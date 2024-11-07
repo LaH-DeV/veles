@@ -5,7 +5,25 @@ import (
 	"regexp"
 )
 
-func TokenizeWat(source string) []Token {
+type Filetype string
+
+const (
+	Wat Filetype = "wat"
+	Vs  Filetype = "vs"
+)
+
+func Tokenize(source string, filetype Filetype) []Token {
+	switch filetype {
+	case Wat:
+		return tokenizeWat(source)
+	case Vs:
+		return tokenizeVs(source)
+	default:
+		return []Token{}
+	}
+}
+
+func tokenizeWat(source string) []Token {
 	patterns := []regexPattern{
 		{regexp.MustCompile(`\s+`), skipHandler},
 		{regexp.MustCompile(`\;;.*`), commentHandler},
@@ -23,7 +41,7 @@ func TokenizeWat(source string) []Token {
 	return lex.tokenize()
 }
 
-func TokenizeVs(source string) []Token {
+func tokenizeVs(source string) []Token {
 	patterns := []regexPattern{
 		{regexp.MustCompile(`\s+`), skipHandler},
 		{regexp.MustCompile(`\/\/.*`), commentHandler},
@@ -77,7 +95,7 @@ func (lex *lexer) tokenize() []Token {
 		}
 
 		if !matched {
-			panic(fmt.Sprintf("lexer error: unrecognized token near '%v'", lex.remainder()))
+			panic(fmt.Sprintf("Veles :: lexer error: unrecognized token near '%v'", lex.remainder()))
 		}
 	}
 	lex.push(newUniqueToken(EOF, "EOF"))

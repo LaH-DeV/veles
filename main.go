@@ -4,51 +4,37 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path"
 
 	"github.com/LaH-DeV/veles/lexer"
 )
 
 func main() {
-	if len(os.Args[1:]) <= 0 {
-		log.Fatal("No arguments provided")
+	if len(os.Args) < 2 || os.Args[1] == "" {
+		log.Fatalf("Veles :: No files listed.")
 	}
+
 	filepath := os.Args[1]
+	filetype := path.Ext(filepath)
 
-	// if there is a second argument, it is the type of file (wat or vs)
-	filetype, err := getFileType(os.Args)
-
-	if err != nil {
-		log.Fatal(err)
+	if filetype != ".wat" && filetype != ".vs" {
+		log.Fatalf("Veles :: Unrecognized file type: \"%s\".", filetype)
+	} else if filetype[0] == '.' {
+		filetype = filetype[1:]
 	}
+
+	fmt.Printf("Veles :: Parsing file: \"%s\".\n", filepath)
 
 	sourceBytes, err := os.ReadFile(filepath)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Veles :: %s.", err)
 	}
 
-	tokens := []lexer.Token{}
-	switch filetype {
-	case "wat":
-		tokens = lexer.TokenizeWat(string(sourceBytes))
-	case "vs":
-		tokens = lexer.TokenizeVs(string(sourceBytes))
-	default:
-		log.Fatal("Unrecognized file type")
-	}
+	tokens := lexer.Tokenize(string(sourceBytes), lexer.Filetype(filetype))
 
-	for _, token := range tokens {
-		fmt.Println(lexer.TokenKindString(token.Kind))
-	}
-}
-
-func getFileType(args []string) (string, error) {
-	filetype := "vs"
-	if len(args[1:]) > 1 {
-		if args[2] == "wat" || args[2] == "vs" {
-			filetype = args[2]
-		} else {
-			return "", fmt.Errorf("Invalid file type")
-		}
-	}
-	return filetype, nil
+	// time to parse the tokens
+	fmt.Printf("Veles :: %d tokens found.\n", len(tokens))
+	//for _, token := range tokens {
+	//fmt.Println(lexer.TokenKindString(token.Kind))
+	//}
 }
