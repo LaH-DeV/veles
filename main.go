@@ -4,37 +4,30 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path"
 
 	"github.com/LaH-DeV/veles/lexer"
 )
 
 func main() {
-	if len(os.Args) < 2 || os.Args[1] == "" {
-		log.Fatalf("Veles :: No files listed.")
-	}
-
-	filepath := os.Args[1]
-	filetype := path.Ext(filepath)
-
-	if filetype != ".wat" && filetype != ".vs" {
-		log.Fatalf("Veles :: Unrecognized file type: \"%s\".", filetype)
-	} else if filetype[0] == '.' {
-		filetype = filetype[1:]
-	}
-
-	fmt.Printf("Veles :: Parsing file: \"%s\".\n", filepath)
-
-	sourceBytes, err := os.ReadFile(filepath)
+	config, err := setup(os.Args)
 	if err != nil {
-		log.Fatalf("Veles :: %s.", err)
+		log.Fatal(err)
 	}
 
-	tokens := lexer.Tokenize(string(sourceBytes), lexer.Filetype(filetype))
+	fmt.Printf("Veles :: Parsing file: \"%s\".\n", config.filepath)
+
+	lex := lexer.NewLexer(config.filetype)
+
+	if lex == nil {
+		log.Fatal("Veles :: lexer error: unrecognized filetype.")
+	}
+
+	tokens := lex.Tokenize(config.source)
+
+	fmt.Printf("Veles :: %d tokens found.\n", len(tokens))
+	// for _, token := range tokens {
+	// 	fmt.Println(lexer.TokenKindString(token.Kind))
+	// }
 
 	// time to parse the tokens
-	fmt.Printf("Veles :: %d tokens found.\n", len(tokens))
-	//for _, token := range tokens {
-	//fmt.Println(lexer.TokenKindString(token.Kind))
-	//}
 }

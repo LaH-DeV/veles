@@ -5,65 +5,23 @@ import (
 	"regexp"
 )
 
-type Filetype string
+type Filetype int
 
 const (
-	Wat Filetype = "wat"
-	Vs  Filetype = "vs"
+	Unrecognized Filetype = iota
+	Vs
+	Wat
 )
 
-func Tokenize(source string, filetype Filetype) []Token {
+func NewLexer(filetype Filetype) *lexer {
 	switch filetype {
-	case Wat:
-		return tokenizeWat(source)
 	case Vs:
-		return tokenizeVs(source)
+		return vsLexer()
+	case Wat:
+		return watLexer()
 	default:
-		return []Token{}
+		return nil
 	}
-}
-
-func tokenizeWat(source string) []Token {
-	patterns := []regexPattern{
-		{regexp.MustCompile(`\s+`), skipHandler},
-		{regexp.MustCompile(`\;;.*`), commentHandler},
-		{regexp.MustCompile(`"[^"]*"`), stringHandler},
-		{regexp.MustCompile(`[0-9_]+(\.[0-9_]+)`), floatHandler},
-		{regexp.MustCompile(`[0-9_]+`), integerHandler},
-		// rewrite the next regex (identifiers starting with $) but keywords not
-		{regexp.MustCompile(`\$[a-zA-Z_][a-zA-Z0-9_]*`), symbolHandler},                       // identifiers starting with $
-		{regexp.MustCompile(`[a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_]*`), symbolHandler}, // identifiers starting with a letter but with '.' in the middle like i32.const
-		{regexp.MustCompile(`[a-zA-Z_][a-zA-Z0-9_]*`), symbolHandler},                         // identifiers starting with a letter
-		{regexp.MustCompile(`\(`), defaultHandler(OPEN_PAREN, "(")},
-		{regexp.MustCompile(`\)`), defaultHandler(CLOSE_PAREN, ")")},
-	}
-	lex := createLexer(source, patterns, &reserved_lu_wat, &reserved_types_lu)
-	return lex.tokenize()
-}
-
-func tokenizeVs(source string) []Token {
-	patterns := []regexPattern{
-		{regexp.MustCompile(`\s+`), skipHandler},
-		{regexp.MustCompile(`\/\/.*`), commentHandler},
-		// {regexp.MustCompile(`"[^"]*"`), stringHandler},
-		{regexp.MustCompile(`[0-9_]+(\.[0-9_]+)`), floatHandler},
-		{regexp.MustCompile(`[0-9_]+`), integerHandler},
-		{regexp.MustCompile(`[a-zA-Z_][a-zA-Z0-9_]*`), symbolHandler},
-		{regexp.MustCompile(`\(`), defaultHandler(OPEN_PAREN, "(")},
-		{regexp.MustCompile(`\)`), defaultHandler(CLOSE_PAREN, ")")},
-		{regexp.MustCompile(`\{`), defaultHandler(OPEN_CURLY, "{")},
-		{regexp.MustCompile(`\}`), defaultHandler(CLOSE_CURLY, "}")},
-		{regexp.MustCompile(`\::`), defaultHandler(DOUBLE_COLON, "::")},
-		{regexp.MustCompile(`\:`), defaultHandler(COLON, ":")},
-		{regexp.MustCompile(`\+`), defaultHandler(PLUS, "+")},
-		{regexp.MustCompile(`\-`), defaultHandler(MINUS, "-")},
-		{regexp.MustCompile(`\==`), defaultHandler(EQUALS, "==")},
-		{regexp.MustCompile(`\=`), defaultHandler(ASSIGNMENT, "=")},
-		{regexp.MustCompile(`\,`), defaultHandler(COMMA, ",")},
-		{regexp.MustCompile(`\;`), defaultHandler(SEMICOLON, ";")},
-	}
-	lex := createLexer(source, patterns, &reserved_lu_vs, &reserved_types_lu)
-	return lex.tokenize()
 }
 
 type regexPattern struct {
@@ -76,16 +34,18 @@ type lexer struct {
 	pos      int
 	line     int
 	Tokens   []Token
-	patterns []regexPattern
+	patterns *[]regexPattern
 	keywords *map[string]TokenKind
 	types    *map[string]TokenKind
+
+	filetype Filetype
 }
 
-func (lex *lexer) tokenize() []Token {
+func (lex *lexer) Tokenize(source string) []Token {
+	lex.source = source
 	for !lex.at_eof() {
 		matched := false
-
-		for _, pattern := range lex.patterns {
+		for _, pattern := range *lex.patterns {
 			loc := pattern.regex.FindStringIndex(lex.remainder())
 			if loc != nil && loc[0] == 0 {
 				pattern.handler(lex, pattern.regex)
@@ -93,12 +53,15 @@ func (lex *lexer) tokenize() []Token {
 				break // Exit the loop after the first match
 			}
 		}
-
 		if !matched {
+			// TODO: add diagnostics and error handling
+			// we shouldn't panic here, but instead add a diagnostic and continue
+			// the continuation will require a strategy
 			panic(fmt.Sprintf("Veles :: lexer error: unrecognized token near '%v'", lex.remainder()))
 		}
 	}
 	lex.push(newUniqueToken(EOF, "EOF"))
+	lex.source = ""
 	return lex.Tokens
 }
 
@@ -124,18 +87,6 @@ func (lex *lexer) push(token Token) {
 
 func (lex *lexer) at_eof() bool {
 	return lex.pos >= len(lex.source)
-}
-
-func createLexer(source string, patterns []regexPattern, keywords *map[string]TokenKind, types *map[string]TokenKind) *lexer {
-	return &lexer{
-		pos:      0,
-		line:     1,
-		source:   source,
-		Tokens:   make([]Token, 0),
-		patterns: patterns,
-		keywords: keywords,
-		types:    types,
-	}
 }
 
 type regexHandler func(lex *lexer, regex *regexp.Regexp)
@@ -194,4 +145,65 @@ func commentHandler(lex *lexer, regex *regexp.Regexp) {
 		lex.advanceN(match[1])
 		lex.line++
 	}
+}
+
+func baseLexer() *lexer {
+	return &lexer{
+		pos:      0,
+		line:     1,
+		Tokens:   make([]Token, 0),
+		patterns: nil,
+		keywords: nil,
+		types:    nil,
+		filetype: Unrecognized,
+	}
+}
+
+func vsLexer() *lexer {
+	lex := baseLexer()
+	lex.keywords = &reserved_lu_vs
+	lex.types = &reserved_types_lu
+	lex.filetype = Vs
+	lex.patterns = &[]regexPattern{
+		{regexp.MustCompile(`\s+`), skipHandler},
+		{regexp.MustCompile(`\/\/.*`), commentHandler},
+		// {regexp.MustCompile(`"[^"]*"`), stringHandler},
+		{regexp.MustCompile(`[0-9_]+(\.[0-9_]+)`), floatHandler},
+		{regexp.MustCompile(`[0-9_]+`), integerHandler},
+		{regexp.MustCompile(`[a-zA-Z_][a-zA-Z0-9_]*`), symbolHandler},
+		{regexp.MustCompile(`\(`), defaultHandler(OPEN_PAREN, "(")},
+		{regexp.MustCompile(`\)`), defaultHandler(CLOSE_PAREN, ")")},
+		{regexp.MustCompile(`\{`), defaultHandler(OPEN_CURLY, "{")},
+		{regexp.MustCompile(`\}`), defaultHandler(CLOSE_CURLY, "}")},
+		{regexp.MustCompile(`\::`), defaultHandler(DOUBLE_COLON, "::")},
+		{regexp.MustCompile(`\:`), defaultHandler(COLON, ":")},
+		{regexp.MustCompile(`\+`), defaultHandler(PLUS, "+")},
+		{regexp.MustCompile(`\-`), defaultHandler(MINUS, "-")},
+		{regexp.MustCompile(`\==`), defaultHandler(EQUALS, "==")},
+		{regexp.MustCompile(`\=`), defaultHandler(ASSIGNMENT, "=")},
+		{regexp.MustCompile(`\,`), defaultHandler(COMMA, ",")},
+		{regexp.MustCompile(`\;`), defaultHandler(SEMICOLON, ";")},
+	}
+	return lex
+}
+
+func watLexer() *lexer {
+	lex := baseLexer()
+	lex.keywords = &reserved_lu_wat
+	lex.types = &reserved_types_lu
+	lex.filetype = Wat
+	lex.patterns = &[]regexPattern{
+		{regexp.MustCompile(`\s+`), skipHandler},
+		{regexp.MustCompile(`\;;.*`), commentHandler},
+		{regexp.MustCompile(`"[^"]*"`), stringHandler},
+		{regexp.MustCompile(`[0-9_]+(\.[0-9_]+)`), floatHandler},
+		{regexp.MustCompile(`[0-9_]+`), integerHandler},
+		// rewrite the next regex (identifiers starting with $) but keywords not
+		{regexp.MustCompile(`\$[a-zA-Z_][a-zA-Z0-9_]*`), symbolHandler},                       // identifiers starting with $
+		{regexp.MustCompile(`[a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_]*`), symbolHandler}, // identifiers starting with a letter but with '.' in the middle like i32.const
+		{regexp.MustCompile(`[a-zA-Z_][a-zA-Z0-9_]*`), symbolHandler},                         // identifiers starting with a letter
+		{regexp.MustCompile(`\(`), defaultHandler(OPEN_PAREN, "(")},
+		{regexp.MustCompile(`\)`), defaultHandler(CLOSE_PAREN, ")")},
+	}
+	return lex
 }
