@@ -17,6 +17,16 @@ const (
 
 	OPEN_PAREN
 	CLOSE_PAREN
+	OPEN_CURLY
+	CLOSE_CURLY
+	DOUBLE_COLON
+	COLON
+	PLUS
+	MINUS
+	EQUALS
+	ASSIGNMENT
+	COMMA
+	SEMICOLON
 
 	MODULE
 	PARAM
@@ -25,9 +35,13 @@ const (
 	FUNC
 	IMPORT
 	EXPORT
+	RETURN
+	FN
+	PUB
+	USE
 )
 
-var reserved_lu map[string]TokenKind = map[string]TokenKind{
+var reserved_lu_wat map[string]TokenKind = map[string]TokenKind{
 	"module": MODULE,
 	"param":  PARAM,
 	"result": RESULT,
@@ -35,6 +49,15 @@ var reserved_lu map[string]TokenKind = map[string]TokenKind{
 	"func":   FUNC,
 	"import": IMPORT,
 	"export": EXPORT,
+	"return": RETURN,
+}
+
+var reserved_lu_vs map[string]TokenKind = map[string]TokenKind{
+	"module": MODULE,
+	"fn":     FN,
+	"pub":    PUB,
+	"use":    USE,
+	"return": RETURN,
 }
 
 var reserved_types_lu map[string]TokenKind = map[string]TokenKind{
@@ -73,6 +96,26 @@ func TokenKindString(kind TokenKind) string {
 		return "open_paren"
 	case CLOSE_PAREN:
 		return "close_paren"
+	case OPEN_CURLY:
+		return "open_curly"
+	case CLOSE_CURLY:
+		return "close_curly"
+	case DOUBLE_COLON:
+		return "double_colon"
+	case COLON:
+		return "colon"
+	case PLUS:
+		return "plus"
+	case MINUS:
+		return "minus"
+	case EQUALS:
+		return "equals"
+	case ASSIGNMENT:
+		return "assignment"
+	case COMMA:
+		return "comma"
+	case SEMICOLON:
+		return "semicolon"
 	case MODULE:
 		return "module"
 	case PARAM:
@@ -87,6 +130,14 @@ func TokenKindString(kind TokenKind) string {
 		return "import"
 	case EXPORT:
 		return "export"
+	case RETURN:
+		return "return"
+	case FN:
+		return "fn"
+	case PUB:
+		return "pub"
+	case USE:
+		return "use"
 	default:
 		return fmt.Sprintf("unknown(%d)", kind)
 	}
