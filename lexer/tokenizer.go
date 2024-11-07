@@ -30,10 +30,11 @@ type regexPattern struct {
 }
 
 type lexer struct {
-	source   string
-	pos      int
-	line     int
-	Tokens   []Token
+	source string
+	pos    int
+	line   int
+	Tokens []Token
+
 	patterns *[]regexPattern
 	keywords *map[string]TokenKind
 	types    *map[string]TokenKind
@@ -42,7 +43,7 @@ type lexer struct {
 }
 
 func (lex *lexer) Tokenize(source string) []Token {
-	lex.source = source
+	lex.newState(source)
 	for !lex.at_eof() {
 		matched := false
 		for _, pattern := range *lex.patterns {
@@ -61,8 +62,15 @@ func (lex *lexer) Tokenize(source string) []Token {
 		}
 	}
 	lex.push(newUniqueToken(EOF, "EOF"))
-	lex.source = ""
 	return lex.Tokens
+}
+
+func (lex *lexer) newState(source string) {
+	lex.source = source
+	lex.pos = 0
+	lex.line = 1
+	lex.Tokens = make([]Token, 0)
+	// TODO: reset diagnostics
 }
 
 func (lex *lexer) advanceN(n int) {
@@ -165,6 +173,7 @@ func vsLexer() *lexer {
 	lex.types = &reserved_types_lu
 	lex.filetype = Vs
 	lex.patterns = &[]regexPattern{
+		{regexp.MustCompile(`\n`), defaultHandler(NEWLINE, "\n")},
 		{regexp.MustCompile(`\s+`), skipHandler},
 		{regexp.MustCompile(`\/\/.*`), commentHandler},
 		// {regexp.MustCompile(`"[^"]*"`), stringHandler},
@@ -178,7 +187,10 @@ func vsLexer() *lexer {
 		{regexp.MustCompile(`\::`), defaultHandler(DOUBLE_COLON, "::")},
 		{regexp.MustCompile(`\:`), defaultHandler(COLON, ":")},
 		{regexp.MustCompile(`\+`), defaultHandler(PLUS, "+")},
-		{regexp.MustCompile(`\-`), defaultHandler(MINUS, "-")},
+		{regexp.MustCompile(`\-`), defaultHandler(DASH, "-")},
+		{regexp.MustCompile(`\/`), defaultHandler(SLASH, "/")},
+		{regexp.MustCompile(`\*`), defaultHandler(ASTERISK, "*")},
+		{regexp.MustCompile(`\%`), defaultHandler(REMAINDER, "%")},
 		{regexp.MustCompile(`\==`), defaultHandler(EQUALS, "==")},
 		{regexp.MustCompile(`\=`), defaultHandler(ASSIGNMENT, "=")},
 		{regexp.MustCompile(`\,`), defaultHandler(COMMA, ",")},

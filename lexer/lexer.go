@@ -22,7 +22,10 @@ const (
 	DOUBLE_COLON
 	COLON
 	PLUS
-	MINUS
+	DASH
+	SLASH
+	ASTERISK
+	REMAINDER
 	EQUALS
 	ASSIGNMENT
 	COMMA
@@ -39,6 +42,8 @@ const (
 	FN
 	PUB
 	USE
+
+	NEWLINE
 )
 
 var reserved_lu_wat map[string]TokenKind = map[string]TokenKind{
@@ -76,6 +81,8 @@ func TokenKindString(kind TokenKind) string {
 	switch kind {
 	case EOF:
 		return "eof"
+	case NEWLINE:
+		return "newline"
 	case STRING:
 		return "string"
 	case INT_32:
@@ -106,8 +113,14 @@ func TokenKindString(kind TokenKind) string {
 		return "colon"
 	case PLUS:
 		return "plus"
-	case MINUS:
-		return "minus"
+	case DASH:
+		return "dash"
+	case SLASH:
+		return "slash"
+	case ASTERISK:
+		return "asterisk"
+	case REMAINDER:
+		return "remainder"
 	case EQUALS:
 		return "equals"
 	case ASSIGNMENT:
@@ -147,4 +160,14 @@ func newUniqueToken(kind TokenKind, value string) Token {
 	return Token{
 		kind, value,
 	}
+}
+
+func (tk Token) IsOneOfMany(expectedTokens ...TokenKind) bool {
+	for _, expected := range expectedTokens {
+		if expected == tk.Kind {
+			return true
+		}
+	}
+
+	return false
 }

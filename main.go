@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/LaH-DeV/veles/lexer"
+	"github.com/LaH-DeV/veles/parser"
 )
 
 func main() {
@@ -19,7 +20,7 @@ func main() {
 	lex := lexer.NewLexer(config.filetype)
 
 	if lex == nil {
-		log.Fatal("Veles :: lexer error: unrecognized filetype.")
+		log.Fatal("Veles :: lexer error: could not create lexer.")
 	}
 
 	tokens := lex.Tokenize(config.source)
@@ -29,5 +30,16 @@ func main() {
 	// 	fmt.Println(lexer.TokenKindString(token.Kind))
 	// }
 
-	// time to parse the tokens
+	par := parser.NewParser(config.filetype)
+
+	if par == nil {
+		log.Fatal("Veles :: parser error: could not create parser.")
+	}
+
+	ast := par.ParseFile(tokens, config.filepath)
+
+	fmt.Printf("Veles :: %d statements found.\n", len(ast.Statements))
+	for _, stmt := range ast.Statements {
+		fmt.Println("\t" + stmt.String())
+	}
 }
