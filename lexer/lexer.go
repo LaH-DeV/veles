@@ -14,6 +14,7 @@ const (
 	FLOAT_32
 	FLOAT_64
 	IDENTIFIER
+	VOID
 
 	OPEN_PAREN
 	CLOSE_PAREN
@@ -72,6 +73,8 @@ var reserved_types_lu map[string]TokenKind = map[string]TokenKind{
 	"i64": INT_64,
 	"f32": FLOAT_32,
 	"f64": FLOAT_64,
+
+	"void": VOID,
 }
 
 type Token struct {
@@ -83,6 +86,8 @@ func TokenKindString(kind TokenKind) string {
 	switch kind {
 	case EOF:
 		return "eof"
+	case VOID:
+		return "void"
 	case NEWLINE:
 		return "newline"
 	case STRING:

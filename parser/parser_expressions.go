@@ -8,9 +8,9 @@ import (
 	"github.com/LaH-DeV/veles/lexer"
 )
 
-func parse_binary_expr(p *parser, left ast.Expr, bp bindingPower) ast.Expr {
+func parseBinaryExpr(p *parser, left ast.Expr, bp bindingPower) ast.Expr {
 	operatorToken := p.advance()
-	right := parse_expr(p, bp)
+	right := parseExpr(p, bp)
 
 	if right == nil {
 		//panic(fmt.Sprintf("Veles :: Cannot create binary_expr from \"%s\"\n", lexer.TokenKindString(p.currentTokenKind())))
@@ -24,7 +24,7 @@ func parse_binary_expr(p *parser, left ast.Expr, bp bindingPower) ast.Expr {
 	}
 }
 
-func parse_primary_expr(p *parser) ast.Expr {
+func parsePrimaryExpr(p *parser) ast.Expr {
 	switch p.currentTokenKind() {
 	case lexer.INTEGER:
 		integer, _ := strconv.ParseInt(p.advance().Value, 0, 64)
@@ -43,9 +43,9 @@ func parse_primary_expr(p *parser) ast.Expr {
 	}
 }
 
-func parse_grouping_expr(p *parser) ast.Expr {
+func parseGroupingExpr(p *parser) ast.Expr {
 	p.expect(lexer.OPEN_PAREN)
-	expr := parse_expr(p, default_bp)
+	expr := parseExpr(p, default_bp)
 	p.expect(lexer.CLOSE_PAREN)
 	if expr == nil {
 		return nil
@@ -53,7 +53,7 @@ func parse_grouping_expr(p *parser) ast.Expr {
 	return *expr
 }
 
-func parse_expr(p *parser, bp bindingPower) *ast.Expr {
+func parseExpr(p *parser, bp bindingPower) *ast.Expr {
 	p.skipNewlines()
 
 	nudHandler, exists := (*p.nudLookup)[p.currentTokenKind()]

@@ -38,8 +38,8 @@ func main() {
 
 	ast := par.ParseFile(tokens, config.filepath)
 
-	fmt.Printf("Veles :: %d statements found.\n", len(ast.Statements))
+	fmt.Printf("Veles :: %d statements found.\n\n", len(ast.Statements))
 	for _, stmt := range ast.Statements {
-		fmt.Println("\t" + stmt.String())
+		fmt.Println(stmt.String())
 	}
 }

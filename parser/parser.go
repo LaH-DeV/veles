@@ -35,7 +35,7 @@ func (p *parser) ParseFile(tokens []lexer.Token, filename string) *ast.Program {
 
 	for p.hasTokens() {
 		p.skipNewlines()
-		stmt := parse_stmt(p)
+		stmt := parseStmt(p)
 		if stmt != nil {
 			body = append(body, stmt)
 		}
@@ -49,32 +49,48 @@ func (p *parser) ParseFile(tokens []lexer.Token, filename string) *ast.Program {
 }
 
 func vsParser() *parser {
-	p := &parser{
-		tokens:     []lexer.Token{},
-		pos:        0,
-		stmtLookup: &map[lexer.TokenKind]stmtHandler{},
-		nudLookup:  &map[lexer.TokenKind]nudHandler{},
-		ledLookup:  &map[lexer.TokenKind]ledHandler{},
-		bpLookup:   &map[lexer.TokenKind]bindingPower{},
-		filetype:   lexer.Vs,
-	}
+	p := baseParser()
+	p.filetype = lexer.Vs
 
-	p.led(lexer.PLUS, additive, parse_binary_expr)
-	p.led(lexer.DASH, additive, parse_binary_expr)
-	p.led(lexer.SLASH, multiplicative, parse_binary_expr)
-	p.led(lexer.ASTERISK, multiplicative, parse_binary_expr)
-	p.led(lexer.REMAINDER, multiplicative, parse_binary_expr)
-	p.led(lexer.EXPONENTIATION, exponentiation, parse_binary_expr)
+	p.led(lexer.PLUS, additive, parseBinaryExpr)
+	p.led(lexer.DASH, additive, parseBinaryExpr)
+	p.led(lexer.SLASH, multiplicative, parseBinaryExpr)
+	p.led(lexer.ASTERISK, multiplicative, parseBinaryExpr)
+	p.led(lexer.REMAINDER, multiplicative, parseBinaryExpr)
+	p.led(lexer.EXPONENTIATION, exponentiation, parseBinaryExpr)
 
-	p.nud(lexer.INTEGER, parse_primary_expr)
-	p.nud(lexer.FLOAT, parse_primary_expr)
-	p.nud(lexer.IDENTIFIER, parse_primary_expr)
+	p.nud(lexer.INTEGER, parsePrimaryExpr)
+	p.nud(lexer.FLOAT, parsePrimaryExpr)
+	p.nud(lexer.IDENTIFIER, parsePrimaryExpr)
 
-	p.nud(lexer.OPEN_PAREN, parse_grouping_expr)
+	p.nud(lexer.OPEN_PAREN, parseGroupingExpr)
+
+	p.stmt(lexer.RETURN, parseReturnStmt)
+	p.stmt(lexer.FN, func(p *parser) ast.Stmt {
+		return parseFunctionDeclarationStmt(p, false)
+	})
+	p.stmt(lexer.PUB, func(p *parser) ast.Stmt {
+		p.advance()
+		switch p.currentTokenKind() {
+		case lexer.FN:
+			return parseFunctionDeclarationStmt(p, true)
+		default:
+			// TODO: report error
+			return nil
+		}
+	})
+
 	return p
 }
 
+// TODO
 func watParser() *parser {
+	p := baseParser()
+	p.filetype = lexer.Wat
+	return p
+}
+
+func baseParser() *parser {
 	p := &parser{
 		tokens:     []lexer.Token{},
 		pos:        0,
@@ -82,7 +98,7 @@ func watParser() *parser {
 		nudLookup:  &map[lexer.TokenKind]nudHandler{},
 		ledLookup:  &map[lexer.TokenKind]ledHandler{},
 		bpLookup:   &map[lexer.TokenKind]bindingPower{},
-		filetype:   lexer.Wat,
+		filetype:   lexer.Unrecognized,
 	}
 	return p
 }
