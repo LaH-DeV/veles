@@ -57,18 +57,25 @@ func (n FunctionDeclarationStmt) String() string {
 }
 
 type VariableDeclarationStmt struct {
-	VarType string
-	VarName string
-	Value   Expr
+	Exported bool
+	VarType  string
+	VarName  string
+	Value    Expr
 }
 
 func (n VariableDeclarationStmt) stmt() {}
 func (n VariableDeclarationStmt) String() string {
-	if n.Value == nil {
-		return "let " + n.VarType + " " + n.VarName
-	} else {
-		return "let " + n.VarType + " " + n.VarName + " = " + n.Value.String()
+	str := ""
+	if n.Exported {
+		str += "pub "
 	}
+	str += "let "
+	if n.Value == nil {
+		str += n.VarType + " " + n.VarName
+	} else {
+		str += n.VarType + " " + n.VarName + " = " + n.Value.String()
+	}
+	return str
 }
 
 type ReturnStmt struct {

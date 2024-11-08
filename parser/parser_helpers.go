@@ -59,6 +59,10 @@ func (p *parser) currentTokenKind() lexer.TokenKind {
 	return p.tokens[p.pos].Kind
 }
 
+func (p *parser) peek() lexer.Token {
+	return p.tokens[p.pos+1]
+}
+
 func (p *parser) expectError(expectedKind lexer.TokenKind, err any) lexer.Token {
 	kind := p.currentTokenKind()
 

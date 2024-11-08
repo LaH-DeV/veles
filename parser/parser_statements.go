@@ -79,8 +79,14 @@ func parseType(p *parser) lexer.Token {
 	return p.expectOneOf(lexer.INT_32, lexer.INT_64, lexer.FLOAT_32, lexer.FLOAT_64, lexer.IDENTIFIER, lexer.VOID)
 }
 
-func parseFunctionDeclarationStmt(p *parser, pub bool) ast.Stmt {
-	p.advance()
+func parseFunctionDeclarationStmt(p *parser) ast.Stmt {
+	initialToken := p.advance()
+
+	var pub bool = false
+	if initialToken.Kind == lexer.PUB {
+		pub = true
+		p.advance() // Skip the FN token
+	}
 
 	returnType := parseType(p).Value
 
@@ -101,7 +107,15 @@ func parseFunctionDeclarationStmt(p *parser, pub bool) ast.Stmt {
 }
 
 func parseVariableDeclarationStmt(p *parser) ast.Stmt {
-	p.advance() // Skip the LET token for now
+	var pub bool = false
+
+	if p.currentTokenKind() == lexer.PUB {
+		pub = true
+		p.advance() // PUB token
+		p.advance() // LET token
+	} else {
+		p.advance() // LET token
+	}
 
 	varType := parseType(p).Value
 	varName := p.expect(lexer.IDENTIFIER).Value
@@ -122,9 +136,10 @@ func parseVariableDeclarationStmt(p *parser) ast.Stmt {
 	p.expectOneOf(lexer.NEWLINE, lexer.EOF)
 
 	return &ast.VariableDeclarationStmt{
-		VarType: varType,
-		VarName: varName,
-		Value:   expr,
+		Exported: pub, // should be allowed only for unscoped variables
+		VarType:  varType,
+		VarName:  varName,
+		Value:    expr,
 	}
 }
 
@@ -141,6 +156,19 @@ func parseReturnStmt(p *parser) ast.Stmt {
 	}
 	return &ast.ReturnStmt{
 		Value: expr,
+	}
+}
+
+func parsePublicStmt(p *parser) ast.Stmt {
+	switch p.peek().Kind {
+	case lexer.FN:
+		return parseFunctionDeclarationStmt(p)
+	case lexer.LET:
+		return parseVariableDeclarationStmt(p)
+	default:
+		p.advance()
+		// TODO: report error
+		return nil
 	}
 }
 

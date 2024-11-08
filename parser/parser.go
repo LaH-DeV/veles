@@ -58,32 +58,19 @@ func vsParser() *parser {
 	p.led(lexer.ASTERISK, multiplicative, parseBinaryExpr)
 	p.led(lexer.REMAINDER, multiplicative, parseBinaryExpr)
 	p.led(lexer.EXPONENTIATION, exponentiation, parseBinaryExpr)
-
 	p.led(lexer.OPEN_PAREN, call, parseCallExpr)
 	p.led(lexer.DOUBLE_COLON, member, parseMemberExpr)
 
 	p.nud(lexer.INTEGER, parsePrimaryExpr)
 	p.nud(lexer.FLOAT, parsePrimaryExpr)
 	p.nud(lexer.IDENTIFIER, parsePrimaryExpr)
-
 	p.nud(lexer.OPEN_PAREN, parseGroupingExpr)
 
 	p.stmt(lexer.USE, parseUseStmt)
 	p.stmt(lexer.RETURN, parseReturnStmt)
 	p.stmt(lexer.LET, parseVariableDeclarationStmt)
-	p.stmt(lexer.FN, func(p *parser) ast.Stmt {
-		return parseFunctionDeclarationStmt(p, false)
-	})
-	p.stmt(lexer.PUB, func(p *parser) ast.Stmt {
-		p.advance()
-		switch p.currentTokenKind() {
-		case lexer.FN:
-			return parseFunctionDeclarationStmt(p, true)
-		default:
-			// TODO: report error
-			return nil
-		}
-	})
+	p.stmt(lexer.FN, parseFunctionDeclarationStmt)
+	p.stmt(lexer.PUB, parsePublicStmt)
 
 	return p
 }
