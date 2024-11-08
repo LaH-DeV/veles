@@ -6,11 +6,11 @@ import (
 )
 
 func parse_stmt(p *parser) ast.Stmt {
-	for p.currentTokenKind() == lexer.NEWLINE {
-		p.advance()
+	if p.currentTokenKind() == lexer.EOF {
+		return nil
 	}
 
-	stmt_fn, exists := (*p.stmt_lookup)[p.currentTokenKind()]
+	stmt_fn, exists := (*p.stmtLookup)[p.currentTokenKind()]
 
 	if exists {
 		return stmt_fn(p)

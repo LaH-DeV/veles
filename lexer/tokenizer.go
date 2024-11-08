@@ -177,6 +177,7 @@ func vsLexer() *lexer {
 		{regexp.MustCompile(`\s+`), skipHandler},
 		{regexp.MustCompile(`\/\/.*`), commentHandler},
 		// {regexp.MustCompile(`"[^"]*"`), stringHandler},
+		// TODO float and integer :: need to change '_' to be optional and only allowed between digits (one, not multiple)
 		{regexp.MustCompile(`[0-9_]+(\.[0-9_]+)`), floatHandler},
 		{regexp.MustCompile(`[0-9_]+`), integerHandler},
 		{regexp.MustCompile(`[a-zA-Z_][a-zA-Z0-9_]*`), symbolHandler},
@@ -189,8 +190,9 @@ func vsLexer() *lexer {
 		{regexp.MustCompile(`\+`), defaultHandler(PLUS, "+")},
 		{regexp.MustCompile(`\-`), defaultHandler(DASH, "-")},
 		{regexp.MustCompile(`\/`), defaultHandler(SLASH, "/")},
-		{regexp.MustCompile(`\*`), defaultHandler(ASTERISK, "*")},
 		{regexp.MustCompile(`\%`), defaultHandler(REMAINDER, "%")},
+		{regexp.MustCompile(`\*\*`), defaultHandler(EXPONENTIATION, "**")},
+		{regexp.MustCompile(`\*`), defaultHandler(ASTERISK, "*")},
 		{regexp.MustCompile(`\==`), defaultHandler(EQUALS, "==")},
 		{regexp.MustCompile(`\=`), defaultHandler(ASSIGNMENT, "=")},
 		{regexp.MustCompile(`\,`), defaultHandler(COMMA, ",")},

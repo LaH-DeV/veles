@@ -9,10 +9,10 @@ type parser struct {
 	tokens []lexer.Token
 	pos    int
 
-	stmt_lookup *map[lexer.TokenKind]stmt_handler
-	nud_lookup  *map[lexer.TokenKind]nud_handler
-	led_lookup  *map[lexer.TokenKind]led_handler
-	bp_lookup   *map[lexer.TokenKind]binding_power
+	stmtLookup *map[lexer.TokenKind]stmtHandler
+	nudLookup  *map[lexer.TokenKind]nudHandler
+	ledLookup  *map[lexer.TokenKind]ledHandler
+	bpLookup   *map[lexer.TokenKind]bindingPower
 
 	filetype lexer.Filetype
 }
@@ -34,6 +34,7 @@ func (p *parser) ParseFile(tokens []lexer.Token, filename string) *ast.Program {
 	body := make([]ast.Stmt, 0)
 
 	for p.hasTokens() {
+		p.skipNewlines()
 		stmt := parse_stmt(p)
 		if stmt != nil {
 			body = append(body, stmt)
@@ -49,13 +50,13 @@ func (p *parser) ParseFile(tokens []lexer.Token, filename string) *ast.Program {
 
 func vsParser() *parser {
 	p := &parser{
-		tokens:      []lexer.Token{},
-		pos:         0,
-		stmt_lookup: &map[lexer.TokenKind]stmt_handler{},
-		nud_lookup:  &map[lexer.TokenKind]nud_handler{},
-		led_lookup:  &map[lexer.TokenKind]led_handler{},
-		bp_lookup:   &map[lexer.TokenKind]binding_power{},
-		filetype:    lexer.Vs,
+		tokens:     []lexer.Token{},
+		pos:        0,
+		stmtLookup: &map[lexer.TokenKind]stmtHandler{},
+		nudLookup:  &map[lexer.TokenKind]nudHandler{},
+		ledLookup:  &map[lexer.TokenKind]ledHandler{},
+		bpLookup:   &map[lexer.TokenKind]bindingPower{},
+		filetype:   lexer.Vs,
 	}
 
 	p.led(lexer.PLUS, additive, parse_binary_expr)
@@ -63,20 +64,25 @@ func vsParser() *parser {
 	p.led(lexer.SLASH, multiplicative, parse_binary_expr)
 	p.led(lexer.ASTERISK, multiplicative, parse_binary_expr)
 	p.led(lexer.REMAINDER, multiplicative, parse_binary_expr)
+	p.led(lexer.EXPONENTIATION, exponentiation, parse_binary_expr)
 
+	p.nud(lexer.INTEGER, parse_primary_expr)
+	p.nud(lexer.FLOAT, parse_primary_expr)
 	p.nud(lexer.IDENTIFIER, parse_primary_expr)
+
+	p.nud(lexer.OPEN_PAREN, parse_grouping_expr)
 	return p
 }
 
 func watParser() *parser {
 	p := &parser{
-		tokens:      []lexer.Token{},
-		pos:         0,
-		stmt_lookup: &map[lexer.TokenKind]stmt_handler{},
-		nud_lookup:  &map[lexer.TokenKind]nud_handler{},
-		led_lookup:  &map[lexer.TokenKind]led_handler{},
-		bp_lookup:   &map[lexer.TokenKind]binding_power{},
-		filetype:    lexer.Wat,
+		tokens:     []lexer.Token{},
+		pos:        0,
+		stmtLookup: &map[lexer.TokenKind]stmtHandler{},
+		nudLookup:  &map[lexer.TokenKind]nudHandler{},
+		ledLookup:  &map[lexer.TokenKind]ledHandler{},
+		bpLookup:   &map[lexer.TokenKind]bindingPower{},
+		filetype:   lexer.Wat,
 	}
 	return p
 }

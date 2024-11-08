@@ -26,6 +26,8 @@ const (
 	SLASH
 	ASTERISK
 	REMAINDER
+	EXPONENTIATION
+
 	EQUALS
 	ASSIGNMENT
 	COMMA
@@ -121,6 +123,8 @@ func TokenKindString(kind TokenKind) string {
 		return "asterisk"
 	case REMAINDER:
 		return "remainder"
+	case EXPONENTIATION:
+		return "exponentiation"
 	case EQUALS:
 		return "equals"
 	case ASSIGNMENT:

@@ -7,13 +7,13 @@ import (
 	"github.com/LaH-DeV/veles/lexer"
 )
 
-type stmt_handler func(p *parser) ast.Stmt
-type nud_handler func(p *parser) ast.Expr
-type led_handler func(p *parser, left ast.Expr, bp binding_power) ast.Expr
-type binding_power int
+type stmtHandler func(p *parser) ast.Stmt
+type nudHandler func(p *parser) ast.Expr
+type ledHandler func(p *parser, left ast.Expr, bp bindingPower) ast.Expr
+type bindingPower int
 
 const (
-	default_bp binding_power = iota
+	default_bp bindingPower = iota
 	comma
 	assignment
 	logical
@@ -39,6 +39,20 @@ func (p *parser) advance() lexer.Token {
 	tk := p.currentToken()
 	p.pos++
 	return tk
+}
+
+func (p *parser) skipNewlines() {
+	for p.currentTokenKind() == lexer.NEWLINE {
+		p.advance()
+	}
+}
+
+func (p *parser) lookupBp(tokenKind lexer.TokenKind) bindingPower {
+	bp, exists := (*p.bpLookup)[tokenKind]
+	if !exists {
+		return default_bp
+	}
+	return bp
 }
 
 func (p *parser) currentTokenKind() lexer.TokenKind {
@@ -74,17 +88,16 @@ func (p *parser) expectOneOf(expectedKind ...lexer.TokenKind) lexer.Token {
 	return p.advance()
 }
 
-func (p *parser) led(kind lexer.TokenKind, bp binding_power, led_fn led_handler) {
-	(*p.bp_lookup)[kind] = bp
-	(*p.led_lookup)[kind] = led_fn
+func (p *parser) led(kind lexer.TokenKind, bp bindingPower, handler ledHandler) {
+	(*p.bpLookup)[kind] = bp
+	(*p.ledLookup)[kind] = handler
 }
 
-func (p *parser) nud(kind lexer.TokenKind, nud_fn nud_handler) {
-	(*p.bp_lookup)[kind] = primary
-	(*p.nud_lookup)[kind] = nud_fn
+func (p *parser) nud(kind lexer.TokenKind, handler nudHandler) {
+	(*p.bpLookup)[kind] = primary
+	(*p.nudLookup)[kind] = handler
 }
 
-func (p *parser) stmt(kind lexer.TokenKind, stmt_fn stmt_handler) {
-	(*p.bp_lookup)[kind] = default_bp
-	(*p.stmt_lookup)[kind] = stmt_fn
+func (p *parser) stmt(kind lexer.TokenKind, handler stmtHandler) {
+	(*p.stmtLookup)[kind] = handler
 }
