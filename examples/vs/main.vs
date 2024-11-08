@@ -1,9 +1,7 @@
-use math::add
-use math::(add, sub)
 use math
 
-pub fn void :: main() {
-	let i32 test = 5 * 2;
-	let i32 result = add(test, 5);
-	drop result;
+pub fn i32 :: main() {
+	let i32 random = 5 * math::random()
+	let i32 result = random + 2 * 8 + 1
+	return result
 }

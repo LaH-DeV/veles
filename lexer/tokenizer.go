@@ -141,6 +141,12 @@ func symbolHandler(lex *lexer, regex *regexp.Regexp) {
 	lex.advanceN(len(match))
 }
 
+func newlineHandler(lex *lexer, regex *regexp.Regexp) {
+	match := regex.FindStringIndex(lex.remainder())
+	lex.advanceN(match[1])
+	lex.push(newUniqueToken(NEWLINE, "\n"))
+}
+
 func skipHandler(lex *lexer, regex *regexp.Regexp) {
 	match := regex.FindStringIndex(lex.remainder())
 	lex.advanceN(match[1])
@@ -173,7 +179,12 @@ func vsLexer() *lexer {
 	lex.types = &reserved_types_lu
 	lex.filetype = Vs
 	lex.patterns = &[]regexPattern{
-		{regexp.MustCompile(`\n`), defaultHandler(NEWLINE, "\n")},
+		// {regexp.MustCompile(`\n`), defaultHandler(NEWLINE, "\n")},
+		// get the newline character but ignore multiple newlines
+		// + is a greedy operator, so it will match as many newlines as possible
+		// ? is a non-greedy operator, so it will match as few newlines as possible
+		// 'at least one newline' is the same as 'one or more newlines' which is the same as '+'
+		{regexp.MustCompile(`\n+`), newlineHandler},
 		{regexp.MustCompile(`\s+`), skipHandler},
 		{regexp.MustCompile(`\/\/.*`), commentHandler},
 		// {regexp.MustCompile(`"[^"]*"`), stringHandler},

@@ -59,33 +59,8 @@ func vsParser() *parser {
 	p.led(lexer.REMAINDER, multiplicative, parseBinaryExpr)
 	p.led(lexer.EXPONENTIATION, exponentiation, parseBinaryExpr)
 
-	p.led(lexer.OPEN_PAREN, call, func(p *parser, left ast.Expr, bp bindingPower) ast.Expr {
-		p.advance()
-		symbExpr, ok := left.(ast.SymbolExpr)
-		if !ok {
-			return nil // TODO
-		}
-		fName := symbExpr.Value
-		args := make([]ast.Expr, 0)
-		if p.currentTokenKind() != lexer.CLOSE_PAREN {
-			for {
-				expr := *parseExpr(p, defaultBp)
-				if expr == nil {
-					break // TODO
-				}
-				args = append(args, expr)
-				if p.currentTokenKind() != lexer.COMMA {
-					break
-				}
-				p.advance()
-			}
-		}
-		p.expect(lexer.CLOSE_PAREN)
-		return &ast.CallExpr{
-			Function:  fName,
-			Arguments: args,
-		}
-	})
+	p.led(lexer.OPEN_PAREN, call, parseCallExpr)
+	p.led(lexer.DOUBLE_COLON, member, parseMemberExpr)
 
 	p.nud(lexer.INTEGER, parsePrimaryExpr)
 	p.nud(lexer.FLOAT, parsePrimaryExpr)
@@ -95,7 +70,6 @@ func vsParser() *parser {
 
 	p.stmt(lexer.USE, parseUseStmt)
 	p.stmt(lexer.RETURN, parseReturnStmt)
-	p.stmt(lexer.DROP, parseDropStmt)
 	p.stmt(lexer.LET, parseVariableDeclarationStmt)
 	p.stmt(lexer.FN, func(p *parser) ast.Stmt {
 		return parseFunctionDeclarationStmt(p, false)

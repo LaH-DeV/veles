@@ -69,7 +69,6 @@ var reserved_lu_vs map[string]TokenKind = map[string]TokenKind{
 	"pub":    PUB,
 	"use":    USE,
 	"return": RETURN,
-	"drop":   DROP,
 	"let":    LET,
 }
 

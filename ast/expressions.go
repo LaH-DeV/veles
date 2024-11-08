@@ -46,14 +46,14 @@ func (n FloatExpr) String() string {
 }
 
 type CallExpr struct {
-	Function  string
+	Callee    Expr
 	Arguments []Expr
 }
 
 func (n CallExpr) expr() {}
 func (n CallExpr) String() string {
 	var str string
-	str += n.Function + "("
+	str += n.Callee.String() + "("
 	for i, arg := range n.Arguments {
 		if i > 0 {
 			str += ", "
@@ -62,4 +62,14 @@ func (n CallExpr) String() string {
 	}
 	str += ")"
 	return str
+}
+
+type MemberExpr struct {
+	Container Expr
+	Member    string
+}
+
+func (n MemberExpr) expr() {}
+func (n MemberExpr) String() string {
+	return fmt.Sprintf("%s::%s", n.Container.String(), n.Member)
 }

@@ -24,7 +24,7 @@ func parseStmt(p *parser) ast.Stmt {
 func parseExpressionStmt(p *parser) *ast.ExpressionStmt {
 	expression := parseExpr(p, defaultBp)
 
-	p.expectOneOf(lexer.SEMICOLON, lexer.NEWLINE, lexer.EOF)
+	p.expectOneOf(lexer.NEWLINE, lexer.EOF)
 
 	if expression == nil {
 		return nil
@@ -119,7 +119,7 @@ func parseVariableDeclarationStmt(p *parser) ast.Stmt {
 		}
 	}
 
-	p.expectOneOf(lexer.SEMICOLON, lexer.NEWLINE, lexer.EOF)
+	p.expectOneOf(lexer.NEWLINE, lexer.EOF)
 
 	return &ast.VariableDeclarationStmt{
 		VarType: varType,
@@ -128,29 +128,13 @@ func parseVariableDeclarationStmt(p *parser) ast.Stmt {
 	}
 }
 
-func parseDropStmt(p *parser) ast.Stmt {
-	p.advance()
-
-	var expr ast.Expr = nil
-	if p.currentTokenKind() != lexer.SEMICOLON && p.currentTokenKind() != lexer.NEWLINE {
-		res := parseExpr(p, defaultBp)
-		p.expectOneOf(lexer.SEMICOLON, lexer.NEWLINE)
-		if res != nil {
-			expr = *res
-		}
-	}
-	return &ast.DropStmt{
-		Value: expr,
-	}
-}
-
 func parseReturnStmt(p *parser) ast.Stmt {
 	p.advance()
 
 	var expr ast.Expr = nil
-	if p.currentTokenKind() != lexer.SEMICOLON && p.currentTokenKind() != lexer.NEWLINE {
+	if p.currentTokenKind() != lexer.NEWLINE {
 		res := parseExpr(p, defaultBp)
-		p.expectOneOf(lexer.SEMICOLON, lexer.NEWLINE)
+		p.expect(lexer.NEWLINE)
 		if res != nil {
 			expr = *res
 		}
@@ -160,38 +144,29 @@ func parseReturnStmt(p *parser) ast.Stmt {
 	}
 }
 
-// TODO - it will be enhanced in the future
 func parseUseStmt(p *parser) ast.Stmt {
 	p.advance() // Skip the USE token
 
 	moduleName := p.expect(lexer.IDENTIFIER).Value
 
-	var functions []string = make([]string, 0)
+	var segments []string = make([]string, 0)
 
 	if p.currentTokenKind() == lexer.DOUBLE_COLON {
 		p.advance()
-		var parens bool = false
-		if p.currentTokenKind() == lexer.OPEN_PAREN {
-			parens = true
-			p.advance()
-		}
-		for p.currentTokenKind() != lexer.SEMICOLON && p.currentTokenKind() != lexer.NEWLINE && p.currentTokenKind() != lexer.CLOSE_PAREN {
+		for p.currentTokenKind() != lexer.NEWLINE && p.currentTokenKind() != lexer.CLOSE_PAREN {
 			ident := p.expect(lexer.IDENTIFIER).Value
-			functions = append(functions, ident)
-			if p.currentTokenKind() != lexer.COMMA {
+			segments = append(segments, ident)
+			if p.currentTokenKind() != lexer.DOUBLE_COLON {
 				break
 			}
-			p.advance()
-		}
-		if parens {
-			p.expect(lexer.CLOSE_PAREN)
+			p.advance() // Skip the DOUBLE_COLON token
 		}
 	}
 
-	p.expectOneOf(lexer.SEMICOLON, lexer.NEWLINE, lexer.EOF)
+	p.expectOneOf(lexer.NEWLINE, lexer.EOF)
 
 	return &ast.UseStmt{
-		Module:    moduleName,
-		Functions: functions,
+		Module:   moduleName,
+		Segments: segments,
 	}
 }

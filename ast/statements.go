@@ -84,37 +84,19 @@ func (n *ReturnStmt) String() string {
 	}
 }
 
-type DropStmt struct {
-	Value Expr
-}
-
-func (n *DropStmt) stmt() {}
-func (n *DropStmt) String() string {
-	if n.Value == nil {
-		return "drop"
-	} else {
-		return "drop " + n.Value.String()
-	}
-}
-
 type UseStmt struct {
-	Module    string
-	Functions []string
+	Module   string
+	Segments []string
 }
 
 func (n *UseStmt) stmt() {}
 func (n *UseStmt) String() string {
-	if len(n.Functions) > 1 {
-		var str string = "use " + n.Module + "::("
-		for idx, f := range n.Functions {
-			if idx > 0 {
-				str += ", "
-			}
-			str += f
+	if len(n.Segments) > 0 {
+		var str string = "use " + n.Module
+		for _, f := range n.Segments {
+			str += "::" + f
 		}
-		return str + ")"
-	} else if len(n.Functions) == 1 {
-		return "use " + n.Module + "::" + n.Functions[0]
+		return str
 	}
 	return "use " + n.Module
 }

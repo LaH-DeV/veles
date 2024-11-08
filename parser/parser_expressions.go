@@ -83,3 +83,38 @@ func parseExpr(p *parser, bp bindingPower) *ast.Expr {
 
 	return &expression
 }
+
+func parseCallExpr(p *parser, left ast.Expr, bp bindingPower) ast.Expr {
+	p.advance()
+	if left == nil {
+		return nil // TODO
+	}
+	args := make([]ast.Expr, 0)
+	if p.currentTokenKind() != lexer.CLOSE_PAREN {
+		for {
+			expr := *parseExpr(p, defaultBp)
+			if expr == nil {
+				break // TODO
+			}
+			args = append(args, expr)
+			if p.currentTokenKind() != lexer.COMMA {
+				break
+			}
+			p.advance()
+		}
+	}
+	p.expect(lexer.CLOSE_PAREN)
+	return &ast.CallExpr{
+		Callee:    left,
+		Arguments: args,
+	}
+}
+
+func parseMemberExpr(p *parser, left ast.Expr, bp bindingPower) ast.Expr {
+	p.advance()                          // Skip the DOUBLE_COLON token
+	member := p.expect(lexer.IDENTIFIER) // for now, we'll just assume that the member is an identifier
+	return &ast.MemberExpr{
+		Container: left,
+		Member:    member.Value,
+	}
+}
