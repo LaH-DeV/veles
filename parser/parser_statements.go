@@ -22,7 +22,7 @@ func parseStmt(p *parser) ast.Stmt {
 }
 
 func parseExpressionStmt(p *parser) *ast.ExpressionStmt {
-	expression := parseExpr(p, default_bp)
+	expression := parseExpr(p, defaultBp)
 
 	p.expectOneOf(lexer.SEMICOLON, lexer.NEWLINE, lexer.EOF)
 
@@ -100,12 +100,56 @@ func parseFunctionDeclarationStmt(p *parser, pub bool) ast.Stmt {
 	}
 }
 
+func parseVariableDeclarationStmt(p *parser) ast.Stmt {
+	p.advance() // Skip the LET token for now
+
+	varType := parseType(p).Value
+	varName := p.expect(lexer.IDENTIFIER).Value
+
+	var expr ast.Expr = nil
+	if p.currentTokenKind() == lexer.ASSIGNMENT {
+		p.advance()
+		expr = *parseExpr(p, defaultBp)
+	}
+
+	// TODO.
+	if expr == nil {
+		expr = &ast.IntegerExpr{
+			Value: 0,
+		}
+	}
+
+	p.expectOneOf(lexer.SEMICOLON, lexer.NEWLINE, lexer.EOF)
+
+	return &ast.VariableDeclarationStmt{
+		VarType: varType,
+		VarName: varName,
+		Value:   expr,
+	}
+}
+
+func parseDropStmt(p *parser) ast.Stmt {
+	p.advance()
+
+	var expr ast.Expr = nil
+	if p.currentTokenKind() != lexer.SEMICOLON && p.currentTokenKind() != lexer.NEWLINE {
+		res := parseExpr(p, defaultBp)
+		p.expectOneOf(lexer.SEMICOLON, lexer.NEWLINE)
+		if res != nil {
+			expr = *res
+		}
+	}
+	return &ast.DropStmt{
+		Value: expr,
+	}
+}
+
 func parseReturnStmt(p *parser) ast.Stmt {
 	p.advance()
 
 	var expr ast.Expr = nil
 	if p.currentTokenKind() != lexer.SEMICOLON && p.currentTokenKind() != lexer.NEWLINE {
-		res := parseExpr(p, default_bp)
+		res := parseExpr(p, defaultBp)
 		p.expectOneOf(lexer.SEMICOLON, lexer.NEWLINE)
 		if res != nil {
 			expr = *res
@@ -113,5 +157,41 @@ func parseReturnStmt(p *parser) ast.Stmt {
 	}
 	return &ast.ReturnStmt{
 		Value: expr,
+	}
+}
+
+// TODO - it will be enhanced in the future
+func parseUseStmt(p *parser) ast.Stmt {
+	p.advance() // Skip the USE token
+
+	moduleName := p.expect(lexer.IDENTIFIER).Value
+
+	var functions []string = make([]string, 0)
+
+	if p.currentTokenKind() == lexer.DOUBLE_COLON {
+		p.advance()
+		var parens bool = false
+		if p.currentTokenKind() == lexer.OPEN_PAREN {
+			parens = true
+			p.advance()
+		}
+		for p.currentTokenKind() != lexer.SEMICOLON && p.currentTokenKind() != lexer.NEWLINE && p.currentTokenKind() != lexer.CLOSE_PAREN {
+			ident := p.expect(lexer.IDENTIFIER).Value
+			functions = append(functions, ident)
+			if p.currentTokenKind() != lexer.COMMA {
+				break
+			}
+			p.advance()
+		}
+		if parens {
+			p.expect(lexer.CLOSE_PAREN)
+		}
+	}
+
+	p.expectOneOf(lexer.SEMICOLON, lexer.NEWLINE, lexer.EOF)
+
+	return &ast.UseStmt{
+		Module:    moduleName,
+		Functions: functions,
 	}
 }

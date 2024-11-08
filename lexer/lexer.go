@@ -45,6 +45,8 @@ const (
 	FN
 	PUB
 	USE
+	DROP
+	LET
 
 	NEWLINE
 )
@@ -58,6 +60,7 @@ var reserved_lu_wat map[string]TokenKind = map[string]TokenKind{
 	"import": IMPORT,
 	"export": EXPORT,
 	"return": RETURN,
+	"drop":   DROP,
 }
 
 var reserved_lu_vs map[string]TokenKind = map[string]TokenKind{
@@ -66,6 +69,8 @@ var reserved_lu_vs map[string]TokenKind = map[string]TokenKind{
 	"pub":    PUB,
 	"use":    USE,
 	"return": RETURN,
+	"drop":   DROP,
+	"let":    LET,
 }
 
 var reserved_types_lu map[string]TokenKind = map[string]TokenKind{
@@ -86,6 +91,8 @@ func TokenKindString(kind TokenKind) string {
 	switch kind {
 	case EOF:
 		return "eof"
+	case DROP:
+		return "drop"
 	case VOID:
 		return "void"
 	case NEWLINE:
@@ -160,6 +167,8 @@ func TokenKindString(kind TokenKind) string {
 		return "pub"
 	case USE:
 		return "use"
+	case LET:
+		return "let"
 	default:
 		return fmt.Sprintf("unknown(%d)", kind)
 	}

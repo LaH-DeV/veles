@@ -13,7 +13,7 @@ type ledHandler func(p *parser, left ast.Expr, bp bindingPower) ast.Expr
 type bindingPower int
 
 const (
-	default_bp bindingPower = iota
+	defaultBp bindingPower = iota
 	comma
 	assignment
 	logical
@@ -50,7 +50,7 @@ func (p *parser) skipNewlines() {
 func (p *parser) lookupBp(tokenKind lexer.TokenKind) bindingPower {
 	bp, exists := (*p.bpLookup)[tokenKind]
 	if !exists {
-		return default_bp
+		return defaultBp
 	}
 	return bp
 }

@@ -45,7 +45,7 @@ func parsePrimaryExpr(p *parser) ast.Expr {
 
 func parseGroupingExpr(p *parser) ast.Expr {
 	p.expect(lexer.OPEN_PAREN)
-	expr := parseExpr(p, default_bp)
+	expr := parseExpr(p, defaultBp)
 	p.expect(lexer.CLOSE_PAREN)
 	if expr == nil {
 		return nil

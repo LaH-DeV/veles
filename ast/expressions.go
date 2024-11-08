@@ -44,3 +44,22 @@ func (n FloatExpr) expr() {}
 func (n FloatExpr) String() string {
 	return strconv.FormatFloat(n.Value, 'f', -1, 64)
 }
+
+type CallExpr struct {
+	Function  string
+	Arguments []Expr
+}
+
+func (n CallExpr) expr() {}
+func (n CallExpr) String() string {
+	var str string
+	str += n.Function + "("
+	for i, arg := range n.Arguments {
+		if i > 0 {
+			str += ", "
+		}
+		str += arg.String()
+	}
+	str += ")"
+	return str
+}
