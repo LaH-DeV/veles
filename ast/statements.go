@@ -27,34 +27,6 @@ func (n ExpressionStmt) String() string {
 	return n.Expression.String()
 }
 
-type FunctionDeclarationStmt struct {
-	Exported   bool
-	Identifier string
-	Params     []FunctionParameter
-	ReturnType string // TODO
-}
-
-func (n FunctionDeclarationStmt) stmt() {}
-func (n FunctionDeclarationStmt) String() string {
-	var str string
-	if n.Exported {
-		str += "pub "
-	}
-	str += "fn "
-	if len(n.ReturnType) > 0 {
-		str += n.ReturnType + " "
-	}
-	str += ":: " + n.Identifier + "("
-	for i, param := range n.Params {
-		if i > 0 {
-			str += ", "
-		}
-		str += param.String()
-	}
-	str += ")"
-	return str
-}
-
 type FunctionStmt struct {
 	Exported   bool
 	Identifier string
@@ -129,31 +101,60 @@ func (n *ReturnStmt) String() string {
 
 type UseStmt struct {
 	Module   string
+	Alias    string
 	Segments []string
 }
 
 func (n *UseStmt) stmt() {}
 func (n *UseStmt) String() string {
+	var str string = "use " + n.Module
 	if len(n.Segments) > 0 {
-		var str string = "use " + n.Module
 		for _, f := range n.Segments {
 			str += "::" + f
 		}
-		return str
 	}
-	return "use " + n.Module
+	if len(n.Alias) > 0 {
+		str += " as " + n.Alias
+	}
+	return str
 }
 
 type ExternStmt struct {
-	Statements []Stmt
+	Statement Stmt
 }
 
 func (n *ExternStmt) stmt() {}
 func (n *ExternStmt) String() string {
-	str := "extern {\n"
-	for _, stmt := range n.Statements {
-		str += "\t" + stmt.String() + "\n"
+	return n.Statement.String()
+}
+
+type FunctionDeclaration struct {
+	Extern     bool
+	Exported   bool
+	Identifier string
+	Params     []FunctionParameter
+	ReturnType string // TODO
+}
+
+func (n *FunctionDeclaration) stmt() {}
+func (n *FunctionDeclaration) String() string {
+	var str string
+	if n.Extern {
+		str += "extern "
+	} else if n.Exported {
+		str += "pub "
 	}
-	str += "}"
+	str += "fn "
+	if len(n.ReturnType) > 0 {
+		str += n.ReturnType + " "
+	}
+	str += ":: " + n.Identifier + "("
+	for i, param := range n.Params {
+		if i > 0 {
+			str += ", "
+		}
+		str += param.String()
+	}
+	str += ")"
 	return str
 }

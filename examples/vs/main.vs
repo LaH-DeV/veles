@@ -1,7 +1,5 @@
-use math
-extern {
-	fn :: log(i32 value)
-}
+extern fn :: log(i32 value)
+use math::constants as consts
 
 pub fn :: main {
 	let i32 random = 5 * math::random()
