@@ -1,7 +1,14 @@
 use math
+extern {
+	fn :: log(i32 value)
+}
 
-pub fn i32 :: main() {
+pub fn :: main {
 	let i32 random = 5 * math::random()
 	let i32 result = random + 2 * 8 + 1
-	return result * math::PI
+	log(result * math::PI)
+}
+
+pub fn i32 :: add(i32 a, i32 b) {
+	return a + b
 }

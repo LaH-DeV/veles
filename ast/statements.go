@@ -32,7 +32,6 @@ type FunctionDeclarationStmt struct {
 	Identifier string
 	Params     []FunctionParameter
 	ReturnType string // TODO
-	Body       []Stmt
 }
 
 func (n FunctionDeclarationStmt) stmt() {}
@@ -41,14 +40,51 @@ func (n FunctionDeclarationStmt) String() string {
 	if n.Exported {
 		str += "pub "
 	}
-	str += "fn " + n.ReturnType + " :: " + n.Identifier + "("
+	str += "fn "
+	if len(n.ReturnType) > 0 {
+		str += n.ReturnType + " "
+	}
+	str += ":: " + n.Identifier + "("
 	for i, param := range n.Params {
 		if i > 0 {
 			str += ", "
 		}
 		str += param.String()
 	}
-	str += ") {\n"
+	str += ")"
+	return str
+}
+
+type FunctionStmt struct {
+	Exported   bool
+	Identifier string
+	Params     []FunctionParameter
+	ReturnType string // TODO
+	Body       []Stmt
+}
+
+func (n FunctionStmt) stmt() {}
+func (n FunctionStmt) String() string {
+	var str string
+	if n.Exported {
+		str += "pub "
+	}
+	str += "fn "
+	if len(n.ReturnType) > 0 {
+		str += n.ReturnType + " "
+	}
+	str += ":: " + n.Identifier
+	if len(n.Params) > 0 {
+		str += "("
+		for i, param := range n.Params {
+			if i > 0 {
+				str += ", "
+			}
+			str += param.String()
+		}
+		str += ")"
+	}
+	str += " {\n"
 	for _, stmt := range n.Body {
 		str += "\t" + stmt.String() + "\n"
 	}
@@ -106,4 +142,18 @@ func (n *UseStmt) String() string {
 		return str
 	}
 	return "use " + n.Module
+}
+
+type ExternStmt struct {
+	Statements []Stmt
+}
+
+func (n *ExternStmt) stmt() {}
+func (n *ExternStmt) String() string {
+	str := "extern {\n"
+	for _, stmt := range n.Statements {
+		str += "\t" + stmt.String() + "\n"
+	}
+	str += "}"
+	return str
 }

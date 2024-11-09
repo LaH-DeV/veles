@@ -47,6 +47,7 @@ const (
 	USE
 	DROP
 	LET
+	EXTERN
 
 	NEWLINE
 )
@@ -70,6 +71,7 @@ var reserved_lu_vs map[string]TokenKind = map[string]TokenKind{
 	"use":    USE,
 	"return": RETURN,
 	"let":    LET,
+	"extern": EXTERN,
 }
 
 var reserved_types_lu map[string]TokenKind = map[string]TokenKind{
@@ -168,6 +170,8 @@ func TokenKindString(kind TokenKind) string {
 		return "use"
 	case LET:
 		return "let"
+	case EXTERN:
+		return "extern"
 	default:
 		return fmt.Sprintf("unknown(%d)", kind)
 	}

@@ -69,8 +69,9 @@ func vsParser() *parser {
 	p.stmt(lexer.USE, parseUseStmt)
 	p.stmt(lexer.RETURN, parseReturnStmt)
 	p.stmt(lexer.LET, parseVariableDeclarationStmt)
-	p.stmt(lexer.FN, parseFunctionDeclarationStmt)
+	p.stmt(lexer.FN, parseFunctionStmt)
 	p.stmt(lexer.PUB, parsePublicStmt)
+	p.stmt(lexer.EXTERN, parseExternStmt)
 
 	return p
 }

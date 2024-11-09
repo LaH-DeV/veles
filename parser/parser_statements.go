@@ -1,8 +1,6 @@
 package parser
 
 import (
-	"fmt"
-
 	"github.com/LaH-DeV/veles/ast"
 	"github.com/LaH-DeV/veles/lexer"
 )
@@ -24,7 +22,7 @@ func parseStmt(p *parser) ast.Stmt {
 func parseExpressionStmt(p *parser) *ast.ExpressionStmt {
 	expression := parseExpr(p, defaultBp)
 
-	p.expectOneOf(lexer.NEWLINE, lexer.EOF)
+	p.skipNewlines()
 
 	if expression == nil {
 		return nil
@@ -79,25 +77,45 @@ func parseType(p *parser) lexer.Token {
 	return p.expectOneOf(lexer.INT_32, lexer.INT_64, lexer.FLOAT_32, lexer.FLOAT_64, lexer.IDENTIFIER, lexer.VOID)
 }
 
-func parseFunctionDeclarationStmt(p *parser) ast.Stmt {
+func parseFunctionStmt(p *parser) ast.Stmt {
 	initialToken := p.advance()
 
 	var pub bool = false
+
 	if initialToken.Kind == lexer.PUB {
 		pub = true
 		p.advance() // Skip the FN token
 	}
 
-	returnType := parseType(p).Value
+	var returnType string
+	if p.currentTokenKind() != lexer.DOUBLE_COLON {
+		returnType = parseType(p).Value
+	}
 
 	p.expect(lexer.DOUBLE_COLON)
 
-	functionName := p.expectError(lexer.IDENTIFIER, fmt.Sprintf("Expected an identifier for function declaration")).Value
-	parameters := parseFunctionParameters(p)
+	functionName := p.expectError(lexer.IDENTIFIER, "Expected an identifier for function declaration").Value
+
+	var parameters []ast.FunctionParameter
+
+	if p.currentTokenKind() == lexer.OPEN_PAREN {
+		parameters = parseFunctionParameters(p)
+	} else {
+		parameters = make([]ast.FunctionParameter, 0)
+	}
+
+	if p.currentTokenKind() != lexer.OPEN_CURLY {
+		return &ast.FunctionDeclarationStmt{
+			Exported:   pub,
+			Identifier: functionName,
+			Params:     parameters,
+			ReturnType: returnType,
+		}
+	}
 
 	body := parseBlockStmt(p)
 
-	return &ast.FunctionDeclarationStmt{
+	return &ast.FunctionStmt{
 		Exported:   pub,
 		Identifier: functionName,
 		Params:     parameters,
@@ -123,7 +141,10 @@ func parseVariableDeclarationStmt(p *parser) ast.Stmt {
 	var expr ast.Expr = nil
 	if p.currentTokenKind() == lexer.ASSIGNMENT {
 		p.advance()
-		expr = *parseExpr(p, defaultBp)
+		res := parseExpr(p, defaultBp)
+		if res != nil {
+			expr = *res
+		}
 	}
 
 	// TODO.
@@ -132,8 +153,7 @@ func parseVariableDeclarationStmt(p *parser) ast.Stmt {
 			Value: 0,
 		}
 	}
-
-	p.expectOneOf(lexer.NEWLINE, lexer.EOF)
+	p.skipNewlines()
 
 	return &ast.VariableDeclarationStmt{
 		Exported: pub, // should be allowed only for unscoped variables
@@ -149,8 +169,9 @@ func parseReturnStmt(p *parser) ast.Stmt {
 	var expr ast.Expr = nil
 	if p.currentTokenKind() != lexer.NEWLINE {
 		res := parseExpr(p, defaultBp)
-		p.expect(lexer.NEWLINE)
-		if res != nil {
+		if res == nil {
+			p.skipNewlines()
+		} else {
 			expr = *res
 		}
 	}
@@ -162,7 +183,7 @@ func parseReturnStmt(p *parser) ast.Stmt {
 func parsePublicStmt(p *parser) ast.Stmt {
 	switch p.peek().Kind {
 	case lexer.FN:
-		return parseFunctionDeclarationStmt(p)
+		return parseFunctionStmt(p)
 	case lexer.LET:
 		return parseVariableDeclarationStmt(p)
 	default:
@@ -191,10 +212,31 @@ func parseUseStmt(p *parser) ast.Stmt {
 		}
 	}
 
-	p.expectOneOf(lexer.NEWLINE, lexer.EOF)
+	p.skipNewlines()
 
 	return &ast.UseStmt{
 		Module:   moduleName,
 		Segments: segments,
+	}
+}
+
+func parseExternStmt(p *parser) ast.Stmt {
+	p.advance() // the EXTERN token
+	stmts := make([]ast.Stmt, 0)
+
+	p.expect(lexer.OPEN_CURLY)
+
+	for p.currentTokenKind() != lexer.CLOSE_CURLY {
+		p.skipNewlines()
+		stmt := parseStmt(p)
+		if stmt != nil {
+			stmts = append(stmts, stmt)
+		}
+	}
+
+	p.expect(lexer.CLOSE_CURLY)
+
+	return &ast.ExternStmt{
+		Statements: stmts,
 	}
 }
