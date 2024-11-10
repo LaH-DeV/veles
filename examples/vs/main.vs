@@ -2,9 +2,9 @@ extern fn :: log(i32 value)
 use math::constants
 
 pub fn :: main {
-	let bool test = true
+	let bool test = 5 > 4
 	let i32 result = 2 * 8 + 1
-	if test {
+	if test && 5 >= 5 {
 		log(result * constants::PI)
 	}
 }

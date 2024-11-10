@@ -59,6 +59,37 @@ func parseGroupingExpr(p *parser) ast.Expr {
 	return *expr
 }
 
+func parsePrefixExpr(p *parser) ast.Expr {
+	operatorToken := p.advance()
+
+	expr := parseExpr(p, unary)
+	if expr == nil {
+		return nil // TODO
+	}
+
+	return ast.PrefixExpr{
+		Operator: operatorToken,
+		Right:    *expr,
+	}
+}
+
+func parseAssignmentExpr(p *parser, left ast.Expr, bp bindingPower) ast.Expr {
+	p.advance()
+	if left == nil {
+		return nil // TODO
+	}
+
+	var right *ast.Expr = parseExpr(p, bp)
+	if right == nil {
+		return nil // TODO
+	}
+
+	return ast.AssignmentExpr{
+		Assigne:       left,
+		AssignedValue: *right,
+	}
+}
+
 func parseExpr(p *parser, bp bindingPower) *ast.Expr {
 	p.skipNewlines()
 

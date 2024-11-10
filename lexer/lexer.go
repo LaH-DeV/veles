@@ -30,7 +30,16 @@ const (
 	REMAINDER
 	EXPONENTIATION
 
-	EQUALS
+	EQUAL
+	NOT_EQUAL
+	NOT
+	AND
+	OR
+	LESS
+	LESS_EQUAL
+	GREATER
+	GREATER_EQUAL
+
 	ASSIGNMENT
 	COMMA
 	SEMICOLON
@@ -162,8 +171,24 @@ func TokenKindString(kind TokenKind) string {
 		return "remainder"
 	case EXPONENTIATION:
 		return "exponentiation"
-	case EQUALS:
-		return "equals"
+	case EQUAL:
+		return "equal"
+	case NOT_EQUAL:
+		return "not_equal"
+	case NOT:
+		return "not"
+	case AND:
+		return "and"
+	case OR:
+		return "or"
+	case LESS:
+		return "less"
+	case LESS_EQUAL:
+		return "less_equal"
+	case GREATER:
+		return "greater"
+	case GREATER_EQUAL:
+		return "greater_equal"
 	case ASSIGNMENT:
 		return "assignment"
 	case COMMA:

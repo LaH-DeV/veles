@@ -24,7 +24,7 @@ type SymbolExpr struct {
 
 func (n SymbolExpr) expr() {}
 func (n SymbolExpr) String() string {
-	return fmt.Sprintf("%s", n.Value)
+	return n.Value
 }
 
 type IntegerExpr struct {
@@ -43,6 +43,26 @@ type FloatExpr struct {
 func (n FloatExpr) expr() {}
 func (n FloatExpr) String() string {
 	return strconv.FormatFloat(n.Value, 'f', -1, 64)
+}
+
+type AssignmentExpr struct {
+	Assigne       Expr
+	AssignedValue Expr
+}
+
+func (n AssignmentExpr) expr() {}
+func (n AssignmentExpr) String() string {
+	return n.Assigne.String() + " = " + n.Assigne.String()
+}
+
+type PrefixExpr struct {
+	Operator lexer.Token
+	Right    Expr
+}
+
+func (n PrefixExpr) expr() {}
+func (n PrefixExpr) String() string {
+	return n.Operator.Value + n.Right.String()
 }
 
 type CallExpr struct {

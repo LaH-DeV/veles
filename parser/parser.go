@@ -52,6 +52,18 @@ func vsParser() *parser {
 	p := baseParser()
 	p.filetype = lexer.Vs
 
+	p.led(lexer.ASSIGNMENT, assignment, parseAssignmentExpr)
+
+	p.led(lexer.GREATER, relational, parseBinaryExpr)
+	p.led(lexer.LESS, relational, parseBinaryExpr)
+	p.led(lexer.GREATER_EQUAL, relational, parseBinaryExpr)
+	p.led(lexer.LESS_EQUAL, relational, parseBinaryExpr)
+	p.led(lexer.EQUAL, relational, parseBinaryExpr)
+	p.led(lexer.NOT_EQUAL, relational, parseBinaryExpr)
+
+	p.led(lexer.AND, logical, parseBinaryExpr)
+	p.led(lexer.OR, logical, parseBinaryExpr)
+
 	p.led(lexer.PLUS, additive, parseBinaryExpr)
 	p.led(lexer.DASH, additive, parseBinaryExpr)
 	p.led(lexer.SLASH, multiplicative, parseBinaryExpr)
@@ -66,7 +78,11 @@ func vsParser() *parser {
 	p.nud(lexer.INTEGER, parsePrimaryExpr)
 	p.nud(lexer.FLOAT, parsePrimaryExpr)
 	p.nud(lexer.IDENTIFIER, parsePrimaryExpr)
+
 	p.nud(lexer.OPEN_PAREN, parseGroupingExpr)
+
+	p.nud(lexer.DASH, parsePrefixExpr)
+	p.nud(lexer.NOT, parsePrefixExpr)
 
 	p.stmt(lexer.USE, parseUseStmt)
 	p.stmt(lexer.RETURN, parseReturnStmt)
