@@ -73,3 +73,12 @@ func (n MemberExpr) expr() {}
 func (n MemberExpr) String() string {
 	return fmt.Sprintf("%s::%s", n.Container.String(), n.Member)
 }
+
+type BooleanExpr struct {
+	Value bool
+}
+
+func (n BooleanExpr) expr() {}
+func (n BooleanExpr) String() string {
+	return fmt.Sprintf("%v", n.Value)
+}

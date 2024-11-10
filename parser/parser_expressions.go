@@ -38,6 +38,12 @@ func parsePrimaryExpr(p *parser) ast.Expr {
 		return &ast.FloatExpr{Value: number}
 	case lexer.IDENTIFIER:
 		return ast.SymbolExpr{Value: p.advance().Value}
+	case lexer.FALSE:
+		fallthrough
+	case lexer.TRUE:
+		value, _ := strconv.ParseBool(p.advance().Value)
+		// TODO: Handle errors
+		return ast.BooleanExpr{Value: value}
 	default:
 		panic(fmt.Sprintf("Veles :: Cannot create primary_expr from \"%s\"\n", lexer.TokenKindString(p.currentTokenKind())))
 	}

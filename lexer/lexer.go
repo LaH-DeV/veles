@@ -9,12 +9,13 @@ const (
 	STRING
 	INTEGER
 	FLOAT
+	IDENTIFIER
+
 	INT_32
 	INT_64
 	FLOAT_32
 	FLOAT_64
-	IDENTIFIER
-	VOID
+	BOOL
 
 	OPEN_PAREN
 	CLOSE_PAREN
@@ -43,12 +44,16 @@ const (
 	EXPORT
 	RETURN
 	FN
+	IF
 	PUB
 	USE
 	DROP
 	LET
 	EXTERN
 	AS
+
+	TRUE
+	FALSE
 
 	NEWLINE
 )
@@ -74,15 +79,26 @@ var reserved_lu_vs map[string]TokenKind = map[string]TokenKind{
 	"let":    LET,
 	"extern": EXTERN,
 	"as":     AS,
+	"if":     IF,
+
+	"false": FALSE,
+	"true":  TRUE,
 }
 
-var reserved_types_lu map[string]TokenKind = map[string]TokenKind{
+var reserved_types_vs map[string]TokenKind = map[string]TokenKind{
 	"i32": INT_32,
 	"i64": INT_64,
 	"f32": FLOAT_32,
 	"f64": FLOAT_64,
 
-	"void": VOID,
+	"bool": BOOL,
+}
+
+var reserved_types_wat map[string]TokenKind = map[string]TokenKind{
+	"i32": INT_32,
+	"i64": INT_64,
+	"f32": FLOAT_32,
+	"f64": FLOAT_64,
 }
 
 type Token struct {
@@ -94,10 +110,16 @@ func TokenKindString(kind TokenKind) string {
 	switch kind {
 	case EOF:
 		return "eof"
+	case IF:
+		return "if"
 	case DROP:
 		return "drop"
-	case VOID:
-		return "void"
+	case BOOL:
+		return "bool"
+	case FALSE:
+		return "false"
+	case TRUE:
+		return "true"
 	case NEWLINE:
 		return "newline"
 	case STRING:

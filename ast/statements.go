@@ -158,3 +158,19 @@ func (n *FunctionDeclaration) String() string {
 	str += ")"
 	return str
 }
+
+type IfStmt struct {
+	Condition Expr // must evaluate to BooleanExpr
+	Then      []Stmt
+	// Else TODO
+}
+
+func (n *IfStmt) stmt() {}
+func (n *IfStmt) String() string {
+	str := "if " + n.Condition.String() + " {\n"
+	for _, stmt := range n.Then {
+		str += "\t" + stmt.String()
+	}
+	str += "\n}"
+	return str
+}

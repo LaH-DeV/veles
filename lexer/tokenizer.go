@@ -132,7 +132,7 @@ func symbolHandler(lex *lexer, regex *regexp.Regexp) {
 
 	if kind, found := (*lex.keywords)[match]; found {
 		lex.push(newUniqueToken(kind, match))
-	} else if kind, found := reserved_types_lu[match]; found {
+	} else if kind, found := (*lex.types)[match]; found {
 		lex.push(newUniqueToken(kind, match))
 	} else {
 		lex.push(newUniqueToken(IDENTIFIER, match))
@@ -176,7 +176,7 @@ func baseLexer() *lexer {
 func vsLexer() *lexer {
 	lex := baseLexer()
 	lex.keywords = &reserved_lu_vs
-	lex.types = &reserved_types_lu
+	lex.types = &reserved_types_vs
 	lex.filetype = Vs
 	lex.patterns = &[]regexPattern{
 		// {regexp.MustCompile(`\n`), defaultHandler(NEWLINE, "\n")},
@@ -215,7 +215,7 @@ func vsLexer() *lexer {
 func watLexer() *lexer {
 	lex := baseLexer()
 	lex.keywords = &reserved_lu_wat
-	lex.types = &reserved_types_lu
+	lex.types = &reserved_types_wat
 	lex.filetype = Wat
 	lex.patterns = &[]regexPattern{
 		{regexp.MustCompile(`\s+`), skipHandler},

@@ -74,7 +74,7 @@ func parseBlockStmt(p *parser) []ast.Stmt {
 }
 
 func parseType(p *parser) lexer.Token {
-	return p.expectOneOf(lexer.INT_32, lexer.INT_64, lexer.FLOAT_32, lexer.FLOAT_64, lexer.IDENTIFIER, lexer.VOID)
+	return p.expectOneOf(lexer.INT_32, lexer.INT_64, lexer.FLOAT_32, lexer.FLOAT_64, lexer.IDENTIFIER, lexer.BOOL)
 }
 
 func parseFunctionDeclaration(p *parser) ast.Stmt {
@@ -245,5 +245,25 @@ func parseExternStmt(p *parser) ast.Stmt {
 		p.advance()
 		// TODO: report error
 		return nil
+	}
+}
+
+func parseIfStmt(p *parser) ast.Stmt {
+	p.advance() // IF token
+
+	var expr ast.Expr = nil
+	res := parseExpr(p, defaultBp)
+	if res == nil {
+		return nil
+	} else {
+		expr = *res
+	}
+
+	then := parseBlockStmt(p)
+
+	return &ast.IfStmt{
+		Condition: expr,
+		Then:      then,
+		// TODO ELSE
 	}
 }

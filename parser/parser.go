@@ -61,6 +61,8 @@ func vsParser() *parser {
 	p.led(lexer.OPEN_PAREN, call, parseCallExpr)
 	p.led(lexer.DOUBLE_COLON, member, parseMemberExpr)
 
+	p.nud(lexer.FALSE, parsePrimaryExpr)
+	p.nud(lexer.TRUE, parsePrimaryExpr)
 	p.nud(lexer.INTEGER, parsePrimaryExpr)
 	p.nud(lexer.FLOAT, parsePrimaryExpr)
 	p.nud(lexer.IDENTIFIER, parsePrimaryExpr)
@@ -69,6 +71,7 @@ func vsParser() *parser {
 	p.stmt(lexer.USE, parseUseStmt)
 	p.stmt(lexer.RETURN, parseReturnStmt)
 	p.stmt(lexer.LET, parseVariableDeclarationStmt)
+	p.stmt(lexer.IF, parseIfStmt)
 	p.stmt(lexer.FN, parseFunctionStmt)
 	p.stmt(lexer.PUB, parsePublicStmt)
 	p.stmt(lexer.EXTERN, parseExternStmt)

@@ -26,9 +26,9 @@ func main() {
 	tokens := lex.Tokenize(config.source)
 
 	fmt.Printf("Veles :: %d tokens found.\n", len(tokens))
-	// for _, token := range tokens {
-	// 	fmt.Println(lexer.TokenKindString(token.Kind))
-	// }
+	for _, token := range tokens {
+		fmt.Println(lexer.TokenKindString(token.Kind))
+	}
 
 	par := parser.NewParser(config.filetype)
 
