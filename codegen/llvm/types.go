@@ -66,8 +66,12 @@ func (g *gen) llType(t types.Type) string {
 	case *types.Range:
 		et := g.llType(t.Elem)
 		return "{ " + et + ", " + et + ", i1 }"
-	case *types.List:
+	case *types.List, *types.Map, *types.Set, *types.Channel, *types.Task:
 		return "ptr"
+	case *types.Func:
+		return "{ ptr, ptr }" // code pointer + environment
+	case *types.Trait:
+		return "{ ptr, ptr }" // boxed data + vtable (D9)
 	case *types.Struct:
 		return g.structType(t)
 	case *types.Sealed:
@@ -82,7 +86,7 @@ func (g *gen) llType(t types.Type) string {
 // its nullable form a null niche.
 func isPtrLike(t types.Type) bool {
 	switch t.(type) {
-	case *types.Pointer, *types.List:
+	case *types.Pointer, *types.List, *types.Map, *types.Set, *types.Channel, *types.Task:
 		return true
 	}
 	return false
@@ -190,8 +194,10 @@ func (g *gen) layout(t types.Type) (size, align int) {
 		default:
 			return 8, 8
 		}
-	case *types.Pointer, *types.List:
+	case *types.Pointer, *types.List, *types.Map, *types.Set, *types.Channel, *types.Task:
 		return 8, 8
+	case *types.Func, *types.Trait:
+		return 16, 8
 	case *types.Nullable:
 		if isPtrLike(t.Elem) {
 			return 8, 8
@@ -232,6 +238,6 @@ func structLayout(fields []types.Type, g *gen) (size, align int) {
 // mangleType produces an identifier-safe name for a type.
 func mangleType(t types.Type) string {
 	s := t.String()
-	r := strings.NewReplacer("<", "_", ">", "_", ", ", "_", ",", "_", "*", "P", "?", "N", "(", "T_", ")", "_", " ", "", "|", "_or_", "!", "never", "raw", "R")
+	r := strings.NewReplacer("<", "_", ">", "_", ", ", "_", ",", "_", "*", "P", "?", "N", "(", "T_", ")", "_", " ", "", "|", "_or_", "!", "never", "raw", "R", ":", "_", "&", "A")
 	return r.Replace(s)
 }

@@ -91,6 +91,7 @@ const (
 	KwAs
 	KwIn
 	KwThrows
+	KwThrow
 	KwSuspends
 	KwTry
 	KwAsync
@@ -138,6 +139,7 @@ var keywords = map[string]TokenKind{
 	"as":       KwAs,
 	"in":       KwIn,
 	"throws":   KwThrows,
+	"throw":    KwThrow,
 	"suspends": KwSuspends,
 	"try":      KwTry,
 	"async":    KwAsync,
@@ -162,7 +164,7 @@ var keywords = map[string]TokenKind{
 	// reserved
 	"enum": KwReserved, "match": KwReserved, "defer": KwReserved, "go": KwReserved,
 	"yield": KwReserved, "where": KwReserved, "super": KwReserved, "this": KwReserved,
-	"catch": KwReserved, "throw": KwReserved, "interface": KwReserved, "class": KwReserved,
+	"catch": KwReserved, "interface": KwReserved, "class": KwReserved,
 	"static": KwReserved, "while": KwReserved, "do": KwReserved, "finally": KwReserved,
 	"import": KwReserved, "package": KwReserved, "module": KwReserved, "let": KwReserved,
 }

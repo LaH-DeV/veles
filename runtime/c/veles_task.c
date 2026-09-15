@@ -1,0 +1,686 @@
+/*
+ * Veles tasks (build plan Stage 4; spec D2, D3, D16, D34, D36, D38).
+ *
+ * Suspending functions are LLVM switched-resume coroutines whose frames
+ * live on the GC heap. This file is the single-threaded executor that
+ * resumes them: a run queue, blocking on channels / tasks / timers /
+ * scopes, and fail-fast scopes with cancellation. Every object here is
+ * allocated on the GC heap with conservative word scanning, and the
+ * executor's own list heads are registered as roots, so suspended frames
+ * stay reachable through their tasks.
+ */
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+#include <time.h>
+#include <setjmp.h>
+
+#if defined(_WIN32)
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+
+typedef struct veles_desc veles_desc;
+void *veles_alloc(int64_t size);
+void *veles_alloc_words(int64_t size);
+void *veles_gc_alloc(veles_desc *desc, int64_t size);
+void veles_gc_root(void *addr, veles_desc *desc);
+void veles_panic(const char *msg, int64_t len);
+int64_t veles_desc_size(veles_desc *d);
+
+enum { T_RUNNABLE, T_BLOCKED, T_DONE, T_CANCELLED };
+
+typedef struct veles_scope veles_scope;
+typedef struct veles_race veles_race;
+
+typedef struct veles_task {
+    void *hdl;              /* coroutine frame; NULL after completion */
+    int64_t state;
+    struct veles_task *waiter; /* task blocked in await on this one */
+    void *result;           /* heap cell holding the return value */
+    int64_t failed;         /* result is Err */
+    veles_scope *scope;
+    int64_t index;          /* launch index within its scope */
+    struct veles_task *next;      /* run queue / wait list link */
+    struct veles_task *sibling;   /* scope children list */
+    int64_t queued;
+    int64_t wake_at;        /* timer, ms since start; 0 = none */
+    struct veles_task *timer_next;
+    veles_race *race;
+    int64_t panicked;
+    const char *panic_msg;
+    int64_t panic_len;
+} veles_task;
+
+struct veles_scope {
+    veles_task *owner;
+    veles_task *children;
+    int64_t live;
+    int64_t fail_fast;
+    veles_task *failed;
+    int64_t launches;
+};
+
+typedef struct veles_chan {
+    char *buf;
+    int64_t cap, len, head, elem;
+    veles_desc *desc;
+    int64_t closed;
+    veles_task *recv_waiters;
+    veles_task *send_waiters;
+} veles_chan;
+
+struct veles_race {
+    veles_task *task;
+    int64_t winner;
+    int64_t ready;
+    int64_t closed; /* the winning channel arm was closed */
+    /* registered sources */
+    struct {
+        veles_chan *ch;
+        void *out;
+        int64_t deadline;
+        veles_task *awaited;
+    } arms[16];
+    int64_t narms;
+};
+
+static veles_task *run_head, *run_tail;
+static veles_task *timers;
+static veles_task *current;
+static int64_t start_ms;
+static bool roots_registered;
+
+static void register_roots(void) {
+    if (roots_registered) return;
+    roots_registered = true;
+    veles_gc_root(&run_head, NULL);
+    veles_gc_root(&run_tail, NULL);
+    veles_gc_root(&timers, NULL);
+    veles_gc_root(&current, NULL);
+}
+
+static int64_t now_ms(void) {
+#if defined(_WIN32)
+    return (int64_t)GetTickCount64();
+#else
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+#endif
+}
+
+static void sleep_ms(int64_t ms) {
+    if (ms <= 0) return;
+#if defined(_WIN32)
+    Sleep((DWORD)ms);
+#else
+    usleep((useconds_t)(ms * 1000));
+#endif
+}
+
+/* ---- run queue ------------------------------------------------------------ */
+
+static void enqueue(veles_task *t) {
+    if (t->queued || t->state == T_DONE || t->state == T_CANCELLED) return;
+    t->state = T_RUNNABLE;
+    t->queued = 1;
+    t->next = NULL;
+    if (run_tail) run_tail->next = t; else run_head = t;
+    run_tail = t;
+}
+
+static veles_task *dequeue(void) {
+    veles_task *t = run_head;
+    if (!t) return NULL;
+    run_head = t->next;
+    if (!run_head) run_tail = NULL;
+    t->next = NULL;
+    t->queued = 0;
+    return t;
+}
+
+static void wake(veles_task *t) {
+    if (t && t->state == T_BLOCKED) enqueue(t);
+}
+
+/* ---- tasks ----------------------------------------------------------------- */
+
+veles_task *veles_task_new(void) {
+    register_roots();
+    veles_task *t = veles_alloc_words(sizeof *t);
+    t->state = T_RUNNABLE;
+    return t;
+}
+
+veles_task *veles_task_current(void) {
+    return current;
+}
+
+void veles_task_set_current(veles_task *t) {
+    current = t;
+}
+
+/* veles_task_started records the coroutine handle once the ramp returned. */
+void veles_task_started(veles_task *t, void *hdl) {
+    if (t->state != T_DONE && t->state != T_CANCELLED) t->hdl = hdl;
+}
+
+static void scope_child_finished(veles_task *t);
+
+/* called by the coroutine body before its final suspend */
+void veles_task_finish(veles_task *t, const void *result, int64_t size, int64_t failed) {
+    if (t->state == T_CANCELLED) return;
+    t->result = veles_alloc_words(size > 0 ? size : 8);
+    if (size > 0 && result) memcpy(t->result, result, (size_t)size);
+    t->failed = failed;
+    t->state = T_DONE;
+    t->hdl = NULL;
+    wake(t->waiter);
+    t->waiter = NULL;
+    scope_child_finished(t);
+}
+
+/* a resumed task checks this to honour cancellation (D20: delivered at a
+ * suspension point) */
+int64_t veles_task_cancelled(veles_task *t) {
+    return t->state == T_CANCELLED;
+}
+
+void veles_task_finish_cancelled(veles_task *t) {
+    t->hdl = NULL; /* its scope was already told when it was cancelled */
+}
+
+/* await: true when the target is done, otherwise blocks the caller */
+int64_t veles_task_await(veles_task *self, veles_task *target) {
+    if (target->state == T_DONE) return 1;
+    if (target->state == T_CANCELLED) {
+        veles_panic("awaited task was cancelled", 26);
+    }
+    target->waiter = self;
+    self->state = T_BLOCKED;
+    return 0;
+}
+
+void *veles_task_result(veles_task *t) {
+    return t->result;
+}
+
+int64_t veles_task_failed(veles_task *t) {
+    return t->failed;
+}
+
+/* ---- scopes (D34/D36) ------------------------------------------------------ */
+
+veles_scope *veles_scope_begin(veles_task *owner, int64_t fail_fast) {
+    veles_scope *s = veles_alloc_words(sizeof *s);
+    s->owner = owner;
+    s->fail_fast = fail_fast;
+    return s;
+}
+
+veles_task *veles_task_launch(veles_scope *s) {
+    veles_task *t = veles_task_new();
+    t->scope = s;
+    t->index = s->launches++;
+    t->sibling = s->children;
+    s->children = t;
+    s->live++;
+    return t;
+}
+
+static void cancel_task(veles_task *t) {
+    if (t->state == T_DONE || t->state == T_CANCELLED) return;
+    t->state = T_CANCELLED;
+    /* if it is blocked it will never resume; if runnable, the executor
+     * skips it; either way it counts as finished for its scope */
+    scope_child_finished(t);
+}
+
+static void scope_child_finished(veles_task *t) {
+    veles_scope *s = t->scope;
+    if (!s) return;
+    s->live--;
+    if (t->failed && s->fail_fast && !s->failed) {
+        s->failed = t;
+        for (veles_task *c = s->children; c; c = c->sibling) {
+            if (c != t) cancel_task(c);
+        }
+    }
+    if (s->live <= 0) wake(s->owner);
+}
+
+/* wait for every child: true when done, otherwise blocks the owner */
+int64_t veles_scope_wait(veles_task *owner, veles_scope *s) {
+    if (s->live <= 0) return 1;
+    owner->state = T_BLOCKED;
+    return 0;
+}
+
+veles_task *veles_scope_failed(veles_scope *s) {
+    return s->failed;
+}
+
+int64_t veles_scope_failed_index(veles_scope *s) {
+    return s->failed ? s->failed->index : -1;
+}
+
+/* ---- channels (D16) -------------------------------------------------------- */
+
+veles_chan *veles_chan_new(veles_desc *desc, int64_t cap) {
+    veles_chan *c = veles_alloc_words(sizeof *c);
+    c->desc = desc;
+    c->elem = veles_desc_size(desc);
+    if (cap < 1) cap = 1; /* rendezvous channels behave as capacity 1 in the single-threaded executor */
+    c->cap = cap;
+    c->buf = veles_gc_alloc(desc, c->elem * cap + 1);
+    return c;
+}
+
+static veles_task *pop_waiter(veles_task **list) {
+    veles_task *t = *list;
+    if (t) {
+        *list = t->next;
+        t->next = NULL;
+    }
+    return t;
+}
+
+static void push_waiter(veles_task **list, veles_task *t) {
+    t->next = NULL;
+    if (!*list) {
+        *list = t;
+        return;
+    }
+    veles_task *p = *list;
+    while (p->next) p = p->next;
+    p->next = t;
+}
+
+static void race_deliver(veles_task *t, veles_chan *c, const void *item);
+
+static void remove_waiter(veles_task **list, veles_task *t) {
+    while (*list) {
+        if (*list == t) {
+            *list = t->next;
+            t->next = NULL;
+            continue;
+        }
+        list = &(*list)->next;
+    }
+}
+
+static void remove_timer(veles_task *t) {
+    veles_task **pp = &timers;
+    while (*pp) {
+        if (*pp == t) {
+            *pp = t->timer_next;
+            t->timer_next = NULL;
+            continue;
+        }
+        pp = &(*pp)->timer_next;
+    }
+    t->wake_at = 0;
+}
+
+static void chan_push(veles_chan *c, const void *item) {
+    int64_t slot = (c->head + c->len) % c->cap;
+    memcpy(c->buf + slot * c->elem, item, (size_t)c->elem);
+    c->len++;
+}
+
+static void chan_pop(veles_chan *c, void *out) {
+    memcpy(out, c->buf + c->head * c->elem, (size_t)c->elem);
+    c->head = (c->head + 1) % c->cap;
+    c->len--;
+}
+
+/* deliver to a waiting receiver if any; returns true if delivered */
+static bool chan_hand_off(veles_chan *c, const void *item) {
+    while (c->recv_waiters) {
+        veles_task *r = pop_waiter(&c->recv_waiters);
+        if (r->state == T_CANCELLED) continue;
+        if (r->race) {
+            if (r->race->winner >= 0) continue; /* already won elsewhere */
+            race_deliver(r, c, item);
+            return true;
+        }
+        /* plain receiver: buffer the value and wake it */
+        chan_push(c, item);
+        wake(r);
+        return true;
+    }
+    return false;
+}
+
+/* send: true when delivered or buffered; false blocks the sender */
+int64_t veles_chan_send(veles_task *self, veles_chan *c, const void *item) {
+    if (c->closed) veles_panic("send on a closed channel", 24);
+    if (c->len < c->cap) {
+        if (!chan_hand_off(c, item)) chan_push(c, item);
+        return 1;
+    }
+    push_waiter(&c->send_waiters, self);
+    self->state = T_BLOCKED;
+    return 0;
+}
+
+/* recv: 1 value received, 2 closed and empty, 0 blocked */
+int64_t veles_chan_recv(veles_task *self, veles_chan *c, void *out) {
+    if (c->len > 0) {
+        chan_pop(c, out);
+        wake(pop_waiter(&c->send_waiters));
+        return 1;
+    }
+    if (c->closed) return 2;
+    push_waiter(&c->recv_waiters, self);
+    self->state = T_BLOCKED;
+    return 0;
+}
+
+void veles_chan_close(veles_chan *c) {
+    c->closed = 1;
+    veles_task *t;
+    while ((t = pop_waiter(&c->recv_waiters))) {
+        if (t->race) {
+            if (t->race->winner < 0) {
+                /* a closed channel completes the race arm with "closed" */
+                t->race->winner = 0;
+                t->race->closed = 1;
+                for (int64_t i = 0; i < t->race->narms; i++) {
+                    if (t->race->arms[i].ch == c) t->race->winner = i;
+                }
+                t->race->ready = 1;
+                t->race = NULL;
+                wake(t);
+            }
+            continue;
+        }
+        wake(t);
+    }
+}
+
+int64_t veles_chan_len(veles_chan *c) {
+    return c->len;
+}
+
+/* ---- timers ------------------------------------------------------------------ */
+
+static void add_timer(veles_task *t, int64_t ms) {
+    t->wake_at = now_ms() + ms;
+    t->timer_next = timers;
+    timers = t;
+}
+
+/* sleep: true once the deadline passed; first call arms it and blocks */
+int64_t veles_task_sleep(veles_task *self, int64_t ms) {
+    if (self->wake_at != 0) {
+        if (now_ms() >= self->wake_at) {
+            self->wake_at = 0;
+            return 1;
+        }
+        return 0;
+    }
+    if (ms <= 0) return 1;
+    remove_timer(self);
+    add_timer(self, ms);
+    self->state = T_BLOCKED;
+    return 0;
+}
+
+static void fire_timers(void) {
+    int64_t now = now_ms();
+    veles_task **pp = &timers;
+    while (*pp) {
+        veles_task *t = *pp;
+        if (t->wake_at != 0 && now >= t->wake_at) {
+            *pp = t->timer_next;
+            t->timer_next = NULL;
+            if (t->race) {
+                if (t->race->winner < 0) {
+                    for (int64_t i = 0; i < t->race->narms; i++) {
+                        if (t->race->arms[i].deadline && t->race->arms[i].deadline <= now) {
+                            t->race->winner = i;
+                            break;
+                        }
+                    }
+                    t->race->ready = 1;
+                    t->race = NULL;
+                    t->wake_at = 0;
+                    wake(t);
+                }
+            } else {
+                wake(t);
+            }
+        } else {
+            pp = &t->timer_next;
+        }
+    }
+}
+
+/* ---- race (D38) ------------------------------------------------------------ */
+
+veles_race *veles_race_new(veles_task *t) {
+    veles_race *r = veles_alloc_words(sizeof *r);
+    r->task = t;
+    r->winner = -1;
+    return r;
+}
+
+void veles_race_recv(veles_race *r, veles_chan *c, void *out) {
+    int64_t i = r->narms++;
+    r->arms[i].ch = c;
+    r->arms[i].out = out;
+}
+
+void veles_race_sleep(veles_race *r, int64_t ms) {
+    int64_t i = r->narms++;
+    r->arms[i].deadline = now_ms() + ms;
+    if (ms <= 0) r->arms[i].deadline = 1;
+}
+
+void veles_race_await(veles_race *r, veles_task *t) {
+    int64_t i = r->narms++;
+    r->arms[i].awaited = t;
+}
+
+static void race_deliver(veles_task *t, veles_chan *c, const void *item) {
+    veles_race *r = t->race;
+    for (int64_t i = 0; i < r->narms; i++) {
+        if (r->arms[i].ch == c) {
+            memcpy(r->arms[i].out, item, (size_t)c->elem);
+            r->winner = i;
+            break;
+        }
+    }
+    r->ready = 1;
+    t->race = NULL;
+    wake(t);
+}
+
+/* returns the winning arm, or -1 to block; -2 for a closed channel arm */
+static void race_detach(veles_task *self, veles_race *r) {
+    for (int64_t i = 0; i < r->narms; i++) {
+        if (r->arms[i].ch) remove_waiter(&r->arms[i].ch->recv_waiters, self);
+        if (r->arms[i].awaited && r->arms[i].awaited->waiter == self) r->arms[i].awaited->waiter = NULL;
+    }
+    remove_timer(self);
+    self->race = NULL;
+}
+
+int64_t veles_race_wait(veles_task *self, veles_race *r) {
+    if (r->ready) {
+        race_detach(self, r);
+        return r->winner;
+    }
+    /* immediate checks */
+    int64_t now = now_ms();
+    for (int64_t i = 0; i < r->narms; i++) {
+        if (r->arms[i].ch) {
+            veles_chan *c = r->arms[i].ch;
+            if (c->len > 0) {
+                chan_pop(c, r->arms[i].out);
+                wake(pop_waiter(&c->send_waiters));
+                r->ready = 1;
+                r->winner = i;
+                return i;
+            }
+            if (c->closed) {
+                r->ready = 1;
+                r->closed = 1;
+                r->winner = i;
+                return i;
+            }
+        } else if (r->arms[i].deadline) {
+            if (now >= r->arms[i].deadline) {
+                r->ready = 1;
+                r->winner = i;
+                return i;
+            }
+        } else if (r->arms[i].awaited && r->arms[i].awaited->state == T_DONE) {
+            r->ready = 1;
+            r->winner = i;
+            return i;
+        }
+    }
+    /* register everywhere and block */
+    self->race = r;
+    int64_t earliest = 0;
+    for (int64_t i = 0; i < r->narms; i++) {
+        if (r->arms[i].ch) {
+            push_waiter(&r->arms[i].ch->recv_waiters, self);
+        } else if (r->arms[i].deadline) {
+            if (!earliest || r->arms[i].deadline < earliest) earliest = r->arms[i].deadline;
+        } else if (r->arms[i].awaited) {
+            r->arms[i].awaited->waiter = self;
+        }
+    }
+    if (earliest) {
+        remove_timer(self);
+        self->wake_at = earliest;
+        self->timer_next = timers;
+        timers = self;
+    }
+    self->state = T_BLOCKED;
+    return -1;
+}
+
+/* a task blocked in a race woke up because an awaited task finished */
+int64_t veles_race_resolve(veles_task *self, veles_race *r) {
+    if (r->ready) return r->winner;
+    for (int64_t i = 0; i < r->narms; i++) {
+        if (r->arms[i].awaited && r->arms[i].awaited->state == T_DONE) {
+            r->ready = 1;
+            r->winner = i;
+            self->race = NULL;
+            return i;
+        }
+    }
+    return -1;
+}
+
+/* ---- executor ---------------------------------------------------------------- */
+
+static jmp_buf panic_return;
+static int in_resume;
+
+/* veles_task_panic is called by veles_panic while a task runs: the task
+ * fails with the message and control returns to the executor (D20: a
+ * panic unwinds to the enclosing task scope). */
+int64_t veles_task_panic(const char *msg, int64_t len) {
+    if (!in_resume || !current) return 0;
+    veles_task *t = current;
+    char *copy = veles_alloc(len + 1);
+    memcpy(copy, msg, (size_t)len);
+    t->panic_msg = copy;
+    t->panic_len = len;
+    t->panicked = 1;
+    t->failed = 1;
+    t->state = T_DONE;
+    t->hdl = NULL;
+    t->result = veles_alloc_words(8);
+    wake(t->waiter);
+    t->waiter = NULL;
+    scope_child_finished(t);
+    longjmp(panic_return, 1);
+    return 1;
+}
+
+int64_t veles_task_panicked(veles_task *t) {
+    return t->panicked;
+}
+
+const char *veles_task_panic_msg(veles_task *t, int64_t *len) {
+    *len = t->panic_len;
+    return t->panic_msg;
+}
+
+static void resume(veles_task *t) {
+    void *hdl = t->hdl;
+    if (!hdl) return;
+    current = t;
+    void (*fn)(void *) = *(void (**)(void *))hdl;
+    in_resume = 1;
+    if (setjmp(panic_return) == 0) {
+        fn(hdl);
+    }
+    in_resume = 0;
+    current = NULL;
+}
+
+/* veles_run drives the executor until the root task completes */
+void veles_run(veles_task *root) {
+    register_roots();
+    start_ms = now_ms();
+    while (root->state != T_DONE && root->state != T_CANCELLED) {
+        fire_timers();
+        veles_task *t = dequeue();
+        if (!t) {
+            /* nothing runnable: wait for the nearest timer */
+            int64_t nearest = 0;
+            for (veles_task *x = timers; x; x = x->timer_next) {
+                if (x->wake_at && (!nearest || x->wake_at < nearest)) nearest = x->wake_at;
+            }
+            if (!nearest) {
+                veles_panic("deadlock: every task is blocked", 31);
+            }
+            sleep_ms(nearest - now_ms());
+            continue;
+        }
+        if (t->state == T_CANCELLED || t->state == T_DONE) continue;
+        t->state = T_RUNNABLE;
+        resume(t);
+    }
+}
+
+int64_t veles_race_closed(veles_race *r) {
+    return r->closed;
+}
+
+/* re-raise a child's panic in the current context (scope re-raises, D52) */
+void veles_task_repanic(veles_task *t) {
+    veles_panic(t->panic_msg, t->panic_len);
+}
+
+/* veles_task_start runs a coroutine ramp through an entry thunk inside the
+ * executor's panic guard, so a panic before the first suspension is
+ * captured like any other. Entries nest (a ramp may launch children), so
+ * the guard state is saved and restored. */
+void veles_task_start(veles_task *t, void (*entry)(veles_task *, void *), void *args) {
+    register_roots();
+    veles_task *saved_current = current;
+    int saved_in = in_resume;
+    jmp_buf saved;
+    memcpy(&saved, &panic_return, sizeof saved);
+    current = t;
+    in_resume = 1;
+    if (setjmp(panic_return) == 0) {
+        entry(t, args);
+    }
+    memcpy(&panic_return, &saved, sizeof saved);
+    current = saved_current;
+    in_resume = saved_in;
+}

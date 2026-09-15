@@ -14,20 +14,30 @@ import (
 
 // defineHelper generates a standalone function using the normal builder.
 func (g *gen) defineHelper(name, retLL string, params []string, body func()) {
+	g.defineHelperEx(name, retLL, params, "", body)
+}
+
+func (g *gen) defineHelperEx(name, retLL string, params []string, attrs string, body func()) {
 	saved := struct {
-		fn      *sema.Func
-		body    string
-		allocas string
-		tmp     int
-		label   int
-		term    bool
-		storage map[*sema.Var]string
-		loops   map[*sema.Loop]loopLabels
-		result  types.Type
-	}{g.fn, g.body.String(), g.allocas.String(), g.tmp, g.label, g.term, g.storage, g.loops, g.fnResult}
+		fn       *sema.Func
+		body     string
+		allocas  string
+		tmp      int
+		label    int
+		term     bool
+		storage  map[*sema.Var]string
+		loops    map[*sema.Loop]loopLabels
+		result   types.Type
+		coro     *coroState
+		cleanups []sema.Expr
+		envSlot  string
+	}{g.fn, g.body.String(), g.allocas.String(), g.tmp, g.label, g.term, g.storage, g.loops, g.fnResult, g.coro, g.cleanups, g.envSlot}
 	g.resetFn(&sema.Func{Name: name, Sig: &types.Func{Ret: types.TUnit}})
 	body()
-	fmt.Fprintf(&g.helpers, "define internal %s @%s(%s) {\nentry:\n", retLL, name, strings.Join(params, ", "))
+	if attrs != "" {
+		attrs = " " + attrs
+	}
+	fmt.Fprintf(&g.helpers, "define internal %s @%s(%s)%s {\nentry:\n", retLL, name, strings.Join(params, ", "), attrs)
 	g.helpers.WriteString(g.allocas.String())
 	g.helpers.WriteString(g.body.String())
 	g.helpers.WriteString("}\n\n")
@@ -37,6 +47,7 @@ func (g *gen) defineHelper(name, retLL string, params []string, body func()) {
 	g.allocas.Reset()
 	g.allocas.WriteString(saved.allocas)
 	g.tmp, g.label, g.term, g.storage, g.loops, g.fnResult = saved.tmp, saved.label, saved.term, saved.storage, saved.loops, saved.result
+	g.coro, g.cleanups, g.envSlot = saved.coro, saved.cleanups, saved.envSlot
 }
 
 // concat appends b to a (both %str values).
@@ -214,6 +225,12 @@ func (g *gen) showBody(t types.Type, v string) string {
 		last := g.newTmp()
 		g.emit("%s = load %s, ptr %s", last, strType, res)
 		return g.concat(last, g.stringConst("]"))
+	case *types.Map, *types.Set:
+		return g.showMap(tt, v)
+	case *types.Trait:
+		return g.stringConst("<" + tt.Name + ">")
+	case *types.Channel, *types.Task:
+		return g.stringConst("<" + tt.String() + ">")
 	case *types.Struct:
 		if len(tt.Fields) == 0 {
 			return g.stringConst(tt.Name)
@@ -289,7 +306,7 @@ func (g *gen) equal(t types.Type, l, r string) string {
 			g.emit("%s = icmp eq %s %s, %s", v, g.llType(t), l, r)
 		}
 		return v
-	case *types.Pointer, *types.List:
+	case *types.Pointer, *types.List, *types.Map, *types.Set, *types.Channel, *types.Task:
 		v := g.newTmp()
 		g.emit("%s = icmp eq ptr %s, %s", v, l, r)
 		return v

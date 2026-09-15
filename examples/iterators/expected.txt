@@ -1,0 +1,16 @@
+t-minus 3
+t-minus 2
+t-minus 1
+4|3|2|1
+7|8|9
+[4, 16, 36]
+[10, 20] [5, 6]
+[0:1, 1:2, 2:3, 3:4, 4:5, 5:6]
+[(1, a), (2, b), (3, c)]
+count 5 sum 21
+any true all true find 4 last 6
+mapped 100
+mapped 200
+mapped 300
+total 6
+exit=0

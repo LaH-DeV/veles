@@ -19,7 +19,7 @@ import (
 )
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: veles <build|run|check|parse|tokens> <path> [-o output] [--emit-llvm] [--keep] [--release] [-- args...]")
+	fmt.Fprintln(os.Stderr, "usage: veles <build|run|test|check|parse|tokens> <path> [-o output] [--emit-llvm] [--keep] [--release] [-- args...]")
 	os.Exit(2)
 }
 
@@ -49,7 +49,7 @@ func main() {
 		if diags.HasErrors() {
 			os.Exit(1)
 		}
-	case "build", "run", "check":
+	case "build", "run", "check", "test":
 		opts := driver.Options{Path: path, Mode: cmd}
 		args := os.Args[3:]
 		for i := 0; i < len(args); i++ {

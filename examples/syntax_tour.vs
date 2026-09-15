@@ -111,7 +111,7 @@ fun collections(nums: List<i32>, counts: Map<string, i32>, word: string, a: A?) 
   val sorted = nums
     .sortedBy(x => -x)
     .take(3)
-  outer: loop {
+  loop :outer {
     loop (true) { break outer }
   }
   val big = if (n > 5) "big" else "small"

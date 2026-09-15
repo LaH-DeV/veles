@@ -3,6 +3,7 @@
 package types
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 )
@@ -301,6 +302,7 @@ type TypeParam struct {
 	Bounds []*Trait
 	Index  int
 	Owner  string // for diagnostics
+	id     int
 }
 
 func (t *TypeParam) String() string { return t.Name }
@@ -370,14 +372,15 @@ func (s *Sealed) VariantByName(name string) *Struct {
 // Trait is an open (non-sealed) trait (D6). A trait used as a type denotes
 // a boxed trait object (D9).
 type Trait struct {
-	Name       string
-	Module     string
-	Pub        bool
-	TypeParams []*TypeParam
-	AssocTypes []string
-	Methods    map[string]*Func
-	MethodList []string
-	Decl       any
+	Name        string
+	Module      string
+	Pub         bool
+	TypeParams  []*TypeParam
+	AssocTypes  []string
+	AssocBounds map[string][]*Trait
+	Methods     map[string]*Func
+	MethodList  []string
+	Decl        any
 }
 
 func (t *Trait) String() string { return t.Name }
@@ -429,6 +432,18 @@ func Identical(a, b Type) bool {
 	case *List:
 		b, ok := b.(*List)
 		return ok && a.Mutable == b.Mutable && Identical(a.Elem, b.Elem)
+	case *Map:
+		b, ok := b.(*Map)
+		return ok && a.Mutable == b.Mutable && Identical(a.Key, b.Key) && Identical(a.Value, b.Value)
+	case *Channel:
+		b, ok := b.(*Channel)
+		return ok && Identical(a.Elem, b.Elem)
+	case *Task:
+		b, ok := b.(*Task)
+		return ok && Identical(a.Result, b.Result)
+	case *Set:
+		b, ok := b.(*Set)
+		return ok && a.Mutable == b.Mutable && Identical(a.Elem, b.Elem)
 	case *Func:
 		b, ok := b.(*Func)
 		if !ok || len(a.Params) != len(b.Params) || !Identical(a.Ret, b.Ret) {
@@ -457,6 +472,9 @@ func Identical(a, b Type) bool {
 			}
 		}
 		return true
+	case *Assoc:
+		b, ok := b.(*Assoc)
+		return ok && a.Trait == b.Trait && a.Name == b.Name && Identical(a.Base, b.Base)
 	case *Struct, *Sealed, *Trait, *TypeParam:
 		return a == b
 	}
@@ -474,6 +492,12 @@ func Subst(t Type, m map[*TypeParam]Type) Type {
 			return r
 		}
 		return t
+	case *Assoc:
+		base := Subst(t.Base, m)
+		if base == t.Base {
+			return ResolveAssoc(t)
+		}
+		return ResolveAssoc(&Assoc{Base: base, Trait: t.Trait, Name: t.Name})
 	case *Pointer:
 		return &Pointer{Elem: Subst(t.Elem, m), Raw: t.Raw}
 	case *Nullable:
@@ -488,6 +512,14 @@ func Subst(t Type, m map[*TypeParam]Type) Type {
 		return &Range{Elem: Subst(t.Elem, m)}
 	case *List:
 		return &List{Elem: Subst(t.Elem, m), Mutable: t.Mutable}
+	case *Map:
+		return &Map{Key: Subst(t.Key, m), Value: Subst(t.Value, m), Mutable: t.Mutable}
+	case *Set:
+		return &Set{Elem: Subst(t.Elem, m), Mutable: t.Mutable}
+	case *Channel:
+		return &Channel{Elem: Subst(t.Elem, m)}
+	case *Task:
+		return &Task{Result: Subst(t.Result, m)}
 	case *Func:
 		out := &Func{Ret: Subst(t.Ret, m), Effects: t.Effects}
 		out.Effects.Error = Subst(t.Effects.Error, m)
@@ -530,6 +562,8 @@ func ContainsTypeParam(t Type) bool {
 	switch t := t.(type) {
 	case *TypeParam:
 		return true
+	case *Assoc:
+		return true
 	case *Pointer:
 		return ContainsTypeParam(t.Elem)
 	case *Nullable:
@@ -544,6 +578,14 @@ func ContainsTypeParam(t Type) bool {
 		return ContainsTypeParam(t.Elem)
 	case *List:
 		return ContainsTypeParam(t.Elem)
+	case *Map:
+		return ContainsTypeParam(t.Key) || ContainsTypeParam(t.Value)
+	case *Set:
+		return ContainsTypeParam(t.Elem)
+	case *Channel:
+		return ContainsTypeParam(t.Elem)
+	case *Task:
+		return ContainsTypeParam(t.Result)
 	case *Func:
 		for _, p := range t.Params {
 			if ContainsTypeParam(p.Type) {
@@ -575,12 +617,84 @@ func ContainsTypeParam(t Type) bool {
 	return false
 }
 
-// Key returns a canonical string for use as a map key.
+var nextParamID int
+
+// NewTypeParam allocates a parameter with a unique identity for keying.
+func NewTypeParam(name string, index int, owner string) *TypeParam {
+	nextParamID++
+	return &TypeParam{Name: name, Index: index, Owner: owner, id: nextParamID}
+}
+
+// Key returns a canonical string for use as a map key. Unlike String, it
+// distinguishes type parameters that merely share a name.
 func Key(t Type) string {
-	if t == nil {
+	switch t := t.(type) {
+	case nil:
 		return "<nil>"
+	case *TypeParam:
+		if t.id == 0 {
+			nextParamID++
+			t.id = nextParamID
+		}
+		return fmt.Sprintf("%s#%d", t.Name, t.id)
+	case *Assoc:
+		return Key(t.Base) + "::" + t.Name
+	case *Pointer:
+		if t.Raw {
+			return "*raw " + Key(t.Elem)
+		}
+		return "*" + Key(t.Elem)
+	case *Nullable:
+		return "(" + Key(t.Elem) + ")?"
+	case *Tuple:
+		return "(" + keys(t.Elems) + ")"
+	case *Range:
+		return "Range<" + Key(t.Elem) + ">"
+	case *List:
+		if t.Mutable {
+			return "MutableList<" + Key(t.Elem) + ">"
+		}
+		return "List<" + Key(t.Elem) + ">"
+	case *Map:
+		return "Map" + fmt.Sprint(t.Mutable) + "<" + Key(t.Key) + "," + Key(t.Value) + ">"
+	case *Set:
+		return "Set" + fmt.Sprint(t.Mutable) + "<" + Key(t.Elem) + ">"
+	case *Channel:
+		return "Channel<" + Key(t.Elem) + ">"
+	case *Task:
+		return "Task<" + Key(t.Result) + ">"
+	case *Func:
+		var ps []Type
+		for _, p := range t.Params {
+			ps = append(ps, p.Type)
+		}
+		s := "fun(" + keys(ps) + "):" + Key(t.Ret)
+		if t.Effects.Throws {
+			s += " throws " + Key(t.Effects.Error)
+		}
+		return s
+	case *ErrorUnion:
+		return keys(t.Members)
+	case *Struct:
+		if len(t.TypeArgs) == 0 {
+			return t.Module + "." + t.Name
+		}
+		return t.Module + "." + t.Name + "<" + keys(t.TypeArgs) + ">"
+	case *Sealed:
+		if len(t.TypeArgs) == 0 {
+			return t.Module + "." + t.Name
+		}
+		return t.Module + "." + t.Name + "<" + keys(t.TypeArgs) + ">"
 	}
 	return t.String()
+}
+
+func keys(ts []Type) string {
+	parts := make([]string, len(ts))
+	for i, t := range ts {
+		parts[i] = Key(t)
+	}
+	return strings.Join(parts, ",")
 }
 
 // Instantiators are installed by the checker so that Subst can re-apply
@@ -601,3 +715,71 @@ func substArgs(args []Type, m map[*TypeParam]Type) ([]Type, bool) {
 	}
 	return out, changed
 }
+
+// Assoc is an associated-type projection `Base::Name` (D27) whose base is
+// still generic (a type parameter or a trait's Self). Once the base becomes
+// concrete, Subst resolves the projection through AssocResolver.
+type Assoc struct {
+	Base  Type
+	Trait *Trait
+	Name  string
+}
+
+func (a *Assoc) String() string { return a.Base.String() + "::" + a.Name }
+
+// AssocResolver looks up the binding of an associated type for a concrete
+// implementing type; nil when there is no impl.
+var AssocResolver func(base Type, trait *Trait, name string) Type
+
+// ResolveAssoc resolves a projection whose base is concrete.
+func ResolveAssoc(a *Assoc) Type {
+	if _, bare := a.Base.(*TypeParam); bare || AssocResolver == nil {
+		return a
+	}
+	if r := AssocResolver(a.Base, a.Trait, a.Name); r != nil {
+		return r
+	}
+	return a
+}
+
+// Map is `Map<K, V>` / `MutableMap<K, V>`; Set is `Set<T>` / `MutableSet<T>`
+// (D25: insertion-ordered, reference types with an immutable/mutable split).
+type Map struct {
+	Key, Value Type
+	Mutable    bool
+}
+
+func (m *Map) String() string {
+	name := "Map"
+	if m.Mutable {
+		name = "MutableMap"
+	}
+	return name + "<" + m.Key.String() + ", " + m.Value.String() + ">"
+}
+
+type Set struct {
+	Elem    Type
+	Mutable bool
+}
+
+func (s *Set) String() string {
+	name := "Set"
+	if s.Mutable {
+		name = "MutableSet"
+	}
+	return name + "<" + s.Elem.String() + ">"
+}
+
+// Channel is `Channel<T>` (D16); Task is the handle of a launched task
+// (D3) whose completion yields Result.
+type Channel struct {
+	Elem Type
+}
+
+func (c *Channel) String() string { return "Channel<" + c.Elem.String() + ">" }
+
+type Task struct {
+	Result Type
+}
+
+func (t *Task) String() string { return "Task<" + t.Result.String() + ">" }

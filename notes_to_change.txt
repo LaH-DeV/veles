@@ -1,0 +1,38 @@
+1. Mutable declarations
+We could simplify it by adding a syntactic sugar with `var keepMap = mut ["key": 2]` for simple types
+but only when the typing could work with that... instead of:
+`var keepMap: MutableMap<string, i32> = [:]`
+The same with the list:
+`val words: MutableList<string> = []`
+could be: `val words = mut ["string"]`
+
+2. label for loop.
+currently it is label: loop (...) {}
+but it would read better if it would be loop : label (...) {} or loop () label {} but I think the first one.
+
+3. I kind of hate that we almost implemented rust in the syntax...
+- I do not like `items.iter().filter`, I like js's `items.filter` but I do not know we can do that.
+- I do not like implicit returns but... maybe it is somewhat ok
+- I do not like impl blocks...
+- I do not like `  fun count(): i32 {
+    var n = 0
+    loop (x in self) { n += 1 }
+    n
+  }` so we really cannot have a better syntax for it?
+- I do not understand what the type Iter: Iterator does here `trait Iterable {
+  type Iter: Iterator
+  fun iterator(): Iter
+}`
+- I do not like how the dependencies in toml file are written...
+- I would prefer getting map indexing by .get() and list indexing with .at() than [i]...
+
+4. There is a lot of words to define a fetcher that are not easily undertendable:
+`trait Fetcher {
+  type Error
+  fun fetch(url: string): Bytes suspends throws Self::Error
+}`
+
+5. I hate `Some(null)` and other Some and Ok and Err... this is rust.. WHY
+--- disregard above. new below
+6. we need a lsp and vscode extension so I can test writing in this language and see what needs to be fixed
+7. we need a very specialized tutorials and documentation for different levels for newcomers

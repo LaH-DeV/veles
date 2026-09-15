@@ -4,8 +4,8 @@ struct ParseError { text: string }
 struct RangeError { value: i64 }
 
 fun parsePort(text: string): i64 throws ParseError | RangeError {
-  val n = text.toInt() ?: return Err(ParseError(text: text))
-  if (n < 0 || n > 65535) return Err(RangeError(value: n))
+  val n = text.toInt() ?: throw ParseError(text: text)
+  if (n < 0 || n > 65535) throw RangeError(value: n)
   n
 }
 

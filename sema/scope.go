@@ -75,8 +75,9 @@ type Module struct {
 	Scope   *Scope               // module-level declarations
 	Imports map[*ast.File]*Scope // per-file import scopes, parent = module scope
 	Deps    []*Module
-	// Uses maps a file to its resolved `use` declarations, for diagnostics.
-	state int // 0 unloaded, 1 loading, 2 loaded
+	Pkg     *Package
+	Uses    map[*ast.UseDecl]*Module // resolved imports, filled by the loader
+	state   int                      // 0 unloaded, 1 loading, 2 loaded
 }
 
 func (m *Module) Name() string {
@@ -127,6 +128,7 @@ type FuncTemplate struct {
 	Trait *types.Trait
 
 	Instances map[string]*Func
+	Attrs     map[string]*ast.Attribute
 
 	// Inferred error type for `throws` without a declared type, refined
 	// across rounds until it reaches a fixpoint (D45).
@@ -143,6 +145,7 @@ type Impl struct {
 	Target     types.Type // may contain the impl's own type params
 	TypeParams []*types.TypeParam
 	Methods    map[string]*FuncTemplate
+	AssocTypes map[string]types.Type
 	Module     *Module
 	Decl       *ast.ImplDecl
 }

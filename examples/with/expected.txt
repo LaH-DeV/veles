@@ -1,0 +1,22 @@
+open a
+open b
+close b
+close a
+early 1
+open a
+open b
+body a b
+close b
+close a
+early 2
+open loop0
+used loop0
+close loop0
+open loop1
+close loop1
+open loop2
+close loop2
+open r
+close r
+failed Oops
+exit=0

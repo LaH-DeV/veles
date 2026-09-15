@@ -23,18 +23,20 @@ func TestExamples(t *testing.T) {
 			t.Fatalf("building compiler: %v\n%s", err, out)
 		}
 	}
-	entries, _ := os.ReadDir(".")
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
+	var dirs []string
+	filepath.WalkDir(".", func(path string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && d.Name() == "expected.txt" {
+			dirs = append(dirs, filepath.Dir(path))
 		}
-		dir := e.Name()
+		return nil
+	})
+	for _, dir := range dirs {
 		want, err := os.ReadFile(filepath.Join(dir, "expected.txt"))
 		if err != nil {
 			continue
 		}
 		t.Run(dir, func(t *testing.T) {
-			exe := filepath.Join(t.TempDir(), dir)
+			exe := filepath.Join(t.TempDir(), filepath.Base(dir))
 			if runtime.GOOS == "windows" {
 				exe += ".exe"
 			}

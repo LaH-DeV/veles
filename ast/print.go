@@ -410,6 +410,10 @@ func (p *printer) stmt(s Stmt) {
 			p.expr(s.Value)
 		}
 		p.w(")")
+	case *ThrowStmt:
+		p.w("(throw ")
+		p.expr(s.Value)
+		p.w(")")
 	case *BreakStmt:
 		p.w("(break")
 		if s.Label != nil {
@@ -595,14 +599,22 @@ func (p *printer) expr(e Expr) {
 		}
 		p.w(")")
 	case *ListLit:
-		p.w("(list")
+		if e.Mut {
+			p.w("(mut-list")
+		} else {
+			p.w("(list")
+		}
 		for _, el := range e.Elems {
 			p.w(" ")
 			p.expr(el)
 		}
 		p.w(")")
 	case *MapLit:
-		p.w("(map")
+		if e.Mut {
+			p.w("(mut-map")
+		} else {
+			p.w("(map")
+		}
 		for _, en := range e.Entries {
 			p.w(" [")
 			p.expr(en.Key)

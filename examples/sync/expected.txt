@@ -1,0 +1,2 @@
+hits 12 atomic 12 swapped 12 now 1
+exit=0

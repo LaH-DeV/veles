@@ -47,7 +47,7 @@ Scoped task lifetimes, cancellation trees, no orphan tasks. Orthogonal to D2.
 
 ### D4 — Errors: `Result<T, E>` with `throws` as sugar
 
-`Result<T, E>` is canonical. A `throws` function compiles to **exactly the same ABI** — error in a register, no unwinding tables, no stack ripping. `try` is propagate-or-unwrap sugar.
+`Result<T, E>` is canonical. A `throws` function compiles to **exactly the same ABI** — error in a register, no unwinding tables, no stack ripping. `try` is propagate-or-unwrap sugar. Inside a `throws` function `throw e` is the failing return — sugar for `return Err(e)` — and a plain `return v` is the success case; `Ok`/`Err` are only spelled when a `Result` is handled explicitly (`when (r) { is Ok(v) => ...; is Err(e) => ... }`) or built as a value.
 
 Consequence: `throws` and explicit `Result` interconvert freely; libraries cannot split into two incompatible error camps; the happy path is zero-cost.
 
@@ -360,7 +360,7 @@ D14 remains deferred; nothing here requires variance.
 
 **Literals are bracket-delimited** (Swift's form): `[1, 2, 3]` for lists, `["a": 1]` for maps, `[:]` for an empty map. `{}` was rejected because it already means block, lambda, and struct literal; a fourth meaning would make `{ port: port }` ambiguous between a map and a struct.
 
-A bare `[1, 2, 3]` with no expected type is a `List`. A growable collection therefore needs an annotation — `var xs: MutableList<i32> = []`, not `var xs = []`.
+A bare `[1, 2, 3]` with no expected type is a `List`. A growable collection therefore needs an annotation — `var xs: MutableList<i32> = []`, not `var xs = []` — or the `mut` prefix on the literal: `var xs = mut [1, 2, 3]` is a `MutableList<i32>` and `var m = mut ["k": 1]` a `MutableMap<string, i32>`. The empty forms `mut []` and `mut [:]` still need an annotation for the element types.
 
 ### D26 — Trait methods are always callable; ambiguity is an error
 
@@ -820,7 +820,7 @@ Consequences:
 ## 4b. Settled minor decisions
 
 - **Semicolons** — Go-style automatic insertion.
-- **Loop labels** — `outer: loop { ... break outer }`.
+- **Loop labels** — `loop :outer { ... break outer }`; the label follows the keyword so the statement still starts with `loop`.
 - **Byte access** — `s.bytes[i]`, an explicit view. `s[i]` is left unspent rather than producing a `u8` from validated text.
 - **`Set`** — follows D25's immutable/mutable split and is insertion-ordered, matching `Map`.
 - **`gc.retain` handles** — `Closeable`, acquired through `with` (D43).

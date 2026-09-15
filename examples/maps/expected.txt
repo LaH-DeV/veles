@@ -1,0 +1,16 @@
+{ann: 41, bob: 29} len 2 ann 41 zed -1 has true
+keys [ann, bob] values [41, 29] entries [(ann, 41), (bob, 29)]
+{a: 3, b: 2, c: 1}
+a=3
+b=2
+c=1
+{Point(x: 1, y: 2): replaced, Point(x: 3, y: 4): second} replaced removed true false {Point(x: 1, y: 2): replaced}
+dup 3
+dup 1
+{3, 1, 2} true 3 [3, 1, 2]
+{(1, true): [x], (1, false): [y, z]} [y, z]
+7
+3 1 2 
+500 998001 -1
+{apples: 3, plums: 5} [fresh, local]
+exit=0

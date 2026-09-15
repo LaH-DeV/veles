@@ -23,22 +23,25 @@ type Checker struct {
 	universe *Scope
 	prog     *Program
 	release  bool
+	testMode bool
 
 	// declaration tables
-	structs    []*types.Struct // templates
-	sealeds    []*types.Sealed
-	traits     []*types.Trait
-	templates  []*FuncTemplate
-	impls      map[*types.Trait][]*Impl
-	methods    map[*types.Struct]map[string]*FuncTemplate // inherent, by template
-	globals    map[*Global]*ast.ValDecl
-	globalMod  map[*Global]*Module
-	globalFile map[*Global]*ast.File
-	structDecl map[*types.Struct]*declCtx
-	sealedDecl map[*types.Sealed]*declCtx
-	traitDecl  map[*types.Trait]*declCtx
-	resultTmpl *types.Sealed
-	optionTmpl *types.Sealed
+	structs        []*types.Struct // templates
+	sealeds        []*types.Sealed
+	traits         []*types.Trait
+	templates      []*FuncTemplate
+	impls          map[*types.Trait][]*Impl
+	methods        map[*types.Struct]map[string]*FuncTemplate // inherent, by template
+	globals        map[*Global]*ast.ValDecl
+	globalMod      map[*Global]*Module
+	globalFile     map[*Global]*ast.File
+	structDecl     map[*types.Struct]*declCtx
+	sealedDecl     map[*types.Sealed]*declCtx
+	traitDecl      map[*types.Trait]*declCtx
+	resultTmpl     *types.Sealed
+	traitMethodTPs map[string][]*types.TypeParam
+	tests          []*FuncTemplate
+	optionTmpl     *types.Sealed
 
 	// per-round state
 	queue          []*Func
@@ -49,6 +52,7 @@ type Checker struct {
 	nextVar        int
 	nextLoop       int
 	nextTmp        int
+	nextLambda     int
 	concrete       map[string]*types.Struct
 	concreteSealed map[string]*types.Sealed
 }
@@ -63,21 +67,34 @@ type declCtx struct {
 }
 
 // Check runs the whole analysis over a loaded package.
+// CheckTests is Check for `veles test`: no main is required and @test
+// functions become the entry point.
+func CheckTests(pkg *Package, diags *source.Diagnostics, release bool) *Program {
+	return check(pkg, diags, release, true)
+}
+
 func Check(pkg *Package, diags *source.Diagnostics, release bool) *Program {
+	return check(pkg, diags, release, false)
+}
+
+func check(pkg *Package, diags *source.Diagnostics, release bool, testMode bool) *Program {
 	c := &Checker{
-		pkg:        pkg,
-		diags:      diags,
-		seen:       map[string]bool{},
-		impls:      map[*types.Trait][]*Impl{},
-		methods:    map[*types.Struct]map[string]*FuncTemplate{},
-		globals:    map[*Global]*ast.ValDecl{},
-		globalMod:  map[*Global]*Module{},
-		globalFile: map[*Global]*ast.File{},
-		structDecl: map[*types.Struct]*declCtx{},
-		sealedDecl: map[*types.Sealed]*declCtx{},
-		traitDecl:  map[*types.Trait]*declCtx{},
-		release:    release,
+		pkg:            pkg,
+		diags:          diags,
+		seen:           map[string]bool{},
+		impls:          map[*types.Trait][]*Impl{},
+		methods:        map[*types.Struct]map[string]*FuncTemplate{},
+		globals:        map[*Global]*ast.ValDecl{},
+		globalMod:      map[*Global]*Module{},
+		globalFile:     map[*Global]*ast.File{},
+		structDecl:     map[*types.Struct]*declCtx{},
+		sealedDecl:     map[*types.Sealed]*declCtx{},
+		traitDecl:      map[*types.Trait]*declCtx{},
+		traitMethodTPs: map[string][]*types.TypeParam{},
+		release:        release,
+		testMode:       testMode,
 	}
+	types.AssocResolver = c.resolveAssoc
 	types.StructInstantiator = func(tmpl *types.Struct, args []types.Type) types.Type {
 		return c.instantiateStruct(tmpl, args, source.Span{})
 	}
@@ -101,6 +118,9 @@ func Check(pkg *Package, diags *source.Diagnostics, release bool) *Program {
 		if !c.changed {
 			break
 		}
+	}
+	if prog != nil && !c.roundDiags.HasErrors() {
+		c.inferSuspension(prog)
 	}
 	diags.Items = append(diags.Items, c.roundDiags.Items...)
 	if diags.HasErrors() {
@@ -193,6 +213,14 @@ func (c *Checker) collect() {
 			}
 		}
 	}
+	// 1b. the prelude is in scope everywhere (D24)
+	if prelude, ok := c.pkg.Modules["std/prelude"]; ok {
+		for _, sym := range prelude.Scope.symbols {
+			if sym.Pub {
+				c.universe.Insert(sym)
+			}
+		}
+	}
 	// 2. wire imports (per file)
 	for _, m := range mods {
 		for _, f := range m.Files {
@@ -247,6 +275,7 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 			c.insert(m, &Symbol{Name: fn.Name.Name, Kind: SymFunc, Pub: fn.Pub, Module: m, Span: fn.Name.Pos, Func: t})
 		}
 	case *ast.StructDecl:
+		c.attrsOf(d.Attrs, "struct")
 		s := &types.Struct{Name: d.Name.Name, Module: m.prefix(), Pub: d.Pub, Extern: d.Extern, Decl: d, Instances: map[string]*types.Struct{}}
 		ctx := &declCtx{module: m, file: f, decl: d, tps: map[string]*types.TypeParam{}}
 		for i, tp := range d.TypeParams {
@@ -267,6 +296,7 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 			c.methods[s][md.Name.Name] = t
 		}
 	case *ast.TraitDecl:
+		c.attrsOf(d.Attrs, "trait")
 		if d.Sealed {
 			s := &types.Sealed{Name: d.Name.Name, Module: m.prefix(), Pub: d.Pub, Decl: d, Instances: map[string]*types.Sealed{}}
 			ctx := &declCtx{module: m, file: f, decl: d, tps: map[string]*types.TypeParam{}}
@@ -278,12 +308,22 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 			c.sealedDecl[s] = ctx
 			c.sealeds = append(c.sealeds, s)
 			c.insert(m, &Symbol{Name: d.Name.Name, Kind: SymType, Pub: d.Pub, Module: m, Span: d.Name.Pos, Type: s})
-			if len(d.Methods) > 0 || len(d.AssocTypes) > 0 {
-				c.errorf(d.Name.Pos, "methods on sealed traits are not supported yet in the bootstrap compiler; use 'when' over the variants")
+			if len(d.AssocTypes) > 0 {
+				c.errorf(d.Name.Pos, "sealed traits cannot declare associated types")
+			}
+			if len(d.Methods) > 0 {
+				// the trait half: methods implemented per variant, dispatched by tag
+				t := &types.Trait{Name: d.Name.Name, Module: m.prefix(), Pub: d.Pub, Decl: d, Methods: map[string]*types.Func{}}
+				s.Trait = t
+				c.traitDecl[t] = ctx
+				c.traits = append(c.traits, t)
 			}
 			return
 		}
 		t := &types.Trait{Name: d.Name.Name, Module: m.prefix(), Pub: d.Pub, Decl: d, Methods: map[string]*types.Func{}}
+		for _, at := range d.AssocTypes {
+			t.AssocTypes = append(t.AssocTypes, at.Name.Name)
+		}
 		ctx := &declCtx{module: m, file: f, decl: d, tps: map[string]*types.TypeParam{}}
 		for i, tp := range d.TypeParams {
 			p := &types.TypeParam{Name: tp.Name.Name, Index: i, Owner: d.Name.Name}
@@ -294,6 +334,7 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 		c.traits = append(c.traits, t)
 		c.insert(m, &Symbol{Name: d.Name.Name, Kind: SymType, Pub: d.Pub, Module: m, Span: d.Name.Pos, Type: t})
 	case *ast.ValDecl:
+		c.attrsOf(d.Attrs, "value")
 		g := &Global{Name: m.prefix() + "." + d.Name.Name, Display: d.Name.Name, Mutable: d.Kind == ast.BindVar, Span: d.Name.Pos}
 		c.globals[g] = d
 		c.globalMod[g] = m
@@ -306,6 +347,13 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 
 func (c *Checker) newTemplate(m *Module, f *ast.File, d *ast.FunDecl, owner *types.Struct, outer map[string]*types.TypeParam) *FuncTemplate {
 	t := &FuncTemplate{Name: d.Name.Name, Module: m, File: f, Decl: d, Pub: d.Pub, Owner: owner, Extern: d.Extern}
+	t.Attrs = c.attrsOf(d.Attrs, "function")
+	if _, isTest := t.Attrs["test"]; isTest {
+		if len(d.Params) > 0 || d.Ret != nil || owner != nil {
+			c.errorf(d.Name.Pos, " functions take no parameters and return nothing")
+		}
+		c.tests = append(c.tests, t)
+	}
 	t.Instances = map[string]*Func{}
 	t.Mangled = m.prefix() + "." + d.Name.Name
 	if owner != nil {
@@ -324,10 +372,7 @@ func (c *Checker) declareUse(m *Module, f *ast.File, u *ast.UseDecl) {
 		path = append(path, seg.Name)
 	}
 	key := strings.Join(path, "/")
-	dep := c.pkg.Modules[key]
-	if dep == nil {
-		dep = c.pkg.Modules["std/"+key]
-	}
+	dep := m.Uses[u]
 	if dep == nil {
 		return // loader already reported
 	}
@@ -372,6 +417,10 @@ type typeEnv struct {
 	file   *ast.File
 	tps    map[string]*types.TypeParam
 	self   types.Type
+	// trait is set inside a trait body so bare associated names resolve;
+	// implAssoc holds an impl's `type X = T` bindings.
+	trait     *types.Trait
+	implAssoc map[string]types.Type
 }
 
 func (c *Checker) lookupTypeName(env *typeEnv, path []ast.Ident) (*Symbol, *types.Sealed) {
@@ -423,6 +472,15 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 	case *ast.NamedType:
 		if len(t.Path) == 1 {
 			name := t.Path[0].Name
+			// bare associated names inside trait and impl bodies
+			if env.implAssoc != nil {
+				if bt, ok := env.implAssoc[name]; ok && len(t.Args) == 0 {
+					return bt
+				}
+			}
+			if env.trait != nil && containsString(env.trait.AssocTypes, name) && len(t.Args) == 0 {
+				return &types.Assoc{Base: selfParamOf(env.trait), Trait: env.trait, Name: name}
+			}
 			if tp, ok := env.tps[name]; ok {
 				if len(t.Args) > 0 {
 					c.errorf(t.Pos, "type parameter '%s' cannot take type arguments", name)
@@ -448,9 +506,34 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 					return types.TInvalid
 				}
 				return &types.Nullable{Elem: c.resolveType(env, t.Args[0])}
-			case "Map", "MutableMap", "Set", "MutableSet":
-				c.errorf(t.Pos, "%s is not implemented yet in the bootstrap compiler", name)
-				return types.TInvalid
+			case "Map", "MutableMap":
+				if len(t.Args) != 2 {
+					c.errorf(t.Pos, "%s takes two type arguments", name)
+					return types.TInvalid
+				}
+				k := c.resolveType(env, t.Args[0])
+				c.checkHashable(k, t.Args[0].Span())
+				return &types.Map{Key: k, Value: c.resolveType(env, t.Args[1]), Mutable: name == "MutableMap"}
+			case "Channel":
+				if len(t.Args) != 1 {
+					c.errorf(t.Pos, "Channel takes one type argument")
+					return types.TInvalid
+				}
+				return &types.Channel{Elem: c.resolveType(env, t.Args[0])}
+			case "Task":
+				if len(t.Args) != 1 {
+					c.errorf(t.Pos, "Task takes one type argument")
+					return types.TInvalid
+				}
+				return &types.Task{Result: c.resolveType(env, t.Args[0])}
+			case "Set", "MutableSet":
+				if len(t.Args) != 1 {
+					c.errorf(t.Pos, "%s takes one type argument", name)
+					return types.TInvalid
+				}
+				k := c.resolveType(env, t.Args[0])
+				c.checkHashable(k, t.Args[0].Span())
+				return &types.Set{Elem: k, Mutable: name == "MutableSet"}
 			}
 		}
 		sym, _ := c.lookupTypeName(env, t.Path)
@@ -508,8 +591,11 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 		}
 		return env.self
 	case *ast.AssocType:
-		c.errorf(t.Pos, "associated type projections ('%s') are not supported yet in the bootstrap compiler", ast.TypeString(t))
-		return types.TInvalid
+		base := c.resolveType(env, t.Base)
+		if types.IsInvalid(base) {
+			return base
+		}
+		return c.projectAssoc(env, base, t.Name.Name, t.Pos)
 	case *ast.ErrorUnionType:
 		var members []types.Type
 		for _, m := range t.Members {
@@ -523,9 +609,6 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 
 func (c *Checker) resolveEffects(env *typeEnv, e ast.Effects, mustDeclare bool) types.Effects {
 	eff := types.Effects{Suspends: e.Suspends, Throws: e.Throws}
-	if e.Suspends {
-		c.errorf(e.SuspendsSpan, "'suspends' and the concurrency runtime are not implemented yet in the bootstrap compiler (build plan stage 4)")
-	}
 	if e.Throws && e.Error != nil {
 		eff.Error = c.resolveType(env, e.Error)
 		if _, isUnion := eff.Error.(*types.ErrorUnion); !isUnion {
@@ -591,6 +674,13 @@ func (c *Checker) resolveStruct(s *types.Struct) {
 	ctx.resolving = true
 	d := ctx.decl.(*ast.StructDecl)
 	env := c.envFor(ctx, s)
+	for i, tp := range d.TypeParams {
+		for _, b := range tp.Bounds {
+			if tr, ok := c.resolveType(env, b).(*types.Trait); ok {
+				s.TypeParams[i].Bounds = append(s.TypeParams[i].Bounds, tr)
+			}
+		}
+	}
 	seen := map[string]bool{}
 	for i, f := range d.Fields {
 		if seen[f.Name.Name] {
@@ -675,21 +765,54 @@ func (c *Checker) resolveSealed(s *types.Sealed) {
 func (c *Checker) resolveTrait(t *types.Trait) {
 	ctx := c.traitDecl[t]
 	d := ctx.decl.(*ast.TraitDecl)
-	env := c.envFor(ctx, t)
+	self := selfParamOf(t)
+	self.Bounds = []*types.Trait{t}
+	env := c.envFor(ctx, self)
+	env.trait = t
+	t.AssocBounds = map[string][]*types.Trait{}
 	for _, at := range d.AssocTypes {
-		t.AssocTypes = append(t.AssocTypes, at.Name.Name)
+		for _, b := range at.Bounds {
+			bt := c.resolveType(env, b)
+			if tr, ok := bt.(*types.Trait); ok {
+				t.AssocBounds[at.Name.Name] = append(t.AssocBounds[at.Name.Name], tr)
+			} else if !types.IsInvalid(bt) {
+				c.errorf(b.Span(), "bound '%s' is not a trait", bt)
+			}
+		}
 	}
 	for _, m := range d.Methods {
 		if _, dup := t.Methods[m.Name.Name]; dup {
 			c.errorf(m.Name.Pos, "duplicate trait method '%s'", m.Name.Name)
 			continue
 		}
-		sig := c.signatureOf(env, m, true)
+		// A generic trait method's parameters are shared between the trait
+		// signature and the default-body template so impls compare equal.
+		menv := *env
+		menv.tps = map[string]*types.TypeParam{}
+		for k, v := range env.tps {
+			menv.tps[k] = v
+		}
+		var mtps []*types.TypeParam
+		for i, tp := range m.TypeParams {
+			p := &types.TypeParam{Name: tp.Name.Name, Index: i, Owner: m.Name.Name}
+			mtps = append(mtps, p)
+			menv.tps[tp.Name.Name] = p
+		}
+		for i, tp := range m.TypeParams {
+			for _, b := range tp.Bounds {
+				if tr, ok := c.resolveType(&menv, b).(*types.Trait); ok {
+					mtps[i].Bounds = append(mtps[i].Bounds, tr)
+				}
+			}
+		}
+		sig := c.signatureOf(&menv, m, true)
 		t.Methods[m.Name.Name] = sig
 		t.MethodList = append(t.MethodList, m.Name.Name)
+		c.traitMethodTPs[t.Name+"."+m.Name.Name] = mtps
 		if m.Body != nil || m.ExprBody != nil {
 			tmpl := c.newTemplate(ctx.module, ctx.file, m, nil, ctx.tps)
 			tmpl.Trait = t
+			tmpl.TypeParams = mtps
 			tmpl.Mangled = ctx.module.prefix() + "." + t.Name + "." + m.Name.Name
 		}
 	}
@@ -741,7 +864,11 @@ func (c *Checker) resolveSignature(t *FuncTemplate) {
 		for k, v := range ctx.tps {
 			env.tps[k] = v
 		}
-		env.self = t.Trait
+		env.self = selfParamOf(t.Trait)
+		env.trait = t.Trait
+	}
+	if t.Impl != nil {
+		env.implAssoc = t.Impl.AssocTypes
 	}
 	for _, tp := range t.TypeParams {
 		if _, dup := env.tps[tp.Name]; dup {
@@ -750,6 +877,9 @@ func (c *Checker) resolveSignature(t *FuncTemplate) {
 		env.tps[tp.Name] = tp
 	}
 	for i, tp := range t.Decl.TypeParams {
+		if t.Trait != nil {
+			break // bounds were resolved with the trait signature
+		}
 		for _, b := range tp.Bounds {
 			bt := c.resolveType(env, b)
 			if tr, ok := bt.(*types.Trait); ok {
@@ -811,7 +941,23 @@ func (c *Checker) declareImpl(m *Module, f *ast.File, d *ast.ImplDecl) {
 		ctx.tps[tp.Name.Name] = p
 	}
 	env := c.envFor(ctx, nil)
+	for i, tp := range d.TypeParams {
+		for _, b := range tp.Bounds {
+			if tr, ok := c.resolveType(env, b).(*types.Trait); ok {
+				impl.TypeParams[i].Bounds = append(impl.TypeParams[i].Bounds, tr)
+			}
+		}
+	}
 	tt := c.resolveType(env, d.Trait)
+	var sealedFor *types.Sealed
+	if s, isSealed := tt.(*types.Sealed); isSealed {
+		if s.Trait == nil {
+			c.errorf(d.Trait.Span(), "sealed trait '%s' declares no methods to implement", s.Name)
+			return
+		}
+		sealedFor = sealedTemplate(s)
+		tt = sealedTemplate(s).Trait
+	}
 	trait, ok := tt.(*types.Trait)
 	if !ok {
 		if !types.IsInvalid(tt) {
@@ -825,9 +971,34 @@ func (c *Checker) declareImpl(m *Module, f *ast.File, d *ast.ImplDecl) {
 	if types.IsInvalid(impl.Target) {
 		return
 	}
-	if len(d.AssocTypes) > 0 {
-		c.errorf(d.Pos, "associated types in impls are not supported yet in the bootstrap compiler")
+	if sealedFor != nil {
+		st, isStruct := impl.Target.(*types.Struct)
+		if !isStruct || templateOf(st).Sealed != sealedFor {
+			c.errorf(d.Target.Span(), "'%s' is not a variant of sealed trait '%s'; sealed trait methods are implemented per variant (D12)", impl.Target, sealedFor.Name)
+			return
+		}
 	}
+	impl.AssocTypes = map[string]types.Type{}
+	for _, b := range d.AssocTypes {
+		if !containsString(trait.AssocTypes, b.Name.Name) {
+			c.errorf(b.Name.Pos, "trait '%s' has no associated type '%s'", trait.Name, b.Name.Name)
+			continue
+		}
+		bt := c.resolveType(env, b.Type)
+		impl.AssocTypes[b.Name.Name] = bt
+		for _, bound := range trait.AssocBounds[b.Name.Name] {
+			if !types.ContainsTypeParam(bt) && c.findImplFor(bt, bound) == nil {
+				c.errorf(b.Type.Span(), "'%s' does not implement '%s', required by 'type %s: %s' in trait '%s'", bt, bound.Name, b.Name.Name, bound.Name, trait.Name)
+			}
+		}
+	}
+	for _, name := range trait.AssocTypes {
+		if _, ok := impl.AssocTypes[name]; !ok {
+			c.errorf(d.Pos, "impl of '%s' for '%s' must bind associated type '%s': 'type %s = ...'", trait.Name, impl.Target, name, name)
+		}
+	}
+	env.implAssoc = impl.AssocTypes
+	c.impls[trait] = append(c.impls[trait], impl)
 	for _, md := range d.Methods {
 		sig, declared := trait.Methods[md.Name.Name]
 		if !declared {
@@ -855,7 +1026,6 @@ func (c *Checker) declareImpl(m *Module, f *ast.File, d *ast.ImplDecl) {
 			c.errorf(d.Pos, "impl of '%s' for '%s' is missing method '%s'", trait.Name, impl.Target, name)
 		}
 	}
-	c.impls[trait] = append(c.impls[trait], impl)
 }
 
 func (c *Checker) traitDefault(trait *types.Trait, name string) *FuncTemplate {
@@ -872,10 +1042,16 @@ func (c *Checker) checkImplSignature(t *FuncTemplate, traitSig *types.Func, trai
 		c.errorf(md.Name.Pos, "method '%s' takes %d parameters but trait '%s' declares %d", md.Name.Name, len(t.Sig.Params), trait.Name, len(traitSig.Params))
 		return
 	}
-	self := map[*types.TypeParam]types.Type{}
-	_ = self
+	subst := map[*types.TypeParam]types.Type{selfParamOf(trait): impl.Target}
+	if mtps := c.traitMethodTPs[trait.Name+"."+md.Name.Name]; len(mtps) == len(t.TypeParams) {
+		for i, tp := range mtps {
+			subst[tp] = t.TypeParams[i]
+		}
+	} else {
+		c.errorf(md.Name.Pos, "method '%s' must declare the same type parameters as in trait '%s'", md.Name.Name, trait.Name)
+	}
 	for i, p := range t.Sig.Params {
-		want := c.substSelf(traitSig.Params[i].Type, trait, impl.Target)
+		want := types.Subst(traitSig.Params[i].Type, subst)
 		if p.Name != traitSig.Params[i].Name {
 			c.errorf(md.Params[i].Name.Pos, "parameter must be named '%s' as in trait '%s' (D28: impls inherit the trait's parameter names)", traitSig.Params[i].Name, trait.Name)
 		}
@@ -883,7 +1059,7 @@ func (c *Checker) checkImplSignature(t *FuncTemplate, traitSig *types.Func, trai
 			c.errorf(md.Params[i].Pos, "parameter '%s' has type '%s' but trait '%s' declares '%s'", p.Name, p.Type, trait.Name, want)
 		}
 	}
-	wantRet := c.substSelf(traitSig.Ret, trait, impl.Target)
+	wantRet := types.Subst(traitSig.Ret, subst)
 	if !types.Identical(t.Sig.Ret, wantRet) {
 		c.errorf(md.Name.Pos, "method '%s' returns '%s' but trait '%s' declares '%s'", md.Name.Name, t.Sig.Ret, trait.Name, wantRet)
 	}
@@ -896,20 +1072,10 @@ func (c *Checker) checkImplSignature(t *FuncTemplate, traitSig *types.Func, trai
 	}
 }
 
-// substSelf replaces the trait's Self with the impl target.
+// substSelf replaces the trait's Self with the impl target, resolving
+// associated-type projections through the impl.
 func (c *Checker) substSelf(t types.Type, trait *types.Trait, target types.Type) types.Type {
-	if t == types.Type(trait) {
-		return target
-	}
-	switch tt := t.(type) {
-	case *types.Pointer:
-		return &types.Pointer{Elem: c.substSelf(tt.Elem, trait, target), Raw: tt.Raw}
-	case *types.Nullable:
-		return &types.Nullable{Elem: c.substSelf(tt.Elem, trait, target)}
-	case *types.List:
-		return &types.List{Elem: c.substSelf(tt.Elem, trait, target), Mutable: tt.Mutable}
-	}
-	return t
+	return types.Subst(t, map[*types.TypeParam]types.Type{selfParamOf(trait): target})
 }
 
 // checkCoherence enforces D17: at most one impl per (trait, type) pair.
@@ -1031,6 +1197,18 @@ func unify(pattern, concrete types.Type, m map[*types.TypeParam]types.Type) bool
 	case *types.Range:
 		cc, ok := concrete.(*types.Range)
 		return ok && unify(p.Elem, cc.Elem, m)
+	case *types.Map:
+		cc, ok := concrete.(*types.Map)
+		return ok && p.Mutable == cc.Mutable && unify(p.Key, cc.Key, m) && unify(p.Value, cc.Value, m)
+	case *types.Set:
+		cc, ok := concrete.(*types.Set)
+		return ok && p.Mutable == cc.Mutable && unify(p.Elem, cc.Elem, m)
+	case *types.Channel:
+		cc, ok := concrete.(*types.Channel)
+		return ok && unify(p.Elem, cc.Elem, m)
+	case *types.Task:
+		cc, ok := concrete.(*types.Task)
+		return ok && unify(p.Result, cc.Result, m)
 	case *types.Tuple:
 		cc, ok := concrete.(*types.Tuple)
 		if !ok || len(cc.Elems) != len(p.Elems) {
@@ -1155,9 +1333,16 @@ func (c *Checker) runRound() *Program {
 		}
 		c.checkBody(fn)
 	}
+	c.prog.TestMode = c.testMode
+	c.prog.PanicType = c.panicType()
+	for _, t := range c.tests {
+		if inst, ok := t.Instances[""]; ok {
+			c.prog.Tests = append(c.prog.Tests, inst)
+		}
+	}
 	// entry point
 	entry := c.pkg.Entry
-	if entry != nil {
+	if entry != nil && !c.testMode {
 		if sym := entry.Scope.LookupLocal("main"); sym != nil && sym.Kind == SymFunc {
 			t := sym.Func
 			if len(t.Sig.Params) != 0 || !types.IsUnit(t.Sig.Ret) {
@@ -1264,6 +1449,12 @@ func (c *Checker) instantiate(t *FuncTemplate, ownerSubst map[*types.TypeParam]t
 		name += "<" + key + ">"
 	}
 	fn := &Func{Name: mangleName(name), Display: t.Name, Sig: sig, Extern: t.Extern, Mut: t.Decl.Mut, Span: t.Decl.Name.Pos}
+	if _, ok := t.Attrs["inline"]; ok {
+		fn.Inline = 1
+	}
+	if _, ok := t.Attrs["noinline"]; ok {
+		fn.Inline = -1
+	}
 	if t.Extern {
 		fn.Name = t.Mangled // the C symbol
 	}
@@ -1298,4 +1489,139 @@ func sortedParams(m map[*types.TypeParam]types.Type) []*types.TypeParam {
 func mangleName(s string) string {
 	r := strings.NewReplacer("<", "_", ">", "", ", ", "_", ",", "_", "*", "ptr_", "?", "_opt", "(", "tup_", ")", "", " ", "", "|", "_", "!", "never", "=", "_", ";", "_", ":", "_")
 	return "v_" + r.Replace(s)
+}
+
+func containsString(xs []string, s string) bool {
+	for _, x := range xs {
+		if x == s {
+			return true
+		}
+	}
+	return false
+}
+
+// findImplFor finds the impl of trait for a concrete type, if any.
+func (c *Checker) findImplFor(t types.Type, trait *types.Trait) *Impl {
+	for _, impl := range c.impls[trait] {
+		m := map[*types.TypeParam]types.Type{}
+		if unify(impl.Target, t, m) {
+			return impl
+		}
+	}
+	return nil
+}
+
+// resolveAssoc implements types.AssocResolver: the binding of an
+// associated type for a concrete implementing type.
+func (c *Checker) resolveAssoc(base types.Type, trait *types.Trait, name string) types.Type {
+	for _, impl := range c.impls[trait] {
+		m := map[*types.TypeParam]types.Type{}
+		if !unify(impl.Target, base, m) {
+			continue
+		}
+		bt, ok := impl.AssocTypes[name]
+		if !ok {
+			return nil
+		}
+		return types.Subst(bt, m)
+	}
+	return nil
+}
+
+// projectAssoc resolves `Base::Name`.
+func (c *Checker) projectAssoc(env *typeEnv, base types.Type, name string, span source.Span) types.Type {
+	if env.implAssoc != nil && env.self != nil && types.Identical(base, env.self) {
+		if bt, ok := env.implAssoc[name]; ok {
+			return bt
+		}
+	}
+	if tp, ok := base.(*types.TypeParam); ok {
+		for _, bound := range tp.Bounds {
+			if containsString(bound.AssocTypes, name) {
+				return &types.Assoc{Base: tp, Trait: bound, Name: name}
+			}
+		}
+		c.errorf(span, "type parameter '%s' has no bound declaring an associated type '%s'", tp.Name, name)
+		return types.TInvalid
+	}
+	if types.ContainsTypeParam(base) {
+		// e.g. MapIter<I, U>::Item — resolve through the impl once concrete
+		for _, tr := range c.traits {
+			if containsString(tr.AssocTypes, name) {
+				if impl := c.findImplFor(base, tr); impl != nil {
+					return &types.Assoc{Base: base, Trait: tr, Name: name}
+				}
+			}
+		}
+		c.errorf(span, "cannot resolve '%s::%s'", base, name)
+		return types.TInvalid
+	}
+	var found types.Type
+	var foundTrait *types.Trait
+	for _, tr := range c.traits {
+		if !containsString(tr.AssocTypes, name) {
+			continue
+		}
+		if r := c.resolveAssoc(base, tr, name); r != nil {
+			if found != nil {
+				c.errorf(span, "'%s::%s' is ambiguous: declared by traits '%s' and '%s'", base, name, foundTrait.Name, tr.Name)
+				return types.TInvalid
+			}
+			found, foundTrait = r, tr
+		}
+	}
+	if found == nil {
+		c.errorf(span, "'%s' has no associated type '%s'", base, name)
+		return types.TInvalid
+	}
+	return found
+}
+
+// checkHashable reports whether a type can be a map key or set element:
+// anything with structural equality except mutable collections and
+// function values.
+func (c *Checker) checkHashable(t types.Type, span source.Span) bool {
+	if types.ContainsTypeParam(t) || types.IsInvalid(t) {
+		return true
+	}
+	if !hashable(t) {
+		c.errorf(span, "'%s' cannot be a map key or set element: it has no structural equality", t)
+		return false
+	}
+	return true
+}
+
+func hashable(t types.Type) bool {
+	switch t := t.(type) {
+	case *types.Basic:
+		return t.Kind != types.Unit && t.Kind != types.Never && t.Kind != types.Invalid
+	case *types.Pointer:
+		return true
+	case *types.Nullable:
+		return hashable(t.Elem)
+	case *types.Tuple:
+		for _, e := range t.Elems {
+			if !hashable(e) {
+				return false
+			}
+		}
+		return true
+	case *types.Struct:
+		for _, f := range t.Fields {
+			if !hashable(f.Type) {
+				return false
+			}
+		}
+		return true
+	case *types.Sealed:
+		for _, v := range t.Variants {
+			if !hashable(v) {
+				return false
+			}
+		}
+		return true
+	case *types.List:
+		return !t.Mutable && hashable(t.Elem)
+	}
+	return false
 }

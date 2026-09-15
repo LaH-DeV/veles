@@ -1,0 +1,4 @@
+circle r=1.0 -> 3.0
+shape with area 6.0 -> 6.0
+total 9.0
+exit=0

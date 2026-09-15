@@ -11,11 +11,7 @@ import (
 
 func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 	if e.Async {
-		f.errorf(e.Pos, "'async' task launches are not implemented yet in the bootstrap compiler (build plan stage 4)")
-		for _, a := range e.Args {
-			f.checkExpr(a.Value, nil)
-		}
-		return bad()
+		return f.launch(e, want)
 	}
 	var typeArgs []types.Type
 	for _, ta := range e.TypeArgs {
@@ -23,6 +19,15 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 	}
 	switch callee := e.Fun.(type) {
 	case *ast.NameExpr:
+		if isCollectionCtor(callee.Name) && f.lookup(callee.Name) == nil {
+			return f.collectionCtor(callee.Name, typeArgs, e, want)
+		}
+		if callee.Name == "Channel" && f.lookup(callee.Name) == nil {
+			return f.channelCtor(typeArgs, e, want)
+		}
+		if callee.Name == "sleep" && f.lookup(callee.Name) == nil {
+			return f.sleepCall(e)
+		}
 		sym := f.lookup(callee.Name)
 		if sym == nil {
 			f.errorf(callee.Pos, "unknown function '%s'", callee.Name)
@@ -68,7 +73,13 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 		}
 		return f.methodCall(callee, typeArgs, e, want)
 	}
-	f.errorf(e.Fun.Span(), "expression is not callable; function values are not supported yet in the bootstrap compiler")
+	fnv := f.checkExpr(e.Fun, nil)
+	if ft, ok := fnv.Type().(*types.Func); ok {
+		return f.callValue(fnv, ft, e.Args, e.Pos)
+	}
+	if !types.IsInvalid(fnv.Type()) {
+		f.errorf(e.Fun.Span(), "value of type '%s' is not callable", fnv.Type())
+	}
 	f.checkArgsLoosely(e.Args)
 	return bad()
 }
@@ -116,7 +127,13 @@ func (f *fnCtx) callSymbol(sym *Symbol, name string, typeArgs []types.Type, e *a
 	case SymVariantCtor:
 		return f.variantCtor(name, e.Args, want, e.Pos)
 	case SymLocal, SymGlobal:
-		f.errorf(e.Pos, "'%s' is a value, not a function; function values are not supported yet in the bootstrap compiler", name)
+		v := f.symbolValue(sym, e.Pos, want)
+		if ft, ok := v.Type().(*types.Func); ok {
+			return f.callValue(v, ft, e.Args, e.Pos)
+		}
+		if !types.IsInvalid(v.Type()) {
+			f.errorf(e.Pos, "'%s' has type '%s' and is not callable", name, v.Type())
+		}
 	default:
 		f.errorf(e.Pos, "'%s' is not callable", name)
 	}
@@ -182,6 +199,7 @@ func (f *fnCtx) callTemplate(t *FuncTemplate, ownerSubst map[*types.TypeParam]ty
 
 func (f *fnCtx) callTemplateRecv(t *FuncTemplate, ownerSubst map[*types.TypeParam]types.Type, typeArgs []types.Type, recv Expr, args []ast.Arg, span source.Span, want types.Type) Expr {
 	f.c.resolveSignature(t)
+	f.noteUse(t, span)
 	if t.Extern && f.unsafe == 0 {
 		f.errorf(span, "calling extern \"C\" function '%s' requires an 'unsafe' block (D44)", t.Name)
 	}
@@ -211,13 +229,33 @@ func (f *fnCtx) callTemplateRecv(t *FuncTemplate, ownerSubst map[*types.TypePara
 	// Check arguments; infer type parameters from those whose parameter
 	// type mentions one.
 	exprs := make([]Expr, len(bound))
-	for i, p := range t.Sig.Params {
-		if bound[i] == nil {
-			continue
+	// Lambdas go last so that their parameter types can come from type
+	// parameters bound by the other arguments.
+	var order []int
+	for i := range t.Sig.Params {
+		if bound[i] != nil {
+			if _, isLambda := bound[i].(*ast.LambdaExpr); !isLambda {
+				order = append(order, i)
+			}
 		}
+	}
+	for i := range t.Sig.Params {
+		if bound[i] != nil {
+			if _, isLambda := bound[i].(*ast.LambdaExpr); isLambda {
+				order = append(order, i)
+			}
+		}
+	}
+	for _, i := range order {
+		p := t.Sig.Params[i]
 		pt := types.Subst(p.Type, m)
 		if types.ContainsTypeParam(pt) {
-			x := f.checkExpr(bound[i], nil)
+			var x Expr
+			if _, isLambda := bound[i].(*ast.LambdaExpr); isLambda {
+				x = f.checkExpr(bound[i], pt)
+			} else {
+				x = f.checkExpr(bound[i], nil)
+			}
 			exprs[i] = x
 			if types.IsInvalid(x.Type()) {
 				continue
@@ -459,6 +497,22 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 	if b := f.builtinMethod(recv, rt, name, e); b != nil {
 		return b
 	}
+	switch ct := rt.(type) {
+	case *types.Sealed:
+		if tr := sealedTemplate(ct).Trait; tr != nil {
+			if _, has := tr.Methods[name]; has {
+				return f.sealedDispatch(recv, ct, callee, typeArgs, e, want)
+			}
+		}
+	case *types.Trait:
+		return f.virtualCall(recv, ct, callee, e)
+	case *types.Channel:
+		return f.channelMethod(recv, ct, name, e)
+	case *types.Map:
+		return f.mapMethod(recv, ct, name, e)
+	case *types.Set:
+		return f.setMethod(recv, ct, name, e)
+	}
 	// inherent methods
 	if st, ok := rt.(*types.Struct); ok {
 		tmpl := templateOf(st)
@@ -504,6 +558,16 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 	if len(found) == 1 {
 		return f.callMethod(found[0], foundSubst[0], typeArgs, recv, viaPointer, callee, e, want)
 	}
+	// a field holding a function value: `self.f(x)`
+	if st, ok := rt.(*types.Struct); ok {
+		for _, fld := range st.Fields {
+			if fld.Name == name {
+				if ft, isFn := fld.Type.(*types.Func); isFn {
+					return f.callValue(&FieldGet{exprBase{fld.Type}, recv, fld.Index, fld.Name}, ft, e.Args, e.Pos)
+				}
+			}
+		}
+	}
 	switch tt := rt.(type) {
 	case *types.Nullable:
 		f.errorf(callee.Pos, "value of type '%s' may be null; use '?.' or check for null first (D5)", tt)
@@ -532,9 +596,15 @@ func (f *fnCtx) callMethod(t *FuncTemplate, ownerSubst map[*types.TypeParam]type
 		if viaPointer {
 			recvArg = recv.(*Deref).X
 		} else {
+			if !isPlaceSyntax(callee.X) {
+				// a temporary: mutate a fresh copy (iterator chains rely on this)
+				tmp := f.newTemp(recv.Type())
+				recvArg = &AddrOf{exprBase{&types.Pointer{Elem: recv.Type()}}, ref(tmp)}
+				call := f.callTemplateRecv(t, ownerSubst, typeArgs, recvArg, e.Args, e.Pos, want)
+				return &Let{exprBase{call.Type()}, tmp, recv, call}
+			}
 			lv, root := f.checkLValue(callee.X, true)
 			if lv == nil {
-				f.errorf(callee.X.Span(), "cannot call 'mut fun %s' on a temporary value", t.Name)
 				return bad()
 			}
 			if root != nil && !root.Mutable && root != f.selfVar {
@@ -642,7 +712,208 @@ func (f *fnCtx) builtinMethod(recv Expr, rt types.Type, name string, e *ast.Call
 				return bad()
 			}
 			return &Builtin{exprBase{types.TUnit}, "list.clear", []Expr{recv}, e.Pos}
+		default:
+			return f.listAdapter(recv, t, name, e)
 		}
 	}
 	return nil
+}
+
+// callValue calls a function value (D28: positional arguments only).
+func (f *fnCtx) callValue(fnv Expr, ft *types.Func, args []ast.Arg, span source.Span) Expr {
+	if len(args) != len(ft.Params) {
+		f.errorf(span, "function value takes %d argument(s), got %d", len(ft.Params), len(args))
+		f.checkArgsLoosely(args)
+		return bad()
+	}
+	var vals []Expr
+	for i, a := range args {
+		if a.Name != nil {
+			f.errorf(a.Name.Pos, "named arguments apply only to direct calls of named functions, not function values (D28)")
+		}
+		vals = append(vals, f.checkExprTo(a.Value, ft.Params[i].Type))
+	}
+	rt := ft.Ret
+	if ft.Effects.Throws {
+		rt = f.c.ResultType(ft.Ret, ft.Effects.Error)
+	}
+	return &CallIndirect{exprBase{rt}, fnv, vals}
+}
+
+// funcValue turns a named, non-generic function into a value.
+func (f *fnCtx) funcValue(t *FuncTemplate, span source.Span) Expr {
+	f.c.resolveSignature(t)
+	if len(t.TypeParams) > 0 {
+		f.errorf(span, "generic function '%s' cannot be used as a value without instantiation", t.Name)
+		return bad()
+	}
+	if t.Extern || t.Decl.Unsafe {
+		f.errorf(span, "unsafe or extern function '%s' cannot be used as a value (D44)", t.Name)
+		return bad()
+	}
+	if t.Owner != nil || t.Impl != nil || t.Trait != nil {
+		f.errorf(span, "methods cannot be used as values; wrap the call in a lambda")
+		return bad()
+	}
+	fn := f.c.instantiate(t, nil, nil, span)
+	return &FuncRef{exprBase{fn.Sig}, fn}
+}
+
+// objectSafe reports whether a trait can be used as a trait object: no
+// associated types, no generic methods, no Self in signatures.
+func (f *fnCtx) objectSafe(trait *types.Trait) (string, bool) {
+	if len(trait.AssocTypes) > 0 {
+		return "it has associated types", false
+	}
+	self := selfParamOf(trait)
+	for _, name := range trait.MethodList {
+		if len(f.c.traitMethodTPs[trait.Name+"."+name]) > 0 {
+			return "method '" + name + "' is generic", false
+		}
+		sig := trait.Methods[name]
+		for _, p := range sig.Params {
+			if mentions(p.Type, self) {
+				return "method '" + name + "' takes Self", false
+			}
+		}
+		if mentions(sig.Ret, self) {
+			return "method '" + name + "' returns Self", false
+		}
+	}
+	return "", true
+}
+
+func mentions(t types.Type, p *types.TypeParam) bool {
+	switch t := t.(type) {
+	case *types.TypeParam:
+		return t == p
+	case *types.Pointer:
+		return mentions(t.Elem, p)
+	case *types.Nullable:
+		return mentions(t.Elem, p)
+	case *types.List:
+		return mentions(t.Elem, p)
+	case *types.Tuple:
+		for _, e := range t.Elems {
+			if mentions(e, p) {
+				return true
+			}
+		}
+	case *types.Func:
+		for _, q := range t.Params {
+			if mentions(q.Type, p) {
+				return true
+			}
+		}
+		return mentions(t.Ret, p)
+	case *types.Assoc:
+		return mentions(t.Base, p)
+	}
+	return false
+}
+
+// boxValue builds the trait object for a concrete value.
+func (f *fnCtx) boxValue(x Expr, trait *types.Trait, span source.Span) Expr {
+	t := x.Type()
+	if reason, ok := f.objectSafe(trait); !ok {
+		f.errorf(span, "'%s' cannot be a trait object: %s (D9)", trait.Name, reason)
+		return bad()
+	}
+	impl := f.findImpl(t, trait)
+	if impl == nil {
+		f.errorf(span, "'%s' does not implement '%s'", t, trait.Name)
+		return bad()
+	}
+	m := map[*types.TypeParam]types.Type{}
+	unify(impl.Target, t, m)
+	box := &Box{exprBase{trait}, x, trait, nil, nil}
+	for _, name := range trait.MethodList {
+		var tmpl *FuncTemplate
+		subst := map[*types.TypeParam]types.Type{}
+		for k, v := range m {
+			subst[k] = v
+		}
+		if mt, ok := impl.Methods[name]; ok {
+			tmpl = mt
+		} else {
+			tmpl = f.c.traitDefault(trait, name)
+			subst[selfParamOf(trait)] = t
+		}
+		fn := f.c.instantiate(tmpl, subst, nil, span)
+		box.Methods = append(box.Methods, fn)
+		box.Mut = append(box.Mut, tmpl.Decl.Mut)
+	}
+	return box
+}
+
+// virtualCall checks a method call on a trait object.
+func (f *fnCtx) virtualCall(recv Expr, trait *types.Trait, callee *ast.MemberExpr, e *ast.CallExpr) Expr {
+	name := callee.Name.Name
+	idx := -1
+	for i, n := range trait.MethodList {
+		if n == name {
+			idx = i
+		}
+	}
+	if idx < 0 {
+		f.errorf(callee.Name.Pos, "trait '%s' has no method '%s'", trait.Name, name)
+		f.checkArgsLoosely(e.Args)
+		return bad()
+	}
+	sig := trait.Methods[name]
+	bound, ok := f.bindArgs(sig.Params, e.Args, "'"+name+"'", e.Pos)
+	if !ok {
+		f.checkArgsLoosely(e.Args)
+		return bad()
+	}
+	var args []Expr
+	for i, p := range sig.Params {
+		if bound[i] == nil {
+			f.errorf(e.Pos, "missing argument '%s' in call to '%s'", p.Name, name)
+			return bad()
+		}
+		args = append(args, f.checkExprTo(bound[i], p.Type))
+	}
+	rt := sig.Ret
+	if sig.Effects.Throws {
+		rt = f.c.ResultType(sig.Ret, sig.Effects.Error)
+	}
+	if sig.Effects.Suspends {
+		f.errorf(e.Pos, "suspending trait methods are not supported yet")
+	}
+	return &CallVirtual{exprBase{rt}, recv, trait, idx, args}
+}
+
+// sealedDispatch lowers a method call on a sealed value to a tag switch
+// over its variants, each calling that variant's impl (D12/D23).
+func (f *fnCtx) sealedDispatch(recv Expr, s *types.Sealed, callee *ast.MemberExpr, typeArgs []types.Type, e *ast.CallExpr, want types.Type) Expr {
+	trait := sealedTemplate(s).Trait
+	name := callee.Name.Name
+	tmp := f.newTemp(s)
+	m := &Match{Subject: tmp, Init: recv, Exhaustive: true, Span: e.Pos}
+	var rt types.Type
+	for _, v := range s.Variants {
+		if f.findImpl(v, trait) == nil && f.c.traitDefault(trait, name) == nil {
+			f.errorf(e.Pos, "variant '%s.%s' does not implement '%s'", s.Name, v.Name, name)
+			return bad()
+		}
+		payload := &VariantCast{exprBase{v}, ref(tmp), v}
+		call := f.dispatchMethod(payload, callee, typeArgs, e, want)
+		if types.IsInvalid(call.Type()) {
+			return bad()
+		}
+		if rt == nil {
+			rt = call.Type()
+		} else if !types.Identical(rt, call.Type()) {
+			f.errorf(e.Pos, "variants of '%s' disagree on the type of '%s'", s.Name, name)
+			return bad()
+		}
+		body := &Block{Value: call, Type: rt}
+		if types.IsUnit(rt) {
+			body = &Block{Stmts: []Stmt{&ExprStmt{X: call}}, Type: types.TUnit}
+		}
+		m.Arms = append(m.Arms, &MatchArm{Test: &VariantTest{exprBase{types.TBool}, ref(tmp), v}, Body: body})
+	}
+	m.T = rt
+	return m
 }

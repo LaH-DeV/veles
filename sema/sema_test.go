@@ -81,6 +81,15 @@ fun main() { }`, "may be null"},
 struct E { }
 fun f(): i32 throws E = 1
 fun main() { f() }`, "unused Result"},
+		{"D4 throw needs throws", prelude + `
+struct E { }
+fun f(): i32 { throw E() }
+fun main() { }`, "not declared 'throws'"},
+		{"D4 throw not in declared union", prelude + `
+struct E1 { }
+struct E2 { }
+fun f(): i32 throws E1 { throw E2() }
+fun main() { }`, "E2"},
 		{"D4 try needs throws", prelude + `
 struct E { }
 fun f(): i32 throws E = 1
@@ -204,10 +213,53 @@ struct A : T { n: i32 }
 struct B : T { }
 fun f(p: *T): i32 = when (p) { is A(n) => n; is B => 0 }
 fun main() { }`,
+		"throw as sugar for Err": prelude + `
+struct E { n: i32 }
+fun f(x: i32): i32 throws { if (x < 0) throw E(n: x); x }
+fun g(x: i32?): i32 throws E = x ?: throw E(n: 0)
+fun main() { when (f(1)) { is Ok(v) => { }; is Err(e) => { } } }`,
 		"labeled loops": prelude + `
-fun main() { outer: loop (i in 0..3) { loop (j in 0..3) { if (j == 1) continue outer; if (i == 2) break outer } } }`,
+fun main() { loop :outer (i in 0..3) { loop (j in 0..3) { if (j == 1) continue outer; if (i == 2) break outer } } }`,
 	}
 	for name, src := range cases {
 		t.Run(name, func(t *testing.T) { expectClean(t, src) })
 	}
+}
+
+func TestConcurrencyRules(t *testing.T) {
+	cases := []struct{ name, src, want string }{
+		{"D3 async outside scope", prelude + `
+fun work() { }
+fun main() { async work() }`, "lexically inside a 'scope'"},
+		{"D35 non-Sendable argument", prelude + `
+fun work(xs: MutableList<i32>) { }
+fun main() { var xs: MutableList<i32> = []; scope { async work(xs) } }`, "not Sendable"},
+		{"D16 recv must be awaited", prelude + `
+fun main() { val ch = Channel<i32>(); val x = ch.recv() }`, "must be awaited"},
+		{"D35 no await inside a lock", prelude + `
+fun main() { val m = mutex(1); m.withLock(p => { await sleep(1); 0 }) }`, "lambda suspends"},
+		{"D40 impl must declare suspends", prelude + `
+trait T { fun f(): i32 }
+struct A { }
+impl T for A { fun f(): i32 { await sleep(1); 1 } }
+fun main() { }`, "declares it non-suspending"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) { expectError(t, c.src, c.want) })
+	}
+}
+
+func TestConcurrencyAccepted(t *testing.T) {
+	expectClean(t, prelude+`
+fun tick(n: i32): i32 { await sleep(1); n }
+fun main() throws {
+  val ch = Channel<i32>(capacity: 2)
+  scope {
+    val t = async tick(1)
+    ch.send(await t)
+    val v = await ch.recv()
+    val (a, b) = gather { async tick(2); async tick(3) }
+    val w = race { val m = ch.recv() => 1; sleep(10) => 2 }
+  }
+}`)
 }

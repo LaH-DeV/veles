@@ -59,6 +59,11 @@ func (f *fnCtx) convert(x Expr, want types.Type) Expr {
 		if st, ok := have.(*types.Struct); ok && st.Sealed == w {
 			return &MakeVariant{exprBase{want}, w, st, x}
 		}
+	case *types.Trait:
+		// implicit boxing into a trait object (D9)
+		if _, isTrait := have.(*types.Trait); !isTrait && f.findImpl(have, w) != nil {
+			return f.boxValue(x, w, source.Span{})
+		}
 	case *types.Pointer:
 		// Inside unsafe a GC pointer may be handed to C as a raw pointer: the
 		// collector is non-moving (§5), so the address is stable.
@@ -92,6 +97,11 @@ func (f *fnCtx) assignableTo(have, want types.Type) bool {
 	case *types.Sealed:
 		st, ok := have.(*types.Struct)
 		return ok && st.Sealed == w
+	case *types.Trait:
+		if _, isTrait := have.(*types.Trait); isTrait {
+			return false
+		}
+		return f.findImpl(have, w) != nil
 	case *types.ErrorUnion:
 		for _, m := range types.UnionMembers(have) {
 			if types.UnionIndex(w, m) < 0 {
@@ -149,14 +159,15 @@ func (f *fnCtx) checkExpr(e ast.Expr, want types.Type) Expr {
 		f.errorf(e.Pos, "cannot infer the type of 'null' here; annotate the binding, e.g. 'val x: T? = null'")
 		return bad()
 	case *ast.SelfExpr:
-		if f.selfVar == nil {
+		self, mut := f.selfRef()
+		if self == nil {
 			f.errorf(e.Pos, "'self' outside of a method")
 			return bad()
 		}
-		if f.selfMut {
-			return &Deref{exprBase{f.selfVar.Type.(*types.Pointer).Elem}, &VarRef{exprBase{f.selfVar.Type}, f.selfVar}}
+		if mut {
+			return &Deref{exprBase{self.Type.(*types.Pointer).Elem}, &VarRef{exprBase{self.Type}, self}}
 		}
-		return f.narrowedRef(f.selfVar)
+		return f.narrowedRef(self)
 	case *ast.NameExpr:
 		return f.nameExpr(e, want)
 	case *ast.MemberExpr:
@@ -202,8 +213,7 @@ func (f *fnCtx) checkExpr(e ast.Expr, want types.Type) Expr {
 	case *ast.ListLit:
 		return f.listLit(e, want)
 	case *ast.MapLit:
-		f.errorf(e.Pos, "Map is not implemented yet in the bootstrap compiler")
-		return bad()
+		return f.mapLit(e, want)
 	case *ast.IfExpr:
 		return f.ifExpr(e, want)
 	case *ast.WhenExpr:
@@ -223,17 +233,13 @@ func (f *fnCtx) checkExpr(e ast.Expr, want types.Type) Expr {
 		f.unsafe--
 		return &BlockExpr{exprBase{b.Type}, b}
 	case *ast.LambdaExpr:
-		f.errorf(e.Pos, "lambdas and closures are not implemented yet in the bootstrap compiler (D32)")
-		return bad()
+		return f.lambdaExpr(e, want)
 	case *ast.AwaitExpr:
-		f.errorf(e.Pos, "'await' and the concurrency runtime are not implemented yet in the bootstrap compiler (build plan stage 4)")
-		return bad()
+		return f.awaitExpr(e)
 	case *ast.GatherExpr:
-		f.errorf(e.Pos, "'gather' is not implemented yet in the bootstrap compiler (build plan stage 4)")
-		return bad()
+		return f.gatherExpr(e)
 	case *ast.RaceExpr:
-		f.errorf(e.Pos, "'race' is not implemented yet in the bootstrap compiler (build plan stage 4)")
-		return bad()
+		return f.raceExpr(e, want)
 	case *ast.ControlExpr:
 		stmts, _ := f.checkStmt(e.Stmt)
 		return &BlockExpr{exprBase{types.TNever}, &Block{Stmts: stmts, Type: types.TNever}}
@@ -317,10 +323,6 @@ func (f *fnCtx) toString(x Expr, span source.Span) Expr {
 		f.errorf(span, "cannot interpolate a value of type '%s'", t)
 		return x
 	}
-	if _, ok := t.(*types.Trait); ok {
-		f.errorf(span, "cannot interpolate a trait object")
-		return x
-	}
 	return &ToString{exprBase{types.TString}, x}
 }
 
@@ -339,13 +341,12 @@ func (f *fnCtx) nameExpr(e *ast.NameExpr, want types.Type) Expr {
 	}
 	switch sym.Kind {
 	case SymLocal:
-		return f.narrowedRef(sym.Var)
+		return f.narrowedRef(f.localVar(sym.Var))
 	case SymGlobal:
 		v := f.globalVar(sym.Global)
 		return &VarRef{exprBase{v.Type}, v}
 	case SymFunc:
-		f.errorf(e.Pos, "function '%s' used as a value; function values are not supported yet in the bootstrap compiler", e.Name)
-		return bad()
+		return f.funcValue(sym.Func, e.Pos)
 	case SymType:
 		if st, ok := sym.Type.(*types.Struct); ok && len(st.Fields) == 0 && st.Sealed != nil {
 			// a field-less variant used as a value: `None`-style
@@ -445,11 +446,13 @@ func (f *fnCtx) memberExpr(e *ast.MemberExpr, want types.Type) Expr {
 
 func (f *fnCtx) symbolValue(sym *Symbol, span source.Span, want types.Type) Expr {
 	switch sym.Kind {
+	case SymLocal:
+		return f.narrowedRef(f.localVar(sym.Var))
 	case SymGlobal:
 		v := f.globalVar(sym.Global)
 		return &VarRef{exprBase{v.Type}, v}
 	case SymFunc:
-		f.errorf(span, "function values are not supported yet in the bootstrap compiler")
+		return f.funcValue(sym.Func, span)
 	case SymType:
 		f.errorf(span, "'%s' is a type, not a value", sym.Name)
 	default:
@@ -510,6 +513,15 @@ func (f *fnCtx) fieldOf(x Expr, name ast.Ident, span source.Span) Expr {
 			return bad()
 		}
 		return &TupleGet{exprBase{tt.Elems[idx]}, x, idx}
+	case *types.Range:
+		switch name.Name {
+		case "lo":
+			return &FieldGet{exprBase{tt.Elem}, x, 0, "lo"}
+		case "hi":
+			return &FieldGet{exprBase{tt.Elem}, x, 1, "hi"}
+		case "inclusive":
+			return &FieldGet{exprBase{types.TBool}, x, 2, "inclusive"}
+		}
 	case *types.Nullable:
 		f.errorf(span, "value of type '%s' may be null; use '?.', '?:' or check for null first (D5)", tt)
 		return bad()
@@ -530,6 +542,9 @@ func (f *fnCtx) indexExpr(e *ast.IndexExpr) Expr {
 	case *types.List:
 		idx := f.indexValue(e.Index)
 		return &Builtin{exprBase{t.Elem}, "list.get", []Expr{x, idx}, e.Pos}
+	case *types.Map:
+		k := f.checkExprTo(e.Index, t.Key)
+		return &Builtin{exprBase{&types.Nullable{Elem: t.Value}}, "map.get", []Expr{x, k}, e.Pos}
 	case *types.Basic:
 		if t.Kind == types.String {
 			f.errorf(e.Pos, "strings are not indexable with '[]'; use 's.bytes[i]' (§4b) — not yet implemented")
@@ -955,6 +970,9 @@ func (f *fnCtx) listLit(e *ast.ListLit, want types.Type) Expr {
 		elem = lt.Elem
 		mutable = lt.Mutable
 	}
+	if e.Mut {
+		mutable = true
+	}
 	lit := &ListLit{}
 	for _, el := range e.Elems {
 		var x Expr
@@ -967,7 +985,11 @@ func (f *fnCtx) listLit(e *ast.ListLit, want types.Type) Expr {
 		lit.Elems = append(lit.Elems, x)
 	}
 	if elem == nil {
-		f.errorf(e.Pos, "cannot infer the element type of an empty list; annotate it, e.g. 'val xs: List<i32> = []' (D25)")
+		if e.Mut {
+			f.errorf(e.Pos, "cannot infer the element type of an empty list; annotate it, e.g. 'var xs: MutableList<i32> = mut []' (D25)")
+		} else {
+			f.errorf(e.Pos, "cannot infer the element type of an empty list; annotate it, e.g. 'val xs: List<i32> = []' (D25)")
+		}
 		return bad()
 	}
 	lit.T = &types.List{Elem: elem, Mutable: mutable}
@@ -1062,7 +1084,7 @@ func varOf(e ast.Expr, f *fnCtx) *Var {
 	if sym == nil || sym.Kind != SymLocal {
 		return nil
 	}
-	return sym.Var
+	return f.localVar(sym.Var)
 }
 
 // condFacts computes what is known about variables when the condition is

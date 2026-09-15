@@ -1,0 +1,45 @@
+use io
+
+struct Mismatch { expected: i32, actual: i32 }
+
+fun add(a: i32, b: i32) = a + b
+
+fun expectEq(expected: i32, actual: i32) throws Mismatch {
+  if (expected != actual) throw Mismatch(expected: expected, actual: actual)
+}
+
+@test
+fun additionWorks() throws Mismatch {
+  try expectEq(4, add(2, 2))
+}
+
+@test
+fun tasksRunInTests() throws Mismatch {
+  val ch = Channel<i32>(capacity: 1)
+  scope {
+    ch.send(41)
+    val v = await ch.recv()
+    try expectEq(42, (v ?: 0) + 1)
+  }
+}
+
+@test
+fun thisOneFails() throws Mismatch {
+  try expectEq(1, add(1, 1))
+}
+
+@deprecated("use add")
+fun plus(a: i32, b: i32) = add(a, b)
+
+@mustUse
+fun important(): i32 = 7
+
+fun main() {
+  io.println("${plus(1, 2)} ${important()}")
+}
+
+@test
+fun panicsAreReported() {
+  val xs = [1]
+  io.println("${xs[3]}")
+}

@@ -26,6 +26,19 @@ type fnCtx struct {
 	selfVar  *Var
 	selfMut  bool
 	isGlobal bool // checking a global initializer
+
+	// lambda support
+	parent      *fnCtx
+	vars        map[*Var]bool // variables declared in this function
+	captures    map[*Var]*Var // outer variable -> inner stand-in
+	captureList []*Var        // outer variables in environment order
+	isLambda    bool
+	pending     []Stmt // statements hoisted by adapter lowering
+	scopes      []*ScopeBlock
+	awaitNext   bool
+	inRaceArm   bool
+	inferThrows bool
+	inferredRet types.Type
 }
 
 type loopFrame struct {
@@ -38,7 +51,7 @@ func (c *Checker) newFnCtx(fn *Func, module *Module, file *ast.File, env *typeEn
 	if scope.parent == nil {
 		scope = NewScope(module.Scope)
 	}
-	return &fnCtx{c: c, fn: fn, module: module, file: file, env: env, subst: subst, scope: scope, narrow: map[*Var]types.Type{}}
+	return &fnCtx{c: c, fn: fn, module: module, file: file, env: env, subst: subst, scope: scope, narrow: map[*Var]types.Type{}, vars: map[*Var]bool{}, captures: map[*Var]*Var{}}
 }
 
 func (f *fnCtx) errorf(span source.Span, format string, args ...any) {
@@ -54,6 +67,7 @@ func (f *fnCtx) resolve(t ast.Type) types.Type {
 func (f *fnCtx) newVar(name string, t types.Type, mutable bool, span source.Span) *Var {
 	f.c.nextVar++
 	v := &Var{Name: name, Type: t, Mutable: mutable, ID: f.c.nextVar, Span: span}
+	f.vars[v] = true
 	if f.fn != nil {
 		f.fn.Locals = append(f.fn.Locals, v)
 	}
@@ -124,7 +138,11 @@ func (c *Checker) checkBody(fn *Func) {
 		for k, v := range c.traitDecl[t.Trait].tps {
 			env.tps[k] = v
 		}
+		env.trait = t.Trait
 		owner = fn.subst[selfParamOf(t.Trait)]
+	}
+	if t.Impl != nil {
+		env.implAssoc = t.Impl.AssocTypes
 	}
 	env.self = owner
 	f := c.newFnCtx(fn, t.Module, t.File, env, fn.subst)
@@ -308,6 +326,11 @@ func (f *fnCtx) checkStmt(s ast.Stmt) (stmts []Stmt, term bool) {
 		return f.checkValStmt(s), false
 	case *ast.ExprStmt:
 		x := f.checkExpr(s.X, types.TUnit)
+		if call, ok := x.(*Call); ok && call.Fn.tmpl != nil {
+			if _, must := call.Fn.tmpl.Attrs["mustUse"]; must && !types.IsUnit(call.Type()) {
+				f.errorf(s.X.Span(), "result of '%s' must be used (@mustUse)", call.Fn.Display)
+			}
+		}
 		if isResultType(x.Type()) {
 			f.errorf(s.X.Span(), "unused Result: the call may fail; use 'try' to propagate the error or 'when' to handle it (D4)")
 		}
@@ -316,11 +339,14 @@ func (f *fnCtx) checkStmt(s ast.Stmt) (stmts []Stmt, term bool) {
 		return f.checkAssign(s), false
 	case *ast.ReturnStmt:
 		return f.checkReturn(s), true
+	case *ast.ThrowStmt:
+		return f.checkThrow(s), true
 	case *ast.BreakStmt:
 		lp := f.findLoop(s.Label, s.Pos, "break")
 		if lp == nil {
 			return nil, true
 		}
+		lp.hasBreak = true
 		return []Stmt{&Break{Loop: lp}}, true
 	case *ast.ContinueStmt:
 		lp := f.findLoop(s.Label, s.Pos, "continue")
@@ -329,16 +355,21 @@ func (f *fnCtx) checkStmt(s ast.Stmt) (stmts []Stmt, term bool) {
 		}
 		return []Stmt{&Continue{Loop: lp}}, true
 	case *ast.LoopStmt:
-		return f.checkLoop(s), false
+		stmts := f.checkLoop(s)
+		// an infinite loop that never breaks does not fall through
+		if s.Cond == nil && s.Var == nil && len(stmts) > 0 {
+			if lp, ok := stmts[len(stmts)-1].(*Loop); ok && !lp.hasBreak {
+				return stmts, true
+			}
+		}
+		return stmts, false
 	case *ast.Block:
 		b := f.checkBlock(s, nil, false)
 		return []Stmt{b}, types.IsNever(b.Type)
 	case *ast.WithStmt:
-		f.errorf(s.Pos, "'with' resource blocks are not implemented yet in the bootstrap compiler (D43)")
-		return nil, false
+		return f.checkWith(s), false
 	case *ast.ScopeStmt:
-		f.errorf(s.Pos, "structured concurrency ('scope') is not implemented yet in the bootstrap compiler (build plan stage 4)")
-		return nil, false
+		return f.scopeStmt(s), false
 	case *ast.FunStmt:
 		f.errorf(s.Fun.Pos, "local functions are not supported; use a lambda or a module-level function")
 		return nil, false
@@ -438,6 +469,20 @@ func (f *fnCtx) checkReturn(s *ast.ReturnStmt) []Stmt {
 		f.errorf(s.Pos, "'return' outside of a function")
 		return nil
 	}
+	if f.retType == nil {
+		// lambda with an inferred return type: the first return decides
+		if s.Value == nil {
+			f.retType = types.TUnit
+		} else {
+			x := f.checkExpr(s.Value, nil)
+			f.retType = x.Type()
+			f.inferredRet = x.Type()
+			if types.IsNever(x.Type()) {
+				return []Stmt{&ExprStmt{X: x}}
+			}
+			return []Stmt{&Return{Value: x}}
+		}
+	}
 	if s.Value == nil {
 		if !types.IsUnit(f.retType) {
 			f.errorf(s.Pos, "missing return value of type '%s'", f.retType)
@@ -463,6 +508,12 @@ func (f *fnCtx) checkReturn(s *ast.ReturnStmt) []Stmt {
 
 // checkAssign handles `target = value` and compound assignment.
 func (f *fnCtx) checkAssign(s *ast.AssignStmt) []Stmt {
+	if ix, ok := s.Target.(*ast.IndexExpr); ok && s.Op == lexer.Assign {
+		m := f.checkExpr(ix.X, nil)
+		if mt, isMap := m.Type().(*types.Map); isMap {
+			return f.mapIndexAssign(ix, m, mt, s.Value, s.Pos)
+		}
+	}
 	target, root := f.checkLValue(s.Target, true)
 	if target == nil {
 		f.checkExpr(s.Value, nil)
@@ -505,10 +556,11 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 		}
 		switch sym.Kind {
 		case SymLocal:
-			if mutate && !sym.Var.Mutable {
+			v := f.localVar(sym.Var)
+			if mutate && !v.Mutable {
 				f.errorf(e.Pos, "cannot assign to '%s': it is a 'val'; declare it with 'var' (D11)", e.Name)
 			}
-			return &VarRef{exprBase{sym.Var.Type}, sym.Var}, sym.Var
+			return &VarRef{exprBase{v.Type}, v}, v
 		case SymGlobal:
 			g := sym.Global
 			if mutate && !g.Mutable {
@@ -520,17 +572,18 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 		f.errorf(e.Pos, "'%s' is not assignable", e.Name)
 		return nil, nil
 	case *ast.SelfExpr:
-		if f.selfVar == nil {
+		self, mut := f.selfRef()
+		if self == nil {
 			f.errorf(e.Pos, "'self' outside of a method")
 			return nil, nil
 		}
-		if f.selfMut {
-			return &Deref{exprBase{f.selfVar.Type.(*types.Pointer).Elem}, &VarRef{exprBase{f.selfVar.Type}, f.selfVar}}, nil
+		if mut {
+			return &Deref{exprBase{self.Type.(*types.Pointer).Elem}, &VarRef{exprBase{self.Type}, self}}, nil
 		}
 		if mutate {
 			f.errorf(e.Pos, "cannot mutate 'self' in a non-'mut' method; declare the method 'mut fun' (D22)")
 		}
-		return &VarRef{exprBase{f.selfVar.Type}, f.selfVar}, f.selfVar
+		return &VarRef{exprBase{self.Type}, self}, self
 	case *ast.MemberExpr:
 		if e.X == nil {
 			break
@@ -682,11 +735,11 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 			le := &Binary{exprBase{types.TBool}, OpLe, &VarRef{exprBase{it.Elem}, idx}, &VarRef{exprBase{it.Elem}, hi}, s.Pos}
 			lp.Cond = &If{exprBase{types.TBool}, incl, &Block{Value: le, Type: types.TBool}, &Block{Value: lt, Type: types.TBool}}
 			lp.Post = []Stmt{&Assign{Target: &VarRef{exprBase{it.Elem}, idx}, Value: &Binary{exprBase{it.Elem}, OpWrapAdd, &VarRef{exprBase{it.Elem}, idx}, &IntConst{exprBase{it.Elem}, 1, false}, s.Pos}}}
-			v := f.bindLoopVar(s.Var, it.Elem)
+			v, parts := f.bindLoopVar(s.Var, it.Elem)
 			f.loops = append(f.loops, &loopFrame{hir: lp, label: label})
 			body := f.checkBlock(s.Body, nil, false)
 			f.loops = f.loops[:len(f.loops)-1]
-			body.Stmts = append([]Stmt{&VarDecl{Var: v, Init: &VarRef{exprBase{it.Elem}, idx}}}, body.Stmts...)
+			body.Stmts = append(append([]Stmt{&VarDecl{Var: v, Init: &VarRef{exprBase{it.Elem}, idx}}}, parts...), body.Stmts...)
 			lp.Body = body
 		case *types.List:
 			listTmp := f.newTemp(it)
@@ -696,16 +749,34 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 			lenExpr := &Builtin{exprBase{types.TI64}, "list.len", []Expr{&VarRef{exprBase{it}, listTmp}}, s.Pos}
 			lp.Cond = &Binary{exprBase{types.TBool}, OpLt, &VarRef{exprBase{types.TI64}, idx}, lenExpr, s.Pos}
 			lp.Post = []Stmt{&Assign{Target: &VarRef{exprBase{types.TI64}, idx}, Value: &Binary{exprBase{types.TI64}, OpWrapAdd, &VarRef{exprBase{types.TI64}, idx}, &IntConst{exprBase{types.TI64}, 1, false}, s.Pos}}}
-			v := f.bindLoopVar(s.Var, it.Elem)
+			v, parts := f.bindLoopVar(s.Var, it.Elem)
 			f.loops = append(f.loops, &loopFrame{hir: lp, label: label})
 			body := f.checkBlock(s.Body, nil, false)
 			f.loops = f.loops[:len(f.loops)-1]
 			get := &Builtin{exprBase{it.Elem}, "list.get", []Expr{&VarRef{exprBase{it}, listTmp}, &VarRef{exprBase{types.TI64}, idx}}, s.Pos}
-			body.Stmts = append([]Stmt{&VarDecl{Var: v, Init: get}}, body.Stmts...)
+			body.Stmts = append(append([]Stmt{&VarDecl{Var: v, Init: get}}, parts...), body.Stmts...)
 			lp.Body = body
+		case *types.Map, *types.Set:
+			op, elem := "map.entries", types.Type(nil)
+			if mt, isMap := it.(*types.Map); isMap {
+				elem = &types.Tuple{Elems: []types.Type{mt.Key, mt.Value}}
+			} else {
+				op, elem = "map.keys", it.(*types.Set).Elem
+			}
+			listT := &types.List{Elem: elem}
+			snapshot := &Builtin{exprBase{listT}, op, []Expr{iter}, s.Pos}
+			copy := *s
+			copy.Iter = &ast.NameExpr{Name: "", Pos: s.Iter.Span()}
+			sv, decl := f.hidden("snapshot", snapshot, false)
+			copy.Iter = nameOf(sv, s.Iter.Span())
+			inner := f.checkLoop(&copy)
+			return append([]Stmt{decl}, inner...)
 		default:
+			if stmts, handled := f.iteratorLoop(s, iter, lp, label); handled {
+				return stmts
+			}
 			if !types.IsInvalid(iter.Type()) {
-				f.errorf(s.Iter.Span(), "cannot iterate over '%s': only ranges and lists are iterable in the bootstrap compiler (Iterable/Iterator traits, D42, come later)", iter.Type())
+				f.errorf(s.Iter.Span(), "cannot iterate over '%s': it implements neither Iterable nor Iterator (D42)", iter.Type())
 			}
 			f.loops = append(f.loops, &loopFrame{hir: lp, label: label})
 			lp.Body = f.checkBlock(s.Body, nil, false)
@@ -730,10 +801,22 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 	return append(pre, lp)
 }
 
-func (f *fnCtx) bindLoopVar(b *ast.Binding, t types.Type) *Var {
+func (f *fnCtx) bindLoopVar(b *ast.Binding, t types.Type) (*Var, []Stmt) {
 	if b.Name == nil {
-		f.errorf(b.Pos, "tuple destructuring in loops is not supported yet")
-		return f.newTemp(t)
+		// `loop ((k, v) in m)`: bind the tuple, then its parts (D37)
+		tt, ok := t.(*types.Tuple)
+		if !ok || len(tt.Elems) != len(b.Tuple) {
+			f.errorf(b.Pos, "cannot destructure a '%s' into %d names", t, len(b.Tuple))
+			return f.newTemp(t), nil
+		}
+		tmp := f.newTemp(t)
+		var extra []Stmt
+		for i, el := range b.Tuple {
+			part, more := f.bindLoopVar(&el, tt.Elems[i])
+			extra = append(extra, &VarDecl{Var: part, Init: &TupleGet{exprBase{tt.Elems[i]}, ref(tmp), i}})
+			extra = append(extra, more...)
+		}
+		return tmp, extra
 	}
 	if b.Type != nil {
 		want := f.resolve(b.Type)
@@ -743,7 +826,7 @@ func (f *fnCtx) bindLoopVar(b *ast.Binding, t types.Type) *Var {
 	}
 	v := f.newVar(b.Name.Name, t, false, b.Name.Pos)
 	f.declareLocal(b.Name.Name, v, b.Name.Pos)
-	return v
+	return v, nil
 }
 
 // invalidateAssigned drops narrowing for variables assigned inside a block.
@@ -777,4 +860,151 @@ func (f *fnCtx) invalidateAssigned(b *ast.Block) {
 
 func (f *fnCtx) warnf(span source.Span, format string, args ...any) {
 	f.c.warnf(span, format, args...)
+}
+
+// hidden binds an expression to a compiler-generated local that source
+// code cannot name, so that synthesized syntax can refer to it.
+func (f *fnCtx) hidden(prefix string, init Expr, mutable bool) (*Var, Stmt) {
+	f.c.nextTmp++
+	name := "$" + prefix + itoa(f.c.nextTmp)
+	v := f.newVar(name, init.Type(), mutable, source.Span{})
+	f.scope.Insert(&Symbol{Name: name, Kind: SymLocal, Var: v})
+	return v, &VarDecl{Var: v, Init: init}
+}
+
+func nameOf(v *Var, span source.Span) *ast.NameExpr {
+	return &ast.NameExpr{Name: v.Name, Pos: span}
+}
+
+// traitNamed finds a prelude trait by name.
+func (c *Checker) traitNamed(name string) *types.Trait {
+	if sym := c.universe.LookupLocal(name); sym != nil && sym.Kind == SymType {
+		if t, ok := sym.Type.(*types.Trait); ok {
+			return t
+		}
+	}
+	return nil
+}
+
+// iteratorLoop lowers `loop (x in c)` through Iterable / Iterator (D42):
+//
+//	var it = c.iterator()      // or c itself when it is already an Iterator
+//	loop { val v = it.next(); if (v == null) break; val x = v; body }
+func (f *fnCtx) iteratorLoop(s *ast.LoopStmt, iter Expr, lp *Loop, label string) ([]Stmt, bool) {
+	iterable, iterator := f.c.traitNamed("Iterable"), f.c.traitNamed("Iterator")
+	if iterable == nil || iterator == nil {
+		return nil, false
+	}
+	t := iter.Type()
+	var pre []Stmt
+	var itVar *Var
+	switch {
+	case f.findImpl(t, iterable) != nil:
+		src, decl := f.hidden("src", iter, false)
+		pre = append(pre, decl)
+		call := &ast.CallExpr{Fun: &ast.MemberExpr{X: nameOf(src, s.Iter.Span()), Name: ast.Ident{Name: "iterator", Pos: s.Iter.Span()}, Pos: s.Iter.Span()}, Pos: s.Iter.Span()}
+		itExpr := f.checkExpr(call, nil)
+		if types.IsInvalid(itExpr.Type()) {
+			return nil, true
+		}
+		var d Stmt
+		itVar, d = f.hidden("it", itExpr, true)
+		pre = append(pre, d)
+	case f.findImpl(t, iterator) != nil:
+		var d Stmt
+		itVar, d = f.hidden("it", iter, true)
+		pre = append(pre, d)
+	default:
+		return nil, false
+	}
+	next := &ast.CallExpr{Fun: &ast.MemberExpr{X: nameOf(itVar, s.Iter.Span()), Name: ast.Ident{Name: "next", Pos: s.Iter.Span()}, Pos: s.Iter.Span()}, Pos: s.Iter.Span()}
+	nx := f.checkExpr(next, nil)
+	nt, ok := nx.Type().(*types.Nullable)
+	if !ok {
+		if !types.IsInvalid(nx.Type()) {
+			f.errorf(s.Iter.Span(), "'next()' must return 'Item?', found '%s'", nx.Type())
+		}
+		return nil, true
+	}
+	v := f.newTemp(nt)
+	x, parts := f.bindLoopVar(s.Var, nt.Elem)
+	f.loops = append(f.loops, &loopFrame{hir: lp, label: label})
+	body := f.checkBlock(s.Body, nil, false)
+	f.loops = f.loops[:len(f.loops)-1]
+	stop := &Block{Stmts: []Stmt{&Break{Loop: lp}}, Type: types.TNever}
+	head := []Stmt{
+		&VarDecl{Var: v, Init: nx},
+		&ExprStmt{X: &If{exprBase{types.TUnit}, &IsNull{exprBase{types.TBool}, ref(v)}, stop, nil}},
+		&VarDecl{Var: x, Init: &Unwrap{exprBase{nt.Elem}, ref(v)}},
+	}
+	head = append(head, parts...)
+	body.Stmts = append(head, body.Stmts...)
+	lp.Body = body
+	return append(pre, lp), true
+}
+
+// checkWith lowers `with (a = x, b = y) { body }` into nested With
+// statements so that resources close in reverse order.
+func (f *fnCtx) checkWith(s *ast.WithStmt) []Stmt {
+	closeable := f.c.traitNamed("Closeable")
+	f.pushScope()
+	defer f.popScope()
+	return f.withBindings(s, 0, closeable)
+}
+
+func (f *fnCtx) withBindings(s *ast.WithStmt, i int, closeable *types.Trait) []Stmt {
+	if i == len(s.Bindings) {
+		b := f.checkBlock(s.Body, nil, false)
+		return []Stmt{b}
+	}
+	b := s.Bindings[i]
+	init := f.checkExpr(b.Value, nil)
+	if types.IsInvalid(init.Type()) {
+		return nil
+	}
+	v := f.newVar(b.Name.Name, init.Type(), false, b.Name.Pos)
+	f.declareLocal(b.Name.Name, v, b.Name.Pos)
+	if closeable == nil || f.findImpl(init.Type(), closeable) == nil {
+		f.errorf(b.Value.Span(), "'%s' is not Closeable; 'with' resources must implement Closeable (D43)", init.Type())
+		return nil
+	}
+	// synthesize `name.close()`; the binding is a val to user code but the
+	// close call needs a mutable place
+	v.Mutable = true
+	call := &ast.CallExpr{Fun: &ast.MemberExpr{X: nameOf(v, b.Name.Pos), Name: ast.Ident{Name: "close", Pos: b.Name.Pos}, Pos: b.Name.Pos}, Pos: b.Name.Pos}
+	closeCall := f.checkExpr(call, types.TUnit)
+	v.Mutable = false
+	if isResultType(closeCall.Type()) {
+		f.errorf(b.Name.Pos, "close() of '%s' throws; throwing cleanup is not supported yet", init.Type())
+	}
+	inner := f.withBindings(s, i+1, closeable)
+	body := &Block{Stmts: inner, Type: types.TUnit}
+	for _, st := range inner {
+		if blk, ok := st.(*Block); ok && types.IsNever(blk.Type) {
+			body.Type = types.TNever
+		}
+	}
+	return []Stmt{&With{Var: v, Init: init, Close: closeCall, Body: body}}
+}
+
+// checkThrow is `throw e`: `return Err(e)` in a throwing function (D4).
+func (f *fnCtx) checkThrow(s *ast.ThrowStmt) []Stmt {
+	if s.Value == nil {
+		return nil
+	}
+	if f.isGlobal {
+		f.errorf(s.Pos, "'throw' outside of a function")
+		return nil
+	}
+	if !f.throws {
+		f.errorf(s.Pos, "'throw' fails the function, but it is not declared 'throws' (D4)")
+		f.checkExpr(s.Value, nil)
+		return nil
+	}
+	errv := f.checkExpr(s.Value, nil)
+	x := f.throwExpr(errv, s.Pos)
+	if types.IsInvalid(x.Type()) {
+		return nil
+	}
+	return []Stmt{&ExprStmt{X: x}}
 }

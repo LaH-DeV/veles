@@ -5,6 +5,7 @@ import (
 	"math"
 	"runtime"
 	"strconv"
+	"strings"
 
 	"github.com/LaH-DeV/veles/sema"
 	"github.com/LaH-DeV/veles/types"
@@ -184,9 +185,7 @@ func (g *gen) expr(e sema.Expr) string {
 		}
 		// box a temporary on the heap
 		v := g.expr(e.X)
-		size, _ := g.layout(e.X.Type())
-		cell := g.newTmp()
-		g.emit("%s = call ptr @veles_alloc(i64 %d)", cell, size)
+		cell := g.gcAlloc(e.X.Type())
 		g.emit("store %s %s, ptr %s", g.llType(e.X.Type()), v, cell)
 		return cell
 	case *sema.Deref:
@@ -282,7 +281,15 @@ func (g *gen) expr(e sema.Expr) string {
 		return g.expr(e.Body)
 	case *sema.ListLit:
 		return g.listLit(e)
+	case *sema.MapLit:
+		return g.mapLit(e)
 	case *sema.Builtin:
+		if v, ok := g.mapBuiltin(e); ok {
+			return v
+		}
+		if v, ok := g.taskBuiltin(e); ok {
+			return v
+		}
 		return g.builtin(e)
 	case *sema.RangeLit:
 		lo := g.expr(e.Lo)
@@ -305,8 +312,29 @@ func (g *gen) expr(e sema.Expr) string {
 		return "undef"
 	case *constExpr:
 		return e.v
+	case *sema.Closure:
+		return g.closure(e)
+	case *sema.Box:
+		return g.box(e)
+	case *sema.CallVirtual:
+		return g.callVirtual(e)
+	case *sema.Launch:
+		return g.launch(e)
+	case *sema.AwaitTask:
+		return g.awaitTask(g.expr(e.X), e.Type())
+	case *sema.ScopeBlock:
+		return g.scopeBlock(e)
+	case *sema.Race:
+		return g.race(e)
+	case *sema.CallIndirect:
+		return g.callIndirect(e)
 	case *sema.FuncRef:
-		panic("codegen: function values are not supported")
+		thunk := g.thunkFor(e.Fn)
+		a := g.newTmp()
+		g.emit("%s = insertvalue { ptr, ptr } undef, ptr @%s, 0", a, thunk)
+		b := g.newTmp()
+		g.emit("%s = insertvalue { ptr, ptr } %s, ptr null, 1", b, a)
+		return b
 	}
 	panic(fmt.Sprintf("codegen: unsupported expression %T", e))
 }
@@ -380,6 +408,15 @@ func (g *gen) call(e *sema.Call) string {
 		}
 		_ = i
 		args = append(args, g.llType(a.Type())+" "+v)
+	}
+	if fn.Suspends {
+		var ats []types.Type
+		var avs []string
+		for i, a := range e.Args {
+			ats = append(ats, a.Type())
+			avs = append(avs, strings.TrimPrefix(args[i], g.llType(a.Type())+" "))
+		}
+		return g.callSuspending(fn, ats, avs, g.resultTypeOf(fn.Sig))
 	}
 	ret := g.retLL(fn)
 	if fn.Extern && types.IsUnit(fn.Sig.Ret) {
@@ -592,6 +629,9 @@ func (g *gen) cast(e *sema.Cast) string {
 	from, to := e.X.Type(), e.Type()
 	if _, ok := from.(*types.Pointer); ok {
 		return x // *T to *raw T
+	}
+	if _, ok := from.(*types.List); ok {
+		return x // MutableList to List: same representation
 	}
 	fl, tl := g.llType(from), g.llType(to)
 	if fl == tl {
@@ -837,8 +877,13 @@ func (g *gen) throwValue(errValue string, from types.Type) {
 	errVariant := rs.Variants[1]
 	to := errVariant.Fields[0].Type
 	conv := g.convertError(errValue, from, to)
+	g.runCleanups(0)
 	payload := g.buildStruct(errVariant, []string{conv})
 	r := g.makeTagged(g.llType(rs), 1, g.llType(errVariant), payload)
+	if g.coro != nil {
+		g.coroReturn(g.llType(rs), r, true)
+		return
+	}
 	g.emitTerm("ret %s %s", g.llType(rs), r)
 }
 
@@ -898,9 +943,8 @@ func (g *gen) try(e *sema.Try) string {
 
 func (g *gen) listLit(e *sema.ListLit) string {
 	lt := e.Type().(*types.List)
-	size, _ := g.layout(lt.Elem)
 	list := g.newTmp()
-	g.emit("%s = call ptr @veles_list_new(i64 %d, i64 %d)", list, size, len(e.Elems))
+	g.emit("%s = call ptr @veles_list_new(ptr %s, i64 %d)", list, g.arrayDescOf(lt.Elem), len(e.Elems))
 	if len(e.Elems) > 0 {
 		et := g.llType(lt.Elem)
 		tmp := g.alloca(et)
@@ -1011,4 +1055,204 @@ func (g *gen) makeNullable(nt *types.Nullable, present, val string) string {
 	b := g.newTmp()
 	g.emit("%s = insertvalue %s %s, %s %s, 1", b, llt, a, g.llType(nt.Elem), val)
 	return b
+}
+
+// ---------------------------------------------------------------------------
+// closures and function values (D32)
+
+// closure builds a `{ fn, env }` pair; the environment is a heap array of
+// pointers to the captured variables' cells.
+func (g *gen) closure(e *sema.Closure) string {
+	env := "null"
+	if len(e.Captures) > 0 {
+		env = g.newTmp()
+		g.emit("%s = call ptr @veles_alloc_words(i64 %d)", env, 8*len(e.Captures))
+		for i, v := range e.Captures {
+			cell := g.varPtr(v)
+			slot := g.newTmp()
+			g.emit("%s = getelementptr ptr, ptr %s, i64 %d", slot, env, i)
+			g.emit("store ptr %s, ptr %s", cell, slot)
+		}
+	}
+	a := g.newTmp()
+	g.emit("%s = insertvalue { ptr, ptr } undef, ptr @%s, 0", a, e.Fn.Name)
+	b := g.newTmp()
+	g.emit("%s = insertvalue { ptr, ptr } %s, ptr %s, 1", b, a, env)
+	return b
+}
+
+func (g *gen) callIndirect(e *sema.CallIndirect) string {
+	ft := e.Fn.Type().(*types.Func)
+	fv := g.expr(e.Fn)
+	code := g.newTmp()
+	g.emit("%s = extractvalue { ptr, ptr } %s, 0", code, fv)
+	env := g.newTmp()
+	g.emit("%s = extractvalue { ptr, ptr } %s, 1", env, fv)
+	args := []string{"ptr " + env}
+	for _, a := range e.Args {
+		args = append(args, g.llType(a.Type())+" "+g.expr(a))
+	}
+	if ft.Effects.Suspends {
+		ct := g.newTmp()
+		g.emit("%s = call ptr @veles_task_new()", ct)
+		var ats []types.Type
+		var avs []string
+		ats = append(ats, &types.Pointer{Elem: types.TUnit, Raw: true}, &types.Pointer{Elem: types.TUnit, Raw: true})
+		avs = append(avs, code, env)
+		for _, a := range e.Args {
+			ats = append(ats, a.Type())
+			avs = append(avs, g.expr(a))
+		}
+		g.startIndirect(ct, ft, ats, avs)
+		return g.awaitTask(ct, g.resultTypeOf(ft))
+	}
+	ret := g.funcRetLL(ft)
+	if ret == "void" {
+		g.emit("call void %s(%s)", code, joinArgs(args))
+		return "zeroinitializer"
+	}
+	v := g.newTmp()
+	g.emit("%s = call %s %s(%s)", v, ret, code, joinArgs(args))
+	return v
+}
+
+// funcRetLL is the LLVM return type of a function type value.
+func (g *gen) funcRetLL(ft *types.Func) string {
+	if ft.Effects.Throws {
+		return g.llType(g.prog.ResultType(ft.Ret, ft.Effects.Error))
+	}
+	if types.IsUnit(ft.Ret) || types.IsNever(ft.Ret) {
+		return "void"
+	}
+	return g.llType(ft.Ret)
+}
+
+// thunkFor returns an adapter giving a named function the closure calling
+// convention (an ignored environment pointer first).
+func (g *gen) thunkFor(fn *sema.Func) string {
+	name := "thunk." + fn.Name
+	if _, done := g.thunks[name]; done {
+		return name
+	}
+	g.thunks[name] = true
+	g.pending = append(g.pending, func() {
+		var params, args []string
+		if fn.Suspends {
+			params = append(params, "ptr %task")
+			args = append(args, "ptr %task")
+		}
+		params = append(params, "ptr %env")
+		for i, p := range fn.Params {
+			llt := g.llType(p.Type)
+			params = append(params, fmt.Sprintf("%s %%p%d", llt, i))
+			args = append(args, fmt.Sprintf("%s %%p%d", llt, i))
+		}
+		ret := g.retLL(fn)
+		g.defineHelper(name, ret, params, func() {
+			if ret == "void" {
+				g.emit("call void @%s(%s)", fn.Name, joinArgs(args))
+				g.emitTerm("ret void")
+				return
+			}
+			v := g.newTmp()
+			g.emit("%s = call %s @%s(%s)", v, ret, fn.Name, joinArgs(args))
+			g.emitTerm("ret %s %s", ret, v)
+		})
+	})
+	return name
+}
+
+// ---------------------------------------------------------------------------
+// trait objects (D9)
+
+func (g *gen) box(e *sema.Box) string {
+	t := e.X.Type()
+	v := g.expr(e.X)
+	data := g.gcAlloc(t)
+	g.emit("store %s %s, ptr %s", g.llType(t), v, data)
+	vt := g.vtable(e)
+	a := g.newTmp()
+	g.emit("%s = insertvalue { ptr, ptr } undef, ptr %s, 0", a, data)
+	b := g.newTmp()
+	g.emit("%s = insertvalue { ptr, ptr } %s, ptr @%s, 1", b, a, vt)
+	return b
+}
+
+// vtable emits (once) the method table of a (trait, type) pair, built from
+// thunks that adapt the impl's calling convention to `(ptr self, args...)`.
+func (g *gen) vtable(e *sema.Box) string {
+	name := "vt." + e.Trait.Name + "." + mangleType(e.X.Type())
+	if _, done := g.vtables[name]; done {
+		return name
+	}
+	g.vtables[name] = true
+	var entries []string
+	for i, fn := range e.Methods {
+		thunk := g.vtableThunk(name, i, fn, e.Mut[i], e.X.Type())
+		entries = append(entries, "ptr @"+thunk)
+	}
+	g.pending = append(g.pending, func() {
+		fmt.Fprintf(&g.helpers, "@%s = internal constant [%d x ptr] [%s]\n\n", name, len(entries), joinArgs(entries))
+	})
+	return name
+}
+
+func (g *gen) vtableThunk(vt string, idx int, fn *sema.Func, mut bool, self types.Type) string {
+	name := fmt.Sprintf("%s.%d", vt, idx)
+	g.pending = append(g.pending, func() {
+		params := []string{"ptr %self"}
+		var args []string
+		if mut {
+			args = append(args, "ptr %self")
+		} else {
+			args = append(args, "SELF")
+		}
+		for i, p := range fn.Params {
+			llt := g.llType(p.Type)
+			params = append(params, fmt.Sprintf("%s %%p%d", llt, i))
+			args = append(args, fmt.Sprintf("%s %%p%d", llt, i))
+		}
+		ret := g.retLL(fn)
+		g.defineHelper(name, ret, params, func() {
+			if !mut {
+				v := g.newTmp()
+				g.emit("%s = load %s, ptr %%self", v, g.llType(self))
+				args[0] = g.llType(self) + " " + v
+			}
+			if ret == "void" {
+				g.emit("call void @%s(%s)", fn.Name, joinArgs(args))
+				g.emitTerm("ret void")
+				return
+			}
+			r := g.newTmp()
+			g.emit("%s = call %s @%s(%s)", r, ret, fn.Name, joinArgs(args))
+			g.emitTerm("ret %s %s", ret, r)
+		})
+	})
+	return name
+}
+
+func (g *gen) callVirtual(e *sema.CallVirtual) string {
+	obj := g.expr(e.Obj)
+	data := g.newTmp()
+	g.emit("%s = extractvalue { ptr, ptr } %s, 0", data, obj)
+	vt := g.newTmp()
+	g.emit("%s = extractvalue { ptr, ptr } %s, 1", vt, obj)
+	slot := g.newTmp()
+	g.emit("%s = getelementptr ptr, ptr %s, i64 %d", slot, vt, e.Index)
+	fnp := g.newTmp()
+	g.emit("%s = load ptr, ptr %s", fnp, slot)
+	args := []string{"ptr " + data}
+	for _, a := range e.Args {
+		args = append(args, g.llType(a.Type())+" "+g.expr(a))
+	}
+	sig := e.Trait.Methods[e.Trait.MethodList[e.Index]]
+	ret := g.funcRetLL(sig)
+	if ret == "void" {
+		g.emit("call void %s(%s)", fnp, joinArgs(args))
+		return "zeroinitializer"
+	}
+	v := g.newTmp()
+	g.emit("%s = call %s %s(%s)", v, ret, fnp, joinArgs(args))
+	return v
 }

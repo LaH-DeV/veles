@@ -3,7 +3,7 @@ use io
 // Labeled loops (§4b), subjectless when (D13), ranges (D29)
 fun primes(limit: i32): List<i32> {
   var found: MutableList<i32> = []
-  outer: loop (n in 2..limit) {
+  loop :outer (n in 2..limit) {
     loop (p in found) {
       if (n % p == 0) continue outer
       if (p * p > n) break

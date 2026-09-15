@@ -341,6 +341,13 @@ type ReturnStmt struct {
 	Pos   source.Span
 }
 
+// ThrowStmt is `throw e`: fail the enclosing `throws` function with the
+// error `e` (D4 sugar for `return Err(e)`).
+type ThrowStmt struct {
+	Value Expr
+	Pos   source.Span
+}
+
 type BreakStmt struct {
 	Label *Ident
 	Pos   source.Span
@@ -393,6 +400,7 @@ func (s *ValStmt) Span() source.Span      { return s.Pos }
 func (s *ExprStmt) Span() source.Span     { return s.X.Span() }
 func (s *AssignStmt) Span() source.Span   { return s.Pos }
 func (s *ReturnStmt) Span() source.Span   { return s.Pos }
+func (s *ThrowStmt) Span() source.Span    { return s.Pos }
 func (s *BreakStmt) Span() source.Span    { return s.Pos }
 func (s *ContinueStmt) Span() source.Span { return s.Pos }
 func (s *LoopStmt) Span() source.Span     { return s.Pos }
@@ -406,6 +414,7 @@ func (*ValStmt) stmtNode()      {}
 func (*ExprStmt) stmtNode()     {}
 func (*AssignStmt) stmtNode()   {}
 func (*ReturnStmt) stmtNode()   {}
+func (*ThrowStmt) stmtNode()    {}
 func (*BreakStmt) stmtNode()    {}
 func (*ContinueStmt) stmtNode() {}
 func (*LoopStmt) stmtNode()     {}
@@ -535,8 +544,10 @@ type TupleExpr struct {
 	Pos   source.Span
 }
 
+// ListLit is `[a, b]`; `mut [a, b]` asks for a MutableList (D25 sugar).
 type ListLit struct {
 	Elems []Expr
+	Mut   bool
 	Pos   source.Span
 }
 
@@ -544,8 +555,10 @@ type MapEntry struct {
 	Key, Value Expr
 }
 
+// MapLit is `["k": v]` or `[:]`; `mut [...]` asks for a MutableMap.
 type MapLit struct {
 	Entries []MapEntry
+	Mut     bool
 	Pos     source.Span
 }
 

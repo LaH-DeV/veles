@@ -17,10 +17,13 @@ import (
 // has no manifest resolver yet: the root is the nearest ancestor directory
 // containing `veles.toml`, or the entry file's own directory.
 type Package struct {
-	Root    string
-	Modules map[string]*Module // by slash path; std modules keyed "std/<name>"
-	Entry   *Module
-	diags   *source.Diagnostics
+	Root      string
+	Modules   map[string]*Module // by slash path; std modules keyed "std/<name>", dependencies "dep/<name>/<path>"
+	Entry     *Module
+	Manifest  *Manifest
+	Deps      map[string]*Package
+	KeyPrefix string // "" for the entry package, "dep/<name>/" for dependencies
+	diags     *source.Diagnostics
 }
 
 // FindRoot locates the package root for an entry path.
@@ -63,6 +66,10 @@ func (p *Package) modulePathOf(dir string) string {
 // detected by the caller through Module.state.
 func (p *Package) loadLocal(modPath string) (*Module, bool) {
 	dir := filepath.Join(p.Root, filepath.FromSlash(modPath))
+	if modPath == "." {
+		dir = p.Root
+		modPath = ""
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, false
@@ -77,7 +84,10 @@ func (p *Package) loadLocal(modPath string) (*Module, bool) {
 		return nil, false
 	}
 	sort.Strings(names)
-	m := &Module{Path: modPath, Dir: dir}
+	m := &Module{Path: p.KeyPrefix + modPath, Dir: dir, Pkg: p}
+	if p.KeyPrefix != "" && modPath == "" {
+		m.Path = strings.TrimSuffix(p.KeyPrefix, "/")
+	}
 	for _, name := range names {
 		full := filepath.Join(dir, name)
 		data, err := os.ReadFile(full)
@@ -96,7 +106,7 @@ func (p *Package) loadStd(modPath string) (*Module, bool) {
 	if err != nil {
 		return nil, false
 	}
-	m := &Module{Path: "std/" + modPath, Dir: "<std>/" + modPath, Std: true}
+	m := &Module{Path: "std/" + modPath, Dir: "<std>/" + modPath, Std: true, Pkg: p}
 	var names []string
 	for _, e := range entries {
 		if strings.HasSuffix(e.Name(), ".vs") {
@@ -115,7 +125,16 @@ func (p *Package) loadStd(modPath string) (*Module, bool) {
 // Resolve finds or loads the module for a `use` path (M3/M6). Local
 // directories shadow standard modules of the same name.
 func (p *Package) Resolve(path []string, span source.Span, from *Module) *Module {
-	key := strings.Join(path, "/")
+	if from != nil && from.Pkg != nil && from.Pkg != p {
+		return from.Pkg.Resolve(path, span, from)
+	}
+	// a dependency package (M6: logical paths resolved through the manifest)
+	if p.Manifest != nil {
+		if depPath, ok := p.Manifest.Deps[path[0]]; ok {
+			return p.resolveDep(path[0], depPath, path[1:], span)
+		}
+	}
+	key := p.KeyPrefix + strings.Join(path, "/")
 	if m, ok := p.Modules[key]; ok {
 		if m.state == 1 {
 			p.diags.Errorf(span, "import cycle: module '%s' is already being loaded (M4: the module graph must be a DAG)", key)
@@ -137,11 +156,11 @@ func (p *Package) Resolve(path []string, span source.Span, from *Module) *Module
 		p.loadImports(m)
 		return m
 	}
-	m, ok := p.loadLocal(key)
+	m, ok := p.loadLocal(strings.Join(path, "/"))
 	if !ok {
-		m, ok = p.loadStd(key)
+		m, ok = p.loadStd(strings.Join(path, "/"))
 		if !ok {
-			p.diags.Errorf(span, "unknown module '%s': no directory '%s' in the package and no such standard module", key, key)
+			p.diags.Errorf(span, "unknown module '%s': no directory '%s' in the package, no dependency of that name and no such standard module", strings.Join(path, "/"), strings.Join(path, "/"))
 			return nil
 		}
 	}
@@ -163,9 +182,13 @@ func (p *Package) loadImports(m *Module) {
 			for _, seg := range u.Path {
 				path = append(path, seg.Name)
 			}
-			dep := p.Resolve(path, u.Pos, m)
+			dep := m.Pkg.Resolve(path, u.Pos, m)
 			if dep != nil {
 				m.Deps = append(m.Deps, dep)
+				if m.Uses == nil {
+					m.Uses = map[*ast.UseDecl]*Module{}
+				}
+				m.Uses[u] = dep
 			}
 		}
 	}
@@ -178,7 +201,12 @@ func LoadPackage(entry string, diags *source.Diagnostics) (*Package, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &Package{Root: root, Modules: map[string]*Module{}, diags: diags}
+	p := &Package{Root: root, Modules: map[string]*Module{}, Deps: map[string]*Package{}, diags: diags}
+	man, err := readManifest(root)
+	if err != nil {
+		return nil, err
+	}
+	p.Manifest = man
 	modPath := p.modulePathOf(entryDir)
 	m, ok := p.loadLocal(modPath)
 	if !ok {
@@ -187,6 +215,10 @@ func LoadPackage(entry string, diags *source.Diagnostics) (*Package, error) {
 	}
 	p.Modules[modPath] = m
 	p.Entry = m
+	if prelude, ok := p.loadStd("prelude"); ok {
+		p.Modules[prelude.Path] = prelude
+		p.loadImports(prelude)
+	}
 	p.loadImports(m)
 	return p, nil
 }
@@ -215,4 +247,55 @@ func (p *Package) SortedModules() []*Module {
 		visit(p.Modules[k])
 	}
 	return out
+}
+
+// resolveDep loads a module of a path dependency, honouring its exports.
+func (p *Package) resolveDep(name, depPath string, rest []string, span source.Span) *Module {
+	dep, ok := p.Deps[name]
+	if !ok {
+		root := depPath
+		if !filepath.IsAbs(root) {
+			root = filepath.Join(p.Manifest.Dir, root)
+		}
+		root, _ = filepath.Abs(root)
+		man, err := readManifest(root)
+		if err != nil {
+			p.diags.Errorf(span, "dependency '%s': %v", name, err)
+			return nil
+		}
+		if man == nil {
+			p.diags.Errorf(span, "dependency '%s' at %s has no veles.toml (M1)", name, root)
+			return nil
+		}
+		dep = &Package{Root: root, Modules: p.Modules, Manifest: man, Deps: map[string]*Package{}, KeyPrefix: "dep/" + name + "/", diags: p.diags}
+		p.Deps[name] = dep
+	}
+	modPath := strings.Join(rest, "/")
+	key := dep.KeyPrefix + modPath
+	if modPath == "" {
+		key = strings.TrimSuffix(dep.KeyPrefix, "/")
+	}
+	if m, ok := p.Modules[key]; ok {
+		if m.state == 1 {
+			p.diags.Errorf(span, "import cycle through dependency '%s' (M4)", name)
+			return nil
+		}
+		return m
+	}
+	if !dep.Manifest.exported(modPath) {
+		p.diags.Errorf(span, "module '%s' of package '%s' is not in its exports (M5: nothing escapes a package except through the manifest's exports)", modPath, name)
+		return nil
+	}
+	local := modPath
+	if local == "" {
+		local = "."
+	}
+	m, ok := dep.loadLocal(local)
+	if !ok {
+		p.diags.Errorf(span, "package '%s' has no module '%s'", name, modPath)
+		return nil
+	}
+	p.Modules[key] = m
+	dep.loadImports(m)
+	return m
 }

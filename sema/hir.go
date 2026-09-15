@@ -20,6 +20,11 @@ type Program struct {
 	Sealeds []*types.Sealed
 	Main    *Func
 	Release bool
+	// PanicType is the prelude Panic struct (D52).
+	PanicType types.Type
+	// Tests are the @test functions; in test mode the entry point runs them.
+	Tests    []*Func
+	TestMode bool
 	// ResultType instantiates the prelude Result<T, E> for the backend.
 	ResultType func(ok, err types.Type) types.Type
 }
@@ -33,8 +38,13 @@ type Func struct {
 	Receiver *Var   // `self` for methods
 	Mut      bool   // `mut fun` — receiver passed by pointer
 	Extern   bool   // C ABI, no body
-	Body     *Block
-	Span     source.Span
+	Inline   int    // 1 @inline, -1 @noinline
+	// Closure functions take an environment pointer first; CapVars are the
+	// inner variables standing for captured outer ones (index = env slot).
+	IsClosure bool
+	CapVars   []*Var
+	Body      *Block
+	Span      source.Span
 
 	// addrTaken variables are heap-allocated by codegen.
 	Locals []*Var
@@ -45,6 +55,10 @@ type Func struct {
 	inferredErrors []types.Type
 	inferring      bool
 	checked        bool
+	suspends       bool // directly contains a suspension point
+
+	// Suspends is the inferred effect (D2): set by the suspension pass.
+	Suspends bool
 }
 
 type Var struct {
@@ -52,6 +66,9 @@ type Var struct {
 	Type      types.Type
 	Mutable   bool
 	AddrTaken bool
+	Captured  bool // inside a closure: read through the environment
+	CapIndex  int
+	Outer     *Var // the enclosing function's variable this stands for
 	IsGlobal  bool
 	Global    *Global
 	ID        int
@@ -107,6 +124,8 @@ type Loop struct {
 	// Post runs at the end of every iteration and on `continue`.
 	Post []Stmt
 	ID   int
+
+	hasBreak bool
 }
 
 type Break struct {
@@ -503,4 +522,109 @@ type Throw struct {
 	Value Expr
 	From  types.Type
 	To    types.Type
+}
+
+// Closure creates a function value from a lambda (D32). Captures are the
+// enclosing function's variables shared by reference: they are heap cells
+// (AddrTaken) whose addresses are stored in the environment.
+type Closure struct {
+	exprBase
+	Fn       *Func
+	Captures []*Var
+}
+
+// CallIndirect calls a function value ({ fn, env } pair).
+type CallIndirect struct {
+	exprBase
+	Fn   Expr
+	Args []Expr
+}
+
+// MapLit constructs a Map/MutableMap from key/value pairs.
+type MapLit struct {
+	exprBase
+	Entries [][2]Expr
+}
+
+// With binds a Closeable resource for the block and closes it on every
+// exit path — fallthrough, return, break and continue (D43).
+type With struct {
+	Var   *Var
+	Init  Expr
+	Close Expr // the close() call on Var
+	Body  *Block
+}
+
+func (*With) hirStmt() {}
+
+// Box coerces a value to a trait object (D9): the value is copied to the
+// heap and paired with the vtable of its impl. Methods lists the concrete
+// functions in the trait's method order.
+type Box struct {
+	exprBase
+	X       Expr
+	Trait   *types.Trait
+	Methods []*Func
+	Mut     []bool
+}
+
+// CallVirtual invokes a trait method through a trait object's vtable.
+type CallVirtual struct {
+	exprBase
+	Obj   Expr
+	Trait *types.Trait
+	Index int
+	Args  []Expr
+}
+
+// ---------------------------------------------------------------------------
+// concurrency (D2/D3/D16/D34/D36/D38)
+
+// Launch starts Call as a child task of the lexically enclosing scope.
+type Launch struct {
+	exprBase
+	Call  *Call
+	Scope *ScopeBlock
+	Index int
+}
+
+// AwaitTask waits for a task handle and yields its result.
+type AwaitTask struct {
+	exprBase
+	X Expr
+}
+
+// ScopeBlock is `scope { }` (statement, fail-fast) or `gather { }`
+// (expression yielding a tuple of Results). Elems are the per-launch
+// Result types of a gather.
+type ScopeBlock struct {
+	exprBase
+	Body     *Block
+	Launches []*Launch
+	Gather   bool
+	Elems    []types.Type
+	ErrTo    types.Type // enclosing function's error type (fail-fast rethrow)
+	Span     source.Span
+}
+
+func (*ScopeBlock) hirStmt() {}
+
+type RaceArmKind int
+
+const (
+	RaceRecv RaceArmKind = iota
+	RaceSleep
+	RaceTask
+)
+
+type RaceArm struct {
+	Kind   RaceArmKind
+	Source Expr // channel, milliseconds, or task
+	Var    *Var // bound value for recv/task arms (nullable for recv)
+	Body   *Block
+}
+
+type Race struct {
+	exprBase
+	Arms []*RaceArm
 }

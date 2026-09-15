@@ -1,8 +1,8 @@
 /*
  * Veles bootstrap runtime.
  *
- * Linked into every Veles executable. Everything here follows the build
- * plan's Stage 1 cut: no garbage collector yet — allocations leak. All
+ * Linked into every Veles executable. The collector in veles_gc.c manages
+ * every allocation; containers carry element descriptors for it. All
  * entry points take explicit primitive arguments or out-pointers so that
  * no struct crosses the C ABI by value (the compiler passes `string` as a
  * (data, len) pair and receives strings through `veles_string*`).
@@ -19,37 +19,41 @@ typedef struct {
     int64_t len;
 } veles_string;
 
+typedef struct veles_desc veles_desc;
+
 typedef struct {
     char *data;
     int64_t len;
     int64_t cap;
     int64_t elem;
+    veles_desc *desc; /* array descriptor of the elements */
 } veles_list;
+
+int64_t veles_desc_size(veles_desc *d);
 
 static int g_argc;
 static char **g_argv;
+void veles_gc_init(void);
 
 void veles_rt_init(int32_t argc, char **argv) {
     g_argc = argc;
     g_argv = argv;
     setvbuf(stdout, NULL, _IOLBF, 0);
+    veles_gc_init();
 }
 
-/* ---- memory (D1 deferred: leak everything) ------------------------------ */
+/* ---- memory: the collector in veles_gc.c owns every allocation --------- */
 
-void *veles_alloc(int64_t size) {
-    if (size <= 0) size = 1;
-    void *p = calloc(1, (size_t)size);
-    if (!p) {
-        fputs("panic: out of memory\n", stderr);
-        exit(101);
-    }
-    return p;
-}
+void *veles_alloc(int64_t size);       /* bytes without pointers */
+void *veles_alloc_words(int64_t size); /* every word may be a pointer */
+void *veles_gc_alloc(veles_desc *desc, int64_t size);
 
 /* ---- panics (D20: unwind to the task scope; bootstrap: exit) ------------ */
 
+int64_t veles_task_panic(const char *msg, int64_t len);
+
 void veles_panic(const char *msg, int64_t len) {
+    if (veles_task_panic(msg, len)) return;
     fflush(stdout);
     fputs("panic: ", stderr);
     fwrite(msg, 1, (size_t)len, stderr);
@@ -236,13 +240,14 @@ void veles_bool_to_string(veles_string *out, bool v) {
 
 /* ---- lists (D25: reference types; element type erased to a size) -------- */
 
-veles_list *veles_list_new(int64_t elem, int64_t cap) {
-    veles_list *l = veles_alloc(sizeof *l);
+veles_list *veles_list_new(veles_desc *desc, int64_t cap) {
+    veles_list *l = veles_alloc_words(sizeof *l);
     if (cap < 4) cap = 4;
-    l->elem = elem;
+    l->elem = veles_desc_size(desc);
+    l->desc = desc;
     l->cap = cap;
     l->len = 0;
-    l->data = veles_alloc(elem * cap);
+    l->data = veles_gc_alloc(desc, l->elem * cap);
     return l;
 }
 
@@ -253,7 +258,7 @@ int64_t veles_list_len(veles_list *l) {
 void veles_list_push(veles_list *l, const void *item) {
     if (l->len == l->cap) {
         int64_t ncap = l->cap * 2;
-        char *nd = veles_alloc(l->elem * ncap);
+        char *nd = veles_gc_alloc(l->desc, l->elem * ncap);
         memcpy(nd, l->data, (size_t)(l->elem * l->len));
         l->data = nd;
         l->cap = ncap;
@@ -279,7 +284,7 @@ bool veles_list_pop(veles_list *l, void *out) {
 }
 
 veles_list *veles_list_copy(veles_list *l) {
-    veles_list *c = veles_list_new(l->elem, l->cap);
+    veles_list *c = veles_list_new(l->desc, l->cap);
     memcpy(c->data, l->data, (size_t)(l->elem * l->len));
     c->len = l->len;
     return c;
@@ -287,4 +292,221 @@ veles_list *veles_list_copy(veles_list *l) {
 
 void veles_list_clear(veles_list *l) {
     l->len = 0;
+}
+
+/* ---- maps and sets (D25: insertion-ordered; a set is a map with no values) */
+
+typedef bool (*veles_eq_fn)(const void *, const void *);
+
+typedef struct {
+    int64_t hash;
+    bool live;
+} veles_meta;
+
+typedef struct {
+    char *keys;
+    char *vals;
+    veles_meta *meta;
+    veles_desc *keyDesc;
+    veles_desc *valDesc;
+    int64_t *index; /* open addressing: 0 empty, -1 tombstone, else entry+1 */
+    int64_t icap;
+    int64_t len;  /* live entries */
+    int64_t used; /* entries appended, including dead ones */
+    int64_t cap;
+    int64_t keySize;
+    int64_t valSize;
+} veles_map;
+
+int64_t veles_hash_bytes(const char *p, int64_t len) {
+    uint64_t h = 1469598103934665603ULL;
+    for (int64_t i = 0; i < len; i++) {
+        h ^= (unsigned char)p[i];
+        h *= 1099511628211ULL;
+    }
+    return (int64_t)h;
+}
+
+int64_t veles_hash_mix(int64_t a, int64_t b) {
+    uint64_t h = (uint64_t)a * 0x9E3779B97F4A7C15ULL;
+    h ^= (uint64_t)b + 0x7F4A7C15ULL + (h << 6) + (h >> 2);
+    return (int64_t)h;
+}
+
+static void map_index_insert(veles_map *m, int64_t hash, int64_t entry) {
+    uint64_t mask = (uint64_t)m->icap - 1;
+    uint64_t i = (uint64_t)hash & mask;
+    while (m->index[i] > 0) i = (i + 1) & mask;
+    m->index[i] = entry + 1;
+}
+
+static void map_rebuild(veles_map *m, int64_t icap) {
+    m->icap = icap;
+    m->index = veles_alloc(icap * (int64_t)sizeof(int64_t));
+    for (int64_t e = 0; e < m->used; e++) {
+        if (m->meta[e].live) map_index_insert(m, m->meta[e].hash, e);
+    }
+}
+
+veles_map *veles_map_new(veles_desc *keyDesc, veles_desc *valDesc) {
+    veles_map *m = veles_alloc_words(sizeof *m);
+    m->keyDesc = keyDesc;
+    m->valDesc = valDesc;
+    m->keySize = veles_desc_size(keyDesc);
+    m->valSize = valDesc ? veles_desc_size(valDesc) : 0;
+    m->cap = 8;
+    m->keys = veles_gc_alloc(keyDesc, m->keySize * m->cap + 1);
+    m->vals = valDesc ? veles_gc_alloc(valDesc, m->valSize * m->cap + 1) : veles_alloc(1);
+    m->meta = veles_alloc((int64_t)sizeof(veles_meta) * m->cap);
+    map_rebuild(m, 16);
+    return m;
+}
+
+int64_t veles_map_len(veles_map *m) {
+    return m->len;
+}
+
+int64_t veles_map_find(veles_map *m, int64_t hash, const void *key, veles_eq_fn eq) {
+    uint64_t mask = (uint64_t)m->icap - 1;
+    uint64_t i = (uint64_t)hash & mask;
+    for (;;) {
+        int64_t slot = m->index[i];
+        if (slot == 0) return -1;
+        if (slot > 0) {
+            int64_t e = slot - 1;
+            if (m->meta[e].hash == hash && (m->keySize == 0 || eq(key, m->keys + e * m->keySize))) return e;
+        }
+        i = (i + 1) & mask;
+    }
+}
+
+static void map_compact(veles_map *m) {
+    int64_t w = 0;
+    for (int64_t e = 0; e < m->used; e++) {
+        if (!m->meta[e].live) continue;
+        if (w != e) {
+            memcpy(m->keys + w * m->keySize, m->keys + e * m->keySize, (size_t)m->keySize);
+            memcpy(m->vals + w * m->valSize, m->vals + e * m->valSize, (size_t)m->valSize);
+            m->meta[w] = m->meta[e];
+        }
+        w++;
+    }
+    m->used = w;
+    map_rebuild(m, m->icap);
+}
+
+/* insert or overwrite; returns the entry index */
+int64_t veles_map_insert(veles_map *m, int64_t hash, const void *key, const void *val, veles_eq_fn eq) {
+    int64_t e = veles_map_find(m, hash, key, eq);
+    if (e >= 0) {
+        if (m->valSize) memcpy(m->vals + e * m->valSize, val, (size_t)m->valSize);
+        return e;
+    }
+    if (m->used == m->cap) {
+        if (m->used > 2 * m->len + 8) {
+            map_compact(m);
+        } else {
+            int64_t ncap = m->cap * 2;
+            char *nk = veles_gc_alloc(m->keyDesc, m->keySize * ncap + 1);
+            char *nv = m->valDesc ? veles_gc_alloc(m->valDesc, m->valSize * ncap + 1) : veles_alloc(1);
+            veles_meta *nm = veles_alloc((int64_t)sizeof(veles_meta) * ncap);
+            memcpy(nk, m->keys, (size_t)(m->keySize * m->used));
+            memcpy(nv, m->vals, (size_t)(m->valSize * m->used));
+            memcpy(nm, m->meta, sizeof(veles_meta) * (size_t)m->used);
+            m->keys = nk;
+            m->vals = nv;
+            m->meta = nm;
+            m->cap = ncap;
+        }
+    }
+    if (m->used * 2 >= m->icap) map_rebuild(m, m->icap * 2);
+    e = m->used++;
+    if (m->keySize) memcpy(m->keys + e * m->keySize, key, (size_t)m->keySize);
+    if (m->valSize) memcpy(m->vals + e * m->valSize, val, (size_t)m->valSize);
+    m->meta[e].hash = hash;
+    m->meta[e].live = true;
+    m->len++;
+    map_index_insert(m, hash, e);
+    return e;
+}
+
+bool veles_map_remove(veles_map *m, int64_t hash, const void *key, veles_eq_fn eq) {
+    uint64_t mask = (uint64_t)m->icap - 1;
+    uint64_t i = (uint64_t)hash & mask;
+    for (;;) {
+        int64_t slot = m->index[i];
+        if (slot == 0) return false;
+        if (slot > 0) {
+            int64_t e = slot - 1;
+            if (m->meta[e].hash == hash && (m->keySize == 0 || eq(key, m->keys + e * m->keySize))) {
+                m->meta[e].live = false;
+                m->index[i] = -1;
+                m->len--;
+                return true;
+            }
+        }
+        i = (i + 1) & mask;
+    }
+}
+
+void *veles_map_key_at(veles_map *m, int64_t e) {
+    return m->keys + e * m->keySize;
+}
+
+void *veles_map_val_at(veles_map *m, int64_t e) {
+    return m->vals + e * m->valSize;
+}
+
+int64_t veles_map_used(veles_map *m) {
+    return m->used;
+}
+
+bool veles_map_live(veles_map *m, int64_t e) {
+    return m->meta[e].live;
+}
+
+void veles_map_clear(veles_map *m) {
+    m->len = 0;
+    m->used = 0;
+    map_rebuild(m, m->icap);
+}
+
+veles_map *veles_map_copy(veles_map *m) {
+    veles_map *c = veles_map_new(m->keyDesc, m->valDesc);
+    for (int64_t e = 0; e < m->used; e++) {
+        if (m->meta[e].live) {
+            veles_map_insert(c, m->meta[e].hash, m->keys + e * m->keySize, m->vals + e * m->valSize, NULL);
+        }
+    }
+    return c;
+}
+
+veles_list *veles_map_keys(veles_map *m) {
+    veles_list *l = veles_list_new(m->keyDesc, m->len);
+    for (int64_t e = 0; e < m->used; e++) {
+        if (m->meta[e].live) veles_list_push(l, m->keys + e * m->keySize);
+    }
+    return l;
+}
+
+veles_list *veles_map_values(veles_map *m) {
+    veles_list *l = veles_list_new(m->valDesc, m->len);
+    for (int64_t e = 0; e < m->used; e++) {
+        if (m->meta[e].live) veles_list_push(l, m->vals + e * m->valSize);
+    }
+    return l;
+}
+
+/* entries as (K, V) tuples laid out with the value at valOffset */
+veles_list *veles_map_entries(veles_map *m, veles_desc *tupleDesc, int64_t valOffset, int64_t tupleSize) {
+    veles_list *l = veles_list_new(tupleDesc, m->len);
+    char *tmp = veles_alloc(tupleSize);
+    for (int64_t e = 0; e < m->used; e++) {
+        if (!m->meta[e].live) continue;
+        memset(tmp, 0, (size_t)tupleSize);
+        memcpy(tmp, m->keys + e * m->keySize, (size_t)m->keySize);
+        memcpy(tmp + valOffset, m->vals + e * m->valSize, (size_t)m->valSize);
+        veles_list_push(l, tmp);
+    }
+    return l;
 }

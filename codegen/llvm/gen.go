@@ -4,6 +4,7 @@ package llvm
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -22,19 +23,33 @@ type gen struct {
 	helpers   strings.Builder // generated show/eq helpers
 	showFns   map[string]string
 	eqFns     map[string]string
+	thunks    map[string]bool
+	hashFns   map[string]string
+	vtables   map[string]bool
+	descs     map[string]string
+	descNames map[string]bool
+	descOut   strings.Builder
+	eqPtrFns  map[string]string
 	pending   []func() // helper bodies to generate after the current function
 
 	// per-function state
-	fn       *sema.Func
-	body     strings.Builder
-	allocas  strings.Builder
-	tmp      int
-	label    int
-	term     bool
-	storage  map[*sema.Var]string
-	loops    map[*sema.Loop]loopLabels
-	fnResult types.Type // Result<T, E> sealed when the function throws
-	inHelper bool
+	fn               *sema.Func
+	body             strings.Builder
+	allocas          strings.Builder
+	tmp              int
+	label            int
+	term             bool
+	storage          map[*sema.Var]string
+	loops            map[*sema.Loop]loopLabels
+	fnResult         types.Type  // Result<T, E> sealed when the function throws
+	cleanups         []sema.Expr // active `with` close calls, innermost last
+	loopCleanupDepth map[*sema.Loop]int
+	coro             *coroState
+	scopeSlots       map[*sema.ScopeBlock]string
+	launchSlots      map[*sema.Launch]string
+	ramps            map[*sema.Func]*sema.Func
+	envSlot          string // closure environment pointer slot
+	inHelper         bool
 }
 
 type loopLabels struct {
@@ -49,6 +64,13 @@ func Generate(prog *sema.Program) string {
 		strs:      map[string]string{},
 		showFns:   map[string]string{},
 		eqFns:     map[string]string{},
+		thunks:    map[string]bool{},
+		hashFns:   map[string]string{},
+		vtables:   map[string]bool{},
+		descs:     map[string]string{},
+		ramps:     map[*sema.Func]*sema.Func{},
+		descNames: map[string]bool{},
+		eqPtrFns:  map[string]string{},
 	}
 	g.typeDecls[strType] = "{ ptr, i64 }"
 	g.typeOrder = append(g.typeOrder, strType)
@@ -81,8 +103,17 @@ func Generate(prog *sema.Program) string {
 	}
 	sb.WriteString("\n")
 	sb.WriteString(runtimeDecls)
+	sb.WriteString(mapDecls)
+	sb.WriteString(gcDecls)
+	sb.WriteString(coroDecls)
+	sb.WriteString(g.descOut.String())
+	declared := map[string]bool{}
+	for _, m := range declRe.FindAllStringSubmatch(runtimeDecls+mapDecls+gcDecls+coroDecls, -1) {
+		declared[m[1]] = true
+	}
 	for _, fn := range prog.Funcs {
-		if fn.Extern {
+		if fn.Extern && !declared[fn.Name] {
+			declared[fn.Name] = true
 			sb.WriteString(g.externDecl(fn))
 		}
 	}
@@ -92,11 +123,14 @@ func Generate(prog *sema.Program) string {
 	return sb.String()
 }
 
+var declRe = regexp.MustCompile(`declare [^@]+@([A-Za-z0-9_.]+)[(]`)
+
 func mangleGlobal(gl *sema.Global) string {
 	return "g_" + strings.NewReplacer(".", "_", "/", "_").Replace(gl.Name)
 }
 
 const runtimeDecls = `declare void @veles_rt_init(i32, ptr)
+declare void @veles_print(ptr, i64)
 declare ptr @veles_alloc(i64)
 declare void @veles_panic(ptr, i64)
 declare void @veles_report_error(ptr, i64)
@@ -112,7 +146,7 @@ declare void @veles_i64_to_string(ptr, i64)
 declare void @veles_u64_to_string(ptr, i64)
 declare void @veles_f64_to_string(ptr, double)
 declare void @veles_bool_to_string(ptr, i1)
-declare ptr @veles_list_new(i64, i64)
+declare ptr @veles_list_new(ptr, i64)
 declare i64 @veles_list_len(ptr)
 declare void @veles_list_push(ptr, ptr)
 declare ptr @veles_list_ref(ptr, i64)
@@ -242,10 +276,18 @@ func (g *gen) resetFn(fn *sema.Func) {
 	g.storage = map[*sema.Var]string{}
 	g.loops = map[*sema.Loop]loopLabels{}
 	g.fnResult = nil
+	g.cleanups = nil
+	g.loopCleanupDepth = map[*sema.Loop]int{}
+	g.coro = nil
+	g.scopeSlots = map[*sema.ScopeBlock]string{}
+	g.launchSlots = map[*sema.Launch]string{}
 }
 
 // retLL returns the LLVM return type of a function.
 func (g *gen) retLL(fn *sema.Func) string {
+	if fn.Suspends {
+		return "ptr" // coroutine handle
+	}
 	if fn.Sig.Effects.Throws {
 		return g.llType(g.resultOf(fn))
 	}
@@ -295,8 +337,25 @@ func (g *gen) function(fn *sema.Func) {
 	bind := func(v *sema.Var, i int) {
 		llt := g.llType(v.Type)
 		params = append(params, fmt.Sprintf("%s %%p%d", llt, i))
+		if v.AddrTaken {
+			// captured or address-taken parameter: copy into a heap cell
+			size, _ := g.layout(v.Type)
+			slot := g.varStorage(v, false)
+			prologue = append(prologue, fmt.Sprintf("  %%cell%d = call ptr @veles_gc_alloc(ptr %s, i64 %d)", i, g.descOf(v.Type), size))
+			prologue = append(prologue, fmt.Sprintf("  store ptr %%cell%d, ptr %s", i, slot))
+			prologue = append(prologue, fmt.Sprintf("  store %s %%p%d, ptr %%cell%d", llt, i, i))
+			return
+		}
 		st := g.varStorage(v, true)
 		prologue = append(prologue, fmt.Sprintf("  store %s %%p%d, ptr %s", llt, i, st))
+	}
+	if fn.Suspends {
+		params = append(params, "ptr %task")
+	}
+	if fn.IsClosure {
+		params = append(params, "ptr %env")
+		g.envSlot = g.alloca("ptr")
+		prologue = append(prologue, fmt.Sprintf("  store ptr %%env, ptr %s", g.envSlot))
 	}
 	if fn.Receiver != nil {
 		bind(fn.Receiver, 0)
@@ -304,12 +363,15 @@ func (g *gen) function(fn *sema.Func) {
 	for i, p := range fn.Params {
 		bind(p, i+1)
 	}
+	if fn.Suspends {
+		g.coroPrologue()
+	}
 	if fn.Body != nil {
 		g.block(fn.Body)
 	}
 	if !g.term {
 		// falling off the end of a unit function
-		if fn.Sig.Effects.Throws {
+		if fn.Sig.Effects.Throws || fn.Suspends {
 			g.retValue(nil)
 		} else if types.IsUnit(fn.Sig.Ret) {
 			g.emitTerm("ret void")
@@ -317,7 +379,17 @@ func (g *gen) function(fn *sema.Func) {
 			g.emitTerm("unreachable")
 		}
 	}
-	fmt.Fprintf(&g.out, "define %s @%s(%s) {\nentry:\n", g.retLL(fn), fn.Name, strings.Join(params, ", "))
+	attrs := ""
+	if fn.Suspends {
+		g.coroEpilogue()
+		attrs = " presplitcoroutine"
+	}
+	if fn.Inline > 0 && !fn.Suspends {
+		attrs += " alwaysinline"
+	} else if fn.Inline < 0 {
+		attrs += " noinline"
+	}
+	fmt.Fprintf(&g.out, "define %s @%s(%s)%s {\nentry:\n", g.retLL(fn), fn.Name, strings.Join(params, ", "), attrs)
 	g.out.WriteString(g.allocas.String())
 	for _, p := range prologue {
 		g.out.WriteString(p + "\n")
@@ -335,6 +407,16 @@ func (g *gen) varStorage(v *sema.Var, param bool) string {
 	if st, ok := g.storage[v]; ok {
 		return st
 	}
+	if v.Captured {
+		// the environment holds the address of the shared heap cell
+		env := g.newTmp()
+		g.emit("%s = load ptr, ptr %s", env, g.envSlot)
+		slot := g.newTmp()
+		g.emit("%s = getelementptr ptr, ptr %s, i64 %d", slot, env, v.CapIndex)
+		cell := g.newTmp()
+		g.emit("%s = load ptr, ptr %s", cell, slot)
+		return cell
+	}
 	llt := g.llType(v.Type)
 	if v.AddrTaken && !param {
 		slot := g.alloca("ptr")
@@ -349,7 +431,7 @@ func (g *gen) varStorage(v *sema.Var, param bool) string {
 // varPtr returns a pointer to the variable's current storage.
 func (g *gen) varPtr(v *sema.Var) string {
 	st := g.varStorage(v, false)
-	if v.AddrTaken && !v.IsGlobal {
+	if v.AddrTaken && !v.IsGlobal && !v.Captured {
 		p := g.newTmp()
 		g.emit("%s = load ptr, ptr %s", p, st)
 		return p
@@ -361,10 +443,8 @@ func (g *gen) varPtr(v *sema.Var) string {
 // for address-taken variables on every execution).
 func (g *gen) declareVar(v *sema.Var) string {
 	st := g.varStorage(v, false)
-	if v.AddrTaken && !v.IsGlobal {
-		size, _ := g.layout(v.Type)
-		cell := g.newTmp()
-		g.emit("%s = call ptr @veles_alloc(i64 %d)", cell, size)
+	if v.AddrTaken && !v.IsGlobal && !v.Captured {
+		cell := g.gcAlloc(v.Type)
 		g.emit("store ptr %s, ptr %s", cell, st)
 		return cell
 	}
@@ -420,9 +500,23 @@ func (g *gen) stmt(s sema.Stmt) {
 	case *sema.Loop:
 		g.loop(s)
 	case *sema.Break:
+		g.runCleanups(g.loopCleanupDepth[s.Loop])
 		g.emitTerm("br label %%%s", g.loops[s.Loop].end)
 	case *sema.Continue:
+		g.runCleanups(g.loopCleanupDepth[s.Loop])
 		g.emitTerm("br label %%%s", g.loops[s.Loop].post)
+	case *sema.ScopeBlock:
+		g.scopeBlock(s)
+	case *sema.With:
+		v := g.expr(s.Init)
+		st := g.declareVar(s.Var)
+		g.emit("store %s %s, ptr %s", g.llType(s.Var.Type), v, st)
+		g.cleanups = append(g.cleanups, s.Close)
+		g.block(s.Body)
+		g.cleanups = g.cleanups[:len(g.cleanups)-1]
+		if !g.term {
+			g.expr(s.Close)
+		}
 	default:
 		panic(fmt.Sprintf("codegen: unsupported statement %T", s))
 	}
@@ -439,6 +533,7 @@ func (g *gen) retValue(value sema.Expr) {
 			return
 		}
 	}
+	g.runCleanups(0)
 	if fn.Sig.Effects.Throws {
 		rs := g.fnResult.(*types.Sealed)
 		if value == nil || types.IsUnit(fn.Sig.Ret) {
@@ -446,11 +541,23 @@ func (g *gen) retValue(value sema.Expr) {
 		}
 		payload := g.buildStruct(rs.Variants[0], []string{v})
 		r := g.makeTagged(g.llType(rs), 0, g.llType(rs.Variants[0]), payload)
+		if g.coro != nil {
+			g.coroReturn(g.llType(rs), r, true)
+			return
+		}
 		g.emitTerm("ret %s %s", g.llType(rs), r)
 		return
 	}
 	if value == nil || types.IsUnit(fn.Sig.Ret) {
+		if g.coro != nil {
+			g.coroReturn("void", "", false)
+			return
+		}
 		g.emitTerm("ret void")
+		return
+	}
+	if g.coro != nil {
+		g.coroReturn(g.llType(fn.Sig.Ret), v, false)
 		return
 	}
 	g.emitTerm("ret %s %s", g.llType(fn.Sig.Ret), v)
@@ -460,6 +567,7 @@ func (g *gen) loop(l *sema.Loop) {
 	labels := loopLabels{cond: g.newLabel("loop.cond"), post: g.newLabel("loop.post"), end: g.newLabel("loop.end")}
 	body := g.newLabel("loop.body")
 	g.loops[l] = labels
+	g.loopCleanupDepth[l] = len(g.cleanups)
 	g.placeLabel(labels.cond)
 	if l.Cond != nil {
 		c := g.expr(l.Cond)
@@ -486,6 +594,11 @@ func (g *gen) loop(l *sema.Loop) {
 func (g *gen) globalsInit() {
 	g.resetFn(&sema.Func{Name: "veles_init_globals", Sig: &types.Func{Ret: types.TUnit}})
 	for _, gl := range g.prog.Globals {
+		if len(g.pointerOffsets(gl.Type)) > 0 {
+			g.emit("call void @veles_gc_root(ptr @%s, ptr %s)", mangleGlobal(gl), g.descOf(gl.Type))
+		}
+	}
+	for _, gl := range g.prog.Globals {
 		if gl.Init == nil {
 			continue
 		}
@@ -504,12 +617,21 @@ func (g *gen) entryPoint() {
 	g.resetFn(&sema.Func{Name: "main", Sig: &types.Func{Ret: types.TUnit}})
 	g.emit("call void @veles_rt_init(i32 %%argc, ptr %%argv)")
 	g.emit("call void @veles_init_globals()")
-	if main == nil {
+	if g.prog.TestMode {
+		g.testRunner()
+	} else if main == nil {
 		g.emitTerm("ret i32 0")
 	} else if main.Sig.Effects.Throws {
 		rs := g.prog.ResultType(main.Sig.Ret, main.Sig.Effects.Error).(*types.Sealed)
 		r := g.newTmp()
-		g.emit("%s = call %s @%s()", r, g.llType(rs), main.Name)
+		if main.Suspends {
+			root := g.runRoot(main)
+			rp := g.newTmp()
+			g.emit("%s = call ptr @veles_task_result(ptr %s)", rp, root)
+			g.emit("%s = load %s, ptr %s", r, g.llType(rs), rp)
+		} else {
+			g.emit("%s = call %s @%s()", r, g.llType(rs), main.Name)
+		}
 		tag := g.newTmp()
 		g.emit("%s = extractvalue %s %s, 0", tag, g.llType(rs), r)
 		isErr := g.newTmp()
@@ -526,6 +648,9 @@ func (g *gen) entryPoint() {
 		g.emit("call void @veles_report_error(ptr %s, i64 %s)", p, l)
 		g.emitTerm("ret i32 1")
 		g.placeLabel(okL)
+		g.emitTerm("ret i32 0")
+	} else if main.Suspends {
+		g.runRoot(main)
 		g.emitTerm("ret i32 0")
 	} else {
 		g.emit("call void @%s()", main.Name)
@@ -553,4 +678,16 @@ func sortedKeys(m map[string]string) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// runCleanups emits the close calls of every `with` entered since depth,
+// innermost first, without popping them (the code after the jump still
+// belongs to those blocks).
+func (g *gen) runCleanups(depth int) {
+	saved := g.cleanups
+	for i := len(saved) - 1; i >= depth; i-- {
+		g.cleanups = saved[:i]
+		g.expr(saved[i])
+	}
+	g.cleanups = saved
 }

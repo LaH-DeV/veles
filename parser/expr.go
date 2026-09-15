@@ -257,6 +257,25 @@ func (p *Parser) parsePrimary() ast.Expr {
 		return p.parseParenOrTuple()
 	case lexer.LBracket:
 		return p.parseCollectionLit()
+	case lexer.KwMut:
+		// `mut [1, 2]` / `mut ["k": v]` / `mut [:]`: a mutable collection
+		// literal without spelling the MutableList/MutableMap annotation.
+		start := p.span()
+		p.next()
+		if !p.at(lexer.LBracket) {
+			p.errorf(p.span(), "'mut' in an expression must be followed by a collection literal, e.g. 'mut [1, 2]' or 'mut [:]'")
+			return &ast.BadExpr{Pos: p.spanFrom(start)}
+		}
+		lit := p.parseCollectionLit()
+		switch l := lit.(type) {
+		case *ast.ListLit:
+			l.Mut = true
+			l.Pos = p.spanFrom(start)
+		case *ast.MapLit:
+			l.Mut = true
+			l.Pos = p.spanFrom(start)
+		}
+		return lit
 	case lexer.KwIf:
 		return p.parseIf()
 	case lexer.KwWhen:
@@ -279,7 +298,7 @@ func (p *Parser) parsePrimary() ast.Expr {
 	case lexer.KwFun:
 		p.errorf(t.Span, "anonymous functions are written as lambdas: '(x) => ...' (D32)")
 		return &ast.BadExpr{Pos: t.Span}
-	case lexer.KwReturn, lexer.KwBreak, lexer.KwContinue:
+	case lexer.KwReturn, lexer.KwThrow, lexer.KwBreak, lexer.KwContinue:
 		return &ast.ControlExpr{Stmt: p.parseStmt()}
 	case lexer.Arrow:
 		p.errorf(t.Span, "'->' is not an operator; use '=>' (D33)")
@@ -364,6 +383,16 @@ func (p *Parser) parseLambda() ast.Expr {
 	}
 	p.expect(lexer.FatArrow)
 	l.Body = p.parseArmBody()
+	// `x => total += x`: an assignment body is a one-statement block.
+	switch p.cur().Kind {
+	case lexer.Assign, lexer.PlusEq, lexer.MinusEq, lexer.StarEq, lexer.SlashEq, lexer.PercentEq:
+		if _, isBlock := l.Body.(*ast.BlockExpr); !isBlock {
+			op := p.next().Kind
+			val := p.parseExpr()
+			as := &ast.AssignStmt{Target: l.Body, Op: op, Value: val, Pos: p.spanFrom(start)}
+			l.Body = &ast.BlockExpr{Block: &ast.Block{Stmts: []ast.Stmt{as}, Pos: as.Pos}}
+		}
+	}
 	l.Pos = p.spanFrom(start)
 	return l
 }

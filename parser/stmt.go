@@ -111,6 +111,17 @@ func (p *Parser) parseStmt() ast.Stmt {
 		s.Pos = p.spanFrom(start)
 		return s
 
+	case lexer.KwThrow:
+		p.next()
+		s := &ast.ThrowStmt{}
+		if p.at(lexer.Semi, lexer.RBrace, lexer.EOF) {
+			p.errorf(p.span(), "'throw' needs an error value, e.g. 'throw ParseError(text: s)'")
+		} else {
+			s.Value = p.parseExpr()
+		}
+		s.Pos = p.spanFrom(start)
+		return s
+
 	case lexer.KwBreak, lexer.KwContinue:
 		isBreak := p.next().Kind == lexer.KwBreak
 		var label *ast.Ident
@@ -124,16 +135,7 @@ func (p *Parser) parseStmt() ast.Stmt {
 		return &ast.ContinueStmt{Label: label, Pos: p.spanFrom(start)}
 
 	case lexer.KwLoop:
-		return p.parseLoop(nil, start)
-
-	case lexer.Ident:
-		// `label: loop { }`
-		if p.peek(1).Kind == lexer.Colon && p.peek(2).Kind == lexer.KwLoop {
-			t := p.next()
-			p.next() // :
-			label := &ast.Ident{Name: t.Text, Pos: t.Span}
-			return p.parseLoop(label, start)
-		}
+		return p.parseLoop(start)
 
 	case lexer.KwWith:
 		return p.parseWith()
@@ -168,9 +170,14 @@ func (p *Parser) parseStmt() ast.Stmt {
 	return &ast.ExprStmt{X: x}
 }
 
-func (p *Parser) parseLoop(label *ast.Ident, start source.Span) ast.Stmt {
+func (p *Parser) parseLoop(start source.Span) ast.Stmt {
 	p.expect(lexer.KwLoop)
-	s := &ast.LoopStmt{Label: label}
+	s := &ast.LoopStmt{}
+	if p.accept(lexer.Colon) {
+		// `loop :outer (x in xs) { ... break outer }` (section 4b)
+		id, _ := p.expectIdent()
+		s.Label = &id
+	}
 	if p.at(lexer.LParen) {
 		// `loop (x in c)` or `loop (cond)`. A binding followed by `in` is the
 		// iteration form; `(a, b) in` destructures tuples.

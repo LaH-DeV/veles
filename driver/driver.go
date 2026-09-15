@@ -38,7 +38,12 @@ func Run(opts Options) int {
 		fmt.Fprint(os.Stderr, diags.Render())
 		return 1
 	}
-	prog := sema.Check(pkg, diags, opts.Release)
+	var prog *sema.Program
+	if opts.Mode == "test" {
+		prog = sema.CheckTests(pkg, diags, opts.Release)
+	} else {
+		prog = sema.Check(pkg, diags, opts.Release)
+	}
 	fmt.Fprint(os.Stderr, diags.Render())
 	if diags.HasErrors() || prog == nil {
 		return 1
@@ -81,6 +86,7 @@ func Run(opts Options) int {
 	}
 	llPath = filepath.Join(tmpDir, "program.ll")
 	rtPath := filepath.Join(tmpDir, "veles_rt.c")
+	gcPath := filepath.Join(tmpDir, "veles_gc.c")
 	if err := os.WriteFile(llPath, []byte(ir), 0o644); err != nil {
 		fmt.Fprintln(os.Stderr, "veles:", err)
 		return 1
@@ -89,12 +95,21 @@ func Run(opts Options) int {
 		fmt.Fprintln(os.Stderr, "veles:", err)
 		return 1
 	}
+	if err := os.WriteFile(gcPath, []byte(rt.GCSource), 0o644); err != nil {
+		fmt.Fprintln(os.Stderr, "veles:", err)
+		return 1
+	}
+	taskPath := filepath.Join(tmpDir, "veles_task.c")
+	if err := os.WriteFile(taskPath, []byte(rt.TaskSource), 0o644); err != nil {
+		fmt.Fprintln(os.Stderr, "veles:", err)
+		return 1
+	}
 	clang, err := findClang()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "veles:", err)
 		return 1
 	}
-	args := []string{"-o", exe, llPath, rtPath, "-Wno-override-module"}
+	args := []string{"-o", exe, llPath, rtPath, gcPath, taskPath, "-Wno-override-module"}
 	if opts.Release {
 		args = append(args, "-O2")
 	} else {
@@ -114,6 +129,9 @@ func Run(opts Options) int {
 	}
 	if opts.Mode == "build" {
 		return 0
+	}
+	if opts.Mode == "test" {
+		defer os.Remove(exe)
 	}
 	abs, _ := filepath.Abs(exe)
 	run := exec.Command(abs, opts.ProgramArgs...)
