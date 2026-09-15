@@ -1,0 +1,9 @@
+The sum is 12
+i = 0
+i = 1
+i = 2
+k = 1
+k = 2
+k = 3
+sum is big, double is 24, float 5.0, bool true
+exit=0

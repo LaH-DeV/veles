@@ -1,0 +1,7 @@
+hello Ann, age 41
+nobody
+ages: 41 -1
+some Ann
+inner null
+len 3
+exit=0

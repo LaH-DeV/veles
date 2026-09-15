@@ -1,0 +1,603 @@
+// Package types is the semantic type representation shared by the checker
+// and the code generator.
+package types
+
+import (
+	"sort"
+	"strings"
+)
+
+type Type interface {
+	String() string
+}
+
+// ---------------------------------------------------------------------------
+// Basic types
+
+type BasicKind int
+
+const (
+	Invalid BasicKind = iota
+	Unit
+	Bool
+	I8
+	I16
+	I32
+	I64
+	ISize
+	U8
+	U16
+	U32
+	U64
+	USize
+	F32
+	F64
+	String
+	Never // type of `return`, `break`, and panics; assignable to anything
+)
+
+type Basic struct {
+	Kind BasicKind
+	Name string
+}
+
+func (b *Basic) String() string { return b.Name }
+
+var (
+	TInvalid = &Basic{Invalid, "<invalid>"}
+	TUnit    = &Basic{Unit, "()"}
+	TBool    = &Basic{Bool, "bool"}
+	TI8      = &Basic{I8, "i8"}
+	TI16     = &Basic{I16, "i16"}
+	TI32     = &Basic{I32, "i32"}
+	TI64     = &Basic{I64, "i64"}
+	TISize   = &Basic{ISize, "isize"}
+	TU8      = &Basic{U8, "u8"}
+	TU16     = &Basic{U16, "u16"}
+	TU32     = &Basic{U32, "u32"}
+	TU64     = &Basic{U64, "u64"}
+	TUSize   = &Basic{USize, "usize"}
+	TF32     = &Basic{F32, "f32"}
+	TF64     = &Basic{F64, "f64"}
+	TString  = &Basic{String, "string"}
+	TNever   = &Basic{Never, "!"}
+)
+
+var Primitives = map[string]*Basic{
+	"bool": TBool, "i8": TI8, "i16": TI16, "i32": TI32, "i64": TI64, "isize": TISize,
+	"u8": TU8, "u16": TU16, "u32": TU32, "u64": TU64, "usize": TUSize,
+	"f32": TF32, "f64": TF64, "string": TString,
+}
+
+func IsInteger(t Type) bool {
+	b, ok := t.(*Basic)
+	return ok && b.Kind >= I8 && b.Kind <= USize
+}
+
+func IsSigned(t Type) bool {
+	b, ok := t.(*Basic)
+	return ok && b.Kind >= I8 && b.Kind <= ISize
+}
+
+func IsUnsigned(t Type) bool {
+	b, ok := t.(*Basic)
+	return ok && b.Kind >= U8 && b.Kind <= USize
+}
+
+func IsFloat(t Type) bool {
+	b, ok := t.(*Basic)
+	return ok && (b.Kind == F32 || b.Kind == F64)
+}
+
+func IsNumeric(t Type) bool { return IsInteger(t) || IsFloat(t) }
+
+func IsBool(t Type) bool   { b, ok := t.(*Basic); return ok && b.Kind == Bool }
+func IsString(t Type) bool { b, ok := t.(*Basic); return ok && b.Kind == String }
+func IsUnit(t Type) bool   { b, ok := t.(*Basic); return ok && b.Kind == Unit }
+func IsNever(t Type) bool  { b, ok := t.(*Basic); return ok && b.Kind == Never }
+func IsInvalid(t Type) bool {
+	b, ok := t.(*Basic)
+	return ok && b.Kind == Invalid
+}
+
+// BitSize returns the width of an integer or float type.
+func BitSize(t Type) int {
+	b, ok := t.(*Basic)
+	if !ok {
+		return 0
+	}
+	switch b.Kind {
+	case I8, U8:
+		return 8
+	case I16, U16:
+		return 16
+	case I32, U32, F32:
+		return 32
+	case I64, U64, ISize, USize, F64:
+		return 64
+	case Bool:
+		return 1
+	}
+	return 0
+}
+
+// ---------------------------------------------------------------------------
+// Composite types
+
+// Pointer is `*T` (GC-managed) or `*raw T`.
+type Pointer struct {
+	Elem Type
+	Raw  bool
+}
+
+func (p *Pointer) String() string {
+	if p.Raw {
+		return "*raw " + p.Elem.String()
+	}
+	return "*" + p.Elem.String()
+}
+
+// Nullable is `T?`, i.e. Option<T> (D5). Nests: `T??` is distinct from `T?`.
+type Nullable struct {
+	Elem Type
+}
+
+func (n *Nullable) String() string {
+	if _, ok := n.Elem.(*Pointer); ok {
+		return "(" + n.Elem.String() + ")?"
+	}
+	return n.Elem.String() + "?"
+}
+
+type Tuple struct {
+	Elems []Type
+}
+
+func (t *Tuple) String() string {
+	parts := make([]string, len(t.Elems))
+	for i, e := range t.Elems {
+		parts[i] = e.String()
+	}
+	return "(" + strings.Join(parts, ", ") + ")"
+}
+
+// Range is the type of `lo..hi` / `lo..<hi` (D29).
+type Range struct {
+	Elem Type
+}
+
+func (r *Range) String() string { return "Range<" + r.Elem.String() + ">" }
+
+// List is the immutable `List<T>`; MutableList is `MutableList<T>` (D25/D41).
+type List struct {
+	Elem    Type
+	Mutable bool
+}
+
+func (l *List) String() string {
+	if l.Mutable {
+		return "MutableList<" + l.Elem.String() + ">"
+	}
+	return "List<" + l.Elem.String() + ">"
+}
+
+// Effects declared or inferred on a function (D2/D4/D40).
+type Effects struct {
+	Suspends bool
+	Throws   bool
+	Error    Type // nil while being inferred; an ErrorUnion or a single type
+}
+
+type Param struct {
+	Name       string
+	Type       Type
+	HasDefault bool
+}
+
+// Func is a function signature.
+type Func struct {
+	Params  []Param
+	Ret     Type
+	Effects Effects
+}
+
+func (f *Func) String() string {
+	parts := make([]string, len(f.Params))
+	for i, p := range f.Params {
+		parts[i] = p.Type.String()
+	}
+	s := "fun(" + strings.Join(parts, ", ") + ")"
+	if f.Ret != nil && !IsUnit(f.Ret) {
+		s += ": " + f.Ret.String()
+	}
+	if f.Effects.Suspends {
+		s += " suspends"
+	}
+	if f.Effects.Throws {
+		s += " throws"
+		if f.Effects.Error != nil {
+			s += " " + f.Effects.Error.String()
+		}
+	}
+	return s
+}
+
+// ErrorUnion is `A | B`, only in error position (D45). Members are kept
+// sorted by name and flattened so that equal unions compare identical.
+type ErrorUnion struct {
+	Members []Type
+}
+
+func (u *ErrorUnion) String() string {
+	parts := make([]string, len(u.Members))
+	for i, m := range u.Members {
+		parts[i] = m.String()
+	}
+	return strings.Join(parts, " | ")
+}
+
+// MakeErrorUnion flattens and sorts members; a single member is returned as
+// itself and zero members as nil.
+func MakeErrorUnion(members ...Type) Type {
+	var flat []Type
+	var add func(t Type)
+	add = func(t Type) {
+		if t == nil {
+			return
+		}
+		if u, ok := t.(*ErrorUnion); ok {
+			for _, m := range u.Members {
+				add(m)
+			}
+			return
+		}
+		for _, m := range flat {
+			if Identical(m, t) {
+				return
+			}
+		}
+		flat = append(flat, t)
+	}
+	for _, m := range members {
+		add(m)
+	}
+	switch len(flat) {
+	case 0:
+		return nil
+	case 1:
+		return flat[0]
+	}
+	sort.Slice(flat, func(i, j int) bool { return flat[i].String() < flat[j].String() })
+	return &ErrorUnion{Members: flat}
+}
+
+// UnionMembers returns the members of an error type (one for a non-union).
+func UnionMembers(t Type) []Type {
+	if t == nil {
+		return nil
+	}
+	if u, ok := t.(*ErrorUnion); ok {
+		return u.Members
+	}
+	return []Type{t}
+}
+
+// UnionIndex returns the position of member m in error type u, or -1.
+func UnionIndex(u Type, m Type) int {
+	for i, x := range UnionMembers(u) {
+		if Identical(x, m) {
+			return i
+		}
+	}
+	return -1
+}
+
+// ---------------------------------------------------------------------------
+// Named types
+
+// TypeParam is a generic parameter inside a template declaration.
+type TypeParam struct {
+	Name   string
+	Bounds []*Trait
+	Index  int
+	Owner  string // for diagnostics
+}
+
+func (t *TypeParam) String() string { return t.Name }
+
+type Field struct {
+	Name       string
+	Type       Type
+	Pub        bool
+	HasDefault bool
+	Index      int
+}
+
+// Struct is a user (or builtin) struct. A generic struct declaration is a
+// template with TypeParams set and TypeArgs nil; each instantiation is a
+// separate *Struct with TypeArgs set and Template pointing back (D8 — one
+// body per instantiation is the bootstrap policy; GC-shape sharing is a
+// later optimisation invisible to semantics per D15).
+type Struct struct {
+	Name       string
+	Module     string
+	Pub        bool
+	Extern     bool
+	TypeParams []*TypeParam
+	TypeArgs   []Type
+	Template   *Struct
+	Fields     []*Field
+	Sealed     *Sealed // the sealed trait this struct is a variant of
+	Tag        int     // variant index within Sealed
+	Instances  map[string]*Struct
+	Methods    map[string]any // *sema.Func; opaque here to avoid a cycle
+	// Decl is the declaring AST node (opaque).
+	Decl any
+}
+
+func (s *Struct) String() string {
+	return qualified(s.Name, s.TypeArgs)
+}
+
+// Sealed is a sealed trait: a closed sum type laid out inline (D12).
+type Sealed struct {
+	Name       string
+	Module     string
+	Pub        bool
+	TypeParams []*TypeParam
+	TypeArgs   []Type
+	Template   *Sealed
+	Variants   []*Struct
+	Instances  map[string]*Sealed
+	Trait      *Trait // the trait half: methods declared on the sealed trait
+	Decl       any
+}
+
+func (s *Sealed) String() string {
+	return qualified(s.Name, s.TypeArgs)
+}
+
+// VariantByName finds a variant of a sealed type.
+func (s *Sealed) VariantByName(name string) *Struct {
+	for _, v := range s.Variants {
+		if v.Name == name {
+			return v
+		}
+	}
+	return nil
+}
+
+// Trait is an open (non-sealed) trait (D6). A trait used as a type denotes
+// a boxed trait object (D9).
+type Trait struct {
+	Name       string
+	Module     string
+	Pub        bool
+	TypeParams []*TypeParam
+	AssocTypes []string
+	Methods    map[string]*Func
+	MethodList []string
+	Decl       any
+}
+
+func (t *Trait) String() string { return t.Name }
+
+func qualified(name string, args []Type) string {
+	if len(args) == 0 {
+		return name
+	}
+	parts := make([]string, len(args))
+	for i, a := range args {
+		parts[i] = a.String()
+	}
+	return name + "<" + strings.Join(parts, ", ") + ">"
+}
+
+// ---------------------------------------------------------------------------
+// Identity and substitution
+
+// Identical reports structural identity. Named types are identical only
+// when they are the same declaration instance.
+func Identical(a, b Type) bool {
+	if a == b {
+		return true
+	}
+	switch a := a.(type) {
+	case *Basic:
+		b, ok := b.(*Basic)
+		return ok && a.Kind == b.Kind
+	case *Pointer:
+		b, ok := b.(*Pointer)
+		return ok && a.Raw == b.Raw && Identical(a.Elem, b.Elem)
+	case *Nullable:
+		b, ok := b.(*Nullable)
+		return ok && Identical(a.Elem, b.Elem)
+	case *Tuple:
+		b, ok := b.(*Tuple)
+		if !ok || len(a.Elems) != len(b.Elems) {
+			return false
+		}
+		for i := range a.Elems {
+			if !Identical(a.Elems[i], b.Elems[i]) {
+				return false
+			}
+		}
+		return true
+	case *Range:
+		b, ok := b.(*Range)
+		return ok && Identical(a.Elem, b.Elem)
+	case *List:
+		b, ok := b.(*List)
+		return ok && a.Mutable == b.Mutable && Identical(a.Elem, b.Elem)
+	case *Func:
+		b, ok := b.(*Func)
+		if !ok || len(a.Params) != len(b.Params) || !Identical(a.Ret, b.Ret) {
+			return false
+		}
+		for i := range a.Params {
+			if !Identical(a.Params[i].Type, b.Params[i].Type) {
+				return false
+			}
+		}
+		if a.Effects.Suspends != b.Effects.Suspends || a.Effects.Throws != b.Effects.Throws {
+			return false
+		}
+		if a.Effects.Throws && !Identical(a.Effects.Error, b.Effects.Error) {
+			return false
+		}
+		return true
+	case *ErrorUnion:
+		b, ok := b.(*ErrorUnion)
+		if !ok || len(a.Members) != len(b.Members) {
+			return false
+		}
+		for i := range a.Members {
+			if !Identical(a.Members[i], b.Members[i]) {
+				return false
+			}
+		}
+		return true
+	case *Struct, *Sealed, *Trait, *TypeParam:
+		return a == b
+	}
+	return false
+}
+
+// Subst replaces type parameters in t according to the mapping.
+func Subst(t Type, m map[*TypeParam]Type) Type {
+	if len(m) == 0 || t == nil {
+		return t
+	}
+	switch t := t.(type) {
+	case *TypeParam:
+		if r, ok := m[t]; ok {
+			return r
+		}
+		return t
+	case *Pointer:
+		return &Pointer{Elem: Subst(t.Elem, m), Raw: t.Raw}
+	case *Nullable:
+		return &Nullable{Elem: Subst(t.Elem, m)}
+	case *Tuple:
+		out := make([]Type, len(t.Elems))
+		for i, e := range t.Elems {
+			out[i] = Subst(e, m)
+		}
+		return &Tuple{Elems: out}
+	case *Range:
+		return &Range{Elem: Subst(t.Elem, m)}
+	case *List:
+		return &List{Elem: Subst(t.Elem, m), Mutable: t.Mutable}
+	case *Func:
+		out := &Func{Ret: Subst(t.Ret, m), Effects: t.Effects}
+		out.Effects.Error = Subst(t.Effects.Error, m)
+		for _, p := range t.Params {
+			out.Params = append(out.Params, Param{Name: p.Name, Type: Subst(p.Type, m), HasDefault: p.HasDefault})
+		}
+		return out
+	case *ErrorUnion:
+		members := make([]Type, len(t.Members))
+		for i, e := range t.Members {
+			members[i] = Subst(e, m)
+		}
+		return MakeErrorUnion(members...)
+	case *Struct:
+		if len(t.TypeArgs) > 0 && StructInstantiator != nil {
+			if args, changed := substArgs(t.TypeArgs, m); changed {
+				tmpl := t
+				if t.Template != nil {
+					tmpl = t.Template
+				}
+				return StructInstantiator(tmpl, args)
+			}
+		}
+	case *Sealed:
+		if len(t.TypeArgs) > 0 && SealedInstantiator != nil {
+			if args, changed := substArgs(t.TypeArgs, m); changed {
+				tmpl := t
+				if t.Template != nil {
+					tmpl = t.Template
+				}
+				return SealedInstantiator(tmpl, args)
+			}
+		}
+	}
+	return t
+}
+
+// ContainsTypeParam reports whether t mentions any generic parameter.
+func ContainsTypeParam(t Type) bool {
+	switch t := t.(type) {
+	case *TypeParam:
+		return true
+	case *Pointer:
+		return ContainsTypeParam(t.Elem)
+	case *Nullable:
+		return ContainsTypeParam(t.Elem)
+	case *Tuple:
+		for _, e := range t.Elems {
+			if ContainsTypeParam(e) {
+				return true
+			}
+		}
+	case *Range:
+		return ContainsTypeParam(t.Elem)
+	case *List:
+		return ContainsTypeParam(t.Elem)
+	case *Func:
+		for _, p := range t.Params {
+			if ContainsTypeParam(p.Type) {
+				return true
+			}
+		}
+		return ContainsTypeParam(t.Ret) || ContainsTypeParam(t.Effects.Error)
+	case *ErrorUnion:
+		for _, m := range t.Members {
+			if ContainsTypeParam(m) {
+				return true
+			}
+		}
+	case *Struct:
+		for _, a := range t.TypeArgs {
+			if ContainsTypeParam(a) {
+				return true
+			}
+		}
+		return len(t.TypeParams) > 0 && t.TypeArgs == nil
+	case *Sealed:
+		for _, a := range t.TypeArgs {
+			if ContainsTypeParam(a) {
+				return true
+			}
+		}
+		return len(t.TypeParams) > 0 && t.TypeArgs == nil
+	}
+	return false
+}
+
+// Key returns a canonical string for use as a map key.
+func Key(t Type) string {
+	if t == nil {
+		return "<nil>"
+	}
+	return t.String()
+}
+
+// Instantiators are installed by the checker so that Subst can re-apply
+// type arguments to generic struct and sealed instances.
+var (
+	StructInstantiator func(tmpl *Struct, args []Type) Type
+	SealedInstantiator func(tmpl *Sealed, args []Type) Type
+)
+
+func substArgs(args []Type, m map[*TypeParam]Type) ([]Type, bool) {
+	changed := false
+	out := make([]Type, len(args))
+	for i, a := range args {
+		out[i] = Subst(a, m)
+		if out[i] != a {
+			changed = true
+		}
+	}
+	return out, changed
+}

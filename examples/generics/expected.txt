@@ -1,0 +1,5 @@
+len 2 pop 2 pop 1 pop -1
+cat Tom!
+int 42!
+first 7 none
+exit=0

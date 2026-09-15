@@ -1,122 +1,734 @@
+// Package parser builds an ast.File from tokens. It is a hand-written
+// recursive-descent parser with Pratt-style expression parsing. Errors are
+// recorded as diagnostics and the parser resynchronises at the next
+// statement or declaration so that one mistake yields one message.
 package parser
 
 import (
+	"fmt"
+
 	"github.com/LaH-DeV/veles/ast"
 	"github.com/LaH-DeV/veles/lexer"
+	"github.com/LaH-DeV/veles/source"
 )
 
-type parser struct {
-	tokens []lexer.Token
-	pos    int
+type Parser struct {
+	file  *source.File
+	toks  []lexer.Token
+	pos   int
+	diags *source.Diagnostics
 
-	stmtLookup *map[lexer.TokenKind]stmtHandler
-	nudLookup  *map[lexer.TokenKind]nudHandler
-	ledLookup  *map[lexer.TokenKind]ledHandler
-	bpLookup   *map[lexer.TokenKind]bindingPower
-
-	filetype lexer.Filetype
+	// noStructLit-style flag: while parsing an `if`/`when`/`loop` header we
+	// are inside parentheses so this is not needed; kept for lambdas.
+	lastErrPos int
 }
 
-func NewParser(filetype lexer.Filetype) *parser {
-	switch filetype {
-	case lexer.Vs:
-		return vsParser()
-	case lexer.Wat:
-		return watParser()
-	default:
-		return nil
+// ParseFile parses one source file.
+func ParseFile(file *source.File, diags *source.Diagnostics) *ast.File {
+	toks := lexer.Tokenize(file, diags)
+	p := &Parser{file: file, toks: toks, diags: diags, lastErrPos: -1}
+	return p.parseFile()
+}
+
+// ParseExprString parses a standalone expression (used by tests).
+func ParseExprString(src string, diags *source.Diagnostics) ast.Expr {
+	file := source.NewFile("<expr>", src)
+	toks := lexer.Tokenize(file, diags)
+	p := &Parser{file: file, toks: toks, diags: diags, lastErrPos: -1}
+	e := p.parseExpr()
+	p.skipSemis()
+	if !p.at(lexer.EOF) {
+		p.errorExpected("end of expression")
 	}
+	return e
 }
 
-func (p *parser) ParseFile(tokens []lexer.Token, filename string) *ast.Program {
-	p.newState(tokens)
+// ---------------------------------------------------------------------------
+// token helpers
 
-	body := make([]ast.Stmt, 0)
+func (p *Parser) cur() lexer.Token { return p.toks[p.pos] }
 
-	for p.hasTokens() {
-		p.skipNewlines()
-		stmt := parseStmt(p)
-		if stmt != nil {
-			body = append(body, stmt)
+func (p *Parser) peek(n int) lexer.Token {
+	if p.pos+n < len(p.toks) {
+		return p.toks[p.pos+n]
+	}
+	return p.toks[len(p.toks)-1]
+}
+
+func (p *Parser) at(kinds ...lexer.TokenKind) bool {
+	k := p.cur().Kind
+	for _, want := range kinds {
+		if k == want {
+			return true
 		}
 	}
+	return false
+}
 
-	return &ast.Program{
-		Statements: body,
-		Filetype:   p.filetype,
-		Filename:   filename,
+func (p *Parser) next() lexer.Token {
+	t := p.toks[p.pos]
+	if p.pos < len(p.toks)-1 {
+		p.pos++
+	}
+	return t
+}
+
+func (p *Parser) accept(kind lexer.TokenKind) bool {
+	if p.at(kind) {
+		p.next()
+		return true
+	}
+	return false
+}
+
+func (p *Parser) span() source.Span { return p.cur().Span }
+
+func (p *Parser) prevSpan() source.Span {
+	if p.pos == 0 {
+		return p.cur().Span
+	}
+	return p.toks[p.pos-1].Span
+}
+
+// spanFrom returns a span from start to the end of the previous token.
+func (p *Parser) spanFrom(start source.Span) source.Span {
+	return start.To(p.prevSpan())
+}
+
+func (p *Parser) errorf(sp source.Span, format string, args ...any) {
+	// Suppress cascades: one error per token position.
+	if sp.Start == p.lastErrPos {
+		return
+	}
+	p.lastErrPos = sp.Start
+	p.diags.Errorf(sp, format, args...)
+}
+
+func (p *Parser) errorExpected(what string) {
+	p.errorf(p.span(), "expected %s, found %s", what, p.cur().Describe())
+}
+
+func (p *Parser) expect(kind lexer.TokenKind) (lexer.Token, bool) {
+	if p.at(kind) {
+		return p.next(), true
+	}
+	p.errorExpected(fmt.Sprintf("'%s'", kind))
+	return p.cur(), false
+}
+
+func (p *Parser) expectIdent() (ast.Ident, bool) {
+	if p.at(lexer.Ident) {
+		t := p.next()
+		return ast.Ident{Name: t.Text, Pos: t.Span}, true
+	}
+	p.errorExpected("identifier")
+	return ast.Ident{Name: "_", Pos: p.span()}, false
+}
+
+func (p *Parser) skipSemis() {
+	for p.at(lexer.Semi) {
+		p.next()
 	}
 }
 
-func vsParser() *parser {
-	p := baseParser()
-	p.filetype = lexer.Vs
-
-	p.led(lexer.ASSIGNMENT, assignment, parseAssignmentExpr)
-
-	p.led(lexer.GREATER, relational, parseBinaryExpr)
-	p.led(lexer.LESS, relational, parseBinaryExpr)
-	p.led(lexer.GREATER_EQUAL, relational, parseBinaryExpr)
-	p.led(lexer.LESS_EQUAL, relational, parseBinaryExpr)
-	p.led(lexer.EQUAL, relational, parseBinaryExpr)
-	p.led(lexer.NOT_EQUAL, relational, parseBinaryExpr)
-
-	p.led(lexer.AND, logical, parseBinaryExpr)
-	p.led(lexer.OR, logical, parseBinaryExpr)
-
-	p.led(lexer.PLUS, additive, parseBinaryExpr)
-	p.led(lexer.DASH, additive, parseBinaryExpr)
-	p.led(lexer.SLASH, multiplicative, parseBinaryExpr)
-	p.led(lexer.ASTERISK, multiplicative, parseBinaryExpr)
-	p.led(lexer.REMAINDER, multiplicative, parseBinaryExpr)
-	p.led(lexer.EXPONENTIATION, exponentiation, parseBinaryExpr)
-	p.led(lexer.OPEN_PAREN, call, parseCallExpr)
-	p.led(lexer.DOUBLE_COLON, member, parseMemberExpr)
-
-	p.nud(lexer.FALSE, parsePrimaryExpr)
-	p.nud(lexer.TRUE, parsePrimaryExpr)
-	p.nud(lexer.INTEGER, parsePrimaryExpr)
-	p.nud(lexer.FLOAT, parsePrimaryExpr)
-	p.nud(lexer.IDENTIFIER, parsePrimaryExpr)
-
-	p.nud(lexer.OPEN_PAREN, parseGroupingExpr)
-
-	p.nud(lexer.DASH, parsePrefixExpr)
-	p.nud(lexer.NOT, parsePrefixExpr)
-
-	p.stmt(lexer.USE, parseUseStmt)
-	p.stmt(lexer.RETURN, parseReturnStmt)
-	p.stmt(lexer.LET, parseVariableDeclarationStmt)
-	p.stmt(lexer.IF, parseIfStmt)
-	p.stmt(lexer.FN, parseFunctionStmt)
-	p.stmt(lexer.PUB, parsePublicStmt)
-	p.stmt(lexer.EXTERN, parseExternStmt)
-
-	return p
-}
-
-// TODO
-func watParser() *parser {
-	p := baseParser()
-	p.filetype = lexer.Wat
-	return p
-}
-
-func baseParser() *parser {
-	p := &parser{
-		tokens:     []lexer.Token{},
-		pos:        0,
-		stmtLookup: &map[lexer.TokenKind]stmtHandler{},
-		nudLookup:  &map[lexer.TokenKind]nudHandler{},
-		ledLookup:  &map[lexer.TokenKind]ledHandler{},
-		bpLookup:   &map[lexer.TokenKind]bindingPower{},
-		filetype:   lexer.Unrecognized,
+// expectTerminator consumes the end of a statement or member: a `;`, or
+// nothing when the next token closes the enclosing block.
+func (p *Parser) expectTerminator() {
+	if p.at(lexer.Semi) {
+		p.next()
+		return
 	}
-	return p
+	if p.at(lexer.RBrace, lexer.EOF) {
+		return
+	}
+	if p.at(lexer.Arrow) {
+		p.errorf(p.span(), "'->' is not an operator; use '=>' (D33)")
+		p.syncStmt()
+		return
+	}
+	p.errorf(p.span(), "expected end of statement, found %s", p.cur().Describe())
+	p.syncStmt()
 }
 
-func (p *parser) newState(tokens []lexer.Token) {
-	p.tokens = tokens
-	p.pos = 0
-	// TODO: reset diagnostics
+// syncStmt skips to the next statement boundary, honouring nesting.
+func (p *Parser) syncStmt() {
+	depth := 0
+	for !p.at(lexer.EOF) {
+		switch p.cur().Kind {
+		case lexer.LBrace, lexer.LParen, lexer.LBracket:
+			depth++
+		case lexer.RBrace, lexer.RParen, lexer.RBracket:
+			if depth == 0 {
+				return
+			}
+			depth--
+		case lexer.Semi:
+			if depth == 0 {
+				p.next()
+				return
+			}
+		}
+		p.next()
+	}
+}
+
+// syncDecl skips to the next top-level declaration.
+func (p *Parser) syncDecl() {
+	depth := 0
+	for !p.at(lexer.EOF) {
+		k := p.cur().Kind
+		if depth == 0 {
+			switch k {
+			case lexer.KwFun, lexer.KwStruct, lexer.KwTrait, lexer.KwImpl, lexer.KwSealed,
+				lexer.KwPub, lexer.KwUse, lexer.KwExtern, lexer.KwVal, lexer.KwVar, lexer.KwConst, lexer.At:
+				return
+			}
+		}
+		switch k {
+		case lexer.LBrace:
+			depth++
+		case lexer.RBrace:
+			if depth > 0 {
+				depth--
+			}
+		}
+		p.next()
+	}
+}
+
+// ---------------------------------------------------------------------------
+// file & declarations
+
+func (p *Parser) parseFile() *ast.File {
+	f := &ast.File{Source: p.file}
+	for {
+		p.skipSemis()
+		if p.at(lexer.EOF) {
+			break
+		}
+		start := p.pos
+		d := p.parseDecl()
+		if d != nil {
+			f.Decls = append(f.Decls, d)
+		}
+		if _, bad := d.(*ast.BadDecl); bad || p.pos == start {
+			if p.pos == start {
+				p.next()
+			}
+			p.syncDecl()
+			continue
+		}
+		switch {
+		case p.at(lexer.Semi):
+			p.next()
+		case p.at(lexer.EOF):
+		case p.startsDecl():
+			// Missing terminator (typically an unbalanced paren suppressed
+			// newline insertion); report but keep the next declaration.
+			p.errorf(p.span(), "expected newline before %s", p.cur().Describe())
+		default:
+			p.expectTerminator()
+		}
+	}
+	return f
+}
+
+func (p *Parser) startsDecl() bool {
+	return p.at(lexer.KwFun, lexer.KwStruct, lexer.KwTrait, lexer.KwImpl, lexer.KwSealed,
+		lexer.KwPub, lexer.KwUse, lexer.KwExtern, lexer.KwVal, lexer.KwVar, lexer.KwConst, lexer.At)
+}
+
+func (p *Parser) parseAttributes() []*ast.Attribute {
+	var attrs []*ast.Attribute
+	for p.at(lexer.At) {
+		start := p.span()
+		p.next()
+		name, _ := p.expectIdent()
+		attr := &ast.Attribute{Name: name}
+		if p.at(lexer.LParen) {
+			attr.Args = p.parseArgs()
+		}
+		attr.Pos = p.spanFrom(start)
+		attrs = append(attrs, attr)
+		p.skipSemis()
+	}
+	return attrs
+}
+
+func (p *Parser) parseDecl() ast.Decl {
+	attrs := p.parseAttributes()
+	start := p.span()
+	pub := p.accept(lexer.KwPub)
+
+	switch p.cur().Kind {
+	case lexer.KwUse:
+		if pub {
+			p.errorf(start, "'use' cannot be 'pub'")
+		}
+		return p.parseUse()
+	case lexer.KwFun, lexer.KwUnsafe:
+		fn := p.parseFun(attrs, funContextFree)
+		fn.Pub = pub
+		fn.Pos = start.To(fn.Pos)
+		return fn
+	case lexer.KwStruct:
+		return p.parseStruct(attrs, pub, false, start)
+	case lexer.KwSealed, lexer.KwTrait:
+		return p.parseTrait(attrs, pub, start)
+	case lexer.KwImpl:
+		if pub {
+			p.errorf(start, "'impl' cannot be 'pub'; visibility follows the trait and type")
+		}
+		return p.parseImpl(attrs)
+	case lexer.KwVal, lexer.KwVar, lexer.KwConst:
+		return p.parseValDecl(attrs, pub, start)
+	case lexer.KwExtern:
+		if p.peek(1).Kind == lexer.KwStruct {
+			p.next()
+			return p.parseStruct(attrs, pub, true, start)
+		}
+		return p.parseExternBlock()
+	}
+	p.errorf(p.span(), "expected a declaration, found %s", p.cur().Describe())
+	return &ast.BadDecl{Pos: p.span()}
+}
+
+func (p *Parser) parseUse() ast.Decl {
+	start := p.span()
+	p.next() // use
+	d := &ast.UseDecl{}
+	for {
+		if p.at(lexer.LBrace) {
+			p.next()
+			d.Items = []ast.UseItem{}
+			for !p.at(lexer.RBrace, lexer.EOF) {
+				p.skipSemis()
+				name, ok := p.expectIdent()
+				if !ok {
+					p.syncStmt()
+					break
+				}
+				it := ast.UseItem{Name: name}
+				if p.accept(lexer.KwAs) {
+					alias, _ := p.expectIdent()
+					it.Alias = &alias
+				}
+				d.Items = append(d.Items, it)
+				p.skipSemis()
+				if !p.accept(lexer.Comma) {
+					break
+				}
+				p.skipSemis()
+			}
+			p.expect(lexer.RBrace)
+			break
+		}
+		seg, ok := p.expectIdent()
+		if !ok {
+			break
+		}
+		d.Path = append(d.Path, seg)
+		if !p.accept(lexer.Dot) {
+			break
+		}
+	}
+	if len(d.Path) == 0 {
+		p.errorf(start, "'use' needs a module path")
+	}
+	if p.accept(lexer.KwAs) {
+		alias, _ := p.expectIdent()
+		d.Alias = &alias
+	}
+	d.Pos = p.spanFrom(start)
+	return d
+}
+
+type funContext int
+
+const (
+	funContextFree   funContext = iota // module level
+	funContextMethod                   // inside struct / impl
+	funContextTrait                    // inside trait (body optional)
+	funContextExtern                   // inside extern block (no body)
+)
+
+func (p *Parser) parseTypeParams() []ast.TypeParam {
+	if !p.at(lexer.Lt) {
+		return nil
+	}
+	p.next()
+	var tps []ast.TypeParam
+	for !p.at(lexer.Gt, lexer.EOF) {
+		name, ok := p.expectIdent()
+		if !ok {
+			break
+		}
+		tp := ast.TypeParam{Name: name}
+		if p.accept(lexer.Colon) {
+			tp.Bounds = append(tp.Bounds, p.parseType())
+			for p.accept(lexer.Plus) {
+				tp.Bounds = append(tp.Bounds, p.parseType())
+			}
+		}
+		tps = append(tps, tp)
+		if !p.accept(lexer.Comma) {
+			break
+		}
+	}
+	p.expect(lexer.Gt)
+	return tps
+}
+
+func (p *Parser) parseParams() []ast.Param {
+	if _, ok := p.expect(lexer.LParen); !ok {
+		return nil
+	}
+	var params []ast.Param
+	for !p.at(lexer.RParen, lexer.EOF) {
+		start := p.span()
+		name, ok := p.expectIdent()
+		if !ok {
+			p.syncParen()
+			break
+		}
+		prm := ast.Param{Name: name}
+		if _, ok := p.expect(lexer.Colon); ok {
+			prm.Type = p.parseType()
+		}
+		if p.accept(lexer.Assign) {
+			prm.Default = p.parseExpr()
+		}
+		prm.Pos = p.spanFrom(start)
+		params = append(params, prm)
+		if !p.accept(lexer.Comma) {
+			break
+		}
+	}
+	p.expect(lexer.RParen)
+	return params
+}
+
+// syncParen skips to the closing paren of the current list, or to a `{` or
+// statement end that shows the list was never closed.
+func (p *Parser) syncParen() {
+	depth := 0
+	for !p.at(lexer.EOF) {
+		switch p.cur().Kind {
+		case lexer.LParen:
+			depth++
+		case lexer.RParen:
+			if depth == 0 {
+				return
+			}
+			depth--
+		case lexer.LBrace, lexer.Semi:
+			if depth == 0 {
+				return
+			}
+		}
+		p.next()
+	}
+}
+
+func (p *Parser) parseEffects() ast.Effects {
+	var eff ast.Effects
+	if p.at(lexer.KwSuspends) {
+		eff.Suspends = true
+		eff.SuspendsSpan = p.next().Span
+	}
+	if p.at(lexer.KwThrows) {
+		eff.Throws = true
+		eff.ThrowsSpan = p.next().Span
+		if p.at(lexer.Ident, lexer.KwSelfTy) {
+			eff.Error = p.parseErrorType()
+		}
+	}
+	if p.at(lexer.KwSuspends) {
+		p.errorf(p.span(), "'suspends' must come before 'throws'")
+		p.next()
+		eff.Suspends = true
+	}
+	return eff
+}
+
+func (p *Parser) parseFun(attrs []*ast.Attribute, ctx funContext) *ast.FunDecl {
+	start := p.span()
+	fn := &ast.FunDecl{Attrs: attrs}
+	// modifiers
+	for {
+		switch p.cur().Kind {
+		case lexer.KwPub:
+			fn.Pub = true
+		case lexer.KwMut:
+			fn.Mut = true
+		case lexer.KwOverride:
+			fn.Override = true
+		case lexer.KwUnsafe:
+			fn.Unsafe = true
+		default:
+			goto done
+		}
+		p.next()
+	}
+done:
+	if _, ok := p.expect(lexer.KwFun); !ok {
+		fn.Name = ast.Ident{Name: "_", Pos: p.span()}
+		fn.Pos = p.spanFrom(start)
+		return fn
+	}
+	fn.TypeParams = p.parseTypeParams()
+	fn.Name, _ = p.expectIdent()
+	if p.at(lexer.Lt) {
+		if fn.TypeParams != nil {
+			p.errorf(p.span(), "type parameters were already given before the function name")
+		}
+		fn.TypeParams = p.parseTypeParams()
+	}
+	fn.Params = p.parseParams()
+	if p.accept(lexer.Colon) {
+		fn.Ret = p.parseType()
+	}
+	fn.Effects = p.parseEffects()
+
+	switch {
+	case p.at(lexer.LBrace):
+		fn.Body = p.parseBlock()
+	case p.at(lexer.Assign):
+		p.next()
+		fn.ExprBody = p.parseExpr()
+	default:
+		if ctx == funContextFree || ctx == funContextMethod {
+			p.errorf(p.span(), "function '%s' needs a body: '{ ... }' or '= expr'", fn.Name.Name)
+		}
+	}
+	if ctx == funContextExtern && (fn.Body != nil || fn.ExprBody != nil) {
+		p.errorf(fn.Name.Pos, "extern function '%s' cannot have a body", fn.Name.Name)
+	}
+	fn.Pos = p.spanFrom(start)
+	return fn
+}
+
+// parseMemberSeparator handles the separators between struct/trait members:
+// newlines, `;`, or `,` (so `{ w: f64, h: f64 }` works on one line).
+func (p *Parser) parseMemberSeparator() bool {
+	if p.at(lexer.Semi, lexer.Comma) {
+		p.next()
+		p.skipSemis()
+		return true
+	}
+	if p.at(lexer.RBrace, lexer.EOF) {
+		return true
+	}
+	p.errorf(p.span(), "expected newline or ',' between members, found %s", p.cur().Describe())
+	p.syncStmt()
+	return false
+}
+
+func (p *Parser) parseStruct(attrs []*ast.Attribute, pub, extern bool, start source.Span) ast.Decl {
+	p.next() // struct
+	d := &ast.StructDecl{Attrs: attrs, Pub: pub, Extern: extern}
+	d.Name, _ = p.expectIdent()
+	d.TypeParams = p.parseTypeParams()
+	if p.accept(lexer.Colon) {
+		d.Variant = p.parseType()
+	}
+	if p.at(lexer.LBrace) {
+		p.next()
+		p.skipSemis()
+		for !p.at(lexer.RBrace, lexer.EOF) {
+			mattrs := p.parseAttributes()
+			switch p.cur().Kind {
+			case lexer.KwFun, lexer.KwMut, lexer.KwOverride, lexer.KwUnsafe:
+				d.Methods = append(d.Methods, p.parseFun(mattrs, funContextMethod))
+			case lexer.KwPub:
+				if p.peek(1).Kind == lexer.Ident {
+					d.Fields = append(d.Fields, p.parseField(true))
+				} else {
+					d.Methods = append(d.Methods, p.parseFun(mattrs, funContextMethod))
+				}
+			case lexer.Ident:
+				d.Fields = append(d.Fields, p.parseField(false))
+			default:
+				p.errorf(p.span(), "expected a field or method, found %s", p.cur().Describe())
+				p.syncStmt()
+				continue
+			}
+			p.parseMemberSeparator()
+		}
+		p.expect(lexer.RBrace)
+	} else {
+		p.expectTerminatorPeek("'{' after struct name")
+	}
+	d.Pos = p.spanFrom(start)
+	return d
+}
+
+func (p *Parser) expectTerminatorPeek(what string) {
+	if !p.at(lexer.Semi, lexer.RBrace, lexer.EOF) {
+		p.errorExpected(what)
+	}
+}
+
+func (p *Parser) parseField(pub bool) *ast.Field {
+	start := p.span()
+	if pub {
+		p.next()
+	}
+	f := &ast.Field{Pub: pub}
+	f.Name, _ = p.expectIdent()
+	if _, ok := p.expect(lexer.Colon); ok {
+		f.Type = p.parseType()
+	}
+	if p.accept(lexer.Assign) {
+		f.Default = p.parseExpr()
+	}
+	f.Pos = p.spanFrom(start)
+	return f
+}
+
+func (p *Parser) parseTrait(attrs []*ast.Attribute, pub bool, start source.Span) ast.Decl {
+	d := &ast.TraitDecl{Attrs: attrs, Pub: pub}
+	if p.accept(lexer.KwSealed) {
+		d.Sealed = true
+	}
+	if _, ok := p.expect(lexer.KwTrait); !ok {
+		return &ast.BadDecl{Pos: p.span()}
+	}
+	d.Name, _ = p.expectIdent()
+	d.TypeParams = p.parseTypeParams()
+	if p.accept(lexer.Colon) {
+		d.Supers = append(d.Supers, p.parseType())
+		for p.accept(lexer.Plus) {
+			d.Supers = append(d.Supers, p.parseType())
+		}
+	}
+	if p.at(lexer.LBrace) {
+		p.next()
+		p.skipSemis()
+		for !p.at(lexer.RBrace, lexer.EOF) {
+			mattrs := p.parseAttributes()
+			switch p.cur().Kind {
+			case lexer.KwType:
+				ts := p.span()
+				p.next()
+				at := &ast.AssocTypeDecl{}
+				at.Name, _ = p.expectIdent()
+				if p.accept(lexer.Colon) {
+					at.Bounds = append(at.Bounds, p.parseType())
+					for p.accept(lexer.Plus) {
+						at.Bounds = append(at.Bounds, p.parseType())
+					}
+				}
+				at.Pos = p.spanFrom(ts)
+				d.AssocTypes = append(d.AssocTypes, at)
+			case lexer.KwFun, lexer.KwMut, lexer.KwUnsafe, lexer.KwPub:
+				d.Methods = append(d.Methods, p.parseFun(mattrs, funContextTrait))
+			default:
+				p.errorf(p.span(), "expected 'type' or 'fun' in trait body, found %s", p.cur().Describe())
+				p.syncStmt()
+				continue
+			}
+			p.parseMemberSeparator()
+		}
+		p.expect(lexer.RBrace)
+	}
+	d.Pos = p.spanFrom(start)
+	return d
+}
+
+func (p *Parser) parseImpl(attrs []*ast.Attribute) ast.Decl {
+	start := p.span()
+	p.next() // impl
+	d := &ast.ImplDecl{Attrs: attrs}
+	d.TypeParams = p.parseTypeParams()
+	d.Trait = p.parseType()
+	if p.at(lexer.KwFor) {
+		p.next()
+		d.Target = p.parseType()
+	} else {
+		p.errorf(p.span(), "expected 'for' after trait name in impl; inherent methods go inside the struct body (D23)")
+		d.Target = d.Trait
+	}
+	if _, ok := p.expect(lexer.LBrace); ok {
+		p.skipSemis()
+		for !p.at(lexer.RBrace, lexer.EOF) {
+			mattrs := p.parseAttributes()
+			switch p.cur().Kind {
+			case lexer.KwType:
+				p.next()
+				b := &ast.AssocTypeBinding{}
+				b.Name, _ = p.expectIdent()
+				if _, ok := p.expect(lexer.Assign); ok {
+					b.Type = p.parseType()
+				}
+				d.AssocTypes = append(d.AssocTypes, b)
+			case lexer.KwFun, lexer.KwMut, lexer.KwOverride, lexer.KwUnsafe, lexer.KwPub:
+				d.Methods = append(d.Methods, p.parseFun(mattrs, funContextMethod))
+			default:
+				p.errorf(p.span(), "expected 'type' or 'fun' in impl body, found %s", p.cur().Describe())
+				p.syncStmt()
+				continue
+			}
+			p.parseMemberSeparator()
+		}
+		p.expect(lexer.RBrace)
+	}
+	d.Pos = p.spanFrom(start)
+	return d
+}
+
+func (p *Parser) parseValDecl(attrs []*ast.Attribute, pub bool, start source.Span) ast.Decl {
+	d := &ast.ValDecl{Attrs: attrs, Pub: pub}
+	switch p.next().Kind {
+	case lexer.KwVar:
+		d.Kind = ast.BindVar
+	case lexer.KwConst:
+		d.Kind = ast.BindConst
+	default:
+		d.Kind = ast.BindVal
+	}
+	d.Name, _ = p.expectIdent()
+	if p.accept(lexer.Colon) {
+		d.Type = p.parseType()
+	}
+	if _, ok := p.expect(lexer.Assign); ok {
+		d.Value = p.parseExpr()
+	}
+	d.Pos = p.spanFrom(start)
+	return d
+}
+
+func (p *Parser) parseExternBlock() ast.Decl {
+	start := p.span()
+	p.next() // extern
+	d := &ast.ExternBlock{ABI: "C"}
+	if p.at(lexer.String) {
+		t := p.next()
+		if len(t.Parts) == 1 && !t.Parts[0].IsExpr {
+			d.ABI = t.Parts[0].Text
+		}
+		if d.ABI != "C" {
+			p.errorf(t.Span, "unsupported ABI %q; only \"C\" is defined", d.ABI)
+		}
+	} else {
+		p.errorExpected("ABI string (\"C\") after 'extern'")
+	}
+	if _, ok := p.expect(lexer.LBrace); ok {
+		p.skipSemis()
+		for !p.at(lexer.RBrace, lexer.EOF) {
+			mattrs := p.parseAttributes()
+			if !p.at(lexer.KwFun, lexer.KwPub, lexer.KwUnsafe) {
+				p.errorf(p.span(), "expected 'fun' in extern block, found %s", p.cur().Describe())
+				p.syncStmt()
+				continue
+			}
+			fn := p.parseFun(mattrs, funContextExtern)
+			fn.Extern = true
+			d.Funs = append(d.Funs, fn)
+			p.parseMemberSeparator()
+		}
+		p.expect(lexer.RBrace)
+	}
+	d.Pos = p.spanFrom(start)
+	return d
 }

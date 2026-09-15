@@ -1,0 +1,5 @@
+circle r=1.0 area=3.14159265358979
+rect 2.0x3.0 area=6.0
+point area=0.0
+still a circle: Circle(radius: 2.0)
+exit=0

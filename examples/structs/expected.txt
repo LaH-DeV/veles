@@ -1,0 +1,6 @@
+c=2 d=2 e=12
+sum 6
+through pointer 3 3
+tuple 1 two two
+squares [0, 1, 4, 9, 16] len 5 last 16
+exit=0
