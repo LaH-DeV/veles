@@ -1,6 +1,6 @@
 use io
 
-struct User { name: string, age: i32 }
+struct User { name: string, age: i64 }
 
 fun find(name: string): User? {
   if (name == "ann") return User(name: "Ann", age: 41)
@@ -24,7 +24,7 @@ fun main() {
     null => io.println("none")
     is User(name) => io.println("some $name")
   }
-  val nested: i32?? = Some(null)
+  val nested: i64?? = Some(null)
   when (nested) {
     null => io.println("outer null")
     Some(null) => io.println("inner null")

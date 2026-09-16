@@ -1,6 +1,8 @@
 package sema
 
 import (
+	"strings"
+
 	"github.com/LaH-DeV/veles/ast"
 	"github.com/LaH-DeV/veles/source"
 	"github.com/LaH-DeV/veles/types"
@@ -25,6 +27,7 @@ type Symbol struct {
 	Span   source.Span
 
 	Type   types.Type    // SymType
+	Alias  *errorAlias   // SymType naming an error set (`error X = A | B`); Type is filled on first use
 	Func   *FuncTemplate // SymFunc
 	Global *Global       // SymGlobal
 	Var    *Var          // SymLocal
@@ -148,4 +151,16 @@ type Impl struct {
 	AssocTypes map[string]types.Type
 	Module     *Module
 	Decl       *ast.ImplDecl
+}
+
+// Doc is the module's documentation: the top-of-file doc comments of its
+// files, in file order, joined by blank lines.
+func (m *Module) Doc() string {
+	var parts []string
+	for _, f := range m.Files {
+		if f.Doc != "" {
+			parts = append(parts, f.Doc)
+		}
+	}
+	return strings.Join(parts, "\n\n")
 }

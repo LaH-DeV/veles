@@ -15,7 +15,8 @@ func (f *fnCtx) whenExpr(e *ast.WhenExpr, want types.Type) Expr {
 	m := &Match{Span: e.Pos}
 
 	var subj Expr
-	var subjVar *Var
+	var subjPlace place
+	var subjOK bool
 	var subjType types.Type
 	if e.Subject != nil {
 		subj = f.checkExpr(e.Subject, nil)
@@ -23,7 +24,7 @@ func (f *fnCtx) whenExpr(e *ast.WhenExpr, want types.Type) Expr {
 		if types.IsInvalid(subjType) {
 			return bad()
 		}
-		subjVar = varOf(e.Subject, f)
+		subjPlace, subjOK = f.placeOf(e.Subject)
 		// D39: a pointer scrutinee is dereferenced without ceremony.
 		if p, ok := subjType.(*types.Pointer); ok && !p.Raw {
 			subj = &Deref{exprBase{p.Elem}, subj}
@@ -71,10 +72,10 @@ func (f *fnCtx) whenExpr(e *ast.WhenExpr, want types.Type) Expr {
 					f.cover(cov, pat, subjType)
 				}
 				// smart cast of the subject variable inside the arm
-				if subjVar != nil && len(arm.Patterns) == 1 {
+				if subjOK && len(arm.Patterns) == 1 {
 					if tp, ok := pat.(*ast.TypePat); ok {
 						if target := f.resolvePatternType(subjType, tp.Type); target != nil && !types.Identical(target, subjType) {
-							f.narrow[subjVar] = target
+							f.narrow[subjPlace] = target
 						}
 					}
 				}
@@ -231,6 +232,7 @@ func (f *fnCtx) compilePattern(pat ast.Pattern, subj Expr, t types.Type, span so
 		return nil, nil, true
 	case *ast.BindPat:
 		v := f.newVar(p.Name.Name, t, false, p.Name.Pos)
+		v.checkUse = true
 		return nil, []Stmt{&VarDecl{Var: v, Init: subj}}, true
 	case *ast.LiteralPat:
 		if tp := f.variantNamePattern(p); tp != nil {

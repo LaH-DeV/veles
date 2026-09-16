@@ -1,0 +1,246 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Veles",
+  "scopeName": "source.veles",
+  "fileTypes": ["vs"],
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#attributes" },
+    { "include": "#use" },
+    { "include": "#declarations" },
+    { "include": "#keywords" },
+    { "include": "#effects" },
+    { "include": "#literals" },
+    { "include": "#strings" },
+    { "include": "#chars" },
+    { "include": "#types" },
+    { "include": "#calls" },
+    { "include": "#operators" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.documentation.veles",
+          "match": "///.*$"
+        },
+        {
+          "name": "comment.line.double-slash.veles",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.documentation.veles",
+          "begin": "/\\*\\*(?!/)",
+          "end": "\\*/",
+          "patterns": [{ "include": "#comments" }]
+        },
+        {
+          "name": "comment.block.veles",
+          "begin": "/\\*",
+          "end": "\\*/",
+          "patterns": [{ "include": "#comments" }]
+        }
+      ]
+    },
+    "attributes": {
+      "name": "meta.attribute.veles",
+      "match": "(@)([A-Za-z_][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "punctuation.definition.attribute.veles" },
+        "2": { "name": "entity.other.attribute-name.veles" }
+      }
+    },
+    "use": {
+      "name": "meta.use.veles",
+      "begin": "\\b(use)\\b",
+      "beginCaptures": { "1": { "name": "keyword.control.import.veles" } },
+      "end": "$",
+      "patterns": [
+        { "name": "keyword.control.import.veles", "match": "\\bas\\b" },
+        { "name": "entity.name.namespace.veles", "match": "[A-Za-z_][A-Za-z0-9_]*" },
+        { "include": "#punctuation" }
+      ]
+    },
+    "declarations": {
+      "patterns": [
+        {
+          "comment": "fun name(",
+          "match": "\\b(pub\\s+)?(override\\s+)?(unsafe\\s+)?(mut\\s+)?(fun)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "storage.modifier.veles" },
+            "2": { "name": "storage.modifier.veles" },
+            "3": { "name": "storage.modifier.veles" },
+            "4": { "name": "storage.modifier.veles" },
+            "5": { "name": "storage.type.function.veles" },
+            "6": { "name": "entity.name.function.veles" }
+          }
+        },
+        {
+          "comment": "struct / trait / sealed trait / error (contextual: a keyword only before a type name)",
+          "match": "\\b(pub\\s+)?(extern\\s+)?(sealed\\s+)?(struct|trait|error)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "storage.modifier.veles" },
+            "2": { "name": "storage.modifier.veles" },
+            "3": { "name": "storage.modifier.veles" },
+            "4": { "name": "storage.type.veles" },
+            "5": { "name": "entity.name.type.veles" }
+          }
+        },
+        {
+          "comment": "impl Trait for Type",
+          "begin": "\\b(impl)\\b",
+          "beginCaptures": { "1": { "name": "storage.type.impl.veles" } },
+          "end": "(?=\\{)",
+          "patterns": [
+            { "name": "keyword.other.for.veles", "match": "\\bfor\\b" },
+            { "include": "#types" },
+            { "include": "#punctuation" }
+          ]
+        },
+        {
+          "comment": "type Item = ...  (associated type)",
+          "match": "\\b(type)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "storage.type.veles" },
+            "2": { "name": "entity.name.type.veles" }
+          }
+        },
+        {
+          "comment": "val / var / const binding",
+          "match": "\\b(pub\\s+)?(val|var|const)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "storage.modifier.veles" },
+            "2": { "name": "storage.type.veles" },
+            "3": { "name": "variable.other.declaration.veles" }
+          }
+        },
+        {
+          "comment": "loop :label",
+          "match": "\\b(loop)\\s*(:)\\s*([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.control.loop.veles" },
+            "2": { "name": "punctuation.separator.label.veles" },
+            "3": { "name": "entity.name.label.veles" }
+          }
+        },
+        {
+          "comment": "break/continue label",
+          "match": "\\b(break|continue)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.control.loop.veles" },
+            "2": { "name": "entity.name.label.veles" }
+          }
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        { "name": "keyword.control.conditional.veles", "match": "\\b(if|else|when|is)\\b" },
+        { "name": "keyword.control.loop.veles", "match": "\\b(loop|break|continue|in)\\b" },
+        { "name": "keyword.control.flow.veles", "match": "\\b(return|throw|try|with)\\b" },
+        { "name": "keyword.control.concurrency.veles", "match": "\\b(async|await|scope|gather|race)\\b" },
+        { "name": "storage.modifier.veles", "match": "\\b(pub|override|unsafe|extern|mut|sealed)\\b" },
+        { "name": "storage.type.veles", "match": "\\b(fun|struct|trait|impl|val|var|const|type)\\b" },
+        { "name": "keyword.operator.expression.veles", "match": "\\b(as|raw)\\b" },
+        { "name": "variable.language.self.veles", "match": "\\b(self)\\b" },
+        { "name": "support.type.self.veles", "match": "\\b(Self)\\b" },
+        { "name": "invalid.illegal.reserved.veles", "match": "\\b(enum|match|defer|go|yield|where|super|this|catch|interface|class|static|while|do|finally|import|package|module|let|for)\\b" }
+      ]
+    },
+    "effects": {
+      "name": "keyword.other.effect.veles",
+      "match": "\\b(throws|suspends)\\b"
+    },
+    "literals": {
+      "patterns": [
+        { "name": "constant.language.boolean.veles", "match": "\\b(true|false)\\b" },
+        { "name": "constant.language.null.veles", "match": "\\b(null)\\b" },
+        { "name": "constant.numeric.hex.veles", "match": "\\b0[xX][0-9a-fA-F_]+([iu](8|16|32|64))?\\b" },
+        { "name": "constant.numeric.binary.veles", "match": "\\b0[bB][01_]+([iu](8|16|32|64))?\\b" },
+        { "name": "constant.numeric.float.veles", "match": "\\b[0-9][0-9_]*\\.[0-9][0-9_]*([eE][+-]?[0-9]+)?(f32|f64)?\\b" },
+        { "name": "constant.numeric.float.veles", "match": "\\b[0-9][0-9_]*[eE][+-]?[0-9]+(f32|f64)?\\b" },
+        { "name": "constant.numeric.integer.veles", "match": "\\b[0-9][0-9_]*([iu](8|16|32|64)|f32|f64)?\\b" }
+      ]
+    },
+    "strings": {
+      "name": "string.quoted.double.veles",
+      "begin": "\"",
+      "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.veles" } },
+      "end": "\"",
+      "endCaptures": { "0": { "name": "punctuation.definition.string.end.veles" } },
+      "patterns": [
+        { "name": "constant.character.escape.veles", "match": "\\\\(u\\{[0-9a-fA-F]+\\}|[nrt0\\\\\"'$])" },
+        {
+          "comment": "`${expr}` — contentName meta.embedded makes themes drop the string colour inside, so the expression is coloured as code",
+          "name": "meta.interpolation.veles",
+          "begin": "\\$\\{",
+          "beginCaptures": { "0": { "name": "punctuation.definition.template-expression.begin.veles" } },
+          "end": "\\}",
+          "endCaptures": { "0": { "name": "punctuation.definition.template-expression.end.veles" } },
+          "contentName": "meta.embedded.line.veles",
+          "patterns": [{ "include": "$self" }]
+        },
+        {
+          "comment": "`$name`",
+          "name": "meta.interpolation.veles meta.embedded.line.veles",
+          "match": "(\\$)([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "punctuation.definition.template-expression.begin.veles" },
+            "2": { "name": "variable.other.readwrite.veles" }
+          }
+        }
+      ]
+    },
+    "chars": {
+      "name": "string.quoted.single.veles",
+      "match": "'(\\\\(u\\{[0-9a-fA-F]+\\}|[nrt0\\\\'\"])|[^'\\\\])'",
+      "captures": { "1": { "name": "constant.character.escape.veles" } }
+    },
+    "types": {
+      "patterns": [
+        { "name": "support.type.primitive.veles", "match": "\\b(i8|i16|i32|i64|u8|u16|u32|u64|f32|f64|bool|string|char)\\b" },
+        { "name": "support.type.collection.veles", "match": "\\b(List|MutableList|Map|MutableMap|Set|MutableSet|Channel|Range|Option|Result|Task|Iterator|Iterable|Closeable|Mutex|Atomic|Panic|Sendable)\\b" },
+        { "name": "support.function.prelude.veles", "match": "\\b(Some|None|Ok|Err|sleep)\\b" },
+        {
+          "comment": "Capitalised identifiers are types or variants",
+          "name": "entity.name.type.veles",
+          "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
+        }
+      ]
+    },
+    "calls": {
+      "match": "\\b([a-z_][A-Za-z0-9_]*)\\s*(?=\\(|<[A-Za-z_][A-Za-z0-9_, <>?*]*>\\()",
+      "captures": { "1": { "name": "entity.name.function.call.veles" } }
+    },
+    "operators": {
+      "patterns": [
+        { "name": "keyword.operator.arrow.veles", "match": "=>" },
+        { "name": "keyword.operator.range.veles", "match": "\\.\\.<|\\.\\." },
+        { "name": "keyword.operator.nullable.veles", "match": "\\?:|\\?\\.|\\?" },
+        { "name": "keyword.operator.wrapping.veles", "match": "[+\\-*]%" },
+        { "name": "keyword.operator.comparison.veles", "match": "==|!=|<=|>=|<|>" },
+        { "name": "keyword.operator.logical.veles", "match": "&&|\\|\\||!" },
+        { "name": "keyword.operator.assignment.veles", "match": "[+\\-*/%]?=" },
+        { "name": "keyword.operator.arithmetic.veles", "match": "[+\\-*/%]" },
+        { "name": "keyword.operator.union.veles", "match": "\\|" },
+        { "name": "keyword.operator.address.veles", "match": "&" },
+        { "name": "punctuation.accessor.assoc.veles", "match": "::" }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        { "name": "punctuation.separator.comma.veles", "match": "," },
+        { "name": "punctuation.separator.colon.veles", "match": ":" },
+        { "name": "punctuation.terminator.veles", "match": ";" },
+        { "name": "punctuation.accessor.veles", "match": "\\." },
+        { "name": "punctuation.section.block.begin.veles", "match": "\\{" },
+        { "name": "punctuation.section.block.end.veles", "match": "\\}" },
+        { "name": "punctuation.section.brackets.begin.veles", "match": "\\[" },
+        { "name": "punctuation.section.brackets.end.veles", "match": "\\]" },
+        { "name": "punctuation.section.parens.begin.veles", "match": "\\(" },
+        { "name": "punctuation.section.parens.end.veles", "match": "\\)" }
+      ]
+    }
+  }
+}

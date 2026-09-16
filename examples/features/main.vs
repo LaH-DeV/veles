@@ -1,8 +1,8 @@
 use io
 
 // Labeled loops (§4b), subjectless when (D13), ranges (D29)
-fun primes(limit: i32): List<i32> {
-  var found: MutableList<i32> = []
+fun primes(limit: i64): List<i64> {
+  var found: MutableList<i64> = []
   loop :outer (n in 2..limit) {
     loop (p in found) {
       if (n % p == 0) continue outer
@@ -13,7 +13,7 @@ fun primes(limit: i32): List<i32> {
   found.toList()
 }
 
-fun sign(n: i32): string = when {
+fun sign(n: i64): string = when {
   n < 0 => "negative"
   n == 0 => "zero"
   else => "positive"

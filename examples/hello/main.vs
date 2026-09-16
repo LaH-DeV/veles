@@ -15,8 +15,8 @@ fun main() {
   io.println("sum is $big, double is ${sum * 2}, float ${2.5 * 2.0}, bool ${sum == 12}")
 }
 
-fun add(a: i32, b: i32) = a + b
+fun add(a: i64, b: i64) = a + b
 
-fun printSum(sum: i32) {
+fun printSum(sum: i64) {
   io.println("The sum is $sum")
 }

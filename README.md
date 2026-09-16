@@ -14,7 +14,13 @@ go build -o veles.exe .
 ./veles.exe check examples/errors           # type-check only
 ./veles.exe parse examples/syntax_tour.vs   # dump the syntax tree
 ./veles.exe build examples/hello --emit-llvm   # write the LLVM IR instead of linking
+./veles.exe lsp                              # language server over stdio (see editors/vscode)
 ```
+
+New to the language? Start with [docs/README.md](docs/README.md): fourteen
+tutorial chapters for three levels of reader plus a cheat sheet, a
+standard-library reference and a guide to error messages. Every program in
+them is compiled and run by `go test ./docs/`.
 
 Requirements: Go 1.23 and `clang` (LLVM 17+) on `PATH`, or `VELES_CLANG`.
 `--release` disables overflow checks (D21) and optimises; the default is a
@@ -33,6 +39,9 @@ checked debug build. `VELES_GC_TRACE=1` reports collections;
 | `codegen/llvm/` | textual LLVM IR emission (I1/I2); coroutines via `llvm.coro.*`; GC type descriptors; vtables |
 | `runtime/c/` | `veles_rt.c` (strings, lists, maps), `veles_gc.c` (collector), `veles_task.c` (executor) |
 | `std/` | standard library in Veles, embedded in the compiler: `prelude` (D24: `Iterator`/`Iterable` and adapters, `Closeable`, `Mutex`/`Atomic`, `Panic`), `io` |
+| `lsp/` | language server: diagnostics, hover, definition, symbols, completion over the compiler front end |
+| `editors/vscode/` | VS Code extension: TextMate grammar and client for `veles lsp` |
+| `docs/` | tutorials and reference; `go test ./docs/` runs every code block |
 | `examples/` | 24 programs with expected output; `go test ./...` compiles and runs them |
 
 ## Spec coverage
@@ -43,7 +52,8 @@ suspension inferred over the call graph and compiled to stackless
 coroutines; `await` only on primitives that always suspend (D16). D3/D34/D36/D38
 `scope` (fail-fast, cancellation at suspension points), `gather` (tuple of
 `Result<T, E | Panic>`), `race`, channels, timers. D4/D45 `throws` as
-`Result` sugar, `throw e`, inferred error unions. D5 nesting `T?` with smart casts,
+`Result` sugar, `throw e`, inferred error unions, `error Name { }` declarations
+with `message()` dispatching on unions. D5 nesting `T?` with smart casts,
 `?.`, `?:`. D6/D9/D17/D26/D53 traits, trait objects with vtables, global
 coherence, default bodies. D7/D10/D39 value structs, `&x` with heap
 promotion, auto-deref. D8/D15 generics by stenciling. D11/D22 `val`/`var`,

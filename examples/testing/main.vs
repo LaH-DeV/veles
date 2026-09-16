@@ -1,10 +1,10 @@
 use io
 
-struct Mismatch { expected: i32, actual: i32 }
+error Mismatch { expected: i64, actual: i64 }
 
-fun add(a: i32, b: i32) = a + b
+fun add(a: i64, b: i64) = a + b
 
-fun expectEq(expected: i32, actual: i32) throws Mismatch {
+fun expectEq(expected: i64, actual: i64) throws Mismatch {
   if (expected != actual) throw Mismatch(expected: expected, actual: actual)
 }
 
@@ -15,7 +15,7 @@ fun additionWorks() throws Mismatch {
 
 @test
 fun tasksRunInTests() throws Mismatch {
-  val ch = Channel<i32>(capacity: 1)
+  val ch = Channel<i64>(capacity: 1)
   scope {
     ch.send(41)
     val v = await ch.recv()
@@ -29,10 +29,10 @@ fun thisOneFails() throws Mismatch {
 }
 
 @deprecated("use add")
-fun plus(a: i32, b: i32) = add(a, b)
+fun plus(a: i64, b: i64) = add(a, b)
 
 @mustUse
-fun important(): i32 = 7
+fun important(): i64 = 7
 
 fun main() {
   io.println("${plus(1, 2)} ${important()}")

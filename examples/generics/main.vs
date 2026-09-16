@@ -17,7 +17,7 @@ struct Cat { name: string }
 impl Show for Cat {
   fun show(): string = "cat ${self.name}"
 }
-impl Show for i32 {
+impl Show for i64 {
   fun show(): string = "int $self"
 }
 
@@ -29,7 +29,7 @@ fun <T> first(xs: List<T>, fallback: T): T {
 }
 
 fun main() {
-  val s = Stack<i32>()
+  val s = Stack<i64>()
   s.push(1)
   s.push(2)
   io.println("len ${s.len()} pop ${s.pop() ?: -1} pop ${s.pop() ?: -1} pop ${s.pop() ?: -1}")

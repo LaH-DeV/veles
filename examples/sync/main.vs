@@ -1,9 +1,9 @@
 use io
 
-struct Counter { hits: i32 }
+struct Counter { hits: i64 }
 
-fun bump(m: Mutex<Counter>, times: i32) {
-  loop (i in 0..<times) {
+fun bump(m: Mutex<Counter>, times: i64) {
+  loop (_ in 0..<times) {
     m.withLock(c => c.hits += 1)
     await sleep(0)
   }

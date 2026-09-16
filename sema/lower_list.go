@@ -276,7 +276,7 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 		get := &Builtin{exprBase{lt.Elem}, "list.get", []Expr{ref(list), ref(idx)}, span}
 		lp.Body = &Block{Stmts: []Stmt{&ExprStmt{X: &Builtin{exprBase{types.TUnit}, "list.push", []Expr{ref(out), get}, span}}}, Type: types.TUnit}
 		stmts = append(stmts, lp)
-		return finish(stmts, &Cast{exprBase{&types.List{Elem: lt.Elem, Mutable: lt.Mutable}}, ref(out)})
+		return finish(stmts, &Cast{exprBase{&types.List{Elem: lt.Elem, Mutable: false}}, ref(out)})
 	case "sortedBy", "sorted":
 		var keyFn *Var
 		var keyT types.Type = lt.Elem
@@ -341,7 +341,7 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 			setOut(ref(j), ref(cur)),
 		}, Type: types.TUnit}
 		stmts = append(stmts, &VarDecl{Var: i, Init: i64c(1)}, outer)
-		return finish(stmts, &Cast{exprBase{&types.List{Elem: lt.Elem, Mutable: lt.Mutable}}, ref(out)})
+		return finish(stmts, &Cast{exprBase{&types.List{Elem: lt.Elem, Mutable: false}}, ref(out)})
 	case "iter":
 		if !need(0) {
 			return bad()

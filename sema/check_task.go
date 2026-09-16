@@ -315,7 +315,7 @@ func (f *fnCtx) raceExpr(e *ast.RaceExpr, want types.Type) Expr {
 			} else {
 				vt := src.Type()
 				ha.Var = f.newVar(arm.Binding.Name.Name, vt, false, arm.Binding.Name.Pos)
-				f.declareLocal(arm.Binding.Name.Name, ha.Var, arm.Binding.Name.Pos)
+				f.declareChecked(arm.Binding.Name.Name, ha.Var, arm.Binding.Name.Pos)
 			}
 		} else if ha.Kind != RaceSleep {
 			ha.Var = f.newTemp(src.Type())

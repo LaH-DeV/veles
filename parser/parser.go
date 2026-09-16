@@ -21,13 +21,24 @@ type Parser struct {
 	// noStructLit-style flag: while parsing an `if`/`when`/`loop` header we
 	// are inside parentheses so this is not needed; kept for lambdas.
 	lastErrPos int
+
+	// errorFields is set while parsing an `error` body: a field may then
+	// have a union type, the one place outside `throws` where a union
+	// appears (a cause, D45).
+	errorFields bool
+
+	// leadDoc is a documentation comment seen on a declaration's attributes,
+	// handed to the declaration that follows them.
+	leadDoc string
 }
 
 // ParseFile parses one source file.
 func ParseFile(file *source.File, diags *source.Diagnostics) *ast.File {
-	toks := lexer.Tokenize(file, diags)
+	toks, doc := lexer.TokenizeFile(file, diags)
 	p := &Parser{file: file, toks: toks, diags: diags, lastErrPos: -1}
-	return p.parseFile()
+	f := p.parseFile()
+	f.Doc = doc
+	return f
 }
 
 // ParseExprString parses a standalone expression (used by tests).
@@ -183,6 +194,9 @@ func (p *Parser) syncDecl() {
 				lexer.KwPub, lexer.KwUse, lexer.KwExtern, lexer.KwVal, lexer.KwVar, lexer.KwConst, lexer.At:
 				return
 			}
+			if p.atErrorDecl() {
+				return
+			}
 		}
 		switch k {
 		case lexer.LBrace:
@@ -210,6 +224,9 @@ func (p *Parser) parseFile() *ast.File {
 		d := p.parseDecl()
 		if d != nil {
 			f.Decls = append(f.Decls, d)
+			if sd, ok := d.(*ast.StructDecl); ok && sd.ErrorImpl != nil {
+				f.Decls = append(f.Decls, sd.ErrorImpl) // `error` desugars to struct + impl
+			}
 		}
 		if _, bad := d.(*ast.BadDecl); bad || p.pos == start {
 			if p.pos == start {
@@ -234,12 +251,15 @@ func (p *Parser) parseFile() *ast.File {
 }
 
 func (p *Parser) startsDecl() bool {
-	return p.at(lexer.KwFun, lexer.KwStruct, lexer.KwTrait, lexer.KwImpl, lexer.KwSealed,
+	return p.atErrorDecl() || p.at(lexer.KwFun, lexer.KwStruct, lexer.KwTrait, lexer.KwImpl, lexer.KwSealed,
 		lexer.KwPub, lexer.KwUse, lexer.KwExtern, lexer.KwVal, lexer.KwVar, lexer.KwConst, lexer.At)
 }
 
 func (p *Parser) parseAttributes() []*ast.Attribute {
 	var attrs []*ast.Attribute
+	if p.at(lexer.At) {
+		p.leadDoc = p.cur().Doc
+	}
 	for p.at(lexer.At) {
 		start := p.span()
 		p.next()
@@ -257,6 +277,42 @@ func (p *Parser) parseAttributes() []*ast.Attribute {
 
 func (p *Parser) parseDecl() ast.Decl {
 	attrs := p.parseAttributes()
+	doc := p.takeDoc()
+	return withDoc(p.parseDeclBody(attrs), doc)
+}
+
+// withDoc attaches a documentation comment to the declaration it precedes.
+func withDoc(d ast.Decl, doc string) ast.Decl {
+	if doc == "" {
+		return d
+	}
+	switch d := d.(type) {
+	case *ast.FunDecl:
+		d.Doc = doc
+	case *ast.StructDecl:
+		d.Doc = doc
+	case *ast.TraitDecl:
+		d.Doc = doc
+	case *ast.ValDecl:
+		d.Doc = doc
+	case *ast.ErrorAliasDecl:
+		d.Doc = doc
+	}
+	return d
+}
+
+// takeDoc returns the documentation comment written above the declaration
+// starting at the cursor: on its attributes, or on its first token.
+func (p *Parser) takeDoc() string {
+	doc := p.leadDoc
+	p.leadDoc = ""
+	if doc == "" {
+		doc = p.cur().Doc
+	}
+	return doc
+}
+
+func (p *Parser) parseDeclBody(attrs []*ast.Attribute) ast.Decl {
 	start := p.span()
 	pub := p.accept(lexer.KwPub)
 
@@ -273,6 +329,10 @@ func (p *Parser) parseDecl() ast.Decl {
 		return fn
 	case lexer.KwStruct:
 		return p.parseStruct(attrs, pub, false, start)
+	case lexer.Ident:
+		if p.atErrorDecl() {
+			return p.parseErrorDecl(attrs, pub, start)
+		}
 	case lexer.KwSealed, lexer.KwTrait:
 		return p.parseTrait(attrs, pub, start)
 	case lexer.KwImpl:
@@ -453,7 +513,7 @@ func (p *Parser) parseEffects() ast.Effects {
 
 func (p *Parser) parseFun(attrs []*ast.Attribute, ctx funContext) *ast.FunDecl {
 	start := p.span()
-	fn := &ast.FunDecl{Attrs: attrs}
+	fn := &ast.FunDecl{Attrs: attrs, Doc: p.takeDoc()}
 	// modifiers
 	for {
 		switch p.cur().Kind {
@@ -571,13 +631,18 @@ func (p *Parser) expectTerminatorPeek(what string) {
 
 func (p *Parser) parseField(pub bool) *ast.Field {
 	start := p.span()
+	doc := p.takeDoc()
 	if pub {
 		p.next()
 	}
-	f := &ast.Field{Pub: pub}
+	f := &ast.Field{Pub: pub, Doc: doc}
 	f.Name, _ = p.expectIdent()
 	if _, ok := p.expect(lexer.Colon); ok {
-		f.Type = p.parseType()
+		if p.errorFields {
+			f.Type = p.parseErrorType()
+		} else {
+			f.Type = p.parseType()
+		}
 	}
 	if p.accept(lexer.Assign) {
 		f.Default = p.parseExpr()
@@ -729,6 +794,81 @@ func (p *Parser) parseExternBlock() ast.Decl {
 		}
 		p.expect(lexer.RBrace)
 	}
+	d.Pos = p.spanFrom(start)
+	return d
+}
+
+// atErrorDecl reports whether the cursor is at an `error Name` declaration.
+// `error` is a contextual keyword: it is an ordinary identifier everywhere
+// else (`is Err(error) => ...`), and a declaration only at declaration
+// position when a name follows.
+func (p *Parser) atErrorDecl() bool {
+	return p.at(lexer.Ident) && p.cur().Text == "error" && p.peek(1).Kind == lexer.Ident
+}
+
+// parseErrorDecl parses `error Name<T> { fields; methods }` (D4). It is
+// sugar for a struct plus `impl Error for Name`: methods marked `override`
+// go to the impl (they replace Error's defaults), the rest stay inherent.
+func (p *Parser) parseErrorDecl(attrs []*ast.Attribute, pub bool, start source.Span) ast.Decl {
+	kw := p.span()
+	if p.peek(2).Kind == lexer.Assign {
+		return p.parseErrorAlias(attrs, pub, start)
+	}
+	p.errorFields = true
+	d := p.parseStruct(attrs, pub, false, start).(*ast.StructDecl)
+	p.errorFields = false
+	d.Error = true
+	if d.Variant != nil {
+		p.errorf(kw, "an 'error' cannot be a variant of a sealed trait; declare it with 'struct'")
+	}
+	// `message` is the override of Error's default; `override` is implied
+	// here (there is exactly one trait in play), the other methods are
+	// inherent.
+	var inherent, impl []*ast.FunDecl
+	for _, m := range d.Methods {
+		if m.Name.Name == "message" {
+			m.Override = true
+			impl = append(impl, m)
+		} else {
+			if m.Override {
+				p.errorf(m.Name.Pos, "only 'message' can be overridden in an error; '%s' is an ordinary method", m.Name.Name)
+			}
+			inherent = append(inherent, m)
+		}
+	}
+	// a `message: string` field is the message: forward the method to it
+	if len(impl) == 0 {
+		for _, f := range d.Fields {
+			if nt, ok := f.Type.(*ast.NamedType); ok && f.Name.Name == "message" && len(nt.Path) == 1 && nt.Path[0].Name == "string" && len(nt.Args) == 0 {
+				pos := f.Name.Pos
+				impl = append(impl, &ast.FunDecl{
+					Override: true,
+					Name:     ast.Ident{Name: "message", Pos: pos},
+					Ret:      &ast.NamedType{Path: []ast.Ident{{Name: "string", Pos: pos}}, Pos: pos},
+					ExprBody: &ast.MemberExpr{X: &ast.SelfExpr{Pos: pos}, Name: ast.Ident{Name: "message", Pos: pos}, Pos: pos},
+					Pos:      pos,
+				})
+			}
+		}
+	}
+	d.Methods = inherent
+	target := &ast.NamedType{Path: []ast.Ident{d.Name}, Pos: d.Name.Pos}
+	for _, tp := range d.TypeParams {
+		target.Args = append(target.Args, &ast.NamedType{Path: []ast.Ident{tp.Name}, Pos: tp.Name.Pos})
+	}
+	errorTrait := &ast.NamedType{Path: []ast.Ident{{Name: "Error", Pos: kw}}, Pos: kw}
+	d.ErrorImpl = &ast.ImplDecl{TypeParams: d.TypeParams, Trait: errorTrait, Target: target, Methods: impl, Pos: d.Pos}
+	return d
+}
+
+// parseErrorAlias parses `error Name = A | B | C`: a named error set
+// (D45), transparent wherever a union may appear.
+func (p *Parser) parseErrorAlias(attrs []*ast.Attribute, pub bool, start source.Span) ast.Decl {
+	p.next() // error
+	d := &ast.ErrorAliasDecl{Attrs: attrs, Pub: pub}
+	d.Name, _ = p.expectIdent()
+	p.expect(lexer.Assign)
+	d.Members = p.parseErrorType()
 	d.Pos = p.spanFrom(start)
 	return d
 }

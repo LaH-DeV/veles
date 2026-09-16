@@ -10,9 +10,9 @@ fun open(name: string): Res {
   Res(name: name)
 }
 
-struct Oops { }
+error Oops { }
 
-fun early(flag: bool): i32 {
+fun early(flag: bool): i64 {
   with (a = open("a"), b = open("b")) {
     if (flag) return 1
     io.println("body ${a.name} ${b.name}")
@@ -20,7 +20,7 @@ fun early(flag: bool): i32 {
   2
 }
 
-fun failing(): i32 throws Oops {
+fun failing(): i64 throws Oops {
   with (r = open("r")) {
     if (r.name == "r") throw Oops()
   }

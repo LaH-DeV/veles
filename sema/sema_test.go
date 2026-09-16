@@ -78,25 +78,34 @@ struct U { name: string }
 fun f(u: U?): string = u.name
 fun main() { }`, "may be null"},
 		{"D4 unhandled Result", prelude + `
-struct E { }
+error E { }
 fun f(): i32 throws E = 1
 fun main() { f() }`, "unused Result"},
 		{"D4 throw needs throws", prelude + `
-struct E { }
+error E { }
 fun f(): i32 { throw E() }
 fun main() { }`, "not declared 'throws'"},
 		{"D4 throw not in declared union", prelude + `
-struct E1 { }
-struct E2 { }
+error E1 { }
+error E2 { }
 fun f(): i32 throws E1 { throw E2() }
 fun main() { }`, "E2"},
+		{"hint: io not imported", `fun main() { io.println("x") }`, "add 'use io'"},
+		{"hint: unqualified std function", `fun main() { println("x") }`, "did you mean 'io.println'"},
+		{"hint: nullable used as value", prelude + `
+fun main() { val m = ["a": 1]; val v: i64 = m["a"] }`, "supply a fallback with '?:'"},
+		{"hint: string plus number", prelude + `
+fun main() { val s = "a" + 1 }`, "interpolation"},
+		{"hint: unknown struct field", prelude + `
+struct P { x: i64 }
+fun main() { val p = P(x: 1, y: 2) }`, "no field named 'y'"},
 		{"D4 try needs throws", prelude + `
-struct E { }
+error E { }
 fun f(): i32 throws E = 1
 fun main() { val x = try f() }`, "not declared 'throws'"},
 		{"D45 error not in declared union", prelude + `
-struct E1 { }
-struct E2 { }
+error E1 { }
+error E2 { }
 fun f(): i32 throws E1 = 1
 fun g(): i32 throws E2 = try f()
 fun main() { }`, "not in the declared 'throws"},
@@ -174,8 +183,8 @@ fun main() { }`,
 fun add(a: i32, b: i32) = a + b
 fun main() { val x: i32 = add(1, 2) }`,
 		"inferred error union": prelude + `
-struct E1 { }
-struct E2 { }
+error E1 { }
+error E2 { }
 fun f(): i32 throws E1 = 1
 fun g(): i32 throws E2 = 2
 fun h(): i32 throws { try f() + try g() }
@@ -201,7 +210,7 @@ fun main() { val s = Stack<i32>(); s.push(1); io.println("${s.len()}") }`,
 struct C { n: i32 }
 fun main() { val c = C(n: 1); val p = &c; p.n = 2 }`,
 		"Result value matched": prelude + `
-struct E { code: i32 }
+error E { code: i32 }
 fun f(): i32 throws E = Err(E(code: 1))
 fun main() {
   val r = f()
@@ -214,7 +223,7 @@ struct B : T { }
 fun f(p: *T): i32 = when (p) { is A(n) => n; is B => 0 }
 fun main() { }`,
 		"throw as sugar for Err": prelude + `
-struct E { n: i32 }
+error E { n: i32 }
 fun f(x: i32): i32 throws { if (x < 0) throw E(n: x); x }
 fun g(x: i32?): i32 throws E = x ?: throw E(n: 0)
 fun main() { when (f(1)) { is Ok(v) => { }; is Err(e) => { } } }`,
@@ -259,7 +268,298 @@ fun main() throws {
     ch.send(await t)
     val v = await ch.recv()
     val (a, b) = gather { async tick(2); async tick(3) }
-    val w = race { val m = ch.recv() => 1; sleep(10) => 2 }
+    val x = try a
+    val y = try b
+    val w = race { val m = ch.recv() => if (m == null) 1 else 2; sleep(10) => 2 }
+    io.println("$v $x $y $w")
   }
 }`)
+}
+
+func TestUnusedBindings(t *testing.T) {
+	src := prelude + `
+error E { code: i32 }
+fun may(): i32 throws E { 1 }
+fun takes(r: Result<i32, E>) {}
+fun main() {
+  val r = may()
+  val s = may()
+  if (s is Ok) io.println("ok")
+  takes(may())
+  val _ = may()
+  val unusedInt = 5
+  var counter = 0
+  counter = 1
+  val (a, b) = (1, 2)
+  io.println("$a")
+  val cap = 7
+  val f = () => cap + 1
+  loop (i in 0..3) { }
+  when (s) {
+    is Ok(v) => io.println("v")
+    is Err(e) => io.println("e")
+  }
+}`
+	diags := checkSource(t, src)
+	out := diags.Render()
+	for _, want := range []string{
+		"unused Result 'r'",
+		"'unusedInt' is never used",
+		"'counter' is never used",
+		"'b' is never used",
+		"'f' is never used",
+		"'i' is never used",
+		"'v' is never used",
+		"'e' is never used",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+	for _, bad := range []string{"'s'", "'a'", "'cap'", "'_'"} {
+		if strings.Contains(out, bad+" is never used") || strings.Contains(out, "unused Result "+bad) {
+			t.Errorf("false positive on %s in:\n%s", bad, out)
+		}
+	}
+}
+
+func TestLoopNeverRepeatsWarning(t *testing.T) {
+	diags := checkSource(t, prelude+`
+fun main() {
+  loop { break }
+  var i = 0
+  loop { i += 1; if (i > 3) break }
+  loop (x in [1, 2]) { if (x == 1) continue; break }
+}`)
+	if diags.HasErrors() {
+		t.Fatalf("unexpected errors:\n%s", diags.Render())
+	}
+	warnings := 0
+	for _, d := range diags.Items {
+		if strings.Contains(d.Message, "never repeats") {
+			warnings++
+		}
+	}
+	if warnings != 1 {
+		t.Errorf("want exactly one 'never repeats' warning, got %d:\n%s", warnings, diags.Render())
+	}
+}
+
+func TestResultSmartCast(t *testing.T) {
+	// `is Ok` / `is Err` read through to the payload, like `!= null` on T?
+	expectClean(t, prelude+`
+error E { code: i32 }
+fun may(n: i32): i32 throws E = if (n > 0) n else throw E(code: n)
+fun main() {
+  val r = may(1)
+  if (r is Ok) {
+    val v: i32 = r + 1
+    io.println("$v")
+  } else {
+    val c: i32 = r.code
+    io.println("$c")
+  }
+  if (r !is Ok) io.println("${r.code}")
+  when (r) {
+    is Ok => io.println("${r + 1}")
+    is Err => io.println("${r.code}")
+  }
+  when (r) {
+    is Ok => io.println("$r")
+    is Err => when (r) { is E => io.println("${r.code}") }
+  }
+  if (r is Err) { if (r is E) io.println("${r.code}") }
+  val o: Option<i32> = Some(value: 5)
+  if (o is Some) io.println("${o + 1}")
+}`)
+	// outside the test the subject is still the Result
+	expectError(t, prelude+`
+error E { code: i32 }
+fun may(n: i32): i32 throws E = if (n > 0) n else throw E(code: n)
+fun main() {
+  val r = may(1)
+  if (r is Ok) io.println("ok")
+  val v: i32 = r
+}`, "type mismatch")
+}
+
+func TestTwoVariantSealedElseNarrows(t *testing.T) {
+	expectClean(t, prelude+`
+sealed trait Shape
+struct Circle : Shape { r: f64 }
+struct Rect : Shape { w: f64, h: f64 }
+fun area(s: Shape): f64 = if (s is Circle) s.r * s.r * 3.0 else s.w * s.h
+fun main() { io.println("${area(Circle(r: 1.0))}") }`)
+}
+
+func TestErrorTrait(t *testing.T) {
+	// every error-position struct implements Error: synthesized default,
+	// explicit override, and dispatch on a union without a `when`
+	expectClean(t, prelude+`
+error ParseError { text: string }
+error RangeError { value: i64; fun message(): string = "out of range: ${self.value}" }
+fun parse(s: string): i64 throws ParseError | RangeError {
+  val n = s.toInt() ?: throw ParseError(text: s)
+  if (n > 10) throw RangeError(value: n)
+  n
+}
+fun load(s: string): i64 throws = try parse(s)
+fun main() {
+  val r = load("x")
+  when (r) {
+    is Ok => io.println("$r")
+    is Err => io.println(r.message())
+  }
+  if (r is Err) {
+    val m: string = r.message()
+    io.println(m)
+    if (r is ParseError) io.println(r.message())
+  }
+  val p: Panic = Panic(message: "boom")
+  io.println(p.message())
+}`)
+	expectError(t, prelude+`
+fun f(): i64 throws string = 1
+fun main() { }`, "cannot be an error")
+	expectError(t, prelude+`
+fun f(): i64 throws { throw 5 }
+fun main() { }`, "cannot be an error")
+	expectError(t, prelude+`
+fun <X> f(x: X): i64 throws X = throw x
+fun main() { val r = f("s"); if (r is Err) io.println("err") }`, "cannot be an error")
+	expectClean(t, prelude+`
+error E { }
+fun <X: Error> f(x: X): i64 throws X = throw x
+fun main() { val r = f(E()); if (r is Err) io.println(r.message()) }`)
+}
+
+func TestErrorDeclarations(t *testing.T) {
+	// message field convention, override-free message(), named error sets,
+	// a cause field holding a union
+	expectClean(t, prelude+`
+error Plain
+error Tagged { message: string }
+error Parse { text: string; fun message(): string = "parse: ${self.text}" }
+error Bounds { value: i64; fun bound(): i64 = 65535 }
+error PortErrors = Parse | Bounds | Tagged | Plain
+error More = PortErrors | Panic
+error Wrapped {
+  key: string
+  cause: PortErrors
+  fun message(): string = "${self.key}: ${self.cause.message()}"
+}
+fun parse(s: string): i64 throws PortErrors {
+  if (s == "t") throw Tagged(message: "tagged")
+  if (s == "p") throw Plain()
+  s.toInt() ?: throw Parse(text: s)
+}
+fun wrap(s: string): i64 throws Wrapped {
+  val r = parse(s)
+  if (r is Err) throw Wrapped(key: "k", cause: r)
+  r
+}
+fun both(s: string): i64 throws More = try parse(s)
+fun main() {
+  val r = parse("x")
+  when (r) {
+    is Ok => io.println("$r")
+    is Err => when (r) {
+      is Parse => io.println(r.message())
+      is Bounds => io.println("${r.bound()}")
+      else => io.println(r.message())
+    }
+  }
+  val w = wrap("x")
+  if (w is Err) io.println("${w.message()} ${w.cause.message()}")
+  val m = both("x")
+  if (m is Err) io.println(m.message())
+  val p = Panic(message: "boom")
+  io.println(p.message())
+}`)
+	for _, c := range []struct{ src, want string }{
+		{`struct Dog { }
+error Errs = Dog
+fun main() { }`, "'Dog' is not an error"},
+		{`error A
+error Errs = A
+struct Holder { e: Errs }
+fun main() { }`, "names an error set"},
+		{`error A
+error Errs = A
+fun main() { val x: Errs = A() }`, "names an error set"},
+		{`error A
+error S1 = A | S2
+error S2 = S1
+fun main() { }`, "refers to itself"},
+		{`error A { n: i64; override fun helper(): i64 = 1 }
+fun main() { }`, "only 'message' can be overridden"},
+		{`error A { message: i64 }
+fun main() { val a = A(message: 1); io.println(a.message()) }`, "A(message: 1)"}, // not a string field: default rendering, no error; see below
+	} {
+		if c.want == "A(message: 1)" {
+			expectClean(t, prelude+c.src)
+			continue
+		}
+		expectError(t, prelude+c.src, c.want)
+	}
+}
+
+func TestFieldPathSmartCasts(t *testing.T) {
+	// D5: a chain of direct struct fields from a local (or value self) is a
+	// stable place; tests on it narrow the path itself
+	expectClean(t, prelude+`
+error ParseError { text: string }
+error RangeError { value: i64 }
+error PortErrors = ParseError | RangeError
+error ConfigError { key: string, cause: PortErrors }
+struct Address { city: string }
+struct User {
+  name: string
+  address: Address?
+  fun city(): string = if (self.address != null) self.address.city else "?"
+}
+struct Box { user: User }
+fun load(): i64 throws ConfigError = throw ConfigError(key: "k", cause: RangeError(value: 7))
+fun main() {
+  val c = load()
+  if (c is Err) {
+    when (c.cause) {
+      is RangeError => io.println("${c.cause.value}")
+      is ParseError => io.println(c.cause.text)
+    }
+    if (c.cause is RangeError) io.println("${c.cause.value}")
+  }
+  val b = Box(user: User(name: "a", address: Address(city: "x")))
+  if (b.user.address != null) io.println(b.user.address.city)
+  var u = b.user
+  if (u.address != null) { io.println(u.address.city); u.name = "n"; io.println(u.address.city) }
+  val f = () => if (b.user.address != null) b.user.address.city else "?"
+  io.println(f() + u.city())
+}`)
+	for _, c := range []struct{ name, src string }{
+		{"field assigned", `
+  if (u.address != null) { u.address = null; io.println(u.address.city) }`},
+		{"root reassigned", `
+  if (u.address != null) { u = User(name: "b", address: null); io.println(u.address.city) }`},
+		{"mut method on root", `
+  if (u.address != null) { u.clear(); io.println(u.address.city) }`},
+		{"address taken", `
+  if (u.address != null) { val p = &u; other(p); io.println(u.address.city) }`},
+		{"through a pointer", `
+  val p = &u
+  if (p.address != null) io.println(p.address.city)`},
+		{"assigned in loop", `
+  if (u.address != null) { loop (i in 0..1) { u.address = null }; io.println(u.address.city) }`},
+		{"mut self", ``},
+	} {
+		src := prelude + `
+struct Address { city: string }
+struct User { name: string, address: Address?; mut fun clear() { self.address = null }
+  mut fun city(): string = if (self.address != null) self.address.city else "?" }
+fun other(u: *User) { u.address = null }
+fun main() {
+  var u = User(name: "a", address: Address(city: "x"))` + c.src + `
+}`
+		t.Run(c.name, func(t *testing.T) { expectError(t, src, "may be null") })
+	}
 }

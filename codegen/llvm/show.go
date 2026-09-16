@@ -79,12 +79,11 @@ func (g *gen) show(t types.Type, v string) string {
 		}
 		out := g.alloca(strType)
 		if types.IsFloat(t) {
-			x := v
 			if tt.Kind == types.F32 {
-				x = g.newTmp()
-				g.emit("%s = fpext float %s to double", x, v)
+				g.emit("call void @veles_f32_to_string(ptr %s, float %s)", out, v)
+			} else {
+				g.emit("call void @veles_f64_to_string(ptr %s, double %s)", out, v)
 			}
-			g.emit("call void @veles_f64_to_string(ptr %s, double %s)", out, x)
 		} else {
 			x := v
 			llt := g.llType(t)

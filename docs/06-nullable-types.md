@@ -1,0 +1,174 @@
+# 6. Nothing, maybe: nullable types
+
+A `string` is always a string. A `string?` is a string *or nothing*. The
+question mark is part of the type, and the compiler will not let you use
+a `T?` where a `T` is required until you have dealt with the nothing
+case (D5). There is no null pointer exception in Veles; there is a
+compile error instead.
+
+## Producing and consuming `T?`
+
+```veles
+use io
+
+fun findUser(id: i64): string? = when (id) {
+  1 => "ann"
+  2 => "bob"
+  else => null
+}
+
+fun main() {
+  val a = findUser(1)          // string?
+  val z = findUser(9)          // string?
+  io.println("${a ?: "nobody"} ${z ?: "nobody"}")
+  io.println("${a?.len() ?: 0} ${z?.len() ?: 0}")
+}
+```
+
+Output:
+```text
+ann nobody
+3 0
+```
+
+Three operators do most of the work:
+
+| Operator | Meaning |
+|---|---|
+| `x ?: fallback` | `x` if it is not null, otherwise `fallback` |
+| `x?.member` | `null` if `x` is null, otherwise `x.member` — the result is nullable |
+| `x?.method()` | same for calls |
+
+`?:` also accepts a `return` or `throw` on its right: `val n =
+text.toInt() ?: return -1` bails out of the function when there is no
+number.
+
+## Smart casts
+
+After a null check the compiler *knows* the value is present and lets
+you use it as a plain `T` (D5). No unwrap syntax:
+
+```veles
+use io
+
+fun describe(name: string?): string {
+  if (name == null) return "anonymous"
+  // from here on `name` is a `string`
+  "${name.len()} letters"
+}
+
+fun shout(name: string?): string {
+  if (name != null && name.len() > 0) {
+    return name + "!"
+  }
+  "..."
+}
+
+fun main() {
+  io.println("${describe(null)} ${describe("ann")} ${shout("hey")} ${shout(null)}")
+  var maybe: string? = null
+  if (maybe == null) maybe = "filled"
+  io.println("${maybe.len()}")       // assignment narrowed it, too
+}
+```
+
+Output:
+```text
+anonymous 3 letters hey! ...
+6
+```
+
+Narrowing follows the control flow: `if (x == null) return` narrows
+everything after it; `x != null && ...` narrows the right side of the
+`&&`; assigning a non-null value narrows a `var`.
+
+It also applies to a **field path** — a chain of plain struct fields from
+a local variable (or `self` in a non-`mut` method):
+
+```veles
+use io
+
+struct Address { city: string }
+struct User { name: string, address: Address? }
+
+fun main() {
+  var u = User(name: "ann", address: Address(city: "Oslo"))
+  if (u.address != null) io.println(u.address.city)   // u.address is an Address here
+  u.address = null                                     // a write to the path forgets the fact
+  io.println("${u.address?.city ?: "nowhere"}")
+}
+```
+
+Output:
+```text
+Oslo
+nowhere
+```
+
+The fact about `u.address` survives until something could change it: an
+assignment to `u.address` or to `u` itself, a `mut` method call on `u`,
+or `&u` being taken. Fields reached *through a pointer* (`p.address` with
+`p: *User`, or `self` in a `mut` method) are never narrowed — another
+pointer to the same value could change them in between; bind the field to
+a `val` first.
+
+## Where `T?` shows up
+
+- `map[key]`, `list.at(i)`, `list.first()`, `list.pop()`,
+  `text.toInt()`, `text.substring(a, b)` — every operation that can come
+  up empty returns `T?` rather than a sentinel or a panic.
+- Struct fields: `next: (*Node)?` for the end of a linked list.
+- Your own functions, whenever "not found" is a normal outcome. When
+  something went *wrong*, use errors ([chapter 7](07-errors.md)) instead.
+
+```veles
+use io
+
+fun main() {
+  val words = ["7", "x", "42"]
+  var total = 0
+  loop (w in words) {
+    val n = w.toInt() ?: continue
+    total += n as i64
+  }
+  io.println("$total ${words.at(5) ?: "none"} ${words.first()?.len() ?: 0}")
+}
+```
+
+Output:
+```text
+49 none 1
+```
+
+## Nullable of nullable
+
+Because `T?` is a real type and not a flag on the value, it nests:
+`i64??` distinguishes "absent" from "present but null". This matters for
+generic containers — a `Map<string, i64?>` lookup must be able to say
+which one it found. You will rarely write such a type by hand; when you
+do, the inner value is wrapped with `Some`:
+
+```veles
+use io
+
+fun main() {
+  val settings: Map<string, i64?> = ["timeout": 30, "retries": null]
+  val t = settings["timeout"]        // i64??
+  val r = settings["retries"]
+  val m = settings["missing"]
+  io.println("${t != null} ${r != null} ${m != null}")
+  when (r) {
+    Some(null) => io.println("retries is explicitly unset")
+    Some(Some(n)) => io.println("retries $n")
+    null => io.println("retries not configured")
+  }
+}
+```
+
+Output:
+```text
+true true false
+retries is explicitly unset
+```
+
+Next: [Errors](07-errors.md).

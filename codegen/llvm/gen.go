@@ -142,9 +142,12 @@ declare i1 @veles_string_ends_with(ptr, i64, ptr, i64)
 declare i1 @veles_string_contains(ptr, i64, ptr, i64)
 declare i1 @veles_string_substring(ptr, ptr, i64, i64, i64)
 declare i1 @veles_string_to_int(ptr, i64, ptr)
+declare i64 @veles_string_char_count(ptr, i64)
+declare ptr @veles_string_chars(ptr, ptr, i64)
 declare void @veles_i64_to_string(ptr, i64)
 declare void @veles_u64_to_string(ptr, i64)
 declare void @veles_f64_to_string(ptr, double)
+declare void @veles_f32_to_string(ptr, float)
 declare void @veles_bool_to_string(ptr, i1)
 declare ptr @veles_list_new(ptr, i64)
 declare i64 @veles_list_len(ptr)
@@ -643,7 +646,14 @@ func (g *gen) entryPoint() {
 		payload := g.extractTagged(g.llType(rs), r, g.llType(errVariant))
 		errVal := g.newTmp()
 		g.emit("%s = extractvalue %s %s, 0", errVal, g.llType(errVariant), payload)
-		msg := g.show(errVariant.Fields[0].Type, errVal)
+		errT := errVariant.Fields[0].Type
+		var msg string
+		if rep := g.prog.MainReport; rep != nil {
+			msg = g.newTmp()
+			g.emit("%s = call %s @%s(%s %s)", msg, g.llType(types.TString), rep.Name, g.llType(errT), errVal)
+		} else {
+			msg = g.show(errT, errVal)
+		}
 		p, l := g.strPtrLen(msg)
 		g.emit("call void @veles_report_error(ptr %s, i64 %s)", p, l)
 		g.emitTerm("ret i32 1")

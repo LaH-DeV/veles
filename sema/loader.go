@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -19,11 +20,41 @@ import (
 type Package struct {
 	Root      string
 	Modules   map[string]*Module // by slash path; std modules keyed "std/<name>", dependencies "dep/<name>/<path>"
-	Entry     *Module
+	Entry     *Module            // the root module: where a program's `main` lives; nil when the root has no sources
+	Given     *Module            // the module of the path the tool was pointed at (may be Entry)
+	GivenDir  string
 	Manifest  *Manifest
+	// NeedMain is set by the driver for build/run: a package is a program
+	// only if its root module declares `fun main()`.
+	NeedMain bool
 	Deps      map[string]*Package
 	KeyPrefix string // "" for the entry package, "dep/<name>/" for dependencies
 	diags     *source.Diagnostics
+	// overlay maps OverlayKey(path) to unsaved editor contents (LSP).
+	overlay map[string]string
+}
+
+// readSource reads a source file, preferring an editor overlay.
+func (p *Package) readSource(full string) ([]byte, error) {
+	if p.overlay != nil {
+		if text, ok := p.overlay[OverlayKey(full)]; ok {
+			return []byte(text), nil
+		}
+	}
+	return os.ReadFile(full)
+}
+
+// OverlayKey normalises a path for overlay lookup.
+func OverlayKey(path string) string {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		abs = path
+	}
+	abs = filepath.Clean(abs)
+	if runtime.GOOS == "windows" {
+		abs = strings.ToLower(abs)
+	}
+	return abs
 }
 
 // FindRoot locates the package root for an entry path.
@@ -90,7 +121,7 @@ func (p *Package) loadLocal(modPath string) (*Module, bool) {
 	}
 	for _, name := range names {
 		full := filepath.Join(dir, name)
-		data, err := os.ReadFile(full)
+		data, err := p.readSource(full)
 		if err != nil {
 			p.diags.Errorf(source.Span{}, "cannot read %s: %v", full, err)
 			continue
@@ -197,29 +228,48 @@ func (p *Package) loadImports(m *Module) {
 
 // LoadPackage loads the entry module and, transitively, everything it uses.
 func LoadPackage(entry string, diags *source.Diagnostics) (*Package, error) {
+	return LoadPackageOverlay(entry, diags, nil)
+}
+
+// LoadPackageOverlay is LoadPackage with unsaved editor buffers, keyed by
+// OverlayKey, standing in for files on disk.
+func LoadPackageOverlay(entry string, diags *source.Diagnostics, overlay map[string]string) (*Package, error) {
 	root, entryDir, err := FindRoot(entry)
 	if err != nil {
 		return nil, err
 	}
-	p := &Package{Root: root, Modules: map[string]*Module{}, Deps: map[string]*Package{}, diags: diags}
+	p := &Package{Root: root, Modules: map[string]*Module{}, Deps: map[string]*Package{}, diags: diags, overlay: overlay}
 	man, err := readManifest(root)
 	if err != nil {
 		return nil, err
 	}
 	p.Manifest = man
+	// The package's root module is the program (its `main`); the module the
+	// tool was pointed at is loaded too, so a module deep in the tree can be
+	// checked or edited even when nothing imports it yet.
+	p.GivenDir = entryDir
 	modPath := p.modulePathOf(entryDir)
-	m, ok := p.loadLocal(modPath)
+	given, ok := p.loadLocal(modPath)
 	if !ok {
 		diags.Errorf(source.Span{}, "no .vs files in %s", entryDir)
 		return p, nil
 	}
-	p.Modules[modPath] = m
-	p.Entry = m
+	p.Modules[modPath] = given
+	p.Given = given
+	if modPath == "" {
+		p.Entry = given
+	} else if rootMod, ok := p.loadLocal(""); ok {
+		p.Modules[""] = rootMod
+		p.Entry = rootMod
+	}
 	if prelude, ok := p.loadStd("prelude"); ok {
 		p.Modules[prelude.Path] = prelude
 		p.loadImports(prelude)
 	}
-	p.loadImports(m)
+	p.loadImports(given)
+	if p.Entry != nil && p.Entry != given {
+		p.loadImports(p.Entry)
+	}
 	return p, nil
 }
 
@@ -267,7 +317,7 @@ func (p *Package) resolveDep(name, depPath string, rest []string, span source.Sp
 			p.diags.Errorf(span, "dependency '%s' at %s has no veles.toml (M1)", name, root)
 			return nil
 		}
-		dep = &Package{Root: root, Modules: p.Modules, Manifest: man, Deps: map[string]*Package{}, KeyPrefix: "dep/" + name + "/", diags: p.diags}
+		dep = &Package{Root: root, Modules: p.Modules, Manifest: man, Deps: map[string]*Package{}, KeyPrefix: "dep/" + name + "/", diags: p.diags, overlay: p.overlay}
 		p.Deps[name] = dep
 	}
 	modPath := strings.Join(rest, "/")
@@ -298,4 +348,19 @@ func (p *Package) resolveDep(name, depPath string, rest []string, span source.Sp
 	p.Modules[key] = m
 	dep.loadImports(m)
 	return m
+}
+
+// stdModuleNames lists the standard modules embedded in the compiler.
+func (p *Package) stdModuleNames() []string {
+	entries, err := fs.ReadDir(std.FS, ".")
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() {
+			names = append(names, e.Name())
+		}
+	}
+	return names
 }

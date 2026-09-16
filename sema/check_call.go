@@ -30,10 +30,11 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 		}
 		sym := f.lookup(callee.Name)
 		if sym == nil {
-			f.errorf(callee.Pos, "unknown function '%s'", callee.Name)
+			f.errorf(callee.Pos, "unknown function '%s'%s", callee.Name, f.c.suggestUnknown(f.module, callee.Name))
 			f.checkArgsLoosely(e.Args)
 			return bad()
 		}
+		f.c.refSym(callee.Pos, sym)
 		return f.callSymbol(sym, callee.Name, typeArgs, e, want)
 	case *ast.MemberExpr:
 		if callee.X == nil {
@@ -54,6 +55,8 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 						f.checkArgsLoosely(e.Args)
 						return bad()
 					}
+					f.c.refSym(n.Pos, sym)
+					f.c.refSym(callee.Name.Pos, member)
 					return f.callSymbol(member, callee.Name.Name, typeArgs, e, want)
 				case SymType:
 					if s, ok := sym.Type.(*types.Sealed); ok {
@@ -63,6 +66,8 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 							f.checkArgsLoosely(e.Args)
 							return bad()
 						}
+						f.c.refSym(n.Pos, sym)
+						f.c.refType(callee.Name.Pos, v.Name, v, variantDefSpan(v))
 						if len(typeArgs) > 0 {
 							v = f.c.instantiateStruct(v, typeArgs, e.Pos)
 						}
@@ -177,7 +182,11 @@ func (f *fnCtx) bindArgs(params []types.Param, args []ast.Arg, what string, span
 			}
 		}
 		if idx < 0 {
-			f.errorf(a.Name.Pos, "%s has no parameter named '%s'", what, a.Name.Name)
+			if strings.HasPrefix(what, "struct ") {
+				f.errorf(a.Name.Pos, "%s has no field named '%s'", what, a.Name.Name)
+			} else {
+				f.errorf(a.Name.Pos, "%s has no parameter named '%s'", what, a.Name.Name)
+			}
 			ok = false
 			continue
 		}
@@ -229,21 +238,17 @@ func (f *fnCtx) callTemplateRecv(t *FuncTemplate, ownerSubst map[*types.TypePara
 	// Check arguments; infer type parameters from those whose parameter
 	// type mentions one.
 	exprs := make([]Expr, len(bound))
-	// Lambdas go last so that their parameter types can come from type
-	// parameters bound by the other arguments.
+	// Lambdas and empty collection literals go last so that their types can
+	// come from type parameters bound by the other arguments.
 	var order []int
 	for i := range t.Sig.Params {
-		if bound[i] != nil {
-			if _, isLambda := bound[i].(*ast.LambdaExpr); !isLambda {
-				order = append(order, i)
-			}
+		if bound[i] != nil && !deferredArg(bound[i]) {
+			order = append(order, i)
 		}
 	}
 	for i := range t.Sig.Params {
-		if bound[i] != nil {
-			if _, isLambda := bound[i].(*ast.LambdaExpr); isLambda {
-				order = append(order, i)
-			}
+		if bound[i] != nil && deferredArg(bound[i]) {
+			order = append(order, i)
 		}
 	}
 	for _, i := range order {
@@ -251,7 +256,7 @@ func (f *fnCtx) callTemplateRecv(t *FuncTemplate, ownerSubst map[*types.TypePara
 		pt := types.Subst(p.Type, m)
 		if types.ContainsTypeParam(pt) {
 			var x Expr
-			if _, isLambda := bound[i].(*ast.LambdaExpr); isLambda {
+			if deferredArg(bound[i]) {
 				x = f.checkExpr(bound[i], pt)
 			} else {
 				x = f.checkExpr(bound[i], nil)
@@ -354,7 +359,7 @@ func (f *fnCtx) inferStructArgs(t *types.Struct, args []ast.Arg, want types.Type
 	for i, fld := range t.Fields {
 		params[i] = types.Param{Name: fld.Name, Type: fld.Type, HasDefault: fld.HasDefault}
 	}
-	bound, ok := f.bindArgs(params, args, "'"+t.Name+"'", span)
+	bound, ok := f.bindArgs(params, args, "struct '"+t.Name+"'", span)
 	if !ok {
 		return nil
 	}
@@ -399,7 +404,7 @@ func (f *fnCtx) constructStruct(st *types.Struct, args []ast.Arg, span source.Sp
 	for i, fld := range st.Fields {
 		params[i] = types.Param{Name: fld.Name, Type: fld.Type, HasDefault: fld.HasDefault}
 	}
-	bound, ok := f.bindArgs(params, args, "'"+st.Name+"'", span)
+	bound, ok := f.bindArgs(params, args, "struct '"+st.Name+"'", span)
 	if !ok {
 		f.checkArgsLoosely(args)
 		return bad()
@@ -506,6 +511,10 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 		}
 	case *types.Trait:
 		return f.virtualCall(recv, ct, callee, e)
+	case *types.ErrorUnion:
+		if len(ct.Members) > 0 {
+			return f.unionDispatch(recv, ct, callee, typeArgs, e, want)
+		}
 	case *types.Channel:
 		return f.channelMethod(recv, ct, name, e)
 	case *types.Map:
@@ -539,6 +548,19 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 				m[selfParamOf(trait)] = rt
 				found = append(found, dt)
 				foundSubst = append(foundSubst, m)
+			}
+		}
+	}
+	// a sealed trait's default method applies to every variant, with or
+	// without an `impl` block for that variant
+	if len(found) == 0 {
+		if st, ok := rt.(*types.Struct); ok && st.Sealed != nil {
+			if trait := sealedTemplate(st.Sealed).Trait; trait != nil {
+				if dt := f.c.traitDefault(trait, name); dt != nil {
+					// the default body sees `self` as the whole sealed type, so
+					// `when (self)` over the variants works inside it
+					return f.callSealedDefault(dt, st.Sealed, &MakeVariant{exprBase{st.Sealed}, st.Sealed, st, recv}, callee, typeArgs, e, want)
+				}
 			}
 		}
 	}
@@ -584,6 +606,7 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 
 func (f *fnCtx) callMethod(t *FuncTemplate, ownerSubst map[*types.TypeParam]types.Type, typeArgs []types.Type, recv Expr, viaPointer bool, callee *ast.MemberExpr, e *ast.CallExpr, want types.Type) Expr {
 	f.c.resolveSignature(t)
+	f.c.refFunc(callee.Name.Pos, t)
 	if t.Impl != nil && !t.Pub && t.Impl.Module != f.module {
 		// impl methods follow the trait's visibility; nothing extra
 	}
@@ -607,8 +630,9 @@ func (f *fnCtx) callMethod(t *FuncTemplate, ownerSubst map[*types.TypeParam]type
 			if lv == nil {
 				return bad()
 			}
-			if root != nil && !root.Mutable && root != f.selfVar {
-				// already reported by checkLValue
+			markUsed(root) // a mut method call reads its receiver
+			if root != nil {
+				f.invalidatePaths(root) // and may rewrite its fields
 			}
 			recvArg = &AddrOf{exprBase{&types.Pointer{Elem: lv.Type()}}, lv}
 		}
@@ -646,6 +670,18 @@ func (f *fnCtx) builtinMethod(recv Expr, rt types.Type, name string, e *ast.Call
 				}
 				arg := f.checkExprTo(e.Args[0].Value, types.TString)
 				return &Builtin{exprBase{types.TBool}, "string." + name, []Expr{recv, arg}, e.Pos}
+			case "charCount":
+				// D18: len() is bytes; this counts Unicode scalar values
+				if !nargs(0) {
+					return bad()
+				}
+				return &Builtin{exprBase{types.TI64}, "string.charCount", []Expr{recv}, e.Pos}
+			case "chars":
+				// each code point as a one-character string (no char type, D18)
+				if !nargs(0) {
+					return bad()
+				}
+				return &Builtin{exprBase{&types.List{Elem: types.TString}}, "string.chars", []Expr{recv}, e.Pos}
 			case "substring":
 				if !nargs(2) {
 					return bad()
@@ -889,6 +925,21 @@ func (f *fnCtx) virtualCall(recv Expr, trait *types.Trait, callee *ast.MemberExp
 func (f *fnCtx) sealedDispatch(recv Expr, s *types.Sealed, callee *ast.MemberExpr, typeArgs []types.Type, e *ast.CallExpr, want types.Type) Expr {
 	trait := sealedTemplate(s).Trait
 	name := callee.Name.Name
+	// A default body that no variant overrides runs directly on the sealed
+	// value; `self` inside it is the sealed type.
+	if dt := f.c.traitDefault(trait, name); dt != nil {
+		overridden := false
+		for _, v := range s.Variants {
+			if impl := f.findImpl(v, trait); impl != nil {
+				if _, has := impl.Methods[name]; has {
+					overridden = true
+				}
+			}
+		}
+		if !overridden {
+			return f.callSealedDefault(dt, s, recv, callee, typeArgs, e, want)
+		}
+	}
 	tmp := f.newTemp(s)
 	m := &Match{Subject: tmp, Init: recv, Exhaustive: true, Span: e.Pos}
 	var rt types.Type
@@ -916,4 +967,63 @@ func (f *fnCtx) sealedDispatch(recv Expr, s *types.Sealed, callee *ast.MemberExp
 	}
 	m.T = rt
 	return m
+}
+
+// unionDispatch lowers a method call on an error union to a tag switch
+// over its members (D4): every member implements Error, so `e.message()`
+// needs no `when`. Any method every member provides dispatches this way.
+func (f *fnCtx) unionDispatch(recv Expr, u *types.ErrorUnion, callee *ast.MemberExpr, typeArgs []types.Type, e *ast.CallExpr, want types.Type) Expr {
+	name := callee.Name.Name
+	tmp := f.newTemp(u)
+	m := &Match{Subject: tmp, Init: recv, Exhaustive: true, Span: e.Pos}
+	var rt types.Type
+	for _, mem := range u.Members {
+		payload := &UnionCast{exprBase{mem}, ref(tmp), mem}
+		call := f.dispatchMethod(payload, callee, typeArgs, e, want)
+		if types.IsInvalid(call.Type()) {
+			return bad()
+		}
+		if rt == nil {
+			rt = call.Type()
+		} else if !types.Identical(rt, call.Type()) {
+			f.errorf(e.Pos, "members of '%s' disagree on the type of '%s'", u, name)
+			return bad()
+		}
+		body := &Block{Value: call, Type: rt}
+		if types.IsUnit(rt) {
+			body = &Block{Stmts: []Stmt{&ExprStmt{X: call}}, Type: types.TUnit}
+		}
+		m.Arms = append(m.Arms, &MatchArm{Test: &UnionTest{exprBase{types.TBool}, ref(tmp), mem}, Body: body})
+	}
+	m.T = rt
+	return m
+}
+
+// deferredArg reports an argument whose type is best checked after the
+// other arguments have bound the callee's type parameters: a lambda (its
+// parameter types come from the signature) or an empty collection literal
+// (its element type has no other source).
+func deferredArg(e ast.Expr) bool {
+	switch e := e.(type) {
+	case *ast.LambdaExpr:
+		return true
+	case *ast.ListLit:
+		return len(e.Elems) == 0
+	case *ast.MapLit:
+		return len(e.Entries) == 0
+	}
+	return false
+}
+
+// callSealedDefault invokes a sealed trait's default method with `Self`
+// bound to the sealed type itself.
+func (f *fnCtx) callSealedDefault(dt *FuncTemplate, s *types.Sealed, recv Expr, callee *ast.MemberExpr, typeArgs []types.Type, e *ast.CallExpr, want types.Type) Expr {
+	trait := sealedTemplate(s).Trait
+	m := map[*types.TypeParam]types.Type{selfParamOf(trait): s}
+	for i, tp := range trait.TypeParams {
+		if i < len(s.TypeArgs) {
+			m[tp] = s.TypeArgs[i]
+		}
+	}
+	return f.callMethod(dt, m, typeArgs, recv, false, callee, e, want)
 }

@@ -36,3 +36,23 @@ but it would read better if it would be loop : label (...) {} or loop () label {
 --- disregard above. new below
 6. we need a lsp and vscode extension so I can test writing in this language and see what needs to be fixed
 7. we need a very specialized tutorials and documentation for different levels for newcomers
+
+6.5: there is an error while using lsp:Request textDocument/definition failed.
+6.6: i think the suggestions after `io.` are showing everything in the language, not the io. context
+6.7: the lint should be able to catch this nonsense: `  loop {
+    break;
+  }`
+--- 
+8. question: could we forget about 'mut' here and figure out the mutability based on 'val' and 'var'?
+I'm not sure it works in every example, but maybe?
+  val ages = ["ann": 41, "bob": 29]              // Map<string, i32>
+  var stock = mut ["apples": 3]                  // MutableMap<string, i32>
+would change to:
+  val ages = ["ann": 41, "bob": 29]              // Map<string, i32>
+  var stock = ["apples": 3]                  // MutableMap<string, i32>
+
+9. I would like the language / std to be prepared for efficiently implementing queues, stacks, maybe graphs? algorithms etc...
+10. There should be a way of calculating length of a string in terms of characters, even we have len() returning byte length
+
+11. list.at(-1) should get the last item
+12. "x does not implement y" when trait has something and the struct does not implement it, it should be reported at the struct, not when using the method

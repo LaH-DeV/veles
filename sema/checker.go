@@ -22,6 +22,7 @@ type Checker struct {
 
 	universe *Scope
 	prog     *Program
+	index    *Index // reference recording for editor tooling; nil when compiling
 	release  bool
 	testMode bool
 
@@ -40,6 +41,11 @@ type Checker struct {
 	traitDecl      map[*types.Trait]*declCtx
 	resultTmpl     *types.Sealed
 	traitMethodTPs map[string][]*types.TypeParam
+	// error-position types seen before the impls were collected, checked
+	// at the end of collection; collected marks that point
+	pendingErrorChecks []pendingErrorCheck
+	collected          bool
+	collectRefs        int // index refs recorded by collect(); rounds reset only past this
 	tests          []*FuncTemplate
 	optionTmpl     *types.Sealed
 
@@ -78,7 +84,16 @@ func Check(pkg *Package, diags *source.Diagnostics, release bool) *Program {
 }
 
 func check(pkg *Package, diags *source.Diagnostics, release bool, testMode bool) *Program {
+	return checkWith(pkg, diags, release, testMode, nil)
+}
+
+func checkWith(pkg *Package, diags *source.Diagnostics, release bool, testMode bool, index *Index) *Program {
+	// per-check caches keyed by identity; reset so a long-lived process (the
+	// language server) does not accumulate objects from earlier checks
+	selfParams = map[*types.Trait]*types.TypeParam{}
+	globalVars = map[*Global]*Var{}
 	c := &Checker{
+		index:          index,
 		pkg:            pkg,
 		diags:          diags,
 		seen:           map[string]bool{},
@@ -104,6 +119,9 @@ func check(pkg *Package, diags *source.Diagnostics, release bool, testMode bool)
 	c.roundDiags = diags
 	c.buildUniverse()
 	c.collect()
+	if c.index != nil {
+		c.collectRefs = len(c.index.Refs)
+	}
 	if diags.HasErrors() {
 		return nil
 	}
@@ -254,6 +272,20 @@ func (c *Checker) collect() {
 		c.resolveSignature(t)
 	}
 	c.checkCoherence()
+	// every error set is resolved (and its members checked) even if unused
+	for _, m := range mods {
+		for _, sym := range m.Scope.symbols {
+			if sym.Alias != nil {
+				c.resolveAlias(sym)
+			}
+		}
+	}
+	// error sets and error fields were resolved before the impls existed
+	for _, pc := range c.pendingErrorChecks {
+		c.checkErrorType(pc.t, pc.span)
+	}
+	c.pendingErrorChecks = nil
+	c.collected = true
 }
 
 func (c *Checker) insert(m *Module, sym *Symbol) {
@@ -295,6 +327,10 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 			}
 			c.methods[s][md.Name.Name] = t
 		}
+	case *ast.ErrorAliasDecl:
+		c.attrsOf(d.Attrs, "error")
+		c.insert(m, &Symbol{Name: d.Name.Name, Kind: SymType, Pub: d.Pub, Module: m, Span: d.Name.Pos,
+			Alias: &errorAlias{decl: d, module: m, file: f}})
 	case *ast.TraitDecl:
 		c.attrsOf(d.Attrs, "trait")
 		if d.Sealed {
@@ -392,6 +428,7 @@ func (c *Checker) declareUse(m *Module, f *ast.File, u *ast.UseDecl) {
 			if it.Alias != nil {
 				name = it.Alias.Name
 			}
+			c.refSym(it.Name.Pos, sym)
 			alias := *sym
 			alias.Name = name
 			if old := scope.Insert(&alias); old != nil {
@@ -407,6 +444,8 @@ func (c *Checker) declareUse(m *Module, f *ast.File, u *ast.UseDecl) {
 	if old := scope.Insert(&Symbol{Name: name, Kind: SymModule, Mod: dep, Span: u.Pos}); old != nil {
 		c.errorf(u.Pos, "'%s' is already imported in this file", name)
 	}
+	// the module name in the `use` line hovers like any other reference
+	c.refSym(u.Path[len(u.Path)-1].Pos, &Symbol{Name: name, Kind: SymModule, Mod: dep, Span: u.Pos})
 }
 
 // ---------------------------------------------------------------------------
@@ -421,6 +460,56 @@ type typeEnv struct {
 	// implAssoc holds an impl's `type X = T` bindings.
 	trait     *types.Trait
 	implAssoc map[string]types.Type
+	// errorPos is set while resolving a type in error position (after
+	// `throws`, a union member, an error's field): the only places a named
+	// error set may appear (D45).
+	errorPos bool
+}
+
+// errorAlias is an `error Name = A | B` declaration awaiting resolution.
+type errorAlias struct {
+	decl      *ast.ErrorAliasDecl
+	module    *Module
+	file      *ast.File
+	resolving bool
+}
+
+// resolveAlias resolves a named error set on first use.
+func (c *Checker) resolveAlias(sym *Symbol) types.Type {
+	if sym.Type != nil {
+		return sym.Type
+	}
+	a := sym.Alias
+	if a.resolving {
+		c.errorf(a.decl.Name.Pos, "error set '%s' refers to itself", sym.Name)
+		return types.TInvalid
+	}
+	a.resolving = true
+	env := &typeEnv{module: a.module, file: a.file, tps: map[string]*types.TypeParam{}, errorPos: true}
+	var syntax []ast.Type
+	if u, ok := a.decl.Members.(*ast.ErrorUnionType); ok {
+		syntax = u.Members
+	} else {
+		syntax = []ast.Type{a.decl.Members}
+	}
+	var members []types.Type
+	for _, m := range syntax {
+		mt := c.resolveType(env, m)
+		members = append(members, mt)
+		// a member that is itself a set has already checked its own members
+		if _, nested := mt.(*types.ErrorUnion); !nested && !types.IsInvalid(mt) {
+			c.deferErrorCheck(mt, m.Span())
+		}
+	}
+	a.resolving = false
+	var t types.Type = types.MakeErrorUnion(members...)
+	for _, m := range members {
+		if types.IsInvalid(m) {
+			t = types.TInvalid
+		}
+	}
+	sym.Type = t
+	return t
 }
 
 func (c *Checker) lookupTypeName(env *typeEnv, path []ast.Ident) (*Symbol, *types.Sealed) {
@@ -545,6 +634,30 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 			c.errorf(t.Pos, "'%s' is not a type", pathString(t.Path))
 			return types.TInvalid
 		}
+		if sym.Alias != nil {
+			u := c.resolveAlias(sym)
+			if c.index != nil {
+				c.refType(t.Path[len(t.Path)-1].Pos, sym.Name, u, sym.Span)
+				c.index.Refs[len(c.index.Refs)-1].Unfold = c.unfoldOf(sym)
+				c.index.Refs[len(c.index.Refs)-1].Doc = sym.Alias.decl.Doc
+			}
+			if len(t.Args) > 0 {
+				c.errorf(t.Pos, "'%s' is not generic", sym.Name)
+			}
+			if !env.errorPos && !types.IsInvalid(u) {
+				c.errorf(t.Pos, "'%s' names an error set; it can only appear after 'throws', in another error set, or as the type of an error's field (D45)", sym.Name)
+				return types.TInvalid
+			}
+			return u
+		}
+		if c.index != nil {
+			last := t.Path[len(t.Path)-1]
+			def := sym.Span
+			if v, ok := sym.Type.(*types.Struct); ok && !def.IsValid() {
+				def = variantDefSpan(v)
+			}
+			c.refType(last.Pos, sym.Name, sym.Type, def)
+		}
 		var args []types.Type
 		for _, a := range t.Args {
 			args = append(args, c.resolveType(env, a))
@@ -597,10 +710,13 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 		}
 		return c.projectAssoc(env, base, t.Name.Name, t.Pos)
 	case *ast.ErrorUnionType:
+		saved := env.errorPos
+		env.errorPos = true
 		var members []types.Type
 		for _, m := range t.Members {
 			members = append(members, c.resolveType(env, m))
 		}
+		env.errorPos = saved
 		return types.MakeErrorUnion(members...)
 	}
 	c.errorf(t.Span(), "unsupported type syntax")
@@ -610,7 +726,10 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 func (c *Checker) resolveEffects(env *typeEnv, e ast.Effects, mustDeclare bool) types.Effects {
 	eff := types.Effects{Suspends: e.Suspends, Throws: e.Throws}
 	if e.Throws && e.Error != nil {
+		saved := env.errorPos
+		env.errorPos = true
 		eff.Error = c.resolveType(env, e.Error)
+		env.errorPos = saved
 		if _, isUnion := eff.Error.(*types.ErrorUnion); !isUnion {
 			eff.Error = types.MakeErrorUnion(eff.Error)
 		}
@@ -688,7 +807,12 @@ func (c *Checker) resolveStruct(s *types.Struct) {
 			continue
 		}
 		seen[f.Name.Name] = true
+		env.errorPos = d.Error // an error's field may hold a cause: a union (D45)
 		ft := c.resolveType(env, f.Type)
+		env.errorPos = false
+		if u, isUnion := ft.(*types.ErrorUnion); isUnion && !isAliasRef(f.Type) { // an alias checks its own members
+			c.deferErrorCheck(u, f.Type.Span())
+		}
 		s.Fields = append(s.Fields, &types.Field{Name: f.Name.Name, Type: ft, Pub: f.Pub, HasDefault: f.Default != nil, Index: i})
 	}
 	if d.Variant != nil {
@@ -1279,6 +1403,9 @@ func unify(pattern, concrete types.Type, m map[*types.TypeParam]types.Type) bool
 
 func (c *Checker) runRound() *Program {
 	c.changed = false
+	if c.index != nil {
+		c.index.Refs = c.index.Refs[:c.collectRefs] // keep signature refs recorded during collection
+	}
 	c.prog = &Program{Release: c.release}
 	c.prog.ResultType = func(ok, err types.Type) types.Type { return c.ResultType(ok, err) }
 	c.queue = nil
@@ -1325,14 +1452,7 @@ func (c *Checker) runRound() *Program {
 		}
 		c.instantiate(t, nil, nil, t.Decl.Name.Pos)
 	}
-	for len(c.queue) > 0 {
-		fn := c.queue[0]
-		c.queue = c.queue[1:]
-		if fn.checked {
-			continue
-		}
-		c.checkBody(fn)
-	}
+	c.drainQueue()
 	c.prog.TestMode = c.testMode
 	c.prog.PanicType = c.panicType()
 	for _, t := range c.tests {
@@ -1340,19 +1460,27 @@ func (c *Checker) runRound() *Program {
 			c.prog.Tests = append(c.prog.Tests, inst)
 		}
 	}
-	// entry point
+	// entry point: a package is a program when its root module has `main`
 	entry := c.pkg.Entry
-	if entry != nil && !c.testMode {
-		if sym := entry.Scope.LookupLocal("main"); sym != nil && sym.Kind == SymFunc {
+	if !c.testMode && (c.pkg.NeedMain || entry != nil) {
+		var sym *Symbol
+		if entry != nil {
+			sym = entry.Scope.LookupLocal("main")
+		}
+		if sym != nil && sym.Kind == SymFunc {
 			t := sym.Func
 			if len(t.Sig.Params) != 0 || !types.IsUnit(t.Sig.Ret) {
 				c.errorf(t.Decl.Name.Pos, "'main' must take no parameters and return nothing")
 			}
 			if inst, ok := t.Instances[""]; ok {
 				c.prog.Main = inst
+				if eff := inst.Sig.Effects; eff.Throws && eff.Error != nil && !types.IsNever(eff.Error) {
+					c.prog.MainReport = c.synthReporter(eff.Error, t)
+					c.drainQueue() // the message() instances it calls
+				}
 			}
-		} else {
-			c.errorf(source.Span{}, "no 'fun main()' in module %s", entry.Dir)
+		} else if c.pkg.NeedMain {
+			c.errorf(source.Span{}, "%s", c.noMainMessage())
 		}
 	}
 	// Finalise inferred error types and detect change.
@@ -1624,4 +1752,112 @@ func hashable(t types.Type) bool {
 		return !t.Mutable && hashable(t.Elem)
 	}
 	return false
+}
+
+// checkErrorType reports a type in error position that is not an error:
+// every member must implement Error (D4) — declared with `error Name { }`
+// or an explicit `impl Error for` — or be a type parameter bounded by it.
+func (c *Checker) checkErrorType(errT types.Type, span source.Span) {
+	errTrait := c.traitNamed("Error")
+	if errTrait == nil {
+		return
+	}
+	var members []types.Type
+	if u, ok := errT.(*types.ErrorUnion); ok {
+		members = u.Members
+	} else {
+		members = []types.Type{errT}
+	}
+	for _, m := range members {
+		if types.IsInvalid(m) || types.IsNever(m) || c.findImplFor(m, errTrait) != nil {
+			continue
+		}
+		switch t := m.(type) {
+		case *types.TypeParam:
+			ok := false
+			for _, b := range t.Bounds {
+				if b == errTrait {
+					ok = true
+				}
+			}
+			if ok {
+				continue
+			}
+			c.errorf(span, "'%s' cannot be an error without the bound '%s: Error' (D4)", t.Name, t.Name)
+		case *types.Struct:
+			c.errorf(span, "'%s' is not an error: declare it with 'error %s { ... }' instead of 'struct', or 'impl Error for %s' (D4)", t.Name, t.Name, t.Name)
+		default:
+			c.errorf(span, "'%s' cannot be an error: only types declared with 'error' (or an 'impl Error for' them) can be thrown (D4)", m)
+		}
+	}
+}
+
+// synthReporter builds the function the entry point calls to render an
+// error escaping `main() throws`: `fun (e: E): string = e.message()`,
+// where E is main's (possibly inferred) error type (D4).
+func (c *Checker) synthReporter(errT types.Type, t *FuncTemplate) *Func {
+	pos := t.Decl.Name.Pos
+	fn := &Func{Name: "veles.main.report", Display: "main.report", Span: pos,
+		Sig: &types.Func{Params: []types.Param{{Name: "e", Type: errT}}, Ret: types.TString}}
+	env := &typeEnv{module: t.Module, file: t.File, tps: map[string]*types.TypeParam{}}
+	f := c.newFnCtx(fn, t.Module, t.File, env, nil)
+	f.retType = types.TString
+	v := f.newVar("$e", errT, false, source.Span{})
+	fn.Params = []*Var{v}
+	f.declareLocal("$e", v, source.Span{})
+	call := &ast.CallExpr{Fun: &ast.MemberExpr{X: &ast.NameExpr{Name: "$e", Pos: pos}, Name: ast.Ident{Name: "message", Pos: pos}, Pos: pos}, Pos: pos}
+	x := f.checkExprTo(call, types.TString)
+	fn.Body = &Block{Stmts: []Stmt{&Return{Value: x}}, Type: types.TNever}
+	fn.checked = true
+	c.funcs = append(c.funcs, fn)
+	return fn
+}
+
+// drainQueue checks the body of every instantiation queued so far,
+// including those queued while checking.
+func (c *Checker) drainQueue() {
+	for len(c.queue) > 0 {
+		fn := c.queue[0]
+		c.queue = c.queue[1:]
+		if fn.checked {
+			continue
+		}
+		c.checkBody(fn)
+	}
+}
+
+type pendingErrorCheck struct {
+	t    types.Type
+	span source.Span
+}
+
+// deferErrorCheck runs checkErrorType once collection is complete; during
+// collection the impls that make a type an error may not exist yet.
+func (c *Checker) deferErrorCheck(t types.Type, span source.Span) {
+	if c.collected {
+		c.checkErrorType(t, span)
+		return
+	}
+	c.pendingErrorChecks = append(c.pendingErrorChecks, pendingErrorCheck{t, span})
+}
+
+// isAliasRef reports whether a type expression is a bare name (which, if
+// it resolved to a union, must be an error-set alias).
+func isAliasRef(t ast.Type) bool {
+	_, ok := t.(*ast.NamedType)
+	return ok
+}
+
+// noMainMessage explains a missing entry point in terms of the package
+// layout: `main` lives in the root module, and a module is not a program.
+func (c *Checker) noMainMessage() string {
+	root := c.pkg.Root
+	if c.pkg.Given != nil && c.pkg.Given != c.pkg.Entry {
+		return fmt.Sprintf("'%s' is a module of the package at %s, not a program; a package runs from 'fun main()' in its root module, and this root has none (build a program from %s, or use the module as a library)",
+			c.pkg.GivenDir, root, root)
+	}
+	if c.pkg.Manifest == nil {
+		return fmt.Sprintf("no 'fun main()' in package %s (no veles.toml above it, so this directory is its own package root); if it is a module of a larger package, add a veles.toml at that package's root and build from there", root)
+	}
+	return fmt.Sprintf("package %s has no 'fun main()' in its root module; it can be used as a library but not run", root)
 }

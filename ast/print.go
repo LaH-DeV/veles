@@ -111,9 +111,22 @@ func (p *printer) decl(d Decl) {
 		p.w(")")
 	case *FunDecl:
 		p.fun(d)
+	case *ErrorAliasDecl:
+		p.attrs(d.Attrs)
+		p.open("error ")
+		if d.Pub {
+			p.w("pub ")
+		}
+		p.w(d.Name.Name + " = ")
+		p.typ(d.Members)
+		p.close()
 	case *StructDecl:
 		p.attrs(d.Attrs)
-		p.open("struct ")
+		if d.Error {
+			p.open("error ")
+		} else {
+			p.open("struct ")
+		}
 		if d.Pub {
 			p.w("pub ")
 		}

@@ -1,0 +1,465 @@
+package lsp
+
+import (
+	"encoding/json"
+	"sort"
+	"strconv"
+	"strings"
+
+	"github.com/LaH-DeV/veles/ast"
+	"github.com/LaH-DeV/veles/sema"
+	"github.com/LaH-DeV/veles/source"
+	"github.com/LaH-DeV/veles/types"
+)
+
+// Completion. Three situations:
+//
+//   - `module.` — the module's public declarations;
+//   - `value.`  — the members of the value's type, found through the last
+//     successful analysis (the buffer usually does not parse at this
+//     moment, so the receiver is looked up by name, not by span);
+//   - a bare name — declarations in scope, keywords, builtin types.
+
+type completionItem struct {
+	Label  string `json:"label"`
+	Kind   int    `json:"kind"`
+	Detail string `json:"detail,omitempty"`
+}
+
+const (
+	ciMethod   = 2
+	ciFunction = 3
+	ciField    = 5
+	ciVariable = 6
+	ciClass    = 7
+	ciInterface = 8
+	ciModule   = 9
+	ciKeyword  = 14
+	ciStruct   = 22
+)
+
+var keywordCompletions = []string{
+	"fun", "val", "var", "const", "if", "else", "loop", "break", "continue", "return", "throw",
+	"struct", "error", "trait", "impl", "sealed", "pub", "use", "when", "is", "as", "in",
+	"throws", "suspends", "try", "async", "await", "scope", "gather", "race", "with",
+	"unsafe", "extern", "mut", "override", "true", "false", "null", "self", "Self", "type",
+}
+
+var builtinTypeCompletions = []string{
+	"i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "bool", "string",
+	"List", "MutableList", "Map", "MutableMap", "Set", "MutableSet", "Channel", "Range", "Option", "Result",
+}
+
+var (
+	stringMethods   = []string{"len", "isEmpty", "startsWith", "endsWith", "contains", "substring", "toInt", "charCount", "chars"}
+	listMethods     = []string{"len", "isEmpty", "at", "contains", "indexOf", "first", "last", "map", "filter", "fold", "forEach", "any", "all", "find", "sorted", "sortedBy", "reversed", "joinToString", "iter", "toList", "toMutable"}
+	mutListMethods  = []string{"push", "pop", "clear"}
+	mapMethods      = []string{"len", "isEmpty", "get", "containsKey", "keys", "values", "entries", "toMap", "toMutable"}
+	mutMapMethods   = []string{"set", "remove", "clear"}
+	setMethods      = []string{"len", "isEmpty", "contains", "toList", "toSet", "toMutable"}
+	mutSetMethods   = []string{"add", "remove", "clear"}
+	channelMethods  = []string{"send", "recv", "close", "len"}
+)
+
+type adder func(label string, kind int, detail string)
+
+func (s *Server) completion(params json.RawMessage) any {
+	var p positionParams
+	json.Unmarshal(params, &p)
+	items := []completionItem{}
+	seen := map[string]bool{}
+	var add adder = func(label string, kind int, detail string) {
+		if seen[label] {
+			return
+		}
+		seen[label] = true
+		items = append(items, completionItem{label, kind, detail})
+	}
+	finish := func() any {
+		sort.Slice(items, func(i, j int) bool { return items[i].Label < items[j].Label })
+		return map[string]any{"isIncomplete": false, "items": items}
+	}
+
+	d := s.docs[p.TextDocument.URI]
+	a, _ := s.analysisFor(p.TextDocument.URI)
+	receiver, afterDot, off, dot := "", false, 0, 0
+	if d != nil {
+		f := source.NewFile(d.path, d.text)
+		off = positionToOffset(f, p.Position)
+		i := off
+		for i > 0 && isIdentByte(d.text[i-1]) {
+			i--
+		}
+		if i > 0 && d.text[i-1] == '.' {
+			afterDot = true
+			dot = i - 1
+			j := dot
+			for j > 0 && isIdentByte(d.text[j-1]) {
+				j--
+			}
+			receiver = d.text[j:dot]
+		}
+	}
+
+	if !afterDot {
+		if a != nil {
+			for _, m := range a.pkg.Modules {
+				if m.Std && m.Path != "std/prelude" {
+					continue // other std modules are reached through their name
+				}
+				for _, f := range m.Files {
+					for _, decl := range f.Decls {
+						if !m.Std || isPub(decl) {
+							s.addDecl(add, decl)
+						}
+					}
+				}
+			}
+			if _, f := s.moduleOf(a, d); f != nil {
+				for _, decl := range f.Decls {
+					if u, ok := decl.(*ast.UseDecl); ok {
+						if u.Items == nil {
+							add(importedName(u), ciModule, "module "+pathString(u.Path))
+						} else {
+							for _, it := range u.Items {
+								name := it.Name.Name
+								if it.Alias != nil {
+									name = it.Alias.Name
+								}
+								add(name, ciFunction, "from "+pathString(u.Path))
+							}
+						}
+					}
+				}
+			}
+		}
+		for _, k := range keywordCompletions {
+			add(k, ciKeyword, "keyword")
+		}
+		for _, t := range builtinTypeCompletions {
+			add(t, ciClass, "builtin type")
+		}
+		return finish()
+	}
+
+	if a != nil && receiver != "" {
+		// `module.`
+		if m, f := s.moduleOf(a, d); m != nil {
+			for _, decl := range f.Decls {
+				if u, ok := decl.(*ast.UseDecl); ok && u.Items == nil && importedName(u) == receiver {
+					if target := m.Uses[u]; target != nil {
+						s.addModuleDecls(add, target)
+						return finish()
+					}
+				}
+			}
+		}
+		// `value.` — a receiver whose type is known gets exactly its
+		// members, even when there are none (a Result has no methods)
+		idx := a.index
+		if idx == nil {
+			// mid-edit: the dangling `.` breaks the parse, so a binding
+			// introduced in this same edit has no reference yet; check the
+			// buffer with the `.` and the partial name after it removed
+			idx = s.indexWithout(d, dot, off)
+		}
+		if idx == nil {
+			idx = a.lastGood
+		}
+		if ref := refNamedIn(idx, sema.OverlayKey(d.path), receiver, off); ref != nil {
+			if ref.Kind == "module" && ref.Module != nil {
+				s.addModuleDecls(add, ref.Module)
+				return finish()
+			}
+			if ref.Type != nil {
+				s.addMembers(add, a, ref.Type)
+				return finish()
+			}
+		}
+	}
+
+	// unknown receiver: every member name in the package plus the builtins
+	if a != nil {
+		for _, m := range a.pkg.Modules {
+			for _, f := range m.Files {
+				for _, decl := range f.Decls {
+					switch dd := decl.(type) {
+					case *ast.StructDecl:
+						for _, fld := range dd.Fields {
+							add(fld.Name.Name, ciField, dd.Name.Name+"."+fld.Name.Name+": "+ast.TypeString(fld.Type))
+						}
+						for _, mth := range dd.Methods {
+							add(mth.Name.Name, ciMethod, dd.Name.Name+"."+mth.Name.Name+funSignature(mth))
+						}
+					case *ast.TraitDecl:
+						for _, mth := range dd.Methods {
+							add(mth.Name.Name, ciMethod, dd.Name.Name+"."+mth.Name.Name+funSignature(mth))
+						}
+					case *ast.ImplDecl:
+						for _, mth := range dd.Methods {
+							add(mth.Name.Name, ciMethod, ast.TypeString(dd.Trait)+"."+mth.Name.Name+funSignature(mth))
+						}
+					}
+				}
+			}
+		}
+	}
+	for _, name := range listMethods {
+		add(name, ciMethod, "List."+name)
+	}
+	for _, name := range mapMethods {
+		add(name, ciMethod, "Map."+name)
+	}
+	for _, name := range stringMethods {
+		add(name, ciMethod, "string."+name)
+	}
+	return finish()
+}
+
+func (s *Server) addModuleDecls(add adder, m *sema.Module) {
+	for _, f := range m.Files {
+		for _, decl := range f.Decls {
+			if isPub(decl) {
+				s.addDecl(add, decl)
+			}
+		}
+	}
+}
+
+// addMembers offers the fields and methods of a value of type t.
+func (s *Server) addMembers(add adder, a *analysis, t types.Type) {
+	switch tt := t.(type) {
+	case *types.Pointer:
+		s.addMembers(add, a, tt.Elem)
+	case *types.Nullable:
+		s.addMembers(add, a, tt.Elem) // reached through `?.`
+	case *types.Basic:
+		if tt.Kind == types.String {
+			for _, m := range stringMethods {
+				add(m, ciMethod, "string."+m)
+			}
+		}
+	case *types.List:
+		for _, m := range listMethods {
+			add(m, ciMethod, "List."+m)
+		}
+		if tt.Mutable {
+			for _, m := range mutListMethods {
+				add(m, ciMethod, "MutableList."+m)
+			}
+		}
+	case *types.Map:
+		for _, m := range mapMethods {
+			add(m, ciMethod, "Map."+m)
+		}
+		if tt.Mutable {
+			for _, m := range mutMapMethods {
+				add(m, ciMethod, "MutableMap."+m)
+			}
+		}
+	case *types.Set:
+		for _, m := range setMethods {
+			add(m, ciMethod, "Set."+m)
+		}
+		if tt.Mutable {
+			for _, m := range mutSetMethods {
+				add(m, ciMethod, "MutableSet."+m)
+			}
+		}
+	case *types.Channel:
+		for _, m := range channelMethods {
+			add(m, ciMethod, "Channel."+m)
+		}
+	case *types.Range:
+		add("lo", ciField, "Range.lo")
+		add("hi", ciField, "Range.hi")
+		add("inclusive", ciField, "Range.inclusive")
+		add("iter", ciMethod, "Range.iter")
+	case *types.Tuple:
+		for i, e := range tt.Elems {
+			add(strconv.Itoa(i), ciField, e.String())
+		}
+	case *types.Trait:
+		s.addTraitMethods(add, a, tt.Name)
+	case *types.Sealed:
+		s.addTraitMethods(add, a, tt.Name)
+	case *types.ErrorUnion:
+		// every member implements Error (D4); its methods dispatch on the union
+		s.addTraitMethods(add, a, "Error")
+	case *types.Struct:
+		base := tt
+		if tt.Template != nil {
+			base = tt.Template
+		}
+		if d, ok := base.Decl.(*ast.StructDecl); ok {
+			for _, fld := range d.Fields {
+				add(fld.Name.Name, ciField, tt.String()+"."+fld.Name.Name+": "+ast.TypeString(fld.Type))
+			}
+			for _, mth := range d.Methods {
+				add(mth.Name.Name, ciMethod, tt.Name+"."+mth.Name.Name+funSignature(mth))
+			}
+			if d.Variant != nil {
+				s.addTraitMethods(add, a, typeHeadName(d.Variant))
+			}
+		}
+		// methods from every trait the struct implements: the impl blocks
+		// and the traits' default bodies
+		for _, m := range a.pkg.Modules {
+			for _, f := range m.Files {
+				for _, decl := range f.Decls {
+					impl, ok := decl.(*ast.ImplDecl)
+					if !ok || typeHeadName(impl.Target) != tt.Name {
+						continue
+					}
+					for _, mth := range impl.Methods {
+						add(mth.Name.Name, ciMethod, ast.TypeString(impl.Trait)+"."+mth.Name.Name+funSignature(mth))
+					}
+					s.addTraitMethods(add, a, typeHeadName(impl.Trait))
+				}
+			}
+		}
+	}
+}
+
+func (s *Server) addTraitMethods(add adder, a *analysis, traitName string) {
+	for _, m := range a.pkg.Modules {
+		for _, f := range m.Files {
+			for _, decl := range f.Decls {
+				if td, ok := decl.(*ast.TraitDecl); ok && td.Name.Name == traitName {
+					for _, mth := range td.Methods {
+						add(mth.Name.Name, ciMethod, td.Name.Name+"."+mth.Name.Name+funSignature(mth))
+					}
+				}
+			}
+		}
+	}
+}
+
+func (s *Server) addDecl(add adder, decl ast.Decl) {
+	switch dd := decl.(type) {
+	case *ast.FunDecl:
+		add(dd.Name.Name, ciFunction, "fun "+dd.Name.Name+funSignature(dd))
+	case *ast.StructDecl:
+		if dd.Error {
+			add(dd.Name.Name, ciStruct, "error "+dd.Name.Name)
+		} else {
+			add(dd.Name.Name, ciStruct, "struct "+dd.Name.Name)
+		}
+	case *ast.ErrorAliasDecl:
+		add(dd.Name.Name, ciStruct, "error "+dd.Name.Name+" = "+ast.TypeString(dd.Members))
+	case *ast.TraitDecl:
+		if dd.Sealed {
+			add(dd.Name.Name, ciStruct, "sealed trait "+dd.Name.Name)
+		} else {
+			add(dd.Name.Name, ciInterface, "trait "+dd.Name.Name)
+		}
+	case *ast.ValDecl:
+		add(dd.Name.Name, ciVariable, dd.Kind.String()+" "+dd.Name.Name)
+	}
+}
+
+func isPub(decl ast.Decl) bool {
+	switch dd := decl.(type) {
+	case *ast.FunDecl:
+		return dd.Pub
+	case *ast.StructDecl:
+		return dd.Pub
+	case *ast.ErrorAliasDecl:
+		return dd.Pub
+	case *ast.TraitDecl:
+		return dd.Pub
+	case *ast.ValDecl:
+		return dd.Pub
+	}
+	return false
+}
+
+// moduleOf finds the module and parsed file of an open document.
+func (s *Server) moduleOf(a *analysis, d *document) (*sema.Module, *ast.File) {
+	if d == nil {
+		return nil, nil
+	}
+	key := sema.OverlayKey(d.path)
+	for _, m := range a.pkg.Modules {
+		for _, f := range m.Files {
+			if sema.OverlayKey(f.Source.Path) == key {
+				return m, f
+			}
+		}
+	}
+	return nil, nil
+}
+
+func importedName(u *ast.UseDecl) string {
+	if u.Alias != nil {
+		return u.Alias.Name
+	}
+	return u.Path[len(u.Path)-1].Name
+}
+
+func pathString(path []ast.Ident) string {
+	parts := make([]string, len(path))
+	for i, p := range path {
+		parts[i] = p.Name
+	}
+	return strings.Join(parts, ".")
+}
+
+func typeHeadName(t ast.Type) string {
+	switch tt := t.(type) {
+	case *ast.NamedType:
+		return tt.Path[len(tt.Path)-1].Name
+	case *ast.PointerType:
+		return typeHeadName(tt.Elem)
+	}
+	return ""
+}
+
+// indexWithout checks the package as if the buffer were d.text with the
+// bytes [from, to) removed, and returns the resulting index, or nil when
+// even that does not parse. Used by completion on a non-parsing buffer.
+func (s *Server) indexWithout(d *document, from, to int) *sema.Index {
+	if from < 0 || to > len(d.text) || from >= to {
+		return nil
+	}
+	overlay := make(map[string]string, len(s.overlay))
+	for k, v := range s.overlay {
+		overlay[k] = v
+	}
+	overlay[sema.OverlayKey(d.path)] = d.text[:from] + d.text[to:]
+	diags := &source.Diagnostics{}
+	pkg, err := sema.LoadPackageOverlay(d.path, diags, overlay)
+	if err != nil || diags.HasErrors() {
+		return nil
+	}
+	return sema.CheckIndex(pkg, diags)
+}
+
+// refNamedIn finds the reference to `name` in a file closest before `off`.
+func refNamedIn(idx *sema.Index, fileKey, name string, off int) *sema.Ref {
+	if idx == nil {
+		return nil
+	}
+	var best *sema.Ref
+	for i := range idx.Refs {
+		r := &idx.Refs[i]
+		if r.Name != name || r.Span.File == nil || sema.OverlayKey(r.Span.File.Path) != fileKey {
+			continue
+		}
+		if r.Span.Start <= off && (best == nil || r.Span.Start > best.Span.Start) {
+			best = r
+		}
+	}
+	if best == nil {
+		for i := range idx.Refs {
+			if idx.Refs[i].Name == name {
+				return &idx.Refs[i]
+			}
+		}
+	}
+	return best
+}
+
+func isIdentByte(b byte) bool {
+	return b == '_' || b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' || b >= '0' && b <= '9'
+}

@@ -37,8 +37,10 @@ func (f *fnCtx) localVar(v *Var) *Var {
 	f.captures[v] = inner
 	// Smart casts on immutable outer bindings still hold inside (D5).
 	if !outer.Mutable {
-		if t, ok := f.parent.narrow[outer]; ok {
-			f.narrow[inner] = t
+		for k, t := range f.parent.narrow {
+			if k.v == outer {
+				f.narrow[place{v: inner, path: k.path}] = t
+			}
 		}
 	}
 	return inner
@@ -197,6 +199,7 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 		}
 		body.Stmts = append(pre, body.Stmts...)
 	}
+	l.reportUnused()
 	fn.Body = body
 	fn.Sig.Ret = l.retType
 	suspends := fn.Sig.Effects.Suspends

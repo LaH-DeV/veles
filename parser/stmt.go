@@ -137,6 +137,10 @@ func (p *Parser) parseStmt() ast.Stmt {
 	case lexer.KwLoop:
 		return p.parseLoop(start)
 
+	case lexer.KwFor:
+		p.errorf(p.span(), "there is no 'for'; every loop is spelled 'loop': 'loop (x in xs)', 'loop (cond)' or 'loop { }'")
+		return p.parseLoop(start)
+
 	case lexer.KwWith:
 		return p.parseWith()
 
@@ -151,6 +155,11 @@ func (p *Parser) parseStmt() ast.Stmt {
 
 	case lexer.KwPub, lexer.KwStruct, lexer.KwTrait, lexer.KwImpl, lexer.KwUse, lexer.KwSealed:
 		p.errorf(p.span(), "%s is only allowed at module level", p.cur().Describe())
+		p.syncStmt()
+		return &ast.BadStmt{Pos: start}
+	}
+	if p.atErrorDecl() {
+		p.errorf(p.span(), "'error' declarations are only allowed at module level")
 		p.syncStmt()
 		return &ast.BadStmt{Pos: start}
 	}
@@ -171,7 +180,9 @@ func (p *Parser) parseStmt() ast.Stmt {
 }
 
 func (p *Parser) parseLoop(start source.Span) ast.Stmt {
-	p.expect(lexer.KwLoop)
+	if !p.accept(lexer.KwFor) { // already diagnosed by the caller
+		p.expect(lexer.KwLoop)
+	}
 	s := &ast.LoopStmt{}
 	if p.accept(lexer.Colon) {
 		// `loop :outer (x in xs) { ... break outer }` (section 4b)
@@ -191,7 +202,7 @@ func (p *Parser) parseLoop(start source.Span) ast.Stmt {
 		} else {
 			p.next()
 			s.Cond = p.parseExpr()
-			p.expect(lexer.RParen)
+			p.closeCondition()
 		}
 	}
 	s.Body = p.parseBlock()

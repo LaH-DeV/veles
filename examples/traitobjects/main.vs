@@ -21,12 +21,12 @@ impl Shape for Square {
 }
 
 trait Counter {
-  mut fun bump(): i32
+  mut fun bump(): i64
 }
 
-struct Clicks { n: i32 = 0 }
+struct Clicks { n: i64 = 0 }
 impl Counter for Clicks {
-  mut fun bump(): i32 { self.n += 1; self.n }
+  mut fun bump(): i64 { self.n += 1; self.n }
 }
 
 fun total(shapes: List<Shape>): f64 {

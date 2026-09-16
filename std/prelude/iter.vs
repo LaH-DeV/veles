@@ -89,6 +89,8 @@ pub trait Iterator {
 pub trait Iterable {
   type Iter: Iterator
   fun iterator(): Iter
+  // `xs.iter()` reads better at the head of a pipeline; same thing.
+  fun iter(): Iter = self.iterator()
 }
 
 // ---------------------------------------------------------------------------

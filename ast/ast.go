@@ -26,6 +26,9 @@ func (i Ident) String() string    { return i.Name }
 type File struct {
 	Source *source.File
 	Decls  []Decl
+	// Doc is the file's module documentation: a doc comment at the very top,
+	// set off from the first declaration by a blank line.
+	Doc string
 }
 
 func (f *File) Span() source.Span {
@@ -165,6 +168,7 @@ type Param struct {
 // (signature-only when Body and ExprBody are both nil), or an extern.
 type FunDecl struct {
 	Attrs      []*Attribute
+	Doc        string // documentation comment, if any
 	Pub        bool
 	Mut        bool // `mut fun` — mutates the receiver's own fields (D22)
 	Override   bool
@@ -183,6 +187,7 @@ type FunDecl struct {
 // Field is a struct field, optionally with a default.
 type Field struct {
 	Pub     bool
+	Doc     string
 	Name    Ident
 	Type    Type
 	Default Expr
@@ -192,8 +197,11 @@ type Field struct {
 // StructDecl is `struct Name<T> : SealedParent { fields; methods }`.
 type StructDecl struct {
 	Attrs      []*Attribute
+	Doc        string
 	Pub        bool
 	Extern     bool // `extern struct` — C layout
+	Error      bool // `error Name { }` — declared with an impl of Error (D4)
+	ErrorImpl  *ImplDecl // the `impl Error for Name` an error declaration desugars to
 	Name       Ident
 	TypeParams []TypeParam
 	Variant    Type // the sealed trait this struct is a variant of, or nil
@@ -211,6 +219,7 @@ type AssocTypeDecl struct {
 // TraitDecl is `trait Name { type Item; fun m(); }` or `sealed trait Name`.
 type TraitDecl struct {
 	Attrs      []*Attribute
+	Doc        string
 	Pub        bool
 	Sealed     bool
 	Name       Ident
@@ -258,6 +267,7 @@ func (k BindKind) String() string {
 // ValDecl is a module-level `val`, `var` or `const`.
 type ValDecl struct {
 	Attrs []*Attribute
+	Doc   string
 	Pub   bool
 	Kind  BindKind
 	Name  Ident
@@ -273,6 +283,17 @@ type ExternBlock struct {
 	Pos  source.Span
 }
 
+// ErrorAliasDecl is `error Name = A | B | C`: a named error set (D45),
+// transparent wherever a union may appear.
+type ErrorAliasDecl struct {
+	Attrs   []*Attribute
+	Doc     string
+	Pub     bool
+	Name    Ident
+	Members Type // an ErrorUnionType, or a single type
+	Pos     source.Span
+}
+
 // BadDecl stands in for a declaration that failed to parse.
 type BadDecl struct {
 	Pos source.Span
@@ -286,7 +307,9 @@ func (d *ImplDecl) Span() source.Span    { return d.Pos }
 func (d *ValDecl) Span() source.Span     { return d.Pos }
 func (d *ExternBlock) Span() source.Span { return d.Pos }
 func (d *BadDecl) Span() source.Span     { return d.Pos }
+func (d *ErrorAliasDecl) Span() source.Span { return d.Pos }
 
+func (*ErrorAliasDecl) declNode() {}
 func (*UseDecl) declNode()     {}
 func (*FunDecl) declNode()     {}
 func (*StructDecl) declNode()  {}

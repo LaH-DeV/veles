@@ -162,6 +162,31 @@ bool veles_string_substring(veles_string *out, const char *s, int64_t len, int64
     return true;
 }
 
+veles_list *veles_list_new(veles_desc *desc, int64_t cap);
+void veles_list_push(veles_list *l, const void *item);
+
+/* D18: len() is bytes. These give the Unicode scalar view on demand. */
+int64_t veles_string_char_count(const char *s, int64_t len) {
+    int64_t n = 0;
+    for (int64_t i = 0; i < len; i++) {
+        if (((unsigned char)s[i] & 0xC0) != 0x80) n++;
+    }
+    return n;
+}
+
+veles_list *veles_string_chars(veles_desc *desc, const char *s, int64_t len) {
+    veles_list *l = veles_list_new(desc, veles_string_char_count(s, len));
+    int64_t i = 0;
+    while (i < len) {
+        int64_t j = i + 1;
+        while (j < len && ((unsigned char)s[j] & 0xC0) == 0x80) j++;
+        veles_string ch = { (char *)s + i, j - i };
+        veles_list_push(l, &ch);
+        i = j;
+    }
+    return l;
+}
+
 bool veles_string_to_int(const char *s, int64_t len, int64_t *out) {
     if (len == 0 || len > 20) return false;
     int64_t i = 0;
@@ -207,17 +232,37 @@ void veles_u64_to_string(veles_string *out, uint64_t v) {
     from_buf(out, buf, n);
 }
 
-void veles_f64_to_string(veles_string *out, double v) {
+static void float_to_string(veles_string *out, double v, int is_f32) {
     char buf[64];
     int n = snprintf(buf, sizeof buf, "%.17g", v);
-    /* shortest round-trip: try shorter precisions first */
-    for (int prec = 1; prec <= 17; prec++) {
+    /* shortest representation that round-trips at the value's own precision */
+    int max = is_f32 ? 9 : 17;
+    for (int prec = 1; prec <= max; prec++) {
         char tmp[64];
         int m = snprintf(tmp, sizeof tmp, "%.*g", prec, v);
-        if (strtod(tmp, NULL) == v) {
+        int same = is_f32 ? ((float)strtod(tmp, NULL) == (float)v) : (strtod(tmp, NULL) == v);
+        if (same) {
             memcpy(buf, tmp, (size_t)m + 1);
             n = m;
             break;
+        }
+    }
+    /* %g switches to exponent form early (1.5e+03); prefer plain digits for
+       magnitudes people read as ordinary numbers */
+    char *e = strchr(buf, 'e');
+    if (e && v == v && v - v == 0) {
+        int exp = atoi(e + 1);
+        if (exp >= -4 && exp < 15) {
+            char tmp[64];
+            int decimals = (int)(e - buf) - 2; /* digits after the point in mantissa */
+            if (decimals < 0) decimals = 0;
+            int frac = decimals - exp;
+            if (frac < 0) frac = 0;
+            int m = snprintf(tmp, sizeof tmp, "%.*f", frac, v);
+            if (m > 0 && m < 60) {
+                memcpy(buf, tmp, (size_t)m + 1);
+                n = m;
+            }
         }
     }
     /* make sure it reads as a float */
@@ -232,6 +277,9 @@ void veles_f64_to_string(veles_string *out, double v) {
     }
     from_buf(out, buf, n);
 }
+
+void veles_f64_to_string(veles_string *out, double v) { float_to_string(out, v, 0); }
+void veles_f32_to_string(veles_string *out, float v) { float_to_string(out, (double)v, 1); }
 
 void veles_bool_to_string(veles_string *out, bool v) {
     out->data = v ? "true" : "false";

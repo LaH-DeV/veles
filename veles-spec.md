@@ -51,6 +51,12 @@ Scoped task lifetimes, cancellation trees, no orphan tasks. Orthogonal to D2.
 
 Consequence: `throws` and explicit `Result` interconvert freely; libraries cannot split into two incompatible error camps; the happy path is zero-cost.
 
+**A `Result` must be consumed.** A `throws` call as a bare statement, or bound to a name that is never read, is an error — regardless of whether the caller is itself `throws`, since only `try` propagates. `val _ = f()` is the explicit discard. (Non-`Result` bindings that are never read are a warning.)
+
+**Errors are declared, and every error implements `Error`.** The prelude declares `trait Error { fun message(): string = "$self" }`. An error type is declared with a contextual keyword: `error ParseError { text: string; fun message(): string = ... }` is sugar for `struct ParseError { text: string }` plus `impl Error for ParseError { override fun message() ... }`. Inside an `error` body `message` needs no `override` (there is exactly one trait in play; writing it is allowed), and no other method may carry one — they are inherent. A field `message: string` with no `message()` written is used as the message, so `error Failed { message: string }` is thrown as `Failed(message: "...")`; `Panic` is exactly that. **Only errors can be in error position** (a `throws` clause, a `throw` operand, the `E` of a `Result`): throwing a plain struct is an error naming the fix (`error Dog { ... }`), non-structs are rejected, and a generic `throws X` needs the bound `X: Error`. `impl Error for T {}` on an existing struct is the escape hatch for types one does not own. Because every member of an error union implements `Error`, **the union exposes `Error`'s methods directly**: `e.message()` on a `ParseError | RangeError` compiles to a tag switch, no `when` required. An error escaping `main() throws` is reported through `message()`. This is Go's one-method `error` interface with structured payloads kept as fields, and the declaration form makes "is an error" a property of the type rather than of its uses. `error` is a keyword only at declaration position (`error Name`); elsewhere it is an ordinary identifier, so `is Err(error) => ...` is unaffected. Rejected: treating every struct as an implicit `Error` (it made `throw Dog()` legal); `struct X : Error` (in D12 that syntax means variant membership); and making `message` a mandatory field (it cannot be computed from the other fields, which is the common case).
+
+**`is Ok` / `is Err` smart-cast to the payload.** After `if (r is Ok)` the subject `r` *is* the `T`; in the `else` branch (or after `!is Ok`) it is the `E`. This is D5's `T?` → `T` rule applied to `Result` (and `Option`'s `Some`): the wrapper variants are handled, never held as values. A general two-variant sealed type gets the complementary narrowing in the failed branch too, but only `Result`/`Option` read through to a payload.
+
 Error type is **typed but inferrable** for ordinary functions. *Amended by D40:* trait methods must declare it. *Extended by D45:* inference across callees with different error types produces a union.
 
 ### D5 — Nullability: `T?` with flow-sensitive smart casts, nesting
@@ -69,6 +75,8 @@ Rationale: Kotlin's collapsing `T?` makes generic lookups ambiguous — `map[key
 **Precedence with pointers:** `?` binds tighter than `*`, so `*User?` is a pointer to a nullable `User`. A nullable pointer is written `(*User)?`.
 
 This follows the conventional rule that postfix binds tighter than prefix, but it hands the terse form to the rarer case — optional references are common, pointers to nullable values are not — and it reads against the representation note above, where the nullable pointer is the free one. Expect `(*T)?` to be frequent.
+
+**What a smart cast is about: a stable place.** A fact (`x != null`, `x is Circle`, `r is Ok`) attaches to a *place*: a local variable, or a chain of direct struct fields starting from one (`config.cause`, `self.address` in a non-`mut` method). Reads of the place are narrowed until something could change it: an assignment to the place or to a prefix of it (`u.address = ...`, `u = ...`), a `mut` method call on the root, or `&root` being taken — after which no new facts form on the root's fields either. Nothing reached through a pointer, `?.` or an index is a place: with `p: *User`, `p.address` may change through another pointer between the test and the use, so it is never narrowed (this is Kotlin's "stable value" rule with aliasing made explicit; Veles has pointers, Kotlin does not). Inside a `mut` method `self` is a pointer, so `self.field` is bound to a `val` first. Facts on the variable itself survive a `mut` call or `&` (they cannot change which variant a value is); only the field-path facts are dropped.
 
 ### D6 — Polymorphism: Rust-style nominal traits
 
@@ -105,6 +113,10 @@ Distinct syntax for boxed trait objects was considered and rejected in favour of
 `veles.toml` at the package root holds name, version, dependencies, license, exports, build config. **No source file declares package identity.** The resolver builds a dependency graph by reading manifests, never by parsing Veles source.
 
 A monorepo contains multiple manifests, one per package.
+
+**The package is the unit that runs.** A package is a program when its root module declares `fun main()`, and a library otherwise; a module is never a program on its own. The tools locate the package from any path inside it (the nearest `veles.toml` above), so `veles run` on a sub-module directory runs the package; a directory with no manifest above it is its own single-module package. `check` accepts modules and libraries.
+
+**Documentation comments.** `/// ...` lines and `/** ... */` blocks directly above a declaration, field or method are that item's documentation, carried by the compiler (markdown, shown on hover). A doc comment at the top of a file, separated from the first declaration by a blank line, documents the module; a module's documentation is its files' top comments in file order. Ordinary `//` and `/* */` comments are discarded.
 
 ### M2 — A module is a directory
 
@@ -258,6 +270,8 @@ Two consequences to design for:
 
 ### D18 — Strings: validated UTF-8, immutable, byte-indexed
 
+*Addendum:* `len()` is the byte length; the scalar view is available on demand as `charCount()` and `chars()` (a `List<string>` of one-code-point strings), so character-level work never goes through byte indices.
+
 - Storage is UTF-8 and **validity is guaranteed**, unlike Go. Required at FFI boundaries: bytes entering from C must be validated.
 - A single immutable `string` type plus a builder for construction. No owned/borrowed split — with a GC and no borrow checker it would buy nothing.
 - `len` counts bytes. Byte-level indexing is available.
@@ -285,6 +299,8 @@ Rust's model, plus an explicit operator. `+` is checked in debug builds and wrap
 *Known wart:* overflow behaves differently between builds, so a bug that panics loudly in tests can wrap silently in production.
 
 *Resolves the D20 interaction:* release builds have no overflow checks, so no landing pads on arithmetic.
+
+*Default integer type:* an integer literal with no expected type is `i64`, and so are lengths, indices and counts. There are no implicit widenings (a `T` is never silently an `i64`), so having one default everywhere is what keeps ordinary code cast-free; the narrower types are for layout, C interop and bit work, and a literal adapts to them wherever one is expected.
 
 ### M7 — Version resolution: minimal version selection
 
@@ -679,6 +695,8 @@ Rules:
 - Width subtyping applies in error position: `IoError` is usable where `IoError | ParseError` is expected. This does **not** reopen D14 — it is not generic variance.
 - `when` matches over union members with normal exhaustiveness checking.
 - An associated error type on a trait method (D40) may be a union, but it is declared rather than inferred.
+- **Named error sets.** `error PortErrors = ParseError | RangeError` names a union (Zig's named error sets). The name is transparent — it flattens into any union it appears in, `when` sees the members — and it is not a nominal type: it cannot be constructed, bound as a value type, or tested with `is`. It may appear only where a union may: after `throws`, inside another error set, or as the type of a field of an `error`. Cycles between sets are an error. Sets are resolved once, after collection, so an error set declared in another file or module works and its members are checked for being errors at that point.
+- **A cause field.** The one place a union appears outside `throws` is a field of an `error` (`error ConfigError { key: string, cause: PortErrors }`). This is how context wraps a cause (Go's `%w`, Rust's `source()`); `self.cause.message()` dispatches on the union like any other. Fields of plain structs may not hold unions.
 
 Rejected: Rust-style `From` conversion at `try`, which requires the caller to declare its error type and abandons inference; and boxing into an `Error` trait object, which discards the typing D4 exists to preserve and allocates on every error under D9.
 

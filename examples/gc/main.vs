@@ -44,7 +44,7 @@ fun main() {
   loop (i in 0..<2000) { words.push("w" + "$i") }
   io.println("keep ${sum(keep)} checksum $checksum")
   var total: i64 = 0
-  loop ((k, v) in keepMap) { total += v[0] + v[1] }
+  loop ((_, v) in keepMap) { total += v[0] + v[1] }
   io.println("map ${keepMap.len()} $total ${keepMap["k7"] ?: []}")
   io.println("${boxes.map(b => b.name())} ${counter()} ${words.len()} ${words[1999]}")
 }

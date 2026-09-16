@@ -1,6 +1,8 @@
 package sema
 
 import (
+	"strings"
+
 	"github.com/LaH-DeV/veles/ast"
 	"github.com/LaH-DeV/veles/lexer"
 	"github.com/LaH-DeV/veles/source"
@@ -17,7 +19,7 @@ type fnCtx struct {
 	subst  map[*types.TypeParam]types.Type
 	scope  *Scope
 	loops  []*loopFrame
-	narrow map[*Var]types.Type
+	narrow map[place]types.Type
 
 	retType  types.Type // declared return type (never the Result wrapper)
 	throws   bool
@@ -51,7 +53,7 @@ func (c *Checker) newFnCtx(fn *Func, module *Module, file *ast.File, env *typeEn
 	if scope.parent == nil {
 		scope = NewScope(module.Scope)
 	}
-	return &fnCtx{c: c, fn: fn, module: module, file: file, env: env, subst: subst, scope: scope, narrow: map[*Var]types.Type{}, vars: map[*Var]bool{}, captures: map[*Var]*Var{}}
+	return &fnCtx{c: c, fn: fn, module: module, file: file, env: env, subst: subst, scope: scope, narrow: map[place]types.Type{}, vars: map[*Var]bool{}, captures: map[*Var]*Var{}}
 }
 
 func (f *fnCtx) errorf(span source.Span, format string, args ...any) {
@@ -67,6 +69,9 @@ func (f *fnCtx) resolve(t ast.Type) types.Type {
 func (f *fnCtx) newVar(name string, t types.Type, mutable bool, span source.Span) *Var {
 	f.c.nextVar++
 	v := &Var{Name: name, Type: t, Mutable: mutable, ID: f.c.nextVar, Span: span}
+	if name != "self" && !strings.HasPrefix(name, "$") && t != nil {
+		f.c.refVar(span, v)
+	}
 	f.vars[v] = true
 	if f.fn != nil {
 		f.fn.Locals = append(f.fn.Locals, v)
@@ -103,6 +108,40 @@ func (f *fnCtx) declareLocal(name string, v *Var, span source.Span) {
 		return
 	}
 	f.scope.Insert(&Symbol{Name: name, Kind: SymLocal, Var: v, Span: span})
+}
+
+// declareChecked declares a binding that must be read somewhere: a `val`
+// or `var`, a destructured element, a loop or pattern variable. Parameters
+// and `with` resources are exempt (a resource may be held only for its
+// close), and `_` is the explicit discard.
+func (f *fnCtx) declareChecked(name string, v *Var, span source.Span) {
+	v.checkUse = name != "_"
+	f.declareLocal(name, v, span)
+}
+
+// markUsed records a read of v. A read inside a lambda counts for the
+// captured variable in every enclosing function.
+func markUsed(v *Var) {
+	for ; v != nil; v = v.Outer {
+		v.used = true
+	}
+}
+
+// reportUnused runs after a body is checked. A binding that is never read
+// is a warning, except that an unread Result silently swallows a failure
+// the same way a discarded call would, so it is the same error (D4).
+// Assignments do not count as reads.
+func (f *fnCtx) reportUnused() {
+	for _, v := range f.fn.Locals {
+		if !v.checkUse || v.used || v.Outer != nil {
+			continue
+		}
+		if isResultType(v.Type) {
+			f.errorf(v.Span, "unused Result '%s': the call may fail; use 'try' to propagate the error or 'when' to handle it (D4)", v.Name)
+		} else if !types.IsInvalid(v.Type) {
+			f.warnf(v.Span, "'%s' is never used", v.Name)
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -146,10 +185,12 @@ func (c *Checker) checkBody(fn *Func) {
 	}
 	env.self = owner
 	f := c.newFnCtx(fn, t.Module, t.File, env, fn.subst)
+	c.refFunc(t.Decl.Name.Pos, t)
 	f.retType = fn.Sig.Ret
 	f.throws = fn.Sig.Effects.Throws
 	if f.throws && t.Decl.Effects.Error != nil {
 		f.errType = fn.Sig.Effects.Error
+		c.checkErrorType(f.errType, t.Decl.Effects.Error.Span())
 	}
 	if t.Decl.Unsafe {
 		f.unsafe = 1
@@ -168,6 +209,7 @@ func (c *Checker) checkBody(fn *Func) {
 		fn.Params = append(fn.Params, v)
 		f.declareLocal(p.Name.Name, v, p.Name.Pos)
 	}
+	defer f.reportUnused()
 	if t.Decl.ExprBody != nil {
 		f.pushScope()
 		var body *Block
@@ -353,6 +395,7 @@ func (f *fnCtx) checkStmt(s ast.Stmt) (stmts []Stmt, term bool) {
 		if lp == nil {
 			return nil, true
 		}
+		lp.hasContinue = true
 		return []Stmt{&Continue{Loop: lp}}, true
 	case *ast.LoopStmt:
 		stmts := f.checkLoop(s)
@@ -367,7 +410,8 @@ func (f *fnCtx) checkStmt(s ast.Stmt) (stmts []Stmt, term bool) {
 		b := f.checkBlock(s, nil, false)
 		return []Stmt{b}, types.IsNever(b.Type)
 	case *ast.WithStmt:
-		return f.checkWith(s), false
+		stmts := f.checkWith(s)
+		return stmts, withDiverges(stmts)
 	case *ast.ScopeStmt:
 		return f.scopeStmt(s), false
 	case *ast.FunStmt:
@@ -427,7 +471,7 @@ func (f *fnCtx) checkValStmt(s *ast.ValStmt) []Stmt {
 			declared = types.TInvalid
 		}
 		v := f.newVar(b.Name.Name, declared, mutable, b.Name.Pos)
-		f.declareLocal(b.Name.Name, v, b.Name.Pos)
+		f.declareChecked(b.Name.Name, v, b.Name.Pos)
 		return []Stmt{&VarDecl{Var: v, Init: init}}
 	}
 	// tuple destructuring (D37)
@@ -458,7 +502,7 @@ func (f *fnCtx) checkValStmt(s *ast.ValStmt) []Stmt {
 			}
 		}
 		v := f.newVar(el.Name.Name, et, mutable, el.Name.Pos)
-		f.declareLocal(el.Name.Name, v, el.Name.Pos)
+		f.declareChecked(el.Name.Name, v, el.Name.Pos)
 		stmts = append(stmts, &VarDecl{Var: v, Init: &TupleGet{exprBase{et}, &VarRef{exprBase{tt}, tmp}, i}})
 	}
 	return stmts
@@ -534,10 +578,15 @@ func (f *fnCtx) checkAssign(s *ast.AssignStmt) []Stmt {
 	// non-null value smart-casts a nullable var), or clears the narrowing.
 	if root != nil {
 		if _, ok := target.(*VarRef); ok {
-			delete(f.narrow, root)
+			f.invalidatePlace(pv(root))
 			if rawType != nil && !types.Identical(rawType, root.Type) && !types.IsNever(rawType) && !types.IsInvalid(rawType) && f.assignableTo(rawType, root.Type) {
-				f.narrow[root] = rawType
+				f.narrow[pv(root)] = rawType
 			}
+		} else if p, ok := f.placeOf(s.Target); ok {
+			// a field write drops the facts about that field and below
+			f.invalidatePlace(p)
+		} else {
+			f.invalidatePaths(root)
 		}
 	}
 	return []Stmt{&Assign{Target: target, Value: value}}
@@ -559,6 +608,11 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 			v := f.localVar(sym.Var)
 			if mutate && !v.Mutable {
 				f.errorf(e.Pos, "cannot assign to '%s': it is a 'val'; declare it with 'var' (D11)", e.Name)
+			}
+			if !mutate {
+				// a field write or address-of reads the binding; a plain
+				// assignment to the name itself does not
+				markUsed(v)
 			}
 			return &VarRef{exprBase{v.Type}, v}, v
 		case SymGlobal:
@@ -666,6 +720,7 @@ func (f *fnCtx) lookupField(st *types.Struct, name string, span source.Span) *ty
 			if !fld.Pub && st.Module != f.module.prefix() {
 				f.errorf(span, "field '%s' of '%s' is private to module '%s' (M5)", name, st.Name, st.Module)
 			}
+			f.c.refField(span, st, fld)
 			return fld
 		}
 	}
@@ -798,6 +853,12 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 		lp.Body = f.checkBlock(s.Body, nil, false)
 		f.loops = f.loops[:len(f.loops)-1]
 	}
+	if lp.Body != nil && types.IsNever(lp.Body.Type) && !lp.hasContinue {
+		// every path through the body breaks, returns or throws: the loop
+		// runs its body once and the `loop` is doing nothing
+		kw := source.Span{File: s.Pos.File, Start: s.Pos.Start, End: s.Pos.Start + len("loop")}
+		f.warnf(kw, "this loop never repeats: every path through its body leaves it (break, return or throw); drop the 'loop' or add a condition")
+	}
 	return append(pre, lp)
 }
 
@@ -825,7 +886,7 @@ func (f *fnCtx) bindLoopVar(b *ast.Binding, t types.Type) (*Var, []Stmt) {
 		}
 	}
 	v := f.newVar(b.Name.Name, t, false, b.Name.Pos)
-	f.declareLocal(b.Name.Name, v, b.Name.Pos)
+	f.declareChecked(b.Name.Name, v, b.Name.Pos)
 	return v, nil
 }
 
@@ -835,9 +896,18 @@ func (f *fnCtx) invalidateAssigned(b *ast.Block) {
 	walk = func(s ast.Stmt) {
 		switch s := s.(type) {
 		case *ast.AssignStmt:
-			if n, ok := s.Target.(*ast.NameExpr); ok {
+			// any write rooted at a local drops every fact about it
+			target := s.Target
+			for {
+				m, ok := target.(*ast.MemberExpr)
+				if !ok || m.X == nil {
+					break
+				}
+				target = m.X
+			}
+			if n, ok := target.(*ast.NameExpr); ok {
 				if sym := f.scope.Lookup(n.Name); sym != nil && sym.Kind == SymLocal {
-					delete(f.narrow, sym.Var)
+					f.invalidatePlace(pv(sym.Var))
 				}
 			}
 		case *ast.Block:
@@ -1007,4 +1077,20 @@ func (f *fnCtx) checkThrow(s *ast.ThrowStmt) []Stmt {
 		return nil
 	}
 	return []Stmt{&ExprStmt{X: x}}
+}
+
+// withDiverges reports whether a lowered `with` never falls through: its
+// innermost body block has type Never.
+func withDiverges(stmts []Stmt) bool {
+	for len(stmts) == 1 {
+		switch s := stmts[0].(type) {
+		case *With:
+			stmts = []Stmt{s.Body}
+			continue
+		case *Block:
+			return types.IsNever(s.Type)
+		}
+		break
+	}
+	return false
 }

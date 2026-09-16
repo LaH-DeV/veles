@@ -5,6 +5,7 @@
 //	veles check <file.vs | dir>   type-check only
 //	veles parse <file.vs>         dump the syntax tree
 //	veles tokens <file.vs>        dump the token stream
+//	veles lsp                     language server over stdio
 package main
 
 import (
@@ -14,20 +15,25 @@ import (
 	"github.com/LaH-DeV/veles/ast"
 	"github.com/LaH-DeV/veles/driver"
 	"github.com/LaH-DeV/veles/lexer"
+	"github.com/LaH-DeV/veles/lsp"
 	"github.com/LaH-DeV/veles/parser"
 	"github.com/LaH-DeV/veles/source"
 )
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: veles <build|run|test|check|parse|tokens> <path> [-o output] [--emit-llvm] [--keep] [--release] [-- args...]")
+	fmt.Fprintln(os.Stderr, "usage: veles <build|run|test|check|parse|tokens> <path> [-o output] [--emit-llvm] [--keep] [--release] [-- args...] | veles lsp")
 	os.Exit(2)
 }
 
 func main() {
-	if len(os.Args) < 3 {
+	if len(os.Args) < 2 || (len(os.Args) < 3 && os.Args[1] != "lsp") {
 		usage()
 	}
-	cmd, path := os.Args[1], os.Args[2]
+	cmd := os.Args[1]
+	path := ""
+	if len(os.Args) > 2 {
+		path = os.Args[2]
+	}
 	switch cmd {
 	case "tokens":
 		file := mustLoad(path)
@@ -49,6 +55,12 @@ func main() {
 		if diags.HasErrors() {
 			os.Exit(1)
 		}
+	case "lsp":
+		if err := lsp.Serve(os.Stdin, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "veles lsp:", err)
+			os.Exit(1)
+		}
+		return
 	case "build", "run", "check", "test":
 		opts := driver.Options{Path: path, Mode: cmd}
 		args := os.Args[3:]

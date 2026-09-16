@@ -1,5 +1,9 @@
 80 -> 160
-x -> parse error on 'x'
-70000 -> 70000 out of range
+22 -> config 'port': port 22 is reserved
+  (not a range problem)
+x -> config 'port': parsing problem in "x"
+  (not a range problem)
+70000 -> config 'port': RangeError(value: 70000)
+  70000 is outside 0..65535
 doubled 42
 exit=1

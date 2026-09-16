@@ -90,6 +90,10 @@ func (g *gen) expr(e sema.Expr) string {
 		}
 		return strconv.FormatUint(e.Value, 10)
 	case *sema.FloatConst:
+		if b, ok := e.Type().(*types.Basic); ok && b.Kind == types.F32 {
+			// a `float` constant must be exactly representable in single precision
+			return floatConst(float64(float32(e.Value)))
+		}
 		return floatConst(e.Value)
 	case *sema.BoolConst:
 		if e.Value {
@@ -1015,6 +1019,18 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		fn := map[string]string{"string.startsWith": "veles_string_starts_with", "string.endsWith": "veles_string_ends_with", "string.contains": "veles_string_contains"}[e.Op]
 		v := g.newTmp()
 		g.emit("%s = call i1 @%s(ptr %s, i64 %s, ptr %s, i64 %s)", v, fn, ap, al, bp, bl)
+		return v
+	case "string.charCount":
+		s := g.expr(e.Args[0])
+		sp, sl := g.strPtrLen(s)
+		v := g.newTmp()
+		g.emit("%s = call i64 @veles_string_char_count(ptr %s, i64 %s)", v, sp, sl)
+		return v
+	case "string.chars":
+		s := g.expr(e.Args[0])
+		sp, sl := g.strPtrLen(s)
+		v := g.newTmp()
+		g.emit("%s = call ptr @veles_string_chars(ptr %s, ptr %s, i64 %s)", v, g.arrayDescOf(types.TString), sp, sl)
 		return v
 	case "string.substring":
 		s := g.expr(e.Args[0])

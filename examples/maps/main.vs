@@ -1,9 +1,9 @@
 use io
 
-struct Point { x: i32, y: i32 }
+struct Point { x: i64, y: i64 }
 
-fun wordCounts(text: List<string>): Map<string, i32> {
-  var counts: MutableMap<string, i32> = mut [:]
+fun wordCounts(text: List<string>): Map<string, i64> {
+  var counts: MutableMap<string, i64> = mut [:]
   loop (w in text) {
     counts[w] = (counts[w] ?: 0) + 1
   }
@@ -27,11 +27,11 @@ fun main() {
     if (!seen.add(x as i64)) io.println("dup $x")
   }
   io.println("$seen ${seen.contains(2)} ${seen.len()} ${seen.toList()}")
-  var byKey: MutableMap<(i32, bool), List<string>> = [:]
+  var byKey: MutableMap<(i64, bool), List<string>> = [:]
   byKey[(1, true)] = ["x"]
   byKey[(1, false)] = ["y", "z"]
   io.println("$byKey ${byKey[(1, false)] ?: []}")
-  val nested: Map<string, Map<string, i32>> = ["outer": ["inner": 7]]
+  val nested: Map<string, Map<string, i64>> = ["outer": ["inner": 7]]
   io.println("${nested["outer"]?.get("inner") ?: 0}")
   loop (k in seen) { io.print("$k ") }
   io.println("")

@@ -1,12 +1,12 @@
 use io
 
-fun boom(n: i32): i32 {
+fun boom(n: i64): i64 {
   await sleep(1)
   val xs = [1, 2]
   xs[n]
 }
 
-fun fine(): i32 {
+fun fine(): i64 {
   await sleep(1)
   7
 }

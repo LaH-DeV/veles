@@ -18,6 +18,25 @@ func isResultType(t types.Type) bool {
 	return ok && s.Template != nil && s.Template.Name == "Result" && s.Template.Module == "<prelude>"
 }
 
+// payloadField returns the single field of a builtin `Ok`, `Err` or `Some`
+// variant. A smart cast onto one of these reads through to the payload:
+// `if (r is Ok)` makes `r` a `T`, exactly as `x != null` makes a `T?` a
+// `T` — the wrapper is handled, never held (D4/D5).
+func payloadField(t types.Type) *types.Field {
+	st, ok := t.(*types.Struct)
+	if !ok || st.Sealed == nil || len(st.Fields) != 1 {
+		return nil
+	}
+	s := st.Sealed
+	if s.Template != nil {
+		s = s.Template
+	}
+	if s.Module != "<prelude>" || (s.Name != "Result" && s.Name != "Option") {
+		return nil
+	}
+	return st.Fields[0]
+}
+
 // checkExprTo checks e and converts it to want, reporting a mismatch.
 func (f *fnCtx) checkExprTo(e ast.Expr, want types.Type) Expr {
 	x := f.checkExpr(e, want)
@@ -40,6 +59,14 @@ func (f *fnCtx) coerce(x Expr, want types.Type, span source.Span) Expr {
 	}
 	if types.IsUnit(want) {
 		return x // statement position: any value may be discarded
+	}
+	if n, ok := have.(*types.Nullable); ok && types.Identical(n.Elem, want) {
+		f.errorf(span, "type mismatch: expected '%s', found '%s'; the value may be null — supply a fallback with '?:' or check for null first (D5)", want, have)
+		return x
+	}
+	if types.IsString(want) && (types.IsNumeric(have) || types.IsBool(have)) {
+		f.errorf(span, "type mismatch: expected '%s', found '%s'; build strings with interpolation: \"...${expr}...\"", want, have)
+		return x
 	}
 	f.errorf(span, "type mismatch: expected '%s', found '%s'", want, have)
 	return x
@@ -253,7 +280,7 @@ func (f *fnCtx) checkExpr(e ast.Expr, want types.Type) Expr {
 func (f *fnCtx) intLit(e *ast.IntLit, want types.Type, neg bool) Expr {
 	t := numericHint(want)
 	if !types.IsNumeric(t) {
-		t = types.TI32
+		t = types.TI64
 	}
 	text := strings.ReplaceAll(e.Text, "_", "")
 	v, err := strconv.ParseUint(text, 0, 64)
@@ -336,12 +363,18 @@ func (f *fnCtx) lookup(name string) *Symbol {
 func (f *fnCtx) nameExpr(e *ast.NameExpr, want types.Type) Expr {
 	sym := f.lookup(e.Name)
 	if sym == nil {
-		f.errorf(e.Pos, "unknown name '%s'", e.Name)
+		f.errorf(e.Pos, "unknown name '%s'%s", e.Name, f.c.suggestUnknownName(f.module, e.Name))
 		return bad()
 	}
+	if sym.Kind == SymLocal {
+		v := f.localVar(sym.Var)
+		markUsed(v)
+		x := f.narrowedRef(v)
+		f.c.refVarAs(e.Pos, v, x.Type())
+		return x
+	}
+	f.c.refSym(e.Pos, sym)
 	switch sym.Kind {
-	case SymLocal:
-		return f.narrowedRef(f.localVar(sym.Var))
 	case SymGlobal:
 		v := f.globalVar(sym.Global)
 		return &VarRef{exprBase{v.Type}, v}
@@ -366,12 +399,7 @@ func (f *fnCtx) nameExpr(e *ast.NameExpr, want types.Type) Expr {
 
 // narrowedRef reads a variable applying its current smart cast (D5).
 func (f *fnCtx) narrowedRef(v *Var) Expr {
-	ref := Expr(&VarRef{exprBase{v.Type}, v})
-	to, ok := f.narrow[v]
-	if !ok {
-		return ref
-	}
-	return narrowExpr(ref, to)
+	return f.narrowPlace(&VarRef{exprBase{v.Type}, v}, pv(v))
 }
 
 // narrowExpr converts a value of a wider type to a narrower one already
@@ -387,11 +415,23 @@ func narrowExpr(x Expr, to types.Type) Expr {
 		case *types.Nullable:
 			x = &Unwrap{exprBase{t.Elem}, x}
 		case *types.Sealed:
-			st, ok := to.(*types.Struct)
-			if !ok || st.Sealed != t {
+			if st, ok := to.(*types.Struct); ok && st.Sealed == t {
+				return &VariantCast{exprBase{st}, x, st}
+			}
+			// A fact established through a payload (`is Err` then
+			// `is ParseError`) reads through the variant that can reach it.
+			var via *types.Struct
+			for _, v := range t.Variants {
+				if fld := payloadField(v); fld != nil && narrowReaches(fld.Type, to) {
+					via = v
+					break
+				}
+			}
+			if via == nil {
 				return x
 			}
-			return &VariantCast{exprBase{st}, x, st}
+			fld := via.Fields[0]
+			x = &FieldGet{exprBase{fld.Type}, &VariantCast{exprBase{via}, x, via}, fld.Index, fld.Name}
 		case *types.ErrorUnion:
 			if types.UnionIndex(t, to) < 0 {
 				return x
@@ -402,6 +442,37 @@ func narrowExpr(x Expr, to types.Type) Expr {
 		}
 	}
 	return x
+}
+
+// narrowReaches reports whether narrowExpr can take a value of type from
+// to the type to.
+func narrowReaches(from, to types.Type) bool {
+	for !types.Identical(from, to) {
+		switch t := from.(type) {
+		case *types.Pointer:
+			if t.Raw {
+				return false
+			}
+			from = t.Elem
+		case *types.Nullable:
+			from = t.Elem
+		case *types.Sealed:
+			if st, ok := to.(*types.Struct); ok && st.Sealed == t {
+				return true
+			}
+			for _, v := range t.Variants {
+				if fld := payloadField(v); fld != nil && narrowReaches(fld.Type, to) {
+					return true
+				}
+			}
+			return false
+		case *types.ErrorUnion:
+			return types.UnionIndex(t, to) >= 0
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func (f *fnCtx) memberExpr(e *ast.MemberExpr, want types.Type) Expr {
@@ -441,13 +512,23 @@ func (f *fnCtx) memberExpr(e *ast.MemberExpr, want types.Type) Expr {
 		}
 	}
 	x := f.checkExpr(e.X, nil)
-	return f.fieldAccess(x, e, want)
+	r := f.fieldAccess(x, e, want)
+	// a field path the flow has narrowed (`when (config.cause) { is E => config.cause.x }`)
+	if p, ok := f.placeOf(e); ok {
+		if n := f.narrowPlace(r, p); n != r {
+			f.c.renarrowRef(e.Name.Pos, n.Type(), r.Type())
+			r = n
+		}
+	}
+	return r
 }
 
 func (f *fnCtx) symbolValue(sym *Symbol, span source.Span, want types.Type) Expr {
 	switch sym.Kind {
 	case SymLocal:
-		return f.narrowedRef(f.localVar(sym.Var))
+		v := f.localVar(sym.Var)
+		markUsed(v)
+		return f.narrowedRef(v)
 	case SymGlobal:
 		v := f.globalVar(sym.Global)
 		return &VarRef{exprBase{v.Type}, v}
@@ -676,6 +757,7 @@ func (f *fnCtx) throwExpr(errv Expr, span source.Span) Expr {
 	} else {
 		f.recordError(et, span)
 	}
+	f.c.checkErrorType(et, span)
 	return &Throw{exprBase{types.TNever}, errv, et, f.currentErrType()}
 }
 
@@ -747,6 +829,7 @@ func (f *fnCtx) unaryExpr(e *ast.UnaryExpr, want types.Type) Expr {
 		}
 		if root != nil {
 			root.AddrTaken = true
+			f.invalidatePaths(root) // fields may now change through the pointer
 		}
 		return &AddrOf{exprBase{&types.Pointer{Elem: lv.Type()}}, lv}
 	case lexer.Star:
@@ -859,8 +942,8 @@ func (f *fnCtx) equality(e *ast.BinaryExpr, op BinOp) Expr {
 		}
 		x := f.checkExpr(other, nil)
 		if _, ok := x.Type().(*types.Nullable); !ok {
-			if v := varOf(other, f); v != nil {
-				if _, declaredNullable := v.Type.(*types.Nullable); declaredNullable {
+			if p, isPlace := f.placeOf(other); isPlace {
+				if _, declaredNullable := f.declaredTypeOf(p).(*types.Nullable); declaredNullable {
 					// smart-cast to non-null already; the test is decided
 					return &BoolConst{exprBase{types.TBool}, op == OpNe}
 				}
@@ -1046,7 +1129,19 @@ func (f *fnCtx) tryExpr(e *ast.TryExpr) Expr {
 // ---------------------------------------------------------------------------
 // if / is and flow-sensitive narrowing (D5, D13)
 
-type facts map[*Var]types.Type
+// place is what a smart cast is about: a local variable, or a chain of
+// direct struct fields from one (`config.cause`). Only fields of value
+// structs count — nothing reached through a pointer, `?.` or an index —
+// so the place cannot change behind the test's back except by an
+// assignment to it, which invalidates the fact (D5).
+type place struct {
+	v    *Var
+	path string // "" for the variable itself; "cause" / "cause.inner" for fields
+}
+
+func pv(v *Var) place { return place{v: v} }
+
+type facts map[place]types.Type
 
 func (f *fnCtx) saveNarrow() facts {
 	out := facts{}
@@ -1057,10 +1152,123 @@ func (f *fnCtx) saveNarrow() facts {
 }
 
 func (f *fnCtx) restoreNarrow(saved facts) {
-	f.narrow = map[*Var]types.Type{}
+	f.narrow = map[place]types.Type{}
 	for k, v := range saved {
 		f.narrow[k] = v
 	}
+}
+
+// invalidatePlace drops the facts an assignment to p can break: p itself
+// and every field path under it. An assignment to the whole variable
+// drops everything rooted at it.
+func (f *fnCtx) invalidatePlace(p place) {
+	for k := range f.narrow {
+		if k.v != p.v {
+			continue
+		}
+		if p.path == "" || k.path == p.path || strings.HasPrefix(k.path, p.path+".") {
+			delete(f.narrow, k)
+		}
+	}
+}
+
+// invalidatePaths drops the field-path facts rooted at v but keeps the
+// fact about v itself: a mut method call or `&v` may rewrite v's fields
+// but cannot change which variant v is.
+func (f *fnCtx) invalidatePaths(v *Var) {
+	for k := range f.narrow {
+		if k.v == v && k.path != "" {
+			delete(f.narrow, k)
+		}
+	}
+}
+
+// placeOf returns the place an expression denotes: a local variable or a
+// chain of direct struct fields from one.
+func (f *fnCtx) placeOf(e ast.Expr) (place, bool) {
+	switch e := e.(type) {
+	case *ast.NameExpr:
+		if v := varOf(e, f); v != nil {
+			return pv(v), true
+		}
+	case *ast.SelfExpr:
+		// `self` is a value in a non-mut method; in a mut method it is a
+		// pointer, and fields behind a pointer are not stable
+		if self, mut := f.selfRef(); self != nil && !mut {
+			return pv(self), true
+		}
+	case *ast.MemberExpr:
+		if e.X == nil || e.Safe {
+			return place{}, false
+		}
+		base, ok := f.placeOf(e.X)
+		if !ok || base.v.AddrTaken {
+			// with a pointer to the variable around, its fields can change
+			// behind a test's back
+			return place{}, false
+		}
+		st, isStruct := f.currentTypeOf(base).(*types.Struct)
+		if !isStruct {
+			return place{}, false
+		}
+		for _, fld := range st.Fields {
+			if fld.Name == e.Name.Name {
+				p := place{v: base.v, path: e.Name.Name}
+				if base.path != "" {
+					p.path = base.path + "." + e.Name.Name
+				}
+				return p, true
+			}
+		}
+	}
+	return place{}, false
+}
+
+// currentTypeOf is the flow-sensitive type of a place: its narrowed type
+// if a fact holds, else the field's declared type on the (narrowed)
+// prefix, else the variable's type.
+func (f *fnCtx) currentTypeOf(p place) types.Type {
+	if t, ok := f.narrow[p]; ok {
+		if fld := payloadField(t); fld != nil {
+			return fld.Type
+		}
+		return t
+	}
+	return f.declaredTypeOf(p)
+}
+
+// declaredTypeOf is the type of a place before any fact about the place
+// itself (facts about its prefix still apply).
+func (f *fnCtx) declaredTypeOf(p place) types.Type {
+	if p.path == "" {
+		return p.v.Type
+	}
+	prefix, last := place{v: p.v}, p.path
+	if i := strings.LastIndex(p.path, "."); i >= 0 {
+		prefix.path, last = p.path[:i], p.path[i+1:]
+	}
+	if st, ok := f.currentTypeOf(prefix).(*types.Struct); ok {
+		for _, fld := range st.Fields {
+			if fld.Name == last {
+				return fld.Type
+			}
+		}
+	}
+	return types.TInvalid
+}
+
+// narrowPlace applies the fact about p, if any, to the expression that
+// reads it (D5): T? to T, sealed to variant, Result to payload.
+func (f *fnCtx) narrowPlace(x Expr, p place) Expr {
+	to, ok := f.narrow[p]
+	if !ok {
+		return x
+	}
+	x = narrowExpr(x, to)
+	if fld := payloadField(to); fld != nil && types.Identical(x.Type(), to) {
+		x = &FieldGet{exprBase{fld.Type}, x, fld.Index, fld.Name}
+	}
+	return x
 }
 
 func (f *fnCtx) applyFacts(fs facts) {
@@ -1104,11 +1312,11 @@ func (f *fnCtx) condFacts(cond ast.Expr, checked Expr) (whenTrue, whenFalse fact
 			if rNull {
 				other = c.L
 			}
-			v := varOf(other, f)
-			if v == nil {
+			v, isPlace := f.placeOf(other)
+			if !isPlace {
 				return
 			}
-			cur := f.currentType(v)
+			cur := f.currentTypeOf(v)
 			nt, ok := cur.(*types.Nullable)
 			if !ok {
 				return
@@ -1143,29 +1351,39 @@ func (f *fnCtx) condFacts(cond ast.Expr, checked Expr) (whenTrue, whenFalse fact
 			return fl, t
 		}
 	case *ast.IsExpr:
-		v := varOf(c.X, f)
-		if v == nil {
+		v, ok := f.placeOf(c.X)
+		if !ok {
 			return
 		}
-		target := f.patternTargetType(f.currentType(v), c.Pat)
+		from := f.currentTypeOf(v)
+		target := f.patternTargetType(from, c.Pat)
 		if target == nil {
 			return
 		}
+		// On a two-variant sealed the failed test pins the other variant,
+		// so `if (r is Ok) ... else ...` sees an Err in the else branch.
+		var other types.Type
+		if s, ok := from.(*types.Sealed); ok && len(s.Variants) == 2 {
+			if st, ok := target.(*types.Struct); ok && st.Sealed == s {
+				other = s.Variants[1-st.Tag]
+			}
+		}
 		if c.Not {
 			whenFalse[v] = target
+			if other != nil {
+				whenTrue[v] = other
+			}
 		} else {
 			whenTrue[v] = target
+			if other != nil {
+				whenFalse[v] = other
+			}
 		}
 	}
 	return
 }
 
-func (f *fnCtx) currentType(v *Var) types.Type {
-	if t, ok := f.narrow[v]; ok {
-		return t
-	}
-	return v.Type
-}
+func (f *fnCtx) currentType(v *Var) types.Type { return f.currentTypeOf(pv(v)) }
 
 // patternTargetType returns the narrowed type a successful `is` test on a
 // value of type from establishes, or nil.

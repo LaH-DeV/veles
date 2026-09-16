@@ -179,3 +179,74 @@ func TestSpecRejections(t *testing.T) {
 		}
 	}
 }
+
+func TestDocComments(t *testing.T) {
+	f, diags := parse(t, `/// Adds two numbers.
+/// Second line.
+fun add(a: i64, b: i64): i64 = a + b
+
+/**
+ * A point.
+ */
+struct Point {
+  /// horizontal
+  x: i64
+  // not a doc comment
+  y: i64
+  /// distance to origin
+  @inline
+  fun norm(): i64 = self.x
+}
+
+/// orphaned by a blank line
+
+fun plain() { }
+
+//// four slashes is an ordinary comment
+fun other() { }
+
+/// A named set.
+error Errs = Point
+`)
+	if diags.HasErrors() {
+		t.Fatalf("unexpected errors:\n%s", diags.Render())
+	}
+	add := f.Decls[0].(*ast.FunDecl)
+	if add.Doc != "Adds two numbers.\nSecond line." {
+		t.Errorf("fun doc = %q", add.Doc)
+	}
+	pt := f.Decls[1].(*ast.StructDecl)
+	if pt.Doc != "A point." {
+		t.Errorf("struct doc = %q", pt.Doc)
+	}
+	if pt.Fields[0].Doc != "horizontal" || pt.Fields[1].Doc != "" {
+		t.Errorf("field docs = %q, %q", pt.Fields[0].Doc, pt.Fields[1].Doc)
+	}
+	if pt.Methods[0].Doc != "distance to origin" {
+		t.Errorf("method doc (through an attribute) = %q", pt.Methods[0].Doc)
+	}
+	if d := f.Decls[2].(*ast.FunDecl).Doc; d != "" {
+		t.Errorf("doc separated by a blank line attached: %q", d)
+	}
+	if d := f.Decls[3].(*ast.FunDecl).Doc; d != "" {
+		t.Errorf("//// attached as doc: %q", d)
+	}
+	if d := f.Decls[4].(*ast.ErrorAliasDecl).Doc; d != "A named set." {
+		t.Errorf("error set doc = %q", d)
+	}
+}
+
+func TestModuleDoc(t *testing.T) {
+	f, _ := parse(t, "/// The geometry module.\n/// Points and shapes.\n\n/// Doubles n.\nfun twice(n: i64): i64 = n * 2\n")
+	if f.Doc != "The geometry module.\nPoints and shapes." {
+		t.Errorf("module doc = %q", f.Doc)
+	}
+	if d := f.Decls[0].(*ast.FunDecl).Doc; d != "Doubles n." {
+		t.Errorf("fun doc after a module doc = %q", d)
+	}
+	// no blank line: the comment documents the declaration, not the module
+	f, _ = parse(t, "/// Doubles n.\nfun twice(n: i64): i64 = n * 2\n")
+	if f.Doc != "" || f.Decls[0].(*ast.FunDecl).Doc != "Doubles n." {
+		t.Errorf("doc without a blank line: module=%q fun=%q", f.Doc, f.Decls[0].(*ast.FunDecl).Doc)
+	}
+}

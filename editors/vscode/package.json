@@ -1,0 +1,70 @@
+{
+  "name": "veles",
+  "displayName": "Veles",
+  "description": "Veles language support: syntax highlighting, diagnostics, hover, go to definition, completion (via `veles lsp`).",
+  "version": "0.1.0",
+  "publisher": "veles-lang",
+  "license": "MIT",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Programming Languages"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "veles",
+        "aliases": ["Veles", "veles"],
+        "extensions": [".vs", ".veles"],
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "toml",
+        "filenames": ["veles.toml"]
+      }
+    ],
+    "grammars": [
+      {
+        "language": "veles",
+        "scopeName": "source.veles",
+        "path": "./syntaxes/veles.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "Veles",
+      "properties": {
+        "veles.serverPath": {
+          "type": "string",
+          "default": "veles",
+          "description": "Path to the `veles` compiler binary; the language server is `veles lsp`."
+        },
+        "veles.trace.server": {
+          "type": "string",
+          "enum": ["off", "messages", "verbose"],
+          "default": "off",
+          "description": "Trace the communication with the language server."
+        }
+      }
+    },
+    "commands": [
+      { "command": "veles.restartServer", "title": "Veles: Restart Language Server" },
+      { "command": "veles.run", "title": "Veles: Run Current Package" },
+      { "command": "veles.test", "title": "Veles: Test Current Package" }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "npx vsce package --allow-missing-repository",
+    "install": "code --install-extension ./veles-0.1.0.vsix",
+    "uninstall": "code --uninstall-extension veles-lang.veles",
+    "extension": "npm run compile && npm run package && npm run uninstall && npm run install"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.3",
+    "@vscode/vsce": "^2.24.0"
+  }
+}

@@ -1,1 +1,1 @@
-pub fun twice(x: i32): i32 = x * 2
+pub fun twice(x: i64): i64 = x * 2

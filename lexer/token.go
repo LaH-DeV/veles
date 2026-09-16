@@ -216,6 +216,10 @@ type Token struct {
 	Parts []StringPart // only for String
 	// AutoSemi marks a Semi that was inserted by the newline rule.
 	AutoSemi bool
+	// Doc is the documentation comment (`/// ...` lines or `/** ... */`)
+	// written directly above this token, markers stripped; the parser
+	// attaches it to the declaration the token starts.
+	Doc string
 }
 
 func (t Token) String() string {

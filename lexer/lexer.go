@@ -24,14 +24,24 @@ type Lexer struct {
 
 	tokens  []Token
 	nesting []byte // stack of '(' '[' '{'
+	docs    []docComment // documentation comments, attached to tokens after the scan
 }
 
 // Tokenize scans an entire file. Errors are reported into diags and the
 // offending characters become Illegal tokens so parsing can continue.
 func Tokenize(file *source.File, diags *source.Diagnostics) []Token {
+	toks, _ := TokenizeFile(file, diags)
+	return toks
+}
+
+// TokenizeFile scans a file and also returns its module documentation: a
+// doc comment at the very top of the file, set off from the first token
+// by a blank line (so it documents the module, not that declaration).
+func TokenizeFile(file *source.File, diags *source.Diagnostics) ([]Token, string) {
 	lx := &Lexer{file: file, src: file.Content, diags: diags}
 	lx.run()
-	return lx.tokens
+	lx.attachDocs()
+	return lx.tokens, lx.moduleDoc()
 }
 
 func (lx *Lexer) span(start, end int) source.Span {
@@ -147,8 +157,10 @@ func (lx *Lexer) run() {
 			for lx.pos < len(lx.src) && lx.src[lx.pos] != '\n' {
 				lx.pos++
 			}
+			lx.lineDoc(start)
 		case c == '/' && lx.peekByte(1) == '*':
 			lx.blockComment()
+			lx.blockDoc(start)
 		case isIdentStart(c):
 			lx.identifier()
 		case isDigit(c):
@@ -478,4 +490,101 @@ func TokenizeRange(file *source.File, start, end int, diags *source.Diagnostics)
 	lx := &Lexer{file: file, src: file.Content[:end], pos: start, diags: diags}
 	lx.run()
 	return lx.tokens
+}
+
+// ---------------------------------------------------------------------------
+// documentation comments
+
+// docComment is a `/// ...` line or a `/** ... */` block; consecutive
+// `///` lines merge into one comment.
+type docComment struct {
+	start, end int
+	text       string
+}
+
+// lineDoc records a `///` comment just scanned from start (pos is at the
+// newline). `////` and plain `//` are ordinary comments.
+func (lx *Lexer) lineDoc(start int) {
+	body := lx.src[start:lx.pos]
+	if !strings.HasPrefix(body, "///") || strings.HasPrefix(body, "////") {
+		return
+	}
+	line := strings.TrimPrefix(strings.TrimPrefix(body, "///"), " ")
+	line = strings.TrimRight(line, "\r")
+	// merge with a `///` line directly above
+	if n := len(lx.docs); n > 0 && onlyWhitespace(lx.src[lx.docs[n-1].end:start]) && strings.Count(lx.src[lx.docs[n-1].end:start], "\n") == 1 {
+		lx.docs[n-1].text += "\n" + line
+		lx.docs[n-1].end = lx.pos
+		return
+	}
+	lx.docs = append(lx.docs, docComment{start: start, end: lx.pos, text: line})
+}
+
+// blockDoc records a `/** ... */` comment just scanned from start.
+func (lx *Lexer) blockDoc(start int) {
+	body := lx.src[start:lx.pos]
+	if !strings.HasPrefix(body, "/**") || body == "/**/" || !strings.HasSuffix(body, "*/") {
+		return
+	}
+	inner := strings.TrimSuffix(strings.TrimPrefix(body, "/**"), "*/")
+	var lines []string
+	for _, l := range strings.Split(inner, "\n") {
+		l = strings.TrimRight(l, " \t\r")
+		l = strings.TrimLeft(l, " \t")
+		l = strings.TrimPrefix(strings.TrimPrefix(l, "*"), " ")
+		lines = append(lines, l)
+	}
+	// drop blank first/last lines from `/**\n ... \n */`
+	for len(lines) > 0 && lines[0] == "" {
+		lines = lines[1:]
+	}
+	for len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	lx.docs = append(lx.docs, docComment{start: start, end: lx.pos, text: strings.Join(lines, "\n")})
+}
+
+// attachDocs gives each documentation comment to the first token after it,
+// provided nothing but whitespace (at most one newline of it) separates
+// them. Automatic semicolons are skipped over.
+func (lx *Lexer) attachDocs() {
+	ti := 0
+	for _, d := range lx.docs {
+		for ti < len(lx.tokens) && (lx.tokens[ti].Span.Start < d.end || (lx.tokens[ti].Kind == Semi && lx.tokens[ti].AutoSemi)) {
+			ti++
+		}
+		if ti >= len(lx.tokens) {
+			return
+		}
+		gap := lx.src[d.end:lx.tokens[ti].Span.Start]
+		if onlyWhitespace(gap) && strings.Count(gap, "\n") <= 1 {
+			lx.tokens[ti].Doc = d.text
+		}
+	}
+}
+
+func onlyWhitespace(s string) bool {
+	return strings.TrimSpace(s) == ""
+}
+
+// moduleDoc is the first doc comment when nothing but whitespace precedes
+// it and a blank line separates it from the first token.
+func (lx *Lexer) moduleDoc() string {
+	if len(lx.docs) == 0 {
+		return ""
+	}
+	d := lx.docs[0]
+	if !onlyWhitespace(lx.src[:d.start]) {
+		return ""
+	}
+	for _, t := range lx.tokens {
+		if t.Span.Start < d.end || (t.Kind == Semi && t.AutoSemi) {
+			continue
+		}
+		if strings.Count(lx.src[d.end:t.Span.Start], "\n") >= 2 {
+			return d.text
+		}
+		return ""
+	}
+	return d.text
 }

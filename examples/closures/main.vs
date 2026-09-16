@@ -1,10 +1,10 @@
 use io
 
-fun apply(f: fun(i32): i32, x: i32): i32 = f(x)
+fun apply(f: fun(i64): i64, x: i64): i64 = f(x)
 
 fun <T, U> twice(x: T, f: fun(T): U): U = f(x)
 
-fun counter(): fun(): i32 {
+fun counter(): fun(): i64 {
   var n = 0
   () => {
     n += 1
@@ -12,11 +12,11 @@ fun counter(): fun(): i32 {
   }
 }
 
-fun double(x: i32): i32 = x * 2
+fun double(x: i64): i64 = x * 2
 
 struct Acc {
-  total: i32 = 0
-  mut fun addAll(xs: List<i32>) {
+  total: i64 = 0
+  mut fun addAll(xs: List<i64>) {
     xs.forEach(x => self.total += x)
   }
 }
@@ -25,7 +25,7 @@ fun main() {
   val nums = [3, 1, 2]
   val doubled = nums.map(x => x * 2)
   val total = nums.fold(0, (acc, x) => acc + x)
-  val typed = nums.map((x: i32) => "<$x>")
+  val typed = nums.map((x: i64) => "<$x>")
   io.println("$doubled $total $typed")
   io.println("${nums.filter(x => x > 1)} ${nums.any(x => x > 2)} ${nums.all(x => x > 2)}")
   io.println("${nums.find(x => x == 2) ?: -1} ${nums.indexOf(1)} ${nums.contains(9)} ${nums.reversed()}")
@@ -45,6 +45,6 @@ fun main() {
   io.println("acc ${acc.total}")
   val pairs = [(1, "one"), (2, "two")]
   io.println("${pairs.map((n, s) => "$n=$s")}")
-  val adder = (a: i32) => (b: i32) => a + b
+  val adder = (a: i64) => (b: i64) => a + b
   io.println("curried ${adder(2)(3)}")
 }

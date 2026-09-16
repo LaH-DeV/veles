@@ -1,12 +1,12 @@
 use io
 
 // A user-defined iterable: a countdown (D42)
-struct Countdown { from: i32 }
-struct CountdownIter { current: i32 }
+struct Countdown { from: i64 }
+struct CountdownIter { current: i64 }
 
 impl Iterator for CountdownIter {
-  type Item = i32
-  mut fun next(): i32? {
+  type Item = i64
+  mut fun next(): i64? {
     if (self.current <= 0) return null
     val v = self.current
     self.current -= 1

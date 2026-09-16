@@ -477,7 +477,7 @@ func (p *Parser) parseIf() ast.Expr {
 	e := &ast.IfExpr{}
 	if _, ok := p.expect(lexer.LParen); ok {
 		e.Cond = p.parseExpr()
-		p.expect(lexer.RParen)
+		p.closeCondition()
 	} else {
 		e.Cond = &ast.BadExpr{Pos: p.span()}
 	}
@@ -599,4 +599,15 @@ func (p *Parser) parseRace() ast.Expr {
 	p.expect(lexer.RBrace)
 	r.Pos = p.spanFrom(start)
 	return r
+}
+
+// closeCondition expects the `)` after a condition, with a hint for the
+// most common slip: `=` where `==` was meant.
+func (p *Parser) closeCondition() {
+	if p.at(lexer.Assign) {
+		p.errorf(p.span(), "'=' assigns; use '==' to compare")
+		p.next()
+		p.parseExpr()
+	}
+	p.expect(lexer.RParen)
 }

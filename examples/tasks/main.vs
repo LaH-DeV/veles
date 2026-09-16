@@ -1,9 +1,9 @@
 use io
 
-struct Job { id: i32 }
-struct Done { id: i32, worker: i32 }
+struct Job { id: i64 }
+struct Done { id: i64, worker: i64 }
 
-fun worker(id: i32, jobs: Channel<Job>, results: Channel<Done>) {
+fun worker(id: i64, jobs: Channel<Job>, results: Channel<Done>) {
   loop {
     val job = await jobs.recv()
     if (job == null) break
@@ -12,14 +12,14 @@ fun worker(id: i32, jobs: Channel<Job>, results: Channel<Done>) {
   }
 }
 
-fun square(x: i32): i32 {
+fun square(x: i64): i64 {
   await sleep(2)
   x * x
 }
 
-struct Boom { n: i32 }
+error Boom { n: i64 }
 
-fun mayFail(n: i32): i32 throws Boom {
+fun mayFail(n: i64): i64 throws Boom {
   await sleep(1)
   if (n == 2) throw Boom(n: n)
   n * 10
@@ -34,8 +34,8 @@ fun main() throws {
     async worker(2, jobs, results)
     loop (i in 1..4) { jobs.send(Job(id: i)) }
     jobs.close()
-    var got: MutableList<i32> = []
-    loop (i in 1..4) {
+    var got: MutableList<i64> = []
+    loop (_ in 1..4) {
       val d = await results.recv()
       if (d != null) got.push(d.id)
     }

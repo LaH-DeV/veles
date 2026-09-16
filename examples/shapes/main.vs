@@ -8,10 +8,10 @@ struct Point  : Shape { }
 const PI: f64 = 3.14159265358979
 
 fun area(shape: Shape): f64 = when (shape) {
-  is Shape.Circle(radius) if radius > 100.0 => 0.0
-  is Shape.Circle(radius) => PI * radius * radius
-  is Shape.Rect(w, h)     => w * h
-  is Shape.Point          => 0.0
+  is Circle(radius) if radius > 100.0 => 0.0
+  is Circle(radius) => PI * radius * radius
+  is Rect(w, h)     => w * h
+  is Point          => 0.0
 }
 
 fun describe(shape: Shape): string = when (shape) {

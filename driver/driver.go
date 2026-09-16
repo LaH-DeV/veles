@@ -38,6 +38,8 @@ func Run(opts Options) int {
 		fmt.Fprint(os.Stderr, diags.Render())
 		return 1
 	}
+	// only build/run need a program; check accepts a library or a module
+	pkg.NeedMain = opts.Mode == "build" || opts.Mode == "run"
 	var prog *sema.Program
 	if opts.Mode == "test" {
 		prog = sema.CheckTests(pkg, diags, opts.Release)

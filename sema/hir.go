@@ -19,7 +19,10 @@ type Program struct {
 	Structs []*types.Struct
 	Sealeds []*types.Sealed
 	Main    *Func
-	Release bool
+	// MainReport renders an error escaping `main() throws` via Error.message()
+	// (D4); nil when main does not throw.
+	MainReport *Func
+	Release    bool
 	// PanicType is the prelude Panic struct (D52).
 	PanicType types.Type
 	// Tests are the @test functions; in test mode the entry point runs them.
@@ -76,6 +79,10 @@ type Var struct {
 	// narrowed holds the flow-sensitive type while checking; not used by codegen.
 	narrowed types.Type
 	captured bool
+	// used records a read of the variable; checkUse marks bindings the
+	// checker reports when they are never read (see reportUnused).
+	used     bool
+	checkUse bool
 }
 
 type Global struct {
@@ -125,7 +132,8 @@ type Loop struct {
 	Post []Stmt
 	ID   int
 
-	hasBreak bool
+	hasBreak    bool
+	hasContinue bool
 }
 
 type Break struct {
