@@ -563,3 +563,51 @@ fun main() {
 		t.Run(c.name, func(t *testing.T) { expectError(t, src, "may be null") })
 	}
 }
+
+func TestMathBuiltins(t *testing.T) {
+	expectClean(t, prelude+`
+fun main() {
+  val x = 2.0
+  val a: f64 = x.sqrt() + x.abs() + x.floor() + x.ceil() + x.round() + x.trunc() + x.pow(2.0) + x.min(1.0) + x.max(3.0)
+  val b: bool = x.isNaN() || x.isFinite() || x.isInfinite()
+  val f: f32 = (9.0 as f32).sqrt()
+  val n = -7
+  val c: i64 = n.abs() + n.min(3) + n.max(3) + n.mod(3) + n.clamp(0, 5) + n.sign()
+  val d: f64 = x.mod(1.5) + x.clamp(0.0, 1.0) + x.sign()
+  val u: u8 = (200 as u8).min(3 as u8)
+  io.println("$a $b $f $c $u")
+}`)
+	expectError(t, prelude+`fun main() { val s = "x".sqrt() }`, "no method 'sqrt'")
+	expectError(t, prelude+`fun main() { val s = 2.0.pow() }`, "takes 1 argument")
+}
+
+func TestNumberAndCollectionBuiltins(t *testing.T) {
+	expectClean(t, prelude+`
+fun main() {
+  val x = 2.0
+  val a: f64 = x.log() + x.log2() + x.log10() + x.exp() + x.sin() + x.cos() + x.tan() + x.atan2(1.0) + x.hypot(3.0)
+  val n = 7
+  val b: i64 = n.pow(2) + n.wrappingAdd(1) + n.wrappingSub(1) + n.wrappingMul(2) + n.saturatingAdd(1) + n.saturatingSub(1)
+  val c: i64? = n.checkedAdd(1)
+  val d: i64? = n.checkedSub(1)
+  val e: i64? = n.checkedMul(2)
+  val f: i64 = n.countOnes() + n.leadingZeros() + n.trailingZeros()
+  val g: u8 = (3 as u8).pow(2 as u8).saturatingAdd(1 as u8)
+  val m: MutableMap<string, i64> = [:]
+  val got: i64 = m.getOrPut("k", () => 1)
+  val ages = ["ann": 41]
+  ages.forEach((k, v) => io.println("$k $v"))
+  val next: Map<string, i64> = ages.mapValues(v => v + 1)
+  val adults: Map<string, i64> = ages.filter((k, v) => v >= 18)
+  val s = MutableSet<i64>()
+  val u: Set<i64> = s.union(s)
+  val i: Set<i64> = s.intersect(s)
+  val df: Set<i64> = s.difference(s)
+  val sub: bool = s.isSubsetOf(s)
+  io.println("$a $b $c $d $e $f $g $got ${next.len()} ${adults.len()} ${u.len()} ${i.len()} ${df.len()} $sub")
+}`)
+	expectError(t, prelude+`
+fun main() { val m = ["a": 1]; m.getOrPut("b", () => 2) }`, "changes the map")
+	expectError(t, prelude+`
+fun main() { val s = Set<i64>(); val t = Set<string>(); s.union(t) }`, "needs a set of 'i64'")
+}

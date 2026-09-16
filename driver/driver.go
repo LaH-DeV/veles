@@ -112,6 +112,9 @@ func Run(opts Options) int {
 		return 1
 	}
 	args := []string{"-o", exe, llPath, rtPath, gcPath, taskPath, "-Wno-override-module"}
+	if runtime.GOOS != "windows" {
+		args = append(args, "-lm") // tan, atan2, hypot: libm is separate outside the UCRT
+	}
 	if opts.Release {
 		args = append(args, "-O2")
 	} else {

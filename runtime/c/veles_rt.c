@@ -234,6 +234,15 @@ void veles_u64_to_string(veles_string *out, uint64_t v) {
 
 static void float_to_string(veles_string *out, double v, int is_f32) {
     char buf[64];
+    /* one spelling on every platform (the MSVC runtime prints -nan(ind)) */
+    if (v != v) {
+        from_buf(out, "NaN", 3);
+        return;
+    }
+    if (v != 0 && v * 2 == v) { /* only the infinities satisfy this */
+        if (v > 0) from_buf(out, "inf", 3); else from_buf(out, "-inf", 4);
+        return;
+    }
     int n = snprintf(buf, sizeof buf, "%.17g", v);
     /* shortest representation that round-trips at the value's own precision */
     int max = is_f32 ? 9 : 17;
@@ -557,4 +566,46 @@ veles_list *veles_map_entries(veles_map *m, veles_desc *tupleDesc, int64_t valOf
         veles_list_push(l, tmp);
     }
     return l;
+}
+
+/* Integer exponentiation by squaring for every width: the operands arrive
+ * extended to 64 bits, `bits`/`is_signed` describe the Veles type so that
+ * overflow is detected at that type's range (D21: overflow panics). */
+int64_t veles_int_pow(int64_t base, int64_t exp, int64_t bits, bool is_signed, const char *where, int64_t where_len) {
+    char msg[512];
+    if (exp < 0) {
+        int n = snprintf(msg, sizeof msg, "negative exponent %" PRId64 " in integer pow at %.*s", exp, (int)where_len, where);
+        if (n >= (int)sizeof msg) n = (int)sizeof msg - 1;
+        veles_panic(msg, n);
+    }
+    uint64_t lo = 0, hi = 0;
+    if (is_signed) {
+        hi = (bits == 64) ? (uint64_t)INT64_MAX : ((uint64_t)1 << (bits - 1)) - 1;
+        lo = ~hi; /* two's complement minimum, as an unsigned bit pattern */
+    } else {
+        hi = (bits == 64) ? UINT64_MAX : ((uint64_t)1 << bits) - 1;
+    }
+    /* compute in 128-bit-free style: check each multiply against the range */
+    int64_t result = 1, b = base;
+    bool overflow = false;
+    while (exp > 0) {
+        if (exp & 1) {
+            if (__builtin_mul_overflow(result, b, &result)) { overflow = true; break; }
+        }
+        exp >>= 1;
+        if (exp > 0 && __builtin_mul_overflow(b, b, &b)) { overflow = true; break; }
+    }
+    if (!overflow) {
+        if (is_signed) {
+            overflow = result > (int64_t)hi || result < (int64_t)lo;
+        } else {
+            overflow = (uint64_t)result > hi || result < 0;
+        }
+    }
+    if (overflow) {
+        int n = snprintf(msg, sizeof msg, "integer overflow in pow at %.*s", (int)where_len, where);
+        if (n >= (int)sizeof msg) n = (int)sizeof msg - 1;
+        veles_panic(msg, n);
+    }
+    return result;
 }

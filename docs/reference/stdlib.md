@@ -152,19 +152,48 @@ Interpolation `"$x ${expr}"` accepts any value.
 | `keys()`, `values()`, `entries()` | `List<K>`, `List<V>`, `List<(K, V)>` in insertion order |
 | `toMap()`, `toMutable()` | copies |
 | `m[k] = v`, `set(k, v)`, `remove(k): bool`, `clear()` | `MutableMap` only |
+| `forEach((k, v) => ...)`, `mapValues(v => ...)`, `filter((k, v) => ...)` | iterate; new `Map` |
+| `getOrPut(k, () => v)` | `V` — `MutableMap` only: stores `v` when `k` is absent |
 
 Keys must be hashable: scalars, strings, tuples and structs of hashable
 fields.
 
 ### `Set<T>` and `MutableSet<T>`
 
-`contains(x)`, `len()`, `isEmpty()`, `toList()`, `toSet()`, `toMutable()`;
-on `MutableSet`: `add(x): bool`, `remove(x): bool`, `clear()`. Construct
-with `Set<T>()` / `MutableSet<T>()`.
+`contains(x)`, `len()`, `isEmpty()`, `toList()`, `toSet()`, `toMutable()`,
+`union(s)`, `intersect(s)`, `difference(s)`, `isSubsetOf(s)`; on `MutableSet`:
+`add(x): bool`, `remove(x): bool`, `clear()`. Construct with `Set<T>()` /
+`MutableSet<T>()`.
 
 ### `Range<T>`
 
 Fields `lo`, `hi`, `inclusive`; iterable.
+
+### Numbers
+
+Each is a single machine instruction (an LLVM intrinsic), not a runtime call.
+
+| Method | On | Result |
+|---|---|---|
+| `sqrt()`, `abs()`, `floor()`, `ceil()`, `round()`, `trunc()` | `f64`, `f32` | same type; `round` is half away from zero |
+| `pow(y)`, `min(y)`, `max(y)`, `mod(y)`, `clamp(lo, hi)`, `sign()` | `f64`, `f32` | same type; `mod` is Euclidean (never negative for `y > 0`) |
+| `log()`, `log2()`, `log10()`, `exp()`, `sin()`, `cos()`, `tan()`, `atan2(x)`, `hypot(y)` | `f64`, `f32` | same type; radians |
+| `isNaN()`, `isFinite()`, `isInfinite()` | `f64`, `f32` | `bool` |
+| `abs()`, `min(y)`, `max(y)`, `mod(y)`, `clamp(lo, hi)`, `sign()` | every integer type | same type; `abs` on an unsigned type is the identity; `mod` is Euclidean where `%` truncates (`(-7).mod(3)` is 2, `-7 % 3` is -1) |
+| `pow(n)` | every integer type | same type; panics on overflow or `n < 0` |
+| `wrappingAdd/Sub/Mul(y)`, `saturatingAdd/Sub(y)` | every integer type | same type — the overflow policies other than the default panic (D21) |
+| `checkedAdd/Sub/Mul(y)` | every integer type | `T?`: `null` on overflow |
+| `countOnes()`, `leadingZeros()`, `trailingZeros()` | every integer type | same type |
+
+`f64` is an IEEE 754 double, so `NaN` and the infinities are ordinary values
+of the type: `0.0 / 0.0`, `inf - inf` and `(-1.0).sqrt()` produce `NaN`, and it
+propagates through arithmetic. `NaN == NaN` is false — test with `isNaN()`.
+They print as `NaN`, `inf` and `-inf`.
+
+Every built-in method is documented in the editor: hover shows its signature
+and description, and go-to-definition opens `builtins.vs`, a declarations-only
+file the language server writes next to the standard library sources (they
+are embedded in the compiler; the copies live under the user cache directory).
 
 ## Module `io`
 

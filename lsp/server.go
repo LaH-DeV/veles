@@ -45,6 +45,7 @@ type Server struct {
 	// last analysis per package root, so hover/definition need no re-check
 	analyses map[string]*analysis
 	shutdown bool
+	stdDir   string // materialised standard library, for go-to-definition into std
 }
 
 type document struct {
@@ -178,6 +179,7 @@ func (s *Server) handle(req *request) {
 	}()
 	switch req.Method {
 	case "initialize":
+		s.materializeStd()
 		s.reply(req.ID, map[string]any{
 			"capabilities": map[string]any{
 				"textDocumentSync": map[string]any{
@@ -258,6 +260,11 @@ func (s *Server) open(uri, text string) {
 	path := uriToPath(uri)
 	d := &document{uri: uri, path: path, text: text}
 	s.docs[uri] = d
+	if s.inStdCache(path) {
+		// a reference copy of the standard library: shown, not analysed
+		s.publish(uri, []lspDiagnostic{})
+		return
+	}
 	s.overlay[sema.OverlayKey(path)] = text
 	s.analyze(d)
 }
@@ -416,7 +423,7 @@ func (s *Server) hover(params json.RawMessage) any {
 // (`file:///...#L<line>,<col>`, which the editor opens at that position),
 // or as plain code when there is nowhere to go.
 func (s *Server) declLink(name string, def source.Span) string {
-	if !def.IsValid() || strings.HasPrefix(def.File.Path, "std/") {
+	if !def.IsValid() || (strings.HasPrefix(def.File.Path, "std/") && s.stdDir == "") {
 		return "`" + name + "`"
 	}
 	pos := offsetToPosition(def.File, def.Start)
@@ -425,7 +432,7 @@ func (s *Server) declLink(name string, def source.Span) string {
 
 func (s *Server) definition(params json.RawMessage) any {
 	ref, _ := s.refAt(params)
-	if ref == nil || !ref.Def.IsValid() || strings.HasPrefix(ref.Def.File.Path, "std/") {
+	if ref == nil || !ref.Def.IsValid() || (strings.HasPrefix(ref.Def.File.Path, "std/") && s.stdDir == "") {
 		return nil
 	}
 	return map[string]any{"uri": s.uriFor(ref.Def.File.Path), "range": spanToRange(ref.Def)}
@@ -649,6 +656,9 @@ func uriToPath(uri string) string {
 // under when it is an open document (clients compare URIs textually), else
 // a VS Code-style file URI (lower-case drive letter, encoded colon).
 func (s *Server) uriFor(path string) string {
+	if cached := s.stdPath(path); cached != "" {
+		return pathToURI(cached)
+	}
 	key := sema.OverlayKey(path)
 	for _, d := range s.docs {
 		if sema.OverlayKey(d.path) == key {

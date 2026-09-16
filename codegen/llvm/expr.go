@@ -963,6 +963,247 @@ func (g *gen) listLit(e *sema.ListLit) string {
 
 func (g *gen) builtin(e *sema.Builtin) string {
 	switch e.Op {
+	case "float.sqrt", "float.abs", "float.floor", "float.ceil", "float.round", "float.trunc",
+		"float.log", "float.log2", "float.log10", "float.exp", "float.sin", "float.cos":
+		// a single LLVM intrinsic: no runtime call, no unsafe
+		x := g.expr(e.Args[0])
+		ty := g.llType(e.Type())
+		intr := strings.TrimPrefix(e.Op, "float.")
+		if intr == "abs" {
+			intr = "fabs"
+		}
+		v := g.newTmp()
+		g.emit("%s = call %s @llvm.%s.%s(%s %s)", v, ty, intr, llFloatSuffix(ty), ty, x)
+		return v
+	case "float.tan", "float.atan2", "float.hypot":
+		// libm (no LLVM intrinsic in this LLVM version)
+		ty := g.llType(e.Type())
+		name := strings.TrimPrefix(e.Op, "float.")
+		if ty == "float" {
+			name += "f"
+		}
+		args := make([]string, len(e.Args))
+		for i, a := range e.Args {
+			args[i] = ty + " " + g.expr(a)
+		}
+		v := g.newTmp()
+		g.emit("%s = call %s @%s(%s)", v, ty, name, joinArgs(args))
+		return v
+	case "int.pow":
+		// exponentiation by squaring in the runtime; panics on overflow or a
+		// negative exponent (D21)
+		x, y := g.expr(e.Args[0]), g.expr(e.Args[1])
+		ty := g.llType(e.Type())
+		signed := types.IsSigned(e.Type())
+		ext := "zext"
+		if signed {
+			ext = "sext"
+		}
+		bx, by := x, y
+		if ty != "i64" {
+			bx, by = g.newTmp(), g.newTmp()
+			g.emit("%s = %s %s %s to i64", bx, ext, ty, x)
+			g.emit("%s = %s %s %s to i64", by, ext, ty, y)
+		}
+		bits := map[string]int{"i8": 8, "i16": 16, "i32": 32, "i64": 64}[ty]
+		s := 0
+		if signed {
+			s = 1
+		}
+		p, l := g.strPtrLen(g.stringConst(e.Span.String()))
+		r := g.newTmp()
+		g.emit("%s = call i64 @veles_int_pow(i64 %s, i64 %s, i64 %d, i1 %d, ptr %s, i64 %s)", r, bx, by, bits, s, p, l)
+		if ty == "i64" {
+			return r
+		}
+		v := g.newTmp()
+		g.emit("%s = trunc i64 %s to %s", v, r, ty)
+		return v
+	case "int.wrappingAdd", "int.wrappingSub", "int.wrappingMul":
+		x, y := g.expr(e.Args[0]), g.expr(e.Args[1])
+		ty := g.llType(e.Type())
+		op := map[string]string{"int.wrappingAdd": "add", "int.wrappingSub": "sub", "int.wrappingMul": "mul"}[e.Op]
+		v := g.newTmp()
+		g.emit("%s = %s %s %s, %s", v, op, ty, x, y)
+		return v
+	case "int.saturatingAdd", "int.saturatingSub":
+		x, y := g.expr(e.Args[0]), g.expr(e.Args[1])
+		ty := g.llType(e.Type())
+		intr := "sadd.sat"
+		if e.Op == "int.saturatingSub" {
+			intr = "ssub.sat"
+		}
+		if types.IsUnsigned(e.Type()) {
+			intr = "u" + intr[1:]
+		}
+		v := g.newTmp()
+		g.emit("%s = call %s @llvm.%s.%s(%s %s, %s %s)", v, ty, intr, ty, ty, x, ty, y)
+		return v
+	case "int.checkedAdd", "int.checkedSub", "int.checkedMul":
+		// the with.overflow pair becomes a T?: { present, value }
+		x, y := g.expr(e.Args[0]), g.expr(e.Args[1])
+		ty := g.llType(e.Args[0].Type())
+		intr := map[string]string{"int.checkedAdd": "sadd", "int.checkedSub": "ssub", "int.checkedMul": "smul"}[e.Op]
+		if types.IsUnsigned(e.Args[0].Type()) {
+			intr = "u" + intr[1:]
+		}
+		pair := g.newTmp()
+		g.emit("%s = call { %s, i1 } @llvm.%s.with.overflow.%s(%s %s, %s %s)", pair, ty, intr, ty, ty, x, ty, y)
+		val, of := g.newTmp(), g.newTmp()
+		g.emit("%s = extractvalue { %s, i1 } %s, 0", val, ty, pair)
+		g.emit("%s = extractvalue { %s, i1 } %s, 1", of, ty, pair)
+		ok := g.newTmp()
+		g.emit("%s = xor i1 %s, true", ok, of)
+		nt := g.llType(e.Type())
+		a := g.newTmp()
+		g.emit("%s = insertvalue %s undef, i1 %s, 0", a, nt, ok)
+		v := g.newTmp()
+		g.emit("%s = insertvalue %s %s, %s %s, 1", v, nt, a, ty, val)
+		return v
+	case "int.countOnes", "int.leadingZeros", "int.trailingZeros":
+		x := g.expr(e.Args[0])
+		ty := g.llType(e.Type())
+		v := g.newTmp()
+		switch e.Op {
+		case "int.countOnes":
+			g.emit("%s = call %s @llvm.ctpop.%s(%s %s)", v, ty, ty, ty, x)
+		case "int.leadingZeros":
+			g.emit("%s = call %s @llvm.ctlz.%s(%s %s, i1 false)", v, ty, ty, ty, x)
+		default:
+			g.emit("%s = call %s @llvm.cttz.%s(%s %s, i1 false)", v, ty, ty, ty, x)
+		}
+		return v
+	case "float.pow", "float.min", "float.max":
+		x, y := g.expr(e.Args[0]), g.expr(e.Args[1])
+		ty := g.llType(e.Type())
+		intr := map[string]string{"float.pow": "pow", "float.min": "minnum", "float.max": "maxnum"}[e.Op]
+		v := g.newTmp()
+		g.emit("%s = call %s @llvm.%s.%s(%s %s, %s %s)", v, ty, intr, llFloatSuffix(ty), ty, x, ty, y)
+		return v
+	case "float.mod":
+		// Euclidean modulo: the result has the sign of the divisor's magnitude, never negative for b > 0
+		x, y := g.expr(e.Args[0]), g.expr(e.Args[1])
+		ty := g.llType(e.Type())
+		r := g.newTmp()
+		g.emit("%s = frem %s %s, %s", r, ty, x, y)
+		neg := g.newTmp()
+		g.emit("%s = fcmp olt %s %s, 0.0", neg, ty, r)
+		ay := g.newTmp()
+		g.emit("%s = call %s @llvm.fabs.%s(%s %s)", ay, ty, llFloatSuffix(ty), ty, y)
+		adj := g.newTmp()
+		g.emit("%s = fadd %s %s, %s", adj, ty, r, ay)
+		v := g.newTmp()
+		g.emit("%s = select i1 %s, %s %s, %s %s", v, neg, ty, adj, ty, r)
+		return v
+	case "float.sign":
+		x := g.expr(e.Args[0])
+		ty := g.llType(e.Type())
+		pos, neg := g.newTmp(), g.newTmp()
+		g.emit("%s = fcmp ogt %s %s, 0.0", pos, ty, x)
+		g.emit("%s = fcmp olt %s %s, 0.0", neg, ty, x)
+		a := g.newTmp()
+		g.emit("%s = select i1 %s, %s -1.0, %s %s", a, neg, ty, ty, x) // NaN and 0 stay themselves
+		v := g.newTmp()
+		g.emit("%s = select i1 %s, %s 1.0, %s %s", v, pos, ty, ty, a)
+		return v
+	case "float.clamp":
+		x, lo, hi := g.expr(e.Args[0]), g.expr(e.Args[1]), g.expr(e.Args[2])
+		ty := g.llType(e.Type())
+		a := g.newTmp()
+		g.emit("%s = call %s @llvm.maxnum.%s(%s %s, %s %s)", a, ty, llFloatSuffix(ty), ty, x, ty, lo)
+		v := g.newTmp()
+		g.emit("%s = call %s @llvm.minnum.%s(%s %s, %s %s)", v, ty, llFloatSuffix(ty), ty, a, ty, hi)
+		return v
+	case "int.mod":
+		x, y := g.expr(e.Args[0]), g.expr(e.Args[1])
+		ty := g.llType(e.Type())
+		signed := types.IsSigned(e.Type())
+		g.divCheck(ty, x, y, signed, e.Span.String())
+		if !signed {
+			v := g.newTmp()
+			g.emit("%s = urem %s %s, %s", v, ty, x, y)
+			return v
+		}
+		r := g.newTmp()
+		g.emit("%s = srem %s %s, %s", r, ty, x, y)
+		neg := g.newTmp()
+		g.emit("%s = icmp slt %s %s, 0", neg, ty, r)
+		ay := g.newTmp()
+		g.emit("%s = call %s @llvm.abs.%s(%s %s, i1 false)", ay, ty, ty, ty, y)
+		adj := g.newTmp()
+		g.emit("%s = add %s %s, %s", adj, ty, r, ay)
+		v := g.newTmp()
+		g.emit("%s = select i1 %s, %s %s, %s %s", v, neg, ty, adj, ty, r)
+		return v
+	case "int.sign":
+		x := g.expr(e.Args[0])
+		ty := g.llType(e.Type())
+		pos := g.newTmp()
+		g.emit("%s = icmp ne %s %s, 0", pos, ty, x)
+		a := g.newTmp()
+		g.emit("%s = zext i1 %s to %s", a, pos, ty)
+		if !types.IsSigned(e.Type()) {
+			return a
+		}
+		neg := g.newTmp()
+		g.emit("%s = icmp slt %s %s, 0", neg, ty, x)
+		v := g.newTmp()
+		g.emit("%s = select i1 %s, %s -1, %s %s", v, neg, ty, ty, a)
+		return v
+	case "int.clamp":
+		x, lo, hi := g.expr(e.Args[0]), g.expr(e.Args[1]), g.expr(e.Args[2])
+		ty := g.llType(e.Type())
+		mn, mx := "smin", "smax"
+		if types.IsUnsigned(e.Type()) {
+			mn, mx = "umin", "umax"
+		}
+		a := g.newTmp()
+		g.emit("%s = call %s @llvm.%s.%s(%s %s, %s %s)", a, ty, mx, ty, ty, x, ty, lo)
+		v := g.newTmp()
+		g.emit("%s = call %s @llvm.%s.%s(%s %s, %s %s)", v, ty, mn, ty, ty, a, ty, hi)
+		return v
+	case "float.isNaN":
+		x := g.expr(e.Args[0])
+		v := g.newTmp()
+		g.emit("%s = fcmp uno %s %s, %s", v, g.llType(e.Args[0].Type()), x, x)
+		return v
+	case "float.isFinite", "float.isInfinite":
+		// |x| == inf: fabs, then an ordered compare against +inf (NaN fails
+		// both, so it is neither finite nor infinite here — use isNaN)
+		x := g.expr(e.Args[0])
+		ty := g.llType(e.Args[0].Type())
+		a := g.newTmp()
+		g.emit("%s = call %s @llvm.fabs.%s(%s %s)", a, ty, llFloatSuffix(ty), ty, x)
+		inf := "0x7FF0000000000000"
+		v := g.newTmp()
+		if e.Op == "float.isInfinite" {
+			g.emit("%s = fcmp oeq %s %s, %s", v, ty, a, inf)
+		} else {
+			g.emit("%s = fcmp olt %s %s, %s", v, ty, a, inf)
+		}
+		return v
+	case "int.abs":
+		x := g.expr(e.Args[0])
+		ty := g.llType(e.Type())
+		if types.IsUnsigned(e.Type()) {
+			return x
+		}
+		v := g.newTmp()
+		g.emit("%s = call %s @llvm.abs.%s(%s %s, i1 false)", v, ty, ty, ty, x)
+		return v
+	case "int.min", "int.max":
+		x, y := g.expr(e.Args[0]), g.expr(e.Args[1])
+		ty := g.llType(e.Type())
+		intr := "smin"
+		if e.Op == "int.max" {
+			intr = "smax"
+		}
+		if types.IsUnsigned(e.Type()) {
+			intr = "u" + intr[1:]
+		}
+		v := g.newTmp()
+		g.emit("%s = call %s @llvm.%s.%s(%s %s, %s %s)", v, ty, intr, ty, ty, x, ty, y)
+		return v
 	case "list.len":
 		l := g.expr(e.Args[0])
 		v := g.newTmp()
@@ -1271,4 +1512,12 @@ func (g *gen) callVirtual(e *sema.CallVirtual) string {
 	v := g.newTmp()
 	g.emit("%s = call %s %s(%s)", v, ret, fnp, joinArgs(args))
 	return v
+}
+
+// llFloatSuffix is the intrinsic name suffix for an LLVM float type.
+func llFloatSuffix(ty string) string {
+	if ty == "float" {
+		return "f32"
+	}
+	return "f64"
 }

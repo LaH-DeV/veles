@@ -1,17 +1,8 @@
-1. Mutable declarations
-We could simplify it by adding a syntactic sugar with `var keepMap = mut ["key": 2]` for simple types
-but only when the typing could work with that... instead of:
-`var keepMap: MutableMap<string, i32> = [:]`
-The same with the list:
-`val words: MutableList<string> = []`
-could be: `val words = mut ["string"]`
-
-2. label for loop.
-currently it is label: loop (...) {}
-but it would read better if it would be loop : label (...) {} or loop () label {} but I think the first one.
+Open design notes. Items are removed once done; numbering is historical.
 
 3. I kind of hate that we almost implemented rust in the syntax...
 - I do not like `items.iter().filter`, I like js's `items.filter` but I do not know we can do that.
+  (partly: List has eager map/filter/fold/etc. directly; `iter()` is only the lazy form, D46)
 - I do not like implicit returns but... maybe it is somewhat ok
 - I do not like impl blocks...
 - I do not like `  fun count(): i32 {
@@ -26,33 +17,52 @@ but it would read better if it would be loop : label (...) {} or loop () label {
 - I do not like how the dependencies in toml file are written...
 - I would prefer getting map indexing by .get() and list indexing with .at() than [i]...
 
-4. There is a lot of words to define a fetcher that are not easily undertendable:
+4. There is a lot of words to define a fetcher that are not easily understandable:
 `trait Fetcher {
   type Error
   fun fetch(url: string): Bytes suspends throws Self::Error
 }`
 
 5. I hate `Some(null)` and other Some and Ok and Err... this is rust.. WHY
---- disregard above. new below
-6. we need a lsp and vscode extension so I can test writing in this language and see what needs to be fixed
-7. we need a very specialized tutorials and documentation for different levels for newcomers
+   (partly: `is Ok` / `is Err` now smart-cast to the payload, so Ok/Err are rarely spelled)
 
-6.5: there is an error while using lsp:Request textDocument/definition failed.
-6.6: i think the suggestions after `io.` are showing everything in the language, not the io. context
-6.7: the lint should be able to catch this nonsense: `  loop {
-    break;
-  }`
---- 
+7. we need very specialized tutorials and documentation for different levels for newcomers
+   (docs/ exists and is tested; "basic for now, to be expanded later")
+
 8. question: could we forget about 'mut' here and figure out the mutability based on 'val' and 'var'?
 I'm not sure it works in every example, but maybe?
   val ages = ["ann": 41, "bob": 29]              // Map<string, i32>
   var stock = mut ["apples": 3]                  // MutableMap<string, i32>
 would change to:
   val ages = ["ann": 41, "bob": 29]              // Map<string, i32>
-  var stock = ["apples": 3]                  // MutableMap<string, i32>
+  var stock = ["apples": 3]                      // MutableMap<string, i32>
 
 9. I would like the language / std to be prepared for efficiently implementing queues, stacks, maybe graphs? algorithms etc...
-10. There should be a way of calculating length of a string in terms of characters, even we have len() returning byte length
 
 11. list.at(-1) should get the last item
+
 12. "x does not implement y" when trait has something and the struct does not implement it, it should be reported at the struct, not when using the method
+
+13. `unsafe` hygiene (from the discussion on 2026-09-16): an `unsafe { }` block in a non-`unsafe fun`
+   should carry a `// SAFETY: ...` comment saying why it is sound, or the function should be
+   declared `unsafe fun` so the obligation moves to the caller. Not implemented; decide first.
+
+14. Built-in methods still to add (catalogue in sema/builtins_doc.go; each is a checker case,
+   a codegen case or a lowering, and a catalogue line):
+   - string: trim(), trimStart(), trimEnd(), split(sep): List<string>, lines(), replace(old, new),
+     indexOf(part): i64, repeat(n), toUpper()/toLower() (ASCII), toF64(): f64?, bytes(): List<u8>,
+     padStart(n, ch), padEnd(n, ch)
+   - List: take(n), drop(n), slice(from, to), sum() (numeric), min()/max(): T? (Ord),
+     count(pred), zip(other): List<(T, U)>, flatMap(f), distinct(), chunked(n), windowed(n),
+     sortedDescending(); MutableList: insert(i, x), removeAt(i): T, addAll(xs), sort() in place
+   - Range: step(n), contains(x), reversed(), len()
+   - Channel: trySend(x): bool, tryRecv(): T? (non-suspending)
+   - int: saturatingMul (LLVM has no plain intrinsic; llvm.smul.fix.sat with scale 0)
+   - not as built-ins, on purpose: toString() (interpolation), parse<T>() (wants a FromString
+     trait once traits on primitives are allowed), width/precision formatting (a format module)
+
+15. Hover shows a field typed with an error set as the flattened union (`cause: A | B`) rather
+   than the set's name; the alias name is not kept in the type. Small follow-up if wanted.
+
+16. The generated `builtins.vs` stub is reference-only (not compilable Veles). If a second
+   consumer for declaration files appears, consider a real `declare`-style form.

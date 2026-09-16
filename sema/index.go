@@ -115,7 +115,12 @@ func (c *Checker) refSym(span source.Span, sym *Symbol) {
 	case SymType:
 		c.refType(span, sym.Name, sym.Type, sym.Span)
 	case SymModule:
-		c.index.Refs = append(c.index.Refs, Ref{Span: span, Def: sym.Span, Kind: "module", Name: sym.Name, Detail: "module " + sym.Mod.Path, Module: sym.Mod, Doc: sym.Mod.Doc()})
+		// the definition of a module is the top of its first file
+		def := sym.Span
+		if len(sym.Mod.Files) > 0 {
+			def = source.Span{File: sym.Mod.Files[0].Source, Start: 0, End: 0}
+		}
+		c.index.Refs = append(c.index.Refs, Ref{Span: span, Def: def, Kind: "module", Name: sym.Name, Detail: "module " + sym.Mod.Path, Module: sym.Mod, Doc: sym.Mod.Doc()})
 	case SymVariantCtor:
 		c.index.Refs = append(c.index.Refs, Ref{Span: span, Kind: "fun", Name: sym.Name, Detail: "prelude " + sym.Name})
 	}

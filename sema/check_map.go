@@ -179,6 +179,8 @@ func (f *fnCtx) mapMethod(recv Expr, mt *types.Map, name string, e *ast.CallExpr
 			return bad()
 		}
 		return &Builtin{exprBase{types.TUnit}, "map.clear", []Expr{recv}, span}
+	case "getOrPut", "forEach", "mapValues", "filter":
+		return f.mapAdapter(recv, mt, name, e)
 	}
 	f.errorf(e.Fun.Span(), "no method '%s' on '%s'", name, mt)
 	f.checkArgsLoosely(e.Args)
@@ -247,9 +249,196 @@ func (f *fnCtx) setMethod(recv Expr, st *types.Set, name string, e *ast.CallExpr
 			return bad()
 		}
 		return &Builtin{exprBase{types.TUnit}, "map.clear", []Expr{recv}, span}
+	case "union", "intersect", "difference", "isSubsetOf":
+		return f.setAdapter(recv, st, name, e)
 	}
 	f.errorf(e.Fun.Span(), "no method '%s' on '%s'", name, st)
 	f.checkArgsLoosely(e.Args)
+	return bad()
+}
+
+// mapAdapter lowers the map operations that iterate: a loop over the
+// entries snapshot, in the style of the list adapters.
+func (f *fnCtx) mapAdapter(recv Expr, mt *types.Map, name string, e *ast.CallExpr) Expr {
+	span := e.Pos
+	need := func(n int) bool {
+		if len(e.Args) != n {
+			f.errorf(span, "'%s' takes %d argument(s)", name, n)
+			f.checkArgsLoosely(e.Args)
+			return false
+		}
+		return true
+	}
+	m := f.newTemp(mt)
+	f.pending = nil
+	pre := []Stmt{&VarDecl{Var: m, Init: recv}}
+	finish := func(stmts []Stmt, value Expr) Expr {
+		all := append(pre, f.pending...)
+		f.pending = nil
+		all = append(all, stmts...)
+		return &BlockExpr{exprBase{value.Type()}, &Block{Stmts: all, Value: value, Type: value.Type()}}
+	}
+	entryT := &types.Tuple{Elems: []types.Type{mt.Key, mt.Value}}
+	entries := func() *Var {
+		v := f.newTemp(&types.List{Elem: entryT})
+		pre = append(pre, &VarDecl{Var: v, Init: &Builtin{exprBase{v.Type}, "map.entries", []Expr{ref(m)}, span}})
+		return v
+	}
+	key := func(x *Var) Expr { return &TupleGet{exprBase{mt.Key}, ref(x), 0} }
+	val := func(x *Var) Expr { return &TupleGet{exprBase{mt.Value}, ref(x), 1} }
+	switch name {
+	case "getOrPut":
+		// the value for k, or f() stored under k and returned
+		if !mt.Mutable {
+			f.errorf(span, "'getOrPut' changes the map; use MutableMap (D25)")
+			f.checkArgsLoosely(e.Args)
+			return bad()
+		}
+		if !need(2) {
+			return bad()
+		}
+		k := f.newTemp(mt.Key)
+		pre = append(pre, &VarDecl{Var: k, Init: f.checkExprTo(e.Args[0].Value, mt.Key)})
+		fv, ok := f.fnArg(e.Args[1].Value, &types.Func{Ret: mt.Value})
+		if !ok {
+			return bad()
+		}
+		got := f.newTemp(&types.Nullable{Elem: mt.Value})
+		out := f.newTemp(mt.Value)
+		fresh := &Block{Stmts: []Stmt{
+			&Assign{Target: ref(out), Value: callFn(fv)},
+			&ExprStmt{X: &Builtin{exprBase{types.TUnit}, "map.set", []Expr{ref(m), ref(k), ref(out)}, span}},
+		}, Type: types.TUnit}
+		present := &Block{Stmts: []Stmt{&Assign{Target: ref(out), Value: &Unwrap{exprBase{mt.Value}, ref(got)}}}, Type: types.TUnit}
+		stmts := []Stmt{
+			&VarDecl{Var: got, Init: &Builtin{exprBase{got.Type}, "map.get", []Expr{ref(m), ref(k)}, span}},
+			&VarDecl{Var: out},
+			&ExprStmt{X: &If{exprBase{types.TUnit}, &IsNull{exprBase{types.TBool}, ref(got)}, fresh, present}},
+		}
+		return finish(stmts, ref(out))
+	case "forEach":
+		if !need(1) {
+			return bad()
+		}
+		fv, ok := f.fnArg(e.Args[0].Value, &types.Func{Params: []types.Param{{Type: mt.Key}, {Type: mt.Value}}, Ret: types.TUnit})
+		if !ok {
+			return bad()
+		}
+		es := entries()
+		stmts := f.listLoop(es, entryT, span, func(x *Var, lp *Loop) []Stmt {
+			return []Stmt{&ExprStmt{X: callFn(fv, key(x), val(x))}}
+		})
+		return finish(stmts, &UnitConst{exprBase{types.TUnit}})
+	case "mapValues":
+		if !need(1) {
+			return bad()
+		}
+		fv, ok := f.fnArg(e.Args[0].Value, &types.Func{Params: []types.Param{{Type: mt.Value}}})
+		if !ok {
+			return bad()
+		}
+		ut := fv.Type.(*types.Func).Ret
+		if types.IsUnit(ut) {
+			f.errorf(span, "'mapValues' needs a function that returns a value; use 'forEach' for side effects")
+			return bad()
+		}
+		outT := &types.Map{Key: mt.Key, Value: ut, Mutable: true}
+		out := f.newTemp(outT)
+		es := entries()
+		stmts := []Stmt{&VarDecl{Var: out, Init: &MapLit{exprBase{outT}, nil}}}
+		stmts = append(stmts, f.listLoop(es, entryT, span, func(x *Var, lp *Loop) []Stmt {
+			return []Stmt{&ExprStmt{X: &Builtin{exprBase{types.TUnit}, "map.set", []Expr{ref(out), key(x), callFn(fv, val(x))}, span}}}
+		})...)
+		return finish(stmts, &Cast{exprBase{&types.Map{Key: mt.Key, Value: ut}}, ref(out)})
+	case "filter":
+		if !need(1) {
+			return bad()
+		}
+		fv, ok := f.fnArg(e.Args[0].Value, &types.Func{Params: []types.Param{{Type: mt.Key}, {Type: mt.Value}}, Ret: types.TBool})
+		if !ok {
+			return bad()
+		}
+		outT := &types.Map{Key: mt.Key, Value: mt.Value, Mutable: true}
+		out := f.newTemp(outT)
+		es := entries()
+		stmts := []Stmt{&VarDecl{Var: out, Init: &MapLit{exprBase{outT}, nil}}}
+		stmts = append(stmts, f.listLoop(es, entryT, span, func(x *Var, lp *Loop) []Stmt {
+			put := &Block{Stmts: []Stmt{&ExprStmt{X: &Builtin{exprBase{types.TUnit}, "map.set", []Expr{ref(out), key(x), val(x)}, span}}}, Type: types.TUnit}
+			return []Stmt{&ExprStmt{X: &If{exprBase{types.TUnit}, callFn(fv, key(x), val(x)), put, nil}}}
+		})...)
+		return finish(stmts, &Cast{exprBase{&types.Map{Key: mt.Key, Value: mt.Value}}, ref(out)})
+	}
+	return bad()
+}
+
+// setAdapter lowers the set algebra: loops over one set's members testing
+// membership in the other.
+func (f *fnCtx) setAdapter(recv Expr, st *types.Set, name string, e *ast.CallExpr) Expr {
+	span := e.Pos
+	if len(e.Args) != 1 {
+		f.errorf(span, "'%s' takes 1 argument", name)
+		f.checkArgsLoosely(e.Args)
+		return bad()
+	}
+	a := f.newTemp(st)
+	other := f.checkExpr(e.Args[0].Value, nil)
+	ot, ok := other.Type().(*types.Set)
+	if !ok || !types.Identical(ot.Elem, st.Elem) {
+		if !types.IsInvalid(other.Type()) {
+			f.errorf(e.Args[0].Value.Span(), "'%s' needs a set of '%s', found '%s'", name, st.Elem, other.Type())
+		}
+		return bad()
+	}
+	b := f.newTemp(ot)
+	f.pending = nil
+	pre := []Stmt{&VarDecl{Var: a, Init: recv}, &VarDecl{Var: b, Init: other}}
+	finish := func(stmts []Stmt, value Expr) Expr {
+		all := append(pre, f.pending...)
+		f.pending = nil
+		all = append(all, stmts...)
+		return &BlockExpr{exprBase{value.Type()}, &Block{Stmts: all, Value: value, Type: value.Type()}}
+	}
+	members := func(s *Var) *Var {
+		v := f.newTemp(&types.List{Elem: st.Elem})
+		pre = append(pre, &VarDecl{Var: v, Init: &Builtin{exprBase{v.Type}, "map.keys", []Expr{ref(s)}, span}})
+		return v
+	}
+	inSet := func(s *Var, x *Var) Expr {
+		return &Builtin{exprBase{types.TBool}, "map.contains", []Expr{ref(s), ref(x)}, span}
+	}
+	outT := &types.Set{Elem: st.Elem, Mutable: true}
+	resultT := &types.Set{Elem: st.Elem}
+	add := func(out *Var, x *Var) Stmt {
+		return &ExprStmt{X: &Builtin{exprBase{types.TBool}, "set.add", []Expr{ref(out), ref(x)}, span}}
+	}
+	switch name {
+	case "union":
+		out := f.newTemp(outT)
+		stmts := []Stmt{&VarDecl{Var: out, Init: &Builtin{exprBase{outT}, "map.copy", []Expr{ref(a)}, span}}}
+		stmts = append(stmts, f.listLoop(members(b), st.Elem, span, func(x *Var, lp *Loop) []Stmt {
+			return []Stmt{add(out, x)}
+		})...)
+		return finish(stmts, &Cast{exprBase{resultT}, ref(out)})
+	case "intersect", "difference":
+		out := f.newTemp(outT)
+		stmts := []Stmt{&VarDecl{Var: out, Init: &Builtin{exprBase{outT}, "set.new", nil, span}}}
+		stmts = append(stmts, f.listLoop(members(a), st.Elem, span, func(x *Var, lp *Loop) []Stmt {
+			var test Expr = inSet(b, x)
+			if name == "difference" {
+				test = &Unary{exprBase{types.TBool}, OpNot, test, span}
+			}
+			return []Stmt{&ExprStmt{X: &If{exprBase{types.TUnit}, test, &Block{Stmts: []Stmt{add(out, x)}, Type: types.TUnit}, nil}}}
+		})...)
+		return finish(stmts, &Cast{exprBase{resultT}, ref(out)})
+	case "isSubsetOf":
+		all := f.newTemp(types.TBool)
+		stmts := []Stmt{&VarDecl{Var: all, Init: &BoolConst{exprBase{types.TBool}, true}}}
+		stmts = append(stmts, f.listLoop(members(a), st.Elem, span, func(x *Var, lp *Loop) []Stmt {
+			miss := &Block{Stmts: []Stmt{&Assign{Target: ref(all), Value: &BoolConst{exprBase{types.TBool}, false}}, &Break{Loop: lp}}, Type: types.TNever}
+			return []Stmt{&ExprStmt{X: &If{exprBase{types.TUnit}, &Unary{exprBase{types.TBool}, OpNot, inSet(b, x), span}, miss, nil}}}
+		})...)
+		return finish(stmts, ref(all))
+	}
 	return bad()
 }
 

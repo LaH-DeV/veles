@@ -442,3 +442,33 @@ func TestModuleDocHover(t *testing.T) {
 		t.Errorf("type hover doubles the name: %s", h)
 	}
 }
+
+func TestBuiltinHoverAndDefinition(t *testing.T) {
+	src := "use io\n\nfun main() {\n  val xs = [1, 2, 3]\n  io.println(\"${xs.len()} ${2.0.sqrt()}\")\n}\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := pathToURI(path)
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{})
+	c.notify("initialized", map[string]any{})
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": src}})
+	// a built-in method hovers with its catalogue signature and description
+	res, _ := c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": 4, "character": 20}})
+	if !strings.Contains(string(res), ".len(): i64  (built in)") || !strings.Contains(string(res), "Number of elements.") {
+		t.Errorf("hover on a built-in: %s", res)
+	}
+	// ...and its definition is the stub file materialised in the cache
+	res, _ = c.call("textDocument/definition", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": 4, "character": 32}})
+	if !strings.Contains(string(res), "builtins.vs") {
+		t.Errorf("definition of a built-in: %s", res)
+	}
+	// a standard-library function's definition is its (cached) source
+	res, _ = c.call("textDocument/definition", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": 4, "character": 6}})
+	if !strings.Contains(string(res), "std/io/io.vs") && !strings.Contains(string(res), "std%2Fio%2Fio.vs") && !strings.Contains(string(res), "veles/std/io/io.vs") {
+		t.Errorf("definition of io.println: %s", res)
+	}
+}

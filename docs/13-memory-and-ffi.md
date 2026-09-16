@@ -180,26 +180,27 @@ There are two pointer types, and the difference is the whole point:
 
 Declare the C signature in an `extern "C"` block and call it inside
 `unsafe`. The compiler links against the C library by default, so libc
-functions need no extra setup:
+functions need no extra setup: (Square root, `abs` and the like are
+built into the language — `x.sqrt()` — so they never go through C.)
 
 ```veles
 use io
 
 extern "C" {
-  fun sqrt(x: f64): f64
-  fun abs(x: i32): i32
+  fun cbrt(x: f64): f64
+  fun toupper(c: i32): i32
 }
 
-fun root(x: f64): f64 = unsafe { sqrt(x) }
+fun cubeRoot(x: f64): f64 = unsafe { cbrt(x) }
 
 fun main() {
-  io.println("${root(2.0)} ${unsafe { abs(-7) }}")
+  io.println("${cubeRoot(27.0)} ${unsafe { toupper(97) }}")
 }
 ```
 
 Output:
 ```text
-1.4142135623730951 7
+3.0 65
 ```
 
 Numeric types map to their C counterparts, `bool` to a byte, `string` to

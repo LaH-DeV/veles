@@ -500,6 +500,7 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 		rt = p.Elem
 	}
 	if b := f.builtinMethod(recv, rt, name, e); b != nil {
+		f.c.refBuiltin(callee.Name.Pos, rt, name)
 		return b
 	}
 	switch ct := rt.(type) {
@@ -516,10 +517,13 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 			return f.unionDispatch(recv, ct, callee, typeArgs, e, want)
 		}
 	case *types.Channel:
+		f.c.refBuiltin(callee.Name.Pos, rt, name)
 		return f.channelMethod(recv, ct, name, e)
 	case *types.Map:
+		f.c.refBuiltin(callee.Name.Pos, rt, name)
 		return f.mapMethod(recv, ct, name, e)
 	case *types.Set:
+		f.c.refBuiltin(callee.Name.Pos, rt, name)
 		return f.setMethod(recv, ct, name, e)
 	}
 	// inherent methods
@@ -695,6 +699,82 @@ func (f *fnCtx) builtinMethod(recv Expr, rt types.Type, name string, e *ast.Call
 					return bad()
 				}
 				return &Builtin{exprBase{&types.Nullable{Elem: types.TI64}}, "string.toInt", []Expr{recv}, e.Pos}
+			}
+		}
+		// math on numbers: single LLVM instructions/intrinsics, no runtime call
+		if types.IsFloat(t) {
+			switch name {
+			case "sqrt", "abs", "floor", "ceil", "round", "trunc", "log", "log2", "log10", "exp", "sin", "cos", "tan":
+				if !nargs(0) {
+					return bad()
+				}
+				return &Builtin{exprBase{t}, "float." + name, []Expr{recv}, e.Pos}
+			case "sign":
+				if !nargs(0) {
+					return bad()
+				}
+				return &Builtin{exprBase{t}, "float.sign", []Expr{recv}, e.Pos}
+			case "pow", "min", "max", "mod", "atan2", "hypot":
+				if !nargs(1) {
+					return bad()
+				}
+				return &Builtin{exprBase{t}, "float." + name, []Expr{recv, f.checkExprTo(e.Args[0].Value, t)}, e.Pos}
+			case "clamp":
+				if !nargs(2) {
+					return bad()
+				}
+				return &Builtin{exprBase{t}, "float.clamp", []Expr{recv, f.checkExprTo(e.Args[0].Value, t), f.checkExprTo(e.Args[1].Value, t)}, e.Pos}
+			case "isNaN", "isFinite", "isInfinite":
+				if !nargs(0) {
+					return bad()
+				}
+				return &Builtin{exprBase{types.TBool}, "float." + name, []Expr{recv}, e.Pos}
+			}
+		}
+		if types.IsInteger(t) {
+			switch name {
+			case "abs":
+				if !nargs(0) {
+					return bad()
+				}
+				return &Builtin{exprBase{t}, "int.abs", []Expr{recv}, e.Pos}
+			case "sign":
+				if !nargs(0) {
+					return bad()
+				}
+				return &Builtin{exprBase{t}, "int.sign", []Expr{recv}, e.Pos}
+			case "min", "max", "mod":
+				if !nargs(1) {
+					return bad()
+				}
+				return &Builtin{exprBase{t}, "int." + name, []Expr{recv, f.checkExprTo(e.Args[0].Value, t)}, e.Pos}
+			case "clamp":
+				if !nargs(2) {
+					return bad()
+				}
+				return &Builtin{exprBase{t}, "int.clamp", []Expr{recv, f.checkExprTo(e.Args[0].Value, t), f.checkExprTo(e.Args[1].Value, t)}, e.Pos}
+			case "pow":
+				if !nargs(1) {
+					return bad()
+				}
+				return &Builtin{exprBase{t}, "int.pow", []Expr{recv, f.checkExprTo(e.Args[0].Value, t)}, e.Pos}
+			case "wrappingAdd", "wrappingSub", "wrappingMul", "saturatingAdd", "saturatingSub":
+				// the overflow family: `+` panics on overflow in debug builds (D21);
+				// these spell the other policies
+				if !nargs(1) {
+					return bad()
+				}
+				return &Builtin{exprBase{t}, "int." + name, []Expr{recv, f.checkExprTo(e.Args[0].Value, t)}, e.Pos}
+			case "checkedAdd", "checkedSub", "checkedMul":
+				if !nargs(1) {
+					return bad()
+				}
+				return &Builtin{exprBase{&types.Nullable{Elem: t}}, "int." + name, []Expr{recv, f.checkExprTo(e.Args[0].Value, t)}, e.Pos}
+			case "countOnes", "leadingZeros", "trailingZeros":
+				if !nargs(0) {
+					return bad()
+				}
+				return &Builtin{exprBase{t}, "int." + name, []Expr{recv}, e.Pos}
 			}
 		}
 	case *types.List:
