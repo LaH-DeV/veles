@@ -94,16 +94,41 @@ func (p *Parser) parseType() ast.Type {
 
 // parseTypeArgs parses `<T, U>` in type context.
 func (p *Parser) parseTypeArgs() []ast.Type {
-	p.expect(lexer.Lt)
+	lt, _ := p.expect(lexer.Lt)
 	var args []ast.Type
-	for !p.at(lexer.Gt, lexer.EOF) {
+	if p.atTypeClose() {
+		p.errorf(lt.Span, "empty type argument list; drop the '<>'")
+	}
+	for !p.atTypeClose() {
 		args = append(args, p.parseType())
 		if !p.accept(lexer.Comma) {
 			break
 		}
 	}
-	p.expect(lexer.Gt)
+	p.expectTypeClose()
 	return args
+}
+
+// atTypeClose reports the end of a type-argument list: `>`, or the first
+// half of a `>>` closing two lists at once (`List<List<i64>>`).
+func (p *Parser) atTypeClose() bool {
+	return p.at(lexer.Gt, lexer.Shr, lexer.EOF)
+}
+
+// expectTypeClose consumes a `>`; a `>>` is split, leaving one `>` for the
+// enclosing list.
+func (p *Parser) expectTypeClose() {
+	if p.at(lexer.Shr) {
+		first := p.toks[p.pos]
+		first.Kind, first.Text = lexer.Gt, ">"
+		first.Span.End--
+		second := first
+		second.Span.Start++
+		second.Span.End++
+		p.toks = append(p.toks[:p.pos+1], p.toks[p.pos:]...)
+		p.toks[p.pos], p.toks[p.pos+1] = first, second
+	}
+	p.expect(lexer.Gt)
 }
 
 // parseErrorType parses the type after `throws`: a type or a union `A | B`.

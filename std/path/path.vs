@@ -3,21 +3,21 @@
 /// Both `/` and `\` separate components on input; output uses `/`, which
 /// every platform's file API accepts.
 
-/// Joins `a` and `b` with a separator (none when `a` is empty or `b` is
-/// absolute).
-pub fun join(a: string, b: string): string {
+/// Joins the parts with separators: `join("a", "b", "c")` is `a/b/c`. An
+/// empty part adds nothing; an absolute part starts over. A list joins with
+/// `join(parts...)`.
+pub fun join(parts: string...): string {
+  var out = ""
+  loop (p in parts) {
+    out = join2(out, p)
+  }
+  out
+}
+
+fun join2(a: string, b: string): string {
   if (a.isEmpty() || isAbsolute(b)) return b
   if (b.isEmpty()) return a
   if (isSep(a.byteAt(a.len() - 1))) a + b else a + "/" + b
-}
-
-/// Joins every part in turn: `joinAll([a, b, c])` is `join(join(a, b), c)`.
-pub fun joinAll(parts: List<string>): string {
-  var out = ""
-  loop (p in parts) {
-    out = join(out, p)
-  }
-  out
 }
 
 /// Everything before the last separator, `""` when there is none.

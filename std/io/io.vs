@@ -7,6 +7,7 @@ extern "C" {
   fun veles_print(s: string)
   fun veles_eprint(s: string)
   fun veles_read_line(out: *raw string): bool
+  fun veles_read_all(out: *raw string): i64
 }
 
 /// Writes `s` and a newline to standard output.
@@ -40,4 +41,13 @@ pub fun readLine(): string? {
     veles_read_line(&line)
   }
   if (ok) line else null
+}
+
+/// Reads standard input to its end (the rest of it, after any `readLine`).
+pub fun readAll(): string {
+  var text = ""
+  unsafe {
+    veles_read_all(&text)
+  }
+  text
 }

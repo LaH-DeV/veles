@@ -30,7 +30,7 @@ fun main() {
   io.println("${nums.filter(x => x > 1)} ${nums.any(x => x > 2)} ${nums.all(x => x > 2)}")
   io.println("${nums.find(x => x == 2) ?: -1} ${nums.indexOf(1)} ${nums.contains(9)} ${nums.reversed()}")
   io.println("${nums.sorted()} ${nums.sortedBy(x => -x)} ${["bb", "a", "ccc"].sortedBy(s => s.len())}")
-  io.println("${nums.first() ?: 0} ${nums.last() ?: 0} ${nums.joinToString(", ")}")
+  io.println("${nums.first() ?: 0} ${nums.last() ?: 0} ${nums.join(", ")}")
   val next = counter()
   next()
   next()

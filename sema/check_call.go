@@ -94,6 +94,10 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 				return f.staticCall(rt, callee, typeArgs, e, want)
 			}
 		}
+		if rt := f.moduleTypeNamed(callee.X); rt != nil {
+			// `module.Type.f(args)`
+			return f.staticCall(rt, callee, typeArgs, e, want)
+		}
 		return f.methodCall(callee, typeArgs, e, want)
 	}
 	fnv := f.checkExpr(e.Fun, nil)
@@ -177,6 +181,48 @@ func (f *fnCtx) bindArgs(params []types.Param, args []ast.Arg, what string, span
 	bound := make([]ast.Expr, len(params))
 	positional := true
 	ok := true
+	// A variadic last parameter takes the trailing positional arguments as
+	// a list literal, or one `xs...` argument as the list itself.
+	if n := len(params); n > 0 && params[n-1].Variadic {
+		v := n - 1
+		var trailing []ast.Expr
+		rest := args
+		for i, a := range args {
+			if a.Name != nil {
+				break
+			}
+			if i < v {
+				continue
+			}
+			if a.Spread {
+				if len(trailing) > 0 || i+1 < len(args) && args[i+1].Name == nil {
+					f.errorf(a.Value.Span(), "'...' must be the only argument for '%s'", params[v].Name)
+					ok = false
+				}
+				bound[v] = a.Value
+				trailing = nil
+				rest = append(append([]ast.Arg{}, args[:v]...), args[i+1:]...)
+				break
+			}
+			trailing = append(trailing, a.Value)
+			rest = append(append([]ast.Arg{}, args[:v]...), args[i+1:]...)
+		}
+		if bound[v] == nil && len(trailing) > 0 {
+			bound[v] = &ast.ListLit{Elems: trailing, Pos: trailing[0].Span().To(trailing[len(trailing)-1].Span())}
+		}
+		args = rest
+		defer func() {
+			if bound[v] == nil {
+				bound[v] = &ast.ListLit{Pos: span} // no argument: the empty list
+			}
+		}()
+	}
+	for _, a := range args {
+		if a.Spread {
+			f.errorf(a.Value.Span(), "'...' spreads a list into a variadic parameter; %s has none here", what)
+			ok = false
+		}
+	}
 	for i, a := range args {
 		if a.Name == nil {
 			if !positional {
@@ -271,7 +317,7 @@ func (f *fnCtx) callTemplateRecv(t *FuncTemplate, ownerSubst map[*types.TypePara
 	}
 	for _, i := range order {
 		p := t.Sig.Params[i]
-		pt := types.Subst(p.Type, m)
+		pt := f.c.hooks.Subst(p.Type, m)
 		if types.ContainsTypeParam(pt) {
 			var x Expr
 			if deferredArg(bound[i]) {
@@ -287,6 +333,11 @@ func (f *fnCtx) callTemplateRecv(t *FuncTemplate, ownerSubst map[*types.TypePara
 				if n, isN := pt.(*types.Nullable); isN && unify(n.Elem, x.Type(), m) {
 					continue
 				}
+				// D25: a mutable collection is its immutable form too, so
+				// `MutableList<string>` binds `List<T>` with T = string
+				if views := receiverViews(x.Type()); len(views) > 1 && unify(pt, views[1], m) {
+					continue
+				}
 				f.errorf(bound[i].Span(), "cannot infer type parameters: argument of type '%s' does not match parameter type '%s'", x.Type(), pt)
 			}
 		} else {
@@ -294,8 +345,8 @@ func (f *fnCtx) callTemplateRecv(t *FuncTemplate, ownerSubst map[*types.TypePara
 		}
 	}
 	// Unbound type parameters may still come from the expected return type.
-	if want != nil && types.ContainsTypeParam(types.Subst(t.Sig.Ret, m)) {
-		unify(types.Subst(t.Sig.Ret, m), want, m)
+	if want != nil && types.ContainsTypeParam(f.c.hooks.Subst(t.Sig.Ret, m)) {
+		unify(f.c.hooks.Subst(t.Sig.Ret, m), want, m)
 	}
 	var finalArgs []types.Type
 	for _, tp := range t.TypeParams {

@@ -21,7 +21,7 @@ for no particular reason — use `i64` unless the width matters.
 
 You called a `throws` function as a statement, or bound its result to a
 name (`unused Result 'r'`) and never read it. Decide: `try f()` if your
-function is `throws`, or `when (f()) { is Ok(v) => ...; is Err(e) => ... }`.
+function is `throws`, or `when (val r = f()) { is Ok => ...; is Err => ... }`.
 Ignoring a failure is not an option; `val _ = f()` is the deliberate
 discard. (D4)
 

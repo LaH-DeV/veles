@@ -7,6 +7,8 @@ use path.{ dir }
 
 extern "C" {
   fun veles_fs_read_file(path: string, out: *raw string): i64
+  fun veles_fs_read_bytes(path: string, out: *raw string): i64
+  fun veles_fs_write_bytes(path: string, bytes: List<u8>, append: bool): i64
   fun veles_fs_write_file(path: string, text: string): i64
   fun veles_fs_append_file(path: string, text: string): i64
   fun veles_fs_stat(path: string): i64
@@ -17,7 +19,7 @@ extern "C" {
   fun veles_fs_cwd(out: *raw string): i64
 }
 
-/// The whole file as text.
+/// The whole file as text; a file that is not valid UTF-8 is an error.
 pub fun readFile(path: string): string throws IoError {
   var out = ""
   val code = unsafe {
@@ -25,6 +27,32 @@ pub fun readFile(path: string): string throws IoError {
   }
   if (code != 0) throw os.ioError(code, path)
   out
+}
+
+/// The whole file as bytes.
+pub fun readBytes(path: string): List<u8> throws IoError {
+  var data = ""
+  val code = unsafe {
+    veles_fs_read_bytes(path, &data)
+  }
+  if (code != 0) throw os.ioError(code, path)
+  data.bytes()
+}
+
+/// Writes `bytes` to `path`, replacing the file.
+pub fun writeBytes(path: string, bytes: List<u8>) throws IoError {
+  val code = unsafe {
+    veles_fs_write_bytes(path, bytes, false)
+  }
+  if (code != 0) throw os.ioError(code, path)
+}
+
+/// Appends `bytes` to `path`, creating the file when missing.
+pub fun appendBytes(path: string, bytes: List<u8>) throws IoError {
+  val code = unsafe {
+    veles_fs_write_bytes(path, bytes, true)
+  }
+  if (code != 0) throw os.ioError(code, path)
 }
 
 /// Writes `text` to `path`, replacing the file.

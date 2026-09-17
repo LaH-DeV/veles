@@ -415,6 +415,9 @@ func (lx *Lexer) stringLit() {
 						lx.pos++
 					}
 				}
+				if lx.pos > len(lx.src) {
+					lx.pos = len(lx.src) // a nested string ran off the end
+				}
 				if depth != 0 {
 					lx.errorf(exprStart-2, exprStart, "unterminated interpolation")
 					break
@@ -472,14 +475,14 @@ var operators = []struct {
 	text string
 	kind TokenKind
 }{
-	{"..<", RangeLt}, {"::", DblColon}, {"?.", SafeDot}, {"?:", Elvis}, {"=>", FatArrow},
+	{"...", Ellipsis}, {"..<", RangeLt}, {"<<", Shl}, {">>", Shr}, {"::", DblColon}, {"?.", SafeDot}, {"?:", Elvis}, {"=>", FatArrow},
 	{"->", Arrow}, {"..", Range}, {"+=", PlusEq}, {"-=", MinusEq}, {"*=", StarEq},
 	{"/=", SlashEq}, {"%=", PercentEq}, {"+%", WrapPlus}, {"-%", WrapMinus}, {"*%", WrapStar},
 	{"==", Eq}, {"!=", NotEq}, {"<=", LtEq}, {">=", GtEq}, {"&&", AndAnd}, {"||", OrOr},
 	{"(", LParen}, {")", RParen}, {"{", LBrace}, {"}", RBrace}, {"[", LBracket}, {"]", RBracket},
 	{",", Comma}, {";", Semi}, {":", Colon}, {".", Dot}, {"?", Question}, {"@", At},
 	{"&", Amp}, {"|", Pipe}, {"=", Assign}, {"+", Plus}, {"-", Minus}, {"*", Star},
-	{"/", Slash}, {"%", Percent}, {"<", Lt}, {">", Gt}, {"!", Bang},
+	{"/", Slash}, {"%", Percent}, {"<", Lt}, {">", Gt}, {"!", Bang}, {"^", Caret}, {"~", Tilde},
 }
 
 func (lx *Lexer) operator() {

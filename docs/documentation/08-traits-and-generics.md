@@ -168,7 +168,7 @@ struct Box<T: Show> {
   fun label(): string = "[${self.item.show()}]"
 }
 
-fun <T: Show> showAll(xs: List<T>): string = xs.map(x => x.show()).joinToString(" ")
+fun <T: Show> showAll(xs: List<T>): string = xs.map(x => x.show()).join(" ")
 
 fun main() {
   io.println("${Box(item: 7).label()} ${Box(item: "hi").label()}")

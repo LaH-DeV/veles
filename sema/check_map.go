@@ -15,7 +15,7 @@ func (f *fnCtx) mapLit(e *ast.MapLit, want types.Type) Expr {
 	if mt, ok := numericHint(want).(*types.Map); ok {
 		kt, vt, mutable = mt.Key, mt.Value, mt.Mutable
 		if e.Mut && mutable {
-			f.warnf(e.Pos, "redundant 'mut': the expected type '%s' already makes the literal mutable", mt)
+			f.warnFix(e.Pos, fixDropMut(e.Pos), "redundant 'mut': the expected type '%s' already makes the literal mutable", mt)
 		}
 	}
 	if e.Mut {

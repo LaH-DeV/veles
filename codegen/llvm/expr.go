@@ -125,6 +125,10 @@ func (g *gen) expr(e sema.Expr) string {
 			g.emit("%s = xor i1 %s, true", v, x)
 			return v
 		}
+		if e.Op == sema.OpBitNot {
+			g.emit("%s = xor %s %s, -1", v, g.llType(e.Type()), x)
+			return v
+		}
 		if types.IsFloat(e.Type()) {
 			g.emit("%s = fneg %s %s", v, g.llType(e.Type()), x)
 			return v
@@ -520,6 +524,14 @@ func (g *gen) binary(e *sema.Binary) string {
 			g.emit("%s = sub %s %s, %s", v, llt, l, r)
 		case sema.OpWrapMul:
 			g.emit("%s = mul %s %s, %s", v, llt, l, r)
+		case sema.OpBitAnd:
+			g.emit("%s = and %s %s, %s", v, llt, l, r)
+		case sema.OpBitOr:
+			g.emit("%s = or %s %s, %s", v, llt, l, r)
+		case sema.OpBitXor:
+			g.emit("%s = xor %s %s, %s", v, llt, l, r)
+		case sema.OpShl, sema.OpShr:
+			return g.shift(e, llt, l, r, signed)
 		case sema.OpDiv, sema.OpRem:
 			g.divCheck(llt, l, r, signed, e.Span.String())
 			op := "udiv"
@@ -1548,4 +1560,48 @@ func llFloatSuffix(ty string) string {
 		return "f32"
 	}
 	return "f64"
+}
+
+// shift emits `<<` / `>>` with Go's rule for large counts: a count at or
+// beyond the width yields 0 (or the sign fill for a signed `>>`), where
+// LLVM's own shifts would be poison. The count is brought to the operand's
+// width first (it may be any integer type).
+func (g *gen) shift(e *sema.Binary, llt, l, r string, signed bool) string {
+	rt := e.R.Type()
+	rll := g.llType(rt)
+	bits := types.BitSize(e.L.Type())
+	count := r
+	if rll != llt {
+		count = g.newTmp()
+		if types.BitSize(rt) > bits {
+			g.emit("%s = trunc %s %s to %s", count, rll, r, llt)
+		} else if types.IsSigned(rt) {
+			g.emit("%s = sext %s %s to %s", count, rll, r, llt)
+		} else {
+			g.emit("%s = zext %s %s to %s", count, rll, r, llt)
+		}
+	}
+	// a negative count (signed type) compares as huge when unsigned, so
+	// one unsigned test covers both "negative" and "too large"
+	big := g.newTmp()
+	g.emit("%s = icmp uge %s %s, %d", big, llt, count, bits)
+	safe := g.newTmp()
+	g.emit("%s = select i1 %s, %s 0, %s %s", safe, big, llt, llt, count)
+	raw := g.newTmp()
+	fill := "0"
+	switch {
+	case e.Op == sema.OpShl:
+		g.emit("%s = shl %s %s, %s", raw, llt, l, safe)
+	case signed:
+		g.emit("%s = ashr %s %s, %s", raw, llt, l, safe)
+		neg := g.newTmp()
+		g.emit("%s = icmp slt %s %s, 0", neg, llt, l)
+		fill = g.newTmp()
+		g.emit("%s = select i1 %s, %s -1, %s 0", fill, neg, llt, llt)
+	default:
+		g.emit("%s = lshr %s %s, %s", raw, llt, l, safe)
+	}
+	v := g.newTmp()
+	g.emit("%s = select i1 %s, %s %s, %s %s", v, big, llt, fill, llt, raw)
+	return v
 }

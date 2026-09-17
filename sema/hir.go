@@ -238,6 +238,11 @@ const (
 	OpGe
 	OpAnd // short-circuit
 	OpOr  // short-circuit
+	OpBitAnd
+	OpBitOr
+	OpBitXor
+	OpShl
+	OpShr
 )
 
 func BinOpFromToken(k lexer.TokenKind) BinOp {
@@ -274,12 +279,22 @@ func BinOpFromToken(k lexer.TokenKind) BinOp {
 		return OpAnd
 	case lexer.OrOr:
 		return OpOr
+	case lexer.Amp:
+		return OpBitAnd
+	case lexer.Pipe:
+		return OpBitOr
+	case lexer.Caret:
+		return OpBitXor
+	case lexer.Shl:
+		return OpShl
+	case lexer.Shr:
+		return OpShr
 	}
 	return -1
 }
 
 func (op BinOp) String() string {
-	return [...]string{"+", "-", "*", "/", "%", "+%", "-%", "*%", "==", "!=", "<", "<=", ">", ">=", "&&", "||"}[op]
+	return [...]string{"+", "-", "*", "/", "%", "+%", "-%", "*%", "==", "!=", "<", "<=", ">", ">=", "&&", "||", "&", "|", "^", "<<", ">>"}[op]
 }
 
 // Binary is an arithmetic, comparison or logical operation on operands of
@@ -296,6 +311,7 @@ type UnOp int
 const (
 	OpNeg UnOp = iota
 	OpNot
+	OpBitNot // ~x, integers
 )
 
 type Unary struct {

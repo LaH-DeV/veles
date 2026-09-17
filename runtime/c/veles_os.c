@@ -19,6 +19,7 @@
 #include <dirent.h>
 
 #if defined(_WIN32)
+#include <windows.h>
 #include <direct.h>
 #include <io.h>
 #define veles_popen _popen
@@ -147,7 +148,9 @@ int64_t veles_os_run(const char *cmd, int64_t clen, veles_string *out, int64_t *
 
 /* ---- files ------------------------------------------------------------- */
 
-int64_t veles_fs_read_file(const char *path, int64_t plen, veles_string *out) {
+bool veles_utf8_valid(const char *s, int64_t len);
+
+static int64_t read_raw(const char *path, int64_t plen, veles_string *out) {
     FILE *f = fopen(cstr(path, plen), "rb");
     if (!f) return errno;
     buf_t b = {0};
@@ -155,6 +158,15 @@ int64_t veles_fs_read_file(const char *path, int64_t plen, veles_string *out) {
     fclose(f);
     if (err) return err;
     set_string(out, b.data ? b.data : "", b.len);
+    return 0;
+}
+
+/* veles_fs_read_file reads a text file; bytes that are not UTF-8 are an
+ * error (EILSEQ), since a Veles string is always well-formed (D18). */
+int64_t veles_fs_read_file(const char *path, int64_t plen, veles_string *out) {
+    int64_t err = read_raw(path, plen, out);
+    if (err) return err;
+    if (!veles_utf8_valid(out->data, out->len)) return EILSEQ;
     return 0;
 }
 
@@ -233,4 +245,121 @@ int64_t veles_fs_cwd(veles_string *out) {
 #endif
     set_string(out, buf, (int64_t)strlen(buf));
     return 0;
+}
+
+/* ---- bytes ------------------------------------------------------------- */
+
+/* A List<u8> from the Veles side: only data and len are read here. */
+typedef struct {
+    char *data;
+    int64_t len;
+} veles_bytes_view;
+
+/* veles_fs_read_bytes reads a file as raw bytes into a string-shaped
+ * buffer; the Veles side turns it into a List<u8> with .bytes(). */
+int64_t veles_fs_read_bytes(const char *path, int64_t plen, veles_string *out) {
+    return read_raw(path, plen, out);
+}
+
+/* veles_utf8_valid reports whether the bytes are well-formed UTF-8, so that
+ * readFile can refuse a file that is not text (EILSEQ). */
+bool veles_utf8_valid(const char *s, int64_t len) {
+    const unsigned char *p = (const unsigned char *)s;
+    int64_t i = 0;
+    while (i < len) {
+        unsigned char c = p[i];
+        int n; /* continuation bytes */
+        if (c < 0x80) { i++; continue; }
+        if (c >= 0xC2 && c <= 0xDF) n = 1;
+        else if (c >= 0xE0 && c <= 0xEF) n = 2;
+        else if (c >= 0xF0 && c <= 0xF4) n = 3;
+        else return false;
+        if (i + n >= len) return false;
+        for (int k = 1; k <= n; k++) {
+            if ((p[i + k] & 0xC0) != 0x80) return false;
+        }
+        if (c == 0xE0 && p[i + 1] < 0xA0) return false;  /* overlong */
+        if (c == 0xED && p[i + 1] >= 0xA0) return false; /* surrogate */
+        if (c == 0xF0 && p[i + 1] < 0x90) return false;  /* overlong */
+        if (c == 0xF4 && p[i + 1] >= 0x90) return false; /* beyond U+10FFFF */
+        i += n + 1;
+    }
+    return true;
+}
+
+int64_t veles_fs_write_bytes(const char *path, int64_t plen, veles_bytes_view *bytes, bool append) {
+    return write_file(path, plen, bytes->data, bytes->len, append ? "ab" : "wb");
+}
+
+/* veles_read_all reads standard input to its end. */
+int64_t veles_read_all(veles_string *out) {
+    buf_t b = {0};
+    int err = read_stream(stdin, &b);
+    if (err) return err;
+    set_string(out, b.data ? b.data : "", b.len);
+    return 0;
+}
+
+/* ---- time -------------------------------------------------------------- */
+
+#include <time.h>
+
+/* milliseconds since the Unix epoch, UTC */
+int64_t veles_time_now_ms(void) {
+#if defined(_WIN32)
+    FILETIME ft;
+    GetSystemTimeAsFileTime(&ft);
+    uint64_t t = ((uint64_t)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
+    return (int64_t)(t / 10000) - 11644473600000LL;
+#else
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    return ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+#endif
+}
+
+/* nanoseconds on a monotonic clock, for measuring */
+int64_t veles_time_monotonic_ns(void) {
+#if defined(_WIN32)
+    LARGE_INTEGER f, c;
+    QueryPerformanceFrequency(&f);
+    QueryPerformanceCounter(&c);
+    return (int64_t)((double)c.QuadPart * 1e9 / (double)f.QuadPart);
+#else
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000000000LL + ts.tv_nsec;
+#endif
+}
+
+/* veles_time_civil writes the calendar fields of a Unix-millisecond time
+ * (UTC, or local when local is set) as
+ * "year month day hour minute second weekday yearday" for the Veles side to
+ * split; weekday is 0 for Sunday. */
+void veles_time_civil(int64_t ms, bool local, veles_string *out) {
+    time_t secs = (time_t)(ms / 1000);
+    if (ms < 0 && ms % 1000 != 0) secs -= 1;
+    struct tm tmv;
+#if defined(_WIN32)
+    if (local) localtime_s(&tmv, &secs); else gmtime_s(&tmv, &secs);
+#else
+    if (local) localtime_r(&secs, &tmv); else gmtime_r(&secs, &tmv);
+#endif
+    char buf[128];
+    int n = snprintf(buf, sizeof buf, "%d %d %d %d %d %d %d %d", tmv.tm_year + 1900, tmv.tm_mon + 1, tmv.tm_mday,
+                     tmv.tm_hour, tmv.tm_min, tmv.tm_sec, tmv.tm_wday, tmv.tm_yday + 1);
+    set_string(out, buf, n);
+}
+
+/* ---- number formatting ------------------------------------------------- */
+
+/* veles_f64_to_fixed renders v with exactly `digits` decimals (0..30). */
+void veles_f64_to_fixed(double v, int64_t digits, veles_string *out) {
+    if (digits < 0) digits = 0;
+    if (digits > 30) digits = 30;
+    char buf[400];
+    int n = snprintf(buf, sizeof buf, "%.*f", (int)digits, v);
+    if (n < 0) n = 0;
+    if (n > (int)sizeof buf - 1) n = (int)sizeof buf - 1;
+    set_string(out, buf, n);
 }

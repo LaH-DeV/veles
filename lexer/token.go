@@ -41,6 +41,7 @@ const (
 	Pipe     // |
 	Range    // ..
 	RangeLt  // ..<
+	Ellipsis // ... (variadic parameter, spread argument)
 	Under    // _
 
 	// Operators
@@ -67,6 +68,10 @@ const (
 	AndAnd    // &&
 	OrOr      // ||
 	Bang      // !
+	Caret     // ^ (bitwise xor)
+	Tilde     // ~ (bitwise not)
+	Shl       // <<
+	Shr       // >>
 
 	// Keywords
 	keywordStart
@@ -177,11 +182,11 @@ var kindNames = map[TokenKind]string{
 	LParen: "(", RParen: ")", LBrace: "{", RBrace: "}", LBracket: "[", RBracket: "]",
 	Comma: ",", Semi: "newline", Colon: ":", DblColon: "::", Dot: ".", SafeDot: "?.",
 	Elvis: "?:", Question: "?", FatArrow: "=>", Arrow: "->", At: "@", Amp: "&", Pipe: "|",
-	Range: "..", RangeLt: "..<", Under: "_",
+	Range: "..", RangeLt: "..<", Ellipsis: "...", Under: "_",
 	Assign: "=", PlusEq: "+=", MinusEq: "-=", StarEq: "*=", SlashEq: "/=", PercentEq: "%=",
 	Plus: "+", Minus: "-", Star: "*", Slash: "/", Percent: "%", WrapPlus: "+%",
 	WrapMinus: "-%", WrapStar: "*%", Eq: "==", NotEq: "!=", Lt: "<", LtEq: "<=", Gt: ">",
-	GtEq: ">=", AndAnd: "&&", OrOr: "||", Bang: "!",
+	GtEq: ">=", AndAnd: "&&", OrOr: "||", Bang: "!", Caret: "^", Tilde: "~", Shl: "<<", Shr: ">>",
 }
 
 func (k TokenKind) String() string {

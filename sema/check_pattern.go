@@ -30,7 +30,18 @@ func (f *fnCtx) whenExpr(e *ast.WhenExpr, want types.Type) Expr {
 			subj = &Deref{exprBase{p.Elem}, subj}
 			subjType = p.Elem
 		}
-		m.Subject = f.newTemp(subjType)
+		if e.Bind != nil {
+			// `when (val r = subject)`: the subject is a named local of the arms,
+			// and smart casts apply to it
+			f.pushScope()
+			defer f.popScope()
+			v := f.newVar(e.Bind.Name, subjType, false, e.Bind.Pos)
+			f.declareLocal(e.Bind.Name, v, e.Bind.Pos)
+			m.Subject = v
+			subjPlace, subjOK = pv(v), true
+		} else {
+			m.Subject = f.newTemp(subjType)
+		}
 		m.Init = subj
 	}
 
@@ -133,7 +144,15 @@ func (f *fnCtx) whenExpr(e *ast.WhenExpr, want types.Type) Expr {
 		}
 	} else if hasElse && subjType != nil {
 		if _, sealed := subjType.(*types.Sealed); sealed && f.isExhaustive(cov, subjType, false) {
-			f.warnf(e.Pos, "'else' on a sealed subject silences the exhaustiveness check when a variant is added later (D13 lint)")
+			// every variant has an arm already, so the else is dead: the fix
+			// removes it
+			var fix *source.Fix
+			for _, arm := range e.Arms {
+				if arm.Else {
+					fix = fixDeleteLine("Remove the unreachable 'else' arm", arm.Pos)
+				}
+			}
+			f.warnFix(e.Pos, fix, "'else' on a sealed subject silences the exhaustiveness check when a variant is added later (D13 lint)")
 		}
 	}
 

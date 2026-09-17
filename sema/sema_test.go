@@ -748,7 +748,7 @@ fun main() throws IoError {
   try fs.remove("b.txt")
   val here: string = try fs.cwd()
   io.println("${fs.exists("a")} ${fs.isFile("a")} ${fs.isDir("a")} $names $here")
-  val p: string = path.joinAll([path.join("a", "b"), path.dir("c/d"), path.base("e"), path.ext("f.vs"), path.stem("g.vs")])
+  val p: string = path.join(path.join("a", "b"), path.dir("c/d"), path.base("e"), path.ext("f.vs"), path.stem("g.vs"))
   io.println("$p ${path.isAbsolute(p)}")
   val sb = stringBuilder()
   sb.append("a")
@@ -984,4 +984,126 @@ impl Show for Box<i64> { fun show(): string = "box" }`,
 			t.Errorf("%s: the lint should not fire", name)
 		}
 	}
+}
+
+// #5: `r.ok` / `r.err` are the tag tests of a Result spelled as properties
+// and smart-cast like `r is Ok`; `when (val r = e)` names the subject.
+func TestResultProperties(t *testing.T) {
+	expectClean(t, prelude+`
+error Bad { text: string }
+fun parse(s: string): i64 throws Bad = s.toInt() ?: throw Bad(text: s)
+fun describe(s: string): string = when (val r = parse(s)) {
+  is Ok  => "ok ${r * 2}"
+  is Err => "err ${r.text}"
+}
+fun main() {
+  val r = parse("42")
+  if (r.ok) io.println("${r + 1}") else io.println(r.message())
+  if (r.err) io.println(r.text)
+  if (!r.ok) io.println(r.text) else io.println("${r - 1}")
+  when (val n = "5".toInt()) {
+    null   => io.println("none")
+    is i64 => io.println("${n + 1}")
+  }
+  io.println("${describe("1")} ${parse("7").ok}")
+}`)
+	expectError(t, prelude+`struct P { x: i64 }
+fun main() { val p = P(x: 1); io.println("${p.ok}") }`, "has no field 'ok'")
+	expectError(t, prelude+`fun main() { when (val n = 1) { else => io.println("$m") } }`, "unknown name 'm'")
+}
+
+// Variadic parameters (`parts: string...`) collect the trailing arguments
+// into a List; `xs...` passes a list whole.
+func TestVariadics(t *testing.T) {
+	expectClean(t, prelude+`
+fun join(sep: string, parts: string...): string = parts.join(sep)
+fun sum(xs: i64...): i64 {
+  var t: i64 = 0
+  loop (x in xs) { t += x }
+  t
+}
+trait Fmt { fun fmt(args: string...): string }
+struct P { x: i64
+  impl Fmt { fun fmt(args: string...): string = "${self.x} ${args.len()}" }
+  static fun of(xs: i64...): P = P(x: xs.len())
+}
+fun main() {
+  val parts = ["x", "y"]
+  io.println("${join("/", "a", "b")} ${join("-")} ${join(",", parts...)} ${join("+", parts: parts)}")
+  io.println("${sum()} ${sum(1, 2, 3)} ${sum([4, 5]...)} ${P(x: 1).fmt("a")} ${P.of(1, 2).x}")
+}`)
+	cases := []struct{ name, src, want string }{
+		{"not last", `fun f(xs: i64..., y: i64) { }`, "must be the last one"},
+		{"default", `fun f(xs: i64... = [1]) { }`, "cannot have a default"},
+		{"spread to plain", `fun f(x: i64) { }
+fun main() { f([1]...) }`, "has none here"},
+		{"spread plus more", `fun f(xs: i64...) { }
+fun main() { f([1]..., 2) }`, "must be the only argument"},
+		{"element type", `fun f(xs: i64...) { }
+fun main() { f(1, "two") }`, "expected 'i64', found 'string'"},
+		{"impl must match", `trait Fmt { fun fmt(args: string...): string }
+struct P { x: i64 }
+impl Fmt for P { fun fmt(args: List<string>): string = "" }`, "must be variadic exactly as in trait"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			expectError(t, prelude+c.src, c.want)
+		})
+	}
+}
+
+// std/time, std/random, byte I/O, io.readAll, number formatting, and the
+// bitwise operators the generator is built from.
+func TestTimeRandomBytesFormatting(t *testing.T) {
+	expectClean(t, `
+use io
+use fs
+use time
+use random
+
+fun main() throws IoError {
+  val now: i64 = time.now()
+  val d: time.DateTime = time.utc(now)
+  val l: time.DateTime = time.local(now)
+  val sw = time.Stopwatch.start()
+  io.println("$d ${d.date()} ${l.time()} ${d.weekday} ${sw.elapsedMillis()} ${sw.elapsedSeconds()} ${time.monotonic()} ${time.monotonicNanos()}")
+  random.seed(1)
+  val n: i64 = random.range(1, 7)
+  val x: f64 = random.float()
+  val b: bool = random.boolean()
+  val p: string? = random.pick(["a", "b"])
+  val xs = mut [1, 2, 3]
+  random.shuffle(xs)
+  var rng = random.Rng.seeded(7)
+  io.println("$n $x $b $p $xs ${rng.range(0, 10)} ${rng.nextU64()} ${random.nextU64()}")
+  val bytes: List<u8> = try fs.readBytes("a.bin")
+  try fs.writeBytes("a.bin", bytes)
+  try fs.appendBytes("a.bin", [1, 2])
+  val all: string = io.readAll()
+  io.println("${bytes.len()} ${all.len()} ${(2.0 / 3.0).toFixed(2)} ${(255).toString(radix: 16)} ${(7 as u64).toString(radix: 2)} ${(1.5 as f32).toFixed(1)}")
+  val flags: u8 = 0b1010
+  val nested: List<List<i64>> = [[1]]
+  val m: Map<string, List<Set<i64>>> = [:]
+  io.println("${flags & 3} ${flags | 1} ${flags ^ 0xFF} ${~flags} ${flags << 2} ${(-8) >> 1} ${(1 as u64) << 63} ${nested.len()} ${m.len()}")
+}`)
+	cases := []struct{ name, src, want string }{
+		{"bitwise on floats", `fun main() { io.println("${1.5 & 2.0}") }`, "only defined for integers"},
+		{"not on bool", `fun main() { io.println("${~true}") }`, "only defined for integers"},
+		{"shift count", `fun main() { io.println("${1 << 2.0}") }`, "shift count must be an integer"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			expectError(t, prelude+c.src, c.want)
+		})
+	}
+	// D25: a mutable collection passes where its immutable form is expected
+	expectClean(t, prelude+`
+fun total(xs: List<i64>): i64 = xs.fold(0, (a, b) => a + b)
+fun first<T>(xs: List<T>): T? = xs.first()
+fun main() {
+  val xs = mut [1, 2]
+  val m: MutableMap<string, i64> = [:]
+  val ro: Map<string, i64> = m
+  io.println("${total(xs)} ${first(xs)} ${ro.len()}")
+}`)
 }

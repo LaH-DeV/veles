@@ -103,6 +103,34 @@ Output:
 -2147483648
 ```
 
+### Bits and formatting
+
+Integers have the bitwise operators `&`, `|`, `^`, `<<`, `>>` and `~`.
+`&` and the shifts bind like `*`, `|` and `^` like `+`, so `2 + 4 & 7`
+is `2 + (4 & 7)` (Go's grouping, which reads the way you mean it). A
+shift by the width or more gives 0 rather than something undefined.
+Literals may be written in hex or binary: `0xFF`, `0b1010`.
+
+To shape a number as text, ask it: `n.toString(radix: 16)` for hex and
+`x.toFixed(2)` for two decimals, then the string methods for width —
+`n.toString().padStart(6, "0")`.
+
+```veles
+use io
+
+fun main() {
+  val flags: u8 = 0b1010
+  io.println("${flags & 0b0010} ${flags | 1} ${flags << 4} ${(255).toString(radix: 2)} ${(-1).toString(radix: 16)}")
+  io.println("${(2.0 / 3.0).toFixed(3)} ${(42).toString().padStart(6, "0")} ${(1234.56).toFixed(0)}")
+}
+```
+
+Output:
+```text
+2 11 160 11111111 -1
+0.667 000042 1235
+```
+
 ## Text
 
 `string` is immutable UTF-8 text. Concatenate with `+`, compare with

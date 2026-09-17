@@ -55,7 +55,7 @@ Consequence: `throws` and explicit `Result` interconvert freely; libraries canno
 
 **Errors are declared, and every error implements `Error`.** The prelude declares `trait Error { fun message(): string = "$self" }`. An error type is declared with a contextual keyword: `error ParseError { text: string; fun message(): string = ... }` is sugar for `struct ParseError { text: string }` plus `impl Error for ParseError { override fun message() ... }`. Inside an `error` body `message` needs no `override` (there is exactly one trait in play; writing it is allowed), and no other method may carry one — they are inherent. A field `message: string` with no `message()` written is used as the message, so `error Failed { message: string }` is thrown as `Failed(message: "...")`; `Panic` is exactly that. **Only errors can be in error position** (a `throws` clause, a `throw` operand, the `E` of a `Result`): throwing a plain struct is an error naming the fix (`error Dog { ... }`), non-structs are rejected, and a generic `throws X` needs the bound `X: Error`. `impl Error for T {}` on an existing struct is the escape hatch for types one does not own. Because every member of an error union implements `Error`, **the union exposes `Error`'s methods directly**: `e.message()` on a `ParseError | RangeError` compiles to a tag switch, no `when` required. An error escaping `main() throws` is reported through `message()`. This is Go's one-method `error` interface with structured payloads kept as fields, and the declaration form makes "is an error" a property of the type rather than of its uses. `error` is a keyword only at declaration position (`error Name`); elsewhere it is an ordinary identifier, so `is Err(error) => ...` is unaffected. Rejected: treating every struct as an implicit `Error` (it made `throw Dog()` legal); `struct X : Error` (in D12 that syntax means variant membership); and making `message` a mandatory field (it cannot be computed from the other fields, which is the common case).
 
-**`is Ok` / `is Err` smart-cast to the payload.** After `if (r is Ok)` the subject `r` *is* the `T`; in the `else` branch (or after `!is Ok`) it is the `E`. This is D5's `T?` → `T` rule applied to `Result` (and `Option`'s `Some`): the wrapper variants are handled, never held as values. A general two-variant sealed type gets the complementary narrowing in the failed branch too, but only `Result`/`Option` read through to a payload.
+**`is Ok` / `is Err` smart-cast to the payload.** After `if (r is Ok)` the subject `r` *is* the `T`; in the `else` branch (or after `!is Ok`) it is the `E`. `r.ok` and `r.err` are the same tests spelled as properties (v0.23): `if (r.ok)` narrows exactly like `if (r is Ok)`, and the teaching form. In a `when`, `is Ok` / `is Err` arms narrow the subject the same way, and `when (val r = expr)` names an expression subject for the arms. This is D5's `T?` → `T` rule applied to `Result` (and `Option`'s `Some`): the wrapper variants are handled, never held as values. A general two-variant sealed type gets the complementary narrowing in the failed branch too, but only `Result`/`Option` read through to a payload.
 
 Error type is **typed but inferrable** for ordinary functions. *Amended by D40:* trait methods must declare it. *Extended by D45:* inference across callees with different error types produces a union.
 
@@ -206,7 +206,7 @@ struct Rect   : Shape { w: f64, h: f64 }
 
 ### D13 — Pattern matching: `when`, as an expression
 
-Type-test with smart casts, **and** destructuring patterns (revised — destructuring was originally excluded).
+Type-test with smart casts, **and** destructuring patterns (revised — destructuring was originally excluded). A subject may be bound in the head — `when (val r = parse(s)) { is Ok => r ... }` — so type tests can narrow an expression that has no name of its own (v0.23).
 
 ```vs
 val area = when (shape) {
@@ -293,6 +293,9 @@ Index-out-of-bounds, null dereference, and division by zero are not `Result` —
 Because the GC means there is no drop glue to run, a cheaper option is available: compile panics as a hidden error-return path — the same mechanism as D4 — which works identically in both frame kinds at the cost of a predictable branch on return and some code size. It cannot catch panics originating in FFI or from signals.
 
 ### D21 — Integer overflow: checked in debug, wrapping in release, `+%` always wraps
+
+*Amended (v0.23) — bitwise operators.* Integers have `&`, `|`, `^`, `<<`, `>>` and unary `~`, with Go's grouping (`&`, `<<`, `>>` at the level of `*`; `|`, `^` at the level of `+`). A shift count may be any integer type; a count at or beyond the width yields 0 (the sign fill for a signed `>>`), never undefined behaviour. Literals may be hexadecimal (`0xFF`) or binary (`0b1010`).
+
 
 Rust's model, plus an explicit operator. `+` is checked in debug builds and wraps in release. `+%` means "I intend wrapping, in every build" — Rust's `wrapping_add`, promoted to an operator.
 
@@ -418,6 +421,8 @@ val s = Stack<i32>()
 ```
 
 Every struct gets an implicit constructor from its fields. Fields with declared defaults may be omitted.
+
+*Amended (v0.23) — variadic parameters.* The last parameter of a function may be `name: T...`; the call supplies any number of trailing positional arguments (`join("/", "a", "b")`, `sum()`), collected into a `List<T>`, or one list spread with `join("/", parts...)`. Inside the function the parameter is a plain `List<T>`. A variadic parameter has no default, an `extern` function cannot declare one, and an impl declares it exactly as its trait does.
 
 - **Declaring an explicit constructor suppresses the implicit one.** Otherwise invariants could always be bypassed by calling the generated version.
 - **The implicit constructor is callable only where every field is visible.** Otherwise a `pub` struct with private fields would leak construction.

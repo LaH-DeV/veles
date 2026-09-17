@@ -24,9 +24,9 @@ fun parsePort(text: string): i64 throws ParseError | RangeError {
 
 fun main() {
   loop (t in ["80", "x", "70000"]) {
-    when (parsePort(t)) {
-      is Ok(port) => io.println("$t -> $port")
-      is Err(e) => io.println("$t -> failed: $e")
+    when (val port = parsePort(t)) {
+      is Ok  => io.println("$t -> $port")
+      is Err => io.println("$t -> failed: $port")
     }
   }
 }
@@ -46,12 +46,16 @@ x -> failed: ParseError(text: x)
 - `throws A | B` lists what can go wrong. `throw e` leaves the function
   with that error; it works anywhere an expression can go, including on
   the right of `?:`.
-- The **caller sees a `Result`**. `when` with `is Ok(v)` / `is Err(e)`
-  takes it apart; the compiler checks both arms are there.
-- A bare `is Ok` / `is Err` test **smart-casts the value itself**: after
-  `if (r is Ok)` the name `r` is the `i64` inside, and in the `else` branch
-  it is the error — the same rule that turns a `T?` into a `T` after
-  `!= null`. `Ok` and `Err` are handled, never held.
+- The **caller sees a `Result`**. `when (val port = parsePort(t))` gives
+  it a name; `is Ok` / `is Err` tell the arms apart, and the compiler
+  checks both are there.
+- An `is Ok` / `is Err` test **smart-casts the value itself**: in the
+  `is Ok` arm `port` is the `i64` inside, in the `is Err` arm it is the
+  error — the same rule that turns a `T?` into a `T` after `!= null`. In
+  an `if`, `r.ok` and `r.err` are the same tests spelled as properties:
+  after `if (r.ok)` the name `r` is the value, and in the `else` branch
+  the error. `Ok` and `Err` are handled, never held; `is Ok(v)` with a
+  fresh name still works when you want one.
 
 You cannot silently drop a failure. Calling `parsePort(t)` as a bare
 statement is a compile error ("unused Result"), and so is binding the
@@ -85,13 +89,11 @@ fun total(items: List<string>): i64 throws ParseError {
 }
 
 fun main() {
-  when (total(["1", "2", "3"])) {
-    is Ok(v) => io.println("total $v")
-    is Err(e) => io.println("bad input ${e.text}")
-  }
-  when (total(["1", "two"])) {
-    is Ok(v) => io.println("total $v")
-    is Err(e) => io.println("bad input ${e.text}")
+  val r = total(["1", "2", "3"])
+  if (r.ok) io.println("total $r") else io.println("bad input ${r.text}")
+  when (val r = total(["1", "two"])) {
+    is Ok  => io.println("total $r")
+    is Err => io.println("bad input ${r.text}")
   }
 }
 ```
@@ -127,9 +129,9 @@ fun settingFor(key: string): string throws = try validate(try lookup(key))
 
 fun main() {
   loop (k in ["name", "age"]) {
-    when (settingFor(k)) {
-      is Ok(v) => io.println("$k = $v")
-      is Err(e) => when (e) {
+    when (val v = settingFor(k)) {
+      is Ok  => io.println("$k = $v")
+      is Err => when (v) {
         is NotFound(key) => io.println("no such key '$key'")
         is Invalid(reason) => io.println("invalid: $reason")
       }
@@ -286,7 +288,7 @@ fun risky(n: i64): i64 throws Oops = if (n > 0) n * 10 else throw Oops(code: n)
 
 fun main() {
   val results = [risky(1), risky(0), risky(2)]      // List<Result<i64, Oops>>
-  val successes = results.filter(r => r is Ok)
+  val successes = results.filter(r => r.ok)
   io.println("${successes.len()} of ${results.len()} succeeded")
   val explicit: Result<i64, Oops> = Err(Oops(code: -1))
   io.println("$explicit")

@@ -28,7 +28,7 @@ fun <I: Iterable> summarize(xs: I): string {
   loop (x in xs) {
     parts.push("$x")
   }
-  parts.joinToString("|")
+  parts.join("|")
 }
 
 fun main() {

@@ -52,9 +52,9 @@ use io
 use fs
 
 fun main() {
-  when (fs.readFile("no/such/file.txt")) {
-    is Ok(text) => io.println("read ${text.len()} bytes")
-    is Err(e) => io.println("${e.message()} (code ${e.code > 0})")
+  when (val r = fs.readFile("no/such/file.txt")) {
+    is Ok  => io.println("read ${r.len()} bytes")
+    is Err => io.println("${r.message()} (code ${r.code > 0})")
   }
 }
 ```
@@ -63,6 +63,13 @@ Output:
 ```text
 No such file or directory: no/such/file.txt (code true)
 ```
+
+`readFile` insists on UTF-8, because a string is always well-formed text
+(D18); anything else is an `IoError` ("Illegal byte sequence"). For raw
+data use the byte forms: `fs.readBytes(path)` gives a `List<u8>`,
+`fs.writeBytes(path, bytes)` and `fs.appendBytes` take one, and
+`text.bytes()` / `bytes.decodeUtf8()` convert. `io.readAll()` reads the
+rest of standard input as text.
 
 ## Paths are text
 
@@ -74,7 +81,7 @@ use io
 use path
 
 fun main() {
-  val p = path.joinAll(["src", "compiler", "lexer.vs"])
+  val p = path.join("src", "compiler", "lexer.vs")
   io.println(p)
   io.println("${path.dir(p)} | ${path.base(p)} | ${path.stem(p)} | ${path.ext(p)}")
   io.println("${path.join("a", "/absolute")} ${path.isAbsolute("C:\\tools")} ${path.isAbsolute("tools")}")
@@ -128,8 +135,38 @@ if (!r.ok()) io.eprintln("clang failed with ${r.code}")
 ```
 
 `os.run` waits for the program and captures its standard output; its
-standard error is passed through. A non-zero exit is not an error — it is
-reported in `Output.code` — only a program that cannot be started throws.
+standard error is passed through, or captured into the same text with
+`os.run("clang", ["--version"], mergeStderr: true)`. A non-zero exit is
+not an error — it is reported in `Output.code` — only a program that
+cannot be started throws.
+
+## Time and randomness
+
+```veles
+// fragment
+use time
+val t = time.now()                       // i64 milliseconds since 1970-01-01T00:00:00Z
+val d = time.utc(t)                      // DateTime: year, month, day, hour, minute, second, millis, weekday, yearDay
+io.println("$d ${d.date()} ${time.local(t).hour}")   // 2026-09-17T12:34:56.789 2026-09-17 14
+val sw = time.Stopwatch.start()
+work()
+io.println("took ${sw.elapsedMillis()} ms")    // monotonic clock; time.monotonic() gives the reading itself
+```
+
+```veles
+// fragment
+use random
+random.seed(42)                          // reproducible from here; unseeded, it starts from the clock
+val n = random.range(1, 7)               // 1..<7
+val x = random.float()                   // 0.0..<1.0
+val pick = random.pick(names)            // T?, null when empty
+random.shuffle(deck)                     // MutableList, in place
+var rng = random.Rng.seeded(7)           // a generator of your own, with the same methods
+```
+
+Times are plain `i64` milliseconds, the unit `sleep` and timers already
+use. The generator is xoshiro256** — fast and good for games, tests and
+sampling, not for secrets.
 
 Next: [Attributes and the test runner](14-attributes-and-testing.md), or
 back to the [index](index.md).

@@ -137,3 +137,31 @@ func (f *fnCtx) findMethod(rt types.Type, name string) (*FuncTemplate, map[*type
 	}
 	return nil, nil, ""
 }
+
+// moduleTypeNamed resolves `module.Type` used as a call target to the type,
+// or nil when x is not that shape.
+func (f *fnCtx) moduleTypeNamed(x ast.Expr) types.Type {
+	m, ok := x.(*ast.MemberExpr)
+	if !ok || m.Safe {
+		return nil
+	}
+	n, ok := m.X.(*ast.NameExpr)
+	if !ok {
+		return nil
+	}
+	sym := f.lookup(n.Name)
+	if sym == nil || sym.Kind != SymModule {
+		return nil
+	}
+	member := sym.Mod.Scope.LookupLocal(m.Name.Name)
+	if member == nil || member.Kind != SymType {
+		return nil
+	}
+	if !member.Pub {
+		f.errorf(m.Name.Pos, "'%s' is private to module '%s' (M5)", m.Name.Name, n.Name)
+		return types.TInvalid
+	}
+	f.c.refSym(n.Pos, sym)
+	f.c.refSym(m.Name.Pos, member)
+	return member.Type
+}

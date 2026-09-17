@@ -41,13 +41,19 @@ compiler/clang/flag combination and cached under the user cache directory
 | `types/` | semantic types |
 | `sema/` | modules and manifests (M1–M6), name resolution, type checking, effect inference (D2/D4/D45), lowering to a typed HIR |
 | `codegen/llvm/` | textual LLVM IR emission (I1/I2); coroutines via `llvm.coro.*`; GC type descriptors; vtables |
-| `runtime/c/` | `veles_rt.c` (strings, lists, maps), `veles_gc.c` (collector), `veles_task.c` (executor), `veles_os.c` (files, processes, environment) |
-| `std/` | standard library in Veles, embedded in the compiler: `prelude` (D24: `Iterator`/`Iterable` and adapters, `extend` blocks for `string`, `List`, `Range`, the operator traits `Comparable`/`Equatable`/`Hashable`/`Display`, `Closeable`, `Mutex`/`Atomic`, `Panic`, `IoError`, `StringBuilder`), `io`, `os` (args, env, exit, run), `fs`, `path` |
+| `runtime/c/` | `veles_rt.c` (strings, lists, maps), `veles_gc.c` (collector), `veles_task.c` (executor), `veles_os.c` (files, bytes, processes, environment, clocks) |
+| `std/` | standard library in Veles, embedded in the compiler: `prelude` (D24: `Iterator`/`Iterable` and adapters, `extend` blocks for `string`, `List`, `Range`, the operator traits `Comparable`/`Equatable`/`Hashable`/`Display`, `Closeable`, `Mutex`/`Atomic`, `Panic`, `IoError`, `StringBuilder`), `io`, `os` (args, env, exit, run), `fs` (text and bytes), `path`, `time`, `random` |
 | `format/` | the formatter (`veles fmt`, and `textDocument/formatting` in the LSP): prettier-style — blocks always break, columns align, comments and the author's list/chain line breaks are kept |
 | `lsp/` | language server: diagnostics with quick fixes, hover, definition, symbols, completion, formatting over the compiler front end |
 | `editors/vscode/` | VS Code extension: TextMate grammar and client for `veles lsp` |
 | `docs/` | tutorials and reference; `go test ./docs/` runs every code block |
-| `examples/` | 26 programs with expected output; `go test ./...` compiles and runs them |
+| `examples/` | 27 programs with expected output; `go test ./...` compiles and runs them |
+
+`go test ./...` is the regression suite. The parser, formatter and checker also
+have native fuzz targets — `go test -fuzz=FuzzParse ./parser`, `-fuzz=FuzzFormat
+./format`, `-fuzz=FuzzCheck ./sema` — seeded with every program in the
+repository; inputs that once failed live under each package's `testdata/fuzz`
+and run with the ordinary tests.
 
 ## Spec coverage
 
@@ -58,7 +64,7 @@ coroutines; `await` only on primitives that always suspend (D16). D3/D34/D36/D38
 `scope` (fail-fast, cancellation at suspension points), `gather` (tuple of
 `Result<T, E | Panic>`), `race`, channels, timers. D4/D45 `throws` as
 `Result` sugar, `throw e`, inferred error unions, `error Name { }` declarations
-with `message()` dispatching on unions. D5 nesting `T?` with smart casts,
+with `message()` dispatching on unions, `r.ok`/`r.err` and `is Ok` smart casts to the payload. D5 nesting `T?` with smart casts,
 `?.`, `?:`. D6/D9/D17/D26/D53 traits, trait objects with vtables, global
 coherence, default bodies, the prelude operator traits (`Comparable`, `Equatable`,
 `Hashable`, `Display` replace structural ordering, equality, hashing and text; `Parsable` for parsing). D7/D10/D39 value structs, `&x` with heap
@@ -66,10 +72,10 @@ promotion, auto-deref. D8/D15 generics by stenciling. D11/D22 `val`/`var`,
 `mut fun`. D12/D13 sealed traits as inline tagged unions, `when` with
 destructuring, guards, exhaustiveness, methods on sealed traits dispatched
 by tag. D18/D19 byte-indexed UTF-8 strings. D20/D52 panics unwind to the
-task scope; `panic(msg)`. D21 checked/wrapping arithmetic. D23 methods in struct bodies,
+task scope; `panic(msg)`. D21 checked/wrapping arithmetic, bitwise operators. D23 methods in struct bodies,
 `impl` blocks (also inline in the body of your own types), `static fun`, `extend` blocks (the prelude adds the string, list and range methods in Veles). D25/D41 `List`/`Map`/`Set` with the immutable/mutable split,
 insertion-ordered maps, literals typed by context (`mut [...]` only for untyped ones), `xs.at(i)`. D27/D42/D46 associated types, `loop (x in c)`
-through `Iterable`, lazy adapters. D28 named arguments and defaults. D29
+through `Iterable`, lazy adapters. D28 named arguments, defaults and variadic parameters. D29
 ranges. D31 infinite-size diagnostic. D32/D33/D37 lambdas, `=>`, tuples
 with tupling conversion. D35/D54 `Sendable` derivation, `Mutex`/`Atomic`.
 D40 declared effects on trait methods and function types. D43/D47 `with`

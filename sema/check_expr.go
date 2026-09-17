@@ -90,6 +90,12 @@ func (f *fnCtx) convertAt(x Expr, want types.Type, span source.Span) Expr {
 		if st, ok := have.(*types.Struct); ok && st.Sealed == w {
 			return &MakeVariant{exprBase{want}, w, st, x}
 		}
+	case *types.List, *types.Map, *types.Set:
+		// D25: a mutable collection is usable as its immutable form (the
+		// same handle; the callee just cannot change it through this type)
+		if views := receiverViews(have); len(views) > 1 && types.Identical(views[1], want) {
+			return &Cast{exprBase{want}, x}
+		}
 	case *types.Trait:
 		// implicit boxing into a trait object (D9)
 		if _, isTrait := have.(*types.Trait); !isTrait && f.findImpl(have, w) != nil {
@@ -128,6 +134,9 @@ func (f *fnCtx) assignableTo(have, want types.Type) bool {
 	case *types.Sealed:
 		st, ok := have.(*types.Struct)
 		return ok && st.Sealed == w
+	case *types.List, *types.Map, *types.Set:
+		views := receiverViews(have)
+		return len(views) > 1 && types.Identical(views[1], want)
 	case *types.Trait:
 		if _, isTrait := have.(*types.Trait); isTrait {
 			return false
@@ -611,6 +620,11 @@ func (f *fnCtx) fieldOf(x Expr, name ast.Ident, span source.Span) Expr {
 		f.errorf(span, "value of type '%s' may be null; use '?.', '?:' or check for null first (D5)", tt)
 		return bad()
 	case *types.Sealed:
+		if v := resultTest(tt, name.Name); v != nil {
+			// `r.ok` / `r.err`: the tag test, spelled as a property; it smart-casts
+			// like `r is Ok` (condFacts reads it the same way)
+			return &VariantTest{exprBase{types.TBool}, x, v}
+		}
 		f.errorf(span, "'%s' is a sealed trait; match on its variants with 'when' before accessing '%s' (D13)", tt, name.Name)
 		return bad()
 	}
@@ -619,6 +633,22 @@ func (f *fnCtx) fieldOf(x Expr, name ast.Ident, span source.Span) Expr {
 	}
 	f.errorf(span, "type '%s' has no field '%s'", t, name.Name)
 	return bad()
+}
+
+// resultTest returns the variant `r.ok` or `r.err` tests on a Result, or
+// nil when t is not a Result or name is neither.
+func resultTest(t types.Type, name string) *types.Struct {
+	s, ok := t.(*types.Sealed)
+	if !ok || !isResultType(s) {
+		return nil
+	}
+	switch name {
+	case "ok":
+		return s.VariantByName("Ok")
+	case "err":
+		return s.VariantByName("Err")
+	}
+	return nil
 }
 
 func (f *fnCtx) indexExpr(e *ast.IndexExpr) Expr {
@@ -789,6 +819,15 @@ func (f *fnCtx) unaryExpr(e *ast.UnaryExpr, want types.Type) Expr {
 	case lexer.Bang:
 		x := f.checkExprTo(e.X, types.TBool)
 		return &Unary{exprBase{types.TBool}, OpNot, x, e.Pos}
+	case lexer.Tilde:
+		x := f.checkExpr(e.X, want)
+		if !types.IsInteger(x.Type()) {
+			if !types.IsInvalid(x.Type()) {
+				f.errorf(e.Pos, "'~' is only defined for integers, not '%s'", x.Type())
+			}
+			return bad()
+		}
+		return &Unary{exprBase{x.Type()}, OpBitNot, x, e.Pos}
 	case lexer.Amp:
 		// D10: address of a local (heap-promoted); D50: always a GC pointer.
 		// The address of a temporary boxes the value.
@@ -854,6 +893,11 @@ func (f *fnCtx) binaryExpr(e *ast.BinaryExpr, want types.Type) Expr {
 		return &Binary{exprBase{types.TBool}, op, l, r, e.Pos}
 	case OpEq, OpNe:
 		return f.equality(e, op)
+	case OpShl, OpShr:
+		// the count keeps its own integer type
+		l := f.checkExpr(e.L, want)
+		r := f.checkExpr(e.R, nil)
+		return f.makeBinary(op, l, r, e.Pos)
 	}
 	// Arithmetic and ordering: operands must share a type. Literals adapt
 	// to the other side.
@@ -892,6 +936,24 @@ func (f *fnCtx) makeBinary(op BinOp, l, r Expr, span source.Span) Expr {
 	case OpWrapAdd, OpWrapSub, OpWrapMul:
 		if !types.IsInteger(t) {
 			f.errorf(span, "wrapping operator '%s' is only defined for integers (D21)", op)
+			return bad()
+		}
+		return &Binary{exprBase{t}, op, l, r, span}
+	case OpBitAnd, OpBitOr, OpBitXor:
+		if !types.IsInteger(t) {
+			f.errorf(span, "operator '%s' is only defined for integers, not '%s'", op, t)
+			return bad()
+		}
+		return &Binary{exprBase{t}, op, l, r, span}
+	case OpShl, OpShr:
+		// the count may be any integer type; a count at or beyond the width
+		// shifts everything out (Go's rule, no undefined behaviour)
+		if !types.IsInteger(t) {
+			f.errorf(span, "operator '%s' is only defined for integers, not '%s'", op, t)
+			return bad()
+		}
+		if !types.IsInteger(r.Type()) {
+			f.errorf(span, "a shift count must be an integer, not '%s'", r.Type())
 			return bad()
 		}
 		return &Binary{exprBase{t}, op, l, r, span}
@@ -1062,7 +1124,7 @@ func (f *fnCtx) listLit(e *ast.ListLit, want types.Type) Expr {
 		elem = lt.Elem
 		mutable = lt.Mutable
 		if e.Mut && mutable {
-			f.warnf(e.Pos, "redundant 'mut': the expected type '%s' already makes the literal mutable", lt)
+			f.warnFix(e.Pos, fixDropMut(e.Pos), "redundant 'mut': the expected type '%s' already makes the literal mutable", lt)
 		}
 	}
 	if e.Mut {
@@ -1095,7 +1157,7 @@ func (f *fnCtx) listLit(e *ast.ListLit, want types.Type) Expr {
 // `val s: Set<i64> = [1, 2]` becomes `{ val tmp = MutableSet(); tmp.add(1); ...; tmp }`.
 func (f *fnCtx) setLit(e *ast.ListLit, st *types.Set) Expr {
 	if e.Mut && st.Mutable {
-		f.warnf(e.Pos, "redundant 'mut': the expected type '%s' already makes the literal mutable", st)
+		f.warnFix(e.Pos, fixDropMut(e.Pos), "redundant 'mut': the expected type '%s' already makes the literal mutable", st)
 	}
 	if !f.c.checkHashable(st.Elem, e.Pos) {
 		return bad()
@@ -1382,6 +1444,22 @@ func (f *fnCtx) condFacts(cond ast.Expr, checked Expr) (whenTrue, whenFalse fact
 			t, fl := f.condFacts(c.X, nil)
 			return fl, t
 		}
+	case *ast.MemberExpr:
+		// `r.ok` / `r.err` narrow like `r is Ok` / `r is Err`
+		if c.Safe {
+			return
+		}
+		v, ok := f.placeOf(c.X)
+		if !ok {
+			return
+		}
+		from := f.currentTypeOf(v)
+		target := resultTest(from, c.Name.Name)
+		if target == nil {
+			return
+		}
+		whenTrue[v] = target
+		whenFalse[v] = from.(*types.Sealed).Variants[1-target.Tag]
 	case *ast.IsExpr:
 		v, ok := f.placeOf(c.X)
 		if !ok {

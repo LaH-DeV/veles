@@ -69,7 +69,7 @@ var builtinDocs = []BuiltinDoc{
 	{"List", "sorted", "(): List<T>", "A sorted copy (elements must be `Ord`)."},
 	{"List", "sortedBy", "<K>(key: fun(T): K): List<T>", "A copy sorted by `key(x)`."},
 	{"List", "reversed", "(): List<T>", "A reversed copy."},
-	{"List", "joinToString", "(sep: string): string", "The elements rendered and joined with `sep`."},
+	{"List", "join", "(sep: string): string", "The elements rendered and joined with `sep`."},
 	{"List", "iter", "(): Iterator<T>", "A lazy iterator over the elements (D46)."},
 	{"List", "toList", "(): List<T>", "An immutable copy."},
 	{"List", "toMutable", "(): MutableList<T>", "A mutable copy."},

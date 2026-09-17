@@ -6,18 +6,19 @@ sealed trait Shape {
 }
 struct Circle : Shape {
   r: f64
+
+  impl Shape {
+    fun area(): f64 = 3.0 * self.r * self.r
+    override fun describe(): string = "circle r=${self.r}"
+  }
 }
 struct Rect : Shape {
   w: f64
   h: f64
-}
 
-impl Shape for Circle {
-  fun area(): f64 = 3.0 * self.r * self.r
-  override fun describe(): string = "circle r=${self.r}"
-}
-impl Shape for Rect {
-  fun area(): f64 = self.w * self.h
+  impl Shape {
+    fun area(): f64 = self.w * self.h
+  }
 }
 
 fun main() {

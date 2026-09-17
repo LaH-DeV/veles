@@ -61,13 +61,15 @@ pub struct Output {
 }
 
 /// Runs `program` with `args`, waits for it, and captures its standard
-/// output (standard error passes through). Throws when the program cannot
-/// be started; a non-zero exit is reported in `Output.code`, not thrown.
-pub fun run(program: string, args: List<string> = []): Output throws IoError {
+/// output; standard error passes through, or is captured into the same
+/// text with `mergeStderr`. Throws when the program cannot be started; a
+/// non-zero exit is reported in `Output.code`, not thrown.
+pub fun run(program: string, args: List<string> = [], mergeStderr: bool = false): Output throws IoError {
   var cmd = quote(program)
   loop (a in args) {
     cmd = cmd + " " + quote(a)
   }
+  if (mergeStderr) cmd = cmd + " 2>&1"
   var out = ""
   var err: i64 = 0
   val code = unsafe {

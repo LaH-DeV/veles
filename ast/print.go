@@ -280,6 +280,9 @@ func (p *printer) fun(d *FunDecl) {
 		if prm.Type != nil {
 			p.w(": ")
 			p.typ(prm.Type)
+			if prm.Variadic {
+				p.w("...")
+			}
 		}
 		if prm.Default != nil {
 			p.w(" = ")
@@ -499,6 +502,9 @@ func (p *printer) args(args []Arg) {
 			p.w(a.Name.Name + ": ")
 		}
 		p.expr(a.Value)
+		if a.Spread {
+			p.w("...")
+		}
 	}
 }
 
@@ -669,6 +675,9 @@ func (p *printer) expr(e Expr) {
 		p.open("when")
 		if e.Subject != nil {
 			p.w(" ")
+			if e.Bind != nil {
+				p.w("val " + e.Bind.Name + " = ")
+			}
 			p.expr(e.Subject)
 		}
 		for _, arm := range e.Arms {

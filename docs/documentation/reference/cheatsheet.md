@@ -48,6 +48,7 @@ val (a, b) = (1, "one")         // tuple destructuring
 | | |
 |---|---|
 | arithmetic | `+ - * / %` (checked, D21); wrapping `+% -% *%` |
+| bitwise | `& \| ^ << >> ~` on integers; `&` and shifts bind like `*`, `\|` `^` like `+` |
 | comparison | `== != < <= > >=` |
 | logic | `&& \|\| !` |
 | conversion | `x as T` (numeric only) |
@@ -71,7 +72,7 @@ when (v) { 1 => "one"; 2, 3 => "few"; else => "many" }
 when { x < 0 => "neg"; else => "pos" }
 when (shape) { is Circle(r) => ...; is Rect(w, h) if w > h => ...; is Point => ... }
 when (opt) { Some(x) => ...; null => ... }
-when (res) { is Ok(v) => ...; is Err(e) => ... }
+when (val r = res) { is Ok => r; is Err => r.message() }   // r is the payload in each arm; Ok(v) / Err(e) also work
 return v; break; continue; throw e; panic("msg")   // panic never returns (D20)
 ```
 
@@ -81,6 +82,7 @@ return v; break; continue; throw e; panic("msg")   // panic never returns (D20)
 // fragment
 fun add(a: i64, b: i64): i64 = a + b                // expression body
 fun greet(name: string, punct: string = "!") { }    // default; call greet("x", punct: "?")
+fun sum(xs: i64...): i64 = xs.fold(0, (a, b) => a + b)  // variadic: sum(1, 2), sum(list...)
 fun <T: Show> show(x: T): string = x.show()         // generic with bound
 fun fetch(url: string): string suspends throws E    // effects (inferred for free functions)
 val f = x => x * 2                                  // lambda; (a, b) => ..., (x: i64) => ...
@@ -143,11 +145,11 @@ error GetErrors = NotFound | Invalid | Failed             // a named error set (
 error Wrapped { cause: GetErrors }                      // an error's field may hold a set
 fun get(k: string): string throws NotFound = if (k == "a") "A" else throw NotFound(key: k)
 fun getAll(): string throws = try get("a") + try get("b")   // error type inferred: NotFound
-when (get("z")) { is Ok(v) => ...; is Err(e) => ... }        // caller sees Result
+when (val r = get("z")) { is Ok => r; is Err => r.key }    // caller sees Result; r is the payload per arm
 val r: Result<i64, NotFound> = Ok(1)
 ```
 
-Unused `Result` is an error. `try` needs an enclosing `throws`. `if (r is Ok)`
+Unused `Result` is an error. `try` needs an enclosing `throws`. `if (r.ok)` (or `r is Ok`)
 smart-casts `r` to the payload; `r.message()` works on any error or error union.
 
 ## Collections
@@ -204,7 +206,7 @@ val n = unsafe { strlen(p) }                  // C calls and raw pointers need u
 use fs; use path; use os
 val text = try fs.readFile(p); try fs.writeFile(p, text); try fs.appendFile(p, "x")
 fs.exists(p); fs.isFile(p); fs.isDir(p); try fs.listDir(d); try fs.mkdir(d); try fs.remove(p); try fs.rename(a, b)
-path.join(a, b); path.joinAll([a, b, c]); path.dir(p); path.base(p); path.stem(p); path.ext(p); path.isAbsolute(p)
+path.join(a, b, c); path.join(parts...); path.dir(p); path.base(p); path.stem(p); path.ext(p); path.isAbsolute(p)
 os.args(); os.env("HOME"); os.exit(1); val r = try os.run("clang", ["--version"]); r.code; r.stdout; r.ok()
 val sb = stringBuilder(); sb.append("a"); sb.appendLine("b"); sb.toString()   // linear-time building
 ```

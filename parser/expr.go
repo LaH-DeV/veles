@@ -16,8 +16,8 @@ const (
 	bpNamed // is, !is
 	bpElvis // ?:
 	bpRange // .. ..<
-	bpAdd   // + - +% -%
-	bpMul   // * / % *%
+	bpAdd   // + - +% -% | ^
+	bpMul   // * / % *% & << >>
 	bpCast  // as
 	bpUnary // prefix
 )
@@ -38,10 +38,10 @@ func infixBp(k lexer.TokenKind) int {
 		return bpElvis
 	case lexer.Range, lexer.RangeLt:
 		return bpRange
-	case lexer.Plus, lexer.Minus, lexer.WrapPlus, lexer.WrapMinus:
-		return bpAdd
-	case lexer.Star, lexer.Slash, lexer.Percent, lexer.WrapStar:
-		return bpMul
+	case lexer.Plus, lexer.Minus, lexer.WrapPlus, lexer.WrapMinus, lexer.Pipe, lexer.Caret:
+		return bpAdd // Go's grouping: | and ^ sit with + and -
+	case lexer.Star, lexer.Slash, lexer.Percent, lexer.WrapStar, lexer.Amp, lexer.Shl, lexer.Shr:
+		return bpMul // and &, <<, >> with *, /, %
 	case lexer.KwAs:
 		return bpCast
 	}
@@ -98,7 +98,7 @@ func (p *Parser) parseBinary(minBp int) ast.Expr {
 func (p *Parser) parseUnary() ast.Expr {
 	start := p.span()
 	switch p.cur().Kind {
-	case lexer.Minus, lexer.Bang, lexer.Amp, lexer.Star:
+	case lexer.Minus, lexer.Bang, lexer.Amp, lexer.Star, lexer.Tilde:
 		op := p.next().Kind
 		x := p.parseUnary()
 		return &ast.UnaryExpr{Op: op, X: x, Pos: p.spanFrom(start)}
@@ -136,6 +136,11 @@ func (p *Parser) parsePostfix() ast.Expr {
 			if p.at(lexer.Int) {
 				// tuple index: `pair.0`
 				t := p.next()
+				switch x.(type) {
+				case *ast.IntLit, *ast.FloatLit:
+					// `0 .0` would print back as the float `0.0`
+					p.errorf(t.Span, "a number has no tuple elements")
+				}
 				name = ast.Ident{Name: t.Text, Pos: t.Span}
 			} else {
 				name, _ = p.expectIdent()
@@ -213,6 +218,9 @@ func (p *Parser) parseArgs() []ast.Arg {
 			arg.Name = &ast.Ident{Name: t.Text, Pos: t.Span}
 		}
 		arg.Value = p.parseExpr()
+		if p.accept(lexer.Ellipsis) {
+			arg.Spread = true // `f(xs...)`: a list passed as the variadic parameter
+		}
 		args = append(args, arg)
 		if _, bad := arg.Value.(*ast.BadExpr); bad {
 			p.syncParen()
@@ -521,6 +529,13 @@ func (p *Parser) parseWhen() ast.Expr {
 	p.next() // when
 	w := &ast.WhenExpr{}
 	if p.accept(lexer.LParen) {
+		if p.at(lexer.KwVal) && p.peek(1).Kind == lexer.Ident && p.peek(2).Kind == lexer.Assign {
+			// `when (val r = expr)`: the subject gets a name the arms can use
+			p.next()
+			name, _ := p.expectIdent()
+			w.Bind = &name
+			p.next() // =
+		}
 		w.Subject = p.parseExpr()
 		p.expect(lexer.RParen)
 	}

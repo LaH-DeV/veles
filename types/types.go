@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync/atomic"
 )
 
 type Type interface {
@@ -193,6 +194,7 @@ type Param struct {
 	Name       string
 	Type       Type
 	HasDefault bool
+	Variadic   bool // Type is the List<T> the trailing arguments are collected into
 }
 
 // Func is a function signature.
@@ -381,6 +383,9 @@ type Trait struct {
 	Methods     map[string]*Func
 	MethodList  []string
 	Decl        any
+	// SelfParam is the synthetic type parameter standing for Self in the
+	// trait's default bodies (created by the checker on first use).
+	SelfParam *TypeParam
 }
 
 func (t *Trait) String() string { return t.Name }
@@ -481,10 +486,25 @@ func Identical(a, b Type) bool {
 	return false
 }
 
+// Hooks are the checker's callbacks Subst needs to re-instantiate generic
+// structs and sealed types and to resolve associated-type projections once
+// their base is concrete. Each checker owns one, so checkers may run
+// concurrently (a test suite, a language server).
+type Hooks struct {
+	StructInstantiator func(tmpl *Struct, args []Type) Type
+	SealedInstantiator func(tmpl *Sealed, args []Type) Type
+	// AssocResolver looks up the binding of an associated type for a
+	// concrete implementing type; nil when there is no impl.
+	AssocResolver func(base Type, trait *Trait, name string) Type
+}
+
 // Subst replaces type parameters in t according to the mapping.
-func Subst(t Type, m map[*TypeParam]Type) Type {
+func (h *Hooks) Subst(t Type, m map[*TypeParam]Type) Type {
 	if len(m) == 0 || t == nil {
 		return t
+	}
+	if h == nil {
+		h = &Hooks{}
 	}
 	switch t := t.(type) {
 	case *TypeParam:
@@ -493,64 +513,64 @@ func Subst(t Type, m map[*TypeParam]Type) Type {
 		}
 		return t
 	case *Assoc:
-		base := Subst(t.Base, m)
+		base := h.Subst(t.Base, m)
 		if base == t.Base {
-			return ResolveAssoc(t)
+			return h.ResolveAssoc(t)
 		}
-		return ResolveAssoc(&Assoc{Base: base, Trait: t.Trait, Name: t.Name})
+		return h.ResolveAssoc(&Assoc{Base: base, Trait: t.Trait, Name: t.Name})
 	case *Pointer:
-		return &Pointer{Elem: Subst(t.Elem, m), Raw: t.Raw}
+		return &Pointer{Elem: h.Subst(t.Elem, m), Raw: t.Raw}
 	case *Nullable:
-		return &Nullable{Elem: Subst(t.Elem, m)}
+		return &Nullable{Elem: h.Subst(t.Elem, m)}
 	case *Tuple:
 		out := make([]Type, len(t.Elems))
 		for i, e := range t.Elems {
-			out[i] = Subst(e, m)
+			out[i] = h.Subst(e, m)
 		}
 		return &Tuple{Elems: out}
 	case *Range:
-		return &Range{Elem: Subst(t.Elem, m)}
+		return &Range{Elem: h.Subst(t.Elem, m)}
 	case *List:
-		return &List{Elem: Subst(t.Elem, m), Mutable: t.Mutable}
+		return &List{Elem: h.Subst(t.Elem, m), Mutable: t.Mutable}
 	case *Map:
-		return &Map{Key: Subst(t.Key, m), Value: Subst(t.Value, m), Mutable: t.Mutable}
+		return &Map{Key: h.Subst(t.Key, m), Value: h.Subst(t.Value, m), Mutable: t.Mutable}
 	case *Set:
-		return &Set{Elem: Subst(t.Elem, m), Mutable: t.Mutable}
+		return &Set{Elem: h.Subst(t.Elem, m), Mutable: t.Mutable}
 	case *Channel:
-		return &Channel{Elem: Subst(t.Elem, m)}
+		return &Channel{Elem: h.Subst(t.Elem, m)}
 	case *Task:
-		return &Task{Result: Subst(t.Result, m)}
+		return &Task{Result: h.Subst(t.Result, m)}
 	case *Func:
-		out := &Func{Ret: Subst(t.Ret, m), Effects: t.Effects}
-		out.Effects.Error = Subst(t.Effects.Error, m)
+		out := &Func{Ret: h.Subst(t.Ret, m), Effects: t.Effects}
+		out.Effects.Error = h.Subst(t.Effects.Error, m)
 		for _, p := range t.Params {
-			out.Params = append(out.Params, Param{Name: p.Name, Type: Subst(p.Type, m), HasDefault: p.HasDefault})
+			out.Params = append(out.Params, Param{Name: p.Name, Type: h.Subst(p.Type, m), HasDefault: p.HasDefault, Variadic: p.Variadic})
 		}
 		return out
 	case *ErrorUnion:
 		members := make([]Type, len(t.Members))
 		for i, e := range t.Members {
-			members[i] = Subst(e, m)
+			members[i] = h.Subst(e, m)
 		}
 		return MakeErrorUnion(members...)
 	case *Struct:
-		if len(t.TypeArgs) > 0 && StructInstantiator != nil {
-			if args, changed := substArgs(t.TypeArgs, m); changed {
+		if len(t.TypeArgs) > 0 && h.StructInstantiator != nil {
+			if args, changed := h.substArgs(t.TypeArgs, m); changed {
 				tmpl := t
 				if t.Template != nil {
 					tmpl = t.Template
 				}
-				return StructInstantiator(tmpl, args)
+				return h.StructInstantiator(tmpl, args)
 			}
 		}
 	case *Sealed:
-		if len(t.TypeArgs) > 0 && SealedInstantiator != nil {
-			if args, changed := substArgs(t.TypeArgs, m); changed {
+		if len(t.TypeArgs) > 0 && h.SealedInstantiator != nil {
+			if args, changed := h.substArgs(t.TypeArgs, m); changed {
 				tmpl := t
 				if t.Template != nil {
 					tmpl = t.Template
 				}
-				return SealedInstantiator(tmpl, args)
+				return h.SealedInstantiator(tmpl, args)
 			}
 		}
 	}
@@ -617,7 +637,9 @@ func ContainsTypeParam(t Type) bool {
 	return false
 }
 
-var nextParamID int
+// nextParamID numbers type parameters for Key; atomic, since several checkers
+// (a test suite, a language server) may run at once.
+var nextParamID atomic.Int64
 
 // Key returns a canonical string for use as a map key. Unlike String, it
 // distinguishes type parameters that merely share a name.
@@ -627,8 +649,7 @@ func Key(t Type) string {
 		return "<nil>"
 	case *TypeParam:
 		if t.id == 0 {
-			nextParamID++
-			t.id = nextParamID
+			t.id = int(nextParamID.Add(1))
 		}
 		return fmt.Sprintf("%s#%d", t.Name, t.id)
 	case *Assoc:
@@ -691,18 +712,11 @@ func keys(ts []Type) string {
 	return strings.Join(parts, ",")
 }
 
-// Instantiators are installed by the checker so that Subst can re-apply
-// type arguments to generic struct and sealed instances.
-var (
-	StructInstantiator func(tmpl *Struct, args []Type) Type
-	SealedInstantiator func(tmpl *Sealed, args []Type) Type
-)
-
-func substArgs(args []Type, m map[*TypeParam]Type) ([]Type, bool) {
+func (h *Hooks) substArgs(args []Type, m map[*TypeParam]Type) ([]Type, bool) {
 	changed := false
 	out := make([]Type, len(args))
 	for i, a := range args {
-		out[i] = Subst(a, m)
+		out[i] = h.Subst(a, m)
 		if out[i] != a {
 			changed = true
 		}
@@ -721,16 +735,12 @@ type Assoc struct {
 
 func (a *Assoc) String() string { return a.Base.String() + "::" + a.Name }
 
-// AssocResolver looks up the binding of an associated type for a concrete
-// implementing type; nil when there is no impl.
-var AssocResolver func(base Type, trait *Trait, name string) Type
-
 // ResolveAssoc resolves a projection whose base is concrete.
-func ResolveAssoc(a *Assoc) Type {
-	if _, bare := a.Base.(*TypeParam); bare || AssocResolver == nil {
+func (h *Hooks) ResolveAssoc(a *Assoc) Type {
+	if _, bare := a.Base.(*TypeParam); bare || h == nil || h.AssocResolver == nil {
 		return a
 	}
-	if r := AssocResolver(a.Base, a.Trait, a.Name); r != nil {
+	if r := h.AssocResolver(a.Base, a.Trait, a.Name); r != nil {
 		return r
 	}
 	return a

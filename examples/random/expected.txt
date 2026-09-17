@@ -1,0 +1,6 @@
+dice [6, 5, 1, 1, 1]
+shuffled [J, 10, Q, A, K], pick A
+float 0.966 coin false
+own generators agree: true
+2 11 245 245 160 5 -4 11111111
+exit=0

@@ -16,7 +16,7 @@ fun main() throws IoError {
   loop (i in 1..3) {
     report.appendLine("line $i")
   }
-  val file = path.joinAll([root, "notes", "report.md"])
+  val file = path.join(root, "notes", "report.md")
   try fs.writeFile(file, report.toString())
   try fs.appendFile(file, "done\n")
 
@@ -28,9 +28,9 @@ fun main() throws IoError {
   io.println("${path.base(file)} ${path.ext(file)} ${path.stem(file)} ${path.base(path.dir(file))}")
   io.println("${path.join("a", "b/c")} ${path.join("a/", "b")} ${path.join("a", "/abs")} ${path.isAbsolute("C:\\x")}")
 
-  try fs.writeFile(path.joinAll([root, "notes", "a.txt"]), "")
+  try fs.writeFile(path.join(root, "notes", "a.txt"), "")
   io.println("listed: ${try fs.listDir(path.join(root, "notes"))}")
-  try fs.rename(path.joinAll([root, "notes", "a.txt"]), path.joinAll([root, "notes", "z.txt"]))
+  try fs.rename(path.join(root, "notes", "a.txt"), path.join(root, "notes", "z.txt"))
   io.println("renamed: ${try fs.listDir(path.join(root, "notes"))}")
 
   // errors carry the path and the system's description
@@ -41,7 +41,7 @@ fun main() throws IoError {
 
   // clean up: files first, then the directories
   loop (name in try fs.listDir(path.join(root, "notes"))) {
-    try fs.remove(path.joinAll([root, "notes", name]))
+    try fs.remove(path.join(root, "notes", name))
   }
   try fs.remove(path.join(root, "notes"))
   try fs.remove(root)

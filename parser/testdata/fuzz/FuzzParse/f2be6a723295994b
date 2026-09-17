@@ -1,0 +1,2 @@
+go test fuzz v1
+string("use io\r\n\r\nfun square(x: i64): i64 {\r\n  return x * x\r\n}\r\n\r\nfun cube(x: i64): i64 = x * x * x      // expression body\r\n\r\nfun greet(name: string, punctuation: string = \"!\") {\r\n  io.println(\"Hello, $name$penctuation\")\r\n}\r\n\r\nfun main() {\r\n  io.println(\"${square(4)\x86 ${cube(3)}\")\r\n  greet(\"Ada\")\r\n  greet(\"Bob\", punctuation: \">\")\r\n  greet(punctuation: \".\", name: \"Cy\")\r\n}\r\n")

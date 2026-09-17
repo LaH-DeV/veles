@@ -21,7 +21,7 @@ func (c *Checker) lintInlinableImpl(m *Module, f *ast.File, d *ast.ImplDecl, imp
 		return // embedded std: not the user's code to fix
 	}
 	st, ok := impl.Target.(*types.Struct)
-	if !ok || st.Sealed != nil {
+	if !ok {
 		return
 	}
 	tmpl := templateOf(st)

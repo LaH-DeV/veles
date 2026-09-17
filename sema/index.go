@@ -439,7 +439,11 @@ func funDetail(t *FuncTemplate) string {
 			if p.Name != "" {
 				sb.WriteString(p.Name + ": ")
 			}
-			sb.WriteString(p.Type.String())
+			if lt, ok := p.Type.(*types.List); ok && p.Variadic {
+				sb.WriteString(lt.Elem.String() + "...")
+			} else {
+				sb.WriteString(p.Type.String())
+			}
 			if p.HasDefault {
 				sb.WriteString(" = ...")
 			}

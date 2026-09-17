@@ -158,10 +158,11 @@ type TypeParam struct {
 }
 
 type Param struct {
-	Name    Ident
-	Type    Type
-	Default Expr
-	Pos     source.Span
+	Name     Ident
+	Type     Type
+	Default  Expr
+	Variadic bool // `name: T...` — the last parameter takes any number of arguments (a List<T> inside)
+	Pos      source.Span
 }
 
 // FunDecl is a free function, an inherent method, a trait method
@@ -521,8 +522,9 @@ type IndexExpr struct {
 
 // Arg is a call argument, optionally named (D28).
 type Arg struct {
-	Name  *Ident
-	Value Expr
+	Name   *Ident
+	Value  Expr
+	Spread bool // `xs...`: the list is the whole variadic argument
 }
 
 // CallExpr is `f(args)`, `Type<T>(args)`, or `async f(args)`.
@@ -604,6 +606,7 @@ type IfExpr struct {
 // WhenExpr is `when (subject) { arms }` or the subjectless `when { }` (D13).
 type WhenExpr struct {
 	Subject Expr
+	Bind    *Ident // `when (val r = subject)`: a name for the subject, scoped to the arms
 	Arms    []*WhenArm
 	Pos     source.Span
 }

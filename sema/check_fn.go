@@ -63,7 +63,7 @@ func (f *fnCtx) errorf(span source.Span, format string, args ...any) {
 // resolve turns a syntactic type into a concrete type in this function.
 func (f *fnCtx) resolve(t ast.Type) types.Type {
 	rt := f.c.resolveType(f.env, t)
-	return types.Subst(rt, f.subst)
+	return f.c.hooks.Subst(rt, f.subst)
 }
 
 func (f *fnCtx) newVar(name string, t types.Type, mutable bool, span source.Span) *Var {
@@ -139,7 +139,7 @@ func (f *fnCtx) reportUnused() {
 		if isResultType(v.Type) {
 			f.errorf(v.Span, "unused Result '%s': the call may fail; use 'try' to propagate the error or 'when' to handle it (D4)", v.Name)
 		} else if !types.IsInvalid(v.Type) {
-			f.warnf(v.Span, "'%s' is never used", v.Name)
+			f.warnFix(v.Span, fixReplace("Rename to '_' (discard)", v.Span, "_"), "'%s' is never used", v.Name)
 		}
 	}
 }
@@ -171,7 +171,7 @@ func (c *Checker) checkBody(fn *Func) {
 		for _, tp := range t.Impl.TypeParams {
 			env.tps[tp.Name] = tp
 		}
-		owner = types.Subst(t.Impl.Target, fn.subst)
+		owner = c.hooks.Subst(t.Impl.Target, fn.subst)
 	}
 	if t.Trait != nil {
 		for k, v := range c.traitDecl[t.Trait].tps {
@@ -256,17 +256,13 @@ func (c *Checker) checkBody(fn *Func) {
 	}
 }
 
-// selfParamOf returns a synthetic type parameter standing for Self in a
-// trait default method template.
-var selfParams = map[*types.Trait]*types.TypeParam{}
-
+// selfParamOf returns the synthetic type parameter standing for Self in a
+// trait default method template, kept on the trait itself.
 func selfParamOf(t *types.Trait) *types.TypeParam {
-	if p, ok := selfParams[t]; ok {
-		return p
+	if t.SelfParam == nil {
+		t.SelfParam = &types.TypeParam{Name: "Self", Owner: t.Name}
 	}
-	p := &types.TypeParam{Name: "Self", Owner: t.Name}
-	selfParams[t] = p
-	return p
+	return t.SelfParam
 }
 
 // ---------------------------------------------------------------------------
@@ -726,10 +722,8 @@ func (f *fnCtx) lookupField(st *types.Struct, name string, span source.Span) *ty
 }
 
 // globalVar returns the Var standing for a module-level binding.
-var globalVars = map[*Global]*Var{}
-
 func (f *fnCtx) globalVar(g *Global) *Var {
-	if v, ok := globalVars[g]; ok {
+	if v, ok := f.c.globalVars[g]; ok {
 		if v.Type == nil || types.IsInvalid(v.Type) {
 			v.Type = g.Type
 		}
@@ -743,7 +737,7 @@ func (f *fnCtx) globalVar(g *Global) *Var {
 		}
 	}
 	v := &Var{Name: g.Display, Type: g.Type, Mutable: g.Mutable, IsGlobal: true, Global: g, Span: g.Span}
-	globalVars[g] = v
+	f.c.globalVars[g] = v
 	return v
 }
 

@@ -217,3 +217,48 @@ P3 progress (2026-09-17):
      `veles check --fix` applies in bulk, then formats). Silent for foreign types, other modules,
      extra bounds, specific instances, `error` decls, embedded std. std/examples/docs dogfooded.
      Infrastructure is generic: any future lint can attach a Fix.
+   - DONE #5 (2026-09-17): `r.ok` / `r.err` on a Result = `r is Ok` / `r is Err` (VariantTest),
+     smart-casting the same way; `when (val r = expr) { is Ok => r ... }` binds the subject
+     (WhenExpr.Bind). Docs teach `.ok` and `when (val ...)`; `Ok(v)` patterns still work.
+   - DONE `join` only (joinToString removed; the Go-lowered adapter is now `join`).
+   - DONE variadics: `name: T...` last parameter (List<T> inside), trailing positionals collected,
+     `xs...` spreads a list, named `f(parts: xs)` passes it whole. Spec D28 amended. `path.join`
+     is variadic (`joinAll` gone). Not supported: `...` in function types / lambdas; no
+     implicit single-list pass (a lone list is an element — use `xs...`).
+   - Added `List.concat(other)` to the prelude (there was no way to append two lists).
+   - OPEN #4: `type Error` default on traits.
+
+P8. DONE (2026-09-17) — std gaps: fs.readBytes/writeBytes/appendBytes (List<u8> crosses the C
+   ABI as the runtime list pointer, std only; readFile now rejects non-UTF-8 with EILSEQ),
+   io.readAll, os.run(mergeStderr:), std/time (now, monotonic, monotonicNanos, utc/local →
+   DateTime, Stopwatch.start()), std/random (xoshiro256**: seed/range/float/boolean/pick/
+   shuffle/nextU64, Rng.seeded), number formatting as methods (f64.toFixed, i64/u64
+   .toString(radix:)). Found on the way and fixed:
+   - no bitwise operators existed → added `& | ^ << >> ~` (Go grouping, safe large shifts,
+     spec D21 amended); `>>` is split when it closes nested type lists.
+   - parser hang: syncStmt returned without consuming a stray `)`/`]` at depth 0 (infinite
+     recovery loop on `(b & 1)` inside an unclosed struct). Fixed.
+   - MutableList<T> did not pass where List<T> was expected, nor bind T in generic inference
+     (D25 said it should) → coerce/assignableTo/inference use receiverViews.
+   - `module.Type.static()` call form (was NameExpr-only).
+   - u64 literals above i64 max need a typed binding (`const K: u64 = ...`); `as u64` does not
+     retype a literal. A function named like a type (`fun f64()`) shadows the type in its module.
+   Left: os.run with stdin / separate stderr (needs real process spawning), directory walking.
+
+P9. DONE (2026-09-17) — fuzzing + more quick fixes (no CI, per user).
+   - Go fuzz targets: parser/FuzzParse, format/FuzzFormat (round trip + idempotence),
+     sema/FuzzCheck (raw bytes) and sema/FuzzCheckMutated (token-level edits of the examples:
+     ~50% still parse, so the checker is what gets exercised). Failing inputs are kept under
+     each package's testdata/fuzz and run with `go test`. Also sema/TestCheckEveryPrefix
+     (every line-prefix of every example, in parallel) and a `-race` run of the front end.
+   - Bugs found and fixed: lexer overrun on an unterminated `${` with a nested string; four
+     formatter defects (operator moved to the next line after an author's break-after, comment
+     in an empty body glued to `{`, comment at a chain break dumped twice on one line,
+     `(0,)` broken tuple double comma, `0 .0` reprinted as a float); `fun<>` empty type lists;
+     D31 infinite-size check recursed forever on a cycle not through the target; three pieces
+     of package-global checker state (selfParams, globalVars, the types.Subst hooks) made
+     per-checker — concurrent checks (tests, a future multi-threaded LSP) were unsound; the
+     TypeParam id counter is atomic now.
+   - Quick fixes added: redundant `mut` (removed), unused binding (renamed `_`), unreachable
+     `else` on a sealed subject (removed); the inline-impl lint now covers sealed variants too.
+     driver/TestCheckFix pins the `--fix` output.

@@ -265,6 +265,12 @@ Each is a single machine instruction (an LLVM intrinsic), not a runtime call.
 | `wrappingAdd/Sub/Mul(y)`, `saturatingAdd/Sub(y)` | every integer type | same type — the overflow policies other than the default panic (D21) |
 | `checkedAdd/Sub/Mul(y)` | every integer type | `T?`: `null` on overflow |
 | `countOnes()`, `leadingZeros()`, `trailingZeros()` | every integer type | same type |
+| `toString(radix: i64 = 10)` | `i64`, `u64` | `string`; digits `0-9a-z`, radix 2 to 36 |
+| `toFixed(digits)` | `f64`, `f32` | `string` with exactly that many decimals, rounded |
+
+The bitwise operators `&`, `|`, `^`, `<<`, `>>` and `~` work on every integer
+type; `&`, `<<`, `>>` bind like `*`, `|` and `^` like `+` (Go's grouping), and a
+shift count at or beyond the width gives 0 (or the sign fill for a signed `>>`).
 
 `f64` is an IEEE 754 double, so `NaN` and the infinities are ordinary values
 of the type: `0.0 / 0.0`, `inf - inf` and `(-1.0).sqrt()` produce `NaN`, and it
@@ -285,6 +291,7 @@ io.println(s: string)
 io.print(s: string)
 io.eprintln(s: string)           // standard error
 io.readLine(): string?           // null at end of input
+io.readAll(): string             // the rest of standard input
 ```
 
 ## Module `os`
@@ -296,7 +303,7 @@ os.args(): List<string>                          // arguments, without the progr
 os.program(): string                             // the program as invoked
 os.env(name: string): string?                    // null when unset
 os.exit(code: i64)                               // flushes output, ends the process
-os.run(program: string, args: List<string> = []): Output throws IoError
+os.run(program: string, args: List<string> = [], mergeStderr: bool = false): Output throws IoError
 // Output { code: i64, stdout: string, fun ok(): bool }
 os.ioError(code: i64, path: string): IoError     // an IoError for a platform error number
 ```
@@ -312,7 +319,10 @@ Every call that can fail throws `IoError` (below).
 ```veles
 // fragment
 use fs
-fs.readFile(path: string): string throws IoError
+fs.readFile(path: string): string throws IoError           // must be UTF-8
+fs.readBytes(path: string): List<u8> throws IoError
+fs.writeBytes(path: string, bytes: List<u8>) throws IoError
+fs.appendBytes(path: string, bytes: List<u8>) throws IoError
 fs.writeFile(path: string, text: string) throws IoError    // replaces
 fs.appendFile(path: string, text: string) throws IoError   // creates when missing
 fs.exists(path: string): bool
@@ -333,8 +343,7 @@ input, output uses `/`.
 ```veles
 // fragment
 use path
-path.join(a: string, b: string): string          // "a/b"; an absolute b wins
-path.joinAll(parts: List<string>): string
+path.join(parts: string...): string              // "a/b/c"; an absolute part starts over; join(xs...) for a list
 path.dir(p: string): string                      // "a/b.vs" -> "a"; "" when no separator
 path.base(p: string): string                     // "a/b.vs" -> "b.vs"
 path.ext(p: string): string                      // ".vs" or ""
@@ -342,10 +351,42 @@ path.stem(p: string): string                     // "b"
 path.isAbsolute(p: string): bool                 // "/x", "C:\x", "C:/x"
 ```
 
+## Module `time`
+
+```veles
+// fragment
+use time
+time.now(): i64                       // milliseconds since 1970-01-01T00:00:00Z
+time.monotonic(): i64                 // milliseconds on a monotonic clock, for differences
+time.monotonicNanos(): i64
+time.utc(ms: i64): DateTime           // year month day hour minute second millis weekday(0 = Sunday) yearDay
+time.local(ms: i64): DateTime
+DateTime.date(): string               // 2026-09-17;  time(): 12:34:56.789;  "$d": both, joined by T
+time.Stopwatch.start(): Stopwatch     // elapsedNanos(), elapsedMillis(), elapsedSeconds(): f64, reset()
+```
+
+## Module `random`
+
+```veles
+// fragment
+use random
+random.seed(n: i64)                   // reproducible from here on; unseeded, from the clock
+random.range(lo: i64, hi: i64): i64   // lo..<hi
+random.float(): f64                   // 0.0..<1.0
+random.boolean(): bool
+random.nextU64(): u64
+random.pick<T>(xs: List<T>): T?       // null when empty
+random.shuffle<T>(xs: MutableList<T>) // in place
+random.Rng.seeded(n: i64): Rng        // an independent generator with the same methods (mut)
+```
+
+xoshiro256** seeded through splitmix64: fast and well distributed, not
+cryptographic.
+
 ## Not yet in the bootstrap
 
-Network I/O, formatting beyond interpolation, time, random numbers,
-reading a file as bytes, iterating a directory tree. Each is a small
+Network I/O, a format-string module, iterating a directory tree, running a
+program with its own stdin or a separate stderr capture. Each is a small
 `extern "C"` binding away (see [chapter 13](../13-memory-and-ffi.md)) or
 plain Veles on top of `fs`; the library grows with the compiler's own needs
 setting the order.

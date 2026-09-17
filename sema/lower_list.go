@@ -354,7 +354,7 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 		call := &ast.CallExpr{Fun: &ast.MemberExpr{X: nameOf(list, span), Name: ast.Ident{Name: "iterator", Pos: span}, Pos: span}, Pos: span}
 		f.scope.Insert(&Symbol{Name: list.Name, Kind: SymLocal, Var: list})
 		return finish(nil, f.checkExpr(call, nil))
-	case "joinToString":
+	case "join":
 		if !need(1) {
 			return bad()
 		}

@@ -63,7 +63,7 @@ fun main() {
   io.println("$doubled $big $sum")
   io.println("${xs.sorted()} ${xs.sortedBy(x => -x)} ${xs.reversed()}")
   io.println("${xs.any(x => x > 7)} ${xs.all(x => x > 0)} ${xs.find(x => x > 4) ?: 0} ${xs.indexOf(8)}")
-  io.println("${xs.first() ?: 0} ${xs.last() ?: 0} ${xs.joinToString(", ")}")
+  io.println("${xs.first() ?: 0} ${xs.last() ?: 0} ${xs.join(", ")}")
   xs.forEach(x => io.print("$x "))
   io.println("")
 }

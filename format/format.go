@@ -72,15 +72,16 @@ type printer struct {
 	src      string
 	opts     Options
 	comments []lexer.Comment
-	ci       int // next comment to place
+	ci       int             // next comment to place
 	parens   map[[2]int]bool // expressions the author parenthesised
-	marks    []mark // alignment columns in the output (see alignColumns)
+	marks    []mark          // alignment columns in the output (see alignColumns)
 
-	out       strings.Builder
-	indent    int
-	pendingNL int  // newlines owed before the next text
-	lineEmpty bool // nothing but indentation on the current output line
-	lastEnd   int  // source offset just past the last node or comment printed
+	out         strings.Builder
+	indent      int
+	pendingNL   int  // newlines owed before the next text
+	lineEmpty   bool // nothing but indentation on the current output line
+	lastEnd     int  // source offset just past the last node or comment printed
+	lastComment int  // output length right after the last comment written
 
 	// cont marks that the current statement has broken onto continuation
 	// lines: the indent was raised by one and is restored when the
@@ -165,11 +166,17 @@ func (p *printer) flushComments(limit int) {
 		c := p.comments[p.ci]
 		p.ci++
 		sameLine := p.lastEnd >= 0 && !p.hasNewline(p.lastEnd, c.Span.Start)
+		// one line comment per output line: a second would merge into the
+		// first when read back
+		if sameLine && p.out.Len() > 0 && p.out.Len() == p.lastComment && strings.HasPrefix(c.Text, "//") {
+			sameLine = false
+		}
 		if sameLine && p.out.Len() > 0 {
 			if p.pendingNL > 0 {
 				// trailing: sits at the end of the line just finished
 				p.mark(alignComment)
 				p.out.WriteString("  " + c.Text)
+				p.lastComment = p.out.Len()
 			} else {
 				p.w(" " + c.Text)
 				if strings.HasPrefix(c.Text, "//") {
@@ -184,6 +191,7 @@ func (p *printer) flushComments(limit int) {
 		p.nl()
 		p.keepBlank(c.Span.Start)
 		p.commentText(c.Text)
+		p.lastComment = p.out.Len()
 		p.nl()
 		p.after(c.Span.End)
 	}
@@ -523,6 +531,9 @@ func (p *printer) params(params []ast.Param, open int, owner ast.Node) {
 		if prm.Type != nil {
 			p.w(": ")
 			p.typ(prm.Type)
+			if prm.Variadic {
+				p.w("...")
+			}
 		}
 		if prm.Default != nil {
 			p.w(" = ")
@@ -587,6 +598,7 @@ func (p *printer) members(open, close int, empty bool, has func(i int) bool, mem
 func (p *printer) emptyBody(close int) {
 	p.w("{")
 	p.indent++
+	p.lastEnd = -1 // a comment in an empty body gets its own line, never `{ // c`
 	p.flushComments(close - 1)
 	p.indent--
 	if p.pendingNL > 0 {
@@ -1079,9 +1091,9 @@ func infixBp(k lexer.TokenKind) int {
 		return bpEq
 	case lexer.Lt, lexer.LtEq, lexer.Gt, lexer.GtEq:
 		return bpCmp
-	case lexer.Plus, lexer.Minus, lexer.WrapPlus, lexer.WrapMinus:
+	case lexer.Plus, lexer.Minus, lexer.WrapPlus, lexer.WrapMinus, lexer.Pipe, lexer.Caret:
 		return bpAdd
-	case lexer.Star, lexer.Slash, lexer.Percent, lexer.WrapStar:
+	case lexer.Star, lexer.Slash, lexer.Percent, lexer.WrapStar, lexer.Amp, lexer.Shl, lexer.Shr:
 		return bpMul
 	}
 	return bpNone
@@ -1168,9 +1180,12 @@ func (p *printer) exprInner(e ast.Expr) {
 		}
 	case *ast.MemberExpr:
 		p.expr(e.X, bpPostfix)
-		// a chain the author broke onto lines stays broken
+		// a chain the author broke onto lines stays broken; a comment at the
+		// break trails the line above
 		if p.hasNewline(e.X.Span().End, e.Name.Pos.Start) {
 			p.breakCont()
+			p.after(e.X.Span().End)
+			p.flushComments(e.Name.Pos.Start - 1)
 		}
 		if e.Safe {
 			p.w("?.")
@@ -1247,8 +1262,8 @@ func (p *printer) exprInner(e ast.Expr) {
 	case *ast.TupleExpr:
 		p.w("(")
 		p.exprList(e.Elems, e.Pos, "(")
-		if len(e.Elems) == 1 {
-			p.w(",")
+		if len(e.Elems) == 1 && p.pendingNL == 0 {
+			p.w(",") // the one-element marker; a broken list wrote it already
 		}
 		p.w(")")
 	case *ast.ListLit:
@@ -1304,13 +1319,35 @@ func (p *printer) exprInner(e ast.Expr) {
 
 // operator prints a binary operator, on a continuation line when the
 // author started the right operand on a new line (`a\n  ?: b`, `x\n  && y`).
+// operator prints a binary operator, keeping the author's line break on
+// whichever side of it they put it. A break before the operator stays
+// before it; a break after must stay after (a line that starts with `%`
+// or `-` would read as a new statement or a negation).
 func (p *printer) operator(lend, rstart int, op string) {
-	if p.hasNewline(lend, rstart) {
+	opPos := lend
+	if lend <= rstart && rstart <= len(p.src) {
+		if i := strings.Index(p.src[lend:rstart], op); i >= 0 {
+			opPos = lend + i
+		}
+		// operand spans exclude their parentheses: look only between the
+		// last `)` of the left side and the first `(` of the right
+		if i := strings.LastIndex(p.src[lend:opPos], ")"); i >= 0 {
+			lend += i + 1
+		}
+		if i := strings.Index(p.src[opPos+len(op):rstart], "("); i >= 0 {
+			rstart = opPos + len(op) + i
+		}
+	}
+	switch {
+	case p.hasNewline(lend, opPos):
 		p.breakCont()
 		p.w(op + " ")
-		return
+	case p.hasNewline(opPos+len(op), rstart):
+		p.w(" " + op)
+		p.breakCont()
+	default:
+		p.w(" " + op + " ")
 	}
-	p.w(" " + op + " ")
 }
 
 func (p *printer) args(args []ast.Arg, owner source.Span) {
@@ -1347,6 +1384,9 @@ func (p *printer) args(args []ast.Arg, owner source.Span) {
 			p.w(args[i].Name.Name + ": ")
 		}
 		p.expr(args[i].Value, 0)
+		if args[i].Spread {
+			p.w("...")
+		}
 	})
 }
 
@@ -1461,6 +1501,9 @@ func (p *printer) whenExpr(e *ast.WhenExpr) {
 	p.w("when ")
 	if e.Subject != nil {
 		p.w("(")
+		if e.Bind != nil {
+			p.w("val " + e.Bind.Name + " = ")
+		}
 		p.expr(e.Subject, 0)
 		p.w(") ")
 	}
@@ -1583,7 +1626,6 @@ func (p *printer) typePat(pat *ast.TypePat, mayIs bool) {
 	}
 	p.w(")")
 }
-
 
 // ---------------------------------------------------------------------------
 // column alignment

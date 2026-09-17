@@ -38,6 +38,9 @@ Hello, Cy.
   to call a function with several parameters of the same type (D28).
 - `fun f(...) = expr` is a one-expression function. When its return type
   is obvious you may omit it: `fun twice(x: i64) = x * 2`.
+- The last parameter can be **variadic**: `fun sum(xs: i64...): i64` takes
+  `sum()`, `sum(1)` or `sum(1, 2, 3)`, and inside `xs` is a `List<i64>`.
+  A list you already have is passed whole with `sum(numbers...)`.
 
 ### The last expression is the result
 
@@ -187,7 +190,10 @@ Output:
 negative zero Mon midweek weekend
 ```
 
-Arm bodies can be blocks: `1 => { io.println("one"); "one" }`.
+Arm bodies can be blocks: `1 => { io.println("one"); "one" }`. When
+the subject is an expression the arms need to refer to, name it in the
+head: `when (val n = text.toInt()) { null => "none"; is i64 => "got $n" }`
+— the name lives only inside the `when`, and the type tests narrow it.
 
 ## Recursion and mutual recursion
 

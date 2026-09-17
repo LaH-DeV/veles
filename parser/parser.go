@@ -197,9 +197,17 @@ func (p *Parser) syncStmt() {
 		switch p.cur().Kind {
 		case lexer.LBrace, lexer.LParen, lexer.LBracket:
 			depth++
-		case lexer.RBrace, lexer.RParen, lexer.RBracket:
+		case lexer.RBrace:
 			if depth == 0 {
-				return
+				return // closes the enclosing block: the caller's to consume
+			}
+			depth--
+		case lexer.RParen, lexer.RBracket:
+			if depth == 0 {
+				// an unbalanced closer nobody will consume: skipping it keeps
+				// the caller's loop moving
+				p.next()
+				continue
 			}
 			depth--
 		case lexer.Semi:
@@ -456,9 +464,12 @@ func (p *Parser) parseTypeParams() []ast.TypeParam {
 	if !p.at(lexer.Lt) {
 		return nil
 	}
-	p.next()
+	lt := p.next()
 	var tps []ast.TypeParam
-	for !p.at(lexer.Gt, lexer.EOF) {
+	if p.atTypeClose() {
+		p.errorf(lt.Span, "empty type parameter list; drop the '<>'")
+	}
+	for !p.atTypeClose() {
 		name, ok := p.expectIdent()
 		if !ok {
 			break
@@ -475,7 +486,7 @@ func (p *Parser) parseTypeParams() []ast.TypeParam {
 			break
 		}
 	}
-	p.expect(lexer.Gt)
+	p.expectTypeClose()
 	return tps
 }
 
@@ -494,9 +505,15 @@ func (p *Parser) parseParams() []ast.Param {
 		prm := ast.Param{Name: name}
 		if _, ok := p.expect(lexer.Colon); ok {
 			prm.Type = p.parseType()
+			if p.accept(lexer.Ellipsis) {
+				prm.Variadic = true // `parts: string...`: any number of arguments, a List inside
+			}
 		}
 		if p.accept(lexer.Assign) {
 			prm.Default = p.parseExpr()
+			if prm.Variadic {
+				p.errorf(prm.Default.Span(), "a variadic parameter cannot have a default; it is empty when no argument is given")
+			}
 		}
 		prm.Pos = p.spanFrom(start)
 		params = append(params, prm)

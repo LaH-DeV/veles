@@ -11,6 +11,14 @@ extend<T> List<T> {
   /// The elements after the first `n`.
   pub fun drop(n: i64): List<T> = self.slice(n, self.len())
 
+  /// A new list of these elements followed by `other`'s.
+  pub fun concat(other: List<T>): List<T> {
+    var out: MutableList<T> = []
+    out.addAll(self)
+    out.addAll(other)
+    out.toList()
+  }
+
   /// The elements in `from..<to`, clamped to the list; empty when `from >= to`.
   pub fun slice(from: i64, to: i64): List<T> {
     val lo = from.max(0)
@@ -83,9 +91,6 @@ extend<T> List<T> {
     }
     out.toList()
   }
-
-  /// The elements as text, joined with `sep`.
-  pub fun join(sep: string): string = self.joinToString(sep)
 }
 
 // Ordering needs Comparable: numbers and strings implement it in the

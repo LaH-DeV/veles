@@ -43,6 +43,8 @@ type Checker struct {
 	resultTmpl     *types.Sealed
 	traitMethodTPs map[string][]*types.TypeParam
 	traitStatic    map[string]bool // "Trait.method" declared `static fun`
+	globalVars     map[*Global]*Var // the Var standing for each module-level binding
+	hooks          *types.Hooks     // what types.Subst calls back into
 	// error-position types seen before the impls were collected, checked
 	// at the end of collection; collected marks that point
 	pendingErrorChecks []pendingErrorCheck
@@ -89,11 +91,8 @@ func check(pkg *Package, diags *source.Diagnostics, release bool, testMode bool)
 }
 
 func checkWith(pkg *Package, diags *source.Diagnostics, release bool, testMode bool, index *Index) *Program {
-	// per-check caches keyed by identity; reset so a long-lived process (the
-	// language server) does not accumulate objects from earlier checks
-	selfParams = map[*types.Trait]*types.TypeParam{}
-	globalVars = map[*Global]*Var{}
 	c := &Checker{
+		globalVars:     map[*Global]*Var{},
 		index:          index,
 		pkg:            pkg,
 		diags:          diags,
@@ -111,12 +110,14 @@ func checkWith(pkg *Package, diags *source.Diagnostics, release bool, testMode b
 		release:        release,
 		testMode:       testMode,
 	}
-	types.AssocResolver = c.resolveAssoc
-	types.StructInstantiator = func(tmpl *types.Struct, args []types.Type) types.Type {
-		return c.instantiateStruct(tmpl, args, source.Span{})
-	}
-	types.SealedInstantiator = func(tmpl *types.Sealed, args []types.Type) types.Type {
-		return c.instantiateSealed(tmpl, args, source.Span{})
+	c.hooks = &types.Hooks{
+		AssocResolver: c.resolveAssoc,
+		StructInstantiator: func(tmpl *types.Struct, args []types.Type) types.Type {
+			return c.instantiateStruct(tmpl, args, source.Span{})
+		},
+		SealedInstantiator: func(tmpl *types.Sealed, args []types.Type) types.Type {
+			return c.instantiateSealed(tmpl, args, source.Span{})
+		},
 	}
 	c.roundDiags = diags
 	c.buildUniverse()
@@ -871,13 +872,24 @@ func (c *Checker) resolveStruct(s *types.Struct) {
 }
 
 func (c *Checker) containsInline(t types.Type, target *types.Struct) bool {
+	return c.containsInlineSeen(t, target, map[*types.Struct]bool{})
+}
+
+// containsInlineSeen is containsInline with the structs already entered,
+// so a cycle that does not pass through target (B holds C holds B) ends;
+// that cycle is reported when B itself is resolved.
+func (c *Checker) containsInlineSeen(t types.Type, target *types.Struct, seen map[*types.Struct]bool) bool {
 	switch t := t.(type) {
 	case *types.Struct:
 		if t == target || t.Template == target {
 			return true
 		}
+		if seen[t] {
+			return false
+		}
+		seen[t] = true
 		for _, f := range t.Fields {
-			if c.containsInline(f.Type, target) {
+			if c.containsInlineSeen(f.Type, target, seen) {
 				return true
 			}
 		}
@@ -887,15 +899,15 @@ func (c *Checker) containsInline(t types.Type, target *types.Struct) bool {
 			tmpl = t.Template
 		}
 		for _, v := range tmpl.Variants {
-			if v == target || c.containsInline(v, target) {
+			if v == target || c.containsInlineSeen(v, target, seen) {
 				return true
 			}
 		}
 	case *types.Nullable:
-		return c.containsInline(t.Elem, target)
+		return c.containsInlineSeen(t.Elem, target, seen)
 	case *types.Tuple:
 		for _, e := range t.Elems {
-			if c.containsInline(e, target) {
+			if c.containsInlineSeen(e, target, seen) {
 				return true
 			}
 		}
@@ -986,7 +998,20 @@ func (c *Checker) signatureOf(env *typeEnv, d *ast.FunDecl, isTrait bool) *types
 		} else {
 			c.errorf(p.Name.Pos, "parameter '%s' needs a type", p.Name.Name)
 		}
-		sig.Params = append(sig.Params, types.Param{Name: p.Name.Name, Type: pt, HasDefault: p.Default != nil})
+		if p.Variadic {
+			// `parts: string...` is a List<string> inside; only the last
+			// parameter may be variadic, and an extern cannot be
+			if i := len(sig.Params); i != len(d.Params)-1 {
+				c.errorf(p.Name.Pos, "the variadic parameter '%s' must be the last one", p.Name.Name)
+			}
+			if d.Extern {
+				c.errorf(p.Name.Pos, "extern \"C\" functions cannot be variadic")
+			}
+			if !types.IsInvalid(pt) {
+				pt = &types.List{Elem: pt}
+			}
+		}
+		sig.Params = append(sig.Params, types.Param{Name: p.Name.Name, Type: pt, HasDefault: p.Default != nil, Variadic: p.Variadic})
 	}
 	sig.Effects = c.resolveEffects(env, d.Effects, isTrait || d.Extern)
 	return sig
@@ -1047,9 +1072,9 @@ func (c *Checker) resolveSignature(t *FuncTemplate) {
 	}
 	if t.Extern {
 		for _, p := range t.Sig.Params {
-			c.checkExternType(p.Type, t.Decl.Name.Pos)
+			c.checkExternType(p.Type, t.Decl.Name.Pos, t.Module.Std)
 		}
-		c.checkExternType(t.Sig.Ret, t.Decl.Name.Pos)
+		c.checkExternType(t.Sig.Ret, t.Decl.Name.Pos, t.Module.Std)
 	}
 	if t.Decl.Mut && t.Owner == nil && t.Impl == nil && t.Trait == nil {
 		c.errorf(t.Decl.Name.Pos, "'mut fun' is only meaningful for methods (D22)")
@@ -1062,7 +1087,7 @@ func (c *Checker) resolveSignature(t *FuncTemplate) {
 	}
 }
 
-func (c *Checker) checkExternType(t types.Type, span source.Span) {
+func (c *Checker) checkExternType(t types.Type, span source.Span, std bool) {
 	switch t := t.(type) {
 	case *types.Basic:
 		return
@@ -1072,11 +1097,17 @@ func (c *Checker) checkExternType(t types.Type, span source.Span) {
 		}
 	case *types.Nullable:
 		if _, ok := t.Elem.(*types.Basic); !ok {
-			c.checkExternType(t.Elem, span)
+			c.checkExternType(t.Elem, span, std)
 		}
 	case *types.Struct:
 		if !t.Extern {
 			c.errorf(span, "extern \"C\" functions can only pass 'extern struct' types by value")
+		}
+	case *types.List:
+		// the runtime's own list layout: `List<u8>` is passed as a pointer to
+		// it, for the standard library's byte I/O
+		if !std || !types.Identical(t.Elem, types.TU8) {
+			c.errorf(span, "type '%s' cannot cross the C ABI", t)
 		}
 	default:
 		c.errorf(span, "type '%s' cannot cross the C ABI", t)
@@ -1294,15 +1325,17 @@ func (c *Checker) checkImplSignature(t *FuncTemplate, traitSig *types.Func, trai
 		c.errorf(md.Name.Pos, "method '%s' must declare the same type parameters as in trait '%s'", md.Name.Name, trait.Name)
 	}
 	for i, p := range t.Sig.Params {
-		want := types.Subst(traitSig.Params[i].Type, subst)
+		want := c.hooks.Subst(traitSig.Params[i].Type, subst)
 		if p.Name != traitSig.Params[i].Name {
 			c.errorf(md.Params[i].Name.Pos, "parameter must be named '%s' as in trait '%s' (D28: impls inherit the trait's parameter names)", traitSig.Params[i].Name, trait.Name)
 		}
 		if !types.Identical(p.Type, want) {
 			c.errorf(md.Params[i].Pos, "parameter '%s' has type '%s' but trait '%s' declares '%s'", p.Name, p.Type, trait.Name, want)
+		} else if p.Variadic != traitSig.Params[i].Variadic {
+			c.errorf(md.Params[i].Pos, "parameter '%s' must be variadic exactly as in trait '%s'", p.Name, trait.Name)
 		}
 	}
-	wantRet := types.Subst(traitSig.Ret, subst)
+	wantRet := c.hooks.Subst(traitSig.Ret, subst)
 	if !types.Identical(t.Sig.Ret, wantRet) {
 		c.errorf(md.Name.Pos, "method '%s' returns '%s' but trait '%s' declares '%s'", md.Name.Name, t.Sig.Ret, trait.Name, wantRet)
 	}
@@ -1375,7 +1408,7 @@ func (c *Checker) instantiateStruct(tmpl *types.Struct, args []types.Type, span 
 	tmpl.Instances[key] = inst
 	for _, f := range tmpl.Fields {
 		nf := *f
-		nf.Type = types.Subst(f.Type, m)
+		nf.Type = c.hooks.Subst(f.Type, m)
 		inst.Fields = append(inst.Fields, &nf)
 	}
 	if tmpl.Sealed != nil {
@@ -1690,7 +1723,7 @@ func (c *Checker) instantiate(t *FuncTemplate, ownerSubst map[*types.TypeParam]t
 		}
 		return inst
 	}
-	sig := types.Subst(t.Sig, m).(*types.Func)
+	sig := c.hooks.Subst(t.Sig, m).(*types.Func)
 	if sig == t.Sig {
 		cp := *t.Sig
 		sig = &cp
@@ -1777,7 +1810,7 @@ func (c *Checker) resolveAssoc(base types.Type, trait *types.Trait, name string)
 		if !ok {
 			return nil
 		}
-		return types.Subst(bt, m)
+		return c.hooks.Subst(bt, m)
 	}
 	return nil
 }
