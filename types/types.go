@@ -619,12 +619,6 @@ func ContainsTypeParam(t Type) bool {
 
 var nextParamID int
 
-// NewTypeParam allocates a parameter with a unique identity for keying.
-func NewTypeParam(name string, index int, owner string) *TypeParam {
-	nextParamID++
-	return &TypeParam{Name: name, Index: index, Owner: owner, id: nextParamID}
-}
-
 // Key returns a canonical string for use as a map key. Unlike String, it
 // distinguishes type parameters that merely share a name.
 func Key(t Type) string {

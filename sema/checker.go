@@ -59,8 +59,6 @@ type Checker struct {
 	nextLoop       int
 	nextTmp        int
 	nextLambda     int
-	concrete       map[string]*types.Struct
-	concreteSealed map[string]*types.Sealed
 }
 
 type declCtx struct {
@@ -1196,12 +1194,6 @@ func (c *Checker) checkImplSignature(t *FuncTemplate, traitSig *types.Func, trai
 	}
 }
 
-// substSelf replaces the trait's Self with the impl target, resolving
-// associated-type projections through the impl.
-func (c *Checker) substSelf(t types.Type, trait *types.Trait, target types.Type) types.Type {
-	return types.Subst(t, map[*types.TypeParam]types.Type{selfParamOf(trait): target})
-}
-
 // checkCoherence enforces D17: at most one impl per (trait, type) pair.
 func (c *Checker) checkCoherence() {
 	for trait, impls := range c.impls {
@@ -1504,9 +1496,7 @@ func (c *Checker) runRound() *Program {
 		if len(s.TypeParams) == 0 {
 			c.prog.Structs = append(c.prog.Structs, s)
 		}
-		for _, inst := range sortedStructInstances(s) {
-			c.prog.Structs = append(c.prog.Structs, inst)
-		}
+		c.prog.Structs = append(c.prog.Structs, sortedStructInstances(s)...)
 	}
 	return c.prog
 }

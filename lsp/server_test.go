@@ -31,7 +31,6 @@ fun main() {
 type client struct {
 	t      *testing.T
 	w      io.Writer
-	r      *bytes.Buffer
 	out    chan []byte
 	nextID int
 }

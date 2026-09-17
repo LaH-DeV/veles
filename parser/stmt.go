@@ -19,10 +19,7 @@ func (p *Parser) parseBlock() *ast.Block {
 			break
 		}
 		before := p.pos
-		s := p.parseStmt()
-		if s != nil {
-			b.Stmts = append(b.Stmts, s)
-		}
+		b.Stmts = append(b.Stmts, p.parseStmt())
 		if p.pos == before {
 			p.errorf(p.span(), "unexpected %s", p.cur().Describe())
 			p.next()
@@ -44,11 +41,7 @@ func (p *Parser) parseBodyOrStmt() *ast.Block {
 	}
 	start := p.span()
 	s := p.parseStmt()
-	b := &ast.Block{Pos: p.spanFrom(start)}
-	if s != nil {
-		b.Stmts = []ast.Stmt{s}
-	}
-	return b
+	return &ast.Block{Stmts: []ast.Stmt{s}, Pos: p.spanFrom(start)}
 }
 
 func (p *Parser) parseBinding() ast.Binding {

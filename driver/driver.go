@@ -3,6 +3,8 @@
 package driver
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -18,7 +20,7 @@ import (
 
 type Options struct {
 	Path              string
-	Mode              string // build | run | check
+	Mode              string // build | run | check | test
 	Output            string
 	EmitLLVM          bool
 	KeepIntermediates bool
@@ -56,20 +58,15 @@ func Run(opts Options) int {
 
 	ir := llvm.Generate(prog)
 
-	base := opts.Output
-	if base == "" {
-		name := filepath.Base(strings.TrimSuffix(opts.Path, filepath.Ext(opts.Path)))
+	name := opts.Output
+	if name == "" {
+		name = filepath.Base(strings.TrimSuffix(opts.Path, filepath.Ext(opts.Path)))
 		if name == "." || name == "" {
 			name = "main"
 		}
-		base = name
 	}
-	exe := base
-	if runtime.GOOS == "windows" && !strings.HasSuffix(exe, ".exe") {
-		exe += ".exe"
-	}
-	llPath := strings.TrimSuffix(exe, ".exe") + ".ll"
 	if opts.EmitLLVM {
+		llPath := strings.TrimSuffix(name, ".exe") + ".ll"
 		if err := os.WriteFile(llPath, []byte(ir), 0o644); err != nil {
 			fmt.Fprintln(os.Stderr, "veles:", err)
 			return 1
@@ -85,24 +82,20 @@ func Run(opts Options) int {
 	}
 	if !opts.KeepIntermediates {
 		defer os.RemoveAll(tmpDir)
+	} else {
+		defer fmt.Fprintln(os.Stderr, "intermediates kept in", tmpDir)
 	}
-	llPath = filepath.Join(tmpDir, "program.ll")
-	rtPath := filepath.Join(tmpDir, "veles_rt.c")
-	gcPath := filepath.Join(tmpDir, "veles_gc.c")
+	// `run` and `test` executables are transient unless -o names them;
+	// only `build` leaves one next to the caller.
+	exe := name
+	if opts.Mode != "build" && opts.Output == "" {
+		exe = filepath.Join(tmpDir, name)
+	}
+	if runtime.GOOS == "windows" && !strings.HasSuffix(exe, ".exe") {
+		exe += ".exe"
+	}
+	llPath := filepath.Join(tmpDir, "program.ll")
 	if err := os.WriteFile(llPath, []byte(ir), 0o644); err != nil {
-		fmt.Fprintln(os.Stderr, "veles:", err)
-		return 1
-	}
-	if err := os.WriteFile(rtPath, []byte(rt.Source), 0o644); err != nil {
-		fmt.Fprintln(os.Stderr, "veles:", err)
-		return 1
-	}
-	if err := os.WriteFile(gcPath, []byte(rt.GCSource), 0o644); err != nil {
-		fmt.Fprintln(os.Stderr, "veles:", err)
-		return 1
-	}
-	taskPath := filepath.Join(tmpDir, "veles_task.c")
-	if err := os.WriteFile(taskPath, []byte(rt.TaskSource), 0o644); err != nil {
 		fmt.Fprintln(os.Stderr, "veles:", err)
 		return 1
 	}
@@ -111,32 +104,25 @@ func Run(opts Options) int {
 		fmt.Fprintln(os.Stderr, "veles:", err)
 		return 1
 	}
-	args := []string{"-o", exe, llPath, rtPath, gcPath, taskPath, "-Wno-override-module"}
+	objs, err := runtimeObjects(clang, opts.Release, tmpDir)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "veles:", err)
+		return 1
+	}
+	args := append([]string{"-o", exe, llPath}, objs...)
+	args = append(args, "-Wno-override-module")
+	args = append(args, codegenFlags(opts.Release)...)
 	if runtime.GOOS != "windows" {
 		args = append(args, "-lm") // tan, atan2, hypot: libm is separate outside the UCRT
-	}
-	if opts.Release {
-		args = append(args, "-O2")
-	} else {
-		args = append(args, "-O0", "-g")
 	}
 	cmd := exec.Command(clang, args...)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	if err := cmd.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "veles: clang failed:", err)
-		if opts.KeepIntermediates {
-			fmt.Fprintln(os.Stderr, "intermediates kept in", tmpDir)
-		}
 		return 1
-	}
-	if opts.KeepIntermediates {
-		fmt.Fprintln(os.Stderr, "intermediates kept in", tmpDir)
 	}
 	if opts.Mode == "build" {
 		return 0
-	}
-	if opts.Mode == "test" {
-		defer os.Remove(exe)
 	}
 	abs, _ := filepath.Abs(exe)
 	run := exec.Command(abs, opts.ProgramArgs...)
@@ -149,6 +135,84 @@ func Run(opts Options) int {
 		return 1
 	}
 	return 0
+}
+
+func codegenFlags(release bool) []string {
+	if release {
+		return []string{"-O2"}
+	}
+	return []string{"-O0", "-g"}
+}
+
+// runtimeSources is the C runtime every executable links, in link order.
+var runtimeSources = []struct{ name, src string }{
+	{"veles_rt", rt.Source},
+	{"veles_gc", rt.GCSource},
+	{"veles_task", rt.TaskSource},
+}
+
+// runtimeObjects returns object files for the C runtime. The runtime never
+// changes between builds of the same compiler, so the objects are compiled
+// once per (compiler, clang, flags) and kept in the user cache directory;
+// without a usable cache they are compiled into tmpDir instead.
+func runtimeObjects(clang string, release bool, tmpDir string) ([]string, error) {
+	flags := codegenFlags(release)
+	dir := runtimeCacheDir(clang, flags)
+	if dir == "" {
+		dir = tmpDir
+	}
+	var objs []string
+	for _, s := range runtimeSources {
+		obj := filepath.Join(dir, s.name+".o")
+		objs = append(objs, obj)
+		if dir != tmpDir {
+			if _, err := os.Stat(obj); err == nil {
+				continue
+			}
+		}
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, err
+		}
+		src := filepath.Join(tmpDir, s.name+".c")
+		if err := os.WriteFile(src, []byte(s.src), 0o644); err != nil {
+			return nil, err
+		}
+		// compile to a private name and rename so a concurrent build never
+		// links a half-written object
+		partial := filepath.Join(tmpDir, s.name+".o")
+		args := append([]string{"-c", "-o", partial, src}, flags...)
+		cmd := exec.Command(clang, args...)
+		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+		if err := cmd.Run(); err != nil {
+			return nil, fmt.Errorf("compiling %s.c: %w", s.name, err)
+		}
+		if partial != obj {
+			if err := os.Rename(partial, obj); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return objs, nil
+}
+
+// runtimeCacheDir names the cache directory for runtime objects built with
+// this compiler's runtime sources by this clang with these flags, or ""
+// when there is no user cache directory.
+func runtimeCacheDir(clang string, flags []string) string {
+	base, err := os.UserCacheDir()
+	if err != nil {
+		return ""
+	}
+	h := sha256.New()
+	fmt.Fprintln(h, clang, strings.Join(flags, " "), runtime.GOOS, runtime.GOARCH)
+	if info, err := os.Stat(clang); err == nil {
+		fmt.Fprintln(h, info.Size(), info.ModTime().UnixNano())
+	}
+	for _, s := range runtimeSources {
+		fmt.Fprintln(h, s.name, len(s.src))
+		h.Write([]byte(s.src))
+	}
+	return filepath.Join(base, "veles", "rt", hex.EncodeToString(h.Sum(nil))[:16])
 }
 
 // findClang locates clang on PATH or in the usual MSYS2/LLVM locations.

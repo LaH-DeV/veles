@@ -5,7 +5,6 @@ package llvm
 import (
 	"fmt"
 	"regexp"
-	"sort"
 	"strings"
 
 	"github.com/LaH-DeV/veles/sema"
@@ -49,7 +48,6 @@ type gen struct {
 	launchSlots      map[*sema.Launch]string
 	ramps            map[*sema.Func]*sema.Func
 	envSlot          string // closure environment pointer slot
-	inHelper         bool
 }
 
 type loopLabels struct {
@@ -763,16 +761,6 @@ func (g *gen) flushPending() {
 		g.pending = g.pending[1:]
 		p()
 	}
-}
-
-// sortedKeys is used for deterministic output.
-func sortedKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 // runCleanups emits the close calls of every `with` entered since depth,

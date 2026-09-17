@@ -76,9 +76,6 @@ type Var struct {
 	Global    *Global
 	ID        int
 	Span      source.Span
-	// narrowed holds the flow-sensitive type while checking; not used by codegen.
-	narrowed types.Type
-	captured bool
 	// used records a read of the variable; checkUse marks bindings the
 	// checker reports when they are never read (see reportUnused).
 	used     bool

@@ -169,12 +169,6 @@ func (g *gen) payloadWords(t types.Type) int {
 	return 1
 }
 
-// taggedType returns the LLVM type of a sealed or union value, or of a
-// single-member error type which is represented as itself.
-func (g *gen) errType(t types.Type) string {
-	return g.llType(t)
-}
-
 // layout computes size and alignment following the x86-64 (and AArch64)
 // natural layout rules, which is what LLVM uses for these types.
 func (g *gen) layout(t types.Type) (size, align int) {

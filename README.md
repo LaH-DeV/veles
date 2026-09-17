@@ -17,14 +17,17 @@ go build -o veles.exe .
 ./veles.exe lsp                              # language server over stdio (see editors/vscode)
 ```
 
-New to the language? Start with [docs/README.md](docs/README.md): fourteen
+New to the language? Start with [docs/documentation/index.md](docs/documentation/index.md): fourteen
 tutorial chapters for three levels of reader plus a cheat sheet, a
 standard-library reference and a guide to error messages. Every program in
 them is compiled and run by `go test ./docs/`.
 
 Requirements: Go 1.23 and `clang` (LLVM 17+) on `PATH`, or `VELES_CLANG`.
 `--release` disables overflow checks (D21) and optimises; the default is a
-checked debug build. `VELES_GC_TRACE=1` reports collections;
+checked debug build. `run` and `test` build into a temporary directory; only
+`build` leaves an executable behind. The C runtime is compiled once per
+compiler/clang/flag combination and cached under the user cache directory
+(`%LOCALAPPDATA%\veles\rt` on Windows). `VELES_GC_TRACE=1` reports collections;
 `VELES_GC_THRESHOLD=<bytes>` lowers the collection trigger for testing.
 
 ## Layout
@@ -42,7 +45,7 @@ checked debug build. `VELES_GC_TRACE=1` reports collections;
 | `lsp/` | language server: diagnostics, hover, definition, symbols, completion over the compiler front end |
 | `editors/vscode/` | VS Code extension: TextMate grammar and client for `veles lsp` |
 | `docs/` | tutorials and reference; `go test ./docs/` runs every code block |
-| `examples/` | 24 programs with expected output; `go test ./...` compiles and runs them |
+| `examples/` | 22 programs with expected output; `go test ./...` compiles and runs them |
 
 ## Spec coverage
 

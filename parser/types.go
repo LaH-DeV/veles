@@ -5,11 +5,6 @@ import (
 	"github.com/LaH-DeV/veles/lexer"
 )
 
-// canStartType reports whether the current token can begin a type.
-func (p *Parser) canStartType() bool {
-	return p.at(lexer.Ident, lexer.Star, lexer.LParen, lexer.KwFun, lexer.KwSelfTy)
-}
-
 // parseType parses a type. Postfix `?` binds tighter than prefix `*` (D5),
 // so `*T?` is a pointer to a nullable T and `(*T)?` a nullable pointer.
 func (p *Parser) parseType() ast.Type {

@@ -16,6 +16,7 @@ func Dump(f *File) string {
 	return p.sb.String()
 }
 
+// DumpExpr renders a single expression; the parser tests compare against it.
 func DumpExpr(e Expr) string {
 	p := &printer{}
 	p.expr(e)

@@ -690,7 +690,7 @@ func (f *fnCtx) variantCtor(name string, args []ast.Arg, want types.Type, span s
 	hint := want
 	switch name {
 	case "None":
-		if args != nil && len(args) != 0 {
+		if len(args) != 0 {
 			f.errorf(span, "'None' takes no arguments")
 		}
 		if n, ok := hint.(*types.Nullable); ok {
@@ -1382,8 +1382,6 @@ func (f *fnCtx) condFacts(cond ast.Expr, checked Expr) (whenTrue, whenFalse fact
 	}
 	return
 }
-
-func (f *fnCtx) currentType(v *Var) types.Type { return f.currentTypeOf(pv(v)) }
 
 // patternTargetType returns the narrowed type a successful `is` test on a
 // value of type from establishes, or nil.
