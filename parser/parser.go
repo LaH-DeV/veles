@@ -194,7 +194,7 @@ func (p *Parser) syncDecl() {
 				lexer.KwPub, lexer.KwUse, lexer.KwExtern, lexer.KwVal, lexer.KwVar, lexer.KwConst, lexer.At:
 				return
 			}
-			if p.atErrorDecl() {
+			if p.atErrorDecl() || p.atExtendDecl() {
 				return
 			}
 		}
@@ -251,7 +251,7 @@ func (p *Parser) parseFile() *ast.File {
 }
 
 func (p *Parser) startsDecl() bool {
-	return p.atErrorDecl() || p.at(lexer.KwFun, lexer.KwStruct, lexer.KwTrait, lexer.KwImpl, lexer.KwSealed,
+	return p.atErrorDecl() || p.atExtendDecl() || p.at(lexer.KwFun, lexer.KwStruct, lexer.KwTrait, lexer.KwImpl, lexer.KwSealed,
 		lexer.KwPub, lexer.KwUse, lexer.KwExtern, lexer.KwVal, lexer.KwVar, lexer.KwConst, lexer.At)
 }
 
@@ -333,13 +333,19 @@ func (p *Parser) parseDeclBody(attrs []*ast.Attribute) ast.Decl {
 		if p.atErrorDecl() {
 			return p.parseErrorDecl(attrs, pub, start)
 		}
+		if p.atExtendDecl() {
+			if pub {
+				p.errorf(start, "'extend' cannot be 'pub'; mark the methods instead")
+			}
+			return p.parseImpl(attrs, true)
+		}
 	case lexer.KwSealed, lexer.KwTrait:
 		return p.parseTrait(attrs, pub, start)
 	case lexer.KwImpl:
 		if pub {
 			p.errorf(start, "'impl' cannot be 'pub'; visibility follows the trait and type")
 		}
-		return p.parseImpl(attrs)
+		return p.parseImpl(attrs, false)
 	case lexer.KwVal, lexer.KwVar, lexer.KwConst:
 		return p.parseValDecl(attrs, pub, start)
 	case lexer.KwExtern:
@@ -701,18 +707,29 @@ func (p *Parser) parseTrait(attrs []*ast.Attribute, pub bool, start source.Span)
 	return d
 }
 
-func (p *Parser) parseImpl(attrs []*ast.Attribute) ast.Decl {
+// parseImpl parses `impl<T> Trait for Type { ... }` or, with extend set,
+// `extend<T> Type { ... }`.
+func (p *Parser) parseImpl(attrs []*ast.Attribute, extend bool) ast.Decl {
 	start := p.span()
-	p.next() // impl
-	d := &ast.ImplDecl{Attrs: attrs}
+	p.next() // impl / extend
+	d := &ast.ImplDecl{Attrs: attrs, Extend: extend}
 	d.TypeParams = p.parseTypeParams()
-	d.Trait = p.parseType()
-	if p.at(lexer.KwFor) {
-		p.next()
+	if extend {
 		d.Target = p.parseType()
+		if p.at(lexer.KwFor) {
+			p.errorf(p.span(), "'extend' names the type being extended, not a trait; use 'impl Trait for Type' to implement a trait")
+			p.next()
+			d.Target = p.parseType()
+		}
 	} else {
-		p.errorf(p.span(), "expected 'for' after trait name in impl; inherent methods go inside the struct body (D23)")
-		d.Target = d.Trait
+		d.Trait = p.parseType()
+		if p.at(lexer.KwFor) {
+			p.next()
+			d.Target = p.parseType()
+		} else {
+			p.errorf(p.span(), "expected 'for' after trait name in impl; inherent methods go inside the struct body (D23)")
+			d.Target = d.Trait
+		}
 	}
 	if _, ok := p.expect(lexer.LBrace); ok {
 		p.skipSemis()
@@ -720,6 +737,9 @@ func (p *Parser) parseImpl(attrs []*ast.Attribute) ast.Decl {
 			mattrs := p.parseAttributes()
 			switch p.cur().Kind {
 			case lexer.KwType:
+				if extend {
+					p.errorf(p.span(), "'extend' blocks add methods only; associated types belong to trait impls")
+				}
 				p.next()
 				b := &ast.AssocTypeBinding{}
 				b.Name, _ = p.expectIdent()
@@ -730,7 +750,11 @@ func (p *Parser) parseImpl(attrs []*ast.Attribute) ast.Decl {
 			case lexer.KwFun, lexer.KwMut, lexer.KwOverride, lexer.KwUnsafe, lexer.KwPub:
 				d.Methods = append(d.Methods, p.parseFun(mattrs, funContextMethod))
 			default:
-				p.errorf(p.span(), "expected 'type' or 'fun' in impl body, found %s", p.cur().Describe())
+				if extend {
+					p.errorf(p.span(), "expected 'fun' in extend body, found %s", p.cur().Describe())
+				} else {
+					p.errorf(p.span(), "expected 'type' or 'fun' in impl body, found %s", p.cur().Describe())
+				}
 				p.syncStmt()
 				continue
 			}
@@ -740,6 +764,13 @@ func (p *Parser) parseImpl(attrs []*ast.Attribute) ast.Decl {
 	}
 	d.Pos = p.spanFrom(start)
 	return d
+}
+
+// atExtendDecl recognises the contextual keyword `extend` at declaration
+// position: `extend Type {` or `extend<T> Type {`.
+func (p *Parser) atExtendDecl() bool {
+	next := p.peek(1).Kind
+	return p.at(lexer.Ident) && p.cur().Text == "extend" && (next == lexer.Ident || next == lexer.Lt || next == lexer.Star || next == lexer.LParen)
 }
 
 func (p *Parser) parseValDecl(attrs []*ast.Attribute, pub bool, start source.Span) ast.Decl {

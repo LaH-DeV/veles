@@ -28,6 +28,16 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 		if callee.Name == "sleep" && f.lookup(callee.Name) == nil {
 			return f.sleepCall(e)
 		}
+		if callee.Name == "panic" && f.lookup(callee.Name) == nil {
+			// D20: `panic(message)` never returns; it unwinds to the task scope
+			if len(e.Args) != 1 {
+				f.errorf(e.Pos, "'panic' takes one argument: the message")
+				f.checkArgsLoosely(e.Args)
+				return bad()
+			}
+			msg := f.checkExprTo(e.Args[0].Value, types.TString)
+			return &Builtin{exprBase{types.TNever}, "panic", []Expr{msg}, e.Pos}
+		}
 		sym := f.lookup(callee.Name)
 		if sym == nil {
 			f.errorf(callee.Pos, "unknown function '%s'%s", callee.Name, f.c.suggestUnknown(f.module, callee.Name))
@@ -533,6 +543,32 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 			return f.callMethod(t, substOf(st), typeArgs, recv, viaPointer, callee, e, want)
 		}
 	}
+	// extend blocks: inherent too; the first block whose target matches wins
+	// (checkCoherence rejects overlapping ones). A mutable collection also
+	// has its immutable form's methods (D25: MutableList<T> is a List<T>),
+	// looked up after any block naming the mutable type itself.
+	for _, view := range receiverViews(rt) {
+		for _, ext := range f.c.extends {
+			t, ok := ext.Methods[name]
+			if !ok {
+				continue
+			}
+			m := map[*types.TypeParam]types.Type{}
+			if !unify(ext.Target, view, m) {
+				continue
+			}
+			for _, tp := range ext.TypeParams {
+				for _, bound := range tp.Bounds {
+					if bt, ok := m[tp]; ok && !f.implements(bt, bound) {
+						f.errorf(callee.Name.Pos, "'%s' on '%s' requires '%s' to implement '%s' (extend<%s: %s> %s)", name, rt, bt, bound.Name, tp.Name, bound.Name, ext.Target)
+						f.checkArgsLoosely(e.Args)
+						return bad()
+					}
+				}
+			}
+			return f.callMethod(t, m, typeArgs, recv, viaPointer, callee, e, want)
+		}
+	}
 	// trait impls (D26: any trait method is callable; ambiguity is an error)
 	var found []*FuncTemplate
 	var foundSubst []map[*types.TypeParam]types.Type
@@ -608,13 +644,44 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 	return bad()
 }
 
+// isReferenceType reports whether values of t are handles to shared
+// storage (D25 collections, channels), so that copying one does not copy
+// what it refers to.
+func isReferenceType(t types.Type) bool {
+	switch t.(type) {
+	case *types.List, *types.Map, *types.Set, *types.Channel:
+		return true
+	}
+	return false
+}
+
+// receiverViews lists the types an extend target may match for a receiver:
+// the type itself, then — for a mutable collection — its immutable form.
+func receiverViews(rt types.Type) []types.Type {
+	switch t := rt.(type) {
+	case *types.List:
+		if t.Mutable {
+			return []types.Type{rt, &types.List{Elem: t.Elem}}
+		}
+	case *types.Map:
+		if t.Mutable {
+			return []types.Type{rt, &types.Map{Key: t.Key, Value: t.Value}}
+		}
+	case *types.Set:
+		if t.Mutable {
+			return []types.Type{rt, &types.Set{Elem: t.Elem}}
+		}
+	}
+	return []types.Type{rt}
+}
+
 func (f *fnCtx) callMethod(t *FuncTemplate, ownerSubst map[*types.TypeParam]types.Type, typeArgs []types.Type, recv Expr, viaPointer bool, callee *ast.MemberExpr, e *ast.CallExpr, want types.Type) Expr {
 	f.c.resolveSignature(t)
 	f.c.refFunc(callee.Name.Pos, t)
-	if t.Impl != nil && !t.Pub && t.Impl.Module != f.module {
-		// impl methods follow the trait's visibility; nothing extra
-	}
-	if t.Owner != nil && !t.Pub && t.Module != f.module {
+	// inherent methods (struct body or extend block) follow M5; trait impl
+	// methods follow the trait's visibility
+	inherent := t.Owner != nil || (t.Impl != nil && t.Impl.Trait == nil)
+	if inherent && !t.Pub && t.Module != f.module {
 		f.errorf(callee.Name.Pos, "method '%s' is private to module '%s' (M5)", t.Name, t.Module.Path)
 	}
 	var recvArg Expr = recv
@@ -623,8 +690,11 @@ func (f *fnCtx) callMethod(t *FuncTemplate, ownerSubst map[*types.TypeParam]type
 		if viaPointer {
 			recvArg = recv.(*Deref).X
 		} else {
-			if !isPlaceSyntax(callee.X) {
-				// a temporary: mutate a fresh copy (iterator chains rely on this)
+			if !isPlaceSyntax(callee.X) || isReferenceType(recv.Type()) {
+				// a temporary: mutate a fresh copy (iterator chains rely on
+				// this). A collection is a reference (D25), so a copy of the
+				// handle mutates the same elements and a `val` binding is fine,
+				// as with the built-in `push`.
 				tmp := f.newTemp(recv.Type())
 				recvArg = &AddrOf{exprBase{&types.Pointer{Elem: recv.Type()}}, ref(tmp)}
 				call := f.callTemplateRecv(t, ownerSubst, typeArgs, recvArg, e.Args, e.Pos, want)
@@ -686,6 +756,17 @@ func (f *fnCtx) builtinMethod(recv Expr, rt types.Type, name string, e *ast.Call
 					return bad()
 				}
 				return &Builtin{exprBase{&types.List{Elem: types.TString}}, "string.chars", []Expr{recv}, e.Pos}
+			case "byteAt":
+				if !nargs(1) {
+					return bad()
+				}
+				i := f.checkExprTo(e.Args[0].Value, types.TI64)
+				return &Builtin{exprBase{types.TU8}, "string.byteAt", []Expr{recv, i}, e.Pos}
+			case "bytes":
+				if !nargs(0) {
+					return bad()
+				}
+				return &Builtin{exprBase{&types.List{Elem: types.TU8}}, "string.bytes", []Expr{recv}, e.Pos}
 			case "substring":
 				if !nargs(2) {
 					return bad()
@@ -799,6 +880,14 @@ func (f *fnCtx) builtinMethod(recv Expr, rt types.Type, name string, e *ast.Call
 				return bad()
 			}
 			return &Builtin{exprBase{&types.List{Elem: t.Elem, Mutable: true}}, "list.copy", []Expr{recv}, e.Pos}
+		case "decodeUtf8":
+			if !types.Identical(t.Elem, types.TU8) {
+				break // only List<u8>
+			}
+			if !nargs(0) {
+				return bad()
+			}
+			return &Builtin{exprBase{&types.Nullable{Elem: types.TString}}, "list.decodeUtf8", []Expr{recv}, e.Pos}
 		case "push":
 			if !t.Mutable {
 				f.errorf(e.Pos, "cannot push into an immutable List; use MutableList (D25)")

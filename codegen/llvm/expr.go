@@ -1273,6 +1273,34 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		v := g.newTmp()
 		g.emit("%s = call ptr @veles_string_chars(ptr %s, ptr %s, i64 %s)", v, g.arrayDescOf(types.TString), sp, sl)
 		return v
+	case "panic":
+		s := g.expr(e.Args[0])
+		sp, sl := g.strPtrLen(s)
+		g.emit("call void @veles_panic(ptr %s, i64 %s)", sp, sl)
+		g.emitTerm("unreachable")
+		return "zeroinitializer"
+	case "string.byteAt":
+		s := g.expr(e.Args[0])
+		i := g.expr(e.Args[1])
+		sp, sl := g.strPtrLen(s)
+		v := g.newTmp()
+		g.emit("%s = call i8 @veles_string_byte_at(ptr %s, i64 %s, i64 %s)", v, sp, sl, i)
+		return v
+	case "string.bytes":
+		s := g.expr(e.Args[0])
+		sp, sl := g.strPtrLen(s)
+		v := g.newTmp()
+		g.emit("%s = call ptr @veles_string_bytes(ptr %s, ptr %s, i64 %s)", v, g.arrayDescOf(types.TU8), sp, sl)
+		return v
+	case "list.decodeUtf8":
+		l := g.expr(e.Args[0])
+		out := g.alloca(strType)
+		g.emit("store %s zeroinitializer, ptr %s", strType, out)
+		ok := g.newTmp()
+		g.emit("%s = call i1 @veles_bytes_decode_utf8(ptr %s, ptr %s)", ok, out, l)
+		val := g.newTmp()
+		g.emit("%s = load %s, ptr %s", val, strType, out)
+		return g.makeNullable(e.Type().(*types.Nullable), ok, val)
 	case "string.substring":
 		s := g.expr(e.Args[0])
 		lo := g.expr(e.Args[1])

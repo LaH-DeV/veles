@@ -233,7 +233,8 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 		}
 		return finish(nil, &Binary{exprBase{types.TBool}, OpGe, inner, i64c(0), span})
 	case "at":
-		// `xs.at(i)` is the checked read: `T?`, null when out of range.
+		// `xs.at(i)` is the checked read: `T?`, null when out of range. A
+		// negative index counts from the end: `xs.at(-1)` is the last element.
 		if !need(1) {
 			return bad()
 		}
@@ -241,6 +242,10 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 		pre = append(pre, &VarDecl{Var: idx, Init: f.checkExprTo(e.Args[0].Value, types.TI64)})
 		rt := &types.Nullable{Elem: lt.Elem}
 		n := &Builtin{exprBase{types.TI64}, "list.len", []Expr{ref(list)}, span}
+		fromEnd := &Assign{Target: ref(idx), Value: &Binary{exprBase{types.TI64}, OpWrapAdd, ref(idx), n, span}}
+		pre = append(pre, &ExprStmt{X: &If{exprBase{types.TUnit},
+			&Binary{exprBase{types.TBool}, OpLt, ref(idx), i64c(0), span},
+			&Block{Stmts: []Stmt{fromEnd}, Type: types.TUnit}, nil}})
 		inRange := &Binary{exprBase{types.TBool}, OpAnd,
 			&Binary{exprBase{types.TBool}, OpGe, ref(idx), i64c(0), span},
 			&Binary{exprBase{types.TBool}, OpLt, ref(idx), n, span}, span}

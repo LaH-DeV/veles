@@ -38,7 +38,7 @@ func (c *Checker) inferSuspension(prog *Program) {
 		}
 		t := fn.tmpl
 		if fn.Suspends {
-			if t.Impl != nil {
+			if t.Impl != nil && t.Impl.Trait != nil {
 				if sig := t.Impl.Trait.Methods[t.Name]; sig != nil && !sig.Effects.Suspends {
 					c.errorf(fn.Span, "method '%s' suspends but trait '%s' declares it non-suspending; declare 'suspends' on the trait method (D40)", t.Name, t.Impl.Trait.Name)
 				}

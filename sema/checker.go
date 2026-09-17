@@ -32,6 +32,7 @@ type Checker struct {
 	traits         []*types.Trait
 	templates      []*FuncTemplate
 	impls          map[*types.Trait][]*Impl
+	extends        []*Impl                                    // `extend Type { }` blocks (Trait == nil)
 	methods        map[*types.Struct]map[string]*FuncTemplate // inherent, by template
 	globals        map[*Global]*ast.ValDecl
 	globalMod      map[*Global]*Module
@@ -261,7 +262,11 @@ func (c *Checker) collect() {
 		for _, f := range m.Files {
 			for _, d := range f.Decls {
 				if impl, ok := d.(*ast.ImplDecl); ok {
-					c.declareImpl(m, f, impl)
+					if impl.Extend {
+						c.declareExtend(m, f, impl)
+					} else {
+						c.declareImpl(m, f, impl)
+					}
 				}
 			}
 		}
@@ -1025,7 +1030,7 @@ func (c *Checker) resolveSignature(t *FuncTemplate) {
 	if t.Decl.Mut && t.Owner == nil && t.Impl == nil && t.Trait == nil {
 		c.errorf(t.Decl.Name.Pos, "'mut fun' is only meaningful for methods (D22)")
 	}
-	if t.Decl.Override && t.Impl == nil {
+	if t.Decl.Override && (t.Impl == nil || t.Impl.Trait == nil) {
 		c.errorf(t.Decl.Name.Pos, "'override' is only meaningful inside an impl block (D53)")
 	}
 	if t.Sig.Effects.Throws && t.Sig.Effects.Error == nil && !t.InferDone {
@@ -1054,7 +1059,9 @@ func (c *Checker) checkExternType(t types.Type, span source.Span) {
 	}
 }
 
-func (c *Checker) declareImpl(m *Module, f *ast.File, d *ast.ImplDecl) {
+// newImpl starts an Impl for an `impl` or `extend` block: its type
+// parameters with their bounds, and the environment its types resolve in.
+func (c *Checker) newImpl(m *Module, f *ast.File, d *ast.ImplDecl) (*Impl, *declCtx, *typeEnv) {
 	ctx := &declCtx{module: m, file: f, decl: d, tps: map[string]*types.TypeParam{}}
 	impl := &Impl{Module: m, Decl: d, Methods: map[string]*FuncTemplate{}}
 	for i, tp := range d.TypeParams {
@@ -1070,6 +1077,80 @@ func (c *Checker) declareImpl(m *Module, f *ast.File, d *ast.ImplDecl) {
 			}
 		}
 	}
+	return impl, ctx, env
+}
+
+// declareExtend records `extend<T> Type { methods }` (D23 addendum): inherent
+// methods for a type the package declares. The built-in types — string,
+// numbers, the collections, ranges, channels — are declared by std, so only
+// the prelude may extend them; everyone else adds behaviour to foreign types
+// through a trait.
+func (c *Checker) declareExtend(m *Module, f *ast.File, d *ast.ImplDecl) {
+	impl, ctx, env := c.newImpl(m, f, d)
+	impl.Target = c.resolveType(env, d.Target)
+	env.self = impl.Target
+	if types.IsInvalid(impl.Target) {
+		return
+	}
+	if !c.ownsType(m, impl.Target) {
+		switch impl.Target.(type) {
+		case *types.Struct, *types.Sealed:
+			c.errorf(d.Target.Span(), "cannot extend '%s': it is declared outside this package; declare a trait and implement it for '%s' instead (D23)", impl.Target, impl.Target)
+		case *types.Basic, *types.List, *types.Map, *types.Set, *types.Range, *types.Channel:
+			c.errorf(d.Target.Span(), "cannot extend built-in type '%s' outside the standard library; declare a trait and implement it for '%s' instead (D23)", impl.Target, impl.Target)
+		default:
+			c.errorf(d.Target.Span(), "cannot extend '%s': only named types can be extended", impl.Target)
+		}
+		return
+	}
+	c.extends = append(c.extends, impl)
+	for _, md := range d.Methods {
+		name := md.Name.Name
+		if prev, dup := impl.Methods[name]; dup {
+			c.errorf(md.Name.Pos, "duplicate method '%s' in extend block; first declared at %s", name, prev.Decl.Name.Pos)
+			continue
+		}
+		if st, ok := impl.Target.(*types.Struct); ok {
+			if _, has := c.methods[templateOf(st)][name]; has {
+				c.errorf(md.Name.Pos, "method '%s' is already declared in the body of '%s'", name, st.Name)
+				continue
+			}
+		}
+		if lookupBuiltinDoc(builtinFamily(impl.Target), name) != nil {
+			c.errorf(md.Name.Pos, "method '%s' is a compiler built-in on '%s' and cannot be redeclared", name, impl.Target)
+			continue
+		}
+		t := c.newTemplate(m, f, md, nil, ctx.tps)
+		t.Impl = impl
+		t.Mangled = m.prefix() + ".extend." + typeMangle(impl.Target) + "." + name
+		impl.Methods[name] = t
+	}
+}
+
+// ownsType reports whether m's package declares the head type of t; the
+// built-in types belong to the standard library.
+func (c *Checker) ownsType(m *Module, t types.Type) bool {
+	var prefix string
+	switch t := t.(type) {
+	case *types.Struct:
+		prefix = t.Module
+	case *types.Sealed:
+		prefix = t.Module
+	case *types.Basic, *types.List, *types.Map, *types.Set, *types.Range, *types.Channel:
+		return m.Std
+	default:
+		return false
+	}
+	for _, om := range c.pkg.Modules {
+		if om.prefix() == prefix {
+			return om.Pkg == m.Pkg && om.Std == m.Std
+		}
+	}
+	return false
+}
+
+func (c *Checker) declareImpl(m *Module, f *ast.File, d *ast.ImplDecl) {
+	impl, ctx, env := c.newImpl(m, f, d)
 	tt := c.resolveType(env, d.Trait)
 	var sealedFor *types.Sealed
 	if s, isSealed := tt.(*types.Sealed); isSealed {
@@ -1205,6 +1286,20 @@ func (c *Checker) checkCoherence() {
 				continue
 			}
 			byKey[k] = impl
+		}
+	}
+	// extend blocks: a method name may be provided once per receiver type;
+	// two blocks overlap when either target matches the other
+	for i, a := range c.extends {
+		for _, b := range c.extends[:i] {
+			if !unify(a.Target, b.Target, map[*types.TypeParam]types.Type{}) && !unify(b.Target, a.Target, map[*types.TypeParam]types.Type{}) {
+				continue
+			}
+			for name, t := range a.Methods {
+				if other, dup := b.Methods[name]; dup {
+					c.errorf(t.Decl.Name.Pos, "method '%s' is already provided for '%s' by the extend block at %s", name, b.Target, other.Decl.Name.Pos)
+				}
+			}
 		}
 	}
 }

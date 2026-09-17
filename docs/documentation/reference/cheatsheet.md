@@ -56,7 +56,7 @@ val (a, b) = (1, "one")         // tuple destructuring
 | address | `&x` → `*T`, `*p` reads through |
 | range | `a..b`, `a..<b` |
 | assignment | `= += -= *= /= %=` |
-| strings | `"a" + "b"`, `s.len()` (bytes), `s.charCount()`, `s.chars()`, `"$name ${expr}"`, escapes `\n \t \\ \" \$ \u{..}` |
+| strings | `"a" + "b"`, `s.len()` (bytes), `s.trim()`, `s.split(",")`, `s.replace(a, b)`, `s.indexOf(p)`, `s.toUpper()`, `s.padStart(n)`, `s.toInt()`, `s.chars()`, `"$name ${expr}"`, escapes `\n \t \\ \" \$ \u{..}` |
 
 ## Control flow
 
@@ -72,7 +72,7 @@ when { x < 0 => "neg"; else => "pos" }
 when (shape) { is Circle(r) => ...; is Rect(w, h) if w > h => ...; is Point => ... }
 when (opt) { Some(x) => ...; null => ... }
 when (res) { is Ok(v) => ...; is Err(e) => ... }
-return v; break; continue; throw e
+return v; break; continue; throw e; panic("msg")   // panic never returns (D20)
 ```
 
 ## Functions and lambdas
@@ -110,6 +110,11 @@ trait Shape {
 impl Shape for Point { fun area(): f64 = 0.0; override fun describe(): string = "pt" }
 val s: Shape = p                // trait object (D9)
 
+extend Point {                  // more inherent methods, outside the body (D23)
+  fun norm(): i64 = self.x.abs() + self.y.abs()
+}
+extend<T: Shape> Box<T> { ... } // only for types you declare; bounds allowed
+
 sealed trait Expr {             // fixed set of variants (D12)
   fun eval(): i64 = when (self) { is Num(v) => v; is Neg(e) => -e.eval() }
 }
@@ -145,10 +150,11 @@ smart-casts `r` to the payload; `r.message()` works on any error or error union.
 val xs = [1, 2, 3]              // List<i64>;   mut [1, 2] is MutableList
 val m = ["a": 1]                // Map<string, i64>;  mut ["a": 1], mut [:] with annotation
 var s = MutableSet<i64>()
-xs[0]; xs.at(9) ?: -1; xs.len(); xs.contains(2); xs.first(); xs.last(); xs.indexOf(2)
-xs.map(f); xs.filter(p); xs.fold(0, f); xs.any(p); xs.all(p); xs.find(p); xs.forEach(f)
-xs.sorted(); xs.sortedBy(key); xs.reversed(); xs.joinToString(", "); xs.iter()
-ml.push(x); ml.pop(); ml.clear(); ml.toList(); xs.toMutable()
+xs[0]; xs.at(9) ?: -1; xs.at(-1); xs.len(); xs.contains(2); xs.first(); xs.last(); xs.indexOf(2)
+xs.map(f); xs.filter(p); xs.fold(0, f); xs.any(p); xs.all(p); xs.find(p); xs.forEach(f); xs.count(p)
+xs.take(2); xs.drop(2); xs.slice(1, 3); xs.zip(ys); xs.flatMap(f); xs.distinct(); xs.chunked(2); xs.windowed(2)
+xs.sorted(); xs.sortedBy(key); xs.sortedDescending(); xs.reversed(); xs.min(); xs.max(); xs.sum(); xs.join(", "); xs.iter()
+ml.push(x); ml.pop(); ml.insert(i, x); ml.removeAt(i); ml.addAll(ys); ml.sort(); ml.clear(); ml.toList(); xs.toMutable()
 m[k] ?: d; m.get(k); m.containsKey(k); m.keys(); m.values(); m.entries(); mm[k] = v; mm.remove(k)
 s.add(x); s.contains(x); s.remove(x); s.toList()
 xs.iter().filter(p).map(f).take(n).skip(n).enumerate().zip(ys.iter()).toList()

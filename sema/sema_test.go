@@ -1,12 +1,14 @@
 package sema
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/LaH-DeV/veles/source"
+	"github.com/LaH-DeV/veles/std"
 )
 
 // checkSource writes a one-module package to a temp dir and checks it.
@@ -610,4 +612,117 @@ fun main() {
 fun main() { val m = ["a": 1]; m.getOrPut("b", () => 2) }`, "changes the map")
 	expectError(t, prelude+`
 fun main() { val s = Set<i64>(); val t = Set<string>(); s.union(t) }`, "needs a set of 'i64'")
+}
+
+func TestExtendBlocks(t *testing.T) {
+	expectClean(t, prelude+`
+struct Point { x: i64, y: i64 }
+struct Box<T> { value: T }
+trait Show { fun show(): string }
+impl Show for Point { fun show(): string = "p" }
+extend Point {
+  pub fun sum(): i64 = self.x + self.y
+  mut fun bump() { self.x += 1 }
+}
+extend<T: Show> Box<T> { fun label(): string = self.value.show() }
+extend<T> Box<T> { fun get(): T = self.value }
+fun main() {
+  var p = Point(x: 1, y: 2)
+  p.bump()
+  val q = &p
+  val b = Box(value: p)
+  io.println("${p.sum()} ${q.sum()} ${b.get().x} ${b.label()}")
+  // the prelude's extend blocks
+  val words: List<string> = " a b ".trim().split(" ")
+  val xs = mut [3, 1, 2]
+  xs.insert(0, 9)
+  io.println("${words.len()} ${xs.take(2)} ${xs.sum()} ${xs.at(-1)} ${(1..4).len()} ${"abc".toUpper()}")
+  val bad: MutableList<u8> = [255]
+  val text: string? = bad.decodeUtf8()
+  io.println("$text ${"hi".byteAt(0)} ${"hi".bytes()}")
+  val v: i64 = xs.at(-1) ?: panic("empty")
+  io.println("$v")
+}`)
+	cases := []struct{ name, src, want string }{
+		{"builtin outside std", `extend string { fun shout(): string = self }`, "outside the standard library"},
+		{"foreign struct", `extend Panic { fun why(): string = "" }`, "declared outside this package"},
+		{"pointer target", `struct P { x: i64 }
+extend *P { fun z() {} }`, "only named types can be extended"},
+		{"type param target", `extend<T> T { fun z() {} }`, "only named types can be extended"},
+		{"struct body collision", `struct P { x: i64
+  fun sum(): i64 = self.x }
+extend P { fun sum(): i64 = 1 }`, "already declared in the body"},
+		{"duplicate in block", `struct P { x: i64 }
+extend P { fun a(): i64 = 1
+  fun a(): i64 = 2 }`, "duplicate method 'a'"},
+		{"overlapping blocks", `struct P { x: i64 }
+extend P { fun a(): i64 = 1 }
+extend P { fun a(): i64 = 2 }`, "already provided for 'P'"},
+		{"override", `struct P { x: i64 }
+extend P { override fun a(): i64 = 1 }`, "only meaningful inside an impl block"},
+		{"for keyword", `struct P { x: i64 }
+extend Show for P { }`, "names the type being extended"},
+		{"bound not met", `struct P { x: i64 }
+trait Show { fun show(): string }
+struct Box<T> { value: T }
+extend<T: Show> Box<T> { fun label(): string = self.value.show() }
+fun main() { val b = Box(value: P(x: 1)); b.label() }`, "requires 'P' to implement 'Show'"},
+		{"private across modules is still M5", `struct P { x: i64 }
+extend P { fun a(): i64 = 1 }
+fun main() { val p = P(x: 1); p.a() }`, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if c.want == "" {
+				expectClean(t, prelude+c.src)
+				return
+			}
+			expectError(t, prelude+c.src, c.want)
+		})
+	}
+}
+
+// The compiler's own std sources (`<dir>/std/<module>`) are checked as that
+// std module, replacing the embedded copy: editing the prelude reports
+// against the edited files, and its extend blocks on built-in types pass.
+func TestStdSourceTreeIsStd(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "std", "prelude")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := fs.ReadDir(std.FS, "prelude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		data, _ := fs.ReadFile(std.FS, "prelude/"+e.Name())
+		if err := os.WriteFile(filepath.Join(dir, e.Name()), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	extra := "extend string {\n  pub fun shout(): string = self + \"!\"\n}\nfun wrong(): i64 = \"x\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "zz_extra.vs"), []byte(extra), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	diags := &source.Diagnostics{}
+	pkg, err := LoadPackage(dir, diags)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pkg.Given.Std || pkg.Given.Path != "std/prelude" {
+		t.Fatalf("given module = %q std=%v", pkg.Given.Path, pkg.Given.Std)
+	}
+	Check(pkg, diags, false)
+	var sawMismatch bool
+	for _, d := range diags.Items {
+		if strings.Contains(d.Message, "outside the standard library") {
+			t.Errorf("std source tree treated as a user package: %s", d.Message)
+		}
+		if strings.Contains(d.Message, "type mismatch") && strings.Contains(d.Span.File.Path, "zz_extra.vs") {
+			sawMismatch = true
+		}
+	}
+	if !sawMismatch {
+		t.Errorf("the on-disk prelude was not the one checked:\n%s", diags.Render())
+	}
 }

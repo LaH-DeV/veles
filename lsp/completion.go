@@ -40,7 +40,7 @@ const (
 
 var keywordCompletions = []string{
 	"fun", "val", "var", "const", "if", "else", "loop", "break", "continue", "return", "throw",
-	"struct", "error", "trait", "impl", "sealed", "pub", "use", "when", "is", "as", "in",
+	"struct", "error", "trait", "impl", "extend", "sealed", "pub", "use", "when", "is", "as", "in",
 	"throws", "suspends", "try", "async", "await", "scope", "gather", "race", "with",
 	"unsafe", "extern", "mut", "override", "true", "false", "null", "self", "Self", "type",
 }
@@ -49,17 +49,6 @@ var builtinTypeCompletions = []string{
 	"i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "bool", "string",
 	"List", "MutableList", "Map", "MutableMap", "Set", "MutableSet", "Channel", "Range", "Option", "Result",
 }
-
-var (
-	stringMethods   = []string{"len", "isEmpty", "startsWith", "endsWith", "contains", "substring", "toInt", "charCount", "chars"}
-	listMethods     = []string{"len", "isEmpty", "at", "contains", "indexOf", "first", "last", "map", "filter", "fold", "forEach", "any", "all", "find", "sorted", "sortedBy", "reversed", "joinToString", "iter", "toList", "toMutable"}
-	mutListMethods  = []string{"push", "pop", "clear"}
-	mapMethods      = []string{"len", "isEmpty", "get", "containsKey", "keys", "values", "entries", "toMap", "toMutable"}
-	mutMapMethods   = []string{"set", "remove", "clear"}
-	setMethods      = []string{"len", "isEmpty", "contains", "toList", "toSet", "toMutable"}
-	mutSetMethods   = []string{"add", "remove", "clear"}
-	channelMethods  = []string{"send", "recv", "close", "len"}
-)
 
 type adder func(label string, kind int, detail string)
 
@@ -196,22 +185,23 @@ func (s *Server) completion(params json.RawMessage) any {
 							add(mth.Name.Name, ciMethod, dd.Name.Name+"."+mth.Name.Name+funSignature(mth))
 						}
 					case *ast.ImplDecl:
+						owner := ast.TypeString(dd.Target)
+						if !dd.Extend {
+							owner = ast.TypeString(dd.Trait)
+						}
 						for _, mth := range dd.Methods {
-							add(mth.Name.Name, ciMethod, ast.TypeString(dd.Trait)+"."+mth.Name.Name+funSignature(mth))
+							add(mth.Name.Name, ciMethod, owner+"."+mth.Name.Name+funSignature(mth))
 						}
 					}
 				}
 			}
 		}
 	}
-	for _, name := range listMethods {
-		add(name, ciMethod, "List."+name)
-	}
-	for _, name := range mapMethods {
-		add(name, ciMethod, "Map."+name)
-	}
-	for _, name := range stringMethods {
-		add(name, ciMethod, "string."+name)
+	for _, t := range []types.Type{&types.List{Elem: types.TI64}, &types.Map{Key: types.TString, Value: types.TI64}, types.TString} {
+		family := sema.BuiltinFamily(t)
+		for _, d := range sema.BuiltinMethods(t) {
+			add(d.Name, ciMethod, family+"."+d.Name+d.Sig)
+		}
 	}
 	return finish()
 }
@@ -226,66 +216,36 @@ func (s *Server) addModuleDecls(add adder, m *sema.Module) {
 	}
 }
 
-// addMembers offers the fields and methods of a value of type t.
+// addMembers offers the fields and methods of a value of type t: the
+// compiler's built-ins from the catalogue, the struct's own fields and
+// methods, and every `extend` and `impl` block whose target names the type.
 func (s *Server) addMembers(add adder, a *analysis, t types.Type) {
 	switch tt := t.(type) {
 	case *types.Pointer:
 		s.addMembers(add, a, tt.Elem)
+		return
 	case *types.Nullable:
 		s.addMembers(add, a, tt.Elem) // reached through `?.`
-	case *types.Basic:
-		if tt.Kind == types.String {
-			for _, m := range stringMethods {
-				add(m, ciMethod, "string."+m)
-			}
-		}
-	case *types.List:
-		for _, m := range listMethods {
-			add(m, ciMethod, "List."+m)
-		}
-		if tt.Mutable {
-			for _, m := range mutListMethods {
-				add(m, ciMethod, "MutableList."+m)
-			}
-		}
-	case *types.Map:
-		for _, m := range mapMethods {
-			add(m, ciMethod, "Map."+m)
-		}
-		if tt.Mutable {
-			for _, m := range mutMapMethods {
-				add(m, ciMethod, "MutableMap."+m)
-			}
-		}
-	case *types.Set:
-		for _, m := range setMethods {
-			add(m, ciMethod, "Set."+m)
-		}
-		if tt.Mutable {
-			for _, m := range mutSetMethods {
-				add(m, ciMethod, "MutableSet."+m)
-			}
-		}
-	case *types.Channel:
-		for _, m := range channelMethods {
-			add(m, ciMethod, "Channel."+m)
-		}
-	case *types.Range:
-		add("lo", ciField, "Range.lo")
-		add("hi", ciField, "Range.hi")
-		add("inclusive", ciField, "Range.inclusive")
-		add("iter", ciMethod, "Range.iter")
+		return
 	case *types.Tuple:
 		for i, e := range tt.Elems {
 			add(strconv.Itoa(i), ciField, e.String())
 		}
+		return
 	case *types.Trait:
 		s.addTraitMethods(add, a, tt.Name)
+		return
 	case *types.Sealed:
 		s.addTraitMethods(add, a, tt.Name)
+		return
 	case *types.ErrorUnion:
 		// every member implements Error (D4); its methods dispatch on the union
 		s.addTraitMethods(add, a, "Error")
+		return
+	case *types.Range:
+		add("lo", ciField, "Range.lo")
+		add("hi", ciField, "Range.hi")
+		add("inclusive", ciField, "Range.inclusive")
 	case *types.Struct:
 		base := tt
 		if tt.Template != nil {
@@ -302,18 +262,43 @@ func (s *Server) addMembers(add adder, a *analysis, t types.Type) {
 				s.addTraitMethods(add, a, typeHeadName(d.Variant))
 			}
 		}
-		// methods from every trait the struct implements: the impl blocks
-		// and the traits' default bodies
-		for _, m := range a.pkg.Modules {
-			for _, f := range m.Files {
-				for _, decl := range f.Decls {
-					impl, ok := decl.(*ast.ImplDecl)
-					if !ok || typeHeadName(impl.Target) != tt.Name {
-						continue
-					}
-					for _, mth := range impl.Methods {
-						add(mth.Name.Name, ciMethod, ast.TypeString(impl.Trait)+"."+mth.Name.Name+funSignature(mth))
-					}
+	}
+	family := sema.BuiltinFamily(t)
+	for _, d := range sema.BuiltinMethods(t) {
+		add(d.Name, ciMethod, family+"."+d.Name+d.Sig)
+	}
+	// the names an impl or extend target may spell this type with: a
+	// mutable collection also has its immutable form's blocks (D25)
+	heads := map[string]bool{}
+	if st, ok := t.(*types.Struct); ok {
+		heads[st.Name] = true
+	} else if family != "" {
+		heads[family] = true
+		if base := strings.TrimPrefix(family, "Mutable"); base != family {
+			heads[base] = true
+		}
+		if b, ok := t.(*types.Basic); ok {
+			heads[b.Name] = true // `i64`, `f64`: the family is "int"/"float"
+		}
+	}
+	if len(heads) == 0 {
+		return
+	}
+	for _, m := range a.pkg.Modules {
+		for _, f := range m.Files {
+			for _, decl := range f.Decls {
+				impl, ok := decl.(*ast.ImplDecl)
+				if !ok || !heads[typeHeadName(impl.Target)] {
+					continue
+				}
+				owner := ast.TypeString(impl.Target)
+				if !impl.Extend {
+					owner = ast.TypeString(impl.Trait)
+				}
+				for _, mth := range impl.Methods {
+					add(mth.Name.Name, ciMethod, owner+"."+mth.Name.Name+funSignature(mth))
+				}
+				if !impl.Extend {
 					s.addTraitMethods(add, a, typeHeadName(impl.Trait))
 				}
 			}

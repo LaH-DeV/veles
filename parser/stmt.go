@@ -151,8 +151,8 @@ func (p *Parser) parseStmt() ast.Stmt {
 		p.syncStmt()
 		return &ast.BadStmt{Pos: start}
 	}
-	if p.atErrorDecl() {
-		p.errorf(p.span(), "'error' declarations are only allowed at module level")
+	if p.atErrorDecl() || p.atExtendDecl() {
+		p.errorf(p.span(), "'%s' declarations are only allowed at module level", p.cur().Text)
 		p.syncStmt()
 		return &ast.BadStmt{Pos: start}
 	}

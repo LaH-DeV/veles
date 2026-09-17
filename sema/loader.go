@@ -248,6 +248,27 @@ func LoadPackageOverlay(entry string, diags *source.Diagnostics, overlay map[str
 	// tool was pointed at is loaded too, so a module deep in the tree can be
 	// checked or edited even when nothing imports it yet.
 	p.GivenDir = entryDir
+	// The compiler's own standard library sources (`<repo>/std/<module>`)
+	// are checked as the std module they are, replacing the embedded copy,
+	// so that editing the prelude gives real diagnostics against the edit.
+	if name, ok := stdSourceDir(entryDir); ok {
+		p.Root = filepath.Dir(entryDir)
+		given, ok := p.loadStdFromDisk(entryDir, name)
+		if !ok {
+			diags.Errorf(source.Span{}, "no .vs files in %s", entryDir)
+			return p, nil
+		}
+		p.Modules[given.Path] = given
+		p.Given = given
+		if name != "prelude" {
+			if prelude, ok := p.loadStd("prelude"); ok {
+				p.Modules[prelude.Path] = prelude
+				p.loadImports(prelude)
+			}
+		}
+		p.loadImports(given)
+		return p, nil
+	}
 	modPath := p.modulePathOf(entryDir)
 	given, ok := p.loadLocal(modPath)
 	if !ok {
@@ -363,4 +384,30 @@ func (p *Package) stdModuleNames() []string {
 		}
 	}
 	return names
+}
+
+// stdSourceDir reports whether dir is one of the compiler's own standard
+// library source directories — a directory named after an embedded std
+// module, inside a directory named `std` — and which module it is.
+func stdSourceDir(dir string) (string, bool) {
+	name := filepath.Base(dir)
+	if filepath.Base(filepath.Dir(dir)) != "std" {
+		return "", false
+	}
+	if _, err := fs.ReadDir(std.FS, name); err != nil {
+		return "", false
+	}
+	return name, true
+}
+
+// loadStdFromDisk loads a std module from a source directory instead of
+// the embedded copy (see LoadPackageOverlay).
+func (p *Package) loadStdFromDisk(dir, name string) (*Module, bool) {
+	m, ok := p.loadLocal(name)
+	if !ok {
+		return nil, false
+	}
+	m.Path = "std/" + name
+	m.Std = true
+	return m, true
 }

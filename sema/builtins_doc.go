@@ -49,10 +49,12 @@ var builtinDocs = []BuiltinDoc{
 	{"string", "chars", "(): List<string>", "The code points, each as a one-character string."},
 	{"string", "substring", "(from: i64, to: i64): string?", "The bytes in `from..<to`, or `null` when the bounds are not valid."},
 	{"string", "toInt", "(): i64?", "Parses a decimal integer, or `null` when the text is not one."},
+	{"string", "byteAt", "(i: i64): u8", "The byte at index `i`; panics when out of range (D18: strings are byte-indexed)."},
+	{"string", "bytes", "(): List<u8>", "A copy of the UTF-8 bytes; `List<u8>.decodeUtf8()` goes back."},
 
 	{"List", "len", "(): i64", "Number of elements."},
 	{"List", "isEmpty", "(): bool", "True when there are no elements."},
-	{"List", "at", "(i: i64): T?", "The element at `i`, or `null` when `i` is out of range (`xs[i]` panics instead)."},
+	{"List", "at", "(i: i64): T?", "The element at `i`, or `null` when `i` is out of range (`xs[i]` panics instead); a negative `i` counts from the end, so `xs.at(-1)` is the last element."},
 	{"List", "first", "(): T?", "The first element, or `null` when empty."},
 	{"List", "last", "(): T?", "The last element, or `null` when empty."},
 	{"List", "contains", "(x: T): bool", "True when some element equals `x`."},
@@ -71,6 +73,7 @@ var builtinDocs = []BuiltinDoc{
 	{"List", "iter", "(): Iterator<T>", "A lazy iterator over the elements (D46)."},
 	{"List", "toList", "(): List<T>", "An immutable copy."},
 	{"List", "toMutable", "(): MutableList<T>", "A mutable copy."},
+	{"List", "decodeUtf8", "(): string?", "On a `List<u8>` only: the bytes as text, or `null` when they are not valid UTF-8 (D18)."},
 	{"MutableList", "push", "(x: T)", "Appends `x`."},
 	{"MutableList", "pop", "(): T?", "Removes and returns the last element, or `null` when empty."},
 	{"MutableList", "clear", "()", "Removes every element."},
@@ -277,3 +280,23 @@ func (c *Checker) refBuiltin(span source.Span, recv types.Type, name string) {
 	c.index.Refs = append(c.index.Refs, Ref{Span: span, Def: def, Kind: "fun", Name: name,
 		Detail: "fun " + recv.String() + "." + name + d.Sig + "  (built in)", Doc: d.Doc})
 }
+
+// BuiltinMethods lists the catalogued methods of a receiver type: those of
+// its family plus, for a mutable collection, its immutable family's.
+func BuiltinMethods(t types.Type) []BuiltinDoc {
+	family := builtinFamily(t)
+	if family == "" {
+		return nil
+	}
+	var out []BuiltinDoc
+	for _, d := range builtinDocs {
+		if d.Recv == family || (strings.HasPrefix(family, "Mutable") && d.Recv == strings.TrimPrefix(family, "Mutable")) {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// BuiltinFamily names the catalogue family of a receiver type ("string",
+// "List", "MutableMap", "int", ...), or "" for types with no built-ins.
+func BuiltinFamily(t types.Type) string { return builtinFamily(t) }

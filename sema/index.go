@@ -423,6 +423,8 @@ func funDetail(t *FuncTemplate) string {
 		sb.WriteString(t.Owner.Name + ".")
 	} else if t.Impl != nil && t.Impl.Trait != nil {
 		sb.WriteString(t.Impl.Trait.Name + ".")
+	} else if t.Impl != nil {
+		sb.WriteString(t.Impl.Target.String() + ".")
 	} else if t.Trait != nil {
 		sb.WriteString(t.Trait.Name + ".")
 	}

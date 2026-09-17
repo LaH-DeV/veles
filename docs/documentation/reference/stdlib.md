@@ -81,6 +81,9 @@ Both are `Sendable` regardless of `T`.
 pub struct Panic { pub message: string }    // a task's panic, as seen by `gather`
 ```
 
+`panic(message)` raises one deliberately (D20). It never returns, so it
+can stand in for a value: `val x = xs.at(i) ?: panic("index $i")`.
+
 ### Errors (D4)
 
 ```veles
@@ -111,6 +114,11 @@ sealed types and match with `when`.
 
 ## Built-in methods
 
+The compiler provides a small set of primitives on each built-in type;
+the rest of the methods below are ordinary Veles in the prelude, added
+with `extend` blocks (`std/prelude/string.vs`, `list.vs`) — go-to-definition
+opens them. Both kinds are called the same way.
+
 ### `string`
 
 | Method | Result |
@@ -120,28 +128,44 @@ sealed types and match with `when`.
 | `chars()` | `List<string>`, one string per code point |
 | `isEmpty()` | `bool` |
 | `startsWith(s)`, `endsWith(s)`, `contains(s)` | `bool` |
+| `indexOf(part, from: 0)`, `lastIndexOf(part)` | `i64` byte index, −1 if absent |
 | `substring(from, to)` | `string?` — byte offsets; null if a boundary splits a character |
-| `toInt()` | `i64?` |
+| `byteAt(i)`, `bytes()` | `u8` (panics out of range), `List<u8>` |
+| `trim()`, `trimStart()`, `trimEnd()` | ASCII whitespace removed |
+| `split(sep)`, `lines()` | `List<string>`; `lines` drops `\r` and a final empty line |
+| `replace(old, new)`, `repeat(n)` | `string` |
+| `toUpper()`, `toLower()` | ASCII letters only |
+| `padStart(width, pad: " ")`, `padEnd(width, pad: " ")` | `string` |
+| `toInt()`, `toF64()` | `i64?`, `f64?` |
 | `+`, `==`, `<` … | concatenation and comparison |
 
-Interpolation `"$x ${expr}"` accepts any value.
+Interpolation `"$x ${expr}"` accepts any value. `List<u8>.decodeUtf8()` is
+the way back from `bytes()`: `string?`, null when the bytes are not valid
+UTF-8.
 
 ### `List<T>` and `MutableList<T>`
 
 | Method | Result |
 |---|---|
 | `xs[i]` | `T`; panics when out of range |
-| `at(i)` | `T?` |
+| `at(i)` | `T?`; a negative `i` counts from the end (`at(-1)` is the last) |
 | `len()`, `isEmpty()` | |
-| `contains(x)`, `indexOf(x)` | `bool`, `i64` (−1 if absent) |
-| `first()`, `last()` | `T?` |
-| `map(f)`, `filter(p)`, `fold(z, f)`, `forEach(f)` | eager; `map`/`filter` return `List` |
+| `contains(x)`, `indexOf(x)`, `count(p)` | `bool`, `i64` (−1 if absent), `i64` |
+| `first()`, `last()`, `min()`, `max()` | `T?`; `min`/`max` need numbers or strings |
+| `take(n)`, `drop(n)`, `slice(from, to)` | new `List`, bounds clamped |
+| `map(f)`, `filter(p)`, `fold(z, f)`, `forEach(f)`, `flatMap(f)` | eager; return `List` |
 | `any(p)`, `all(p)`, `find(p)` | |
-| `sorted()`, `sortedBy(key)`, `reversed()` | new `List`; `key` returns a number or string (D48) |
-| `joinToString(sep)` | `string` |
+| `zip(ys)`, `chunked(n)`, `windowed(n)`, `distinct()` | `List<(T, U)>`, `List<List<T>>`, `List<List<T>>`, `List<T>` |
+| `sorted()`, `sortedDescending()`, `sortedBy(key)`, `reversed()` | new `List`; `key` returns a number or string (D48) |
+| `sum()` | `List<i64>` and `List<f64>` only |
+| `join(sep)`, `joinToString(sep)` | `string` |
 | `iter()` | lazy iterator |
 | `toList()`, `toMutable()` | copies (D25) |
 | `push(x)`, `pop(): T?`, `clear()` | `MutableList` only |
+| `insert(i, x)`, `removeAt(i): T`, `addAll(xs)`, `sort()` | `MutableList` only; `sort` is in place |
+
+A `MutableList<T>` has every `List<T>` method; a `val` binding is enough to
+call the mutating ones, since the list is a reference (D25).
 
 ### `Map<K, V>` and `MutableMap<K, V>`
 
@@ -167,7 +191,8 @@ fields.
 
 ### `Range<T>`
 
-Fields `lo`, `hi`, `inclusive`; iterable.
+Fields `lo`, `hi`, `inclusive`; iterable. `len()`, `contains(x)`, `step(n)` and
+`reversed()` (the last two are iterators: `(1..10).step(3).toList()`).
 
 ### Numbers
 
@@ -208,8 +233,8 @@ io.readLine(): string?           // null at end of input
 
 ## Not yet in the bootstrap
 
-File and network I/O, formatting beyond interpolation, string splitting
-and searching beyond `contains`, time, random numbers, command-line
-arguments. Each is a small `extern "C"` binding away (see
-[chapter 13](../13-memory-and-ffi.md)); the plan is to grow the library
-in Veles once the compiler is self-hosting.
+File and network I/O, formatting beyond interpolation, time, random
+numbers, command-line arguments. Each is a small `extern "C"` binding away
+(see [chapter 13](../13-memory-and-ffi.md)); the library grows in Veles —
+the string and list methods above are the first step — with the compiler's
+own needs setting the order.

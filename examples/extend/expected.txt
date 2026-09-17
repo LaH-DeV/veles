@@ -1,0 +1,12 @@
+length 5.0
+scaled (6.0, 8.0) length 10.0
+depth 2: (1.0, 0.0) (0.0, 1.0)
+popped (0.0, 1.0) depth 1
+[alpha, beta, gamma] alpha|beta|gamma ABAB
+alpha.beta..gamma.
+[4, 8] [23, 42] 108 42 42 [[4, 8, 15, 16], [23, 42]]
+4 [(4, alpha), (8, beta), (15, gamma)] [3, 1, 2]
+[1, 2, 3, 9] removed 1 -> [2, 3, 9]
+[1, 4, 7, 10] [4, 3, 2, 1, 0] 10 false
+350.0 null 6 héllo
+exit=0

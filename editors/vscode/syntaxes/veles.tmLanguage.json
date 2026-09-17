@@ -99,6 +99,16 @@
           ]
         },
         {
+          "comment": "extend<T> Type { ... }  (contextual keyword at declaration position)",
+          "begin": "^\\s*(extend)\\b(?=\\s*[<A-Za-z_*(])",
+          "beginCaptures": { "1": { "name": "storage.type.impl.veles" } },
+          "end": "(?=\\{)",
+          "patterns": [
+            { "include": "#types" },
+            { "include": "#punctuation" }
+          ]
+        },
+        {
           "comment": "type Item = ...  (associated type)",
           "match": "\\b(type)\\s+([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {

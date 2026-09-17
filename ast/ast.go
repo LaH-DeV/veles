@@ -235,9 +235,12 @@ type AssocTypeBinding struct {
 	Type Type
 }
 
-// ImplDecl is `impl<T> Trait for Type { ... }`.
+// ImplDecl is `impl<T> Trait for Type { ... }`, or with Extend set
+// `extend<T> Type { ... }`: inherent methods added to a type the package
+// declares (D23; the built-in types belong to std). Trait is nil then.
 type ImplDecl struct {
 	Attrs      []*Attribute
+	Extend     bool
 	TypeParams []TypeParam
 	Trait      Type
 	Target     Type

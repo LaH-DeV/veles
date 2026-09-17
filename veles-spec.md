@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.21** — language design complete. Every open question in the language itself is closed. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
+**Working draft v0.22** — language design complete. Every open question in the language itself is closed. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -351,6 +351,19 @@ Inherent methods are declared inside the struct. Trait implementations go in `im
 Putting trait implementations in the struct body was considered and rejected. It would mean a trait impl could only be written by whoever controls the type's source, which makes `impl Display for SomeForeignType` impossible — removing the capability D6 grants, that D17's global coherence was built around, and that D23 cited as the reason extension functions were unnecessary. It would also force every trait a type ever implements to be named in its header.
 
 Consequence: inherent methods cannot be added to a type you do not own. Extension functions were declined, so the route is declaring a trait and implementing it. This is narrower than it sounds — Veles owns `string` and the collections, so stdlib types stay method-rich; the ceremony only appears when extending a third-party type. Rust lives this way.
+
+**Addendum (v0.22) — `extend` blocks.** A package may add inherent methods to a type it declares, outside the struct body:
+
+```vs
+extend<T> Stack<T> {
+  fun depth(): i64 = self.items.len()
+}
+extend<T: Show> Stack<T> {          // bounded: only for showable elements
+  fun render(): string = ...
+}
+```
+
+The ownership rule is unchanged — `extend` names only a type declared in the same package, and the built-in types (`string`, the numbers, `List`, `Map`, `Set`, `Range`, `Channel`) are declared by the standard library. This is not an extension-function mechanism: what it provides is a home for the methods of the built-in types, which have no struct body to hold them, so that `trim`, `split`, `take`, `chunked` and the rest are written in Veles in the prelude rather than in the compiler. A `MutableList<T>` also has every `extend<T> List<T>` method (D25). Method names must not collide with the struct body, another `extend` in the package, or a compiler built-in; coherence is checked program-wide like D17. `pub` on the methods follows M5.
 
 ### D24 — Full prelude
 
@@ -839,7 +852,8 @@ Consequences:
 
 - **Semicolons** — Go-style automatic insertion.
 - **Loop labels** — `loop :outer { ... break outer }`; the label follows the keyword so the statement still starts with `loop`.
-- **Byte access** — `s.bytes[i]`, an explicit view. `s[i]` is left unspent rather than producing a `u8` from validated text.
+- **Byte access** — `s.byteAt(i)` and `s.bytes()`, explicit views; `List<u8>.decodeUtf8()` validates on the way back. `s[i]` is left unspent rather than producing a `u8` from validated text.
+- **`panic(message)`** — a built-in that never returns (D20); a `T?` fallback like `xs.at(i) ?: panic("...")` types as `T`.
 - **`Set`** — follows D25's immutable/mutable split and is insertion-ordered, matching `Map`.
 - **`gc.retain` handles** — `Closeable`, acquired through `with` (D43).
 - **Module interface files** — build cache, regenerated. Packages distribute as source under the decentralized registry model (manifest §7), so there is nothing to ship them in.

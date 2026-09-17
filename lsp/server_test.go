@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/LaH-DeV/veles/std"
 )
 
 const testSrc = `use io
@@ -469,5 +472,97 @@ func TestBuiltinHoverAndDefinition(t *testing.T) {
 	res, _ = c.call("textDocument/definition", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": 4, "character": 6}})
 	if !strings.Contains(string(res), "std/io/io.vs") && !strings.Contains(string(res), "std%2Fio%2Fio.vs") && !strings.Contains(string(res), "veles/std/io/io.vs") {
 		t.Errorf("definition of io.println: %s", res)
+	}
+}
+
+func TestExtendMethods(t *testing.T) {
+	// line 3: val s = " hi "; 4: io.println(s.trim())
+	src := "use io\n\nfun main() {\n  val s = \" hi \"\n  io.println(s.trim())\n}\n\nstruct P { x: i64 }\n\nextend P {\n  /// Twice x.\n  fun double(): i64 = self.x * 2\n}\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := pathToURI(path)
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{})
+	c.notify("initialized", map[string]any{})
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": src}})
+	// a prelude extend method hovers like any function, with its doc and
+	// the receiver type as owner
+	res, _ := c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": 4, "character": 16}})
+	if !strings.Contains(string(res), "fun string.trim(): string") || !strings.Contains(string(res), "without leading or trailing") {
+		t.Errorf("hover on an extend method: %s", res)
+	}
+	// its definition is the prelude source
+	res, _ = c.call("textDocument/definition", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": 4, "character": 16}})
+	if !strings.Contains(string(res), "string.vs") {
+		t.Errorf("definition of an extend method: %s", res)
+	}
+	// completion on a string offers the built-ins and the prelude's extends
+	// (the dangling `.` does not parse; the receiver resolves through the
+	// last good analysis)
+	broken := strings.Replace(src, "  io.println(s.trim())\n", "  io.println(s.trim())\n  s.\n", 1)
+	c.notify("textDocument/didChange", map[string]any{"textDocument": map[string]any{"uri": uri, "version": 2}, "contentChanges": []map[string]any{{"text": broken}}})
+	res, _ = c.call("textDocument/completion", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": 5, "character": 4}})
+	labels := completionLabels(res)
+	for _, want := range []string{"len", "trim", "split", "padStart"} {
+		found := false
+		for _, l := range labels {
+			found = found || l == want
+		}
+		if !found {
+			t.Errorf("completion on a string lacks %q: %v", want, labels)
+		}
+	}
+	// document symbols list the extend block under its target
+	res, _ = c.call("textDocument/documentSymbol", map[string]any{"textDocument": map[string]any{"uri": uri}})
+	if !strings.Contains(string(res), "extend P") {
+		t.Errorf("document symbols: %s", res)
+	}
+}
+
+// Editing the compiler's own prelude (`<repo>/std/prelude/*.vs`): the
+// server checks it as the std module, so its extend blocks on built-in
+// types are legal and real errors in the edited file are reported.
+func TestStdSourceTreeDiagnostics(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "std", "prelude")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := fs.ReadDir(std.FS, "prelude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		data, _ := fs.ReadFile(std.FS, "prelude/"+e.Name())
+		if err := os.WriteFile(filepath.Join(dir, e.Name()), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	src := "extend string {\n  pub fun shout(): string = self + \"!\"\n}\nfun wrong(): i64 = \"x\"\n"
+	path := filepath.Join(dir, "zz_extra.vs")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := pathToURI(path)
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{})
+	c.notify("initialized", map[string]any{})
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": src}})
+	_, notes := c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": 0, "character": 0}})
+	var published string
+	for _, n := range notes {
+		if strings.Contains(string(n), "publishDiagnostics") {
+			published += string(n)
+		}
+	}
+	if strings.Contains(published, "outside the standard library") {
+		t.Errorf("prelude source treated as a user package: %s", published)
+	}
+	if !strings.Contains(published, "type mismatch") {
+		t.Errorf("no diagnostics for the edited prelude file: %s", published)
 	}
 }

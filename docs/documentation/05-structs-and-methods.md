@@ -204,4 +204,45 @@ Pair(first: 1, second: one) Pair(first: one, second: 1) 3
 Type arguments are inferred from the constructor's arguments. Each
 distinct `Pair<A, B>` is compiled separately (D8).
 
+## Methods outside the body: `extend`
+
+A struct body can get long. `extend` adds inherent methods to a type from
+anywhere in the same package — another file, or a block below the struct
+that groups related operations:
+
+```veles
+use io
+
+struct Pair<A, B> {
+  first: A
+  second: B
+}
+
+extend<A, B> Pair<A, B> {
+  fun swap(): Pair<B, A> = Pair(first: self.second, second: self.first)
+}
+
+extend Pair<i64, i64> {
+  fun sum(): i64 = self.first + self.second
+}
+
+fun main() {
+  val p = Pair(first: 1, second: 2)
+  io.println("${p.swap()} ${p.sum()}")
+}
+```
+
+Output:
+```text
+Pair(first: 2, second: 1) 3
+```
+
+The second block applies to `Pair<i64, i64>` only; a bound like
+`extend<T: Show> Box<T>` works the same way. You can only extend types your
+own package declares — for anyone else's type, declare a trait and
+implement it ([chapter 8](08-traits-and-generics.md)). The built-in types
+belong to the standard library, which is where `"a,b".split(",")` and
+`xs.take(3)` come from: they are `extend` blocks in the prelude, written in
+Veles.
+
 Next: [Nullable types](06-nullable-types.md).

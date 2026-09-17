@@ -38,8 +38,8 @@ would change to:
   var stock = ["apples": 3]                      // MutableMap<string, i32>
 
 9. I would like the language / std to be prepared for efficiently implementing queues, stacks, maybe graphs? algorithms etc...
-
-11. list.at(-1) should get the last item
+   (2026-09-17: `extend` blocks landed, so Deque/PriorityQueue can be plain Veles in the prelude;
+   MutableList now has insert/removeAt/addAll/sort)
 
 12. "x does not implement y" when trait has something and the struct does not implement it, it should be reported at the struct, not when using the method
 
@@ -47,19 +47,20 @@ would change to:
    should carry a `// SAFETY: ...` comment saying why it is sound, or the function should be
    declared `unsafe fun` so the obligation moves to the caller. Not implemented; decide first.
 
-14. Built-in methods still to add (catalogue in sema/builtins_doc.go; each is a checker case,
-   a codegen case or a lowering, and a catalogue line):
-   - string: trim(), trimStart(), trimEnd(), split(sep): List<string>, lines(), replace(old, new),
-     indexOf(part): i64, repeat(n), toUpper()/toLower() (ASCII), toF64(): f64?, bytes(): List<u8>,
-     padStart(n, ch), padEnd(n, ch)
-   - List: take(n), drop(n), slice(from, to), sum() (numeric), min()/max(): T? (Ord),
-     count(pred), zip(other): List<(T, U)>, flatMap(f), distinct(), chunked(n), windowed(n),
-     sortedDescending(); MutableList: insert(i, x), removeAt(i): T, addAll(xs), sort() in place
-   - Range: step(n), contains(x), reversed(), len()
-   - Channel: trySend(x): bool, tryRecv(): T? (non-suspending)
-   - int: saturatingMul (LLVM has no plain intrinsic; llvm.smul.fix.sat with scale 0)
+14. (2026-09-17) The built-in method list moved to Veles: `extend` blocks in std/prelude/string.vs
+   and list.vs provide trim/split/lines/replace/indexOf/repeat/toUpper/toLower/toF64/padStart/padEnd,
+   take/drop/slice/count/zip/flatMap/distinct/chunked/windowed/sortedDescending/min/max/sum,
+   insert/removeAt/addAll/sort, Range step/contains/reversed/len, plus `panic(msg)` and `xs.at(-1)`.
+   Only primitives stay in Go (sema/builtins_doc.go is now that list): string byteAt/bytes,
+   List<u8>.decodeUtf8, and the pre-existing ones. Still open from the old list:
+   - Channel: trySend(x): bool, tryRecv(): T? (non-suspending) — runtime work, not prelude
+   - int: saturatingMul (llvm.smul.fix.sat with scale 0)
    - not as built-ins, on purpose: toString() (interpolation), parse<T>() (wants a FromString
      trait once traits on primitives are allowed), width/precision formatting (a format module)
+   - the Go-lowered eager adapters (sema/lower_list.go, check_map.go) could move to the prelude
+     too once one is benchmarked at -O2 against the Veles version
+   - `min()`/`max()`/`sorted()` need numbers or strings; with a generic `extend<T> List<T>` the
+     error for other T is reported inside the prelude. An `Ord` marker bound would fix the location.
 
 15. Hover shows a field typed with an error set as the flattened union (`cause: A | B`) rather
    than the set's name; the alias name is not kept in the type. Small follow-up if wanted.

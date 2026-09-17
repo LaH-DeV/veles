@@ -295,6 +295,68 @@ void veles_bool_to_string(veles_string *out, bool v) {
     out->len = v ? 4 : 5;
 }
 
+/* ---- bytes: the primitives the prelude builds the string methods on ---- */
+
+uint8_t veles_string_byte_at(const char *s, int64_t len, int64_t i) {
+    if (i < 0 || i >= len) {
+        char msg[80];
+        int n = snprintf(msg, sizeof msg, "index %" PRId64 " out of bounds for string of length %" PRId64, i, len);
+        veles_panic(msg, n);
+    }
+    return (uint8_t)s[i];
+}
+
+veles_list *veles_string_bytes(veles_desc *desc, const char *s, int64_t len) {
+    veles_list *l = veles_list_new(desc, len);
+    memcpy(l->data, s, (size_t)len);
+    l->len = len;
+    return l;
+}
+
+/* veles_utf8_valid checks the encoding: shortest forms only, no surrogates,
+ * nothing above U+10FFFF (D18: every string is valid UTF-8). */
+static bool veles_utf8_valid(const unsigned char *p, int64_t len) {
+    int64_t i = 0;
+    while (i < len) {
+        unsigned char c = p[i];
+        if (c < 0x80) { i++; continue; }
+        int n;
+        uint32_t cp;
+        if ((c & 0xE0) == 0xC0) { n = 1; cp = c & 0x1F; if (c < 0xC2) return false; }
+        else if ((c & 0xF0) == 0xE0) { n = 2; cp = c & 0x0F; }
+        else if ((c & 0xF8) == 0xF0) { n = 3; cp = c & 0x07; if (c > 0xF4) return false; }
+        else return false;
+        for (int k = 1; k <= n; k++) {
+            if (i + k >= len || (p[i + k] & 0xC0) != 0x80) return false;
+            cp = (cp << 6) | (p[i + k] & 0x3F);
+        }
+        if (n == 2 && (cp < 0x800 || (cp >= 0xD800 && cp <= 0xDFFF))) return false;
+        if (n == 3 && (cp < 0x10000 || cp > 0x10FFFF)) return false;
+        i += n + 1;
+    }
+    return true;
+}
+
+bool veles_bytes_decode_utf8(veles_string *out, veles_list *bytes) {
+    if (!veles_utf8_valid((const unsigned char *)bytes->data, bytes->len)) return false;
+    char *buf = veles_alloc(bytes->len + 1);
+    memcpy(buf, bytes->data, (size_t)bytes->len);
+    out->data = buf;
+    out->len = bytes->len;
+    return true;
+}
+
+/* veles_string_find returns the byte index of the first occurrence of part
+ * at or after from, or -1. */
+int64_t veles_string_find(const char *s, int64_t len, const char *part, int64_t plen, int64_t from) {
+    if (from < 0) from = 0;
+    if (plen == 0) return from <= len ? from : -1;
+    for (int64_t i = from; i + plen <= len; i++) {
+        if (s[i] == part[0] && memcmp(s + i, part, (size_t)plen) == 0) return i;
+    }
+    return -1;
+}
+
 /* ---- lists (D25: reference types; element type erased to a size) -------- */
 
 veles_list *veles_list_new(veles_desc *desc, int64_t cap) {

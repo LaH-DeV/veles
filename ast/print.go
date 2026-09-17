@@ -198,12 +198,19 @@ func (p *printer) decl(d Decl) {
 		p.close()
 	case *ImplDecl:
 		p.attrs(d.Attrs)
-		p.open("impl")
-		p.typeParams(d.TypeParams)
-		p.w(" ")
-		p.typ(d.Trait)
-		p.w(" for ")
-		p.typ(d.Target)
+		if d.Extend {
+			p.open("extend")
+			p.typeParams(d.TypeParams)
+			p.w(" ")
+			p.typ(d.Target)
+		} else {
+			p.open("impl")
+			p.typeParams(d.TypeParams)
+			p.w(" ")
+			p.typ(d.Trait)
+			p.w(" for ")
+			p.typ(d.Target)
+		}
 		for _, at := range d.AssocTypes {
 			p.child(func() {
 				p.w("(type " + at.Name.Name + " = ")

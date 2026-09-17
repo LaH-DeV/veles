@@ -296,8 +296,8 @@ func (s *Server) analyze(d *document) {
 	}
 	byFile := map[*source.File][]lspDiagnostic{}
 	for _, m := range pkg.Modules {
-		if m.Std {
-			continue
+		if m.Std && m != pkg.Given {
+			continue // embedded: not a file the editor can show (the given module may be a std source tree being edited)
 		}
 		for _, f := range m.Files {
 			a.files[sema.OverlayKey(f.Source.Path)] = f.Source
@@ -518,8 +518,13 @@ func declSymbol(decl ast.Decl) (docSymbol, bool) {
 		}
 		return sym, true
 	case *ast.ImplDecl:
-		name := "impl " + ast.TypeString(d.Trait) + " for " + ast.TypeString(d.Target)
-		sym := docSymbol{Name: name, Kind: symIface, Range: spanToRange(d.Pos), SelectionRange: spanToRange(d.Trait.Span())}
+		name := "extend " + ast.TypeString(d.Target)
+		sel := d.Target.Span()
+		if !d.Extend {
+			name = "impl " + ast.TypeString(d.Trait) + " for " + ast.TypeString(d.Target)
+			sel = d.Trait.Span()
+		}
+		sym := docSymbol{Name: name, Kind: symIface, Range: spanToRange(d.Pos), SelectionRange: spanToRange(sel)}
 		for _, m := range d.Methods {
 			sym.Children = append(sym.Children, funSymbol(m, symMethod))
 		}

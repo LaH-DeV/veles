@@ -79,6 +79,12 @@ impl<T> Display for Stack<T> {
   override fun hint(): i32 = 1
 }
 
+// D23 addendum — extend blocks: inherent methods for a type you declare
+extend<T: Display> Stack<T> {
+  pub fun render(): string = self.items.map(x => x.show()).join(" ")
+  mut fun drain() { self.items.clear() }
+}
+
 // D31 — recursion through pointers
 struct Node<T> : Tree<T> {
   value: T
