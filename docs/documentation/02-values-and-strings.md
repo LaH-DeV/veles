@@ -163,8 +163,8 @@ h true true
 Two things worth knowing early:
 
 - `len()` counts **bytes**, not characters (D18): `"héllo"` is 6 bytes.
-  Veles does not pretend a string is an array of characters, so `s[i]`
-  is not allowed either. When you do need characters, `charCount()`
+  Veles does not pretend a string is an array of characters, so there
+  is no character-at-index either (`s.byteAt(i)` gives a byte). When you do need characters, `charCount()`
   counts them and `chars()` gives them as a `List<string>` of
   one-character strings: `"héllo".charCount()` is 5 and
   `"héllo".chars()` is `[h, é, l, l, o]`.

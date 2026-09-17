@@ -46,7 +46,7 @@ fun main() {
   val addThenDouble = compose(x => x + 1, double)
   io.println("${addThenDouble(4)}")
   val ops: Map<string, fun(i64, i64): i64> = ["add": (a, b) => a + b, "mul": (a, b) => a * b]
-  val mul = ops["mul"] ?: ((a: i64, b: i64) => 0)
+  val mul = ops.get("mul") ?: ((a: i64, b: i64) => 0)
   io.println("${mul(6, 7)}")
 }
 ```

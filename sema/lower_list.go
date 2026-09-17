@@ -251,6 +251,33 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 			&Binary{exprBase{types.TBool}, OpLt, ref(idx), n, span}, span}
 		get := &SomeWrap{exprBase{rt}, &Builtin{exprBase{lt.Elem}, "list.get", []Expr{ref(list), ref(idx)}, span}}
 		return finish(nil, &If{exprBase{rt}, inRange, &Block{Value: get, Type: rt}, &Block{Value: &NullConst{exprBase{rt}}, Type: rt}})
+	case "atOrPanic":
+		// `xs.atOrPanic(i)` is the unchecked read: `T`, a panic when out of
+		// range. A negative index counts from the end, as with `at`.
+		if !need(1) {
+			return bad()
+		}
+		idx := f.newTemp(types.TI64)
+		pre = append(pre, &VarDecl{Var: idx, Init: f.indexValue(e.Args[0].Value)})
+		n := &Builtin{exprBase{types.TI64}, "list.len", []Expr{ref(list)}, span}
+		fromEnd := &Assign{Target: ref(idx), Value: &Binary{exprBase{types.TI64}, OpWrapAdd, ref(idx), n, span}}
+		pre = append(pre, &ExprStmt{X: &If{exprBase{types.TUnit},
+			&Binary{exprBase{types.TBool}, OpLt, ref(idx), i64c(0), span},
+			&Block{Stmts: []Stmt{fromEnd}, Type: types.TUnit}, nil}})
+		return finish(nil, &Builtin{exprBase{lt.Elem}, "list.get", []Expr{ref(list), ref(idx)}, span})
+	case "set":
+		// `xs.set(i, v)` replaces the element at `i`; a panic when out of range.
+		if !lt.Mutable {
+			f.errorf(span, "cannot set an element of an immutable List; use MutableList (D25)")
+			f.checkArgsLoosely(e.Args)
+			return bad()
+		}
+		if !need(2) {
+			return bad()
+		}
+		place := f.listElemPlace(ref(list), lt, e.Args[0].Value, span, true)
+		v := f.checkExprTo(e.Args[1].Value, lt.Elem)
+		return finish([]Stmt{&Assign{Target: place, Value: v}}, &UnitConst{exprBase{types.TUnit}})
 	case "first", "last":
 		if !need(0) {
 			return bad()

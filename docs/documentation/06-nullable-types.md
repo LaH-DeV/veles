@@ -114,7 +114,7 @@ a `val` first.
 
 ## Where `T?` shows up
 
-- `map[key]`, `list.at(i)`, `list.first()`, `list.pop()`,
+- `map.get(key)`, `list.at(i)`, `list.first()`, `list.pop()`,
   `text.toInt()`, `text.substring(a, b)` — every operation that can come
   up empty returns `T?` rather than a sentinel or a panic.
 - Struct fields: `next: (*Node)?` for the end of a linked list.
@@ -153,14 +153,14 @@ use io
 
 fun main() {
   val settings: Map<string, i64?> = ["timeout": 30, "retries": null]
-  val t = settings["timeout"]        // i64??
-  val r = settings["retries"]
-  val m = settings["missing"]
+  val t = settings.get("timeout")  // i64??
+  val r = settings.get("retries")
+  val m = settings.get("missing")
   io.println("${t != null} ${r != null} ${m != null}")
   when (r) {
-    Some(null) => io.println("retries is explicitly unset")
+    Some(null)    => io.println("retries is explicitly unset")
     Some(Some(n)) => io.println("retries $n")
-    null => io.println("retries not configured")
+    null          => io.println("retries not configured")
   }
 }
 ```

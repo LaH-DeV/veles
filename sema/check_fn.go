@@ -548,10 +548,28 @@ func (f *fnCtx) checkReturn(s *ast.ReturnStmt) []Stmt {
 
 // checkAssign handles `target = value` and compound assignment.
 func (f *fnCtx) checkAssign(s *ast.AssignStmt) []Stmt {
-	if ix, ok := s.Target.(*ast.IndexExpr); ok && s.Op == lexer.Assign {
+	if ix, ok := s.Target.(*ast.IndexExpr); ok {
+		// removed form (lint_index.go): reported once here with its fix, then
+		// typed as before so nothing else cascades
 		m := f.checkExpr(ix.X, nil)
 		if mt, isMap := m.Type().(*types.Map); isMap {
+			f.indexWrite(s, ix, true)
+			if s.Op != lexer.Assign {
+				f.checkExprTo(s.Value, mt.Value)
+				return nil
+			}
 			return f.mapIndexAssign(ix, m, mt, s.Value, s.Pos)
+		}
+		if lt, isList := m.Type().(*types.List); isList {
+			f.indexWrite(s, ix, false)
+			target := f.listElemPlace(m, lt, ix.Index, ix.Pos, true)
+			var value Expr
+			if s.Op == lexer.Assign {
+				value = f.coerce(f.checkExpr(s.Value, lt.Elem), lt.Elem, s.Value.Span())
+			} else {
+				value = f.makeBinary(BinOpFromToken(s.Op), target, f.checkExprTo(s.Value, lt.Elem), s.Pos)
+			}
+			return []Stmt{&Assign{Target: target, Value: value}}
 		}
 	}
 	target, root := f.checkLValue(s.Target, true)
@@ -659,12 +677,8 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 			f.errorf(e.Pos, "cannot mutate 'self.%s' in a non-'mut' method; declare the method 'mut fun' (D22)", e.Name.Name)
 		} else if mutate && root != nil && !root.Mutable {
 			f.errorf(e.Pos, "cannot assign to field '%s' of '%s': it is a 'val' (D11/D22)", e.Name.Name, root.Name)
-		} else if mutate && root == nil {
-			if _, isDeref := base.(*Deref); !isDeref {
-				if _, isField := base.(*FieldGet); !isField {
-					f.errorf(e.Pos, "cannot assign to a field of a temporary value")
-				}
-			}
+		} else if mutate && root == nil && !isPlaceExpr(base) {
+			f.errorf(e.Pos, "cannot assign to a field of a temporary value")
 		}
 		st, ok := bt.(*types.Struct)
 		if !ok {
@@ -677,17 +691,28 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 		}
 		return &FieldGet{exprBase{fld.Type}, base, fld.Index, fld.Name}, root
 	case *ast.IndexExpr:
+		// removed form (lint_index.go); `xs.atOrPanic(i)` is the place now
 		x := f.checkExpr(e.X, nil)
 		lt, ok := x.Type().(*types.List)
 		if !ok {
-			f.errorf(e.Pos, "cannot index-assign into '%s'", x.Type())
+			f.errorf(e.Pos, "'[...]' after a value of type '%s' is not indexing; brackets are for collection literals only (D25)", x.Type())
 			return nil, nil
 		}
-		if !lt.Mutable {
-			f.errorf(e.Pos, "cannot assign into an immutable List; use MutableList (D25)")
+		f.indexRead(e, false)
+		return f.listElemPlace(x, lt, e.Index, e.Pos, mutate), nil
+	case *ast.CallExpr:
+		// `xs.atOrPanic(i)` names an element in place, so a value-struct
+		// element can be mutated where it lives: `xs.atOrPanic(i).bump()`,
+		// `xs.atOrPanic(i).n = 1`, `&xs.atOrPanic(i)`.
+		if isElemPlaceCall(e) {
+			x := f.checkExpr(e.Fun.(*ast.MemberExpr).X, nil)
+			if lt, ok := x.Type().(*types.List); ok {
+				return f.listElemPlace(x, lt, e.Args[0].Value, e.Pos, mutate), nil
+			}
+			if types.IsInvalid(x.Type()) {
+				return nil, nil
+			}
 		}
-		idx := f.indexValue(e.Index)
-		return &Builtin{exprBase{lt.Elem}, "list.ref", []Expr{x, idx}, e.Pos}, nil
 	case *ast.UnaryExpr:
 		if e.Op == lexer.Star {
 			p := f.checkExpr(e.X, nil)

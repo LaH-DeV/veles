@@ -80,7 +80,7 @@ fun civil(ms: i64, local: bool): DateTime {
   val f = text.split(" ").map(x => x.toInt() ?: 0)
   var millis = ms % 1000
   if (millis < 0) millis += 1000
-  DateTime(year: f[0], month: f[1], day: f[2], hour: f[3], minute: f[4], second: f[5], millis: millis, weekday: f[6], yearDay: f[7])
+  DateTime(year: f.atOrPanic(0), month: f.atOrPanic(1), day: f.atOrPanic(2), hour: f.atOrPanic(3), minute: f.atOrPanic(4), second: f.atOrPanic(5), millis: millis, weekday: f.atOrPanic(6), yearDay: f.atOrPanic(7))
 }
 
 /// The calendar fields of `ms` in UTC.

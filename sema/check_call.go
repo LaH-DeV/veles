@@ -323,7 +323,7 @@ func (f *fnCtx) callTemplateRecv(t *FuncTemplate, ownerSubst map[*types.TypePara
 			if deferredArg(bound[i]) {
 				x = f.checkExpr(bound[i], pt)
 			} else {
-				x = f.checkExpr(bound[i], nil)
+				x = f.checkExpr(bound[i], literalHint(bound[i], pt))
 			}
 			exprs[i] = x
 			if types.IsInvalid(x.Type()) {
@@ -436,7 +436,7 @@ func (f *fnCtx) inferStructArgs(t *types.Struct, args []ast.Arg, want types.Type
 		if bound[i] == nil || !types.ContainsTypeParam(fld.Type) {
 			continue
 		}
-		x := f.checkExpr(bound[i], nil)
+		x := f.checkExpr(bound[i], literalHint(bound[i], fld.Type))
 		if !types.IsInvalid(x.Type()) {
 			unify(fld.Type, x.Type(), m)
 		}
@@ -513,7 +513,26 @@ func (f *fnCtx) fieldDefault(st *types.Struct, i int) Expr {
 // method calls
 
 func (f *fnCtx) methodCall(callee *ast.MemberExpr, typeArgs []types.Type, e *ast.CallExpr, want types.Type) Expr {
-	recv := f.checkExpr(callee.X, nil)
+	var recv Expr
+	if callee.Safe {
+		// `xs.at(i)?.m()` (also first/last) reaches the element in place
+		// rather than through the copy `at` returns, so a `mut fun` on a
+		// value-struct element sticks (lint_index.go).
+		pre, inRange, place, elem, ok := f.listElemSafePlace(callee.X)
+		if ok {
+			ptr := &AddrOf{exprBase{&types.Pointer{Elem: place.Type()}}, place}
+			inner := f.dispatchMethod(ptr, callee, typeArgs, e, want)
+			if types.IsInvalid(inner.Type()) {
+				return inner
+			}
+			body := f.safeCallBranch(inner, inRange)
+			return &BlockExpr{exprBase{body.Type()}, &Block{Stmts: pre, Value: body, Type: body.Type()}}
+		}
+		recv = elem // the receiver, checked once either way
+	}
+	if recv == nil {
+		recv = f.checkExpr(callee.X, nil)
+	}
 	if types.IsInvalid(recv.Type()) {
 		f.checkArgsLoosely(e.Args)
 		return bad()
@@ -530,26 +549,9 @@ func (f *fnCtx) methodCall(callee *ast.MemberExpr, typeArgs []types.Type, e *ast
 		if types.IsInvalid(inner.Type()) {
 			return inner
 		}
-		rt := types.Type(&types.Nullable{Elem: inner.Type()})
-		if _, isN := inner.Type().(*types.Nullable); isN {
-			rt = inner.Type()
-		} else if types.IsUnit(inner.Type()) {
-			rt = types.TUnit
-		} else {
-			inner = &SomeWrap{exprBase{rt}, inner}
-		}
-		var elseBlock *Block
-		if types.IsUnit(rt) {
-			elseBlock = &Block{Type: rt}
-		} else {
-			elseBlock = &Block{Value: &NullConst{exprBase{rt}}, Type: rt}
-		}
-		thenBlock := &Block{Value: inner, Type: rt}
-		if types.IsUnit(rt) {
-			thenBlock = &Block{Stmts: []Stmt{&ExprStmt{X: inner}}, Type: rt}
-		}
-		body := &If{exprBase{rt}, &IsNull{exprBase{types.TBool}, &VarRef{exprBase{nt}, tmp}}, elseBlock, thenBlock}
-		return &Let{exprBase{rt}, tmp, recv, body}
+		notNull := &Unary{exprBase{types.TBool}, OpNot, &IsNull{exprBase{types.TBool}, &VarRef{exprBase{nt}, tmp}}, callee.Pos}
+		body := f.safeCallBranch(inner, notNull)
+		return &Let{exprBase{body.Type()}, tmp, recv, body}
 	}
 	return f.dispatchMethod(recv, callee, typeArgs, e, want)
 }
@@ -1262,4 +1264,40 @@ func (f *fnCtx) callSealedDefault(dt *FuncTemplate, s *types.Sealed, recv Expr, 
 		}
 	}
 	return f.callMethod(dt, m, typeArgs, recv, false, callee, e, want)
+}
+
+// literalHint is the expected type to check an inference argument with:
+// a collection literal gets the (still generic) parameter type, from which
+// it takes only the mutability (D25/#8); anything else is checked bare.
+func literalHint(arg ast.Expr, pt types.Type) types.Type {
+	switch arg.(type) {
+	case *ast.ListLit, *ast.MapLit:
+		return pt
+	}
+	return nil
+}
+
+// safeCallBranch wraps a `?.` call: `if (cond) inner else null`, with the
+// result type lifted to nullable unless the call already returns one or
+// nothing.
+func (f *fnCtx) safeCallBranch(inner Expr, cond Expr) Expr {
+	rt := types.Type(&types.Nullable{Elem: inner.Type()})
+	if _, isN := inner.Type().(*types.Nullable); isN {
+		rt = inner.Type()
+	} else if types.IsUnit(inner.Type()) {
+		rt = types.TUnit
+	} else {
+		inner = &SomeWrap{exprBase{rt}, inner}
+	}
+	var elseBlock *Block
+	if types.IsUnit(rt) {
+		elseBlock = &Block{Type: rt}
+	} else {
+		elseBlock = &Block{Value: &NullConst{exprBase{rt}}, Type: rt}
+	}
+	thenBlock := &Block{Value: inner, Type: rt}
+	if types.IsUnit(rt) {
+		thenBlock = &Block{Stmts: []Stmt{&ExprStmt{X: inner}}, Type: rt}
+	}
+	return &If{exprBase{rt}, cond, thenBlock, elseBlock}
 }

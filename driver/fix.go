@@ -27,7 +27,7 @@ func ApplyFixes(diags *source.Diagnostics) (int, error) {
 		}
 		n++
 		for _, e := range d.Fix.Edits {
-			if e.Span.File == nil {
+			if e.Span.File == nil || e.Span.File.Embedded {
 				continue
 			}
 			byFile[e.Span.File] = append(byFile[e.Span.File], edit{e, order})
@@ -44,11 +44,16 @@ func ApplyFixes(diags *source.Diagnostics) (int, error) {
 			return edits[i].order > edits[j].order
 		})
 		text := f.Content
+		limit := len(text) // edits that overlap one already applied wait for the next run
 		for _, e := range edits {
-			if e.Span.Start < 0 || e.Span.End > len(text) || e.Span.Start > e.Span.End {
+			if e.Span.Start < 0 || e.Span.End > len(f.Content) || e.Span.Start > e.Span.End {
 				return n, fmt.Errorf("%s: fix edit out of range", f.Path)
 			}
+			if e.Span.End > limit {
+				continue
+			}
 			text = text[:e.Span.Start] + e.NewText + text[e.Span.End:]
+			limit = e.Span.Start
 		}
 		style, err := StyleFor(f.Path)
 		if err != nil {

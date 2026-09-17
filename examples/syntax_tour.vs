@@ -128,7 +128,7 @@ fun collections(nums: List<i32>, counts: Map<string, i32>, word: string, a: A?) 
   val doubled = nums.map(x => x * 2)
   val total = nums.fold(0, (acc, x) => acc + x)
   val typed = nums.map((x: i32) => x * 2)
-  val n = counts[word] ?: 0
+  val n = counts.get(word) ?: 0
   val deep = a?.b?.c
   loop (i in 0..<nums.len()) {
     io.println("$i")

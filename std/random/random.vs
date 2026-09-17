@@ -25,7 +25,7 @@ pub struct Rng {
       z = (z ^ (z >> 27)) *% MIX2
       s.push(z ^ (z >> 31))
     }
-    Rng(s0: s[0], s1: s[1], s2: s[2], s3: s[3])
+    Rng(s0: s.atOrPanic(0), s1: s.atOrPanic(1), s2: s.atOrPanic(2), s3: s.atOrPanic(3))
   }
 
   /// The next 64 random bits.
@@ -54,16 +54,16 @@ pub struct Rng {
   pub mut fun boolean(): bool = (self.nextU64() & 1) == 1
 
   /// One element of `xs`, or `null` when it is empty.
-  pub mut fun pick<T>(xs: List<T>): T? = if (xs.isEmpty()) null else xs[self.range(0, xs.len())]
+  pub mut fun pick<T>(xs: List<T>): T? = if (xs.isEmpty()) null else xs.atOrPanic(self.range(0, xs.len()))
 
   /// Reorders `xs` in place (Fisher–Yates).
   pub mut fun shuffle<T>(xs: MutableList<T>) {
     var i = xs.len() - 1
     loop (i > 0) {
       val j = self.range(0, i + 1)
-      val tmp = xs[i]
-      xs[i] = xs[j]
-      xs[j] = tmp
+      val tmp = xs.atOrPanic(i)
+      xs.set(i, xs.atOrPanic(j))
+      xs.set(j, tmp)
       i -= 1
     }
   }

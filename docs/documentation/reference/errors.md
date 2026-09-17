@@ -130,7 +130,8 @@ there is no separate char type in the bootstrap (D18).
 
 ### `panic: index 3 out of bounds for list of length 1`
 
-A runtime panic, not a compile error: `xs[i]` with a bad index. Use
+A runtime panic, not a compile error: `xs.atOrPanic(i)` with a bad index
+(the same message names the map key for `m.getOrPanic(k)`). Use
 `xs.at(i)`, which returns `T?`, when the index is not known to be valid.
 Panics end the current task; a `gather` reports them as `Err(Panic)`,
 a `scope` re-raises them (D52).

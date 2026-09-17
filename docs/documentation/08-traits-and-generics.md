@@ -276,7 +276,7 @@ fun main() {
   val b = Version(major: 1, minor: 9)
   io.println("${a > b} ${[a, b].sorted()} ${largest(a, b)} ${largest("x", "y")}")
   var seen = mut [Name(text: "Ann"): 1]
-  seen[Name(text: "ANN")] = 2
+  seen.set(Name(text: "ANN"), 2)
   io.println("${Name(text: "ann") == Name(text: "ANN")} ${seen.len()}")
 }
 ```

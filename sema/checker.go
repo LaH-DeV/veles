@@ -181,6 +181,18 @@ func (c *Checker) warnFix(span source.Span, fix *source.Fix, format string, args
 	c.roundDiags.Items = append(c.roundDiags.Items, source.Diagnostic{Severity: source.Warning, Span: span, Message: msg, Fix: fix})
 }
 
+// errorFix is errorf with an automatic correction attached: for a form
+// that was removed from the language and has a mechanical replacement.
+func (c *Checker) errorFix(span source.Span, fix *source.Fix, format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	key := span.String() + msg
+	if c.seen[key] {
+		return
+	}
+	c.seen[key] = true
+	c.roundDiags.Items = append(c.roundDiags.Items, source.Diagnostic{Severity: source.Error, Span: span, Message: msg, Fix: fix})
+}
+
 // ---------------------------------------------------------------------------
 // universe / prelude (D24)
 

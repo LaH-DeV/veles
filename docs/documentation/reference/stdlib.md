@@ -202,8 +202,9 @@ UTF-8.
 
 | Method | Result |
 |---|---|
-| `xs[i]` | `T`; panics when out of range |
-| `at(i)` | `T?`; a negative `i` counts from the end (`at(-1)` is the last) |
+| `at(i)` | `T?`; null when out of range. A negative `i` counts from the end (`at(-1)` is the last) |
+| `atOrPanic(i)` | `T`; panics when out of range. Names the element in place: `xs.atOrPanic(i).bump()` mutates it, and so does `xs.at(i)?.bump()` |
+| `atOrDefault(i, d)` | `T`; `at(i) ?: d` |
 | `len()`, `isEmpty()` | |
 | `contains(x)`, `indexOf(x)`, `count(p)` | `bool`, `i64` (−1 if absent), `i64` |
 | `first()`, `last()`, `min()`, `max()` | `T?`; `min`/`max` need `Comparable` elements |
@@ -213,10 +214,10 @@ UTF-8.
 | `zip(ys)`, `chunked(n)`, `windowed(n)`, `distinct()` | `List<(T, U)>`, `List<List<T>>`, `List<List<T>>`, `List<T>` |
 | `sorted()`, `sortedDescending()`, `sortedBy(key)`, `reversed()` | new `List`; elements or `key` results must be `Comparable` (D48) |
 | `sum()` | `List<i64>` and `List<f64>` only |
-| `join(sep)`, `joinToString(sep)` | `string` |
+| `join(sep)` | `string` |
 | `iter()` | lazy iterator |
 | `toList()`, `toMutable()` | copies (D25) |
-| `push(x)`, `pop(): T?`, `clear()` | `MutableList` only |
+| `push(x)`, `pop(): T?`, `set(i, x)`, `clear()` | `MutableList` only |
 | `insert(i, x)`, `removeAt(i): T`, `addAll(xs)`, `sort()` | `MutableList` only; `sort` is in place |
 
 A `MutableList<T>` has every `List<T>` method; a `val` binding is enough to
@@ -226,11 +227,12 @@ call the mutating ones, since the list is a reference (D25).
 
 | Method | Result |
 |---|---|
-| `m[k]`, `get(k)` | `V?` |
+| `get(k)` | `V?` |
+| `getOrPanic(k)`, `getOrDefault(k, d)` | `V`; the first panics when `k` is absent |
 | `containsKey(k)`, `len()`, `isEmpty()` | |
 | `keys()`, `values()`, `entries()` | `List<K>`, `List<V>`, `List<(K, V)>` in insertion order |
 | `toMap()`, `toMutable()` | copies |
-| `m[k] = v`, `set(k, v)`, `remove(k): bool`, `clear()` | `MutableMap` only |
+| `set(k, v)`, `remove(k): bool`, `clear()` | `MutableMap` only |
 | `forEach((k, v) => ...)`, `mapValues(v => ...)`, `filter((k, v) => ...)` | iterate; new `Map` |
 | `getOrPut(k, () => v)` | `V` — `MutableMap` only: stores `v` when `k` is absent |
 

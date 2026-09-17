@@ -95,7 +95,7 @@ fun main() { }`, "E2"},
 		{"hint: io not imported", `fun main() { io.println("x") }`, "add 'use io'"},
 		{"hint: unqualified std function", `fun main() { println("x") }`, "did you mean 'io.println'"},
 		{"hint: nullable used as value", prelude + `
-fun main() { val m = ["a": 1]; val v: i64 = m["a"] }`, "supply a fallback with '?:'"},
+fun main() { val m = ["a": 1]; val v: i64 = m.get("a") }`, "supply a fallback with '?:'"},
 		{"hint: string plus number", prelude + `
 fun main() { val s = "a" + 1 }`, "interpolation"},
 		{"hint: unknown struct field", prelude + `
@@ -794,7 +794,7 @@ fun main() {
   val b = Version(major: 1, minor: 9)
   io.println("$a ${a > b} ${a <= b} ${a == b} ${[a, b].sorted()} ${[a, b].min()} ${[a, b].sortedBy(v => v)}")
   var m = mut [Name(text: "Ann"): 1]
-  m[Name(text: "ANN")] = 2
+  m.set(Name(text: "ANN"), 2)
   io.println("${m.len()} ${Name(text: "a") == Name(text: "A")} ${[Name(text: "x")].contains(Name(text: "X"))}")
   val shapes: List<Shape> = [Square(side: 2.0), Circle(r: 1.0)]
   io.println("${shapes.max()} ${Pair(a: a, b: b)} ${maxOf(3, 9)} ${maxOf("b", "a")} ${(5).compareTo(7)}")
@@ -840,7 +840,7 @@ fun main() {
   val a: MutableList<i64> = [1, 2, 3]
   a.push(9)
   val m: MutableMap<string, i64> = [:]
-  m["y"] = 2
+  m.set("y", 2)
   val s: Set<i64> = [1, 2, 2]
   val ms: MutableSet<string> = ["a"]
   ms.add("b")
@@ -853,7 +853,7 @@ fun main() {
 }`)
 	for _, src := range []string{
 		`fun main() { var r: MutableList<i64> = mut []; r.push(1); io.println("$r") }`,
-		`fun main() { var r: MutableMap<string, i64> = mut [:]; r["a"] = 1; io.println("$r") }`,
+		`fun main() { var r: MutableMap<string, i64> = mut [:]; r.set("a", 1); io.println("$r") }`,
 	} {
 		diags := checkSource(t, prelude+src)
 		found := false
@@ -882,8 +882,8 @@ struct Point {
   static fun fromText(s: string): Point? {
     val parts = s.split(",")
     if (parts.len() != 2) return null
-    val x = i64.parse(parts[0]) ?: return null
-    val y = i64.parse(parts[1]) ?: return null
+    val x = i64.parse(parts.atOrPanic(0)) ?: return null
+    val y = i64.parse(parts.atOrPanic(1)) ?: return null
     Point(x: x, y: y)
   }
   impl Parsable {
@@ -1106,4 +1106,128 @@ fun main() {
   val ro: Map<string, i64> = m
   io.println("${total(xs)} ${first(xs)} ${ro.len()}")
 }`)
+}
+
+// D25 (v0.24): brackets are collection literals only. The old index forms
+// are errors that carry a mechanical fix; the methods that replace them
+// type as documented, and `atOrPanic` is a place.
+func TestIndexingIsMethodsOnly(t *testing.T) {
+	cases := []struct{ src, msg, fix string }{
+		{`fun main() { val xs = [1]; io.println("${xs[0]}") }`, "'xs[0]' is not indexing", "xs.atOrPanic(0)"},
+		{`fun main() { val m = ["a": 1]; io.println("${m["a"]}") }`, "'m[\"a\"]' is not indexing", `m.get("a")`},
+		{`fun main() { var xs: MutableList<i64> = [1]; xs[0] = 2; io.println("$xs") }`, "is not index assignment", "xs.set(0, 2)"},
+		{`fun main() { var xs: MutableList<i64> = [1]; xs[0] += 2; io.println("$xs") }`, "is not index assignment", "xs.set(0, xs.atOrPanic(0) + 2)"},
+		{`fun main() { var m: MutableMap<string, i64> = [:]; m["k"] = 2; io.println("$m") }`, "is not index assignment", `m.set("k", 2)`},
+	}
+	for _, c := range cases {
+		diags := checkSource(t, prelude+c.src)
+		found := false
+		for _, d := range diags.Items {
+			if d.Severity == source.Error && strings.Contains(d.Message, c.msg) {
+				found = true
+				if d.Fix == nil || len(d.Fix.Edits) != 1 || d.Fix.Edits[0].NewText != c.fix {
+					t.Errorf("%q: expected a fix to %q, got %+v", c.src, c.fix, d.Fix)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("%q: expected %q, got:\n%s", c.src, c.msg, diags.Render())
+		}
+	}
+	expectClean(t, prelude+`
+struct C { n: i64 = 0
+  mut fun bump() { self.n += 1 } }
+fun main() {
+  val xs = [1, 2]
+  val a: i64? = xs.at(5)
+  val b: i64 = xs.atOrPanic(-1)
+  val c: i64 = xs.atOrDefault(9, 0)
+  var ys: MutableList<i64> = [1]
+  ys.set(0, 3)
+  val cs: MutableList<C> = [C()]
+  cs.atOrPanic(0).bump()
+  cs.atOrPanic(0).n = 4
+  val p = &cs.atOrPanic(0)
+  p.n += 1
+  val m = ["k": 1]
+  val d: i64? = m.get("k")
+  val e: i64 = m.getOrPanic("k")
+  val f: i64 = m.getOrDefault("z", 0)
+  var mm: MutableMap<string, i64> = [:]
+  mm.set("k", 1)
+  io.println("$a $b $c $ys ${cs.atOrPanic(0).n} $d $e $f $mm")
+}`)
+	expectError(t, prelude+`fun main() { val xs = [1]; xs.set(0, 2) }`, "immutable List")
+	expectError(t, prelude+`fun main() { val m = ["a": 1]; m.set("a", 2) }`, "immutable Map")
+	expectError(t, prelude+`fun main() { val xs = [1]; val n: i64 = xs.at(0); io.println("$n") }`, "supply a fallback with '?:'")
+	expectError(t, prelude+`fun main() { val s = "abc"; io.println("${s[0]}") }`, "strings are not indexable")
+}
+
+// The sealed-`else` lint only carries its removal fix when the other arms
+// already cover every variant; a load-bearing `else` still warns but must
+// not be removed.
+func TestSealedElseFixOnlyWhenDead(t *testing.T) {
+	src := prelude + `
+sealed trait S
+struct A : S { }
+struct B : S { }
+fun f(s: S): i64 = when (s) {
+  is A => 1
+  else => 2
+}
+fun g(s: S): i64 = when (s) {
+  is A => 1
+  is B => 2
+  else => 3
+}
+fun main() { io.println("${f(A())} ${g(B())}") }`
+	diags := checkSource(t, src)
+	var fixes []bool
+	for _, d := range diags.Items {
+		if strings.Contains(d.Message, "'else' on a sealed subject") {
+			fixes = append(fixes, d.Fix != nil)
+		}
+	}
+	if diags.HasErrors() || len(fixes) != 2 || fixes[0] || !fixes[1] {
+		t.Errorf("expected two warnings, only the second with a fix; got:\n%s", diags.Render())
+	}
+}
+
+// A collection literal passed to a generic constructor or function takes
+// its mutability from the still-generic parameter type, so the literal
+// needs no `mut` and the element type still infers the type parameter.
+func TestLiteralMutabilityFromGenericParam(t *testing.T) {
+	expectClean(t, prelude+`
+struct Stack<T> { items: MutableList<T>
+  mut fun push(x: T) { self.items.push(x) } }
+fun fill<T>(xs: MutableList<T>, x: T): i64 { xs.push(x); xs.len() }
+fun keyed<K, V>(m: MutableMap<K, V>, k: K, v: V): i64 { m.set(k, v); m.len() }
+fun main() {
+  var s = Stack(items: [1, 2])
+  s.push(3)
+  io.println("${s.items.len()} ${fill(["a"], "b")} ${keyed(["k": 1], "j", 2)}")
+}`)
+}
+
+// `xs.at(i)?.m()` (and first/last) reaches the element in place, so a
+// `mut fun` sticks; the fallback path (not a list) still checks the
+// receiver exactly once and dispatches normally.
+func TestSafeCallThroughAtIsAPlace(t *testing.T) {
+	expectClean(t, prelude+`
+struct C { n: i64 = 0
+  mut fun bump() { self.n += 1 }
+  fun show(): string = "${self.n}" }
+fun make(f: fun(i64): i64): List<C> = [C(n: f(1))]
+fun main() {
+  val cs: MutableList<C> = [C()]
+  cs.at(0)?.bump()
+  cs.first()?.bump()
+  cs.last()?.bump()
+  val s: string? = cs.at(0)?.show()
+  val m = ["k": C()]
+  val t: string? = m.get("k")?.show()
+  val u: string? = make(x => x + 1).at(0)?.show()
+  io.println("${cs.atOrPanic(0).n} $s $t $u")
+}`)
+	expectError(t, prelude+`fun main() { val xs = [1]; xs.at(0).abs() }`, "may be null; use '?.'")
 }

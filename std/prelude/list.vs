@@ -1,10 +1,13 @@
 // Prelude — List, MutableList and Range methods (D25, D29, D46). In scope
 // in every file (D24).
 //
-// The compiler provides the primitives (`len`, `[i]`, `at`, `push`, `pop`,
+// The compiler provides the primitives (`len`, `at`, `atOrPanic`, `set`, `push`, `pop`,
 // `sorted`, the eager `map`/`filter`/`fold`, ...); the rest is Veles.
 
 extend<T> List<T> {
+  /// The element at `i`, or `d` when `i` is out of range; `self.at(i) ?: d`.
+  pub fun atOrDefault(i: i64, d: T): T = self.at(i) ?: d
+
   /// The first `n` elements (all of them when `n` exceeds the length).
   pub fun take(n: i64): List<T> = self.slice(0, n)
 
@@ -25,7 +28,7 @@ extend<T> List<T> {
     val hi = to.min(self.len())
     var out: MutableList<T> = []
     loop (i in lo..<hi) {
-      out.push(self[i])
+      out.push(self.atOrPanic(i))
     }
     out.toList()
   }
@@ -44,7 +47,7 @@ extend<T> List<T> {
     var out: MutableList<(T, U)> = []
     val n = self.len().min(other.len())
     loop (i in 0..<n) {
-      out.push((self[i], other[i]))
+      out.push((self.atOrPanic(i), other.atOrPanic(i)))
     }
     out.toList()
   }
@@ -103,7 +106,7 @@ extend<T: Comparable> List<T> {
   /// The smallest element, or `null` when empty.
   pub fun min(): T? {
     if (self.isEmpty()) return null
-    var best = self[0]
+    var best = self.atOrPanic(0)
     loop (x in self) {
       if (x < best) best = x
     }
@@ -113,7 +116,7 @@ extend<T: Comparable> List<T> {
   /// The largest element, or `null` when empty.
   pub fun max(): T? {
     if (self.isEmpty()) return null
-    var best = self[0]
+    var best = self.atOrPanic(0)
     loop (x in self) {
       if (x > best) best = x
     }
@@ -150,17 +153,17 @@ extend<T> MutableList<T> {
     self.push(x)
     var j = self.len() - 1
     loop (j > i) {
-      self[j] = self[j - 1]
+      self.set(j, self.atOrPanic(j - 1))
       j -= 1
     }
-    self[i] = x
+    self.set(i, x)
   }
 
   /// Removes and returns the element at index `i`, shifting the rest down.
   pub mut fun removeAt(i: i64): T {
-    val removed = self[i]
+    val removed = self.atOrPanic(i)
     loop (j in i..<(self.len() - 1)) {
-      self[j] = self[j + 1]
+      self.set(j, self.atOrPanic(j + 1))
     }
     self.pop()
     removed
@@ -177,7 +180,7 @@ extend<T> MutableList<T> {
   pub mut fun sort() {
     val sorted = self.sorted()
     loop (i in 0..<self.len()) {
-      self[i] = sorted[i]
+      self.set(i, sorted.atOrPanic(i))
     }
   }
 }

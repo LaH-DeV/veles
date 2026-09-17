@@ -12,7 +12,10 @@ import (
 type File struct {
 	Path    string
 	Content string
-	lines   []int // byte offset of the start of each line
+	// Embedded marks a file compiled into the tool (the std sources) rather
+	// than read from disk; fixes are never written to one.
+	Embedded bool
+	lines    []int // byte offset of the start of each line
 }
 
 func NewFile(path, content string) *File {

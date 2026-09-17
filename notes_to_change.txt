@@ -262,3 +262,85 @@ P9. DONE (2026-09-17) — fuzzing + more quick fixes (no CI, per user).
    - Quick fixes added: redundant `mut` (removed), unused binding (renamed `_`), unreachable
      `else` on a sealed subject (removed); the inline-impl lint now covers sealed variants too.
      driver/TestCheckFix pins the `--fix` output.
+
+--- Decisions 2026-09-18 (user; from the review of these notes) ---
+- Next batch, in this order: (1) mid-size real programs + conformance suite (P6), (2) P4 data
+  structures, (3) the small debt items (#12, #15, #13 as a lint, Channel trySend/tryRecv,
+  saturatingMul, Display-recursion diagnostic, statics in `Type.` completion, fs directory walk).
+  #19 (`pub use` surface) stays designed-but-unscheduled. Big three untouched until after.
+- #17: `veles.toml` stays until M7 gives the manifest real content.
+- #13: a LINT, not a rule — `unsafe { }` in a non-`unsafe fun` without a `// SAFETY:` comment
+  on the preceding line warns; quick fix inserts the stub.
+- #4 trait errors: both forms. `throws X` on a trait method = fixed type (works today);
+  bare `throws` on a trait method = impl-defined (an implicit associated `Error`, one per
+  trait; impl bodies infer it like any function, D45; erased to the prelude `Error` through a
+  trait object; precise under stenciling). Explicit `type Error` stays legal, no longer taught.
+  Spec D40 and docs to update. Open sub-point: two throwing methods in one trait share the one
+  implicit type.
+- `::` removed from the language: `Self::Error` → `Self.Error`, `F::Error` → `F.Error`
+  (dot already serves `Type.static()`).
+- Indexing (#3): brackets are ONLY collection literals. `xs[i]`, `m[k]`, `xs[i] = v`,
+  `m[k] = v` all go. Spec D25 ("assignable-index operator") and 4b to amend. New surface:
+    List:       at(i): T?   atOrPanic(i): T   atOrDefault(i, d): T   (negative i from the end)
+    Map:        get(k): V?  getOrPanic(k): V  getOrDefault(k, d): V
+    MutableList/MutableMap: set(i, v) / set(k, v)
+  `atOrDefault`/`getOrDefault` are sugar for `?:`. Out-of-range/missing is a PANIC (D20), never a
+  thrown error. ~145 read sites and 18 assignment sites in examples/docs/std to migrate — give
+  the removal a quick fix (`xs[i]` → `xs.atOrPanic(i)`, `m[k]` → `m.get(k)`, `c[k] = v` →
+  `c.set(k, v)`) and run `veles check --fix` over the repo.
+- Iterable's `type Iter: Iterator`: keep the associated type (a generic `Iterable<T>` would box
+  every iterator); fix it in docs chapter 10 with a one-sentence explanation + Iterable → Iter →
+  Item diagram.
+- Implicit returns: keep as is.
+
+P10 progress (2026-09-18):
+   - DONE indexing: brackets are literals only (spec D25 amended, v0.24; D18/D30/4b touched).
+     List: at / atOrPanic / atOrDefault / set; Map: get / getOrPanic / getOrDefault / set (the
+     `put` alias is gone). `xs.atOrPanic(i)` is a place (checkLValue + isPlaceSyntax), so
+     `xs.atOrPanic(i).bump()`, `xs.atOrPanic(i).f = v`, `&xs.atOrPanic(i)` and `xs.at(i)?.bump()` (listElemSafePlace: the
+     `?.` receiver `at`/`first`/`last` is lowered to a bounds-guarded place) work in place —
+     field assignment through an element is new (the old `xs[i].f = v` was refused as a
+     temporary). Negative indexes count from the end everywhere. Old forms: sema/lint_index.go
+     reports an ERROR carrying a fix; `veles check --fix` now applies fixes even when errors
+     remain (runs to convergence: nested `a[i][j]` needs a pass per level, overlapping edits
+     wait). Embedded std files are never written (`source.File.Embedded`). Migrated: std, all
+     examples, docs blocks (via a scratch tool that ran --fix per block; prose by hand),
+     cheatsheet/stdlib/errors references, builtins_doc.go, syntax_tour, README. New
+     examples/indexing. Found on the way and fixed: the sealed-`else` lint attached its
+     removal fix even when the else was load-bearing (else set cov.all — now the warning stays,
+     the fix only when the other arms cover everything); the redundant-`mut` fix broke
+     `Stack(items: mut [..])` for a generic struct (the literal without `mut` could not bind T) —
+     a collection literal now takes only the mutability from a still-generic expected type
+     (`literalHint` in check_call.go), so `Stack(items: [..])` infers and is mutable.
+   - Formatter reflowed trailing-comment alignment in several docs blocks (they were not
+     fmt-clean); harmless churn in the diff.
+   - NEXT in P10: bare `throws` on trait methods (#4), `::` → `.`, then the mid-size programs.
+
+20. (2026-09-18, idea, not yet) Lint: a `mut fun` called on a temporary value struct.
+   The situation, step by step:
+   - A struct is a VALUE (D7): passing it around copies it, like an i64. A List is a
+     REFERENCE (D25): copying the handle still points at the same elements.
+   - `m.get(k)` on a `Map<string, Counter>` returns a COPY of the Counter (a `Counter?`), not
+     the one stored in the map. Same for `makeCounter()`, `xs.first()` on a plain List, a
+     `val c = m.get(k)` read, etc. — any expression that produces a struct value rather than
+     naming storage produces a copy.
+   - A `mut fun` (e.g. `bump()`) mutates whatever it is called on. Called on a copy, it
+     mutates the copy; the copy is then thrown away, so nothing observable happens:
+       m.get("a")?.bump()     // compiles, runs, changes nothing — the map still holds n=0
+       makeCounter().bump()   // same: the fresh Counter is bumped and dropped
+   - This is not a bug in the compiler: the rule "a temporary mutates a fresh copy" is what
+     makes iterator chains work (`xs.iter().filter(..).next()` mutates the temporary iterator
+     and USES the result). The difference is whether the RESULT is used.
+   - `xs.atOrPanic(i)` and `xs.at(i)?.` are special-cased to be PLACES (they name the storage
+     inside the list), which is why `counters.at(1)?.bump()` does stick. Maps have no such
+     form: a map value is not addressable today.
+   The lint: when a `mut fun` that returns NOTHING (unit) is called on a receiver that is
+   not a place (a call result, a `?.` on a non-list, a literal) and the receiver's type is a
+   value struct (not a List/Map/Set/Channel, which are references), warn:
+     "'bump' mutates a temporary copy of 'Counter' that is then discarded; bind it first
+      (`var c = m.get("a") ?: ...; c.bump(); m.set("a", c)`)".
+   Unit-returning is the key filter: a mut method that returns something (`next()`) is
+   presumably called for its result and stays silent. Effort: half a day in `callMethod`
+   (check_call.go, the `isPlaceSyntax(callee.X)` branch). Open question: should map values be
+   addressable instead (`m.getOrPanic(k).bump()` in place, like lists)? That would need a
+   `map.ref` runtime primitive and would make the lint mostly moot for maps.

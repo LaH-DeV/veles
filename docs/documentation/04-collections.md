@@ -13,16 +13,16 @@ shared between tasks without locks (D35).
 use io
 
 fun main() {
-  val primes = [2, 3, 5, 7]                 // List<i64>
-  io.println("${primes.len()} ${primes[0]} ${primes.at(10) ?: -1} ${primes.contains(5)}")
+  val primes = [2, 3, 5, 7]  // List<i64>
+  io.println("${primes.len()} ${primes.atOrPanic(0)} ${primes.at(10) ?: -1} ${primes.contains(5)}")
 
-  val names = mut ["ann", "bob"]            // MutableList<string>
+  val names = mut ["ann", "bob"]  // MutableList<string>
   names.push("cy")
-  val last = names.pop()                    // string?
+  val last = names.pop()  // string?
   io.println("$names ${last ?: "-"} ${names.isEmpty()}")
 
-  val frozen = names.toList()               // copy into an immutable List
-  names.push("dee")                         // does not affect `frozen`
+  val frozen = names.toList()  // copy into an immutable List
+  names.push("dee")            // does not affect `frozen`
   io.println("$frozen $names")
 }
 ```
@@ -41,9 +41,13 @@ Output:
   literal always needs such a type, because there is nothing to infer it
   from. A list literal where a `Set` is expected builds a set:
   `val seen: Set<i64> = [1, 2]`.
-- `xs[i]` reads an element and **panics** if `i` is out of range.
-  `xs.at(i)` returns `T?` — null instead of a panic — for when the index
-  comes from data you do not control.
+- Reading is a method, never brackets — `[...]` only ever builds a literal.
+  `xs.at(i)` returns `T?`: null when `i` is out of range, for when the
+  index comes from data you do not control. `xs.atOrPanic(i)` returns `T`
+  and **panics** out of range, for indexes you know are valid — a loop
+  over `0..<xs.len()`, a table you filled yourself. `xs.atOrDefault(i, d)`
+  is `xs.at(i) ?: d`. A negative index counts from the end: `xs.at(-1)` is
+  the last element.
 - `push`, `pop` and `clear` exist only on `MutableList`; calling them on a
   `List` is a compile-time error, not a runtime one.
 
@@ -92,12 +96,12 @@ deterministic, always (D25).
 use io
 
 fun main() {
-  val ages = ["ann": 41, "bob": 29]              // Map<string, i64>
-  io.println("${ages["ann"] ?: 0} ${ages["zed"] ?: 0} ${ages.containsKey("bob")} ${ages.len()}")
+  val ages = ["ann": 41, "bob": 29]  // Map<string, i64>
+  io.println("${ages.get("ann") ?: 0} ${ages.get("zed") ?: 0} ${ages.containsKey("bob")} ${ages.len()}")
 
-  var stock = mut ["apples": 3]                  // MutableMap<string, i64>
-  stock["pears"] = 5
-  stock["apples"] = (stock["apples"] ?: 0) + 1
+  var stock = mut ["apples": 3]  // MutableMap<string, i64>
+  stock.set("pears", 5)
+  stock.set("apples", (stock.get("apples") ?: 0) + 1)
   stock.remove("pears")
   io.println("$stock ${stock.keys()} ${stock.values()}")
 
@@ -115,10 +119,12 @@ ann is 41
 bob is 29
 ```
 
-`m[key]` returns `V?` — null when the key is absent — which is why the
+`m.get(key)` returns `V?` — null when the key is absent — which is why the
 reads above carry `?: 0`. This is the honest type: a lookup can fail.
-`m.get(key)` is the same operation spelled as a method. Writing
-`m[key] = value` requires a `MutableMap` and inserts or replaces.
+`m.getOrPanic(key)` returns `V` and panics when the key is absent, for
+keys you know are there; `m.getOrDefault(key, d)` is `m.get(key) ?: d`.
+Writing `m.set(key, value)` requires a `MutableMap` and inserts or
+replaces. There is no bracket form: `[...]` only ever builds a literal.
 
 Keys must be **hashable**: numbers, strings, booleans, tuples of those,
 and structs whose fields are (structs get equality and hashing for

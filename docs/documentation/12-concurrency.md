@@ -106,7 +106,9 @@ program down (D36/D52):
 ```veles
 use io
 
-error Boom { n: i64 }
+error Boom {
+  n: i64
+}
 
 fun mayFail(n: i64): i64 throws Boom {
   await sleep(1)
@@ -116,7 +118,7 @@ fun mayFail(n: i64): i64 throws Boom {
 
 fun crashes(): i64 {
   val xs = [1]
-  xs[5]
+  xs.atOrPanic(5)
 }
 
 fun main() {
@@ -128,8 +130,8 @@ fun main() {
   io.println("$a")
   io.println("$b")
   when (c) {
-    is Ok(v) => io.println("ok $v")
-    is Err(e) => when (e) {
+    is Ok(v)            => io.println("ok $v")
+    is Err(e)           => when (e) {
       is Panic(message) => io.println("panic: $message")
     }
   }

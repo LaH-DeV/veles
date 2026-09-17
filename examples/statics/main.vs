@@ -13,8 +13,8 @@ struct Point {
   static fun fromText(s: string): Point? {
     val parts = s.split(",")
     if (parts.len() != 2) return null
-    val x = i64.parse(parts[0].trim()) ?: return null
-    val y = i64.parse(parts[1].trim()) ?: return null
+    val x = i64.parse(parts.atOrPanic(0).trim()) ?: return null
+    val y = i64.parse(parts.atOrPanic(1).trim()) ?: return null
     Point(x: x, y: y)
   }
 

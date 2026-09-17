@@ -56,8 +56,9 @@ func (f *fnCtx) whenExpr(e *ast.WhenExpr, want types.Type) Expr {
 		ha := &MatchArm{}
 		switch {
 		case arm.Else:
+			// not recorded in cov: the sealed-else lint below asks whether the
+			// other arms cover everything on their own
 			hasElse = true
-			cov.all = true
 		case e.Subject == nil:
 			cond := f.checkExprTo(arm.Cond, types.TBool)
 			ha.Test = cond
@@ -143,13 +144,16 @@ func (f *fnCtx) whenExpr(e *ast.WhenExpr, want types.Type) Expr {
 			f.errorf(e.Pos, "'when' is not exhaustive: %s (D13; add the missing arms or 'else')", f.missingArms(cov, subjType))
 		}
 	} else if hasElse && subjType != nil {
-		if _, sealed := subjType.(*types.Sealed); sealed && f.isExhaustive(cov, subjType, false) {
-			// every variant has an arm already, so the else is dead: the fix
-			// removes it
+		if _, sealed := subjType.(*types.Sealed); sealed {
+			// the fix removes the else only when every variant has an arm
+			// already (it is dead); otherwise the author has to write the
+			// missing arms, which no fix can invent
 			var fix *source.Fix
-			for _, arm := range e.Arms {
-				if arm.Else {
-					fix = fixDeleteLine("Remove the unreachable 'else' arm", arm.Pos)
+			if f.isExhaustive(cov, subjType, false) {
+				for _, arm := range e.Arms {
+					if arm.Else {
+						fix = fixDeleteLine("Remove the unreachable 'else' arm", arm.Pos)
+					}
 				}
 			}
 			f.warnFix(e.Pos, fix, "'else' on a sealed subject silences the exhaustiveness check when a variant is added later (D13 lint)")

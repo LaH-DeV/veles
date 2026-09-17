@@ -51,5 +51,5 @@ fun main() {
   loop (i in 0..<5) {
     xs.push(i * i)
   }
-  println("squares ${xs} len ${xs.len()} last ${xs[4]}")
+  println("squares ${xs} len ${xs.len()} last ${xs.atOrPanic(4)}")
 }

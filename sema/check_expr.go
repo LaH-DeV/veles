@@ -652,22 +652,27 @@ func resultTest(t types.Type, name string) *types.Struct {
 }
 
 func (f *fnCtx) indexExpr(e *ast.IndexExpr) Expr {
+	// Bracket indexing is no longer in the language (lint_index.go); the
+	// old forms are still typed so that one diagnostic, with its fix, is
+	// all the author sees.
 	x := f.checkExpr(e.X, nil)
 	switch t := x.Type().(type) {
 	case *types.List:
+		f.indexRead(e, false)
 		idx := f.indexValue(e.Index)
 		return &Builtin{exprBase{t.Elem}, "list.get", []Expr{x, idx}, e.Pos}
 	case *types.Map:
+		f.indexRead(e, true)
 		k := f.checkExprTo(e.Index, t.Key)
 		return &Builtin{exprBase{&types.Nullable{Elem: t.Value}}, "map.get", []Expr{x, k}, e.Pos}
 	case *types.Basic:
 		if t.Kind == types.String {
-			f.errorf(e.Pos, "strings are not indexable with '[]'; use 's.bytes[i]' (§4b) — not yet implemented")
+			f.errorf(e.Pos, "strings are not indexable; use 's.byteAt(i)' for a byte or 's.chars()' for the code points (D18)")
 			return bad()
 		}
 	}
 	if !types.IsInvalid(x.Type()) {
-		f.errorf(e.Pos, "cannot index a value of type '%s'", x.Type())
+		f.errorf(e.Pos, "'[...]' after a value of type '%s' is not indexing; brackets are for collection literals only (D25)", x.Type())
 	}
 	return bad()
 }
@@ -1121,7 +1126,11 @@ func (f *fnCtx) listLit(e *ast.ListLit, want types.Type) Expr {
 		return f.setLit(e, st)
 	}
 	if lt, ok := numericHint(want).(*types.List); ok {
-		elem = lt.Elem
+		// a still-generic expected type (`items: MutableList<T>` during
+		// inference) settles the mutability; the element type is inferred
+		if !types.ContainsTypeParam(lt.Elem) {
+			elem = lt.Elem
+		}
 		mutable = lt.Mutable
 		if e.Mut && mutable {
 			f.warnFix(e.Pos, fixDropMut(e.Pos), "redundant 'mut': the expected type '%s' already makes the literal mutable", lt)
@@ -1621,10 +1630,19 @@ func isPlaceSyntax(e ast.Expr) bool {
 		return !e.Safe && isPlaceSyntax(e.X)
 	case *ast.IndexExpr:
 		return true
+	case *ast.CallExpr:
+		return isElemPlaceCall(e)
 	case *ast.UnaryExpr:
 		return e.Op == lexer.Star
 	}
 	return false
+}
+
+// isElemPlaceCall recognises `xs.atOrPanic(i)`, the call that names a list
+// element in place (checkLValue, lint_index.go).
+func isElemPlaceCall(e *ast.CallExpr) bool {
+	m, ok := e.Fun.(*ast.MemberExpr)
+	return ok && !m.Safe && m.Name.Name == "atOrPanic" && len(e.Args) == 1 && e.Args[0].Name == nil
 }
 
 // mergeFacts intersects the narrowing state of two joining paths; a nil

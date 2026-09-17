@@ -30,7 +30,7 @@ fun <T: Show> describe(x: T): string = x.shout()
 
 fun <T> first(xs: List<T>, fallback: T): T {
   if (xs.len() == 0) return fallback
-  xs[0]
+  xs.atOrPanic(0)
 }
 
 fun main() {

@@ -123,7 +123,10 @@ passes when it returns, and fails when it throws or panics.
 ```veles
 use io
 
-error Mismatch { expected: i64, actual: i64 }
+error Mismatch {
+  expected: i64
+  actual:   i64
+}
 
 fun add(a: i64, b: i64) = a + b
 
@@ -144,7 +147,7 @@ fun thisOneFails() throws Mismatch {
 @test
 fun panicsAreReported() {
   val xs = [1]
-  io.println("${xs[3]}")
+  io.println("${xs.atOrPanic(3)}")
 }
 
 fun main() {

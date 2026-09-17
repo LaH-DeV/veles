@@ -46,7 +46,7 @@ fun main() {
   v.scale(2.0)
   io.println("scaled ${v.show()} length ${v.length()}")
 
-  val s = Stack(items: mut [Vec2(x: 1.0, y: 0.0)])
+  val s = Stack(items: [Vec2(x: 1.0, y: 0.0)])
   s.push(Vec2(x: 0.0, y: 1.0))
   io.println("depth ${s.depth()}: ${s.render()}")
   io.println("popped ${s.pop()?.show()} depth ${s.depth()}")

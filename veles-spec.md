@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.23** — language design complete. Every open question in the language itself is closed. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
+**Working draft v0.24** — language design complete. Every open question in the language itself is closed. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -278,7 +278,7 @@ Two consequences to design for:
 - Iteration is explicit: a bytes view and a scalar-value view. **Grapheme segmentation lives in an opt-in stdlib module**, so Unicode segmentation tables don't land in every binary.
 - Rejected: UTF-16 (Java/C#/JS), where anything outside the BMP occupies two slots and indexing can split a surrogate pair.
 
-*Open:* whether byte access is `s[i]` or an explicit `s.bytes[i]` view. The latter avoids the surprise of a `u8` coming out of a subscript on validated text, and leaves `s[i]` unspent.
+*Resolved (§4b):* byte access is the explicit `s.byteAt(i)` / `s.bytes()` view; there is no subscript on text (and, since v0.24, no subscript anywhere — D25).
 
 ### D19 — A slice that splits a code point returns `string?`
 
@@ -392,7 +392,9 @@ D14 remains deferred; nothing here requires variance.
 
 **Maps are insertion-ordered.** Python's and JavaScript's behaviour, not Go's. Iteration is faster than open addressing; memory is roughly 1.3x because of the separate index array; deletions leave tombstones requiring periodic compaction. Ordering is a guarantee that can never be withdrawn — Go randomizes iteration specifically to prevent dependence on it.
 
-**Index assignment.** `map[key] = value` is supported on mutable collections via an assignable-index operator.
+~~**Index assignment.** `map[key] = value` is supported on mutable collections via an assignable-index operator.~~
+
+**Element access is methods only (v0.24).** Brackets are collection-literal syntax and nothing else; there is no index operator, reading or writing. Lists read with `xs.at(i): T?` (null out of range, a negative index counting from the end), `xs.atOrPanic(i): T` (panics out of range — programmer error, D20, never a thrown error) and `xs.atOrDefault(i, d)`; maps with `m.get(k): V?`, `m.getOrPanic(k)` and `m.getOrDefault(k, d)`; the mutable kinds write with `xs.set(i, v)` and `m.set(k, v)`. `xs.atOrPanic(i)` names the element in place, so a value-struct element is mutated where it lives (`xs.atOrPanic(i).bump()`, `&xs.atOrPanic(i)`); a `?.` call through `at`, `first` or `last` reaches the element the same way, so `xs.at(i)?.bump()` mutates it or does nothing. Rationale: `[]` carried three meanings (literal, read, write) with two different null-behaviours between lists and maps; one spelling per operation, with the failure mode in the name, reads better and is what JavaScript and Kotlin users reach for. Cost: array-style code is longer; the honest name (`atOrPanic`) is the point. The old forms are reported with a fix (`veles check --fix`).
 
 **Literals are bracket-delimited** (Swift's form): `[1, 2, 3]` for lists, `["a": 1]` for maps, `[:]` for an empty map. `{}` was rejected because it already means block, lambda, and struct literal; a fourth meaning would make `{ port: port }` ambiguous between a map and a struct.
 
@@ -443,7 +445,7 @@ Noted tension: index iteration (`0..<arr.len()`) is the more common case and get
 
 ### D30 — Elvis operator `?:`
 
-Supplies a default for a `T?`: `counts[word] ?: 0`. Pairs with D5's smart casts.
+Supplies a default for a `T?`: `counts.get(word) ?: 0`. Pairs with D5's smart casts.
 
 The safe-call `?.` is included: `a?.b?.c` short-circuits to `null` and the chain's type is `T?`.
 
@@ -861,7 +863,7 @@ Consequences:
 
 - **Semicolons** — Go-style automatic insertion.
 - **Loop labels** — `loop :outer { ... break outer }`; the label follows the keyword so the statement still starts with `loop`.
-- **Byte access** — `s.byteAt(i)` and `s.bytes()`, explicit views; `List<u8>.decodeUtf8()` validates on the way back. `s[i]` is left unspent rather than producing a `u8` from validated text.
+- **Byte access** — `s.byteAt(i)` and `s.bytes()`, explicit views; `List<u8>.decodeUtf8()` validates on the way back. There is no subscript on text (D25, v0.24: no subscript anywhere).
 - **`panic(message)`** — a built-in that never returns (D20); a `T?` fallback like `xs.at(i) ?: panic("...")` types as `T`.
 - **`Set`** — follows D25's immutable/mutable split and is insertion-ordered, matching `Map`.
 - **`gc.retain` handles** — `Closeable`, acquired through `with` (D43).

@@ -86,8 +86,8 @@ fun main() {
   val ann = Name(text: "Ann")
   io.println("${ann == Name(text: "ANN")} ${ann != Name(text: "Bob")} ${[ann].contains(Name(text: "ann"))}")
   var counts = mut [ann: 1]
-  counts[Name(text: "ANN")] = 2
-  io.println("${counts.len()} entry, value ${counts[Name(text: "aNN")]}")
+  counts.set(Name(text: "ANN"), 2)
+  io.println("${counts.len()} entry, value ${counts.get(Name(text: "aNN"))}")
 
   io.println("${Pair(a: a, b: b)} ${Pair(a: 1, b: 2)}")
   val shapes: List<Shape> = [Square(side: 2.0), Circle(r: 1.0), Square(side: 1.0)]

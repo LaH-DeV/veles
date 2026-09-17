@@ -44,5 +44,5 @@ fun main() {
 @test
 fun panicsAreReported() {
   val xs = [1]
-  io.println("${xs[3]}")
+  io.println("${xs.atOrPanic(3)}")
 }

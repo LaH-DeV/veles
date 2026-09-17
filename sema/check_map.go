@@ -13,7 +13,10 @@ func (f *fnCtx) mapLit(e *ast.MapLit, want types.Type) Expr {
 	var kt, vt types.Type
 	mutable := false
 	if mt, ok := numericHint(want).(*types.Map); ok {
-		kt, vt, mutable = mt.Key, mt.Value, mt.Mutable
+		mutable = mt.Mutable
+		if !types.ContainsTypeParam(mt.Key) && !types.ContainsTypeParam(mt.Value) {
+			kt, vt = mt.Key, mt.Value
+		}
 		if e.Mut && mutable {
 			f.warnFix(e.Pos, fixDropMut(e.Pos), "redundant 'mut': the expected type '%s' already makes the literal mutable", mt)
 		}
@@ -138,6 +141,34 @@ func (f *fnCtx) mapMethod(recv Expr, mt *types.Map, name string, e *ast.CallExpr
 		}
 		k := f.checkExprTo(e.Args[0].Value, mt.Key)
 		return &Builtin{exprBase{&types.Nullable{Elem: mt.Value}}, "map.get", []Expr{recv, k}, span}
+	case "getOrPanic":
+		// `m.getOrPanic(k)` is `m.get(k) ?: panic(...)`: `V`, a panic when absent.
+		if !need(1) {
+			return bad()
+		}
+		m := f.newTemp(mt)
+		k := f.newTemp(mt.Key)
+		get := &Builtin{exprBase{&types.Nullable{Elem: mt.Value}}, "map.get", []Expr{ref(m), ref(k)}, span}
+		msg := &StringConcat{exprBase{types.TString}, []Expr{
+			&StringConst{exprBase{types.TString}, "key "},
+			&ToString{exprBase{types.TString}, ref(k)},
+			&StringConst{exprBase{types.TString}, " not found in map"},
+		}}
+		fail := &Builtin{exprBase{types.TNever}, "panic", []Expr{msg}, span}
+		body := &Block{Stmts: []Stmt{
+			&VarDecl{Var: m, Init: recv},
+			&VarDecl{Var: k, Init: f.checkExprTo(e.Args[0].Value, mt.Key)},
+		}, Value: &Elvis{exprBase{mt.Value}, get, fail}, Type: mt.Value}
+		return &BlockExpr{exprBase{mt.Value}, body}
+	case "getOrDefault":
+		// `m.getOrDefault(k, d)` is `m.get(k) ?: d`.
+		if !need(2) {
+			return bad()
+		}
+		k := f.checkExprTo(e.Args[0].Value, mt.Key)
+		d := f.checkExprTo(e.Args[1].Value, mt.Value)
+		get := &Builtin{exprBase{&types.Nullable{Elem: mt.Value}}, "map.get", []Expr{recv, k}, span}
+		return &Elvis{exprBase{mt.Value}, get, d}
 	case "containsKey":
 		if !need(1) {
 			return bad()
@@ -164,7 +195,7 @@ func (f *fnCtx) mapMethod(recv Expr, mt *types.Map, name string, e *ast.CallExpr
 			return bad()
 		}
 		return &Builtin{exprBase{&types.Map{Key: mt.Key, Value: mt.Value, Mutable: name == "toMutable"}}, "map.copy", []Expr{recv}, span}
-	case "set", "put":
+	case "set":
 		if !mutating() || !need(2) {
 			return bad()
 		}
@@ -445,7 +476,8 @@ func (f *fnCtx) setAdapter(recv Expr, st *types.Set, name string, e *ast.CallExp
 	return bad()
 }
 
-// mapIndexAssign lowers `m[k] = v`.
+// mapIndexAssign lowers the removed `m[k] = v` form after it is reported
+// (lint_index.go), so nothing cascades.
 func (f *fnCtx) mapIndexAssign(target *ast.IndexExpr, m Expr, mt *types.Map, value ast.Expr, span source.Span) []Stmt {
 	if !mt.Mutable {
 		f.errorf(span, "cannot assign into an immutable Map; use MutableMap (D25)")

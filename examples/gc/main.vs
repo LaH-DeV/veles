@@ -39,7 +39,7 @@ fun main() {
   val keep = build(2000)
   var keepMap: MutableMap<string, List<i64>> = [:]
   loop (i in 0..<50) {
-    keepMap["k$i"] = [i as i64, (i * 2) as i64]
+    keepMap.set("k$i", [i as i64, (i * 2) as i64])
   }
   val boxes: List<Named> = [Thing(label: "a"), Thing(label: "b")]
   var n: i64 = 0
@@ -53,7 +53,7 @@ fun main() {
     val strs = (0..<200).iterator().map(x => "item $x $round").toList()
     var m: MutableMap<i64, string> = [:]
     loop (s in strs) {
-      m[s.len()] = s
+      m.set(s.len(), s)
     }
     checksum += sum(garbage) + m.len() as i64 + counter()
   }
@@ -64,8 +64,8 @@ fun main() {
   io.println("keep ${sum(keep)} checksum $checksum")
   var total: i64 = 0
   loop ((_, v) in keepMap) {
-    total += v[0] + v[1]
+    total += v.atOrPanic(0) + v.atOrPanic(1)
   }
-  io.println("map ${keepMap.len()} $total ${keepMap["k7"] ?: []}")
-  io.println("${boxes.map(b => b.name())} ${counter()} ${words.len()} ${words[1999]}")
+  io.println("map ${keepMap.len()} $total ${keepMap.get("k7") ?: []}")
+  io.println("${boxes.map(b => b.name())} ${counter()} ${words.len()} ${words.atOrPanic(1999)}")
 }

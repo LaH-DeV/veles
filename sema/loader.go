@@ -18,15 +18,15 @@ import (
 // has no manifest resolver yet: the root is the nearest ancestor directory
 // containing `veles.toml`, or the entry file's own directory.
 type Package struct {
-	Root      string
-	Modules   map[string]*Module // by slash path; std modules keyed "std/<name>", dependencies "dep/<name>/<path>"
-	Entry     *Module            // the root module: where a program's `main` lives; nil when the root has no sources
-	Given     *Module            // the module of the path the tool was pointed at (may be Entry)
-	GivenDir  string
-	Manifest  *Manifest
+	Root     string
+	Modules  map[string]*Module // by slash path; std modules keyed "std/<name>", dependencies "dep/<name>/<path>"
+	Entry    *Module            // the root module: where a program's `main` lives; nil when the root has no sources
+	Given    *Module            // the module of the path the tool was pointed at (may be Entry)
+	GivenDir string
+	Manifest *Manifest
 	// NeedMain is set by the driver for build/run: a package is a program
 	// only if its root module declares `fun main()`.
-	NeedMain bool
+	NeedMain  bool
 	Deps      map[string]*Package
 	KeyPrefix string // "" for the entry package, "dep/<name>/" for dependencies
 	diags     *source.Diagnostics
@@ -147,7 +147,9 @@ func (p *Package) loadStd(modPath string) (*Module, bool) {
 	sort.Strings(names)
 	for _, name := range names {
 		data, _ := fs.ReadFile(std.FS, modPath+"/"+name)
-		f := parser.ParseFile(source.NewFile("std/"+modPath+"/"+name, string(data)), p.diags)
+		sf := source.NewFile("std/"+modPath+"/"+name, string(data))
+		sf.Embedded = true
+		f := parser.ParseFile(sf, p.diags)
 		m.Files = append(m.Files, f)
 	}
 	return m, len(names) > 0

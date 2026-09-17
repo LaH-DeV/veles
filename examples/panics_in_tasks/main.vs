@@ -3,7 +3,7 @@ use io
 fun boom(n: i64): i64 {
   await sleep(1)
   val xs = [1, 2]
-  xs[n]
+  xs.atOrPanic(n)
 }
 
 fun fine(): i64 {

@@ -199,7 +199,7 @@ pub struct ListIter<T> {
     type Item = T
     mut fun next(): T? {
       if (self.index >= self.list.len()) return null
-      val v = self.list[self.index]
+      val v = self.list.atOrPanic(self.index)
       self.index += 1
       v
     }

@@ -80,3 +80,53 @@ fun main() {
 		t.Errorf("second --fix changed the file")
 	}
 }
+
+// The removed index forms (D25, v0.24) are errors with a fix, so
+// `check --fix` migrates a file even though it does not compile; nested
+// forms take further passes because their edits overlap.
+func TestCheckFixIndexing(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	src := `use io
+
+fun main() {
+  val xs = [1, 2, 3]
+  var ys: MutableList<i64> = [0, 0]
+  var m: MutableMap<string, i64> = [:]
+  val grid = [[1, 2], [3, 4]]
+  ys[0] = xs[1]
+  ys[1] += 2
+  m["k"] = grid[1][0]
+  io.println("$ys ${m["k"] ?: 0}")
+}
+`
+	os.WriteFile(path, []byte(src), 0o644)
+	if code := Run(Options{Path: dir, Mode: "check", Fix: true}); code == 0 {
+		t.Fatalf("first check --fix: expected errors to remain (nested forms), got exit 0")
+	}
+	passes := 1
+	for ; passes < 4; passes++ {
+		if Run(Options{Path: dir, Mode: "check", Fix: true}) == 0 {
+			break
+		}
+	}
+	if passes == 4 {
+		t.Fatalf("check --fix did not converge in %d passes", passes)
+	}
+	want := `use io
+
+fun main() {
+  val xs = [1, 2, 3]
+  var ys: MutableList<i64> = [0, 0]
+  var m: MutableMap<string, i64> = [:]
+  val grid = [[1, 2], [3, 4]]
+  ys.set(0, xs.atOrPanic(1))
+  ys.set(1, ys.atOrPanic(1) + 2)
+  m.set("k", grid.atOrPanic(1).atOrPanic(0))
+  io.println("$ys ${m.get("k") ?: 0}")
+}
+`
+	if data, _ := os.ReadFile(path); string(data) != want {
+		t.Errorf("after --fix:\n%s\n--- want ---\n%s", data, want)
+	}
+}

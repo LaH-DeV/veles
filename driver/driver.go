@@ -51,18 +51,21 @@ func Run(opts Options) int {
 		prog = sema.Check(pkg, diags, opts.Release)
 	}
 	fmt.Fprint(os.Stderr, diags.Render())
+	if opts.Mode == "check" && opts.Fix {
+		// fixes hang off warnings (lints) and off errors for removed forms
+		// with a mechanical replacement; a run with errors applies what it
+		// can, and the next run reports what is left
+		n, err := ApplyFixes(diags)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "veles:", err)
+			return 1
+		}
+		fmt.Fprintf(os.Stderr, "%d fix(es) applied\n", n)
+	}
 	if diags.HasErrors() || prog == nil {
 		return 1
 	}
 	if opts.Mode == "check" {
-		if opts.Fix {
-			n, err := ApplyFixes(diags)
-			if err != nil {
-				fmt.Fprintln(os.Stderr, "veles:", err)
-				return 1
-			}
-			fmt.Fprintf(os.Stderr, "%d fix(es) applied\n", n)
-		}
 		return 0
 	}
 
