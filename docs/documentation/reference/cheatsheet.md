@@ -100,15 +100,18 @@ struct Point {
   y: i64 = 0                    // default
   fun len(): i64 = self.x + self.y
   mut fun move(dx: i64) { self.x += dx }   // D22: only on a var
+  static fun origin(): Point = Point(x: 0)  // no self; Point.origin()
 }
 val p = Point(x: 1)             // named construction; p == q, "$p" work
+val n = i64.parse("42")         // i64?; Parsable — T.parse(s) in generic code
 
 trait Shape {
   fun area(): f64
   fun describe(): string = "area ${self.area()}"   // default
 }
-impl Shape for Point { fun area(): f64 = 0.0; override fun describe(): string = "pt" }
-val s: Shape = p                // trait object (D9)
+struct Sq { s: f64; impl Shape { fun area(): f64 = self.s * self.s; override fun describe(): string = "sq" } }   // your own type: impl in the body
+impl Shape for i64 { fun area(): f64 = 0.0 }   // a foreign type: top-level impl (for your own type it is a lint with a quick fix)
+val s: Shape = Sq(s: 2.0)       // trait object (D9)
 
 extend Point {                  // more inherent methods, outside the body (D23)
   fun norm(): i64 = self.x.abs() + self.y.abs()
@@ -123,6 +126,10 @@ struct Neg : Expr { e: *Expr }
 
 trait Iterator { type Item; mut fun next(): Item? }   // associated type
 impl Iterator for Countdown { type Item = i64; mut fun next(): i64? { ... } }
+
+impl Comparable for Point { fun compareTo(other: Point): i64 = self.x - other.x }  // <, sorted, min
+impl Display for Point { fun toString(): string = "(${self.x})" }              // "$p"
+// also Equatable (==) and Hashable (map keys); structural by default
 ```
 
 ## Errors (D4)
@@ -147,8 +154,8 @@ smart-casts `r` to the payload; `r.message()` works on any error or error union.
 
 ```veles
 // fragment
-val xs = [1, 2, 3]              // List<i64>;   mut [1, 2] is MutableList
-val m = ["a": 1]                // Map<string, i64>;  mut ["a": 1], mut [:] with annotation
+val xs = [1, 2, 3]              // List<i64>;   mut [1, 2] is MutableList (untyped only)
+val m = ["a": 1]                // Map<string, i64>;  mut ["a": 1]; typed: var m: MutableMap<string, i64> = [:]
 var s = MutableSet<i64>()
 xs[0]; xs.at(9) ?: -1; xs.at(-1); xs.len(); xs.contains(2); xs.first(); xs.last(); xs.indexOf(2)
 xs.map(f); xs.filter(p); xs.fold(0, f); xs.any(p); xs.all(p); xs.find(p); xs.forEach(f); xs.count(p)

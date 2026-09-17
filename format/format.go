@@ -265,8 +265,13 @@ func (p *printer) file(f *ast.File) {
 	// to the file; the impl is printed as part of the error declaration
 	synth := map[*ast.ImplDecl]bool{}
 	for _, d := range f.Decls {
-		if sd, ok := d.(*ast.StructDecl); ok && sd.ErrorImpl != nil {
-			synth[sd.ErrorImpl] = true
+		if sd, ok := d.(*ast.StructDecl); ok {
+			if sd.ErrorImpl != nil {
+				synth[sd.ErrorImpl] = true
+			}
+			for _, impl := range sd.Impls {
+				synth[impl] = true // printed inside the struct body
+			}
 		}
 	}
 	for _, d := range f.Decls {
@@ -401,7 +406,7 @@ func (p *printer) modifiers(fn *ast.FunDecl) {
 	head := p.src[fn.Pos.Start:fn.Name.Pos.Start]
 	for _, kw := range strings.Fields(head) {
 		switch kw {
-		case "pub", "mut", "override", "unsafe":
+		case "pub", "mut", "override", "unsafe", "static":
 			p.w(kw + " ")
 		}
 	}
@@ -658,6 +663,10 @@ func (p *printer) structDecl(d *ast.StructDecl) {
 		m := m
 		ms = append(ms, memberRef{declStart(m), func() { p.fun(m) }})
 	}
+	for _, impl := range d.Impls {
+		impl := impl
+		ms = append(ms, memberRef{declStart(impl), func() { p.implDecl(impl) }})
+	}
 	ms = p.sortedMembers(ms)
 	hdr := d.Name.Pos.End
 	if d.Variant != nil {
@@ -692,6 +701,11 @@ func memberEnd(d *ast.StructDecl, pos int) int {
 			if declStart(m) == pos {
 				return m.Pos.End
 			}
+		}
+	}
+	for _, impl := range d.Impls {
+		if declStart(impl) == pos {
+			return impl.Pos.End
 		}
 	}
 	return pos
@@ -768,6 +782,9 @@ func (p *printer) implDecl(d *ast.ImplDecl) {
 		p.typeParams(d.TypeParams)
 		p.w(" ")
 		p.typ(d.Target)
+	} else if d.Inline {
+		p.w("impl ")
+		p.typ(d.Trait)
 	} else {
 		p.w("impl")
 		p.typeParams(d.TypeParams)
@@ -798,8 +815,12 @@ func (p *printer) implDecl(d *ast.ImplDecl) {
 		ms = append(ms, memberRef{declStart(m), func() { p.fun(m) }})
 	}
 	ms = p.sortedMembers(ms)
+	hdr := d.Target.Span().End
+	if d.Inline {
+		hdr = d.Trait.Span().End // the target is the enclosing struct's name
+	}
 	p.w(" ")
-	p.members(p.openBrace(d.Target.Span().End, d.Pos.End), d.Pos.End, len(ms) == 0, func(i int) bool { return i < len(ms) }, func(i int) {
+	p.members(p.openBrace(hdr, d.Pos.End), d.Pos.End, len(ms) == 0, func(i int) bool { return i < len(ms) }, func(i int) {
 		p.before(ms[i].pos)
 		ms[i].print()
 		p.after(ends[ms[i].pos])
@@ -1140,13 +1161,16 @@ func (p *printer) exprInner(e ast.Expr) {
 		p.w("self")
 	case *ast.NameExpr:
 		p.w(e.Name)
+		if len(e.TypeArgs) > 0 {
+			p.w("<")
+			p.typeList(e.TypeArgs)
+			p.w(">")
+		}
 	case *ast.MemberExpr:
-		if e.X != nil {
-			p.expr(e.X, bpPostfix)
-			// a chain the author broke onto lines stays broken
-			if p.hasNewline(e.X.Span().End, e.Name.Pos.Start) {
-				p.breakCont()
-			}
+		p.expr(e.X, bpPostfix)
+		// a chain the author broke onto lines stays broken
+		if p.hasNewline(e.X.Span().End, e.Name.Pos.Start) {
+			p.breakCont()
 		}
 		if e.Safe {
 			p.w("?.")
@@ -1537,9 +1561,6 @@ func (p *printer) pattern(pat ast.Pattern) {
 func (p *printer) typePat(pat *ast.TypePat, mayIs bool) {
 	if mayIs && p.startsWith(pat.Pos.Start, "is") {
 		p.w("is ")
-	}
-	if nt, ok := pat.Type.(*ast.NamedType); ok && nt.Pos.Start < len(p.src) && p.src[nt.Pos.Start] == '.' {
-		p.w(".") // leading-dot variant: `.none`, `.some(x)`
 	}
 	p.typ(pat.Type)
 	if !pat.HasArg {

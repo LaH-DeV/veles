@@ -57,7 +57,7 @@ The other commands you will use:
 | Command | What it does |
 |---|---|
 | `veles build <dir> -o app` | produce an executable |
-| `veles check <dir>` | type-check without compiling |
+| `veles check <dir>` | type-check without compiling; `--fix` applies lint corrections |
 | `veles test <dir>` | run every `@test` function |
 | `veles build <dir> --release` | optimise, and drop integer overflow checks |
 

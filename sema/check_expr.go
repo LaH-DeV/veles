@@ -54,7 +54,7 @@ func (f *fnCtx) coerce(x Expr, want types.Type, span source.Span) Expr {
 	if types.Identical(have, want) || types.IsNever(have) {
 		return x
 	}
-	if conv := f.convert(x, want); conv != nil {
+	if conv := f.convertAt(x, want, span); conv != nil {
 		return conv
 	}
 	if types.IsUnit(want) {
@@ -73,13 +73,17 @@ func (f *fnCtx) coerce(x Expr, want types.Type, span source.Span) Expr {
 }
 
 func (f *fnCtx) convert(x Expr, want types.Type) Expr {
+	return f.convertAt(x, want, source.Span{})
+}
+
+func (f *fnCtx) convertAt(x Expr, want types.Type, span source.Span) Expr {
 	have := x.Type()
 	switch w := want.(type) {
 	case *types.Nullable:
 		if types.Identical(have, w.Elem) {
 			return &SomeWrap{exprBase{want}, x}
 		}
-		if inner := f.convert(x, w.Elem); inner != nil {
+		if inner := f.convertAt(x, w.Elem, span); inner != nil {
 			return &SomeWrap{exprBase{want}, inner}
 		}
 	case *types.Sealed:
@@ -89,7 +93,7 @@ func (f *fnCtx) convert(x Expr, want types.Type) Expr {
 	case *types.Trait:
 		// implicit boxing into a trait object (D9)
 		if _, isTrait := have.(*types.Trait); !isTrait && f.findImpl(have, w) != nil {
-			return f.boxValue(x, w, source.Span{})
+			return f.boxValue(x, w, span)
 		}
 	case *types.Pointer:
 		// Inside unsafe a GC pointer may be handed to C as a raw pointer: the
@@ -188,6 +192,10 @@ func (f *fnCtx) checkExpr(e ast.Expr, want types.Type) Expr {
 	case *ast.SelfExpr:
 		self, mut := f.selfRef()
 		if self == nil {
+			if f.fn != nil && f.fn.tmpl != nil && f.fn.tmpl.Decl.Static {
+				f.errorf(e.Pos, "'self' is not available in a static function; it has no receiver (D23)")
+				return bad()
+			}
 			f.errorf(e.Pos, "'self' outside of a method")
 			return bad()
 		}
@@ -476,10 +484,6 @@ func narrowReaches(from, to types.Type) bool {
 }
 
 func (f *fnCtx) memberExpr(e *ast.MemberExpr, want types.Type) Expr {
-	if e.X == nil {
-		// `.some(x)`, `.none` — resolved against the expected type
-		return f.leadingDot(e, nil, want)
-	}
 	// module member or sealed variant?
 	if n, ok := e.X.(*ast.NameExpr); ok {
 		if sym := f.lookup(n.Name); sym != nil {
@@ -640,34 +644,6 @@ func (f *fnCtx) indexExpr(e *ast.IndexExpr) Expr {
 
 // ---------------------------------------------------------------------------
 // variant constructors: Some / None / Ok / Err and `.name`
-
-func (f *fnCtx) leadingDot(e *ast.MemberExpr, args []ast.Arg, want types.Type) Expr {
-	switch e.Name.Name {
-	case "some", "none", "ok", "err":
-		return f.variantCtor(strings.ToUpper(e.Name.Name[:1])+e.Name.Name[1:], args, want, e.Pos)
-	}
-	s, ok := want.(*types.Sealed)
-	if !ok {
-		if n, ok := want.(*types.Nullable); ok {
-			if s2, ok := n.Elem.(*types.Sealed); ok {
-				s = s2
-			}
-		}
-	}
-	if s == nil {
-		f.errorf(e.Pos, "cannot resolve '.%s': no sealed type is expected here", e.Name.Name)
-		return bad()
-	}
-	v := s.VariantByName(e.Name.Name)
-	if v == nil {
-		f.errorf(e.Name.Pos, "'%s' has no variant '%s'", s.Name, e.Name.Name)
-		return bad()
-	}
-	if args == nil && len(v.Fields) == 0 {
-		return f.variantValue(v, want, e.Pos)
-	}
-	return f.constructStruct(v, args, e.Pos)
-}
 
 func (f *fnCtx) variantValue(v *types.Struct, want types.Type, span source.Span) Expr {
 	if len(v.TypeParams) > 0 && v.TypeArgs == nil {
@@ -920,14 +896,34 @@ func (f *fnCtx) makeBinary(op BinOp, l, r Expr, span source.Span) Expr {
 		}
 		return &Binary{exprBase{t}, op, l, r, span}
 	case OpLt, OpLe, OpGt, OpGe:
-		if !types.IsNumeric(t) && !types.IsString(t) {
-			f.errorf(span, "operator '%s' is not defined for '%s'", op, t)
-			return bad()
+		if types.IsNumeric(t) || types.IsString(t) {
+			return &Binary{exprBase{types.TBool}, op, l, r, span}
 		}
-		return &Binary{exprBase{types.TBool}, op, l, r, span}
+		if cmp := f.compareOp(op, l, r, span); cmp != nil {
+			return cmp
+		}
+		f.errorf(span, "operator '%s' is not defined for '%s'; implement 'Comparable' to order it", op, t)
+		return bad()
 	}
 	f.errorf(span, "unsupported operator")
 	return bad()
+}
+
+// ordered reports whether values of t can be compared with `<`: numbers,
+// strings, and types implementing the prelude's Comparable.
+func (f *fnCtx) ordered(t types.Type) bool {
+	return types.IsNumeric(t) || types.IsString(t) || f.c.implementsPrelude(t, "Comparable")
+}
+
+// compareOp lowers an ordering operator on a type with a custom
+// Comparable impl to `l.compareTo(r) <op> 0`; nil when t has none.
+func (f *fnCtx) compareOp(op BinOp, l, r Expr, span source.Span) Expr {
+	ops := f.c.customOps(l.Type())
+	if ops == nil || ops.Compare == nil {
+		return nil
+	}
+	cmp := &Call{exprBase{types.TI64}, ops.Compare, []Expr{l, r}}
+	return &Binary{exprBase{types.TBool}, op, cmp, i64c(0), span}
 }
 
 // equality handles ==/!= including null comparisons and sealed/struct
@@ -972,12 +968,14 @@ func (f *fnCtx) equality(e *ast.BinaryExpr, op BinOp) Expr {
 		return bad()
 	}
 	if !f.comparable(t) {
-		f.errorf(e.Pos, "values of type '%s' cannot be compared with '%s'", t, op)
+		f.errorf(e.Pos, "values of type '%s' cannot be compared with '%s'; implement 'Equatable' to define it", t, op)
 		return bad()
 	}
 	return &Binary{exprBase{types.TBool}, op, l, r, e.Pos}
 }
 
+// comparable reports whether `==` is defined for t: structural equality
+// over the fields, or a custom Equatable impl.
 func (f *fnCtx) comparable(t types.Type) bool {
 	switch t := t.(type) {
 	case *types.Basic:
@@ -987,6 +985,9 @@ func (f *fnCtx) comparable(t types.Type) bool {
 	case *types.Nullable:
 		return f.comparable(t.Elem)
 	case *types.Struct:
+		if f.c.implementsPrelude(t, "Equatable") {
+			return true
+		}
 		for _, fld := range t.Fields {
 			if !f.comparable(fld.Type) {
 				return false
@@ -994,6 +995,9 @@ func (f *fnCtx) comparable(t types.Type) bool {
 		}
 		return true
 	case *types.Sealed:
+		if f.c.implementsPrelude(t, "Equatable") {
+			return true
+		}
 		for _, v := range t.Variants {
 			if !f.comparable(v) {
 				return false
@@ -1049,9 +1053,17 @@ func (f *fnCtx) rangeExpr(e *ast.RangeExpr, want types.Type) Expr {
 func (f *fnCtx) listLit(e *ast.ListLit, want types.Type) Expr {
 	var elem types.Type
 	mutable := false
+	// D25/#8: the expected type decides mutability; `mut` is for literals
+	// with nothing to infer it from.
+	if st, ok := numericHint(want).(*types.Set); ok {
+		return f.setLit(e, st)
+	}
 	if lt, ok := numericHint(want).(*types.List); ok {
 		elem = lt.Elem
 		mutable = lt.Mutable
+		if e.Mut && mutable {
+			f.warnf(e.Pos, "redundant 'mut': the expected type '%s' already makes the literal mutable", lt)
+		}
 	}
 	if e.Mut {
 		mutable = true
@@ -1069,7 +1081,7 @@ func (f *fnCtx) listLit(e *ast.ListLit, want types.Type) Expr {
 	}
 	if elem == nil {
 		if e.Mut {
-			f.errorf(e.Pos, "cannot infer the element type of an empty list; annotate it, e.g. 'var xs: MutableList<i32> = mut []' (D25)")
+			f.errorf(e.Pos, "cannot infer the element type of an empty list; annotate it, e.g. 'var xs: MutableList<i32> = []' (D25)")
 		} else {
 			f.errorf(e.Pos, "cannot infer the element type of an empty list; annotate it, e.g. 'val xs: List<i32> = []' (D25)")
 		}
@@ -1077,6 +1089,26 @@ func (f *fnCtx) listLit(e *ast.ListLit, want types.Type) Expr {
 	}
 	lit.T = &types.List{Elem: elem, Mutable: mutable}
 	return lit
+}
+
+// setLit builds a set from a list literal where a Set is expected:
+// `val s: Set<i64> = [1, 2]` becomes `{ val tmp = MutableSet(); tmp.add(1); ...; tmp }`.
+func (f *fnCtx) setLit(e *ast.ListLit, st *types.Set) Expr {
+	if e.Mut && st.Mutable {
+		f.warnf(e.Pos, "redundant 'mut': the expected type '%s' already makes the literal mutable", st)
+	}
+	if !f.c.checkHashable(st.Elem, e.Pos) {
+		return bad()
+	}
+	outT := &types.Set{Elem: st.Elem, Mutable: true}
+	out := f.newTemp(outT)
+	stmts := []Stmt{&VarDecl{Var: out, Init: &Builtin{exprBase{outT}, "set.new", nil, e.Pos}}}
+	for _, el := range e.Elems {
+		x := f.checkExprTo(el, st.Elem)
+		stmts = append(stmts, &ExprStmt{X: &Builtin{exprBase{types.TBool}, "set.add", []Expr{ref(out), x}, e.Pos}})
+	}
+	resultT := &types.Set{Elem: st.Elem, Mutable: st.Mutable || e.Mut}
+	return &BlockExpr{exprBase{resultT}, &Block{Stmts: stmts, Value: &Cast{exprBase{resultT}, ref(out)}, Type: resultT}}
 }
 
 func (f *fnCtx) castExpr(e *ast.CastExpr) Expr {
@@ -1198,7 +1230,7 @@ func (f *fnCtx) placeOf(e ast.Expr) (place, bool) {
 			return pv(self), true
 		}
 	case *ast.MemberExpr:
-		if e.X == nil || e.Safe {
+		if e.Safe {
 			return place{}, false
 		}
 		base, ok := f.placeOf(e.X)
@@ -1508,7 +1540,7 @@ func isPlaceSyntax(e ast.Expr) bool {
 	case *ast.NameExpr, *ast.SelfExpr:
 		return true
 	case *ast.MemberExpr:
-		return e.X != nil && !e.Safe && isPlaceSyntax(e.X)
+		return !e.Safe && isPlaceSyntax(e.X)
 	case *ast.IndexExpr:
 		return true
 	case *ast.UnaryExpr:

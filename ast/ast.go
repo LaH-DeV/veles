@@ -171,6 +171,7 @@ type FunDecl struct {
 	Doc        string // documentation comment, if any
 	Pub        bool
 	Mut        bool // `mut fun` — mutates the receiver's own fields (D22)
+	Static     bool // `static fun` — no receiver; called on the type (D23)
 	Override   bool
 	Unsafe     bool
 	Extern     bool
@@ -207,6 +208,7 @@ type StructDecl struct {
 	Variant    Type // the sealed trait this struct is a variant of, or nil
 	Fields     []*Field
 	Methods    []*FunDecl
+	Impls      []*ImplDecl // `impl Trait { }` blocks written in the body (also in File.Decls)
 	Pos        source.Span
 }
 
@@ -241,6 +243,7 @@ type AssocTypeBinding struct {
 type ImplDecl struct {
 	Attrs      []*Attribute
 	Extend     bool
+	Inline     bool // written inside the target struct's body
 	TypeParams []TypeParam
 	Trait      Type
 	Target     Type
@@ -497,8 +500,9 @@ type SelfExpr struct {
 }
 
 type NameExpr struct {
-	Name string
-	Pos  source.Span
+	Name     string
+	TypeArgs []Type // `Name<T>` before `.f(...)`: a generic type as a static call target
+	Pos      source.Span
 }
 
 // MemberExpr is `x.name` or `x?.name`.

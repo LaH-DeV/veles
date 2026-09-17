@@ -27,10 +27,11 @@ trait Area {
 
 struct Square {
   side: f64
-}
-impl Area for Square {
-  fun area(): f64 = self.side * self.side
-  override fun describe(): string = "square ${self.side}: " + "area ${self.area()}"
+
+  impl Area {
+    fun area(): f64 = self.side * self.side
+    override fun describe(): string = "square ${self.side}: " + "area ${self.area()}"
+  }
 }
 
 struct Pair<A, B> {

@@ -3,24 +3,24 @@ use io
 // A user-defined iterable: a countdown (D42)
 struct Countdown {
   from: i64
+
+  impl Iterable {
+    type Iter = CountdownIter
+    fun iterator(): CountdownIter = CountdownIter(current: self.from)
+  }
 }
 struct CountdownIter {
   current: i64
-}
 
-impl Iterator for CountdownIter {
-  type Item = i64
-  mut fun next(): i64? {
-    if (self.current <= 0) return null
-    val v = self.current
-    self.current -= 1
-    v
+  impl Iterator {
+    type Item = i64
+    mut fun next(): i64? {
+      if (self.current <= 0) return null
+      val v = self.current
+      self.current -= 1
+      v
+    }
   }
-}
-
-impl Iterable for Countdown {
-  type Iter = CountdownIter
-  fun iterator(): CountdownIter = CountdownIter(current: self.from)
 }
 
 fun <I: Iterable> summarize(xs: I): string {

@@ -31,7 +31,9 @@ Point(x: 3, y: -4) 7 Point(x: 4, y: -3) true
   not matter and nothing can be forgotten.
 - Methods live in the struct body and refer to the receiver as `self`.
 - Every struct can be printed with `$p`, compared with `==`, and used as
-  a map key, automatically.
+  a map key, automatically. To order structs with `<` or `sorted()`, or
+  to change what `==` and `$p` mean, implement the operator traits of
+  [chapter 8](08-traits-and-generics.md#the-operator-traits).
 
 ### Defaults
 
@@ -119,6 +121,48 @@ Account(balance: 150) false
 Try `val acct = ...` instead: the compiler refuses `acct.deposit(50)`
 because a `val` cannot be mutated. This is how Veles makes "does this
 call change my data?" visible at every call site.
+
+## Static functions
+
+A `static fun` has no `self`: it belongs to the type and is called on the
+type name. That is where constructors with a story go — a default value,
+a parse from text — next to the fields they build.
+
+```veles
+use io
+
+struct Point {
+  x: i64
+  y: i64
+
+  static fun origin(): Point = Point(x: 0, y: 0)
+
+  static fun fromText(s: string): Point? {
+    val parts = s.split(",")
+    if (parts.len() != 2) return null
+    val x = i64.parse(parts[0]) ?: return null
+    val y = i64.parse(parts[1]) ?: return null
+    Point(x: x, y: y)
+  }
+
+  fun shifted(dx: i64): Point = Point(x: self.x + dx, y: self.y)
+}
+
+fun main() {
+  io.println("${Point.origin()} ${Point.origin().shifted(2)} ${Point.fromText("3,4")} ${Point.fromText("3")}")
+}
+```
+
+Output:
+```text
+Point(x: 0, y: 0) Point(x: 2, y: 0) Point(x: 3, y: 4) null
+```
+
+`i64.parse(text)` is the same idea on a built-in type: it returns `i64?`,
+null when the text is not a number. Calling a static function on a value
+(`p.origin()`) or a method on the type (`Point.shifted(2)`) is an error
+that says which one you meant. For a generic struct, name the instance:
+`Stack<i64>.empty()`.
 
 ## Sharing with pointers
 

@@ -171,7 +171,7 @@ fun main() {
     async worker("b", jobs, results)
     loop (i in 1..4) { jobs.send(Job(id: i)) }
     jobs.close()
-    var done: MutableList<string> = mut []
+    var done: MutableList<string> = []
     loop (_ in 1..4) {
       val r = await results.recv()
       if (r != null) done.push(r)

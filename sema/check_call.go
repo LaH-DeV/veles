@@ -47,9 +47,6 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 		f.c.refSym(callee.Pos, sym)
 		return f.callSymbol(sym, callee.Name, typeArgs, e, want)
 	case *ast.MemberExpr:
-		if callee.X == nil {
-			return f.leadingDot(callee, e.Args, want)
-		}
 		if n, ok := callee.X.(*ast.NameExpr); ok {
 			if sym := f.lookup(n.Name); sym != nil {
 				switch sym.Kind {
@@ -84,6 +81,17 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 						return f.constructStruct(v, e.Args, e.Pos)
 					}
 				}
+			}
+			if rt := f.typeNamed(n); rt != nil {
+				// `Type.f(args)`: a static function (D23)
+				if len(typeArgs) == 0 {
+					if st, ok := rt.(*types.Struct); ok && len(st.TypeParams) > 0 && st.TypeArgs == nil {
+						f.errorf(n.Pos, "'%s' is generic; write the type arguments, e.g. '%s<T>.%s(...)'", st.Name, st.Name, callee.Name.Name)
+						f.checkArgsLoosely(e.Args)
+						return bad()
+					}
+				}
+				return f.staticCall(rt, callee, typeArgs, e, want)
 			}
 		}
 		return f.methodCall(callee, typeArgs, e, want)
@@ -676,6 +684,11 @@ func receiverViews(rt types.Type) []types.Type {
 }
 
 func (f *fnCtx) callMethod(t *FuncTemplate, ownerSubst map[*types.TypeParam]types.Type, typeArgs []types.Type, recv Expr, viaPointer bool, callee *ast.MemberExpr, e *ast.CallExpr, want types.Type) Expr {
+	if t.Decl.Static {
+		f.errorf(callee.Name.Pos, "'%s' is a static function; call it on the type: '%s.%s(...)'", t.Name, recv.Type(), t.Name)
+		f.checkArgsLoosely(e.Args)
+		return bad()
+	}
 	f.c.resolveSignature(t)
 	f.c.refFunc(callee.Name.Pos, t)
 	// inherent methods (struct body or extend block) follow M5; trait impl
@@ -972,6 +985,9 @@ func (f *fnCtx) objectSafe(trait *types.Trait) (string, bool) {
 	}
 	self := selfParamOf(trait)
 	for _, name := range trait.MethodList {
+		if f.c.traitStatic[trait.Name+"."+name] {
+			return "function '" + name + "' is static", false
+		}
 		if len(f.c.traitMethodTPs[trait.Name+"."+name]) > 0 {
 			return "method '" + name + "' is generic", false
 		}

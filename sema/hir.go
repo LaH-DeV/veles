@@ -30,6 +30,19 @@ type Program struct {
 	TestMode bool
 	// ResultType instantiates the prelude Result<T, E> for the backend.
 	ResultType func(ok, err types.Type) types.Type
+	// Custom maps types.Key of a struct or sealed type to the prelude-trait
+	// methods that replace its structural equality, hash, ordering and text.
+	Custom map[string]*CustomOps
+}
+
+// CustomOps are the instantiated impl methods of the prelude's Equatable,
+// Hashable, Comparable and Display for one concrete type; a nil entry means
+// the structural behaviour applies. Each takes the receiver by value.
+type CustomOps struct {
+	Equals   *Func // (self, other) bool
+	Hash     *Func // (self) i64
+	Compare  *Func // (self, other) i64
+	ToString *Func // (self) string
 }
 
 // Func is a concrete (monomorphic) function.

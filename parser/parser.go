@@ -253,8 +253,13 @@ func (p *Parser) parseFile() *ast.File {
 		d := p.parseDecl()
 		if d != nil {
 			f.Decls = append(f.Decls, d)
-			if sd, ok := d.(*ast.StructDecl); ok && sd.ErrorImpl != nil {
-				f.Decls = append(f.Decls, sd.ErrorImpl) // `error` desugars to struct + impl
+			if sd, ok := d.(*ast.StructDecl); ok {
+				if sd.ErrorImpl != nil {
+					f.Decls = append(f.Decls, sd.ErrorImpl) // `error` desugars to struct + impl
+				}
+				for _, impl := range sd.Impls {
+					f.Decls = append(f.Decls, impl) // `impl Trait { }` in the body is an impl for the struct
+				}
 			}
 		}
 		if _, bad := d.(*ast.BadDecl); bad || p.pos == start {
@@ -351,7 +356,7 @@ func (p *Parser) parseDeclBody(attrs []*ast.Attribute) ast.Decl {
 			p.errorf(start, "'use' cannot be 'pub'")
 		}
 		return p.parseUse()
-	case lexer.KwFun, lexer.KwUnsafe:
+	case lexer.KwFun, lexer.KwUnsafe, lexer.KwStatic:
 		fn := p.parseFun(attrs, funContextFree)
 		fn.Pub = pub
 		fn.Pos = start.To(fn.Pos)
@@ -558,6 +563,11 @@ func (p *Parser) parseFun(attrs []*ast.Attribute, ctx funContext) *ast.FunDecl {
 			fn.Mut = true
 		case lexer.KwOverride:
 			fn.Override = true
+		case lexer.KwStatic:
+			fn.Static = true
+			if ctx == funContextFree || ctx == funContextExtern {
+				p.errorf(p.span(), "'static' belongs to a function in a struct, trait, impl or extend body; a top-level function needs no marker")
+			}
 		case lexer.KwUnsafe:
 			fn.Unsafe = true
 		default:
@@ -633,8 +643,10 @@ func (p *Parser) parseStruct(attrs []*ast.Attribute, pub, extern bool, start sou
 		for !p.at(lexer.RBrace, lexer.EOF) {
 			mattrs := p.parseAttributes()
 			switch p.cur().Kind {
-			case lexer.KwFun, lexer.KwMut, lexer.KwOverride, lexer.KwUnsafe:
+			case lexer.KwFun, lexer.KwMut, lexer.KwOverride, lexer.KwUnsafe, lexer.KwStatic:
 				d.Methods = append(d.Methods, p.parseFun(mattrs, funContextMethod))
+			case lexer.KwImpl:
+				d.Impls = append(d.Impls, p.parseInlineImpl(mattrs, d))
 			case lexer.KwPub:
 				if p.peek(1).Kind == lexer.Ident {
 					d.Fields = append(d.Fields, p.parseField(true))
@@ -721,7 +733,7 @@ func (p *Parser) parseTrait(attrs []*ast.Attribute, pub bool, start source.Span)
 				}
 				at.Pos = p.spanFrom(ts)
 				d.AssocTypes = append(d.AssocTypes, at)
-			case lexer.KwFun, lexer.KwMut, lexer.KwUnsafe, lexer.KwPub:
+			case lexer.KwFun, lexer.KwMut, lexer.KwUnsafe, lexer.KwPub, lexer.KwStatic:
 				d.Methods = append(d.Methods, p.parseFun(mattrs, funContextTrait))
 			default:
 				p.errorf(p.span(), "expected 'type' or 'fun' in trait body, found %s", p.cur().Describe())
@@ -760,6 +772,42 @@ func (p *Parser) parseImpl(attrs []*ast.Attribute, extend bool) ast.Decl {
 			d.Target = d.Trait
 		}
 	}
+	p.parseImplBody(d, extend)
+	d.Pos = p.spanFrom(start)
+	return d
+}
+
+// parseInlineImpl parses `impl Trait { ... }` inside the body of struct
+// sd (D23): an impl of the trait for the struct itself, with the struct's
+// type parameters. It joins the file's declarations like a top-level impl;
+// Inline marks it for the formatter.
+func (p *Parser) parseInlineImpl(attrs []*ast.Attribute, sd *ast.StructDecl) *ast.ImplDecl {
+	start := p.span()
+	p.next() // impl
+	d := &ast.ImplDecl{Attrs: attrs, Inline: true, TypeParams: sd.TypeParams}
+	if p.at(lexer.Lt) {
+		p.errorf(p.span(), "an impl inside a struct body uses the struct's type parameters; for other bounds write 'impl<T: ...> Trait for %s<T>' at top level", sd.Name.Name)
+		p.parseTypeParams()
+	}
+	d.Trait = p.parseType()
+	if p.at(lexer.KwFor) {
+		p.errorf(p.span(), "an impl inside a struct body is for that struct; drop 'for'")
+		p.next()
+		p.parseType()
+	}
+	target := &ast.NamedType{Path: []ast.Ident{sd.Name}, Pos: sd.Name.Pos}
+	for _, tp := range sd.TypeParams {
+		target.Args = append(target.Args, &ast.NamedType{Path: []ast.Ident{tp.Name}, Pos: tp.Name.Pos})
+	}
+	d.Target = target
+	p.parseImplBody(d, false)
+	d.Pos = p.spanFrom(start)
+	return d
+}
+
+// parseImplBody parses the `{ type ... = ...; fun ... }` body of an impl
+// or extend block.
+func (p *Parser) parseImplBody(d *ast.ImplDecl, extend bool) {
 	if _, ok := p.expect(lexer.LBrace); ok {
 		p.skipSemis()
 		for !p.at(lexer.RBrace, lexer.EOF) {
@@ -776,7 +824,7 @@ func (p *Parser) parseImpl(attrs []*ast.Attribute, extend bool) ast.Decl {
 					b.Type = p.parseType()
 				}
 				d.AssocTypes = append(d.AssocTypes, b)
-			case lexer.KwFun, lexer.KwMut, lexer.KwOverride, lexer.KwUnsafe, lexer.KwPub:
+			case lexer.KwFun, lexer.KwMut, lexer.KwOverride, lexer.KwUnsafe, lexer.KwPub, lexer.KwStatic:
 				d.Methods = append(d.Methods, p.parseFun(mattrs, funContextMethod))
 			default:
 				if extend {
@@ -791,8 +839,6 @@ func (p *Parser) parseImpl(attrs []*ast.Attribute, extend bool) ast.Decl {
 		}
 		p.expect(lexer.RBrace)
 	}
-	d.Pos = p.spanFrom(start)
-	return d
 }
 
 // atExtendDecl recognises the contextual keyword `extend` at declaration

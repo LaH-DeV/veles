@@ -71,12 +71,6 @@ func (p *Parser) parsePattern(binding bool) ast.Pattern {
 		}
 		x := p.parsePostfix()
 		return &ast.LiteralPat{Value: x}
-	case lexer.Dot:
-		// leading-dot variant: `.none`, `.some(x)`
-		p.next()
-		name, _ := p.expectIdent()
-		t := &ast.NamedType{Path: []ast.Ident{name}, Pos: p.spanFrom(start)}
-		return p.parseTypePatternFields(t, start)
 	}
 	p.errorf(p.span(), "expected a pattern, found %s", p.cur().Describe())
 	return &ast.LiteralPat{Value: &ast.BadExpr{Pos: p.span()}}

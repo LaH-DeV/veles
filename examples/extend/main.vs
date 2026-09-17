@@ -5,6 +5,10 @@ use io
 struct Vec2 {
   x: f64
   y: f64
+
+  impl Show {
+    fun show(): string = "(${self.x}, ${self.y})"
+  }
 }
 
 struct Stack<T> {
@@ -13,9 +17,6 @@ struct Stack<T> {
 
 trait Show {
   fun show(): string
-}
-impl Show for Vec2 {
-  fun show(): string = "(${self.x}, ${self.y})"
 }
 
 extend Vec2 {

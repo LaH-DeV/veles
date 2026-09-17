@@ -763,3 +763,225 @@ fun main() throws IoError {
 	expectError(t, "use fs\nfun main() { fs.readFile(\"a\") }", "unused Result")
 	expectError(t, "use fs\nfun main() throws Panic { try fs.readFile(\"a\") }", "IoError")
 }
+
+// The prelude's Comparable, Equatable, Hashable and Display replace the
+// structural behaviour of the ordering operators, `==`, map hashing and
+// interpolation for a struct or sealed type; the numbers and strings
+// implement Comparable so generic code can order them.
+func TestOperatorTraits(t *testing.T) {
+	expectClean(t, prelude+`
+struct Version { major: i64, minor: i64 }
+impl Comparable for Version {
+  fun compareTo(other: Version): i64 = if (self.major != other.major) self.major.compareTo(other.major) else self.minor.compareTo(other.minor)
+}
+impl Display for Version { fun toString(): string = "v${self.major}.${self.minor}" }
+struct Name { text: string }
+impl Equatable for Name { fun equals(other: Name): bool = self.text.toLower() == other.text.toLower() }
+impl Hashable for Name { fun hash(): i64 = self.text.toLower().len() }
+struct Pair<T> { a: T, b: T }
+impl<T: Display> Display for Pair<T> { fun toString(): string = "<${self.a}, ${self.b}>" }
+sealed trait Shape
+struct Circle : Shape { r: f64 }
+struct Square : Shape { side: f64 }
+impl Comparable for Shape { fun compareTo(other: Shape): i64 = area(self).compareTo(area(other)) }
+fun area(s: Shape): f64 = when (s) {
+  is Circle => 3.14 * s.r * s.r
+  is Square => s.side * s.side
+}
+fun maxOf<T: Comparable>(a: T, b: T): T = if (a.compareTo(b) >= 0) a else b
+fun main() {
+  val a = Version(major: 1, minor: 10)
+  val b = Version(major: 1, minor: 9)
+  io.println("$a ${a > b} ${a <= b} ${a == b} ${[a, b].sorted()} ${[a, b].min()} ${[a, b].sortedBy(v => v)}")
+  var m = mut [Name(text: "Ann"): 1]
+  m[Name(text: "ANN")] = 2
+  io.println("${m.len()} ${Name(text: "a") == Name(text: "A")} ${[Name(text: "x")].contains(Name(text: "X"))}")
+  val shapes: List<Shape> = [Square(side: 2.0), Circle(r: 1.0)]
+  io.println("${shapes.max()} ${Pair(a: a, b: b)} ${maxOf(3, 9)} ${maxOf("b", "a")} ${(5).compareTo(7)}")
+}`)
+	cases := []struct{ name, src, want string }{
+		{"ordering needs Comparable", `struct P { x: i64 }
+fun main() { val p = P(x: 1); io.println("${p < p}") }`, "implement 'Comparable' to order it"},
+		{"min needs Comparable at the call", `struct P { x: i64 }
+fun main() { io.println("${[P(x: 1)].min()}") }`, "'min' on 'List<P>' requires 'P' to implement 'Comparable'"},
+		{"sorted needs Comparable", `struct P { x: i64 }
+fun main() { io.println("${[P(x: 1)].sorted()}") }`, "implement 'Comparable'"},
+		{"Equatable key needs Hashable", `struct K { s: string }
+impl Equatable for K { fun equals(other: K): bool = true }
+fun main() { val m = [K(s: "a"): 1]; io.println("${m.len()}") }`, "implements Equatable but not Hashable"},
+		{"Hashable alone is fine", `struct K { s: string }
+impl Hashable for K { fun hash(): i64 = 1 }
+fun main() { val m = [K(s: "a"): 1]; io.println("${m.len()}") }`, ""},
+		{"compareTo must match the trait", `struct P { x: i64 }
+impl Comparable for P { fun compareTo(other: P): bool = true }`, "Comparable"},
+		{"function fields cannot compare, Equatable makes them", `struct H { f: fun(i64): i64 }
+impl Equatable for H { fun equals(other: H): bool = true }
+fun main() { val h = H(f: x => x); io.println("${h == h}") }`, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if c.want == "" {
+				expectClean(t, prelude+c.src)
+				return
+			}
+			expectError(t, prelude+c.src, c.want)
+		})
+	}
+}
+
+// #8: the expected type decides a literal's mutability; `mut` is for
+// untyped literals, and a list literal where a Set is expected builds one.
+func TestLiteralMutabilityInference(t *testing.T) {
+	expectClean(t, prelude+`
+fun fill(xs: MutableList<i64>) { xs.push(4) }
+struct Bag { items: MutableList<string> = [], tags: MutableMap<string, i64> = [:] }
+fun make(): MutableList<i64> = [1, 2]
+fun main() {
+  val a: MutableList<i64> = [1, 2, 3]
+  a.push(9)
+  val m: MutableMap<string, i64> = [:]
+  m["y"] = 2
+  val s: Set<i64> = [1, 2, 2]
+  val ms: MutableSet<string> = ["a"]
+  ms.add("b")
+  fill([1, 2])
+  val b = Bag()
+  b.items.push("t")
+  val untyped = mut [1]
+  untyped.push(2)
+  io.println("$a $m ${s.len()} ${ms.len()} ${b.items} ${make()} $untyped")
+}`)
+	for _, src := range []string{
+		`fun main() { var r: MutableList<i64> = mut []; r.push(1); io.println("$r") }`,
+		`fun main() { var r: MutableMap<string, i64> = mut [:]; r["a"] = 1; io.println("$r") }`,
+	} {
+		diags := checkSource(t, prelude+src)
+		found := false
+		for _, d := range diags.Items {
+			if d.Severity == source.Warning && strings.Contains(d.Message, "redundant 'mut'") {
+				found = true
+			}
+		}
+		if !found || diags.HasErrors() {
+			t.Errorf("expected a redundant-mut warning and no errors for %q, got:\n%s", src, diags.Render())
+		}
+	}
+	expectError(t, prelude+`fun main() { val xs = []; io.println("$xs") }`, "val xs: List<i32> = []")
+	expectError(t, prelude+`struct P { f: fun(): i64 }
+fun main() { val s: Set<P> = [P(f: () => 1)]; io.println("${s.len()}") }`, "cannot be a map key or set element")
+}
+
+// `static fun` (D23): no receiver, called on the type — in struct bodies,
+// extend blocks and traits (where generic code writes `T.parse(s)`).
+func TestStaticFunctions(t *testing.T) {
+	expectClean(t, prelude+`
+struct Point {
+  x: i64
+  y: i64
+  static fun origin(): Point = Point(x: 0, y: 0)
+  static fun fromText(s: string): Point? {
+    val parts = s.split(",")
+    if (parts.len() != 2) return null
+    val x = i64.parse(parts[0]) ?: return null
+    val y = i64.parse(parts[1]) ?: return null
+    Point(x: x, y: y)
+  }
+  impl Parsable {
+    static fun parse(s: string): Point? = Point.fromText(s)
+  }
+}
+extend Point {
+  static fun unit(): Point = Point(x: 1, y: 1)
+}
+struct Stack<T> {
+  items: MutableList<T> = []
+  static fun of(x: T): Stack<T> {
+    val s = Stack<T>()
+    s.items.push(x)
+    s
+  }
+}
+fun parseAll<T: Parsable>(xs: List<string>): List<T?> = xs.map(x => T.parse(x))
+fun main() {
+  val p: Point? = Point.parse("3,4")
+  val ns: List<i64?> = parseAll(["1", "x"])
+  io.println("${Point.origin()} ${Point.unit()} $p $ns ${bool.parse("true")} ${Stack<string>.of("x").items}")
+}`)
+	cases := []struct{ name, src, want string }{
+		{"top level", `static fun f() { }`, "a top-level function needs no marker"},
+		{"self in static", `struct P { x: i64
+  static fun make(): P = P(x: self.x) }`, "'self' is not available in a static function"},
+		{"static called on a value", `struct P { x: i64
+  static fun make(): P = P(x: 1) }
+fun main() { val p = P(x: 1); p.make() }`, "call it on the type: 'P.make(...)'"},
+		{"method called on the type", `struct P { x: i64
+  fun m(): i64 = 1 }
+fun main() { P.m() }`, "call it on a value, not on the type"},
+		{"unknown static", `struct P { x: i64 }
+fun main() { P.nothing() }`, "no static function 'nothing' on type 'P'"},
+		{"impl must say static", `trait F { static fun make(): Self }
+struct P { x: i64 }
+impl F for P { fun make(): P = P(x: 1) }`, "declare it 'static fun'"},
+		{"impl must not say static", `trait F { fun m(): i64 }
+struct P { x: i64 }
+impl F for P { static fun m(): i64 = 1 }`, "cannot be 'static'"},
+		{"sealed trait", `sealed trait S { static fun z(): i64 = 1 }
+struct A : S { }`, "a sealed trait cannot declare a static function"},
+		{"not object safe", `trait F { static fun make(): Self }
+struct P { x: i64 }
+impl F for P { static fun make(): P = P(x: 1) }
+fun main() { val f: F = P(x: 1); io.println("$f") }`, "function 'make' is static"},
+		{"generic needs type args", `struct S<T> { x: T
+  static fun z(): i64 = 0 }
+fun main() { io.println("${S.z()}") }`, "write the type arguments"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			expectError(t, prelude+c.src, c.want)
+		})
+	}
+}
+
+// A top-level impl for a struct of the same module that the inline form
+// can express is a lint with an autofix (D23); other cases stay silent.
+func TestInlinableImplLint(t *testing.T) {
+	hasLint := func(src string) (bool, *source.Fix) {
+		diags := checkSource(t, prelude+src)
+		if diags.HasErrors() {
+			t.Fatalf("unexpected errors:\n%s", diags.Render())
+		}
+		for _, d := range diags.Items {
+			if strings.Contains(d.Message, "can be written inside the body") {
+				return true, d.Fix
+			}
+		}
+		return false, nil
+	}
+	if ok, fix := hasLint(`trait Show { fun show(): string }
+struct P { x: i64 }
+impl Show for P { fun show(): string = "p" }`); !ok || fix == nil || len(fix.Edits) != 2 || fix.Title != "Move into the body of 'P'" {
+		t.Errorf("expected the lint with a two-edit fix, got %v %+v", ok, fix)
+	}
+	if ok, _ := hasLint(`trait Show { fun show(): string }
+struct Box<T> { x: T }
+impl<T> Show for Box<T> { fun show(): string = "box" }`); !ok {
+		t.Errorf("a generic impl with the struct's own parameters is inlinable")
+	}
+	for name, src := range map[string]string{
+		"extra bound": `trait Show { fun show(): string }
+struct Box<T> { x: T }
+impl<T: Show> Show for Box<T> { fun show(): string = self.x.show() }`,
+		"foreign type": `trait Show { fun show(): string }
+impl Show for i64 { fun show(): string = "n" }`,
+		"already inline": `trait Show { fun show(): string }
+struct P { x: i64; impl Show { fun show(): string = "p" } }`,
+		"specific instance": `trait Show { fun show(): string }
+struct Box<T> { x: T }
+impl Show for Box<i64> { fun show(): string = "box" }`,
+		"error declaration": `error E { code: i64 }`,
+	} {
+		if ok, _ := hasLint(src); ok {
+			t.Errorf("%s: the lint should not fire", name)
+		}
+	}
+}

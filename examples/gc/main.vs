@@ -28,9 +28,10 @@ trait Named {
 }
 struct Thing {
   label: string
-}
-impl Named for Thing {
-  fun name(): string = self.label
+
+  impl Named {
+    fun name(): string = self.label
+  }
 }
 
 fun main() {

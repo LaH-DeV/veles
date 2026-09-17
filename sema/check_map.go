@@ -14,6 +14,9 @@ func (f *fnCtx) mapLit(e *ast.MapLit, want types.Type) Expr {
 	mutable := false
 	if mt, ok := numericHint(want).(*types.Map); ok {
 		kt, vt, mutable = mt.Key, mt.Value, mt.Mutable
+		if e.Mut && mutable {
+			f.warnf(e.Pos, "redundant 'mut': the expected type '%s' already makes the literal mutable", mt)
+		}
 	}
 	if e.Mut {
 		mutable = true
@@ -38,7 +41,7 @@ func (f *fnCtx) mapLit(e *ast.MapLit, want types.Type) Expr {
 	}
 	if kt == nil {
 		if e.Mut {
-			f.errorf(e.Pos, "cannot infer the type of an empty map; annotate it, e.g. 'var m: MutableMap<string, i32> = mut [:]' (D25)")
+			f.errorf(e.Pos, "cannot infer the type of an empty map; annotate it, e.g. 'var m: MutableMap<string, i32> = [:]' (D25)")
 		} else {
 			f.errorf(e.Pos, "cannot infer the type of an empty map; annotate it, e.g. 'val m: Map<string, i32> = [:]' (D25)")
 		}

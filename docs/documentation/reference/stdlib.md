@@ -107,6 +107,34 @@ pub error IoError { pub path: string; pub code: i64; pub detail: string }
 ("No such file or directory"), `path` the file or program involved, `code`
 the platform error number; `message()` is `"detail: path"`.
 
+### The operator traits
+
+```veles
+// fragment
+pub trait Comparable { fun compareTo(other: Self): i64 }   // <, <=, >, >=, sorted, min, max
+pub trait Equatable  { fun equals(other: Self): bool }     // ==, !=, contains, indexOf
+pub trait Hashable   { fun hash(): i64 }                   // map keys, set elements
+pub trait Display    { fun toString(): string }            // interpolation "$x"
+```
+
+A struct or sealed type has structural equality, hashing and
+`Name(field: value)` text by default and replaces any of them with an
+impl. `compareTo` is negative, zero or positive. Numbers and strings
+implement `Comparable` (so `T: Comparable` bounds accept them); the
+built-in types otherwise keep their own behaviour. A type with
+`Equatable` needs `Hashable` to be a map key.
+
+### Parsable
+
+```veles
+// fragment
+pub trait Parsable { static fun parse(s: string): Self? }   // i64.parse("42"), T.parse(s)
+```
+
+Construction from text, implemented for `i64`, `f64`, `bool` and `string`;
+`null` when the text is not a value of the type. A `static fun` has no
+receiver and is called on the type (`Point.origin()`, `Stack<i64>.of(1)`).
+
 ### StringBuilder
 
 ```veles
@@ -178,12 +206,12 @@ UTF-8.
 | `at(i)` | `T?`; a negative `i` counts from the end (`at(-1)` is the last) |
 | `len()`, `isEmpty()` | |
 | `contains(x)`, `indexOf(x)`, `count(p)` | `bool`, `i64` (−1 if absent), `i64` |
-| `first()`, `last()`, `min()`, `max()` | `T?`; `min`/`max` need numbers or strings |
+| `first()`, `last()`, `min()`, `max()` | `T?`; `min`/`max` need `Comparable` elements |
 | `take(n)`, `drop(n)`, `slice(from, to)` | new `List`, bounds clamped |
 | `map(f)`, `filter(p)`, `fold(z, f)`, `forEach(f)`, `flatMap(f)` | eager; return `List` |
 | `any(p)`, `all(p)`, `find(p)` | |
 | `zip(ys)`, `chunked(n)`, `windowed(n)`, `distinct()` | `List<(T, U)>`, `List<List<T>>`, `List<List<T>>`, `List<T>` |
-| `sorted()`, `sortedDescending()`, `sortedBy(key)`, `reversed()` | new `List`; `key` returns a number or string (D48) |
+| `sorted()`, `sortedDescending()`, `sortedBy(key)`, `reversed()` | new `List`; elements or `key` results must be `Comparable` (D48) |
 | `sum()` | `List<i64>` and `List<f64>` only |
 | `join(sep)`, `joinToString(sep)` | `string` |
 | `iter()` | lazy iterator |
@@ -214,7 +242,8 @@ fields.
 `contains(x)`, `len()`, `isEmpty()`, `toList()`, `toSet()`, `toMutable()`,
 `union(s)`, `intersect(s)`, `difference(s)`, `isSubsetOf(s)`; on `MutableSet`:
 `add(x): bool`, `remove(x): bool`, `clear()`. Construct with `Set<T>()` /
-`MutableSet<T>()`.
+`MutableSet<T>()`, or with a list literal where a set type is expected:
+`val s: Set<i64> = [1, 2]`.
 
 ### `Range<T>`
 

@@ -42,9 +42,11 @@ type Checker struct {
 	traitDecl      map[*types.Trait]*declCtx
 	resultTmpl     *types.Sealed
 	traitMethodTPs map[string][]*types.TypeParam
+	traitStatic    map[string]bool // "Trait.method" declared `static fun`
 	// error-position types seen before the impls were collected, checked
 	// at the end of collection; collected marks that point
 	pendingErrorChecks []pendingErrorCheck
+	pendingAssocChecks []func() // associated-type bounds, run once all impls exist
 	collected          bool
 	collectRefs        int // index refs recorded by collect(); rounds reset only past this
 	tests          []*FuncTemplate
@@ -105,6 +107,7 @@ func checkWith(pkg *Package, diags *source.Diagnostics, release bool, testMode b
 		sealedDecl:     map[*types.Sealed]*declCtx{},
 		traitDecl:      map[*types.Trait]*declCtx{},
 		traitMethodTPs: map[string][]*types.TypeParam{},
+		traitStatic:    map[string]bool{},
 		release:        release,
 		testMode:       testMode,
 	}
@@ -164,6 +167,17 @@ func (c *Checker) warnf(span source.Span, format string, args ...any) {
 	}
 	c.seen[key] = true
 	c.roundDiags.Warnf(span, "%s", msg)
+}
+
+// warnFix is warnf with an automatic correction attached (a lint).
+func (c *Checker) warnFix(span source.Span, fix *source.Fix, format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	key := "w" + span.String() + msg
+	if c.seen[key] {
+		return
+	}
+	c.seen[key] = true
+	c.roundDiags.Items = append(c.roundDiags.Items, source.Diagnostic{Severity: source.Warning, Span: span, Message: msg, Fix: fix})
 }
 
 // ---------------------------------------------------------------------------
@@ -271,6 +285,10 @@ func (c *Checker) collect() {
 			}
 		}
 	}
+	for _, check := range c.pendingAssocChecks {
+		check()
+	}
+	c.pendingAssocChecks = nil
 	for _, t := range c.templates {
 		c.resolveSignature(t)
 	}
@@ -936,6 +954,12 @@ func (c *Checker) resolveTrait(t *types.Trait) {
 		t.Methods[m.Name.Name] = sig
 		t.MethodList = append(t.MethodList, m.Name.Name)
 		c.traitMethodTPs[t.Name+"."+m.Name.Name] = mtps
+		if m.Static {
+			if d.Sealed {
+				c.errorf(m.Name.Pos, "a sealed trait cannot declare a static function; write a free function (D12)")
+			}
+			c.traitStatic[t.Name+"."+m.Name.Name] = true
+		}
 		if m.Body != nil || m.ExprBody != nil {
 			tmpl := c.newTemplate(ctx.module, ctx.file, m, nil, ctx.tps)
 			tmpl.Trait = t
@@ -1190,8 +1214,16 @@ func (c *Checker) declareImpl(m *Module, f *ast.File, d *ast.ImplDecl) {
 		bt := c.resolveType(env, b.Type)
 		impl.AssocTypes[b.Name.Name] = bt
 		for _, bound := range trait.AssocBounds[b.Name.Name] {
-			if !types.ContainsTypeParam(bt) && c.findImplFor(bt, bound) == nil {
-				c.errorf(b.Type.Span(), "'%s' does not implement '%s', required by 'type %s: %s' in trait '%s'", bt, bound.Name, b.Name.Name, bound.Name, trait.Name)
+			if !types.ContainsTypeParam(bt) {
+				// checked once every impl is declared: the impl that satisfies
+				// the bound may come later in the source (or inside another
+				// struct's body)
+				b, bound := b, bound
+				c.pendingAssocChecks = append(c.pendingAssocChecks, func() {
+					if c.findImplFor(bt, bound) == nil {
+						c.errorf(b.Type.Span(), "'%s' does not implement '%s', required by 'type %s: %s' in trait '%s'", bt, bound.Name, b.Name.Name, bound.Name, trait.Name)
+					}
+				})
 			}
 		}
 	}
@@ -1202,6 +1234,7 @@ func (c *Checker) declareImpl(m *Module, f *ast.File, d *ast.ImplDecl) {
 	}
 	env.implAssoc = impl.AssocTypes
 	c.impls[trait] = append(c.impls[trait], impl)
+	c.lintInlinableImpl(m, f, d, impl)
 	for _, md := range d.Methods {
 		sig, declared := trait.Methods[md.Name.Name]
 		if !declared {
@@ -1244,6 +1277,13 @@ func (c *Checker) checkImplSignature(t *FuncTemplate, traitSig *types.Func, trai
 	if len(t.Sig.Params) != len(traitSig.Params) {
 		c.errorf(md.Name.Pos, "method '%s' takes %d parameters but trait '%s' declares %d", md.Name.Name, len(t.Sig.Params), trait.Name, len(traitSig.Params))
 		return
+	}
+	if isStatic := c.traitStatic[trait.Name+"."+md.Name.Name]; isStatic != md.Static {
+		if isStatic {
+			c.errorf(md.Name.Pos, "'%s' is a static function in trait '%s'; declare it 'static fun'", md.Name.Name, trait.Name)
+		} else {
+			c.errorf(md.Name.Pos, "'%s' is a method in trait '%s'; it cannot be 'static'", md.Name.Name, trait.Name)
+		}
 	}
 	subst := map[*types.TypeParam]types.Type{selfParamOf(trait): impl.Target}
 	if mtps := c.traitMethodTPs[trait.Name+"."+md.Name.Name]; len(mtps) == len(t.TypeParams) {
@@ -1540,6 +1580,7 @@ func (c *Checker) runRound() *Program {
 		c.instantiate(t, nil, nil, t.Decl.Name.Pos)
 	}
 	c.drainQueue()
+	c.resolveAllCustom()
 	c.prog.TestMode = c.testMode
 	c.prog.PanicType = c.panicType()
 	for _, t := range c.tests {
@@ -1797,46 +1838,65 @@ func (c *Checker) checkHashable(t types.Type, span source.Span) bool {
 	if types.ContainsTypeParam(t) || types.IsInvalid(t) {
 		return true
 	}
-	if !hashable(t) {
-		c.errorf(span, "'%s' cannot be a map key or set element: it has no structural equality", t)
+	if reason := c.unhashable(t); reason != "" {
+		c.errorf(span, "'%s' cannot be a map key or set element: %s", t, reason)
 		return false
 	}
 	return true
 }
 
-func hashable(t types.Type) bool {
+// unhashable explains why t cannot be hashed, or returns "" when it can:
+// structurally (every part has structural equality) or through the
+// prelude's Hashable. A custom Equatable without a matching Hashable is
+// refused, because equal values would not hash alike.
+func (c *Checker) unhashable(t types.Type) string {
+	const structural = "it has no structural equality"
 	switch t := t.(type) {
 	case *types.Basic:
-		return t.Kind != types.Unit && t.Kind != types.Never && t.Kind != types.Invalid
+		if t.Kind == types.Unit || t.Kind == types.Never || t.Kind == types.Invalid {
+			return structural
+		}
+		return ""
 	case *types.Pointer:
-		return true
+		return ""
 	case *types.Nullable:
-		return hashable(t.Elem)
+		return c.unhashable(t.Elem)
 	case *types.Tuple:
 		for _, e := range t.Elems {
-			if !hashable(e) {
-				return false
+			if r := c.unhashable(e); r != "" {
+				return r
 			}
 		}
-		return true
-	case *types.Struct:
-		for _, f := range t.Fields {
-			if !hashable(f.Type) {
-				return false
+		return ""
+	case *types.Struct, *types.Sealed:
+		hasHash := c.implementsPrelude(t, "Hashable")
+		if c.implementsPrelude(t, "Equatable") && !hasHash {
+			return fmt.Sprintf("'%s' implements Equatable but not Hashable, so equal values might hash differently", t)
+		}
+		if hasHash {
+			return ""
+		}
+		if st, ok := t.(*types.Struct); ok {
+			for _, f := range st.Fields {
+				if r := c.unhashable(f.Type); r != "" {
+					return r
+				}
+			}
+			return ""
+		}
+		for _, v := range t.(*types.Sealed).Variants {
+			if r := c.unhashable(v); r != "" {
+				return r
 			}
 		}
-		return true
-	case *types.Sealed:
-		for _, v := range t.Variants {
-			if !hashable(v) {
-				return false
-			}
-		}
-		return true
+		return ""
 	case *types.List:
-		return !t.Mutable && hashable(t.Elem)
+		if t.Mutable {
+			return structural
+		}
+		return c.unhashable(t.Elem)
 	}
-	return false
+	return structural
 }
 
 // checkErrorType reports a type in error position that is not an error:

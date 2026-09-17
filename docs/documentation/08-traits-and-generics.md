@@ -16,18 +16,23 @@ trait Shape {
   fun describe(): string = "${self.name()} with area ${self.area()}"   // default body
 }
 
-struct Circle { r: f64 }
-struct Square { side: f64 }
+struct Circle {
+  r: f64
 
-impl Shape for Circle {
-  fun area(): f64 = 3.0 * self.r * self.r
-  fun name(): string = "circle"
+  impl Shape {
+    fun area(): f64 = 3.0 * self.r * self.r
+    fun name(): string = "circle"
+  }
 }
 
-impl Shape for Square {
-  fun area(): f64 = self.side * self.side
-  fun name(): string = "square"
-  override fun describe(): string = "a square of side ${self.side}"
+struct Square {
+  side: f64
+
+  impl Shape {
+    fun area(): f64 = self.side * self.side
+    fun name(): string = "square"
+    override fun describe(): string = "a square of side ${self.side}"
+  }
 }
 
 fun main() {
@@ -44,6 +49,15 @@ a square of side 2.0
 
 - A method with a body in the trait is a **default**; an `impl` may keep
   it or replace it with `override fun`.
+- For a type you declare, the impl sits **inside the struct body** as
+  `impl Shape { ... }` — the type is implied, and generic structs pass
+  their type parameters along. The top-level `impl Shape for Square`
+  form is the same thing written apart, and it is the form for a type
+  you did not write (`impl Shape for i64`), or when the impl needs
+  bounds the struct does not have (`impl<T: Display> Display for
+  Pair<T>`). Writing it at top level for your own type in the same
+  module is a lint: the compiler warns, and the editor's quick fix moves
+  it into the body (`veles check --fix` does the same in bulk).
 - A type may implement any number of traits, and you may implement
   *your* trait for a type you did not write — `impl Shape for i64` is
   legal. What is not legal is two impls of the same trait for the same
@@ -61,10 +75,8 @@ function you may call exactly the methods `Shape` promises:
 use io
 
 trait Shape { fun area(): f64 }
-struct Circle { r: f64 }
-struct Square { side: f64 }
-impl Shape for Circle { fun area(): f64 = 3.0 * self.r * self.r }
-impl Shape for Square { fun area(): f64 = self.side * self.side }
+struct Circle { r: f64; impl Shape { fun area(): f64 = 3.0 * self.r * self.r } }
+struct Square { side: f64; impl Shape { fun area(): f64 = self.side * self.side } }
 
 fun <T: Shape> largest(shapes: List<T>): T? {
   var best: T? = null
@@ -103,15 +115,19 @@ trait Shape {
   fun area(): f64
   fun name(): string
 }
-struct Circle { r: f64 }
-struct Square { side: f64 }
-impl Shape for Circle {
-  fun area(): f64 = 3.0 * self.r * self.r
-  fun name(): string = "circle"
+struct Circle {
+  r: f64
+  impl Shape {
+    fun area(): f64 = 3.0 * self.r * self.r
+    fun name(): string = "circle"
+  }
 }
-impl Shape for Square {
-  fun area(): f64 = self.side * self.side
-  fun name(): string = "square"
+struct Square {
+  side: f64
+  impl Shape {
+    fun area(): f64 = self.side * self.side
+    fun name(): string = "square"
+  }
 }
 
 fun main() {
@@ -165,6 +181,117 @@ Output:
 [#7] ['hi']
 #1 #2 #3
 ```
+
+## Static trait functions
+
+A trait may declare a `static fun` — a function without `self`, called
+on the type. Implementations write `static fun` too, and generic code
+calls it on the type parameter: `T.parse(s)` picks the impl for whatever
+`T` is at each call. The prelude's `Parsable` is the standard example:
+
+```veles
+use io
+
+struct Celsius {
+  degrees: f64
+
+  impl Parsable {
+    static fun parse(s: string): Celsius? {
+      val n = f64.parse(s.trimEnd().replace("C", "")) ?: return null
+      Celsius(degrees: n)
+    }
+  }
+}
+
+fun parseAll<T: Parsable>(xs: List<string>): List<T?> = xs.map(x => T.parse(x))
+
+fun main() {
+  val temps: List<Celsius?> = parseAll(["21.5C", "cold"])
+  val ints: List<i64?> = parseAll(["1", "2", "x"])
+  io.println("$temps $ints ${bool.parse("true")}")
+}
+```
+
+Output:
+```text
+[Celsius(degrees: 21.5), null] [1, 2, null] true
+```
+
+A trait with a static function cannot be a trait object (there is no
+value to dispatch on), and sealed traits cannot declare one.
+
+## The operator traits
+
+Every struct can be compared with `==`, used as a map key and printed
+with `$x` without writing anything: equality is field by field, so is the
+hash, and the text is `Name(field: value, ...)`. Four prelude traits let a
+type replace that behaviour:
+
+| Trait | Method | Replaces |
+|---|---|---|
+| `Comparable` | `compareTo(other: Self): i64` | `<`, `<=`, `>`, `>=`, `sorted()`, `min()`, `max()` |
+| `Equatable` | `equals(other: Self): bool` | `==`, `!=`, `contains`, `indexOf` |
+| `Hashable` | `hash(): i64` | map keys and set elements |
+| `Display` | `toString(): string` | interpolation, `"$x"` |
+
+`compareTo` returns a negative number, zero or a positive number. Numbers
+and strings implement `Comparable` in the prelude, so a bound `T:
+Comparable` accepts `i64`, `string` and your own types alike — this is
+what `min()` and `sorted()` demand of their elements.
+
+```veles
+use io
+
+struct Version {
+  major: i64
+  minor: i64
+
+  impl Comparable {
+    fun compareTo(other: Version): i64 =
+      if (self.major != other.major) self.major.compareTo(other.major)
+      else self.minor.compareTo(other.minor)
+  }
+
+  impl Display {
+    fun toString(): string = "v${self.major}.${self.minor}"
+  }
+}
+
+struct Name {
+  text: string
+
+  impl Equatable {
+    fun equals(other: Name): bool = self.text.toLower() == other.text.toLower()
+  }
+
+  impl Hashable {
+    fun hash(): i64 = self.text.toLower().len()
+  }
+}
+
+fun largest<T: Comparable>(a: T, b: T): T = if (a.compareTo(b) >= 0) a else b
+
+fun main() {
+  val a = Version(major: 1, minor: 10)
+  val b = Version(major: 1, minor: 9)
+  io.println("${a > b} ${[a, b].sorted()} ${largest(a, b)} ${largest("x", "y")}")
+  var seen = mut [Name(text: "Ann"): 1]
+  seen[Name(text: "ANN")] = 2
+  io.println("${Name(text: "ann") == Name(text: "ANN")} ${seen.len()}")
+}
+```
+
+Output:
+```text
+true [v1.9, v1.10] v1.10 y
+true 1
+```
+
+Two rules keep this honest. A type that implements `Equatable` must also
+implement `Hashable` before it can be a map key, because values that are
+equal must hash alike. And the built-in types keep their meaning: an
+`impl Display for i64` in your package is accepted but interpolation of
+an `i64` still prints the number.
 
 ## Associated types
 

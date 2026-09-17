@@ -53,6 +53,13 @@ struct Counter {
   mut fun bump() {
     self.n += 1
   }
+
+  // D23 (v0.23) — a trait impl inside the body of your own type; a static
+  // function has no self and is called on the type: Counter.zero()
+  impl Display {
+    fun toString(): string = "Counter(${self.n})"
+  }
+  static fun zero(): Counter = Counter()
 }
 
 // D27/D42 — traits with associated types and default bodies

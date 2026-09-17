@@ -244,6 +244,11 @@ func (g *gen) mix(a, b string) string {
 }
 
 func (g *gen) hashBody(t types.Type, v string) string {
+	if ops := g.custom(t); ops != nil && ops.Hash != nil {
+		r := g.newTmp()
+		g.emit("%s = call i64 @%s(%s %s)", r, ops.Hash.Name, g.llType(t), v)
+		return r
+	}
 	llt := g.llType(t)
 	switch tt := t.(type) {
 	case *types.Nullable:

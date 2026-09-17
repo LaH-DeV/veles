@@ -81,7 +81,7 @@ fun main() {
   next()
   io.println("third call: ${next()}")
 
-  var log: MutableList<string> = mut []
+  var log: MutableList<string> = []
   val record = (msg: string) => log.push(msg)
   record("a")
   record("b")
@@ -140,22 +140,27 @@ takes two small structs:
 ```veles
 use io
 
-struct Countdown { from: i64 }
-struct CountdownIter { current: i64 }
+struct Countdown {
+  from: i64
 
-impl Iterator for CountdownIter {
-  type Item = i64
-  mut fun next(): i64? {
-    if (self.current <= 0) return null
-    val v = self.current
-    self.current -= 1
-    v
+  impl Iterable {
+    type Iter = CountdownIter
+    fun iterator(): CountdownIter = CountdownIter(current: self.from)
   }
 }
 
-impl Iterable for Countdown {
-  type Iter = CountdownIter
-  fun iterator(): CountdownIter = CountdownIter(current: self.from)
+struct CountdownIter {
+  current: i64
+
+  impl Iterator {
+    type Item = i64
+    mut fun next(): i64? {
+      if (self.current <= 0) return null
+      val v = self.current
+      self.current -= 1
+      v
+    }
+  }
 }
 
 fun main() {

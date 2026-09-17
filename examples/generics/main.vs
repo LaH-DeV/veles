@@ -17,9 +17,10 @@ trait Show {
 
 struct Cat {
   name: string
-}
-impl Show for Cat {
-  fun show(): string = "cat ${self.name}"
+
+  impl Show {
+    fun show(): string = "cat ${self.name}"
+  }
 }
 impl Show for i64 {
   fun show(): string = "int $self"

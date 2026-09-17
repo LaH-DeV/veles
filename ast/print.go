@@ -257,6 +257,9 @@ func (p *printer) fun(d *FunDecl) {
 	if d.Pub {
 		p.w("pub ")
 	}
+	if d.Static {
+		p.w("static ")
+	}
 	if d.Override {
 		p.w("override ")
 	}
@@ -529,6 +532,16 @@ func (p *printer) expr(e Expr) {
 		p.w("self")
 	case *NameExpr:
 		p.w(e.Name)
+		if len(e.TypeArgs) > 0 {
+			p.w("<")
+			for i, t := range e.TypeArgs {
+				if i > 0 {
+					p.w(", ")
+				}
+				p.typ(t)
+			}
+			p.w(">")
+		}
 	case *MemberExpr:
 		p.w("(")
 		if e.Safe {

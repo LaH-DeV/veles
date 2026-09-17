@@ -1,7 +1,7 @@
 # The Veles programming language
 
 Bootstrap compiler for Veles, written in Go, implementing `veles-spec.md`
-(v0.22) through build-plan Stages 1–5: the whole surface syntax, the type
+(v0.23) through build-plan Stages 1–5: the whole surface syntax, the type
 system with inferred effects, a non-moving collector, a single-threaded
 executor for stackless coroutines, path-based packages, and a test runner.
 The remaining step of the plan — self-hosting — is future work.
@@ -11,7 +11,7 @@ go build -o veles.exe .
 ./veles.exe run examples/hello              # compile and run a module directory
 ./veles.exe build examples/tasks -o tasks   # produce an executable
 ./veles.exe test examples/testing           # run @test functions (§4b)
-./veles.exe check examples/errors           # type-check only
+./veles.exe check examples/errors           # type-check only (--fix applies lint corrections)
 ./veles.exe parse examples/syntax_tour.vs   # dump the syntax tree
 ./veles.exe build examples/hello --emit-llvm   # write the LLVM IR instead of linking
 ./veles.exe fmt examples std                 # format sources in place (--check lists, --stdout prints)
@@ -42,12 +42,12 @@ compiler/clang/flag combination and cached under the user cache directory
 | `sema/` | modules and manifests (M1–M6), name resolution, type checking, effect inference (D2/D4/D45), lowering to a typed HIR |
 | `codegen/llvm/` | textual LLVM IR emission (I1/I2); coroutines via `llvm.coro.*`; GC type descriptors; vtables |
 | `runtime/c/` | `veles_rt.c` (strings, lists, maps), `veles_gc.c` (collector), `veles_task.c` (executor), `veles_os.c` (files, processes, environment) |
-| `std/` | standard library in Veles, embedded in the compiler: `prelude` (D24: `Iterator`/`Iterable` and adapters, `extend` blocks for `string`, `List`, `Range`, `Closeable`, `Mutex`/`Atomic`, `Panic`, `IoError`, `StringBuilder`), `io`, `os` (args, env, exit, run), `fs`, `path` |
+| `std/` | standard library in Veles, embedded in the compiler: `prelude` (D24: `Iterator`/`Iterable` and adapters, `extend` blocks for `string`, `List`, `Range`, the operator traits `Comparable`/`Equatable`/`Hashable`/`Display`, `Closeable`, `Mutex`/`Atomic`, `Panic`, `IoError`, `StringBuilder`), `io`, `os` (args, env, exit, run), `fs`, `path` |
 | `format/` | the formatter (`veles fmt`, and `textDocument/formatting` in the LSP): prettier-style — blocks always break, columns align, comments and the author's list/chain line breaks are kept |
-| `lsp/` | language server: diagnostics, hover, definition, symbols, completion, formatting over the compiler front end |
+| `lsp/` | language server: diagnostics with quick fixes, hover, definition, symbols, completion, formatting over the compiler front end |
 | `editors/vscode/` | VS Code extension: TextMate grammar and client for `veles lsp` |
 | `docs/` | tutorials and reference; `go test ./docs/` runs every code block |
-| `examples/` | 24 programs with expected output; `go test ./...` compiles and runs them |
+| `examples/` | 26 programs with expected output; `go test ./...` compiles and runs them |
 
 ## Spec coverage
 
@@ -60,14 +60,15 @@ coroutines; `await` only on primitives that always suspend (D16). D3/D34/D36/D38
 `Result` sugar, `throw e`, inferred error unions, `error Name { }` declarations
 with `message()` dispatching on unions. D5 nesting `T?` with smart casts,
 `?.`, `?:`. D6/D9/D17/D26/D53 traits, trait objects with vtables, global
-coherence, default bodies. D7/D10/D39 value structs, `&x` with heap
+coherence, default bodies, the prelude operator traits (`Comparable`, `Equatable`,
+`Hashable`, `Display` replace structural ordering, equality, hashing and text; `Parsable` for parsing). D7/D10/D39 value structs, `&x` with heap
 promotion, auto-deref. D8/D15 generics by stenciling. D11/D22 `val`/`var`,
 `mut fun`. D12/D13 sealed traits as inline tagged unions, `when` with
 destructuring, guards, exhaustiveness, methods on sealed traits dispatched
 by tag. D18/D19 byte-indexed UTF-8 strings. D20/D52 panics unwind to the
 task scope; `panic(msg)`. D21 checked/wrapping arithmetic. D23 methods in struct bodies,
-`impl` blocks, `extend` blocks (the prelude adds the string, list and range methods in Veles). D25/D41 `List`/`Map`/`Set` with the immutable/mutable split,
-insertion-ordered maps, `mut [...]` literal sugar, `xs.at(i)`. D27/D42/D46 associated types, `loop (x in c)`
+`impl` blocks (also inline in the body of your own types), `static fun`, `extend` blocks (the prelude adds the string, list and range methods in Veles). D25/D41 `List`/`Map`/`Set` with the immutable/mutable split,
+insertion-ordered maps, literals typed by context (`mut [...]` only for untyped ones), `xs.at(i)`. D27/D42/D46 associated types, `loop (x in c)`
 through `Iterable`, lazy adapters. D28 named arguments and defaults. D29
 ranges. D31 infinite-size diagnostic. D32/D33/D37 lambdas, `=>`, tuples
 with tupling conversion. D35/D54 `Sendable` derivation, `Mutex`/`Atomic`.

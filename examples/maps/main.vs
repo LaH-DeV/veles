@@ -6,7 +6,7 @@ struct Point {
 }
 
 fun wordCounts(text: List<string>): Map<string, i64> {
-  var counts: MutableMap<string, i64> = mut [:]
+  var counts: MutableMap<string, i64> = [:]
   loop (w in text) {
     counts[w] = (counts[w] ?: 0) + 1
   }

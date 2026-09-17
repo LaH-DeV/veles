@@ -195,7 +195,7 @@ func (c *Checker) checkBody(fn *Func) {
 	if t.Decl.Unsafe {
 		f.unsafe = 1
 	}
-	if owner != nil {
+	if owner != nil && !t.Decl.Static {
 		selfType := owner
 		if t.Decl.Mut {
 			selfType = &types.Pointer{Elem: owner}
@@ -639,9 +639,6 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 		}
 		return &VarRef{exprBase{self.Type}, self}, self
 	case *ast.MemberExpr:
-		if e.X == nil {
-			break
-		}
 		if e.Safe {
 			f.errorf(e.Pos, "cannot assign through '?.'")
 			return nil, nil
@@ -900,7 +897,7 @@ func (f *fnCtx) invalidateAssigned(b *ast.Block) {
 			target := s.Target
 			for {
 				m, ok := target.(*ast.MemberExpr)
-				if !ok || m.X == nil {
+				if !ok {
 					break
 				}
 				target = m.X

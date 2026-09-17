@@ -34,9 +34,13 @@ Output:
 [ann, bob] [ann, bob, dee]
 ```
 
-- `[a, b, c]` is a `List`; `mut [a, b, c]` is a `MutableList`. An
-  **empty** literal needs the type spelled out, because there is nothing
-  to infer it from: `var xs: MutableList<i64> = mut []`.
+- `[a, b, c]` is a `List`; `mut [a, b, c]` is a `MutableList`. When the
+  expected type is known — an annotated binding, a parameter, a field, a
+  return — the literal takes it, mutability included, and `mut` is not
+  written: `var xs: MutableList<i64> = []`, `fill([1, 2])`. An **empty**
+  literal always needs such a type, because there is nothing to infer it
+  from. A list literal where a `Set` is expected builds a set:
+  `val seen: Set<i64> = [1, 2]`.
 - `xs[i]` reads an element and **panics** if `i` is out of range.
   `xs.at(i)` returns `T?` — null instead of a panic — for when the index
   comes from data you do not control.
@@ -141,8 +145,10 @@ duplicate 1
 {3, 1, 2} true 3 [3, 1, 2]
 ```
 
-`add` returns whether the element was new. There is no set literal;
-construct with `MutableSet<T>()` or `Set<T>()`, or convert a list.
+`add` returns whether the element was new. There is no set literal of its
+own: construct with `MutableSet<T>()` or `Set<T>()`, convert a list, or
+write a list literal where a set type is expected — `val s: Set<i64> =
+[1, 2, 2]` has two elements.
 
 ## Ranges
 

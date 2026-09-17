@@ -102,9 +102,11 @@ task (D43/D47):
 ```veles
 use io
 
-struct Res { name: string }
-impl Closeable for Res {
-  mut fun close() { io.println("close ${self.name}") }
+struct Res {
+  name: string
+  impl Closeable {
+    mut fun close() { io.println("close ${self.name}") }
+  }
 }
 
 fun open(name: string): Res {

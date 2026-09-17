@@ -193,6 +193,7 @@ func (s *Server) handle(req *request) {
 				"definitionProvider":     true,
 				"documentSymbolProvider": true,
 				"documentFormattingProvider": true,
+				"codeActionProvider":         map[string]any{"codeActionKinds": []string{"quickfix"}},
 				"completionProvider":     map[string]any{"triggerCharacters": []string{"."}},
 			},
 			"serverInfo": map[string]any{"name": "veles-lsp", "version": "0.1"},
@@ -252,6 +253,8 @@ func (s *Server) handle(req *request) {
 		s.reply(req.ID, s.documentSymbols(req.Params))
 	case "textDocument/formatting":
 		s.reply(req.ID, s.formatting(req.Params))
+	case "textDocument/codeAction":
+		s.reply(req.ID, s.codeAction(req.Params))
 	case "textDocument/completion":
 		s.reply(req.ID, s.completion(req.Params))
 	default:
@@ -331,6 +334,7 @@ func (s *Server) analyze(d *document) {
 			Severity: sev,
 			Source:   "veles",
 			Message:  it.Message,
+			Data:     s.fixData(it.Fix),
 		})
 	}
 	s.analyses[pkg.Root] = a
@@ -600,6 +604,59 @@ type lspDiagnostic struct {
 	Severity int      `json:"severity"`
 	Source   string   `json:"source"`
 	Message  string   `json:"message"`
+	// Data carries a lint's autofix as a ready workspace edit; the client
+	// hands it back with a codeAction request (LSP round-trips `data`).
+	Data *lspFix `json:"data,omitempty"`
+}
+
+type lspFix struct {
+	Title   string                  `json:"title"`
+	Changes map[string][]lspTextEdit `json:"changes"`
+}
+
+type lspTextEdit struct {
+	Range   lspRange `json:"range"`
+	NewText string   `json:"newText"`
+}
+
+// fixData converts a diagnostic's fix to LSP edits keyed by document URI.
+func (s *Server) fixData(fix *source.Fix) *lspFix {
+	if fix == nil {
+		return nil
+	}
+	out := &lspFix{Title: fix.Title, Changes: map[string][]lspTextEdit{}}
+	for _, e := range fix.Edits {
+		if e.Span.File == nil {
+			return nil
+		}
+		uri := s.uriFor(e.Span.File.Path)
+		out.Changes[uri] = append(out.Changes[uri], lspTextEdit{Range: spanToRange(e.Span), NewText: e.NewText})
+	}
+	return out
+}
+
+// codeAction offers the autofix of every diagnostic in the request's
+// context that carries one, as a quick fix.
+func (s *Server) codeAction(params json.RawMessage) any {
+	var p struct {
+		Context struct {
+			Diagnostics []lspDiagnostic `json:"diagnostics"`
+		} `json:"context"`
+	}
+	json.Unmarshal(params, &p)
+	actions := []any{}
+	for _, d := range p.Context.Diagnostics {
+		if d.Data == nil {
+			continue
+		}
+		actions = append(actions, map[string]any{
+			"title":       d.Data.Title,
+			"kind":        "quickfix",
+			"diagnostics": []lspDiagnostic{d},
+			"edit":        map[string]any{"changes": d.Data.Changes},
+		})
+	}
+	return actions
 }
 
 // offsetToPosition converts a byte offset to a 0-based line and a UTF-16

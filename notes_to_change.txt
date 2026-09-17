@@ -59,8 +59,7 @@ would change to:
      trait once traits on primitives are allowed), width/precision formatting (a format module)
    - the Go-lowered eager adapters (sema/lower_list.go, check_map.go) could move to the prelude
      too once one is benchmarked at -O2 against the Veles version
-   - `min()`/`max()`/`sorted()` need numbers or strings; with a generic `extend<T> List<T>` the
-     error for other T is reported inside the prelude. An `Ord` marker bound would fix the location.
+   - (done in P7) min/max/sorted now require Comparable, checked at the call site.
 
 15. Hover shows a field typed with an error set as the flattened union (`cause: A | B`) rather
    than the set's name; the alias name is not kept in the type. Small follow-up if wanted.
@@ -118,3 +117,103 @@ P5. Engineering debt: `unsafe` hygiene (#13), missing-impl reported at the struc
    can never begin a `when` arm on its own line — only `null` / `Some(x)` work there. Also
    fixed along the way: `Name => ...` and `... if x > limit => ...` in arm heads were read as
    lambdas (parser `noLambda`, `parseArmHead`). Decide whether leading-dot patterns stay.
+
+19. (2026-09-17, user idea, decided "figure out and note") Package surface in source instead of
+   the manifest's `exports`:
+   - `pub` inside a module = visible to the rest of the package (already the rule, M5).
+   - The root module (`lib.vs` by convention; any file of the root directory) re-exports with
+     `pub use geometry` — that, and only that, is what other packages may import. Manifest
+     `exports` goes away (bootstrap has no users; no compatibility alias needed).
+   Design worked out so far:
+   - Forms mirror `use`: `pub use geometry` re-exports the module under its name (outsiders write
+     `use mathlib.geometry`, as today); `pub use geometry.{ area, Circle }` flattens those items
+     into the root (`use mathlib` → `mathlib.area`) — a facade that hides the internal layout,
+     which the manifest list cannot do; `pub use geometry as geo` renames.
+   - Uniform rule, no root special case: `pub use` in ANY module adds the named module/items to
+     that module's pub surface; the root module's pub surface is the package's.
+   - Only the package's own modules/items may be re-exported; re-exporting a dependency
+     (`pub use utils.text`) is refused for now (keeps "nothing escapes except through the root",
+     avoids diamond questions). Revisit when M7 lands.
+   - M1 is untouched: the dependency graph still comes from manifests only. The loader parses a
+     dependency's root module (its `use` lines) to learn the surface before resolving
+     `use dep.mod`; error text: "module 'geometry' of package 'mathlib' is not re-exported; add
+     `pub use geometry` to its root module".
+   - `pub use` is a `use` edge for M4 cycle detection. Flattened names collide with root decls
+     like duplicate declarations. LSP definition/hover follow a re-export to the original.
+   - Fits #17: if `.veles` replaces the manifest, identity/deps live there and the surface stays
+     in code. Cost: small (loader + checker + LSP), one docs chapter, examples/packages update.
+
+P6. Completeness pass (2026-09-17 assessment; what a user hits before the big-ticket items):
+   Features still missing for ordinary programs:
+   - bytes I/O (fs.readBytes/writeBytes; List<u8> across the C ABI), io.readAll, os.run with
+     stdin/stderr, std/time (now, monotonic clock, sleep beyond `timer`), std/random.
+   - number formatting: f64 precision/width, integer radix/padding (a `format` module or
+     methods; interpolation stays the only concatenation).
+   - (done in P7) the operator traits; static trait functions still needed for FromString/parse<T>.
+   - P4 Deque/PriorityQueue, Channel trySend/tryRecv, saturatingMul.
+   - variadics or spread (`path.joinAll` is the workaround) — decision needed.
+   - `with` cleanups on panic (needs the unwinder), nested-pattern exhaustiveness,
+     `extern struct` by value.
+   Bug-freedom is a process, not a list — set up in this order:
+   - CI (none exists): build, vet, staticcheck, `go test ./...`, `veles fmt --check`.
+   - a spec conformance suite: one negative test per diagnostic in sema (`// error:` expectations
+     in .vs files, grouped by D-number); sema has ~16 Go tests today.
+   - Go native fuzzing of the parser, formatter and checker seeded with every repo .vs; the
+     formatter round-trip found two parser bugs in one afternoon.
+   - runtime under `-fsanitize=address,undefined` with a tiny VELES_GC_THRESHOLD over all examples.
+   - LSP: diagnostics on every prefix of every corpus file must not panic; `go test -race ./lsp`.
+   - 3–5 mid-size real programs (JSON parser, expression calculator, todo CLI over fs, worker
+     pool, text adventure) written as a user would — the best bug finder for a young language,
+     and they become examples/docs.
+   - one pass over every diagnostic: names the rule, says the fix.
+   Then the big three (P5): DWARF unwinding, multi-threaded executor, M7.
+
+--- Decisions 2026-09-17 (user) ---
+- Next phase P7: traits on primitives + Ord/Eq/Hash as real traits (structural behaviour stays the
+  default). Then CI/conformance, then std gaps.
+- #8: infer `mut` from the expected type; `mut [..]` stays only for untyped literals.
+- #3: `impl Trait { }` allowed inline in a struct body for types you own; top-level `impl` kept
+  for foreign types.
+- #18: leading-dot patterns dropped; `null` / `Some(x)` are the spellings (spec D5 to update).
+
+P7. DONE (2026-09-17) — operator traits in the prelude (std/prelude/traits.vs): Comparable
+   (compareTo → <, <=, >, >=, sorted/sortedBy/min/max/sortedDescending/sort), Equatable (equals →
+   ==, !=, contains, indexOf), Hashable (hash → map keys/set elements; required when Equatable is
+   implemented), Display (toString → interpolation, hence Error.message() default). Structural
+   behaviour stays the default; built-in types keep theirs. Numbers and strings impl Comparable in
+   Veles, so `T: Comparable` bounds accept them; min/max/sortedDescending moved under
+   `extend<T: Comparable> List<T>` (errors now at the call site — #14's Ord marker is done).
+   Implementation: sema/custom.go resolves impl methods for every concrete struct/sealed type
+   after the queue drains (Program.Custom); codegen eq/hash/show helpers call them first.
+   Traits on primitives already worked (impl Show for i64, trait objects on i64) — the README
+   note was stale. Still open from this area:
+   - static trait functions (`fun parse(s: string): Self?` called as `i64.parse(s)` / `T.parse(s)`):
+     every method has a `self` today; needs a syntax decision (`static fun`? Kotlin companion?).
+     Blocks FromString / parse<T>().
+   - `impl Trait { }` inline in struct bodies (#3, decided) would make these impls read better.
+   - a Display impl that interpolates `self` recurses forever; no diagnostic.
+   - `mut fun` stays (2026-09-17): it is the receiver's val/var and part of the signature;
+     inferring it (like effects) is feasible but makes `val` callers break on body edits. Revisit
+     after the mid-size programs. `static fun` decided as the marker for self-less functions.
+
+P3 progress (2026-09-17):
+   - DONE #18: leading-dot patterns and expressions (`.none`, `.some(x)`, `.Variant(..)`) removed
+     from the grammar; spec D5 updated. `null` / `Some(x)` / `Variant(..)` are the spellings.
+   - DONE #8: a list/map literal takes the expected type's mutability (`var xs: MutableList<i64>
+     = []`, `fill([1, 2])`); `mut [..]` is for untyped literals and a redundant one warns. A list
+     literal where a Set is expected builds a set (`val s: Set<i64> = [1, 2]`).
+   - DONE #3: `impl Trait { }` inside a struct body (parser desugars to a top-level impl with the
+     struct's type parameters, `ImplDecl.Inline`; formatter prints it back in the body). Spec D23
+     amended (v0.23). Extra bounds still need the top-level form.
+   - DONE static functions: `static fun` in struct/trait/impl/extend bodies, `Type.f()`,
+     `Stack<i64>.of(x)` (NameExpr.TypeArgs), `T.parse(s)` on a bounded type parameter. Prelude
+     `Parsable { static fun parse(s: string): Self? }` for i64/f64/bool/string. Not object-safe;
+     not on sealed traits. LSP completion after `Type.` does not list statics yet.
+   - OPEN #5: `when` payload symmetry for Ok/Err/Some (`is Ok => r`). OPEN #4: `type Error`
+     default on traits. OPEN: `join` vs `joinToString` (both exist). OPEN: `mut fun` stays (decided).
+   - DONE lint + autofix (user idea 2026-09-17): a top-level `impl Trait for T` for a struct of
+     the same module that the inline form can express warns ("can be written inside the body")
+     and carries a fix (source.Diagnostic.Fix → LSP `data` → codeAction quick fix, multi-file;
+     `veles check --fix` applies in bulk, then formats). Silent for foreign types, other modules,
+     extra bounds, specific instances, `error` decls, embedded std. std/examples/docs dogfooded.
+     Infrastructure is generic: any future lint can attach a Fix.

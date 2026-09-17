@@ -84,10 +84,18 @@ extend<T> List<T> {
     out.toList()
   }
 
-  /// A copy sorted from largest to smallest (elements must be numbers or strings).
+  /// The elements as text, joined with `sep`.
+  pub fun join(sep: string): string = self.joinToString(sep)
+}
+
+// Ordering needs Comparable: numbers and strings implement it in the
+// prelude, a struct by `impl Comparable`. The bound is checked at the call
+// site, so a list of anything else reports the error there.
+extend<T: Comparable> List<T> {
+  /// A copy sorted from largest to smallest.
   pub fun sortedDescending(): List<T> = self.sorted().reversed()
 
-  /// The smallest element, or `null` when empty (elements must be numbers or strings).
+  /// The smallest element, or `null` when empty.
   pub fun min(): T? {
     if (self.isEmpty()) return null
     var best = self[0]
@@ -97,7 +105,7 @@ extend<T> List<T> {
     best
   }
 
-  /// The largest element, or `null` when empty (elements must be numbers or strings).
+  /// The largest element, or `null` when empty.
   pub fun max(): T? {
     if (self.isEmpty()) return null
     var best = self[0]
@@ -106,9 +114,6 @@ extend<T> List<T> {
     }
     best
   }
-
-  /// The elements as text, joined with `sep`.
-  pub fun join(sep: string): string = self.joinToString(sep)
 }
 
 extend List<i64> {
@@ -163,7 +168,7 @@ extend<T> MutableList<T> {
     }
   }
 
-  /// Sorts in place (elements must be numbers or strings).
+  /// Sorts in place (elements must be Comparable).
   pub mut fun sort() {
     val sorted = self.sorted()
     loop (i in 0..<self.len()) {
@@ -179,22 +184,22 @@ pub struct RangeStepIter<T> {
   step:    T
   up:      bool
   done:    bool = false
-}
 
-impl<T> Iterator for RangeStepIter<T> {
-  type Item = T
-  mut fun next(): T? {
-    if (self.done) return null
-    if (self.up && self.current > self.last) return null
-    if (!self.up && self.current < self.last) return null
-    val v = self.current
-    // stop rather than wrap when the next step would leave the type's range
-    if (self.up) {
-      if (self.last -% self.current < self.step) self.done = true else self.current += self.step
-    } else {
-      if (self.current -% self.last < self.step) self.done = true else self.current -= self.step
+  impl Iterator {
+    type Item = T
+    mut fun next(): T? {
+      if (self.done) return null
+      if (self.up && self.current > self.last) return null
+      if (!self.up && self.current < self.last) return null
+      val v = self.current
+      // stop rather than wrap when the next step would leave the type's range
+      if (self.up) {
+        if (self.last -% self.current < self.step) self.done = true else self.current += self.step
+      } else {
+        if (self.current -% self.last < self.step) self.done = true else self.current -= self.step
+      }
+      v
     }
-    v
   }
 }
 

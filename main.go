@@ -2,7 +2,7 @@
 //
 //	veles build <file.vs | dir>   compile a package to a native executable
 //	veles run   <file.vs | dir>   compile and run
-//	veles check <file.vs | dir>   type-check only
+//	veles check <file.vs | dir>   type-check only (--fix applies lint corrections)
 //	veles parse <file.vs>         dump the syntax tree
 //	veles tokens <file.vs>        dump the token stream
 //	veles fmt   <paths...>        format source files in place (--check, --stdout)
@@ -23,7 +23,7 @@ import (
 )
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: veles <build|run|test|check|parse|tokens> <path> [-o output] [--emit-llvm] [--keep] [--release] [-- args...] | veles fmt <paths...> [--check] [--stdout] | veles lsp")
+	fmt.Fprintln(os.Stderr, "usage: veles <build|run|test|check|parse|tokens> <path> [-o output] [--emit-llvm] [--keep] [--release] [--fix] [-- args...] | veles fmt <paths...> [--check] [--stdout] | veles lsp")
 	os.Exit(2)
 }
 
@@ -99,6 +99,8 @@ func main() {
 				opts.KeepIntermediates = true
 			case "--release":
 				opts.Release = true
+			case "--fix":
+				opts.Fix = true
 			case "--":
 				opts.ProgramArgs = args[i+1:]
 				i = len(args)

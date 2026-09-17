@@ -9,9 +9,11 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 
+	"github.com/LaH-DeV/veles/source"
 	"github.com/LaH-DeV/veles/std"
 )
 
@@ -600,5 +602,77 @@ func TestFormatting(t *testing.T) {
 	res, _ = c.call("textDocument/formatting", map[string]any{"textDocument": map[string]any{"uri": uri}})
 	if string(res) != "[]" {
 		t.Errorf("formatting a broken document: %s", res)
+	}
+}
+
+// A lint's autofix travels as the diagnostic's `data` and comes back as a
+// quick fix from textDocument/codeAction: here, moving a top-level impl
+// into the struct's body (D23).
+func TestCodeActionInlineImpl(t *testing.T) {
+	src := "trait Show {\n  fun show(): string\n}\n\nstruct P {\n  x: i64\n}\n\nimpl Show for P {\n  fun show(): string = \"p\"\n}\n\nfun main() { }\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := pathToURI(path)
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{})
+	c.notify("initialized", map[string]any{})
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": src}})
+	// the diagnostics arrive as a notification before the next answer
+	_, notes := c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": 0, "character": 0}})
+	var diags []lspDiagnostic
+	for _, n := range notes {
+		var env struct {
+			Method string `json:"method"`
+			Params struct {
+				Diagnostics []lspDiagnostic `json:"diagnostics"`
+			} `json:"params"`
+		}
+		json.Unmarshal(n, &env)
+		if env.Method == "textDocument/publishDiagnostics" {
+			diags = env.Params.Diagnostics
+		}
+	}
+	if len(diags) != 1 || diags[0].Data == nil || !strings.Contains(diags[0].Message, "inside the body of 'P'") {
+		t.Fatalf("expected one warning with a fix, got %+v", diags)
+	}
+	res, _ := c.call("textDocument/codeAction", map[string]any{
+		"textDocument": map[string]any{"uri": uri},
+		"range":        diags[0].Range,
+		"context":      map[string]any{"diagnostics": diags},
+	})
+	var actions []struct {
+		Title string `json:"title"`
+		Kind  string `json:"kind"`
+		Edit  struct {
+			Changes map[string][]lspTextEdit `json:"changes"`
+		} `json:"edit"`
+	}
+	json.Unmarshal(res, &actions)
+	if len(actions) != 1 || actions[0].Kind != "quickfix" || actions[0].Title != "Move into the body of 'P'" {
+		t.Fatalf("code actions: %s", res)
+	}
+	edits := actions[0].Edit.Changes[uri]
+	if len(edits) != 2 {
+		t.Fatalf("expected a deletion and an insertion in %s, got %s", uri, res)
+	}
+	// apply the edits (later offsets first) and check the result compiles
+	// to the inline form
+	text := src
+	type off struct{ start, end int; text string }
+	var offs []off
+	for _, e := range edits {
+		offs = append(offs, off{positionToOffset(source.NewFile(path, src), e.Range.Start), positionToOffset(source.NewFile(path, src), e.Range.End), e.NewText})
+	}
+	sort.Slice(offs, func(i, j int) bool { return offs[i].start > offs[j].start })
+	for _, o := range offs {
+		text = text[:o.start] + o.text + text[o.end:]
+	}
+	want := "trait Show {\n  fun show(): string\n}\n\nstruct P {\n  x: i64\n\n  impl Show {\n    fun show(): string = \"p\"\n  }\n}\n\nfun main() { }\n"
+	if text != want {
+		t.Errorf("after the fix:\n%s\n--- want ---\n%s", text, want)
 	}
 }

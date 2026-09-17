@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.22** — language design complete. Every open question in the language itself is closed. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
+**Working draft v0.23** — language design complete. Every open question in the language itself is closed. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -67,7 +67,7 @@ Rationale: Kotlin's collapsing `T?` makes generic lookups ambiguous — `map[key
 
 - `null` is sugar for the `None` case
 - Implicit promotion: assigning `String` where `String?` is expected wraps automatically, so the constructor is almost never written by hand
-- Leading-dot case syntax (`.some(x)`, `.none`) for the rare explicit case; this generalizes to all sum types
+- The explicit spellings are `Some(x)` and `null` (a leading-dot case syntax was tried and dropped: a line starting with `.` continues a method chain, so `.none =>` could never begin a `when` arm)
 - `String??` arises only from generic instantiation, essentially never from hand-written source
 
 **Representation is dual:** nullable pointer → niche-optimized, zero cost. Nullable value struct → tagged union with a discriminant. Nesting costs a discriminant only at the nested level. Does not disturb D8: nullable and non-nullable pointers are the same GC shape.
@@ -349,6 +349,10 @@ Inherent methods are declared inside the struct. Trait implementations go in `im
 **`struct Circle : Shape` is not a conformance declaration** — it is variant membership in a sealed set, required by D12. The header says the type is one of the trait's variants; the `impl` block supplies the methods. A non-sealed trait has no header clause at all.
 
 Putting trait implementations in the struct body was considered and rejected. It would mean a trait impl could only be written by whoever controls the type's source, which makes `impl Display for SomeForeignType` impossible — removing the capability D6 grants, that D17's global coherence was built around, and that D23 cited as the reason extension functions were unnecessary. It would also force every trait a type ever implements to be named in its header.
+
+*Amended (v0.23):* the top-level block stays the general form, but for a type you declare an impl may also be written inside the struct body as `impl Trait { ... }` — sugar for `impl<Ps> Trait for Name<Ps>` with the struct's own type parameters. Nothing above changes: foreign types still take the top-level form, coherence is unchanged, and the header still names only sealed membership. An impl that needs bounds the struct lacks (`impl<T: Display> Display for Pair<T>`) is written at top level. A top-level impl for a struct of the same module that the inline form could express is a lint: a warning with an automatic fix that moves it into the body (editor quick fix, `veles check --fix`).
+
+*Amended (v0.23) — static functions.* A function in a struct body, trait, impl or extend block may be declared `static fun`: it has no receiver and is called on the type — `Point.origin()`, `i64.parse(s)`, `Stack<i64>.of(x)` — and, for a trait, on a type parameter bounded by it: `T.parse(s)` resolves to the impl for the concrete `T` of each stencil. An impl declares `static` exactly where the trait does. A trait with a static function is not object-safe (D9), and a sealed trait cannot declare one (its methods dispatch on a variant). The prelude declares `Parsable { static fun parse(s: string): Self? }` for the numbers, `bool` and `string`.
 
 Consequence: inherent methods cannot be added to a type you do not own. Extension functions were declined, so the route is declaring a trait and implementing it. This is narrower than it sounds — Veles owns `string` and the collections, so stdlib types stay method-rich; the ceremony only appears when extending a third-party type. Rust lives this way.
 

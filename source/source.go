@@ -101,6 +101,22 @@ type Diagnostic struct {
 	Severity Severity
 	Span     Span
 	Message  string
+	// Fix is an optional automatic correction (a lint's autofix); tools
+	// that can apply edits — the language server — offer it.
+	Fix *Fix
+}
+
+// Fix is a set of text edits, possibly across files, that resolves a
+// diagnostic. Edits are applied to the text as it was when the diagnostic
+// was produced; an empty span inserts.
+type Fix struct {
+	Title string
+	Edits []TextEdit
+}
+
+type TextEdit struct {
+	Span    Span
+	NewText string
 }
 
 func (d Diagnostic) String() string {
@@ -114,11 +130,11 @@ type Diagnostics struct {
 }
 
 func (d *Diagnostics) Errorf(span Span, format string, args ...any) {
-	d.Items = append(d.Items, Diagnostic{Error, span, fmt.Sprintf(format, args...)})
+	d.Items = append(d.Items, Diagnostic{Severity: Error, Span: span, Message: fmt.Sprintf(format, args...)})
 }
 
 func (d *Diagnostics) Warnf(span Span, format string, args ...any) {
-	d.Items = append(d.Items, Diagnostic{Warning, span, fmt.Sprintf(format, args...)})
+	d.Items = append(d.Items, Diagnostic{Severity: Warning, Span: span, Message: fmt.Sprintf(format, args...)})
 }
 
 func (d *Diagnostics) HasErrors() bool {

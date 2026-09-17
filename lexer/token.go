@@ -104,6 +104,7 @@ const (
 	KwExtern
 	KwMut
 	KwOverride
+	KwStatic
 	KwTrue
 	KwFalse
 	KwNull
@@ -152,6 +153,7 @@ var keywords = map[string]TokenKind{
 	"extern":   KwExtern,
 	"mut":      KwMut,
 	"override": KwOverride,
+	"static":   KwStatic,
 	"true":     KwTrue,
 	"false":    KwFalse,
 	"null":     KwNull,
@@ -165,7 +167,7 @@ var keywords = map[string]TokenKind{
 	"enum": KwReserved, "match": KwReserved, "defer": KwReserved, "go": KwReserved,
 	"yield": KwReserved, "where": KwReserved, "super": KwReserved, "this": KwReserved,
 	"catch": KwReserved, "interface": KwReserved, "class": KwReserved,
-	"static": KwReserved, "while": KwReserved, "do": KwReserved, "finally": KwReserved,
+	"while": KwReserved, "do": KwReserved, "finally": KwReserved,
 	"import": KwReserved, "package": KwReserved, "module": KwReserved, "let": KwReserved,
 }
 

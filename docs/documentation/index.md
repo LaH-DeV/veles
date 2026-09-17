@@ -13,7 +13,7 @@ first language.
 2. [Values, types and strings](02-values-and-strings.md) — `val`/`var`, numbers, text, `bool`.
 3. [Functions and control flow](03-functions-and-control-flow.md) — `fun`, `if`, `loop`, ranges, `when`.
 4. [Collections](04-collections.md) — lists, maps, sets and the operations on them.
-5. [Structs and methods](05-structs-and-methods.md) — your own types.
+5. [Structs and methods](05-structs-and-methods.md) — your own types, static functions.
 6. [Nothing, maybe: nullable types](06-nullable-types.md) — `T?`, `?.`, `?:` and smart casts.
 
 ## Track 2 — Coming from Go, Kotlin, Swift, TypeScript or Java
@@ -21,7 +21,7 @@ first language.
 Skim Track 1 (the syntax is close to Kotlin's), then:
 
 7. [Errors: `throws`, `throw`, `try`](07-errors.md) — errors are values, without the ceremony.
-8. [Traits and generics](08-traits-and-generics.md) — interfaces without inheritance, stenciled generics, trait objects.
+8. [Traits and generics](08-traits-and-generics.md) — interfaces without inheritance, stenciled generics, trait objects, the operator traits.
 9. [Sealed types and `when`](09-sealed-types.md) — algebraic data types with exhaustive matching.
 10. [Closures and iterators](10-closures-and-iterators.md) — lambdas, captures, lazy pipelines, `Iterable`.
 11. [Modules, packages and tests](11-modules-and-packages.md) — directories as modules, `veles.toml`, `@test`.

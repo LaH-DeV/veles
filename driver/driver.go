@@ -26,6 +26,8 @@ type Options struct {
 	KeepIntermediates bool
 	Release           bool
 	ProgramArgs       []string
+	// Fix applies the automatic corrections attached to warnings (check).
+	Fix bool
 }
 
 // Run executes the pipeline and returns a process exit code.
@@ -53,6 +55,14 @@ func Run(opts Options) int {
 		return 1
 	}
 	if opts.Mode == "check" {
+		if opts.Fix {
+			n, err := ApplyFixes(diags)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "veles:", err)
+				return 1
+			}
+			fmt.Fprintf(os.Stderr, "%d fix(es) applied\n", n)
+		}
 		return 0
 	}
 

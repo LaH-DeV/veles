@@ -298,8 +298,8 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 		} else if !need(0) {
 			return bad()
 		}
-		if !types.IsNumeric(keyT) && !types.IsString(keyT) {
-			f.errorf(span, "cannot order by '%s'; keys must be numbers or strings (D48: use a comparator otherwise)", keyT)
+		if !f.ordered(keyT) {
+			f.errorf(span, "cannot order by '%s'; keys must be numbers, strings or implement 'Comparable' (D48: use a comparator otherwise)", keyT)
 			return bad()
 		}
 		key := func(x Expr) Expr {
@@ -331,7 +331,7 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 		// inner: loop (j > 0 && key(out[j-1]) > curKey) { out[j] = out[j-1]; j -= 1 }
 		inner.Cond = &Binary{exprBase{types.TBool}, OpAnd,
 			&Binary{exprBase{types.TBool}, OpGt, ref(j), i64c(0), span},
-			&Binary{exprBase{types.TBool}, OpGt, key(getOut(prev)), ref(curKey), span}, span}
+			f.greater(key(getOut(prev)), ref(curKey), span), span}
 		inner.Body = &Block{Stmts: []Stmt{
 			setOut(ref(j), getOut(prev)),
 			&Assign{Target: ref(j), Value: prev},
@@ -377,4 +377,13 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 		return finish(stmts, ref(acc))
 	}
 	return nil
+}
+
+// greater builds `l > r` for an orderable type: a native comparison for
+// numbers and strings, `compareTo` for a Comparable type.
+func (f *fnCtx) greater(l, r Expr, span source.Span) Expr {
+	if cmp := f.compareOp(OpGt, l, r, span); cmp != nil {
+		return cmp
+	}
+	return &Binary{exprBase{types.TBool}, OpGt, l, r, span}
 }

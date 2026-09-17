@@ -69,7 +69,6 @@ func TestExpressions(t *testing.T) {
 		"*p":                   "(* p)",
 		`"a$b${c + 1}"`:        `(str "a" ${b} ${(+ c 1)})`,
 		`"\n\t\u{41}"`:         `(str "\n\tA")`,
-		".none":                "(. <nil> none)",
 		"if (a) b else c":      "(if a\n  (block\n    b)\n  else (block\n    c))",
 		"await ch.recv()":      "(await (call (. ch recv)))",
 		"pair.0":               "(. pair 0)",
@@ -285,5 +284,83 @@ fun h() {
 	}
 	if strings.Contains(dump, "(lambda (limit)") || strings.Contains(dump, "(lambda (t)") || strings.Contains(dump, "(lambda (Nothing)") {
 		t.Errorf("an arm head was read as a lambda:\n%s", dump)
+	}
+}
+
+// `impl Trait { }` inside a struct body is an impl for that struct with
+// its type parameters (D23, v0.23); it joins the file's declarations.
+func TestInlineImpl(t *testing.T) {
+	src := `
+struct Box<T: Show> {
+  item: T
+  impl Display {
+    fun toString(): string = "box"
+  }
+  impl Iterator {
+    type Item = T
+    mut fun next(): T? = null
+  }
+}
+`
+	f, diags := parse(t, src)
+	if diags.HasErrors() {
+		t.Fatalf("parse errors:\n%s", diags.Render())
+	}
+	var impls []*ast.ImplDecl
+	for _, d := range f.Decls {
+		if impl, ok := d.(*ast.ImplDecl); ok {
+			impls = append(impls, impl)
+		}
+	}
+	if len(impls) != 2 || !impls[0].Inline || len(impls[0].TypeParams) != 1 {
+		t.Fatalf("expected 2 inline impls with the struct's type parameter, got:\n%s", ast.Dump(f))
+	}
+	if sd := f.Decls[0].(*ast.StructDecl); len(sd.Impls) != 2 || sd.Impls[0] != impls[0] {
+		t.Errorf("the struct should own the same impl nodes")
+	}
+	if got := ast.Dump(f); !strings.Contains(got, "Box<T>") || !strings.Contains(got, "type Item = T") {
+		t.Errorf("target should be Box<T>:\n%s", got)
+	}
+	for src, want := range map[string]string{
+		"struct P { x: i64\n impl<T> Display { fun toString(): string = \"\" } }": "uses the struct's type parameters",
+		"struct P { x: i64\n impl Display for P { fun toString(): string = \"\" } }": "drop 'for'",
+	} {
+		_, diags := parse(t, src)
+		found := false
+		for _, d := range diags.Items {
+			if strings.Contains(d.Message, want) {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected %q for %q, got:\n%s", want, src, diags.Render())
+		}
+	}
+}
+
+// `static fun` is a modifier in struct, trait, impl and extend bodies;
+// `Name<T>.f(...)` names a generic type as a static call target.
+func TestStaticFun(t *testing.T) {
+	src := `
+struct S<T> {
+  static fun of(x: T): S<T> = S<T>()
+  pub static fun z(): i64 = 0
+}
+trait P { static fun parse(s: string): Self? }
+extend S<i64> { static fun one(): S<i64> = S<i64>.of(1) }
+fun main() {
+  val a = S<i64>.of(1)
+  val b = a < c
+}
+`
+	f, diags := parse(t, src)
+	if diags.HasErrors() {
+		t.Fatalf("parse errors:\n%s", diags.Render())
+	}
+	dump := ast.Dump(f)
+	for _, want := range []string{"(fun static of", "(fun pub static z", "(fun static parse", "(call (. S<i64> of) 1)", "(< a c)"} {
+		if !strings.Contains(dump, want) {
+			t.Errorf("dump lacks %q:\n%s", want, dump)
+		}
 	}
 }

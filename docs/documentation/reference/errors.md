@@ -7,7 +7,7 @@ behind each. The `D<n>` / `M<n>` tags point into `veles-spec.md`.
 ### `cannot infer the element type of an empty list; annotate it`
 
 `[]` and `[:]` have no elements to infer from. Write the type on the
-binding — `var xs: MutableList<i64> = mut []` — or pass the literal
+binding — `var xs: MutableList<i64> = []` — or pass the literal
 where the expected type is known (a parameter, a field, a return). (D25)
 
 ### `type mismatch: expected 'i32', found 'i64'`

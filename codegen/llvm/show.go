@@ -129,6 +129,11 @@ func (g *gen) showHelper(t types.Type) string {
 }
 
 func (g *gen) showBody(t types.Type, v string) string {
+	if ops := g.custom(t); ops != nil && ops.ToString != nil {
+		r := g.newTmp()
+		g.emit("%s = call %s @%s(%s %s)", r, strType, ops.ToString.Name, g.llType(t), v)
+		return r
+	}
 	switch tt := t.(type) {
 	case *types.Pointer:
 		if tt.Raw {
@@ -334,6 +339,11 @@ func (g *gen) eqHelper(t types.Type) string {
 }
 
 func (g *gen) eqBody(t types.Type, a, b string) string {
+	if ops := g.custom(t); ops != nil && ops.Equals != nil {
+		v := g.newTmp()
+		g.emit("%s = call i1 @%s(%s %s, %s %s)", v, ops.Equals.Name, g.llType(t), a, g.llType(t), b)
+		return v
+	}
 	llt := g.llType(t)
 	switch tt := t.(type) {
 	case *types.Nullable:
@@ -431,4 +441,13 @@ func (g *gen) eqTagged(llt, a, b string, member func(i int) types.Type, n int) s
 	v := g.newTmp()
 	g.emit("%s = load i1, ptr %s", v, res)
 	return v
+}
+
+// custom returns the prelude-trait methods that replace t's structural
+// equality, hash or text (sema.Program.Custom), or nil.
+func (g *gen) custom(t types.Type) *sema.CustomOps {
+	if g.prog.Custom == nil {
+		return nil
+	}
+	return g.prog.Custom[types.Key(t)]
 }

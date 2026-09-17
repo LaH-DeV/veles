@@ -154,9 +154,16 @@ func (p *Parser) parsePostfix() ast.Expr {
 			if !isGenericCallee(x) {
 				return x
 			}
-			targs, ok := p.tryTypeArgsBeforeCall()
+			_, isName := x.(*ast.NameExpr)
+			targs, ok, dot := p.tryTypeArgsBeforeCall(isName)
 			if !ok {
 				return x
+			}
+			if dot {
+				// `Name<T>.f(...)`: a static function of a generic type (D23)
+				n := x.(*ast.NameExpr)
+				x = &ast.NameExpr{Name: n.Name, TypeArgs: targs, Pos: p.spanFrom(start)}
+				continue
 			}
 			args := p.parseArgs()
 			x = &ast.CallExpr{Fun: x, TypeArgs: targs, Args: args, Pos: p.spanFrom(start)}
@@ -174,20 +181,22 @@ func isGenericCallee(x ast.Expr) bool {
 	return false
 }
 
-// tryTypeArgsBeforeCall attempts to parse `<T, U>` followed by `(`. On
-// failure nothing is consumed and no diagnostics are emitted.
-func (p *Parser) tryTypeArgsBeforeCall() ([]ast.Type, bool) {
+// tryTypeArgsBeforeCall attempts to parse `<T, U>` followed by `(`, or —
+// after a bare name — by `.name(` (dot is then set). On failure nothing is
+// consumed and no diagnostics are emitted.
+func (p *Parser) tryTypeArgsBeforeCall(allowDot bool) (targs []ast.Type, ok, dot bool) {
 	savedPos, savedDiags, savedErr := p.pos, p.diags, p.lastErrPos
 	scratch := &source.Diagnostics{}
 	p.diags = scratch
-	targs := p.parseTypeArgs()
-	ok := !scratch.HasErrors() && p.at(lexer.LParen)
+	targs = p.parseTypeArgs()
+	dot = allowDot && p.at(lexer.Dot) && p.peek(1).Kind == lexer.Ident && p.peek(2).Kind == lexer.LParen
+	ok = !scratch.HasErrors() && (p.at(lexer.LParen) || dot)
 	p.diags, p.lastErrPos = savedDiags, savedErr
 	if !ok {
 		p.pos = savedPos
-		return nil, false
+		return nil, false, false
 	}
-	return targs, true
+	return targs, true, dot
 }
 
 func (p *Parser) parseArgs() []ast.Arg {
@@ -248,11 +257,6 @@ func (p *Parser) parsePrimary() ast.Expr {
 		}
 		p.next()
 		return &ast.NameExpr{Name: t.Text, Pos: t.Span}
-	case lexer.Dot:
-		// leading-dot case syntax: `.some(x)`, `.none` (D5)
-		p.next()
-		name, _ := p.expectIdent()
-		return &ast.MemberExpr{X: nil, Name: name, Pos: p.spanFrom(start)}
 	case lexer.LParen:
 		if p.noLambda == 0 && p.looksLikeLambda() {
 			return p.parseLambda()

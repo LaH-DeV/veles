@@ -1,0 +1,4 @@
+Point(x: 0, y: 0) Point(x: 3, y: 0) Point(x: 1, y: 2) null
+Point(x: 5, y: 6) 42 2.5 null
+[1, null, 3] [Point(x: 0, y: 0), null] [top]
+exit=0

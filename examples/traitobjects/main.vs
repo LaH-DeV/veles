@@ -8,20 +8,20 @@ trait Shape {
 
 struct Circle {
   r: f64
+
+  impl Shape {
+    fun area(): f64 = 3.0 * self.r * self.r
+    fun name(): string = "circle"
+  }
 }
 struct Square {
   side: f64
-}
 
-impl Shape for Circle {
-  fun area(): f64 = 3.0 * self.r * self.r
-  fun name(): string = "circle"
-}
-
-impl Shape for Square {
-  fun area(): f64 = self.side * self.side
-  fun name(): string = "square"
-  override fun describe(): string = "a square of side ${self.side}"
+  impl Shape {
+    fun area(): f64 = self.side * self.side
+    fun name(): string = "square"
+    override fun describe(): string = "a square of side ${self.side}"
+  }
 }
 
 trait Counter {
@@ -30,11 +30,12 @@ trait Counter {
 
 struct Clicks {
   n: i64 = 0
-}
-impl Counter for Clicks {
-  mut fun bump(): i64 {
-    self.n += 1
-    self.n
+
+  impl Counter {
+    mut fun bump(): i64 {
+      self.n += 1
+      self.n
+    }
   }
 }
 
