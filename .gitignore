@@ -2,3 +2,7 @@ veles
 veles.exe
 *.exe*
 *.ll
+
+
+node_modules
+**/.vitepress/cache

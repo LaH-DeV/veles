@@ -34,7 +34,7 @@ func TestDocs(t *testing.T) {
 		}
 	}
 	var mds []string
-	filepath.WalkDir(".", func(path string, d os.DirEntry, err error) error {
+	filepath.WalkDir("./documentation", func(path string, d os.DirEntry, err error) error {
 		if err == nil && !d.IsDir() && strings.HasSuffix(path, ".md") {
 			mds = append(mds, path)
 		}
