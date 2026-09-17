@@ -1,8 +1,12 @@
 use io
 
-struct Res { name: string }
+struct Res {
+  name: string
+}
 impl Closeable for Res {
-  mut fun close() { io.println("close ${self.name}") }
+  mut fun close() {
+    io.println("close ${self.name}")
+  }
 }
 
 fun open(name: string): Res {
@@ -38,7 +42,7 @@ fun main() {
     }
   }
   when (failing()) {
-    is Ok(v) => io.println("ok $v")
+    is Ok(v)  => io.println("ok $v")
     is Err(e) => io.println("failed $e")
   }
 }

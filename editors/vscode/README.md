@@ -28,6 +28,10 @@ document outline and completion.
 - **Veles: Test Current Package** — `veles test <dir>`.
 - **Veles: Restart Language Server**.
 
+Formatting (**Format Document**, or `editor.formatOnSave`) is served by the
+same server — `veles fmt` inside the editor, using the `[format]` table of
+the package's `veles.toml` when there is one.
+
 ## How it works
 
 The server is the compiler itself (`lsp/` in the repository). Every edit

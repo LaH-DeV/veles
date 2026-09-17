@@ -3,7 +3,9 @@ use io
 struct Stack<T> {
   items: MutableList<T> = []
 
-  fun push(x: T) { self.items.push(x) }
+  fun push(x: T) {
+    self.items.push(x)
+  }
   fun pop(): T? = self.items.pop()
   fun len(): i64 = self.items.len()
 }
@@ -13,7 +15,9 @@ trait Show {
   fun shout(): string = self.show() + "!"
 }
 
-struct Cat { name: string }
+struct Cat {
+  name: string
+}
 impl Show for Cat {
   fun show(): string = "cat ${self.name}"
 }

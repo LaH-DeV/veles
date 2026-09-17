@@ -25,6 +25,13 @@ type Lexer struct {
 	tokens  []Token
 	nesting []byte // stack of '(' '[' '{'
 	docs    []docComment // documentation comments, attached to tokens after the scan
+	comments []Comment   // every comment, in source order (for the formatter)
+}
+
+// Comment is one `// ...` line or `/* ... */` block, with its raw text.
+type Comment struct {
+	Span source.Span
+	Text string
 }
 
 // Tokenize scans an entire file. Errors are reported into diags and the
@@ -42,6 +49,15 @@ func TokenizeFile(file *source.File, diags *source.Diagnostics) ([]Token, string
 	lx.run()
 	lx.attachDocs()
 	return lx.tokens, lx.moduleDoc()
+}
+
+// TokenizeAll is TokenizeFile plus every comment in the file, in source
+// order, for tools that reproduce the source (the formatter).
+func TokenizeAll(file *source.File, diags *source.Diagnostics) ([]Token, string, []Comment) {
+	lx := &Lexer{file: file, src: file.Content, diags: diags}
+	lx.run()
+	lx.attachDocs()
+	return lx.tokens, lx.moduleDoc(), lx.comments
 }
 
 func (lx *Lexer) span(start, end int) source.Span {
@@ -157,9 +173,11 @@ func (lx *Lexer) run() {
 			for lx.pos < len(lx.src) && lx.src[lx.pos] != '\n' {
 				lx.pos++
 			}
+			lx.comments = append(lx.comments, Comment{Span: lx.span(start, lx.pos), Text: strings.TrimRight(lx.src[start:lx.pos], "\r")})
 			lx.lineDoc(start)
 		case c == '/' && lx.peekByte(1) == '*':
 			lx.blockComment()
+			lx.comments = append(lx.comments, Comment{Span: lx.span(start, lx.pos), Text: lx.src[start:lx.pos]})
 			lx.blockDoc(start)
 		case isIdentStart(c):
 			lx.identifier()

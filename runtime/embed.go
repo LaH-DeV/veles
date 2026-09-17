@@ -11,3 +11,6 @@ var GCSource string
 
 //go:embed c/veles_task.c
 var TaskSource string
+
+//go:embed c/veles_os.c
+var OSSource string

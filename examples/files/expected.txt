@@ -1,0 +1,10 @@
+created: true true
+5 lines, first: # report, last: done
+size 35 isFile true exists false
+report.md .md report notes
+a/b/c a/b /abs true
+listed: [a.txt, report.md]
+renamed: [report.md, z.txt]
+failed: No such file or directory (missing.txt) code true
+cleaned: true
+exit=0

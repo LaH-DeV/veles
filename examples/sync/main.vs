@@ -1,6 +1,8 @@
 use io
 
-struct Counter { hits: i64 }
+struct Counter {
+  hits: i64
+}
 
 fun bump(m: Mutex<Counter>, times: i64) {
   loop (_ in 0..<times) {

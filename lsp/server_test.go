@@ -566,3 +566,39 @@ func TestStdSourceTreeDiagnostics(t *testing.T) {
 		t.Errorf("no diagnostics for the edited prelude file: %s", published)
 	}
 }
+
+func TestFormatting(t *testing.T) {
+	src := "use io\nfun main(){io.println( \"x\" )}\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := pathToURI(path)
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{})
+	c.notify("initialized", map[string]any{})
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": src}})
+	res, _ := c.call("textDocument/formatting", map[string]any{"textDocument": map[string]any{"uri": uri}, "options": map[string]any{"tabSize": 2}})
+	var edits []struct {
+		Range   lspRange `json:"range"`
+		NewText string   `json:"newText"`
+	}
+	json.Unmarshal(res, &edits)
+	if len(edits) != 1 || edits[0].NewText != "use io\nfun main() {\n  io.println(\"x\")\n}\n" || edits[0].Range.End.Line != 2 {
+		t.Errorf("formatting edits: %s", res)
+	}
+	// an already formatted document gets no edits
+	c.notify("textDocument/didChange", map[string]any{"textDocument": map[string]any{"uri": uri, "version": 2}, "contentChanges": []map[string]any{{"text": edits[0].NewText}}})
+	res, _ = c.call("textDocument/formatting", map[string]any{"textDocument": map[string]any{"uri": uri}})
+	if string(res) != "[]" {
+		t.Errorf("formatting a formatted document: %s", res)
+	}
+	// a document that does not parse is not touched
+	c.notify("textDocument/didChange", map[string]any{"textDocument": map[string]any{"uri": uri, "version": 3}, "contentChanges": []map[string]any{{"text": "fun main( {"}}})
+	res, _ = c.call("textDocument/formatting", map[string]any{"textDocument": map[string]any{"uri": uri}})
+	if string(res) != "[]" {
+		t.Errorf("formatting a broken document: %s", res)
+	}
+}

@@ -42,6 +42,10 @@ void veles_rt_init(int32_t argc, char **argv) {
     veles_gc_init();
 }
 
+/* the process arguments, for std/os (veles_os.c) */
+int veles_os_argc_value(void) { return g_argc; }
+char **veles_os_argv_value(void) { return g_argv; }
+
 /* ---- memory: the collector in veles_gc.c owns every allocation --------- */
 
 void *veles_alloc(int64_t size);       /* bytes without pointers */

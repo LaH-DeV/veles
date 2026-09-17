@@ -5,16 +5,21 @@ use io.{ println }
  * It also shows how to use a mutable struct and a pointer to it.
  */
 struct Counter {
-  n: i64 = 0
+  n:    i64 = 0
   step: i64 = 1
 
   fun get(): i64 = self.n
   /** testing doc for bump */
-  mut fun bump() { self.n += self.step }
+  mut fun bump() {
+    self.n += self.step
+  }
   fun withStep(s: i64): Counter = Counter(n: self.n, step: s)
 }
 
-struct Node { value: i64, next: (*Node)? }
+struct Node {
+  value: i64
+  next:  (*Node)?
+}
 
 fun sum(n: (*Node)?): i64 {
   var total = 0
@@ -43,6 +48,8 @@ fun main() {
   val (x, y) = pair
   println("tuple $x $y ${pair.1}")
   var xs: MutableList<i64> = []
-  loop (i in 0..<5) { xs.push(i * i) }
+  loop (i in 0..<5) {
+    xs.push(i * i)
+  }
   println("squares ${xs} len ${xs.len()} last ${xs[4]}")
 }

@@ -17,14 +17,19 @@ fun printSum(sum: i32) {
 
 // D12 — sealed traits
 sealed trait Shape
-struct Circle : Shape { radius: f64 }
-struct Rect   : Shape { w: f64, h: f64 }
+struct Circle : Shape {
+  radius: f64
+}
+struct Rect : Shape {
+  w: f64
+  h: f64
+}
 
 // D13 — when with patterns, guards, destructuring
 fun area(shape: Shape): f64 = when (shape) {
   is Shape.Circle(radius) if radius > 10.0 => PI * radius * radius
-  is Shape.Circle(radius) => PI * radius * radius
-  is Shape.Rect(w, h)     => w * h
+  is Shape.Circle(radius)                  => PI * radius * radius
+  is Shape.Rect(w, h)                      => w * h
 }
 
 fun classify(n: i32): string = when {
@@ -34,10 +39,10 @@ fun classify(n: i32): string = when {
 }
 
 fun describe(n: i32?): string = when (n) {
-  null => "nothing"
-  1, 2 => "small"
+  null     => "nothing"
+  1, 2     => "small"
   in 3..10 => "medium"
-  is i32 => "big: $n"
+  is i32   => "big: $n"
 }
 
 // D22 — methods, mut fun, expression bodies
@@ -45,7 +50,9 @@ struct Counter {
   n: i32 = 0
 
   fun get(): i32 = self.n
-  mut fun bump() { self.n += 1 }
+  mut fun bump() {
+    self.n += 1
+  }
 }
 
 // D27/D42 — traits with associated types and default bodies
@@ -59,7 +66,9 @@ trait Iterator {
   mut fun next(): Item?
   fun count(): i32 {
     var n = 0
-    loop (x in self) { n += 1 }
+    loop (x in self) {
+      n += 1
+    }
     n
   }
 }
@@ -82,7 +91,9 @@ impl<T> Display for Stack<T> {
 // D23 addendum — extend blocks: inherent methods for a type you declare
 extend<T: Display> Stack<T> {
   pub fun render(): string = self.items.map(x => x.show()).join(" ")
-  mut fun drain() { self.items.clear() }
+  mut fun drain() {
+    self.items.clear()
+  }
 }
 
 // D31 — recursion through pointers
@@ -108,17 +119,21 @@ fun construct() {
 // D29/D30/D32 — ranges, elvis, safe call, lambdas
 fun collections(nums: List<i32>, counts: Map<string, i32>, word: string, a: A?) {
   val doubled = nums.map(x => x * 2)
-  val total   = nums.fold(0, (acc, x) => acc + x)
-  val typed   = nums.map((x: i32) => x * 2)
+  val total = nums.fold(0, (acc, x) => acc + x)
+  val typed = nums.map((x: i32) => x * 2)
   val n = counts[word] ?: 0
   val deep = a?.b?.c
-  loop (i in 0..<nums.len()) { io.println("$i") }
+  loop (i in 0..<nums.len()) {
+    io.println("$i")
+  }
   loop (i in 1..100) { }
   val sorted = nums
     .sortedBy(x => -x)
     .take(3)
   loop :outer {
-    loop (true) { break outer }
+    loop (true) {
+      break outer
+    }
   }
   val big = if (n > 5) "big" else "small"
   val block = nums.map(x => {

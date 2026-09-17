@@ -16,14 +16,18 @@ extend<T> List<T> {
     val lo = from.max(0)
     val hi = to.min(self.len())
     var out: MutableList<T> = []
-    loop (i in lo..<hi) { out.push(self[i]) }
+    loop (i in lo..<hi) {
+      out.push(self[i])
+    }
     out.toList()
   }
 
   /// The number of elements `pred` accepts.
   pub fun count(pred: fun(T): bool): i64 {
     var n: i64 = 0
-    loop (x in self) { if (pred(x)) n += 1 }
+    loop (x in self) {
+      if (pred(x)) n += 1
+    }
     n
   }
 
@@ -31,7 +35,9 @@ extend<T> List<T> {
   pub fun zip<U>(other: List<U>): List<(T, U)> {
     var out: MutableList<(T, U)> = []
     val n = self.len().min(other.len())
-    loop (i in 0..<n) { out.push((self[i], other[i])) }
+    loop (i in 0..<n) {
+      out.push((self[i], other[i]))
+    }
     out.toList()
   }
 
@@ -39,7 +45,9 @@ extend<T> List<T> {
   pub fun flatMap<U>(f: fun(T): List<U>): List<U> {
     var out: MutableList<U> = []
     loop (x in self) {
-      loop (y in f(x)) { out.push(y) }
+      loop (y in f(x)) {
+        out.push(y)
+      }
     }
     out.toList()
   }
@@ -70,7 +78,9 @@ extend<T> List<T> {
   pub fun windowed(n: i64): List<List<T>> {
     if (n <= 0) panic("windowed: size must be positive, got $n")
     var out: MutableList<List<T>> = []
-    loop (i in 0..(self.len() - n)) { out.push(self.slice(i, i + n)) }
+    loop (i in 0..(self.len() - n)) {
+      out.push(self.slice(i, i + n))
+    }
     out.toList()
   }
 
@@ -81,7 +91,9 @@ extend<T> List<T> {
   pub fun min(): T? {
     if (self.isEmpty()) return null
     var best = self[0]
-    loop (x in self) { if (x < best) best = x }
+    loop (x in self) {
+      if (x < best) best = x
+    }
     best
   }
 
@@ -89,7 +101,9 @@ extend<T> List<T> {
   pub fun max(): T? {
     if (self.isEmpty()) return null
     var best = self[0]
-    loop (x in self) { if (x > best) best = x }
+    loop (x in self) {
+      if (x > best) best = x
+    }
     best
   }
 
@@ -101,7 +115,9 @@ extend List<i64> {
   /// The sum of the elements (0 for an empty list).
   pub fun sum(): i64 {
     var total: i64 = 0
-    loop (x in self) { total += x }
+    loop (x in self) {
+      total += x
+    }
     total
   }
 }
@@ -110,7 +126,9 @@ extend List<f64> {
   /// The sum of the elements (0.0 for an empty list).
   pub fun sum(): f64 {
     var total = 0.0
-    loop (x in self) { total += x }
+    loop (x in self) {
+      total += x
+    }
     total
   }
 }
@@ -131,30 +149,36 @@ extend<T> MutableList<T> {
   /// Removes and returns the element at index `i`, shifting the rest down.
   pub mut fun removeAt(i: i64): T {
     val removed = self[i]
-    loop (j in i..<(self.len() - 1)) { self[j] = self[j + 1] }
+    loop (j in i..<(self.len() - 1)) {
+      self[j] = self[j + 1]
+    }
     self.pop()
     removed
   }
 
   /// Appends every element of `xs`.
   pub mut fun addAll(xs: List<T>) {
-    loop (x in xs) { self.push(x) }
+    loop (x in xs) {
+      self.push(x)
+    }
   }
 
   /// Sorts in place (elements must be numbers or strings).
   pub mut fun sort() {
     val sorted = self.sorted()
-    loop (i in 0..<self.len()) { self[i] = sorted[i] }
+    loop (i in 0..<self.len()) {
+      self[i] = sorted[i]
+    }
   }
 }
 
 /// Steps through a range by a fixed increment, in either direction.
 pub struct RangeStepIter<T> {
   current: T
-  last: T
-  step: T
-  up: bool
-  done: bool = false
+  last:    T
+  step:    T
+  up:      bool
+  done:    bool = false
 }
 
 impl<T> Iterator for RangeStepIter<T> {

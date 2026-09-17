@@ -6,3 +6,13 @@
 pub trait Error {
   fun message(): string = "$self"
 }
+
+/// A failed operating-system call (files, processes, environment): `detail`
+/// is the system's description, `path` the file or command involved, and
+/// `code` the platform error number.
+pub error IoError {
+  pub path:   string
+  pub code:   i64
+  pub detail: string
+  fun message(): string = if (self.path.isEmpty()) self.detail else "${self.detail}: ${self.path}"
+}

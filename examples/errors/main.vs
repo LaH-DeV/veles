@@ -8,10 +8,14 @@ error ParseError {
   fun message(): string = "parsing problem in \"${self.text}\""
 }
 /// A number outside 0..65535. Its message() is the default: the show rendering.
-error RangeError { value: i64 }
-error Refused { message: string }             // a `message` field is the message
+error RangeError {
+  value: i64
+}
+error Refused {
+  message: string
+}  // a `message` field is the message
 
-error PortErrors = ParseError | RangeError | Refused   // a named error set (D45)
+error PortErrors = ParseError | RangeError | Refused  // a named error set (D45)
 
 fun parsePort(text: string): i64 throws PortErrors {
   if (text == "22") throw Refused(message: "port 22 is reserved")
@@ -22,7 +26,7 @@ fun parsePort(text: string): i64 throws PortErrors {
 
 /** Context wrapped around a cause: an error's field may hold an error set. */
 error ConfigError {
-  key: string
+  key:   string
   cause: PortErrors
   fun message(): string = "config '${self.key}': ${self.cause.message()}"
 }
@@ -41,10 +45,10 @@ fun main() throws {
     if (config is Ok) {
       io.println("$setting -> $config")
     } else {
-      io.println("$setting -> ${config.message()}")    // no need to know the fields
-      when (config.cause) {                             // a field path narrows too (D5)
+      io.println("$setting -> ${config.message()}")  // no need to know the fields
+      when (config.cause) {                          // a field path narrows too (D5)
         is RangeError => io.println("  ${config.cause.value} is outside 0..65535")
-        else => io.println("  (not a range problem)")
+        else          => io.println("  (not a range problem)")
       }
     }
   }

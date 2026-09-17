@@ -726,3 +726,40 @@ func TestStdSourceTreeIsStd(t *testing.T) {
 		t.Errorf("the on-disk prelude was not the one checked:\n%s", diags.Render())
 	}
 }
+
+func TestOsFsPathModules(t *testing.T) {
+	expectClean(t, `
+use io
+use os
+use fs
+use path
+
+fun main() throws IoError {
+  val args: List<string> = os.args()
+  val home: string? = os.env("HOME")
+  val r: os.Output = try os.run("clang", ["--version"])
+  io.println("${r.code} ${r.stdout} ${r.ok()} ${os.program()} $args $home")
+  val text: string = try fs.readFile("a.txt")
+  try fs.writeFile("a.txt", text)
+  try fs.appendFile("a.txt", text)
+  val names: List<string> = try fs.listDir(".")
+  try fs.mkdir("x/y")
+  try fs.rename("a.txt", "b.txt")
+  try fs.remove("b.txt")
+  val here: string = try fs.cwd()
+  io.println("${fs.exists("a")} ${fs.isFile("a")} ${fs.isDir("a")} $names $here")
+  val p: string = path.joinAll([path.join("a", "b"), path.dir("c/d"), path.base("e"), path.ext("f.vs"), path.stem("g.vs")])
+  io.println("$p ${path.isAbsolute(p)}")
+  val sb = stringBuilder()
+  sb.append("a")
+  sb.appendLine()
+  sb.clear()
+  io.println("${sb.toString()} ${sb.len()} ${sb.isEmpty()}")
+  val e: IoError = os.ioError(2, "p")
+  io.println("${e.message()} ${e.detail} ${e.code} ${e.path}")
+  os.exit(0)
+}`)
+	// a failing call must be handled (D4), and the error is the documented one
+	expectError(t, "use fs\nfun main() { fs.readFile(\"a\") }", "unused Result")
+	expectError(t, "use fs\nfun main() throws Panic { try fs.readFile(\"a\") }", "IoError")
+}

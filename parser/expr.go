@@ -191,6 +191,9 @@ func (p *Parser) tryTypeArgsBeforeCall() ([]ast.Type, bool) {
 }
 
 func (p *Parser) parseArgs() []ast.Arg {
+	saved := p.noLambda
+	p.noLambda = 0
+	defer func() { p.noLambda = saved }()
 	p.expect(lexer.LParen)
 	var args []ast.Arg
 	for !p.at(lexer.RParen, lexer.EOF) {
@@ -240,7 +243,7 @@ func (p *Parser) parsePrimary() ast.Expr {
 		p.next()
 		return &ast.SelfExpr{Pos: t.Span}
 	case lexer.Ident:
-		if p.peek(1).Kind == lexer.FatArrow {
+		if p.peek(1).Kind == lexer.FatArrow && p.noLambda == 0 {
 			return p.parseLambda()
 		}
 		p.next()
@@ -251,7 +254,7 @@ func (p *Parser) parsePrimary() ast.Expr {
 		name, _ := p.expectIdent()
 		return &ast.MemberExpr{X: nil, Name: name, Pos: p.spanFrom(start)}
 	case lexer.LParen:
-		if p.looksLikeLambda() {
+		if p.noLambda == 0 && p.looksLikeLambda() {
 			return p.parseLambda()
 		}
 		return p.parseParenOrTuple()
@@ -406,6 +409,9 @@ func (p *Parser) parseArmBody() ast.Expr {
 }
 
 func (p *Parser) parseParenOrTuple() ast.Expr {
+	saved := p.noLambda
+	p.noLambda = 0
+	defer func() { p.noLambda = saved }()
 	start := p.span()
 	p.next() // (
 	if p.at(lexer.RParen) {
@@ -424,12 +430,19 @@ func (p *Parser) parseParenOrTuple() ast.Expr {
 	}
 	p.expect(lexer.RParen)
 	if len(elems) == 1 && !trailing {
+		if p.parens != nil {
+			sp := elems[0].Span()
+			p.parens[[2]int{sp.Start, sp.End}] = true
+		}
 		return elems[0]
 	}
 	return &ast.TupleExpr{Elems: elems, Pos: p.spanFrom(start)}
 }
 
 func (p *Parser) parseCollectionLit() ast.Expr {
+	saved := p.noLambda
+	p.noLambda = 0
+	defer func() { p.noLambda = saved }()
 	start := p.span()
 	p.next() // [
 	if p.at(lexer.Colon) && p.peek(1).Kind == lexer.RBracket {
@@ -547,10 +560,10 @@ func (p *Parser) parseWhenArm(hasSubject bool) *ast.WhenArm {
 			}
 		}
 		if p.accept(lexer.KwIf) {
-			arm.Guard = p.parseExpr()
+			arm.Guard = p.parseArmHead()
 		}
 	default:
-		arm.Cond = p.parseExpr()
+		arm.Cond = p.parseArmHead()
 	}
 	if _, ok := p.expect(lexer.FatArrow); !ok {
 		p.syncStmt()
@@ -583,7 +596,7 @@ func (p *Parser) parseRace() ast.Expr {
 			arm.Binding = &b
 			p.expect(lexer.Assign)
 		}
-		arm.Source = p.parseExpr()
+		arm.Source = p.parseArmHead()
 		if _, ok := p.expect(lexer.FatArrow); !ok {
 			p.syncStmt()
 			continue
@@ -610,4 +623,14 @@ func (p *Parser) closeCondition() {
 		p.parseExpr()
 	}
 	p.expect(lexer.RParen)
+}
+
+// parseArmHead parses the expression before an arm's `=>` (a guard, a
+// subjectless condition, a race source), where `name => ...` is the arm's
+// arrow, not a lambda.
+func (p *Parser) parseArmHead() ast.Expr {
+	p.noLambda++
+	e := p.parseExpr()
+	p.noLambda--
+	return e
 }

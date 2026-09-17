@@ -25,6 +25,7 @@ Skim Track 1 (the syntax is close to Kotlin's), then:
 9. [Sealed types and `when`](09-sealed-types.md) — algebraic data types with exhaustive matching.
 10. [Closures and iterators](10-closures-and-iterators.md) — lambdas, captures, lazy pipelines, `Iterable`.
 11. [Modules, packages and tests](11-modules-and-packages.md) — directories as modules, `veles.toml`, `@test`.
+15. [Files, paths and processes](15-files-and-processes.md) — `fs`, `path`, `os`, `StringBuilder`, `IoError`.
 
 ## Track 3 — Systems and concurrency
 

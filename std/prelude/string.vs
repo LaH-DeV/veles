@@ -12,7 +12,9 @@ fun isAsciiSpace(b: u8): bool = b == 32 || b == 9 || b == 10 || b == 13 || b == 
 
 extend string {
   /// Byte index of the first occurrence of `part` at or after `from`, or -1.
-  pub fun indexOf(part: string, from: i64 = 0): i64 = unsafe { veles_string_find(self, part, from) }
+  pub fun indexOf(part: string, from: i64 = 0): i64 = unsafe {
+    veles_string_find(self, part, from)
+  }
 
   /// Byte index of the last occurrence of `part`, or -1.
   pub fun lastIndexOf(part: string): i64 {
@@ -28,14 +30,18 @@ extend string {
   /// The text without leading ASCII whitespace.
   pub fun trimStart(): string {
     var i: i64 = 0
-    loop (i < self.len() && isAsciiSpace(self.byteAt(i))) { i += 1 }
+    loop (i < self.len() && isAsciiSpace(self.byteAt(i))) {
+      i += 1
+    }
     self.substring(i, self.len()) ?: self
   }
 
   /// The text without trailing ASCII whitespace.
   pub fun trimEnd(): string {
     var j = self.len()
-    loop (j > 0 && isAsciiSpace(self.byteAt(j - 1))) { j -= 1 }
+    loop (j > 0 && isAsciiSpace(self.byteAt(j - 1))) {
+      j -= 1
+    }
     self.substring(0, j) ?: self
   }
 
@@ -86,7 +92,9 @@ extend string {
     var out: MutableList<u8> = []
     val bytes = self.bytes()
     loop (_ in 0..<n) {
-      loop (b in bytes) { out.push(b) }
+      loop (b in bytes) {
+        out.push(b)
+      }
     }
     out.decodeUtf8() ?: ""
   }
@@ -113,7 +121,9 @@ extend string {
   pub fun padStart(width: i64, pad: string = " "): string {
     if (pad.isEmpty() || self.len() >= width) return self
     var s = self
-    loop (s.len() < width) { s = pad + s }
+    loop (s.len() < width) {
+      s = pad + s
+    }
     s
   }
 
@@ -121,7 +131,9 @@ extend string {
   pub fun padEnd(width: i64, pad: string = " "): string {
     if (pad.isEmpty() || self.len() >= width) return self
     var s = self
-    loop (s.len() < width) { s = s + pad }
+    loop (s.len() < width) {
+      s = s + pad
+    }
     s
   }
 
@@ -178,4 +190,3 @@ extend string {
 }
 
 fun isDigit(b: u8): bool = b >= 48 && b <= 57
-

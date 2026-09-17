@@ -11,7 +11,9 @@ pub struct Mutex<T> {
 
   pub fun withLock<R>(f: fun(*T): R): R = f(self.cell)
   pub fun get(): T = *self.cell
-  pub fun set(value: T) { *self.cell = value }
+  pub fun set(value: T) {
+    *self.cell = value
+  }
 }
 
 pub fun <T> mutex(value: T): Mutex<T> = Mutex(cell: &value)
@@ -20,7 +22,9 @@ pub struct Atomic<T> {
   cell: *T
 
   pub fun load(): T = *self.cell
-  pub fun store(value: T) { *self.cell = value }
+  pub fun store(value: T) {
+    *self.cell = value
+  }
   pub fun swap(value: T): T {
     val old = *self.cell
     *self.cell = value

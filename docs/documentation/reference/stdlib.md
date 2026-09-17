@@ -2,9 +2,9 @@
 
 The bootstrap standard library is deliberately small: enough to write
 the tutorials and the compiler's own tests. Everything here is embedded
-in the compiler binary (`std/` in the repository). Built-in methods on
-strings and collections are implemented by the compiler; the prelude
-traits and structs are written in Veles.
+in the compiler binary (`std/` in the repository). A few primitives on
+strings and collections are implemented by the compiler; everything else —
+the prelude, `io`, `os`, `fs`, `path` — is written in Veles.
 
 ## Always in scope (the prelude, D24)
 
@@ -97,6 +97,33 @@ error position. A `message: string` field is used as the message when no
 `message()` is written. `error Set = A | B` names a union (D45); a field
 of an `error` may hold a union (a cause). `message()` is callable on an
 error union directly.
+
+```veles
+// fragment
+pub error IoError { pub path: string; pub code: i64; pub detail: string }
+```
+
+`IoError` is what `fs` and `os` throw: `detail` is the system's description
+("No such file or directory"), `path` the file or program involved, `code`
+the platform error number; `message()` is `"detail: path"`.
+
+### StringBuilder
+
+```veles
+// fragment
+pub fun stringBuilder(): StringBuilder
+pub struct StringBuilder {
+  pub fun append(s: string)
+  pub fun appendLine(s: string = "")
+  pub fun len(): i64
+  pub fun isEmpty(): bool
+  pub fun clear()
+  pub fun toString(): string
+}
+```
+
+Builds text in linear time where repeated `+` would copy the whole string
+each time.
 
 ### Result and Option
 
@@ -231,10 +258,65 @@ io.eprintln(s: string)           // standard error
 io.readLine(): string?           // null at end of input
 ```
 
+## Module `os`
+
+```veles
+// fragment
+use os
+os.args(): List<string>                          // arguments, without the program name
+os.program(): string                             // the program as invoked
+os.env(name: string): string?                    // null when unset
+os.exit(code: i64)                               // flushes output, ends the process
+os.run(program: string, args: List<string> = []): Output throws IoError
+// Output { code: i64, stdout: string, fun ok(): bool }
+os.ioError(code: i64, path: string): IoError     // an IoError for a platform error number
+```
+
+`run` waits for the program, captures its standard output and lets its
+standard error through; a non-zero exit is reported in `Output.code` —
+only a program that cannot be started throws.
+
+## Module `fs`
+
+Every call that can fail throws `IoError` (below).
+
+```veles
+// fragment
+use fs
+fs.readFile(path: string): string throws IoError
+fs.writeFile(path: string, text: string) throws IoError    // replaces
+fs.appendFile(path: string, text: string) throws IoError   // creates when missing
+fs.exists(path: string): bool
+fs.isFile(path: string): bool
+fs.isDir(path: string): bool
+fs.listDir(path: string): List<string> throws IoError      // names, sorted
+fs.mkdir(path: string) throws IoError                      // with parents
+fs.remove(path: string) throws IoError                     // a file or an empty directory
+fs.rename(from: string, to: string) throws IoError
+fs.cwd(): string throws IoError
+```
+
+## Module `path`
+
+Text only; nothing here touches the disk. `/` and `\` both separate on
+input, output uses `/`.
+
+```veles
+// fragment
+use path
+path.join(a: string, b: string): string          // "a/b"; an absolute b wins
+path.joinAll(parts: List<string>): string
+path.dir(p: string): string                      // "a/b.vs" -> "a"; "" when no separator
+path.base(p: string): string                     // "a/b.vs" -> "b.vs"
+path.ext(p: string): string                      // ".vs" or ""
+path.stem(p: string): string                     // "b"
+path.isAbsolute(p: string): bool                 // "/x", "C:\x", "C:/x"
+```
+
 ## Not yet in the bootstrap
 
-File and network I/O, formatting beyond interpolation, time, random
-numbers, command-line arguments. Each is a small `extern "C"` binding away
-(see [chapter 13](../13-memory-and-ffi.md)); the library grows in Veles —
-the string and list methods above are the first step — with the compiler's
-own needs setting the order.
+Network I/O, formatting beyond interpolation, time, random numbers,
+reading a file as bytes, iterating a directory tree. Each is a small
+`extern "C"` binding away (see [chapter 13](../13-memory-and-ffi.md)) or
+plain Veles on top of `fs`; the library grows with the compiler's own needs
+setting the order.

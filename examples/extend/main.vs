@@ -2,12 +2,21 @@
 // the prelude uses it to give string, List and Range most of their methods.
 use io
 
-struct Vec2 { x: f64, y: f64 }
+struct Vec2 {
+  x: f64
+  y: f64
+}
 
-struct Stack<T> { items: MutableList<T> }
+struct Stack<T> {
+  items: MutableList<T>
+}
 
-trait Show { fun show(): string }
-impl Show for Vec2 { fun show(): string = "(${self.x}, ${self.y})" }
+trait Show {
+  fun show(): string
+}
+impl Show for Vec2 {
+  fun show(): string = "(${self.x}, ${self.y})"
+}
 
 extend Vec2 {
   fun length(): f64 = (self.x * self.x + self.y * self.y).sqrt()
@@ -18,7 +27,9 @@ extend Vec2 {
 }
 
 extend<T> Stack<T> {
-  fun push(x: T) { self.items.push(x) }
+  fun push(x: T) {
+    self.items.push(x)
+  }
   fun pop(): T? = self.items.pop()
   fun depth(): i64 = self.items.len()
 }

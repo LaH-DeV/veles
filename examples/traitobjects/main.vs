@@ -6,8 +6,12 @@ trait Shape {
   fun describe(): string = "${self.name()} with area ${self.area()}"
 }
 
-struct Circle { r: f64 }
-struct Square { side: f64 }
+struct Circle {
+  r: f64
+}
+struct Square {
+  side: f64
+}
 
 impl Shape for Circle {
   fun area(): f64 = 3.0 * self.r * self.r
@@ -24,20 +28,29 @@ trait Counter {
   mut fun bump(): i64
 }
 
-struct Clicks { n: i64 = 0 }
+struct Clicks {
+  n: i64 = 0
+}
 impl Counter for Clicks {
-  mut fun bump(): i64 { self.n += 1; self.n }
+  mut fun bump(): i64 {
+    self.n += 1
+    self.n
+  }
 }
 
 fun total(shapes: List<Shape>): f64 {
   var sum = 0.0
-  loop (s in shapes) { sum += s.area() }
+  loop (s in shapes) {
+    sum += s.area()
+  }
   sum
 }
 
 fun main() {
   val shapes: List<Shape> = [Circle(r: 1.0), Square(side: 2.0)]
-  loop (s in shapes) { io.println(s.describe()) }
+  loop (s in shapes) {
+    io.println(s.describe())
+  }
   io.println("total ${total(shapes)}")
   val one: Shape = Circle(r: 2.0)
   io.println("${one.name()} ${one.area()} $one")

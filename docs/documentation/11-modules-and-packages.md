@@ -84,6 +84,10 @@ exports = ["geometry"]        # modules other packages may import
 
 [dependencies]
 utils = "../utils"            # a path dependency
+
+[format]
+indent = 2                    # spaces per level, or "tab"; the default is 2
+max_blank_lines = 1           # consecutive blank lines kept by `veles fmt`
 ```
 
 - `exports` is the package's public surface. `pub` makes something
@@ -169,4 +173,4 @@ There is no assertion library in the bootstrap; a small `expectEq`
 throwing a struct, as above, is the idiom. The error value is what gets
 printed, so make it descriptive.
 
-Next: [Concurrency](12-concurrency.md).
+Next: [Concurrency](12-concurrency.md), or [Files, paths and processes](15-files-and-processes.md) for the modules a tool needs.

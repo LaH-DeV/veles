@@ -250,3 +250,40 @@ func TestModuleDoc(t *testing.T) {
 		t.Errorf("doc without a blank line: module=%q fun=%q", f.Doc, f.Decls[0].(*ast.FunDecl).Doc)
 	}
 }
+
+// TestArmHeadsAreNotLambdas: the `=>` after a guard, a subjectless
+// condition or a race source belongs to the arm, even when the head ends
+// in a name; a lambda inside brackets in the head still parses.
+func TestArmHeadsAreNotLambdas(t *testing.T) {
+	src := `
+fun f(v: i64, limit: i64, xs: List<i64>): string = when (v) {
+  is i64 if v > limit => "big"
+  in 0..9 if xs.any(x => x == v) => "listed"
+  Nothing => "none"
+  else => "small"
+}
+fun g(n: i64, limit: i64): string = when {
+  n > limit => "over"
+  else => "under"
+}
+fun h() {
+  val w = race {
+    val v = t => v
+    timer => 0
+  }
+}
+`
+	f, diags := parse(t, src)
+	if diags.HasErrors() {
+		t.Fatalf("parse errors:\n%s", diags.Render())
+	}
+	dump := ast.Dump(f)
+	for _, want := range []string{"(when v", "(lambda (x)", "Nothing => ", "(race"} {
+		if !strings.Contains(dump, want) {
+			t.Errorf("dump lacks %q:\n%s", want, dump)
+		}
+	}
+	if strings.Contains(dump, "(lambda (limit)") || strings.Contains(dump, "(lambda (t)") || strings.Contains(dump, "(lambda (Nothing)") {
+		t.Errorf("an arm head was read as a lambda:\n%s", dump)
+	}
+}

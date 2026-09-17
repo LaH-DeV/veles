@@ -1,6 +1,9 @@
 use io
 
-struct Point { x: i64, y: i64 }
+struct Point {
+  x: i64
+  y: i64
+}
 
 fun wordCounts(text: List<string>): Map<string, i64> {
   var counts: MutableMap<string, i64> = mut [:]
@@ -16,7 +19,9 @@ fun main() {
   io.println("keys ${ages.keys()} values ${ages.values()} entries ${ages.entries()}")
   val counts = wordCounts(["a", "b", "a", "c", "a", "b"])
   io.println("$counts")
-  loop ((word, n) in counts) { io.println("$word=$n") }
+  loop ((word, n) in counts) {
+    io.println("$word=$n")
+  }
   var m = MutableMap<Point, string>()
   m[Point(x: 1, y: 2)] = "first"
   m.set(Point(x: 1, y: 2), "replaced")
@@ -33,11 +38,18 @@ fun main() {
   io.println("$byKey ${byKey[(1, false)] ?: []}")
   val nested: Map<string, Map<string, i64>> = ["outer": ["inner": 7]]
   io.println("${nested["outer"]?.get("inner") ?: 0}")
-  loop (k in seen) { io.print("$k ") }
+  loop (k in seen) {
+    io.print("$k ")
+  }
   io.println("")
   var big: MutableMap<i64, i64> = [:]
-  loop (i in 0..<1000) { val k = i as i64; big[k] = k * k }
-  loop (i in 0..<500) { big.remove((i * 2) as i64) }
+  loop (i in 0..<1000) {
+    val k = i as i64
+    big[k] = k * k
+  }
+  loop (i in 0..<500) {
+    big.remove((i * 2) as i64)
+  }
   io.println("${big.len()} ${big[999] ?: -1} ${big[998] ?: -1}")
   var stock = mut ["apples": 3, "pears": 0]
   stock["plums"] = 5

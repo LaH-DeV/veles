@@ -14,9 +14,9 @@ fun primes(limit: i64): List<i64> {
 }
 
 fun sign(n: i64): string = when {
-  n < 0 => "negative"
+  n < 0  => "negative"
   n == 0 => "zero"
-  else => "positive"
+  else   => "positive"
 }
 
 // Generic struct with methods, generic function with a trait bound (D6/D8)
@@ -25,21 +25,25 @@ trait Area {
   fun describe(): string = "area ${self.area()}"
 }
 
-struct Square { side: f64 }
+struct Square {
+  side: f64
+}
 impl Area for Square {
   fun area(): f64 = self.side * self.side
   override fun describe(): string = "square ${self.side}: " + "area ${self.area()}"
 }
 
 struct Pair<A, B> {
-  first: A
+  first:  A
   second: B
   fun swap(): Pair<B, A> = Pair(first: self.second, second: self.first)
 }
 
 fun <T: Area> total(xs: List<T>): f64 {
   var sum = 0.0
-  loop (x in xs) { sum += x.area() }
+  loop (x in xs) {
+    sum += x.area()
+  }
   sum
 }
 
@@ -54,12 +58,20 @@ fun wrap(): (i32, i64, u8) {
 
 // Smart casts on vars and sealed (D5/D13), pointer auto-deref (D39)
 sealed trait Expr
-struct Num : Expr { value: i64 }
-struct Add : Expr { left: *Expr, right: *Expr }
-struct Mul : Expr { left: *Expr, right: *Expr }
+struct Num : Expr {
+  value: i64
+}
+struct Add : Expr {
+  left:  *Expr
+  right: *Expr
+}
+struct Mul : Expr {
+  left:  *Expr
+  right: *Expr
+}
 
 fun eval(e: Expr): i64 = when (e) {
-  is Num(value) => value
+  is Num(value)       => value
   is Add(left, right) => eval(*left) + eval(*right)
   is Mul(left, right) => eval(*left) * eval(*right)
 }

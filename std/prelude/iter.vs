@@ -98,7 +98,7 @@ pub trait Iterable {
 
 pub struct MapIter<I: Iterator, U> {
   inner: I
-  f: fun(I::Item): U
+  f:     fun(I::Item): U
 }
 
 impl<I: Iterator, U> Iterator for MapIter<I, U> {
@@ -112,7 +112,7 @@ impl<I: Iterator, U> Iterator for MapIter<I, U> {
 
 pub struct FilterIter<I: Iterator> {
   inner: I
-  f: fun(I::Item): bool
+  f:     fun(I::Item): bool
 }
 
 impl<I: Iterator> Iterator for FilterIter<I> {
@@ -127,7 +127,7 @@ impl<I: Iterator> Iterator for FilterIter<I> {
 }
 
 pub struct TakeIter<I: Iterator> {
-  inner: I
+  inner:     I
   remaining: i64
 }
 
@@ -141,7 +141,7 @@ impl<I: Iterator> Iterator for TakeIter<I> {
 }
 
 pub struct SkipIter<I: Iterator> {
-  inner: I
+  inner:     I
   remaining: i64
 }
 
@@ -192,7 +192,7 @@ impl<A: Iterator, B: Iterator> Iterator for ZipIter<A, B> {
 // iterators over the builtin collections
 
 pub struct ListIter<T> {
-  list: List<T>
+  list:  List<T>
   index: i64 = 0
 }
 
@@ -217,8 +217,8 @@ impl<T> Iterable for MutableList<T> {
 }
 
 pub struct RangeIter<T> {
-  current: T
-  hi: T
+  current:   T
+  hi:        T
   inclusive: bool
 }
 

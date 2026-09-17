@@ -1,17 +1,22 @@
 use io
 
 sealed trait Shape
-struct Circle : Shape { radius: f64 }
-struct Rect   : Shape { w: f64, h: f64 }
-struct Point  : Shape { }
+struct Circle : Shape {
+  radius: f64
+}
+struct Rect : Shape {
+  w: f64
+  h: f64
+}
+struct Point : Shape { }
 
 const PI: f64 = 3.14159265358979
 
 fun area(shape: Shape): f64 = when (shape) {
   is Circle(radius) if radius > 100.0 => 0.0
   is Circle(radius) => PI * radius * radius
-  is Rect(w, h)     => w * h
-  is Point          => 0.0
+  is Rect(w, h) => w * h
+  is Point => 0.0
 }
 
 fun describe(shape: Shape): string = when (shape) {

@@ -1,7 +1,12 @@
 use io
 
-struct Job { id: i64 }
-struct Done { id: i64, worker: i64 }
+struct Job {
+  id: i64
+}
+struct Done {
+  id:     i64
+  worker: i64
+}
 
 fun worker(id: i64, jobs: Channel<Job>, results: Channel<Done>) {
   loop {
@@ -17,7 +22,9 @@ fun square(x: i64): i64 {
   x * x
 }
 
-error Boom { n: i64 }
+error Boom {
+  n: i64
+}
 
 fun mayFail(n: i64): i64 throws Boom {
   await sleep(1)
@@ -32,7 +39,9 @@ fun main() throws {
   scope {
     async worker(1, jobs, results)
     async worker(2, jobs, results)
-    loop (i in 1..4) { jobs.send(Job(id: i)) }
+    loop (i in 1..4) {
+      jobs.send(Job(id: i))
+    }
     jobs.close()
     var got: MutableList<i64> = []
     loop (_ in 1..4) {
@@ -63,12 +72,12 @@ fun main() throws {
     async producer(ch)
     val winner = race {
       val msg = ch.recv() => "message ${msg ?: "closed"}"
-      sleep(1000) => "timeout"
+      sleep(1000)         => "timeout"
     }
     io.println("race $winner")
     val second = race {
       val msg = ch.recv() => "message ${msg ?: "closed"}"
-      sleep(5) => "timeout"
+      sleep(5)            => "timeout"
     }
     io.println("race $second")
   }
@@ -89,7 +98,7 @@ fun producer(ch: Channel<string>) {
 
 fun slowLoop() {
   loop (i in 0..<100) {
-    io.println("Printing slowLoop iteration $i");
+    io.println("Printing slowLoop iteration $i")
     await sleep(1)
   }
   io.println("slowLoop finished (should have been cancelled)")

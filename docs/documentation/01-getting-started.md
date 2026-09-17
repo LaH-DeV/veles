@@ -84,6 +84,15 @@ completion. Its `README.md` has three-line install instructions. The
 language server is the compiler itself (`veles lsp`), so what the editor
 says and what the compiler says never disagree.
 
+The compiler is also the formatter: `veles fmt <files or directories>`
+rewrites sources in the canonical style (`--check` only lists what would
+change, `--stdout` prints one file), and the extension formats on save
+when VS Code's `editor.formatOnSave` is on. The style is fixed like
+prettier's — spacing, indentation and alignment are the formatter's job,
+and a `{ }` block always breaks onto its own lines — but the line breaks
+you choose inside argument lists, literals and method chains, and blank
+lines between statements, are kept.
+
 ## When something goes wrong
 
 The compiler reports errors with the source line and a caret, and most

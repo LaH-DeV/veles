@@ -1,6 +1,9 @@
 use io
 
-error Mismatch { expected: i64, actual: i64 }
+error Mismatch {
+  expected: i64
+  actual:   i64
+}
 
 fun add(a: i64, b: i64) = a + b
 

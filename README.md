@@ -14,10 +14,11 @@ go build -o veles.exe .
 ./veles.exe check examples/errors           # type-check only
 ./veles.exe parse examples/syntax_tour.vs   # dump the syntax tree
 ./veles.exe build examples/hello --emit-llvm   # write the LLVM IR instead of linking
+./veles.exe fmt examples std                 # format sources in place (--check lists, --stdout prints)
 ./veles.exe lsp                              # language server over stdio (see editors/vscode)
 ```
 
-New to the language? Start with [docs/documentation/index.md](docs/documentation/index.md): fourteen
+New to the language? Start with [docs/documentation/index.md](docs/documentation/index.md): fifteen
 tutorial chapters for three levels of reader plus a cheat sheet, a
 standard-library reference and a guide to error messages. Every program in
 them is compiled and run by `go test ./docs/`.
@@ -40,12 +41,13 @@ compiler/clang/flag combination and cached under the user cache directory
 | `types/` | semantic types |
 | `sema/` | modules and manifests (M1–M6), name resolution, type checking, effect inference (D2/D4/D45), lowering to a typed HIR |
 | `codegen/llvm/` | textual LLVM IR emission (I1/I2); coroutines via `llvm.coro.*`; GC type descriptors; vtables |
-| `runtime/c/` | `veles_rt.c` (strings, lists, maps), `veles_gc.c` (collector), `veles_task.c` (executor) |
-| `std/` | standard library in Veles, embedded in the compiler: `prelude` (D24: `Iterator`/`Iterable` and adapters, `extend` blocks for `string`, `List`, `Range`, `Closeable`, `Mutex`/`Atomic`, `Panic`), `io` |
-| `lsp/` | language server: diagnostics, hover, definition, symbols, completion over the compiler front end |
+| `runtime/c/` | `veles_rt.c` (strings, lists, maps), `veles_gc.c` (collector), `veles_task.c` (executor), `veles_os.c` (files, processes, environment) |
+| `std/` | standard library in Veles, embedded in the compiler: `prelude` (D24: `Iterator`/`Iterable` and adapters, `extend` blocks for `string`, `List`, `Range`, `Closeable`, `Mutex`/`Atomic`, `Panic`, `IoError`, `StringBuilder`), `io`, `os` (args, env, exit, run), `fs`, `path` |
+| `format/` | the formatter (`veles fmt`, and `textDocument/formatting` in the LSP): prettier-style — blocks always break, columns align, comments and the author's list/chain line breaks are kept |
+| `lsp/` | language server: diagnostics, hover, definition, symbols, completion, formatting over the compiler front end |
 | `editors/vscode/` | VS Code extension: TextMate grammar and client for `veles lsp` |
 | `docs/` | tutorials and reference; `go test ./docs/` runs every code block |
-| `examples/` | 23 programs with expected output; `go test ./...` compiles and runs them |
+| `examples/` | 24 programs with expected output; `go test ./...` compiles and runs them |
 
 ## Spec coverage
 

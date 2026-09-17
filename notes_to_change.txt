@@ -67,3 +67,54 @@ would change to:
 
 16. The generated `builtins.vs` stub is reference-only (not compilable Veles). If a second
    consumer for declaration files appears, consider a real `declare`-style form.
+
+--- Expansion roadmap (2026-09-17; phases from the review, in order) ---
+
+P1. DONE — `extend` blocks + the built-in method surface in Veles (string.vs, list.vs), panic(), at(-1).
+
+P2. DONE (2026-09-17) — std/os (args, program, env, exit, run, ioError), std/fs (readFile,
+   writeFile, appendFile, exists, isFile, isDir, listDir, mkdir, remove, rename, cwd), std/path
+   (join, joinAll, dir, base, ext, stem, isAbsolute), prelude IoError + StringBuilder; runtime
+   in runtime/c/veles_os.c. Left for later: reading/writing bytes (List<u8> cannot cross the
+   C ABI — needs a builtin), walking a directory tree, os.run capturing stderr / passing stdin,
+   time, random. `path.join` is binary (no variadics); `joinAll` takes a list.
+
+P2b. DONE (2026-09-17) — formatter: `veles fmt` (package format/, LSP textDocument/formatting,
+   `[format]` in veles.toml: indent, max_blank_lines). gofmt-style: fixed spacing, author line
+   breaks kept (one-line vs broken blocks/lists/chains), comments re-attached by position, author
+   parentheses kept (parser records them in Layout), columns aligned (trailing comments, `=>`
+   arms, struct field types). Braced bodies always break (prettier rule, user decision 2026-09-17);
+   only `{ }` stays inline. Tests: every repo .vs and docs block round-trips (identical AST,
+   idempotent). Not done: reflowing long lines (no max width), aligning `=` in val runs, a
+   `veles fmt` pass over the code blocks inside docs/*.md, an editor setting to disable alignment.
+
+P3. De-Rusting decisions (items 3/4/5/8 above) — each needs a decision, then is a small change:
+   - #8 `mut [..]`: recommend inferring from the expected type (`val xs: MutableList<i64> = []`
+     already works) and keeping `mut` only for untyped literals; tying it to `var` conflates
+     rebinding with element mutation.
+   - #3 `impl` blocks: keep for foreign-type impls, but allow `impl Trait { ... }` inline in a
+     struct body for types you own.
+   - #5 Some/Ok/Err: remaining spellings are in `when` patterns; give `when` the same
+     `is Ok => r` payload symmetry as the smart casts.
+   - #4 trait verbosity: `type Error` on traits could default to `Error`.
+   - `join` vs `joinToString` (both exist now): pick one.
+
+P4. Data structures (#9): Deque<T> (ring buffer over MutableList), PriorityQueue<T> (binary
+   heap; needs a comparator or the Ord marker from #14), Stack = MutableList. All Veles in the
+   prelude now that `extend` exists.
+
+P5. Engineering debt: `unsafe` hygiene (#13), missing-impl reported at the struct (#12), error-set
+   names in hover (#15), Ord marker bound (#14), Channel trySend/tryRecv, saturatingMul, moving
+   the Go-lowered eager adapters (lower_list.go/check_map.go) into the prelude after a benchmark,
+   then the big three: DWARF unwinding (D49), multi-threaded executor (D35), M7 registry/MVS —
+   and the self-hosting decision, for which P2 is the prerequisite.
+
+17. (2026-09-17, idea, not yet) A `.veles` file type could replace `veles.toml` and put the
+   package/build system fully in our hands (own syntax, parsed by the compiler). Not decided;
+   until then `veles.toml` stays and formatter options live there.
+
+18. Grammar conflict found by the formatter: a line that starts with `.` continues the previous
+   line (method chains), so a leading-dot variant pattern (`.none => ...`, `.some(x) => ...`, D5)
+   can never begin a `when` arm on its own line — only `null` / `Some(x)` work there. Also
+   fixed along the way: `Name => ...` and `... if x > limit => ...` in arm heads were read as
+   lambdas (parser `noLambda`, `parseArmHead`). Decide whether leading-dot patterns stay.

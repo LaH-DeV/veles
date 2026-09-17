@@ -1,8 +1,12 @@
 use io
 
 // A user-defined iterable: a countdown (D42)
-struct Countdown { from: i64 }
-struct CountdownIter { current: i64 }
+struct Countdown {
+  from: i64
+}
+struct CountdownIter {
+  current: i64
+}
 
 impl Iterator for CountdownIter {
   type Item = i64
@@ -21,12 +25,16 @@ impl Iterable for Countdown {
 
 fun <I: Iterable> summarize(xs: I): string {
   var parts: MutableList<string> = []
-  loop (x in xs) { parts.push("$x") }
+  loop (x in xs) {
+    parts.push("$x")
+  }
   parts.joinToString("|")
 }
 
 fun main() {
-  loop (n in Countdown(from: 3)) { io.println("t-minus $n") }
+  loop (n in Countdown(from: 3)) {
+    io.println("t-minus $n")
+  }
   io.println(summarize(Countdown(from: 4)))
   io.println(summarize([7, 8, 9]))
 
@@ -39,7 +47,9 @@ fun main() {
   io.println("${nums.iter().zip(["a", "b", "c"].iter()).toList()}")
   io.println("count ${Countdown(from: 5).iterator().count()} sum ${nums.iter().fold(0, (a, b) => a + b)}")
   io.println("any ${nums.iter().any(x => x > 5)} all ${nums.iter().all(x => x > 0)} find ${nums.iter().find(x => x > 3) ?: -1} last ${nums.iter().last() ?: -1}")
-  loop (x in (1..3).iterator().map(x => x * 100)) { io.println("mapped $x") }
+  loop (x in (1..3).iterator().map(x => x * 100)) {
+    io.println("mapped $x")
+  }
   var total = 0
   Countdown(from: 3).iterator().forEach(x => total += x)
   io.println("total $total")

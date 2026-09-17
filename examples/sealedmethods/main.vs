@@ -4,8 +4,13 @@ sealed trait Shape {
   fun area(): f64
   fun describe(): string = "shape with area ${self.area()}"
 }
-struct Circle : Shape { r: f64 }
-struct Rect : Shape { w: f64, h: f64 }
+struct Circle : Shape {
+  r: f64
+}
+struct Rect : Shape {
+  w: f64
+  h: f64
+}
 
 impl Shape for Circle {
   fun area(): f64 = 3.0 * self.r * self.r

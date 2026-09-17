@@ -149,6 +149,7 @@ var runtimeSources = []struct{ name, src string }{
 	{"veles_rt", rt.Source},
 	{"veles_gc", rt.GCSource},
 	{"veles_task", rt.TaskSource},
+	{"veles_os", rt.OSSource},
 }
 
 // runtimeObjects returns object files for the C runtime. The runtime never

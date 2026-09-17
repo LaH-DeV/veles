@@ -19,6 +19,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/LaH-DeV/veles/ast"
+	"github.com/LaH-DeV/veles/driver"
+	"github.com/LaH-DeV/veles/format"
 	"github.com/LaH-DeV/veles/parser"
 	"github.com/LaH-DeV/veles/sema"
 	"github.com/LaH-DeV/veles/source"
@@ -190,6 +192,7 @@ func (s *Server) handle(req *request) {
 				"hoverProvider":          true,
 				"definitionProvider":     true,
 				"documentSymbolProvider": true,
+				"documentFormattingProvider": true,
 				"completionProvider":     map[string]any{"triggerCharacters": []string{"."}},
 			},
 			"serverInfo": map[string]any{"name": "veles-lsp", "version": "0.1"},
@@ -247,6 +250,8 @@ func (s *Server) handle(req *request) {
 		s.reply(req.ID, s.definition(req.Params))
 	case "textDocument/documentSymbol":
 		s.reply(req.ID, s.documentSymbols(req.Params))
+	case "textDocument/formatting":
+		s.reply(req.ID, s.formatting(req.Params))
 	case "textDocument/completion":
 		s.reply(req.ID, s.completion(req.Params))
 	default:
@@ -691,4 +696,29 @@ func pathToURI(path string) string {
 		u = "file:" + strings.Replace(strings.TrimPrefix(u, "file:"), ":/", "%3A/", 1)
 	}
 	return u
+}
+
+// formatting answers textDocument/formatting with one edit replacing the
+// whole document, in the style of the file's package (`[format]` in
+// veles.toml). A file that does not parse is left alone: null, no edits.
+func (s *Server) formatting(params json.RawMessage) any {
+	var p positionParams
+	json.Unmarshal(params, &p)
+	d := s.docs[p.TextDocument.URI]
+	if d == nil {
+		return nil
+	}
+	style, err := driver.StyleFor(d.path)
+	if err != nil {
+		style = format.Default
+	}
+	file := source.NewFile(d.path, d.text)
+	out, diags := format.Source(file, style)
+	if diags.HasErrors() || out == d.text {
+		return []any{}
+	}
+	return []map[string]any{{
+		"range":   lspRange{Start: lspPosition{0, 0}, End: offsetToPosition(file, len(d.text))},
+		"newText": out,
+	}}
 }

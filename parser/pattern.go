@@ -64,6 +64,11 @@ func (p *Parser) parsePattern(binding bool) ast.Pattern {
 		if p.peek(i).Kind == lexer.Ident && p.peek(i+1).Kind == lexer.LParen {
 			return p.parseTypePatternRest(start)
 		}
+		if p.peek(1).Kind == lexer.FatArrow {
+			// `Name => ...`: a bare name is the pattern, not a lambda
+			t := p.next()
+			return &ast.LiteralPat{Value: &ast.NameExpr{Name: t.Text, Pos: t.Span}}
+		}
 		x := p.parsePostfix()
 		return &ast.LiteralPat{Value: x}
 	case lexer.Dot:

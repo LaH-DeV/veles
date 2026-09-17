@@ -19,7 +19,9 @@ pub fun println(s: string) {
 
 /// Writes `s` to standard output, without a newline.
 pub fun print(s: string) {
-  unsafe { veles_print(s) }
+  unsafe {
+    veles_print(s)
+  }
 }
 
 /// Writes `s` and a newline to standard error.
@@ -34,6 +36,8 @@ pub fun eprintln(s: string) {
 /// `null` at end of input.
 pub fun readLine(): string? {
   var line = ""
-  val ok = unsafe { veles_read_line(&line) }
+  val ok = unsafe {
+    veles_read_line(&line)
+  }
   if (ok) line else null
 }

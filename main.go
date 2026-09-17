@@ -5,12 +5,14 @@
 //	veles check <file.vs | dir>   type-check only
 //	veles parse <file.vs>         dump the syntax tree
 //	veles tokens <file.vs>        dump the token stream
+//	veles fmt   <paths...>        format source files in place (--check, --stdout)
 //	veles lsp                     language server over stdio
 package main
 
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/LaH-DeV/veles/ast"
 	"github.com/LaH-DeV/veles/driver"
@@ -21,7 +23,7 @@ import (
 )
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: veles <build|run|test|check|parse|tokens> <path> [-o output] [--emit-llvm] [--keep] [--release] [-- args...] | veles lsp")
+	fmt.Fprintln(os.Stderr, "usage: veles <build|run|test|check|parse|tokens> <path> [-o output] [--emit-llvm] [--keep] [--release] [-- args...] | veles fmt <paths...> [--check] [--stdout] | veles lsp")
 	os.Exit(2)
 }
 
@@ -55,6 +57,26 @@ func main() {
 		if diags.HasErrors() {
 			os.Exit(1)
 		}
+	case "fmt":
+		opts := driver.FormatOptions{}
+		for _, a := range os.Args[2:] {
+			switch a {
+			case "--check":
+				opts.Check = true
+			case "--stdout":
+				opts.Stdout = true
+			default:
+				if strings.HasPrefix(a, "-") {
+					fmt.Fprintf(os.Stderr, "unknown flag %q\n", a)
+					usage()
+				}
+				opts.Paths = append(opts.Paths, a)
+			}
+		}
+		if len(opts.Paths) == 0 {
+			usage()
+		}
+		os.Exit(driver.Format(opts))
 	case "lsp":
 		if err := lsp.Serve(os.Stdin, os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, "veles lsp:", err)

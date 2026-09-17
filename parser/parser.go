@@ -30,6 +30,17 @@ type Parser struct {
 	// leadDoc is a documentation comment seen on a declaration's attributes,
 	// handed to the declaration that follows them.
 	leadDoc string
+
+	// noLambda is set while parsing the head of a `when` or `race` arm (a
+	// guard, a condition, a source), where the `=>` that follows belongs to
+	// the arm: `x > limit => ...` must not read `limit => ...` as a lambda.
+	// Brackets reset it, so a lambda argument inside the head still works.
+	noLambda int
+
+	// parens records every parenthesised expression as the span of the
+	// expression inside the parentheses; the tree itself has no node for
+	// them, and the formatter keeps the ones the author wrote.
+	parens map[[2]int]bool
 }
 
 // ParseFile parses one source file.
@@ -39,6 +50,24 @@ func ParseFile(file *source.File, diags *source.Diagnostics) *ast.File {
 	f := p.parseFile()
 	f.Doc = doc
 	return f
+}
+
+// Layout is what the tree does not record but a formatter must keep: the
+// comments, and which expressions the author parenthesised (as the spans
+// of the expressions inside the parentheses).
+type Layout struct {
+	Comments []lexer.Comment
+	Parens   map[[2]int]bool
+}
+
+// ParseFileLayout is ParseFile plus the file's Layout, for tools that
+// reproduce the source (the formatter).
+func ParseFileLayout(file *source.File, diags *source.Diagnostics) (*ast.File, *Layout) {
+	toks, doc, comments := lexer.TokenizeAll(file, diags)
+	p := &Parser{file: file, toks: toks, diags: diags, lastErrPos: -1, parens: map[[2]int]bool{}}
+	f := p.parseFile()
+	f.Doc = doc
+	return f, &Layout{Comments: comments, Parens: p.parens}
 }
 
 // ParseExprString parses a standalone expression (used by tests).

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -26,6 +27,10 @@ type Manifest struct {
 	Exports []string
 	Deps    map[string]string // name -> path (relative to the manifest)
 	Dir     string
+	// Format holds the `[format]` table for `veles fmt`: Indent is "" for
+	// the default, a run of spaces, or a tab; MaxBlankLines is 0 for the
+	// default.
+	Format ManifestFormat
 }
 
 func readManifest(dir string) (*Manifest, error) {
@@ -74,6 +79,28 @@ func readManifest(dir string) (*Manifest, error) {
 				return nil, fmt.Errorf("%s:%d: dependency '%s' must be a path in the bootstrap, e.g. '%s = \"../%s\"' (M7's registry is not implemented)", path, n+1, key, key, key)
 			}
 			m.Deps[key] = p
+		case "format":
+			switch key {
+			case "indent":
+				switch v := tomlString(val); v {
+				case "tab":
+					m.Format.Indent = "\t"
+				default:
+					width, err := strconv.Atoi(v)
+					if err != nil || width < 1 || width > 8 {
+						return nil, fmt.Errorf("%s:%d: [format] indent must be a number of spaces (1-8) or \"tab\"", path, n+1)
+					}
+					m.Format.Indent = strings.Repeat(" ", width)
+				}
+			case "max_blank_lines":
+				limit, err := strconv.Atoi(tomlString(val))
+				if err != nil || limit < 1 {
+					return nil, fmt.Errorf("%s:%d: [format] max_blank_lines must be a positive number", path, n+1)
+				}
+				m.Format.MaxBlankLines = limit
+			default:
+				return nil, fmt.Errorf("%s:%d: unknown [format] key %q (indent, max_blank_lines)", path, n+1, key)
+			}
 		}
 	}
 	if m.Name == "" {
@@ -146,4 +173,20 @@ func stripComment(line string) string {
 		}
 	}
 	return line
+}
+
+// ManifestFormat is the `[format]` table.
+type ManifestFormat struct {
+	Indent        string
+	MaxBlankLines int
+}
+
+// ReadManifest reads the `veles.toml` of the package containing path, or
+// returns nil when there is none.
+func ReadManifest(path string) (*Manifest, error) {
+	root, _, err := FindRoot(path)
+	if err != nil {
+		return nil, err
+	}
+	return readManifest(root)
 }

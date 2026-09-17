@@ -190,6 +190,20 @@ extern "C" { fun strlen(s: *raw u8): i64 }
 val n = unsafe { strlen(p) }                  // C calls and raw pointers need unsafe (D44)
 ```
 
+## Files, paths, processes
+
+```veles
+// fragment
+use fs; use path; use os
+val text = try fs.readFile(p); try fs.writeFile(p, text); try fs.appendFile(p, "x")
+fs.exists(p); fs.isFile(p); fs.isDir(p); try fs.listDir(d); try fs.mkdir(d); try fs.remove(p); try fs.rename(a, b)
+path.join(a, b); path.joinAll([a, b, c]); path.dir(p); path.base(p); path.stem(p); path.ext(p); path.isAbsolute(p)
+os.args(); os.env("HOME"); os.exit(1); val r = try os.run("clang", ["--version"]); r.code; r.stdout; r.ok()
+val sb = stringBuilder(); sb.append("a"); sb.appendLine("b"); sb.toString()   // linear-time building
+```
+
+Everything that can fail throws `IoError { path, code, detail }`.
+
 ## Attributes (D51)
 
 `@test`, `@deprecated("msg")`, `@mustUse`, `@inline`, `@noinline`.
@@ -200,5 +214,6 @@ val n = unsafe { strlen(p) }                  // C calls and raw pointers need u
 veles run <dir>        veles build <dir> -o app [--release]
 veles check <dir>      veles test <dir>
 veles parse <file>     veles lsp     (editor server)
+veles fmt <paths>      [--check | --stdout]   format in place; [format] in veles.toml: indent = 2 | "tab", max_blank_lines = 1
 VELES_CLANG=<path>     VELES_GC_TRACE=1     VELES_GC_THRESHOLD=<bytes>
 ```
