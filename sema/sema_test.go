@@ -1231,3 +1231,54 @@ fun main() {
 }`)
 	expectError(t, prelude+`fun main() { val xs = [1]; xs.at(0).abs() }`, "may be null; use '?.'")
 }
+
+// D5/D25 (v0.24): element access and `?.` reach places. `m.getOrPanic(k)`
+// and `m.get(k)?.` name the map entry itself; a nullable variable or field
+// is written through after its null test (`if (p != null) p.n = 5`); and
+// assignment through `?.` (`x?.f = v`, `x?.f op= v`) writes only when the
+// receiver is present. Immutable collections and `val` structs stay closed.
+func TestPlacesThroughNullables(t *testing.T) {
+	expectClean(t, prelude+`
+struct C { n: i64 = 0
+  mut fun bump() { self.n += 1 } }
+struct Box { c: C? = null }
+fun main() {
+  val m: MutableMap<string, C> = ["a": C()]
+  m.get("a")?.bump()
+  m.get("a")?.n += 1
+  m.get("zz")?.n = 9
+  m.getOrPanic("a").bump()
+  m.getOrPanic("a").n = 3
+  val p = &m.getOrPanic("a")
+  p.n += 1
+  val xs: MutableList<C> = [C()]
+  xs.at(0)?.n = 7
+  xs.first()?.n *= 2
+  xs.last()?.bump()
+  var q: C? = C()
+  if (q != null) {
+    q.n = 5
+    q.bump()
+  }
+  q?.n += 1
+  var b = Box(c: C())
+  b.c?.n = 8
+  b.c?.bump()
+  var r: (*C)? = &xs.atOrPanic(0)
+  r?.n = 1
+  io.println("$m $xs $q ${b.c}")
+}`)
+	for _, c := range []struct{ src, want string }{
+		{`fun main() { val f = ["b": C()]; f.get("b")?.bump() }`, "on an element of an immutable collection"},
+		{`fun main() { val f = ["b": C()]; f.get("b")?.n = 1 }`, "into an element of an immutable collection"},
+		{`fun main() { val f = ["b": C()]; f.getOrPanic("b").bump() }`, "immutable Map"},
+		{`fun main() { val xs = [C()]; xs.at(0)?.bump() }`, "on an element of an immutable collection"},
+		{`fun main() { val xs = [C()]; xs.atOrPanic(0).n = 1 }`, "immutable List"},
+		{`fun make(): C? = C()
+fun main() { make()?.n = 1 }`, "into a temporary value of type 'C' has no effect"},
+		{`fun main() { val p: C? = C(); p?.n = 1 }`, "it is a 'val'"},
+		{`fun main() { var p: C = C(); p?.n = 1 }`, "'?.' on a non-nullable value"},
+	} {
+		expectError(t, prelude+"struct C { n: i64 = 0\n  mut fun bump() { self.n += 1 } }\n"+c.src, c.want)
+	}
+}

@@ -125,6 +125,9 @@ reads above carry `?: 0`. This is the honest type: a lookup can fail.
 keys you know are there; `m.getOrDefault(key, d)` is `m.get(key) ?: d`.
 Writing `m.set(key, value)` requires a `MutableMap` and inserts or
 replaces. There is no bracket form: `[...]` only ever builds a literal.
+An entry is a *place*: `m.getOrPanic(key).bump()` and `m.get(key)?.n += 1`
+change the value stored in the map, not a copy of it (chapter 6 has the
+full story).
 
 Keys must be **hashable**: numbers, strings, booleans, tuples of those,
 and structs whose fields are (structs get equality and hashing for

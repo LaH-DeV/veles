@@ -37,6 +37,10 @@ func isPlace(e sema.Expr) bool {
 		return isPlace(e.X)
 	case *sema.TupleGet:
 		return isPlace(e.X)
+	case *sema.Unwrap:
+		return isPlace(e.X)
+	case *sema.VariantCast:
+		return isPlace(e.X)
 	case *sema.Builtin:
 		return e.Op == "list.ref"
 	}
@@ -50,6 +54,24 @@ func (g *gen) place(e sema.Expr) string {
 		return g.varPtr(e.Var)
 	case *sema.Deref:
 		return g.expr(e.X)
+	case *sema.Unwrap:
+		// the payload of a nullable place (after a null test): a pointer-like
+		// nullable is the payload itself; otherwise field 1 of {i1, T}
+		base := g.place(e.X)
+		nt := e.X.Type().(*types.Nullable)
+		if isPtrLike(nt.Elem) {
+			return base
+		}
+		p := g.newTmp()
+		g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 1", p, g.llType(nt), base)
+		return p
+	case *sema.VariantCast:
+		// the payload of a sealed place (after `is Variant`): field 1 of the
+		// tagged union, read as the variant's own layout
+		base := g.place(e.X)
+		p := g.newTmp()
+		g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 1", p, g.llType(e.X.Type()), base)
+		return p
 	case *sema.FieldGet:
 		base := g.place(e.X)
 		p := g.newTmp()

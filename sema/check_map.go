@@ -142,24 +142,12 @@ func (f *fnCtx) mapMethod(recv Expr, mt *types.Map, name string, e *ast.CallExpr
 		k := f.checkExprTo(e.Args[0].Value, mt.Key)
 		return &Builtin{exprBase{&types.Nullable{Elem: mt.Value}}, "map.get", []Expr{recv, k}, span}
 	case "getOrPanic":
-		// `m.getOrPanic(k)` is `m.get(k) ?: panic(...)`: `V`, a panic when absent.
+		// `m.getOrPanic(k)`: `V`, a panic when absent; a place, so a
+		// value-struct entry is mutated where it lives (lint_index.go)
 		if !need(1) {
 			return bad()
 		}
-		m := f.newTemp(mt)
-		k := f.newTemp(mt.Key)
-		get := &Builtin{exprBase{&types.Nullable{Elem: mt.Value}}, "map.get", []Expr{ref(m), ref(k)}, span}
-		msg := &StringConcat{exprBase{types.TString}, []Expr{
-			&StringConst{exprBase{types.TString}, "key "},
-			&ToString{exprBase{types.TString}, ref(k)},
-			&StringConst{exprBase{types.TString}, " not found in map"},
-		}}
-		fail := &Builtin{exprBase{types.TNever}, "panic", []Expr{msg}, span}
-		body := &Block{Stmts: []Stmt{
-			&VarDecl{Var: m, Init: recv},
-			&VarDecl{Var: k, Init: f.checkExprTo(e.Args[0].Value, mt.Key)},
-		}, Value: &Elvis{exprBase{mt.Value}, get, fail}, Type: mt.Value}
-		return &BlockExpr{exprBase{mt.Value}, body}
+		return f.mapElemPlace(recv, mt, e.Args[0].Value, span, false)
 	case "getOrDefault":
 		// `m.getOrDefault(k, d)` is `m.get(k) ?: d`.
 		if !need(2) {

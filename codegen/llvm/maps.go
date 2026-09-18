@@ -101,6 +101,45 @@ func (g *gen) mapBuiltin(e *sema.Builtin) (string, bool) {
 		out := g.newTmp()
 		g.emit("%s = load %s, ptr %s", out, g.llType(nt), res)
 		return out, true
+	case "map.ref", "map.refOrPanic":
+		// the value slot as a pointer: null when the key is absent (`map.ref`,
+		// typed `(*V)?`) or a panic (`map.refOrPanic`, typed `*V`). The slot
+		// stays valid until the map grows; the collector keeps the old
+		// storage alive while a pointer into it exists (D10).
+		kt, _ := keyValTypes(e.Args[0].Type())
+		m := g.expr(e.Args[0])
+		k := g.expr(e.Args[1])
+		h, kp, eq := g.keyArgs(kt, k)
+		idx := g.newTmp()
+		g.emit("%s = call i64 @veles_map_find(ptr %s, i64 %s, ptr %s, ptr %s)", idx, m, h, kp, eq)
+		found := g.newTmp()
+		g.emit("%s = icmp sge i64 %s, 0", found, idx)
+		if e.Op == "map.refOrPanic" {
+			hit, miss := g.newLabel("map.hit"), g.newLabel("map.miss")
+			g.emitTerm("br i1 %s, label %%%s, label %%%s", found, hit, miss)
+			g.placeLabel(miss)
+			msg := g.concat(g.concat(g.stringConst("key "), g.show(kt, k)), g.stringConst(" not found in map"))
+			sp, sl := g.strPtrLen(msg)
+			g.emit("call void @veles_panic(ptr %s, i64 %s)", sp, sl)
+			g.emitTerm("unreachable")
+			g.placeLabel(hit)
+			vp := g.newTmp()
+			g.emit("%s = call ptr @veles_map_val_at(ptr %s, i64 %s)", vp, m, idx)
+			return vp, true
+		}
+		res := g.alloca("ptr")
+		g.emit("store ptr null, ptr %s", res)
+		hit, end := g.newLabel("map.hit"), g.newLabel("map.end")
+		g.emitTerm("br i1 %s, label %%%s, label %%%s", found, hit, end)
+		g.placeLabel(hit)
+		vp := g.newTmp()
+		g.emit("%s = call ptr @veles_map_val_at(ptr %s, i64 %s)", vp, m, idx)
+		g.emit("store ptr %s, ptr %s", vp, res)
+		g.emitTerm("br label %%%s", end)
+		g.placeLabel(end)
+		out := g.newTmp()
+		g.emit("%s = load ptr, ptr %s", out, res)
+		return out, true
 	case "map.contains":
 		kt, _ := keyValTypes(e.Args[0].Type())
 		m := g.expr(e.Args[0])

@@ -112,6 +112,52 @@ or `&u` being taken. Fields reached *through a pointer* (`p.address` with
 pointer to the same value could change them in between; bind the field to
 a `val` first.
 
+## Updating through `?.`
+
+A narrowed value is not a copy: after the null test you can write to it
+and call `mut` methods on it, and the change lands in the variable, field
+or collection element it came from. `?.` does the same in one step — on a
+call, and on an assignment, which happens only when the left side is
+present and is skipped otherwise:
+
+```veles
+use io
+
+struct Counter {
+  n: i64 = 0
+
+  mut fun bump() {
+    self.n += 1
+  }
+}
+
+fun main() {
+  var maybe: Counter? = Counter()
+  if (maybe != null) {
+    maybe.n = 5
+    maybe.bump()
+  }
+  maybe?.n += 1
+
+  val tally: MutableMap<string, Counter> = ["hits": Counter()]
+  tally.get("hits")?.bump()
+  tally.get("hits")?.n += 10
+  tally.get("misses")?.bump()     // no entry: nothing happens
+  io.println("$maybe $tally")
+}
+```
+
+Output:
+```text
+Counter(n: 7) {hits: Counter(n: 11)}
+```
+
+This is why get-and-update code rarely needs `atOrPanic` or
+`getOrPanic`: `?.` *is* the presence test. Two things stay closed to it —
+a `val` struct and the elements of an immutable `List` or `Map` — and a
+write into a genuine temporary (`make()?.n = 1`) is an error, because it
+could never be observed.
+
 ## Where `T?` shows up
 
 - `map.get(key)`, `list.at(i)`, `list.first()`, `list.pop()`,

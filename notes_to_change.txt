@@ -344,3 +344,26 @@ P10 progress (2026-09-18):
    (check_call.go, the `isPlaceSyntax(callee.X)` branch). Open question: should map values be
    addressable instead (`m.getOrPanic(k).bump()` in place, like lists)? That would need a
    `map.ref` runtime primitive and would make the lint mostly moot for maps.
+
+P10 progress (2026-09-18, later) — decision B on item 20 (user): structs stay values; element
+   access and `?.` are PLACES. Done:
+   - map entries are addressable: codegen `map.ref` ((*V)?, null when absent) and
+     `map.refOrPanic` (*V) in codegen/llvm/maps.go; `m.getOrPanic(k)` is now Deref(map.refOrPanic)
+     — value and lvalue at once (`m.getOrPanic(k).bump()`, `m.getOrPanic(k).n = 1`,
+     `&m.getOrPanic(k)`).
+   - `?.` calls reach places: sema/lint_index.go `elemSafePlace` (list at/first/last, map get)
+     returns {pre, cond, place, value, mutable}; methodCall passes AddrOf(place) for a mutable
+     collection, the value for an immutable one (+ `readOnlyRecv` → error for a mut method).
+   - narrowed places are writable: codegen `place()` handles Unwrap ({i1,T} field 1; ptr-like =
+     itself) and VariantCast (tagged field 1); sema `narrowLValue` applies the smart cast to
+     lvalue bases (`if (p != null) p.n = 5`, `p.bump()`; `is Circle` then `shape.radius = 1`).
+   - assignment through `?.`: sema/check_safe.go (`safeMemberOf`, `safeAssign`, `safeReceiver`):
+     `x?.f = v`, `x?.f op= v`, `x?.a.b = v`; receiver = nullable var/field (payload place),
+     nullable pointer, or collection element; a value-struct temporary is an ERROR ("has no
+     effect"); val / immutable collections refused. Implementation trick: the receiver is bound
+     in `fnCtx.boundPlace` and the member's Safe flag is cleared while the target is checked as
+     an ordinary lvalue (restored by defer).
+   - `checkElemWritable`: a field write rooted in an element of an immutable List/Map errors.
+   - Spec D5 + D25 amended; docs 06 "Updating through `?.`", 04 note; examples/indexing extended.
+   Item 20's lint (mut fun on a temporary value struct, result discarded) is still open, now
+   only for genuine temporaries like `make().bump()`.

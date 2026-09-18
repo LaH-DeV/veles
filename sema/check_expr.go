@@ -168,6 +168,9 @@ func numericHint(want types.Type) types.Type {
 // checkExpr checks an expression. want is a hint (may be nil); the caller
 // performs the final coercion.
 func (f *fnCtx) checkExpr(e ast.Expr, want types.Type) Expr {
+	if p, ok := f.boundPlace[e]; ok {
+		return p // the receiver of a `?.` write (check_safe.go)
+	}
 	switch e := e.(type) {
 	case *ast.IntLit:
 		return f.intLit(e, want, false)
@@ -1638,11 +1641,11 @@ func isPlaceSyntax(e ast.Expr) bool {
 	return false
 }
 
-// isElemPlaceCall recognises `xs.atOrPanic(i)`, the call that names a list
-// element in place (checkLValue, lint_index.go).
+// isElemPlaceCall recognises `xs.atOrPanic(i)` and `m.getOrPanic(k)`, the
+// calls that name a collection element in place (checkLValue, lint_index.go).
 func isElemPlaceCall(e *ast.CallExpr) bool {
 	m, ok := e.Fun.(*ast.MemberExpr)
-	return ok && !m.Safe && m.Name.Name == "atOrPanic" && len(e.Args) == 1 && e.Args[0].Name == nil
+	return ok && !m.Safe && (m.Name.Name == "atOrPanic" || m.Name.Name == "getOrPanic") && len(e.Args) == 1 && e.Args[0].Name == nil
 }
 
 // mergeFacts intersects the narrowing state of two joining paths; a nil

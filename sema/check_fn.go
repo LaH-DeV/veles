@@ -30,17 +30,19 @@ type fnCtx struct {
 	isGlobal bool // checking a global initializer
 
 	// lambda support
-	parent      *fnCtx
-	vars        map[*Var]bool // variables declared in this function
-	captures    map[*Var]*Var // outer variable -> inner stand-in
-	captureList []*Var        // outer variables in environment order
-	isLambda    bool
-	pending     []Stmt // statements hoisted by adapter lowering
-	scopes      []*ScopeBlock
-	awaitNext   bool
-	inRaceArm   bool
-	inferThrows bool
-	inferredRet types.Type
+	parent       *fnCtx
+	vars         map[*Var]bool // variables declared in this function
+	captures     map[*Var]*Var // outer variable -> inner stand-in
+	captureList  []*Var        // outer variables in environment order
+	isLambda     bool
+	pending      []Stmt            // statements hoisted by adapter lowering
+	boundPlace   map[ast.Expr]Expr // receiver of a `?.` assignment, already lowered to its place (check_safe.go)
+	readOnlyRecv bool              // the next method receiver is an element of an immutable collection (methodCall)
+	scopes       []*ScopeBlock
+	awaitNext    bool
+	inRaceArm    bool
+	inferThrows  bool
+	inferredRet  types.Type
 }
 
 type loopFrame struct {
@@ -548,6 +550,9 @@ func (f *fnCtx) checkReturn(s *ast.ReturnStmt) []Stmt {
 
 // checkAssign handles `target = value` and compound assignment.
 func (f *fnCtx) checkAssign(s *ast.AssignStmt) []Stmt {
+	if safe := safeMemberOf(s.Target); safe != nil {
+		return f.safeAssign(s, safe)
+	}
 	if ix, ok := s.Target.(*ast.IndexExpr); ok {
 		// removed form (lint_index.go): reported once here with its fix, then
 		// typed as before so nothing else cascades
@@ -610,6 +615,9 @@ func (f *fnCtx) checkAssign(s *ast.AssignStmt) []Stmt {
 // when the place is rooted in a local or global variable (not through a
 // pointer), that variable. With mutate=true it enforces D11/D22 mutability.
 func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
+	if p, ok := f.boundPlace[e]; ok {
+		return p, nil // the receiver of a `?.` write (check_safe.go)
+	}
 	switch e := e.(type) {
 	case *ast.NameExpr:
 		sym := f.scope.Lookup(e.Name)
@@ -664,6 +672,11 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 			x := f.checkExpr(e.X, nil)
 			base = x
 			root = nil
+		} else {
+			base = f.narrowLValue(base, e.X)
+			if mutate {
+				f.checkElemWritable(base, e.Pos)
+			}
 		}
 		bt := base.Type()
 		if p, ok := bt.(*types.Pointer); ok {
@@ -701,13 +714,17 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 		f.indexRead(e, false)
 		return f.listElemPlace(x, lt, e.Index, e.Pos, mutate), nil
 	case *ast.CallExpr:
-		// `xs.atOrPanic(i)` names an element in place, so a value-struct
-		// element can be mutated where it lives: `xs.atOrPanic(i).bump()`,
-		// `xs.atOrPanic(i).n = 1`, `&xs.atOrPanic(i)`.
+		// `xs.atOrPanic(i)` and `m.getOrPanic(k)` name an element in place, so
+		// a value-struct element can be mutated where it lives:
+		// `xs.atOrPanic(i).bump()`, `m.getOrPanic(k).n = 1`, `&xs.atOrPanic(i)`.
 		if isElemPlaceCall(e) {
-			x := f.checkExpr(e.Fun.(*ast.MemberExpr).X, nil)
-			if lt, ok := x.Type().(*types.List); ok {
+			m := e.Fun.(*ast.MemberExpr)
+			x := f.checkExpr(m.X, nil)
+			if lt, ok := x.Type().(*types.List); ok && m.Name.Name == "atOrPanic" {
 				return f.listElemPlace(x, lt, e.Args[0].Value, e.Pos, mutate), nil
+			}
+			if mt, ok := x.Type().(*types.Map); ok && m.Name.Name == "getOrPanic" {
+				return f.mapElemPlace(x, mt, e.Args[0].Value, e.Pos, mutate), nil
 			}
 			if types.IsInvalid(x.Type()) {
 				return nil, nil

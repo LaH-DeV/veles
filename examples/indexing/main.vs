@@ -38,19 +38,36 @@ fun main() {
   counters.at(7)?.bump()
   counters.first()?.bump()
   counters.last()?.bump()
+  // and assignment through `?.` writes only when the element is there
+  counters.at(0)?.n += 1
+  counters.at(9)?.n = 1000
   io.println("${counters.atOrPanic(0).n} ${counters.atOrPanic(1).n} ${counters.at(1)?.show()} ${counters.at(9)?.show()}")
 
   val grid = [[1, 2], [3, 4]]
   io.println("${grid.atOrPanic(1).atOrPanic(0)}")
 
   val ages = ["ann": 41, "bob": 29]
-  io.println("${ages.get("ann")} ${ages.get("zed")} ${ages.getOrDefault("zed", 0)} ${ages.getOrPanic("bob")}")
+  io.println("${ages.get("ann")} ${ages.get("zed")} ${ages.getOrDefault("zed", 0)} ${ages.getOrPanic("bob")} ${ages.containsKey("zed")}")
   var stock: MutableMap<string, i64> = [:]
   stock.set("pears", 5)
   stock.set("pears", stock.getOrPanic("pears") + 1)
-  io.println("$stock")
+  // a map entry is a place too: `getOrPanic` and `get(k)?.` reach the
+  // stored value, so a value struct is updated in the map, not in a copy
+  val tally: MutableMap<string, Counter> = ["hits": Counter()]
+  tally.getOrPanic("hits").bump()
+  tally.get("hits")?.bump()
+  tally.get("hits")?.n += 10
+  tally.get("misses")?.bump()
+  io.println("$stock $tally")
 
-  io.println("${ages.containsKey("zed")}")
+  // a nullable variable is written through after its null test, or with `?.`
+  var maybe: Counter? = Counter()
+  if (maybe != null) maybe.n = 5
+  maybe?.n += 1
+  var nothing: Counter? = null
+  nothing?.n = 1
+  io.println("$maybe $nothing")
+
   // out of range is a panic, never a thrown error
   io.println("${ages.getOrPanic("zed")}")
 }

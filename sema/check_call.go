@@ -515,18 +515,25 @@ func (f *fnCtx) fieldDefault(st *types.Struct, i int) Expr {
 func (f *fnCtx) methodCall(callee *ast.MemberExpr, typeArgs []types.Type, e *ast.CallExpr, want types.Type) Expr {
 	var recv Expr
 	if callee.Safe {
-		// `xs.at(i)?.m()` (also first/last) reaches the element in place
-		// rather than through the copy `at` returns, so a `mut fun` on a
-		// value-struct element sticks (lint_index.go).
-		pre, inRange, place, elem, ok := f.listElemSafePlace(callee.X)
-		if ok {
-			ptr := &AddrOf{exprBase{&types.Pointer{Elem: place.Type()}}, place}
-			inner := f.dispatchMethod(ptr, callee, typeArgs, e, want)
+		// `xs.at(i)?.m()` (also first/last, and `m.get(k)?.m()`) reaches the
+		// element in place rather than through the copy `at`/`get` returns,
+		// so a `mut fun` on a value-struct element sticks (lint_index.go). An
+		// element of an immutable collection is read, so the method sees a
+		// copy, as any temporary does.
+		sp, elem := f.elemSafePlace(callee.X)
+		if sp != nil {
+			var target Expr = sp.value
+			if sp.mutable {
+				target = &AddrOf{exprBase{&types.Pointer{Elem: sp.place.Type()}}, sp.place}
+			}
+			f.readOnlyRecv = !sp.mutable
+			inner := f.dispatchMethod(target, callee, typeArgs, e, want)
+			f.readOnlyRecv = false
 			if types.IsInvalid(inner.Type()) {
 				return inner
 			}
-			body := f.safeCallBranch(inner, inRange)
-			return &BlockExpr{exprBase{body.Type()}, &Block{Stmts: pre, Value: body, Type: body.Type()}}
+			body := f.safeCallBranch(inner, sp.cond)
+			return &BlockExpr{exprBase{body.Type()}, &Block{Stmts: sp.pre, Value: body, Type: body.Type()}}
 		}
 		recv = elem // the receiver, checked once either way
 	}
@@ -751,8 +758,15 @@ func (f *fnCtx) callMethod(t *FuncTemplate, ownerSubst map[*types.TypeParam]type
 		f.errorf(callee.Name.Pos, "method '%s' is private to module '%s' (M5)", t.Name, t.Module.Path)
 	}
 	var recvArg Expr = recv
+	readOnly := f.readOnlyRecv
+	f.readOnlyRecv = false
 	if t.Decl.Mut {
 		// D22: a mut method needs a mutable place.
+		if readOnly {
+			f.errorf(callee.Name.Pos, "cannot call the 'mut' method '%s' on an element of an immutable collection; use MutableList / MutableMap (D25)", t.Name)
+			f.checkArgsLoosely(e.Args)
+			return bad()
+		}
 		if viaPointer {
 			recvArg = recv.(*Deref).X
 		} else {
@@ -770,6 +784,7 @@ func (f *fnCtx) callMethod(t *FuncTemplate, ownerSubst map[*types.TypeParam]type
 			if lv == nil {
 				return bad()
 			}
+			lv = f.narrowLValue(lv, callee.X)
 			markUsed(root) // a mut method call reads its receiver
 			if root != nil {
 				f.invalidatePaths(root) // and may rewrite its fields

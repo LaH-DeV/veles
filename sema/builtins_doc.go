@@ -82,8 +82,8 @@ var builtinDocs = []BuiltinDoc{
 
 	{"Map", "len", "(): i64", "Number of entries."},
 	{"Map", "isEmpty", "(): bool", "True when there are no entries."},
-	{"Map", "get", "(key: K): V?", "The value for `key`, or `null` when there is no entry."},
-	{"Map", "getOrPanic", "(key: K): V", "The value for `key`; panics when there is no entry."},
+	{"Map", "get", "(key: K): V?", "The value for `key`, or `null` when there is no entry. `m.get(k)?.f = v` and `m.get(k)?.m()` reach the stored value when it is there."},
+	{"Map", "getOrPanic", "(key: K): V", "The value for `key`; panics when there is no entry. Names the entry in place, so `m.getOrPanic(k).bump()` mutates the stored value (as does `m.get(k)?.bump()`)."},
 	{"Map", "getOrDefault", "(key: K, d: V): V", "The value for `key`, or `d` when there is no entry; `m.get(key) ?: d`."},
 	{"Map", "containsKey", "(key: K): bool", "True when `key` has an entry."},
 	{"Map", "keys", "(): List<K>", "The keys."},
