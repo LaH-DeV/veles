@@ -308,14 +308,75 @@ pub trait Iterator {
 
 Each iterator names its `Item`; `next()` returns `Item?`, null at the
 end. Inside the trait the associated type is used by its bare name;
-outside, as `I::Item`. [Chapter 10](10-closures-and-iterators.md) shows
+outside, as `I.Item`. [Chapter 10](10-closures-and-iterators.md) shows
 an implementation and what it buys you.
 
 ## Effects on trait methods
 
-A trait method that may fail or suspend must say so — `fun fetch(url:
-string): string suspends throws FetchError` — because callers dispatch on
-the trait, not on any one body (D40). Implementations may throw *less*
-than declared, never more.
+A trait method that may fail or suspend must say so, because callers
+dispatch on the trait, not on any one body (D40). For errors there are
+two spellings:
+
+- `throws FetchError` fixes the error type: every implementation throws
+  `FetchError` (or nothing), and callers see `FetchError` wherever they
+  call it.
+- a bare `throws` leaves the error to each implementation. The
+  implementation's `fetch` declares its own, or just writes `throws` and
+  lets the compiler infer it from the body as for any function; one that
+  cannot fail costs its callers nothing. Generic code names it `F.Error`:
+
+```veles
+use io
+
+error HttpError { status: i64 }
+error Missing { name: string }
+
+trait Fetcher {
+  fun fetch(url: string): string throws
+}
+
+struct Http {
+  impl Fetcher {
+    fun fetch(url: string): string throws {
+      if (url.startsWith("bad")) throw HttpError(status: 500)
+      "http:$url"
+    }
+  }
+}
+
+struct Memory {
+  data: Map<string, string>
+
+  impl Fetcher {
+    fun fetch(url: string): string throws Missing = self.data.get(url) ?: throw Missing(name: url)
+  }
+}
+
+fun load<F: Fetcher>(f: F, url: string): string throws F.Error {
+  val body = try f.fetch(url)
+  "[$body]"
+}
+
+fun main() {
+  io.println("${load(Http(), "x")}")
+  val r = load(Http(), "bad")
+  if (r.err) io.println("http: ${r.message()}")
+  val m = load(Memory(data: ["k": "v"]), "zz")
+  if (m.err) io.println("memory: ${m.name}")
+}
+```
+
+Output:
+```text
+Ok(value: [http:x])
+http: HttpError(status: 500)
+memory: zz
+```
+
+`load` with `Memory` throws exactly `Missing` — the error is the
+implementation's, not a union of everything any implementation might
+throw. A trait whose error is left to the implementation cannot be used
+as a trait object yet (`Fetcher` as a value); give it a fixed error type
+for that.
 
 Next: [Sealed types and `when`](09-sealed-types.md).

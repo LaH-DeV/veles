@@ -3,6 +3,7 @@ package parser
 import (
 	"github.com/LaH-DeV/veles/ast"
 	"github.com/LaH-DeV/veles/lexer"
+	"github.com/LaH-DeV/veles/source"
 )
 
 // parseType parses a type. Postfix `?` binds tighter than prefix `*` (D5),
@@ -55,6 +56,12 @@ func (p *Parser) parseType() ast.Type {
 	case lexer.KwSelfTy:
 		p.next()
 		t = &ast.SelfType{Pos: start}
+		// `Self.Item`: an associated type of the implementing type
+		for p.at(lexer.Dot) && p.peek(1).Kind == lexer.Ident {
+			p.next()
+			name, _ := p.expectIdent()
+			t = &ast.AssocType{Base: t, Name: name, Pos: p.spanFrom(start)}
+		}
 	case lexer.Ident:
 		nt := &ast.NamedType{}
 		for {
@@ -76,11 +83,11 @@ func (p *Parser) parseType() ast.Type {
 		return &ast.NamedType{Path: []ast.Ident{{Name: "<error>", Pos: start}}, Pos: start}
 	}
 
-	// postfix: `::Assoc` projections and `?`
+	// postfix: `?`, and the removed `::Assoc` spelling (reported, then read as `.`)
 	for {
 		switch {
 		case p.at(lexer.DblColon):
-			p.next()
+			p.dblColon()
 			name, _ := p.expectIdent()
 			t = &ast.AssocType{Base: t, Name: name, Pos: p.spanFrom(start)}
 		case p.at(lexer.Question):
@@ -144,4 +151,21 @@ func (p *Parser) parseErrorType() ast.Type {
 	}
 	u.Pos = p.spanFrom(start)
 	return u
+}
+
+// dblColon consumes a `::` and reports it: associated types are written
+// with a dot (`Self.Item`, `I.Item`, v0.24). The fix rewrites it.
+func (p *Parser) dblColon() {
+	tok := p.cur()
+	p.next()
+	if tok.Span.Start == p.lastErrPos {
+		return
+	}
+	p.lastErrPos = tok.Span.Start
+	p.diags.Items = append(p.diags.Items, source.Diagnostic{
+		Severity: source.Error,
+		Span:     tok.Span,
+		Message:  "'::' is not Veles; an associated type is written with a dot: 'Self.Item', 'I.Item'",
+		Fix:      &source.Fix{Title: "Replace '::' with '.'", Edits: []source.TextEdit{{Span: tok.Span, NewText: "."}}},
+	})
 }

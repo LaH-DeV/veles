@@ -394,6 +394,15 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 		for _, at := range d.AssocTypes {
 			t.AssocTypes = append(t.AssocTypes, at.Name.Name)
 		}
+		// a bare `throws` on a method means "each impl decides": the trait
+		// gets an implicit associated type `Error` (D40, v0.24)
+		for _, md := range d.Methods {
+			if md.Effects.Throws && md.Effects.Error == nil && !containsString(t.AssocTypes, "Error") {
+				t.AssocTypes = append(t.AssocTypes, "Error")
+				t.ImplicitError = true
+				break
+			}
+		}
 		ctx := &declCtx{module: m, file: f, decl: d, tps: map[string]*types.TypeParam{}}
 		for i, tp := range d.TypeParams {
 			p := &types.TypeParam{Name: tp.Name.Name, Index: i, Owner: d.Name.Name}
@@ -659,6 +668,22 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 				return &types.Set{Elem: k, Mutable: name == "MutableSet"}
 			}
 		}
+		if tp, ok := env.tps[t.Path[0].Name]; ok && len(t.Path) > 1 {
+			// `I.Item`: an associated type projected from a type parameter
+			// (the dot is a path in the grammar; a type parameter in scope
+			// cannot also name a module)
+			var base types.Type = tp
+			for _, seg := range t.Path[1:] {
+				base = c.projectAssoc(env, base, seg.Name, t.Pos)
+				if types.IsInvalid(base) {
+					return base
+				}
+			}
+			if len(t.Args) > 0 {
+				c.errorf(t.Pos, "'%s' cannot take type arguments", pathString(t.Path))
+			}
+			return base
+		}
 		sym, _ := c.lookupTypeName(env, t.Path)
 		if sym == nil {
 			c.errorf(t.Pos, "unknown type '%s'", pathString(t.Path))
@@ -768,7 +793,12 @@ func (c *Checker) resolveEffects(env *typeEnv, e ast.Effects, mustDeclare bool) 
 			eff.Error = types.MakeErrorUnion(eff.Error)
 		}
 	} else if e.Throws && mustDeclare {
-		c.errorf(e.ThrowsSpan, "error type must be declared here: 'throws E' (D40 — effects are declared wherever dispatch is dynamic)")
+		if env.trait != nil && env.trait.ImplicitError {
+			// the trait's implicit `Error`: whatever the impl throws
+			eff.Error = types.MakeErrorUnion(&types.Assoc{Base: selfParamOf(env.trait), Trait: env.trait, Name: "Error"})
+		} else {
+			c.errorf(e.ThrowsSpan, "error type must be declared here: 'throws E' (D40 — effects are declared wherever dispatch is dynamic)")
+		}
 	}
 	return eff
 }
@@ -1272,6 +1302,10 @@ func (c *Checker) declareImpl(m *Module, f *ast.File, d *ast.ImplDecl) {
 	}
 	for _, name := range trait.AssocTypes {
 		if _, ok := impl.AssocTypes[name]; !ok {
+			if name == "Error" && trait.ImplicitError {
+				impl.ImplicitError = true // defined by what the methods throw (resolveAssoc)
+				continue
+			}
 			c.errorf(d.Pos, "impl of '%s' for '%s' must bind associated type '%s': 'type %s = ...'", trait.Name, impl.Target, name, name)
 		}
 	}
@@ -1354,9 +1388,10 @@ func (c *Checker) checkImplSignature(t *FuncTemplate, traitSig *types.Func, trai
 	if t.Sig.Effects.Throws && !traitSig.Effects.Throws {
 		c.errorf(md.Name.Pos, "method '%s' throws but trait '%s' declares it as non-throwing (D40)", md.Name.Name, trait.Name)
 	}
-	if t.Sig.Effects.Throws && traitSig.Effects.Throws && t.Sig.Effects.Error == nil {
-		// inherit the declared error
-		t.Sig.Effects.Error = traitSig.Effects.Error
+	if t.Sig.Effects.Throws && traitSig.Effects.Throws && t.Sig.Effects.Error == nil && !impl.ImplicitError {
+		// inherit the declared error; with an implicit `Error` the method's
+		// own error is inferred from its body (D45) and defines the impl's
+		t.Sig.Effects.Error = c.hooks.Subst(traitSig.Effects.Error, subst)
 	}
 }
 
@@ -1820,6 +1855,9 @@ func (c *Checker) resolveAssoc(base types.Type, trait *types.Trait, name string)
 		}
 		bt, ok := impl.AssocTypes[name]
 		if !ok {
+			if name == "Error" && impl.ImplicitError {
+				return c.hooks.Subst(c.implErrorType(impl), m)
+			}
 			return nil
 		}
 		return c.hooks.Subst(bt, m)
@@ -1852,7 +1890,7 @@ func (c *Checker) projectAssoc(env *typeEnv, base types.Type, name string, span 
 				}
 			}
 		}
-		c.errorf(span, "cannot resolve '%s::%s'", base, name)
+		c.errorf(span, "cannot resolve '%s.%s'", base, name)
 		return types.TInvalid
 	}
 	var found types.Type
@@ -1863,7 +1901,7 @@ func (c *Checker) projectAssoc(env *typeEnv, base types.Type, name string, span 
 		}
 		if r := c.resolveAssoc(base, tr, name); r != nil {
 			if found != nil {
-				c.errorf(span, "'%s::%s' is ambiguous: declared by traits '%s' and '%s'", base, name, foundTrait.Name, tr.Name)
+				c.errorf(span, "'%s.%s' is ambiguous: declared by traits '%s' and '%s'", base, name, foundTrait.Name, tr.Name)
 				return types.TInvalid
 			}
 			found, foundTrait = r, tr
@@ -2050,4 +2088,34 @@ func (c *Checker) noMainMessage() string {
 		return fmt.Sprintf("no 'fun main()' in package %s (no veles.toml above it, so this directory is its own package root); if it is a module of a larger package, add a veles.toml at that package's root and build from there", root)
 	}
 	return fmt.Sprintf("package %s has no 'fun main()' in its root module; it can be used as a library but not run", root)
+}
+
+// implErrorType is the implicit `Error` of an impl whose trait declares a
+// method with a bare `throws`: the union of everything the impl's throwing
+// methods declare or, when they too say only `throws`, infer from their
+// bodies (D45). Nothing thrown is Never, so a fallible-by-signature method
+// whose impl cannot fail costs its callers nothing.
+func (c *Checker) implErrorType(impl *Impl) types.Type {
+	var members []types.Type
+	for _, name := range impl.Trait.MethodList {
+		t := impl.Methods[name]
+		if t == nil {
+			continue
+		}
+		c.resolveSignature(t)
+		if t.Sig == nil || !t.Sig.Effects.Throws {
+			continue
+		}
+		e := t.Sig.Effects.Error
+		if e == nil {
+			e = t.InferError
+		}
+		if e != nil {
+			members = append(members, e)
+		}
+	}
+	if u := types.MakeErrorUnion(members...); u != nil {
+		return u
+	}
+	return types.TNever
 }

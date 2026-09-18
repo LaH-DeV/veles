@@ -314,7 +314,18 @@ P10 progress (2026-09-18):
      (`literalHint` in check_call.go), so `Stack(items: [..])` infers and is mutable.
    - Formatter reflowed trailing-comment alignment in several docs blocks (they were not
      fmt-clean); harmless churn in the diff.
-   - NEXT in P10: bare `throws` on trait methods (#4), `::` → `.`, then the mid-size programs.
+   - DONE (2026-09-18) `::` → `.`: `Self.Item`, `I.Item` (parser: SelfType postfix, NamedType
+     path whose head is a type parameter → projection in resolveType); `::` is an error with a
+     fix. DONE #4: bare `throws` on a trait method = implicit associated `Error`
+     (types.Trait.ImplicitError, Impl.ImplicitError, `implErrorType` = union of the impl's
+     methods' declared/inferred errors, Never when nothing); spec D40 revised, docs 08 section.
+     Not object-safe (needs a dyn `Error` in unions + vtable thunks) — noted in D40 as open.
+     Found on the way: an impl method inheriting `throws Self.Error` never substituted Self
+     (fixed with hooks.Subst). Note: a generic function's INFERRED error is the union over
+     all its instantiations (template-level, D45 "module is the inference unit"); write
+     `throws F.Error` for per-instance precision — worth a docs line, maybe a lint.
+   - NEXT in P10: the mid-size programs (JSON parser, calculator, todo CLI, worker pool,
+     text adventure), then the conformance suite.
 
 20. (2026-09-18, idea, not yet) Lint: a `mut fun` called on a temporary value struct.
    The situation, step by step:

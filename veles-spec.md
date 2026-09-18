@@ -413,7 +413,7 @@ No import required to call a trait method. Under D17 there is only ever one impl
 Rust's design. The distinction, which should be documented early because reversing it is the standard beginner mistake:
 
 - **Generic parameter** when a type may implement the trait several ways — `From<i32>` and `From<string>` on the same type.
-- **Associated type** when there is exactly one natural choice per type — `Iterator::Item`.
+- **Associated type** when there is exactly one natural choice per type — `Iterator.Item`.
 
 **`Iterator` must use an associated type.** Under a generic `Iterator<T>`, a single type could implement `Iterator<i32>` and `Iterator<string>` — legal under D17, since those are distinct (trait, type) pairs — and `for (x in thing)` would have no way to infer `x`. The associated form permits at most one impl per type, so inference always succeeds.
 
@@ -587,21 +587,26 @@ This applies inside `when` as well, so `is Tree.Node(left, right)` destructures 
 
 **The problem.** D2 infers suspension by call-graph analysis and D4 infers error types the same way. Both work for direct calls, where the callee's body or materialized interface is visible. Neither works through **trait dispatch**: under D8 a trait call goes through a dictionary, and under D17 any module may add an impl with coherence checked only at link time, so the set of impls a call may reach is not closed at compile time.
 
-Conservatism does not rescue this. Assuming every trait method may suspend means CPS-transforming every caller of every trait method — and with a full prelude (D24) plus `Iterator`, `Ord` and `Display`, that reaches almost everything. `loop (x in items)` calls `Iterator::next`, so every loop in the language would become a suspension point and nearly the whole program would be state-machined. That is a collapse, not a tuning problem.
+Conservatism does not rescue this. Assuming every trait method may suspend means CPS-transforming every caller of every trait method — and with a full prelude (D24) plus `Iterator`, `Ord` and `Display`, that reaches almost everything. `loop (x in items)` calls `Iterator.next`, so every loop in the language would become a suspension point and nearly the whole program would be state-machined. That is a collapse, not a tuning problem.
 
 **The rule.** Trait methods and function types declare their effects; ordinary functions continue to infer them. Declaration follows the return type, matching `throws`:
 
 ```vs
 trait Fetcher {
-  type Error;
-  fun fetch(url: string): Bytes suspends throws Self::Error;
+  fun fetch(url: string): Bytes suspends throws
 }
 
 // function types carry effects too
 val handler: fun(Request): Response suspends throws HttpError
 ```
 
-Error types on trait methods use an **associated type** (D27), since the concrete error varies per impl.
+**Error types on trait methods (revised v0.24).** A trait method says *that* it can fail; which error is either fixed by the trait or left to each impl:
+
+- `throws E` — every impl throws `E` (or a subset); callers see `E` however they reach the method.
+- a bare `throws` — the error is **impl-defined**: the trait carries an implicit associated type `Error` (D27), and each impl defines it through its methods: what they declare, or, when they too say only `throws`, what their bodies throw (D45 inference); an impl that cannot fail defines it as `Never`. Generic code sees it as `F.Error` (`fun load<F: Fetcher>(f: F): Bytes throws F.Error`) and, once stenciled, as the impl's exact union. Two throwing methods of one trait share the one `Error`. A trait may still write `type Error` and `throws Self.Error` explicitly — it is the same thing spelled out — and an impl may bind `type Error = E` to pin it.
+- A trait with an impl-defined error is not object-safe for now: through a trait object the error would have to be erased to `Error` (a boxed error), which needs a dyn-error type in unions and adapter thunks in the vtable. Declare `throws E` on the trait to use it as an object. Open item.
+
+Associated-type projections are written with a dot, `Self.Error`, `I.Item` (`::` was dropped in v0.24 with the other Rust spellings).
 
 **Defaults.** A trait method neither suspends nor throws unless it says so.
 
@@ -649,7 +654,7 @@ loop {
 }
 ```
 
-`__it` is `var` because `next` is a `mut fun` (D22). The loop variable's type is the projection `Iter::Item`, using the associated-type projection D40 introduced with `Self::Error`.
+`__it` is `var` because `next` is a `mut fun` (D22). The loop variable's type is the projection `Iter.Item`, using the associated-type projection D40 introduced with `Self.Error`.
 
 **Termination depends on D5 nesting.** If `Item` is itself `string?`, `next()` returns `string??` and the outer `null` means end-of-sequence. Under Kotlin's collapsing rule this would be ambiguous with a sequence containing nulls — a concrete case where D5's nesting decision is load-bearing rather than theoretical.
 

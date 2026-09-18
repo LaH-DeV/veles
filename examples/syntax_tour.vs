@@ -80,10 +80,10 @@ trait Iterator {
   }
 }
 
-// D40 — declared effects on trait methods and function types
+// D40 — declared effects on trait methods and function types; a bare
+// `throws` leaves the error type to each impl (v0.24)
 trait Fetcher {
-  type Error
-  fun fetch(url: string): Bytes suspends throws Self::Error
+  fun fetch(url: string): Bytes suspends throws
 }
 
 val handler: fun(Request): Response suspends throws HttpError = handle

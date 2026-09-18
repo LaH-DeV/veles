@@ -1049,6 +1049,9 @@ func (f *fnCtx) funcValue(t *FuncTemplate, span source.Span) Expr {
 // associated types, no generic methods, no Self in signatures.
 func (f *fnCtx) objectSafe(trait *types.Trait) (string, bool) {
 	if len(trait.AssocTypes) > 0 {
+		if trait.ImplicitError && len(trait.AssocTypes) == 1 {
+			return "a method is declared with a bare 'throws' (an impl-defined error); declare the error type, e.g. 'throws E', to use the trait as an object", false
+		}
 		return "it has associated types", false
 	}
 	self := selfParamOf(trait)

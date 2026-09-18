@@ -892,7 +892,7 @@ func (p *printer) typ(t ast.Type) {
 		p.w("Self")
 	case *ast.AssocType:
 		p.typ(t.Base)
-		p.w("::" + t.Name.Name)
+		p.w("." + t.Name.Name)
 	case *ast.ErrorUnionType:
 		for i, m := range t.Members {
 			if i > 0 {

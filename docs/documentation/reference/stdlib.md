@@ -22,7 +22,7 @@ pub trait Iterator {
   fun take(n: i64): TakeIter<Self>
   fun skip(n: i64): SkipIter<Self>
   fun enumerate(): EnumerateIter<Self>        // yields (i64, Item)
-  fun zip<J: Iterator>(other: J): ZipIter<Self, J>   // yields (Item, J::Item)
+  fun zip<J: Iterator>(other: J): ZipIter<Self, J>   // yields (Item, J.Item)
 
   // terminal operations: pull until done
   mut fun toList(): List<Item>

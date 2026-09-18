@@ -386,6 +386,10 @@ type Trait struct {
 	// SelfParam is the synthetic type parameter standing for Self in the
 	// trait's default bodies (created by the checker on first use).
 	SelfParam *TypeParam
+	// ImplicitError is set when a method is declared with a bare `throws`:
+	// the trait then carries an associated type `Error` that each impl
+	// defines through its methods' error types (D40, v0.24).
+	ImplicitError bool
 }
 
 func (t *Trait) String() string { return t.Name }
@@ -733,7 +737,7 @@ type Assoc struct {
 	Name  string
 }
 
-func (a *Assoc) String() string { return a.Base.String() + "::" + a.Name }
+func (a *Assoc) String() string { return a.Base.String() + "." + a.Name }
 
 // ResolveAssoc resolves a projection whose base is concrete.
 func (h *Hooks) ResolveAssoc(a *Assoc) Type {

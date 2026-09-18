@@ -149,6 +149,9 @@ type Impl struct {
 	TypeParams []*types.TypeParam
 	Methods    map[string]*FuncTemplate
 	AssocTypes map[string]types.Type
+	// ImplicitError: the trait's `Error` is not bound by a `type Error =`
+	// line but is the union of what the impl's methods throw (D40, v0.24).
+	ImplicitError bool
 	Module     *Module
 	Decl       *ast.ImplDecl
 }

@@ -159,9 +159,9 @@ fun main() { val xs = [1, 2]; xs.push(3) }`, "immutable List"},
 fun main() { val xs = [] }`, "cannot infer the element type"},
 		{"D30 elvis needs nullable", prelude + `
 fun main() { val x = 1 ?: 2 }`, "needs a nullable left operand"},
-		{"D40 trait effects declared", prelude + `
-trait T { fun f(): i32 throws }
-fun main() { }`, "error type must be declared"},
+		{"D40 function type effects declared", prelude + `
+fun g(): i32 throws = 1
+fun main() { val h: fun(): i32 throws = g; io.println("${h()}") }`, "error type must be declared"},
 		{"D28 generic inference", prelude + `
 struct Box<T> { value: T }
 fun main() { val b = Box(value: 1); val s: string = b.value }`, "type mismatch"},
@@ -1281,4 +1281,52 @@ fun main() { make()?.n = 1 }`, "into a temporary value of type 'C' has no effect
 	} {
 		expectError(t, prelude+"struct C { n: i64 = 0\n  mut fun bump() { self.n += 1 } }\n"+c.src, c.want)
 	}
+}
+
+// D40 (v0.24): a bare `throws` on a trait method leaves the error to each
+// impl (an implicit associated `Error`), inferred from impl bodies; an
+// impl that cannot fail has `Never`. Projections are spelled with a dot.
+func TestTraitImplDefinedError(t *testing.T) {
+	src := prelude + `
+error HttpError { status: i64 }
+error Missing { name: string }
+trait Fetcher {
+  fun fetch(url: string): string throws
+}
+struct Http { impl Fetcher {
+  fun fetch(url: string): string throws {
+    if (url.startsWith("bad")) throw HttpError(status: 500)
+    "http:$url"
+  } } }
+struct Memory { data: Map<string, string>
+  impl Fetcher {
+    fun fetch(url: string): string throws Missing = self.data.get(url) ?: throw Missing(name: url) } }
+struct Always { impl Fetcher { fun fetch(url: string): string throws = url } }
+struct Pinned { impl Fetcher {
+  type Error = HttpError
+  fun fetch(url: string): string throws = url } }
+fun load<F: Fetcher>(f: F, url: string): string throws F.Error = try f.fetch(url)
+fun main() {
+  val h: Result<string, HttpError> = load(Http(), "x")
+  val m: Result<string, Missing> = load(Memory(data: [:]), "k")
+  val a = load(Always(), "y")
+  val p: Result<string, HttpError> = load(Pinned(), "z")
+  io.println("$h $m $a $p")
+}`
+	expectClean(t, src)
+	expectError(t, prelude+`
+trait Fetcher { fun fetch(url: string): string throws }
+struct A { impl Fetcher { fun fetch(url: string): string throws = url } }
+fun main() { val f: Fetcher = A(); io.println("${f.fetch("x")}") }`, "bare 'throws'")
+	expectError(t, prelude+`
+trait Iter2 { type Item
+  fun next(): Item? }
+fun f<I: Iter2>(i: I): I::Item? = i.next()`, "'::' is not Veles")
+	expectClean(t, prelude+`
+trait Iter2 { type Item
+  fun next(): Item? }
+fun f<I: Iter2>(i: I): I.Item? = i.next()
+struct Ones { impl Iter2 { type Item = i64
+  fun next(): Self.Item? = 1 } }
+fun main() { io.println("${f(Ones())}") }`)
 }

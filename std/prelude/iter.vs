@@ -98,7 +98,7 @@ pub trait Iterable {
 
 pub struct MapIter<I: Iterator, U> {
   inner: I
-  f:     fun(I::Item): U
+  f:     fun(I.Item): U
 
   impl Iterator {
     type Item = U
@@ -112,11 +112,11 @@ pub struct MapIter<I: Iterator, U> {
 
 pub struct FilterIter<I: Iterator> {
   inner: I
-  f:     fun(I::Item): bool
+  f:     fun(I.Item): bool
 
   impl Iterator {
-    type Item = I::Item
-    mut fun next(): I::Item? {
+    type Item = I.Item
+    mut fun next(): I.Item? {
       loop {
         val v = self.inner.next()
         if (v == null) return null
@@ -131,8 +131,8 @@ pub struct TakeIter<I: Iterator> {
   remaining: i64
 
   impl Iterator {
-    type Item = I::Item
-    mut fun next(): I::Item? {
+    type Item = I.Item
+    mut fun next(): I.Item? {
       if (self.remaining <= 0) return null
       self.remaining -= 1
       self.inner.next()
@@ -145,8 +145,8 @@ pub struct SkipIter<I: Iterator> {
   remaining: i64
 
   impl Iterator {
-    type Item = I::Item
-    mut fun next(): I::Item? {
+    type Item = I.Item
+    mut fun next(): I.Item? {
       loop (self.remaining > 0) {
         self.remaining -= 1
         if (self.inner.next() == null) return null
@@ -161,8 +161,8 @@ pub struct EnumerateIter<I: Iterator> {
   index: i64
 
   impl Iterator {
-    type Item = (i64, I::Item)
-    mut fun next(): (i64, I::Item)? {
+    type Item = (i64, I.Item)
+    mut fun next(): (i64, I.Item)? {
       val v = self.inner.next()
       if (v == null) return null
       val i = self.index
@@ -177,8 +177,8 @@ pub struct ZipIter<A: Iterator, B: Iterator> {
   b: B
 
   impl Iterator {
-    type Item = (A::Item, B::Item)
-    mut fun next(): (A::Item, B::Item)? {
+    type Item = (A.Item, B.Item)
+    mut fun next(): (A.Item, B.Item)? {
       val x = self.a.next()
       if (x == null) return null
       val y = self.b.next()
