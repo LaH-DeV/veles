@@ -1265,6 +1265,10 @@ func (c *Checker) declareImpl(m *Module, f *ast.File, d *ast.ImplDecl) {
 		}
 		return
 	}
+	if isSendableTrait(trait) {
+		c.errorf(d.Trait.Span(), "Sendable is derived from a type's fields and cannot be implemented by hand (D35)")
+		return
+	}
 	impl.Trait = trait
 	impl.Target = c.resolveType(env, d.Target)
 	env.self = impl.Target

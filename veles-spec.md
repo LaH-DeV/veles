@@ -357,7 +357,7 @@ Putting trait implementations in the struct body was considered and rejected. It
 
 *Amended (v0.23):* the top-level block stays the general form, but for a type you declare an impl may also be written inside the struct body as `impl Trait { ... }` — sugar for `impl<Ps> Trait for Name<Ps>` with the struct's own type parameters. Nothing above changes: foreign types still take the top-level form, coherence is unchanged, and the header still names only sealed membership. An impl that needs bounds the struct lacks (`impl<T: Display> Display for Pair<T>`) is written at top level. A top-level impl for a struct of the same module that the inline form could express is a lint: a warning with an automatic fix that moves it into the body (editor quick fix, `veles check --fix`).
 
-*Amended (v0.23) — static functions.* A function in a struct body, trait, impl or extend block may be declared `static fun`: it has no receiver and is called on the type — `Point.origin()`, `i64.parse(s)`, `Stack<i64>.of(x)` — and, for a trait, on a type parameter bounded by it: `T.parse(s)` resolves to the impl for the concrete `T` of each stencil. An impl declares `static` exactly where the trait does. A trait with a static function is not object-safe (D9), and a sealed trait cannot declare one (its methods dispatch on a variant). The prelude declares `Parsable { static fun parse(s: string): Self? }` for the numbers, `bool` and `string`.
+*Amended (v0.23) — static functions.* A function in a struct body, trait, impl or extend block may be declared `static fun`: it has no receiver and is called on the type — `Point.origin()`, `i64.parse(s)`, `Stack<i64>.of(x)` — and, for a trait, on a type parameter bounded by it: `T.parse(s)` resolves to the impl for the concrete `T` of each stencil. An `extend` block in the prelude may add statics to a built-in generic type, called with the type arguments written: `MutableList<bool>.repeat(false, n)`, `MutableList<Row>.make(n, i => ...)` (v0.25). An impl declares `static` exactly where the trait does. A trait with a static function is not object-safe (D9), and a sealed trait cannot declare one (its methods dispatch on a variant). The prelude declares `Parsable { static fun parse(s: string): Self? }` for the numbers, `bool` and `string`.
 
 Consequence: inherent methods cannot be added to a type you do not own. Extension functions were declined, so the route is declaring a trait and implementing it. This is narrower than it sounds — Veles owns `string` and the collections, so stdlib types stay method-rich; the ceremony only appears when extending a third-party type. Rust lives this way.
 
@@ -401,6 +401,8 @@ D14 remains deferred; nothing here requires variance.
 **Literals are bracket-delimited** (Swift's form): `[1, 2, 3]` for lists, `["a": 1]` for maps, `[:]` for an empty map. `{}` was rejected because it already means block, lambda, and struct literal; a fourth meaning would make `{ port: port }` ambiguous between a map and a struct.
 
 A bare `[1, 2, 3]` with no expected type is a `List`. A growable collection therefore needs an annotation — `var xs: MutableList<i32> = []`, not `var xs = []` — or the `mut` prefix on the literal: `var xs = mut [1, 2, 3]` is a `MutableList<i32>` and `var m = mut ["k": 1]` a `MutableMap<string, i32>`. The empty forms `mut []` and `mut [:]` still need an annotation for the element types.
+
+*Amended (v0.25) — Deque and PriorityQueue.* The prelude adds `Deque<T>` (a ring buffer: O(1) at both ends, the FIFO queue and the sliding window) and `PriorityQueue<T>` (a binary heap over `Comparable` or a comparator), constructed by `deque<T>()`, `priorityQueue<T>()` and `priorityQueueBy(compare)`. Both are plain Veles (`std/prelude/collections.vs`) and have the reference semantics of this section, obtained by holding their state behind a GC pointer (D31): a `val` binding can grow them and a callee shares the caller's. `MutableList` serves as the stack. `MutableList<T>.fill(n, x)` and `.make(n, make)` build a list of known size; `swap(i, j)` exchanges two elements.
 
 ### D26 — Trait methods are always callable; ambiguity is an error
 
@@ -473,7 +475,7 @@ val total   = nums.fold(0, (acc, x) => acc + x)
 val typed   = nums.map((x: i32) => x * 2)
 ```
 
-Parentheses are optional for a single untyped parameter and required otherwise. There is **no `it` shorthand** — every lambda names its parameters.
+Parentheses are optional for a single untyped parameter and required otherwise. There is **no `it` shorthand** — every lambda names its parameters. The discard `_` is a parameter name (v0.25): `make(n, _ => [])` and `(_, x) => x` take an argument they do not use, as `loop (_ in xs)` does.
 
 No trailing-lambda sugar. `=` was chosen over `=>` for expression bodies (§4) specifically to keep `=>` free for this.
 
@@ -513,7 +515,7 @@ Tasks may run on multiple cores. Data-race freedom is a **compile-time guarantee
 
 **The rules:**
 
-- `Sendable` is an auto-derived marker: a type is `Sendable` when all its fields are.
+- `Sendable` is an auto-derived marker: a type is `Sendable` when all its fields are. *(v0.25)* It is a nameable prelude trait usable as a bound (`extend<T: Sendable>`, `fun f<T: Sendable>`) and answered from the type's shape; an `impl Sendable for X` written by hand is an error.
 - Anything captured by an `async` call must be `Sendable`, immutable, or an explicitly synchronized wrapper (`Mutex<T>`, `Atomic<T>`).
 - A captured `var` cannot be mutated from more than one task; plain mutable references do not cross task boundaries.
 

@@ -32,6 +32,17 @@ func (f *fnCtx) typeNamed(n *ast.NameExpr) types.Type {
 	if _, ok := f.env.tps[n.Name]; ok {
 		return f.resolve(&ast.NamedType{Path: []ast.Ident{{Name: n.Name, Pos: n.Pos}}, Pos: n.Pos})
 	}
+	switch n.Name {
+	case "List", "MutableList", "Map", "MutableMap", "Set", "MutableSet":
+		// `MutableList<bool>.repeat(false, n)`: statics the prelude adds to a
+		// built-in generic type with `extend`; the type arguments are required.
+		if len(n.TypeArgs) == 0 {
+			f.errorf(n.Pos, "'%s' is generic; write the type arguments, e.g. '%s<T>.f(...)'", n.Name, n.Name)
+			return types.TInvalid
+		}
+		path := []ast.Ident{{Name: n.Name, Pos: n.Pos}}
+		return f.resolve(&ast.NamedType{Path: path, Args: n.TypeArgs, Pos: n.Pos})
+	}
 	return nil
 }
 
@@ -102,7 +113,7 @@ func (f *fnCtx) findMethod(rt types.Type, name string) (*FuncTemplate, map[*type
 			for _, tp := range ext.TypeParams {
 				for _, bound := range tp.Bounds {
 					if bt, ok := m[tp]; ok && !f.implements(bt, bound) {
-						return nil, nil, "'" + name + "' on '" + rt.String() + "' requires '" + bt.String() + "' to implement '" + bound.Name + "' (extend<" + tp.Name + ": " + bound.Name + "> " + ext.Target.String() + ")"
+						return nil, nil, "'" + name + "' on '" + rt.String() + "' requires '" + bt.String() + "' to implement '" + bound.Name + "' (extend<" + tp.Name + ": " + bound.Name + "> " + ext.Target.String() + ")" + sendableHint(bound)
 					}
 				}
 			}
@@ -164,4 +175,13 @@ func (f *fnCtx) moduleTypeNamed(x ast.Expr) types.Type {
 	f.c.refSym(n.Pos, sym)
 	f.c.refSym(m.Name.Pos, member)
 	return member.Type
+}
+
+// sendableHint explains a failed `Sendable` bound: the value would be
+// shared, which is what the bound exists to refuse.
+func sendableHint(bound *types.Trait) string {
+	if !isSendableTrait(bound) {
+		return ""
+	}
+	return "; it holds shared mutable state (a mutable collection, a pointer or a closure), so every slot would alias one value; build one per slot with make(n, i => ...)"
 }

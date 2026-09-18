@@ -181,6 +181,67 @@ Output:
 [1, 4, 9, 16]
 ```
 
+## Queues and priority queues
+
+A `MutableList` is already a stack (`push`, `pop`, `last`). For a queue,
+the prelude has `Deque<T>`, a ring buffer with O(1) work at both ends; for
+"smallest first", `PriorityQueue<T>`, a binary heap. Both are reference
+types like `MutableList`: a `val` binding can grow them, and a function
+that receives one shares it with the caller.
+
+```veles
+use io
+
+struct Job {
+  name: string
+  cost: i64
+
+  impl Comparable {
+    fun compareTo(other: Job): i64 = self.cost.compareTo(other.cost)
+  }
+}
+
+fun main() {
+  val queue = deque<string>()
+  queue.addLast("b")
+  queue.addLast("c")
+  queue.addFirst("a")
+  io.println("$queue ${queue.removeFirst()} ${queue.last()} ${queue.len()}")
+
+  val jobs = priorityQueue<Job>()
+  jobs.push(Job(name: "deploy", cost: 5))
+  jobs.push(Job(name: "lint", cost: 1))
+  jobs.push(Job(name: "test", cost: 3))
+  loop {
+    val job = jobs.pop() ?: break
+    io.println("${job.name} (${job.cost})")
+  }
+
+  // a comparator instead of the natural order: largest first
+  val biggest = priorityQueueBy<i64>((a, b) => b.compareTo(a))
+  loop (x in [4, 9, 2]) biggest.push(x)
+  io.println("${biggest.pop()} ${biggest.peek()}")
+}
+```
+
+Output:
+```text
+[a, b, c] a c 2
+lint (1)
+test (3)
+deploy (5)
+9 4
+```
+
+`removeFirst`, `removeLast`, `first`, `last`, `at(i)` and `pop`, `peek`
+return `T?`: null when the container is empty, never a panic. To build a
+list of a known size up front, `MutableList<bool>.repeat(false, n)` gives
+`n` copies of a value and `MutableList<MutableList<i64>>.make(n, _ => [])`
+calls the function once per slot. `xs.fill(x)` overwrites every element of
+an existing list. `repeat` and `fill` refuse an element type with shared
+mutable state — a mutable collection, a pointer, a closure — because every
+slot would alias the one value; `make` is the form for those.
+
 ## Choosing between them
 
 | You need | Use |
@@ -189,5 +250,7 @@ Output:
 | to accumulate results | `MutableList<T>` then `.toList()` |
 | lookup by key, ordered | `Map<K, V>` / `MutableMap<K, V>` |
 | membership tests, no duplicates | `Set<T>` / `MutableSet<T>` |
+| a queue, a sliding window, a stack shared by reference | `Deque<T>` |
+| the smallest (or largest) element next | `PriorityQueue<T>` |
 
 Next: [Structs and methods](05-structs-and-methods.md).

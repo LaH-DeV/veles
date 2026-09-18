@@ -85,7 +85,7 @@ fun greet(name: string, punct: string = "!") { }    // default; call greet("x", 
 fun sum(xs: i64...): i64 = xs.fold(0, (a, b) => a + b)  // variadic: sum(1, 2), sum(list...)
 fun <T: Show> show(x: T): string = x.show()         // generic with bound
 fun fetch(url: string): string suspends throws E    // effects (inferred for free functions)
-val f = x => x * 2                                  // lambda; (a, b) => ..., (x: i64) => ...
+val f = x => x * 2                                  // lambda; (a, b) => ..., (x: i64) => ..., _ => ... ignores its argument
 val g = () => { var n = 0; n }                      // block body
 val h = (a: i64) => (b: i64) => a + b               // curried
 ```
@@ -164,6 +164,9 @@ xs.map(f); xs.filter(p); xs.fold(0, f); xs.any(p); xs.all(p); xs.find(p); xs.for
 xs.take(2); xs.drop(2); xs.slice(1, 3); xs.zip(ys); xs.flatMap(f); xs.distinct(); xs.chunked(2); xs.windowed(2)
 xs.sorted(); xs.sortedBy(key); xs.sortedDescending(); xs.reversed(); xs.min(); xs.max(); xs.sum(); xs.join(", "); xs.iter()
 ml.push(x); ml.pop(); ml.set(i, x); ml.insert(i, x); ml.removeAt(i); ml.addAll(ys); ml.sort(); ml.clear(); ml.toList(); xs.toMutable()
+ml.swap(i, j); ml.fill(x); MutableList<bool>.repeat(false, n); MutableList<MutableList<i64>>.make(n, _ => [])
+val q = deque<i64>(); q.addLast(x); q.addFirst(x); q.removeFirst(); q.removeLast(); q.first(); q.last(); q.at(-1); q.len()
+val pq = priorityQueue<i64>(); pq.push(x); pq.pop(); pq.peek(); priorityQueueBy<i64>((a, b) => b.compareTo(a))
 m.get(k) ?: d; m.getOrPanic(k); m.getOrDefault(k, d); m.containsKey(k); m.keys(); m.values(); m.entries(); mm.set(k, v); mm.remove(k)
 s.add(x); s.contains(x); s.remove(x); s.toList()
 xs.iter().filter(p).map(f).take(n).skip(n).enumerate().zip(ys.iter()).toList()

@@ -403,7 +403,17 @@ func (f *fnCtx) defaultArg(t *FuncTemplate, i int, pt types.Type, subst map[*typ
 
 // implements reports whether a concrete type has an impl for trait.
 func (f *fnCtx) implements(t types.Type, trait *types.Trait) bool {
+	if isSendableTrait(trait) {
+		// the auto-derived marker (D35): answered from the type's shape, never
+		// from an impl
+		return sendable(t)
+	}
 	return f.findImpl(t, trait) != nil
+}
+
+// isSendableTrait recognises the prelude's `Sendable` marker trait.
+func isSendableTrait(trait *types.Trait) bool {
+	return trait != nil && trait.Name == "Sendable" && trait.Module == "std.prelude"
 }
 
 func (f *fnCtx) findImpl(t types.Type, trait *types.Trait) *Impl {

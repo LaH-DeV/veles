@@ -1,62 +1,45 @@
-// Classic data structures built from the prelude collections and pointers.
+// Classic data structures. The prelude already has the containers a
+// program reaches for first — MutableList is a stack, Deque a queue, and
+// PriorityQueue a heap — so this file shows them in use and builds the two
+// that are worth writing out: a binary search tree over GC pointers and a
+// binary heap, the structure behind PriorityQueue.
 
-/// LIFO on top of a MutableList.
-pub struct Stack<T> {
-  items: MutableList<T> = []
-
-  fun push(x: T) {
-    self.items.push(x)
-  }
-  fun pop(): T? = self.items.pop()
-  fun peek(): T? = self.items.last()
-  fun len(): i64 = self.items.len()
-  fun isEmpty(): bool = self.items.len() == 0
-}
-
-/// FIFO with a moving head; compacts once half the buffer is dead.
-pub struct Queue<T> {
-  items: MutableList<T> = []
-  head:  i64 = 0
-
-  fun enqueue(x: T) {
-    self.items.push(x)
-  }
-
-  mut fun dequeue(): T? {
-    val x = self.items.at(self.head) ?: return null
-    self.head += 1
-    if (self.head * 2 >= self.items.len()) {
-      val rest = self.items.drop(self.head)
-      self.items.clear()
-      self.items.addAll(rest)
-      self.head = 0
-    }
-    x
-  }
-
-  fun len(): i64 = self.items.len() - self.head
-}
-
-/// Balanced parentheses — the textbook stack use.
+/// Balanced brackets — the textbook stack use, with a MutableList as the
+/// stack: `push`, `pop` and `last` are all it needs.
 pub fun balanced(s: string): bool {
-  var stack = Stack<u8>()
-  loop (i in 0..<s.len()) {
-    val b = s.byteAt(i)
-    when (b) {
-      '(', '[', '{' => stack.push(b)
-      ')'           => {
-        if (stack.pop() != '(') return false
-      }
-      ']' => {
-        if (stack.pop() != '[') return false
-      }
-      '}' => {
-        if (stack.pop() != '{') return false
+  val opener: Map<u8, u8> = [')': '(', ']': '[', '}': '{']
+  val stack: MutableList<u8> = []
+  loop (byte in s.bytes()) {
+    when (byte) {
+      '(', '[', '{' => stack.push(byte)
+      ')', ']', '}' => {
+        if (stack.pop() != opener.getOrPanic(byte)) return false
       }
       else => { }
     }
   }
   stack.isEmpty()
+}
+
+/// Largest element of every window of `k` — the textbook deque use. The
+/// deque holds indices whose values decrease front to back, so the front
+/// is always the current window's maximum: O(n) overall.
+pub fun slidingMax(xs: List<i64>, k: i64): List<i64> {
+  val out: MutableList<i64> = []
+  val window = deque<i64>()
+  loop ((i, x) in xs.iter().enumerate()) {
+    // drop smaller elements from the back: they can never be a maximum again
+    loop {
+      val back = window.last() ?: break
+      if (xs.atOrPanic(back) > x) break
+      window.removeLast()
+    }
+    window.addLast(i)
+    // drop the front once it has left the window
+    if (window.first() == i - k) window.removeFirst()
+    if (i >= k - 1) out.push(xs.atOrPanic(window.first() ?: i))
+  }
+  out.toList()
 }
 
 /// Binary search tree of i64, nodes linked by GC pointers (D10/D31).
@@ -71,33 +54,9 @@ pub struct Bst {
   size: i64 = 0
 
   mut fun insert(v: i64) {
-    val r = self.root
-    if (r == null) {
-      self.root = &TreeNode(value: v)
-      self.size += 1
-      return
-    }
-    var cur = r
-    loop {
-      if (v == cur.value) return
-      if (v < cur.value) {
-        val l = cur.left
-        if (l == null) {
-          cur.left = &TreeNode(value: v)
-          self.size += 1
-          return
-        }
-        cur = l
-      } else {
-        val rr = cur.right
-        if (rr == null) {
-          cur.right = &TreeNode(value: v)
-          self.size += 1
-          return
-        }
-        cur = rr
-      }
-    }
+    if (self.contains(v)) return
+    self.root = insertInto(self.root, v)
+    self.size += 1
   }
 
   fun contains(v: i64): bool {
@@ -111,20 +70,31 @@ pub struct Bst {
 
   /// In-order walk yields the values sorted.
   fun inOrder(): List<i64> {
-    var out: MutableList<i64> = []
+    val out: MutableList<i64> = []
     walk(self.root, out)
     out.toList()
   }
 
   fun height(): i64 = heightOf(self.root)
 
+  /// The leftmost node holds the smallest value.
   fun min(): i64? {
     var cur = self.root ?: return null
-    loop {
-      val l = cur.left ?: return cur.value
-      cur = l
-    }
+    loop cur = cur.left ?: return cur.value
   }
+
+  fun max(): i64? {
+    var cur = self.root ?: return null
+    loop cur = cur.right ?: return cur.value
+  }
+}
+
+/// The subtree with `v` added; a null subtree becomes a leaf. Written as a
+/// function of the subtree so the same code handles the root and any child.
+fun insertInto(node: (*TreeNode)?, v: i64): *TreeNode {
+  if (node == null) return &TreeNode(value: v)
+  if (v < node.value) node.left = insertInto(node.left, v) else node.right = insertInto(node.right, v)
+  node
 }
 
 fun walk(node: (*TreeNode)?, out: MutableList<i64>) {
@@ -137,37 +107,40 @@ fun walk(node: (*TreeNode)?, out: MutableList<i64>) {
 fun heightOf(node: (*TreeNode)?): i64 =
   if (node == null) 0 else 1 + heightOf(node.left).max(heightOf(node.right))
 
-/// Binary min-heap in a list: parent of i is (i - 1) / 2.
+/// Binary min-heap in a list: the parent of `i` is `(i - 1) / 2`, its
+/// children are `2i + 1` and `2i + 2`. The prelude's `priorityQueue()` is
+/// this structure made generic and comparator-driven.
 pub struct MinHeap {
   items: MutableList<i64> = []
 
+  /// Appends, then sifts the new element up while it beats its parent.
   fun push(x: i64) {
     self.items.push(x)
     var i = self.items.len() - 1
     loop (i > 0) {
       val parent = (i - 1) / 2
       if (self.items.atOrPanic(parent) <= self.items.atOrPanic(i)) break
-      self.swap(parent, i)
+      self.items.swap(parent, i)
       i = parent
     }
   }
 
+  /// Takes the root, moves the last element there and sifts it down.
   fun pop(): i64? {
-    val n = self.items.len()
-    if (n == 0) return null
-    val top = self.items.atOrPanic(0)
+    val top = self.items.first() ?: return null
     val last = self.items.pop() ?: return null
-    if (n == 1) return top
+    if (self.items.isEmpty()) return top
     self.items.set(0, last)
+    val n = self.items.len()
     var i = 0
     loop {
-      val l = 2 * i + 1
-      val r = l + 1
+      val left = 2 * i + 1
+      val right = left + 1
       var smallest = i
-      if (l < n - 1 && self.items.atOrPanic(l) < self.items.atOrPanic(smallest)) smallest = l
-      if (r < n - 1 && self.items.atOrPanic(r) < self.items.atOrPanic(smallest)) smallest = r
+      if (left < n && self.items.atOrPanic(left) < self.items.atOrPanic(smallest)) smallest = left
+      if (right < n && self.items.atOrPanic(right) < self.items.atOrPanic(smallest)) smallest = right
       if (smallest == i) break
-      self.swap(i, smallest)
+      self.items.swap(i, smallest)
       i = smallest
     }
     top
@@ -175,17 +148,13 @@ pub struct MinHeap {
 
   fun peek(): i64? = self.items.first()
   fun len(): i64 = self.items.len()
-
-  fun swap(i: i64, j: i64) {
-    (self.items.atOrPanic(i), self.items.atOrPanic(j)) = (self.items.atOrPanic(j), self.items.atOrPanic(i))
-  }
 }
 
 /// Heap sort, as a demonstration of the heap: O(n log n).
 pub fun heapSort(xs: List<i64>): List<i64> {
-  var heap = MinHeap()
+  val heap = MinHeap()
   loop (x in xs) heap.push(x)
-  var out: MutableList<i64> = []
+  val out: MutableList<i64> = []
   loop {
     val v = heap.pop() ?: break
     out.push(v)

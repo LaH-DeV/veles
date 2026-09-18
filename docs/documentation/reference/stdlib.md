@@ -70,9 +70,15 @@ pub struct Atomic<T> {
   pub fun swap(value: T): T
 }
 pub fun <T> atomic(value: T): Atomic<T>
+
+pub trait Sendable { }   // derived from the type's shape; a bound, never implemented by hand
 ```
 
-Both are `Sendable` regardless of `T`.
+Both are `Sendable` regardless of `T`. `Sendable` itself is the marker for
+values with no shared mutable state — numbers, strings, immutable
+collections, structs of such fields; never a mutable collection, a pointer
+or a closure. It is what may cross a task boundary, and what a function may
+duplicate: `MutableList<T>.repeat` and `fill` require it.
 
 ### Panics (D52)
 
@@ -154,6 +160,45 @@ pub struct StringBuilder {
 Builds text in linear time where repeated `+` would copy the whole string
 each time.
 
+### Deque and PriorityQueue
+
+```veles
+// fragment
+pub fun deque<T>(): Deque<T>
+pub struct Deque<T> {
+  pub fun addLast(x: T)
+  pub fun addFirst(x: T)
+  pub fun removeFirst(): T?
+  pub fun removeLast(): T?
+  pub fun first(): T?
+  pub fun last(): T?
+  pub fun at(i: i64): T?          // from the front; a negative i counts from the back
+  pub fun len(): i64
+  pub fun isEmpty(): bool
+  pub fun clear()
+  pub fun toList(): List<T>       // front to back; also Iterable and Display
+}
+
+pub fun priorityQueue<T: Comparable>(): PriorityQueue<T>        // smallest first
+pub fun priorityQueueBy<T>(compare: fun(T, T): i64): PriorityQueue<T>
+pub struct PriorityQueue<T> {
+  pub fun push(x: T)
+  pub fun pop(): T?               // the first element in the queue's order
+  pub fun peek(): T?
+  pub fun len(): i64
+  pub fun isEmpty(): bool
+  pub fun clear()
+  pub fun toList(): List<T>       // heap order: only the first is the smallest
+}
+```
+
+Both are reference types like `MutableList` (D25): a `val` binding can
+grow them and a callee shares the caller's. `Deque` is a ring buffer —
+O(1) at both ends, amortised O(1) growth — and serves as a FIFO queue
+(`addLast` / `removeFirst`), a stack, or a sliding window. `PriorityQueue`
+is a binary heap: `push` and `pop` are O(log n). For the largest first,
+`priorityQueueBy<i64>((a, b) => b.compareTo(a))`.
+
 ### Result and Option
 
 `Result<T, E>` with variants `Ok(value)` and `Err(error)`; `Option<T>`
@@ -220,6 +265,9 @@ UTF-8.
 | `toList()`, `toMutable()` | copies (D25) |
 | `push(x)`, `pop(): T?`, `set(i, x)`, `clear()` | `MutableList` only |
 | `insert(i, x)`, `removeAt(i): T`, `addAll(xs)`, `sort()` | `MutableList` only; `sort` is in place |
+| `swap(i, j)` | `MutableList` only; exchanges two elements in place |
+| `fill(x)` | `MutableList` only; overwrites every element, length unchanged |
+| `MutableList<T>.repeat(x, count)`, `MutableList<T>.make(n, i => ...)` | statics: `count` copies of `x`, or `init(i)` called once per slot. `repeat` and `fill` need `T: Sendable` (D35): a mutable collection or pointer would be one value aliased by every slot, which is what `make` is for |
 
 A `MutableList<T>` has every `List<T>` method; a `val` binding is enough to
 call the mutating ones, since the list is a reference (D25).

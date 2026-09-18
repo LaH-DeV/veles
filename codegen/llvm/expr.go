@@ -1252,7 +1252,12 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		g.emit("%s = load %s, ptr %s", v, g.llType(e.Type()), p)
 		return v
 	case "list.ref":
-		return g.place(e)
+		// as a value: the element itself (`xs.atOrPanic(i) += 1` reads the
+		// place before writing it); place() is what takes the address
+		p := g.place(e)
+		v := g.newTmp()
+		g.emit("%s = load %s, ptr %s", v, g.llType(e.Type()), p)
+		return v
 	case "list.push":
 		l := g.expr(e.Args[0])
 		x := g.expr(e.Args[1])

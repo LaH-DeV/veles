@@ -385,3 +385,32 @@ fun f() {
 		t.Fatalf("%s", diags.Render())
 	}
 }
+
+// `_ => ...` and `(_, x) => ...`: the discard as a lambda parameter, as in
+// `loop (_ in xs)`.
+func TestLambdaDiscardParam(t *testing.T) {
+	src := `
+fun f() {
+  val a = MutableList<i64>.make(3, _ => 0)
+  val b = xs.map((_, x) => x)
+  val c = ys.fold(0, (_: i64, x) => x)
+}
+`
+	file, diags := parse(t, src)
+	if diags.HasErrors() {
+		t.Fatalf("%s", diags.Render())
+	}
+	fn := file.Decls[0].(*ast.FunDecl)
+	for i, want := range [][]string{{"_"}, {"_", "x"}, {"_", "x"}} {
+		decl := fn.Body.Stmts[i].(*ast.ValStmt)
+		call := decl.Value.(*ast.CallExpr)
+		lam := call.Args[len(call.Args)-1].Value.(*ast.LambdaExpr)
+		var got []string
+		for _, p := range lam.Params {
+			got = append(got, p.Name.Name)
+		}
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Errorf("stmt %d: params %v, want %v", i, got, want)
+		}
+	}
+}

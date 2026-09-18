@@ -265,6 +265,11 @@ func (p *Parser) parsePrimary() ast.Expr {
 		}
 		p.next()
 		return &ast.NameExpr{Name: t.Text, Pos: t.Span}
+	case lexer.Under:
+		// `_ => ...`: a lambda that ignores its argument
+		if p.peek(1).Kind == lexer.FatArrow && p.noLambda == 0 {
+			return p.parseLambda()
+		}
 	case lexer.LParen:
 		if p.noLambda == 0 && p.looksLikeLambda() {
 			return p.parseLambda()
@@ -369,17 +374,22 @@ func (p *Parser) looksLikeLambda() bool {
 func (p *Parser) parseLambda() ast.Expr {
 	start := p.span()
 	l := &ast.LambdaExpr{}
-	if p.at(lexer.Ident) {
+	if p.at(lexer.Ident, lexer.Under) {
 		t := p.next()
-		l.Params = []ast.Param{{Name: ast.Ident{Name: t.Text, Pos: t.Span}, Pos: t.Span}}
+		l.Params = []ast.Param{{Name: p.paramName(t), Pos: t.Span}}
 	} else {
 		p.expect(lexer.LParen)
 		for !p.at(lexer.RParen, lexer.EOF) {
 			ps := p.span()
-			name, ok := p.expectIdent()
-			if !ok {
-				p.syncParen()
-				break
+			var name ast.Ident
+			if p.at(lexer.Under) {
+				name = p.paramName(p.next())
+			} else {
+				var ok bool
+				if name, ok = p.expectIdent(); !ok {
+					p.syncParen()
+					break
+				}
 			}
 			prm := ast.Param{Name: name}
 			if p.accept(lexer.Colon) {
@@ -653,4 +663,13 @@ func (p *Parser) parseArmHead() ast.Expr {
 	e := p.parseExpr()
 	p.noLambda--
 	return e
+}
+
+// paramName is the identifier for a lambda parameter token: an identifier's
+// text, or `_` for the discard.
+func (p *Parser) paramName(t lexer.Token) ast.Ident {
+	if t.Kind == lexer.Under {
+		return ast.Ident{Name: "_", Pos: t.Span}
+	}
+	return ast.Ident{Name: t.Text, Pos: t.Span}
 }

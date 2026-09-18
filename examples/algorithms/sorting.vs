@@ -1,15 +1,16 @@
 // Sorting — every function returns a new List and leaves its input alone
-// (List is immutable, D25); the in-place work happens on a MutableList copy.
+// (List is immutable, D25); the in-place work happens on a MutableList copy,
+// swapping with the prelude's `swap(i, j)`.
 
 /// Bubble sort: O(n²), stops early when a pass makes no swap.
 pub fun bubbleSort(xs: List<i64>): List<i64> {
-  var out = xs.toMutable()
+  val out = xs.toMutable()
   val n = out.len()
   loop (i in 0..<n) {
     var swapped = false
     loop (j in 0..<n - i - 1) {
       if (out.atOrPanic(j) > out.atOrPanic(j + 1)) {
-        swap(out, j, j + 1)
+        out.swap(j, j + 1)
         swapped = true
       }
     }
@@ -21,7 +22,7 @@ pub fun bubbleSort(xs: List<i64>): List<i64> {
 /// Insertion sort, generic over anything Comparable: O(n²), fast on
 /// nearly-sorted input.
 pub fun insertionSort<T: Comparable>(xs: List<T>): List<T> {
-  var out = xs.toMutable()
+  val out = xs.toMutable()
   loop (i in 1..<out.len()) {
     val key = out.atOrPanic(i)
     var j = i - 1
@@ -36,14 +37,14 @@ pub fun insertionSort<T: Comparable>(xs: List<T>): List<T> {
 
 /// Selection sort: O(n²) comparisons, at most n swaps.
 pub fun selectionSort(xs: List<i64>): List<i64> {
-  var out = xs.toMutable()
+  val out = xs.toMutable()
   val n = out.len()
   loop (i in 0..<n) {
     var minAt = i
     loop (j in i + 1..<n) {
       if (out.atOrPanic(j) < out.atOrPanic(minAt)) minAt = j
     }
-    if (minAt != i) swap(out, i, minAt)
+    if (minAt != i) out.swap(i, minAt)
   }
   out.toList()
 }
@@ -55,27 +56,29 @@ pub fun mergeSort(xs: List<i64>): List<i64> {
   merge(mergeSort(xs.take(mid)), mergeSort(xs.drop(mid)))
 }
 
-fun merge(a: List<i64>, b: List<i64>): List<i64> {
-  var out: MutableList<i64> = []
+/// Interleaves two sorted lists; `<=` keeps equal elements in their
+/// original order, which is what makes the sort stable.
+fun merge(left: List<i64>, right: List<i64>): List<i64> {
+  val out: MutableList<i64> = []
   var i = 0
   var j = 0
-  loop (i < a.len() && j < b.len()) {
-    if (a.atOrPanic(i) <= b.atOrPanic(j)) {
-      out.push(a.atOrPanic(i))
+  loop (i < left.len() && j < right.len()) {
+    if (left.atOrPanic(i) <= right.atOrPanic(j)) {
+      out.push(left.atOrPanic(i))
       i += 1
     } else {
-      out.push(b.atOrPanic(j))
+      out.push(right.atOrPanic(j))
       j += 1
     }
   }
-  out.addAll(a.drop(i))
-  out.addAll(b.drop(j))
+  out.addAll(left.drop(i))
+  out.addAll(right.drop(j))
   out.toList()
 }
 
 /// Quick sort: O(n log n) average, in place on a copy, Lomuto partition.
 pub fun quickSort(xs: List<i64>): List<i64> {
-  var out = xs.toMutable()
+  val out = xs.toMutable()
   quickSortRange(out, 0, out.len() - 1)
   out.toList()
 }
@@ -86,30 +89,24 @@ fun quickSortRange(xs: MutableList<i64>, lo: i64, hi: i64) {
   var store = lo
   loop (i in lo..<hi) {
     if (xs.atOrPanic(i) < pivot) {
-      swap(xs, i, store)
+      xs.swap(i, store)
       store += 1
     }
   }
-  swap(xs, store, hi)
+  xs.swap(store, hi)
   quickSortRange(xs, lo, store - 1)
   quickSortRange(xs, store + 1, hi)
 }
 
 /// Counting sort for small non-negative keys: O(n + k).
 pub fun countingSort(xs: List<i64>, maxValue: i64): List<i64> {
-  var counts: MutableList<i64> = []
-  loop (_ in 0..maxValue) counts.push(0)
-  loop (x in xs) counts.set(x, counts.atOrPanic(x) + 1)
-  var out: MutableList<i64> = []
+  val counts = MutableList<i64>.repeat(0, maxValue + 1)
+  loop (x in xs) counts.atOrPanic(x) += 1
+  val out: MutableList<i64> = []
   loop (v in 0..maxValue) {
     loop (_ in 0..<counts.atOrPanic(v)) out.push(v)
   }
   out.toList()
-}
-
-/// Tuple assignment evaluates the right side first, so a swap needs no temp.
-fun swap(xs: MutableList<i64>, i: i64, j: i64) {
-  (xs.atOrPanic(i), xs.atOrPanic(j)) = (xs.atOrPanic(j), xs.atOrPanic(i))
 }
 
 pub fun isSorted(xs: List<i64>): bool {

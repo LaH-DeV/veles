@@ -21,7 +21,13 @@ fun main() {
   var ys: MutableList<i64> = [1, 2, 3]
   ys.set(0, 5)
   ys.set(-1, ys.atOrPanic(-1) * 10)
+  // a compound assignment reads and writes the element in place
+  ys.atOrPanic(1) += 40
+  ys.atOrPanic(-1) *= 2
   io.println("$ys")
+  // `fill` overwrites every element; `repeat` builds a list of copies
+  ys.fill(1)
+  io.println("$ys ${MutableList<string>.repeat("ab", 2)}")
 
   // `atOrPanic` names the element in place: a value struct is mutated
   // where it lives, and `&` takes its address

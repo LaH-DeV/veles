@@ -1429,3 +1429,68 @@ fun main() {
 	expectError(t, prelude+`fun main() { var a = 1; var b = 2; (a, b) = 5; io.println("$a $b") }`, "only tuples destructure positionally")
 	expectError(t, prelude+`fun main() { var a = 1; var b = 2; (a, b) = ("x", 1); io.println("$a $b") }`, "expected 'i64', found 'string'")
 }
+
+// Statics the prelude adds to a built-in generic type (`extend<T>
+// MutableList<T> { static fun repeat ... }`) are called with the type
+// arguments written, like a generic struct's statics.
+func TestBuiltinStatics(t *testing.T) {
+	expectClean(t, prelude+`
+fun main() {
+  val flags = MutableList<bool>.repeat(false, 3)
+  flags.fill(true)
+  val slots = MutableList<i64?>.repeat(null, 2)
+  val rows = MutableList<MutableList<i64>>.make(2, _ => [])
+  rows.atOrPanic(0).push(1)
+  flags.swap(0, 2)
+  io.println("$flags $slots $rows")
+}`)
+	expectError(t, prelude+`fun main() { val xs = MutableList.repeat(0, 3); io.println("$xs") }`, "'MutableList' is generic; write the type arguments")
+	expectError(t, prelude+`fun main() { val xs = MutableList<i64>.nope(3); io.println("$xs") }`, "no static function 'nope'")
+	// `repeat` duplicates its value, so the element type must be Sendable (D35):
+	// a mutable collection, a pointer or a closure would be shared by every slot
+	expectError(t, prelude+`fun main() { val xs = MutableList<MutableList<i64>>.repeat(mut [1], 2); io.println("$xs") }`, "requires 'MutableList<i64>' to implement 'Sendable'")
+	expectError(t, prelude+`struct N { v: i64 }
+fun main() { val xs = MutableList<*N>.repeat(&N(v: 1), 2); io.println("$xs") }`, "to implement 'Sendable'")
+	expectClean(t, prelude+`struct P { x: i64; y: i64 }
+fun main() { val xs = MutableList<P>.repeat(P(x: 1, y: 2), 2); val ys = MutableList<List<i64>>.repeat([1], 2); io.println("$xs $ys") }`)
+	expectError(t, prelude+`struct N { v: i64 }
+impl Sendable for N { }
+fun main() { io.println("x") }`, "cannot be implemented by hand")
+}
+
+// Deque and PriorityQueue (prelude/collections.vs) are reference types: a
+// `val` binding can grow them and a callee shares the caller's one.
+func TestPreludeCollections(t *testing.T) {
+	expectClean(t, prelude+`
+struct Job {
+  cost: i64
+  impl Comparable {
+    fun compareTo(other: Job): i64 = self.cost.compareTo(other.cost)
+  }
+}
+fun drain(q: Deque<i64>): i64 {
+  var n = 0
+  loop {
+    q.removeFirst() ?: break
+    n += 1
+  }
+  n
+}
+fun main() {
+  val q = deque<i64>()
+  q.addLast(1)
+  q.addFirst(0)
+  val typed: Deque<string> = deque()
+  typed.addLast("x")
+  loop (x in q) io.println("$x")
+  io.println("$q ${q.first()} ${q.last()} ${q.at(-1)} ${q.len()} ${drain(q)} ${q.isEmpty()} $typed")
+  val jobs = priorityQueue<Job>()
+  jobs.push(Job(cost: 3))
+  val words = priorityQueueBy<string>((a, b) => b.compareTo(a))
+  words.push("a")
+  val holes = deque<i64?>()
+  holes.addLast(null)
+  io.println("${holes.len()} ${holes.removeFirst()}")
+  io.println("${jobs.pop()?.cost} ${jobs.peek()} ${words.pop()} ${words.len()}")
+}`)
+}

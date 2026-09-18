@@ -1,6 +1,7 @@
 // Searching — indices are i64, "not found" is null (D5), never -1.
 
-/// Linear scan: O(n), works on unsorted input.
+/// Linear scan: O(n), works on unsorted input. (`xs.indexOf(target)` is the
+/// built-in spelling; it answers -1 rather than null.)
 pub fun linearSearch(xs: List<i64>, target: i64): i64? {
   loop ((i, x) in xs.iter().enumerate()) {
     if (x == target) return i
@@ -53,11 +54,11 @@ pub fun pairWithSum(xs: List<i64>, target: i64): (i64, i64)? {
   var i = 0
   var j = xs.len() - 1
   loop (i < j) {
-    val s = xs.atOrPanic(i) + xs.atOrPanic(j)
+    val sum = xs.atOrPanic(i) + xs.atOrPanic(j)
     when {
-      s == target => return (xs.atOrPanic(i), xs.atOrPanic(j))
-      s < target  => i += 1
-      else        => j -= 1
+      sum == target => return (xs.atOrPanic(i), xs.atOrPanic(j))
+      sum < target  => i += 1
+      else          => j -= 1
     }
   }
   null

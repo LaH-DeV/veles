@@ -146,7 +146,38 @@ extend List<f64> {
   }
 }
 
+// `repeat` and `fill` copy one value into every slot, so the value must be
+// one that copies cleanly: a mutable list, a pointer or a closure would be
+// shared by all the slots instead (D35 Sendable), and `make` is the way to
+// build a fresh one per slot.
+extend<T: Sendable> MutableList<T> {
+  /// A list of `count` copies of `x`: `MutableList<bool>.repeat(false, n)`.
+  pub static fun repeat(x: T, count: i64): MutableList<T> {
+    var out: MutableList<T> = []
+    loop (_ in 0..<count) out.push(x)
+    out
+  }
+
+  /// Overwrites every element with `x`; the length does not change.
+  pub mut fun fill(x: T) {
+    loop (i in 0..<self.len()) self.set(i, x)
+  }
+}
+
 extend<T> MutableList<T> {
+  /// A list of `n` elements where slot `i` holds `init(i)`:
+  /// `MutableList<MutableList<i64>>.make(n, _ => [])`.
+  pub static fun make(n: i64, init: fun(i64): T): MutableList<T> {
+    var out: MutableList<T> = []
+    loop (i in 0..<n) out.push(init(i))
+    out
+  }
+
+  /// Exchanges the elements at `i` and `j`.
+  pub mut fun swap(i: i64, j: i64) {
+    (self.atOrPanic(i), self.atOrPanic(j)) = (self.atOrPanic(j), self.atOrPanic(i))
+  }
+
   /// Inserts `x` at index `i`, shifting the rest up; `i == len()` appends.
   pub mut fun insert(i: i64, x: T) {
     if (i < 0 || i > self.len()) panic("insert: index $i out of bounds for list of length ${self.len()}")

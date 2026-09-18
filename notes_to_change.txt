@@ -502,3 +502,56 @@ M6. examples/algorithms (2026-09-18): sorting (bubble/insertion<T: Comparable>/s
    `.reversed()` — documented in docs 03 (loop section) + cheatsheet. DONE: tuple assignment
    `(a, b) = (b, a)` (sema tupleAssign/assignPlace in check_fn.go, TestTupleAssignment; spec D37
    addendum v0.25; docs 02 tuples section + cheatsheet). Used in algorithms for swap/gcd/fib.
+M6b. examples/algorithms review pass (2026-09-18, user asked: use the language's own forms,
+   no `l`/`r` names, "something better than a Queue over a MutableList"). Done:
+   - P4 DONE: `std/prelude/collections.vs` — `Deque<T>` (ring buffer; addFirst/addLast/
+     removeFirst/removeLast/first/last/at/len/isEmpty/clear/toList, Iterable, Display) and
+     `PriorityQueue<T>` (binary heap; push/pop/peek/len/isEmpty/clear/toList, Display), built
+     by `deque<T>()`, `priorityQueue<T: Comparable>()`, `priorityQueueBy(compare)`. Both keep
+     their state behind `*State<T>` so they are reference types like MutableList (a `val`
+     can grow them, a callee shares them) — the value-struct-with-counters shape the example
+     Queue had copies its head/size on every pass. Stack = MutableList (no struct).
+     The ring is a `MutableList<T?>` with `null` marking a free slot: a removed element is
+     released at once. `T?` over a nullable `T` is a distinct type (an empty slot is not a
+     stored null — verified: `Deque<i64?>` keeps a `null` element), so this is honest.
+     Initial capacity 4, doubling.
+   - `MutableList<T>.fill(n, x)`, `MutableList<T>.make(n, make)` statics and
+     `swap(i, j)` (list.vs). The fill loop `loop (_ in 0..<n) xs.push(0)` appeared 12× in the
+     examples. `fill` shares a reference value across slots — doc'd, `make` is the fix.
+     Names decided by the user (2026-09-18): `fill` / `make` — not filled/generate; `from`
+     reads as a conversion from another collection.
+   - COMPILER: statics on a built-in generic type resolve when the type arguments are
+     written (`typeNamed` in check_static.go; `MutableList.filled` without them is an error
+     with the same wording as generic structs). Spec D23 amended (v0.25), TestBuiltinStatics.
+   - PARSER: `_ => ...` and `(_, x) => ...` — the discard as a lambda parameter, like
+     `loop (_ in xs)`. Spec D32 amended, TestLambdaDiscardParam, cheatsheet.
+   - CODEGEN BUG fixed: `xs.atOrPanic(i) += 1` emitted the element's ADDRESS as the operand
+     of the add (`list.ref` as an rvalue returned the pointer; only place() loaded). Now an
+     rvalue `list.ref` loads. Pinned in examples/indexing. (Compound assignment on an element
+     still evaluates the index expression twice — `xs.atOrPanic(f()) += 1` calls f twice;
+     same as before for map entries. Worth a temp in assignPlace some day.)
+   - Examples: Dijkstra is now O((n + m) log n) over `priorityQueue<Hop>()` with a Comparable
+     `Hop`; BFS/Kahn use `deque`; `slidingMax` shows the deque both ways; BST insert is a
+     recursive `insertInto` + the `loop cur = cur.left ?: return cur.value` one-liner for
+     min/max; MinHeap kept as the algorithm behind PriorityQueue; sieve/isPrime use
+     `.step()` + `isqrt`; knapsack uses `(w..capacity).reversed()` and `zip`.
+   - Docs: 04-collections "Queues and priority queues" (runnable), stdlib reference, cheatsheet.
+   LATER (user, 2026-09-18): plan a real std library — algorithms, json, collections beyond
+   these, text formatting, etc. — "efficient, optimized and safe"; NOT before the language is
+   stable. For now examples/ is where such code lives and gets exercised.
+   - fill and aliasing (user question, 2026-09-18): `fill(n, x)` pushes the same `x` n
+     times, so a mutable collection / pointer / closure would be ONE value aliased by every
+     slot (JS `Array(n).fill([])`). Copying generically is impossible (no Clone), so it is
+     refused instead: `Sendable` is now a nameable prelude marker trait (sync.vs; answered by
+     sema's `sendable()` shape check in `implements`, `impl Sendable for X` by hand is an
+     error) and `fill` lives in `extend<T: Sendable> MutableList<T>`. The bound failure adds
+     a hint pointing at `make(n, i => ...)`. Value structs, immutable lists, tuples,
+     nullables all pass. Spec D25/D35 amended (v0.25), TestBuiltinStatics extended.
+   - fill → repeat (user, 2026-09-18): JS's `fill` is an in-place overwrite of an existing
+     array, so calling the constructor `fill(n, x)` misled. Now `MutableList<T>.repeat(x,
+     count)` (Swift's `Array(repeating:count:)` order, echoes `"ab".repeat(3)`) builds the
+     list, and `xs.fill(x)` is the JS-style in-place overwrite (length unchanged). Both under
+     `extend<T: Sendable>`. User floated a Kotlin-style `mutableListOf(repeating: x, count: n)`
+     / `mutableListOf<i64>()` free-function family — see the reply of 2026-09-18; not adopted
+     for now (would imply `mutableListOf(1, 2, 3)` and the `listOf`/`mapOf` family, i.e. the
+     std naming plan that is deferred until the language is stable).
