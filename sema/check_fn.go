@@ -579,6 +579,9 @@ func (f *fnCtx) checkAssign(s *ast.AssignStmt) []Stmt {
 			return []Stmt{&Assign{Target: target, Value: value}}
 		}
 	}
+	if tup, ok := s.Target.(*ast.TupleExpr); ok {
+		return f.tupleAssign(s, tup)
+	}
 	target, root := f.checkLValue(s.Target, true)
 	if target == nil {
 		f.checkExpr(s.Value, nil)
@@ -595,6 +598,78 @@ func (f *fnCtx) checkAssign(s *ast.AssignStmt) []Stmt {
 		rhs := f.checkExprTo(s.Value, target.Type())
 		value = f.makeBinary(op, target, rhs, s.Pos)
 	}
+	return []Stmt{f.assignPlace(s.Target, target, root, value, rawType)}
+}
+
+// tupleAssign is `(a, b) = expr` (D37 destructuring as an assignment): the
+// right side is evaluated once into a temporary and then each place is
+// assigned in order, so `(a, b) = (b, a)` swaps without a named temp.
+func (f *fnCtx) tupleAssign(s *ast.AssignStmt, tup *ast.TupleExpr) []Stmt {
+	if s.Op != lexer.Assign {
+		f.errorf(s.Pos, "compound assignment cannot target a tuple; assign each place separately")
+		f.checkExpr(s.Value, nil)
+		return nil
+	}
+	var targets []Expr
+	var roots []*Var
+	var elemTypes []types.Type
+	ok := true
+	for _, el := range tup.Elems {
+		t, root := f.checkLValue(el, true)
+		if t == nil {
+			ok = false
+			continue
+		}
+		targets = append(targets, t)
+		roots = append(roots, root)
+		elemTypes = append(elemTypes, t.Type())
+	}
+	if !ok {
+		f.checkExpr(s.Value, nil)
+		return nil
+	}
+	want := &types.Tuple{Elems: elemTypes}
+	var raw Expr
+	rawTypes := elemTypes // what each place is narrowed to after the store
+	if lit, ok := s.Value.(*ast.TupleExpr); ok && len(lit.Elems) == len(targets) {
+		// a literal on the right (`(a, b) = (b, a)`): check each element
+		// against its own place, exactly as a plain assignment would
+		tl := &TupleLit{}
+		rawTypes = nil
+		for i, el := range lit.Elems {
+			x := f.checkExpr(el, elemTypes[i])
+			rawTypes = append(rawTypes, x.Type())
+			tl.Elems = append(tl.Elems, f.coerce(x, elemTypes[i], el.Span()))
+		}
+		tl.T = want
+		raw = tl
+	} else {
+		raw = f.checkExpr(s.Value, want)
+	}
+	tt, isTuple := raw.Type().(*types.Tuple)
+	if !isTuple {
+		if !types.IsInvalid(raw.Type()) {
+			f.errorf(s.Value.Span(), "cannot destructure a value of type '%s' into %d places; only tuples destructure positionally (D37)", raw.Type(), len(targets))
+		}
+		return nil
+	}
+	if len(tt.Elems) != len(targets) {
+		f.errorf(s.Value.Span(), "tuple has %d elements but %d places are assigned", len(tt.Elems), len(targets))
+		return nil
+	}
+	tmp := f.newTemp(tt)
+	stmts := []Stmt{&VarDecl{Var: tmp, Init: raw}}
+	for i, target := range targets {
+		part := Expr(&TupleGet{exprBase{tt.Elems[i]}, &VarRef{exprBase{tt}, tmp}, i})
+		value := f.coerce(part, target.Type(), tup.Elems[i].Span())
+		stmts = append(stmts, f.assignPlace(tup.Elems[i], target, roots[i], value, rawTypes[i]))
+	}
+	return stmts
+}
+
+// assignPlace builds the store of value into target and updates the smart
+// casts for the assigned place.
+func (f *fnCtx) assignPlace(targetAst ast.Expr, target Expr, root *Var, value Expr, rawType types.Type) Stmt {
 	// Assignment re-narrows the variable to the assigned value's type (a
 	// non-null value smart-casts a nullable var), or clears the narrowing.
 	if root != nil {
@@ -603,14 +678,14 @@ func (f *fnCtx) checkAssign(s *ast.AssignStmt) []Stmt {
 			if rawType != nil && !types.Identical(rawType, root.Type) && !types.IsNever(rawType) && !types.IsInvalid(rawType) && f.assignableTo(rawType, root.Type) {
 				f.narrow[pv(root)] = rawType
 			}
-		} else if p, ok := f.placeOf(s.Target); ok {
+		} else if p, ok := f.placeOf(targetAst); ok {
 			// a field write drops the facts about that field and below
 			f.invalidatePlace(p)
 		} else {
 			f.invalidatePaths(root)
 		}
 	}
-	return []Stmt{&Assign{Target: target, Value: value}}
+	return &Assign{Target: target, Value: value}
 }
 
 // checkLValue checks an assignable expression. It returns the lvalue and,

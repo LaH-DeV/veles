@@ -65,7 +65,7 @@ struct Parser {
   fun peek(): u8? = if (self.pos < self.src.len()) self.src.byteAt(self.pos) else null
 
   mut fun skipSpace() {
-    loop (true) {
+    loop {
       val b = self.peek() ?: return
       if (b != SPACE && b != TAB && b != LF && b != CR) return
       self.pos += 1
@@ -110,7 +110,7 @@ struct Parser {
       self.pos += 1
       return JObj(fields: fields.toMap())
     }
-    loop (true) {
+    loop {
       self.skipSpace()
       if (self.peek() != QUOTE) throw self.fail("expected a string key")
       val key = try self.parseString()
@@ -133,7 +133,7 @@ struct Parser {
       self.pos += 1
       return JArr(items: items.toList())
     }
-    loop (true) {
+    loop {
       items.push(try self.parseValue())
       self.skipSpace()
       val b = self.peek() ?: throw self.fail("unterminated array")
@@ -165,7 +165,7 @@ struct Parser {
   }
 
   mut fun digits() {
-    loop (true) {
+    loop {
       val b = self.peek() ?: return
       if (b < ZERO || b > NINE) return
       self.pos += 1
@@ -176,7 +176,7 @@ struct Parser {
   mut fun parseString(): string throws ParseError {
     self.pos += 1
     var out: MutableList<u8> = []
-    loop (true) {
+    loop {
       val b = self.peek() ?: throw self.fail("unterminated string")
       self.pos += 1
       if (b == QUOTE) break

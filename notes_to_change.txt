@@ -426,3 +426,79 @@ M2. examples/calc (2026-09-18): tokenizer, Pratt parser into a sealed AST (recur
    u8 (ASCII only; sema CharLit → IntConst; spec D18/4b, docs 02, errors.md, cheatsheet);
    json/calc rewritten with them.
    NEXT: M3 todo CLI over fs, M4 worker pool, M5 text adventure.
+IDEAS (2026-09-18, undecided — noted from reading examples/json, examples/syntax_tour):
+ I1. Guard / early-exit binding. `val doc = when (val r = parse(text)) { is Ok => r; is Err
+     => { ...; return } }` is correct (a Never arm drops out of the join, `return` targets the
+     enclosing fun — Kotlin/Rust/Swift semantics; keep that) but the happy-path value is buried
+     in a `when` whose only job is to bail out. Candidate spellings, in order of preference:
+     (a) `val doc = parse(text) else { e => ...; return }` — Rust let-else / Swift guard-let;
+         the block MUST diverge (checker enforces Never, explicit diagnostic). One rule covers
+         Result, Option and refutable patterns: `val Some(x) = m.get(k) else { return }`,
+         `val JObj(fields) = doc else { ... }`.
+     (b) `?:` on a Result (extend D30): `parse(text) ?: { e => ...; return }`, `parse(s) ?: 0`.
+         Cheapest; sugar for (a) in the Result/Option case.
+     (c) LSP rewrite hint only: a `when` with exactly one value arm + all-Never others.
+ I2. `when (val n = ...)` requires `val`, `loop (x in c)` does not. Different situations (the
+     when-subject is a general expression binding; the loop var is always a fresh binding), but
+     it reads inconsistent. Options: allow `when (n = part.toInt())`; or require nothing and
+     treat a bare `name = expr` in a when-head as the binding (assignment there is never wanted).
+ I3. (docs, low priority) Mutating a MutableList while looping over it: memory-safe (D42
+     iterator holds the old buffer) but the meaning is unspecified (snapshot? sees appends?).
+     Decide and document when it comes up; not blocking.
+
+TODO (2026-09-18, decided by user):
+ T1. IMPLEMENT `loop (&x in xs)` — mutate the ELEMENT in place while iterating. Today
+     `loop (x in xs)` copies a value struct, so mutating elements needs the index walk
+     `loop (i in 0..xs.len()) { xs.atOrPanic(i).bump() }`. `&x` binds `x: *Item` to the element's
+     storage (same place `atOrPanic(i)` names, D10/D25); only for addressable sources (List /
+     MutableList / Map values), an error for a plain Iterator. Spec: D42 addendum.
+ T2. DOCS ONLY (no new syntax): index + element is `loop ((i, x) in xs.iter().enumerate())`.
+     Hard to read but common — put it in 10-closures-and-iterators next to the loop forms and in
+     the cheatsheet under loops (not only under iterator adapters). Revisit sugar
+     (`loop (i, x in xs)`) only if it keeps hurting.
+ T3. DOCS ONLY: the counting loop (`var n = 0; loop (x in c) { n += 1 }; n`) is
+     `c.iter().count()`; likewise sum/accumulate → `fold`. Show the loop and the one-liner side
+     by side in the docs.
+ T4. LINTS (with `--fix`) for the simple shapes above:
+     - `loop (true) { ... }` → `loop { ... }`.
+     - `var n = 0; loop (x in c) { n += 1 }` where x is unused and n only incremented →
+       `c.iter().count()`.
+     - `when` with one value arm and all other arms Never (I1c) → hint, no fix until I1 is
+       decided.
+     Keep these in the sema lint family (lint_selfaddr.go style), each pinned by a test.
+ T5. RENAME `self` → `this` (user preference, 2026-09-18). Receiver keyword in methods, the
+     `when (self)` subject, `Self` type stays as is (or `This`? decide with it). Touches lexer
+     keyword table, parser, sema (`fnCtx` receiver binding, smart-cast place root), LSP hover/
+     completion, std/prelude/*.vs, every example, docs, spec (D22/D23 text), cheatsheet. Do it
+     in one sweep with `veles check --fix` offering the rewrite for old sources; pending go-ahead.
+M6. examples/algorithms (2026-09-18): sorting (bubble/insertion<T: Comparable>/selection/
+   merge/quick/counting/heap), searching (linear/binary/lowerBound/two-pointer), numbers
+   (gcd/sieve/fib+memo/powMod/isqrt/factorize), strings (reverse/palindrome/anagram/RLE/
+   caesar/naive+KMP find/common prefix), graph (BFS/DFS/distances/Kahn topo/components/
+   Dijkstra O(n²)), dp (LCS/edit distance/knapsack/coin change/LIS/Kadane), structures
+   (Stack<T>/Queue<T>/BST via *TreeNode/MinHeap). One file per topic in one module. Found:
+   - FIXED lexer bug: a line ending in `>>` (`adj: MutableList<MutableList<i64>>`) got no
+     auto-semicolon, so the next member/statement was glued on ("expected newline or ','
+     between members, found 'static'"). `Shr` added to semiAllowed (lexer.go); pinned by
+     parser TestSemicolonAfterDoubleGt.
+   - `val v = if (c)\n  a\nelse\n  b` (body on the next line, no braces) is a parse error;
+     Kotlin accepts it. Either accept a newline after `if (c)` / `else` in expression position
+     or make the diagnostic say "use braces or keep the branch on the same line".
+   - An `if (c) return false` as a when-ARM body swallows the `else =>` arm on the next line
+     as its own else ("expected an expression, found '=>'"). Fix: inside an arm body, an `else`
+     after a newline followed by `=>` belongs to the `when`. Workaround was braces.
+   - `List<string> == List<string>` is refused ("implement Equatable"): structural equality on
+     List/Map/Set of Equatable elements should be built in (D25 says structural by default).
+     Workaround `.join("")`.
+   - `s.substring(a, b)` returns `string?` — fine, but the algorithms all know their bounds are
+     valid; a `substringOrPanic` per the at/atOrPanic convention would match the rest of the API.
+   - FORMATTER bug: in a `when` with a multi-line block arm, `=>` alignment only pads the first
+     arm after the widest pattern (`')'           => {`) and leaves the rest unaligned. Either
+     align the whole group or none once a block arm breaks it.
+   - Nice: `val x = xs.first() ?: return ""`, `val u = best ?: break`, `loop ((i, x) in
+     xs.iter().enumerate())`, `loop ((from, to, w) in edges)` all read well; nullable pointer
+     BST with `val l = cur.left; if (l == null) ...; cur = l` works but is verbose (I1 again).
+   Decisions (2026-09-18, user): no C-style `for`; stepped loops are `(a..b).step(n)` /
+   `.reversed()` — documented in docs 03 (loop section) + cheatsheet. DONE: tuple assignment
+   `(a, b) = (b, a)` (sema tupleAssign/assignPlace in check_fn.go, TestTupleAssignment; spec D37
+   addendum v0.25; docs 02 tuples section + cheatsheet). Used in algorithms for swap/gcd/fib.

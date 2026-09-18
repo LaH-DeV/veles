@@ -1402,3 +1402,30 @@ fun key(x: i64): i64 throws Bad = x
 fun main() { io.println("${[2, 1].sortedBy(x => try key(x))}") }`, "cannot be passed here")
 	expectError(t, prelude+`fun main() { val b = 'é'; io.println("$b") }`, "one ASCII character")
 }
+
+// `(a, b) = (b, a)`: D37 destructuring as an assignment. The right side is
+// evaluated once, then each place is stored in order.
+func TestTupleAssignment(t *testing.T) {
+	expectClean(t, prelude+`
+struct P { x: i64; y: i64 }
+fun pair(): (i64, i64) = (1, 2)
+fun main() {
+  var a = 1
+  var b = 2
+  (a, b) = (b, a)
+  (a, b) = pair()
+  var xs = mut [1, 2, 3]
+  (xs.atOrPanic(0), xs.atOrPanic(2)) = (xs.atOrPanic(2), xs.atOrPanic(0))
+  var p = P(x: 1, y: 2)
+  (p.x, p.y) = (p.y, p.x)
+  var s: string? = null
+  var n = 0
+  (s, n) = ("hi", 5)
+  io.println("$a $b $xs $p ${s.len()} $n")
+}`)
+	expectError(t, prelude+`fun main() { var a = 1; var b = 2; (a, b) = (1, 2, 3); io.println("$a $b") }`, "tuple has 3 elements but 2 places")
+	expectError(t, prelude+`fun main() { var a = 1; val c = 2; (a, c) = (2, 3); io.println("$a $c") }`, "it is a 'val'")
+	expectError(t, prelude+`fun main() { var a = 1; var b = 2; (a, b) += (1, 1); io.println("$a $b") }`, "compound assignment cannot target a tuple")
+	expectError(t, prelude+`fun main() { var a = 1; var b = 2; (a, b) = 5; io.println("$a $b") }`, "only tuples destructure positionally")
+	expectError(t, prelude+`fun main() { var a = 1; var b = 2; (a, b) = ("x", 1); io.println("$a $b") }`, "expected 'i64', found 'string'")
+}

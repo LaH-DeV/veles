@@ -138,7 +138,7 @@ fun collections(nums: List<i32>, counts: Map<string, i32>, word: string, a: A?) 
     .sortedBy(x => -x)
     .take(3)
   loop :outer {
-    loop (true) {
+    loop {
       break outer
     }
   }

@@ -227,6 +227,33 @@ Output:
 3 2 3 2 true
 ```
 
+Destructuring also works as an *assignment* to existing places. The right
+side is evaluated completely before anything is stored, so a swap needs no
+temporary — and the same goes for list elements and struct fields:
+
+```veles
+use io
+
+fun main() {
+  var a = 1
+  var b = 2
+  (a, b) = (b, a)
+  var xs = mut [10, 20, 30]
+  (xs.atOrPanic(0), xs.atOrPanic(2)) = (xs.atOrPanic(2), xs.atOrPanic(0))
+  var fibA = 0
+  var fibB = 1
+  loop (_ in 0..<10) (fibA, fibB) = (fibB, fibA + fibB)
+  io.println("$a $b $xs $fibA")
+}
+```
+
+Output:
+```text
+2 1 [30, 20, 10] 55
+```
+
+Only `=` destructures; `(a, b) += (1, 1)` is an error.
+
 ## Constants
 
 Module-level `val` and `const` hold values shared by the whole module:

@@ -125,7 +125,7 @@ struct Parser {
 
   mut fun parseExpr(minPower: i64): Expr throws SyntaxError {
     var left = try self.parsePrefix()
-    loop (true) {
+    loop {
       val t = self.peek()
       if (t is Op && t.text == "=") {
         val target = left
@@ -159,7 +159,7 @@ struct Parser {
           var args: MutableList<Expr> = []
           val first = self.peek()
           if (!(first is Op && first.text == ")")) {
-            loop (true) {
+            loop {
               args.push(try self.parseExpr(0))
               val sep = self.peek()
               if (sep is Op && sep.text == ",") {

@@ -557,6 +557,8 @@ Required by D36's heterogeneous `gather`. Tuples destructure positionally in bot
 
 **Tuple parameters auto-adapt.** A two-parameter lambda is accepted where a one-parameter lambda over a tuple is expected, so `entries().sortedByDescending((k, v) => v)` works without doubled parentheses. This is Scala's tupling conversion. Cost: a special case in the checker, and it can mask genuine arity errors, since a two-argument lambda passed where one argument is expected now silently succeeds.
 
+*Addendum (v0.25) — destructuring assignment.* `(a, b) = expr` assigns to existing places (variables, fields, `atOrPanic`/`getOrPanic` elements) positionally. The right side is evaluated in full before the first store, so `(a, b) = (b, a)` swaps and `(a, b) = (b, a + b)` steps without a named temporary — Python's and Go's rule. Each place keeps its own mutability check (D11) and its own smart cast after the store (D5). Only plain `=` destructures; a compound `(a, b) += ...` is an error, since element-wise arithmetic on tuples is not defined. Nested tuples do not destructure in assignment, as they do not yet in bindings.
+
 ### D38 — `race { }` for the first-ready construct
 
 Completes the concurrency family:

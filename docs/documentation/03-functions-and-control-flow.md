@@ -134,6 +134,33 @@ Output:
 3 1 10 4 30
 ```
 
+There is no C-style `for (init; cond; step)`. A loop that walks by a fixed
+stride — every third element, counting down, the inner loop of a sieve — is
+a range with `step()` or `reversed()`, which says *what* is visited rather
+than *how*:
+
+```veles
+use io
+
+fun main() {
+  var marked: MutableList<i64> = []
+  val p = 3
+  loop (m in (p * p..30).step(p)) marked.push(m)   // multiples of 3 from 9
+  var down: MutableList<i64> = []
+  loop (i in (0..<5).reversed()) down.push(i)
+  io.println("$marked $down")
+}
+```
+
+Output:
+```text
+[9, 12, 15, 18, 21, 24, 27, 30] [4, 3, 2, 1, 0]
+```
+
+When the step is not arithmetic (`m /= 10`, `cur = cur.next`), write the
+condition form and update at the end of the body — and remember that a
+`continue` skips that update.
+
 `break` leaves the loop and `continue` skips to the next iteration. To
 target an outer loop, label it after the keyword:
 

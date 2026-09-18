@@ -364,3 +364,24 @@ fun main() {
 		}
 	}
 }
+
+// A line ending in `>>` closes two generic lists at once (`List<List<T>>`)
+// and must terminate the statement like a single `>` does.
+func TestSemicolonAfterDoubleGt(t *testing.T) {
+	src := `
+struct G {
+  n:   i64
+  adj: MutableList<MutableList<i64>>
+
+  static fun mk(n: i64): G = G(n: n, adj: [])
+}
+fun f() {
+  var t: MutableList<MutableList<i64>>
+  t = []
+}
+`
+	_, diags := parse(t, src)
+	if diags.HasErrors() {
+		t.Fatalf("%s", diags.Render())
+	}
+}

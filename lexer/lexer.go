@@ -104,7 +104,7 @@ func (lx *Lexer) semiAllowed() bool {
 	case Ident, Int, Float, String, Char,
 		KwTrue, KwFalse, KwNull, KwSelf, KwSelfTy, KwBreak, KwContinue, KwReturn,
 		KwThrows, KwSuspends,
-		RParen, RBracket, RBrace, Question, Gt, Under:
+		RParen, RBracket, RBrace, Question, Gt, Shr, Under: // Shr: `List<List<T>>` at line end
 		return true
 	}
 	return false
