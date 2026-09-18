@@ -123,10 +123,12 @@ exported module, or add `x` to that package's `exports` (M5).
 Once you name one argument, name the rest: `f(1, b: 2, c: 3)` is fine,
 `f(a: 1, 2)` is not (D28).
 
-### `character literals are not part of the language`
+### `a byte literal holds one ASCII character`
 
-Use a one-character string, `"x"`. Strings are byte-indexed UTF-8 and
-there is no separate char type in the bootstrap (D18).
+`'x'` is a `u8` — the byte of one ASCII character, for code that walks a
+string with `byteAt` (`b == '"'`, `b >= '0' && b <= '9'`). A character
+outside ASCII has no single byte to be; use a one-character string, `"é"`
+(D18).
 
 ### `panic: index 3 out of bounds for list of length 1`
 

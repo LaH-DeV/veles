@@ -1,0 +1,21 @@
+(1 + (2 * 3))  => 7
+(((1 - 2) - 3) - 4)  => -8
+((((2 * 3) * 4) - 5) - 6)  => 13
+((1 + 2) * 3)  => 9
+(2 ^ (3 ^ 2))  => 512
+(-(2 ^ 2))  => -4
+((10 % 4) + (7 / 2))  => 5.5000
+x = 5  => 5
+y = ((x * 2) + 1)  => 11
+sqrt(((x * x) + (y * y)))  => 12.0830
+(max(x, y) - min(x, y))  => 6
+(sum(1, 2, 3, 4) / 4)  => 2.5000
+(z + 1)  => error: unknown variable 'z'
+(1 / (x - 5))  => error: division by zero
+sqrt((-1))  => error: sqrt of a negative number
+2 +  => syntax error: unexpected end of expression (column 4)
+3 $ 4  => syntax error: unexpected character '$' (column 3)
+pow(2, 10, 3)  => error: 'pow' takes 2 argument(s), got 3
+(1 + 2  => syntax error: expected ')' (column 7)
+variables: {x: 5.0, y: 11.0}
+exit=0

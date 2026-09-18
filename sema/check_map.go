@@ -293,8 +293,12 @@ func (f *fnCtx) mapAdapter(recv Expr, mt *types.Map, name string, e *ast.CallExp
 	}
 	m := f.newTemp(mt)
 	f.pending = nil
+	savedAdapter := f.adapter
+	f.adapter = &adapterState{}
+	defer func() { f.adapter = savedAdapter }()
 	pre := []Stmt{&VarDecl{Var: m, Init: recv}}
 	finish := func(stmts []Stmt, value Expr) Expr {
+		value = f.adapterResult(value)
 		all := append(pre, f.pending...)
 		f.pending = nil
 		all = append(all, stmts...)
@@ -321,7 +325,7 @@ func (f *fnCtx) mapAdapter(recv Expr, mt *types.Map, name string, e *ast.CallExp
 		}
 		k := f.newTemp(mt.Key)
 		pre = append(pre, &VarDecl{Var: k, Init: f.checkExprTo(e.Args[0].Value, mt.Key)})
-		fv, ok := f.fnArg(e.Args[1].Value, &types.Func{Ret: mt.Value})
+		fv, ok := f.fnArgNoThrow(e.Args[1].Value, &types.Func{Ret: mt.Value})
 		if !ok {
 			return bad()
 		}
@@ -348,7 +352,7 @@ func (f *fnCtx) mapAdapter(recv Expr, mt *types.Map, name string, e *ast.CallExp
 		}
 		es := entries()
 		stmts := f.listLoop(es, entryT, span, func(x *Var, lp *Loop) []Stmt {
-			return []Stmt{&ExprStmt{X: callFn(fv, key(x), val(x))}}
+			return []Stmt{&ExprStmt{X: f.call(lp, fv, key(x), val(x))}}
 		})
 		return finish(stmts, &UnitConst{exprBase{types.TUnit}})
 	case "mapValues":
@@ -369,7 +373,7 @@ func (f *fnCtx) mapAdapter(recv Expr, mt *types.Map, name string, e *ast.CallExp
 		es := entries()
 		stmts := []Stmt{&VarDecl{Var: out, Init: &MapLit{exprBase{outT}, nil}}}
 		stmts = append(stmts, f.listLoop(es, entryT, span, func(x *Var, lp *Loop) []Stmt {
-			return []Stmt{&ExprStmt{X: &Builtin{exprBase{types.TUnit}, "map.set", []Expr{ref(out), key(x), callFn(fv, val(x))}, span}}}
+			return []Stmt{&ExprStmt{X: &Builtin{exprBase{types.TUnit}, "map.set", []Expr{ref(out), key(x), f.call(lp, fv, val(x))}, span}}}
 		})...)
 		return finish(stmts, &Cast{exprBase{&types.Map{Key: mt.Key, Value: ut}}, ref(out)})
 	case "filter":
@@ -386,7 +390,7 @@ func (f *fnCtx) mapAdapter(recv Expr, mt *types.Map, name string, e *ast.CallExp
 		stmts := []Stmt{&VarDecl{Var: out, Init: &MapLit{exprBase{outT}, nil}}}
 		stmts = append(stmts, f.listLoop(es, entryT, span, func(x *Var, lp *Loop) []Stmt {
 			put := &Block{Stmts: []Stmt{&ExprStmt{X: &Builtin{exprBase{types.TUnit}, "map.set", []Expr{ref(out), key(x), val(x)}, span}}}, Type: types.TUnit}
-			return []Stmt{&ExprStmt{X: &If{exprBase{types.TUnit}, callFn(fv, key(x), val(x)), put, nil}}}
+			return []Stmt{&ExprStmt{X: &If{exprBase{types.TUnit}, f.call(lp, fv, key(x), val(x)), put, nil}}}
 		})...)
 		return finish(stmts, &Cast{exprBase{&types.Map{Key: mt.Key, Value: mt.Value}}, ref(out)})
 	}

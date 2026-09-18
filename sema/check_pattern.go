@@ -144,19 +144,32 @@ func (f *fnCtx) whenExpr(e *ast.WhenExpr, want types.Type) Expr {
 			f.errorf(e.Pos, "'when' is not exhaustive: %s (D13; add the missing arms or 'else')", f.missingArms(cov, subjType))
 		}
 	} else if hasElse && subjType != nil {
-		if _, sealed := subjType.(*types.Sealed); sealed {
-			// the fix removes the else only when every variant has an arm
-			// already (it is dead); otherwise the author has to write the
-			// missing arms, which no fix can invent
-			var fix *source.Fix
-			if f.isExhaustive(cov, subjType, false) {
+		if st, sealed := subjType.(*types.Sealed); sealed {
+			// D13 lint, scoped (2026-09-18): an `else` that stands for one
+			// missing variant is an enumeration that a new variant would
+			// silently fall into — warn. One-variant extraction
+			// (`is JStr(v) => v  else => null`) is the honest spelling and
+			// stays silent. An `else` with every variant covered is dead: the
+			// fix removes it; otherwise the author has to write the missing
+			// arm, which no fix can invent.
+			covered := 0
+			for _, v := range st.Variants {
+				if cov.variants[v] {
+					covered++
+				}
+			}
+			switch {
+			case f.isExhaustive(cov, subjType, false):
+				var fix *source.Fix
 				for _, arm := range e.Arms {
 					if arm.Else {
 						fix = fixDeleteLine("Remove the unreachable 'else' arm", arm.Pos)
 					}
 				}
+				f.warnFix(e.Pos, fix, "'else' is unreachable: every variant of '%s' has an arm (D13 lint)", st.Name)
+			case len(st.Variants) > 1 && covered == len(st.Variants)-1:
+				f.warnf(e.Pos, "'else' stands for the one remaining variant, %s, and would silently take any variant added to '%s' later; name it instead (D13 lint)", f.missingArms(cov, subjType), st.Name)
 			}
-			f.warnFix(e.Pos, fix, "'else' on a sealed subject silences the exhaustiveness check when a variant is added later (D13 lint)")
 		}
 	}
 

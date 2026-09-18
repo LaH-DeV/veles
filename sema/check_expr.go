@@ -189,8 +189,18 @@ func (f *fnCtx) checkExpr(e ast.Expr, want types.Type) Expr {
 	case *ast.StringLit:
 		return f.stringLit(e)
 	case *ast.CharLit:
-		f.errorf(e.Pos, "character literals are not part of the language; strings are byte-indexed (D18) — use a one-character string")
-		return bad()
+		// `'"'` is a byte (D18 addendum, v0.24): the u8 of one ASCII character,
+		// for code that walks a string with `byteAt`. Not a character type —
+		// a multi-byte character has no single byte to be.
+		if len(e.Value) != 1 {
+			f.errorf(e.Pos, "a byte literal holds one ASCII character; '%s' is %d bytes of UTF-8 — use a one-character string (D18)", e.Value, len(e.Value))
+			return bad()
+		}
+		t := numericHint(want)
+		if !types.IsInteger(t) {
+			t = types.TU8
+		}
+		return &IntConst{exprBase{t}, uint64(e.Value[0]), false}
 	case *ast.NullLit:
 		if n, ok := want.(*types.Nullable); ok {
 			return &NullConst{exprBase{n}}

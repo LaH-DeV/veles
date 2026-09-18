@@ -398,26 +398,27 @@ func (p *Parser) parseLambda() ast.Expr {
 	}
 	p.expect(lexer.FatArrow)
 	l.Body = p.parseArmBody()
-	// `x => total += x`: an assignment body is a one-statement block.
-	switch p.cur().Kind {
-	case lexer.Assign, lexer.PlusEq, lexer.MinusEq, lexer.StarEq, lexer.SlashEq, lexer.PercentEq:
-		if _, isBlock := l.Body.(*ast.BlockExpr); !isBlock {
-			op := p.next().Kind
-			val := p.parseExpr()
-			as := &ast.AssignStmt{Target: l.Body, Op: op, Value: val, Pos: p.spanFrom(start)}
-			l.Body = &ast.BlockExpr{Block: &ast.Block{Stmts: []ast.Stmt{as}, Pos: as.Pos}}
-		}
-	}
 	l.Pos = p.spanFrom(start)
 	return l
 }
 
-// parseArmBody parses the right side of `=>`: a block or an expression.
+// parseArmBody parses the right side of `=>` (a lambda, a `when` or `race`
+// arm): a block, an expression, or an assignment — `x => total += x`,
+// `cond => self.pos += 1` — which becomes a one-statement block.
 func (p *Parser) parseArmBody() ast.Expr {
 	if p.at(lexer.LBrace) {
 		return &ast.BlockExpr{Block: p.parseBlock()}
 	}
-	return p.parseExpr()
+	start := p.span()
+	body := p.parseExpr()
+	switch p.cur().Kind {
+	case lexer.Assign, lexer.PlusEq, lexer.MinusEq, lexer.StarEq, lexer.SlashEq, lexer.PercentEq:
+		op := p.next().Kind
+		val := p.parseExpr()
+		as := &ast.AssignStmt{Target: body, Op: op, Value: val, Pos: p.spanFrom(start)}
+		return &ast.BlockExpr{Block: &ast.Block{Stmts: []ast.Stmt{as}, Pos: as.Pos}}
+	}
+	return body
 }
 
 func (p *Parser) parseParenOrTuple() ast.Expr {

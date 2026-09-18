@@ -1,0 +1,34 @@
+{"name":"Veles","version":0.24,"tags":["fast","safe","gc"],"author":{"name":"Lah","langs":["pl","en"]},"stars":1000,"escaped":"line\nbreak \"quoted\" Aé","nothing":null,"ok":true}
+{
+  "name": "Veles",
+  "version": 0.24,
+  "tags": [
+    "fast",
+    "safe",
+    "gc"
+  ],
+  "author": {
+    "name": "Lah",
+    "langs": [
+      "pl",
+      "en"
+    ]
+  },
+  "stars": 1000,
+  "escaped": "line\nbreak \"quoted\" Aé",
+  "nothing": null,
+  "ok": true
+}
+name=Veles second tag=safe author=Lah
+stars=1000.0 missing=null depth=3
+escaped=line
+break "quoted" Aé chars=22
+round trip true
+{"a": } -> unexpected character at offset 6
+[1, 2 -> unterminated array at offset 5
+"open -> unterminated string at offset 5
+{"a": 1} x -> trailing characters after the value at offset 9
+[1, 2,] -> unexpected character at offset 6
+tru -> unexpected character at offset 0
+"\q" -> unknown escape at offset 3
+exit=0

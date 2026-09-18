@@ -61,8 +61,8 @@ func (f *fnCtx) fnArg(arg ast.Expr, expected *types.Func) (*Var, bool) {
 		f.errorf(arg.Span(), "expected a function returning '%s', found '%s'", expected.Ret, ft.Ret)
 		return nil, false
 	}
-	if ft.Effects.Throws {
-		f.errorf(arg.Span(), "a throwing function cannot be passed to an eager collection operation; handle the Result inside it")
+	if ft.Effects.Throws && !f.throwingFn(ft, arg.Span()) {
+		f.errorf(arg.Span(), "a throwing function cannot be passed here; handle the Result inside it")
 		return nil, false
 	}
 	v := f.newTemp(ft)
@@ -83,8 +83,12 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 	}
 	list := f.newTemp(lt)
 	f.pending = nil
+	savedAdapter := f.adapter
+	f.adapter = &adapterState{}
+	defer func() { f.adapter = savedAdapter }()
 	pre := []Stmt{&VarDecl{Var: list, Init: recv}}
 	finish := func(stmts []Stmt, value Expr) Expr {
+		value = f.adapterResult(value)
 		all := append(pre, f.pending...)
 		f.pending = nil
 		all = append(all, stmts...)
@@ -108,7 +112,7 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 		out := f.newTemp(outT)
 		stmts := []Stmt{&VarDecl{Var: out, Init: &ListLit{exprBase{outT}, nil}}}
 		stmts = append(stmts, f.listLoop(list, lt.Elem, span, func(x *Var, lp *Loop) []Stmt {
-			return []Stmt{&ExprStmt{X: &Builtin{exprBase{types.TUnit}, "list.push", []Expr{ref(out), callFn(fv, ref(x))}, span}}}
+			return []Stmt{&ExprStmt{X: &Builtin{exprBase{types.TUnit}, "list.push", []Expr{ref(out), f.call(lp, fv, ref(x))}, span}}}
 		})...)
 		return finish(stmts, &Cast{exprBase{&types.List{Elem: ut}}, ref(out)})
 	case "filter":
@@ -124,7 +128,7 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 		stmts := []Stmt{&VarDecl{Var: out, Init: &ListLit{exprBase{outT}, nil}}}
 		stmts = append(stmts, f.listLoop(list, lt.Elem, span, func(x *Var, lp *Loop) []Stmt {
 			push := &Block{Stmts: []Stmt{&ExprStmt{X: &Builtin{exprBase{types.TUnit}, "list.push", []Expr{ref(out), ref(x)}, span}}}, Type: types.TUnit}
-			return []Stmt{&ExprStmt{X: &If{exprBase{types.TUnit}, callFn(fv, ref(x)), push, nil}}}
+			return []Stmt{&ExprStmt{X: &If{exprBase{types.TUnit}, f.call(lp, fv, ref(x)), push, nil}}}
 		})...)
 		return finish(stmts, &Cast{exprBase{&types.List{Elem: lt.Elem}}, ref(out)})
 	case "forEach":
@@ -136,7 +140,7 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 			return bad()
 		}
 		stmts := f.listLoop(list, lt.Elem, span, func(x *Var, lp *Loop) []Stmt {
-			return []Stmt{&ExprStmt{X: callFn(fv, ref(x))}}
+			return []Stmt{&ExprStmt{X: f.call(lp, fv, ref(x))}}
 		})
 		return finish(stmts, &UnitConst{exprBase{types.TUnit}})
 	case "fold":
@@ -154,7 +158,7 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 		}
 		stmts := []Stmt{&VarDecl{Var: acc, Init: init}}
 		stmts = append(stmts, f.listLoop(list, lt.Elem, span, func(x *Var, lp *Loop) []Stmt {
-			return []Stmt{&Assign{Target: ref(acc), Value: callFn(fv, ref(acc), ref(x))}}
+			return []Stmt{&Assign{Target: ref(acc), Value: f.call(lp, fv, ref(acc), ref(x))}}
 		})...)
 		return finish(stmts, ref(acc))
 	case "any", "all":
@@ -169,7 +173,7 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 		isAny := name == "any"
 		stmts := []Stmt{&VarDecl{Var: res, Init: &BoolConst{exprBase{types.TBool}, !isAny}}}
 		stmts = append(stmts, f.listLoop(list, lt.Elem, span, func(x *Var, lp *Loop) []Stmt {
-			cond := callFn(fv, ref(x))
+			cond := f.call(lp, fv, ref(x))
 			if !isAny {
 				cond = &Unary{exprBase{types.TBool}, OpNot, cond, span}
 			}
@@ -181,13 +185,13 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 		if !need(1) {
 			return bad()
 		}
-		var test func(x *Var) Expr
+		var test func(x *Var, lp *Loop) Expr
 		if name == "find" {
 			fv, ok := f.fnArg(e.Args[0].Value, &types.Func{Params: []types.Param{{Type: lt.Elem}}, Ret: types.TBool})
 			if !ok {
 				return bad()
 			}
-			test = func(x *Var) Expr { return callFn(fv, ref(x)) }
+			test = func(x *Var, lp *Loop) Expr { return f.call(lp, fv, ref(x)) }
 		} else {
 			needle := f.checkExprTo(e.Args[0].Value, lt.Elem)
 			if !f.comparable(lt.Elem) {
@@ -196,7 +200,7 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 			}
 			nv := f.newTemp(lt.Elem)
 			pre = append(pre, &VarDecl{Var: nv, Init: needle})
-			test = func(x *Var) Expr { return &Binary{exprBase{types.TBool}, OpEq, ref(x), ref(nv), span} }
+			test = func(x *Var, _ *Loop) Expr { return &Binary{exprBase{types.TBool}, OpEq, ref(x), ref(nv), span} }
 		}
 		var res *Var
 		var found func(x *Var, idx Expr) Expr
@@ -218,7 +222,7 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 		stmts = append(stmts, f.listLoop(list, lt.Elem, span, func(x *Var, lp *Loop) []Stmt {
 			hit := &Block{Stmts: []Stmt{&Assign{Target: ref(res), Value: found(x, ref(idxVar))}, &Break{Loop: lp}}, Type: types.TNever}
 			return []Stmt{
-				&ExprStmt{X: &If{exprBase{types.TUnit}, test(x), hit, nil}},
+				&ExprStmt{X: &If{exprBase{types.TUnit}, test(x, lp), hit, nil}},
 				&Assign{Target: ref(idxVar), Value: &Binary{exprBase{types.TI64}, OpWrapAdd, ref(idxVar), i64c(1), span}},
 			}
 		})...)
@@ -316,7 +320,7 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 			if !need(1) {
 				return bad()
 			}
-			fv, ok := f.fnArg(e.Args[0].Value, &types.Func{Params: []types.Param{{Type: lt.Elem}}})
+			fv, ok := f.fnArgNoThrow(e.Args[0].Value, &types.Func{Params: []types.Param{{Type: lt.Elem}}})
 			if !ok {
 				return bad()
 			}

@@ -198,7 +198,7 @@ func (p *Parser) parseLoop(start source.Span) ast.Stmt {
 			p.closeCondition()
 		}
 	}
-	s.Body = p.parseBlock()
+	s.Body = p.parseBodyOrStmt()
 	s.Pos = p.spanFrom(start)
 	return s
 }

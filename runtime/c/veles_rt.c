@@ -152,14 +152,12 @@ static bool is_boundary(const char *s, int64_t len, int64_t i) {
     return ((unsigned char)s[i] & 0xC0) != 0x80;
 }
 
-/* D19: a slice that splits a code point returns null rather than panicking;
- * an out-of-range slice is a panic like any bounds violation (D20). */
+/* D19: the result is already a string?, so every way a slice can fail
+ * answers null: bounds outside the text or reversed, and a cut through a
+ * code point. A parser probing `s.substring(pos, pos + 4)` near the end
+ * wants that, not a panic. (Changed 2026-09-18; it used to panic.) */
 bool veles_string_substring(veles_string *out, const char *s, int64_t len, int64_t lo, int64_t hi) {
-    if (lo < 0 || hi > len || lo > hi) {
-        char msg[96];
-        int n = snprintf(msg, sizeof msg, "substring bounds %" PRId64 "..%" PRId64 " out of range for length %" PRId64, lo, hi, len);
-        veles_panic(msg, n);
-    }
+    if (lo < 0 || hi > len || lo > hi) return false;
     if (!is_boundary(s, len, lo) || !is_boundary(s, len, hi)) return false;
     out->data = s + lo;
     out->len = hi - lo;

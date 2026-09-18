@@ -148,6 +148,7 @@ fun main() {
   val s = "héllo"
   io.println("${s.len()} bytes, starts with h: ${s.startsWith("h")}, has ll: ${s.contains("ll")}")
   io.println("${s.substring(0, 1) ?: "?"} ${"abc" < "abd"} ${"a" + "b" == "ab"}")
+  io.println("${s.substring(1, 2)} ${s.substring(4, 9)} ${s.substring(3, 6)}")
   io.println("${s.charCount()} characters: ${s.chars()}")
 }
 ```
@@ -157,6 +158,7 @@ Output:
 Veles was born in 2026; next year is 2027
 6 bytes, starts with h: true, has ll: true
 h true true
+null null llo
 5 characters: [h, é, l, l, o]
 ```
 
@@ -169,11 +171,15 @@ Two things worth knowing early:
   one-character strings: `"héllo".charCount()` is 5 and
   `"héllo".chars()` is `[h, é, l, l, o]`.
 - `substring(from, to)` takes byte offsets and returns `string?` — null
-  when the offsets would cut a multi-byte character. The `?: "?"` after
+  when the offsets fall outside the text or would cut a multi-byte
+  character, so a parser can probe `s.substring(pos, pos + 4)` near the
+  end without a bounds check. The `?: "?"` after
   it supplies a fallback; nullable types get [a chapter of their own](06-nullable-types.md).
 
-There is no separate character type in the bootstrap; a one-character
-string is what you use.
+There is no separate character type; a one-character string is what you
+use. When you walk a string byte by byte (`s.byteAt(i)`), `'"'` is the
+`u8` of one ASCII character, so `b == '"'` and `b >= '0' && b <= '9'` read
+as intended; a non-ASCII character is not a byte literal.
 
 Escapes in string literals: `\n`, `\t`, `\\`, `\"`, `\$` (a literal
 dollar) and `\u{1F600}` for a code point.

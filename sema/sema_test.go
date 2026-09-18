@@ -1162,34 +1162,41 @@ fun main() {
 	expectError(t, prelude+`fun main() { val xs = [1]; val n: i64 = xs.at(0); io.println("$n") }`, "supply a fallback with '?:'")
 	expectError(t, prelude+`fun main() { val s = "abc"; io.println("${s[0]}") }`, "strings are not indexable")
 }
-
-// The sealed-`else` lint only carries its removal fix when the other arms
-// already cover every variant; a load-bearing `else` still warns but must
-// not be removed.
-func TestSealedElseFixOnlyWhenDead(t *testing.T) {
+// The sealed-`else` lint (D13, scoped 2026-09-18): an `else` standing for
+// exactly one missing variant warns (an enumeration a new variant would
+// fall into); an `else` with every variant covered is dead and carries a
+// removal fix; one-variant extraction with several variants left is silent.
+func TestSealedElseLint(t *testing.T) {
 	src := prelude + `
 sealed trait S
 struct A : S { }
 struct B : S { }
+struct C : S { }
 fun f(s: S): i64 = when (s) {
-  is A => 1
-  else => 2
-}
-fun g(s: S): i64 = when (s) {
   is A => 1
   is B => 2
   else => 3
 }
-fun main() { io.println("${f(A())} ${g(B())}") }`
+fun g(s: S): i64 = when (s) {
+  is A => 1
+  is B => 2
+  is C => 3
+  else => 4
+}
+fun h(s: S): i64? = when (s) {
+  is A => 1
+  else => null
+}
+fun main() { io.println("${f(A())} ${g(B())} ${h(C())}") }`
 	diags := checkSource(t, src)
 	var fixes []bool
 	for _, d := range diags.Items {
-		if strings.Contains(d.Message, "'else' on a sealed subject") {
+		if strings.Contains(d.Message, "D13 lint") {
 			fixes = append(fixes, d.Fix != nil)
 		}
 	}
 	if diags.HasErrors() || len(fixes) != 2 || fixes[0] || !fixes[1] {
-		t.Errorf("expected two warnings, only the second with a fix; got:\n%s", diags.Render())
+		t.Errorf("expected two warnings (f without a fix, g with one) and none for h; got:\n%s", diags.Render())
 	}
 }
 
@@ -1329,4 +1336,69 @@ fun f<I: Iter2>(i: I): I.Item? = i.next()
 struct Ones { impl Iter2 { type Item = i64
   fun next(): Self.Item? = 1 } }
 fun main() { io.println("${f(Ones())}") }`)
+}
+
+// Found by the calculator program: an arm body may be an assignment
+// (`cond => self.pos += 1`), a loop body may be a bare statement like an
+// `if` body, and `x = Node(child: &x)` is warned about (the pointer would
+// name the variable being assigned, making the value contain itself).
+func TestCalculatorFindings(t *testing.T) {
+	expectClean(t, prelude+`
+struct Cursor { pos: i64 = 0
+  mut fun step(b: u8) {
+    when {
+      b == 32 => self.pos += 1
+      else => self.pos = 0
+    }
+    loop (self.pos < 3) self.pos += 1
+  } }
+fun main() { var c = Cursor(); c.step(32); io.println("${c.pos}") }`)
+	diags := checkSource(t, prelude+`
+sealed trait T
+struct Leaf : T { }
+struct Node : T { child: *T }
+fun main() {
+  var t: T = Leaf()
+  t = Node(child: &t)
+  val old = t
+  t = Node(child: &old)
+  io.println("${t is Node}")
+}`)
+	n := 0
+	for _, d := range diags.Items {
+		if strings.Contains(d.Message, "would contain itself") {
+			n++
+		}
+	}
+	if diags.HasErrors() || n != 1 {
+		t.Errorf("expected exactly one self-address warning, got:\n%s", diags.Render())
+	}
+}
+
+// D46 (v0.24): an eager collection operation given a throwing function is
+// itself fallible — `Result<T, E>` — and stops at the first failure;
+// `sortedBy` and `getOrPut` still refuse (their function runs outside a
+// loop the adapter controls). `'x'` is a u8 byte literal (D18).
+func TestThrowingAdaptersAndByteLiterals(t *testing.T) {
+	expectClean(t, prelude+`
+error Bad { n: i64 }
+fun check(x: i64): i64 throws Bad = if (x < 0) throw Bad(n: x) else x * 10
+fun all(xs: List<i64>): List<i64> throws Bad = try xs.map(x => try check(x))
+fun main() {
+  val r: Result<List<i64>, Bad> = [1, -2].map(x => try check(x))
+  val k: Result<List<i64>, Bad> = [1, 2].filter(x => try check(x) > 15)
+  val s: Result<i64, Bad> = [1, 2].fold(0, (a, x) => a + (try check(x)))
+  val f: Result<i64?, Bad> = [1, 2].find(x => try check(x) == 20)
+  val e: Result<(), Bad> = [1].forEach(x => { val _ = try check(x) })
+  val mv: Result<Map<string, i64>, Bad> = ["a": 1].mapValues(v => try check(v))
+  val plain: List<i64> = [1, 2].map(x => x + 1)
+  val q: u8 = '"'
+  val d = 'a' + 1
+  io.println("${all([1])} ${r.ok} ${k.ok} ${s.ok} ${f.ok} ${e.ok} ${mv.ok} $plain $q $d ${'0' == 48}")
+}`)
+	expectError(t, prelude+`
+error Bad { n: i64 }
+fun key(x: i64): i64 throws Bad = x
+fun main() { io.println("${[2, 1].sortedBy(x => try key(x))}") }`, "cannot be passed here")
+	expectError(t, prelude+`fun main() { val b = 'é'; io.println("$b") }`, "one ASCII character")
 }

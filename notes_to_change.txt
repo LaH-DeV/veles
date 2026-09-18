@@ -378,3 +378,51 @@ P10 progress (2026-09-18, later) — decision B on item 20 (user): structs stay 
    - Spec D5 + D25 amended; docs 06 "Updating through `?.`", 04 note; examples/indexing extended.
    Item 20's lint (mut fun on a temporary value struct, result discarded) is still open, now
    only for genuine temporaries like `make().bump()`.
+
+--- Mid-size programs (P6/P10), findings log ---
+M1. examples/json (2026-09-18): sealed Json, byte-level recursive descent with positioned
+   errors, compact/pretty printers, dotted-path queries. Compiled on the first try; found:
+   - `substring` out of range PANICKED although its type is `string?` (docs said null) →
+     runtime now returns null for out-of-range too (D19 note in veles_rt.c, docs 02).
+   - StringBuilder had no way to copy a byte through (`appendByte(b: u8)` added); the natural
+     workaround `s.substring(i, i + 1)` silently drops multi-byte chars (null → `?: ""`).
+   - formatter: an arm body broken after `=>` left a trailing space (`=> $`) — fixed in
+     `armBody`, pinned in TestStyle.
+   - LINT NOISE (decision wanted): "else on a sealed subject" fired 6× on idiomatic
+     one-variant extraction (`fun asString(): string? = when (self) { is JStr(value) => value
+     else => null }`). D13 asks for the lint, but in this shape `else` is the honest spelling
+     and a new variant falling into `null` is correct. Options: (a) keep as is, (b) only warn
+     when the `when` yields different values per variant... not decidable, (c) only warn when
+     the else is dead (the fix case) — i.e. drop the "silences the check" warning, (d) warn only
+     when the arms cover all but one variant (the case where the author probably meant to
+     enumerate). Recommendation: (d), or (c) if simplicity wins.
+   - No char literals: byte constants (`const QUOTE: u8 = 34`) are the workaround; readable
+     enough with a comment, but `'"'` as a u8 literal would remove a whole table. Decision.
+M2. examples/calc (2026-09-18): tokenizer, Pratt parser into a sealed AST (recursive through
+   `*Expr`), evaluator with variables/functions, positioned errors. Found:
+   - `cond => self.pos += 1` in a `when` arm was a parse error ("expected newline between
+     arms, found '+='"); lambdas already allowed `x => total += x` → parseArmBody now wraps
+     an assignment for every arm kind (when, race, lambda).
+   - `loop (cond) stmt` required braces while `if (c) stmt` did not → loop bodies take a bare
+     statement too (parseBodyOrStmt), formatter unchanged.
+   - `left = Binary(left: &left, ...)` in a parser loop built a CYCLE (stack overflow at run
+     time): `&left` is the variable, not its current value (D10) — the classic Go trap. New
+     lint (sema/lint_selfaddr.go): "'&x' is the address of the variable being assigned...
+     box the old value first". Docs should show the `val old = x` idiom next to D31.
+   - `args.map(a => try self.eval(a))` is refused ("a throwing function cannot be passed to an
+     eager collection operation") — clear message, but the loop workaround is what everyone
+     writes. Improvement: let the eager adapters (map/filter/forEach/...) take a throwing
+     lambda and propagate with `try` at the call (they are inlined loops, so it is only a
+     matter of typing the result as Result). Worth doing before the docs teach the loop.
+   - Recursive sealed types need `*Expr` + `&`/`*` everywhere (D31): acceptable, but the
+     error message's hint ("e.g. '*Expr'") is what made it painless — keep that standard.
+   - Sealed `else` lint fired 2× more (M1's point again).
+   Decisions on M1/M2 (2026-09-18, user): (a) sealed-else lint scoped — warns when the else
+   stands for exactly one missing variant or is dead (fix); one-variant extraction silent
+   (spec D13 amended, TestSealedElseLint). (b) DONE: throwing lambdas in eager adapters →
+   `Result<T, E>`, loop stops at the first Err (sema/lower_try.go: adapterState, f.call,
+   adapterResult; sortedBy/getOrPut refuse via fnArgNoThrow); spec D46 amended, docs 10
+   section; calc uses `try args.map(a => try self.eval(a))`. (c) DONE: byte literal `'"'` is a
+   u8 (ASCII only; sema CharLit → IntConst; spec D18/4b, docs 02, errors.md, cheatsheet);
+   json/calc rewritten with them.
+   NEXT: M3 todo CLI over fs, M4 worker pool, M5 text adventure.

@@ -108,6 +108,42 @@ A lambda that calls a `throws` function infers `throws` itself, and one
 that suspends infers `suspends` — the same inference as for named
 functions (chapters 7 and 12).
 
+## `try` inside a collection operation
+
+A lambda may itself fail. Passed to an eager operation like `map`, that
+makes the whole operation fallible: it stops at the first error and
+yields it, otherwise the finished list. You `try` the operation as you
+would any other call:
+
+```veles
+use io
+
+error NotANumber {
+  text: string
+}
+
+fun parseAll(words: List<string>): List<i64> throws NotANumber =
+  try words.map(w => w.toInt() ?: throw NotANumber(text: w))
+
+fun main() {
+  io.println("${parseAll(["1", "2", "3"])}")
+  io.println("${parseAll(["1", "x", "3"])}")
+  val r = ["4", "5"].map(w => w.toInt() ?: throw NotANumber(text: w))
+  if (r.ok) io.println("parsed $r")
+}
+```
+
+Output:
+```text
+Ok(value: [1, 2, 3])
+Err(error: NotANumber(text: x))
+parsed [4, 5]
+```
+
+The same holds for `filter`, `fold`, `forEach`, `find`, `any`/`all` and
+the map operations. A sort key (`sortedBy`) cannot fail — it runs inside
+the sort, where there is no way to stop — so handle the error inside it.
+
 ## Currying and tuples
 
 `a => b => a + b` is a function returning a function. A lambda taking

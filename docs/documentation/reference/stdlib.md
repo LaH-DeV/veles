@@ -143,6 +143,7 @@ pub fun stringBuilder(): StringBuilder
 pub struct StringBuilder {
   pub fun append(s: string)
   pub fun appendLine(s: string = "")
+  pub fun appendByte(b: u8)          // one UTF-8 byte, for code walking a string with byteAt
   pub fun len(): i64
   pub fun isEmpty(): bool
   pub fun clear()

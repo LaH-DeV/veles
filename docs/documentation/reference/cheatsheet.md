@@ -57,7 +57,7 @@ val (a, b) = (1, "one")         // tuple destructuring
 | address | `&x` → `*T`, `*p` reads through |
 | range | `a..b`, `a..<b` |
 | assignment | `= += -= *= /= %=` |
-| strings | `"a" + "b"`, `s.len()` (bytes), `s.trim()`, `s.split(",")`, `s.replace(a, b)`, `s.indexOf(p)`, `s.toUpper()`, `s.padStart(n)`, `s.toInt()`, `s.chars()`, `"$name ${expr}"`, escapes `\n \t \\ \" \$ \u{..}` |
+| strings | `"a" + "b"`, `s.len()` (bytes), `s.trim()`, `s.split(",")`, `s.replace(a, b)`, `s.indexOf(p)`, `s.toUpper()`, `s.padStart(n)`, `s.toInt()`, `s.chars()`, `s.byteAt(i)` (a `u8`; `'"'` is a byte literal), `"$name ${expr}"`, escapes `\n \t \\ \" \$ \u{..}` |
 
 ## Control flow
 

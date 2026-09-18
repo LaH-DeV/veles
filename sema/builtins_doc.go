@@ -47,7 +47,7 @@ var builtinDocs = []BuiltinDoc{
 	{"string", "contains", "(part: string): bool", "True when `part` occurs anywhere in the text."},
 	{"string", "charCount", "(): i64", "Number of Unicode code points (not bytes)."},
 	{"string", "chars", "(): List<string>", "The code points, each as a one-character string."},
-	{"string", "substring", "(from: i64, to: i64): string?", "The bytes in `from..<to`, or `null` when the bounds are not valid."},
+	{"string", "substring", "(from: i64, to: i64): string?", "The bytes in `from..<to`, or `null` when the bounds fall outside the text or cut through a code point (D19)."},
 	{"string", "toInt", "(): i64?", "Parses a decimal integer, or `null` when the text is not one."},
 	{"string", "byteAt", "(i: i64): u8", "The byte at index `i`; panics when out of range (D18: strings are byte-indexed)."},
 	{"string", "bytes", "(): List<u8>", "A copy of the UTF-8 bytes; `List<u8>.decodeUtf8()` goes back."},

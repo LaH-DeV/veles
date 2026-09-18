@@ -20,6 +20,12 @@ pub struct StringBuilder {
     self.bytes.push(10)
   }
 
+  /// Appends one byte of UTF-8 — for code that walks a string with `byteAt`
+  /// and copies most of it through (`toString` checks the result is text).
+  pub fun appendByte(b: u8) {
+    self.bytes.push(b)
+  }
+
   /// Length in bytes so far.
   pub fun len(): i64 = self.bytes.len()
 

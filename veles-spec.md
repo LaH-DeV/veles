@@ -234,7 +234,7 @@ The bare `is Shape.Circle =>` form remains available; destructuring is additive.
 
 **Pattern guards** are supported: `is Shape.Circle(radius) if radius > 10 =>`. A guarded arm **never counts toward exhaustiveness**, since the compiler cannot prove a guard is ever satisfied — Rust's and Scala's rule. This catches people out regularly and needs a clear diagnostic.
 
-Exhaustiveness is required; `else` opts out. **Lint against `else` when the scrutinee is sealed**, since it silences exactly the error you want when a variant is added later.
+Exhaustiveness is required; `else` opts out. **Lint against `else` when the scrutinee is sealed**, since it silences exactly the error you want when a variant is added later. *Scoped (v0.24):* the lint fires when the `else` stands for exactly one missing variant (an enumeration that a later variant would fall into) or when it is unreachable (every variant has an arm; the fix removes it). One-variant extraction — `is JStr(v) => v  else => null` with several variants left — is the honest spelling and stays silent; two mid-size programs hit it eight times.
 
 ### D14 — Variance: deferred, generics are invariant
 
@@ -743,6 +743,8 @@ Eager methods on collections (`list.map(...)` returns a `List`), and lazy adapte
 
 Cost: every operation exists twice, so the collection area of the stdlib roughly doubles, and there is a performance cliff users have to learn. D23's absence of extension functions means both sets must be declared up front by whoever owns the types; neither can be added later from outside.
 
+*Amended (v0.24) — a throwing function in an eager operation.* `xs.map(x => try parse(x))` is `Result<List<U>, E>`: the inlined loop stops at the first `Err` and the operation yields it, dropping the partial result; otherwise `Ok(list)`. The same holds for `filter`, `fold`, `forEach`, `any`/`all`, `find`, `count`, and the map operations `forEach`/`mapValues`/`filter`. Callers write `try xs.map(...)` like any fallible call; nothing panics. `sortedBy` and `getOrPut` run their function where no loop can be left and refuse a throwing one. Lazy adapters do not take throwing functions (`next()` would have to become fallible).
+
 ### D47 — Cleanup is implicitly non-cancellable
 
 D43 says `with` releases on cancellation; D20 says cancellation is a panic delivered at the next suspension point. Those combine badly: a `close()` that suspends — flushing a socket, say — would be cancelled immediately and the resource would leak. Kotlin hit this and added `NonCancellable`.
@@ -870,7 +872,7 @@ Consequences:
 
 - **Semicolons** — Go-style automatic insertion.
 - **Loop labels** — `loop :outer { ... break outer }`; the label follows the keyword so the statement still starts with `loop`.
-- **Byte access** — `s.byteAt(i)` and `s.bytes()`, explicit views; `List<u8>.decodeUtf8()` validates on the way back. There is no subscript on text (D25, v0.24: no subscript anywhere).
+- **Byte access** — `s.byteAt(i)` and `s.bytes()`, explicit views; `List<u8>.decodeUtf8()` validates on the way back. `'"'` is a byte literal: the `u8` of one ASCII character (v0.24), so the code that walks bytes can name what it compares against; a multi-byte character is an error, never a char type. There is no subscript on text (D25, v0.24: no subscript anywhere).
 - **`panic(message)`** — a built-in that never returns (D20); a `T?` fallback like `xs.at(i) ?: panic("...")` types as `T`.
 - **`Set`** — follows D25's immutable/mutable split and is insertion-ordered, matching `Map`.
 - **`gc.retain` handles** — `Closeable`, acquired through `with` (D43).

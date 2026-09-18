@@ -37,6 +37,7 @@ type fnCtx struct {
 	isLambda     bool
 	pending      []Stmt            // statements hoisted by adapter lowering
 	boundPlace   map[ast.Expr]Expr // receiver of a `?.` assignment, already lowered to its place (check_safe.go)
+	adapter      *adapterState     // the eager collection operation being lowered (lower_try.go)
 	readOnlyRecv bool              // the next method receiver is an element of an immutable collection (methodCall)
 	scopes       []*ScopeBlock
 	awaitNext    bool
@@ -553,6 +554,7 @@ func (f *fnCtx) checkAssign(s *ast.AssignStmt) []Stmt {
 	if safe := safeMemberOf(s.Target); safe != nil {
 		return f.safeAssign(s, safe)
 	}
+	f.lintSelfAddress(s)
 	if ix, ok := s.Target.(*ast.IndexExpr); ok {
 		// removed form (lint_index.go): reported once here with its fix, then
 		// typed as before so nothing else cascades

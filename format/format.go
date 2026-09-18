@@ -1538,17 +1538,19 @@ func (p *printer) whenArm(arm *ast.WhenArm) {
 		}
 	}
 	p.mark(alignArrow)
-	p.w(" => ")
 	p.armBody(arm.Body)
 }
 
-// armBody prints the right side of `=>`, keeping a break the author put
-// after the arrow.
+// armBody prints ` =>` and the right side, keeping a break the author put
+// after the arrow (with no space left dangling before it).
 func (p *printer) armBody(body ast.Expr) {
+	p.w(" =>")
 	start := body.Span().Start
 	arrow := strings.LastIndex(p.src[:start], "=>")
 	if arrow >= 0 && p.hasNewline(arrow, start) {
 		p.breakCont()
+	} else {
+		p.w(" ")
 	}
 	p.expr(body, 0)
 }
@@ -1565,7 +1567,6 @@ func (p *printer) raceExpr(e *ast.RaceExpr) {
 		}
 		p.expr(arm.Source, 0)
 		p.mark(alignArrow)
-		p.w(" => ")
 		p.armBody(arm.Body)
 		p.after(arm.Pos.End)
 	})
