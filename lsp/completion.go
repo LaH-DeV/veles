@@ -330,6 +330,8 @@ func (s *Server) addDecl(add adder, decl ast.Decl) {
 		}
 	case *ast.ErrorAliasDecl:
 		add(dd.Name.Name, ciStruct, "error "+dd.Name.Name+" = "+ast.TypeString(dd.Members))
+	case *ast.TypeAliasDecl:
+		add(dd.Name.Name, ciClass, "type "+dd.Name.Name+" = "+ast.TypeString(dd.Type))
 	case *ast.TraitDecl:
 		if dd.Sealed {
 			add(dd.Name.Name, ciStruct, "sealed trait "+dd.Name.Name)
@@ -348,6 +350,8 @@ func isPub(decl ast.Decl) bool {
 	case *ast.StructDecl:
 		return dd.Pub
 	case *ast.ErrorAliasDecl:
+		return dd.Pub
+	case *ast.TypeAliasDecl:
 		return dd.Pub
 	case *ast.TraitDecl:
 		return dd.Pub

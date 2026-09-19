@@ -272,6 +272,74 @@ Pair(first: 1, second: one) Pair(first: one, second: 1) 3
 Type arguments are inferred from the constructor's arguments. Each
 distinct `Pair<A, B>` is compiled separately (D8).
 
+
+## Naming a type: `type`
+
+`type Name = Type` gives a type another name. It is an *alias*, never a
+new type: `Index` below **is** `i64`, so an `Index` goes wherever an
+`i64` goes and back, with no conversion. What you gain is a name in
+your code, in error messages and in hover — `Key` instead of `(i64, u64)`,
+`Handler` instead of a function type nobody wants to read twice:
+
+```veles
+use io
+
+type Index = i64
+type Hash = u64
+type Key = (Index, Hash)
+type Groups = MutableMap<Key, MutableList<string>>
+type Handler = fun(string): string
+type StrMap<V> = Map<string, V>
+
+fun apply(h: Handler, s: string): string = h(s)
+
+fun main() {
+  val groups: Groups = [:]
+  val k: Key = (1, 2)
+  groups.getOrPut(k, () => []).push("first")
+  val n: Index = 40
+  val plain: i64 = n + 2                 // an Index is an i64
+  val names: StrMap<i64> = ["ann": 41]
+  io.println("${groups.get(k)} $plain ${names.get("ann")} ${apply(s => s + "!", "hi")}")
+}
+```
+
+Output:
+```text
+[first] 42 41 hi!
+```
+
+The rules are short. An alias lives at module level (`pub type` exports
+it, and exporting an alias of a private type is fine — that is how a
+library presents a facade). A generic alias takes plain parameters, no
+bounds: state `T: Comparable` where the alias is used. `type Point =
+geo.Point` shortens a qualified name, and the alias then constructs
+(`Point(x: 1.0, y: 2.0)`), calls statics and matches with `is` exactly
+like the struct, because it is the struct.
+
+### When you want something an alias is not
+
+- **A distinct type** — an `i64` that cannot be confused with another
+  `i64` (`UserId` vs `OrderId`): a one-field struct, `struct UserId { value: i64 }`.
+  An alias is a name, never a wall.
+- **A union** (`Circle | Square`): a `sealed trait` with variant structs
+  ([chapter 9](09-sealed-types.md)); for errors, `error Set = A | B`
+  ([chapter 7](07-errors.md)). `type` never spells `|`.
+- **A recursive type** (`Json = Map<string, Json>`): a sealed trait or a
+  struct — `examples/json` is the pattern — which also names the cases.
+  A `type` that mentions itself is an error.
+- **A constrained alias** (`Sorted<T: Comparable>`): put the bound on
+  the function or struct that uses it; if the constraint is part of the
+  meaning, it is a struct.
+- **A type computed from a type** (TypeScript's `ReturnType<F>`,
+  `keyof`): an associated type on a trait — `Iterator.Item` is exactly
+  that ([chapter 8](08-traits-and-generics.md#associated-types)).
+
+And one thing not to do: aliases for the built-in numbers (`type int =
+i64`). Two spellings for one type give every reader two things to learn
+and every codebase a style argument; if a short name were better it would
+be the name.
+
 ## Methods outside the body: `extend`
 
 A struct body can get long. `extend` adds inherent methods to a type from

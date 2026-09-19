@@ -394,7 +394,7 @@ func TestHoverDocsAndShapes(t *testing.T) {
 		return string(res)
 	}
 	// a value of a struct type: its declaration line, then what it has inside
-	if h := hover(18, 13); !strings.Contains(h, "val c: ConfigError") || !strings.Contains(h, `error ConfigError {\n  key: string\n  cause: ParseError | RangeError\n  fun message(): string\n}`) {
+	if h := hover(18, 13); !strings.Contains(h, "val c: ConfigError") || !strings.Contains(h, `error ConfigError {\n  key: string\n  cause: PortErrors\n  fun message(): string\n}`) {
 		t.Errorf("hover on a value shows no shape: %s", h)
 	}
 	// the type name itself, with its doc comment
@@ -438,7 +438,7 @@ func TestModuleDocHover(t *testing.T) {
 		}
 	}
 	// a smart-cast field shows the narrowed type once, with its origin
-	if h := hover(11, 30); !strings.Contains(h, `Wrap.cause: E  (smart cast from E | F)`) {
+	if h := hover(11, 30); !strings.Contains(h, `Wrap.cause: E  (smart cast from Both)`) {
 		t.Errorf("narrowed field hover: %s", h)
 	}
 	// a type's hover opens with its shape, not the name twice
@@ -674,5 +674,32 @@ func TestCodeActionInlineImpl(t *testing.T) {
 	want := "trait Show {\n  fun show(): string\n}\n\nstruct P {\n  x: i64\n\n  impl Show {\n    fun show(): string = \"p\"\n  }\n}\n\nfun main() { }\n"
 	if text != want {
 		t.Errorf("after the fix:\n%s\n--- want ---\n%s", text, want)
+	}
+}
+
+// D55: hover on a type alias shows its name, its definition as written
+// and the full expansion; the binding's type prints the alias.
+func TestTypeAliasHover(t *testing.T) {
+	src := "use io\n\ntype Index = i64\n/// A group key.\ntype Key = (Index, u64)\n\nfun main() {\n  val k: Key = (1, 2)\n  io.println(\"${k.0}\")\n}\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := pathToURI(path)
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{})
+	c.notify("initialized", map[string]any{})
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": src}})
+	hover := func(line, ch int) string {
+		res, _ := c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": line, "character": ch}})
+		return string(res)
+	}
+	if h := hover(7, 10); !strings.Contains(h, "type Key = (Index, u64)  (= (i64, u64))") || !strings.Contains(h, "A group key.") {
+		t.Errorf("hover on an alias use: %s", h)
+	}
+	if h := hover(7, 6); !strings.Contains(h, "val k: Key") {
+		t.Errorf("hover on a binding typed by an alias: %s", h)
 	}
 }

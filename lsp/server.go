@@ -502,6 +502,9 @@ func declSymbol(decl ast.Decl) (docSymbol, bool) {
 	case *ast.ErrorAliasDecl:
 		return docSymbol{Name: d.Name.Name, Detail: "error = " + ast.TypeString(d.Members), Kind: symStruct,
 			Range: spanToRange(d.Pos), SelectionRange: spanToRange(d.Name.Pos)}, true
+	case *ast.TypeAliasDecl:
+		return docSymbol{Name: d.Name.Name, Detail: "type = " + ast.TypeString(d.Type), Kind: symStruct,
+			Range: spanToRange(d.Pos), SelectionRange: spanToRange(d.Name.Pos)}, true
 	case *ast.StructDecl:
 		sym := docSymbol{Name: d.Name.Name, Kind: symStruct, Range: spanToRange(d.Pos), SelectionRange: spanToRange(d.Name.Pos)}
 		if d.Variant != nil {

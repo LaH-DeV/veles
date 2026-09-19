@@ -102,6 +102,17 @@ func (p *printer) decl(d Decl) {
 		p.w(")")
 	case *FunDecl:
 		p.fun(d)
+	case *TypeAliasDecl:
+		p.attrs(d.Attrs)
+		p.open("type ")
+		if d.Pub {
+			p.w("pub ")
+		}
+		p.w(d.Name.Name)
+		p.typeParams(d.TypeParams)
+		p.w(" = ")
+		p.typ(d.Type)
+		p.close()
 	case *ErrorAliasDecl:
 		p.attrs(d.Attrs)
 		p.open("error ")

@@ -42,6 +42,7 @@ val (a, b) = (1, "one")         // tuple destructuring; (a, b) = (b, a) assigns 
 | ranges | `Range<T>` from `a..b` (inclusive) or `a..<b` |
 | concurrency | `Channel<T>`, `Task<T>`, `Mutex<T>`, `Atomic<T>` |
 | results | `Result<T, E>`; `T?` is `Option<T>` |
+| alias | `type Key = (i64, u64)`, `type StrMap<V> = Map<string, V>`, `pub type Point = geo.Point` — a name, never a new type (D55) |
 
 ## Operators
 

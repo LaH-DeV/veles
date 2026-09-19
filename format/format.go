@@ -334,6 +334,8 @@ func declStart(d ast.Node) int {
 		attrs = d.Attrs
 	case *ast.ErrorAliasDecl:
 		attrs = d.Attrs
+	case *ast.TypeAliasDecl:
+		attrs = d.Attrs
 	}
 	if len(attrs) > 0 {
 		return attrs[0].Pos.Start
@@ -389,6 +391,15 @@ func (p *printer) decl(d ast.Decl) {
 			p.fun(fn)
 			p.after(fn.Pos.End)
 		})
+	case *ast.TypeAliasDecl:
+		p.attrs(d.Attrs)
+		if d.Pub {
+			p.w("pub ")
+		}
+		p.w("type " + d.Name.Name)
+		p.typeParams(d.TypeParams)
+		p.w(" = ")
+		p.typ(d.Type)
 	case *ast.ErrorAliasDecl:
 		p.attrs(d.Attrs)
 		if d.Pub {

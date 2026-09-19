@@ -18,6 +18,9 @@ struct Hashed {
   hash: u64
 }
 
+/// What makes two files "the same": equal size and equal hash.
+type Fingerprint = (i64, u64)
+
 // ---------------------------------------------------------------------------
 // hashing: FNV-1a over the bytes, a fingerprint that is cheap to write in
 // the language itself (no crypto in std yet)
@@ -110,7 +113,7 @@ fun run(args: List<string>) throws UsageError | IoError {
   }
 
   // group by (size, hash); a group of one is not a duplicate
-  val groups: MutableMap<(i64, u64), MutableList<string>> = [:]
+  val groups: MutableMap<Fingerprint, MutableList<string>> = [:]
   loop (h in hashed) {
     if (h.size < opts.minSize) continue
     groups.getOrPut((h.size, h.hash), () => []).push(h.file)

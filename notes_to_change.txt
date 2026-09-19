@@ -61,8 +61,7 @@ would change to:
      too once one is benchmarked at -O2 against the Veles version
    - (done in P7) min/max/sorted now require Comparable, checked at the call site.
 
-15. Hover shows a field typed with an error set as the flattened union (`cause: A | B`) rather
-   than the set's name; the alias name is not kept in the type. Small follow-up if wanted.
+15. DONE (2026-09-19, with R12): error sets keep their name in hover and diagnostics.
 
 16. The generated `builtins.vs` stub is reference-only (not compilable Veles). If a second
    consumer for declaration files appears, consider a real `declare`-style form.
@@ -670,8 +669,7 @@ P11. DONE (2026-09-19; was PROPOSED): concurrency helpers in the prelude — see
     per-worker state and pipelines; docs 12 shows the helper, then the machine it is made of.
     Also: results channels should carry Result<T, E> rather than sentinels; the counted drain
     exists because multiple producers cannot close a channel (docs line or Channel.closeAfter(n)).
-P12. PROPOSED (2026-09-19, user asked for the full use-case list before implementing): type
-    aliases. `type Name<T> = Type` at module level, `pub` allowed. Use cases: (1) naming
+P12. DONE (2026-09-19; see R12): type aliases. `type Name<T> = Type` at module level, `pub` allowed. Use cases: (1) naming
     structural types — tuples, nested generics, function types (`type Handler =
     fun(Request): Response throws HttpError`, needed by the HTTP server); (2) shortening a
     qualified name after R9 (`type Point = geo.Point`; ctor, statics, `is` must work);
@@ -728,3 +726,16 @@ P12 refinements (2026-09-19, from the user's questions; still to implement, sepa
       or a struct; unions → sealed trait / error set; recursion → sealed trait; keyof/mapped/
       conditional types → associated types on traits (`Iterator.Item` is the Veles ReturnType).
     - Document `type` strictly as "type alias" (a name, never a new type); newtype = struct.
+R12. DONE (2026-09-19): type aliases, spec D55. `type Name<T> = Type` at module level, `pub`
+    allowed (also of a private type — the facade), transparent (same type, one instantiation),
+    no bounds on params, not recursive, never a union. Implementation: display names ride on
+    the structural type nodes (`Alias` field on Basic/Tuple/List/Map/Set/Func/... set by
+    `types.Aliased`; Identical/Key/codegen ignore it; `types.Unaliased(t, deep)` for hover),
+    named types keep their own name. sema: `Symbol.TypeAlias` (typeAlias{decl, tps, body},
+    `aliasBody` lazy with cycle guard, `resolveTypeAlias`, `symType` for value positions so
+    `Pt(x: 1)`, `Pt.origin()`, `mod.Alias.f()` work). Error sets are `Aliased` with their name
+    too (closes #15; hover shows `cause: PortErrors`, smart-cast notes say `from Both`). Hover
+    on an alias: `type Key = (Index, u64)  (= (i64, u64))` + doc. Docs 05 "Naming a type" with
+    the "when you want something an alias is not" list; cheatsheet; dedup uses `Fingerprint`.
+    Not done: aliases in `impl`/`extend` targets get the underlying type's messages (fine);
+    generic alias used bare in value position errors ("write the type arguments").

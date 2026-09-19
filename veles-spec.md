@@ -883,6 +883,24 @@ Consequences:
 
 ---
 
+### D55 — Type aliases: a name for a type, never a new type (v0.28)
+
+```vs
+type Index = i64
+type Key = (Index, u64)
+type Handler = fun(Request): Response throws HttpError
+type StrMap<V> = Map<string, V>
+pub type Point = geo.Point
+```
+
+`type Name<T> = Type` at module level declares another name for a type. The alias is **transparent**: `Key` and `(Index, u64)` are the same type everywhere — assignable both ways, one instantiation of every generic, no conversion. A distinct type with the same representation is a one-field struct, as before; `type` never provides safety, only a name. What the alias does own is its *spelling*: diagnostics and hover print `Key` where the source said `Key`, its definition as written, and the full expansion when that differs (structural types carry the display name; a named type — struct, sealed, trait — keeps its own name, so `type Point = geo.Point` reads `Point`). The same mechanism names `error Set = A | B` in messages.
+
+Rules. Module level only; `pub` exports it, and a `pub` alias of a private type is allowed — it *is* the facade (Go, TS). Parameters take no bounds (state them where the alias is used). No unions: `error` names an error set, `sealed trait` a closed family of types, and `type` never spells `A | B`. Not recursive: `type Json = Map<string, Json>` is an error; a recursive type is a sealed trait or a struct (which also gives its cases names). Everything else sees through the alias: `impl`/`extend` on an alias follow the underlying type's ownership rule (D23), an alias of a struct constructs (`Point(x: 1.0, y: 2.0)`), calls statics (`Point.origin()`) and matches (`is Point`); a generic alias in value position takes its arguments (`Pair<i64>(...)`).
+
+Rejected: aliases in std for numbers (`int = i64`) — two spellings for one type is the import problem again; TS-style type-level computation (`keyof`, mapped and conditional types) — the Veles answer to "compute a type from a type" is an associated type on a trait (`Iterator.Item`).
+
+---
+
 ## 4b. Settled minor decisions
 
 - **Semicolons** — Go-style automatic insertion.

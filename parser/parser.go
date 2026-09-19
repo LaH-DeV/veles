@@ -229,7 +229,7 @@ func (p *Parser) syncDecl() {
 		if depth == 0 {
 			switch k {
 			case lexer.KwFun, lexer.KwStruct, lexer.KwTrait, lexer.KwImpl, lexer.KwSealed,
-				lexer.KwPub, lexer.KwUse, lexer.KwExtern, lexer.KwVal, lexer.KwVar, lexer.KwConst, lexer.At:
+				lexer.KwPub, lexer.KwUse, lexer.KwExtern, lexer.KwVal, lexer.KwVar, lexer.KwConst, lexer.KwType, lexer.At:
 				return
 			}
 			if p.atErrorDecl() || p.atExtendDecl() {
@@ -340,6 +340,8 @@ func withDoc(d ast.Decl, doc string) ast.Decl {
 		d.Doc = doc
 	case *ast.ErrorAliasDecl:
 		d.Doc = doc
+	case *ast.TypeAliasDecl:
+		d.Doc = doc
 	}
 	return d
 }
@@ -391,6 +393,8 @@ func (p *Parser) parseDeclBody(attrs []*ast.Attribute) ast.Decl {
 		return p.parseImpl(attrs, false)
 	case lexer.KwVal, lexer.KwVar, lexer.KwConst:
 		return p.parseValDecl(attrs, pub, start)
+	case lexer.KwType:
+		return p.parseTypeAlias(attrs, pub, start)
 	case lexer.KwExtern:
 		if p.peek(1).Kind == lexer.KwStruct {
 			p.next()
@@ -1010,6 +1014,24 @@ func (p *Parser) parseErrorAlias(attrs []*ast.Attribute, pub bool, start source.
 	d.Name, _ = p.expectIdent()
 	p.expect(lexer.Assign)
 	d.Members = p.parseErrorType()
+	d.Pos = p.spanFrom(start)
+	return d
+}
+
+// parseTypeAlias parses `type Name<T> = Type` at module level (D55).
+func (p *Parser) parseTypeAlias(attrs []*ast.Attribute, pub bool, start source.Span) ast.Decl {
+	p.next() // type
+	d := &ast.TypeAliasDecl{Attrs: attrs, Pub: pub}
+	d.Name, _ = p.expectIdent()
+	if p.at(lexer.Lt) {
+		d.TypeParams = p.parseTypeParams()
+	}
+	if _, ok := p.expect(lexer.Assign); !ok {
+		p.syncStmt()
+		d.Pos = p.spanFrom(start)
+		return d
+	}
+	d.Type = p.parseType()
 	d.Pos = p.spanFrom(start)
 	return d
 }

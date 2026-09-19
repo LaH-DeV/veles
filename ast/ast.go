@@ -305,6 +305,18 @@ type ErrorAliasDecl struct {
 	Pos     source.Span
 }
 
+// TypeAliasDecl is `type Name<T> = Type`: another name for a type (D55).
+// It never makes a new type; the newtype is a one-field struct.
+type TypeAliasDecl struct {
+	Attrs      []*Attribute
+	Doc        string
+	Pub        bool
+	Name       Ident
+	TypeParams []TypeParam
+	Type       Type
+	Pos        source.Span
+}
+
 // BadDecl stands in for a declaration that failed to parse.
 type BadDecl struct {
 	Pos source.Span
@@ -319,8 +331,10 @@ func (d *ValDecl) Span() source.Span     { return d.Pos }
 func (d *ExternBlock) Span() source.Span { return d.Pos }
 func (d *BadDecl) Span() source.Span     { return d.Pos }
 func (d *ErrorAliasDecl) Span() source.Span { return d.Pos }
+func (d *TypeAliasDecl) Span() source.Span  { return d.Pos }
 
 func (*ErrorAliasDecl) declNode() {}
+func (*TypeAliasDecl) declNode()  {}
 func (*UseDecl) declNode()     {}
 func (*FunDecl) declNode()     {}
 func (*StructDecl) declNode()  {}

@@ -314,6 +314,9 @@ func (c *Checker) collect() {
 			if sym.Alias != nil {
 				c.resolveAlias(sym)
 			}
+			if sym.TypeAlias != nil {
+				c.aliasBody(sym)
+			}
 		}
 	}
 	// error sets and error fields were resolved before the impls existed
@@ -367,6 +370,10 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 		c.attrsOf(d.Attrs, "error")
 		c.insert(m, &Symbol{Name: d.Name.Name, Kind: SymType, Pub: d.Pub, Module: m, Span: d.Name.Pos,
 			Alias: &errorAlias{decl: d, module: m, file: f}})
+	case *ast.TypeAliasDecl:
+		c.attrsOf(d.Attrs, "type")
+		c.insert(m, &Symbol{Name: d.Name.Name, Kind: SymType, Pub: d.Pub, Module: m, Span: d.Name.Pos,
+			TypeAlias: &typeAlias{decl: d, module: m, file: f}})
 	case *ast.TraitDecl:
 		c.attrsOf(d.Attrs, "trait")
 		if d.Sealed {
@@ -490,6 +497,111 @@ type errorAlias struct {
 	resolving bool
 }
 
+// typeAlias is a `type Name<T> = Type` declaration (D55) awaiting resolution.
+type typeAlias struct {
+	decl      *ast.TypeAliasDecl
+	module    *Module
+	file      *ast.File
+	tps       []*types.TypeParam
+	body      types.Type
+	resolving bool
+	done      bool
+}
+
+// aliasBody resolves an alias's right-hand side once, in an environment
+// holding its own type parameters.
+func (c *Checker) aliasBody(sym *Symbol) types.Type {
+	a := sym.TypeAlias
+	if a.done {
+		return a.body
+	}
+	if a.resolving {
+		c.errorf(a.decl.Name.Pos, "type alias '%s' refers to itself; a recursive type is a sealed trait or a struct (D55)", sym.Name)
+		return types.TInvalid
+	}
+	a.resolving = true
+	env := &typeEnv{module: a.module, file: a.file, tps: map[string]*types.TypeParam{}}
+	for i, tp := range a.decl.TypeParams {
+		if len(tp.Bounds) > 0 {
+			c.errorf(tp.Name.Pos, "a type alias parameter takes no bounds; state '%s: ...' where the alias is used (D55)", tp.Name.Name)
+		}
+		p := &types.TypeParam{Name: tp.Name.Name, Index: i, Owner: sym.Name}
+		a.tps = append(a.tps, p)
+		env.tps[tp.Name.Name] = p
+	}
+	if a.decl.Type == nil {
+		a.body = types.TInvalid
+	} else {
+		a.body = c.resolveType(env, a.decl.Type)
+	}
+	a.resolving = false
+	a.done = true
+	return a.body
+}
+
+// resolveTypeAlias is an alias used as a type: its body with the
+// arguments substituted, displayed under the alias's name. The result is
+// the underlying type itself (a display name on a structural type, D55);
+// a named type keeps its own name.
+func (c *Checker) resolveTypeAlias(sym *Symbol, args []types.Type, span source.Span) types.Type {
+	a := sym.TypeAlias
+	body := c.aliasBody(sym)
+	if types.IsInvalid(body) {
+		return body
+	}
+	if len(args) != len(a.tps) {
+		if len(a.tps) == 0 {
+			c.errorf(span, "'%s' is not generic", sym.Name)
+		} else {
+			c.errorf(span, "'%s' expects %d type arguments, got %d", sym.Name, len(a.tps), len(args))
+		}
+		return types.TInvalid
+	}
+	display := sym.Name
+	t := body
+	if len(a.tps) > 0 {
+		m := map[*types.TypeParam]types.Type{}
+		parts := make([]string, len(args))
+		for i, tp := range a.tps {
+			m[tp] = args[i]
+			parts[i] = args[i].String()
+		}
+		t = c.hooks.Subst(body, m)
+		display += "<" + strings.Join(parts, ", ") + ">"
+	}
+	return types.Aliased(t, display)
+}
+
+// aliasDetail is the hover line of an alias: its name, its definition as
+// written, and the full expansion when that differs.
+func aliasDetail(sym *Symbol, t types.Type) string {
+	a := sym.TypeAlias
+	head := "type " + sym.Name
+	if len(a.tps) > 0 {
+		head += typeParamList(a.tps)
+	}
+	one := types.Unaliased(a.body, false).String()
+	full := types.Unaliased(a.body, true).String()
+	s := head + " = " + one
+	if full != one {
+		s += "  (= " + full + ")"
+	}
+	return s
+}
+
+// symType is the type a SymType symbol names, resolving a non-generic
+// alias on the way; generic aliases need arguments and yield nil here.
+func (c *Checker) symType(sym *Symbol) types.Type {
+	if sym.TypeAlias != nil {
+		if len(sym.TypeAlias.decl.TypeParams) > 0 {
+			c.aliasBody(sym)
+			return nil
+		}
+		return c.resolveTypeAlias(sym, nil, sym.Span)
+	}
+	return sym.Type
+}
+
 // resolveAlias resolves a named error set on first use.
 func (c *Checker) resolveAlias(sym *Symbol) types.Type {
 	if sym.Type != nil {
@@ -524,6 +636,9 @@ func (c *Checker) resolveAlias(sym *Symbol) types.Type {
 			t = types.TInvalid
 		}
 	}
+	if _, isUnion := t.(*types.ErrorUnion); isUnion {
+		t = types.Aliased(t, sym.Name) // hover and diagnostics say `GetErrors`, not the members
+	}
 	sym.Type = t
 	return t
 }
@@ -552,7 +667,7 @@ func (c *Checker) lookupTypeName(env *typeEnv, path []ast.Ident) (*Symbol, *type
 			sym = next
 		case SymType:
 			// Sealed.Variant
-			if s, ok := sym.Type.(*types.Sealed); ok {
+			if s, ok := c.symType(sym).(*types.Sealed); ok {
 				v := s.VariantByName(path[i].Name)
 				if v == nil {
 					c.errorf(path[i].Pos, "'%s' has no variant '%s'", s.Name, path[i].Name)
@@ -671,6 +786,18 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 		if sym.Kind != SymType {
 			c.errorf(t.Pos, "'%s' is not a type", pathString(t.Path))
 			return types.TInvalid
+		}
+		if sym.TypeAlias != nil {
+			var args []types.Type
+			for _, a := range t.Args {
+				args = append(args, c.resolveType(env, a))
+			}
+			u := c.resolveTypeAlias(sym, args, t.Pos)
+			if c.index != nil && !types.IsInvalid(u) {
+				c.index.Refs = append(c.index.Refs, Ref{Span: t.Path[len(t.Path)-1].Pos, Def: sym.Span, Kind: "type", Name: sym.Name, Type: u,
+					Detail: aliasDetail(sym, u), Doc: sym.TypeAlias.decl.Doc, Shape: c.shapeOf(u)})
+			}
+			return u
 		}
 		if sym.Alias != nil {
 			u := c.resolveAlias(sym)

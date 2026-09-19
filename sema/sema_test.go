@@ -1831,3 +1831,39 @@ error Bad { n: i64 }
 fun <T, R, E> apply(x: T, f: fun(T): R throws E): R throws E = try f(x)
 fun main() { val v: i64 = apply(1, (n: i64) => if (n > 0) throw Bad(n) else n); io.println("$v") }`, "type mismatch")
 }
+
+// D55: type aliases are transparent names; diagnostics print the alias;
+// recursion and bounds are errors; an alias of a struct constructs.
+func TestTypeAliases(t *testing.T) {
+	expectClean(t, prelude+`
+type Index = i64
+type Key = (Index, u64)
+type StrMap<V> = Map<string, V>
+type Handler = fun(string): string
+struct P { x: i64; static fun origin(): P = P(x: 0) }
+pub type Pt = P
+fun apply(h: Handler, s: string): string = h(s)
+fun main() {
+  val k: Key = (1, 2)
+  val n: Index = 3
+  val m: i64 = n
+  val names: StrMap<i64> = ["a": 1]
+  val p = Pt(x: 1)
+  io.println("${k.0 + m} ${names.get("a")} ${apply(s => s, "x")} ${Pt.origin()} ${p is Pt}")
+}`)
+	expectError(t, prelude+`
+type Key = (i64, u64)
+fun main() { val k: Key = 1; io.println("$k") }`, "expected 'Key', found 'i64'")
+	expectError(t, prelude+`
+type Loop = List<Loop>
+fun main() { }`, "refers to itself")
+	expectError(t, prelude+`
+type Sorted<T: Comparable> = List<T>
+fun main() { }`, "takes no bounds")
+	expectError(t, prelude+`
+type One = i64
+fun main() { val x: One<i64> = 1; io.println("$x") }`, "'One' is not generic")
+	expectError(t, prelude+`
+type Pair<T> = (T, T)
+fun main() { val x: Pair = (1, 2); io.println("$x") }`, "'Pair' expects 1 type arguments, got 0")
+}

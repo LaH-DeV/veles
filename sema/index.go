@@ -113,6 +113,12 @@ func (c *Checker) refSym(span source.Span, sym *Symbol) {
 	case SymFunc:
 		c.refFunc(span, sym.Func)
 	case SymType:
+		if sym.TypeAlias != nil {
+			if t := c.symType(sym); t != nil {
+				c.index.Refs = append(c.index.Refs, Ref{Span: span, Def: sym.Span, Kind: "type", Name: sym.Name, Type: t, Detail: aliasDetail(sym, t), Doc: sym.TypeAlias.decl.Doc, Shape: c.shapeOf(t)})
+			}
+			return
+		}
 		c.refType(span, sym.Name, sym.Type, sym.Span)
 	case SymModule:
 		// the definition of a module is the top of its first file
@@ -253,7 +259,7 @@ func (c *Checker) refType(span source.Span, name string, t types.Type, def sourc
 		}
 	case *types.ErrorUnion:
 		kind = "error"
-		detail = "error " + name + " = " + tt.String()
+		detail = "error " + name + " = " + types.Unaliased(tt, false).String()
 	case *types.Sealed:
 		kind = "sealed"
 		detail = "sealed trait " + tt.Name + typeParamList(tt.TypeParams)

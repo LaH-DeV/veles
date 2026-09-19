@@ -28,6 +28,7 @@ type Symbol struct {
 
 	Type   types.Type    // SymType
 	Alias  *errorAlias   // SymType naming an error set (`error X = A | B`); Type is filled on first use
+	TypeAlias *typeAlias  // SymType declared `type X<T> = ...` (D55); resolved on first use
 	Func   *FuncTemplate // SymFunc
 	Global *Global       // SymGlobal
 	Var    *Var          // SymLocal

@@ -122,7 +122,27 @@ func (f *fnCtx) callSymbol(sym *Symbol, name string, typeArgs []types.Type, e *a
 	case SymFunc:
 		return f.callTemplate(sym.Func, nil, typeArgs, e.Args, e.Pos, want)
 	case SymType:
-		switch t := sym.Type.(type) {
+		symT := sym.Type
+		if sym.TypeAlias != nil {
+			// `P(x: 1)` with `type P = geo.Point`: the alias names the struct;
+			// a generic alias takes its arguments here (`Pair<i64>(...)`)
+			if len(typeArgs) > 0 {
+				symT = f.c.resolveTypeAlias(sym, typeArgs, e.Pos)
+				typeArgs = nil
+			} else {
+				symT = f.c.symType(sym)
+				if symT == nil {
+					f.errorf(e.Pos, "'%s' is generic; write the type arguments, e.g. '%s<T>(...)'", sym.Name, sym.Name)
+					f.checkArgsLoosely(e.Args)
+					return bad()
+				}
+			}
+			if types.IsInvalid(symT) {
+				f.checkArgsLoosely(e.Args)
+				return bad()
+			}
+		}
+		switch t := symT.(type) {
 		case *types.Struct:
 			st := t
 			if len(t.TypeParams) > 0 {

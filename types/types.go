@@ -39,30 +39,36 @@ const (
 )
 
 type Basic struct {
-	Kind BasicKind
-	Name string
+	Kind  BasicKind
+	Name  string
+	Alias string // display name from a `type` alias (Aliased)
 }
 
-func (b *Basic) String() string { return b.Name }
+func (b *Basic) String() string {
+	if b.Alias != "" {
+		return b.Alias
+	}
+	return b.Name
+}
 
 var (
-	TInvalid = &Basic{Invalid, "<invalid>"}
-	TUnit    = &Basic{Unit, "()"}
-	TBool    = &Basic{Bool, "bool"}
-	TI8      = &Basic{I8, "i8"}
-	TI16     = &Basic{I16, "i16"}
-	TI32     = &Basic{I32, "i32"}
-	TI64     = &Basic{I64, "i64"}
-	TISize   = &Basic{ISize, "isize"}
-	TU8      = &Basic{U8, "u8"}
-	TU16     = &Basic{U16, "u16"}
-	TU32     = &Basic{U32, "u32"}
-	TU64     = &Basic{U64, "u64"}
-	TUSize   = &Basic{USize, "usize"}
-	TF32     = &Basic{F32, "f32"}
-	TF64     = &Basic{F64, "f64"}
-	TString  = &Basic{String, "string"}
-	TNever   = &Basic{Never, "!"}
+	TInvalid = &Basic{Kind: Invalid, Name: "<invalid>"}
+	TUnit    = &Basic{Kind: Unit, Name: "()"}
+	TBool    = &Basic{Kind: Bool, Name: "bool"}
+	TI8      = &Basic{Kind: I8, Name: "i8"}
+	TI16     = &Basic{Kind: I16, Name: "i16"}
+	TI32     = &Basic{Kind: I32, Name: "i32"}
+	TI64     = &Basic{Kind: I64, Name: "i64"}
+	TISize   = &Basic{Kind: ISize, Name: "isize"}
+	TU8      = &Basic{Kind: U8, Name: "u8"}
+	TU16     = &Basic{Kind: U16, Name: "u16"}
+	TU32     = &Basic{Kind: U32, Name: "u32"}
+	TU64     = &Basic{Kind: U64, Name: "u64"}
+	TUSize   = &Basic{Kind: USize, Name: "usize"}
+	TF32     = &Basic{Kind: F32, Name: "f32"}
+	TF64     = &Basic{Kind: F64, Name: "f64"}
+	TString  = &Basic{Kind: String, Name: "string"}
+	TNever   = &Basic{Kind: Never, Name: "!"}
 )
 
 var Primitives = map[string]*Basic{
@@ -128,11 +134,15 @@ func BitSize(t Type) int {
 
 // Pointer is `*T` (GC-managed) or `*raw T`.
 type Pointer struct {
-	Elem Type
-	Raw  bool
+	Elem  Type
+	Raw   bool
+	Alias string
 }
 
 func (p *Pointer) String() string {
+	if p.Alias != "" {
+		return p.Alias
+	}
 	if p.Raw {
 		return "*raw " + p.Elem.String()
 	}
@@ -141,10 +151,14 @@ func (p *Pointer) String() string {
 
 // Nullable is `T?`, i.e. Option<T> (D5). Nests: `T??` is distinct from `T?`.
 type Nullable struct {
-	Elem Type
+	Elem  Type
+	Alias string
 }
 
 func (n *Nullable) String() string {
+	if n.Alias != "" {
+		return n.Alias
+	}
 	if _, ok := n.Elem.(*Pointer); ok {
 		return "(" + n.Elem.String() + ")?"
 	}
@@ -153,9 +167,13 @@ func (n *Nullable) String() string {
 
 type Tuple struct {
 	Elems []Type
+	Alias string
 }
 
 func (t *Tuple) String() string {
+	if t.Alias != "" {
+		return t.Alias
+	}
 	parts := make([]string, len(t.Elems))
 	for i, e := range t.Elems {
 		parts[i] = e.String()
@@ -165,18 +183,28 @@ func (t *Tuple) String() string {
 
 // Range is the type of `lo..hi` / `lo..<hi` (D29).
 type Range struct {
-	Elem Type
+	Elem  Type
+	Alias string
 }
 
-func (r *Range) String() string { return "Range<" + r.Elem.String() + ">" }
+func (r *Range) String() string {
+	if r.Alias != "" {
+		return r.Alias
+	}
+	return "Range<" + r.Elem.String() + ">"
+}
 
 // List is the immutable `List<T>`; MutableList is `MutableList<T>` (D25/D41).
 type List struct {
 	Elem    Type
 	Mutable bool
+	Alias   string
 }
 
 func (l *List) String() string {
+	if l.Alias != "" {
+		return l.Alias
+	}
 	if l.Mutable {
 		return "MutableList<" + l.Elem.String() + ">"
 	}
@@ -206,9 +234,13 @@ type Func struct {
 	Ret      Type
 	Effects  Effects
 	Sendable bool
+	Alias    string
 }
 
 func (f *Func) String() string {
+	if f.Alias != "" {
+		return f.Alias
+	}
 	parts := make([]string, len(f.Params))
 	for i, p := range f.Params {
 		parts[i] = p.Type.String()
@@ -236,9 +268,13 @@ func (f *Func) String() string {
 // sorted by name and flattened so that equal unions compare identical.
 type ErrorUnion struct {
 	Members []Type
+	Alias   string // the `error Set = A | B` name this union was written as
 }
 
 func (u *ErrorUnion) String() string {
+	if u.Alias != "" {
+		return u.Alias
+	}
 	parts := make([]string, len(u.Members))
 	for i, m := range u.Members {
 		parts[i] = m.String()
@@ -770,9 +806,13 @@ func (h *Hooks) ResolveAssoc(a *Assoc) Type {
 type Map struct {
 	Key, Value Type
 	Mutable    bool
+	Alias      string
 }
 
 func (m *Map) String() string {
+	if m.Alias != "" {
+		return m.Alias
+	}
 	name := "Map"
 	if m.Mutable {
 		name = "MutableMap"
@@ -783,9 +823,13 @@ func (m *Map) String() string {
 type Set struct {
 	Elem    Type
 	Mutable bool
+	Alias   string
 }
 
 func (s *Set) String() string {
+	if s.Alias != "" {
+		return s.Alias
+	}
 	name := "Set"
 	if s.Mutable {
 		name = "MutableSet"
@@ -796,13 +840,173 @@ func (s *Set) String() string {
 // Channel is `Channel<T>` (D16); Task is the handle of a launched task
 // (D3) whose completion yields Result.
 type Channel struct {
-	Elem Type
+	Elem  Type
+	Alias string
 }
 
-func (c *Channel) String() string { return "Channel<" + c.Elem.String() + ">" }
+func (c *Channel) String() string {
+	if c.Alias != "" {
+		return c.Alias
+	}
+	return "Channel<" + c.Elem.String() + ">"
+}
 
 type Task struct {
 	Result Type
+	Alias  string
 }
 
-func (t *Task) String() string { return "Task<" + t.Result.String() + ">" }
+func (t *Task) String() string {
+	if t.Alias != "" {
+		return t.Alias
+	}
+	return "Task<" + t.Result.String() + ">"
+}
+
+// ---------------------------------------------------------------------------
+// type aliases (display only)
+
+// Aliased returns t as written through a `type` alias: a shallow copy of a
+// structural type carrying name as its display name. Identity, keys and
+// codegen see the structure; only String shows the alias. Named types —
+// structs, sealed types, traits, type parameters — keep their own name and
+// are returned unchanged.
+func Aliased(t Type, name string) Type {
+	switch t := t.(type) {
+	case *Basic:
+		c := *t
+		c.Alias = name
+		return &c
+	case *Pointer:
+		c := *t
+		c.Alias = name
+		return &c
+	case *Nullable:
+		c := *t
+		c.Alias = name
+		return &c
+	case *Tuple:
+		c := *t
+		c.Alias = name
+		return &c
+	case *Range:
+		c := *t
+		c.Alias = name
+		return &c
+	case *List:
+		c := *t
+		c.Alias = name
+		return &c
+	case *Map:
+		c := *t
+		c.Alias = name
+		return &c
+	case *Set:
+		c := *t
+		c.Alias = name
+		return &c
+	case *Channel:
+		c := *t
+		c.Alias = name
+		return &c
+	case *Task:
+		c := *t
+		c.Alias = name
+		return &c
+	case *Func:
+		c := *t
+		c.Alias = name
+		return &c
+	case *ErrorUnion:
+		c := *t
+		c.Alias = name
+		return &c
+	}
+	return t
+}
+
+// AliasOf returns the display alias t was written through, or "".
+func AliasOf(t Type) string {
+	switch t := t.(type) {
+	case *Basic:
+		return t.Alias
+	case *Pointer:
+		return t.Alias
+	case *Nullable:
+		return t.Alias
+	case *Tuple:
+		return t.Alias
+	case *Range:
+		return t.Alias
+	case *List:
+		return t.Alias
+	case *Map:
+		return t.Alias
+	case *Set:
+		return t.Alias
+	case *Channel:
+		return t.Alias
+	case *Task:
+		return t.Alias
+	case *Func:
+		return t.Alias
+	case *ErrorUnion:
+		return t.Alias
+	}
+	return ""
+}
+
+// Unaliased strips display aliases: one level when deep is false (the
+// alias's own definition, with its parts as written), every level when deep
+// is true (the fully expanded type).
+func Unaliased(t Type, deep bool) Type {
+	if t == nil {
+		return nil
+	}
+	if !deep {
+		return Aliased(t, "")
+	}
+	switch t := t.(type) {
+	case *Basic:
+		return Aliased(t, "")
+	case *Pointer:
+		return &Pointer{Elem: Unaliased(t.Elem, true), Raw: t.Raw}
+	case *Nullable:
+		return &Nullable{Elem: Unaliased(t.Elem, true)}
+	case *Tuple:
+		out := make([]Type, len(t.Elems))
+		for i, e := range t.Elems {
+			out[i] = Unaliased(e, true)
+		}
+		return &Tuple{Elems: out}
+	case *Range:
+		return &Range{Elem: Unaliased(t.Elem, true)}
+	case *List:
+		return &List{Elem: Unaliased(t.Elem, true), Mutable: t.Mutable}
+	case *Map:
+		return &Map{Key: Unaliased(t.Key, true), Value: Unaliased(t.Value, true), Mutable: t.Mutable}
+	case *Set:
+		return &Set{Elem: Unaliased(t.Elem, true), Mutable: t.Mutable}
+	case *Channel:
+		return &Channel{Elem: Unaliased(t.Elem, true)}
+	case *Task:
+		return &Task{Result: Unaliased(t.Result, true)}
+	case *Func:
+		c := *t
+		c.Alias = ""
+		c.Ret = Unaliased(t.Ret, true)
+		c.Effects.Error = Unaliased(t.Effects.Error, true)
+		c.Params = make([]Param, len(t.Params))
+		for i, p := range t.Params {
+			c.Params[i] = Param{Name: p.Name, Type: Unaliased(p.Type, true), HasDefault: p.HasDefault, Variadic: p.Variadic}
+		}
+		return &c
+	case *ErrorUnion:
+		out := make([]Type, len(t.Members))
+		for i, m := range t.Members {
+			out[i] = Unaliased(m, true)
+		}
+		return &ErrorUnion{Members: out}
+	}
+	return t
+}

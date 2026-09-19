@@ -27,6 +27,9 @@ func (f *fnCtx) typeNamed(n *ast.NameExpr) types.Type {
 			path := []ast.Ident{{Name: n.Name, Pos: n.Pos}}
 			return f.resolve(&ast.NamedType{Path: path, Args: n.TypeArgs, Pos: n.Pos})
 		}
+		if t := f.c.symType(sym); t != nil {
+			return t
+		}
 		return sym.Type
 	}
 	if _, ok := f.env.tps[n.Name]; ok {
@@ -174,6 +177,9 @@ func (f *fnCtx) moduleTypeNamed(x ast.Expr) types.Type {
 	}
 	f.c.refSym(n.Pos, sym)
 	f.c.refSym(m.Name.Pos, member)
+	if t := f.c.symType(member); t != nil {
+		return t
+	}
 	return member.Type
 }
 
