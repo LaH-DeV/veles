@@ -872,6 +872,14 @@ func (f *fnCtx) unaryExpr(e *ast.UnaryExpr, want types.Type) Expr {
 		// D10: address of a local (heap-promoted); D50: always a GC pointer.
 		// The address of a temporary boxes the value.
 		if !isPlaceSyntax(e.X) {
+			if repl, ok := elemReadCall(e.X); ok {
+				// `&xs.atOrPanic(i)` would box a copy of the element; the
+				// pointer to the element itself is `refOrPanic` (D25, v0.27)
+				f.c.errorFix(e.Pos, fixReplace("Replace with '"+repl+"'", e.Pos, repl),
+					"'&%s' is the address of a copy of the element, not of the element; use '%s' (D25)", srcText(e.X), repl)
+				f.checkExpr(e.X, nil)
+				return bad()
+			}
 			x := f.checkExpr(e.X, nil)
 			if types.IsInvalid(x.Type()) {
 				return bad()
@@ -1700,19 +1708,10 @@ func isPlaceSyntax(e ast.Expr) bool {
 		return !e.Safe && isPlaceSyntax(e.X)
 	case *ast.IndexExpr:
 		return true
-	case *ast.CallExpr:
-		return isElemPlaceCall(e)
 	case *ast.UnaryExpr:
 		return e.Op == lexer.Star
 	}
 	return false
-}
-
-// isElemPlaceCall recognises `xs.atOrPanic(i)` and `m.getOrPanic(k)`, the
-// calls that name a collection element in place (checkLValue, lint_index.go).
-func isElemPlaceCall(e *ast.CallExpr) bool {
-	m, ok := e.Fun.(*ast.MemberExpr)
-	return ok && !m.Safe && (m.Name.Name == "atOrPanic" || m.Name.Name == "getOrPanic") && len(e.Args) == 1 && e.Args[0].Name == nil
 }
 
 // mergeFacts intersects the narrowing state of two joining paths; a nil

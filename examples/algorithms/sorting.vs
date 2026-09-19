@@ -101,7 +101,7 @@ fun quickSortRange(xs: MutableList<i64>, lo: i64, hi: i64) {
 /// Counting sort for small non-negative keys: O(n + k).
 pub fun countingSort(xs: List<i64>, maxValue: i64): List<i64> {
   val counts = MutableList<i64>.repeat(0, maxValue + 1)
-  loop (x in xs) counts.atOrPanic(x) += 1
+  loop (x in xs) *counts.refOrPanic(x) += 1
   val out: MutableList<i64> = []
   loop (v in 0..maxValue) {
     loop (_ in 0..<counts.atOrPanic(v)) out.push(v)

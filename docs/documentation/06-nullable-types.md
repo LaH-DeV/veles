@@ -115,10 +115,12 @@ a `val` first.
 ## Updating through `?.`
 
 A narrowed value is not a copy: after the null test you can write to it
-and call `mut` methods on it, and the change lands in the variable, field
-or collection element it came from. `?.` does the same in one step — on a
-call, and on an assignment, which happens only when the left side is
-present and is skipped otherwise:
+and call `mut` methods on it, and the change lands in the variable or
+field it came from. `?.` does the same in one step — on a call, and on an
+assignment, which happens only when the left side is present and is
+skipped otherwise. A nullable *pointer* is the common receiver: `m.ref(k)`
+is `(*V)?`, a pointer to the value stored in the map or null, so `?.`
+through it updates the map entry itself:
 
 ```veles
 use io
@@ -140,9 +142,9 @@ fun main() {
   maybe?.n += 1
 
   val tally: MutableMap<string, Counter> = ["hits": Counter()]
-  tally.get("hits")?.bump()
-  tally.get("hits")?.n += 10
-  tally.get("misses")?.bump()     // no entry: nothing happens
+  tally.ref("hits")?.bump()
+  tally.ref("hits")?.n += 10
+  tally.ref("misses")?.bump()     // no entry: nothing happens
   io.println("$maybe $tally")
 }
 ```
@@ -152,11 +154,11 @@ Output:
 Counter(n: 7) {hits: Counter(n: 11)}
 ```
 
-This is why get-and-update code rarely needs `atOrPanic` or
-`getOrPanic`: `?.` *is* the presence test. Two things stay closed to it —
-a `val` struct and the elements of an immutable `List` or `Map` — and a
-write into a genuine temporary (`make()?.n = 1`) is an error, because it
-could never be observed.
+This is why get-and-update code rarely needs `getOrPanic`: `?.` *is* the
+presence test. What stays closed to it is anything that is a copy — a
+`val` struct, and the value `get(k)` or `at(i)` returns: `tally.get("hits")?.n += 10`
+is an error, because the change could never be observed ([chapter 4](04-collections.md#updating-elements-in-place)
+has the reading/writing rule).
 
 ## Where `T?` shows up
 

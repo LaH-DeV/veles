@@ -38,7 +38,6 @@ type fnCtx struct {
 	pending      []Stmt            // statements hoisted by adapter lowering
 	boundPlace   map[ast.Expr]Expr // receiver of a `?.` assignment, already lowered to its place (check_safe.go)
 	adapter      *adapterState     // the eager collection operation being lowered (lower_try.go)
-	readOnlyRecv bool              // the next method receiver is an element of an immutable collection (methodCall)
 	scopes       []*ScopeBlock
 	awaitNext    bool
 	inRaceArm    bool
@@ -323,6 +322,7 @@ func isConstExpr(e Expr) bool {
 func (f *fnCtx) checkBlock(b *ast.Block, expected types.Type, wantValue bool) *Block {
 	f.pushScope()
 	defer f.popScope()
+	f.lintStaleRefs(b.Stmts)
 	out := &Block{Type: types.TUnit}
 	terminated := false
 	for i, s := range b.Stmts {
@@ -582,6 +582,20 @@ func (f *fnCtx) checkAssign(s *ast.AssignStmt) []Stmt {
 	if tup, ok := s.Target.(*ast.TupleExpr); ok {
 		return f.tupleAssign(s, tup)
 	}
+	if n, isName := s.Target.(*ast.NameExpr); isName {
+		// `n += 1` on a `val n: *i64` (a `loop (&n in nums)` variable or a
+		// `&` binding): the pointer cannot be rebound; the pointee can
+		if sym := f.scope.Lookup(n.Name); sym != nil && sym.Kind == SymLocal {
+			v := f.localVar(sym.Var)
+			if pt, isPtr := v.Type.(*types.Pointer); isPtr && !v.Mutable && !pt.Raw {
+				repl := "*" + n.Name
+				f.c.errorFix(n.Pos, fixReplace("Replace with '"+repl+"'", n.Pos, repl),
+					"'%s' is a pointer to a '%s' and cannot be reassigned; write '%s' to change the value it points to", n.Name, pt.Elem, repl)
+				f.checkExpr(s.Value, nil)
+				return nil
+			}
+		}
+	}
 	target, root := f.checkLValue(s.Target, true)
 	if target == nil {
 		f.checkExpr(s.Value, nil)
@@ -748,21 +762,20 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 		// Through a pointer, mutability is not gated by the binding (D11).
 		var base Expr
 		var root *Var
+		temporary := false
 		if !isPlaceSyntax(e.X) {
 			// an rvalue such as a call result: a field behind a pointer it
-			// returns is writable (`ptrOf(h).n = 5`); a value is a temporary,
-			// reported below
+			// returns is writable (`ptrOf(h).n = 5`); a value is a temporary
+			// — `xs.atOrPanic(i)` included, which reads a copy (D25, v0.27)
 			base = f.checkExpr(e.X, nil)
 			if types.IsInvalid(base.Type()) {
 				return nil, nil
 			}
+			temporary = true
 		} else if base, root = f.checkLValue(e.X, false); base == nil {
 			return nil, nil
 		} else {
 			base = f.narrowLValue(base, e.X)
-			if mutate {
-				f.checkElemWritable(base, e.Pos)
-			}
 		}
 		bt := base.Type()
 		if p, ok := bt.(*types.Pointer); ok {
@@ -776,8 +789,9 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 			f.errorf(e.Pos, "cannot mutate 'self.%s' in a non-'mut' method; declare the method 'mut fun' (D22)", e.Name.Name)
 		} else if mutate && root != nil && !root.Mutable {
 			f.errorf(e.Pos, "cannot assign to field '%s' of '%s': it is a 'val' (D11/D22)", e.Name.Name, root.Name)
-		} else if mutate && root == nil && !isPlaceExpr(base) {
-			f.errorf(e.Pos, "cannot assign to a field of a temporary value")
+		} else if mutate && (temporary || root == nil && !isPlaceExpr(base)) {
+			f.copyMutationHint(e.X, e.Pos, "cannot assign to a field of a temporary value")
+			return nil, nil
 		}
 		st, ok := bt.(*types.Struct)
 		if !ok {
@@ -799,23 +813,6 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 		}
 		f.indexRead(e, false)
 		return f.listElemPlace(x, lt, e.Index, e.Pos, mutate), nil
-	case *ast.CallExpr:
-		// `xs.atOrPanic(i)` and `m.getOrPanic(k)` name an element in place, so
-		// a value-struct element can be mutated where it lives:
-		// `xs.atOrPanic(i).bump()`, `m.getOrPanic(k).n = 1`, `&xs.atOrPanic(i)`.
-		if isElemPlaceCall(e) {
-			m := e.Fun.(*ast.MemberExpr)
-			x := f.checkExpr(m.X, nil)
-			if lt, ok := x.Type().(*types.List); ok && m.Name.Name == "atOrPanic" {
-				return f.listElemPlace(x, lt, e.Args[0].Value, e.Pos, mutate), nil
-			}
-			if mt, ok := x.Type().(*types.Map); ok && m.Name.Name == "getOrPanic" {
-				return f.mapElemPlace(x, mt, e.Args[0].Value, e.Pos, mutate), nil
-			}
-			if types.IsInvalid(x.Type()) {
-				return nil, nil
-			}
-		}
 	case *ast.UnaryExpr:
 		if e.Op == lexer.Star {
 			p := f.checkExpr(e.X, nil)
@@ -829,6 +826,15 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 			}
 			return &Deref{exprBase{pt.Elem}, p}, nil
 		}
+	}
+	if repl, ok := elemReadCall(e); ok && !strings.Contains(repl, "?.") {
+		// `xs.atOrPanic(i) += 1`: the read is a copy; the element's storage
+		// is `*xs.refOrPanic(i)` (D25, v0.27)
+		f.checkExpr(e, nil) // so the names in it count as used
+		repl = "*" + repl
+		f.c.errorFix(e.Span(), fixReplace("Replace with '"+repl+"'", e.Span(), repl),
+			"'%s' is a copy of the element, not the element; assign through '%s', or use 'set' (D25)", srcText(e), repl)
+		return nil, nil
 	}
 	f.errorf(e.Span(), "expression is not assignable")
 	return nil, nil
@@ -893,6 +899,9 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 		switch it := iter.Type().(type) {
 		case *types.Range:
 			// var i = lo; val hi = hi; loop (i < hi) { val x = i; body; post: i += 1 }
+			if hasRefBinding(s.Var) {
+				f.errorf(s.Var.Pos, "'&' binds an element of a MutableList or a value of a MutableMap in place; a range yields values (D42)")
+			}
 			if !types.IsInteger(it.Elem) {
 				f.errorf(s.Iter.Span(), "cannot iterate a range of '%s'", it.Elem)
 			}
@@ -916,6 +925,13 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 			body.Stmts = append(append([]Stmt{&VarDecl{Var: v, Init: &VarRef{exprBase{it.Elem}, idx}}}, parts...), body.Stmts...)
 			lp.Body = body
 		case *types.List:
+			byRef := s.Var.Name != nil && s.Var.Ref
+			if !byRef && hasRefBinding(s.Var) {
+				f.errorf(s.Var.Pos, "'&' binds a list element as a whole: 'loop (&x in xs)' (D42)")
+			}
+			if byRef && !it.Mutable {
+				f.errorf(s.Var.Pos, "'loop (&x in xs)' needs a MutableList: it changes the elements in place, and a List is read-only (D25, D42)")
+			}
 			listTmp := f.newTemp(it)
 			pre = append(pre, &VarDecl{Var: listTmp, Init: iter})
 			idx := f.newTemp(types.TI64)
@@ -923,14 +939,32 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 			lenExpr := &Builtin{exprBase{types.TI64}, "list.len", []Expr{&VarRef{exprBase{it}, listTmp}}, s.Pos}
 			lp.Cond = &Binary{exprBase{types.TBool}, OpLt, &VarRef{exprBase{types.TI64}, idx}, lenExpr, s.Pos}
 			lp.Post = []Stmt{&Assign{Target: &VarRef{exprBase{types.TI64}, idx}, Value: &Binary{exprBase{types.TI64}, OpWrapAdd, &VarRef{exprBase{types.TI64}, idx}, &IntConst{exprBase{types.TI64}, 1, false}, s.Pos}}}
-			v, parts := f.bindLoopVar(s.Var, it.Elem)
+			var elemT types.Type = it.Elem
+			if byRef {
+				elemT = &types.Pointer{Elem: it.Elem}
+			}
+			v, parts := f.bindLoopVar(s.Var, elemT)
 			f.loops = append(f.loops, &loopFrame{hir: lp, label: label})
 			body := f.checkBlock(s.Body, nil, false)
 			f.loops = f.loops[:len(f.loops)-1]
-			get := &Builtin{exprBase{it.Elem}, "list.get", []Expr{&VarRef{exprBase{it}, listTmp}, &VarRef{exprBase{types.TI64}, idx}}, s.Pos}
+			var get Expr = &Builtin{exprBase{it.Elem}, "list.get", []Expr{&VarRef{exprBase{it}, listTmp}, &VarRef{exprBase{types.TI64}, idx}}, s.Pos}
+			if byRef {
+				// `loop (&x in xs)`: x is a pointer to the element's storage (D42)
+				get = &AddrOf{exprBase{elemT}, &Builtin{exprBase{it.Elem}, "list.ref", []Expr{&VarRef{exprBase{it}, listTmp}, &VarRef{exprBase{types.TI64}, idx}}, s.Pos}}
+			}
 			body.Stmts = append(append([]Stmt{&VarDecl{Var: v, Init: get}}, parts...), body.Stmts...)
 			lp.Body = body
 		case *types.Map, *types.Set:
+			if mt, isMap := it.(*types.Map); isMap && s.Var.Name == nil && len(s.Var.Tuple) == 2 && s.Var.Tuple[1].Ref && !s.Var.Tuple[0].Ref {
+				return f.mapRefLoop(s, iter, mt, lp, label)
+			}
+			if hasRefBinding(s.Var) {
+				if _, isMap := it.(*types.Map); isMap {
+					f.errorf(s.Var.Pos, "a map key cannot be changed in place; '&' goes on the value: 'loop ((k, &v) in m)' (D42)")
+				} else {
+					f.errorf(s.Var.Pos, "'&' cannot bind a set element in place: sets hold their elements by value (D42)")
+				}
+			}
 			op, elem := "map.entries", types.Type(nil)
 			if mt, isMap := it.(*types.Map); isMap {
 				elem = &types.Tuple{Elems: []types.Type{mt.Key, mt.Value}}
@@ -940,12 +974,18 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 			listT := &types.List{Elem: elem}
 			snapshot := &Builtin{exprBase{listT}, op, []Expr{iter}, s.Pos}
 			copy := *s
+			if hasRefBinding(s.Var) {
+				copy.Var = withoutRefs(s.Var) // reported above; the snapshot loop is by value
+			}
 			copy.Iter = &ast.NameExpr{Name: "", Pos: s.Iter.Span()}
 			sv, decl := f.hidden("snapshot", snapshot, false)
 			copy.Iter = nameOf(sv, s.Iter.Span())
 			inner := f.checkLoop(&copy)
 			return append([]Stmt{decl}, inner...)
 		default:
+			if hasRefBinding(s.Var) && !types.IsInvalid(iter.Type()) {
+				f.errorf(s.Var.Pos, "'&' binds an element of a MutableList or a value of a MutableMap in place; an iterator yields values (D42)")
+			}
 			if stmts, handled := f.iteratorLoop(s, iter, lp, label); handled {
 				return stmts
 			}
@@ -978,6 +1018,70 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 		kw := source.Span{File: s.Pos.File, Start: s.Pos.Start, End: s.Pos.Start + len("loop")}
 		f.warnf(kw, "this loop never repeats: every path through its body leaves it (break, return or throw); drop the 'loop' or add a condition")
 	}
+	return append(pre, lp)
+}
+
+// withoutRefs is a copy of a binding with every `&` dropped.
+func withoutRefs(b *ast.Binding) *ast.Binding {
+	c := *b
+	c.Ref = false
+	c.Tuple = nil
+	for i := range b.Tuple {
+		c.Tuple = append(c.Tuple, *withoutRefs(&b.Tuple[i]))
+	}
+	return &c
+}
+
+// hasRefBinding reports whether a loop binding, or any part of a tuple
+// binding, is written `&name`.
+func hasRefBinding(b *ast.Binding) bool {
+	if b.Ref {
+		return true
+	}
+	for i := range b.Tuple {
+		if hasRefBinding(&b.Tuple[i]) {
+			return true
+		}
+	}
+	return false
+}
+
+// mapRefLoop lowers `loop ((k, &v) in m)`: the keys are snapshotted, and
+// for each one still present `v` is a pointer to the stored value, so the
+// body changes the entry where it lives (D42). An entry removed by the
+// body is skipped; one added is not visited.
+func (f *fnCtx) mapRefLoop(s *ast.LoopStmt, m Expr, mt *types.Map, lp *Loop, label string) []Stmt {
+	if !mt.Mutable {
+		f.errorf(s.Var.Pos, "'loop ((k, &v) in m)' needs a MutableMap: it changes the values in place, and a Map is read-only (D25, D42)")
+	}
+	mapTmp := f.newTemp(mt)
+	keysT := &types.List{Elem: mt.Key}
+	keys := f.newTemp(keysT)
+	idx := f.newTemp(types.TI64)
+	pre := []Stmt{
+		&VarDecl{Var: mapTmp, Init: m},
+		&VarDecl{Var: keys, Init: &Builtin{exprBase{keysT}, "map.keys", []Expr{ref(mapTmp)}, s.Pos}},
+		&VarDecl{Var: idx, Init: i64c(0)},
+	}
+	lp.Cond = &Binary{exprBase{types.TBool}, OpLt, ref(idx), &Builtin{exprBase{types.TI64}, "list.len", []Expr{ref(keys)}, s.Pos}, s.Pos}
+	lp.Post = []Stmt{&Assign{Target: ref(idx), Value: &Binary{exprBase{types.TI64}, OpWrapAdd, ref(idx), i64c(1), s.Pos}}}
+	ptrT := &types.Pointer{Elem: mt.Value}
+	k, kParts := f.bindLoopVar(&s.Var.Tuple[0], mt.Key)
+	v, _ := f.bindLoopVar(&s.Var.Tuple[1], ptrT)
+	f.loops = append(f.loops, &loopFrame{hir: lp, label: label})
+	body := f.checkBlock(s.Body, nil, false)
+	f.loops = f.loops[:len(f.loops)-1]
+	slot := f.newTemp(&types.Nullable{Elem: ptrT})
+	lp.hasContinue = true
+	prefix := []Stmt{&VarDecl{Var: k, Init: &Builtin{exprBase{mt.Key}, "list.get", []Expr{ref(keys), ref(idx)}, s.Pos}}}
+	prefix = append(prefix, kParts...)
+	prefix = append(prefix,
+		&VarDecl{Var: slot, Init: &Builtin{exprBase{slot.Type}, "map.ref", []Expr{ref(mapTmp), ref(k)}, s.Pos}},
+		&ExprStmt{X: &If{exprBase{types.TUnit}, &IsNull{exprBase{types.TBool}, ref(slot)},
+			&Block{Stmts: []Stmt{&Continue{Loop: lp}}, Type: types.TNever}, nil}},
+		&VarDecl{Var: v, Init: &Unwrap{exprBase{ptrT}, ref(slot)}})
+	body.Stmts = append(prefix, body.Stmts...)
+	lp.Body = body
 	return append(pre, lp)
 }
 

@@ -74,8 +74,10 @@ func (p *Parser) parseBinding() ast.Binding {
 		t := p.next()
 		return ast.Binding{Name: &ast.Ident{Name: "_", Pos: t.Span}, Pos: t.Span}
 	}
+	// `&x`: the loop variable refers to the element in place (D42)
+	isRef := p.accept(lexer.Amp)
 	name, _ := p.expectIdent()
-	b := ast.Binding{Name: &name}
+	b := ast.Binding{Name: &name, Ref: isRef}
 	if p.accept(lexer.Colon) {
 		b.Type = p.parseType()
 	}
@@ -227,7 +229,7 @@ func (p *Parser) looksLikeForIn() bool {
 			depth--
 		case lexer.KwIn:
 			return depth == 0
-		case lexer.Ident, lexer.Comma, lexer.Under, lexer.Colon:
+		case lexer.Ident, lexer.Comma, lexer.Under, lexer.Colon, lexer.Amp:
 			// part of a binding
 		case lexer.EOF:
 			return false

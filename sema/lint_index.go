@@ -66,9 +66,9 @@ func (f *fnCtx) indexWrite(s *ast.AssignStmt, ix *ast.IndexExpr, isMap bool) {
 }
 
 // listElemPlace is the element of `x` at `index` as an assignable place
-// (`list.ref`), the lvalue behind `xs.atOrPanic(i)`. A negative index counts
-// from the end, as in the value form; the list is read a second time for
-// its length only on that path.
+// (`list.ref`): the storage behind `xs.set(i, v)`, `xs.refOrPanic(i)` and
+// `loop (&x in xs)`. A negative index counts from the end, as in the value
+// form; the list is read a second time for the length.
 func (f *fnCtx) listElemPlace(x Expr, lt *types.List, index ast.Expr, span source.Span, mutate bool) Expr {
 	if mutate && !lt.Mutable {
 		f.errorf(span, "cannot assign into an immutable List; use MutableList (D25)")
@@ -87,7 +87,7 @@ func (f *fnCtx) listElemPlace(x Expr, lt *types.List, index ast.Expr, span sourc
 
 // isPlaceExpr reports whether a checked expression denotes storage that
 // can be written through: a dereference, a field of a place, or a list
-// element (`list.ref`, the lvalue behind `xs.atOrPanic(i)`).
+// element (`list.ref`, the storage behind `set` and `refOrPanic`).
 func isPlaceExpr(x Expr) bool {
 	switch x := x.(type) {
 	case *Deref, *VarRef:
@@ -106,185 +106,59 @@ func isPlaceExpr(x Expr) bool {
 	return false
 }
 
-// safePlace is a collection element as the receiver of a `?.` call or
-// write: pre runs first (binds the collection and the index or slot), cond
-// says whether the element is present, place is the element itself (valid
-// only under cond) and value reads it. mutable is the collection's kind: a
-// place inside an immutable List or Map is read, never written or handed
-// to a `mut fun`.
-type safePlace struct {
-	pre     []Stmt
-	cond    Expr
-	place   Expr
-	value   Expr
-	mutable bool
-}
+// Element reads are values (D25, v0.27): `xs.at(i)`, `xs.atOrPanic(i)`,
+// `m.get(k)`, `m.getOrPanic(k)`, `first()`, `last()` and `find(p)` all copy
+// a value struct out of the collection, exactly like binding it to a name
+// would. Writing into the collection goes through a reference — `ref` /
+// `refOrPanic` (a pointer to the element, only on MutableList/MutableMap)
+// or `loop (&x in xs)` — so that a read and a write never look alike.
 
-// elemSafePlace recognises `xs.at(i)`, `xs.first()`, `xs.last()` on a list
-// and `m.get(k)` on a map as the receiver of a `?.` call or assignment. A
-// `?.` call then mutates the element itself rather than the copy `at`/`get`
-// returns.
-//
-// When the shape matches but the call is not on a collection, the receiver
-// expression has still been checked; it comes back as recv so the caller
-// need not check it twice (a lambda in it would otherwise be emitted twice).
-func (f *fnCtx) elemSafePlace(x ast.Expr) (sp *safePlace, recv Expr) {
+// elemReadCall recognises a call that reads an element by value and
+// returns the reference form that reaches the same element, for the hint
+// on a mutation of the copy; "" when the expression is something else.
+func elemReadCall(x ast.Expr) (fixed string, ok bool) {
 	call, isCall := x.(*ast.CallExpr)
 	if !isCall {
-		return nil, nil
+		return "", false
 	}
 	m, isMember := call.Fun.(*ast.MemberExpr)
-	if !isMember || m.Safe {
-		return nil, nil
+	if !isMember {
+		return "", false
 	}
+	var name string
 	switch m.Name.Name {
 	case "at", "get":
-		if len(call.Args) != 1 || call.Args[0].Name != nil {
-			return nil, nil
-		}
-	case "first", "last":
-		if len(call.Args) != 0 {
-			return nil, nil
-		}
+		name = "ref"
+	case "atOrPanic", "getOrPanic":
+		name = "refOrPanic"
 	default:
-		return nil, nil
+		return "", false
 	}
-	// `module.f()` and `Type.f()` are not method calls (callExpr)
-	if n, isName := m.X.(*ast.NameExpr); isName {
-		if sym := f.lookup(n.Name); sym != nil && (sym.Kind == SymModule || sym.Kind == SymType) {
-			return nil, nil
-		}
-		if f.typeNamed(n) != nil {
-			return nil, nil
-		}
+	if len(call.Args) != 1 || call.Args[0].Name != nil {
+		return "", false
 	}
-	if f.moduleTypeNamed(m.X) != nil {
-		return nil, nil
+	recv, arg := srcText(m.X), srcText(call.Args[0].Value)
+	if recv == "" || arg == "" {
+		return "", false
 	}
-	base := f.checkExpr(m.X, nil)
-	span := call.Pos
-	// an element that is itself nullable (`List<T?>`, `Map<K, V?>`): the
-	// place would be a `T?`, so `?.` goes through the ordinary call, whose
-	// chain flattens the two levels (flattenNullable)
-	if lt, isList := base.Type().(*types.List); isList {
-		if _, elemNullable := lt.Elem.(*types.Nullable); elemNullable {
-			return nil, f.dispatchMethod(base, m, nil, call, nil)
-		}
+	sep := "."
+	if m.Safe {
+		sep = "?."
 	}
-	if mt, isMap := base.Type().(*types.Map); isMap {
-		if _, valNullable := mt.Value.(*types.Nullable); valNullable && m.Name.Name == "get" {
-			return nil, f.dispatchMethod(base, m, nil, call, nil)
-		}
-	}
-	if mt, isMap := base.Type().(*types.Map); isMap && m.Name.Name == "get" {
-		k := f.checkExprTo(call.Args[0].Value, mt.Key)
-		slot := f.newTemp(&types.Nullable{Elem: &types.Pointer{Elem: mt.Value}})
-		ptr := &Unwrap{exprBase{&types.Pointer{Elem: mt.Value}}, ref(slot)}
-		return &safePlace{
-			pre:     []Stmt{&VarDecl{Var: slot, Init: &Builtin{exprBase{slot.Type}, "map.ref", []Expr{base, k}, span}}},
-			cond:    &Unary{exprBase{types.TBool}, OpNot, &IsNull{exprBase{types.TBool}, ref(slot)}, span},
-			place:   &Deref{exprBase{mt.Value}, ptr},
-			value:   &Deref{exprBase{mt.Value}, ptr},
-			mutable: mt.Mutable,
-		}, nil
-	}
-	lt, isList := base.Type().(*types.List)
-	if !isList || m.Name.Name == "get" {
-		var typeArgs []types.Type
-		for _, ta := range call.TypeArgs {
-			typeArgs = append(typeArgs, f.resolve(ta))
-		}
-		if types.IsInvalid(base.Type()) {
-			f.checkArgsLoosely(call.Args)
-			return nil, bad()
-		}
-		return nil, f.dispatchMethod(base, m, typeArgs, call, nil)
-	}
-	list := f.newTemp(lt)
-	idx := f.newTemp(types.TI64)
-	n := &Builtin{exprBase{types.TI64}, "list.len", []Expr{ref(list)}, span}
-	pre := []Stmt{&VarDecl{Var: list, Init: base}}
-	switch m.Name.Name {
-	case "at":
-		pre = append(pre, &VarDecl{Var: idx, Init: f.indexValue(call.Args[0].Value)})
-		fromEnd := &Assign{Target: ref(idx), Value: &Binary{exprBase{types.TI64}, OpWrapAdd, ref(idx), n, span}}
-		pre = append(pre, &ExprStmt{X: &If{exprBase{types.TUnit},
-			&Binary{exprBase{types.TBool}, OpLt, ref(idx), i64c(0), span},
-			&Block{Stmts: []Stmt{fromEnd}, Type: types.TUnit}, nil}})
-	case "first":
-		pre = append(pre, &VarDecl{Var: idx, Init: i64c(0)})
-	case "last":
-		pre = append(pre, &VarDecl{Var: idx, Init: &Binary{exprBase{types.TI64}, OpWrapSub, n, i64c(1), span}})
-	}
-	return &safePlace{
-		pre: pre,
-		cond: &Binary{exprBase{types.TBool}, OpAnd,
-			&Binary{exprBase{types.TBool}, OpGe, ref(idx), i64c(0), span},
-			&Binary{exprBase{types.TBool}, OpLt, ref(idx), n, span}, span},
-		place:   &Builtin{exprBase{lt.Elem}, "list.ref", []Expr{ref(list), ref(idx)}, span},
-		value:   &Builtin{exprBase{lt.Elem}, "list.get", []Expr{ref(list), ref(idx)}, span},
-		mutable: lt.Mutable,
-	}, nil
+	return recv + sep + name + "(" + arg + ")", true
 }
 
-// narrowLValue applies the smart casts in force to a place, so that a
-// field write or a `mut fun` call reaches the payload of a nullable or
-// sealed variable after its test (`if (p != null) p.n = 5`), the same way
-// a read does (narrowedRef).
-func (f *fnCtx) narrowLValue(lv Expr, x ast.Expr) Expr {
-	if p, ok := f.placeOf(x); ok {
-		return f.narrowPlace(lv, p)
+// copyMutationHint explains a mutation of an element copy and, when the
+// receiver is `at`/`atOrPanic`/`get`/`getOrPanic`, attaches the rewrite to
+// the reference form as a fix.
+func (f *fnCtx) copyMutationHint(recv ast.Expr, span source.Span, what string) {
+	if repl, ok := elemReadCall(recv); ok {
+		f.c.errorFix(recv.Span(), fixReplace("Replace with '"+repl+"'", recv.Span(), repl),
+			"%s: '%s' is a copy of the element, so the change would be lost; reach the element itself with '%s' (D25)", what, srcText(recv), repl)
+		return
 	}
-	return lv
+	f.errorf(span, "%s; bind it with 'var' to change a copy, or reach the element with 'ref' / 'refOrPanic' or 'loop (&x in xs)' (D25)", what)
 }
-
-// mapElemPlace is the value stored under `key` in `m` as an assignable
-// place: a dereference of `map.refOrPanic` (which panics when the key is
-// absent). It is both the value and the lvalue behind `m.getOrPanic(k)`.
-func (f *fnCtx) mapElemPlace(m Expr, mt *types.Map, key ast.Expr, span source.Span, mutate bool) Expr {
-	if mutate && !mt.Mutable {
-		f.errorf(span, "cannot assign into an immutable Map; use MutableMap (D25)")
-	}
-	k := f.checkExprTo(key, mt.Key)
-	ptr := &Builtin{exprBase{&types.Pointer{Elem: mt.Value}}, "map.refOrPanic", []Expr{m, k}, span}
-	return &Deref{exprBase{mt.Value}, ptr}
-}
-
-// checkElemWritable reports a write through a place that is rooted in an
-// element of an immutable collection (`xs.atOrPanic(i).n = 1` on a List,
-// `m.getOrPanic(k).f.g = 1` on a Map). The lvalue chain is walked down to
-// the element access; anything behind a pointer is writable (D11).
-func (f *fnCtx) checkElemWritable(x Expr, span source.Span) {
-	for {
-		switch e := x.(type) {
-		case *FieldGet:
-			x = e.X
-		case *TupleGet:
-			x = e.X
-		case *Unwrap:
-			x = e.X
-		case *VariantCast:
-			x = e.X
-		case *Deref:
-			if b, ok := e.X.(*Builtin); ok && b.Op == "map.refOrPanic" {
-				if mt, ok := b.Args[0].Type().(*types.Map); ok && !mt.Mutable {
-					f.errorf(span, "cannot assign into an immutable Map; use MutableMap (D25)")
-				}
-			}
-			return
-		case *Builtin:
-			if e.Op == "list.ref" {
-				if lt, ok := e.Args[0].Type().(*types.List); ok && !lt.Mutable {
-					f.errorf(span, "cannot assign into an immutable List; use MutableList (D25)")
-				}
-			}
-			return
-		default:
-			return
-		}
-	}
-}
-
 // hoistPlace binds every sub-expression that locating target evaluates —
 // the collection and index of a `list.ref`, the map and key of a
 // `map.refOrPanic`, the pointer under a dereference — to a temporary, so
@@ -341,4 +215,15 @@ func (f *fnCtx) hoistPlace(target Expr) (Expr, []Stmt) {
 		return x
 	}
 	return walk(target), pre
+}
+
+// narrowLValue applies the smart casts in force to a place, so that a
+// field write or a `mut fun` call reaches the payload of a nullable or
+// sealed variable after its test (`if (p != null) p.n = 5`), the same way
+// a read does (narrowedRef).
+func (f *fnCtx) narrowLValue(lv Expr, x ast.Expr) Expr {
+	if p, ok := f.placeOf(x); ok {
+		return f.narrowPlace(lv, p)
+	}
+	return lv
 }

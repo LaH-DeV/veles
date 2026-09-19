@@ -87,6 +87,66 @@ covers them fully. These operations are *eager*: each builds its result
 immediately. For long pipelines over big data, `xs.iter()` gives a lazy
 iterator with the same names — also chapter 10.
 
+### Updating elements in place
+
+Every read is a **value**: `xs.at(i)`, `xs.atOrPanic(i)`, `xs.first()`,
+`xs.find(p)` and the loop variable of `loop (x in xs)` all hand you a
+copy of a struct element, exactly as `val t = xs.atOrPanic(i)` does. So a
+change to what you read never reaches the list — and the compiler says so
+rather than letting it vanish: `xs.atOrPanic(i).n += 1` is an error
+("a copy of the element"), as is `xs.at(i)?.bump()`.
+
+To change an element, ask for a **reference** to it. `refOrPanic(i)` is a
+pointer to the element (`*T`, a panic when out of range), `ref(i)` the
+nullable pointer (`(*T)?`), and `loop (&x in xs)` visits every element by
+reference. A read and a write then never look alike:
+
+```veles
+use io
+
+struct Counter {
+  name: string
+  n:    i64 = 0
+
+  mut fun bump() {
+    self.n += 1
+  }
+}
+
+fun main() {
+  val counters: MutableList<Counter> = [Counter(name: "a"), Counter(name: "b")]
+  var copy = counters.atOrPanic(0)   // a copy: `var` because we change it
+  copy.n = 100
+  counters.refOrPanic(0).bump()      // the element itself
+  counters.ref(1)?.n = 5             // in range: written; out of range: skipped
+  counters.ref(7)?.n = 5
+  val p = counters.refOrPanic(1)     // a pointer may sit in a `val`
+  p.bump()
+  loop (&c in counters) c.n *= 10    // every element, in place
+  io.println("${copy.n} ${counters.map(c => c.n)}")
+
+  val nums: MutableList<i64> = [1, 2, 3]
+  *nums.refOrPanic(0) += 10          // a primitive: write through the pointer
+  loop (&n in nums) *n += 1
+  nums.set(2, 0)                     // or replace the element outright
+  io.println("$nums")
+}
+```
+
+Output:
+```text
+100 [10, 60]
+[12, 3, 0]
+```
+
+`ref` and `refOrPanic` exist only on `MutableList` and `MutableMap`; the
+same pair on maps (`m.ref(k)`, `m.refOrPanic(k)`) and `loop ((k, &v) in m)`
+reach map values. Two things to know about a reference: it is a pointer
+into the collection's storage, so keep it short-lived — after the list
+grows (`push`) an old reference points at the old buffer; and `&` in a
+loop head means the same as `ref`, so `loop (&x in xs)` on a read-only
+`List` is an error.
+
 ### Comparing collections
 
 Two lists are equal when they hold equal elements in the same order; two
@@ -171,9 +231,11 @@ reads above carry `?: 0`. This is the honest type: a lookup can fail.
 keys you know are there; `m.getOrDefault(key, d)` is `m.get(key) ?: d`.
 Writing `m.set(key, value)` requires a `MutableMap` and inserts or
 replaces. There is no bracket form: `[...]` only ever builds a literal.
-An entry is a *place*: `m.getOrPanic(key).bump()` and `m.get(key)?.n += 1`
-change the value stored in the map, not a copy of it (chapter 6 has the
-full story).
+A read is a copy of the value; to change the stored value ask for a
+reference: `m.refOrPanic(key).bump()` and `m.ref(key)?.n += 1` update the
+entry in the map, and `loop ((k, &v) in m)` visits every value by
+reference (see [Updating elements in place](#updating-elements-in-place)
+above; chapter 6 has the `?.` side).
 
 Keys must be **hashable**: numbers, strings, booleans, tuples of those,
 structs whose fields are (structs get equality and hashing for free),

@@ -142,12 +142,31 @@ func (f *fnCtx) mapMethod(recv Expr, mt *types.Map, name string, e *ast.CallExpr
 		k := f.checkExprTo(e.Args[0].Value, mt.Key)
 		return &Builtin{exprBase{&types.Nullable{Elem: mt.Value}}, "map.get", []Expr{recv, k}, span}
 	case "getOrPanic":
-		// `m.getOrPanic(k)`: `V`, a panic when absent; a place, so a
-		// value-struct entry is mutated where it lives (lint_index.go)
+		// `m.getOrPanic(k)`: `V`, a panic when absent — a copy of the value
+		// (D25, v0.27); `refOrPanic` is the pointer to it
 		if !need(1) {
 			return bad()
 		}
-		return f.mapElemPlace(recv, mt, e.Args[0].Value, span, false)
+		k := f.checkExprTo(e.Args[0].Value, mt.Key)
+		ptr := &Builtin{exprBase{&types.Pointer{Elem: mt.Value}}, "map.refOrPanic", []Expr{recv, k}, span}
+		return &Builtin{exprBase{mt.Value}, "deref", []Expr{ptr}, span}
+	case "ref", "refOrPanic":
+		// `m.ref(k)`: `(*V)?`, null when absent; `m.refOrPanic(k)`: `*V`, a
+		// panic when absent. The pointer reaches the stored value, so a
+		// value-struct entry is changed where it lives (D25, v0.27).
+		if !mt.Mutable {
+			f.errorf(span, "'%s' needs a MutableMap: a pointer into an immutable Map could change it (D25)", name)
+			f.checkArgsLoosely(e.Args)
+			return bad()
+		}
+		if !need(1) {
+			return bad()
+		}
+		k := f.checkExprTo(e.Args[0].Value, mt.Key)
+		if name == "ref" {
+			return &Builtin{exprBase{&types.Nullable{Elem: &types.Pointer{Elem: mt.Value}}}, "map.ref", []Expr{recv, k}, span}
+		}
+		return &Builtin{exprBase{&types.Pointer{Elem: mt.Value}}, "map.refOrPanic", []Expr{recv, k}, span}
 	case "getOrDefault":
 		// `m.getOrDefault(k, d)` is `m.get(k) ?: d`.
 		if !need(2) {

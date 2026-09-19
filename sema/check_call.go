@@ -523,33 +523,7 @@ func (f *fnCtx) fieldDefault(st *types.Struct, i int) Expr {
 // method calls
 
 func (f *fnCtx) methodCall(callee *ast.MemberExpr, typeArgs []types.Type, e *ast.CallExpr, want types.Type) Expr {
-	var recv Expr
-	if callee.Safe {
-		// `xs.at(i)?.m()` (also first/last, and `m.get(k)?.m()`) reaches the
-		// element in place rather than through the copy `at`/`get` returns,
-		// so a `mut fun` on a value-struct element sticks (lint_index.go). An
-		// element of an immutable collection is read, so the method sees a
-		// copy, as any temporary does.
-		sp, elem := f.elemSafePlace(callee.X)
-		if sp != nil {
-			var target Expr = sp.value
-			if sp.mutable {
-				target = &AddrOf{exprBase{&types.Pointer{Elem: sp.place.Type()}}, sp.place}
-			}
-			f.readOnlyRecv = !sp.mutable
-			inner := f.dispatchMethod(target, callee, typeArgs, e, want)
-			f.readOnlyRecv = false
-			if types.IsInvalid(inner.Type()) {
-				return inner
-			}
-			body := f.safeCallBranch(inner, sp.cond)
-			return &BlockExpr{exprBase{body.Type()}, &Block{Stmts: sp.pre, Value: body, Type: body.Type()}}
-		}
-		recv = elem // the receiver, checked once either way
-	}
-	if recv == nil {
-		recv = f.checkExpr(callee.X, nil)
-	}
+	recv := f.checkExpr(callee.X, nil)
 	if types.IsInvalid(recv.Type()) {
 		f.checkArgsLoosely(e.Args)
 		return bad()
@@ -769,15 +743,8 @@ func (f *fnCtx) callMethod(t *FuncTemplate, ownerSubst map[*types.TypeParam]type
 		f.errorf(callee.Name.Pos, "method '%s' is private to module '%s' (M5)", t.Name, t.Module.Path)
 	}
 	var recvArg Expr = recv
-	readOnly := f.readOnlyRecv
-	f.readOnlyRecv = false
 	if t.Decl.Mut {
 		// D22: a mut method needs a mutable place.
-		if readOnly {
-			f.errorf(callee.Name.Pos, "cannot call the 'mut' method '%s' on an element of an immutable collection; use MutableList / MutableMap (D25)", t.Name)
-			f.checkArgsLoosely(e.Args)
-			return bad()
-		}
 		if viaPointer {
 			recvArg = recv.(*Deref).X
 		} else {
@@ -786,6 +753,15 @@ func (f *fnCtx) callMethod(t *FuncTemplate, ownerSubst map[*types.TypeParam]type
 				// this). A collection is a reference (D25), so a copy of the
 				// handle mutates the same elements and a `val` binding is fine,
 				// as with the built-in `push`.
+				if !isReferenceType(recv.Type()) && t.Sig != nil && types.IsUnit(t.Sig.Ret) && !f.c.implementsPrelude(recv.Type(), "Iterator") {
+					// a value struct's mut method that returns nothing, called on
+					// a copy (`xs.at(i)?.bump()`, `make().bump()`): the change
+					// is lost, so it is an error (D25, v0.27). Iterators are
+					// consumed by their methods and stay exempt.
+					f.copyMutationHint(callee.X, callee.Name.Pos, fmt.Sprintf("'%s' would change a temporary copy of '%s' that is then discarded", t.Name, recv.Type()))
+					f.checkArgsLoosely(e.Args)
+					return bad()
+				}
 				tmp := f.newTemp(recv.Type())
 				recvArg = &AddrOf{exprBase{&types.Pointer{Elem: recv.Type()}}, ref(tmp)}
 				call := f.callTemplateRecv(t, ownerSubst, typeArgs, recvArg, e.Args, e.Pos, want)

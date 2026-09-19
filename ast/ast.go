@@ -344,6 +344,7 @@ type Binding struct {
 	Name  *Ident    // simple binding
 	Tuple []Binding // destructuring
 	Type  Type      // optional annotation (simple bindings only)
+	Ref   bool      // `&x` in a loop head: bind the element in place (D42)
 	Pos   source.Span
 }
 

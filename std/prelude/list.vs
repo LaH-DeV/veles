@@ -288,7 +288,7 @@ extend<T> MutableList<T> {
 
   /// Exchanges the elements at `i` and `j`.
   pub mut fun swap(i: i64, j: i64) {
-    (self.atOrPanic(i), self.atOrPanic(j)) = (self.atOrPanic(j), self.atOrPanic(i))
+    (*self.refOrPanic(i), *self.refOrPanic(j)) = (self.atOrPanic(j), self.atOrPanic(i))
   }
 
   /// Inserts `x` at index `i`, shifting the rest up; `i == len()` appends.

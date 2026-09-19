@@ -269,6 +269,38 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 			&Binary{exprBase{types.TBool}, OpLt, ref(idx), i64c(0), span},
 			&Block{Stmts: []Stmt{fromEnd}, Type: types.TUnit}, nil}})
 		return finish(nil, &Builtin{exprBase{lt.Elem}, "list.get", []Expr{ref(list), ref(idx)}, span})
+	case "ref", "refOrPanic":
+		// `xs.ref(i)`: `(*T)?`, null when out of range; `xs.refOrPanic(i)`:
+		// `*T`, a panic when out of range. A pointer to the element itself,
+		// so a value struct is changed where it lives (D25, v0.27); only on
+		// a MutableList, since writing through it would change the list.
+		if !lt.Mutable {
+			f.errorf(span, "'%s' needs a MutableList: a pointer into an immutable List could change it (D25)", name)
+			f.checkArgsLoosely(e.Args)
+			return bad()
+		}
+		if !need(1) {
+			return bad()
+		}
+		pt := &types.Pointer{Elem: lt.Elem}
+		if name == "refOrPanic" {
+			place := f.listElemPlace(ref(list), lt, e.Args[0].Value, span, true)
+			return finish(nil, &AddrOf{exprBase{pt}, place})
+		}
+		idx := f.newTemp(types.TI64)
+		pre = append(pre, &VarDecl{Var: idx, Init: f.indexValue(e.Args[0].Value)})
+		rt := &types.Nullable{Elem: pt}
+		n := &Builtin{exprBase{types.TI64}, "list.len", []Expr{ref(list)}, span}
+		fromEnd := &Assign{Target: ref(idx), Value: &Binary{exprBase{types.TI64}, OpWrapAdd, ref(idx), n, span}}
+		pre = append(pre, &ExprStmt{X: &If{exprBase{types.TUnit},
+			&Binary{exprBase{types.TBool}, OpLt, ref(idx), i64c(0), span},
+			&Block{Stmts: []Stmt{fromEnd}, Type: types.TUnit}, nil}})
+		inRange := &Binary{exprBase{types.TBool}, OpAnd,
+			&Binary{exprBase{types.TBool}, OpGe, ref(idx), i64c(0), span},
+			&Binary{exprBase{types.TBool}, OpLt, ref(idx), n, span}, span}
+		elem := &Builtin{exprBase{lt.Elem}, "list.ref", []Expr{ref(list), ref(idx)}, span}
+		some := &SomeWrap{exprBase{rt}, &AddrOf{exprBase{pt}, elem}}
+		return finish(nil, &If{exprBase{rt}, inRange, &Block{Value: some, Type: rt}, &Block{Value: &NullConst{exprBase{rt}}, Type: rt}})
 	case "set":
 		// `xs.set(i, v)` replaces the element at `i`; a panic when out of range.
 		if !lt.Mutable {

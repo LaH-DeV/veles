@@ -67,6 +67,7 @@ if (c) a else b                       // expression
 loop { ... break }                    // forever
 loop (cond) { ... }                   // while
 loop (x in xs) { ... }                // any Iterable, Range, Map ((k, v) in m); (a..b).step(n), (a..b).reversed(), (a..b).reversed().step(n)
+loop (&x in xs) x.bump()             // by reference: x is *T (MutableList only); loop ((k, &v) in m) for map values
 loop :outer (x in xs) { continue outer; break outer }
 when (v) { 1 => "one"; 2, 3 => "few"; else => "many" }
 when { x < 0 => "neg"; else => "pos" }
@@ -160,6 +161,7 @@ val xs = [1, 2, 3]              // List<i64>;   mut [1, 2] is MutableList (untyp
 val m = ["a": 1]                // Map<string, i64>;  mut ["a": 1]; typed: var m: MutableMap<string, i64> = [:]
 var s = MutableSet<i64>()
 xs.at(9) ?: -1; xs.atOrPanic(0); xs.atOrDefault(9, -1); xs.at(-1); xs.len(); xs.contains(2); xs.first(); xs.last(); xs.indexOf(2)
+// reads are copies; writes go through a reference: ml.refOrPanic(i).bump(); *ml.refOrPanic(i) += 1; ml.ref(i)?.n = 0; ml.set(i, x)
 xs.map(f); xs.filter(p); xs.fold(0, f); xs.any(p); xs.all(p); xs.find(p); xs.forEach(f); xs.count(p)
 xs.take(2); xs.drop(2); xs.slice(1, 3); xs.zip(ys); xs.flatMap(f); xs.distinct(); xs.chunked(2); xs.windowed(2)
 xs.sorted(); xs.sortedBy(key); xs.sortedDescending(); xs.sortedWith((a, b) => ...); xs.reversed(); xs.min(); xs.max(); xs.sum(); xs.join(", "); xs.iter()
@@ -169,6 +171,7 @@ ml.swap(i, j); ml.fill(x); MutableList<bool>.repeat(false, n); MutableList<Mutab
 val q = deque<i64>(); q.addLast(x); q.addFirst(x); q.removeFirst(); q.removeLast(); q.first(); q.last(); q.at(-1); q.len()
 val pq = priorityQueue<i64>(); pq.push(x); pq.pop(); pq.peek(); priorityQueueBy<i64>((a, b) => b.compareTo(a))
 m.get(k) ?: d; m.getOrPanic(k); m.getOrDefault(k, d); m.containsKey(k); m.keys(); m.values(); m.entries(); mm.set(k, v); mm.remove(k)
+mm.refOrPanic(k).bump(); mm.ref(k)?.n += 1   // a pointer to the stored value; get/getOrPanic return copies
 s.add(x); s.contains(x); s.remove(x); s.toList()
 xs.iter().filter(p).map(f).take(n).skip(n).enumerate().zip(ys.iter()).toList()
 it.count(); it.fold(z, f); it.any(p); it.all(p); it.find(p); it.last(); it.forEach(f)

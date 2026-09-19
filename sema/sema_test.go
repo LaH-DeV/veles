@@ -1110,7 +1110,7 @@ fun main() {
 
 // D25 (v0.24): brackets are collection literals only. The old index forms
 // are errors that carry a mechanical fix; the methods that replace them
-// type as documented, and `atOrPanic` is a place.
+// type as documented; reads are copies and `refOrPanic` is the pointer.
 func TestIndexingIsMethodsOnly(t *testing.T) {
 	cases := []struct{ src, msg, fix string }{
 		{`fun main() { val xs = [1]; io.println("${xs[0]}") }`, "'xs[0]' is not indexing", "xs.atOrPanic(0)"},
@@ -1145,10 +1145,12 @@ fun main() {
   var ys: MutableList<i64> = [1]
   ys.set(0, 3)
   val cs: MutableList<C> = [C()]
-  cs.atOrPanic(0).bump()
-  cs.atOrPanic(0).n = 4
-  val p = &cs.atOrPanic(0)
+  cs.refOrPanic(0).bump()
+  cs.refOrPanic(0).n = 4
+  val p = cs.refOrPanic(0)
   p.n += 1
+  var copy = cs.atOrPanic(0)
+  copy.n = 9
   val m = ["k": 1]
   val d: i64? = m.get("k")
   val e: i64 = m.getOrPanic("k")
@@ -1216,10 +1218,10 @@ fun main() {
 }`)
 }
 
-// `xs.at(i)?.m()` (and first/last) reaches the element in place, so a
-// `mut fun` sticks; the fallback path (not a list) still checks the
-// receiver exactly once and dispatches normally.
-func TestSafeCallThroughAtIsAPlace(t *testing.T) {
+// `xs.ref(i)?.m()` reaches the element in place through the nullable
+// pointer, so a `mut fun` sticks; `at`/`first`/`last` return copies, on
+// which a value-returning method is fine and a unit `mut fun` an error.
+func TestSafeCallThroughRef(t *testing.T) {
 	expectClean(t, prelude+`
 struct C { n: i64 = 0
   mut fun bump() { self.n += 1 }
@@ -1227,9 +1229,9 @@ struct C { n: i64 = 0
 fun make(f: fun(i64): i64): List<C> = [C(n: f(1))]
 fun main() {
   val cs: MutableList<C> = [C()]
-  cs.at(0)?.bump()
-  cs.first()?.bump()
-  cs.last()?.bump()
+  cs.ref(0)?.bump()
+  cs.ref(-1)?.bump()
+  cs.ref(9)?.bump()
   val s: string? = cs.at(0)?.show()
   val m = ["k": C()]
   val t: string? = m.get("k")?.show()
@@ -1237,13 +1239,24 @@ fun main() {
   io.println("${cs.atOrPanic(0).n} $s $t $u")
 }`)
 	expectError(t, prelude+`fun main() { val xs = [1]; xs.at(0).abs() }`, "may be null; use '?.'")
+	for _, c := range []struct{ src, want string }{
+		{`fun main() { val cs: MutableList<C> = [C()]; cs.at(0)?.bump() }`, "reach the element itself with 'cs.ref(0)'"},
+		{`fun main() { val cs: MutableList<C> = [C()]; cs.first()?.bump() }`, "would change a temporary copy"},
+		{`fun main() { val cs: MutableList<C> = [C()]; cs.atOrPanic(0).bump() }`, "reach the element itself with 'cs.refOrPanic(0)'"},
+		{"fun make(): C = C()\nfun main() { make().bump() }", "would change a temporary copy of 'C' that is then discarded"},
+		{`fun main() { val cs = [C()]; cs.ref(0)?.bump() }`, "'ref' needs a MutableList"},
+		{`fun main() { val cs: MutableList<C> = [C()]; val p = &cs.atOrPanic(0); p.n = 1 }`, "address of a copy of the element"},
+	} {
+		expectError(t, prelude+"struct C { n: i64 = 0\n  mut fun bump() { self.n += 1 } }\n"+c.src, c.want)
+	}
 }
 
-// D5/D25 (v0.24): element access and `?.` reach places. `m.getOrPanic(k)`
-// and `m.get(k)?.` name the map entry itself; a nullable variable or field
-// is written through after its null test (`if (p != null) p.n = 5`); and
-// assignment through `?.` (`x?.f = v`, `x?.f op= v`) writes only when the
-// receiver is present. Immutable collections and `val` structs stay closed.
+// D5/D25 (v0.27): `?.` reaches places. `m.refOrPanic(k)` and `m.ref(k)?.`
+// point at the map entry itself (reads are copies); a nullable variable or
+// field is written through after its null test (`if (p != null) p.n = 5`);
+// and assignment through `?.` (`x?.f = v`, `x?.f op= v`) writes only when
+// the receiver is present. Immutable collections and `val` structs stay
+// closed; a write into a copy is an error.
 func TestPlacesThroughNullables(t *testing.T) {
 	expectClean(t, prelude+`
 struct C { n: i64 = 0
@@ -1251,17 +1264,19 @@ struct C { n: i64 = 0
 struct Box { c: C? = null }
 fun main() {
   val m: MutableMap<string, C> = ["a": C()]
-  m.get("a")?.bump()
-  m.get("a")?.n += 1
-  m.get("zz")?.n = 9
-  m.getOrPanic("a").bump()
-  m.getOrPanic("a").n = 3
-  val p = &m.getOrPanic("a")
+  m.ref("a")?.bump()
+  m.ref("a")?.n += 1
+  m.ref("zz")?.n = 9
+  m.refOrPanic("a").bump()
+  m.refOrPanic("a").n = 3
+  val p = m.refOrPanic("a")
   p.n += 1
   val xs: MutableList<C> = [C()]
-  xs.at(0)?.n = 7
-  xs.first()?.n *= 2
-  xs.last()?.bump()
+  xs.ref(0)?.n = 7
+  xs.ref(0)?.n *= 2
+  xs.ref(-1)?.bump()
+  loop (&c in xs) c.bump()
+  loop ((_, &c) in m) c.n += 1
   var q: C? = C()
   if (q != null) {
     q.n = 5
@@ -1271,16 +1286,22 @@ fun main() {
   var b = Box(c: C())
   b.c?.n = 8
   b.c?.bump()
-  var r: (*C)? = &xs.atOrPanic(0)
+  var r: (*C)? = xs.refOrPanic(0)
   r?.n = 1
+  val q2 = xs.ref(0)
+  q2?.n = 2
   io.println("$m $xs $q ${b.c}")
 }`)
 	for _, c := range []struct{ src, want string }{
-		{`fun main() { val f = ["b": C()]; f.get("b")?.bump() }`, "on an element of an immutable collection"},
-		{`fun main() { val f = ["b": C()]; f.get("b")?.n = 1 }`, "into an element of an immutable collection"},
-		{`fun main() { val f = ["b": C()]; f.getOrPanic("b").bump() }`, "immutable Map"},
-		{`fun main() { val xs = [C()]; xs.at(0)?.bump() }`, "on an element of an immutable collection"},
-		{`fun main() { val xs = [C()]; xs.atOrPanic(0).n = 1 }`, "immutable List"},
+		{`fun main() { val f = ["b": C()]; f.ref("b")?.bump() }`, "'ref' needs a MutableMap"},
+		{`fun main() { val f: MutableMap<string, C> = ["b": C()]; f.get("b")?.n = 1 }`, "reach the element itself with 'f.ref(\"b\")'"},
+		{`fun main() { val f: MutableMap<string, C> = ["b": C()]; f.getOrPanic("b").bump() }`, "reach the element itself with 'f.refOrPanic(\"b\")'"},
+		{`fun main() { val xs = [C()]; loop (&c in xs) c.bump() }`, "needs a MutableList"},
+		{`fun main() { val m = ["a": C()]; loop ((k, &v) in m) v.bump() }`, "needs a MutableMap"},
+		{`fun main() { val m: MutableMap<string, C> = ["a": C()]; loop ((&k, v) in m) v.bump() }`, "'&' goes on the value"},
+		{`fun main() { val xs: MutableList<C> = [C()]; xs.atOrPanic(0).n = 1 }`, "reach the element itself with 'xs.refOrPanic(0)'"},
+		{`fun main() { val ns: MutableList<i64> = [1]; loop (&n in ns) n += 1 }`, "write '*n' to change the value it points to"},
+		{`fun main() { val ns: MutableList<i64> = [1]; ns.atOrPanic(0) += 1 }`, "assign through '*ns.refOrPanic(0)'"},
 		{`fun make(): C? = C()
 fun main() { make()?.n = 1 }`, "into a temporary value of type 'C' has no effect"},
 		{`fun main() { val p: C? = C(); p?.n = 1 }`, "it is a 'val'"},
@@ -1415,7 +1436,7 @@ fun main() {
   (a, b) = (b, a)
   (a, b) = pair()
   var xs = mut [1, 2, 3]
-  (xs.atOrPanic(0), xs.atOrPanic(2)) = (xs.atOrPanic(2), xs.atOrPanic(0))
+  (*xs.refOrPanic(0), *xs.refOrPanic(2)) = (xs.atOrPanic(2), xs.atOrPanic(0))
   var p = P(x: 1, y: 2)
   (p.x, p.y) = (p.y, p.x)
   var s: string? = null
@@ -1526,9 +1547,9 @@ fun idx(): i64 { calls += 1; 0 }
 fun key(): string { calls += 1; "a" }
 fun main() {
   var xs = mut [1, 2]
-  xs.atOrPanic(idx()) += 1
+  *xs.refOrPanic(idx()) += 1
   var m: MutableMap<string, i64> = ["a": 1]
-  m.getOrPanic(key()) *= 2
+  *m.refOrPanic(key()) *= 2
   io.println("$calls $xs $m")
 }`)
 	stmts := prog.Main.Body.Stmts
@@ -1643,4 +1664,45 @@ fun main() {
   val deep: ((i64?)?)? = 4
   io.println("${ws.at(1)?.inner} ${ws.at(0)?.show()} ${m.get("a")?.inner} ${deep?.abs()}")
 }`)
+}
+
+// A reference into a collection goes stale when the collection is grown
+// or rearranged (D25); the lint warns when such a reference is still used
+// afterwards, and when a `loop (&x in xs)` body changes `xs`.
+func TestStaleReferenceLint(t *testing.T) {
+	src := prelude + `
+struct C { n: i64 = 0
+  mut fun bump() { self.n += 1 } }
+fun main() {
+  val xs: MutableList<C> = [C()]
+  val p = xs.refOrPanic(0)
+  xs.push(C())
+  p.n = 1
+  val q = xs.refOrPanic(0)
+  q.n = 2
+  xs.push(C())
+  val s = xs.refOrPanic(0)
+  xs.fill(C())
+  s.n = 4
+  loop (&c in xs) { if (c.n > 100) xs.push(C()) }
+  loop (&c in xs) c.bump()
+  val m: MutableMap<string, C> = ["a": C()]
+  loop ((k, &c) in m) { if (k == "a") m.remove("b"); c.bump() }
+  val ys: MutableList<C> = [C()]
+  val u = xs.refOrPanic(0)
+  ys.push(C())
+  u.n = 9
+  io.println("${xs.len()} ${ys.len()}")
+}`
+	diags := checkSource(t, src)
+	var got []string
+	for _, d := range diags.Items {
+		if strings.Contains(d.Message, "may move or reorder") || strings.Contains(d.Message, "walks it by reference") {
+			line, _ := d.Span.File.Position(d.Span.Start)
+			got = append(got, itoa(line))
+		}
+	}
+	if want := "8,16,19"; strings.Join(got, ",") != want {
+		t.Errorf("stale-reference warnings on lines %v, want %s:\n%s", got, want, diags.Render())
+	}
 }

@@ -251,7 +251,8 @@ UTF-8.
 | Method | Result |
 |---|---|
 | `at(i)` | `T?`; null when out of range. A negative `i` counts from the end (`at(-1)` is the last) |
-| `atOrPanic(i)` | `T`; panics when out of range. Names the element in place: `xs.atOrPanic(i).bump()` mutates it, and so does `xs.at(i)?.bump()` |
+| `atOrPanic(i)` | `T`; panics when out of range. A copy, like every read: changing it is an error unless bound with `var` |
+| `ref(i)`, `refOrPanic(i)` | `(*T)?`, `*T`: a pointer to the element itself (`MutableList` only). `xs.refOrPanic(i).bump()`, `*xs.refOrPanic(i) += 1`, `xs.ref(i)?.n = 0` change the element in place; `loop (&x in xs)` visits every element by reference |
 | `atOrDefault(i, d)` | `T`; `at(i) ?: d` |
 | `len()`, `isEmpty()` | |
 | `contains(x)`, `indexOf(x)`, `count(p)` | `bool`, `i64` (−1 if absent), `i64` |
@@ -281,7 +282,8 @@ call the mutating ones, since the list is a reference (D25).
 | Method | Result |
 |---|---|
 | `get(k)` | `V?` |
-| `getOrPanic(k)`, `getOrDefault(k, d)` | `V`; the first panics when `k` is absent |
+| `getOrPanic(k)`, `getOrDefault(k, d)` | `V`; the first panics when `k` is absent. Copies of the value |
+| `ref(k)`, `refOrPanic(k)` | `(*V)?`, `*V`: a pointer to the stored value (`MutableMap` only): `m.refOrPanic(k).bump()`, `m.ref(k)?.n += 1`; `loop ((k, &v) in m)` visits every value by reference |
 | `containsKey(k)`, `len()`, `isEmpty()` | |
 | `keys()`, `values()`, `entries()` | `List<K>`, `List<V>`, `List<(K, V)>` in insertion order |
 | `toMap()`, `toMutable()` | copies |

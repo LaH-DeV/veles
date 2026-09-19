@@ -2,10 +2,12 @@
 10 30
 [5, 42, 60]
 [1, 1, 1] [ab, ab]
-9 105 n=105 null
+7 0
+8 104 n=104 null
+[9, 105] [2, 2, 2]
 3
 41 null 0 29 false
-{pears: 6} {hits: Counter(n: 12)}
+{pears: 6} {hits: Counter(n: 13)}
 Counter(n: 6) null
-2 2 7
+2 3 7
 exit=101

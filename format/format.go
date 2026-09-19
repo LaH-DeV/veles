@@ -1043,6 +1043,9 @@ func (p *printer) initExpr(e ast.Expr) {
 
 func (p *printer) binding(b ast.Binding) {
 	if b.Name != nil {
+		if b.Ref {
+			p.w("&")
+		}
 		p.w(b.Name.Name)
 		if b.Type != nil {
 			p.w(": ")

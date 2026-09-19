@@ -79,7 +79,7 @@ pub struct Graph {
   fun topologicalOrder(): List<i64>? {
     val indegree = MutableList<i64>.repeat(0, self.n)
     loop (v in 0..<self.n) {
-      loop (w in self.neighbours(v)) indegree.atOrPanic(w) += 1
+      loop (w in self.neighbours(v)) *indegree.refOrPanic(w) += 1
     }
     val ready = deque<i64>()
     loop (v in 0..<self.n) {
@@ -90,7 +90,7 @@ pub struct Graph {
       val v = ready.removeFirst() ?: break
       order.push(v)
       loop (w in self.neighbours(v)) {
-        indegree.atOrPanic(w) -= 1
+        *indegree.refOrPanic(w) -= 1
         if (indegree.atOrPanic(w) == 0) ready.addLast(w)
       }
     }

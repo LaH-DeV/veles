@@ -1,6 +1,8 @@
 package sema
 
 import (
+	"fmt"
+
 	"github.com/LaH-DeV/veles/ast"
 	"github.com/LaH-DeV/veles/lexer"
 	"github.com/LaH-DeV/veles/types"
@@ -11,8 +13,8 @@ import (
 // rule. The receiver `x` is lowered to a guarded place: a nullable variable
 // or field after its null test (the payload in place), a nullable pointer
 // (through it), or a collection element (`xs.at(i)?.n = 1`,
-// `m.get(k)?.n += 1`, via elemSafePlace) — so the write lands where the
-// value lives, never on a copy.
+// `m.ref(k)?.n += 1`, a nullable pointer to the element, v0.27) — so the
+// write lands where the value lives, never on a copy.
 
 // safeMemberOf finds the `?.` member in an assignment target's field chain
 // (`x?.a.b = v` → the `x?.a` node), or nil when there is none.
@@ -72,34 +74,32 @@ func (f *fnCtx) safeAssign(s *ast.AssignStmt, safe *ast.MemberExpr) []Stmt {
 // safeReceiver lowers the left side of a `?.` write to a guarded place:
 // pre runs first, cond says whether the value is present, place is it.
 func (f *fnCtx) safeReceiver(x ast.Expr) (pre []Stmt, cond Expr, place Expr, ok bool) {
-	// a collection element: `xs.at(i)`, `xs.first()`, `m.get(k)`, ...
-	sp, recv := f.elemSafePlace(x)
-	if sp != nil {
-		if !sp.mutable {
-			f.errorf(x.Span(), "cannot assign into an element of an immutable collection through '?.'; use MutableList / MutableMap (D25)")
+	var recv Expr
+	if isPlaceSyntax(x) {
+		// a nullable variable or field: test it, then write its payload
+		lv, root := f.checkLValue(x, false)
+		if lv == nil {
 			return nil, nil, nil, false
 		}
-		return sp.pre, sp.cond, sp.place, true
-	}
-	if recv == nil {
-		if isPlaceSyntax(x) {
-			// a nullable variable or field: test it, then write its payload
-			lv, root := f.checkLValue(x, true) // a `val` struct stays immutable (D11)
-			if lv == nil {
-				return nil, nil, nil, false
-			}
-			markUsed(root) // the presence test reads it
-			lv = f.narrowLValue(lv, x)
-			nt, isN := lv.Type().(*types.Nullable)
-			if !isN {
-				f.errorf(x.Span(), "'?.' on a non-nullable value of type '%s'; use '.'", lv.Type())
-				return nil, nil, nil, false
-			}
-			cond = &Unary{exprBase{types.TBool}, OpNot, &IsNull{exprBase{types.TBool}, lv}, x.Span()}
-			return nil, cond, &Unwrap{exprBase{nt.Elem}, lv}, true
+		markUsed(root) // the presence test reads it
+		lv = f.narrowLValue(lv, x)
+		nt, isN := lv.Type().(*types.Nullable)
+		if !isN {
+			f.errorf(x.Span(), "'?.' on a non-nullable value of type '%s'; use '.'", lv.Type())
+			return nil, nil, nil, false
 		}
-		recv = f.checkExpr(x, nil)
+		if _, isPtr := nt.Elem.(*types.Pointer); !isPtr {
+			// a `val` struct stays immutable (D11); through a pointer the
+			// binding does not matter (`val p = xs.ref(i); p?.n = 1`)
+			if lv, _ = f.checkLValue(x, true); lv == nil {
+				return nil, nil, nil, false
+			}
+			lv = f.narrowLValue(lv, x)
+		}
+		cond = &Unary{exprBase{types.TBool}, OpNot, &IsNull{exprBase{types.TBool}, lv}, x.Span()}
+		return nil, cond, &Unwrap{exprBase{nt.Elem}, lv}, true
 	}
+	recv = f.flattenNullable(f.checkExpr(x, nil))
 	if types.IsInvalid(recv.Type()) {
 		return nil, nil, nil, false
 	}
@@ -109,10 +109,11 @@ func (f *fnCtx) safeReceiver(x ast.Expr) (pre []Stmt, cond Expr, place Expr, ok 
 		return nil, nil, nil, false
 	}
 	// a temporary: writing through it reaches something only when it is a
-	// reference (a pointer or a collection handle)
+	// reference (a pointer or a collection handle); an element read such
+	// as `xs.at(i)` is a copy, and `xs.ref(i)` the pointer (D25, v0.27)
 	if !isReferenceType(nt.Elem) {
 		if _, isPtr := nt.Elem.(*types.Pointer); !isPtr {
-			f.errorf(x.Span(), "assigning through '?.' into a temporary value of type '%s' has no effect; bind it to a variable first, or make the receiver a place (a variable, a field, 'xs.at(i)', 'm.get(k)')", nt.Elem)
+			f.copyMutationHint(x, x.Span(), fmt.Sprintf("assigning through '?.' into a temporary value of type '%s' has no effect", nt.Elem))
 			return nil, nil, nil, false
 		}
 	}

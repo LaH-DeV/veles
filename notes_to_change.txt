@@ -447,7 +447,7 @@ IDEAS (2026-09-18, undecided — noted from reading examples/json, examples/synt
      Decide and document when it comes up; not blocking.
 
 TODO (2026-09-18, decided by user):
- T1. IMPLEMENT `loop (&x in xs)` — mutate the ELEMENT in place while iterating. Today
+ T1. DONE (2026-09-19, see R8) — `loop (&x in xs)` — mutate the ELEMENT in place while iterating. Today
      `loop (x in xs)` copies a value struct, so mutating elements needs the index walk
      `loop (i in 0..xs.len()) { xs.atOrPanic(i).bump() }`. `&x` binds `x: *Item` to the element's
      storage (same place `atOrPanic(i)` names, D10/D25); only for addressable sources (List /
@@ -586,3 +586,21 @@ R7. Decided (2026-09-19, question "should `xs.at(0)` return a reference?"): `at`
     copy. In-place access is syntactic (`xs.atOrPanic(i).f = v`, `xs.at(i)?.bump()`,
     `&xs.atOrPanic(i)` for an explicit pointer); a stored reference into a list would go stale
     when the list grows (no borrow checker to catch it), and a pointer is heavier than an i64.
+R8. DONE (2026-09-19, user decision): reads are VALUES, writes go through REFERENCES (spec
+    v0.27, D25/D5/D42). `at`/`atOrPanic`/`get`/`getOrPanic`/`first`/`last`/`find`/loop vars are
+    copies, and mutating a copy that is not a `var` is an ERROR with a fix — this closes item 20
+    (unit `mut fun` on a temporary; Iterator types exempt) and removes the v0.24 "atOrPanic is a
+    place" special case, which made `val t = xs.atOrPanic(0); t.n += 1` and
+    `xs.atOrPanic(0).n += 1` look alike but behave differently. New surface (MutableList/
+    MutableMap only): `ref(i): (*T)?`, `refOrPanic(i): *T`, `ref(k)`, `refOrPanic(k)`, and T1
+    `loop (&x in xs)` / `loop ((k, &v) in m)` (x: *T; map loop snapshots the keys, skips removed
+    entries). Primitives: `*xs.refOrPanic(i) += 1`. `&xs.atOrPanic(i)` is refused (would box a
+    copy). Docs: 04 "Updating elements in place", 06 rewritten, 03 loop note, refs; examples/
+    indexing rewritten. DONE (2026-09-19): lint for a `ref` held across a layout change (sema/lint_staleref.go:
+    push/insert/addAll/removeAt/pop/clear/sort/sortWith/swap on lists, set/remove/clear on
+    maps, matched by the collection's source text; warns only when the reference is used
+    afterwards, and on any such call inside a `loop (&x in xs)` body over the same collection).
+    Reflective AST walker `walkAST` / `forEachCall` / `mentionsName` is reusable by other lints.
+    TO DECIDE: `xs.ref(i)?.tags.push(x)` is an error today (`?.` does not carry through `.tags`;
+    Kotlin's rule, D30) — Swift propagates optional chaining through the rest of the chain so
+    `a?.b.c()` works. User: "not sure yet" (2026-09-19).

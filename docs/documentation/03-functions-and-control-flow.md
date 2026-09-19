@@ -161,6 +161,13 @@ When the step is not arithmetic (`m /= 10`, `cur = cur.next`), write the
 condition form and update at the end of the body — and remember that a
 `continue` skips that update.
 
+The loop variable is a copy of the element, like every read (`val`, so
+`x.n += 1` is an error). To change the elements of a `MutableList` write
+`loop (&x in xs)`: `x` is then a pointer to the element and `x.bump()` or
+`*x += 1` updates the list; `loop ((k, &v) in m)` does the same for the
+values of a `MutableMap`. [Chapter 4](04-collections.md#updating-elements-in-place)
+has the full rule.
+
 `break` leaves the loop and `continue` skips to the next iteration. To
 target an outer loop, label it after the keyword:
 

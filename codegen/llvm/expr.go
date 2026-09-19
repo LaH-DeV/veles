@@ -1271,9 +1271,16 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		g.emit("%s = load %s, ptr %s", v, g.llType(e.Type()), p)
 		return v
 	case "list.ref":
-		// as a value: the element itself (`xs.atOrPanic(i) += 1` reads the
-		// place before writing it); place() is what takes the address
+		// as a value: the element itself (`xs.set(i, v)` and `refOrPanic`
+		// use it as a place; place() is what takes the address)
 		p := g.place(e)
+		v := g.newTmp()
+		g.emit("%s = load %s, ptr %s", v, g.llType(e.Type()), p)
+		return v
+	case "deref":
+		// a read through a pointer that is a value, not a place (the copy
+		// `m.getOrPanic(k)` returns)
+		p := g.expr(e.Args[0])
 		v := g.newTmp()
 		g.emit("%s = load %s, ptr %s", v, g.llType(e.Type()), p)
 		return v

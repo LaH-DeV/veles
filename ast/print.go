@@ -393,6 +393,9 @@ func (p *printer) block(b *Block) {
 
 func (p *printer) binding(b Binding) {
 	if b.Name != nil {
+		if b.Ref {
+			p.w("&")
+		}
 		p.w(b.Name.Name)
 		if b.Type != nil {
 			p.w(": ")
