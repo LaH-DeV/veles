@@ -14,3 +14,6 @@ var TaskSource string
 
 //go:embed c/veles_os.c
 var OSSource string
+
+//go:embed c/veles_net.c
+var NetSource string

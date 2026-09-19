@@ -279,6 +279,120 @@ Output:
 got hello / timeout
 ```
 
+## Cancellation
+
+A task is cancelled in three situations: a sibling in a fail-fast `scope`
+failed; the body of its `scope` left early — a `return`, a `throw` or a
+`try` that failed, a cancellation coming from further out — while it was
+still running; or someone called `cancel()` on its handle. In each case
+the same thing happens (D20/D34/D43):
+
+- the task keeps running until its **next suspension point** (an `await`,
+  a `sleep`, a channel operation, a socket read); a task that never
+  suspends finishes on its own;
+- there it **unwinds**: every `with` it is inside runs its `close()`,
+  innermost first — a cancelled task calling a suspending function
+  unwinds from the innermost call outwards, so a connection opened three
+  calls deep is closed before the caller's own cleanup runs;
+- the scope that owns it **waits** for that to finish. Leaving a scope
+  body early therefore does not leak children: they are cancelled and
+  joined before the `return` or `throw` completes.
+
+```veles
+use io
+
+struct Res {
+  name: string
+  impl Closeable {
+    mut fun close() { io.println("closed ${self.name}") }
+  }
+}
+
+fun worker(name: string) {
+  with (r = Res(name)) {
+    await sleep(1000)
+    io.println("never printed")
+  }
+}
+
+fun firstReady(): string {
+  scope {
+    async worker("a")
+    async worker("b")
+    await sleep(1)
+    return "gave up"
+  }
+}
+
+fun main() {
+  io.println(firstReady())
+  scope {
+    val t = async worker("c")
+    await sleep(1)
+    t.cancel()
+  }
+  io.println("done")
+}
+```
+
+Output:
+```text
+closed b
+closed a
+gave up
+closed c
+done
+```
+
+Cleanup itself is never cancelled (D47): a `close()` that runs during
+unwinding completes even if the task is cancelled again meanwhile. Note
+what cancellation is *not*: it is not a signal that interrupts running
+code. A loop that computes without ever suspending will not notice it,
+and does not need to — it cannot block anyone else.
+
+### Time limits: `withTimeout`
+
+The prelude's `withTimeout(ms, f)` runs `f` in a task of its own and
+gives up after `ms` milliseconds by throwing `Timeout`; `f`'s own errors
+are rethrown, so the call throws `E | Timeout`. `f` must be sendable,
+like anything handed to a task:
+
+```veles
+use io
+
+fun slow(): i64 {
+  await sleep(500)
+  42
+}
+
+fun quick(): i64 {
+  await sleep(1)
+  7
+}
+
+fun main() {
+  when (withTimeout(20, () => slow())) {
+    is Ok(v) => io.println("got $v")
+    is Err(e) => io.println("failed: ${e.message()}")
+  }
+  when (withTimeout(500, () => quick())) {
+    is Ok(v) => io.println("got $v")
+    is Err(e) => io.println("failed: ${e.message()}")
+  }
+}
+```
+
+Output:
+```text
+failed: timed out after 20 ms
+got 7
+```
+
+On timeout the task running `f` is cancelled and `withTimeout` waits for
+it to unwind before throwing — the rule above — so whatever `f` had open
+is closed by the time you see the `Timeout`. It is `scope` + `async` +
+`race` written once; go-to-definition shows the seven lines.
+
 ## What may cross a task boundary
 
 Data handed to `async` must be **Sendable** (D35): numbers, strings,

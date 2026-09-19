@@ -613,9 +613,12 @@ R5. Examples (small and mid-size) must DO something useful — real use cases, n
 R6. DONE (2026-09-19): comparison strategies in the prelude — sortedWith/sortWith (stable
     bottom-up merge sort in Veles), sortedByDescending, minBy/maxBy, minWith/maxWith,
     distinctBy; docs 08 "Comparing values" (table: what ==, <, keys mean per type; strategies
-    table + runnable example), docs 04 "Comparing collections". OPEN: the Go-lowered `sorted`/
-    `sortedBy` (sema/lower_list.go) are insertion sorts, O(n²) — make them call the prelude's
-    merge sort (the benchmark item from #14) before anyone sorts a big list.
+    table + runnable example), docs 04 "Comparing collections". DONE (2026-09-19): the
+    Go-lowered `sorted`/`sortedBy` now rewrite to the prelude's merge sort —
+    `list.sortedWith(($a, $b) => key($a).compareTo(key($b)))` re-checked as AST, like `iter`
+    — so every sort is stable and O(n log n) (200k i64 in well under a second). Found on the
+    way: listAdapter cleared `f.pending` for a List method it does not handle, losing the
+    key function's declaration of an enclosing adapter (now handed back).
 R7. Decided (2026-09-19, question "should `xs.at(0)` return a reference?"): `at` stays `T?`, a
     copy. In-place access is syntactic (`xs.atOrPanic(i).f = v`, `xs.at(i)?.bump()`,
     `&xs.atOrPanic(i)` for an explicit pointer); a stored reference into a list would go stale
@@ -705,7 +708,8 @@ R11. DONE (2026-09-19): `mapConcurrent` / `forEachConcurrent` in std/prelude/con
       VALUE (no `try`) so one unreadable file is reported and skipped (user: "it should be a
       result"). Docs 12: pool section, sendable functions, closeAfter in the channel example.
     CANDIDATE HELPERS for later (not started; pick when a program needs them):
-      `withTimeout(ms, f)` (race sugar, returns R?), `retry(times, f)` / `retry(times, delay,
+      `withTimeout(ms, f)` DONE in R15 (throws Timeout, not R? — R? breaks for a nullable R
+      such as readLine's), `retry(times, f)` / `retry(times, delay,
       f)`, `Semaphore` (`semaphore(n).withPermit(f)`, the primitive under mapConcurrent for
       code that is not a list), `awaitAll(tasks)` for a List<Task<T>>, `Channel.forEach(f)` /
       `Channel.toList()` drains, a `Ticker`/`interval(ms)` channel, `filterConcurrent`,
@@ -757,3 +761,59 @@ R13. DONE (2026-09-19, from the dedup review): `Never` is a nameable type (unive
     Also R14: `xs.filterIs<Variant>()` (Go-lowered, `listFilterIs`) and `filterNotNull()` — the
     answer to "can filter promise its type": a type ARGUMENT can, a predicate cannot; no
     user-written type predicates (unverifiable). Spec D13/D37/D48 addenda; docs 08/09/10.
+R15. DONE (2026-09-19, "go towards the HTTP server"): std/net + the I/O reactor, and the
+    cancellation semantics the first server program exposed. Spec v0.29: D56 (networking),
+    D35/D34 v0.29 (structured cancellation), D38 and D46 addenda. Docs: 12 "Cancellation" and
+    "Time limits: withTimeout", new chapter 16 Networking (three runnable programs: echo,
+    one-task-per-connection key-value server, a read timeout), stdlib ref, cheatsheet.
+    - RUNTIME: runtime/c/veles_net.c (non-blocking sockets: listen/accept/connect/recv/send/
+      shutdown/close/peer/port; getaddrinfo; WSA codes on Windows, errno elsewhere; linked with
+      -lws2_32 on Windows) and an io-waiter list in veles_task.c: `veles_task_wait_io(task, fd,
+      write)` parks a task, `poll_io` (poll/WSAPoll) runs each executor iteration with timeout 0
+      when tasks are parked and replaces the sleep in the idle path (a server blocked in accept
+      is not a deadlock). veles_os_strerror describes Winsock codes (>= 10000) via
+      FormatMessageW. Sema intrinsic `await ioWait(fd, write)` (task.ioWait) only inside std.
+    - std/net/net.vs: listen(host="127.0.0.1", port=0)/connect, Listener{accept, port},
+      Conn{read, readExact, readLine, write, writeText, shutdownWrite, peer}; both Closeable;
+      Conn is SENDABLE because its read-ahead buffer is a Mutex<MutableList<u8>> (needed for
+      `async handle(conn)` and `withTimeout(ms, () => try conn.readLine())`). Byte copies:
+      recv → string out-param → .bytes() → buffer; fine for now, revisit for throughput.
+    - CANCELLATION (was broken in three ways, all found by withTimeout):
+      (1) a cancelled task blocked in sleep/recv/io never resumed, so its `with` cleanups never
+          ran (D43 promised they would). Now cancel is a REQUEST (`cancel_requested`): the task
+          is woken, unwinds at its suspension point (codegen's existing cancel check →
+          runCleanups → veles_task_finish_cancelled, which now decrements the scope's live count
+          and wakes the awaiter), and the scope waits for the unwinding.
+      (2) a suspending call is a child task awaited by the caller; cancelling the caller left
+          the callee running. `task->awaiting` records the await; cancel_task follows it down
+          (callees with no scope) so the innermost frame unwinds first and each finish wakes
+          the next one up — cleanups run inner to outer.
+      (3) return/throw out of a scope body orphaned the children (they kept running after the
+          function returned!). codegen pushes a "scope.abandon" cleanup for every scope/gather
+          body: veles_scope_cancel + join loop; `g.inCleanup` makes suspension points inside
+          cleanups non-cancellable (D47) and stops re-entry. The scope join is now emitted even
+          after a diverging body (the fail-fast abort branch jumped to a missing label before).
+      Also: `Task.cancel()` (task.cancel builtin), `scope { ... return x }` is Never-typed, a
+      race whose arms all return/throw is Never-typed, race arms JOIN narrowing facts (an
+      assignment in one arm no longer smart-casts after the race — was a soundness hole).
+    - `withTimeout(ms, f): R throws E | Timeout` in std/prelude/concurrent.vs (7 lines: scope +
+      async invoke(f) + race; the throw leaves the scope, which cancels and joins the task).
+      Needed: a TYPE PARAMETER IN AN ERROR UNION (`throws E | Timeout`; MakeErrorUnion drops
+      Never members, so E=Never gives `throws Timeout`), and `try` as the identity on a value
+      the template typed Result<R, E> when the instance's E is Never (`fnCtx.neverInstance`,
+      one step beyond errPolyCall: `await t` of a Task<Result<R, E>>).
+    - Sort fix (R6 OPEN closed): Go-lowered sorted/sortedBy delegate to the prelude merge sort;
+      listAdapter no longer drops an enclosing adapter's pending declarations.
+    - Codegen bug found by the prelude's `Timeout`: LLVM type/helper names came from the display
+      string, so a user `error Timeout` and the prelude's collided (invalid GEP). `mangleType`
+      now starts from `types.Key` (module-qualified), which fixes every same-named-struct
+      collision (descriptors, show/eq/hash helpers, vtables too). Docs 07 block 6 is the test.
+    KNOWN / NEXT for the HTTP server: `poll_io(0)` per executor iteration while sockets are
+    parked (cheap, but a syscall per resume — an epoll/IOCP reactor later); Listener has no
+    accept timeout/shutdown beyond cancelling the accepting task; no TLS/UDP; recv copies
+    twice; `with` is a statement (a `with` that ends in `return` inside a function returning a
+    value needs the `return` written — fine, but noted); gather results of throwing tasks are
+    `Result<T, E | Panic>` so `try` on them needs Panic in the signature (use getOrDefault/
+    when). Then: R4 the HTTP server itself (request parsing over readLine/readExact, a
+    Handler = sendable fun(Request): Response type alias, a router, static files, keep-alive
+    with withTimeout on the idle read).

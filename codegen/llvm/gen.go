@@ -49,6 +49,14 @@ type gen struct {
 	// innermost last: a suspension point inside checks them and, when a
 	// child has failed, abandons the body for the scope's join (D34).
 	bodyScopes []bodyScope
+	// abandonSlots map the "scope.abandon" cleanup entries to their scope
+	// slot: leaving a scope body early (return, throw, cancellation) cancels
+	// the children and joins them, so nothing outlives the block (D34).
+	abandonSlots map[*sema.Builtin]string
+	// inCleanup is set while cleanups are emitted: a suspension point in a
+	// cleanup (the join of an abandoned scope) is non-cancellable (D47) and
+	// does not re-enter the cleanups
+	inCleanup        int
 	launchSlots      map[*sema.Launch]string
 	ramps            map[*sema.Func]*sema.Func
 	envSlot          string // closure environment pointer slot
@@ -389,6 +397,8 @@ func (g *gen) resetFn(fn *sema.Func) {
 	g.loopCleanupDepth = map[*sema.Loop]int{}
 	g.coro = nil
 	g.scopeSlots = map[*sema.ScopeBlock]string{}
+	g.abandonSlots = map[*sema.Builtin]string{}
+	g.inCleanup = 0
 	g.launchSlots = map[*sema.Launch]string{}
 }
 
@@ -791,9 +801,11 @@ func (g *gen) flushPending() {
 // belongs to those blocks).
 func (g *gen) runCleanups(depth int) {
 	saved := g.cleanups
+	g.inCleanup++
 	for i := len(saved) - 1; i >= depth; i-- {
 		g.cleanups = saved[:i]
 		g.expr(saved[i])
 	}
+	g.inCleanup--
 	g.cleanups = saved
 }

@@ -195,6 +195,27 @@ func (f *fnCtx) sleepCall(e *ast.CallExpr) Expr {
 	return b
 }
 
+// ioWaitCall handles `await ioWait(fd, write)`, the standard library's
+// socket wait (std/net): the task parks until the executor's poll reports
+// the descriptor readable (or writable) and the non-blocking call is
+// retried. Not a user-facing name; it exists only inside std.
+func (f *fnCtx) ioWaitCall(e *ast.CallExpr) Expr {
+	if len(e.Args) != 2 {
+		f.errorf(e.Pos, "'ioWait' takes two arguments: the descriptor and whether to wait for writing")
+		f.checkArgsLoosely(e.Args)
+		return bad()
+	}
+	awaited := f.awaitNext
+	f.awaitNext = false
+	fd := f.checkExprTo(e.Args[0].Value, types.TI64)
+	write := f.checkExprTo(e.Args[1].Value, types.TBool)
+	b := f.suspending(&Builtin{exprBase{types.TUnit}, "task.ioWait", []Expr{fd, write}, e.Pos}, e.Pos, "ioWait")
+	if !awaited {
+		f.errorf(e.Pos, "'ioWait()' always suspends and must be awaited: 'await ioWait(fd, write)' (D16)")
+	}
+	return b
+}
+
 func (f *fnCtx) awaitExpr(e *ast.AwaitExpr) Expr {
 	f.awaitNext = true
 	x := f.checkExpr(e.X, nil)
@@ -308,7 +329,14 @@ func (f *fnCtx) raceExpr(e *ast.RaceExpr, want types.Type) Expr {
 	r := &Race{}
 	asValue := want != nil && !types.IsUnit(want)
 	var resultType types.Type
+	// exactly one arm runs: smart casts made inside an arm (an assignment
+	// to a `var`) hold afterwards only when every arm agrees (D5), as for
+	// the branches of an `if`
+	saved := f.saveNarrow()
+	var joined facts
+	first := true
 	for _, arm := range e.Arms {
+		f.restoreNarrow(saved)
 		f.pushScope()
 		f.inRaceArm = true
 		src := f.checkExpr(arm.Source, nil)
@@ -349,27 +377,54 @@ func (f *fnCtx) raceExpr(e *ast.RaceExpr, want types.Type) Expr {
 		} else if want == nil {
 			x := f.checkExpr(arm.Body, nil)
 			body = f.valueBlock(x)
-			if body.Value != nil && resultType == nil {
+			if body.Value != nil && resultType == nil && !types.IsNever(body.Type) {
 				resultType = body.Type
 			}
 		} else {
 			x := f.checkExpr(arm.Body, types.TUnit)
-			body = &Block{Stmts: []Stmt{&ExprStmt{X: x}}, Type: types.TUnit}
+			var bt types.Type = types.TUnit
+			if types.IsNever(x.Type()) {
+				bt = types.TNever // the arm returns or throws
+			}
+			body = &Block{Stmts: []Stmt{&ExprStmt{X: x}}, Type: bt}
 		}
 		ha.Body = body
 		r.Arms = append(r.Arms, ha)
 		f.popScope()
+		var state facts
+		if !types.IsNever(body.Type) {
+			state = f.saveNarrow()
+		}
+		if first {
+			joined, first = state, false
+		} else {
+			joined = mergeFacts(joined, state)
+		}
 	}
 	if len(r.Arms) == 0 {
 		f.errorf(e.Pos, "'race' needs at least one arm")
+		f.restoreNarrow(saved)
 		return bad()
 	}
+	if joined == nil {
+		joined = facts{}
+	}
+	f.narrow = joined
+	allDiverge := true
+	for _, a := range r.Arms {
+		if !types.IsNever(a.Body.Type) {
+			allDiverge = false
+		}
+	}
 	switch {
+	case allDiverge:
+		// every arm returns or throws: nothing follows the race
+		r.T = types.TNever
 	case asValue:
 		r.T = want
 	case want == nil && resultType != nil:
 		for _, a := range r.Arms {
-			if a.Body.Value != nil && !types.Identical(a.Body.Type, resultType) {
+			if a.Body.Value != nil && !types.IsNever(a.Body.Type) && !types.Identical(a.Body.Type, resultType) {
 				a.Body.Value = f.coerce(a.Body.Value, resultType, e.Pos)
 				a.Body.Type = resultType
 			}

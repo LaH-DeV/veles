@@ -163,5 +163,6 @@ Times are plain `i64` milliseconds, the unit `sleep` and timers already
 use. The generator is xoshiro256** — fast and good for games, tests and
 sampling, not for secrets.
 
-Next: [Attributes and the test runner](14-attributes-and-testing.md), or
-back to the [index](index.md).
+Next: [Networking](16-networking.md) for TCP, or [Attributes and the
+test runner](14-attributes-and-testing.md), or back to the
+[index](index.md).

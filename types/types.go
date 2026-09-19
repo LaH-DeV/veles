@@ -287,6 +287,7 @@ func (u *ErrorUnion) String() string {
 // itself and zero members as nil.
 func MakeErrorUnion(members ...Type) Type {
 	var flat []Type
+	sawNever := false
 	var add func(t Type)
 	add = func(t Type) {
 		if t == nil {
@@ -296,6 +297,12 @@ func MakeErrorUnion(members ...Type) Type {
 			for _, m := range u.Members {
 				add(m)
 			}
+			return
+		}
+		if IsNever(t) {
+			// `E | Timeout` with E bound to Never (a lambda that does not
+			// throw): nothing to add — the union is the other members
+			sawNever = true
 			return
 		}
 		for _, m := range flat {
@@ -310,6 +317,9 @@ func MakeErrorUnion(members ...Type) Type {
 	}
 	switch len(flat) {
 	case 0:
+		if sawNever {
+			return TNever // every member was Never
+		}
 		return nil
 	case 1:
 		return flat[0]

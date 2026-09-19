@@ -34,6 +34,7 @@ var builtinFamilies = []struct{ family, header, doc string }{
 	{"Set", "struct Set<T>", "An immutable hash set."},
 	{"MutableSet", "struct MutableSet<T> : Set<T>", "A hash set that can be changed in place."},
 	{"Channel", "struct Channel<T>", "A bounded channel between tasks (D16). `Channel<T>(capacity: n)` creates one."},
+	{"Task", "struct Task<T>", "A handle to a running child of a `scope`, from `async f()`; `await t` is its result, `t.cancel()` stops it."},
 	{"Range", "struct Range<T>", "`lo..hi` (inclusive) or `lo..<hi` (exclusive); iterate with `loop (i in r)`."},
 	{"float", "struct f64", "Floating-point numbers (`f64`, `f32`). Every method is a single machine instruction."},
 	{"int", "struct i64", "Integers (`i8`..`i64`, `u8`..`u64`). Arithmetic panics on overflow in debug builds."},
@@ -68,8 +69,8 @@ var builtinDocs = []BuiltinDoc{
 	{"List", "filterIs", "<V>(): List<V>", "On a list of a sealed type: the elements that are the variant `V`, typed as `V` — `shapes.filterIs<Circle>()`. What `filter(s => s is Circle)` cannot promise, the type argument does."},
 	{"List", "fold", "<A>(init: A, f: fun(A, T): A): A", "Folds left: `f(f(f(init, x0), x1), x2)`."},
 	{"List", "forEach", "(f: fun(T))", "Calls `f` on each element in order."},
-	{"List", "sorted", "(): List<T>", "A sorted copy (elements must be `Ord`)."},
-	{"List", "sortedBy", "<K>(key: fun(T): K): List<T>", "A copy sorted by `key(x)`."},
+	{"List", "sorted", "(): List<T>", "A sorted copy, stable, O(n log n) (elements must be numbers, strings, tuples of those, or `Comparable`)."},
+	{"List", "sortedBy", "<K>(key: fun(T): K): List<T>", "A copy sorted by `key(x)`; a tuple key sorts on several fields: `sortedBy(e => (-e.size, e.name))`."},
 	{"List", "reversed", "(): List<T>", "A reversed copy."},
 	{"List", "join", "(sep: string): string", "The elements rendered and joined with `sep`."},
 	{"List", "iter", "(): Iterator<T>", "A lazy iterator over the elements (D46)."},
@@ -123,6 +124,8 @@ var builtinDocs = []BuiltinDoc{
 	{"Channel", "close", "()", "Closes the channel: receivers drain what is buffered, then get `null`."},
 	{"Channel", "closeAfter", "(n: i64)", "Closes the channel by itself once `n` more values have been sent — how several producers end a channel without coordinating. A further send panics, as on any closed channel."},
 	{"Channel", "len", "(): i64", "Number of buffered values."},
+
+	{"Task", "cancel", "()", "Asks the task to stop: it unwinds at its next suspension point, running its `with` cleanups (D43), and its scope still waits for it. Awaiting a cancelled task panics; `withTimeout` is the usual way to use this."},
 
 	{"Range", "iter", "(): Iterator<T>", "An iterator from `lo` to `hi`."},
 
@@ -253,6 +256,8 @@ func builtinFamily(t types.Type) string {
 		return "Set"
 	case *types.Channel:
 		return "Channel"
+	case *types.Task:
+		return "Task"
 	case *types.Range:
 		return "Range"
 	}

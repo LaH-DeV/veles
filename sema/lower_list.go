@@ -82,7 +82,16 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 		return true
 	}
 	list := f.newTemp(lt)
+	// an enclosing adapter may have pending declarations (a key function
+	// bound by fnArg) and be checking a call this switch does not handle
+	// (`sortedBy` rewritten to `sortedWith`): hand them back on the way out
+	savedPending := f.pending
 	f.pending = nil
+	defer func() {
+		if f.pending == nil {
+			f.pending = savedPending
+		}
+	}()
 	savedAdapter := f.adapter
 	f.adapter = &adapterState{}
 	defer func() { f.adapter = savedAdapter }()
@@ -365,51 +374,22 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 			f.errorf(span, "cannot order by '%s'; keys must be numbers, strings or implement 'Comparable' (D48: use a comparator otherwise)", keyT)
 			return bad()
 		}
-		key := func(x Expr) Expr {
-			if keyFn == nil {
-				return x
-			}
-			return &CallIndirect{exprBase{keyT}, ref(keyFn), []Expr{x}}
+		// delegate to the prelude's stable merge sort (list.vs sortedWith)
+		// with the natural comparison as the comparator: every ordered type
+		// answers `compareTo` (prelude impls for numbers and strings, the
+		// synthesized one for tuples, D48), so the lowering is
+		// `list.sortedWith(($a, $b) => key($a).compareTo(key($b)))`
+		f.scope.Insert(&Symbol{Name: list.Name, Kind: SymLocal, Var: list})
+		var ka, kb ast.Expr = &ast.NameExpr{Name: "$a", Pos: span}, &ast.NameExpr{Name: "$b", Pos: span}
+		if keyFn != nil {
+			f.scope.Insert(&Symbol{Name: keyFn.Name, Kind: SymLocal, Var: keyFn})
+			ka = &ast.CallExpr{Fun: nameOf(keyFn, span), Args: []ast.Arg{{Value: ka}}, Pos: span}
+			kb = &ast.CallExpr{Fun: nameOf(keyFn, span), Args: []ast.Arg{{Value: kb}}, Pos: span}
 		}
-		// insertion sort on a mutable copy
-		outT := &types.List{Elem: lt.Elem, Mutable: true}
-		out := f.newTemp(outT)
-		stmts := []Stmt{&VarDecl{Var: out, Init: &Builtin{exprBase{outT}, "list.copy", []Expr{ref(list)}, span}}}
-		i := f.newTemp(types.TI64)
-		j := f.newTemp(types.TI64)
-		cur := f.newTemp(lt.Elem)
-		curKey := f.newTemp(keyT)
-		f.c.nextLoop++
-		outer := &Loop{ID: f.c.nextLoop}
-		f.c.nextLoop++
-		inner := &Loop{ID: f.c.nextLoop}
-		n := &Builtin{exprBase{types.TI64}, "list.len", []Expr{ref(out)}, span}
-		getOut := func(idx Expr) Expr {
-			return &Builtin{exprBase{lt.Elem}, "list.get", []Expr{ref(out), idx}, span}
-		}
-		setOut := func(idx Expr, v Expr) Stmt {
-			return &Assign{Target: &Builtin{exprBase{lt.Elem}, "list.ref", []Expr{ref(out), idx}, span}, Value: v}
-		}
-		prev := &Binary{exprBase{types.TI64}, OpWrapSub, ref(j), i64c(1), span}
-		// inner: loop (j > 0 && key(out[j-1]) > curKey) { out[j] = out[j-1]; j -= 1 }
-		inner.Cond = &Binary{exprBase{types.TBool}, OpAnd,
-			&Binary{exprBase{types.TBool}, OpGt, ref(j), i64c(0), span},
-			f.greater(key(getOut(prev)), ref(curKey), span), span}
-		inner.Body = &Block{Stmts: []Stmt{
-			setOut(ref(j), getOut(prev)),
-			&Assign{Target: ref(j), Value: prev},
-		}, Type: types.TUnit}
-		outer.Cond = &Binary{exprBase{types.TBool}, OpLt, ref(i), n, span}
-		outer.Post = []Stmt{&Assign{Target: ref(i), Value: &Binary{exprBase{types.TI64}, OpWrapAdd, ref(i), i64c(1), span}}}
-		outer.Body = &Block{Stmts: []Stmt{
-			&VarDecl{Var: cur, Init: getOut(ref(i))},
-			&VarDecl{Var: curKey, Init: key(ref(cur))},
-			&VarDecl{Var: j, Init: ref(i)},
-			inner,
-			setOut(ref(j), ref(cur)),
-		}, Type: types.TUnit}
-		stmts = append(stmts, &VarDecl{Var: i, Init: i64c(1)}, outer)
-		return finish(stmts, &Cast{exprBase{&types.List{Elem: lt.Elem, Mutable: false}}, ref(out)})
+		cmp := &ast.CallExpr{Fun: &ast.MemberExpr{X: ka, Name: ast.Ident{Name: "compareTo", Pos: span}, Pos: span}, Args: []ast.Arg{{Value: kb}}, Pos: span}
+		lambda := &ast.LambdaExpr{Params: []ast.Param{{Name: ast.Ident{Name: "$a", Pos: span}, Pos: span}, {Name: ast.Ident{Name: "$b", Pos: span}, Pos: span}}, Body: cmp, Pos: span}
+		call := &ast.CallExpr{Fun: &ast.MemberExpr{X: nameOf(list, span), Name: ast.Ident{Name: "sortedWith", Pos: span}, Pos: span}, Args: []ast.Arg{{Value: lambda}}, Pos: span}
+		return finish(nil, f.checkExpr(call, nil))
 	case "iter":
 		if !need(0) {
 			return bad()
@@ -442,14 +422,6 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 	return nil
 }
 
-// greater builds `l > r` for an orderable type: a native comparison for
-// numbers and strings, `compareTo` for a Comparable type.
-func (f *fnCtx) greater(l, r Expr, span source.Span) Expr {
-	if cmp := f.compareOp(OpGt, l, r, span); cmp != nil {
-		return cmp
-	}
-	return &Binary{exprBase{types.TBool}, OpGt, l, r, span}
-}
 
 // listFilterIs lowers `xs.filterIs<Variant>()` on a list of a sealed type: the
 // elements of that variant, as a `List<Variant>`. It is `filter(x => x is V)`

@@ -63,3 +63,31 @@ extend<T: Sendable> List<T> {
     }, workers: workers)
   }
 }
+
+/// Calls `f`; the named function `async` needs for a function value.
+fun <R, E> invoke(f: sendable fun(): R suspends throws E): R throws E = try f()
+
+/// `withTimeout` ran out of time.
+pub error Timeout {
+  pub millis: i64
+  fun message(): string = "timed out after ${self.millis} ms"
+}
+
+/// Runs `f` with a time limit: its result, or a `Timeout` error when `ms`
+/// milliseconds pass first. The task running `f` is then cancelled and
+/// unwinds — its `with` cleanups run — before `withTimeout` throws; an
+/// error `f` throws in time is rethrown, so the call throws `E | Timeout`.
+///
+/// ```veles
+/// val line = try withTimeout(5000, () => try conn.readLine())
+/// ```
+pub fun <R: Sendable, E> withTimeout(ms: i64, f: sendable fun(): R suspends throws E): R throws E | Timeout {
+  scope {
+    val t = async invoke(f)
+    race {
+      val r = await t => return try r
+      // leaving the scope by a throw cancels `t` and waits for it to unwind
+      sleep(ms)       => throw Timeout(millis: ms)
+    }
+  }
+}

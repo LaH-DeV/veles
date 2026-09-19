@@ -1321,6 +1321,13 @@ func (f *fnCtx) tryExpr(e *ast.TryExpr) Expr {
 	}
 	rs, ok := x.Type().(*types.Sealed)
 	if !ok || !isResultType(rs) {
+		if f.neverInstance() && !types.IsInvalid(x.Type()) {
+			// the same erasure one step removed: the operand was a
+			// `Result<R, E>` in the template — an awaited `Task<Result<R, E>>`,
+			// a stored call result — and E is Never in this instance, so the
+			// value is already the payload
+			return x
+		}
 		if !types.IsInvalid(x.Type()) {
 			f.errorf(e.Pos, "'try' needs a Result (a call to a 'throws' function), found '%s'", x.Type())
 		}
@@ -1790,6 +1797,24 @@ func (f *fnCtx) indexValue(e ast.Expr) Expr {
 		return x
 	}
 	return &Cast{exprBase{types.TI64}, x}
+}
+
+// neverInstance reports whether this code is an instance of a generic
+// function (or a lambda inside one) with a type parameter bound to Never:
+// the instance in which `throws E` and `Result<R, E>` have been erased to
+// plain values (D46), so a template-level `try` may find no Result.
+func (f *fnCtx) neverInstance() bool {
+	for ctx := f; ctx != nil; ctx = ctx.parent {
+		if ctx.fn == nil {
+			continue
+		}
+		for _, t := range ctx.fn.subst {
+			if types.IsNever(t) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // errPolyCall reports whether x calls something whose declaration says

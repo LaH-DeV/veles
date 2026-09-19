@@ -1966,3 +1966,141 @@ struct Circle : Shape { r: f64 }
 struct Other { n: i64 }
 fun main() { val xs: List<Shape> = [Circle(r: 1.0)]; io.println("${xs.filterIs<Other>()}") }`, "'Other' is not a variant of 'Shape'")
 }
+
+func TestTaskCancel(t *testing.T) {
+	expectClean(t, prelude+`
+fun slow(): i64 {
+  await sleep(100)
+  1
+}
+fun main() {
+  scope {
+    val t = async slow()
+    t.cancel()
+  }
+  io.println("done")
+}`)
+	expectError(t, prelude+`
+fun slow(): i64 = 1
+fun main() {
+  scope {
+    val t = async slow()
+    t.cancel(1)
+  }
+}`, "'cancel' takes no arguments")
+}
+
+func TestIoWaitIsStdOnly(t *testing.T) {
+	// the socket wait exists for std/net; user code has no such name
+	expectError(t, prelude+`
+fun main() {
+  await ioWait(3, false)
+}`, "unknown function 'ioWait'")
+}
+
+func TestRaceNarrowingJoins(t *testing.T) {
+	// an assignment in one race arm does not smart-cast the variable after
+	// the race: exactly one arm runs, and the other may not have assigned
+	expectError(t, prelude+`
+fun slow(): i64 {
+  await sleep(50)
+  1
+}
+fun main() {
+  var out: i64? = null
+  scope {
+    val t = async slow()
+    race {
+      val r = await t => out = r
+      sleep(1) => io.println("late")
+    }
+  }
+  val n: i64 = out
+  io.println("$n")
+}`, "type mismatch")
+	// every arm returning makes the race — and the scope — diverge
+	expectClean(t, prelude+`
+fun slow(): i64 {
+  await sleep(50)
+  1
+}
+fun pick(): i64 {
+  scope {
+    val t = async slow()
+    race {
+      val r = await t => return r
+      sleep(1) => return -1
+    }
+  }
+}
+fun main() { io.println("${pick()}") }`)
+}
+
+func TestScopeBodyDiverges(t *testing.T) {
+	expectClean(t, prelude+`
+fun work(): i64 {
+  await sleep(1)
+  1
+}
+fun early(): i64 {
+  scope {
+    async work()
+    return 1
+  }
+}
+error Boom { }
+fun thrower(): i64 throws Boom {
+  scope {
+    async work()
+    throw Boom()
+  }
+}
+fun main() { io.println("${early()} ${thrower()}") }`)
+}
+
+func TestErrorUnionWithTypeParam(t *testing.T) {
+	// `throws E | Timeout`: with E bound to Never the union is just Timeout;
+	// with E bound to an error it is the two-member union
+	expectClean(t, prelude+`
+error Timeout { }
+error Late { }
+fun <R, E> guarded(flag: bool, f: fun(): R throws E): R throws E | Timeout {
+  if (flag) throw Timeout()
+  try f()
+}
+fun failing(): i64 throws Late = throw Late()
+fun onlyTimeout(): i64 throws Timeout = try guarded(false, () => 5)
+fun both(): i64 throws Late | Timeout = try guarded(false, () => try failing())
+fun main() { io.println("${onlyTimeout()} ${both()}") }`)
+	expectError(t, prelude+`
+error Timeout { }
+error Late { }
+fun <R, E> guarded(flag: bool, f: fun(): R throws E): R throws E | Timeout {
+  if (flag) throw Timeout()
+  try f()
+}
+fun failing(): i64 throws Late = throw Late()
+fun narrow(): i64 throws Timeout = try guarded(false, () => try failing())
+fun main() { io.println("${narrow()}") }`, "not in the declared 'throws Timeout'")
+}
+
+func TestWithTimeoutTypes(t *testing.T) {
+	expectClean(t, prelude+`
+error Late { }
+fun slow(): i64 {
+  await sleep(1)
+  1
+}
+fun failing(): string? throws Late {
+  await sleep(1)
+  throw Late()
+}
+fun a(): i64 throws Timeout = try withTimeout(100, () => slow())
+fun b(): string? throws Late | Timeout = try withTimeout(100, () => try failing())
+fun main() { io.println("${a()} ${b()}") }`)
+	expectError(t, prelude+`
+fun main() {
+  var n = 0
+  io.println("${withTimeout(10, () => { n += 1; n })}")
+}`, "cannot cross a task boundary")
+}

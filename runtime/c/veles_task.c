@@ -18,9 +18,11 @@
 #include <setjmp.h>
 
 #if defined(_WIN32)
+#include <winsock2.h> /* before windows.h: WSAPoll drives socket waits */
 #include <windows.h>
 #else
 #include <unistd.h>
+#include <poll.h>
 #endif
 
 typedef struct veles_desc veles_desc;
@@ -53,6 +55,13 @@ typedef struct veles_task {
     int64_t panicked;
     const char *panic_msg;
     int64_t panic_len;
+    int64_t io_fd;          /* socket the task waits on (std/net); io_waiting set */
+    int64_t io_write;       /* waiting to write rather than read */
+    int64_t io_waiting;
+    int64_t io_ready;
+    struct veles_task *io_next;
+    int64_t cancel_requested; /* unwinds at its next suspension point (D20/D43) */
+    struct veles_task *awaiting; /* the task this one is blocked in await on */
 } veles_task;
 
 struct veles_scope {
@@ -91,6 +100,7 @@ struct veles_race {
 
 static veles_task *run_head, *run_tail;
 static veles_task *timers;
+static veles_task *io_waiters;
 static veles_task *current;
 static int64_t start_ms;
 static bool roots_registered;
@@ -101,6 +111,7 @@ static void register_roots(void) {
     veles_gc_root(&run_head, NULL);
     veles_gc_root(&run_tail, NULL);
     veles_gc_root(&timers, NULL);
+    veles_gc_root(&io_waiters, NULL);
     veles_gc_root(&current, NULL);
 }
 
@@ -189,20 +200,31 @@ void veles_task_finish(veles_task *t, const void *result, int64_t size, int64_t 
 /* a resumed task checks this to honour cancellation (D20: delivered at a
  * suspension point) */
 int64_t veles_task_cancelled(veles_task *t) {
-    return t->state == T_CANCELLED;
+    return t->cancel_requested || t->state == T_CANCELLED;
 }
 
+/* the cancelled task has run its cleanups (D43) and is done */
 void veles_task_finish_cancelled(veles_task *t) {
-    t->hdl = NULL; /* its scope was already told when it was cancelled */
+    t->hdl = NULL;
+    if (t->state == T_CANCELLED) return;
+    t->state = T_CANCELLED;
+    wake(t->waiter);
+    t->waiter = NULL;
+    scope_child_finished(t);
 }
 
 /* await: true when the target is done, otherwise blocks the caller */
 int64_t veles_task_await(veles_task *self, veles_task *target) {
-    if (target->state == T_DONE) return 1;
+    if (target->state == T_DONE) {
+        self->awaiting = NULL;
+        return 1;
+    }
     if (target->state == T_CANCELLED) {
+        self->awaiting = NULL;
         veles_panic("awaited task was cancelled", 26);
     }
     target->waiter = self;
+    self->awaiting = target;
     self->state = T_BLOCKED;
     return 0;
 }
@@ -234,12 +256,40 @@ veles_task *veles_task_launch(veles_scope *s) {
     return t;
 }
 
+static void remove_io_waiter(veles_task *t);
+
+/* Cancellation is a request: the task is woken and unwinds at the
+ * suspension point it was parked on (running its `with` cleanups, D43),
+ * then reports itself finished. A task with no frame — it never
+ * suspended, or already returned — is finished on the spot. */
 static void cancel_task(veles_task *t) {
-    if (t->state == T_DONE || t->state == T_CANCELLED) return;
+    if (t->state == T_DONE || t->state == T_CANCELLED || t->cancel_requested) return;
+    t->cancel_requested = 1;
+    remove_timer(t);
+    remove_io_waiter(t);
+    t->race = NULL;
+    veles_task *callee = t->awaiting;
+    if (callee && !callee->scope && callee->state != T_DONE && callee->state != T_CANCELLED) {
+        /* blocked in a suspending call (the callee runs as a task of its
+         * own): cancel from the inside out, so the innermost frame's
+         * cleanups run first; the callee's finish wakes this task, which
+         * then sees the request at its own suspension point */
+        cancel_task(callee);
+        return;
+    }
+    if (t->hdl) {
+        t->state = T_BLOCKED;
+        wake(t);
+        return;
+    }
     t->state = T_CANCELLED;
-    /* if it is blocked it will never resume; if runnable, the executor
-     * skips it; either way it counts as finished for its scope */
     scope_child_finished(t);
+}
+
+/* `task.cancel()`: ask a task to stop; it unwinds at its next suspension
+ * point, and its scope still waits for it */
+void veles_task_cancel(veles_task *t) {
+    cancel_task(t);
 }
 
 static void scope_child_finished(veles_task *t) {
@@ -264,6 +314,16 @@ static void scope_child_finished(veles_task *t) {
 void veles_task_leave_waits(veles_task *t) {
     t->race = NULL;
     remove_timer(t);
+    remove_io_waiter(t);
+}
+
+/* the body left the scope early (return, throw, cancellation): the
+ * children still running are cancelled; the owner then waits for them
+ * as usual, so nothing outlives the block (D34) */
+void veles_scope_cancel(veles_scope *s) {
+    for (veles_task *c = s->children; c; c = c->sibling) {
+        cancel_task(c);
+    }
 }
 
 /* wait for every child: true when done, otherwise blocks the owner */
@@ -356,7 +416,7 @@ static void chan_pop(veles_chan *c, void *out) {
 static bool chan_hand_off(veles_chan *c, const void *item) {
     while (c->recv_waiters) {
         veles_task *r = pop_waiter(&c->recv_waiters);
-        if (r->state == T_CANCELLED) continue;
+        if (r->state == T_CANCELLED || r->cancel_requested) continue;
         if (r->race) {
             if (r->race->winner >= 0) continue; /* already won elsewhere */
             race_deliver(r, c, item);
@@ -486,6 +546,96 @@ static void fire_timers(void) {
             pp = &t->timer_next;
         }
     }
+}
+
+/* ---- socket waits (std/net) ------------------------------------------------ */
+
+/* Sockets are non-blocking; when a call would block, the task parks here
+ * until the executor's poll reports the descriptor ready (readable,
+ * writable, or in error - the retried call then reports what happened). */
+
+static void remove_io_waiter(veles_task *t) {
+    veles_task **pp = &io_waiters;
+    while (*pp) {
+        if (*pp == t) {
+            *pp = t->io_next;
+            t->io_next = NULL;
+            continue;
+        }
+        pp = &(*pp)->io_next;
+    }
+    t->io_waiting = 0;
+    t->io_ready = 0;
+}
+
+/* wait for fd: true once the poll saw it ready; the first call parks the
+ * task, a wake for any other reason parks it again */
+int64_t veles_task_wait_io(veles_task *self, int64_t fd, int64_t write) {
+    if (self->io_waiting) {
+        if (self->io_ready) {
+            self->io_waiting = 0;
+            self->io_ready = 0;
+            return 1;
+        }
+        self->state = T_BLOCKED;
+        return 0;
+    }
+    self->io_fd = fd;
+    self->io_write = write;
+    self->io_waiting = 1;
+    self->io_ready = 0;
+    self->io_next = io_waiters;
+    io_waiters = self;
+    self->state = T_BLOCKED;
+    return 0;
+}
+
+static int64_t io_waiter_count(void) {
+    int64_t n = 0;
+    for (veles_task *t = io_waiters; t; t = t->io_next) n++;
+    return n;
+}
+
+/* poll every parked descriptor, waiting at most timeout_ms (-1: forever),
+ * and wake the tasks whose descriptors are ready */
+static void poll_io(int64_t timeout_ms) {
+    int64_t n = io_waiter_count();
+    if (n == 0) return;
+#if defined(_WIN32)
+    WSAPOLLFD *fds = malloc(sizeof(WSAPOLLFD) * (size_t)n);
+#else
+    struct pollfd *fds = malloc(sizeof(struct pollfd) * (size_t)n);
+#endif
+    veles_task **tasks = malloc(sizeof(veles_task *) * (size_t)n);
+    int64_t i = 0;
+    for (veles_task *t = io_waiters; t; t = t->io_next, i++) {
+        tasks[i] = t;
+#if defined(_WIN32)
+        fds[i].fd = (SOCKET)t->io_fd;
+#else
+        fds[i].fd = (int)t->io_fd;
+#endif
+        fds[i].events = t->io_write ? POLLOUT : POLLIN;
+        fds[i].revents = 0;
+    }
+    if (timeout_ms > 0x7fffffff) timeout_ms = 0x7fffffff;
+#if defined(_WIN32)
+    int r = WSAPoll(fds, (ULONG)n, (INT)timeout_ms);
+#else
+    int r = poll(fds, (nfds_t)n, (int)timeout_ms);
+#endif
+    if (r > 0) {
+        for (i = 0; i < n; i++) {
+            if (fds[i].revents == 0) continue;
+            veles_task *t = tasks[i];
+            remove_io_waiter(t);
+            t->io_waiting = 1; /* stays "waiting" so the retry sees ready */
+            t->io_ready = 1;
+            wake(t);
+        }
+    }
+    free(fds);
+    free(tasks);
 }
 
 /* ---- race (D38) ------------------------------------------------------------ */
@@ -664,12 +814,19 @@ void veles_run(veles_task *root) {
     start_ms = now_ms();
     while (root->state != T_DONE && root->state != T_CANCELLED) {
         fire_timers();
+        if (io_waiters) poll_io(0); /* runnable tasks must not starve the sockets */
         veles_task *t = dequeue();
         if (!t) {
-            /* nothing runnable: wait for the nearest timer */
+            /* nothing runnable: wait for the nearest timer or a socket */
             int64_t nearest = 0;
             for (veles_task *x = timers; x; x = x->timer_next) {
                 if (x->wake_at && (!nearest || x->wake_at < nearest)) nearest = x->wake_at;
+            }
+            if (io_waiters) {
+                int64_t wait = nearest ? nearest - now_ms() : -1;
+                if (nearest && wait < 0) wait = 0;
+                poll_io(wait);
+                continue;
             }
             if (!nearest) {
                 veles_panic("deadlock: every task is blocked", 31);

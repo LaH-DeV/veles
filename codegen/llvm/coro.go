@@ -41,6 +41,9 @@ declare void @veles_chan_close(ptr)
 declare void @veles_chan_close_after(ptr, i64)
 declare i64 @veles_chan_len(ptr)
 declare i64 @veles_task_sleep(ptr, i64)
+declare i64 @veles_task_wait_io(ptr, i64, i64)
+declare void @veles_task_cancel(ptr)
+declare void @veles_scope_cancel(ptr)
 declare ptr @veles_race_new(ptr)
 declare void @veles_race_recv(ptr, ptr, ptr)
 declare void @veles_race_sleep(ptr, i64)
@@ -108,6 +111,11 @@ func (g *gen) suspendPoint() {
 	resume := g.newLabel("resume")
 	g.emitTerm("switch i8 %s, label %%%s [ i8 0, label %%%s i8 1, label %%%s ]", s, c.suspendL, resume, c.cleanupL)
 	g.placeLabel(resume)
+	if g.inCleanup > 0 {
+		// D47: cleanup is non-cancellable — the join of an abandoned scope
+		// waits for its children whatever happens around it
+		return
+	}
 	cc := g.newTmp()
 	g.emit("%s = call i64 @veles_task_cancelled(ptr %s)", cc, c.task)
 	cb := g.newTmp()
@@ -304,6 +312,12 @@ func (g *gen) scopeBlock(e *sema.ScopeBlock) string {
 	g.emit("store ptr %s, ptr %s", sc, slot)
 	g.scopeSlots[e] = slot
 	wait, done, susp := g.newLabel("scope.wait"), g.newLabel("scope.done"), g.newLabel("scope.susp")
+	// leaving the body early cancels and joins the children (a cleanup,
+	// like a `with` close); the fail-fast abort path below the entry runs
+	// only the cleanups inside the body and joins through `wait` itself
+	abandon := &sema.Builtin{Op: "scope.abandon"}
+	g.abandonSlots[abandon] = slot
+	g.cleanups = append(g.cleanups, abandon)
 	if !e.Gather {
 		g.bodyScopes = append(g.bodyScopes, bodyScope{slot: slot, wait: wait, cleanups: len(g.cleanups)})
 	}
@@ -311,11 +325,10 @@ func (g *gen) scopeBlock(e *sema.ScopeBlock) string {
 	if !e.Gather {
 		g.bodyScopes = g.bodyScopes[:len(g.bodyScopes)-1]
 	}
-	if g.term {
-		return "zeroinitializer"
-	}
-	// wait for every child
-	g.emitTerm("br label %%%s", wait)
+	g.cleanups = g.cleanups[:len(g.cleanups)-1]
+	// wait for every child; the join is emitted even after a body that
+	// always returns or throws, because the fail-fast abort branch of a
+	// suspension point inside the body jumps here
 	g.placeLabel(wait)
 	scv := g.newTmp()
 	g.emit("%s = load ptr, ptr %s", scv, slot)
@@ -596,6 +609,29 @@ func (g *gen) taskBuiltin(e *sema.Builtin) (string, bool) {
 		ch := g.expr(e.Args[0])
 		g.emit("call void @veles_chan_close(ptr %s)", ch)
 		return "zeroinitializer", true
+	case "task.cancel":
+		t := g.expr(e.Args[0])
+		g.emit("call void @veles_task_cancel(ptr %s)", t)
+		return "zeroinitializer", true
+	case "scope.abandon":
+		// the body is being left early: cancel the children and join them
+		slot := g.abandonSlots[e]
+		sc := g.newTmp()
+		g.emit("%s = load ptr, ptr %s", sc, slot)
+		g.emit("call void @veles_scope_cancel(ptr %s)", sc)
+		wait, done, susp := g.newLabel("abandon.wait"), g.newLabel("abandon.done"), g.newLabel("abandon.susp")
+		g.emitTerm("br label %%%s", wait)
+		g.placeLabel(wait)
+		r := g.newTmp()
+		g.emit("%s = call i64 @veles_scope_wait(ptr %s, ptr %s)", r, g.coro.task, sc)
+		rb := g.newTmp()
+		g.emit("%s = icmp ne i64 %s, 0", rb, r)
+		g.emitTerm("br i1 %s, label %%%s, label %%%s", rb, done, susp)
+		g.placeLabel(susp)
+		g.suspendPoint()
+		g.emitTerm("br label %%%s", wait)
+		g.placeLabel(done)
+		return "zeroinitializer", true
 	case "chan.closeAfter":
 		ch := g.expr(e.Args[0])
 		n := g.expr(e.Args[1])
@@ -613,6 +649,26 @@ func (g *gen) taskBuiltin(e *sema.Builtin) (string, bool) {
 		g.placeLabel(loop)
 		r := g.newTmp()
 		g.emit("%s = call i64 @veles_task_sleep(ptr %s, i64 %s)", r, g.coro.task, ms)
+		rb := g.newTmp()
+		g.emit("%s = icmp ne i64 %s, 0", rb, r)
+		g.emitTerm("br i1 %s, label %%%s, label %%%s", rb, done, susp)
+		g.placeLabel(susp)
+		g.suspendPoint()
+		g.emitTerm("br label %%%s", loop)
+		g.placeLabel(done)
+		return "zeroinitializer", true
+	case "task.ioWait":
+		// std/net: park until the executor's poll reports the socket ready;
+		// the same retry loop as sleep
+		fd := g.expr(e.Args[0])
+		write := g.expr(e.Args[1])
+		wz := g.newTmp()
+		g.emit("%s = zext i1 %s to i64", wz, write)
+		loop, done, susp := g.newLabel("iowait"), g.newLabel("iowait.done"), g.newLabel("iowait.susp")
+		g.emitTerm("br label %%%s", loop)
+		g.placeLabel(loop)
+		r := g.newTmp()
+		g.emit("%s = call i64 @veles_task_wait_io(ptr %s, i64 %s, i64 %s)", r, g.coro.task, fd, wz)
 		rb := g.newTmp()
 		g.emit("%s = icmp ne i64 %s, 0", rb, r)
 		g.emitTerm("br i1 %s, label %%%s, label %%%s", rb, done, susp)

@@ -227,7 +227,8 @@ unreachable.
 | `Channel<T>(capacity: n)` | bounded channel; `send(v)`, `await recv(): T?`, `close()`, `closeAfter(n)` (closes itself after `n` more sends), `len()` |
 | `xs.mapConcurrent(f, workers: 4)`, `xs.forEachConcurrent(f, workers: 4)` | `List<T: Sendable>`: the worker pool — at most `workers` calls of `f` in flight, results in order; `f` is a `sendable fun` that may suspend and throw (then the call throws) |
 | `await sleep(ms: i64)` | suspend for at least `ms` milliseconds |
-| `async f(...)`: `Task<T>` | start a task in the enclosing `scope`; `await task` |
+| `async f(...)`: `Task<T>` | start a task in the enclosing `scope`; `await task`; `task.cancel()` asks it to stop at its next suspension point (its `with` cleanups run, the scope still waits for it) |
+| `withTimeout(ms, f): R throws E \| Timeout` | run the sendable `f` in a task of its own and throw `Timeout` (with `millis`) if `ms` pass first — `f` is cancelled and has unwound by then; `f`'s own errors are rethrown |
 
 ## Built-in methods
 
@@ -409,6 +410,29 @@ fs.rename(from: string, to: string) throws IoError
 fs.cwd(): string throws IoError
 ```
 
+## Module `net`
+
+TCP over the task executor ([chapter 16](../16-networking.md)): every call
+that waits suspends the task. Failures throw `IoError` with the address in
+`path`.
+
+```veles
+// fragment
+use net
+net.listen(host: string = "127.0.0.1", port: i64 = 0): Listener throws IoError   // "" = every interface; 0 = any free port
+net.connect(host: string, port: i64): Conn suspends throws IoError
+listener.port(): i64                                     // the bound port
+listener.accept(): Conn suspends throws IoError
+conn.read(max: i64 = 65536): List<u8> suspends throws IoError   // what has arrived; [] at end of stream
+conn.readExact(n: i64): List<u8> suspends throws IoError       // n bytes, fewer only at end of stream
+conn.readLine(): string? suspends throws IoError               // without "\n" / "\r\n"; null at end of stream
+conn.write(bytes: List<u8>) suspends throws IoError            // all of it
+conn.writeText(text: string) suspends throws IoError
+conn.shutdownWrite() throws IoError                            // half-close: the peer reads end of stream
+conn.peer(): string                                            // "host:port"
+// Listener and Conn are Closeable (use `with`) and Sendable (hand a Conn to `async handle(conn)`)
+```
+
 ## Module `path`
 
 Text only; nothing here touches the disk. `/` and `\` both separate on
@@ -459,7 +483,7 @@ cryptographic.
 
 ## Not yet in the bootstrap
 
-Network I/O, a format-string module, iterating a directory tree, running a
+TLS, UDP, a format-string module, iterating a directory tree, running a
 program with its own stdin or a separate stderr capture. Each is a small
 `extern "C"` binding away (see [chapter 13](../13-memory-and-ffi.md)) or
 plain Veles on top of `fs`; the library grows with the compiler's own needs

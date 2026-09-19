@@ -193,6 +193,9 @@ val ch = Channel<i64>(capacity: 8); ch.send(1); await ch.recv(); ch.close(); ch.
 xs.mapConcurrent(f, workers: 4); xs.forEachConcurrent(f, workers: 4)   // the worker pool, results in order; f may suspend/throw
 fun run(f: sendable fun(i64): i64)   // a function that may cross a task boundary: named, or a lambda over vals of Sendable types
 await sleep(ms)
+t.cancel()                       // stop a task at its next suspension point; its `with` cleanups run, the scope still joins it
+val v = try withTimeout(1000, () => try fetch())   // R throws E | Timeout; the task is cancelled and unwound before Timeout is thrown
+// leaving a scope body early (return / throw / cancellation) cancels and joins its children
 val m = mutex(state); m.withLock(s => s.n += 1); m.get(); m.set(v)
 val a = atomic(0); a.load(); a.store(1); a.swap(2)
 ```
@@ -223,6 +226,23 @@ val sb = stringBuilder(); sb.append("a"); sb.appendLine("b"); sb.toString()   //
 ```
 
 Everything that can fail throws `IoError { path, code, detail }`.
+
+## Networking
+
+```veles
+// fragment
+use net
+with (listener = try net.listen(host: "", port: 8080)) {   // defaults: loopback, any free port (listener.port())
+  loop { val conn = try listener.accept(); async handle(conn) }   // inside a scope; Conn is Sendable
+}
+with (conn = try net.connect("example.org", 80)) {
+  try conn.writeText("ping\n"); val line = try conn.readLine() ?: "closed"   // readLine: string?, null at end of stream
+  val body = try conn.readExact(n); val chunk = try conn.read(); try conn.write(bytes); try conn.shutdownWrite()
+}
+val line = try withTimeout(5000, () => try conn.readLine())   // throws IoError | Timeout
+```
+
+Every waiting call suspends the task; failures throw `IoError` with the address in `path`.
 
 ## Attributes (D51)
 

@@ -416,7 +416,15 @@ func (f *fnCtx) checkStmt(s ast.Stmt) (stmts []Stmt, term bool) {
 		stmts := f.checkWith(s)
 		return stmts, withDiverges(stmts)
 	case *ast.ScopeStmt:
-		return f.scopeStmt(s), false
+		stmts := f.scopeStmt(s)
+		// a body that always returns or throws leaves through the scope's
+		// cleanup (children cancelled and joined); nothing follows
+		if len(stmts) == 1 {
+			if sb, ok := stmts[0].(*ScopeBlock); ok && sb.Body != nil && types.IsNever(sb.Body.Type) {
+				return stmts, true
+			}
+		}
+		return stmts, false
 	case *ast.FunStmt:
 		f.errorf(s.Fun.Pos, "local functions are not supported; use a lambda or a module-level function")
 		return nil, false

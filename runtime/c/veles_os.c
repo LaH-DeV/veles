@@ -116,6 +116,21 @@ static int read_stream(FILE *f, buf_t *b) {
 /* ---- errors ------------------------------------------------------------ */
 
 void veles_os_strerror(int64_t code, veles_string *out) {
+#if defined(_WIN32)
+    if (code >= 10000) {
+        /* a Winsock code (std/net): the system's text, without its trailing
+         * newline and full stop */
+        wchar_t *msg = NULL;
+        DWORD n = FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                                 NULL, (DWORD)code, 0, (LPWSTR)&msg, 0, NULL);
+        if (n > 0 && msg) {
+            while (n > 0 && (msg[n - 1] == L'\r' || msg[n - 1] == L'\n' || msg[n - 1] == L' ' || msg[n - 1] == L'.')) msg[--n] = 0;
+            set_wstring(out, msg);
+            LocalFree(msg);
+            return;
+        }
+    }
+#endif
     const char *s = strerror((int)code);
     set_string(out, s, (int64_t)strlen(s));
 }

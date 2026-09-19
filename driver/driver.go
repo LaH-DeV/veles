@@ -129,6 +129,7 @@ func Run(opts Options) int {
 		args = append(args, "-lm") // tan, atan2, hypot: libm is separate outside the UCRT
 	} else {
 		args = append(args, "-lshell32") // CommandLineToArgvW: UTF-16 process arguments (veles_os.c)
+		args = append(args, "-lws2_32")  // sockets (veles_net.c, WSAPoll in veles_task.c)
 	}
 	cmd := exec.Command(clang, args...)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
@@ -165,6 +166,7 @@ var runtimeSources = []struct{ name, src string }{
 	{"veles_gc", rt.GCSource},
 	{"veles_task", rt.TaskSource},
 	{"veles_os", rt.OSSource},
+	{"veles_net", rt.NetSource},
 }
 
 // runtimeObjects returns object files for the C runtime. The runtime never

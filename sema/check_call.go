@@ -28,6 +28,9 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 		if callee.Name == "sleep" && f.lookup(callee.Name) == nil {
 			return f.sleepCall(e)
 		}
+		if callee.Name == "ioWait" && f.module.Std && f.lookup(callee.Name) == nil {
+			return f.ioWaitCall(e)
+		}
 		if callee.Name == "panic" && f.lookup(callee.Name) == nil {
 			// D20: `panic(message)` never returns; it unwinds to the task scope
 			if len(e.Args) != 1 {
@@ -657,6 +660,16 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 	case *types.Channel:
 		f.c.refBuiltin(callee.Name.Pos, rt, name)
 		return f.channelMethod(recv, ct, name, e)
+	case *types.Task:
+		if name == "cancel" {
+			f.c.refBuiltin(callee.Name.Pos, rt, name)
+			if len(e.Args) != 0 {
+				f.errorf(e.Pos, "'cancel' takes no arguments")
+				f.checkArgsLoosely(e.Args)
+				return bad()
+			}
+			return &Builtin{exprBase{types.TUnit}, "task.cancel", []Expr{recv}, e.Pos}
+		}
 	case *types.Map:
 		f.c.refBuiltin(callee.Name.Pos, rt, name)
 		return f.mapMethod(recv, ct, name, e)

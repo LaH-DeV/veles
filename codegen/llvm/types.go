@@ -230,8 +230,12 @@ func structLayout(fields []types.Type, g *gen) (size, align int) {
 }
 
 // mangleType produces an identifier-safe name for a type.
+// mangleType names a type in LLVM symbols. It starts from types.Key rather
+// than the display string so that two structs with one name in different
+// modules (a user's `error Timeout` next to the prelude's) get distinct
+// LLVM types, descriptors, show/eq/hash helpers and vtables.
 func mangleType(t types.Type) string {
-	s := t.String()
-	r := strings.NewReplacer("<", "_", ">", "_", ", ", "_", ",", "_", "*", "P", "?", "N", "(", "T_", ")", "_", " ", "", "|", "_or_", "!", "never", "raw", "R", ":", "_", "&", "A")
+	s := types.Key(t)
+	r := strings.NewReplacer("<", "_", ">", "_", ", ", "_", ",", "_", "*", "P", "?", "N", "(", "T_", ")", "_", " ", "", "|", "_or_", "!", "never", "raw", "R", ":", "_", "&", "A", "#", "_")
 	return r.Replace(s)
 }

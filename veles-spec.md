@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.28** — language design complete. Every open question in the language itself is closed. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
+**Working draft v0.29** — language design complete. Every open question in the language itself is closed. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -526,6 +526,7 @@ Tasks may run on multiple cores. Data-race freedom is a **compile-time guarantee
 - Anything captured by an `async` call must be `Sendable`, immutable, or an explicitly synchronized wrapper (`Mutex<T>`, `Atomic<T>`).
 - A captured `var` cannot be mutated from more than one task; plain mutable references do not cross task boundaries.
 - *(v0.28)* **Structured cancellation reaches the body.** When a child of a fail-fast `scope` fails, the scope's own body is abandoned at its next suspension point (a `recv` on a channel the failed child was meant to feed would otherwise wait forever); the scope then joins the surviving children and re-raises. `Channel.closeAfter(n)` closes a channel after `n` further sends, so several producers can end a channel none of them owns. The prelude's `mapConcurrent`/`forEachConcurrent` (`std/prelude/concurrent.vs`) are the worker pool written once over these primitives.
+- *(v0.29)* **Cancellation, fully structured.** A task is cancelled when a sibling in its fail-fast scope fails, when the body of its scope leaves early (`return`, `throw`, a failed `try`, a cancellation from further out) while it is still running, or when `task.cancel()` is called on its handle. Cancellation is a *request*: the task runs to its next suspension point and unwinds there, running the `close()` of every `with` it is inside (D43 — this was specified before and is implemented now), and only then counts as finished, so its scope waits for the unwinding. A task blocked in a suspending call is unwound from the innermost call outwards (each suspending call is a task of its own in the bootstrap; the request follows the await chain down and the finishes come back up), so the deepest resource closes first. Leaving a `scope` or `gather` body early therefore cancels and joins its children as a cleanup, like a `with` close, and a body that always returns or throws is `Never`-typed. Cleanup code is shielded (D47): a suspension point inside it — the join of an abandoned scope — takes no cancellation. `withTimeout(ms, f)` in the prelude is `scope` + `async` + `race` over this: it throws `Timeout` after cancelling and joining `f`'s task, so nothing `f` opened is still open when the caller sees the error.
 - *(v0.28)* **Sendable functions.** A function type may be marked `sendable fun(A): R ...`; a value of it may cross a task boundary. A named function is sendable; a lambda is sendable exactly when every capture is a `val` whose type is Sendable (nothing it reaches can change under another task — Swift's `@Sendable` closure rule). The property is part of the closure's type, inferred from its captures at the lambda, so `val g = x => x + k` is a `sendable fun`; a sendable function is assignable to the plain function type, never the reverse, and a lambda checked against a `sendable fun` reports the offending capture. This is what lets the prelude's `mapConcurrent` take an ordinary-looking lambda and run it in pool tasks. *Rationale for a type flag rather than a call-site check only:* a handler stored in a struct and invoked from worker tasks (an HTTP router) must carry the promise in its type.
 
 **What structured concurrency buys here.** Because `scope` (D34) guarantees children cannot outlive their parent frame, immutable values captured from the enclosing frame are provably safe to share by reference with no copy. Go's unstructured `go` statement cannot establish this; Veles gets it free from D3.
@@ -589,6 +590,8 @@ race {
 ```
 
 `race` is itself the suspension point, so arms carry no `await`.
+
+*Addendum (v0.29).* Exactly one arm runs, so a smart cast made inside an arm (an assignment to a `var`) survives the race only when every arm makes it — the `if`/`else` join rule (D5). A race whose arms all return or throw is `Never`-typed, which is what lets `withTimeout` be written as `race { val r = await t => return try r; sleep(ms) => throw Timeout() }` inside a scope whose early exit cancels `t`.
 
 Named `race` rather than Go's `select` because the three constructs then share a vocabulary — each name says what it does with the set of children — instead of borrowing the third from an unrelated tradition. Recorded against it: `select` is what anyone arriving from Go will look for, and Go's `select` is typically driven in a loop to service channels repeatedly, which "race" slightly undersells.
 
@@ -764,6 +767,8 @@ Cost: every operation exists twice, so the collection area of the stdlib roughly
 
 *Amended (v0.28) — the same rule for functions written in Veles.* A higher-order function declares `f: fun(T): R throws E` with `E` one of its own type parameters and itself `throws E`; a lambda argument then has its error type *inferred* into `E` — a throwing lambda binds `E` to what it throws, a non-throwing one binds `E` to nothing, and an instance whose `E` is nothing is an ordinary non-throwing function (`throws Never` is erased at instantiation, and a `try` in the generic body on such a call is the identity). So `xs.mapConcurrent(x => try parse(x))` throws `E` exactly as the built-in `map` does, without the compiler knowing anything about `mapConcurrent`. Rust spells this `F: Fn(T) -> Result<R, E>`; Veles keeps the one error channel.
 
+*Addendum (v0.29) — a type parameter in an error union.* Such a function may add errors of its own: `withTimeout(ms, f: fun(): R throws E): R throws E | Timeout`. On instantiation the union is normalised — a member bound to `Never` vanishes, so a non-throwing lambda gives `throws Timeout` and a throwing one `throws IoError | Timeout` — and the erasure reaches one step further than a call: in an instance where `E` is `Never`, a value the template typed as `Result<R, E>` (an awaited `Task<Result<R, E>>`) is already the payload, and a `try` on it is the identity.
+
 ### D47 — Cleanup is implicitly non-cancellable
 
 D43 says `with` releases on cancellation; D20 says cancellation is a panic delivered at the next suspension point. Those combine badly: a `close()` that suspends — flushing a socket, say — would be cancelled immediately and the resource would leak. Kotlin hit this and added `NonCancellable`.
@@ -904,6 +909,29 @@ pub type Point = geo.Point
 Rules. Module level only; `pub` exports it, and a `pub` alias of a private type is allowed — it *is* the facade (Go, TS). Parameters take no bounds (state them where the alias is used). No unions: `error` names an error set, `sealed trait` a closed family of types, and `type` never spells `A | B`. Not recursive: `type Json = Map<string, Json>` is an error; a recursive type is a sealed trait or a struct (which also gives its cases names). Everything else sees through the alias: `impl`/`extend` on an alias follow the underlying type's ownership rule (D23), an alias of a struct constructs (`Point(x: 1.0, y: 2.0)`), calls statics (`Point.origin()`) and matches (`is Point`); a generic alias in value position takes its arguments (`Pair<i64>(...)`).
 
 Rejected: aliases in std for numbers (`int = i64`) — two spellings for one type is the import problem again; TS-style type-level computation (`keyof`, mapped and conditional types) — the Veles answer to "compute a type from a type" is an associated type on a trait (`Iterator.Item`).
+
+### D56 — Networking: non-blocking sockets under the task executor (v0.29)
+
+```vs
+with (listener = try net.listen(host: "", port: 8080)) {
+  scope {
+    loop {
+      val conn = try listener.accept()
+      async handle(conn)
+    }
+  }
+}
+```
+
+`std/net` is TCP: `listen`/`connect`, a `Listener` with `accept()` and `port()`, a `Conn` with `read`, `readExact`, `readLine`, `write`, `writeText`, `shutdownWrite`, `peer()`; both are `Closeable` and `Sendable`, and every failing call throws `IoError` with the address in `path`. Every call that has to wait is a `suspends` function, and a function that calls one becomes one — the waiting is in the types, not in a callback or a colour of its own.
+
+**How.** Sockets are non-blocking. A call that would block parks the task on the descriptor (`await ioWait(fd, write)`, a compiler intrinsic that exists only inside the standard library) and returns to the executor, which polls every parked descriptor together with its timers — `poll` on POSIX, `WSAPoll` on Windows — and resumes the task when the socket is ready; the call is then retried. Nothing blocks a thread, so one thread holds any number of idle connections, and a task blocked on a socket is cancelled like one blocked on a timer (D34 v0.29: it unwinds, its `with` closes the connection). The design is Go's netpoller and Node's event loop with the suspension explicit; it stays valid when the executor gains threads (D35), since the parked task is just a wait-list entry.
+
+**The `Conn`.** A connection is a handle plus a read-ahead buffer (`readLine` needs one). The buffer sits behind a `Mutex` so that `Conn` is Sendable — handing a connection to `async handle(conn)` or to `withTimeout(ms, () => try conn.readLine())` is the first thing a server does — with every access a short non-suspending section; the socket calls happen outside it. Two tasks reading one connection interleave bytes, as they do everywhere; the type system rules out the data race, not the protocol error.
+
+**Why not threads and blocking calls.** A blocking `accept`/`recv` under the single-threaded executor would stall every other task; a thread per connection is the model D2/D35 exist to avoid. The intrinsic is deliberately not user-facing: a program wanting another kind of descriptor wait (a pipe, a signal) asks for a standard-library binding, which keeps every wait the executor knows about in one place.
+
+Not in this decision: TLS (a binding to a system library, later), UDP, name resolution beyond `getaddrinfo` at connect time, and an HTTP layer — the next proving program, built on this in Veles.
 
 ---
 
