@@ -662,3 +662,54 @@ R10. DONE (2026-09-19, user): constructor puns — `Hashed(file, size: n)` means
     struct construction was allowed by bindArgs before and used nowhere — now refused. Spec D28
     addendum; docs 05, cheatsheet; std/examples/docs rewritten with --fix (generic prelude
     bodies by sed, as always). Functions keep positional-then-named; the pun is ctor-only.
+P11. DONE (2026-09-19; was PROPOSED): concurrency helpers in the prelude — see R11 below for what
+    the language needed first.
+    `xs.mapConcurrent(f, workers: n): List<R>` (eager, input order, at most n calls of f in
+    flight, written in Veles over scope + two channels) and `forEachConcurrent`; a throwing f
+    follows D46 (whole call throws, stops at the first error). Channels stay for streams,
+    per-worker state and pipelines; docs 12 shows the helper, then the machine it is made of.
+    Also: results channels should carry Result<T, E> rather than sentinels; the counted drain
+    exists because multiple producers cannot close a channel (docs line or Channel.closeAfter(n)).
+P12. PROPOSED (2026-09-19, user asked for the full use-case list before implementing): type
+    aliases. `type Name<T> = Type` at module level, `pub` allowed. Use cases: (1) naming
+    structural types — tuples, nested generics, function types (`type Handler =
+    fun(Request): Response throws HttpError`, needed by the HTTP server); (2) shortening a
+    qualified name after R9 (`type Point = geo.Point`; ctor, statics, `is` must work);
+    (3) generic aliases without bounds on the alias params; (4) transparent, never a new type
+    (one-field structs stay the newtype); (5) never a union — `error Set = A | B` keeps that;
+    (6) same keyword as associated `type Item = T`; pub alias of a private type is an error;
+    (7) module level only; (8) impl/extend on an alias follow the underlying type's ownership
+    rule; (9) cycle = error (reuse the error-set `resolving` guard); (10) DISPLAY: diagnostics
+    and hover show the alias name where the source used it — same mechanism fixes #15 (error
+    sets flattened in hover); the one non-trivial part; (11) value printing unaffected;
+    (12) keep `error` and `type` as separate keywords.
+R11. DONE (2026-09-19): `mapConcurrent` / `forEachConcurrent` in std/prelude/concurrent.vs (the
+    worker pool written once: indexes over a jobs channel, `Indexed<R>` results, slots by index,
+    `results.closeAfter(n)`), `Channel.closeAfter(n)` (runtime `remaining` counter), and the
+    language pieces the helper forced — each a real gap the HTTP server would have hit:
+    - SENDABLE FUNCTIONS (D35 v0.28): `sendable fun(A): R` type flag; a lambda's type is
+      sendable iff every capture is a `val` of a Sendable type (named functions always); a
+      sendable fun coerces to the plain type, never the reverse; the error names the capture.
+      Syntax `sendable fun` is a contextual keyword in type position — revisit the spelling if
+      disliked (alternatives were `@sendable`, `fun(..) sendable`).
+    - ERROR-POLYMORPHIC HOFs (D46 v0.28): `f: fun(T): R throws E` with E a type param infers E
+      from the lambda (unify binds Effects.Error; Never when it does not throw); `throws Never`
+      is erased in Subst so the instance is a plain function; `try` on such a call in the
+      generic body is the identity (Var.ErrPoly / template Effects check, `errPolyCall`), and
+      `try` on a `Result<T, Never>` anywhere just unwraps. Without this no Veles-written HOF
+      could take a throwing lambda.
+    - FAIL-FAST REACHES THE BODY (D34): a child failure wakes the scope owner; the next
+      suspension point in the body checks the enclosing fail-fast scopes and jumps to the join
+      (codegen `bodyScopes` in suspendPoint; runtime `veles_task_leave_waits`). Before, a body
+      blocked on `recv` deadlocked when its producer task threw. Known gap: a stale channel
+      waiter entry can wake the owner early out of a later `sleep` (harmless spurious wake).
+    - dedup rewritten over `mapConcurrent`; the lambda returns `Result<Hashed, IoError>` as a
+      VALUE (no `try`) so one unreadable file is reported and skipped (user: "it should be a
+      result"). Docs 12: pool section, sendable functions, closeAfter in the channel example.
+    CANDIDATE HELPERS for later (not started; pick when a program needs them):
+      `withTimeout(ms, f)` (race sugar, returns R?), `retry(times, f)` / `retry(times, delay,
+      f)`, `Semaphore` (`semaphore(n).withPermit(f)`, the primitive under mapConcurrent for
+      code that is not a list), `awaitAll(tasks)` for a List<Task<T>>, `Channel.forEach(f)` /
+      `Channel.toList()` drains, a `Ticker`/`interval(ms)` channel, `filterConcurrent`,
+      `firstConcurrent(f)` (race over elements), and pipeline stages
+      (`ch.mapConcurrent(f, workers)` channel→channel) once the HTTP server shows the shape.

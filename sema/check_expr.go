@@ -107,6 +107,16 @@ func (f *fnCtx) convertAt(x Expr, want types.Type, span source.Span) Expr {
 		if hp, ok := have.(*types.Pointer); ok && w.Raw && !hp.Raw && types.Identical(hp.Elem, w.Elem) && f.unsafe > 0 {
 			return &Cast{exprBase{want}, x}
 		}
+	case *types.Func:
+		// a sendable function is also an ordinary one (D35): same value,
+		// viewed through the plain type
+		if h, ok := have.(*types.Func); ok && h.Sendable && !w.Sendable {
+			plain := *h
+			plain.Sendable = false
+			if types.Identical(&plain, w) {
+				return &Cast{exprBase{want}, x}
+			}
+		}
 	case *types.ErrorUnion:
 		if types.UnionIndex(w, have) >= 0 {
 			return &ErrorConvert{exprBase{want}, x, have}
@@ -149,6 +159,14 @@ func (f *fnCtx) assignableTo(have, want types.Type) bool {
 			}
 		}
 		return true
+	case *types.Func:
+		// a sendable function is also an ordinary one (D35); the reverse
+		// would let a closure over mutable state cross a task boundary
+		if h, ok := have.(*types.Func); ok && h.Sendable && !w.Sendable {
+			plain := *h
+			plain.Sendable = false
+			return types.Identical(&plain, w)
+		}
 	}
 	return false
 }
@@ -1287,6 +1305,12 @@ func (f *fnCtx) castExpr(e *ast.CastExpr) Expr {
 
 func (f *fnCtx) tryExpr(e *ast.TryExpr) Expr {
 	x := f.checkExpr(e.X, nil)
+	if errPolyCall(x) {
+		// generic code calling something declared `throws E`: in this
+		// instance E is Never, the call is plain (its value may itself be a
+		// Result the caller asked for), and `try` is the identity
+		return x
+	}
 	rs, ok := x.Type().(*types.Sealed)
 	if !ok || !isResultType(rs) {
 		if !types.IsInvalid(x.Type()) {
@@ -1295,6 +1319,14 @@ func (f *fnCtx) tryExpr(e *ast.TryExpr) Expr {
 		return bad()
 	}
 	okT, errT := rs.TypeArgs[0], rs.TypeArgs[1]
+	if types.IsNever(errT) {
+		// nothing can be propagated: `try` just unwraps (a `throws E` callee
+		// whose E is Never in this instance still returns a Result)
+		tmp := f.newTemp(rs)
+		okV := rs.Variants[0]
+		var payload Expr = &FieldGet{exprBase{okT}, &VariantCast{exprBase{okV}, &VarRef{exprBase{rs}, tmp}, okV}, 0, okV.Fields[0].Name}
+		return &Let{exprBase{okT}, tmp, x, payload}
+	}
 	if !f.throws {
 		f.errorf(e.Pos, "'try' propagates an error, but the enclosing function is not declared 'throws'; add 'throws' or handle the Result with 'when' (D4)")
 		return &ResultValue{exprBase{okT}, x, false}
@@ -1750,4 +1782,24 @@ func (f *fnCtx) indexValue(e ast.Expr) Expr {
 		return x
 	}
 	return &Cast{exprBase{types.TI64}, x}
+}
+
+// errPolyCall reports whether x calls something whose declaration says
+// `throws E` for a type parameter E, in an instance where that E is Never
+// and the call therefore does not throw: a `fun(..) throws E` parameter
+// (Var.ErrPoly), or a generic function with such a signature.
+func errPolyCall(x Expr) bool {
+	switch c := x.(type) {
+	case *CallIndirect:
+		v, ok := c.Fn.(*VarRef)
+		ft, isFn := v.Var.Type.(*types.Func)
+		return ok && v.Var.ErrPoly && isFn && !ft.Effects.Throws
+	case *Call:
+		if c.Fn.Sig.Effects.Throws || c.Fn.tmpl == nil || c.Fn.tmpl.Sig == nil {
+			return false
+		}
+		decl := c.Fn.tmpl.Sig.Effects
+		return decl.Throws && decl.Error != nil && types.ContainsTypeParam(decl.Error)
+	}
+	return false
 }

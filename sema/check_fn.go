@@ -208,6 +208,9 @@ func (c *Checker) checkBody(fn *Func) {
 	}
 	for i, p := range t.Decl.Params {
 		v := f.newVar(p.Name.Name, fn.Sig.Params[i].Type, false, p.Name.Pos)
+		if ft, ok := t.Sig.Params[i].Type.(*types.Func); ok && ft.Effects.Throws && ft.Effects.Error != nil && types.ContainsTypeParam(ft.Effects.Error) {
+			v.ErrPoly = true // `try f(x)` stays valid in the instance where E is Never
+		}
 		fn.Params = append(fn.Params, v)
 		f.declareLocal(p.Name.Name, v, p.Name.Pos)
 	}

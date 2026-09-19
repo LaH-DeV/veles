@@ -37,7 +37,7 @@ val (a, b) = (1, "one")         // tuple destructuring; (a, b) = (b, a) assigns 
 | nullable | `T?` (`(*T)?` for a nullable pointer) |
 | pointer | `*T` (GC-managed), `*raw T` (unsafe, D50) |
 | tuple | `(A, B)`, unit is `()` |
-| function | `fun(A, B): R`, with `suspends` / `throws E` |
+| function | `fun(A, B): R`, with `suspends` / `throws E`; `sendable fun(...)` may cross tasks |
 | collections | `List<T> MutableList<T> Map<K,V> MutableMap<K,V> Set<T> MutableSet<T>` |
 | ranges | `Range<T>` from `a..b` (inclusive) or `a..<b` |
 | concurrency | `Channel<T>`, `Task<T>`, `Mutex<T>`, `Atomic<T>` |
@@ -187,7 +187,9 @@ scope {                          // every task started inside finishes here
 }
 val (a, b) = gather { async f(); async g() }   // (Result<A, E|Panic>, Result<B, ...>)
 val winner = race { val m = ch.recv() => ...; sleep(100) => "timeout"; val v = t => ... }
-val ch = Channel<i64>(capacity: 8); ch.send(1); await ch.recv(); ch.close()
+val ch = Channel<i64>(capacity: 8); ch.send(1); await ch.recv(); ch.close(); ch.closeAfter(n)  // closes itself after n sends
+xs.mapConcurrent(f, workers: 4); xs.forEachConcurrent(f, workers: 4)   // the worker pool, results in order; f may suspend/throw
+fun run(f: sendable fun(i64): i64)   // a function that may cross a task boundary: named, or a lambda over vals of Sendable types
 await sleep(ms)
 val m = mutex(state); m.withLock(s => s.n += 1); m.get(); m.set(v)
 val a = atomic(0); a.load(); a.store(1); a.swap(2)

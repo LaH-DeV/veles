@@ -36,7 +36,9 @@ declare i64 @veles_scope_failed_index(ptr)
 declare ptr @veles_chan_new(ptr, i64)
 declare i64 @veles_chan_send(ptr, ptr, ptr)
 declare i64 @veles_chan_recv(ptr, ptr, ptr)
+declare void @veles_task_leave_waits(ptr)
 declare void @veles_chan_close(ptr)
+declare void @veles_chan_close_after(ptr, i64)
 declare i64 @veles_chan_len(ptr)
 declare i64 @veles_task_sleep(ptr, i64)
 declare ptr @veles_race_new(ptr)
@@ -87,6 +89,14 @@ func (g *gen) coroEpilogue() {
 	g.emitTerm("ret ptr %s", c.hdl)
 }
 
+// bodyScope is an enclosing fail-fast scope as seen from a suspension
+// point in its body: where its scope pointer lives, the label of its join
+// loop, and the cleanup depth at its start.
+type bodyScope struct {
+	slot, wait string
+	cleanups   int
+}
+
 // suspendPoint yields to the executor and, on resume, honours cancellation.
 func (g *gen) suspendPoint() {
 	c := g.coro
@@ -109,6 +119,31 @@ func (g *gen) suspendPoint() {
 	g.emit("call void @veles_task_finish_cancelled(ptr %s)", c.task)
 	g.emitTerm("br label %%%s", c.finalL)
 	g.placeLabel(cont)
+	// fail-fast (D34): a child of an enclosing scope has failed, so the body
+	// stops here — whatever it was waiting for will not come — and the
+	// innermost scope joins its children and re-raises
+	if n := len(g.bodyScopes); n > 0 {
+		abort := g.newLabel("scope.abort")
+		for _, bs := range g.bodyScopes {
+			scv := g.newTmp()
+			g.emit("%s = load ptr, ptr %s", scv, bs.slot)
+			ft := g.newTmp()
+			g.emit("%s = call ptr @veles_scope_failed(ptr %s)", ft, scv)
+			fb := g.newTmp()
+			g.emit("%s = icmp ne ptr %s, null", fb, ft)
+			next := g.newLabel("scope.ok")
+			g.emitTerm("br i1 %s, label %%%s, label %%%s", fb, abort, next)
+			g.placeLabel(next)
+		}
+		go_on := g.newLabel("cont")
+		g.emitTerm("br label %%%s", go_on)
+		g.placeLabel(abort)
+		inner := g.bodyScopes[n-1]
+		g.emit("call void @veles_task_leave_waits(ptr %s)", c.task)
+		g.runCleanups(inner.cleanups)
+		g.emitTerm("br label %%%s", inner.wait)
+		g.placeLabel(go_on)
+	}
 }
 
 // coroReturn finishes the task with the (already Result-wrapped) value.
@@ -268,12 +303,18 @@ func (g *gen) scopeBlock(e *sema.ScopeBlock) string {
 	slot := g.alloca("ptr")
 	g.emit("store ptr %s, ptr %s", sc, slot)
 	g.scopeSlots[e] = slot
+	wait, done, susp := g.newLabel("scope.wait"), g.newLabel("scope.done"), g.newLabel("scope.susp")
+	if !e.Gather {
+		g.bodyScopes = append(g.bodyScopes, bodyScope{slot: slot, wait: wait, cleanups: len(g.cleanups)})
+	}
 	g.block(e.Body)
+	if !e.Gather {
+		g.bodyScopes = g.bodyScopes[:len(g.bodyScopes)-1]
+	}
 	if g.term {
 		return "zeroinitializer"
 	}
 	// wait for every child
-	wait, done, susp := g.newLabel("scope.wait"), g.newLabel("scope.done"), g.newLabel("scope.susp")
 	g.emitTerm("br label %%%s", wait)
 	g.placeLabel(wait)
 	scv := g.newTmp()
@@ -554,6 +595,11 @@ func (g *gen) taskBuiltin(e *sema.Builtin) (string, bool) {
 	case "chan.close":
 		ch := g.expr(e.Args[0])
 		g.emit("call void @veles_chan_close(ptr %s)", ch)
+		return "zeroinitializer", true
+	case "chan.closeAfter":
+		ch := g.expr(e.Args[0])
+		n := g.expr(e.Args[1])
+		g.emit("call void @veles_chan_close_after(ptr %s, i64 %s)", ch, n)
 		return "zeroinitializer", true
 	case "chan.len":
 		ch := g.expr(e.Args[0])

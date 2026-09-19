@@ -30,6 +30,7 @@ func (f *fnCtx) localVar(v *Var) *Var {
 	outer.AddrTaken = true
 	inner := f.newVar(outer.Name, outer.Type, outer.Mutable, outer.Span)
 	inner.Captured = true
+	inner.ErrPoly = outer.ErrPoly
 	inner.CapIndex = len(f.fn.CapVars)
 	inner.Outer = outer
 	f.fn.CapVars = append(f.fn.CapVars, inner)
@@ -144,10 +145,12 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 	} else if expected != nil && expected.Ret != nil && !types.ContainsTypeParam(expected.Ret) {
 		l.retType = expected.Ret
 	}
-	if expected != nil && expected.Effects.Throws {
+	if expected != nil && expected.Effects.Throws && !types.ContainsTypeParam(expected.Effects.Error) {
 		l.throws = true
 		l.errType = expected.Effects.Error
 	} else {
+		// no expected error, or `throws E` with E still to be inferred from
+		// this very lambda (a generic higher-order function): infer it
 		l.throws = true // inferred: any error raised in the body makes it throw
 		l.inferThrows = true
 	}
@@ -211,6 +214,25 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 		fn.Sig.Effects = types.Effects{Throws: true, Error: l.errType}
 	}
 	fn.Sig.Effects.Suspends = suspends
+	// D35: a closure may cross a task boundary when every capture is a
+	// `val` of a Sendable type — nothing it reaches can change under
+	// another task. That is a fact about this closure, so it is part of its
+	// type; where a `sendable fun` is expected, the offending capture is named.
+	fn.Sig.Sendable = true
+	for _, v := range l.captureList {
+		if v.Mutable || !sendable(v.Type) {
+			fn.Sig.Sendable = false
+			if expected != nil && expected.Sendable {
+				why := "a 'var'"
+				if !v.Mutable {
+					why = "of type '" + v.Type.String() + "', which is not Sendable"
+				}
+				f.errorf(e.Pos, "this lambda cannot cross a task boundary: it captures '%s', %s (D35: a sendable function may capture only vals of Sendable types)", v.Name, why)
+				fn.Sig.Sendable = true // reported once; no second mismatch error
+			}
+			break
+		}
+	}
 	fn.checked = true
 	f.c.funcs = append(f.c.funcs, fn)
 	return &Closure{exprBase{fn.Sig}, fn, l.captureList}

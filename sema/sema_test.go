@@ -1775,3 +1775,59 @@ fun main() { val file = "a"; io.println("${H(file: file)}") }`)
 		t.Errorf("expected the pun warning with a fix, got:\n%s", diags.Render())
 	}
 }
+
+// D35 (v0.28): a function value is sendable when it is a named function or
+// a lambda over vals of Sendable types; `sendable fun` parameters demand
+// it, plain function parameters accept it.
+func TestSendableFunctions(t *testing.T) {
+	expectClean(t, prelude+`
+fun run(f: sendable fun(i64): i64, x: i64): i64 = f(x)
+fun plain(f: fun(i64): i64, x: i64): i64 = f(x)
+fun twice(n: i64): i64 = n * 2
+fun main() {
+  val k = 3
+  val g = (n: i64) => n + k
+  scope {
+    val a = async run(n => n * k, 1)
+    val b = async run(twice, 2)
+    val c = async run(g, 3)
+    io.println("${await a} ${await b} ${await c} ${plain(g, 4)}")
+  }
+}`)
+	expectError(t, prelude+`
+fun run(f: sendable fun(i64): i64, x: i64): i64 = f(x)
+fun main() { var m = 1; io.println("${run(n => n * m, 1)}") }`, "captures 'm', a 'var'")
+	expectError(t, prelude+`
+fun run(f: sendable fun(i64): i64, x: i64): i64 = f(x)
+fun main() { val xs: MutableList<i64> = []; io.println("${run(n => { xs.push(n); n }, 1)}") }`, "captures 'xs', of type 'MutableList<i64>'")
+	expectError(t, prelude+`
+fun run(f: sendable fun(i64): i64, x: i64): i64 = f(x)
+fun main() { val h: fun(i64): i64 = n => n; io.println("${run(h, 1)}") }`, "expected 'sendable fun(i64): i64', found 'fun(i64): i64'")
+}
+
+// D46 (v0.28): a generic `f: fun(T): R throws E` infers E from the lambda;
+// a non-throwing lambda makes the instance an ordinary function.
+func TestErrorPolymorphicHigherOrder(t *testing.T) {
+	expectClean(t, prelude+`
+error Bad { n: i64 }
+fun <T, R, E> apply(x: T, f: fun(T): R throws E): R throws E = try f(x)
+fun main() {
+  val plain = apply(3, (n: i64) => n + 1)
+  when (val r = apply(7, (n: i64) => if (n > 5) throw Bad(n) else n)) {
+    is Ok  => io.println("ok $r $plain")
+    is Err => io.println("err ${r.n}")
+  }
+  val xs = [1, 2]
+  val doubled = xs.mapConcurrent(n => n * 2)
+  when (val r = xs.mapConcurrent(n => if (n > 1) throw Bad(n) else n)) {
+    is Ok  => io.println("$doubled $r")
+    is Err => io.println("${r.n}")
+  }
+}`)
+	// a throwing lambda where the instance is used without `try`: the
+	// caller sees the Result like any other fallible call
+	expectError(t, prelude+`
+error Bad { n: i64 }
+fun <T, R, E> apply(x: T, f: fun(T): R throws E): R throws E = try f(x)
+fun main() { val v: i64 = apply(1, (n: i64) => if (n > 0) throw Bad(n) else n); io.println("$v") }`, "type mismatch")
+}

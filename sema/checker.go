@@ -729,7 +729,7 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 		}
 		return tt
 	case *ast.FunType:
-		ft := &types.Func{Ret: c.resolveType(env, t.Ret)}
+		ft := &types.Func{Ret: c.resolveType(env, t.Ret), Sendable: t.Sendable}
 		for _, p := range t.Params {
 			ft.Params = append(ft.Params, types.Param{Type: c.resolveType(env, p)})
 		}
@@ -1580,6 +1580,18 @@ func unify(pattern, concrete types.Type, m map[*types.TypeParam]types.Type) bool
 		}
 		for i := range p.Params {
 			if !unify(p.Params[i].Type, cc.Params[i].Type, m) {
+				return false
+			}
+		}
+		if p.Effects.Throws && p.Effects.Error != nil && types.ContainsTypeParam(p.Effects.Error) {
+			// `throws E`: E is what the concrete function throws — nothing
+			// (Never) when it does not throw, which makes the instance an
+			// ordinary function (Subst drops `throws Never`)
+			var concreteErr types.Type = types.TNever
+			if cc.Effects.Throws && cc.Effects.Error != nil {
+				concreteErr = cc.Effects.Error
+			}
+			if !unify(p.Effects.Error, concreteErr, m) {
 				return false
 			}
 		}

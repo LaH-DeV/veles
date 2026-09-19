@@ -1,8 +1,9 @@
-// dedup: find duplicate files under a directory. A worker pool hashes the
-// files — one task per worker pulling paths from a channel and sending
-// (path, size, hash) back on another — while the main task walks the tree
-// and then groups the results by content. Nothing is deleted; the report
-// says what is duplicated and how much space it costs.
+// dedup: find duplicate files under a directory. The files are hashed by a
+// pool of tasks (`mapConcurrent`, at most --workers at a time), each result
+// a `Result<Hashed, IoError>` so one unreadable file is reported and
+// skipped rather than stopping the run; the main task then groups the
+// results by content. Nothing is deleted; the report says what is
+// duplicated and how much space it costs.
 //
 //   dedup <dir> [--workers N] [--min-size BYTES] [--verbose]
 use fs, io, os, path
@@ -33,23 +34,14 @@ fun fnv1a(bytes: List<u8>): u64 {
 }
 
 // ---------------------------------------------------------------------------
-// the pool
+// hashing one file; the pool is the prelude's mapConcurrent
 
-/// A worker: takes paths until the channel closes, hashes each, reports it.
-/// A file that cannot be read is reported with size -1 and skipped later,
-/// so one unreadable file does not stop the run.
-fun worker(id: i64, jobs: Channel<string>, results: Channel<Hashed>, verbose: bool) {
-  loop {
-    val file = await jobs.recv() ?: break
-    val bytes = fs.readBytes(file)
-    if (bytes is Err) {
-      io.println("worker $id: cannot read $file: ${bytes.detail}")
-      results.send(Hashed(file, size: -1, hash: 0))
-      continue
-    }
-    if (verbose) io.println("worker $id: ${bytes.len()} bytes ${path.base(file)}")
-    results.send(Hashed(file, size: bytes.len(), hash: fnv1a(bytes)))
-  }
+/// Reads and fingerprints one file. A file that cannot be read is an
+/// IoError; the caller decides that one bad file does not stop the run.
+fun hashFile(file: string, verbose: bool): Hashed throws IoError {
+  val bytes = try fs.readBytes(file)
+  if (verbose) io.println("hashed ${bytes.len()} bytes ${path.base(file)}")
+  Hashed(file, size: bytes.len(), hash: fnv1a(bytes))
 }
 
 /// Every regular file under `dir`, recursively, in a stable order.
@@ -104,19 +96,17 @@ fun run(args: List<string>) throws UsageError | IoError {
   val files: MutableList<string> = []
   try walk(opts.dir, files)
 
-  // hash everything: the workers run while the main task feeds the channel
-  val jobs = Channel<string>(capacity: 16)
-  val results = Channel<Hashed>(capacity: 16)
+  // hash everything, --workers files at a time; the lambda returns the
+  // Result itself (no `try`), so a failure is a value in the list
+  val verbose = opts.verbose
+  val outcomes = files.toList().mapConcurrent(file => hashFile(file, verbose), workers: opts.workers)
   val hashed: MutableList<Hashed> = []
-  scope {
-    loop (id in 1..opts.workers) {
-      async worker(id, jobs, results, opts.verbose)
+  loop (outcome in outcomes) {
+    if (outcome is Err) {
+      io.println("cannot read: ${outcome.message()}")
+      continue
     }
-    async feed(jobs, files.toList())
-    loop (_ in files) {
-      val h = await results.recv() ?: break
-      if (h.size >= 0) hashed.push(h)
-    }
+    hashed.push(outcome)
   }
 
   // group by (size, hash); a group of one is not a duplicate
@@ -144,14 +134,6 @@ fun run(args: List<string>) throws UsageError | IoError {
   }
   val total = hashed.fold(0, (acc, h) => acc + h.size)
   io.println("${plural(hashed.len(), "file")}, ${plural(total, "byte")}, ${plural(opts.workers, "worker")}: ${plural(dupes.len(), "duplicate group")}, ${plural(wasted, "byte")} recoverable")
-}
-
-/// Feeds the paths and closes the channel so the workers finish.
-fun feed(jobs: Channel<string>, files: List<string>) {
-  loop (f in files) {
-    jobs.send(f)
-  }
-  jobs.close()
 }
 
 fun main() {

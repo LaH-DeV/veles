@@ -69,6 +69,7 @@ typedef struct veles_chan {
     int64_t cap, len, head, elem;
     veles_desc *desc;
     int64_t closed;
+    int64_t remaining; /* closeAfter: sends left before the channel closes itself; -1 = never */
     veles_task *recv_waiters;
     veles_task *send_waiters;
 } veles_chan;
@@ -170,6 +171,7 @@ void veles_task_started(veles_task *t, void *hdl) {
 }
 
 static void scope_child_finished(veles_task *t);
+static void remove_timer(veles_task *t);
 
 /* called by the coroutine body before its final suspend */
 void veles_task_finish(veles_task *t, const void *result, int64_t size, int64_t failed) {
@@ -249,8 +251,19 @@ static void scope_child_finished(veles_task *t) {
         for (veles_task *c = s->children; c; c = c->sibling) {
             if (c != t) cancel_task(c);
         }
+        /* the owner may be blocked in the scope body (a recv that will now
+         * never complete): wake it so its next suspension point sees the
+         * failure and abandons the body */
+        wake(s->owner);
     }
     if (s->live <= 0) wake(s->owner);
+}
+
+/* a task abandoning a scope body forgets whatever it was waiting on; a
+   stale entry in a channel's waiter list only causes a harmless wake */
+void veles_task_leave_waits(veles_task *t) {
+    t->race = NULL;
+    remove_timer(t);
 }
 
 /* wait for every child: true when done, otherwise blocks the owner */
@@ -276,6 +289,7 @@ veles_chan *veles_chan_new(veles_desc *desc, int64_t cap) {
     c->elem = veles_desc_size(desc);
     if (cap < 1) cap = 1; /* rendezvous channels behave as capacity 1 in the single-threaded executor */
     c->cap = cap;
+    c->remaining = -1;
     c->buf = veles_gc_alloc(desc, c->elem * cap + 1);
     return c;
 }
@@ -356,11 +370,14 @@ static bool chan_hand_off(veles_chan *c, const void *item) {
     return false;
 }
 
+void veles_chan_close(veles_chan *c);
+
 /* send: true when delivered or buffered; false blocks the sender */
 int64_t veles_chan_send(veles_task *self, veles_chan *c, const void *item) {
     if (c->closed) veles_panic("send on a closed channel", 24);
     if (c->len < c->cap) {
         if (!chan_hand_off(c, item)) chan_push(c, item);
+        if (c->remaining > 0 && --c->remaining == 0) veles_chan_close(c);
         return 1;
     }
     push_waiter(&c->send_waiters, self);
@@ -405,6 +422,16 @@ void veles_chan_close(veles_chan *c) {
 
 int64_t veles_chan_len(veles_chan *c) {
     return c->len;
+}
+
+/* closeAfter(n): the channel closes itself once n more values have been sent,
+   so several producers can end it without coordinating. */
+void veles_chan_close_after(veles_chan *c, int64_t n) {
+    if (n <= 0) {
+        veles_chan_close(c);
+        return;
+    }
+    c->remaining = n;
 }
 
 /* ---- timers ------------------------------------------------------------------ */

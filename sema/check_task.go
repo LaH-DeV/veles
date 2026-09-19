@@ -79,6 +79,8 @@ func sendableIn(t types.Type, seen map[types.Type]bool) bool {
 		return true
 	case *types.TypeParam, *types.Assoc:
 		return true
+	case *types.Func:
+		return t.Sendable // a named function, or a closure over vals of Sendable types
 	}
 	return false
 }
@@ -148,6 +150,12 @@ func (f *fnCtx) channelMethod(recv Expr, ct *types.Channel, name string, e *ast.
 			return bad()
 		}
 		return &Builtin{exprBase{types.TUnit}, "chan.close", []Expr{recv}, span}
+	case "closeAfter":
+		if !need(1) {
+			return bad()
+		}
+		n := f.checkExprTo(e.Args[0].Value, types.TI64)
+		return &Builtin{exprBase{types.TUnit}, "chan.closeAfter", []Expr{recv, n}, span}
 	case "len":
 		if !need(0) {
 			return bad()

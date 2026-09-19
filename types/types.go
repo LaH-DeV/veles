@@ -197,11 +197,15 @@ type Param struct {
 	Variadic   bool // Type is the List<T> the trailing arguments are collected into
 }
 
-// Func is a function signature.
+// Func is a function signature. Sendable marks a value that may cross a
+// task boundary (D35): a named function, or a closure whose captures are
+// all `val`s of Sendable types; the flag is part of the type, and a
+// sendable function is assignable to a plain function type, not the reverse.
 type Func struct {
-	Params  []Param
-	Ret     Type
-	Effects Effects
+	Params   []Param
+	Ret      Type
+	Effects  Effects
+	Sendable bool
 }
 
 func (f *Func) String() string {
@@ -210,6 +214,9 @@ func (f *Func) String() string {
 		parts[i] = p.Type.String()
 	}
 	s := "fun(" + strings.Join(parts, ", ") + ")"
+	if f.Sendable {
+		s = "sendable " + s
+	}
 	if f.Ret != nil && !IsUnit(f.Ret) {
 		s += ": " + f.Ret.String()
 	}
@@ -463,7 +470,7 @@ func Identical(a, b Type) bool {
 				return false
 			}
 		}
-		if a.Effects.Suspends != b.Effects.Suspends || a.Effects.Throws != b.Effects.Throws {
+		if a.Effects.Suspends != b.Effects.Suspends || a.Effects.Throws != b.Effects.Throws || a.Sendable != b.Sendable {
 			return false
 		}
 		if a.Effects.Throws && !Identical(a.Effects.Error, b.Effects.Error) {
@@ -545,8 +552,13 @@ func (h *Hooks) Subst(t Type, m map[*TypeParam]Type) Type {
 	case *Task:
 		return &Task{Result: h.Subst(t.Result, m)}
 	case *Func:
-		out := &Func{Ret: h.Subst(t.Ret, m), Effects: t.Effects}
+		out := &Func{Ret: h.Subst(t.Ret, m), Effects: t.Effects, Sendable: t.Sendable}
 		out.Effects.Error = h.Subst(t.Effects.Error, m)
+		if out.Effects.Throws && out.Effects.Error != nil && IsNever(out.Effects.Error) {
+			// `throws E` with E bound to nothing: the function cannot fail,
+			// so the instance is an ordinary non-throwing function
+			out.Effects.Throws, out.Effects.Error = false, nil
+		}
 		for _, p := range t.Params {
 			out.Params = append(out.Params, Param{Name: p.Name, Type: h.Subst(p.Type, m), HasDefault: p.HasDefault, Variadic: p.Variadic})
 		}
@@ -688,6 +700,9 @@ func Key(t Type) string {
 			ps = append(ps, p.Type)
 		}
 		s := "fun(" + keys(ps) + "):" + Key(t.Ret)
+		if t.Sendable {
+			s = "sendable " + s
+		}
 		if t.Effects.Throws {
 			s += " throws " + Key(t.Effects.Error)
 		}

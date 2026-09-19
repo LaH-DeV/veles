@@ -1076,7 +1076,8 @@ func (f *fnCtx) callValue(fnv Expr, ft *types.Func, args []ast.Arg, span source.
 	return &CallIndirect{exprBase{rt}, fnv, vals}
 }
 
-// funcValue turns a named, non-generic function into a value.
+// funcValue turns a named, non-generic function into a value; it captures
+// nothing, so it is sendable (D35).
 func (f *fnCtx) funcValue(t *FuncTemplate, span source.Span) Expr {
 	f.c.resolveSignature(t)
 	if len(t.TypeParams) > 0 {
@@ -1092,7 +1093,9 @@ func (f *fnCtx) funcValue(t *FuncTemplate, span source.Span) Expr {
 		return bad()
 	}
 	fn := f.c.instantiate(t, nil, nil, span)
-	return &FuncRef{exprBase{fn.Sig}, fn}
+	sig := *fn.Sig
+	sig.Sendable = true
+	return &FuncRef{exprBase{&sig}, fn}
 }
 
 // objectSafe reports whether a trait can be used as a trait object: no

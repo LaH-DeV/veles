@@ -211,7 +211,8 @@ sealed types and match with `when`.
 
 | | |
 |---|---|
-| `Channel<T>(capacity: n)` | bounded channel; `send(v)`, `await recv(): T?`, `close()`, `len()` |
+| `Channel<T>(capacity: n)` | bounded channel; `send(v)`, `await recv(): T?`, `close()`, `closeAfter(n)` (closes itself after `n` more sends), `len()` |
+| `xs.mapConcurrent(f, workers: 4)`, `xs.forEachConcurrent(f, workers: 4)` | `List<T: Sendable>`: the worker pool — at most `workers` calls of `f` in flight, results in order; `f` is a `sendable fun` that may suspend and throw (then the call throws) |
 | `await sleep(ms: i64)` | suspend for at least `ms` milliseconds |
 | `async f(...)`: `Task<T>` | start a task in the enclosing `scope`; `await task` |
 

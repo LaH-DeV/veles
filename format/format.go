@@ -980,6 +980,9 @@ func (p *printer) typ(t ast.Type) {
 		}
 		p.w(")")
 	case *ast.FunType:
+		if t.Sendable {
+			p.w("sendable ")
+		}
 		p.w("fun(")
 		p.typeList(t.Params)
 		p.w(")")

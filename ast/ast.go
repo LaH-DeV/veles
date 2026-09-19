@@ -70,12 +70,14 @@ type TupleType struct {
 	Pos   source.Span
 }
 
-// FunType is `fun(A, B): R suspends throws E` (D40).
+// FunType is `fun(A, B): R suspends throws E` (D40), or `sendable fun(...)`:
+// a function value that may cross a task boundary (D35).
 type FunType struct {
-	Params  []Type
-	Ret     Type // nil means unit
-	Effects Effects
-	Pos     source.Span
+	Params   []Type
+	Ret      Type // nil means unit
+	Effects  Effects
+	Sendable bool
+	Pos      source.Span
 }
 
 // SelfType is the `Self` keyword in a trait or impl.

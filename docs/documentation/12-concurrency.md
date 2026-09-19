@@ -171,12 +171,12 @@ fun main() {
   scope {
     async worker("a", jobs, results)
     async worker("b", jobs, results)
+    results.closeAfter(4)   // closes itself after the 4th send, whoever sends it
     loop (i in 1..4) { jobs.send(Job(id: i)) }
     jobs.close()
-    var done: MutableList<string> = []
-    loop (_ in 1..4) {
-      val r = await results.recv()
-      if (r != null) done.push(r)
+    val done: MutableList<string> = []
+    loop {
+      done.push(await results.recv() ?: break)
     }
     io.println("${done.len()} results, first ${done.sorted().first() ?: ""}")
   }
@@ -187,6 +187,62 @@ Output:
 ```text
 4 results, first a did 1
 ```
+
+That is the worker pool, spelled out: a bounded number of tasks pulling
+from one channel and reporting on another, inside a `scope` that joins
+them. Several producers cannot tell which of them sent the last value,
+so `results.closeAfter(4)` says it once and the consumer loops until
+`recv()` returns `null`. A channel of `Result<T, E>` carries failures as
+values when one bad item should not stop the others.
+
+## The same job on every element
+
+Most pools do one thing: apply a function to every element with a limit
+on how many run at once. The prelude has that written once:
+
+```veles
+use io
+
+error Rejected { n: i64 }
+
+fun fetch(n: i64): i64 {
+  await sleep(1)
+  n * n
+}
+
+fun check(n: i64): i64 throws Rejected = if (n > 3) throw Rejected(n) else n
+
+fun main() {
+  val ids = [1, 2, 3, 4, 5]
+  val offset = 100
+  io.println("${ids.mapConcurrent(n => fetch(n) + offset, workers: 2)}")
+  ids.forEachConcurrent(n => io.println("handled $n"), workers: 3)
+  when (val r = ids.mapConcurrent(n => try check(n))) {
+    is Ok  => io.println("all $r")
+    is Err => io.println("rejected ${r.n}")
+  }
+}
+```
+
+Output:
+```text
+[101, 104, 109, 116, 125]
+handled 1
+handled 2
+handled 3
+handled 4
+handled 5
+rejected 4
+```
+
+`mapConcurrent` keeps the input order and runs at most `workers` calls at
+a time; `forEachConcurrent` is the same for effects. The function may
+suspend, and it may throw: then the whole call throws, and the first
+error cancels the work still queued — the rule the eager adapters follow
+([chapter 10](10-closures-and-iterators.md)). Go-to-definition opens
+`std/prelude/concurrent.vs`, which is the channel machine above with
+names on it; write the machine yourself when the shape is different — a
+stream you do not want to collect first, a pipeline, per-worker state.
 
 ## First one wins: `race`
 
@@ -230,6 +286,23 @@ immutable collections, structs whose fields are Sendable, channels,
 `Mutex` and `Atomic`. A `MutableList` is not — two tasks could then
 mutate it — and the compiler refuses the `async`. This is the concrete
 reason `List` and `MutableList` are separate types.
+
+A function value is Sendable when it can be called from another task
+without reaching shared mutable state: a named function always, a lambda
+when everything it captures is a `val` of a Sendable type. The lambda's
+type says so — `sendable fun(i64): i64` — and a parameter that will hand
+the function to a task is declared with that type, as `mapConcurrent`
+declares its `f`. A sendable function is accepted wherever a plain one is;
+the reverse is refused, naming the capture that stops it:
+
+```veles
+// fragment
+fun run(f: sendable fun(i64): i64, x: i64): i64 = f(x)
+val k = 10
+var total = 0
+run(n => n * k, 1)          // ok: k is a val of a Sendable type
+run(n => { total += n; n }, 1)  // error: captures 'total', a 'var'
+```
 
 For state that genuinely must be shared and mutated, wrap it:
 

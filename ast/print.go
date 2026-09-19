@@ -343,6 +343,9 @@ func (p *printer) typ(t Type) {
 		}
 		p.w(")")
 	case *FunType:
+		if t.Sendable {
+			p.w("sendable ")
+		}
 		p.w("fun(")
 		for i, e := range t.Params {
 			if i > 0 {

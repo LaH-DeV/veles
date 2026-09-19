@@ -120,6 +120,7 @@ var builtinDocs = []BuiltinDoc{
 	{"Channel", "send", "(x: T) suspends", "Sends `x`, suspending while the channel is full."},
 	{"Channel", "recv", "(): T? suspends", "Receives the next value, suspending while empty; `null` once closed and drained."},
 	{"Channel", "close", "()", "Closes the channel: receivers drain what is buffered, then get `null`."},
+	{"Channel", "closeAfter", "(n: i64)", "Closes the channel by itself once `n` more values have been sent — how several producers end a channel without coordinating. A further send panics, as on any closed channel."},
 	{"Channel", "len", "(): i64", "Number of buffered values."},
 
 	{"Range", "iter", "(): Iterator<T>", "An iterator from `lo` to `hi`."},

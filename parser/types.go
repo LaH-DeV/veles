@@ -38,31 +38,19 @@ func (p *Parser) parseType() ast.Type {
 	case lexer.KwFun:
 		p.next()
 		ft := &ast.FunType{}
-		if _, ok := p.expect(lexer.LParen); ok {
-			for !p.at(lexer.RParen, lexer.EOF) {
-				ft.Params = append(ft.Params, p.parseType())
-				if !p.accept(lexer.Comma) {
-					break
-				}
-			}
-			p.expect(lexer.RParen)
-		}
-		if p.accept(lexer.Colon) {
-			ft.Ret = p.parseType()
-		}
-		ft.Effects = p.parseEffects()
-		ft.Pos = p.spanFrom(start)
+		p.parseFunType(ft, start)
 		t = ft
-	case lexer.KwSelfTy:
-		p.next()
-		t = &ast.SelfType{Pos: start}
-		// `Self.Item`: an associated type of the implementing type
-		for p.at(lexer.Dot) && p.peek(1).Kind == lexer.Ident {
-			p.next()
-			name, _ := p.expectIdent()
-			t = &ast.AssocType{Base: t, Name: name, Pos: p.spanFrom(start)}
-		}
 	case lexer.Ident:
+		if p.cur().Text == "sendable" && p.peek(1).Kind == lexer.KwFun {
+			// `sendable fun(A): R`: a function value that may cross a task
+			// boundary (D35); contextual keyword, like `extend`
+			p.next()
+			p.next()
+			ft := &ast.FunType{Sendable: true}
+			p.parseFunType(ft, start)
+			t = ft
+			break
+		}
 		nt := &ast.NamedType{}
 		for {
 			id, _ := p.expectIdent()
@@ -78,6 +66,15 @@ func (p *Parser) parseType() ast.Type {
 		}
 		nt.Pos = p.spanFrom(start)
 		t = nt
+	case lexer.KwSelfTy:
+		p.next()
+		t = &ast.SelfType{Pos: start}
+		// `Self.Item`: an associated type of the implementing type
+		for p.at(lexer.Dot) && p.peek(1).Kind == lexer.Ident {
+			p.next()
+			name, _ := p.expectIdent()
+			t = &ast.AssocType{Base: t, Name: name, Pos: p.spanFrom(start)}
+		}
 	default:
 		p.errorExpected("a type")
 		return &ast.NamedType{Path: []ast.Ident{{Name: "<error>", Pos: start}}, Pos: start}
@@ -168,4 +165,23 @@ func (p *Parser) dblColon() {
 		Message:  "'::' is not Veles; an associated type is written with a dot: 'Self.Item', 'I.Item'",
 		Fix:      &source.Fix{Title: "Replace '::' with '.'", Edits: []source.TextEdit{{Span: tok.Span, NewText: "."}}},
 	})
+}
+
+// parseFunType parses the rest of a function type after `fun`:
+// `(A, B): R suspends throws E`.
+func (p *Parser) parseFunType(ft *ast.FunType, start source.Span) {
+	if _, ok := p.expect(lexer.LParen); ok {
+		for !p.at(lexer.RParen, lexer.EOF) {
+			ft.Params = append(ft.Params, p.parseType())
+			if !p.accept(lexer.Comma) {
+				break
+			}
+		}
+		p.expect(lexer.RParen)
+	}
+	if p.accept(lexer.Colon) {
+		ft.Ret = p.parseType()
+	}
+	ft.Effects = p.parseEffects()
+	ft.Pos = p.spanFrom(start)
 }

@@ -45,6 +45,10 @@ type gen struct {
 	loopCleanupDepth map[*sema.Loop]int
 	coro             *coroState
 	scopeSlots       map[*sema.ScopeBlock]string
+	// bodyScopes are the fail-fast scopes whose body is being emitted,
+	// innermost last: a suspension point inside checks them and, when a
+	// child has failed, abandons the body for the scope's join (D34).
+	bodyScopes []bodyScope
 	launchSlots      map[*sema.Launch]string
 	ramps            map[*sema.Func]*sema.Func
 	envSlot          string // closure environment pointer slot

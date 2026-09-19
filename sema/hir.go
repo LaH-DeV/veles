@@ -83,6 +83,7 @@ type Var struct {
 	Mutable   bool
 	AddrTaken bool
 	Captured  bool // inside a closure: read through the environment
+	ErrPoly   bool // a parameter declared `fun(..) throws E` with E a type parameter of the enclosing function
 	CapIndex  int
 	Outer     *Var // the enclosing function's variable this stands for
 	IsGlobal  bool
