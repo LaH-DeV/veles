@@ -108,6 +108,66 @@ A lambda that calls a `throws` function infers `throws` itself, and one
 that suspends infers `suspends` — the same inference as for named
 functions (chapters 7 and 12).
 
+## What a function type says
+
+The full shape of a function type is
+
+```text
+[sendable] fun(A, B): R [suspends] [throws E]
+```
+
+Each word is a separate promise, and each answers a different question.
+
+- `fun(A, B): R` — what goes in and what comes out. Parameter names are
+  not part of the type (a lambda may call them anything).
+- `suspends` — *calling it may pause the task*: it awaits a channel, a
+  timer or another task somewhere inside, so it can only be called from
+  code that may itself suspend. A function without it is a plain call
+  that runs to completion. Chapter 12 explains what suspending means.
+- `throws E` — *calling it may fail with E*: the call yields a `Result`
+  and the caller writes `try` or handles it with `when` (chapter 7). A
+  function without it cannot fail.
+- `sendable` — *the value may be handed to another task*: it touches no
+  shared mutable state, so two tasks may call it at once. Chapter 12's
+  [What may cross a task boundary](12-concurrency.md#what-may-cross-a-task-boundary)
+  has the rule; in short, a named function always is, and a lambda is
+  when everything it captures is a `val` of a Sendable type.
+
+The first three describe what happens when the function is *called*; the
+last describes what the *value* is. That difference decides how they
+adapt.
+
+**A lambda written where a function is expected takes the expected
+effects.** `xs.mapConcurrent(n => fetch(n))` expects
+`sendable fun(T): R suspends throws E`; the lambda is compiled as a
+suspending function because the parameter says so, its `E` is whatever
+it throws (nothing, here), and it is checked to be sendable. You never
+write the words on a lambda.
+
+**A function value does not change its type.** A named function or a
+stored closure has fixed effects, and it fits a parameter only when they
+match: `needsSuspend(plain, 1)` is an error when `plain` does not suspend,
+because the two are compiled differently. The fix is the one the message
+suggests, a lambda that calls it: `needsSuspend(n => plain(n), 1)`. The one
+exception is `sendable`: it is a property the value either has or lacks,
+and a sendable function is accepted wherever a plain one is, never the
+reverse.
+
+**Generic code names the effects it passes through.** A function that
+takes a callback and may fail *because the callback does* is written
+
+```veles
+// fragment
+fun <T, R, E> apply(x: T, f: fun(T): R throws E): R throws E = try f(x)
+```
+
+`E` is inferred at each call from the lambda: `apply(2, n => n * 2)` is an
+ordinary non-throwing call, `apply(2, n => try parse(n))` throws what `parse`
+throws. Inside `apply`, `try f(x)` is correct either way. This is how
+`mapConcurrent` in the prelude gets the same behaviour as the built-in
+`map` without the compiler knowing about it, and it is what to write for
+any helper of your own that runs a user's function.
+
 ## `try` inside a collection operation
 
 A lambda may itself fail. Passed to an eager operation like `map`, that

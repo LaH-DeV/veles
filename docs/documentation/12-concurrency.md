@@ -287,13 +287,23 @@ immutable collections, structs whose fields are Sendable, channels,
 mutate it — and the compiler refuses the `async`. This is the concrete
 reason `List` and `MutableList` are separate types.
 
-A function value is Sendable when it can be called from another task
-without reaching shared mutable state: a named function always, a lambda
-when everything it captures is a `val` of a Sendable type. The lambda's
-type says so — `sendable fun(i64): i64` — and a parameter that will hand
-the function to a task is declared with that type, as `mapConcurrent`
-declares its `f`. A sendable function is accepted wherever a plain one is;
-the reverse is refused, naming the capture that stops it:
+### Functions that cross
+
+A function value is a special case worth its own rule, because a closure
+carries its captures with it. Handing `n => n * k` to another task hands
+over `k` as well; handing over `n => { total += n; n }` would hand over
+`total`, and two tasks could then write it at once — exactly the race D35
+exists to forbid.
+
+So a function value is **sendable** when calling it from another task can
+reach no shared mutable state: a named function always is (it captures
+nothing), and a lambda is when everything it captures is a `val` of a
+Sendable type — immutable, so shared by reference safely. The compiler
+works this out from the captures and records it in the lambda's type,
+`sendable fun(i64): i64`. A parameter that will hand the function to a
+task is declared with that type — that is what `mapConcurrent`'s `f` looks
+like — and a plain `fun(i64): i64` parameter, like `List.map`'s, accepts
+either. The reverse is refused with the capture named:
 
 ```veles
 // fragment
@@ -303,6 +313,24 @@ var total = 0
 run(n => n * k, 1)          // ok: k is a val of a Sendable type
 run(n => { total += n; n }, 1)  // error: captures 'total', a 'var'
 ```
+
+The rule composes with the rest: a struct holding a `sendable fun` field
+is itself Sendable (a router with its handlers can be given to worker
+tasks), and a lambda that needs mutable state shared across tasks
+captures a `Mutex` or an `Atomic`, which are Sendable by design.
+
+### `suspends`, from the caller's side
+
+`suspends` on a function type means calling it may pause the current
+task. Two consequences. It can only be called from a function that may
+itself suspend — which is inferred, so in practice the only place this
+bites is a lambda passed to a non-suspending parameter: `xs.map(x =>
+fetch(x))` is refused, because `map` runs its function in a plain loop
+and cannot pause; `xs.mapConcurrent(x => fetch(x))` is fine, because its
+parameter is declared `suspends`. And a suspending function is compiled
+as a state machine (see below), which is why a named non-suspending
+function does not fit a `suspends` parameter as a value: pass
+`x => f(x)` and the lambda is compiled the suspending way.
 
 For state that genuinely must be shared and mutated, wrap it:
 

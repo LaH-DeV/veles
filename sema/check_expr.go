@@ -64,6 +64,14 @@ func (f *fnCtx) coerce(x Expr, want types.Type, span source.Span) Expr {
 		f.errorf(span, "type mismatch: expected '%s', found '%s'; the value may be null — supply a fallback with '?:' or check for null first (D5)", want, have)
 		return x
 	}
+	if hf, ok := have.(*types.Func); ok {
+		if wf, ok := want.(*types.Func); ok && len(hf.Params) == len(wf.Params) && (hf.Effects != wf.Effects) {
+			// same shape, different effects: a function value keeps its own
+			// calling convention, a lambda written in place adapts (D40)
+			f.errorf(span, "type mismatch: expected '%s', found '%s'; a function value does not take on 'suspends' or 'throws' — pass a lambda that calls it, '(x) => f(x)'", want, have)
+			return x
+		}
+	}
 	if types.IsString(want) && (types.IsNumeric(have) || types.IsBool(have)) {
 		f.errorf(span, "type mismatch: expected '%s', found '%s'; build strings with interpolation: \"...${expr}...\"", want, have)
 		return x

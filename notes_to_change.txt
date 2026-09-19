@@ -713,3 +713,18 @@ R11. DONE (2026-09-19): `mapConcurrent` / `forEachConcurrent` in std/prelude/con
       `Channel.toList()` drains, a `Ticker`/`interval(ms)` channel, `filterConcurrent`,
       `firstConcurrent(f)` (race over elements), and pipeline stages
       (`ch.mapConcurrent(f, workers)` channel→channel) once the HTTP server shows the shape.
+P12 refinements (2026-09-19, from the user's questions; still to implement, separate commit):
+    - Aliases chain: `type Index = i64; type Hash = u64; type Key = (Index, Hash)` — yes; hover
+      shows `Key = (Index, Hash)` and the full expansion `(i64, u64)`; go-to-definition on an
+      alias name opens its `type` line (reuse Ref.Unfold from error sets).
+    - `pub type Handle = Internal` with a private Internal: ALLOWED (Go allows it, TS too) —
+      the alias is the facade; Internal's private members stay private. Drops list item (6b).
+    - No std aliases for numbers (`int = i64`, `float = f64`): two spellings for one type is the
+      import problem again; if a short canonical name is wanted it is a RENAME, not an alias.
+      Docs may use `type int = i64` as the "don't" example.
+    - Recursive aliases (`type Json = Map<string, Json>`): NOT now — needs coinductive type
+      identity/printing; the sealed-trait spelling (examples/json) names the cases and is what
+      to teach. Docs: a "when you would reach for X" section: bounds → bound at the use site
+      or a struct; unions → sealed trait / error set; recursion → sealed trait; keyof/mapped/
+      conditional types → associated types on traits (`Iterator.Item` is the Veles ReturnType).
+    - Document `type` strictly as "type alias" (a name, never a new type); newtype = struct.

@@ -66,6 +66,28 @@ a square of side 2.0
   `describe` for the same type, the call is an error rather than a guess
   (D26).
 
+### If you know interfaces from another language
+
+A trait is close to an interface, with these differences — each one a
+deliberate choice, so it is worth knowing which is which.
+
+| | TypeScript / Go interface | Kotlin interface | Veles trait |
+|---|---|---|---|
+| How a type gets it | structurally: having the methods is enough | `class C : I` at the class | `impl I for C` (or `impl I { }` in the body): explicit, by name |
+| For a type you did not write | Go: yes (structural); TS: yes | no (extension functions do not implement interfaces) | yes: `impl Display for i64` in your package |
+| Default method bodies | TS: no (abstract only); Go: no | yes | yes; an impl that replaces one writes `override` |
+| Static / constructor-like members | TS: no; Go: no | companion objects | `static fun` on the trait: `T.parse(s)` in generic code |
+| Associated types | generics on the interface | generics | `type Item` inside the trait (`Iterator.Item`) |
+| A closed set of implementors | discriminated union (TS) | `sealed interface` | `sealed trait` + variant structs (chapter 9) |
+| Used as a runtime value | yes | yes | yes, as a trait object `val s: Shape = ...` (boxed), or statically through a bound `<T: Shape>` |
+
+The structural-vs-explicit difference is the one that changes how you
+write code: in Veles a type never satisfies a trait by accident, and the
+compiler tells you *at the impl* what is missing, not at the first call.
+The price is one `impl` line per type; the return is that `Comparable`,
+`Display` and your own traits can carry meaning ("this type promises
+its `compareTo` is a total order") rather than only a method shape.
+
 ## Generic functions with bounds
 
 `<T: Shape>` says "any `T` that implements `Shape`", and inside the

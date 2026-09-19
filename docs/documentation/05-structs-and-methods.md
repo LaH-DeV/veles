@@ -88,6 +88,27 @@ Output:
 Counter(n: 1) Counter(n: 2)
 ```
 
+### If you know classes from another language
+
+A struct is where a Kotlin, TypeScript or Java programmer would reach
+for a class, so the differences are the things to unlearn:
+
+| | class (Kotlin / TS / Java) | Veles struct |
+|---|---|---|
+| Assignment | copies a *reference*; two names, one object | copies the *value*; two names, two structs (D7) |
+| Sharing one instance | the default | explicit: a pointer `*T` (`&x`, [Sharing with pointers](#sharing-with-pointers) below), or a reference type such as `MutableList` |
+| Inheritance | `class Dog : Animal` | none. Shared behaviour is a trait (chapter 8); a closed family is a `sealed trait` with variant structs (chapter 9) |
+| Constructor | written by hand | implicit, by field name: `Point(x: 1, y: 2)`; `static fun` for anything with logic |
+| Mutation | any method may assign fields | only a `mut fun`, only on a `var` binding (D22) |
+| Equality, printing, hashing | `equals`/`hashCode`/`toString` by hand (or `data class`) | structural by default; replaced with the operator traits |
+| Interfaces | `implements I` | `impl I for T` — see chapter 8 |
+| Private state | `private` fields | no `pub` on the field; the implicit constructor then works only inside the module |
+
+The value semantics are the one that surprises people: `var b = a` then
+`b.n = 5` leaves `a` alone. When you want the class behaviour — one
+object, many names — say so with a pointer or a `Mutex`, and the reader
+sees where sharing happens.
+
 ## Mutating methods
 
 A method that changes its receiver's fields must be declared `mut fun`
