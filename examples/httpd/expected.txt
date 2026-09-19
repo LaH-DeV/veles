@@ -1,0 +1,75 @@
+$ httpd fixtures/public --check
+> GET /api/echo?msg=hello+world
+< HTTP/1.1 200 OK [text/plain; charset=utf-8]
+< hello world
+> GET /api/notes
+< HTTP/1.1 200 OK [application/json]
+< []
+> POST /api/notes "buy milk"
+< HTTP/1.1 201 Created [application/json]
+< {"id": 1, "text": "buy milk"}
+> POST /api/notes "call \"mum\""
+< HTTP/1.1 201 Created [application/json]
+< {"id": 2, "text": "call \"mum\""}
+> POST /api/notes "   "
+< HTTP/1.1 400 Bad Request [text/plain; charset=utf-8]
+< a note needs some text
+> GET /api/notes
+< HTTP/1.1 200 OK [application/json]
+< [{"id": 1, "text": "buy milk"}, {"id": 2, "text": "call \"mum\""}]
+> GET /api/notes/2
+< HTTP/1.1 200 OK [application/json]
+< {"id": 2, "text": "call \"mum\""}
+> GET /api/notes/9
+< HTTP/1.1 404 Not Found [text/plain; charset=utf-8]
+< no note 9
+> GET /api/notes/x
+< HTTP/1.1 400 Bad Request [text/plain; charset=utf-8]
+< the id must be a number
+> DELETE /api/notes/1
+< HTTP/1.1 204 No Content [-]
+> DELETE /api/notes/1
+< HTTP/1.1 404 Not Found [text/plain; charset=utf-8]
+< no note 1
+> GET /api/notes
+< HTTP/1.1 200 OK [application/json]
+< [{"id": 2, "text": "call \"mum\""}]
+> PUT /api/notes "nope"
+< HTTP/1.1 405 Method Not Allowed [text/plain; charset=utf-8]
+< method not allowed
+> GET /static/
+< HTTP/1.1 200 OK [text/html; charset=utf-8]
+< <!doctype html>
+<html>
+<head><meta charset="utf-8"><title>httpd</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<h1>httpd</h1>
+<p>A Veles web server. Try the API:</p>
+<pre>curl -d "buy milk" http://127.0.0.1:8080/api/notes
+curl http://127.0.0.1:8080/api/notes</pre>
+</body>
+</html>
+
+> GET /static/style.css
+< HTTP/1.1 200 OK [text/css; charset=utf-8]
+< body { font-family: sans-serif; max-width: 40em; margin: 2em auto; }
+pre { background: #eee; padding: 1em; }
+
+> GET /static/../main.vs
+< HTTP/1.1 403 Forbidden [text/plain; charset=utf-8]
+< forbidden
+> GET /static/missing.txt
+< HTTP/1.1 404 Not Found [text/plain; charset=utf-8]
+< no such file: /missing.txt
+> GET /
+< HTTP/1.1 302 Found [-]
+> GET /nowhere
+< HTTP/1.1 404 Not Found [text/plain; charset=utf-8]
+< not found
+exit=0
+$ httpd nowhere --check
+httpd: 'nowhere' is not a directory (the files to serve)
+exit=2
+$ httpd --port
+httpd: --port needs a number
+exit=2

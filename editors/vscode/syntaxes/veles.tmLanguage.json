@@ -227,7 +227,7 @@
       "patterns": [
         { "name": "keyword.operator.arrow.veles", "match": "=>" },
         { "name": "keyword.operator.range.veles", "match": "\\.\\.<|\\.\\." },
-        { "name": "keyword.operator.nullable.veles", "match": "\\?:|\\?\\.|\\?" },
+        { "name": "keyword.operator.nullable.veles", "match": "\\?:|\\?!|\\?\\.|\\?" },
         { "name": "keyword.operator.wrapping.veles", "match": "[+\\-*]%" },
         { "name": "keyword.operator.comparison.veles", "match": "==|!=|<=|>=|<|>" },
         { "name": "keyword.operator.logical.veles", "match": "&&|\\|\\||!" },

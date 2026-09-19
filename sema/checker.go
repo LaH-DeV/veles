@@ -1704,6 +1704,47 @@ func unify(pattern, concrete types.Type, m map[*types.TypeParam]types.Type) bool
 			}
 		}
 		return true
+	case *types.ErrorUnion:
+		// `throws E | Fail` against what a function actually throws: the
+		// concrete members named in the pattern are accounted for, E is
+		// bound to the rest (Never when nothing is left), so a handler that
+		// throws `IoError | Fail` gives E = IoError and one that throws
+		// only `Fail` gives E = Never
+		var param *types.TypeParam
+		var fixed []types.Type
+		for _, mem := range p.Members {
+			if tp, ok := mem.(*types.TypeParam); ok {
+				if param != nil {
+					return types.Identical(pattern, concrete)
+				}
+				param = tp
+			} else {
+				fixed = append(fixed, mem)
+			}
+		}
+		if param == nil {
+			return types.Identical(pattern, concrete)
+		}
+		var rest []types.Type
+		for _, cm := range types.UnionMembers(concrete) {
+			if types.IsNever(cm) {
+				continue
+			}
+			covered := false
+			for _, fm := range fixed {
+				if types.Identical(fm, cm) {
+					covered = true
+				}
+			}
+			if !covered {
+				rest = append(rest, cm)
+			}
+		}
+		var restT types.Type = types.TNever
+		if len(rest) > 0 {
+			restT = types.MakeErrorUnion(rest...)
+		}
+		return unify(param, restT, m)
 	case *types.Func:
 		cc, ok := concrete.(*types.Func)
 		if !ok || len(cc.Params) != len(p.Params) {

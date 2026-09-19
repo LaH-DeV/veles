@@ -145,7 +145,8 @@ func (p *Parser) parseStmt() ast.Stmt {
 		return p.parseLoop(start)
 
 	case lexer.KwWith:
-		return p.parseWith()
+		w := p.parseWith()
+		return &ast.ExprStmt{X: w}
 
 	case lexer.KwScope:
 		p.next()
@@ -245,10 +246,10 @@ func (p *Parser) looksLikeForIn() bool {
 	}
 }
 
-func (p *Parser) parseWith() ast.Stmt {
+func (p *Parser) parseWith() *ast.WithExpr {
 	start := p.span()
 	p.next() // with
-	s := &ast.WithStmt{}
+	s := &ast.WithExpr{}
 	if _, ok := p.expect(lexer.LParen); ok {
 		for !p.at(lexer.RParen, lexer.EOF) {
 			name, ok := p.expectIdent()

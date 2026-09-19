@@ -817,3 +817,42 @@ R15. DONE (2026-09-19, "go towards the HTTP server"): std/net + the I/O reactor,
     when). Then: R4 the HTTP server itself (request parsing over readLine/readExact, a
     Handler = sendable fun(Request): Response type alias, a router, static files, keep-alive
     with withTimeout on the idle read).
+R16. DONE (2026-09-19, the HTTP server; decisions by the user). std/http + examples/httpd
+    (static files + JSON notes API; `httpd public --port 8080` tested from curl: keep-alive
+    reuse, 400/404/405/500, a panicking route leaves the server up; `--check` plays a scripted
+    in-process client for the examples suite). Docs chapter 17, stdlib ref, cheatsheet, D56.
+    Compiler pieces the server needed: unify(ErrorUnion with one type param, concrete) binds E
+    to the members beyond the fixed ones (sema/checker.go); a lambda checked against
+    `throws E | Fail` gets Fail added to its inferred union (check_lambda.go) so the instance
+    signature matches exactly; `indexOfFirst` in the prelude.
+    FOUND AND FIXED on the way: a panic inside a SUSPENDING CALLEE was silently swallowed — the
+    awaiter read a zeroed result (`awaitTask` never checked `veles_task_panicked`; now it
+    re-raises via veles_task_repanic, so a panic unwinds call by call to the scope/gather).
+    OPEN (small): `try req.text().trim()` still reads as `try (req.text().trim())` and needs
+    `(try req.text()).trim()`; consider whether `try` should distribute when the method is not
+    on Result but on its Ok type. `http.files` returns the throwing form so `app.get` takes it;
+    a plain Handler value cannot be passed where `throws E | Fail` is expected (no adapter
+    thunks for function-value width subtyping) — use `app.add(method, pattern, handler)`.
+    Details of the steps:
+    - HANDLER ERRORS: option A ("erase at registration") + B's helpers. Stored handler type
+      is `sendable fun(Request): Response suspends` (no throws); `app.get(path, h)` is generic
+      over what h throws (`throws E | Fail`); Fail(status, text) → that status, any other
+      error → 500 + log line. Option C (an open `Error` type) rejected again (D45).
+    - SYNTAX (user found `try http.orFail(x, 400)` Go-ugly): `x ?! e` OR-FAIL operator (spec
+      D30 addendum): T? or Result → Result failing with e; `try x ?! e` parses as `try (x ?! e)`
+      (parser KwTry loop; formatter parenthesises `(try x) ?! e`). `??` rejected (null-coalescing
+      elsewhere). Prelude `Result.mapError(f)`. `with` is now an EXPRESSION (ast.WithExpr,
+      sema withExpr: value carried out through a temp declared before the resources open).
+    - PANICS: P1 = per-request `gather` isolation inside http.serve (no language change; a
+      panic in a handler → 500 + log, connection stays up). P2 DONE = `with` cleanups (and
+      scope child cancellation) run on PANIC: per-task dynamic cleanup stack in the runtime
+      (`veles_cleanup_push/pop`, run by veles_task_panic before the longjmp, innermost first;
+      a panicking close continues with the first message); codegen pushes a `with.close.N`
+      thunk per `with` and `scope.cancel.thunk` per scope body, pops on every emitted exit
+      (runCleanups pops before each close). Docs 13 + spec D49 addendum. P3 (a `supervise`
+      scope, Erlang/Kotlin SupervisorScope) noted as a POSSIBILITY only; not built.
+    - Scope children are UNLINKED when they finish (a server's accept loop launched forever
+      and the list kept every connection task alive) — 50k children, live heap flat.
+    NEXT: std/http (parser, Response, serve with keep-alive + withTimeout, Router with
+    `{param}` paths, static files), unifier support for `throws E | Fail` expected types,
+    examples/httpd testable with curl/browser + in-process test.

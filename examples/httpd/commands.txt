@@ -1,0 +1,5 @@
+# fixtures/ is copied into the working directory before the script runs;
+# --check serves fixtures/public on a free port and plays a client against it
+httpd fixtures/public --check
+httpd nowhere --check
+httpd --port

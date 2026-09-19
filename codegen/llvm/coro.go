@@ -44,6 +44,15 @@ declare i64 @veles_task_sleep(ptr, i64)
 declare i64 @veles_task_wait_io(ptr, i64, i64)
 declare void @veles_task_cancel(ptr)
 declare void @veles_scope_cancel(ptr)
+
+; a panic inside a scope body cancels the children (the join is left to
+; them: their owner is gone); env is the slot holding the scope pointer
+define internal void @scope.cancel.thunk(ptr %env) {
+entry:
+  %sc = load ptr, ptr %env
+  call void @veles_scope_cancel(ptr %sc)
+  ret void
+}
 declare ptr @veles_race_new(ptr)
 declare void @veles_race_recv(ptr, ptr, ptr)
 declare void @veles_race_sleep(ptr, i64)
@@ -202,6 +211,19 @@ func (g *gen) awaitTask(task string, rt types.Type) string {
 	g.suspendPoint()
 	g.emitTerm("br label %%%s", wait)
 	g.placeLabel(got)
+	// a panic in the awaited task continues in this one (D20: it unwinds
+	// to the enclosing task scope; a suspending call is a task of its own,
+	// and `await handle` on a panicked child rethrows as well)
+	pan := g.newTmp()
+	g.emit("%s = call i64 @veles_task_panicked(ptr %s)", pan, task)
+	pb := g.newTmp()
+	g.emit("%s = icmp ne i64 %s, 0", pb, pan)
+	repanic, fine := g.newLabel("await.repanic"), g.newLabel("await.fine")
+	g.emitTerm("br i1 %s, label %%%s, label %%%s", pb, repanic, fine)
+	g.placeLabel(repanic)
+	g.emit("call void @veles_task_repanic(ptr %s)", task)
+	g.emitTerm("unreachable")
+	g.placeLabel(fine)
 	if types.IsUnit(rt) || types.IsNever(rt) {
 		return "zeroinitializer"
 	}
@@ -318,6 +340,7 @@ func (g *gen) scopeBlock(e *sema.ScopeBlock) string {
 	abandon := &sema.Builtin{Op: "scope.abandon"}
 	g.abandonSlots[abandon] = slot
 	g.cleanups = append(g.cleanups, abandon)
+	g.emit("call void @veles_cleanup_push(ptr @scope.cancel.thunk, ptr %s)", slot)
 	if !e.Gather {
 		g.bodyScopes = append(g.bodyScopes, bodyScope{slot: slot, wait: wait, cleanups: len(g.cleanups)})
 	}
@@ -326,6 +349,9 @@ func (g *gen) scopeBlock(e *sema.ScopeBlock) string {
 		g.bodyScopes = g.bodyScopes[:len(g.bodyScopes)-1]
 	}
 	g.cleanups = g.cleanups[:len(g.cleanups)-1]
+	if !g.term {
+		g.emit("call void @veles_cleanup_pop()")
+	}
 	// wait for every child; the join is emitted even after a body that
 	// always returns or throws, because the fail-fast abort branch of a
 	// suspension point inside the body jumps here

@@ -1118,17 +1118,6 @@ func (p *printer) stmt(s ast.Stmt) {
 		}
 		p.w(" ")
 		p.block(s.Body)
-	case *ast.WithStmt:
-		p.w("with (")
-		for i, b := range s.Bindings {
-			if i > 0 {
-				p.w(", ")
-			}
-			p.w(b.Name.Name + " = ")
-			p.expr(b.Value, 0)
-		}
-		p.w(") ")
-		p.block(s.Body)
 	case *ast.ScopeStmt:
 		p.w("scope ")
 		p.block(s.Body)
@@ -1222,7 +1211,7 @@ func bp(e ast.Expr) int {
 	switch e := e.(type) {
 	case *ast.BinaryExpr:
 		return infixBp(e.Op)
-	case *ast.ElvisExpr:
+	case *ast.ElvisExpr, *ast.OrFailExpr:
 		return bpElvis
 	case *ast.RangeExpr:
 		return bpRange
@@ -1340,7 +1329,11 @@ func (p *printer) exprInner(e ast.Expr) {
 		}
 	case *ast.TryExpr:
 		p.w("try ")
-		p.exprRight(e.X, bpUnary)
+		if of, ok := e.X.(*ast.OrFailExpr); ok && !p.authored(of) {
+			p.exprInner(of) // `try x ?! e` parses as `try (x ?! e)`
+		} else {
+			p.exprRight(e.X, bpUnary)
+		}
 	case *ast.AwaitExpr:
 		p.w("await ")
 		p.exprRight(e.X, bpUnary)
@@ -1353,6 +1346,29 @@ func (p *printer) exprInner(e ast.Expr) {
 		// right-associative
 		p.expr(e.L, bpElvis+1)
 		p.operator(e.L.Span().End, e.R.Span().Start, "?:")
+		p.exprRight(e.R, bpElvis)
+	case *ast.WithExpr:
+		p.w("with (")
+		for i, b := range e.Bindings {
+			if i > 0 {
+				p.w(", ")
+			}
+			p.w(b.Name.Name + " = ")
+			p.expr(b.Value, 0)
+		}
+		p.w(") ")
+		p.block(e.Body)
+	case *ast.OrFailExpr:
+		if _, isTry := e.L.(*ast.TryExpr); isTry {
+			// `(try x) ?! e`: without the parentheses the `try` would take
+			// the whole operator expression
+			p.w("(")
+			p.exprInner(e.L)
+			p.w(")")
+		} else {
+			p.expr(e.L, bpElvis+1)
+		}
+		p.operator(e.L.Span().End, e.R.Span().Start, "?!")
 		p.exprRight(e.R, bpElvis)
 	case *ast.RangeExpr:
 		p.expr(e.Lo, bpRange)

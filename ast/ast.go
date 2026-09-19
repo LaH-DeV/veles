@@ -419,7 +419,10 @@ type LoopStmt struct {
 }
 
 // WithStmt is `with (a = expr, b = expr) { }` (D43).
-type WithStmt struct {
+// WithExpr is `with (r = open()) { ... }` (D43): the bindings are closed
+// on every way out of the body. It is an expression — its value is the
+// body's — and appears as a statement through ExprStmt.
+type WithExpr struct {
 	Bindings []WithBinding
 	Body     *Block
 	Pos      source.Span
@@ -454,7 +457,7 @@ func (s *ThrowStmt) Span() source.Span    { return s.Pos }
 func (s *BreakStmt) Span() source.Span    { return s.Pos }
 func (s *ContinueStmt) Span() source.Span { return s.Pos }
 func (s *LoopStmt) Span() source.Span     { return s.Pos }
-func (s *WithStmt) Span() source.Span     { return s.Pos }
+
 func (s *ScopeStmt) Span() source.Span    { return s.Pos }
 func (s *FunStmt) Span() source.Span      { return s.Fun.Pos }
 func (s *BadStmt) Span() source.Span      { return s.Pos }
@@ -468,7 +471,7 @@ func (*ThrowStmt) stmtNode()    {}
 func (*BreakStmt) stmtNode()    {}
 func (*ContinueStmt) stmtNode() {}
 func (*LoopStmt) stmtNode()     {}
-func (*WithStmt) stmtNode()     {}
+
 func (*ScopeStmt) stmtNode()    {}
 func (*FunStmt) stmtNode()      {}
 func (*BadStmt) stmtNode()      {}
@@ -567,6 +570,13 @@ type BinaryExpr struct {
 	L   Expr
 	R   Expr
 	Pos source.Span
+}
+
+// OrFailExpr is `x ?! error`: a `T?` or a `Result<T, E1>` becomes a
+// `Result<T, E2>` whose failure is the right operand (evaluated only then).
+type OrFailExpr struct {
+	L, R Expr
+	Pos  source.Span
 }
 
 // ElvisExpr is `x ?: default` (D30).
@@ -712,6 +722,8 @@ func (e *CallExpr) Span() source.Span   { return e.Pos }
 func (e *UnaryExpr) Span() source.Span  { return e.Pos }
 func (e *BinaryExpr) Span() source.Span { return e.Pos }
 func (e *ElvisExpr) Span() source.Span  { return e.Pos }
+func (e *OrFailExpr) Span() source.Span { return e.Pos }
+func (e *WithExpr) Span() source.Span   { return e.Pos }
 func (e *RangeExpr) Span() source.Span  { return e.Pos }
 func (e *LambdaExpr) Span() source.Span { return e.Pos }
 func (e *TupleExpr) Span() source.Span  { return e.Pos }
@@ -743,6 +755,8 @@ func (*CallExpr) exprNode()   {}
 func (*UnaryExpr) exprNode()  {}
 func (*BinaryExpr) exprNode() {}
 func (*ElvisExpr) exprNode()  {}
+func (*OrFailExpr) exprNode() {}
+func (*WithExpr) exprNode()   {}
 func (*RangeExpr) exprNode()  {}
 func (*LambdaExpr) exprNode() {}
 func (*TupleExpr) exprNode()  {}

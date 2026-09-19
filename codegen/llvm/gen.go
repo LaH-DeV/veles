@@ -53,13 +53,15 @@ type gen struct {
 	// slot: leaving a scope body early (return, throw, cancellation) cancels
 	// the children and joins them, so nothing outlives the block (D34).
 	abandonSlots map[*sema.Builtin]string
+	closeThunks  map[*sema.With]string // panic-path close functions, per `with`
+	thunkSeq     int
 	// inCleanup is set while cleanups are emitted: a suspension point in a
 	// cleanup (the join of an abandoned scope) is non-cancellable (D47) and
 	// does not re-enter the cleanups
-	inCleanup        int
-	launchSlots      map[*sema.Launch]string
-	ramps            map[*sema.Func]*sema.Func
-	envSlot          string // closure environment pointer slot
+	inCleanup   int
+	launchSlots map[*sema.Launch]string
+	ramps       map[*sema.Func]*sema.Func
+	envSlot     string // closure environment pointer slot
 }
 
 type loopLabels struct {
@@ -69,18 +71,19 @@ type loopLabels struct {
 // Generate returns the LLVM IR module for a checked program.
 func Generate(prog *sema.Program) string {
 	g := &gen{
-		prog:      prog,
-		typeDecls: map[string]string{},
-		strs:      map[string]string{},
-		showFns:   map[string]string{},
-		eqFns:     map[string]string{},
-		thunks:    map[string]bool{},
-		hashFns:   map[string]string{},
-		vtables:   map[string]bool{},
-		descs:     map[string]string{},
-		ramps:     map[*sema.Func]*sema.Func{},
-		descNames: map[string]bool{},
-		eqPtrFns:  map[string]string{},
+		prog:        prog,
+		typeDecls:   map[string]string{},
+		strs:        map[string]string{},
+		showFns:     map[string]string{},
+		eqFns:       map[string]string{},
+		thunks:      map[string]bool{},
+		hashFns:     map[string]string{},
+		vtables:     map[string]bool{},
+		descs:       map[string]string{},
+		ramps:       map[*sema.Func]*sema.Func{},
+		closeThunks: map[*sema.With]string{},
+		descNames:   map[string]bool{},
+		eqPtrFns:    map[string]string{},
 	}
 	g.typeDecls[strType] = "{ ptr, i64 }"
 	g.typeOrder = append(g.typeOrder, strType)
@@ -143,6 +146,8 @@ const runtimeDecls = `declare void @veles_rt_init(i32, ptr)
 declare void @veles_print(ptr, i64)
 declare ptr @veles_alloc(i64)
 declare void @veles_panic(ptr, i64)
+declare void @veles_cleanup_push(ptr, ptr)
+declare void @veles_cleanup_pop()
 declare void @veles_report_error(ptr, i64)
 declare void @veles_string_concat(ptr, ptr, i64, ptr, i64)
 declare i1 @veles_string_eq(ptr, i64, ptr, i64)
@@ -630,10 +635,14 @@ func (g *gen) stmt(s sema.Stmt) {
 		v := g.expr(s.Init)
 		st := g.declareVar(s.Var)
 		g.emit("store %s %s, ptr %s", g.llType(s.Var.Type), v, st)
+		// registered with the task as well, so that a panic inside the
+		// body closes the resource before the task is abandoned (D49)
+		g.emit("call void @veles_cleanup_push(ptr @%s, ptr %s)", g.closeThunk(s), st)
 		g.cleanups = append(g.cleanups, s.Close)
 		g.block(s.Body)
 		g.cleanups = g.cleanups[:len(g.cleanups)-1]
 		if !g.term {
+			g.emit("call void @veles_cleanup_pop()")
 			g.expr(s.Close)
 		}
 	default:
@@ -804,8 +813,37 @@ func (g *gen) runCleanups(depth int) {
 	g.inCleanup++
 	for i := len(saved) - 1; i >= depth; i-- {
 		g.cleanups = saved[:i]
+		g.emit("call void @veles_cleanup_pop()") // this path runs it itself
 		g.expr(saved[i])
 	}
 	g.inCleanup--
 	g.cleanups = saved
+}
+
+// closeThunk defines (once per `with`) the function a panic calls to close
+// the binding: it receives the address of the resource and runs the same
+// close call the normal exit runs.
+func (g *gen) closeThunk(s *sema.With) string {
+	if name, ok := g.closeThunks[s]; ok {
+		return name
+	}
+	g.thunkSeq++
+	name := fmt.Sprintf("with.close.%d", g.thunkSeq)
+	g.closeThunks[s] = name
+	v := s.Var
+	g.pending = append(g.pending, func() {
+		g.defineHelperEx(name, "void", []string{"ptr %env"}, "", func() {
+			if v.AddrTaken && !v.IsGlobal && !v.Captured {
+				// varPtr loads the heap cell's address from the slot
+				slot := g.alloca("ptr")
+				g.emit("store ptr %%env, ptr %s", slot)
+				g.storage[v] = slot
+			} else {
+				g.storage[v] = "%env"
+			}
+			g.expr(s.Close)
+			g.emitTerm("ret void")
+		})
+	})
+	return name
 }

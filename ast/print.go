@@ -478,15 +478,6 @@ func (p *printer) stmt(s Stmt) {
 		}
 		p.child(func() { p.block(s.Body) })
 		p.close()
-	case *WithStmt:
-		p.open("with")
-		for _, b := range s.Bindings {
-			p.w(" (" + b.Name.Name + " = ")
-			p.expr(b.Value)
-			p.w(")")
-		}
-		p.child(func() { p.block(s.Body) })
-		p.close()
 	case *ScopeStmt:
 		p.open("scope")
 		p.child(func() { p.block(s.Body) })
@@ -608,6 +599,21 @@ func (p *printer) expr(e Expr) {
 		p.w(" ")
 		p.expr(e.R)
 		p.w(")")
+	case *OrFailExpr:
+		p.w("(?! ")
+		p.expr(e.L)
+		p.w(" ")
+		p.expr(e.R)
+		p.w(")")
+	case *WithExpr:
+		p.open("with")
+		for _, b := range e.Bindings {
+			p.w(" (" + b.Name.Name + " = ")
+			p.expr(b.Value)
+			p.w(")")
+		}
+		p.child(func() { p.block(e.Body) })
+		p.close()
 	case *RangeExpr:
 		if e.Inclusive {
 			p.w("(.. ")

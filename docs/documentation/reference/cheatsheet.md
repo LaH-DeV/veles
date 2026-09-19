@@ -54,6 +54,7 @@ val (a, b) = (1, "one")         // tuple destructuring, nests: val ((x, y), z) =
 | logic | `&& \|\| !` |
 | conversion | `x as T` (numeric only) |
 | nullable | `x ?: fallback`, `x?.member`, `x?.method()` |
+| or fail | `x ?! error` — a `T?` or `Result` becomes a `Result` failing with `error`; `try x ?! e` propagates it |
 | type test | `x is T`, `x !is T` |
 | address | `&x` → `*T`, `*p` reads through |
 | range | `a..b`, `a..<b` |
@@ -149,6 +150,9 @@ fun get(k: string): string throws NotFound = if (k == "a") "A" else throw NotFou
 fun getAll(): string throws = try get("a") + try get("b")   // error type inferred: NotFound
 when (val r = get("z")) { is Ok => r; is Err => r.key }    // caller sees Result; r is the payload per arm
 val r: Result<i64, NotFound> = Ok(1); r.getOrNull(); r.getOrDefault(0); r.errorOrNull(); results.oks(); results.errors()
+val user = try users.get(id) ?! NotFound(key: id)        // `x ?! e`: absence (T?) or failure (Result) becomes failure with e; try propagates
+val n = try parse(s) ?! Invalid(why: "not a number")     // the old error is dropped; keep it with mapError:
+val m = try parse(s).mapError(e => Invalid(why: e.message()))
 ```
 
 Unused `Result` is an error. `try` needs an enclosing `throws`. `if (r.ok)` (or `r is Ok`)
@@ -207,7 +211,7 @@ Data passed to `async` must be Sendable (D35): no `Mutable*`.
 
 ```veles
 // fragment
-with (f = open("a"), g = open("b")) { ... }   // close() on every exit (D43)
+with (f = open("a"), g = open("b")) { ... }   // close() on every exit (D43); an expression: val text = with (f = open(p)) { f.readAll() }
 impl Closeable for File { mut fun close() { } }
 extern "C" { fun strlen(s: *raw u8): i64 }
 val n = unsafe { strlen(p) }                  // C calls and raw pointers need unsafe (D44)
@@ -243,6 +247,15 @@ val line = try withTimeout(5000, () => try conn.readLine())   // throws IoError 
 ```
 
 Every waiting call suspends the task; failures throw `IoError` with the address in `path`.
+
+```veles
+// fragment
+use http
+val app = http.router()
+app.get("/users/{id}", req => http.Response.json(try find(req.param("id")) ?! http.notFound()))   // Fail → its status, other errors → 500
+app.get("/static/*", http.files("./public"))
+with (listener = try net.listen(host: "", port: 8080)) { http.serve(listener, app.handler()) }
+```
 
 ## Attributes (D51)
 

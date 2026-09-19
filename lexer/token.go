@@ -33,6 +33,7 @@ const (
 	Dot      // .
 	SafeDot  // ?.
 	Elvis    // ?:
+	OrFail   // ?!
 	Question // ?
 	FatArrow // =>
 	Arrow    // ->
@@ -181,7 +182,7 @@ var kindNames = map[TokenKind]string{
 	Float: "float literal", String: "string literal", Char: "character literal",
 	LParen: "(", RParen: ")", LBrace: "{", RBrace: "}", LBracket: "[", RBracket: "]",
 	Comma: ",", Semi: "newline", Colon: ":", DblColon: "::", Dot: ".", SafeDot: "?.",
-	Elvis: "?:", Question: "?", FatArrow: "=>", Arrow: "->", At: "@", Amp: "&", Pipe: "|",
+	Elvis: "?:", OrFail: "?!", Question: "?", FatArrow: "=>", Arrow: "->", At: "@", Amp: "&", Pipe: "|",
 	Range: "..", RangeLt: "..<", Ellipsis: "...", Under: "_",
 	Assign: "=", PlusEq: "+=", MinusEq: "-=", StarEq: "*=", SlashEq: "/=", PercentEq: "%=",
 	Plus: "+", Minus: "-", Star: "*", Slash: "/", Percent: "%", WrapPlus: "+%",

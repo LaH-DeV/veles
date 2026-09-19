@@ -62,7 +62,19 @@ typedef struct veles_task {
     struct veles_task *io_next;
     int64_t cancel_requested; /* unwinds at its next suspension point (D20/D43) */
     struct veles_task *awaiting; /* the task this one is blocked in await on */
+    struct veles_cleanup *cleanups; /* active `with` closes and scope joins, innermost first */
+    int64_t unwinding;           /* a panic is running the cleanups */
 } veles_task;
+
+/* One active cleanup (D43/D49): the close of a `with` binding or the
+ * cancellation of a scope's children. Code pushes on entry and pops on
+ * every exit it emits itself; a panic runs whatever is still pushed,
+ * innermost first, before the task is abandoned. */
+typedef struct veles_cleanup {
+    void (*fn)(void *env);
+    void *env;
+    struct veles_cleanup *next;
+} veles_cleanup;
 
 struct veles_scope {
     veles_task *owner;
@@ -292,15 +304,34 @@ void veles_task_cancel(veles_task *t) {
     cancel_task(t);
 }
 
+/* cancel every child still running; a child with no frame finishes on the
+ * spot and unlinks itself, so the next link is read first */
+static void cancel_children(veles_scope *s, veles_task *except) {
+    veles_task *c = s->children;
+    while (c) {
+        veles_task *next = c->sibling;
+        if (c != except) cancel_task(c);
+        c = next;
+    }
+}
+
 static void scope_child_finished(veles_task *t) {
     veles_scope *s = t->scope;
     if (!s) return;
     s->live--;
+    /* a finished child leaves the scope's list: a server's accept loop
+     * launches a task per connection for as long as it runs, and the list
+     * would otherwise keep every one of them (and its frame) alive */
+    for (veles_task **pp = &s->children; *pp; pp = &(*pp)->sibling) {
+        if (*pp == t) {
+            *pp = t->sibling;
+            t->sibling = NULL;
+            break;
+        }
+    }
     if (t->failed && s->fail_fast && !s->failed) {
         s->failed = t;
-        for (veles_task *c = s->children; c; c = c->sibling) {
-            if (c != t) cancel_task(c);
-        }
+        cancel_children(s, t);
         /* the owner may be blocked in the scope body (a recv that will now
          * never complete): wake it so its next suspension point sees the
          * failure and abandons the body */
@@ -321,9 +352,7 @@ void veles_task_leave_waits(veles_task *t) {
  * children still running are cancelled; the owner then waits for them
  * as usual, so nothing outlives the block (D34) */
 void veles_scope_cancel(veles_scope *s) {
-    for (veles_task *c = s->children; c; c = c->sibling) {
-        cancel_task(c);
-    }
+    cancel_children(s, NULL);
 }
 
 /* wait for every child: true when done, otherwise blocks the owner */
@@ -764,16 +793,42 @@ int64_t veles_race_resolve(veles_task *self, veles_race *r) {
 static jmp_buf panic_return;
 static int in_resume;
 
-/* veles_task_panic is called by veles_panic while a task runs: the task
- * fails with the message and control returns to the executor (D20: a
- * panic unwinds to the enclosing task scope). */
+/* ---- cleanups (D43/D49) ---------------------------------------------------- */
+
+void veles_cleanup_push(void (*fn)(void *), void *env) {
+    if (!current) return;
+    veles_cleanup *c = veles_alloc_words(sizeof *c);
+    c->fn = fn;
+    c->env = env;
+    c->next = current->cleanups;
+    current->cleanups = c;
+}
+
+void veles_cleanup_pop(void) {
+    if (!current || !current->cleanups) return;
+    current->cleanups = current->cleanups->next;
+}
+
+/* veles_task_panic is called by veles_panic while a task runs: the task's
+ * active cleanups run (a `with` closes its resource, a scope cancels its
+ * children), then the task fails with the message and control returns to
+ * the executor (D20: a panic unwinds to the enclosing task scope). A
+ * panic inside a cleanup continues the unwinding with the first message. */
 int64_t veles_task_panic(const char *msg, int64_t len) {
     if (!in_resume || !current) return 0;
     veles_task *t = current;
-    char *copy = veles_alloc(len + 1);
-    memcpy(copy, msg, (size_t)len);
-    t->panic_msg = copy;
-    t->panic_len = len;
+    if (!t->unwinding) {
+        t->unwinding = 1;
+        char *copy = veles_alloc(len + 1);
+        memcpy(copy, msg, (size_t)len);
+        t->panic_msg = copy;
+        t->panic_len = len;
+    }
+    while (t->cleanups) {
+        veles_cleanup *c = t->cleanups;
+        t->cleanups = c->next;
+        c->fn(c->env);
+    }
     t->panicked = 1;
     t->failed = 1;
     t->state = T_DONE;

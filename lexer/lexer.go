@@ -131,7 +131,7 @@ func (lx *Lexer) continuesLine() bool {
 			i += end + 4
 		default:
 			rest := lx.src[i:]
-			if strings.HasPrefix(rest, "?.") || strings.HasPrefix(rest, "?:") {
+			if strings.HasPrefix(rest, "?.") || strings.HasPrefix(rest, "?:") || strings.HasPrefix(rest, "?!") {
 				return true
 			}
 			if c == '.' && len(rest) > 1 && rest[1] != '.' {
@@ -481,7 +481,7 @@ var operators = []struct {
 	text string
 	kind TokenKind
 }{
-	{"...", Ellipsis}, {"..<", RangeLt}, {"<<", Shl}, {">>", Shr}, {"::", DblColon}, {"?.", SafeDot}, {"?:", Elvis}, {"=>", FatArrow},
+	{"...", Ellipsis}, {"..<", RangeLt}, {"<<", Shl}, {">>", Shr}, {"::", DblColon}, {"?.", SafeDot}, {"?:", Elvis}, {"?!", OrFail}, {"=>", FatArrow},
 	{"->", Arrow}, {"..", Range}, {"+=", PlusEq}, {"-=", MinusEq}, {"*=", StarEq},
 	{"/=", SlashEq}, {"%=", PercentEq}, {"+%", WrapPlus}, {"-%", WrapMinus}, {"*%", WrapStar},
 	{"==", Eq}, {"!=", NotEq}, {"<=", LtEq}, {">=", GtEq}, {"&&", AndAnd}, {"||", OrOr},

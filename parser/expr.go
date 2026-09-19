@@ -34,7 +34,7 @@ func infixBp(k lexer.TokenKind) int {
 		return bpCmp
 	case lexer.KwIs:
 		return bpNamed
-	case lexer.Elvis:
+	case lexer.Elvis, lexer.OrFail:
 		return bpElvis
 	case lexer.Range, lexer.RangeLt:
 		return bpRange
@@ -83,6 +83,10 @@ func (p *Parser) parseBinary(minBp int) ast.Expr {
 			// right-associative: `a ?: b ?: c` is `a ?: (b ?: c)`
 			right := p.parseBinary(bp - 1)
 			left = &ast.ElvisExpr{L: left, R: right, Pos: p.spanFrom(start)}
+		case lexer.OrFail:
+			p.next()
+			right := p.parseBinary(bp - 1)
+			left = &ast.OrFailExpr{L: left, R: right, Pos: p.spanFrom(start)}
 		case lexer.Range, lexer.RangeLt:
 			p.next()
 			right := p.parseBinary(bp)
@@ -105,6 +109,14 @@ func (p *Parser) parseUnary() ast.Expr {
 	case lexer.KwTry:
 		p.next()
 		x := p.parseUnary()
+		// `try x ?! e` is `try (x ?! e)`: the operator rewrites the failure,
+		// `try` propagates it — `(try x) ?! e` would need x to be nullable
+		// and is written with the parentheses
+		for p.at(lexer.OrFail) {
+			p.next()
+			right := p.parseBinary(bpElvis - 1)
+			x = &ast.OrFailExpr{L: x, R: right, Pos: p.spanFrom(start)}
+		}
 		return &ast.TryExpr{X: x, Pos: p.spanFrom(start)}
 	case lexer.KwAwait:
 		p.next()
@@ -300,6 +312,8 @@ func (p *Parser) parsePrimary() ast.Expr {
 		return p.parseIf()
 	case lexer.KwWhen:
 		return p.parseWhen()
+	case lexer.KwWith:
+		return p.parseWith()
 	case lexer.KwGather:
 		p.next()
 		body := p.parseBlock()

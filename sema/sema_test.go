@@ -2104,3 +2104,88 @@ fun main() {
   io.println("${withTimeout(10, () => { n += 1; n })}")
 }`, "cannot cross a task boundary")
 }
+
+func TestOrFailOperator(t *testing.T) {
+	expectClean(t, prelude+`
+error NotFound { id: string }
+error Bad { text: string }
+error ParseError { at: i64 }
+fun parse(s: string): i64 throws ParseError = if (s == "1") 1 else throw ParseError(at: 0)
+fun lookup(users: Map<string, string>, id: string): string throws NotFound = try users.get(id) ?! NotFound(id)
+fun number(s: string): i64 throws Bad = try parse(s) ?! Bad(text: "bad request: $s")
+fun kept(s: string): Result<i64, Bad> = parse(s) ?! Bad(text: "as a value")
+fun wrapped(s: string): i64 throws Bad = try parse(s).mapError(e => Bad(text: "at ${e.at}"))
+fun main() { io.println("${lookup(["a": "b"], "a")} ${number("1")} ${kept("x")} ${wrapped("1")}") }`)
+	expectError(t, prelude+`
+error Bad { text: string }
+fun main() { val n: i64 = 3; io.println("${n ?! Bad(text: "x")}") }`, "'?!' needs a nullable or a Result")
+	expectError(t, prelude+`
+struct NotAnError { n: i64 }
+fun main() { val n: i64? = 3; io.println("${n ?! NotAnError(n: 1)}") }`, "is not an error")
+	// `try x ?! e` is `try (x ?! e)`: the propagated error is the new one
+	expectError(t, prelude+`
+error Bad { text: string }
+error ParseError { at: i64 }
+fun parse(s: string): i64 throws ParseError = throw ParseError(at: 0)
+fun number(s: string): i64 throws ParseError = try parse(s) ?! Bad(text: "no")
+fun main() { io.println("${number("1")}") }`, "error type 'Bad' is not in the declared")
+}
+
+func TestWithExpression(t *testing.T) {
+	expectClean(t, prelude+`
+struct Res {
+  n: i64
+  impl Closeable { mut fun close() { } }
+}
+fun readIt(): i64 {
+  with (r = Res(n: 1)) {
+    r.n + 1
+  }
+}
+fun twice(): i64 = with (a = Res(n: 1), b = Res(n: 2)) { a.n + b.n }
+fun diverges(): i64 {
+  with (r = Res(n: 1)) {
+    return r.n
+  }
+}
+fun main() {
+  val v = with (r = Res(n: 5)) { r.n * 2 }
+  with (r = Res(n: 0)) {
+    io.println("${r.n}")
+  }
+  io.println("$v ${readIt()} ${twice()} ${diverges()}")
+}`)
+	expectError(t, prelude+`
+struct Res {
+  n: i64
+  impl Closeable { mut fun close() { } }
+}
+fun main() {
+  val s: string = with (r = Res(n: 5)) { r.n }
+  io.println(s)
+}`, "type mismatch")
+}
+
+func TestErrorUnionWithTypeParamInHandlers(t *testing.T) {
+	// `throws E | Fail`: E binds to what the lambda throws beyond Fail
+	// (Never when nothing), and the lambda may throw Fail regardless
+	expectClean(t, prelude+`
+error Fail { status: i64; text: string }
+error Boom { n: i64 }
+type Handler = sendable fun(string): string suspends
+fun <E> handler(h: sendable fun(string): string suspends throws E | Fail): Handler =
+  p => when (h(p)) {
+    is Ok(v) => v
+    is Err(e) => when (e) {
+      is Fail => "${e.status} ${e.text}"
+      else => "500 ${e.message()}"
+    }
+  }
+fun main() {
+  val a = handler(p => "ok $p")
+  val b = handler(p => throw Boom(n: 3))
+  val c = handler(p => throw Fail(status: 404, text: "no $p"))
+  val d = handler(p => { if (p == "t") throw Fail(status: 418, text: "tea"); throw Boom(n: 1) })
+  io.println("${a("x")} ${b("x")} ${c("x")} ${d("t")}")
+}`)
+}

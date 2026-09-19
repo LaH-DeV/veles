@@ -35,6 +35,7 @@ For readers who want to know what the compiler actually does.
 13. [Memory, `with`, `unsafe` and C](13-memory-and-ffi.md) — the collector, value vs pointer, cleanup, raw pointers, `extern "C"`.
 14. [Attributes and the test runner](14-attributes-and-testing.md) — `@test`, `@deprecated`, `@mustUse`, `@inline`.
 16. [Networking](16-networking.md) — TCP with `net`: one task per connection, `readLine`/`write`, timeouts.
+17. [An HTTP server](17-http.md) — `http`: router, handlers and what their errors mean, static files, keep-alive.
 
 ## Reference
 

@@ -460,6 +460,8 @@ Supplies a default for a `T?`: `counts.get(word) ?: 0`. Pairs with D5's smart ca
 
 The safe-call `?.` is included: `a?.b?.c` short-circuits to `null` and the chain's type is `T?`. A receiver that is nullable more than once — `xs.at(i)` on a `List<T?>` is a `T??`, since a missing element and a stored `null` are different answers — is flattened by `?.`: `xs.at(i)?.f` is null when the index is out of range or the element is null, and `T??` values are otherwise kept apart (v0.26).
 
+*Addendum (v0.29) — the or-fail operator `?!`.* `x ?! e` turns absence or failure into failure with `e`: a `T?` becomes a `Result<T, E>`, a `Result<T, E1>` a `Result<T, E2>` with the original error dropped; `e` must be an error type and is evaluated only on that path. It rewrites the failure and nothing more — `try` remains the one place propagation happens, so `try users.get(id) ?! NotFound(id)` and `try parse(s) ?! BadRequest(...)` read "or fail with", and the parser takes `try x ?! e` as `try (x ?! e)` (the other grouping is written with its parentheses). `Result.mapError(f)` in the prelude is the form that keeps the old error in hand. Spelled `?!` rather than `??` because `??` is null-coalescing in C#, JS and Swift and would read as a second `?:`. Motivated by request handlers, where every lookup and parse must become a status code without a `when` per call.
+
 ### D31 — Recursive data structures require indirection
 
 Because D12 lays a sealed trait out as an inline tagged union, a variant containing the trait by value has infinite size. Recursive types must go through `*`:
@@ -698,6 +700,7 @@ Named `with` rather than `use`, because `use` is already the import keyword and 
 - Multiple bindings close in reverse order: `with (a = ..., b = ...) { }`.
 - Cleanup runs on **every** exit path. Under D20 cancellation is a panic delivered at a suspension point, so a `with` block containing a suspension point still releases when its task is cancelled.
 - If `close()` fails and the body also failed, the body's error wins and the close failure is attached rather than replacing it — Kotlin's suppression rule.
+- *(v0.29)* `with` is an expression: its value is the body's, and the resources close before the value is used (`val text = with (f = open(p)) { f.readAll() }`), so an "open, use, close" function has no `return` in its middle. In statement position the body is a plain block, as before.
 
 **This raises the stakes on §6.1.** The panic mechanism is still undecided, and `with` cleanup has to run during unwinding: under a hidden error-return path it is an ordinary code path, under DWARF it needs landing pads. Either works, but the choice is no longer purely internal.
 
@@ -804,6 +807,8 @@ Native frames use LLVM `invoke` and landing pads. Suspended coroutine frames (D2
 After the GC, this is the largest single piece of runtime engineering in the compiler.
 
 Rejected: a hidden error-return path, which works identically in native and coroutine frames because it is just code, needs no platform-specific machinery, and ports to wasm unchanged — at the cost of a predictable branch per call site and roughly 5–15% code size, much of it recoverable by panic-freedom analysis on leaf functions.
+
+*Addendum (v0.29) — what the bootstrap does today.* The bootstrap has no unwinder yet: a panic is a `longjmp` back into the executor, so nothing between the panic site and the resume point runs. What D43 promised — `with` closes on panic — is kept another way: every `with` entry (and every `scope` body) registers its cleanup with the task on a dynamic stack and unregisters it on each exit the compiler emits; `veles_task_panic` runs whatever is still registered, innermost first, on the live stack before the jump, so a plain function's resource (whose frame the jump would destroy) is closed while it still exists. A cleanup that panics does not stop the unwinding, and the first message is the one reported. A panicking scope body cancels its children (they unwind on their own; the owner is gone). This is the D20 "cheap option" restricted to cleanups: a push/pop pair per `with`, no landing pads, and it stays correct when the DWARF unwinder replaces the jump. Not covered, as before: a panic in a `close()` that suspends — cleanups do not suspend today.
 
 ### D50 — Raw pointers: `*raw T`
 
@@ -931,7 +936,9 @@ with (listener = try net.listen(host: "", port: 8080)) {
 
 **Why not threads and blocking calls.** A blocking `accept`/`recv` under the single-threaded executor would stall every other task; a thread per connection is the model D2/D35 exist to avoid. The intrinsic is deliberately not user-facing: a program wanting another kind of descriptor wait (a pipe, a signal) asks for a standard-library binding, which keeps every wait the executor knows about in one place.
 
-Not in this decision: TLS (a binding to a system library, later), UDP, name resolution beyond `getaddrinfo` at connect time, and an HTTP layer — the next proving program, built on this in Veles.
+Not in this decision: TLS (a binding to a system library, later), UDP, name resolution beyond `getaddrinfo` at connect time.
+
+**The HTTP layer (v0.29, `std/http`)** is written in Veles on `net`, and its one design question was what a handler's error means. A handler stored in a router needs a closed type, Veles has no "any error" (D45), and forcing every handler to convert every `IoError` into a status by hand is the Go shape the language exists to avoid. The answer: the *stored* type is `Handler = sendable fun(Request): Response suspends` (no throws), and registration is error-polymorphic — `app.get<E>(pattern, h: fun(Request): Response suspends throws E | Fail)` — with one rule applied at that point: `Fail(status, text)` answers with its status, anything else answers 500 and is logged. Erasure happens in exactly one documented place; `try` stays free inside handlers; `?!` says which status a failure deserves. This needed a type parameter *inside* an error union to unify (`E` binds to what the lambda throws beyond `Fail`, `Never` when nothing; a lambda checked against `throws E | Fail` may throw `Fail` regardless). Panics in handlers are isolated per request by a `gather` around the call — no new construct, the panic is a value at that boundary (D52) — and the `with` cleanups a handler held have run by then (D49 addendum). Rejected: a `supervise` scope construct (Erlang/Kotlin `SupervisorScope`), noted as a possibility if a second program needs "children fail independently"; an open `Error` type, again.
 
 ---
 

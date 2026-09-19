@@ -412,9 +412,6 @@ func (f *fnCtx) checkStmt(s ast.Stmt) (stmts []Stmt, term bool) {
 	case *ast.Block:
 		b := f.checkBlock(s, nil, false)
 		return []Stmt{b}, types.IsNever(b.Type)
-	case *ast.WithStmt:
-		stmts := f.checkWith(s)
-		return stmts, withDiverges(stmts)
 	case *ast.ScopeStmt:
 		stmts := f.scopeStmt(s)
 		// a body that always returns or throws leaves through the scope's
@@ -1243,28 +1240,64 @@ func (f *fnCtx) iteratorLoop(s *ast.LoopStmt, iter Expr, lp *Loop, label string)
 
 // checkWith lowers `with (a = x, b = y) { body }` into nested With
 // statements so that resources close in reverse order.
-func (f *fnCtx) checkWith(s *ast.WithStmt) []Stmt {
+// withExpr checks `with (r = init) { body }` (D43). It is an expression:
+// in statement position (want is unit) the body is a plain block; where a
+// value is wanted the body's value is the result, carried out through a
+// temporary declared before the resources are opened, so the close calls
+// run between the body and the use of the value.
+func (f *fnCtx) withExpr(e *ast.WithExpr, want types.Type) Expr {
 	closeable := f.c.traitNamed("Closeable")
 	f.pushScope()
 	defer f.popScope()
-	return f.withBindings(s, 0, closeable)
+	asValue := want == nil || !types.IsUnit(want)
+	var result *Var
+	stmts, bodyT := f.withBindings(e, 0, closeable, want, asValue, &result)
+	out := &Block{Type: types.TUnit}
+	if result != nil {
+		out.Stmts = append(out.Stmts, &VarDecl{Var: result})
+	}
+	out.Stmts = append(out.Stmts, stmts...)
+	switch {
+	case types.IsNever(bodyT):
+		out.Type = types.TNever
+	case result != nil:
+		out.Value = &VarRef{exprBase{result.Type}, result}
+		out.Type = result.Type
+	}
+	return &BlockExpr{exprBase{out.Type}, out}
 }
 
-func (f *fnCtx) withBindings(s *ast.WithStmt, i int, closeable *types.Trait) []Stmt {
+func (f *fnCtx) withBindings(s *ast.WithExpr, i int, closeable *types.Trait, want types.Type, asValue bool, result **Var) ([]Stmt, types.Type) {
 	if i == len(s.Bindings) {
-		b := f.checkBlock(s.Body, nil, false)
-		return []Stmt{b}
+		if !asValue {
+			b := f.checkBlock(s.Body, nil, false)
+			return []Stmt{b}, b.Type
+		}
+		b := f.checkBlock(s.Body, want, true)
+		if b.Value != nil && !types.IsUnit(b.Type) && !types.IsNever(b.Type) {
+			*result = f.newTemp(b.Type)
+			b.Stmts = append(b.Stmts, &Assign{Target: &VarRef{exprBase{b.Type}, *result}, Value: b.Value})
+			b.Value = nil
+			bt := b.Type
+			b.Type = types.TUnit
+			return []Stmt{b}, bt
+		}
+		if b.Value != nil {
+			b.Stmts = append(b.Stmts, &ExprStmt{X: b.Value})
+			b.Value = nil
+		}
+		return []Stmt{b}, b.Type
 	}
 	b := s.Bindings[i]
 	init := f.checkExpr(b.Value, nil)
 	if types.IsInvalid(init.Type()) {
-		return nil
+		return nil, types.TInvalid
 	}
 	v := f.newVar(b.Name.Name, init.Type(), false, b.Name.Pos)
 	f.declareLocal(b.Name.Name, v, b.Name.Pos)
 	if closeable == nil || f.findImpl(init.Type(), closeable) == nil {
 		f.errorf(b.Value.Span(), "'%s' is not Closeable; 'with' resources must implement Closeable (D43)", init.Type())
-		return nil
+		return nil, types.TInvalid
 	}
 	// synthesize `name.close()`; the binding is a val to user code but the
 	// close call needs a mutable place
@@ -1275,14 +1308,12 @@ func (f *fnCtx) withBindings(s *ast.WithStmt, i int, closeable *types.Trait) []S
 	if isResultType(closeCall.Type()) {
 		f.errorf(b.Name.Pos, "close() of '%s' throws; throwing cleanup is not supported yet", init.Type())
 	}
-	inner := f.withBindings(s, i+1, closeable)
+	inner, bodyT := f.withBindings(s, i+1, closeable, want, asValue, result)
 	body := &Block{Stmts: inner, Type: types.TUnit}
-	for _, st := range inner {
-		if blk, ok := st.(*Block); ok && types.IsNever(blk.Type) {
-			body.Type = types.TNever
-		}
+	if types.IsNever(bodyT) {
+		body.Type = types.TNever
 	}
-	return []Stmt{&With{Var: v, Init: init, Close: closeCall, Body: body}}
+	return []Stmt{&With{Var: v, Init: init, Close: closeCall, Body: body}}, bodyT
 }
 
 // checkThrow is `throw e`: `return Err(e)` in a throwing function (D4).
@@ -1307,18 +1338,4 @@ func (f *fnCtx) checkThrow(s *ast.ThrowStmt) []Stmt {
 	return []Stmt{&ExprStmt{X: x}}
 }
 
-// withDiverges reports whether a lowered `with` never falls through: its
-// innermost body block has type Never.
-func withDiverges(stmts []Stmt) bool {
-	for len(stmts) == 1 {
-		switch s := stmts[0].(type) {
-		case *With:
-			stmts = []Stmt{s.Body}
-			continue
-		case *Block:
-			return types.IsNever(s.Type)
-		}
-		break
-	}
-	return false
-}
+

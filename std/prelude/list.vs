@@ -33,6 +33,14 @@ extend<T> List<T> {
     out.toList()
   }
 
+  /// The index of the first element `pred` accepts, or -1.
+  pub fun indexOfFirst(pred: fun(T): bool): i64 {
+    loop (i in 0..<self.len()) {
+      if (pred(self.atOrPanic(i))) return i
+    }
+    -1
+  }
+
   /// The number of elements `pred` accepts.
   pub fun count(pred: fun(T): bool): i64 {
     var n: i64 = 0
@@ -440,6 +448,16 @@ extend<T, E> Result<T, E> {
 
   /// The value, or `fallback` when this is an error.
   pub fun getOrDefault(fallback: T): T = self.getOrNull() ?: fallback
+
+  /// The same outcome with the error replaced by `f(error)` — how an error
+  /// from one layer becomes one of another while keeping what it said:
+  /// `try parse(text).mapError(e => BadRequest(detail: e.message()))`.
+  /// When the new error does not depend on the old one, `?!` is shorter:
+  /// `try parse(text) ?! BadRequest(detail: "not a user")`.
+  pub fun mapError<E2: Error>(f: fun(E): E2): Result<T, E2> = when (self) {
+    is Ok(value)  => Ok(value)
+    is Err(error) => Err(f(error))
+  }
 }
 
 extend<T, E> List<Result<T, E>> {

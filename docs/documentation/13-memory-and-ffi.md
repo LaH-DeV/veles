@@ -158,9 +158,89 @@ close r
 failed Oops
 ```
 
-Resources close in reverse order of acquisition. The bootstrap compiler
-does not yet run `with` cleanups when a *panic* unwinds through the
-block (D49 is planned); errors and cancellation are covered.
+Resources close in reverse order of acquisition.
+
+`with` is an expression: its value is the body's, and the resources are
+closed before that value is used — the shape of every "open, read,
+close" function:
+
+```veles
+use io
+
+struct Handle {
+  name: string
+  impl Closeable {
+    mut fun close() { io.println("close ${self.name}") }
+  }
+  fun contents(): string = "<${self.name}>"
+}
+
+fun read(name: string): string = with (h = Handle(name)) { h.contents() }
+
+fun main() {
+  val both = with (a = Handle(name: "a"), b = Handle(name: "b")) {
+    a.contents() + b.contents()
+  }
+  io.println("${read("r")} $both")
+}
+```
+
+Output:
+```text
+close b
+close a
+close r
+<r> <a><b>
+```
+
+A panic unwinds through `with` as well. The task that panicked is lost
+(D20 — there is no catching it inside the task), but everything it held
+is released on the way out, innermost first, so a bug in one request
+handler cannot leak a socket or a file; a `gather` boundary is where the
+panic becomes a value ([chapter 12](12-concurrency.md)):
+
+```veles
+use io
+
+struct Res {
+  name: string
+  impl Closeable {
+    mut fun close() { io.println("close ${self.name}") }
+  }
+}
+
+fun deep(i: i64): i64 {
+  await sleep(0)          // a suspending call: a task of its own underneath
+  [10, 20].atOrPanic(i)   // its panic continues in the caller
+}
+
+fun risky(i: i64): i64 = with (a = Res(name: "a"), b = Res(name: "b")) {
+  deep(i)
+}
+
+fun main() {
+  loop (i in [1, 5]) {
+    when ((gather { async risky(i) }).0) {
+      is Ok(v)  => io.println("value $v")
+      is Err(p) => io.println("panicked: ${p.message()}")
+    }
+  }
+}
+```
+
+Output:
+```text
+close b
+close a
+value 20
+close b
+close a
+panicked: index 5 out of bounds for list of length 2
+```
+
+A `close()` that itself panics during that unwinding does not stop it:
+the remaining resources still close and the first panic is the one
+reported.
 
 ## `unsafe`
 

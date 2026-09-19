@@ -222,7 +222,6 @@ The cost of that model is the one it has everywhere: a task that computes
 for a long time without suspending stalls every other connection. Break
 long work with `await sleep(0)`, or keep it out of the serving tasks.
 
-Next: [Files, paths and processes](15-files-and-processes.md) for the
-rest of the standard library, or back to
-[Concurrency](12-concurrency.md) for what `scope`, `gather` and
+Next: [An HTTP server](17-http.md), which is this module used in anger, or
+back to [Concurrency](12-concurrency.md) for what `scope`, `gather` and
 cancellation do in detail.

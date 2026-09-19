@@ -263,6 +263,10 @@ func (f *fnCtx) checkExpr(e ast.Expr, want types.Type) Expr {
 		return f.unaryExpr(e, want)
 	case *ast.BinaryExpr:
 		return f.binaryExpr(e, want)
+	case *ast.OrFailExpr:
+		return f.orFailExpr(e)
+	case *ast.WithExpr:
+		return f.withExpr(e, want)
 	case *ast.ElvisExpr:
 		return f.elvisExpr(e, want)
 	case *ast.RangeExpr:
@@ -1184,6 +1188,68 @@ func (f *fnCtx) comparableIn(t types.Type, seen map[types.Type]bool) bool {
 		return f.comparableIn(t.Key, seen) && f.comparableIn(t.Value, seen)
 	}
 	return false
+}
+
+// orFailExpr checks `x ?! err`: absence or failure becomes failure with
+// `err`. A `T?` gives a `Result<T, E>`, a `Result<T, E1>` a `Result<T, E>`
+// with the original error dropped (mapError keeps it); the right operand
+// is evaluated only on that path. `try` then propagates as usual:
+// `val user = try users.get(id) ?! notFound(id)`.
+func (f *fnCtx) orFailExpr(e *ast.OrFailExpr) Expr {
+	l := f.checkExpr(e.L, nil)
+	lt := l.Type()
+	if types.IsInvalid(lt) {
+		f.checkExpr(e.R, nil)
+		return bad()
+	}
+	var okT types.Type
+	var isNullable bool
+	switch t := lt.(type) {
+	case *types.Nullable:
+		okT, isNullable = t.Elem, true
+	case *types.Sealed:
+		if isResultType(t) {
+			okT = t.TypeArgs[0]
+		}
+	}
+	if okT == nil {
+		f.errorf(e.Pos, "'?!' needs a nullable or a Result on its left, found '%s'", lt)
+		f.checkExpr(e.R, nil)
+		return bad()
+	}
+	r := f.checkExpr(e.R, nil)
+	et := r.Type()
+	if types.IsInvalid(et) {
+		return bad()
+	}
+	if u, ok := et.(*types.ErrorUnion); ok {
+		for _, m := range u.Members {
+			f.c.checkErrorType(m, e.R.Span())
+		}
+	} else if _, isStruct := et.(*types.Struct); isStruct || types.IsNever(et) {
+		f.c.checkErrorType(et, e.R.Span())
+	} else {
+		f.errorf(e.R.Span(), "the right operand of '?!' must be an error (a type declared with 'error'), found '%s'", et)
+		return bad()
+	}
+	rs := f.c.ResultType(okT, et)
+	okV, errV := rs.Variants[0], rs.Variants[1]
+	tmp := f.newTemp(lt)
+	var failed Expr
+	var payload Expr
+	if isNullable {
+		failed = &IsNull{exprBase{types.TBool}, &VarRef{exprBase{lt}, tmp}}
+		payload = &Unwrap{exprBase{okT}, &VarRef{exprBase{lt}, tmp}}
+	} else {
+		src := lt.(*types.Sealed)
+		srcOk, srcErr := src.Variants[0], src.Variants[1]
+		failed = &VariantTest{exprBase{types.TBool}, &VarRef{exprBase{lt}, tmp}, srcErr}
+		payload = &FieldGet{exprBase{okT}, &VariantCast{exprBase{srcOk}, &VarRef{exprBase{lt}, tmp}, srcOk}, 0, srcOk.Fields[0].Name}
+	}
+	errValue := &MakeVariant{exprBase{rs}, rs, errV, &StructLit{exprBase{errV}, errV, []Expr{r}}}
+	okValue := &MakeVariant{exprBase{rs}, rs, okV, &StructLit{exprBase{okV}, okV, []Expr{payload}}}
+	pick := &If{exprBase{rs}, failed, &Block{Value: errValue, Type: rs}, &Block{Value: okValue, Type: rs}}
+	return &Let{exprBase{rs}, tmp, l, pick}
 }
 
 func (f *fnCtx) elvisExpr(e *ast.ElvisExpr, want types.Type) Expr {

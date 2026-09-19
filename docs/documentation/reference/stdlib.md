@@ -433,6 +433,24 @@ conn.peer(): string                                            // "host:port"
 // Listener and Conn are Closeable (use `with`) and Sendable (hand a Conn to `async handle(conn)`)
 ```
 
+## Module `http`
+
+An HTTP/1.1 server on `net` ([chapter 17](../17-http.md)).
+
+```veles
+// fragment
+use http
+val app = http.router()
+app.get("/users/{id}", req => ...)          // get / post / put / delete / any; `{name}` captures, a final `*` the rest
+app.get("/static/*", http.files("./public"))   // index.html for a directory, `..` refused, type by extension
+http.serve(listener, app.handler(), idleTimeout: 15000, log: true)   // forever, one task per connection; cancel its task to stop
+type Handler = sendable fun(Request): Response suspends   // the stored form; `http.handler(h)` adapts a throwing h
+error Fail { status, text }; http.notFound(text); http.badRequest(text); http.forbidden(text)   // thrown → that status; other errors → 500 + log; a panic → 500 + log
+req.method; req.path; req.query; req.headers; req.header(name); req.body; try req.text(); req.param(name); req.peer
+http.Response.text(s, status: 200); .html(s); .json(s); .bytes(b, contentType); .empty(status); .redirect(url); resp.withHeader(n, v)
+http.contentTypeOf(name); http.httpDate(ms); http.reasonOf(status); http.percentDecode(s, plusIsSpace)
+```
+
 ## Module `path`
 
 Text only; nothing here touches the disk. `/` and `\` both separate on

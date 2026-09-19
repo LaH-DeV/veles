@@ -238,8 +238,19 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 	fn.Sig.Ret = l.retType
 	suspends := fn.Sig.Effects.Suspends
 	if l.inferThrows {
-		if len(fn.inferredErrors) > 0 {
-			fn.Sig.Effects = types.Effects{Throws: true, Error: types.MakeErrorUnion(fn.inferredErrors...)}
+		errs := append([]types.Type{}, fn.inferredErrors...)
+		if expected != nil && expected.Effects.Throws {
+			// `throws E | Fail`: the lambda may throw Fail whatever else it
+			// throws — its type carries the named members so that E binds to
+			// the rest and the instance's signature matches exactly
+			for _, m := range types.UnionMembers(expected.Effects.Error) {
+				if !types.ContainsTypeParam(m) {
+					errs = append(errs, m)
+				}
+			}
+		}
+		if len(errs) > 0 {
+			fn.Sig.Effects = types.Effects{Throws: true, Error: types.MakeErrorUnion(errs...)}
 		}
 	} else if l.throws {
 		fn.Sig.Effects = types.Effects{Throws: true, Error: l.errType}

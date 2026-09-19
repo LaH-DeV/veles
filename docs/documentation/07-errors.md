@@ -317,6 +317,61 @@ continues (`examples/dedup`). Note what does *not* work: narrowing does not
 survive a call boundary, so `results.filter(r => r is Ok).map(r => ...)`
 still sees `Result` inside the `map` — use `oks()`, or `mapNotNull(r => r.getOrNull())`.
 
+### Changing the error on the way up: `?!` and `mapError`
+
+An error from one layer is often the wrong error for the next: a
+`ParseError` deep inside a request handler should reach the client as
+"400 bad request", a missing map key should become "no such user". Two
+tools, both leaving `try` as the one place where propagation happens:
+
+- `x ?! e` — "or fail with `e`". A `T?` or a `Result<T, E1>` becomes a
+  `Result<T, E2>` that fails with `e`; the right side is evaluated only on
+  the failure path, and `try x ?! e` is read as `try (x ?! e)`.
+- `r.mapError(f)` — the same with the old error in hand, when the new one
+  should mention it.
+
+```veles
+use io
+
+error NotFound { id: string; fun message(): string = "no user ${self.id}" }
+error BadRequest { detail: string }
+error ParseError { at: i64 }
+
+fun parseAge(s: string): i64 throws ParseError =
+  s.toInt() ?: throw ParseError(at: 0)
+
+fun age(users: Map<string, string>, id: string): i64 throws NotFound | BadRequest {
+  val text = try users.get(id) ?! NotFound(id)                       // absence → NotFound
+  try parseAge(text).mapError(e => BadRequest(detail: "age at ${e.at}"))   // ParseError → BadRequest
+}
+
+fun main() {
+  val users = ["ann": "41", "bob": "x"]
+  loop (id in ["ann", "bob", "cid"]) {
+    when (age(users, id)) {
+      is Ok(n)  => io.println("$id is $n")
+      is Err(e) => io.println("$id: ${e.message()}")
+    }
+  }
+  val kept: Result<i64, BadRequest> = parseAge("z") ?! BadRequest(detail: "not a number")
+  io.println("$kept")
+}
+```
+
+Output:
+```text
+ann is 41
+bob: BadRequest(detail: age at 0)
+cid: no user cid
+Err(error: BadRequest(detail: not a number))
+```
+
+`?!` next to `?:`: both read "the value, or…"; `?:` supplies a fallback
+value and the expression is a `T`, `?!` supplies a failure and the
+expression is a `Result` for `try` to propagate. The right side of `?!`
+must be an error type — a value, never a thrown one; `?: throw e` remains
+the spelling for "fail right here, not as a Result".
+
 ### Functions that never return
 
 `os.exit` and `panic` never come back; their type is `Never`, the type with no
