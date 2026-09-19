@@ -425,7 +425,28 @@ M2. examples/calc (2026-09-18): tokenizer, Pratt parser into a sealed AST (recur
    section; calc uses `try args.map(a => try self.eval(a))`. (c) DONE: byte literal `'"'` is a
    u8 (ASCII only; sema CharLit → IntConst; spec D18/4b, docs 02, errors.md, cheatsheet);
    json/calc rewritten with them.
-   NEXT: M3 todo CLI over fs, M4 worker pool, M5 text adventure.
+   NEXT (then): M3 todo CLI over fs, M4 worker pool, M5 text adventure.
+M3. examples/todo (2026-09-19): a todo.txt manager (add/ls/due/done/undo/pri/edit/rm/projects/
+   contexts/archive) over fs/os/path/time; the examples harness gained scripted runs
+   (`commands.txt`: one shell-like line per invocation, `NAME=v` prefixes set the environment,
+   fresh temp cwd, transcript `$ line` + output + `exit=N`) and `go test ./examples -update`.
+   Found:
+   - `struct Task` was unreachable: the built-in generics (List, Map, Set, Channel, Task, Range,
+     Option) were matched by NAME in resolveType before any scope lookup, so a user type of the
+     same name silently became the builtin — while call sites already let declarations win
+     (`f.lookup` before `collectionCtor`). Fixed: a declared/imported type shadows the builtin
+     in type position too (TestUserTypeShadowsBuiltinGeneric).
+   - `try fs.readFile(f).lines()` parses as `try (fs.readFile(f).lines())` (`try` is a prefix
+     over the whole postfix chain, like Swift/Zig), so the error was "no method lines on
+     Result". Kept the grammar; the diagnostic now says `write (try f()).lines()`. Worth a
+     docs line in 08 — or a decision: should `try` bind tighter than `.` (Rust `?` postfix
+     avoids the question entirely)?
+   - No language friction otherwise: `loop ((i, t) in xs.iter().enumerate())`, `?: return null`,
+     `refOrPanic` for in-place edits, `sortedWith` with early returns in the lambda, static
+     ctors on structs all read fine. The formatter leaves `=>` unaligned when the arm heads
+     differ by more than 24 columns (maxAlignSpread) — by design, noted here so it is not
+     re-reported.
+   NEXT: M4 worker pool, M5 text adventure.
 IDEAS (2026-09-18, undecided — noted from reading examples/json, examples/syntax_tour):
  I1. Guard / early-exit binding. `val doc = when (val r = parse(text)) { is Ok => r; is Err
      => { ...; return } }` is correct (a Never arm drops out of the join, `return` targets the

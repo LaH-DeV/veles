@@ -1706,3 +1706,32 @@ fun main() {
 		t.Errorf("stale-reference warnings on lines %v, want %s:\n%s", got, want, diags.Render())
 	}
 }
+
+// A declaration named like a built-in generic (`struct Task`) shadows it in
+// type position as it already did at call sites; the built-in stays
+// reachable from other modules (D24: names in scope win over the prelude).
+func TestUserTypeShadowsBuiltinGeneric(t *testing.T) {
+	expectClean(t, prelude+`
+struct Task { text: string }
+struct List { n: i64 }
+fun first(xs: MutableList<Task>): Task? = xs.first()
+fun main() {
+  val xs: MutableList<Task> = [Task(text: "a")]
+  val l = List(n: 1)
+  io.println("${first(xs)?.text} ${l.n} ${xs.len()}")
+}`)
+	expectError(t, prelude+`
+fun main() { val t: Task<i64> = 1 }`, "expected 'Task<i64>', found 'i64'")
+}
+
+// `try f().m()` applies `try` to the whole chain; the message says how to
+// unwrap first instead of reporting a missing method on the Result.
+func TestTryCoversChainHint(t *testing.T) {
+	expectError(t, prelude+`
+error E { message: string }
+fun f(): string throws E = "a b"
+fun main() throws E {
+  val n = try f().split(" ").len()
+  io.println("$n")
+}`, "write '(try f()).split(...)' to unwrap first")
+}

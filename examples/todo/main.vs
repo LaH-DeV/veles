@@ -1,0 +1,336 @@
+// A todo.txt manager: a command-line tool that keeps tasks in a plain text
+// file, one per line, in the todo.txt format —
+//
+//   x 2026-09-19 (A) 2026-09-17 Call the bank +finance @phone due:2026-09-20
+//   ^ done         ^ priority   ^ created     ^ +project @context key:value tags
+//
+// The file lives at $TODO_FILE, or todo.txt in the current directory. Tasks
+// are numbered by line; `todo help` lists the commands.
+use io
+use os
+use fs
+use path
+use time
+
+error UsageError {
+  message: string
+}
+
+// ---------------------------------------------------------------------------
+// the task line
+
+struct Task {
+  done:        bool = false
+  completedOn: string = ""  // ISO dates, "" when absent
+  createdOn:   string = ""
+  priority:    string = ""  // "A".."Z" or ""
+  text:        string       // the description, tags included
+
+  /// Parses one line of the file; anything is a task, so this cannot fail.
+  static fun parse(line: string): Task {
+    var words = line.split(" ").filter(w => !w.isEmpty())
+    var t = Task(text: "")
+    if (words.first() == "x") {
+      t.done = true
+      words = words.drop(1)
+      if (isDate(words.first())) {
+        t.completedOn = words.atOrPanic(0)
+        words = words.drop(1)
+      }
+    }
+    if (isPriority(words.first() ?: "")) {
+      t.priority = words.atOrPanic(0).substring(1, 2) ?: ""
+      words = words.drop(1)
+    }
+    if (isDate(words.first())) {
+      t.createdOn = words.atOrPanic(0)
+      words = words.drop(1)
+    }
+    t.text = words.join(" ")
+    t
+  }
+
+  /// The line as it is stored: the inverse of `parse`.
+  fun line(): string {
+    val sb = stringBuilder()
+    if (self.done) {
+      sb.append("x ")
+      if (!self.completedOn.isEmpty()) sb.append("${self.completedOn} ")
+    }
+    if (!self.priority.isEmpty()) sb.append("(${self.priority}) ")
+    if (!self.createdOn.isEmpty()) sb.append("${self.createdOn} ")
+    sb.append(self.text)
+    sb.toString()
+  }
+
+  fun words(): List<string> = self.text.split(" ")
+  fun projects(): List<string> = self.words().filter(w => w.startsWith("+") && w.len() > 1)
+  fun contexts(): List<string> = self.words().filter(w => w.startsWith("@") && w.len() > 1)
+
+  /// The value of a `key:value` tag, or null.
+  fun tag(key: string): string? {
+    val prefix = "$key:"
+    val w = self.words().find(w => w.startsWith(prefix)) ?: return null
+    w.substring(prefix.len(), w.len())
+  }
+
+  fun due(): string? {
+    val d = self.tag("due") ?: return null
+    if (isDate(d)) d else null
+  }
+
+  /// Every term must match: `+proj` and `@ctx` match a tag, `-word` excludes,
+  /// anything else is a case-insensitive substring of the line.
+  fun matches(terms: List<string>): bool = terms.all(term => when {
+    term.startsWith("-") && term.len() > 1 => !self.matches([term.substring(1, term.len()) ?: ""])
+    term.startsWith("+") => self.projects().contains(term)
+    term.startsWith("@") => self.contexts().contains(term)
+    else => self.line().toLower().contains(term.toLower())
+  })
+}
+
+fun isDigit(b: u8): bool = b >= '0' && b <= '9'
+
+/// `YYYY-MM-DD`, by shape only.
+fun isDate(w: string?): bool {
+  if (w == null) return false
+  if (w.len() != 10) return false
+  loop (i in 0..<10) {
+    val b = w.byteAt(i)
+    if (i == 4 || i == 7) {
+      if (b != '-') return false
+    } else if (!isDigit(b)) return false
+  }
+  true
+}
+
+/// `(A)` to `(Z)`.
+fun isPriority(w: string): bool = w.len() == 3 && w.byteAt(0) == '(' && w.byteAt(2) == ')' && w.byteAt(1) >= 'A' && w.byteAt(1) <= 'Z'
+
+// ---------------------------------------------------------------------------
+// dates: only whole days matter here
+
+/// Today as an ISO date; $TODO_TODAY overrides the clock for scripts and tests.
+fun today(): string = os.env("TODO_TODAY") ?: time.local(time.now()).date()
+
+/// Days since 1970-01-01 for an ISO date (Howard Hinnant's days_from_civil).
+fun dayNumber(date: string): i64 {
+  val parts = date.split("-").map(p => p.toInt() ?: 0)
+  var y = parts.atOrPanic(0)
+  val m = parts.atOrPanic(1)
+  val d = parts.atOrPanic(2)
+  if (m <= 2) y -= 1
+  val era = (if (y >= 0) y else y - 399) / 400
+  val yoe = y - era * 400
+  val doy = (153 * (if (m > 2) m - 3 else m + 9) + 2) / 5 + d - 1
+  val doe = yoe * 365 + yoe / 4 - yoe / 100 + doy
+  era * 146097 + doe - 719468
+}
+
+/// "overdue by 2 days", "due today", "due in 3 days".
+fun describeDue(due: string, today: string): string {
+  val days = dayNumber(due) - dayNumber(today)
+  when {
+    days < 0  => "overdue by ${-days} ${if (days == -1) "day" else "days"}"
+    days == 0 => "due today"
+    else      => "due in $days ${if (days == 1) "day" else "days"}"
+  }
+}
+
+// ---------------------------------------------------------------------------
+// the file
+
+struct TodoFile {
+  file:  string
+  tasks: MutableList<Task> = []
+
+  static fun open(file: string): TodoFile throws IoError {
+    val t = TodoFile(file: file)
+    if (fs.exists(file)) {
+      loop (line in (try fs.readFile(file)).lines()) {
+        if (!line.trim().isEmpty()) t.tasks.push(Task.parse(line))
+      }
+    }
+    t
+  }
+
+  fun save() throws IoError {
+    try fs.writeFile(self.file, self.tasks.map(t => t.line() + "\n").join(""))
+  }
+
+  /// Task numbers are 1-based line numbers.
+  fun number(arg: string): i64 throws UsageError {
+    val n = arg.toInt() ?: throw UsageError(message: "'$arg' is not a task number")
+    if (n < 1 || n > self.tasks.len()) throw UsageError(message: "no task $n (${self.tasks.len()} in ${path.base(self.file)})")
+    n
+  }
+
+  /// The numbered tasks, open ones first by priority, then by due date, then by number.
+  fun listed(terms: List<string>, all: bool): List<(i64, Task)> {
+    val rows: MutableList<(i64, Task)> = []
+    loop ((i, t) in self.tasks.iter().enumerate()) {
+      if ((all || !t.done) && t.matches(terms)) rows.push((i + 1, t))
+    }
+    rows.sortedWith((a, b) => {
+      val (x, y) = (a.1, b.1)
+      if (x.done != y.done) return if (x.done) 1 else -1
+      val pri = sortKey(x.priority).compareTo(sortKey(y.priority))
+      if (pri != 0) return pri
+      val due = (x.due() ?: "9999").compareTo(y.due() ?: "9999")
+      if (due != 0) return due
+      a.0 - b.0
+    })
+  }
+}
+
+fun sortKey(priority: string): string = if (priority.isEmpty()) "ZZ" else priority
+
+fun printRows(rows: List<(i64, Task)>, total: i64, width: i64) {
+  val now = today()
+  loop ((n, t) in rows) {
+    val due = t.due()
+    val note = if (due != null && !t.done) "  <- ${describeDue(due, now)}" else ""
+    io.println("${"$n".padStart(width)} ${t.line()}$note")
+  }
+  io.println("--")
+  io.println("${rows.len()} of $total ${if (total == 1) "task" else "tasks"} shown")
+}
+
+fun counts(tasks: List<Task>, pick: fun(Task): List<string>) {
+  val tally: MutableMap<string, i64> = [:]
+  loop (t in tasks) {
+    if (t.done) continue
+    loop (tag in pick(t).distinct()) {
+      tally.set(tag, tally.getOrDefault(tag, 0) + 1)
+    }
+  }
+  loop ((tag, n) in tally.entries().sortedWith((a, b) => if (a.1 != b.1) b.1 - a.1 else a.0.compareTo(b.0))) {
+    io.println("${"$n".padStart(3)} $tag")
+  }
+}
+
+// ---------------------------------------------------------------------------
+// commands
+
+const HELP = "usage: todo <command> [arguments]
+
+  add TEXT...          add a task; (A) at the start sets its priority
+  ls [TERMS...] [-a]   open tasks (all with -a) matching every term:
+                       +project, @context, -word to exclude, a word to search
+  due                  open tasks with a due:YYYY-MM-DD tag, soonest first
+  done N...            complete tasks
+  undo N               reopen a task
+  pri N A-Z            set a priority; depri N removes it
+  edit N TEXT...       replace a task's text
+  rm N                 delete a task (later tasks are renumbered)
+  projects, contexts   how many open tasks carry each tag
+  archive              move completed tasks to done.txt next to the file
+
+The file is \$TODO_FILE or ./todo.txt; \$TODO_TODAY overrides today's date.
+"
+
+fun run(args: List<string>) throws UsageError | IoError {
+  val file = os.env("TODO_FILE") ?: "todo.txt"
+  val todo = try TodoFile.open(file)
+  val command = args.first() ?: "ls"
+  val rest = args.drop(1)
+  val width = "${todo.tasks.len() + 1}".len()
+
+  when (command) {
+    "help", "-h", "--help" => io.print(HELP)
+    "add"                  => {
+      if (rest.isEmpty()) throw UsageError(message: "add needs the task text")
+      var t = Task.parse(rest.join(" "))
+      t.createdOn = today()
+      todo.tasks.push(t)
+      try todo.save()
+      io.println("${todo.tasks.len()} ${t.line()}")
+    }
+    "ls", "list"           => {
+      val terms = rest.filter(a => a != "-a" && a != "--all")
+      printRows(todo.listed(terms, rest.len() != terms.len()), todo.tasks.len(), width)
+    }
+    "due"                  => {
+      val rows = todo.listed([], false).filter(r => r.1.due() != null)
+      printRows(rows.sortedBy(r => r.1.due() ?: ""), todo.tasks.len(), width)
+    }
+    "done", "do"           => {
+      if (rest.isEmpty()) throw UsageError(message: "done needs a task number")
+      loop (arg in rest) {
+        val n = try todo.number(arg)
+        val t = todo.tasks.refOrPanic(n - 1)
+        if (t.done) {
+          io.println("$n is already done")
+          continue
+        }
+        t.done = true
+        t.completedOn = today()
+        t.priority = ""
+        io.println("$n ${t.line()}")
+      }
+      try todo.save()
+    }
+    "undo"                 => {
+      val n = try todo.number(rest.first() ?: "")
+      val t = todo.tasks.refOrPanic(n - 1)
+      t.done = false
+      t.completedOn = ""
+      try todo.save()
+      io.println("$n ${t.line()}")
+    }
+    "pri"                  => {
+      val n = try todo.number(rest.first() ?: "")
+      val p = (rest.at(1) ?: "").toUpper()
+      if (!isPriority("($p)")) throw UsageError(message: "priority must be a letter A-Z, got '$p'")
+      todo.tasks.refOrPanic(n - 1).priority = p
+      try todo.save()
+      io.println("$n ${todo.tasks.atOrPanic(n - 1).line()}")
+    }
+    "depri"                => {
+      val n = try todo.number(rest.first() ?: "")
+      todo.tasks.refOrPanic(n - 1).priority = ""
+      try todo.save()
+      io.println("$n ${todo.tasks.atOrPanic(n - 1).line()}")
+    }
+    "edit"                 => {
+      val n = try todo.number(rest.first() ?: "")
+      if (rest.len() < 2) throw UsageError(message: "edit needs the new text")
+      todo.tasks.refOrPanic(n - 1).text = rest.drop(1).join(" ")
+      try todo.save()
+      io.println("$n ${todo.tasks.atOrPanic(n - 1).line()}")
+    }
+    "rm", "del"            => {
+      val n = try todo.number(rest.first() ?: "")
+      val t = todo.tasks.removeAt(n - 1)
+      try todo.save()
+      io.println("removed $n ${t.line()}")
+    }
+    "projects"             => counts(todo.tasks.toList(), t => t.projects())
+    "contexts"             => counts(todo.tasks.toList(), t => t.contexts())
+    "archive"              => {
+      val done = todo.tasks.filter(t => t.done)
+      if (done.isEmpty()) {
+        io.println("nothing to archive")
+        return
+      }
+      val archive = path.join(path.dir(file), "done.txt")
+      try fs.appendFile(archive, done.map(t => t.line() + "\n").join(""))
+      val open = todo.tasks.filter(t => !t.done)
+      todo.tasks.clear()
+      todo.tasks.addAll(open)
+      try todo.save()
+      io.println("archived ${done.len()} to ${path.base(archive)}, ${open.len()} left")
+    }
+    else                   => throw UsageError(message: "unknown command '$command' (try: todo help)")
+  }
+}
+
+fun main() {
+  when (val r = run(os.args())) {
+    is Err => {
+      io.println("todo: ${r.message()}")
+      os.exit(if (r is UsageError) 2 else 1)
+    }
+    is Ok  => { }
+  }
+}

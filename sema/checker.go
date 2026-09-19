@@ -619,6 +619,12 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 				}
 				return tp
 			}
+			// the built-in generics are not in any scope: a declaration or
+			// import of the same name (a user's `struct Task`) shadows them,
+			// as it does at a call site (`f.lookup` in checkCall)
+			if sym, _ := c.lookupTypeName(env, t.Path); sym != nil && sym.Kind == SymType && c.universe.LookupLocal(name) != sym {
+				name = ""
+			}
 			switch name {
 			case "List", "MutableList":
 				if len(t.Args) != 1 {

@@ -47,7 +47,7 @@ compiler/clang/flag combination and cached under the user cache directory
 | `lsp/` | language server: diagnostics with quick fixes, hover, definition, symbols, completion, formatting over the compiler front end |
 | `editors/vscode/` | VS Code extension: TextMate grammar and client for `veles lsp` |
 | `docs/` | tutorials and reference; `go test ./docs/` runs every code block |
-| `examples/` | 28 programs with expected output; `go test ./...` compiles and runs them |
+| `examples/` | 31 programs with expected output; `go test ./...` compiles and runs them (a `commands.txt` scripts a command-line tool, `-update` rewrites `expected.txt`) |
 
 `go test ./...` is the regression suite. The parser, formatter and checker also
 have native fuzz targets — `go test -fuzz=FuzzParse ./parser`, `-fuzz=FuzzFormat

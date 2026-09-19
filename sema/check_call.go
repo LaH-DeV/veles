@@ -687,6 +687,13 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 	case *types.Nullable:
 		f.errorf(callee.Pos, "value of type '%s' may be null; use '?.' or check for null first (D5)", tt)
 	case *types.Sealed:
+		if isResultType(tt) {
+			// `try f().m()` applies `try` to the whole chain, so `m` is
+			// looked up on the Result; the unwrap has to happen first
+			f.errorf(callee.Name.Pos, "no method '%s' on '%s'; 'try' covers the whole chain — write '(try %s).%s(...)' to unwrap first, or match with 'when' (D13)", name, tt, srcText(callee.X), name)
+			f.checkArgsLoosely(e.Args)
+			return bad()
+		}
 		f.errorf(callee.Name.Pos, "no method '%s' on sealed trait '%s'; match on its variants with 'when' (D13)", name, tt)
 	case *types.Trait:
 		f.errorf(callee.Pos, "trait objects (boxed '%s') are not supported yet in the bootstrap compiler; use a generic bound instead (D9)", tt)

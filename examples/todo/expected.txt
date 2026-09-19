@@ -1,0 +1,126 @@
+$ TODO_TODAY=2026-09-14 todo add "(B) Renew passport +admin @city due:2026-09-20"
+1 (B) 2026-09-14 Renew passport +admin @city due:2026-09-20
+exit=0
+$ TODO_TODAY=2026-09-14 todo add "Buy milk and eggs +groceries @store"
+2 2026-09-14 Buy milk and eggs +groceries @store
+exit=0
+$ TODO_TODAY=2026-09-14 todo add "(A) Call the bank about the card +finance @phone due:2026-09-15"
+3 (A) 2026-09-14 Call the bank about the card +finance @phone due:2026-09-15
+exit=0
+$ TODO_TODAY=2026-09-14 todo add "Fix the bike light +home"
+4 2026-09-14 Fix the bike light +home
+exit=0
+$ TODO_TODAY=2026-09-14 todo add "Book dentist +admin @phone due:2026-09-13"
+5 2026-09-14 Book dentist +admin @phone due:2026-09-13
+exit=0
+$ TODO_TODAY=2026-09-14 todo
+3 (A) 2026-09-14 Call the bank about the card +finance @phone due:2026-09-15  <- due in 1 day
+1 (B) 2026-09-14 Renew passport +admin @city due:2026-09-20  <- due in 6 days
+5 2026-09-14 Book dentist +admin @phone due:2026-09-13  <- overdue by 1 day
+2 2026-09-14 Buy milk and eggs +groceries @store
+4 2026-09-14 Fix the bike light +home
+--
+5 of 5 tasks shown
+exit=0
+$ TODO_TODAY=2026-09-14 todo due
+5 2026-09-14 Book dentist +admin @phone due:2026-09-13  <- overdue by 1 day
+3 (A) 2026-09-14 Call the bank about the card +finance @phone due:2026-09-15  <- due in 1 day
+1 (B) 2026-09-14 Renew passport +admin @city due:2026-09-20  <- due in 6 days
+--
+3 of 5 tasks shown
+exit=0
+$ TODO_TODAY=2026-09-14 todo ls @phone
+3 (A) 2026-09-14 Call the bank about the card +finance @phone due:2026-09-15  <- due in 1 day
+5 2026-09-14 Book dentist +admin @phone due:2026-09-13  <- overdue by 1 day
+--
+2 of 5 tasks shown
+exit=0
+$ TODO_TODAY=2026-09-14 todo ls +admin -passport
+5 2026-09-14 Book dentist +admin @phone due:2026-09-13  <- overdue by 1 day
+--
+1 of 5 tasks shown
+exit=0
+$ TODO_TODAY=2026-09-14 todo ls bike
+4 2026-09-14 Fix the bike light +home
+--
+1 of 5 tasks shown
+exit=0
+$ TODO_TODAY=2026-09-15 todo done 3 5
+3 x 2026-09-15 2026-09-14 Call the bank about the card +finance @phone due:2026-09-15
+5 x 2026-09-15 2026-09-14 Book dentist +admin @phone due:2026-09-13
+exit=0
+$ TODO_TODAY=2026-09-15 todo done 3
+3 is already done
+exit=0
+$ TODO_TODAY=2026-09-15 todo pri 4 c
+4 (C) 2026-09-14 Fix the bike light +home
+exit=0
+$ TODO_TODAY=2026-09-15 todo edit 2 "Buy oat milk and eggs +groceries @store"
+2 2026-09-14 Buy oat milk and eggs +groceries @store
+exit=0
+$ TODO_TODAY=2026-09-15 todo ls -a
+1 (B) 2026-09-14 Renew passport +admin @city due:2026-09-20  <- due in 5 days
+4 (C) 2026-09-14 Fix the bike light +home
+2 2026-09-14 Buy oat milk and eggs +groceries @store
+5 x 2026-09-15 2026-09-14 Book dentist +admin @phone due:2026-09-13
+3 x 2026-09-15 2026-09-14 Call the bank about the card +finance @phone due:2026-09-15
+--
+5 of 5 tasks shown
+exit=0
+$ TODO_TODAY=2026-09-15 todo projects
+  1 +admin
+  1 +groceries
+  1 +home
+exit=0
+$ TODO_TODAY=2026-09-15 todo contexts
+  1 @city
+  1 @store
+exit=0
+$ TODO_TODAY=2026-09-16 todo undo 5
+5 2026-09-14 Book dentist +admin @phone due:2026-09-13
+exit=0
+$ TODO_TODAY=2026-09-16 todo depri 4
+4 2026-09-14 Fix the bike light +home
+exit=0
+$ TODO_TODAY=2026-09-16 todo rm 2
+removed 2 2026-09-14 Buy oat milk and eggs +groceries @store
+exit=0
+$ TODO_TODAY=2026-09-16 todo archive
+archived 1 to done.txt, 3 left
+exit=0
+$ TODO_TODAY=2026-09-16 todo archive
+nothing to archive
+exit=0
+$ TODO_TODAY=2026-09-21 todo
+1 (B) 2026-09-14 Renew passport +admin @city due:2026-09-20  <- overdue by 1 day
+3 2026-09-14 Book dentist +admin @phone due:2026-09-13  <- overdue by 8 days
+2 2026-09-14 Fix the bike light +home
+--
+3 of 3 tasks shown
+exit=0
+$ todo done 9
+todo: no task 9 (3 in todo.txt)
+exit=2
+$ todo pri 1 5
+todo: priority must be a letter A-Z, got '5'
+exit=2
+$ todo frobnicate
+todo: unknown command 'frobnicate' (try: todo help)
+exit=2
+$ todo help
+usage: todo <command> [arguments]
+
+  add TEXT...          add a task; (A) at the start sets its priority
+  ls [TERMS...] [-a]   open tasks (all with -a) matching every term:
+                       +project, @context, -word to exclude, a word to search
+  due                  open tasks with a due:YYYY-MM-DD tag, soonest first
+  done N...            complete tasks
+  undo N               reopen a task
+  pri N A-Z            set a priority; depri N removes it
+  edit N TEXT...       replace a task's text
+  rm N                 delete a task (later tasks are renumbered)
+  projects, contexts   how many open tasks carry each tag
+  archive              move completed tasks to done.txt next to the file
+
+The file is $TODO_FILE or ./todo.txt; $TODO_TODAY overrides today's date.
+exit=0

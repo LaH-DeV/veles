@@ -1,0 +1,28 @@
+# a week of a todo.txt file; TODO_TODAY pins the clock so the transcript is stable
+TODO_TODAY=2026-09-14 todo add "(B) Renew passport +admin @city due:2026-09-20"
+TODO_TODAY=2026-09-14 todo add "Buy milk and eggs +groceries @store"
+TODO_TODAY=2026-09-14 todo add "(A) Call the bank about the card +finance @phone due:2026-09-15"
+TODO_TODAY=2026-09-14 todo add "Fix the bike light +home"
+TODO_TODAY=2026-09-14 todo add "Book dentist +admin @phone due:2026-09-13"
+TODO_TODAY=2026-09-14 todo
+TODO_TODAY=2026-09-14 todo due
+TODO_TODAY=2026-09-14 todo ls @phone
+TODO_TODAY=2026-09-14 todo ls +admin -passport
+TODO_TODAY=2026-09-14 todo ls bike
+TODO_TODAY=2026-09-15 todo done 3 5
+TODO_TODAY=2026-09-15 todo done 3
+TODO_TODAY=2026-09-15 todo pri 4 c
+TODO_TODAY=2026-09-15 todo edit 2 "Buy oat milk and eggs +groceries @store"
+TODO_TODAY=2026-09-15 todo ls -a
+TODO_TODAY=2026-09-15 todo projects
+TODO_TODAY=2026-09-15 todo contexts
+TODO_TODAY=2026-09-16 todo undo 5
+TODO_TODAY=2026-09-16 todo depri 4
+TODO_TODAY=2026-09-16 todo rm 2
+TODO_TODAY=2026-09-16 todo archive
+TODO_TODAY=2026-09-16 todo archive
+TODO_TODAY=2026-09-21 todo
+todo done 9
+todo pri 1 5
+todo frobnicate
+todo help

@@ -107,6 +107,11 @@ bad input two
 `try` is only allowed in a function declared `throws`; using it
 elsewhere is an error that tells you exactly that.
 
+`try` is a prefix that covers the whole expression after it, so
+`try fs.readFile(p).lines()` asks for `lines()` on the `Result` and is refused;
+unwrap first with `(try fs.readFile(p)).lines()`, or bind the value on its
+own line.
+
 ## Letting the compiler work out the error type
 
 Write `throws` with no type and the compiler infers the union of
