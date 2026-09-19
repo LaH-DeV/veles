@@ -483,6 +483,11 @@ func (f *fnCtx) constructStruct(st *types.Struct, args []ast.Arg, span source.Sp
 	for i, fld := range st.Fields {
 		params[i] = types.Param{Name: fld.Name, Type: fld.Type, HasDefault: fld.HasDefault}
 	}
+	args, ok := f.punFields(st, args)
+	if !ok {
+		f.checkArgsLoosely(args)
+		return bad()
+	}
 	bound, ok := f.bindArgs(params, args, "struct '"+st.Name+"'", span)
 	if !ok {
 		f.checkArgsLoosely(args)
@@ -505,6 +510,49 @@ func (f *fnCtx) constructStruct(st *types.Struct, args []ast.Arg, span source.Sp
 		return &MakeVariant{exprBase{st.Sealed}, st.Sealed, st, lit}
 	}
 	return lit
+}
+
+// punFields applies D28's construction rule to the arguments: every field
+// is named, and a bare argument is allowed only as a pun — a variable
+// named like the field, `Hashed(file, size: n)` for `file: file`. Any other
+// bare argument is an error carrying the fix that names it after the field
+// at its position; `file: file` is a warning with the fix that puns it.
+func (f *fnCtx) punFields(st *types.Struct, args []ast.Arg) ([]ast.Arg, bool) {
+	out := make([]ast.Arg, len(args))
+	ok := true
+	for i, a := range args {
+		out[i] = a
+		if a.Name != nil {
+			if n, isName := a.Value.(*ast.NameExpr); isName && n.Name == a.Name.Name && len(n.TypeArgs) == 0 {
+				fix := fixReplace("Write '"+n.Name+"' once", source.Span{File: a.Name.Pos.File, Start: a.Name.Pos.Start, End: n.Pos.Start}, "")
+				f.warnFix(a.Name.Pos, fix, "'%s: %s' can be written '%s' (D28)", n.Name, n.Name, n.Name)
+			}
+			continue
+		}
+		if n, isName := a.Value.(*ast.NameExpr); isName && len(n.TypeArgs) == 0 && hasField(st, n.Name) {
+			ident := ast.Ident{Name: n.Name, Pos: n.Pos}
+			out[i].Name = &ident
+			continue
+		}
+		ok = false
+		if i < len(st.Fields) {
+			fld := st.Fields[i].Name
+			fix := fixReplace("Name the field", source.Span{File: a.Value.Span().File, Start: a.Value.Span().Start, End: a.Value.Span().Start}, fld+": ")
+			f.c.errorFix(a.Value.Span(), fix, "construct '%s' by field name: '%s: %s'; a bare name is accepted only for a variable named like the field (D28)", st.Name, fld, srcText(a.Value))
+		} else {
+			f.errorf(a.Value.Span(), "construct '%s' by field name (D28)", st.Name)
+		}
+	}
+	return out, ok
+}
+
+func hasField(st *types.Struct, name string) bool {
+	for _, fld := range st.Fields {
+		if fld.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func (f *fnCtx) fieldDefault(st *types.Struct, i int) Expr {

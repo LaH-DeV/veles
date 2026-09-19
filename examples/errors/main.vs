@@ -19,7 +19,7 @@ error PortErrors = ParseError | RangeError | Refused  // a named error set (D45)
 
 fun parsePort(text: string): i64 throws PortErrors {
   if (text == "22") throw Refused(message: "port 22 is reserved")
-  val n = text.toInt() ?: throw ParseError(text: text)
+  val n = text.toInt() ?: throw ParseError(text)
   if (n < 0 || n > 65535) throw RangeError(value: n)
   n
 }
@@ -34,7 +34,7 @@ error ConfigError {
 /** Codedoc */
 fun loadConfig(key: string, text: string): i64 throws ConfigError {
   val port = parsePort(text)
-  if (port is Err) throw ConfigError(key: key, cause: port)
+  if (port is Err) throw ConfigError(key, cause: port)
   port * 2
 }
 

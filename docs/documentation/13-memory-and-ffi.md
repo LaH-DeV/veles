@@ -111,7 +111,7 @@ struct Res {
 
 fun open(name: string): Res {
   io.println("open $name")
-  Res(name: name)
+  Res(name)
 }
 
 error Oops { }

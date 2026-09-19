@@ -44,11 +44,11 @@ fun worker(id: i64, jobs: Channel<string>, results: Channel<Hashed>, verbose: bo
     val bytes = fs.readBytes(file)
     if (bytes is Err) {
       io.println("worker $id: cannot read $file: ${bytes.detail}")
-      results.send(Hashed(file: file, size: -1, hash: 0))
+      results.send(Hashed(file, size: -1, hash: 0))
       continue
     }
     if (verbose) io.println("worker $id: ${bytes.len()} bytes ${path.base(file)}")
-    results.send(Hashed(file: file, size: bytes.len(), hash: fnv1a(bytes)))
+    results.send(Hashed(file, size: bytes.len(), hash: fnv1a(bytes)))
   }
 }
 

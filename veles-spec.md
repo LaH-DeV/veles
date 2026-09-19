@@ -431,6 +431,8 @@ val s = Stack<i32>()
 
 Every struct gets an implicit constructor from its fields. Fields with declared defaults may be omitted.
 
+*Addendum (v0.28) — construction is by name only, with puns.* A constructor argument is always `field: value`; the one shorthand is a bare identifier that names both a field and a variable in scope, `Hashed(file, size: n)` for `file: file` (Rust's field-init shorthand, JS's `{ file }`), and `file: file` written out is a warning with a fix. Any other bare argument — `Point(3, -4)` — is an error with the fix that names the fields, so a reordered or renamed field can never silently change what a call means. Named arguments to *functions* keep D28's positional-then-named rule; the pun exists only where positional arguments do not.
+
 *Amended (v0.23) — variadic parameters.* The last parameter of a function may be `name: T...`; the call supplies any number of trailing positional arguments (`join("/", "a", "b")`, `sum()`), collected into a `List<T>`, or one list spread with `join("/", parts...)`. Inside the function the parameter is a plain `List<T>`. A variadic parameter has no default, an `extern` function cannot declare one, and an impl declares it exactly as its trait does.
 
 - **Declaring an explicit constructor suppresses the implicit one.** Otherwise invariants could always be bypassed by calling the generated version.

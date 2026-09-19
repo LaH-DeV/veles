@@ -7,8 +7,8 @@ pub trait Iterator {
   type Item
   mut fun next(): Item?
 
-  fun map<U>(f: fun(Item): U): MapIter<Self, U> = MapIter(inner: self, f: f)
-  fun filter(f: fun(Item): bool): FilterIter<Self> = FilterIter(inner: self, f: f)
+  fun map<U>(f: fun(Item): U): MapIter<Self, U> = MapIter(inner: self, f)
+  fun filter(f: fun(Item): bool): FilterIter<Self> = FilterIter(inner: self, f)
   fun take(n: i64): TakeIter<Self> = TakeIter(inner: self, remaining: n)
   fun skip(n: i64): SkipIter<Self> = SkipIter(inner: self, remaining: n)
   fun enumerate(): EnumerateIter<Self> = EnumerateIter(inner: self, index: 0)

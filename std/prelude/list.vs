@@ -358,7 +358,7 @@ pub struct RangeStepIter<T> {
   /// `(0..10).reversed().step(3)` is 10, 7, 4, 1.
   pub fun step(step: T): RangeStepIter<T> {
     if (step <= 0) panic("step: must be positive")
-    RangeStepIter(current: self.current, last: self.last, step: step, up: self.up, done: self.done)
+    RangeStepIter(current: self.current, last: self.last, step, up: self.up, done: self.done)
   }
 
   /// The same values in the opposite order: `(0..10).step(3).reversed()`
@@ -391,7 +391,7 @@ extend<T> Range<T> {
   pub fun step(step: T): RangeStepIter<T> {
     if (step <= 0) panic("step: must be positive")
     val last = if (self.inclusive) self.hi else self.hi -% 1
-    RangeStepIter(current: self.lo, last: last, step: step, up: true, done: last < self.lo)
+    RangeStepIter(current: self.lo, last, step, up: true, done: last < self.lo)
   }
 
   /// The values from the high end down to the low end.

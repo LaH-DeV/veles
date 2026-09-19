@@ -53,7 +53,7 @@ use io
 error Expected { what: string, expected: string, actual: string }
 
 fun expectEq<T>(what: string, expected: T, actual: T) throws Expected {
-  if (expected != actual) throw Expected(what: what, expected: "$expected", actual: "$actual")
+  if (expected != actual) throw Expected(what, expected: "$expected", actual: "$actual")
 }
 
 fun wordCount(text: string): i64 {

@@ -146,7 +146,7 @@ pub fun priorityQueue<T: Comparable>(): PriorityQueue<T> =
 /// number when its first argument should come out first. For the largest
 /// first: `priorityQueueBy<i64>((a, b) => b.compareTo(a))`.
 pub fun priorityQueueBy<T>(compare: fun(T, T): i64): PriorityQueue<T> =
-  PriorityQueue(state: &PriorityQueueState<T>(compare: compare))
+  PriorityQueue(state: &PriorityQueueState<T>(compare))
 
 /// A priority queue over a binary heap: `push` and `pop` are O(log n),
 /// `peek` O(1). Elements that compare equal come out in no particular order.

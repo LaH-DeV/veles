@@ -656,3 +656,9 @@ R9. DONE (2026-09-19, user decision): `use` takes a comma list — `use fs, io, 
     (`type P = geo.Point`) do not exist yet and are the fallback if prefixed type names hurt.
     Item 19's `pub use geometry.{ area, Circle }` flattening form falls with this: re-exports
     are whole modules (`pub use geometry`, `pub use geometry as geo`) when #19 is built.
+R10. DONE (2026-09-19, user): constructor puns — `Hashed(file, size: n)` means `file: file`
+    (a bare argument must be an identifier naming a field; anything else bare is an error with
+    the fix that names the field at that position; `x: x` is a warning with a fix). Positional
+    struct construction was allowed by bindArgs before and used nowhere — now refused. Spec D28
+    addendum; docs 05, cheatsheet; std/examples/docs rewritten with --fix (generic prelude
+    bodies by sed, as always). Functions keep positional-then-named; the pun is ctor-only.

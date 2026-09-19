@@ -28,7 +28,10 @@ Point(x: 3, y: -4) 7 Point(x: 4, y: -3) true
 - Fields are declared one per line (or comma-separated on one line:
   `struct Point { x: i64, y: i64 }`).
 - Construction uses the field names: `Point(x: 3, y: -4)`. Order does
-  not matter and nothing can be forgotten.
+  not matter and nothing can be forgotten. A variable named like the
+  field can stand alone: `Point(x, y)` is `Point(x: x, y: y)` (and
+  writing `x: x` is a warning with a fix). Nothing else may be passed
+  bare — `Point(3, -4)` is an error.
 - Methods live in the struct body and refer to the receiver as `self`.
 - Every struct can be printed with `$p`, compared with `==`, and used as
   a map key, automatically. To order structs with `<` or `sorted()`, or
@@ -142,7 +145,7 @@ struct Point {
     if (parts.len() != 2) return null
     val x = i64.parse(parts.atOrPanic(0)) ?: return null
     val y = i64.parse(parts.atOrPanic(1)) ?: return null
-    Point(x: x, y: y)
+    Point(x, y)
   }
 
   fun shifted(dx: i64): Point = Point(x: self.x + dx, y: self.y)

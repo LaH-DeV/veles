@@ -15,7 +15,7 @@ struct Point {
     if (parts.len() != 2) return null
     val x = i64.parse(parts.atOrPanic(0).trim()) ?: return null
     val y = i64.parse(parts.atOrPanic(1).trim()) ?: return null
-    Point(x: x, y: y)
+    Point(x, y)
   }
 
   fun shifted(dx: i64): Point = Point(x: self.x + dx, y: self.y)

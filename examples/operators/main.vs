@@ -89,7 +89,7 @@ fun main() {
   counts.set(Name(text: "ANN"), 2)
   io.println("${counts.len()} entry, value ${counts.get(Name(text: "aNN"))}")
 
-  io.println("${Pair(a: a, b: b)} ${Pair(a: 1, b: 2)}")
+  io.println("${Pair(a, b)} ${Pair(a: 1, b: 2)}")
   val shapes: List<Shape> = [Square(side: 2.0), Circle(r: 1.0), Square(side: 1.0)]
   io.println("${shapes.sorted()} largest ${shapes.max()}")
   io.println("${largest([3, 9, 4])} ${largest(["pear", "apple"])} ${largest(shapes)}")

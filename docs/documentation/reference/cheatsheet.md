@@ -105,7 +105,7 @@ struct Point {
   mut fun move(dx: i64) { self.x += dx }   // D22: only on a var
   static fun origin(): Point = Point(x: 0)  // no self; Point.origin()
 }
-val p = Point(x: 1)             // named construction; p == q, "$p" work
+val p = Point(x: 1)             // named construction (Point(x, y) puns variables named like fields); p == q, "$p" work
 val n = i64.parse("42")         // i64?; Parsable — T.parse(s) in generic code
 
 trait Shape {

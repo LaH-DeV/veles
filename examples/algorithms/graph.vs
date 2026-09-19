@@ -9,7 +9,7 @@ pub struct Graph {
   adj: MutableList<MutableList<i64>>
 
   static fun withNodes(n: i64): Graph =
-    Graph(n: n, adj: MutableList<MutableList<i64>>.make(n, _ => []))
+    Graph(n, adj: MutableList<MutableList<i64>>.make(n, _ => []))
 
   fun addEdge(a: i64, b: i64) {
     self.adj.atOrPanic(a).push(b)

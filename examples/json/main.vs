@@ -60,7 +60,7 @@ struct Parser {
     v
   }
 
-  fun fail(message: string): ParseError = ParseError(message: message, pos: self.pos)
+  fun fail(message: string): ParseError = ParseError(message, pos: self.pos)
 
   fun peek(): u8? = if (self.pos < self.src.len()) self.src.byteAt(self.pos) else null
 
@@ -161,7 +161,7 @@ struct Parser {
     }
     val text = self.src.substring(start, self.pos) ?: ""
     val value = text.toF64() ?: throw ParseError(message: "malformed number '$text'", pos: start)
-    JNum(value: value)
+    JNum(value)
   }
 
   mut fun digits() {

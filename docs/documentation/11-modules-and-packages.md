@@ -142,7 +142,7 @@ error Mismatch {
 fun add(a: i64, b: i64) = a + b
 
 fun expectEq(expected: i64, actual: i64) throws Mismatch {
-  if (expected != actual) throw Mismatch(expected: expected, actual: actual)
+  if (expected != actual) throw Mismatch(expected, actual)
 }
 
 @test

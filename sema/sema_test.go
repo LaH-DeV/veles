@@ -1747,3 +1747,31 @@ fun main() {
 	expectError(t, `use io, os, io
 fun main() { io.println("x") }`, "'io' is already imported in this file")
 }
+
+// Construction is by field name; a bare identifier is a pun for a field of
+// the same name, anything else bare is an error with a fix, and `x: x` is
+// a warning with a fix (D28 addendum).
+func TestConstructorPuns(t *testing.T) {
+	expectClean(t, prelude+`
+struct H { file: string; size: i64 = 0 }
+fun main() {
+  val file = "a"
+  val size = 2
+  io.println("${H(file, size)} ${H(size, file: "b")} ${H(file)}")
+}`)
+	expectError(t, prelude+`
+struct H { file: string; size: i64 }
+fun main() { io.println("${H("a", 1)}") }`, "construct 'H' by field name: 'file: \"a\"'")
+	diags := checkSource(t, prelude+`
+struct H { file: string }
+fun main() { val file = "a"; io.println("${H(file: file)}") }`)
+	found := false
+	for _, d := range diags.Items {
+		if strings.Contains(d.Message, "'file: file' can be written 'file'") && d.Fix != nil {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected the pun warning with a fix, got:\n%s", diags.Render())
+	}
+}

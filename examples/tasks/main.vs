@@ -28,7 +28,7 @@ error Boom {
 
 fun mayFail(n: i64): i64 throws Boom {
   await sleep(1)
-  if (n == 2) throw Boom(n: n)
+  if (n == 2) throw Boom(n)
   n * 10
 }
 

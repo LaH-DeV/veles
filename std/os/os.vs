@@ -76,7 +76,7 @@ pub fun run(program: string, args: List<string> = [], mergeStderr: bool = false)
     veles_os_run(cmd, &out, &err)
   }
   if (code < 0) throw ioError(err, program)
-  Output(code: code, stdout: out)
+  Output(code, stdout: out)
 }
 
 /// Builds an `IoError` for a platform error number.
@@ -85,7 +85,7 @@ pub fun ioError(code: i64, path: string): IoError {
   unsafe {
     veles_os_strerror(code, &detail)
   }
-  IoError(path: path, code: code, detail: detail)
+  IoError(path, code, detail)
 }
 
 fun quote(s: string): string {

@@ -17,7 +17,7 @@ error ParseError { text: string }
 error RangeError { value: i64 }
 
 fun parsePort(text: string): i64 throws ParseError | RangeError {
-  val n = text.toInt() ?: throw ParseError(text: text)
+  val n = text.toInt() ?: throw ParseError(text)
   if (n < 0 || n > 65535) throw RangeError(value: n)
   n
 }
@@ -124,7 +124,7 @@ error NotFound { key: string }
 error Invalid { reason: string }
 
 fun lookup(key: string): string throws NotFound =
-  if (key == "name") "veles" else throw NotFound(key: key)
+  if (key == "name") "veles" else throw NotFound(key)
 
 fun validate(v: string): string throws Invalid =
   if (v.len() > 3) v else throw Invalid(reason: "too short")
@@ -186,7 +186,7 @@ error Invalid {
 }
 
 fun lookup(key: string): string throws NotFound =
-  if (key == "name") "veles" else throw NotFound(key: key)
+  if (key == "name") "veles" else throw NotFound(key)
 
 fun validate(v: string): string throws Invalid =
   if (v.len() > 3) v else throw Invalid(reason: "too short")
@@ -244,12 +244,12 @@ fun setting(key: string): string throws LookupErrors =
     "name" => "veles"
     "slow" => throw Timeout()
     "bad" => throw Invalid(reason: "too short")
-    else => throw NotFound(key: key)
+    else => throw NotFound(key)
   }
 
 fun load(file: string, key: string): string throws ConfigError {
   val r = setting(key)
-  if (r is Err) throw ConfigError(file: file, cause: r)
+  if (r is Err) throw ConfigError(file, cause: r)
   r
 }
 

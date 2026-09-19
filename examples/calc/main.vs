@@ -151,7 +151,7 @@ struct Parser {
     val col = self.col()
     val t = self.next()
     when (t) {
-      is Num(value)              => Literal(value: value)
+      is Num(value)              => Literal(value)
       is Name(text)              => {
         val nt = self.peek()
         if (nt is Op && nt.text == "(") {
@@ -181,16 +181,16 @@ struct Parser {
         try self.expectOp(")")
         inner
       }
-      is End                     => throw SyntaxError(message: "unexpected end of expression", col: col)
-      else                       => throw SyntaxError(message: "unexpected token", col: col)
+      is End                     => throw SyntaxError(message: "unexpected end of expression", col)
+      else                       => throw SyntaxError(message: "unexpected token", col)
     }
   }
 }
 
 fun parse(src: string): Expr throws SyntaxError {
-  var lx = Lexer(src: src)
+  var lx = Lexer(src)
   val toks = try lx.run()
-  var p = Parser(toks: toks)
+  var p = Parser(toks)
   try p.parseAll()
 }
 
