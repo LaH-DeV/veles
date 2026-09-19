@@ -1,6 +1,6 @@
 use internal
-pub struct Point {
-  pub x: f64
-  pub y: f64
+public struct Point {
+  public x: f64
+  public y: f64
 }
-pub fun norm(p: Point): f64 = internal.root(p.x * p.x + p.y * p.y)
+public fun norm(p: Point): f64 = internal.root(p.x * p.x + p.y * p.y)

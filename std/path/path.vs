@@ -6,7 +6,7 @@
 /// Joins the parts with separators: `join("a", "b", "c")` is `a/b/c`. An
 /// empty part adds nothing; an absolute part starts over. A list joins with
 /// `join(parts...)`.
-pub fun join(parts: string...): string {
+public fun join(parts: string...): string {
   var out = ""
   loop (p in parts) {
     out = join2(out, p)
@@ -21,33 +21,33 @@ fun join2(a: string, b: string): string {
 }
 
 /// Everything before the last separator, `""` when there is none.
-pub fun dir(p: string): string {
+public fun dir(p: string): string {
   val i = lastSep(p)
   if (i < 0) "" else if (i == 0) "/" else p.substring(0, i) ?: p
 }
 
 /// Everything after the last separator.
-pub fun base(p: string): string {
+public fun base(p: string): string {
   val i = lastSep(p)
   if (i < 0) p else p.substring(i + 1, p.len()) ?: p
 }
 
 /// The extension of the last component including its dot (`".vs"`), or `""`.
-pub fun ext(p: string): string {
+public fun ext(p: string): string {
   val name = base(p)
   val i = name.lastIndexOf(".")
   if (i <= 0) "" else name.substring(i, name.len()) ?: ""
 }
 
 /// The last component without its extension.
-pub fun stem(p: string): string {
+public fun stem(p: string): string {
   val name = base(p)
   val i = name.lastIndexOf(".")
   if (i <= 0) name else name.substring(0, i) ?: name
 }
 
 /// True for `/x`, `C:\x`, `C:/x` and `\server\x`.
-pub fun isAbsolute(p: string): bool {
+public fun isAbsolute(p: string): bool {
   if (p.isEmpty()) return false
   if (isSep(p.byteAt(0))) return true
   p.len() >= 3 && p.byteAt(1) == 58 && isSep(p.byteAt(2))  // drive letter, ':'

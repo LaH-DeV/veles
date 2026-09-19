@@ -19,7 +19,7 @@ extern "C" {
 }
 
 /// The whole file as text; a file that is not valid UTF-8 is an error.
-pub fun readFile(path: string): string throws IoError {
+public fun readFile(path: string): string throws IoError {
   var out = ""
   val code = unsafe {
     veles_fs_read_file(path, &out)
@@ -29,7 +29,7 @@ pub fun readFile(path: string): string throws IoError {
 }
 
 /// The whole file as bytes.
-pub fun readBytes(path: string): List<u8> throws IoError {
+public fun readBytes(path: string): List<u8> throws IoError {
   var data = ""
   val code = unsafe {
     veles_fs_read_bytes(path, &data)
@@ -39,7 +39,7 @@ pub fun readBytes(path: string): List<u8> throws IoError {
 }
 
 /// Writes `bytes` to `path`, replacing the file.
-pub fun writeBytes(path: string, bytes: List<u8>) throws IoError {
+public fun writeBytes(path: string, bytes: List<u8>) throws IoError {
   val code = unsafe {
     veles_fs_write_bytes(path, bytes, false)
   }
@@ -47,7 +47,7 @@ pub fun writeBytes(path: string, bytes: List<u8>) throws IoError {
 }
 
 /// Appends `bytes` to `path`, creating the file when missing.
-pub fun appendBytes(path: string, bytes: List<u8>) throws IoError {
+public fun appendBytes(path: string, bytes: List<u8>) throws IoError {
   val code = unsafe {
     veles_fs_write_bytes(path, bytes, true)
   }
@@ -55,7 +55,7 @@ pub fun appendBytes(path: string, bytes: List<u8>) throws IoError {
 }
 
 /// Writes `text` to `path`, replacing the file.
-pub fun writeFile(path: string, text: string) throws IoError {
+public fun writeFile(path: string, text: string) throws IoError {
   val code = unsafe {
     veles_fs_write_file(path, text)
   }
@@ -63,7 +63,7 @@ pub fun writeFile(path: string, text: string) throws IoError {
 }
 
 /// Appends `text` to `path`, creating the file when missing.
-pub fun appendFile(path: string, text: string) throws IoError {
+public fun appendFile(path: string, text: string) throws IoError {
   val code = unsafe {
     veles_fs_append_file(path, text)
   }
@@ -71,22 +71,22 @@ pub fun appendFile(path: string, text: string) throws IoError {
 }
 
 /// True when a file or directory exists at `path`.
-pub fun exists(path: string): bool = unsafe {
+public fun exists(path: string): bool = unsafe {
   veles_fs_stat(path)
 } != 0
 
 /// True when `path` is a directory.
-pub fun isDir(path: string): bool = unsafe {
+public fun isDir(path: string): bool = unsafe {
   veles_fs_stat(path)
 } == 2
 
 /// True when `path` is a regular file.
-pub fun isFile(path: string): bool = unsafe {
+public fun isFile(path: string): bool = unsafe {
   veles_fs_stat(path)
 } == 1
 
 /// The names in a directory (not paths), sorted.
-pub fun listDir(path: string): List<string> throws IoError {
+public fun listDir(path: string): List<string> throws IoError {
   var out = ""
   val code = unsafe {
     veles_fs_list_dir(path, &out)
@@ -97,7 +97,7 @@ pub fun listDir(path: string): List<string> throws IoError {
 }
 
 /// Creates the directory and any missing parents.
-pub fun mkdir(path: string) throws IoError {
+public fun mkdir(path: string) throws IoError {
   val parent = paths.dir(path)
   if (!parent.isEmpty() && parent != path && !exists(parent)) try mkdir(parent)
   val code = unsafe {
@@ -107,7 +107,7 @@ pub fun mkdir(path: string) throws IoError {
 }
 
 /// Removes a file or an empty directory.
-pub fun remove(path: string) throws IoError {
+public fun remove(path: string) throws IoError {
   val code = unsafe {
     veles_fs_remove(path)
   }
@@ -115,7 +115,7 @@ pub fun remove(path: string) throws IoError {
 }
 
 /// Renames (moves) `from` to `to`.
-pub fun rename(from: string, to: string) throws IoError {
+public fun rename(from: string, to: string) throws IoError {
   val code = unsafe {
     veles_fs_rename(from, to)
   }
@@ -123,7 +123,7 @@ pub fun rename(from: string, to: string) throws IoError {
 }
 
 /// The current working directory.
-pub fun cwd(): string throws IoError {
+public fun cwd(): string throws IoError {
   var out = ""
   val code = unsafe {
     veles_fs_cwd(&out)

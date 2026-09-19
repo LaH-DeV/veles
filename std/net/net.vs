@@ -37,7 +37,7 @@ val wouldBlock: i64 = 1
 /// Listens for TCP connections on `host:port`. `host` empty means every
 /// interface; `port` 0 lets the system pick one (read it back with
 /// `port()`).
-pub fun listen(host: string = "127.0.0.1", port: i64 = 0): Listener throws IoError {
+public fun listen(host: string = "127.0.0.1", port: i64 = 0): Listener throws IoError {
   var fd: i64 = 0
   val code = unsafe {
     veles_net_listen(host, port, &fd)
@@ -47,7 +47,7 @@ pub fun listen(host: string = "127.0.0.1", port: i64 = 0): Listener throws IoErr
 }
 
 /// Connects to `host:port`; suspends until the connection is up.
-pub fun connect(host: string, port: i64): Conn suspends throws IoError {
+public fun connect(host: string, port: i64): Conn suspends throws IoError {
   var fd: i64 = 0
   var code = unsafe {
     veles_net_connect(host, port, &fd)
@@ -68,18 +68,18 @@ pub fun connect(host: string, port: i64): Conn suspends throws IoError {
 }
 
 /// A listening socket. Close it with `with` or `close()`.
-pub struct Listener {
+public struct Listener {
   fd:      i64
   address: string
 
   /// The port the listener is bound to — the system's choice when `listen`
   /// was asked for port 0.
-  pub fun port(): i64 = unsafe {
+  public fun port(): i64 = unsafe {
     veles_net_port(self.fd)
   }
 
   /// The next connection; suspends until a client arrives.
-  pub fun accept(): Conn suspends throws IoError {
+  public fun accept(): Conn suspends throws IoError {
     loop {
       var fd: i64 = 0
       val code = unsafe {
@@ -127,17 +127,17 @@ fun peerOf(fd: i64): string {
 
 /// One TCP connection. Reads hand out whatever has arrived; `readLine`
 /// and `readExact` buffer on top of that.
-pub struct Conn {
+public struct Conn {
   fd:      i64
   address: string
   buffer:  Mutex<MutableList<u8>> = newBuffer()
 
   /// The peer's address, `host:port`.
-  pub fun peer(): string = self.address
+  public fun peer(): string = self.address
 
   /// Up to `max` bytes, as soon as any are available; an empty list means
   /// the peer closed its side.
-  pub fun read(max: i64 = 65536): List<u8> suspends throws IoError {
+  public fun read(max: i64 = 65536): List<u8> suspends throws IoError {
     val buffered = self.take(max)
     if (!buffered.isEmpty()) return buffered
     loop {
@@ -152,7 +152,7 @@ pub struct Conn {
   }
 
   /// Exactly `n` bytes, or fewer when the peer closes first.
-  pub fun readExact(n: i64): List<u8> suspends throws IoError {
+  public fun readExact(n: i64): List<u8> suspends throws IoError {
     loop (self.buffered() < n) {
       val chunk = try self.fetch()
       if (chunk.isEmpty()) break
@@ -163,7 +163,7 @@ pub struct Conn {
   /// The next line as text, without its `\n` (and a `\r` before it), or
   /// `null` when the peer closed with nothing left; a line that is not
   /// valid UTF-8 is an error.
-  pub fun readLine(): string? suspends throws IoError {
+  public fun readLine(): string? suspends throws IoError {
     var scanned: i64 = 0
     loop {
       val nl = self.buffer.withLock(b => findByte(b, 10, from: scanned))
@@ -188,7 +188,7 @@ pub struct Conn {
   }
 
   /// Sends all of `bytes`; suspends while the peer catches up.
-  pub fun write(bytes: List<u8>) suspends throws IoError {
+  public fun write(bytes: List<u8>) suspends throws IoError {
     var offset: i64 = 0
     loop (offset < bytes.len()) {
       var sent: i64 = 0
@@ -205,14 +205,14 @@ pub struct Conn {
   }
 
   /// Sends `text` as UTF-8.
-  pub fun writeText(text: string) suspends throws IoError {
+  public fun writeText(text: string) suspends throws IoError {
     try self.write(text.bytes())
   }
 
   /// Tells the peer that nothing more will be sent (its reads see the end
   /// of the stream) while this side keeps reading — how a client marks the
   /// end of a request when the protocol has no other way to say so.
-  pub fun shutdownWrite() throws IoError {
+  public fun shutdownWrite() throws IoError {
     val code = unsafe {
       veles_net_shutdown_write(self.fd)
     }

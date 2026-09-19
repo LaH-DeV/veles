@@ -22,7 +22,7 @@ struct Version {
 
 /// A case-insensitive name: equal values must hash alike, so Equatable
 /// comes with Hashable.
-pub struct Name {
+public struct Name {
   text: string
 
   impl Hashable {

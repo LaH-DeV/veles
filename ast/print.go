@@ -106,7 +106,7 @@ func (p *printer) decl(d Decl) {
 		p.attrs(d.Attrs)
 		p.open("type ")
 		if d.Pub {
-			p.w("pub ")
+			p.w("public ")
 		}
 		p.w(d.Name.Name)
 		p.typeParams(d.TypeParams)
@@ -117,7 +117,7 @@ func (p *printer) decl(d Decl) {
 		p.attrs(d.Attrs)
 		p.open("error ")
 		if d.Pub {
-			p.w("pub ")
+			p.w("public ")
 		}
 		p.w(d.Name.Name + " = ")
 		p.typ(d.Members)
@@ -130,7 +130,7 @@ func (p *printer) decl(d Decl) {
 			p.open("struct ")
 		}
 		if d.Pub {
-			p.w("pub ")
+			p.w("public ")
 		}
 		if d.Extern {
 			p.w("extern ")
@@ -145,7 +145,10 @@ func (p *printer) decl(d Decl) {
 			p.child(func() {
 				p.w("(field ")
 				if fld.Pub {
-					p.w("pub ")
+					p.w("public ")
+				}
+				if fld.Private {
+					p.w("private ")
 				}
 				p.w(fld.Name.Name + ": ")
 				p.typ(fld.Type)
@@ -159,12 +162,19 @@ func (p *printer) decl(d Decl) {
 		for _, m := range d.Methods {
 			p.child(func() { p.fun(m) })
 		}
+		for _, s := range d.Statics {
+			p.child(func() {
+				p.w("(static " + s.Name.Name + " ")
+				p.expr(s.Value)
+				p.w(")")
+			})
+		}
 		p.close()
 	case *TraitDecl:
 		p.attrs(d.Attrs)
 		p.open("trait ")
 		if d.Pub {
-			p.w("pub ")
+			p.w("public ")
 		}
 		if d.Sealed {
 			p.w("sealed ")
@@ -227,7 +237,7 @@ func (p *printer) decl(d Decl) {
 		p.attrs(d.Attrs)
 		p.w("(")
 		if d.Pub {
-			p.w("pub ")
+			p.w("public ")
 		}
 		p.w(d.Kind.String() + " " + d.Name.Name)
 		if d.Type != nil {
@@ -256,7 +266,10 @@ func (p *printer) fun(d *FunDecl) {
 	p.attrs(d.Attrs)
 	p.open("fun ")
 	if d.Pub {
-		p.w("pub ")
+		p.w("public ")
+	}
+	if d.Private {
+		p.w("private ")
 	}
 	if d.Static {
 		p.w("static ")

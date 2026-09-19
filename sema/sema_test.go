@@ -636,7 +636,7 @@ struct Box<T> { value: T }
 trait Show { fun show(): string }
 impl Show for Point { fun show(): string = "p" }
 extend Point {
-  pub fun sum(): i64 = self.x + self.y
+  public fun sum(): i64 = self.x + self.y
   mut fun bump() { self.x += 1 }
 }
 extend<T: Show> Box<T> { fun label(): string = self.value.show() }
@@ -715,7 +715,7 @@ func TestStdSourceTreeIsStd(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	extra := "extend string {\n  pub fun shout(): string = self + \"!\"\n}\nfun wrong(): i64 = \"x\"\n"
+	extra := "extend string {\n  public fun shout(): string = self + \"!\"\n}\nfun wrong(): i64 = \"x\"\n"
 	if err := os.WriteFile(filepath.Join(dir, "zz_extra.vs"), []byte(extra), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -1856,7 +1856,7 @@ type Key = (Index, u64)
 type StrMap<V> = Map<string, V>
 type Handler = fun(string): string
 struct P { x: i64; static fun origin(): P = P(x: 0) }
-pub type Pt = P
+public type Pt = P
 fun apply(h: Handler, s: string): string = h(s)
 fun main() {
   val k: Key = (1, 2)
@@ -2221,4 +2221,83 @@ error Worse { }
 fun text(): string throws Bad = "hi"
 fun d(): string throws Worse = try text().mapError(e => Worse())
 fun main() { io.println("${d()}") }`)
+}
+
+func TestStaticVal(t *testing.T) {
+	expectClean(t, prelude+`
+struct Status {
+  public code: i64
+  public static val ok = Status(code: 200)
+  static val internal: Status = Status(code: 500)
+  static val known = [Status.ok, Status.internal]
+  static fun of(code: i64): Status = Status.known.find(s => s.code == code) ?: Status(code)
+}
+fun main() { io.println("${Status.ok.code} ${Status.of(500).code} ${Status.known.len()}") }`)
+	expectError(t, prelude+`
+struct Status { public code: i64 }
+fun main() { io.println("${Status.ok}") }`, "'Status' has no static 'ok'")
+	expectError(t, prelude+`
+struct Box<T> {
+  v: T
+  static val empty = 0
+}
+fun main() { io.println("${Box<i64>(v: 1).v}") }`, "a generic struct cannot have a 'static val'")
+	expectError(t, prelude+`
+struct S {
+  static fun ok(): i64 = 1
+  static val ok = 2
+}
+fun main() { io.println("${S.ok}") }`, "already a static function")
+	expectError(t, prelude+`
+struct S {
+  static var n = 2
+}
+fun main() { io.println("${S.n}") }`, "a static member is a 'val'")
+}
+
+func TestPrivateMembers(t *testing.T) {
+	const notes = `
+struct Note { id: i64; text: string }
+struct Notes {
+  private next:  i64 = 1
+  private items: MutableList<Note> = []
+  static val seeded = Notes(next: 100)
+  mut fun add(text: string): Note {
+    val n = Note(id: self.next, text)
+    self.items.push(n)
+    self.bump()
+    n
+  }
+  private mut fun bump() { self.next += 1 }
+  fun all(): List<Note> = self.items.toList()
+}
+extend Notes {
+  fun count(): i64 = self.items.len()
+}
+`
+	expectClean(t, prelude+notes+`
+fun main() {
+  var notes = Notes()
+  io.println("${notes.add("a").id} ${notes.all().len()} ${notes.count()}")
+}`)
+	expectError(t, prelude+notes+`
+fun main() { val n = Notes(); io.println("${n.next}") }`, "field 'next' is private to 'Notes'")
+	expectError(t, prelude+notes+`
+fun main() { var n = Notes(); n.bump() }`, "method 'bump' is private to 'Notes'")
+	expectError(t, prelude+notes+`
+fun main() { val n = Notes(next: 5); io.println("${n.all()}") }`, "cannot be set here")
+	expectError(t, prelude+`
+struct Secret { private key: string }
+fun main() { val s = Secret(); io.println("$s") }`, "private and has no default")
+	expectError(t, prelude+`
+struct P { private x: i64 = 0; y: i64 = 0 }
+fun main() {
+  val p = P()
+  when (p) {
+    is P(x, y) => io.println("$x $y")
+  }
+}`, "cannot be matched here")
+	expectError(t, prelude+`
+private fun helper(): i64 = 1
+fun main() { io.println("${helper()}") }`, "'private' belongs to a member of a struct")
 }

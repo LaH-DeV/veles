@@ -102,7 +102,7 @@ for a class, so the differences are the things to unlearn:
 | Mutation | any method may assign fields | only a `mut fun`, only on a `var` binding (D22) |
 | Equality, printing, hashing | `equals`/`hashCode`/`toString` by hand (or `data class`) | structural by default; replaced with the operator traits |
 | Interfaces | `implements I` | `impl I for T` — see chapter 8 |
-| Private state | `private` fields | no `pub` on the field; the implicit constructor then works only inside the module |
+| Private state | `private` fields | no `public` on the field; the implicit constructor then works only inside the module |
 
 The value semantics are the one that surprises people: `var b = a` then
 `b.n = 5` leaves `a` alone. When you want the class behaviour — one
@@ -188,6 +188,45 @@ null when the text is not a number. Calling a static function on a value
 that says which one you meant. For a generic struct, name the instance:
 `Stack<i64>.empty()`.
 
+### Constants on a type: `static val`
+
+A `static val` is a value that lives in the type's namespace — the
+well-known instances of a type that is otherwise open, such as HTTP status
+codes, or a table the type's own functions consult. It is initialised
+once, with the module's other globals, and read as `Type.name`:
+
+```veles
+use io
+
+struct Status {
+  code:   i64
+  reason: string = ""
+
+  static val ok       = Status(code: 200, reason: "OK")
+  static val notFound = Status(code: 404, reason: "Not Found")
+  static val known    = [Status.ok, Status.notFound]
+
+  static fun of(code: i64): Status = Status.known.find(s => s.code == code) ?: Status(code)
+  fun isError(): bool = self.code >= 400
+}
+
+fun main() {
+  io.println("${Status.ok.code} ${Status.of(404).reason} ${Status.of(299).isError()} ${Status.notFound == Status(code: 404, reason: "Not Found")}")
+}
+```
+
+Output:
+```text
+200 Not Found false true
+```
+
+A static is always a `val`; it is `public` when the type's users may read
+it, private to the module otherwise, like any declaration. A generic
+struct cannot have one (there would have to be a value per
+instantiation) — use a `static fun` there. This is the tool for a set of
+named values that stays *open*: anyone may still write `Status(code: 599)`.
+A set that is closed is a different thing, and will be an `enum`.
+
 ## Sharing with pointers
 
 When two places must see the *same* struct, take its address. `&x`
@@ -243,9 +282,55 @@ anything points at it, so returning it from a function is fine.
 
 ## Visibility
 
-Declarations are private to their module unless marked `pub`; the same
+Declarations are private to their module unless marked `public`; the same
 goes for fields and methods (M5). Inside one directory everything sees
-everything. More in [chapter 11](11-modules-and-packages.md).
+everything — which is right for a helper struct and wrong for an
+invariant: in a one-file program, nothing would stop a handler from
+poking a counter that only the type should touch. A member marked
+`private` is visible only inside the type's own declarations — its
+methods, its `impl` and `extend` blocks in the same module, and its
+`static val` initializers:
+
+```veles
+use io
+
+struct Note {
+  id:   i64
+  text: string
+}
+
+struct Notes {
+  private next:  i64 = 1
+  private items: MutableList<Note> = []
+
+  mut fun add(text: string): Note {
+    val n = Note(id: self.next, text)
+    self.items.push(n)
+    self.next += 1
+    n
+  }
+  fun all(): List<Note> = self.items.toList()
+  fun find(id: i64): Note? = self.items.find(n => n.id == id)
+}
+
+fun main() {
+  var notes = Notes()
+  notes.add("buy milk")
+  notes.add("call mum")
+  io.println("${notes.all().len()} ${notes.find(2)?.text} ${notes.find(9)}")
+}
+```
+
+Output:
+```text
+2 call mum null
+```
+
+Outside `Notes`, `notes.next` and `Notes(next: 5)` are errors, and so is
+matching the field in a pattern. A private field must therefore have a
+default, or the type must offer a `static fun` that builds it; `Notes()`
+above works because both fields do. `private fun` marks a helper method
+the same way. More on modules in [chapter 11](11-modules-and-packages.md).
 
 ## Generic structs
 
@@ -309,7 +394,7 @@ Output:
 [first] 42 41 hi!
 ```
 
-The rules are short. An alias lives at module level (`pub type` exports
+The rules are short. An alias lives at module level (`public type` exports
 it, and exporting an alias of a private type is fine — that is how a
 library presents a facade). A generic alias takes plain parameters, no
 bounds: state `T: Comparable` where the alias is used. `type Point =

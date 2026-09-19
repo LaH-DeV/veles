@@ -91,6 +91,7 @@ const (
 	KwImpl
 	KwSealed
 	KwPub
+	KwPrivate
 	KwUse
 	KwWhen
 	KwIs
@@ -139,7 +140,8 @@ var keywords = map[string]TokenKind{
 	"trait":    KwTrait,
 	"impl":     KwImpl,
 	"sealed":   KwSealed,
-	"pub":      KwPub,
+	"public":   KwPub,
+	"private":  KwPrivate,
 	"use":      KwUse,
 	"when":     KwWhen,
 	"is":       KwIs,

@@ -34,6 +34,8 @@ type Checker struct {
 	impls          map[*types.Trait][]*Impl
 	extends        []*Impl                                    // `extend Type { }` blocks (Trait == nil)
 	methods        map[*types.Struct]map[string]*FuncTemplate // inherent, by template
+	staticVals     map[*types.Struct]map[string]*Symbol       // `static val` members, as globals in the type's namespace
+	staticOwner    map[*Global]*types.Struct                  // the struct a `static val` global belongs to
 	globals        map[*Global]*ast.ValDecl
 	globalMod      map[*Global]*Module
 	globalFile     map[*Global]*ast.File
@@ -100,6 +102,8 @@ func checkWith(pkg *Package, diags *source.Diagnostics, release bool, testMode b
 		seen:           map[string]bool{},
 		impls:          map[*types.Trait][]*Impl{},
 		methods:        map[*types.Struct]map[string]*FuncTemplate{},
+		staticVals:     map[*types.Struct]map[string]*Symbol{},
+		staticOwner:    map[*Global]*types.Struct{},
 		globals:        map[*Global]*ast.ValDecl{},
 		globalMod:      map[*Global]*Module{},
 		globalFile:     map[*Global]*ast.File{},
@@ -366,6 +370,32 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 				continue
 			}
 			c.methods[s][md.Name.Name] = t
+		}
+		// `static val`: a module global that lives in the type's namespace
+		// (`Status.ok`), initialised with the other globals
+		for _, sv := range d.Statics {
+			if len(d.TypeParams) > 0 {
+				c.errorf(sv.Name.Pos, "a generic struct cannot have a 'static val' (it would need one value per instantiation); use a 'static fun'")
+				continue
+			}
+			if _, dup := c.methods[s][sv.Name.Name]; dup {
+				c.errorf(sv.Name.Pos, "'%s' is already a static function of '%s'", sv.Name.Name, s.Name)
+				continue
+			}
+			if c.staticVals[s] == nil {
+				c.staticVals[s] = map[string]*Symbol{}
+			}
+			if _, dup := c.staticVals[s][sv.Name.Name]; dup {
+				c.errorf(sv.Name.Pos, "duplicate static '%s' on '%s'", sv.Name.Name, s.Name)
+				continue
+			}
+			c.attrsOf(sv.Attrs, "value")
+			g := &Global{Name: m.prefix() + "." + d.Name.Name + "." + sv.Name.Name, Display: d.Name.Name + "." + sv.Name.Name, Span: sv.Name.Pos}
+			c.globals[g] = sv
+			c.globalMod[g] = m
+			c.globalFile[g] = f
+			c.staticOwner[g] = s
+			c.staticVals[s][sv.Name.Name] = &Symbol{Name: sv.Name.Name, Kind: SymGlobal, Pub: sv.Pub, Module: m, Span: sv.Name.Pos, Global: g}
 		}
 	case *ast.ErrorAliasDecl:
 		c.attrsOf(d.Attrs, "error")
@@ -984,7 +1014,7 @@ func (c *Checker) resolveStruct(s *types.Struct) {
 		if u, isUnion := ft.(*types.ErrorUnion); isUnion && !isAliasRef(f.Type) { // an alias checks its own members
 			c.deferErrorCheck(u, f.Type.Span())
 		}
-		s.Fields = append(s.Fields, &types.Field{Name: f.Name.Name, Type: ft, Pub: f.Pub, HasDefault: f.Default != nil, Index: i})
+		s.Fields = append(s.Fields, &types.Field{Name: f.Name.Name, Type: ft, Pub: f.Pub, Private: f.Private, HasDefault: f.Default != nil, Index: i})
 	}
 	if d.Variant != nil {
 		vt := c.resolveType(env, d.Variant)

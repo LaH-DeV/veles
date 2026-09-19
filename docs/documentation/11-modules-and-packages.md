@@ -61,25 +61,33 @@ make that inference circular.
 
 ## Visibility
 
-Everything is private to its module unless marked `pub` (M5): functions,
+Everything is private to its module unless marked `public` (M5): functions,
 structs, fields, methods, module-level values.
 
 ```veles
 // fragment — geometry/point.vs
-pub struct Point {
-  pub x: f64
-  pub y: f64
+public struct Point {
+  public x: f64
+  public y: f64
 }
 
-pub fun distance(a: Point, b: Point): f64 = root((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y))
-pub fun origin(): Point = Point(x: 0.0, y: 0.0)
+public fun distance(a: Point, b: Point): f64 = root((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y))
+public fun origin(): Point = Point(x: 0.0, y: 0.0)
 
 fun root(x: f64): f64 = ...   // private helper
 ```
 
-A struct with private fields cannot be constructed outside its module
-with the `Point(x: .., y: ..)` syntax; give it a `pub fun` constructor
-instead. That is how you keep invariants.
+A struct whose fields are module-private cannot be constructed outside
+its module with the `Point(x: .., y: ..)` syntax; give it a `public fun`
+constructor instead. That is how you keep invariants at the module
+boundary; for an invariant that even the rest of the module must not
+touch, a member can be `private` to its type
+([chapter 5](05-structs-and-methods.md#visibility)).
+
+The three levels, then: `private` — the type's own methods, impl and
+extend blocks; nothing written — the module (the directory); `public` —
+the whole package. What leaves the *package* is not a keyword but the
+manifest's `exports` list, below.
 
 ## Packages and `veles.toml`
 
@@ -101,7 +109,7 @@ indent = 2                    # spaces per level, or "tab"; the default is 2
 max_blank_lines = 1           # consecutive blank lines kept by `veles fmt`
 ```
 
-- `exports` is the package's public surface. `pub` makes something
+- `exports` is the package's public surface. `public` makes something
   visible to the *rest of the package*; only modules listed in `exports`
   (plus the root module) can be imported from *outside* it (M5).
 - A dependency is imported by its manifest name: `use utils`,

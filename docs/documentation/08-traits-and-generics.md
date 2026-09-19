@@ -414,7 +414,7 @@ The standard `Iterator` is the canonical example:
 
 ```veles
 // fragment — this is how the prelude declares it
-pub trait Iterator {
+public trait Iterator {
   type Item
   mut fun next(): Item?
 }

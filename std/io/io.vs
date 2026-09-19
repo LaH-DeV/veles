@@ -11,7 +11,7 @@ extern "C" {
 }
 
 /// Writes `s` and a newline to standard output.
-pub fun println(s: string) {
+public fun println(s: string) {
   unsafe {
     veles_print(s)
     veles_print("\n")
@@ -19,14 +19,14 @@ pub fun println(s: string) {
 }
 
 /// Writes `s` to standard output, without a newline.
-pub fun print(s: string) {
+public fun print(s: string) {
   unsafe {
     veles_print(s)
   }
 }
 
 /// Writes `s` and a newline to standard error.
-pub fun eprintln(s: string) {
+public fun eprintln(s: string) {
   unsafe {
     veles_eprint(s)
     veles_eprint("\n")
@@ -35,7 +35,7 @@ pub fun eprintln(s: string) {
 
 /// Reads one line from standard input without the trailing newline, or
 /// `null` at end of input.
-pub fun readLine(): string? {
+public fun readLine(): string? {
   var line = ""
   val ok = unsafe {
     veles_read_line(&line)
@@ -44,7 +44,7 @@ pub fun readLine(): string? {
 }
 
 /// Reads standard input to its end (the rest of it, after any `readLine`).
-pub fun readAll(): string {
+public fun readAll(): string {
   var text = ""
   unsafe {
     veles_read_all(&text)

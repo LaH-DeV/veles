@@ -59,11 +59,33 @@ struct Note {
   text: string
 }
 
-/// The store behind the API; handlers run in connection tasks, so it lives
-/// in a Mutex (D35).
+/// The store behind the API. Handlers run in connection tasks, so it lives
+/// in a Mutex (D35); its fields are private, so the only way in is through
+/// the methods, which keep `next` and `items` consistent.
 struct Notes {
-  next:  i64 = 1
-  items: MutableList<Note> = []
+  private next:  i64 = 1
+  private items: MutableList<Note> = []
+
+  fun all(): List<Note> = self.items.toList()
+
+  fun find(id: i64): Note? = self.items.find(x => x.id == id)
+
+  /// Stores a new note with the next id.
+  mut fun add(text: string): Note {
+    val created = Note(id: self.next, text)
+    self.next += 1
+    self.items.push(created)
+    created
+  }
+
+  /// Removes the note with that id; false when there is none. (`items` is a
+  /// MutableList — a handle — so this needs no `mut`: only `self`'s own
+  /// fields are guarded by it, D22/D25.)
+  fun remove(id: i64): bool {
+    val at = self.items.indexOfFirst(x => x.id == id)
+    if (at >= 0) self.items.removeAt(at)
+    at >= 0
+  }
 }
 
 fun jsonString(s: string): string =
@@ -84,33 +106,24 @@ fun app(dir: string): http.Handler {
 
   r.get("/api/echo", req => http.Response.text(req.query.get("msg") ?: "(no msg)"))
 
-  r.get("/api/notes", req => http.Response.json(notes.withLock(n => notesJson(n.items.toList()))))
+  r.get("/api/notes", req => http.Response.json(notes.withLock(n => notesJson(n.all()))))
 
   r.post("/api/notes", req => {
     val text = (try req.text()).trim()
     if (text.isEmpty()) throw http.badRequest("a note needs some text")
-    val note = notes.withLock(n => {
-      val created = Note(id: n.next, text)
-      n.next += 1
-      n.items.push(created)
-      created
-    })
+    val note = notes.withLock(n => n.add(text))
     http.Response.json(noteJson(note), status: 201).withHeader("location", "/api/notes/${note.id}")
   })
 
   r.get("/api/notes/{id}", req => {
     val id = try req.param("id").toInt() ?! http.badRequest("the id must be a number")
-    val note = try notes.withLock(n => n.items.find(x => x.id == id)) ?! http.notFound("no note $id")
+    val note = try notes.withLock(n => n.find(id)) ?! http.notFound("no note $id")
     http.Response.json(noteJson(note))
   })
 
   r.delete("/api/notes/{id}", req => {
     val id = try req.param("id").toInt() ?! http.badRequest("the id must be a number")
-    val removed = notes.withLock(n => {
-      val at = n.items.indexOfFirst(x => x.id == id)
-      if (at >= 0) n.items.removeAt(at)
-      at >= 0
-    })
+    val removed = notes.withLock(n => n.remove(id))
     if (!removed) throw http.notFound("no note $id")
     http.Response.empty(204)
   })

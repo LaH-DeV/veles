@@ -110,7 +110,7 @@ both can import, or merge the two.
 
 ### `'helper' is private to module 'geometry'`
 
-Mark it `pub`, or if it is meant to stay internal, add a `pub`
+Mark it `public`, or if it is meant to stay internal, add a `public`
 function in that module that does what you need (M5).
 
 ### `module 'x' of package 'lib' is not in its exports`

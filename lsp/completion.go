@@ -40,7 +40,7 @@ const (
 
 var keywordCompletions = []string{
 	"fun", "val", "var", "const", "if", "else", "loop", "break", "continue", "return", "throw",
-	"struct", "error", "trait", "impl", "extend", "sealed", "pub", "use", "when", "is", "as", "in",
+	"struct", "error", "trait", "impl", "extend", "sealed", "public", "private", "use", "when", "is", "as", "in",
 	"throws", "suspends", "try", "async", "await", "scope", "gather", "race", "with",
 	"unsafe", "extern", "mut", "override", "true", "false", "null", "self", "Self", "type",
 }
@@ -255,6 +255,13 @@ func (s *Server) addMembers(add adder, a *analysis, t types.Type) {
 			}
 			for _, mth := range d.Methods {
 				add(mth.Name.Name, ciMethod, tt.Name+"."+mth.Name.Name+funSignature(mth))
+			}
+			for _, sv := range d.Statics {
+				detail := tt.Name + "." + sv.Name.Name
+				if sv.Type != nil {
+					detail += ": " + ast.TypeString(sv.Type)
+				}
+				add(sv.Name.Name, ciField, "static val "+detail)
 			}
 			if d.Variant != nil {
 				s.addTraitMethods(add, a, typeHeadName(d.Variant))

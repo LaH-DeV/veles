@@ -176,6 +176,7 @@ type FunDecl struct {
 	Attrs      []*Attribute
 	Doc        string // documentation comment, if any
 	Pub        bool
+	Private    bool // `private fun` — callable only inside the type's own declarations
 	Mut        bool // `mut fun` — mutates the receiver's own fields (D22)
 	Static     bool // `static fun` — no receiver; called on the type (D23)
 	Override   bool
@@ -194,6 +195,7 @@ type FunDecl struct {
 // Field is a struct field, optionally with a default.
 type Field struct {
 	Pub     bool
+	Private bool // visible only inside the type's own declarations
 	Doc     string
 	Name    Ident
 	Type    Type
@@ -214,6 +216,7 @@ type StructDecl struct {
 	Variant    Type // the sealed trait this struct is a variant of, or nil
 	Fields     []*Field
 	Methods    []*FunDecl
+	Statics    []*ValDecl  // `static val name = expr`: constants in the type's namespace (`Type.name`)
 	Impls      []*ImplDecl // `impl Trait { }` blocks written in the body (also in File.Decls)
 	Pos        source.Span
 }

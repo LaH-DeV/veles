@@ -528,6 +528,10 @@ func (f *fnCtx) compileFields(p *ast.TypePat, value Expr, st *types.Struct, span
 			}
 			fld = st.Fields[i]
 		}
+		if fld.Private && !f.insideType(st) {
+			f.errorf(fp.Name.Pos, "field '%s' is private to '%s' and cannot be matched here", fld.Name, st.Name)
+			continue
+		}
 		if !fld.Pub && st.Module != f.module.prefix() {
 			f.errorf(p.Pos, "field '%s' of '%s' is private (M5)", fld.Name, st.Name)
 		}

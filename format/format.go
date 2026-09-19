@@ -372,7 +372,7 @@ func (p *printer) decl(d ast.Decl) {
 	case *ast.ValDecl:
 		p.attrs(d.Attrs)
 		if d.Pub {
-			p.w("pub ")
+			p.w("public ")
 		}
 		p.w(d.Kind.String() + " " + d.Name.Name)
 		if d.Type != nil {
@@ -394,7 +394,7 @@ func (p *printer) decl(d ast.Decl) {
 	case *ast.TypeAliasDecl:
 		p.attrs(d.Attrs)
 		if d.Pub {
-			p.w("pub ")
+			p.w("public ")
 		}
 		p.w("type " + d.Name.Name)
 		p.typeParams(d.TypeParams)
@@ -403,7 +403,7 @@ func (p *printer) decl(d ast.Decl) {
 	case *ast.ErrorAliasDecl:
 		p.attrs(d.Attrs)
 		if d.Pub {
-			p.w("pub ")
+			p.w("public ")
 		}
 		p.w("error " + d.Name.Name + " = ")
 		p.typ(d.Members)
@@ -525,7 +525,7 @@ func (p *printer) modifiers(fn *ast.FunDecl) {
 	head := p.src[fn.Pos.Start:fn.Name.Pos.Start]
 	for _, kw := range strings.Fields(head) {
 		switch kw {
-		case "pub", "mut", "override", "unsafe", "static":
+		case "public", "private", "mut", "override", "unsafe", "static":
 			p.w(kw + " ")
 		}
 	}
@@ -745,7 +745,7 @@ func (p *printer) sortedMembers(ms []memberRef) []memberRef {
 func (p *printer) structDecl(d *ast.StructDecl) {
 	p.attrs(d.Attrs)
 	if d.Pub {
-		p.w("pub ")
+		p.w("public ")
 	}
 	switch {
 	case d.Error:
@@ -786,6 +786,10 @@ func (p *printer) structDecl(d *ast.StructDecl) {
 		m := m
 		ms = append(ms, memberRef{declStart(m), func() { p.fun(m) }})
 	}
+	for _, s := range d.Statics {
+		s := s
+		ms = append(ms, memberRef{s.Pos.Start, func() { p.staticVal(s) }})
+	}
 	for _, impl := range d.Impls {
 		impl := impl
 		ms = append(ms, memberRef{declStart(impl), func() { p.implDecl(impl) }})
@@ -807,11 +811,33 @@ func (p *printer) structDecl(d *ast.StructDecl) {
 	})
 }
 
+// staticVal prints `static val name: T = value` in a struct body.
+func (p *printer) staticVal(d *ast.ValDecl) {
+	p.attrs(d.Attrs)
+	if d.Pub {
+		p.w("public ")
+	}
+	p.w("static val " + d.Name.Name)
+	if d.Type != nil {
+		p.w(": ")
+		p.typ(d.Type)
+	}
+	if d.Value != nil {
+		p.w(" = ")
+		p.exprRight(d.Value, 0)
+	}
+}
+
 // memberEnd finds the end of the member starting at pos within a struct.
 func memberEnd(d *ast.StructDecl, pos int) int {
 	for _, f := range d.Fields {
 		if f.Pos.Start == pos {
 			return f.Pos.End
+		}
+	}
+	for _, s := range d.Statics {
+		if s.Pos.Start == pos {
+			return s.Pos.End
 		}
 	}
 	for _, m := range d.Methods {
@@ -836,7 +862,10 @@ func memberEnd(d *ast.StructDecl, pos int) int {
 
 func (p *printer) field(f *ast.Field) {
 	if f.Pub {
-		p.w("pub ")
+		p.w("public ")
+	}
+	if f.Private {
+		p.w("private ")
 	}
 	p.w(f.Name.Name + ":")
 	p.mark(alignField)
@@ -851,7 +880,7 @@ func (p *printer) field(f *ast.Field) {
 func (p *printer) traitDecl(d *ast.TraitDecl) {
 	p.attrs(d.Attrs)
 	if d.Pub {
-		p.w("pub ")
+		p.w("public ")
 	}
 	if d.Sealed {
 		p.w("sealed ")

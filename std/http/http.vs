@@ -20,38 +20,38 @@ use fs, io, net, path, time
 // failing a request
 
 /// "Answer this request with `status`": thrown from a handler.
-pub error Fail {
-  pub status: i64
-  pub text:   string
+public error Fail {
+  public status: i64
+  public text:   string
   fun message(): string = "${self.status} ${self.text}"
 }
 
-pub fun notFound(text: string = "not found"): Fail = Fail(status: 404, text)
-pub fun badRequest(text: string = "bad request"): Fail = Fail(status: 400, text)
-pub fun forbidden(text: string = "forbidden"): Fail = Fail(status: 403, text)
+public fun notFound(text: string = "not found"): Fail = Fail(status: 404, text)
+public fun badRequest(text: string = "bad request"): Fail = Fail(status: 400, text)
+public fun forbidden(text: string = "forbidden"): Fail = Fail(status: 403, text)
 
 // ---------------------------------------------------------------------------
 // messages
 
 /// One request. Header names are lower-case; `params` holds the route's
 /// `{name}` captures and `*` the rest matched by a trailing wildcard.
-pub struct Request {
-  pub method:  string
-  pub path:    string
-  pub query:   Map<string, string>
-  pub headers: Map<string, string>
-  pub body:    List<u8>
-  pub peer:    string
-  pub params:  Map<string, string> = [:]
+public struct Request {
+  public method:  string
+  public path:    string
+  public query:   Map<string, string>
+  public headers: Map<string, string>
+  public body:    List<u8>
+  public peer:    string
+  public params:  Map<string, string> = [:]
 
   /// A header by name, case-insensitively.
-  pub fun header(name: string): string? = self.headers.get(name.toLower())
+  public fun header(name: string): string? = self.headers.get(name.toLower())
 
   /// A route parameter (`{id}` in the pattern); empty when the route has none.
-  pub fun param(name: string): string = self.params.get(name) ?: ""
+  public fun param(name: string): string = self.params.get(name) ?: ""
 
   /// The body as text; a body that is not UTF-8 is a 400.
-  pub fun text(): string throws Fail = try self.body.decodeUtf8() ?! badRequest("body is not valid UTF-8")
+  public fun text(): string throws Fail = try self.body.decodeUtf8() ?! badRequest("body is not valid UTF-8")
 
   /// The same request with route parameters filled in.
   fun withParams(params: Map<string, string>): Request =
@@ -59,36 +59,36 @@ pub struct Request {
 }
 
 /// One response. Build it with the statics, adjust with `withHeader`.
-pub struct Response {
-  pub status:  i64 = 200
-  pub headers: Map<string, string> = [:]
-  pub body:    List<u8> = []
+public struct Response {
+  public status:  i64 = 200
+  public headers: Map<string, string> = [:]
+  public body:    List<u8> = []
 
   /// Plain text.
-  pub static fun text(body: string, status: i64 = 200): Response =
+  public static fun text(body: string, status: i64 = 200): Response =
     Response(status, headers: ["content-type": "text/plain; charset=utf-8"], body: body.bytes())
 
   /// HTML.
-  pub static fun html(body: string, status: i64 = 200): Response =
+  public static fun html(body: string, status: i64 = 200): Response =
     Response(status, headers: ["content-type": "text/html; charset=utf-8"], body: body.bytes())
 
   /// JSON text the caller already produced.
-  pub static fun json(body: string, status: i64 = 200): Response =
+  public static fun json(body: string, status: i64 = 200): Response =
     Response(status, headers: ["content-type": "application/json"], body: body.bytes())
 
   /// Raw bytes with a content type.
-  pub static fun bytes(body: List<u8>, contentType: string, status: i64 = 200): Response =
+  public static fun bytes(body: List<u8>, contentType: string, status: i64 = 200): Response =
     Response(status, headers: ["content-type": contentType], body)
 
   /// A status and nothing else (`204`, `404`, ...).
-  pub static fun empty(status: i64): Response = Response(status)
+  public static fun empty(status: i64): Response = Response(status)
 
   /// A redirect to `location`.
-  pub static fun redirect(location: string, status: i64 = 302): Response =
+  public static fun redirect(location: string, status: i64 = 302): Response =
     Response(status, headers: ["location": location])
 
   /// The same response with a header set (names are lower-cased).
-  pub fun withHeader(name: string, value: string): Response {
+  public fun withHeader(name: string, value: string): Response {
     val h = self.headers.toMutable()
     h.set(name.toLower(), value)
     Response(status: self.status, headers: h.toMap(), body: self.body)
@@ -100,13 +100,13 @@ pub struct Response {
 
 /// What the server calls for a request. It cannot throw: `handler` turns
 /// a throwing function into one, deciding the status for each error.
-pub type Handler = sendable fun(Request): Response suspends
+public type Handler = sendable fun(Request): Response suspends
 
 /// Adapts a handler that may throw: a `Fail` answers with its status, any
 /// other error answers 500 and is logged. This is what the router applies
 /// to every handler it is given, so `try` is free inside a handler and an
 /// error nobody mapped is never silent.
-pub fun <E> handler(h: sendable fun(Request): Response suspends throws E | Fail): Handler =
+public fun <E> handler(h: sendable fun(Request): Response suspends throws E | Fail): Handler =
   req => when (h(req)) {
     is Ok(resp) => resp
     is Err(e)   => when (e) {
@@ -148,40 +148,40 @@ struct Route {
 /// Maps `METHOD /pattern` to handlers. A pattern segment `{name}` captures
 /// one path segment into `req.params`; a final `*` captures the rest under
 /// `"*"`. Register routes, then hand `handler()` to `serve`.
-pub struct Router {
+public struct Router {
   routes: MutableList<Route> = []
 
-  pub fun get<E>(pattern: string, h: sendable fun(Request): Response suspends throws E | Fail) {
+  public fun get<E>(pattern: string, h: sendable fun(Request): Response suspends throws E | Fail) {
     self.add("GET", pattern, handler(h))
   }
-  pub fun post<E>(pattern: string, h: sendable fun(Request): Response suspends throws E | Fail) {
+  public fun post<E>(pattern: string, h: sendable fun(Request): Response suspends throws E | Fail) {
     self.add("POST", pattern, handler(h))
   }
-  pub fun put<E>(pattern: string, h: sendable fun(Request): Response suspends throws E | Fail) {
+  public fun put<E>(pattern: string, h: sendable fun(Request): Response suspends throws E | Fail) {
     self.add("PUT", pattern, handler(h))
   }
-  pub fun delete<E>(pattern: string, h: sendable fun(Request): Response suspends throws E | Fail) {
+  public fun delete<E>(pattern: string, h: sendable fun(Request): Response suspends throws E | Fail) {
     self.add("DELETE", pattern, handler(h))
   }
-  pub fun any<E>(pattern: string, h: sendable fun(Request): Response suspends throws E | Fail) {
+  public fun any<E>(pattern: string, h: sendable fun(Request): Response suspends throws E | Fail) {
     self.add("*", pattern, handler(h))
   }
 
   /// Registers an already adapted handler for `method` (`"*"` for any).
-  pub fun add(method: string, pattern: string, h: Handler) {
+  public fun add(method: string, pattern: string, h: Handler) {
     self.routes.push(Route(method, segments: segmentsOf(pattern), handler: h))
   }
 
   /// The routes as one handler: first match wins, 405 when only the method
   /// differs, 404 otherwise.
-  pub fun handler(): Handler {
+  public fun handler(): Handler {
     val routes = self.routes.toList()
     req => route(routes, req)
   }
 }
 
 /// A new, empty router.
-pub fun router(): Router = Router()
+public fun router(): Router = Router()
 
 fun route(routes: List<Route>, req: Request): Response {
   val segments = segmentsOf(req.path)
@@ -230,7 +230,7 @@ fun matchRoute(pattern: List<string>, segments: List<string>): Map<string, strin
 /// It throws like a handler you would write (a missing file is a 404, a
 /// read error a 500), so the router adapts it; `http.handler(http.files(d))`
 /// is the form `serve` takes directly.
-pub fun files(dir: string): sendable fun(Request): Response suspends throws Fail | IoError = req => {
+public fun files(dir: string): sendable fun(Request): Response suspends throws Fail | IoError = req => {
   val rel = req.param("*")
   loop (seg in rel.split("/")) {
     if (seg == "..") throw forbidden()
@@ -243,7 +243,7 @@ pub fun files(dir: string): sendable fun(Request): Response suspends throws Fail
 
 /// The media type for a file name, by extension; `application/octet-stream`
 /// when unknown.
-pub fun contentTypeOf(name: string): string = when (path.ext(name).toLower()) {
+public fun contentTypeOf(name: string): string = when (path.ext(name).toLower()) {
   ".html", ".htm" => "text/html; charset=utf-8"
   ".css"          => "text/css; charset=utf-8"
   ".js", ".mjs"   => "text/javascript; charset=utf-8"
@@ -267,7 +267,7 @@ pub fun contentTypeOf(name: string): string = when (path.ext(name).toLower()) {
 /// further requests until the client closes it, asks for `Connection:
 /// close`, or stays silent for `idleTimeout` milliseconds. Every request
 /// is logged to standard error unless `log` is false.
-pub fun serve(listener: net.Listener, handler: Handler, idleTimeout: i64 = 15000, log: bool = true) {
+public fun serve(listener: net.Listener, handler: Handler, idleTimeout: i64 = 15000, log: bool = true) {
   scope {
     loop {
       when (listener.accept()) {
@@ -381,7 +381,7 @@ fun hexValue(b: u8): i64 {
 
 /// Decodes `%XX` escapes (and `+` as a space in query strings); text that
 /// does not decode to UTF-8 is returned as it came.
-pub fun percentDecode(s: string, plusIsSpace: bool): string {
+public fun percentDecode(s: string, plusIsSpace: bool): string {
   if (!s.contains("%") && !(plusIsSpace && s.contains("+"))) return s
   val bytes = s.bytes()
   val out: MutableList<u8> = []
@@ -420,7 +420,7 @@ fun writeResponse(c: net.Conn, resp: Response, close: bool) throws IoError {
 }
 
 /// The standard reason phrase for a status code (empty when unknown).
-pub fun reasonOf(status: i64): string = when (status) {
+public fun reasonOf(status: i64): string = when (status) {
   200  => "OK"
   201  => "Created"
   202  => "Accepted"
@@ -454,7 +454,7 @@ val dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 val monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 /// A time in the format HTTP dates use: `Sun, 06 Nov 1994 08:49:37 GMT`.
-pub fun httpDate(ms: i64): string {
+public fun httpDate(ms: i64): string {
   val t = time.utc(ms)
   val day = dayNames.atOrDefault(t.weekday, "Sun")
   val month = monthNames.atOrDefault(t.month - 1, "Jan")

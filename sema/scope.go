@@ -39,7 +39,7 @@ type Symbol struct {
 type Scope struct {
 	parent  *Scope
 	symbols map[string]*Symbol
-	// module is set on module-level scopes so lookups can enforce `pub`.
+	// module is set on module-level scopes so lookups can enforce `public`.
 	module *Module
 }
 

@@ -33,7 +33,7 @@ extend<T: Sendable> List<T> {
   /// must be sendable: it may capture only vals of Sendable types (D35). A
   /// throwing `f` makes the whole call throw — the first error cancels the
   /// remaining work, as for the eager adapters (D46).
-  pub fun mapConcurrent<R: Sendable, E>(f: sendable fun(T): R suspends throws E, workers: i64 = 4): List<R> throws E {
+  public fun mapConcurrent<R: Sendable, E>(f: sendable fun(T): R suspends throws E, workers: i64 = 4): List<R> throws E {
     if (workers < 1) panic("mapConcurrent: workers must be at least 1, got $workers")
     val n = self.len()
     val slots: MutableList<R?> = MutableList<R?>.make(n, _ => null)
@@ -56,7 +56,7 @@ extend<T: Sendable> List<T> {
 
   /// `mapConcurrent` for its effects: runs `f` on every element, at most
   /// `workers` at a time, and returns when all have finished.
-  pub fun forEachConcurrent<E>(f: sendable fun(T) suspends throws E, workers: i64 = 4) throws E {
+  public fun forEachConcurrent<E>(f: sendable fun(T) suspends throws E, workers: i64 = 4) throws E {
     val _ = try self.mapConcurrent(x => {
       try f(x)
       true
@@ -68,8 +68,8 @@ extend<T: Sendable> List<T> {
 fun <R, E> invoke(f: sendable fun(): R suspends throws E): R throws E = try f()
 
 /// `withTimeout` ran out of time.
-pub error Timeout {
-  pub millis: i64
+public error Timeout {
+  public millis: i64
   fun message(): string = "timed out after ${self.millis} ms"
 }
 
@@ -81,7 +81,7 @@ pub error Timeout {
 /// ```veles
 /// val line = try withTimeout(5000, () => try conn.readLine())
 /// ```
-pub fun <R: Sendable, E> withTimeout(ms: i64, f: sendable fun(): R suspends throws E): R throws E | Timeout {
+public fun <R: Sendable, E> withTimeout(ms: i64, f: sendable fun(): R suspends throws E): R throws E | Timeout {
   scope {
     val t = async invoke(f)
     race {

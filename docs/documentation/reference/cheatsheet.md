@@ -17,7 +17,7 @@ fun main() { }                  // entry point
 ```
 
 A module is a directory; every `.vs` in it shares a namespace (M2).
-`pub` exports from the module (M5). `veles.toml` names the package and
+`public` exports from the module (M5). `veles.toml` names the package and
 its `exports` and `[dependencies]` (M1).
 
 ## Bindings and types
@@ -42,7 +42,7 @@ val (a, b) = (1, "one")         // tuple destructuring, nests: val ((x, y), z) =
 | ranges | `Range<T>` from `a..b` (inclusive) or `a..<b` |
 | concurrency | `Channel<T>`, `Task<T>`, `Mutex<T>`, `Atomic<T>` |
 | results | `Result<T, E>`; `T?` is `Option<T>` |
-| alias | `type Key = (i64, u64)`, `type StrMap<V> = Map<string, V>`, `pub type Point = geo.Point` — a name, never a new type (D55) |
+| alias | `type Key = (i64, u64)`, `type StrMap<V> = Map<string, V>`, `public type Point = geo.Point` — a name, never a new type (D55) |
 
 ## Operators
 
@@ -106,6 +106,8 @@ struct Point {
   fun len(): i64 = self.x + self.y
   mut fun move(dx: i64) { self.x += dx }   // D22: only on a var
   static fun origin(): Point = Point(x: 0)  // no self; Point.origin()
+  static val unit = Point(x: 1)             // a constant in the type's namespace: Point.unit (public to export; never var)
+  private count: i64 = 0                    // private: only Point's own methods/impl/extend blocks; no marker = the module; public = the package
 }
 val p = Point(x: 1)             // named construction (Point(x, y) puns variables named like fields); p == q, "$p" work
 val n = i64.parse("42")         // i64?; Parsable — T.parse(s) in generic code

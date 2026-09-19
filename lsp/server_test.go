@@ -415,7 +415,7 @@ func TestModuleDocHover(t *testing.T) {
 	root := t.TempDir()
 	os.MkdirAll(filepath.Join(root, "geometry"), 0o755)
 	os.WriteFile(filepath.Join(root, "veles.toml"), []byte("[package]\nname = \"app\"\nversion = \"0.1.0\"\n"), 0o644)
-	os.WriteFile(filepath.Join(root, "geometry", "lib.vs"), []byte("/// Points and shapes on a plane.\n\npub fun twice(n: i64): i64 = n * 2\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "geometry", "lib.vs"), []byte("/// Points and shapes on a plane.\n\npublic fun twice(n: i64): i64 = n * 2\n"), 0o644)
 	src := "use io\nuse geometry\n\nerror E { n: i64 }\nerror F { m: i64 }\nerror Both = E | F\nerror Wrap { cause: Both }\n\nfun main() {\n  val w = Wrap(cause: E(n: 1))\n  when (w.cause) {\n    is E => io.println(\"${w.cause.n} ${geometry.twice(2)}\")\n    is F => io.println(\"f\")\n  }\n}\n"
 	path := filepath.Join(root, "main.vs")
 	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
@@ -543,7 +543,7 @@ func TestStdSourceTreeDiagnostics(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	src := "extend string {\n  pub fun shout(): string = self + \"!\"\n}\nfun wrong(): i64 = \"x\"\n"
+	src := "extend string {\n  public fun shout(): string = self + \"!\"\n}\nfun wrong(): i64 = \"x\"\n"
 	path := filepath.Join(dir, "zz_extra.vs")
 	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
 		t.Fatal(err)

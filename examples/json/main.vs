@@ -290,29 +290,29 @@ fun pretty(v: Json, indent: i64 = 0): string {
 
 extend Json {
   /// The field `name` of an object, or null.
-  pub fun field(name: string): Json? = when (self) {
+  public fun field(name: string): Json? = when (self) {
     is JObj(fields) => fields.get(name)
     else            => null
   }
 
   /// The element `i` of an array, or null.
-  pub fun item(i: i64): Json? = when (self) {
+  public fun item(i: i64): Json? = when (self) {
     is JArr(items) => items.at(i)
     else           => null
   }
 
-  pub fun asString(): string? = when (self) {
+  public fun asString(): string? = when (self) {
     is JStr(value) => value
     else           => null
   }
 
-  pub fun asNumber(): f64? = when (self) {
+  public fun asNumber(): f64? = when (self) {
     is JNum(value) => value
     else           => null
   }
 
   /// Walks a dotted path: "users.1.name".
-  pub fun path(p: string): Json? {
+  public fun path(p: string): Json? {
     var cur: Json? = self
     loop (part in p.split(".")) {
       val here = cur ?: return null

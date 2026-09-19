@@ -3,7 +3,7 @@
 // `loop (x in c)` desugars through Iterable; lazy adapters are default
 // bodies on Iterator, so every iterator gets them for free (D53).
 
-pub trait Iterator {
+public trait Iterator {
   type Item
   mut fun next(): Item?
 
@@ -86,7 +86,7 @@ pub trait Iterator {
   }
 }
 
-pub trait Iterable {
+public trait Iterable {
   type Iter: Iterator
   fun iterator(): Iter
   // `xs.iter()` reads better at the head of a pipeline; same thing.
@@ -96,7 +96,7 @@ pub trait Iterable {
 // ---------------------------------------------------------------------------
 // adapters
 
-pub struct MapIter<I: Iterator, U> {
+public struct MapIter<I: Iterator, U> {
   inner: I
   f:     fun(I.Item): U
 
@@ -110,7 +110,7 @@ pub struct MapIter<I: Iterator, U> {
   }
 }
 
-pub struct FilterIter<I: Iterator> {
+public struct FilterIter<I: Iterator> {
   inner: I
   f:     fun(I.Item): bool
 
@@ -126,7 +126,7 @@ pub struct FilterIter<I: Iterator> {
   }
 }
 
-pub struct TakeIter<I: Iterator> {
+public struct TakeIter<I: Iterator> {
   inner:     I
   remaining: i64
 
@@ -140,7 +140,7 @@ pub struct TakeIter<I: Iterator> {
   }
 }
 
-pub struct SkipIter<I: Iterator> {
+public struct SkipIter<I: Iterator> {
   inner:     I
   remaining: i64
 
@@ -156,7 +156,7 @@ pub struct SkipIter<I: Iterator> {
   }
 }
 
-pub struct EnumerateIter<I: Iterator> {
+public struct EnumerateIter<I: Iterator> {
   inner: I
   index: i64
 
@@ -172,7 +172,7 @@ pub struct EnumerateIter<I: Iterator> {
   }
 }
 
-pub struct ZipIter<A: Iterator, B: Iterator> {
+public struct ZipIter<A: Iterator, B: Iterator> {
   a: A
   b: B
 
@@ -191,7 +191,7 @@ pub struct ZipIter<A: Iterator, B: Iterator> {
 // ---------------------------------------------------------------------------
 // iterators over the builtin collections
 
-pub struct ListIter<T> {
+public struct ListIter<T> {
   list:  List<T>
   index: i64 = 0
 
@@ -216,7 +216,7 @@ impl<T> Iterable for MutableList<T> {
   fun iterator(): ListIter<T> = ListIter(list: self.toList())
 }
 
-pub struct RangeIter<T> {
+public struct RangeIter<T> {
   current:   T
   hi:        T
   inclusive: bool

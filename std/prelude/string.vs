@@ -12,12 +12,12 @@ fun isAsciiSpace(b: u8): bool = b == 32 || b == 9 || b == 10 || b == 13 || b == 
 
 extend string {
   /// Byte index of the first occurrence of `part` at or after `from`, or -1.
-  pub fun indexOf(part: string, from: i64 = 0): i64 = unsafe {
+  public fun indexOf(part: string, from: i64 = 0): i64 = unsafe {
     veles_string_find(self, part, from)
   }
 
   /// Byte index of the last occurrence of `part`, or -1.
-  pub fun lastIndexOf(part: string): i64 {
+  public fun lastIndexOf(part: string): i64 {
     var last: i64 = -1
     var at = self.indexOf(part)
     loop (at >= 0) {
@@ -28,7 +28,7 @@ extend string {
   }
 
   /// The text without leading ASCII whitespace.
-  pub fun trimStart(): string {
+  public fun trimStart(): string {
     var i: i64 = 0
     loop (i < self.len() && isAsciiSpace(self.byteAt(i))) {
       i += 1
@@ -37,7 +37,7 @@ extend string {
   }
 
   /// The text without trailing ASCII whitespace.
-  pub fun trimEnd(): string {
+  public fun trimEnd(): string {
     var j = self.len()
     loop (j > 0 && isAsciiSpace(self.byteAt(j - 1))) {
       j -= 1
@@ -46,11 +46,11 @@ extend string {
   }
 
   /// The text without leading or trailing ASCII whitespace.
-  pub fun trim(): string = self.trimStart().trimEnd()
+  public fun trim(): string = self.trimStart().trimEnd()
 
   /// The pieces between occurrences of `sep`. An empty `sep` yields the
   /// code points; a `sep` that never occurs yields the whole text.
-  pub fun split(sep: string): List<string> {
+  public fun split(sep: string): List<string> {
     if (sep.isEmpty()) return self.chars()
     var out: MutableList<string> = []
     var start: i64 = 0
@@ -66,7 +66,7 @@ extend string {
 
   /// The lines of the text, split on `\n`; a trailing `\r` on each line and
   /// a final empty line are dropped.
-  pub fun lines(): List<string> {
+  public fun lines(): List<string> {
     var out: MutableList<string> = []
     loop (line in self.split("\n")) {
       if (line.endsWith("\r")) {
@@ -80,7 +80,7 @@ extend string {
   }
 
   /// The text with every occurrence of `old` replaced by `new`.
-  pub fun replace(old: string, new: string): string {
+  public fun replace(old: string, new: string): string {
     if (old.isEmpty()) return self
     val parts = self.split(old)
     if (parts.len() == 1) return self
@@ -88,7 +88,7 @@ extend string {
   }
 
   /// The text repeated `n` times (empty for `n <= 0`).
-  pub fun repeat(n: i64): string {
+  public fun repeat(n: i64): string {
     var out: MutableList<u8> = []
     val bytes = self.bytes()
     loop (_ in 0..<n) {
@@ -100,7 +100,7 @@ extend string {
   }
 
   /// Copy with ASCII letters upper-cased.
-  pub fun toUpper(): string {
+  public fun toUpper(): string {
     var out: MutableList<u8> = []
     loop (b in self.bytes()) {
       out.push(if (b >= 97 && b <= 122) b - 32 else b)
@@ -109,7 +109,7 @@ extend string {
   }
 
   /// Copy with ASCII letters lower-cased.
-  pub fun toLower(): string {
+  public fun toLower(): string {
     var out: MutableList<u8> = []
     loop (b in self.bytes()) {
       out.push(if (b >= 65 && b <= 90) b + 32 else b)
@@ -118,7 +118,7 @@ extend string {
   }
 
   /// The text preceded by `pad` until it is at least `width` bytes long.
-  pub fun padStart(width: i64, pad: string = " "): string {
+  public fun padStart(width: i64, pad: string = " "): string {
     if (pad.isEmpty() || self.len() >= width) return self
     var s = self
     loop (s.len() < width) {
@@ -128,7 +128,7 @@ extend string {
   }
 
   /// The text followed by `pad` until it is at least `width` bytes long.
-  pub fun padEnd(width: i64, pad: string = " "): string {
+  public fun padEnd(width: i64, pad: string = " "): string {
     if (pad.isEmpty() || self.len() >= width) return self
     var s = self
     loop (s.len() < width) {
@@ -139,7 +139,7 @@ extend string {
 
   /// Parses a decimal number with an optional fraction and exponent, or
   /// `null` when the text is not one.
-  pub fun toF64(): f64? {
+  public fun toF64(): f64? {
     val s = self.trim()
     if (s.isEmpty()) return null
     var i: i64 = 0

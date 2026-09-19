@@ -134,11 +134,13 @@ The build graph is a DAG. If two modules need mutual recursion, that is evidence
 
 This is not a style rule. Both of Veles' inferred effects (D2 suspension, D4 error type) are inferred per-module; a DAG makes inference a single topological pass, while cycles would require fixpoint iteration across module boundaries.
 
-### M5 — `pub` grants package-wide visibility
+### M5 — `public` grants package-wide visibility
 
-Default visibility is module-private. `pub` makes a declaration visible to the rest of the package. Nothing escapes the package except through the manifest's `exports` field.
+Default visibility is module-private. `public` makes a declaration visible to the rest of the package. Nothing escapes the package except through the manifest's `exports` field.
 
 Consequence: library authors get a deliberately curated public surface, consumers cannot reach into internals, and Veles never needs Go's magic `internal/` directories.
+
+*Amended (v0.29) — spelling and a third level.* The keyword is `public`, not `pub`: it now sits next to `private`, and the pair every Java, C#, Kotlin, Swift and TypeScript reader knows is `public`/`private`; the three extra characters on each exported declaration were weighed against that and lost. `export` was rejected for it — exporting is what the *package* does, in the manifest, module by module, and a keyword by that name on a struct field would claim a boundary the field does not cross. (Whether the package boundary itself should one day be spelled in source with `export` rather than in the manifest is an open question the user has reserved; nothing here prejudges it.) The levels are therefore: **`private`** — visible only inside the type's own declarations: its methods, its `impl` and `extend` blocks in the same module, and its `static val` initializers (Swift's rule for extensions in the same file); **nothing** — the module, as before, which keeps small programs light; **`public`** — the package. `private` exists for fields and methods only; a module-level declaration is already module-private. A private field cannot be read, assigned, set in a constructor call or bound in a pattern from outside, so it must have a default or the type must provide a `static fun` that builds the value; that is the whole encapsulation story, with no getters and no `friend`. Motivated by a one-file program whose request handlers reached into a store's counter: modules were the only boundary, and a directory per invariant is too heavy.
 
 ### M6 — Import paths are logical
 
@@ -168,7 +170,7 @@ fun printSum(sum: i32) {
 }
 
 // otherModule/funcs.vs
-pub fun someFunc() {
+public fun someFunc() {
   //
 }
 ```
@@ -203,7 +205,7 @@ struct Rect   : Shape { w: f64, h: f64 }
 ```
 
 - **Sealing is a layout feature, not just an exhaustiveness feature.** Under D9 a trait object boxes implicitly; a plain open trait would heap-allocate every sum value, including every `Option<T>`. A closed variant set lets the compiler compute a maximum size and lay the value out inline as a tagged union.
-- Variants must be declared in the **same module** as the trait. If a `pub` sealed trait could be extended elsewhere in the package (reachable under M5), exhaustiveness checking would break across modules.
+- Variants must be declared in the **same module** as the trait. If a `public` sealed trait could be extended elsewhere in the package (reachable under M5), exhaustiveness checking would break across modules.
 - Variant names are **scoped and importable**: `Shape.Circle` by default, bare `Circle` after explicit import. Top-level variants were rejected — `Loading`, `Error`, `Empty`, `Pending` collide across any two sealed traits in one module.
 - **All variant fields must be named.** No positional `Circle(f64)`. This was originally forced by the absence of destructuring; D13 has since added it, but named fields are retained on their own merits and destructuring binds by field name.
 
@@ -362,6 +364,8 @@ Putting trait implementations in the struct body was considered and rejected. It
 
 *Amended (v0.23) — static functions.* A function in a struct body, trait, impl or extend block may be declared `static fun`: it has no receiver and is called on the type — `Point.origin()`, `i64.parse(s)`, `Stack<i64>.of(x)` — and, for a trait, on a type parameter bounded by it: `T.parse(s)` resolves to the impl for the concrete `T` of each stencil. An `extend` block in the prelude may add statics to a built-in generic type, called with the type arguments written: `MutableList<bool>.repeat(false, n)`, `MutableList<Row>.make(n, i => ...)` (v0.25). An impl declares `static` exactly where the trait does. A trait with a static function is not object-safe (D9), and a sealed trait cannot declare one (its methods dispatch on a variant). The prelude declares `Parsable { static fun parse(s: string): Self? }` for the numbers, `bool` and `string`.
 
+*Addendum (v0.29) — static values.* A struct body may declare `static val name[: T] = expr`: a constant in the type's namespace, read as `Type.name` (`Status.notFound`, `http.Status.ok` from outside the module), `public` to export and module-private otherwise, initialised with the module's globals in source order. It is always a `val` — a mutable global belongs at module level, where it is visibly one — and a generic struct cannot have one (a value per instantiation would be a different feature; a `static fun` serves). Motivated by the HTTP module: status codes, methods and content types are *open* sets with well-known members, which is a value type plus named constants, not an enumeration; closed sets remain for the `enum` decision.
+
 Consequence: inherent methods cannot be added to a type you do not own. Extension functions were declined, so the route is declaring a trait and implementing it. This is narrower than it sounds — Veles owns `string` and the collections, so stdlib types stay method-rich; the ceremony only appears when extending a third-party type. Rust lives this way.
 
 **Addendum (v0.22) — `extend` blocks.** A package may add inherent methods to a type it declares, outside the struct body:
@@ -375,7 +379,7 @@ extend<T: Show> Stack<T> {          // bounded: only for showable elements
 }
 ```
 
-The ownership rule is unchanged — `extend` names only a type declared in the same package, and the built-in types (`string`, the numbers, `List`, `Map`, `Set`, `Range`, `Channel`) are declared by the standard library. This is not an extension-function mechanism: what it provides is a home for the methods of the built-in types, which have no struct body to hold them, so that `trim`, `split`, `take`, `chunked` and the rest are written in Veles in the prelude rather than in the compiler. A `MutableList<T>` also has every `extend<T> List<T>` method (D25). Method names must not collide with the struct body, another `extend` in the package, or a compiler built-in; coherence is checked program-wide like D17. `pub` on the methods follows M5.
+The ownership rule is unchanged — `extend` names only a type declared in the same package, and the built-in types (`string`, the numbers, `List`, `Map`, `Set`, `Range`, `Channel`) are declared by the standard library. This is not an extension-function mechanism: what it provides is a home for the methods of the built-in types, which have no struct body to hold them, so that `trim`, `split`, `take`, `chunked` and the rest are written in Veles in the prelude rather than in the compiler. A `MutableList<T>` also has every `extend<T> List<T>` method (D25). Method names must not collide with the struct body, another `extend` in the package, or a compiler built-in; coherence is checked program-wide like D17. `public` on the methods follows M5.
 
 ### D24 — Full prelude
 
@@ -438,7 +442,7 @@ Every struct gets an implicit constructor from its fields. Fields with declared 
 *Amended (v0.23) — variadic parameters.* The last parameter of a function may be `name: T...`; the call supplies any number of trailing positional arguments (`join("/", "a", "b")`, `sum()`), collected into a `List<T>`, or one list spread with `join("/", parts...)`. Inside the function the parameter is a plain `List<T>`. A variadic parameter has no default, an `extern` function cannot declare one, and an impl declares it exactly as its trait does.
 
 - **Declaring an explicit constructor suppresses the implicit one.** Otherwise invariants could always be bypassed by calling the generated version.
-- **The implicit constructor is callable only where every field is visible.** Otherwise a `pub` struct with private fields would leak construction.
+- **The implicit constructor is callable only where every field is visible.** Otherwise a `public` struct with private fields would leak construction.
 
 **Named arguments are language-wide, not a constructor feature.** Consequences:
 
@@ -906,12 +910,12 @@ type Index = i64
 type Key = (Index, u64)
 type Handler = fun(Request): Response throws HttpError
 type StrMap<V> = Map<string, V>
-pub type Point = geo.Point
+public type Point = geo.Point
 ```
 
 `type Name<T> = Type` at module level declares another name for a type. The alias is **transparent**: `Key` and `(Index, u64)` are the same type everywhere — assignable both ways, one instantiation of every generic, no conversion. A distinct type with the same representation is a one-field struct, as before; `type` never provides safety, only a name. What the alias does own is its *spelling*: diagnostics and hover print `Key` where the source said `Key`, its definition as written, and the full expansion when that differs (structural types carry the display name; a named type — struct, sealed, trait — keeps its own name, so `type Point = geo.Point` reads `Point`). The same mechanism names `error Set = A | B` in messages.
 
-Rules. Module level only; `pub` exports it, and a `pub` alias of a private type is allowed — it *is* the facade (Go, TS). Parameters take no bounds (state them where the alias is used). No unions: `error` names an error set, `sealed trait` a closed family of types, and `type` never spells `A | B`. Not recursive: `type Json = Map<string, Json>` is an error; a recursive type is a sealed trait or a struct (which also gives its cases names). Everything else sees through the alias: `impl`/`extend` on an alias follow the underlying type's ownership rule (D23), an alias of a struct constructs (`Point(x: 1.0, y: 2.0)`), calls statics (`Point.origin()`) and matches (`is Point`); a generic alias in value position takes its arguments (`Pair<i64>(...)`).
+Rules. Module level only; `public` exports it, and a `public` alias of a private type is allowed — it *is* the facade (Go, TS). Parameters take no bounds (state them where the alias is used). No unions: `error` names an error set, `sealed trait` a closed family of types, and `type` never spells `A | B`. Not recursive: `type Json = Map<string, Json>` is an error; a recursive type is a sealed trait or a struct (which also gives its cases names). Everything else sees through the alias: `impl`/`extend` on an alias follow the underlying type's ownership rule (D23), an alias of a struct constructs (`Point(x: 1.0, y: 2.0)`), calls statics (`Point.origin()`) and matches (`is Point`); a generic alias in value position takes its arguments (`Pair<i64>(...)`).
 
 Rejected: aliases in std for numbers (`int = i64`) — two spellings for one type is the import problem again; TS-style type-level computation (`keyof`, mapped and conditional types) — the Veles answer to "compute a type from a type" is an associated type on a trait (`Iterator.Item`).
 

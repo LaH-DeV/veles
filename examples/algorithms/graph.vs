@@ -4,7 +4,7 @@
 // The queues are the prelude's Deque; the priority queue in Dijkstra is
 // the prelude's PriorityQueue.
 
-pub struct Graph {
+public struct Graph {
   n:   i64
   adj: MutableList<MutableList<i64>>
 
@@ -128,7 +128,7 @@ struct Hop {
 /// priority queue of pending hops: O((n + m) log n). An entry pushed before
 /// a shorter path to its node was found is stale and skipped when it comes
 /// out.
-pub fun dijkstra(n: i64, edges: List<(i64, i64, i64)>, start: i64): List<i64?> {
+public fun dijkstra(n: i64, edges: List<(i64, i64, i64)>, start: i64): List<i64?> {
   val adj = MutableList<MutableList<(i64, i64)>>.make(n, _ => [])
   loop ((from, to, weight) in edges) adj.atOrPanic(from).push((to, weight))
   val dist = MutableList<i64?>.repeat(null, n)

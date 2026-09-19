@@ -344,7 +344,7 @@ func TestStaticFun(t *testing.T) {
 	src := `
 struct S<T> {
   static fun of(x: T): S<T> = S<T>()
-  pub static fun z(): i64 = 0
+  public static fun z(): i64 = 0
 }
 trait P { static fun parse(s: string): Self? }
 extend S<i64> { static fun one(): S<i64> = S<i64>.of(1) }
@@ -358,7 +358,7 @@ fun main() {
 		t.Fatalf("parse errors:\n%s", diags.Render())
 	}
 	dump := ast.Dump(f)
-	for _, want := range []string{"(fun static of", "(fun pub static z", "(fun static parse", "(call (. S<i64> of) 1)", "(< a c)"} {
+	for _, want := range []string{"(fun static of", "(fun public static z", "(fun static parse", "(call (. S<i64> of) 1)", "(< a c)"} {
 		if !strings.Contains(dump, want) {
 			t.Errorf("dump lacks %q:\n%s", want, dump)
 		}

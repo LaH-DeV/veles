@@ -564,8 +564,23 @@ func (f *fnCtx) memberExpr(e *ast.MemberExpr, want types.Type) Expr {
 					f.errorf(e.Pos, "variant '%s.%s' needs its fields: '%s.%s(...)'", s.Name, v.Name, s.Name, v.Name)
 					return bad()
 				}
+				if st, ok := f.c.symType(sym).(*types.Struct); ok {
+					// `Status.ok`: a static val, or a static fun used as a value
+					f.c.refSym(n.Pos, sym)
+					return f.staticValue(st, e, want)
+				}
 			}
 		}
+	}
+	if rt := f.moduleTypeNamed(e.X); rt != nil {
+		// `http.Status.ok`
+		if st, ok := rt.(*types.Struct); ok {
+			return f.staticValue(st, e, want)
+		}
+		if !types.IsInvalid(rt) {
+			f.errorf(e.Name.Pos, "'%s' has no static '%s'", rt, e.Name.Name)
+		}
+		return bad()
 	}
 	x := f.checkExpr(e.X, nil)
 	r := f.fieldAccess(x, e, want)
@@ -577,6 +592,29 @@ func (f *fnCtx) memberExpr(e *ast.MemberExpr, want types.Type) Expr {
 		}
 	}
 	return r
+}
+
+// staticValue checks `Type.name` in value position: a `static val` of the
+// struct (a module global), or a static function as a value.
+func (f *fnCtx) staticValue(st *types.Struct, e *ast.MemberExpr, want types.Type) Expr {
+	name := e.Name.Name
+	tmpl := st
+	if st.Template != nil {
+		tmpl = st.Template
+	}
+	if sym, ok := f.c.staticVals[tmpl][name]; ok {
+		if !sym.Pub && sym.Module != f.module {
+			f.errorf(e.Name.Pos, "'%s.%s' is private to module '%s' (M5)", st.Name, name, sym.Module.Name())
+			return bad()
+		}
+		f.c.refSym(e.Name.Pos, sym)
+		return f.symbolValue(sym, e.Name.Pos, want)
+	}
+	if t, _, _ := f.findMethod(st, name); t != nil && t.Decl.Static {
+		return f.funcValue(t, e.Name.Pos)
+	}
+	f.errorf(e.Name.Pos, "'%s' has no static '%s'; a 'static val' or 'static fun' in its body declares one (D23)", st.Name, name)
+	return bad()
 }
 
 func (f *fnCtx) symbolValue(sym *Symbol, span source.Span, want types.Type) Expr {

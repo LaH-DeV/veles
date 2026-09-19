@@ -3,7 +3,7 @@
 // swapping with the prelude's `swap(i, j)`.
 
 /// Bubble sort: O(n²), stops early when a pass makes no swap.
-pub fun bubbleSort(xs: List<i64>): List<i64> {
+public fun bubbleSort(xs: List<i64>): List<i64> {
   val out = xs.toMutable()
   val n = out.len()
   loop (i in 0..<n) {
@@ -21,7 +21,7 @@ pub fun bubbleSort(xs: List<i64>): List<i64> {
 
 /// Insertion sort, generic over anything Comparable: O(n²), fast on
 /// nearly-sorted input.
-pub fun insertionSort<T: Comparable>(xs: List<T>): List<T> {
+public fun insertionSort<T: Comparable>(xs: List<T>): List<T> {
   val out = xs.toMutable()
   loop (i in 1..<out.len()) {
     val key = out.atOrPanic(i)
@@ -36,7 +36,7 @@ pub fun insertionSort<T: Comparable>(xs: List<T>): List<T> {
 }
 
 /// Selection sort: O(n²) comparisons, at most n swaps.
-pub fun selectionSort(xs: List<i64>): List<i64> {
+public fun selectionSort(xs: List<i64>): List<i64> {
   val out = xs.toMutable()
   val n = out.len()
   loop (i in 0..<n) {
@@ -50,7 +50,7 @@ pub fun selectionSort(xs: List<i64>): List<i64> {
 }
 
 /// Merge sort: O(n log n), stable, recursive on halves.
-pub fun mergeSort(xs: List<i64>): List<i64> {
+public fun mergeSort(xs: List<i64>): List<i64> {
   if (xs.len() <= 1) return xs
   val mid = xs.len() / 2
   merge(mergeSort(xs.take(mid)), mergeSort(xs.drop(mid)))
@@ -77,7 +77,7 @@ fun merge(left: List<i64>, right: List<i64>): List<i64> {
 }
 
 /// Quick sort: O(n log n) average, in place on a copy, Lomuto partition.
-pub fun quickSort(xs: List<i64>): List<i64> {
+public fun quickSort(xs: List<i64>): List<i64> {
   val out = xs.toMutable()
   quickSortRange(out, 0, out.len() - 1)
   out.toList()
@@ -99,7 +99,7 @@ fun quickSortRange(xs: MutableList<i64>, lo: i64, hi: i64) {
 }
 
 /// Counting sort for small non-negative keys: O(n + k).
-pub fun countingSort(xs: List<i64>, maxValue: i64): List<i64> {
+public fun countingSort(xs: List<i64>, maxValue: i64): List<i64> {
   val counts = MutableList<i64>.repeat(0, maxValue + 1)
   loop (x in xs) *counts.refOrPanic(x) += 1
   val out: MutableList<i64> = []
@@ -109,7 +109,7 @@ pub fun countingSort(xs: List<i64>, maxValue: i64): List<i64> {
   out.toList()
 }
 
-pub fun isSorted(xs: List<i64>): bool {
+public fun isSorted(xs: List<i64>): bool {
   loop (i in 1..<xs.len()) {
     if (xs.atOrPanic(i - 1) > xs.atOrPanic(i)) return false
   }

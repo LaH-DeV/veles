@@ -367,6 +367,7 @@ type Field struct {
 	Name       string
 	Type       Type
 	Pub        bool
+	Private    bool // visible only inside the type's own declarations
 	HasDefault bool
 	Index      int
 }

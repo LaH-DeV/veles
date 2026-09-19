@@ -21,29 +21,30 @@ type fnCtx struct {
 	loops  []*loopFrame
 	narrow map[place]types.Type
 
-	retType  types.Type // declared return type (never the Result wrapper)
-	throws   bool
-	errType  types.Type // declared error union, or nil when inferred
-	unsafe   int
-	selfVar  *Var
-	selfMut  bool
-	isGlobal bool // checking a global initializer
+	retType     types.Type // declared return type (never the Result wrapper)
+	throws      bool
+	errType     types.Type // declared error union, or nil when inferred
+	unsafe      int
+	selfVar     *Var
+	selfMut     bool
+	isGlobal    bool          // checking a global initializer
+	staticOwner *types.Struct // the struct whose `static val` this global initializer is, if any
 
 	// lambda support
-	parent       *fnCtx
-	vars         map[*Var]bool // variables declared in this function
-	captures     map[*Var]*Var // outer variable -> inner stand-in
-	captureList  []*Var        // outer variables in environment order
-	paramInit    []Stmt        // lambda: statements destructuring tuple-pattern parameters
-	isLambda     bool
-	pending      []Stmt            // statements hoisted by adapter lowering
-	boundPlace   map[ast.Expr]Expr // receiver of a `?.` assignment, already lowered to its place (check_safe.go)
-	adapter      *adapterState     // the eager collection operation being lowered (lower_try.go)
-	scopes       []*ScopeBlock
-	awaitNext    bool
-	inRaceArm    bool
-	inferThrows  bool
-	inferredRet  types.Type
+	parent      *fnCtx
+	vars        map[*Var]bool // variables declared in this function
+	captures    map[*Var]*Var // outer variable -> inner stand-in
+	captureList []*Var        // outer variables in environment order
+	paramInit   []Stmt        // lambda: statements destructuring tuple-pattern parameters
+	isLambda    bool
+	pending     []Stmt            // statements hoisted by adapter lowering
+	boundPlace  map[ast.Expr]Expr // receiver of a `?.` assignment, already lowered to its place (check_safe.go)
+	adapter     *adapterState     // the eager collection operation being lowered (lower_try.go)
+	scopes      []*ScopeBlock
+	awaitNext   bool
+	inRaceArm   bool
+	inferThrows bool
+	inferredRet types.Type
 }
 
 type loopFrame struct {
@@ -281,6 +282,7 @@ func (c *Checker) checkGlobal(g *Global) {
 	env := &typeEnv{module: m, file: file, tps: map[string]*types.TypeParam{}}
 	f := c.newFnCtx(nil, m, file, env, nil)
 	f.isGlobal = true
+	f.staticOwner = c.staticOwner[g] // a `static val` initializer is inside its type
 	var declared types.Type
 	if d.Type != nil {
 		declared = f.resolve(d.Type)
@@ -832,11 +834,39 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 	return nil, nil
 }
 
+// insideType reports whether this code belongs to the type: one of its
+// methods, an `impl`/`extend` block for it in its own module, or the
+// initializer of one of its `static val`s — the places that may use its
+// `private` members. Lambdas inside such code count.
+func (f *fnCtx) insideType(st *types.Struct) bool {
+	tmpl := templateOf(st)
+	for ctx := f; ctx != nil; ctx = ctx.parent {
+		if ctx.staticOwner != nil && templateOf(ctx.staticOwner) == tmpl {
+			return true
+		}
+		if ctx.fn == nil || ctx.fn.tmpl == nil {
+			continue
+		}
+		t := ctx.fn.tmpl
+		if t.Owner != nil && templateOf(t.Owner) == tmpl {
+			return true
+		}
+		if t.Impl != nil && t.Impl.Module == f.module {
+			if hs, ok := t.Impl.Target.(*types.Struct); ok && templateOf(hs) == tmpl {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (f *fnCtx) lookupField(st *types.Struct, name string, span source.Span) *types.Field {
 	f.c.resolveStruct(templateOf(st))
 	for _, fld := range st.Fields {
 		if fld.Name == name {
-			if !fld.Pub && st.Module != f.module.prefix() {
+			if fld.Private && !f.insideType(st) {
+				f.errorf(span, "field '%s' is private to '%s': only its own methods, impl and extend blocks may use it", name, st.Name)
+			} else if !fld.Pub && st.Module != f.module.prefix() {
 				f.errorf(span, "field '%s' of '%s' is private to module '%s' (M5)", name, st.Name, st.Module)
 			}
 			f.c.refField(span, st, fld)
@@ -1337,5 +1367,3 @@ func (f *fnCtx) checkThrow(s *ast.ThrowStmt) []Stmt {
 	}
 	return []Stmt{&ExprStmt{X: x}}
 }
-
-

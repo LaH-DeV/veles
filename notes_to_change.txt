@@ -119,25 +119,25 @@ P5. Engineering debt: `unsafe` hygiene (#13), missing-impl reported at the struc
 
 19. (2026-09-17, user idea, decided "figure out and note") Package surface in source instead of
    the manifest's `exports`:
-   - `pub` inside a module = visible to the rest of the package (already the rule, M5).
+   - `public` inside a module = visible to the rest of the package (already the rule, M5).
    - The root module (`lib.vs` by convention; any file of the root directory) re-exports with
-     `pub use geometry` — that, and only that, is what other packages may import. Manifest
+     `public use geometry` — that, and only that, is what other packages may import. Manifest
      `exports` goes away (bootstrap has no users; no compatibility alias needed).
    Design worked out so far:
-   - Forms mirror `use`: `pub use geometry` re-exports the module under its name (outsiders write
-     `use mathlib.geometry`, as today); `pub use geometry.{ area, Circle }` flattens those items
+   - Forms mirror `use`: `public use geometry` re-exports the module under its name (outsiders write
+     `use mathlib.geometry`, as today); `public use geometry.{ area, Circle }` flattens those items
      into the root (`use mathlib` → `mathlib.area`) — a facade that hides the internal layout,
-     which the manifest list cannot do; `pub use geometry as geo` renames.
-   - Uniform rule, no root special case: `pub use` in ANY module adds the named module/items to
-     that module's pub surface; the root module's pub surface is the package's.
+     which the manifest list cannot do; `public use geometry as geo` renames.
+   - Uniform rule, no root special case: `public use` in ANY module adds the named module/items to
+     that module's public surface; the root module's public surface is the package's.
    - Only the package's own modules/items may be re-exported; re-exporting a dependency
-     (`pub use utils.text`) is refused for now (keeps "nothing escapes except through the root",
+     (`public use utils.text`) is refused for now (keeps "nothing escapes except through the root",
      avoids diamond questions). Revisit when M7 lands.
    - M1 is untouched: the dependency graph still comes from manifests only. The loader parses a
      dependency's root module (its `use` lines) to learn the surface before resolving
      `use dep.mod`; error text: "module 'geometry' of package 'mathlib' is not re-exported; add
-     `pub use geometry` to its root module".
-   - `pub use` is a `use` edge for M4 cycle detection. Flattened names collide with root decls
+     `public use geometry` to its root module".
+   - `public use` is a `use` edge for M4 cycle detection. Flattened names collide with root decls
      like duplicate declarations. LSP definition/hover follow a re-export to the original.
    - Fits #17: if `.veles` replaces the manifest, identity/deps live there and the surface stays
      in code. Cost: small (loader + checker + LSP), one docs chapter, examples/packages update.
@@ -266,7 +266,7 @@ P9. DONE (2026-09-17) — fuzzing + more quick fixes (no CI, per user).
 - Next batch, in this order: (1) mid-size real programs + conformance suite (P6), (2) P4 data
   structures, (3) the small debt items (#12, #15, #13 as a lint, Channel trySend/tryRecv,
   saturatingMul, Display-recursion diagnostic, statics in `Type.` completion, fs directory walk).
-  #19 (`pub use` surface) stays designed-but-unscheduled. Big three untouched until after.
+  #19 (`public use` surface) stays designed-but-unscheduled. Big three untouched until after.
 - #17: `veles.toml` stays until M7 gives the manifest real content.
 - #13: a LINT, not a rule — `unsafe { }` in a non-`unsafe fun` without a `// SAFETY:` comment
   on the preceding line warns; quick fix inserts the stub.
@@ -656,8 +656,8 @@ R9. DONE (2026-09-19, user decision): `use` takes a comma list — `use fs, io, 
     addendum and docs 11: a parameter/local named like a module shadows it (std/fs had
     `fun mkdir(path: string)` calling `dir` — now `use path as paths`); type aliases
     (`type P = geo.Point`) do not exist yet and are the fallback if prefixed type names hurt.
-    Item 19's `pub use geometry.{ area, Circle }` flattening form falls with this: re-exports
-    are whole modules (`pub use geometry`, `pub use geometry as geo`) when #19 is built.
+    Item 19's `public use geometry.{ area, Circle }` flattening form falls with this: re-exports
+    are whole modules (`public use geometry`, `public use geometry as geo`) when #19 is built.
 R10. DONE (2026-09-19, user): constructor puns — `Hashed(file, size: n)` means `file: file`
     (a bare argument must be an identifier naming a field; anything else bare is an error with
     the fix that names the field at that position; `x: x` is a warning with a fix). Positional
@@ -672,13 +672,13 @@ P11. DONE (2026-09-19; was PROPOSED): concurrency helpers in the prelude — see
     per-worker state and pipelines; docs 12 shows the helper, then the machine it is made of.
     Also: results channels should carry Result<T, E> rather than sentinels; the counted drain
     exists because multiple producers cannot close a channel (docs line or Channel.closeAfter(n)).
-P12. DONE (2026-09-19; see R12): type aliases. `type Name<T> = Type` at module level, `pub` allowed. Use cases: (1) naming
+P12. DONE (2026-09-19; see R12): type aliases. `type Name<T> = Type` at module level, `public` allowed. Use cases: (1) naming
     structural types — tuples, nested generics, function types (`type Handler =
     fun(Request): Response throws HttpError`, needed by the HTTP server); (2) shortening a
     qualified name after R9 (`type Point = geo.Point`; ctor, statics, `is` must work);
     (3) generic aliases without bounds on the alias params; (4) transparent, never a new type
     (one-field structs stay the newtype); (5) never a union — `error Set = A | B` keeps that;
-    (6) same keyword as associated `type Item = T`; pub alias of a private type is an error;
+    (6) same keyword as associated `type Item = T`; public alias of a private type is an error;
     (7) module level only; (8) impl/extend on an alias follow the underlying type's ownership
     rule; (9) cycle = error (reuse the error-set `resolving` guard); (10) DISPLAY: diagnostics
     and hover show the alias name where the source used it — same mechanism fixes #15 (error
@@ -719,7 +719,7 @@ P12 refinements (2026-09-19, from the user's questions; still to implement, sepa
     - Aliases chain: `type Index = i64; type Hash = u64; type Key = (Index, Hash)` — yes; hover
       shows `Key = (Index, Hash)` and the full expansion `(i64, u64)`; go-to-definition on an
       alias name opens its `type` line (reuse Ref.Unfold from error sets).
-    - `pub type Handle = Internal` with a private Internal: ALLOWED (Go allows it, TS too) —
+    - `public type Handle = Internal` with a private Internal: ALLOWED (Go allows it, TS too) —
       the alias is the facade; Internal's private members stay private. Drops list item (6b).
     - No std aliases for numbers (`int = i64`, `float = f64`): two spellings for one type is the
       import problem again; if a short canonical name is wanted it is a RENAME, not an alias.
@@ -730,7 +730,7 @@ P12 refinements (2026-09-19, from the user's questions; still to implement, sepa
       or a struct; unions → sealed trait / error set; recursion → sealed trait; keyof/mapped/
       conditional types → associated types on traits (`Iterator.Item` is the Veles ReturnType).
     - Document `type` strictly as "type alias" (a name, never a new type); newtype = struct.
-R12. DONE (2026-09-19): type aliases, spec D55. `type Name<T> = Type` at module level, `pub`
+R12. DONE (2026-09-19): type aliases, spec D55. `type Name<T> = Type` at module level, `public`
     allowed (also of a private type — the facade), transparent (same type, one instantiation),
     no bounds on params, not recursive, never a union. Implementation: display names ride on
     the structural type nodes (`Alias` field on Basic/Tuple/List/Map/Set/Func/... set by
@@ -861,3 +861,32 @@ R17. DONE (2026-09-19, user: "maybe lint for it for now"): `try f().m()` where `
     with a WARNING + fix that writes the parentheses (`fnCtx.tryChain`; only call/member
     chains qualify as the receiver, a bare name stays as it reads). A Result method
     (`mapError`, `?!`) still applies to the Result silently. Docs 07 updated.
+R18. DONE (2026-09-20): `static val name[: T] = expr` in a struct body (spec D23 addendum v0.29):
+    a module global in the type's namespace (`Status.ok`, `http.Status.ok`), `public` to export,
+    module-private otherwise, initialised with the globals in source order; never `var`; not
+    on generic structs. ast.StructDecl.Statics, sema `Checker.staticVals`, `fnCtx.staticValue`
+    (also `Type.name` for a static fun value → the existing "methods cannot be used as values"
+    message), formatter `staticVal`, LSP completion. Docs 05 "Constants on a type", cheatsheet.
+    Motivation recorded: HTTP's statuses/methods/content types are OPEN sets (value type +
+    constants), not enums; the enum design (closed sets of VALUES, see the 2026-09-20 write-up)
+    is PARKED by the user ("let's wait a minute").
+    OPEN (user, in examples/httpd): (a) encapsulation — a struct cannot hide a field from code
+    in its own module (Notes.next is poked by handler code); strategies discussed 2026-09-20,
+    decision pending. (b) user flagged as a bug: a non-`mut fun` may mutate a MutableList
+    field (`self.items.removeAt(i)`); this is the documented reference semantics of the mutable
+    collections (D25/D41: `Mutable` is the permission, the handle is the value) — Kotlin's
+    model, not Swift's/Rust's deep mutability; decision pending.
+R19. DONE (2026-09-20, user decisions): `pub` → `public` everywhere (keyword, ~330 uses in
+    std/examples, docs, spec, grammar; no compatibility shim — nobody uses the language yet),
+    and `private` for struct FIELDS and METHODS (also in impl/extend bodies): visible only inside
+    the type's own declarations — methods, impl/extend blocks in the same module, `static val`
+    initializers (`fnCtx.insideType`); enforced at field access, method call, constructor call
+    (a private field is not settable from outside and must have a default or a static
+    constructor) and in patterns. Levels: private (type) / nothing (module) / public (package).
+    `export` REJECTED as the spelling of `public` (it is what the package does in the
+    manifest); the user RESERVES the question whether the package boundary should later be
+    spelled `export` in source instead of the manifest's `exports` — note that, do not
+    prejudge. Spec M5 amendment; docs 05 "Visibility" (runnable), 11; cheatsheet; examples/
+    httpd Notes uses private (the user's refactor finished).
+    Still pending from R18: deep mutability (`fun` mutating a MutableList field is allowed by
+    design today; the user's comment in httpd called it a bug) — explained, not changed.

@@ -168,7 +168,7 @@ declaration is a struct plus an impl of the prelude trait `Error`:
 
 ```veles
 // fragment
-pub trait Error {
+public trait Error {
   fun message(): string = "$self"     // default: the value as `show` renders it
 }
 ```

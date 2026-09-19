@@ -18,22 +18,22 @@ struct DequeState<T> {
 
 /// An empty double-ended queue: `val q = deque<i64>()`, or
 /// `val q: Deque<i64> = deque()`.
-pub fun deque<T>(): Deque<T> = Deque(state: &DequeState<T>())
+public fun deque<T>(): Deque<T> = Deque(state: &DequeState<T>())
 
 /// A double-ended queue over a ring buffer: O(1) at both ends, so it serves
 /// as a FIFO queue (`addLast` / `removeFirst`), a stack, or a sliding
 /// window. Amortised O(1) growth; `at(i)` is O(1).
-pub struct Deque<T> {
+public struct Deque<T> {
   state: *DequeState<T>
 
   /// Number of elements.
-  pub fun len(): i64 = self.state.size
+  public fun len(): i64 = self.state.size
 
   /// True when there are no elements.
-  pub fun isEmpty(): bool = self.state.size == 0
+  public fun isEmpty(): bool = self.state.size == 0
 
   /// Appends `x` at the back.
-  pub fun addLast(x: T) {
+  public fun addLast(x: T) {
     val s = self.state
     self.reserve()
     s.buf.set((s.head + s.size) % s.buf.len(), x)
@@ -41,7 +41,7 @@ pub struct Deque<T> {
   }
 
   /// Prepends `x` at the front.
-  pub fun addFirst(x: T) {
+  public fun addFirst(x: T) {
     val s = self.state
     self.reserve()
     val cap = s.buf.len()
@@ -51,7 +51,7 @@ pub struct Deque<T> {
   }
 
   /// Removes and returns the front element, or `null` when empty.
-  pub fun removeFirst(): T? {
+  public fun removeFirst(): T? {
     val s = self.state
     if (s.size == 0) return null
     val x = s.buf.atOrPanic(s.head)
@@ -62,7 +62,7 @@ pub struct Deque<T> {
   }
 
   /// Removes and returns the back element, or `null` when empty.
-  pub fun removeLast(): T? {
+  public fun removeLast(): T? {
     val s = self.state
     if (s.size == 0) return null
     s.size -= 1
@@ -73,14 +73,14 @@ pub struct Deque<T> {
   }
 
   /// The front element, or `null` when empty.
-  pub fun first(): T? = self.at(0)
+  public fun first(): T? = self.at(0)
 
   /// The back element, or `null` when empty.
-  pub fun last(): T? = self.at(-1)
+  public fun last(): T? = self.at(-1)
 
   /// The element `i` places from the front, or `null` when `i` is out of
   /// range; a negative `i` counts from the back, so `at(-1)` is the last.
-  pub fun at(i: i64): T? {
+  public fun at(i: i64): T? {
     val s = self.state
     val k = if (i < 0) i + s.size else i
     if (k < 0 || k >= s.size) return null
@@ -88,7 +88,7 @@ pub struct Deque<T> {
   }
 
   /// Removes every element.
-  pub fun clear() {
+  public fun clear() {
     val s = self.state
     s.buf.clear()
     s.head = 0
@@ -96,7 +96,7 @@ pub struct Deque<T> {
   }
 
   /// The elements front to back.
-  pub fun toList(): List<T> {
+  public fun toList(): List<T> {
     val s = self.state
     var out: MutableList<T> = []
     loop (i in 0..<s.size) {
@@ -139,31 +139,31 @@ struct PriorityQueueState<T> {
 
 /// An empty min-priority queue over the elements' natural order:
 /// `val pq = priorityQueue<i64>()`; `pop()` yields the smallest first.
-pub fun priorityQueue<T: Comparable>(): PriorityQueue<T> =
+public fun priorityQueue<T: Comparable>(): PriorityQueue<T> =
   PriorityQueue(state: &PriorityQueueState<T>(compare: (a, b) => a.compareTo(b)))
 
 /// An empty priority queue ordered by `compare`, which returns a negative
 /// number when its first argument should come out first. For the largest
 /// first: `priorityQueueBy<i64>((a, b) => b.compareTo(a))`.
-pub fun priorityQueueBy<T>(compare: fun(T, T): i64): PriorityQueue<T> =
+public fun priorityQueueBy<T>(compare: fun(T, T): i64): PriorityQueue<T> =
   PriorityQueue(state: &PriorityQueueState<T>(compare))
 
 /// A priority queue over a binary heap: `push` and `pop` are O(log n),
 /// `peek` O(1). Elements that compare equal come out in no particular order.
-pub struct PriorityQueue<T> {
+public struct PriorityQueue<T> {
   state: *PriorityQueueState<T>
 
   /// Number of elements.
-  pub fun len(): i64 = self.state.items.len()
+  public fun len(): i64 = self.state.items.len()
 
   /// True when there are no elements.
-  pub fun isEmpty(): bool = self.state.items.len() == 0
+  public fun isEmpty(): bool = self.state.items.len() == 0
 
   /// The element that `pop` would return, or `null` when empty.
-  pub fun peek(): T? = self.state.items.first()
+  public fun peek(): T? = self.state.items.first()
 
   /// Adds `x`.
-  pub fun push(x: T) {
+  public fun push(x: T) {
     val items = self.state.items
     items.push(x)
     self.siftUp(items.len() - 1)
@@ -171,7 +171,7 @@ pub struct PriorityQueue<T> {
 
   /// Removes and returns the first element in the queue's order, or `null`
   /// when empty.
-  pub fun pop(): T? {
+  public fun pop(): T? {
     val items = self.state.items
     val top = items.first() ?: return null
     val last = items.pop() ?: return null
@@ -183,13 +183,13 @@ pub struct PriorityQueue<T> {
   }
 
   /// Removes every element.
-  pub fun clear() {
+  public fun clear() {
     self.state.items.clear()
   }
 
   /// The elements in heap order — the first is the smallest, the rest are
   /// not sorted.
-  pub fun toList(): List<T> = self.state.items.toList()
+  public fun toList(): List<T> = self.state.items.toList()
 
   fun siftUp(from: i64) {
     val s = self.state

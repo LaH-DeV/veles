@@ -12,7 +12,7 @@ fun setCell(dp: MutableList<MutableList<i64>>, row: i64, col: i64, v: i64) {
 }
 
 /// Length of the longest common subsequence of two strings (by bytes).
-pub fun lcsLength(a: string, b: string): i64 {
+public fun lcsLength(a: string, b: string): i64 {
   val n = a.len()
   val m = b.len()
   val dp = grid(n + 1, m + 1, 0)
@@ -30,7 +30,7 @@ pub fun lcsLength(a: string, b: string): i64 {
 }
 
 /// Levenshtein distance: insert, delete or replace one byte at a time.
-pub fun editDistance(a: string, b: string): i64 {
+public fun editDistance(a: string, b: string): i64 {
   val n = a.len()
   val m = b.len()
   val dp = grid(n + 1, m + 1, 0)
@@ -49,7 +49,7 @@ pub fun editDistance(a: string, b: string): i64 {
 }
 
 /// 0/1 knapsack: best total value within `capacity`, one row per item.
-pub fun knapsack(weights: List<i64>, values: List<i64>, capacity: i64): i64 {
+public fun knapsack(weights: List<i64>, values: List<i64>, capacity: i64): i64 {
   val best = MutableList<i64>.repeat(0, capacity + 1)
   loop ((weight, value) in weights.zip(values)) {
     // walk capacities downwards so each item is used at most once
@@ -61,7 +61,7 @@ pub fun knapsack(weights: List<i64>, values: List<i64>, capacity: i64): i64 {
 }
 
 /// Fewest coins that make `amount`; null when it cannot be made.
-pub fun coinChange(coins: List<i64>, amount: i64): i64? {
+public fun coinChange(coins: List<i64>, amount: i64): i64? {
   val fewest = MutableList<i64?>.repeat(null, amount + 1)
   fewest.set(0, 0)
   loop (target in 1..amount) {
@@ -76,7 +76,7 @@ pub fun coinChange(coins: List<i64>, amount: i64): i64? {
 }
 
 /// Longest strictly increasing subsequence, O(n²).
-pub fun longestIncreasing(xs: List<i64>): i64 {
+public fun longestIncreasing(xs: List<i64>): i64 {
   val best = MutableList<i64>.repeat(1, xs.len())
   loop (i in 1..<xs.len()) {
     loop (j in 0..<i) {
@@ -89,7 +89,7 @@ pub fun longestIncreasing(xs: List<i64>): i64 {
 }
 
 /// Kadane: largest sum of a contiguous run.
-pub fun maxSubarraySum(xs: List<i64>): i64 {
+public fun maxSubarraySum(xs: List<i64>): i64 {
   var bestEndingHere = 0
   var best = xs.first() ?: 0
   loop (x in xs) {
@@ -100,7 +100,7 @@ pub fun maxSubarraySum(xs: List<i64>): i64 {
 }
 
 /// Number of ways to climb `n` stairs taking 1 or 2 steps at a time.
-pub fun climbStairs(n: i64): i64 {
+public fun climbStairs(n: i64): i64 {
   var a = 1
   var b = 1
   loop (_ in 0..<n) (a, b) = (b, a + b)

@@ -8,26 +8,26 @@
 /// Ordering for `<`, `<=`, `>`, `>=`, `sorted()`, `min()` and `max()`.
 /// `compareTo` returns a negative number when `self` sorts before `other`,
 /// zero when they are equal, and a positive number otherwise.
-pub trait Comparable {
+public trait Comparable {
   fun compareTo(other: Self): i64
 }
 
 /// Custom equality for `==` and `!=`. A type that implements Equatable and
 /// is used as a map key or set element must implement Hashable too, so that
 /// equal values hash alike.
-pub trait Equatable {
+public trait Equatable {
   fun equals(other: Self): bool
 }
 
 /// Custom hashing for map keys and set elements. Equal values (by `==`)
 /// must return the same hash.
-pub trait Hashable {
+public trait Hashable {
   fun hash(): i64
 }
 
 /// Custom text for interpolation: `"$x"` calls `x.toString()` when the type
 /// implements Display, and prints the fields otherwise.
-pub trait Display {
+public trait Display {
   fun toString(): string
 }
 
@@ -86,7 +86,7 @@ impl Comparable for string {
 /// Construction from text, the inverse of Display: `i64.parse("42")`, or
 /// `T.parse(s)` in generic code. `null` when the text is not a value of
 /// the type.
-pub trait Parsable {
+public trait Parsable {
   static fun parse(s: string): Self?
 }
 

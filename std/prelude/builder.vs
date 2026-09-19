@@ -2,41 +2,41 @@
 // where repeated `+` would copy the whole string each time.
 
 /// Accumulates text. `stringBuilder()` starts one; `toString()` reads it.
-pub fun stringBuilder(): StringBuilder = StringBuilder()
+public fun stringBuilder(): StringBuilder = StringBuilder()
 
-pub struct StringBuilder {
+public struct StringBuilder {
   bytes: MutableList<u8> = []
 
   /// Appends `s`.
-  pub fun append(s: string) {
+  public fun append(s: string) {
     loop (b in s.bytes()) {
       self.bytes.push(b)
     }
   }
 
   /// Appends `s` and a newline.
-  pub fun appendLine(s: string = "") {
+  public fun appendLine(s: string = "") {
     self.append(s)
     self.bytes.push(10)
   }
 
   /// Appends one byte of UTF-8 — for code that walks a string with `byteAt`
   /// and copies most of it through (`toString` checks the result is text).
-  pub fun appendByte(b: u8) {
+  public fun appendByte(b: u8) {
     self.bytes.push(b)
   }
 
   /// Length in bytes so far.
-  pub fun len(): i64 = self.bytes.len()
+  public fun len(): i64 = self.bytes.len()
 
   /// True when nothing has been appended.
-  pub fun isEmpty(): bool = self.bytes.len() == 0
+  public fun isEmpty(): bool = self.bytes.len() == 0
 
   /// Empties the builder.
-  pub fun clear() {
+  public fun clear() {
     self.bytes.clear()
   }
 
   /// The accumulated text.
-  pub fun toString(): string = self.bytes.decodeUtf8() ?: panic("StringBuilder: invalid UTF-8")
+  public fun toString(): string = self.bytes.decodeUtf8() ?: panic("StringBuilder: invalid UTF-8")
 }

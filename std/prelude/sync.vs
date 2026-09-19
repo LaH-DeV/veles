@@ -12,32 +12,32 @@
 /// closure. It is derived from a type's shape and cannot be implemented by
 /// hand. A value crossing a task boundary must be Sendable (D35/D54), and
 /// so must one that a function duplicates, such as `MutableList<T>.fill`.
-pub trait Sendable { }
+public trait Sendable { }
 
-pub struct Mutex<T> {
+public struct Mutex<T> {
   cell: *T
 
-  pub fun withLock<R>(f: fun(*T): R): R = f(self.cell)
-  pub fun get(): T = *self.cell
-  pub fun set(value: T) {
+  public fun withLock<R>(f: fun(*T): R): R = f(self.cell)
+  public fun get(): T = *self.cell
+  public fun set(value: T) {
     *self.cell = value
   }
 }
 
-pub fun <T> mutex(value: T): Mutex<T> = Mutex(cell: &value)
+public fun <T> mutex(value: T): Mutex<T> = Mutex(cell: &value)
 
-pub struct Atomic<T> {
+public struct Atomic<T> {
   cell: *T
 
-  pub fun load(): T = *self.cell
-  pub fun store(value: T) {
+  public fun load(): T = *self.cell
+  public fun store(value: T) {
     *self.cell = value
   }
-  pub fun swap(value: T): T {
+  public fun swap(value: T): T {
     val old = *self.cell
     *self.cell = value
     old
   }
 }
 
-pub fun <T> atomic(value: T): Atomic<T> = Atomic(cell: &value)
+public fun <T> atomic(value: T): Atomic<T> = Atomic(cell: &value)

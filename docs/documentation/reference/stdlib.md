@@ -12,7 +12,7 @@ the prelude, `io`, `os`, `fs`, `path` — is written in Veles.
 
 ```veles
 // fragment
-pub trait Iterator {
+public trait Iterator {
   type Item
   mut fun next(): Item?                       // null at the end
 
@@ -35,7 +35,7 @@ pub trait Iterator {
   mut fun last(): Item?
 }
 
-pub trait Iterable {
+public trait Iterable {
   type Iter: Iterator
   fun iterator(): Iter
   fun iter(): Iter = self.iterator()
@@ -50,28 +50,28 @@ pub trait Iterable {
 
 ```veles
 // fragment
-pub trait Closeable { mut fun close() }     // for `with (r = ...) { }` (D43)
+public trait Closeable { mut fun close() }     // for `with (r = ...) { }` (D43)
 ```
 
 ### Synchronisation (D35)
 
 ```veles
 // fragment
-pub struct Mutex<T> {
-  pub fun withLock<R>(f: fun(*T): R): R
-  pub fun get(): T
-  pub fun set(value: T)
+public struct Mutex<T> {
+  public fun withLock<R>(f: fun(*T): R): R
+  public fun get(): T
+  public fun set(value: T)
 }
-pub fun <T> mutex(value: T): Mutex<T>
+public fun <T> mutex(value: T): Mutex<T>
 
-pub struct Atomic<T> {
-  pub fun load(): T
-  pub fun store(value: T)
-  pub fun swap(value: T): T
+public struct Atomic<T> {
+  public fun load(): T
+  public fun store(value: T)
+  public fun swap(value: T): T
 }
-pub fun <T> atomic(value: T): Atomic<T>
+public fun <T> atomic(value: T): Atomic<T>
 
-pub trait Sendable { }   // derived from the type's shape; a bound, never implemented by hand
+public trait Sendable { }   // derived from the type's shape; a bound, never implemented by hand
 ```
 
 Both are `Sendable` regardless of `T`. `Sendable` itself is the marker for
@@ -84,7 +84,7 @@ duplicate: `MutableList<T>.repeat` and `fill` require it.
 
 ```veles
 // fragment
-pub struct Panic { pub message: string }    // a task's panic, as seen by `gather`
+public struct Panic { public message: string }    // a task's panic, as seen by `gather`
 ```
 
 `panic(message)` raises one deliberately (D20). It never returns, so it
@@ -94,7 +94,7 @@ can stand in for a value: `val x = xs.at(i) ?: panic("index $i")`.
 
 ```veles
 // fragment
-pub trait Error { fun message(): string = "$self" }   // what `error Name { }` implements
+public trait Error { fun message(): string = "$self" }   // what `error Name { }` implements
 ```
 
 `error Name { fields; fun message() ... }` declares a struct with this
@@ -106,7 +106,7 @@ error union directly.
 
 ```veles
 // fragment
-pub error IoError { pub path: string; pub code: i64; pub detail: string }
+public error IoError { public path: string; public code: i64; public detail: string }
 ```
 
 `IoError` is what `fs` and `os` throw: `detail` is the system's description
@@ -117,10 +117,10 @@ the platform error number; `message()` is `"detail: path"`.
 
 ```veles
 // fragment
-pub trait Comparable { fun compareTo(other: Self): i64 }   // <, <=, >, >=, sorted, min, max
-pub trait Equatable  { fun equals(other: Self): bool }     // ==, !=, contains, indexOf
-pub trait Hashable   { fun hash(): i64 }                   // map keys, set elements
-pub trait Display    { fun toString(): string }            // interpolation "$x"
+public trait Comparable { fun compareTo(other: Self): i64 }   // <, <=, >, >=, sorted, min, max
+public trait Equatable  { fun equals(other: Self): bool }     // ==, !=, contains, indexOf
+public trait Hashable   { fun hash(): i64 }                   // map keys, set elements
+public trait Display    { fun toString(): string }            // interpolation "$x"
 ```
 
 A struct or sealed type has structural equality, hashing and
@@ -136,7 +136,7 @@ entries in any order) whenever their elements do. A type with
 
 ```veles
 // fragment
-pub trait Parsable { static fun parse(s: string): Self? }   // i64.parse("42"), T.parse(s)
+public trait Parsable { static fun parse(s: string): Self? }   // i64.parse("42"), T.parse(s)
 ```
 
 Construction from text, implemented for `i64`, `f64`, `bool` and `string`;
@@ -147,15 +147,15 @@ receiver and is called on the type (`Point.origin()`, `Stack<i64>.of(1)`).
 
 ```veles
 // fragment
-pub fun stringBuilder(): StringBuilder
-pub struct StringBuilder {
-  pub fun append(s: string)
-  pub fun appendLine(s: string = "")
-  pub fun appendByte(b: u8)          // one UTF-8 byte, for code walking a string with byteAt
-  pub fun len(): i64
-  pub fun isEmpty(): bool
-  pub fun clear()
-  pub fun toString(): string
+public fun stringBuilder(): StringBuilder
+public struct StringBuilder {
+  public fun append(s: string)
+  public fun appendLine(s: string = "")
+  public fun appendByte(b: u8)          // one UTF-8 byte, for code walking a string with byteAt
+  public fun len(): i64
+  public fun isEmpty(): bool
+  public fun clear()
+  public fun toString(): string
 }
 ```
 
@@ -166,31 +166,31 @@ each time.
 
 ```veles
 // fragment
-pub fun deque<T>(): Deque<T>
-pub struct Deque<T> {
-  pub fun addLast(x: T)
-  pub fun addFirst(x: T)
-  pub fun removeFirst(): T?
-  pub fun removeLast(): T?
-  pub fun first(): T?
-  pub fun last(): T?
-  pub fun at(i: i64): T?          // from the front; a negative i counts from the back
-  pub fun len(): i64
-  pub fun isEmpty(): bool
-  pub fun clear()
-  pub fun toList(): List<T>       // front to back; also Iterable and Display
+public fun deque<T>(): Deque<T>
+public struct Deque<T> {
+  public fun addLast(x: T)
+  public fun addFirst(x: T)
+  public fun removeFirst(): T?
+  public fun removeLast(): T?
+  public fun first(): T?
+  public fun last(): T?
+  public fun at(i: i64): T?          // from the front; a negative i counts from the back
+  public fun len(): i64
+  public fun isEmpty(): bool
+  public fun clear()
+  public fun toList(): List<T>       // front to back; also Iterable and Display
 }
 
-pub fun priorityQueue<T: Comparable>(): PriorityQueue<T>        // smallest first
-pub fun priorityQueueBy<T>(compare: fun(T, T): i64): PriorityQueue<T>
-pub struct PriorityQueue<T> {
-  pub fun push(x: T)
-  pub fun pop(): T?               // the first element in the queue's order
-  pub fun peek(): T?
-  pub fun len(): i64
-  pub fun isEmpty(): bool
-  pub fun clear()
-  pub fun toList(): List<T>       // heap order: only the first is the smallest
+public fun priorityQueue<T: Comparable>(): PriorityQueue<T>        // smallest first
+public fun priorityQueueBy<T>(compare: fun(T, T): i64): PriorityQueue<T>
+public struct PriorityQueue<T> {
+  public fun push(x: T)
+  public fun pop(): T?               // the first element in the queue's order
+  public fun peek(): T?
+  public fun len(): i64
+  public fun isEmpty(): bool
+  public fun clear()
+  public fun toList(): List<T>       // heap order: only the first is the smallest
 }
 ```
 

@@ -519,8 +519,23 @@ func (f *fnCtx) constructStruct(st *types.Struct, args []ast.Arg, span source.Sp
 		f.checkArgsLoosely(args)
 		return bad()
 	}
+	inside := f.insideType(st)
 	lit := &StructLit{exprBase{st}, st, make([]Expr, len(st.Fields))}
 	for i, fld := range st.Fields {
+		if fld.Private && !inside {
+			// a private field is set by the type alone: from outside it
+			// takes its default, or the type offers a static constructor
+			if bound[i] != nil {
+				f.errorf(bound[i].Span(), "field '%s' is private to '%s' and cannot be set here; leave it to its default or construct through a static function of '%s'", fld.Name, st.Name, st.Name)
+				lit.Fields[i] = bad()
+				continue
+			}
+			if !fld.HasDefault {
+				f.errorf(span, "cannot construct '%s' here: field '%s' is private and has no default; give it one or construct through a static function of '%s'", st.Name, fld.Name, st.Name)
+				lit.Fields[i] = bad()
+				continue
+			}
+		}
 		if bound[i] != nil {
 			lit.Fields[i] = f.checkExprTo(bound[i], fld.Type)
 			continue
@@ -840,7 +855,15 @@ func (f *fnCtx) callMethod(t *FuncTemplate, ownerSubst map[*types.TypeParam]type
 	// inherent methods (struct body or extend block) follow M5; trait impl
 	// methods follow the trait's visibility
 	inherent := t.Owner != nil || (t.Impl != nil && t.Impl.Trait == nil)
-	if inherent && !t.Pub && t.Module != f.module {
+	if inherent && t.Decl.Private {
+		owner := t.Owner
+		if owner == nil {
+			owner, _ = t.Impl.Target.(*types.Struct)
+		}
+		if owner != nil && !f.insideType(owner) {
+			f.errorf(callee.Name.Pos, "method '%s' is private to '%s': only its own methods, impl and extend blocks may call it", t.Name, owner.Name)
+		}
+	} else if inherent && !t.Pub && t.Module != f.module {
 		f.errorf(callee.Name.Pos, "method '%s' is private to module '%s' (M5)", t.Name, t.Module.Path)
 	}
 	var recvArg Expr = recv

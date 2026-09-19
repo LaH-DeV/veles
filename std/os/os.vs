@@ -13,7 +13,7 @@ extern "C" {
 }
 
 /// The command-line arguments, without the program name.
-pub fun args(): List<string> {
+public fun args(): List<string> {
   var out: MutableList<string> = []
   val n = unsafe {
     veles_os_argc()
@@ -29,7 +29,7 @@ pub fun args(): List<string> {
 }
 
 /// The program's own path, as it was invoked.
-pub fun program(): string {
+public fun program(): string {
   var s = ""
   unsafe {
     veles_os_arg(0, &s)
@@ -38,7 +38,7 @@ pub fun program(): string {
 }
 
 /// The value of environment variable `name`, or `null` when it is not set.
-pub fun env(name: string): string? {
+public fun env(name: string): string? {
   var s = ""
   val ok = unsafe {
     veles_os_getenv(name, &s)
@@ -47,24 +47,24 @@ pub fun env(name: string): string? {
 }
 
 /// Ends the process with `code` after flushing output.
-pub fun exit(code: i64): Never {
+public fun exit(code: i64): Never {
   unsafe {
     veles_os_exit(code)
   }
 }
 
 /// What a finished program produced.
-pub struct Output {
-  pub code:   i64
-  pub stdout: string
-  pub fun ok(): bool = self.code == 0
+public struct Output {
+  public code:   i64
+  public stdout: string
+  public fun ok(): bool = self.code == 0
 }
 
 /// Runs `program` with `args`, waits for it, and captures its standard
 /// output; standard error passes through, or is captured into the same
 /// text with `mergeStderr`. Throws when the program cannot be started; a
 /// non-zero exit is reported in `Output.code`, not thrown.
-pub fun run(program: string, args: List<string> = [], mergeStderr: bool = false): Output throws IoError {
+public fun run(program: string, args: List<string> = [], mergeStderr: bool = false): Output throws IoError {
   var cmd = quote(program)
   loop (a in args) {
     cmd = cmd + " " + quote(a)
@@ -80,7 +80,7 @@ pub fun run(program: string, args: List<string> = [], mergeStderr: bool = false)
 }
 
 /// Builds an `IoError` for a platform error number.
-pub fun ioError(code: i64, path: string): IoError {
+public fun ioError(code: i64, path: string): IoError {
   var detail = ""
   unsafe {
     veles_os_strerror(code, &detail)

@@ -22,8 +22,8 @@ func TestPackageIsTheProgram(t *testing.T) {
 	}
 	write("veles.toml", "[package]\nname = \"app\"\nversion = \"0.1.0\"\n")
 	write("main.vs", "use io\nuse geometry\nfun main() { io.println(\"${geometry.twice(2)}\") }\n")
-	write("geometry/lib.vs", "pub fun twice(n: i64): i64 = n * 2\n")
-	write("unused/lib.vs", "pub fun broken(): i64 = \"not a number\"\n")
+	write("geometry/lib.vs", "public fun twice(n: i64): i64 = n * 2\n")
+	write("unused/lib.vs", "public fun broken(): i64 = \"not a number\"\n")
 
 	load := func(path string, needMain bool) (*Package, *source.Diagnostics) {
 		diags := &source.Diagnostics{}

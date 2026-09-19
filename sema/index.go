@@ -321,7 +321,7 @@ func (c *Checker) shapeOf(t types.Type) string {
 		for _, fld := range tt.Fields {
 			sb.WriteString("  ")
 			if fld.Pub {
-				sb.WriteString("pub ")
+				sb.WriteString("public ")
 			}
 			sb.WriteString(fld.Name + ": " + fld.Type.String())
 			if fld.HasDefault {

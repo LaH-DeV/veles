@@ -96,7 +96,7 @@ impl<T> Display for Stack<T> {
 
 // D23 addendum — extend blocks: inherent methods for a type you declare
 extend<T: Display> Stack<T> {
-  pub fun render(): string = self.items.map(x => x.show()).join(" ")
+  public fun render(): string = self.items.map(x => x.show()).join(" ")
   mut fun drain() {
     self.items.clear()
   }
@@ -206,5 +206,5 @@ fun typeTests(x: Shape, y: Any) {
   val addr = &x
 }
 
-pub const PI: f64 = 3.14159265358979
-pub var counter = 0
+public const PI: f64 = 3.14159265358979
+public var counter = 0

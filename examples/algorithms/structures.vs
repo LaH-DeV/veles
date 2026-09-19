@@ -6,7 +6,7 @@
 
 /// Balanced brackets — the textbook stack use, with a MutableList as the
 /// stack: `push`, `pop` and `last` are all it needs.
-pub fun balanced(s: string): bool {
+public fun balanced(s: string): bool {
   val opener: Map<u8, u8> = [')': '(', ']': '[', '}': '{']
   val stack: MutableList<u8> = []
   loop (byte in s.bytes()) {
@@ -24,7 +24,7 @@ pub fun balanced(s: string): bool {
 /// Largest element of every window of `k` — the textbook deque use. The
 /// deque holds indices whose values decrease front to back, so the front
 /// is always the current window's maximum: O(n) overall.
-pub fun slidingMax(xs: List<i64>, k: i64): List<i64> {
+public fun slidingMax(xs: List<i64>, k: i64): List<i64> {
   val out: MutableList<i64> = []
   val window = deque<i64>()
   loop ((i, x) in xs.iter().enumerate()) {
@@ -43,13 +43,13 @@ pub fun slidingMax(xs: List<i64>, k: i64): List<i64> {
 }
 
 /// Binary search tree of i64, nodes linked by GC pointers (D10/D31).
-pub struct TreeNode {
+public struct TreeNode {
   value: i64
   left:  (*TreeNode)? = null
   right: (*TreeNode)? = null
 }
 
-pub struct Bst {
+public struct Bst {
   root: (*TreeNode)? = null
   size: i64 = 0
 
@@ -110,7 +110,7 @@ fun heightOf(node: (*TreeNode)?): i64 =
 /// Binary min-heap in a list: the parent of `i` is `(i - 1) / 2`, its
 /// children are `2i + 1` and `2i + 2`. The prelude's `priorityQueue()` is
 /// this structure made generic and comparator-driven.
-pub struct MinHeap {
+public struct MinHeap {
   items: MutableList<i64> = []
 
   /// Appends, then sifts the new element up while it beats its parent.
@@ -151,7 +151,7 @@ pub struct MinHeap {
 }
 
 /// Heap sort, as a demonstration of the heap: O(n log n).
-pub fun heapSort(xs: List<i64>): List<i64> {
+public fun heapSort(xs: List<i64>): List<i64> {
   val heap = MinHeap()
   loop (x in xs) heap.push(x)
   val out: MutableList<i64> = []

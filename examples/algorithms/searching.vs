@@ -2,7 +2,7 @@
 
 /// Linear scan: O(n), works on unsorted input. (`xs.indexOf(target)` is the
 /// built-in spelling; it answers -1 rather than null.)
-pub fun linearSearch(xs: List<i64>, target: i64): i64? {
+public fun linearSearch(xs: List<i64>, target: i64): i64? {
   loop ((i, x) in xs.iter().enumerate()) {
     if (x == target) return i
   }
@@ -10,7 +10,7 @@ pub fun linearSearch(xs: List<i64>, target: i64): i64? {
 }
 
 /// Binary search on a sorted list: O(log n).
-pub fun binarySearch(xs: List<i64>, target: i64): i64? {
+public fun binarySearch(xs: List<i64>, target: i64): i64? {
   var lo = 0
   var hi = xs.len() - 1
   loop (lo <= hi) {
@@ -27,7 +27,7 @@ pub fun binarySearch(xs: List<i64>, target: i64): i64? {
 
 /// First index whose element is >= target (the insertion point that keeps
 /// the list sorted); xs.len() when every element is smaller.
-pub fun lowerBound(xs: List<i64>, target: i64): i64 {
+public fun lowerBound(xs: List<i64>, target: i64): i64 {
   var lo = 0
   var hi = xs.len()
   loop (lo < hi) {
@@ -38,7 +38,7 @@ pub fun lowerBound(xs: List<i64>, target: i64): i64 {
 }
 
 /// Recursive binary search over an explicit range, for comparison.
-pub fun binarySearchRec(xs: List<i64>, target: i64, lo: i64, hi: i64): i64? {
+public fun binarySearchRec(xs: List<i64>, target: i64, lo: i64, hi: i64): i64? {
   if (lo > hi) return null
   val mid = lo + (hi - lo) / 2
   val v = xs.atOrPanic(mid)
@@ -50,7 +50,7 @@ pub fun binarySearchRec(xs: List<i64>, target: i64, lo: i64, hi: i64): i64? {
 }
 
 /// Two-pointer: does a sorted list contain a pair summing to target?
-pub fun pairWithSum(xs: List<i64>, target: i64): (i64, i64)? {
+public fun pairWithSum(xs: List<i64>, target: i64): (i64, i64)? {
   var i = 0
   var j = xs.len() - 1
   loop (i < j) {
