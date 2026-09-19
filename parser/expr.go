@@ -518,8 +518,9 @@ func (p *Parser) parseIf() ast.Expr {
 		e.Cond = &ast.BadExpr{Pos: p.span()}
 	}
 	e.Then = p.parseBodyOrStmt()
-	// `else` may follow on the next line after a `}`.
-	if p.at(lexer.Semi) && p.cur().AutoSemi && p.peek(1).Kind == lexer.KwElse {
+	// `else` may follow on the next line after a `}` — unless it is the
+	// `else =>` arm of an enclosing `when`, when this `if` is an arm body.
+	if p.at(lexer.Semi) && p.cur().AutoSemi && p.peek(1).Kind == lexer.KwElse && p.peek(2).Kind != lexer.FatArrow {
 		p.next()
 	}
 	if p.accept(lexer.KwElse) {

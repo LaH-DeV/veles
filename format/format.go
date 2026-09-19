@@ -1677,7 +1677,36 @@ func alignColumns(out string, marks []mark) string {
 		}
 		off += len(l) + 1
 	}
-	for _, kind := range []alignKind{alignField, alignArrow, alignComment} {
+	// padRun aligns the marked lines of one run on their widest column.
+	padRun := func(kind alignKind, members []int) {
+		width, narrow := 0, -1
+		for _, k := range members {
+			w := displayWidth(lines[k][:cols[k][kind]])
+			if w > width {
+				width = w
+			}
+			if narrow < 0 || w < narrow {
+				narrow = w
+			}
+		}
+		if len(members) < 2 || width-narrow > maxAlignSpread {
+			return
+		}
+		for _, k := range members {
+			c := cols[k][kind]
+			pad := width - displayWidth(lines[k][:c])
+			if pad == 0 {
+				continue
+			}
+			lines[k] = lines[k][:c] + strings.Repeat(" ", pad) + lines[k][c:]
+			for other := range cols[k] {
+				if cols[k][other] > c {
+					cols[k][other] += pad
+				}
+			}
+		}
+	}
+	for _, kind := range []alignKind{alignField, alignComment} {
 		i := 0
 		for i < len(lines) {
 			if cols[i][kind] < 0 {
@@ -1685,36 +1714,66 @@ func alignColumns(out string, marks []mark) string {
 				continue
 			}
 			j := i
-			width, narrow := 0, -1
+			var members []int
 			for j < len(lines) && cols[j][kind] >= 0 {
-				w := displayWidth(lines[j][:cols[j][kind]])
-				if w > width {
-					width = w
-				}
-				if narrow < 0 || w < narrow {
-					narrow = w
-				}
+				members = append(members, j)
 				j++
 			}
-			if j-i >= 2 && width-narrow <= maxAlignSpread {
-				for k := i; k < j; k++ {
-					c := cols[k][kind]
-					pad := width - displayWidth(lines[k][:c])
-					if pad == 0 {
-						continue
-					}
-					lines[k] = lines[k][:c] + strings.Repeat(" ", pad) + lines[k][c:]
-					for other := range cols[k] {
-						if cols[k][other] > c {
-							cols[k][other] += pad
-						}
-					}
-				}
-			}
+			padRun(kind, members)
 			i = j
 		}
 	}
+	// The arms of one `when` / `race` form a single run even when an arm's
+	// body spans lines (a block, a broken chain): lines indented deeper than
+	// the arms, a closing brace at the arms' indentation and comments there
+	// continue it; a blank line or a nested `when`'s own arms (deeper) do
+	// not join it — those get a run of their own.
+	inRun := make([]bool, len(lines))
+	for i := 0; i < len(lines); i++ {
+		if cols[i][alignArrow] < 0 || inRun[i] {
+			continue
+		}
+		indent := indentOf(lines[i])
+		var members []int
+		for j := i; j < len(lines); j++ {
+			if cols[j][alignArrow] >= 0 && indentOf(lines[j]) == indent {
+				inRun[j] = true
+				// an arm broken after its arrow (`1 =>` then the body on the
+				// next line) stays out of the column: a padded arrow with
+				// nothing after it would dangle
+				if strings.TrimRight(lines[j], " ") != lines[j][:cols[j][alignArrow]]+" =>" {
+					members = append(members, j)
+				}
+				continue
+			}
+			if !armRunContinues(lines[j], indent) {
+				break
+			}
+		}
+		padRun(alignArrow, members)
+	}
 	return strings.Join(lines, "\n")
+}
+
+// indentOf is the number of leading spaces of a line.
+func indentOf(l string) int {
+	return len(l) - len(strings.TrimLeft(l, " "))
+}
+
+// armRunContinues reports whether a line without an arrow keeps a run of
+// arms at the given indentation open: an arm body's continuation (indented
+// deeper), the brace closing a block body (`}` or `} else {`) or a comment
+// at the arms' own indentation.
+func armRunContinues(l string, indent int) bool {
+	t := strings.TrimLeft(l, " ")
+	if t == "" {
+		return false
+	}
+	ind := len(l) - len(t)
+	if ind > indent {
+		return true
+	}
+	return ind == indent && (strings.HasPrefix(t, "}") || strings.HasPrefix(t, "//"))
 }
 
 // displayWidth counts characters (not bytes) so that non-ASCII code lines

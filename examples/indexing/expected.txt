@@ -7,4 +7,5 @@
 41 null 0 29 false
 {pears: 6} {hits: Counter(n: 12)}
 Counter(n: 6) null
+2 2 7
 exit=101

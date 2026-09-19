@@ -37,7 +37,7 @@ struct Lexer {
       val b = self.src.byteAt(self.pos)
       val start = self.pos
       when {
-        b == ' ' || b == '\t'  => self.pos += 1
+        b == ' ' || b == '\t' => self.pos += 1
         isDigit(b) || b == '.' => {
           loop (self.pos < self.src.len() && (isDigit(self.src.byteAt(self.pos)) || self.src.byteAt(self.pos) == '.')) self.pos += 1
           val text = self.src.substring(start, self.pos) ?: ""
@@ -90,13 +90,13 @@ struct Assign : Expr {
 
 /// Binding power of an infix operator; 0 when `t` is not one.
 fun infixPower(t: Token): (i64, i64) = when (t) {
-  is Op(text)     => when (text) {
+  is Op(text) => when (text) {
     "+", "-"      => (10, 11)
     "*", "/", "%" => (20, 21)
     "^"           => (31, 30)  // right-associative
     else          => (0, 0)
   }
-  else => (0, 0)
+  else        => (0, 0)
 }
 
 struct Parser {
@@ -151,8 +151,8 @@ struct Parser {
     val col = self.col()
     val t = self.next()
     when (t) {
-      is Num(value) => Literal(value: value)
-      is Name(text) => {
+      is Num(value)              => Literal(value: value)
+      is Name(text)              => {
         val nt = self.peek()
         if (nt is Op && nt.text == "(") {
           self.next()
@@ -181,8 +181,8 @@ struct Parser {
         try self.expectOp(")")
         inner
       }
-      is End => throw SyntaxError(message: "unexpected end of expression", col: col)
-      else   => throw SyntaxError(message: "unexpected token", col: col)
+      is End                     => throw SyntaxError(message: "unexpected end of expression", col: col)
+      else                       => throw SyntaxError(message: "unexpected token", col: col)
     }
   }
 }
@@ -221,11 +221,11 @@ struct Env {
         else => throw EvalError(message: "unknown operator '$op'")
       }
     }
-    is Call(name, args) => {
+    is Call(name, args)        => {
       val vals = try args.map(a => try self.eval(a))
       try self.call(name, vals)
     }
-    is Assign(name, value) => {
+    is Assign(name, value)     => {
       val v = try self.eval(*value)
       self.vars.set(name, v)
       v

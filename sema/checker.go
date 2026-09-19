@@ -1937,6 +1937,13 @@ func (c *Checker) checkHashable(t types.Type, span source.Span) bool {
 // prelude's Hashable. A custom Equatable without a matching Hashable is
 // refused, because equal values would not hash alike.
 func (c *Checker) unhashable(t types.Type) string {
+	return c.unhashableIn(t, map[types.Type]bool{})
+}
+
+// unhashableIn is unhashable with the structs and sealed types already on
+// the path in seen: a type that contains itself by value (a D31 error,
+// reported by the size check) must not recurse forever here.
+func (c *Checker) unhashableIn(t types.Type, seen map[types.Type]bool) string {
 	const structural = "it has no structural equality"
 	switch t := t.(type) {
 	case *types.Basic:
@@ -1947,15 +1954,19 @@ func (c *Checker) unhashable(t types.Type) string {
 	case *types.Pointer:
 		return ""
 	case *types.Nullable:
-		return c.unhashable(t.Elem)
+		return c.unhashableIn(t.Elem, seen)
 	case *types.Tuple:
 		for _, e := range t.Elems {
-			if r := c.unhashable(e); r != "" {
+			if r := c.unhashableIn(e, seen); r != "" {
 				return r
 			}
 		}
 		return ""
 	case *types.Struct, *types.Sealed:
+		if seen[t] {
+			return ""
+		}
+		seen[t] = true
 		hasHash := c.implementsPrelude(t, "Hashable")
 		if c.implementsPrelude(t, "Equatable") && !hasHash {
 			return fmt.Sprintf("'%s' implements Equatable but not Hashable, so equal values might hash differently", t)
@@ -1965,14 +1976,14 @@ func (c *Checker) unhashable(t types.Type) string {
 		}
 		if st, ok := t.(*types.Struct); ok {
 			for _, f := range st.Fields {
-				if r := c.unhashable(f.Type); r != "" {
+				if r := c.unhashableIn(f.Type, seen); r != "" {
 					return r
 				}
 			}
 			return ""
 		}
 		for _, v := range t.(*types.Sealed).Variants {
-			if r := c.unhashable(v); r != "" {
+			if r := c.unhashableIn(v, seen); r != "" {
 				return r
 			}
 		}
@@ -1981,7 +1992,7 @@ func (c *Checker) unhashable(t types.Type) string {
 		if t.Mutable {
 			return structural
 		}
-		return c.unhashable(t.Elem)
+		return c.unhashableIn(t.Elem, seen)
 	}
 	return structural
 }

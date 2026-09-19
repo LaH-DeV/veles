@@ -13,6 +13,12 @@ struct Counter {
   fun show(): string = "n=${self.n}"
 }
 
+var picks = 0
+fun pick(): i64 {
+  picks += 1
+  0
+}
+
 fun main() {
   val xs = [10, 20, 30]
   io.println("${xs.at(1)} ${xs.at(-1)} ${xs.at(3)} ${xs.atOrDefault(3, -1)}")
@@ -73,6 +79,12 @@ fun main() {
   var nothing: Counter? = null
   nothing?.n = 1
   io.println("$maybe $nothing")
+
+  // a compound assignment locates its place once: the index or key
+  // expression runs a single time
+  ys.atOrPanic(pick()) += 1
+  stock.getOrPanic(if (pick() == 0) "pears" else "") += 1
+  io.println("$picks ${ys.atOrPanic(0)} ${stock.getOrPanic("pears")}")
 
   // out of range is a panic, never a thrown error
   io.println("${ages.getOrPanic("zed")}")

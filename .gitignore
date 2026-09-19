@@ -3,6 +3,8 @@ veles.exe
 *.exe*
 *.ll
 
+**/testdata/*
+
 
 node_modules
 **/.vitepress/cache

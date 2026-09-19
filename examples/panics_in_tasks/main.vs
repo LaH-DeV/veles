@@ -19,8 +19,8 @@ fun main() {
   }
   io.println("$a $b")
   when (a) {
-    is Ok(v)            => io.println("ok $v")
-    is Err(e)           => when (e) {
+    is Ok(v)  => io.println("ok $v")
+    is Err(e) => when (e) {
       is Panic(message) => io.println("captured panic: $message")
     }
   }

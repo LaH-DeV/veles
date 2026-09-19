@@ -595,8 +595,11 @@ func (f *fnCtx) checkAssign(s *ast.AssignStmt) []Stmt {
 		value = f.coerce(raw, target.Type(), s.Value.Span())
 	} else {
 		op := BinOpFromToken(s.Op)
+		var pre []Stmt
+		target, pre = f.hoistPlace(target)
 		rhs := f.checkExprTo(s.Value, target.Type())
 		value = f.makeBinary(op, target, rhs, s.Pos)
+		return append(pre, f.assignPlace(s.Target, target, root, value, rawType))
 	}
 	return []Stmt{f.assignPlace(s.Target, target, root, value, rawType)}
 }
@@ -743,12 +746,18 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 			return nil, nil
 		}
 		// Through a pointer, mutability is not gated by the binding (D11).
-		base, root := f.checkLValue(e.X, false)
-		if base == nil {
-			// maybe an rvalue like a call result
-			x := f.checkExpr(e.X, nil)
-			base = x
-			root = nil
+		var base Expr
+		var root *Var
+		if !isPlaceSyntax(e.X) {
+			// an rvalue such as a call result: a field behind a pointer it
+			// returns is writable (`ptrOf(h).n = 5`); a value is a temporary,
+			// reported below
+			base = f.checkExpr(e.X, nil)
+			if types.IsInvalid(base.Type()) {
+				return nil, nil
+			}
+		} else if base, root = f.checkLValue(e.X, false); base == nil {
+			return nil, nil
 		} else {
 			base = f.narrowLValue(base, e.X)
 			if mutate {

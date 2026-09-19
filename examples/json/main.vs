@@ -228,7 +228,7 @@ fun encodeUtf8(cp: i64, out: MutableList<u8>) {
       out.push((0xC0 | (cp >> 6)) as u8)
       out.push((0x80 | (cp & 0x3F)) as u8)
     }
-    else => {
+    else       => {
       out.push((0xE0 | (cp >> 12)) as u8)
       out.push((0x80 | ((cp >> 6) & 0x3F)) as u8)
       out.push((0x80 | (cp & 0x3F)) as u8)

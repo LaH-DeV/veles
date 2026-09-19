@@ -563,6 +563,23 @@ func (g *gen) binary(e *sema.Binary) string {
 			if signed {
 				op = "s" + op[1:]
 			}
+			if signed && g.prog.Release {
+				// MIN / -1 is undefined for sdiv (a trap on x86); D21 says a
+				// release build wraps, so divide by 1 instead and negate
+				isNeg1 := g.newTmp()
+				g.emit("%s = icmp eq %s %s, -1", isNeg1, llt, r)
+				safe := g.newTmp()
+				g.emit("%s = select i1 %s, %s 1, %s %s", safe, isNeg1, llt, llt, r)
+				q := g.newTmp()
+				g.emit("%s = %s %s %s, %s", q, op, llt, l, safe)
+				alt := "0"
+				if e.Op == sema.OpDiv {
+					alt = g.newTmp()
+					g.emit("%s = sub %s 0, %s", alt, llt, l)
+				}
+				g.emit("%s = select i1 %s, %s %s, %s %s", v, isNeg1, llt, alt, llt, q)
+				return v
+			}
 			g.emit("%s = %s %s %s, %s", v, op, llt, l, r)
 		default:
 			var pred string
@@ -694,11 +711,13 @@ func (g *gen) cast(e *sema.Cast) string {
 			g.emit("%s = uitofp %s %s to %s", v, fl, x, tl)
 		}
 	case types.IsFloat(from) && types.IsInteger(to):
+		// saturating: a plain fptosi/fptoui is poison out of range, so
+		// `1e20 as i64` would be undefined; this clamps and maps NaN to 0
+		intr := "fptoui"
 		if types.IsSigned(to) {
-			g.emit("%s = fptosi %s %s to %s", v, fl, x, tl)
-		} else {
-			g.emit("%s = fptoui %s %s to %s", v, fl, x, tl)
+			intr = "fptosi"
 		}
+		g.emit("%s = call %s @llvm.%s.sat.%s.%s(%s %s)", v, tl, intr, tl, llFloatSuffix(fl), fl, x)
 	case types.IsFloat(from) && types.IsFloat(to):
 		if tb > fb {
 			g.emit("%s = fpext %s %s to %s", v, fl, x, tl)

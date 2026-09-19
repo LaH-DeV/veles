@@ -1057,36 +1057,51 @@ func (f *fnCtx) equality(e *ast.BinaryExpr, op BinOp) Expr {
 // comparable reports whether `==` is defined for t: structural equality
 // over the fields, or a custom Equatable impl.
 func (f *fnCtx) comparable(t types.Type) bool {
+	return f.comparableIn(t, map[types.Type]bool{})
+}
+
+// comparableIn is comparable with the structs and sealed types already on
+// the path in seen, so a type that contains itself by value (a D31 error)
+// does not recurse forever.
+func (f *fnCtx) comparableIn(t types.Type, seen map[types.Type]bool) bool {
 	switch t := t.(type) {
 	case *types.Basic:
 		return t.Kind != types.Unit && t.Kind != types.Never && t.Kind != types.Invalid
 	case *types.Pointer:
 		return true
 	case *types.Nullable:
-		return f.comparable(t.Elem)
+		return f.comparableIn(t.Elem, seen)
 	case *types.Struct:
+		if seen[t] {
+			return true
+		}
+		seen[t] = true
 		if f.c.implementsPrelude(t, "Equatable") {
 			return true
 		}
 		for _, fld := range t.Fields {
-			if !f.comparable(fld.Type) {
+			if !f.comparableIn(fld.Type, seen) {
 				return false
 			}
 		}
 		return true
 	case *types.Sealed:
+		if seen[t] {
+			return true
+		}
+		seen[t] = true
 		if f.c.implementsPrelude(t, "Equatable") {
 			return true
 		}
 		for _, v := range t.Variants {
-			if !f.comparable(v) {
+			if !f.comparableIn(v, seen) {
 				return false
 			}
 		}
 		return true
 	case *types.Tuple:
 		for _, e := range t.Elems {
-			if !f.comparable(e) {
+			if !f.comparableIn(e, seen) {
 				return false
 			}
 		}

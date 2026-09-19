@@ -271,3 +271,61 @@ func (f *fnCtx) checkElemWritable(x Expr, span source.Span) {
 		}
 	}
 }
+
+// hoistPlace binds every sub-expression that locating target evaluates —
+// the collection and index of a `list.ref`, the map and key of a
+// `map.refOrPanic`, the pointer under a dereference — to a temporary, so
+// that a compound assignment, which reads the place and then writes it,
+// evaluates `xs.atOrPanic(f()) += 1` with one call to `f` and one bounds
+// check. pre declares the temporaries and runs before the read.
+func (f *fnCtx) hoistPlace(target Expr) (Expr, []Stmt) {
+	var pre []Stmt
+	bind := func(x Expr) Expr {
+		switch x.(type) {
+		case *VarRef, *IntConst, *FloatConst, *BoolConst, *StringConst:
+			return x
+		}
+		tmp := f.newTemp(x.Type())
+		pre = append(pre, &VarDecl{Var: tmp, Init: x})
+		return ref(tmp)
+	}
+	var walk func(x Expr) Expr
+	walk = func(x Expr) Expr {
+		switch x := x.(type) {
+		case *FieldGet:
+			n := *x
+			n.X = walk(x.X)
+			return &n
+		case *TupleGet:
+			n := *x
+			n.X = walk(x.X)
+			return &n
+		case *Unwrap:
+			n := *x
+			n.X = walk(x.X)
+			return &n
+		case *VariantCast:
+			n := *x
+			n.X = walk(x.X)
+			return &n
+		case *Deref:
+			n := *x
+			if b, ok := x.X.(*Builtin); ok && b.Op == "map.refOrPanic" {
+				nb := *b
+				nb.Args = []Expr{bind(b.Args[0]), bind(b.Args[1])}
+				n.X = &nb
+			} else {
+				n.X = bind(x.X)
+			}
+			return &n
+		case *Builtin:
+			if x.Op == "list.ref" {
+				n := *x
+				n.Args = []Expr{bind(x.Args[0]), bind(x.Args[1])}
+				return &n
+			}
+		}
+		return x
+	}
+	return walk(target), pre
+}

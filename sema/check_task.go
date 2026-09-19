@@ -14,14 +14,21 @@ import (
 // synchronized primitive. Mutable collections, pointers, closures and trait
 // objects are not.
 func sendable(t types.Type) bool {
+	return sendableIn(t, map[types.Type]bool{})
+}
+
+// sendableIn is sendable with the structs and sealed types already on the
+// path in seen, so a type that contains itself by value (a D31 error) does
+// not recurse forever.
+func sendableIn(t types.Type, seen map[types.Type]bool) bool {
 	switch t := t.(type) {
 	case *types.Basic:
 		return true
 	case *types.Nullable:
-		return sendable(t.Elem)
+		return sendableIn(t.Elem, seen)
 	case *types.Tuple:
 		for _, e := range t.Elems {
-			if !sendable(e) {
+			if !sendableIn(e, seen) {
 				return false
 			}
 		}
@@ -29,37 +36,45 @@ func sendable(t types.Type) bool {
 	case *types.Range:
 		return true
 	case *types.List:
-		return !t.Mutable && sendable(t.Elem)
+		return !t.Mutable && sendableIn(t.Elem, seen)
 	case *types.Map:
-		return !t.Mutable && sendable(t.Key) && sendable(t.Value)
+		return !t.Mutable && sendableIn(t.Key, seen) && sendableIn(t.Value, seen)
 	case *types.Set:
-		return !t.Mutable && sendable(t.Elem)
+		return !t.Mutable && sendableIn(t.Elem, seen)
 	case *types.Struct:
+		if seen[t] {
+			return true
+		}
+		seen[t] = true
 		if t.Module == "std.prelude" && (t.Name == "Mutex" || t.Name == "Atomic") {
 			return true // explicitly synchronized wrappers (D35)
 		}
 		for _, f := range t.Fields {
-			if !sendable(f.Type) {
+			if !sendableIn(f.Type, seen) {
 				return false
 			}
 		}
 		return true
 	case *types.Sealed:
+		if seen[t] {
+			return true
+		}
+		seen[t] = true
 		for _, v := range t.Variants {
-			if !sendable(v) {
+			if !sendableIn(v, seen) {
 				return false
 			}
 		}
 		return true
 	case *types.ErrorUnion:
 		for _, m := range t.Members {
-			if !sendable(m) {
+			if !sendableIn(m, seen) {
 				return false
 			}
 		}
 		return true
 	case *types.Channel:
-		return sendable(t.Elem)
+		return sendableIn(t.Elem, seen)
 	case *types.Task:
 		return true
 	case *types.TypeParam, *types.Assoc:

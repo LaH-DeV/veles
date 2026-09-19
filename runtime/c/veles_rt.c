@@ -516,13 +516,8 @@ static void map_compact(veles_map *m) {
     map_rebuild(m, m->icap);
 }
 
-/* insert or overwrite; returns the entry index */
-int64_t veles_map_insert(veles_map *m, int64_t hash, const void *key, const void *val, veles_eq_fn eq) {
-    int64_t e = veles_map_find(m, hash, key, eq);
-    if (e >= 0) {
-        if (m->valSize) memcpy(m->vals + e * m->valSize, val, (size_t)m->valSize);
-        return e;
-    }
+/* append an entry known to be absent; returns its index */
+static int64_t map_append(veles_map *m, int64_t hash, const void *key, const void *val) {
     if (m->used == m->cap) {
         if (m->used > 2 * m->len + 8) {
             map_compact(m);
@@ -541,7 +536,7 @@ int64_t veles_map_insert(veles_map *m, int64_t hash, const void *key, const void
         }
     }
     if (m->used * 2 >= m->icap) map_rebuild(m, m->icap * 2);
-    e = m->used++;
+    int64_t e = m->used++;
     if (m->keySize) memcpy(m->keys + e * m->keySize, key, (size_t)m->keySize);
     if (m->valSize) memcpy(m->vals + e * m->valSize, val, (size_t)m->valSize);
     m->meta[e].hash = hash;
@@ -549,6 +544,16 @@ int64_t veles_map_insert(veles_map *m, int64_t hash, const void *key, const void
     m->len++;
     map_index_insert(m, hash, e);
     return e;
+}
+
+/* insert or overwrite; returns the entry index */
+int64_t veles_map_insert(veles_map *m, int64_t hash, const void *key, const void *val, veles_eq_fn eq) {
+    int64_t e = veles_map_find(m, hash, key, eq);
+    if (e >= 0) {
+        if (m->valSize) memcpy(m->vals + e * m->valSize, val, (size_t)m->valSize);
+        return e;
+    }
+    return map_append(m, hash, key, val);
 }
 
 bool veles_map_remove(veles_map *m, int64_t hash, const void *key, veles_eq_fn eq) {
@@ -596,7 +601,7 @@ veles_map *veles_map_copy(veles_map *m) {
     veles_map *c = veles_map_new(m->keyDesc, m->valDesc);
     for (int64_t e = 0; e < m->used; e++) {
         if (m->meta[e].live) {
-            veles_map_insert(c, m->meta[e].hash, m->keys + e * m->keySize, m->vals + e * m->valSize, NULL);
+            map_append(c, m->meta[e].hash, m->keys + e * m->keySize, m->vals + e * m->valSize);
         }
     }
     return c;

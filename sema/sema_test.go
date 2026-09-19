@@ -1494,3 +1494,113 @@ fun main() {
   io.println("${jobs.pop()?.cost} ${jobs.peek()} ${words.pop()} ${words.len()}")
 }`)
 }
+
+// A struct that contains itself by value is a D31 error; the predicates
+// that walk fields (hashable, comparable, sendable) must not recurse
+// forever on it — this fuzz-found shape names the struct `string` so a
+// `Map<string, ...>` field elsewhere resolves the key to the struct.
+func TestRecursiveStructDoesNotHang(t *testing.T) {
+	expectError(t, prelude+`
+struct string { op: string }
+struct Env { vars: Map<string, f64> }
+fun main() { }
+`, "infinite size")
+	expectError(t, prelude+`
+struct S { s: S; n: i64 }
+fun main() {
+  val a: S? = null
+  val b: S? = null
+  io.println("${a == b}")
+  scope { async work(a) }
+}
+fun work(s: S?) { }
+`, "infinite size")
+}
+
+// A compound assignment reads and writes one place: the index, key or
+// pointer that locates it is evaluated once (hoistPlace).
+func TestCompoundAssignmentEvaluatesPlaceOnce(t *testing.T) {
+	prog := checkProgram(t, prelude+`
+var calls = 0
+fun idx(): i64 { calls += 1; 0 }
+fun key(): string { calls += 1; "a" }
+fun main() {
+  var xs = mut [1, 2]
+  xs.atOrPanic(idx()) += 1
+  var m: MutableMap<string, i64> = ["a": 1]
+  m.getOrPanic(key()) *= 2
+  io.println("$calls $xs $m")
+}`)
+	stmts := prog.Main.Body.Stmts
+	// each compound assignment is preceded by the temporaries for its
+	// collection and index/key, and the Assign itself names no call
+	var assigns int
+	for _, s := range stmts {
+		if a, ok := s.(*Assign); ok {
+			assigns++
+			if containsCall(a.Target) {
+				t.Errorf("compound target still evaluates a call: %T", a.Target)
+			}
+		}
+	}
+	if assigns != 2 {
+		t.Fatalf("want 2 assignments, got %d", assigns)
+	}
+}
+
+// checkProgram checks src and returns the lowered program.
+func checkProgram(t *testing.T, src string) *Program {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	diags := &source.Diagnostics{}
+	pkg, err := LoadPackage(dir, diags)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prog := Check(pkg, diags, false)
+	if diags.HasErrors() {
+		t.Fatalf("unexpected errors:\n%s", diags.Render())
+	}
+	return prog
+}
+
+func containsCall(e Expr) bool {
+	switch e := e.(type) {
+	case *Call:
+		return true
+	case *Deref:
+		return containsCall(e.X)
+	case *Builtin:
+		for _, a := range e.Args {
+			if containsCall(a) {
+				return true
+			}
+		}
+	case *BlockExpr:
+		return true
+	}
+	return false
+}
+
+// A field behind a pointer that a call returns is writable (D11: through
+// a pointer, mutability is not gated by a binding); a field of a value a
+// call returns is a temporary.
+func TestFieldWriteThroughCallResult(t *testing.T) {
+	expectClean(t, prelude+`
+struct Acc { n: i64 = 0 }
+struct H { p: *Acc }
+fun ptrOf(h: H): *Acc = h.p
+fun main() {
+  val h = H(p: &Acc())
+  ptrOf(h).n = 5
+  ptrOf(h).n += 1
+  io.println("${h.p.n}")
+}`)
+	expectError(t, prelude+`
+struct Acc { n: i64 = 0 }
+fun make(): Acc = Acc()
+fun main() { make().n = 1 }`, "field of a temporary value")
+}

@@ -15,7 +15,7 @@ pub fun balanced(s: string): bool {
       ')', ']', '}' => {
         if (stack.pop() != opener.getOrPanic(byte)) return false
       }
-      else => { }
+      else          => { }
     }
   }
   stack.isEmpty()

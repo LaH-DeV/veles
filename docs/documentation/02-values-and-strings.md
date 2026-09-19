@@ -80,7 +80,9 @@ Output:
 ```
 
 Integer division truncates towards zero. `as` between numeric types
-converts and, when narrowing, wraps.
+converts and, when narrowing, wraps. A float cast to an integer drops
+the fraction and saturates: `1e20 as i64` is the largest `i64`,
+`-1.0 as u8` is 0, and NaN becomes 0.
 
 ### Overflow is an error, unless you ask for wrapping
 

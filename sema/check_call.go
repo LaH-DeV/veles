@@ -790,6 +790,14 @@ func (f *fnCtx) callMethod(t *FuncTemplate, ownerSubst map[*types.TypeParam]type
 				call := f.callTemplateRecv(t, ownerSubst, typeArgs, recvArg, e.Args, e.Pos, want)
 				return &Let{exprBase{call.Type()}, tmp, recv, call}
 			}
+			if n, isName := callee.X.(*ast.NameExpr); isName {
+				// say what was attempted: nothing was assigned
+				if sym := f.scope.Lookup(n.Name); sym != nil && (sym.Kind == SymLocal && !f.localVar(sym.Var).Mutable || sym.Kind == SymGlobal && !sym.Global.Mutable) {
+					f.errorf(callee.Name.Pos, "cannot call the 'mut' method '%s' on '%s': it is a 'val'; declare it with 'var' (D11, D22)", t.Name, n.Name)
+					f.checkArgsLoosely(e.Args)
+					return bad()
+				}
+			}
 			lv, root := f.checkLValue(callee.X, true)
 			if lv == nil {
 				return bad()

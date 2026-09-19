@@ -414,3 +414,30 @@ fun f() {
 		}
 	}
 }
+
+// An `if` without braces as a `when` arm body must not take the `else =>`
+// arm on the next line as its own `else`.
+func TestElseArmAfterBracelessIf(t *testing.T) {
+	src := `
+fun f(x: i64): bool {
+  when (x) {
+    0 => if (x > 0) return false
+    else => return true
+  }
+  false
+}
+`
+	file, diags := parse(t, src)
+	if diags.HasErrors() {
+		t.Fatalf("%s", diags.Render())
+	}
+	fn := file.Decls[0].(*ast.FunDecl)
+	w := fn.Body.Stmts[0].(*ast.ExprStmt).X.(*ast.WhenExpr)
+	if len(w.Arms) != 2 {
+		t.Fatalf("want 2 arms, got %d", len(w.Arms))
+	}
+	ifx := w.Arms[0].Body.(*ast.IfExpr)
+	if ifx.Else != nil {
+		t.Fatalf("the if in the arm body took the when's else arm")
+	}
+}
