@@ -52,7 +52,7 @@ func TestExamples(t *testing.T) {
 			}
 			var got string
 			if script, err := os.ReadFile(filepath.Join(dir, "commands.txt")); err == nil {
-				got = runScript(t, exe, string(script))
+				got = runScript(t, exe, dir, string(script))
 			} else {
 				out, code := runOnce(t, exe, nil, nil, "")
 				got = out + "exit=" + strconv.Itoa(code) + "\n"
@@ -94,11 +94,17 @@ func runOnce(t *testing.T, exe string, args, env []string, dir string) (string, 
 // runScript drives a command-line program: every non-blank line of
 // commands.txt is one invocation, written like a shell command whose first
 // word is the program (`NAME=value` words before it set the environment).
-// All invocations share a fresh temporary working directory. The transcript
+// All invocations share a fresh temporary working directory, seeded with a
+// copy of the example's fixtures/ directory when it has one. The transcript
 // echoes each command as `$ line`, then its output, then `exit=N`.
-func runScript(t *testing.T, exe, script string) string {
+func runScript(t *testing.T, exe, example, script string) string {
 	t.Helper()
 	dir := t.TempDir()
+	if fixtures := filepath.Join(example, "fixtures"); dirExists(fixtures) {
+		if err := os.CopyFS(filepath.Join(dir, "fixtures"), os.DirFS(fixtures)); err != nil {
+			t.Fatal(err)
+		}
+	}
 	var out strings.Builder
 	for _, line := range strings.Split(script, "\n") {
 		line = strings.TrimSpace(line)
@@ -145,4 +151,9 @@ func splitWords(line string) []string {
 		words = append(words, cur.String())
 	}
 	return words
+}
+
+func dirExists(path string) bool {
+	st, err := os.Stat(path)
+	return err == nil && st.IsDir()
 }

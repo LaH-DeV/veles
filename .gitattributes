@@ -1,0 +1,2 @@
+# example fixtures are compared byte for byte by the tests
+examples/*/fixtures/** -text

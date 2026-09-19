@@ -1,0 +1,51 @@
+$ dedup fixtures
+3 identical files, 45 bytes each:
+  fixtures/archive/fox-2024.txt
+  fixtures/fox.txt
+  fixtures/notes/fox-copy.txt
+2 identical files, 28 bytes each:
+  fixtures/archive/list.bak
+  fixtures/list.txt
+9 files, 246 bytes, 4 workers: 2 duplicate groups, 118 bytes recoverable
+exit=0
+$ dedup fixtures --min-size 0
+3 identical files, 45 bytes each:
+  fixtures/archive/fox-2024.txt
+  fixtures/fox.txt
+  fixtures/notes/fox-copy.txt
+2 identical files, 28 bytes each:
+  fixtures/archive/list.bak
+  fixtures/list.txt
+2 identical files, 0 bytes each:
+  fixtures/empty1
+  fixtures/notes/empty2
+9 files, 246 bytes, 4 workers: 3 duplicate groups, 118 bytes recoverable
+exit=0
+$ dedup fixtures --workers 1 --verbose
+worker 1: 45 bytes fox-2024.txt
+worker 1: 28 bytes list.bak
+worker 1: 0 bytes empty1
+worker 1: 45 bytes fox.txt
+worker 1: 28 bytes list.txt
+worker 1: 0 bytes empty2
+worker 1: 45 bytes fox-copy.txt
+worker 1: 35 bytes meeting.md
+worker 1: 20 bytes readme.txt
+3 identical files, 45 bytes each:
+  fixtures/archive/fox-2024.txt
+  fixtures/fox.txt
+  fixtures/notes/fox-copy.txt
+2 identical files, 28 bytes each:
+  fixtures/archive/list.bak
+  fixtures/list.txt
+9 files, 246 bytes, 1 worker: 2 duplicate groups, 118 bytes recoverable
+exit=0
+$ dedup fixtures --workers 0
+dedup: --workers must be at least 1
+exit=2
+$ dedup nowhere
+dedup: 'nowhere' is not a directory
+exit=2
+$ dedup
+dedup: usage: dedup <dir> [--workers N] [--min-size BYTES] [--verbose]
+exit=2

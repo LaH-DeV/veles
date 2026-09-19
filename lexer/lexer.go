@@ -264,7 +264,13 @@ func (lx *Lexer) number() {
 	}
 	lx.digits(isDigit)
 	isFloat := false
-	// A '.' followed by a digit continues a float; `1..5` is a range.
+	// A '.' followed by a digit continues a float; `1..5` is a range. After
+	// a member dot the number is a tuple index, so `pair.0.1` is two
+	// indexes, not `pair` followed by the float `0.1`.
+	if k := lx.lastKind(); k == Dot || k == SafeDot {
+		lx.push(Int, start)
+		return
+	}
 	if lx.peekByte(0) == '.' && isDigit(lx.peekByte(1)) {
 		isFloat = true
 		lx.pos++

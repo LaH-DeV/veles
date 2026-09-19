@@ -473,3 +473,15 @@ fun f() {
 		t.Fatalf("else-if chain lost its final else")
 	}
 }
+
+// `pair.0.1` is two tuple indexes: after a member dot a number is an index,
+// never a float literal.
+func TestNestedTupleIndex(t *testing.T) {
+	f, diags := parse(t, "fun f(p: ((i64, i64), i64)): i64 = p.0.1 + p.1\nfun g(): f64 = 0.1 + 1.5e3")
+	if diags.HasErrors() {
+		t.Fatalf("unexpected errors:\n%s", diags.Render())
+	}
+	if got := ast.Dump(f); !strings.Contains(got, "(. (. p 0) 1)") {
+		t.Errorf("p.0.1 did not parse as two indexes:\n%s", got)
+	}
+}

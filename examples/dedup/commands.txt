@@ -1,0 +1,7 @@
+# fixtures/ is copied into the working directory before the script runs
+dedup fixtures
+dedup fixtures --min-size 0
+dedup fixtures --workers 1 --verbose
+dedup fixtures --workers 0
+dedup nowhere
+dedup

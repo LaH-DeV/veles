@@ -446,7 +446,21 @@ M3. examples/todo (2026-09-19): a todo.txt manager (add/ls/due/done/undo/pri/edi
      ctors on structs all read fine. The formatter leaves `=>` unaligned when the arm heads
      differ by more than 24 columns (maxAlignSpread) — by design, noted here so it is not
      re-reported.
-   NEXT: M4 worker pool, M5 text adventure.
+   NEXT (then): M4 worker pool, M5 text adventure.
+M4. examples/dedup (2026-09-19): duplicate-file finder — a worker pool (N `async worker`
+   tasks over a jobs channel, results channel back, a feeder task closing the channel) hashing
+   files with FNV-1a in Veles, grouped by (size, hash), largest groups first, recoverable
+   bytes. Harness: an example's `fixtures/` dir is copied into the scripted temp cwd
+   (`.gitattributes` keeps fixtures byte-exact under autocrlf). Found:
+   - `a.0.0` lexed as `a` `.` `0.0` (a float) — nested tuple indexing was unwritable. Lexer:
+     after `.`/`?.` a number is always an Int (TestNestedTupleIndex).
+   - Everything else composed first time: `await ch.recv() ?: break`, `is Err` smart cast on
+     a Result binding (`bytes.detail`), `getOrPut((size, hash), () => [])` with a tuple key,
+     `loop (_ in files)` as a counted wait, sortedWith with early returns. The worker pool
+     is the straightforward shape; the single-threaded executor makes `--verbose` output
+     deterministic, which the transcript relies on (multi-threaded executor will need the
+     example to sort or drop that output).
+   NEXT: M5 text adventure, then the conformance suite / HTTP server (R4).
 IDEAS (2026-09-18, undecided — noted from reading examples/json, examples/syntax_tour):
  I1. Guard / early-exit binding. `val doc = when (val r = parse(text)) { is Ok => r; is Err
      => { ...; return } }` is correct (a Never arm drops out of the join, `return` targets the
