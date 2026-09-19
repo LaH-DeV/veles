@@ -26,7 +26,7 @@ its `exports` and `[dependencies]` (M1).
 // fragment
 val x = 1                       // immutable, inferred i64
 var y: i64 = 2                  // mutable, explicit type
-val (a, b) = (1, "one")         // tuple destructuring; (a, b) = (b, a) assigns (swap)
+val (a, b) = (1, "one")         // tuple destructuring, nests: val ((x, y), z) = ...; also in loop heads and lambda params ((x, y), z) => ...; (a, b) = (b, a) swaps
 ```
 
 | Kind | Types |
@@ -164,8 +164,9 @@ var s = MutableSet<i64>()
 xs.at(9) ?: -1; xs.atOrPanic(0); xs.atOrDefault(9, -1); xs.at(-1); xs.len(); xs.contains(2); xs.first(); xs.last(); xs.indexOf(2)
 // reads are copies; writes go through a reference: ml.refOrPanic(i).bump(); *ml.refOrPanic(i) += 1; ml.ref(i)?.n = 0; ml.set(i, x)
 xs.map(f); xs.filter(p); xs.fold(0, f); xs.any(p); xs.all(p); xs.find(p); xs.forEach(f); xs.count(p); xs.mapNotNull(f); xs.partition(p)
+shapes.filterIs<Circle>(); maybes.filterNotNull()   // narrowed lists: List<Circle>, List<T>
 xs.take(2); xs.drop(2); xs.slice(1, 3); xs.zip(ys); xs.flatMap(f); xs.distinct(); xs.chunked(2); xs.windowed(2)
-xs.sorted(); xs.sortedBy(key); xs.sortedDescending(); xs.sortedWith((a, b) => ...); xs.reversed(); xs.min(); xs.max(); xs.sum(); xs.join(", "); xs.iter()
+xs.sorted(); xs.sortedBy(key); xs.sortedBy(e => (-e.size, e.name)); xs.sortedDescending(); xs.sortedWith((a, b) => ...); xs.reversed(); xs.min(); xs.max(); xs.sum(); xs.join(", "); xs.iter()  // tuples order element by element
 xs.minBy(key); xs.maxBy(key); xs.minWith(cmp); xs.maxWith(cmp); xs.distinctBy(key); xs == ys  // lists, maps, sets compare by content
 ml.push(x); ml.pop(); ml.set(i, x); ml.insert(i, x); ml.removeAt(i); ml.addAll(ys); ml.sort(); ml.clear(); ml.toList(); xs.toMutable()
 ml.swap(i, j); ml.fill(x); MutableList<bool>.repeat(false, n); MutableList<MutableList<i64>>.make(n, _ => [])

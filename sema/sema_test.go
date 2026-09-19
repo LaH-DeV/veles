@@ -1909,3 +1909,60 @@ fun main() {
   io.println("$oks $errs ${rs.atOrPanic(0).getOrNull()} ${rs.atOrPanic(1).getOrDefault(0)} $small $big ${["1", "x"].mapNotNull(s => s.toInt())}")
 }`)
 }
+
+// D48 (v0.28): tuples of ordered elements order lexicographically, through
+// `<`, `sorted`, `sortedBy` with a tuple key, `min`, bounds and `compareTo`.
+func TestTupleOrdering(t *testing.T) {
+	expectClean(t, prelude+`
+struct E { size: i64; name: string }
+fun <T: Comparable> smallest(xs: List<T>): T? = xs.min()
+fun main() {
+  val xs = [(2, "b"), (1, "z"), (2, "a")]
+  val es = [E(size: 5, name: "b"), E(size: 9, name: "a")]
+  io.println("${xs.sorted()} ${(1, "a") < (1, "b")} ${(1, "a").compareTo((2, "a"))} ${es.sortedBy(e => (-e.size, e.name)).len()} ${smallest(xs)} ${[((1, 2), "x")].sorted().len()}")
+}`)
+	expectError(t, prelude+`
+struct P { n: i64 }
+fun main() { io.println("${(1, P(n: 1)) < (2, P(n: 2))}") }`, "operator '<' is not defined for '(i64, P)'")
+}
+
+// D37 (v0.28): tuple patterns nest in vals, loop heads and lambda parameters.
+func TestNestedTuplePatterns(t *testing.T) {
+	expectClean(t, prelude+`
+fun main() {
+  val groups = [((3, 7), ["a"]), ((1, 2), ["b", "c"])]
+  val n = groups.map(((size, hash), files) => size * files.len() + hash)
+  val byName = groups.sortedWith((((sa, _), _), ((sb, _), _)) => sa - sb)
+  val ((s, h), fs) = groups.atOrPanic(0)
+  var ((a, b), c) = ((1, 2), 3)
+  a += 10
+  loop (((size, _), files) in groups) io.println("$size ${files.len()}")
+  io.println("$n ${byName.len()} $s $h $fs $a $b $c")
+}`)
+	expectError(t, prelude+`
+fun main() { val xs = [(1, 2)]; io.println("${xs.map(((a, b), c) => a)}") }`, "cannot destructure a 'i64' into 2 names")
+}
+
+// D13 (v0.28): filterIs narrows a list of a sealed type by variant.
+func TestFilterIs(t *testing.T) {
+	expectClean(t, prelude+`
+sealed trait Shape
+struct Circle : Shape { r: f64 }
+struct Square : Shape { side: f64 }
+fun main() {
+  val shapes: List<Shape> = [Circle(r: 1.0), Square(side: 2.0)]
+  val circles: List<Circle> = shapes.filterIs<Circle>()
+  val maybe: List<i64?> = [1, null, 3]
+  val present: List<i64> = maybe.filterNotNull()
+  io.println("${circles.map(c => c.r)} $present")
+}`)
+	expectError(t, prelude+`
+sealed trait Shape
+struct Circle : Shape { r: f64 }
+fun main() { val xs: List<i64> = [1]; io.println("${xs.filterIs<Circle>()}") }`, "'filterIs' works on a list of a sealed type")
+	expectError(t, prelude+`
+sealed trait Shape
+struct Circle : Shape { r: f64 }
+struct Other { n: i64 }
+fun main() { val xs: List<Shape> = [Circle(r: 1.0)]; io.println("${xs.filterIs<Other>()}") }`, "'Other' is not a variant of 'Shape'")
+}

@@ -449,3 +449,8 @@ extend<T, E> List<Result<T, E>> {
   /// The errors of the failed results, in order.
   pub fun errors(): List<E> = self.mapNotNull(r => r.errorOrNull())
 }
+
+extend<T> List<T?> {
+  /// The elements that are present, in order (Kotlin's `filterNotNull`).
+  pub fun filterNotNull(): List<T> = self.mapNotNull(x => x)
+}

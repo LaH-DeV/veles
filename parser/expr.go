@@ -381,6 +381,15 @@ func (p *Parser) parseLambda() ast.Expr {
 		p.expect(lexer.LParen)
 		for !p.at(lexer.RParen, lexer.EOF) {
 			ps := p.span()
+			if p.at(lexer.LParen) {
+				// a tuple pattern in parameter position destructures the argument
+				b := p.parseBinding()
+				l.Params = append(l.Params, ast.Param{Name: ast.Ident{Name: "$tuple", Pos: b.Pos}, Pattern: &b, Pos: p.spanFrom(ps)})
+				if !p.accept(lexer.Comma) {
+					break
+				}
+				continue
+			}
 			var name ast.Ident
 			if p.at(lexer.Under) {
 				name = p.paramName(p.next())

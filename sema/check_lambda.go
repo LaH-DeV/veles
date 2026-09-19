@@ -105,8 +105,17 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 		tupleParam = l.newVar("$tuple", tt, false, e.Pos)
 		fn.Params = []*Var{tupleParam}
 		fn.Sig.Params = []types.Param{{Name: "tuple", Type: tt}}
+		var patternInit []Stmt
 		for i, p := range e.Params {
 			pt := tt.Elems[i]
+			if p.Pattern != nil {
+				// `((size, hash), files) => ...` over a pair: the element is
+				// itself destructured (D37)
+				v, parts := l.bindPattern(p.Pattern, pt, false)
+				params = append(params, v)
+				patternInit = append(patternInit, parts...)
+				continue
+			}
 			if p.Type != nil {
 				declared := f.resolve(p.Type)
 				if !types.Identical(declared, pt) {
@@ -117,8 +126,27 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 			l.declareLocal(p.Name.Name, v, p.Name.Pos)
 			params = append(params, v)
 		}
+		l.paramInit = patternInit
 	} else {
+		var patternInit []Stmt
 		for i, p := range e.Params {
+			if p.Pattern != nil {
+				// `((size, hash), files) => ...`: the parameter is the whole
+				// tuple, bound to a hidden variable and destructured into the
+				// body's first statements (D37)
+				var pt types.Type = types.TInvalid
+				if expected != nil && !types.ContainsTypeParam(expected.Params[i].Type) {
+					pt = expected.Params[i].Type
+				} else {
+					f.errorf(p.Pos, "cannot infer the type of this tuple parameter; a destructuring parameter needs a known function type")
+				}
+				v, parts := l.bindPattern(p.Pattern, pt, false)
+				params = append(params, v)
+				fn.Params = append(fn.Params, v)
+				fn.Sig.Params = append(fn.Sig.Params, types.Param{Name: "tuple", Type: pt})
+				patternInit = append(patternInit, parts...)
+				continue
+			}
 			var pt types.Type
 			if p.Type != nil {
 				pt = f.resolve(p.Type)
@@ -137,6 +165,7 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 			fn.Params = append(fn.Params, v)
 			fn.Sig.Params = append(fn.Sig.Params, types.Param{Name: p.Name.Name, Type: pt})
 		}
+		l.paramInit = patternInit
 	}
 
 	// return type and effects
@@ -200,7 +229,9 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 		for i, v := range params {
 			pre = append(pre, &VarDecl{Var: v, Init: &TupleGet{exprBase{tt.Elems[i]}, &VarRef{exprBase{tt}, tupleParam}, i}})
 		}
-		body.Stmts = append(pre, body.Stmts...)
+		body.Stmts = append(append(pre, l.paramInit...), body.Stmts...)
+	} else if len(l.paramInit) > 0 {
+		body.Stmts = append(append([]Stmt{}, l.paramInit...), body.Stmts...)
 	}
 	l.reportUnused()
 	fn.Body = body

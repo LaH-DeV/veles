@@ -218,13 +218,26 @@ fun main() {
   val adder = (a: i64) => (b: i64) => a + b
   val pairs = [(1, "one"), (2, "two")]
   io.println("${adder(2)(3)} ${pairs.map((n, s) => "$n=$s")}")
+  // a parameter may itself be a tuple pattern, as deep as the value goes
+  val groups = [((3, 7), ["a"]), ((1, 2), ["b", "c"])]
+  io.println("${groups.map(((size, hash), files) => size * files.len() + hash)}")
+  val byName = groups.sortedWith((((sa, _), _), ((sb, _), _)) => sa - sb)
+  val ((size, _), _) = byName.atOrPanic(0)
+  io.println("$size")
 }
 ```
 
 Output:
 ```text
 5 [1=one, 2=two]
+[10, 4]
+1
 ```
+
+The same nesting works in `val`/`var` bindings and loop heads
+(`loop (((size, hash), files) in groups)`). When positional access
+starts to pile up — `e.0.0` — that is usually the moment to name the
+tuple as a struct instead.
 
 ## Iterators
 

@@ -450,3 +450,41 @@ func (f *fnCtx) greater(l, r Expr, span source.Span) Expr {
 	}
 	return &Binary{exprBase{types.TBool}, OpGt, l, r, span}
 }
+
+// listFilterIs lowers `xs.filterIs<Variant>()` on a list of a sealed type: the
+// elements of that variant, as a `List<Variant>`. It is `filter(x => x is V)`
+// with the promise kept in the type — a predicate cannot narrow across the
+// call boundary, a type argument can (D13).
+func (f *fnCtx) listFilterIs(recv Expr, lt *types.List, typeArgs []types.Type, e *ast.CallExpr) Expr {
+	span := e.Pos
+	if len(e.Args) != 0 {
+		f.errorf(span, "'filterIs' takes no arguments; the variant is its type argument: 'xs.filterIs<Circle>()'")
+		f.checkArgsLoosely(e.Args)
+		return bad()
+	}
+	sealed, isSealed := lt.Elem.(*types.Sealed)
+	if !isSealed {
+		f.errorf(span, "'filterIs' works on a list of a sealed type, not 'List<%s>'; a list of 'T?' has 'filterNotNull()'", lt.Elem)
+		return bad()
+	}
+	if len(typeArgs) != 1 {
+		f.errorf(span, "'filterIs' needs one type argument, a variant of '%s': 'xs.filterIs<%s>()'", sealed.Name, firstVariantName(sealed))
+		return bad()
+	}
+	variant, ok := typeArgs[0].(*types.Struct)
+	if !ok || variant.Sealed == nil || !types.Identical(variant.Sealed, sealed) {
+		f.errorf(span, "'%s' is not a variant of '%s'", typeArgs[0], sealed)
+		return bad()
+	}
+	list := f.newTemp(lt)
+	outT := &types.List{Elem: variant, Mutable: true}
+	out := f.newTemp(outT)
+	stmts := []Stmt{&VarDecl{Var: list, Init: recv}, &VarDecl{Var: out, Init: &ListLit{exprBase{outT}, nil}}}
+	stmts = append(stmts, f.listLoop(list, lt.Elem, span, func(x *Var, lp *Loop) []Stmt {
+		test := &VariantTest{exprBase{types.TBool}, ref(x), variant}
+		push := &Block{Stmts: []Stmt{&ExprStmt{X: &Builtin{exprBase{types.TUnit}, "list.push", []Expr{ref(out), &VariantCast{exprBase{variant}, ref(x), variant}}, span}}}, Type: types.TUnit}
+		return []Stmt{&ExprStmt{X: &If{exprBase{types.TUnit}, test, push, nil}}}
+	})...)
+	result := &Cast{exprBase{&types.List{Elem: variant}}, ref(out)}
+	return &BlockExpr{exprBase{result.Type()}, &Block{Stmts: stmts, Value: result, Type: result.Type()}}
+}

@@ -65,6 +65,7 @@ var builtinDocs = []BuiltinDoc{
 	{"List", "all", "(pred: fun(T): bool): bool", "True when `pred` accepts every element (true for an empty list)."},
 	{"List", "map", "<U>(f: fun(T): U): List<U>", "A new list of `f` applied to each element (eager; `iter().map` is lazy, D46)."},
 	{"List", "filter", "(pred: fun(T): bool): List<T>", "A new list of the elements `pred` accepts."},
+	{"List", "filterIs", "<V>(): List<V>", "On a list of a sealed type: the elements that are the variant `V`, typed as `V` — `shapes.filterIs<Circle>()`. What `filter(s => s is Circle)` cannot promise, the type argument does."},
 	{"List", "fold", "<A>(init: A, f: fun(A, T): A): A", "Folds left: `f(f(f(init, x0), x1), x2)`."},
 	{"List", "forEach", "(f: fun(T))", "Calls `f` on each element in order."},
 	{"List", "sorted", "(): List<T>", "A sorted copy (elements must be `Ord`)."},

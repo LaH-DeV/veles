@@ -34,6 +34,7 @@ type fnCtx struct {
 	vars         map[*Var]bool // variables declared in this function
 	captures     map[*Var]*Var // outer variable -> inner stand-in
 	captureList  []*Var        // outer variables in environment order
+	paramInit    []Stmt        // lambda: statements destructuring tuple-pattern parameters
 	isLambda     bool
 	pending      []Stmt            // statements hoisted by adapter lowering
 	boundPlace   map[ast.Expr]Expr // receiver of a `?.` assignment, already lowered to its place (check_safe.go)
@@ -489,25 +490,8 @@ func (f *fnCtx) checkValStmt(s *ast.ValStmt) []Stmt {
 		f.errorf(b.Pos, "tuple has %d elements but %d names are bound", len(tt.Elems), len(b.Tuple))
 		return nil
 	}
-	tmp := f.newTemp(tt)
-	stmts := []Stmt{&VarDecl{Var: tmp, Init: init}}
-	for i, el := range b.Tuple {
-		if el.Name == nil {
-			f.errorf(el.Pos, "nested tuple destructuring is not supported yet")
-			continue
-		}
-		et := tt.Elems[i]
-		if el.Type != nil {
-			want := f.resolve(el.Type)
-			if !types.Identical(want, et) {
-				f.errorf(el.Pos, "element %d has type '%s', not '%s'", i, et, want)
-			}
-		}
-		v := f.newVar(el.Name.Name, et, mutable, el.Name.Pos)
-		f.declareChecked(el.Name.Name, v, el.Name.Pos)
-		stmts = append(stmts, &VarDecl{Var: v, Init: &TupleGet{exprBase{et}, &VarRef{exprBase{tt}, tmp}, i}})
-	}
-	return stmts
+	tmp, parts := f.bindPattern(&b, tt, mutable)
+	return append([]Stmt{&VarDecl{Var: tmp, Init: init}}, parts...)
 }
 
 func (f *fnCtx) checkReturn(s *ast.ReturnStmt) []Stmt {
@@ -1089,17 +1073,27 @@ func (f *fnCtx) mapRefLoop(s *ast.LoopStmt, m Expr, mt *types.Map, lp *Loop, lab
 }
 
 func (f *fnCtx) bindLoopVar(b *ast.Binding, t types.Type) (*Var, []Stmt) {
+	return f.bindPattern(b, t, false)
+}
+
+// bindPattern declares the names of a binding pattern for a value of type
+// t: a plain name is one variable; a tuple pattern binds a hidden variable
+// for the whole and, nested as deep as the pattern goes, one for each part
+// (D37). The returned statements initialise the parts from the hidden
+// variable, which the caller initialises.
+func (f *fnCtx) bindPattern(b *ast.Binding, t types.Type, mutable bool) (*Var, []Stmt) {
 	if b.Name == nil {
-		// `loop ((k, v) in m)`: bind the tuple, then its parts (D37)
 		tt, ok := t.(*types.Tuple)
 		if !ok || len(tt.Elems) != len(b.Tuple) {
-			f.errorf(b.Pos, "cannot destructure a '%s' into %d names", t, len(b.Tuple))
+			if !types.IsInvalid(t) {
+				f.errorf(b.Pos, "cannot destructure a '%s' into %d names", t, len(b.Tuple))
+			}
 			return f.newTemp(t), nil
 		}
 		tmp := f.newTemp(t)
 		var extra []Stmt
 		for i, el := range b.Tuple {
-			part, more := f.bindLoopVar(&el, tt.Elems[i])
+			part, more := f.bindPattern(&el, tt.Elems[i], mutable)
 			extra = append(extra, &VarDecl{Var: part, Init: &TupleGet{exprBase{tt.Elems[i]}, ref(tmp), i}})
 			extra = append(extra, more...)
 		}
@@ -1108,10 +1102,10 @@ func (f *fnCtx) bindLoopVar(b *ast.Binding, t types.Type) (*Var, []Stmt) {
 	if b.Type != nil {
 		want := f.resolve(b.Type)
 		if !types.Identical(want, t) {
-			f.errorf(b.Pos, "loop variable has type '%s', not '%s'", t, want)
+			f.errorf(b.Pos, "'%s' is bound to a value of type '%s', not '%s'", b.Name.Name, t, want)
 		}
 	}
-	v := f.newVar(b.Name.Name, t, false, b.Name.Pos)
+	v := f.newVar(b.Name.Name, t, mutable, b.Name.Pos)
 	f.declareChecked(b.Name.Name, v, b.Name.Pos)
 	return v, nil
 }

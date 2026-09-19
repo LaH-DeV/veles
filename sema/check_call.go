@@ -428,6 +428,9 @@ func (f *fnCtx) implements(t types.Type, trait *types.Trait) bool {
 		// from an impl
 		return sendable(t)
 	}
+	if tt, ok := t.(*types.Tuple); ok && trait.Name == "Comparable" && trait.Module == "std.prelude" {
+		return f.c.tupleCompare(tt) != nil // lexicographic order (tuple_order.go)
+	}
 	return f.findImpl(t, trait) != nil
 }
 
@@ -630,6 +633,10 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 		recv = &Deref{exprBase{p.Elem}, recv}
 		rt = p.Elem
 	}
+	if lt, isList := rt.(*types.List); isList && name == "filterIs" {
+		f.c.refBuiltin(callee.Name.Pos, rt, name)
+		return f.listFilterIs(recv, lt, typeArgs, e)
+	}
 	if b := f.builtinMethod(recv, rt, name, e); b != nil {
 		f.c.refBuiltin(callee.Name.Pos, rt, name)
 		return b
@@ -749,6 +756,12 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 					return f.callValue(&FieldGet{exprBase{fld.Type}, recv, fld.Index, fld.Name}, ft, e.Args, e.Pos)
 				}
 			}
+		}
+	}
+	if tt, ok := rt.(*types.Tuple); ok && name == "compareTo" && len(e.Args) == 1 {
+		if cmp := f.c.tupleCompare(tt); cmp != nil {
+			other := f.checkExprTo(e.Args[0].Value, tt)
+			return &Call{exprBase{types.TI64}, cmp, []Expr{recv, other}}
 		}
 	}
 	switch tt := rt.(type) {

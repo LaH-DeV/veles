@@ -747,9 +747,13 @@ R13. DONE (2026-09-19, from the dedup review): `Never` is a nameable type (unive
     (std may `extend` the built-in sealed types Result/Option now — ownsType). dedup: the key is
     `struct Fingerprint { size, hash }` (reads `key.size`; the `(a.0.0, b.0.0)` destructuring is
     gone), failures via `outcomes.errors()`, values via `outcomes.oks()`.
-    OPEN (user question 2, tuple ergonomics): (a) tuples of Comparable elements could be
-    Comparable lexicographically → `sortedBy(e => (-e.size, e.name))` for multi-key sorts;
-    (b) comparator combinators `compareBy(k).thenByDescending(k2)` for mixed directions on
-    non-numeric keys; (c) nested tuple patterns in lambda params / loop heads
-    (`loop (((size, hash), files) in dupes)`). None started; the honest first answer is
-    "name it" — a struct with fields — which the docs now say.
+    DONE (2026-09-19, R14): (a) tuples of ordered elements are Comparable lexicographically
+    (sema/tuple_order.go synthesizes a compareTo per tuple type, reached via customOps, so `<`,
+    sorted, sortedBy tuple keys, min, `T: Comparable` bounds and `a.compareTo(b)` all work);
+    (c) tuple patterns nest in val/var, loop heads and lambda parameters (`ast.Param.Pattern`,
+    `bindPattern` shared by all three; lambda patterns compose with the tupling conversion).
+    (b) comparator combinators NOT added: no overloading, and `sortedWith(cmp.compare)` reads
+    badly; the tuple key covers multi-key sorts, a comparator lambda covers descending strings.
+    Also R14: `xs.filterIs<Variant>()` (Go-lowered, `listFilterIs`) and `filterNotNull()` — the
+    answer to "can filter promise its type": a type ARGUMENT can, a predicate cannot; no
+    user-written type predicates (unverifiable). Spec D13/D37/D48 addenda; docs 08/09/10.

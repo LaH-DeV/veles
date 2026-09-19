@@ -1048,7 +1048,7 @@ func (f *fnCtx) makeBinary(op BinOp, l, r Expr, span source.Span) Expr {
 // ordered reports whether values of t can be compared with `<`: numbers,
 // strings, and types implementing the prelude's Comparable.
 func (f *fnCtx) ordered(t types.Type) bool {
-	return types.IsNumeric(t) || types.IsString(t) || f.c.implementsPrelude(t, "Comparable")
+	return f.c.orderedType(t)
 }
 
 // compareOp lowers an ordering operator on a type with a custom

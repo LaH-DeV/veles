@@ -1558,6 +1558,10 @@ func (p *printer) lambda(e *ast.LambdaExpr) {
 			if i > 0 {
 				p.w(", ")
 			}
+			if prm.Pattern != nil {
+				p.binding(*prm.Pattern)
+				continue
+			}
 			p.w(prm.Name.Name)
 			if prm.Type != nil {
 				p.w(": ")

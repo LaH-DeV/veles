@@ -157,4 +157,40 @@ Generic sealed types work too: `sealed trait Tree<T>` with
 `struct Leaf<T> : Tree<T> { value: T }`. `Option<T>` (spelled `T?`) and
 `Result<T, E>` are exactly such types in the prelude.
 
+## Picking one variant out of a list
+
+`shapes.filter(s => s is Circle)` gives back a `List<Shape>`: a predicate
+is just a function returning `bool`, and nothing it learned survives the
+call. When you want the *narrowed* list, say the variant as a type
+argument instead:
+
+```veles
+use io
+
+sealed trait Shape
+struct Circle : Shape { r: f64 }
+struct Square : Shape { side: f64 }
+
+fun main() {
+  val shapes: List<Shape> = [Circle(r: 1.0), Square(side: 2.0), Circle(r: 3.0)]
+  val circles = shapes.filterIs<Circle>()        // List<Circle>
+  io.println("${circles.map(c => c.r)} ${shapes.filterIs<Square>().len()}")
+  val maybe: List<i64?> = [1, null, 3]
+  io.println("${maybe.filterNotNull()}")          // List<i64>
+}
+```
+
+Output:
+```text
+[1.0, 3.0] 1
+[1, 3]
+```
+
+`filterNotNull()` is the same idea for `T?`, and `oks()`/`errors()` for a
+list of `Result` (chapter 7). There is deliberately no way to write a
+predicate that narrows (TypeScript's `x is Circle` return type): the
+compiler cannot check that such a function tells the truth, so the
+promise would rest on the author. A type argument the compiler fills in
+itself costs nothing to trust.
+
 Next: [Closures and iterators](10-closures-and-iterators.md).

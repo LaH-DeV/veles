@@ -237,6 +237,8 @@ The bare `is Shape.Circle =>` form remains available; destructuring is additive.
 
 Exhaustiveness is required; `else` opts out. **Lint against `else` when the scrutinee is sealed**, since it silences exactly the error you want when a variant is added later. *Scoped (v0.24):* the lint fires when the `else` stands for exactly one missing variant (an enumeration that a later variant would fall into) or when it is unreachable (every variant has an arm; the fix removes it). One-variant extraction — `is JStr(v) => v  else => null` with several variants left — is the honest spelling and stays silent; two mid-size programs hit it eight times.
 
+*Addendum (v0.28) — narrowing a list.* A predicate cannot promise a type (`filter(s => s is Circle)` yields `List<Shape>`; nothing a lambda learns crosses a call boundary), and Veles deliberately has no user-written type predicates (TypeScript's `x is T`), which the compiler cannot verify. `xs.filterIs<Circle>()` states the variant as a type argument and yields `List<Circle>`; `filterNotNull()` and `oks()`/`errors()` do the same for `T?` and `Result`.
+
 ### D14 — Variance: deferred, generics are invariant
 
 `None<T>` keeps a zero-sized phantom parameter, resolved by inference at the construction site; `null` sugar hides it entirely. This is how Rust's `None` behaves.
@@ -566,6 +568,8 @@ Required by D36's heterogeneous `gather`. Tuples destructure positionally in bot
 
 **Tuple parameters auto-adapt.** A two-parameter lambda is accepted where a one-parameter lambda over a tuple is expected, so `entries().sortedByDescending((k, v) => v)` works without doubled parentheses. This is Scala's tupling conversion. Cost: a special case in the checker, and it can mask genuine arity errors, since a two-argument lambda passed where one argument is expected now silently succeeds.
 
+*Addendum (v0.28) — patterns everywhere a tuple is bound.* Destructuring nests to any depth in `val`/`var`, in loop heads and in lambda parameters: `groups.map(((size, hash), files) => ...)`, `sortedWith((((sa, _), _), ((sb, _), _)) => sa - sb)`. A lambda parameter written as a tuple pattern binds the whole element to a hidden variable and destructures it as the body's first statements; it composes with the tupling conversion above.
+
 *Addendum (v0.25) — destructuring assignment.* `(a, b) = expr` assigns to existing places (variables, fields, `*xs.refOrPanic(i)` elements) positionally. The right side is evaluated in full before the first store, so `(a, b) = (b, a)` swaps and `(a, b) = (b, a + b)` steps without a named temporary — Python's and Go's rule. Each place keeps its own mutability check (D11) and its own smart cast after the store (D5). Only plain `=` destructures; a compound `(a, b) += ...` is an error, since element-wise arithmetic on tuples is not defined. Nested tuples do not destructure in assignment, as they do not yet in bindings.
 
 ### D38 — `race { }` for the first-ready construct
@@ -773,6 +777,8 @@ D43 says `with` releases on cancellation; D20 says cancellation is a panic deliv
 D17 permits one `Ord` impl per type, so descending and case-insensitive sorts need another route. That route is comparator and key-extractor lambdas — `sort(by: ...)`, `sortBy(...)` — not a second `Ord` impl.
 
 This **formally drops named-impls-as-values**, which had been recorded as still-useful since D17. Nothing else in the design now needs it.
+
+*Addendum (v0.28) — tuples are ordered.* A tuple whose elements are all ordered (numbers, strings, `Comparable` types, such tuples) is `Comparable`, element by element: `(1, "b") < (2, "a")`. The comparison is a function the compiler synthesizes per tuple type and reaches through the same path as a hand-written `compareTo` (`<`, `sorted`, `min`, a `T: Comparable` bound, `a.compareTo(b)`). Consequence: a multi-key sort is `sortedBy(e => (-e.size, e.name))` — Python's key tuple — with no comparator-combinator API; a comparator lambda remains for the cases a key cannot express (a descending string). Equality and hashing of tuples were already structural.
 
 ### D49 — Panics unwind via DWARF tables, with a separate coroutine-frame chain
 

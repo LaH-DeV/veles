@@ -165,7 +165,8 @@ type Param struct {
 	Name     Ident
 	Type     Type
 	Default  Expr
-	Variadic bool // `name: T...` — the last parameter takes any number of arguments (a List<T> inside)
+	Variadic bool     // `name: T...` — the last parameter takes any number of arguments (a List<T> inside)
+	Pattern  *Binding // lambda only: `((size, hash), files) => ...` destructures the argument (D37)
 	Pos      source.Span
 }
 

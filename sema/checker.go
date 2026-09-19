@@ -61,6 +61,7 @@ type Checker struct {
 	checkedGlobals map[*Global]bool
 	changed        bool
 	nextVar        int
+	tupleCmp       map[string]*Func // synthesized tuple comparisons by type key (tuple_order.go)
 	nextLoop       int
 	nextTmp        int
 	nextLambda     int

@@ -352,10 +352,15 @@ negative number, zero or a positive number):
 | any order at all | `xs.sortedWith((a, b) => ...)`, `xs.minWith(compare)`, `xs.maxWith(compare)`, `ml.sortWith(compare)` |
 | uniqueness by a key | `xs.distinctBy(x => x.email.toLower())` |
 | a queue in a custom order | `priorityQueueBy<T>((a, b) => ...)` |
+| several keys at once | a tuple key: `xs.sortedBy(e => (-e.size, e.name))` — tuples of `Comparable` elements compare lexicographically, so this is "largest first, then by name" |
 | equality with a different meaning | `xs.any(x => sameName(x, y))`, or a wrapper struct with its own `Equatable` |
 
 Sorting is stable: elements the strategy cannot tell apart keep their
 order, so sorting by one key and then by another gives a two-level order.
+A tuple orders element by element (`(1, "b") < (2, "a")`), which makes
+`sortedBy` with a tuple key the way to sort on several fields; negate a
+number to flip its direction, and write a comparator when a *string* must
+run backwards.
 
 ```veles
 use io

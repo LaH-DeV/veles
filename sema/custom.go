@@ -25,6 +25,13 @@ func (c *Checker) customOps(t types.Type) *CustomOps {
 		span = c.declSpan(t.Decl)
 	case *types.Sealed:
 		span = c.declSpan(t.Decl)
+	case *types.Tuple:
+		// lexicographic order over ordered elements (tuple_order.go);
+		// equality, hashing and printing stay structural
+		if fn := c.tupleCompare(t); fn != nil {
+			return &CustomOps{Compare: fn}
+		}
+		return nil
 	default:
 		return nil
 	}
@@ -86,6 +93,9 @@ func (c *Checker) implementsPrelude(t types.Type, traitName string) bool {
 			}
 		}
 		return false
+	}
+	if tt, ok := t.(*types.Tuple); ok && traitName == "Comparable" {
+		return c.tupleCompare(tt) != nil
 	}
 	return c.findImplFor(t, trait) != nil
 }
