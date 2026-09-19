@@ -1867,3 +1867,45 @@ fun main() { val x: One<i64> = 1; io.println("$x") }`, "'One' is not generic")
 type Pair<T> = (T, T)
 fun main() { val x: Pair = (1, 2); io.println("$x") }`, "'Pair' expects 1 type arguments, got 0")
 }
+
+// `Never` is nameable: os.exit and a `fun f(): Never` end control flow, so a
+// `when` whose arms all diverge makes what follows unreachable.
+func TestNeverType(t *testing.T) {
+	expectError(t, prelude+`use os
+fun bail(): Never {
+  io.println("bye")
+  os.exit(2)
+}
+fun main() {
+  val xs: List<i64> = []
+  when (xs.first()) {
+    null => bail()
+    else => os.exit(0)
+  }
+  io.println("after")
+}`, "unreachable code")
+	expectClean(t, prelude+`use os
+fun bail(): Never = os.exit(2)
+fun main() {
+  val xs: List<i64> = [1]
+  val n: i64 = xs.first() ?: bail()
+  io.println("$n")
+}`)
+	expectError(t, prelude+`
+fun bad(): Never { io.println("x") }
+fun main() { bad() }`, "expected 'Never', found '()'")
+}
+
+// Result accessors and the List<Result> helpers live in the prelude.
+func TestResultHelpers(t *testing.T) {
+	expectClean(t, prelude+`
+error Odd { n: i64 }
+fun check(n: i64): i64 throws Odd = if (n % 2 == 1) throw Odd(n) else n
+fun main() {
+  val rs = [1, 2, 3].map(n => check(n))
+  val oks: List<i64> = rs.oks()
+  val errs: List<Odd> = rs.errors()
+  val (small, big) = [1, 5].partition(n => n < 3)
+  io.println("$oks $errs ${rs.atOrPanic(0).getOrNull()} ${rs.atOrPanic(1).getOrDefault(0)} $small $big ${["1", "x"].mapNotNull(s => s.toInt())}")
+}`)
+}

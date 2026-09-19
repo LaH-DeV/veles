@@ -400,3 +400,52 @@ extend<T> Range<T> {
     RangeStepIter(current: last, last: self.lo, step: 1, up: false, done: last < self.lo)
   }
 }
+
+extend<T> List<T> {
+  /// `map` that drops the nulls: `f` returns `U?` and the result holds the
+  /// values that were present, in order (Kotlin's `mapNotNull`).
+  pub fun mapNotNull<U>(f: fun(T): U?): List<U> {
+    val out: MutableList<U> = []
+    loop (x in self) {
+      val y = f(x) ?: continue
+      out.push(y)
+    }
+    out.toList()
+  }
+
+  /// Splits the list in two: the elements `p` accepts, then the rest, each
+  /// in the original order.
+  pub fun partition(p: fun(T): bool): (List<T>, List<T>) {
+    val yes: MutableList<T> = []
+    val no: MutableList<T> = []
+    loop (x in self) {
+      if (p(x)) yes.push(x) else no.push(x)
+    }
+    (yes.toList(), no.toList())
+  }
+}
+
+extend<T, E> Result<T, E> {
+  /// The value, or null when this is an error (Kotlin's `getOrNull`).
+  pub fun getOrNull(): T? = when (self) {
+    is Ok(value) => value
+    is Err       => null
+  }
+
+  /// The error, or null when this is a value.
+  pub fun errorOrNull(): E? = when (self) {
+    is Err(error) => error
+    is Ok         => null
+  }
+
+  /// The value, or `fallback` when this is an error.
+  pub fun getOrDefault(fallback: T): T = self.getOrNull() ?: fallback
+}
+
+extend<T, E> List<Result<T, E>> {
+  /// The values of the successful results, in order.
+  pub fun oks(): List<T> = self.mapNotNull(r => r.getOrNull())
+
+  /// The errors of the failed results, in order.
+  pub fun errors(): List<E> = self.mapNotNull(r => r.errorOrNull())
+}

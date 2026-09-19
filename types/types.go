@@ -68,13 +68,14 @@ var (
 	TF32     = &Basic{Kind: F32, Name: "f32"}
 	TF64     = &Basic{Kind: F64, Name: "f64"}
 	TString  = &Basic{Kind: String, Name: "string"}
-	TNever   = &Basic{Kind: Never, Name: "!"}
+	TNever   = &Basic{Kind: Never, Name: "Never"}
 )
 
 var Primitives = map[string]*Basic{
 	"bool": TBool, "i8": TI8, "i16": TI16, "i32": TI32, "i64": TI64, "isize": TISize,
 	"u8": TU8, "u16": TU16, "u32": TU32, "u64": TU64, "usize": TUSize,
 	"f32": TF32, "f64": TF64, "string": TString,
+	"Never": TNever, // the bottom type: a function that never returns (D20)
 }
 
 func IsInteger(t Type) bool {

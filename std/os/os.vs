@@ -7,7 +7,7 @@ extern "C" {
   fun veles_os_argc(): i64
   fun veles_os_arg(i: i64, out: *raw string)
   fun veles_os_getenv(name: string, out: *raw string): bool
-  fun veles_os_exit(code: i64)
+  fun veles_os_exit(code: i64): Never
   fun veles_os_run(cmd: string, out: *raw string, err: *raw i64): i64
   fun veles_os_strerror(code: i64, out: *raw string)
 }
@@ -47,7 +47,7 @@ pub fun env(name: string): string? {
 }
 
 /// Ends the process with `code` after flushing output.
-pub fun exit(code: i64) {
+pub fun exit(code: i64): Never {
   unsafe {
     veles_os_exit(code)
   }

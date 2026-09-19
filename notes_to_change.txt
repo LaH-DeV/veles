@@ -739,3 +739,17 @@ R12. DONE (2026-09-19): type aliases, spec D55. `type Name<T> = Type` at module 
     the "when you want something an alias is not" list; cheatsheet; dedup uses `Fingerprint`.
     Not done: aliases in `impl`/`extend` targets get the underlying type's messages (fine);
     generic alias used bare in value position errors ("write the type arguments").
+R13. DONE (2026-09-19, from the dedup review): `Never` is a nameable type (universe; was the
+    unnameable `!`): `os.exit(code): Never`, `fun usage(): Never`, a `when` whose arms all
+    diverge is Never → "unreachable code" after it (the check existed; exit was `()`). Extern
+    `veles_os_exit(): Never` lowers to void + unreachable. Prelude: `Result.getOrNull/
+    getOrDefault/errorOrNull`, `List.mapNotNull/partition`, `List<Result<T,E>>.oks()/errors()`
+    (std may `extend` the built-in sealed types Result/Option now — ownsType). dedup: the key is
+    `struct Fingerprint { size, hash }` (reads `key.size`; the `(a.0.0, b.0.0)` destructuring is
+    gone), failures via `outcomes.errors()`, values via `outcomes.oks()`.
+    OPEN (user question 2, tuple ergonomics): (a) tuples of Comparable elements could be
+    Comparable lexicographically → `sortedBy(e => (-e.size, e.name))` for multi-key sorts;
+    (b) comparator combinators `compareBy(k).thenByDescending(k2)` for mixed directions on
+    non-numeric keys; (c) nested tuple patterns in lambda params / loop heads
+    (`loop (((size, hash), files) in dupes)`). None started; the honest first answer is
+    "name it" — a struct with fields — which the docs now say.

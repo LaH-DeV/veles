@@ -1338,6 +1338,9 @@ func (c *Checker) ownsType(m *Module, t types.Type) bool {
 	case *types.Struct:
 		prefix = t.Module
 	case *types.Sealed:
+		if t.Module == "<prelude>" {
+			return m.Std // Result and Option are built in; std extends them
+		}
 		prefix = t.Module
 	case *types.Basic, *types.List, *types.Map, *types.Set, *types.Range, *types.Channel:
 		return m.Std

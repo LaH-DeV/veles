@@ -293,8 +293,10 @@ fun risky(n: i64): i64 throws Oops = if (n > 0) n * 10 else throw Oops(code: n)
 
 fun main() {
   val results = [risky(1), risky(0), risky(2)]      // List<Result<i64, Oops>>
-  val successes = results.filter(r => r.ok)
-  io.println("${successes.len()} of ${results.len()} succeeded")
+  io.println("${results.oks()} ${results.errors()}")
+  loop (e in results.errors()) io.println("failed with code ${e.code}")
+  val first = results.atOrPanic(0)
+  io.println("${first.getOrNull()} ${results.atOrPanic(1).getOrDefault(-1)} ${first.errorOrNull()}")
   val explicit: Result<i64, Oops> = Err(Oops(code: -1))
   io.println("$explicit")
 }
@@ -302,9 +304,35 @@ fun main() {
 
 Output:
 ```text
-2 of 3 succeeded
+[10, 20] [Oops(code: 0)]
+failed with code 0
+10 -1 null
 Err(error: Oops(code: -1))
 ```
+
+A single result unwraps with `getOrNull()`, `getOrDefault(d)` and
+`errorOrNull()`; a list of results splits with `oks()` and `errors()`, which
+is how a batch that must not stop at the first failure reports and then
+continues (`examples/dedup`). Note what does *not* work: narrowing does not
+survive a call boundary, so `results.filter(r => r is Ok).map(r => ...)`
+still sees `Result` inside the `map` — use `oks()`, or `mapNotNull(r => r.getOrNull())`.
+
+### Functions that never return
+
+`os.exit` and `panic` never come back; their type is `Never`, the type with no
+values, and a function of your own can declare it:
+
+```veles
+// fragment
+fun usage(): Never {
+  io.println("usage: tool <dir>")
+  os.exit(2)
+}
+```
+
+A `Never` value fits anywhere (`val n = xs.first() ?: usage()` is an `i64`), a
+`when` whose arms all end in one is itself `Never`, and code after such a
+statement is reported as unreachable.
 
 ## When to throw, when to return `T?`
 

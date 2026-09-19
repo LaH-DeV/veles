@@ -75,7 +75,7 @@ when { x < 0 => "neg"; else => "pos" }
 when (shape) { is Circle(r) => ...; is Rect(w, h) if w > h => ...; is Point => ... }
 when (opt) { Some(x) => ...; null => ... }
 when (val r = res) { is Ok => r; is Err => r.message() }   // r is the payload in each arm; Ok(v) / Err(e) also work
-return v; break; continue; throw e; panic("msg")   // panic never returns (D20)
+return v; break; continue; throw e; panic("msg")   // panic and os.exit are Never: nothing after them runs; fun f(): Never is allowed
 ```
 
 ## Functions and lambdas
@@ -148,7 +148,7 @@ error Wrapped { cause: GetErrors }                      // an error's field may 
 fun get(k: string): string throws NotFound = if (k == "a") "A" else throw NotFound(key: k)
 fun getAll(): string throws = try get("a") + try get("b")   // error type inferred: NotFound
 when (val r = get("z")) { is Ok => r; is Err => r.key }    // caller sees Result; r is the payload per arm
-val r: Result<i64, NotFound> = Ok(1)
+val r: Result<i64, NotFound> = Ok(1); r.getOrNull(); r.getOrDefault(0); r.errorOrNull(); results.oks(); results.errors()
 ```
 
 Unused `Result` is an error. `try` needs an enclosing `throws`. `if (r.ok)` (or `r is Ok`)
@@ -163,7 +163,7 @@ val m = ["a": 1]                // Map<string, i64>;  mut ["a": 1]; typed: var m
 var s = MutableSet<i64>()
 xs.at(9) ?: -1; xs.atOrPanic(0); xs.atOrDefault(9, -1); xs.at(-1); xs.len(); xs.contains(2); xs.first(); xs.last(); xs.indexOf(2)
 // reads are copies; writes go through a reference: ml.refOrPanic(i).bump(); *ml.refOrPanic(i) += 1; ml.ref(i)?.n = 0; ml.set(i, x)
-xs.map(f); xs.filter(p); xs.fold(0, f); xs.any(p); xs.all(p); xs.find(p); xs.forEach(f); xs.count(p)
+xs.map(f); xs.filter(p); xs.fold(0, f); xs.any(p); xs.all(p); xs.find(p); xs.forEach(f); xs.count(p); xs.mapNotNull(f); xs.partition(p)
 xs.take(2); xs.drop(2); xs.slice(1, 3); xs.zip(ys); xs.flatMap(f); xs.distinct(); xs.chunked(2); xs.windowed(2)
 xs.sorted(); xs.sortedBy(key); xs.sortedDescending(); xs.sortedWith((a, b) => ...); xs.reversed(); xs.min(); xs.max(); xs.sum(); xs.join(", "); xs.iter()
 xs.minBy(key); xs.maxBy(key); xs.minWith(cmp); xs.maxWith(cmp); xs.distinctBy(key); xs == ys  // lists, maps, sets compare by content

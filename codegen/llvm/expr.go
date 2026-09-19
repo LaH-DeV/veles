@@ -449,7 +449,7 @@ func (g *gen) call(e *sema.Call) string {
 		return g.callSuspending(fn, ats, avs, g.resultTypeOf(fn.Sig))
 	}
 	ret := g.retLL(fn)
-	if fn.Extern && types.IsUnit(fn.Sig.Ret) {
+	if fn.Extern && (types.IsUnit(fn.Sig.Ret) || types.IsNever(fn.Sig.Ret)) {
 		ret = "void"
 	}
 	if ret == "void" {

@@ -18,8 +18,13 @@ struct Hashed {
   hash: u64
 }
 
-/// What makes two files "the same": equal size and equal hash.
-type Fingerprint = (i64, u64)
+/// What makes two files "the same": equal size and equal hash. A struct
+/// rather than a `(i64, u64)` tuple so that a group's key reads `key.size`,
+/// and it is a map key for free (structural equality and hashing).
+struct Fingerprint {
+  size: i64
+  hash: u64
+}
 
 // ---------------------------------------------------------------------------
 // hashing: FNV-1a over the bytes, a fingerprint that is cheap to write in
@@ -103,37 +108,29 @@ fun run(args: List<string>) throws UsageError | IoError {
   // Result itself (no `try`), so a failure is a value in the list
   val verbose = opts.verbose
   val outcomes = files.toList().mapConcurrent(file => hashFile(file, verbose), workers: opts.workers)
-  val hashed: MutableList<Hashed> = []
-  loop (outcome in outcomes) {
-    if (outcome is Err) {
-      io.println("cannot read: ${outcome.message()}")
-      continue
-    }
-    hashed.push(outcome)
-  }
+  loop (err in outcomes.errors()) io.println("cannot read: ${err.message()}")
+  val hashed = outcomes.oks()
 
-  // group by (size, hash); a group of one is not a duplicate
+  // group by fingerprint; a group of one is not a duplicate
   val groups: MutableMap<Fingerprint, MutableList<string>> = [:]
   loop (h in hashed) {
     if (h.size < opts.minSize) continue
-    groups.getOrPut((h.size, h.hash), () => []).push(h.file)
+    groups.getOrPut(Fingerprint(size: h.size, hash: h.hash), () => []).push(h.file)
   }
   val dupes = groups.entries()
     .filter(e => e.1.len() > 1)
     .sortedWith((a, b) => {
-      val (sizeA, sizeB) = (a.0.0, b.0.0)
-      if (sizeA != sizeB) return sizeB - sizeA  // largest first
+      if (a.0.size != b.0.size) return b.0.size - a.0.size  // largest first
       a.1.atOrPanic(0).compareTo(b.1.atOrPanic(0))
     })
 
   var wasted = 0
   loop ((key, members) in dupes) {
-    val (size, _) = key
-    io.println("${members.len()} identical files, ${plural(size, "byte")} each:")
+    io.println("${members.len()} identical files, ${plural(key.size, "byte")} each:")
     loop (file in members.sorted()) {
       io.println("  $file")
     }
-    wasted += size * (members.len() - 1)
+    wasted += key.size * (members.len() - 1)
   }
   val total = hashed.fold(0, (acc, h) => acc + h.size)
   io.println("${plural(hashed.len(), "file")}, ${plural(total, "byte")}, ${plural(opts.workers, "worker")}: ${plural(dupes.len(), "duplicate group")}, ${plural(wasted, "byte")} recoverable")
@@ -141,10 +138,10 @@ fun run(args: List<string>) throws UsageError | IoError {
 
 fun main() {
   when (val r = run(os.args())) {
-    is Ok  => { }
     is Err => {
       io.println("dedup: ${r.message()}")
       os.exit(if (r is UsageError) 2 else 1)
     }
+    is Ok  => { }
   }
 }

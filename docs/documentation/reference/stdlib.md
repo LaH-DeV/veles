@@ -207,6 +207,19 @@ is a binary heap: `push` and `pop` are O(log n). For the largest first,
 with `Some(value)` and `None`, normally spelled `T?` and `null`. Both are
 sealed types and match with `when`.
 
+```veles
+// fragment
+r.getOrNull(): T?            // the value, or null
+r.getOrDefault(fallback): T
+r.errorOrNull(): E?          // the error, or null
+results.oks(): List<T>       // on a List<Result<T, E>>: the successes, in order
+results.errors(): List<E>    // the failures, in order
+```
+
+`Never` is the type of a call that does not return (`panic`, `os.exit`, a
+function declared `: Never`); it fits anywhere, and code after it is
+unreachable.
+
 ### Concurrency primitives
 
 | | |
@@ -260,6 +273,7 @@ UTF-8.
 | `first()`, `last()`, `min()`, `max()` | `T?`; `min`/`max` need `Comparable` elements |
 | `take(n)`, `drop(n)`, `slice(from, to)` | new `List`, bounds clamped |
 | `map(f)`, `filter(p)`, `fold(z, f)`, `forEach(f)`, `flatMap(f)` | eager; return `List` |
+| `mapNotNull(f)`, `partition(p)` | `f` returns `U?`, nulls dropped; `(List<T>, List<T>)` of accepted and rest |
 | `any(p)`, `all(p)`, `find(p)` | |
 | `zip(ys)`, `chunked(n)`, `windowed(n)`, `distinct()` | `List<(T, U)>`, `List<List<T>>`, `List<List<T>>`, `List<T>` |
 | `sorted()`, `sortedDescending()`, `sortedBy(key)`, `sortedByDescending(key)`, `reversed()` | new `List`; elements or `key` results must be `Comparable` (D48) |
