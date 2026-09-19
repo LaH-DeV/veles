@@ -441,3 +441,35 @@ fun f(x: i64): bool {
 		t.Fatalf("the if in the arm body took the when's else arm")
 	}
 }
+
+// A braceless body may start on the line after `if (c)`, `else` or
+// `loop (c)` (Kotlin's layout); the line break does not end the statement.
+func TestBodyOnNextLine(t *testing.T) {
+	src := `
+fun sign(x: i64): string =
+  if (x > 0)
+    "positive"
+  else if (x < 0)
+    "negative"
+  else
+    "zero"
+fun f() {
+  var n = 0
+  loop (n < 3)
+    n += 1
+}
+`
+	file, diags := parse(t, src)
+	if diags.HasErrors() {
+		t.Fatalf("%s", diags.Render())
+	}
+	sign := file.Decls[0].(*ast.FunDecl)
+	ifx := sign.ExprBody.(*ast.IfExpr)
+	if ifx.Else == nil || len(ifx.Then.Stmts) != 1 {
+		t.Fatalf("if on the next line parsed wrong:\n%s", ast.Dump(file))
+	}
+	inner := ifx.Else.Stmts[0].(*ast.ExprStmt).X.(*ast.IfExpr)
+	if inner.Else == nil {
+		t.Fatalf("else-if chain lost its final else")
+	}
+}

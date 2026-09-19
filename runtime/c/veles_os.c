@@ -22,15 +22,9 @@
 #include <windows.h>
 #include <direct.h>
 #include <io.h>
-#define veles_popen _popen
-#define veles_pclose _pclose
-#define veles_mkdir(p) _mkdir(p)
 #else
 #include <unistd.h>
 #include <sys/wait.h>
-#define veles_popen popen
-#define veles_pclose pclose
-#define veles_mkdir(p) mkdir(p, 0777)
 #endif
 
 typedef struct {
@@ -43,6 +37,7 @@ void veles_panic(const char *msg, int64_t len);
 
 /* cstr copies a Veles string into a NUL-terminated buffer the C library
  * can take; Veles strings are not NUL-terminated. */
+static char *cstr(const char *s, int64_t len) __attribute__((unused));
 static char *cstr(const char *s, int64_t len) {
     char *buf = veles_alloc(len + 1);
     memcpy(buf, s, (size_t)len);
@@ -57,6 +52,40 @@ static void set_string(veles_string *out, const char *s, int64_t len) {
     out->data = buf;
     out->len = len;
 }
+
+#if defined(_WIN32)
+/* Windows: paths, arguments, environment and directory names go through
+ * the UTF-16 API so that non-ASCII text survives (D18: every Veles string
+ * is UTF-8; the "ANSI" functions would use the legacy code page). */
+static wchar_t *wstr(const char *s, int64_t len) {
+    int n = MultiByteToWideChar(CP_UTF8, 0, s, (int)len, NULL, 0);
+    wchar_t *w = veles_alloc(((int64_t)n + 1) * (int64_t)sizeof(wchar_t));
+    MultiByteToWideChar(CP_UTF8, 0, s, (int)len, w, n);
+    w[n] = 0;
+    return w;
+}
+
+static void set_wstring(veles_string *out, const wchar_t *w) {
+    int n = WideCharToMultiByte(CP_UTF8, 0, w, -1, NULL, 0, NULL, NULL); /* counts the NUL */
+    if (n <= 0) { set_string(out, "", 0); return; }
+    char *buf = veles_alloc(n);
+    WideCharToMultiByte(CP_UTF8, 0, w, -1, buf, n, NULL, NULL);
+    out->data = buf;
+    out->len = n - 1;
+}
+
+static FILE *open_file(const char *path, int64_t plen, const char *mode) {
+    wchar_t wmode[8];
+    int i = 0;
+    for (; mode[i] && i < 7; i++) wmode[i] = (wchar_t)mode[i];
+    wmode[i] = 0;
+    return _wfopen(wstr(path, plen), wmode);
+}
+#else
+static FILE *open_file(const char *path, int64_t plen, const char *mode) {
+    return fopen(cstr(path, plen), mode);
+}
+#endif
 
 /* growing byte buffer for reads */
 typedef struct {
@@ -96,6 +125,38 @@ void veles_os_strerror(int64_t code, veles_string *out) {
 extern int veles_os_argc_value(void);
 extern char **veles_os_argv_value(void);
 
+#if defined(_WIN32)
+static wchar_t **wide_argv(int *argc) {
+    static wchar_t **cached;
+    static int cached_argc;
+    if (!cached) {
+        cached = CommandLineToArgvW(GetCommandLineW(), &cached_argc);
+        if (!cached) cached_argc = 0;
+    }
+    *argc = cached_argc;
+    return cached;
+}
+
+int64_t veles_os_argc(void) {
+    int argc;
+    wide_argv(&argc);
+    return argc ? argc : veles_os_argc_value();
+}
+
+void veles_os_arg(int64_t i, veles_string *out) {
+    int argc;
+    wchar_t **argv = wide_argv(&argc);
+    if (!argv || argc == 0) {
+        char **a = veles_os_argv_value();
+        argc = veles_os_argc_value();
+        if (i < 0 || i >= argc) veles_panic("os.arg: index out of range", 26);
+        set_string(out, a[i], (int64_t)strlen(a[i]));
+        return;
+    }
+    if (i < 0 || i >= argc) veles_panic("os.arg: index out of range", 26);
+    set_wstring(out, argv[i]);
+}
+#else
 int64_t veles_os_argc(void) { return veles_os_argc_value(); }
 
 void veles_os_arg(int64_t i, veles_string *out) {
@@ -106,12 +167,20 @@ void veles_os_arg(int64_t i, veles_string *out) {
     }
     set_string(out, argv[i], (int64_t)strlen(argv[i]));
 }
+#endif
 
 bool veles_os_getenv(const char *name, int64_t nlen, veles_string *out) {
+#if defined(_WIN32)
+    const wchar_t *v = _wgetenv(wstr(name, nlen));
+    if (!v) return false;
+    set_wstring(out, v);
+    return true;
+#else
     const char *v = getenv(cstr(name, nlen));
     if (!v) return false;
     set_string(out, v, (int64_t)strlen(v));
     return true;
+#endif
 }
 
 void veles_os_exit(int64_t code) {
@@ -125,14 +194,22 @@ void veles_os_exit(int64_t code) {
  * set when the process could not be started. */
 int64_t veles_os_run(const char *cmd, int64_t clen, veles_string *out, int64_t *err) {
     fflush(stdout);
-    FILE *p = veles_popen(cstr(cmd, clen), "r");
+#if defined(_WIN32)
+    FILE *p = _wpopen(wstr(cmd, clen), L"r");
+#else
+    FILE *p = popen(cstr(cmd, clen), "r");
+#endif
     if (!p) {
         *err = errno ? errno : EIO;
         return -1;
     }
     buf_t b = {0};
     int rerr = read_stream(p, &b);
-    int status = veles_pclose(p);
+#if defined(_WIN32)
+    int status = _pclose(p);
+#else
+    int status = pclose(p);
+#endif
     set_string(out, b.data ? b.data : "", b.len);
     *err = rerr;
 #if defined(_WIN32)
@@ -151,7 +228,7 @@ int64_t veles_os_run(const char *cmd, int64_t clen, veles_string *out, int64_t *
 bool veles_utf8_valid(const char *s, int64_t len);
 
 static int64_t read_raw(const char *path, int64_t plen, veles_string *out) {
-    FILE *f = fopen(cstr(path, plen), "rb");
+    FILE *f = open_file(path, plen, "rb");
     if (!f) return errno;
     buf_t b = {0};
     int err = read_stream(f, &b);
@@ -171,7 +248,7 @@ int64_t veles_fs_read_file(const char *path, int64_t plen, veles_string *out) {
 }
 
 static int64_t write_file(const char *path, int64_t plen, const char *text, int64_t tlen, const char *mode) {
-    FILE *f = fopen(cstr(path, plen), mode);
+    FILE *f = open_file(path, plen, mode);
     if (!f) return errno;
     if (tlen > 0 && fwrite(text, 1, (size_t)tlen, f) != (size_t)tlen) {
         int err = errno ? errno : EIO;
@@ -192,17 +269,35 @@ int64_t veles_fs_append_file(const char *path, int64_t plen, const char *text, i
 
 /* veles_fs_stat: 0 = missing, 1 = file, 2 = directory */
 int64_t veles_fs_stat(const char *path, int64_t plen) {
+#if defined(_WIN32)
+    struct _stat64 st;
+    if (_wstat64(wstr(path, plen), &st) != 0) return 0;
+#else
     struct stat st;
     if (stat(cstr(path, plen), &st) != 0) return 0;
+#endif
     return S_ISDIR(st.st_mode) ? 2 : 1;
 }
 
 /* veles_fs_list_dir writes the entry names, one per line, sorted by the
  * Veles side. */
 int64_t veles_fs_list_dir(const char *path, int64_t plen, veles_string *out) {
+    buf_t b = {0};
+#if defined(_WIN32)
+    _WDIR *d = _wopendir(wstr(path, plen));
+    if (!d) return errno;
+    struct _wdirent *e;
+    while ((e = _wreaddir(d)) != NULL) {
+        if (wcscmp(e->d_name, L".") == 0 || wcscmp(e->d_name, L"..") == 0) continue;
+        veles_string name;
+        set_wstring(&name, e->d_name);
+        if (b.len) buf_push(&b, "\n", 1);
+        buf_push(&b, name.data, name.len);
+    }
+    _wclosedir(d);
+#else
     DIR *d = opendir(cstr(path, plen));
     if (!d) return errno;
-    buf_t b = {0};
     struct dirent *e;
     while ((e = readdir(d)) != NULL) {
         if (strcmp(e->d_name, ".") == 0 || strcmp(e->d_name, "..") == 0) continue;
@@ -210,16 +305,32 @@ int64_t veles_fs_list_dir(const char *path, int64_t plen, veles_string *out) {
         buf_push(&b, e->d_name, (int64_t)strlen(e->d_name));
     }
     closedir(d);
+#endif
     set_string(out, b.data ? b.data : "", b.len);
     return 0;
 }
 
 int64_t veles_fs_mkdir(const char *path, int64_t plen) {
-    if (veles_mkdir(cstr(path, plen)) != 0 && errno != EEXIST) return errno;
+#if defined(_WIN32)
+    if (_wmkdir(wstr(path, plen)) != 0 && errno != EEXIST) return errno;
+#else
+    if (mkdir(cstr(path, plen), 0777) != 0 && errno != EEXIST) return errno;
+#endif
     return 0;
 }
 
 int64_t veles_fs_remove(const char *path, int64_t plen) {
+#if defined(_WIN32)
+    wchar_t *p = wstr(path, plen);
+    struct _stat64 st;
+    if (_wstat64(p, &st) != 0) return errno;
+    if (S_ISDIR(st.st_mode)) {
+        if (_wrmdir(p) != 0) return errno;
+        return 0;
+    }
+    if (_wremove(p) != 0) return errno;
+    return 0;
+#else
     char *p = cstr(path, plen);
     struct stat st;
     if (stat(p, &st) != 0) return errno;
@@ -229,21 +340,28 @@ int64_t veles_fs_remove(const char *path, int64_t plen) {
     }
     if (remove(p) != 0) return errno;
     return 0;
+#endif
 }
 
 int64_t veles_fs_rename(const char *from, int64_t flen, const char *to, int64_t tlen) {
+#if defined(_WIN32)
+    if (_wrename(wstr(from, flen), wstr(to, tlen)) != 0) return errno;
+#else
     if (rename(cstr(from, flen), cstr(to, tlen)) != 0) return errno;
+#endif
     return 0;
 }
 
 int64_t veles_fs_cwd(veles_string *out) {
-    char buf[4096];
 #if defined(_WIN32)
-    if (!_getcwd(buf, sizeof buf)) return errno;
+    wchar_t buf[4096];
+    if (!_wgetcwd(buf, 4096)) return errno;
+    set_wstring(out, buf);
 #else
+    char buf[4096];
     if (!getcwd(buf, sizeof buf)) return errno;
-#endif
     set_string(out, buf, (int64_t)strlen(buf));
+#endif
     return 0;
 }
 

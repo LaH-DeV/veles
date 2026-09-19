@@ -310,11 +310,12 @@ func (g *gen) equal(t types.Type, l, r string) string {
 			g.emit("%s = icmp eq %s %s, %s", v, g.llType(t), l, r)
 		}
 		return v
-	case *types.Pointer, *types.List, *types.Map, *types.Set, *types.Channel, *types.Task:
+	case *types.Pointer, *types.Channel, *types.Task:
 		v := g.newTmp()
 		g.emit("%s = icmp eq ptr %s, %s", v, l, r)
 		return v
 	}
+	// collections compare element-wise (D25, v0.26); the helpers below
 	name := g.eqHelper(t)
 	v := g.newTmp()
 	g.emit("%s = call i1 @%s(%s %s, %s %s)", v, name, g.llType(t), l, g.llType(t), r)
@@ -348,9 +349,18 @@ func (g *gen) eqBody(t types.Type, a, b string) string {
 	switch tt := t.(type) {
 	case *types.Nullable:
 		if isPtrLike(tt.Elem) {
-			v := g.newTmp()
-			g.emit("%s = icmp eq ptr %s, %s", v, a, b)
-			return v
+			if _, isColl := tt.Elem.(*types.List); !isColl {
+				if _, isColl = tt.Elem.(*types.Map); !isColl {
+					_, isColl = tt.Elem.(*types.Set)
+				}
+				if !isColl {
+					v := g.newTmp()
+					g.emit("%s = icmp eq ptr %s, %s", v, a, b)
+					return v
+				}
+			}
+			// a nullable collection: null == null, otherwise element-wise
+			return g.eqNullPtr(tt.Elem, a, b)
 		}
 		ta := g.newTmp()
 		g.emit("%s = extractvalue %s %s, 0", ta, llt, a)
@@ -390,8 +400,166 @@ func (g *gen) eqBody(t types.Type, a, b string) string {
 		return g.eqTagged(llt, a, b, func(i int) types.Type { return tt.Variants[i] }, len(tt.Variants))
 	case *types.ErrorUnion:
 		return g.eqTagged(llt, a, b, func(i int) types.Type { return tt.Members[i] }, len(tt.Members))
+	case *types.List:
+		return g.eqList(tt.Elem, a, b)
+	case *types.Map, *types.Set:
+		return g.eqMap(t, a, b)
 	}
 	return "false"
+}
+
+// eqNullPtr compares two nullable collections: both null is equal, one
+// null is not, otherwise the collections are compared element-wise.
+func (g *gen) eqNullPtr(elem types.Type, a, b string) string {
+	res := g.alloca("i1")
+	an := g.newTmp()
+	g.emit("%s = icmp eq ptr %s, null", an, a)
+	bn := g.newTmp()
+	g.emit("%s = icmp eq ptr %s, null", bn, b)
+	sameNull := g.newTmp()
+	g.emit("%s = icmp eq i1 %s, %s", sameNull, an, bn)
+	g.emit("store i1 %s, ptr %s", sameNull, res)
+	bothL, endL := g.newLabel("eq.both"), g.newLabel("eq.end")
+	anyNull := g.newTmp()
+	g.emit("%s = or i1 %s, %s", anyNull, an, bn)
+	g.emitTerm("br i1 %s, label %%%s, label %%%s", anyNull, endL, bothL)
+	g.placeLabel(bothL)
+	e := g.equal(elem, a, b)
+	g.emit("store i1 %s, ptr %s", e, res)
+	g.emitTerm("br label %%%s", endL)
+	g.placeLabel(endL)
+	v := g.newTmp()
+	g.emit("%s = load i1, ptr %s", v, res)
+	return v
+}
+
+// eqList is element-wise equality: same length and every pair equal, in
+// order. The same handle is equal to itself without a walk.
+func (g *gen) eqList(elem types.Type, a, b string) string {
+	res := g.alloca("i1")
+	g.emit("store i1 false, ptr %s", res)
+	same := g.newTmp()
+	g.emit("%s = icmp eq ptr %s, %s", same, a, b)
+	lenL, endL := g.newLabel("eq.len"), g.newLabel("eq.end")
+	g.emit("store i1 %s, ptr %s", same, res)
+	g.emitTerm("br i1 %s, label %%%s, label %%%s", same, endL, lenL)
+	g.placeLabel(lenL)
+	na := g.newTmp()
+	g.emit("%s = call i64 @veles_list_len(ptr %s)", na, a)
+	nb := g.newTmp()
+	g.emit("%s = call i64 @veles_list_len(ptr %s)", nb, b)
+	sameLen := g.newTmp()
+	g.emit("%s = icmp eq i64 %s, %s", sameLen, na, nb)
+	condL, bodyL, nextL := g.newLabel("eq.cond"), g.newLabel("eq.body"), g.newLabel("eq.next")
+	i := g.alloca("i64")
+	g.emit("store i64 0, ptr %s", i)
+	g.emitTerm("br i1 %s, label %%%s, label %%%s", sameLen, condL, endL)
+	g.placeLabel(condL)
+	iv := g.newTmp()
+	g.emit("%s = load i64, ptr %s", iv, i)
+	more := g.newTmp()
+	g.emit("%s = icmp slt i64 %s, %s", more, iv, na)
+	// past the end with every pair equal: true
+	g.emit("store i1 true, ptr %s", res)
+	g.emitTerm("br i1 %s, label %%%s, label %%%s", more, bodyL, endL)
+	g.placeLabel(bodyL)
+	ell := g.llType(elem)
+	pa := g.newTmp()
+	g.emit("%s = call ptr @veles_list_ref(ptr %s, i64 %s)", pa, a, iv)
+	pb := g.newTmp()
+	g.emit("%s = call ptr @veles_list_ref(ptr %s, i64 %s)", pb, b, iv)
+	xa := g.newTmp()
+	g.emit("%s = load %s, ptr %s", xa, ell, pa)
+	xb := g.newTmp()
+	g.emit("%s = load %s, ptr %s", xb, ell, pb)
+	e := g.equal(elem, xa, xb)
+	g.emit("store i1 %s, ptr %s", e, res)
+	g.emitTerm("br i1 %s, label %%%s, label %%%s", e, nextL, endL)
+	g.placeLabel(nextL)
+	inc := g.newTmp()
+	g.emit("%s = add i64 %s, 1", inc, iv)
+	g.emit("store i64 %s, ptr %s", inc, i)
+	g.emitTerm("br label %%%s", condL)
+	g.placeLabel(endL)
+	v := g.newTmp()
+	g.emit("%s = load i1, ptr %s", v, res)
+	return v
+}
+
+// eqMap is order-independent equality of two maps (or sets): the same
+// number of entries, and every key of a is in b with an equal value.
+func (g *gen) eqMap(t types.Type, a, b string) string {
+	kt, vt := keyValTypes(t)
+	_, isSet := t.(*types.Set)
+	res := g.alloca("i1")
+	same := g.newTmp()
+	g.emit("%s = icmp eq ptr %s, %s", same, a, b)
+	g.emit("store i1 %s, ptr %s", same, res)
+	lenL, endL := g.newLabel("eq.len"), g.newLabel("eq.end")
+	g.emitTerm("br i1 %s, label %%%s, label %%%s", same, endL, lenL)
+	g.placeLabel(lenL)
+	na := g.newTmp()
+	g.emit("%s = call i64 @veles_map_len(ptr %s)", na, a)
+	nb := g.newTmp()
+	g.emit("%s = call i64 @veles_map_len(ptr %s)", nb, b)
+	sameLen := g.newTmp()
+	g.emit("%s = icmp eq i64 %s, %s", sameLen, na, nb)
+	condL, bodyL, liveL, nextL := g.newLabel("eq.cond"), g.newLabel("eq.body"), g.newLabel("eq.live"), g.newLabel("eq.next")
+	used := g.newTmp()
+	g.emit("%s = call i64 @veles_map_used(ptr %s)", used, a)
+	i := g.alloca("i64")
+	g.emit("store i64 0, ptr %s", i)
+	g.emitTerm("br i1 %s, label %%%s, label %%%s", sameLen, condL, endL)
+	g.placeLabel(condL)
+	iv := g.newTmp()
+	g.emit("%s = load i64, ptr %s", iv, i)
+	more := g.newTmp()
+	g.emit("%s = icmp slt i64 %s, %s", more, iv, used)
+	g.emit("store i1 true, ptr %s", res)
+	g.emitTerm("br i1 %s, label %%%s, label %%%s", more, bodyL, endL)
+	g.placeLabel(bodyL)
+	live := g.newTmp()
+	g.emit("%s = call i1 @veles_map_live(ptr %s, i64 %s)", live, a, iv)
+	g.emitTerm("br i1 %s, label %%%s, label %%%s", live, liveL, nextL)
+	g.placeLabel(liveL)
+	kp := g.newTmp()
+	g.emit("%s = call ptr @veles_map_key_at(ptr %s, i64 %s)", kp, a, iv)
+	k := g.newTmp()
+	g.emit("%s = load %s, ptr %s", k, g.llType(kt), kp)
+	h := g.hash(kt, k)
+	idx := g.newTmp()
+	g.emit("%s = call i64 @veles_map_find(ptr %s, i64 %s, ptr %s, ptr @%s)", idx, b, h, kp, g.eqPtrHelper(kt))
+	found := g.newTmp()
+	g.emit("%s = icmp sge i64 %s, 0", found, idx)
+	g.emit("store i1 %s, ptr %s", found, res)
+	if isSet {
+		g.emitTerm("br i1 %s, label %%%s, label %%%s", found, nextL, endL)
+	} else {
+		valL := g.newLabel("eq.val")
+		g.emitTerm("br i1 %s, label %%%s, label %%%s", found, valL, endL)
+		g.placeLabel(valL)
+		vll := g.llType(vt)
+		vpa := g.newTmp()
+		g.emit("%s = call ptr @veles_map_val_at(ptr %s, i64 %s)", vpa, a, iv)
+		vpb := g.newTmp()
+		g.emit("%s = call ptr @veles_map_val_at(ptr %s, i64 %s)", vpb, b, idx)
+		va := g.newTmp()
+		g.emit("%s = load %s, ptr %s", va, vll, vpa)
+		vb := g.newTmp()
+		g.emit("%s = load %s, ptr %s", vb, vll, vpb)
+		e := g.equal(vt, va, vb)
+		g.emit("store i1 %s, ptr %s", e, res)
+		g.emitTerm("br i1 %s, label %%%s, label %%%s", e, nextL, endL)
+	}
+	g.placeLabel(nextL)
+	inc := g.newTmp()
+	g.emit("%s = add i64 %s, 1", inc, iv)
+	g.emit("store i64 %s, ptr %s", inc, i)
+	g.emitTerm("br label %%%s", condL)
+	g.placeLabel(endL)
+	v := g.newTmp()
+	g.emit("%s = load i1, ptr %s", v, res)
+	return v
 }
 
 func (g *gen) eqFields(llt, a, b string, fields []types.Type) string {

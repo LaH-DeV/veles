@@ -1604,3 +1604,43 @@ struct Acc { n: i64 = 0 }
 fun make(): Acc = Acc()
 fun main() { make().n = 1 }`, "field of a temporary value")
 }
+
+// Collections compare by content (D25, v0.26) whenever their elements do,
+// across the mutable and immutable views; an immutable collection of
+// hashable elements is a key, a mutable one is not.
+func TestCollectionEquality(t *testing.T) {
+	expectClean(t, prelude+`
+struct P { tags: List<string> }
+fun main() {
+  val xs: MutableList<i64> = [1]
+  val ys = [1]
+  val m: MutableMap<string, List<i64>> = [:]
+  var keyed: MutableMap<List<i64>, string> = [:]
+  keyed.set([1], "one")
+  val s: Set<Set<i64>> = [[1]]
+  io.println("${xs == ys} ${ys == xs} ${m == ["a": [1]]} ${P(tags: []) == P(tags: ["a"])} ${keyed.get([1])} ${s.contains([1])}")
+}`)
+	expectError(t, prelude+`
+fun main() {
+  var m: MutableMap<MutableList<i64>, i64> = [:]
+  io.println("${m.len()}")
+}`, "MutableList can change after it is stored")
+	expectError(t, prelude+`
+fun main() {
+  val a = [() => 1]
+  io.println("${a == a}")
+}`, "cannot be compared")
+}
+
+// `?.` on a value that is nullable twice (`xs.at(i)` on a `List<T?>`)
+// flattens the levels: null at either level is null (D30).
+func TestSafeAccessOnNestedNullable(t *testing.T) {
+	expectClean(t, prelude+`
+struct W { inner: i64?; fun show(): string = "w" }
+fun main() {
+  val ws: List<W?> = [null, W(inner: 3)]
+  val m: Map<string, W?> = ["a": null]
+  val deep: ((i64?)?)? = 4
+  io.println("${ws.at(1)?.inner} ${ws.at(0)?.show()} ${m.get("a")?.inner} ${deep?.abs()}")
+}`)
+}

@@ -163,6 +163,19 @@ func (f *fnCtx) elemSafePlace(x ast.Expr) (sp *safePlace, recv Expr) {
 	}
 	base := f.checkExpr(m.X, nil)
 	span := call.Pos
+	// an element that is itself nullable (`List<T?>`, `Map<K, V?>`): the
+	// place would be a `T?`, so `?.` goes through the ordinary call, whose
+	// chain flattens the two levels (flattenNullable)
+	if lt, isList := base.Type().(*types.List); isList {
+		if _, elemNullable := lt.Elem.(*types.Nullable); elemNullable {
+			return nil, f.dispatchMethod(base, m, nil, call, nil)
+		}
+	}
+	if mt, isMap := base.Type().(*types.Map); isMap {
+		if _, valNullable := mt.Value.(*types.Nullable); valNullable && m.Name.Name == "get" {
+			return nil, f.dispatchMethod(base, m, nil, call, nil)
+		}
+	}
 	if mt, isMap := base.Type().(*types.Map); isMap && m.Name.Name == "get" {
 		k := f.checkExprTo(call.Args[0].Value, mt.Key)
 		slot := f.newTemp(&types.Nullable{Elem: &types.Pointer{Elem: mt.Value}})

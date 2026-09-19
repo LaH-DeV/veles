@@ -127,7 +127,9 @@ A struct or sealed type has structural equality, hashing and
 `Name(field: value)` text by default and replaces any of them with an
 impl. `compareTo` is negative, zero or positive. Numbers and strings
 implement `Comparable` (so `T: Comparable` bounds accept them); the
-built-in types otherwise keep their own behaviour. A type with
+built-in types otherwise keep their own behaviour: lists, maps and sets
+compare by content (`[1, 2] == [1, 2]`, a map equals a map with the same
+entries in any order) whenever their elements do. A type with
 `Equatable` needs `Hashable` to be a map key.
 
 ### Parsable
@@ -299,7 +301,8 @@ fields.
 ### `Range<T>`
 
 Fields `lo`, `hi`, `inclusive`; iterable. `len()`, `contains(x)`, `step(n)` and
-`reversed()` (the last two are iterators: `(1..10).step(3).toList()`).
+`reversed()` (the last two are iterators that combine either way:
+`(1..10).step(3).toList()`, `(0..10).reversed().step(3)` is 10, 7, 4, 1).
 
 ### Numbers
 

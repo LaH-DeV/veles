@@ -248,11 +248,12 @@ func (g *gen) hash(t types.Type, v string) string {
 			}
 		}
 		return out
-	case *types.Pointer, *types.List:
+	case *types.Pointer:
 		out := g.newTmp()
 		g.emit("%s = ptrtoint ptr %s to i64", out, v)
 		return out
 	}
+	// collections hash over their elements, matching their `==` (v0.26)
 	name := g.hashHelper(t)
 	out := g.newTmp()
 	g.emit("%s = call i64 @%s(%s %s)", out, name, g.llType(t), v)
@@ -292,8 +293,24 @@ func (g *gen) hashBody(t types.Type, v string) string {
 	switch tt := t.(type) {
 	case *types.Nullable:
 		if isPtrLike(tt.Elem) {
+			if _, isPtr := tt.Elem.(*types.Pointer); isPtr {
+				out := g.newTmp()
+				g.emit("%s = ptrtoint ptr %s to i64", out, v)
+				return out
+			}
+			// a nullable collection: 0 for null, else the collection's hash
+			res := g.alloca("i64")
+			g.emit("store i64 0, ptr %s", res)
+			isNull := g.newTmp()
+			g.emit("%s = icmp eq ptr %s, null", isNull, v)
+			some, end := g.newLabel("hash.some"), g.newLabel("hash.end")
+			g.emitTerm("br i1 %s, label %%%s, label %%%s", isNull, end, some)
+			g.placeLabel(some)
+			g.emit("store i64 %s, ptr %s", g.mix("1", g.hash(tt.Elem, v)), res)
+			g.emitTerm("br label %%%s", end)
+			g.placeLabel(end)
 			out := g.newTmp()
-			g.emit("%s = ptrtoint ptr %s to i64", out, v)
+			g.emit("%s = load i64, ptr %s", out, res)
 			return out
 		}
 		tag := g.newTmp()
@@ -323,8 +340,101 @@ func (g *gen) hashBody(t types.Type, v string) string {
 		return g.hashTagged(llt, v, func(i int) types.Type { return tt.Variants[i] }, len(tt.Variants))
 	case *types.ErrorUnion:
 		return g.hashTagged(llt, v, func(i int) types.Type { return tt.Members[i] }, len(tt.Members))
+	case *types.List:
+		return g.hashList(tt.Elem, v)
+	case *types.Map, *types.Set:
+		return g.hashMap(t, v)
 	}
 	return "0"
+}
+
+// hashList folds the element hashes in order, seeded with the length.
+func (g *gen) hashList(elem types.Type, v string) string {
+	n := g.newTmp()
+	g.emit("%s = call i64 @veles_list_len(ptr %s)", n, v)
+	acc := g.alloca("i64")
+	g.emit("store i64 %s, ptr %s", g.mix("17", n), acc)
+	i := g.alloca("i64")
+	g.emit("store i64 0, ptr %s", i)
+	condL, bodyL, endL := g.newLabel("hash.cond"), g.newLabel("hash.body"), g.newLabel("hash.end")
+	g.emitTerm("br label %%%s", condL)
+	g.placeLabel(condL)
+	iv := g.newTmp()
+	g.emit("%s = load i64, ptr %s", iv, i)
+	more := g.newTmp()
+	g.emit("%s = icmp slt i64 %s, %s", more, iv, n)
+	g.emitTerm("br i1 %s, label %%%s, label %%%s", more, bodyL, endL)
+	g.placeLabel(bodyL)
+	p := g.newTmp()
+	g.emit("%s = call ptr @veles_list_ref(ptr %s, i64 %s)", p, v, iv)
+	x := g.newTmp()
+	g.emit("%s = load %s, ptr %s", x, g.llType(elem), p)
+	cur := g.newTmp()
+	g.emit("%s = load i64, ptr %s", cur, acc)
+	g.emit("store i64 %s, ptr %s", g.mix(cur, g.hash(elem, x)), acc)
+	inc := g.newTmp()
+	g.emit("%s = add i64 %s, 1", inc, iv)
+	g.emit("store i64 %s, ptr %s", inc, i)
+	g.emitTerm("br label %%%s", condL)
+	g.placeLabel(endL)
+	out := g.newTmp()
+	g.emit("%s = load i64, ptr %s", out, acc)
+	return out
+}
+
+// hashMap sums the entry hashes so that the result does not depend on
+// insertion order, which `==` ignores too.
+func (g *gen) hashMap(t types.Type, v string) string {
+	kt, vt := keyValTypes(t)
+	_, isSet := t.(*types.Set)
+	n := g.newTmp()
+	g.emit("%s = call i64 @veles_map_len(ptr %s)", n, v)
+	used := g.newTmp()
+	g.emit("%s = call i64 @veles_map_used(ptr %s)", used, v)
+	acc := g.alloca("i64")
+	g.emit("store i64 %s, ptr %s", g.mix("23", n), acc)
+	i := g.alloca("i64")
+	g.emit("store i64 0, ptr %s", i)
+	condL, bodyL, liveL, nextL, endL := g.newLabel("hash.cond"), g.newLabel("hash.body"), g.newLabel("hash.live"), g.newLabel("hash.next"), g.newLabel("hash.end")
+	g.emitTerm("br label %%%s", condL)
+	g.placeLabel(condL)
+	iv := g.newTmp()
+	g.emit("%s = load i64, ptr %s", iv, i)
+	more := g.newTmp()
+	g.emit("%s = icmp slt i64 %s, %s", more, iv, used)
+	g.emitTerm("br i1 %s, label %%%s, label %%%s", more, bodyL, endL)
+	g.placeLabel(bodyL)
+	live := g.newTmp()
+	g.emit("%s = call i1 @veles_map_live(ptr %s, i64 %s)", live, v, iv)
+	g.emitTerm("br i1 %s, label %%%s, label %%%s", live, liveL, nextL)
+	g.placeLabel(liveL)
+	kp := g.newTmp()
+	g.emit("%s = call ptr @veles_map_key_at(ptr %s, i64 %s)", kp, v, iv)
+	k := g.newTmp()
+	g.emit("%s = load %s, ptr %s", k, g.llType(kt), kp)
+	h := g.hash(kt, k)
+	if !isSet {
+		vp := g.newTmp()
+		g.emit("%s = call ptr @veles_map_val_at(ptr %s, i64 %s)", vp, v, iv)
+		val := g.newTmp()
+		g.emit("%s = load %s, ptr %s", val, g.llType(vt), vp)
+		h = g.mix(h, g.hash(vt, val))
+	}
+	cur := g.newTmp()
+	g.emit("%s = load i64, ptr %s", cur, acc)
+	sum := g.newTmp()
+	g.emit("%s = add i64 %s, %s", sum, cur, h)
+	g.emit("store i64 %s, ptr %s", sum, acc)
+	g.emitTerm("br label %%%s", nextL)
+	g.placeLabel(nextL)
+	inc := g.newTmp()
+	g.emit("%s = add i64 %s, 1", inc, iv)
+	g.emit("store i64 %s, ptr %s", inc, i)
+	g.emitTerm("br label %%%s", condL)
+	g.placeLabel(endL)
+	out := g.newTmp()
+	g.emit("%s = load i64, ptr %s", out, acc)
+	return out
 }
 
 func (g *gen) hashFields(llt, v string, fields []types.Type) string {

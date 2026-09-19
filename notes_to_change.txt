@@ -555,3 +555,24 @@ M6b. examples/algorithms review pass (2026-09-18, user asked: use the language's
      / `mutableListOf<i64>()` free-function family — see the reply of 2026-09-18; not adopted
      for now (would imply `mutableListOf(1, 2, 3)` and the `listOf`/`mapOf` family, i.e. the
      std naming plan that is deferred until the language is stable).
+
+--- 2026-09-19 (bug-review pass; decisions by user) ---
+R1. FIXED: compound assignment evaluated the index/key/pointer twice (`hoistPlace`); `f64 as
+    i64` saturates (was LLVM poison); release `MIN / -1` wraps (was a trap); checker hang on a
+    struct named like a builtin (`struct string { op: string }`, fuzz find; cycle guards in
+    unhashable/comparable/sendable); `if (c) stmt` arm body ate the next `else =>`; formatter
+    `=>` alignment spans a whole `when` across block arms; `veles_map_copy` NULL eq on a hash
+    collision; `ptrOf(h).n = 5` (field behind a pointer a call returns) is writable.
+R2. DONE (2026-09-19): structural `==` on List/Map/Set of comparable elements (built-in types get
+    Equatable by default); `if (c)` / `else` may be followed by a newline in expression position;
+    `reversed().step(n)` on ranges; nested-nullable diagnostics say so; float text drops the
+    exponent's leading zero (`1e-7`, JS style).
+R3. Platforms: Windows is the test platform now; Linux next, then macOS — every runtime binding
+    must work on all three. Windows text bindings (args, env, cwd, listDir, file paths) must go
+    through the wide (UTF-16) APIs so non-ASCII names stay valid UTF-8 (D18).
+R4. PLANNED (user, 2026-09-19): an HTTP server — the language needs the features for it (sockets,
+    bytes I/O, a threaded or async executor, timeouts, a request/response model, maybe TLS
+    later). Expect it to surface many things to add or fix; treat it as the next big proving
+    program after the mid-size ones.
+R5. Examples (small and mid-size) must DO something useful — real use cases, not demonstrations
+    of syntax: a tool someone would run (todo CLI, log analyser, file dedup, ...).

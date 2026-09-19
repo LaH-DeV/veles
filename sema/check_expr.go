@@ -571,6 +571,7 @@ func (f *fnCtx) symbolValue(sym *Symbol, span source.Span, want types.Type) Expr
 // fieldAccess handles `x.name` and `x?.name` on values; auto-derefs (D39).
 func (f *fnCtx) fieldAccess(x Expr, e *ast.MemberExpr, want types.Type) Expr {
 	if e.Safe {
+		x = f.flattenNullable(x)
 		nt, ok := x.Type().(*types.Nullable)
 		if !ok {
 			f.errorf(e.Pos, "'?.' on a non-nullable value of type '%s'; use '.'", x.Type())
@@ -595,6 +596,27 @@ func (f *fnCtx) fieldAccess(x Expr, e *ast.MemberExpr, want types.Type) Expr {
 		return &Let{exprBase{rt}, tmp, x, body}
 	}
 	return f.fieldOf(x, e.Name, e.Pos)
+}
+
+// flattenNullable turns a value nullable more than once (`T??`, as
+// `xs.at(i)` yields on a `List<T?>`) into a `T?` for a `?.` chain: null at
+// any level is null (D30: the chain's type is `T?`).
+func (f *fnCtx) flattenNullable(x Expr) Expr {
+	for {
+		nt, ok := x.Type().(*types.Nullable)
+		if !ok {
+			return x
+		}
+		inner, nested := nt.Elem.(*types.Nullable)
+		if !nested {
+			return x
+		}
+		tmp := f.newTemp(nt)
+		body := &If{exprBase{inner}, &IsNull{exprBase{types.TBool}, &VarRef{exprBase{nt}, tmp}},
+			&Block{Value: &NullConst{exprBase{inner}}, Type: inner},
+			&Block{Value: &Unwrap{exprBase{inner}, &VarRef{exprBase{nt}, tmp}}, Type: inner}}
+		x = &Let{exprBase{inner}, tmp, x, body}
+	}
 }
 
 func (f *fnCtx) fieldOf(x Expr, name ast.Ident, span source.Span) Expr {
@@ -1038,9 +1060,11 @@ func (f *fnCtx) equality(e *ast.BinaryExpr, op BinOp) Expr {
 	var l, r Expr
 	if isLiteralExpr(e.L) && !isLiteralExpr(e.R) {
 		r = f.checkExpr(e.R, nil)
+		r = f.immutableView(r)
 		l = f.checkExprTo(e.L, r.Type())
 	} else {
 		l = f.checkExpr(e.L, nil)
+		l = f.immutableView(l)
 		r = f.checkExprTo(e.R, l.Type())
 	}
 	t := l.Type()
@@ -1052,6 +1076,17 @@ func (f *fnCtx) equality(e *ast.BinaryExpr, op BinOp) Expr {
 		return bad()
 	}
 	return &Binary{exprBase{types.TBool}, op, l, r, e.Pos}
+}
+
+// immutableView coerces a mutable collection to its read-only view, so
+// that `==` compares a MutableList with a List (they share one layout and
+// one element-wise equality).
+func (f *fnCtx) immutableView(x Expr) Expr {
+	views := receiverViews(x.Type())
+	if len(views) == 1 {
+		return x
+	}
+	return f.coerce(x, views[1], source.Span{})
 }
 
 // comparable reports whether `==` is defined for t: structural equality
@@ -1106,6 +1141,13 @@ func (f *fnCtx) comparableIn(t types.Type, seen map[types.Type]bool) bool {
 			}
 		}
 		return true
+	case *types.List:
+		// collections compare element-wise (D25, v0.26)
+		return f.comparableIn(t.Elem, seen)
+	case *types.Set:
+		return f.comparableIn(t.Elem, seen)
+	case *types.Map:
+		return f.comparableIn(t.Key, seen) && f.comparableIn(t.Value, seen)
 	}
 	return false
 }

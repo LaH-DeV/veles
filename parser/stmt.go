@@ -39,6 +39,14 @@ func (p *Parser) parseBodyOrStmt() *ast.Block {
 	if p.at(lexer.LBrace) {
 		return p.parseBlock()
 	}
+	// the body may start on the next line (`if (c)` newline `a`), as in
+	// Kotlin; the line break is not the end of the statement
+	if p.at(lexer.Semi) && p.cur().AutoSemi && p.peek(1).Kind != lexer.RBrace && p.peek(1).Kind != lexer.EOF {
+		p.next()
+		if p.at(lexer.LBrace) {
+			return p.parseBlock()
+		}
+	}
 	start := p.span()
 	s := p.parseStmt()
 	return &ast.Block{Stmts: []ast.Stmt{s}, Pos: p.spanFrom(start)}

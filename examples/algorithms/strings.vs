@@ -20,7 +20,7 @@ pub fun isPalindrome(s: string): bool {
 
 /// Two words are anagrams when their sorted characters agree.
 pub fun isAnagram(a: string, b: string): bool =
-  a.toLower().chars().sorted().join("") == b.toLower().chars().sorted().join("")
+  a.toLower().chars().sorted() == b.toLower().chars().sorted()
 
 /// Word frequencies, insertion-ordered (D25: maps keep insertion order).
 pub fun wordCounts(text: string): Map<string, i64> {

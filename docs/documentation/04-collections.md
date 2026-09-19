@@ -130,8 +130,11 @@ change the value stored in the map, not a copy of it (chapter 6 has the
 full story).
 
 Keys must be **hashable**: numbers, strings, booleans, tuples of those,
-and structs whose fields are (structs get equality and hashing for
-free).
+structs whose fields are (structs get equality and hashing for free),
+and immutable lists, maps and sets of hashable elements — `m.get([1, 2])`
+finds a key stored as `[1, 2]`, because collections compare by content
+(`[1, 2] == [1, 2]` is true; a set or map ignores insertion order). A
+`MutableList` cannot be a key: it could change after it was stored.
 
 ## Sets
 

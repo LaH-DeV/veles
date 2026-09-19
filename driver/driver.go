@@ -127,6 +127,8 @@ func Run(opts Options) int {
 	args = append(args, codegenFlags(opts.Release)...)
 	if runtime.GOOS != "windows" {
 		args = append(args, "-lm") // tan, atan2, hypot: libm is separate outside the UCRT
+	} else {
+		args = append(args, "-lshell32") // CommandLineToArgvW: UTF-16 process arguments (veles_os.c)
 	}
 	cmd := exec.Command(clang, args...)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr

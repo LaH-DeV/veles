@@ -1990,9 +1990,22 @@ func (c *Checker) unhashableIn(t types.Type, seen map[types.Type]bool) string {
 		return ""
 	case *types.List:
 		if t.Mutable {
-			return structural
+			return "a MutableList can change after it is stored; use an immutable List"
 		}
 		return c.unhashableIn(t.Elem, seen)
+	case *types.Set:
+		if t.Mutable {
+			return "a MutableSet can change after it is stored; use an immutable Set"
+		}
+		return c.unhashableIn(t.Elem, seen)
+	case *types.Map:
+		if t.Mutable {
+			return "a MutableMap can change after it is stored; use an immutable Map"
+		}
+		if r := c.unhashableIn(t.Key, seen); r != "" {
+			return r
+		}
+		return c.unhashableIn(t.Value, seen)
 	}
 	return structural
 }

@@ -555,6 +555,7 @@ func (f *fnCtx) methodCall(callee *ast.MemberExpr, typeArgs []types.Type, e *ast
 		return bad()
 	}
 	if callee.Safe {
+		recv = f.flattenNullable(recv)
 		nt, ok := recv.Type().(*types.Nullable)
 		if !ok {
 			f.errorf(callee.Pos, "'?.' on a non-nullable value of type '%s'; use '.'", recv.Type())

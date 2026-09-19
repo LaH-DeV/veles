@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.24** — language design complete. Every open question in the language itself is closed. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
+**Working draft v0.26** — language design complete. Every open question in the language itself is closed. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -404,6 +404,8 @@ A bare `[1, 2, 3]` with no expected type is a `List`. A growable collection ther
 
 *Amended (v0.25) — Deque and PriorityQueue.* The prelude adds `Deque<T>` (a ring buffer: O(1) at both ends, the FIFO queue and the sliding window) and `PriorityQueue<T>` (a binary heap over `Comparable` or a comparator), constructed by `deque<T>()`, `priorityQueue<T>()` and `priorityQueueBy(compare)`. Both are plain Veles (`std/prelude/collections.vs`) and have the reference semantics of this section, obtained by holding their state behind a GC pointer (D31): a `val` binding can grow them and a callee shares the caller's. `MutableList` serves as the stack. `MutableList<T>.fill(n, x)` and `.make(n, make)` build a list of known size; `swap(i, j)` exchanges two elements.
 
+*Amended (v0.26) — collections compare by content.* `==` on `List`, `Map` and `Set` (and their mutable views, which compare with each other) is element-wise: two lists are equal when they have the same elements in the same order, two maps when they hold the same keys with equal values, two sets when they hold the same elements — insertion order is not part of a map or set. It is defined whenever the elements are (structurally or through `Equatable`), so a struct with a `List` field keeps its structural equality. Hashing follows: an immutable `List`, `Map` or `Set` of hashable elements can be a map key or set element and is found by content; the mutable views cannot be keys, since they can change after they are stored. Handles are still references (assigning shares, `==` compares) — the split between identity and equality that Kotlin and Python make.
+
 ### D26 — Trait methods are always callable; ambiguity is an error
 
 No import required to call a trait method. Under D17 there is only ever one impl per (trait, type) pair, so scoping is unnecessary for correctness — it would only serve to disambiguate two traits sharing a method name, which is reported as an error instead.
@@ -451,7 +453,7 @@ Noted tension: index iteration (`0..<arr.len()`) is the more common case and get
 
 Supplies a default for a `T?`: `counts.get(word) ?: 0`. Pairs with D5's smart casts.
 
-The safe-call `?.` is included: `a?.b?.c` short-circuits to `null` and the chain's type is `T?`.
+The safe-call `?.` is included: `a?.b?.c` short-circuits to `null` and the chain's type is `T?`. A receiver that is nullable more than once — `xs.at(i)` on a `List<T?>` is a `T??`, since a missing element and a stored `null` are different answers — is flattened by `?.`: `xs.at(i)?.f` is null when the index is out of range or the element is null, and `T??` values are otherwise kept apart (v0.26).
 
 ### D31 — Recursive data structures require indirection
 

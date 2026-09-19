@@ -66,7 +66,7 @@ val (a, b) = (1, "one")         // tuple destructuring; (a, b) = (b, a) assigns 
 if (c) a else b                       // expression
 loop { ... break }                    // forever
 loop (cond) { ... }                   // while
-loop (x in xs) { ... }                // any Iterable, Range, Map ((k, v) in m); (a..b).step(n), (a..b).reversed()
+loop (x in xs) { ... }                // any Iterable, Range, Map ((k, v) in m); (a..b).step(n), (a..b).reversed(), (a..b).reversed().step(n)
 loop :outer (x in xs) { continue outer; break outer }
 when (v) { 1 => "one"; 2, 3 => "few"; else => "many" }
 when { x < 0 => "neg"; else => "pos" }

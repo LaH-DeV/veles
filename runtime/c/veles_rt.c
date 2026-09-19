@@ -13,6 +13,9 @@
 #include <string.h>
 #include <stdbool.h>
 #include <inttypes.h>
+#if defined(_WIN32)
+#include <windows.h>
+#endif
 
 typedef struct {
     const char *data;
@@ -39,6 +42,11 @@ void veles_rt_init(int32_t argc, char **argv) {
     g_argc = argc;
     g_argv = argv;
     setvbuf(stdout, NULL, _IOLBF, 0);
+#if defined(_WIN32)
+    /* the console shows UTF-8 as such (D18); pipes and files are bytes anyway */
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+#endif
     veles_gc_init();
 }
 
@@ -274,6 +282,15 @@ static void float_to_string(veles_string *out, double v, int is_f32) {
                 memcpy(buf, tmp, (size_t)m + 1);
                 n = m;
             }
+        }
+    }
+    /* C pads the exponent to two digits (1e-07); print it plain (1e-7) */
+    e = strchr(buf, 'e');
+    if (e && (e[1] == '+' || e[1] == '-')) {
+        char *d = e + 2;
+        while (d[0] == '0' && d[1] >= '0' && d[1] <= '9') {
+            memmove(d, d + 1, strlen(d + 1) + 1);
+            n--;
         }
     }
     /* make sure it reads as a float */
