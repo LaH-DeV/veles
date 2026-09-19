@@ -107,10 +107,12 @@ bad input two
 `try` is only allowed in a function declared `throws`; using it
 elsewhere is an error that tells you exactly that.
 
-`try` is a prefix that covers the whole expression after it, so
-`try fs.readFile(p).lines()` asks for `lines()` on the `Result` and is refused;
-unwrap first with `(try fs.readFile(p)).lines()`, or bind the value on its
-own line.
+`try` is a prefix that covers the whole chain after it, which is what
+you want when the method belongs to the `Result` — `try parse(s).mapError(...)`,
+`try parse(s) ?! e`. When it does not, as in `try fs.readFile(p).lines()`,
+the compiler reads it as `(try fs.readFile(p)).lines()` and warns, with a
+fix that writes those parentheses (`veles check --fix`), so the source says
+what it does; or bind the value on its own line.
 
 ## Letting the compiler work out the error type
 

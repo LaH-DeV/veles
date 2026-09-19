@@ -48,6 +48,21 @@ func expectClean(t *testing.T, src string) {
 	}
 }
 
+// expectWarning wants no errors and a warning containing want.
+func expectWarning(t *testing.T, src, want string) {
+	t.Helper()
+	diags := checkSource(t, src)
+	if diags.HasErrors() {
+		t.Errorf("unexpected errors:\n%s", diags.Render())
+	}
+	for _, d := range diags.Items {
+		if d.Severity == source.Warning && strings.Contains(d.Message, want) {
+			return
+		}
+	}
+	t.Errorf("expected a warning containing %q, got:\n%s", want, diags.Render())
+}
+
 const prelude = "use io\n"
 
 func TestSpecRules(t *testing.T) {
@@ -2188,4 +2203,22 @@ fun main() {
   val d = handler(p => { if (p == "t") throw Fail(status: 418, text: "tea"); throw Boom(n: 1) })
   io.println("${a("x")} ${b("x")} ${c("x")} ${d("t")}")
 }`)
+}
+
+func TestTryChainLint(t *testing.T) {
+	// `try f().m()` with m not a Result method reads as `(try f()).m()`,
+	// with a warning and the fix that writes the parentheses
+	src := prelude + `
+error Bad { }
+fun text(): string throws Bad = "  hi  "
+fun a(): string throws Bad = try text().trim()
+fun main() { io.println("${a()}") }`
+	expectWarning(t, src, "read as '(try text()).trim(...)'")
+	// a Result method still applies to the Result, silently
+	expectClean(t, prelude+`
+error Bad { }
+error Worse { }
+fun text(): string throws Bad = "hi"
+fun d(): string throws Worse = try text().mapError(e => Worse())
+fun main() { io.println("${d()}") }`)
 }

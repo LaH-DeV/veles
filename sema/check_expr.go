@@ -1378,7 +1378,84 @@ func (f *fnCtx) castExpr(e *ast.CastExpr) Expr {
 }
 
 func (f *fnCtx) tryExpr(e *ast.TryExpr) Expr {
+	if x, done := f.tryChain(e); done {
+		return x
+	}
 	x := f.checkExpr(e.X, nil)
+	return f.tryOn(x, e.Pos)
+}
+
+// tryChain handles `try f().m(...)` where `f()` is a Result and `m` is not
+// a method of Result: `try` covers the whole chain by grammar, so `m`
+// would be looked up on the Result and fail. What was meant is
+// `(try f()).m(...)`, and that is what this checks — with a warning and
+// the fix that writes the parentheses, so the source says what it does.
+// Only a call or member chain qualifies as the receiver (a bare name may
+// be a type, and `try r.m()` on a Result variable stays as it reads).
+func (f *fnCtx) tryChain(e *ast.TryExpr) (Expr, bool) {
+	call, ok := e.X.(*ast.CallExpr)
+	if !ok || call.Async {
+		return nil, false
+	}
+	mem, ok := call.Fun.(*ast.MemberExpr)
+	if !ok || mem.Safe {
+		return nil, false
+	}
+	switch mem.X.(type) {
+	case *ast.CallExpr, *ast.MemberExpr:
+	default:
+		return nil, false
+	}
+	if mx, isMember := mem.X.(*ast.MemberExpr); isMember && f.moduleTypeNamed(mx) != nil {
+		return nil, false
+	}
+	recv := f.checkExpr(mem.X, nil)
+	var typeArgs []types.Type
+	for _, ta := range call.TypeArgs {
+		typeArgs = append(typeArgs, f.resolve(ta))
+	}
+	rs, isSealed := recv.Type().(*types.Sealed)
+	if !isSealed || !isResultType(rs) || f.hasMethod(rs, mem.Name.Name) {
+		// the ordinary reading: the method applies to what f() returned
+		return f.tryOn(f.dispatchMethod(recv, mem, typeArgs, call, nil), e.Pos), true
+	}
+	span := source.Span{File: e.Pos.File, Start: e.Pos.Start, End: mem.X.Span().End}
+	f.warnFix(e.Pos, fixReplace("Write '(try ...)' around the call", span, "(try "+srcText(mem.X)+")"),
+		"'try' covers the whole chain, but '%s' is not a method of '%s'; read as '(try %s).%s(...)' — write the parentheses", mem.Name.Name, rs, srcText(mem.X), mem.Name.Name)
+	unwrapped := f.tryOn(recv, e.Pos)
+	if types.IsInvalid(unwrapped.Type()) {
+		f.checkArgsLoosely(call.Args)
+		return bad(), true
+	}
+	return f.dispatchMethod(unwrapped, mem, typeArgs, call, nil), true
+}
+
+// hasMethod reports whether a method of that name applies to the type
+// through an extend block or a trait impl (a Result has no built-ins).
+func (f *fnCtx) hasMethod(rt types.Type, name string) bool {
+	for _, view := range receiverViews(rt) {
+		for _, ext := range f.c.extends {
+			if _, ok := ext.Methods[name]; ok && unify(ext.Target, view, map[*types.TypeParam]types.Type{}) {
+				return true
+			}
+		}
+	}
+	for trait, impls := range f.c.impls {
+		if _, has := trait.Methods[name]; !has {
+			continue
+		}
+		for _, impl := range impls {
+			if unify(impl.Target, rt, map[*types.TypeParam]types.Type{}) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// tryOn applies `try` to a checked operand.
+func (f *fnCtx) tryOn(x Expr, pos source.Span) Expr {
+	e := struct{ Pos source.Span }{pos}
 	if errPolyCall(x) {
 		// generic code calling something declared `throws E`: in this
 		// instance E is Never, the call is plain (its value may itself be a

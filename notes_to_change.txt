@@ -856,3 +856,8 @@ R16. DONE (2026-09-19, the HTTP server; decisions by the user). std/http + examp
     NEXT: std/http (parser, Response, serve with keep-alive + withTimeout, Router with
     `{param}` paths, static files), unifier support for `throws E | Fail` expected types,
     examples/httpd testable with curl/browser + in-process test.
+R17. DONE (2026-09-19, user: "maybe lint for it for now"): `try f().m()` where `m` is not a
+    method of the Result (extend/impl lookup, `fnCtx.hasMethod`) now checks as `(try f()).m()`
+    with a WARNING + fix that writes the parentheses (`fnCtx.tryChain`; only call/member
+    chains qualify as the receiver, a bare name stays as it reads). A Result method
+    (`mapError`, `?!`) still applies to the Result silently. Docs 07 updated.
