@@ -66,6 +66,8 @@ func fuzzOne(t *testing.T, src string) {
 	if diags.HasErrors() {
 		t.Fatalf("formatted output does not parse:\n%s\n--- input ---\n%q\n--- output ---\n%s", diags.Render(), src, out)
 	}
+	normalizeUses(before)
+	normalizeUses(after)
 	if a, b := ast.Dump(before), ast.Dump(after); a != b {
 		t.Fatalf("formatting changed the syntax tree\n--- input ---\n%q\n--- output ---\n%s\n--- before ---\n%s\n--- after ---\n%s", src, out, a, b)
 	}

@@ -270,7 +270,9 @@ func (c *Checker) collect() {
 		for _, f := range m.Files {
 			for _, d := range f.Decls {
 				if u, ok := d.(*ast.UseDecl); ok {
-					c.declareUse(m, f, u)
+					for _, s := range u.Specs {
+						c.declareUse(m, f, s)
+					}
 				}
 			}
 		}
@@ -445,42 +447,13 @@ func (c *Checker) newTemplate(m *Module, f *ast.File, d *ast.FunDecl, owner *typ
 	return t
 }
 
-func (c *Checker) declareUse(m *Module, f *ast.File, u *ast.UseDecl) {
-	var path []string
-	for _, seg := range u.Path {
-		path = append(path, seg.Name)
-	}
-	key := strings.Join(path, "/")
+func (c *Checker) declareUse(m *Module, f *ast.File, u *ast.UseSpec) {
 	dep := m.Uses[u]
 	if dep == nil {
 		return // loader already reported
 	}
 	scope := m.Imports[f]
-	if u.Items != nil {
-		for _, it := range u.Items {
-			sym := dep.Scope.LookupLocal(it.Name.Name)
-			if sym == nil {
-				c.errorf(it.Name.Pos, "module '%s' has no declaration '%s'", key, it.Name.Name)
-				continue
-			}
-			if !sym.Pub {
-				c.errorf(it.Name.Pos, "'%s' is private to module '%s' (M5: add 'pub' to share it)", it.Name.Name, key)
-				continue
-			}
-			name := it.Name.Name
-			if it.Alias != nil {
-				name = it.Alias.Name
-			}
-			c.refSym(it.Name.Pos, sym)
-			alias := *sym
-			alias.Name = name
-			if old := scope.Insert(&alias); old != nil {
-				c.errorf(it.Name.Pos, "'%s' is imported twice", name)
-			}
-		}
-		return
-	}
-	name := path[len(path)-1]
+	name := u.Path[len(u.Path)-1].Name
 	if u.Alias != nil {
 		name = u.Alias.Name
 	}

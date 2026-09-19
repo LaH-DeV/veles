@@ -1735,3 +1735,15 @@ fun main() throws E {
   io.println("$n")
 }`, "write '(try f()).split(...)' to unwrap first")
 }
+
+// One `use` may list several imports (M6 addendum); each behaves as its
+// own import, including the "already imported" check.
+func TestUseList(t *testing.T) {
+	expectClean(t, `use io, os,
+  path as p
+fun main() {
+  io.println("${p.base(os.program())}")
+}`)
+	expectError(t, `use io, os, io
+fun main() { io.println("x") }`, "'io' is already imported in this file")
+}

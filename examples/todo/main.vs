@@ -6,11 +6,7 @@
 //
 // The file lives at $TODO_FILE, or todo.txt in the current directory. Tasks
 // are numbered by line; `todo help` lists the commands.
-use io
-use os
-use fs
-use path
-use time
+use fs, io, os, path, time
 
 error UsageError {
   message: string

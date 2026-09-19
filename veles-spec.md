@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.27** — language design complete. Every open question in the language itself is closed. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
+**Working draft v0.28** — language design complete. Every open question in the language itself is closed. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -144,6 +144,8 @@ Consequence: library authors get a deliberately curated public surface, consumer
 
 Resolved by the package manager against the manifest. No filesystem-relative string paths.
 
+*Addendum (v0.28) — modules only, one statement, many imports.* A `use` imports modules and nothing smaller: members are always qualified (`geometry.Point`, `io.println()`), and `use geometry as geo` renames the module when the prefix is long. The braced name-import form (`use geometry.{ Point as P, norm }`) is gone — Go's reasoning: a qualified name says at the use site where a thing comes from, two modules may both declare a `Point` with no renaming, and there is one way to write a call. A parameter or local named like a module shadows it (`fun mkdir(path: string)` cannot call `path.dir`); the answer is an alias at the import, not a name-import escape hatch. Type aliases (`type P = geo.Point`) are the remaining way to shorten a type name and are not in the language yet; add them if the prefix on types proves to hurt. `use` takes a comma-separated list: `use fs, io, os`, `use geometry as geo, shapes`; a comma at the end of a line continues the list. Import order and grouping carry no meaning, so the formatter owns them: consecutive `use` lines become one sorted list per origin — the standard library first, then everything else — one `use` statement each. Go groups its imports the same way (goimports), by convention rather than syntax: a separate spelling for standard-library imports would turn every move of a module between the library and a package into a source edit, and the compiler already knows which is which.
+
 ---
 
 ## 4. Syntax — provisional
@@ -151,8 +153,7 @@ Resolved by the package manager against the manifest. No filesystem-relative str
 Nothing here is locked. Current working sketch:
 
 ```vs
-use io
-use otherModule.{ someFunc }
+use io, otherModule
 
 fun main() throws {
   val sum = add(5, 7)
@@ -163,7 +164,7 @@ fun add(a: i32, b: i32) = a + b
 
 fun printSum(sum: i32) {
   io.println("The sum is $sum")
-  someFunc()
+  otherModule.someFunc()
 }
 
 // otherModule/funcs.vs

@@ -2,8 +2,7 @@
 ///
 /// Implemented on top of runtime/c/veles_os.c; every extern call is confined
 /// to one `unsafe` block (D44).
-use os
-use path.{ dir }
+use os, path as paths
 
 extern "C" {
   fun veles_fs_read_file(path: string, out: *raw string): i64
@@ -99,7 +98,7 @@ pub fun listDir(path: string): List<string> throws IoError {
 
 /// Creates the directory and any missing parents.
 pub fun mkdir(path: string) throws IoError {
-  val parent = dir(path)
+  val parent = paths.dir(path)
   if (!parent.isEmpty() && parent != path && !exists(parent)) try mkdir(parent)
   val code = unsafe {
     veles_fs_mkdir(path)

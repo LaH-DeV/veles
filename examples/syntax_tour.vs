@@ -1,7 +1,6 @@
 // A tour of the Veles surface syntax, taken from veles-spec.md.
 use io
-use otherModule.{ someFunc, other as o }
-use math.geometry as geo
+use math.geometry as geo, otherModule
 
 fun main() throws {
   val sum = add(5, 7)
@@ -12,7 +11,7 @@ fun add(a: i32, b: i32) = a + b
 
 fun printSum(sum: i32) {
   io.println("The sum is $sum and ${sum * 2}")
-  someFunc()
+  otherModule.someFunc()
 }
 
 // D12 — sealed traits

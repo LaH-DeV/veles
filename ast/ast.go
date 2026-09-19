@@ -139,17 +139,19 @@ type Attribute struct {
 	Pos  source.Span
 }
 
-// UseDecl is `use a.b`, `use a.b as c`, or `use a.b.{ x, y as z }`.
+// UseDecl is `use a, b.c as d`: one or more module imports in one
+// statement (M6). Modules are the only thing imported; their members are
+// always qualified (`geometry.Point`), and `as` renames the module.
 type UseDecl struct {
-	Path  []Ident
-	Alias *Ident
-	Items []UseItem // non-nil for the braced form
+	Specs []*UseSpec
 	Pos   source.Span
 }
 
-type UseItem struct {
-	Name  Ident
+// UseSpec is one import: `a.b` or `a.b as c`.
+type UseSpec struct {
+	Path  []Ident
 	Alias *Ident
+	Pos   source.Span
 }
 
 type TypeParam struct {

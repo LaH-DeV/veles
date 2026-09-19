@@ -1,9 +1,6 @@
 // std/fs, std/path, std/os and StringBuilder: a program that touches the
 // file system. Everything that can fail throws IoError (D4).
-use io
-use os
-use fs
-use path
+use fs, io, os, path
 
 fun main() throws IoError {
   val root = path.join(os.env("TEMP") ?: os.env("TMPDIR") ?: "/tmp", "veles-files-example")

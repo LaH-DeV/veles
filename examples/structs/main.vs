@@ -1,4 +1,4 @@
-use io.{ println }
+use io
 
 /**
  * A simple example of structs, including a recursive struct.
@@ -38,18 +38,18 @@ fun main() {
   val d = c.withStep(10)
   var e = d
   e.bump()
-  println("c=${c.get()} d=${d.get()} e=${e.get()}")
+  io.println("c=${c.get()} d=${d.get()} e=${e.get()}")
   val list = Node(value: 1, next: &Node(value: 2, next: &Node(value: 3, next: null)))
-  println("sum ${sum(&list)}")
+  io.println("sum ${sum(&list)}")
   val p = &c
   p.bump()
-  println("through pointer ${c.get()} ${p.n}")
+  io.println("through pointer ${c.get()} ${p.n}")
   val pair = (1, "two")
   val (x, y) = pair
-  println("tuple $x $y ${pair.1}")
+  io.println("tuple $x $y ${pair.1}")
   var xs: MutableList<i64> = []
   loop (i in 0..<5) {
     xs.push(i * i)
   }
-  println("squares ${xs} len ${xs.len()} last ${xs.atOrPanic(4)}")
+  io.println("squares ${xs} len ${xs.len()} last ${xs.atOrPanic(4)}")
 }

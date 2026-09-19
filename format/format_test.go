@@ -32,6 +32,8 @@ func checkRoundTrip(t *testing.T, name, src string) string {
 	if diags.HasErrors() {
 		t.Fatalf("%s: formatted output does not parse:\n%s\n--- output ---\n%s", name, diags.Render(), numbered(out))
 	}
+	normalizeUses(before)
+	normalizeUses(after)
 	if a, b := ast.Dump(before), ast.Dump(after); a != b {
 		t.Fatalf("%s: formatting changed the syntax tree\n--- before ---\n%s\n--- after ---\n%s\n--- output ---\n%s", name, a, b, numbered(out))
 	}
@@ -40,6 +42,33 @@ func checkRoundTrip(t *testing.T, name, src string) string {
 		t.Fatalf("%s: formatting is not idempotent\n--- first ---\n%s\n--- second ---\n%s", name, numbered(out), numbered(again))
 	}
 	return out
+}
+
+// normalizeUses merges every run of consecutive `use` declarations into one
+// sorted declaration. The formatter reorders imports (useRun), which is the
+// one change of syntax tree it is allowed: the meaning of a file does not
+// depend on the order or grouping of its imports.
+func normalizeUses(f *ast.File) {
+	var out []ast.Decl
+	for i := 0; i < len(f.Decls); i++ {
+		u, ok := f.Decls[i].(*ast.UseDecl)
+		if !ok {
+			out = append(out, f.Decls[i])
+			continue
+		}
+		merged := &ast.UseDecl{Specs: append([]*ast.UseSpec(nil), u.Specs...)}
+		for i+1 < len(f.Decls) {
+			next, ok := f.Decls[i+1].(*ast.UseDecl)
+			if !ok {
+				break
+			}
+			merged.Specs = append(merged.Specs, next.Specs...)
+			i++
+		}
+		SortUseSpecs(merged.Specs)
+		out = append(out, merged)
+	}
+	f.Decls = out
 }
 
 func numbered(s string) string {
@@ -189,8 +218,17 @@ func TestStyle(t *testing.T) {
 			"@test\nfun t() { }\n@deprecated(\"use g\")\npub fun f() { }\nextern \"C\" { fun strlen(s: *raw u8): i64\n  fun puts(s: string) }\n",
 			"@test\nfun t() { }\n@deprecated(\"use g\")\npub fun f() { }\nextern \"C\" {\n  fun strlen(s: *raw u8): i64\n  fun puts(s: string)\n}\n"},
 		{"use forms",
-			"use io\nuse geometry.{Point as P,norm}\nuse a.b as c\n",
-			"use io\nuse geometry.{ Point as P, norm }\nuse a.b as c\n"},
+			"use io\nuse geometry   as   geo\nuse a.b as c\n",
+			"use io\nuse a.b as c, geometry as geo\n"},
+		{"use block: merged, sorted, std first, blank lines dropped",
+			"use time\nuse shapes\nuse os,\n  io\n\nuse fs\n\nfun main() { }\n",
+			"use fs, io, os, time\nuse shapes\n\nfun main() { }\n"},
+		{"use block: a commented line stays as written, the rest is grouped",
+			"use os  // needed\nuse io\nuse fs\n",
+			"use os  // needed\nuse fs, io\n"},
+		{"use block: comments above and below are not inside it",
+			"// header\nuse os\nuse io\n// about main\nfun main() { }\n",
+			"// header\nuse io, os\n// about main\nfun main() { }\n"},
 		{"concurrency",
 			"fun main() {\n  scope {\n    val t = async work(1)\n    val (a, b) = gather { async f(); async g() }\n    val w = race { val m = ch.recv() => m; sleep(100) => \"t\" }\n    with (f = open(\"a\")) { process(f) }\n  }\n}\n",
 			"fun main() {\n  scope {\n    val t = async work(1)\n    val (a, b) = gather {\n      async f()\n      async g()\n    }\n    val w = race {\n      val m = ch.recv() => m\n      sleep(100)        => \"t\"\n    }\n    with (f = open(\"a\")) {\n      process(f)\n    }\n  }\n}\n"},

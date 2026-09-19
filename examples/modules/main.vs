@@ -1,8 +1,8 @@
-use io.{ println }
-use geometry.{ Point as P, distance, origin }
+use io
+use geometry as geo
 
 fun main() {
-  val p = P(x: 3.0, y: 4.0)
-  println("dist ${distance(p, origin())}")
-  println("origin ${origin()}")
+  val p = geo.Point(x: 3.0, y: 4.0)
+  io.println("dist ${geo.distance(p, geo.origin())}")
+  io.println("origin ${geo.origin()}")
 }

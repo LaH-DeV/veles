@@ -91,23 +91,13 @@ func (p *printer) effects(e Effects) {
 func (p *printer) decl(d Decl) {
 	switch d := d.(type) {
 	case *UseDecl:
-		p.w("(use ")
-		p.path(d.Path)
-		if d.Alias != nil {
-			p.w(" as " + d.Alias.Name)
-		}
-		if d.Items != nil {
-			p.w(" {")
-			for i, it := range d.Items {
-				if i > 0 {
-					p.w(", ")
-				}
-				p.w(it.Name.Name)
-				if it.Alias != nil {
-					p.w(" as " + it.Alias.Name)
-				}
+		p.w("(use")
+		for _, s := range d.Specs {
+			p.w(" ")
+			p.path(s.Path)
+			if s.Alias != nil {
+				p.w(" as " + s.Alias.Name)
 			}
-			p.w("}")
 		}
 		p.w(")")
 	case *FunDecl:

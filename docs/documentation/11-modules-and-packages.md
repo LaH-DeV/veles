@@ -22,25 +22,36 @@ myapp/
 
 ## Importing
 
-`use geometry` brings the module in under its own name; members are
-reached with a prefix. `use geometry.{ Point, norm }` imports names
-directly, and `as` renames:
+`use geometry` brings the module in under its own name, and its members
+are always reached through that name: `geometry.Point`, `geometry.norm()`.
+There is no way to import a single name — the prefix is the point (M6):
+at the use site it says where a thing comes from, and two modules may
+both have a `Point` without anyone renaming anything. When the prefix is
+long, rename the module with `as`. One `use` lists any number of
+imports, separated by commas:
 
 ```veles
 // fragment — main.vs, next to a geometry/ directory
 use io
-use geometry
-use geometry.{ Point as P, distance }
+use geometry as geo
 
 fun main() {
-  val p = P(x: 3.0, y: 4.0)
-  io.println("${distance(p, geometry.origin())}")
+  val p = geo.Point(x: 3.0, y: 4.0)
+  io.println("${geo.distance(p, geo.origin())}")
 }
 ```
+
+A parameter or local named like a module shadows it inside its scope
+(`fun mkdir(path: string)` cannot call `path.dir(path)`); rename the
+module at the import (`use path as paths`) when that happens.
 
 Import paths are logical, resolved by the compiler against the package
 (M6): never a file path, never a URL. Nested directories use dots:
 `use net.http`.
+
+The order of imports means nothing, so `veles fmt` decides it: consecutive
+`use` lines are merged into one sorted list per origin — standard library
+modules on one line, everything else on the next — as in the example above.
 
 Imports must form a DAG. If `a` uses `b` and `b` uses `a`, the compiler
 reports the cycle (M4) — merge them or move the shared part into a third

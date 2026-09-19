@@ -79,7 +79,7 @@ type Module struct {
 	Imports map[*ast.File]*Scope // per-file import scopes, parent = module scope
 	Deps    []*Module
 	Pkg     *Package
-	Uses    map[*ast.UseDecl]*Module // resolved imports, filled by the loader
+	Uses    map[*ast.UseSpec]*Module // resolved imports, filled by the loader
 	state   int                      // 0 unloaded, 1 loading, 2 loaded
 }
 

@@ -625,3 +625,20 @@ R8. DONE (2026-09-19, user decision): reads are VALUES, writes go through REFERE
     TO DECIDE: `xs.ref(i)?.tags.push(x)` is an error today (`?.` does not carry through `.tags`;
     Kotlin's rule, D30) — Swift propagates optional chaining through the rest of the chain so
     `a?.b.c()` works. User: "not sure yet" (2026-09-19).
+R9. DONE (2026-09-19, user decision): `use` takes a comma list — `use fs, io, os, path` — and
+    the formatter owns the import block: consecutive `use` lines are merged into one sorted
+    list per origin (std first, then everything else), one statement each, blank lines
+    dropped; a `use` line carrying a comment is left alone and the run restarts after it
+    (format.useRun; ast.UseDecl{Specs []*UseSpec}). No separate syntax for std vs external
+    imports (goimports-style convention instead; the compiler knows which is which). Spec M6
+    addendum v0.28; docs 11, cheatsheet, spec sketch; std/examples/docs reformatted.
+    DONE (2026-09-19, user decision, option "Go"): name imports are GONE — `use` imports
+    modules only, members are always qualified (`geo.Point`, `io.println()`), `use m as x`
+    renames the module. Alternatives weighed: Kotlin one-name-per-spec (`use geometry.Point
+    as P`), Python-style `use geometry: Point, norm`, other delimiters, wildcards. The parser
+    reports the old braced form with the qualify/alias hint. Consequence noted in the spec
+    addendum and docs 11: a parameter/local named like a module shadows it (std/fs had
+    `fun mkdir(path: string)` calling `dir` — now `use path as paths`); type aliases
+    (`type P = geo.Point`) do not exist yet and are the fallback if prefixed type names hurt.
+    Item 19's `pub use geometry.{ area, Circle }` flattening form falls with this: re-exports
+    are whole modules (`pub use geometry`, `pub use geometry as geo`) when #19 is built.

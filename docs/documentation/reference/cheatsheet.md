@@ -6,8 +6,8 @@ Everything on one page. `D<n>` refers to a decision in `veles-spec.md`.
 
 ```veles
 // fragment
-use io                          // import a module; call as io.println
-use geometry.{ Point as P, norm } // import names directly, with renames
+use fs, io, os                  // import modules; call as io.println (fmt sorts: std first, then the rest)
+use geometry as geo             // rename a module; members are always qualified: geo.Point (no name imports)
 
 const limit = 10                // module-level constant
 val banner = "hi"               // module-level value

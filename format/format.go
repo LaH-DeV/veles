@@ -15,13 +15,16 @@
 package format
 
 import (
+	"io/fs"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/LaH-DeV/veles/ast"
 	"github.com/LaH-DeV/veles/lexer"
 	"github.com/LaH-DeV/veles/parser"
 	"github.com/LaH-DeV/veles/source"
+	"github.com/LaH-DeV/veles/std"
 )
 
 // Options are the style knobs, read from `[format]` in veles.toml.
@@ -282,9 +285,24 @@ func (p *printer) file(f *ast.File) {
 			}
 		}
 	}
-	for _, d := range f.Decls {
+	for i := 0; i < len(f.Decls); i++ {
+		d := f.Decls[i]
 		if impl, ok := d.(*ast.ImplDecl); ok && synth[impl] {
 			continue
+		}
+		if _, ok := d.(*ast.UseDecl); ok {
+			// consecutive `use` declarations form one group (see useRun)
+			j := i + 1
+			for j < len(f.Decls) {
+				if _, ok := f.Decls[j].(*ast.UseDecl); !ok {
+					break
+				}
+				j++
+			}
+			if p.useRun(f.Decls[i:j]) {
+				i = j - 1
+				continue
+			}
 		}
 		p.before(declStart(d))
 		p.nested(func() { p.decl(d) })
@@ -383,29 +401,111 @@ func (p *printer) decl(d ast.Decl) {
 	}
 }
 
+// useRun prints a run of consecutive `use` declarations as the canonical
+// import block: every import in one sorted list per origin — the standard
+// library first, then everything else — one `use` statement each, on one
+// line. Blank lines inside the run and the author's order are dropped;
+// what an import is called never depends on where it is written. A run
+// with a comment among its lines is left as written (each declaration
+// printed on its own, unsorted) so no comment is separated from its line,
+// and useRun returns false.
+func (p *printer) useRun(decls []ast.Decl) bool {
+	start, end := decls[0].Span().Start, decls[len(decls)-1].Span().End
+	lineEnd := end
+	for lineEnd < len(p.src) && p.src[lineEnd] != '\n' {
+		lineEnd++
+	}
+	for i := p.ci; i < len(p.comments) && p.comments[i].Span.Start < lineEnd; i++ {
+		if p.comments[i].Span.Start >= start {
+			return false
+		}
+	}
+	var specs []*ast.UseSpec
+	for _, d := range decls {
+		specs = append(specs, d.(*ast.UseDecl).Specs...)
+	}
+	SortUseSpecs(specs)
+	p.before(start)
+	for i := 0; i < len(specs); {
+		std := isStdImport(specs[i])
+		p.w("use ")
+		j := i
+		for ; j < len(specs) && isStdImport(specs[j]) == std; j++ {
+			if j > i {
+				p.w(", ")
+			}
+			p.useSpec(specs[j])
+		}
+		i = j
+		p.nl()
+	}
+	p.after(end)
+	return true
+}
+
+// SortUseSpecs orders imports the way the formatter prints them: standard
+// library modules first, then by path; the order is stable.
+func SortUseSpecs(specs []*ast.UseSpec) {
+	sort.SliceStable(specs, func(i, j int) bool {
+		a, b := isStdImport(specs[i]), isStdImport(specs[j])
+		if a != b {
+			return a
+		}
+		return usePath(specs[i]) < usePath(specs[j])
+	})
+}
+
+func usePath(s *ast.UseSpec) string {
+	parts := make([]string, len(s.Path))
+	for i, seg := range s.Path {
+		parts[i] = seg.Name
+	}
+	return strings.Join(parts, ".")
+}
+
+// isStdImport reports whether an import names a standard library module:
+// a single segment that is one of the modules embedded in the compiler.
+func isStdImport(s *ast.UseSpec) bool {
+	if len(s.Path) != 1 {
+		return false
+	}
+	stdOnce.Do(func() {
+		stdModules = map[string]bool{}
+		if entries, err := fs.ReadDir(std.FS, "."); err == nil {
+			for _, e := range entries {
+				if e.IsDir() {
+					stdModules[e.Name()] = true
+				}
+			}
+		}
+	})
+	return stdModules[s.Path[0].Name]
+}
+
+var (
+	stdOnce    sync.Once
+	stdModules map[string]bool
+)
+
 func (p *printer) useDecl(d *ast.UseDecl) {
 	p.w("use ")
-	for i, seg := range d.Path {
+	for i, s := range d.Specs {
+		if i > 0 {
+			p.w(", ")
+		}
+		p.useSpec(s)
+	}
+}
+
+func (p *printer) useSpec(s *ast.UseSpec) {
+	for i, seg := range s.Path {
 		if i > 0 {
 			p.w(".")
 		}
 		p.w(seg.Name)
 	}
-	if d.Items != nil {
-		p.w(".{ ")
-		for i, it := range d.Items {
-			if i > 0 {
-				p.w(", ")
-			}
-			p.w(it.Name.Name)
-			if it.Alias != nil {
-				p.w(" as " + it.Alias.Name)
-			}
-		}
-		p.w(" }")
-	}
-	if d.Alias != nil {
-		p.w(" as " + d.Alias.Name)
+	if s.Alias != nil {
+		p.w(" as " + s.Alias.Name)
 	}
 }
 

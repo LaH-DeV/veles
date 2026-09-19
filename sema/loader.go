@@ -211,17 +211,19 @@ func (p *Package) loadImports(m *Module) {
 			if !ok {
 				continue
 			}
-			var path []string
-			for _, seg := range u.Path {
-				path = append(path, seg.Name)
-			}
-			dep := m.Pkg.Resolve(path, u.Pos, m)
-			if dep != nil {
-				m.Deps = append(m.Deps, dep)
-				if m.Uses == nil {
-					m.Uses = map[*ast.UseDecl]*Module{}
+			for _, s := range u.Specs {
+				var path []string
+				for _, seg := range s.Path {
+					path = append(path, seg.Name)
 				}
-				m.Uses[u] = dep
+				dep := m.Pkg.Resolve(path, s.Pos, m)
+				if dep != nil {
+					m.Deps = append(m.Deps, dep)
+					if m.Uses == nil {
+						m.Uses = map[*ast.UseSpec]*Module{}
+					}
+					m.Uses[s] = dep
+				}
 			}
 		}
 	}

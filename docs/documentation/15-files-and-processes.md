@@ -11,10 +11,7 @@ Every `fs` call that can fail throws `IoError`, so the rules of
 [chapter 7](07-errors.md) apply: `try` to propagate, `when` to handle.
 
 ```veles
-use io
-use os
-use fs
-use path
+use fs, io, os, path
 
 fun main() throws IoError {
   val dir = path.join(os.env("TEMP") ?: os.env("TMPDIR") ?: "/tmp", "veles-tutorial-15")
@@ -48,8 +45,7 @@ description, `path` the file, `code` the platform error number, and
 `message()` combines the first two.
 
 ```veles
-use io
-use fs
+use fs, io
 
 fun main() {
   when (val r = fs.readFile("no/such/file.txt")) {
@@ -77,8 +73,7 @@ rest of standard input as text.
 `/`, which every platform's file API accepts.
 
 ```veles
-use io
-use path
+use io, path
 
 fun main() {
   val p = path.join("src", "compiler", "lexer.vs")

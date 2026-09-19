@@ -6,6 +6,7 @@ package parser
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/LaH-DeV/veles/ast"
 	"github.com/LaH-DeV/veles/lexer"
@@ -401,54 +402,71 @@ func (p *Parser) parseDeclBody(attrs []*ast.Attribute) ast.Decl {
 	return &ast.BadDecl{Pos: p.span()}
 }
 
+// parseUse parses `use a, b.c as d`: a comma-separated list of module
+// imports; a comma at the end of a line continues the list.
 func (p *Parser) parseUse() ast.Decl {
 	start := p.span()
 	p.next() // use
 	d := &ast.UseDecl{}
 	for {
+		s := p.parseUseSpec()
+		if s == nil {
+			break
+		}
+		d.Specs = append(d.Specs, s)
+		if !p.accept(lexer.Comma) {
+			break
+		}
+		p.skipSemis()
+	}
+	if len(d.Specs) == 0 {
+		p.errorf(start, "'use' needs a module path")
+	}
+	d.Pos = p.spanFrom(start)
+	return d
+}
+
+func (p *Parser) parseUseSpec() *ast.UseSpec {
+	start := p.span()
+	s := &ast.UseSpec{}
+	for {
 		if p.at(lexer.LBrace) {
-			p.next()
-			d.Items = []ast.UseItem{}
-			for !p.at(lexer.RBrace, lexer.EOF) {
-				p.skipSemis()
-				name, ok := p.expectIdent()
-				if !ok {
-					p.syncStmt()
+			// the removed name-import form `use m.{ a, b as c }` (M6): skip
+			// the braces so the rest of the file still parses
+			braceStart := p.span()
+			depth := 0
+			for !p.at(lexer.EOF) {
+				if p.at(lexer.LBrace) {
+					depth++
+				} else if p.at(lexer.RBrace) {
+					depth--
+				}
+				p.next()
+				if depth == 0 {
 					break
 				}
-				it := ast.UseItem{Name: name}
-				if p.accept(lexer.KwAs) {
-					alias, _ := p.expectIdent()
-					it.Alias = &alias
-				}
-				d.Items = append(d.Items, it)
-				p.skipSemis()
-				if !p.accept(lexer.Comma) {
-					break
-				}
-				p.skipSemis()
 			}
-			p.expect(lexer.RBrace)
+			p.errorf(p.spanFrom(braceStart), "names are not imported one by one; import the module and qualify its members (%s.name), or rename it with 'use %s as m' (M6)", pathString(s.Path), pathString(s.Path))
 			break
 		}
 		seg, ok := p.expectIdent()
 		if !ok {
 			break
 		}
-		d.Path = append(d.Path, seg)
+		s.Path = append(s.Path, seg)
 		if !p.accept(lexer.Dot) {
 			break
 		}
 	}
-	if len(d.Path) == 0 {
-		p.errorf(start, "'use' needs a module path")
+	if len(s.Path) == 0 {
+		return nil
 	}
 	if p.accept(lexer.KwAs) {
 		alias, _ := p.expectIdent()
-		d.Alias = &alias
+		s.Alias = &alias
 	}
-	d.Pos = p.spanFrom(start)
-	return d
+	s.Pos = p.spanFrom(start)
+	return s
 }
 
 type funContext int
@@ -994,4 +1012,13 @@ func (p *Parser) parseErrorAlias(attrs []*ast.Attribute, pub bool, start source.
 	d.Members = p.parseErrorType()
 	d.Pos = p.spanFrom(start)
 	return d
+}
+
+// pathString joins a dotted path for diagnostics.
+func pathString(path []ast.Ident) string {
+	parts := make([]string, len(path))
+	for i, seg := range path {
+		parts[i] = seg.Name
+	}
+	return strings.Join(parts, ".")
 }

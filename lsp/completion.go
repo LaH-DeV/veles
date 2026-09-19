@@ -106,17 +106,9 @@ func (s *Server) completion(params json.RawMessage) any {
 			}
 			if _, f := s.moduleOf(a, d); f != nil {
 				for _, decl := range f.Decls {
-					if u, ok := decl.(*ast.UseDecl); ok {
-						if u.Items == nil {
+					if ud, ok := decl.(*ast.UseDecl); ok {
+						for _, u := range ud.Specs {
 							add(importedName(u), ciModule, "module "+pathString(u.Path))
-						} else {
-							for _, it := range u.Items {
-								name := it.Name.Name
-								if it.Alias != nil {
-									name = it.Alias.Name
-								}
-								add(name, ciFunction, "from "+pathString(u.Path))
-							}
 						}
 					}
 				}
@@ -135,10 +127,16 @@ func (s *Server) completion(params json.RawMessage) any {
 		// `module.`
 		if m, f := s.moduleOf(a, d); m != nil {
 			for _, decl := range f.Decls {
-				if u, ok := decl.(*ast.UseDecl); ok && u.Items == nil && importedName(u) == receiver {
-					if target := m.Uses[u]; target != nil {
-						s.addModuleDecls(add, target)
-						return finish()
+				ud, ok := decl.(*ast.UseDecl)
+				if !ok {
+					continue
+				}
+				for _, u := range ud.Specs {
+					if importedName(u) == receiver {
+						if target := m.Uses[u]; target != nil {
+							s.addModuleDecls(add, target)
+							return finish()
+						}
 					}
 				}
 			}
@@ -375,7 +373,7 @@ func (s *Server) moduleOf(a *analysis, d *document) (*sema.Module, *ast.File) {
 	return nil, nil
 }
 
-func importedName(u *ast.UseDecl) string {
+func importedName(u *ast.UseSpec) string {
 	if u.Alias != nil {
 		return u.Alias.Name
 	}
