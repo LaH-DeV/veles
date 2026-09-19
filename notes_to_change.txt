@@ -576,3 +576,13 @@ R4. PLANNED (user, 2026-09-19): an HTTP server — the language needs the featur
     program after the mid-size ones.
 R5. Examples (small and mid-size) must DO something useful — real use cases, not demonstrations
     of syntax: a tool someone would run (todo CLI, log analyser, file dedup, ...).
+R6. DONE (2026-09-19): comparison strategies in the prelude — sortedWith/sortWith (stable
+    bottom-up merge sort in Veles), sortedByDescending, minBy/maxBy, minWith/maxWith,
+    distinctBy; docs 08 "Comparing values" (table: what ==, <, keys mean per type; strategies
+    table + runnable example), docs 04 "Comparing collections". OPEN: the Go-lowered `sorted`/
+    `sortedBy` (sema/lower_list.go) are insertion sorts, O(n²) — make them call the prelude's
+    merge sort (the benchmark item from #14) before anyone sorts a big list.
+R7. Decided (2026-09-19, question "should `xs.at(0)` return a reference?"): `at` stays `T?`, a
+    copy. In-place access is syntactic (`xs.atOrPanic(i).f = v`, `xs.at(i)?.bump()`,
+    `&xs.atOrPanic(i)` for an explicit pointer); a stored reference into a list would go stale
+    when the list grows (no borrow checker to catch it), and a pointer is heavier than an i64.

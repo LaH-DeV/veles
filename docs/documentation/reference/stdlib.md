@@ -260,14 +260,16 @@ UTF-8.
 | `map(f)`, `filter(p)`, `fold(z, f)`, `forEach(f)`, `flatMap(f)` | eager; return `List` |
 | `any(p)`, `all(p)`, `find(p)` | |
 | `zip(ys)`, `chunked(n)`, `windowed(n)`, `distinct()` | `List<(T, U)>`, `List<List<T>>`, `List<List<T>>`, `List<T>` |
-| `sorted()`, `sortedDescending()`, `sortedBy(key)`, `reversed()` | new `List`; elements or `key` results must be `Comparable` (D48) |
+| `sorted()`, `sortedDescending()`, `sortedBy(key)`, `sortedByDescending(key)`, `reversed()` | new `List`; elements or `key` results must be `Comparable` (D48) |
+| `sortedWith(compare)`, `minWith(compare)`, `maxWith(compare)` | any order: `compare(a, b)` negative when `a` comes first; sorts are stable, O(n log n) |
+| `minBy(key)`, `maxBy(key)`, `distinctBy(key)` | `T?`, `T?`, `List<T>`; by a `Comparable` (or, for `distinctBy`, hashable) key |
 | `sum()` | `List<i64>` and `List<f64>` only |
 | `join(sep)` | `string` |
 | `iter()` | lazy iterator |
 | `toList()`, `toMutable()` | copies (D25) |
 | `push(x)`, `pop(): T?`, `set(i, x)`, `clear()` | `MutableList` only |
 | `insert(i, x)`, `removeAt(i): T`, `addAll(xs)`, `sort()` | `MutableList` only; `sort` is in place |
-| `swap(i, j)` | `MutableList` only; exchanges two elements in place |
+| `swap(i, j)`, `sortWith(compare)` | `MutableList` only; in place |
 | `fill(x)` | `MutableList` only; overwrites every element, length unchanged |
 | `MutableList<T>.repeat(x, count)`, `MutableList<T>.make(n, i => ...)` | statics: `count` copies of `x`, or `init(i)` called once per slot. `repeat` and `fill` need `T: Sendable` (D35): a mutable collection or pointer would be one value aliased by every slot, which is what `make` is for |
 

@@ -87,6 +87,52 @@ covers them fully. These operations are *eager*: each builds its result
 immediately. For long pipelines over big data, `xs.iter()` gives a lazy
 iterator with the same names — also chapter 10.
 
+### Comparing collections
+
+Two lists are equal when they hold equal elements in the same order; two
+maps when they hold the same keys with equal values; two sets when they
+hold the same elements — order never matters for a map or a set. The
+mutable and immutable kinds compare with each other, and anything built
+from comparable parts is comparable: a `List<List<i64>>`, a struct with a
+`List` field, a `Map<string, Set<i64>>`. What is *not* comparable is a
+value with no meaningful equality — a function.
+
+```veles
+use io
+
+struct Row {
+  name:   string
+  scores: List<i64>
+}
+
+fun main() {
+  val a = [1, 2, 3]
+  var b: MutableList<i64> = []
+  b.push(1); b.push(2); b.push(3)
+  io.println("${a == b} ${a == [3, 2, 1]} ${[[1], [2]] == [[1], [2]]}")
+  io.println("${["x": 1, "y": 2] == ["y": 2, "x": 1]} ${[1, 2].contains(2)} ${[[1, 2], [3]].indexOf([3])}")
+  val s1: Set<i64> = [1, 2]
+  val s2: Set<i64> = [2, 1, 1]
+  io.println("${s1 == s2} ${Row(name: "a", scores: [1]) == Row(name: "a", scores: [1])}")
+  var byScores: MutableMap<List<i64>, string> = [:]
+  byScores.set([9, 9], "perfect")
+  io.println("${byScores.get([9, 9])} ${byScores.get([9, 8])}")
+}
+```
+
+Output:
+```text
+true false true
+true true 1
+true true
+perfect null
+```
+
+`==` is one strategy; `sorted()` and `min()` use another (`Comparable`),
+and both can be replaced per call — `sortedBy(key)`, `sortedWith(compare)`,
+`distinctBy(key)`. [Chapter 8](08-traits-and-generics.md#comparing-values)
+lays out the whole picture.
+
 ## Maps
 
 A `Map<K, V>` keeps its entries in **insertion order** — iteration is

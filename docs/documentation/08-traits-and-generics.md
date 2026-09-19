@@ -293,6 +293,93 @@ equal must hash alike. And the built-in types keep their meaning: an
 `impl Display for i64` in your package is accepted but interpolation of
 an `i64` still prints the number.
 
+## Comparing values
+
+Three questions have three separate answers in Veles: *are these equal?*
+(`==`), *which comes first?* (`<`, `sorted()`), and *can this be a key?*
+(maps and sets). The table says what each type does by default:
+
+| Type | `==` | `<`, `sorted()`, `min()` | Map key / set element |
+|---|---|---|---|
+| numbers, `bool`, `string` | by value | numbers and strings: natural order | yes |
+| tuples | element by element | no (use a key or comparator) | when the elements are |
+| structs | field by field | only with `impl Comparable` | when the fields are |
+| sealed types | same variant, equal fields | only with `impl Comparable` | when the variants are |
+| `T?` | both null, or both present and equal | no | when `T` is |
+| `List`, `Map`, `Set` | by content (chapter 4) | no | immutable ones, when the elements are |
+| `MutableList`, `MutableMap`, `MutableSet` | by content | no | never — they can change after being stored |
+| pointers, channels, tasks | same object (identity) | no | pointers: by identity |
+| functions | not comparable | no | no |
+
+A struct changes any answer by implementing the matching trait —
+`Equatable` for `==`, `Comparable` for ordering, `Hashable` for keys — as
+`Version` and `Name` do above. A struct that defines `equals` must define
+`hash` too before it can be a key, because equal values must hash alike.
+
+### Comparing with a different strategy
+
+The trait gives a type *one* natural meaning. Every other meaning is
+passed at the call, as a **key** (a function from the element to something
+`Comparable`) or a **comparator** (a function of two elements returning a
+negative number, zero or a positive number):
+
+| Want | Write |
+|---|---|
+| natural order | `xs.sorted()`, `xs.min()`, `xs.max()`, `xs.sortedDescending()` |
+| order by a field or derived value | `xs.sortedBy(x => x.age)`, `xs.sortedByDescending(key)`, `xs.minBy(key)`, `xs.maxBy(key)` |
+| any order at all | `xs.sortedWith((a, b) => ...)`, `xs.minWith(compare)`, `xs.maxWith(compare)`, `ml.sortWith(compare)` |
+| uniqueness by a key | `xs.distinctBy(x => x.email.toLower())` |
+| a queue in a custom order | `priorityQueueBy<T>((a, b) => ...)` |
+| equality with a different meaning | `xs.any(x => sameName(x, y))`, or a wrapper struct with its own `Equatable` |
+
+Sorting is stable: elements the strategy cannot tell apart keep their
+order, so sorting by one key and then by another gives a two-level order.
+
+```veles
+use io
+
+struct Employee {
+  name: string
+  dept: string
+  age:  i64
+}
+
+fun main() {
+  val staff = [
+    Employee(name: "Ola", dept: "ops", age: 41),
+    Employee(name: "ann", dept: "dev", age: 29),
+    Employee(name: "Bob", dept: "dev", age: 35),
+    Employee(name: "Ann", dept: "ops", age: 29),
+  ]
+  val names = (xs: List<Employee>) => xs.map(e => e.name)
+  // a key: youngest first; ties keep the list's order
+  io.println("${names(staff.sortedBy(e => e.age))}")
+  // a comparator: by department, then oldest first within it
+  val byDeptThenAge = (a: Employee, b: Employee) =>
+    if (a.dept != b.dept) a.dept.compareTo(b.dept) else b.age.compareTo(a.age)
+  io.println("${names(staff.sortedWith(byDeptThenAge))}")
+  // extremes by key or comparator
+  io.println("${staff.maxBy(e => e.age)?.name} ${staff.minWith((a, b) => a.name.toLower().compareTo(b.name.toLower()))?.name}")
+  // one entry per name, case-insensitively; and case-insensitive membership
+  io.println("${names(staff.distinctBy(e => e.name.toLower()))} ${staff.any(e => e.name.toLower() == "bob")}")
+}
+```
+
+Output:
+```text
+[ann, Ann, Bob, Ola]
+[Bob, ann, Ola, Ann]
+Ola ann
+[Ola, ann, Bob] true
+```
+
+When a *different equality* is needed everywhere a type appears — not
+just in one call — give the type an `Equatable` impl (with `Hashable`), as
+`Name` does above. When two meanings are needed for one type, wrap it: a
+`struct CaseInsensitive { text: string }` with its own `Equatable` and
+`Hashable` is a key that treats `"Ann"` and `"ann"` as one, while plain
+`string` keys stay exact.
+
 ## Associated types
 
 A trait can declare a *type* its implementors choose, not just methods.

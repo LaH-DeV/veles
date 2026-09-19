@@ -96,6 +96,119 @@ extend<T> List<T> {
   }
 }
 
+// Comparison strategies (D48): the natural order comes from Comparable;
+// any other order is a comparator (`sortedWith`, `minWith`) or a key
+// (`sortedBy`, `minBy`, `distinctBy`) passed at the call.
+extend<T> List<T> {
+  /// A copy sorted by `compare`, which returns a negative number when its
+  /// first argument sorts first: `xs.sortedWith((a, b) => b.compareTo(a))`
+  /// is descending. Stable (equal elements keep their order); O(n log n).
+  pub fun sortedWith(compare: fun(T, T): i64): List<T> {
+    val n = self.len()
+    var src = self.toMutable()
+    if (n < 2) return src.toList()
+    var dst: MutableList<T> = self.toMutable()
+    // bottom-up merge sort: runs of `width` merged into `dst`, then swapped
+    var width: i64 = 1
+    loop (width < n) {
+      var lo: i64 = 0
+      loop (lo < n) {
+        val mid = if (lo + width < n) lo + width else n
+        val hi = if (lo + 2 * width < n) lo + 2 * width else n
+        var i = lo
+        var j = mid
+        var k = lo
+        loop (k < hi) {
+          if (i < mid && (j >= hi || compare(src.atOrPanic(i), src.atOrPanic(j)) <= 0)) {
+            dst.set(k, src.atOrPanic(i))
+            i += 1
+          } else {
+            dst.set(k, src.atOrPanic(j))
+            j += 1
+          }
+          k += 1
+        }
+        lo += 2 * width
+      }
+      (src, dst) = (dst, src)
+      width *= 2
+    }
+    src.toList()
+  }
+
+  /// A copy sorted from largest to smallest key.
+  pub fun sortedByDescending<K: Comparable>(key: fun(T): K): List<T> =
+    self.sortedWith((a, b) => key(b).compareTo(key(a)))
+
+  /// The element with the smallest key, or `null` when empty; the first
+  /// of several equal keys.
+  pub fun minBy<K: Comparable>(key: fun(T): K): T? {
+    var best = self.first() ?: return null
+    var bestKey = key(best)
+    loop (x in self.drop(1)) {
+      val k = key(x)
+      if (k < bestKey) {
+        best = x
+        bestKey = k
+      }
+    }
+    best
+  }
+
+  /// The element with the largest key, or `null` when empty.
+  pub fun maxBy<K: Comparable>(key: fun(T): K): T? {
+    var best = self.first() ?: return null
+    var bestKey = key(best)
+    loop (x in self.drop(1)) {
+      val k = key(x)
+      if (k > bestKey) {
+        best = x
+        bestKey = k
+      }
+    }
+    best
+  }
+
+  /// The element that `compare` places first, or `null` when empty.
+  pub fun minWith(compare: fun(T, T): i64): T? {
+    var best = self.first() ?: return null
+    loop (x in self.drop(1)) {
+      if (compare(x, best) < 0) best = x
+    }
+    best
+  }
+
+  /// The element that `compare` places last, or `null` when empty.
+  pub fun maxWith(compare: fun(T, T): i64): T? {
+    var best = self.first() ?: return null
+    loop (x in self.drop(1)) {
+      if (compare(x, best) > 0) best = x
+    }
+    best
+  }
+
+  /// The elements whose keys are distinct, first occurrence kept:
+  /// `names.distinctBy(n => n.toLower())`.
+  pub fun distinctBy<K>(key: fun(T): K): List<T> {
+    var seen = MutableSet<K>()
+    var out: MutableList<T> = []
+    loop (x in self) {
+      if (seen.add(key(x))) out.push(x)
+    }
+    out.toList()
+  }
+}
+
+extend<T> MutableList<T> {
+  /// Sorts in place by `compare` (see `sortedWith`).
+  pub mut fun sortWith(compare: fun(T, T): i64) {
+    val sorted = self.sortedWith(compare)
+    loop (i in 0..<self.len()) {
+      self.set(i, sorted.atOrPanic(i))
+    }
+  }
+}
+
 // Ordering needs Comparable: numbers and strings implement it in the
 // prelude, a struct by `impl Comparable`. The bound is checked at the call
 // site, so a list of anything else reports the error there.
