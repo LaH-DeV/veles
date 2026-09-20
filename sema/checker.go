@@ -1016,7 +1016,7 @@ func (c *Checker) resolveStruct(s *types.Struct) {
 		if u, isUnion := ft.(*types.ErrorUnion); isUnion && !isAliasRef(f.Type) { // an alias checks its own members
 			c.deferErrorCheck(u, f.Type.Span())
 		}
-		s.Fields = append(s.Fields, &types.Field{Name: f.Name.Name, Type: ft, Pub: f.Pub, Private: f.Private, Var: f.Var, HasDefault: f.Default != nil, Index: i})
+		s.Fields = append(s.Fields, &types.Field{Name: f.Name.Name, Type: ft, Pub: f.Pub, Private: f.Private, Var: f.Var, Protected: f.Protected, HasDefault: f.Default != nil, Index: i})
 	}
 	if d.Variant != nil {
 		vt := c.resolveType(env, d.Variant)

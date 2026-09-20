@@ -2251,8 +2251,8 @@ func TestStaticVal(t *testing.T) {
 struct Status {
   public code: i64
   public static val ok = Status(code: 200)
-  static val internal: Status = Status(code: 500)
-  static val known = [Status.ok, Status.internal]
+  static val failed: Status = Status(code: 500)
+  static val known = [Status.ok, Status.failed]
   static fun of(code: i64): Status = Status.known.find(s => s.code == code) ?: Status(code)
 }
 fun main() { io.println("${Status.ok.code} ${Status.of(500).code} ${Status.known.len()}") }`)
@@ -2380,8 +2380,6 @@ fun make(): Counter = Counter(label: "m")
 fun main() { make().bump() }`, "'bump' changes a temporary copy of 'Counter' that is then discarded"},
 		{"an element read is a copy", counter + `
 fun main() { val cs: MutableList<Counter> = [Counter(label: "e")]; cs.atOrPanic(0).bump() }`, "reach the element itself with 'cs.refOrPanic(0)'"},
-		{"a val field cannot be spelled val", `struct P { val x: i64 }
-fun main() { }`, "a field is immutable unless declared 'var'"},
 		{"mut fun is gone", `struct P { var x: i64; mut fun move() { self.x += 1 } }
 fun main() { }`, "'mut fun' no longer exists"},
 		{"tuple elements are not assignable", `fun main() { var t = (1, 2); t.0 = 3 }`, "cannot assign to a tuple element"},
@@ -2452,4 +2450,50 @@ struct Server { config: Config
   fun start(): i64 = run(() => self.config.items.len()) }
 fun run(f: sendable fun(): i64): i64 = f()
 fun main() { io.println("${Server(config: Config(name: "s")).start()}") }`)
+}
+
+// `protected var`: readable wherever the field is visible, assigned only by the
+// type's own declarations; `val` and `internal` are the defaults, written
+// out (D22 v0.30 / M5).
+func TestProtectedAndExplicitDefaults(t *testing.T) {
+	const notes = `
+internal struct Note { val id: i64; internal text: string }
+public struct Notes {
+  public protected var count: i64 = 0
+  private var next:      i64 = 1
+  internal fun add(): Note {
+    self.count += 1
+    self.next += 1
+    Note(id: self.next, text: "n")
+  }
+}
+extend Notes {
+  fun reset() { self.count = 0 }
+}
+internal val limit = 10
+internal fun helper(): i64 = limit
+`
+	expectClean(t, prelude+notes+`
+fun main() { val n = Notes(); n.add(); n.reset(); io.println("${n.count} ${helper()} ${Notes(count: 5).count}") }`)
+	expectError(t, prelude+notes+`
+fun main() { val n = Notes(); n.count = 3 }`, "the field is 'protected var', assigned only by 'Notes' itself")
+	expectError(t, prelude+notes+`
+fun main() { val n = Notes(); val p = &n; p.count = 3 }`, "the field is 'protected var'")
+	expectError(t, prelude+`
+struct P { private protected var x: i64 = 0 }
+fun main() { }`, "'private protected' is redundant")
+	expectError(t, prelude+`
+struct P { val var x: i64 = 0 }
+fun main() { }`, "a field is 'val' (the default), 'var' or 'protected var'")
+	expectError(t, prelude+`
+struct P { protected x: i64 = 0 }
+fun main() { }`, "'protected' qualifies 'var'")
+	expectError(t, prelude+`
+public internal fun f(): i64 = 1
+fun main() { }`, "'public' and 'internal' contradict each other")
+	// a protected var field makes the type changeable for a sendable capture
+	expectError(t, prelude+`
+struct C { protected var n: i64 = 0 }
+fun run(f: sendable fun(): i64): i64 = f()
+fun main() { val c = C(); io.println("${run(() => c.n)}") }`, "which has 'var' fields")
 }

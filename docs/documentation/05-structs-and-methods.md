@@ -155,6 +155,60 @@ the type — try `acct.owner = "bob"`: the compiler refuses, and no method
 could do it either. A struct with no `var` fields and no collections
 inside cannot change at all, whoever holds it.
 
+### `protected var`: everyone reads, the type writes
+
+Between "never assigned" and "assigned by anyone" sits the most common
+shape of managed state: a value that everyone may look at but that only
+its type is allowed to update — a counter, a status, a cached total.
+Write it `protected var`. Anyone who can see the field reads it; only the
+type's own code — its methods, its `impl` and `extend` blocks — assigns
+it. It replaces the `private var` plus a one-line getter that other
+languages need:
+
+```veles
+use io
+
+struct Stats {
+  public protected var count: i64 = 0   // everyone reads it, only Stats writes it
+  fun record() { self.count += 1 }
+}
+
+fun main() {
+  val s = Stats()
+  s.record()
+  s.record()
+  io.println("${s.count}")             // reading is fine; `s.count = 0` is an error here
+}
+```
+
+Output:
+```text
+2
+```
+
+Read the modifiers left to right as two separate questions. The first
+word answers *who can see the field*: `private` (the type), nothing or
+`internal` (the module), `public` (the package). The rest answers *who
+can assign it*:
+
+| spelling | set by the constructor | assigned by the type's own code | assigned by anyone who sees it |
+|---|---|---|---|
+| `x: T` — or `val x: T`, if you like to write it | yes | no | no |
+| `protected var x: T` | yes | yes | no |
+| `var x: T` | yes | yes | yes |
+
+`protected` always comes with `var`: a bare field is never assigned, so
+there is nothing to protect, and the compiler says so if you leave `var`
+out. `private protected var` is refused as redundant — nobody outside the
+type can see a private field, so `private var` already means the same.
+
+Two things to know about the word. Veles borrows `protected` from Java,
+C# and Kotlin, where it means "the class and its subclasses". Veles has
+no inheritance — shared behaviour is a trait (chapter 8) — so the
+"subclasses" part has no meaning here and the word is free to mean what
+it says: the field is protected from writes by anyone but its owner. And
+`protected` never restricts *reading*: `public protected var` is the
+normal spelling, "public to read, protected to write".
 Because a struct is a value, a method changes the copy it was called on.
 `var b = acct; b.deposit(1)` leaves `acct` alone, and a method called
 on a temporary — `accounts.at(0)?.deposit(1)`, a copy of the element —
@@ -299,9 +353,11 @@ anything points at it, so returning it from a function is fine.
 
 ## Visibility
 
-Declarations are private to their module unless marked `public`; the same
-goes for fields and methods (M5). Inside one directory everything sees
-everything — which is right for a helper struct and wrong for an
+Declarations are *internal* — visible throughout their module — unless
+marked `public`; the same goes for fields and methods (M5). Nothing is
+written for it, though you may write `internal` when it helps the reader
+(`internal fun helper()`, `internal x: i64`). Inside one directory
+everything sees everything — which is right for a helper struct and wrong for an
 invariant: in a one-file program, nothing would stop a handler from
 poking a counter that only the type should touch. A member marked
 `private` is visible only inside the type's own declarations — its

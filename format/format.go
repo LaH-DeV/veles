@@ -373,6 +373,8 @@ func (p *printer) decl(d ast.Decl) {
 		p.attrs(d.Attrs)
 		if d.Pub {
 			p.w("public ")
+		} else if d.Internal {
+			p.w("internal ")
 		}
 		p.w(d.Kind.String() + " " + d.Name.Name)
 		if d.Type != nil {
@@ -395,6 +397,8 @@ func (p *printer) decl(d ast.Decl) {
 		p.attrs(d.Attrs)
 		if d.Pub {
 			p.w("public ")
+		} else if d.Internal {
+			p.w("internal ")
 		}
 		p.w("type " + d.Name.Name)
 		p.typeParams(d.TypeParams)
@@ -404,6 +408,8 @@ func (p *printer) decl(d ast.Decl) {
 		p.attrs(d.Attrs)
 		if d.Pub {
 			p.w("public ")
+		} else if d.Internal {
+			p.w("internal ")
 		}
 		p.w("error " + d.Name.Name + " = ")
 		p.typ(d.Members)
@@ -525,7 +531,7 @@ func (p *printer) modifiers(fn *ast.FunDecl) {
 	head := p.src[fn.Pos.Start:fn.Name.Pos.Start]
 	for _, kw := range strings.Fields(head) {
 		switch kw {
-		case "public", "private", "override", "unsafe", "static":
+		case "public", "private", "internal", "override", "unsafe", "static":
 			p.w(kw + " ")
 		}
 	}
@@ -746,6 +752,8 @@ func (p *printer) structDecl(d *ast.StructDecl) {
 	p.attrs(d.Attrs)
 	if d.Pub {
 		p.w("public ")
+	} else if d.Internal {
+		p.w("internal ")
 	}
 	switch {
 	case d.Error:
@@ -816,6 +824,8 @@ func (p *printer) staticVal(d *ast.ValDecl) {
 	p.attrs(d.Attrs)
 	if d.Pub {
 		p.w("public ")
+	} else if d.Internal {
+		p.w("internal ")
 	}
 	p.w("static val " + d.Name.Name)
 	if d.Type != nil {
@@ -867,8 +877,16 @@ func (p *printer) field(f *ast.Field) {
 	if f.Private {
 		p.w("private ")
 	}
-	if f.Var {
+	if f.Internal {
+		p.w("internal ")
+	}
+	switch {
+	case f.Protected:
+		p.w("protected var ")
+	case f.Var:
 		p.w("var ")
+	case f.Val:
+		p.w("val ")
 	}
 	p.w(f.Name.Name + ":")
 	p.mark(alignField)
@@ -884,6 +902,8 @@ func (p *printer) traitDecl(d *ast.TraitDecl) {
 	p.attrs(d.Attrs)
 	if d.Pub {
 		p.w("public ")
+	} else if d.Internal {
+		p.w("internal ")
 	}
 	if d.Sealed {
 		p.w("sealed ")

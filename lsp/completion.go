@@ -40,7 +40,7 @@ const (
 
 var keywordCompletions = []string{
 	"fun", "val", "var", "const", "if", "else", "loop", "break", "continue", "return", "throw",
-	"struct", "error", "trait", "impl", "extend", "sealed", "public", "private", "use", "when", "is", "as", "in",
+	"struct", "error", "trait", "impl", "extend", "sealed", "public", "private", "internal", "protected", "use", "when", "is", "as", "in",
 	"throws", "suspends", "try", "async", "await", "scope", "gather", "race", "with",
 	"unsafe", "extern", "mut", "override", "true", "false", "null", "self", "Self", "type",
 }

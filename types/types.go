@@ -369,6 +369,7 @@ type Field struct {
 	Pub        bool
 	Private    bool // visible only inside the type's own declarations
 	Var        bool // assignable after construction (D22 v0.30); a bare field never changes
+	Protected  bool // `protected var`: assignable only by the type's own declarations; read like any field
 	HasDefault bool
 	Index      int
 }

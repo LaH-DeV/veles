@@ -173,10 +173,11 @@ type Param struct {
 // FunDecl is a free function, an inherent method, a trait method
 // (signature-only when Body and ExprBody are both nil), or an extern.
 type FunDecl struct {
-	Attrs      []*Attribute
-	Doc        string // documentation comment, if any
-	Pub        bool
-	Private    bool // `private fun` — callable only inside the type's own declarations
+	Attrs    []*Attribute
+	Doc      string // documentation comment, if any
+	Pub      bool
+	Internal bool // `internal`: the module level written out (M5); the default
+	Private  bool // `private fun` — callable only inside the type's own declarations
 
 	Static     bool // `static fun` — no receiver; called on the type (D23)
 	Override   bool
@@ -194,14 +195,17 @@ type FunDecl struct {
 
 // Field is a struct field, optionally with a default.
 type Field struct {
-	Pub     bool
-	Private bool // visible only inside the type's own declarations
-	Var     bool // `var name: T` — assignable after construction (D22 v0.30)
-	Doc     string
-	Name    Ident
-	Type    Type
-	Default Expr
-	Pos     source.Span
+	Pub      bool
+	Internal bool // `internal`: the module level written out (M5); the default
+	Private  bool // visible only inside the type's own declarations
+	Var      bool // `var name: T` — assignable after construction (D22 v0.30)
+	Val      bool // `val name: T` — the default, written out
+	Protected bool // `protected var name: T` — assigned only by the type's own declarations (D22 v0.30)
+	Doc      string
+	Name     Ident
+	Type     Type
+	Default  Expr
+	Pos      source.Span
 }
 
 // StructDecl is `struct Name<T> : SealedParent { fields; methods }`.
@@ -209,8 +213,9 @@ type StructDecl struct {
 	Attrs      []*Attribute
 	Doc        string
 	Pub        bool
-	Extern     bool // `extern struct` — C layout
-	Error      bool // `error Name { }` — declared with an impl of Error (D4)
+	Internal   bool      // `internal`: the module level written out (M5); the default
+	Extern     bool      // `extern struct` — C layout
+	Error      bool      // `error Name { }` — declared with an impl of Error (D4)
 	ErrorImpl  *ImplDecl // the `impl Error for Name` an error declaration desugars to
 	Name       Ident
 	TypeParams []TypeParam
@@ -233,6 +238,7 @@ type TraitDecl struct {
 	Attrs      []*Attribute
 	Doc        string
 	Pub        bool
+	Internal   bool // `internal`: the module level written out (M5); the default
 	Sealed     bool
 	Name       Ident
 	TypeParams []TypeParam
@@ -282,14 +288,15 @@ func (k BindKind) String() string {
 
 // ValDecl is a module-level `val`, `var` or `const`.
 type ValDecl struct {
-	Attrs []*Attribute
-	Doc   string
-	Pub   bool
-	Kind  BindKind
-	Name  Ident
-	Type  Type
-	Value Expr
-	Pos   source.Span
+	Attrs    []*Attribute
+	Doc      string
+	Pub      bool
+	Internal bool // `internal`: the module level written out (M5); the default
+	Kind     BindKind
+	Name     Ident
+	Type     Type
+	Value    Expr
+	Pos      source.Span
 }
 
 // ExternBlock is `extern "C" { fun ...; }`.
@@ -302,12 +309,13 @@ type ExternBlock struct {
 // ErrorAliasDecl is `error Name = A | B | C`: a named error set (D45),
 // transparent wherever a union may appear.
 type ErrorAliasDecl struct {
-	Attrs   []*Attribute
-	Doc     string
-	Pub     bool
-	Name    Ident
-	Members Type // an ErrorUnionType, or a single type
-	Pos     source.Span
+	Attrs    []*Attribute
+	Doc      string
+	Pub      bool
+	Internal bool // `internal`: the module level written out (M5); the default
+	Name     Ident
+	Members  Type // an ErrorUnionType, or a single type
+	Pos      source.Span
 }
 
 // TypeAliasDecl is `type Name<T> = Type`: another name for a type (D55).
@@ -316,6 +324,7 @@ type TypeAliasDecl struct {
 	Attrs      []*Attribute
 	Doc        string
 	Pub        bool
+	Internal   bool // `internal`: the module level written out (M5); the default
 	Name       Ident
 	TypeParams []TypeParam
 	Type       Type
@@ -327,27 +336,27 @@ type BadDecl struct {
 	Pos source.Span
 }
 
-func (d *UseDecl) Span() source.Span     { return d.Pos }
-func (d *FunDecl) Span() source.Span     { return d.Pos }
-func (d *StructDecl) Span() source.Span  { return d.Pos }
-func (d *TraitDecl) Span() source.Span   { return d.Pos }
-func (d *ImplDecl) Span() source.Span    { return d.Pos }
-func (d *ValDecl) Span() source.Span     { return d.Pos }
-func (d *ExternBlock) Span() source.Span { return d.Pos }
-func (d *BadDecl) Span() source.Span     { return d.Pos }
+func (d *UseDecl) Span() source.Span        { return d.Pos }
+func (d *FunDecl) Span() source.Span        { return d.Pos }
+func (d *StructDecl) Span() source.Span     { return d.Pos }
+func (d *TraitDecl) Span() source.Span      { return d.Pos }
+func (d *ImplDecl) Span() source.Span       { return d.Pos }
+func (d *ValDecl) Span() source.Span        { return d.Pos }
+func (d *ExternBlock) Span() source.Span    { return d.Pos }
+func (d *BadDecl) Span() source.Span        { return d.Pos }
 func (d *ErrorAliasDecl) Span() source.Span { return d.Pos }
 func (d *TypeAliasDecl) Span() source.Span  { return d.Pos }
 
 func (*ErrorAliasDecl) declNode() {}
 func (*TypeAliasDecl) declNode()  {}
-func (*UseDecl) declNode()     {}
-func (*FunDecl) declNode()     {}
-func (*StructDecl) declNode()  {}
-func (*TraitDecl) declNode()   {}
-func (*ImplDecl) declNode()    {}
-func (*ValDecl) declNode()     {}
-func (*ExternBlock) declNode() {}
-func (*BadDecl) declNode()     {}
+func (*UseDecl) declNode()        {}
+func (*FunDecl) declNode()        {}
+func (*StructDecl) declNode()     {}
+func (*TraitDecl) declNode()      {}
+func (*ImplDecl) declNode()       {}
+func (*ValDecl) declNode()        {}
+func (*ExternBlock) declNode()    {}
+func (*BadDecl) declNode()        {}
 
 // ---------------------------------------------------------------------------
 // Statements
@@ -462,9 +471,9 @@ func (s *BreakStmt) Span() source.Span    { return s.Pos }
 func (s *ContinueStmt) Span() source.Span { return s.Pos }
 func (s *LoopStmt) Span() source.Span     { return s.Pos }
 
-func (s *ScopeStmt) Span() source.Span    { return s.Pos }
-func (s *FunStmt) Span() source.Span      { return s.Fun.Pos }
-func (s *BadStmt) Span() source.Span      { return s.Pos }
+func (s *ScopeStmt) Span() source.Span { return s.Pos }
+func (s *FunStmt) Span() source.Span   { return s.Fun.Pos }
+func (s *BadStmt) Span() source.Span   { return s.Pos }
 
 func (*Block) stmtNode()        {}
 func (*ValStmt) stmtNode()      {}
@@ -476,9 +485,9 @@ func (*BreakStmt) stmtNode()    {}
 func (*ContinueStmt) stmtNode() {}
 func (*LoopStmt) stmtNode()     {}
 
-func (*ScopeStmt) stmtNode()    {}
-func (*FunStmt) stmtNode()      {}
-func (*BadStmt) stmtNode()      {}
+func (*ScopeStmt) stmtNode() {}
+func (*FunStmt) stmtNode()   {}
+func (*BadStmt) stmtNode()   {}
 
 // ---------------------------------------------------------------------------
 // Expressions

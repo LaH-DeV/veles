@@ -229,7 +229,7 @@ func (p *Parser) syncDecl() {
 		if depth == 0 {
 			switch k {
 			case lexer.KwFun, lexer.KwStruct, lexer.KwTrait, lexer.KwImpl, lexer.KwSealed,
-				lexer.KwPub, lexer.KwPrivate, lexer.KwUse, lexer.KwExtern, lexer.KwVal, lexer.KwVar, lexer.KwConst, lexer.KwType, lexer.At:
+				lexer.KwPub, lexer.KwPrivate, lexer.KwInternal, lexer.KwUse, lexer.KwExtern, lexer.KwVal, lexer.KwVar, lexer.KwConst, lexer.KwType, lexer.At:
 				return
 			}
 			if p.atErrorDecl() || p.atExtendDecl() {
@@ -295,7 +295,7 @@ func (p *Parser) parseFile() *ast.File {
 
 func (p *Parser) startsDecl() bool {
 	return p.atErrorDecl() || p.atExtendDecl() || p.at(lexer.KwFun, lexer.KwStruct, lexer.KwTrait, lexer.KwImpl, lexer.KwSealed,
-		lexer.KwPub, lexer.KwPrivate, lexer.KwUse, lexer.KwExtern, lexer.KwVal, lexer.KwVar, lexer.KwConst, lexer.At)
+		lexer.KwPub, lexer.KwPrivate, lexer.KwInternal, lexer.KwUse, lexer.KwExtern, lexer.KwVal, lexer.KwVar, lexer.KwConst, lexer.At)
 }
 
 func (p *Parser) parseAttributes() []*ast.Attribute {
@@ -359,16 +359,53 @@ func (p *Parser) takeDoc() string {
 
 func (p *Parser) parseDeclBody(attrs []*ast.Attribute) ast.Decl {
 	start := p.span()
+	// visibility (M5): `public` = the package, `internal` = the module,
+	// which is also what nothing means; `private` belongs to members
 	pub := p.accept(lexer.KwPub)
+	internal := p.accept(lexer.KwInternal)
+	if internal && pub {
+		p.errorf(start, "'public' and 'internal' contradict each other; a declaration has one visibility (M5)")
+	}
 	if p.at(lexer.KwPrivate) {
 		p.errorf(p.span(), "'private' belongs to a member of a struct; a top-level declaration is private to its module unless 'public' (M5)")
 		p.next()
 	}
+	marked := pub || internal
+	which := "'public'"
+	if internal {
+		which = "'internal'"
+	}
+	d := p.parseDeclKind(attrs, pub, marked, which, start)
+	if internal {
+		setInternal(d)
+	}
+	return d
+}
 
+// setInternal records an explicit `internal` on the declaration, so the
+// formatter keeps the author's word (it changes nothing else).
+func setInternal(d ast.Decl) {
+	switch d := d.(type) {
+	case *ast.FunDecl:
+		d.Internal = true
+	case *ast.StructDecl:
+		d.Internal = true
+	case *ast.TraitDecl:
+		d.Internal = true
+	case *ast.ValDecl:
+		d.Internal = true
+	case *ast.ErrorAliasDecl:
+		d.Internal = true
+	case *ast.TypeAliasDecl:
+		d.Internal = true
+	}
+}
+
+func (p *Parser) parseDeclKind(attrs []*ast.Attribute, pub, marked bool, which string, start source.Span) ast.Decl {
 	switch p.cur().Kind {
 	case lexer.KwUse:
-		if pub {
-			p.errorf(start, "'use' cannot be 'public'")
+		if marked {
+			p.errorf(start, "'use' cannot be %s", which)
 		}
 		return p.parseUse()
 	case lexer.KwFun, lexer.KwUnsafe, lexer.KwStatic:
@@ -383,16 +420,16 @@ func (p *Parser) parseDeclBody(attrs []*ast.Attribute) ast.Decl {
 			return p.parseErrorDecl(attrs, pub, start)
 		}
 		if p.atExtendDecl() {
-			if pub {
-				p.errorf(start, "'extend' cannot be 'public'; mark the methods instead")
+			if marked {
+				p.errorf(start, "'extend' cannot be %s; mark the methods instead", which)
 			}
 			return p.parseImpl(attrs, true)
 		}
 	case lexer.KwSealed, lexer.KwTrait:
 		return p.parseTrait(attrs, pub, start)
 	case lexer.KwImpl:
-		if pub {
-			p.errorf(start, "'impl' cannot be 'public'; visibility follows the trait and type")
+		if marked {
+			p.errorf(start, "'impl' cannot be %s; visibility follows the trait and type", which)
 		}
 		return p.parseImpl(attrs, false)
 	case lexer.KwVal, lexer.KwVar, lexer.KwConst:
@@ -623,6 +660,8 @@ func (p *Parser) parseFun(attrs []*ast.Attribute, ctx funContext) *ast.FunDecl {
 			if ctx == funContextFree || ctx == funContextExtern {
 				p.errorf(p.span(), "'private' belongs to a member of a struct; a top-level declaration is private to its module unless 'public' (M5)")
 			}
+		case lexer.KwInternal:
+			fn.Internal = true
 		case lexer.KwStatic:
 			fn.Static = true
 			if ctx == funContextFree || ctx == funContextExtern {
@@ -702,40 +741,40 @@ func (p *Parser) parseStruct(attrs []*ast.Attribute, pub, extern bool, start sou
 		p.skipSemis()
 		for !p.at(lexer.RBrace, lexer.EOF) {
 			mattrs := p.parseAttributes()
-			switch p.cur().Kind {
+			// a member may start with a visibility word (M5: public /
+			// internal / private); what follows says whether it is a field,
+			// a static or a method
+			at := 0
+			vis := p.cur().Kind
+			hasVis := vis == lexer.KwPub || vis == lexer.KwPrivate || vis == lexer.KwInternal
+			if hasVis {
+				at = 1
+			}
+			switch p.peek(at).Kind {
+			case lexer.Ident, lexer.KwVar, lexer.KwVal, lexer.KwProtected:
+				d.Fields = append(d.Fields, p.parseField(vis == lexer.KwPub, vis == lexer.KwPrivate, vis == lexer.KwInternal, hasVis))
 			case lexer.KwStatic:
-				if p.peek(1).Kind == lexer.KwVal || p.peek(1).Kind == lexer.KwVar {
-					d.Statics = append(d.Statics, p.parseStaticVal(mattrs, false))
+				if p.peek(at+1).Kind == lexer.KwVal || p.peek(at+1).Kind == lexer.KwVar {
+					if hasVis {
+						p.next()
+					}
+					if vis == lexer.KwPrivate {
+						p.errorf(p.prevSpan(), "a static value cannot be 'private'; it is the module's unless 'public' (D23)")
+					}
+					d.Statics = append(d.Statics, p.parseStaticVal(mattrs, vis == lexer.KwPub, vis == lexer.KwInternal))
 				} else {
 					d.Methods = append(d.Methods, p.parseFun(mattrs, funContextMethod))
 				}
 			case lexer.KwFun, lexer.KwMut, lexer.KwOverride, lexer.KwUnsafe:
 				d.Methods = append(d.Methods, p.parseFun(mattrs, funContextMethod))
 			case lexer.KwImpl:
-				d.Impls = append(d.Impls, p.parseInlineImpl(mattrs, d))
-			case lexer.KwPub:
-				if p.peek(1).Kind == lexer.Ident || p.peek(1).Kind == lexer.KwVar {
-					d.Fields = append(d.Fields, p.parseField(true, false))
-				} else if p.peek(1).Kind == lexer.KwStatic && (p.peek(2).Kind == lexer.KwVal || p.peek(2).Kind == lexer.KwVar) {
+				if hasVis {
+					p.errorf(p.span(), "an inline 'impl' has no visibility of its own; it follows the trait and type")
 					p.next()
-					d.Statics = append(d.Statics, p.parseStaticVal(mattrs, true))
-				} else {
-					d.Methods = append(d.Methods, p.parseFun(mattrs, funContextMethod))
 				}
-			case lexer.KwPrivate:
-				if p.peek(1).Kind == lexer.Ident || p.peek(1).Kind == lexer.KwVar {
-					d.Fields = append(d.Fields, p.parseField(false, true))
-				} else {
-					d.Methods = append(d.Methods, p.parseFun(mattrs, funContextMethod))
-				}
-			case lexer.Ident, lexer.KwVar:
-				d.Fields = append(d.Fields, p.parseField(false, false))
-			case lexer.KwVal:
-				p.errorf(p.span(), "a field is immutable unless declared 'var'; write the name alone instead of 'val' (D22)")
-				p.next()
-				d.Fields = append(d.Fields, p.parseField(false, false))
+				d.Impls = append(d.Impls, p.parseInlineImpl(mattrs, d))
 			default:
-				p.errorf(p.span(), "expected a field or method, found %s", p.cur().Describe())
+				p.errorf(p.peek(at).Span, "expected a field or method, found %s", p.peek(at).Describe())
 				p.syncStmt()
 				continue
 			}
@@ -751,7 +790,7 @@ func (p *Parser) parseStruct(attrs []*ast.Attribute, pub, extern bool, start sou
 
 // parseStaticVal parses `static val name[: T] = expr` inside a struct body:
 // a constant in the type's namespace, read as `Type.name`.
-func (p *Parser) parseStaticVal(attrs []*ast.Attribute, pub bool) *ast.ValDecl {
+func (p *Parser) parseStaticVal(attrs []*ast.Attribute, pub, internal bool) *ast.ValDecl {
 	start := p.span()
 	doc := p.takeDoc()
 	p.next() // static
@@ -759,7 +798,7 @@ func (p *Parser) parseStaticVal(attrs []*ast.Attribute, pub bool) *ast.ValDecl {
 		p.errorf(p.span(), "a static member is a 'val': a type's constants do not change (a mutable global belongs at module level)")
 	}
 	p.next() // val / var
-	d := &ast.ValDecl{Attrs: attrs, Doc: doc, Pub: pub, Kind: ast.BindVal}
+	d := &ast.ValDecl{Attrs: attrs, Doc: doc, Pub: pub, Internal: internal, Kind: ast.BindVal}
 	d.Name, _ = p.expectIdent()
 	if p.accept(lexer.Colon) {
 		d.Type = p.parseType()
@@ -777,15 +816,40 @@ func (p *Parser) expectTerminatorPeek(what string) {
 	}
 }
 
-func (p *Parser) parseField(pub, private bool) *ast.Field {
+// parseField parses `[public|internal|private] [protected] [val|var] name: T [= default]`
+// with the visibility word (if hasVis) still at the cursor.
+func (p *Parser) parseField(pub, private, internal, hasVis bool) *ast.Field {
 	start := p.span()
 	doc := p.takeDoc()
-	if pub || private {
+	if hasVis {
 		p.next()
 	}
-	f := &ast.Field{Pub: pub, Private: private, Doc: doc}
-	if p.accept(lexer.KwVar) {
+	f := &ast.Field{Pub: pub, Private: private, Internal: internal, Doc: doc}
+	// mutability (D22): bare or `val` = set once by the constructor; `var`
+	// = assignable by anyone who sees the field; `protected var` =
+	// assignable only by the type's own declarations
+	if p.at(lexer.KwProtected) {
+		sp := p.span()
+		p.next()
+		f.Protected = true
+		switch {
+		case private:
+			p.errorf(sp, "'private protected' is redundant: a private field is already assignable only by the type; write 'private var' (D22)")
+		case !p.at(lexer.KwVar):
+			p.errorf(sp, "'protected' qualifies 'var': a bare field is never assigned, so there is nothing to protect; write 'protected var %s' (D22)", p.cur().Text)
+		}
+	}
+	switch p.cur().Kind {
+	case lexer.KwVar:
 		f.Var = true
+		p.next()
+	case lexer.KwVal:
+		f.Val = true
+		p.next()
+	}
+	if p.at(lexer.KwVar, lexer.KwVal, lexer.KwProtected) {
+		p.errorf(p.span(), "a field is 'val' (the default), 'var' or 'protected var' (D22)")
+		p.next()
 	}
 	f.Name, _ = p.expectIdent()
 	if _, ok := p.expect(lexer.Colon); ok {
@@ -837,7 +901,7 @@ func (p *Parser) parseTrait(attrs []*ast.Attribute, pub bool, start source.Span)
 				}
 				at.Pos = p.spanFrom(ts)
 				d.AssocTypes = append(d.AssocTypes, at)
-			case lexer.KwFun, lexer.KwMut, lexer.KwUnsafe, lexer.KwPub, lexer.KwStatic:
+			case lexer.KwFun, lexer.KwMut, lexer.KwUnsafe, lexer.KwPub, lexer.KwInternal, lexer.KwStatic:
 				d.Methods = append(d.Methods, p.parseFun(mattrs, funContextTrait))
 			default:
 				p.errorf(p.span(), "expected 'type' or 'fun' in trait body, found %s", p.cur().Describe())
@@ -928,7 +992,7 @@ func (p *Parser) parseImplBody(d *ast.ImplDecl, extend bool) {
 					b.Type = p.parseType()
 				}
 				d.AssocTypes = append(d.AssocTypes, b)
-			case lexer.KwFun, lexer.KwMut, lexer.KwOverride, lexer.KwUnsafe, lexer.KwPub, lexer.KwPrivate, lexer.KwStatic:
+			case lexer.KwFun, lexer.KwMut, lexer.KwOverride, lexer.KwUnsafe, lexer.KwPub, lexer.KwPrivate, lexer.KwInternal, lexer.KwStatic:
 				d.Methods = append(d.Methods, p.parseFun(mattrs, funContextMethod))
 			default:
 				if extend {

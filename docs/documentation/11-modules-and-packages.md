@@ -85,9 +85,14 @@ touch, a member can be `private` to its type
 ([chapter 5](05-structs-and-methods.md#visibility)).
 
 The three levels, then: `private` — the type's own methods, impl and
-extend blocks; nothing written — the module (the directory); `public` —
-the whole package. What leaves the *package* is not a keyword but the
-manifest's `exports` list, below.
+extend blocks; `internal` — the module (the directory), which is what
+nothing written means, so the word is optional; `public` — the whole
+package. These say who can *see* a name. Who can *assign* a field is a
+separate question with its own words — bare, `protected var`, `var`
+([chapter 5](05-structs-and-methods.md#protected-var-everyone-reads-the-type-writes)) —
+so `public protected var count` reads "everyone sees it, only the type
+changes it". What leaves the *package* is not a keyword but the manifest's
+`exports` list, below.
 
 ## Packages and `veles.toml`
 

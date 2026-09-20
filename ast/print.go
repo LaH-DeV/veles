@@ -150,8 +150,16 @@ func (p *printer) decl(d Decl) {
 				if fld.Private {
 					p.w("private ")
 				}
-				if fld.Var {
+				if fld.Internal {
+					p.w("internal ")
+				}
+				switch {
+				case fld.Protected:
+					p.w("protected var ")
+				case fld.Var:
 					p.w("var ")
+				case fld.Val:
+					p.w("val ")
 				}
 				p.w(fld.Name.Name + ": ")
 				p.typ(fld.Type)

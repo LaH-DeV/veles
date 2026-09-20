@@ -804,10 +804,15 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 		if fld == nil {
 			return nil, nil
 		}
-		if mutate && !fld.Var {
+		if mutate {
 			// D22 (v0.30): mutability is declared on the field, whoever holds
-			// the struct; a bare field is set once, by the constructor call
-			f.c.errorFix(e.Name.Pos, f.fixVarField(st, fld), "cannot assign to '%s.%s': the field is immutable; declare it 'var %s: %s' to allow assignment, or build a new '%s' (D22)", st.Name, fld.Name, fld.Name, fld.Type, st.Name)
+			// the struct: a bare field is set once, by the constructor call;
+			// a `protected var` is assigned only by the type's own declarations
+			if !fld.Var {
+				f.c.errorFix(e.Name.Pos, f.fixVarField(st, fld), "cannot assign to '%s.%s': the field is immutable; declare it 'var %s: %s' to allow assignment, or build a new '%s' (D22)", st.Name, fld.Name, fld.Name, fld.Type, st.Name)
+			} else if fld.Protected && !f.insideType(st) {
+				f.errorf(e.Name.Pos, "cannot assign to '%s.%s' here: the field is 'protected var', assigned only by '%s' itself — its methods, impl and extend blocks; call a method of '%s' (D22)", st.Name, fld.Name, st.Name, st.Name)
+			}
 		}
 		return &FieldGet{exprBase{fld.Type}, base, fld.Index, fld.Name}, root
 	case *ast.IndexExpr:

@@ -927,3 +927,21 @@ R20. DONE (2026-09-20, user decisions): mutability moved from the method to the 
     diagnosed; (2) escapes by call are not tracked (`helper(self.items)` may push) — the
     receiver pass is a path check on `self`; (3) `&self.x` marks the receiver variable
     AddrTaken, which disables narrowing on self paths after it (conservative).
+R21. DONE (2026-09-20, user decisions after R20): (1) `internal` keyword = the unwritten module
+    level, optional, allowed wherever `public` is (top-level decls, fields, methods, statics);
+    formatter keeps it; `public internal` is an error. `protected` REJECTED for that level
+    (means subclasses everywhere else). examples/packages/mathlib/internal renamed `support`.
+    (2) `val` may be written on a field (= bare); formatter keeps it. (3) `readonly` field =
+    read wherever visible, assigned only inside the type (insideType); counts as var for
+    narrowing/Sendable; `private readonly` refused as redundant. `var(private)` REJECTED by the
+    user ("does not look like Veles"); making readonly the DEFAULT rejected by me (guarantee +
+    Sendable) and accepted. Spec D22/M5 addenda, docs 05/11, cheatsheet, errors reference,
+    grammar, LSP keywords, sema/format tests.
+R22. DONE (2026-09-20, user decision): `readonly` → `protected var` (R21 (3) superseded). The
+    user's reasoning: no inheritance now or later (traits are the alternative), so `protected`
+    is free to mean "protected from writes by anyone but the owner"; `public protected var i`
+    = everyone sees and reads, only the struct assigns. `protected` qualifies `var` (bare has
+    nothing to protect → error); `private protected var` redundant → error; never restricts
+    reading. Documented as a two-question grid (who sees / who assigns) in docs 05 with a table,
+    11, cheatsheet, errors reference; spec D22 addendum rewritten (records readonly,
+    var(private), private(set) as rejected), M5 addendum corrected. `readonly` is not a keyword.

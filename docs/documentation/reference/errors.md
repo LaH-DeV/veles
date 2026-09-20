@@ -85,9 +85,23 @@ collection's contents can still change.
 
 A bare field is set by the constructor call and never assigned again,
 whoever holds the struct — through a binding, a pointer or `self`. Mark
-the field `var` if it is meant to change, or build a new value (D22). A
+the field `var` if it is meant to change, `protected var` if only the
+type's own code should change it, or build a new value (D22). A
 method call on a global `val` is refused the same way when the method
 changes its receiver: a global is shared by every task (D35).
+
+### `cannot assign to 'T.f' here: the field is 'protected var'`
+
+A `protected var` field is assigned only inside the type's own
+declarations — its methods, `impl` and `extend` blocks; everyone else
+reads it. Call a method of the type, or make the field a plain `var` if
+outside writes are intended (D22).
+
+### `'protected' qualifies 'var'`
+
+`protected` restricts *who may assign* a field, so it goes with `var`:
+`protected var count: i64`. A bare field is never assigned by anyone, and
+so has nothing to protect (D22).
 
 ### `cannot push into an immutable List; use MutableList`
 

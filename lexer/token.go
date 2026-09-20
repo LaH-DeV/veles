@@ -92,6 +92,8 @@ const (
 	KwSealed
 	KwPub
 	KwPrivate
+	KwInternal // the unwritten module level, spelled out (M5)
+	KwProtected // `protected var`: a field assigned only by its type (D22)
 	KwUse
 	KwWhen
 	KwIs
@@ -142,6 +144,8 @@ var keywords = map[string]TokenKind{
 	"sealed":   KwSealed,
 	"public":   KwPub,
 	"private":  KwPrivate,
+	"internal": KwInternal,
+	"protected": KwProtected,
 	"use":      KwUse,
 	"when":     KwWhen,
 	"is":       KwIs,

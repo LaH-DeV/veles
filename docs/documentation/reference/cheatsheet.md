@@ -102,12 +102,13 @@ value.
 // fragment
 struct Point {
   var x: i64                    // var: assignable (through self, a binding, a pointer)
-  y: i64 = 0                    // bare: set by the constructor, never assigned (D22); default
+  y: i64 = 0                    // bare (or `val`): set by the constructor, never assigned (D22); default
+  public protected var hits: i64 = 0  // protected var: read wherever visible, assigned only by Point's own code
   fun len(): i64 = self.x + self.y
   fun move(dx: i64) { self.x += dx }   // no marker: a method may assign the var fields
   static fun origin(): Point = Point(x: 0)  // no self; Point.origin()
   static val unit = Point(x: 1)             // a constant in the type's namespace: Point.unit (public to export; never var)
-  private count: i64 = 0                    // private: only Point's own methods/impl/extend blocks; no marker = the module; public = the package
+  private count: i64 = 0                    // private: only Point's own methods/impl/extend blocks; no marker (or `internal`) = the module; public = the package
 }
 val p = Point(x: 1)             // named construction (Point(x, y) puns variables named like fields); p == q, "$p" work
 val n = i64.parse("42")         // i64?; Parsable — T.parse(s) in generic code
