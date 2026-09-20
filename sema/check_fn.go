@@ -27,6 +27,7 @@ type fnCtx struct {
 	errType     types.Type // declared error union, or nil when inferred
 	unsafe      int
 	selfVar     *Var          // `self`: a pointer to the receiver's place (D22 v0.30)
+	ctor        *ctorScope    // checking a field default inside a constructor call (D28 v0.30)
 	isGlobal    bool          // checking a global initializer
 	staticOwner *types.Struct // the struct whose `static val` this global initializer is, if any
 
@@ -209,6 +210,7 @@ func (c *Checker) checkBody(fn *Func) {
 	}
 	for i, p := range t.Decl.Params {
 		v := f.newVar(p.Name.Name, fn.Sig.Params[i].Type, false, p.Name.Pos)
+		v.IsParam = true
 		if ft, ok := t.Sig.Params[i].Type.(*types.Func); ok && ft.Effects.Throws && ft.Effects.Error != nil && types.ContainsTypeParam(ft.Effects.Error) {
 			v.ErrPoly = true // `try f(x)` stays valid in the instance where E is Never
 		}
@@ -480,6 +482,10 @@ func (f *fnCtx) checkValStmt(s *ast.ValStmt) []Stmt {
 			declared = types.TInvalid
 		}
 		v := f.newVar(b.Name.Name, declared, mutable, b.Name.Pos)
+		if s.Value != nil {
+			v.InitText = srcText(s.Value) // for the hover
+			f.c.refVar(b.Name.Pos, v)     // re-record the declaration with it
+		}
 		f.declareChecked(b.Name.Name, v, b.Name.Pos)
 		return []Stmt{&VarDecl{Var: v, Init: init}}
 	}
@@ -863,6 +869,9 @@ func (f *fnCtx) insideType(st *types.Struct) bool {
 	for ctx := f; ctx != nil; ctx = ctx.parent {
 		if ctx.staticOwner != nil && templateOf(ctx.staticOwner) == tmpl {
 			return true
+		}
+		if ctx.ctor != nil && templateOf(ctx.ctor.st) == tmpl {
+			return true // a field default is the type's own code
 		}
 		if ctx.fn == nil || ctx.fn.tmpl == nil {
 			continue

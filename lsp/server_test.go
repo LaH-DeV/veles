@@ -888,3 +888,41 @@ func TestCompletionVisibility(t *testing.T) {
 		}
 	}
 }
+
+// A local's hover shows its initializer as written; a parameter says so.
+func TestHoverLocals(t *testing.T) {
+	src := "use io\n\nfun scale(factor: i64): i64 {\n  val base = factor * 10\n  var total = base + 1\n  total += factor\n  total\n}\n\nfun main() { io.println(\"${scale(2)}\") }\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := pathToURI(path)
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{})
+	c.notify("initialized", map[string]any{})
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": src}})
+	hover := func(line, ch int) string {
+		res, _ := c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": line, "character": ch}})
+		var h struct {
+			Contents struct {
+				Value string `json:"value"`
+			} `json:"contents"`
+		}
+		json.Unmarshal(res, &h)
+		return h.Contents.Value
+	}
+	for _, tc := range []struct {
+		line, ch int
+		want     string
+	}{
+		{3, 7, "val base: i64 = factor * 10"},
+		{5, 3, "var total: i64 = base + 1"},
+		{3, 14, "val factor: i64  (parameter)"},
+	} {
+		if h := hover(tc.line, tc.ch); !strings.Contains(h, tc.want) {
+			t.Errorf("hover at %d:%d: %q\nwant %q", tc.line, tc.ch, h, tc.want)
+		}
+	}
+}

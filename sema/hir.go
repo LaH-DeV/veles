@@ -81,6 +81,13 @@ type Func struct {
 	// callee. Both are set by the receiver pass (receivers.go, D22 v0.30).
 	SelfEscapes bool
 	WritesSelf  bool
+	// FieldsUsed are the receiver's fields the method reads or writes,
+	// by index, directly or through the methods it calls on self;
+	// AllFields when it uses the receiver as a whole (copies it, hands out
+	// a pointer to it, captures it). A method called on a struct under
+	// construction (D28 derived defaults) must stay within the bound fields.
+	FieldsUsed map[int]bool
+	AllFields  bool
 }
 
 type Var struct {
@@ -90,13 +97,19 @@ type Var struct {
 	AddrTaken bool
 	Captured  bool // inside a closure: read through the environment
 	IsSelf    bool // a method's receiver (or its stand-in inside a lambda): a pointer read as the value
-	ErrPoly   bool // a parameter declared `fun(..) throws E` with E a type parameter of the enclosing function
-	CapIndex  int
-	Outer     *Var // the enclosing function's variable this stands for
-	IsGlobal  bool
-	Global    *Global
-	ID        int
-	Span      source.Span
+	IsParam   bool // a function or lambda parameter
+	// Partial marks the temporary holding a struct under construction, as
+	// `self` inside the default of field Partial.Index (D28); the receiver
+	// pass checks that the methods called on it read only earlier fields.
+	Partial  *PartialSelf
+	InitText string // a local binding's initializer as written, for the hover
+	ErrPoly  bool   // a parameter declared `fun(..) throws E` with E a type parameter of the enclosing function
+	CapIndex int
+	Outer    *Var // the enclosing function's variable this stands for
+	IsGlobal bool
+	Global   *Global
+	ID       int
+	Span     source.Span
 	// used records a read of the variable; checkUse marks bindings the
 	// checker reports when they are never read (see reportUnused).
 	used     bool
@@ -204,6 +217,12 @@ type StringConst struct {
 }
 
 type UnitConst struct{ exprBase }
+
+// Zero is the all-zero value of a type: the placeholder for the fields
+// not yet bound in a partially built struct (D28 derived defaults). It is
+// never read — the receiver pass proves a method called on the partial
+// value touches only the fields already bound.
+type Zero struct{ exprBase }
 
 // NullConst is the `None` of a nullable type.
 type NullConst struct{ exprBase }
@@ -685,4 +704,12 @@ type RaceArm struct {
 type Race struct {
 	exprBase
 	Arms []*RaceArm
+}
+
+// PartialSelf describes a struct value under construction: fields below
+// Index are not bound yet.
+type PartialSelf struct {
+	Struct *types.Struct
+	Index  int
+	Span   source.Span // the default expression
 }

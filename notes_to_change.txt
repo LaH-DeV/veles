@@ -988,3 +988,29 @@ R26. DONE (2026-09-20): (1) Constructor rule for private fields RELAXED (spec M5
     traits the type implements (`impl Display`, `impl Comparable`, and `impl Error` for error
     types) — that is how "which traits does this struct have" is answered; the header
     `struct X : T` remains sealed-variant membership only (D12/D23), conformance is `impl`.
+R27. DONE (2026-09-20): derived field defaults (spec D28 addendum v0.30, docs 05 "Defaults
+    derived from other fields"): `private positions: List<i64> = self.toks.map(t => t.1)` —
+    a default may read fields declared ABOVE it as `self.<field>`; constructor lowering binds
+    fields to temporaries in order (Let chain) only for structs whose defaults mention self
+    (Checker.derived); `fnCtx.ctor`/ctorScope resolves `self.f` (lambdas inside see it);
+    errors for a later field, the field itself, methods/bare self; warning when derived from
+    a `var` field (computed once, goes stale). sema TestDerivedDefaults.
+
+PARKED — must be addressed later (user, 2026-09-20):
+  * ENUMS: closed sets of named values (statuses, methods, content types) — design in R18
+    discussion; `static val` covers open sets for now.
+  * SUPERTRAITS: `trait Shape : Display` (a requirement on implementors, not inheritance);
+    parser accepts, sema says "not supported yet". First real customer will be
+    `Hashable : Equatable`; also lets a default body use the supertrait. Decide together with
+    enums when a std trait needs it.
+R28. DONE (2026-09-20): (1) a derived default may CALL METHODS on `self` (user's
+    `count = self.getCount()`): `self` in a default is the struct-so-far bound to a temporary
+    (Var.Partial, unbound fields `Zero`), and the receiver pass now computes Func.FieldsUsed /
+    AllFields (fields read or written through self, transitively via self-calls and closures;
+    whole-value uses = all) and refuses a call whose method reaches a field at/below the one
+    being initialized, naming it; any other use of the partial `self` is an error. A field
+    default counts as inside the type (private methods callable). Spec D28 addendum extended
+    ("Swift's definite initialization made precise per method"), docs 05 updated.
+    (2) Local hover shows the initializer as written (`val base: i64 = factor * 10`) and marks
+    parameters `(parameter)` (Var.InitText / IsParam; declaration ref re-recorded after the
+    initializer is known). lsp TestHoverLocals.

@@ -126,6 +126,8 @@ func (g *gen) expr(e sema.Expr) string {
 		return g.stringConst(e.Value)
 	case *sema.UnitConst:
 		return "zeroinitializer"
+	case *sema.Zero:
+		return "zeroinitializer"
 	case *sema.NullConst:
 		if isPtrLike(e.Type().(*types.Nullable).Elem) {
 			return "null"

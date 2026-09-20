@@ -125,6 +125,7 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 				}
 			}
 			v := l.newVar(p.Name.Name, pt, false, p.Name.Pos)
+			v.IsParam = true
 			l.declareLocal(p.Name.Name, v, p.Name.Pos)
 			params = append(params, v)
 		}
@@ -162,6 +163,7 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 				pt = types.TInvalid
 			}
 			v := l.newVar(p.Name.Name, pt, false, p.Name.Pos)
+			v.IsParam = true
 			l.declareLocal(p.Name.Name, v, p.Name.Pos)
 			params = append(params, v)
 			fn.Params = append(fn.Params, v)

@@ -238,6 +238,12 @@ func (f *fnCtx) checkExpr(e ast.Expr, want types.Type) Expr {
 		f.errorf(e.Pos, "cannot infer the type of 'null' here; annotate the binding, e.g. 'val x: T? = null'")
 		return bad()
 	case *ast.SelfExpr:
+		if sc := f.ctorScopeOf(); sc != nil {
+			// the struct as built so far: the receiver of a method call in
+			// a derived default (D28); any other use is reported by the
+			// receiver pass, which knows what each method reads
+			return f.partialSelf(sc, e.Pos)
+		}
 		self := f.selfRef()
 		if self == nil {
 			if f.fn != nil && f.fn.tmpl != nil && f.fn.tmpl.Decl.Static {
@@ -536,6 +542,12 @@ func narrowReaches(from, to types.Type) bool {
 }
 
 func (f *fnCtx) memberExpr(e *ast.MemberExpr, want types.Type) Expr {
+	// `self.field` in a field default: an earlier field's value (D28 v0.30)
+	if _, isSelf := e.X.(*ast.SelfExpr); isSelf && !e.Safe {
+		if x, ok := f.ctorField(e); ok {
+			return x
+		}
+	}
 	// module member or sealed variant?
 	if n, ok := e.X.(*ast.NameExpr); ok {
 		if sym := f.lookup(n.Name); sym != nil {

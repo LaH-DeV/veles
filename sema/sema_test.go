@@ -2509,3 +2509,55 @@ struct C { protected var n: i64 = 0 }
 fun run(f: sendable fun(): i64): i64 = f()
 fun main() { val c = C(); io.println("${run(() => c.n)}") }`, "which has 'var' fields")
 }
+
+// D28 (v0.30): a field default may be derived from the fields declared
+// above it, read as `self.<field>`; the constructor binds fields in order.
+func TestDerivedDefaults(t *testing.T) {
+	expectClean(t, prelude+`
+struct Parser {
+  private toks:      List<(string, i64)>
+  private positions: List<i64> = self.toks.map(v => v.1)
+  private count:     i64 = self.positions.len()
+  fun total(): i64 = self.count + self.positions.len()
+}
+struct Wrap { inner: Parser; n: i64 = self.inner.total() }
+fun main() {
+  val p = Parser(toks: [("a", 1)])
+  io.println("${p.total()} ${Wrap(inner: p).n}")
+}`)
+	for _, c := range []struct{ name, src, want string }{
+		{"a later field", `struct P { a: i64 = self.b + 1; b: i64 = 2 }
+fun main() { P() }`, "'b' is declared below 'a', so it has no value yet"},
+		{"the field itself", `struct P { a: i64 = self.a }
+fun main() { P() }`, "cannot read 'a' itself"},
+		{"a method reading a later field", `struct P { a: i64 = 1; b: i64 = self.twice(); c: i64 = 3; fun twice(): i64 = self.a * self.c }
+fun main() { P() }`, "calls 'twice', which reads 'c' — declared at or below 'b'"},
+		{"a method reading a later field through another", `struct P { a: i64 = 1; b: i64 = self.twice(); c: i64 = 3; fun twice(): i64 = self.inner(); fun inner(): i64 = self.c }
+fun main() { P() }`, "calls 'twice', which reads 'c'"},
+		{"a method using the whole value", `struct P { a: i64 = 1; b: string = self.show(); fun show(): string = "$self" }
+fun main() { P() }`, "calls 'show', which uses the whole value"},
+
+		{"bare self", `struct P { a: i64 = 1; b: string = "$self" }
+fun main() { P() }`, "'self' in the default of 'b'"},
+		{"inside a lambda", `struct P { xs: List<i64>; ys: List<i64> = self.xs.map(x => x + self.zs.len()); zs: List<i64> = [] }
+fun main() { P(xs: []) }`, "'zs' is declared below 'ys'"},
+	} {
+		t.Run(c.name, func(t *testing.T) { expectError(t, prelude+c.src, c.want) })
+	}
+	expectWarning(t, prelude+`
+struct Box { var size: i64; label: string = "box of ${self.size}" }
+fun main() { io.println(Box(size: 1).label) }`, "'label' is derived from 'size', a 'var' field")
+	// a method that reads only the fields above is fine, private or not,
+	// through other methods too
+	expectClean(t, prelude+`
+struct Parser {
+  private toks:      List<(string, i64)>
+  private positions: List<i64> = self.toks.map(t => t.1)
+  private count:     i64 = self.getCount()
+  private var pos:   i64 = 0
+  private fun getCount(): i64 = self.span() + self.positions.len()
+  private fun span(): i64 = self.toks.len()
+  fun total(): i64 = self.count
+}
+fun main() { io.println("${Parser(toks: [("a", 1)]).total()}") }`)
+}

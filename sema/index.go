@@ -293,6 +293,13 @@ func (c *Checker) refVarAs(span source.Span, v *Var, as types.Type) {
 	if as != nil && !types.Identical(as, v.Type) {
 		t = as
 		detail = kind + " " + v.Name + typeSuffix(as) + "  (smart cast from " + v.Type.String() + ")"
+	} else if v.InitText != "" && len(v.InitText) <= 60 && !strings.Contains(v.InitText, "\n") {
+		detail += " = " + v.InitText
+	} else if v.InitText != "" {
+		detail += " = ..."
+	}
+	if v.IsParam {
+		detail += "  (parameter)"
 	}
 	c.index.Refs = append(c.index.Refs, Ref{Span: span, Def: v.Span, Kind: kind, Name: v.Name, Type: t, Detail: detail, Shape: c.shapeOf(t)})
 }

@@ -47,16 +47,30 @@ func (c *Checker) receiverPass(prog *Program) {
 			}
 		}
 	}
+	c.fieldUsePass(prog)
 	for _, fn := range prog.Funcs {
 		if fn.Body == nil {
 			continue
 		}
+		partials := map[*VarRef]bool{}
 		walkBlock(fn.Body, func(n any) {
-			call, ok := n.(*Call)
-			if !ok || call.Fn.Receiver == nil || len(call.Args) == 0 {
-				return
+			switch n := n.(type) {
+			case *Call:
+				if n.Fn.Receiver == nil || len(n.Args) == 0 {
+					return
+				}
+				c.applyReceiver(n)
+				if a, ok := n.Args[0].(*AddrOf); ok {
+					if r, ok := a.X.(*VarRef); ok && r.Var.Partial != nil {
+						partials[r] = true
+						c.checkPartialCall(n, r.Var.Partial)
+					}
+				}
+			case *VarRef:
+				if p := n.Var.Partial; p != nil && !partials[n] {
+					c.errorf(p.Span, "'self' in the default of '%s': the value is not built yet; a default may read the fields declared above it as 'self.<field>' and call methods that use only those (D28)", p.Struct.Fields[p.Index].Name)
+				}
 			}
-			c.applyReceiver(call)
 		})
 	}
 	for _, g := range prog.Globals {
@@ -205,4 +219,112 @@ func (c *Checker) lostCopy(call *Call, what string) {
 		}
 	}
 	c.errorf(call.RecvSpan, "%s; bind it with 'var' to change a copy, or reach the element with 'ref' / 'refOrPanic' or 'loop (&x in xs)' (D25)", what)
+}
+
+// fieldUsePass computes, for every method, which of the receiver's fields
+// it uses (Func.FieldsUsed / AllFields), to a fixpoint over the calls on
+// self. `self.f` reads field f; any other use of `self` as a whole — a
+// copy, `&self`, a capture, a task launch — counts as every field.
+func (c *Checker) fieldUsePass(prog *Program) {
+	changed := true
+	for changed {
+		changed = false
+		for _, fn := range prog.Funcs {
+			if fn.Body == nil || fn.AllFields {
+				continue
+			}
+			self := selfVarOf(fn)
+			if self == nil {
+				continue
+			}
+			used, all := fieldUse(fn, self)
+			if all && !fn.AllFields {
+				fn.AllFields = true
+				changed = true
+				continue
+			}
+			for i := range used {
+				if !fn.FieldsUsed[i] {
+					if fn.FieldsUsed == nil {
+						fn.FieldsUsed = map[int]bool{}
+					}
+					fn.FieldsUsed[i] = true
+					changed = true
+				}
+			}
+		}
+	}
+}
+
+func fieldUse(fn *Func, self *Var) (used map[int]bool, all bool) {
+	used = map[int]bool{}
+	consumed := map[Expr]bool{} // a Deref of self already accounted for
+	isSelf := func(e Expr) bool {
+		d, ok := e.(*Deref)
+		if !ok {
+			return false
+		}
+		v, ok := d.X.(*VarRef)
+		return ok && v.Var == self
+	}
+	walkBlock(fn.Body, func(n any) {
+		switch n := n.(type) {
+		case *FieldGet:
+			if isSelf(n.X) {
+				used[n.Index] = true
+				consumed[n.X] = true
+			}
+		case *Call:
+			if n.Fn.Receiver != nil && len(n.Args) > 0 {
+				if a, ok := n.Args[0].(*AddrOf); ok && isSelf(a.X) {
+					// a method on self: what it uses, we use
+					consumed[a.X] = true
+					consumed[a] = true
+					if n.Fn.AllFields {
+						all = true
+					}
+					for i := range n.Fn.FieldsUsed {
+						used[i] = true
+					}
+				}
+			}
+		case *AddrOf:
+			if isSelf(n.X) && !consumed[n] {
+				all = true // a pointer to the whole receiver handed out
+			}
+		case *Deref:
+			if isSelf(n) && !consumed[n] {
+				all = true // the receiver used as a value
+			}
+		case *Closure:
+			for _, v := range n.Captures {
+				if v == self {
+					if n.Fn.AllFields {
+						all = true
+					}
+					for i := range n.Fn.FieldsUsed {
+						used[i] = true
+					}
+				}
+			}
+		}
+	})
+	return used, all
+}
+
+// checkPartialCall reports a method called on a struct under construction
+// that reaches a field not bound yet.
+func (c *Checker) checkPartialCall(call *Call, p *PartialSelf) {
+	fn := call.Fn
+	field := p.Struct.Fields[p.Index].Name
+	if fn.AllFields {
+		c.errorf(call.RecvSpan, "the default of '%s' calls '%s', which uses the whole value ('%s' is not built yet); a method called in a default may read only the fields declared above '%s' (D28)", field, fn.Display, field, field)
+		return
+	}
+	for i := range fn.FieldsUsed {
+		if i >= p.Index {
+			c.errorf(call.RecvSpan, "the default of '%s' calls '%s', which reads '%s' — declared at or below '%s', so it has no value yet (D28)", field, fn.Display, p.Struct.Fields[i].Name, field)
+			return
+		}
+	}
 }

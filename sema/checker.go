@@ -20,6 +20,7 @@ type Checker struct {
 	roundDiags *source.Diagnostics
 	seen       map[string]bool
 	varFixes   map[*ast.Field]bool // fields already offered the `var` insertion (fixes.go)
+	derived    map[*types.Struct]bool // structs whose field defaults mention `self` (check_call.go)
 
 	universe *Scope
 	prog     *Program
