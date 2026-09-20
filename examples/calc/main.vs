@@ -27,12 +27,14 @@ error SyntaxError {
 fun isDigit(b: u8): bool = b >= '0' && b <= '9'
 fun isAlpha(b: u8): bool = (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || b == '_'
 
+type Position = i64
+
 struct Lexer {
   src:     string
-  var pos: i64 = 0
-  toks:    MutableList<(Token, i64)> = []
+  var pos: Position = 0
+  toks:    MutableList<(Token, Position)> = []
 
-  fun run(): List<(Token, i64)> throws SyntaxError {
+  fun run(): List<(Token, Position)> throws SyntaxError {
     loop (self.pos < self.src.len()) {
       val b = self.src.byteAt(self.pos)
       val start = self.pos
@@ -100,30 +102,24 @@ fun infixPower(t: Token): (i64, i64) = when (t) {
 }
 
 struct Parser {
-  toks:    List<(Token, i64)>
-  var pos: i64 = 0
+  private toks:    List<(Token, Position)>
+  private var pos: Position = 0
 
-  fun peek(): Token = self.toks.atOrPanic(self.pos).0
-  fun col(): i64 = self.toks.atOrPanic(self.pos).1
+  private fun peek(): Token = self.toks.atOrPanic(self.pos).0
+  private fun col(): Position = self.toks.atOrPanic(self.pos).1
 
-  fun next(): Token {
+  private fun next(): Token {
     val t = self.peek()
     if (self.pos < self.toks.len() - 1) self.pos += 1
     t
   }
 
-  fun expectOp(text: string) throws SyntaxError {
+  private fun expectOp(text: string) throws SyntaxError {
     val t = self.next()
     if (!(t is Op) || t.text != text) throw SyntaxError(message: "expected '$text'", col: self.col())
   }
 
-  fun parseAll(): Expr throws SyntaxError {
-    val e = try self.parseExpr(0)
-    if (!(self.peek() is End)) throw SyntaxError(message: "unexpected token", col: self.col())
-    e
-  }
-
-  fun parseExpr(minPower: i64): Expr throws SyntaxError {
+  private fun parseExpr(minPower: i64): Expr throws SyntaxError {
     var left = try self.parsePrefix()
     loop {
       val t = self.peek()
@@ -147,7 +143,7 @@ struct Parser {
     left
   }
 
-  fun parsePrefix(): Expr throws SyntaxError {
+  private fun parsePrefix(): Expr throws SyntaxError {
     val col = self.col()
     val t = self.next()
     when (t) {
@@ -184,6 +180,12 @@ struct Parser {
       is End                     => throw SyntaxError(message: "unexpected end of expression", col)
       else                       => throw SyntaxError(message: "unexpected token", col)
     }
+  }
+
+  fun parseAll(): Expr throws SyntaxError {
+    val e = try self.parseExpr(0)
+    if (!(self.peek() is End)) throw SyntaxError(message: "unexpected token", col: self.col())
+    e
   }
 }
 

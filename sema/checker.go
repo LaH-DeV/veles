@@ -332,6 +332,41 @@ func (c *Checker) collect() {
 	}
 	c.pendingErrorChecks = nil
 	c.collected = true
+	// the declaration sites themselves: a hover on `struct Notes {` or on a
+	// field where it is declared shows the same spelled-out form as a use
+	if c.index != nil {
+		for s, ctx := range c.structDecl {
+			d, ok := ctx.decl.(*ast.StructDecl)
+			if !ok || s.Template != nil {
+				continue
+			}
+			c.resolveStruct(s)
+			c.refType(d.Name.Pos, s.Name, s, d.Name.Pos)
+			for _, fld := range s.Fields {
+				for _, af := range d.Fields {
+					if af.Name.Name == fld.Name {
+						c.refField(af.Name.Pos, s, fld)
+					}
+				}
+			}
+		}
+		for tr, ctx := range c.traitDecl {
+			if d, ok := ctx.decl.(*ast.TraitDecl); ok && !d.Sealed {
+				c.refType(d.Name.Pos, tr.Name, tr, d.Name.Pos)
+			}
+		}
+		for s, ctx := range c.sealedDecl {
+			if d, ok := ctx.decl.(*ast.TraitDecl); ok && s.Template == nil {
+				c.refType(d.Name.Pos, s.Name, s, d.Name.Pos)
+			}
+		}
+		// every function and method at its declaration, checked or not
+		for _, t := range c.templates {
+			if t.Decl != nil && t.Decl.Name.Pos.IsValid() {
+				c.refFunc(t.Decl.Name.Pos, t)
+			}
+		}
+	}
 }
 
 func (c *Checker) insert(m *Module, sym *Symbol) {
@@ -1841,6 +1876,12 @@ func (c *Checker) runRound() *Program {
 	for _, g := range globals {
 		c.checkGlobal(g)
 		c.prog.Globals = append(c.prog.Globals, g)
+	}
+	// every value at its declaration, now that its type is known
+	if c.index != nil {
+		for _, g := range globals {
+			c.refGlobal(g.Span, g.Display[strings.LastIndex(g.Display, ".")+1:], g)
+		}
 	}
 	// Instantiate every non-generic function and method so that unused code
 	// is still checked.

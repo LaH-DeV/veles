@@ -396,6 +396,10 @@ func (s *Server) hover(params json.RawMessage) any {
 		// a type's shape opens with its own signature line: show it once
 		head, shape = shape, ""
 	}
+	if ref.Where != "" {
+		// a member: the declaration it belongs to, then the member itself
+		head = ref.Where + "\n  " + head
+	}
 	value := "```veles\n" + head + "\n```"
 	if ref.Doc != "" {
 		value += "\n\n" + ref.Doc

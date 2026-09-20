@@ -35,6 +35,9 @@ type Ref struct {
 	// Shape spells out a struct/error/sealed/trait type involved in the
 	// reference — its fields, variants or methods — for the hover.
 	Shape string
+	// Where names the declaration a member belongs to (`internal struct
+	// Notes` for a field), shown above Detail in the hover.
+	Where string
 }
 
 // Unfold is a named error set and its members, each with its declaration.
@@ -88,7 +91,9 @@ func (ix *Index) RefAt(file *source.File, offset int) *Ref {
 		if r.Span.File != file || offset < r.Span.Start || offset > r.Span.End {
 			continue
 		}
-		if best == nil || r.Span.End-r.Span.Start < best.Span.End-best.Span.Start {
+		// the innermost span; on a tie the one recorded last, which is the
+		// better informed (a body check refines what collection recorded)
+		if best == nil || r.Span.End-r.Span.Start <= best.Span.End-best.Span.Start {
 			best = r
 		}
 	}
@@ -103,13 +108,7 @@ func (c *Checker) refSym(span source.Span, sym *Symbol) {
 	case SymLocal:
 		c.refVar(span, sym.Var)
 	case SymGlobal:
-		g := sym.Global
-		kind := "val"
-		if g.Mutable {
-			kind = "var"
-		}
-		c.index.Refs = append(c.index.Refs, Ref{Span: span, Def: sym.Span, Kind: kind, Name: sym.Name, Type: g.Type,
-			Detail: kind + " " + sym.Name + typeSuffix(g.Type), Doc: c.globalDoc(g), Shape: c.shapeOf(g.Type)})
+		c.refGlobal(span, sym.Name, sym.Global)
 	case SymFunc:
 		c.refFunc(span, sym.Func)
 	case SymType:
@@ -126,10 +125,150 @@ func (c *Checker) refSym(span source.Span, sym *Symbol) {
 		if len(sym.Mod.Files) > 0 {
 			def = source.Span{File: sym.Mod.Files[0].Source, Start: 0, End: 0}
 		}
-		c.index.Refs = append(c.index.Refs, Ref{Span: span, Def: def, Kind: "module", Name: sym.Name, Detail: "module " + sym.Mod.Path, Module: sym.Mod, Doc: sym.Mod.Doc()})
+		head, _ := moduleHead(sym.Mod)
+		c.index.Refs = append(c.index.Refs, Ref{Span: span, Def: def, Kind: "module", Name: sym.Name, Detail: head, Module: sym.Mod, Doc: sym.Mod.Doc(), Shape: c.moduleShape(sym.Mod)})
 	case SymVariantCtor:
 		c.index.Refs = append(c.index.Refs, Ref{Span: span, Kind: "fun", Name: sym.Name, Detail: "prelude " + sym.Name})
 	}
+}
+
+// refGlobal records a use of a module-level or static value, rendered as
+// its declaration with every implicit word spelled out:
+// `internal val limit: i64 = 10`, `public static val ok: Status = ...`.
+func (c *Checker) refGlobal(span source.Span, name string, g *Global) {
+	if c.index == nil || g == nil || !span.IsValid() {
+		return
+	}
+	ref := Ref{Span: span, Def: g.Span, Kind: "val", Name: name, Type: g.Type, Doc: c.globalDoc(g), Shape: c.shapeOf(g.Type)}
+	if g.Mutable {
+		ref.Kind = "var"
+	}
+	ref.Detail = c.globalDecl(name, g)
+	if owner := c.staticOwner[g]; owner != nil {
+		ref.Where = structHead(owner)
+	}
+	c.index.Refs = append(c.index.Refs, ref)
+}
+
+// globalDecl renders a global or static value as declared.
+func (c *Checker) globalDecl(name string, g *Global) string {
+	d := c.globals[g]
+	if d == nil {
+		kind := "val"
+		if g.Mutable {
+			kind = "var"
+		}
+		return kind + " " + name + typeSuffix(g.Type)
+	}
+	var sb strings.Builder
+	sb.WriteString(visibilityWord(d.Pub, false) + " ")
+	if c.staticOwner[g] != nil {
+		sb.WriteString("static ")
+	}
+	sb.WriteString(d.Kind.String() + " " + name + typeSuffix(g.Type))
+	if d.Value != nil {
+		if t := srcText(d.Value); t != "" && len(t) <= 60 && !strings.Contains(t, "\n") {
+			sb.WriteString(" = " + t)
+		} else {
+			sb.WriteString(" = ...")
+		}
+	}
+	return sb.String()
+}
+
+// moduleHead names a module the way `use` spells it (`module io`,
+// `module mathlib.geometry`) and says where it comes from: "std",
+// "package mathlib" or "this package".
+func moduleHead(m *Module) (head, from string) {
+	path := m.Path
+	from = "this package"
+	switch {
+	case strings.HasPrefix(path, "std/"):
+		path = strings.TrimPrefix(path, "std/")
+		from = "std"
+	case strings.HasPrefix(path, "dep/"):
+		path = strings.TrimPrefix(path, "dep/")
+		if i := strings.Index(path, "/"); i >= 0 {
+			from = "package " + path[:i]
+		} else {
+			from = "package " + path
+		}
+	case path == "":
+		path = "main"
+	}
+	return "module " + strings.ReplaceAll(path, "/", "."), from
+}
+
+// moduleShape lists a module's public surface — what `use` brings in — as
+// it would be declared: types, functions and values in source order.
+func (c *Checker) moduleShape(m *Module) string {
+	if m == nil || m.Scope == nil {
+		return ""
+	}
+	var syms []*Symbol
+	for _, sym := range m.Scope.symbols {
+		if sym.Pub && sym.Kind != SymModule {
+			syms = append(syms, sym)
+		}
+	}
+	sort.Slice(syms, func(i, j int) bool {
+		a, b := syms[i].Span, syms[j].Span
+		if a.File != b.File {
+			pa, pb := "", ""
+			if a.File != nil {
+				pa = a.File.Path
+			}
+			if b.File != nil {
+				pb = b.File.Path
+			}
+			return pa < pb
+		}
+		return a.Start < b.Start
+	})
+	var sb strings.Builder
+	head, from := moduleHead(m)
+	sb.WriteString(head + " {  // " + from + "\n")
+	const limit = 40
+	for i, sym := range syms {
+		if i == limit {
+			sb.WriteString(fmt.Sprintf("  // ... and %d more\n", len(syms)-limit))
+			break
+		}
+		line := ""
+		switch sym.Kind {
+		case SymType:
+			switch {
+			case sym.TypeAlias != nil:
+				if t := c.symType(sym); t != nil {
+					line = "public " + aliasDetail(sym, t)
+				}
+			case sym.Alias != nil:
+				c.resolveAlias(sym)
+				if u, ok := sym.Type.(*types.ErrorUnion); ok {
+					line = "public error " + sym.Name + " = " + types.Unaliased(u, false).String()
+				}
+			default:
+				switch t := sym.Type.(type) {
+				case *types.Struct:
+					line = structHead(t)
+				case *types.Trait:
+					line = traitHead(t)
+				case *types.Sealed:
+					line = sealedHead(t)
+				}
+			}
+		case SymFunc:
+			c.resolveSignature(sym.Func)
+			line = funDecl(sym.Func)
+		case SymGlobal:
+			line = c.globalDecl(sym.Name, sym.Global)
+		}
+		if line != "" {
+			sb.WriteString("  " + line + "\n")
+		}
+	}
+	sb.WriteString("}")
+	return sb.String()
 }
 
 func (c *Checker) refVar(span source.Span, v *Var) {
@@ -184,9 +323,22 @@ func (c *Checker) refFunc(span source.Span, t *FuncTemplate) {
 	if t.Decl != nil {
 		def = t.Decl.Name.Pos
 	}
-	ref := Ref{Span: span, Def: def, Kind: "fun", Name: t.Name, Type: t.Sig, Detail: funDetail(t)}
+	// the function as declared with nothing left implicit (`internal`),
+	// under the declaration it belongs to: `internal struct Notes`,
+	// `impl Display for Point`, `extend Point`, `public trait Shape`
+	ref := Ref{Span: span, Def: def, Kind: "fun", Name: t.Name, Type: t.Sig, Detail: funDecl(t), Where: funWhere(t)}
 	if t.Decl != nil {
 		ref.Doc = t.Decl.Doc
+	}
+	if ref.Doc == "" && t.Impl != nil && t.Impl.Trait != nil {
+		// an undocumented impl method inherits the trait's description of it
+		if d, ok := t.Impl.Trait.Decl.(*ast.TraitDecl); ok {
+			for _, m := range d.Methods {
+				if m.Name.Name == t.Name {
+					ref.Doc = m.Doc
+				}
+			}
+		}
 	}
 	// `throws PortErrors`: show the set's name in the signature and unfold it
 	if sym := c.errorSetOf(t); sym != nil {
@@ -234,8 +386,233 @@ func (c *Checker) refField(span source.Span, st *types.Struct, fld *types.Field)
 			}
 		}
 	}
+	// the field as declared, every implicit word spelled out (`internal`,
+	// `val`), so the hover says who sees it and who may assign it
 	c.index.Refs = append(c.index.Refs, Ref{Span: span, Def: def, Kind: "field", Name: fld.Name, Type: fld.Type,
-		Detail: st.String() + "." + fld.Name + typeSuffix(fld.Type), Doc: doc, Shape: c.shapeOf(fld.Type)})
+		Detail: fieldDecl(st, fld, 60), Where: structHead(st), Doc: doc, Shape: c.shapeOf(fld.Type)})
+}
+
+// visibilityWord spells the M5 level of a member or declaration: the
+// unwritten level is `internal`.
+func visibilityWord(pub, private bool) string {
+	switch {
+	case private:
+		return "private"
+	case pub:
+		return "public"
+	}
+	return "internal"
+}
+
+// fieldDecl renders a field the way its declaration reads with nothing
+// left implicit: `public protected var count: i64 = 0`. A default longer
+// than maxDefault characters is elided to `= ...`.
+func fieldDecl(st *types.Struct, fld *types.Field, maxDefault int) string {
+	var sb strings.Builder
+	sb.WriteString(visibilityWord(fld.Pub, fld.Private) + " ")
+	switch {
+	case fld.Protected:
+		sb.WriteString("protected var ")
+	case fld.Var:
+		sb.WriteString("var ")
+	default:
+		sb.WriteString("val ")
+	}
+	sb.WriteString(fld.Name + ": " + fld.Type.String())
+	if fld.HasDefault {
+		text := "..."
+		if d, ok := templateOf(st).Decl.(*ast.StructDecl); ok {
+			for _, f := range d.Fields {
+				if f.Name.Name == fld.Name && f.Default != nil {
+					if t := srcText(f.Default); t != "" && len(t) <= maxDefault && !strings.Contains(t, "\n") {
+						text = t
+					}
+				}
+			}
+		}
+		sb.WriteString(" = " + text)
+	}
+	return sb.String()
+}
+
+// structHead is a struct's declaration line with its visibility spelled
+// out: `internal struct Notes`, `public error NotFound`, `struct Circle : Shape`.
+func structHead(st *types.Struct) string {
+	tmpl := templateOf(st)
+	d, _ := tmpl.Decl.(*ast.StructDecl)
+	head := "struct "
+	pub := st.Pub
+	if d != nil {
+		if d.Error {
+			head = "error "
+		}
+		pub = d.Pub
+	}
+	head = visibilityWord(pub, false) + " " + head
+	if len(st.TypeParams) > 0 && len(st.TypeArgs) == 0 {
+		head += st.Name + typeParamList(st.TypeParams)
+	} else {
+		head += st.String()
+	}
+	if st.Sealed != nil {
+		head += " : " + st.Sealed.Name
+	}
+	return head
+}
+
+// methodDecl renders an inherent method for a struct's shape: visibility,
+// `static`, then the signature without the owner prefix.
+func methodDecl(tmpl *types.Struct, t *FuncTemplate) string {
+	return funDecl(t)
+}
+
+// funDecl renders a function or method the way its declaration reads with
+// every implicit word spelled out: `internal static fun of(n: i64): Notes`,
+// `override fun toString(): string`, `fun describe(): string = ...` for a
+// trait's default body. The owner is not repeated (see funWhere).
+func funDecl(t *FuncTemplate) string {
+	var sb strings.Builder
+	d := t.Decl
+	implMethod := t.Impl != nil && t.Impl.Trait != nil
+	traitMethod := t.Trait != nil
+	if d != nil && !implMethod && !traitMethod {
+		// an impl's or a trait's method has the trait's visibility
+		sb.WriteString(visibilityWord(d.Pub, d.Private) + " ")
+	}
+	if d != nil {
+		if d.Override {
+			sb.WriteString("override ")
+		}
+		if d.Extern {
+			sb.WriteString("extern ")
+		}
+		if d.Unsafe {
+			sb.WriteString("unsafe ")
+		}
+		if d.Static {
+			sb.WriteString("static ")
+		}
+	}
+	sig := funDetail(t)
+	for _, prefix := range ownerPrefixes(t) {
+		sig = strings.Replace(sig, "fun "+prefix+".", "fun ", 1)
+	}
+	sb.WriteString(sig)
+	if traitMethod && d != nil && (d.Body != nil || d.ExprBody != nil) {
+		sb.WriteString(" = ...")
+	}
+	return sb.String()
+}
+
+// ownerPrefixes lists the `Owner.` spellings funDetail may have used.
+func ownerPrefixes(t *FuncTemplate) []string {
+	var out []string
+	if t.Owner != nil {
+		out = append(out, t.Owner.Name)
+	}
+	if t.Impl != nil && t.Impl.Trait != nil {
+		out = append(out, t.Impl.Trait.Name)
+	} else if t.Impl != nil {
+		out = append(out, t.Impl.Target.String())
+	}
+	if t.Trait != nil {
+		out = append(out, t.Trait.Name)
+	}
+	return out
+}
+
+// funWhere names the declaration a method belongs to, spelled out:
+// `internal struct Notes`, `impl Display for Point`, `extend<T> Box<T>`,
+// `public trait Shape`. Empty for a free function.
+func funWhere(t *FuncTemplate) string {
+	switch {
+	case t.Owner != nil:
+		return structHead(t.Owner)
+	case t.Impl != nil && t.Impl.Trait != nil:
+		return "impl " + t.Impl.Trait.Name + " for " + t.Impl.Target.String()
+	case t.Impl != nil:
+		return "extend " + t.Impl.Target.String()
+	case t.Trait != nil:
+		return traitHead(t.Trait)
+	}
+	return ""
+}
+
+// traitHead is a trait's declaration line with its visibility spelled
+// out and its supertraits: `public trait Shape : Display`.
+func traitHead(tr *types.Trait) string {
+	head := visibilityWord(tr.Pub, false) + " "
+	d, _ := tr.Decl.(*ast.TraitDecl)
+	if d != nil && d.Sealed {
+		head += "sealed "
+	}
+	head += "trait " + tr.Name + typeParamList(tr.TypeParams)
+	if d != nil && len(d.Supers) > 0 {
+		var supers []string
+		for _, s := range d.Supers {
+			supers = append(supers, ast.TypeString(s))
+		}
+		head += " : " + strings.Join(supers, " + ")
+	}
+	return head
+}
+
+// typeArgList spells the trait's type arguments as an impl wrote them
+// (`impl From<string>`), or nothing for a plain trait.
+func typeArgList(impl *Impl, trait *types.Trait) string {
+	if impl.Decl == nil || impl.Decl.Trait == nil || len(trait.TypeParams) == 0 {
+		return ""
+	}
+	if s := ast.TypeString(impl.Decl.Trait); strings.HasPrefix(s, trait.Name) {
+		return strings.TrimPrefix(s, trait.Name)
+	}
+	return ""
+}
+
+// sealedHead is a sealed trait's declaration line with its visibility
+// spelled out: `internal sealed trait Shape`.
+func sealedHead(s *types.Sealed) string {
+	tmpl := sealedTemplate(s)
+	name := s.String()
+	if len(tmpl.TypeParams) > 0 && len(s.TypeArgs) == 0 {
+		name = s.Name + typeParamList(tmpl.TypeParams)
+	}
+	return visibilityWord(tmpl.Pub, false) + " sealed trait " + name
+}
+
+// traitBody lists a trait's associated types and methods as declared:
+// `type Item`, `fun next(): Item?`, `fun map<U>(...) = ...` for a default.
+func (c *Checker) traitBody(tr *types.Trait) string {
+	var sb strings.Builder
+	d, _ := tr.Decl.(*ast.TraitDecl)
+	if d != nil {
+		for _, at := range d.AssocTypes {
+			sb.WriteString("  type " + at.Name.Name)
+			if len(at.Bounds) > 0 {
+				var bounds []string
+				for _, b := range at.Bounds {
+					bounds = append(bounds, ast.TypeString(b))
+				}
+				sb.WriteString(": " + strings.Join(bounds, " + "))
+			}
+			sb.WriteString("\n")
+		}
+	}
+	if tr.ImplicitError {
+		sb.WriteString("  type Error  // each impl's `throws`\n")
+	}
+	for _, name := range tr.MethodList {
+		sb.WriteString("  ")
+		if c.traitStatic[tr.Name+"."+name] {
+			sb.WriteString("static ")
+		}
+		sb.WriteString("fun " + name + typeParamList(c.traitMethodTPs[tr.Name+"."+name]) + funSigString(tr.Methods[name]))
+		if c.traitDefault(tr, name) != nil {
+			sb.WriteString(" = ...")
+		}
+		sb.WriteString("\n")
+	}
+	return sb.String()
 }
 
 func (c *Checker) refType(span source.Span, name string, t types.Type, def source.Span) {
@@ -246,26 +623,16 @@ func (c *Checker) refType(span source.Span, name string, t types.Type, def sourc
 	switch tt := t.(type) {
 	case *types.Struct:
 		kind = "struct"
-		if tt.Sealed != nil {
-			detail = "struct " + tt.Name + " : " + tt.Sealed.Name
-		} else {
-			detail = "struct " + tt.String()
-		}
-		if len(tt.TypeParams) > 0 && len(tt.TypeArgs) == 0 {
-			detail = "struct " + tt.Name + typeParamList(tt.TypeParams)
-		}
-		if d, ok := templateOf(tt).Decl.(*ast.StructDecl); ok && d.Error {
-			detail = "error" + strings.TrimPrefix(detail, "struct")
-		}
+		detail = structHead(tt)
 	case *types.ErrorUnion:
 		kind = "error"
 		detail = "error " + name + " = " + types.Unaliased(tt, false).String()
 	case *types.Sealed:
 		kind = "sealed"
-		detail = "sealed trait " + tt.Name + typeParamList(tt.TypeParams)
+		detail = sealedHead(tt)
 	case *types.Trait:
 		kind = "trait"
-		detail = "trait " + tt.Name + typeParamList(tt.TypeParams)
+		detail = traitHead(tt)
 	case *types.Basic:
 		detail = "builtin type " + tt.Name
 	}
@@ -309,35 +676,62 @@ func (c *Checker) shapeOf(t types.Type) string {
 			return ""
 		}
 		c.resolveStruct(tmpl)
-		kw := "struct "
-		if d.Error {
-			kw = "error "
-		}
-		sb.WriteString(kw + tt.String())
-		if tt.Sealed != nil {
-			sb.WriteString(" : " + tt.Sealed.Name)
-		}
+		// the declaration with every implicit word spelled out: the level
+		// nothing written means (`internal`), the mutability a bare field
+		// has (`val`) — what a reader needs to know and cannot see at the use
+		sb.WriteString(structHead(tt))
 		sb.WriteString(" {\n")
 		for _, fld := range tt.Fields {
-			sb.WriteString("  ")
-			if fld.Pub {
-				sb.WriteString("public ")
+			sb.WriteString("  " + fieldDecl(tt, fld, 30) + "\n")
+		}
+		if statics := c.staticVals[tmpl]; len(statics) > 0 {
+			var names []string
+			for name := range statics {
+				names = append(names, name)
 			}
-			sb.WriteString(fld.Name + ": " + fld.Type.String())
-			if fld.HasDefault {
-				sb.WriteString(" = ...")
+			sort.Strings(names)
+			for _, name := range names {
+				sym := statics[name]
+				sb.WriteString("  " + visibilityWord(sym.Pub, false) + " static val " + name)
+				if sym.Global != nil && sym.Global.Type != nil {
+					sb.WriteString(": " + sym.Global.Type.String())
+				}
+				if sv := c.globals[sym.Global]; sv != nil && sv.Value != nil {
+					if t := srcText(sv.Value); t != "" && len(t) <= 30 && !strings.Contains(t, "\n") {
+						sb.WriteString(" = " + t)
+					} else {
+						sb.WriteString(" = ...")
+					}
+				}
+				sb.WriteString("\n")
 			}
-			sb.WriteString("\n")
 		}
 		for _, name := range sortedMethodNames(c.methods[tmpl]) {
-			sb.WriteString("  " + strings.Replace(funDetail(c.methods[tmpl][name]), tmpl.Name+".", "", 1) + "\n")
+			sb.WriteString("  " + methodDecl(tmpl, c.methods[tmpl][name]) + "\n")
 		}
 		if d.Error {
-			sb.WriteString("  fun message(): string\n")
+			sb.WriteString("  public fun message(): string\n")
+		}
+		// the traits the type implements, wherever the impl was written
+		var impls []string
+		for trait, list := range c.impls {
+			for _, impl := range list {
+				if target, ok := impl.Target.(*types.Struct); ok && templateOf(target) == tmpl {
+					impls = append(impls, "  impl "+trait.Name+typeArgList(impl, trait))
+				}
+			}
+		}
+		sort.Strings(impls)
+		for _, line := range impls {
+			sb.WriteString(line + "\n")
 		}
 		sb.WriteString("}")
 	case *types.Sealed:
-		sb.WriteString("sealed trait " + tt.String() + " {\n")
+		sb.WriteString(sealedHead(tt) + " {\n")
+		if tt.Trait != nil {
+			sb.WriteString(c.traitBody(tt.Trait))
+		}
+		// the variants, as they would read at a use
 		for _, v := range tt.Variants {
 			sb.WriteString("  " + v.Name)
 			if len(v.Fields) > 0 {
@@ -354,10 +748,8 @@ func (c *Checker) shapeOf(t types.Type) string {
 		}
 		sb.WriteString("}")
 	case *types.Trait:
-		sb.WriteString("trait " + tt.Name + " {\n")
-		for _, name := range tt.MethodList {
-			sb.WriteString("  fun " + name + funSigString(tt.Methods[name]) + "\n")
-		}
+		sb.WriteString(traitHead(tt) + " {\n")
+		sb.WriteString(c.traitBody(tt))
 		sb.WriteString("}")
 	default:
 		return ""

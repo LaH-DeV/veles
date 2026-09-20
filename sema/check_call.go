@@ -522,19 +522,15 @@ func (f *fnCtx) constructStruct(st *types.Struct, args []ast.Arg, span source.Sp
 	inside := f.insideType(st)
 	lit := &StructLit{exprBase{st}, st, make([]Expr, len(st.Fields))}
 	for i, fld := range st.Fields {
-		if fld.Private && !inside {
-			// a private field is set by the type alone: from outside it
-			// takes its default, or the type offers a static constructor
-			if bound[i] != nil {
-				f.errorf(bound[i].Span(), "field '%s' is private to '%s' and cannot be set here; leave it to its default or construct through a static function of '%s'", fld.Name, st.Name, st.Name)
-				lit.Fields[i] = bad()
-				continue
-			}
-			if !fld.HasDefault {
-				f.errorf(span, "cannot construct '%s' here: field '%s' is private and has no default; give it one or construct through a static function of '%s'", st.Name, fld.Name, st.Name)
-				lit.Fields[i] = bad()
-				continue
-			}
+		if fld.Private && !inside && fld.HasDefault && bound[i] != nil {
+			// a private field with a default is the type's own state: from
+			// outside it takes its default (M5). One without a default is
+			// the initial state the constructor call must supply — nobody
+			// else could — so it may be given from anywhere the type is
+			// visible, and is private from then on.
+			f.errorf(bound[i].Span(), "field '%s' is private to '%s' and has a default; it cannot be set from outside — drop it, or construct through a static function of '%s'", fld.Name, st.Name, st.Name)
+			lit.Fields[i] = bad()
+			continue
 		}
 		if bound[i] != nil {
 			lit.Fields[i] = f.checkExprTo(bound[i], fld.Type)

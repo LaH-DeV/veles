@@ -171,7 +171,7 @@ func TestServer(t *testing.T) {
 
 	// hover on the field access `p.y` (line 8, char 21)
 	res, _ = c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": 8, "character": 21}})
-	if !strings.Contains(string(res), "Point.y: i32") {
+	if !strings.Contains(string(res), `internal struct Point\n  internal val y: i32`) {
 		t.Errorf("hover on field: %s", res)
 	}
 
@@ -394,7 +394,7 @@ func TestHoverDocsAndShapes(t *testing.T) {
 		return string(res)
 	}
 	// a value of a struct type: its declaration line, then what it has inside
-	if h := hover(18, 13); !strings.Contains(h, "val c: ConfigError") || !strings.Contains(h, `error ConfigError {\n  key: string\n  cause: PortErrors\n  fun message(): string\n}`) {
+	if h := hover(18, 13); !strings.Contains(h, "val c: ConfigError") || !strings.Contains(h, `internal error ConfigError {\n  internal val key: string\n  internal val cause: PortErrors\n  public fun message(): string\n  impl Error\n}`) {
 		t.Errorf("hover on a value shows no shape: %s", h)
 	}
 	// the type name itself, with its doc comment
@@ -402,7 +402,7 @@ func TestHoverDocsAndShapes(t *testing.T) {
 		t.Errorf("hover on a type shows no doc/shape: %s", h)
 	}
 	// a field with a doc comment
-	if h := hover(18, 16); !strings.Contains(h, "ConfigError.key: string") {
+	if h := hover(18, 16); !strings.Contains(h, `internal error ConfigError\n  internal val key: string`) {
 		t.Errorf("hover on a field: %s", h)
 	}
 	// a function: doc, the set's name in the signature, the set unfolded with member shapes
@@ -438,11 +438,11 @@ func TestModuleDocHover(t *testing.T) {
 		}
 	}
 	// a smart-cast field shows the narrowed type once, with its origin
-	if h := hover(11, 30); !strings.Contains(h, `Wrap.cause: E  (smart cast from Both)`) {
+	if h := hover(11, 30); !strings.Contains(h, `internal val cause: E  (smart cast from Both)`) {
 		t.Errorf("narrowed field hover: %s", h)
 	}
 	// a type's hover opens with its shape, not the name twice
-	if h := hover(3, 7); strings.Contains(h, `error E\n`+"```") || !strings.Contains(h, `error E {\n  n: i64`) {
+	if h := hover(3, 7); strings.Contains(h, `error E\n`+"```") || !strings.Contains(h, `internal error E {\n  internal val n: i64`) {
 		t.Errorf("type hover doubles the name: %s", h)
 	}
 }
@@ -494,7 +494,7 @@ func TestExtendMethods(t *testing.T) {
 	// a prelude extend method hovers like any function, with its doc and
 	// the receiver type as owner
 	res, _ := c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": 4, "character": 16}})
-	if !strings.Contains(string(res), "fun string.trim(): string") || !strings.Contains(string(res), "without leading or trailing") {
+	if !strings.Contains(string(res), `extend string\n  public fun trim(): string`) || !strings.Contains(string(res), "without leading or trailing") {
 		t.Errorf("hover on an extend method: %s", res)
 	}
 	// its definition is the prelude source
@@ -701,5 +701,190 @@ func TestTypeAliasHover(t *testing.T) {
 	}
 	if h := hover(7, 6); !strings.Contains(h, "val k: Key") {
 		t.Errorf("hover on a binding typed by an alias: %s", h)
+	}
+}
+
+// A struct's hover is its declaration with every implicit word spelled out
+// — `internal` for the unwritten level, `val` for a bare field — and the
+// defaults; a field's hover names the struct and shows the field's line.
+func TestHoverSpellsOutModifiers(t *testing.T) {
+	src := "use io\n\npublic struct Notes {\n  private var next: i64 = 1\n  items: bool = false\n  public protected var count: i64 = 0\n  static val empty = Notes()\n  public fun add(text: string) {\n    self.next += text.len()\n    self.count += 1\n  }\n  private fun bump() { }\n  public static fun of(n: i64): Notes = Notes(count: n)\n}\n\nfun main() {\n  val n = Notes()\n  n.add(\"x\")\n  io.println(\"${n.count} ${n.items}\")\n}\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := pathToURI(path)
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{})
+	c.notify("initialized", map[string]any{})
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": src}})
+	hover := func(line, ch int) string {
+		res, _ := c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": line, "character": ch}})
+		return string(res)
+	}
+	want := `public struct Notes {\n  private var next: i64 = 1\n  internal val items: bool = false\n  public protected var count: i64 = 0\n  internal static val empty: Notes = Notes()\n  public fun add(text: string)\n  private fun bump()\n  public static fun of(n: i64): Notes\n}`
+	if h := hover(16, 11); !strings.Contains(h, want) {
+		t.Errorf("struct hover: %s\nwant %s", h, want)
+	}
+	if h := hover(18, 19); !strings.Contains(h, `public struct Notes\n  public protected var count: i64 = 0`) {
+		t.Errorf("field hover: %s", h)
+	}
+}
+
+// Methods and traits hover as their declarations, spelled out: the owner
+// on its own line, the visibility written, `static`, `override`, a trait's
+// associated types and which methods have default bodies.
+func TestHoverMethodsAndTraits(t *testing.T) {
+	src := "use io\n\n/// Something with an area.\npublic trait Shape {\n  type Unit\n  fun area(): f64\n  fun describe(): string = \"area ${self.area()}\"\n  static fun unit(): string\n}\n\nstruct Square {\n  side: f64\n  fun grow(by: f64): Square = Square(side: self.side + by)\n  private fun check() { }\n  public static fun of(side: f64): Square = Square(side)\n}\n\nimpl Shape for Square {\n  type Unit = string\n  fun area(): f64 = self.side * self.side\n  override fun describe(): string = \"square\"\n  static fun unit(): string = \"m\"\n}\n\nimpl Display for Square {\n  fun toString(): string = \"sq\"\n}\n\nextend Square {\n  public fun doubled(): Square = self.grow(self.side)\n}\n\nsealed trait Tree {\n  fun size(): i64\n}\nstruct Leaf : Tree { impl Tree { fun size(): i64 = 1 } }\nstruct Node : Tree {\n  kids: List<Tree>\n  impl Tree { fun size(): i64 = self.kids.len() }\n}\n\nfun helper(): i64 = 1\n\nfun main() {\n  val s = Square(side: 2.0)\n  val a = s.area()\n  val d = s.describe()\n  val g = s.grow(1.0).doubled()\n  val o = Square.of(1.0)\n  val h = helper()\n  io.println(\"$a $d $g $o $h ${Leaf().size()}\")\n}\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := pathToURI(path)
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{})
+	c.notify("initialized", map[string]any{})
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": src}})
+	// the hover's markdown, decoded (JSON escapes `<` and newlines)
+	hover := func(line, ch int) string {
+		res, _ := c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": line, "character": ch}})
+		var h struct {
+			Contents struct {
+				Value string `json:"value"`
+			} `json:"contents"`
+		}
+		json.Unmarshal(res, &h)
+		return h.Contents.Value
+	}
+	for _, tc := range []struct {
+		line, ch int
+		want     string
+	}{
+		// the trait at its declaration: head, associated type, default body marker, static
+		{3, 14, "public trait Shape {\n  type Unit\n  fun area(): f64\n  fun describe(): string = ...\n  static fun unit(): string\n}"},
+		{3, 14, "Something with an area."},
+		// an inherent method at a use, under its struct
+		{47, 13, "internal struct Square\n  internal fun grow(by: f64): Square"},
+		// an impl method at a use: the impl as owner, `override` kept
+		{46, 13, "impl Shape for Square\n  override fun describe(): string"},
+		// an extend method at a use
+		{47, 24, "extend Square\n  public fun doubled(): Square"},
+		// a static at a use
+		{48, 18, "internal struct Square\n  public static fun of(side: f64): Square"},
+		// a free function at a use, and a private method at its declaration
+		{49, 11, "internal fun helper(): i64"},
+		{13, 15, "internal struct Square\n  private fun check()"},
+		// a trait's default method at its declaration
+		{6, 7, "public trait Shape\n  fun describe(): string = ..."},
+		// a sealed trait at its declaration: methods, then variants
+		{32, 14, "internal sealed trait Tree {\n  fun size(): i64\n  Leaf\n  Node { kids: List<Tree> }\n}"},
+	} {
+		if h := hover(tc.line, tc.ch); !strings.Contains(h, tc.want) {
+			t.Errorf("hover at %d:%d: %q\nwant %q", tc.line, tc.ch, h, tc.want)
+		}
+	}
+}
+
+// Values and modules hover as declarations too: a global with its
+// visibility, kind and initializer; a static under its struct; a module
+// as `use` spells it, with its public surface.
+func TestHoverValuesAndModules(t *testing.T) {
+	src := "use io\n\n/// The upper bound.\npublic val limit: i64 = 10\nvar hits = 0\nconst name = \"v\"\n\nstruct Status {\n  code: i64\n  public static val ok = Status(code: 200)\n}\n\nfun main() {\n  hits += 1\n  io.println(\"$limit $hits $name ${Status.ok.code}\")\n}\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := pathToURI(path)
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{})
+	c.notify("initialized", map[string]any{})
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": src}})
+	hover := func(line, ch int) string {
+		res, _ := c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": line, "character": ch}})
+		var h struct {
+			Contents struct {
+				Value string `json:"value"`
+			} `json:"contents"`
+		}
+		json.Unmarshal(res, &h)
+		return h.Contents.Value
+	}
+	for _, tc := range []struct {
+		line, ch int
+		want     string
+	}{
+		// a public val at its declaration, with its doc
+		{3, 12, "public val limit: i64 = 10"},
+		{3, 12, "The upper bound."},
+		// a var at a use; a const
+		{13, 3, "internal var hits: i64 = 0"},
+		{5, 7, "internal const name: string = \"v\""},
+		// a static, under its struct, at its declaration and at a use
+		{9, 21, "internal struct Status\n  public static val ok: Status = Status(code: 200)"},
+		{14, 42, "internal struct Status\n  public static val ok: Status = Status(code: 200)"},
+		// a std module: as `use` spells it, its origin, its public functions
+		{0, 5, "module io {  // std\n  public fun println(s: string)"},
+		{14, 3, "Console input and output."},
+	} {
+		if h := hover(tc.line, tc.ch); !strings.Contains(h, tc.want) {
+			t.Errorf("hover at %d:%d: %q\nwant %q", tc.line, tc.ch, h, tc.want)
+		}
+	}
+}
+
+// Completion offers only what the cursor may name (M5): private members
+// inside the type's own declarations, unmarked ones inside the module,
+// public ones from anywhere.
+func TestCompletionVisibility(t *testing.T) {
+	src := "use io\n\nstruct Parser {\n  private toks: List<string>\n  private var pos: i64 = 0\n  public val tag: string = \"p\"\n  private static val zero = 0\n  fun next(): string? {\n    val t = self.toks.at(self.pos)\n    self.\n    t\n  }\n  private fun bump() { self.pos += 1 }\n  public fun done(): bool = self.pos >= self.toks.len()\n}\n\nextend Parser {\n  fun rewind() { self.pos = 0 }\n}\n\nfun main() {\n  val p = Parser(toks: [\"a\"])\n  p.\n  io.println(\"${p.done()} ${p.tag}\")\n}\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := pathToURI(path)
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{})
+	c.notify("initialized", map[string]any{})
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": src}})
+	labels := func(line, ch int) map[string]bool {
+		res, _ := c.call("textDocument/completion", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": line, "character": ch}})
+		var r struct {
+			Items []struct {
+				Label string `json:"label"`
+			} `json:"items"`
+		}
+		json.Unmarshal(res, &r)
+		out := map[string]bool{}
+		for _, it := range r.Items {
+			out[it.Label] = true
+		}
+		return out
+	}
+	// `p.` in main: no private field, method or static; module-level and public ones yes
+	got := labels(22, 4)
+	for _, want := range []string{"tag", "next", "done", "rewind"} {
+		if !got[want] {
+			t.Errorf("p. in main should offer %q: %v", want, got)
+		}
+	}
+	for _, hidden := range []string{"toks", "pos", "bump", "zero"} {
+		if got[hidden] {
+			t.Errorf("p. in main must not offer private %q: %v", hidden, got)
+		}
+	}
+	// `self.` inside the type: everything
+	got = labels(9, 9)
+	for _, want := range []string{"toks", "pos", "bump", "tag", "next", "done", "rewind"} {
+		if !got[want] {
+			t.Errorf("self. inside Parser should offer %q: %v", want, got)
+		}
 	}
 }

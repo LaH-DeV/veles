@@ -2308,10 +2308,22 @@ fun main() { val n = Notes(); io.println("${n.next}") }`, "field 'next' is priva
 	expectError(t, prelude+notes+`
 fun main() { var n = Notes(); n.bump() }`, "method 'bump' is private to 'Notes'")
 	expectError(t, prelude+notes+`
-fun main() { val n = Notes(next: 5); io.println("${n.all()}") }`, "cannot be set here")
+fun main() { val n = Notes(next: 5); io.println("${n.all()}") }`, "has a default; it cannot be set from outside")
+	// a private field without a default is the constructor's parameter:
+	// supplied at construction from anywhere, private afterwards
 	expectError(t, prelude+`
 struct Secret { private key: string }
-fun main() { val s = Secret(); io.println("$s") }`, "private and has no default")
+fun main() { val s = Secret(); io.println("$s") }`, "missing field 'key'")
+	expectClean(t, prelude+`
+struct Parser { private toks: List<string>; private var pos: i64 = 0
+  fun next(): string? { val t = self.toks.at(self.pos); self.pos += 1; t } }
+fun main() { val p = Parser(toks: ["a"]); io.println("${p.next()}") }`)
+	expectError(t, prelude+`
+struct Parser { private toks: List<string>; private var pos: i64 = 0 }
+fun main() { val p = Parser(toks: ["a"], pos: 1) }`, "field 'pos' is private to 'Parser' and has a default")
+	expectError(t, prelude+`
+struct Parser { private toks: List<string> }
+fun main() { val p = Parser(toks: ["a"]); io.println("${p.toks}") }`, "field 'toks' is private to 'Parser'")
 	expectError(t, prelude+`
 struct P { private x: i64 = 0; y: i64 = 0 }
 fun main() {

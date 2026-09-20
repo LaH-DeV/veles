@@ -400,13 +400,46 @@ Output:
 ```
 
 Outside `Notes`, `notes.next` and `Notes(next: 5)` are errors, and so is
-matching the field in a pattern. A private field must therefore have a
-default, or the type must offer a `static fun` that builds it; `Notes()`
-above works because both fields do. `private fun` marks a helper method
-the same way. Read the two declarations together: `next` is the only
-thing in `Notes` that is ever assigned, and only `Notes` may do it —
-`items` is a handle whose *contents* change but which is never replaced.
-More on modules in [chapter 11](11-modules-and-packages.md).
+matching the field in a pattern. `private fun` marks a helper method the
+same way. Read the two declarations together: `next` is the only thing
+in `Notes` that is ever assigned, and only `Notes` may do it — `items` is
+a handle whose *contents* change but which is never replaced.
+
+The constructor call follows one rule: a private field **with a default**
+is the type's own state, and outsiders leave it to the default (that is
+why `Notes(next: 5)` is refused — 5 is not where numbering starts). A
+private field **without a default** is the initial state only the
+constructor call can supply, so it is given like any other field — and
+is private from then on:
+
+```veles
+use io
+
+struct Parser {
+  private toks:    List<string>   // supplied at construction, then hidden
+  private var pos: i64 = 0        // the type's own bookkeeping
+
+  fun next(): string? {
+    val t = self.toks.at(self.pos)
+    self.pos += 1
+    t
+  }
+}
+
+fun main() {
+  val p = Parser(toks: ["a", "b"])   // fine; Parser(toks: [], pos: 3) is not
+  io.println("${p.next()} ${p.next()} ${p.next()}")
+}
+```
+
+Output:
+```text
+a b null
+```
+
+So a `static fun` constructor is needed only when construction has logic,
+never just to get past `private`. More on modules in
+[chapter 11](11-modules-and-packages.md).
 
 ## Generic structs
 

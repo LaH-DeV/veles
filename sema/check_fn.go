@@ -723,6 +723,7 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 				// assignment to the name itself does not
 				markUsed(v)
 			}
+			f.c.refVar(e.Pos, v) // the name at an assignment hovers like a read
 			return &VarRef{exprBase{v.Type}, v}, v
 		case SymGlobal:
 			g := sym.Global
@@ -730,6 +731,7 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 				f.errorf(e.Pos, "cannot assign to '%s': it is not a 'var'", e.Name)
 			}
 			v := f.globalVar(g)
+			f.c.refGlobal(e.Pos, e.Name, g)
 			return &VarRef{exprBase{v.Type}, v}, v
 		}
 		f.errorf(e.Pos, "'%s' is not assignable", e.Name)

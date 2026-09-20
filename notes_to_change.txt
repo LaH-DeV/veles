@@ -945,3 +945,46 @@ R22. DONE (2026-09-20, user decision): `readonly` → `protected var` (R21 (3) s
     reading. Documented as a two-question grid (who sees / who assigns) in docs 05 with a table,
     11, cheatsheet, errors reference; spec D22 addendum rewritten (records readonly,
     var(private), private(set) as rejected), M5 addendum corrected. `readonly` is not a keyword.
+R23. DONE (2026-09-20): LSP hover shows a struct's/field's DEFINITION with every implicit word
+    spelled out — `internal` for the unwritten level, `val` for a bare field, `protected var`,
+    `static`, defaults (source text when short) and `static val` members (sema/index.go:
+    fieldDecl / structHead / methodDecl / visibilityWord; Ref.Where names the owner above a
+    field's line). Declaration sites (the struct name and each field name in `struct X { }`)
+    are indexed too, so the hover works at the declaration, not only at uses (end of
+    Checker.collect). Tests: lsp TestHoverSpellsOutModifiers + updated expectations.
+R24. DONE (2026-09-20): hover for methods, functions and traits in the same spelled-out form:
+    `Where` = the owner (`internal struct Notes`, `impl Display for Point`, `extend Point`,
+    `public trait Shape`), Detail = `internal static fun of(...)`, `override fun ...`, a trait
+    default marked `= ...`; impl/trait methods carry no visibility word (they follow the
+    trait); an undocumented impl method shows the trait's doc for it. Trait hover: head with
+    visibility/`sealed`/supertraits, `type Item` (+ bounds, implicit `type Error`), methods with
+    type params, `static`, default markers; sealed trait: methods then variants. Declaration
+    sites of traits, sealed traits and every function/method template are indexed (end of
+    collect); RefAt prefers the later ref on equal spans so a body check's richer ref wins.
+    lsp TestHoverMethodsAndTraits (decodes the JSON value; `<` arrives as \u003c).
+R25. DONE (2026-09-20): hover for values and modules in the declaration form. Globals:
+    `public val limit: i64 = 10`, `internal var hits: i64 = 0`, `internal const name: string =
+    "v"`; a static under its struct (`internal struct Status` / `public static val ok: Status =
+    Status(code: 200)`); declaration sites indexed after the globals are typed (runRound) and
+    names at assignment targets are refs now (`hits += 1`). Modules: `module io {  // std` /
+    `module mathlib.geometry {  // package mathlib` / `// this package`, then the public surface
+    (structs/traits/sealed/error sets/type aliases/functions/values in source order, capped at
+    40) and the module doc. Locals unchanged (kind, type, smart cast). lsp
+    TestHoverValuesAndModules. Free functions were already covered by R24.
+    Answered: a struct may implement any number of traits (inline `impl A {}` `impl B {}` or
+    top-level impls) and bounds compose (`T: A + B`); what is NOT supported yet is a supertrait
+    on a trait declaration (`trait Shape : Display` → "supertraits are not supported yet in the
+    bootstrap compiler").
+R26. DONE (2026-09-20): (1) Constructor rule for private fields RELAXED (spec M5 text, docs 05
+    with a runnable Parser example): a private field WITHOUT a default is the constructor
+    call's parameter — settable from anywhere the type is visible, private afterwards
+    (Kotlin's `class P(private val toks)`); a private field WITH a default stays the type's
+    own state (`Notes(next: 5)` refused). v0.29's Swift-like "private field ⇒ static
+    constructor" was dropped after the user hit it in examples/calc. (2) LSP completion filters
+    members by reachability (M5): private ones only when the cursor is inside the type's
+    struct body / impl / extend in the same module (`scope.insideType`), unmarked ones only
+    inside the type's module, public ones anywhere; statics and extend methods too
+    (lsp/completion.go `scope`; TestCompletionVisibility). (3) The struct hover lists the
+    traits the type implements (`impl Display`, `impl Comparable`, and `impl Error` for error
+    types) — that is how "which traits does this struct have" is answered; the header
+    `struct X : T` remains sealed-variant membership only (D12/D23), conformance is `impl`.

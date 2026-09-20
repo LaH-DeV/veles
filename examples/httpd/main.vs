@@ -57,6 +57,9 @@ struct Options {
 struct Note {
   id:   i64
   text: string
+
+  static fun toJson(n: Note): string =
+    "{\"id\": ${n.id}, \"text\": ${jsonString(n.text)}}"
 }
 
 /// The store behind the API. Handlers run in connection tasks, so it lives
@@ -86,14 +89,13 @@ struct Notes {
     if (at >= 0) self.items.removeAt(at)
     at >= 0
   }
+
+  static fun toJson(notes: List<Note>): string =
+    "[" + notes.map(n => Note.toJson(n)).join(", ") + "]"
 }
 
 fun jsonString(s: string): string =
   "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t") + "\""
-
-fun noteJson(n: Note): string = "{\"id\": ${n.id}, \"text\": ${jsonString(n.text)}}"
-
-fun notesJson(notes: List<Note>): string = "[" + notes.map(n => noteJson(n)).join(", ") + "]"
 
 /// The whole application as one handler: the routes below plus the files
 /// under `dir`.
@@ -106,19 +108,19 @@ fun app(dir: string): http.Handler {
 
   router.get("/api/echo", req => http.Response.text(req.query.get("msg") ?: "(no msg)"))
 
-  router.get("/api/notes", req => http.Response.json(notes.withLock(n => notesJson(n.all()))))
+  router.get("/api/notes", req => http.Response.json(notes.withLock(n => Notes.toJson(n.all()))))
 
   router.post("/api/notes", req => {
     val text = (try req.text()).trim()
     if (text.isEmpty()) throw http.badRequest("a note needs some text")
     val note = notes.withLock(n => n.add(text))
-    http.Response.json(noteJson(note), status: 201).withHeader("location", "/api/notes/${note.id}")
+    http.Response.json(Note.toJson(note), status: 201).withHeader("location", "/api/notes/${note.id}")
   })
 
   router.get("/api/notes/{id}", req => {
     val id = try req.param("id").toInt() ?! http.badRequest("the id must be a number")
     val note = try notes.withLock(n => n.find(id)) ?! http.notFound("no note $id")
-    http.Response.json(noteJson(note))
+    http.Response.json(Note.toJson(note))
   })
 
   router.delete("/api/notes/{id}", req => {

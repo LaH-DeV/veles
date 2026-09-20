@@ -159,28 +159,36 @@ func (s *Server) completion(params json.RawMessage) any {
 				return finish()
 			}
 			if ref.Type != nil {
-				s.addMembers(add, a, ref.Type)
+				s.addMembers(add, a, ref.Type, s.scopeAt(a, d, off))
 				return finish()
 			}
 		}
 	}
 
-	// unknown receiver: every member name in the package plus the builtins
+	// unknown receiver: every reachable member name in the package plus
+	// the builtins
 	if a != nil {
+		sc := s.scopeAt(a, d, off)
 		for _, m := range a.pkg.Modules {
 			for _, f := range m.Files {
 				for _, decl := range f.Decls {
 					switch dd := decl.(type) {
 					case *ast.StructDecl:
 						for _, fld := range dd.Fields {
-							add(fld.Name.Name, ciField, dd.Name.Name+"."+fld.Name.Name+": "+ast.TypeString(fld.Type))
+							if sc.allows(dd.Name.Name, m, fld.Pub, fld.Private) {
+								add(fld.Name.Name, ciField, dd.Name.Name+"."+fld.Name.Name+": "+ast.TypeString(fld.Type))
+							}
 						}
 						for _, mth := range dd.Methods {
-							add(mth.Name.Name, ciMethod, dd.Name.Name+"."+mth.Name.Name+funSignature(mth))
+							if sc.allows(dd.Name.Name, m, mth.Pub, mth.Private) {
+								add(mth.Name.Name, ciMethod, dd.Name.Name+"."+mth.Name.Name+funSignature(mth))
+							}
 						}
 					case *ast.TraitDecl:
-						for _, mth := range dd.Methods {
-							add(mth.Name.Name, ciMethod, dd.Name.Name+"."+mth.Name.Name+funSignature(mth))
+						if m == sc.mod || dd.Pub {
+							for _, mth := range dd.Methods {
+								add(mth.Name.Name, ciMethod, dd.Name.Name+"."+mth.Name.Name+funSignature(mth))
+							}
 						}
 					case *ast.ImplDecl:
 						owner := ast.TypeString(dd.Target)
@@ -188,7 +196,9 @@ func (s *Server) completion(params json.RawMessage) any {
 							owner = ast.TypeString(dd.Trait)
 						}
 						for _, mth := range dd.Methods {
-							add(mth.Name.Name, ciMethod, owner+"."+mth.Name.Name+funSignature(mth))
+							if sc.allows(typeHeadName(dd.Target), m, mth.Pub || !dd.Extend, mth.Private) {
+								add(mth.Name.Name, ciMethod, owner+"."+mth.Name.Name+funSignature(mth))
+							}
 						}
 					}
 				}
@@ -217,13 +227,13 @@ func (s *Server) addModuleDecls(add adder, m *sema.Module) {
 // addMembers offers the fields and methods of a value of type t: the
 // compiler's built-ins from the catalogue, the struct's own fields and
 // methods, and every `extend` and `impl` block whose target names the type.
-func (s *Server) addMembers(add adder, a *analysis, t types.Type) {
+func (s *Server) addMembers(add adder, a *analysis, t types.Type, sc *scope) {
 	switch tt := t.(type) {
 	case *types.Pointer:
-		s.addMembers(add, a, tt.Elem)
+		s.addMembers(add, a, tt.Elem, sc)
 		return
 	case *types.Nullable:
-		s.addMembers(add, a, tt.Elem) // reached through `?.`
+		s.addMembers(add, a, tt.Elem, sc) // reached through `?.`
 		return
 	case *types.Tuple:
 		for i, e := range tt.Elems {
@@ -250,13 +260,23 @@ func (s *Server) addMembers(add adder, a *analysis, t types.Type) {
 			base = tt.Template
 		}
 		if d, ok := base.Decl.(*ast.StructDecl); ok {
+			// only what the cursor may name (M5): private members inside
+			// the type, unmarked ones inside its module, public ones anywhere
+			ownerMod := sc.moduleOfDecl(d)
 			for _, fld := range d.Fields {
-				add(fld.Name.Name, ciField, tt.String()+"."+fld.Name.Name+": "+ast.TypeString(fld.Type))
+				if sc.allows(d.Name.Name, ownerMod, fld.Pub, fld.Private) {
+					add(fld.Name.Name, ciField, tt.String()+"."+fld.Name.Name+": "+ast.TypeString(fld.Type))
+				}
 			}
 			for _, mth := range d.Methods {
-				add(mth.Name.Name, ciMethod, tt.Name+"."+mth.Name.Name+funSignature(mth))
+				if sc.allows(d.Name.Name, ownerMod, mth.Pub, mth.Private) {
+					add(mth.Name.Name, ciMethod, tt.Name+"."+mth.Name.Name+funSignature(mth))
+				}
 			}
 			for _, sv := range d.Statics {
+				if !sc.allows(d.Name.Name, ownerMod, sv.Pub, false) {
+					continue
+				}
 				detail := tt.Name + "." + sv.Name.Name
 				if sv.Type != nil {
 					detail += ": " + ast.TypeString(sv.Type)
@@ -301,7 +321,11 @@ func (s *Server) addMembers(add adder, a *analysis, t types.Type) {
 					owner = ast.TypeString(impl.Trait)
 				}
 				for _, mth := range impl.Methods {
-					add(mth.Name.Name, ciMethod, owner+"."+mth.Name.Name+funSignature(mth))
+					// an impl's methods follow the trait's visibility; an
+					// extend's are members like the struct's own (M5)
+					if sc.allows(typeHeadName(impl.Target), m, mth.Pub || !impl.Extend, mth.Private) {
+						add(mth.Name.Name, ciMethod, owner+"."+mth.Name.Name+funSignature(mth))
+					}
 				}
 				if !impl.Extend {
 					s.addTraitMethods(add, a, typeHeadName(impl.Trait))
@@ -456,4 +480,80 @@ func refNamedIn(idx *sema.Index, fileKey, name string, off int) *sema.Ref {
 
 func isIdentByte(b byte) bool {
 	return b == '_' || b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' || b >= '0' && b <= '9'
+}
+
+// scope is where a completion happens: the module of the buffer and the
+// offset in it. It decides which members are reachable (M5): private
+// ones only inside the type's own declarations, unmarked ones only inside
+// the type's module, public ones everywhere.
+type scope struct {
+	s    *Server
+	a    *analysis
+	mod  *sema.Module
+	file *ast.File
+	off  int
+}
+
+func (s *Server) scopeAt(a *analysis, d *document, off int) *scope {
+	sc := &scope{s: s, a: a, off: off}
+	if a != nil && d != nil {
+		sc.mod, sc.file = s.moduleOf(a, d)
+	}
+	return sc
+}
+
+// insideType reports whether the cursor is inside a declaration owned by
+// the struct named owner in the buffer's module: its body, or an impl or
+// extend block whose target names it.
+func (sc *scope) insideType(owner string) bool {
+	if sc.mod == nil {
+		return false
+	}
+	within := func(sp source.Span, f *ast.File) bool {
+		return sp.File != nil && f != nil && sp.File == f.Source && sc.off >= sp.Start && sc.off <= sp.End
+	}
+	for _, f := range sc.mod.Files {
+		for _, decl := range f.Decls {
+			switch dd := decl.(type) {
+			case *ast.StructDecl:
+				if dd.Name.Name == owner && within(dd.Pos, f) {
+					return true
+				}
+			case *ast.ImplDecl:
+				if typeHeadName(dd.Target) == owner && within(dd.Pos, f) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// moduleOfDecl finds the module a declaration was parsed in.
+func (sc *scope) moduleOfDecl(decl ast.Decl) *sema.Module {
+	if sc.a == nil {
+		return nil
+	}
+	for _, m := range sc.a.pkg.Modules {
+		for _, f := range m.Files {
+			for _, d := range f.Decls {
+				if d == decl {
+					return m
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// allows reports whether a member of owner (declared in ownerMod) with
+// the given visibility can be named from the cursor.
+func (sc *scope) allows(owner string, ownerMod *sema.Module, pub, private bool) bool {
+	if private {
+		return sc.insideType(owner)
+	}
+	if ownerMod != nil && sc.mod != nil && ownerMod != sc.mod {
+		return pub
+	}
+	return true
 }
