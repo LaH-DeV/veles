@@ -47,13 +47,13 @@ const LF: u8 = '\n'
 const CR: u8 = '\r'
 
 struct Parser {
-  src: string
-  pos: i64 = 0
+  src:     string
+  var pos: i64 = 0
 
   static fun of(text: string): Parser = Parser(src: text)
 
   /// Parses the whole text: one value, surrounded by whitespace only.
-  mut fun parseDocument(): Json throws ParseError {
+  fun parseDocument(): Json throws ParseError {
     val v = try self.parseValue()
     self.skipSpace()
     if (self.pos < self.src.len()) throw self.fail("trailing characters after the value")
@@ -64,7 +64,7 @@ struct Parser {
 
   fun peek(): u8? = if (self.pos < self.src.len()) self.src.byteAt(self.pos) else null
 
-  mut fun skipSpace() {
+  fun skipSpace() {
     loop {
       val b = self.peek() ?: return
       if (b != SPACE && b != TAB && b != LF && b != CR) return
@@ -72,13 +72,13 @@ struct Parser {
     }
   }
 
-  mut fun expect(b: u8, what: string) throws ParseError {
+  fun expect(b: u8, what: string) throws ParseError {
     self.skipSpace()
     if (self.peek() != b) throw self.fail("expected $what")
     self.pos += 1
   }
 
-  mut fun parseValue(): Json throws ParseError {
+  fun parseValue(): Json throws ParseError {
     self.skipSpace()
     val b = self.peek() ?: throw self.fail("unexpected end of input")
     when {
@@ -102,7 +102,7 @@ struct Parser {
     }
   }
 
-  mut fun parseObject(): Json throws ParseError {
+  fun parseObject(): Json throws ParseError {
     try self.expect(LBRACE, "'{'")
     var fields: MutableMap<string, Json> = [:]
     self.skipSpace()
@@ -125,7 +125,7 @@ struct Parser {
     JObj(fields: fields.toMap())
   }
 
-  mut fun parseArray(): Json throws ParseError {
+  fun parseArray(): Json throws ParseError {
     try self.expect(LBRACKET, "'['")
     var items: MutableList<Json> = []
     self.skipSpace()
@@ -144,7 +144,7 @@ struct Parser {
     JArr(items: items.toList())
   }
 
-  mut fun parseNumber(): Json throws ParseError {
+  fun parseNumber(): Json throws ParseError {
     val start = self.pos
     if (self.peek() == MINUS) self.pos += 1
     self.digits()
@@ -164,7 +164,7 @@ struct Parser {
     JNum(value)
   }
 
-  mut fun digits() {
+  fun digits() {
     loop {
       val b = self.peek() ?: return
       if (b < ZERO || b > NINE) return
@@ -173,7 +173,7 @@ struct Parser {
   }
 
   /// A string literal, with escapes decoded; the cursor is on the opening quote.
-  mut fun parseString(): string throws ParseError {
+  fun parseString(): string throws ParseError {
     self.pos += 1
     var out: MutableList<u8> = []
     loop {

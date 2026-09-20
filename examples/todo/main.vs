@@ -16,11 +16,11 @@ error UsageError {
 // the task line
 
 struct Task {
-  done:        bool = false
-  completedOn: string = ""  // ISO dates, "" when absent
-  createdOn:   string = ""
-  priority:    string = ""  // "A".."Z" or ""
-  text:        string       // the description, tags included
+  var done:        bool = false
+  var completedOn: string = ""  // ISO dates, "" when absent
+  var createdOn:   string = ""
+  var priority:    string = ""  // "A".."Z" or ""
+  var text:        string       // the description, tags included
 
   /// Parses one line of the file; anything is a task, so this cannot fail.
   static fun parse(line: string): Task {

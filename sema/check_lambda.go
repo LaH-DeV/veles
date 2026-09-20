@@ -47,21 +47,23 @@ func (f *fnCtx) localVar(v *Var) *Var {
 	return inner
 }
 
-// selfRef returns the receiver variable, capturing it inside lambdas.
-func (f *fnCtx) selfRef() (*Var, bool) {
+// selfRef returns the receiver variable (a pointer to the receiver's
+// place, D22), capturing it inside lambdas.
+func (f *fnCtx) selfRef() *Var {
 	if f.selfVar != nil {
-		return f.selfVar, f.selfMut
+		return f.selfVar
 	}
 	if f.parent == nil {
-		return nil, false
+		return nil
 	}
-	outer, mut := f.parent.selfRef()
+	outer := f.parent.selfRef()
 	if outer == nil {
-		return nil, false
+		return nil
 	}
 	inner := f.localVar(outer)
-	f.selfVar, f.selfMut = inner, mut
-	return inner, mut
+	inner.IsSelf = true
+	f.selfVar = inner
+	return inner
 }
 
 // lambdaExpr checks a lambda against an optional expected function type.
@@ -262,14 +264,26 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 	// type; where a `sendable fun` is expected, the offending capture is named.
 	fn.Sig.Sendable = true
 	for _, v := range l.captureList {
-		if v.Mutable || !sendable(v.Type) {
+		// `self` is captured as the pointer to the receiver's place (D22):
+		// what matters is the receiver's type, and it is never a `var`
+		ct := v.Type
+		isVar := v.Mutable
+		if v.IsSelf {
+			ct = ct.(*types.Pointer).Elem
+			isVar = false
+		}
+		if isVar || !sendable(ct) || hasVarFields(ct) {
 			fn.Sig.Sendable = false
 			if expected != nil && expected.Sendable {
 				why := "a 'var'"
-				if !v.Mutable {
-					why = "of type '" + v.Type.String() + "', which is not Sendable"
+				switch {
+				case isVar:
+				case !sendable(ct):
+					why = "of type '" + ct.String() + "', which is not Sendable"
+				default:
+					why = "of type '" + ct.String() + "', which has 'var' fields another task could see change; copy what the lambda needs into vals first"
 				}
-				f.errorf(e.Pos, "this lambda cannot cross a task boundary: it captures '%s', %s (D35: a sendable function may capture only vals of Sendable types)", v.Name, why)
+				f.errorf(e.Pos, "this lambda cannot cross a task boundary: it captures '%s', %s (D35: a sendable function may capture only vals of Sendable types without 'var' fields)", v.Name, why)
 				fn.Sig.Sendable = true // reported once; no second mismatch error
 			}
 			break

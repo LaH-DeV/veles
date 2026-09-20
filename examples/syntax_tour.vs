@@ -44,12 +44,12 @@ fun describe(n: i32?): string = when (n) {
   is i32   => "big: $n"
 }
 
-// D22 — methods, mut fun, expression bodies
+// D22 — methods, fun, expression bodies
 struct Counter {
   n: i32 = 0
 
   fun get(): i32 = self.n
-  mut fun bump() {
+  fun bump() {
     self.n += 1
   }
 
@@ -69,7 +69,7 @@ trait Iterable {
 
 trait Iterator {
   type Item
-  mut fun next(): Item?
+  fun next(): Item?
   fun count(): i32 {
     var n = 0
     loop (x in self) {
@@ -97,7 +97,7 @@ impl<T> Display for Stack<T> {
 // D23 addendum — extend blocks: inherent methods for a type you declare
 extend<T: Display> Stack<T> {
   public fun render(): string = self.items.map(x => x.show()).join(" ")
-  mut fun drain() {
+  fun drain() {
     self.items.clear()
   }
 }

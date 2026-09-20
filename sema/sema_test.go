@@ -70,12 +70,26 @@ func TestSpecRules(t *testing.T) {
 		name, src, want string
 	}{
 		{"D11 val is immutable", prelude + `fun main() { val x = 1; x = 2 }`, "it is a 'val'"},
-		{"D22 mut fun on val", prelude + `
-struct C { n: i32 = 0; mut fun bump() { self.n += 1 } }
-fun main() { val c = C(); c.bump() }`, "it is a 'val'"},
-		{"D22 mutation in non-mut method", prelude + `
+		{"D22 assignment to a bare field", prelude + `
 struct C { n: i32 = 0; fun bump() { self.n += 1 } }
-fun main() { }`, "non-'mut' method"},
+fun main() { }`, "the field is immutable; declare it 'var n: i32'"},
+		{"D22 bare field through a var binding", prelude + `
+struct C { n: i32 = 0 }
+fun main() { var c = C(); c.n = 2 }`, "the field is immutable"},
+		{"D22 bare field through a pointer", prelude + `
+struct C { n: i32 = 0 }
+fun main() { var c = C(); val p = &c; p.n = 2 }`, "the field is immutable"},
+		{"D22 self is not assignable", prelude + `
+struct C { var n: i32 = 0; fun reset() { self = C() } }
+fun main() { }`, "cannot assign to 'self'"},
+		{"D22 var field of a global val", prelude + `
+struct C { var n: i32 = 0 }
+val g = C()
+fun main() { g.n = 2 }`, "a global 'val' is a constant"},
+		{"D22 method changing a global val", prelude + `
+struct C { var n: i32 = 0; fun bump() { self.n += 1 } }
+val g = C()
+fun main() { g.bump() }`, "the method changes its receiver and a global 'val' is a constant"},
 		{"D12 variant in other module only", prelude + `
 struct X : Missing { }
 fun main() { }`, "unknown type"},
@@ -224,8 +238,15 @@ fun main() { io.println(p(A())) }`,
 struct Stack<T> { items: MutableList<T> = []; fun push(x: T) { self.items.push(x) }; fun len(): i64 = self.items.len() }
 fun main() { val s = Stack<i32>(); s.push(1); io.println("${s.len()}") }`,
 		"mutation through pointer on val": prelude + `
-struct C { n: i32 }
+struct C { var n: i32 }
 fun main() { val c = C(n: 1); val p = &c; p.n = 2 }`,
+		"var field through a val binding": prelude + `
+struct C { var n: i32 = 0; fun bump() { self.n += 1 } }
+fun main() { val c = C(); c.n = 2; c.bump(); io.println("${c.n}") }`,
+		"var field on a var global": prelude + `
+struct C { var n: i32 = 0; fun bump() { self.n += 1 } }
+var g = C()
+fun main() { g.n = 2; g.bump() }`,
 		"Result value matched": prelude + `
 error E { code: i32 }
 fun f(): i32 throws E = Err(E(code: 1))
@@ -531,7 +552,7 @@ error PortErrors = ParseError | RangeError
 error ConfigError { key: string, cause: PortErrors }
 struct Address { city: string }
 struct User {
-  name: string
+  var name: string
   address: Address?
   fun city(): string = if (self.address != null) self.address.city else "?"
 }
@@ -567,12 +588,14 @@ fun main() {
   if (p.address != null) io.println(p.address.city)`},
 		{"assigned in loop", `
   if (u.address != null) { loop (i in 0..1) { u.address = null }; io.println(u.address.city) }`},
-		{"mut self", ``},
+		{"method on self clears the fact", `
+  io.println(u.reset())`},
 	} {
 		src := prelude + `
 struct Address { city: string }
-struct User { name: string, address: Address?; mut fun clear() { self.address = null }
-  mut fun city(): string = if (self.address != null) self.address.city else "?" }
+struct User { name: string, var address: Address?; fun clear() { self.address = null }
+  fun city(): string = if (self.address != null) self.address.city else "?"
+  fun reset(): string = if (self.address != null) { self.clear(); self.address.city } else "?" }
 fun other(u: *User) { u.address = null }
 fun main() {
   var u = User(name: "a", address: Address(city: "x"))` + c.src + `
@@ -631,13 +654,13 @@ fun main() { val s = Set<i64>(); val t = Set<string>(); s.union(t) }`, "needs a 
 
 func TestExtendBlocks(t *testing.T) {
 	expectClean(t, prelude+`
-struct Point { x: i64, y: i64 }
+struct Point { var x: i64, y: i64 }
 struct Box<T> { value: T }
 trait Show { fun show(): string }
 impl Show for Point { fun show(): string = "p" }
 extend Point {
   public fun sum(): i64 = self.x + self.y
-  mut fun bump() { self.x += 1 }
+  fun bump() { self.x += 1 }
 }
 extend<T: Show> Box<T> { fun label(): string = self.value.show() }
 extend<T> Box<T> { fun get(): T = self.value }
@@ -1150,8 +1173,8 @@ func TestIndexingIsMethodsOnly(t *testing.T) {
 		}
 	}
 	expectClean(t, prelude+`
-struct C { n: i64 = 0
-  mut fun bump() { self.n += 1 } }
+struct C { var n: i64 = 0
+  fun bump() { self.n += 1 } }
 fun main() {
   val xs = [1, 2]
   val a: i64? = xs.at(5)
@@ -1223,7 +1246,7 @@ fun main() { io.println("${f(A())} ${g(B())} ${h(C())}") }`
 func TestLiteralMutabilityFromGenericParam(t *testing.T) {
 	expectClean(t, prelude+`
 struct Stack<T> { items: MutableList<T>
-  mut fun push(x: T) { self.items.push(x) } }
+  fun push(x: T) { self.items.push(x) } }
 fun fill<T>(xs: MutableList<T>, x: T): i64 { xs.push(x); xs.len() }
 fun keyed<K, V>(m: MutableMap<K, V>, k: K, v: V): i64 { m.set(k, v); m.len() }
 fun main() {
@@ -1234,12 +1257,12 @@ fun main() {
 }
 
 // `xs.ref(i)?.m()` reaches the element in place through the nullable
-// pointer, so a `mut fun` sticks; `at`/`first`/`last` return copies, on
-// which a value-returning method is fine and a unit `mut fun` an error.
+// pointer, so a `fun` sticks; `at`/`first`/`last` return copies, on
+// which a value-returning method is fine and a unit `fun` an error.
 func TestSafeCallThroughRef(t *testing.T) {
 	expectClean(t, prelude+`
-struct C { n: i64 = 0
-  mut fun bump() { self.n += 1 }
+struct C { var n: i64 = 0
+  fun bump() { self.n += 1 }
   fun show(): string = "${self.n}" }
 fun make(f: fun(i64): i64): List<C> = [C(n: f(1))]
 fun main() {
@@ -1256,13 +1279,13 @@ fun main() {
 	expectError(t, prelude+`fun main() { val xs = [1]; xs.at(0).abs() }`, "may be null; use '?.'")
 	for _, c := range []struct{ src, want string }{
 		{`fun main() { val cs: MutableList<C> = [C()]; cs.at(0)?.bump() }`, "reach the element itself with 'cs.ref(0)'"},
-		{`fun main() { val cs: MutableList<C> = [C()]; cs.first()?.bump() }`, "would change a temporary copy"},
+		{`fun main() { val cs: MutableList<C> = [C()]; cs.first()?.bump() }`, "changes a temporary copy"},
 		{`fun main() { val cs: MutableList<C> = [C()]; cs.atOrPanic(0).bump() }`, "reach the element itself with 'cs.refOrPanic(0)'"},
-		{"fun make(): C = C()\nfun main() { make().bump() }", "would change a temporary copy of 'C' that is then discarded"},
+		{"fun make(): C = C()\nfun main() { make().bump() }", "changes a temporary copy of 'C' that is then discarded"},
 		{`fun main() { val cs = [C()]; cs.ref(0)?.bump() }`, "'ref' needs a MutableList"},
 		{`fun main() { val cs: MutableList<C> = [C()]; val p = &cs.atOrPanic(0); p.n = 1 }`, "address of a copy of the element"},
 	} {
-		expectError(t, prelude+"struct C { n: i64 = 0\n  mut fun bump() { self.n += 1 } }\n"+c.src, c.want)
+		expectError(t, prelude+"struct C { var n: i64 = 0\n  fun bump() { self.n += 1 } }\n"+c.src, c.want)
 	}
 }
 
@@ -1274,9 +1297,9 @@ fun main() {
 // closed; a write into a copy is an error.
 func TestPlacesThroughNullables(t *testing.T) {
 	expectClean(t, prelude+`
-struct C { n: i64 = 0
-  mut fun bump() { self.n += 1 } }
-struct Box { c: C? = null }
+struct C { var n: i64 = 0
+  fun bump() { self.n += 1 } }
+struct Box { var c: C? = null }
 fun main() {
   val m: MutableMap<string, C> = ["a": C()]
   m.ref("a")?.bump()
@@ -1322,7 +1345,7 @@ fun main() { make()?.n = 1 }`, "into a temporary value of type 'C' has no effect
 		{`fun main() { val p: C? = C(); p?.n = 1 }`, "it is a 'val'"},
 		{`fun main() { var p: C = C(); p?.n = 1 }`, "'?.' on a non-nullable value"},
 	} {
-		expectError(t, prelude+"struct C { n: i64 = 0\n  mut fun bump() { self.n += 1 } }\n"+c.src, c.want)
+		expectError(t, prelude+"struct C { var n: i64 = 0\n  fun bump() { self.n += 1 } }\n"+c.src, c.want)
 	}
 }
 
@@ -1380,8 +1403,8 @@ fun main() { io.println("${f(Ones())}") }`)
 // name the variable being assigned, making the value contain itself).
 func TestCalculatorFindings(t *testing.T) {
 	expectClean(t, prelude+`
-struct Cursor { pos: i64 = 0
-  mut fun step(b: u8) {
+struct Cursor { var pos: i64 = 0
+  fun step(b: u8) {
     when {
       b == 32 => self.pos += 1
       else => self.pos = 0
@@ -1443,7 +1466,7 @@ fun main() { io.println("${[2, 1].sortedBy(x => try key(x))}") }`, "cannot be pa
 // evaluated once, then each place is stored in order.
 func TestTupleAssignment(t *testing.T) {
 	expectClean(t, prelude+`
-struct P { x: i64; y: i64 }
+struct P { var x: i64; var y: i64 }
 fun pair(): (i64, i64) = (1, 2)
 fun main() {
   var a = 1
@@ -1626,7 +1649,7 @@ func containsCall(e Expr) bool {
 // call returns is a temporary.
 func TestFieldWriteThroughCallResult(t *testing.T) {
 	expectClean(t, prelude+`
-struct Acc { n: i64 = 0 }
+struct Acc { var n: i64 = 0 }
 struct H { p: *Acc }
 fun ptrOf(h: H): *Acc = h.p
 fun main() {
@@ -1636,7 +1659,7 @@ fun main() {
   io.println("${h.p.n}")
 }`)
 	expectError(t, prelude+`
-struct Acc { n: i64 = 0 }
+struct Acc { var n: i64 = 0 }
 fun make(): Acc = Acc()
 fun main() { make().n = 1 }`, "field of a temporary value")
 }
@@ -1686,8 +1709,8 @@ fun main() {
 // afterwards, and when a `loop (&x in xs)` body changes `xs`.
 func TestStaleReferenceLint(t *testing.T) {
 	src := prelude + `
-struct C { n: i64 = 0
-  mut fun bump() { self.n += 1 } }
+struct C { var n: i64 = 0
+  fun bump() { self.n += 1 } }
 fun main() {
   val xs: MutableList<C> = [C()]
   val p = xs.refOrPanic(0)
@@ -2150,7 +2173,7 @@ func TestWithExpression(t *testing.T) {
 	expectClean(t, prelude+`
 struct Res {
   n: i64
-  impl Closeable { mut fun close() { } }
+  impl Closeable { fun close() { } }
 }
 fun readIt(): i64 {
   with (r = Res(n: 1)) {
@@ -2173,7 +2196,7 @@ fun main() {
 	expectError(t, prelude+`
 struct Res {
   n: i64
-  impl Closeable { mut fun close() { } }
+  impl Closeable { fun close() { } }
 }
 fun main() {
   val s: string = with (r = Res(n: 5)) { r.n }
@@ -2259,16 +2282,16 @@ func TestPrivateMembers(t *testing.T) {
 	const notes = `
 struct Note { id: i64; text: string }
 struct Notes {
-  private next:  i64 = 1
-  private items: MutableList<Note> = []
+  private var next: i64 = 1
+  private items:    MutableList<Note> = []
   static val seeded = Notes(next: 100)
-  mut fun add(text: string): Note {
+  fun add(text: string): Note {
     val n = Note(id: self.next, text)
     self.items.push(n)
     self.bump()
     n
   }
-  private mut fun bump() { self.next += 1 }
+  private fun bump() { self.next += 1 }
   fun all(): List<Note> = self.items.toList()
 }
 extend Notes {
@@ -2300,4 +2323,133 @@ fun main() {
 	expectError(t, prelude+`
 private fun helper(): i64 = 1
 fun main() { io.println("${helper()}") }`, "'private' belongs to a member of a struct")
+}
+
+// D22 (v0.30): mutability is declared on the field. A bare field is never
+// assigned; a `var` field is assignable through `self`, any binding or a
+// pointer; `val`/`var` on a binding only govern rebinding. Every method
+// takes a pointer to its receiver's place; the receiver pass reports a
+// change to a discarded copy and heap-allocates a receiver a method keeps
+// a pointer to.
+func TestVarFields(t *testing.T) {
+	const counter = `
+struct Counter {
+  label: string
+  var n: i64 = 0
+  fun bump() { self.n += 1 }
+  fun show(): string = "${self.label}=${self.n}"
+  fun ticker(): fun(): i64 = () => { self.n += 1; self.n }
+  fun handle(): *Counter = &self
+}
+`
+	expectClean(t, prelude+counter+`
+fun main() {
+  val c = Counter(label: "a")
+  c.bump()
+  c.n = 5
+  val t = c.ticker()
+  val p = c.handle()
+  p.n += 1
+  var d = c
+  d.label
+  io.println("${c.show()} ${t()} ${d.show()}")
+}`)
+	for _, c := range []struct{ name, src, want string }{
+		{"bare field through self", `struct P { x: i64; fun move() { self.x += 1 } }
+fun main() { }`, "'P.x': the field is immutable; declare it 'var x: i64'"},
+		{"bare field through a var binding", `struct P { x: i64 }
+fun main() { var p = P(x: 1); p.x = 2 }`, "the field is immutable"},
+		{"bare field through a pointer", `struct P { x: i64 }
+fun main() { var p = P(x: 1); val q = &p; q.x = 2 }`, "the field is immutable"},
+		{"bare field through a loop reference", `struct P { x: i64 }
+fun main() { val ps: MutableList<P> = [P(x: 1)]; loop (&p in ps) p.x = 2 }`, "the field is immutable"},
+		{"only the last field decides", `struct In { x: i64 }
+struct Out { var inner: In }
+fun main() { var o = Out(inner: In(x: 1)); o.inner.x = 2 }`, "'In.x': the field is immutable"},
+		{"self cannot be replaced", counter + `
+extend Counter { fun reset() { self = Counter(label: "r") } }
+fun main() { }`, "cannot assign to 'self'"},
+		{"a global val is a constant", counter + `
+val g = Counter(label: "g")
+fun main() { g.n = 1 }`, "a global 'val' is a constant"},
+		{"a method may not change a global val", counter + `
+val g = Counter(label: "g")
+fun main() { g.bump() }`, "changes its receiver and a global 'val' is a constant"},
+		{"a change to a temporary copy is lost", counter + `
+fun make(): Counter = Counter(label: "m")
+fun main() { make().bump() }`, "'bump' changes a temporary copy of 'Counter' that is then discarded"},
+		{"an element read is a copy", counter + `
+fun main() { val cs: MutableList<Counter> = [Counter(label: "e")]; cs.atOrPanic(0).bump() }`, "reach the element itself with 'cs.refOrPanic(0)'"},
+		{"a val field cannot be spelled val", `struct P { val x: i64 }
+fun main() { }`, "a field is immutable unless declared 'var'"},
+		{"mut fun is gone", `struct P { var x: i64; mut fun move() { self.x += 1 } }
+fun main() { }`, "'mut fun' no longer exists"},
+		{"tuple elements are not assignable", `fun main() { var t = (1, 2); t.0 = 3 }`, "cannot assign to a tuple element"},
+	} {
+		t.Run(c.name, func(t *testing.T) { expectError(t, prelude+c.src, c.want) })
+	}
+	// a value-returning method on a copy is fine; a method that changes
+	// nothing is fine on any temporary
+	expectClean(t, prelude+counter+`
+fun make(): Counter = Counter(label: "m")
+fun main() { io.println(make().show()); val cs = [Counter(label: "e")]; io.println(cs.atOrPanic(0).show()) }`)
+	// the inner field of an immutable outer field is still assignable
+	// when it is `var`: `var` says whether this slot can be assigned
+	expectClean(t, prelude+`
+struct In { var x: i64 }
+struct Out { inner: In }
+fun main() { val o = Out(inner: In(x: 1)); o.inner.x = 2; io.println("${o.inner.x}") }`)
+	// tuple elements are places for method calls
+	expectClean(t, prelude+counter+`
+fun main() { val pair = (1, Counter(label: "t")); pair.1.bump(); io.println(pair.1.show()) }`)
+}
+
+// A method's receiver is a place it may narrow like a local: a fact about
+// `self.f` survives calls that cannot assign `f` (a bare field) and is
+// dropped by an assignment or by a call when `f` is `var`.
+func TestSelfNarrowing(t *testing.T) {
+	expectClean(t, prelude+`
+struct Address { city: string }
+struct User {
+  address: Address?
+  var nick: string? = null
+  fun log() { }
+  fun city(): string = if (self.address != null) { self.log(); self.address.city } else "?"
+  fun nickLen(): i64 = if (self.nick != null) self.nick.len() else 0
+}
+fun main() { io.println(User(address: Address(city: "x")).city()) }`)
+	expectError(t, prelude+`
+struct User {
+  var nick: string? = null
+  fun clear() { self.nick = null }
+  fun nickLen(): i64 = if (self.nick != null) { self.clear(); self.nick.len() } else 0
+}
+fun main() { }`, "may be null")
+	expectError(t, prelude+`
+struct User {
+  var nick: string? = null
+  fun nickLen(): i64 = if (self.nick != null) { self.nick = null; self.nick.len() } else 0
+}
+fun main() { }`, "may be null")
+}
+
+// D35 with var fields: a sendable lambda shares its captures, so a val
+// whose type has `var` fields may not cross — another task could see it
+// change. `self` counts by its type.
+func TestSendableCaptureVarFields(t *testing.T) {
+	expectError(t, prelude+`
+struct Counter { var n: i64 = 0 }
+fun run(f: sendable fun(): i64): i64 = f()
+fun main() { val c = Counter(); io.println("${run(() => c.n)}") }`, "which has 'var' fields another task could see change")
+	expectError(t, prelude+`
+struct Counter { var n: i64 = 0
+  fun start(): i64 = run(() => self.n) }
+fun run(f: sendable fun(): i64): i64 = f()
+fun main() { io.println("${Counter().start()}") }`, "captures 'self'")
+	expectClean(t, prelude+`
+struct Config { name: string; items: List<i64> = [] }
+struct Server { config: Config
+  fun start(): i64 = run(() => self.config.items.len()) }
+fun run(f: sendable fun(): i64): i64 = f()
+fun main() { io.println("${Server(config: Config(name: "s")).start()}") }`)
 }

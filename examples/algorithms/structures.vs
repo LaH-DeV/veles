@@ -44,16 +44,16 @@ public fun slidingMax(xs: List<i64>, k: i64): List<i64> {
 
 /// Binary search tree of i64, nodes linked by GC pointers (D10/D31).
 public struct TreeNode {
-  value: i64
-  left:  (*TreeNode)? = null
-  right: (*TreeNode)? = null
+  value:     i64
+  var left:  (*TreeNode)? = null
+  var right: (*TreeNode)? = null
 }
 
 public struct Bst {
-  root: (*TreeNode)? = null
-  size: i64 = 0
+  var root: (*TreeNode)? = null
+  var size: i64 = 0
 
-  mut fun insert(v: i64) {
+  fun insert(v: i64) {
     if (self.contains(v)) return
     self.root = insertInto(self.root, v)
     self.size += 1

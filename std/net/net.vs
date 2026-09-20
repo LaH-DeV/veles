@@ -92,7 +92,7 @@ public struct Listener {
   }
 
   impl Closeable {
-    mut fun close() {
+    fun close() {
       unsafe {
         veles_net_close(self.fd)
       }
@@ -220,7 +220,7 @@ public struct Conn {
   }
 
   impl Closeable {
-    mut fun close() {
+    fun close() {
       unsafe {
         veles_net_close(self.fd)
       }

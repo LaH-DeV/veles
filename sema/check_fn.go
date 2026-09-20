@@ -1,6 +1,7 @@
 package sema
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/LaH-DeV/veles/ast"
@@ -25,8 +26,7 @@ type fnCtx struct {
 	throws      bool
 	errType     types.Type // declared error union, or nil when inferred
 	unsafe      int
-	selfVar     *Var
-	selfMut     bool
+	selfVar     *Var          // `self`: a pointer to the receiver's place (D22 v0.30)
 	isGlobal    bool          // checking a global initializer
 	staticOwner *types.Struct // the struct whose `static val` this global initializer is, if any
 
@@ -200,13 +200,12 @@ func (c *Checker) checkBody(fn *Func) {
 		f.unsafe = 1
 	}
 	if owner != nil && !t.Decl.Static {
-		selfType := owner
-		if t.Decl.Mut {
-			selfType = &types.Pointer{Elem: owner}
-		}
-		fn.Receiver = f.newVar("self", selfType, t.Decl.Mut, t.Decl.Name.Pos)
+		// D22 (v0.30): every method receives a pointer to the place it was
+		// called on, so it may assign the receiver's `var` fields; `self`
+		// still reads as the value (checkLValue/selfRef dereference it).
+		fn.Receiver = f.newVar("self", &types.Pointer{Elem: owner}, true, t.Decl.Name.Pos)
+		fn.Receiver.IsSelf = true
 		f.selfVar = fn.Receiver
-		f.selfMut = t.Decl.Mut
 	}
 	for i, p := range t.Decl.Params {
 		v := f.newVar(p.Name.Name, fn.Sig.Params[i].Type, false, p.Name.Pos)
@@ -736,18 +735,15 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 		f.errorf(e.Pos, "'%s' is not assignable", e.Name)
 		return nil, nil
 	case *ast.SelfExpr:
-		self, mut := f.selfRef()
+		self := f.selfRef()
 		if self == nil {
 			f.errorf(e.Pos, "'self' outside of a method")
 			return nil, nil
 		}
-		if mut {
-			return &Deref{exprBase{self.Type.(*types.Pointer).Elem}, &VarRef{exprBase{self.Type}, self}}, nil
-		}
 		if mutate {
-			f.errorf(e.Pos, "cannot mutate 'self' in a non-'mut' method; declare the method 'mut fun' (D22)")
+			f.errorf(e.Pos, "cannot assign to 'self': assign its 'var' fields, or return the new value (D22)")
 		}
-		return &VarRef{exprBase{self.Type}, self}, self
+		return &Deref{exprBase{self.Type.(*types.Pointer).Elem}, &VarRef{exprBase{self.Type}, self}}, self
 	case *ast.MemberExpr:
 		if e.Safe {
 			f.errorf(e.Pos, "cannot assign through '?.'")
@@ -779,13 +775,25 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 			base = &Deref{exprBase{p.Elem}, base}
 			bt = p.Elem
 			root = nil
-		} else if mutate && root != nil && root == f.selfVar && !f.selfMut {
-			f.errorf(e.Pos, "cannot mutate 'self.%s' in a non-'mut' method; declare the method 'mut fun' (D22)", e.Name.Name)
-		} else if mutate && root != nil && !root.Mutable {
-			f.errorf(e.Pos, "cannot assign to field '%s' of '%s': it is a 'val' (D11/D22)", e.Name.Name, root.Name)
+		} else if mutate && root != nil && root.IsGlobal && !root.Mutable {
+			// a global `val` is shared by every task (D35): nothing in it changes
+			f.errorf(e.Pos, "cannot assign to field '%s' of '%s': a global 'val' is a constant; declare it 'var' (D11/D35)", e.Name.Name, root.Name)
 		} else if mutate && (temporary || root == nil && !isPlaceExpr(base)) {
 			f.copyMutationHint(e.X, e.Pos, "cannot assign to a field of a temporary value")
 			return nil, nil
+		}
+		if tt, isTuple := bt.(*types.Tuple); isTuple {
+			// a tuple element is a place too (`pair.1.bump()`); elements
+			// are not assignable one at a time
+			idx, err := strconv.Atoi(e.Name.Name)
+			if err != nil || idx < 0 || idx >= len(tt.Elems) {
+				f.errorf(e.Name.Pos, "tuple of %d elements has no element '%s'", len(tt.Elems), e.Name.Name)
+				return nil, nil
+			}
+			if mutate {
+				f.errorf(e.Pos, "cannot assign to a tuple element; assign the whole tuple (D48)")
+			}
+			return &TupleGet{exprBase{tt.Elems[idx]}, base, idx}, root
 		}
 		st, ok := bt.(*types.Struct)
 		if !ok {
@@ -795,6 +803,11 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 		fld := f.lookupField(st, e.Name.Name, e.Name.Pos)
 		if fld == nil {
 			return nil, nil
+		}
+		if mutate && !fld.Var {
+			// D22 (v0.30): mutability is declared on the field, whoever holds
+			// the struct; a bare field is set once, by the constructor call
+			f.c.errorFix(e.Name.Pos, f.fixVarField(st, fld), "cannot assign to '%s.%s': the field is immutable; declare it 'var %s: %s' to allow assignment, or build a new '%s' (D22)", st.Name, fld.Name, fld.Name, fld.Type, st.Name)
 		}
 		return &FieldGet{exprBase{fld.Type}, base, fld.Index, fld.Name}, root
 	case *ast.IndexExpr:
@@ -1329,12 +1342,9 @@ func (f *fnCtx) withBindings(s *ast.WithExpr, i int, closeable *types.Trait, wan
 		f.errorf(b.Value.Span(), "'%s' is not Closeable; 'with' resources must implement Closeable (D43)", init.Type())
 		return nil, types.TInvalid
 	}
-	// synthesize `name.close()`; the binding is a val to user code but the
-	// close call needs a mutable place
-	v.Mutable = true
+	// synthesize `name.close()` (a method call works on any binding, D22)
 	call := &ast.CallExpr{Fun: &ast.MemberExpr{X: nameOf(v, b.Name.Pos), Name: ast.Ident{Name: "close", Pos: b.Name.Pos}, Pos: b.Name.Pos}, Pos: b.Name.Pos}
 	closeCall := f.checkExpr(call, types.TUnit)
-	v.Mutable = false
 	if isResultType(closeCall.Type()) {
 		f.errorf(b.Name.Pos, "close() of '%s' throws; throwing cleanup is not supported yet", init.Type())
 	}

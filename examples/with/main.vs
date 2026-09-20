@@ -4,7 +4,7 @@ struct Res {
   name: string
 
   impl Closeable {
-    mut fun close() {
+    fun close() {
       io.println("close ${self.name}")
     }
   }

@@ -17,10 +17,10 @@ error UsageError {
 }
 
 struct Options {
-  dir:   string = "public"
-  host:  string = "127.0.0.1"
-  port:  i64 = 8080
-  check: bool = false
+  var dir:   string = "public"
+  var host:  string = "127.0.0.1"
+  var port:  i64 = 8080
+  var check: bool = false
 
   static fun parse(args: List<string>): Options throws UsageError {
     var opts = Options()
@@ -63,15 +63,15 @@ struct Note {
 /// in a Mutex (D35); its fields are private, so the only way in is through
 /// the methods, which keep `next` and `items` consistent.
 struct Notes {
-  private next:  i64 = 1
-  private items: MutableList<Note> = []
+  private var next: i64 = 1
+  private items:    MutableList<Note> = []
 
   fun all(): List<Note> = self.items.toList()
 
   fun find(id: i64): Note? = self.items.find(x => x.id == id)
 
   /// Stores a new note with the next id.
-  mut fun add(text: string): Note {
+  fun add(text: string): Note {
     val created = Note(id: self.next, text)
     self.next += 1
     self.items.push(created)
@@ -99,36 +99,36 @@ fun notesJson(notes: List<Note>): string = "[" + notes.map(n => noteJson(n)).joi
 /// under `dir`.
 fun app(dir: string): http.Handler {
   val notes = mutex(Notes())
-  val r = http.router()
+  val router = http.router()
 
-  r.get("/", req => http.Response.redirect("/static/"))
-  r.get("/static/*", http.files(dir))
+  router.get("/", req => http.Response.redirect("/static/"))
+  router.get("/static/*", http.files(dir))
 
-  r.get("/api/echo", req => http.Response.text(req.query.get("msg") ?: "(no msg)"))
+  router.get("/api/echo", req => http.Response.text(req.query.get("msg") ?: "(no msg)"))
 
-  r.get("/api/notes", req => http.Response.json(notes.withLock(n => notesJson(n.all()))))
+  router.get("/api/notes", req => http.Response.json(notes.withLock(n => notesJson(n.all()))))
 
-  r.post("/api/notes", req => {
+  router.post("/api/notes", req => {
     val text = (try req.text()).trim()
     if (text.isEmpty()) throw http.badRequest("a note needs some text")
     val note = notes.withLock(n => n.add(text))
     http.Response.json(noteJson(note), status: 201).withHeader("location", "/api/notes/${note.id}")
   })
 
-  r.get("/api/notes/{id}", req => {
+  router.get("/api/notes/{id}", req => {
     val id = try req.param("id").toInt() ?! http.badRequest("the id must be a number")
     val note = try notes.withLock(n => n.find(id)) ?! http.notFound("no note $id")
     http.Response.json(noteJson(note))
   })
 
-  r.delete("/api/notes/{id}", req => {
+  router.delete("/api/notes/{id}", req => {
     val id = try req.param("id").toInt() ?! http.badRequest("the id must be a number")
     val removed = notes.withLock(n => n.remove(id))
     if (!removed) throw http.notFound("no note $id")
     http.Response.empty(204)
   })
 
-  r.handler()
+  router.handler()
 }
 
 // ---------------------------------------------------------------------------
@@ -212,10 +212,10 @@ fun run(args: List<string>) throws UsageError | IoError {
 }
 
 fun main() {
-  when (val r = run(os.args())) {
+  when (val result = run(os.args())) {
     is Err => {
-      io.println("httpd: ${r.message()}")
-      os.exit(if (r is UsageError) 2 else 1)
+      io.println("httpd: ${result.message()}")
+      os.exit(if (result is UsageError) 2 else 1)
     }
     is Ok  => { }
   }

@@ -304,7 +304,7 @@ use io
 struct Res {
   name: string
   impl Closeable {
-    mut fun close() { io.println("closed ${self.name}") }
+    fun close() { io.println("closed ${self.name}") }
   }
 }
 
@@ -451,7 +451,7 @@ For state that genuinely must be shared and mutated, wrap it:
 ```veles
 use io
 
-struct Counter { hits: i64 }
+struct Counter { var hits: i64 }
 
 fun bump(m: Mutex<Counter>, times: i64) {
   loop (_ in 0..<times) {

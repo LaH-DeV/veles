@@ -149,3 +149,23 @@ func sortedKeys[V any](m map[string]V) []string {
 	sort.Strings(keys)
 	return keys
 }
+
+// recvArg passes x as the receiver of fn: a pointer to its place, or to a
+// copy when x is a temporary (D22 v0.30). A synthesized comparison that is
+// not a method (tuple_order.go) takes the value itself.
+func recvArg(fn *Func, x Expr) Expr {
+	if !fn.isMethod() {
+		return x
+	}
+	return &AddrOf{exprBase{&types.Pointer{Elem: x.Type()}}, x}
+}
+
+// isMethod reports whether fn takes a receiver — known from its template
+// before the body is checked (which is what sets fn.Receiver).
+func (fn *Func) isMethod() bool {
+	if fn.Receiver != nil {
+		return true
+	}
+	t := fn.tmpl
+	return t != nil && !t.Decl.Static && (t.Owner != nil || t.Impl != nil || t.Trait != nil)
+}

@@ -368,6 +368,7 @@ type Field struct {
 	Type       Type
 	Pub        bool
 	Private    bool // visible only inside the type's own declarations
+	Var        bool // assignable after construction (D22 v0.30); a bare field never changes
 	HasDefault bool
 	Index      int
 }

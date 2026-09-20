@@ -177,7 +177,7 @@ type FunDecl struct {
 	Doc        string // documentation comment, if any
 	Pub        bool
 	Private    bool // `private fun` — callable only inside the type's own declarations
-	Mut        bool // `mut fun` — mutates the receiver's own fields (D22)
+
 	Static     bool // `static fun` — no receiver; called on the type (D23)
 	Override   bool
 	Unsafe     bool
@@ -196,6 +196,7 @@ type FunDecl struct {
 type Field struct {
 	Pub     bool
 	Private bool // visible only inside the type's own declarations
+	Var     bool // `var name: T` — assignable after construction (D22 v0.30)
 	Doc     string
 	Name    Ident
 	Type    Type

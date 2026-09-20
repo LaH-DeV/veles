@@ -603,7 +603,19 @@ func (p *Parser) parseFun(attrs []*ast.Attribute, ctx funContext) *ast.FunDecl {
 		case lexer.KwPub:
 			fn.Pub = true
 		case lexer.KwMut:
-			fn.Mut = true
+			// removed in v0.30 (D22): every method may assign the receiver's
+			// `var` fields; the marker no longer exists
+			sp := p.span()
+			end := sp.End
+			if src := sp.File; src != nil {
+				for end < len(src.Content) && (src.Content[end] == ' ' || src.Content[end] == '\t') {
+					end++
+				}
+			}
+			p.errorf(sp, "'mut fun' no longer exists: a method may assign the fields declared 'var' (D22); remove 'mut' and mark the fields it changes 'var'")
+			if n := len(p.diags.Items); n > 0 && p.diags.Items[n-1].Span.Start == sp.Start {
+				p.diags.Items[n-1].Fix = &source.Fix{Title: "Remove 'mut'", Edits: []source.TextEdit{{Span: source.Span{File: sp.File, Start: sp.Start, End: end}}}}
+			}
 		case lexer.KwOverride:
 			fn.Override = true
 		case lexer.KwPrivate:
@@ -702,7 +714,7 @@ func (p *Parser) parseStruct(attrs []*ast.Attribute, pub, extern bool, start sou
 			case lexer.KwImpl:
 				d.Impls = append(d.Impls, p.parseInlineImpl(mattrs, d))
 			case lexer.KwPub:
-				if p.peek(1).Kind == lexer.Ident {
+				if p.peek(1).Kind == lexer.Ident || p.peek(1).Kind == lexer.KwVar {
 					d.Fields = append(d.Fields, p.parseField(true, false))
 				} else if p.peek(1).Kind == lexer.KwStatic && (p.peek(2).Kind == lexer.KwVal || p.peek(2).Kind == lexer.KwVar) {
 					p.next()
@@ -711,12 +723,16 @@ func (p *Parser) parseStruct(attrs []*ast.Attribute, pub, extern bool, start sou
 					d.Methods = append(d.Methods, p.parseFun(mattrs, funContextMethod))
 				}
 			case lexer.KwPrivate:
-				if p.peek(1).Kind == lexer.Ident {
+				if p.peek(1).Kind == lexer.Ident || p.peek(1).Kind == lexer.KwVar {
 					d.Fields = append(d.Fields, p.parseField(false, true))
 				} else {
 					d.Methods = append(d.Methods, p.parseFun(mattrs, funContextMethod))
 				}
-			case lexer.Ident:
+			case lexer.Ident, lexer.KwVar:
+				d.Fields = append(d.Fields, p.parseField(false, false))
+			case lexer.KwVal:
+				p.errorf(p.span(), "a field is immutable unless declared 'var'; write the name alone instead of 'val' (D22)")
+				p.next()
 				d.Fields = append(d.Fields, p.parseField(false, false))
 			default:
 				p.errorf(p.span(), "expected a field or method, found %s", p.cur().Describe())
@@ -768,6 +784,9 @@ func (p *Parser) parseField(pub, private bool) *ast.Field {
 		p.next()
 	}
 	f := &ast.Field{Pub: pub, Private: private, Doc: doc}
+	if p.accept(lexer.KwVar) {
+		f.Var = true
+	}
 	f.Name, _ = p.expectIdent()
 	if _, ok := p.expect(lexer.Colon); ok {
 		if p.errorFields {

@@ -150,6 +150,9 @@ func (p *printer) decl(d Decl) {
 				if fld.Private {
 					p.w("private ")
 				}
+				if fld.Var {
+					p.w("var ")
+				}
 				p.w(fld.Name.Name + ": ")
 				p.typ(fld.Type)
 				if fld.Default != nil {
@@ -279,9 +282,6 @@ func (p *printer) fun(d *FunDecl) {
 	}
 	if d.Unsafe {
 		p.w("unsafe ")
-	}
-	if d.Mut {
-		p.w("mut ")
 	}
 	p.w(d.Name.Name)
 	p.typeParams(d.TypeParams)

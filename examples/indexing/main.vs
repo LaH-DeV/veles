@@ -8,9 +8,9 @@
 use io
 
 struct Counter {
-  n: i64 = 0
+  var n: i64 = 0
 
-  mut fun bump() {
+  fun bump() {
     self.n += 1
   }
 

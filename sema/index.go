@@ -421,9 +421,6 @@ func typeParamList(tps []*types.TypeParam) string {
 // funDetail renders a template's signature the way it was declared.
 func funDetail(t *FuncTemplate) string {
 	var sb strings.Builder
-	if t.Decl != nil && t.Decl.Mut {
-		sb.WriteString("mut ")
-	}
 	sb.WriteString("fun ")
 	if t.Owner != nil {
 		sb.WriteString(t.Owner.Name + ".")

@@ -411,7 +411,7 @@ func (f *fnCtx) callTemplateRecv(t *FuncTemplate, ownerSubst map[*types.TypePara
 	if fn.Sig.Effects.Throws {
 		rt = f.c.ResultType(fn.Sig.Ret, fn.Sig.Effects.Error)
 	}
-	return &Call{exprBase{rt}, fn, callArgs}
+	return &Call{exprBase: exprBase{rt}, Fn: fn, Args: callArgs}
 }
 
 // defaultArg evaluates a parameter's default expression in the callee's
@@ -625,6 +625,16 @@ func (f *fnCtx) methodCall(callee *ast.MemberExpr, typeArgs []types.Type, e *ast
 			f.checkArgsLoosely(e.Args)
 			return bad()
 		}
+		if isPlaceExpr(recv) {
+			// a nullable variable or field: test the place and call on its
+			// payload where it lives, so the method's changes land (D22/D25)
+			inner := f.dispatchMethod(&Unwrap{exprBase{nt.Elem}, recv}, callee, typeArgs, e, want)
+			if types.IsInvalid(inner.Type()) {
+				return inner
+			}
+			notNull := &Unary{exprBase{types.TBool}, OpNot, &IsNull{exprBase{types.TBool}, recv}, callee.Pos}
+			return f.safeCallBranch(inner, notNull)
+		}
 		tmp := f.newTemp(nt)
 		inner := f.dispatchMethod(&Unwrap{exprBase{nt.Elem}, &VarRef{exprBase{nt}, tmp}}, callee, typeArgs, e, want)
 		if types.IsInvalid(inner.Type()) {
@@ -789,7 +799,7 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 	if tt, ok := rt.(*types.Tuple); ok && name == "compareTo" && len(e.Args) == 1 {
 		if cmp := f.c.tupleCompare(tt); cmp != nil {
 			other := f.checkExprTo(e.Args[0].Value, tt)
-			return &Call{exprBase{types.TI64}, cmp, []Expr{recv, other}}
+			return &Call{exprBase: exprBase{types.TI64}, Fn: cmp, Args: []Expr{recvArg(cmp, recv), other}}
 		}
 	}
 	switch tt := rt.(type) {
@@ -866,50 +876,51 @@ func (f *fnCtx) callMethod(t *FuncTemplate, ownerSubst map[*types.TypeParam]type
 	} else if inherent && !t.Pub && t.Module != f.module {
 		f.errorf(callee.Name.Pos, "method '%s' is private to module '%s' (M5)", t.Name, t.Module.Path)
 	}
-	var recvArg Expr = recv
-	if t.Decl.Mut {
-		// D22: a mut method needs a mutable place.
-		if viaPointer {
-			recvArg = recv.(*Deref).X
-		} else {
-			if !isPlaceSyntax(callee.X) || isReferenceType(recv.Type()) {
-				// a temporary: mutate a fresh copy (iterator chains rely on
-				// this). A collection is a reference (D25), so a copy of the
-				// handle mutates the same elements and a `val` binding is fine,
-				// as with the built-in `push`.
-				if !isReferenceType(recv.Type()) && t.Sig != nil && types.IsUnit(t.Sig.Ret) && !f.c.implementsPrelude(recv.Type(), "Iterator") {
-					// a value struct's mut method that returns nothing, called on
-					// a copy (`xs.at(i)?.bump()`, `make().bump()`): the change
-					// is lost, so it is an error (D25, v0.27). Iterators are
-					// consumed by their methods and stay exempt.
-					f.copyMutationHint(callee.X, callee.Name.Pos, fmt.Sprintf("'%s' would change a temporary copy of '%s' that is then discarded", t.Name, recv.Type()))
-					f.checkArgsLoosely(e.Args)
-					return bad()
-				}
-				tmp := f.newTemp(recv.Type())
-				recvArg = &AddrOf{exprBase{&types.Pointer{Elem: recv.Type()}}, ref(tmp)}
-				call := f.callTemplateRecv(t, ownerSubst, typeArgs, recvArg, e.Args, e.Pos, want)
-				return &Let{exprBase{call.Type()}, tmp, recv, call}
+	// D22 (v0.30): every method takes a pointer to its receiver's place.
+	var recvArg Expr
+	if viaPointer {
+		recvArg = recv.(*Deref).X
+	} else if !isPlaceExpr(recv) || isReferenceType(recv.Type()) {
+		// a temporary: the method runs on a fresh copy (iterator chains rely
+		// on this). A collection is a reference (D25), so a copy of the
+		// handle reaches the same elements, as with the built-in `push`.
+		// Whether the method changes the copy — and so loses the change — is
+		// known once every body is checked: the receiver pass reports it.
+		tmp := f.newTemp(recv.Type())
+		recvArg = &AddrOf{exprBase{&types.Pointer{Elem: recv.Type()}}, ref(tmp)}
+		call := f.callTemplateRecv(t, ownerSubst, typeArgs, recvArg, e.Args, e.Pos, want)
+		if c, ok := call.(*Call); ok {
+			c.Recv = RecvTemp
+			if isReferenceType(recv.Type()) {
+				c.Recv = RecvHandle
 			}
-			if n, isName := callee.X.(*ast.NameExpr); isName {
-				// say what was attempted: nothing was assigned
-				if sym := f.scope.Lookup(n.Name); sym != nil && (sym.Kind == SymLocal && !f.localVar(sym.Var).Mutable || sym.Kind == SymGlobal && !sym.Global.Mutable) {
-					f.errorf(callee.Name.Pos, "cannot call the 'mut' method '%s' on '%s': it is a 'val'; declare it with 'var' (D11, D22)", t.Name, n.Name)
-					f.checkArgsLoosely(e.Args)
-					return bad()
-				}
-			}
-			lv, root := f.checkLValue(callee.X, true)
-			if lv == nil {
-				return bad()
-			}
-			lv = f.narrowLValue(lv, callee.X)
-			markUsed(root) // a mut method call reads its receiver
-			if root != nil {
-				f.invalidatePaths(root) // and may rewrite its fields
-			}
-			recvArg = &AddrOf{exprBase{&types.Pointer{Elem: lv.Type()}}, lv}
+			c.RecvSpan = callee.Name.Pos
+			c.RecvType = recv.Type()
+			c.RecvExpr = callee.X
 		}
+		return &Let{exprBase{call.Type()}, tmp, recv, call}
+	} else {
+		// the receiver as checked is a place (a variable, a field, a
+		// dereference, a narrowed payload of one): the method works on it
+		root := rootVar(recv)
+		kind := RecvPlace
+		if root != nil && strings.HasPrefix(root.Name, "$") {
+			// a temporary the lowering bound (the receiver of `?.`): a copy
+			kind, root = RecvTemp, nil
+		}
+		if root != nil {
+			f.invalidateVarPaths(root) // the call may assign its `var` fields
+		}
+		recvArg = &AddrOf{exprBase{&types.Pointer{Elem: recv.Type()}}, recv}
+		call := f.callTemplateRecv(t, ownerSubst, typeArgs, recvArg, e.Args, e.Pos, want)
+		if c, ok := call.(*Call); ok {
+			c.Recv = kind
+			c.RecvRoot = root
+			c.RecvSpan = callee.Name.Pos
+			c.RecvType = recv.Type()
+			c.RecvExpr = callee.X
+		}
+		return call
 	}
 	return f.callTemplateRecv(t, ownerSubst, typeArgs, recvArg, e.Args, e.Pos, want)
 }
@@ -1240,7 +1251,7 @@ func (f *fnCtx) boxValue(x Expr, trait *types.Trait, span source.Span) Expr {
 	}
 	m := map[*types.TypeParam]types.Type{}
 	unify(impl.Target, t, m)
-	box := &Box{exprBase{trait}, x, trait, nil, nil}
+	box := &Box{exprBase{trait}, x, trait, nil}
 	for _, name := range trait.MethodList {
 		var tmpl *FuncTemplate
 		subst := map[*types.TypeParam]types.Type{}
@@ -1255,7 +1266,6 @@ func (f *fnCtx) boxValue(x Expr, trait *types.Trait, span source.Span) Expr {
 		}
 		fn := f.c.instantiate(tmpl, subst, nil, span)
 		box.Methods = append(box.Methods, fn)
-		box.Mut = append(box.Mut, tmpl.Decl.Mut)
 	}
 	return box
 }
@@ -1320,13 +1330,19 @@ func (f *fnCtx) sealedDispatch(recv Expr, s *types.Sealed, callee *ast.MemberExp
 	}
 	tmp := f.newTemp(s)
 	m := &Match{Subject: tmp, Init: recv, Exhaustive: true, Span: e.Pos}
+	// the arms work on the value itself when it is a place, so that a
+	// method assigning the variant's `var` fields reaches it (D22)
+	var subject Expr = ref(tmp)
+	if isPlaceExpr(recv) {
+		subject = recv
+	}
 	var rt types.Type
 	for _, v := range s.Variants {
 		if f.findImpl(v, trait) == nil && f.c.traitDefault(trait, name) == nil {
 			f.errorf(e.Pos, "variant '%s.%s' does not implement '%s'", s.Name, v.Name, name)
 			return bad()
 		}
-		payload := &VariantCast{exprBase{v}, ref(tmp), v}
+		payload := &VariantCast{exprBase{v}, subject, v}
 		call := f.dispatchMethod(payload, callee, typeArgs, e, want)
 		if types.IsInvalid(call.Type()) {
 			return bad()
@@ -1354,9 +1370,13 @@ func (f *fnCtx) unionDispatch(recv Expr, u *types.ErrorUnion, callee *ast.Member
 	name := callee.Name.Name
 	tmp := f.newTemp(u)
 	m := &Match{Subject: tmp, Init: recv, Exhaustive: true, Span: e.Pos}
+	var subject Expr = ref(tmp)
+	if isPlaceExpr(recv) {
+		subject = recv
+	}
 	var rt types.Type
 	for _, mem := range u.Members {
-		payload := &UnionCast{exprBase{mem}, ref(tmp), mem}
+		payload := &UnionCast{exprBase{mem}, subject, mem}
 		call := f.dispatchMethod(payload, callee, typeArgs, e, want)
 		if types.IsInvalid(call.Type()) {
 			return bad()

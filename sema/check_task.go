@@ -17,6 +17,54 @@ func sendable(t types.Type) bool {
 	return sendableIn(t, map[types.Type]bool{})
 }
 
+// hasVarFields reports whether a value of t can change in place: a struct
+// with a `var` field (D22 v0.30), directly or inside a field, tuple
+// element, nullable or sealed variant held by value. Elements of an
+// immutable collection are read as copies, and Mutex/Atomic synchronize
+// their contents, so they do not count. A closure shares its captures by
+// reference, which is why a sendable one may not capture such a value
+// (check_lambda.go).
+func hasVarFields(t types.Type) bool {
+	return hasVarFieldsIn(t, map[types.Type]bool{})
+}
+
+func hasVarFieldsIn(t types.Type, seen map[types.Type]bool) bool {
+	switch t := t.(type) {
+	case *types.Nullable:
+		return hasVarFieldsIn(t.Elem, seen)
+	case *types.Tuple:
+		for _, e := range t.Elems {
+			if hasVarFieldsIn(e, seen) {
+				return true
+			}
+		}
+	case *types.Struct:
+		if seen[t] {
+			return false
+		}
+		seen[t] = true
+		if t.Module == "std.prelude" && (t.Name == "Mutex" || t.Name == "Atomic") {
+			return false
+		}
+		for _, f := range t.Fields {
+			if f.Var || hasVarFieldsIn(f.Type, seen) {
+				return true
+			}
+		}
+	case *types.Sealed:
+		if seen[t] {
+			return false
+		}
+		seen[t] = true
+		for _, v := range t.Variants {
+			if hasVarFieldsIn(v, seen) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // sendableIn is sendable with the structs and sealed types already on the
 // path in seen, so a type that contains itself by value (a D31 error) does
 // not recurse forever.
@@ -251,8 +299,23 @@ func (f *fnCtx) launch(e *ast.CallExpr, want types.Type) Expr {
 		return bad()
 	}
 	for i, a := range call.Args {
-		if !sendable(a.Type()) {
-			f.errorf(e.Args[min(i, len(e.Args)-1)].Value.Span(), "argument of type '%s' is not Sendable and cannot cross a task boundary (D35)", a.Type())
+		t := a.Type()
+		if i == 0 && call.Fn.Receiver != nil {
+			// the receiver crosses as a copy — a snapshot, like the captures
+			// of a sendable closure — never as a pointer into this task
+			p := t.(*types.Pointer)
+			t = p.Elem
+			tmp := f.newTemp(p.Elem)
+			copy := &Let{exprBase{p.Elem}, tmp, &Deref{exprBase{p.Elem}, a}, ref(tmp)}
+			call.Args[0] = &AddrOf{exprBase{p}, copy}
+			call.Recv = RecvNone
+		}
+		if !sendable(t) {
+			span := e.Pos
+			if j := i - len(call.Args) + len(e.Args); j >= 0 && j < len(e.Args) {
+				span = e.Args[j].Value.Span()
+			}
+			f.errorf(span, "argument of type '%s' is not Sendable and cannot cross a task boundary (D35)", t)
 		}
 	}
 	sc := f.scopes[len(f.scopes)-1]

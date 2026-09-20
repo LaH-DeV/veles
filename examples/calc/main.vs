@@ -28,11 +28,11 @@ fun isDigit(b: u8): bool = b >= '0' && b <= '9'
 fun isAlpha(b: u8): bool = (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || b == '_'
 
 struct Lexer {
-  src:  string
-  pos:  i64 = 0
-  toks: MutableList<(Token, i64)> = []
+  src:     string
+  var pos: i64 = 0
+  toks:    MutableList<(Token, i64)> = []
 
-  mut fun run(): List<(Token, i64)> throws SyntaxError {
+  fun run(): List<(Token, i64)> throws SyntaxError {
     loop (self.pos < self.src.len()) {
       val b = self.src.byteAt(self.pos)
       val start = self.pos
@@ -100,30 +100,30 @@ fun infixPower(t: Token): (i64, i64) = when (t) {
 }
 
 struct Parser {
-  toks: List<(Token, i64)>
-  pos:  i64 = 0
+  toks:    List<(Token, i64)>
+  var pos: i64 = 0
 
   fun peek(): Token = self.toks.atOrPanic(self.pos).0
   fun col(): i64 = self.toks.atOrPanic(self.pos).1
 
-  mut fun next(): Token {
+  fun next(): Token {
     val t = self.peek()
     if (self.pos < self.toks.len() - 1) self.pos += 1
     t
   }
 
-  mut fun expectOp(text: string) throws SyntaxError {
+  fun expectOp(text: string) throws SyntaxError {
     val t = self.next()
     if (!(t is Op) || t.text != text) throw SyntaxError(message: "expected '$text'", col: self.col())
   }
 
-  mut fun parseAll(): Expr throws SyntaxError {
+  fun parseAll(): Expr throws SyntaxError {
     val e = try self.parseExpr(0)
     if (!(self.peek() is End)) throw SyntaxError(message: "unexpected token", col: self.col())
     e
   }
 
-  mut fun parseExpr(minPower: i64): Expr throws SyntaxError {
+  fun parseExpr(minPower: i64): Expr throws SyntaxError {
     var left = try self.parsePrefix()
     loop {
       val t = self.peek()
@@ -147,7 +147,7 @@ struct Parser {
     left
   }
 
-  mut fun parsePrefix(): Expr throws SyntaxError {
+  fun parsePrefix(): Expr throws SyntaxError {
     val col = self.col()
     val t = self.next()
     when (t) {

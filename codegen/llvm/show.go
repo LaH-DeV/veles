@@ -131,7 +131,7 @@ func (g *gen) showHelper(t types.Type) string {
 func (g *gen) showBody(t types.Type, v string) string {
 	if ops := g.custom(t); ops != nil && ops.ToString != nil {
 		r := g.newTmp()
-		g.emit("%s = call %s @%s(%s %s)", r, strType, ops.ToString.Name, g.llType(t), v)
+		g.emit("%s = call %s @%s(%s)", r, strType, ops.ToString.Name, g.recvOperand(ops.ToString, t, v))
 		return r
 	}
 	switch tt := t.(type) {
@@ -342,7 +342,7 @@ func (g *gen) eqHelper(t types.Type) string {
 func (g *gen) eqBody(t types.Type, a, b string) string {
 	if ops := g.custom(t); ops != nil && ops.Equals != nil {
 		v := g.newTmp()
-		g.emit("%s = call i1 @%s(%s %s, %s %s)", v, ops.Equals.Name, g.llType(t), a, g.llType(t), b)
+		g.emit("%s = call i1 @%s(%s, %s %s)", v, ops.Equals.Name, g.recvOperand(ops.Equals, t, a), g.llType(t), b)
 		return v
 	}
 	llt := g.llType(t)

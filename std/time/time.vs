@@ -30,7 +30,7 @@ public fun monotonicNanos(): i64 = unsafe {
 /// Measures elapsed time: `val sw = time.Stopwatch.start()`, then
 /// `sw.elapsedMillis()`.
 public struct Stopwatch {
-  started: i64
+  var started: i64
 
   /// A stopwatch running from now.
   public static fun start(): Stopwatch = Stopwatch(started: monotonicNanos())
@@ -40,7 +40,7 @@ public struct Stopwatch {
   public fun elapsedSeconds(): f64 = (self.elapsedNanos() as f64) / 1000000000.0
 
   /// Starts over.
-  public mut fun reset() {
+  public fun reset() {
     self.started = monotonicNanos()
   }
 }

@@ -1,7 +1,7 @@
 use io
 
 struct Counter {
-  hits: i64
+  var hits: i64
 }
 
 fun bump(m: Mutex<Counter>, times: i64) {

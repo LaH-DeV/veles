@@ -15,8 +15,8 @@ fun counter(): fun(): i64 {
 fun double(x: i64): i64 = x * 2
 
 struct Acc {
-  total: i64 = 0
-  mut fun addAll(xs: List<i64>) {
+  var total: i64 = 0
+  fun addAll(xs: List<i64>) {
     xs.forEach(x => self.total += x)
   }
 }

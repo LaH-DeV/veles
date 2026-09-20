@@ -25,14 +25,14 @@ struct Square {
 }
 
 trait Counter {
-  mut fun bump(): i64
+  fun bump(): i64
 }
 
 struct Clicks {
-  n: i64 = 0
+  var n: i64 = 0
 
   impl Counter {
-    mut fun bump(): i64 {
+    fun bump(): i64 {
       self.n += 1
       self.n
     }

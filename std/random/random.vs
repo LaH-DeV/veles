@@ -8,10 +8,10 @@ const MIX1: u64 = 13787848793156543929
 const MIX2: u64 = 10723151780598845931
 
 public struct Rng {
-  s0: u64
-  s1: u64
-  s2: u64
-  s3: u64
+  var s0: u64
+  var s1: u64
+  var s2: u64
+  var s3: u64
 
   /// A generator with its own state, seeded from `n`.
   public static fun seeded(n: i64): Rng {
@@ -29,7 +29,7 @@ public struct Rng {
   }
 
   /// The next 64 random bits.
-  public mut fun nextU64(): u64 {
+  public fun nextU64(): u64 {
     val result = rotl(self.s1 *% 5, 7) *% 9
     val t = self.s1 << 17
     self.s2 = self.s2 ^ self.s0
@@ -42,22 +42,22 @@ public struct Rng {
   }
 
   /// A number in `lo..<hi`; `hi` must exceed `lo`.
-  public mut fun range(lo: i64, hi: i64): i64 {
+  public fun range(lo: i64, hi: i64): i64 {
     if (hi <= lo) panic("random.range: empty range $lo..<$hi")
     val span = (hi - lo) as u64
     lo + (self.nextU64() % span) as i64
   }
 
   /// A number in `0.0..<1.0`.
-  public mut fun float(): f64 = ((self.nextU64() >> 11) as f64) / 9007199254740992.0
+  public fun float(): f64 = ((self.nextU64() >> 11) as f64) / 9007199254740992.0
 
-  public mut fun boolean(): bool = (self.nextU64() & 1) == 1
+  public fun boolean(): bool = (self.nextU64() & 1) == 1
 
   /// One element of `xs`, or `null` when it is empty.
-  public mut fun pick<T>(xs: List<T>): T? = if (xs.isEmpty()) null else xs.atOrPanic(self.range(0, xs.len()))
+  public fun pick<T>(xs: List<T>): T? = if (xs.isEmpty()) null else xs.atOrPanic(self.range(0, xs.len()))
 
   /// Reorders `xs` in place (Fisher–Yates).
-  public mut fun shuffle<T>(xs: MutableList<T>) {
+  public fun shuffle<T>(xs: MutableList<T>) {
     var i = xs.len() - 1
     loop (i > 0) {
       val j = self.range(0, i + 1)

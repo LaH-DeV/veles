@@ -1,6 +1,7 @@
 package sema
 
 import (
+	"github.com/LaH-DeV/veles/ast"
 	"github.com/LaH-DeV/veles/lexer"
 	"github.com/LaH-DeV/veles/source"
 	"github.com/LaH-DeV/veles/types"
@@ -51,8 +52,7 @@ type Func struct {
 	Display  string // for diagnostics and panics
 	Sig      *types.Func
 	Params   []*Var // excludes the receiver
-	Receiver *Var   // `self` for methods
-	Mut      bool   // `mut fun` — receiver passed by pointer
+	Receiver *Var   // `self` for methods, always a pointer to the receiver's place (D22 v0.30)
 	Extern   bool   // C ABI, no body
 	Inline   int    // 1 @inline, -1 @noinline
 	// Closure functions take an environment pointer first; CapVars are the
@@ -75,6 +75,12 @@ type Func struct {
 
 	// Suspends is the inferred effect (D2): set by the suspension pass.
 	Suspends bool
+	// SelfEscapes: the method may keep a pointer to its receiver beyond
+	// the call (a closure capturing `self`, `&self`, or a callee that does);
+	// WritesSelf: it may assign the receiver's fields, directly or through a
+	// callee. Both are set by the receiver pass (receivers.go, D22 v0.30).
+	SelfEscapes bool
+	WritesSelf  bool
 }
 
 type Var struct {
@@ -83,6 +89,7 @@ type Var struct {
 	Mutable   bool
 	AddrTaken bool
 	Captured  bool // inside a closure: read through the environment
+	IsSelf    bool // a method's receiver (or its stand-in inside a lambda): a pointer read as the value
 	ErrPoly   bool // a parameter declared `fun(..) throws E` with E a type parameter of the enclosing function
 	CapIndex  int
 	Outer     *Var // the enclosing function's variable this stands for
@@ -213,12 +220,29 @@ type FuncRef struct {
 }
 
 // Call invokes a concrete function. For methods the receiver is Args[0],
-// passed by pointer when the method is `mut`.
+// passed by pointer (D22 v0.30); Recv records where that pointer points,
+// for the receiver pass (receivers.go).
 type Call struct {
 	exprBase
 	Fn   *Func
 	Args []Expr
+
+	Recv     RecvKind
+	RecvRoot *Var        // RecvPlace: the local or global the place is rooted in, if any
+	RecvSpan source.Span // the method name at the call
+	RecvType types.Type  // the receiver's type
+	RecvExpr ast.Expr    // the receiver as written, for fixes
 }
+
+// RecvKind says what a method call's receiver pointer points at.
+type RecvKind int
+
+const (
+	RecvNone   RecvKind = iota
+	RecvPlace           // a variable, field or dereference: the method changes it in place
+	RecvTemp            // a fresh copy of a temporary value
+	RecvHandle          // a copy of a collection handle (D25): the same elements
+)
 
 type BinOp int
 
@@ -600,7 +624,6 @@ type Box struct {
 	X       Expr
 	Trait   *types.Trait
 	Methods []*Func
-	Mut     []bool
 }
 
 // CallVirtual invokes a trait method through a trait object's vtable.

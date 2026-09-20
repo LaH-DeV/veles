@@ -416,7 +416,7 @@ The standard `Iterator` is the canonical example:
 // fragment — this is how the prelude declares it
 public trait Iterator {
   type Item
-  mut fun next(): Item?
+  fun next(): Item?
 }
 ```
 

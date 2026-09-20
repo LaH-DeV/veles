@@ -1538,7 +1538,7 @@ func (g *gen) vtable(e *sema.Box) string {
 	g.vtables[name] = true
 	var entries []string
 	for i, fn := range e.Methods {
-		thunk := g.vtableThunk(name, i, fn, e.Mut[i], e.X.Type())
+		thunk := g.vtableThunk(name, i, fn)
 		entries = append(entries, "ptr @"+thunk)
 	}
 	g.pending = append(g.pending, func() {
@@ -1547,16 +1547,13 @@ func (g *gen) vtable(e *sema.Box) string {
 	return name
 }
 
-func (g *gen) vtableThunk(vt string, idx int, fn *sema.Func, mut bool, self types.Type) string {
+func (g *gen) vtableThunk(vt string, idx int, fn *sema.Func) string {
 	name := fmt.Sprintf("%s.%d", vt, idx)
 	g.pending = append(g.pending, func() {
+		// every method takes a pointer to its receiver (D22 v0.30): the
+		// trait object's data pointer is passed through unchanged
 		params := []string{"ptr %self"}
-		var args []string
-		if mut {
-			args = append(args, "ptr %self")
-		} else {
-			args = append(args, "SELF")
-		}
+		args := []string{"ptr %self"}
 		for i, p := range fn.Params {
 			llt := g.llType(p.Type)
 			params = append(params, fmt.Sprintf("%s %%p%d", llt, i))
@@ -1564,11 +1561,6 @@ func (g *gen) vtableThunk(vt string, idx int, fn *sema.Func, mut bool, self type
 		}
 		ret := g.retLL(fn)
 		g.defineHelper(name, ret, params, func() {
-			if !mut {
-				v := g.newTmp()
-				g.emit("%s = load %s, ptr %%self", v, g.llType(self))
-				args[0] = g.llType(self) + " " + v
-			}
 			if ret == "void" {
 				g.emit("call void @%s(%s)", fn.Name, joinArgs(args))
 				g.emitTerm("ret void")

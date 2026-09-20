@@ -68,8 +68,8 @@ with `message()` dispatching on unions, `r.ok`/`r.err` and `is Ok` smart casts t
 `?.`, `?:`. D6/D9/D17/D26/D53 traits, trait objects with vtables, global
 coherence, default bodies, the prelude operator traits (`Comparable`, `Equatable`,
 `Hashable`, `Display` replace structural ordering, equality, hashing and text; `Parsable` for parsing). D7/D10/D39 value structs, `&x` with heap
-promotion, auto-deref. D8/D15 generics by stenciling. D11/D22 `val`/`var`,
-`mut fun`. D12/D13 sealed traits as inline tagged unions, `when` with
+promotion, auto-deref. D8/D15 generics by stenciling. D11/D22 `val`/`var`
+bindings, `var` fields. D12/D13 sealed traits as inline tagged unions, `when` with
 destructuring, guards, exhaustiveness, methods on sealed traits dispatched
 by tag. D18/D19 byte-indexed UTF-8 strings. D20/D52 panics unwind to the
 task scope; `panic(msg)`. D21 checked/wrapping arithmetic, bitwise operators. D23 methods in struct bodies,

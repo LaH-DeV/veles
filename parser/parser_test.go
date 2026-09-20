@@ -298,7 +298,7 @@ struct Box<T: Show> {
   }
   impl Iterator {
     type Item = T
-    mut fun next(): T? = null
+    fun next(): T? = null
   }
 }
 `

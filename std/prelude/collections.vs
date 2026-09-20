@@ -11,9 +11,9 @@ struct DequeState<T> {
   /// wrapping at `buf.len()`, which is the capacity. A free slot holds
   /// `null` — `T?` keeps that apart from a stored `null` when `T` is itself
   /// nullable — so a removed element is released at once.
-  buf:  MutableList<T?> = []
-  head: i64 = 0
-  size: i64 = 0
+  var buf:  MutableList<T?> = []
+  var head: i64 = 0
+  var size: i64 = 0
 }
 
 /// An empty double-ended queue: `val q = deque<i64>()`, or

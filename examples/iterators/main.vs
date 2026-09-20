@@ -10,11 +10,11 @@ struct Countdown {
   }
 }
 struct CountdownIter {
-  current: i64
+  var current: i64
 
   impl Iterator {
     type Item = i64
-    mut fun next(): i64? {
+    fun next(): i64? {
       if (self.current <= 0) return null
       val v = self.current
       self.current -= 1

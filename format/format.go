@@ -525,7 +525,7 @@ func (p *printer) modifiers(fn *ast.FunDecl) {
 	head := p.src[fn.Pos.Start:fn.Name.Pos.Start]
 	for _, kw := range strings.Fields(head) {
 		switch kw {
-		case "public", "private", "mut", "override", "unsafe", "static":
+		case "public", "private", "override", "unsafe", "static":
 			p.w(kw + " ")
 		}
 	}
@@ -866,6 +866,9 @@ func (p *printer) field(f *ast.Field) {
 	}
 	if f.Private {
 		p.w("private ")
+	}
+	if f.Var {
+		p.w("var ")
 	}
 	p.w(f.Name.Name + ":")
 	p.mark(alignField)

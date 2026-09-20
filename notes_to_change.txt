@@ -890,3 +890,40 @@ R19. DONE (2026-09-20, user decisions): `pub` → `public` everywhere (keyword, 
     httpd Notes uses private (the user's refactor finished).
     Still pending from R18: deep mutability (`fun` mutating a MutableList field is allowed by
     design today; the user's comment in httpd called it a bug) — explained, not changed.
+R20. DONE (2026-09-20, user decisions): mutability moved from the method to the FIELD (spec
+    D22 rewritten, D11/D25/D35 amended, v0.30). `mut fun` REMOVED (parse error with a fix);
+    `var name: T` marks an assignable field, a bare field is set by the constructor and never
+    assigned (error with a fix inserting `var`; `val name: T` is refused); `val`/`var` on a
+    binding govern rebinding only, for structs as for MutableList; `self` is never assignable
+    as a whole; a global `val` stays a constant (no field writes, no receiver-changing method).
+    `var` governs the slot only (`o.inner.x = 1` needs `x` var, not `inner`); the deep
+    guarantee is "no var fields and no mutable collections reachable by value => cannot
+    change". User REJECTED a class/struct split ("I wanted to avoid classes"); the structural
+    "handle iff all fields are references" rule was considered and dropped (Conn{fd, buf}
+    would be a value); private-by-default fields REJECTED (immutable default already covers
+    it; one unmarked visibility level for everything). `readonly` keyword not introduced:
+    immutable is the default, `var` the opt-in.
+    Implementation: every method takes `*Self` (self reads as the value; temporaries spilled);
+    receiver pass sema/receivers.go (+ sema/walk.go generic HIR walker) computes WritesSelf /
+    SelfEscapes to a fixpoint and (a) heap-allocates (AddrTaken) a receiver a method may keep
+    a pointer to — this FIXED a real pre-existing segfault: a closure over `self` (or `&self`)
+    in a `mut fun` pointed at the caller's stack frame; (b) reports a receiver-changing,
+    unit-returning method on a temporary copy (old D25 v0.27 rule, iterators exempt);
+    (c) refuses such a method on a global val. Call.Recv/RecvRoot/RecvSpan/RecvType/RecvExpr
+    carry the receiver kind; `$`-temps bound by lowering count as copies. Sealed/union method
+    dispatch and `?.` calls now operate on the real place when the receiver is one (before, a
+    method on a sealed variable wrote a copy). `self` narrows like a local; a method call
+    drops facts through `var` fields only (invalidateVarPaths). Sendable lambdas may not
+    capture vals whose type has `var` fields (hasVarFields); `async recv.m()` copies the
+    receiver into the task. Custom ops (Equatable/Hashable/Comparable/Display) and vtable
+    thunks pass pointers; codegen recvOperand spills to the stack, or the heap when the
+    method's self escapes. Tuple elements are places for method calls (`pair.1.bump()`).
+    Migration: std (iterators, DequeState, Rng, Stopwatch, RangeStepIter fields → var),
+    examples (`veles check --fix` inserted `var`; one fix per field), docs 04/05/06/13/14,
+    errors/cheatsheet/stdlib references, README; new examples/varfields; sema tests
+    TestVarFields/TestSelfNarrowing/TestSendableCaptureVarFields.
+    NOT done / follow-ups: (1) lost-copy warning for a struct PARAMETER whose var field is
+    assigned and never read afterwards (Go's value-receiver footgun) — only temporaries are
+    diagnosed; (2) escapes by call are not tracked (`helper(self.items)` may push) — the
+    receiver pass is a path check on `self`; (3) `&self.x` marks the receiver variable
+    AddrTaken, which disables narrowing on self paths after it (conservative).

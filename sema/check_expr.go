@@ -238,7 +238,7 @@ func (f *fnCtx) checkExpr(e ast.Expr, want types.Type) Expr {
 		f.errorf(e.Pos, "cannot infer the type of 'null' here; annotate the binding, e.g. 'val x: T? = null'")
 		return bad()
 	case *ast.SelfExpr:
-		self, mut := f.selfRef()
+		self := f.selfRef()
 		if self == nil {
 			if f.fn != nil && f.fn.tmpl != nil && f.fn.tmpl.Decl.Static {
 				f.errorf(e.Pos, "'self' is not available in a static function; it has no receiver (D23)")
@@ -247,10 +247,10 @@ func (f *fnCtx) checkExpr(e ast.Expr, want types.Type) Expr {
 			f.errorf(e.Pos, "'self' outside of a method")
 			return bad()
 		}
-		if mut {
-			return &Deref{exprBase{self.Type.(*types.Pointer).Elem}, &VarRef{exprBase{self.Type}, self}}
-		}
-		return f.narrowedRef(self)
+		// the receiver pointer, read as the value it points at (D22), with
+		// the smart casts on `self` in force
+		x := &Deref{exprBase{self.Type.(*types.Pointer).Elem}, &VarRef{exprBase{self.Type}, self}}
+		return f.narrowPlace(x, pv(self))
 	case *ast.NameExpr:
 		return f.nameExpr(e, want)
 	case *ast.MemberExpr:
@@ -1100,7 +1100,7 @@ func (f *fnCtx) compareOp(op BinOp, l, r Expr, span source.Span) Expr {
 	if ops == nil || ops.Compare == nil {
 		return nil
 	}
-	cmp := &Call{exprBase{types.TI64}, ops.Compare, []Expr{l, r}}
+	cmp := &Call{exprBase: exprBase{types.TI64}, Fn: ops.Compare, Args: []Expr{recvArg(ops.Compare, l), r}}
 	return &Binary{exprBase{types.TBool}, op, cmp, i64c(0), span}
 }
 
@@ -1582,12 +1582,46 @@ func (f *fnCtx) invalidatePlace(p place) {
 }
 
 // invalidatePaths drops the field-path facts rooted at v but keeps the
-// fact about v itself: a mut method call or `&v` may rewrite v's fields
+// fact about v itself: `&v` may rewrite v's fields
 // but cannot change which variant v is.
 func (f *fnCtx) invalidatePaths(v *Var) {
 	for k := range f.narrow {
 		if k.v == v && k.path != "" {
 			delete(f.narrow, k)
+		}
+	}
+}
+
+// invalidateVarPaths drops the field-path facts rooted at v that a method
+// call on v (or on one of its fields) can break: those with a `var` field
+// somewhere on the path. A bare field is never assigned, so a fact about
+// it survives any call (D22 v0.30).
+func (f *fnCtx) invalidateVarPaths(v *Var) {
+	for k := range f.narrow {
+		if k.v != v || k.path == "" {
+			continue
+		}
+		t := f.declaredTypeOf(pv(v))
+		for _, name := range strings.Split(k.path, ".") {
+			st, ok := t.(*types.Struct)
+			if !ok {
+				break
+			}
+			var fld *types.Field
+			for _, cand := range st.Fields {
+				if cand.Name == name {
+					fld = cand
+					break
+				}
+			}
+			if fld == nil {
+				break
+			}
+			if fld.Var {
+				delete(f.narrow, k)
+				break
+			}
+			t = fld.Type
 		}
 	}
 }
@@ -1601,9 +1635,9 @@ func (f *fnCtx) placeOf(e ast.Expr) (place, bool) {
 			return pv(v), true
 		}
 	case *ast.SelfExpr:
-		// `self` is a value in a non-mut method; in a mut method it is a
-		// pointer, and fields behind a pointer are not stable
-		if self, mut := f.selfRef(); self != nil && !mut {
+		// the receiver is a pointer to its place (D22); a method call on
+		// `self` drops the facts about its `var` fields (invalidateVarPaths)
+		if self := f.selfRef(); self != nil {
 			return pv(self), true
 		}
 	case *ast.MemberExpr:
@@ -1650,6 +1684,9 @@ func (f *fnCtx) currentTypeOf(p place) types.Type {
 // itself (facts about its prefix still apply).
 func (f *fnCtx) declaredTypeOf(p place) types.Type {
 	if p.path == "" {
+		if p.v.IsSelf {
+			return p.v.Type.(*types.Pointer).Elem
+		}
 		return p.v.Type
 	}
 	prefix, last := place{v: p.v}, p.path

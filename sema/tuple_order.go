@@ -70,7 +70,7 @@ func (c *Checker) elemCompare(t types.Type, l, r Expr) Expr {
 		return &If{exprBase{types.TI64}, lt, &Block{Value: minusOne, Type: types.TI64}, &Block{Value: inner, Type: types.TI64}}
 	}
 	if ops := c.customOps(t); ops != nil && ops.Compare != nil {
-		return &Call{exprBase{types.TI64}, ops.Compare, []Expr{l, r}}
+		return &Call{exprBase: exprBase{types.TI64}, Fn: ops.Compare, Args: []Expr{recvArg(ops.Compare, l), r}}
 	}
 	return i64c(0)
 }

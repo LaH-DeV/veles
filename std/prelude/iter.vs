@@ -5,7 +5,7 @@
 
 public trait Iterator {
   type Item
-  mut fun next(): Item?
+  fun next(): Item?
 
   fun map<U>(f: fun(Item): U): MapIter<Self, U> = MapIter(inner: self, f)
   fun filter(f: fun(Item): bool): FilterIter<Self> = FilterIter(inner: self, f)
@@ -14,7 +14,7 @@ public trait Iterator {
   fun enumerate(): EnumerateIter<Self> = EnumerateIter(inner: self, index: 0)
   fun zip<J: Iterator>(other: J): ZipIter<Self, J> = ZipIter(a: self, b: other)
 
-  mut fun toList(): List<Item> {
+  fun toList(): List<Item> {
     var out: MutableList<Item> = []
     loop {
       val v = self.next()
@@ -24,7 +24,7 @@ public trait Iterator {
     out.toList()
   }
 
-  mut fun count(): i64 {
+  fun count(): i64 {
     var n: i64 = 0
     loop {
       if (self.next() == null) break
@@ -33,7 +33,7 @@ public trait Iterator {
     n
   }
 
-  mut fun fold<A>(init: A, f: fun(A, Item): A): A {
+  fun fold<A>(init: A, f: fun(A, Item): A): A {
     var acc = init
     loop {
       val v = self.next()
@@ -43,7 +43,7 @@ public trait Iterator {
     acc
   }
 
-  mut fun forEach(f: fun(Item)) {
+  fun forEach(f: fun(Item)) {
     loop {
       val v = self.next()
       if (v == null) break
@@ -51,7 +51,7 @@ public trait Iterator {
     }
   }
 
-  mut fun any(f: fun(Item): bool): bool {
+  fun any(f: fun(Item): bool): bool {
     loop {
       val v = self.next()
       if (v == null) return false
@@ -59,7 +59,7 @@ public trait Iterator {
     }
   }
 
-  mut fun all(f: fun(Item): bool): bool {
+  fun all(f: fun(Item): bool): bool {
     loop {
       val v = self.next()
       if (v == null) return true
@@ -67,7 +67,7 @@ public trait Iterator {
     }
   }
 
-  mut fun find(f: fun(Item): bool): Item? {
+  fun find(f: fun(Item): bool): Item? {
     loop {
       val v = self.next()
       if (v == null) return null
@@ -75,7 +75,7 @@ public trait Iterator {
     }
   }
 
-  mut fun last(): Item? {
+  fun last(): Item? {
     var found: Item? = null
     loop {
       val v = self.next()
@@ -102,7 +102,7 @@ public struct MapIter<I: Iterator, U> {
 
   impl Iterator {
     type Item = U
-    mut fun next(): U? {
+    fun next(): U? {
       val v = self.inner.next()
       if (v == null) return null
       self.f(v)
@@ -116,7 +116,7 @@ public struct FilterIter<I: Iterator> {
 
   impl Iterator {
     type Item = I.Item
-    mut fun next(): I.Item? {
+    fun next(): I.Item? {
       loop {
         val v = self.inner.next()
         if (v == null) return null
@@ -127,12 +127,12 @@ public struct FilterIter<I: Iterator> {
 }
 
 public struct TakeIter<I: Iterator> {
-  inner:     I
-  remaining: i64
+  inner:         I
+  var remaining: i64
 
   impl Iterator {
     type Item = I.Item
-    mut fun next(): I.Item? {
+    fun next(): I.Item? {
       if (self.remaining <= 0) return null
       self.remaining -= 1
       self.inner.next()
@@ -141,12 +141,12 @@ public struct TakeIter<I: Iterator> {
 }
 
 public struct SkipIter<I: Iterator> {
-  inner:     I
-  remaining: i64
+  inner:         I
+  var remaining: i64
 
   impl Iterator {
     type Item = I.Item
-    mut fun next(): I.Item? {
+    fun next(): I.Item? {
       loop (self.remaining > 0) {
         self.remaining -= 1
         if (self.inner.next() == null) return null
@@ -157,12 +157,12 @@ public struct SkipIter<I: Iterator> {
 }
 
 public struct EnumerateIter<I: Iterator> {
-  inner: I
-  index: i64
+  inner:     I
+  var index: i64
 
   impl Iterator {
     type Item = (i64, I.Item)
-    mut fun next(): (i64, I.Item)? {
+    fun next(): (i64, I.Item)? {
       val v = self.inner.next()
       if (v == null) return null
       val i = self.index
@@ -178,7 +178,7 @@ public struct ZipIter<A: Iterator, B: Iterator> {
 
   impl Iterator {
     type Item = (A.Item, B.Item)
-    mut fun next(): (A.Item, B.Item)? {
+    fun next(): (A.Item, B.Item)? {
       val x = self.a.next()
       if (x == null) return null
       val y = self.b.next()
@@ -192,12 +192,12 @@ public struct ZipIter<A: Iterator, B: Iterator> {
 // iterators over the builtin collections
 
 public struct ListIter<T> {
-  list:  List<T>
-  index: i64 = 0
+  list:      List<T>
+  var index: i64 = 0
 
   impl Iterator {
     type Item = T
-    mut fun next(): T? {
+    fun next(): T? {
       if (self.index >= self.list.len()) return null
       val v = self.list.atOrPanic(self.index)
       self.index += 1
@@ -217,13 +217,13 @@ impl<T> Iterable for MutableList<T> {
 }
 
 public struct RangeIter<T> {
-  current:   T
-  hi:        T
-  inclusive: bool
+  var current: T
+  hi:          T
+  inclusive:   bool
 
   impl Iterator {
     type Item = T
-    mut fun next(): T? {
+    fun next(): T? {
       if (self.inclusive) {
         if (self.current > self.hi) return null
       } else {

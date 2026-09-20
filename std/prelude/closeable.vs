@@ -2,5 +2,5 @@
 // path; cleanup is implicitly non-cancellable (D47).
 
 public trait Closeable {
-  mut fun close()
+  fun close()
 }

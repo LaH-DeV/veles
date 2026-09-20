@@ -847,3 +847,22 @@ func (g *gen) closeThunk(s *sema.With) string {
 	})
 	return name
 }
+
+// recvOperand renders v (a value of type t) as the receiver argument of
+// fn: methods take a pointer to the receiver's place (D22 v0.30), so a
+// value is spilled — to the stack when the method keeps no pointer to its
+// receiver, to the heap when it might (sema's receiver pass decides).
+func (g *gen) recvOperand(fn *sema.Func, t types.Type, v string) string {
+	llt := g.llType(t)
+	if fn.Receiver == nil {
+		return llt + " " + v
+	}
+	var cell string
+	if fn.SelfEscapes {
+		cell = g.gcAlloc(t)
+	} else {
+		cell = g.alloca(llt)
+	}
+	g.emit("store %s %s, ptr %s", llt, v, cell)
+	return "ptr " + cell
+}

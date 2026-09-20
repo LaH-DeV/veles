@@ -3,7 +3,9 @@ package sema
 import (
 	"strings"
 
+	"github.com/LaH-DeV/veles/ast"
 	"github.com/LaH-DeV/veles/source"
+	"github.com/LaH-DeV/veles/types"
 )
 
 // Small fixes attached to lints (see lint_impl.go for the larger one).
@@ -67,4 +69,27 @@ func (f *fnCtx) warnFix(span source.Span, fix *source.Fix, format string, args .
 		return
 	}
 	f.c.warnFix(span, fix, format, args...)
+}
+
+// fixVarField inserts `var ` before the declaration of fld in st, when the
+// declaration is at hand (a user struct in this compilation).
+func (f *fnCtx) fixVarField(st *types.Struct, fld *types.Field) *source.Fix {
+	d, ok := st.Decl.(*ast.StructDecl)
+	if !ok {
+		return nil
+	}
+	for _, af := range d.Fields {
+		if af.Name.Name == fld.Name && af.Name.Pos.File != nil {
+			if f.c.varFixes[af] {
+				return nil // one insertion per field, however many assignments
+			}
+			if f.c.varFixes == nil {
+				f.c.varFixes = map[*ast.Field]bool{}
+			}
+			f.c.varFixes[af] = true
+			at := af.Name.Pos
+			return fixReplace("Declare '"+fld.Name+"' as 'var'", source.Span{File: at.File, Start: at.Start, End: at.Start}, "var ")
+		}
+	}
+	return nil
 }

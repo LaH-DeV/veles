@@ -101,10 +101,10 @@ value.
 ```veles
 // fragment
 struct Point {
-  x: i64
-  y: i64 = 0                    // default
+  var x: i64                    // var: assignable (through self, a binding, a pointer)
+  y: i64 = 0                    // bare: set by the constructor, never assigned (D22); default
   fun len(): i64 = self.x + self.y
-  mut fun move(dx: i64) { self.x += dx }   // D22: only on a var
+  fun move(dx: i64) { self.x += dx }   // no marker: a method may assign the var fields
   static fun origin(): Point = Point(x: 0)  // no self; Point.origin()
   static val unit = Point(x: 1)             // a constant in the type's namespace: Point.unit (public to export; never var)
   private count: i64 = 0                    // private: only Point's own methods/impl/extend blocks; no marker = the module; public = the package
@@ -131,8 +131,8 @@ sealed trait Expr {             // fixed set of variants (D12)
 struct Num : Expr { v: i64 }
 struct Neg : Expr { e: *Expr }
 
-trait Iterator { type Item; mut fun next(): Item? }   // associated type
-impl Iterator for Countdown { type Item = i64; mut fun next(): i64? { ... } }
+trait Iterator { type Item; fun next(): Item? }   // associated type
+impl Iterator for Countdown { type Item = i64; fun next(): i64? { ... } }
 
 impl Comparable for Point { fun compareTo(other: Point): i64 = self.x - other.x }  // <, sorted, min
 impl Display for Point { fun toString(): string = "(${self.x})" }              // "$p"
@@ -214,7 +214,7 @@ Data passed to `async` must be Sendable (D35): no `Mutable*`.
 ```veles
 // fragment
 with (f = open("a"), g = open("b")) { ... }   // close() on every exit (D43); an expression: val text = with (f = open(p)) { f.readAll() }
-impl Closeable for File { mut fun close() { } }
+impl Closeable for File { fun close() { } }
 extern "C" { fun strlen(s: *raw u8): i64 }
 val n = unsafe { strlen(p) }                  // C calls and raw pointers need unsafe (D44)
 ```

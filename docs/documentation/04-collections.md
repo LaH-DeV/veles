@@ -105,10 +105,10 @@ reference. A read and a write then never look alike:
 use io
 
 struct Counter {
-  name: string
-  n:    i64 = 0
+  name:  string
+  var n: i64 = 0
 
-  mut fun bump() {
+  fun bump() {
     self.n += 1
   }
 }

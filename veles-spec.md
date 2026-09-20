@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.29** — language design complete. Every open question in the language itself is closed. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
+**Working draft v0.30** — language design complete. Every open question in the language itself is closed. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -196,6 +196,8 @@ public fun someFunc() {
 
 Kotlin's model. Immutability is **shallow and non-transitive** — a `val p: *Point` still permits mutation through the pointer. Veles cannot express "immutable view of mutable data" in the type system. `const` is reserved for genuine compile-time constants.
 
+*Amended (v0.30) — the binding says nothing about the value.* With mutability declared on fields (D22), `val`/`var` on a binding govern rebinding only, for every type alike: a `val c: Counter` can have its `var` fields assigned and its methods called, as a `val xs: MutableList` could always be pushed to. What cannot change is decided by the type — a bare field is never assigned — and D22 states the guarantee that replaces "a `val` struct is immutable". A global `val` is the one exception: it is a constant, shared by every task (D35), so neither its fields nor a method that changes its receiver may touch it.
+
 ### D12 — Sum types: sealed traits, no `enum` sugar
 
 ```vs
@@ -318,39 +320,39 @@ Go's MVS. Reproducible without lockfiles and far simpler to implement than SAT s
 
 Requires: a hard "no breaking changes within a major version" culture, since MVS trusts that promise completely; the major-version-in-import-path convention for v2 and later; and an explicit upgrade command, because MVS selects the *minimum* satisfying version and will not pick up security patches on its own.
 
-### D22 — Method receivers: implicit `self`, `mut fun` to mutate
+### D22 — Method receivers: implicit `self`; mutability is declared on the field (`var`)
 
-Declare **intent, not representation**. The compiler chooses the calling convention — small non-mutating receivers by value, mutating ones by pointer — and the choice is unobservable.
+**REVISED (v0.30).** The original rule — `mut fun` marks a method that assigns its receiver's fields, and only a `var` binding may call one — is withdrawn. It was honest for structs of scalars and silent for the common shape of a domain type, a struct holding a collection: `val s = Stack()` did not stop `s.items.push(x)` in a plain `fun`, so the signature said "does not mutate" and the reader was misled. Making `mut` transitive through reference fields was considered again and rejected again: it needs to know which structs are values and which are handles, which is a `class`/`struct` split (Swift's) that the language does not want, or an ownership system.
+
+**The rule.** Whether a field can change is written on the field:
 
 ```vs
 struct Counter {
-  n: i32
+  label: string          // bare: set by the constructor call, never assigned again
+  var n:  i32 = 0        // var: assignable
 
   fun get(): i32 = self.n
-  mut fun bump() { self.n += 1 }
+  fun bump() { self.n += 1 }     // no marker: a method may assign the receiver's var fields
 }
 ```
+
+- A **bare field** is never assigned after construction — not through `self`, not through a `var` binding, not through a pointer, not through `loop (&x in xs)`. The compiler reports it with a fix that inserts `var`.
+- A **`var` field** is assignable through any place: `self`, a binding whether `val` or `var`, a pointer, an element reference. `val`/`var` on a binding govern rebinding only (D11, amended) — as they always did for a `MutableList`.
+- `var` governs *that slot*. `o.inner.x = 1` needs `x` to be `var`, not `inner`: what is inside a field is governed by its own type, and a method call on `o.inner` could always reach it. The guarantee is therefore stated transitively: **a type with no `var` fields and no mutable collections reachable by value cannot change, whoever holds it.** Fields hold the truth about mutability where a reader looks for it, and `private var` next to a bare handle (`private var next: i64; private items: MutableList<Note>`) says exactly which two things in a type ever move.
+- `self` is not assignable as a whole (`self = ...`): assign its fields, or return the new value.
+- There is no method marker. Kotlin's `val`/`var` properties are the model; Swift's `mutating` and Rust's `&mut self` were the alternatives, and both exist to gate the *call* on the binding, which is the thing this design gives up. A struct is still a value: a method called on a temporary — `xs.at(i)?.bump()`, `make().bump()` — changes a copy that is discarded, which is an error when the method changes its receiver and returns nothing (the rule that guarded `mut fun` on a copy, D25 v0.27, kept). A struct passed to a function is a copy the callee may change without the caller seeing it; that is Go's value receiver and it is one rule rather than two.
+
+**Calling convention.** Every method receives a *pointer to the place it was called on*, and `self` reads as the value; a temporary is spilled first. The representation is not declared and not observable, as before. Two facts about each method are computed once every body is checked (the receiver pass), to a fixpoint over the call graph: whether it *may write* its receiver (assigns a field of `self`, takes a pointer into it, calls a method that does) — this is what the discarded-copy error uses — and whether the receiver *may escape* (a closure captures `self`, `&self` or a pointer into `self` is taken, a callee does either). A receiver that may escape cannot stay on the caller's stack: its variable is heap-allocated, the same promotion `&x` performs (D10). This closes a hole the `mut fun` design had: a closure over `self` in a `mut fun` held a pointer to the caller's stack frame.
+
+**Interaction with narrowing (D5).** `self` is a place like a local and its field paths narrow; a method call on a variable or on `self` drops the facts about paths through a `var` field and keeps those through bare fields, which no call can assign.
+
+**Interaction with tasks (D35).** A sendable closure shares its captures by reference, so it may capture only `val`s of Sendable types *without `var` fields* (transitively, by value; collections and `Mutex` excluded as before) — another task could otherwise watch them change; the error names the capture. `self` is judged by the receiver's type. `async recv.m()` copies the receiver into the task, as it always copied arguments. Elements of an immutable `List` are read as copies, so `var` fields inside them are unreachable and do not count.
 
 Rejected — Go's declared receiver (`(c Circle)` vs `(c *Circle)`): it declares representation, which produces two well-known failures. A value-receiver method that mutates silently modifies a copy with no diagnostic, and method sets diverge so that `Circle` does not satisfy an interface that `*Circle` does. Neither can arise here, because no representation is ever declared.
 
 Rejected — Rust's `&self` / `&mut self`: enforced by a borrow checker Veles does not have, so the distinction would be decoration.
 
-**Consequence: `val` gains teeth, but only over the struct's own storage.** Calling a `mut fun` on a `val`-bound struct is a compile error, because with value semantics that *is* mutation of the binding.
-
-**Scope of the guarantee, restated precisely.** `mut` means "mutates my own fields," not "mutates anything reachable." A non-`mut` method may freely mutate through a reference-typed field:
-
-```vs
-struct Stack<T> {
-  items: MutableList<T> = []
-  fun sneak(x: T) { self.items.push(x) }   // legal: no `mut` required
-}
-```
-
-`items` is a reference (D25), so the struct's own storage never changes. `val s = Stack<i32>()` therefore does **not** prevent the stack's contents from changing.
-
-The alternative — making `mut` transitive through reference fields — was considered and rejected. It would require tracking reachable mutability across the whole object graph, which is a substantial analysis and edges toward the ownership system Veles deliberately does not have.
-
-So `val` is stronger than Kotlin's for plain value structs and no stronger for anything holding a collection. Documentation must say this plainly rather than claiming immutability.
+Rejected — private-by-default fields alongside `var`: with bare fields immutable, an exposed field is readable and nothing else, which is what a record is for; three visibility levels need one unmarked level and it must be the same for fields, methods and top-level declarations (M5).
 
 ### D23 — Methods in the struct body; `impl` blocks for traits; no extension functions
 
@@ -391,7 +393,7 @@ The ownership rule is unchanged — `extend` names only a type declared in the s
 
 **Reference types, not values.** A `List<T>` is a header pointing at a heap buffer; as a value type, copying would share the buffer, which is precisely Go's slice-aliasing footgun where appending to a copy sometimes writes through and sometimes does not. Swift avoids this with copy-on-write, which needs cheap uniqueness checks that ARC provides and D1's tracing GC does not.
 
-**Cost, stated plainly:** because collections are references, `val list` does not prevent mutation. D22's immutability guarantee covers plain structs but stops here. The `List` / `MutableList` split is the mitigation.
+**Cost, stated plainly:** because collections are references, `val list` does not prevent mutation. The `List` / `MutableList` split is the mitigation. *(v0.30: `val` no longer claims to prevent mutation of a struct either; what cannot change is declared on the type — D22, D11 amended — and a `MutableList` field is simply the mutable part of it, visible in the declaration.)*
 
 **REVISED by D35 — `List` is genuinely immutable, not a read-only view.** The original design followed Kotlin, where a `List<T>` reference may point at a `MutableList<T>` and a holder of the mutable handle can change it underneath you. That is incompatible with D35's isolation rules: a view over someone else's mutable buffer can never be `Sendable`, which would make `List` useless for the case it most needs to serve.
 
@@ -533,7 +535,7 @@ Tasks may run on multiple cores. Data-race freedom is a **compile-time guarantee
 - A captured `var` cannot be mutated from more than one task; plain mutable references do not cross task boundaries.
 - *(v0.28)* **Structured cancellation reaches the body.** When a child of a fail-fast `scope` fails, the scope's own body is abandoned at its next suspension point (a `recv` on a channel the failed child was meant to feed would otherwise wait forever); the scope then joins the surviving children and re-raises. `Channel.closeAfter(n)` closes a channel after `n` further sends, so several producers can end a channel none of them owns. The prelude's `mapConcurrent`/`forEachConcurrent` (`std/prelude/concurrent.vs`) are the worker pool written once over these primitives.
 - *(v0.29)* **Cancellation, fully structured.** A task is cancelled when a sibling in its fail-fast scope fails, when the body of its scope leaves early (`return`, `throw`, a failed `try`, a cancellation from further out) while it is still running, or when `task.cancel()` is called on its handle. Cancellation is a *request*: the task runs to its next suspension point and unwinds there, running the `close()` of every `with` it is inside (D43 — this was specified before and is implemented now), and only then counts as finished, so its scope waits for the unwinding. A task blocked in a suspending call is unwound from the innermost call outwards (each suspending call is a task of its own in the bootstrap; the request follows the await chain down and the finishes come back up), so the deepest resource closes first. Leaving a `scope` or `gather` body early therefore cancels and joins its children as a cleanup, like a `with` close, and a body that always returns or throws is `Never`-typed. Cleanup code is shielded (D47): a suspension point inside it — the join of an abandoned scope — takes no cancellation. `withTimeout(ms, f)` in the prelude is `scope` + `async` + `race` over this: it throws `Timeout` after cancelling and joining `f`'s task, so nothing `f` opened is still open when the caller sees the error.
-- *(v0.28)* **Sendable functions.** A function type may be marked `sendable fun(A): R ...`; a value of it may cross a task boundary. A named function is sendable; a lambda is sendable exactly when every capture is a `val` whose type is Sendable (nothing it reaches can change under another task — Swift's `@Sendable` closure rule). The property is part of the closure's type, inferred from its captures at the lambda, so `val g = x => x + k` is a `sendable fun`; a sendable function is assignable to the plain function type, never the reverse, and a lambda checked against a `sendable fun` reports the offending capture. This is what lets the prelude's `mapConcurrent` take an ordinary-looking lambda and run it in pool tasks. *Rationale for a type flag rather than a call-site check only:* a handler stored in a struct and invoked from worker tasks (an HTTP router) must carry the promise in its type.
+- *(v0.28)* **Sendable functions.** A function type may be marked `sendable fun(A): R ...`; a value of it may cross a task boundary. A named function is sendable; a lambda is sendable exactly when every capture is a `val` whose type is Sendable (nothing it reaches can change under another task — Swift's `@Sendable` closure rule) — and, since v0.30, whose type has no `var` fields (D22): a captured `val` struct with a `var` field is shared with the lambda and could change under it. The property is part of the closure's type, inferred from its captures at the lambda, so `val g = x => x + k` is a `sendable fun`; a sendable function is assignable to the plain function type, never the reverse, and a lambda checked against a `sendable fun` reports the offending capture. This is what lets the prelude's `mapConcurrent` take an ordinary-looking lambda and run it in pool tasks. *Rationale for a type flag rather than a call-site check only:* a handler stored in a struct and invoked from worker tasks (an HTTP router) must carry the promise in its type.
 
 **What structured concurrency buys here.** Because `scope` (D34) guarantees children cannot outlive their parent frame, immutable values captured from the enclosing frame are provably safe to share by reference with no copy. Go's unstructured `go` statement cannot establish this; Veles gets it free from D3.
 

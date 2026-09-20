@@ -83,13 +83,13 @@ everything after it; `x != null && ...` narrows the right side of the
 `&&`; assigning a non-null value narrows a `var`.
 
 It also applies to a **field path** — a chain of plain struct fields from
-a local variable (or `self` in a non-`mut` method):
+a local variable or from `self`:
 
 ```veles
 use io
 
 struct Address { city: string }
-struct User { name: string, address: Address? }
+struct User { name: string, var address: Address? }
 
 fun main() {
   var u = User(name: "ann", address: Address(city: "Oslo"))
@@ -106,16 +106,17 @@ nowhere
 ```
 
 The fact about `u.address` survives until something could change it: an
-assignment to `u.address` or to `u` itself, a `mut` method call on `u`,
-or `&u` being taken. Fields reached *through a pointer* (`p.address` with
-`p: *User`, or `self` in a `mut` method) are never narrowed — another
-pointer to the same value could change them in between; bind the field to
-a `val` first.
+assignment to `u.address` or to `u` itself, or `&u` being taken. A method
+call on `u` forgets the facts about its `var` fields — the method may
+assign them — and keeps those about bare fields, which nothing can
+assign (D22). Fields reached *through a pointer* (`p.address` with
+`p: *User`) are never narrowed — another pointer to the same value could
+change them in between; bind the field to a `val` first.
 
 ## Updating through `?.`
 
-A narrowed value is not a copy: after the null test you can write to it
-and call `mut` methods on it, and the change lands in the variable or
+A narrowed value is not a copy: after the null test you can write to its
+`var` fields and call methods on it, and the change lands in the variable or
 field it came from. `?.` does the same in one step — on a call, and on an
 assignment, which happens only when the left side is present and is
 skipped otherwise. A nullable *pointer* is the common receiver: `m.ref(k)`
@@ -126,9 +127,9 @@ through it updates the map entry itself:
 use io
 
 struct Counter {
-  n: i64 = 0
+  var n: i64 = 0
 
-  mut fun bump() {
+  fun bump() {
     self.n += 1
   }
 }
@@ -155,8 +156,8 @@ Counter(n: 7) {hits: Counter(n: 11)}
 ```
 
 This is why get-and-update code rarely needs `getOrPanic`: `?.` *is* the
-presence test. What stays closed to it is anything that is a copy — a
-`val` struct, and the value `get(k)` or `at(i)` returns: `tally.get("hits")?.n += 10`
+presence test. What stays closed to it is anything that is a copy — the
+value `get(k)` or `at(i)` returns: `tally.get("hits")?.n += 10`
 is an error, because the change could never be observed ([chapter 4](04-collections.md#updating-elements-in-place)
 has the reading/writing rule).
 

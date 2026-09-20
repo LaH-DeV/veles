@@ -121,7 +121,7 @@ Looking back over the tutorials, a good deal of what a style guide would
 say is already a compile error in Veles:
 
 - an unused `Result` (chapter 7), a `when` missing a variant (9), a
-  `val` that is assigned (2), a `mut fun` called on a `val` (5);
+  `val` that is assigned (2), a bare field assigned (5);
 - a `T?` used as a `T` (6), a `MutableList` handed to another task (12),
   a C call outside `unsafe` (13);
 - an import cycle (11), a private name used from another module (11).

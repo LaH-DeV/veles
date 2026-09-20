@@ -3,8 +3,8 @@
 use io
 
 struct Vec2 {
-  x: f64
-  y: f64
+  var x: f64
+  var y: f64
 
   impl Show {
     fun show(): string = "(${self.x}, ${self.y})"
@@ -21,7 +21,7 @@ trait Show {
 
 extend Vec2 {
   fun length(): f64 = (self.x * self.x + self.y * self.y).sqrt()
-  mut fun scale(k: f64) {
+  fun scale(k: f64) {
     self.x *= k
     self.y *= k
   }

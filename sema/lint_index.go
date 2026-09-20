@@ -218,7 +218,7 @@ func (f *fnCtx) hoistPlace(target Expr) (Expr, []Stmt) {
 }
 
 // narrowLValue applies the smart casts in force to a place, so that a
-// field write or a `mut fun` call reaches the payload of a nullable or
+// field write or a method call reaches the payload of a nullable or
 // sealed variable after its test (`if (p != null) p.n = 5`), the same way
 // a read does (narrowedRef).
 func (f *fnCtx) narrowLValue(lv Expr, x ast.Expr) Expr {

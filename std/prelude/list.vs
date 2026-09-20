@@ -209,7 +209,7 @@ extend<T> List<T> {
 
 extend<T> MutableList<T> {
   /// Sorts in place by `compare` (see `sortedWith`).
-  public mut fun sortWith(compare: fun(T, T): i64) {
+  public fun sortWith(compare: fun(T, T): i64) {
     val sorted = self.sortedWith(compare)
     loop (i in 0..<self.len()) {
       self.set(i, sorted.atOrPanic(i))
@@ -280,7 +280,7 @@ extend<T: Sendable> MutableList<T> {
   }
 
   /// Overwrites every element with `x`; the length does not change.
-  public mut fun fill(x: T) {
+  public fun fill(x: T) {
     loop (i in 0..<self.len()) self.set(i, x)
   }
 }
@@ -295,12 +295,12 @@ extend<T> MutableList<T> {
   }
 
   /// Exchanges the elements at `i` and `j`.
-  public mut fun swap(i: i64, j: i64) {
+  public fun swap(i: i64, j: i64) {
     (*self.refOrPanic(i), *self.refOrPanic(j)) = (self.atOrPanic(j), self.atOrPanic(i))
   }
 
   /// Inserts `x` at index `i`, shifting the rest up; `i == len()` appends.
-  public mut fun insert(i: i64, x: T) {
+  public fun insert(i: i64, x: T) {
     if (i < 0 || i > self.len()) panic("insert: index $i out of bounds for list of length ${self.len()}")
     self.push(x)
     var j = self.len() - 1
@@ -312,7 +312,7 @@ extend<T> MutableList<T> {
   }
 
   /// Removes and returns the element at index `i`, shifting the rest down.
-  public mut fun removeAt(i: i64): T {
+  public fun removeAt(i: i64): T {
     val removed = self.atOrPanic(i)
     loop (j in i..<(self.len() - 1)) {
       self.set(j, self.atOrPanic(j + 1))
@@ -322,14 +322,14 @@ extend<T> MutableList<T> {
   }
 
   /// Appends every element of `xs`.
-  public mut fun addAll(xs: List<T>) {
+  public fun addAll(xs: List<T>) {
     loop (x in xs) {
       self.push(x)
     }
   }
 
   /// Sorts in place (elements must be Comparable).
-  public mut fun sort() {
+  public fun sort() {
     val sorted = self.sorted()
     loop (i in 0..<self.len()) {
       self.set(i, sorted.atOrPanic(i))
@@ -339,15 +339,15 @@ extend<T> MutableList<T> {
 
 /// Steps through a range by a fixed increment, in either direction.
 public struct RangeStepIter<T> {
-  current: T
-  last:    T
-  step:    T
-  up:      bool
-  done:    bool = false
+  var current: T
+  last:        T
+  step:        T
+  up:          bool
+  var done:    bool = false
 
   impl Iterator {
     type Item = T
-    mut fun next(): T? {
+    fun next(): T? {
       if (self.done) return null
       if (self.up && self.current > self.last) return null
       if (!self.up && self.current < self.last) return null

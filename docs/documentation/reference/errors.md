@@ -77,9 +77,17 @@ A `when` over a sealed type must cover every variant or end with `else`
 
 ### `cannot assign to 'x': it is a 'val'; declare it with 'var'`
 
-Also reported for `a.bump()` when `bump` is a `mut fun` and `a` is a
-`val`. Only `var` bindings can be mutated or have `mut fun` methods
-called on them (D11/D22).
+A binding declared `val` cannot be rebound (D11). It says nothing about
+the value's insides: a `val` struct's `var` fields and a `val`
+collection's contents can still change.
+
+### `cannot assign to 'T.f': the field is immutable; declare it 'var f: ...'`
+
+A bare field is set by the constructor call and never assigned again,
+whoever holds the struct — through a binding, a pointer or `self`. Mark
+the field `var` if it is meant to change, or build a new value (D22). A
+method call on a global `val` is refused the same way when the method
+changes its receiver: a global is shared by every task (D35).
 
 ### `cannot push into an immutable List; use MutableList`
 

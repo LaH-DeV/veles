@@ -73,7 +73,7 @@ struct by accident:
 ```veles
 use io
 
-struct Counter { n: i64 }
+struct Counter { var n: i64 }
 
 fun main() {
   val a = Counter(n: 1)
@@ -99,7 +99,7 @@ for a class, so the differences are the things to unlearn:
 | Sharing one instance | the default | explicit: a pointer `*T` (`&x`, [Sharing with pointers](#sharing-with-pointers) below), or a reference type such as `MutableList` |
 | Inheritance | `class Dog : Animal` | none. Shared behaviour is a trait (chapter 8); a closed family is a `sealed trait` with variant structs (chapter 9) |
 | Constructor | written by hand | implicit, by field name: `Point(x: 1, y: 2)`; `static fun` for anything with logic |
-| Mutation | any method may assign fields | only a `mut fun`, only on a `var` binding (D22) |
+| Mutation | any method may assign fields | only the fields declared `var`; a bare field never changes (D22) |
 | Equality, printing, hashing | `equals`/`hashCode`/`toString` by hand (or `data class`) | structural by default; replaced with the operator traits |
 | Interfaces | `implements I` | `impl I for T` — see chapter 8 |
 | Private state | `private` fields | no `public` on the field; the implicit constructor then works only inside the module |
@@ -109,20 +109,23 @@ The value semantics are the one that surprises people: `var b = a` then
 object, many names — say so with a pointer or a `Mutex`, and the reader
 sees where sharing happens.
 
-## Mutating methods
+## Mutable fields: `var`
 
-A method that changes its receiver's fields must be declared `mut fun`
-(D22), and can only be called on something mutable — a `var`, not a
-`val`:
+Whether a field can change is written on the field. A bare field is set
+once, by the constructor call, and never assigned again — by anyone,
+whatever holds the struct. A field declared `var` can be assigned: from a
+method through `self`, from outside through any binding, through a
+pointer (D22).
 
 ```veles
 use io
 
 struct Account {
-  balance: i64
+  owner:       string      // fixed for the life of the account
+  var balance: i64         // the part that changes
 
-  mut fun deposit(amount: i64) { self.balance += amount }
-  mut fun withdraw(amount: i64): bool {
+  fun deposit(amount: i64) { self.balance += amount }
+  fun withdraw(amount: i64): bool {
     if (amount > self.balance) return false
     self.balance -= amount
     true
@@ -130,7 +133,7 @@ struct Account {
 }
 
 fun main() {
-  var acct = Account(balance: 100)
+  val acct = Account(owner: "ann", balance: 100)
   acct.deposit(50)
   val ok = acct.withdraw(500)
   io.println("$acct $ok")
@@ -139,12 +142,26 @@ fun main() {
 
 Output:
 ```text
-Account(balance: 150) false
+Account(owner: ann, balance: 150) false
 ```
 
-Try `val acct = ...` instead: the compiler refuses `acct.deposit(50)`
-because a `val` cannot be mutated. This is how Veles makes "does this
-call change my data?" visible at every call site.
+Two things to notice. There is no marker on `deposit`: a method may
+assign the `var` fields of the struct it was called on, and the reader
+learns what can change from the type, not from every method signature.
+And `acct` is a `val`, yet `deposit` changed it: `val` and `var` on a
+binding say whether the *name* can be rebound (`acct = Account(...)`),
+exactly as they do for a `MutableList`. Immutability is a property of
+the type — try `acct.owner = "bob"`: the compiler refuses, and no method
+could do it either. A struct with no `var` fields and no collections
+inside cannot change at all, whoever holds it.
+
+Because a struct is a value, a method changes the copy it was called on.
+`var b = acct; b.deposit(1)` leaves `acct` alone, and a method called
+on a temporary — `accounts.at(0)?.deposit(1)`, a copy of the element —
+is an error, since the change would be thrown away with the copy
+(chapter 4 shows `ref` and `loop (&x in xs)`, which reach the element
+itself). A struct passed to a function is a copy too: to let the
+callee change yours, pass `&acct` ([Sharing with pointers](#sharing-with-pointers)).
 
 ## Static functions
 
@@ -263,7 +280,7 @@ fun main() {
   io.println("$shared")
 }
 
-struct Counter { n: i64 }
+struct Counter { var n: i64 }
 ```
 
 Output:
@@ -300,10 +317,10 @@ struct Note {
 }
 
 struct Notes {
-  private next:  i64 = 1
-  private items: MutableList<Note> = []
+  private var next: i64 = 1
+  private items:    MutableList<Note> = []
 
-  mut fun add(text: string): Note {
+  fun add(text: string): Note {
     val n = Note(id: self.next, text)
     self.items.push(n)
     self.next += 1
@@ -314,7 +331,7 @@ struct Notes {
 }
 
 fun main() {
-  var notes = Notes()
+  val notes = Notes()
   notes.add("buy milk")
   notes.add("call mum")
   io.println("${notes.all().len()} ${notes.find(2)?.text} ${notes.find(9)}")
@@ -330,7 +347,10 @@ Outside `Notes`, `notes.next` and `Notes(next: 5)` are errors, and so is
 matching the field in a pattern. A private field must therefore have a
 default, or the type must offer a `static fun` that builds it; `Notes()`
 above works because both fields do. `private fun` marks a helper method
-the same way. More on modules in [chapter 11](11-modules-and-packages.md).
+the same way. Read the two declarations together: `next` is the only
+thing in `Notes` that is ever assigned, and only `Notes` may do it —
+`items` is a handle whose *contents* change but which is never replaced.
+More on modules in [chapter 11](11-modules-and-packages.md).
 
 ## Generic structs
 

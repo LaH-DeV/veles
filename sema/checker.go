@@ -19,6 +19,7 @@ type Checker struct {
 	// the final round's are kept (D45 fixpoint).
 	roundDiags *source.Diagnostics
 	seen       map[string]bool
+	varFixes   map[*ast.Field]bool // fields already offered the `var` insertion (fixes.go)
 
 	universe *Scope
 	prog     *Program
@@ -146,6 +147,7 @@ func checkWith(pkg *Package, diags *source.Diagnostics, release bool, testMode b
 		}
 	}
 	if prog != nil && !c.roundDiags.HasErrors() {
+		c.receiverPass(prog)
 		c.inferSuspension(prog)
 	}
 	diags.Items = append(diags.Items, c.roundDiags.Items...)
@@ -1014,7 +1016,7 @@ func (c *Checker) resolveStruct(s *types.Struct) {
 		if u, isUnion := ft.(*types.ErrorUnion); isUnion && !isAliasRef(f.Type) { // an alias checks its own members
 			c.deferErrorCheck(u, f.Type.Span())
 		}
-		s.Fields = append(s.Fields, &types.Field{Name: f.Name.Name, Type: ft, Pub: f.Pub, Private: f.Private, HasDefault: f.Default != nil, Index: i})
+		s.Fields = append(s.Fields, &types.Field{Name: f.Name.Name, Type: ft, Pub: f.Pub, Private: f.Private, Var: f.Var, HasDefault: f.Default != nil, Index: i})
 	}
 	if d.Variant != nil {
 		vt := c.resolveType(env, d.Variant)
@@ -1255,9 +1257,7 @@ func (c *Checker) resolveSignature(t *FuncTemplate) {
 		}
 		c.checkExternType(t.Sig.Ret, t.Decl.Name.Pos, t.Module.Std)
 	}
-	if t.Decl.Mut && t.Owner == nil && t.Impl == nil && t.Trait == nil {
-		c.errorf(t.Decl.Name.Pos, "'mut fun' is only meaningful for methods (D22)")
-	}
+
 	if t.Decl.Override && (t.Impl == nil || t.Impl.Trait == nil) {
 		c.errorf(t.Decl.Name.Pos, "'override' is only meaningful inside an impl block (D53)")
 	}
@@ -1979,7 +1979,7 @@ func (c *Checker) instantiate(t *FuncTemplate, ownerSubst map[*types.TypeParam]t
 	if key != "" {
 		name += "<" + key + ">"
 	}
-	fn := &Func{Name: mangleName(name), Display: t.Name, Sig: sig, Extern: t.Extern, Mut: t.Decl.Mut, Span: t.Decl.Name.Pos}
+	fn := &Func{Name: mangleName(name), Display: t.Name, Sig: sig, Extern: t.Extern, Span: t.Decl.Name.Pos}
 	if _, ok := t.Attrs["inline"]; ok {
 		fn.Inline = 1
 	}

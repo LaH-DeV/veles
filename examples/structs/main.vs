@@ -5,12 +5,12 @@ use io
  * It also shows how to use a mutable struct and a pointer to it.
  */
 struct Counter {
-  n:    i64 = 0
-  step: i64 = 1
+  var n: i64 = 0
+  step:  i64 = 1
 
   fun get(): i64 = self.n
   /** testing doc for bump */
-  mut fun bump() {
+  fun bump() {
     self.n += self.step
   }
   fun withStep(s: i64): Counter = Counter(n: self.n, step: s)

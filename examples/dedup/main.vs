@@ -61,10 +61,10 @@ fun walk(dir: string, out: MutableList<string>) throws IoError {
 }
 
 struct Options {
-  dir:     string
-  workers: i64 = 4
-  minSize: i64 = 1
-  verbose: bool = false
+  var dir:     string
+  var workers: i64 = 4
+  var minSize: i64 = 1
+  var verbose: bool = false
 
   static fun parse(args: List<string>): Options throws UsageError {
     var dir: string? = null

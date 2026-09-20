@@ -63,7 +63,7 @@ function returns (D10).
 ```veles
 use io
 
-struct Box { n: i64 }
+struct Box { var n: i64 }
 
 fun makeCounter(): *Box {
   var b = Box(n: 0)     // lives on the heap because &b escapes
@@ -94,7 +94,7 @@ for recursive structures.
 
 Files, sockets and locks are not memory; the collector will not close
 them for you at a useful time. A type that implements `Closeable` — one
-method, `mut fun close()` — can be bound in a `with` statement, and
+method, `fun close()` — can be bound in a `with` statement, and
 `close()` runs on **every** way out of the block: normal completion,
 `return`, `break`, `continue`, a thrown error, or cancellation of the
 task (D43/D47):
@@ -105,7 +105,7 @@ use io
 struct Res {
   name: string
   impl Closeable {
-    mut fun close() { io.println("close ${self.name}") }
+    fun close() { io.println("close ${self.name}") }
   }
 }
 
@@ -170,7 +170,7 @@ use io
 struct Handle {
   name: string
   impl Closeable {
-    mut fun close() { io.println("close ${self.name}") }
+    fun close() { io.println("close ${self.name}") }
   }
   fun contents(): string = "<${self.name}>"
 }
@@ -205,7 +205,7 @@ use io
 struct Res {
   name: string
   impl Closeable {
-    mut fun close() { io.println("close ${self.name}") }
+    fun close() { io.println("close ${self.name}") }
   }
 }
 

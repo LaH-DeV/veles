@@ -14,7 +14,7 @@ the prelude, `io`, `os`, `fs`, `path` — is written in Veles.
 // fragment
 public trait Iterator {
   type Item
-  mut fun next(): Item?                       // null at the end
+  fun next(): Item?                       // null at the end
 
   // lazy adapters: build a new iterator, do no work yet
   fun map<U>(f: fun(Item): U): MapIter<Self, U>
@@ -25,14 +25,14 @@ public trait Iterator {
   fun zip<J: Iterator>(other: J): ZipIter<Self, J>   // yields (Item, J.Item)
 
   // terminal operations: pull until done
-  mut fun toList(): List<Item>
-  mut fun count(): i64
-  mut fun fold<A>(init: A, f: fun(A, Item): A): A
-  mut fun forEach(f: fun(Item))
-  mut fun any(f: fun(Item): bool): bool
-  mut fun all(f: fun(Item): bool): bool
-  mut fun find(f: fun(Item): bool): Item?
-  mut fun last(): Item?
+  fun toList(): List<Item>
+  fun count(): i64
+  fun fold<A>(init: A, f: fun(A, Item): A): A
+  fun forEach(f: fun(Item))
+  fun any(f: fun(Item): bool): bool
+  fun all(f: fun(Item): bool): bool
+  fun find(f: fun(Item): bool): Item?
+  fun last(): Item?
 }
 
 public trait Iterable {
@@ -50,7 +50,7 @@ public trait Iterable {
 
 ```veles
 // fragment
-public trait Closeable { mut fun close() }     // for `with (r = ...) { }` (D43)
+public trait Closeable { fun close() }     // for `with (r = ...) { }` (D43)
 ```
 
 ### Synchronisation (D35)
@@ -493,7 +493,7 @@ random.boolean(): bool
 random.nextU64(): u64
 random.pick<T>(xs: List<T>): T?       // null when empty
 random.shuffle<T>(xs: MutableList<T>) // in place
-random.Rng.seeded(n: i64): Rng        // an independent generator with the same methods (mut)
+random.Rng.seeded(n: i64): Rng        // an independent generator with the same methods
 ```
 
 xoshiro256** seeded through splitmix64: fast and well distributed, not
