@@ -98,10 +98,7 @@ type Var struct {
 	Captured  bool // inside a closure: read through the environment
 	IsSelf    bool // a method's receiver (or its stand-in inside a lambda): a pointer read as the value
 	IsParam   bool // a function or lambda parameter
-	// Partial marks the temporary holding a struct under construction, as
-	// `self` inside the default of field Partial.Index (D28); the receiver
-	// pass checks that the methods called on it read only earlier fields.
-	Partial  *PartialSelf
+
 	InitText string // a local binding's initializer as written, for the hover
 	ErrPoly  bool   // a parameter declared `fun(..) throws E` with E a type parameter of the enclosing function
 	CapIndex int
@@ -251,6 +248,10 @@ type Call struct {
 	RecvSpan source.Span // the method name at the call
 	RecvType types.Type  // the receiver's type
 	RecvExpr ast.Expr    // the receiver as written, for fixes
+	// InitMissing: a call on `self` inside an `init` block while these
+	// owned fields (by index) are not yet assigned; the receiver pass
+	// checks the method does not read them (D28).
+	InitMissing []int
 }
 
 // RecvKind says what a method call's receiver pointer points at.
@@ -704,12 +705,4 @@ type RaceArm struct {
 type Race struct {
 	exprBase
 	Arms []*RaceArm
-}
-
-// PartialSelf describes a struct value under construction: fields below
-// Index are not bound yet.
-type PartialSelf struct {
-	Struct *types.Struct
-	Index  int
-	Span   source.Span // the default expression
 }

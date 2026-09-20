@@ -180,6 +180,13 @@ func (p *printer) decl(d Decl) {
 				p.w(")")
 			})
 		}
+		if d.Init != nil {
+			p.child(func() {
+				p.w("(init ")
+				p.block(d.Init)
+				p.w(")")
+			})
+		}
 		p.close()
 	case *TraitDecl:
 		p.attrs(d.Attrs)

@@ -65,62 +65,86 @@ Config(host: localhost, port: 8080, debug: false)
 Config(host: localhost, port: 9000, debug: true)
 ```
 
-### Defaults derived from other fields
+A default is a constant: it cannot read `self` or the other fields — at
+that moment there is no value yet. A field that is computed from the
+others is assigned in the `init` block.
 
-A default may be computed from the fields declared **above** it, read as
-`self.<field>`. The constructor call binds fields in declaration order, so
-a derived default sees the actual value of what came before it — whether
-that was given by the caller or defaulted itself — and the result is
-stored once, at construction:
+### The `init` block
+
+When a field's value comes from the other fields, or setting up a value
+takes more than a constant — a loop, a temporary, several fields that
+depend on each other — write an `init` block. It runs once for every
+construction, right after the fields are bound (given by the caller or
+defaulted), with the whole `self` at hand:
 
 ```veles
 use io
 
 struct Parser {
   private toks:      List<(string, i64)>
-  private positions: List<i64> = self.toks.map(t => t.1)   // derived from toks
-  private count:     i64 = self.countUp()                  // through a method
+  private positions: List<i64>         // no default: init gives it a value
+  private count:     i64               // same
+  private tokenSet:  Set<string>       // same
   private var pos:   i64 = 0
 
-  private fun countUp(): i64 = self.positions.len()        // reads only what is above `count`
-
-  fun next(): string? {
-    val t = self.toks.at(self.pos)?.0
-    self.pos += 1
-    t
+  init {
+    self.positions = self.toks.map(t => t.1)
+    self.count = self.positions.len()               // assigned above: readable
+    self.tokenSet = self.toks.map(t => t.0).toSet()
   }
-  fun position(): i64 = self.positions.atOrPanic(self.pos - 1)
-  fun total(): i64 = self.count
+
+  fun describe(): string = "${self.count} tokens, ${self.tokenSet.len()} distinct"
+  fun has(t: string): bool = self.tokenSet.contains(t)
 }
 
 fun main() {
-  val p = Parser(toks: [("a", 10), ("b", 20)])
-  io.println("${p.next()} ${p.position()} ${p.next()} ${p.position()} ${p.total()}")
+  val p = Parser(toks: [("a", 1), ("b", 2), ("a", 3)])   // toks only: the rest is init's job
+  io.println("${p.describe()} ${p.has("a")} ${p.has("z")}")
 }
 ```
 
 Output:
 ```text
-a 10 b 20 2
+3 tokens, 2 distinct true false
 ```
 
-This is Kotlin's `val positions = toks.map { ... }` in a class body, and
-it composes with `private`: `positions` is private *and* has a default,
-so nobody outside `Parser` can pass a `positions` that disagrees with
-`toks` — the derived value is guaranteed (see [Visibility](#visibility)).
-Inside the type you may still give it explicitly.
+The rules, all checked by the compiler:
 
-Only the fields above are there to read. A field declared below has no
-value yet, and the field cannot read itself; the compiler reports both.
-A default may call the type's methods — `countUp()` above — and the
-compiler checks *what the method touches*, through any methods it calls
-in turn: it may read only the fields declared above the one being
-initialized. A method that reads a later field, or that uses the value
-as a whole (prints it, copies it, hands out a pointer to it), is
-refused with the field named. And because the value is computed once,
-deriving it from a `var` field is a warning: the copy would go stale the
-moment the source changed; make it a method instead, or the source a
-bare field.
+- A field **without a default that `init` assigns** belongs to `init`:
+  the constructor call does not take it (`Parser(toks: ..., count: 3)`
+  is an error), and `init` must assign it **on every path** before the
+  block ends. `if (cond) self.label = "a" else self.label = "b"` is
+  fine; assigning only in one branch is not. This is the one place
+  where a bare field is assigned after construction — once, by its
+  owner, while the value is still being made.
+- Until such a field is assigned, it is not there: reading it is an
+  error, using `self` as a whole (`"$self"`, passing it on) is an error,
+  and calling a method that reads it is an error — the compiler knows
+  which fields every method touches, through the methods it calls in
+  turn. Once all are assigned, anything goes: call any method, read any
+  field.
+- `init` is not callable, has no name in the type's namespace and does
+  not appear in completion; it cannot suspend, and it cannot throw —
+  construction stays an expression that always succeeds. Construction
+  that can fail is a `static fun ... throws`.
+- One `init` per struct. It runs for every construction, including the
+  type's own, and for a sealed variant before the value is wrapped.
+
+### The ways a field gets its value
+
+| the field says | who gives the value | when |
+|---|---|---|
+| `toks: List<Token>` | the constructor call — required | at construction |
+| `pos: i64 = 0` | the default (a constant); the call may override it | at construction |
+| `count: i64` + `init { self.count = ... }` | the `init` block, with the whole `self` | right after construction, before anyone sees the value |
+| `private next: i64 = 1` | the default only — an outsider cannot pass it | at construction |
+| `private toks: List<Token>` | the constructor call, from anywhere the type is visible; private from then on | at construction |
+
+Whatever the source, once the value exists a bare field never changes;
+`var` and `protected var` say who may change it afterwards
+([Mutable fields](#mutable-fields-var)). The hover on a struct shows
+the constructor's parameters on its first line — what a caller must
+give, and may give — and marks the fields `init` assigns.
 
 ## Structs are values
 

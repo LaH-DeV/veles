@@ -102,21 +102,21 @@ fun infixPower(t: Token): (i64, i64) = when (t) {
 }
 
 struct Parser {
-  private toks:    List<(Token, Position)>
-  private var pos: Position = 0
+  private val tokens: List<(Token, Position)>
+  private var pos:    Position = 0
 
-  private fun peek(): Token = self.toks.atOrPanic(self.pos).0
-  private fun col(): Position = self.toks.atOrPanic(self.pos).1
+  private fun peek(): Token = self.tokens.atOrPanic(self.pos).0
+  private fun col(): Position = self.tokens.atOrPanic(self.pos).1
 
   private fun next(): Token {
     val t = self.peek()
-    if (self.pos < self.toks.len() - 1) self.pos += 1
+    if (self.pos < self.tokens.lastIndex()) self.pos += 1
     t
   }
 
   private fun expectOp(text: string) throws SyntaxError {
     val t = self.next()
-    if (!(t is Op) || t.text != text) throw SyntaxError(message: "expected '$text'", col: self.col())
+    if (t !is Op || t.text != text) throw SyntaxError(message: "expected '$text'", col: self.col())
   }
 
   private fun parseExpr(minPower: i64): Expr throws SyntaxError {
@@ -125,7 +125,7 @@ struct Parser {
       val t = self.peek()
       if (t is Op && t.text == "=") {
         val target = left
-        if (!(target is Variable)) throw SyntaxError(message: "can only assign to a name", col: self.col())
+        if (target !is Variable) throw SyntaxError(message: "can only assign to a name", col: self.col())
         self.next()
         val value = try self.parseExpr(0)
         return Assign(name: target.name, value: &value)
@@ -133,7 +133,7 @@ struct Parser {
       val (lp, rp) = infixPower(t)
       if (lp == 0 || lp < minPower) break
       val op = self.next()
-      if (!(op is Op)) break
+      if (op !is Op) break
       val right = try self.parseExpr(rp)
       // box the current `left`, not the variable: `&left` would point at
       // the variable being assigned, making the tree a cycle
@@ -147,8 +147,8 @@ struct Parser {
     val col = self.col()
     val t = self.next()
     when (t) {
-      is Num(value)              => Literal(value)
-      is Name(text)              => {
+      is Num(value) => Literal(value)
+      is Name(text) => {
         val nt = self.peek()
         if (nt is Op && nt.text == "(") {
           self.next()
@@ -171,29 +171,33 @@ struct Parser {
           Variable(name: text)
         }
       }
-      is Op(text) if text == "-" => Unary(op: "-", operand: &(try self.parseExpr(25)))
-      is Op(text) if text == "(" => {
-        val inner = try self.parseExpr(0)
-        try self.expectOp(")")
-        inner
+      is Op(text)   => {
+        when (text) {
+          "-"  => Unary(op: "-", operand: &(try self.parseExpr(25)))
+          "("  => {
+            val inner = try self.parseExpr(0)
+            try self.expectOp(")")
+            inner
+          }
+          else => throw SyntaxError(message: "unexpected token", col)
+        }
       }
-      is End                     => throw SyntaxError(message: "unexpected end of expression", col)
-      else                       => throw SyntaxError(message: "unexpected token", col)
+      is End        => throw SyntaxError(message: "unexpected end of expression", col)
     }
   }
 
   fun parseAll(): Expr throws SyntaxError {
     val e = try self.parseExpr(0)
-    if (!(self.peek() is End)) throw SyntaxError(message: "unexpected token", col: self.col())
+    if (self.peek() !is End) throw SyntaxError(message: "unexpected token", col: self.col())
     e
   }
 }
 
 fun parse(src: string): Expr throws SyntaxError {
-  var lx = Lexer(src)
-  val toks = try lx.run()
-  var p = Parser(toks)
-  try p.parseAll()
+  var lexer = Lexer(src)
+  val tokens = try lexer.run()
+  var parser = Parser(tokens)
+  try parser.parseAll()
 }
 
 // ---------------------------------------------------------------------------
@@ -204,7 +208,7 @@ error EvalError {
 }
 
 struct Env {
-  vars: MutableMap<string, f64> = [:]
+  private vars: MutableMap<string, f64> = [:]
 
   fun eval(e: Expr): f64 throws EvalError = when (e) {
     is Literal(value)          => value
@@ -255,6 +259,8 @@ struct Env {
       else    => 0.0
     }
   }
+
+  fun peek(): Map<string, f64> = self.vars.toMap()
 }
 
 fun show(e: Expr): string = when (e) {
@@ -304,5 +310,5 @@ fun main() {
     }
     io.println("${show(ast)}  => ${render(result)}")
   }
-  io.println("variables: ${env.vars}")
+  io.println("variables: ${env.peek()}")
 }

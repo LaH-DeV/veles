@@ -752,6 +752,20 @@ func (p *Parser) parseStruct(attrs []*ast.Attribute, pub, extern bool, start sou
 			}
 			switch p.peek(at).Kind {
 			case lexer.Ident, lexer.KwVar, lexer.KwVal, lexer.KwProtected:
+				if p.peek(at).Kind == lexer.Ident && p.peek(at).Text == "init" && p.peek(at+1).Kind == lexer.LBrace {
+					// `init { }`: contextual — a field named init is `init: T`
+					if hasVis {
+						p.errorf(p.span(), "'init' has no visibility: it is not callable, it runs at every construction (D28)")
+						p.next()
+					}
+					if d.Init != nil {
+						p.errorf(p.span(), "a struct has one 'init' block")
+					}
+					d.InitPos = p.span()
+					p.next() // init
+					d.Init = p.parseBlock()
+					break
+				}
 				d.Fields = append(d.Fields, p.parseField(vis == lexer.KwPub, vis == lexer.KwPrivate, vis == lexer.KwInternal, hasVis))
 			case lexer.KwStatic:
 				if p.peek(at+1).Kind == lexer.KwVal || p.peek(at+1).Kind == lexer.KwVar {

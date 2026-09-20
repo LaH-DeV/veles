@@ -2510,54 +2510,111 @@ fun run(f: sendable fun(): i64): i64 = f()
 fun main() { val c = C(); io.println("${run(() => c.n)}") }`, "which has 'var' fields")
 }
 
-// D28 (v0.30): a field default may be derived from the fields declared
-// above it, read as `self.<field>`; the constructor binds fields in order.
-func TestDerivedDefaults(t *testing.T) {
+
+// D28 (v0.30): a field default is a constant — it cannot read `self`; a
+// field derived from the others is assigned in `init { }`.
+func TestDefaultsDoNotReadSelf(t *testing.T) {
+	expectError(t, prelude+`
+struct P { a: i64; b: i64 = self.a + 1 }
+fun main() { P(a: 1) }`, "a field default cannot read 'self'")
+	expectError(t, prelude+`
+struct P { a: i64; b: i64 = self.twice(); fun twice(): i64 = self.a * 2 }
+fun main() { P(a: 1) }`, "Derive 'b' in the 'init' block instead")
+	expectClean(t, prelude+`
+struct P { a: i64; b: i64; init { self.b = self.twice() }; fun twice(): i64 = self.a * 2 }
+fun main() { io.println("${P(a: 1).b}") }`)
+}
+
+// D28 (v0.30): `init { }` runs after every field is bound; it owns the
+// fields without a default that it assigns (the constructor call does not
+// take them), must assign them on every path, and may not read them, use
+// `self` as a whole or call a method that reads them before then.
+func TestInitBlock(t *testing.T) {
 	expectClean(t, prelude+`
 struct Parser {
   private toks:      List<(string, i64)>
-  private positions: List<i64> = self.toks.map(v => v.1)
-  private count:     i64 = self.positions.len()
-  fun total(): i64 = self.count + self.positions.len()
+  private positions: List<i64>
+  private tokenSet:  Set<string>
+  private label:     string
+  private var pos:   i64 = 0
+  init {
+    self.positions = self.toks.map(t => t.1)
+    self.tokenSet = self.toks.map(t => t.0).toSet()
+    val n = self.tokenSet.len()          // assigned above: readable
+    self.label = if (n > 1) "many" else "few"
+    self.pos = self.span()               // a method that reads only bound fields
+    io.println(self.describe())          // everything assigned: any method
+  }
+  private fun span(): i64 = self.positions.len()
+  fun describe(): string = "${self.label} ${self.tokenSet.len()} ${self.pos}"
 }
-struct Wrap { inner: Parser; n: i64 = self.inner.total() }
+sealed trait Shape { fun area(): f64 }
+struct Sq : Shape {
+  side: f64
+  area2: f64
+  init { self.area2 = self.side * self.side }
+  impl Shape { fun area(): f64 = self.area2 }
+}
 fun main() {
-  val p = Parser(toks: [("a", 1)])
-  io.println("${p.total()} ${Wrap(inner: p).n}")
+  val p = Parser(toks: [("a", 1), ("b", 2)])
+  val s: Shape = Sq(side: 2.0)
+  io.println("${p.describe()} ${s.area()}")
 }`)
 	for _, c := range []struct{ name, src, want string }{
-		{"a later field", `struct P { a: i64 = self.b + 1; b: i64 = 2 }
-fun main() { P() }`, "'b' is declared below 'a', so it has no value yet"},
-		{"the field itself", `struct P { a: i64 = self.a }
-fun main() { P() }`, "cannot read 'a' itself"},
-		{"a method reading a later field", `struct P { a: i64 = 1; b: i64 = self.twice(); c: i64 = 3; fun twice(): i64 = self.a * self.c }
-fun main() { P() }`, "calls 'twice', which reads 'c' — declared at or below 'b'"},
-		{"a method reading a later field through another", `struct P { a: i64 = 1; b: i64 = self.twice(); c: i64 = 3; fun twice(): i64 = self.inner(); fun inner(): i64 = self.c }
-fun main() { P() }`, "calls 'twice', which reads 'c'"},
-		{"a method using the whole value", `struct P { a: i64 = 1; b: string = self.show(); fun show(): string = "$self" }
-fun main() { P() }`, "calls 'show', which uses the whole value"},
-
-		{"bare self", `struct P { a: i64 = 1; b: string = "$self" }
-fun main() { P() }`, "'self' in the default of 'b'"},
-		{"inside a lambda", `struct P { xs: List<i64>; ys: List<i64> = self.xs.map(x => x + self.zs.len()); zs: List<i64> = [] }
-fun main() { P(xs: []) }`, "'zs' is declared below 'ys'"},
+		{"read before assigned", `struct P { a: i64; b: string; init { io.println(self.b); self.b = "x" } }
+fun main() { P(a: 1) }`, "'b' is read before 'init' assigns it"},
+		{"not on every path", `struct P { a: i64; b: string; init { if (self.a > 0) self.b = "pos" } }
+fun main() { P(a: 1) }`, "'init' does not assign 'b' on every path"},
+		{"assigned on both branches is fine", `struct P { a: i64; b: string; init { if (self.a > 0) self.b = "pos" else self.b = "neg" } }
+fun main() { io.println(P(a: 1).b) }`, ""},
+		{"self as a whole", `struct P { a: i64; b: string; init { io.println("$self"); self.b = "x" } }
+fun main() { P(a: 1) }`, "'self' is used before 'init' has assigned 'b'"},
+		{"a method that reads an unassigned field", `struct P { a: i64; b: string; init { val n = self.tally(); self.b = "$n" }; fun tally(): i64 = self.b.len() }
+fun main() { P(a: 1) }`, "'init' calls 'tally' before assigning 'b', which the method reads"},
+		{"the caller cannot give an init field", `struct P { a: i64; b: string; init { self.b = "x" } }
+fun main() { P(a: 1, b: "y") }`, "field 'b' is assigned by the 'init' block of 'P'"},
+		{"init cannot suspend", `struct P { a: i64; init { await sleep(1) } }
+fun main() { P(a: 1) }`, "an 'init' block cannot suspend"},
+		{"one init", `struct P { a: i64; init { }; init { } }
+fun main() { P(a: 1) }`, "a struct has one 'init' block"},
+		{"init has no visibility", `struct P { a: i64; public init { } }
+fun main() { P(a: 1) }`, "'init' has no visibility"},
+		{"a field named init is a field", `struct P { init: i64 }
+fun main() { io.println("${P(init: 1).init}") }`, ""},
 	} {
-		t.Run(c.name, func(t *testing.T) { expectError(t, prelude+c.src, c.want) })
+		t.Run(c.name, func(t *testing.T) {
+			if c.want == "" {
+				expectClean(t, prelude+c.src)
+			} else {
+				expectError(t, prelude+c.src, c.want)
+			}
+		})
 	}
-	expectWarning(t, prelude+`
-struct Box { var size: i64; label: string = "box of ${self.size}" }
-fun main() { io.println(Box(size: 1).label) }`, "'label' is derived from 'size', a 'var' field")
-	// a method that reads only the fields above is fine, private or not,
-	// through other methods too
-	expectClean(t, prelude+`
-struct Parser {
-  private toks:      List<(string, i64)>
-  private positions: List<i64> = self.toks.map(t => t.1)
-  private count:     i64 = self.getCount()
-  private var pos:   i64 = 0
-  private fun getCount(): i64 = self.span() + self.positions.len()
-  private fun span(): i64 = self.toks.len()
-  fun total(): i64 = self.count
 }
-fun main() { io.println("${Parser(toks: [("a", 1)]).total()}") }`)
+
+// `!(x is T)` is `x !is T` (D13 lint), only in that exact shape.
+func TestNotIsLint(t *testing.T) {
+	src := prelude + `
+sealed trait T { fun f(): i64 }
+struct A : T { impl T { fun f(): i64 = 1 } }
+struct B : T { impl T { fun f(): i64 = 2 } }
+fun main() {
+  val x: T = A()
+  if (!(x is B)) io.println("a")
+  if (!(x is B && x.f() == 2)) io.println("b")
+  io.println("${[1, 2].lastIndex()} ${[].lastIndex()}")
+}`
+	diags := checkSource(t, src)
+	n := 0
+	for _, d := range diags.Items {
+		if strings.Contains(d.Message, "reads better as 'x !is T'") {
+			n++
+			if d.Fix == nil || len(d.Fix.Edits) != 1 || d.Fix.Edits[0].NewText != "x !is B" {
+				t.Errorf("fix: %+v", d.Fix)
+			}
+		}
+	}
+	if n != 1 {
+		t.Errorf("expected one !is lint, got %d:\n%s", n, diags.Render())
+	}
 }

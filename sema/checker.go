@@ -20,7 +20,7 @@ type Checker struct {
 	roundDiags *source.Diagnostics
 	seen       map[string]bool
 	varFixes   map[*ast.Field]bool // fields already offered the `var` insertion (fixes.go)
-	derived    map[*types.Struct]bool // structs whose field defaults mention `self` (check_call.go)
+	initDecl   map[*types.Struct]*ast.FunDecl // the synthetic `$init` method of structs with an `init { }` block
 
 	universe *Scope
 	prog     *Program
@@ -105,6 +105,7 @@ func checkWith(pkg *Package, diags *source.Diagnostics, release bool, testMode b
 		impls:          map[*types.Trait][]*Impl{},
 		methods:        map[*types.Struct]map[string]*FuncTemplate{},
 		staticVals:     map[*types.Struct]map[string]*Symbol{},
+		initDecl:       map[*types.Struct]*ast.FunDecl{},
 		staticOwner:    map[*Global]*types.Struct{},
 		globals:        map[*Global]*ast.ValDecl{},
 		globalMod:      map[*Global]*Module{},
@@ -408,6 +409,14 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 				continue
 			}
 			c.methods[s][md.Name.Name] = t
+		}
+		if d.Init != nil {
+			// `init { }` is checked and compiled as a hidden method the
+			// constructor calls on the freshly built value; `$` keeps it out
+			// of reach of any name a user can write (D28 v0.30)
+			decl := &ast.FunDecl{Doc: "", Private: true, Name: ast.Ident{Name: "$init", Pos: d.InitPos}, Body: d.Init, Pos: d.InitPos.To(d.Init.Pos)}
+			c.methods[s]["$init"] = c.newTemplate(m, f, decl, s, ctx.tps)
+			c.initDecl[s] = decl
 		}
 		// `static val`: a module global that lives in the type's namespace
 		// (`Status.ok`), initialised with the other globals
@@ -1053,6 +1062,17 @@ func (c *Checker) resolveStruct(s *types.Struct) {
 			c.deferErrorCheck(u, f.Type.Span())
 		}
 		s.Fields = append(s.Fields, &types.Field{Name: f.Name.Name, Type: ft, Pub: f.Pub, Private: f.Private, Var: f.Var, Protected: f.Protected, HasDefault: f.Default != nil, Index: i})
+	}
+	if d.Init != nil {
+		// a field without a default that the block assigns is the block's
+		// to initialise: the constructor call does not take it (D28)
+		for _, name := range initAssigned(d.Init) {
+			for _, fld := range s.Fields {
+				if fld.Name == name && !fld.HasDefault {
+					fld.Init = true
+				}
+			}
+		}
 	}
 	if d.Variant != nil {
 		vt := c.resolveType(env, d.Variant)
@@ -2381,4 +2401,23 @@ func (c *Checker) implErrorType(impl *Impl) types.Type {
 		return u
 	}
 	return types.TNever
+}
+
+// initAssigned lists the fields an `init { }` block assigns as `self.f = ...`
+// (or `self.f op= ...`), anywhere in it, in first-assignment order.
+func initAssigned(b *ast.Block) []string {
+	var names []string
+	seen := map[string]bool{}
+	walkAST(b, func(n any) bool {
+		if s, ok := n.(*ast.AssignStmt); ok {
+			if m, ok := s.Target.(*ast.MemberExpr); ok && !m.Safe {
+				if _, isSelf := m.X.(*ast.SelfExpr); isSelf && !seen[m.Name.Name] {
+					seen[m.Name.Name] = true
+					names = append(names, m.Name.Name)
+				}
+			}
+		}
+		return true
+	})
+	return names
 }

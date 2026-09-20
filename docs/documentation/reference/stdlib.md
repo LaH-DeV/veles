@@ -269,7 +269,7 @@ UTF-8.
 | `atOrPanic(i)` | `T`; panics when out of range. A copy, like every read: changing it is an error unless bound with `var` |
 | `ref(i)`, `refOrPanic(i)` | `(*T)?`, `*T`: a pointer to the element itself (`MutableList` only). `xs.refOrPanic(i).bump()`, `*xs.refOrPanic(i) += 1`, `xs.ref(i)?.n = 0` change the element in place; `loop (&x in xs)` visits every element by reference |
 | `atOrDefault(i, d)` | `T`; `at(i) ?: d` |
-| `len()`, `isEmpty()` | |
+| `len()`, `isEmpty()`, `lastIndex()` | `lastIndex` is `len() - 1`: −1 when empty |
 | `contains(x)`, `indexOf(x)`, `count(p)` | `bool`, `i64` (−1 if absent), `i64` |
 | `first()`, `last()`, `min()`, `max()` | `T?`; `min`/`max` need `Comparable` elements |
 | `take(n)`, `drop(n)`, `slice(from, to)` | new `List`, bounds clamped |
@@ -285,6 +285,7 @@ UTF-8.
 | `join(sep)` | `string` |
 | `iter()` | lazy iterator |
 | `toList()`, `toMutable()` | copies (D25) |
+| `toSet()`, `toMutableSet()` | the distinct elements as a set (iterators have `toSet()` too) |
 | `push(x)`, `pop(): T?`, `set(i, x)`, `clear()` | `MutableList` only |
 | `insert(i, x)`, `removeAt(i): T`, `addAll(xs)`, `sort()` | `MutableList` only; `sort` is in place |
 | `swap(i, j)`, `sortWith(compare)` | `MutableList` only; in place |

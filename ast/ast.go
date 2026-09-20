@@ -195,17 +195,17 @@ type FunDecl struct {
 
 // Field is a struct field, optionally with a default.
 type Field struct {
-	Pub      bool
-	Internal bool // `internal`: the module level written out (M5); the default
-	Private  bool // visible only inside the type's own declarations
-	Var      bool // `var name: T` — assignable after construction (D22 v0.30)
-	Val      bool // `val name: T` — the default, written out
+	Pub       bool
+	Internal  bool // `internal`: the module level written out (M5); the default
+	Private   bool // visible only inside the type's own declarations
+	Var       bool // `var name: T` — assignable after construction (D22 v0.30)
+	Val       bool // `val name: T` — the default, written out
 	Protected bool // `protected var name: T` — assigned only by the type's own declarations (D22 v0.30)
-	Doc      string
-	Name     Ident
-	Type     Type
-	Default  Expr
-	Pos      source.Span
+	Doc       string
+	Name      Ident
+	Type      Type
+	Default   Expr
+	Pos       source.Span
 }
 
 // StructDecl is `struct Name<T> : SealedParent { fields; methods }`.
@@ -224,7 +224,11 @@ type StructDecl struct {
 	Methods    []*FunDecl
 	Statics    []*ValDecl  // `static val name = expr`: constants in the type's namespace (`Type.name`)
 	Impls      []*ImplDecl // `impl Trait { }` blocks written in the body (also in File.Decls)
-	Pos        source.Span
+	// Init is the `init { }` block: runs after every field is bound, may
+	// assign the fields no caller supplied (D28 v0.30). Nil when absent.
+	Init    *Block
+	InitPos source.Span // the `init` keyword
+	Pos     source.Span
 }
 
 type AssocTypeDecl struct {

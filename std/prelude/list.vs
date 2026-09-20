@@ -106,6 +106,9 @@ extend<T> List<T> {
 
 // Comparison strategies (D48): the natural order comes from Comparable;
 extend<T> List<T> {
+  /// The index of the last element, -1 when empty: `if (i < xs.lastIndex()) i += 1`.
+  public fun lastIndex(): i64 = self.len() - 1
+
   /// The distinct elements as an immutable set: `xs.map(t => t.0).toSet()`.
   public fun toSet(): Set<T> = self.toMutableSet().toSet()
 

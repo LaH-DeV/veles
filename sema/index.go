@@ -114,7 +114,7 @@ func (c *Checker) refSym(span source.Span, sym *Symbol) {
 	case SymType:
 		if sym.TypeAlias != nil {
 			if t := c.symType(sym); t != nil {
-				c.index.Refs = append(c.index.Refs, Ref{Span: span, Def: sym.Span, Kind: "type", Name: sym.Name, Type: t, Detail: aliasDetail(sym, t), Doc: sym.TypeAlias.decl.Doc, Shape: c.shapeOf(t)})
+				c.index.Refs = append(c.index.Refs, Ref{Span: span, Def: sym.Span, Kind: "type", Name: sym.Name, Type: t, Detail: aliasDetail(sym, t), Doc: sym.TypeAlias.decl.Doc, Shape: c.shapeFrom(t, c.viewFrom(span))})
 			}
 			return
 		}
@@ -139,7 +139,7 @@ func (c *Checker) refGlobal(span source.Span, name string, g *Global) {
 	if c.index == nil || g == nil || !span.IsValid() {
 		return
 	}
-	ref := Ref{Span: span, Def: g.Span, Kind: "val", Name: name, Type: g.Type, Doc: c.globalDoc(g), Shape: c.shapeOf(g.Type)}
+	ref := Ref{Span: span, Def: g.Span, Kind: "val", Name: name, Type: g.Type, Doc: c.globalDoc(g), Shape: c.shapeFrom(g.Type, c.viewFrom(span))}
 	if g.Mutable {
 		ref.Kind = "var"
 	}
@@ -301,7 +301,7 @@ func (c *Checker) refVarAs(span source.Span, v *Var, as types.Type) {
 	if v.IsParam {
 		detail += "  (parameter)"
 	}
-	c.index.Refs = append(c.index.Refs, Ref{Span: span, Def: v.Span, Kind: kind, Name: v.Name, Type: t, Detail: detail, Shape: c.shapeOf(t)})
+	c.index.Refs = append(c.index.Refs, Ref{Span: span, Def: v.Span, Kind: kind, Name: v.Name, Type: t, Detail: detail, Shape: c.shapeFrom(t, c.viewFrom(span))})
 }
 
 // renarrowRef updates the ref just recorded at span (a field read) to show
@@ -315,7 +315,7 @@ func (c *Checker) renarrowRef(span source.Span, as, declared types.Type) {
 		if r.Span == span {
 			r.Type = as
 			r.Detail = strings.Replace(r.Detail, typeSuffix(declared), typeSuffix(as), 1) + "  (smart cast from " + declared.String() + ")"
-			r.Shape = c.shapeOf(as)
+			r.Shape = c.shapeFrom(as, c.viewFrom(span))
 			return
 		}
 	}
@@ -396,7 +396,7 @@ func (c *Checker) refField(span source.Span, st *types.Struct, fld *types.Field)
 	// the field as declared, every implicit word spelled out (`internal`,
 	// `val`), so the hover says who sees it and who may assign it
 	c.index.Refs = append(c.index.Refs, Ref{Span: span, Def: def, Kind: "field", Name: fld.Name, Type: fld.Type,
-		Detail: fieldDecl(st, fld, 60), Where: structHead(st), Doc: doc, Shape: c.shapeOf(fld.Type)})
+		Detail: fieldDecl(st, fld), Where: structHead(st), Doc: doc, Shape: c.shapeFrom(fld.Type, c.viewFrom(span))})
 }
 
 // visibilityWord spells the M5 level of a member or declaration: the
@@ -412,9 +412,10 @@ func visibilityWord(pub, private bool) string {
 }
 
 // fieldDecl renders a field the way its declaration reads with nothing
-// left implicit: `public protected var count: i64 = 0`. A default longer
-// than maxDefault characters is elided to `= ...`.
-func fieldDecl(st *types.Struct, fld *types.Field, maxDefault int) string {
+// left implicit: `public protected var count: i64 = ...`. Types, not
+// values: a default is shown as `= ...` (it exists, and the constructor
+// call may omit the field); a field the `init` block assigns says so.
+func fieldDecl(st *types.Struct, fld *types.Field) string {
 	var sb strings.Builder
 	sb.WriteString(visibilityWord(fld.Pub, fld.Private) + " ")
 	switch {
@@ -426,20 +427,33 @@ func fieldDecl(st *types.Struct, fld *types.Field, maxDefault int) string {
 		sb.WriteString("val ")
 	}
 	sb.WriteString(fld.Name + ": " + fld.Type.String())
-	if fld.HasDefault {
-		text := "..."
-		if d, ok := templateOf(st).Decl.(*ast.StructDecl); ok {
-			for _, f := range d.Fields {
-				if f.Name.Name == fld.Name && f.Default != nil {
-					if t := srcText(f.Default); t != "" && len(t) <= maxDefault && !strings.Contains(t, "\n") {
-						text = t
-					}
-				}
-			}
-		}
-		sb.WriteString(" = " + text)
+	switch {
+	case fld.HasDefault:
+		sb.WriteString(" = ...")
+	case fld.Init:
+		sb.WriteString("  // assigned by init")
 	}
 	return sb.String()
+}
+
+// constructorLine spells how st is built from outside the type — the
+// implicit constructor's parameters (D28): the fields the call must give,
+// then, as `= ...`, the ones it may give. Private fields with a default
+// and fields assigned by `init` are not the caller's; they are left out.
+func constructorLine(st *types.Struct, v viewpoint) string {
+	var parts []string
+	for _, fld := range st.Fields {
+		switch {
+		case fld.Init, fld.HasDefault && !v.sees(st, fld.Pub, fld.Private):
+			// not the caller's to give from here
+			continue
+		case fld.HasDefault:
+			parts = append(parts, fld.Name+": "+fld.Type.String()+" = ...")
+		default:
+			parts = append(parts, fld.Name+": "+fld.Type.String())
+		}
+	}
+	return st.Name + "(" + strings.Join(parts, ", ") + ")"
 }
 
 // structHead is a struct's declaration line with its visibility spelled
@@ -478,6 +492,9 @@ func methodDecl(tmpl *types.Struct, t *FuncTemplate) string {
 // `override fun toString(): string`, `fun describe(): string = ...` for a
 // trait's default body. The owner is not repeated (see funWhere).
 func funDecl(t *FuncTemplate) string {
+	if t.Name == "$init" {
+		return "init { ... }  // runs after every construction; not callable"
+	}
 	var sb strings.Builder
 	d := t.Decl
 	implMethod := t.Impl != nil && t.Impl.Trait != nil
@@ -644,7 +661,7 @@ func (c *Checker) refType(span source.Span, name string, t types.Type, def sourc
 		detail = "builtin type " + tt.Name
 	}
 	c.index.Refs = append(c.index.Refs, Ref{Span: span, Def: def, Kind: kind, Name: name, Type: t, Detail: detail,
-		Doc: docOfType(t), Shape: c.shapeOf(t)})
+		Doc: docOfType(t), Shape: c.shapeFrom(t, c.viewFrom(span))})
 }
 
 // docOfType is the documentation comment on a type's declaration.
@@ -666,16 +683,88 @@ func docOfType(t types.Type) string {
 	return ""
 }
 
+// viewpoint is where a hover is read from: the module of the reference
+// and, for a struct, whether the reference sits inside the struct's own
+// declarations. It decides which members the shape lists (M5): private
+// ones only inside the type, unmarked ones only inside the module, public
+// ones anywhere — what the reader could actually name from there.
+type viewpoint struct {
+	c    *Checker
+	file *source.File
+	off  int
+	mod  *Module
+}
+
+func (c *Checker) viewFrom(span source.Span) viewpoint {
+	v := viewpoint{c: c, file: span.File, off: span.Start}
+	if span.File != nil && c.pkg != nil {
+		for _, m := range c.pkg.Modules {
+			for _, f := range m.Files {
+				if f.Source == span.File {
+					v.mod = m
+				}
+			}
+		}
+	}
+	return v
+}
+
+// insideType reports whether the viewpoint is within st's body, or an
+// impl or extend block for st in its module.
+func (v viewpoint) insideType(st *types.Struct) bool {
+	if v.mod == nil || v.file == nil {
+		return false
+	}
+	name := templateOf(st).Name
+	within := func(sp source.Span) bool {
+		return sp.File == v.file && v.off >= sp.Start && v.off <= sp.End
+	}
+	for _, f := range v.mod.Files {
+		if f.Source != v.file {
+			continue
+		}
+		for _, decl := range f.Decls {
+			switch d := decl.(type) {
+			case *ast.StructDecl:
+				if d.Name.Name == name && within(d.Pos) {
+					return true
+				}
+			case *ast.ImplDecl:
+				if t, ok := d.Target.(*ast.NamedType); ok && t.Path[len(t.Path)-1].Name == name && within(d.Pos) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// sees reports whether a member with the given visibility of a type
+// declared in module modPrefix can be named from the viewpoint.
+func (v viewpoint) sees(st *types.Struct, pub, private bool) bool {
+	switch {
+	case private:
+		return v.insideType(st)
+	case pub:
+		return true
+	}
+	return v.mod != nil && v.mod.prefix() == templateOf(st).Module
+}
+
 // shapeOf spells out what a value of type t has inside, as it would be
 // declared: a struct's or error's fields and inherent methods, a sealed
 // trait's variants, a trait's methods. Empty for every other type.
-func (c *Checker) shapeOf(t types.Type) string {
+func (c *Checker) shapeOf(t types.Type) string { return c.shapeFrom(t, viewpoint{c: c}) }
+
+// shapeFrom is shapeOf as seen from v: members the reader could not name
+// from there are left out, and a count says so.
+func (c *Checker) shapeFrom(t types.Type, v viewpoint) string {
 	var sb strings.Builder
 	switch tt := t.(type) {
 	case *types.Pointer:
-		return c.shapeOf(tt.Elem)
+		return c.shapeFrom(tt.Elem, v)
 	case *types.Nullable:
-		return c.shapeOf(tt.Elem)
+		return c.shapeFrom(tt.Elem, v)
 	case *types.Struct:
 		tmpl := templateOf(tt)
 		d, _ := tmpl.Decl.(*ast.StructDecl)
@@ -688,8 +777,17 @@ func (c *Checker) shapeOf(t types.Type) string {
 		// has (`val`) — what a reader needs to know and cannot see at the use
 		sb.WriteString(structHead(tt))
 		sb.WriteString(" {\n")
+		hidden := 0
+		if !d.Extern {
+			// what a caller must (and may) give to build one, from here
+			sb.WriteString("  // " + constructorLine(tt, v) + "\n")
+		}
 		for _, fld := range tt.Fields {
-			sb.WriteString("  " + fieldDecl(tt, fld, 30) + "\n")
+			if !v.sees(tt, fld.Pub, fld.Private) {
+				hidden++
+				continue
+			}
+			sb.WriteString("  " + fieldDecl(tt, fld) + "\n")
 		}
 		if statics := c.staticVals[tmpl]; len(statics) > 0 {
 			var names []string
@@ -699,22 +797,39 @@ func (c *Checker) shapeOf(t types.Type) string {
 			sort.Strings(names)
 			for _, name := range names {
 				sym := statics[name]
+				if !v.sees(tt, sym.Pub, false) {
+					hidden++
+					continue
+				}
 				sb.WriteString("  " + visibilityWord(sym.Pub, false) + " static val " + name)
 				if sym.Global != nil && sym.Global.Type != nil {
 					sb.WriteString(": " + sym.Global.Type.String())
 				}
-				if sv := c.globals[sym.Global]; sv != nil && sv.Value != nil {
-					if t := srcText(sv.Value); t != "" && len(t) <= 30 && !strings.Contains(t, "\n") {
-						sb.WriteString(" = " + t)
-					} else {
-						sb.WriteString(" = ...")
-					}
-				}
-				sb.WriteString("\n")
+				sb.WriteString(" = ...\n")
 			}
 		}
 		for _, name := range sortedMethodNames(c.methods[tmpl]) {
-			sb.WriteString("  " + methodDecl(tmpl, c.methods[tmpl][name]) + "\n")
+			if strings.HasPrefix(name, "$") {
+				continue // the hidden `$init` method: shown as the block below
+			}
+			m := c.methods[tmpl][name]
+			if m.Decl != nil && !v.sees(tt, m.Decl.Pub, m.Decl.Private) {
+				hidden++
+				continue
+			}
+			sb.WriteString("  " + methodDecl(tmpl, m) + "\n")
+		}
+		if d.Init != nil && v.insideType(tt) {
+			sb.WriteString("  init { ... }\n")
+		}
+		if hidden > 0 {
+			// the reader cannot name these from here; the count says the
+			// type has more than it shows
+			word := "members"
+			if hidden == 1 {
+				word = "member"
+			}
+			sb.WriteString(fmt.Sprintf("  // ... and %d %s not visible from here\n", hidden, word))
 		}
 		if d.Error {
 			sb.WriteString("  public fun message(): string\n")

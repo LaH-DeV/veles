@@ -802,6 +802,12 @@ func (p *printer) structDecl(d *ast.StructDecl) {
 		impl := impl
 		ms = append(ms, memberRef{declStart(impl), func() { p.implDecl(impl) }})
 	}
+	if d.Init != nil {
+		ms = append(ms, memberRef{d.InitPos.Start, func() {
+			p.w("init ")
+			p.block(d.Init)
+		}})
+	}
 	ms = p.sortedMembers(ms)
 	hdr := d.Name.Pos.End
 	if d.Variant != nil {

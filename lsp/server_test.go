@@ -394,7 +394,7 @@ func TestHoverDocsAndShapes(t *testing.T) {
 		return string(res)
 	}
 	// a value of a struct type: its declaration line, then what it has inside
-	if h := hover(18, 13); !strings.Contains(h, "val c: ConfigError") || !strings.Contains(h, `internal error ConfigError {\n  internal val key: string\n  internal val cause: PortErrors\n  public fun message(): string\n  impl Error\n}`) {
+	if h := hover(18, 13); !strings.Contains(h, "val c: ConfigError") || !strings.Contains(h, `internal error ConfigError {\n  // ConfigError(key: string, cause: PortErrors)\n  internal val key: string\n  internal val cause: PortErrors\n  public fun message(): string\n  impl Error\n}`) {
 		t.Errorf("hover on a value shows no shape: %s", h)
 	}
 	// the type name itself, with its doc comment
@@ -442,7 +442,7 @@ func TestModuleDocHover(t *testing.T) {
 		t.Errorf("narrowed field hover: %s", h)
 	}
 	// a type's hover opens with its shape, not the name twice
-	if h := hover(3, 7); strings.Contains(h, `error E\n`+"```") || !strings.Contains(h, `internal error E {\n  internal val n: i64`) {
+	if h := hover(3, 7); strings.Contains(h, `error E\n`+"```") || !strings.Contains(h, `internal error E {\n  // E(n: i64)\n  internal val n: i64`) {
 		t.Errorf("type hover doubles the name: %s", h)
 	}
 }
@@ -724,11 +724,11 @@ func TestHoverSpellsOutModifiers(t *testing.T) {
 		res, _ := c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": line, "character": ch}})
 		return string(res)
 	}
-	want := `public struct Notes {\n  private var next: i64 = 1\n  internal val items: bool = false\n  public protected var count: i64 = 0\n  internal static val empty: Notes = Notes()\n  public fun add(text: string)\n  private fun bump()\n  public static fun of(n: i64): Notes\n}`
+	want := `public struct Notes {\n  // Notes(items: bool = ..., count: i64 = ...)\n  internal val items: bool = ...\n  public protected var count: i64 = ...\n  internal static val empty: Notes = ...\n  public fun add(text: string)\n  public static fun of(n: i64): Notes\n  // ... and 2 members not visible from here\n}`
 	if h := hover(16, 11); !strings.Contains(h, want) {
 		t.Errorf("struct hover: %s\nwant %s", h, want)
 	}
-	if h := hover(18, 19); !strings.Contains(h, `public struct Notes\n  public protected var count: i64 = 0`) {
+	if h := hover(18, 19); !strings.Contains(h, `public struct Notes\n  public protected var count: i64 = ...`) {
 		t.Errorf("field hover: %s", h)
 	}
 }
@@ -942,5 +942,83 @@ func TestHoverLocals(t *testing.T) {
 		if h := hover(tc.line, tc.ch); !strings.Contains(h, tc.want) {
 			t.Errorf("hover at %d:%d: %q\nwant %q", tc.line, tc.ch, h, tc.want)
 		}
+	}
+}
+
+// `init` is shown in the struct's hover and never offered by completion.
+func TestInitBlockInTooling(t *testing.T) {
+	src := "use io\n\nstruct P {\n  a: i64\n  b: string\n  init {\n    self.b = \"$a\"\n  }\n  fun f(): i64 = self.a\n}\n\nfun main() {\n  val p = P(a: 1)\n  //X\n  io.println(\"${p.b} ${p.f()}\")\n}\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := pathToURI(path)
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{})
+	c.notify("initialized", map[string]any{})
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": src}})
+	res, _ := c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": 12, "character": 11}})
+	if !strings.Contains(string(res), `internal val b: string  // assigned by init\n  internal fun f(): i64\n}`) {
+		t.Errorf("struct hover: %s", res)
+	}
+	res, _ = c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": 5, "character": 3}})
+	if !strings.Contains(string(res), "runs after every construction; not callable") {
+		t.Errorf("init hover: %s", res)
+	}
+	for _, variant := range []string{"  p.\n", "  P.\n"} {
+		text := strings.Replace(src, "  //X\n", variant, 1)
+		c.notify("textDocument/didChange", map[string]any{"textDocument": map[string]any{"uri": uri, "version": 2}, "contentChanges": []map[string]any{{"text": text}}})
+		res, _ = c.call("textDocument/completion", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": 13, "character": len(strings.TrimSpace(variant))+2}})
+		if strings.Contains(string(res), `"label":"init"`) || strings.Contains(string(res), `$init`) {
+			t.Errorf("completion after %q offers init: %s", strings.TrimSpace(variant), res)
+		}
+	}
+}
+
+// The struct hover lists what the reader could name from where they are:
+// everything inside the type, no private members from the rest of the
+// module, public members only from another module.
+func TestHoverViewpoint(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "veles.toml"), []byte("[package]\nname = \"app\"\nversion = \"0.1.0\"\n"), 0o644)
+	os.MkdirAll(filepath.Join(root, "store"), 0o755)
+	store := "public struct Notes {\n  private var next: i64 = 1\n  items: List<string> = []\n  public val tag: string = \"n\"\n  fun size(): i64 = self.items.len()\n  public fun add(text: string): i64 {\n    self.next += 1\n    self.next\n  }\n  private fun bump() { }\n}\n\nfun inModule(): i64 {\n  val n = Notes()\n  n.size()\n}\n"
+	os.WriteFile(filepath.Join(root, "store", "store.vs"), []byte(store), 0o644)
+	main := "use io, store\n\nfun main() {\n  val n = store.Notes()\n  io.println(\"${n.add(\"x\")} ${n.tag}\")\n}\n"
+	os.WriteFile(filepath.Join(root, "main.vs"), []byte(main), 0o644)
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{"rootUri": pathToURI(root)})
+	c.notify("initialized", map[string]any{})
+	storeURI := pathToURI(filepath.Join(root, "store", "store.vs"))
+	mainURI := pathToURI(filepath.Join(root, "main.vs"))
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": storeURI, "languageId": "veles", "version": 1, "text": store}})
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": mainURI, "languageId": "veles", "version": 1, "text": main}})
+	hover := func(uri string, line, ch int) string {
+		res, _ := c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": line, "character": ch}})
+		var h struct {
+			Contents struct {
+				Value string `json:"value"`
+			} `json:"contents"`
+		}
+		json.Unmarshal(res, &h)
+		return h.Contents.Value
+	}
+	// inside a method of Notes: everything
+	h := hover(storeURI, 0, 15)
+	if !strings.Contains(h, "private var next") || !strings.Contains(h, "private fun bump()") || strings.Contains(h, "not visible") {
+		t.Errorf("inside the type: %q", h)
+	}
+	// elsewhere in the module: no private members, internal ones yes
+	h = hover(storeURI, 13, 11)
+	if strings.Contains(h, "private") || !strings.Contains(h, "internal val items") || !strings.Contains(h, "internal fun size()") || !strings.Contains(h, "// ... and 2 members not visible from here") {
+		t.Errorf("in the module: %q", h)
+	}
+	// from another module: public only, and the constructor as seen from there
+	h = hover(mainURI, 3, 17)
+	if strings.Contains(h, "items") || strings.Contains(h, "size()") || !strings.Contains(h, "public val tag") || !strings.Contains(h, "public fun add") || !strings.Contains(h, "// Notes(tag: string = ...)") || !strings.Contains(h, "// ... and 4 members not visible from here") {
+		t.Errorf("from another module: %q", h)
 	}
 }

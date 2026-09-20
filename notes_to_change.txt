@@ -1026,3 +1026,39 @@ R29. DONE (2026-09-20): (1) completion: `Type.` offers the type's namespace only
     prelude (`toks.map(t => t.0).toSet()`). 
     PENDING: `constructor { }` block (user proposal, see conversation 2026-09-20) — design
     discussed, awaiting the user's answer on spelling/semantics.
+R30. DONE (2026-09-20, user decision: `init`, not `constructor`): `init { }` block in a struct
+    body (spec D28 addendum, docs 05 "The init block" + "The ways a field gets its value"
+    table, cheatsheet). Contextual keyword (a field/function named init stays legal);
+    compiled as hidden method `$init` (unreachable by name; hover shows `init { ... }`,
+    completion never lists it); called by the constructor on the built value (Let + BlockExpr)
+    before a sealed wrap. Fields without a default that the block assigns (syntactic scan
+    initAssigned → types.Field.Init) are not constructor params (error if passed); definite
+    assignment via flow facts `$init.<field>` in fnCtx.narrow (joins/loops/divergence for
+    free); errors: read before assigned, `self` as a whole before all assigned, method call
+    before assigned checked in the receiver pass against FieldsUsed (Call.InitMissing),
+    not-on-every-path at block end; cannot suspend (inferSuspension), no throws (ordinary
+    rule), no visibility, one per struct. Side quests: `List.lastIndex()`; lint `!(x is T)` →
+    `x !is T` with a fix (only that exact shape; `!(a is T && ...)` untouched).
+R31. DONE (2026-09-20, user direction): (1) derived field defaults WITHDRAWN — a default is a
+    constant; `self` in a default is an error pointing at `init` ("declare it without a
+    default and write init { self.x = ... }"); removed ctorScope/partialSelf/derivedDefaults/
+    checkPartialCall/Var.Partial (the field-use analysis stays for init). Spec D28 addendum
+    records the withdrawal. (2) `init` highlighted in the VS Code grammar (contextual, before
+    `{`). (3) Struct/field hover shows types only: defaults as `= ...`, statics as `= ...`,
+    init-owned fields marked `// assigned by init`, and a first line `// Parser(toks: ...,
+    pos: Position = ...)` = the implicit constructor as seen from outside (required fields,
+    then optional ones; private-with-default and init fields left out). Locals keep their
+    initializer (asked for earlier). Docs 05: derived section replaced, init example now
+    derives positions/count in init, field-source table updated; cheatsheet.
+R32. DONE (2026-09-20): hover respects the reader's viewpoint (sema/index.go viewpoint /
+    shapeFrom): inside the type everything; elsewhere in the module no private members; from
+    another module public only; hidden members counted ("// ... and N members not visible from
+    here"); the constructor line lists optional fields only when the reader may pass them;
+    `init { ... }` shown inside the type only. lsp TestHoverViewpoint.
+    OPEN (user question): read-only exposure of a mutable-collection field (`vars:
+    MutableMap` — outsiders may read, not mutate). Options laid out in conversation:
+    (a) private + accessor methods (works today, D25-clean); (b) `protected val` on
+    mutable-collection fields = "look, don't take": from outside the field may only be the
+    receiver of the immutable form's methods / a loop head / interpolation, never bound,
+    passed or returned (keeps D25's no-views rule); (c) read-only view types — rejected by D25/
+    D35. Awaiting decision.

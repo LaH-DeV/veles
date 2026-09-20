@@ -238,11 +238,16 @@ func (f *fnCtx) checkExpr(e ast.Expr, want types.Type) Expr {
 		f.errorf(e.Pos, "cannot infer the type of 'null' here; annotate the binding, e.g. 'val x: T? = null'")
 		return bad()
 	case *ast.SelfExpr:
-		if sc := f.ctorScopeOf(); sc != nil {
-			// the struct as built so far: the receiver of a method call in
-			// a derived default (D28); any other use is reported by the
-			// receiver pass, which knows what each method reads
-			return f.partialSelf(sc, e.Pos)
+
+		if in := f.initScope(); in != nil {
+			// `self` as a whole (a copy, "$self", an argument) needs every
+			// owned field assigned; a method receiver is checked against
+			// what the method reads (receivers.go)
+			asRecv := f.selfAsRecv
+			f.selfAsRecv = false
+			if missing := in.initMissing(); len(missing) > 0 && (!asRecv || in != f) {
+				f.errorf(e.Pos, "'self' is used before 'init' has assigned '%s'; assign every field without a default first, or read the fields one by one (D28)", strings.Join(missing, "', '"))
+			}
 		}
 		self := f.selfRef()
 		if self == nil {
@@ -542,10 +547,16 @@ func narrowReaches(from, to types.Type) bool {
 }
 
 func (f *fnCtx) memberExpr(e *ast.MemberExpr, want types.Type) Expr {
-	// `self.field` in a field default: an earlier field's value (D28 v0.30)
 	if _, isSelf := e.X.(*ast.SelfExpr); isSelf && !e.Safe {
-		if x, ok := f.ctorField(e); ok {
-			return x
+		// in an `init` block: a field the block owns is unreadable until
+		// the block has assigned it on every path to here
+		if in := f.initScope(); in != nil {
+			if _, owned := in.initOwned[e.Name.Name]; owned {
+				if _, done := in.narrow[in.initFact(e.Name.Name)]; !done || in != f {
+					f.errorf(e.Name.Pos, "'%s' is read before 'init' assigns it; it has no default, so it holds nothing until the block gives it a value (D28)", e.Name.Name)
+				}
+			}
+			f.selfAsRecv = true // a field read, not `self` as a whole
 		}
 	}
 	// module member or sealed variant?
@@ -937,6 +948,18 @@ func (f *fnCtx) unaryExpr(e *ast.UnaryExpr, want types.Type) Expr {
 		}
 		return &Unary{exprBase{x.Type()}, OpNeg, x, e.Pos}
 	case lexer.Bang:
+		if is, ok := e.X.(*ast.IsExpr); ok && !is.Not {
+			// `!(x is T)` is `x !is T` (D13 lint): parentheses vanish from the
+			// tree, so a negated `is` can only have come from that spelling
+			inner := is.Pos
+			if x := srcText(is.X); x != "" && inner.File != nil && is.X.Span().End <= inner.End {
+				rest := strings.TrimSpace(inner.File.Content[is.X.Span().End:inner.End])
+				if strings.HasPrefix(rest, "is") {
+					repl := x + " !" + rest
+					f.warnFix(e.Pos, fixReplace("Replace with '"+repl+"'", e.Pos, repl), "'!(x is T)' reads better as 'x !is T' (D13)")
+				}
+			}
+		}
 		x := f.checkExprTo(e.X, types.TBool)
 		return &Unary{exprBase{types.TBool}, OpNot, x, e.Pos}
 	case lexer.Tilde:

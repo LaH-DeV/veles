@@ -507,7 +507,8 @@ func (f *fnCtx) constructStruct(st *types.Struct, args []ast.Arg, span source.Sp
 	}
 	params := make([]types.Param, len(st.Fields))
 	for i, fld := range st.Fields {
-		params[i] = types.Param{Name: fld.Name, Type: fld.Type, HasDefault: fld.HasDefault}
+		// a field the `init` block assigns is not the caller's to give
+		params[i] = types.Param{Name: fld.Name, Type: fld.Type, HasDefault: fld.HasDefault || fld.Init}
 	}
 	args, ok := f.punFields(st, args)
 	if !ok {
@@ -521,16 +522,6 @@ func (f *fnCtx) constructStruct(st *types.Struct, args []ast.Arg, span source.Sp
 	}
 	inside := f.insideType(st)
 	lit := &StructLit{exprBase{st}, st, make([]Expr, len(st.Fields))}
-	// A default may be derived from the fields declared above it
-	// (`positions: List<i64> = self.toks.map(...)`, D28 v0.30). Then every
-	// field value is bound to a temporary in declaration order, so a
-	// default reads the actual value — given or defaulted — of what came
-	// before it; the literal is built from the temporaries at the end.
-	derived := f.c.derivedDefaults(st)
-	var temps []*Var // field temporaries, and the partial values between them
-	var vals []Expr
-	fieldTemp := make([]*Var, len(st.Fields))
-	scope := &ctorScope{st: st, fields: map[string]*Var{}}
 	for i, fld := range st.Fields {
 		var v Expr
 		switch {
@@ -542,142 +533,37 @@ func (f *fnCtx) constructStruct(st *types.Struct, args []ast.Arg, span source.Sp
 			// visible, and is private from then on.
 			f.errorf(bound[i].Span(), "field '%s' is private to '%s' and has a default; it cannot be set from outside — drop it, or construct through a static function of '%s'", fld.Name, st.Name, st.Name)
 			v = bad()
+		case fld.Init && bound[i] != nil:
+			f.errorf(bound[i].Span(), "field '%s' is assigned by the 'init' block of '%s'; the constructor call does not take it (D28)", fld.Name, st.Name)
+			f.checkArgsLoosely([]ast.Arg{{Value: bound[i]}})
+			v = &Zero{exprBase{fld.Type}}
+		case fld.Init:
+			v = &Zero{exprBase{fld.Type}} // bound by `init`, never read before
 		case bound[i] != nil:
 			v = f.checkExprTo(bound[i], fld.Type)
 		case !fld.HasDefault:
 			f.errorf(span, "missing field '%s' in constructor of '%s'", fld.Name, st.Name)
 			v = bad()
 		default:
-			scope.index = i
-			v = f.fieldDefault(st, i, scope)
-			if scope.partial != nil && scope.partialIndex == i {
-				// the default called a method on `self`: bind the struct as
-				// built so far, zero where nothing is bound yet, before it
-				partial := &StructLit{exprBase{st}, st, make([]Expr, len(st.Fields))}
-				for j := range st.Fields {
-					if j < i {
-						partial.Fields[j] = ref(fieldTemp[j])
-					} else {
-						partial.Fields[j] = &Zero{exprBase{st.Fields[j].Type}}
-					}
-				}
-				temps = append(temps, scope.partial)
-				vals = append(vals, partial)
-			}
+			v = f.fieldDefault(st, i)
 		}
-		if !derived {
-			lit.Fields[i] = v
-			continue
-		}
-		tmp := f.newTemp(fld.Type)
-		temps = append(temps, tmp)
-		vals = append(vals, v)
-		fieldTemp[i] = tmp
-		scope.fields[fld.Name] = tmp
-		lit.Fields[i] = ref(tmp)
+		lit.Fields[i] = v
 	}
 	var result Expr = lit
-	if st.Sealed != nil {
-		result = &MakeVariant{exprBase{st.Sealed}, st.Sealed, st, lit}
+	if initT := f.c.methods[templateOf(st)]["$init"]; initT != nil {
+		// `init { }`: the block runs on the freshly built value, then the
+		// value is the result (D28)
+		built := f.newTemp(st)
+		fn := f.c.instantiate(initT, substOf(st), nil, span)
+		call := &Call{exprBase: exprBase{types.TUnit}, Fn: fn, Args: []Expr{&AddrOf{exprBase{&types.Pointer{Elem: st}}, ref(built)}}}
+		call.Recv, call.RecvRoot, call.RecvSpan, call.RecvType = RecvPlace, built, span, st
+		body := &Block{Stmts: []Stmt{&ExprStmt{X: call}}, Value: ref(built), Type: st}
+		result = &Let{exprBase{st}, built, lit, &BlockExpr{exprBase{st}, body}}
 	}
-	for i := len(temps) - 1; i >= 0; i-- {
-		result = &Let{exprBase{result.Type()}, temps[i], vals[i], result}
+	if st.Sealed != nil {
+		result = &MakeVariant{exprBase{st.Sealed}, st.Sealed, st, result}
 	}
 	return result
-}
-
-// ctorScope is the state of a constructor call while a field default is
-// checked: the fields already bound (declared above), by name.
-type ctorScope struct {
-	st     *types.Struct
-	index  int // the field whose default is being checked
-	fields map[string]*Var
-	// partial is the struct as built so far, created when the default
-	// being checked calls a method on `self`; partialIndex is that field
-	partial      *Var
-	partialIndex int
-}
-
-// partialSelf is `self` inside a field default: the struct as built so
-// far, for a method call. The receiver pass checks that the method reads
-// only the fields already bound (receivers.go).
-func (f *fnCtx) partialSelf(sc *ctorScope, span source.Span) Expr {
-	if sc.partial == nil || sc.partialIndex != sc.index {
-		tmp := f.newTemp(sc.st)
-		tmp.Partial = &PartialSelf{Struct: sc.st, Index: sc.index, Span: span}
-		sc.partial, sc.partialIndex = tmp, sc.index
-	}
-	return ref(f.localVar(sc.partial))
-}
-
-// derivedDefaults reports whether any default of st mentions `self`, which
-// makes the constructor bind fields to temporaries in order.
-func (c *Checker) derivedDefaults(st *types.Struct) bool {
-	tmpl := templateOf(st)
-	if v, ok := c.derived[tmpl]; ok {
-		return v
-	}
-	found := false
-	if d, ok := tmpl.Decl.(*ast.StructDecl); ok {
-		for _, fld := range d.Fields {
-			if fld.Default == nil || found {
-				continue
-			}
-			walkAST(fld.Default, func(n any) bool {
-				if _, isSelf := n.(*ast.SelfExpr); isSelf {
-					found = true
-				}
-				return !found
-			})
-		}
-	}
-	if c.derived == nil {
-		c.derived = map[*types.Struct]bool{}
-	}
-	c.derived[tmpl] = found
-	return found
-}
-
-// ctorScopeOf is the constructor call whose field default is being
-// checked, if any (lambdas inside the default see it too).
-func (f *fnCtx) ctorScopeOf() *ctorScope {
-	for ctx := f; ctx != nil; ctx = ctx.parent {
-		if ctx.ctor != nil {
-			return ctx.ctor
-		}
-	}
-	return nil
-}
-
-// ctorField resolves `self.name` inside a field default: the temporary
-// holding an earlier field's value, or an error — a later field is not
-// bound yet, and nothing else of `self` exists during construction.
-func (f *fnCtx) ctorField(e *ast.MemberExpr) (Expr, bool) {
-	sc := f.ctorScopeOf()
-	if sc == nil {
-		return nil, false
-	}
-	name := e.Name.Name
-	if tmp, ok := sc.fields[name]; ok {
-		for _, fld := range sc.st.Fields {
-			if fld.Name == name && fld.Var {
-				f.c.warnf(e.Pos, "'%s' is derived from '%s', a 'var' field: it is computed once, at construction, and will not follow later changes to '%s'; make it a method, or '%s' a bare field", sc.st.Fields[sc.index].Name, name, name, name)
-			}
-		}
-		return ref(f.localVar(tmp)), true
-	}
-	for i, fld := range sc.st.Fields {
-		if fld.Name == name {
-			if i == sc.index {
-				f.errorf(e.Pos, "the default of '%s' cannot read '%s' itself", name, name)
-			} else {
-				f.errorf(e.Pos, "'%s' is declared below '%s', so it has no value yet: a field's default may read only the fields declared above it (D28)", name, sc.st.Fields[sc.index].Name)
-			}
-			return bad(), true
-		}
-	}
-	// not a field: a method, resolved on the partial value by methodCall
-	return nil, false
 }
 
 // punFields applies D28's construction rule to the arguments: every field
@@ -723,23 +609,65 @@ func hasField(st *types.Struct, name string) bool {
 	return false
 }
 
-func (f *fnCtx) fieldDefault(st *types.Struct, i int, scope *ctorScope) Expr {
+// fieldDefault checks a field's default expression in the struct's own
+// module, for a constructor call that did not supply the field. A default
+// is a constant: it may not read `self` — a field derived from the others
+// is assigned in `init { }`, which sees the whole value (D28 v0.30).
+func (f *fnCtx) fieldDefault(st *types.Struct, i int) Expr {
 	tmpl := templateOf(st)
 	ctx := f.c.structDecl[tmpl]
 	if ctx == nil {
 		return bad()
 	}
 	d := ctx.decl.(*ast.StructDecl)
+	if sp, ok := mentionsSelf(d.Fields[i].Default); ok {
+		f.c.errorf(sp, "a field default cannot read 'self': the value does not exist yet. Derive '%s' in the 'init' block instead — declare it without a default and write 'init { self.%s = ... }' (D28)", d.Fields[i].Name.Name, d.Fields[i].Name.Name)
+		return bad()
+	}
 	env := f.c.envFor(ctx, st)
 	g := f.c.newFnCtx(f.fn, ctx.module, ctx.file, env, substOf(st))
-	g.ctor = scope
 	return g.checkExprTo(d.Fields[i].Default, st.Fields[i].Type)
+}
+
+// mentionsSelf finds the first `self` in an expression.
+func mentionsSelf(e ast.Expr) (source.Span, bool) {
+	var at source.Span
+	found := false
+	walkAST(e, func(n any) bool {
+		if s, isSelf := n.(*ast.SelfExpr); isSelf && !found {
+			at, found = s.Pos, true
+		}
+		return !found
+	})
+	return at, found
 }
 
 // ---------------------------------------------------------------------------
 // method calls
 
+// methodCall checks `recv.name(args)`. Inside an `init` block a call on
+// `self` while owned fields are still unassigned is recorded on the Call
+// (InitMissing), for the receiver pass to check against what the method
+// reads (D28).
 func (f *fnCtx) methodCall(callee *ast.MemberExpr, typeArgs []types.Type, e *ast.CallExpr, want types.Type) Expr {
+	var initMissing []int
+	if _, isSelf := callee.X.(*ast.SelfExpr); isSelf {
+		if in := f.initScope(); in != nil && in == f {
+			f.selfAsRecv = true
+			for _, name := range in.initMissing() {
+				initMissing = append(initMissing, in.initOwned[name])
+			}
+		}
+	}
+	x := f.methodCallOn(callee, typeArgs, e, want)
+	f.selfAsRecv = false
+	if c, ok := x.(*Call); ok && len(initMissing) > 0 {
+		c.InitMissing = initMissing
+	}
+	return x
+}
+
+func (f *fnCtx) methodCallOn(callee *ast.MemberExpr, typeArgs []types.Type, e *ast.CallExpr, want types.Type) Expr {
 	recv := f.checkExpr(callee.X, nil)
 	if types.IsInvalid(recv.Type()) {
 		f.checkArgsLoosely(e.Args)

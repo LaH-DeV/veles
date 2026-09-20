@@ -2,6 +2,7 @@ package sema
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/LaH-DeV/veles/types"
 )
@@ -52,23 +53,11 @@ func (c *Checker) receiverPass(prog *Program) {
 		if fn.Body == nil {
 			continue
 		}
-		partials := map[*VarRef]bool{}
 		walkBlock(fn.Body, func(n any) {
-			switch n := n.(type) {
-			case *Call:
-				if n.Fn.Receiver == nil || len(n.Args) == 0 {
-					return
-				}
-				c.applyReceiver(n)
-				if a, ok := n.Args[0].(*AddrOf); ok {
-					if r, ok := a.X.(*VarRef); ok && r.Var.Partial != nil {
-						partials[r] = true
-						c.checkPartialCall(n, r.Var.Partial)
-					}
-				}
-			case *VarRef:
-				if p := n.Var.Partial; p != nil && !partials[n] {
-					c.errorf(p.Span, "'self' in the default of '%s': the value is not built yet; a default may read the fields declared above it as 'self.<field>' and call methods that use only those (D28)", p.Struct.Fields[p.Index].Name)
+			if call, ok := n.(*Call); ok && call.Fn.Receiver != nil && len(call.Args) > 0 {
+				c.applyReceiver(call)
+				if len(call.InitMissing) > 0 {
+					c.checkInitCall(call)
 				}
 			}
 		})
@@ -312,18 +301,28 @@ func fieldUse(fn *Func, self *Var) (used map[int]bool, all bool) {
 	return used, all
 }
 
-// checkPartialCall reports a method called on a struct under construction
-// that reaches a field not bound yet.
-func (c *Checker) checkPartialCall(call *Call, p *PartialSelf) {
+// checkInitCall reports a method called from an `init` block that reaches
+// a field the block has not assigned yet.
+func (c *Checker) checkInitCall(call *Call) {
 	fn := call.Fn
-	field := p.Struct.Fields[p.Index].Name
-	if fn.AllFields {
-		c.errorf(call.RecvSpan, "the default of '%s' calls '%s', which uses the whole value ('%s' is not built yet); a method called in a default may read only the fields declared above '%s' (D28)", field, fn.Display, field, field)
+	st, ok := call.RecvType.(*types.Struct)
+	if !ok {
 		return
 	}
-	for i := range fn.FieldsUsed {
-		if i >= p.Index {
-			c.errorf(call.RecvSpan, "the default of '%s' calls '%s', which reads '%s' — declared at or below '%s', so it has no value yet (D28)", field, fn.Display, p.Struct.Fields[i].Name, field)
+	names := func(idx []int) string {
+		var out []string
+		for _, i := range idx {
+			out = append(out, st.Fields[i].Name)
+		}
+		return strings.Join(out, "', '")
+	}
+	if fn.AllFields {
+		c.errorf(call.RecvSpan, "'init' calls '%s' before assigning '%s', and the method uses the whole value; assign every field without a default first (D28)", fn.Display, names(call.InitMissing))
+		return
+	}
+	for _, i := range call.InitMissing {
+		if fn.FieldsUsed[i] {
+			c.errorf(call.RecvSpan, "'init' calls '%s' before assigning '%s', which the method reads (D28)", fn.Display, st.Fields[i].Name)
 			return
 		}
 	}

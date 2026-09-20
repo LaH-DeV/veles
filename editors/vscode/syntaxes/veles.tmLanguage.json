@@ -109,6 +109,13 @@
           ]
         },
         {
+          "comment": "init { }  (contextual: only directly before a brace)",
+          "match": "^\\s*(init)\\b(?=\\s*\\{)",
+          "captures": {
+            "1": { "name": "storage.type.init.veles" }
+          }
+        },
+        {
           "comment": "type Item = ...  (associated type)",
           "match": "\\b(type)\\s+([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {

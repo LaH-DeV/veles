@@ -1,6 +1,7 @@
 package sema
 
 import (
+	"sort"
 	"strconv"
 	"strings"
 
@@ -26,10 +27,11 @@ type fnCtx struct {
 	throws      bool
 	errType     types.Type // declared error union, or nil when inferred
 	unsafe      int
-	selfVar     *Var          // `self`: a pointer to the receiver's place (D22 v0.30)
-	ctor        *ctorScope    // checking a field default inside a constructor call (D28 v0.30)
-	isGlobal    bool          // checking a global initializer
-	staticOwner *types.Struct // the struct whose `static val` this global initializer is, if any
+	selfVar     *Var           // `self`: a pointer to the receiver's place (D22 v0.30)
+	initOwned   map[string]int // checking an `init { }` block: the fields it must assign, by index (D28)
+	selfAsRecv  bool           // the next `self` is a method receiver, not a value (init blocks)
+	isGlobal    bool           // checking a global initializer
+	staticOwner *types.Struct  // the struct whose `static val` this global initializer is, if any
 
 	// lambda support
 	parent      *fnCtx
@@ -207,6 +209,18 @@ func (c *Checker) checkBody(fn *Func) {
 		fn.Receiver = f.newVar("self", &types.Pointer{Elem: owner}, true, t.Decl.Name.Pos)
 		fn.Receiver.IsSelf = true
 		f.selfVar = fn.Receiver
+		if t.Name == "$init" {
+			// the `init { }` block: the fields no caller supplies are its to
+			// assign, on every path, before anything reads them (D28)
+			f.initOwned = map[string]int{}
+			if st, ok := owner.(*types.Struct); ok {
+				for _, fld := range st.Fields {
+					if fld.Init {
+						f.initOwned[fld.Name] = fld.Index
+					}
+				}
+			}
+		}
 	}
 	for i, p := range t.Decl.Params {
 		v := f.newVar(p.Name.Name, fn.Sig.Params[i].Type, false, p.Name.Pos)
@@ -260,8 +274,44 @@ func (c *Checker) checkBody(fn *Func) {
 		} else if !types.IsUnit(f.retType) && !types.IsNever(body.Type) {
 			f.errorf(t.Decl.Body.Pos, "missing return: function '%s' must return a value of type '%s'", t.Name, f.retType)
 		}
+		if f.initOwned != nil && !types.IsNever(body.Type) {
+			// every field the block owns must be assigned on every path
+			for _, name := range f.initMissing() {
+				f.errorf(t.Decl.Name.Pos, "'init' does not assign '%s' on every path; it has no default, so 'init' must give it a value before the block ends (D28)", name)
+			}
+		}
 		fn.Body = body
 	}
+}
+
+// initFact is the flow fact "the init block has assigned field name":
+// kept in the narrowing state, so it joins and dies with control flow
+// like any smart cast (definite assignment for free).
+func (f *fnCtx) initFact(name string) place {
+	return place{v: f.selfVar, path: "$init." + name}
+}
+
+// initScope is the init-block context enclosing f (lambdas inside see it).
+func (f *fnCtx) initScope() *fnCtx {
+	for ctx := f; ctx != nil; ctx = ctx.parent {
+		if ctx.initOwned != nil {
+			return ctx
+		}
+	}
+	return nil
+}
+
+// initMissing lists the owned fields not yet definitely assigned here, in
+// declaration order.
+func (f *fnCtx) initMissing() []string {
+	var out []string
+	for name := range f.initOwned {
+		if _, ok := f.narrow[f.initFact(name)]; !ok {
+			out = append(out, name)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return f.initOwned[out[i]] < f.initOwned[out[j]] })
+	return out
 }
 
 // selfParamOf returns the synthetic type parameter standing for Self in a
@@ -701,6 +751,13 @@ func (f *fnCtx) assignPlace(targetAst ast.Expr, target Expr, root *Var, value Ex
 			f.invalidatePaths(root)
 		}
 	}
+	if m, ok := targetAst.(*ast.MemberExpr); ok && f.initOwned != nil {
+		if _, isSelf := m.X.(*ast.SelfExpr); isSelf {
+			if _, owned := f.initOwned[m.Name.Name]; owned {
+				f.narrow[f.initFact(m.Name.Name)] = types.TUnit // assigned from here on
+			}
+		}
+	}
 	return &Assign{Target: target, Value: value}
 }
 
@@ -814,9 +871,11 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 		}
 		if mutate {
 			// D22 (v0.30): mutability is declared on the field, whoever holds
-			// the struct: a bare field is set once, by the constructor call;
-			// a `protected var` is assigned only by the type's own declarations
-			if !fld.Var {
+			// the struct: a bare field is set once, by the constructor call
+			// — or by the `init { }` block through `self`, the one other place
+			// (D28); a `protected var` is assigned only by the type's own
+			// declarations
+			if !fld.Var && !(root != nil && root.IsSelf && f.inInit(st)) {
 				f.c.errorFix(e.Name.Pos, f.fixVarField(st, fld), "cannot assign to '%s.%s': the field is immutable; declare it 'var %s: %s' to allow assignment, or build a new '%s' (D22)", st.Name, fld.Name, fld.Name, fld.Type, st.Name)
 			} else if fld.Protected && !f.insideType(st) {
 				f.errorf(e.Name.Pos, "cannot assign to '%s.%s' here: the field is 'protected var', assigned only by '%s' itself — its methods, impl and extend blocks; call a method of '%s' (D22)", st.Name, fld.Name, st.Name, st.Name)
@@ -860,6 +919,18 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 	return nil, nil
 }
 
+// inInit reports whether the code being checked is st's `init { }` block
+// (its hidden `$init` method), where bare fields may be assigned once.
+func (f *fnCtx) inInit(st *types.Struct) bool {
+	tmpl := templateOf(st)
+	for ctx := f; ctx != nil; ctx = ctx.parent {
+		if ctx.fn != nil && ctx.fn.tmpl != nil && ctx.fn.tmpl.Name == "$init" && ctx.fn.tmpl.Owner != nil && templateOf(ctx.fn.tmpl.Owner) == tmpl {
+			return true
+		}
+	}
+	return false
+}
+
 // insideType reports whether this code belongs to the type: one of its
 // methods, an `impl`/`extend` block for it in its own module, or the
 // initializer of one of its `static val`s — the places that may use its
@@ -870,9 +941,7 @@ func (f *fnCtx) insideType(st *types.Struct) bool {
 		if ctx.staticOwner != nil && templateOf(ctx.staticOwner) == tmpl {
 			return true
 		}
-		if ctx.ctor != nil && templateOf(ctx.ctor.st) == tmpl {
-			return true // a field default is the type's own code
-		}
+
 		if ctx.fn == nil || ctx.fn.tmpl == nil {
 			continue
 		}

@@ -50,6 +50,9 @@ func (c *Checker) inferSuspension(prog *Program) {
 		if t.Decl.Effects.Suspends {
 			fn.Suspends = true
 		}
+		if fn.Suspends && t.Name == "$init" {
+			c.errorf(fn.Span, "an 'init' block cannot suspend: construction is a plain expression (D28); do the waiting in a static function that builds the value")
+		}
 		fn.Sig.Effects.Suspends = fn.Suspends
 	}
 	for _, g := range prog.Globals {

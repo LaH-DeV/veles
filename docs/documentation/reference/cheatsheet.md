@@ -103,6 +103,8 @@ value.
 struct Point {
   var x: i64                    // var: assignable (through self, a binding, a pointer)
   y: i64 = 0                    // bare (or `val`): set by the constructor, never assigned (D22); default
+  sum: i64                      // no default + assigned in init = init's, not the caller's (a default is a constant: no `self` in it)
+  init { self.sum = self.x + self.y }  // runs after every construction; must assign sum on every path; not callable (D28)
   public protected var hits: i64 = 0  // protected var: read wherever visible, assigned only by Point's own code
   fun len(): i64 = self.x + self.y
   fun move(dx: i64) { self.x += dx }   // no marker: a method may assign the var fields
