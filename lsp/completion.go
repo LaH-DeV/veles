@@ -92,13 +92,18 @@ func (s *Server) completion(params json.RawMessage) any {
 
 	if !afterDot {
 		if a != nil {
+			// the names in scope unqualified (M5): this module's own
+			// declarations and the prelude's public ones; every other
+			// module is reached through its name
+			cur, _ := s.moduleOf(a, d)
 			for _, m := range a.pkg.Modules {
-				if m.Std && m.Path != "std/prelude" {
-					continue // other std modules are reached through their name
+				prelude := m.Std && m.Path == "std/prelude"
+				if m != cur && !prelude {
+					continue
 				}
 				for _, f := range m.Files {
 					for _, decl := range f.Decls {
-						if !m.Std || isPub(decl) {
+						if !prelude || isPub(decl) {
 							s.addDecl(add, decl)
 						}
 					}
@@ -153,13 +158,30 @@ func (s *Server) completion(params json.RawMessage) any {
 		if idx == nil {
 			idx = a.lastGood
 		}
+		if receiver == "self" {
+			// `self.`: the type whose body, impl or extend block holds the cursor
+			sc := s.scopeAt(a, d, off)
+			if owner := sc.enclosingType(); owner != "" {
+				if ref := refNamedIn(idx, sema.OverlayKey(d.path), owner, len(d.text)); ref != nil && ref.Type != nil {
+					s.addMembers(add, a, ref.Type, sc)
+					return finish()
+				}
+			}
+		}
 		if ref := refNamedIn(idx, sema.OverlayKey(d.path), receiver, off); ref != nil {
 			if ref.Kind == "module" && ref.Module != nil {
 				s.addModuleDecls(add, ref.Module)
 				return finish()
 			}
 			if ref.Type != nil {
-				s.addMembers(add, a, ref.Type, s.scopeAt(a, d, off))
+				sc := s.scopeAt(a, d, off)
+				if ref.Kind == "struct" || ref.Kind == "type" || ref.Kind == "sealed" || ref.Kind == "trait" {
+					// `Type.`: the type's namespace — statics and, for a
+					// sealed trait, its variants — never instance members
+					s.addStatics(add, a, ref.Type, sc)
+					return finish()
+				}
+				s.addMembers(add, a, ref.Type, sc)
 				return finish()
 			}
 		}
@@ -269,19 +291,9 @@ func (s *Server) addMembers(add adder, a *analysis, t types.Type, sc *scope) {
 				}
 			}
 			for _, mth := range d.Methods {
-				if sc.allows(d.Name.Name, ownerMod, mth.Pub, mth.Private) {
+				if !mth.Static && sc.allows(d.Name.Name, ownerMod, mth.Pub, mth.Private) {
 					add(mth.Name.Name, ciMethod, tt.Name+"."+mth.Name.Name+funSignature(mth))
 				}
-			}
-			for _, sv := range d.Statics {
-				if !sc.allows(d.Name.Name, ownerMod, sv.Pub, false) {
-					continue
-				}
-				detail := tt.Name + "." + sv.Name.Name
-				if sv.Type != nil {
-					detail += ": " + ast.TypeString(sv.Type)
-				}
-				add(sv.Name.Name, ciField, "static val "+detail)
 			}
 			if d.Variant != nil {
 				s.addTraitMethods(add, a, typeHeadName(d.Variant))
@@ -333,6 +345,89 @@ func (s *Server) addMembers(add adder, a *analysis, t types.Type, sc *scope) {
 			}
 		}
 	}
+}
+
+// addStatics offers what lives in a type's namespace, `Type.`: its
+// `static val`s and `static fun`s (in the body, in extend blocks), and a
+// sealed trait's variants — filtered by what the cursor may name (M5).
+func (s *Server) addStatics(add adder, a *analysis, t types.Type, sc *scope) {
+	switch tt := t.(type) {
+	case *types.Struct:
+		base := tt
+		if tt.Template != nil {
+			base = tt.Template
+		}
+		d, ok := base.Decl.(*ast.StructDecl)
+		if !ok {
+			return
+		}
+		ownerMod := sc.moduleOfDecl(d)
+		for _, sv := range d.Statics {
+			if !sc.allows(d.Name.Name, ownerMod, sv.Pub, false) {
+				continue
+			}
+			detail := tt.Name + "." + sv.Name.Name
+			if sv.Type != nil {
+				detail += ": " + ast.TypeString(sv.Type)
+			}
+			add(sv.Name.Name, ciField, "static val "+detail)
+		}
+		for _, mth := range d.Methods {
+			if mth.Static && sc.allows(d.Name.Name, ownerMod, mth.Pub, mth.Private) {
+				add(mth.Name.Name, ciMethod, "static fun "+tt.Name+"."+mth.Name.Name+funSignature(mth))
+			}
+		}
+	case *types.Sealed:
+		for _, v := range tt.Variants {
+			add(v.Name, ciStruct, "struct "+v.Name+" : "+tt.Name)
+		}
+	case *types.Trait:
+		return // `Trait.` names nothing callable; the methods are on values
+	}
+	// static functions declared in extend and impl blocks for the type —
+	// a struct's, or a builtin's (`MutableList.make`, `i64.parse`)
+	heads := typeHeads(t)
+	if len(heads) == 0 {
+		return
+	}
+	for _, m := range a.pkg.Modules {
+		for _, f := range m.Files {
+			for _, decl := range f.Decls {
+				impl, ok := decl.(*ast.ImplDecl)
+				if !ok || !heads[typeHeadName(impl.Target)] {
+					continue
+				}
+				name := ast.TypeString(impl.Target)
+				for _, mth := range impl.Methods {
+					if mth.Static && sc.allows(typeHeadName(impl.Target), m, mth.Pub || !impl.Extend, mth.Private) {
+						add(mth.Name.Name, ciMethod, "static fun "+name+"."+mth.Name.Name+funSignature(mth))
+					}
+				}
+			}
+		}
+	}
+}
+
+// typeHeads lists the names an impl or extend target may spell a type
+// with: a struct's name; a builtin's family and, for a mutable collection,
+// its immutable form's (D25); a numeric type's own name.
+func typeHeads(t types.Type) map[string]bool {
+	heads := map[string]bool{}
+	if st, ok := t.(*types.Struct); ok {
+		heads[st.Name] = true
+		return heads
+	}
+	family := sema.BuiltinFamily(t)
+	if family != "" {
+		heads[family] = true
+		if base := strings.TrimPrefix(family, "Mutable"); base != family {
+			heads[base] = true
+		}
+		if b, ok := t.(*types.Basic); ok {
+			heads[b.Name] = true
+		}
+	}
+	return heads
 }
 
 func (s *Server) addTraitMethods(add adder, a *analysis, traitName string) {
@@ -527,6 +622,32 @@ func (sc *scope) insideType(owner string) bool {
 		}
 	}
 	return false
+}
+
+// enclosingType names the struct whose body, impl or extend block holds
+// the cursor, or "" outside any.
+func (sc *scope) enclosingType() string {
+	if sc.mod == nil {
+		return ""
+	}
+	within := func(sp source.Span, f *ast.File) bool {
+		return sp.File != nil && f != nil && sp.File == f.Source && sc.off >= sp.Start && sc.off <= sp.End
+	}
+	for _, f := range sc.mod.Files {
+		for _, decl := range f.Decls {
+			switch dd := decl.(type) {
+			case *ast.StructDecl:
+				if within(dd.Pos, f) {
+					return dd.Name.Name
+				}
+			case *ast.ImplDecl:
+				if within(dd.Pos, f) {
+					return typeHeadName(dd.Target)
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // moduleOfDecl finds the module a declaration was parsed in.

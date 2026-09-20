@@ -24,6 +24,8 @@ public trait Iterator {
     out.toList()
   }
 
+  fun toSet(): Set<Item> = self.toList().toSet()
+
   fun count(): i64 {
     var n: i64 = 0
     loop {

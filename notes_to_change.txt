@@ -1014,3 +1014,15 @@ R28. DONE (2026-09-20): (1) a derived default may CALL METHODS on `self` (user's
     (2) Local hover shows the initializer as written (`val base: i64 = factor * 10`) and marks
     parameters `(parameter)` (Var.InitText / IsParam; declaration ref re-recorded after the
     initializer is known). lsp TestHoverLocals.
+R29. DONE (2026-09-20): (1) completion: `Type.` offers the type's namespace only (static vals,
+    static funs from the body and extend/impl blocks, a sealed trait's variants; builtins'
+    statics like MutableList.make via typeHeads), a value never offers statics; `self.`
+    resolves to the enclosing struct/impl/extend (scope.enclosingType) — before it fell to
+    the "unknown receiver" fallback; top-level completion offers this module's names, the
+    prelude's public ones and imported module names — not other modules' declarations
+    (unqualified they are not in scope). TestCompletionVisibility rewritten (one dangling
+    `.` per buffer; two made the buffer unrecoverable and the old test passed by accident
+    through the fallback). (2) `List.toSet()` / `toMutableSet()` and `Iterator.toSet()` in the
+    prelude (`toks.map(t => t.0).toSet()`). 
+    PENDING: `constructor { }` block (user proposal, see conversation 2026-09-20) — design
+    discussed, awaiting the user's answer on spelling/semantics.

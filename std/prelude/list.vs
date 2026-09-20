@@ -105,6 +105,18 @@ extend<T> List<T> {
 }
 
 // Comparison strategies (D48): the natural order comes from Comparable;
+extend<T> List<T> {
+  /// The distinct elements as an immutable set: `xs.map(t => t.0).toSet()`.
+  public fun toSet(): Set<T> = self.toMutableSet().toSet()
+
+  /// The distinct elements as a mutable set.
+  public fun toMutableSet(): MutableSet<T> {
+    val out = MutableSet<T>()
+    loop (x in self) out.add(x)
+    out
+  }
+}
+
 // any other order is a comparator (`sortedWith`, `minWith`) or a key
 // (`sortedBy`, `minBy`, `distinctBy`) passed at the call.
 extend<T> List<T> {

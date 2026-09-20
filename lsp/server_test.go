@@ -842,10 +842,12 @@ func TestHoverValuesAndModules(t *testing.T) {
 // inside the type's own declarations, unmarked ones inside the module,
 // public ones from anywhere.
 func TestCompletionVisibility(t *testing.T) {
-	src := "use io\n\nstruct Parser {\n  private toks: List<string>\n  private var pos: i64 = 0\n  public val tag: string = \"p\"\n  private static val zero = 0\n  fun next(): string? {\n    val t = self.toks.at(self.pos)\n    self.\n    t\n  }\n  private fun bump() { self.pos += 1 }\n  public fun done(): bool = self.pos >= self.toks.len()\n}\n\nextend Parser {\n  fun rewind() { self.pos = 0 }\n}\n\nfun main() {\n  val p = Parser(toks: [\"a\"])\n  p.\n  io.println(\"${p.done()} ${p.tag}\")\n}\n"
+	// one dangling `.` per buffer: `//A` (inside next) or `//B` (in main)
+	// is replaced with the receiver under test
+	base := "use io\n\nstruct Parser {\n  private toks: List<string>\n  private var pos: i64 = 0\n  public val tag: string = \"p\"\n  static val zero = 0\n  public static fun of(n: i64): Parser = Parser(toks: [])\n  fun next(): string? {\n    val t = self.toks.at(self.pos)\n    //A\n    t\n  }\n  private fun bump() { self.pos += 1 }\n  public fun done(): bool = self.pos >= self.toks.len()\n}\n\nextend Parser {\n  fun rewind() { self.pos = 0 }\n}\n\nfun main() {\n  val p = Parser(toks: [\"a\"])\n  //B\n  io.println(\"${p.done()} ${p.tag}\")\n}\n"
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")
-	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(base), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	uri := pathToURI(path)
@@ -853,8 +855,11 @@ func TestCompletionVisibility(t *testing.T) {
 	defer stop()
 	c.call("initialize", map[string]any{})
 	c.notify("initialized", map[string]any{})
-	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": src}})
-	labels := func(line, ch int) map[string]bool {
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": base}})
+	version := 1
+	labels := func(text string, line, ch int) map[string]bool {
+		version++
+		c.notify("textDocument/didChange", map[string]any{"textDocument": map[string]any{"uri": uri, "version": version}, "contentChanges": []map[string]any{{"text": text}}})
 		res, _ := c.call("textDocument/completion", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": line, "character": ch}})
 		var r struct {
 			Items []struct {
@@ -868,24 +873,37 @@ func TestCompletionVisibility(t *testing.T) {
 		}
 		return out
 	}
-	// `p.` in main: no private field, method or static; module-level and public ones yes
-	got := labels(22, 4)
+	// `p.` in main: no private field, method or static; no statics at all
+	got := labels(strings.Replace(base, "  //B\n", "  p.\n", 1), 23, 4)
 	for _, want := range []string{"tag", "next", "done", "rewind"} {
 		if !got[want] {
 			t.Errorf("p. in main should offer %q: %v", want, got)
 		}
 	}
-	for _, hidden := range []string{"toks", "pos", "bump", "zero"} {
+	for _, hidden := range []string{"toks", "pos", "bump", "zero", "of"} {
 		if got[hidden] {
-			t.Errorf("p. in main must not offer private %q: %v", hidden, got)
+			t.Errorf("p. in main must not offer %q: %v", hidden, got)
 		}
 	}
-	// `self.` inside the type: everything
-	got = labels(9, 9)
+	// `self.` inside the type: every instance member, still no statics
+	got = labels(strings.Replace(base, "    //A\n", "    self.\n", 1), 10, 9)
 	for _, want := range []string{"toks", "pos", "bump", "tag", "next", "done", "rewind"} {
 		if !got[want] {
 			t.Errorf("self. inside Parser should offer %q: %v", want, got)
 		}
+	}
+	if got["zero"] || got["of"] {
+		t.Errorf("self. must not offer statics: %v", got)
+	}
+	// `Parser.` in main: the type's namespace — the public static only
+	got = labels(strings.Replace(base, "  //B\n", "  Parser.\n", 1), 23, 9)
+	if !got["of"] || !got["zero"] || got["next"] || got["tag"] || got["toks"] {
+		t.Errorf("Parser. in main should offer the statics only: %v", got)
+	}
+	// top-level: this module's names and the prelude, not another module's
+	got = labels(base, 20, 0)
+	if !got["Parser"] || !got["main"] || !got["MutableList"] || got["println"] {
+		t.Errorf("top-level completion: %v", got)
 	}
 }
 
