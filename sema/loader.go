@@ -26,7 +26,11 @@ type Package struct {
 	Manifest *Manifest
 	// NeedMain is set by the driver for build/run: a package is a program
 	// only if its root module declares `fun main()`.
-	NeedMain  bool
+	NeedMain bool
+	// Script is the absolute path of a script (`.vss`): a one-file package
+	// whose root module is that file alone. Sibling files are never read, no
+	// manifest applies, and only standard modules can be imported.
+	Script    string
 	Deps      map[string]*Package
 	KeyPrefix string // "" for the entry package, "dep/<name>/" for dependencies
 	diags     *source.Diagnostics
@@ -55,6 +59,36 @@ func OverlayKey(path string) string {
 		abs = strings.ToLower(abs)
 	}
 	return abs
+}
+
+// ScriptExt is the extension of a script: one file that is a whole program
+// by itself.
+const ScriptExt = ".vss"
+
+// IsScript reports whether a path names a script file.
+func IsScript(path string) bool {
+	return strings.HasSuffix(strings.ToLower(path), ScriptExt)
+}
+
+// Key identifies the package for caching: its root directory, or the file
+// itself for a script (several scripts may share a directory).
+func (p *Package) Key() string {
+	if p.Script != "" {
+		return p.Script
+	}
+	return p.Root
+}
+
+// loadScript reads a script as the root module of its own package.
+func (p *Package) loadScript(path string) (*Module, bool) {
+	data, err := p.readSource(path)
+	if err != nil {
+		p.diags.Errorf(source.Span{}, "cannot read %s: %v", path, err)
+		return nil, false
+	}
+	m := &Module{Path: "", Dir: filepath.Dir(path), Pkg: p}
+	m.Files = append(m.Files, parser.ParseFile(source.NewFile(path, string(data)), p.diags))
+	return m, true
 }
 
 // FindRoot locates the package root for an entry path.
@@ -189,6 +223,17 @@ func (p *Package) Resolve(path []string, span source.Span, from *Module) *Module
 		p.loadImports(m)
 		return m
 	}
+	if p.Script != "" {
+		// a script has no modules of its own (dependencies: later)
+		m, ok := p.loadStd(key)
+		if !ok {
+			p.diags.Errorf(span, "unknown module '%s': a script imports only standard modules, and there is no such standard module", key)
+			return nil
+		}
+		p.Modules[m.Path] = m
+		p.loadImports(m)
+		return m
+	}
 	m, ok := p.loadLocal(strings.Join(path, "/"))
 	if !ok {
 		m, ok = p.loadStd(strings.Join(path, "/"))
@@ -238,6 +283,26 @@ func LoadPackage(entry string, diags *source.Diagnostics) (*Package, error) {
 // LoadPackageOverlay is LoadPackage with unsaved editor buffers, keyed by
 // OverlayKey, standing in for files on disk.
 func LoadPackageOverlay(entry string, diags *source.Diagnostics, overlay map[string]string) (*Package, error) {
+	if IsScript(entry) {
+		abs, err := filepath.Abs(entry)
+		if err != nil {
+			return nil, err
+		}
+		dir := filepath.Dir(abs)
+		p := &Package{Root: dir, Script: abs, GivenDir: dir, Modules: map[string]*Module{}, Deps: map[string]*Package{}, diags: diags, overlay: overlay}
+		given, ok := p.loadScript(abs)
+		if !ok {
+			return p, nil
+		}
+		p.Modules[""] = given
+		p.Given, p.Entry = given, given
+		if prelude, ok := p.loadStd("prelude"); ok {
+			p.Modules[prelude.Path] = prelude
+			p.loadImports(prelude)
+		}
+		p.loadImports(given)
+		return p, nil
+	}
 	root, entryDir, err := FindRoot(entry)
 	if err != nil {
 		return nil, err

@@ -62,3 +62,68 @@ func TestPackageIsTheProgram(t *testing.T) {
 		t.Errorf("build from a module of a library: %s", diags.Render())
 	}
 }
+
+// A script (`.vss`) is a one-file package: its siblings are not part of it,
+// standard modules are importable, and local directories are not.
+func TestScriptIsItsOwnPackage(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, src string) {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("veles.toml", "[package]\nname = \"app\"\nversion = \"0.1.0\"\n")
+	write("main.vs", "use io\nfun main() { io.println(\"module\") }\n")
+	write("one.vss", "use io\nfun main() { io.println(\"one\") }\n")
+	write("two.vss", "use io, os\nfun main() { io.println(\"two ${os.args().len()}\") }\n")
+	write("local.vss", "use io, geometry\nfun main() { io.println(\"${geometry.twice(2)}\") }\n")
+	write("nomain.vss", "fun helper(): i64 = 1\n")
+	write("geometry/lib.vs", "public fun twice(n: i64): i64 = n * 2\n")
+
+	load := func(path string, needMain bool) (*Package, *source.Diagnostics) {
+		diags := &source.Diagnostics{}
+		pkg, err := LoadPackage(path, diags)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pkg.NeedMain = needMain
+		if !diags.HasErrors() {
+			Check(pkg, diags, false)
+		}
+		return pkg, diags
+	}
+	// the directory package still sees only .vs files
+	pkg, diags := load(root, true)
+	if diags.HasErrors() {
+		t.Errorf("directory package next to scripts: %s", diags.Render())
+	}
+	if n := len(pkg.Entry.Files); n != 1 {
+		t.Errorf("root module has %d files, want 1", n)
+	}
+	// each script is a program of its own, despite the sibling mains
+	for _, name := range []string{"one.vss", "two.vss"} {
+		pkg, diags := load(filepath.Join(root, name), true)
+		if diags.HasErrors() {
+			t.Errorf("%s: %s", name, diags.Render())
+		}
+		if pkg.Script == "" || pkg.Entry != pkg.Given || len(pkg.Entry.Files) != 1 {
+			t.Errorf("%s: script=%q entry=%v given=%v", name, pkg.Script, pkg.Entry, pkg.Given)
+		}
+		if pkg.Manifest != nil {
+			t.Errorf("%s: a script has no manifest", name)
+		}
+	}
+	// a script has no modules of its own
+	if _, diags := load(filepath.Join(root, "local.vss"), true); !strings.Contains(diags.Render(), "a script imports only standard modules") {
+		t.Errorf("local import from a script: %s", diags.Render())
+	}
+	// and it must have a main to run
+	if _, diags := load(filepath.Join(root, "nomain.vss"), true); !strings.Contains(diags.Render(), "script") || !strings.Contains(diags.Render(), "no 'fun main()'") {
+		t.Errorf("script without main: %s", diags.Render())
+	}
+	if _, diags := load(filepath.Join(root, "nomain.vss"), false); diags.HasErrors() {
+		t.Errorf("check of a script without main: %s", diags.Render())
+	}
+}

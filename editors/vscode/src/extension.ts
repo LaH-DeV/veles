@@ -35,7 +35,7 @@ async function startClient(context: vscode.ExtensionContext): Promise<void> {
   const clientOptions: LanguageClientOptions = {
     documentSelector: [{ scheme: "file", language: "veles" }],
     synchronize: {
-      fileEvents: vscode.workspace.createFileSystemWatcher("**/{*.vs,veles.toml}"),
+      fileEvents: vscode.workspace.createFileSystemWatcher("**/{*.vs,*.vss,veles.toml}"),
     },
   };
   client = new LanguageClient("veles", "Veles Language Server", serverOptions, clientOptions);
@@ -52,7 +52,7 @@ async function startClient(context: vscode.ExtensionContext): Promise<void> {
 function runInTerminal(subcommand: string): void {
   const editor = vscode.window.activeTextEditor;
   if (!editor || editor.document.languageId !== "veles") {
-    void vscode.window.showInformationMessage("Open a .vs file first.");
+    void vscode.window.showInformationMessage("Open a .vs or .vss file first.");
     return;
   }
   const dir = path.dirname(editor.document.uri.fsPath);

@@ -13,7 +13,7 @@
       {
         "id": "veles",
         "aliases": ["Veles", "veles"],
-        "extensions": [".vs", ".veles"],
+        "extensions": [".vs", ".vss", ".veles"],
         "configuration": "./language-configuration.json"
       },
       {

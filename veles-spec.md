@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.30** — language design complete. Every open question in the language itself is closed. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
+**Working draft v0.31** — language design complete. Every open question in the language itself is closed. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -11,7 +11,7 @@ Decision IDs are stable. They are never renumbered; superseded decisions are str
 | | |
 |---|---|
 | Name | Veles |
-| Source extension | `.vs` |
+| Source extension | `.vs` (module file), `.vss` (script: a one-file program) |
 | Classification | Compiled, statically typed, garbage collected |
 | Primary target | Native machine code |
 | Secondary target | WebAssembly (deferred — not day-one) |
@@ -117,6 +117,8 @@ Distinct syntax for boxed trait objects was considered and rejected in favour of
 A monorepo contains multiple manifests, one per package.
 
 **The package is the unit that runs.** A package is a program when its root module declares `fun main()`, and a library otherwise; a module is never a program on its own. The tools locate the package from any path inside it (the nearest `veles.toml` above), so `veles run` on a sub-module directory runs the package; a directory with no manifest above it is its own single-module package. `check` accepts modules and libraries.
+
+*Amended (v0.31) — scripts.* A **script** is a file named `*.vss` and is a package by itself: its root module is that one file. It ignores the directory it sits in — sibling `.vs` and `.vss` files are not part of it, and it is not part of any directory module (the directory's module still reads only `.vs` files), so several scripts and a directory package may share a folder without seeing each other's `main`. A script has no manifest and no modules of its own; it imports the standard library, and will import dependencies once there is a way to name them without a manifest (open). It exists for the program that is one file — a tutorial step, a tool, an experiment — where a directory per program is ceremony. The rule stays M3's: the resolver decides membership from the file name, never by reading the source.
 
 **Documentation comments.** `/// ...` lines and `/** ... */` blocks directly above a declaration, field or method are that item's documentation, carried by the compiler (markdown, shown on hover). A doc comment at the top of a file, separated from the first declaration by a blank line, documents the module; a module's documentation is its files' top comments in file order. Ordinary `//` and `/* */` comments are discarded.
 

@@ -41,7 +41,7 @@ func Format(opts FormatOptions) int {
 			if d.IsDir() && path != p && (strings.HasPrefix(d.Name(), ".") || d.Name() == "node_modules") {
 				return fs.SkipDir
 			}
-			if !d.IsDir() && strings.HasSuffix(d.Name(), ".vs") {
+			if !d.IsDir() && (strings.HasSuffix(d.Name(), ".vs") || sema.IsScript(d.Name())) {
 				files = append(files, path)
 			}
 			return nil

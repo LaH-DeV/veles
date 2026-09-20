@@ -1,0 +1,25 @@
+use io, os
+
+fun main() {
+  var list = [1, 2, 3, 4, 5]
+
+  io.println("Please enter an array index.")
+
+  val index = when (val input = io.readLine()) {
+    is string => i64.parse(input.trim())
+    else      => {
+      io.eprintln("Failed to read line")
+      os.exit(1)
+    }
+  }
+
+  if (index !is i64) {
+    io.eprintln("Index entered was not a number")
+    os.exit(1)
+  }
+
+  when (val element = list.at(index)) {
+    is i64 => io.println("The value of the element at index $index is: $element")
+    else   => io.eprintln("Index out of bounds")
+  }
+}

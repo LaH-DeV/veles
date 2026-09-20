@@ -2363,6 +2363,9 @@ func isAliasRef(t ast.Type) bool {
 // layout: `main` lives in the root module, and a module is not a program.
 func (c *Checker) noMainMessage() string {
 	root := c.pkg.Root
+	if c.pkg.Script != "" {
+		return fmt.Sprintf("script %s has no 'fun main()'", c.pkg.Script)
+	}
 	if c.pkg.Given != nil && c.pkg.Given != c.pkg.Entry {
 		return fmt.Sprintf("'%s' is a module of the package at %s, not a program; a package runs from 'fun main()' in its root module, and this root has none (build a program from %s, or use the module as a library)",
 			c.pkg.GivenDir, root, root)

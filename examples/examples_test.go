@@ -17,7 +17,9 @@ var update = flag.Bool("update", false, "rewrite expected.txt with the actual ou
 
 // TestExamples compiles every example directory with the veles binary and
 // compares its standard output and exit code against expected.txt. An
-// example with a commands.txt is a command-line tool: see runScript.
+// example with a commands.txt is a command-line tool: see runScript. A
+// script (`name.vss`) is an example by itself when a `name.expected.txt` exists
+// (create it empty, then -update); `name.stdin.txt`, when present, is its input.
 func TestExamples(t *testing.T) {
 	veles := filepath.Join("..", "veles.exe")
 	if runtime.GOOS != "windows" {
@@ -29,40 +31,59 @@ func TestExamples(t *testing.T) {
 			t.Fatalf("building compiler: %v\n%s", err, out)
 		}
 	}
-	var dirs []string
+	type example struct {
+		name     string // test name
+		source   string // what veles build is pointed at: a directory or a script
+		expected string // the expected.txt to compare against
+	}
+	var cases []example
 	filepath.WalkDir(".", func(path string, d os.DirEntry, err error) error {
-		if err == nil && !d.IsDir() && d.Name() == "expected.txt" {
-			dirs = append(dirs, filepath.Dir(path))
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		switch {
+		case d.Name() == "expected.txt":
+			dir := filepath.Dir(path)
+			cases = append(cases, example{name: dir, source: dir, expected: path})
+		case strings.HasSuffix(d.Name(), ".vss"):
+			stem := strings.TrimSuffix(path, ".vss")
+			if _, err := os.Stat(stem + ".expected.txt"); err == nil {
+				cases = append(cases, example{name: stem, source: path, expected: stem + ".expected.txt"})
+			}
 		}
 		return nil
 	})
-	for _, dir := range dirs {
-		want, err := os.ReadFile(filepath.Join(dir, "expected.txt"))
+	for _, ex := range cases {
+		want, err := os.ReadFile(ex.expected)
 		if err != nil {
 			continue
 		}
-		t.Run(dir, func(t *testing.T) {
-			exe := filepath.Join(t.TempDir(), filepath.Base(dir))
+		t.Run(ex.name, func(t *testing.T) {
+			exe := filepath.Join(t.TempDir(), filepath.Base(ex.name))
 			if runtime.GOOS == "windows" {
 				exe += ".exe"
 			}
-			build := exec.Command(veles, "build", dir, "-o", exe)
+			build := exec.Command(veles, "build", ex.source, "-o", exe)
 			if out, err := build.CombinedOutput(); err != nil {
 				t.Fatalf("veles build failed: %v\n%s", err, out)
 			}
 			var got string
-			if script, err := os.ReadFile(filepath.Join(dir, "commands.txt")); err == nil {
-				got = runScript(t, exe, dir, string(script))
+			if script, err := os.ReadFile(filepath.Join(ex.source, "commands.txt")); err == nil {
+				got = runScript(t, exe, ex.source, string(script))
 			} else {
-				out, code := runOnce(t, exe, nil, nil, "")
+				var stdin []byte
+				if ex.source != ex.name {
+					stdin, _ = os.ReadFile(ex.name + ".stdin.txt")
+				}
+				out, code := runOnce(t, exe, nil, nil, "", stdin)
 				got = out + "exit=" + strconv.Itoa(code) + "\n"
 			}
 			if got != string(want) {
 				if *update {
-					if err := os.WriteFile(filepath.Join(dir, "expected.txt"), []byte(got), 0o644); err != nil {
+					if err := os.WriteFile(ex.expected, []byte(got), 0o644); err != nil {
 						t.Fatal(err)
 					}
-					t.Logf("updated expected.txt")
+					t.Logf("updated %s", filepath.Base(ex.expected))
 					return
 				}
 				t.Errorf("output mismatch\n--- got ---\n%s--- want ---\n%s", got, want)
@@ -72,12 +93,15 @@ func TestExamples(t *testing.T) {
 }
 
 // runOnce runs the program and returns its standard output and exit code.
-func runOnce(t *testing.T, exe string, args, env []string, dir string) (string, int) {
+func runOnce(t *testing.T, exe string, args, env []string, dir string, stdin []byte) (string, int) {
 	t.Helper()
 	run := exec.Command(exe, args...)
 	run.Dir = dir
 	if env != nil {
 		run.Env = append(os.Environ(), env...)
+	}
+	if stdin != nil {
+		run.Stdin = bytes.NewReader(stdin)
 	}
 	var stdout bytes.Buffer
 	run.Stdout = &stdout
@@ -120,7 +144,7 @@ func runScript(t *testing.T, exe, example, script string) string {
 		if len(words) == 0 {
 			t.Fatalf("commands.txt: no program on line %q", line)
 		}
-		stdout, code := runOnce(t, exe, words[1:], env, dir)
+		stdout, code := runOnce(t, exe, words[1:], env, dir, nil)
 		out.WriteString("$ " + line + "\n" + stdout + "exit=" + strconv.Itoa(code) + "\n")
 	}
 	return out.String()

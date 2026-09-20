@@ -52,6 +52,17 @@ veles run hello/
 file to name: a **module is a directory**, every `.vs` file inside it
 shares one namespace, and `fun main()` is the entry point.
 
+For a program that fits in one file, save it as `hello.vss` instead — a
+**script** — and run the file:
+
+```bash
+veles run hello.vss
+```
+
+A script is a package of its own: it does not see the other files in its
+directory, so a folder of scripts can hold a `main` in each. It imports
+the standard library like any other file (`use io`), but nothing else.
+
 The other commands you will use:
 
 | Command | What it does |

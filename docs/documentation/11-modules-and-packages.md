@@ -20,6 +20,22 @@ myapp/
     db.vs             # module "storage"
 ```
 
+## Scripts
+
+A `.vss` file is a **script**: a program that is one file. It is its own
+package — the file is the root module — and it ignores its neighbours:
+other `.vs` and `.vss` files in the same directory are not part of it, and
+a directory module never reads `.vss` files. Scripts import the standard
+library and nothing else (dependencies: later). Use one for a tutorial
+step, a throwaway tool or an experiment; when it grows a second file,
+move it into a directory and rename it `.vs`.
+
+```text
+scratch/
+  fizzbuzz.vss        # `veles run scratch/fizzbuzz.vss`
+  primes.vss          # a separate program with its own main
+```
+
 ## Importing
 
 `use geometry` brings the module in under its own name, and its members

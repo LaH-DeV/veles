@@ -97,7 +97,7 @@ func TestCorpus(t *testing.T) {
 	var files []string
 	for _, root := range []string{"../examples", "../std"} {
 		filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-			if err == nil && !d.IsDir() && strings.HasSuffix(path, ".vs") {
+			if err == nil && !d.IsDir() && (strings.HasSuffix(path, ".vs") || strings.HasSuffix(path, ".vss")) {
 				files = append(files, path)
 			}
 			return nil

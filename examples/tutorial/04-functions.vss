@@ -1,0 +1,8 @@
+use io
+
+fun main() {
+  val x = plusOne(5)
+  io.println("The value of x is: $x")
+}
+
+fun plusOne(x: i32): i32 = x + 1

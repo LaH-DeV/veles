@@ -1062,3 +1062,8 @@ R32. DONE (2026-09-20): hover respects the reader's viewpoint (sema/index.go vie
     receiver of the immutable form's methods / a loop head / interpolation, never bound,
     passed or returned (keeps D25's no-views rule); (c) read-only view types — rejected by D25/
     D35. Awaiting decision.
+
+
+
+NEW TODO:
+- function that does not throw marked as throws should be linted to remove the throw

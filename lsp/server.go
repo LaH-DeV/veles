@@ -298,7 +298,7 @@ func (s *Server) analyze(d *document) {
 	}
 	a := &analysis{pkg: pkg, index: index, lastGood: index, files: map[string]*source.File{}}
 	if index == nil {
-		if prev := s.analyses[pkg.Root]; prev != nil {
+		if prev := s.analyses[pkg.Key()]; prev != nil {
 			a.lastGood = prev.lastGood
 		}
 	}
@@ -337,7 +337,7 @@ func (s *Server) analyze(d *document) {
 			Data:     s.fixData(it.Fix),
 		})
 	}
-	s.analyses[pkg.Root] = a
+	s.analyses[pkg.Key()] = a
 	for f, items := range byFile {
 		if items == nil {
 			items = []lspDiagnostic{}

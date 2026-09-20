@@ -1,0 +1,29 @@
+use io, random
+
+fun main() {
+  io.println("Guess the number!")
+
+  val secret = random.range(0, 101)
+
+  loop {
+    io.println("Please input your guess.")
+
+    val guess = when (val input = io.readLine()) {
+      is string => i64.parse(input.trim())
+      else      => continue
+    }
+
+    if (guess !is i64) continue
+    io.println("You guessed: $guess")
+
+    // TODO: when enums are available, use them here
+    when (guess.compareTo(secret)) {
+      -1 => io.println("Too small!")
+      1  => io.println("Too big!")
+      0  => {
+        io.println("You win!")
+        break
+      }
+    }
+  }
+}

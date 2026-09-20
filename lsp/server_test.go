@@ -1022,3 +1022,39 @@ func TestHoverViewpoint(t *testing.T) {
 		t.Errorf("from another module: %q", h)
 	}
 }
+
+// Two scripts in one directory are two programs: neither sees the other's
+// `main`, and each keeps its own analysis (hover works in both).
+func TestScriptsShareADirectory(t *testing.T) {
+	dir := t.TempDir()
+	srcA := "use io\n\nfun main() {\n  io.println(\"a\")\n}\n"
+	srcB := "use io\n\nfun main() {\n  val n = 1\n  io.println(\"$n\")\n}\n"
+	pathA := filepath.Join(dir, "a.vss")
+	pathB := filepath.Join(dir, "b.vss")
+	for p, s := range map[string]string{pathA: srcA, pathB: srcB} {
+		if err := os.WriteFile(p, []byte(s), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{})
+	c.notify("initialized", map[string]any{})
+	for p, s := range map[string]string{pathA: srcA, pathB: srcB} {
+		c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": pathToURI(p), "languageId": "veles", "version": 1, "text": s}})
+	}
+	// hover on `n` in b.vss
+	res, notes := c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": pathToURI(pathB)}, "position": map[string]any{"line": 3, "character": 6}})
+	for _, n := range notes {
+		if strings.Contains(string(n), "already declared") {
+			t.Errorf("scripts see each other: %s", n)
+		}
+	}
+	if !strings.Contains(string(res), "i64") {
+		t.Errorf("hover in a script: %s", res)
+	}
+	res, _ = c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": pathToURI(pathA)}, "position": map[string]any{"line": 2, "character": 5}})
+	if !strings.Contains(string(res), "main") {
+		t.Errorf("hover in the other script: %s", res)
+	}
+}
