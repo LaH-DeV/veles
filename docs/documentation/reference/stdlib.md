@@ -117,7 +117,8 @@ the platform error number; `message()` is `"detail: path"`.
 
 ```veles
 // fragment
-public trait Comparable { fun compareTo(other: Self): i64 }   // <, <=, >, >=, sorted, min, max
+public enum Ordering { Less = -1, Equal, Greater }             // what compareTo returns
+public trait Comparable { fun compareTo(other: Self): Ordering } // <, <=, >, >=, sorted, min, max
 public trait Equatable  { fun equals(other: Self): bool }     // ==, !=, contains, indexOf
 public trait Hashable   { fun hash(): i64 }                   // map keys, set elements
 public trait Display    { fun toString(): string }            // interpolation "$x"
@@ -125,7 +126,8 @@ public trait Display    { fun toString(): string }            // interpolation "
 
 A struct or sealed type has structural equality, hashing and
 `Name(field: value)` text by default and replaces any of them with an
-impl. `compareTo` is negative, zero or positive. Numbers and strings
+impl. `compareTo` returns `Ordering.Less`, `Ordering.Equal` or `Ordering.Greater`
+(an enum whose values are -1, 0 and 1, so `< 0` still reads). Numbers and strings
 implement `Comparable` (so `T: Comparable` bounds accept them); the
 built-in types otherwise keep their own behaviour: lists, maps and sets
 compare by content (`[1, 2] == [1, 2]`, a map equals a map with the same
@@ -182,7 +184,7 @@ public struct Deque<T> {
 }
 
 public fun priorityQueue<T: Comparable>(): PriorityQueue<T>        // smallest first
-public fun priorityQueueBy<T>(compare: fun(T, T): i64): PriorityQueue<T>
+public fun priorityQueueBy<T>(compare: fun(T, T): Ordering): PriorityQueue<T>
 public struct PriorityQueue<T> {
   public fun push(x: T)
   public fun pop(): T?               // the first element in the queue's order

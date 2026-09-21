@@ -122,6 +122,28 @@ func (p *printer) decl(d Decl) {
 		p.w(d.Name.Name + " = ")
 		p.typ(d.Members)
 		p.close()
+	case *EnumDecl:
+		p.attrs(d.Attrs)
+		p.open("enum ")
+		if d.Pub {
+			p.w("public ")
+		}
+		p.w(d.Name.Name)
+		if d.Base != nil {
+			p.w(" : ")
+			p.typ(d.Base)
+		}
+		for _, m := range d.Members {
+			p.child(func() {
+				p.w("(member " + m.Name.Name)
+				if m.Value != nil {
+					p.w(" = ")
+					p.expr(m.Value)
+				}
+				p.w(")")
+			})
+		}
+		p.close()
 	case *StructDecl:
 		p.attrs(d.Attrs)
 		if d.Error {

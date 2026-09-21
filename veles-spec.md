@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.31** — language design complete. Every open question in the language itself is closed. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
+**Working draft v0.32** — language design complete. Every open question in the language itself is closed. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -215,6 +215,8 @@ struct Rect   : Shape { w: f64, h: f64 }
 - Variant names are **scoped and importable**: `Shape.Circle` by default, bare `Circle` after explicit import. Top-level variants were rejected — `Loading`, `Error`, `Empty`, `Pending` collide across any two sealed traits in one module.
 - **All variant fields must be named.** No positional `Circle(f64)`. This was originally forced by the absence of destructuring; D13 has since added it, but named fields are retained on their own merits and destructuring binds by field name.
 
+*Addendum (v0.32).* "No `enum` sugar" means no second spelling of a sum type. A closed set of plain *values* is a different thing and has its own keyword since D57 (`enum Phase { Red, Amber, Green }`): every member is a number, `when` over it is exhaustive by member, and it carries no data — the moment a member needs a field, it is a sealed trait.
+
 ### D13 — Pattern matching: `when`, as an expression
 
 Type-test with smart casts, **and** destructuring patterns (revised — destructuring was originally excluded). A subject may be bound in the head — `when (val r = parse(s)) { is Ok => r ... }` — so type tests can narrow an expression that has no name of its own (v0.23).
@@ -374,7 +376,7 @@ Putting trait implementations in the struct body was considered and rejected. It
 
 *Amended (v0.23) — static functions.* A function in a struct body, trait, impl or extend block may be declared `static fun`: it has no receiver and is called on the type — `Point.origin()`, `i64.parse(s)`, `Stack<i64>.of(x)` — and, for a trait, on a type parameter bounded by it: `T.parse(s)` resolves to the impl for the concrete `T` of each stencil. An `extend` block in the prelude may add statics to a built-in generic type, called with the type arguments written: `MutableList<bool>.repeat(false, n)`, `MutableList<Row>.make(n, i => ...)` (v0.25). An impl declares `static` exactly where the trait does. A trait with a static function is not object-safe (D9), and a sealed trait cannot declare one (its methods dispatch on a variant). The prelude declares `Parsable { static fun parse(s: string): Self? }` for the numbers, `bool` and `string`.
 
-*Addendum (v0.29) — static values.* A struct body may declare `static val name[: T] = expr`: a constant in the type's namespace, read as `Type.name` (`Status.notFound`, `http.Status.ok` from outside the module), `public` to export and module-private otherwise, initialised with the module's globals in source order. It is always a `val` — a mutable global belongs at module level, where it is visibly one — and a generic struct cannot have one (a value per instantiation would be a different feature; a `static fun` serves). Motivated by the HTTP module: status codes, methods and content types are *open* sets with well-known members, which is a value type plus named constants, not an enumeration; closed sets remain for the `enum` decision.
+*Addendum (v0.29) — static values.* A struct body may declare `static val name[: T] = expr`: a constant in the type's namespace, read as `Type.name` (`Status.notFound`, `http.Status.ok` from outside the module), `public` to export and module-private otherwise, initialised with the module's globals in source order. It is always a `val` — a mutable global belongs at module level, where it is visibly one — and a generic struct cannot have one (a value per instantiation would be a different feature; a `static fun` serves). Motivated by the HTTP module: status codes, methods and content types are *open* sets with well-known members, which is a value type plus named constants, not an enumeration; closed sets are `enum` (D57).
 
 Consequence: inherent methods cannot be added to a type you do not own. Extension functions were declined, so the route is declaring a trait and implementing it. This is narrower than it sounds — Veles owns `string` and the collections, so stdlib types stay method-rich; the ceremony only appears when extending a third-party type. Rust lives this way.
 
@@ -806,6 +808,8 @@ This **formally drops named-impls-as-values**, which had been recorded as still-
 
 *Addendum (v0.28) — tuples are ordered.* A tuple whose elements are all ordered (numbers, strings, `Comparable` types, such tuples) is `Comparable`, element by element: `(1, "b") < (2, "a")`. The comparison is a function the compiler synthesizes per tuple type and reaches through the same path as a hand-written `compareTo` (`<`, `sorted`, `min`, a `T: Comparable` bound, `a.compareTo(b)`). Consequence: a multi-key sort is `sortedBy(e => (-e.size, e.name))` — Python's key tuple — with no comparator-combinator API; a comparator lambda remains for the cases a key cannot express (a descending string). Equality and hashing of tuples were already structural.
 
+*Amended (v0.32).* Every comparison — `compareTo`, the synthesized tuple one, a comparator lambda — returns the prelude enum `Ordering` (`Less = -1`, `Equal`, `Greater`; D57), not an `i64`. A comparator that computed `a - b` is written `a.compareTo(b)`.
+
 ### D49 — Panics unwind via DWARF tables, with a separate coroutine-frame chain
 
 Native frames use LLVM `invoke` and landing pads. Suspended coroutine frames (D2) are heap objects the DWARF unwinder cannot see, so they carry an explicit parent chain that is walked separately.
@@ -957,6 +961,31 @@ with (listener = try net.listen(host: "", port: 8080)) {
 Not in this decision: TLS (a binding to a system library, later), UDP, name resolution beyond `getaddrinfo` at connect time.
 
 **The HTTP layer (v0.29, `std/http`)** is written in Veles on `net`, and its one design question was what a handler's error means. A handler stored in a router needs a closed type, Veles has no "any error" (D45), and forcing every handler to convert every `IoError` into a status by hand is the Go shape the language exists to avoid. The answer: the *stored* type is `Handler = sendable fun(Request): Response suspends` (no throws), and registration is error-polymorphic — `app.get<E>(pattern, h: fun(Request): Response suspends throws E | Fail)` — with one rule applied at that point: `Fail(status, text)` answers with its status, anything else answers 500 and is logged. Erasure happens in exactly one documented place; `try` stays free inside handlers; `?!` says which status a failure deserves. This needed a type parameter *inside* an error union to unify (`E` binds to what the lambda throws beyond `Fail`, `Never` when nothing; a lambda checked against `throws E | Fail` may throw `Fail` regardless). Panics in handlers are isolated per request by a `gather` around the call — no new construct, the panic is a value at that boundary (D52) — and the `with` cleanups a handler held have run by then (D49 addendum). Rejected: a `supervise` scope construct (Erlang/Kotlin `SupervisorScope`), noted as a possibility if a second program needs "children fail independently"; an open `Error` type, again.
+
+### D57 — Enums: a closed set of named values of one integer type (v0.32)
+
+```vs
+enum Ordering { Less = -1, Equal, Greater }      // i64 unless a base is written
+enum Phase : u8 { Red = 1, Amber, Green = 10 }   // Amber is 2
+
+when (guess.compareTo(secret)) {
+  Ordering.Less    => io.println("Too small!")
+  Ordering.Greater => io.println("Too big!")
+  Ordering.Equal   => io.println("You win!")
+}
+```
+
+D12 rejected `enum` as *sugar for sum types*, and that stands: alternatives that carry data are a sealed trait. What D12 did not cover is the closed set of *values* — a phase, a direction, the result of a comparison — which the language had been spelling as bare integers (the guessing game matched `-1`, `0`, `1`) or as a struct plus `static val` constants (D23 addendum, an *open* set with well-known members). An `enum` is the closed one: every value has a name, the compiler knows the whole list, and `when` over it is exhaustive by member (D13's rule, with the same `else` lints).
+
+**Representation.** A member is a number of one integer type: `i64` unless the declaration says `: u8` and the like (integers only — a value must be able to count). An explicit value is an integer literal; an implicit one is the previous member's plus one, and the first counts from 0. Two members cannot share a value, and a value must fit the type — both errors at the declaration. At run time an enum value *is* its number and nothing more: no allocation, no tag, structural equality and hashing are the integer's. The names live in the compiler, which spells them out where they are needed.
+
+**What every enum has, with nothing to write.** `E.Member` names a value; `x.value` reads its number; `x.toString()` (and interpolation) is the member's name as declared; `E.values()` is every member in declaration order; `E.fromValue(n)` and `E.parse(s)` are `E?`, the inverses of `.value` and `toString`. An enum is `Comparable` by its numbers (`<`, `sorted()`, `min()`, a `T: Comparable` bound, `x.compareTo(y)`) and `Hashable` (a map key, a set element). It is `Sendable`.
+
+**Comparison with the base type, no conversion.** `phase == 2` and `ordering < 0` compare the number — a comparison operator accepts an enum on one side and a value of its base type on the other. Nothing converts: an integer is not an `E` (the error names `E.fromValue(n)`), an `E` is not an integer (the error names `.value`), and `as` does not bridge them. Two different enums do not compare at all. A `when` arm over an enum names a member, never a number.
+
+**What an enum is not.** It has no methods, fields, `impl` or `extend` blocks (the compiler refuses them: it already compares, hashes, orders and prints by itself) and cannot be generic. Behaviour that needs one is a function that takes it; a set of alternatives that grows data is a sealed trait, which is the point at which an enum is outgrown. Rejected: string-valued enums (the base must count; a string-keyed closed set is a map or a sealed trait), methods on enums (Kotlin's `enum class` — a type with behaviour is a struct, and the `static val` form already covers named constants of a struct), and implicit conversion to the integer (C's rule; it is what makes `switch` on a C enum silently accept a stray `int`).
+
+**Consequence: `compareTo` returns `Ordering`.** The prelude declares `enum Ordering { Less = -1, Equal, Greater }` and `Comparable.compareTo(other: Self): Ordering` (it was `i64`), so the result can be matched by name; because the values are -1, 0 and 1 and an enum compares with its base type, `a.compareTo(b) < 0` still reads and still holds. Comparator lambdas (`sortedWith`, `minWith`, `maxWith`, `priorityQueueBy`, D48) return `Ordering` for the same reason; a comparator that computed `a - b` becomes `a.compareTo(b)`. The synthesized tuple comparison (D48 addendum) returns `Ordering` too.
 
 ---
 

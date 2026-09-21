@@ -22,7 +22,7 @@ Skim Track 1 (the syntax is close to Kotlin's), then:
 
 7. [Errors: `throws`, `throw`, `try`](07-errors.md) — errors are values, without the ceremony.
 8. [Traits and generics](08-traits-and-generics.md) — interfaces without inheritance, stenciled generics, trait objects, the operator traits.
-9. [Sealed types and `when`](09-sealed-types.md) — algebraic data types with exhaustive matching.
+9. [Sealed types, enums and `when`](09-sealed-types.md) — algebraic data types and closed sets of values, with exhaustive matching.
 10. [Closures and iterators](10-closures-and-iterators.md) — lambdas, captures, lazy pipelines, `Iterable`.
 11. [Modules, packages and tests](11-modules-and-packages.md) — directories as modules, `veles.toml`, `@test`.
 15. [Files, paths and processes](15-files-and-processes.md) — `fs`, `path`, `os`, `StringBuilder`, `IoError`, `time`, `random`.

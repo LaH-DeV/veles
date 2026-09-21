@@ -169,12 +169,12 @@ struct TodoFile {
     }
     rows.sortedWith((a, b) => {
       val (x, y) = (a.1, b.1)
-      if (x.done != y.done) return if (x.done) 1 else -1
+      if (x.done != y.done) return if (x.done) Ordering.Greater else Ordering.Less
       val pri = sortKey(x.priority).compareTo(sortKey(y.priority))
-      if (pri != 0) return pri
+      if (pri != Ordering.Equal) return pri
       val due = (x.due() ?: "9999").compareTo(y.due() ?: "9999")
-      if (due != 0) return due
-      a.0 - b.0
+      if (due != Ordering.Equal) return due
+      a.0.compareTo(b.0)
     })
   }
 }
@@ -200,7 +200,7 @@ fun counts(tasks: List<Task>, pick: fun(Task): List<string>) {
       tally.set(tag, tally.getOrDefault(tag, 0) + 1)
     }
   }
-  loop ((tag, n) in tally.entries().sortedWith((a, b) => if (a.1 != b.1) b.1 - a.1 else a.0.compareTo(b.0))) {
+  loop ((tag, n) in tally.entries().sortedWith((a, b) => if (a.1 != b.1) b.1.compareTo(a.1) else a.0.compareTo(b.0))) {
     io.println("${"$n".padStart(3)} $tag")
   }
 }

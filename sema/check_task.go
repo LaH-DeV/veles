@@ -70,7 +70,7 @@ func hasVarFieldsIn(t types.Type, seen map[types.Type]bool) bool {
 // not recurse forever.
 func sendableIn(t types.Type, seen map[types.Type]bool) bool {
 	switch t := t.(type) {
-	case *types.Basic:
+	case *types.Basic, *types.Enum:
 		return true
 	case *types.Nullable:
 		return sendableIn(t.Elem, seen)

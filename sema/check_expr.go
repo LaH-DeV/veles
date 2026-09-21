@@ -76,6 +76,14 @@ func (f *fnCtx) coerce(x Expr, want types.Type, span source.Span) Expr {
 		f.errorf(span, "type mismatch: expected '%s', found '%s'; build strings with interpolation: \"...${expr}...\"", want, have)
 		return x
 	}
+	if e, ok := want.(*types.Enum); ok && types.IsInteger(have) {
+		f.errorf(span, "type mismatch: expected '%s', found '%s'; an enum is not its number — name a member ('%s') or look one up with '%s.fromValue(n)' (D57)", want, have, enumExample(e), e.Name)
+		return x
+	}
+	if e, ok := have.(*types.Enum); ok && types.IsInteger(want) {
+		f.errorf(span, "type mismatch: expected '%s', found '%s'; read the number with '.value' (D57)", want, e.Name)
+		return x
+	}
 	f.errorf(span, "type mismatch: expected '%s', found '%s'", want, have)
 	return x
 }
@@ -592,6 +600,11 @@ func (f *fnCtx) memberExpr(e *ast.MemberExpr, want types.Type) Expr {
 					f.c.refSym(n.Pos, sym)
 					return f.staticValue(st, e, want)
 				}
+				if en, ok := sym.Type.(*types.Enum); ok {
+					// `Ordering.Less`: a member of the enum (D57)
+					f.c.refSym(n.Pos, sym)
+					return f.enumMember(en, e.Name)
+				}
 			}
 		}
 	}
@@ -599,6 +612,9 @@ func (f *fnCtx) memberExpr(e *ast.MemberExpr, want types.Type) Expr {
 		// `http.Status.ok`
 		if st, ok := rt.(*types.Struct); ok {
 			return f.staticValue(st, e, want)
+		}
+		if en, ok := rt.(*types.Enum); ok {
+			return f.enumMember(en, e.Name)
 		}
 		if !types.IsInvalid(rt) {
 			f.errorf(e.Name.Pos, "'%s' has no static '%s'", rt, e.Name.Name)
@@ -745,6 +761,8 @@ func (f *fnCtx) fieldOf(x Expr, name ast.Ident, span source.Span) Expr {
 	case *types.Nullable:
 		f.errorf(span, "value of type '%s' may be null; use '?.', '?:' or check for null first (D5)", tt)
 		return bad()
+	case *types.Enum:
+		return f.enumField(x, tt, name)
 	case *types.Sealed:
 		if v := resultTest(tt, name.Name); v != nil {
 			// `r.ok` / `r.err`: the tag test, spelled as a property; it smart-casts
@@ -1055,17 +1073,50 @@ func (f *fnCtx) binaryExpr(e *ast.BinaryExpr, want types.Type) Expr {
 	var l, r Expr
 	if isLiteralExpr(e.L) && !isLiteralExpr(e.R) {
 		r = f.checkExpr(e.R, want)
-		l = f.checkExprTo(e.L, r.Type())
+		l = f.checkOperandFor(e.L, r.Type())
 	} else {
 		l = f.checkExpr(e.L, want)
-		r = f.checkExprTo(e.R, l.Type())
+		r = f.checkOperandFor(e.R, l.Type())
 	}
 	return f.makeBinary(op, l, r, e.Pos)
+}
+
+// checkOperandFor checks the other operand of a binary operator against
+// the first one's type. An enum operand only hints: the other side may be a
+// member of the same enum or a value of its base type, which enumCompare
+// sorts out (D57).
+func (f *fnCtx) checkOperandFor(other ast.Expr, t types.Type) Expr {
+	if e, ok := t.(*types.Enum); ok {
+		return f.checkExpr(other, e.Base)
+	}
+	x := f.checkExpr(other, t)
+	if types.IsEnum(x.Type()) {
+		return x // `n < phase`: enumCompare decides whether the pair fits
+	}
+	return f.coerce(x, t, other.Span())
 }
 
 func (f *fnCtx) makeBinary(op BinOp, l, r Expr, span source.Span) Expr {
 	t := l.Type()
 	if types.IsInvalid(t) || types.IsInvalid(r.Type()) {
+		return bad()
+	}
+	if types.IsEnum(t) || types.IsEnum(r.Type()) {
+		// an enum only compares: with its own members, or with its base type
+		// (never arithmetic — the number is behind .value) (D57)
+		switch op {
+		case OpLt, OpLe, OpGt, OpGe, OpEq, OpNe:
+			if cmp := f.enumCompare(op, l, r, span); cmp != nil {
+				return cmp
+			}
+			f.errorf(span, "cannot compare '%s' with '%s'; an enum compares with its own members or with its base type (D57)", t, r.Type())
+		default:
+			which := t
+			if !types.IsEnum(which) {
+				which = r.Type()
+			}
+			f.errorf(span, "operator '%s' is not defined for '%s'; an enum is a set of values, its number is behind '.value' (D57)", op, which)
+		}
 		return bad()
 	}
 	switch op {
@@ -1135,8 +1186,8 @@ func (f *fnCtx) compareOp(op BinOp, l, r Expr, span source.Span) Expr {
 	if ops == nil || ops.Compare == nil {
 		return nil
 	}
-	cmp := &Call{exprBase: exprBase{types.TI64}, Fn: ops.Compare, Args: []Expr{recvArg(ops.Compare, l), r}}
-	return &Binary{exprBase{types.TBool}, op, cmp, i64c(0), span}
+	cmp := &Call{exprBase: exprBase{ops.Compare.Sig.Ret}, Fn: ops.Compare, Args: []Expr{recvArg(ops.Compare, l), r}}
+	return &Binary{exprBase{types.TBool}, op, cmp, f.c.orderingConst(0), span}
 }
 
 // equality handles ==/!= including null comparisons and sealed/struct
@@ -1172,14 +1223,21 @@ func (f *fnCtx) equality(e *ast.BinaryExpr, op BinOp) Expr {
 	if isLiteralExpr(e.L) && !isLiteralExpr(e.R) {
 		r = f.checkExpr(e.R, nil)
 		r = f.immutableView(r)
-		l = f.checkExprTo(e.L, r.Type())
+		l = f.checkOperandFor(e.L, r.Type())
 	} else {
 		l = f.checkExpr(e.L, nil)
 		l = f.immutableView(l)
-		r = f.checkExprTo(e.R, l.Type())
+		r = f.checkOperandFor(e.R, l.Type())
 	}
 	t := l.Type()
 	if types.IsInvalid(t) || types.IsInvalid(r.Type()) {
+		return bad()
+	}
+	if types.IsEnum(t) || types.IsEnum(r.Type()) {
+		if x := f.enumCompare(op, l, r, e.Pos); x != nil {
+			return x
+		}
+		f.errorf(e.Pos, "cannot compare '%s' with '%s'; an enum compares with its own members or with its base type (D57)", t, r.Type())
 		return bad()
 	}
 	if !f.comparable(t) {
@@ -1213,6 +1271,8 @@ func (f *fnCtx) comparableIn(t types.Type, seen map[types.Type]bool) bool {
 	switch t := t.(type) {
 	case *types.Basic:
 		return t.Kind != types.Unit && t.Kind != types.Never && t.Kind != types.Invalid
+	case *types.Enum:
+		return true
 	case *types.Pointer:
 		return true
 	case *types.Nullable:
@@ -1446,7 +1506,14 @@ func (f *fnCtx) castExpr(e *ast.CastExpr) Expr {
 	if conv := f.convert(x, to); conv != nil {
 		return conv
 	}
-	f.errorf(e.Pos, "cannot cast '%s' to '%s'; 'as' converts between numeric types only", from, to)
+	switch {
+	case types.IsEnum(from) && types.IsNumeric(to):
+		f.errorf(e.Pos, "cannot cast '%s' to '%s'; an enum is not its number — read it with '.value' (D57)", from, to)
+	case types.IsNumeric(from) && types.IsEnum(to):
+		f.errorf(e.Pos, "cannot cast '%s' to '%s'; an enum is not its number — look the member up with '%s.fromValue(n)' (D57)", from, to, to)
+	default:
+		f.errorf(e.Pos, "cannot cast '%s' to '%s'; 'as' converts between numeric types only", from, to)
+	}
 	return bad()
 }
 

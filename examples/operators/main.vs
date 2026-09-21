@@ -10,7 +10,7 @@ struct Version {
   minor: i64
 
   impl Comparable {
-    fun compareTo(other: Version): i64 =
+    fun compareTo(other: Version): Ordering =
       if (self.major != other.major) self.major.compareTo(other.major)
       else self.minor.compareTo(other.minor)
   }
@@ -57,7 +57,7 @@ fun area(s: Shape): f64 = when (s) {
 }
 
 impl Comparable for Shape {
-  fun compareTo(other: Shape): i64 = area(self).compareTo(area(other))
+  fun compareTo(other: Shape): Ordering = area(self).compareTo(area(other))
 }
 
 impl Display for Shape {

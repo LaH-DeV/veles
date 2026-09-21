@@ -336,6 +336,8 @@ func declStart(d ast.Node) int {
 		attrs = d.Attrs
 	case *ast.TypeAliasDecl:
 		attrs = d.Attrs
+	case *ast.EnumDecl:
+		attrs = d.Attrs
 	}
 	if len(attrs) > 0 {
 		return attrs[0].Pos.Start
@@ -365,6 +367,8 @@ func (p *printer) decl(d ast.Decl) {
 		p.fun(d)
 	case *ast.StructDecl:
 		p.structDecl(d)
+	case *ast.EnumDecl:
+		p.enumDecl(d)
 	case *ast.TraitDecl:
 		p.traitDecl(d)
 	case *ast.ImplDecl:
@@ -822,6 +826,40 @@ func (p *printer) structDecl(d *ast.StructDecl) {
 		p.before(ms[i].pos)
 		ms[i].print()
 		p.after(memberEnd(d, ms[i].pos))
+	})
+}
+
+// enumDecl prints `enum Name : Base { A = 1, B }`, one member per line; the
+// `=` of valued members align like field types.
+func (p *printer) enumDecl(d *ast.EnumDecl) {
+	p.attrs(d.Attrs)
+	if d.Pub {
+		p.w("public ")
+	} else if d.Internal {
+		p.w("internal ")
+	}
+	p.w("enum " + d.Name.Name)
+	hdr := d.Name.Pos.End
+	if d.Base != nil {
+		p.w(" : ")
+		p.typ(d.Base)
+		hdr = d.Base.Span().End
+	}
+	open := p.openBrace(hdr, d.Pos.End)
+	if open < 0 {
+		return
+	}
+	p.w(" ")
+	p.members(open, d.Pos.End, len(d.Members) == 0, func(i int) bool { return i < len(d.Members) }, func(i int) {
+		m := d.Members[i]
+		p.before(m.Pos.Start)
+		p.w(m.Name.Name)
+		if m.Value != nil {
+			p.mark(alignField)
+			p.w(" = ")
+			p.expr(m.Value, 0)
+		}
+		p.after(m.Pos.End)
 	})
 }
 

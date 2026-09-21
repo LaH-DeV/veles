@@ -5,7 +5,7 @@ fun main() {
 
   val secret = random.range(0, 101)
 
-  loop {
+  loop :game {
     io.println("Please input your guess.")
 
     val guess = when (val input = io.readLine()) {
@@ -16,13 +16,12 @@ fun main() {
     if (guess !is i64) continue
     io.println("You guessed: $guess")
 
-    // TODO: when enums are available, use them here
     when (guess.compareTo(secret)) {
-      -1 => io.println("Too small!")
-      1  => io.println("Too big!")
-      0  => {
+      Ordering.Less    => io.println("Too small!")
+      Ordering.Greater => io.println("Too big!")
+      Ordering.Equal   => {
         io.println("You win!")
-        break
+        break game
       }
     }
   }

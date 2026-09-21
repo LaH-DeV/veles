@@ -58,8 +58,8 @@ type document struct {
 
 type analysis struct {
 	pkg      *sema.Package
-	index    *sema.Index // nil while the package does not parse
-	lastGood *sema.Index // the most recent index that did; used by completion
+	index    *sema.Index             // nil while the package does not parse
+	lastGood *sema.Index             // the most recent index that did; used by completion
 	files    map[string]*source.File // OverlayKey -> parsed file
 }
 
@@ -189,12 +189,12 @@ func (s *Server) handle(req *request) {
 					"change":    1, // full text
 					"save":      map[string]any{"includeText": false},
 				},
-				"hoverProvider":          true,
-				"definitionProvider":     true,
-				"documentSymbolProvider": true,
+				"hoverProvider":              true,
+				"definitionProvider":         true,
+				"documentSymbolProvider":     true,
 				"documentFormattingProvider": true,
 				"codeActionProvider":         map[string]any{"codeActionKinds": []string{"quickfix"}},
-				"completionProvider":     map[string]any{"triggerCharacters": []string{"."}},
+				"completionProvider":         map[string]any{"triggerCharacters": []string{"."}},
 			},
 			"serverInfo": map[string]any{"name": "veles-lsp", "version": "0.1"},
 		})
@@ -455,13 +455,15 @@ func (s *Server) definition(params json.RawMessage) any {
 // document symbols (from the syntax tree alone, so they survive type errors)
 
 const (
-	symFunction = 12
-	symField    = 8
-	symStruct   = 23
-	symIface    = 11
-	symVariable = 13
-	symConstant = 14
-	symMethod   = 6
+	symFunction   = 12
+	symField      = 8
+	symStruct     = 23
+	symIface      = 11
+	symVariable   = 13
+	symConstant   = 14
+	symEnum       = 10
+	symEnumMember = 22
+	symMethod     = 6
 )
 
 type docSymbol struct {
@@ -509,6 +511,16 @@ func declSymbol(decl ast.Decl) (docSymbol, bool) {
 	case *ast.TypeAliasDecl:
 		return docSymbol{Name: d.Name.Name, Detail: "type = " + ast.TypeString(d.Type), Kind: symStruct,
 			Range: spanToRange(d.Pos), SelectionRange: spanToRange(d.Name.Pos)}, true
+	case *ast.EnumDecl:
+		sym := docSymbol{Name: d.Name.Name, Kind: symEnum, Range: spanToRange(d.Pos), SelectionRange: spanToRange(d.Name.Pos)}
+		if d.Base != nil {
+			sym.Detail = ": " + ast.TypeString(d.Base)
+		}
+		for _, m := range d.Members {
+			sym.Children = append(sym.Children, docSymbol{Name: m.Name.Name, Kind: symEnumMember,
+				Range: spanToRange(m.Pos), SelectionRange: spanToRange(m.Name.Pos)})
+		}
+		return sym, true
 	case *ast.StructDecl:
 		sym := docSymbol{Name: d.Name.Name, Kind: symStruct, Range: spanToRange(d.Pos), SelectionRange: spanToRange(d.Name.Pos)}
 		if d.Variant != nil {
@@ -617,7 +629,7 @@ type lspDiagnostic struct {
 }
 
 type lspFix struct {
-	Title   string                  `json:"title"`
+	Title   string                   `json:"title"`
 	Changes map[string][]lspTextEdit `json:"changes"`
 }
 

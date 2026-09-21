@@ -123,10 +123,10 @@ extend<T> List<T> {
 // any other order is a comparator (`sortedWith`, `minWith`) or a key
 // (`sortedBy`, `minBy`, `distinctBy`) passed at the call.
 extend<T> List<T> {
-  /// A copy sorted by `compare`, which returns a negative number when its
+  /// A copy sorted by `compare`, which returns `Ordering.Less` when its
   /// first argument sorts first: `xs.sortedWith((a, b) => b.compareTo(a))`
   /// is descending. Stable (equal elements keep their order); O(n log n).
-  public fun sortedWith(compare: fun(T, T): i64): List<T> {
+  public fun sortedWith(compare: fun(T, T): Ordering): List<T> {
     val n = self.len()
     var src = self.toMutable()
     if (n < 2) return src.toList()
@@ -193,7 +193,7 @@ extend<T> List<T> {
   }
 
   /// The element that `compare` places first, or `null` when empty.
-  public fun minWith(compare: fun(T, T): i64): T? {
+  public fun minWith(compare: fun(T, T): Ordering): T? {
     var best = self.first() ?: return null
     loop (x in self.drop(1)) {
       if (compare(x, best) < 0) best = x
@@ -202,7 +202,7 @@ extend<T> List<T> {
   }
 
   /// The element that `compare` places last, or `null` when empty.
-  public fun maxWith(compare: fun(T, T): i64): T? {
+  public fun maxWith(compare: fun(T, T): Ordering): T? {
     var best = self.first() ?: return null
     loop (x in self.drop(1)) {
       if (compare(x, best) > 0) best = x
@@ -224,7 +224,7 @@ extend<T> List<T> {
 
 extend<T> MutableList<T> {
   /// Sorts in place by `compare` (see `sortedWith`).
-  public fun sortWith(compare: fun(T, T): i64) {
+  public fun sortWith(compare: fun(T, T): Ordering) {
     val sorted = self.sortedWith(compare)
     loop (i in 0..<self.len()) {
       self.set(i, sorted.atOrPanic(i))

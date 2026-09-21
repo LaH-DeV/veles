@@ -485,3 +485,27 @@ func TestNestedTupleIndex(t *testing.T) {
 		t.Errorf("p.0.1 did not parse as two indexes:\n%s", got)
 	}
 }
+
+// `enum Name : Base { A = 1, B }` (D57): members separated like fields,
+// each with an optional constant; a doc comment on the enum and on a member.
+func TestEnumDecl(t *testing.T) {
+	src := "/// Phases.\npublic enum Phase : u8 {\n  /// Stop.\n  Red = 1\n  Amber, Green = -3\n}\nenum Plain { A }\nfun f(p: Phase): bool = p == Phase.Red\n"
+	f, diags := parse(t, src)
+	if diags.HasErrors() {
+		t.Fatalf("parse errors:\n%s", diags.Render())
+	}
+	dump := ast.Dump(f)
+	for _, want := range []string{"(enum public Phase : u8", "(member Red = 1)", "(member Amber)", "(member Green = (- 3))", "(enum Plain", "(member A)", "(== p (. Phase Red))"} {
+		if !strings.Contains(dump, want) {
+			t.Errorf("dump lacks %q:\n%s", want, dump)
+		}
+	}
+	d := f.Decls[0].(*ast.EnumDecl)
+	if d.Doc != "Phases." || d.Members[0].Doc != "Stop." {
+		t.Errorf("doc comments lost: %q %q", d.Doc, d.Members[0].Doc)
+	}
+	_, diags = parse(t, "enum G<T> { A }\n")
+	if !strings.Contains(diags.Render(), "an enum is not generic") {
+		t.Errorf("generic enum accepted:\n%s", diags.Render())
+	}
+}

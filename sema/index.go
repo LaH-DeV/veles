@@ -21,7 +21,7 @@ type Index struct {
 type Ref struct {
 	Span   source.Span // the occurrence
 	Def    source.Span // the declaration; invalid for builtins
-	Kind   string      // "val", "var", "fun", "struct", "trait", "sealed", "field", "module", "type"
+	Kind   string      // "val", "var", "fun", "struct", "trait", "sealed", "enum", "field", "module", "type"
 	Name   string
 	Type   types.Type // value/field type or function signature; nil for modules and traits
 	Detail string     // rendered hover line
@@ -657,6 +657,9 @@ func (c *Checker) refType(span source.Span, name string, t types.Type, def sourc
 	case *types.Trait:
 		kind = "trait"
 		detail = traitHead(tt)
+	case *types.Enum:
+		kind = "enum"
+		detail = enumHead(tt)
 	case *types.Basic:
 		detail = "builtin type " + tt.Name
 	}
@@ -677,6 +680,10 @@ func docOfType(t types.Type) string {
 		}
 	case *types.Trait:
 		if d, ok := tt.Decl.(*ast.TraitDecl); ok {
+			return d.Doc
+		}
+	case *types.Enum:
+		if d, ok := tt.Decl.(*ast.EnumDecl); ok {
 			return d.Doc
 		}
 	}
@@ -765,6 +772,8 @@ func (c *Checker) shapeFrom(t types.Type, v viewpoint) string {
 		return c.shapeFrom(tt.Elem, v)
 	case *types.Nullable:
 		return c.shapeFrom(tt.Elem, v)
+	case *types.Enum:
+		return enumShape(tt)
 	case *types.Struct:
 		tmpl := templateOf(tt)
 		d, _ := tmpl.Decl.(*ast.StructDecl)
@@ -1056,6 +1065,8 @@ func declName(d ast.Decl) string {
 		return d.Name.Name
 	case *ast.ValDecl:
 		return d.Name.Name
+	case *ast.EnumDecl:
+		return d.Name.Name
 	}
 	return ""
 }
@@ -1069,6 +1080,8 @@ func declIsPub(d ast.Decl) bool {
 	case *ast.TraitDecl:
 		return d.Pub
 	case *ast.ValDecl:
+		return d.Pub
+	case *ast.EnumDecl:
 		return d.Pub
 	}
 	return false

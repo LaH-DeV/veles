@@ -221,7 +221,7 @@ fun main() {
   // a parameter may itself be a tuple pattern, as deep as the value goes
   val groups = [((3, 7), ["a"]), ((1, 2), ["b", "c"])]
   io.println("${groups.map(((size, hash), files) => size * files.len() + hash)}")
-  val byName = groups.sortedWith((((sa, _), _), ((sb, _), _)) => sa - sb)
+  val byName = groups.sortedWith((((sa, _), _), ((sb, _), _)) => sa.compareTo(sb))
   val ((size, _), _) = byName.atOrPanic(0)
   io.println("$size")
 }

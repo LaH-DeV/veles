@@ -30,8 +30,9 @@ func (c *Checker) tupleCompare(tt *types.Tuple) *Func {
 			return nil
 		}
 	}
+	ord := c.orderingType()
 	fn := &Func{Name: mangleName("veles.tuple.compare<" + key + ">"), Display: "compareTo", Span: source.Span{},
-		Sig: &types.Func{Params: []types.Param{{Name: "a", Type: tt}, {Name: "b", Type: tt}}, Ret: types.TI64}}
+		Sig: &types.Func{Params: []types.Param{{Name: "a", Type: tt}, {Name: "b", Type: tt}}, Ret: ord}}
 	newVar := func(name string, t types.Type) *Var {
 		c.nextVar++
 		return &Var{Name: name, Type: t, ID: c.nextVar}
@@ -43,14 +44,14 @@ func (c *Checker) tupleCompare(tt *types.Tuple) *Func {
 	for i, et := range tt.Elems {
 		l := &TupleGet{exprBase{et}, &VarRef{exprBase{tt}, a}, i}
 		r := &TupleGet{exprBase{et}, &VarRef{exprBase{tt}, b}, i}
-		cmp := newVar("$cmp", types.TI64)
+		cmp := newVar("$cmp", ord)
 		cmp.Mutable = true
 		body.Stmts = append(body.Stmts, &VarDecl{Var: cmp, Init: c.elemCompare(et, l, r)})
-		nonZero := &Binary{exprBase{types.TBool}, OpNe, &VarRef{exprBase{types.TI64}, cmp}, i64c(0), source.Span{}}
-		early := &If{exprBase{types.TUnit}, nonZero, &Block{Stmts: []Stmt{&Return{Value: &VarRef{exprBase{types.TI64}, cmp}}}, Type: types.TNever}, nil}
+		nonZero := &Binary{exprBase{types.TBool}, OpNe, &VarRef{exprBase{ord}, cmp}, c.orderingConst(0), source.Span{}}
+		early := &If{exprBase{types.TUnit}, nonZero, &Block{Stmts: []Stmt{&Return{Value: &VarRef{exprBase{ord}, cmp}}}, Type: types.TNever}, nil}
 		body.Stmts = append(body.Stmts, &ExprStmt{X: early})
 	}
-	body.Stmts = append(body.Stmts, &Return{Value: i64c(0)})
+	body.Stmts = append(body.Stmts, &Return{Value: c.orderingConst(0)})
 	fn.Body = body
 	fn.checked = true
 	c.funcs = append(c.funcs, fn)
@@ -59,26 +60,26 @@ func (c *Checker) tupleCompare(tt *types.Tuple) *Func {
 }
 
 // elemCompare is the three-way comparison of two values of an ordered type
-// as an expression: -1, 0 or 1 for numbers and strings, the custom or
-// synthesized `compareTo` otherwise.
+// as an expression of type Ordering: Less, Equal or Greater for numbers,
+// strings and enums, the custom or synthesized `compareTo` otherwise.
 func (c *Checker) elemCompare(t types.Type, l, r Expr) Expr {
-	if types.IsNumeric(t) || types.IsString(t) {
+	ord := c.orderingType()
+	if types.IsNumeric(t) || types.IsString(t) || types.IsEnum(t) {
 		lt := &Binary{exprBase{types.TBool}, OpLt, l, r, source.Span{}}
 		gt := &Binary{exprBase{types.TBool}, OpGt, l, r, source.Span{}}
-		minusOne := &IntConst{exprBase{types.TI64}, 1, true}
-		inner := &If{exprBase{types.TI64}, gt, &Block{Value: i64c(1), Type: types.TI64}, &Block{Value: i64c(0), Type: types.TI64}}
-		return &If{exprBase{types.TI64}, lt, &Block{Value: minusOne, Type: types.TI64}, &Block{Value: inner, Type: types.TI64}}
+		inner := &If{exprBase{ord}, gt, &Block{Value: c.orderingConst(1), Type: ord}, &Block{Value: c.orderingConst(0), Type: ord}}
+		return &If{exprBase{ord}, lt, &Block{Value: c.orderingConst(-1), Type: ord}, &Block{Value: inner, Type: ord}}
 	}
 	if ops := c.customOps(t); ops != nil && ops.Compare != nil {
-		return &Call{exprBase: exprBase{types.TI64}, Fn: ops.Compare, Args: []Expr{recvArg(ops.Compare, l), r}}
+		return &Call{exprBase: exprBase{ord}, Fn: ops.Compare, Args: []Expr{recvArg(ops.Compare, l), r}}
 	}
-	return i64c(0)
+	return c.orderingConst(0)
 }
 
 // orderedType is the checker-level `ordered`: numbers, strings, types with a
 // Comparable impl, and tuples of ordered elements.
 func (c *Checker) orderedType(t types.Type) bool {
-	if types.IsNumeric(t) || types.IsString(t) {
+	if types.IsNumeric(t) || types.IsString(t) || types.IsEnum(t) {
 		return true
 	}
 	if tt, ok := t.(*types.Tuple); ok {

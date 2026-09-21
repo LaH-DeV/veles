@@ -31,6 +31,9 @@ type Checker struct {
 	// declaration tables
 	structs        []*types.Struct // templates
 	sealeds        []*types.Sealed
+	enums          []*types.Enum
+	enumDecl       map[*types.Enum]*declCtx
+	ordering       *types.Enum // the prelude's Ordering, once looked up (enum.go)
 	traits         []*types.Trait
 	templates      []*FuncTemplate
 	impls          map[*types.Trait][]*Impl
@@ -66,6 +69,7 @@ type Checker struct {
 	changed        bool
 	nextVar        int
 	tupleCmp       map[string]*Func // synthesized tuple comparisons by type key (tuple_order.go)
+	enumFns        map[string]*Func // synthesized enum functions by type key and name (enum.go)
 	nextLoop       int
 	nextTmp        int
 	nextLambda     int
@@ -112,6 +116,7 @@ func checkWith(pkg *Package, diags *source.Diagnostics, release bool, testMode b
 		globalFile:     map[*Global]*ast.File{},
 		structDecl:     map[*types.Struct]*declCtx{},
 		sealedDecl:     map[*types.Sealed]*declCtx{},
+		enumDecl:       map[*types.Enum]*declCtx{},
 		traitDecl:      map[*types.Trait]*declCtx{},
 		traitMethodTPs: map[string][]*types.TypeParam{},
 		traitStatic:    map[string]bool{},
@@ -287,6 +292,9 @@ func (c *Checker) collect() {
 		}
 	}
 	// 3. resolve signatures, fields, variants, traits, impls
+	for _, e := range c.enums {
+		c.resolveEnum(e)
+	}
 	for _, s := range c.structs {
 		c.resolveStruct(s)
 	}
@@ -452,6 +460,8 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 		c.attrsOf(d.Attrs, "type")
 		c.insert(m, &Symbol{Name: d.Name.Name, Kind: SymType, Pub: d.Pub, Module: m, Span: d.Name.Pos,
 			TypeAlias: &typeAlias{decl: d, module: m, file: f}})
+	case *ast.EnumDecl:
+		c.declareEnum(m, f, d)
 	case *ast.TraitDecl:
 		c.attrsOf(d.Attrs, "trait")
 		if d.Sealed {
@@ -1382,6 +1392,10 @@ func (c *Checker) declareExtend(m *Module, f *ast.File, d *ast.ImplDecl) {
 	if types.IsInvalid(impl.Target) {
 		return
 	}
+	if en, ok := impl.Target.(*types.Enum); ok {
+		c.errorf(d.Target.Span(), "cannot extend enum '%s': an enum is a set of values with no methods of its own; write functions that take one (D57)", en.Name)
+		return
+	}
 	if !c.ownsType(m, impl.Target) {
 		switch impl.Target.(type) {
 		case *types.Struct, *types.Sealed:
@@ -1469,6 +1483,10 @@ func (c *Checker) declareImpl(m *Module, f *ast.File, d *ast.ImplDecl) {
 	impl.Target = c.resolveType(env, d.Target)
 	env.self = impl.Target
 	if types.IsInvalid(impl.Target) {
+		return
+	}
+	if en, ok := impl.Target.(*types.Enum); ok {
+		c.errorf(d.Target.Span(), "cannot implement '%s' for enum '%s': an enum is a set of values with no methods of its own; it already compares, hashes, orders and prints by itself (D57)", trait.Name, en.Name)
 		return
 	}
 	if sealedFor != nil {
@@ -1871,6 +1889,7 @@ func (c *Checker) runRound() *Program {
 	c.queue = nil
 	c.instances = map[string]*Func{}
 	c.funcs = nil
+	c.tupleCmp, c.enumFns = nil, nil // synthesized per round, like every other function
 	c.checkedGlobals = map[*Global]bool{}
 	c.nextVar, c.nextLoop, c.nextTmp = 0, 0, 0
 	for _, t := range c.templates {
@@ -2206,7 +2225,7 @@ func (c *Checker) unhashableIn(t types.Type, seen map[types.Type]bool) string {
 			return structural
 		}
 		return ""
-	case *types.Pointer:
+	case *types.Pointer, *types.Enum:
 		return ""
 	case *types.Nullable:
 		return c.unhashableIn(t.Elem, seen)

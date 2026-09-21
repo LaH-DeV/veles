@@ -32,6 +32,19 @@ func (c *Checker) customOps(t types.Type) *CustomOps {
 			return &CustomOps{Compare: fn}
 		}
 		return nil
+	case *types.Enum:
+		// the member names and the order of the values (enum.go); equality
+		// and hashing are the base integer's
+		key := types.Key(t)
+		if ops, done := c.prog.Custom[key]; done {
+			return ops
+		}
+		if c.prog.Custom == nil {
+			c.prog.Custom = map[string]*CustomOps{}
+		}
+		ops := c.enumOps(t)
+		c.prog.Custom[key] = ops
+		return ops
 	default:
 		return nil
 	}
@@ -97,6 +110,11 @@ func (c *Checker) implementsPrelude(t types.Type, traitName string) bool {
 	if tt, ok := t.(*types.Tuple); ok && traitName == "Comparable" {
 		return c.tupleCompare(tt) != nil
 	}
+	if _, ok := t.(*types.Enum); ok {
+		// ordered by value, printed by name, equal and hashed as the
+		// integer: the whole prelude set, with no impl to write (D57)
+		return traitName == "Comparable" || traitName == "Display" || traitName == "Equatable" || traitName == "Hashable"
+	}
 	return c.findImplFor(t, trait) != nil
 }
 
@@ -133,6 +151,9 @@ func (c *Checker) resolveAllCustom() {
 			for _, k := range sortedKeys(s.Instances) {
 				c.customOps(s.Instances[k])
 			}
+		}
+		for _, e := range c.enums {
+			c.customOps(e)
 		}
 		c.drainQueue()
 		if len(c.funcs) == before {

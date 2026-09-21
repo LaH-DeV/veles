@@ -997,8 +997,7 @@ R27. DONE (2026-09-20): derived field defaults (spec D28 addendum v0.30, docs 05
     a `var` field (computed once, goes stale). sema TestDerivedDefaults.
 
 PARKED — must be addressed later (user, 2026-09-20):
-  * ENUMS: closed sets of named values (statuses, methods, content types) — design in R18
-    discussion; `static val` covers open sets for now.
+  * ENUMS: DONE 2026-09-21, see R33 (spec D57).
   * SUPERTRAITS: `trait Shape : Display` (a requirement on implementors, not inheritance);
     parser accepts, sema says "not supported yet". First real customer will be
     `Hashable : Equatable`; also lets a default body use the supertrait. Decide together with
@@ -1061,7 +1060,30 @@ R32. DONE (2026-09-20): hover respects the reader's viewpoint (sema/index.go vie
     mutable-collection fields = "look, don't take": from outside the field may only be the
     receiver of the immutable form's methods / a loop head / interpolation, never bound,
     passed or returned (keeps D25's no-views rule); (c) read-only view types — rejected by D25/
-    D35. Awaiting decision.
+    D35. Awaiting decision.R33. DONE (2026-09-21, user decisions): ENUMS (spec D57, v0.32). `enum Name [: IntBase] { A = -1, B, C }`
+    — a closed set of named VALUES of one integer type (integers only; i64 default; +1 from
+    the previous member, first is 0; literal values only; duplicate/overflow/empty are errors;
+    not generic). Runtime = the base integer (types.Enum, `types.Underlying`; codegen maps
+    llType/layout/binary/cast/equal/hash/gcdesc through the base). Surface, all synthesized in
+    sema/enum.go (`enumFunc`, per round like tupleCmp — both reset in runRound now):
+    `x.value`, `x.toString()`/interpolation, `x.compareTo(y)`, `E.values()`, `E.fromValue(n): E?`,
+    `E.parse(s): E?`. Comparable/Hashable/Equatable/Display for free (customOps → enumOps);
+    Sendable. Compares with the base type (`o < 0`, `o == -1`; checkOperandFor + enumCompare)
+    but NEVER converts (errors name `E.fromValue(n)` / `.value`); different enums do not
+    compare. `when` arms name members (`E.A =>`), exhaustive by member + the D13 else lints
+    (coverage.enumMembers). No methods/fields/impl/extend on enums (refused). User chose:
+    Comparable only (no methods), integers only, comparable-with-base-not-swappable.
+    CONSEQUENCE: prelude `enum Ordering { Less = -1, Equal, Greater }`; `Comparable.compareTo`
+    returns Ordering (13 prelude impls, tuple_order.go, compareOp lowers to `cmp <op> Equal`);
+    comparators (`sortedWith`, `minWith`, `maxWith`, `sortWith`, `priorityQueueBy`) take
+    `fun(T, T): Ordering` — `a - b` comparators became `a.compareTo(b)` (todo, dedup, docs 10).
+    Tooling: formatter (enumDecl, `=` aligned like fields), LSP (hover on type/member/.value,
+    completion `E.` = members + statics, `e.` = value/toString/compareTo, document symbols),
+    builtins catalogue family "enum" (builtinStatics for the type-level ones), VS Code grammar.
+    Docs: chapter 09 "Enums: a closed set of values" (renamed chapter), cheatsheet, stdlib ref,
+    08 table; tutorial 02 uses Ordering. Tests: sema TestEnums, parser TestEnumDecl, format
+    style case, lsp TestEnumTooling, examples/operators expected updated (Less Greater Equal).
+    Rejected for now: string enums, methods on enums, `as` between enum and base.
 
 
 

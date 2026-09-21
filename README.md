@@ -71,7 +71,7 @@ coherence, default bodies, the prelude operator traits (`Comparable`, `Equatable
 promotion, auto-deref. D8/D15 generics by stenciling. D11/D22 `val`/`var`
 bindings, `var` fields. D12/D13 sealed traits as inline tagged unions, `when` with
 destructuring, guards, exhaustiveness, methods on sealed traits dispatched
-by tag. D18/D19 byte-indexed UTF-8 strings. D20/D52 panics unwind to the
+by tag. D57 enums (closed sets of named integer values: `enum Phase : u8 { Red = 1, Amber }`, exhaustive `when`, `toString`/`values`/`fromValue`/`parse` for free; `compareTo` returns the prelude `Ordering`). D18/D19 byte-indexed UTF-8 strings. D20/D52 panics unwind to the
 task scope; `panic(msg)`. D21 checked/wrapping arithmetic, bitwise operators. D23 methods in struct bodies,
 `impl` blocks (also inline in the body of your own types), `static fun`, `extend` blocks (the prelude adds the string, list and range methods in Veles). D25/D41 `List`/`Map`/`Set` with the immutable/mutable split,
 insertion-ordered maps, literals typed by context (`mut [...]` only for untyped ones); element access is methods only (`at`/`atOrPanic`/`set`, `get`/`getOrPanic`/`set`), brackets are literals. D27/D42/D46 associated types, `loop (x in c)`

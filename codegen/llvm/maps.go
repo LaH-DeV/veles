@@ -219,6 +219,7 @@ func (g *gen) mapBuiltin(e *sema.Builtin) (string, bool) {
 // hash computes a 64-bit hash of a value consistent with structural
 // equality.
 func (g *gen) hash(t types.Type, v string) string {
+	t = types.Underlying(t) // an enum hashes as its integer (D57)
 	switch tt := t.(type) {
 	case *types.Basic:
 		out := g.newTmp()

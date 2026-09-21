@@ -5,11 +5,20 @@
 // built-in types (numbers, strings, collections) keep theirs, and the
 // numbers and strings implement Comparable so generic code can order them.
 
+/// The result of a comparison: `a.compareTo(b)` is `Less` when `a` sorts before
+/// `b`, `Equal` when neither sorts first, `Greater` otherwise. The values
+/// are -1, 0 and 1, so `a.compareTo(b) < 0` reads as it always has.
+public enum Ordering {
+  Less = -1
+  Equal
+  Greater
+}
+
 /// Ordering for `<`, `<=`, `>`, `>=`, `sorted()`, `min()` and `max()`.
-/// `compareTo` returns a negative number when `self` sorts before `other`,
-/// zero when they are equal, and a positive number otherwise.
+/// `compareTo` returns `Ordering.Less` when `self` sorts before `other`,
+/// `Ordering.Equal` when they are equal, and `Ordering.Greater` otherwise.
 public trait Comparable {
-  fun compareTo(other: Self): i64
+  fun compareTo(other: Self): Ordering
 }
 
 /// Custom equality for `==` and `!=`. A type that implements Equatable and
@@ -32,55 +41,68 @@ public trait Display {
 }
 
 impl Comparable for i8 {
-  fun compareTo(other: i8): i64 = if (self < other) -1 else if (self > other) 1 else 0
+  fun compareTo(other: i8): Ordering =
+    if (self < other) Ordering.Less else if (self > other) Ordering.Greater else Ordering.Equal
 }
 
 impl Comparable for i16 {
-  fun compareTo(other: i16): i64 = if (self < other) -1 else if (self > other) 1 else 0
+  fun compareTo(other: i16): Ordering =
+    if (self < other) Ordering.Less else if (self > other) Ordering.Greater else Ordering.Equal
 }
 
 impl Comparable for i32 {
-  fun compareTo(other: i32): i64 = if (self < other) -1 else if (self > other) 1 else 0
+  fun compareTo(other: i32): Ordering =
+    if (self < other) Ordering.Less else if (self > other) Ordering.Greater else Ordering.Equal
 }
 
 impl Comparable for i64 {
-  fun compareTo(other: i64): i64 = if (self < other) -1 else if (self > other) 1 else 0
+  fun compareTo(other: i64): Ordering =
+    if (self < other) Ordering.Less else if (self > other) Ordering.Greater else Ordering.Equal
 }
 
 impl Comparable for isize {
-  fun compareTo(other: isize): i64 = if (self < other) -1 else if (self > other) 1 else 0
+  fun compareTo(other: isize): Ordering =
+    if (self < other) Ordering.Less else if (self > other) Ordering.Greater else Ordering.Equal
 }
 
 impl Comparable for u8 {
-  fun compareTo(other: u8): i64 = if (self < other) -1 else if (self > other) 1 else 0
+  fun compareTo(other: u8): Ordering =
+    if (self < other) Ordering.Less else if (self > other) Ordering.Greater else Ordering.Equal
 }
 
 impl Comparable for u16 {
-  fun compareTo(other: u16): i64 = if (self < other) -1 else if (self > other) 1 else 0
+  fun compareTo(other: u16): Ordering =
+    if (self < other) Ordering.Less else if (self > other) Ordering.Greater else Ordering.Equal
 }
 
 impl Comparable for u32 {
-  fun compareTo(other: u32): i64 = if (self < other) -1 else if (self > other) 1 else 0
+  fun compareTo(other: u32): Ordering =
+    if (self < other) Ordering.Less else if (self > other) Ordering.Greater else Ordering.Equal
 }
 
 impl Comparable for u64 {
-  fun compareTo(other: u64): i64 = if (self < other) -1 else if (self > other) 1 else 0
+  fun compareTo(other: u64): Ordering =
+    if (self < other) Ordering.Less else if (self > other) Ordering.Greater else Ordering.Equal
 }
 
 impl Comparable for usize {
-  fun compareTo(other: usize): i64 = if (self < other) -1 else if (self > other) 1 else 0
+  fun compareTo(other: usize): Ordering =
+    if (self < other) Ordering.Less else if (self > other) Ordering.Greater else Ordering.Equal
 }
 
 impl Comparable for f32 {
-  fun compareTo(other: f32): i64 = if (self < other) -1 else if (self > other) 1 else 0
+  fun compareTo(other: f32): Ordering =
+    if (self < other) Ordering.Less else if (self > other) Ordering.Greater else Ordering.Equal
 }
 
 impl Comparable for f64 {
-  fun compareTo(other: f64): i64 = if (self < other) -1 else if (self > other) 1 else 0
+  fun compareTo(other: f64): Ordering =
+    if (self < other) Ordering.Less else if (self > other) Ordering.Greater else Ordering.Equal
 }
 
 impl Comparable for string {
-  fun compareTo(other: string): i64 = if (self < other) -1 else if (self > other) 1 else 0
+  fun compareTo(other: string): Ordering =
+    if (self < other) Ordering.Less else if (self > other) Ordering.Greater else Ordering.Equal
 }
 
 /// Construction from text, the inverse of Display: `i64.parse("42")`, or

@@ -810,7 +810,7 @@ func TestOperatorTraits(t *testing.T) {
 	expectClean(t, prelude+`
 struct Version { major: i64, minor: i64 }
 impl Comparable for Version {
-  fun compareTo(other: Version): i64 = if (self.major != other.major) self.major.compareTo(other.major) else self.minor.compareTo(other.minor)
+  fun compareTo(other: Version): Ordering = if (self.major != other.major) self.major.compareTo(other.major) else self.minor.compareTo(other.minor)
 }
 impl Display for Version { fun toString(): string = "v${self.major}.${self.minor}" }
 struct Name { text: string }
@@ -821,7 +821,7 @@ impl<T: Display> Display for Pair<T> { fun toString(): string = "<${self.a}, ${s
 sealed trait Shape
 struct Circle : Shape { r: f64 }
 struct Square : Shape { side: f64 }
-impl Comparable for Shape { fun compareTo(other: Shape): i64 = area(self).compareTo(area(other)) }
+impl Comparable for Shape { fun compareTo(other: Shape): Ordering = area(self).compareTo(area(other)) }
 fun area(s: Shape): f64 = when (s) {
   is Circle => 3.14 * s.r * s.r
   is Square => s.side * s.side
@@ -1524,7 +1524,7 @@ func TestPreludeCollections(t *testing.T) {
 struct Job {
   cost: i64
   impl Comparable {
-    fun compareTo(other: Job): i64 = self.cost.compareTo(other.cost)
+    fun compareTo(other: Job): Ordering = self.cost.compareTo(other.cost)
   }
 }
 fun drain(q: Deque<i64>): i64 {
@@ -1970,7 +1970,7 @@ func TestNestedTuplePatterns(t *testing.T) {
 fun main() {
   val groups = [((3, 7), ["a"]), ((1, 2), ["b", "c"])]
   val n = groups.map(((size, hash), files) => size * files.len() + hash)
-  val byName = groups.sortedWith((((sa, _), _), ((sb, _), _)) => sa - sb)
+  val byName = groups.sortedWith((((sa, _), _), ((sb, _), _)) => sa.compareTo(sb))
   val ((s, h), fs) = groups.atOrPanic(0)
   var ((a, b), c) = ((1, 2), 3)
   a += 10
@@ -2617,4 +2617,119 @@ fun main() {
 	if n != 1 {
 		t.Errorf("expected one !is lint, got %d:\n%s", n, diags.Render())
 	}
+}
+
+// Enums (D57): a closed set of named values of one integer type. The
+// members count from 0 or from the previous value, `when` over one is
+// exhaustive by member, the value compares with its own members and with
+// its base type but converts to neither, and the compiler supplies
+// toString/compareTo/values/fromValue/parse — no methods or impls of its own.
+func TestEnums(t *testing.T) {
+	expectClean(t, prelude+`
+/// Traffic light phases.
+public enum Phase : u8 {
+  Red = 1
+  /// Between red and green.
+  Amber
+  Green = 10
+}
+enum Level { Low = -1, Mid, High }
+struct Signal { phase: Phase, at: i64 }
+fun next(p: Phase): Phase = when (p) {
+  Phase.Red   => Phase.Green
+  Phase.Amber => Phase.Red
+  Phase.Green => Phase.Amber
+}
+fun pick<T: Comparable>(a: T, b: T): T = if (a.compareTo(b) == Ordering.Less) a else b
+fun main() {
+  val p = Phase.Amber
+  io.println("$p ${p.value} ${p.toString()} ${next(p)} ${Phase.values()} ${Phase.fromValue(10)} ${Phase.parse("Red")}")
+  io.println("${p == Phase.Amber} ${p != Phase.Red} ${p < Phase.Green} ${p == 2} ${p >= 1} ${0 < p} ${p.compareTo(Phase.Red)}")
+  io.println("${[Phase.Green, Phase.Red].sorted()} ${[Phase.Green, Phase.Red].min()} ${pick(Level.High, Level.Low)} ${Level.Low.value}")
+  val m = [Phase.Red: "stop"]
+  io.println("${m.get(Phase.Red)} ${Signal(phase: p, at: 1) == Signal(phase: Phase.Amber, at: 1)} ${[Signal(phase: p, at: 1)].sortedBy(s => s.phase).len()}")
+  when (7.compareTo(3)) {
+    Ordering.Less    => io.println("less")
+    Ordering.Equal   => io.println("equal")
+    Ordering.Greater => io.println("greater")
+  }
+  io.println("${(1, "a").compareTo((1, "b"))} ${(5).compareTo(5) == 0} ${Ordering.values()}")
+}`)
+	cases := []struct{ name, src, want string }{
+		{"duplicate value", `enum E { A = 1, B = 1 }
+fun main() { }`, "share the value 1"},
+		{"duplicate name", `enum E { A, A }
+fun main() { }`, "duplicate member 'A'"},
+		{"empty", `enum E { }
+fun main() { }`, "has no members"},
+		{"base must be an integer", `enum E : string { A = 1 }
+fun main() { }`, "counts in an integer type"},
+		{"value must fit", `enum E : u8 { A = 255, B }
+fun main() { }`, "value 256 of 'E.B' does not fit in 'u8'"},
+		{"negative needs a signed base", `enum E : u32 { A = -1 }
+fun main() { }`, "does not fit in 'u32'"},
+		{"value is a literal", `val n = 3
+enum E { A = n }
+fun main() { }`, "an integer literal"},
+		{"not generic", `enum E<T> { A }
+fun main() { }`, "an enum is not generic"},
+		{"no impls", `enum E { A }
+impl Display for E { fun toString(): string = "a" }
+fun main() { }`, "cannot implement 'Display' for enum 'E'"},
+		{"no extend", `enum E { A }
+extend E { fun f(): i64 = 1 }
+fun main() { }`, "cannot extend enum 'E'"},
+		{"an integer is not an enum", `enum E { A }
+fun main() { val e: E = 0; io.println("$e") }`, "an enum is not its number"},
+		{"an enum is not an integer", `enum E { A }
+fun main() { val n: i64 = E.A; io.println("$n") }`, "read the number with '.value'"},
+		{"unknown member", `enum E { A, B }
+fun main() { io.println("${E.C}") }`, "enum 'E' has no member 'C'; its members are A, B"},
+		{"no arithmetic", `enum E { A, B }
+fun main() { io.println("${E.A + E.B}") }`, "operator '+' is not defined for 'E'"},
+		{"no methods", `enum E { A }
+fun main() { io.println("${E.A.f()}") }`, "no method 'f' on enum 'E'"},
+		{"no fields", `enum E { A }
+fun main() { io.println("${E.A.x}") }`, "enum 'E' has no field 'x'"},
+		{"a member is not a function", `enum E { A }
+fun main() { io.println("${E.A()}") }`, "'E.A' is a value, not a function"},
+		{"compare only with the base type", `enum E { A }
+fun main() { io.println("${E.A == "A"}") }`, "an enum compares with its own members or with its base type"},
+		{"different enums do not compare", `enum E { A }
+enum F { A }
+fun main() { io.println("${E.A == F.A}") }`, "cannot compare 'E' with 'F'"},
+		{"when must cover every member", `enum E { A, B, C }
+fun main() { val e = E.A; val n = when (e) {
+  E.A => 1
+  E.B => 2
+}; io.println("$n") }`, "'when' is not exhaustive: missing 'E.C'"},
+		{"when arms name members, not numbers", `enum E { A, B }
+fun main() { val e = E.A; when (e) {
+  0 => io.println("a")
+  else => io.println("b")
+} }`, "an enum is not its number"},
+		{"compareTo returns Ordering", `struct P { x: i64 }
+impl Comparable for P { fun compareTo(other: P): i64 = 0 }
+fun main() { }`, "returns 'i64' but trait 'Comparable' declares 'Ordering'"},
+		{"a comparator returns Ordering", `fun main() { io.println("${[2, 1].sortedWith((a, b) => a - b)}") }`, "expected 'Ordering', found 'i64'"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			expectError(t, prelude+c.src, c.want)
+		})
+	}
+	expectWarning(t, prelude+`enum E { A, B, C }
+fun main() { val e = E.A; when (e) {
+  E.A => io.println("a")
+  E.B => io.println("b")
+  else => io.println("c")
+} }`,
+		"'else' stands for the one remaining member, missing 'E.C'")
+	expectWarning(t, prelude+`enum E { A, B }
+fun main() { val e = E.A; when (e) {
+  E.A => io.println("a")
+  E.B => io.println("b")
+  else => io.println("?")
+} }`,
+		"'else' is unreachable: every member of 'E' has an arm")
 }

@@ -487,7 +487,7 @@ func (g *gen) binary(e *sema.Binary) string {
 	}
 	l := g.expr(e.L)
 	r := g.expr(e.R)
-	t := e.L.Type()
+	t := types.Underlying(e.L.Type()) // an enum compares as its integer (D57)
 	llt := g.llType(t)
 	v := g.newTmp()
 	if types.IsString(t) {
@@ -683,7 +683,7 @@ func (g *gen) shortCircuit(e *sema.Binary) string {
 
 func (g *gen) cast(e *sema.Cast) string {
 	x := g.expr(e.X)
-	from, to := e.X.Type(), e.Type()
+	from, to := types.Underlying(e.X.Type()), types.Underlying(e.Type())
 	if _, ok := from.(*types.Pointer); ok {
 		return x // *T to *raw T
 	}

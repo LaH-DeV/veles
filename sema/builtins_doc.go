@@ -17,11 +17,18 @@ import (
 
 // BuiltinDoc describes one built-in method.
 type BuiltinDoc struct {
-	Recv string // receiver family: "string", "List", "MutableList", "Map", ... "float", "int"
+	Recv string // receiver family: "string", "List", "MutableList", "Map", ... "float", "int", "enum"
 	Name string
 	Sig  string // parameter list and result, e.g. "(i: i64): T?"
 	Doc  string
 }
+
+// builtinStatics lists the catalogued operations called on the type rather
+// than on a value, as "family.name".
+var builtinStatics = map[string]bool{"enum.values": true, "enum.fromValue": true, "enum.parse": true}
+
+// Static reports whether the operation is called on the type.
+func (d BuiltinDoc) Static() bool { return builtinStatics[d.Recv+"."+d.Name] }
 
 // builtinFamilies orders the receiver families in the stub, with the
 // declaration header each is rendered under.
@@ -38,6 +45,7 @@ var builtinFamilies = []struct{ family, header, doc string }{
 	{"Range", "struct Range<T>", "`lo..hi` (inclusive) or `lo..<hi` (exclusive); iterate with `loop (i in r)`."},
 	{"float", "struct f64", "Floating-point numbers (`f64`, `f32`). Every method is a single machine instruction."},
 	{"int", "struct i64", "Integers (`i8`..`i64`, `u8`..`u64`). Arithmetic panics on overflow in debug builds."},
+	{"enum", "struct Enum", "Every `enum E : i64 { A = 1, B }` (D57): a closed set of named values of one integer type. `E.A` names a member, `x.value` reads its number."},
 }
 
 var builtinDocs = []BuiltinDoc{
@@ -171,6 +179,12 @@ var builtinDocs = []BuiltinDoc{
 	{"int", "countOnes", "(): i64", "Number of one bits."},
 	{"int", "leadingZeros", "(): i64", "Number of zero bits above the highest one bit (the width for 0)."},
 	{"int", "trailingZeros", "(): i64", "Number of zero bits below the lowest one bit (the width for 0)."},
+
+	{"enum", "toString", "(): string", "The member's name as written in the declaration: `Ordering.Less.toString() == \"Less\"`; interpolation uses it too."},
+	{"enum", "compareTo", "(other: Self): Ordering", "The order of the two values' numbers; `<` and `sorted()` use it."},
+	{"enum", "values", "(): List<Self>", "Every member in declaration order."},
+	{"enum", "fromValue", "(value: i64): Self?", "The member holding `value`, or `null` when none does; the parameter has the enum's base type."},
+	{"enum", "parse", "(s: string): Self?", "The member named `s`, or `null` when none is: the inverse of `toString`."},
 }
 
 // BuiltinStubPath is the path the stub file is known by, next to the
@@ -212,7 +226,11 @@ func buildStub() {
 			}
 			sb.WriteString("  /// ")
 			sb.WriteString(d.Doc)
-			sb.WriteString("\n  fun ")
+			if d.Static() {
+				sb.WriteString("\n  static fun ")
+			} else {
+				sb.WriteString("\n  fun ")
+			}
 			start := sb.Len()
 			sb.WriteString(d.Name)
 			names = append(names, nameAt{fam.family + "." + d.Name, start, sb.Len()})
@@ -260,6 +278,8 @@ func builtinFamily(t types.Type) string {
 		return "Task"
 	case *types.Range:
 		return "Range"
+	case *types.Enum:
+		return "enum"
 	}
 	return ""
 }

@@ -434,6 +434,9 @@ func (f *fnCtx) implements(t types.Type, trait *types.Trait) bool {
 	if tt, ok := t.(*types.Tuple); ok && trait.Name == "Comparable" && trait.Module == "std.prelude" {
 		return f.c.tupleCompare(tt) != nil // lexicographic order (tuple_order.go)
 	}
+	if _, ok := t.(*types.Enum); ok && trait.Module == "std.prelude" {
+		return f.c.implementsPrelude(t, trait.Name) // Comparable, Display, Equatable, Hashable (enum.go)
+	}
 	return f.findImpl(t, trait) != nil
 }
 
@@ -757,6 +760,13 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 	case *types.Set:
 		f.c.refBuiltin(callee.Name.Pos, rt, name)
 		return f.setMethod(recv, ct, name, e)
+	case *types.Enum:
+		if x := f.enumMethodCall(recv, ct, callee, e); x != nil {
+			return x
+		}
+		f.errorf(callee.Name.Pos, "no method '%s' on enum '%s'; an enum value has 'toString()', 'compareTo(other)' and '.value' (D57)", name, ct.Name)
+		f.checkArgsLoosely(e.Args)
+		return bad()
 	}
 	// inherent methods
 	if st, ok := rt.(*types.Struct); ok {
@@ -855,7 +865,7 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 	if tt, ok := rt.(*types.Tuple); ok && name == "compareTo" && len(e.Args) == 1 {
 		if cmp := f.c.tupleCompare(tt); cmp != nil {
 			other := f.checkExprTo(e.Args[0].Value, tt)
-			return &Call{exprBase: exprBase{types.TI64}, Fn: cmp, Args: []Expr{recvArg(cmp, recv), other}}
+			return &Call{exprBase: exprBase{cmp.Sig.Ret}, Fn: cmp, Args: []Expr{recvArg(cmp, recv), other}}
 		}
 	}
 	switch tt := rt.(type) {

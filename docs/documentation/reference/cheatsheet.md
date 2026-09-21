@@ -96,7 +96,7 @@ val h = (a: i64) => (b: i64) => a + b               // curried
 Lambdas capture by reference (D37). Last expression of a block is its
 value.
 
-## Structs, traits, sealed types
+## Structs, traits, sealed types, enums
 
 ```veles
 // fragment
@@ -134,10 +134,15 @@ sealed trait Expr {             // fixed set of variants (D12)
 struct Num : Expr { v: i64 }
 struct Neg : Expr { e: *Expr }
 
+enum Phase : u8 { Red = 1, Amber, Green = 10 }   // closed set of VALUES of one integer type (D57); i64 when unsaid; +1 from the previous
+val ph = Phase.Amber            // ph.value == 2, "$ph" == "Amber", ph.toString(); ph == 2, ph < Phase.Green (compares with the base type, never converts)
+Phase.values(); Phase.fromValue(10); Phase.parse("Red")   // List<Phase>; Phase?; Phase?  — no methods, fields or impls of its own; Comparable + Hashable for free
+when (ph) { Phase.Red => ...; Phase.Amber => ...; Phase.Green => ... }   // exhaustive by member (D13)
+
 trait Iterator { type Item; fun next(): Item? }   // associated type
 impl Iterator for Countdown { type Item = i64; fun next(): i64? { ... } }
 
-impl Comparable for Point { fun compareTo(other: Point): i64 = self.x - other.x }  // <, sorted, min
+impl Comparable for Point { fun compareTo(other: Point): Ordering = self.x.compareTo(other.x) }  // <, sorted, min; Ordering = enum { Less = -1, Equal, Greater }
 impl Display for Point { fun toString(): string = "(${self.x})" }              // "$p"
 // also Equatable (==) and Hashable (map keys); structural by default
 ```

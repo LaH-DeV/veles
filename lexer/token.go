@@ -121,6 +121,7 @@ const (
 	KwSelfTy // Self
 	KwRaw
 	KwType
+	KwEnum
 	KwFor
 	// Reserved for future use; lexed as keywords so they cannot be identifiers.
 	KwReserved
@@ -173,10 +174,11 @@ var keywords = map[string]TokenKind{
 	"Self":     KwSelfTy,
 	"raw":      KwRaw,
 	"type":     KwType,
+	"enum":     KwEnum,
 	"for":      KwFor,
 
 	// reserved
-	"enum": KwReserved, "match": KwReserved, "defer": KwReserved, "go": KwReserved,
+	"match": KwReserved, "defer": KwReserved, "go": KwReserved,
 	"yield": KwReserved, "where": KwReserved, "super": KwReserved, "this": KwReserved,
 	"catch": KwReserved, "interface": KwReserved, "class": KwReserved,
 	"while": KwReserved, "do": KwReserved, "finally": KwReserved,

@@ -1,9 +1,10 @@
-# 9. Sealed types and `when`
+# 9. Sealed types, enums and `when`
 
 A **sealed trait** is a type with a fixed set of variants, each a struct
 (D12). Where a plain trait says "anything that can do X", a sealed trait
 says "exactly one of these". The compiler knows the whole list, so
-`when` can check that you handled every case (D13).
+`when` can check that you handled every case (D13). An **enum** is the
+same idea for plain values (D57): a fixed set of names, each a number.
 
 ## Modelling a choice
 
@@ -116,6 +117,90 @@ Output:
 
 Recursive variants hold pointers (`*Expr`) — a value cannot contain
 itself, and the compiler reports an infinite-size type if you try (D31).
+
+## Enums: a closed set of values
+
+A sealed trait is a closed set of *shapes*; an **enum** is a closed set of
+*values* (D57). Use one when the alternatives carry no data of their
+own — a phase, a direction, a level:
+
+```veles
+use io
+
+/// The phases of a traffic light.
+enum Phase {
+  Red
+  Amber
+  Green
+}
+
+enum Level : u8 {
+  Low = 1
+  Mid
+  High = 10
+}
+
+fun next(p: Phase): Phase = when (p) {
+  Phase.Red   => Phase.Green
+  Phase.Green => Phase.Amber
+  Phase.Amber => Phase.Red
+}
+
+fun main() {
+  val p = Phase.Amber
+  io.println("$p ${p.value} ${next(p)} ${Phase.values()}")
+  io.println("${Level.Mid.value} ${Level.fromValue(10)} ${Level.fromValue(5)} ${Phase.parse("Red")} ${Phase.parse("Blue")}")
+  io.println("${Level.Low < Level.High} ${[Level.High, Level.Low].sorted()} ${Level.High == 10} ${Level.Low.compareTo(Level.Mid)}")
+}
+```
+
+Output:
+```text
+Amber 1 Red [Red, Amber, Green]
+2 High null Red null
+true [Low, High] true Less
+```
+
+Every member is a number of one integer type — `i64` unless the
+declaration says otherwise with `: u8` and the like. A member without a
+value is the previous one plus one, and the first counts from 0; two
+members cannot share a value, and a value must fit the type. At run
+time an enum *is* that number, so it costs nothing to store, compare
+or hash.
+
+What you get without writing anything:
+
+| | |
+|---|---|
+| `Phase.Amber` | a member; `when` over a `Phase` must name every member (or use `else`) |
+| `p.value` | the number |
+| `p.toString()`, `"$p"` | the member's name, `"Amber"` |
+| `Phase.values()` | every member in declaration order |
+| `Phase.fromValue(n)` | the member with that number, or `null` |
+| `Phase.parse("Amber")` | the member with that name, or `null` |
+| `==`, `<`, `sorted()`, map keys | by the number; an enum is `Comparable` and `Hashable` |
+
+An enum compares with its own base type — `level == 10`, `level < 5` —
+but never converts to or from it: a `u8` is not a `Level` (say
+`Level.fromValue(n)`), and a `Level` is not a `u8` (say `.value`). It has
+no methods, fields or `impl` blocks of its own, and it cannot be
+generic: an enum is a set of values, and behaviour that needs one goes
+in a function that takes it, like `next` above. When the alternatives
+start to carry data, you have outgrown the enum and want a sealed trait.
+
+The prelude's `Ordering` is an enum — `Less = -1`, `Equal`, `Greater` —
+and it is what every `compareTo` returns (chapter 8), so a comparison
+reads either way:
+
+```veles
+// fragment
+when (guess.compareTo(secret)) {
+  Ordering.Less    => io.println("Too small!")
+  Ordering.Greater => io.println("Too big!")
+  Ordering.Equal   => io.println("You win!")
+}
+if (a.compareTo(b) < 0) io.println("a first")   // -1 < 0: the base type
+```
 
 ## `when` on other things
 

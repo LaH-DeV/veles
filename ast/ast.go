@@ -335,6 +335,28 @@ type TypeAliasDecl struct {
 	Pos        source.Span
 }
 
+// EnumDecl is `enum Name : Base { A = 1, B, C }`: a closed set of named
+// values of one integer type (D57). Members without a value continue from
+// the previous one; the first defaults to 0.
+type EnumDecl struct {
+	Attrs    []*Attribute
+	Doc      string
+	Pub      bool
+	Internal bool // `internal`: the module level written out (M5); the default
+	Name     Ident
+	Base     Type // the underlying integer type, nil for i64
+	Members  []*EnumMember
+	Pos      source.Span
+}
+
+// EnumMember is one named value of an enum.
+type EnumMember struct {
+	Doc   string
+	Name  Ident
+	Value Expr // nil: the previous value plus one
+	Pos   source.Span
+}
+
 // BadDecl stands in for a declaration that failed to parse.
 type BadDecl struct {
 	Pos source.Span
@@ -350,9 +372,11 @@ func (d *ExternBlock) Span() source.Span    { return d.Pos }
 func (d *BadDecl) Span() source.Span        { return d.Pos }
 func (d *ErrorAliasDecl) Span() source.Span { return d.Pos }
 func (d *TypeAliasDecl) Span() source.Span  { return d.Pos }
+func (d *EnumDecl) Span() source.Span       { return d.Pos }
 
 func (*ErrorAliasDecl) declNode() {}
 func (*TypeAliasDecl) declNode()  {}
+func (*EnumDecl) declNode()       {}
 func (*UseDecl) declNode()        {}
 func (*FunDecl) declNode()        {}
 func (*StructDecl) declNode()     {}

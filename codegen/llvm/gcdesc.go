@@ -36,6 +36,8 @@ func (g *gen) fieldOffsets(fields []types.Type) []int {
 // pointerOffsets lists the candidate pointer words inside a value of type t.
 func (g *gen) pointerOffsets(t types.Type) []int {
 	switch tt := t.(type) {
+	case *types.Enum:
+		return nil
 	case *types.Basic:
 		if tt.Kind == types.String {
 			return []int{0} // data pointer (heap or constant; the collector filters)

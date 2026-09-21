@@ -294,6 +294,7 @@ func (g *gen) showTagged(llt, v string, member func(i int) (types.Type, string),
 // structural equality
 
 func (g *gen) equal(t types.Type, l, r string) string {
+	t = types.Underlying(t) // an enum is its integer (D57)
 	switch tt := t.(type) {
 	case *types.Basic:
 		v := g.newTmp()

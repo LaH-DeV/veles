@@ -171,6 +171,27 @@ func (f *fnCtx) whenExpr(e *ast.WhenExpr, want types.Type) Expr {
 				f.warnf(e.Pos, "'else' stands for the one remaining variant, %s, and would silently take any variant added to '%s' later; name it instead (D13 lint)", f.missingArms(cov, subjType), st.Name)
 			}
 		}
+		if en, isEnum := subjType.(*types.Enum); isEnum {
+			// the same lint over an enum's members (D57)
+			covered := 0
+			for _, m := range en.Members {
+				if cov.enumMembers[m] {
+					covered++
+				}
+			}
+			switch {
+			case f.isExhaustive(cov, subjType, false):
+				var fix *source.Fix
+				for _, arm := range e.Arms {
+					if arm.Else {
+						fix = fixDeleteLine("Remove the unreachable 'else' arm", arm.Pos)
+					}
+				}
+				f.warnFix(e.Pos, fix, "'else' is unreachable: every member of '%s' has an arm (D13 lint)", en.Name)
+			case len(en.Members) > 1 && covered == len(en.Members)-1:
+				f.warnf(e.Pos, "'else' stands for the one remaining member, %s, and would silently take any member added to '%s' later; name it instead (D13 lint)", f.missingArms(cov, subjType), en.Name)
+			}
+		}
 	}
 
 	// result type
@@ -240,7 +261,7 @@ func (f *fnCtx) valueBlock(x Expr) *Block {
 
 func (f *fnCtx) requiresExhaustive(t types.Type) bool {
 	switch tt := t.(type) {
-	case *types.Sealed, *types.Nullable:
+	case *types.Sealed, *types.Nullable, *types.Enum:
 		return true
 	case *types.Basic:
 		return tt.Kind == types.Bool
@@ -558,17 +579,18 @@ func (f *fnCtx) compileFields(p *ast.TypePat, value Expr, st *types.Struct, span
 // exhaustiveness (variant-set coverage; guarded arms never count)
 
 type coverage struct {
-	all       bool
-	null      bool
-	some      bool
-	someInner *coverage // coverage of the payload when Some(pat) is refutable
-	tru, fals bool
-	variants  map[*types.Struct]bool
-	members   map[string]bool // error-union members (D45)
+	all         bool
+	null        bool
+	some        bool
+	someInner   *coverage // coverage of the payload when Some(pat) is refutable
+	tru, fals   bool
+	variants    map[*types.Struct]bool
+	members     map[string]bool            // error-union members (D45)
+	enumMembers map[*types.EnumMember]bool // enum members named by value patterns (D57)
 }
 
 func newCoverage() *coverage {
-	return &coverage{variants: map[*types.Struct]bool{}, members: map[string]bool{}}
+	return &coverage{variants: map[*types.Struct]bool{}, members: map[string]bool{}, enumMembers: map[*types.EnumMember]bool{}}
 }
 
 func (f *fnCtx) cover(cov *coverage, pat ast.Pattern, t types.Type) {
@@ -578,6 +600,14 @@ func (f *fnCtx) cover(cov *coverage, pat ast.Pattern, t types.Type) {
 	case *ast.LiteralPat:
 		if tp := f.variantNamePattern(p); tp != nil {
 			f.cover(cov, tp, t)
+			return
+		}
+		if en, ok := t.(*types.Enum); ok {
+			// `E.Member =>`: compilePattern has already checked that the
+			// value is a member of this enum, so the name is enough
+			if m := enumMemberPattern(en, p); m != nil {
+				cov.enumMembers[m] = true
+			}
 			return
 		}
 		switch v := p.Value.(type) {
@@ -706,6 +736,13 @@ func (f *fnCtx) isExhaustive(cov *coverage, t types.Type, subjectless bool) bool
 			}
 		}
 		return len(tt.Variants) > 0
+	case *types.Enum:
+		for _, m := range tt.Members {
+			if !cov.enumMembers[m] {
+				return false
+			}
+		}
+		return len(tt.Members) > 0
 	case *types.Basic:
 		if tt.Kind == types.Bool {
 			return cov.tru && cov.fals
@@ -738,6 +775,14 @@ func (f *fnCtx) missingArms(cov *coverage, t types.Type) string {
 		for _, m := range tt.Members {
 			if !cov.members[types.Key(m)] {
 				missing = append(missing, "'is "+m.String()+"'")
+			}
+		}
+		return "missing " + strings.Join(missing, ", ")
+	case *types.Enum:
+		var missing []string
+		for _, m := range tt.Members {
+			if !cov.enumMembers[m] {
+				missing = append(missing, "'"+tt.Name+"."+m.Name+"'")
 			}
 		}
 		return "missing " + strings.Join(missing, ", ")
@@ -794,4 +839,24 @@ func (f *fnCtx) variantNamePattern(p *ast.LiteralPat) *ast.TypePat {
 		return nil
 	}
 	return &ast.TypePat{Type: &ast.NamedType{Path: path, Pos: p.Value.Span()}, Pos: p.Value.Span()}
+}
+
+// enumMemberPattern is the member a value pattern over an enum subject
+// names: `E.Member` or `mod.E.Member`. nil for any other expression (a
+// constant of the base type, which covers nothing).
+func enumMemberPattern(en *types.Enum, p *ast.LiteralPat) *types.EnumMember {
+	m, ok := p.Value.(*ast.MemberExpr)
+	if !ok {
+		return nil
+	}
+	switch x := m.X.(type) {
+	case *ast.NameExpr:
+	case *ast.MemberExpr:
+		if _, ok := x.X.(*ast.NameExpr); !ok {
+			return nil
+		}
+	default:
+		return nil
+	}
+	return en.MemberByName(m.Name.Name)
 }

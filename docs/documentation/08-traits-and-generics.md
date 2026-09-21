@@ -251,12 +251,14 @@ type replace that behaviour:
 
 | Trait | Method | Replaces |
 |---|---|---|
-| `Comparable` | `compareTo(other: Self): i64` | `<`, `<=`, `>`, `>=`, `sorted()`, `min()`, `max()` |
+| `Comparable` | `compareTo(other: Self): Ordering` | `<`, `<=`, `>`, `>=`, `sorted()`, `min()`, `max()` |
 | `Equatable` | `equals(other: Self): bool` | `==`, `!=`, `contains`, `indexOf` |
 | `Hashable` | `hash(): i64` | map keys and set elements |
 | `Display` | `toString(): string` | interpolation, `"$x"` |
 
-`compareTo` returns a negative number, zero or a positive number. Numbers
+`compareTo` returns `Ordering.Less`, `Ordering.Equal` or `Ordering.Greater` — an
+enum (chapter 9) whose values are -1, 0 and 1, so `a.compareTo(b) < 0` reads
+as it always has. Numbers
 and strings implement `Comparable` in the prelude, so a bound `T:
 Comparable` accepts `i64`, `string` and your own types alike — this is
 what `min()` and `sorted()` demand of their elements.
@@ -269,7 +271,7 @@ struct Version {
   minor: i64
 
   impl Comparable {
-    fun compareTo(other: Version): i64 =
+    fun compareTo(other: Version): Ordering =
       if (self.major != other.major) self.major.compareTo(other.major)
       else self.minor.compareTo(other.minor)
   }
@@ -493,4 +495,4 @@ throw. A trait whose error is left to the implementation cannot be used
 as a trait object yet (`Fetcher` as a value); give it a fixed error type
 for that.
 
-Next: [Sealed types and `when`](09-sealed-types.md).
+Next: [Sealed types, enums and `when`](09-sealed-types.md).

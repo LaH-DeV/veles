@@ -77,8 +77,8 @@
           }
         },
         {
-          "comment": "struct / trait / sealed trait / error (contextual: a keyword only before a type name)",
-          "match": "\\b(public\\s+)?(extern\\s+)?(sealed\\s+)?(struct|trait|error)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "comment": "struct / trait / sealed trait / error / enum (contextual: a keyword only before a type name)",
+          "match": "\\b(public\\s+)?(extern\\s+)?(sealed\\s+)?(struct|trait|error|enum)\\s+([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
             "1": { "name": "storage.modifier.veles" },
             "2": { "name": "storage.modifier.veles" },

@@ -56,6 +56,9 @@ func (f *fnCtx) staticCall(rt types.Type, callee *ast.MemberExpr, typeArgs []typ
 		f.checkArgsLoosely(e.Args)
 		return bad()
 	}
+	if en, ok := rt.(*types.Enum); ok {
+		return f.enumStaticCall(en, callee, e) // values(), fromValue(n), parse(s) (D57)
+	}
 	t, subst, ok := f.findStatic(rt, name, callee.Name.Pos)
 	if !ok {
 		f.checkArgsLoosely(e.Args)

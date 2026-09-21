@@ -1058,3 +1058,81 @@ func TestScriptsShareADirectory(t *testing.T) {
 		t.Errorf("hover in the other script: %s", res)
 	}
 }
+
+// Enums in the editor (D57): hover on the type spells the members out, hover
+// on a member shows its value, `E.` completes the members and the statics,
+// `e.` completes `value` and the catalogued methods.
+func TestEnumTooling(t *testing.T) {
+	base := "use io\n\n/// Traffic light phases.\nenum Phase : u8 {\n  Red = 1\n  /// Caution.\n  Amber\n  Green = 10\n}\n\nfun main() {\n  val p = Phase.Amber\n  io.println(\"$p ${p.value} ${Phase.Red < p}\")\n  //A\n}\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	if err := os.WriteFile(path, []byte(base), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := pathToURI(path)
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{})
+	c.notify("initialized", map[string]any{})
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": base}})
+	hover := func(line, ch int) string {
+		res, _ := c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": line, "character": ch}})
+		var h struct {
+			Contents struct {
+				Value string `json:"value"`
+			} `json:"contents"`
+		}
+		json.Unmarshal(res, &h)
+		return h.Contents.Value
+	}
+	for _, tc := range []struct {
+		line, ch int
+		want     string
+	}{
+		{3, 6, "internal enum Phase : u8 {\n  Red = 1\n  Amber = 2\n  Green = 10\n}"},
+		{3, 6, "Traffic light phases."},
+		{11, 17, "Phase.Amber = 2"},
+		{11, 17, "Caution."},
+		{6, 3, "Phase.Amber = 2"},
+		{12, 22, "Phase.value: u8"},
+	} {
+		if h := hover(tc.line, tc.ch); !strings.Contains(h, tc.want) {
+			t.Errorf("hover at %d:%d: %q\nwant %q", tc.line, tc.ch, h, tc.want)
+		}
+	}
+	version := 1
+	labels := func(text string, line, ch int) map[string]bool {
+		version++
+		c.notify("textDocument/didChange", map[string]any{"textDocument": map[string]any{"uri": uri, "version": version}, "contentChanges": []map[string]any{{"text": text}}})
+		res, _ := c.call("textDocument/completion", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": line, "character": ch}})
+		var r struct {
+			Items []struct {
+				Label string `json:"label"`
+			} `json:"items"`
+		}
+		json.Unmarshal(res, &r)
+		out := map[string]bool{}
+		for _, it := range r.Items {
+			out[it.Label] = true
+		}
+		return out
+	}
+	got := labels(strings.Replace(base, "  //A\n", "  Phase.\n", 1), 13, 8)
+	for _, want := range []string{"Red", "Amber", "Green", "values", "fromValue", "parse"} {
+		if !got[want] {
+			t.Errorf("Phase. should offer %q: %v", want, got)
+		}
+	}
+	if got["toString"] || got["value"] {
+		t.Errorf("Phase. offers instance members: %v", got)
+	}
+	got = labels(strings.Replace(base, "  //A\n", "  p.\n", 1), 13, 4)
+	for _, want := range []string{"value", "toString", "compareTo"} {
+		if !got[want] {
+			t.Errorf("p. should offer %q: %v", want, got)
+		}
+	}
+	if got["Red"] || got["values"] {
+		t.Errorf("p. offers the type's namespace: %v", got)
+	}
+}

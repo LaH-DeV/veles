@@ -134,7 +134,7 @@ struct PriorityQueueState<T> {
   /// A binary heap: the smallest element (by `compare`) is at index 0 and
   /// the children of `i` are at `2i + 1` and `2i + 2`.
   items:   MutableList<T> = []
-  compare: fun(T, T): i64
+  compare: fun(T, T): Ordering
 }
 
 /// An empty min-priority queue over the elements' natural order:
@@ -142,10 +142,10 @@ struct PriorityQueueState<T> {
 public fun priorityQueue<T: Comparable>(): PriorityQueue<T> =
   PriorityQueue(state: &PriorityQueueState<T>(compare: (a, b) => a.compareTo(b)))
 
-/// An empty priority queue ordered by `compare`, which returns a negative
-/// number when its first argument should come out first. For the largest
+/// An empty priority queue ordered by `compare`, which returns
+/// `Ordering.Less` when its first argument should come out first. For the largest
 /// first: `priorityQueueBy<i64>((a, b) => b.compareTo(a))`.
-public fun priorityQueueBy<T>(compare: fun(T, T): i64): PriorityQueue<T> =
+public fun priorityQueueBy<T>(compare: fun(T, T): Ordering): PriorityQueue<T> =
   PriorityQueue(state: &PriorityQueueState<T>(compare))
 
 /// A priority queue over a binary heap: `push` and `pop` are O(log n),

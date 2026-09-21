@@ -342,6 +342,8 @@ func withDoc(d ast.Decl, doc string) ast.Decl {
 		d.Doc = doc
 	case *ast.TypeAliasDecl:
 		d.Doc = doc
+	case *ast.EnumDecl:
+		d.Doc = doc
 	}
 	return d
 }
@@ -398,6 +400,8 @@ func setInternal(d ast.Decl) {
 		d.Internal = true
 	case *ast.TypeAliasDecl:
 		d.Internal = true
+	case *ast.EnumDecl:
+		d.Internal = true
 	}
 }
 
@@ -436,6 +440,8 @@ func (p *Parser) parseDeclKind(attrs []*ast.Attribute, pub, marked bool, which s
 		return p.parseValDecl(attrs, pub, start)
 	case lexer.KwType:
 		return p.parseTypeAlias(attrs, pub, start)
+	case lexer.KwEnum:
+		return p.parseEnum(attrs, pub, start)
 	case lexer.KwExtern:
 		if p.peek(1).Kind == lexer.KwStruct {
 			p.next()
@@ -1157,6 +1163,49 @@ func (p *Parser) parseErrorAlias(attrs []*ast.Attribute, pub bool, start source.
 	d.Name, _ = p.expectIdent()
 	p.expect(lexer.Assign)
 	d.Members = p.parseErrorType()
+	d.Pos = p.spanFrom(start)
+	return d
+}
+
+// parseEnum parses `enum Name [: Base] { A = 1, B, C }` (D57): members are
+// separated like struct fields, each an identifier with an optional
+// constant value.
+func (p *Parser) parseEnum(attrs []*ast.Attribute, pub bool, start source.Span) ast.Decl {
+	p.next() // enum
+	d := &ast.EnumDecl{Attrs: attrs, Pub: pub}
+	d.Name, _ = p.expectIdent()
+	if p.at(lexer.Lt) {
+		p.errorf(p.span(), "an enum is not generic: it is a closed set of values of one integer type (D57)")
+		p.parseTypeParams()
+	}
+	if p.accept(lexer.Colon) {
+		d.Base = p.parseType()
+	}
+	if !p.at(lexer.LBrace) {
+		p.expectTerminatorPeek("'{' after enum name")
+		d.Pos = p.spanFrom(start)
+		return d
+	}
+	p.next()
+	p.skipSemis()
+	for !p.at(lexer.RBrace, lexer.EOF) {
+		mstart := p.span()
+		doc := p.takeDoc()
+		if !p.at(lexer.Ident) {
+			p.errorf(p.span(), "expected an enum member name, found %s", p.cur().Describe())
+			p.syncStmt()
+			continue
+		}
+		m := &ast.EnumMember{Doc: doc}
+		m.Name, _ = p.expectIdent()
+		if p.accept(lexer.Assign) {
+			m.Value = p.parseExpr()
+		}
+		m.Pos = p.spanFrom(mstart)
+		d.Members = append(d.Members, m)
+		p.parseMemberSeparator()
+	}
+	p.expect(lexer.RBrace)
 	d.Pos = p.spanFrom(start)
 	return d
 }

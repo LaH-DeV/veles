@@ -452,6 +452,65 @@ type Trait struct {
 
 func (t *Trait) String() string { return t.Name }
 
+// Enum is a closed set of named values of one integer type (D57). A value
+// is its Base at run time; the names are compile-time facts the compiler
+// spells out for toString, parse and exhaustiveness.
+type Enum struct {
+	Name    string
+	Module  string
+	Pub     bool
+	Base    *Basic
+	Members []*EnumMember
+	Decl    any
+}
+
+// EnumMember is one named value; Value and Neg spell it the way an integer
+// constant is spelled (a magnitude and a sign), so u64 members fit.
+type EnumMember struct {
+	Name  string
+	Value uint64
+	Neg   bool
+	Doc   string
+	Index int
+}
+
+func (e *Enum) String() string { return e.Name }
+
+// MemberByName finds a member of an enum.
+func (e *Enum) MemberByName(name string) *EnumMember {
+	for _, m := range e.Members {
+		if m.Name == name {
+			return m
+		}
+	}
+	return nil
+}
+
+// MemberByValue finds the member holding a value.
+func (e *Enum) MemberByValue(value uint64, neg bool) *EnumMember {
+	for _, m := range e.Members {
+		if m.Value == value && (m.Neg == neg || value == 0) {
+			return m
+		}
+	}
+	return nil
+}
+
+// Underlying is the run-time representation of a type: an enum's integer
+// base, otherwise the type itself.
+func Underlying(t Type) Type {
+	if e, ok := t.(*Enum); ok {
+		return e.Base
+	}
+	return t
+}
+
+// IsEnum reports whether t is an enum.
+func IsEnum(t Type) bool {
+	_, ok := t.(*Enum)
+	return ok
+}
+
 func qualified(name string, args []Type) string {
 	if len(args) == 0 {
 		return name
@@ -542,7 +601,7 @@ func Identical(a, b Type) bool {
 	case *Assoc:
 		b, ok := b.(*Assoc)
 		return ok && a.Trait == b.Trait && a.Name == b.Name && Identical(a.Base, b.Base)
-	case *Struct, *Sealed, *Trait, *TypeParam:
+	case *Struct, *Sealed, *Trait, *TypeParam, *Enum:
 		return a == b
 	}
 	return false
@@ -770,6 +829,8 @@ func Key(t Type) string {
 			return t.Module + "." + t.Name
 		}
 		return t.Module + "." + t.Name + "<" + keys(t.TypeArgs) + ">"
+	case *Enum:
+		return t.Module + "." + t.Name
 	}
 	return t.String()
 }

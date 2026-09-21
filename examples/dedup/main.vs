@@ -120,7 +120,7 @@ fun run(args: List<string>) throws UsageError | IoError {
   val dupes = groups.entries()
     .filter(e => e.1.len() > 1)
     .sortedWith((a, b) => {
-      if (a.0.size != b.0.size) return b.0.size - a.0.size  // largest first
+      if (a.0.size != b.0.size) return b.0.size.compareTo(a.0.size)  // largest first
       a.1.atOrPanic(0).compareTo(b.1.atOrPanic(0))
     })
 

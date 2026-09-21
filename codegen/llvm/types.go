@@ -78,6 +78,8 @@ func (g *gen) llType(t types.Type) string {
 		return g.sealedType(t)
 	case *types.ErrorUnion:
 		return g.unionType(t)
+	case *types.Enum:
+		return g.llType(t.Base) // a value is its integer (D57)
 	}
 	panic(fmt.Sprintf("llType: unsupported type %s (%T)", t, t))
 }
@@ -211,6 +213,8 @@ func (g *gen) layout(t types.Type) (size, align int) {
 		return 8 + 8*g.payloadWords(t), 8
 	case *types.ErrorUnion:
 		return 8 + 8*g.unionWords(t), 8
+	case *types.Enum:
+		return g.layout(t.Base)
 	}
 	return 8, 8
 }

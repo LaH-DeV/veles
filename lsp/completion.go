@@ -27,20 +27,22 @@ type completionItem struct {
 }
 
 const (
-	ciMethod   = 2
-	ciFunction = 3
-	ciField    = 5
-	ciVariable = 6
-	ciClass    = 7
-	ciInterface = 8
-	ciModule   = 9
-	ciKeyword  = 14
-	ciStruct   = 22
+	ciMethod     = 2
+	ciFunction   = 3
+	ciField      = 5
+	ciVariable   = 6
+	ciClass      = 7
+	ciInterface  = 8
+	ciModule     = 9
+	ciKeyword    = 14
+	ciEnum       = 13
+	ciEnumMember = 20
+	ciStruct     = 22
 )
 
 var keywordCompletions = []string{
 	"fun", "val", "var", "const", "if", "else", "loop", "break", "continue", "return", "throw",
-	"struct", "error", "trait", "impl", "extend", "sealed", "public", "private", "internal", "protected", "use", "when", "is", "as", "in",
+	"struct", "enum", "error", "trait", "impl", "extend", "sealed", "public", "private", "internal", "protected", "use", "when", "is", "as", "in",
 	"throws", "suspends", "try", "async", "await", "scope", "gather", "race", "with",
 	"unsafe", "extern", "mut", "override", "true", "false", "null", "self", "Self", "type",
 }
@@ -175,7 +177,7 @@ func (s *Server) completion(params json.RawMessage) any {
 			}
 			if ref.Type != nil {
 				sc := s.scopeAt(a, d, off)
-				if ref.Kind == "struct" || ref.Kind == "type" || ref.Kind == "sealed" || ref.Kind == "trait" {
+				if ref.Kind == "struct" || ref.Kind == "type" || ref.Kind == "sealed" || ref.Kind == "trait" || ref.Kind == "enum" {
 					// `Type.`: the type's namespace — statics and, for a
 					// sealed trait, its variants — never instance members
 					s.addStatics(add, a, ref.Type, sc)
@@ -276,6 +278,15 @@ func (s *Server) addMembers(add adder, a *analysis, t types.Type, sc *scope) {
 		add("lo", ciField, "Range.lo")
 		add("hi", ciField, "Range.hi")
 		add("inclusive", ciField, "Range.inclusive")
+	case *types.Enum:
+		// a value has its number and the catalogued methods (D57)
+		add("value", ciField, tt.Name+".value: "+tt.Base.Name)
+		for _, d := range sema.BuiltinMethods(t) {
+			if !d.Static() {
+				add(d.Name, ciMethod, "enum."+d.Name+d.Sig)
+			}
+		}
+		return
 	case *types.Struct:
 		base := tt
 		if tt.Template != nil {
@@ -381,6 +392,17 @@ func (s *Server) addStatics(add adder, a *analysis, t types.Type, sc *scope) {
 		for _, v := range tt.Variants {
 			add(v.Name, ciStruct, "struct "+v.Name+" : "+tt.Name)
 		}
+	case *types.Enum:
+		// the members, then values() / fromValue(n) / parse(s) (D57)
+		for _, m := range tt.Members {
+			add(m.Name, ciEnumMember, tt.Name+"."+m.Name+" = "+sema.EnumMemberText(m))
+		}
+		for _, d := range sema.BuiltinMethods(t) {
+			if d.Static() {
+				add(d.Name, ciMethod, "static fun "+tt.Name+"."+d.Name+d.Sig)
+			}
+		}
+		return
 	case *types.Trait:
 		return // `Trait.` names nothing callable; the methods are on values
 	}
@@ -458,6 +480,8 @@ func (s *Server) addDecl(add adder, decl ast.Decl) {
 		add(dd.Name.Name, ciStruct, "error "+dd.Name.Name+" = "+ast.TypeString(dd.Members))
 	case *ast.TypeAliasDecl:
 		add(dd.Name.Name, ciClass, "type "+dd.Name.Name+" = "+ast.TypeString(dd.Type))
+	case *ast.EnumDecl:
+		add(dd.Name.Name, ciEnum, "enum "+dd.Name.Name)
 	case *ast.TraitDecl:
 		if dd.Sealed {
 			add(dd.Name.Name, ciStruct, "sealed trait "+dd.Name.Name)
@@ -478,6 +502,8 @@ func isPub(decl ast.Decl) bool {
 	case *ast.ErrorAliasDecl:
 		return dd.Pub
 	case *ast.TypeAliasDecl:
+		return dd.Pub
+	case *ast.EnumDecl:
 		return dd.Pub
 	case *ast.TraitDecl:
 		return dd.Pub
