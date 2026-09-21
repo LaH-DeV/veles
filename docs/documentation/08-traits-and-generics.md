@@ -19,7 +19,7 @@ trait Shape {
 struct Circle {
   r: f64
 
-  impl Shape {
+  implement Shape {
     fun area(): f64 = 3.0 * self.r * self.r
     fun name(): string = "circle"
   }
@@ -28,7 +28,7 @@ struct Circle {
 struct Square {
   side: f64
 
-  impl Shape {
+  implement Shape {
     fun area(): f64 = self.side * self.side
     fun name(): string = "square"
     override fun describe(): string = "a square of side ${self.side}"
@@ -47,19 +47,19 @@ circle with area 3.0
 a square of side 2.0
 ```
 
-- A method with a body in the trait is a **default**; an `impl` may keep
+- A method with a body in the trait is a **default**; an `implement` may keep
   it or replace it with `override fun`.
-- For a type you declare, the impl sits **inside the struct body** as
-  `impl Shape { ... }` — the type is implied, and generic structs pass
-  their type parameters along. The top-level `impl Shape for Square`
+- For a type you declare, the implement sits **inside the struct body** as
+  `implement Shape { ... }` — the type is implied, and generic structs pass
+  their type parameters along. The top-level `implement Shape for Square`
   form is the same thing written apart, and it is the form for a type
-  you did not write (`impl Shape for i64`), or when the impl needs
-  bounds the struct does not have (`impl<T: Display> Display for
+  you did not write (`implement Shape for i64`), or when the implement needs
+  bounds the struct does not have (`implement<T: Display> Display for
   Pair<T>`). Writing it at top level for your own type in the same
   module is a lint: the compiler warns, and the editor's quick fix moves
   it into the body (`veles check --fix` does the same in bulk).
 - A type may implement any number of traits, and you may implement
-  *your* trait for a type you did not write — `impl Shape for i64` is
+  *your* trait for a type you did not write — `implement Shape for i64` is
   legal. What is not legal is two impls of the same trait for the same
   type anywhere in the program (D17).
 - Trait method calls need no import; if two traits in scope both define
@@ -73,9 +73,9 @@ deliberate choice, so it is worth knowing which is which.
 
 | | TypeScript / Go interface | Kotlin interface | Veles trait |
 |---|---|---|---|
-| How a type gets it | structurally: having the methods is enough | `class C : I` at the class | `impl I for C` (or `impl I { }` in the body): explicit, by name |
-| For a type you did not write | Go: yes (structural); TS: yes | no (extension functions do not implement interfaces) | yes: `impl Display for i64` in your package |
-| Default method bodies | TS: no (abstract only); Go: no | yes | yes; an impl that replaces one writes `override` |
+| How a type gets it | structurally: having the methods is enough | `class C : I` at the class | `implement I for C` (or `implement I { }` in the body): explicit, by name |
+| For a type you did not write | Go: yes (structural); TS: yes | no (extension functions do not implement interfaces) | yes: `implement Display for i64` in your package |
+| Default method bodies | TS: no (abstract only); Go: no | yes | yes; an implement that replaces one writes `override` |
 | Static / constructor-like members | TS: no; Go: no | companion objects | `static fun` on the trait: `T.parse(s)` in generic code |
 | Associated types | generics on the interface | generics | `type Item` inside the trait (`Iterator.Item`) |
 | A closed set of implementors | discriminated union (TS) | `sealed interface` | `sealed trait` + variant structs (chapter 9) |
@@ -83,8 +83,8 @@ deliberate choice, so it is worth knowing which is which.
 
 The structural-vs-explicit difference is the one that changes how you
 write code: in Veles a type never satisfies a trait by accident, and the
-compiler tells you *at the impl* what is missing, not at the first call.
-The price is one `impl` line per type; the return is that `Comparable`,
+compiler tells you *at the implement* what is missing, not at the first call.
+The price is one `implement` line per type; the return is that `Comparable`,
 `Display` and your own traits can carry meaning ("this type promises
 its `compareTo` is a total order") rather than only a method shape.
 
@@ -97,10 +97,10 @@ function you may call exactly the methods `Shape` promises:
 use io
 
 trait Shape { fun area(): f64 }
-struct Circle { r: f64; impl Shape { fun area(): f64 = 3.0 * self.r * self.r } }
-struct Square { side: f64; impl Shape { fun area(): f64 = self.side * self.side } }
+struct Circle { r: f64; implement Shape { fun area(): f64 = 3.0 * self.r * self.r } }
+struct Square { side: f64; implement Shape { fun area(): f64 = self.side * self.side } }
 
-fun <T: Shape> largest(shapes: List<T>): T? {
+fun largest<T: Shape>(shapes: List<T>): T? {
   var best: T? = null
   loop (s in shapes) {
     if (best == null || s.area() > best.area()) best = s
@@ -139,14 +139,14 @@ trait Shape {
 }
 struct Circle {
   r: f64
-  impl Shape {
+  implement Shape {
     fun area(): f64 = 3.0 * self.r * self.r
     fun name(): string = "circle"
   }
 }
 struct Square {
   side: f64
-  impl Shape {
+  implement Shape {
     fun area(): f64 = self.side * self.side
     fun name(): string = "square"
   }
@@ -182,15 +182,15 @@ use io
 
 trait Show { fun show(): string }
 
-impl Show for i64 { fun show(): string = "#$self" }
-impl Show for string { fun show(): string = "'$self'" }
+implement Show for i64 { fun show(): string = "#$self" }
+implement Show for string { fun show(): string = "'$self'" }
 
 struct Box<T: Show> {
   item: T
   fun label(): string = "[${self.item.show()}]"
 }
 
-fun <T: Show> showAll(xs: List<T>): string = xs.map(x => x.show()).join(" ")
+fun showAll<T: Show>(xs: List<T>): string = xs.map(x => x.show()).join(" ")
 
 fun main() {
   io.println("${Box(item: 7).label()} ${Box(item: "hi").label()}")
@@ -208,7 +208,7 @@ Output:
 
 A trait may declare a `static fun` — a function without `self`, called
 on the type. Implementations write `static fun` too, and generic code
-calls it on the type parameter: `T.parse(s)` picks the impl for whatever
+calls it on the type parameter: `T.parse(s)` picks the implement for whatever
 `T` is at each call. The prelude's `Parsable` is the standard example:
 
 ```veles
@@ -217,7 +217,7 @@ use io
 struct Celsius {
   degrees: f64
 
-  impl Parsable {
+  implement Parsable {
     static fun parse(s: string): Celsius? {
       val n = f64.parse(s.trimEnd().replace("C", "")) ?: return null
       Celsius(degrees: n)
@@ -270,13 +270,13 @@ struct Version {
   major: i64
   minor: i64
 
-  impl Comparable {
+  implement Comparable {
     fun compareTo(other: Version): Ordering =
       if (self.major != other.major) self.major.compareTo(other.major)
       else self.minor.compareTo(other.minor)
   }
 
-  impl Display {
+  implement Display {
     fun toString(): string = "v${self.major}.${self.minor}"
   }
 }
@@ -284,11 +284,11 @@ struct Version {
 struct Name {
   text: string
 
-  impl Equatable {
+  implement Equatable {
     fun equals(other: Name): bool = self.text.toLower() == other.text.toLower()
   }
 
-  impl Hashable {
+  implement Hashable {
     fun hash(): i64 = self.text.toLower().len()
   }
 }
@@ -314,7 +314,7 @@ true 1
 Two rules keep this honest. A type that implements `Equatable` must also
 implement `Hashable` before it can be a map key, because values that are
 equal must hash alike. And the built-in types keep their meaning: an
-`impl Display for i64` in your package is accepted but interpolation of
+`implement Display for i64` in your package is accepted but interpolation of
 an `i64` still prints the number.
 
 ## Comparing values
@@ -327,8 +327,8 @@ Three questions have three separate answers in Veles: *are these equal?*
 |---|---|---|---|
 | numbers, `bool`, `string` | by value | numbers and strings: natural order | yes |
 | tuples | element by element | no (use a key or comparator) | when the elements are |
-| structs | field by field | only with `impl Comparable` | when the fields are |
-| sealed types | same variant, equal fields | only with `impl Comparable` | when the variants are |
+| structs | field by field | only with `implement Comparable` | when the fields are |
+| sealed types | same variant, equal fields | only with `implement Comparable` | when the variants are |
 | `T?` | both null, or both present and equal | no | when `T` is |
 | `List`, `Map`, `Set` | by content (chapter 4) | no | immutable ones, when the elements are |
 | `MutableList`, `MutableMap`, `MutableSet` | by content | no | never — they can change after being stored |
@@ -403,7 +403,7 @@ Ola ann
 ```
 
 When a *different equality* is needed everywhere a type appears — not
-just in one call — give the type an `Equatable` impl (with `Hashable`), as
+just in one call — give the type an `Equatable` implement (with `Hashable`), as
 `Name` does above. When two meanings are needed for one type, wrap it: a
 `struct CaseInsensitive { text: string }` with its own `Equatable` and
 `Hashable` is a key that treats `"Ann"` and `"ann"` as one, while plain
@@ -452,7 +452,7 @@ trait Fetcher {
 }
 
 struct Http {
-  impl Fetcher {
+  implement Fetcher {
     fun fetch(url: string): string throws {
       if (url.startsWith("bad")) throw HttpError(status: 500)
       "http:$url"
@@ -463,7 +463,7 @@ struct Http {
 struct Memory {
   data: Map<string, string>
 
-  impl Fetcher {
+  implement Fetcher {
     fun fetch(url: string): string throws Missing = self.data.get(url) ?: throw Missing(name: url)
   }
 }

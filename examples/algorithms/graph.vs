@@ -119,7 +119,7 @@ struct Hop {
   dist: i64
   node: i64
 
-  impl Comparable {
+  implement Comparable {
     fun compareTo(other: Hop): Ordering = self.dist.compareTo(other.dist)
   }
 }

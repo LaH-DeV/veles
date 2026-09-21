@@ -141,7 +141,7 @@ var keywords = map[string]TokenKind{
 	"return":   KwReturn,
 	"struct":   KwStruct,
 	"trait":    KwTrait,
-	"impl":     KwImpl,
+	"implement": KwImpl,
 	"sealed":   KwSealed,
 	"public":   KwPub,
 	"private":  KwPrivate,

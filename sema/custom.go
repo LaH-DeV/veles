@@ -113,7 +113,10 @@ func (c *Checker) implementsPrelude(t types.Type, traitName string) bool {
 	if _, ok := t.(*types.Enum); ok {
 		// ordered by value, printed by name, equal and hashed as the
 		// integer: the whole prelude set, with no impl to write (D57)
-		return traitName == "Comparable" || traitName == "Display" || traitName == "Equatable" || traitName == "Hashable"
+		if traitName == "Comparable" || traitName == "Display" || traitName == "Equatable" || traitName == "Hashable" {
+			return true
+		}
+		// Encodable and Decodable are derived impls (D58): found below
 	}
 	return c.findImplFor(t, trait) != nil
 }

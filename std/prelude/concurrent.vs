@@ -11,7 +11,7 @@ struct Indexed<R> {
 }
 
 /// A pool worker: takes indexes until the channel closes, applies `f`, reports.
-fun <T, R, E> poolWorker(items: List<T>, f: sendable fun(T): R suspends throws E, jobs: Channel<i64>, results: Channel<Indexed<R>>) throws E {
+fun poolWorker<T, R, E>(items: List<T>, f: sendable fun(T): R suspends throws E, jobs: Channel<i64>, results: Channel<Indexed<R>>) throws E {
   loop {
     val i = await jobs.recv() ?: break
     val value = try f(items.atOrPanic(i))
@@ -65,7 +65,7 @@ extend<T: Sendable> List<T> {
 }
 
 /// Calls `f`; the named function `async` needs for a function value.
-fun <R, E> invoke(f: sendable fun(): R suspends throws E): R throws E = try f()
+fun invoke<R, E>(f: sendable fun(): R suspends throws E): R throws E = try f()
 
 /// `withTimeout` ran out of time.
 public error Timeout {
@@ -81,7 +81,7 @@ public error Timeout {
 /// ```veles
 /// val line = try withTimeout(5000, () => try conn.readLine())
 /// ```
-public fun <R: Sendable, E> withTimeout(ms: i64, f: sendable fun(): R suspends throws E): R throws E | Timeout {
+public fun withTimeout<R: Sendable, E>(ms: i64, f: sendable fun(): R suspends throws E): R throws E | Timeout {
   scope {
     val t = async invoke(f)
     race {

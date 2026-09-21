@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.32** — language design complete. Every open question in the language itself is closed. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
+**Working draft v0.33** — language design complete; D58 adds the derivation story D51 deferred. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -35,7 +35,7 @@ The compiler performs call-graph analysis to determine which functions can suspe
 
 *Rationale:* Go's ergonomics with an implementation that ports to WebAssembly later without re-engineering the concurrency layer or the GC's root scanning.
 
-*Amended by D40:* inference covers direct calls only. Trait methods and function types declare their effects explicitly, because dynamic dispatch makes the reachable impl set open.
+*Amended by D40:* inference covers direct calls only. Trait methods and function types declare their effects explicitly, because dynamic dispatch makes the reachable implement set open.
 
 *Known costs:* Stack traces and profiler output are worse than green threads would give. Least battle-tested of the available approaches.
 
@@ -53,7 +53,7 @@ Consequence: `throws` and explicit `Result` interconvert freely; libraries canno
 
 **A `Result` must be consumed.** A `throws` call as a bare statement, or bound to a name that is never read, is an error — regardless of whether the caller is itself `throws`, since only `try` propagates. `val _ = f()` is the explicit discard. (Non-`Result` bindings that are never read are a warning.)
 
-**Errors are declared, and every error implements `Error`.** The prelude declares `trait Error { fun message(): string = "$self" }`. An error type is declared with a contextual keyword: `error ParseError { text: string; fun message(): string = ... }` is sugar for `struct ParseError { text: string }` plus `impl Error for ParseError { override fun message() ... }`. Inside an `error` body `message` needs no `override` (there is exactly one trait in play; writing it is allowed), and no other method may carry one — they are inherent. A field `message: string` with no `message()` written is used as the message, so `error Failed { message: string }` is thrown as `Failed(message: "...")`; `Panic` is exactly that. **Only errors can be in error position** (a `throws` clause, a `throw` operand, the `E` of a `Result`): throwing a plain struct is an error naming the fix (`error Dog { ... }`), non-structs are rejected, and a generic `throws X` needs the bound `X: Error`. `impl Error for T {}` on an existing struct is the escape hatch for types one does not own. Because every member of an error union implements `Error`, **the union exposes `Error`'s methods directly**: `e.message()` on a `ParseError | RangeError` compiles to a tag switch, no `when` required. An error escaping `main() throws` is reported through `message()`. This is Go's one-method `error` interface with structured payloads kept as fields, and the declaration form makes "is an error" a property of the type rather than of its uses. `error` is a keyword only at declaration position (`error Name`); elsewhere it is an ordinary identifier, so `is Err(error) => ...` is unaffected. Rejected: treating every struct as an implicit `Error` (it made `throw Dog()` legal); `struct X : Error` (in D12 that syntax means variant membership); and making `message` a mandatory field (it cannot be computed from the other fields, which is the common case).
+**Errors are declared, and every error implements `Error`.** The prelude declares `trait Error { fun message(): string = "$self" }`. An error type is declared with a contextual keyword: `error ParseError { text: string; fun message(): string = ... }` is sugar for `struct ParseError { text: string }` plus `implement Error for ParseError { override fun message() ... }`. Inside an `error` body `message` needs no `override` (there is exactly one trait in play; writing it is allowed), and no other method may carry one — they are inherent. A field `message: string` with no `message()` written is used as the message, so `error Failed { message: string }` is thrown as `Failed(message: "...")`; `Panic` is exactly that. **Only errors can be in error position** (a `throws` clause, a `throw` operand, the `E` of a `Result`): throwing a plain struct is an error naming the fix (`error Dog { ... }`), non-structs are rejected, and a generic `throws X` needs the bound `X: Error`. `implement Error for T {}` on an existing struct is the escape hatch for types one does not own. Because every member of an error union implements `Error`, **the union exposes `Error`'s methods directly**: `e.message()` on a `ParseError | RangeError` compiles to a tag switch, no `when` required. An error escaping `main() throws` is reported through `message()`. This is Go's one-method `error` interface with structured payloads kept as fields, and the declaration form makes "is an error" a property of the type rather than of its uses. `error` is a keyword only at declaration position (`error Name`); elsewhere it is an ordinary identifier, so `is Err(error) => ...` is unaffected. Rejected: treating every struct as an implicit `Error` (it made `throw Dog()` legal); `struct X : Error` (in D12 that syntax means variant membership); and making `message` a mandatory field (it cannot be computed from the other fields, which is the common case).
 
 **`is Ok` / `is Err` smart-cast to the payload.** After `if (r is Ok)` the subject `r` *is* the `T`; in the `else` branch (or after `!is Ok`) it is the `E`. `r.ok` and `r.err` are the same tests spelled as properties (v0.23): `if (r.ok)` narrows exactly like `if (r is Ok)`, and the teaching form. In a `when`, `is Ok` / `is Err` arms narrow the subject the same way, and `when (val r = expr)` names an expression subject for the arms. This is D5's `T?` → `T` rule applied to `Result` (and `Option`'s `Some`): the wrapper variants are handled, never held as values. A general two-variant sealed type gets the complementary narrowing in the failed branch too, but only `Result`/`Option` read through to a payload.
 
@@ -142,7 +142,7 @@ Default visibility is module-private. `public` makes a declaration visible to th
 
 Consequence: library authors get a deliberately curated public surface, consumers cannot reach into internals, and Veles never needs Go's magic `internal/` directories.
 
-*Amended (v0.29) — spelling and a third level.* The keyword is `public`, not `pub`: it now sits next to `private`, and the pair every Java, C#, Kotlin, Swift and TypeScript reader knows is `public`/`private`; the three extra characters on each exported declaration were weighed against that and lost. `export` was rejected for it — exporting is what the *package* does, in the manifest, module by module, and a keyword by that name on a struct field would claim a boundary the field does not cross. (Whether the package boundary itself should one day be spelled in source with `export` rather than in the manifest is an open question the user has reserved; nothing here prejudges it.) The levels are therefore: **`private`** — visible only inside the type's own declarations: its methods, its `impl` and `extend` blocks in the same module, and its `static val` initializers (Swift's rule for extensions in the same file); **nothing** — the module, as before, which keeps small programs light; **`public`** — the package. `private` exists for fields and methods only; a module-level declaration is already module-private. A private field cannot be read, assigned or bound in a pattern from outside. In a constructor call the rule turns on the default (v0.30): a private field *with* a default is the type's own state and outsiders leave it to the default; one *without* a default is the initial state only the constructor call can supply, so it is given from anywhere the type is visible and is private from then on — Kotlin's `class Parser(private val toks: ...)`, without the syntax. Swift's rule (a private stored property makes the memberwise initializer private) was the v0.29 behaviour and was dropped: it forced a `static fun` on every type that merely wanted to hide what it was given. That is the whole encapsulation story, with no getters and no `friend`. Motivated by a one-file program whose request handlers reached into a store's counter: modules were the only boundary, and a directory per invariant is too heavy.
+*Amended (v0.29) — spelling and a third level.* The keyword is `public`, not `pub`: it now sits next to `private`, and the pair every Java, C#, Kotlin, Swift and TypeScript reader knows is `public`/`private`; the three extra characters on each exported declaration were weighed against that and lost. `export` was rejected for it — exporting is what the *package* does, in the manifest, module by module, and a keyword by that name on a struct field would claim a boundary the field does not cross. (Whether the package boundary itself should one day be spelled in source with `export` rather than in the manifest is an open question the user has reserved; nothing here prejudges it.) The levels are therefore: **`private`** — visible only inside the type's own declarations: its methods, its `implement` and `extend` blocks in the same module, and its `static val` initializers (Swift's rule for extensions in the same file); **nothing** — the module, as before, which keeps small programs light; **`public`** — the package. `private` exists for fields and methods only; a module-level declaration is already module-private. A private field cannot be read, assigned or bound in a pattern from outside. In a constructor call the rule turns on the default (v0.30): a private field *with* a default is the type's own state and outsiders leave it to the default; one *without* a default is the initial state only the constructor call can supply, so it is given from anywhere the type is visible and is private from then on — Kotlin's `class Parser(private val toks: ...)`, without the syntax. Swift's rule (a private stored property makes the memberwise initializer private) was the v0.29 behaviour and was dropped: it forced a `static fun` on every type that merely wanted to hide what it was given. That is the whole encapsulation story, with no getters and no `friend`. Motivated by a one-file program whose request handlers reached into a store's counter: modules were the only boundary, and a directory per invariant is too heavy.
 
 *Addendum (v0.30) — the unwritten level has a name: `internal`.* "Nothing written means the module" was judged not self-explanatory, so the level is called *internal* (Kotlin's and Swift's word for it; `protected` was considered for this level and given instead to write-protection of fields, D22 addendum, where its "the owner only" sense fits) and may be written: `internal fun helper()`, `internal x: i64`, `internal struct Note`, on the same positions as `public`. It changes nothing and is never required; the formatter keeps it where the author wrote it; `public internal` is a contradiction and an error. The example package's `internal` module was renamed `support`, since the word is a keyword now.
 
@@ -194,7 +194,7 @@ public fun someFunc() {
 
 - Semicolon rule — recommend copying Go's automatic insertion wholesale
 - Lambda syntax
-- Trait declaration and impl syntax
+- Trait declaration and implement syntax
 
 ### D11 — Mutability: `val` / `var` on bindings only
 
@@ -262,7 +262,7 @@ Rejected: invariance combined with a `Nothing` bottom type, which does not compo
 Whether a trait call was specialized or dispatched through a dictionary must never be observable. Therefore, as hard rules:
 
 - No per-instantiation static state
-- No Rust-style `specialization` where a more specific impl overrides a generic one
+- No Rust-style `specialization` where a more specific implement overrides a generic one
 
 With those in place, specialization is purely an optimization policy. Veles can ship dictionary dispatch in v1 and add auto-specialization later with no language change. The §6.2 question becomes permanently deferrable.
 
@@ -274,14 +274,14 @@ With those in place, specialization is purely an optimization policy. Veles can 
 
 ### D17 — Trait coherence: global, enforced at link time
 
-No orphan rule. Any module may implement any trait for any type, but **at most one impl may exist per (trait, type) pair across the entire program.**
+No orphan rule. Any module may implement any trait for any type, but **at most one implement may exist per (trait, type) pair across the entire program.**
 
 Module-scoped resolution was considered and rejected. Under D9 a trait object's vtable is built at the boxing site, and under D8 the dictionary is chosen at the instantiation site, so scoped impls would make "this type implements this trait" stop being a fact about the type. The concrete failure: a `HashMap<Foo, V>` populated in one module and read in another silently fails to find present keys, with no error anywhere.
 
 Two consequences to design for:
 
 - **Conflicts should be caught at dependency resolution, not link time.** Impls are visible in the materialized module interfaces (§5), so the package manager can detect a collision while resolving and report both module paths, instead of emitting a linker error with no useful context.
-- **Adding an impl is a breaking change.** A library shipping a new `impl Display for Foo` in v1.1 can collide with an impl a downstream user already wrote. Rust's orphan rule eliminates this class; Veles has traded it for flexibility. The semver policy must state that new impls require a major version.
+- **Adding an implement is a breaking change.** A library shipping a new `implement Display for Foo` in v1.1 can collide with an implement a downstream user already wrote. Rust's orphan rule eliminates this class; Veles has traded it for flexibility. The semver policy must state that new impls require a major version.
 
 ### D18 — Strings: validated UTF-8, immutable, byte-indexed
 
@@ -360,21 +360,21 @@ Rejected — Rust's `&self` / `&mut self`: enforced by a borrow checker Veles do
 
 Rejected — private-by-default fields alongside `var`: with bare fields immutable, an exposed field is readable and nothing else, which is what a record is for; three visibility levels need one unmarked level and it must be the same for fields, methods and top-level declarations (M5).
 
-*Addendum (v0.30) — `protected var`, and `val` written out.* Between "never assigned" and "assigned by anyone" sits the most common shape of managed state: a value everyone may read that only its type updates — C#'s `{ get; private set; }`, Swift's `private(set) var`, Kotlin's `var x` with a `private set`. Veles spells it `protected var`: `public protected var count: i64 = 0` is read wherever it is visible and assigned only inside the type's own declarations (methods, `impl` and `extend` blocks, the same set `private` uses). It replaces a `private var` plus a getter. The two modifiers answer two questions in order — the first word says who *sees* the field (`private` / nothing or `internal` / `public`), the rest who *assigns* it (bare or `val`: nobody; `protected var`: the type; `var`: anyone who sees it). `protected` always qualifies `var` (a bare field has nothing to protect; the compiler says so), and `private protected var` is refused as redundant — nobody outside can see the field, so `private var` already says it. It never restricts reading. For narrowing and for Sendable a `protected var` counts as `var` (the type can change it). The bare field may be written `val` for emphasis; the formatter keeps the author's word and never requires it.
+*Addendum (v0.30) — `protected var`, and `val` written out.* Between "never assigned" and "assigned by anyone" sits the most common shape of managed state: a value everyone may read that only its type updates — C#'s `{ get; private set; }`, Swift's `private(set) var`, Kotlin's `var x` with a `private set`. Veles spells it `protected var`: `public protected var count: i64 = 0` is read wherever it is visible and assigned only inside the type's own declarations (methods, `implement` and `extend` blocks, the same set `private` uses). It replaces a `private var` plus a getter. The two modifiers answer two questions in order — the first word says who *sees* the field (`private` / nothing or `internal` / `public`), the rest who *assigns* it (bare or `val`: nobody; `protected var`: the type; `var`: anyone who sees it). `protected` always qualifies `var` (a bare field has nothing to protect; the compiler says so), and `private protected var` is refused as redundant — nobody outside can see the field, so `private var` already says it. It never restricts reading. For narrowing and for Sendable a `protected var` counts as `var` (the type can change it). The bare field may be written `val` for emphasis; the formatter keeps the author's word and never requires it.
 
 On the word: `protected` means "the class and its subclasses" in Java, C#, C++ and Kotlin. Veles has no inheritance and will not get it — shared behaviour is a trait (D6/D9), closed families are sealed traits (D12) — so the subclass reading has nothing to attach to, and the word is free to mean what it says: protected from writes by anyone but the owner. The alternatives were weighed: `readonly` (TypeScript's and C#'s word for what Veles's *bare* field already is — it would invert the term for those readers, and it sits confusingly next to `val`), `var(private)` (not Veles syntax), Swift's `private(set)` (same). Making the protected level the *default* was proposed and rejected: it would take back the at-a-glance guarantee (a struct of bare fields cannot change) and make most `val` structs uncapturable by sendable closures.
 
-### D23 — Methods in the struct body; `impl` blocks for traits; no extension functions
+### D23 — Methods in the struct body; `implement` blocks for traits; no extension functions
 
-Inherent methods are declared inside the struct. Trait implementations go in `impl Trait for Type` blocks, which are required anyway since D6 permits implementing traits for foreign types.
+Inherent methods are declared inside the struct. Trait implementations go in `implement Trait for Type` blocks, which are required anyway since D6 permits implementing traits for foreign types.
 
-**`struct Circle : Shape` is not a conformance declaration** — it is variant membership in a sealed set, required by D12. The header says the type is one of the trait's variants; the `impl` block supplies the methods. A non-sealed trait has no header clause at all.
+**`struct Circle : Shape` is not a conformance declaration** — it is variant membership in a sealed set, required by D12. The header says the type is one of the trait's variants; the `implement` block supplies the methods. A non-sealed trait has no header clause at all.
 
-Putting trait implementations in the struct body was considered and rejected. It would mean a trait impl could only be written by whoever controls the type's source, which makes `impl Display for SomeForeignType` impossible — removing the capability D6 grants, that D17's global coherence was built around, and that D23 cited as the reason extension functions were unnecessary. It would also force every trait a type ever implements to be named in its header.
+Putting trait implementations in the struct body was considered and rejected. It would mean a trait implement could only be written by whoever controls the type's source, which makes `implement Display for SomeForeignType` impossible — removing the capability D6 grants, that D17's global coherence was built around, and that D23 cited as the reason extension functions were unnecessary. It would also force every trait a type ever implements to be named in its header.
 
-*Amended (v0.23):* the top-level block stays the general form, but for a type you declare an impl may also be written inside the struct body as `impl Trait { ... }` — sugar for `impl<Ps> Trait for Name<Ps>` with the struct's own type parameters. Nothing above changes: foreign types still take the top-level form, coherence is unchanged, and the header still names only sealed membership. An impl that needs bounds the struct lacks (`impl<T: Display> Display for Pair<T>`) is written at top level. A top-level impl for a struct of the same module that the inline form could express is a lint: a warning with an automatic fix that moves it into the body (editor quick fix, `veles check --fix`).
+*Amended (v0.23):* the top-level block stays the general form, but for a type you declare an implement may also be written inside the struct body as `implement Trait { ... }` — sugar for `implement<Ps> Trait for Name<Ps>` with the struct's own type parameters. Nothing above changes: foreign types still take the top-level form, coherence is unchanged, and the header still names only sealed membership. An implement that needs bounds the struct lacks (`implement<T: Display> Display for Pair<T>`) is written at top level. A top-level implement for a struct of the same module that the inline form could express is a lint: a warning with an automatic fix that moves it into the body (editor quick fix, `veles check --fix`).
 
-*Amended (v0.23) — static functions.* A function in a struct body, trait, impl or extend block may be declared `static fun`: it has no receiver and is called on the type — `Point.origin()`, `i64.parse(s)`, `Stack<i64>.of(x)` — and, for a trait, on a type parameter bounded by it: `T.parse(s)` resolves to the impl for the concrete `T` of each stencil. An `extend` block in the prelude may add statics to a built-in generic type, called with the type arguments written: `MutableList<bool>.repeat(false, n)`, `MutableList<Row>.make(n, i => ...)` (v0.25). An impl declares `static` exactly where the trait does. A trait with a static function is not object-safe (D9), and a sealed trait cannot declare one (its methods dispatch on a variant). The prelude declares `Parsable { static fun parse(s: string): Self? }` for the numbers, `bool` and `string`.
+*Amended (v0.23) — static functions.* A function in a struct body, trait, implement or extend block may be declared `static fun`: it has no receiver and is called on the type — `Point.origin()`, `i64.parse(s)`, `Stack<i64>.of(x)` — and, for a trait, on a type parameter bounded by it: `T.parse(s)` resolves to the implement for the concrete `T` of each stencil. An `extend` block in the prelude may add statics to a built-in generic type, called with the type arguments written: `MutableList<bool>.repeat(false, n)`, `MutableList<Row>.make(n, i => ...)` (v0.25). An implement declares `static` exactly where the trait does. A trait with a static function is not object-safe (D9), and a sealed trait cannot declare one (its methods dispatch on a variant). The prelude declares `Parsable { static fun parse(s: string): Self? }` for the numbers, `bool` and `string`.
 
 *Addendum (v0.29) — static values.* A struct body may declare `static val name[: T] = expr`: a constant in the type's namespace, read as `Type.name` (`Status.notFound`, `http.Status.ok` from outside the module), `public` to export and module-private otherwise, initialised with the module's globals in source order. It is always a `val` — a mutable global belongs at module level, where it is visibly one — and a generic struct cannot have one (a value per instantiation would be a different feature; a `static fun` serves). Motivated by the HTTP module: status codes, methods and content types are *open* sets with well-known members, which is a value type plus named constants, not an enumeration; closed sets are `enum` (D57).
 
@@ -427,7 +427,7 @@ A bare `[1, 2, 3]` with no expected type is a `List`. A growable collection ther
 
 ### D26 — Trait methods are always callable; ambiguity is an error
 
-No import required to call a trait method. Under D17 there is only ever one impl per (trait, type) pair, so scoping is unnecessary for correctness — it would only serve to disambiguate two traits sharing a method name, which is reported as an error instead.
+No import required to call a trait method. Under D17 there is only ever one implement per (trait, type) pair, so scoping is unnecessary for correctness — it would only serve to disambiguate two traits sharing a method name, which is reported as an error instead.
 
 **Consequence for semver:** adding a method to a trait can introduce an ambiguity in code that compiles today. Together with D17's "new impls are breaking," these are the two breaking-change classes that M7's minimal version selection trusts library authors to handle correctly.
 
@@ -438,7 +438,7 @@ Rust's design. The distinction, which should be documented early because reversi
 - **Generic parameter** when a type may implement the trait several ways — `From<i32>` and `From<string>` on the same type.
 - **Associated type** when there is exactly one natural choice per type — `Iterator.Item`.
 
-**`Iterator` must use an associated type.** Under a generic `Iterator<T>`, a single type could implement `Iterator<i32>` and `Iterator<string>` — legal under D17, since those are distinct (trait, type) pairs — and `for (x in thing)` would have no way to infer `x`. The associated form permits at most one impl per type, so inference always succeeds.
+**`Iterator` must use an associated type.** Under a generic `Iterator<T>`, a single type could implement `Iterator<i32>` and `Iterator<string>` — legal under D17, since those are distinct (trait, type) pairs — and `for (x in thing)` would have no way to infer `x`. The associated form permits at most one implement per type, so inference always succeeds.
 
 ### D28 — Construction: call syntax, named arguments, implicit constructor
 
@@ -451,7 +451,7 @@ Every struct gets an implicit constructor from its fields. Fields with declared 
 
 *Addendum (v0.28) — construction is by name only, with puns.* A constructor argument is always `field: value`; the one shorthand is a bare identifier that names both a field and a variable in scope, `Hashed(file, size: n)` for `file: file` (Rust's field-init shorthand, JS's `{ file }`), and `file: file` written out is a warning with a fix. Any other bare argument — `Point(3, -4)` — is an error with the fix that names the fields, so a reordered or renamed field can never silently change what a call means. Named arguments to *functions* keep D28's positional-then-named rule; the pun exists only where positional arguments do not.
 
-*Amended (v0.23) — variadic parameters.* The last parameter of a function may be `name: T...`; the call supplies any number of trailing positional arguments (`join("/", "a", "b")`, `sum()`), collected into a `List<T>`, or one list spread with `join("/", parts...)`. Inside the function the parameter is a plain `List<T>`. A variadic parameter has no default, an `extern` function cannot declare one, and an impl declares it exactly as its trait does.
+*Amended (v0.23) — variadic parameters.* The last parameter of a function may be `name: T...`; the call supplies any number of trailing positional arguments (`join("/", "a", "b")`, `sum()`), collected into a `List<T>`, or one list spread with `join("/", parts...)`. Inside the function the parameter is a plain `List<T>`. A variadic parameter has no default, an `extern` function cannot declare one, and an implement declares it exactly as its trait does.
 
 - **Declaring an explicit constructor suppresses the implicit one.** Otherwise invariants could always be bypassed by calling the generated version.
 - **The implicit constructor is callable only where every field is visible.** Otherwise a `public` struct with private fields would leak construction. *(v0.30: refined for `private` fields by M5's amendment — a private field without a default is supplied by the call, one with a default is not.)*
@@ -544,7 +544,7 @@ Tasks may run on multiple cores. Data-race freedom is a **compile-time guarantee
 
 **The rules:**
 
-- `Sendable` is an auto-derived marker: a type is `Sendable` when all its fields are. *(v0.25)* It is a nameable prelude trait usable as a bound (`extend<T: Sendable>`, `fun f<T: Sendable>`) and answered from the type's shape; an `impl Sendable for X` written by hand is an error.
+- `Sendable` is an auto-derived marker: a type is `Sendable` when all its fields are. *(v0.25)* It is a nameable prelude trait usable as a bound (`extend<T: Sendable>`, `fun f<T: Sendable>`) and answered from the type's shape; an `implement Sendable for X` written by hand is an error.
 - Anything captured by an `async` call must be `Sendable`, immutable, or an explicitly synchronized wrapper (`Mutex<T>`, `Atomic<T>`).
 - A captured `var` cannot be mutated from more than one task; plain mutable references do not cross task boundaries.
 - *(v0.28)* **Structured cancellation reaches the body.** When a child of a fail-fast `scope` fails, the scope's own body is abandoned at its next suspension point (a `recv` on a channel the failed child was meant to feed would otherwise wait forever); the scope then joins the surviving children and re-raises. `Channel.closeAfter(n)` closes a channel after `n` further sends, so several producers can end a channel none of them owns. The prelude's `mapConcurrent`/`forEachConcurrent` (`std/prelude/concurrent.vs`) are the worker pool written once over these primitives.
@@ -625,7 +625,7 @@ This applies inside `when` as well, so `is Tree.Node(left, right)` destructures 
 
 ### D40 — Effects are declared wherever dispatch is dynamic
 
-**The problem.** D2 infers suspension by call-graph analysis and D4 infers error types the same way. Both work for direct calls, where the callee's body or materialized interface is visible. Neither works through **trait dispatch**: under D8 a trait call goes through a dictionary, and under D17 any module may add an impl with coherence checked only at link time, so the set of impls a call may reach is not closed at compile time.
+**The problem.** D2 infers suspension by call-graph analysis and D4 infers error types the same way. Both work for direct calls, where the callee's body or materialized interface is visible. Neither works through **trait dispatch**: under D8 a trait call goes through a dictionary, and under D17 any module may add an implement with coherence checked only at link time, so the set of impls a call may reach is not closed at compile time.
 
 Conservatism does not rescue this. Assuming every trait method may suspend means CPS-transforming every caller of every trait method — and with a full prelude (D24) plus `Iterator`, `Ord` and `Display`, that reaches almost everything. `loop (x in items)` calls `Iterator.next`, so every loop in the language would become a suspension point and nearly the whole program would be state-machined. That is a collapse, not a tuning problem.
 
@@ -640,17 +640,17 @@ trait Fetcher {
 val handler: fun(Request): Response suspends throws HttpError
 ```
 
-**Error types on trait methods (revised v0.24).** A trait method says *that* it can fail; which error is either fixed by the trait or left to each impl:
+**Error types on trait methods (revised v0.24).** A trait method says *that* it can fail; which error is either fixed by the trait or left to each implement:
 
-- `throws E` — every impl throws `E` (or a subset); callers see `E` however they reach the method.
-- a bare `throws` — the error is **impl-defined**: the trait carries an implicit associated type `Error` (D27), and each impl defines it through its methods: what they declare, or, when they too say only `throws`, what their bodies throw (D45 inference); an impl that cannot fail defines it as `Never`. Generic code sees it as `F.Error` (`fun load<F: Fetcher>(f: F): Bytes throws F.Error`) and, once stenciled, as the impl's exact union. Two throwing methods of one trait share the one `Error`. A trait may still write `type Error` and `throws Self.Error` explicitly — it is the same thing spelled out — and an impl may bind `type Error = E` to pin it.
-- A trait with an impl-defined error is not object-safe for now: through a trait object the error would have to be erased to `Error` (a boxed error), which needs a dyn-error type in unions and adapter thunks in the vtable. Declare `throws E` on the trait to use it as an object. Open item.
+- `throws E` — every implement throws `E` (or a subset); callers see `E` however they reach the method.
+- a bare `throws` — the error is **implement-defined**: the trait carries an implicit associated type `Error` (D27), and each implement defines it through its methods: what they declare, or, when they too say only `throws`, what their bodies throw (D45 inference); an implement that cannot fail defines it as `Never`. Generic code sees it as `F.Error` (`fun load<F: Fetcher>(f: F): Bytes throws F.Error`) and, once stenciled, as the implement's exact union. Two throwing methods of one trait share the one `Error`. A trait may still write `type Error` and `throws Self.Error` explicitly — it is the same thing spelled out — and an implement may bind `type Error = E` to pin it.
+- A trait with an implement-defined error is not object-safe for now: through a trait object the error would have to be erased to `Error` (a boxed error), which needs a dyn-error type in unions and adapter thunks in the vtable. Declare `throws E` on the trait to use it as an object. Open item.
 
 Associated-type projections are written with a dot, `Self.Error`, `I.Item` (`::` was dropped in v0.24 with the other Rust spellings).
 
 **Defaults.** A trait method neither suspends nor throws unless it says so.
 
-**Sealed traits are exempt.** D12 requires variants in the same module as the trait, so the impl set genuinely is closed and inference works normally. `Option`, `Result` and every user-defined sealed type remain fully inferred.
+**Sealed traits are exempt.** D12 requires variants in the same module as the trait, so the implement set genuinely is closed and inference works normally. `Option`, `Result` and every user-defined sealed type remain fully inferred.
 
 **What this costs.** This is a partial retreat from D2's no-coloring goal, confined to trait declarations and function types — ordinary function definitions never carry an effect marker, so libraries still don't split into sync and async ecosystems. But a suspending iterator cannot share a trait with a non-suspending one, so Veles will need the `Iterator` / `AsyncIterator` split that Rust has as `Iterator` / `Stream` and Kotlin has as `Iterator` / `Flow`. That is the state of the art, not a Veles-specific failure, but it should be recorded as the price of D17's open impls.
 
@@ -660,7 +660,7 @@ Associated-type projections are written with a dot, `Self.Error`, `I.Item` (`::`
 
 This is forced by D9. An open trait used as a variable type is a boxed trait object, so declaring `val xs: List<i32>` against a `List` *trait* would allocate and dispatch dynamically on every operation. Kotlin pays exactly this cost because its `List` is an interface.
 
-Abstraction moves to traits taken as generic bounds — `fun <I: Iterable> summarize(xs: I)` — which D8 stencils with no boxing and no dynamic dispatch.
+Abstraction moves to traits taken as generic bounds — `fun summarize<I: Iterable>(xs: I)` — which D8 stencils with no boxing and no dynamic dispatch.
 
 **Consequence:** a user-defined collection cannot be passed where a `List<T>` is expected. It implements `Iterable` instead, and functions that want to accept it must be generic rather than taking `List<T>` concretely. Stdlib signatures should therefore prefer `Iterable` bounds over concrete `List` wherever they only need to iterate.
 
@@ -802,7 +802,7 @@ D43 says `with` releases on cancellation; D20 says cancellation is a panic deliv
 
 ### D48 — Alternative orderings use comparator lambdas
 
-D17 permits one `Ord` impl per type, so descending and case-insensitive sorts need another route. That route is comparator and key-extractor lambdas — `sort(by: ...)`, `sortBy(...)` — not a second `Ord` impl.
+D17 permits one `Ord` implement per type, so descending and case-insensitive sorts need another route. That route is comparator and key-extractor lambdas — `sort(by: ...)`, `sortBy(...)` — not a second `Ord` implement.
 
 This **formally drops named-impls-as-values**, which had been recorded as still-useful since D17. Nothing else in the design now needs it.
 
@@ -877,6 +877,8 @@ Initial compiler-known set:
 - `@mustUse` — unused-result lint; this is what the `Channel.send()` returning `Result` decision needed
 - `@specialize` — makes §6's deferred specialization question expressible when wanted (D15)
 
+*Amended (v0.33, D58).* The derivation story exists, and with it the first attributes that carry data the compiler reads on the author's behalf — all of them serve the synthesized `Codable` impls and nothing else: `@key(...)`, `@skip`, `@required` on a field, `@key` on an enum member or sealed variant, `@tag(...)` on a sealed trait. They are still compiler-known; "user-definable attributes are deferred" stands.
+
 `extern struct` (FFI §3) is **retained as a keyword** rather than folded into a layout attribute.
 
 *Noted pressure point:* `extern struct` does not extend. Packed layout, explicit alignment, and transparent single-field wrappers all come up in FFI and wire-format work, and there is currently nowhere to express them without inventing further keywords or revisiting this.
@@ -905,7 +907,7 @@ Default bodies may call the trait's other methods — that is the point, since `
 
 **`override` is required when overriding a default body**, and only then. A method with no default needs no keyword.
 
-*Consequence — this is the fifth breaking-change class.* Adding a default body to an existing trait method breaks every impl that already implements it, since all of them would suddenly require `override`. It joins D17 (new impls), D26 (new trait methods), D28 (parameter renames) and D45 (widened error unions). Kotlin avoids this by requiring `override` on every interface method implementation; Veles trades that for less ceremony and one more thing library authors must watch when bumping a major version.
+*Consequence — this is the fifth breaking-change class.* Adding a default body to an existing trait method breaks every implement that already implements it, since all of them would suddenly require `override`. It joins D17 (new impls), D26 (new trait methods), D28 (parameter renames) and D45 (widened error unions). Kotlin avoids this by requiring `override` on every interface method implementation; Veles trades that for less ceremony and one more thing library authors must watch when bumping a major version.
 
 ### D54 — Values crossing a task boundary must be `Sendable`, including error types
 
@@ -933,7 +935,7 @@ public type Point = geo.Point
 
 `type Name<T> = Type` at module level declares another name for a type. The alias is **transparent**: `Key` and `(Index, u64)` are the same type everywhere — assignable both ways, one instantiation of every generic, no conversion. A distinct type with the same representation is a one-field struct, as before; `type` never provides safety, only a name. What the alias does own is its *spelling*: diagnostics and hover print `Key` where the source said `Key`, its definition as written, and the full expansion when that differs (structural types carry the display name; a named type — struct, sealed, trait — keeps its own name, so `type Point = geo.Point` reads `Point`). The same mechanism names `error Set = A | B` in messages.
 
-Rules. Module level only; `public` exports it, and a `public` alias of a private type is allowed — it *is* the facade (Go, TS). Parameters take no bounds (state them where the alias is used). No unions: `error` names an error set, `sealed trait` a closed family of types, and `type` never spells `A | B`. Not recursive: `type Json = Map<string, Json>` is an error; a recursive type is a sealed trait or a struct (which also gives its cases names). Everything else sees through the alias: `impl`/`extend` on an alias follow the underlying type's ownership rule (D23), an alias of a struct constructs (`Point(x: 1.0, y: 2.0)`), calls statics (`Point.origin()`) and matches (`is Point`); a generic alias in value position takes its arguments (`Pair<i64>(...)`).
+Rules. Module level only; `public` exports it, and a `public` alias of a private type is allowed — it *is* the facade (Go, TS). Parameters take no bounds (state them where the alias is used). No unions: `error` names an error set, `sealed trait` a closed family of types, and `type` never spells `A | B`. Not recursive: `type Json = Map<string, Json>` is an error; a recursive type is a sealed trait or a struct (which also gives its cases names). Everything else sees through the alias: `implement`/`extend` on an alias follow the underlying type's ownership rule (D23), an alias of a struct constructs (`Point(x: 1.0, y: 2.0)`), calls statics (`Point.origin()`) and matches (`is Point`); a generic alias in value position takes its arguments (`Pair<i64>(...)`).
 
 Rejected: aliases in std for numbers (`int = i64`) — two spellings for one type is the import problem again; TS-style type-level computation (`keyof`, mapped and conditional types) — the Veles answer to "compute a type from a type" is an associated type on a trait (`Iterator.Item`).
 
@@ -983,9 +985,78 @@ D12 rejected `enum` as *sugar for sum types*, and that stands: alternatives that
 
 **Comparison with the base type, no conversion.** `phase == 2` and `ordering < 0` compare the number — a comparison operator accepts an enum on one side and a value of its base type on the other. Nothing converts: an integer is not an `E` (the error names `E.fromValue(n)`), an `E` is not an integer (the error names `.value`), and `as` does not bridge them. Two different enums do not compare at all. A `when` arm over an enum names a member, never a number.
 
-**What an enum is not.** It has no methods, fields, `impl` or `extend` blocks (the compiler refuses them: it already compares, hashes, orders and prints by itself) and cannot be generic. Behaviour that needs one is a function that takes it; a set of alternatives that grows data is a sealed trait, which is the point at which an enum is outgrown. Rejected: string-valued enums (the base must count; a string-keyed closed set is a map or a sealed trait), methods on enums (Kotlin's `enum class` — a type with behaviour is a struct, and the `static val` form already covers named constants of a struct), and implicit conversion to the integer (C's rule; it is what makes `switch` on a C enum silently accept a stray `int`).
+**What an enum is not.** It has no methods, fields, `implement` or `extend` blocks (the compiler refuses them: it already compares, hashes, orders and prints by itself) and cannot be generic. Behaviour that needs one is a function that takes it; a set of alternatives that grows data is a sealed trait, which is the point at which an enum is outgrown. Rejected: string-valued enums (the base must count; a string-keyed closed set is a map or a sealed trait), methods on enums (Kotlin's `enum class` — a type with behaviour is a struct, and the `static val` form already covers named constants of a struct), and implicit conversion to the integer (C's rule; it is what makes `switch` on a C enum silently accept a stray `int`).
 
 **Consequence: `compareTo` returns `Ordering`.** The prelude declares `enum Ordering { Less = -1, Equal, Greater }` and `Comparable.compareTo(other: Self): Ordering` (it was `i64`), so the result can be matched by name; because the values are -1, 0 and 1 and an enum compares with its base type, `a.compareTo(b) < 0` still reads and still holds. Comparator lambdas (`sortedWith`, `minWith`, `maxWith`, `priorityQueueBy`, D48) return `Ordering` for the same reason; a comparator that computed `a - b` becomes `a.compareTo(b)`. The synthesized tuple comparison (D48 addendum) returns `Ordering` too.
+
+### D58 — Derivation: an empty `implement` asks the compiler to write the body (v0.33)
+
+```vs
+struct User {
+  @key("user_id") id: i64
+  name:  string
+  email: string?                 // null on the wire, or absent: both read as null
+  role:  Role = Role.Member      // absent → the default
+  @skip passwordHash: string = ""
+  implement Codable                   // encode and decode, synthesized from the fields
+}
+
+sealed trait Shape
+struct Circle : Shape { r: f64 }
+struct Rect   : Shape { w: f64; h: f64 }
+implement Codable for Shape           // {"type": "Circle", "r": 1.0}
+
+val text = json.encode(user)
+val back = try json.decode<User>(text)         // DecodeError lists every problem, with paths
+```
+
+**The problem.** A server maps its types to the outside world constantly — JSON in and out, rows from a database, settings from the environment — and D51 had closed the door on it: no reflection, no derivation, so `@serialize` "would do nothing". Writing `toJson` and `fromJson` by hand for every type is the thing no one will do, and the language already synthesizes from shape wherever it can (structural `==` and hashing, `Sendable`, tuple ordering, everything an enum has). This decision is the derivation story D51 asked for, scoped to what the compiler implements.
+
+**Mechanism: an empty `implement` opts in.** `implement Codable for User { }` — or, in a struct body, just `implement Codable`, the braces being optional when the body is empty — asks the compiler to synthesize the body from the type's fields. A method the author writes is kept and the rest is synthesized, so one direction can be hand-written; a foreign type is covered the same way at top level (`implement Codable for geo.Point`), one implement per pair program-wide as D17 already requires. On a generic struct the empty implement is read with the bounds the derive needs (`implement Codable` in `Page<T>` is `implement<T: Codable> Codable for Page<T>`; a parameter that appears only in a `@skip` field gets no bound), and hover shows the header and the body that were written. The formatter drops empty braces.
+
+*Why declared, when `==` is not.* The line is between a **property of the value** — equality, hashing, sendability, ordering of tuples, which hold because of what the value is — and a **contract with the outside world** — a wire format, which others depend on and which a renamed field silently breaks. The first kind is implicit; the second is declared, in one line, where a reader can see that the type is a DTO. Rejected: implicit-from-shape (every type a wire format by default: a `passwordHash` ships unless someone remembers `@skip`, a rename is a silent protocol change); Go's exported-field rule (couples API visibility to wire shape — "why is my field missing" is that language's most-asked serialization question); a `@derive(Codable)` attribute (a second spelling for "give me an implement", no partial override, no foreign types); user-definable derivation (compile-time code execution, hygiene, tooling — a later phase, to be built on the shape description this decision makes the compiler compute).
+
+**Target: one derive, every format.** The synthesized traits are format-agnostic — Swift's `Codable`, serde's `Serialize`/`Deserialize`:
+
+```vs
+trait Encodable { fun encode(to: Encoder) throws EncodeError }
+trait Decodable { static fun decode(from: Decoder): Self throws DecodeError }
+trait Codable : Encodable + Decodable { }   // a supertrait pair (spelled like a bound): the one line a DTO writes
+
+trait Encoder {
+  fun format(): string                        // "json", "db", "env": what @key(json: ...) selects on
+  fun beginObject() throws EncodeError;  fun key(name: string) throws EncodeError;  fun endObject() throws EncodeError
+  fun beginList()   throws EncodeError;  fun endList() throws EncodeError
+  fun i64(v: i64) throws EncodeError          // and u64, f64, bool, string, bytes, null
+}
+trait Decoder {
+  fun format(): string
+  fun beginObject() throws DecodeError;  fun nextKey(): string? throws DecodeError;  fun endObject() throws DecodeError
+  fun beginList()   throws DecodeError;  fun hasNext(): bool throws DecodeError;    fun endList() throws DecodeError
+  fun i64(): i64 throws DecodeError           // and the other primitives
+  fun isNull(): bool throws DecodeError;  fun skip() throws DecodeError;  fun path(): string
+}
+```
+
+A flat event stream: the derive writes `key("id")` and then the value encodes *itself* (`self.id.encode(to)`), so the traits carry no generic method (a boxed trait object could not, D9) and no value is boxed on the way out; a format is one implementation of each trait, and `std/json`, a row decoder and an environment decoder all drive the same synthesized code. The encoder is a **trait object**, one virtual call per primitive — `Encodable` stays object-safe and the derive stays simple; a program that links one JSON encoder devirtualizes later. The error types are fixed, as D40 requires of a trait used as an object. Rejected: a JSON-specific `toJson()`/`fromJson()` (a derive per format, a tree allocation per encode); Swift's container objects (`field<T>` is a generic method, impossible on a trait object, and its non-generic form boxes every value); a format-neutral `Value` tree as the intermediate (an allocation per field); a generic `fun encode<E: Encoder>(to: E)` (direct calls, but `Encodable` is no longer an object and every format stencils the world).
+
+**`Codable` is a supertrait, and supertraits now exist.** `trait Codable : Encodable + Decodable { }` is an ordinary prelude trait, its supers spelled like a bound with no members of its own. A bound `T: Codable` expands transitively, so `T` has `encode` and `decode`; `implement Codable for X { ... }` requires that `X` implements the supers — and an *empty* implement of a trait with supertraits synthesizes every super implement the type lacks, which is how one line derives both directions. Bootstrap limit, to be lifted: a trait with supertraits cannot yet be a trait object (`x: Codable` is an error naming `Encodable`/`Decodable`), since its vtable would compose the supers'. Rejected: `Codable` as compiler-known sugar (a prelude name that is not a trait — hover, docs and errors would all special-case it); `implement Encodable + Decodable for X` (new implement syntax, two names on every DTO).
+
+**What the derive knows.** The prelude implements the traits for the primitives, `List<T>`, `Map<string, T>`, `T?`, tuples and the `Json` tree itself. A struct becomes an object of its non-skipped fields in declaration order. A field's key is its name, or `@key("user_id")` for every format, or `@key(json: "userId", db: "user_id")` per format by the string the encoder reports (a format written in a library picks its own string, no compiler change); a casing policy for a whole API is an *encoder option* (`json.Options(keys: KeyStyle.SnakeCase)`), never an attribute. `@skip` leaves a field out in both directions (it needs a default, or the decoder could not construct the value); `@skip(json)` for one format. Two fields on one key are a compile error; a field of a type that cannot be derived (a function, a `Mutex`, a raw pointer, a handle) is an error at the implement naming the field, as the `Equatable`-key check already does.
+
+**Absent, null, required.** A field with no default and a non-nullable type is required: absent or `null` is a problem. A field default is the value when the key is absent — there is no `@default` attribute because the language already has one. A `T?` field reads `null` and *absent* both as `null` (Swift's and serde's rule; Kotlin's stricter one makes the most common API shape the most verbose); `@required` marks a nullable field whose key must be present. When absent and null must be told apart — a PATCH body — the field is `T??` (D5 nests) or `json.Patch<T>`. Encoding writes `null` for a null field; `json.Options(omitNulls: true)` drops them.
+
+**Sealed traits are internally tagged.** `implement Codable for Shape` covers the trait and every variant (the set is closed; a variant may still write its own implement): `{"type": "Circle", "r": 1.0}`, the tag being the variant's declared name (renamed by `@key` on the variant) under the key `"type"` (renamed by `@tag("kind")` on the trait; `@tag("type", content: "value")` opts into the adjacent layout `{"type": "Circle", "value": {...}}`). A variant with a field named like the tag is an error. Decoding takes the fast path when the tag is the first key — what this encoder writes — and otherwise buffers the object through the `Codable` `Json` tree and decodes the variant from that. A format that has no notion of variants (a row) reports a `DecodeError` at the path. Rejected: externally tagged `{"Circle": {...}}` (rare in APIs), untagged (try each variant: fragile, slow, and the errors are useless).
+
+**Enums need nothing.** An enum is compiler-owned (D57: no `implement` blocks), so like a primitive it is `Codable` without a declaration: its name on the wire, matched exactly on the way in (an unknown name is a problem listing the valid ones), `@key("active")` renaming a member. Whether an enum travels as its name or its number is a property of *where it is going*, not of the enum — JSON wants names, a `smallint` column wants numbers — so it is the format's policy: `json.Options(enums: EnumStyle.Number)`; `json` defaults to `Name`, a row codec to `Number`; decoding is strict per style. Rejected: `@key(number)` on the enum (a second meaning for `@key`); a new attribute for a rare case.
+
+**Decoding reports every problem.** `DecodeError { problems: List<Problem> }`, a `Problem` being a path and a message (`user.address[2].zip`: "expected a number, found a string"; `Problem.pointer()` is the RFC 6901 spelling, and a key containing a dot is quoted). The synthesized `decode` reads each field into a temporary, records a problem instead of throwing, skips what it cannot read, and throws once at the end; a nested struct's problems come back with the path prefixed; the list is capped so a hostile document cannot grow it. A malformed document is one problem — there is nothing to continue from. Validation, when it comes, appends to the same list, so a client fixes a request in one round trip. Rejected: fail-fast (one field per round trip); fail-fast for types with collected validation (two responses for one bad request).
+
+**Also synthesized: `Comparable`.** `implement Comparable for Version` orders lexicographically by field in declaration order — the tuple rule of D48 applied to a struct — and fails at the implement on a field that is not ordered. `==`, hashing and printing were already structural and stay implicit.
+
+*Implementation notes (v0.33).* A `Decoder` records a value of the wrong type as a problem, consumes it and returns a zero, so the derived code never has to recover a stream; `problem`/`problemAt`/`problems` are part of the trait. A nested value that cannot be built throws after its object is fully read, and its parent catches that, finishes its own checks, and fails once. Sealed families decode through the `Value` tree today; the in-stream fast path for a leading tag is still to come. Derived bodies are synthesized as syntax (with three nodes no source spells: a resolved type, a resolved type as a receiver, a field's default) and checked like anything written, so every rule of the language applies to them.
+
+**Consequences.** D51 gains its first data-carrying attributes, all in service of this decision (`@key`, `@skip`, `@required`, `@tag`); the sentence "there is no derivation mechanism" is replaced by "derivation is what the compiler implements, requested by an empty `implement`". The compiler's synthesized-function machinery (tuple comparison, enum functions) becomes the general path for a derived body, so a later user-definable derivation has one description of a type's shape to expose. `std/json` is the first format; rows and environment follow.
 
 ---
 
@@ -997,6 +1068,8 @@ D12 rejected `enum` as *sugar for sum types*, and that stands: alternatives that
 - **`panic(message)`** — a built-in that never returns (D20); a `T?` fallback like `xs.at(i) ?: panic("...")` types as `T`.
 - **`Set`** — follows D25's immutable/mutable split and is insertion-ordered, matching `Map`.
 - **`gc.retain` handles** — `Closeable`, acquired through `with` (D43).
+- **`implement`, not `implement`** *(v0.33)* — the keyword is the word: `implement Display for Point { }`, `implement Codable` in a struct body. `implement` was the Rust abbreviation; the parser still reads it and reports the spelling with the fix. The AST node keeps its name.
+- **A function's type parameters follow its name** *(v0.33)* — `fun encode<T: Encodable>(value: T)`, as on a struct (`struct Page<T>`) and at the call (`decode<User>(text)`); Swift, TypeScript, Go and Rust agree. Kotlin's `fun <T> encode(...)` was accepted alongside it since v0.1 and is now an error with the fix: one spelling.
 - **Module interface files** — build cache, regenerated. Packages distribute as source under the decentralized registry model (manifest §7), so there is nothing to ship them in.
 - **`veles.sum`** — mandatory. Supply-chain integrity is not opt-in.
 - **Variadic C functions** — excluded. The varargs calling convention differs per platform and is the nastiest corner of the C ABI; bind a fixed-arity wrapper instead.
@@ -1042,7 +1115,7 @@ Combined with M2, the **module is the inference unit**, and one interface file i
 
 ## 7. Not yet designed
 
-- Trait declaration syntax; generic bound syntax (`fun <T: Ord>` is provisional)
+- Trait declaration syntax (generic bound syntax settled v0.33: `fun name<T: Ord>(...)`, the parameters after the name as on a struct)
 - Closure representation and capture semantics (syntax is settled in D32)
 - Whether `Mutex.withLock` becomes a `with` resource (D43)
 - Whether collection literals are wired to fixed types or an opt-in trait (D41)

@@ -4,7 +4,7 @@ use io
 struct Countdown {
   from: i64
 
-  impl Iterable {
+  implement Iterable {
     type Iter = CountdownIter
     fun iterator(): CountdownIter = CountdownIter(current: self.from)
   }
@@ -12,7 +12,7 @@ struct Countdown {
 struct CountdownIter {
   var current: i64
 
-  impl Iterator {
+  implement Iterator {
     type Item = i64
     fun next(): i64? {
       if (self.current <= 0) return null
@@ -23,7 +23,7 @@ struct CountdownIter {
   }
 }
 
-fun <I: Iterable> summarize(xs: I): string {
+fun summarize<I: Iterable>(xs: I): string {
   var parts: MutableList<string> = []
   loop (x in xs) {
     parts.push("$x")

@@ -28,7 +28,7 @@ trait Area {
 struct Square {
   side: f64
 
-  impl Area {
+  implement Area {
     fun area(): f64 = self.side * self.side
     override fun describe(): string = "square ${self.side}: " + "area ${self.area()}"
   }
@@ -40,7 +40,7 @@ struct Pair<A, B> {
   fun swap(): Pair<B, A> = Pair(first: self.second, second: self.first)
 }
 
-fun <T: Area> total(xs: List<T>): f64 {
+fun total<T: Area>(xs: List<T>): f64 {
   var sum = 0.0
   loop (x in xs) {
     sum += x.area()

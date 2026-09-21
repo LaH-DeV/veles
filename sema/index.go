@@ -408,7 +408,7 @@ func visibilityWord(pub, private bool) string {
 	case pub:
 		return "public"
 	}
-	return "internal"
+	return ""
 }
 
 // fieldDecl renders a field the way its declaration reads with nothing
@@ -553,7 +553,7 @@ func funWhere(t *FuncTemplate) string {
 	case t.Owner != nil:
 		return structHead(t.Owner)
 	case t.Impl != nil && t.Impl.Trait != nil:
-		return "impl " + t.Impl.Trait.Name + " for " + t.Impl.Target.String()
+		return "implement " + t.Impl.Trait.Name + " for " + t.Impl.Target.String()
 	case t.Impl != nil:
 		return "extend " + t.Impl.Target.String()
 	case t.Trait != nil:
@@ -843,14 +843,33 @@ func (c *Checker) shapeFrom(t types.Type, v viewpoint) string {
 		if d.Error {
 			sb.WriteString("  public fun message(): string\n")
 		}
-		// the traits the type implements, wherever the impl was written
-		var impls []string
-		for trait, list := range c.impls {
+		// the traits the type implements, wherever the impl was written or
+		// derived (D58). A trait one of them requires is not listed again:
+		// `implement Codable` stands for its Encodable and Decodable.
+		var own []*Impl
+		for _, list := range c.impls {
 			for _, impl := range list {
 				if target, ok := impl.Target.(*types.Struct); ok && templateOf(target) == tmpl {
-					impls = append(impls, "  impl "+trait.Name+typeArgList(impl, trait))
+					own = append(own, impl)
 				}
 			}
+		}
+		var impls []string
+		for _, impl := range own {
+			covered := false
+			for _, other := range own {
+				if other != impl && containsTrait(allSupers(other.Trait), impl.Trait) {
+					covered = true
+				}
+			}
+			if covered {
+				continue
+			}
+			line := "  implement " + impl.Trait.Name + typeArgList(impl, impl.Trait)
+			if impl.Decl.Derived {
+				line += "  // derived"
+			}
+			impls = append(impls, line)
 		}
 		sort.Strings(impls)
 		for _, line := range impls {

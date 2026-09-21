@@ -106,7 +106,7 @@ public type Handler = sendable fun(Request): Response suspends
 /// other error answers 500 and is logged. This is what the router applies
 /// to every handler it is given, so `try` is free inside a handler and an
 /// error nobody mapped is never silent.
-public fun <E> handler(h: sendable fun(Request): Response suspends throws E | Fail): Handler =
+public fun handler<E>(h: sendable fun(Request): Response suspends throws E | Fail): Handler =
   req => when (h(req)) {
     is Ok(resp) => resp
     is Err(e)   => when (e) {

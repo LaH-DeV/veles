@@ -233,7 +233,7 @@ extend<T> MutableList<T> {
 }
 
 // Ordering needs Comparable: numbers and strings implement it in the
-// prelude, a struct by `impl Comparable`. The bound is checked at the call
+// prelude, a struct by `implement Comparable`. The bound is checked at the call
 // site, so a list of anything else reports the error there.
 extend<T: Comparable> List<T> {
   /// A copy sorted from largest to smallest.
@@ -360,7 +360,7 @@ public struct RangeStepIter<T> {
   up:          bool
   var done:    bool = false
 
-  impl Iterator {
+  implement Iterator {
     type Item = T
     fun next(): T? {
       if (self.done) return null

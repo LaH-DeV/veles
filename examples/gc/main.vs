@@ -29,7 +29,7 @@ trait Named {
 struct Thing {
   label: string
 
-  impl Named {
+  implement Named {
     fun name(): string = self.label
   }
 }

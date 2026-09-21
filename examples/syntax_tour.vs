@@ -55,7 +55,7 @@ struct Counter {
 
   // D23 (v0.23) — a trait impl inside the body of your own type; a static
   // function has no self and is called on the type: Counter.zero()
-  impl Display {
+  implement Display {
     fun toString(): string = "Counter(${self.n})"
   }
   static fun zero(): Counter = Counter()
@@ -88,7 +88,7 @@ trait Fetcher {
 val handler: fun(Request): Response suspends throws HttpError = handle
 
 // D23 — impl blocks
-impl<T> Display for Stack<T> {
+implement<T> Display for Stack<T> {
   type Output = string
   fun show(): string = "stack"
   override fun hint(): i32 = 1

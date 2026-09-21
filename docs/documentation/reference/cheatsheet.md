@@ -86,7 +86,7 @@ return v; break; continue; throw e; panic("msg")   // panic and os.exit are Neve
 fun add(a: i64, b: i64): i64 = a + b                // expression body
 fun greet(name: string, punct: string = "!") { }    // default; call greet("x", punct: "?")
 fun sum(xs: i64...): i64 = xs.fold(0, (a, b) => a + b)  // variadic: sum(1, 2), sum(list...)
-fun <T: Show> show(x: T): string = x.show()         // generic with bound
+fun show<T: Show>(x: T): string = x.show()         // generic with bound
 fun fetch(url: string): string suspends throws E    // effects (inferred for free functions)
 val f = x => x * 2                                  // lambda; (a, b) => ..., (x: i64) => ..., _ => ... ignores its argument
 val g = () => { var n = 0; n }                      // block body
@@ -110,7 +110,7 @@ struct Point {
   fun move(dx: i64) { self.x += dx }   // no marker: a method may assign the var fields
   static fun origin(): Point = Point(x: 0)  // no self; Point.origin()
   static val unit = Point(x: 1)             // a constant in the type's namespace: Point.unit (public to export; never var)
-  private count: i64 = 0                    // private: only Point's own methods/impl/extend blocks; no marker (or `internal`) = the module; public = the package
+  private count: i64 = 0                    // private: only Point's own methods/implement/extend blocks; no marker (or `internal`) = the module; public = the package
 }
 val p = Point(x: 1)             // named construction (Point(x, y) puns variables named like fields); p == q, "$p" work
 val n = i64.parse("42")         // i64?; Parsable — T.parse(s) in generic code
@@ -119,8 +119,8 @@ trait Shape {
   fun area(): f64
   fun describe(): string = "area ${self.area()}"   // default
 }
-struct Sq { s: f64; impl Shape { fun area(): f64 = self.s * self.s; override fun describe(): string = "sq" } }   // your own type: impl in the body
-impl Shape for i64 { fun area(): f64 = 0.0 }   // a foreign type: top-level impl (for your own type it is a lint with a quick fix)
+struct Sq { s: f64; implement Shape { fun area(): f64 = self.s * self.s; override fun describe(): string = "sq" } }   // your own type: implement in the body
+implement Shape for i64 { fun area(): f64 = 0.0 }   // a foreign type: top-level implement (for your own type it is a lint with a quick fix)
 val s: Shape = Sq(s: 2.0)       // trait object (D9)
 
 extend Point {                  // more inherent methods, outside the body (D23)
@@ -140,10 +140,10 @@ Phase.values(); Phase.fromValue(10); Phase.parse("Red")   // List<Phase>; Phase?
 when (ph) { Phase.Red => ...; Phase.Amber => ...; Phase.Green => ... }   // exhaustive by member (D13)
 
 trait Iterator { type Item; fun next(): Item? }   // associated type
-impl Iterator for Countdown { type Item = i64; fun next(): i64? { ... } }
+implement Iterator for Countdown { type Item = i64; fun next(): i64? { ... } }
 
-impl Comparable for Point { fun compareTo(other: Point): Ordering = self.x.compareTo(other.x) }  // <, sorted, min; Ordering = enum { Less = -1, Equal, Greater }
-impl Display for Point { fun toString(): string = "(${self.x})" }              // "$p"
+implement Comparable for Point { fun compareTo(other: Point): Ordering = self.x.compareTo(other.x) }  // <, sorted, min; Ordering = enum { Less = -1, Equal, Greater }
+implement Display for Point { fun toString(): string = "(${self.x})" }              // "$p"
 // also Equatable (==) and Hashable (map keys); structural by default
 ```
 
@@ -222,7 +222,7 @@ Data passed to `async` must be Sendable (D35): no `Mutable*`.
 ```veles
 // fragment
 with (f = open("a"), g = open("b")) { ... }   // close() on every exit (D43); an expression: val text = with (f = open(p)) { f.readAll() }
-impl Closeable for File { fun close() { } }
+implement Closeable for File { fun close() { } }
 extern "C" { fun strlen(s: *raw u8): i64 }
 val n = unsafe { strlen(p) }                  // C calls and raw pointers need unsafe (D44)
 ```

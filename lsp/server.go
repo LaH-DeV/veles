@@ -549,7 +549,7 @@ func declSymbol(decl ast.Decl) (docSymbol, bool) {
 		name := "extend " + ast.TypeString(d.Target)
 		sel := d.Target.Span()
 		if !d.Extend {
-			name = "impl " + ast.TypeString(d.Trait) + " for " + ast.TypeString(d.Target)
+			name = "implement " + ast.TypeString(d.Trait) + " for " + ast.TypeString(d.Target)
 			sel = d.Trait.Span()
 		}
 		sym := docSymbol{Name: name, Kind: symIface, Range: spanToRange(d.Pos), SelectionRange: spanToRange(sel)}

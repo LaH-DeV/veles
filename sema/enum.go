@@ -62,6 +62,7 @@ func (c *Checker) resolveEnum(e *types.Enum) {
 			c.errorf(md.Name.Pos, "duplicate member '%s' in enum '%s'", md.Name.Name, e.Name)
 			continue
 		}
+		c.attrsOf(md.Attrs, "member")
 		byName[md.Name.Name] = true
 		v := next
 		if md.Value != nil {

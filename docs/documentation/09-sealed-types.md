@@ -183,7 +183,7 @@ What you get without writing anything:
 An enum compares with its own base type — `level == 10`, `level < 5` —
 but never converts to or from it: a `u8` is not a `Level` (say
 `Level.fromValue(n)`), and a `Level` is not a `u8` (say `.value`). It has
-no methods, fields or `impl` blocks of its own, and it cannot be
+no methods, fields or `implement` blocks of its own, and it cannot be
 generic: an enum is a set of values, and behaviour that needs one goes
 in a function that takes it, like `next` above. When the alternatives
 start to carry data, you have outgrown the enum and want a sealed trait.

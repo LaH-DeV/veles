@@ -22,7 +22,7 @@ trait Show {
   fun show(): string
 }
 
-impl Show for A {
+implement Show for A {
   fun show(): string = "a"
 }
 
@@ -47,7 +47,7 @@ fun main() {
 
 sealed trait S
 struct A : S {
-  impl Show {
+  implement Show {
     fun show(): string = "a"
   }
 }

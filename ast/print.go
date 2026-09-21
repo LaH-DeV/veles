@@ -16,6 +16,13 @@ func Dump(f *File) string {
 	return p.sb.String()
 }
 
+// DumpDecl renders one declaration.
+func DumpDecl(d Decl) string {
+	p := &printer{}
+	p.decl(d)
+	return p.sb.String()
+}
+
 // DumpExpr renders a single expression; the parser tests compare against it.
 func DumpExpr(e Expr) string {
 	p := &printer{}
@@ -135,7 +142,9 @@ func (p *printer) decl(d Decl) {
 		}
 		for _, m := range d.Members {
 			p.child(func() {
-				p.w("(member " + m.Name.Name)
+				p.w("(member ")
+				p.attrs(m.Attrs)
+				p.w(m.Name.Name)
 				if m.Value != nil {
 					p.w(" = ")
 					p.expr(m.Value)
@@ -166,6 +175,7 @@ func (p *printer) decl(d Decl) {
 		for _, fld := range d.Fields {
 			p.child(func() {
 				p.w("(field ")
+				p.attrs(fld.Attrs)
 				if fld.Pub {
 					p.w("public ")
 				}
@@ -367,6 +377,8 @@ func (p *printer) typ(t Type) {
 	switch t := t.(type) {
 	case nil:
 		p.w("()")
+	case *ResolvedType:
+		p.w(fmt.Sprint(t.T))
 	case *NamedType:
 		p.path(t.Path)
 		if len(t.Args) > 0 {
@@ -584,6 +596,10 @@ func (p *printer) expr(e Expr) {
 		p.w("null")
 	case *SelfExpr:
 		p.w("self")
+	case *TypeExpr:
+		p.typ(e.Type)
+	case *FieldDefaultExpr:
+		p.w(fmt.Sprintf("(default %v.%d)", e.Struct, e.Index))
 	case *NameExpr:
 		p.w(e.Name)
 		if len(e.TypeArgs) > 0 {

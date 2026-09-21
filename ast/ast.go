@@ -64,6 +64,14 @@ type PointerType struct {
 	Pos  source.Span
 }
 
+// ResolvedType is a type the compiler already knows, written into a
+// synthesized declaration (a derived impl, D58) that no source spells:
+// the checker hands `T` back as it is. It never comes from the parser.
+type ResolvedType struct {
+	T   any // a types.Type; `any` keeps ast free of the types package
+	Pos source.Span
+}
+
 // TupleType is `(A, B)`. The empty tuple `()` is the unit type.
 type TupleType struct {
 	Elems []Type
@@ -106,6 +114,7 @@ func (t *FunType) Span() source.Span        { return t.Pos }
 func (t *SelfType) Span() source.Span       { return t.Pos }
 func (t *AssocType) Span() source.Span      { return t.Pos }
 func (t *ErrorUnionType) Span() source.Span { return t.Pos }
+func (t *ResolvedType) Span() source.Span   { return t.Pos }
 
 func (*NamedType) typeNode()      {}
 func (*NullableType) typeNode()   {}
@@ -115,6 +124,7 @@ func (*FunType) typeNode()        {}
 func (*SelfType) typeNode()       {}
 func (*AssocType) typeNode()      {}
 func (*ErrorUnionType) typeNode() {}
+func (*ResolvedType) typeNode()   {}
 
 // Effects are the declared effects of a signature: `suspends`, `throws`,
 // `throws E`. A `throws` with a nil Error type is inferred (D4/D45).
@@ -195,6 +205,7 @@ type FunDecl struct {
 
 // Field is a struct field, optionally with a default.
 type Field struct {
+	Attrs     []*Attribute // `@key(...)`, `@skip`, `@required` (D58)
 	Pub       bool
 	Internal  bool // `internal`: the module level written out (M5); the default
 	Private   bool // visible only inside the type's own declarations
@@ -264,6 +275,8 @@ type ImplDecl struct {
 	Attrs      []*Attribute
 	Extend     bool
 	Inline     bool // written inside the target struct's body
+	Braceless  bool // an empty impl written without `{ }` (D58): the body is derived
+	Derived    bool // synthesized by the compiler (D58): a supertrait's, a variant's or an enum's impl; never from the parser
 	TypeParams []TypeParam
 	Trait      Type
 	Target     Type
@@ -351,6 +364,7 @@ type EnumDecl struct {
 
 // EnumMember is one named value of an enum.
 type EnumMember struct {
+	Attrs []*Attribute // `@key("name")`: the member's name on the wire (D58)
 	Doc   string
 	Name  Ident
 	Value Expr // nil: the previous value plus one
@@ -564,6 +578,24 @@ type SelfExpr struct {
 	Pos source.Span
 }
 
+// FieldDefaultExpr is the default of field `Index` of struct `Struct` (a
+// types.Struct), in a synthesized declaration (a derived decode, D58): the
+// value a missing key falls back to, checked in the struct's own module
+// exactly as a constructor call that omits the field would.
+type FieldDefaultExpr struct {
+	Struct any
+	Index  int
+	Pos    source.Span
+}
+
+// TypeExpr is a type in receiver position — `T.decode(from)` with `T`
+// already resolved — in a synthesized declaration (a derived impl, D58).
+// It never comes from the parser, which spells such a receiver as a name.
+type TypeExpr struct {
+	Type Type
+	Pos  source.Span
+}
+
 type NameExpr struct {
 	Name     string
 	TypeArgs []Type // `Name<T>` before `.f(...)`: a generic type as a static call target
@@ -756,6 +788,8 @@ func (e *CharLit) Span() source.Span    { return e.Pos }
 func (e *BoolLit) Span() source.Span    { return e.Pos }
 func (e *NullLit) Span() source.Span    { return e.Pos }
 func (e *SelfExpr) Span() source.Span   { return e.Pos }
+func (e *TypeExpr) Span() source.Span   { return e.Pos }
+func (e *FieldDefaultExpr) Span() source.Span { return e.Pos }
 func (e *NameExpr) Span() source.Span   { return e.Pos }
 func (e *MemberExpr) Span() source.Span { return e.Pos }
 func (e *IndexExpr) Span() source.Span  { return e.Pos }
@@ -789,6 +823,8 @@ func (*CharLit) exprNode()    {}
 func (*BoolLit) exprNode()    {}
 func (*NullLit) exprNode()    {}
 func (*SelfExpr) exprNode()   {}
+func (*TypeExpr) exprNode()   {}
+func (*FieldDefaultExpr) exprNode() {}
 func (*NameExpr) exprNode()   {}
 func (*MemberExpr) exprNode() {}
 func (*IndexExpr) exprNode()  {}

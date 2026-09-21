@@ -26,7 +26,7 @@ sealed trait Shape {
 }
 struct Circle : Shape {
   var r: f64
-  impl Shape {
+  implement Shape {
     fun grow(by: f64) {
       self.r += by
     }
@@ -35,7 +35,7 @@ struct Circle : Shape {
 }
 struct Square : Shape {
   var side: f64
-  impl Shape {
+  implement Shape {
     fun grow(by: f64) {
       self.side += by
     }

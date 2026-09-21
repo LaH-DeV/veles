@@ -40,67 +40,67 @@ public trait Display {
   fun toString(): string
 }
 
-impl Comparable for i8 {
+implement Comparable for i8 {
   fun compareTo(other: i8): Ordering =
     if (self < other) Ordering.Less else if (self > other) Ordering.Greater else Ordering.Equal
 }
 
-impl Comparable for i16 {
+implement Comparable for i16 {
   fun compareTo(other: i16): Ordering =
     if (self < other) Ordering.Less else if (self > other) Ordering.Greater else Ordering.Equal
 }
 
-impl Comparable for i32 {
+implement Comparable for i32 {
   fun compareTo(other: i32): Ordering =
     if (self < other) Ordering.Less else if (self > other) Ordering.Greater else Ordering.Equal
 }
 
-impl Comparable for i64 {
+implement Comparable for i64 {
   fun compareTo(other: i64): Ordering =
     if (self < other) Ordering.Less else if (self > other) Ordering.Greater else Ordering.Equal
 }
 
-impl Comparable for isize {
+implement Comparable for isize {
   fun compareTo(other: isize): Ordering =
     if (self < other) Ordering.Less else if (self > other) Ordering.Greater else Ordering.Equal
 }
 
-impl Comparable for u8 {
+implement Comparable for u8 {
   fun compareTo(other: u8): Ordering =
     if (self < other) Ordering.Less else if (self > other) Ordering.Greater else Ordering.Equal
 }
 
-impl Comparable for u16 {
+implement Comparable for u16 {
   fun compareTo(other: u16): Ordering =
     if (self < other) Ordering.Less else if (self > other) Ordering.Greater else Ordering.Equal
 }
 
-impl Comparable for u32 {
+implement Comparable for u32 {
   fun compareTo(other: u32): Ordering =
     if (self < other) Ordering.Less else if (self > other) Ordering.Greater else Ordering.Equal
 }
 
-impl Comparable for u64 {
+implement Comparable for u64 {
   fun compareTo(other: u64): Ordering =
     if (self < other) Ordering.Less else if (self > other) Ordering.Greater else Ordering.Equal
 }
 
-impl Comparable for usize {
+implement Comparable for usize {
   fun compareTo(other: usize): Ordering =
     if (self < other) Ordering.Less else if (self > other) Ordering.Greater else Ordering.Equal
 }
 
-impl Comparable for f32 {
+implement Comparable for f32 {
   fun compareTo(other: f32): Ordering =
     if (self < other) Ordering.Less else if (self > other) Ordering.Greater else Ordering.Equal
 }
 
-impl Comparable for f64 {
+implement Comparable for f64 {
   fun compareTo(other: f64): Ordering =
     if (self < other) Ordering.Less else if (self > other) Ordering.Greater else Ordering.Equal
 }
 
-impl Comparable for string {
+implement Comparable for string {
   fun compareTo(other: string): Ordering =
     if (self < other) Ordering.Less else if (self > other) Ordering.Greater else Ordering.Equal
 }
@@ -112,15 +112,15 @@ public trait Parsable {
   static fun parse(s: string): Self?
 }
 
-impl Parsable for i64 {
+implement Parsable for i64 {
   static fun parse(s: string): i64? = s.toInt()
 }
 
-impl Parsable for f64 {
+implement Parsable for f64 {
   static fun parse(s: string): f64? = s.toF64()
 }
 
-impl Parsable for bool {
+implement Parsable for bool {
   static fun parse(s: string): bool? = when (s) {
     "true"  => true
     "false" => false
@@ -128,6 +128,6 @@ impl Parsable for bool {
   }
 }
 
-impl Parsable for string {
+implement Parsable for string {
   static fun parse(s: string): string? = s
 }

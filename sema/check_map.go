@@ -223,9 +223,7 @@ func (f *fnCtx) mapMethod(recv Expr, mt *types.Map, name string, e *ast.CallExpr
 	case "getOrPut", "forEach", "mapValues", "filter":
 		return f.mapAdapter(recv, mt, name, e)
 	}
-	f.errorf(e.Fun.Span(), "no method '%s' on '%s'", name, mt)
-	f.checkArgsLoosely(e.Args)
-	return bad()
+	return nil // not a built-in: a trait impl may provide it
 }
 
 func (f *fnCtx) setMethod(recv Expr, st *types.Set, name string, e *ast.CallExpr) Expr {
@@ -293,9 +291,7 @@ func (f *fnCtx) setMethod(recv Expr, st *types.Set, name string, e *ast.CallExpr
 	case "union", "intersect", "difference", "isSubsetOf":
 		return f.setAdapter(recv, st, name, e)
 	}
-	f.errorf(e.Fun.Span(), "no method '%s' on '%s'", name, st)
-	f.checkArgsLoosely(e.Args)
-	return bad()
+	return nil // not a built-in: a trait impl may provide it
 }
 
 // mapAdapter lowers the map operations that iterate: a loop over the

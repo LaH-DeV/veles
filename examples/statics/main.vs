@@ -20,7 +20,7 @@ struct Point {
 
   fun shifted(dx: i64): Point = Point(x: self.x + dx, y: self.y)
 
-  impl Parsable {
+  implement Parsable {
     static fun parse(s: string): Point? = Point.fromText(s)
   }
 }

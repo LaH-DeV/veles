@@ -100,7 +100,7 @@ boundary; for an invariant that even the rest of the module must not
 touch, a member can be `private` to its type
 ([chapter 5](05-structs-and-methods.md#visibility)).
 
-The three levels, then: `private` — the type's own methods, impl and
+The three levels, then: `private` — the type's own methods, implement and
 extend blocks; `internal` — the module (the directory), which is what
 nothing written means, so the word is optional; `public` — the whole
 package. These say who can *see* a name. Who can *assign* a field is a

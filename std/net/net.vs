@@ -91,7 +91,7 @@ public struct Listener {
     }
   }
 
-  impl Closeable {
+  implement Closeable {
     fun close() {
       unsafe {
         veles_net_close(self.fd)
@@ -219,7 +219,7 @@ public struct Conn {
     if (code != 0) throw os.ioError(code, self.address)
   }
 
-  impl Closeable {
+  implement Closeable {
     fun close() {
       unsafe {
         veles_net_close(self.fd)

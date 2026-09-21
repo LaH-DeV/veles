@@ -102,7 +102,7 @@ public struct MapIter<I: Iterator, U> {
   inner: I
   f:     fun(I.Item): U
 
-  impl Iterator {
+  implement Iterator {
     type Item = U
     fun next(): U? {
       val v = self.inner.next()
@@ -116,7 +116,7 @@ public struct FilterIter<I: Iterator> {
   inner: I
   f:     fun(I.Item): bool
 
-  impl Iterator {
+  implement Iterator {
     type Item = I.Item
     fun next(): I.Item? {
       loop {
@@ -132,7 +132,7 @@ public struct TakeIter<I: Iterator> {
   inner:         I
   var remaining: i64
 
-  impl Iterator {
+  implement Iterator {
     type Item = I.Item
     fun next(): I.Item? {
       if (self.remaining <= 0) return null
@@ -146,7 +146,7 @@ public struct SkipIter<I: Iterator> {
   inner:         I
   var remaining: i64
 
-  impl Iterator {
+  implement Iterator {
     type Item = I.Item
     fun next(): I.Item? {
       loop (self.remaining > 0) {
@@ -162,7 +162,7 @@ public struct EnumerateIter<I: Iterator> {
   inner:     I
   var index: i64
 
-  impl Iterator {
+  implement Iterator {
     type Item = (i64, I.Item)
     fun next(): (i64, I.Item)? {
       val v = self.inner.next()
@@ -178,7 +178,7 @@ public struct ZipIter<A: Iterator, B: Iterator> {
   a: A
   b: B
 
-  impl Iterator {
+  implement Iterator {
     type Item = (A.Item, B.Item)
     fun next(): (A.Item, B.Item)? {
       val x = self.a.next()
@@ -197,7 +197,7 @@ public struct ListIter<T> {
   list:      List<T>
   var index: i64 = 0
 
-  impl Iterator {
+  implement Iterator {
     type Item = T
     fun next(): T? {
       if (self.index >= self.list.len()) return null
@@ -208,12 +208,12 @@ public struct ListIter<T> {
   }
 }
 
-impl<T> Iterable for List<T> {
+implement<T> Iterable for List<T> {
   type Iter = ListIter<T>
   fun iterator(): ListIter<T> = ListIter(list: self)
 }
 
-impl<T> Iterable for MutableList<T> {
+implement<T> Iterable for MutableList<T> {
   type Iter = ListIter<T>
   fun iterator(): ListIter<T> = ListIter(list: self.toList())
 }
@@ -223,7 +223,7 @@ public struct RangeIter<T> {
   hi:          T
   inclusive:   bool
 
-  impl Iterator {
+  implement Iterator {
     type Item = T
     fun next(): T? {
       if (self.inclusive) {
@@ -238,7 +238,7 @@ public struct RangeIter<T> {
   }
 }
 
-impl<T> Iterable for Range<T> {
+implement<T> Iterable for Range<T> {
   type Iter = RangeIter<T>
   fun iterator(): RangeIter<T> = RangeIter(current: self.lo, hi: self.hi, inclusive: self.inclusive)
 }

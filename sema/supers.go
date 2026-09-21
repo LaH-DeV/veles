@@ -1,0 +1,117 @@
+package sema
+
+import (
+	"github.com/LaH-DeV/veles/ast"
+	"github.com/LaH-DeV/veles/types"
+)
+
+// Supertraits (D58): `trait Codable : Encodable, Decodable { }` requires
+// its supers. A bound `T: Codable` carries the supers' bounds, so `T` has
+// their methods; an impl of `Codable` needs impls of the supers — and an
+// empty impl derives the ones the type lacks (derive.go). A trait whose
+// only content is its supers is implemented by whatever implements all of
+// them. Bootstrap limit: a trait with supertraits is not a trait object
+// (its vtable would compose the supers'); objectSafe says so.
+
+// resolveSupers resolves a trait's supertraits. It runs for every trait
+// before any bound is read, since expansion is transitive.
+func (c *Checker) resolveSupers(t *types.Trait) {
+	ctx := c.traitDecl[t]
+	d := ctx.decl.(*ast.TraitDecl)
+	if len(d.Supers) == 0 {
+		return
+	}
+	if d.Sealed {
+		c.errorf(d.Supers[0].Span(), "a sealed trait has no supertraits: its variants implement traits one by one (D12)")
+		return
+	}
+	env := c.envFor(ctx, selfParamOf(t))
+	for _, s := range d.Supers {
+		st := c.resolveType(env, s)
+		tr, ok := st.(*types.Trait)
+		if !ok {
+			if !types.IsInvalid(st) {
+				c.errorf(s.Span(), "supertrait '%s' is not a trait", st)
+			}
+			continue
+		}
+		if tr == t {
+			c.errorf(s.Span(), "trait '%s' cannot require itself", t.Name)
+			continue
+		}
+		if isSendableTrait(tr) {
+			c.errorf(s.Span(), "Sendable is derived from a type's fields and cannot be required as a supertrait; use it as a bound (D35)")
+			continue
+		}
+		if containsTrait(t.Supers, tr) {
+			c.errorf(s.Span(), "supertrait '%s' is listed twice", tr.Name)
+			continue
+		}
+		t.Supers = append(t.Supers, tr)
+	}
+}
+
+// checkSuperCycles reports a trait that reaches itself through its supers.
+func (c *Checker) checkSuperCycles() {
+	for _, t := range c.traits {
+		if containsTrait(allSupers(t), t) {
+			d := c.traitDecl[t].decl.(*ast.TraitDecl)
+			c.errorf(d.Name.Pos, "trait '%s' requires itself through its supertraits", t.Name)
+			t.Supers = nil // so nothing loops on it later
+		}
+	}
+}
+
+// allSupers is the transitive closure of a trait's supertraits, not
+// including the trait itself unless a cycle brings it back.
+func allSupers(t *types.Trait) []*types.Trait {
+	var out []*types.Trait
+	seen := map[*types.Trait]bool{}
+	var walk func(x *types.Trait)
+	walk = func(x *types.Trait) {
+		for _, s := range x.Supers {
+			if seen[s] {
+				continue
+			}
+			seen[s] = true
+			out = append(out, s)
+			walk(s)
+		}
+	}
+	walk(t)
+	return out
+}
+
+// withSupers appends a bound and, transitively, its supertraits.
+func (c *Checker) withSupers(bounds []*types.Trait, t *types.Trait) []*types.Trait {
+	if !containsTrait(bounds, t) {
+		bounds = append(bounds, t)
+	}
+	for _, s := range allSupers(t) {
+		if !containsTrait(bounds, s) {
+			bounds = append(bounds, s)
+		}
+	}
+	return bounds
+}
+
+// isCombination reports whether a trait is nothing but its supertraits —
+// no methods, no associated types — so that implementing every super is
+// implementing it.
+func isCombination(t *types.Trait) bool {
+	return len(t.Supers) > 0 && len(t.MethodList) == 0 && len(t.AssocTypes) == 0
+}
+
+// superOwning returns the trait among t and its supers that declares the
+// method, or nil.
+func superOwning(t *types.Trait, method string) *types.Trait {
+	if _, ok := t.Methods[method]; ok {
+		return t
+	}
+	for _, s := range allSupers(t) {
+		if _, ok := s.Methods[method]; ok {
+			return s
+		}
+	}
+	return nil
+}

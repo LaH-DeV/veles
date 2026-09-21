@@ -88,10 +88,10 @@
           }
         },
         {
-          "comment": "impl Trait for Type",
-          "begin": "\\b(impl)\\b",
+          "comment": "implement Trait for Type — or, with no body, `implement Codable` (D58: derived), which ends with the line",
+          "begin": "\\b(implement)\\b",
           "beginCaptures": { "1": { "name": "storage.type.impl.veles" } },
-          "end": "(?=\\{)",
+          "end": "(?=\\{)|$",
           "patterns": [
             { "name": "keyword.other.for.veles", "match": "\\bfor\\b" },
             { "include": "#types" },
@@ -158,7 +158,7 @@
         { "name": "keyword.control.flow.veles", "match": "\\b(return|throw|try|with)\\b" },
         { "name": "keyword.control.concurrency.veles", "match": "\\b(async|await|scope|gather|race)\\b" },
         { "name": "storage.modifier.veles", "match": "\\b(public|private|internal|protected|override|unsafe|extern|mut|static|sealed|sendable)\\b" },
-        { "name": "storage.type.veles", "match": "\\b(fun|struct|trait|impl|val|var|const|type)\\b" },
+        { "name": "storage.type.veles", "match": "\\b(fun|struct|trait|implement|val|var|const|type)\\b" },
         { "name": "keyword.operator.expression.veles", "match": "\\b(as|raw)\\b" },
         { "name": "variable.language.self.veles", "match": "\\b(self)\\b" },
         { "name": "support.type.self.veles", "match": "\\b(Self)\\b" },

@@ -261,7 +261,7 @@ cost:
 ```veles
 use io
 
-fun <T> first(xs: List<T>, fallback: T): T = xs.at(0) ?: fallback
+fun first<T>(xs: List<T>, fallback: T): T = xs.at(0) ?: fallback
 
 fun main() {
   io.println("${first([3, 4], 0)} ${first([], "none")}")

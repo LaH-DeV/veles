@@ -54,7 +54,7 @@ func (c *Checker) lintInlinableImpl(m *Module, f *ast.File, d *ast.ImplDecl, imp
 		return
 	}
 	fix := inlineImplFix(f, sf, d, sd, impl.Trait.Name)
-	c.warnFix(d.Pos, fix, "impl of '%s' for '%s' can be written inside the body of '%s' as 'impl %s { ... }' (D23)", impl.Trait.Name, tmpl.Name, tmpl.Name, impl.Trait.Name)
+	c.warnFix(d.Pos, fix, "implement of '%s' for '%s' can be written inside the body of '%s' as 'implement %s { ... }' (D23)", impl.Trait.Name, tmpl.Name, tmpl.Name, impl.Trait.Name)
 }
 
 func containsTrait(ts []*types.Trait, t *types.Trait) bool {
@@ -99,9 +99,9 @@ func inlineImplFix(implFile, structFile *ast.File, d *ast.ImplDecl, sd *ast.Stru
 		}
 		lines = append(lines, "  "+line)
 	}
-	block := "\n  impl " + traitName + " {\n" + strings.Join(lines, "\n") + "\n  }\n"
+	block := "\n  implement " + traitName + " {\n" + strings.Join(lines, "\n") + "\n  }\n"
 	if strings.TrimSpace(body) == "" {
-		block = "\n  impl " + traitName + " { }\n"
+		block = "\n  implement " + traitName + " { }\n"
 	}
 	// delete the declaration with the line break that follows it, and one
 	// blank line before it when there is one

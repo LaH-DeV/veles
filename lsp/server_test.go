@@ -394,7 +394,7 @@ func TestHoverDocsAndShapes(t *testing.T) {
 		return string(res)
 	}
 	// a value of a struct type: its declaration line, then what it has inside
-	if h := hover(18, 13); !strings.Contains(h, "val c: ConfigError") || !strings.Contains(h, `internal error ConfigError {\n  // ConfigError(key: string, cause: PortErrors)\n  internal val key: string\n  internal val cause: PortErrors\n  public fun message(): string\n  impl Error\n}`) {
+	if h := hover(18, 13); !strings.Contains(h, "val c: ConfigError") || !strings.Contains(h, `internal error ConfigError {\n  // ConfigError(key: string, cause: PortErrors)\n  internal val key: string\n  internal val cause: PortErrors\n  public fun message(): string\n  implement Error\n}`) {
 		t.Errorf("hover on a value shows no shape: %s", h)
 	}
 	// the type name itself, with its doc comment
@@ -609,7 +609,7 @@ func TestFormatting(t *testing.T) {
 // quick fix from textDocument/codeAction: here, moving a top-level impl
 // into the struct's body (D23).
 func TestCodeActionInlineImpl(t *testing.T) {
-	src := "trait Show {\n  fun show(): string\n}\n\nstruct P {\n  x: i64\n}\n\nimpl Show for P {\n  fun show(): string = \"p\"\n}\n\nfun main() { }\n"
+	src := "trait Show {\n  fun show(): string\n}\n\nstruct P {\n  x: i64\n}\n\nimplement Show for P {\n  fun show(): string = \"p\"\n}\n\nfun main() { }\n"
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")
 	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
@@ -671,7 +671,7 @@ func TestCodeActionInlineImpl(t *testing.T) {
 	for _, o := range offs {
 		text = text[:o.start] + o.text + text[o.end:]
 	}
-	want := "trait Show {\n  fun show(): string\n}\n\nstruct P {\n  x: i64\n\n  impl Show {\n    fun show(): string = \"p\"\n  }\n}\n\nfun main() { }\n"
+	want := "trait Show {\n  fun show(): string\n}\n\nstruct P {\n  x: i64\n\n  implement Show {\n    fun show(): string = \"p\"\n  }\n}\n\nfun main() { }\n"
 	if text != want {
 		t.Errorf("after the fix:\n%s\n--- want ---\n%s", text, want)
 	}
@@ -737,7 +737,7 @@ func TestHoverSpellsOutModifiers(t *testing.T) {
 // on its own line, the visibility written, `static`, `override`, a trait's
 // associated types and which methods have default bodies.
 func TestHoverMethodsAndTraits(t *testing.T) {
-	src := "use io\n\n/// Something with an area.\npublic trait Shape {\n  type Unit\n  fun area(): f64\n  fun describe(): string = \"area ${self.area()}\"\n  static fun unit(): string\n}\n\nstruct Square {\n  side: f64\n  fun grow(by: f64): Square = Square(side: self.side + by)\n  private fun check() { }\n  public static fun of(side: f64): Square = Square(side)\n}\n\nimpl Shape for Square {\n  type Unit = string\n  fun area(): f64 = self.side * self.side\n  override fun describe(): string = \"square\"\n  static fun unit(): string = \"m\"\n}\n\nimpl Display for Square {\n  fun toString(): string = \"sq\"\n}\n\nextend Square {\n  public fun doubled(): Square = self.grow(self.side)\n}\n\nsealed trait Tree {\n  fun size(): i64\n}\nstruct Leaf : Tree { impl Tree { fun size(): i64 = 1 } }\nstruct Node : Tree {\n  kids: List<Tree>\n  impl Tree { fun size(): i64 = self.kids.len() }\n}\n\nfun helper(): i64 = 1\n\nfun main() {\n  val s = Square(side: 2.0)\n  val a = s.area()\n  val d = s.describe()\n  val g = s.grow(1.0).doubled()\n  val o = Square.of(1.0)\n  val h = helper()\n  io.println(\"$a $d $g $o $h ${Leaf().size()}\")\n}\n"
+	src := "use io\n\n/// Something with an area.\npublic trait Shape {\n  type Unit\n  fun area(): f64\n  fun describe(): string = \"area ${self.area()}\"\n  static fun unit(): string\n}\n\nstruct Square {\n  side: f64\n  fun grow(by: f64): Square = Square(side: self.side + by)\n  private fun check() { }\n  public static fun of(side: f64): Square = Square(side)\n}\n\nimplement Shape for Square {\n  type Unit = string\n  fun area(): f64 = self.side * self.side\n  override fun describe(): string = \"square\"\n  static fun unit(): string = \"m\"\n}\n\nimplement Display for Square {\n  fun toString(): string = \"sq\"\n}\n\nextend Square {\n  public fun doubled(): Square = self.grow(self.side)\n}\n\nsealed trait Tree {\n  fun size(): i64\n}\nstruct Leaf : Tree { implement Tree { fun size(): i64 = 1 } }\nstruct Node : Tree {\n  kids: List<Tree>\n  implement Tree { fun size(): i64 = self.kids.len() }\n}\n\nfun helper(): i64 = 1\n\nfun main() {\n  val s = Square(side: 2.0)\n  val a = s.area()\n  val d = s.describe()\n  val g = s.grow(1.0).doubled()\n  val o = Square.of(1.0)\n  val h = helper()\n  io.println(\"$a $d $g $o $h ${Leaf().size()}\")\n}\n"
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")
 	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
@@ -770,7 +770,7 @@ func TestHoverMethodsAndTraits(t *testing.T) {
 		// an inherent method at a use, under its struct
 		{47, 13, "internal struct Square\n  internal fun grow(by: f64): Square"},
 		// an impl method at a use: the impl as owner, `override` kept
-		{46, 13, "impl Shape for Square\n  override fun describe(): string"},
+		{46, 13, "implement Shape for Square\n  override fun describe(): string"},
 		// an extend method at a use
 		{47, 24, "extend Square\n  public fun doubled(): Square"},
 		// a static at a use
@@ -1134,5 +1134,34 @@ func TestEnumTooling(t *testing.T) {
 	}
 	if got["Red"] || got["values"] {
 		t.Errorf("p. offers the type's namespace: %v", got)
+	}
+}
+
+// D58: a struct's shape lists its impls, derived ones marked; a trait that
+// another listed impl requires (Codable's Encodable and Decodable) is not
+// listed again.
+func TestHoverShapeFoldsDerivedImpls(t *testing.T) {
+	src := "use io\n\nstruct Note {\n  id: i64\n  implement Codable\n}\nsealed trait S\nstruct A : S { x: i64 }\nimplement Codable for S\n\nfun main() {\n  val n = Note(id: 1)\n  val a: S = A(x: 1)\n  io.println(\"$n $a\")\n}\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := pathToURI(path)
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{})
+	c.notify("initialized", map[string]any{})
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": src}})
+	res, _ := c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": 11, "character": 6}})
+	h := string(res)
+	if !strings.Contains(h, `implement Codable\n}`) || strings.Contains(h, "implement Encodable") || strings.Contains(h, "implement Decodable") {
+		t.Errorf("Codable should stand for the impls it derived: %s", h)
+	}
+	// a variant whose impls came from the family's line: derived, and marked
+	res, _ = c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": 12, "character": 13}})
+	h = string(res)
+	if !strings.Contains(h, `implement Decodable  // derived`) || !strings.Contains(h, `implement Encodable  // derived`) {
+		t.Errorf("derived impls should be listed and marked: %s", h)
 	}
 }

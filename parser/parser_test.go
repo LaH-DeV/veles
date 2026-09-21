@@ -161,7 +161,7 @@ func TestSpecRejections(t *testing.T) {
 	cases := []struct{ src, msg string }{
 		{"fun f() { val x = fun() {} }", "lambdas"},
 		{"fun f() { scope { } + 1 }", "statement"},
-		{"impl Foo { }", "'for'"},
+		{"implement Foo { }", "'for'"},
 		{"fun f() { async 1 }", "'async' must prefix a call"},
 		{"fun f() { val x = a -> b }", "'=>'"},
 	}
@@ -287,16 +287,16 @@ fun h() {
 	}
 }
 
-// `impl Trait { }` inside a struct body is an impl for that struct with
+// `implement Trait { }` inside a struct body is an impl for that struct with
 // its type parameters (D23, v0.23); it joins the file's declarations.
 func TestInlineImpl(t *testing.T) {
 	src := `
 struct Box<T: Show> {
   item: T
-  impl Display {
+  implement Display {
     fun toString(): string = "box"
   }
-  impl Iterator {
+  implement Iterator {
     type Item = T
     fun next(): T? = null
   }
@@ -322,8 +322,8 @@ struct Box<T: Show> {
 		t.Errorf("target should be Box<T>:\n%s", got)
 	}
 	for src, want := range map[string]string{
-		"struct P { x: i64\n impl<T> Display { fun toString(): string = \"\" } }": "uses the struct's type parameters",
-		"struct P { x: i64\n impl Display for P { fun toString(): string = \"\" } }": "drop 'for'",
+		"struct P { x: i64\n implement<T> Display { fun toString(): string = \"\" } }": "uses the struct's type parameters",
+		"struct P { x: i64\n implement Display for P { fun toString(): string = \"\" } }": "drop 'for'",
 	} {
 		_, diags := parse(t, src)
 		found := false
@@ -335,6 +335,51 @@ struct Box<T: Show> {
 		if !found {
 			t.Errorf("expected %q for %q, got:\n%s", want, src, diags.Render())
 		}
+	}
+}
+
+// An empty trait impl may omit its braces — `implement Codable` in a struct
+// body, `implement Codable for geo.Point` at top level — and a field may carry
+// attributes (D58).
+func TestBracelessImplAndFieldAttributes(t *testing.T) {
+	src := `
+struct User {
+  @key("user_id") id: i64
+  @skip passwordHash: string = ""
+  implement Codable
+  implement Comparable
+  name: string
+}
+implement Codable for geo.Point
+implement Display for User { fun toString(): string = "u" }
+extend User { fun hello(): string = "hi" }
+`
+	f, diags := parse(t, src)
+	if diags.HasErrors() {
+		t.Fatalf("parse errors:\n%s", diags.Render())
+	}
+	sd := f.Decls[0].(*ast.StructDecl)
+	if len(sd.Fields) != 3 || len(sd.Fields[0].Attrs) != 1 || sd.Fields[0].Attrs[0].Name.Name != "key" || len(sd.Fields[1].Attrs) != 1 || len(sd.Fields[2].Attrs) != 0 {
+		t.Fatalf("field attributes not kept:\n%s", ast.Dump(f))
+	}
+	var braceless, braced int
+	for _, d := range f.Decls {
+		if impl, ok := d.(*ast.ImplDecl); ok {
+			if impl.Braceless {
+				braceless++
+				if len(impl.Methods) != 0 {
+					t.Errorf("a braceless impl has no methods")
+				}
+			} else {
+				braced++
+			}
+		}
+	}
+	if braceless != 3 || braced != 2 {
+		t.Fatalf("expected 3 braceless and 2 braced impls, got %d and %d:\n%s", braceless, braced, ast.Dump(f))
+	}
+	if _, diags := parse(t, "extend User\nfun f() { }"); !diags.HasErrors() {
+		t.Errorf("an extend block always has braces")
 	}
 }
 
@@ -507,5 +552,33 @@ func TestEnumDecl(t *testing.T) {
 	_, diags = parse(t, "enum G<T> { A }\n")
 	if !strings.Contains(diags.Render(), "an enum is not generic") {
 		t.Errorf("generic enum accepted:\n%s", diags.Render())
+	}
+}
+
+// v0.33 spellings: `implement` replaces `impl`, and a function's type
+// parameters follow its name. The old forms still parse, with an error
+// that names the new one, so a file is fixed in one pass.
+func TestV033Spellings(t *testing.T) {
+	src := "struct P { x: i64\n  impl Display { fun toString(): string = \"p\" } }\nimpl Show for P { }\nfun <T: Display> show(x: T): string = \"$x\"\nfun ok<T>(x: T): T = x\n"
+	f, diags := parse(t, src)
+	var msgs []string
+	for _, d := range diags.Items {
+		msgs = append(msgs, d.Message)
+	}
+	joined := strings.Join(msgs, "\n")
+	if strings.Count(joined, "'impl' is spelled 'implement'") != 2 || !strings.Contains(joined, "write 'fun show<...>(...)'") {
+		t.Fatalf("expected the two spelling errors, got:\n%s", diags.Render())
+	}
+	impls := 0
+	for _, d := range f.Decls {
+		if _, ok := d.(*ast.ImplDecl); ok {
+			impls++
+		}
+	}
+	if impls != 2 {
+		t.Errorf("both impls should still be in the tree, got %d", impls)
+	}
+	if fn := f.Decls[len(f.Decls)-2].(*ast.FunDecl); fn.Name.Name != "show" || len(fn.TypeParams) != 1 {
+		t.Errorf("the old generic form should still parse: %s", ast.Dump(f))
 	}
 }

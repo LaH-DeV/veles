@@ -18,17 +18,17 @@ trait Show {
 struct Cat {
   name: string
 
-  impl Show {
+  implement Show {
     fun show(): string = "cat ${self.name}"
   }
 }
-impl Show for i64 {
+implement Show for i64 {
   fun show(): string = "int $self"
 }
 
-fun <T: Show> describe(x: T): string = x.shout()
+fun describe<T: Show>(x: T): string = x.shout()
 
-fun <T> first(xs: List<T>, fallback: T): T {
+fun first<T>(xs: List<T>, fallback: T): T {
   if (xs.len() == 0) return fallback
   xs.atOrPanic(0)
 }

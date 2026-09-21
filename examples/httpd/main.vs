@@ -10,7 +10,7 @@
 // test suite runs this program.
 //
 //   httpd [<dir>] [--host H] [--port N] [--check]
-use fs, http, io, net, os
+use fs, http, io, json, net, os
 
 error UsageError {
   message: string
@@ -57,9 +57,13 @@ struct Options {
 struct Note {
   id:   i64
   text: string
+  implement Codable  // the wire form, written by the compiler (D58)
+}
 
-  static fun toJson(n: Note): string =
-    "{\"id\": ${n.id}, \"text\": ${jsonString(n.text)}}"
+/// What a client sends to change a note: `{"text": "..."}`.
+struct NotePatch {
+  text: string
+  implement Codable
 }
 
 /// The store behind the API. Handlers run in connection tasks, so it lives
@@ -90,12 +94,13 @@ struct Notes {
     at >= 0
   }
 
-  static fun toJson(notes: List<Note>): string =
-    "[" + notes.map(n => Note.toJson(n)).join(", ") + "]"
+  /// Replaces the text of a note; false when there is none.
+  fun update(id: i64, text: string): bool {
+    val at = self.items.indexOfFirst(x => x.id == id)
+    if (at >= 0) self.items.set(at, Note(id, text))
+    at >= 0
+  }
 }
-
-fun jsonString(s: string): string =
-  "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t") + "\""
 
 /// The whole application as one handler: the routes below plus the files
 /// under `dir`.
@@ -108,19 +113,31 @@ fun app(dir: string): http.Handler {
 
   router.get("/api/echo", req => http.Response.text(req.query.get("msg") ?: "(no msg)"))
 
-  router.get("/api/notes", req => http.Response.json(notes.withLock(n => Notes.toJson(n.all()))))
+  router.get("/api/notes", req => http.Response.json(try json.encode(notes.withLock(n => n.all()))))
 
   router.post("/api/notes", req => {
     val text = (try req.text()).trim()
     if (text.isEmpty()) throw http.badRequest("a note needs some text")
     val note = notes.withLock(n => n.add(text))
-    http.Response.json(Note.toJson(note), status: 201).withHeader("location", "/api/notes/${note.id}")
+    http.Response.json(try json.encode(note), status: 201).withHeader("location", "/api/notes/${note.id}")
   })
 
   router.get("/api/notes/{id}", req => {
     val id = try req.param("id").toInt() ?! http.badRequest("the id must be a number")
     val note = try notes.withLock(n => n.find(id)) ?! http.notFound("no note $id")
-    http.Response.json(Note.toJson(note))
+    http.Response.json(try json.encode(note))
+  })
+
+  router.put("/api/notes/{id}", req => {
+    val id = try req.param("id").toInt() ?! http.badRequest("the id must be a number")
+    // a bad body answers 400 with every problem found, each with its path
+    val patch = when (json.decode<NotePatch>(try req.text())) {
+      is Ok(p)  => p
+      is Err(e) => throw http.badRequest(e.message())
+    }
+    if (patch.text.trim().isEmpty()) throw http.badRequest("a note needs some text")
+    if (!notes.withLock(n => n.update(id, patch.text.trim()))) throw http.notFound("no note $id")
+    http.Response.json(try json.encode(Note(id, text: patch.text.trim())))
   })
 
   router.delete("/api/notes/{id}", req => {
@@ -162,7 +179,7 @@ fun exchange(port: i64, method: string, target: string, body: string): string th
   }
 }
 
-fun check(handler: http.Handler) throws IoError {
+fun check(handler: http.Handler) throws IoError | EncodeError {
   val script = [
     ("GET", "/api/echo?msg=hello+world", ""),
     ("GET", "/api/notes", ""),
@@ -175,6 +192,10 @@ fun check(handler: http.Handler) throws IoError {
     ("GET", "/api/notes/x", ""),
     ("DELETE", "/api/notes/1", ""),
     ("DELETE", "/api/notes/1", ""),
+    ("PUT", "/api/notes/2", "{\"text\": \"call mum back\"}"),
+    ("PUT", "/api/notes/2", "{\"text\": 5, \"extra\": true}"),
+    ("PUT", "/api/notes/2", "{\"text\": \"x\""),
+    ("PUT", "/api/notes/9", "{\"text\": \"nope\"}"),
     ("GET", "/api/notes", ""),
     ("PUT", "/api/notes", "nope"),
     ("GET", "/static/", ""),
@@ -189,7 +210,7 @@ fun check(handler: http.Handler) throws IoError {
     scope {
       val server = async http.serve(listener, handler, log: false)
       loop ((method, target, body) in script) {
-        io.println("> $method $target" + (if (body.isEmpty()) "" else " ${jsonString(body)}"))
+        io.println("> $method $target" + (if (body.isEmpty()) "" else " ${try json.encode(body)}"))
         io.println(try exchange(port, method, target, body))
       }
       server.cancel()
@@ -199,13 +220,12 @@ fun check(handler: http.Handler) throws IoError {
 
 // ---------------------------------------------------------------------------
 
-fun run(args: List<string>) throws UsageError | IoError {
+fun run(args: List<string>) throws UsageError | IoError | EncodeError {
   val opts = try Options.parse(args)
   if (!fs.isDir(opts.dir)) throw UsageError(message: "'${opts.dir}' is not a directory (the files to serve)")
   val handler = app(opts.dir)
   if (opts.check) {
-    try check(handler)
-    return
+    return try check(handler)
   }
   with (listener = try net.listen(host: opts.host, port: opts.port)) {
     io.println("serving ${opts.dir} on http://${opts.host}:${listener.port()}/ — Ctrl+C stops")

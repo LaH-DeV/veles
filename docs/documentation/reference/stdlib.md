@@ -62,14 +62,14 @@ public struct Mutex<T> {
   public fun get(): T
   public fun set(value: T)
 }
-public fun <T> mutex(value: T): Mutex<T>
+public fun mutex<T>(value: T): Mutex<T>
 
 public struct Atomic<T> {
   public fun load(): T
   public fun store(value: T)
   public fun swap(value: T): T
 }
-public fun <T> atomic(value: T): Atomic<T>
+public fun atomic<T>(value: T): Atomic<T>
 
 public trait Sendable { }   // derived from the type's shape; a bound, never implemented by hand
 ```
@@ -98,7 +98,7 @@ public trait Error { fun message(): string = "$self" }   // what `error Name { }
 ```
 
 `error Name { fields; fun message() ... }` declares a struct with this
-impl; only such types (or an explicit `impl Error for T`) can appear in
+implement; only such types (or an explicit `implement Error for T`) can appear in
 error position. A `message: string` field is used as the message when no
 `message()` is written. `error Set = A | B` names a union (D45); a field
 of an `error` may hold a union (a cause). `message()` is callable on an
@@ -126,7 +126,7 @@ public trait Display    { fun toString(): string }            // interpolation "
 
 A struct or sealed type has structural equality, hashing and
 `Name(field: value)` text by default and replaces any of them with an
-impl. `compareTo` returns `Ordering.Less`, `Ordering.Equal` or `Ordering.Greater`
+implement. `compareTo` returns `Ordering.Less`, `Ordering.Equal` or `Ordering.Greater`
 (an enum whose values are -1, 0 and 1, so `< 0` still reads). Numbers and strings
 implement `Comparable` (so `T: Comparable` bounds accept them); the
 built-in types otherwise keep their own behaviour: lists, maps and sets
@@ -144,6 +144,28 @@ public trait Parsable { static fun parse(s: string): Self? }   // i64.parse("42"
 Construction from text, implemented for `i64`, `f64`, `bool` and `string`;
 `null` when the text is not a value of the type. A `static fun` has no
 receiver and is called on the type (`Point.origin()`, `Stack<i64>.of(1)`).
+
+### Codable (D58)
+
+```veles
+// fragment
+public trait Encodable { fun encode(to: Encoder) throws EncodeError }
+public trait Decodable { static fun decode(from: Decoder): Self throws DecodeError }
+public trait Codable : Encodable + Decodable { }   // `implement Codable` in a struct body derives both; `implement Codable for pkg.T` at top level
+public trait Encoder { format(); enums(); keys(); beginObject(); key(name); endObject(); beginList(); endList(); writeI64/U64/F64/Bool/String/Null(v) }
+public trait Decoder { format(); enums(); keys(); peek(): Kind; beginObject(); nextKey(): string?; endObject(); beginList(); hasNext(); endList(); readI64/U64/F64/Bool/String/Null(); skip(); path(); problem(msg); problemAt(path, msg); problems() }
+public error EncodeError { message, path }; public error DecodeError { problems: List<Problem> }; struct Problem { path, message; pointer() }
+public enum EnumStyle { Name, Number }; public enum KeyStyle { AsWritten, SnakeCase, CamelCase }; public enum Kind { Null, Bool, Int, Float, String, List, Object }
+public sealed trait Value   // VNull, VBool, VInt, VFloat, VString, VList, VObject; get(k), at(i), asString/asI64/asF64/asBool(), isNull()
+ValueEncoder.of(format, enums, keys); ValueDecoder.of(v, format, enums, keys)   // a Value as the sink / the source
+```
+
+The wire traits ([chapter 18](../18-codable-and-json.md)). Implemented
+by the prelude for the numbers, `bool`, `string`, `T?`, `List`,
+`MutableList`, `Map<string, V>` and `MutableMap<string, V>`; derived for
+structs and sealed traits by an empty `implement`; automatic for enums.
+`Comparable` is derived the same way. A struct field takes `@key`, `@skip`
+and `@required`; a sealed trait `@tag`.
 
 ### StringBuilder
 
@@ -452,6 +474,20 @@ error Fail { status, text }; http.notFound(text); http.badRequest(text); http.fo
 req.method; req.path; req.query; req.headers; req.header(name); req.body; try req.text(); req.param(name); req.peer
 http.Response.text(s, status: 200); .html(s); .json(s); .bytes(b, contentType); .empty(status); .redirect(url); resp.withHeader(n, v)
 http.contentTypeOf(name); http.httpDate(ms); http.reasonOf(status); http.percentDecode(s, plusIsSpace)
+```
+
+## Module `json`
+
+JSON for anything Codable ([chapter 18](../18-codable-and-json.md)).
+
+```veles
+// fragment
+use json
+try json.encode(x); try json.pretty(x)                 // T: Encodable → text; EncodeError for a NaN or infinity
+try json.decode<T>(text)                               // T: Decodable; DecodeError lists every problem with its path
+try json.parse(text): Value; try json.toValue(x); try json.fromValue<T>(v)
+json.Options(keys: KeyStyle.SnakeCase, enums: EnumStyle.Number, omitNulls: true, pretty: true, indent: "  ", maxDepth: 64, maxProblems: 100)
+json.JsonEncoder.of(options); json.JsonDecoder.of(text, options)   // the Encoder / Decoder themselves
 ```
 
 ## Module `path`

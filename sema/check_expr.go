@@ -245,6 +245,11 @@ func (f *fnCtx) checkExpr(e ast.Expr, want types.Type) Expr {
 		}
 		f.errorf(e.Pos, "cannot infer the type of 'null' here; annotate the binding, e.g. 'val x: T? = null'")
 		return bad()
+	case *ast.TypeExpr:
+		f.errorf(e.Pos, "a type is not a value")
+		return bad()
+	case *ast.FieldDefaultExpr:
+		return f.fieldDefault(e.Struct.(*types.Struct), e.Index) // synthesized (D58)
 	case *ast.SelfExpr:
 
 		if in := f.initScope(); in != nil {
@@ -608,7 +613,11 @@ func (f *fnCtx) memberExpr(e *ast.MemberExpr, want types.Type) Expr {
 			}
 		}
 	}
-	if rt := f.moduleTypeNamed(e.X); rt != nil {
+	rt := f.moduleTypeNamed(e.X)
+	if te, ok := e.X.(*ast.TypeExpr); ok {
+		rt = f.resolve(te.Type) // synthesized code (D58): a resolved type's member
+	}
+	if rt != nil {
 		// `http.Status.ok`
 		if st, ok := rt.(*types.Struct); ok {
 			return f.staticValue(st, e, want)

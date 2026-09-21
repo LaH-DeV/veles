@@ -37,7 +37,7 @@ Add `throws` to the function (the error type is inferred), or handle the
 
 ### `'Dog' is not an error: declare it with 'error Dog { ... }' instead of 'struct'`
 
-Only types declared with `error` (or given an explicit `impl Error for`)
+Only types declared with `error` (or given an explicit `implement Error for`)
 can be thrown or named in `throws`. Change `struct` to `error`, or wrap a
 non-struct value: `error Failed { why: string }`. A generic `throws X`
 needs `X: Error`.
@@ -93,7 +93,7 @@ changes its receiver: a global is shared by every task (D35).
 ### `cannot assign to 'T.f' here: the field is 'protected var'`
 
 A `protected var` field is assigned only inside the type's own
-declarations — its methods, `impl` and `extend` blocks; everyone else
+declarations — its methods, `implement` and `extend` blocks; everyone else
 reads it. Call a method of the type, or make the field a plain `var` if
 outside writes are intended (D22).
 

@@ -36,6 +36,7 @@ For readers who want to know what the compiler actually does.
 14. [Attributes and the test runner](14-attributes-and-testing.md) — `@test`, `@deprecated`, `@mustUse`, `@inline`.
 16. [Networking](16-networking.md) — TCP with `net`: one task per connection, `readLine`/`write`, timeouts.
 17. [An HTTP server](17-http.md) — `http`: router, handlers and what their errors mean, static files, keep-alive.
+18. [Codable and JSON](18-codable-and-json.md) — `implement Codable` derives the wire code; `json` reads and writes it, reporting every problem with its path.
 
 ## Reference
 

@@ -104,7 +104,7 @@ use io
 
 struct Res {
   name: string
-  impl Closeable {
+  implement Closeable {
     fun close() { io.println("close ${self.name}") }
   }
 }
@@ -169,7 +169,7 @@ use io
 
 struct Handle {
   name: string
-  impl Closeable {
+  implement Closeable {
     fun close() { io.println("close ${self.name}") }
   }
   fun contents(): string = "<${self.name}>"
@@ -204,7 +204,7 @@ use io
 
 struct Res {
   name: string
-  impl Closeable {
+  implement Closeable {
     fun close() { io.println("close ${self.name}") }
   }
 }

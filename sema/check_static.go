@@ -56,8 +56,8 @@ func (f *fnCtx) staticCall(rt types.Type, callee *ast.MemberExpr, typeArgs []typ
 		f.checkArgsLoosely(e.Args)
 		return bad()
 	}
-	if en, ok := rt.(*types.Enum); ok {
-		return f.enumStaticCall(en, callee, e) // values(), fromValue(n), parse(s) (D57)
+	if en, ok := rt.(*types.Enum); ok && (name == "values" || name == "fromValue" || name == "parse") {
+		return f.enumStaticCall(en, callee, e) // D57; `decode` comes from the derived impl (D58)
 	}
 	t, subst, ok := f.findStatic(rt, name, callee.Name.Pos)
 	if !ok {
@@ -67,6 +67,12 @@ func (f *fnCtx) staticCall(rt types.Type, callee *ast.MemberExpr, typeArgs []typ
 	if t == nil {
 		if m, _, _ := f.findMethod(rt, name); m != nil {
 			f.errorf(callee.Name.Pos, "'%s' is a method of '%s'; call it on a value, not on the type", name, rt)
+		} else if en, isEnum := rt.(*types.Enum); isEnum {
+			if m := en.MemberByName(name); m != nil {
+				f.errorf(callee.Name.Pos, "'%s.%s' is a value, not a function", en.Name, name)
+			} else {
+				f.errorf(callee.Name.Pos, "enum '%s' has no function '%s'; an enum has 'values()', 'fromValue(n)', 'parse(s)' and 'decode(from)' (D57)", en.Name, name)
+			}
 		} else {
 			f.errorf(callee.Name.Pos, "no static function '%s' on type '%s'", name, rt)
 		}
@@ -129,6 +135,7 @@ func (f *fnCtx) findMethod(rt types.Type, name string) (*FuncTemplate, map[*type
 	var found []*FuncTemplate
 	var foundSubst []map[*types.TypeParam]types.Type
 	var traits []string
+	unmet := ""
 	for trait, impls := range f.c.impls {
 		if _, has := trait.Methods[name]; !has {
 			continue
@@ -136,6 +143,12 @@ func (f *fnCtx) findMethod(rt types.Type, name string) (*FuncTemplate, map[*type
 		for _, impl := range impls {
 			m := map[*types.TypeParam]types.Type{}
 			if !unify(impl.Target, rt, m) {
+				continue
+			}
+			// the impl's own bounds: `impl<T: Encodable> Encodable for List<T>`
+			// serves `List<H>` only when `H` is Encodable
+			if why := f.unmetImplBound(impl, m, name, rt); why != "" {
+				unmet = why
 				continue
 			}
 			if t, ok := impl.Methods[name]; ok {
@@ -152,7 +165,25 @@ func (f *fnCtx) findMethod(rt types.Type, name string) (*FuncTemplate, map[*type
 	if len(found) == 1 {
 		return found[0], foundSubst[0], ""
 	}
-	return nil, nil, ""
+	return nil, nil, unmet
+}
+
+// unmetImplBound says why an impl does not serve the receiver: a type
+// argument that misses a bound of the impl's type parameters; "" when all
+// hold (or are not yet known).
+func (f *fnCtx) unmetImplBound(impl *Impl, m map[*types.TypeParam]types.Type, name string, rt types.Type) string {
+	for _, tp := range impl.TypeParams {
+		bt, ok := m[tp]
+		if !ok || types.ContainsTypeParam(bt) {
+			continue
+		}
+		for _, bound := range tp.Bounds {
+			if !f.implements(bt, bound) {
+				return "'" + name + "' on '" + rt.String() + "' requires '" + bt.String() + "' to implement '" + bound.Name + "' (impl<" + tp.Name + ": " + bound.Name + "> " + impl.Trait.Name + " for " + impl.Target.String() + ")" + sendableHint(bound)
+			}
+		}
+	}
+	return ""
 }
 
 // moduleTypeNamed resolves `module.Type` used as a call target to the type,

@@ -2,7 +2,7 @@ use io
 
 fun apply(f: fun(i64): i64, x: i64): i64 = f(x)
 
-fun <T, U> twice(x: T, f: fun(T): U): U = f(x)
+fun twice<T, U>(x: T, f: fun(T): U): U = f(x)
 
 fun counter(): fun(): i64 {
   var n = 0

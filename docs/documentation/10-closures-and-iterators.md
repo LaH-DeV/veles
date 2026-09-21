@@ -158,7 +158,7 @@ takes a callback and may fail *because the callback does* is written
 
 ```veles
 // fragment
-fun <T, R, E> apply(x: T, f: fun(T): R throws E): R throws E = try f(x)
+fun apply<T, R, E>(x: T, f: fun(T): R throws E): R throws E = try f(x)
 ```
 
 `E` is inferred at each call from the lambda: `apply(2, n => n * 2)` is an
@@ -252,7 +252,7 @@ use io
 struct Countdown {
   from: i64
 
-  impl Iterable {
+  implement Iterable {
     type Iter = CountdownIter
     fun iterator(): CountdownIter = CountdownIter(current: self.from)
   }
@@ -261,7 +261,7 @@ struct Countdown {
 struct CountdownIter {
   var current: i64
 
-  impl Iterator {
+  implement Iterator {
     type Item = i64
     fun next(): i64? {
       if (self.current <= 0) return null

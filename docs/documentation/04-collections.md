@@ -307,7 +307,7 @@ struct Job {
   name: string
   cost: i64
 
-  impl Comparable {
+  implement Comparable {
     fun compareTo(other: Job): Ordering = self.cost.compareTo(other.cost)
   }
 }

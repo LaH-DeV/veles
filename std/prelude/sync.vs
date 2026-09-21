@@ -24,7 +24,7 @@ public struct Mutex<T> {
   }
 }
 
-public fun <T> mutex(value: T): Mutex<T> = Mutex(cell: &value)
+public fun mutex<T>(value: T): Mutex<T> = Mutex(cell: &value)
 
 public struct Atomic<T> {
   cell: *T
@@ -40,4 +40,4 @@ public struct Atomic<T> {
   }
 }
 
-public fun <T> atomic(value: T): Atomic<T> = Atomic(cell: &value)
+public fun atomic<T>(value: T): Atomic<T> = Atomic(cell: &value)

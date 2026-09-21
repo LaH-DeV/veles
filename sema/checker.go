@@ -3,6 +3,7 @@
 package sema
 
 import (
+	"os"
 	"fmt"
 	"sort"
 	"strings"
@@ -56,6 +57,10 @@ type Checker struct {
 	// at the end of collection; collected marks that point
 	pendingErrorChecks []pendingErrorCheck
 	pendingAssocChecks []func() // associated-type bounds, run once all impls exist
+	pendingDerives     []func() // derived impl bodies and supertrait impls, once all impls exist (D58)
+	deriveFailed       map[*Impl]bool
+	debugDerive        bool // VELES_DEBUG_DERIVE: print every synthesized declaration
+	syntheticSpans     map[source.Span]bool // spans that derived code carries; no hover there
 	collected          bool
 	collectRefs        int // index refs recorded by collect(); rounds reset only past this
 	tests          []*FuncTemplate
@@ -101,6 +106,9 @@ func check(pkg *Package, diags *source.Diagnostics, release bool, testMode bool)
 
 func checkWith(pkg *Package, diags *source.Diagnostics, release bool, testMode bool, index *Index) *Program {
 	c := &Checker{
+		deriveFailed: map[*Impl]bool{},
+		syntheticSpans: map[source.Span]bool{},
+		debugDerive:  os.Getenv("VELES_DEBUG_DERIVE") != "",
 		globalVars:     map[*Global]*Var{},
 		index:          index,
 		pkg:            pkg,
@@ -158,10 +166,27 @@ func checkWith(pkg *Package, diags *source.Diagnostics, release bool, testMode b
 		c.inferSuspension(prog)
 	}
 	diags.Items = append(diags.Items, c.roundDiags.Items...)
+	c.dropSyntheticRefs()
 	if diags.HasErrors() {
 		return nil
 	}
 	return prog
+}
+
+// dropSyntheticRefs removes the references derived code recorded (D58):
+// every node of a synthesized body carries the span of the declaration
+// that asked for it, which is not where any of them is.
+func (c *Checker) dropSyntheticRefs() {
+	if c.index == nil || len(c.syntheticSpans) == 0 {
+		return
+	}
+	kept := c.index.Refs[:0]
+	for _, r := range c.index.Refs {
+		if !c.syntheticSpans[r.Span] {
+			kept = append(kept, r)
+		}
+	}
+	c.index.Refs = kept
 }
 
 func (c *Checker) errorf(span source.Span, format string, args ...any) {
@@ -295,6 +320,10 @@ func (c *Checker) collect() {
 	for _, e := range c.enums {
 		c.resolveEnum(e)
 	}
+	for _, t := range c.traits {
+		c.resolveSupers(t) // before any bound is read: bounds carry supertraits
+	}
+	c.checkSuperCycles()
 	for _, s := range c.structs {
 		c.resolveStruct(s)
 	}
@@ -316,6 +345,14 @@ func (c *Checker) collect() {
 				}
 			}
 		}
+	}
+	c.deriveEnumCodecs()
+	// derived bodies, supertrait impls and variant impls, in the order
+	// they were asked for; each may ask for more (D58)
+	for len(c.pendingDerives) > 0 {
+		next := c.pendingDerives[0]
+		c.pendingDerives = c.pendingDerives[1:]
+		next()
 	}
 	for _, check := range c.pendingAssocChecks {
 		check()
@@ -398,7 +435,11 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 			c.insert(m, &Symbol{Name: fn.Name.Name, Kind: SymFunc, Pub: fn.Pub, Module: m, Span: fn.Name.Pos, Func: t})
 		}
 	case *ast.StructDecl:
-		c.attrsOf(d.Attrs, "struct")
+		if d.Variant != nil {
+			c.attrsOf(d.Attrs, "variant")
+		} else {
+			c.attrsOf(d.Attrs, "struct")
+		}
 		s := &types.Struct{Name: d.Name.Name, Module: m.prefix(), Pub: d.Pub, Extern: d.Extern, Decl: d, Instances: map[string]*types.Struct{}}
 		ctx := &declCtx{module: m, file: f, decl: d, tps: map[string]*types.TypeParam{}}
 		for i, tp := range d.TypeParams {
@@ -463,7 +504,11 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 	case *ast.EnumDecl:
 		c.declareEnum(m, f, d)
 	case *ast.TraitDecl:
-		c.attrsOf(d.Attrs, "trait")
+		if d.Sealed {
+			c.attrsOf(d.Attrs, "sealed")
+		} else {
+			c.attrsOf(d.Attrs, "trait")
+		}
 		if d.Sealed {
 			s := &types.Sealed{Name: d.Name.Name, Module: m.prefix(), Pub: d.Pub, Decl: d, Instances: map[string]*types.Sealed{}}
 			ctx := &declCtx{module: m, file: f, decl: d, tps: map[string]*types.TypeParam{}}
@@ -777,6 +822,8 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 	switch t := t.(type) {
 	case nil:
 		return types.TUnit
+	case *ast.ResolvedType:
+		return t.T.(types.Type) // synthesized by the compiler (D58)
 	case *ast.NamedType:
 		if len(t.Path) == 1 {
 			name := t.Path[0].Name
@@ -1054,7 +1101,7 @@ func (c *Checker) resolveStruct(s *types.Struct) {
 	for i, tp := range d.TypeParams {
 		for _, b := range tp.Bounds {
 			if tr, ok := c.resolveType(env, b).(*types.Trait); ok {
-				s.TypeParams[i].Bounds = append(s.TypeParams[i].Bounds, tr)
+				s.TypeParams[i].Bounds = c.withSupers(s.TypeParams[i].Bounds, tr)
 			}
 		}
 	}
@@ -1065,6 +1112,7 @@ func (c *Checker) resolveStruct(s *types.Struct) {
 			continue
 		}
 		seen[f.Name.Name] = true
+		c.checkFieldAttrs(f)
 		env.errorPos = d.Error // an error's field may hold a cause: a union (D45)
 		ft := c.resolveType(env, f.Type)
 		env.errorPos = false
@@ -1089,7 +1137,7 @@ func (c *Checker) resolveStruct(s *types.Struct) {
 		parent, ok := vt.(*types.Sealed)
 		if !ok {
 			if !types.IsInvalid(vt) {
-				c.errorf(d.Variant.Span(), "'%s' is not a sealed trait; 'struct X : T' declares variant membership (D23), trait conformance uses 'impl T for X'", vt)
+				c.errorf(d.Variant.Span(), "'%s' is not a sealed trait; 'struct X : T' declares variant membership (D23), trait conformance uses 'implement T for X'", vt)
 			}
 		} else {
 			tmpl := parent
@@ -1170,7 +1218,7 @@ func (c *Checker) resolveTrait(t *types.Trait) {
 	ctx := c.traitDecl[t]
 	d := ctx.decl.(*ast.TraitDecl)
 	self := selfParamOf(t)
-	self.Bounds = []*types.Trait{t}
+	self.Bounds = c.withSupers(nil, t) // Self has the supertraits' methods too
 	env := c.envFor(ctx, self)
 	env.trait = t
 	t.AssocBounds = map[string][]*types.Trait{}
@@ -1205,7 +1253,7 @@ func (c *Checker) resolveTrait(t *types.Trait) {
 		for i, tp := range m.TypeParams {
 			for _, b := range tp.Bounds {
 				if tr, ok := c.resolveType(&menv, b).(*types.Trait); ok {
-					mtps[i].Bounds = append(mtps[i].Bounds, tr)
+					mtps[i].Bounds = c.withSupers(mtps[i].Bounds, tr)
 				}
 			}
 		}
@@ -1225,9 +1273,6 @@ func (c *Checker) resolveTrait(t *types.Trait) {
 			tmpl.TypeParams = mtps
 			tmpl.Mangled = ctx.module.prefix() + "." + t.Name + "." + m.Name.Name
 		}
-	}
-	if len(d.Supers) > 0 {
-		c.errorf(d.Name.Pos, "supertraits are not supported yet in the bootstrap compiler")
 	}
 }
 
@@ -1306,7 +1351,7 @@ func (c *Checker) resolveSignature(t *FuncTemplate) {
 		for _, b := range tp.Bounds {
 			bt := c.resolveType(env, b)
 			if tr, ok := bt.(*types.Trait); ok {
-				t.TypeParams[i].Bounds = append(t.TypeParams[i].Bounds, tr)
+				t.TypeParams[i].Bounds = c.withSupers(t.TypeParams[i].Bounds, tr)
 			} else if !types.IsInvalid(bt) {
 				c.errorf(b.Span(), "bound '%s' is not a trait", bt)
 			}
@@ -1325,7 +1370,7 @@ func (c *Checker) resolveSignature(t *FuncTemplate) {
 	}
 
 	if t.Decl.Override && (t.Impl == nil || t.Impl.Trait == nil) {
-		c.errorf(t.Decl.Name.Pos, "'override' is only meaningful inside an impl block (D53)")
+		c.errorf(t.Decl.Name.Pos, "'override' is only meaningful inside an implement block (D53)")
 	}
 	if t.Sig.Effects.Throws && t.Sig.Effects.Error == nil && !t.InferDone {
 		t.InferError = types.MakeErrorUnion() // nil: nothing yet
@@ -1363,7 +1408,7 @@ func (c *Checker) checkExternType(t types.Type, span source.Span, std bool) {
 // parameters with their bounds, and the environment its types resolve in.
 func (c *Checker) newImpl(m *Module, f *ast.File, d *ast.ImplDecl) (*Impl, *declCtx, *typeEnv) {
 	ctx := &declCtx{module: m, file: f, decl: d, tps: map[string]*types.TypeParam{}}
-	impl := &Impl{Module: m, Decl: d, Methods: map[string]*FuncTemplate{}}
+	impl := &Impl{Module: m, File: f, Decl: d, Methods: map[string]*FuncTemplate{}}
 	for i, tp := range d.TypeParams {
 		p := &types.TypeParam{Name: tp.Name.Name, Index: i, Owner: "impl"}
 		impl.TypeParams = append(impl.TypeParams, p)
@@ -1373,7 +1418,7 @@ func (c *Checker) newImpl(m *Module, f *ast.File, d *ast.ImplDecl) (*Impl, *decl
 	for i, tp := range d.TypeParams {
 		for _, b := range tp.Bounds {
 			if tr, ok := c.resolveType(env, b).(*types.Trait); ok {
-				impl.TypeParams[i].Bounds = append(impl.TypeParams[i].Bounds, tr)
+				impl.TypeParams[i].Bounds = c.withSupers(impl.TypeParams[i].Bounds, tr)
 			}
 		}
 	}
@@ -1485,8 +1530,8 @@ func (c *Checker) declareImpl(m *Module, f *ast.File, d *ast.ImplDecl) {
 	if types.IsInvalid(impl.Target) {
 		return
 	}
-	if en, ok := impl.Target.(*types.Enum); ok {
-		c.errorf(d.Target.Span(), "cannot implement '%s' for enum '%s': an enum is a set of values with no methods of its own; it already compares, hashes, orders and prints by itself (D57)", trait.Name, en.Name)
+	if en, ok := impl.Target.(*types.Enum); ok && !d.Derived {
+		c.errorf(d.Target.Span(), "cannot implement '%s' for enum '%s': an enum is a set of values with no methods of its own; it already compares, hashes, orders, prints and encodes by itself (D57, D58)", trait.Name, en.Name)
 		return
 	}
 	if sealedFor != nil {
@@ -1524,41 +1569,74 @@ func (c *Checker) declareImpl(m *Module, f *ast.File, d *ast.ImplDecl) {
 				impl.ImplicitError = true // defined by what the methods throw (resolveAssoc)
 				continue
 			}
-			c.errorf(d.Pos, "impl of '%s' for '%s' must bind associated type '%s': 'type %s = ...'", trait.Name, impl.Target, name, name)
+			c.errorf(d.Pos, "implement of '%s' for '%s' must bind associated type '%s': 'type %s = ...'", trait.Name, impl.Target, name, name)
 		}
 	}
 	env.implAssoc = impl.AssocTypes
 	c.impls[trait] = append(c.impls[trait], impl)
-	c.lintInlinableImpl(m, f, d, impl)
+	if !d.Derived {
+		c.lintInlinableImpl(m, f, d, impl)
+	}
+	// D58: methods written for a supertrait are declared with that super's
+	// impl; the supers the type lacks are derived once every impl exists
+	routed := c.routeSuperMethods(d, trait)
 	for _, md := range d.Methods {
-		sig, declared := trait.Methods[md.Name.Name]
-		if !declared {
-			c.errorf(md.Name.Pos, "trait '%s' has no method '%s'", trait.Name, md.Name.Name)
-			continue
-		}
-		t := c.newTemplate(m, f, md, nil, ctx.tps)
-		t.Impl = impl
-		t.Mangled = m.prefix() + "." + trait.Name + "." + typeMangle(impl.Target) + "." + md.Name.Name
-		impl.Methods[md.Name.Name] = t
-		c.resolveSignature(t)
-		// D28: impls inherit the trait's parameter names; D53: override only
-		// when the trait supplies a default.
-		hasDefault := c.traitDefault(trait, md.Name.Name) != nil
-		if md.Override && !hasDefault {
-			c.errorf(md.Name.Pos, "'override' is only allowed when trait '%s' supplies a default body for '%s' (D53)", trait.Name, md.Name.Name)
-		}
-		if !md.Override && hasDefault {
-			c.errorf(md.Name.Pos, "method '%s' overrides a default body in trait '%s' and must be marked 'override' (D53)", md.Name.Name, trait.Name)
-		}
-		c.checkImplSignature(t, sig, trait, impl, md)
+		c.declareImplMethod(m, f, d, impl, trait, ctx, md)
+	}
+	if c.derivable(trait) != "" || len(trait.Supers) > 0 {
+		c.pendingDerives = append(c.pendingDerives, func() {
+			c.deriveMissing(d, impl, trait)
+			for _, md := range d.Methods {
+				if _, done := impl.Methods[md.Name.Name]; !done {
+					c.declareImplMethod(m, f, d, impl, trait, ctx, md)
+				}
+			}
+			c.checkImplComplete(d, impl, trait)
+			if len(trait.Supers) > 0 {
+				c.deriveSupers(superImplReq{module: m, file: f, decl: d, impl: impl, trait: trait, methods: routed})
+			}
+		})
+		return
+	}
+	c.checkImplComplete(d, impl, trait)
+}
+
+// declareImplMethod declares one method of a trait impl.
+func (c *Checker) declareImplMethod(m *Module, f *ast.File, d *ast.ImplDecl, impl *Impl, trait *types.Trait, ctx *declCtx, md *ast.FunDecl) {
+	sig, declared := trait.Methods[md.Name.Name]
+	if !declared {
+		c.errorf(md.Name.Pos, "trait '%s' has no method '%s'", trait.Name, md.Name.Name)
+		return
+	}
+	t := c.newTemplate(m, f, md, nil, ctx.tps)
+	t.Impl = impl
+	t.Mangled = m.prefix() + "." + trait.Name + "." + typeMangle(impl.Target) + "." + md.Name.Name
+	impl.Methods[md.Name.Name] = t
+	c.resolveSignature(t)
+	// D28: impls inherit the trait's parameter names; D53: override only
+	// when the trait supplies a default.
+	hasDefault := c.traitDefault(trait, md.Name.Name) != nil
+	if md.Override && !hasDefault {
+		c.errorf(md.Name.Pos, "'override' is only allowed when trait '%s' supplies a default body for '%s' (D53)", trait.Name, md.Name.Name)
+	}
+	if !md.Override && hasDefault {
+		c.errorf(md.Name.Pos, "method '%s' overrides a default body in trait '%s' and must be marked 'override' (D53)", md.Name.Name, trait.Name)
+	}
+	c.checkImplSignature(t, sig, trait, impl, md)
+}
+
+// checkImplComplete reports the trait methods an impl neither writes nor
+// derives.
+func (c *Checker) checkImplComplete(d *ast.ImplDecl, impl *Impl, trait *types.Trait) {
+	if c.deriveFailed[impl] {
+		return // the reason was reported
 	}
 	for _, name := range trait.MethodList {
 		if _, ok := impl.Methods[name]; !ok && c.traitDefault(trait, name) == nil {
-			c.errorf(d.Pos, "impl of '%s' for '%s' is missing method '%s'", trait.Name, impl.Target, name)
+			c.errorf(d.Pos, "implement of '%s' for '%s' is missing method '%s'", trait.Name, impl.Target, name)
 		}
 	}
 }
-
 func (c *Checker) traitDefault(trait *types.Trait, name string) *FuncTemplate {
 	for _, t := range c.templates {
 		if t.Trait == trait && t.Name == name {
@@ -1600,6 +1678,12 @@ func (c *Checker) checkImplSignature(t *FuncTemplate, traitSig *types.Func, trai
 		}
 	}
 	wantRet := c.hooks.Subst(traitSig.Ret, subst)
+	if t.InferRet {
+		// `fun encode(to: Encoder) = try to.writeI64(self)`: an impl method
+		// with an expression body and no return type takes the trait's
+		t.InferRet = false
+		t.Sig.Ret = wantRet
+	}
 	if !types.Identical(t.Sig.Ret, wantRet) {
 		c.errorf(md.Name.Pos, "method '%s' returns '%s' but trait '%s' declares '%s'", md.Name.Name, t.Sig.Ret, trait.Name, wantRet)
 	}
@@ -2315,9 +2399,9 @@ func (c *Checker) checkErrorType(errT types.Type, span source.Span) {
 			}
 			c.errorf(span, "'%s' cannot be an error without the bound '%s: Error' (D4)", t.Name, t.Name)
 		case *types.Struct:
-			c.errorf(span, "'%s' is not an error: declare it with 'error %s { ... }' instead of 'struct', or 'impl Error for %s' (D4)", t.Name, t.Name, t.Name)
+			c.errorf(span, "'%s' is not an error: declare it with 'error %s { ... }' instead of 'struct', or 'implement Error for %s' (D4)", t.Name, t.Name, t.Name)
 		default:
-			c.errorf(span, "'%s' cannot be an error: only types declared with 'error' (or an 'impl Error for' them) can be thrown (D4)", m)
+			c.errorf(span, "'%s' cannot be an error: only types declared with 'error' (or an 'implement Error for' them) can be thrown (D4)", m)
 		}
 	}
 }

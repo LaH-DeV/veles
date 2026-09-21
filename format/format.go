@@ -345,7 +345,18 @@ func declStart(d ast.Node) int {
 	return d.Span().Start
 }
 
+// attrs prints a declaration's attributes, one per line above it.
 func (p *printer) attrs(attrs []*ast.Attribute) {
+	p.attrList(attrs, func() { p.nl() })
+}
+
+// fieldAttrs prints a field's attributes on the field's own line:
+// `@key("user_id") id: i64` (D58).
+func (p *printer) fieldAttrs(attrs []*ast.Attribute) {
+	p.attrList(attrs, func() { p.w(" ") })
+}
+
+func (p *printer) attrList(attrs []*ast.Attribute, sep func()) {
 	for _, a := range attrs {
 		p.before(a.Pos.Start)
 		p.w("@" + a.Name.Name)
@@ -355,7 +366,7 @@ func (p *printer) attrs(attrs []*ast.Attribute) {
 			p.w(")")
 		}
 		p.after(a.Pos.End)
-		p.nl()
+		sep()
 	}
 }
 
@@ -545,17 +556,10 @@ func (p *printer) fun(fn *ast.FunDecl) {
 	p.attrs(fn.Attrs)
 	p.modifiers(fn)
 	p.w("fun ")
-	// `fun <T> name` and `fun name<T>` are both accepted; keep the author's
-	head := p.src[fn.Pos.Start:fn.Name.Pos.Start]
-	prefixTP := strings.Contains(head, "<")
-	if prefixTP {
-		p.typeParams(fn.TypeParams)
-		p.w(" ")
-	}
+	// type parameters follow the name, as on a struct: `fun encode<T>(...)`
+	// (v0.33; the parser still reads `fun <T> encode` and rewrites it)
 	p.w(fn.Name.Name)
-	if !prefixTP {
-		p.typeParams(fn.TypeParams)
-	}
+	p.typeParams(fn.TypeParams)
 	p.params(fn.Params, fn.Name.Pos.End, fn)
 	if fn.Ret != nil {
 		p.w(": ")
@@ -730,6 +734,20 @@ func (p *printer) emptyBody(close int) {
 	p.w(" }")
 }
 
+// bracesHoldNothing reports whether the `{ }` found after `from` enclose
+// only whitespace — no comment that dropping them would lose.
+func (p *printer) bracesHoldNothing(from, to int) bool {
+	open := p.openBrace(from, to)
+	if open < 0 {
+		return false
+	}
+	close := strings.LastIndex(p.src[open:to], "}")
+	if close < 0 {
+		return false
+	}
+	return strings.TrimSpace(p.src[open+1:open+close]) == ""
+}
+
 // openBrace finds the `{` that opens a body, searching from `from`.
 func (p *printer) openBrace(from, to int) int {
 	if from < 0 || to > len(p.src) || from > to {
@@ -853,9 +871,12 @@ func (p *printer) enumDecl(d *ast.EnumDecl) {
 	p.members(open, d.Pos.End, len(d.Members) == 0, func(i int) bool { return i < len(d.Members) }, func(i int) {
 		m := d.Members[i]
 		p.before(m.Pos.Start)
+		p.fieldAttrs(m.Attrs)
 		p.w(m.Name.Name)
 		if m.Value != nil {
-			p.mark(alignField)
+			if len(m.Attrs) == 0 {
+				p.mark(alignField)
+			}
 			p.w(" = ")
 			p.expr(m.Value, 0)
 		}
@@ -915,6 +936,7 @@ func memberEnd(d *ast.StructDecl, pos int) int {
 }
 
 func (p *printer) field(f *ast.Field) {
+	p.fieldAttrs(f.Attrs)
 	if f.Pub {
 		p.w("public ")
 	}
@@ -933,7 +955,9 @@ func (p *printer) field(f *ast.Field) {
 		p.w("val ")
 	}
 	p.w(f.Name.Name + ":")
-	p.mark(alignField)
+	if len(f.Attrs) == 0 {
+		p.mark(alignField) // an attributed field stands alone: its width is the attribute's
+	}
 	p.w(" ")
 	p.typ(f.Type)
 	if f.Default != nil {
@@ -1002,10 +1026,10 @@ func (p *printer) implDecl(d *ast.ImplDecl) {
 		p.w(" ")
 		p.typ(d.Target)
 	} else if d.Inline {
-		p.w("impl ")
+		p.w("implement ")
 		p.typ(d.Trait)
 	} else {
-		p.w("impl")
+		p.w("implement")
 		p.typeParams(d.TypeParams)
 		p.w(" ")
 		p.typ(d.Trait)
@@ -1037,6 +1061,11 @@ func (p *printer) implDecl(d *ast.ImplDecl) {
 	hdr := d.Target.Span().End
 	if d.Inline {
 		hdr = d.Trait.Span().End // the target is the enclosing struct's name
+	}
+	// an empty trait impl is written without braces (D58: the body is
+	// derived); braces that hold only a comment are kept
+	if !d.Extend && len(ms) == 0 && (d.Braceless || p.bracesHoldNothing(hdr, d.Pos.End)) {
+		return
 	}
 	p.w(" ")
 	p.members(p.openBrace(hdr, d.Pos.End), d.Pos.End, len(ms) == 0, func(i int) bool { return i < len(ms) }, func(i int) {

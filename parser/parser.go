@@ -406,6 +406,7 @@ func setInternal(d ast.Decl) {
 }
 
 func (p *Parser) parseDeclKind(attrs []*ast.Attribute, pub, marked bool, which string, start source.Span) ast.Decl {
+	p.oldImplSpelling()
 	switch p.cur().Kind {
 	case lexer.KwUse:
 		if marked {
@@ -433,7 +434,7 @@ func (p *Parser) parseDeclKind(attrs []*ast.Attribute, pub, marked bool, which s
 		return p.parseTrait(attrs, pub, start)
 	case lexer.KwImpl:
 		if marked {
-			p.errorf(start, "'impl' cannot be %s; visibility follows the trait and type", which)
+			p.errorf(start, "'implement' cannot be %s; visibility follows the trait and type", which)
 		}
 		return p.parseImpl(attrs, false)
 	case lexer.KwVal, lexer.KwVar, lexer.KwConst:
@@ -686,7 +687,12 @@ done:
 		fn.Pos = p.spanFrom(start)
 		return fn
 	}
-	fn.TypeParams = p.parseTypeParams()
+	if p.at(lexer.Lt) {
+		// `fun <T> name(...)`: the pre-v0.33 spelling; the type parameters
+		// follow the name, as on a struct (`fun name<T>(...)`)
+		p.errorf(p.span(), "type parameters follow the function name: write 'fun %s<...>(...)' (v0.33)", p.peekIdentAfterTypeParams())
+		fn.TypeParams = p.parseTypeParams()
+	}
 	fn.Name, _ = p.expectIdent()
 	if p.at(lexer.Lt) {
 		if fn.TypeParams != nil {
@@ -756,6 +762,9 @@ func (p *Parser) parseStruct(attrs []*ast.Attribute, pub, extern bool, start sou
 			if hasVis {
 				at = 1
 			}
+			if !hasVis {
+				p.oldImplSpelling()
+			}
 			switch p.peek(at).Kind {
 			case lexer.Ident, lexer.KwVar, lexer.KwVal, lexer.KwProtected:
 				if p.peek(at).Kind == lexer.Ident && p.peek(at).Text == "init" && p.peek(at+1).Kind == lexer.LBrace {
@@ -772,7 +781,7 @@ func (p *Parser) parseStruct(attrs []*ast.Attribute, pub, extern bool, start sou
 					d.Init = p.parseBlock()
 					break
 				}
-				d.Fields = append(d.Fields, p.parseField(vis == lexer.KwPub, vis == lexer.KwPrivate, vis == lexer.KwInternal, hasVis))
+				d.Fields = append(d.Fields, p.parseField(mattrs, vis == lexer.KwPub, vis == lexer.KwPrivate, vis == lexer.KwInternal, hasVis))
 			case lexer.KwStatic:
 				if p.peek(at+1).Kind == lexer.KwVal || p.peek(at+1).Kind == lexer.KwVar {
 					if hasVis {
@@ -789,7 +798,7 @@ func (p *Parser) parseStruct(attrs []*ast.Attribute, pub, extern bool, start sou
 				d.Methods = append(d.Methods, p.parseFun(mattrs, funContextMethod))
 			case lexer.KwImpl:
 				if hasVis {
-					p.errorf(p.span(), "an inline 'impl' has no visibility of its own; it follows the trait and type")
+					p.errorf(p.span(), "an inline 'implement' has no visibility of its own; it follows the trait and type")
 					p.next()
 				}
 				d.Impls = append(d.Impls, p.parseInlineImpl(mattrs, d))
@@ -838,13 +847,13 @@ func (p *Parser) expectTerminatorPeek(what string) {
 
 // parseField parses `[public|internal|private] [protected] [val|var] name: T [= default]`
 // with the visibility word (if hasVis) still at the cursor.
-func (p *Parser) parseField(pub, private, internal, hasVis bool) *ast.Field {
+func (p *Parser) parseField(attrs []*ast.Attribute, pub, private, internal, hasVis bool) *ast.Field {
 	start := p.span()
 	doc := p.takeDoc()
 	if hasVis {
 		p.next()
 	}
-	f := &ast.Field{Pub: pub, Private: private, Internal: internal, Doc: doc}
+	f := &ast.Field{Attrs: attrs, Pub: pub, Private: private, Internal: internal, Doc: doc}
 	// mutability (D22): bare or `val` = set once by the constructor; `var`
 	// = assignable by anyone who sees the field; `protected var` =
 	// assignable only by the type's own declarations
@@ -946,7 +955,7 @@ func (p *Parser) parseImpl(attrs []*ast.Attribute, extend bool) ast.Decl {
 	if extend {
 		d.Target = p.parseType()
 		if p.at(lexer.KwFor) {
-			p.errorf(p.span(), "'extend' names the type being extended, not a trait; use 'impl Trait for Type' to implement a trait")
+			p.errorf(p.span(), "'extend' names the type being extended, not a trait; use 'implement Trait for Type'")
 			p.next()
 			d.Target = p.parseType()
 		}
@@ -974,7 +983,7 @@ func (p *Parser) parseInlineImpl(attrs []*ast.Attribute, sd *ast.StructDecl) *as
 	p.next() // impl
 	d := &ast.ImplDecl{Attrs: attrs, Inline: true, TypeParams: sd.TypeParams}
 	if p.at(lexer.Lt) {
-		p.errorf(p.span(), "an impl inside a struct body uses the struct's type parameters; for other bounds write 'impl<T: ...> Trait for %s<T>' at top level", sd.Name.Name)
+		p.errorf(p.span(), "an impl inside a struct body uses the struct's type parameters; for other bounds write 'implement<T: ...> Trait for %s<T>' at top level", sd.Name.Name)
 		p.parseTypeParams()
 	}
 	d.Trait = p.parseType()
@@ -994,8 +1003,15 @@ func (p *Parser) parseInlineImpl(attrs []*ast.Attribute, sd *ast.StructDecl) *as
 }
 
 // parseImplBody parses the `{ type ... = ...; fun ... }` body of an impl
-// or extend block.
+// or extend block. A trait impl may have no body at all — `impl Codable`
+// in a struct, `impl Codable for geo.Point` at top level — which asks the
+// compiler to derive it (D58); an `extend` always has braces.
 func (p *Parser) parseImplBody(d *ast.ImplDecl, extend bool) {
+	if !extend && !p.at(lexer.LBrace) {
+		d.Braceless = true
+		p.expectTerminatorPeek("'{' or the end of the line after the impl header")
+		return
+	}
 	if _, ok := p.expect(lexer.LBrace); ok {
 		p.skipSemis()
 		for !p.at(lexer.RBrace, lexer.EOF) {
@@ -1190,13 +1206,14 @@ func (p *Parser) parseEnum(attrs []*ast.Attribute, pub bool, start source.Span) 
 	p.skipSemis()
 	for !p.at(lexer.RBrace, lexer.EOF) {
 		mstart := p.span()
+		mattrs := p.parseAttributes()
 		doc := p.takeDoc()
 		if !p.at(lexer.Ident) {
 			p.errorf(p.span(), "expected an enum member name, found %s", p.cur().Describe())
 			p.syncStmt()
 			continue
 		}
-		m := &ast.EnumMember{Doc: doc}
+		m := &ast.EnumMember{Attrs: mattrs, Doc: doc}
 		m.Name, _ = p.expectIdent()
 		if p.accept(lexer.Assign) {
 			m.Value = p.parseExpr()
@@ -1235,4 +1252,46 @@ func pathString(path []ast.Ident) string {
 		parts[i] = seg.Name
 	}
 	return strings.Join(parts, ".")
+}
+
+// oldImplSpelling turns the pre-v0.33 keyword `impl` at declaration
+// position into `implement`, with an error that carries the fix: the
+// block still parses, so one rename yields one message.
+func (p *Parser) oldImplSpelling() {
+	if !p.at(lexer.Ident) || p.cur().Text != "impl" {
+		return
+	}
+	switch p.peek(1).Kind {
+	case lexer.Ident, lexer.Lt:
+	default:
+		return
+	}
+	p.errorf(p.span(), "'impl' is spelled 'implement' (v0.33: `implement Display for Point { }`, `implement Codable`)")
+	p.toks[p.pos].Kind = lexer.KwImpl
+}
+
+// peekIdentAfterTypeParams is the identifier that follows a `<...>` at the
+// cursor, for a message; "name" when there is none.
+func (p *Parser) peekIdentAfterTypeParams() string {
+	depth := 0
+	for i := 0; p.pos+i < len(p.toks); i++ {
+		switch p.peek(i).Kind {
+		case lexer.Lt:
+			depth++
+		case lexer.Gt, lexer.Shr:
+			depth--
+			if p.peek(i).Kind == lexer.Shr {
+				depth--
+			}
+			if depth <= 0 {
+				if p.peek(i + 1).Kind == lexer.Ident {
+					return p.peek(i + 1).Text
+				}
+				return "name"
+			}
+		case lexer.LParen, lexer.LBrace, lexer.EOF:
+			return "name"
+		}
+	}
+	return "name"
 }

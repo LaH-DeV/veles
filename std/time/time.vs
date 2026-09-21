@@ -58,7 +58,7 @@ public struct DateTime {
   public weekday: i64
   public yearDay: i64
 
-  impl Display {
+  implement Display {
     /// ISO 8601 without a zone: `2026-09-17T12:34:56.789`.
     fun toString(): string = "${self.date()}T${self.time()}"
   }

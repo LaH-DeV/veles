@@ -18,6 +18,14 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 		typeArgs = append(typeArgs, f.resolve(ta))
 	}
 	switch callee := e.Fun.(type) {
+	case *ast.TypeExpr:
+		// a resolved struct as the constructor: synthesized code only (D58)
+		if st, ok := f.resolve(callee.Type).(*types.Struct); ok {
+			return f.constructStruct(st, e.Args, e.Pos)
+		}
+		f.errorf(callee.Pos, "'%s' is not a struct", f.resolve(callee.Type))
+		f.checkArgsLoosely(e.Args)
+		return bad()
 	case *ast.NameExpr:
 		if isCollectionCtor(callee.Name) && f.lookup(callee.Name) == nil {
 			return f.collectionCtor(callee.Name, typeArgs, e, want)
@@ -72,6 +80,12 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 					if s, ok := sym.Type.(*types.Sealed); ok {
 						v := s.VariantByName(callee.Name.Name)
 						if v == nil {
+							// `Shape.decode(from)`: a static function of a trait
+							// implemented for the family (D58)
+							if t, _, _ := f.findMethod(s, callee.Name.Name); t != nil && t.Decl.Static {
+								f.c.refSym(n.Pos, sym)
+								return f.staticCall(s, callee, typeArgs, e, want)
+							}
 							f.errorf(callee.Name.Pos, "'%s' has no variant '%s'", s.Name, callee.Name.Name)
 							f.checkArgsLoosely(e.Args)
 							return bad()
@@ -100,6 +114,10 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 		if rt := f.moduleTypeNamed(callee.X); rt != nil {
 			// `module.Type.f(args)`
 			return f.staticCall(rt, callee, typeArgs, e, want)
+		}
+		if te, ok := callee.X.(*ast.TypeExpr); ok {
+			// a resolved type as the receiver: synthesized code only (D58)
+			return f.staticCall(f.resolve(te.Type), callee, typeArgs, e, want)
 		}
 		return f.methodCall(callee, typeArgs, e, want)
 	}
@@ -381,6 +399,7 @@ func (f *fnCtx) callTemplateRecv(t *FuncTemplate, ownerSubst map[*types.TypePara
 		for _, bound := range tp.Bounds {
 			if !f.implements(bt, bound) {
 				f.errorf(span, "type '%s' does not implement trait '%s' required by parameter '%s' of '%s'", bt, bound.Name, tp.Name, t.Name)
+				return bad() // instantiating anyway would report the same inside the callee
 			}
 		}
 		finalArgs = append(finalArgs, bt)
@@ -437,7 +456,19 @@ func (f *fnCtx) implements(t types.Type, trait *types.Trait) bool {
 	if _, ok := t.(*types.Enum); ok && trait.Module == "std.prelude" {
 		return f.c.implementsPrelude(t, trait.Name) // Comparable, Display, Equatable, Hashable (enum.go)
 	}
-	return f.findImpl(t, trait) != nil
+	if f.findImpl(t, trait) != nil {
+		return true
+	}
+	if isCombination(trait) {
+		// a trait that is only its supers is implemented by implementing them
+		for _, s := range trait.Supers {
+			if !f.implements(t, s) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
 }
 
 // isSendableTrait recognises the prelude's `Sendable` marker trait.
@@ -445,10 +476,13 @@ func isSendableTrait(trait *types.Trait) bool {
 	return trait != nil && trait.Name == "Sendable" && trait.Module == "std.prelude"
 }
 
+// findImpl finds the impl of trait that serves t: its target unifies and
+// its own bounds hold (`impl<T: Encodable> Encodable for List<T>` serves
+// `List<H>` only when `H` is Encodable).
 func (f *fnCtx) findImpl(t types.Type, trait *types.Trait) *Impl {
 	for _, impl := range f.c.impls[trait] {
 		m := map[*types.TypeParam]types.Type{}
-		if unify(impl.Target, t, m) {
+		if unify(impl.Target, t, m) && f.unmetImplBound(impl, m, "", t) == "" {
 			return impl
 		}
 	}
@@ -755,18 +789,20 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 			return &Builtin{exprBase{types.TUnit}, "task.cancel", []Expr{recv}, e.Pos}
 		}
 	case *types.Map:
-		f.c.refBuiltin(callee.Name.Pos, rt, name)
-		return f.mapMethod(recv, ct, name, e)
+		if x := f.mapMethod(recv, ct, name, e); x != nil {
+			f.c.refBuiltin(callee.Name.Pos, rt, name)
+			return x
+		}
 	case *types.Set:
-		f.c.refBuiltin(callee.Name.Pos, rt, name)
-		return f.setMethod(recv, ct, name, e)
+		if x := f.setMethod(recv, ct, name, e); x != nil {
+			f.c.refBuiltin(callee.Name.Pos, rt, name)
+			return x
+		}
 	case *types.Enum:
 		if x := f.enumMethodCall(recv, ct, callee, e); x != nil {
 			return x
 		}
-		f.errorf(callee.Name.Pos, "no method '%s' on enum '%s'; an enum value has 'toString()', 'compareTo(other)' and '.value' (D57)", name, ct.Name)
-		f.checkArgsLoosely(e.Args)
-		return bad()
+		// anything else comes from a derived impl (encode, D58) or is an error below
 	}
 	// inherent methods
 	if st, ok := rt.(*types.Struct); ok {
@@ -804,6 +840,7 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 	// trait impls (D26: any trait method is callable; ambiguity is an error)
 	var found []*FuncTemplate
 	var foundSubst []map[*types.TypeParam]types.Type
+	unmet := ""
 	for trait, impls := range f.c.impls {
 		if _, has := trait.Methods[name]; !has {
 			continue
@@ -811,6 +848,10 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 		for _, impl := range impls {
 			m := map[*types.TypeParam]types.Type{}
 			if !unify(impl.Target, rt, m) {
+				continue
+			}
+			if why := f.unmetImplBound(impl, m, name, rt); why != "" {
+				unmet = why
 				continue
 			}
 			if t, ok := impl.Methods[name]; ok {
@@ -852,6 +893,11 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 	if len(found) == 1 {
 		return f.callMethod(found[0], foundSubst[0], typeArgs, recv, viaPointer, callee, e, want)
 	}
+	if unmet != "" {
+		f.errorf(callee.Name.Pos, "%s", unmet)
+		f.checkArgsLoosely(e.Args)
+		return bad()
+	}
 	// a field holding a function value: `self.f(x)`
 	if st, ok := rt.(*types.Struct); ok {
 		for _, fld := range st.Fields {
@@ -880,6 +926,8 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 			return bad()
 		}
 		f.errorf(callee.Name.Pos, "no method '%s' on sealed trait '%s'; match on its variants with 'when' (D13)", name, tt)
+	case *types.Enum:
+		f.errorf(callee.Name.Pos, "no method '%s' on enum '%s'; an enum value has 'toString()', 'compareTo(other)', 'encode(to)' and '.value' (D57)", name, tt.Name)
 	case *types.Trait:
 		f.errorf(callee.Pos, "trait objects (boxed '%s') are not supported yet in the bootstrap compiler; use a generic bound instead (D9)", tt)
 	default:
@@ -1247,6 +1295,9 @@ func (f *fnCtx) funcValue(t *FuncTemplate, span source.Span) Expr {
 // objectSafe reports whether a trait can be used as a trait object: no
 // associated types, no generic methods, no Self in signatures.
 func (f *fnCtx) objectSafe(trait *types.Trait) (string, bool) {
+	if len(trait.Supers) > 0 {
+		return "it has supertraits (use '" + trait.Supers[0].Name + "' or another of them as the object type; composing their vtables is not implemented yet, D58)", false
+	}
 	if len(trait.AssocTypes) > 0 {
 		if trait.ImplicitError && len(trait.AssocTypes) == 1 {
 			return "a method is declared with a bare 'throws' (an impl-defined error); declare the error type, e.g. 'throws E', to use the trait as an object", false

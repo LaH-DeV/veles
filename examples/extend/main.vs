@@ -6,7 +6,7 @@ struct Vec2 {
   var x: f64
   var y: f64
 
-  impl Show {
+  implement Show {
     fun show(): string = "(${self.x}, ${self.y})"
   }
 }

@@ -117,12 +117,12 @@ public struct Deque<T> {
     s.head = 0
   }
 
-  impl Iterable {
+  implement Iterable {
     type Iter = ListIter<T>
     fun iterator(): ListIter<T> = ListIter(list: self.toList())
   }
 
-  impl Display {
+  implement Display {
     fun toString(): string = "[${self.toList().join(", ")}]"
   }
 }
@@ -218,7 +218,7 @@ public struct PriorityQueue<T> {
     }
   }
 
-  impl Display {
+  implement Display {
     fun toString(): string = "[${self.state.items.join(", ")}]"
   }
 }

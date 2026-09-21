@@ -4,18 +4,18 @@
 use io
 
 /// An impl for your own type may sit inside its body (D23); the
-/// top-level `impl Trait for Type` below is the same thing written apart.
+/// top-level `implement Trait for Type` below is the same thing written apart.
 struct Version {
   major: i64
   minor: i64
 
-  impl Comparable {
+  implement Comparable {
     fun compareTo(other: Version): Ordering =
       if (self.major != other.major) self.major.compareTo(other.major)
       else self.minor.compareTo(other.minor)
   }
 
-  impl Display {
+  implement Display {
     fun toString(): string = "v${self.major}.${self.minor}"
   }
 }
@@ -25,11 +25,11 @@ struct Version {
 public struct Name {
   text: string
 
-  impl Hashable {
+  implement Hashable {
     fun hash(): i64 = self.text.toLower().len()
   }
 
-  impl Equatable {
+  implement Equatable {
     fun equals(other: Name): bool = self.text.toLower() == other.text.toLower()
   }
 }
@@ -39,7 +39,7 @@ struct Pair<T> {
   b: T
 }
 
-impl<T: Display> Display for Pair<T> {
+implement<T: Display> Display for Pair<T> {
   fun toString(): string = "<${self.a} | ${self.b}>"
 }
 
@@ -56,11 +56,11 @@ fun area(s: Shape): f64 = when (s) {
   is Square => s.side * s.side
 }
 
-impl Comparable for Shape {
+implement Comparable for Shape {
   fun compareTo(other: Shape): Ordering = area(self).compareTo(area(other))
 }
 
-impl Display for Shape {
+implement Display for Shape {
   fun toString(): string = when (self) {
     is Circle => "circle(${self.r})"
     is Square => "square(${self.side})"

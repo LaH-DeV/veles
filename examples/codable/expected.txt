@@ -1,0 +1,36 @@
+{"user_id":7,"name":"ann","email":null,"role":"Admin","tags":["staff"],"address":{"street":"Main 1","zip":"00-001"}}
+{
+  "user_id": 7,
+  "name": "ann",
+  "role": "Admin",
+  "tags": [
+    "staff"
+  ],
+  "address": {
+    "street": "Main 1",
+    "zip": "00-001"
+  }
+}
+round trip: true; the secret stayed off the wire: true
+problems:
+  user_id: expected an integer, found a string
+  role: "Boss" is not a Role (one of "Admin", "Member")
+  tags[0]: expected a string, found a number
+  address.street: expected a string, found a number
+  address.zip: missing
+  name: missing
+sparse: User(id: 1, name: bo, email: null, role: Member, tags: [], address: null, passwordHash: )
+{"items":[{"kind":"circle","r":1.5},{"kind":"rect","w":2.0,"h":3.0}],"total":2}
+page back: Page(items: [Circle(r: 1.5), Rect(w: 2.0, h: 3.0)], total: 2)
+shape: unknown variant "blob" of Shape (one of "circle", "rect")
+{"items":[{"major":1,"minor":2}],"total":1}
+["Admin","Member"]
+[0,1]
+[Member, Admin]
+"5 EUR"
+Money(amount: 3, currency: PLN)
+true [Version(major: 1, minor: 5), Version(major: 2, minor: 1)]
+café 2.5
+{"a":[1,2.5,"café",true,null]}
+malformed JSON at byte 12: a trailing comma
+exit=0

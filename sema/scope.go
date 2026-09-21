@@ -154,7 +154,10 @@ type Impl struct {
 	// line but is the union of what the impl's methods throw (D40, v0.24).
 	ImplicitError bool
 	Module     *Module
+	File       *ast.File
 	Decl       *ast.ImplDecl
+	// Derived names the methods the compiler wrote (D58), for hover.
+	Derived map[string]bool
 }
 
 // Doc is the module's documentation: the top-of-file doc comments of its

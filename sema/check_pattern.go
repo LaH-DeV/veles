@@ -851,6 +851,7 @@ func enumMemberPattern(en *types.Enum, p *ast.LiteralPat) *types.EnumMember {
 	}
 	switch x := m.X.(type) {
 	case *ast.NameExpr:
+	case *ast.TypeExpr: // synthesized code (D58)
 	case *ast.MemberExpr:
 		if _, ok := x.X.(*ast.NameExpr); !ok {
 			return nil

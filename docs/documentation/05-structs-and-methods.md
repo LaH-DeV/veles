@@ -182,7 +182,7 @@ for a class, so the differences are the things to unlearn:
 | Constructor | written by hand | implicit, by field name: `Point(x: 1, y: 2)`; `static fun` for anything with logic |
 | Mutation | any method may assign fields | only the fields declared `var`; a bare field never changes (D22) |
 | Equality, printing, hashing | `equals`/`hashCode`/`toString` by hand (or `data class`) | structural by default; replaced with the operator traits |
-| Interfaces | `implements I` | `impl I for T` — see chapter 8 |
+| Interfaces | `implements I` | `implement I for T` — see chapter 8 |
 | Private state | `private` fields | no `public` on the field; the implicit constructor then works only inside the module |
 
 The value semantics are the one that surprises people: `var b = a` then
@@ -242,7 +242,7 @@ Between "never assigned" and "assigned by anyone" sits the most common
 shape of managed state: a value that everyone may look at but that only
 its type is allowed to update — a counter, a status, a cached total.
 Write it `protected var`. Anyone who can see the field reads it; only the
-type's own code — its methods, its `impl` and `extend` blocks — assigns
+type's own code — its methods, its `implement` and `extend` blocks — assigns
 it. It replaces the `private var` plus a one-line getter that other
 languages need:
 
@@ -442,7 +442,7 @@ everything sees everything — which is right for a helper struct and wrong for 
 invariant: in a one-file program, nothing would stop a handler from
 poking a counter that only the type should touch. A member marked
 `private` is visible only inside the type's own declarations — its
-methods, its `impl` and `extend` blocks in the same module, and its
+methods, its `implement` and `extend` blocks in the same module, and its
 `static val` initializers:
 
 ```veles

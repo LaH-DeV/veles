@@ -148,23 +148,23 @@ fun main() { }`, "infinite size"},
 		{"D17 coherence", prelude + `
 trait Show { fun show(): string }
 struct A { }
-impl Show for A { fun show(): string = "a" }
-impl Show for A { fun show(): string = "b" }
+implement Show for A { fun show(): string = "a" }
+implement Show for A { fun show(): string = "b" }
 fun main() { }`, "conflicting impl"},
 		{"D28 impl parameter names", prelude + `
 trait T { fun f(x: i32): i32 }
 struct A { }
-impl T for A { fun f(y: i32): i32 = y }
+implement T for A { fun f(y: i32): i32 = y }
 fun main() { }`, "parameter must be named"},
 		{"D53 override required", prelude + `
 trait T { fun f(): i32 = 1 }
 struct A { }
-impl T for A { fun f(): i32 = 2 }
+implement T for A { fun f(): i32 = 2 }
 fun main() { }`, "must be marked 'override'"},
 		{"D53 override without default", prelude + `
 trait T { fun f(): i32 }
 struct A { }
-impl T for A { override fun f(): i32 = 2 }
+implement T for A { override fun f(): i32 = 2 }
 fun main() { }`, "only allowed when trait"},
 		{"D44 extern needs unsafe", prelude + `
 extern "C" { fun puts(s: *raw u8): i32 }
@@ -179,8 +179,8 @@ fun main() { io.veles_print("x") }`, "private to module"},
 trait A { fun f(): i32 }
 trait B { fun f(): i32 }
 struct S { }
-impl A for S { fun f(): i32 = 1 }
-impl B for S { fun f(): i32 = 2 }
+implement A for S { fun f(): i32 = 1 }
+implement B for S { fun f(): i32 = 2 }
 fun main() { val s = S(); s.f() }`, "ambiguous method"},
 		{"D25 push into List", prelude + `
 fun main() { val xs = [1, 2]; xs.push(3) }`, "immutable List"},
@@ -231,8 +231,8 @@ fun main() { }`,
 		"trait default and generic bound": prelude + `
 trait Show { fun show(): string; fun twice(): string = self.show() + self.show() }
 struct A { }
-impl Show for A { fun show(): string = "a" }
-fun <T: Show> p(x: T): string = x.twice()
+implement Show for A { fun show(): string = "a" }
+fun p<T: Show>(x: T): string = x.twice()
 fun main() { io.println(p(A())) }`,
 		"struct methods on generic": prelude + `
 struct Stack<T> { items: MutableList<T> = []; fun push(x: T) { self.items.push(x) }; fun len(): i64 = self.items.len() }
@@ -288,7 +288,7 @@ fun main() { val m = mutex(1); m.withLock(p => { await sleep(1); 0 }) }`, "lambd
 		{"D40 impl must declare suspends", prelude + `
 trait T { fun f(): i32 }
 struct A { }
-impl T for A { fun f(): i32 { await sleep(1); 1 } }
+implement T for A { fun f(): i32 { await sleep(1); 1 } }
 fun main() { }`, "declares it non-suspending"},
 	}
 	for _, c := range cases {
@@ -463,11 +463,11 @@ fun main() { }`, "cannot be an error")
 fun f(): i64 throws { throw 5 }
 fun main() { }`, "cannot be an error")
 	expectError(t, prelude+`
-fun <X> f(x: X): i64 throws X = throw x
+fun f<X>(x: X): i64 throws X = throw x
 fun main() { val r = f("s"); if (r is Err) io.println("err") }`, "cannot be an error")
 	expectClean(t, prelude+`
 error E { }
-fun <X: Error> f(x: X): i64 throws X = throw x
+fun f<X: Error>(x: X): i64 throws X = throw x
 fun main() { val r = f(E()); if (r is Err) io.println(r.message()) }`)
 }
 
@@ -657,7 +657,7 @@ func TestExtendBlocks(t *testing.T) {
 struct Point { var x: i64, y: i64 }
 struct Box<T> { value: T }
 trait Show { fun show(): string }
-impl Show for Point { fun show(): string = "p" }
+implement Show for Point { fun show(): string = "p" }
 extend Point {
   public fun sum(): i64 = self.x + self.y
   fun bump() { self.x += 1 }
@@ -697,7 +697,7 @@ extend P { fun a(): i64 = 1
 extend P { fun a(): i64 = 1 }
 extend P { fun a(): i64 = 2 }`, "already provided for 'P'"},
 		{"override", `struct P { x: i64 }
-extend P { override fun a(): i64 = 1 }`, "only meaningful inside an impl block"},
+extend P { override fun a(): i64 = 1 }`, "only meaningful inside an implement block"},
 		{"for keyword", `struct P { x: i64 }
 extend Show for P { }`, "names the type being extended"},
 		{"bound not met", `struct P { x: i64 }
@@ -809,19 +809,19 @@ fun main() throws IoError {
 func TestOperatorTraits(t *testing.T) {
 	expectClean(t, prelude+`
 struct Version { major: i64, minor: i64 }
-impl Comparable for Version {
+implement Comparable for Version {
   fun compareTo(other: Version): Ordering = if (self.major != other.major) self.major.compareTo(other.major) else self.minor.compareTo(other.minor)
 }
-impl Display for Version { fun toString(): string = "v${self.major}.${self.minor}" }
+implement Display for Version { fun toString(): string = "v${self.major}.${self.minor}" }
 struct Name { text: string }
-impl Equatable for Name { fun equals(other: Name): bool = self.text.toLower() == other.text.toLower() }
-impl Hashable for Name { fun hash(): i64 = self.text.toLower().len() }
+implement Equatable for Name { fun equals(other: Name): bool = self.text.toLower() == other.text.toLower() }
+implement Hashable for Name { fun hash(): i64 = self.text.toLower().len() }
 struct Pair<T> { a: T, b: T }
-impl<T: Display> Display for Pair<T> { fun toString(): string = "<${self.a}, ${self.b}>" }
+implement<T: Display> Display for Pair<T> { fun toString(): string = "<${self.a}, ${self.b}>" }
 sealed trait Shape
 struct Circle : Shape { r: f64 }
 struct Square : Shape { side: f64 }
-impl Comparable for Shape { fun compareTo(other: Shape): Ordering = area(self).compareTo(area(other)) }
+implement Comparable for Shape { fun compareTo(other: Shape): Ordering = area(self).compareTo(area(other)) }
 fun area(s: Shape): f64 = when (s) {
   is Circle => 3.14 * s.r * s.r
   is Square => s.side * s.side
@@ -845,15 +845,15 @@ fun main() { io.println("${[P(x: 1)].min()}") }`, "'min' on 'List<P>' requires '
 		{"sorted needs Comparable", `struct P { x: i64 }
 fun main() { io.println("${[P(x: 1)].sorted()}") }`, "implement 'Comparable'"},
 		{"Equatable key needs Hashable", `struct K { s: string }
-impl Equatable for K { fun equals(other: K): bool = true }
+implement Equatable for K { fun equals(other: K): bool = true }
 fun main() { val m = [K(s: "a"): 1]; io.println("${m.len()}") }`, "implements Equatable but not Hashable"},
 		{"Hashable alone is fine", `struct K { s: string }
-impl Hashable for K { fun hash(): i64 = 1 }
+implement Hashable for K { fun hash(): i64 = 1 }
 fun main() { val m = [K(s: "a"): 1]; io.println("${m.len()}") }`, ""},
 		{"compareTo must match the trait", `struct P { x: i64 }
-impl Comparable for P { fun compareTo(other: P): bool = true }`, "Comparable"},
+implement Comparable for P { fun compareTo(other: P): bool = true }`, "Comparable"},
 		{"function fields cannot compare, Equatable makes them", `struct H { f: fun(i64): i64 }
-impl Equatable for H { fun equals(other: H): bool = true }
+implement Equatable for H { fun equals(other: H): bool = true }
 fun main() { val h = H(f: x => x); io.println("${h == h}") }`, ""},
 	}
 	for _, c := range cases {
@@ -924,7 +924,7 @@ struct Point {
     val y = i64.parse(parts.atOrPanic(1)) ?: return null
     Point(x: x, y: y)
   }
-  impl Parsable {
+  implement Parsable {
     static fun parse(s: string): Point? = Point.fromText(s)
   }
 }
@@ -959,15 +959,15 @@ fun main() { P.m() }`, "call it on a value, not on the type"},
 fun main() { P.nothing() }`, "no static function 'nothing' on type 'P'"},
 		{"impl must say static", `trait F { static fun make(): Self }
 struct P { x: i64 }
-impl F for P { fun make(): P = P(x: 1) }`, "declare it 'static fun'"},
+implement F for P { fun make(): P = P(x: 1) }`, "declare it 'static fun'"},
 		{"impl must not say static", `trait F { fun m(): i64 }
 struct P { x: i64 }
-impl F for P { static fun m(): i64 = 1 }`, "cannot be 'static'"},
+implement F for P { static fun m(): i64 = 1 }`, "cannot be 'static'"},
 		{"sealed trait", `sealed trait S { static fun z(): i64 = 1 }
 struct A : S { }`, "a sealed trait cannot declare a static function"},
 		{"not object safe", `trait F { static fun make(): Self }
 struct P { x: i64 }
-impl F for P { static fun make(): P = P(x: 1) }
+implement F for P { static fun make(): P = P(x: 1) }
 fun main() { val f: F = P(x: 1); io.println("$f") }`, "function 'make' is static"},
 		{"generic needs type args", `struct S<T> { x: T
   static fun z(): i64 = 0 }
@@ -997,25 +997,25 @@ func TestInlinableImplLint(t *testing.T) {
 	}
 	if ok, fix := hasLint(`trait Show { fun show(): string }
 struct P { x: i64 }
-impl Show for P { fun show(): string = "p" }`); !ok || fix == nil || len(fix.Edits) != 2 || fix.Title != "Move into the body of 'P'" {
+implement Show for P { fun show(): string = "p" }`); !ok || fix == nil || len(fix.Edits) != 2 || fix.Title != "Move into the body of 'P'" {
 		t.Errorf("expected the lint with a two-edit fix, got %v %+v", ok, fix)
 	}
 	if ok, _ := hasLint(`trait Show { fun show(): string }
 struct Box<T> { x: T }
-impl<T> Show for Box<T> { fun show(): string = "box" }`); !ok {
+implement<T> Show for Box<T> { fun show(): string = "box" }`); !ok {
 		t.Errorf("a generic impl with the struct's own parameters is inlinable")
 	}
 	for name, src := range map[string]string{
 		"extra bound": `trait Show { fun show(): string }
 struct Box<T> { x: T }
-impl<T: Show> Show for Box<T> { fun show(): string = self.x.show() }`,
+implement<T: Show> Show for Box<T> { fun show(): string = self.x.show() }`,
 		"foreign type": `trait Show { fun show(): string }
-impl Show for i64 { fun show(): string = "n" }`,
+implement Show for i64 { fun show(): string = "n" }`,
 		"already inline": `trait Show { fun show(): string }
-struct P { x: i64; impl Show { fun show(): string = "p" } }`,
+struct P { x: i64; implement Show { fun show(): string = "p" } }`,
 		"specific instance": `trait Show { fun show(): string }
 struct Box<T> { x: T }
-impl Show for Box<i64> { fun show(): string = "box" }`,
+implement Show for Box<i64> { fun show(): string = "box" }`,
 		"error declaration": `error E { code: i64 }`,
 	} {
 		if ok, _ := hasLint(src); ok {
@@ -1062,7 +1062,7 @@ fun sum(xs: i64...): i64 {
 }
 trait Fmt { fun fmt(args: string...): string }
 struct P { x: i64
-  impl Fmt { fun fmt(args: string...): string = "${self.x} ${args.len()}" }
+  implement Fmt { fun fmt(args: string...): string = "${self.x} ${args.len()}" }
   static fun of(xs: i64...): P = P(x: xs.len())
 }
 fun main() {
@@ -1081,7 +1081,7 @@ fun main() { f([1]..., 2) }`, "must be the only argument"},
 fun main() { f(1, "two") }`, "expected 'i64', found 'string'"},
 		{"impl must match", `trait Fmt { fun fmt(args: string...): string }
 struct P { x: i64 }
-impl Fmt for P { fun fmt(args: List<string>): string = "" }`, "must be variadic exactly as in trait"},
+implement Fmt for P { fun fmt(args: List<string>): string = "" }`, "must be variadic exactly as in trait"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -1359,16 +1359,16 @@ error Missing { name: string }
 trait Fetcher {
   fun fetch(url: string): string throws
 }
-struct Http { impl Fetcher {
+struct Http { implement Fetcher {
   fun fetch(url: string): string throws {
     if (url.startsWith("bad")) throw HttpError(status: 500)
     "http:$url"
   } } }
 struct Memory { data: Map<string, string>
-  impl Fetcher {
+  implement Fetcher {
     fun fetch(url: string): string throws Missing = self.data.get(url) ?: throw Missing(name: url) } }
-struct Always { impl Fetcher { fun fetch(url: string): string throws = url } }
-struct Pinned { impl Fetcher {
+struct Always { implement Fetcher { fun fetch(url: string): string throws = url } }
+struct Pinned { implement Fetcher {
   type Error = HttpError
   fun fetch(url: string): string throws = url } }
 fun load<F: Fetcher>(f: F, url: string): string throws F.Error = try f.fetch(url)
@@ -1382,7 +1382,7 @@ fun main() {
 	expectClean(t, src)
 	expectError(t, prelude+`
 trait Fetcher { fun fetch(url: string): string throws }
-struct A { impl Fetcher { fun fetch(url: string): string throws = url } }
+struct A { implement Fetcher { fun fetch(url: string): string throws = url } }
 fun main() { val f: Fetcher = A(); io.println("${f.fetch("x")}") }`, "bare 'throws'")
 	expectError(t, prelude+`
 trait Iter2 { type Item
@@ -1392,7 +1392,7 @@ fun f<I: Iter2>(i: I): I::Item? = i.next()`, "'::' is not Veles")
 trait Iter2 { type Item
   fun next(): Item? }
 fun f<I: Iter2>(i: I): I.Item? = i.next()
-struct Ones { impl Iter2 { type Item = i64
+struct Ones { implement Iter2 { type Item = i64
   fun next(): Self.Item? = 1 } }
 fun main() { io.println("${f(Ones())}") }`)
 }
@@ -1513,7 +1513,7 @@ fun main() { val xs = MutableList<*N>.repeat(&N(v: 1), 2); io.println("$xs") }`,
 	expectClean(t, prelude+`struct P { x: i64; y: i64 }
 fun main() { val xs = MutableList<P>.repeat(P(x: 1, y: 2), 2); val ys = MutableList<List<i64>>.repeat([1], 2); io.println("$xs $ys") }`)
 	expectError(t, prelude+`struct N { v: i64 }
-impl Sendable for N { }
+implement Sendable for N { }
 fun main() { io.println("x") }`, "cannot be implemented by hand")
 }
 
@@ -1523,7 +1523,7 @@ func TestPreludeCollections(t *testing.T) {
 	expectClean(t, prelude+`
 struct Job {
   cost: i64
-  impl Comparable {
+  implement Comparable {
     fun compareTo(other: Job): Ordering = self.cost.compareTo(other.cost)
   }
 }
@@ -1848,7 +1848,7 @@ fun main() { val h: fun(i64): i64 = n => n; io.println("${run(h, 1)}") }`, "expe
 func TestErrorPolymorphicHigherOrder(t *testing.T) {
 	expectClean(t, prelude+`
 error Bad { n: i64 }
-fun <T, R, E> apply(x: T, f: fun(T): R throws E): R throws E = try f(x)
+fun apply<T, R, E>(x: T, f: fun(T): R throws E): R throws E = try f(x)
 fun main() {
   val plain = apply(3, (n: i64) => n + 1)
   when (val r = apply(7, (n: i64) => if (n > 5) throw Bad(n) else n)) {
@@ -1866,7 +1866,7 @@ fun main() {
 	// caller sees the Result like any other fallible call
 	expectError(t, prelude+`
 error Bad { n: i64 }
-fun <T, R, E> apply(x: T, f: fun(T): R throws E): R throws E = try f(x)
+fun apply<T, R, E>(x: T, f: fun(T): R throws E): R throws E = try f(x)
 fun main() { val v: i64 = apply(1, (n: i64) => if (n > 0) throw Bad(n) else n); io.println("$v") }`, "type mismatch")
 }
 
@@ -1953,7 +1953,7 @@ fun main() {
 func TestTupleOrdering(t *testing.T) {
 	expectClean(t, prelude+`
 struct E { size: i64; name: string }
-fun <T: Comparable> smallest(xs: List<T>): T? = xs.min()
+fun smallest<T: Comparable>(xs: List<T>): T? = xs.min()
 fun main() {
   val xs = [(2, "b"), (1, "z"), (2, "a")]
   val es = [E(size: 5, name: "b"), E(size: 9, name: "a")]
@@ -2102,7 +2102,7 @@ func TestErrorUnionWithTypeParam(t *testing.T) {
 	expectClean(t, prelude+`
 error Timeout { }
 error Late { }
-fun <R, E> guarded(flag: bool, f: fun(): R throws E): R throws E | Timeout {
+fun guarded<R, E>(flag: bool, f: fun(): R throws E): R throws E | Timeout {
   if (flag) throw Timeout()
   try f()
 }
@@ -2113,7 +2113,7 @@ fun main() { io.println("${onlyTimeout()} ${both()}") }`)
 	expectError(t, prelude+`
 error Timeout { }
 error Late { }
-fun <R, E> guarded(flag: bool, f: fun(): R throws E): R throws E | Timeout {
+fun guarded<R, E>(flag: bool, f: fun(): R throws E): R throws E | Timeout {
   if (flag) throw Timeout()
   try f()
 }
@@ -2173,7 +2173,7 @@ func TestWithExpression(t *testing.T) {
 	expectClean(t, prelude+`
 struct Res {
   n: i64
-  impl Closeable { fun close() { } }
+  implement Closeable { fun close() { } }
 }
 fun readIt(): i64 {
   with (r = Res(n: 1)) {
@@ -2196,7 +2196,7 @@ fun main() {
 	expectError(t, prelude+`
 struct Res {
   n: i64
-  impl Closeable { fun close() { } }
+  implement Closeable { fun close() { } }
 }
 fun main() {
   val s: string = with (r = Res(n: 5)) { r.n }
@@ -2211,7 +2211,7 @@ func TestErrorUnionWithTypeParamInHandlers(t *testing.T) {
 error Fail { status: i64; text: string }
 error Boom { n: i64 }
 type Handler = sendable fun(string): string suspends
-fun <E> handler(h: sendable fun(string): string suspends throws E | Fail): Handler =
+fun handler<E>(h: sendable fun(string): string suspends throws E | Fail): Handler =
   p => when (h(p)) {
     is Ok(v) => v
     is Err(e) => when (e) {
@@ -2553,7 +2553,7 @@ struct Sq : Shape {
   side: f64
   area2: f64
   init { self.area2 = self.side * self.side }
-  impl Shape { fun area(): f64 = self.area2 }
+  implement Shape { fun area(): f64 = self.area2 }
 }
 fun main() {
   val p = Parser(toks: [("a", 1), ("b", 2)])
@@ -2596,8 +2596,8 @@ fun main() { io.println("${P(init: 1).init}") }`, ""},
 func TestNotIsLint(t *testing.T) {
 	src := prelude + `
 sealed trait T { fun f(): i64 }
-struct A : T { impl T { fun f(): i64 = 1 } }
-struct B : T { impl T { fun f(): i64 = 2 } }
+struct A : T { implement T { fun f(): i64 = 1 } }
+struct B : T { implement T { fun f(): i64 = 2 } }
 fun main() {
   val x: T = A()
   if (!(x is B)) io.println("a")
@@ -2674,7 +2674,7 @@ fun main() { }`, "an integer literal"},
 		{"not generic", `enum E<T> { A }
 fun main() { }`, "an enum is not generic"},
 		{"no impls", `enum E { A }
-impl Display for E { fun toString(): string = "a" }
+implement Display for E { fun toString(): string = "a" }
 fun main() { }`, "cannot implement 'Display' for enum 'E'"},
 		{"no extend", `enum E { A }
 extend E { fun f(): i64 = 1 }
@@ -2709,7 +2709,7 @@ fun main() { val e = E.A; when (e) {
   else => io.println("b")
 } }`, "an enum is not its number"},
 		{"compareTo returns Ordering", `struct P { x: i64 }
-impl Comparable for P { fun compareTo(other: P): i64 = 0 }
+implement Comparable for P { fun compareTo(other: P): i64 = 0 }
 fun main() { }`, "returns 'i64' but trait 'Comparable' declares 'Ordering'"},
 		{"a comparator returns Ordering", `fun main() { io.println("${[2, 1].sortedWith((a, b) => a - b)}") }`, "expected 'Ordering', found 'i64'"},
 	}
@@ -2732,4 +2732,132 @@ fun main() { val e = E.A; when (e) {
   else => io.println("?")
 } }`,
 		"'else' is unreachable: every member of 'E' has an arm")
+}
+
+// D58: the wire attributes are validated where they sit — a field, an
+// enum member, a sealed variant, a sealed trait — with their arguments.
+func TestWireAttributes(t *testing.T) {
+	cases := []struct{ name, src, want string }{
+		{"key on a field, every format", `struct U { @key("user_id") id: i64 }`, ""},
+		{"key on a field, by format", `struct U { @key(json: "userId", db: "user_id") id: i64 }`, ""},
+		{"key mixes the two forms", `struct U { @key("a", db: "b") id: i64 }`, "either one name for every format or names by format"},
+		{"key twice positional", `struct U { @key("a", "b") id: i64 }`, "one name for every format"},
+		{"key needs a string", `struct U { @key(1) id: i64 }`, "string literal"},
+		{"key names a format twice", `struct U { @key(json: "a", json: "b") id: i64 }`, "names the 'json' format twice"},
+		{"key on a function", `@key("x") fun f() { }`, "@key applies to a struct field"},
+		{"key on an enum member", `enum S { @key("active") Active, Off }`, ""},
+		{"key on a member takes one name", `enum S { @key(json: "a") Active }`, "one name for every format"},
+		{"key on a variant", `sealed trait Shape
+@key("circle") struct Circle : Shape { r: f64 }`, ""},
+		{"key on a plain struct", `@key("u") struct U { id: i64 }`, "@key applies to a struct field"},
+		{"skip needs a default", `struct U { @skip secret: string }`, "needs a default"},
+		{"skip with a default", `struct U { @skip secret: string = "" }`, ""},
+		{"skip by format", `struct U { @skip(json) secret: string = "" }`, ""},
+		{"skip takes bare names", `struct U { @skip("json") secret: string = "" }`, "format names, bare"},
+		{"skip and key together", `struct U { @skip @key("s") secret: string = "" }`, "has no effect"},
+		{"required on nullable", `struct U { @required email: string? }`, ""},
+		{"required on non-nullable", `struct U { @required name: string }`, "required already"},
+		{"tag on a sealed trait", `@tag("kind") sealed trait Shape
+struct Circle : Shape { r: f64 }`, ""},
+		{"tag with content", `@tag("kind", content: "data") sealed trait Shape
+struct Circle : Shape { r: f64 }`, ""},
+		{"tag with a wrong name", `@tag("kind", value: "data") sealed trait Shape
+struct Circle : Shape { r: f64 }`, "optionally 'content:'"},
+		{"tag on an open trait", `@tag("kind") trait Shape { fun area(): f64 }`, "@tag applies to a sealed trait"},
+		{"unknown attribute still rejected", `struct U { @json(name: "x") id: i64 }`, "unknown attribute '@json'"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if c.want == "" {
+				expectClean(t, prelude+c.src)
+				return
+			}
+			expectError(t, prelude+c.src, c.want)
+		})
+	}
+}
+
+// D58: an empty impl derives the body; what cannot be derived says why.
+func TestDerivation(t *testing.T) {
+	cases := []struct{ name, src, want string }{
+		{"struct Codable, braceless", `struct U { id: i64; name: string?
+  implement Codable }
+fun main() { val e = ValueEncoder.of(); val _ = U(id: 1, name: null).encode(e); io.println("${U.decode(ValueDecoder.of(e.value())) is Ok}") }`, ""},
+		{"struct Codable, top level, foreign-style", `struct U { id: i64 }
+implement Codable for U
+fun main() { io.println("${U.decode(ValueDecoder.of(VNull())) is Err}") }`, ""},
+		{"partial override keeps the written method", `struct M { n: i64
+  implement Codable { fun encode(to: Encoder) throws EncodeError = try to.writeString("m") } }
+fun main() { val e = ValueEncoder.of(); val _ = M(n: 1).encode(e); io.println("${e.value()}") }`, ""},
+		{"generic struct infers the bound", `struct Page<T> { items: List<T>
+  implement Codable }
+fun main() { val e = ValueEncoder.of(); val _ = Page(items: [1, 2]).encode(e); io.println("${e.value()}") }`, ""},
+		{"generic struct: an argument that is not Codable", `struct Page<T> { items: List<T>
+  implement Codable }
+struct H { f: fun(i64): i64 }
+fun main() { val e = ValueEncoder.of(); val _ = Page(items: [H(f: x => x)]).encode(e) }`, "requires 'H' to implement 'Encodable'"},
+		{"function field cannot be derived", `struct H { f: fun(i64): i64
+  implement Codable }`, "field 'f' is a function"},
+		{"skipped function field is fine", `struct H { @skip f: fun(i64): i64 = x => x
+  n: i64
+  implement Codable }
+fun main() { io.println("${H.decode(ValueDecoder.of(VObject(fields: ["n": VInt(value: 1)]))) is Ok}") }`, ""},
+		{"two fields on one key", `struct U { @key("x") a: i64; @key("x") b: i64
+  implement Decodable }`, "share the key"},
+		{"sealed derives every variant", `sealed trait S
+struct A : S { x: i64 }
+struct B : S { y: string }
+implement Codable for S
+fun main() { val e = ValueEncoder.of(); val v: S = A(x: 1); val _ = v.encode(e); io.println("${S.decode(ValueDecoder.of(e.value())) is Ok}") }`, ""},
+		{"sealed keeps a hand-written variant impl", `sealed trait S
+struct A : S { x: i64 }
+struct B : S { y: string }
+implement Encodable for A { fun encode(to: Encoder) throws EncodeError = try to.writeString("a") }
+implement Encodable for S
+fun main() { val e = ValueEncoder.of(); val v: S = A(x: 1); val _ = v.encode(e); io.println("${e.value()}") }`, ""},
+		{"Comparable by field order", `struct V { a: i64; b: string
+  implement Comparable }
+fun main() { io.println("${V(a: 1, b: "x") < V(a: 1, b: "y")}") }`, ""},
+		{"Comparable needs ordered fields", `struct V { a: fun(): i64
+  implement Comparable }`, "compareTo"},
+		{"an enum is Codable by itself", `enum E { A, B }
+fun main() { val e = ValueEncoder.of(); val _ = E.B.encode(e); io.println("${e.value()} ${E.decode(ValueDecoder.of(e.value())) is Ok}") }`, ""},
+		{"enums still refuse a written impl", `enum E { A, B }
+implement Codable for E`, "cannot implement 'Codable' for enum"},
+		{"a method of a super written in the Codable body", `struct U { id: i64
+  implement Codable { static fun decode(from: Decoder): U throws DecodeError = U(id: 0) } }
+fun main() { io.println("${U.decode(ValueDecoder.of(VNull())) is Ok}") }`, ""},
+		{"a super the type already implements", `struct U { id: i64
+  implement Encodable { fun encode(to: Encoder) throws EncodeError = try to.writeI64(1) }
+  implement Codable { fun encode(to: Encoder) throws EncodeError = try to.writeI64(2) } }`, "already implements"},
+		{"Codable bound gives both methods", `struct U { id: i64
+  implement Codable }
+fun roundTrip<T: Codable>(x: T): T throws DecodeError {
+  val e = ValueEncoder.of()
+  val _ = x.encode(e)
+  try T.decode(ValueDecoder.of(e.value()))
+}
+fun main() { io.println("${roundTrip(U(id: 3))}") }`, ""},
+		{"a combination trait is satisfied by its parts", `struct U { id: i64
+  implement Encodable
+  implement Decodable }
+fun f<T: Codable>(x: T): T = x
+fun main() { io.println("${f(U(id: 3))}") }`, ""},
+		{"a trait with supertraits is not an object yet", `struct U { id: i64
+  implement Codable }
+fun main() { val c: Codable = U(id: 1) }`, "supertraits"},
+		{"a supertrait cycle", `trait A : B { }
+trait B : A { }`, "requires itself"},
+		{"an unknown method in an impl body", `struct U { id: i64
+  implement Codable { fun nope() { } } }`, "has no method 'nope'"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if c.want == "" {
+				expectClean(t, prelude+c.src)
+				return
+			}
+			expectError(t, prelude+c.src, c.want)
+		})
+	}
 }

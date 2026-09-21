@@ -1,3 +1,7 @@
+| `@key("k")` / `@key(json: "k", db: "c")` | a field, an enum member, a sealed variant | its name on the wire, for every format or by format ([chapter 18](18-codable-and-json.md)) |
+| `@skip` / `@skip(json)` | a field with a default | left out of the wire form, everywhere or in one format |
+| `@required` | a nullable field | the key must be present even though the value may be null |
+| `@tag("kind")` / `@tag("type", content: "value")` | a sealed trait | the key that names the variant; with `content`, the key the fields go under |
 # 14. Attributes and the test runner
 
 An attribute is `@name` or `@name(args)` on the line before a

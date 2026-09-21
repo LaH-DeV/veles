@@ -3,7 +3,7 @@ use io
 struct Res {
   name: string
 
-  impl Closeable {
+  implement Closeable {
     fun close() {
       io.println("close ${self.name}")
     }

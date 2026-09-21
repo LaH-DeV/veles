@@ -35,7 +35,7 @@ the package's `veles.toml` when there is one.
 Lints come with quick fixes: a warning that carries a correction shows the
 light bulb, and **Quick Fix** (Ctrl+.) applies the edit. Today: a redundant
 `mut` on a literal (removed), an unused binding (renamed to `_`), an
-unreachable `else` on a sealed subject (removed), and a top-level impl that
+unreachable `else` on a sealed subject (removed), and a top-level implement that
 belongs in the struct body (moved, across files when the struct lives in
 another file of the module). `veles check
 <dir> --fix` applies every such correction from the command line.

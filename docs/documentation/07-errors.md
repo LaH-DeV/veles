@@ -164,7 +164,7 @@ with the error's `message()` printed and a non-zero exit code.
 ## Every error has a `message()`
 
 You do not have to know an error's fields to report it. An `error`
-declaration is a struct plus an impl of the prelude trait `Error`:
+declaration is a struct plus an implement of the prelude trait `Error`:
 
 ```veles
 // fragment
@@ -211,7 +211,7 @@ age: NotFound(key: age)
 ```
 
 Only errors can be thrown. A struct you cannot change (from another
-package, say) becomes one with an explicit `impl Error for That { }`;
+package, say) becomes one with an explicit `implement Error for That { }`;
 anything else — a `string`, a number — is rejected, so wrap it. A generic
 `throws X` needs the bound `X: Error`. Note that `error` is a keyword
 only at the start of a declaration; `is Err(error) => ...` still works.
