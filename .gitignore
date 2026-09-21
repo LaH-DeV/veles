@@ -8,3 +8,4 @@ veles.exe
 
 node_modules
 **/.vitepress/cache
+**/.vitepress/dist

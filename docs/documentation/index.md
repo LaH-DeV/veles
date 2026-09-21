@@ -43,7 +43,7 @@ For readers who want to know what the compiler actually does.
 - [Cheat sheet](reference/cheatsheet.md) — the whole syntax on one page.
 - [Standard library](reference/stdlib.md) — what the bootstrap prelude and `io` provide today.
 - [Common error messages](reference/errors.md) — what they mean and how to fix them.
-- The language design itself is in [`veles-spec.md`](../veles-spec.md); tutorials cite its decisions as `D<n>`.
+- The language design itself is in [`veles-spec.md`](../../veles-spec.md); tutorials cite its decisions as `D<n>`.
 
 ## Conventions
 
