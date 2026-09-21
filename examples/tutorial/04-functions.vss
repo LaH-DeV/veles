@@ -3,6 +3,20 @@ use io
 fun main() {
   val x = plusOne(5)
   io.println("The value of x is: $x")
+
+  val y = timesTwo(x)
+  io.println("The value of y is: $y")
+
+  val z = minusThree(y)
+  io.println("The value of z is: $z")
 }
 
 fun plusOne(x: i32): i32 = x + 1
+
+fun timesTwo(x: i32): i32 {
+  x * 2
+}
+
+fun minusThree(x: i32): i32 {
+  return x - 3
+}
