@@ -408,6 +408,12 @@ func (s *Server) hover(params json.RawMessage) any {
 		// a value of a struct type: what the type has inside
 		value += "\n\n```veles\n" + shape + "\n```"
 	}
+	if ref.Derived != "" {
+		// an implement the compiler filled in (D58): what it wrote, and
+		// where to read the bodies it wrote
+		value += "\n\n```veles\n" + ref.Derived + "\n```"
+		value += "\n\n`veles explain <path> --derive " + derivedTarget(ref.Derived) + "` prints the bodies."
+	}
 	if u := ref.Unfold; u != nil {
 		// the error set spelled out, each member a link to its declaration,
 		// then each member's shape
@@ -797,4 +803,26 @@ func (s *Server) formatting(params json.RawMessage) any {
 		"range":   lspRange{Start: lspPosition{0, 0}, End: offsetToPosition(file, len(d.text))},
 		"newText": out,
 	}}
+}
+
+// derivedTarget picks the type name out of a derived-implement summary
+// (`implement<T: Codable> Codable for Page<T>` → `Page`) for the hint that
+// names the command printing the bodies.
+func derivedTarget(summary string) string {
+	line := summary
+	if i := strings.IndexByte(line, '\n'); i >= 0 {
+		line = line[:i]
+	}
+	i := strings.Index(line, " for ")
+	if i < 0 {
+		return ""
+	}
+	name := strings.TrimSpace(line[i+len(" for "):])
+	if j := strings.IndexAny(name, "< "); j >= 0 {
+		name = name[:j]
+	}
+	if j := strings.LastIndex(name, "."); j >= 0 {
+		name = name[j+1:]
+	}
+	return name
 }

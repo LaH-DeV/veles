@@ -2843,9 +2843,41 @@ fun main() { io.println("${roundTrip(U(id: 3))}") }`, ""},
   implement Decodable }
 fun f<T: Codable>(x: T): T = x
 fun main() { io.println("${f(U(id: 3))}") }`, ""},
-		{"a trait with supertraits is not an object yet", `struct U { id: i64
+		{"a trait object answers to its supertraits' methods", `trait Named { fun name(): string }
+trait Shape : Named { fun area(): f64 }
+struct Sq { side: f64
+  implement Named { fun name(): string = "square" }
+  implement Shape { fun area(): f64 = self.side * self.side } }
+fun show(s: Shape): string = "${s.name()}=${s.area()}"
+fun main() { io.println(show(Sq(side: 2.0))) }`, ""},
+		{"a supertrait's default body is in the object's table", `trait Named { fun name(): string
+  fun shout(): string = "${self.name()}!" }
+trait Shape : Named { fun area(): f64 }
+struct Sq { side: f64
+  implement Named { fun name(): string = "square" }
+  implement Shape { fun area(): f64 = self.side * self.side } }
+fun main() { val s: Shape = Sq(side: 2.0)
+  io.println(s.shout()) }`, ""},
+		{"a combination trait is a trait object built from its parts", `trait A { fun id(): i64 }
+trait B { fun label(): string }
+trait C : A + B { }
+struct U {
+  implement A { fun id(): i64 = 7 }
+  implement B { fun label(): string = "u" } }
+fun main() { val c: C = U()
+  io.println("${c.label()}${c.id()}") }`, ""},
+		{"two supertraits declaring one name is not an object", `trait A { fun id(): i64 }
+trait B { fun id(): i64 }
+trait C : A + B { }
+struct U {
+  implement A { fun id(): i64 = 1 }
+  implement B { fun id(): i64 = 2 } }
+fun main() { val c: C = U()
+  io.println("${c.id()}") }`, "both declare 'id'"},
+		{"a static method in a supertrait keeps the trait off the objects", `struct U { id: i64
   implement Codable }
-fun main() { val c: Codable = U(id: 1) }`, "supertraits"},
+fun main() { val c: Codable = U(id: 1)
+  io.println("${c}") }`, "is static (from 'Decodable')"},
 		{"a supertrait cycle", `trait A : B { }
 trait B : A { }`, "requires itself"},
 		{"an unknown method in an impl body", `struct U { id: i64

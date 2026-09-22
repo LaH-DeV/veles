@@ -172,8 +172,50 @@ total 7.0
 
 A `Circle` converts to a `Shape` wherever a `Shape` is expected. Not
 every trait can be used this way: one with generic methods, associated
-types, or `Self` in a signature has no single method table to build, and
-the compiler says so.
+types, static functions, or `Self` in a signature has no single method
+table to build, and the compiler says so.
+
+### Objects of a trait that requires another
+
+A trait may require others — `trait Shape : Named` means every `Shape` is
+also a `Named`. The object carries one table with both traits' methods in
+it, the required ones first, so an inherited method is called like any
+other and a default body a super declares is in the table too:
+
+```veles
+use io
+
+trait Named {
+  fun name(): string
+  fun shout(): string = "${self.name()}!"
+}
+trait Shape : Named {
+  fun area(): f64
+}
+struct Square {
+  side: f64
+  implement Named { fun name(): string = "square" }
+  implement Shape { fun area(): f64 = self.side * self.side }
+}
+
+fun main() {
+  val s: Shape = Square(side: 2.0)
+  io.println("${s.shout()} ${s.name()} ${s.area()}")
+}
+```
+
+Output:
+```text
+square! square 4.0
+```
+
+A trait whose whole content is its requirements — `trait Codable :
+Encodable + Decodable { }` — is an object too, built from the implements
+of its parts; nothing implements it directly. Two required traits that
+declare the same method name are an ambiguity, and the compiler refuses
+the object rather than pick one. What a trait object still cannot do is
+become *another* trait's object: `val n: Named = s` needs the concrete
+type back, and a trait object has forgotten it.
 
 ## Traits on built-in types, and generic structs
 

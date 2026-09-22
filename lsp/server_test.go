@@ -171,7 +171,7 @@ func TestServer(t *testing.T) {
 
 	// hover on the field access `p.y` (line 8, char 21)
 	res, _ = c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": 8, "character": 21}})
-	if !strings.Contains(string(res), `internal struct Point\n  internal val y: i32`) {
+	if !strings.Contains(string(res), `struct Point\n  val y: i32`) {
 		t.Errorf("hover on field: %s", res)
 	}
 
@@ -394,7 +394,7 @@ func TestHoverDocsAndShapes(t *testing.T) {
 		return string(res)
 	}
 	// a value of a struct type: its declaration line, then what it has inside
-	if h := hover(18, 13); !strings.Contains(h, "val c: ConfigError") || !strings.Contains(h, `internal error ConfigError {\n  // ConfigError(key: string, cause: PortErrors)\n  internal val key: string\n  internal val cause: PortErrors\n  public fun message(): string\n  implement Error\n}`) {
+	if h := hover(18, 13); !strings.Contains(h, "val c: ConfigError") || !strings.Contains(h, `error ConfigError {\n  // ConfigError(key: string, cause: PortErrors)\n  val key: string\n  val cause: PortErrors\n  public fun message(): string\n  implement Error\n}`) {
 		t.Errorf("hover on a value shows no shape: %s", h)
 	}
 	// the type name itself, with its doc comment
@@ -402,7 +402,7 @@ func TestHoverDocsAndShapes(t *testing.T) {
 		t.Errorf("hover on a type shows no doc/shape: %s", h)
 	}
 	// a field with a doc comment
-	if h := hover(18, 16); !strings.Contains(h, `internal error ConfigError\n  internal val key: string`) {
+	if h := hover(18, 16); !strings.Contains(h, `error ConfigError\n  val key: string`) {
 		t.Errorf("hover on a field: %s", h)
 	}
 	// a function: doc, the set's name in the signature, the set unfolded with member shapes
@@ -438,11 +438,11 @@ func TestModuleDocHover(t *testing.T) {
 		}
 	}
 	// a smart-cast field shows the narrowed type once, with its origin
-	if h := hover(11, 30); !strings.Contains(h, `internal val cause: E  (smart cast from Both)`) {
+	if h := hover(11, 30); !strings.Contains(h, `val cause: E  (smart cast from Both)`) {
 		t.Errorf("narrowed field hover: %s", h)
 	}
 	// a type's hover opens with its shape, not the name twice
-	if h := hover(3, 7); strings.Contains(h, `error E\n`+"```") || !strings.Contains(h, `internal error E {\n  // E(n: i64)\n  internal val n: i64`) {
+	if h := hover(3, 7); strings.Contains(h, `error E\n`+"```") || !strings.Contains(h, `error E {\n  // E(n: i64)\n  val n: i64`) {
 		t.Errorf("type hover doubles the name: %s", h)
 	}
 }
@@ -705,8 +705,10 @@ func TestTypeAliasHover(t *testing.T) {
 }
 
 // A struct's hover is its declaration with every implicit word spelled out
-// — `internal` for the unwritten level, `val` for a bare field — and the
-// defaults; a field's hover names the struct and shows the field's line.
+// — `val` for a bare field, `protected`, `static` — and the defaults. The
+// unwritten visibility level has no word: it is the common case, and
+// `internal` on every line only made the hover harder to read. A field's
+// hover names the struct and shows the field's line.
 func TestHoverSpellsOutModifiers(t *testing.T) {
 	src := "use io\n\npublic struct Notes {\n  private var next: i64 = 1\n  items: bool = false\n  public protected var count: i64 = 0\n  static val empty = Notes()\n  public fun add(text: string) {\n    self.next += text.len()\n    self.count += 1\n  }\n  private fun bump() { }\n  public static fun of(n: i64): Notes = Notes(count: n)\n}\n\nfun main() {\n  val n = Notes()\n  n.add(\"x\")\n  io.println(\"${n.count} ${n.items}\")\n}\n"
 	dir := t.TempDir()
@@ -724,7 +726,7 @@ func TestHoverSpellsOutModifiers(t *testing.T) {
 		res, _ := c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": line, "character": ch}})
 		return string(res)
 	}
-	want := `public struct Notes {\n  // Notes(items: bool = ..., count: i64 = ...)\n  internal val items: bool = ...\n  public protected var count: i64 = ...\n  internal static val empty: Notes = ...\n  public fun add(text: string)\n  public static fun of(n: i64): Notes\n  // ... and 2 members not visible from here\n}`
+	want := `public struct Notes {\n  // Notes(items: bool = ..., count: i64 = ...)\n  val items: bool = ...\n  public protected var count: i64 = ...\n  static val empty: Notes = ...\n  public fun add(text: string)\n  public static fun of(n: i64): Notes\n  // ... and 2 members not visible from here\n}`
 	if h := hover(16, 11); !strings.Contains(h, want) {
 		t.Errorf("struct hover: %s\nwant %s", h, want)
 	}
@@ -768,20 +770,20 @@ func TestHoverMethodsAndTraits(t *testing.T) {
 		{3, 14, "public trait Shape {\n  type Unit\n  fun area(): f64\n  fun describe(): string = ...\n  static fun unit(): string\n}"},
 		{3, 14, "Something with an area."},
 		// an inherent method at a use, under its struct
-		{47, 13, "internal struct Square\n  internal fun grow(by: f64): Square"},
+		{47, 13, "struct Square\n  fun grow(by: f64): Square"},
 		// an impl method at a use: the impl as owner, `override` kept
 		{46, 13, "implement Shape for Square\n  override fun describe(): string"},
 		// an extend method at a use
 		{47, 24, "extend Square\n  public fun doubled(): Square"},
 		// a static at a use
-		{48, 18, "internal struct Square\n  public static fun of(side: f64): Square"},
+		{48, 18, "struct Square\n  public static fun of(side: f64): Square"},
 		// a free function at a use, and a private method at its declaration
-		{49, 11, "internal fun helper(): i64"},
-		{13, 15, "internal struct Square\n  private fun check()"},
+		{49, 11, "fun helper(): i64"},
+		{13, 15, "struct Square\n  private fun check()"},
 		// a trait's default method at its declaration
 		{6, 7, "public trait Shape\n  fun describe(): string = ..."},
 		// a sealed trait at its declaration: methods, then variants
-		{32, 14, "internal sealed trait Tree {\n  fun size(): i64\n  Leaf\n  Node { kids: List<Tree> }\n}"},
+		{32, 14, "sealed trait Tree {\n  fun size(): i64\n  Leaf\n  Node { kids: List<Tree> }\n}"},
 	} {
 		if h := hover(tc.line, tc.ch); !strings.Contains(h, tc.want) {
 			t.Errorf("hover at %d:%d: %q\nwant %q", tc.line, tc.ch, h, tc.want)
@@ -823,11 +825,11 @@ func TestHoverValuesAndModules(t *testing.T) {
 		{3, 12, "public val limit: i64 = 10"},
 		{3, 12, "The upper bound."},
 		// a var at a use; a const
-		{13, 3, "internal var hits: i64 = 0"},
-		{5, 7, "internal const name: string = \"v\""},
+		{13, 3, "var hits: i64 = 0"},
+		{5, 7, "const name: string = \"v\""},
 		// a static, under its struct, at its declaration and at a use
-		{9, 21, "internal struct Status\n  public static val ok: Status = Status(code: 200)"},
-		{14, 42, "internal struct Status\n  public static val ok: Status = Status(code: 200)"},
+		{9, 21, "struct Status\n  public static val ok: Status = Status(code: 200)"},
+		{14, 42, "struct Status\n  public static val ok: Status = Status(code: 200)"},
 		// a std module: as `use` spells it, its origin, its public functions
 		{0, 5, "module io {  // std\n  public fun println(s: string)"},
 		{14, 3, "Console input and output."},
@@ -960,7 +962,7 @@ func TestInitBlockInTooling(t *testing.T) {
 	c.notify("initialized", map[string]any{})
 	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": src}})
 	res, _ := c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": 12, "character": 11}})
-	if !strings.Contains(string(res), `internal val b: string  // assigned by init\n  internal fun f(): i64\n}`) {
+	if !strings.Contains(string(res), `val b: string  // assigned by init\n  fun f(): i64\n}`) {
 		t.Errorf("struct hover: %s", res)
 	}
 	res, _ = c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": 5, "character": 3}})
@@ -1011,9 +1013,9 @@ func TestHoverViewpoint(t *testing.T) {
 	if !strings.Contains(h, "private var next") || !strings.Contains(h, "private fun bump()") || strings.Contains(h, "not visible") {
 		t.Errorf("inside the type: %q", h)
 	}
-	// elsewhere in the module: no private members, internal ones yes
+	// elsewhere in the module: no private members, unmarked ones yes
 	h = hover(storeURI, 13, 11)
-	if strings.Contains(h, "private") || !strings.Contains(h, "internal val items") || !strings.Contains(h, "internal fun size()") || !strings.Contains(h, "// ... and 2 members not visible from here") {
+	if strings.Contains(h, "private") || !strings.Contains(h, "val items") || !strings.Contains(h, "fun size()") || !strings.Contains(h, "// ... and 2 members not visible from here") {
 		t.Errorf("in the module: %q", h)
 	}
 	// from another module: public only, and the constructor as seen from there
@@ -1089,7 +1091,7 @@ func TestEnumTooling(t *testing.T) {
 		line, ch int
 		want     string
 	}{
-		{3, 6, "internal enum Phase : u8 {\n  Red = 1\n  Amber = 2\n  Green = 10\n}"},
+		{3, 6, "enum Phase : u8 {\n  Red = 1\n  Amber = 2\n  Green = 10\n}"},
 		{3, 6, "Traffic light phases."},
 		{11, 17, "Phase.Amber = 2"},
 		{11, 17, "Caution."},

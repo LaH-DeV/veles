@@ -47,11 +47,11 @@ answered from the shape, tuples get `Comparable`, enums get
       (`DecodeError { problems }`, `Problem { path, message }`, capped)
 - [x] Performance: encoding streams straight to text, decoding reads the bytes;
       no tree except for sealed values (see the fast-path item) — not yet benchmarked (§3.3)
-- [ ] LSP: hover on a derived implement shows what was synthesized (`implement.Derived` and `sema.DumpDerived` exist; the hover is not wired)
+- [x] LSP: hover on a derived implement shows what was synthesized — the implements produced, the bounds inferred for a generic target, the signatures, and the wire shape (keys, optional, skipped); the bodies are behind `veles explain <path> --derive [Type]`, which prints them as Veles (`sema/derive_print.go`)
 - [x] Derivable set: `Codable` (`Encodable`, `Decodable`) and `Comparable`
       (`==`, hashing, printing already structural; `Default` deferred)
 - [x] Supertraits: `trait A : B + C`, transitive bounds, super check on impls
-- [ ] Trait objects of a trait with supertraits (vtable composition) — refused today with a message
+- [x] Trait objects of a trait with supertraits: the table composes the supers' (`objectSlots` in `sema/supers.go`), inherited methods and their default bodies included; a combination trait is an object built from its parts; two supers declaring one name is an ambiguity and object safety is asked of the supers too
 - [x] Parser: braceless empty `implement Trait` (body and top level); field attributes kept; formatter drops empty braces
 - [x] Spec entry written (D58) with the rejected alternatives
 
@@ -98,9 +98,15 @@ answered from the shape, tuples get `Comparable`, enums get
 
 ## 2. Safety
 
-- [ ] `readRequest` limits: max header bytes, max header count, max body
-      bytes, request-header timeout separate from idle timeout
-- [ ] Every `List<u8>` read from the network is bounded by a caller-given max
+- [x] `readRequest` limits: `http.Limits` — request line, header line, header
+      count (lines, not map entries), header bytes, body bytes, and three clocks
+      (header, body, idle). A byte ceiling answers 414/431/413 and closes, a time
+      ceiling 408; nothing reaches a handler, and a body is never assembled to
+      discover it was too big
+- [x] Every read from the network is bounded by a caller-given max: `readLine(max:)`
+      has no default and throws `net.TooLong`, so the unbounded call does not compile;
+      `read(max)` and `readExact(n)` were already caller-bounded, and http checks
+      `Content-Length` against `bodyBytes` before the read
 - [ ] Panic-freedom analysis on leaf functions (also a perf win)
 - [ ] `unsafe` blocks audited: each std use has a comment saying why it is sound
 - [ ] Bounds checks stay on in release; a profile that removes them is opt-in
@@ -176,13 +182,16 @@ answered from the shape, tuples get `Comparable`, enums get
 
 ### 5.2 `std/http` — server
 
-- [ ] Request limits (§2)
+- [x] Request limits (§2)
 - [ ] Chunked transfer-encoding: requests (501 today) and responses
 - [ ] Streaming bodies: `Request.body`/`Response.body` as reader/writer,
       not `List<u8>`; `http.files` streams
-- [ ] Middleware: `type Middleware = fun(Handler): Handler`; `router.use(...)`
-- [ ] Standard middleware: recovery (D56), request-id, access log, CORS,
-      timeout, body-limit, auth hook, compression
+- [x] Middleware: `type Middleware = sendable fun(Handler): Handler`; `router.wrap(m)`
+      (`use` is the import keyword, so the verb is `wrap`) — outermost first, around
+      the router's own 404s and 405s too
+- [~] Standard middleware: `requestId()`, `logging()`, `timeout(ms)` done; recovery
+      needs nothing (a panic is already caught at the request boundary, D56) and
+      body-limit is `Limits.bodyBytes`. Still open: CORS, auth hook, compression
 - [ ] Graceful shutdown (§4)
 - [ ] Max concurrent connections with backpressure at `accept`
 - [ ] `Expect: 100-continue`
@@ -193,7 +202,8 @@ answered from the shape, tuples get `Comparable`, enums get
 - [ ] Router: method-not-allowed vs not-found distinction, route groups,
       typed path params (`{id: i64}`)
 - [ ] In-process test client: `http.call(handler, method, path, body)`
-- [ ] Access log format: structured, one line, latency, bytes, request id
+- [~] Access log format: one line with peer, method, path, status, latency and the
+      request id (`logging()`); not structured (JSON/key=value) and no byte count yet
 - [ ] HTTP/2 (later; needed for gRPC-style internal traffic)
 - [ ] WebSocket (later)
 
@@ -337,6 +347,9 @@ pros/cons before anything is built; the answer becomes a spec entry.
 | 2026-09-21 | `Codable` and supertraits | **Supertraits implemented**: `trait Codable : Encodable + Decodable { }` (supers spelled like a bound) is an ordinary prelude trait; a bound `T: Codable` expands transitively; `implement Codable for X { ... }` needs the supers implemented, and an *empty* implement derives every super implement the type lacks. Bootstrap limit: a trait with supertraits cannot yet be a trait object (error names the super to use). Rejected: compiler-known sugar (a name that is not a trait); `implement A + B for X` (new syntax, two names per DTO). |
 | 2026-09-21 | Function type parameters | **After the name**: `fun encode<T: Encodable>(value: T)`, as on a struct and at the call site. The Kotlin form `fun <T> encode` is an error with the fix; 17 sites rewritten. Rejected: keeping both (two spellings). |
 | 2026-09-21 | The keyword | **`implement`** replaces `implement` everywhere — lexer, parser (the old word still parses, with an error naming the new one), formatter, grammar, LSP, spec, docs, std, examples. Rejected: keeping `implement` (the Rust abbreviation the notes dislike); folding trait impls into `extend … with …` (a change to D23, not a rename). |
+| 2026-09-22 | Bounding a network read (std) | **`readLine` takes a required `max`.** The peer decides where the newline goes, so a line is only as long as the reader allows; a default would make the unbounded call the easy one and the ceiling invisible. Reaching it throws `net.TooLong`, distinct from `IoError` because the caller has to answer differently (431/414, not 500) — which costs every caller a wider `throws`, and that is D45 doing its job. `readExact(n)` keeps its shape: `n` is the ceiling, and http checks `Content-Length` against `Limits.bodyBytes` before calling. Rejected: a generous default (the unbounded intent stops being expressible, and safety by forgetfulness); a budget on the `Conn` (invisible at the call site). |
+| 2026-09-22 | Hover on a derived implement (tooling) | **The summary in the hover, the code behind a command**: hovering the trait name shows the implements produced, the bounds inferred for a generic target, the synthesized signatures and the wire shape (keys, optional, skipped) — the question a derive actually raises; `veles explain <path> --derive [Type]` prints the bodies as Veles. Needed a printer for synthesized nodes (`sema/derive_print.go`): the formatter is source-guided (it copies literals verbatim and reads the author's line breaks out of the text) and every derived node carries the implement's span, so it could not be reused. Rejected: the full bodies in the hover (~80 lines for a Codable pair); the s-expression debug dump (syntax no Veles programmer writes). |
+| 2026-09-22 | `internal` in hover (tooling) | **The unwritten visibility level has no word.** It is the common case, and `internal` on every line made hovers harder to read; `public`, `private`, `protected`, `static`, `val` are still spelled out. `visPrefix` in `sema/index.go` is the one place that decides. (A half-done version of this shipped in 5d050f5 and left a stray leading space and 8 red LSP tests.) |
 | 2026-09-21 | `is Trait` check | **Deferred** to its own decision (§9 item 14): a runtime check needs RTTI in trait objects, a compile-time one belongs to generics, and for a concrete type the answer is static. |
 
 ## 11. Known limitations to revisit

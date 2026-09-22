@@ -108,6 +108,12 @@ fun app(dir: string): http.Handler {
   val notes = mutex(Notes())
   val router = http.router()
 
+  // Middleware, outermost first: every answer carries the request id the
+  // client sent (or a fresh one), and no handler may run for more than a
+  // second. Both wrap the 404s and 405s too.
+  router.wrap(http.requestId())
+  router.wrap(http.timeout(1000))
+
   router.get("/", req => http.Response.redirect("/static/"))
   router.get("/static/*", http.files(dir))
 
@@ -153,21 +159,29 @@ fun app(dir: string): http.Handler {
 // ---------------------------------------------------------------------------
 // --check: a scripted client in the same process
 
+// The client bounds its reads too: a server is a stranger from here, and
+// `readLine` has no unbounded form by design.
+const maxResponseLine: i64 = 8192
+
 /// One raw HTTP/1.1 exchange over a fresh connection: the status line, the
 /// content type and the body, as the test output.
-fun exchange(port: i64, method: string, target: string, body: string): string throws IoError {
+fun exchange(port: i64, method: string, target: string, body: string, extra: string = ""): string throws IoError | net.TooLong {
   with (conn = try net.connect("127.0.0.1", port)) {
     val head = stringBuilder()
-    head.append("$method $target HTTP/1.1\r\nHost: check\r\nConnection: close\r\n")
+    head.append("$method $target HTTP/1.1\r\nHost: check\r\nConnection: close\r\nX-Request-Id: check\r\n")
     if (!body.isEmpty()) head.append("Content-Length: ${body.len()}\r\n")
+    head.append(extra)
     head.append("\r\n")
     try conn.writeText(head.toString() + body)
-    val status = try conn.readLine() ?: "(no response)"
+    val status = try conn.readLine(max: maxResponseLine) ?: "(no response)"
     var contentType = "-"
+    var id = "-"
     loop {
-      val line = try conn.readLine() ?: break
+      val line = try conn.readLine(max: maxResponseLine) ?: break
       if (line.isEmpty()) break
-      if (line.toLower().startsWith("content-type:")) contentType = (line.substring(13, line.len()) ?: "").trim()
+      val low = line.toLower()
+      if (low.startsWith("content-type:")) contentType = (line.substring(13, line.len()) ?: "").trim()
+      if (low.startsWith("x-request-id:")) id = (line.substring(13, line.len()) ?: "").trim()
     }
     var text = ""
     loop {
@@ -175,11 +189,29 @@ fun exchange(port: i64, method: string, target: string, body: string): string th
       if (chunk.isEmpty()) break
       text = text + (chunk.decodeUtf8() ?: "<binary>")
     }
-    "< $status [$contentType]" + (if (text.isEmpty()) "" else "\n< $text")
+    "< $status [$contentType] id=$id" + (if (text.isEmpty()) "" else "\n< $text")
   }
 }
 
-fun check(handler: http.Handler) throws IoError | EncodeError {
+// What one request may cost this server. A note is a line of text and the
+// API takes no uploads, so the body ceiling is small on purpose: the
+// defaults are for a server that does not know what it serves, and this
+// one does. Everything not named here keeps its default (see http.Limits).
+val limits = http.Limits(bodyBytes: 4096, headerCount: 32)
+
+// A request that is refused for its size is thousands of characters long;
+// the transcript wants the answer, not the characters.
+fun brief(s: string): string =
+  if (s.len() <= 48) s else (s.substring(0, 24) ?: s) + "...(${s.len()} bytes)"
+
+// Header ceilings, as raw header lines: more headers than `headerCount`,
+// and one header longer than `headerLineBytes`.
+val headerScript = [
+  ("40 headers", "X-N: 1\r\n".repeat(40)),
+  ("one long header", "X-Long: " + "y".repeat(9000) + "\r\n"),
+]
+
+fun check(handler: http.Handler) throws IoError | EncodeError | net.TooLong {
   val script = [
     ("GET", "/api/echo?msg=hello+world", ""),
     ("GET", "/api/notes", ""),
@@ -204,14 +236,23 @@ fun check(handler: http.Handler) throws IoError | EncodeError {
     ("GET", "/static/missing.txt", ""),
     ("GET", "/", ""),
     ("GET", "/nowhere", ""),
+    // the ceilings, refused before a handler ever sees the request
+    ("POST", "/api/notes", "x".repeat(5000)),
+    ("GET", "/api/notes/" + "9".repeat(9000), ""),
   ]
   with (listener = try net.listen()) {
     val port = listener.port()
     scope {
-      val server = async http.serve(listener, handler, log: false)
+      val server = async http.serve(listener, handler, limits, log: false)
       loop ((method, target, body) in script) {
-        io.println("> $method $target" + (if (body.isEmpty()) "" else " ${try json.encode(body)}"))
+        io.println("> $method ${brief(target)}" + (if (body.isEmpty()) "" else " ${try json.encode(brief(body))}"))
         io.println(try exchange(port, method, target, body))
+      }
+      // the header ceilings need raw header lines, which the script above
+      // does not carry
+      loop ((what, extra) in headerScript) {
+        io.println("> GET /api/notes ($what)")
+        io.println(try exchange(port, "GET", "/api/notes", "", extra))
       }
       server.cancel()
     }
@@ -220,7 +261,7 @@ fun check(handler: http.Handler) throws IoError | EncodeError {
 
 // ---------------------------------------------------------------------------
 
-fun run(args: List<string>) throws UsageError | IoError | EncodeError {
+fun run(args: List<string>) throws UsageError | IoError | EncodeError | net.TooLong {
   val opts = try Options.parse(args)
   if (!fs.isDir(opts.dir)) throw UsageError(message: "'${opts.dir}' is not a directory (the files to serve)")
   val handler = app(opts.dir)
@@ -229,7 +270,7 @@ fun run(args: List<string>) throws UsageError | IoError | EncodeError {
   }
   with (listener = try net.listen(host: opts.host, port: opts.port)) {
     io.println("serving ${opts.dir} on http://${opts.host}:${listener.port()}/ — Ctrl+C stops")
-    http.serve(listener, handler)
+    http.serve(listener, handler, limits)
   }
 }
 

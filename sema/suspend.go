@@ -119,7 +119,7 @@ func exprSuspends(e Expr) bool {
 		}
 		return exprSuspends(e.Fn) || anySuspends(e.Args)
 	case *CallVirtual:
-		if sig := e.Trait.Methods[e.Trait.MethodList[e.Index]]; sig.Effects.Suspends {
+		if e.Sig.Effects.Suspends {
 			return true
 		}
 		return exprSuspends(e.Obj) || anySuspends(e.Args)

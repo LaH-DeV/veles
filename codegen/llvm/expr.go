@@ -1590,7 +1590,7 @@ func (g *gen) callVirtual(e *sema.CallVirtual) string {
 	for _, a := range e.Args {
 		args = append(args, g.llType(a.Type())+" "+g.expr(a))
 	}
-	sig := e.Trait.Methods[e.Trait.MethodList[e.Index]]
+	sig := e.Sig
 	ret := g.funcRetLL(sig)
 	if ret == "void" {
 		g.emit("call void %s(%s)", fnp, joinArgs(args))

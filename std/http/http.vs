@@ -14,7 +14,7 @@
 ///   http.serve(listener, app.handler())
 /// }
 /// ```
-use fs, io, net, path, time
+use fs, io, net, path, random, time
 
 // ---------------------------------------------------------------------------
 // failing a request
@@ -29,6 +29,45 @@ public error Fail {
 public fun notFound(text: string = "not found"): Fail = Fail(status: 404, text)
 public fun badRequest(text: string = "bad request"): Fail = Fail(status: 400, text)
 public fun forbidden(text: string = "forbidden"): Fail = Fail(status: 403, text)
+
+// ---------------------------------------------------------------------------
+// what a request may cost
+
+/// The ceilings one request may reach before the server refuses it. A
+/// listener is open to strangers, so every one of these has a default
+/// meant to be safe rather than generous; raise the ones your API needs
+/// and leave the rest.
+///
+/// ```veles
+/// http.serve(listener, app, limits: http.Limits(bodyBytes: 8 * 1024 * 1024))
+/// ```
+///
+/// Byte ceilings answer the client and close: 414 for the request line,
+/// 431 for the headers, 413 for the body. Time ceilings answer 408 —
+/// except `idleTimeout`, which is the ordinary end of a kept-alive
+/// connection and closes without a word.
+public struct Limits {
+  /// `GET /some/path HTTP/1.1` — the target is most of it.
+  public requestLineBytes: i64 = 8192
+  /// One header line, name and value together.
+  public headerLineBytes: i64 = 8192
+  /// How many header lines one request may carry.
+  public headerCount: i64 = 100
+  /// Every header line added up, so many small headers cost as much as
+  /// one large one.
+  public headerBytes: i64 = 65536
+  /// The body, whatever `Content-Length` claims. A handler that streams
+  /// a larger upload raises this for its own server.
+  public bodyBytes: i64 = 1048576
+  /// From the request line to the blank line that ends the headers. This
+  /// is what a connection holding its headers open half-sent runs into.
+  public headerTimeout: i64 = 10000
+  /// From the end of the headers to the last byte of the body.
+  public bodyTimeout: i64 = 30000
+  /// How long a kept-alive connection may stay silent before the next
+  /// request. Reaching it is not an error: the connection closes.
+  public idleTimeout: i64 = 15000
+}
 
 // ---------------------------------------------------------------------------
 // messages
@@ -56,6 +95,15 @@ public struct Request {
   /// The same request with route parameters filled in.
   fun withParams(params: Map<string, string>): Request =
     Request(method: self.method, path: self.path, query: self.query, headers: self.headers, body: self.body, peer: self.peer, params)
+
+  /// The same request with a header set (names are lower-cased). This is
+  /// how a middleware hands something to the handlers behind it — there
+  /// are no task-local values yet.
+  public fun withHeader(name: string, value: string): Request {
+    val h = self.headers.toMutable()
+    h.set(name.toLower(), value)
+    Request(method: self.method, path: self.path, query: self.query, headers: h.toMap(), body: self.body, peer: self.peer, params: self.params)
+  }
 }
 
 /// One response. Build it with the statics, adjust with `withHeader`.
@@ -149,7 +197,8 @@ struct Route {
 /// one path segment into `req.params`; a final `*` captures the rest under
 /// `"*"`. Register routes, then hand `handler()` to `serve`.
 public struct Router {
-  routes: MutableList<Route> = []
+  routes:     MutableList<Route> = []
+  middleware: MutableList<Middleware> = []
 
   public fun get<E>(pattern: string, h: sendable fun(Request): Response suspends throws E | Fail) {
     self.add("GET", pattern, handler(h))
@@ -172,16 +221,89 @@ public struct Router {
     self.routes.push(Route(method, segments: segmentsOf(pattern), handler: h))
   }
 
+  /// Puts `m` around everything this router answers — its 404s and 405s
+  /// included, which is what an access log or a request id wants. The
+  /// first `wrap` ends up outermost: it sees the request first and the
+  /// response last.
+  ///
+  /// (`use` is the keyword that imports a module, so the verb here is
+  /// `wrap`.)
+  public fun wrap(m: Middleware) {
+    self.middleware.push(m)
+  }
+
   /// The routes as one handler: first match wins, 405 when only the method
-  /// differs, 404 otherwise.
+  /// differs, 404 otherwise — then the middleware, outermost first.
   public fun handler(): Handler {
     val routes = self.routes.toList()
-    req => route(routes, req)
+    var h: Handler = req => route(routes, req)
+    // applied last to first, so the first one wrapped ends up outside
+    loop (m in self.middleware.toList().reversed()) {
+      h = m(h)
+    }
+    h
   }
 }
 
 /// A new, empty router.
 public fun router(): Router = Router()
+
+// ---------------------------------------------------------------------------
+// middleware
+
+/// A wrapper around a handler: it takes the handler that comes after it
+/// and returns one that does something before, after, or instead.
+///
+/// ```veles
+/// app.wrap(next => req => next(req).withHeader("x-served-by", "veles"))
+/// ```
+public type Middleware = sendable fun(Handler): Handler
+
+/// One line per request on standard error: peer, method, path, status,
+/// how long it took and the request id when there is one. `serve` logs a
+/// plainer version of the same line itself, so pass `log: false` when you
+/// wrap this one.
+public fun logging(): Middleware = next => req => {
+  val started = time.monotonic()
+  val resp = next(req)
+  val id = req.header("x-request-id")
+  io.eprintln("${req.peer} ${req.method} ${req.path} ${resp.status} ${time.monotonic() - started}ms" +
+    (if (id == null) "" else " id=$id"))
+  resp
+}
+
+/// Gives every request an id — the client's `X-Request-Id` if it sent one,
+/// a fresh one otherwise — and puts it on the request for the handlers
+/// behind it and on the response for the client. Wrap it outside
+/// `logging()` so the log line carries it.
+public fun requestId(): Middleware = next => req => {
+  val id = req.header("x-request-id") ?: newRequestId()
+  next(req.withHeader("x-request-id", id)).withHeader("x-request-id", id)
+}
+
+// 16 hex digits: enough to tell a day's requests apart in a log, and not
+// a claim to be unguessable — this is for tracing, not for security.
+fun newRequestId(): string {
+  val digits = "0123456789abcdef"
+  val out = stringBuilder()
+  var bits = random.nextU64()
+  loop (_ in 0..<16) {
+    val d = (bits % 16) as i64
+    out.append(digits.substring(d, d + 1) ?: "0")
+    bits = bits / 16
+  }
+  out.toString()
+}
+
+/// Answers 503 when the handler behind it takes longer than `ms`. The
+/// handler runs in a task of its own and is cancelled on the way out, so
+/// whatever it held in a `with` is closed.
+public fun timeout(ms: i64): Middleware = next => req => {
+  when (withTimeout(ms, () => next(req))) {
+    is Ok(resp) => resp
+    is Err      => Response.text("service unavailable", status: 503)
+  }
+}
 
 fun route(routes: List<Route>, req: Request): Response {
   val segments = segmentsOf(req.path)
@@ -265,14 +387,15 @@ public fun contentTypeOf(name: string): string = when (path.ext(name).toLower())
 /// Accepts connections forever, serving each in a task of its own, and
 /// returns only when its task is cancelled. A connection is kept open for
 /// further requests until the client closes it, asks for `Connection:
-/// close`, or stays silent for `idleTimeout` milliseconds. Every request
-/// is logged to standard error unless `log` is false.
-public fun serve(listener: net.Listener, handler: Handler, idleTimeout: i64 = 15000, log: bool = true) {
+/// close`, or stays silent for `limits.idleTimeout` milliseconds. What one
+/// request may cost is `limits` (see `Limits`); every request is logged to
+/// standard error unless `log` is false.
+public fun serve(listener: net.Listener, handler: Handler, limits: Limits = Limits(), log: bool = true) {
   scope {
     loop {
       when (listener.accept()) {
         is Ok(conn) => {
-          async connection(conn, handler, idleTimeout, log)
+          async connection(conn, handler, limits, log)
         }
         is Err(e)   => {
           // out of descriptors, a reset before accept: report and go on
@@ -284,10 +407,10 @@ public fun serve(listener: net.Listener, handler: Handler, idleTimeout: i64 = 15
   }
 }
 
-fun connection(conn: net.Conn, handler: Handler, idleTimeout: i64, log: bool) {
+fun connection(conn: net.Conn, handler: Handler, limits: Limits, log: bool) {
   with (c = conn) {
     loop {
-      val req = when (readRequest(c, idleTimeout)) {
+      val req = when (readRequest(c, limits)) {
         is Ok(r)  => r ?: break
         is Err(e) => {
           when (e) {
@@ -319,19 +442,55 @@ fun wantsKeepAlive(req: Request): bool = when (req.header("connection")?.toLower
 // ---------------------------------------------------------------------------
 // wire format
 
+// One line of the head, refusing a ceiling breach with the status the
+// client should see rather than letting the read error escape.
+fun headLine(c: net.Conn, max: i64, ms: i64, tooLong: Fail): string? suspends throws Fail | IoError | Timeout {
+  when (withTimeout(ms, () => try c.readLine(max: max))) {
+    is Ok(line) => line
+    is Err(e)   => when (e) {
+      is net.TooLong => throw tooLong
+      is Timeout     => throw e
+      is IoError     => throw e
+    }
+  }
+}
+
 // One request from the connection, or null when the peer closed between
-// requests; a malformed request is a Fail (400/411/501/505).
-fun readRequest(c: net.Conn, idleTimeout: i64): Request? throws Fail | IoError | Timeout {
-  val first = try withTimeout(idleTimeout, () => try c.readLine()) ?: return null
+// requests; a malformed or oversized request is a Fail (400/411/413/414/
+// 431/501/505), a slow one a 408.
+fun readRequest(c: net.Conn, limits: Limits): Request? throws Fail | IoError | Timeout {
+  // the wait for the first line is the idle wait: a timeout here is the
+  // end of a kept-alive connection, not a bad request
+  val first = try headLine(
+    c,
+    limits.requestLineBytes,
+    limits.idleTimeout,
+    Fail(status: 414, text: "URI too long"),
+  ) ?: return null
+  // from here the whole head is on one clock, so a peer cannot hold the
+  // connection open by sending one header every few seconds
+  val headDeadline = time.monotonic() + limits.headerTimeout
   val parts = first.split(" ")
   if (parts.len() != 3) throw badRequest("malformed request line")
   val method = parts.atOrPanic(0)
   val target = parts.atOrPanic(1)
   if (!parts.atOrPanic(2).startsWith("HTTP/1.")) throw Fail(status: 505, text: "HTTP version not supported")
+  val tooManyHeaders = Fail(status: 431, text: "request header fields too large")
   val headers: MutableMap<string, string> = [:]
+  var headerBytes: i64 = 0
+  // lines, not entries: repeating one name costs the server the same and
+  // the map would collapse them to a single key
+  var headerLines: i64 = 0
   loop {
-    val line = try withTimeout(idleTimeout, () => try c.readLine()) ?: throw badRequest("connection closed inside the headers")
+    val left = headDeadline - time.monotonic()
+    if (left <= 0) throw Fail(status: 408, text: "request header timeout")
+    val line = try headLine(c, limits.headerLineBytes, left, tooManyHeaders)
+      ?: throw badRequest("connection closed inside the headers")
     if (line.isEmpty()) break
+    headerBytes += line.len()
+    headerLines += 1
+    if (headerBytes > limits.headerBytes) throw tooManyHeaders
+    if (headerLines > limits.headerCount) throw tooManyHeaders
     val colon = line.indexOf(":")
     if (colon <= 0) throw badRequest("malformed header line")
     val name = (line.substring(0, colon) ?: "").trim().toLower()
@@ -344,8 +503,17 @@ fun readRequest(c: net.Conn, idleTimeout: i64): Request? throws Fail | IoError |
   if (declared != null) {
     val length = try declared.toInt() ?! badRequest("malformed content-length")
     if (length < 0) throw badRequest("malformed content-length")
+    // checked before the read, not after: `readExact` allocates what it
+    // is asked for, and the number came from the peer
+    if (length > limits.bodyBytes) throw Fail(status: 413, text: "payload too large")
     if (length > 0) {
-      body = try withTimeout(idleTimeout, () => try c.readExact(length))
+      when (withTimeout(limits.bodyTimeout, () => try c.readExact(length))) {
+        is Ok(bytes) => body = bytes
+        is Err(e)    => when (e) {
+          is Timeout => throw Fail(status: 408, text: "request body timeout")
+          is IoError => throw e
+        }
+      }
       if (body.len() < length) throw badRequest("body shorter than content-length")
     }
   }
@@ -440,9 +608,11 @@ public fun reasonOf(status: i64): string = when (status) {
   409  => "Conflict"
   411  => "Length Required"
   413  => "Payload Too Large"
+  414  => "URI Too Long"
   415  => "Unsupported Media Type"
   422  => "Unprocessable Entity"
   429  => "Too Many Requests"
+  431  => "Request Header Fields Too Large"
   500  => "Internal Server Error"
   501  => "Not Implemented"
   503  => "Service Unavailable"

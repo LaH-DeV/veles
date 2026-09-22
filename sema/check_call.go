@@ -1293,33 +1293,47 @@ func (f *fnCtx) funcValue(t *FuncTemplate, span source.Span) Expr {
 }
 
 // objectSafe reports whether a trait can be used as a trait object: no
-// associated types, no generic methods, no Self in signatures.
+// associated types, no generic methods, no Self in signatures — in the
+// trait and in every supertrait, whose methods the object answers to too
+// (D58: the table composes the supers').
 func (f *fnCtx) objectSafe(trait *types.Trait) (string, bool) {
-	if len(trait.Supers) > 0 {
-		return "it has supertraits (use '" + trait.Supers[0].Name + "' or another of them as the object type; composing their vtables is not implemented yet, D58)", false
+	slots, clash := objectSlots(trait)
+	if clash != "" {
+		return clash, false
 	}
-	if len(trait.AssocTypes) > 0 {
-		if trait.ImplicitError && len(trait.AssocTypes) == 1 {
-			return "a method is declared with a bare 'throws' (an impl-defined error); declare the error type, e.g. 'throws E', to use the trait as an object", false
+	for _, tr := range objectOrder(trait) {
+		if len(tr.AssocTypes) == 0 {
+			continue
 		}
-		return "it has associated types", false
+		where := ""
+		if tr != trait {
+			where = " (from '" + tr.Name + "')"
+		}
+		if tr.ImplicitError && len(tr.AssocTypes) == 1 {
+			return "a method is declared with a bare 'throws' (an impl-defined error)" + where + "; declare the error type, e.g. 'throws E', to use the trait as an object", false
+		}
+		return "it has associated types" + where, false
 	}
-	self := selfParamOf(trait)
-	for _, name := range trait.MethodList {
-		if f.c.traitStatic[trait.Name+"."+name] {
-			return "function '" + name + "' is static", false
+	for _, s := range slots {
+		where := ""
+		if s.Owner != trait {
+			where = " (from '" + s.Owner.Name + "')"
 		}
-		if len(f.c.traitMethodTPs[trait.Name+"."+name]) > 0 {
-			return "method '" + name + "' is generic", false
+		key := s.Owner.Name + "." + s.Name
+		if f.c.traitStatic[key] {
+			return "function '" + s.Name + "' is static" + where, false
 		}
-		sig := trait.Methods[name]
-		for _, p := range sig.Params {
+		if len(f.c.traitMethodTPs[key]) > 0 {
+			return "method '" + s.Name + "' is generic" + where, false
+		}
+		self := selfParamOf(s.Owner)
+		for _, p := range s.Sig.Params {
 			if mentions(p.Type, self) {
-				return "method '" + name + "' takes Self", false
+				return "method '" + s.Name + "' takes Self" + where, false
 			}
 		}
-		if mentions(sig.Ret, self) {
-			return "method '" + name + "' returns Self", false
+		if mentions(s.Sig.Ret, self) {
+			return "method '" + s.Name + "' returns Self" + where, false
 		}
 	}
 	return "", true
@@ -1361,25 +1375,32 @@ func (f *fnCtx) boxValue(x Expr, trait *types.Trait, span source.Span) Expr {
 		f.errorf(span, "'%s' cannot be a trait object: %s (D9)", trait.Name, reason)
 		return bad()
 	}
-	impl := f.findImpl(t, trait)
-	if impl == nil {
+	// a combination trait (only its supers) is boxed from their impls, so
+	// ask the predicate rather than for an impl of the trait itself
+	if !f.implements(t, trait) {
 		f.errorf(span, "'%s' does not implement '%s'", t, trait.Name)
 		return bad()
 	}
-	m := map[*types.TypeParam]types.Type{}
-	unify(impl.Target, t, m)
+	slots, _ := objectSlots(trait)
 	box := &Box{exprBase{trait}, x, trait, nil}
-	for _, name := range trait.MethodList {
-		var tmpl *FuncTemplate
-		subst := map[*types.TypeParam]types.Type{}
-		for k, v := range m {
-			subst[k] = v
+	for _, s := range slots {
+		// a supertrait's methods live in that super's own impl, written or
+		// derived (D58); each is instantiated for the concrete type
+		impl := f.findImpl(t, s.Owner)
+		if impl == nil {
+			f.errorf(span, "'%s' does not implement '%s', required by '%s'", t, s.Owner.Name, trait.Name)
+			return bad()
 		}
-		if mt, ok := impl.Methods[name]; ok {
-			tmpl = mt
-		} else {
-			tmpl = f.c.traitDefault(trait, name)
-			subst[selfParamOf(trait)] = t
+		subst := map[*types.TypeParam]types.Type{}
+		unify(impl.Target, t, subst)
+		tmpl, ok := impl.Methods[s.Name]
+		if !ok {
+			tmpl = f.c.traitDefault(s.Owner, s.Name)
+			subst[selfParamOf(s.Owner)] = t
+		}
+		if tmpl == nil {
+			f.errorf(span, "'%s' does not implement '%s.%s'", t, s.Owner.Name, s.Name)
+			return bad()
 		}
 		fn := f.c.instantiate(tmpl, subst, nil, span)
 		box.Methods = append(box.Methods, fn)
@@ -1390,18 +1411,18 @@ func (f *fnCtx) boxValue(x Expr, trait *types.Trait, span source.Span) Expr {
 // virtualCall checks a method call on a trait object.
 func (f *fnCtx) virtualCall(recv Expr, trait *types.Trait, callee *ast.MemberExpr, e *ast.CallExpr) Expr {
 	name := callee.Name.Name
-	idx := -1
-	for i, n := range trait.MethodList {
-		if n == name {
-			idx = i
-		}
-	}
+	slots, clash := objectSlots(trait)
+	slot, idx := findSlot(slots, name)
 	if idx < 0 {
-		f.errorf(callee.Name.Pos, "trait '%s' has no method '%s'", trait.Name, name)
+		if clash != "" {
+			f.errorf(callee.Name.Pos, "'%s' cannot be a trait object: %s (D9)", trait.Name, clash)
+		} else {
+			f.errorf(callee.Name.Pos, "trait '%s' has no method '%s'", trait.Name, name)
+		}
 		f.checkArgsLoosely(e.Args)
 		return bad()
 	}
-	sig := trait.Methods[name]
+	sig := slot.Sig
 	bound, ok := f.bindArgs(sig.Params, e.Args, "'"+name+"'", e.Pos)
 	if !ok {
 		f.checkArgsLoosely(e.Args)
@@ -1422,7 +1443,7 @@ func (f *fnCtx) virtualCall(recv Expr, trait *types.Trait, callee *ast.MemberExp
 	if sig.Effects.Suspends {
 		f.errorf(e.Pos, "suspending trait methods are not supported yet")
 	}
-	return &CallVirtual{exprBase{rt}, recv, trait, idx, args}
+	return &CallVirtual{exprBase{rt}, recv, trait, idx, sig, args}
 }
 
 // sealedDispatch lowers a method call on a sealed value to a tag switch

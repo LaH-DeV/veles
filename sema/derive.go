@@ -821,11 +821,6 @@ func (b *synth) fun(name string, static bool, params []ast.Param, ret types.Type
 	return fd
 }
 
-// DumpDerived renders a synthesized declaration, for tests and hover.
-func DumpDerived(fd *ast.FunDecl) string {
-	return ast.DumpDecl(fd)
-}
-
 // resultPat is `is Ok(name)` / `is Err` over a Result.
 func (b *synth) resultPat(variant, bind string) ast.Pattern {
 	p := &ast.TypePat{Type: &ast.NamedType{Path: []ast.Ident{{Name: variant, Pos: b.sp}}, Pos: b.sp}, Pos: b.sp}

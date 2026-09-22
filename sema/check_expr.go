@@ -114,7 +114,10 @@ func (f *fnCtx) convertAt(x Expr, want types.Type, span source.Span) Expr {
 		}
 	case *types.Trait:
 		// implicit boxing into a trait object (D9)
-		if _, isTrait := have.(*types.Trait); !isTrait && f.findImpl(have, w) != nil {
+		// a combination trait (only its supers, D58) has no impl of its own:
+		// its object is built from theirs
+		if _, isTrait := have.(*types.Trait); !isTrait &&
+			(f.findImpl(have, w) != nil || (isCombination(w) && f.implements(have, w))) {
 			return f.boxValue(x, w, span)
 		}
 	case *types.Pointer:

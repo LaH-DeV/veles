@@ -79,7 +79,7 @@ public error Timeout {
 /// error `f` throws in time is rethrown, so the call throws `E | Timeout`.
 ///
 /// ```veles
-/// val line = try withTimeout(5000, () => try conn.readLine())
+/// val line = try withTimeout(5000, () => try conn.readLine(max: 8192))
 /// ```
 public fun withTimeout<R: Sendable, E>(ms: i64, f: sendable fun(): R suspends throws E): R throws E | Timeout {
   scope {

@@ -1,56 +1,56 @@
 $ httpd fixtures/public --check
 > GET /api/echo?msg=hello+world
-< HTTP/1.1 200 OK [text/plain; charset=utf-8]
+< HTTP/1.1 200 OK [text/plain; charset=utf-8] id=check
 < hello world
 > GET /api/notes
-< HTTP/1.1 200 OK [application/json]
+< HTTP/1.1 200 OK [application/json] id=check
 < []
 > POST /api/notes "buy milk"
-< HTTP/1.1 201 Created [application/json]
+< HTTP/1.1 201 Created [application/json] id=check
 < {"id":1,"text":"buy milk"}
 > POST /api/notes "call \"mum\""
-< HTTP/1.1 201 Created [application/json]
+< HTTP/1.1 201 Created [application/json] id=check
 < {"id":2,"text":"call \"mum\""}
 > POST /api/notes "   "
-< HTTP/1.1 400 Bad Request [text/plain; charset=utf-8]
+< HTTP/1.1 400 Bad Request [text/plain; charset=utf-8] id=check
 < a note needs some text
 > GET /api/notes
-< HTTP/1.1 200 OK [application/json]
+< HTTP/1.1 200 OK [application/json] id=check
 < [{"id":1,"text":"buy milk"},{"id":2,"text":"call \"mum\""}]
 > GET /api/notes/2
-< HTTP/1.1 200 OK [application/json]
+< HTTP/1.1 200 OK [application/json] id=check
 < {"id":2,"text":"call \"mum\""}
 > GET /api/notes/9
-< HTTP/1.1 404 Not Found [text/plain; charset=utf-8]
+< HTTP/1.1 404 Not Found [text/plain; charset=utf-8] id=check
 < no note 9
 > GET /api/notes/x
-< HTTP/1.1 400 Bad Request [text/plain; charset=utf-8]
+< HTTP/1.1 400 Bad Request [text/plain; charset=utf-8] id=check
 < the id must be a number
 > DELETE /api/notes/1
-< HTTP/1.1 204 No Content [-]
+< HTTP/1.1 204 No Content [-] id=check
 > DELETE /api/notes/1
-< HTTP/1.1 404 Not Found [text/plain; charset=utf-8]
+< HTTP/1.1 404 Not Found [text/plain; charset=utf-8] id=check
 < no note 1
 > PUT /api/notes/2 "{\"text\": \"call mum back\"}"
-< HTTP/1.1 200 OK [application/json]
+< HTTP/1.1 200 OK [application/json] id=check
 < {"id":2,"text":"call mum back"}
 > PUT /api/notes/2 "{\"text\": 5, \"extra\": true}"
-< HTTP/1.1 400 Bad Request [text/plain; charset=utf-8]
+< HTTP/1.1 400 Bad Request [text/plain; charset=utf-8] id=check
 < text: expected a string, found a number
 > PUT /api/notes/2 "{\"text\": \"x\""
-< HTTP/1.1 400 Bad Request [text/plain; charset=utf-8]
+< HTTP/1.1 400 Bad Request [text/plain; charset=utf-8] id=check
 < malformed JSON at byte 12: unterminated container
 > PUT /api/notes/9 "{\"text\": \"nope\"}"
-< HTTP/1.1 404 Not Found [text/plain; charset=utf-8]
+< HTTP/1.1 404 Not Found [text/plain; charset=utf-8] id=check
 < no note 9
 > GET /api/notes
-< HTTP/1.1 200 OK [application/json]
+< HTTP/1.1 200 OK [application/json] id=check
 < [{"id":2,"text":"call mum back"}]
 > PUT /api/notes "nope"
-< HTTP/1.1 405 Method Not Allowed [text/plain; charset=utf-8]
+< HTTP/1.1 405 Method Not Allowed [text/plain; charset=utf-8] id=check
 < method not allowed
 > GET /static/
-< HTTP/1.1 200 OK [text/html; charset=utf-8]
+< HTTP/1.1 200 OK [text/html; charset=utf-8] id=check
 < <!doctype html>
 <html>
 
@@ -70,21 +70,33 @@ curl http://127.0.0.1:8080/api/notes</pre>
 
 </html>
 > GET /static/style.css
-< HTTP/1.1 200 OK [text/css; charset=utf-8]
+< HTTP/1.1 200 OK [text/css; charset=utf-8] id=check
 < body { font-family: sans-serif; max-width: 40em; margin: 2em auto; }
 pre { background: #eee; padding: 1em; }
 
 > GET /static/../main.vs
-< HTTP/1.1 403 Forbidden [text/plain; charset=utf-8]
+< HTTP/1.1 403 Forbidden [text/plain; charset=utf-8] id=check
 < forbidden
 > GET /static/missing.txt
-< HTTP/1.1 404 Not Found [text/plain; charset=utf-8]
+< HTTP/1.1 404 Not Found [text/plain; charset=utf-8] id=check
 < no such file: /missing.txt
 > GET /
-< HTTP/1.1 302 Found [-]
+< HTTP/1.1 302 Found [-] id=check
 > GET /nowhere
-< HTTP/1.1 404 Not Found [text/plain; charset=utf-8]
+< HTTP/1.1 404 Not Found [text/plain; charset=utf-8] id=check
 < not found
+> POST /api/notes "xxxxxxxxxxxxxxxxxxxxxxxx...(5000 bytes)"
+< HTTP/1.1 413 Payload Too Large [text/plain; charset=utf-8] id=-
+< payload too large
+> GET /api/notes/9999999999999...(9011 bytes)
+< HTTP/1.1 414 URI Too Long [text/plain; charset=utf-8] id=-
+< URI too long
+> GET /api/notes (40 headers)
+< HTTP/1.1 431 Request Header Fields Too Large [text/plain; charset=utf-8] id=-
+< request header fields too large
+> GET /api/notes (one long header)
+< HTTP/1.1 431 Request Header Fields Too Large [text/plain; charset=utf-8] id=-
+< request header fields too large
 exit=0
 $ httpd nowhere --check
 httpd: 'nowhere' is not a directory (the files to serve)

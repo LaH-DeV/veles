@@ -1089,3 +1089,82 @@ R32. DONE (2026-09-20): hover respects the reader's viewpoint (sema/index.go vie
 
 NEW TODO:
 - function that does not throw marked as throws should be linted to remove the throw
+R34. DONE (2026-09-22): closed the last two open items of the derivation section
+    (veles-checklist.md §1.1).
+    (1) TRAIT OBJECTS OF A TRAIT WITH SUPERTRAITS (spec D58 amended). The vtable is the
+    supers' tables laid end to end: `objectSlots`/`objectOrder` in sema/supers.go walk the
+    trait and its supers depth-first, supers first, each trait once; a name declared by both
+    a trait and a super is one slot, the most derived winning; two supers that neither
+    requires the other declaring one name is an ambiguity and the trait is not object safe.
+    `objectSafe` now asks every super for associated types, statics, generic methods and
+    `Self` (so `Codable` is still refused, naming `Decodable.decode` as the static one).
+    `boxValue` looks each slot up in its OWNER's impl (written or derived), so a default body
+    from a super lands in the table; a combination trait (only its supers) is boxed from
+    their impls — `isCombination` in the coercion in check_expr.go, since it has no impl of
+    its own. `CallVirtual` carries `Sig` now instead of codegen/suspend re-deriving it from
+    `Trait.MethodList[Index]`, which is no longer the layout. NOT done, and it needs RTTI:
+    converting a trait object to another trait's object (`val n: Named = shapeObj`) — same
+    family as §9 item 14. Tests in sema TestDerivation, docs 08 new section.
+    (2) HOVER ON A DERIVED IMPLEMENT (user decision: the summary in the hover, the code
+    behind a command). sema/derive_print.go is a printer for SYNTHESIZED ast nodes — the
+    formatter cannot be reused, it is source-guided (`p.src[...]` everywhere: literals copied
+    verbatim, the author's line breaks read out of the text) and every derived node carries
+    the implement's span. It covers the closed set derive.go builds; `DumpDerived` now
+    returns Veles, so VELES_DEBUG_DERIVE=1 is readable too. `Ref.Derived` + `indexDerived`
+    (sema/explain.go) put the summary on the implement's trait name: the implements produced
+    (grouped by the span of the line that asked for them — derived super impls share it),
+    the bounds inferred for a generic target (from `Impl.TypeParams`, not the ast), the
+    signatures, and the wire shape (keys / optional / skipped, `@key(json: ..)` shown as the
+    run-time `when` on `format()` that it is). New command `veles explain <path> --derive
+    [Type]` prints the bodies; with no type it skips std's own derives. `checkWith` split
+    into `checkCollect` so a caller can read the checker.
+    (3) HOVER NO LONGER SAYS `internal` (user decision). 5d050f5 had changed visibilityWord
+    to return "" but left `+ " "` at seven call sites (a stray leading space) and eight red
+    LSP tests; `visPrefix` is the one place now, enumHead follows it, tests updated.
+
+R35. DONE (2026-09-22): veles-checklist.md §2 + §5.2, first slice — the request is
+    measured before it is believed.
+    (1) `net.Conn.readLine(max:)` — REQUIRED, no default. The peer chooses where the
+    newline goes, so the old `readLine()` let a stranger decide how much the process
+    allocated; `readExact(n)` was already caller-bounded but now says in its doc that
+    `n` from the peer must be checked first. Over the ceiling throws the new
+    `net.TooLong { message, limit }` — a separate error, not an IoError, because the
+    caller answers differently (431/414, never 500). Cost: every caller's `throws`
+    grows by `| net.TooLong` (docs 16 and 17, examples/httpd). That is D45 working.
+    (2) `http.Limits` (8 fields: requestLineBytes, headerLineBytes, headerCount,
+    headerBytes, bodyBytes, headerTimeout, bodyTimeout, idleTimeout) replaces `serve`'s
+    `idleTimeout` parameter. The whole head is on ONE clock (`headDeadline`), so a peer
+    cannot hold a connection open by dribbling one header every few seconds; the body
+    has its own. Content-Length is checked against bodyBytes BEFORE readExact, so an
+    oversized body is never assembled. New statuses in `reasonOf`: 414, 431.
+    BUG FOUND BY THE TEST: headerCount was counting map entries, and repeated header
+    names collapse to one key — 40 `X-N:` lines passed. It counts LINES now.
+    (3) examples/httpd sets `Limits(bodyBytes: 4096, headerCount: 32)` (a notes API
+    takes a line of text) and the --check script provokes all four refusals; `exchange`
+    grew an `extra` parameter for raw header lines and `brief()` elides the
+    thousands-of-characters requests in the transcript.
+    STILL OPEN in that section: middleware (`type Middleware = fun(Handler): Handler`,
+    `router.use`), the standard ones (recovery/request-id/access-log/CORS/timeout),
+    graceful shutdown (needs §4 `os.onSignal`), max concurrent connections, chunked
+    encoding, streaming bodies, the in-process test client.
+
+R36. DONE (2026-09-22): MIDDLEWARE (checklist §5.2). `public type Middleware = sendable
+    fun(Handler): Handler` and `Router.wrap(m)` — the verb is `wrap`, not `use`, because
+    `use` is the keyword that imports a module and `app.use(...)` next to `use http`
+    would read badly. Middleware wraps the whole router (its 404s and 405s included),
+    first wrapped = outermost; `handler()` folds the list in reverse. Standard ones:
+    `requestId()` (the client's X-Request-Id or 16 fresh hex digits, onto the request
+    for the handlers behind and onto the response), `logging()` (peer/method/path/
+    status/ms/id on stderr — `serve(log:)` already prints a plainer line, so pass
+    `log: false` when wrapping it), `timeout(ms)` (503; the handler runs in its own task
+    and is cancelled, so its `with`s close). NO recovery middleware: a panic is already
+    caught at the request boundary (D56) and there would be nothing for it to do.
+    `Request.withHeader` added — with no task-local values (§1.3) that is how a
+    middleware hands something to the handlers behind it.
+    The ordering is visible in docs 17 and in examples/httpd: `timeout` sits outside the
+    header middleware, so a cancelled handler's 503 never passes through it, while
+    `requestId` (outermost) is on the response either way; and a request refused for its
+    SIZE shows `id=-` in the transcript, because it never reaches any middleware.
+    Open in §5.2 after this: CORS, auth hook, compression, structured access log with a
+    byte count, graceful shutdown (needs §4 os.onSignal), max concurrent connections,
+    chunked encoding, streaming bodies, the in-process test client.

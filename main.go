@@ -6,6 +6,7 @@
 //	veles parse <file.vs>         dump the syntax tree
 //	veles tokens <file.vs>        dump the token stream
 //	veles fmt   <paths...>        format source files in place (--check, --stdout)
+//	veles explain <file.vs | dir> --derive [Type]  print the implements the compiler wrote
 //	veles lsp                     language server over stdio
 package main
 
@@ -23,7 +24,7 @@ import (
 )
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: veles <build|run|test|check|parse|tokens> <path> [-o output] [--emit-llvm] [--keep] [--release] [--fix] [-- args...] | veles fmt <paths...> [--check] [--stdout] | veles lsp")
+	fmt.Fprintln(os.Stderr, "usage: veles <build|run|test|check|parse|tokens> <path> [-o output] [--emit-llvm] [--keep] [--release] [--fix] [-- args...] | veles explain <path> --derive [Type] | veles fmt <paths...> [--check] [--stdout] | veles lsp")
 	os.Exit(2)
 }
 
@@ -77,6 +78,24 @@ func main() {
 			usage()
 		}
 		os.Exit(driver.Format(opts))
+	case "explain":
+		opts := driver.ExplainOptions{Path: path}
+		for _, a := range os.Args[3:] {
+			switch {
+			case a == "--derive":
+				opts.Derive = true
+			case strings.HasPrefix(a, "-"):
+				fmt.Fprintf(os.Stderr, "unknown flag %q\n", a)
+				usage()
+			default:
+				opts.TypeName = a
+			}
+		}
+		if !opts.Derive {
+			fmt.Fprintln(os.Stderr, "veles explain: say what to explain (today: --derive)")
+			usage()
+		}
+		os.Exit(driver.Explain(opts))
 	case "lsp":
 		if err := lsp.Serve(os.Stdin, os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, "veles lsp:", err)

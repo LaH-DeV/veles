@@ -16,25 +16,25 @@ the client is another machine.
 ```veles
 use io, net
 
-fun serve(listener: net.Listener) throws IoError {
+fun serve(listener: net.Listener) throws IoError | net.TooLong {
   with (conn = try listener.accept()) {
     loop {
-      val line = try conn.readLine() ?: break
+      val line = try conn.readLine(max: 4096) ?: break
       try conn.writeText("echo: $line\n")
     }
   }
 }
 
-fun client(port: i64) throws IoError {
+fun client(port: i64) throws IoError | net.TooLong {
   with (conn = try net.connect("127.0.0.1", port)) {
     loop (word in ["one", "two"]) {
       try conn.writeText("$word\n")
-      io.println("client got: ${try conn.readLine()}")
+      io.println("client got: ${try conn.readLine(max: 4096)}")
     }
   }
 }
 
-fun main() throws IoError {
+fun main() throws IoError | net.TooLong {
   with (listener = try net.listen()) {
     scope {
       async serve(listener)
@@ -60,10 +60,14 @@ Reading it:
   `host: ""` (every interface) and its port.
 - `listener.accept()` suspends until a client connects and returns the
   `Conn`. `net.connect(host, port)` is the other end.
-- `readLine()` returns the next line without its `\n` (a `\r` before it
-  is dropped too), or `null` when the peer closed the connection and
+- `readLine(max:)` returns the next line without its `\n` (a `\r` before
+  it is dropped too), or `null` when the peer closed the connection and
   nothing is left — the `?: break` above is the usual way to run a
-  connection to its end.
+  connection to its end. `max` is how many bytes of one line you are
+  willing to hold, and it has no default: the peer decides where the
+  newline goes, so a line is only as long as the reader allows. Reaching
+  the ceiling throws `net.TooLong`, and the connection is spent — close
+  it.
 - `with` closes the connection and the listener on every way out,
   including a thrown error or the task being cancelled
   ([chapter 13](13-memory-and-ffi.md)).
@@ -75,8 +79,8 @@ The `Conn` API, in full:
 | call | what it does |
 |---|---|
 | `read(max = 65536): List<u8>` | up to `max` bytes, as soon as any arrive; empty at end of stream |
-| `readExact(n): List<u8>` | exactly `n` bytes (fewer only if the peer closes first) — a body with a known length |
-| `readLine(): string?` | the next text line, `null` at end of stream |
+| `readExact(n): List<u8>` | exactly `n` bytes (fewer only if the peer closes first) — a body with a known length. `n` is the ceiling as well as the count, so check a length that came from the peer against your own limit first |
+| `readLine(max): string?` | the next text line, `null` at end of stream; more than `max` bytes without a newline throws `net.TooLong` |
 | `write(bytes)`, `writeText(text)` | send everything, suspending while the peer catches up |
 | `shutdownWrite()` | "nothing more from me": the peer's reads see end of stream while this side keeps reading |
 | `peer()` | the other end's address as `host:port` |
@@ -94,10 +98,10 @@ The handler owns the connection from then on; the accept loop is back to
 ```veles
 use io, net
 
-fun handle(conn: net.Conn, store: Mutex<MutableMap<string, string>>) throws IoError {
+fun handle(conn: net.Conn, store: Mutex<MutableMap<string, string>>) throws IoError | net.TooLong {
   with (c = conn) {
     loop {
-      val line = try c.readLine() ?: break
+      val line = try c.readLine(max: 4096) ?: break
       val parts = line.split(" ")
       val reply = when (parts.first()) {
         "SET" => {
@@ -112,7 +116,7 @@ fun handle(conn: net.Conn, store: Mutex<MutableMap<string, string>>) throws IoEr
   }
 }
 
-fun server(listener: net.Listener, connections: i64) throws IoError {
+fun server(listener: net.Listener, connections: i64) throws IoError | net.TooLong {
   val store = mutex(MutableMap<string, string>())
   scope {
     loop (_ in 0..<connections) {
@@ -122,12 +126,12 @@ fun server(listener: net.Listener, connections: i64) throws IoError {
   }
 }
 
-fun ask(port: i64, commands: List<string>): List<string> throws IoError {
+fun ask(port: i64, commands: List<string>): List<string> throws IoError | net.TooLong {
   with (conn = try net.connect("127.0.0.1", port)) {
     var replies: MutableList<string> = []
     loop (cmd in commands) {
       try conn.writeText("$cmd\n")
-      replies.push(try conn.readLine() ?: "closed")
+      replies.push(try conn.readLine(max: 4096) ?: "closed")
     }
     return replies.toList()
   }
@@ -161,17 +165,18 @@ ends; a real one loops forever and is stopped by cancelling its task.
 
 ## Timeouts
 
-A client that connects and then says nothing would hold `readLine()`
-forever. `withTimeout` from the prelude puts a limit on any suspending
-call; on timeout the read is cancelled, the connection's `with` — if the
+Size and time are two different ceilings. `max` bounds what one read may
+hold; it does nothing about a client that connects and then says nothing,
+which would hold a `readLine` open forever. 
+`withTimeout` from the prelude puts a limit on any suspending call; on timeout the read is cancelled, the connection's `with` — if the
 read was inside one — has run, and `Timeout` is thrown:
 
 ```veles
 use io, net
 
-fun greetOrDrop(conn: net.Conn): string throws IoError | Timeout {
+fun greetOrDrop(conn: net.Conn): string throws IoError | net.TooLong | Timeout {
   with (c = conn) {
-    return try withTimeout(50, () => try c.readLine()) ?: "closed"
+    return try withTimeout(50, () => try c.readLine(max: 4096)) ?: "closed"
   }
 }
 

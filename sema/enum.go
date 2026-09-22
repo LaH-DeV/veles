@@ -169,10 +169,7 @@ func (c *Checker) refEnumMember(span source.Span, e *types.Enum, m *types.EnumMe
 // enumHead is the declaration line of an enum with every implicit word
 // spelled out.
 func enumHead(e *types.Enum) string {
-	head := "internal enum " + e.Name
-	if e.Pub {
-		head = "public enum " + e.Name
-	}
+	head := visPrefix(e.Pub, false) + "enum " + e.Name
 	return head + " : " + e.Base.Name
 }
 

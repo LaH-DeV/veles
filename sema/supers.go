@@ -10,8 +10,10 @@ import (
 // their methods; an impl of `Codable` needs impls of the supers — and an
 // empty impl derives the ones the type lacks (derive.go). A trait whose
 // only content is its supers is implemented by whatever implements all of
-// them. Bootstrap limit: a trait with supertraits is not a trait object
-// (its vtable would compose the supers'); objectSafe says so.
+// them. A trait with supertraits IS a trait object: its table composes the
+// supers' (objectSlots below), so an object answers to every inherited
+// method; what a trait object still cannot do is become another trait's
+// object, which would need the concrete type back.
 
 // resolveSupers resolves a trait's supertraits. It runs for every trait
 // before any bound is read, since expansion is transitive.
@@ -114,4 +116,78 @@ func superOwning(t *types.Trait, method string) *types.Trait {
 		}
 	}
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// trait objects of a trait with supertraits (D58/D9)
+
+// objSlot is one entry in a trait object's method table: the method and the
+// trait that declares it — the object's own trait, or one of its supers.
+type objSlot struct {
+	Owner *types.Trait
+	Name  string
+	Sig   *types.Func
+}
+
+// objectOrder is the trait itself and its supers, each once, supers first
+// (depth first). It is the order the vtable is laid out in, so a subtrait's
+// table starts with its first super's — not that anything depends on it
+// yet: a trait object is never converted to another trait's object, which
+// would need the concrete type back (§9 item 14).
+func objectOrder(t *types.Trait) []*types.Trait {
+	var out []*types.Trait
+	seen := map[*types.Trait]bool{}
+	var walk func(x *types.Trait)
+	walk = func(x *types.Trait) {
+		if seen[x] {
+			return
+		}
+		seen[x] = true
+		for _, s := range x.Supers {
+			walk(s)
+		}
+		out = append(out, x)
+	}
+	walk(t)
+	return out
+}
+
+// objectSlots is the vtable layout of a trait used as an object: every
+// method the object answers to. A name declared both by the trait and by a
+// super is one slot, the most derived declaration; two supers that neither
+// requires the other declaring the same name is an ambiguity, returned as
+// the second result (the trait is then not object safe).
+func objectSlots(t *types.Trait) ([]objSlot, string) {
+	order := objectOrder(t)
+	owner := map[string]*types.Trait{}
+	for _, tr := range order {
+		for _, name := range tr.MethodList {
+			prev, seen := owner[name]
+			if seen && !containsTrait(allSupers(tr), prev) {
+				return nil, "supertraits '" + prev.Name + "' and '" + tr.Name +
+					"' both declare '" + name + "'"
+			}
+			owner[name] = tr
+		}
+	}
+	var out []objSlot
+	for _, tr := range order {
+		for _, name := range tr.MethodList {
+			if owner[name] != tr {
+				continue // overridden by a more derived declaration
+			}
+			out = append(out, objSlot{Owner: tr, Name: name, Sig: tr.Methods[name]})
+		}
+	}
+	return out, ""
+}
+
+// findSlot is the object's slot for a method name, and its index.
+func findSlot(slots []objSlot, name string) (objSlot, int) {
+	for i, s := range slots {
+		if s.Name == name {
+			return s, i
+		}
+	}
+	return objSlot{}, -1
 }

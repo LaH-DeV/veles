@@ -35,8 +35,12 @@ type Ref struct {
 	// Shape spells out a struct/error/sealed/trait type involved in the
 	// reference — its fields, variants or methods — for the hover.
 	Shape string
-	// Where names the declaration a member belongs to (`internal struct
-	// Notes` for a field), shown above Detail in the hover.
+	// Derived, on the trait name of an implement whose body the compiler
+	// wrote (D58), says what it wrote: the header with any inferred bounds,
+	// the synthesized signatures, and the wire shape of a Codable derive.
+	Derived string
+	// Where names the declaration a member belongs to (`struct Notes` for a
+	// field), shown above Detail in the hover.
 	Where string
 }
 
@@ -134,7 +138,7 @@ func (c *Checker) refSym(span source.Span, sym *Symbol) {
 
 // refGlobal records a use of a module-level or static value, rendered as
 // its declaration with every implicit word spelled out:
-// `internal val limit: i64 = 10`, `public static val ok: Status = ...`.
+// `val limit: i64 = 10`, `public static val ok: Status = ...`.
 func (c *Checker) refGlobal(span source.Span, name string, g *Global) {
 	if c.index == nil || g == nil || !span.IsValid() {
 		return
@@ -161,7 +165,7 @@ func (c *Checker) globalDecl(name string, g *Global) string {
 		return kind + " " + name + typeSuffix(g.Type)
 	}
 	var sb strings.Builder
-	sb.WriteString(visibilityWord(d.Pub, false) + " ")
+	sb.WriteString(visPrefix(d.Pub, false))
 	if c.staticOwner[g] != nil {
 		sb.WriteString("static ")
 	}
@@ -330,8 +334,8 @@ func (c *Checker) refFunc(span source.Span, t *FuncTemplate) {
 	if t.Decl != nil {
 		def = t.Decl.Name.Pos
 	}
-	// the function as declared with nothing left implicit (`internal`),
-	// under the declaration it belongs to: `internal struct Notes`,
+	// the function as declared with nothing left implicit, under the
+	// declaration it belongs to: `struct Notes`,
 	// `impl Display for Point`, `extend Point`, `public trait Shape`
 	ref := Ref{Span: span, Def: def, Kind: "fun", Name: t.Name, Type: t.Sig, Detail: funDecl(t), Where: funWhere(t)}
 	if t.Decl != nil {
@@ -393,14 +397,15 @@ func (c *Checker) refField(span source.Span, st *types.Struct, fld *types.Field)
 			}
 		}
 	}
-	// the field as declared, every implicit word spelled out (`internal`,
-	// `val`), so the hover says who sees it and who may assign it
+	// the field as declared, every implicit word spelled out (`val`), so
+	// the hover says who sees it and who may assign it
 	c.index.Refs = append(c.index.Refs, Ref{Span: span, Def: def, Kind: "field", Name: fld.Name, Type: fld.Type,
 		Detail: fieldDecl(st, fld), Where: structHead(st), Doc: doc, Shape: c.shapeFrom(fld.Type, c.viewFrom(span))})
 }
 
-// visibilityWord spells the M5 level of a member or declaration: the
-// unwritten level is `internal`.
+// visibilityWord spells the M5 level of a member or declaration. The
+// unwritten level (module-internal) has no word: hover shows what was
+// written, and `internal` on every line only made it harder to read.
 func visibilityWord(pub, private bool) string {
 	switch {
 	case private:
@@ -411,13 +416,22 @@ func visibilityWord(pub, private bool) string {
 	return ""
 }
 
+// visPrefix is visibilityWord ready to prepend: the word and a space, or
+// nothing at all.
+func visPrefix(pub, private bool) string {
+	if w := visibilityWord(pub, private); w != "" {
+		return w + " "
+	}
+	return ""
+}
+
 // fieldDecl renders a field the way its declaration reads with nothing
 // left implicit: `public protected var count: i64 = ...`. Types, not
 // values: a default is shown as `= ...` (it exists, and the constructor
 // call may omit the field); a field the `init` block assigns says so.
 func fieldDecl(st *types.Struct, fld *types.Field) string {
 	var sb strings.Builder
-	sb.WriteString(visibilityWord(fld.Pub, fld.Private) + " ")
+	sb.WriteString(visPrefix(fld.Pub, fld.Private))
 	switch {
 	case fld.Protected:
 		sb.WriteString("protected var ")
@@ -457,7 +471,7 @@ func constructorLine(st *types.Struct, v viewpoint) string {
 }
 
 // structHead is a struct's declaration line with its visibility spelled
-// out: `internal struct Notes`, `public error NotFound`, `struct Circle : Shape`.
+// out: `struct Notes`, `public error NotFound`, `struct Circle : Shape`.
 func structHead(st *types.Struct) string {
 	tmpl := templateOf(st)
 	d, _ := tmpl.Decl.(*ast.StructDecl)
@@ -469,7 +483,7 @@ func structHead(st *types.Struct) string {
 		}
 		pub = d.Pub
 	}
-	head = visibilityWord(pub, false) + " " + head
+	head = visPrefix(pub, false) + head
 	if len(st.TypeParams) > 0 && len(st.TypeArgs) == 0 {
 		head += st.Name + typeParamList(st.TypeParams)
 	} else {
@@ -488,7 +502,7 @@ func methodDecl(tmpl *types.Struct, t *FuncTemplate) string {
 }
 
 // funDecl renders a function or method the way its declaration reads with
-// every implicit word spelled out: `internal static fun of(n: i64): Notes`,
+// every implicit word spelled out: `public static fun of(n: i64): Notes`,
 // `override fun toString(): string`, `fun describe(): string = ...` for a
 // trait's default body. The owner is not repeated (see funWhere).
 func funDecl(t *FuncTemplate) string {
@@ -501,7 +515,7 @@ func funDecl(t *FuncTemplate) string {
 	traitMethod := t.Trait != nil
 	if d != nil && !implMethod && !traitMethod {
 		// an impl's or a trait's method has the trait's visibility
-		sb.WriteString(visibilityWord(d.Pub, d.Private) + " ")
+		sb.WriteString(visPrefix(d.Pub, d.Private))
 	}
 	if d != nil {
 		if d.Override {
@@ -546,7 +560,7 @@ func ownerPrefixes(t *FuncTemplate) []string {
 }
 
 // funWhere names the declaration a method belongs to, spelled out:
-// `internal struct Notes`, `impl Display for Point`, `extend<T> Box<T>`,
+// `struct Notes`, `implement Display for Point`, `extend<T> Box<T>`,
 // `public trait Shape`. Empty for a free function.
 func funWhere(t *FuncTemplate) string {
 	switch {
@@ -565,7 +579,7 @@ func funWhere(t *FuncTemplate) string {
 // traitHead is a trait's declaration line with its visibility spelled
 // out and its supertraits: `public trait Shape : Display`.
 func traitHead(tr *types.Trait) string {
-	head := visibilityWord(tr.Pub, false) + " "
+	head := visPrefix(tr.Pub, false)
 	d, _ := tr.Decl.(*ast.TraitDecl)
 	if d != nil && d.Sealed {
 		head += "sealed "
@@ -594,14 +608,14 @@ func typeArgList(impl *Impl, trait *types.Trait) string {
 }
 
 // sealedHead is a sealed trait's declaration line with its visibility
-// spelled out: `internal sealed trait Shape`.
+// spelled out: `public sealed trait Shape`.
 func sealedHead(s *types.Sealed) string {
 	tmpl := sealedTemplate(s)
 	name := s.String()
 	if len(tmpl.TypeParams) > 0 && len(s.TypeArgs) == 0 {
 		name = s.Name + typeParamList(tmpl.TypeParams)
 	}
-	return visibilityWord(tmpl.Pub, false) + " sealed trait " + name
+	return visPrefix(tmpl.Pub, false) + "sealed trait " + name
 }
 
 // traitBody lists a trait's associated types and methods as declared:
@@ -781,9 +795,9 @@ func (c *Checker) shapeFrom(t types.Type, v viewpoint) string {
 			return ""
 		}
 		c.resolveStruct(tmpl)
-		// the declaration with every implicit word spelled out: the level
-		// nothing written means (`internal`), the mutability a bare field
-		// has (`val`) — what a reader needs to know and cannot see at the use
+		// the declaration with every implicit word spelled out: the mutability
+		// a bare field has (`val`) — what a reader needs to know and cannot
+		// see at the use
 		sb.WriteString(structHead(tt))
 		sb.WriteString(" {\n")
 		hidden := 0
@@ -810,7 +824,7 @@ func (c *Checker) shapeFrom(t types.Type, v viewpoint) string {
 					hidden++
 					continue
 				}
-				sb.WriteString("  " + visibilityWord(sym.Pub, false) + " static val " + name)
+				sb.WriteString("  " + visPrefix(sym.Pub, false) + "static val " + name)
 				if sym.Global != nil && sym.Global.Type != nil {
 					sb.WriteString(": " + sym.Global.Type.String())
 				}

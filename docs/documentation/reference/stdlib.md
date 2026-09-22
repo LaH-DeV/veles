@@ -449,8 +449,9 @@ net.connect(host: string, port: i64): Conn suspends throws IoError
 listener.port(): i64                                     // the bound port
 listener.accept(): Conn suspends throws IoError
 conn.read(max: i64 = 65536): List<u8> suspends throws IoError   // what has arrived; [] at end of stream
-conn.readExact(n: i64): List<u8> suspends throws IoError       // n bytes, fewer only at end of stream
-conn.readLine(): string? suspends throws IoError               // without "\n" / "\r\n"; null at end of stream
+conn.readExact(n: i64): List<u8> suspends throws IoError       // n bytes, fewer only at end of stream; n is the ceiling too
+conn.readLine(max: i64): string? suspends throws IoError | TooLong   // without the newline; null at end of stream
+error TooLong { message, limit }                               // a read hit the ceiling; `max` has no default, by design
 conn.write(bytes: List<u8>) suspends throws IoError            // all of it
 conn.writeText(text: string) suspends throws IoError
 conn.shutdownWrite() throws IoError                            // half-close: the peer reads end of stream
@@ -468,7 +469,12 @@ use http
 val app = http.router()
 app.get("/users/{id}", req => ...)          // get / post / put / delete / any; `{name}` captures, a final `*` the rest
 app.get("/static/*", http.files("./public"))   // index.html for a directory, `..` refused, type by extension
-http.serve(listener, app.handler(), idleTimeout: 15000, log: true)   // forever, one task per connection; cancel its task to stop
+app.wrap(http.requestId()); app.wrap(http.timeout(1000)); app.wrap(http.logging())   // first wrap = outermost; wraps the 404s too
+type Middleware = sendable fun(Handler): Handler          // `next => req => ...`; req.withHeader(n, v) hands something to the handlers behind
+http.serve(listener, app.handler(), limits: http.Limits(), log: true)   // forever, one task per connection; cancel its task to stop
+http.Limits(requestLineBytes: 8192, headerLineBytes: 8192, headerCount: 100, headerBytes: 65536,
+            bodyBytes: 1048576, headerTimeout: 10000, bodyTimeout: 30000, idleTimeout: 15000)
+// a byte ceiling answers 414 / 431 / 413 and closes; a time ceiling 408; idleTimeout just closes
 type Handler = sendable fun(Request): Response suspends   // the stored form; `http.handler(h)` adapts a throwing h
 error Fail { status, text }; http.notFound(text); http.badRequest(text); http.forbidden(text)   // thrown → that status; other errors → 500 + log; a panic → 500 + log
 req.method; req.path; req.query; req.headers; req.header(name); req.body; try req.text(); req.param(name); req.peer

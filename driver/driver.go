@@ -256,3 +256,44 @@ func findClang() (string, error) {
 	}
 	return "", fmt.Errorf("clang not found; install LLVM/clang or set VELES_CLANG to its path (spec I1/I2: Veles emits LLVM IR)")
 }
+
+// Explain answers a question about what the compiler made of a package,
+// rather than compiling it. Today there is one question: `--derive`, which
+// prints the implements D58 synthesized, as Veles source. TypeName, when
+// set, limits the output to that type.
+type ExplainOptions struct {
+	Path     string
+	Derive   bool
+	TypeName string
+}
+
+func Explain(opts ExplainOptions) int {
+	diags := &source.Diagnostics{}
+	pkg, err := sema.LoadPackage(opts.Path, diags)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "veles:", err)
+		return 1
+	}
+	if diags.HasErrors() {
+		fmt.Fprint(os.Stderr, diags.Render())
+		return 1
+	}
+	out := sema.ExplainDerived(pkg, diags, opts.TypeName)
+	fmt.Fprint(os.Stderr, diags.Render())
+	if len(out) == 0 {
+		who := "this package"
+		if opts.TypeName != "" {
+			who = "'" + opts.TypeName + "'"
+		}
+		fmt.Fprintf(os.Stderr, "veles: nothing derived for %s\n", who)
+		if diags.HasErrors() {
+			return 1
+		}
+		return 0
+	}
+	fmt.Println(strings.Join(out, "\n\n"))
+	if diags.HasErrors() {
+		return 1
+	}
+	return 0
+}

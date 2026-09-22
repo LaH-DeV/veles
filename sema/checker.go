@@ -105,6 +105,14 @@ func check(pkg *Package, diags *source.Diagnostics, release bool, testMode bool)
 }
 
 func checkWith(pkg *Package, diags *source.Diagnostics, release bool, testMode bool, index *Index) *Program {
+	prog, _ := checkCollect(pkg, diags, release, testMode, index)
+	return prog
+}
+
+// checkCollect is checkWith, handing the checker back so a caller that
+// needs more than the HIR — `veles explain --derive` wants the synthesized
+// implements — can read it.
+func checkCollect(pkg *Package, diags *source.Diagnostics, release bool, testMode bool, index *Index) (*Program, *Checker) {
 	c := &Checker{
 		deriveFailed: map[*Impl]bool{},
 		syntheticSpans: map[source.Span]bool{},
@@ -147,7 +155,7 @@ func checkWith(pkg *Package, diags *source.Diagnostics, release bool, testMode b
 		c.collectRefs = len(c.index.Refs)
 	}
 	if diags.HasErrors() {
-		return nil
+		return nil, c
 	}
 
 	// Effect inference to a fixpoint (D4/D45): inferred error unions grow
@@ -168,9 +176,9 @@ func checkWith(pkg *Package, diags *source.Diagnostics, release bool, testMode b
 	diags.Items = append(diags.Items, c.roundDiags.Items...)
 	c.dropSyntheticRefs()
 	if diags.HasErrors() {
-		return nil
+		return nil, c
 	}
-	return prog
+	return prog, c
 }
 
 // dropSyntheticRefs removes the references derived code recorded (D58):
@@ -413,6 +421,7 @@ func (c *Checker) collect() {
 				c.refFunc(t.Decl.Name.Pos, t)
 			}
 		}
+		c.indexDerived(mods)
 	}
 }
 

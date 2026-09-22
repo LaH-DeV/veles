@@ -34,6 +34,16 @@ extern "C" {
 /// The runtime's "would block" answer: wait and retry.
 val wouldBlock: i64 = 1
 
+/// A read that would have exceeded the ceiling its caller gave. The bytes
+/// read so far are dropped and the connection is left where it stood, so
+/// there is nothing sensible to resume from: close it. A server answers
+/// the peer first — 431 for headers, 413 for a body — and then closes.
+public error TooLong {
+  public message: string
+  /// The ceiling that was passed, in bytes.
+  public limit: i64
+}
+
 /// Listens for TCP connections on `host:port`. `host` empty means every
 /// interface; `port` 0 lets the system pick one (read it back with
 /// `port()`).
@@ -151,7 +161,10 @@ public struct Conn {
     }
   }
 
-  /// Exactly `n` bytes, or fewer when the peer closes first.
+  /// Exactly `n` bytes, or fewer when the peer closes first. `n` is the
+  /// ceiling as well as the count, so a caller that takes it from the peer
+  /// — a `Content-Length` header, a length prefix — must check it against
+  /// its own limit before calling, or the peer chooses the allocation.
   public fun readExact(n: i64): List<u8> suspends throws IoError {
     loop (self.buffered() < n) {
       val chunk = try self.fetch()
@@ -163,11 +176,18 @@ public struct Conn {
   /// The next line as text, without its `\n` (and a `\r` before it), or
   /// `null` when the peer closed with nothing left; a line that is not
   /// valid UTF-8 is an error.
-  public fun readLine(): string? suspends throws IoError {
+  ///
+  /// `max` is how many bytes of one line this caller is willing to hold.
+  /// It has no default on purpose: the peer decides where the newline
+  /// goes, so a line is only as long as the reader allows, and a program
+  /// that never says allows a stranger to fill its memory. A line that
+  /// reaches the ceiling throws `TooLong` and the connection is spent.
+  public fun readLine(max: i64): string? suspends throws IoError | TooLong {
     var scanned: i64 = 0
     loop {
       val nl = self.buffer.withLock(b => findByte(b, 10, from: scanned))
       if (nl >= 0) {
+        if (nl > max) throw self.tooLong("line", max)
         val line = self.buffer.withLock(b => {
           var end = nl
           if (end > 0 && b.atOrPanic(end - 1) == 13) end -= 1
@@ -178,14 +198,22 @@ public struct Conn {
         return line.decodeUtf8() ?: throw IoError(path: self.address, code: 0, detail: "line is not valid UTF-8")
       }
       scanned = self.buffered()
+      // no newline in what has arrived: stop before asking for more, or a
+      // peer that never sends one decides how much we allocate
+      if (scanned > max) throw self.tooLong("line", max)
       val chunk = try self.fetch()
       if (chunk.isEmpty()) {
         val rest = self.take(scanned)
         if (rest.isEmpty()) return null
+        if (rest.len() > max) throw self.tooLong("line", max)
         return rest.decodeUtf8() ?: throw IoError(path: self.address, code: 0, detail: "line is not valid UTF-8")
       }
     }
   }
+
+  // the refusal, with the address so a log says which peer it was
+  fun tooLong(what: string, max: i64): TooLong =
+    TooLong(message: "$what from ${self.address} is longer than $max bytes", limit: max)
 
   /// Sends all of `bytes`; suspends while the peer catches up.
   public fun write(bytes: List<u8>) suspends throws IoError {

@@ -246,6 +246,42 @@ A method written in the body is kept and the rest is derived, so one
 direction can be by hand. `Comparable` is derived the same way: field by
 field, in declaration order.
 
+## Seeing what was derived
+
+An empty `implement` writes code you never read, which is fine until a
+key on the wire is not the one you expected. Hover the trait name in the
+editor and the language server answers with what the compiler made of
+that line — the implements it produced, with the bounds it inferred for a
+generic target, the signatures, and the shape the value takes on the
+wire:
+
+```text
+implement Decodable for Note   // derived (D58)
+  static fun decode(from: Decoder): Note throws DecodeError
+
+implement Encodable for Note   // derived (D58)
+  fun encode(to: Encoder) throws EncodeError
+
+keys      id · author → "userName" (json) · body · tags
+optional  tags (field default)
+skipped   cached (@skip)
+```
+
+A field with `@key(json: ...)` is shown as the mapping it is: the key is
+chosen at run time from the encoder's `format()`, so the same type can be
+`userName` in JSON and `author` everywhere else.
+
+The bodies themselves are a command away:
+
+```bash
+veles explain path/to/package --derive Note
+```
+
+which prints the synthesized implements as ordinary Veles — the code you
+would have had to write. A couple of forms in it have no spelling of
+their own and are named between angle brackets, such as `<default of
+Note.tags>` for the value a missing key falls back to.
+
 ## An untyped document
 
 ```veles

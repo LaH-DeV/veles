@@ -647,11 +647,14 @@ type Box struct {
 }
 
 // CallVirtual invokes a trait method through a trait object's vtable.
+// Index is the slot in the composed table (supertraits first, D58); Sig is
+// the declaration in the trait that owns the method.
 type CallVirtual struct {
 	exprBase
 	Obj   Expr
 	Trait *types.Trait
 	Index int
+	Sig   *types.Func
 	Args  []Expr
 }
 
