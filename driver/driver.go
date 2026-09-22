@@ -130,6 +130,7 @@ func Run(opts Options) int {
 	} else {
 		args = append(args, "-lshell32") // CommandLineToArgvW: UTF-16 process arguments (veles_os.c)
 		args = append(args, "-lws2_32")  // sockets (veles_net.c, WSAPoll in veles_task.c)
+		args = append(args, "-lbcrypt")  // BCryptGenRandom: the system CSPRNG (veles_os.c)
 	}
 	cmd := exec.Command(clang, args...)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr

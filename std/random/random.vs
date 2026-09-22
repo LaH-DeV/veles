@@ -1,5 +1,12 @@
 /// Pseudo-random numbers: a xoshiro256** generator seeded from the clock
-/// (call `seed(n)` for a reproducible sequence). Not for cryptography.
+/// (call `seed(n)` for a reproducible sequence). Fast, well distributed,
+/// and for shuffling a list or picking a sample — never for a secret.
+///
+/// **Not for cryptography.** A handful of outputs is enough to recover the
+/// state and predict every value before and after, so a session token, an
+/// API key, a password-reset link or a nonce built from here is guessable.
+/// `crypto.randomBytes(n)` is the operating system's generator and is what
+/// those want; `crypto.uuidV4()` and `crypto.uuidV7()` use it.
 use time
 
 // splitmix64 constants; u64 literals need a typed binding to be read as u64

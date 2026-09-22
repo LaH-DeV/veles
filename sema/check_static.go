@@ -211,6 +211,11 @@ func (f *fnCtx) moduleTypeNamed(x ast.Expr) types.Type {
 	}
 	f.c.refSym(n.Pos, sym)
 	f.c.refSym(m.Name.Pos, member)
+	if len(m.TypeArgs) > 0 {
+		// `crypto.Hmac<Sha256>.start(key)`: the type arguments name the instance
+		path := []ast.Ident{{Name: n.Name, Pos: n.Pos}, {Name: m.Name.Name, Pos: m.Name.Pos}}
+		return f.resolve(&ast.NamedType{Path: path, Args: m.TypeArgs, Pos: m.Pos})
+	}
 	if t := f.c.symType(member); t != nil {
 		return t
 	}

@@ -1,0 +1,195 @@
+// UUIDs (RFC 9562). Two versions are worth generating: v4, sixteen random
+// bytes, and v7, a millisecond timestamp followed by random bits — the
+// same uniqueness, but sorted by creation time, which is what a database
+// index wants.
+use time
+
+/// A 128-bit identifier. `toString()` is the canonical lower-case form
+/// `0190d3e1-7c00-7000-8000-9a5b1c2d3e4f`; `parse` reads that, or the same
+/// digits without the dashes.
+///
+/// ```veles
+/// val id = crypto.uuidV7()
+/// io.println("$id")                            // sorted by creation time
+/// val back = crypto.Uuid.parse(text) ?: return
+/// ```
+///
+/// UUIDs compare and sort by their bytes, so a list of v7 ids sorts into
+/// creation order.
+public struct Uuid {
+  private data: List<u8>
+
+  /// A random UUID (version 4): 122 random bits. The version and variant
+  /// take the other six, so two v4 ids collide about as often as two
+  /// 122-bit random numbers do — never, in practice.
+  public static fun v4(): Uuid {
+    val b = randomBytes(16).toMutable()
+    b.set(6, (b.atOrPanic(6) & 0x0f) | 0x40)  // version 4
+    b.set(8, (b.atOrPanic(8) & 0x3f) | 0x80)  // variant 10
+    Uuid(data: b.toList())
+  }
+
+  /// A time-ordered UUID (version 7): 48 bits of Unix milliseconds, a
+  /// 12-bit counter, then 62 random bits.
+  ///
+  /// Successive calls are **strictly increasing**, which is the point of
+  /// v7 — as a primary key it appends to the index instead of scattering
+  /// writes across it. Milliseconds alone would not be enough (a server
+  /// makes many ids per millisecond), so the twelve bits the RFC calls
+  /// `rand_a` hold a counter instead (RFC 9562 §6.2, the "fixed-length
+  /// dedicated counter" method): it starts at a random point in the lower
+  /// half of its range each new millisecond, so the ids are not
+  /// guessable, and 2048 of them fit before it has to borrow a
+  /// millisecond from the future. A clock that jumps backwards is
+  /// ignored rather than obeyed.
+  public static fun v7(): Uuid {
+    val ms = nextTick()
+    val r = randomBytes(8)
+    val b: MutableList<u8> = []
+    var s = 40
+    loop (s >= 0) {
+      b.push(((ms >> s) & 255) as u8)
+      s = s - 8
+    }
+    b.push(0x70 | ((v7Counter >> 8) & 0x0f) as u8)  // version 7 + counter high
+    b.push((v7Counter & 255) as u8)                 // counter low
+    b.push((r.atOrPanic(0) & 0x3f) | 0x80)          // variant 10
+    var i = 1
+    loop (i < 8) {
+      b.push(r.atOrPanic(i))
+      i = i + 1
+    }
+    Uuid(data: b.toList())
+  }
+
+  /// The all-zero UUID, `00000000-0000-0000-0000-000000000000`: the RFC's
+  /// "nil" value, for a column that must hold a UUID and means "none".
+  public static fun zero(): Uuid = Uuid(data: MutableList<u8>.repeat(0, 16).toList())
+
+  /// Sixteen bytes as a UUID, whatever they say about their version — for
+  /// reading an id out of a binary column. Panics unless there are exactly
+  /// sixteen.
+  public static fun of(bytes: List<u8>): Uuid {
+    if (bytes.len() != 16) panic("crypto.Uuid.of: a UUID is 16 bytes, got ${bytes.len()}")
+    Uuid(data: bytes)
+  }
+
+  /// The UUID the text spells, or `null` when it does not. Accepts the
+  /// canonical `8-4-4-4-12` form and the same 32 digits with no dashes, in
+  /// either case; rejects everything else, braces and `urn:uuid:`
+  /// prefixes included.
+  public static fun parse(text: string): Uuid? {
+    val digits = if (text.len() == 36) {
+      if (text.byteAt(8) != 45 || text.byteAt(13) != 45 || text.byteAt(18) != 45 || text.byteAt(23) != 45) return null
+      text.replace("-", "")
+    } else if (text.len() == 32) {
+      text
+    } else {
+      return null
+    }
+    if (digits.len() != 32) return null
+    val out: MutableList<u8> = []
+    var i = 0
+    loop (i < 32) {
+      val hi = nibble(digits.byteAt(i)) ?: return null
+      val lo = nibble(digits.byteAt(i + 1)) ?: return null
+      out.push((hi << 4) | lo)
+      i = i + 2
+    }
+    Uuid(data: out.toList())
+  }
+
+  /// The sixteen bytes, big-endian as the RFC lays them out.
+  public fun bytes(): List<u8> = self.data
+
+  /// The version digit: 4 for `v4()`, 7 for `v7()`, 0 for `zero()`.
+  public fun version(): i64 = ((self.data.atOrPanic(6) >> 4) & 0x0f) as i64
+
+  /// The milliseconds a version 7 id was made at, or `null` for any other
+  /// version.
+  public fun timestamp(): i64? {
+    if (self.version() != 7) return null
+    var v = 0
+    var i = 0
+    loop (i < 6) {
+      v = (v << 8) | (self.data.atOrPanic(i) as i64)
+      i = i + 1
+    }
+    v
+  }
+
+  /// True for the all-zero UUID.
+  public fun isZero(): bool = self.data.all(b => b == 0)
+
+  implement Display {
+    fun toString(): string {
+      val out = stringBuilder()
+      var i = 0
+      loop (i < 16) {
+        if (i == 4 || i == 6 || i == 8 || i == 10) out.appendByte(45)
+        val b = self.data.atOrPanic(i)
+        out.appendByte(hexDigit(b >> 4))
+        out.appendByte(hexDigit(b & 15))
+        i = i + 1
+      }
+      out.toString()
+    }
+  }
+
+  implement Comparable {
+    /// By the bytes, so version 7 ids sort into creation order.
+    fun compareTo(other: Uuid): Ordering {
+      var i = 0
+      loop (i < 16) {
+        val a = self.data.atOrPanic(i)
+        val b = other.data.atOrPanic(i)
+        if (a < b) return Ordering.Less
+        if (a > b) return Ordering.Greater
+        i = i + 1
+      }
+      Ordering.Equal
+    }
+  }
+}
+
+/// A random UUID (version 4). `crypto.Uuid.v4()` said shorter.
+public fun uuidV4(): Uuid = Uuid.v4()
+
+/// A time-ordered UUID (version 7) — the one to reach for when the id ends
+/// up in a database. `crypto.Uuid.v7()` said shorter.
+public fun uuidV7(): Uuid = Uuid.v7()
+
+// The v7 clock. Two ids from the same millisecond are told apart by the
+// counter, and a millisecond that runs out of counter borrows the next
+// one — so `v7()` never returns the same value twice and never goes
+// backwards, whatever the system clock does.
+var v7Millis: i64 = -1
+var v7Counter: i64 = 0
+
+fun nextTick(): i64 {
+  val now = time.now()
+  if (now > v7Millis) {
+    v7Millis = now
+    // a random start in the lower half leaves 2048 increments and keeps
+    // the counter from being a visible sequence
+    v7Counter = (randomU64() % 2048) as i64
+    return v7Millis
+  }
+  // the same millisecond, or a clock that went backwards: keep the
+  // timestamp we already published and count
+  v7Counter = v7Counter + 1
+  if (v7Counter > 4095) {
+    v7Millis = v7Millis + 1
+    v7Counter = (randomU64() % 2048) as i64
+  }
+  v7Millis
+}
+
+fun hexDigit(nibble: u8): u8 = if (nibble < 10) 48 +% nibble else 87 +% nibble
+
+fun nibble(b: u8): u8? {
+  if (b >= 48 && b <= 57) return b -% 48
+  if (b >= 97 && b <= 102) return b -% 87
+  if (b >= 65 && b <= 70) return b -% 55
+  null
+}

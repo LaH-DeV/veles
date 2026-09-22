@@ -1,0 +1,67 @@
+-- digests (FIPS 180-4)
+sha256 ''    e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+sha256 'abc' ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
+sha256 long  248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1
+sha384 'abc' cb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed8086072ba1e7cc2358baeca134c825a7
+sha512 'abc' ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f
+sha1   'abc' a9993e364706816aba3e25717850c26c9cd0d89d
+streamed     ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad  same=true
+1000 bytes   ab6c5f3237f551d208fc2ca5225a4cca20b3fd638794a804f0ed5549d5041734
+names        SHA-256 block=64 digest=32
+etag         2cf24dba5fb0a30e
+-- MACs (RFC 4231, RFC 2202)
+hs256 t1 b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7
+hs256 t2 5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843
+hs256 t3 773ea91e36800e46854db8ebd09181a72959098b3ef8c122d9635514ced565fe
+hs256 t6 60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54
+hs384 t1 afd03944d84895626b0825f4ab46907f15f9dadbe4101ec682aa034c7cebc59cfaea9ea9076ede7f4af152e8b2fa9cb6
+hs512 t1 87aa7cdea5ef619d4ff0b4241a1d6cb02379f4e2ce4ec2787ad0b30545e17cdedaa833b7d6b8a702038b274eaea3f4e4be9d914eeb61f1702e696c203a126854
+hs1   t1 b617318655057264e28bc0b6fb378c8ef146be00
+streamed same=true
+name     HMAC-SHA-256
+-- verifying a signature
+header   sha256=9581aa57055911ff52c3ae01d5809eae3d6db62f9ec26d46143399bcd151fd1d
+accepted true
+altered  false
+raw      true false false
+-- base64 and hex (RFC 4648)
+'      ' std=         url=
+'f     ' std=Zg==     url=Zg
+'fo    ' std=Zm8=     url=Zm8
+'foo   ' std=Zm9v     url=Zm9v
+'foob  ' std=Zm9vYg== url=Zm9vYg
+'fooba ' std=Zm9vYmE= url=Zm9vYmE
+'foobar' std=Zm9vYmFy url=Zm9vYmFy
+alphabets  std=+//+ url=-__-
+hex        fbfffe FBFFFE
+round trip foobar foo
+lengths    44 43
+base64 'Zg=' -> base64: padded input must be a multiple of four characters, got 3
+base64 'Zm9vYmF' -> base64: the last character sets 2 bits the byte count does not use (not a canonical encoding)
+base64 '-_8' -> base64: '-' at 0 is URL-safe base64; use decodeUrl, not decode
+base64 'Zm 9v' -> base64: whitespace at 2; strip line breaks before decoding
+base64 'Z' -> base64: the input ends inside a byte — one character is left over
+hex '0' -> hex: an odd number of digits (1); a byte is two
+hex '0g' -> hex: 'g' at 1 is not a hex digit
+hex '0x00' -> hex: 'x' at 1 is not a hex digit
+-- randomness and ids
+token    len=43 distinct=true
+v4       version=4 text=36 timestamp=null
+v7       version=7 ordered=true
+zero     00000000-0000-0000-0000-000000000000 isZero=true
+parse    canonical=true bare=true
+refuse   true true
+-- JSON Web Tokens (RFC 7515)
+rfc token    ok sub=- iss=joe aud=-
+expired      Expired — jwt: expired 99180620 seconds ago
+with leeway  ok sub=- iss=joe aud=-
+wrong issuer WrongIssuer — jwt: 'iss' is joe, not 'jane'
+as HS512     AlgorithmMismatch — jwt: 'alg' is 'HS256' but 'HS512' was expected
+wrong key    BadSignature — jwt: the signature does not match
+two parts    Malformed — jwt: a compact token has three parts, found 2
+mine         ok sub=user-42 iss=notes.example aud=api|web
+wrong aud    WrongAudience — jwt: 'aud' is api, web, not 'admin'
+no exp       MissingClaim — jwt: the token has no 'exp'; pass Options(requireExpiry: false) to accept one that never expires
+header       kid=2026-09 alg=HS256
+claims       role=admin extra=1 iat=1700000000
+exit=0

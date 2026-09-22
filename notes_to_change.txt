@@ -1168,3 +1168,58 @@ R36. DONE (2026-09-22): MIDDLEWARE (checklist §5.2). `public type Middleware = 
     Open in §5.2 after this: CORS, auth hook, compression, structured access log with a
     byte count, graceful shutdown (needs §4 os.onSignal), max concurrent connections,
     chunked encoding, streaming bodies, the in-process test client.
+
+R37. DONE (2026-09-23): veles-checklist.md §5.5 — CRYPTOGRAPHY AND THE ENCODINGS
+    (spec D59, v0.34). Four new std modules; the shape of each was chosen so the
+    safe call is the short one.
+    (1) `std/crypto`: SHA-256/384/512 and SHA-1 behind a `Hasher` trait
+    (`start`/`update`/`finish` plus three statics, so HMAC is written ONCE over
+    `H: Hasher` and `Hmac<Sha256>` is an instantiation, not a copy). A hash
+    returns a `Digest`, not `List<u8>`: `Display` is lower-case hex and
+    `Equatable` is CONSTANT TIME, so `mac == expected` is the natural spelling
+    and the safe one — `List<u8>`'s structural `==` short-circuits and would
+    have been a timing oracle that compiles silently. `Digest.of(bytes)` wraps a
+    signature from a header so it compares the same way; `equalBytes` is the raw
+    version. `randomBytes` over BCryptGenRandom / getrandom(2) / arc4random_buf
+    (`veles_random_bytes` in veles_os.c, `-lbcrypt` on Windows) and PANICS on
+    failure — unrecoverable, not rare, and `throws` would spread to `uuidV4()`.
+    UUID v4 + v7, v7 with a counter in `rand_a` so ids are strictly increasing
+    (the example caught that random `rand_a` left same-millisecond ids
+    unordered).
+    (2) `std/hex` and `std/base64` are their OWN modules, not `crypto.` —
+    base64 is an encoding, and a name that suggests otherwise is how
+    `base64.encode(password)` happens. Both decoders are strict: the other
+    alphabet (naming the right function), whitespace, a misplaced `=`, an
+    impossible length, and a non-canonical last character (two texts, one
+    signature) — each with the byte offset.
+    (3) `std/jwt`: HS256/384/512. The expected algorithm comes from `Options`,
+    never from the token's `alg`; `exp` required by default; `crit` rejected; a
+    key shorter than the digest is a panic (RFC 7518 §3.2). `Invalid` carries a
+    `Reason` enum so `Expired` can be told from `BadSignature`.
+    (4) TWO COMPILER CHANGES fell out of writing it:
+      - `mod.Type<T>.f(...)` now parses. `tryTypeArgsBeforeCall` only allowed
+        the `.f(` continuation after a BARE name, so `crypto.Hmac<Sha256>.start`
+        — the natural spelling from outside the module — was a syntax error.
+        New `ast.MemberExpr.TypeArgs`; `moduleTypeNamed` resolves the instance;
+        the formatter prints them; a qualified generic with no arguments gets
+        the same error as an unqualified one.
+      - The formatter keeps the AUTHOR'S GROUPING inside a list it breaks
+        (`brokenList`). One element per line turned SHA-256's 64 round
+        constants into 64 lines; a newline now goes only where the author had
+        one, so a grid stays a grid. Same rule as the rest of the printer.
+    (5) Tests are published vectors, which is the only honest way: FIPS 180-4
+    (three messages per hash), RFC 4231 + RFC 2202 (HMAC), RFC 4648 (base64),
+    and the RFC 7515 A.1 token with its key — verifying someone else's token
+    proves interop in a way signing and verifying our own never could.
+    `examples/crypto` + docs 19; `go test ./...` is green except the
+    pre-existing `examples/tutorial/04-functions`.
+    LANGUAGE FACTS LEARNED: a `List<u64>` literal types its elements from the
+    annotation, so `0xffffffffffffffff` is fine where `0x... as u64` is a
+    range error; module-level `var` is a real mutable global (initialised in
+    `veles_init_globals`, in declaration order); `MutableList<T>` passes where
+    `List<T>` is wanted; `go` is a keyword (a method cannot be named `run`'s
+    sibling `go`); `when` arms need newlines, never commas; `[:]` is the empty
+    map; `try x ?! e` needs the `try` even though `?!` maps the error.
+    OPEN AFTER THIS: argon2id and RS256/ES256 (both want a binding), zeroing
+    keys (`Secret<T>`), a fuzz corpus for the two decoders, and a benchmark —
+    the hashes are plain Veles and nothing has measured how far that is from C.

@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.33** — language design complete; D58 adds the derivation story D51 deferred. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
+**Working draft v0.34** — language design complete; D58 adds the derivation story D51 deferred, D59 the standard library's cryptography. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -1057,6 +1057,103 @@ A flat event stream: the derive writes `key("id")` and then the value encodes *i
 *Implementation notes (v0.33).* A `Decoder` records a value of the wrong type as a problem, consumes it and returns a zero, so the derived code never has to recover a stream; `problem`/`problemAt`/`problems` are part of the trait. A nested value that cannot be built throws after its object is fully read, and its parent catches that, finishes its own checks, and fails once. Sealed families decode through the `Value` tree today; the in-stream fast path for a leading tag is still to come. Derived bodies are synthesized as syntax (with three nodes no source spells: a resolved type, a resolved type as a receiver, a field's default) and checked like anything written, so every rule of the language applies to them.
 
 **Consequences.** D51 gains its first data-carrying attributes, all in service of this decision (`@key`, `@skip`, `@required`, `@tag`); the sentence "there is no derivation mechanism" is replaced by "derivation is what the compiler implements, requested by an empty `implement`". The compiler's synthesized-function machinery (tuple comparison, enum functions) becomes the general path for a derived body, so a later user-definable derivation has one description of a type's shape to expose. `std/json` is the first format; rows and environment follow.
+
+---
+
+### D59 — Cryptography and the encodings that carry it (v0.34)
+
+A server cannot be trusted with a session, a webhook or an API key without
+a hash, a keyed hash, unpredictable bytes and a way to write bytes as text.
+Four modules, and the shape of each is chosen so that the safe call is the
+short one.
+
+**Four modules, not one.** `crypto` holds the digests (SHA-256, SHA-384,
+SHA-512, SHA-1), HMAC, constant-time comparison, the system CSPRNG and
+UUIDs; `hex` and `base64` are their own modules; `jwt` sits on top of all
+three. base64 is an *encoding*, not encryption, and a name that suggests
+otherwise is how `base64.encode(password)` gets written — so it does not
+live behind `crypto.`. Rejected: one `encoding` module with the codecs as
+statics (`encoding.Base64.encodeUrl(...)` is three hops for the commonest
+call in a web server); everything under `crypto` (misfiles two modules that
+protect nothing).
+
+**A hash returns a `Digest`, not `List<u8>`.** `Digest` implements
+`Display` (lower-case hex), `Hashable`, and `Equatable` with a
+**constant-time** `equals` — so `mac == expected` is the natural spelling
+*and* the safe one. `bytes()` is there for sending the digest, and its
+result compares with the structural, short-circuiting `==`; the asymmetry
+is deliberate, and `Digest.of(bytes)` wraps a signature that arrived from
+outside so it can be compared the safe way. `crypto.equalBytes(a, b)` is
+the same guarantee for bytes that are not digests. Rejected: returning
+`List<u8>` (`if (mac == expected)` then compiles into a timing oracle, and
+the only defence is a doc comment — the shape this language has refused
+before, D45's reasoning applied to a leak instead of an error).
+
+**A digest is a `Hasher`.** `start()`/`update`/`finish()` with three static
+members (`algorithm`, `blockSize`, `digestSize`); the one-shot
+`crypto.sha256(data)` is `digest<Sha256>(data)`. HMAC is therefore written
+once, generic over `H: Hasher` — `Hmac<Sha256>` — rather than three times.
+A hasher finishes once: `update` after `finish` panics, `finish` twice
+returns the same digest. Streaming is not a nicety; an `ETag` for a file
+and a MAC over a large body both need it.
+
+**Decoding is strict and canonical.** Both base64 decoders take padded or
+unpadded input, and refuse a character from the other alphabet (naming
+which function to call instead), an `=` before the end, any whitespace, a
+length that cannot spell whole bytes, and a final character with bits set
+that the byte count does not use. That last one is the security case: a
+non-canonical encoding means two different texts decode to one signature,
+so a replay filter keyed on the text never sees the repeat. Every refusal
+carries the byte offset. `hex.decode` is the same: either case, an even
+number of digits, nothing else — no `0x`, no separators, no whitespace.
+
+**`randomBytes` panics; it does not throw.** The operating system's
+generator (`BCryptGenRandom`, `getrandom(2)`, `arc4random_buf`) failing is
+not a condition a caller can answer: there is no weaker source worth
+falling back to, and nothing to decide. Threading `throws IoError` through
+every call site — including `uuidV4()`, which would then throw — buys
+nothing, and a panic is still caught at a request boundary (D56). This is
+the one place in the standard library where an *external* failure is a
+panic rather than an error, and the reason is that it is not recoverable
+rather than that it is rare. Go 1.24 moved `crypto/rand.Read` the same way.
+Rejected: `throws IoError` (every session-token line grows a `try`, and the
+handler can only crash anyway); a silent fallback to `std/random` (a
+predictable token is worse than no token).
+
+**UUID v7 is strictly increasing.** The twelve bits RFC 9562 calls `rand_a`
+hold a counter instead (its §6.2 "fixed-length dedicated counter"),
+starting each millisecond at a random point in the lower half of its range;
+a millisecond that exhausts the counter borrows the next one, and a clock
+that jumps backwards is ignored rather than obeyed. Monotonicity is the
+whole reason to prefer v7 over v4 — as a primary key it appends to the
+index instead of scattering writes — and milliseconds alone do not give it,
+because a server makes many ids per millisecond. The cost is module-level
+mutable state, which becomes a lock when the executor gets threads (D35).
+
+**A JWT library is a list of refusals.** `jwt` implements the HMAC family
+(`HS256`/`HS384`/`HS512`) and: takes the expected algorithm from the
+*caller*, never from the token's `alg` (the header is unsigned input — this
+is `alg: none` and RS256-verified-as-HS256); requires `exp` unless asked
+not to; rejects `crit`; compares the signature through `Digest`; and
+refuses a key shorter than the digest (RFC 7518 §3.2) with a panic, because
+a short HMAC key is a configuration mistake and serving requests with it is
+worse than stopping. `Claims` spells the registered claims out (`issuer`,
+`expiresAt`, …) in Unix seconds and keeps the rest as `Value`; `Invalid`
+carries a `Reason` enum, because `Expired` means "refresh" and everything
+else means "sign in again". `readHeader` exists for `kid` lookup and says
+in its doc that nothing it returns is trustworthy. RSA and ECDSA are out of
+scope until there is a bignum or a binding.
+
+*Implementation notes (v0.34).* All of it is Veles except one runtime call,
+`veles_random_bytes` in `veles_os.c` (and `-lbcrypt` on Windows). The
+digests keep a per-hasher scratch buffer so a long message allocates
+nothing per block; the round-constant tables are module-level `val`s, which
+are globals initialised once at start-up. Two compiler changes fell out of
+writing it: a module-qualified generic type may now be a static call target
+(`crypto.Hmac<Sha256>.start(key)` — the parser only allowed a bare name
+before, `ast.MemberExpr.TypeArgs`), and the formatter keeps the author's
+grouping inside a list it breaks, so a table written as a grid stays a grid
+instead of becoming one constant per line.
 
 ---
 

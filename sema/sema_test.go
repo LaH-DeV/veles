@@ -2893,3 +2893,24 @@ trait B : A { }`, "requires itself"},
 		})
 	}
 }
+
+// D59: a module-qualified generic type is a static call target —
+// `crypto.Hmac<Sha256>.start(key)`. Before, the speculative type-argument
+// path only allowed the `.f(` continuation after a bare name.
+func TestStaticCallOnQualifiedGeneric(t *testing.T) {
+	const uses = "use io, crypto\n"
+	expectClean(t, uses+`
+fun main() {
+  val xs = MutableList<i64>.repeat(0, 3)
+  io.println("${xs.len()} ${crypto.Hmac<crypto.Sha256>.digestSize()} ${crypto.Hmac<crypto.Sha256>.algorithm()}")
+}`)
+	expectClean(t, uses+`
+fun main() {
+  var m = crypto.Hmac<crypto.Sha256>.start(crypto.randomBytes(32))
+  m.update("body".bytes())
+  io.println("${m.finish().len()}")
+}`)
+	expectError(t, uses+`
+fun main() { io.println("${crypto.Hmac.digestSize()}") }`,
+		"'Hmac' is generic; write the type arguments")
+}

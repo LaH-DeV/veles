@@ -1424,6 +1424,11 @@ func (p *printer) exprInner(e ast.Expr) {
 			p.w(".")
 		}
 		p.w(e.Name.Name)
+		if len(e.TypeArgs) > 0 {
+			p.w("<")
+			p.typeList(e.TypeArgs)
+			p.w(">")
+		}
 	case *ast.IndexExpr:
 		p.expr(e.X, bpPostfix)
 		p.w("[")
@@ -1662,8 +1667,10 @@ func (p *printer) exprList(elems []ast.Expr, owner source.Span, bracket string) 
 }
 
 // brokenList prints n elements either separated by `, ` or, when the author
-// broke the list, one per line with a trailing comma and the closing
-// bracket on its own line.
+// broke the list, over several lines with a trailing comma and the closing
+// bracket on its own line. Where the author put the breaks is kept: one
+// element per line is the common case, but a table written as a grid — the
+// round constants of a hash, a matrix — stays a grid.
 func (p *printer) brokenList(multi bool, n, open, close int, span func(i int) (int, int), elem func(i int)) {
 	if !multi {
 		for i := 0; i < n; i++ {
@@ -1676,13 +1683,19 @@ func (p *printer) brokenList(multi bool, n, open, close int, span func(i int) (i
 	}
 	p.after(open + 1)
 	p.indent++
+	prevEnd := open + 1
 	for i := 0; i < n; i++ {
 		s, e := span(i)
-		p.nl()
+		if i == 0 || p.hasNewline(prevEnd, s) {
+			p.nl()
+		} else {
+			p.w(" ")
+		}
 		p.before(s)
 		p.nested(func() { elem(i) })
 		p.w(",")
 		p.after(e)
+		prevEnd = e
 	}
 	p.indent--
 	p.flushComments(close)

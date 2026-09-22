@@ -544,6 +544,88 @@ random.Rng.seeded(n: i64): Rng        // an independent generator with the same 
 xoshiro256** seeded through splitmix64: fast and well distributed, not
 cryptographic.
 
+## Module `crypto`
+
+```veles
+// fragment
+use crypto
+crypto.sha256(data: List<u8>): Digest        // also sha384, sha512, sha1Legacy
+crypto.digest<H: Hasher>(data: List<u8>): Digest
+crypto.Sha256.start(): Sha256                // also Sha384, Sha512, Sha1
+  h.update(data: List<u8>)                   // any number of times
+  h.finish(): Digest                         // once; update after it panics
+crypto.hmacSha256(key: List<u8>, message: List<u8>): Digest  // also 384, 512, Sha1Legacy
+crypto.hmac<H: Hasher>(key: List<u8>, message: List<u8>): Digest
+crypto.Hmac<Sha256>.start(key: List<u8>): Hmac<Sha256>       // update/finish as above
+crypto.equalBytes(a: List<u8>, b: List<u8>): bool            // constant time
+crypto.randomBytes(n: i64): List<u8>         // the OS CSPRNG; panics if it refuses
+crypto.randomU64(): u64
+crypto.uuidV4(): Uuid                        // 122 random bits
+crypto.uuidV7(): Uuid                        // time-ordered, strictly increasing
+```
+
+`Digest`: `bytes()`, `len()`, `toHex()`, `toBase64Url()`, `prefix(n)`,
+`Digest.of(bytes)`; `==` is constant time, `"$d"` is lower-case hex.
+
+`Uuid`: `version()`, `timestamp()` (v7 only), `bytes()`, `isZero()`,
+`Uuid.parse(text): Uuid?`, `Uuid.of(bytes)`, `Uuid.zero()`; `Comparable`,
+so a list of v7 ids sorts into creation order.
+
+`Hasher` is the trait behind the four digests: `start`, `algorithm`,
+`blockSize`, `digestSize`, `update`, `finish`.
+
+## Module `hex`
+
+```veles
+// fragment
+use hex
+hex.encode(bytes: List<u8>): string       // lower case
+hex.encodeUpper(bytes: List<u8>): string
+hex.decode(text: string): List<u8> throws hex.Invalid   // either case, nothing else
+```
+
+`hex.Invalid { message, position }` — `position` is the byte offset at fault.
+
+## Module `base64`
+
+```veles
+// fragment
+use base64
+base64.encode(bytes: List<u8>): string       // standard alphabet, padded
+base64.encodeUrl(bytes: List<u8>): string    // RFC 4648 §5, unpadded
+base64.decode(text: string): List<u8> throws base64.Invalid
+base64.decodeUrl(text: string): List<u8> throws base64.Invalid
+base64.encodedLen(n: i64, pad: bool = true): i64
+```
+
+Both decoders take padded or unpadded input and refuse everything else —
+the other alphabet, whitespace, an `=` in the middle, a non-canonical last
+character. `base64.Invalid { message, position }`.
+
+## Module `jwt`
+
+```veles
+// fragment
+use jwt
+jwt.sign(claims: Claims, key: List<u8>, algorithm: Algorithm = Algorithm.HS256,
+         keyId: string? = null): string throws EncodeError
+jwt.verify(token: string, key: List<u8>, options: Options = Options()): Claims throws jwt.Invalid
+jwt.readHeader(token: string): Value throws jwt.Invalid   // unverified: for `kid`
+jwt.now(): i64                                            // Unix seconds
+```
+
+`Claims { issuer, subject, audience, expiresAt, notBefore, issuedAt, id,
+extra }` with `claim(name)`, `text(name)`, `number(name)`, `flag(name)`;
+the three times are Unix **seconds**.
+
+`Options { algorithm, audience, issuer, leeway, requireExpiry, now }` —
+the algorithm is the caller's, never the token's.
+
+`Algorithm`: `HS256`, `HS384`, `HS512`. `jwt.Invalid { message, reason }`
+with `Reason`: `Malformed`, `UnsupportedAlgorithm`, `AlgorithmMismatch`,
+`UnsupportedExtension`, `BadSignature`, `Expired`, `NotYetValid`,
+`WrongAudience`, `WrongIssuer`, `MissingClaim`.
+
 ## Not yet in the bootstrap
 
 TLS, UDP, a format-string module, iterating a directory tree, running a

@@ -113,6 +113,11 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 		}
 		if rt := f.moduleTypeNamed(callee.X); rt != nil {
 			// `module.Type.f(args)`
+			if st, ok := rt.(*types.Struct); ok && len(st.TypeParams) > 0 && st.TypeArgs == nil {
+				f.errorf(callee.X.Span(), "'%s' is generic; write the type arguments, e.g. '%s<T>.%s(...)'", st.Name, st.Name, callee.Name.Name)
+				f.checkArgsLoosely(e.Args)
+				return bad()
+			}
 			return f.staticCall(rt, callee, typeArgs, e, want)
 		}
 		if te, ok := callee.X.(*ast.TypeExpr); ok {

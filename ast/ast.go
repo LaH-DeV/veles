@@ -607,7 +607,10 @@ type MemberExpr struct {
 	X    Expr
 	Name Ident
 	Safe bool
-	Pos  source.Span
+	// `mod.Name<T>` before `.f(...)`: a module-qualified generic type as a
+	// static call target.
+	TypeArgs []Type
+	Pos      source.Span
 }
 
 type IndexExpr struct {

@@ -112,14 +112,18 @@ answered from the shape, tuples get `Comparable`, enums get
 - [ ] Bounds checks stay on in release; a profile that removes them is opt-in
       and loud
 - [ ] Integer conversions (`as`) between widths: truncation is explicit
-- [ ] Constant-time comparison primitive in `std/crypto`
+- [x] Constant-time comparison primitive in `std/crypto`: `Digest`'s `==`, and
+      `crypto.equalBytes` for raw bytes. Structural `==` on `List<u8>`
+      short-circuits, so a MAC is compared as a `Digest`, never as bytes (D59)
 - [ ] Secrets: a `Secret<T>` wrapper that does not `Display`, does not derive,
       and zeroes on collection
 - [ ] Path traversal: `http.files` already refuses `..` — make the check a
       `path.within(root, p)` primitive others can reuse
-- [ ] Fuzz corpus for the HTTP parser, the JSON parser and `percentDecode`
+- [ ] Fuzz corpus for the HTTP parser, the JSON parser, `percentDecode` and
+      the base64/hex decoders
 - [ ] Resource leaks: a `Closeable` dropped without `with` is a warning
-- [ ] Stack depth: recursion limit in decoders and the router
+- [ ] Stack depth: one recursion limit shared by the decoders, the router and
+      the parser (the front-end rewrite wants the same one)
 
 ---
 
@@ -148,7 +152,8 @@ answered from the shape, tuples get `Comparable`, enums get
 
 ### 3.3 Benchmarks (so regressions are seen)
 
-- [ ] `bench/` with an HTTP hello, a JSON round-trip, a map-heavy workload
+- [ ] `bench/` with an HTTP hello, a JSON round-trip, a map-heavy workload, a
+      SHA-256 of a megabyte, and (once it exists) parsing a large file
 - [ ] Numbers recorded in-repo per commit that touches the runtime
 
 ---
@@ -221,14 +226,35 @@ answered from the shape, tuples get `Comparable`, enums get
 - [ ] Server TLS with certificate reload
 - [ ] Certificate verification on by default; opt-out is loud
 
-### 5.5 `std/crypto` and `std/encoding`
+### 5.5 `std/crypto`, `std/hex`, `std/base64`, `std/jwt` → D59
 
-- [ ] base64 (std + url), hex
-- [ ] SHA-256/512, HMAC, constant-time compare
-- [ ] CSPRNG (`std/random` is xoshiro — not for crypto; say so in the API)
-- [ ] UUID v4/v7
+Four modules, not two: `hex` and `base64` are encodings and do not live
+behind a name that says "crypto" (§10, 2026-09-23).
+
+- [x] base64 (std + url) and hex, both strict on the way in: the other
+      alphabet, whitespace, a misplaced `=`, an impossible length and a
+      **non-canonical** last character are refused with the byte offset
+      (`base64.Invalid`/`hex.Invalid`)
+- [x] SHA-256/384/512 and SHA-1 (`sha1Legacy`), one-shot and streaming
+      (`Hasher`: `start`/`update`/`finish`, finished once); HMAC written once
+      over `H: Hasher` (`Hmac<Sha256>`); constant-time compare is what
+      `Digest`'s `==` *is*, plus `equalBytes` for raw bytes
+- [x] CSPRNG: `crypto.randomBytes(n)`/`randomU64()` over `BCryptGenRandom` /
+      `getrandom(2)` / `arc4random_buf` (`veles_random_bytes` in `veles_os.c`,
+      `-lbcrypt`); panics rather than throws, and `std/random`'s doc now
+      points here
+- [x] UUID v4 and v7; v7 carries a counter in `rand_a`, so successive ids are
+      **strictly increasing** (5000 checked in `examples/crypto`)
+- [x] JWT sign/verify (HS256/HS384/HS512) with the algorithm taken from the
+      caller, `exp` required by default, `crit` rejected, a key shorter than
+      the digest refused, and `Reason` so `Expired` can be told from the rest;
+      checked against the RFC 7515 A.1 token
 - [ ] Password hashing (argon2id) via binding
-- [ ] JWT sign/verify (HS256, RS256/ES256 via binding)
+- [ ] RS256/ES256 — needs bignum or a binding (blocked on 1.2)
+- [ ] A `Hasher` that is not a SHA: BLAKE3 or SHA-3 when something asks
+- [ ] Zeroing: a key or a pad is left to the GC (see `Secret<T>` in §2)
+- [ ] Not benchmarked; the compression functions allocate nothing per block
+      but are plain Veles, so they are far from a hand-tuned C hash (§3.3)
 
 ### 5.6 `std/time`
 
@@ -267,6 +293,8 @@ answered from the shape, tuples get `Comparable`, enums get
 - [ ] `std/compress`: gzip/deflate via zlib binding
 - [ ] `std/os`: `onSignal`, `hostname`, `pid`, `tempDir`
 - [ ] `std/fs`: streaming reads/writes, `walk`, atomic rename, file locks
+- [ ] `std/utf8`: decode/encode one code point (the lexer rewrite needs it; see
+      `veles-selfhost-frontend-plan.md` §4) — no rune API exists today
 - [ ] Collections: queue/deque, priority queue, `Set` ops complete
       (`notes_to_change` §9)
 
@@ -289,10 +317,15 @@ answered from the shape, tuples get `Comparable`, enums get
 
 ## 7. Documentation
 
-- [x] `docs/18-codable-and-json.md` (chapter, attributes table, stdlib reference); `docs/19-production-servers.md` still to write
+- [x] `docs/18-codable-and-json.md` (chapter, attributes table, stdlib reference)
+- [x] `docs/19-secrets-and-crypto.md` (hashes, MACs, randomness, UUIDs, the two
+      encodings, JWT and what each refuses); a production-servers chapter is
+      still to write, as chapter 20
 - [ ] A "deploying Veles" page: binaries, signals, Docker, health checks
 - [x] Derivation chapter with the rules from 1.1 in plain language
-- [ ] Security guidance: limits, secrets, TLS defaults
+- [~] Security guidance: request limits are in chapter 17 and constant-time
+      comparison, canonical decoding and the JWT refusals in chapter 19; a page
+      that collects them, with secrets and TLS defaults, is still to write
 
 ---
 
@@ -301,8 +334,22 @@ answered from the shape, tuples get `Comparable`, enums get
 - [~] `examples/httpd` upgraded: `std/json` (done: derived `Note`, a `PUT` with a 400 that lists the problems); middleware, graceful shutdown,
       limits — the reference server
 - [x] `examples/codable`: every derivation rule in one program
+- [x] `examples/crypto`: every published test vector — FIPS 180-4, RFC 4231,
+      RFC 2202, RFC 4648 and the RFC 7515 A.1 token — plus the decoder
+      refusals and 5000 monotonic v7 ids
 - [ ] `examples/apiclient`: calls a JSON API over TLS
 - [ ] `examples/pgnotes`: the notes API on PostgreSQL
+
+---
+
+## 8b. Self-hosting the front end
+
+The lexer and parser rewritten in Veles, planned in
+`veles-selfhost-frontend-plan.md`: six phases, each gated on byte-identical
+output against the Go front end over the repository's own `.vs` files, ending
+with the Veles parser parsing itself. Four decisions to make before it starts
+(a rune API, `unicode.IsPrint`, the recursion limit, `Span`'s representation)
+are listed in §4 of that file.
 
 ---
 
@@ -351,6 +398,14 @@ pros/cons before anything is built; the answer becomes a spec entry.
 | 2026-09-22 | Hover on a derived implement (tooling) | **The summary in the hover, the code behind a command**: hovering the trait name shows the implements produced, the bounds inferred for a generic target, the synthesized signatures and the wire shape (keys, optional, skipped) — the question a derive actually raises; `veles explain <path> --derive [Type]` prints the bodies as Veles. Needed a printer for synthesized nodes (`sema/derive_print.go`): the formatter is source-guided (it copies literals verbatim and reads the author's line breaks out of the text) and every derived node carries the implement's span, so it could not be reused. Rejected: the full bodies in the hover (~80 lines for a Codable pair); the s-expression debug dump (syntax no Veles programmer writes). |
 | 2026-09-22 | `internal` in hover (tooling) | **The unwritten visibility level has no word.** It is the common case, and `internal` on every line made hovers harder to read; `public`, `private`, `protected`, `static`, `val` are still spelled out. `visPrefix` in `sema/index.go` is the one place that decides. (A half-done version of this shipped in 5d050f5 and left a stray leading space and 8 red LSP tests.) |
 | 2026-09-21 | `is Trait` check | **Deferred** to its own decision (§9 item 14): a runtime check needs RTTI in trait objects, a compile-time one belongs to generics, and for a concrete type the answer is static. |
+| 2026-09-23 | Crypto module layout | **Four modules**: `crypto` (digests, HMAC, constant-time compare, CSPRNG, UUID), `hex`, `base64`, `jwt`. base64 is an encoding, not encryption, and a name that implies otherwise is how `base64.encode(password)` gets written; `encoding.Base64.encodeUrl(...)` would also be three hops for a web server's commonest call. Rejected: one `encoding` module with the codecs as statics; everything under `crypto`. |
+| 2026-09-23 | What a hash returns | **A `Digest`**, not `List<u8>`: `Display` prints lower-case hex, `Equatable` compares in **constant time**, so `mac == expected` is both the natural and the safe spelling; `bytes()` is for *sending* a digest and compares with the ordinary short-circuiting `==`; `Digest.of(bytes)` wraps a signature from outside so it can be compared safely, and `equalBytes` covers raw bytes. Rejected: `List<u8>` (a timing oracle that compiles silently, defended only by a doc comment). |
+| 2026-09-23 | base64 surface | **Four functions** — `encode`/`decode` (standard, padded) and `encodeUrl`/`decodeUrl` (RFC 4648 §5, unpadded). Two axes with two useful combinations do not earn an options struct, and `encodeUrl` says at the call site what it does. Both decoders take padded or unpadded input; everything else is refused with the byte offset, including a **non-canonical** last character (two texts, one signature). Rejected: an `Options(alphabet:, pad:)` struct; Go-style codec values (`base64.Std.encode`). |
+| 2026-09-23 | `randomBytes` on failure | **Panics, does not throw.** A kernel that will not produce randomness is not a condition a caller can answer — there is no weaker source and nothing to decide — and `throws IoError` would spread to `uuidV4()` and every session-token line. A panic is still caught at a request boundary (D56). The one place in std where an external failure is a panic, because it is unrecoverable rather than rare; Go 1.24 made the same move. Rejected: `throws IoError`; a silent fall back to `std/random`. |
+| 2026-09-23 | UUID v7 ordering | **Strictly increasing**: the twelve `rand_a` bits hold a counter (RFC 9562 §6.2), started at a random point in the lower half of its range each millisecond, borrowing the next millisecond on overflow and ignoring a clock that goes backwards. Monotonicity is the whole reason to prefer v7 over v4 — it appends to an index instead of scattering writes — and milliseconds alone do not give it. Cost: module-level mutable state, a lock once the executor has threads (D35). Rejected: 74 random bits (unordered within a millisecond, which the example caught). |
+| 2026-09-23 | JWT scope and strictness | **HMAC only, strict by default**: the expected algorithm comes from `Options`, never from the token's `alg` (that is `alg: none` and RS256-as-HS256); `exp` required unless waived; `crit` rejected; the signature compared through `Digest`; a key shorter than the digest refused with a panic (RFC 7518 §3.2). `Invalid` carries a `Reason` enum because `Expired` means "refresh" and the rest mean "sign in again". RS256/ES256 wait for a bignum or a binding. |
+| 2026-09-23 | Static call on a qualified generic (compiler) | **`mod.Type<T>.f(...)` parses.** The speculative type-argument path only allowed a bare name before, so `crypto.Hmac<Sha256>.start(key)` — the natural spelling from outside the module — was a syntax error. `ast.MemberExpr.TypeArgs` carries them, `moduleTypeNamed` resolves the instance, and a qualified generic named without arguments gets the same error as an unqualified one. |
+| 2026-09-23 | Formatter: a grid stays a grid | **A broken list keeps the author's grouping.** `brokenList` put one element per line, which turned SHA-256's 64 round constants into 64 lines. A newline now goes only where the author had one, so a table written as a grid stays a grid — the same "read the line breaks out of the text" rule the rest of the printer follows. |
 
 ## 11. Known limitations to revisit
 
@@ -363,3 +418,15 @@ pros/cons before anything is built; the answer becomes a spec entry.
   resolved-type receiver and is unaffected.
 - `examples/tutorial/04-functions.expected.txt` is out of date relative to
   its source (three lines printed, one expected) — pre-existing, not touched.
+- `crypto.randomBytes` returns the bytes through a `string`-shaped runtime
+  buffer and `.bytes()`, the convention `fs.readBytes` already uses. It
+  works (the length, not a NUL, delimits the buffer) but a `List<u8>` out
+  parameter would be one copy cheaper.
+- Keys and HMAC pads are ordinary garbage-collected memory: nothing is
+  zeroed after use. `Secret<T>` (§2) is where that belongs.
+- Hashes are plain Veles. They allocate nothing per block, but expect a
+  multiple of a hand-tuned C implementation's time; there is no benchmark
+  yet to say which multiple (§3.3).
+- `time.now()` is the only clock `uuidV7` has, so two processes on one host
+  can produce the same (millisecond, counter) pair. Uniqueness comes from
+  the 62 random bits, as in v4; only the ordering is per-process.

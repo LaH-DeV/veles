@@ -171,15 +171,19 @@ func (p *Parser) parsePostfix() ast.Expr {
 			if !isGenericCallee(x) {
 				return x
 			}
-			_, isName := x.(*ast.NameExpr)
-			targs, ok, dot := p.tryTypeArgsBeforeCall(isName)
+			targs, ok, dot := p.tryTypeArgsBeforeCall()
 			if !ok {
 				return x
 			}
 			if dot {
-				// `Name<T>.f(...)`: a static function of a generic type (D23)
-				n := x.(*ast.NameExpr)
-				x = &ast.NameExpr{Name: n.Name, TypeArgs: targs, Pos: p.spanFrom(start)}
+				// `Name<T>.f(...)` and `mod.Name<T>.f(...)`: a static function
+				// of a generic type (D23)
+				switch b := x.(type) {
+				case *ast.NameExpr:
+					x = &ast.NameExpr{Name: b.Name, TypeArgs: targs, Pos: p.spanFrom(start)}
+				case *ast.MemberExpr:
+					x = &ast.MemberExpr{X: b.X, Name: b.Name, Safe: b.Safe, TypeArgs: targs, Pos: p.spanFrom(start)}
+				}
 				continue
 			}
 			args := p.parseArgs()
@@ -198,15 +202,15 @@ func isGenericCallee(x ast.Expr) bool {
 	return false
 }
 
-// tryTypeArgsBeforeCall attempts to parse `<T, U>` followed by `(`, or —
-// after a bare name — by `.name(` (dot is then set). On failure nothing is
-// consumed and no diagnostics are emitted.
-func (p *Parser) tryTypeArgsBeforeCall(allowDot bool) (targs []ast.Type, ok, dot bool) {
+// tryTypeArgsBeforeCall attempts to parse `<T, U>` followed by `(`, or by
+// `.name(` (dot is then set). On failure nothing is consumed and no
+// diagnostics are emitted.
+func (p *Parser) tryTypeArgsBeforeCall() (targs []ast.Type, ok, dot bool) {
 	savedPos, savedDiags, savedErr := p.pos, p.diags, p.lastErrPos
 	scratch := &source.Diagnostics{}
 	p.diags = scratch
 	targs = p.parseTypeArgs()
-	dot = allowDot && p.at(lexer.Dot) && p.peek(1).Kind == lexer.Ident && p.peek(2).Kind == lexer.LParen
+	dot = p.at(lexer.Dot) && p.peek(1).Kind == lexer.Ident && p.peek(2).Kind == lexer.LParen
 	ok = !scratch.HasErrors() && (p.at(lexer.LParen) || dot)
 	p.diags, p.lastErrPos = savedDiags, savedErr
 	if !ok {

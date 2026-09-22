@@ -321,3 +321,5 @@ in the program works with it unchanged.
 `json.Options` holds the limits a hostile document meets: `maxDepth`
 (64) and `maxProblems` (100); a NaN or infinity cannot be encoded and is
 an `EncodeError`.
+
+Next: [Secrets, hashes and tokens](19-secrets-and-crypto.md).

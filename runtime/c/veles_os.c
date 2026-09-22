@@ -20,11 +20,15 @@
 
 #if defined(_WIN32)
 #include <windows.h>
+#include <bcrypt.h>
 #include <direct.h>
 #include <io.h>
 #else
 #include <unistd.h>
 #include <sys/wait.h>
+#if defined(__linux__)
+#include <sys/random.h>
+#endif
 #endif
 
 typedef struct {
@@ -495,4 +499,48 @@ void veles_f64_to_fixed(double v, int64_t digits, veles_string *out) {
     if (n < 0) n = 0;
     if (n > (int)sizeof buf - 1) n = (int)sizeof buf - 1;
     set_string(out, buf, n);
+}
+
+/* ---- randomness -------------------------------------------------------- */
+
+/* veles_random_bytes fills out with n bytes from the operating system's
+ * cryptographically secure generator: BCryptGenRandom on Windows,
+ * getrandom(2) on Linux with a /dev/urandom fallback for kernels that
+ * lack it, arc4random_buf on the BSDs and macOS. Returns 0, or an errno
+ * value when the system will not produce randomness — a condition
+ * std/crypto refuses to paper over. */
+int64_t veles_random_bytes(int64_t n, veles_string *out) {
+    if (n < 0) return EINVAL;
+    char *buf = veles_alloc(n + 1);
+    buf[n] = 0;
+#if defined(_WIN32)
+    if (n > 0) {
+        NTSTATUS st = BCryptGenRandom(NULL, (PUCHAR)buf, (ULONG)n, BCRYPT_USE_SYSTEM_PREFERRED_RNG);
+        if (st != 0) return EIO;
+    }
+#elif defined(__linux__)
+    int64_t got = 0;
+    while (got < n) {
+        ssize_t r = getrandom(buf + got, (size_t)(n - got), 0);
+        if (r < 0) {
+            if (errno == EINTR) continue;
+            break;
+        }
+        got += r;
+    }
+    if (got < n) {
+        /* getrandom is missing (pre-3.17) or refused: /dev/urandom is the
+         * same pool, reached the older way */
+        FILE *f = fopen("/dev/urandom", "rb");
+        if (!f) return errno ? errno : EIO;
+        size_t r = fread(buf + got, 1, (size_t)(n - got), f);
+        fclose(f);
+        if (got + (int64_t)r < n) return EIO;
+    }
+#else
+    if (n > 0) arc4random_buf(buf, (size_t)n);
+#endif
+    out->data = buf;
+    out->len = n;
+    return 0;
 }
