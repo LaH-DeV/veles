@@ -1223,3 +1223,107 @@ R37. DONE (2026-09-23): veles-checklist.md §5.5 — CRYPTOGRAPHY AND THE ENCODI
     OPEN AFTER THIS: argon2id and RS256/ES256 (both want a binding), zeroing
     keys (`Secret<T>`), a fuzz corpus for the two decoders, and a benchmark —
     the hashes are plain Veles and nothing has measured how far that is from C.
+
+R38. DONE (2026-09-23): PREPARING THE LIBRARY FOR THE FRONT-END REWRITE —
+    veles-selfhost-frontend-plan.md §4, all four open decisions taken and the two
+    "just work" items that P0 and P3 wanted. Nothing here is about the rewrite
+    itself; it is the library the rewrite will sit on, and every piece has a
+    caller outside it already.
+    (1) `std/utf8` (decision 1a, checklist §5.10): `utf8.Rune { code, size }`,
+    `decode`/`decodeLast` over a `string`, `decodeBytes` over a buffer that
+    carries no promise, `encodeTo`/`encode`/`char` back, `size`, `isScalar`,
+    `isSurrogate`, `isContinuation`, `isStart`, `combineSurrogates`, `isValid`,
+    `count`. One decoder underneath all of them, `step(b0..b3, rest)`, written
+    as Table 3-7 of the Unicode standard: the FIRST byte fixes the length and
+    the RANGE OF THE SECOND, and it is that range, not a check afterwards, that
+    rejects the overlong forms and the surrogates. Strict in, lossy out (a value
+    that is not a code point encodes as U+FFFD, which is what Go and Rust do —
+    a text pipeline that stops dead on one bad code point is a denial of
+    service). `examples/utf8` is the Kuhn stress test plus Table 3-7: every
+    boundary code point round-trips, every overlong, surrogate, past-U+10FFFF,
+    truncated and stray-continuation row is rejected.
+    `std/json` deleted its private `encodeUtf8` and its hand-rolled surrogate
+    arithmetic and calls `utf8.encodeTo` / `utf8.combineSurrogates` instead, so
+    the module has a caller in the std from the day it landed.
+    (2) `binarySearch` and its family in `std/prelude/list.vs`: `binarySearch`,
+    `binarySearchWith(compare)`, `binarySearchBy(key, target)`, `lowerBound`,
+    `upperBound`, and the `partitionPoint(pred)` all five are written in terms
+    of. ABSENT IS -1, not null, to match `indexOf`/`indexOfFirst`/`lastIndexOf`
+    in the same file; the insertion point, which the negative-encoding
+    convention exists to carry, is `lowerBound`. Always the FIRST of several
+    equal elements, so a list with duplicates answers the same way every time.
+    None of them checks that the list is sorted — checking is the linear scan
+    they exist to avoid — and `examples/algorithms` now runs the prelude's
+    answers against its own hand-written ones for every target from below the
+    smallest element to above the largest.
+    (3) ONE RECURSION LIMIT (decision 3a, checklist §2), in the prelude:
+    `maxRecursionDepth` (1000 — a stack budget, reasoned from Windows' 1 MiB
+    default and ~1 KiB per level of a recursive descent), `tooDeepMessage(limit)`
+    so every caller says the same sentence, and `Depth` (`enter`/`leave`/
+    `depth`/`deepest`/`reset`) for a walk whose depth is only its call frames.
+    Two shapes deliberately, because both exist: a walk that already keeps a
+    stack has its depth in hand and only needs the limit and the wording;
+    duplicating the counter beside the stack would have been a second source of
+    truth. WRITING IT FOUND A HOLE: the JSON ENCODER was unbounded, so a
+    document refused on the way in as too deep could still be walked on the way
+    out — `json.encode` of a hostile `Value`, and `toValue`/`fromValue` through
+    `ValueEncoder`/`ValueDecoder`, were all a stack overflow away. All four are
+    bounded now, by `json.Options.maxDepth` (64, JSON's own policy) where the
+    caller is json, and by `maxRecursionDepth` otherwise. THE ROUTER, which
+    checklist §2 named, does not recurse: it matches path segments in a loop, so
+    there was nothing there to bound. Said so in the checklist rather than
+    inventing a limit for it.
+    (4) `unicode.IsPrint` (decision 2) TURNED OUT NOT TO BE A GAP, and neither
+    of the plan's two options was the answer. `isIdentStart` accepts every byte
+    >= 0x80 (D18), and `operator()` is the only caller of the IsPrint branch, so
+    the branch is only ever reached with a ONE-BYTE rune: the whole non-ASCII
+    half of `unicode.IsPrint` was unreachable. The Go lexer now says
+    `showAsItself(r)`, which is `r >= 0x20 && r != 0x7F`, the `unicode` import is
+    gone, and `lexer/lexer_test.go` (the package had no tests) pins the message
+    for punctuation, the ASCII controls and DEL — and, separately, pins the fact
+    that U+00A0, U+200B, U+202E and U+FEFF are lexed as IDENTIFIERS. The Veles
+    port therefore needs no Unicode data at all and has no documented
+    divergence, which is better than the "one-line divergence" the plan expected
+    to accept.
+    OPEN AFTER THIS: see #21 below — that a no-break space or a bidirectional
+    override is a legal identifier byte is a real question, and a D18 one. And
+    the Go-compatible `%q` of plan P3 is deliberately still open: getting
+    `strconv.Quote` right to the character is P3's job, and choosing its
+    permanent home (a `std/strconv`?) wants the caller to exist first.
+
+21. (2026-09-23, found while doing R38, not decided) An invisible or
+    bidirectional-control character is a legal identifier byte.
+    D18 classifies identifier bytes by value: `_`, an ASCII letter, or ANY byte
+    >= 0x80. That is the right default for the common path — it means no Unicode
+    tables to scan an identifier, and `val café = 1` works — but it also means
+    U+00A0 (no-break space), U+200B (zero width space), U+202E (right-to-left
+    override) and U+FEFF (a byte order mark in the middle of a file) are each a
+    perfectly good identifier character. Consequences:
+    - a pasted no-break space produces "undeclared name" pointing at what looks
+      like an empty span, not "unexpected character";
+    - two identifiers that render identically can be different names;
+    - a bidirectional override inside an identifier is the "trojan source"
+      family (CVE-2021-42574): a file that reads one way to a human and compiles
+      another.
+    Rust, Go and the others answer this with UAX #31 (XID_Start/XID_Continue)
+    plus an explicit refusal of the bidi controls, which is Unicode tables — the
+    thing D18 was written to avoid, and the thing the front-end rewrite would
+    then have to reproduce in Veles.
+    A middle answer exists and is small: keep the byte rule, and refuse a short
+    explicit LIST of code points anywhere in a file outside a string literal —
+    the bidi controls (U+202A..U+202E, U+2066..U+2069), the zero-width marks
+    (U+200B..U+200F, U+2060, U+FEFF) and U+00A0. A dozen entries, reproducible
+    in the Veles lexer, and it turns the trojan-source case into a diagnostic
+    without making identifiers depend on Unicode versions.
+    Not done, because it changes what is a legal program.
+
+    (5) A defect found by WRITING THE EXAMPLE rather than the type: `Depth`'s
+    counters are private, so D28 made the implicit constructor module-private
+    and `Depth(limit: 500)` did not compile outside `std.prelude` — which is
+    every caller it has. `public static fun of(limit: i64 = maxRecursionDepth)`
+    fixes it, following the `JsonEncoder.of` / `ValueDecoder.of` convention.
+    Worth noting as a general shape: a public struct with any private field
+    needs an explicit constructor, and nothing says so until someone outside
+    the module tries. `examples/recursion` — a recursive-descent calculator
+    over `(1+(2+3))` that answers a diagnostic instead of a segmentation
+    fault — is both the test for `Depth` and the shape plan P5 should copy.

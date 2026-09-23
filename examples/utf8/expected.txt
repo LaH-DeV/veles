@@ -1,0 +1,67 @@
+-- the boundary of each length --
+  U+0000     00         round trip
+  U+007F     7f         round trip
+  U+0080     c280       round trip
+  U+07FF     dfbf       round trip
+  U+0800     e0a080     round trip
+  U+FFFF     efbfbf     round trip
+  U+10000    f0908080   round trip
+  U+10FFFF   f48fbfbf   round trip
+-- accepted --
+  ASCII 'A'                  41         U+0041 size 1
+  U+00E9 e-acute             c3a9       U+00E9 size 2
+  U+20AC euro                e282ac     U+20AC size 3
+  U+10348 gothic hwair       f0908d88   U+10348 size 4
+  U+FFFD replacement         efbfbd     U+FFFD size 3
+-- overlong: a shorter form exists --
+  NUL as two bytes           c080       rejected
+  U+007F as two bytes        c1bf       rejected
+  NUL as three bytes         e08080     rejected
+  U+07FF as three bytes      e09fbf     rejected
+  NUL as four bytes          f0808080   rejected
+  U+FFFF as four bytes       f08fbfbf   rejected
+-- surrogates: not code points --
+  U+D800 high                eda080     rejected
+  U+DBFF high last           edafbf     rejected
+  U+DC00 low                 edb080     rejected
+  U+DFFF low last            edbfbf     rejected
+  U+D7FF just below          ed9fbf     U+D7FF size 3
+  U+E000 just above          ee8080     U+E000 size 3
+-- past U+10FFFF, and bytes that are never UTF-8 --
+  U+110000                   f4908080   rejected
+  five-byte lead             f888808080 rejected
+  0xFE                       fe         rejected
+  0xFF                       ff         rejected
+-- truncated and stray --
+  U+20AC less a byte         e282       rejected
+  U+10348 less a byte        f0908d     rejected
+  lone continuation 80       80         rejected
+  lone continuation BF       bf         rejected
+  lead with no follower      c3         rejected
+-- a string, forwards and backwards --
+  bytes 10, characters 4
+  forwards  U+0061/1 U+00E9/2 U+20AC/3 U+10348/4
+  backwards U+10348/4 U+20AC/3 U+00E9/2 U+0061/1
+  decode at 1 is the whole character: true
+  decode at 2 splits one:            true
+  decode at the end:                 true
+  decodeLast before 0:               true
+-- encoding a value that is not a code point --
+  negative         efbfbd is U+FFFD, size null
+  high surrogate   efbfbd is U+FFFD, size null
+  low surrogate    efbfbd is U+FFFD, size null
+  past U+10FFFF    efbfbd is U+FFFD, size null
+  isScalar: true false true false
+  size:     1 2 3 4 null
+  char:     € 😀
+-- surrogate pairs, as the hex escapes of other formats spell them --
+  D83D DE00 -> U+1F600
+  D800 DC00 -> U+10000
+  DBFF DFFF -> U+10FFFF
+  low first: true
+  not a pair: true
+-- whole buffers --
+  isValid good true, count 4
+  isValid bad  false, count 4
+  isValid empty true, count 0
+exit=0

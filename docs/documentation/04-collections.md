@@ -87,6 +87,46 @@ covers them fully. These operations are *eager*: each builds its result
 immediately. For long pipelines over big data, `xs.iter()` gives a lazy
 iterator with the same names — also chapter 10.
 
+`indexOf` scans, which is the honest answer on a list in no particular
+order. On a list that *is* sorted, `binarySearch` answers the same question
+in log *n* comparisons, and `lowerBound`/`upperBound`/`partitionPoint`
+answer the neighbouring ones — where a value would be inserted, where a run
+ends:
+
+```veles
+use io
+
+struct Row {
+  id:   i64
+  name: string
+}
+
+fun main() {
+  val sorted = [10, 20, 20, 30]
+  // the first of the two 20s, and -1 for a value that is not there
+  io.println("${sorted.binarySearch(20)} ${sorted.binarySearch(25)}")
+  // where 20 begins and where it ends: it occurs 3 - 1 = 2 times
+  io.println("${sorted.lowerBound(20)} ${sorted.upperBound(20)}")
+  // the general form: where the run of smaller values ends
+  io.println("${sorted.partitionPoint(x => x < 25)}")
+  // and by a key, on a list sorted by that key
+  val rows = [Row(id: 3, name: "ann"), Row(id: 7, name: "bo")]
+  io.println("${rows.binarySearchBy(r => r.id, 7)} ${rows.binarySearchBy(r => r.id, 4)}")
+}
+```
+
+Output:
+```text
+1 -1
+1 3
+3
+1 -1
+```
+
+None of them checks that the list is sorted, because checking is the linear
+scan they exist to avoid: on a list that is not sorted the answer is simply
+wrong, never a panic.
+
 ### Updating elements in place
 
 Every read is a **value**: `xs.at(i)`, `xs.atOrPanic(i)`, `xs.first()`,

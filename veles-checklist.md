@@ -122,8 +122,19 @@ answered from the shape, tuples get `Comparable`, enums get
 - [ ] Fuzz corpus for the HTTP parser, the JSON parser, `percentDecode` and
       the base64/hex decoders
 - [ ] Resource leaks: a `Closeable` dropped without `with` is a warning
-- [ ] Stack depth: one recursion limit shared by the decoders, the router and
-      the parser (the front-end rewrite wants the same one)
+- [x] Stack depth: one limit, in the prelude — `maxRecursionDepth` (1000),
+      `tooDeepMessage(limit)` for the one sentence every caller reports, and
+      `Depth` (`enter`/`leave`/`deepest`) for a walk whose depth is only its
+      call frames. Every walk in the library over input someone else wrote is
+      bounded by it: the JSON decoder as before, and now the JSON **encoder**,
+      `ValueEncoder` and `ValueDecoder` — a tree built in memory nests as deep
+      as whoever built it wanted, so refusing a document on the way in while
+      walking one on the way out was a hole. `json.Options.maxDepth` (64) is
+      JSON's own policy against that default. The router does not recurse (it
+      matches segments in a loop) and so has nothing to bound; the front-end
+      rewrite takes `Depth` as it stands (`veles-selfhost-frontend-plan.md` §4.3),
+      and `examples/recursion` is that parser in miniature — a recursive descent
+      that answers a diagnostic rather than a segmentation fault
 
 ---
 
@@ -293,10 +304,21 @@ behind a name that says "crypto" (§10, 2026-09-23).
 - [ ] `std/compress`: gzip/deflate via zlib binding
 - [ ] `std/os`: `onSignal`, `hostname`, `pid`, `tempDir`
 - [ ] `std/fs`: streaming reads/writes, `walk`, atomic rename, file locks
-- [ ] `std/utf8`: decode/encode one code point (the lexer rewrite needs it; see
-      `veles-selfhost-frontend-plan.md` §4) — no rune API exists today
+- [x] `std/utf8`: one code point at a time — `decode`/`decodeLast` over a
+      `string`, `decodeBytes` over a buffer that carries no promise,
+      `encodeTo`/`encode`/`char` back, `combineSurrogates` for the formats
+      that quote characters the UTF-16 way, `isValid`/`count` over a buffer.
+      Strict in (shortest form only, no surrogates, nothing above U+10FFFF —
+      Table 3-7) and lossy out (U+FFFD for a value that is not a code point,
+      as Go and Rust do). `std/json` now decodes its `\u` escapes through it
+      instead of a private copy; `examples/utf8` is the Table 3-7 and Kuhn
+      stress vectors
 - [ ] Collections: queue/deque, priority queue, `Set` ops complete
       (`notes_to_change` §9)
+- [x] Binary search in the prelude: `binarySearch`, `binarySearchWith`,
+      `binarySearchBy`, `lowerBound`, `upperBound` and the `partitionPoint`
+      they are all written in terms of. -1 for absent, as `indexOf` answers,
+      and always the *first* of several equal elements
 
 ---
 

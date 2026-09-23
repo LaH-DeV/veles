@@ -10,7 +10,6 @@ package lexer
 
 import (
 	"strings"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/LaH-DeV/veles/source"
@@ -22,10 +21,10 @@ type Lexer struct {
 	pos   int
 	diags *source.Diagnostics
 
-	tokens  []Token
-	nesting []byte // stack of '(' '[' '{'
-	docs    []docComment // documentation comments, attached to tokens after the scan
-	comments []Comment   // every comment, in source order (for the formatter)
+	tokens   []Token
+	nesting  []byte       // stack of '(' '[' '{'
+	docs     []docComment // documentation comments, attached to tokens after the scan
+	comments []Comment    // every comment, in source order (for the formatter)
 }
 
 // Comment is one `// ...` line or `/* ... */` block, with its raw text.
@@ -503,13 +502,33 @@ func (lx *Lexer) operator() {
 	}
 	r, size := utf8.DecodeRuneInString(rest)
 	lx.pos += size
-	if unicode.IsPrint(r) {
+	if showAsItself(r) {
 		lx.errorf(start, lx.pos, "unexpected character '%c'", r)
 	} else {
 		lx.errorf(start, lx.pos, "unexpected character U+%04X", r)
 	}
 	lx.push(Illegal, start)
 }
+
+// showAsItself decides how an unexpected character is spelled in the
+// diagnostic: quoted as itself, or as U+XXXX. It replaces unicode.IsPrint,
+// which was doing nothing that ASCII did not already decide.
+//
+// Only ASCII reaches here. A byte at or above 0x80 begins an identifier
+// (isIdentStart, D18), so operator() is called for bytes below it and the
+// rune decoded above is always one byte long — which means the whole
+// non-ASCII half of unicode.IsPrint was unreachable, and a run of invisible
+// characters like U+00A0 or U+202E is lexed as an identifier rather than
+// reported here at all. (That it is lexed as an identifier is its own
+// question, and D18's, not this function's.)
+//
+// This is why the Veles front end can reproduce these diagnostics character
+// for character without a line of Unicode data
+// (veles-selfhost-frontend-plan.md §4.2): the rule is the ASCII half of
+// unicode.IsPrint, and there is no other half. The rune is still decoded,
+// and everything above ASCII still reads as printable, so the branch stays
+// correct if the identifier rule ever narrows.
+func showAsItself(r rune) bool { return r >= 0x20 && r != 0x7F }
 
 // TokenizeRange scans file.Content[start:end] with file-absolute positions.
 // It is used to lex the expressions embedded in interpolated strings.

@@ -33,4 +33,9 @@ true [Version(major: 1, minor: 5), Version(major: 2, minor: 1)]
 café 2.5
 {"a":[1,2.5,"café",true,null]}
 malformed JSON at byte 12: a trailing comma
+parse:   malformed JSON at byte 64: nesting deeper than 64
+encode:  nesting deeper than 8
+toValue: nesting deeper than 8
+fromValue: [0][0][0][0][0][0][0][0]: nesting deeper than 8
+within the limit: [[1]]
 exit=0

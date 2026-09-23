@@ -13,6 +13,12 @@ linear 9 at 2, 7 at null
 binary 6 at 6, 4 at null
 binaryRec 0 at 0
 lowerBound 4 -> 4, 100 -> 8
+prelude on [0, 1, 2, 3, 5, 5, 6, 9]: 6 at 6, 4 at -1
+prelude 5 occupies [4, 6)
+partitionPoint x <= 5 -> 6
+binarySearchBy fig -> 1, kiwi -> -1
+binarySearchWith, descending: 2
+the two implementations agree: true
 pair summing to 11: (2, 9), to 100: null
 == numbers
 gcd(84, 36) = 12, lcm(4, 6) = 12

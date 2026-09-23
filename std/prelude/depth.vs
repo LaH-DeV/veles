@@ -6,10 +6,12 @@
 // unbounded recursive descent is a segmentation fault, not an error — the
 // one failure mode a server may not have.
 //
-// So there is one type for it, and one default, and every decoder, encoder
-// and parser in the standard library uses them. A walk that keeps its own
-// stack compares `stack.len()` against `limit`; a walk that keeps nothing
-// but its call frames counts them with `enter` and `leave`.
+// So there is one default here, one sentence to report reaching it, and one
+// counter for the walks that need one — and every decoder, encoder and
+// parser in the standard library uses them. A walk that already keeps a
+// stack (`std/json`, `ValueEncoder`) has its depth in hand and needs only
+// the limit and `tooDeepMessage`; a walk that keeps nothing but its call
+// frames (a recursive descent parser) counts them with `Depth`.
 
 /// The default bound on how deep a recursive walk over untrusted input may
 /// go: 1000 levels.
@@ -23,11 +25,17 @@
 /// defaults to 64, which is what JSON documents in the wild look like).
 public val maxRecursionDepth: i64 = 1000
 
+/// What every recursion limit in the standard library says when it is
+/// reached — `nesting deeper than 64` — so the wording is one sentence and
+/// not five. The caller wraps it in whatever its own errors carry: a byte
+/// offset, a field path, a source span.
+public fun tooDeepMessage(limit: i64): string = "nesting deeper than $limit"
+
 /// How deep a recursive walk has gone, and how deep it may go.
 ///
 /// ```veles
 /// struct Parser {
-///   private var depth: Depth = Depth(limit: 500)
+///   private depth: Depth = Depth.of(500)
 ///
 ///   fun parseExpr(): Expr {
 ///     if (!self.depth.enter()) return self.tooDeep()
@@ -52,6 +60,11 @@ public struct Depth {
   public limit:      i64 = maxRecursionDepth
   private var level: i64 = 0
   private var peak:  i64 = 0
+
+  /// A counter at level zero. This is how one is made: the fields it counts
+  /// with are private, so the implicit constructor stays inside the prelude
+  /// (D28).
+  public static fun of(limit: i64 = maxRecursionDepth): Depth = Depth(limit)
 
   /// Goes one level deeper, or reports `false` when `limit` levels are
   /// already open — in which case nothing changed and there is no `leave`
@@ -82,9 +95,6 @@ public struct Depth {
     self.peak = 0
   }
 
-  /// What every limit in the standard library says when it is reached, so
-  /// the wording is one sentence and not five: `nesting deeper than 64`.
-  /// A caller wraps it in whatever its own errors carry — a byte offset, a
-  /// path, a span.
-  public fun message(): string = "nesting deeper than ${self.limit}"
+  /// What to say when `enter` refuses: `tooDeepMessage(self.limit)`.
+  public fun message(): string = tooDeepMessage(self.limit)
 }

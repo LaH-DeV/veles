@@ -19,6 +19,8 @@
 /// val tree = try json.parse(text)          // a Value, untyped
 /// ```
 
+use utf8
+
 /// The policies of one encoder or decoder.
 public struct Options {
   /// How field names are spelled as keys: `passwordHash`, `password_hash`
@@ -31,7 +33,10 @@ public struct Options {
   /// Newlines and indentation.
   public pretty: bool = false
   public indent: string = "  "
-  /// Nesting deeper than this is a `DecodeError`.
+  /// Nesting deeper than this is refused: a `DecodeError` on the way in, an
+  /// `EncodeError` on the way out. 64 is well past what documents in the
+  /// wild nest to and well short of what the stack can take; the prelude's
+  /// `maxRecursionDepth` is the general bound this is a policy against.
   public maxDepth: i64 = 64
   /// Problems recorded beyond this are dropped.
   public maxProblems: i64 = 100
@@ -65,14 +70,14 @@ public fun parse(text: string, options: Options = Options()): Value throws Decod
 
 /// `value` as a `Value` tree — what it would encode to, before it is text.
 public fun toValue<T: Encodable>(value: T, options: Options = Options()): Value throws EncodeError {
-  val enc = ValueEncoder.of("json", options.enums, options.keys)
+  val enc = ValueEncoder.of("json", options.enums, options.keys, options.maxDepth)
   try value.encode(enc)
   enc.value()
 }
 
 /// A `T` read from a `Value` tree.
 public fun fromValue<T: Decodable>(v: Value, options: Options = Options()): T throws DecodeError {
-  val dec = ValueDecoder.of(v, "json", options.enums, options.keys)
+  val dec = ValueDecoder.of(v, "json", options.enums, options.keys, options.maxDepth)
   val value = try T.decode(dec)
   try finish(dec, value)
 }
@@ -122,6 +127,16 @@ public struct JsonEncoder {
     loop (_ in 0..<self.stack.len()) self.out.append(self.options.indent)
   }
 
+  /// A tree nests as deep as whoever built it wanted, and `Value.encode`
+  /// walks it by recursion, so the limit belongs on the way out as much as
+  /// on the way in — a document that was refused as too deep must not come
+  /// back as a stack overflow when something re-encodes it.
+  private fun checkDepth() throws EncodeError {
+    if (self.stack.len() >= self.options.maxDepth) {
+      throw EncodeError(message: tooDeepMessage(self.options.maxDepth))
+    }
+  }
+
   private fun close(what: string) {
     val top = self.stack.removeAt(self.stack.len() - 1)
     if (top.members > 0) self.newline()
@@ -134,6 +149,7 @@ public struct JsonEncoder {
     override fun keys(): KeyStyle = self.options.keys
 
     fun beginObject() throws EncodeError {
+      try self.checkDepth()
       self.beforeValue()
       self.out.append("{")
       self.stack.push(Open(isList: false))
@@ -146,6 +162,7 @@ public struct JsonEncoder {
     fun endObject() throws EncodeError = self.close("}")
 
     fun beginList() throws EncodeError {
+      try self.checkDepth()
       self.beforeValue()
       self.out.append("[")
       self.stack.push(Open(isList: true))
@@ -352,20 +369,16 @@ public struct JsonDecoder {
         esc == 'f' => out.push(12)
         esc == 'u' => {
           var cp = try self.hex4()
-          if (cp >= 0xD800 && cp <= 0xDBFF) {
+          if (utf8.isSurrogate(cp)) {
             // a surrogate pair: the low half follows as another \u escape
-            if (self.peekByte() == '\\' && self.pos() + 1 < self.src.len() && self.src.atOrPanic(self.pos() + 1) == 'u') {
-              self.setPos(self.pos() + 2)
-              val low = try self.hex4()
-              if (low < 0xDC00 || low > 0xDFFF) throw self.malformed("a lone surrogate in a \\u escape")
-              cp = 0x10000 + ((cp - 0xD800) << 10) + (low - 0xDC00)
-            } else {
+            if (self.peekByte() != '\\' || self.pos() + 1 >= self.src.len() || self.src.atOrPanic(self.pos() + 1) != 'u') {
               throw self.malformed("a lone surrogate in a \\u escape")
             }
-          } else if (cp >= 0xDC00 && cp <= 0xDFFF) {
-            throw self.malformed("a lone surrogate in a \\u escape")
+            self.setPos(self.pos() + 2)
+            val low = try self.hex4()
+            cp = utf8.combineSurrogates(cp, low) ?: throw self.malformed("a lone surrogate in a \\u escape")
           }
-          encodeUtf8(cp, out)
+          val _ = utf8.encodeTo(out, cp)
         }
         else => throw self.malformed("unknown escape '\\${[esc].decodeUtf8() ?: "?"}'")
       }
@@ -406,7 +419,7 @@ public struct JsonDecoder {
   }
 
   private fun open(isList: bool, opener: u8, expected: string) throws DecodeError {
-    if (self.stack.len() >= self.options.maxDepth) throw self.malformed("nesting deeper than ${self.options.maxDepth}")
+    if (self.stack.len() >= self.options.maxDepth) throw self.malformed(tooDeepMessage(self.options.maxDepth))
     self.skipSpace()
     if (self.peekByte() == opener) {
       self.setPos(self.pos() + 1)
@@ -581,26 +594,5 @@ public struct JsonDecoder {
     fun problemAt(path: string, message: string) = self.recorded.record(path, message)
 
     fun problems(): List<Problem> = self.recorded.list()
-  }
-}
-
-fun encodeUtf8(cp: i64, out: MutableList<u8>) {
-  when {
-    cp < 0x80    => out.push(cp as u8)
-    cp < 0x800   => {
-      out.push((0xC0 | (cp >> 6)) as u8)
-      out.push((0x80 | (cp & 0x3F)) as u8)
-    }
-    cp < 0x10000 => {
-      out.push((0xE0 | (cp >> 12)) as u8)
-      out.push((0x80 | ((cp >> 6) & 0x3F)) as u8)
-      out.push((0x80 | (cp & 0x3F)) as u8)
-    }
-    else         => {
-      out.push((0xF0 | (cp >> 18)) as u8)
-      out.push((0x80 | ((cp >> 12) & 0x3F)) as u8)
-      out.push((0x80 | ((cp >> 6) & 0x3F)) as u8)
-      out.push((0x80 | (cp & 0x3F)) as u8)
-    }
   }
 }

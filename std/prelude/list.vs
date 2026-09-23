@@ -260,6 +260,74 @@ extend<T: Comparable> List<T> {
   }
 }
 
+// Binary search (D48). Everything here needs the list to be *in order* —
+// sorted by the same order the search uses — and none of it checks, because
+// checking is the linear scan the search exists to avoid. On a list that is
+// not in order the answer is simply wrong; it is never a panic and never a
+// read out of range.
+//
+// All five are one loop, `partitionPoint`, asked five ways: the list is a
+// run of elements before the answer and a run from the answer on, and every
+// step halves whichever run the middle belongs to. `lo + (hi - lo) / 2`
+// rather than `(lo + hi) / 2`, so a list long enough to overflow the sum
+// would still work (the classic bug, and free to avoid).
+extend<T> List<T> {
+  /// The first index where `pred` stops being true, or the length when it
+  /// never does. The list must be *partitioned* by `pred`: every element it
+  /// accepts before every element it does not.
+  ///
+  /// This is the general form — a line table looks up the line containing a
+  /// byte offset with `starts.partitionPoint(s => s <= offset) - 1` — and
+  /// the one to reach for when the question is not "where is this element"
+  /// but "where does the run end".
+  public fun partitionPoint(pred: fun(T): bool): i64 {
+    var lo: i64 = 0
+    var hi = self.len()
+    loop (lo < hi) {
+      val mid = lo + (hi - lo) / 2
+      if (pred(self.atOrPanic(mid))) lo = mid + 1 else hi = mid
+    }
+    lo
+  }
+
+  /// The index of the first element `compare` calls `Equal`, or -1 — the
+  /// same answer shape as `indexOf`, in log n comparisons instead of n.
+  ///
+  /// `compare(element)` answers where the element sits *relative to what is
+  /// being looked for*: `Less` when it sorts before it, `Greater` when
+  /// after. So a search of a list ordered by `id` is
+  /// `rows.binarySearchWith(r => r.id.compareTo(wanted))`, and a descending
+  /// list flips the arguments: `xs.binarySearchWith(x => wanted.compareTo(x))`.
+  public fun binarySearchWith(compare: fun(T): Ordering): i64 {
+    val at = self.partitionPoint(x => compare(x) < 0)
+    if (at < self.len() && compare(self.atOrPanic(at)) == Ordering.Equal) at else -1
+  }
+
+  /// The index of the first element whose key equals `target`, or -1:
+  /// `people.binarySearchBy(p => p.name, "ann")` on a list sorted by name.
+  public fun binarySearchBy<K: Comparable>(key: fun(T): K, target: K): i64 =
+    self.binarySearchWith(x => key(x).compareTo(target))
+}
+
+extend<T: Comparable> List<T> {
+  /// The index of the first element equal to `x`, or -1. The *first*, not
+  /// any: a list with duplicates gives the same answer every time.
+  public fun binarySearch(x: T): i64 {
+    val at = self.lowerBound(x)
+    if (at < self.len() && self.atOrPanic(at).compareTo(x) == Ordering.Equal) at else -1
+  }
+
+  /// The first index whose element is not less than `x` — where `x` belongs
+  /// if it is inserted, keeping the order and going before any equals.
+  /// `[10, 20, 20, 30].lowerBound(20)` is 1.
+  public fun lowerBound(x: T): i64 = self.partitionPoint(e => e < x)
+
+  /// The first index whose element is greater than `x` — where `x` belongs
+  /// if it goes after any equals. `[10, 20, 20, 30].upperBound(20)` is 3, so
+  /// `upperBound(x) - lowerBound(x)` is how many times `x` occurs.
+  public fun upperBound(x: T): i64 = self.partitionPoint(e => e <= x)
+}
+
 extend List<i64> {
   /// The sum of the elements (0 for an empty list).
   public fun sum(): i64 {

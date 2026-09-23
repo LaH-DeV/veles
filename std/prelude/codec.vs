@@ -584,9 +584,10 @@ public struct ValueDecoder {
   private name:     string = "json"
   private style:    EnumStyle = EnumStyle.Name
   private keyStyle: KeyStyle = KeyStyle.AsWritten
+  private maxDepth: i64 = maxRecursionDepth
 
-  public static fun of(v: Value, format: string = "json", enums: EnumStyle = EnumStyle.Name, keys: KeyStyle = KeyStyle.AsWritten): ValueDecoder =
-    ValueDecoder(root: v, name: format, style: enums, keyStyle: keys)
+  public static fun of(v: Value, format: string = "json", enums: EnumStyle = EnumStyle.Name, keys: KeyStyle = KeyStyle.AsWritten, maxDepth: i64 = maxRecursionDepth): ValueDecoder =
+    ValueDecoder(root: v, name: format, style: enums, keyStyle: keys, maxDepth)
 
   /// The value about to be read.
   private fun current(): Value {
@@ -617,6 +618,15 @@ public struct ValueDecoder {
     v
   }
 
+  /// A tree nests as deep as whoever built it wanted, and walking it is
+  /// recursion, so it is bounded like every other walk over input someone
+  /// else produced (§2). Unlike a wrong type, this is not a problem to
+  /// record and carry on from: the frames are already on the stack.
+  private fun checkDepth() throws DecodeError {
+    if (self.stack.len() < self.maxDepth) return
+    throw DecodeError(problems: self.recorded.list().concat([Problem(path: self.here(), message: tooDeepMessage(self.maxDepth))]))
+  }
+
   implement Decoder {
     fun format(): string = self.name
     override fun enums(): EnumStyle = self.style
@@ -633,6 +643,7 @@ public struct ValueDecoder {
     }
 
     fun beginObject() throws DecodeError {
+      try self.checkDepth()
       val v = self.current()
       when (v) {
         is VObject => {
@@ -660,6 +671,7 @@ public struct ValueDecoder {
     }
 
     fun beginList() throws DecodeError {
+      try self.checkDepth()
       val v = self.current()
       when (v) {
         is VList => self.stack.push(Frame(path: self.here(), values: v.items, isList: true))
@@ -788,12 +800,19 @@ public struct ValueEncoder {
   private name:     string = "json"
   private style:    EnumStyle = EnumStyle.Name
   private keyStyle: KeyStyle = KeyStyle.AsWritten
+  private maxDepth: i64 = maxRecursionDepth
 
-  public static fun of(format: string = "json", enums: EnumStyle = EnumStyle.Name, keys: KeyStyle = KeyStyle.AsWritten): ValueEncoder =
-    ValueEncoder(state: &ValueEncoderState(), name: format, style: enums, keyStyle: keys)
+  public static fun of(format: string = "json", enums: EnumStyle = EnumStyle.Name, keys: KeyStyle = KeyStyle.AsWritten, maxDepth: i64 = maxRecursionDepth): ValueEncoder =
+    ValueEncoder(state: &ValueEncoderState(), name: format, style: enums, keyStyle: keys, maxDepth)
 
   /// The value built, once one whole value has been written.
   public fun value(): Value = self.state.result ?: VNull()
+
+  /// The same bound the text encoders keep (§2): a value nested deeper than
+  /// this is refused rather than walked, whichever direction it is going.
+  private fun checkDepth() throws EncodeError {
+    if (self.stack.len() >= self.maxDepth) throw EncodeError(message: tooDeepMessage(self.maxDepth))
+  }
 
   private fun put(v: Value) {
     if (self.stack.isEmpty()) {
@@ -810,7 +829,10 @@ public struct ValueEncoder {
     override fun enums(): EnumStyle = self.style
     override fun keys(): KeyStyle = self.keyStyle
 
-    fun beginObject() throws EncodeError = self.stack.push(Building(isList: false))
+    fun beginObject() throws EncodeError {
+      try self.checkDepth()
+      self.stack.push(Building(isList: false))
+    }
 
     fun key(name: string) throws EncodeError {
       self.stack.refOrPanic(self.stack.lastIndex()).key = name
@@ -827,7 +849,10 @@ public struct ValueEncoder {
       self.put(VObject(fields: fields.toMap()))
     }
 
-    fun beginList() throws EncodeError = self.stack.push(Building(isList: true))
+    fun beginList() throws EncodeError {
+      try self.checkDepth()
+      self.stack.push(Building(isList: true))
+    }
 
     fun endList() throws EncodeError {
       val top = self.stack.removeAt(self.stack.lastIndex())

@@ -1,0 +1,18 @@
+-- within the limit --
+  1+2+3              = 6      deepest 1, balanced true
+  (1+(2+3))          = 6      deepest 3, balanced true
+  ((((((1))))))      = 1      deepest 7, balanced true
+-- past it --
+  40 brackets        ! at byte 16: nesting deeper than 16
+  16 brackets        ! at byte 16: nesting deeper than 16
+  15 brackets        = 1      deepest 16, balanced true
+-- the counter on its own --
+  limit 3, at 0
+  three enters: true true true, now at 3
+  the fourth:   false, still at 3
+  after a leave: at 2, and a fourth enter is true
+  deepest 3
+  an extra leave does not go negative: 0
+  and does not let the next enter run past the limit: true at 1
+  after reset: at 0, deepest 0
+exit=0

@@ -243,6 +243,50 @@ Everything below was checked against the compiler as it stands at D59.
 None of it is a blocker; four of them are decisions worth making before P1
 rather than during it.
 
+> **Settled, 2026-09-23.** All four decisions below were taken as
+> recommended and the work is in the tree, so P0 starts against a library
+> that has what it needs. What changed:
+>
+> - **`std/utf8`** exists (decision 1a): `decode`, `decodeLast`,
+>   `decodeBytes`, `encodeTo`, `encode`, `char`, `size`, `isScalar`,
+>   `isSurrogate`, `isContinuation`, `isStart`, `combineSurrogates`,
+>   `isValid`, `count`, and `utf8.Rune { code, size }`. `std/json` decodes
+>   its `\u` escapes through it now, so it has a caller from day one, and
+>   `examples/utf8` pins it against the Unicode Table 3-7 and Kuhn stress
+>   vectors. The lexer's three decode sites are `utf8.decode(s, i)`.
+> - **`unicode.IsPrint` turned out not to be a gap at all** (decision 2,
+>   and *neither* of its options). The call is unreachable for anything
+>   above ASCII: `isIdentStart` accepts every byte ≥ 0x80 (D18), so
+>   `operator()` — the only caller — is only ever reached with a one-byte
+>   rune. The Go lexer now says `showAsItself(r)`, which is `r >= 0x20 &&
+>   r != 0x7F`, and `lexer/lexer_test.go` pins both that and the fact that
+>   an invisible character like U+00A0 or U+202E is lexed as an *identifier*
+>   rather than reported. The Veles port needs no Unicode data and has no
+>   documented divergence. (That a bidirectional override is a legal
+>   identifier byte is a real question, but it is D18's, not this plan's —
+>   `notes_to_change` #21.)
+> - **One recursion limit** exists (decision 3a), in the prelude:
+>   `maxRecursionDepth` (1000, a stack budget — see its doc comment),
+>   `tooDeepMessage(limit)` so every caller reports the same sentence, and
+>   `Depth.of(n)` with `enter`/`leave`/`deepest` for a walk that keeps no
+>   stack of its own, which is exactly the parser's shape —
+>   `examples/recursion` is that parser in miniature, and is the shape P5
+>   should copy. Writing it closed a hole in `std/json` on the way past: the
+>   *encoder* was unbounded, so a tree too deep to decode could still be
+>   walked on the way out.
+> - **`selfhost/`** is the package location (decision 4).
+>
+> Also done, from "gaps that are just work": **`binarySearch`** and its
+> family are in `std/prelude/list.vs` — `binarySearch`, `binarySearchWith`,
+> `binarySearchBy`, `lowerBound`, `upperBound`, `partitionPoint`. P0's line
+> table is `starts.partitionPoint(s => s <= offset) - 1`; nothing needs to
+> be written locally and promoted later.
+>
+> Still open, deliberately: the **Go-compatible `%q`** of P3. It is left
+> where the plan put it, because getting `strconv.Quote` right to the
+> character is P3's job and choosing its permanent home (a `std/strconv`?)
+> is a decision that wants the caller to exist first.
+
 ### Gaps that need a decision
 
 **1. Stepping one UTF-8 code point.** The lexer decodes a rune in three
@@ -292,8 +336,8 @@ modules `vsource`, `vlexer`, … which is ugly but unambiguous.
 
 ### Gaps that are just work
 
-- **`binarySearch`** for the line table (P0) — 15 lines. Worth promoting to
-  `std/prelude/list.vs` afterwards.
+- ~~**`binarySearch`** for the line table (P0) — 15 lines. Worth promoting to
+  `std/prelude/list.vs` afterwards.~~ Done, in the prelude.
 - **Go-compatible `%q`** (P3) — 40 lines. Worth a home in std later.
 - **A keyword map** — `Map<string, TokenKind>` works; a module-level `val`
   is initialised once at start-up (D59's note), so it costs nothing per
@@ -391,12 +435,15 @@ warns about actually lives.
 ## 7. Suggested order against the rest of the checklist
 
 The front end needs nothing from §1.2 (FFI), §1.3 (threads) or §5.3–5.8,
-so it can run alongside them. It does want two things from the checklist
-first, and both are small and independently useful:
+so it can run alongside them. It wanted two things from the checklist
+first, and both are done (2026-09-23), so P0 is unblocked:
 
-1. **§2 stack depth** — one recursion limit, shared by the decoder, the
-   router and the parser (decision 3 above).
-2. **`std/utf8`** — not on the checklist yet; add it under §5.10, because
-   the lexer is not the only program that will want it.
+1. ~~**§2 stack depth** — one recursion limit, shared by the decoder, the
+   router and the parser (decision 3 above).~~ Done; §2 is ticked. The
+   router turned out not to recurse, so the sharers are the decoders, the
+   encoders and, from P5, the parser.
+2. ~~**`std/utf8`** — not on the checklist yet; add it under §5.10, because
+   the lexer is not the only program that will want it.~~ Done; §5.10 is
+   ticked, and `std/json` is already a caller.
 
 And it *produces* one: `bench/parse` belongs in §3.3 from P1 onward.

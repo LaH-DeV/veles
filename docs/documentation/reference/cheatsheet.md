@@ -59,7 +59,7 @@ val (a, b) = (1, "one")         // tuple destructuring, nests: val ((x, y), z) =
 | address | `&x` → `*T`, `*p` reads through |
 | range | `a..b`, `a..<b` |
 | assignment | `= += -= *= /= %=` |
-| strings | `"a" + "b"`, `s.len()` (bytes), `s.trim()`, `s.split(",")`, `s.replace(a, b)`, `s.indexOf(p)`, `s.toUpper()`, `s.padStart(n)`, `s.toInt()`, `s.chars()`, `s.byteAt(i)` (a `u8`; `'"'` is a byte literal), `"$name ${expr}"`, escapes `\n \t \\ \" \$ \u{..}` |
+| strings | `"a" + "b"`, `s.len()` (bytes), `s.trim()`, `s.split(",")`, `s.replace(a, b)`, `s.indexOf(p)`, `s.toUpper()`, `s.padStart(n)`, `s.toInt()`, `s.chars()`, `s.byteAt(i)` (a `u8`; `'"'` is a byte literal), `"$name ${expr}"`, escapes `\n \t \\ \" \$ \u{..}`; one code point at a time is `use utf8` — `utf8.decode(s, i)`, `utf8.encodeTo(out, code)` |
 
 ## Control flow
 
@@ -182,6 +182,8 @@ shapes.filterIs<Circle>(); maybes.filterNotNull()   // narrowed lists: List<Circ
 xs.take(2); xs.drop(2); xs.slice(1, 3); xs.zip(ys); xs.flatMap(f); xs.distinct(); xs.chunked(2); xs.windowed(2)
 xs.sorted(); xs.sortedBy(key); xs.sortedBy(e => (-e.size, e.name)); xs.sortedDescending(); xs.sortedWith((a, b) => ...); xs.reversed(); xs.min(); xs.max(); xs.sum(); xs.join(", "); xs.iter()  // tuples order element by element
 xs.minBy(key); xs.maxBy(key); xs.minWith(cmp); xs.maxWith(cmp); xs.distinctBy(key); xs == ys  // lists, maps, sets compare by content
+sorted.binarySearch(x); sorted.binarySearchBy(key, target); sorted.binarySearchWith(e => e.compareTo(x))  // first match or -1; the list must already be in order
+sorted.lowerBound(x); sorted.upperBound(x); sorted.partitionPoint(e => e < x)   // insertion points; upperBound - lowerBound is how many times x occurs
 ml.push(x); ml.pop(); ml.set(i, x); ml.insert(i, x); ml.removeAt(i); ml.addAll(ys); ml.sort(); ml.clear(); ml.toList(); xs.toMutable()
 ml.swap(i, j); ml.fill(x); MutableList<bool>.repeat(false, n); MutableList<MutableList<i64>>.make(n, _ => [])
 val q = deque<i64>(); q.addLast(x); q.addFirst(x); q.removeFirst(); q.removeLast(); q.first(); q.last(); q.at(-1); q.len()

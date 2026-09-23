@@ -22,6 +22,13 @@ fun main() {
   io.println("binary 6 at ${binarySearch(sorted, 6)}, 4 at ${binarySearch(sorted, 4)}")
   io.println("binaryRec 0 at ${binarySearchRec(sorted, 0, 0, sorted.len() - 1)}")
   io.println("lowerBound 4 -> ${lowerBound(sorted, 4)}, 100 -> ${lowerBound(sorted, 100)}")
+  io.println("prelude on $sorted: 6 at ${sorted.binarySearch(6)}, 4 at ${sorted.binarySearch(4)}")
+  io.println("prelude 5 occupies [${sorted.lowerBound(5)}, ${sorted.upperBound(5)})")
+  io.println("partitionPoint x <= 5 -> ${sorted.partitionPoint(x => x <= 5)}")
+  val names = ["apple", "fig", "pear"]
+  io.println("binarySearchBy fig -> ${names.binarySearchBy(w => w, "fig")}, kiwi -> ${names.binarySearchBy(w => w, "kiwi")}")
+  io.println("binarySearchWith, descending: ${[9, 6, 5, 1].binarySearchWith(x => (5).compareTo(x))}")
+  io.println("the two implementations agree: ${preludeAgrees(data)}")
   io.println("pair summing to 11: ${pairWithSum(sorted, 11)}, to 100: ${pairWithSum(sorted, 100)}")
 
   io.println("== numbers")

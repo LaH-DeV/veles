@@ -120,4 +120,27 @@ fun main() throws EncodeError | DecodeError {
     is Ok(v)  => io.println("unexpected: $v")
     is Err(e) => io.println(e.message())
   }
+
+  // nesting is bounded in every direction (§2 of the checklist): one limit
+  // on the way in, the same one on the way out, and one sentence for both.
+  // A tree deep enough to overflow the stack is refused before it is walked.
+  when (json.parse("[".repeat(200) + "]".repeat(200))) {
+    is Ok(v)  => io.println("unexpected: $v")
+    is Err(e) => io.println("parse:   ${e.message()}")
+  }
+  var nested: Value = VInt(value: 1)
+  loop (_ in 0..<200) nested = VList(items: [nested])
+  when (json.encode(nested, json.Options(maxDepth: 8))) {
+    is Ok(t)  => io.println("unexpected: $t")
+    is Err(e) => io.println("encode:  ${e.message()}")
+  }
+  when (json.toValue(nested, json.Options(maxDepth: 8))) {
+    is Ok(_)  => io.println("unexpected")
+    is Err(e) => io.println("toValue: ${e.message()}")
+  }
+  when (json.fromValue<Value>(nested, json.Options(maxDepth: 8))) {
+    is Ok(_)  => io.println("unexpected")
+    is Err(e) => io.println("fromValue: ${e.message()}")
+  }
+  io.println("within the limit: ${try json.encode(VList(items: [VList(items: [VInt(value: 1)])]), json.Options(maxDepth: 8))}")
 }

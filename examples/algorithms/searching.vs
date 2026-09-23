@@ -1,4 +1,12 @@
 // Searching — indices are i64, "not found" is null (D5), never -1.
+//
+// The binary searches below are written out because that is what this
+// example is for. Working code calls the prelude instead, which has the
+// whole family as methods on any `List`: `xs.binarySearch(t)`,
+// `xs.lowerBound(t)`, `xs.upperBound(t)`, `xs.binarySearchWith(compare)`,
+// `xs.binarySearchBy(key, t)`, and `xs.partitionPoint(pred)` underneath
+// them all. Those answer -1 for absent, as `indexOf` does. `preludeAgrees`
+// at the bottom of this file checks the two against each other.
 
 /// Linear scan: O(n), works on unsorted input. (`xs.indexOf(target)` is the
 /// built-in spelling; it answers -1 rather than null.)
@@ -47,6 +55,28 @@ public fun binarySearchRec(xs: List<i64>, target: i64, lo: i64, hi: i64): i64? {
     v < target  => binarySearchRec(xs, target, mid + 1, hi)
     else        => binarySearchRec(xs, target, lo, mid - 1)
   }
+}
+
+/// The two implementations, on every target from below the smallest element
+/// to above the largest — the only honest way to compare two searches, since
+/// the interesting answers are the ones for values that are *not* there.
+public fun preludeAgrees(xs: List<i64>): bool {
+  val sorted = xs.sorted()
+  loop (target in -2..12) {
+    if (sorted.lowerBound(target) != lowerBound(sorted, target)) return false
+    // the prelude answers -1 where this file answers null
+    val here = binarySearch(sorted, target)
+    val prelude = sorted.binarySearch(target)
+    if ((here != null) != (prelude >= 0)) return false
+    if (prelude >= 0 && sorted.atOrPanic(prelude) != target) return false
+    // and it always answers the first of several equal elements
+    if (prelude >= 0 && prelude != sorted.lowerBound(target)) return false
+    // the half-open range [lowerBound, upperBound) is exactly the equals
+    if (sorted.upperBound(target) - sorted.lowerBound(target) != sorted.count(x => x == target)) return false
+    // partitionPoint is the same question with the predicate spelled out
+    if (sorted.partitionPoint(x => x < target) != sorted.lowerBound(target)) return false
+  }
+  true
 }
 
 /// Two-pointer: does a sorted list contain a pair summing to target?

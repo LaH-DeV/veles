@@ -90,6 +90,39 @@ public struct Panic { public message: string }    // a task's panic, as seen by 
 `panic(message)` raises one deliberately (D20). It never returns, so it
 can stand in for a value: `val x = xs.at(i) ?: panic("index $i")`.
 
+### Recursion depth
+
+```veles
+// fragment
+public val maxRecursionDepth: i64 = 1000         // the default bound
+public fun tooDeepMessage(limit: i64): string    // "nesting deeper than 64"
+
+public struct Depth {
+  public limit: i64 = maxRecursionDepth
+  public static fun of(limit: i64 = maxRecursionDepth): Depth
+  public fun enter(): bool     // false at the limit, and then there is nothing to leave
+  public fun leave()
+  public fun depth(): i64
+  public fun deepest(): i64    // the high-water mark
+  public fun reset()
+  public fun message(): string
+}
+```
+
+Veles runs on the C stack and does not grow it, so a recursive walk over
+input someone else wrote — a JSON document of 100 000 `[`, a source file of
+50 000 `(` — has to be bounded or it is a crash rather than an error. There
+is one default for that and one sentence to report reaching it, and every
+decoder, encoder and parser in the library uses them.
+
+A walk that already keeps a stack compares its length against a limit and
+reports `tooDeepMessage(limit)`; that is what `std/json` does, with
+`Options.maxDepth` (64) as its own policy. A walk whose depth is only its
+call frames — a recursive descent parser — counts them with `Depth.of(n)`,
+where `enter` and `leave` pair like a push and a pop on every path out of
+the body except a throw, which abandons the walk anyway. `examples/recursion`
+is that parser, in forty lines.
+
 ### Errors (D4)
 
 ```veles
@@ -304,6 +337,8 @@ UTF-8.
 | `zip(ys)`, `chunked(n)`, `windowed(n)`, `distinct()` | `List<(T, U)>`, `List<List<T>>`, `List<List<T>>`, `List<T>` |
 | `sorted()`, `sortedDescending()`, `sortedBy(key)`, `sortedByDescending(key)`, `reversed()` | new `List`; elements or `key` results must be `Comparable` (D48) |
 | `sortedWith(compare)`, `minWith(compare)`, `maxWith(compare)` | any order: `compare(a, b)` negative when `a` comes first; sorts are stable, O(n log n) |
+| `binarySearch(x)`, `binarySearchWith(compare)`, `binarySearchBy(key, target)` | `i64` index of the **first** match, −1 if absent, in O(log n). The list must already be in order; nothing checks, and a list that is not gives a wrong answer, never a panic. `compare(element)` says where the element sits relative to what is wanted |
+| `lowerBound(x)`, `upperBound(x)`, `partitionPoint(pred)` | `i64` insertion points: first index not less than `x`, first greater than `x`, and the general form — the first index where `pred` stops holding. `upperBound − lowerBound` is how many times `x` occurs |
 | `minBy(key)`, `maxBy(key)`, `distinctBy(key)` | `T?`, `T?`, `List<T>`; by a `Comparable` (or, for `distinctBy`, hashable) key |
 | `sum()` | `List<i64>` and `List<f64>` only |
 | `join(sep)` | `string` |
@@ -601,6 +636,35 @@ base64.encodedLen(n: i64, pad: bool = true): i64
 Both decoders take padded or unpadded input and refuse everything else —
 the other alphabet, whitespace, an `=` in the middle, a non-canonical last
 character. `base64.Invalid { message, position }`.
+
+## Module `utf8`
+
+```veles
+// fragment
+use utf8
+utf8.decode(s: string, at: i64): utf8.Rune?        // null: out of range, or mid-character
+utf8.decodeLast(s: string, before: i64): utf8.Rune?
+utf8.decodeBytes(bytes: List<u8>, at: i64): utf8.Rune?   // null: also malformed
+utf8.encodeTo(out: MutableList<u8>, code: i64): i64      // bytes appended, 1..4
+utf8.encode(code: i64): List<u8>
+utf8.char(code: i64): string                       // a one-character string
+utf8.size(code: i64): i64?                         // how many bytes it takes
+utf8.isScalar(code), utf8.isSurrogate(code)
+utf8.isContinuation(b: u8), utf8.isStart(b: u8)
+utf8.combineSurrogates(high: i64, low: i64): i64?  // for \uXXXX\uXXXX escapes
+utf8.isValid(bytes: List<u8>), utf8.count(bytes: List<u8>)
+utf8.maxCode, utf8.replacement, utf8.maxSize       // 0x10FFFF, 0xFFFD, 4
+```
+
+`utf8.Rune { code, size }` — the scalar value and its width, so
+`i += r.size` steps to the next character.
+
+Strings are indexed in bytes (D18) and are valid UTF-8 by construction, so
+`decode` on one fails only for an index outside it or in the middle of a
+character. Bytes carry no such promise, and `decodeBytes` is strict about
+them in the sense Table 3-7 of the Unicode standard means: shortest form
+only, no surrogates, nothing above U+10FFFF. Encoding a value that is not a
+code point writes U+FFFD rather than failing. See `examples/utf8`.
 
 ## Module `jwt`
 

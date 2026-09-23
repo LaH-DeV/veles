@@ -171,7 +171,12 @@ Two things worth knowing early:
   is no character-at-index either (`s.byteAt(i)` gives a byte). When you do need characters, `charCount()`
   counts them and `chars()` gives them as a `List<string>` of
   one-character strings: `"héllo".charCount()` is 5 and
-  `"héllo".chars()` is `[h, é, l, l, o]`.
+  `"héllo".chars()` is `[h, é, l, l, o]`. Both build a whole list; when you
+  need to walk characters *without* building one — a scanner, a lexer, a
+  validator over bytes off a socket — `use utf8` steps one at a time:
+  `utf8.decode(s, i)` gives the code point at a byte offset and how wide it
+  is, `utf8.encodeTo(out, code)` writes one back
+  ([reference](reference/stdlib.md#module-utf8)).
 - `substring(from, to)` takes byte offsets and returns `string?` — null
   when the offsets fall outside the text or would cut a multi-byte
   character, so a parser can probe `s.substring(pos, pos + 4)` near the
