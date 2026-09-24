@@ -284,11 +284,11 @@ fun main() { var xs: MutableList<i32> = []; scope { async work(xs) } }`, "not Se
 		{"D16 recv must be awaited", prelude + `
 fun main() { val ch = Channel<i32>(); val x = ch.recv() }`, "must be awaited"},
 		{"D35 no await inside a lock", prelude + `
-fun main() { val m = mutex(1); m.withLock(p => { await sleep(1); 0 }) }`, "lambda suspends"},
+fun main() { val m = mutex(1); m.withLock(p => { await sleep(Duration.millis(1)); 0 }) }`, "lambda suspends"},
 		{"D40 impl must declare suspends", prelude + `
 trait T { fun f(): i32 }
 struct A { }
-implement T for A { fun f(): i32 { await sleep(1); 1 } }
+implement T for A { fun f(): i32 { await sleep(Duration.millis(1)); 1 } }
 fun main() { }`, "declares it non-suspending"},
 	}
 	for _, c := range cases {
@@ -298,7 +298,7 @@ fun main() { }`, "declares it non-suspending"},
 
 func TestConcurrencyAccepted(t *testing.T) {
 	expectClean(t, prelude+`
-fun tick(n: i32): i32 { await sleep(1); n }
+fun tick(n: i32): i32 { await sleep(Duration.millis(1)); n }
 fun main() throws {
   val ch = Channel<i32>(capacity: 2)
   scope {
@@ -308,7 +308,7 @@ fun main() throws {
     val (a, b) = gather { async tick(2); async tick(3) }
     val x = try a
     val y = try b
-    val w = race { val m = ch.recv() => if (m == null) 1 else 2; sleep(10) => 2 }
+    val w = race { val m = ch.recv() => if (m == null) 1 else 2; sleep(Duration.millis(10)) => 2 }
     io.println("$v $x $y $w")
   }
 }`)
@@ -1100,11 +1100,15 @@ use time
 use random
 
 fun main() throws IoError {
-  val now: i64 = time.now()
-  val d: time.DateTime = time.utc(now)
-  val l: time.DateTime = time.local(now)
+  val now: time.Timestamp = time.now()
+  val d: time.DateTime = now.utc()
+  val l: time.DateTime = now.local()
   val sw = time.Stopwatch.start()
-  io.println("$d ${d.date()} ${l.time()} ${d.weekday} ${sw.elapsedMillis()} ${sw.elapsedSeconds()} ${time.monotonic()} ${time.monotonicNanos()}")
+  val dl = time.Deadline.after(Duration.seconds(1))
+  val back: time.Timestamp? = time.parseRfc3339("2026-09-24T09:15:02Z")
+  io.println("$d ${d.date()} ${l.time()} ${d.weekday()} ${sw.elapsed()} ${time.monotonicNanos()}")
+  io.println("${time.formatHttp(now)} ${time.parseHttp("Sun, 06 Nov 1994 08:49:37 GMT")} $back")
+  io.println("${dl.remaining()} ${dl.expired()} ${now.since(time.Timestamp.epoch)} ${Duration.parse("1h30m")}")
   random.seed(1)
   val n: i64 = random.range(1, 7)
   val x: f64 = random.float()
@@ -2008,7 +2012,7 @@ fun main() { val xs: List<Shape> = [Circle(r: 1.0)]; io.println("${xs.filterIs<O
 func TestTaskCancel(t *testing.T) {
 	expectClean(t, prelude+`
 fun slow(): i64 {
-  await sleep(100)
+  await sleep(Duration.millis(100))
   1
 }
 fun main() {
@@ -2041,7 +2045,7 @@ func TestRaceNarrowingJoins(t *testing.T) {
 	// the race: exactly one arm runs, and the other may not have assigned
 	expectError(t, prelude+`
 fun slow(): i64 {
-  await sleep(50)
+  await sleep(Duration.millis(50))
   1
 }
 fun main() {
@@ -2050,7 +2054,7 @@ fun main() {
     val t = async slow()
     race {
       val r = await t => out = r
-      sleep(1) => io.println("late")
+      sleep(Duration.millis(1)) => io.println("late")
     }
   }
   val n: i64 = out
@@ -2059,7 +2063,7 @@ fun main() {
 	// every arm returning makes the race — and the scope — diverge
 	expectClean(t, prelude+`
 fun slow(): i64 {
-  await sleep(50)
+  await sleep(Duration.millis(50))
   1
 }
 fun pick(): i64 {
@@ -2067,7 +2071,7 @@ fun pick(): i64 {
     val t = async slow()
     race {
       val r = await t => return r
-      sleep(1) => return -1
+      sleep(Duration.millis(1)) => return -1
     }
   }
 }
@@ -2077,7 +2081,7 @@ fun main() { io.println("${pick()}") }`)
 func TestScopeBodyDiverges(t *testing.T) {
 	expectClean(t, prelude+`
 fun work(): i64 {
-  await sleep(1)
+  await sleep(Duration.millis(1))
   1
 }
 fun early(): i64 {
@@ -2126,20 +2130,20 @@ func TestWithTimeoutTypes(t *testing.T) {
 	expectClean(t, prelude+`
 error Late { }
 fun slow(): i64 {
-  await sleep(1)
+  await sleep(Duration.millis(1))
   1
 }
 fun failing(): string? throws Late {
-  await sleep(1)
+  await sleep(Duration.millis(1))
   throw Late()
 }
-fun a(): i64 throws Timeout = try withTimeout(100, () => slow())
-fun b(): string? throws Late | Timeout = try withTimeout(100, () => try failing())
+fun a(): i64 throws Timeout = try withTimeout(Duration.millis(100), () => slow())
+fun b(): string? throws Late | Timeout = try withTimeout(Duration.millis(100), () => try failing())
 fun main() { io.println("${a()} ${b()}") }`)
 	expectError(t, prelude+`
 fun main() {
   var n = 0
-  io.println("${withTimeout(10, () => { n += 1; n })}")
+  io.println("${withTimeout(Duration.millis(10), () => { n += 1; n })}")
 }`, "cannot cross a task boundary")
 }
 
@@ -2573,7 +2577,7 @@ fun main() { P(a: 1) }`, "'self' is used before 'init' has assigned 'b'"},
 fun main() { P(a: 1) }`, "'init' calls 'tally' before assigning 'b', which the method reads"},
 		{"the caller cannot give an init field", `struct P { a: i64; b: string; init { self.b = "x" } }
 fun main() { P(a: 1, b: "y") }`, "field 'b' is assigned by the 'init' block of 'P'"},
-		{"init cannot suspend", `struct P { a: i64; init { await sleep(1) } }
+		{"init cannot suspend", `struct P { a: i64; init { await sleep(Duration.millis(1)) } }
 fun main() { P(a: 1) }`, "an 'init' block cannot suspend"},
 		{"one init", `struct P { a: i64; init { }; init { } }
 fun main() { P(a: 1) }`, "a struct has one 'init' block"},

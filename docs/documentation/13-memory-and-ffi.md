@@ -210,7 +210,7 @@ struct Res {
 }
 
 fun deep(i: i64): i64 {
-  await sleep(0)          // a suspending call: a task of its own underneath
+  await sleep(Duration.zero)          // a suspending call: a task of its own underneath
   [10, 20].atOrPanic(i)   // its panic continues in the caller
 }
 

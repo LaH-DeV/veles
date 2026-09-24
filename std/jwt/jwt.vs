@@ -145,7 +145,7 @@ public struct Options {
 
 /// The current time in Unix **seconds**, the unit `exp`, `nbf` and `iat`
 /// are written in.
-public fun now(): i64 = time.now() / 1000
+public fun now(): i64 = time.now().toSeconds()
 
 // ---------------------------------------------------------------------------
 // signing

@@ -283,9 +283,9 @@ unreachable.
 |---|---|
 | `Channel<T>(capacity: n)` | bounded channel; `send(v)`, `await recv(): T?`, `close()`, `closeAfter(n)` (closes itself after `n` more sends), `len()` |
 | `xs.mapConcurrent(f, workers: 4)`, `xs.forEachConcurrent(f, workers: 4)` | `List<T: Sendable>`: the worker pool — at most `workers` calls of `f` in flight, results in order; `f` is a `sendable fun` that may suspend and throw (then the call throws) |
-| `await sleep(ms: i64)` | suspend for at least `ms` milliseconds |
+| `await sleep(d: Duration)` | suspend for at least `d`; rounded up to the executor’s millisecond, so `Duration.zero` yields |
 | `async f(...)`: `Task<T>` | start a task in the enclosing `scope`; `await task`; `task.cancel()` asks it to stop at its next suspension point (its `with` cleanups run, the scope still waits for it) |
-| `withTimeout(ms, f): R throws E \| Timeout` | run the sendable `f` in a task of its own and throw `Timeout` (with `millis`) if `ms` pass first — `f` is cancelled and has unwound by then; `f`'s own errors are rethrown |
+| `withTimeout(limit: Duration, f): R throws E \| Timeout` | run the sendable `f` in a task of its own and throw `Timeout` (which carries the `limit` it reached) if it passes first — `f` is cancelled and has unwound by then; `f`'s own errors are rethrown |
 
 ## Built-in methods
 
@@ -549,16 +549,57 @@ path.isAbsolute(p: string): bool                 // "/x", "C:\x", "C:/x"
 
 ## Module `time`
 
+`Duration` is in the prelude, not here: it is a *length* of time, and
+`sleep` and `withTimeout` take one. `Timestamp` is the wall clock,
+`Deadline` and `Stopwatch` the monotonic one — no raw monotonic reading is
+handed out, so the two cannot be confused (D60).
+
 ```veles
 // fragment
 use time
-time.now(): i64                       // milliseconds since 1970-01-01T00:00:00Z
-time.monotonic(): i64                 // milliseconds on a monotonic clock, for differences
-time.monotonicNanos(): i64
-time.utc(ms: i64): DateTime           // year month day hour minute second millis weekday(0 = Sunday) yearDay
-time.local(ms: i64): DateTime
-DateTime.date(): string               // 2026-09-17;  time(): 12:34:56.789;  "$d": both, joined by T
-time.Stopwatch.start(): Stopwatch     // elapsedNanos(), elapsedMillis(), elapsedSeconds(): f64, reset()
+time.now(): Timestamp                 // Timestamp.now(); .epoch, .ofSeconds/.ofMillis/.ofMicros(n)
+t.toSeconds() / toMillis() / toMicros(): i64          // rounded down, so they work before 1970
+t.subsecondMicros(): i64              // 0..999999
+t.plus(d) / t.minus(d): Timestamp;  t.since(earlier) / t.until(later): Duration
+t.utc() / t.local() / t.at(offset): DateTime
+"$t"                                  // RFC 3339 in UTC; Parsable and Codable are the same text
+
+time.Offset.utc; Offset.of(hours, minutes = 0): Offset?; Offset.ofMinutes(m): Offset?   // ±18:00
+time.Offset.local(at: Timestamp): Offset              // the host zone's offset at that instant
+"$o"                                  // Z, +02:00, -05:30
+
+DateTime(year:, month:, day:, hour: 0, minute: 0, second: 0, micros: 0, offset: Offset.utc)
+d.timestamp(): Timestamp;  d.normalized(): DateTime   // out-of-range fields carry (month 13 = next January)
+d.weekday(): i64 (0 = Sunday);  d.yearDay(): i64 (1 = Jan 1)
+d.date(): string                      // 2026-09-24;  time(): 09:15:02;  "$d": full RFC 3339
+
+time.parseRfc3339(s): Timestamp?      // strict, plus lower-case t/z, a space separator, expanded years
+time.parseRfc3339Fields(s): DateTime? // the same, keeping the text's offset
+time.formatRfc3339(t): string
+time.formatHttp(t): string            // Sun, 06 Nov 1994 08:49:37 GMT (IMF-fixdate)
+time.parseHttp(s): Timestamp?         // IMF-fixdate, RFC 850 and asctime (RFC 9110 §5.6.7)
+
+time.Stopwatch.start(): Stopwatch     // elapsed(): Duration, reset()
+time.Deadline.after(d): Deadline      // remaining(): Duration (never negative), expired(), extend(d), earlier(other)
+time.monotonicNanos(): i64            // the raw reading, for a benchmark
+
+time.daysFromCivil(y, m, d): i64;  time.civilFromDays(days): (i64, i64, i64)
+time.isLeapYear(y): bool;  time.daysInMonth(y, m): i64
+```
+
+## Prelude type `Duration`
+
+```veles
+// fragment
+Duration.zero; Duration.nanos/micros/millis/seconds/minutes/hours/days(n: i64)
+Duration.ofSeconds(v: f64)            // a fractional count
+d.toNanos() / toMicros() / toMillis() / toSeconds() / toMinutes() / toHours() / toDays(): i64   // truncate toward zero
+d.asSeconds() / asMillis(): f64       // the fraction kept
+d.plus(o) / minus(o) / times(n) / dividedBy(n) / negated() / abs(): Duration
+d.over(o): i64                        // how many times o fits in d
+d.isZero() / isNegative(): bool;  d.min(o) / d.max(o): Duration
+"$d"                                  // 0s, 250ms, 1.5s, 2m30s, 1d1h, -90ms
+Duration.parse(s): Duration?          // reads back exactly what "$d" writes; 1h30m, 250ms, 1.5s, -2m30s
 ```
 
 ## Module `random`

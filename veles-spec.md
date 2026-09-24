@@ -1157,6 +1157,106 @@ instead of becoming one constant per line.
 
 ---
 
+### D60 — Time: a length, a wall clock and a monotonic clock are three types (v0.35)
+
+Before this entry every time in Veles was an `i64` whose unit lived in a
+parameter name. `withTimeout(5000, ...)` was milliseconds, `Stopwatch.elapsedNanos()`
+was nanoseconds, `time.now()` was milliseconds since the epoch, and all
+three could be added to each other. `withTimeout(5, ...)` — five seconds,
+surely — compiled and gave up after five thousandths of one. This is the
+D59 `Digest` argument again: the mistake that matters is the one that
+compiles.
+
+**`Duration` is a type, in the prelude.** A one-field struct over an `i64`
+of **nanoseconds** (±292 years), with `Duration.seconds(5)` and its
+siblings, `Comparable`, `Display` (`0s`, `250ms`, `1.5s`, `2m30s`, `1d1h`)
+and `Parsable`, which reads back exactly what `Display` writes — the
+fraction is carried in whole nanoseconds, never through a float, so
+`Duration.parse("$d") == d` for every `d`. It lives in the prelude, not in
+`std/time`, because the things that take one are there: `sleep`,
+`withTimeout`, `Timeout`. Nanoseconds rather than milliseconds so that
+`Stopwatch.elapsed()` is the same type as a cache lifetime.
+
+Arithmetic is methods — `a.plus(b)`, not `a + b` — because the language has
+only five operator traits (`Comparable`, `Equatable`, `Hashable`,
+`Display`, `Parsable`) and no arithmetic ones. That cost was accepted
+rather than paid for with a language change: adding an `Arithmetic` trait
+is a decision about operators, not about time, and it can be taken later
+without a second spelling appearing here, because `plus`, `minus`, `times`
+and `dividedBy` are named to be adopted by it. What made the cost small is
+that the two sums anyone actually writes — "now plus a timeout" and "how
+much is left" — are not arithmetic at all once `Deadline` exists.
+
+**Two clocks, two types, and no raw monotonic reading.** `Timestamp` is a
+point on the wall clock; `Deadline` and `Stopwatch` are the only things
+built from the monotonic one, and `time.monotonic()` is gone. A monotonic
+reading therefore cannot be compared with a wall-clock one, serialized into
+a log, or mistaken by a reader for a time of day — the confusion is not
+documented, it is unrepresentable. Rejected: Go's `time.Time`, which
+carries both readings in one value and whose subtraction changes meaning
+silently once the value has been serialized.
+
+**`Timestamp` counts microseconds.** Milliseconds would lose the six
+fractional digits an RFC 3339 producer and a PostgreSQL `timestamptz` both
+write, on a round trip through a server whose job is to hand them back;
+nanoseconds would buy precision the OS clock does not have and cost the
+range, as Go's year-2262 ceiling shows. Microseconds span ±292,000 years
+and order two events inside one millisecond. `toSeconds`/`toMillis` round
+**down**, not toward zero — they name the second *containing* the instant,
+which is what the calendar needs and what keeps working before 1970 —
+while `Duration`'s conversions truncate toward zero, because a length has a
+sign and a point does not.
+
+**Zones are a fixed `Offset`, and the calendar is pure Veles.** `Offset` is
+minutes east of UTC (±18:00); `DateTime` carries one, so it prints full
+RFC 3339, and `Offset.local(at:)` asks the host for its offset *at that
+instant*, which is the only form the question has. The conversion itself is
+Howard Hinnant's `days_from_civil` and its inverse, in Veles: deterministic,
+no C round trip, and no `mktime` ambiguity. The C side answers exactly two
+questions — what time is it, and what is this host's offset. The IANA
+database, and with it "09:30 local on the morning the clocks go forward",
+is deliberately out of scope.
+
+A `DateTime`'s fields are data, not an invariant: `month: 13` is January of
+the next year and `day: 71` is forty days after the 31st, so date
+arithmetic needs no second API. Text is the strict half — `parseRfc3339`
+refuses month 13.
+
+**One RFC 3339 parser, with three named leniencies**: lower-case `t`/`z`
+(the RFC's own NOTE), a space where the `T` goes (§5.6, and what PostgreSQL
+prints), and ISO 8601's expanded year, so that `parse(t.toString())` is
+total rather than total only between the years 0000 and 9999. It refuses a
+missing offset, `24:00:00`, a bare date and any field out of range; `-00:00`
+("offset unknown") reads as UTC and is never written. A fraction longer
+than six digits is truncated, not rounded, so the order of two texts stays
+the order of their instants. `23:59:60` is legal RFC 3339 and has no POSIX
+instant: it is accepted as the last microsecond of that minute, the instant
+a POSIX clock reports while it happens. Go rejects it; a conforming
+producer's timestamp failing to parse is the worse answer.
+
+**HTTP-date lives in `std/time`, not `std/http`.** `formatHttp` writes
+IMF-fixdate only; `parseHttp` reads it and the two obsolete forms RFC 9110
+§5.6.7 says a recipient must accept, because RFC 850 and asctime are
+exactly what an old client puts in `If-Modified-Since`. `Last-Modified` and
+`If-Modified-Since` are two ends of one conversation and belong to one
+module; `http.httpDate` is a one-line name for the same function.
+
+**The migration is the point, so it was done in full.** `sleep` is a
+compiler builtin and now takes a `Duration`, resolved through
+`preludeType("Duration")` as `Ordering` and `Encoder` already are, and
+lowered to `(ns + 999999) / 1000000` — rounded **up**, so a sleep is never
+shorter than it was asked for and a sub-millisecond one still yields.
+`sleep(500)` is an error that names the fix. `withTimeout` and `Timeout`,
+`http.Limits`' three clocks, `http.timeout`, `uuidV7`, `jwt.now` and the
+`random` seed all moved with it; `Timestamp` also implements `Codable` by
+hand, as RFC 3339 text, so a timestamp field in a derived struct is never a
+number of microseconds on the wire. Rejected: keeping the types and
+migrating later (two spellings, which is the objection `notes_to_change`
+keeps making), and leaving `sleep` on `i64` (the one place in the language
+where a time would still be an unlabelled number).
+
+---
+
 ## 4b. Settled minor decisions
 
 - **Semicolons** — Go-style automatic insertion.

@@ -226,21 +226,51 @@ func (f *fnCtx) suspending(x Expr, span source.Span, what string) Expr {
 	return x
 }
 
-// sleepCall handles the prelude `sleep(ms)`.
+// sleepCall handles the prelude `sleep(d)`. The argument is a `Duration`
+// (D60): a bare number would put the unit back in the reader's head, which
+// is what the type exists to prevent. The executor's timers are in
+// milliseconds, so the duration is rounded **up** to one here — a sleep is
+// never shorter than it was asked for, and a sub-millisecond one still
+// yields.
 func (f *fnCtx) sleepCall(e *ast.CallExpr) Expr {
 	if len(e.Args) != 1 {
-		f.errorf(e.Pos, "'sleep' takes one argument: milliseconds")
+		f.errorf(e.Pos, "'sleep' takes one argument: a 'Duration'")
 		f.checkArgsLoosely(e.Args)
 		return bad()
 	}
 	awaited := f.awaitNext
 	f.awaitNext = false
-	ms := f.checkExprTo(e.Args[0].Value, types.TI64)
+	dur, _ := f.c.preludeType("Duration").(*types.Struct)
+	var ms Expr
+	if dur == nil {
+		// no prelude (a bare-file test): fall back to the old milliseconds
+		ms = f.checkExprTo(e.Args[0].Value, types.TI64)
+	} else {
+		arg := f.checkExpr(e.Args[0].Value, dur)
+		if types.IsInteger(arg.Type()) {
+			f.errorf(e.Pos, "'sleep' takes a 'Duration', not a number of milliseconds: write 'sleep(Duration.millis(n))' or 'sleep(Duration.seconds(n))' (D60)")
+			return bad()
+		}
+		if !types.Identical(arg.Type(), dur) {
+			f.errorf(e.Pos, "'sleep' takes a 'Duration', found '%s'", arg.Type())
+			return bad()
+		}
+		ms = durationMillis(arg, e.Pos)
+	}
 	b := f.suspending(&Builtin{exprBase{types.TUnit}, "task.sleep", []Expr{ms}, e.Pos}, e.Pos, "sleep")
 	if !awaited && !f.inRaceArm {
-		f.errorf(e.Pos, "'sleep()' always suspends and must be awaited: 'await sleep(ms)' (D16)")
+		f.errorf(e.Pos, "'sleep()' always suspends and must be awaited: 'await sleep(d)' (D16)")
 	}
 	return b
+}
+
+// durationMillis is `(d.ns + 999999) / 1000000`: the whole milliseconds a
+// Duration covers, rounded up. Negative and zero durations fall out as 0,
+// which the executor reads as "yield".
+func durationMillis(d Expr, span source.Span) Expr {
+	ns := &FieldGet{exprBase{types.TI64}, d, 0, "ns"}
+	up := &Binary{exprBase{types.TI64}, OpAdd, ns, &IntConst{exprBase{types.TI64}, 999999, false}, span}
+	return &Binary{exprBase{types.TI64}, OpDiv, up, &IntConst{exprBase{types.TI64}, 1000000, false}, span}
 }
 
 // ioWaitCall handles `await ioWait(fd, write)`, the standard library's
@@ -418,7 +448,7 @@ func (f *fnCtx) raceExpr(e *ast.RaceExpr, want types.Type) Expr {
 		}
 		if ha.Source == nil {
 			if !types.IsInvalid(src.Type()) {
-				f.errorf(arm.Source.Span(), "a race arm waits on 'ch.recv()', 'sleep(ms)' or 'await task', not '%s'", src.Type())
+				f.errorf(arm.Source.Span(), "a race arm waits on 'ch.recv()', 'sleep(d)' or 'await task', not '%s'", src.Type())
 			}
 			f.popScope()
 			continue

@@ -7,7 +7,7 @@ struct Counter {
 fun bump(m: Mutex<Counter>, times: i64) {
   loop (_ in 0..<times) {
     m.withLock(c => c.hits += 1)
-    await sleep(0)
+    await sleep(Duration.zero)
   }
 }
 

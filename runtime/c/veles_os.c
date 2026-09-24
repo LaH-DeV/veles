@@ -441,17 +441,25 @@ int64_t veles_read_all(veles_string *out) {
 
 #include <time.h>
 
-/* milliseconds since the Unix epoch, UTC */
-int64_t veles_time_now_ms(void) {
+/* microseconds since the Unix epoch, UTC. Microseconds, not milliseconds:
+ * a Veles Timestamp is an i64 of them, which round-trips RFC 3339's six
+ * fractional digits and a PostgreSQL timestamptz without loss and still
+ * spans +/-292,000 years. */
+int64_t veles_time_now_us(void) {
 #if defined(_WIN32)
     FILETIME ft;
-    GetSystemTimeAsFileTime(&ft);
+#if defined(_WIN32_WINNT) && _WIN32_WINNT >= 0x0602
+    GetSystemTimePreciseAsFileTime(&ft); /* sub-microsecond */
+#else
+    GetSystemTimeAsFileTime(&ft);        /* ~15 ms tick on older targets */
+#endif
     uint64_t t = ((uint64_t)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
-    return (int64_t)(t / 10000) - 11644473600000LL;
+    /* FILETIME counts 100 ns ticks from 1601-01-01 */
+    return (int64_t)(t / 10) - 11644473600000000LL;
 #else
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
-    return ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+    return ts.tv_sec * 1000000LL + ts.tv_nsec / 1000;
 #endif
 }
 
@@ -469,23 +477,35 @@ int64_t veles_time_monotonic_ns(void) {
 #endif
 }
 
-/* veles_time_civil writes the calendar fields of a Unix-millisecond time
- * (UTC, or local when local is set) as
- * "year month day hour minute second weekday yearday" for the Veles side to
- * split; weekday is 0 for Sunday. */
-void veles_time_civil(int64_t ms, bool local, veles_string *out) {
-    time_t secs = (time_t)(ms / 1000);
-    if (ms < 0 && ms % 1000 != 0) secs -= 1;
-    struct tm tmv;
+/* Days since 1970-01-01 from a proleptic Gregorian date (Howard Hinnant's
+ * days_from_civil). std/time has the same function in Veles; this copy
+ * exists only to difference the two struct tm below. */
+static int64_t days_from_civil(int64_t y, int64_t m, int64_t d) {
+    y -= m <= 2;
+    int64_t era = (y >= 0 ? y : y - 399) / 400;
+    int64_t yoe = y - era * 400;                                   /* 0..399 */
+    int64_t doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;  /* 0..365 */
+    int64_t doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;           /* 0..146096 */
+    return era * 146097 + doe - 719468;
+}
+
+/* The host time zone's offset east of UTC, in minutes, at the instant
+ * `secs` (Unix seconds). Taken as the difference between that instant's
+ * local and UTC calendar fields, so it needs no tz internals and follows
+ * daylight saving. Zero when the platform will not answer. */
+int64_t veles_time_local_offset_minutes(int64_t secs) {
+    time_t t = (time_t)secs;
+    struct tm lt, gt;
 #if defined(_WIN32)
-    if (local) localtime_s(&tmv, &secs); else gmtime_s(&tmv, &secs);
+    if (localtime_s(&lt, &t) != 0 || gmtime_s(&gt, &t) != 0) return 0;
 #else
-    if (local) localtime_r(&secs, &tmv); else gmtime_r(&secs, &tmv);
+    if (!localtime_r(&t, &lt) || !gmtime_r(&t, &gt)) return 0;
 #endif
-    char buf[128];
-    int n = snprintf(buf, sizeof buf, "%d %d %d %d %d %d %d %d", tmv.tm_year + 1900, tmv.tm_mon + 1, tmv.tm_mday,
-                     tmv.tm_hour, tmv.tm_min, tmv.tm_sec, tmv.tm_wday, tmv.tm_yday + 1);
-    set_string(out, buf, n);
+    int64_t l = days_from_civil(lt.tm_year + 1900, lt.tm_mon + 1, lt.tm_mday) * 86400
+              + lt.tm_hour * 3600 + lt.tm_min * 60 + lt.tm_sec;
+    int64_t g = days_from_civil(gt.tm_year + 1900, gt.tm_mon + 1, gt.tm_mday) * 86400
+              + gt.tm_hour * 3600 + gt.tm_min * 60 + gt.tm_sec;
+    return (l - g) / 60;
 }
 
 /* ---- number formatting ------------------------------------------------- */

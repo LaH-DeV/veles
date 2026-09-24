@@ -205,7 +205,7 @@ answered from the shape, tuples get `Comparable`, enums get
 - [x] Middleware: `type Middleware = sendable fun(Handler): Handler`; `router.wrap(m)`
       (`use` is the import keyword, so the verb is `wrap`) — outermost first, around
       the router's own 404s and 405s too
-- [~] Standard middleware: `requestId()`, `logging()`, `timeout(ms)` done; recovery
+- [~] Standard middleware: `requestId()`, `logging()`, `timeout(d: Duration)` done; recovery
       needs nothing (a panic is already caught at the request boundary, D56) and
       body-limit is `Limits.bodyBytes`. Still open: CORS, auth hook, compression
 - [ ] Graceful shutdown (§4)
@@ -218,7 +218,7 @@ answered from the shape, tuples get `Comparable`, enums get
 - [ ] Router: method-not-allowed vs not-found distinction, route groups,
       typed path params (`{id: i64}`)
 - [ ] In-process test client: `http.call(handler, method, path, body)`
-- [~] Access log format: one line with peer, method, path, status, latency and the
+- [~] Access log format: one line with peer, method, path, status, latency (a `Duration`, so the unit is in the line) and the
       request id (`logging()`); not structured (JSON/key=value) and no byte count yet
 - [ ] HTTP/2 (later; needed for gRPC-style internal traffic)
 - [ ] WebSocket (later)
@@ -267,12 +267,40 @@ behind a name that says "crypto" (§10, 2026-09-23).
 - [ ] Not benchmarked; the compression functions allocate nothing per block
       but are plain Veles, so they are far from a hand-tuned C hash (§3.3)
 
-### 5.6 `std/time`
+### 5.6 `std/time` → D60
 
-- [ ] `Duration` type
-- [ ] RFC 3339 / ISO-8601 parse and format; HTTP-date
-- [ ] Zone offsets (UTC + fixed offset first; tz database later)
-- [ ] Monotonic deadlines usable by `withTimeout`
+- [x] `Duration` type: a prelude struct over an `i64` of nanoseconds
+      (±292 years), `Duration.seconds(5)` and siblings, `Comparable`,
+      `Display` (`0s`, `250ms`, `1.5s`, `2m30s`, `1d1h`) and `Parsable`
+      that reads back exactly what `Display` writes — the fraction is
+      carried in whole nanoseconds, never a float, so
+      `Duration.parse("$d") == d` for every `d`. Arithmetic is methods
+      (`plus`/`minus`/`times`/`dividedBy`), named so an `Arithmetic` trait
+      could later adopt them without a second spelling
+- [x] RFC 3339 parse and format, in one parser with three named leniencies
+      (lower-case `t`/`z`, a space separator, ISO 8601 expanded years so the
+      round trip is total); the leap second `23:59:60` reads as the last
+      microsecond of its minute. HTTP-date moved out of `std/http`:
+      `formatHttp` writes IMF-fixdate, `parseHttp` reads all three forms
+      RFC 9110 §5.6.7 requires a recipient to accept
+- [x] Zone offsets: `Offset` is minutes east of UTC (±18:00), `DateTime`
+      carries one, `Offset.local(at:)` asks the host for its offset at a
+      given instant. The calendar is pure Veles (Hinnant's
+      `days_from_civil` and its inverse); C answers only "what time is it"
+      and "what is this host's offset". tz database still later
+- [x] Monotonic deadlines: `Deadline.after(d)` / `remaining()` / `expired()`
+      / `extend` / `earlier`, and `Stopwatch.elapsed(): Duration`. No raw
+      monotonic reading is handed out any more, so it cannot be compared
+      with a wall-clock one; `withTimeout` and `sleep` take a `Duration`
+      (the `sleep` builtin unwraps it in `sema/check_task.go`, rounding
+      **up** to the executor's millisecond)
+- [x] `Timestamp`: microseconds since the epoch, so RFC 3339's six digits
+      and a PostgreSQL `timestamptz` round-trip; `Display`/`Parsable`/
+      `Codable` are all RFC 3339 text
+- [ ] `Duration` is not `Codable`: JSON has no duration form and the
+      choice between ISO 8601 `PT1H30M`, a number of seconds and the
+      `Display` text is its own decision. Today a `Duration` field in a
+      derived struct is a compile error naming the field
 
 ### 5.7 `std/log`
 
@@ -341,9 +369,14 @@ behind a name that says "crypto" (§10, 2026-09-23).
 
 - [x] `docs/18-codable-and-json.md` (chapter, attributes table, stdlib reference)
 - [x] `docs/19-secrets-and-crypto.md` (hashes, MACs, randomness, UUIDs, the two
-      encodings, JWT and what each refuses); a production-servers chapter is
-      still to write, as chapter 20
+      encodings, JWT and what each refuses)
+- [x] `docs/20-time.md` (why there are three types, `Duration`, `Timestamp`,
+      the calendar and offsets, RFC 3339, HTTP dates, `Stopwatch`/`Deadline`,
+      and where a `Duration` turns up); the stdlib reference and the cheat
+      sheet moved with it
 - [ ] A "deploying Veles" page: binaries, signals, Docker, health checks
+- [ ] A production-servers chapter (was pencilled in as chapter 20; the
+      number is taken, so it is 21)
 - [x] Derivation chapter with the rules from 1.1 in plain language
 - [~] Security guidance: request limits are in chapter 17 and constant-time
       comparison, canonical decoding and the JWT refusals in chapter 19; a page
@@ -359,6 +392,11 @@ behind a name that says "crypto" (§10, 2026-09-23).
 - [x] `examples/crypto`: every published test vector — FIPS 180-4, RFC 4231,
       RFC 2202, RFC 4648 and the RFC 7515 A.1 token — plus the decoder
       refusals and 5000 monotonic v7 ids
+- [x] `examples/time`: the RFC 3339 grammar and its leniencies, the leap
+      second, the calendar across 1970 and the year 2000, the three HTTP-date
+      forms and the refusals, and the round trips for `Duration` and
+      `Timestamp`. Only the last section reads the host clock, and only for
+      what holds of every reading of one
 - [ ] `examples/apiclient`: calls a JSON API over TLS
 - [ ] `examples/pgnotes`: the notes API on PostgreSQL
 
@@ -397,6 +435,8 @@ pros/cons before anything is built; the answer becomes a spec entry.
 8. FFI design. *Not yet asked.*
 9. Executor threading model. *Not yet asked.*
 10. User-definable derivation (phase 2, once the compiler-known set is proven). *Not yet asked.*
+11. **Arithmetic operator traits** (`Addable`/`Subtractable`/… so `a + b` works on a `Duration`, a `Timestamp`, a vector, a money amount). D60 deliberately did not take it: the five operator traits today are about *comparison and text*, and adding arithmetic ones raises overflow, mixed operand types (`Timestamp + Duration` is not `Timestamp + Timestamp`) and whether `+=` follows. `Duration.plus`/`minus`/`times`/`dividedBy` are named so that such a trait could adopt them. *Not yet asked.*
+12. **How a `Duration` goes on the wire** (it has no `Codable` today): ISO 8601 `PT1H30M`, a number of seconds or milliseconds, or the `Display` text `1h30m`. *Not yet asked.*
 
 ## 10. Decision log
 
@@ -428,6 +468,9 @@ pros/cons before anything is built; the answer becomes a spec entry.
 | 2026-09-23 | JWT scope and strictness | **HMAC only, strict by default**: the expected algorithm comes from `Options`, never from the token's `alg` (that is `alg: none` and RS256-as-HS256); `exp` required unless waived; `crit` rejected; the signature compared through `Digest`; a key shorter than the digest refused with a panic (RFC 7518 §3.2). `Invalid` carries a `Reason` enum because `Expired` means "refresh" and the rest mean "sign in again". RS256/ES256 wait for a bignum or a binding. |
 | 2026-09-23 | Static call on a qualified generic (compiler) | **`mod.Type<T>.f(...)` parses.** The speculative type-argument path only allowed a bare name before, so `crypto.Hmac<Sha256>.start(key)` — the natural spelling from outside the module — was a syntax error. `ast.MemberExpr.TypeArgs` carries them, `moduleTypeNamed` resolves the instance, and a qualified generic named without arguments gets the same error as an unqualified one. |
 | 2026-09-23 | Formatter: a grid stays a grid | **A broken list keeps the author's grouping.** `brokenList` put one element per line, which turned SHA-256's 64 round constants into 64 lines. A newline now goes only where the author had one, so a table written as a grid stays a grid — the same "read the line breaks out of the text" rule the rest of the printer follows. |
+| 2026-09-24 | Time: three types, not one number | **`Duration` (prelude, i64 nanoseconds), `Timestamp` (wall clock, i64 microseconds) and `Deadline`/`Stopwatch` (monotonic).** No raw monotonic reading is handed out, so it cannot be compared with a wall-clock one — the confusion is unrepresentable rather than documented. Microseconds for the wall clock because RFC 3339's six digits and a PostgreSQL `timestamptz` must survive a round trip; `toSeconds`/`toMillis` round **down** on a point and truncate toward zero on a length. Arithmetic is methods (`a.plus(b)`), accepted rather than paid for with an `Arithmetic` trait, which stays its own decision; `plus`/`minus`/`times`/`dividedBy` are named so it could adopt them. Rejected: bare `i64` with named constructors (the unit stays optional); Go's `time.Time` carrying both readings; keeping `sleep` on `i64`; migrating std later (two spellings). Spec entry: D60. |
+| 2026-09-24 | What RFC 3339 accepts | **One parser, three named leniencies** — lower-case `t`/`z` (the RFC's NOTE), a space separator (§5.6, PostgreSQL) and ISO 8601 expanded years, so `parse(t.toString())` is total rather than total only within 0000–9999. `23:59:60` is accepted and read as the last microsecond of the minute: it is legal RFC 3339 with no POSIX instant, and a conforming producer's timestamp failing to parse (Go's answer) is worse than the microsecond. A fraction longer than six digits truncates, never rounds, so the order of two texts is the order of their instants. |
+| 2026-09-24 | Where HTTP-date lives | **`std/time`, not `std/http`.** `Last-Modified` and `If-Modified-Since` are two ends of one conversation; `formatHttp` writes IMF-fixdate only, `parseHttp` also reads RFC 850 and asctime, which RFC 9110 §5.6.7 requires of a recipient and which is exactly what an old client sends. `http.httpDate` is a one-line name for the same function. |
 
 ## 11. Known limitations to revisit
 
@@ -452,3 +495,23 @@ pros/cons before anything is built; the answer becomes a spec entry.
 - `time.now()` is the only clock `uuidV7` has, so two processes on one host
   can produce the same (millisecond, counter) pair. Uniqueness comes from
   the 62 random bits, as in v4; only the ordering is per-process.
+- `Duration` arithmetic is methods (`a.plus(b)`), because the language has
+  no arithmetic operator traits. An `Arithmetic`/`Addable` trait is its own
+  decision, deliberately not taken with D60; the names were chosen so it
+  could adopt them later without a second spelling appearing.
+- `Duration` has no `Codable` implement, so a `Duration` field in a derived
+  struct is a compile error naming the field. That is the right error for
+  now — ISO 8601 `PT1H30M`, a number of seconds and the `Display` text are
+  three defensible wire forms and choosing one is a decision, not a gap.
+- `Offset.local(at:)` goes through the C library's `localtime_r`, so it
+  reads the host's zone, honours `TZ`, and is as correct as the platform's
+  tz data. A fixed offset still cannot answer a *local* time on a DST
+  boundary; that needs the IANA database (§5.6).
+- `Timestamp` outside the years 0000–9999 prints ISO 8601's expanded year
+  (`+011476-08-15T05:20:00Z`). That text is not RFC 3339, and the parser
+  accepts it only so `parse(t.toString())` is total; a peer that is strict
+  about RFC 3339 will refuse it.
+- `sleep` rounds a `Duration` **up** to the executor's millisecond, so
+  `Duration.micros(1)` sleeps for one millisecond rather than a
+  microsecond. Sub-millisecond waiting needs a finer timer wheel in
+  `veles_task.c`, which is a runtime change, not a library one.

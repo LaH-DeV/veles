@@ -107,7 +107,7 @@ fun isPriority(w: string): bool = w.len() == 3 && w.byteAt(0) == '(' && w.byteAt
 // dates: only whole days matter here
 
 /// Today as an ISO date; $TODO_TODAY overrides the clock for scripts and tests.
-fun today(): string = os.env("TODO_TODAY") ?: time.local(time.now()).date()
+fun today(): string = os.env("TODO_TODAY") ?: time.now().local().date()
 
 /// Days since 1970-01-01 for an ISO date (Howard Hinnant's days_from_civil).
 fun dayNumber(date: string): i64 {

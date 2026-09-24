@@ -12,16 +12,16 @@ task in it has (D3). Nothing leaks, nothing is fire-and-forget.
 ```veles
 use io
 
-fun work(id: i64, ms: i64): i64 {
-  await sleep(ms)            // suspends here; the executor runs other tasks
+fun work(id: i64, d: Duration): i64 {
+  await sleep(d)             // suspends here; the executor runs other tasks
   io.println("task $id done")
   id * 10
 }
 
 fun main() {
   scope {
-    val a = async work(1, 20)
-    val b = async work(2, 10)
+    val a = async work(1, Duration.millis(20))
+    val b = async work(2, Duration.millis(10))
     io.println("both started")
     io.println("results ${await a} ${await b}")
   }
@@ -40,7 +40,7 @@ scope finished
 
 - `async f(...)` starts `f` as a task in the enclosing `scope` and gives
   back a handle. `await handle` waits for its result.
-- `sleep(ms)` is a primitive that always suspends, so it is awaited
+- `sleep(d)` takes a `Duration` and always suspends, so it is awaited
   explicitly. Calling `work` makes `main` a suspending function too —
   you did not have to say so anywhere.
 - `await` is only written on the primitives that are known to suspend
@@ -62,7 +62,7 @@ use io
 error Boom { n: i64 }
 
 fun mayFail(n: i64): i64 throws Boom {
-  await sleep(1)
+  await sleep(Duration.millis(1))
   if (n == 2) throw Boom(n)
   n * 10
 }
@@ -70,7 +70,7 @@ fun mayFail(n: i64): i64 throws Boom {
 fun slow() {
   loop (i in 0..<100) {
     io.println("slow tick $i")
-    await sleep(1)
+    await sleep(Duration.millis(1))
   }
   io.println("never printed")
 }
@@ -111,7 +111,7 @@ error Boom {
 }
 
 fun mayFail(n: i64): i64 throws Boom {
-  await sleep(1)
+  await sleep(Duration.millis(1))
   if (n == 2) throw Boom(n)
   n * 10
 }
@@ -160,7 +160,7 @@ fun worker(name: string, jobs: Channel<Job>, results: Channel<string>) {
   loop {
     val job = await jobs.recv()
     if (job == null) break
-    await sleep(1)
+    await sleep(Duration.millis(1))
     results.send("$name did ${job.id}")
   }
 }
@@ -206,7 +206,7 @@ use io
 error Rejected { n: i64 }
 
 fun fetch(n: i64): i64 {
-  await sleep(1)
+  await sleep(Duration.millis(1))
   n * n
 }
 
@@ -253,7 +253,7 @@ Arms can receive from channels, sleep (a timeout), or await tasks (D38):
 use io
 
 fun producer(ch: Channel<string>) {
-  await sleep(5)
+  await sleep(Duration.millis(5))
   ch.send("hello")
 }
 
@@ -263,11 +263,11 @@ fun main() {
     async producer(ch)
     val first = race {
       val msg = ch.recv() => "got ${msg ?: "closed"}"
-      sleep(1000) => "timeout"
+      sleep(Duration.seconds(1)) => "timeout"
     }
     val second = race {
       val msg = ch.recv() => "got ${msg ?: "closed"}"
-      sleep(2) => "timeout"
+      sleep(Duration.millis(2)) => "timeout"
     }
     io.println("$first / $second")
   }
@@ -310,7 +310,7 @@ struct Res {
 
 fun worker(name: string) {
   with (r = Res(name)) {
-    await sleep(1000)
+    await sleep(Duration.seconds(1))
     io.println("never printed")
   }
 }
@@ -319,7 +319,7 @@ fun firstReady(): string {
   scope {
     async worker("a")
     async worker("b")
-    await sleep(1)
+    await sleep(Duration.millis(1))
     return "gave up"
   }
 }
@@ -328,7 +328,7 @@ fun main() {
   io.println(firstReady())
   scope {
     val t = async worker("c")
-    await sleep(1)
+    await sleep(Duration.millis(1))
     t.cancel()
   }
   io.println("done")
@@ -361,21 +361,21 @@ like anything handed to a task:
 use io
 
 fun slow(): i64 {
-  await sleep(500)
+  await sleep(Duration.millis(500))
   42
 }
 
 fun quick(): i64 {
-  await sleep(1)
+  await sleep(Duration.millis(1))
   7
 }
 
 fun main() {
-  when (withTimeout(20, () => slow())) {
+  when (withTimeout(Duration.millis(20), () => slow())) {
     is Ok(v) => io.println("got $v")
     is Err(e) => io.println("failed: ${e.message()}")
   }
-  when (withTimeout(500, () => quick())) {
+  when (withTimeout(Duration.millis(500), () => quick())) {
     is Ok(v) => io.println("got $v")
     is Err(e) => io.println("failed: ${e.message()}")
   }
@@ -384,7 +384,7 @@ fun main() {
 
 Output:
 ```text
-failed: timed out after 20 ms
+failed: timed out after 20ms
 got 7
 ```
 
@@ -456,7 +456,7 @@ struct Counter { var hits: i64 }
 fun bump(m: Mutex<Counter>, times: i64) {
   loop (_ in 0..<times) {
     m.withLock(c => c.hits += 1)
-    await sleep(0)
+    await sleep(Duration.zero)
   }
 }
 

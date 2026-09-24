@@ -78,7 +78,7 @@ public struct Rng {
 
 fun rotl(x: u64, k: i64): u64 = (x << k) | (x >> (64 - k))
 
-var shared = Rng.seeded(time.now())
+var shared = Rng.seeded(time.now().toMicros())
 
 /// Reseeds the module's shared generator, for a reproducible run.
 public fun seed(n: i64) {

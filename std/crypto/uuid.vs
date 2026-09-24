@@ -167,7 +167,7 @@ var v7Millis: i64 = -1
 var v7Counter: i64 = 0
 
 fun nextTick(): i64 {
-  val now = time.now()
+  val now = time.now().toMillis()
   if (now > v7Millis) {
     v7Millis = now
     // a random start in the lower half leaves 2048 increments and keeps

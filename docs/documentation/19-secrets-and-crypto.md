@@ -304,4 +304,4 @@ agrees with something other than itself.
 [Codable and JSON](18-codable-and-json.md) covers the wire shape of your
 own types; this chapter covers the bytes that protect them.
 
-Next: back to the [index](index.md).
+Next: [Time](20-time.md), or back to the [index](index.md).

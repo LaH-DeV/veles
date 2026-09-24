@@ -112,7 +112,7 @@ fun app(dir: string): http.Handler {
   // client sent (or a fresh one), and no handler may run for more than a
   // second. Both wrap the 404s and 405s too.
   router.wrap(http.requestId())
-  router.wrap(http.timeout(1000))
+  router.wrap(http.timeout(Duration.seconds(1)))
 
   router.get("/", req => http.Response.redirect("/static/"))
   router.get("/static/*", http.files(dir))

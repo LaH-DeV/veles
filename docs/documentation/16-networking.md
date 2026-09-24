@@ -176,13 +176,13 @@ use io, net
 
 fun greetOrDrop(conn: net.Conn): string throws IoError | net.TooLong | Timeout {
   with (c = conn) {
-    return try withTimeout(50, () => try c.readLine(max: 4096)) ?: "closed"
+    return try withTimeout(Duration.millis(50), () => try c.readLine(max: 4096)) ?: "closed"
   }
 }
 
 fun silent(port: i64) throws IoError {
   with (conn = try net.connect("127.0.0.1", port)) {
-    await sleep(500)
+    await sleep(Duration.millis(500))
   }
 }
 
@@ -202,7 +202,7 @@ fun main() throws IoError {
 
 Output:
 ```text
-dropped: timed out after 50 ms
+dropped: timed out after 50ms
 ```
 
 The function passed to `withTimeout` runs in a task of its own, so it must
@@ -225,7 +225,7 @@ them becomes one.
 
 The cost of that model is the one it has everywhere: a task that computes
 for a long time without suspending stalls every other connection. Break
-long work with `await sleep(0)`, or keep it out of the serving tasks.
+long work with `await sleep(Duration.zero)`, or keep it out of the serving tasks.
 
 Next: [An HTTP server](17-http.md), which is this module used in anger, or
 back to [Concurrency](12-concurrency.md) for what `scope`, `gather` and

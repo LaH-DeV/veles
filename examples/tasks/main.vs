@@ -12,13 +12,13 @@ fun worker(id: i64, jobs: Channel<Job>, results: Channel<Done>) {
   loop {
     val job = await jobs.recv()
     if (job == null) break
-    await sleep(1)
+    await sleep(Duration.millis(1))
     results.send(Done(id: job.id, worker: id))
   }
 }
 
 fun square(x: i64): i64 {
-  await sleep(2)
+  await sleep(Duration.millis(2))
   x * x
 }
 
@@ -27,7 +27,7 @@ error Boom {
 }
 
 fun mayFail(n: i64): i64 throws Boom {
-  await sleep(1)
+  await sleep(Duration.millis(1))
   if (n == 2) throw Boom(n)
   n * 10
 }
@@ -71,13 +71,13 @@ fun main() throws {
   scope {
     async producer(ch)
     val winner = race {
-      val msg = ch.recv() => "message ${msg ?: "closed"}"
-      sleep(1000)         => "timeout"
+      val msg = ch.recv()        => "message ${msg ?: "closed"}"
+      sleep(Duration.seconds(1)) => "timeout"
     }
     io.println("race $winner")
     val second = race {
-      val msg = ch.recv() => "message ${msg ?: "closed"}"
-      sleep(5)            => "timeout"
+      val msg = ch.recv()       => "message ${msg ?: "closed"}"
+      sleep(Duration.millis(5)) => "timeout"
     }
     io.println("race $second")
   }
@@ -92,14 +92,14 @@ fun main() throws {
 }
 
 fun producer(ch: Channel<string>) {
-  await sleep(2)
+  await sleep(Duration.millis(2))
   ch.send("hello")
 }
 
 fun slowLoop() {
   loop (i in 0..<100) {
     io.println("Printing slowLoop iteration $i")
-    await sleep(1)
+    await sleep(Duration.millis(1))
   }
   io.println("slowLoop finished (should have been cancelled)")
 }

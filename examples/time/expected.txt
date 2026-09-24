@@ -1,0 +1,126 @@
+-- Duration: what it prints --
+  0 ns                               0s
+  1 ns                               1ns
+  1500 ns                            1.5µs
+  250000 ns                          250µs
+  1000000 ns                         1ms
+  1500000000 ns                      1.5s
+  1000000000 ns                      1s
+  90000000000 ns                     1m30s
+  5400000000000 ns                   1h30m
+  90000000000000 ns                  1d1h
+  259200000000000 ns                 3d
+  -90000000 ns                       -90ms
+-- Duration: what it reads --
+  "0"                                0s
+  "90s"                              1m30s
+  "1h30m"                            1h30m
+  "250ms"                            250ms
+  "1.5s"                             1.5s
+  "-2m30s"                           -2m30s
+  "1d1h"                             1d1h
+  "1.000001ms"                       1.000001ms
+-- Duration: what it refuses --
+  ""                                 rejected
+  "5"                                rejected
+  "5 s"                              rejected
+  "s"                                rejected
+  "1h30"                             rejected
+  "1x"                               rejected
+  "1.s"                              rejected
+  "1.0000000001s"                    rejected
+  "-"                                rejected
+-- Duration: the round trip --
+  parse(d.toString()) == d           ok
+-- Duration: arithmetic and order --
+  1s + 250ms                         1.25s
+  1s - 250ms                         750ms
+  250ms * 6                          1.5s
+  1s / 4                             250ms
+  1h / 250ms                         14400
+  -90ms abs                          90ms
+  sorted                             [-5ms, 0s, 1s]
+  min, max                           10ms 1s
+  0.25 seconds                       250ms
+  90s as seconds, millis             90 90000
+  -1500ns truncates toward zero      -1
+-- the calendar, across the awkward dates --
+  0                                  1970-01-01T00:00:00Z weekday 4 day 1
+  -1                                 1969-12-31T23:59:59Z weekday 3 day 365
+  951782400                          2000-02-29T00:00:00Z weekday 2 day 60
+  4107542400                         2100-03-01T00:00:00Z weekday 1 day 60
+  1000000000                         2001-09-09T01:46:40Z weekday 0 day 252
+  -2208988800                        1900-01-01T00:00:00Z weekday 1 day 1
+-- civil conversion is its own inverse --
+  civilFromDays round trip           ok
+  2000 is a leap year                ok
+  1900 is not                        ok
+  February 2024 has 29 days          ok
+-- out-of-range fields carry, as a human means them --
+  2026-13-01                         2027-01-01
+  2026-01-32                         2026-02-01
+  2026-03-00                         2026-02-28
+-- RFC 3339: what it reads --
+  2026-09-24T09:15:02Z               2026-09-24T09:15:02Z
+  2026-09-24T09:15:02.481Z           2026-09-24T09:15:02.481Z
+  2026-09-24T09:15:02.481123Z        2026-09-24T09:15:02.481123Z
+  2026-09-24T09:15:02.4811239999Z    2026-09-24T09:15:02.481123Z
+  2026-09-24t09:15:02z               2026-09-24T09:15:02Z
+  2026-09-24 09:15:02Z               2026-09-24T09:15:02Z
+  2026-09-24T11:15:02+02:00          2026-09-24T09:15:02Z
+  2026-09-24T04:15:02-05:00          2026-09-24T09:15:02Z
+  2026-09-24T09:15:02-00:00          2026-09-24T09:15:02Z
+  1969-12-31T23:59:59Z               1969-12-31T23:59:59Z
+  2016-12-31T23:59:60Z               2016-12-31T23:59:59.999999Z
+-- RFC 3339: what it refuses --
+  2026-09-24T09:15:02                rejected
+  2026-09-24                         rejected
+  2026-09-24T24:00:00Z               rejected
+  2026-13-01T00:00:00Z               rejected
+  2026-02-30T00:00:00Z               rejected
+  2026-09-24T09:15:02.Z              rejected
+  2026-09-24T09:15:02+2:00           rejected
+  2026-09-24T09:15:02 Z              rejected
+  not a timestamp                    rejected
+-- RFC 3339: the offset is kept when the fields are --
+  parseRfc3339Fields                 2026-09-24T11:15:02.481+02:00
+    same instant in UTC              2026-09-24T09:15:02.481Z
+    offset                           +02:00
+-- an offset is a value of its own --
+  0 minutes                          Z
+  120 minutes                        +02:00
+  -330 minutes                       -05:30
+  330 minutes                        +05:30
+  beyond 18 hours                    null
+  parse "+05:45"                     +05:45
+-- the round trip, at both ends of the range --
+  parse(t.toString()) == t           ok
+  an expanded year                   +011476-08-15T05:20:00Z
+-- HTTP-date: the three forms of one instant --
+  Sun, 06 Nov 1994 08:49:37 GMT      1994-11-06T08:49:37Z
+  Sunday, 06-Nov-94 08:49:37 GMT     1994-11-06T08:49:37Z
+  Sun Nov  6 08:49:37 1994           1994-11-06T08:49:37Z
+-- HTTP-date: what a sender writes --
+  784111777                          Sun, 06 Nov 1994 08:49:37 GMT
+  0                                  Thu, 01 Jan 1970 00:00:00 GMT
+  1790000000                         Mon, 21 Sep 2026 14:13:20 GMT
+  format then parse is the second    ok
+-- HTTP-date: what it refuses --
+  "Sun, 06 Nov 1994 08:49:37"        rejected
+  "Sun, 06 Nov 1994 08:49:37 UTC"    rejected
+  "Sun, 6 Nov 1994 08:49:37 GMT"     rejected
+  "Sun, 06 Foo 1994 08:49:37 GMT"    rejected
+  "Sun, 31 Nov 1994 08:49:37 GMT"    rejected
+  ""                                 rejected
+-- the clocks: what holds for every reading --
+  now() is after the epoch           ok
+  now() does not run backwards       ok
+  since() is what minus is           ok
+  a stopwatch runs forward           ok
+  a 30 s deadline has not passed     ok
+  its remainder is under 30 s        ok
+  a passed deadline has no remainder ok
+  the local offset is a real one     ok
+  local and UTC are the same instant ok
+  plus and minus undo each other     ok
+exit=0

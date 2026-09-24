@@ -156,11 +156,11 @@ fun request(port: i64, target: string, extra: string): string throws IoError | n
 fun main() throws IoError | net.TooLong {
   val app = http.router()
   app.wrap(http.requestId())                                        // outermost
-  app.wrap(http.timeout(50))
+  app.wrap(http.timeout(Duration.millis(50)))
   app.wrap(next => req => next(req).withHeader("x-served-by", "veles"))
   app.get("/fast", req => http.Response.text("quick"))
   app.get("/slow", req => {
-    await sleep(500)
+    await sleep(Duration.millis(500))
     http.Response.text("eventually")
   })
   with (listener = try net.listen()) {
@@ -192,7 +192,7 @@ What the module gives you:
 |---|---|
 | `http.logging()` | one line per request on standard error: peer, method, path, status, duration, request id when there is one |
 | `http.requestId()` | the client's `X-Request-Id`, or a fresh 16 hex digits, on the request for the handlers and on the response for the client |
-| `http.timeout(ms)` | 503 when the handler takes longer; it runs in its own task and is cancelled, so its `with`s close |
+| `http.timeout(d)` | 503 when the handler takes longer; it runs in its own task and is cancelled, so its `with`s close |
 
 `serve` logs a plainer version of `logging()`'s line itself, so pass
 `log: false` when you wrap it. A **recovery** middleware is not among
@@ -208,7 +208,7 @@ behind you is `req.withHeader(...)`, as `requestId` does.
 
 `serve` keeps a connection open for further requests (HTTP/1.1
 keep-alive) until the client closes it, sends `Connection: close`, or says
-nothing for `limits.idleTimeout` milliseconds (15 s by default) — a
+nothing for `limits.idleTimeout` (15 s by default) — a
 `withTimeout` around each read, so a silent client costs one parked task
 and nothing else. Requests are logged to standard error as
 `peer METHOD path status ms` unless `log: false`.
@@ -232,9 +232,9 @@ http.serve(listener, app, limits: http.Limits(bodyBytes: 8 * 1024 * 1024))
 | `headerCount` | 100 | how many header lines |
 | `headerBytes` | 65536 | every header line added up |
 | `bodyBytes` | 1048576 | the body, whatever `Content-Length` claims |
-| `headerTimeout` | 10000 | request line to the blank line, on one clock |
-| `bodyTimeout` | 30000 | the body |
-| `idleTimeout` | 15000 | silence between requests on a kept-alive connection |
+| `headerTimeout` | `Duration.seconds(10)` | request line to the blank line, on one clock |
+| `bodyTimeout` | `Duration.seconds(30)` | the body |
+| `idleTimeout` | `Duration.seconds(15)` | silence between requests on a kept-alive connection |
 
 A request that reaches a byte ceiling is answered and the connection
 closed: `414` for the request line, `431` for the headers, `413` for the

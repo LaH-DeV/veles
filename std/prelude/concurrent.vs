@@ -69,25 +69,26 @@ fun invoke<R, E>(f: sendable fun(): R suspends throws E): R throws E = try f()
 
 /// `withTimeout` ran out of time.
 public error Timeout {
-  public millis: i64
-  fun message(): string = "timed out after ${self.millis} ms"
+  /// The limit that was reached — not how long the call actually took.
+  public limit: Duration
+  fun message(): string = "timed out after ${self.limit}"
 }
 
-/// Runs `f` with a time limit: its result, or a `Timeout` error when `ms`
-/// milliseconds pass first. The task running `f` is then cancelled and
+/// Runs `f` with a time limit: its result, or a `Timeout` error when
+/// `limit` passes first. The task running `f` is then cancelled and
 /// unwinds — its `with` cleanups run — before `withTimeout` throws; an
 /// error `f` throws in time is rethrown, so the call throws `E | Timeout`.
 ///
 /// ```veles
-/// val line = try withTimeout(5000, () => try conn.readLine(max: 8192))
+/// val line = try withTimeout(Duration.seconds(5), () => try conn.readLine(max: 8192))
 /// ```
-public fun withTimeout<R: Sendable, E>(ms: i64, f: sendable fun(): R suspends throws E): R throws E | Timeout {
+public fun withTimeout<R: Sendable, E>(limit: Duration, f: sendable fun(): R suspends throws E): R throws E | Timeout {
   scope {
     val t = async invoke(f)
     race {
       val r = await t => return try r
       // leaving the scope by a throw cancels `t` and waits for it to unwind
-      sleep(ms)       => throw Timeout(millis: ms)
+      sleep(limit)    => throw Timeout(limit)
     }
   }
 }

@@ -61,12 +61,12 @@ public struct Limits {
   public bodyBytes: i64 = 1048576
   /// From the request line to the blank line that ends the headers. This
   /// is what a connection holding its headers open half-sent runs into.
-  public headerTimeout: i64 = 10000
+  public headerTimeout: Duration = Duration.seconds(10)
   /// From the end of the headers to the last byte of the body.
-  public bodyTimeout: i64 = 30000
+  public bodyTimeout: Duration = Duration.seconds(30)
   /// How long a kept-alive connection may stay silent before the next
   /// request. Reaching it is not an error: the connection closes.
-  public idleTimeout: i64 = 15000
+  public idleTimeout: Duration = Duration.seconds(15)
 }
 
 // ---------------------------------------------------------------------------
@@ -264,10 +264,10 @@ public type Middleware = sendable fun(Handler): Handler
 /// plainer version of the same line itself, so pass `log: false` when you
 /// wrap this one.
 public fun logging(): Middleware = next => req => {
-  val started = time.monotonic()
+  val sw = time.Stopwatch.start()
   val resp = next(req)
   val id = req.header("x-request-id")
-  io.eprintln("${req.peer} ${req.method} ${req.path} ${resp.status} ${time.monotonic() - started}ms" +
+  io.eprintln("${req.peer} ${req.method} ${req.path} ${resp.status} ${sw.elapsed()}" +
     (if (id == null) "" else " id=$id"))
   resp
 }
@@ -298,8 +298,8 @@ fun newRequestId(): string {
 /// Answers 503 when the handler behind it takes longer than `ms`. The
 /// handler runs in a task of its own and is cancelled on the way out, so
 /// whatever it held in a `with` is closed.
-public fun timeout(ms: i64): Middleware = next => req => {
-  when (withTimeout(ms, () => next(req))) {
+public fun timeout(limit: Duration): Middleware = next => req => {
+  when (withTimeout(limit, () => next(req))) {
     is Ok(resp) => resp
     is Err      => Response.text("service unavailable", status: 503)
   }
@@ -387,7 +387,7 @@ public fun contentTypeOf(name: string): string = when (path.ext(name).toLower())
 /// Accepts connections forever, serving each in a task of its own, and
 /// returns only when its task is cancelled. A connection is kept open for
 /// further requests until the client closes it, asks for `Connection:
-/// close`, or stays silent for `limits.idleTimeout` milliseconds. What one
+/// close`, or stays silent for `limits.idleTimeout`. What one
 /// request may cost is `limits` (see `Limits`); every request is logged to
 /// standard error unless `log` is false.
 public fun serve(listener: net.Listener, handler: Handler, limits: Limits = Limits(), log: bool = true) {
@@ -400,7 +400,7 @@ public fun serve(listener: net.Listener, handler: Handler, limits: Limits = Limi
         is Err(e)   => {
           // out of descriptors, a reset before accept: report and go on
           io.eprintln("http: accept: ${e.message()}")
-          await sleep(100)
+          await sleep(Duration.millis(100))
         }
       }
     }
@@ -423,11 +423,11 @@ fun connection(conn: net.Conn, handler: Handler, limits: Limits, log: bool) {
           break
         }
       }
-      val started = time.monotonic()
+      val sw = time.Stopwatch.start()
       val keepAlive = wantsKeepAlive(req)
       val resp = dispatch(handler, req)
       val sent = writeResponse(c, resp, close: !keepAlive)
-      if (log) io.eprintln("${req.peer} ${req.method} ${req.path} ${resp.status} ${time.monotonic() - started}ms")
+      if (log) io.eprintln("${req.peer} ${req.method} ${req.path} ${resp.status} ${sw.elapsed()}")
       if (sent is Err || !keepAlive) break
     }
   }
@@ -444,8 +444,8 @@ fun wantsKeepAlive(req: Request): bool = when (req.header("connection")?.toLower
 
 // One line of the head, refusing a ceiling breach with the status the
 // client should see rather than letting the read error escape.
-fun headLine(c: net.Conn, max: i64, ms: i64, tooLong: Fail): string? suspends throws Fail | IoError | Timeout {
-  when (withTimeout(ms, () => try c.readLine(max: max))) {
+fun headLine(c: net.Conn, max: i64, limit: Duration, tooLong: Fail): string? suspends throws Fail | IoError | Timeout {
+  when (withTimeout(limit, () => try c.readLine(max: max))) {
     is Ok(line) => line
     is Err(e)   => when (e) {
       is net.TooLong => throw tooLong
@@ -469,7 +469,7 @@ fun readRequest(c: net.Conn, limits: Limits): Request? throws Fail | IoError | T
   ) ?: return null
   // from here the whole head is on one clock, so a peer cannot hold the
   // connection open by sending one header every few seconds
-  val headDeadline = time.monotonic() + limits.headerTimeout
+  val headDeadline = time.Deadline.after(limits.headerTimeout)
   val parts = first.split(" ")
   if (parts.len() != 3) throw badRequest("malformed request line")
   val method = parts.atOrPanic(0)
@@ -482,9 +482,8 @@ fun readRequest(c: net.Conn, limits: Limits): Request? throws Fail | IoError | T
   // the map would collapse them to a single key
   var headerLines: i64 = 0
   loop {
-    val left = headDeadline - time.monotonic()
-    if (left <= 0) throw Fail(status: 408, text: "request header timeout")
-    val line = try headLine(c, limits.headerLineBytes, left, tooManyHeaders)
+    if (headDeadline.expired()) throw Fail(status: 408, text: "request header timeout")
+    val line = try headLine(c, limits.headerLineBytes, headDeadline.remaining(), tooManyHeaders)
       ?: throw badRequest("connection closed inside the headers")
     if (line.isEmpty()) break
     headerBytes += line.len()
@@ -620,15 +619,10 @@ public fun reasonOf(status: i64): string = when (status) {
   else => ""
 }
 
-val dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-val monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-
 /// A time in the format HTTP dates use: `Sun, 06 Nov 1994 08:49:37 GMT`.
-public fun httpDate(ms: i64): string {
-  val t = time.utc(ms)
-  val day = dayNames.atOrDefault(t.weekday, "Sun")
-  val month = monthNames.atOrDefault(t.month - 1, "Jan")
-  "$day, ${pad2(t.day)} $month ${t.year} ${pad2(t.hour)}:${pad2(t.minute)}:${pad2(t.second)} GMT"
-}
-
-fun pad2(n: i64): string = if (n < 10) "0$n" else "$n"
+///
+/// The format itself lives in `std/time`, with the parser for the two
+/// obsolete forms a recipient must also accept (`time.parseHttp`) —
+/// `Last-Modified` and `If-Modified-Since` are two ends of one conversation
+/// and belong in one place.
+public fun httpDate(t: time.Timestamp): string = time.formatHttp(t)

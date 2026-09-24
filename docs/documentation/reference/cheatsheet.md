@@ -204,13 +204,13 @@ scope {                          // every task started inside finishes here
   val v = await t
 }
 val (a, b) = gather { async f(); async g() }   // (Result<A, E|Panic>, Result<B, ...>)
-val winner = race { val m = ch.recv() => ...; sleep(100) => "timeout"; val v = t => ... }
+val winner = race { val m = ch.recv() => ...; sleep(Duration.millis(100)) => "timeout"; val v = t => ... }
 val ch = Channel<i64>(capacity: 8); ch.send(1); await ch.recv(); ch.close(); ch.closeAfter(n)  // closes itself after n sends
 xs.mapConcurrent(f, workers: 4); xs.forEachConcurrent(f, workers: 4)   // the worker pool, results in order; f may suspend/throw
 fun run(f: sendable fun(i64): i64)   // a function that may cross a task boundary: named, or a lambda over vals of Sendable types
-await sleep(ms)
+await sleep(d)                   // a Duration: Duration.millis(100), Duration.seconds(5); zero yields
 t.cancel()                       // stop a task at its next suspension point; its `with` cleanups run, the scope still joins it
-val v = try withTimeout(1000, () => try fetch())   // R throws E | Timeout; the task is cancelled and unwound before Timeout is thrown
+val v = try withTimeout(Duration.seconds(1), () => try fetch())   // R throws E | Timeout; the task is cancelled and unwound before Timeout is thrown
 // leaving a scope body early (return / throw / cancellation) cancels and joins its children
 val m = mutex(state); m.withLock(s => s.n += 1); m.get(); m.set(v)
 val a = atomic(0); a.load(); a.store(1); a.swap(2)
@@ -255,7 +255,7 @@ with (conn = try net.connect("example.org", 80)) {
   try conn.writeText("ping\n"); val line = try conn.readLine() ?: "closed"   // readLine: string?, null at end of stream
   val body = try conn.readExact(n); val chunk = try conn.read(); try conn.write(bytes); try conn.shutdownWrite()
 }
-val line = try withTimeout(5000, () => try conn.readLine())   // throws IoError | Timeout
+val line = try withTimeout(Duration.seconds(5), () => try conn.readLine())   // throws IoError | Timeout
 ```
 
 Every waiting call suspends the task; failures throw `IoError` with the address in `path`.
