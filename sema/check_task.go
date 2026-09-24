@@ -247,15 +247,17 @@ func (f *fnCtx) sleepCall(e *ast.CallExpr) Expr {
 		ms = f.checkExprTo(e.Args[0].Value, types.TI64)
 	} else {
 		arg := f.checkExpr(e.Args[0].Value, dur)
-		if types.IsInteger(arg.Type()) {
+		switch {
+		case types.IsInvalid(arg.Type()):
+			return bad() // the argument reported its own problem
+		case types.IsInteger(arg.Type()):
 			f.errorf(e.Pos, "'sleep' takes a 'Duration', not a number of milliseconds: write 'sleep(Duration.millis(n))' or 'sleep(Duration.seconds(n))' (D60)")
 			return bad()
-		}
-		if !types.Identical(arg.Type(), dur) {
+		case !types.Identical(arg.Type(), dur):
 			f.errorf(e.Pos, "'sleep' takes a 'Duration', found '%s'", arg.Type())
 			return bad()
 		}
-		ms = durationMillis(arg, e.Pos)
+		ms = durationMillis(dur, arg, e.Pos)
 	}
 	b := f.suspending(&Builtin{exprBase{types.TUnit}, "task.sleep", []Expr{ms}, e.Pos}, e.Pos, "sleep")
 	if !awaited && !f.inRaceArm {
@@ -265,12 +267,29 @@ func (f *fnCtx) sleepCall(e *ast.CallExpr) Expr {
 }
 
 // durationMillis is `(d.ns + 999999) / 1000000`: the whole milliseconds a
-// Duration covers, rounded up. Negative and zero durations fall out as 0,
-// which the executor reads as "yield".
-func durationMillis(d Expr, span source.Span) Expr {
-	ns := &FieldGet{exprBase{types.TI64}, d, 0, "ns"}
+// Duration covers, rounded up, so a sleep is never shorter than it was asked
+// for. `d` is read once, so an argument with side effects is evaluated once.
+// Zero gives 0 and a negative duration a negative count, both of which
+// `veles_task_sleep` reads as "yield". The one value this does not hold for
+// is a duration within a millisecond of the largest one representable, where
+// the `+ 999999` overflows — 292 years, checked in a debug build (D21).
+func durationMillis(dur *types.Struct, d Expr, span source.Span) Expr {
+	ns := &FieldGet{exprBase{types.TI64}, d, fieldIndex(dur, "ns"), "ns"}
 	up := &Binary{exprBase{types.TI64}, OpAdd, ns, &IntConst{exprBase{types.TI64}, 999999, false}, span}
 	return &Binary{exprBase{types.TI64}, OpDiv, up, &IntConst{exprBase{types.TI64}, 1000000, false}, span}
+}
+
+// fieldIndex is the position of a field by name, so lowering that reaches
+// into a prelude struct does not depend on the order its fields are written
+// in. -1 is impossible for a field the prelude declares, and would be caught
+// by the first program that sleeps.
+func fieldIndex(s *types.Struct, name string) int {
+	for i, f := range s.Fields {
+		if f.Name == name {
+			return i
+		}
+	}
+	return -1
 }
 
 // ioWaitCall handles `await ioWait(fd, write)`, the standard library's

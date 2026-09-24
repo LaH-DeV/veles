@@ -1225,7 +1225,9 @@ refuses month 13.
 **One RFC 3339 parser, with three named leniencies**: lower-case `t`/`z`
 (the RFC's own NOTE), a space where the `T` goes (§5.6, and what PostgreSQL
 prints), and ISO 8601's expanded year, so that `parse(t.toString())` is
-total rather than total only between the years 0000 and 9999. It refuses a
+total rather than total only between the years 0000 and 9999 — bar the last
+second at each end of the microsecond range, which prints and does not read
+back, a pair of instants not worth unreadable arithmetic. It refuses a
 missing offset, `24:00:00`, a bare date and any field out of range; `-00:00`
 ("offset unknown") reads as UTC and is never written. A fraction longer
 than six digits is truncated, not rounded, so the order of two texts stays
@@ -1234,6 +1236,34 @@ instant: it is accepted as the last microsecond of that minute, the instant
 a POSIX clock reports while it happens. Go rejects it; a conforming
 producer's timestamp failing to parse is the worse answer.
 
+**A date from outside is refused, never overflowed.** The year in
+`+999999-01-01T00:00:00Z` is 3.2e19 microseconds, and the year in
+`Sun, 06 Nov 99999999999999 08:49:37 GMT` is whatever the client typed; both
+reached `days * 86400 * 1000000` and panicked on the overflow D21 checks for
+(or, in a release build, wrapped into a plausible wrong instant, which is
+worse). Every conversion from calendar fields now goes through one checked
+place, `instantOf`, which bounds the year before `daysFromCivil` can
+overflow and the seconds before the multiplication can — so a parser answers
+`null` and only a hand-built `DateTime` can still reach the panic, which is
+D21's business. Formatting was made total the same way: applying an offset
+to the microsecond count, and `floorMod`'s `a - floorDiv(a, b) * b`, both
+overflowed within a day of the ends of the i64 range, so `at` now shifts the
+day and the microsecond within it separately and `floorMod` is
+`((a % b) + b) % b`. What is left is one honest gap: the last second at each
+end prints and does not parse back, because the parser stops where the
+product would leave the i64, and the arithmetic to recover those two seconds
+is not arithmetic a reader could check.
+
+**The host is asked what it can answer.** `Offset.local(at:)` reads the zone
+through the C library, and the Microsoft CRT refuses a negative `time_t` and
+anything past the year 3000 where glibc is happy — so a date of birth read
+back as local time silently became `Z`, right only in the UK. The C function
+now reports "cannot answer" distinguishably from "UTC" (zero is a real
+offset), and `std/time` asks again for the same month, day and time of day
+in a year the host can convert, keeping the leap-year parity. That is the
+assumption a fixed-offset model makes anyway — that the rules did not
+change — and it gets the daylight-saving half right, which a fallback to
+UTC does not.
 **HTTP-date lives in `std/time`, not `std/http`.** `formatHttp` writes
 IMF-fixdate only; `parseHttp` reads it and the two obsolete forms RFC 9110
 §5.6.7 says a recipient must accept, because RFC 850 and asctime are

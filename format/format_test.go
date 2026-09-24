@@ -259,6 +259,14 @@ func TestStyle(t *testing.T) {
 		{"trailing whitespace and CRLF",
 			"use io\r\n\r\nfun main() {   \r\n  io.println(\"x\")  \r\n}\r\n",
 			"use io\n\nfun main() {\n  io.println(\"x\")\n}\n"},
+		// a broken parameter list used to flush every comment up to the end
+		// of the *function*, which swept the body's comments into it
+		{"a broken parameter list does not swallow the body's comments",
+			"fun f(a: i64,\n      b: i64): i64 {\n  // about the first\n  val x = a + b\n  // about the second\n  x * 2\n}\n",
+			"fun f(\n  a: i64,\n  b: i64,\n): i64 {\n  // about the first\n  val x = a + b\n  // about the second\n  x * 2\n}\n"},
+		{"a comment inside a broken parameter list stays inside it",
+			"fun f(a: i64,  // the first\n      // about the last\n      b: i64): i64 {\n  // about the body\n  a + b\n}\n",
+			"fun f(\n  a: i64,  // the first\n  // about the last\n  b: i64,\n): i64 {\n  // about the body\n  a + b\n}\n"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -46,6 +46,20 @@ public fun monotonicNanos(): i64 = unsafe {
   veles_time_monotonic_ns()
 }
 
+/// What the host answers when it will not convert an instant at all. Not
+/// zero: zero is the offset of every machine running in UTC, and a correct
+/// answer must not be spelled like a failure.
+val offsetUnknown: i64 = 100000
+
+/// Two years the host is certain to be able to convert, one of each
+/// leap-year parity, for the fallback in `Offset.local`.
+val referenceYear: i64 = 2019
+val leapReferenceYear: i64 = 2020
+
+fun hostOffsetMinutes(secs: i64): i64 = unsafe {
+  veles_time_local_offset_minutes(secs)
+}
+
 // ---- arithmetic that rounds toward negative infinity ---------------------
 //
 // A point in time is a point on a line, so the second (or day) *containing*
@@ -57,7 +71,13 @@ fun floorDiv(a: i64, b: i64): i64 {
   if (a % b != 0 && ((a < 0) != (b < 0))) q - 1 else q
 }
 
-fun floorMod(a: i64, b: i64): i64 = a - floorDiv(a, b) * b
+/// The remainder of `floorDiv`, for a positive `b`: always `0..<b`.
+///
+/// Written as `((a % b) + b) % b` rather than `a - floorDiv(a, b) * b`,
+/// because that product overflows for an `a` near the end of the i64 range
+/// — which is exactly where a `Timestamp` built from raw microseconds can
+/// sit. `a % b` is already smaller than `b`, so nothing here can.
+fun floorMod(a: i64, b: i64): i64 = ((a % b) + b) % b
 
 // ---- the civil calendar ---------------------------------------------------
 
@@ -91,6 +111,31 @@ public fun civilFromDays(days: i64): (i64, i64, i64) {
   val d = doy - (153 * mp + 2) / 5 + 1               // 1..31
   val m = mp + (if (mp < 10) 3 else -9)              // 1..12
   (if (m <= 2) y + 1 else y, m, d)
+}
+
+// The edges of what a `Timestamp` holds. Every conversion from calendar
+// fields goes through `instantOf`, which checks against these *before* it
+// multiplies — a year read out of a JSON body or an `If-Modified-Since`
+// header is a number someone else chose, and `+999999-01-01T00:00:00Z` is
+// 3.2e19 microseconds, which is not a panic a server may have (D21 checks
+// the overflow in a debug build and wraps in release; neither is an answer).
+val maxSeconds: i64 = 9223372036854  // i64 microseconds, floored
+val maxDays: i64 = 106751991         // maxSeconds / 86400
+
+/// The instant a set of calendar fields names, or `null` when it is outside
+/// the ±292,277 years a `Timestamp` holds. Out-of-range months and days
+/// carry, as `daysFromCivil` defines; it is only the *magnitude* that is
+/// refused.
+fun instantOf(d: DateTime): Timestamp? {
+  // first, so that `daysFromCivil`'s own `era * 146097` cannot overflow
+  if (d.year > 300000 || d.year < -300000) return null
+  val days = daysFromCivil(d.year, d.month, d.day)
+  if (days > maxDays || days < 0 - maxDays) return null
+  val secs = days * 86400 + d.hour * 3600 + d.minute * 60 + d.second -
+    d.offset.totalMinutes() * 60
+  // a second of headroom, so the microseconds added below still fit
+  if (secs >= maxSeconds || secs <= 0 - maxSeconds) return null
+  Timestamp(us: secs * 1000000 + d.micros)
 }
 
 /// True for a proleptic Gregorian leap year.
@@ -172,9 +217,13 @@ public struct Timestamp {
 
   /// The calendar fields at a fixed offset from UTC.
   public fun at(offset: Offset): DateTime {
-    val shifted = self.us + offset.totalMinutes() * 60000000
-    val days = floorDiv(shifted, 86400000000)
-    val rest = floorMod(shifted, 86400000000)
+    // the offset is applied to the day and the microsecond within it, not to
+    // the microsecond count: `us + 18 hours` overflows for an instant near
+    // the end of the i64 range, and every Timestamp has to be printable
+    val whole = floorDiv(self.us, 86400000000)
+    val within = floorMod(self.us, 86400000000) + offset.totalMinutes() * 60000000
+    val days = whole + floorDiv(within, 86400000000)
+    val rest = floorMod(within, 86400000000)
     val (y, mo, d) = civilFromDays(days)
     DateTime(
       year: y, month: mo, day: d,
@@ -249,11 +298,29 @@ public struct Offset {
 
   /// The host time zone's offset at a given instant — which is the only way
   /// to ask: the answer changes twice a year in most of the world.
+  ///
+  /// Not every instant can be asked about. The Microsoft CRT refuses a
+  /// negative `time_t` and anything past the year 3000, where glibc is
+  /// happy, so a date of birth or a far-future lease would get no answer on
+  /// Windows and a silent `Z` — wrong for every zone but one. Instead the
+  /// same month, day and time of day is asked for in a year the host *can*
+  /// convert, keeping the leap-year parity so the 29th of February survives:
+  /// the answer is then the zone's rule for that date, which is right unless
+  /// the rules themselves changed. That is the only approximation available
+  /// without a tz database (§5.6), and it is the assumption a fixed-offset
+  /// zone model makes anyway.
   public static fun local(at: Timestamp): Offset {
-    val m = unsafe {
-      veles_time_local_offset_minutes(at.toSeconds())
-    }
-    Offset.ofMinutes(m) ?: Offset.utc
+    val direct = hostOffsetMinutes(at.toSeconds())
+    if (direct != offsetUnknown) return Offset.ofMinutes(direct) ?: Offset.utc
+    val d = at.utc()
+    val year = if (isLeapYear(d.year)) leapReferenceYear else referenceYear
+    val shifted = DateTime(
+      year, month: d.month, day: d.day, hour: d.hour,
+      minute: d.minute, second: d.second,
+    ).timestamp()
+    val nearby = hostOffsetMinutes(shifted.toSeconds())
+    if (nearby == offsetUnknown) return Offset.utc
+    Offset.ofMinutes(nearby) ?: Offset.utc
   }
 
   /// Minutes east of UTC; negative west of it.
@@ -315,10 +382,14 @@ public struct DateTime {
   public offset: Offset = Offset.utc
 
   /// The instant these fields name.
-  public fun timestamp(): Timestamp =
-    Timestamp(us: (daysFromCivil(self.year, self.month, self.day) * 86400
-    + self.hour * 3600 + self.minute * 60 + self.second
-    - self.offset.totalMinutes() * 60) * 1000000 + self.micros)
+  ///
+  /// Panics when they name one outside the ±292,277 years a `Timestamp`
+  /// holds — a `DateTime` is a set of fields and nothing stops a caller
+  /// writing `year: 999999999`, but the answer then does not exist. Every
+  /// parser here checks before it builds, so text from outside reaches a
+  /// `null`, never this.
+  public fun timestamp(): Timestamp = instantOf(self)
+    ?: panic("${self.year}-${self.month}-${self.day} is outside the range a Timestamp holds")
 
   /// The same instant with every field brought back into range.
   public fun normalized(): DateTime = self.timestamp().at(self.offset)
@@ -371,8 +442,11 @@ fun pad(n: i64, width: i64): string = n.toString().padStart(width, "0")
 
 /// Four digits for a year RFC 3339 can spell, and ISO 8601's expanded form
 /// (`+271821`, `-000001`) for one it cannot — so that `parse(t.toString())`
-/// is total over every `Timestamp`, not only over the ones between the year
-/// 0 and the year 9999.
+/// reads back every `Timestamp`, not only the ones between the year 0 and
+/// the year 9999. The exception is the last second at each end of the
+/// microsecond range, which prints but does not parse: the parser stops
+/// where `secs * 1000000 + micros` would leave the i64, and buying those
+/// two seconds back would cost arithmetic nobody could check.
 fun year4(y: i64): string {
   if (y >= 0 && y <= 9999) return pad(y, 4)
   val sign = if (y < 0) "-" else "+"
@@ -407,7 +481,13 @@ fun twoDigits(s: string, i: i64): i64? = digitsAt(s, i, 2)
 ///  * a space where the `T` goes — RFC 3339 §5.6 allows it "by mutual
 ///    agreement", and it is what PostgreSQL prints;
 ///  * ISO 8601's expanded year (`+271821-04-20T...`), so that the text
-///    `Timestamp.toString()` produces always reads back.
+///    `Timestamp.toString()` produces reads back — every instant but the
+///    last second at each end of the microsecond range, which prints and
+///    does not parse.
+///
+/// A date outside the ±292,277 years a `Timestamp` holds is refused rather
+/// than overflowed: the year in `+999999-01-01T00:00:00Z` is a number
+/// whoever sent the document chose.
 ///
 /// Refused: a missing offset, `24:00:00`, a date with no time, a decimal
 /// point with no digits after it, and any field out of range. `-00:00`,
@@ -466,17 +546,17 @@ public fun parseRfc3339Fields(s: string): DateTime? {
   if (month < 1 || month > 12) return null
   if (day < 1 || day > daysInMonth(year, month)) return null
   if (hour > 23 || minute > 59 || second > 60) return null
-  if (second == 60) {
-    // a leap second: the last microsecond of the minute it belongs to
-    return DateTime(
-      year, month, day, hour, minute,
-      second: 59, micros: 999999, offset,
-    )
-  }
-  DateTime(
+  // a leap second is the last microsecond of the minute it belongs to
+  val sec = if (second == 60) 59 else second
+  val us = if (second == 60) 999999 else micros
+  val d = DateTime(
     year, month, day, hour, minute,
-    second, micros, offset,
+    second: sec, micros: us, offset,
   )
+  // an expanded year can name a date no Timestamp holds; refuse it here so
+  // that the `DateTime` this hands back always converts
+  val _ = instantOf(d) ?: return null
+  d
 }
 
 /// An RFC 3339 timestamp as an instant, or `null`. See
@@ -570,7 +650,9 @@ fun buildUtc(year: i64, month: i64, day: i64, clock: (i64, i64, i64)): Timestamp
   if (month < 1 || month > 12) return null
   if (day < 1 || day > daysInMonth(year, month)) return null
   val (h, mi, sec) = clock
-  DateTime(year, month, day, hour: h, minute: mi, second: sec).timestamp()
+  // the year came out of `toInt()` on a field of the header, so it is a
+  // number the client chose; `instantOf` refuses one no Timestamp holds
+  instantOf(DateTime(year, month, day, hour: h, minute: mi, second: sec))
 }
 
 /// `24 Sep 2026 09:15:02 GMT`

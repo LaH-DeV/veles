@@ -481,10 +481,20 @@ fun readRequest(c: net.Conn, limits: Limits): Request? throws Fail | IoError | T
   // lines, not entries: repeating one name costs the server the same and
   // the map would collapse them to a single key
   var headerLines: i64 = 0
+  val headerTimeout = Fail(status: 408, text: "request header timeout")
   loop {
-    if (headDeadline.expired()) throw Fail(status: 408, text: "request header timeout")
-    val line = try headLine(c, limits.headerLineBytes, headDeadline.remaining(), tooManyHeaders)
-      ?: throw badRequest("connection closed inside the headers")
+    // the deadline is answered with a status, not with a bare Timeout: a
+    // Timeout out of `readRequest` is the *idle* wait above, which closes
+    // without a word, and a client that dribbles its headers has to be told
+    if (headDeadline.expired()) throw headerTimeout
+    val line = when (headLine(c, limits.headerLineBytes, headDeadline.remaining(), tooManyHeaders)) {
+      is Ok(l)  => l ?: throw badRequest("connection closed inside the headers")
+      is Err(e) => when (e) {
+        is Timeout => throw headerTimeout
+        is Fail    => throw e
+        is IoError => throw e
+      }
+    }
     if (line.isEmpty()) break
     headerBytes += line.len()
     headerLines += 1

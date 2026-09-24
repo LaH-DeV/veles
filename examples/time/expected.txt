@@ -82,6 +82,14 @@
   2026-09-24T09:15:02+2:00           rejected
   2026-09-24T09:15:02 Z              rejected
   not a timestamp                    rejected
+  +999999-01-01T00:00:00Z            rejected
+  +300000-01-01T00:00:00Z            rejected
+  -999999-01-01T00:00:00Z            rejected
+  Sun, 06 Nov 99999999999999 08:49:37 GMT rejected
+  Sun Nov  6 08:49:37 999999999      rejected
+  ofMicros(9223372036854775807)      +294247-01-10T04:00:54.775807Z
+  ofMicros(-9223372036854775807)     -290308-12-21T19:59:05.224193Z
+  ofMicros(0)                        1970-01-01T00:00:00Z
 -- RFC 3339: the offset is kept when the fields are --
   parseRfc3339Fields                 2026-09-24T11:15:02.481+02:00
     same instant in UTC              2026-09-24T09:15:02.481Z

@@ -142,9 +142,27 @@ fun rfc3339() {
     "2026-09-24T09:15:02+2:00",
     "2026-09-24T09:15:02 Z",
     "not a timestamp",
+    // a year no Timestamp holds is refused, not overflowed: the number came
+    // from whoever wrote the document
+    "+999999-01-01T00:00:00Z",
+    "+300000-01-01T00:00:00Z",
+    "-999999-01-01T00:00:00Z",
   ]) {
     val t = time.parseRfc3339(text)
     show(text, if (t == null) "rejected" else "$t")
+  }
+  // the same field, in a header, reaches a different parser
+  loop (text in [
+    "Sun, 06 Nov 99999999999999 08:49:37 GMT",
+    "Sun Nov  6 08:49:37 999999999",
+  ]) {
+    val t = time.parseHttp(text)
+    show(text, if (t == null) "rejected" else "$t")
+  }
+  // and every instant a Timestamp holds still has a text, both ends included
+  loop (us in [9223372036854775807, -9223372036854775807, 0]) {
+    val t = time.Timestamp.ofMicros(us)
+    show("ofMicros($us)", "$t")
   }
 
   io.println("-- RFC 3339: the offset is kept when the fields are --")

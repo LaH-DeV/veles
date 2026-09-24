@@ -279,7 +279,8 @@ behind a name that says "crypto" (§10, 2026-09-23).
       could later adopt them without a second spelling
 - [x] RFC 3339 parse and format, in one parser with three named leniencies
       (lower-case `t`/`z`, a space separator, ISO 8601 expanded years so the
-      round trip is total); the leap second `23:59:60` reads as the last
+      round trip reads back every instant but the last second at each end of
+      the range); the leap second `23:59:60` reads as the last
       microsecond of its minute. HTTP-date moved out of `std/http`:
       `formatHttp` writes IMF-fixdate, `parseHttp` reads all three forms
       RFC 9110 §5.6.7 requires a recipient to accept
@@ -352,7 +353,11 @@ behind a name that says "crypto" (§10, 2026-09-23).
 
 ## 6. Tooling and developer experience
 
-- [ ] `veles fmt` stable on every example (formatter exists — CI check)
+- [ ] `veles fmt` stable on every example (formatter exists — CI check).
+      A 2026-09-24 review found it swept a function body's comments into a
+      parameter list the author had wrapped: fixed, with two cases in
+      `format/format_test.go`. That it took reading a formatted file to
+      notice is the argument for the CI check
 - [ ] `veles test`: coverage, `--filter`, parallel, test timeouts
 - [ ] `veles bench`
 - [ ] LSP: rename, find references, code actions ("add `@json(skip)`",
@@ -469,8 +474,11 @@ pros/cons before anything is built; the answer becomes a spec entry.
 | 2026-09-23 | Static call on a qualified generic (compiler) | **`mod.Type<T>.f(...)` parses.** The speculative type-argument path only allowed a bare name before, so `crypto.Hmac<Sha256>.start(key)` — the natural spelling from outside the module — was a syntax error. `ast.MemberExpr.TypeArgs` carries them, `moduleTypeNamed` resolves the instance, and a qualified generic named without arguments gets the same error as an unqualified one. |
 | 2026-09-23 | Formatter: a grid stays a grid | **A broken list keeps the author's grouping.** `brokenList` put one element per line, which turned SHA-256's 64 round constants into 64 lines. A newline now goes only where the author had one, so a table written as a grid stays a grid — the same "read the line breaks out of the text" rule the rest of the printer follows. |
 | 2026-09-24 | Time: three types, not one number | **`Duration` (prelude, i64 nanoseconds), `Timestamp` (wall clock, i64 microseconds) and `Deadline`/`Stopwatch` (monotonic).** No raw monotonic reading is handed out, so it cannot be compared with a wall-clock one — the confusion is unrepresentable rather than documented. Microseconds for the wall clock because RFC 3339's six digits and a PostgreSQL `timestamptz` must survive a round trip; `toSeconds`/`toMillis` round **down** on a point and truncate toward zero on a length. Arithmetic is methods (`a.plus(b)`), accepted rather than paid for with an `Arithmetic` trait, which stays its own decision; `plus`/`minus`/`times`/`dividedBy` are named so it could adopt them. Rejected: bare `i64` with named constructors (the unit stays optional); Go's `time.Time` carrying both readings; keeping `sleep` on `i64`; migrating std later (two spellings). Spec entry: D60. |
-| 2026-09-24 | What RFC 3339 accepts | **One parser, three named leniencies** — lower-case `t`/`z` (the RFC's NOTE), a space separator (§5.6, PostgreSQL) and ISO 8601 expanded years, so `parse(t.toString())` is total rather than total only within 0000–9999. `23:59:60` is accepted and read as the last microsecond of the minute: it is legal RFC 3339 with no POSIX instant, and a conforming producer's timestamp failing to parse (Go's answer) is worse than the microsecond. A fraction longer than six digits truncates, never rounds, so the order of two texts is the order of their instants. |
+| 2026-09-24 | What RFC 3339 accepts | **One parser, three named leniencies** — lower-case `t`/`z` (the RFC's NOTE), a space separator (§5.6, PostgreSQL) and ISO 8601 expanded years, so `parse(t.toString())` reads back every instant but the last second at each end of the microsecond range (the arithmetic to buy those two back is not checkable by eye). A year beyond the ±292,277 a `Timestamp` holds is *refused*, in every parser, because it is a number the sender chose and the multiplication overflows. `23:59:60` is accepted and read as the last microsecond of the minute: it is legal RFC 3339 with no POSIX instant, and a conforming producer's timestamp failing to parse (Go's answer) is worse than the microsecond. A fraction longer than six digits truncates, never rounds, so the order of two texts is the order of their instants. |
 | 2026-09-24 | Where HTTP-date lives | **`std/time`, not `std/http`.** `Last-Modified` and `If-Modified-Since` are two ends of one conversation; `formatHttp` writes IMF-fixdate only, `parseHttp` also reads RFC 850 and asctime, which RFC 9110 §5.6.7 requires of a recipient and which is exactly what an old client sends. `http.httpDate` is a one-line name for the same function. |
+| 2026-09-24 | A date from outside is refused, not overflowed (review) | **One checked conversion.** A review of D60 found that `+999999-01-01T00:00:00Z` and `Sun, 06 Nov 99999999999999 08:49:37 GMT` both reached `days * 86400 * 1000000` and panicked — a parser fed untrusted text may not. Every field-to-instant conversion now goes through `instantOf`, which bounds the year before `daysFromCivil` can overflow and the seconds before the multiplication can. Formatting was made total the same way: `Timestamp.at` shifts the day and the microsecond within it instead of the microsecond count, and `floorMod` is `((a % b) + b) % b` — both of the old forms overflowed within a day of the ends of the i64 range. Left as a documented gap: the last second at each end prints but does not parse back. |
+| 2026-09-24 | A local offset the host cannot give (review) | **Ask again for a date it can.** `Offset.local(at:)` reads the zone through the C library, and the Microsoft CRT refuses a negative `time_t` and anything past the year 3000; a date of birth silently read back as `Z`, correct only in the UK. The C side now reports "cannot answer" distinguishably from "UTC" (zero being a real offset), and `std/time` retries with the same month, day and time of day in a year the host can convert, keeping leap-year parity, so the daylight-saving half is right too. Rejected: falling back to UTC (wrong for almost every zone), and carrying a tz database (§5.6, later). |
+| 2026-09-24 | Formatter: a broken parameter list is not a comment sink | **`flushComments` stopped at the end of the *function*.** So when an author wrapped a signature over two lines, every comment in the body was swept up into the parameter list and the statements they documented were left bare — no text lost, all meaning lost, and idempotent in the wrong state. The limit is now the parameter list's own `)`, found by a scan that skips the only things that can stand there (whitespace, a trailing comma, comments). Found by reviewing D60's own source after `veles fmt` rearranged it. |
 
 ## 11. Known limitations to revisit
 
@@ -481,8 +489,6 @@ pros/cons before anything is built; the answer becomes a spec entry.
 - `T?.decode(from)` written by hand parses as a safe call on `T`; use a
   generic (`fun decodeIt<T: Decodable>(...)`) or a field. Derived code uses a
   resolved-type receiver and is unaffected.
-- `examples/tutorial/04-functions.expected.txt` is out of date relative to
-  its source (three lines printed, one expected) — pre-existing, not touched.
 - `crypto.randomBytes` returns the bytes through a `string`-shaped runtime
   buffer and `.bytes()`, the convention `fs.readBytes` already uses. It
   works (the length, not a NUL, delimits the buffer) but a `List<u8>` out
@@ -509,8 +515,23 @@ pros/cons before anything is built; the answer becomes a spec entry.
   boundary; that needs the IANA database (§5.6).
 - `Timestamp` outside the years 0000–9999 prints ISO 8601's expanded year
   (`+011476-08-15T05:20:00Z`). That text is not RFC 3339, and the parser
-  accepts it only so `parse(t.toString())` is total; a peer that is strict
-  about RFC 3339 will refuse it.
+  accepts it only so that `parse(t.toString())` reads back; a peer that is
+  strict about RFC 3339 will refuse it.
+- The last second at each end of the microsecond range prints and does not
+  parse back: the parser stops where `secs * 1000000 + micros` would leave
+  the i64, and recovering those two seconds needs arithmetic split across
+  the boundary that no reader could check. Everything between them round
+  trips (`examples/time` asserts both ends print).
+- `Offset.local(at:)` outside what the host's C library will convert — a
+  negative `time_t` or past the year 3000 on the Microsoft CRT — is the
+  offset for the *same date in a year the host can do*, not the offset that
+  zone actually had then. Without a tz database "the rules did not change"
+  is the only assumption available; with one (§5.6) this stops being an
+  approximation.
+- `Duration.nanos(n).toString()` for the single most negative `n` prints one
+  nanosecond short, because `abs()` saturates there rather than overflowing.
+  It is the one `Duration` whose text does not read back, and it cannot be
+  written as a literal.
 - `sleep` rounds a `Duration` **up** to the executor's millisecond, so
   `Duration.micros(1)` sleeps for one millisecond rather than a
   microsecond. Sub-millisecond waiting needs a finer timer wheel in

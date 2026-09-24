@@ -140,13 +140,16 @@ cannot be started throws.
 ```veles
 // fragment
 use time
-val t = time.now()                       // i64 milliseconds since 1970-01-01T00:00:00Z
-val d = time.utc(t)                      // DateTime: year, month, day, hour, minute, second, millis, weekday, yearDay
-io.println("$d ${d.date()} ${time.local(t).hour}")   // 2026-09-17T12:34:56.789 2026-09-17 14
+val t = time.now()                       // Timestamp: microseconds since 1970-01-01T00:00:00Z
+val d = t.utc()                          // DateTime: year, month, day, hour, minute, second, micros, offset
+io.println("$d ${d.date()} ${t.local().hour}")   // 2026-09-17T12:34:56.789Z 2026-09-17 14
 val sw = time.Stopwatch.start()
 work()
-io.println("took ${sw.elapsedMillis()} ms")    // monotonic clock; time.monotonic() gives the reading itself
+io.println("took ${sw.elapsed()}")       // a Duration on the monotonic clock: "took 1.2ms"
 ```
+
+The wall clock and the monotonic one are different types on purpose, and a
+length of time is a third. [Time](20-time.md) is the chapter.
 
 ```veles
 // fragment

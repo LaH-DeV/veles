@@ -492,14 +492,23 @@ static int64_t days_from_civil(int64_t y, int64_t m, int64_t d) {
 /* The host time zone's offset east of UTC, in minutes, at the instant
  * `secs` (Unix seconds). Taken as the difference between that instant's
  * local and UTC calendar fields, so it needs no tz internals and follows
- * daylight saving. Zero when the platform will not answer. */
+ * daylight saving.
+ *
+ * VELES_TIME_OFFSET_UNKNOWN (not zero — zero is a real offset, and a UTC
+ * host must not be indistinguishable from a failure) when the platform
+ * will not convert that instant: the Microsoft CRT refuses a negative
+ * time_t and anything past the year 3000, where glibc is happy. std/time
+ * answers that by asking again for the same date in a year the host can
+ * do, which is the only approximation available without a tz database. */
+#define VELES_TIME_OFFSET_UNKNOWN 100000
+
 int64_t veles_time_local_offset_minutes(int64_t secs) {
     time_t t = (time_t)secs;
     struct tm lt, gt;
 #if defined(_WIN32)
-    if (localtime_s(&lt, &t) != 0 || gmtime_s(&gt, &t) != 0) return 0;
+    if (localtime_s(&lt, &t) != 0 || gmtime_s(&gt, &t) != 0) return VELES_TIME_OFFSET_UNKNOWN;
 #else
-    if (!localtime_r(&t, &lt) || !gmtime_r(&t, &gt)) return 0;
+    if (!localtime_r(&t, &lt) || !gmtime_r(&t, &gt)) return VELES_TIME_OFFSET_UNKNOWN;
 #endif
     int64_t l = days_from_civil(lt.tm_year + 1900, lt.tm_mon + 1, lt.tm_mday) * 86400
               + lt.tm_hour * 3600 + lt.tm_min * 60 + lt.tm_sec;

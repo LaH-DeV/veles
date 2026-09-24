@@ -183,7 +183,10 @@ The parser is strict, with three leniencies it documents:
 - a space where the `T` goes, allowed by §5.6 "by mutual agreement" and
   what PostgreSQL prints;
 - ISO 8601's expanded year (`+271821-04-20T…`), so the text `toString()`
-  produces always reads back, even outside the years 0000–9999.
+  produces reads back, even outside the years 0000–9999 — every instant
+  but the last second at each end of the microsecond range, which prints
+  and does not parse. A date beyond the ±292,277 years a `Timestamp` holds
+  is refused, not overflowed.
 
 It refuses a missing offset, `24:00:00`, a bare date, a decimal point with
 no digits after it, and any field out of range. `-00:00` — RFC 3339's

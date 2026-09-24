@@ -672,9 +672,45 @@ func (p *printer) params(params []ast.Param, open int, owner ast.Node) {
 	if multi {
 		p.indent--
 		p.nl()
-		p.flushComments(owner.Span().End)
+		// only what stands between the last parameter and the ')': the
+		// owner's end is the end of the whole function, and flushing to it
+		// swept every comment in the body up into the parameter list
+		p.flushComments(p.closeParenAfter(params[len(params)-1].Pos.End, owner.Span().End))
 	}
 	p.w(")")
+}
+
+// closeParenAfter is the offset of the parameter list's ')'. Between the end
+// of the last parameter and it there can only be whitespace, a trailing
+// comma and comments, so the scan skips exactly those and stops at the first
+// ')' it sees; `end` bounds it so a source the parser accepted but this does
+// not understand cannot run past the node.
+func (p *printer) closeParenAfter(from, end int) int {
+	if from < 0 {
+		from = 0
+	}
+	if end > len(p.src) {
+		end = len(p.src)
+	}
+	for i := from; i < end; {
+		switch {
+		case p.src[i] == ')':
+			return i
+		case strings.HasPrefix(p.src[i:], "//"):
+			for i < end && p.src[i] != '\n' {
+				i++
+			}
+		case strings.HasPrefix(p.src[i:], "/*"):
+			j := strings.Index(p.src[i+2:end], "*/")
+			if j < 0 {
+				return end
+			}
+			i += 2 + j + 2
+		default:
+			i++
+		}
+	}
+	return end
 }
 
 // listBroken reports whether a bracketed list was written across lines:
