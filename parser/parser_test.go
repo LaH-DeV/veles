@@ -322,7 +322,7 @@ struct Box<T: Show> {
 		t.Errorf("target should be Box<T>:\n%s", got)
 	}
 	for src, want := range map[string]string{
-		"struct P { x: i64\n implement<T> Display { fun toString(): string = \"\" } }": "uses the struct's type parameters",
+		"struct P { x: i64\n implement<T> Display { fun toString(): string = \"\" } }":    "uses the struct's type parameters",
 		"struct P { x: i64\n implement Display for P { fun toString(): string = \"\" } }": "drop 'for'",
 	} {
 		_, diags := parse(t, src)

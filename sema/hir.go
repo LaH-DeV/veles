@@ -72,6 +72,7 @@ type Func struct {
 	inferring      bool
 	checked        bool
 	suspends       bool // directly contains a suspension point
+	raised         bool // an error reached recordError: something in the body can throw
 
 	// Suspends is the inferred effect (D2): set by the suspension pass.
 	Suspends bool

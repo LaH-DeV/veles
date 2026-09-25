@@ -444,7 +444,7 @@ type Trait struct {
 	// Decodable`, D58): a bound on this trait carries theirs, an impl of
 	// it needs impls of them.
 	Supers []*Trait
-	Decl        any
+	Decl   any
 	// SelfParam is the synthetic type parameter standing for Self in the
 	// trait's default bodies (created by the checker on first use).
 	SelfParam *TypeParam

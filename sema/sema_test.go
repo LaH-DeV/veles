@@ -1206,6 +1206,7 @@ fun main() {
 	expectError(t, prelude+`fun main() { val xs = [1]; val n: i64 = xs.at(0); io.println("$n") }`, "supply a fallback with '?:'")
 	expectError(t, prelude+`fun main() { val s = "abc"; io.println("${s[0]}") }`, "strings are not indexable")
 }
+
 // The sealed-`else` lint (D13, scoped 2026-09-18): an `else` standing for
 // exactly one missing variant warns (an enumeration a new variant would
 // fall into); an `else` with every variant covered is dead and carries a
@@ -2514,7 +2515,6 @@ fun run(f: sendable fun(): i64): i64 = f()
 fun main() { val c = C(); io.println("${run(() => c.n)}") }`, "which has 'var' fields")
 }
 
-
 // D28 (v0.30): a field default is a constant — it cannot read `self`; a
 // field derived from the others is assigned in `init { }`.
 func TestDefaultsDoNotReadSelf(t *testing.T) {
@@ -2917,4 +2917,320 @@ fun main() {
 	expectError(t, uses+`
 fun main() { io.println("${crypto.Hmac.digestSize()}") }`,
 		"'Hmac' is generic; write the type arguments")
+}
+
+// A `throws` clause on a body that cannot raise anything warns, with a fix
+// that removes it; the callers' `try` then carries a fix of its own. The
+// lint leaves contracts alone: public functions, trait implementations,
+// functions used as values, and a declared error that is a type parameter.
+func TestNeedlessThrowsLint(t *testing.T) {
+	src := prelude + `
+error Bad { n: i64 }
+trait Source { fun read(): i64 throws Bad }
+struct Fixed { implement Source { fun read(): i64 throws Bad = 1 } }
+fun plain(x: i64): i64 throws Bad = x + 1
+fun bare(x: i64): i64 throws { return x }
+fun real(x: i64): i64 throws Bad = if (x > 5) throw Bad(n: x) else x
+fun forwards(): i64 throws Bad = try real(1)
+public fun reserved(): i64 throws Bad = 0
+fun asValue(x: i64): i64 throws Bad = x
+fun run(f: fun(i64): i64 throws Bad): i64 throws Bad = try f(1)
+fun generic<E>(f: fun(): i64 throws E): i64 throws E = try f()
+fun main() {
+  val s: Source = Fixed()
+  io.println("${plain(1).getOrDefault(0)} ${bare(2).getOrDefault(0)} ${forwards().getOrDefault(0)}")
+  io.println("${reserved().getOrDefault(0)} ${run(asValue).getOrDefault(0)} ${s.read().getOrDefault(0)}")
+  io.println("${generic(() => 3)}")
+}`
+	diags := checkSource(t, src)
+	var flagged []string
+	for _, d := range diags.Items {
+		if strings.Contains(d.Message, "nothing in its body can throw") {
+			if d.Fix == nil {
+				t.Errorf("no fix on %q", d.Message)
+			}
+			flagged = append(flagged, strings.Split(d.Message, "'")[1])
+		}
+	}
+	if diags.HasErrors() || strings.Join(flagged, " ") != "plain bare" {
+		t.Errorf("expected warnings for plain and bare only, got %v:\n%s", flagged, diags.Render())
+	}
+
+	diags = checkSource(t, prelude+`
+fun one(): i64 = 1
+fun main() { io.println("${try one()}") }`)
+	for _, d := range diags.Items {
+		if strings.Contains(d.Message, "'try' needs a Result") {
+			if d.Fix == nil || len(d.Fix.Edits) != 1 || d.Fix.Edits[0].Span.End-d.Fix.Edits[0].Span.Start != len("try ") {
+				t.Errorf("the fix should delete exactly 'try ': %+v", d.Fix)
+			}
+			return
+		}
+	}
+	t.Errorf("expected the 'try needs a Result' error:\n%s", diags.Render())
+}
+
+// `loop (true)` warns with a fix that writes `loop { ... }`, labels kept.
+func TestLoopTrueLint(t *testing.T) {
+	diags := checkSource(t, prelude+`
+fun main() {
+  var i = 0
+  loop (true) {
+    i += 1
+    if (i > 3) break
+  }
+  loop :outer ( true ) {
+    i += 1
+    if (i > 9) break outer
+  }
+  loop (false) { }
+  io.println("$i")
+}`)
+	var cut []string
+	for _, d := range diags.Items {
+		if strings.Contains(d.Message, "'loop (true)'") {
+			if d.Fix == nil {
+				t.Fatalf("no fix: %s", d.Message)
+			}
+			e := d.Fix.Edits[0]
+			cut = append(cut, e.Span.File.Content[e.Span.Start:e.Span.End])
+		}
+	}
+	if diags.HasErrors() || strings.Join(cut, "|") != " (true)| ( true )" {
+		t.Errorf("expected two fixes cutting ' (true)' and ' ( true )', got %q:\n%s", cut, diags.Render())
+	}
+}
+
+// A hand-written count over a List/Set/Map/Range warns with a `.len()`
+// fix; a counter reassigned later, or a loop over an iterator, does not.
+func TestCountingLoopLint(t *testing.T) {
+	diags := checkSource(t, prelude+`
+fun main() {
+  val xs = [1, 2, 3]
+  var n = 0
+  loop (_ in xs) { n += 1 }
+  var r = 0
+  loop (_ in 0..<10) { r += 1 }
+  var kept = 0
+  loop (_ in xs) { kept += 1 }
+  kept = 5
+  var it = 0
+  loop (_ in xs.iter()) { it += 1 }
+  var two = 0
+  loop (_ in xs) { two += 2 }
+  io.println("$n $r $kept $it $two")
+}`)
+	var fixes []string
+	for _, d := range diags.Items {
+		if strings.Contains(d.Message, "counts the elements") {
+			fixes = append(fixes, d.Fix.Edits[0].NewText)
+		}
+	}
+	if diags.HasErrors() || strings.Join(fixes, "|") != "val n = xs.len()|val r = (0..<10).len()" {
+		t.Errorf("got fixes %q:\n%s", fixes, diags.Render())
+	}
+}
+
+// `"$self"` inside the type's own Display.toString recurses forever and is
+// an error; interpolating another value of the type (which may terminate)
+// and a generic type's field are fine.
+func TestDisplaySelfRecursion(t *testing.T) {
+	diags := checkSource(t, prelude+`
+struct P {
+  x: i64
+  implement Display { fun toString(): string = "P$self" }
+}
+struct Frac {
+  n: i64
+  implement Display { fun toString(): string = if (self.n < 0) "-${Frac(n: -self.n)}" else "${self.n}" }
+}
+struct Box<T> {
+  v: T
+  implement Display { fun toString(): string = "box ${self.v}" }
+}
+fun main() { io.println("${P(x: 1)} ${Frac(n: -3)} ${Box(v: 1)}") }`)
+	n := 0
+	for _, d := range diags.Items {
+		if strings.Contains(d.Message, "inside its own 'toString'") {
+			n++
+		}
+	}
+	if n != 1 || diags.ErrorCount() != 1 {
+		t.Errorf("expected exactly one error, for P:\n%s", diags.Render())
+	}
+}
+
+// A missing implement is reported with where to write it; a missing trait
+// method with the declaration to add.
+func TestImplementHints(t *testing.T) {
+	shape := `
+trait Shape {
+  fun area(): f64
+  fun name(
+    short: bool,
+  ): string
+}
+`
+	missing := checkSource(t, prelude+shape+`
+struct Sq {
+  s: f64
+  implement Shape { fun area(): f64 = self.s }
+}
+fun main() { }`).Render()
+	unimplemented := checkSource(t, prelude+shape+`
+struct Tri { b: f64 }
+fun show<T: Shape>(x: T): string = x.name(short: true)
+fun main() {
+  io.println(show(Tri(b: 1.0)))
+  val s: Shape = Tri(b: 2.0)
+  io.println(s.name(short: false))
+}`).Render()
+	for _, c := range []struct{ text, want string }{
+		{missing, "is missing method 'name'; add: fun name(short: bool): string"},
+		{unimplemented, "required by parameter 'T' of 'show'; add 'implement Shape { ... }' inside 'struct Tri'"},
+		{unimplemented, "cannot be used as a 'Shape' value; add 'implement Shape { ... }' inside 'struct Tri'"},
+	} {
+		if !strings.Contains(c.text, c.want) {
+			t.Errorf("missing %q in:\n%s", c.want, c.text)
+		}
+	}
+}
+
+// A lone `null` branch or arm takes the other branches' type made
+// nullable when nothing else says what is wanted (Kotlin's rule); with no
+// other branch to go on it is still an error.
+func TestNullBranchInference(t *testing.T) {
+	expectClean(t, prelude+`
+sealed trait Shape
+struct Circle : Shape { r: f64 }
+struct Sq : Shape { s: f64 }
+fun radius(s: Shape) = when (s) {
+  is Circle(r) => r
+  is Sq => null
+}
+fun main() {
+  val a = if (1 > 2) null else "yes"
+  val b = if (1 < 2) 5 else null
+  val c = when {
+    1 > 2 => null
+    else => [1, 2]
+  }
+  val d: i64? = null
+  val e = if (true) d else null
+  val f: string? = a
+  val g: i64? = b
+  io.println("${f ?: ""} ${g ?: 0} ${c?.len() ?: 0} ${radius(Sq(s: 1.0)) ?: -1.0} ${e ?: 7}")
+}`)
+	diags := checkSource(t, prelude+`
+fun main() {
+  val a = if (true) null else null
+  val b = when {
+    true => null
+    else => null
+  }
+}`)
+	if !strings.Contains(diags.Render(), "cannot infer the type of 'null' here") || !strings.Contains(diags.Render(), "cannot infer the type of 'null' in this 'when'") {
+		t.Errorf("all-null branches must still be an error:\n%s", diags.Render())
+	}
+}
+
+// Changing a by-value struct parameter warns at the parameter (R20
+// follow-up, 2026-09-25); references, returned copies, copies used whole,
+// pointers and plain reads stay silent.
+func TestParamCopyLint(t *testing.T) {
+	diags := checkSource(t, prelude+`
+struct Counter { var n: i64 = 0; fun bump() { self.n += 1 } }
+struct Box { var c: Counter = Counter(); items: MutableList<i64> = [] }
+fun lostCall(b: Box) { b.c.bump() }
+fun lostAssign(c: Counter) { c.n = 5 }
+fun visible(b: Box) { b.items.push(1) }
+fun returned(c: Counter): Counter { c.n += 1; return c }
+fun stored(c: Counter, into: MutableList<Counter>) { c.bump(); into.push(c) }
+fun reads(c: Counter): i64 = c.n * 2
+fun pointer(b: *Box) { b.c.bump() }
+fun main() {
+  var b = Box()
+  lostCall(b)
+  lostAssign(Counter())
+  visible(b)
+  val xs: MutableList<Counter> = []
+  stored(returned(Counter()), xs)
+  pointer(&b)
+  io.println("${reads(Counter())} ${b.items.len()} ${xs.len()}")
+}`)
+	var got []string
+	for _, d := range diags.Items {
+		if strings.Contains(d.Message, "is a copy of the caller") {
+			got = append(got, d.Message[:strings.Index(d.Message, ":")])
+		}
+	}
+	if diags.HasErrors() || strings.Join(got, "|") != "'b' is a copy of the caller's 'Box'|'c' is a copy of the caller's 'Counter'" {
+		t.Errorf("expected warnings for lostCall and lostAssign only, got %q:\n%s", got, diags.Render())
+	}
+}
+
+// let-else and `??` (spec D61): the forms check, and each misuse is an
+// error — `?:` on a Result and `??` on a nullable carry a fix naming the
+// other operator.
+func TestLetElseAndCoalesce(t *testing.T) {
+	expectClean(t, prelude+`
+error Bad { why: string }
+sealed trait Shape
+struct Circle : Shape { r: f64 }
+struct Rect : Shape { w: f64 }
+fun parse(s: string): i64 throws Bad = s.toInt() ?: throw Bad(why: s)
+fun radius(s: Shape): f64 {
+  val Circle(r) = s else return -1.0
+  r
+}
+fun describe(text: string): string {
+  val n = parse(text) else { e =>
+    return e.why
+  }
+  "got $n"
+}
+fun main() {
+  var total = 0
+  loop (s in ["1", "x"]) {
+    val v = parse(s) else continue
+    val w = s.toInt() else continue
+    total += v + w
+  }
+  val a = parse("x") ?? 0
+  val b = parse("x") ?? { e => e.why.len() }
+  val c = parse("x") ?? return
+  io.println("$total $a $b $c ${radius(Rect(w: 1.0))} ${describe("q")}")
+}`)
+	diags := checkSource(t, prelude+`
+error Bad { why: string }
+fun parse(s: string): i64 throws Bad = s.toInt() ?: throw Bad(why: s)
+fun main() {
+  val a = parse("1") ?: 0
+  val b = "2".toInt() ?? 0
+  val c = parse("3") else { io.println("no") }
+  val d = 4 else return
+  val e = "5".toInt() else { err => return }
+  io.println("$a $b $c $d $e")
+}`)
+	text := diags.Render()
+	for _, want := range []string{
+		"'?:' is for a nullable; a Result's value-or-fallback is '??'",
+		"'??' is for a Result; a nullable's value-or-fallback is '?:'",
+		"must leave",
+		"nothing here can fail",
+		"only a Result has an error to bind",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("missing %q in:\n%s", want, text)
+		}
+	}
+	fixes := 0
+	for _, d := range diags.Items {
+		if d.Fix != nil {
+			fixes++
+		}
+	}
+	if fixes != 2 || strings.Contains(text, "unknown name") {
+		t.Errorf("wanted the two operator fixes and no cascade, got %d fixes:\n%s", fixes, text)
+	}
 }

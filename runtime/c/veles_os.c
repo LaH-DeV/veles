@@ -208,6 +208,55 @@ void veles_os_exit(int64_t code) {
     exit((int)code);
 }
 
+
+/* ---- process identity -------------------------------------------------- */
+
+int64_t veles_os_pid(void) {
+#if defined(_WIN32)
+    return (int64_t)GetCurrentProcessId();
+#else
+    return (int64_t)getpid();
+#endif
+}
+
+/* the host's name, as the network knows it; 0 or an error code */
+int64_t veles_os_hostname(veles_string *out) {
+#if defined(_WIN32)
+    wchar_t buf[256];
+    DWORD n = sizeof buf / sizeof buf[0];
+    if (!GetComputerNameExW(ComputerNameDnsHostname, buf, &n)) return EIO;
+    set_wstring(out, buf);
+#else
+    char buf[256];
+    if (gethostname(buf, sizeof buf) != 0) return errno;
+    buf[sizeof buf - 1] = 0;
+    set_string(out, buf, (int64_t)strlen(buf));
+#endif
+    return 0;
+}
+
+/* the directory for temporary files, without a trailing separator (a root
+ * keeps its own: "C:\", "/"). TMPDIR, then /tmp, on POSIX; GetTempPathW,
+ * which reads TMP and TEMP, on Windows. */
+void veles_os_temp_dir(veles_string *out) {
+#if defined(_WIN32)
+    wchar_t buf[MAX_PATH + 2];
+    DWORD n = GetTempPathW(MAX_PATH + 2, buf);
+    if (n == 0 || n > MAX_PATH + 1) {
+        set_string(out, "C:\\Windows\\Temp", 15);
+        return;
+    }
+    while (n > 3 && (buf[n - 1] == L'\\' || buf[n - 1] == L'/')) buf[--n] = 0;
+    set_wstring(out, buf);
+#else
+    const char *t = getenv("TMPDIR");
+    if (!t || !*t) t = "/tmp";
+    size_t len = strlen(t);
+    while (len > 1 && t[len - 1] == '/') len--;
+    set_string(out, t, (int64_t)len);
+#endif
+}
+
 /* veles_os_run runs a shell command line, capturing its standard output;
  * standard error is inherited. Returns the exit status, or -1 with errno
  * set when the process could not be started. */
@@ -296,6 +345,32 @@ int64_t veles_fs_stat(const char *path, int64_t plen) {
     if (stat(cstr(path, plen), &st) != 0) return 0;
 #endif
     return S_ISDIR(st.st_mode) ? 2 : 1;
+}
+
+/* veles_fs_lstat: like veles_fs_stat, but a symbolic link is 3 and is not
+ * followed. On Windows a junction counts as a link too; other reparse
+ * points (OneDrive placeholders, deduplicated files) are ordinary entries,
+ * so the reparse tag is read rather than the attribute alone. */
+int64_t veles_fs_lstat(const char *path, int64_t plen) {
+#if defined(_WIN32)
+    wchar_t *w = wstr(path, plen);
+    DWORD a = GetFileAttributesW(w);
+    if (a == INVALID_FILE_ATTRIBUTES) return 0;
+    if (a & FILE_ATTRIBUTE_REPARSE_POINT) {
+        WIN32_FIND_DATAW fd;
+        HANDLE h = FindFirstFileW(w, &fd);
+        if (h != INVALID_HANDLE_VALUE) {
+            FindClose(h);
+            if (fd.dwReserved0 == IO_REPARSE_TAG_SYMLINK || fd.dwReserved0 == IO_REPARSE_TAG_MOUNT_POINT) return 3;
+        }
+    }
+    return (a & FILE_ATTRIBUTE_DIRECTORY) ? 2 : 1;
+#else
+    struct stat st;
+    if (lstat(cstr(path, plen), &st) != 0) return 0;
+    if (S_ISLNK(st.st_mode)) return 3;
+    return S_ISDIR(st.st_mode) ? 2 : 1;
+#endif
 }
 
 /* veles_fs_list_dir writes the entry names, one per line, sorted by the

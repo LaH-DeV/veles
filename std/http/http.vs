@@ -354,10 +354,13 @@ fun matchRoute(pattern: List<string>, segments: List<string>): Map<string, strin
 /// is the form `serve` takes directly.
 public fun files(dir: string): sendable fun(Request): Response suspends throws Fail | IoError = req => {
   val rel = req.param("*")
-  loop (seg in rel.split("/")) {
-    if (seg == "..") throw forbidden()
-  }
   var p = if (rel.isEmpty()) dir else path.join(dir, rel)
+  // Two checks, either enough on its own today. `within` is the one that
+  // holds by construction: whatever the request spells, the file must be
+  // under `dir` once `.`, `..` and both separators are resolved — a
+  // `..\secret` is a traversal on Windows even though it has no `/`. A `..`
+  // segment is refused outright as well, since a browser never sends one.
+  if (!path.within(dir, p) || rel.replace("\\", "/").split("/").contains("..")) throw forbidden()
   if (fs.isDir(p)) p = path.join(p, "index.html")
   if (!fs.isFile(p)) throw notFound("no such file: /$rel")
   Response.bytes(try fs.readBytes(p), contentType: contentTypeOf(p))

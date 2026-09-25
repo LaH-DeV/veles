@@ -1,0 +1,9 @@
+base64 decode: 500 runs, 58 accepted, 0 failures
+base64 round trip: 500 runs, 500 accepted, 0 failures
+hex decode: 500 runs, 87 accepted, 0 failures
+hex round trip: 500 runs, 500 accepted, 0 failures
+json parse: 506 runs, 28 accepted, 0 failures
+json value round trip: 500 runs, 500 accepted, 0 failures
+percentDecode: 500 runs, 500 accepted, 0 failures
+utf8 validators agree: 500 runs, 50 accepted, 0 failures
+exit=0

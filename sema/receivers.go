@@ -49,6 +49,7 @@ func (c *Checker) receiverPass(prog *Program) {
 		}
 	}
 	c.fieldUsePass(prog)
+	c.lintParamCopies(prog)
 	for _, fn := range prog.Funcs {
 		if fn.Body == nil {
 			continue

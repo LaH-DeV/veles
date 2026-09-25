@@ -1,6 +1,7 @@
 package sema
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/LaH-DeV/veles/ast"
@@ -171,4 +172,22 @@ func blankLineBefore(src string, pos int) int {
 		return pos - j
 	}
 	return 0
+}
+
+// implementHint finishes a "does not implement" message for a struct the
+// program declares: where the implement goes. Inside the struct's body is
+// the form the inline-implement lint asks for, so that is what it names.
+// Nothing for std's types, whose implements are not the reader's to write.
+func implementHint(t types.Type, trait *types.Trait) string {
+	st, ok := t.(*types.Struct)
+	if !ok {
+		return ""
+	}
+	if st.Template != nil {
+		st = st.Template
+	}
+	if st.Module == "std" || strings.HasPrefix(st.Module, "std.") || strings.HasPrefix(st.Module, "<") {
+		return ""
+	}
+	return fmt.Sprintf("; add 'implement %s { ... }' inside 'struct %s'", trait.Name, st.Name)
 }

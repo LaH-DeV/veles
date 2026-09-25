@@ -117,10 +117,27 @@ answered from the shape, tuples get `Comparable`, enums get
       short-circuits, so a MAC is compared as a `Digest`, never as bytes (D59)
 - [ ] Secrets: a `Secret<T>` wrapper that does not `Display`, does not derive,
       and zeroes on collection
-- [ ] Path traversal: `http.files` already refuses `..` — make the check a
-      `path.within(root, p)` primitive others can reuse
-- [ ] Fuzz corpus for the HTTP parser, the JSON parser, `percentDecode` and
-      the base64/hex decoders
+- [x] Path traversal: `path.within(root, p)` over a lexical `path.clean`,
+      both separators on every platform, a `\\server\share` root kept.
+      Writing it found a **real hole**: `http.files` split the request on
+      `/` only, so on Windows `GET /static/..\main.vs` passed the `..` check
+      and served a file from outside the root (reproduced: 200 with the
+      file's contents). `files` now checks `within` *and* refuses any `..`
+      segment on either separator; `examples/httpd` probes `..`, `..\` and
+      `%2e%2e` (2026-09-25)
+- [~] Fuzzing: `examples/fuzz` (seeded, `fuzz [iterations] [seed]`) checks
+      properties, not examples — base64/hex round trips and canonical
+      re-encoding, JSON text refused-or-round-trips, generated JSON values
+      round-trip, `percentDecode` never panics, `std/utf8` and the runtime's
+      `decodeUtf8` agree. Its first minute found three bugs, all fixed with
+      the inputs kept as a corpus it checks every run: `toF64` **panicked** on
+      `1e99999999999999999999` (the exponent overflowed); `json.parse`
+      accepted `1e400` as infinity, which `json.encode` then refused; and
+      `toF64` was **not correctly rounded** (digits summed in floating point),
+      so a float's shortest text read back as a different float and drifted
+      on every JSON round trip — it now takes the value from `strtod`, which
+      the printer already checks against (2026-09-25). Still open: the HTTP
+      request parser (needs an in-process connection)
 - [ ] Resource leaks: a `Closeable` dropped without `with` is a warning
 - [x] Stack depth: one limit, in the prelude — `maxRecursionDepth` (1000),
       `tooDeepMessage(limit)` for the one sentence every caller reports, and
@@ -163,9 +180,17 @@ answered from the shape, tuples get `Comparable`, enums get
 
 ### 3.3 Benchmarks (so regressions are seen)
 
-- [ ] `bench/` with an HTTP hello, a JSON round-trip, a map-heavy workload, a
-      SHA-256 of a megabyte, and (once it exists) parsing a large file
-- [ ] Numbers recorded in-repo per commit that touches the runtime
+- [x] `bench/`: seven workloads (sha256, maps, sort, json, strings, GC-heavy
+      trees, channels), each next to a Go program doing the same work, the
+      checksums compared, and the result read as a multiple of Go —
+      `go run ./bench` (2026-09-25). Still to add: an HTTP hello (needs a load
+      generator), and parsing a large file once the self-hosted parser exists
+- [x] Numbers recorded in-repo: `go run ./bench -record` appends to
+      `bench/results.md`; the first run is there
+- [x] The allocator was quadratic between collections (every slot of every
+      full span scanned per allocation): `json` took 376 s, now 0.31 s. Fixed in
+      `veles_gc.c` (O(1) full-span skip, a per-class cursor); `examples/gc`
+      guards it (2026-09-25)
 
 ---
 
@@ -178,7 +203,8 @@ answered from the shape, tuples get `Comparable`, enums get
 - [ ] Crash report: what a production panic prints and where
 - [ ] Static binaries; cross-compile Windows → Linux (LLVM target triple)
 - [ ] Docker base image and a one-line `veles build --release --target linux`
-- [ ] Environment: `os.env` exists; `os.hostname`, `os.pid`, `os.cwd`
+- [x] Environment: `os.env`, `os.hostname()`, `os.pid()`, `os.tempDir()`; the working
+      directory is `fs.cwd()` (2026-09-25)
 - [ ] File descriptors: `ulimit` awareness, accept-loop behaviour at the limit
       (today: log and sleep 100 ms — keep, but count it)
 
@@ -298,10 +324,10 @@ behind a name that says "crypto" (§10, 2026-09-23).
 - [x] `Timestamp`: microseconds since the epoch, so RFC 3339's six digits
       and a PostgreSQL `timestamptz` round-trip; `Display`/`Parsable`/
       `Codable` are all RFC 3339 text
-- [ ] `Duration` is not `Codable`: JSON has no duration form and the
-      choice between ISO 8601 `PT1H30M`, a number of seconds and the
-      `Display` text is its own decision. Today a `Duration` field in a
-      derived struct is a compile error naming the field
+- [x] `Duration` is `Codable`: `"90.5s"` by default, and `DurationStyle` (`Seconds`,
+      `Iso8601`, `Text`, `Nanos`, `Millis`) as a format option —
+      `json.Options(durations:)` — the `EnumStyle` precedent (D60 addendum,
+      docs 18 "Durations", `examples/codable`) (2026-09-25)
 
 ### 5.7 `std/log`
 
@@ -331,8 +357,10 @@ behind a name that says "crypto" (§10, 2026-09-23).
 
 - [ ] `std/config`: typed env parsing, all missing keys reported at once
 - [ ] `std/compress`: gzip/deflate via zlib binding
-- [ ] `std/os`: `onSignal`, `hostname`, `pid`, `tempDir`
-- [ ] `std/fs`: streaming reads/writes, `walk`, atomic rename, file locks
+- [~] `std/os`: `hostname`, `pid`, `tempDir` done (2026-09-25); `onSignal` open (§4)
+- [~] `std/fs`: `walk` done (2026-09-25: depth-first, name order, links to
+      directories not followed, its own stack); streaming reads/writes, atomic
+      rename, file locks open
 - [x] `std/utf8`: one code point at a time — `decode`/`decodeLast` over a
       `string`, `decodeBytes` over a buffer that carries no promise,
       `encodeTo`/`encode`/`char` back, `combineSurrogates` for the formats
@@ -353,7 +381,9 @@ behind a name that says "crypto" (§10, 2026-09-23).
 
 ## 6. Tooling and developer experience
 
-- [ ] `veles fmt` stable on every example (formatter exists — CI check).
+- [x] `veles fmt` stable on every example: `format/TestCorpus` now fails on any
+      file under `examples/` or `std/` that `veles fmt` would change (2026-09-25).
+      (docs blocks are not held to it: they align comments by hand)
       A 2026-09-24 review found it swept a function body's comments into a
       parameter list the author had wrapped: fixed, with two cases in
       `format/format_test.go`. That it took reading a formatted file to
@@ -441,7 +471,7 @@ pros/cons before anything is built; the answer becomes a spec entry.
 9. Executor threading model. *Not yet asked.*
 10. User-definable derivation (phase 2, once the compiler-known set is proven). *Not yet asked.*
 11. **Arithmetic operator traits** (`Addable`/`Subtractable`/… so `a + b` works on a `Duration`, a `Timestamp`, a vector, a money amount). D60 deliberately did not take it: the five operator traits today are about *comparison and text*, and adding arithmetic ones raises overflow, mixed operand types (`Timestamp + Duration` is not `Timestamp + Timestamp`) and whether `+=` follows. `Duration.plus`/`minus`/`times`/`dividedBy` are named so that such a trait could adopt them. *Not yet asked.*
-12. **How a `Duration` goes on the wire** (it has no `Codable` today): ISO 8601 `PT1H30M`, a number of seconds or milliseconds, or the `Display` text `1h30m`. *Not yet asked.*
+12. ~~How a `Duration` goes on the wire~~ — decided 2026-09-25, see §10.
 
 ## 10. Decision log
 
@@ -479,6 +509,14 @@ pros/cons before anything is built; the answer becomes a spec entry.
 | 2026-09-24 | A date from outside is refused, not overflowed (review) | **One checked conversion.** A review of D60 found that `+999999-01-01T00:00:00Z` and `Sun, 06 Nov 99999999999999 08:49:37 GMT` both reached `days * 86400 * 1000000` and panicked — a parser fed untrusted text may not. Every field-to-instant conversion now goes through `instantOf`, which bounds the year before `daysFromCivil` can overflow and the seconds before the multiplication can. Formatting was made total the same way: `Timestamp.at` shifts the day and the microsecond within it instead of the microsecond count, and `floorMod` is `((a % b) + b) % b` — both of the old forms overflowed within a day of the ends of the i64 range. Left as a documented gap: the last second at each end prints but does not parse back. |
 | 2026-09-24 | A local offset the host cannot give (review) | **Ask again for a date it can.** `Offset.local(at:)` reads the zone through the C library, and the Microsoft CRT refuses a negative `time_t` and anything past the year 3000; a date of birth silently read back as `Z`, correct only in the UK. The C side now reports "cannot answer" distinguishably from "UTC" (zero being a real offset), and `std/time` retries with the same month, day and time of day in a year the host can convert, keeping leap-year parity, so the daylight-saving half is right too. Rejected: falling back to UTC (wrong for almost every zone), and carrying a tz database (§5.6, later). |
 | 2026-09-24 | Formatter: a broken parameter list is not a comment sink | **`flushComments` stopped at the end of the *function*.** So when an author wrapped a signature over two lines, every comment in the body was swept up into the parameter list and the statements they documented were left bare — no text lost, all meaning lost, and idempotent in the wrong state. The limit is now the parameter list's own `)`, found by a scan that skips the only things that can stand there (whitespace, a trailing comma, comments). Found by reviewing D60's own source after `veles fmt` rearranged it. |
+| 2026-09-25 | `trySend` on a closed channel (std) | **Panics, as `send` does.** Sending into a closed channel is a bug in the program, not a state to poll for, and one rule for both forms is easier to hold. `trySend` returns `false` only for "full"; `tryRecv` returns `null` for "nothing buffered", which covers both empty-for-now and closed-and-drained — `len()` or a waiting `recv` tells them apart. |
+| 2026-09-25 | A sleeper woken early (runtime) | **It goes back to sleep.** `veles_task_sleep` returned 0 on an early wake without re-blocking the task, and `fire_timers` only wakes a blocked task, so a task sleeping when its scope's child finished was lost and the executor reported a deadlock — any `scope` whose body sleeps while a producer ends. And `sleep(Duration.zero)` returned at once instead of yielding, as the compiler, the cheat sheet and the stdlib page all said it would, so a polling loop starved the task it polled for. Both fixed in `veles_task.c`; `codegen/llvm/golden/tasks` runs both shapes. |
+| 2026-09-25 | What `fs.walk` returns (std) | **Every file, as a list, links to directories not followed.** Eager like `listDir` (one call, a stable order, sortable, `mapConcurrent`-able), files only (what every caller in the tree wanted), iterative (a deep tree cannot overflow the stack), and a symbolic link or junction to a directory is neither listed nor entered, so a cycle cannot loop the walk — `examples/dedup`'s own recursive walker would have. `root` itself may be a link. Rejected: a callback walker (no caller needs to prune yet); following links (cycles). |
+| 2026-09-25 | `os.hostname` can fail (std) | **`throws IoError`**, like Go's `os.Hostname`: rare, but a host can refuse, and `std/os` reports failures as `IoError`. `pid()` and `tempDir()` cannot fail and do not throw; `tempDir()` has no trailing separator so `path.join` reads right. |
+| 2026-09-25 | A `Duration` on the wire (§9.12) | **`"90.5s"` by default, any of five on request** (user: "90.5s, but we need to be able to convert to different"). `DurationStyle { Seconds, Iso8601, Text, Nanos, Millis }` is the format's policy, like `EnumStyle`. Spec D60 addendum. Rejected: ISO 8601 by default (Go/Python stdlib do not read it), seconds as a number (precision). |
+| 2026-09-25 | Identifiers and invisible characters (notes #21) | **UAX #31** (user's choice over the recommended fixed list): identifiers are `XID_Start XID_Continue*` plus `_`, so a bidi control, a zero-width character or a no-break space is no longer an identifier byte — the Trojan-source case (CVE-2021-42574) becomes a diagnostic. Costs Unicode tables in the lexer, and in the self-hosted one. |
+| 2026-09-25 | Changing a by-value struct parameter (R20 follow-up 1) | **A warning**: a function that assigns a `var` field of a value-struct parameter, directly or through a method that writes `self`, is told the caller never sees it, with `*T` or returning the value as the fixes. R20's rule (`val`/`var` govern rebinding only) is unchanged. Rejected: Swift's immutable parameters (changes R20). |
+| 2026-09-25 | Guard binding (I1) | **Let-else plus `??` on Result** (user, after `veles-guard-design.md`): `val x = r else { e => ... }` binds or leaves (Result, nullable, variant pattern; one-statement `else return` allowed); `r ?? fallback` / `r ?? { e => ... }` is `?:` for a Result, and each operator on the other kind is an error with a fix that swaps it. Spec D61. Rejected: widening `?:` to Result (the recommendation), a `Fallible` trait (its own decision, later). |
 
 ## 11. Known limitations to revisit
 
@@ -505,10 +543,6 @@ pros/cons before anything is built; the answer becomes a spec entry.
   no arithmetic operator traits. An `Arithmetic`/`Addable` trait is its own
   decision, deliberately not taken with D60; the names were chosen so it
   could adopt them later without a second spelling appearing.
-- `Duration` has no `Codable` implement, so a `Duration` field in a derived
-  struct is a compile error naming the field. That is the right error for
-  now — ISO 8601 `PT1H30M`, a number of seconds and the `Display` text are
-  three defensible wire forms and choosing one is a decision, not a gap.
 - `Offset.local(at:)` goes through the C library's `localtime_r`, so it
   reads the host's zone, honours `TZ`, and is as correct as the platform's
   tz data. A fixed offset still cannot answer a *local* time on a DST

@@ -29,6 +29,12 @@ func usage() {
 }
 
 func main() {
+	os.Exit(driver.Guard(command))
+}
+
+// command runs one subcommand and returns its exit status. A panic in it is
+// a compiler bug and is reported by driver.Guard.
+func command() int {
 	if len(os.Args) < 2 || (len(os.Args) < 3 && os.Args[1] != "lsp") {
 		usage()
 	}
@@ -47,7 +53,7 @@ func main() {
 		}
 		fmt.Print(diags.Render())
 		if diags.HasErrors() {
-			os.Exit(1)
+			return 1
 		}
 	case "parse":
 		file := mustLoad(path)
@@ -56,7 +62,7 @@ func main() {
 		fmt.Print(ast.Dump(f))
 		fmt.Fprint(os.Stderr, diags.Render())
 		if diags.HasErrors() {
-			os.Exit(1)
+			return 1
 		}
 	case "fmt":
 		opts := driver.FormatOptions{}
@@ -77,7 +83,7 @@ func main() {
 		if len(opts.Paths) == 0 {
 			usage()
 		}
-		os.Exit(driver.Format(opts))
+		return driver.Format(opts)
 	case "explain":
 		opts := driver.ExplainOptions{Path: path}
 		for _, a := range os.Args[3:] {
@@ -95,13 +101,13 @@ func main() {
 			fmt.Fprintln(os.Stderr, "veles explain: say what to explain (today: --derive)")
 			usage()
 		}
-		os.Exit(driver.Explain(opts))
+		return driver.Explain(opts)
 	case "lsp":
 		if err := lsp.Serve(os.Stdin, os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, "veles lsp:", err)
-			os.Exit(1)
+			return 1
 		}
-		return
+		return 0
 	case "build", "run", "check", "test":
 		opts := driver.Options{Path: path, Mode: cmd}
 		args := os.Args[3:]
@@ -128,10 +134,11 @@ func main() {
 				usage()
 			}
 		}
-		os.Exit(driver.Run(opts))
+		return driver.Run(opts)
 	default:
 		usage()
 	}
+	return 0
 }
 
 func mustLoad(path string) *source.File {

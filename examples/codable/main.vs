@@ -143,4 +143,37 @@ fun main() throws EncodeError | DecodeError {
     is Err(e) => io.println("fromValue: ${e.message()}")
   }
   io.println("within the limit: ${try json.encode(VList(items: [VList(items: [VInt(value: 1)])]), json.Options(maxDepth: 8))}")
+  try durations()
+}
+
+// A Duration travels in the format's DurationStyle: "90.5s" unless the
+// options say otherwise; every style reads back to the same nanosecond.
+struct Job {
+  name:    string
+  timeout: Duration
+  retry:   Duration? = null
+  implement Codable
+}
+
+fun durations() throws EncodeError | DecodeError {
+  val ds = [Duration.seconds(90).plus(Duration.millis(500)), Duration.zero, Duration.nanos(-1), Duration.hours(49).plus(Duration.nanos(1)), Duration.millis(250)]
+  loop (style in DurationStyle.values()) {
+    val o = json.Options(durations: style)
+    var line = "$style:"
+    loop (d in ds) {
+      val text = try json.encode(Job(name: "x", timeout: d), o)
+      val back = try json.decode<Job>(text, o)
+      line += " ${text.substring(text.indexOf("\"timeout\":") + 10, text.len() - 1) ?: "?"}${if (back.timeout == d) "" else " (read back as ${back.timeout})"}"
+    }
+    io.println(line)
+  }
+  // refusals, each named with its path
+  loop ((style, text) in [(DurationStyle.Seconds, "{\"name\": \"x\", \"timeout\": \"1m30s\"}"), (DurationStyle.Iso8601, "{\"name\": \"x\", \"timeout\": \"P1M\"}"), (DurationStyle.Iso8601, "{\"name\": \"x\", \"timeout\": \"PT1.5M30S\"}"), (DurationStyle.Iso8601, "{\"name\": \"x\", \"timeout\": \"PT\"}"), (DurationStyle.Seconds, "{\"name\": \"x\", \"timeout\": 90}"), (DurationStyle.Millis, "{\"name\": \"x\", \"timeout\": 1e300}")]) {
+    when (val r = json.decode<Job>(text, json.Options(durations: style))) {
+      is Ok  => io.println("unexpectedly read ${r.timeout}")
+      is Err => io.println("$style refuses: ${r.message()}")
+    }
+  }
+  io.println(try json.encode(Job(name: "y", timeout: Duration.seconds(5), retry: Duration.millis(1500))))
+  io.println("${(try json.decode<Job>("{\"name\": \"z\", \"timeout\": \"P1DT2H\"}", json.Options(durations: DurationStyle.Iso8601))).timeout}")
 }

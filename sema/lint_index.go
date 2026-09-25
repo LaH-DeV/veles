@@ -159,6 +159,7 @@ func (f *fnCtx) copyMutationHint(recv ast.Expr, span source.Span, what string) {
 	}
 	f.errorf(span, "%s; bind it with 'var' to change a copy, or reach the element with 'ref' / 'refOrPanic' or 'loop (&x in xs)' (D25)", what)
 }
+
 // hoistPlace binds every sub-expression that locating target evaluates —
 // the collection and index of a `list.ref`, the map and key of a
 // `map.refOrPanic`, the pointer under a dereference — to a temporary, so

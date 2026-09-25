@@ -403,7 +403,7 @@ func (f *fnCtx) callTemplateRecv(t *FuncTemplate, ownerSubst map[*types.TypePara
 		}
 		for _, bound := range tp.Bounds {
 			if !f.implements(bt, bound) {
-				f.errorf(span, "type '%s' does not implement trait '%s' required by parameter '%s' of '%s'", bt, bound.Name, tp.Name, t.Name)
+				f.errorf(span, "type '%s' does not implement trait '%s' required by parameter '%s' of '%s'%s", bt, bound.Name, tp.Name, t.Name, implementHint(bt, bound))
 				return bad() // instantiating anyway would report the same inside the callee
 			}
 		}
@@ -1169,7 +1169,7 @@ func (f *fnCtx) builtinMethod(recv Expr, rt types.Type, name string, e *ast.Call
 					return bad()
 				}
 				return &Builtin{exprBase{t}, "int.pow", []Expr{recv, f.checkExprTo(e.Args[0].Value, t)}, e.Pos}
-			case "wrappingAdd", "wrappingSub", "wrappingMul", "saturatingAdd", "saturatingSub":
+			case "wrappingAdd", "wrappingSub", "wrappingMul", "saturatingAdd", "saturatingSub", "saturatingMul":
 				// the overflow family: `+` panics on overflow in debug builds (D21);
 				// these spell the other policies
 				if !nargs(1) {
@@ -1291,6 +1291,7 @@ func (f *fnCtx) funcValue(t *FuncTemplate, span source.Span) Expr {
 		f.errorf(span, "methods cannot be used as values; wrap the call in a lambda")
 		return bad()
 	}
+	t.ValueUsed = true
 	fn := f.c.instantiate(t, nil, nil, span)
 	sig := *fn.Sig
 	sig.Sendable = true

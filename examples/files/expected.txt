@@ -7,4 +7,5 @@ listed: [a.txt, report.md]
 renamed: [report.md, z.txt]
 failed: No such file or directory (missing.txt) code true
 cleaned: true
+process: pid true, host named true, temp is a dir true
 exit=0

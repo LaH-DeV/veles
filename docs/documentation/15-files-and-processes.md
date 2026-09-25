@@ -14,7 +14,7 @@ Every `fs` call that can fail throws `IoError`, so the rules of
 use fs, io, os, path
 
 fun main() throws IoError {
-  val dir = path.join(os.env("TEMP") ?: os.env("TMPDIR") ?: "/tmp", "veles-tutorial-15")
+  val dir = path.join(os.tempDir(), "veles-tutorial-15")
   try fs.mkdir(dir)                       // parents too; fine if it exists
   val file = path.join(dir, "todo.txt")
 
@@ -38,6 +38,20 @@ Output:
 true true true
 [todo.txt]
 false
+```
+
+`listDir` gives one directory's names. `fs.walk(root)` gives every file
+under a directory, as paths, depth-first with each directory's entries in
+name order — the same tree always walks the same way. It does not follow
+a symbolic link to a directory (or a Windows junction), so a link that
+points back up the tree cannot make it endless, and it keeps its own
+stack, so a deep tree cannot overflow yours:
+
+```veles
+// fragment
+loop (file in try fs.walk("src")) {
+  if (path.ext(file) == ".vs") io.println(file)   // src/a.vs, src/lexer/b.vs, ...
+}
 ```
 
 An `IoError` carries what went wrong and where: `detail` is the system's
@@ -90,6 +104,37 @@ src/compiler | lexer.vs | lexer | .vs
 /absolute true false
 ```
 
+`path.clean(p)` is the shortest path naming the same file: separators
+collapse to one `/`, `.` goes, and `a/..` cancels. `path.within(root, p)`
+answers whether `p`, cleaned, is `root` or something inside it — the
+check to make before opening a file whose name came from outside:
+
+```veles
+use io, path
+
+fun main() {
+  io.println(path.clean("site/./css/../img//logo.png"))
+  val root = "site"
+  loop (asked in ["img/logo.png", "../secrets.txt", "img\\..\\..\\secrets.txt"]) {
+    val file = path.join(root, asked)
+    io.println("$asked -> ${if (path.within(root, file)) "serve $file" else "refuse"}")
+  }
+}
+```
+
+Output:
+```text
+site/img/logo.png
+img/logo.png -> serve site/img/logo.png
+../secrets.txt -> refuse
+img\..\..\secrets.txt -> refuse
+```
+
+Both are lexical: they read the text, not the disk, so a symbolic link
+inside `root` that points elsewhere is not detected. Both separators count
+on every platform — the third request is a real escape on Windows, where
+`\` separates, and it is refused on Linux too.
+
 ## Building text
 
 `+` on strings copies both sides every time, so building a large file
@@ -123,6 +168,8 @@ name,square
 use os
 val args = os.args()                 // without the program name
 val home = os.env("HOME") ?: "?"     // null when unset
+val scratch = os.tempDir()           // TMPDIR or /tmp; TMP/TEMP on Windows
+val who = "${os.pid()}@${try os.hostname()}"   // process id and host name, e.g. for a log line
 os.exit(2)                           // flushes output first
 
 val r = try os.run("clang", ["--version"])   // Output { code, stdout, ok() }

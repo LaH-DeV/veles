@@ -63,3 +63,69 @@ fun lastSep(p: string): i64 {
   }
   -1
 }
+
+/// The shortest path that names the same file, worked out from the text
+/// alone: separators collapse to one `/`, `.` components go, and `a/..`
+/// cancels. A `..` that climbs above the start of a relative path is kept
+/// (`../x`); one that climbs above a root is dropped (`/..` is `/`). The
+/// empty path is `.`. Symbolic links are not consulted, so `a/link/..` is
+/// `a` even when `link` points somewhere else.
+public fun clean(p: string): string {
+  if (p.isEmpty()) return "."
+  val root = rootOf(p)
+  var parts: MutableList<string> = []
+  loop (seg in p.substring(root.len(), p.len())?.replace("\\", "/")?.split("/") ?: []) {
+    when {
+      seg.isEmpty() || seg == "." => continue
+      seg != ".." => parts.push(seg)
+      !parts.isEmpty() && parts.atOrPanic(-1) != ".." => parts.pop()
+      root.isEmpty() => parts.push("..")
+    }
+  }
+  val body = parts.join("/")
+  if (root.isEmpty()) {
+    if (body.isEmpty()) "." else body
+  } else {
+    root + body
+  }
+}
+
+/// True when `p` is `root` itself or lies inside it, comparing the
+/// cleaned paths component by component: `/srv/www2` is not within
+/// `/srv/www`, and `/srv/www/../etc` is not within anything under `/srv/www`.
+/// This is the check that keeps a path built from a request inside the
+/// directory it was meant for:
+///
+///     val file = path.join(root, requested)
+///     if (!path.within(root, file)) throw forbidden()
+///
+/// Lexical, like `clean`: a symbolic link inside `root` that points out of
+/// it is not detected. Both separators count, on every platform, so
+/// `..\secret` is caught on Linux as well as on Windows.
+public fun within(root: string, p: string): bool {
+  val r = clean(root)
+  val q = clean(p)
+  if (r == ".") return !isAbsolute(q) && q != ".." && !q.startsWith("../")
+  if (q == r) return true
+  q.startsWith(if (r.endsWith("/")) r else r + "/")
+}
+
+// rootOf is the part of p that `..` cannot climb above, written with `/`
+// but as long as it is in p (clean skips that many bytes): "/" for `/x` and
+// `\x`, "C:/" for `C:\x`, and for a network path `\\server\share\x` the
+// server and share too, which Windows treats as the root the way it treats
+// a drive letter; "" for a relative path.
+fun rootOf(p: string): string {
+  if (p.len() >= 3 && p.byteAt(1) == ':' && isSep(p.byteAt(2))) return (p.substring(0, 2) ?: "") + "/"
+  if (p.len() >= 2 && isSep(p.byteAt(0)) && isSep(p.byteAt(1))) {
+    var end = 2
+    var seps = 0
+    loop (end < p.len() && seps < 2) {
+      if (isSep(p.byteAt(end))) seps += 1
+      end += 1
+    }
+    return (p.substring(0, end) ?: p).replace("\\", "/")
+  }
+  if (isSep(p.byteAt(0))) return "/"
+  ""
+}

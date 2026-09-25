@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/LaH-DeV/veles/sema"
+	"github.com/LaH-DeV/veles/source"
 	"github.com/LaH-DeV/veles/types"
 )
 
@@ -452,6 +453,7 @@ func (g *gen) externParamTypes(t types.Type) []string {
 }
 
 func (g *gen) function(fn *sema.Func) {
+	source.SetWhere("generating code for", fn.Display, fn.Span)
 	g.resetFn(fn)
 	if fn.Sig.Effects.Throws {
 		g.fnResult = g.prog.ResultType(fn.Sig.Ret, fn.Sig.Effects.Error)

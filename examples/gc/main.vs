@@ -68,4 +68,11 @@ fun main() {
   }
   io.println("map ${keepMap.len()} $total ${keepMap.get("k7") ?: []}")
   io.println("${boxes.map(b => b.name())} ${counter()} ${words.len()} ${words.atOrPanic(1999)}")
+
+  // many small short-lived objects between two collections: linear time.
+  // The allocator once scanned every slot of every full span on each
+  // allocation, which made this loop take minutes (bench/results.md).
+  var bytes: i64 = 0
+  loop (i in 0..<400000) bytes += "item-$i".bytes().len()
+  io.println("small objects $bytes")
 }

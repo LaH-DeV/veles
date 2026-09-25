@@ -13,26 +13,16 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/LaH-DeV/veles/internal/buildtest"
 )
 
 var fence = regexp.MustCompile("(?s)```veles\\n(.*?)```(?:\\s*\\n\\s*Output:\\s*\\n```text\\n(.*?)```)?")
 
 func TestDocs(t *testing.T) {
-	root, _ := filepath.Abs("..")
-	veles := filepath.Join(root, "veles")
-	if runtime.GOOS == "windows" {
-		veles += ".exe"
-	}
-	if _, err := os.Stat(veles); err != nil {
-		build := exec.Command("go", "build", "-o", veles, ".")
-		build.Dir = root
-		if out, err := build.CombinedOutput(); err != nil {
-			t.Fatalf("building compiler: %v\n%s", err, out)
-		}
-	}
+	veles := buildtest.Compiler(t)
 	var mds []string
 	filepath.WalkDir("./documentation", func(path string, d os.DirEntry, err error) error {
 		if err == nil && !d.IsDir() && strings.HasSuffix(path, ".md") {

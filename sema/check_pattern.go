@@ -48,6 +48,7 @@ func (f *fnCtx) whenExpr(e *ast.WhenExpr, want types.Type) Expr {
 	cov := newCoverage()
 	hasElse := false
 	var resultType types.Type
+	var nullArms []*NullConst // `=> null` arms, typed from the others at the end
 	var valueArms []*MatchArm
 	saved := f.saveNarrow()
 	for _, arm := range e.Arms {
@@ -115,6 +116,14 @@ func (f *fnCtx) whenExpr(e *ast.WhenExpr, want types.Type) Expr {
 			x := f.checkExprTo(arm.Body, want)
 			body = f.valueBlock(x)
 		case inferValue:
+			if _, isNull := arm.Body.(*ast.NullLit); isNull {
+				// typed from the other arms once they are known, as in
+				// ifExpr: `is Circle(r) => r  else => null` is an `f64?`
+				nc := &NullConst{exprBase{&types.Nullable{Elem: types.TNever}}}
+				nullArms = append(nullArms, nc)
+				body = &Block{Value: nc, Type: nc.T}
+				break
+			}
 			x := f.checkExpr(arm.Body, nil)
 			body = f.valueBlock(x)
 		default:
@@ -127,7 +136,7 @@ func (f *fnCtx) whenExpr(e *ast.WhenExpr, want types.Type) Expr {
 		ha.Body = body
 		if body.Value != nil {
 			valueArms = append(valueArms, ha)
-			if resultType == nil {
+			if _, isNull := body.Value.(*NullConst); resultType == nil && !(isNull && inferValue) {
 				resultType = body.Type
 			}
 		}
@@ -197,9 +206,24 @@ func (f *fnCtx) whenExpr(e *ast.WhenExpr, want types.Type) Expr {
 	// result type
 	if asValue {
 		m.T = want
+	} else if inferValue && len(nullArms) > 0 && nullableOf(resultType) == nil {
+		// every value arm is `null`, or the others give nothing to go on
+		f.errorf(e.Pos, "cannot infer the type of 'null' in this 'when'; annotate the binding, e.g. 'val x: T? = when ...'")
+		m.T = types.TInvalid
 	} else if inferValue && resultType != nil {
-		// unify arms
+		// unify arms; a `null` arm makes the result nullable
 		rt := resultType
+		if len(nullArms) > 0 {
+			rt = nullableOf(rt)
+			for _, nc := range nullArms {
+				nc.T = rt
+			}
+			for _, ha := range valueArms {
+				if _, ok := ha.Body.Value.(*NullConst); ok {
+					ha.Body.Type = rt
+				}
+			}
+		}
 		for _, ha := range valueArms {
 			if !types.Identical(ha.Body.Type, rt) {
 				if f.assignableTo(ha.Body.Type, rt) {

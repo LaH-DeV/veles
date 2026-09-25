@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/LaH-DeV/veles/internal/buildtest"
 )
 
 // -update rewrites the expected.txt of every example whose output differs.
@@ -21,16 +23,7 @@ var update = flag.Bool("update", false, "rewrite expected.txt with the actual ou
 // script (`name.vss`) is an example by itself when a `name.expected.txt` exists
 // (create it empty, then -update); `name.stdin.txt`, when present, is its input.
 func TestExamples(t *testing.T) {
-	veles := filepath.Join("..", "veles.exe")
-	if runtime.GOOS != "windows" {
-		veles = filepath.Join("..", "veles")
-	}
-	if _, err := os.Stat(veles); err != nil {
-		build := exec.Command("go", "build", "-o", veles, "..")
-		if out, err := build.CombinedOutput(); err != nil {
-			t.Fatalf("building compiler: %v\n%s", err, out)
-		}
-	}
+	veles := buildtest.Compiler(t)
 	type example struct {
 		name     string // test name
 		source   string // what veles build is pointed at: a directory or a script

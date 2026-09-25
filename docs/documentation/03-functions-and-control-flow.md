@@ -118,20 +118,20 @@ fun main() {
   // 3. over a range: `..` inclusive, `..<` exclusive
   var sum = 0
   loop (i in 1..4) { sum += i }
-  var count = 0
-  loop (_ in 0..<4) { count += 1 }   // `_` when the value is not needed
+  var bar = ""
+  loop (_ in 0..<4) { bar += "#" }   // `_` when the value is not needed
 
   // 4. over a collection
   var total = 0
   loop (x in [5, 10, 15]) { total += x }
 
-  io.println("$n $m $sum $count $total")
+  io.println("$n $m $sum $bar $total")
 }
 ```
 
 Output:
 ```text
-3 1 10 4 30
+3 1 10 #### 30
 ```
 
 There is no C-style `for (init; cond; step)`. A loop that walks by a fixed

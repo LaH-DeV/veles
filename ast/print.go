@@ -485,10 +485,18 @@ func (p *printer) stmt(s Stmt) {
 		p.block(s)
 	case *ValStmt:
 		p.w("(" + s.Kind.String() + " ")
-		p.binding(s.Binding)
+		if s.Pattern != nil {
+			p.pattern(s.Pattern)
+		} else {
+			p.binding(s.Binding)
+		}
 		if s.Value != nil {
 			p.w(" = ")
 			p.expr(s.Value)
+		}
+		if s.Else != nil {
+			p.w(" else ")
+			p.handler(s.Else)
 		}
 		p.w(")")
 	case *ExprStmt:
@@ -670,6 +678,16 @@ func (p *printer) expr(e Expr) {
 		p.expr(e.L)
 		p.w(" ")
 		p.expr(e.R)
+		p.w(")")
+	case *CoalesceExpr:
+		p.w("(?? ")
+		p.expr(e.L)
+		p.w(" ")
+		if e.Handler != nil {
+			p.handler(e.Handler)
+		} else {
+			p.expr(e.R)
+		}
 		p.w(")")
 	case *WithExpr:
 		p.open("with")
@@ -892,4 +910,14 @@ func (p *printer) pattern(pat Pattern) {
 	default:
 		p.f("?pat(%T)", pat)
 	}
+}
+
+func (p *printer) handler(h *Handler) {
+	if h.Err != nil {
+		p.w("(" + h.Err.Name + " => ")
+		p.block(h.Body)
+		p.w(")")
+		return
+	}
+	p.block(h.Body)
 }

@@ -54,6 +54,7 @@ val (a, b) = (1, "one")         // tuple destructuring, nests: val ((x, y), z) =
 | logic | `&& \|\| !` |
 | conversion | `x as T` (numeric only) |
 | nullable | `x ?: fallback`, `x?.member`, `x?.method()` |
+| result | `r ?? fallback`, `r ?? { e => ... }` — `?:` for a Result; `val v = r else { e => ... }` binds or leaves |
 | or fail | `x ?! error` — a `T?` or `Result` becomes a `Result` failing with `error`; `try x ?! e` propagates it |
 | type test | `x is T`, `x !is T` |
 | address | `&x` → `*T`, `*p` reads through |
@@ -163,6 +164,8 @@ val r: Result<i64, NotFound> = Ok(1); r.getOrNull(); r.getOrDefault(0); r.errorO
 val user = try users.get(id) ?! NotFound(key: id)        // `x ?! e`: absence (T?) or failure (Result) becomes failure with e; try propagates
 val n = try parse(s) ?! Invalid(why: "not a number")     // the old error is dropped; keep it with mapError:
 val m = try parse(s).mapError(e => Invalid(why: e.message()))
+val n = parse(s) ?? 0; parse(s) ?? { e => fallback(e) }; parse(s) ?? return   // ?? is ?: for a Result: the value, or the fallback
+val v = parse(s) else continue; val w = parse(s) else { e => log(e); return }  // let-else: the else must leave (also T? and patterns: val Circle(r) = s else return 0.0)
 ```
 
 Unused `Result` is an error. `try` needs an enclosing `throws`. `if (r.ok)` (or `r is Ok`)
@@ -206,6 +209,7 @@ scope {                          // every task started inside finishes here
 val (a, b) = gather { async f(); async g() }   // (Result<A, E|Panic>, Result<B, ...>)
 val winner = race { val m = ch.recv() => ...; sleep(Duration.millis(100)) => "timeout"; val v = t => ... }
 val ch = Channel<i64>(capacity: 8); ch.send(1); await ch.recv(); ch.close(); ch.closeAfter(n)  // closes itself after n sends
+ch.trySend(1); ch.tryRecv()      // never wait: false when full, null when nothing is buffered
 xs.mapConcurrent(f, workers: 4); xs.forEachConcurrent(f, workers: 4)   // the worker pool, results in order; f may suspend/throw
 fun run(f: sendable fun(i64): i64)   // a function that may cross a task boundary: named, or a lambda over vals of Sendable types
 await sleep(d)                   // a Duration: Duration.millis(100), Duration.seconds(5); zero yields
@@ -235,9 +239,9 @@ val n = unsafe { strlen(p) }                  // C calls and raw pointers need u
 // fragment
 use fs; use path; use os
 val text = try fs.readFile(p); try fs.writeFile(p, text); try fs.appendFile(p, "x")
-fs.exists(p); fs.isFile(p); fs.isDir(p); try fs.listDir(d); try fs.mkdir(d); try fs.remove(p); try fs.rename(a, b)
-path.join(a, b, c); path.join(parts...); path.dir(p); path.base(p); path.stem(p); path.ext(p); path.isAbsolute(p)
-os.args(); os.env("HOME"); os.exit(1); val r = try os.run("clang", ["--version"]); r.code; r.stdout; r.ok()
+fs.exists(p); fs.isFile(p); fs.isDir(p); try fs.listDir(d); try fs.walk(d); try fs.mkdir(d); try fs.remove(p); try fs.rename(a, b)
+path.join(a, b, c); path.join(parts...); path.dir(p); path.base(p); path.stem(p); path.ext(p); path.isAbsolute(p); path.clean(p); path.within(root, p)  // within: the check before opening a file named from outside
+os.args(); os.env("HOME"); os.pid(); try os.hostname(); os.tempDir(); os.exit(1); val r = try os.run("clang", ["--version"]); r.code; r.stdout; r.ok()
 val sb = stringBuilder(); sb.append("a"); sb.appendLine("b"); sb.toString()   // linear-time building
 ```
 

@@ -38,4 +38,17 @@ encode:  nesting deeper than 8
 toValue: nesting deeper than 8
 fromValue: [0][0][0][0][0][0][0][0]: nesting deeper than 8
 within the limit: [[1]]
+Seconds: "90.5s","retry":null "0s","retry":null "-0.000000001s","retry":null "176400.000000001s","retry":null "0.25s","retry":null
+Iso8601: "PT1M30.5S","retry":null "PT0S","retry":null "-PT0.000000001S","retry":null "PT49H0.000000001S","retry":null "PT0.25S","retry":null
+Text: "1m30.5s","retry":null "0s","retry":null "-1ns","retry":null "2d1h0.000000001s","retry":null "250ms","retry":null
+Nanos: 90500000000,"retry":null 0,"retry":null -1,"retry":null 176400000000001,"retry":null 250000000,"retry":null
+Millis: 90500,"retry":null 0,"retry":null -1e-6,"retry":null 176400000.000001,"retry":null 250,"retry":null
+Seconds refuses: timeout: not seconds like "90.5s": '1m30s'
+Iso8601 refuses: timeout: 'P1M' counts years, months or weeks, which have no fixed length; write days, hours, minutes and seconds ("P1DT2H")
+Iso8601 refuses: timeout: not an ISO 8601 duration like "PT1M30.5S": 'PT1.5M30S'
+Iso8601 refuses: timeout: not an ISO 8601 duration like "PT1M30.5S": 'PT'
+Seconds refuses: timeout: expected a string, found a number
+Millis refuses: timeout: 1e+300 milliseconds is out of range for a Duration
+{"name":"y","timeout":"5s","retry":"1.5s"}
+1d2h
 exit=0

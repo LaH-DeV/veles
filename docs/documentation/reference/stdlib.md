@@ -188,9 +188,9 @@ public trait Codable : Encodable + Decodable { }   // `implement Codable` in a s
 public trait Encoder { format(); enums(); keys(); beginObject(); key(name); endObject(); beginList(); endList(); writeI64/U64/F64/Bool/String/Null(v) }
 public trait Decoder { format(); enums(); keys(); peek(): Kind; beginObject(); nextKey(): string?; endObject(); beginList(); hasNext(); endList(); readI64/U64/F64/Bool/String/Null(); skip(); path(); problem(msg); problemAt(path, msg); problems() }
 public error EncodeError { message, path }; public error DecodeError { problems: List<Problem> }; struct Problem { path, message; pointer() }
-public enum EnumStyle { Name, Number }; public enum KeyStyle { AsWritten, SnakeCase, CamelCase }; public enum Kind { Null, Bool, Int, Float, String, List, Object }
+public enum EnumStyle { Name, Number }; public enum DurationStyle { Seconds, Iso8601, Text, Nanos, Millis }; public enum KeyStyle { AsWritten, SnakeCase, CamelCase }; public enum Kind { Null, Bool, Int, Float, String, List, Object }
 public sealed trait Value   // VNull, VBool, VInt, VFloat, VString, VList, VObject; get(k), at(i), asString/asI64/asF64/asBool(), isNull()
-ValueEncoder.of(format, enums, keys); ValueDecoder.of(v, format, enums, keys)   // a Value as the sink / the source
+ValueEncoder.of(format, enums, keys, durations); ValueDecoder.of(v, format, enums, keys, durations)   // a Value as the sink / the source
 ```
 
 The wire traits ([chapter 18](../18-codable-and-json.md)). Implemented
@@ -281,7 +281,7 @@ unreachable.
 
 | | |
 |---|---|
-| `Channel<T>(capacity: n)` | bounded channel; `send(v)`, `await recv(): T?`, `close()`, `closeAfter(n)` (closes itself after `n` more sends), `len()` |
+| `Channel<T>(capacity: n)` | bounded channel; `send(v)`, `await recv(): T?`, `close()`, `closeAfter(n)` (closes itself after `n` more sends), `len()`; `trySend(v): bool` and `tryRecv(): T?` never wait (`false` when full, `null` when nothing is buffered) |
 | `xs.mapConcurrent(f, workers: 4)`, `xs.forEachConcurrent(f, workers: 4)` | `List<T: Sendable>`: the worker pool — at most `workers` calls of `f` in flight, results in order; `f` is a `sendable fun` that may suspend and throw (then the call throws) |
 | `await sleep(d: Duration)` | suspend for at least `d`; rounded up to the executor’s millisecond, so `Duration.zero` yields |
 | `async f(...)`: `Task<T>` | start a task in the enclosing `scope`; `await task`; `task.cancel()` asks it to stop at its next suspension point (its `with` cleanups run, the scope still waits for it) |
@@ -397,7 +397,7 @@ Each is a single machine instruction (an LLVM intrinsic), not a runtime call.
 | `isNaN()`, `isFinite()`, `isInfinite()` | `f64`, `f32` | `bool` |
 | `abs()`, `min(y)`, `max(y)`, `mod(y)`, `clamp(lo, hi)`, `sign()` | every integer type | same type; `abs` on an unsigned type is the identity; `mod` is Euclidean where `%` truncates (`(-7).mod(3)` is 2, `-7 % 3` is -1) |
 | `pow(n)` | every integer type | same type; panics on overflow or `n < 0` |
-| `wrappingAdd/Sub/Mul(y)`, `saturatingAdd/Sub(y)` | every integer type | same type — the overflow policies other than the default panic (D21) |
+| `wrappingAdd/Sub/Mul(y)`, `saturatingAdd/Sub/Mul(y)` | every integer type | same type — the overflow policies other than the default panic (D21) |
 | `checkedAdd/Sub/Mul(y)` | every integer type | `T?`: `null` on overflow |
 | `countOnes()`, `leadingZeros()`, `trailingZeros()` | every integer type | same type |
 | `toString(radix: i64 = 10)` | `i64`, `u64` | `string`; digits `0-9a-z`, radix 2 to 36 |
@@ -438,6 +438,9 @@ os.args(): List<string>                          // arguments, without the progr
 os.program(): string                             // the program as invoked
 os.env(name: string): string?                    // null when unset
 os.exit(code: i64)                               // flushes output, ends the process
+os.pid(): i64                                    // this process's id
+os.hostname(): string throws IoError             // the host's network name
+os.tempDir(): string                             // TMPDIR or /tmp; TMP/TEMP on Windows; no trailing separator
 os.run(program: string, args: List<string> = [], mergeStderr: bool = false): Output throws IoError
 // Output { code: i64, stdout: string, fun ok(): bool }
 os.ioError(code: i64, path: string): IoError     // an IoError for a platform error number
@@ -464,6 +467,7 @@ fs.exists(path: string): bool
 fs.isFile(path: string): bool
 fs.isDir(path: string): bool
 fs.listDir(path: string): List<string> throws IoError      // names, sorted
+fs.walk(root: string): List<string> throws IoError         // every file below root, depth-first in name order; links to directories not followed
 fs.mkdir(path: string) throws IoError                      // with parents
 fs.remove(path: string) throws IoError                     // a file or an empty directory
 fs.rename(from: string, to: string) throws IoError
@@ -527,7 +531,7 @@ use json
 try json.encode(x); try json.pretty(x)                 // T: Encodable → text; EncodeError for a NaN or infinity
 try json.decode<T>(text)                               // T: Decodable; DecodeError lists every problem with its path
 try json.parse(text): Value; try json.toValue(x); try json.fromValue<T>(v)
-json.Options(keys: KeyStyle.SnakeCase, enums: EnumStyle.Number, omitNulls: true, pretty: true, indent: "  ", maxDepth: 64, maxProblems: 100)
+json.Options(keys: KeyStyle.SnakeCase, enums: EnumStyle.Number, durations: DurationStyle.Iso8601, omitNulls: true, pretty: true, indent: "  ", maxDepth: 64, maxProblems: 100)
 json.JsonEncoder.of(options); json.JsonDecoder.of(text, options)   // the Encoder / Decoder themselves
 ```
 
@@ -545,6 +549,8 @@ path.base(p: string): string                     // "a/b.vs" -> "b.vs"
 path.ext(p: string): string                      // ".vs" or ""
 path.stem(p: string): string                     // "b"
 path.isAbsolute(p: string): bool                 // "/x", "C:\x", "C:/x"
+path.clean(p: string): string                    // "a/./b/../c" -> "a/c"; "" -> "."; lexical
+path.within(root: string, p: string): bool       // p, cleaned, is root or inside it; both separators count
 ```
 
 ## Module `time`

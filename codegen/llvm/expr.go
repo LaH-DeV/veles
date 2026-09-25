@@ -1094,6 +1094,35 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		v := g.newTmp()
 		g.emit("%s = call %s @llvm.%s.%s(%s %s, %s %s)", v, ty, intr, ty, ty, x, ty, y)
 		return v
+	case "int.saturatingMul":
+		// LLVM's *.mul.fix.sat with scale 0 would do, but it is poorly
+		// supported by backends; with.overflow plus a select is the same
+		// thing: on overflow, all ones unsigned, and for signed MIN when
+		// the operands' signs differ (the true product is negative), MAX
+		// otherwise
+		x, y := g.expr(e.Args[0]), g.expr(e.Args[1])
+		ty := g.llType(e.Type())
+		signed := !types.IsUnsigned(e.Type())
+		intr := "smul"
+		if !signed {
+			intr = "umul"
+		}
+		pair, val, of := g.newTmp(), g.newTmp(), g.newTmp()
+		g.emit("%s = call { %s, i1 } @llvm.%s.with.overflow.%s(%s %s, %s %s)", pair, ty, intr, ty, ty, x, ty, y)
+		g.emit("%s = extractvalue { %s, i1 } %s, 0", val, ty, pair)
+		g.emit("%s = extractvalue { %s, i1 } %s, 1", of, ty, pair)
+		limit := "-1"
+		if signed {
+			bits := map[string]int{"i8": 8, "i16": 16, "i32": 32, "i64": 64}[ty]
+			signs, neg := g.newTmp(), g.newTmp()
+			g.emit("%s = xor %s %s, %s", signs, ty, x, y)
+			g.emit("%s = icmp slt %s %s, 0", neg, ty, signs)
+			limit = g.newTmp()
+			g.emit("%s = select i1 %s, %s -%d, %s %d", limit, neg, ty, uint64(1)<<(bits-1), ty, (uint64(1)<<(bits-1))-1)
+		}
+		v := g.newTmp()
+		g.emit("%s = select i1 %s, %s %s, %s %s", v, of, ty, limit, ty, val)
+		return v
 	case "int.checkedAdd", "int.checkedSub", "int.checkedMul":
 		// the with.overflow pair becomes a T?: { present, value }
 		x, y := g.expr(e.Args[0]), g.expr(e.Args[1])

@@ -41,7 +41,10 @@ Three operators do most of the work:
 
 `?:` also accepts a `return` or `throw` on its right: `val n =
 text.toInt() ?: return -1` bails out of the function when there is no
-number.
+number. The same thing can be written as a binding, `val n = text.toInt()
+else return -1` — the form that also works for a `Result` and for a pattern
+(`val Circle(r) = shape else return 0.0`); see chapter 7, "Falling back and
+bailing out".
 
 ## Smart casts
 

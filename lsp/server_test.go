@@ -662,7 +662,10 @@ func TestCodeActionInlineImpl(t *testing.T) {
 	// apply the edits (later offsets first) and check the result compiles
 	// to the inline form
 	text := src
-	type off struct{ start, end int; text string }
+	type off struct {
+		start, end int
+		text       string
+	}
 	var offs []off
 	for _, e := range edits {
 		offs = append(offs, off{positionToOffset(source.NewFile(path, src), e.Range.Start), positionToOffset(source.NewFile(path, src), e.Range.End), e.NewText})
@@ -972,7 +975,7 @@ func TestInitBlockInTooling(t *testing.T) {
 	for _, variant := range []string{"  p.\n", "  P.\n"} {
 		text := strings.Replace(src, "  //X\n", variant, 1)
 		c.notify("textDocument/didChange", map[string]any{"textDocument": map[string]any{"uri": uri, "version": 2}, "contentChanges": []map[string]any{{"text": text}}})
-		res, _ = c.call("textDocument/completion", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": 13, "character": len(strings.TrimSpace(variant))+2}})
+		res, _ = c.call("textDocument/completion", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": 13, "character": len(strings.TrimSpace(variant)) + 2}})
 		if strings.Contains(string(res), `"label":"init"`) || strings.Contains(string(res), `$init`) {
 			t.Errorf("completion after %q offers init: %s", strings.TrimSpace(variant), res)
 		}

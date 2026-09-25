@@ -295,6 +295,8 @@ Two consequences to design for:
 
 *Resolved (§4b):* byte access is the explicit `s.byteAt(i)` / `s.bytes()` view; there is no subscript on text (and, since v0.24, no subscript anywhere — D25).
 
+*Addendum (2026-09-25) — identifiers are UAX #31, and source text is checked for Trojan source.* Until now every byte ≥ 0x80 was an identifier byte: no Unicode tables to scan a name, and `val café = 1` worked — but so did a no-break space, a zero-width space and U+202E RIGHT-TO-LEFT OVERRIDE inside a name, the "Trojan source" family (CVE-2021-42574) where a file reads one way and compiles another. Decided (user, over the smaller "refuse a fixed list" option): an identifier is `_` or an **ID_Start** character followed by **ID_Continue** characters, the Unicode Standard Annex #31 definitions (`L + Nl + Other_ID_Start`, then `+ Mn + Mc + Nd + Pc + Other_ID_Continue`, minus `Pattern_Syntax` and `Pattern_White_Space`). Anything else above ASCII outside a string or comment is an error that *names* the character — "U+00A0, a no-break space; use an ordinary space", "U+202E, a bidirectional control character, which makes text display in a different order from how it compiles" — because the reader cannot see it. Beyond identifiers, as Rust does: a bidirectional control in a **comment** is an error (that is where the attack hides code); in a **string** it is a warning suggesting the `\u{...}` escape (it may be legitimate text, but should be visible). A byte-order mark is skipped at the very start of a file and is an error anywhere else. Identifiers are not NFC-normalized (two spellings of `é` are two names; Go's standard library has no normalizer). Cost: Unicode property tables in the lexer — Go's `unicode` package here, and a generated table in the self-hosted lexer (veles-selfhost-frontend-plan.md §4.2, amended).
+
 ### D19 — A slice that splits a code point returns `string?`
 
 Not a panic. Boundary violation is recoverable and flows through the smart-cast machinery of D5.
@@ -363,6 +365,8 @@ Rejected — private-by-default fields alongside `var`: with bare fields immutab
 *Addendum (v0.30) — `protected var`, and `val` written out.* Between "never assigned" and "assigned by anyone" sits the most common shape of managed state: a value everyone may read that only its type updates — C#'s `{ get; private set; }`, Swift's `private(set) var`, Kotlin's `var x` with a `private set`. Veles spells it `protected var`: `public protected var count: i64 = 0` is read wherever it is visible and assigned only inside the type's own declarations (methods, `implement` and `extend` blocks, the same set `private` uses). It replaces a `private var` plus a getter. The two modifiers answer two questions in order — the first word says who *sees* the field (`private` / nothing or `internal` / `public`), the rest who *assigns* it (bare or `val`: nobody; `protected var`: the type; `var`: anyone who sees it). `protected` always qualifies `var` (a bare field has nothing to protect; the compiler says so), and `private protected var` is refused as redundant — nobody outside can see the field, so `private var` already says it. It never restricts reading. For narrowing and for Sendable a `protected var` counts as `var` (the type can change it). The bare field may be written `val` for emphasis; the formatter keeps the author's word and never requires it.
 
 On the word: `protected` means "the class and its subclasses" in Java, C#, C++ and Kotlin. Veles has no inheritance and will not get it — shared behaviour is a trait (D6/D9), closed families are sealed traits (D12) — so the subclass reading has nothing to attach to, and the word is free to mean what it says: protected from writes by anyone but the owner. The alternatives were weighed: `readonly` (TypeScript's and C#'s word for what Veles's *bare* field already is — it would invert the term for those readers, and it sits confusingly next to `val`), `var(private)` (not Veles syntax), Swift's `private(set)` (same). Making the protected level the *default* was proposed and rejected: it would take back the at-a-glance guarantee (a struct of bare fields cannot change) and make most `val` structs uncapturable by sendable closures.
+
+*Addendum (2026-09-25) — a changed parameter is a lost change.* A struct parameter is the caller's value copied (D7), and `val`/`var` govern rebinding only, so a function may assign a `var` field of a parameter, or call a method that writes `self` on it — and the caller never sees it: `fun step(f: Fuzzer) { f.rng.next() }` advances a copy of the generator. This is a **warning**, on the parameter, naming the change and the fixes (`f: *Fuzzer`, or return the value). Silent when the copy is the point (the function returns the parameter's type, or uses the parameter whole after changing it), when the parameter's address is taken, and for writes through a reference field (seen by the caller). Rejected: Swift's immutable parameters, which would change the rule above for one case.
 
 ### D23 — Methods in the struct body; `implement` blocks for traits; no extension functions
 
@@ -476,7 +480,7 @@ Noted tension: index iteration (`0..<arr.len()`) is the more common case and get
 
 ### D30 — Elvis operator `?:`
 
-Supplies a default for a `T?`: `counts.get(word) ?: 0`. Pairs with D5's smart casts.
+Supplies a default for a `T?`: `counts.get(word) ?: 0`. Pairs with D5's smart casts. Its counterpart for a `Result` is `??`, and `val x = e else ...` binds or leaves (D61).
 
 The safe-call `?.` is included: `a?.b?.c` short-circuits to `null` and the chain's type is `T?`. A receiver that is nullable more than once — `xs.at(i)` on a `List<T?>` is a `T??`, since a missing element and a stored `null` are different answers — is flattened by `?.`: `xs.at(i)?.f` is null when the index is out of range or the element is null, and `T??` values are otherwise kept apart (v0.26).
 
@@ -1284,6 +1288,73 @@ number of microseconds on the wire. Rejected: keeping the types and
 migrating later (two spellings, which is the objection `notes_to_change`
 keeps making), and leaving `sleep` on `i64` (the one place in the language
 where a time would still be an unlabelled number).
+
+**Addendum (2026-09-25): a `Duration` on the wire.** `Duration` implements
+`Codable` by hand, and *how* it is written is the format's policy, not the
+type's — the `EnumStyle` precedent: `Encoder`/`Decoder` gained
+`durations(): DurationStyle` (default `Seconds`), `json.Options` a
+`durations` field, `ValueEncoder`/`ValueDecoder.of` a `durations`
+parameter. The styles: **`Seconds`** `"90.5s"` (the default: protobuf's
+JSON mapping for `google.protobuf.Duration` and Go's `time.ParseDuration`
+read it, and it is exact), `Iso8601` `"PT1M30.5S"` (hours at most on the
+way out, as Java writes it; days read as 24 hours on the way in; years,
+months and weeks refused with a message saying why — a month is not a
+length), `Text` (the `Display` form), `Nanos` (an exact integer) and
+`Millis` (an integer when whole, a fraction otherwise). Every text style
+reuses the exact integer parser behind `Duration.parse`. Decoding is strict
+per style. Rejected: one fixed form (the user's requirement was to be able
+to convert to the others); ISO 8601 as the default (Go and Python's
+standard libraries do not read it); a number of seconds as the default
+(precision past 2^53 ns).
+
+### D61 — Falling back and bailing out: `??` and let-else (v0.36)
+
+`try` hands a failure up; `?:` (D30) replaces a missing value. What was
+missing was the same for a `Result`, and a way to *bind* a value or leave,
+without burying the happy path in a `when` whose only job is to bail out
+(notes I1; the write-up with the alternatives is `veles-guard-design.md`).
+
+**`r ?? fallback`** — the value of a `Result<T, E>`, or `fallback` when it
+is an `Err`. `fallback` is a `T`, or `Never` (`?? return`, `?? continue`,
+`?? throw X`), or a **handler** `{ e => ... }` whose block sees the error
+and yields a `T` or leaves (`{ _ => ... }` ignores it). Right-associative,
+at `?:`'s precedence; a line may start with `??` and continue the previous
+one, as with `?:` and `?!`. In a type, `T??` is still two `?`.
+
+**One operator per kind of "maybe"** (user decision, 2026-09-25). `?:` is
+for a nullable, `??` for a `Result`; each on the other kind is an *error*
+whose fix swaps the operator, so a reader always knows from the operator
+which kind is being unwrapped. Every other language with `??` (Swift, C#,
+JavaScript, Dart, PHP) means by it what Veles means by `?:`; the error and
+its fix are what teach the difference.
+
+**Let-else** — `val <binding> = <expr> else <handler>`:
+
+- on a **`Result`**, binds the value; `else { e => ... }` sees the error;
+- on a **nullable**, binds the value (`else { e => }` is refused: there is
+  no error to bind);
+- with a **variant pattern**, `val Circle(r) = shape else ...`, binds the
+  pattern's names — the one form of `val` that takes a pattern, since a
+  pattern can fail and only let-else says what happens then.
+
+The `else` **must diverge** (checked: its type is `Never`), because the
+names do not exist on that path. It may be a braced block or, like the
+body of `if (c) stmt`, one statement: `val v = parse(s) else continue`.
+The formatter keeps a one-statement `else` on the line; a braced one
+breaks, as every braced body does. `var` works the same; tuple bindings
+destructure the value. `else` may start the next line. Errors: `else` that
+does not leave; `else` on something that cannot fail ("drop the 'else'");
+a pattern that always matches; a pattern `val` without `else`.
+
+Known edge: `val x = if (c) a` followed by `else ...` on the next line is
+an `if`/`else`, not a let-else — the `if` claims its `else` first, as it
+always has. Parenthesise the `if`.
+
+Rejected: `?:` widened to `Result` (one operator for both — what was
+recommended, and turned down so the operator shows the kind); a
+`Fallible` trait letting user types take part in `?:`/`??`/`try`/let-else
+(a separate decision, not foreclosed by this one); Swift's `guard let`
+spelling (a second keyword for what `val` already says).
 
 ---
 

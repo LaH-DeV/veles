@@ -24,6 +24,7 @@ type FormatOptions struct {
 // to parse or, with Check, would change.
 func Format(opts FormatOptions) int {
 	var files []string
+	walkFailed := false
 	for _, p := range opts.Paths {
 		info, err := os.Stat(p)
 		if err != nil {
@@ -34,8 +35,17 @@ func Format(opts FormatOptions) int {
 			files = append(files, p)
 			continue
 		}
-		filepath.WalkDir(p, func(path string, d fs.DirEntry, err error) error {
+		// An entry that cannot be read is reported and makes the run fail,
+		// but the walk goes on: one unreadable directory should not hide
+		// the state of every other file, and `--check` must never pass on
+		// a tree it did not fully read.
+		walkErr := filepath.WalkDir(p, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
+				fmt.Fprintln(os.Stderr, "veles fmt:", err)
+				walkFailed = true
+				if d != nil && d.IsDir() && path != p {
+					return fs.SkipDir
+				}
 				return nil
 			}
 			if d.IsDir() && path != p && (strings.HasPrefix(d.Name(), ".") || d.Name() == "node_modules") {
@@ -46,8 +56,15 @@ func Format(opts FormatOptions) int {
 			}
 			return nil
 		})
+		if walkErr != nil {
+			fmt.Fprintln(os.Stderr, "veles fmt:", walkErr)
+			walkFailed = true
+		}
 	}
 	code := 0
+	if walkFailed {
+		code = 1
+	}
 	for _, path := range files {
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -77,7 +94,7 @@ func Format(opts FormatOptions) int {
 			fmt.Println(path)
 			code = 1
 		default:
-			if err := os.WriteFile(path, []byte(out), 0o644); err != nil {
+			if err := writeAtomic(path, []byte(out)); err != nil {
 				fmt.Fprintln(os.Stderr, "veles fmt:", err)
 				code = 1
 				continue
@@ -86,6 +103,41 @@ func Format(opts FormatOptions) int {
 		}
 	}
 	return code
+}
+
+// writeAtomic replaces the file at path with data so that a crash, a full
+// disk or a kill leaves either the old contents or the new ones, never a
+// truncated file: the text goes to a temporary file in the same directory
+// (one filesystem, so the rename is atomic), is flushed, takes the
+// original's permission bits, and is renamed over the original.
+func writeAtomic(path string, data []byte) (err error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".veles-fmt-*")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			tmp.Close()
+			os.Remove(tmp.Name())
+		}
+	}()
+	if _, err = tmp.Write(data); err != nil {
+		return err
+	}
+	if err = tmp.Sync(); err != nil {
+		return err
+	}
+	if err = tmp.Close(); err != nil {
+		return err
+	}
+	if err = os.Chmod(tmp.Name(), info.Mode().Perm()); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
 }
 
 // StyleFor returns the formatting options for a file: the `[format]` table

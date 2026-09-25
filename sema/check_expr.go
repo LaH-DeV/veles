@@ -84,6 +84,10 @@ func (f *fnCtx) coerce(x Expr, want types.Type, span source.Span) Expr {
 		f.errorf(span, "type mismatch: expected '%s', found '%s'; read the number with '.value' (D57)", want, e.Name)
 		return x
 	}
+	if tr, ok := want.(*types.Trait); ok && !f.implements(have, tr) {
+		f.errorf(span, "type '%s' does not implement trait '%s', so it cannot be used as a '%s' value%s", have, tr.Name, tr.Name, implementHint(have, tr))
+		return x
+	}
 	f.errorf(span, "type mismatch: expected '%s', found '%s'", want, have)
 	return x
 }
@@ -296,6 +300,8 @@ func (f *fnCtx) checkExpr(e ast.Expr, want types.Type) Expr {
 		return f.withExpr(e, want)
 	case *ast.ElvisExpr:
 		return f.elvisExpr(e, want)
+	case *ast.CoalesceExpr:
+		return f.coalesceExpr(e, want)
 	case *ast.RangeExpr:
 		return f.rangeExpr(e, want)
 	case *ast.TupleExpr:
@@ -419,9 +425,25 @@ func (f *fnCtx) stringLit(e *ast.StringLit) Expr {
 			continue
 		}
 		x := f.checkExpr(p.Expr, nil)
+		if _, ok := p.Expr.(*ast.SelfExpr); ok && f.inOwnToString(x.Type()) {
+			f.errorf(p.Expr.Span(), "interpolating 'self' inside its own 'toString' calls this 'toString' again, forever; interpolate the fields instead, e.g. \"(${self.x}, ${self.y})\"")
+		}
 		cat.Parts = append(cat.Parts, f.toString(x, p.Expr.Span()))
 	}
 	return cat
+}
+
+// inOwnToString reports whether the function being checked is the
+// `Display.toString` that interpolating a value of type t would call.
+func (f *fnCtx) inOwnToString(t types.Type) bool {
+	if f.fn == nil || f.fn.tmpl == nil || f.fn.tmpl.Impl == nil || f.fn.tmpl.Name != "toString" || f.fn.Receiver == nil {
+		return false
+	}
+	if f.fn.tmpl.Impl.Trait != f.c.traitNamed("Display") {
+		return false
+	}
+	recv, ok := f.fn.Receiver.Type.(*types.Pointer)
+	return ok && types.Identical(recv.Elem, t)
 }
 
 // toString converts any showable value to a string (interpolation).
@@ -935,6 +957,9 @@ func (f *fnCtx) recordError(t types.Type, span source.Span) {
 		f.errorf(span, "errors cannot be raised in a global initializer")
 		return
 	}
+	if f.fn != nil {
+		f.fn.raised = true
+	}
 	if f.errType != nil {
 		if types.UnionIndex(f.errType, t) < 0 {
 			f.errorf(span, "error type '%s' is not in the declared 'throws %s' of this function (D45: declare it or widen the union)", t, f.errType)
@@ -1401,6 +1426,12 @@ func (f *fnCtx) elvisExpr(e *ast.ElvisExpr, want types.Type) Expr {
 	l := f.checkExpr(e.L, nil)
 	nt, ok := l.Type().(*types.Nullable)
 	if !ok {
+		if isResultType(l.Type()) {
+			op := operatorSpan(e.L, "?:")
+			f.c.errorFix(op, fixReplace("Use '??'", op, "??"), "'?:' is for a nullable; a Result's value-or-fallback is '??': '%s ?? fallback'", srcText(e.L))
+			f.checkExpr(e.R, nil)
+			return bad()
+		}
 		if !types.IsInvalid(l.Type()) {
 			f.errorf(e.Pos, "'?:' needs a nullable left operand, found '%s'", l.Type())
 		}
@@ -1624,7 +1655,9 @@ func (f *fnCtx) tryOn(x Expr, pos source.Span) Expr {
 			return x
 		}
 		if !types.IsInvalid(x.Type()) {
-			f.errorf(e.Pos, "'try' needs a Result (a call to a 'throws' function), found '%s'", x.Type())
+			// the fix is what `--fix` needs after a callee lost a needless
+			// `throws` (lint_throws.go): the `try` has nothing left to do
+			f.c.errorFix(e.Pos, fixDropKeyword("Remove 'try'", "try", e.Pos), "'try' needs a Result (a call to a 'throws' function), found '%s'", x.Type())
 		}
 		return bad()
 	}
@@ -1978,10 +2011,20 @@ func (f *fnCtx) ifExpr(e *ast.IfExpr, want types.Type) Expr {
 	if e.Else == nil && asValue {
 		f.errorf(e.Pos, "'if' used as a value needs an 'else' branch")
 	}
+	// A branch that is only `null`, where nothing says what type is wanted,
+	// takes the other branch's type made nullable: `if (c) null else x` is
+	// a `T?` for a `T` x, as in Kotlin. The `null` branch is checked last,
+	// against that type; it changes no facts, so the order is invisible.
+	nullThen := want == nil && e.Else != nil && loneNull(e.Then) && !loneNull(e.Else)
+	nullElse := want == nil && e.Else != nil && loneNull(e.Else) && !loneNull(e.Then)
+
 	f.applyFacts(whenTrue)
-	then := f.checkBlock(e.Then, want, asValue || want == nil)
+	var then *Block
+	if !nullThen {
+		then = f.checkBlock(e.Then, want, asValue || want == nil)
+	}
 	var thenState facts
-	if !types.IsNever(then.Type) {
+	if then == nil || !types.IsNever(then.Type) {
 		thenState = f.saveNarrow()
 	}
 	f.restoreNarrow(saved)
@@ -1990,7 +2033,14 @@ func (f *fnCtx) ifExpr(e *ast.IfExpr, want types.Type) Expr {
 	f.applyFacts(whenFalse)
 	var elseState facts
 	if e.Else != nil {
-		els = f.checkBlock(e.Else, want, asValue || want == nil)
+		elseWant := want
+		if nullElse {
+			elseWant = nullableOf(then.Type)
+		}
+		els = f.checkBlock(e.Else, elseWant, asValue || want == nil)
+	}
+	if nullThen {
+		then = f.checkBlock(e.Then, nullableOf(els.Type), true)
 	}
 	if els == nil || !types.IsNever(els.Type) {
 		elseState = f.saveNarrow()
@@ -2036,6 +2086,32 @@ func (f *fnCtx) ifExpr(e *ast.IfExpr, want types.Type) Expr {
 		then.Type, els.Type = types.TUnit, types.TUnit
 	}
 	return &If{exprBase{rt}, cond, then, els}
+}
+
+// loneNull reports whether a branch is nothing but the literal `null`.
+func loneNull(b *ast.Block) bool {
+	if b == nil || len(b.Stmts) != 1 {
+		return false
+	}
+	es, ok := b.Stmts[0].(*ast.ExprStmt)
+	if !ok {
+		return false
+	}
+	_, ok = es.X.(*ast.NullLit)
+	return ok
+}
+
+// nullableOf is t made nullable, for a `null` standing next to a value of
+// type t: t itself when it already admits null, nil when t is not a value
+// (unit, Never, an error) and there is nothing to infer from.
+func nullableOf(t types.Type) types.Type {
+	if t == nil || types.IsInvalid(t) || types.IsUnit(t) || types.IsNever(t) {
+		return nil
+	}
+	if _, ok := t.(*types.Nullable); ok {
+		return t
+	}
+	return &types.Nullable{Elem: t}
 }
 
 // unifyBranches reconciles two value blocks' types (T and T? unify to T?,

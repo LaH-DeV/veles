@@ -34,7 +34,7 @@ func infixBp(k lexer.TokenKind) int {
 		return bpCmp
 	case lexer.KwIs:
 		return bpNamed
-	case lexer.Elvis, lexer.OrFail:
+	case lexer.Elvis, lexer.OrFail, lexer.Coalesce:
 		return bpElvis
 	case lexer.Range, lexer.RangeLt:
 		return bpRange
@@ -87,6 +87,14 @@ func (p *Parser) parseBinary(minBp int) ast.Expr {
 			p.next()
 			right := p.parseBinary(bp - 1)
 			left = &ast.OrFailExpr{L: left, R: right, Pos: p.spanFrom(start)}
+		case lexer.Coalesce:
+			p.next()
+			if p.atHandler() {
+				left = &ast.CoalesceExpr{L: left, Handler: p.parseHandler(), Pos: p.spanFrom(start)}
+			} else {
+				right := p.parseBinary(bp - 1)
+				left = &ast.CoalesceExpr{L: left, R: right, Pos: p.spanFrom(start)}
+			}
 		case lexer.Range, lexer.RangeLt:
 			p.next()
 			right := p.parseBinary(bp)

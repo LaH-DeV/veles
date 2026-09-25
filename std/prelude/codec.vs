@@ -108,6 +108,29 @@ public enum EnumStyle {
   Number
 }
 
+/// How a `Duration` travels. Like `EnumStyle`, a property of the format
+/// and the API it talks to, not of the type: the same struct may go to a
+/// gRPC gateway as `"90.5s"` and to a Java service as `"PT1M30.5S"`.
+/// Decoding is strict per style — a number where `Seconds` wants text is a
+/// problem, as it is for enums.
+public enum DurationStyle {
+  /// `"90.5s"`: seconds with up to nine decimals and an `s` — protobuf's
+  /// JSON form for `google.protobuf.Duration`, and what Go's
+  /// `time.ParseDuration` reads. Exact. The default.
+  Seconds
+  /// `"PT1M30.5S"`, `"-PT0.25S"`: ISO 8601, for Java, .NET and JavaScript's
+  /// Temporal. Days are read (as 24 hours); years and months are refused,
+  /// because they have no fixed length.
+  Iso8601
+  /// `"1m30.5s"`: the `Display` text, which `Duration.parse` reads back.
+  Text
+  /// `90500000000`: whole nanoseconds, a number. Exact.
+  Nanos
+  /// `90500`: milliseconds, a number — whole when the duration is, with a
+  /// fraction otherwise. What many JavaScript APIs expect.
+  Millis
+}
+
 /// How an encoder spells the keys it is given: as written, `snake_case`
 /// or `camelCase`. A policy for a whole API, never an attribute on a type.
 public enum KeyStyle {
@@ -173,6 +196,8 @@ public trait Encoder {
   /// The format's name (`"json"`, `"db"`, `"env"`): what `@key(json: ...)`
   /// selects on and what a library format chooses for itself.
   fun format(): string
+  /// How durations are written; `Seconds` unless the format says otherwise.
+  fun durations(): DurationStyle = DurationStyle.Seconds
   /// How enums are written; `Name` unless the format says otherwise.
   fun enums(): EnumStyle = EnumStyle.Name
   /// How field names are spelled as keys; derived code applies it to a
@@ -199,6 +224,7 @@ public trait Encoder {
 /// code, when a value cannot be built at all (a required field missing).
 public trait Decoder {
   fun format(): string
+  fun durations(): DurationStyle = DurationStyle.Seconds
   fun enums(): EnumStyle = EnumStyle.Name
   fun keys(): KeyStyle = KeyStyle.AsWritten
   /// What comes next, without consuming it.
@@ -577,17 +603,18 @@ struct Frame {
 /// variant out of an object it buffered, and what `json.decodeValue<T>`
 /// uses to type a tree after the fact.
 public struct ValueDecoder {
-  private root:     Value
-  private stack:    MutableList<Frame> = []
-  private recorded: Problems = Problems()
-  private started:  bool = false
-  private name:     string = "json"
-  private style:    EnumStyle = EnumStyle.Name
-  private keyStyle: KeyStyle = KeyStyle.AsWritten
-  private maxDepth: i64 = maxRecursionDepth
+  private root:          Value
+  private stack:         MutableList<Frame> = []
+  private recorded:      Problems = Problems()
+  private started:       bool = false
+  private name:          string = "json"
+  private style:         EnumStyle = EnumStyle.Name
+  private keyStyle:      KeyStyle = KeyStyle.AsWritten
+  private durationStyle: DurationStyle = DurationStyle.Seconds
+  private maxDepth:      i64 = maxRecursionDepth
 
-  public static fun of(v: Value, format: string = "json", enums: EnumStyle = EnumStyle.Name, keys: KeyStyle = KeyStyle.AsWritten, maxDepth: i64 = maxRecursionDepth): ValueDecoder =
-    ValueDecoder(root: v, name: format, style: enums, keyStyle: keys, maxDepth)
+  public static fun of(v: Value, format: string = "json", enums: EnumStyle = EnumStyle.Name, keys: KeyStyle = KeyStyle.AsWritten, durations: DurationStyle = DurationStyle.Seconds, maxDepth: i64 = maxRecursionDepth): ValueDecoder =
+    ValueDecoder(root: v, name: format, style: enums, keyStyle: keys, durationStyle: durations, maxDepth)
 
   /// The value about to be read.
   private fun current(): Value {
@@ -630,6 +657,7 @@ public struct ValueDecoder {
   implement Decoder {
     fun format(): string = self.name
     override fun enums(): EnumStyle = self.style
+    override fun durations(): DurationStyle = self.durationStyle
     override fun keys(): KeyStyle = self.keyStyle
 
     fun peek(): Kind throws DecodeError = when (self.current()) {
@@ -795,15 +823,16 @@ struct ValueEncoderState {
 /// value is re-encoded through another format without a document in
 /// between.
 public struct ValueEncoder {
-  private stack:    MutableList<Building> = []
-  private state:    *ValueEncoderState
-  private name:     string = "json"
-  private style:    EnumStyle = EnumStyle.Name
-  private keyStyle: KeyStyle = KeyStyle.AsWritten
-  private maxDepth: i64 = maxRecursionDepth
+  private stack:         MutableList<Building> = []
+  private state:         *ValueEncoderState
+  private name:          string = "json"
+  private style:         EnumStyle = EnumStyle.Name
+  private keyStyle:      KeyStyle = KeyStyle.AsWritten
+  private durationStyle: DurationStyle = DurationStyle.Seconds
+  private maxDepth:      i64 = maxRecursionDepth
 
-  public static fun of(format: string = "json", enums: EnumStyle = EnumStyle.Name, keys: KeyStyle = KeyStyle.AsWritten, maxDepth: i64 = maxRecursionDepth): ValueEncoder =
-    ValueEncoder(state: &ValueEncoderState(), name: format, style: enums, keyStyle: keys, maxDepth)
+  public static fun of(format: string = "json", enums: EnumStyle = EnumStyle.Name, keys: KeyStyle = KeyStyle.AsWritten, durations: DurationStyle = DurationStyle.Seconds, maxDepth: i64 = maxRecursionDepth): ValueEncoder =
+    ValueEncoder(state: &ValueEncoderState(), name: format, style: enums, keyStyle: keys, durationStyle: durations, maxDepth)
 
   /// The value built, once one whole value has been written.
   public fun value(): Value = self.state.result ?: VNull()
@@ -827,6 +856,7 @@ public struct ValueEncoder {
   implement Encoder {
     fun format(): string = self.name
     override fun enums(): EnumStyle = self.style
+    override fun durations(): DurationStyle = self.durationStyle
     override fun keys(): KeyStyle = self.keyStyle
 
     fun beginObject() throws EncodeError {

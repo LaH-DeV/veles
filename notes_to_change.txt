@@ -53,8 +53,8 @@ would change to:
    insert/removeAt/addAll/sort, Range step/contains/reversed/len, plus `panic(msg)` and `xs.at(-1)`.
    Only primitives stay in Go (sema/builtins_doc.go is now that list): string byteAt/bytes,
    List<u8>.decodeUtf8, and the pre-existing ones. Still open from the old list:
-   - Channel: trySend(x): bool, tryRecv(): T? (non-suspending) — runtime work, not prelude
-   - int: saturatingMul (llvm.smul.fix.sat with scale 0)
+   - DONE (R39) Channel: trySend(x): bool, tryRecv(): T? (non-suspending) — runtime work, not prelude
+   - DONE (R39) int: saturatingMul (with.overflow + select)
    - not as built-ins, on purpose: toString() (interpolation), parse<T>() (wants a FromString
      trait once traits on primitives are allowed), width/precision formatting (a format module)
    - the Go-lowered eager adapters (sema/lower_list.go, check_map.go) could move to the prelude
@@ -461,7 +461,7 @@ M4. examples/dedup (2026-09-19): duplicate-file finder — a worker pool (N `asy
      example to sort or drop that output).
    NEXT: M5 text adventure, then the conformance suite / HTTP server (R4).
 IDEAS (2026-09-18, undecided — noted from reading examples/json, examples/syntax_tour):
- I1. Guard / early-exit binding. `val doc = when (val r = parse(text)) { is Ok => r; is Err
+ I1. DONE 2026-09-25 (spec D61: let-else + `??` on Result). Guard / early-exit binding. `val doc = when (val r = parse(text)) { is Ok => r; is Err
      => { ...; return } }` is correct (a Never arm drops out of the join, `return` targets the
      enclosing fun — Kotlin/Rust/Swift semantics; keep that) but the happy-path value is buried
      in a `when` whose only job is to bail out. Candidate spellings, in order of preference:
@@ -1088,7 +1088,7 @@ R32. DONE (2026-09-20): hover respects the reader's viewpoint (sema/index.go vie
 
 
 NEW TODO:
-- function that does not throw marked as throws should be linted to remove the throw
+- DONE (2026-09-25, R39): function that does not throw marked as throws should be linted to remove the throw
 R34. DONE (2026-09-22): closed the last two open items of the derivation section
     (veles-checklist.md §1.1).
     (1) TRAIT OBJECTS OF A TRAIT WITH SUPERTRAITS (spec D58 amended). The vtable is the
@@ -1291,7 +1291,7 @@ R38. DONE (2026-09-23): PREPARING THE LIBRARY FOR THE FRONT-END REWRITE —
     `strconv.Quote` right to the character is P3's job, and choosing its
     permanent home (a `std/strconv`?) wants the caller to exist first.
 
-21. (2026-09-23, found while doing R38, not decided) An invisible or
+21. DONE (2026-09-25, user chose UAX #31; spec D18 addendum). (2026-09-23, found while doing R38) An invisible or
     bidirectional-control character is a legal identifier byte.
     D18 classifies identifier bytes by value: `_`, an ASCII letter, or ANY byte
     >= 0x80. That is the right default for the common path — it means no Unicode
@@ -1327,3 +1327,40 @@ R38. DONE (2026-09-23): PREPARING THE LIBRARY FOR THE FRONT-END REWRITE —
     the module tries. `examples/recursion` — a recursive-descent calculator
     over `(1+(2+3))` that answers a diagnostic instead of a segmentation
     fault — is both the test for `Depth` and the shape plan P5 should copy.
+
+R39. DONE (2026-09-25): veles-plan.md Phases 0–2 — the harness, then the debt
+    that needed no decision. Full account in veles-plan.md (progress log) and
+    veles-review-fixes.md (resolution).
+    - Harness: the examples/docs suites build a fresh compiler and key Go's
+      test cache on every compiler source (they reported `(cached)` after a
+      codegen edit before); an internal compiler error prints a report and
+      exits 3 instead of a Go stack trace; `veles fmt` writes atomically.
+    - codegen/llvm has golden-IR tests that also run each fixture (0% → 57%).
+    - Lints: needless `throws` (the NEW TODO above), `loop (true)`, the
+      hand-counting loop (T4); `"$self"` in its own toString is an error (P7);
+      missing-implement messages say what and where (#12).
+    - std: Channel.trySend/tryRecv and saturatingMul (#14), os.pid/hostname/
+      tempDir, path.clean/within, fs.walk.
+    FOUND AND FIXED:
+    - a sleeping task woken early (its scope's child finished) was lost and
+      the executor reported a deadlock; `sleep(Duration.zero)` did not yield.
+    - DIRECTORY TRAVERSAL on Windows in http.files: `GET /static/..\x` passed
+      the `..` check (split on `/` only) and served files outside the root.
+    LATER THE SAME DAY (still R39):
+    - `if (c) null else x` / `when { ... => null }` infer `T?` from the other
+      branches (was "cannot infer the type of 'null'").
+    - examples/fuzz (property fuzzer for base64/hex/json/percentDecode/utf8)
+      found: toF64 panic on `1e99999999999999999999`; json.parse accepting
+      `1e400`; toF64 not correctly rounded (JSON floats drifted per round
+      trip) — now strtod.
+    - FOOTGUN HIT, OPEN: passing a value struct to a function copies it, so a
+      `var` field advanced inside (an Rng) is lost to the caller, silently.
+      This is R20 follow-up (1). Decision wanted: see veles-plan.md Phase 3.
+
+R40. DONE (2026-09-25): I1 decided and built — let-else (`val x = r else { e => ... }`,
+    `else return`, `val Circle(r) = s else ...`) and `??` for a Result (`r ?? 0`,
+    `r ?? { e => ... }`); `?:` on a Result and `??` on a nullable are errors whose fix
+    swaps the operator. Spec D61. Then benchmarks (bench/, `go run ./bench`, a Go
+    reference per workload) — which found the GC allocator QUADRATIC between
+    collections: every full span was scanned slot by slot on each allocation. JSON of
+    40k records took 376 s (now 0.31 s). Fixed in veles_gc.c, guarded in examples/gc.

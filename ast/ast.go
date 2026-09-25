@@ -425,8 +425,22 @@ type Binding struct {
 type ValStmt struct {
 	Kind    BindKind
 	Binding Binding
+	// Pattern is set instead of Binding for a let-else over a variant:
+	// `val JObj(fields) = doc else { ... }`.
+	Pattern Pattern
 	Value   Expr
-	Pos     source.Span
+	// Else is the block of `val x = e else { ... }` (let-else): it runs when
+	// e is null, an Err, or does not match Pattern, and must leave.
+	Else *Handler
+	Pos  source.Span
+}
+
+// Handler is `{ body }` or `{ e => body }`: the failure branch of a let-else
+// or of `r ?? { e => ... }`, with a Result's error bound to Err.
+type Handler struct {
+	Err  *Ident
+	Body *Block
+	Pos  source.Span
 }
 
 type ExprStmt struct {
@@ -655,6 +669,16 @@ type OrFailExpr struct {
 	Pos  source.Span
 }
 
+// CoalesceExpr is `r ?? fallback` or `r ?? { e => ... }`: a Result's value,
+// or the fallback (a value, or a handler that yields one or leaves) when it
+// is an Err. `??` is to a Result what `?:` is to a nullable.
+type CoalesceExpr struct {
+	L       Expr
+	R       Expr     // nil when Handler is set
+	Handler *Handler // `?? { e => ... }`
+	Pos     source.Span
+}
+
 // ElvisExpr is `x ?: default` (D30).
 type ElvisExpr struct {
 	L   Expr
@@ -784,75 +808,77 @@ type BadExpr struct {
 	Pos source.Span
 }
 
-func (e *IntLit) Span() source.Span     { return e.Pos }
-func (e *FloatLit) Span() source.Span   { return e.Pos }
-func (e *StringLit) Span() source.Span  { return e.Pos }
-func (e *CharLit) Span() source.Span    { return e.Pos }
-func (e *BoolLit) Span() source.Span    { return e.Pos }
-func (e *NullLit) Span() source.Span    { return e.Pos }
-func (e *SelfExpr) Span() source.Span   { return e.Pos }
-func (e *TypeExpr) Span() source.Span   { return e.Pos }
+func (e *IntLit) Span() source.Span           { return e.Pos }
+func (e *FloatLit) Span() source.Span         { return e.Pos }
+func (e *StringLit) Span() source.Span        { return e.Pos }
+func (e *CharLit) Span() source.Span          { return e.Pos }
+func (e *BoolLit) Span() source.Span          { return e.Pos }
+func (e *NullLit) Span() source.Span          { return e.Pos }
+func (e *SelfExpr) Span() source.Span         { return e.Pos }
+func (e *TypeExpr) Span() source.Span         { return e.Pos }
 func (e *FieldDefaultExpr) Span() source.Span { return e.Pos }
-func (e *NameExpr) Span() source.Span   { return e.Pos }
-func (e *MemberExpr) Span() source.Span { return e.Pos }
-func (e *IndexExpr) Span() source.Span  { return e.Pos }
-func (e *CallExpr) Span() source.Span   { return e.Pos }
-func (e *UnaryExpr) Span() source.Span  { return e.Pos }
-func (e *BinaryExpr) Span() source.Span { return e.Pos }
-func (e *ElvisExpr) Span() source.Span  { return e.Pos }
-func (e *OrFailExpr) Span() source.Span { return e.Pos }
-func (e *WithExpr) Span() source.Span   { return e.Pos }
-func (e *RangeExpr) Span() source.Span  { return e.Pos }
-func (e *LambdaExpr) Span() source.Span { return e.Pos }
-func (e *TupleExpr) Span() source.Span  { return e.Pos }
-func (e *ListLit) Span() source.Span    { return e.Pos }
-func (e *MapLit) Span() source.Span     { return e.Pos }
-func (e *IfExpr) Span() source.Span     { return e.Pos }
-func (e *WhenExpr) Span() source.Span   { return e.Pos }
-func (e *BlockExpr) Span() source.Span  { return e.Block.Pos }
-func (e *TryExpr) Span() source.Span    { return e.Pos }
-func (e *AwaitExpr) Span() source.Span  { return e.Pos }
-func (e *IsExpr) Span() source.Span     { return e.Pos }
-func (e *CastExpr) Span() source.Span   { return e.Pos }
-func (e *GatherExpr) Span() source.Span { return e.Pos }
-func (e *RaceExpr) Span() source.Span   { return e.Pos }
-func (e *UnsafeExpr) Span() source.Span { return e.Pos }
-func (e *BadExpr) Span() source.Span    { return e.Pos }
+func (e *NameExpr) Span() source.Span         { return e.Pos }
+func (e *MemberExpr) Span() source.Span       { return e.Pos }
+func (e *IndexExpr) Span() source.Span        { return e.Pos }
+func (e *CallExpr) Span() source.Span         { return e.Pos }
+func (e *UnaryExpr) Span() source.Span        { return e.Pos }
+func (e *BinaryExpr) Span() source.Span       { return e.Pos }
+func (e *ElvisExpr) Span() source.Span        { return e.Pos }
+func (e *CoalesceExpr) Span() source.Span     { return e.Pos }
+func (e *OrFailExpr) Span() source.Span       { return e.Pos }
+func (e *WithExpr) Span() source.Span         { return e.Pos }
+func (e *RangeExpr) Span() source.Span        { return e.Pos }
+func (e *LambdaExpr) Span() source.Span       { return e.Pos }
+func (e *TupleExpr) Span() source.Span        { return e.Pos }
+func (e *ListLit) Span() source.Span          { return e.Pos }
+func (e *MapLit) Span() source.Span           { return e.Pos }
+func (e *IfExpr) Span() source.Span           { return e.Pos }
+func (e *WhenExpr) Span() source.Span         { return e.Pos }
+func (e *BlockExpr) Span() source.Span        { return e.Block.Pos }
+func (e *TryExpr) Span() source.Span          { return e.Pos }
+func (e *AwaitExpr) Span() source.Span        { return e.Pos }
+func (e *IsExpr) Span() source.Span           { return e.Pos }
+func (e *CastExpr) Span() source.Span         { return e.Pos }
+func (e *GatherExpr) Span() source.Span       { return e.Pos }
+func (e *RaceExpr) Span() source.Span         { return e.Pos }
+func (e *UnsafeExpr) Span() source.Span       { return e.Pos }
+func (e *BadExpr) Span() source.Span          { return e.Pos }
 
-func (*IntLit) exprNode()     {}
-func (*FloatLit) exprNode()   {}
-func (*StringLit) exprNode()  {}
-func (*CharLit) exprNode()    {}
-func (*BoolLit) exprNode()    {}
-func (*NullLit) exprNode()    {}
-func (*SelfExpr) exprNode()   {}
-func (*TypeExpr) exprNode()   {}
+func (*IntLit) exprNode()           {}
+func (*FloatLit) exprNode()         {}
+func (*StringLit) exprNode()        {}
+func (*CharLit) exprNode()          {}
+func (*BoolLit) exprNode()          {}
+func (*NullLit) exprNode()          {}
+func (*SelfExpr) exprNode()         {}
+func (*TypeExpr) exprNode()         {}
 func (*FieldDefaultExpr) exprNode() {}
-func (*NameExpr) exprNode()   {}
-func (*MemberExpr) exprNode() {}
-func (*IndexExpr) exprNode()  {}
-func (*CallExpr) exprNode()   {}
-func (*UnaryExpr) exprNode()  {}
-func (*BinaryExpr) exprNode() {}
-func (*ElvisExpr) exprNode()  {}
-func (*OrFailExpr) exprNode() {}
-func (*WithExpr) exprNode()   {}
-func (*RangeExpr) exprNode()  {}
-func (*LambdaExpr) exprNode() {}
-func (*TupleExpr) exprNode()  {}
-func (*ListLit) exprNode()    {}
-func (*MapLit) exprNode()     {}
-func (*IfExpr) exprNode()     {}
-func (*WhenExpr) exprNode()   {}
-func (*BlockExpr) exprNode()  {}
-func (*TryExpr) exprNode()    {}
-func (*AwaitExpr) exprNode()  {}
-func (*IsExpr) exprNode()     {}
-func (*CastExpr) exprNode()   {}
-func (*GatherExpr) exprNode() {}
-func (*RaceExpr) exprNode()   {}
-func (*UnsafeExpr) exprNode() {}
-func (*BadExpr) exprNode()    {}
+func (*NameExpr) exprNode()         {}
+func (*MemberExpr) exprNode()       {}
+func (*IndexExpr) exprNode()        {}
+func (*CallExpr) exprNode()         {}
+func (*UnaryExpr) exprNode()        {}
+func (*BinaryExpr) exprNode()       {}
+func (*ElvisExpr) exprNode()        {}
+func (*CoalesceExpr) exprNode()     {}
+func (*OrFailExpr) exprNode()       {}
+func (*WithExpr) exprNode()         {}
+func (*RangeExpr) exprNode()        {}
+func (*LambdaExpr) exprNode()       {}
+func (*TupleExpr) exprNode()        {}
+func (*ListLit) exprNode()          {}
+func (*MapLit) exprNode()           {}
+func (*IfExpr) exprNode()           {}
+func (*WhenExpr) exprNode()         {}
+func (*BlockExpr) exprNode()        {}
+func (*TryExpr) exprNode()          {}
+func (*AwaitExpr) exprNode()        {}
+func (*IsExpr) exprNode()           {}
+func (*CastExpr) exprNode()         {}
+func (*GatherExpr) exprNode()       {}
+func (*RaceExpr) exprNode()         {}
+func (*UnsafeExpr) exprNode()       {}
+func (*BadExpr) exprNode()          {}
 
 // ---------------------------------------------------------------------------
 // Patterns (D13)

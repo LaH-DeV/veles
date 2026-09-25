@@ -42,33 +42,3 @@ func TestUnexpectedCharacter(t *testing.T) {
 		})
 	}
 }
-
-// TestAboveAsciiIsAnIdentifier is the reason TestUnexpectedCharacter has no
-// non-ASCII rows: every byte at or above 0x80 starts an identifier (D18),
-// so nothing above ASCII ever reaches the "unexpected character" path — not
-// a letter, and not an invisible one either. The Veles lexer has to agree,
-// and this is where that expectation is written down.
-func TestAboveAsciiIsAnIdentifier(t *testing.T) {
-	for _, r := range []rune{
-		0x00E9, // é, a letter
-		0x00A0, // no-break space
-		0x200B, // zero width space
-		0x202E, // right-to-left override
-		0xFEFF, // byte order mark, in the middle of a file
-	} {
-		var diags source.Diagnostics
-		toks := Tokenize(source.NewFile("t.vs", between(r)), &diags)
-		if out := diags.Render(); strings.Contains(out, "unexpected character") {
-			t.Fatalf("U+%04X: wanted no complaint, got:\n%s", r, out)
-		}
-		found := false
-		for _, tok := range toks {
-			if tok.Kind == Ident && tok.Text == string(r) {
-				found = true
-			}
-		}
-		if !found {
-			t.Fatalf("U+%04X: wanted it lexed as an identifier, got %v", r, toks)
-		}
-	}
-}

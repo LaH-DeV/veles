@@ -28,6 +28,9 @@ public struct Options {
   public keys: KeyStyle = KeyStyle.AsWritten
   /// Enums as their names (`"Active"`) or their numbers (`1`).
   public enums: EnumStyle = EnumStyle.Name
+  /// Durations as `"90.5s"` (the default), ISO 8601, the `Display` text, or
+  /// a number of nanoseconds or milliseconds; see `DurationStyle`.
+  public durations: DurationStyle = DurationStyle.Seconds
   /// Leave out object members whose value is null.
   public omitNulls: bool = false
   /// Newlines and indentation.
@@ -54,7 +57,7 @@ public fun encode<T: Encodable>(value: T, options: Options = Options()): string 
 
 /// `value` as JSON text over several lines.
 public fun pretty<T: Encodable>(value: T, options: Options = Options()): string throws EncodeError =
-  try encode(value, Options(keys: options.keys, enums: options.enums, omitNulls: options.omitNulls, pretty: true, indent: options.indent))
+  try encode(value, Options(keys: options.keys, enums: options.enums, durations: options.durations, omitNulls: options.omitNulls, pretty: true, indent: options.indent, maxDepth: options.maxDepth, maxProblems: options.maxProblems))
 
 /// A `T` read from JSON text. Every problem in the document is reported
 /// together; a document that is not JSON at all is one problem.
@@ -70,14 +73,14 @@ public fun parse(text: string, options: Options = Options()): Value throws Decod
 
 /// `value` as a `Value` tree — what it would encode to, before it is text.
 public fun toValue<T: Encodable>(value: T, options: Options = Options()): Value throws EncodeError {
-  val enc = ValueEncoder.of("json", options.enums, options.keys, options.maxDepth)
+  val enc = ValueEncoder.of("json", options.enums, options.keys, options.durations, options.maxDepth)
   try value.encode(enc)
   enc.value()
 }
 
 /// A `T` read from a `Value` tree.
 public fun fromValue<T: Decodable>(v: Value, options: Options = Options()): T throws DecodeError {
-  val dec = ValueDecoder.of(v, "json", options.enums, options.keys, options.maxDepth)
+  val dec = ValueDecoder.of(v, "json", options.enums, options.keys, options.durations, options.maxDepth)
   val value = try T.decode(dec)
   try finish(dec, value)
 }
@@ -146,6 +149,7 @@ public struct JsonEncoder {
   implement Encoder {
     fun format(): string = "json"
     override fun enums(): EnumStyle = self.options.enums
+    override fun durations(): DurationStyle = self.options.durations
     override fun keys(): KeyStyle = self.options.keys
 
     fun beginObject() throws EncodeError {
@@ -441,6 +445,7 @@ public struct JsonDecoder {
   implement Decoder {
     fun format(): string = "json"
     override fun enums(): EnumStyle = self.options.enums
+    override fun durations(): DurationStyle = self.options.durations
     override fun keys(): KeyStyle = self.options.keys
 
     fun peek(): Kind throws DecodeError {
@@ -519,6 +524,13 @@ public struct JsonDecoder {
       val n = text.toF64()
       if (n == null) {
         self.recorded.record(self.path(), "$text is not a number")
+        return 0.0
+      }
+      if (n.isInfinite()) {
+        // `1e400` is valid JSON grammar, but no f64 holds it; accepting it
+        // as infinity would read a document that cannot be written back
+        // (RFC 8259 §6 lets a parser limit range; Go refuses it too)
+        self.recorded.record(self.path(), "$text is out of range for a 64-bit float")
         return 0.0
       }
       n

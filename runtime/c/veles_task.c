@@ -50,6 +50,7 @@ typedef struct veles_task {
     struct veles_task *sibling;   /* scope children list */
     int64_t queued;
     int64_t wake_at;        /* timer, ms since start; 0 = none */
+    int64_t yielded;        /* sleep(0) put the task at the back of the run queue once */
     struct veles_task *timer_next;
     veles_race *race;
     int64_t panicked;
@@ -513,6 +514,26 @@ int64_t veles_chan_len(veles_chan *c) {
     return c->len;
 }
 
+/* trySend: 1 when delivered or buffered, 0 when the buffer is full; never
+   blocks. A closed channel panics, as send does: sending into it is a bug
+   in the program, not a condition to poll for. */
+int64_t veles_chan_try_send(veles_chan *c, const void *item) {
+    if (c->closed) veles_panic("send on a closed channel", 24);
+    if (c->len >= c->cap) return 0;
+    if (!chan_hand_off(c, item)) chan_push(c, item);
+    if (c->remaining > 0 && --c->remaining == 0) veles_chan_close(c);
+    return 1;
+}
+
+/* tryRecv: 1 with a value in *out, 0 when nothing is buffered (empty, or
+   closed and drained); never blocks. */
+int64_t veles_chan_try_recv(veles_chan *c, void *out) {
+    if (c->len == 0) return 0;
+    chan_pop(c, out);
+    wake(pop_waiter(&c->send_waiters));
+    return 1;
+}
+
 /* closeAfter(n): the channel closes itself once n more values have been sent,
    so several producers can end it without coordinating. */
 void veles_chan_close_after(veles_chan *c, int64_t n) {
@@ -531,16 +552,34 @@ static void add_timer(veles_task *t, int64_t ms) {
     timers = t;
 }
 
-/* sleep: true once the deadline passed; first call arms it and blocks */
+/* sleep: true once the deadline passed; first call arms it and blocks.
+ * A task can be woken before its deadline for another reason - a scope
+ * child finishing wakes the scope's owner - and it then comes back here:
+ * it must block again, still on the timer list. Returning 0 while leaving
+ * the task T_RUNNABLE lost it: fire_timers' wake() only wakes a blocked
+ * task, so the sleeper was never resumed and the executor reported a
+ * deadlock (a producer finishing while main slept on a timer). */
 int64_t veles_task_sleep(veles_task *self, int64_t ms) {
     if (self->wake_at != 0) {
         if (now_ms() >= self->wake_at) {
             self->wake_at = 0;
             return 1;
         }
+        self->state = T_BLOCKED;
         return 0;
     }
-    if (ms <= 0) return 1;
+    if (ms <= 0) {
+        /* a yield: to the back of the run queue once, so every other
+         * runnable task gets a turn before this one continues - the
+         * polling loop around a tryRecv depends on it */
+        if (self->yielded) {
+            self->yielded = 0;
+            return 1;
+        }
+        self->yielded = 1;
+        enqueue(self);
+        return 0;
+    }
     remove_timer(self);
     add_timer(self, ms);
     self->state = T_BLOCKED;
@@ -771,20 +810,6 @@ int64_t veles_race_wait(veles_task *self, veles_race *r) {
         timers = self;
     }
     self->state = T_BLOCKED;
-    return -1;
-}
-
-/* a task blocked in a race woke up because an awaited task finished */
-int64_t veles_race_resolve(veles_task *self, veles_race *r) {
-    if (r->ready) return r->winner;
-    for (int64_t i = 0; i < r->narms; i++) {
-        if (r->arms[i].awaited && r->arms[i].awaited->state == T_DONE) {
-            r->ready = 1;
-            r->winner = i;
-            self->race = NULL;
-            return i;
-        }
-    }
     return -1;
 }
 

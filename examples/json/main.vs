@@ -335,12 +335,9 @@ fun main() {
   val text = "{\"name\": \"Veles\", \"version\": 0.24, \"tags\": [\"fast\", \"safe\", \"gc\"],\n" +
     "  \"author\": {\"name\": \"Lah\", \"langs\": [\"pl\", \"en\"]}, \"stars\": 1e3,\n" +
     "  \"escaped\": \"line\\nbreak \\\"quoted\\\" \\u0041\\u00e9\", \"nothing\": null, \"ok\": true}"
-  val doc = when (val r = parse(text)) {
-    is Ok  => r
-    is Err => {
-      io.println("parse failed: ${r.message()}")
-      return
-    }
+  val doc = parse(text) else { e =>
+    io.println("parse failed: ${e.message()}")
+    return
   }
   io.println(compact(doc))
   io.println(pretty(doc))

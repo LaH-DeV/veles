@@ -265,6 +265,14 @@ rather than during it.
 >   documented divergence. (That a bidirectional override is a legal
 >   identifier byte is a real question, but it is D18's, not this plan's —
 >   `notes_to_change` #21.)
+> - **Superseded 2026-09-25 (D18 addendum):** identifiers are now UAX #31,
+>   so the paragraph above no longer holds. The Go lexer asks Go's
+>   `unicode` tables for ID_Start/ID_Continue and names invisible characters
+>   in its errors (`lexer/ident.go`); the Veles lexer needs the same
+>   answers, so P1 gains a generated table — the ID_Start/ID_Continue ranges
+>   above ASCII, written out by a small Go program from the same `unicode`
+>   package, so the two lexers cannot disagree about which Unicode version
+>   they follow. `describeRune`'s wording is part of the token-dump gate.
 > - **One recursion limit** exists (decision 3a), in the prelude:
 >   `maxRecursionDepth` (1000, a stack budget — see its doc comment),
 >   `tooDeepMessage(limit)` so every caller reports the same sentence, and

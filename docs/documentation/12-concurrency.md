@@ -195,6 +195,39 @@ so `results.closeAfter(4)` says it once and the consumer loops until
 `recv()` returns `null`. A channel of `Result<T, E>` carries failures as
 values when one bad item should not stop the others.
 
+`send` and `recv` wait. When waiting is wrong — a best-effort
+notification that should be dropped rather than hold up the sender, or a
+loop that has other work to do — `trySend(v)` and `tryRecv()` ask and
+move on:
+
+```veles
+use io
+
+fun main() {
+  val events = Channel<string>(capacity: 2)
+  loop (e in ["start", "tick", "tick", "stop"]) {
+    if (!events.trySend(e)) io.println("dropped $e")   // full: do not wait
+  }
+  loop {
+    val e = events.tryRecv() ?: break                  // nothing buffered
+    io.println("got $e")
+  }
+}
+```
+
+Output:
+```text
+dropped tick
+dropped stop
+got start
+got tick
+```
+
+`tryRecv()` returns `null` both when the channel is empty for now and when
+it is closed and drained; `len()` or a waiting `recv()` tells the two
+apart. A loop that polls should `await sleep(Duration.zero)` between
+tries: that yields, so the tasks it is waiting for get to run.
+
 ## The same job on every element
 
 Most pools do one thing: apply a function to every element with a limit

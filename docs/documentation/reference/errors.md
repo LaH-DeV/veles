@@ -35,6 +35,35 @@ read (assigning to it does not count). Use it, drop it, or name it `_`.
 Add `throws` to the function (the error type is inferred), or handle the
 `Result` with `when`.
 
+### `'?:' is for a nullable; a Result's value-or-fallback is '??'` (and the reverse)
+
+`?:` unwraps a `T?`, `??` unwraps a `Result` — one idea, split by what is
+on the left, so the operator tells the reader which kind of "maybe" it is.
+The quick fix (and `veles check --fix`) swaps the operator. (D61)
+
+### `the 'else' of a 'val ... else' must leave`
+
+`val x = r else { ... }` binds `x` only when `r` has a value; on the other
+path `x` does not exist, so the block cannot fall through to code that
+uses it. End it with `return`, `break`, `continue`, `throw` or `panic`. To
+carry on with a default instead, use `r ?? fallback` (a Result) or
+`n ?: fallback` (a nullable). (D61)
+
+### `nothing here can fail: 'val ... else' needs a nullable, a Result or a pattern`
+
+The value always exists, so the `else` could never run. Drop it. (D61)
+
+### `'f' is declared 'throws' but nothing in its body can throw`
+
+A warning: no `throw`, and no `try` of something that can fail, anywhere
+in the body — so the clause only makes every caller write a `try` that
+can never propagate anything. Remove it; `veles check --fix` does, and on
+the next pass also removes the callers' now-pointless `try` (which is the
+error `'try' needs a Result`, carrying its own fix). A `public` function,
+a trait method and its implementations, and a function passed as a value
+are left alone: there the clause is a contract, not a claim about one
+body. (D45)
+
 ### `'Dog' is not an error: declare it with 'error Dog { ... }' instead of 'struct'`
 
 Only types declared with `error` (or given an explicit `implement Error for`)
@@ -69,6 +98,34 @@ answer rather than "failure".
 
 A nullable value is not a value (D5). `x ?: fallback`, `x?.member`, or
 `if (x == null) return ...` and continue with `x` narrowed.
+
+### `unexpected character U+00A0, a no-break space; use an ordinary space`
+
+Names may use letters from any script — `café`, `日本語`, `µs` — and
+combining marks and digits after the first letter (Unicode's identifier
+rules, UAX #31). A character that is none of those is reported by name,
+because it is usually invisible: a no-break space pasted from a web page,
+a zero-width space, a byte-order mark in the middle of a file. A
+*bidirectional control* (U+202A–U+202E, U+2066–U+2069) is refused in code
+and in comments: it makes a file display in a different order from how it
+compiles (the "Trojan source" attack). Inside a string it is a warning —
+write it as `\u{202E}` so it can be seen. (D18)
+
+### `'f' is a copy of the caller's 'Fuzzer': this function calls 'range', which changes 'f.rng', and the caller never sees the change`
+
+A warning. A struct is a value (D7), so a parameter is a copy of what the
+caller passed; changing its `var` fields changes the copy. Take a pointer
+— `f: *Fuzzer`, called with `&fuzzer` — to change the caller's value, or
+return the changed one. Fields that are references (a `MutableList`, a
+`*State`) are shared, so pushing into them is seen and is not reported.
+
+### `interpolating 'self' inside its own 'toString' calls this 'toString' again, forever`
+
+Interpolation prints a value through its `Display` implementation, so
+`"$self"` inside that very `toString` is the function calling itself with
+the same argument — a stack overflow at run time. Interpolate the fields
+(`"(${self.x}, ${self.y})"`). Printing a *different* value of the type is
+allowed, since that recursion can end. (P7)
 
 ### `'when' is not exhaustive: Rect`
 

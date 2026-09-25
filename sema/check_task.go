@@ -193,6 +193,19 @@ func (f *fnCtx) channelMethod(recv Expr, ct *types.Channel, name string, e *ast.
 			f.errorf(span, "'recv()' always suspends and must be awaited: 'await ch.recv()' (D16)")
 		}
 		return b
+	case "trySend":
+		// the non-suspending forms: a caller that must not wait (a
+		// metrics sample, a best-effort notification) asks, and moves on
+		if !need(1) {
+			return bad()
+		}
+		x := f.checkExprTo(e.Args[0].Value, ct.Elem)
+		return &Builtin{exprBase{types.TBool}, "chan.trySend", []Expr{recv, x}, span}
+	case "tryRecv":
+		if !need(0) {
+			return bad()
+		}
+		return &Builtin{exprBase{&types.Nullable{Elem: ct.Elem}}, "chan.tryRecv", []Expr{recv}, span}
 	case "close":
 		if !need(0) {
 			return bad()

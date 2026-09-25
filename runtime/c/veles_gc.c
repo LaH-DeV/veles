@@ -44,7 +44,8 @@ typedef struct veles_span {
     size_t nobjs;
     uint8_t *marks;    /* per object */
     uint8_t *used;     /* per object: allocated */
-    size_t free_hint;
+    size_t free_hint;  /* every slot below it is in use (slots are freed only by a sweep) */
+    size_t nused;      /* slots in use, so a full span is skipped without a scan */
     struct veles_span *next; /* in size class list */
     int cls;
 } veles_span;
@@ -53,6 +54,9 @@ static const size_t class_sizes[] = {16, 32, 48, 64, 96, 128, 192, 256, 384, 512
 #define NCLASSES (sizeof class_sizes / sizeof class_sizes[0])
 
 static veles_span *classes[NCLASSES];
+/* the first span of each class that may have a free slot: the spans before
+ * it filled up since the last sweep, and only a sweep frees a slot */
+static veles_span *cursor[NCLASSES];
 static veles_span **all_spans;
 static size_t nspans, cap_spans;
 
@@ -197,10 +201,14 @@ void veles_gc_collect(void);
 /* ---- allocation ----------------------------------------------------------- */
 
 static void *alloc_in_span(veles_span *s, veles_desc *desc) {
-    for (size_t n = 0; n < s->nobjs; n++) {
-        size_t i = (s->free_hint + n) % s->nobjs;
+    /* slots are freed only by a sweep, which resets free_hint, so the hint
+     * only moves forward between collections and the scan is amortised
+     * O(1); a full span answers at once */
+    if (s->nused == s->nobjs) return NULL;
+    for (size_t i = s->free_hint; i < s->nobjs; i++) {
         if (!s->used[i]) {
             s->used[i] = 1;
+            s->nused++;
             s->free_hint = i + 1;
             char *obj = s->start + i * s->objsize;
             memset(obj, 0, s->objsize);
@@ -223,13 +231,17 @@ void *veles_gc_alloc(veles_desc *desc, int64_t size) {
         s->nobjs = 1;
         return alloc_in_span(s, desc);
     }
-    for (veles_span *s = classes[cls]; s; s = s->next) {
+    for (veles_span *s = cursor[cls] ? cursor[cls] : classes[cls]; s; s = s->next) {
         void *p = alloc_in_span(s, desc);
-        if (p) return p;
+        if (p) {
+            cursor[cls] = s;
+            return p;
+        }
     }
     veles_span *s = new_span(cls, class_sizes[cls], SPAN_SIZE);
     s->next = classes[cls];
     classes[cls] = s;
+    cursor[cls] = s;
     void *p = alloc_in_span(s, desc);
     if (!p) oom();
     return p;
@@ -361,6 +373,7 @@ void veles_gc_init(void) {
 
 static void sweep(void) {
     live_bytes = 0;
+    memset(cursor, 0, sizeof cursor); /* every span may have room again */
     size_t w = 0;
     for (size_t i = 0; i < nspans; i++) {
         veles_span *s = all_spans[i];
@@ -374,6 +387,7 @@ static void sweep(void) {
             s->marks[k] = 0;
         }
         s->free_hint = 0;
+        s->nused = live;
         live_bytes += live * s->objsize;
         if (live == 0 && s->cls < 0) {
             /* release large-object spans */

@@ -166,6 +166,174 @@ public struct Duration {
     /// zero has no unit.
     static fun parse(s: string): Duration? = parseDuration(s)
   }
+
+  /// On the wire in the format's `DurationStyle` — `"90.5s"` unless it
+  /// says otherwise (`json.Options(durations: ...)`). Every text style is
+  /// exact to the nanosecond; `Millis` is exact when the duration is whole
+  /// milliseconds.
+  implement Encodable {
+    fun encode(to: Encoder) throws EncodeError {
+      when (to.durations()) {
+        DurationStyle.Seconds => try to.writeString(secondsText(self))
+        DurationStyle.Iso8601 => try to.writeString(isoText(self))
+        DurationStyle.Text    => try to.writeString(self.toString())
+        DurationStyle.Nanos   => try to.writeI64(self.ns)
+        DurationStyle.Millis  => if (self.ns % 1000000 == 0) try to.writeI64(self.ns / 1000000) else try to.writeF64(self.asMillis())
+      }
+    }
+  }
+
+  implement Decodable {
+    static fun decode(from: Decoder): Duration throws DecodeError {
+      val style = from.durations()
+      when (style) {
+        DurationStyle.Nanos  => return Duration(ns: try from.readI64())
+        DurationStyle.Millis => {
+          if (try from.peek() == Kind.Float) {
+            val ms = try from.readF64()
+            if (ms.abs() > 9.2e12) {
+              from.problem("$ms milliseconds is out of range for a Duration")
+              return Duration.zero
+            }
+            return Duration.ofSeconds(ms / 1000.0)
+          }
+          val ms = try from.readI64()
+          if (ms > nanosMax / 1000000 || ms < 0 - nanosMax / 1000000) {
+            from.problem("$ms milliseconds is out of range for a Duration")
+            return Duration.zero
+          }
+          return Duration.millis(ms)
+        }
+        else                 => {
+          if (try from.peek() != Kind.String) {
+            try from.readString()  // records "expected a string" once
+            return Duration.zero
+          }
+          val text = try from.readString()
+          if (style == DurationStyle.Iso8601 && calendarUnits(text)) {
+            from.problem("'$text' counts years, months or weeks, which have no fixed length; write days, hours, minutes and seconds (\"P1DT2H\")")
+            return Duration.zero
+          }
+          val d = when (style) {
+            DurationStyle.Seconds => parseSecondsText(text)
+            DurationStyle.Iso8601 => parseIsoText(text)
+            else                  => parseDuration(text)
+          }
+          if (d != null) return d
+          val shape = when (style) {
+            DurationStyle.Seconds => "seconds like \"90.5s\""
+            DurationStyle.Iso8601 => "an ISO 8601 duration like \"PT1M30.5S\""
+            else                  => "a duration like \"1m30.5s\""
+          }
+          from.problem("not $shape: '$text'")
+          return Duration.zero
+        }
+      }
+    }
+  }
+}
+
+/// `"90.5s"`: the seconds with their exact fraction.
+fun secondsText(d: Duration): string {
+  val n = d.abs().toNanos()
+  val sign = if (d.isNegative()) "-" else ""
+  "$sign${decimal(n / 1000000000, n % 1000000000, 9)}s"
+}
+
+/// `-?digits(.digits)?s` and nothing else, read exactly.
+fun parseSecondsText(s: string): Duration? {
+  if (!s.endsWith("s") || s.len() < 2) return null
+  var i: i64 = if (s.byteAt(0) == '-') 1 else 0
+  loop (i < s.len() - 1) {
+    val b = s.byteAt(i)
+    if (!isAsciiDigit(b) && b != '.') return null
+    i += 1
+  }
+  parseDuration(s)
+}
+
+/// Whether ISO 8601 text uses Y, W, or an M before the T (months).
+fun calendarUnits(s: string): bool {
+  val t = s.indexOf("T")
+  val date = if (t < 0) s else s.substring(0, t) ?: s
+  date.contains("Y") || date.contains("M") || date.contains("W")
+}
+
+/// `"PT1H2M3.5S"`, `"PT0S"`, `"-PT0.25S"`: hours at most, as Java's
+/// `Duration.toString` writes it, since a day is not always 24 hours on a
+/// calendar and a reader should not have to wonder.
+fun isoText(d: Duration): string {
+  if (d.isZero()) return "PT0S"
+  var rest = d.abs().toNanos()
+  var out = if (d.isNegative()) "-PT" else "PT"
+  val hours = rest / 3600000000000
+  if (hours > 0) {
+    out += "${hours}H"
+    rest -= hours * 3600000000000
+  }
+  val mins = rest / 60000000000
+  if (mins > 0) {
+    out += "${mins}M"
+    rest -= mins * 60000000000
+  }
+  if (rest > 0) out += "${decimal(rest / 1000000000, rest % 1000000000, 9)}S"
+  out
+}
+
+/// ISO 8601 `[-+]P[nD][T[nH][nM][n[.f]S]]`, designators in that order and
+/// each at most once, at least one component, a fraction on the seconds
+/// only. Years, months and weeks are refused: a month is not a length.
+/// Read by rewriting it into `Duration.parse`'s own units, so the
+/// arithmetic — exact, overflow-checked — is the one already tested.
+fun parseIsoText(s: string): Duration? {
+  var i: i64 = 0
+  var sign = ""
+  if (i < s.len() && (s.byteAt(i) == '-' || s.byteAt(i) == '+')) {
+    if (s.byteAt(i) == '-') sign = "-"
+    i += 1
+  }
+  if (i >= s.len() || s.byteAt(i) != 'P') return null
+  i += 1
+  val order = "DHMS"
+  var next: i64 = 0  // index into order: designators only move forward
+  var inTime = false
+  var parts = 0
+  var fraction = false
+  val out = stringBuilder()
+  out.append(sign)
+  loop (i < s.len()) {
+    if (s.byteAt(i) == 'T') {
+      if (inTime) return null
+      inTime = true
+      if (next < 1) next = 1
+      i += 1
+      if (i >= s.len()) return null  // "PT" with nothing after
+      continue
+    }
+    val start = i
+    loop (i < s.len() && (isAsciiDigit(s.byteAt(i)) || s.byteAt(i) == '.' || s.byteAt(i) == ',')) i += 1
+    if (i == start || i >= s.len()) return null
+    val number = (s.substring(start, i) ?: return null).replace(",", ".")
+    if (fraction) return null  // a fraction is only allowed on the last component
+    if (number.contains(".")) fraction = true
+    val designator = s.byteAt(i)
+    val at = order.indexOf(s.substring(i, i + 1) ?: return null)
+    if (at < 0 || at < next) return null
+    if ((designator == 'D') == inTime) return null  // D before T, H/M/S after it
+    if (fraction && designator != 'S') return null
+    next = at + 1
+    out.append(number)
+    out.append(when (designator) {
+      'D'  => "d"
+      'H'  => "h"
+      'M'  => "m"
+      else => "s"
+    })
+    parts += 1
+    i += 1
+  }
+  if (parts == 0) return null
+  parseDuration(out.toString())
 }
 
 /// `whole.frac` with `digits` decimal places and trailing zeros removed; the

@@ -209,6 +209,48 @@ Whether an enum is a name or a number is a property of where it is going
 format's option, not a mark on the enum. `@key("active")` on a member
 renames it.
 
+## Durations
+
+A `Duration` field is `"90.5s"` on the wire — seconds with their exact
+fraction, the form protobuf's JSON mapping and Go's `time.ParseDuration`
+use. When the other side expects something else, say so once, in the
+options:
+
+```veles
+use io, json
+
+struct Job {
+  name:    string
+  timeout: Duration
+  implement Codable
+}
+
+fun main() throws EncodeError | DecodeError {
+  val job = Job(name: "backup", timeout: Duration.seconds(90).plus(Duration.millis(500)))
+  loop (style in DurationStyle.values()) {
+    io.println("$style: ${try json.encode(job, json.Options(durations: style))}")
+  }
+  val java = json.Options(durations: DurationStyle.Iso8601)
+  io.println("${(try json.decode<Job>("{\"name\": \"x\", \"timeout\": \"PT2H\"}", java)).timeout}")
+}
+```
+
+Output:
+```text
+Seconds: {"name":"backup","timeout":"90.5s"}
+Iso8601: {"name":"backup","timeout":"PT1M30.5S"}
+Text: {"name":"backup","timeout":"1m30.5s"}
+Nanos: {"name":"backup","timeout":90500000000}
+Millis: {"name":"backup","timeout":90500}
+2h
+```
+
+Every text style reads back to the same nanosecond; `Millis` does when the
+duration is whole milliseconds (a finer one is written with a fraction and
+rounded to the nanosecond on the way back). Decoding is strict per style,
+as for enums. ISO 8601 refuses years, months and weeks — `"P1M"` is not a
+length of time, since months differ — with a message that says so.
+
 ## Writing part by hand
 
 ```veles

@@ -3,8 +3,8 @@
 package sema
 
 import (
-	"os"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -20,7 +20,7 @@ type Checker struct {
 	// the final round's are kept (D45 fixpoint).
 	roundDiags *source.Diagnostics
 	seen       map[string]bool
-	varFixes   map[*ast.Field]bool // fields already offered the `var` insertion (fixes.go)
+	varFixes   map[*ast.Field]bool            // fields already offered the `var` insertion (fixes.go)
 	initDecl   map[*types.Struct]*ast.FunDecl // the synthetic `$init` method of structs with an `init { }` block
 
 	universe *Scope
@@ -50,7 +50,7 @@ type Checker struct {
 	traitDecl      map[*types.Trait]*declCtx
 	resultTmpl     *types.Sealed
 	traitMethodTPs map[string][]*types.TypeParam
-	traitStatic    map[string]bool // "Trait.method" declared `static fun`
+	traitStatic    map[string]bool  // "Trait.method" declared `static fun`
 	globalVars     map[*Global]*Var // the Var standing for each module-level binding
 	hooks          *types.Hooks     // what types.Subst calls back into
 	// error-position types seen before the impls were collected, checked
@@ -59,12 +59,12 @@ type Checker struct {
 	pendingAssocChecks []func() // associated-type bounds, run once all impls exist
 	pendingDerives     []func() // derived impl bodies and supertrait impls, once all impls exist (D58)
 	deriveFailed       map[*Impl]bool
-	debugDerive        bool // VELES_DEBUG_DERIVE: print every synthesized declaration
+	debugDerive        bool                 // VELES_DEBUG_DERIVE: print every synthesized declaration
 	syntheticSpans     map[source.Span]bool // spans that derived code carries; no hover there
 	collected          bool
 	collectRefs        int // index refs recorded by collect(); rounds reset only past this
-	tests          []*FuncTemplate
-	optionTmpl     *types.Sealed
+	tests              []*FuncTemplate
+	optionTmpl         *types.Sealed
 
 	// per-round state
 	queue          []*Func
@@ -114,9 +114,9 @@ func checkWith(pkg *Package, diags *source.Diagnostics, release bool, testMode b
 // implements — can read it.
 func checkCollect(pkg *Package, diags *source.Diagnostics, release bool, testMode bool, index *Index) (*Program, *Checker) {
 	c := &Checker{
-		deriveFailed: map[*Impl]bool{},
+		deriveFailed:   map[*Impl]bool{},
 		syntheticSpans: map[source.Span]bool{},
-		debugDerive:  os.Getenv("VELES_DEBUG_DERIVE") != "",
+		debugDerive:    os.Getenv("VELES_DEBUG_DERIVE") != "",
 		globalVars:     map[*Global]*Var{},
 		index:          index,
 		pkg:            pkg,
@@ -1642,9 +1642,29 @@ func (c *Checker) checkImplComplete(d *ast.ImplDecl, impl *Impl, trait *types.Tr
 	}
 	for _, name := range trait.MethodList {
 		if _, ok := impl.Methods[name]; !ok && c.traitDefault(trait, name) == nil {
-			c.errorf(d.Pos, "implement of '%s' for '%s' is missing method '%s'", trait.Name, impl.Target, name)
+			msg := fmt.Sprintf("implement of '%s' for '%s' is missing method '%s'", trait.Name, impl.Target, name)
+			if sig := traitMethodText(trait, name); sig != "" {
+				msg += "; add: " + sig
+			}
+			c.errorf(d.Pos, "%s", msg)
 		}
 	}
+}
+
+// traitMethodText is a required trait method's declaration as written in
+// the trait, on one line — what an implement has to add.
+func traitMethodText(trait *types.Trait, name string) string {
+	td, ok := trait.Decl.(*ast.TraitDecl)
+	if !ok {
+		return ""
+	}
+	for _, md := range td.Methods {
+		if md.Name.Name == name && md.Body == nil && md.ExprBody == nil {
+			text := strings.Join(strings.Fields(spanText(md.Pos)), " ")
+			return strings.NewReplacer("( ", "(", " )", ")", ", )", ")", ",)", ")").Replace(text)
+		}
+	}
+	return ""
 }
 func (c *Checker) traitDefault(trait *types.Trait, name string) *FuncTemplate {
 	for _, t := range c.templates {
@@ -2077,6 +2097,7 @@ func (c *Checker) runRound() *Program {
 			c.changed = true
 		}
 	}
+	c.lintNeedlessThrows()
 	c.prog.Funcs = c.funcs
 	c.prog.Structs = nil
 	for _, s := range c.structs {

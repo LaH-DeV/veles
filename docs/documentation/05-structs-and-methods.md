@@ -297,6 +297,11 @@ is an error, since the change would be thrown away with the copy
 (chapter 4 shows `ref` and `loop (&x in xs)`, which reach the element
 itself). A struct passed to a function is a copy too: to let the
 callee change yours, pass `&acct` ([Sharing with pointers](#sharing-with-pointers)).
+A function that changes a struct parameter anyway — assigns one of its
+`var` fields, or calls a method that does — gets a warning on the
+parameter, because the caller will never see the change. It stays quiet
+when the change is the point: the function returns the changed copy, or
+uses it whole (stores it, passes it on).
 
 ## Static functions
 

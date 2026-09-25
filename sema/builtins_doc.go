@@ -129,6 +129,8 @@ var builtinDocs = []BuiltinDoc{
 
 	{"Channel", "send", "(x: T) suspends", "Sends `x`, suspending while the channel is full."},
 	{"Channel", "recv", "(): T? suspends", "Receives the next value, suspending while empty; `null` once closed and drained."},
+	{"Channel", "trySend", "(x: T): bool", "Sends `x` if there is room, without waiting; `false` when the channel is full. Panics on a closed channel, as `send` does."},
+	{"Channel", "tryRecv", "(): T?", "Takes the next buffered value without waiting; `null` when there is none — empty now, or closed and drained. `len()` or `recv` tells the two apart."},
 	{"Channel", "close", "()", "Closes the channel: receivers drain what is buffered, then get `null`."},
 	{"Channel", "closeAfter", "(n: i64)", "Closes the channel by itself once `n` more values have been sent — how several producers end a channel without coordinating. A further send panics, as on any closed channel."},
 	{"Channel", "len", "(): i64", "Number of buffered values."},
@@ -173,6 +175,7 @@ var builtinDocs = []BuiltinDoc{
 	{"int", "wrappingMul", "(y: i64): i64", "Multiplication that wraps around on overflow."},
 	{"int", "saturatingAdd", "(y: i64): i64", "Addition that stops at the type's minimum or maximum instead of overflowing."},
 	{"int", "saturatingSub", "(y: i64): i64", "Subtraction that stops at the type's minimum or maximum."},
+	{"int", "saturatingMul", "(y: i64): i64", "Multiplication that stops at the type's minimum or maximum instead of overflowing."},
 	{"int", "checkedAdd", "(y: i64): i64?", "The sum, or `null` when it would overflow."},
 	{"int", "checkedSub", "(y: i64): i64?", "The difference, or `null` when it would overflow."},
 	{"int", "checkedMul", "(y: i64): i64?", "The product, or `null` when it would overflow."},

@@ -8,11 +8,16 @@ import (
 
 func (p *Parser) parseBlock() *ast.Block {
 	start := p.span()
-	b := &ast.Block{}
 	if _, ok := p.expect(lexer.LBrace); !ok {
-		b.Pos = start
-		return b
+		return &ast.Block{Pos: start}
 	}
+	return p.parseBlockRest(start)
+}
+
+// parseBlockRest reads the statements of a block whose `{` (and, in a
+// handler, `name =>`) is already consumed, through the closing `}`.
+func (p *Parser) parseBlockRest(start source.Span) *ast.Block {
+	b := &ast.Block{}
 	for {
 		p.skipSemis()
 		if p.at(lexer.RBrace, lexer.EOF) {
@@ -96,11 +101,33 @@ func (p *Parser) parseStmt() ast.Stmt {
 		case lexer.KwConst:
 			s.Kind = ast.BindConst
 		}
-		s.Binding = p.parseBinding()
+		// `val JObj(fields) = doc else { ... }`: a name followed by `(` is a
+		// variant pattern, which only a let-else can bind
+		if p.at(lexer.Ident) && (p.peek(1).Kind == lexer.LParen || (p.peek(1).Kind == lexer.Dot && p.peek(2).Kind == lexer.Ident && p.peek(3).Kind == lexer.LParen)) {
+			s.Pattern = p.parsePattern(true)
+		} else {
+			s.Binding = p.parseBinding()
+		}
 		if p.accept(lexer.Assign) {
 			s.Value = p.parseExpr()
-		} else if s.Kind != ast.BindVar || s.Binding.Type == nil {
+		} else if s.Kind != ast.BindVar || s.Binding.Type == nil || s.Pattern != nil {
 			p.errorf(p.span(), "'%s' binding needs an initializer", s.Kind)
+		}
+		// let-else: the `else` may start the next line
+		if p.at(lexer.Semi) && p.cur().AutoSemi && p.peek(1).Kind == lexer.KwElse {
+			p.next()
+		}
+		if p.accept(lexer.KwElse) {
+			if p.at(lexer.LBrace) {
+				s.Else = p.parseHandler()
+			} else {
+				// `else return`: one statement, like the body of `if (c) stmt`
+				hs := p.span()
+				body := p.parseBodyOrStmt()
+				s.Else = &ast.Handler{Body: body, Pos: p.spanFrom(hs)}
+			}
+		} else if s.Pattern != nil {
+			p.errorf(p.span(), "a pattern in a 'val' can fail to match, so it needs 'else { ... }' to say what happens then: 'val %s = x else { return }'", "Variant(field)")
 		}
 		s.Pos = p.spanFrom(start)
 		return s
@@ -271,4 +298,26 @@ func (p *Parser) parseWith() *ast.WithExpr {
 	s.Body = p.parseBlock()
 	s.Pos = p.spanFrom(start)
 	return s
+}
+
+// atHandler: a `{` after `??` always opens a handler — no other expression
+// begins with a brace.
+func (p *Parser) atHandler() bool { return p.at(lexer.LBrace) }
+
+// parseHandler is `{ stmts }` or `{ e => stmts }`: the failure branch of a
+// let-else and of `r ?? { ... }`, with a Result's error bound to `e`.
+func (p *Parser) parseHandler() *ast.Handler {
+	start := p.span()
+	h := &ast.Handler{}
+	if (p.peek(1).Kind == lexer.Ident || p.peek(1).Kind == lexer.Under) && p.peek(2).Kind == lexer.FatArrow {
+		p.next() // {
+		t := p.next()
+		h.Err = &ast.Ident{Name: t.Text, Pos: t.Span}
+		p.next() // =>
+		h.Body = p.parseBlockRest(start)
+	} else {
+		h.Body = p.parseBlock()
+	}
+	h.Pos = p.spanFrom(start)
+	return h
 }

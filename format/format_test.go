@@ -109,7 +109,13 @@ func TestCorpus(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Run(filepath.ToSlash(path), func(t *testing.T) {
-			checkRoundTrip(t, path, string(data))
+			out := checkRoundTrip(t, path, string(data))
+			// the repository's own sources are kept formatted, so what
+			// `veles fmt --check` would flag fails here instead of in review
+			// (none of them sets a [format] style, so the defaults apply)
+			if src := strings.ReplaceAll(string(data), "\r\n", "\n"); out != src {
+				t.Errorf("%s is not formatted; run `veles fmt %s`", path, path)
+			}
 		})
 	}
 	fence := regexp.MustCompile("(?s)```veles\\n(.*?)```")
@@ -148,6 +154,30 @@ func TestStyle(t *testing.T) {
 		{"or-fail binds under try",
 			"fun f(): i64 throws E = try g() ?! E()\nfun h(): i64 throws E = (try g()) ?! E()\nfun k(): i64 throws E = try (g() ?! E())\nfun m(): i64 = with (r = open()) { r.n }\n",
 			"fun f(): i64 throws E = try g() ?! E()\nfun h(): i64 throws E = (try g()) ?! E()\nfun k(): i64 throws E = try (g() ?! E())\nfun m(): i64 = with (r = open()) {\n  r.n\n}\n"},
+		{"let-else and ??",
+			`fun f() {
+val a=g()??0
+val b = g() ?? { e => e.n }
+val c = g() else return
+val d = g()
+else { e => return }
+val Some(x) = h() else continue
+val t: i64?? = null
+}
+`,
+			`fun f() {
+  val a = g() ?? 0
+  val b = g() ?? { e =>
+    e.n
+  }
+  val c = g() else return
+  val d = g() else { e =>
+    return
+  }
+  val Some(x) = h() else continue
+  val t: i64?? = null
+}
+`},
 		{"nested unary keeps parens",
 			"fun f(a: i64): i64 = -(-a) + !(!b)\n",
 			"fun f(a: i64): i64 = -(-a) + !(!b)\n"},

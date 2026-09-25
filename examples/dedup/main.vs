@@ -52,14 +52,6 @@ fun hashFile(file: string, verbose: bool): Hashed throws IoError {
   Hashed(file, size: bytes.len(), hash: fnv1a(bytes))
 }
 
-/// Every regular file under `dir`, recursively, in a stable order.
-fun walk(dir: string, out: MutableList<string>) throws IoError {
-  loop (name in try fs.listDir(dir)) {
-    val p = path.join(dir, name)
-    if (fs.isDir(p)) try walk(p, out) else out.push(p)
-  }
-}
-
 struct Options {
   var dir:     string
   var workers: i64 = 4
@@ -101,13 +93,12 @@ fun run(args: List<string>) throws UsageError | IoError {
   val opts = try Options.parse(args)
   if (!fs.isDir(opts.dir)) throw UsageError(message: "'${opts.dir}' is not a directory")
 
-  val files: MutableList<string> = []
-  try walk(opts.dir, files)
+  val files = try fs.walk(opts.dir)  // every file below, in a stable order
 
   // hash everything, --workers files at a time; the lambda returns the
   // Result itself (no `try`), so a failure is a value in the list
   val verbose = opts.verbose
-  val outcomes = files.toList().mapConcurrent(file => hashFile(file, verbose), workers: opts.workers)
+  val outcomes = files.mapConcurrent(file => hashFile(file, verbose), workers: opts.workers)
   loop (err in outcomes.errors()) io.println("cannot read: ${err.message()}")
   val hashed = outcomes.oks()
 

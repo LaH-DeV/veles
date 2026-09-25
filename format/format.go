@@ -1193,7 +1193,11 @@ func (p *printer) typeList(ts []ast.Type) {
 // block prints a `{ }` body, one statement per line (a block always breaks,
 // as in prettier; only an empty one is `{ }`). A body written without braces
 // (a single statement after `if` or `=>`) stays without them.
-func (p *printer) block(b *ast.Block) {
+func (p *printer) block(b *ast.Block) { p.blockHead(b, "") }
+
+// blockHead prints a block whose `{` is followed by head on the same line —
+// ` e =>` in a handler (`?? { e => ... }`, `val ... else { e => ... }`).
+func (p *printer) blockHead(b *ast.Block, head string) {
 	if !p.braced(b) {
 		if len(b.Stmts) == 1 {
 			p.stmt(b.Stmts[0])
@@ -1204,7 +1208,7 @@ func (p *printer) block(b *ast.Block) {
 		p.emptyBody(b.Pos.End)
 		return
 	}
-	p.w("{")
+	p.w("{" + head)
 	p.after(b.Pos.Start + 1)
 	p.indent++
 	for _, s := range b.Stmts {
@@ -1230,10 +1234,18 @@ func (p *printer) stmt(s ast.Stmt) {
 	switch s := s.(type) {
 	case *ast.ValStmt:
 		p.w(s.Kind.String() + " ")
-		p.binding(s.Binding)
+		if s.Pattern != nil {
+			p.pattern(s.Pattern)
+		} else {
+			p.binding(s.Binding)
+		}
 		if s.Value != nil {
 			p.w(" = ")
 			p.initExpr(s.Value)
+		}
+		if s.Else != nil {
+			p.w(" else ")
+			p.handler(s.Else)
 		}
 	case *ast.ExprStmt:
 		p.expr(s.X, 0)
@@ -1372,7 +1384,7 @@ func bp(e ast.Expr) int {
 	switch e := e.(type) {
 	case *ast.BinaryExpr:
 		return infixBp(e.Op)
-	case *ast.ElvisExpr, *ast.OrFailExpr:
+	case *ast.ElvisExpr, *ast.OrFailExpr, *ast.CoalesceExpr:
 		return bpElvis
 	case *ast.RangeExpr:
 		return bpRange
@@ -1513,6 +1525,15 @@ func (p *printer) exprInner(e ast.Expr) {
 		p.expr(e.L, bpElvis+1)
 		p.operator(e.L.Span().End, e.R.Span().Start, "?:")
 		p.exprRight(e.R, bpElvis)
+	case *ast.CoalesceExpr:
+		p.expr(e.L, bpElvis+1)
+		if e.Handler != nil {
+			p.w(" ?? ")
+			p.handler(e.Handler)
+		} else {
+			p.operator(e.L.Span().End, e.R.Span().Start, "??")
+			p.exprRight(e.R, bpElvis)
+		}
 	case *ast.WithExpr:
 		p.w("with (")
 		for i, b := range e.Bindings {
@@ -2095,4 +2116,13 @@ func displayWidth(s string) int {
 		n++
 	}
 	return n
+}
+
+// handler prints `{ ... }` or `{ e => ... }`.
+func (p *printer) handler(h *ast.Handler) {
+	if h.Err != nil {
+		p.blockHead(h.Body, " "+h.Err.Name+" =>")
+		return
+	}
+	p.block(h.Body)
 }

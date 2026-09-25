@@ -422,7 +422,6 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 	return nil
 }
 
-
 // listFilterIs lowers `xs.filterIs<Variant>()` on a list of a sealed type: the
 // elements of that variant, as a `List<Variant>`. It is `filter(x => x is V)`
 // with the promise kept in the type — a predicate cannot narrow across the

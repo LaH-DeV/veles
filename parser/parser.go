@@ -1284,7 +1284,7 @@ func (p *Parser) peekIdentAfterTypeParams() string {
 				depth--
 			}
 			if depth <= 0 {
-				if p.peek(i + 1).Kind == lexer.Ident {
+				if p.peek(i+1).Kind == lexer.Ident {
 					return p.peek(i + 1).Text
 				}
 				return "name"

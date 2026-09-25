@@ -161,6 +161,13 @@ any particular body.
 A `main() throws` is allowed: an error that escapes it ends the program
 with the error's `message()` printed and a non-zero exit code.
 
+The other direction is checked too: a function written `throws` whose
+body cannot fail — no `throw`, no `try` of anything that can — gets a
+warning, because the clause makes every caller pay for a `try` that never
+propagates. `veles check --fix` removes the clause and then the callers'
+`try`. Public functions keep theirs: a library may declare `throws` today
+so that adding a failure later is not a breaking change.
+
 ## Every error has a `message()`
 
 You do not have to know an error's fields to report it. An `error`
@@ -390,6 +397,70 @@ fun usage(): Never {
 A `Never` value fits anywhere (`val n = xs.first() ?: usage()` is an `i64`), a
 `when` whose arms all end in one is itself `Never`, and code after such a
 statement is reported as unreachable.
+
+## Falling back and bailing out: `??` and `val ... else`
+
+`try` passes a failure up. Often the right answer is closer: a default,
+a value worked out from the error, or leaving the function (or the loop
+iteration) right here. Two forms say that in one line.
+
+`r ?? fallback` is the value of a `Result`, or the fallback when it is an
+`Err` — what `?:` is to a nullable. The fallback may be a value, something
+that leaves (`return`, `continue`, `throw`), or a handler that sees the
+error: `r ?? { e => ... }`.
+
+`val x = r else ...` binds the value and runs the `else` otherwise — and
+the `else` **must leave**, since `x` does not exist on that path. It works
+on a `Result` (write `else { e => ... }` to see the error), on a nullable,
+and on a pattern: `val Circle(radius) = shape else return 0.0`.
+
+```veles
+use io
+
+error Invalid { line: string }
+
+fun number(line: string): i64 throws Invalid = line.trim().toInt() ?: throw Invalid(line)
+
+fun total(lines: List<string>): i64 {
+  var sum = 0
+  loop (line in lines) {
+    val n = number(line) else continue             // skip what is not a number
+    sum += n
+  }
+  sum
+}
+
+fun firstOrReport(lines: List<string>): string {
+  val first = lines.first() else return "empty"    // a nullable
+  val n = number(first) else { e =>                // a Result, with its error
+    return "not a number: '${e.line}'"
+  }
+  "first is $n"
+}
+
+fun main() {
+  val lines = ["3", "x", " 4 "]
+  io.println("${total(lines)}")
+  io.println(firstOrReport(lines))
+  io.println(firstOrReport(["y"]))
+  io.println(firstOrReport([]))
+  io.println("${number("x") ?? 0} ${number("x") ?? { e => -e.line.len() }}")
+}
+```
+
+Output:
+```text
+7
+first is 3
+not a number: 'y'
+empty
+0 -1
+```
+
+The two operators are split by what is on their left: `?:` for a
+nullable, `??` for a `Result`. Writing the other one is an error whose
+quick fix swaps it, so the operator always says which kind of "maybe" is
+being unwrapped. (D61)
 
 ## When to throw, when to return `T?`
 

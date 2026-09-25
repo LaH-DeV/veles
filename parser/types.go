@@ -90,6 +90,11 @@ func (p *Parser) parseType() ast.Type {
 		case p.at(lexer.Question):
 			p.next()
 			t = &ast.NullableType{Elem: t, Pos: p.spanFrom(start)}
+		case p.at(lexer.Coalesce):
+			// `T??` in a type is two `?`, not the Result operator
+			p.next()
+			t = &ast.NullableType{Elem: t, Pos: p.spanFrom(start)}
+			t = &ast.NullableType{Elem: t, Pos: p.spanFrom(start)}
 		default:
 			return t
 		}

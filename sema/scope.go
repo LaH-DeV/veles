@@ -26,13 +26,13 @@ type Symbol struct {
 	Module *Module
 	Span   source.Span
 
-	Type   types.Type    // SymType
-	Alias  *errorAlias   // SymType naming an error set (`error X = A | B`); Type is filled on first use
-	TypeAlias *typeAlias  // SymType declared `type X<T> = ...` (D55); resolved on first use
-	Func   *FuncTemplate // SymFunc
-	Global *Global       // SymGlobal
-	Var    *Var          // SymLocal
-	Mod    *Module       // SymModule
+	Type      types.Type    // SymType
+	Alias     *errorAlias   // SymType naming an error set (`error X = A | B`); Type is filled on first use
+	TypeAlias *typeAlias    // SymType declared `type X<T> = ...` (D55); resolved on first use
+	Func      *FuncTemplate // SymFunc
+	Global    *Global       // SymGlobal
+	Var       *Var          // SymLocal
+	Mod       *Module       // SymModule
 }
 
 // Scope is a lexical symbol table.
@@ -141,6 +141,9 @@ type FuncTemplate struct {
 	// InferRet marks `fun f(...) = expr` with no declared return type; the
 	// type is inferred from the body when the function is instantiated.
 	InferRet bool
+	// ValueUsed marks a function turned into a value (`run(plain)`); its
+	// signature may be shaped to fit a function type, so lints leave it be.
+	ValueUsed bool
 }
 
 // Impl records `impl Trait for Type` (D17: one per pair program-wide).
@@ -153,9 +156,9 @@ type Impl struct {
 	// ImplicitError: the trait's `Error` is not bound by a `type Error =`
 	// line but is the union of what the impl's methods throw (D40, v0.24).
 	ImplicitError bool
-	Module     *Module
-	File       *ast.File
-	Decl       *ast.ImplDecl
+	Module        *Module
+	File          *ast.File
+	Decl          *ast.ImplDecl
 	// Derived names the methods the compiler wrote (D58), for hover.
 	Derived map[string]bool
 }

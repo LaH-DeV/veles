@@ -307,6 +307,19 @@ static void float_to_string(veles_string *out, double v, int is_f32) {
 }
 
 void veles_f64_to_string(veles_string *out, double v) { float_to_string(out, v, 0); }
+
+/* veles_parse_f64: the double nearest a decimal number, correctly rounded -
+ * strtod is, in the UCRT and in glibc and the BSDs alike, and it is what
+ * float_to_string checks its shortest form against, so printing and parsing
+ * are exact inverses. The caller (string.toF64) has checked the grammar;
+ * out-of-range text gives an infinity or zero, as the value it names. */
+double veles_parse_f64(const char *s, int64_t len) {
+    char small[128];
+    char *buf = len < (int64_t)sizeof small ? small : veles_alloc(len + 1);
+    memcpy(buf, s, (size_t)len);
+    buf[len] = 0;
+    return strtod(buf, NULL);
+}
 void veles_f32_to_string(veles_string *out, float v) { float_to_string(out, (double)v, 1); }
 
 void veles_bool_to_string(veles_string *out, bool v) {

@@ -130,7 +130,7 @@ func (lx *Lexer) continuesLine() bool {
 			i += end + 4
 		default:
 			rest := lx.src[i:]
-			if strings.HasPrefix(rest, "?.") || strings.HasPrefix(rest, "?:") || strings.HasPrefix(rest, "?!") {
+			if strings.HasPrefix(rest, "?.") || strings.HasPrefix(rest, "?:") || strings.HasPrefix(rest, "?!") || strings.HasPrefix(rest, "??") {
 				return true
 			}
 			if c == '.' && len(rest) > 1 && rest[1] != '.' {
@@ -148,17 +148,13 @@ func (lx *Lexer) newline(start int) {
 	}
 }
 
-func isIdentStart(c byte) bool {
-	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c >= 0x80
-}
-
-func isIdentChar(c byte) bool {
-	return isIdentStart(c) || (c >= '0' && c <= '9')
-}
-
 func isDigit(c byte) bool { return c >= '0' && c <= '9' }
 
 func (lx *Lexer) run() {
+	// a byte-order mark may begin a file, and means nothing there
+	if lx.pos == 0 && strings.HasPrefix(lx.src, string(rune(0xFEFF))) {
+		lx.pos = 3
+	}
 	for lx.pos < len(lx.src) {
 		c := lx.src[lx.pos]
 		start := lx.pos
@@ -172,13 +168,15 @@ func (lx *Lexer) run() {
 			for lx.pos < len(lx.src) && lx.src[lx.pos] != '\n' {
 				lx.pos++
 			}
+			lx.checkComment(start, lx.pos)
 			lx.comments = append(lx.comments, Comment{Span: lx.span(start, lx.pos), Text: strings.TrimRight(lx.src[start:lx.pos], "\r")})
 			lx.lineDoc(start)
 		case c == '/' && lx.peekByte(1) == '*':
 			lx.blockComment()
+			lx.checkComment(start, lx.pos)
 			lx.comments = append(lx.comments, Comment{Span: lx.span(start, lx.pos), Text: lx.src[start:lx.pos]})
 			lx.blockDoc(start)
-		case isIdentStart(c):
+		case identStartLen(lx.src, lx.pos) > 0:
 			lx.identifier()
 		case isDigit(c):
 			lx.number()
@@ -219,9 +217,7 @@ func (lx *Lexer) blockComment() {
 
 func (lx *Lexer) identifier() {
 	start := lx.pos
-	for lx.pos < len(lx.src) && isIdentChar(lx.src[lx.pos]) {
-		lx.pos++
-	}
+	lx.pos = identEnd(lx.src, lx.pos)
 	text := lx.src[start:lx.pos]
 	if text == "_" {
 		lx.push(Under, start)
@@ -291,11 +287,9 @@ func (lx *Lexer) number() {
 	} else {
 		lx.push(Int, start)
 	}
-	if lx.pos < len(lx.src) && isIdentStart(lx.src[lx.pos]) {
+	if identStartLen(lx.src, lx.pos) > 0 {
 		s := lx.pos
-		for lx.pos < len(lx.src) && isIdentChar(lx.src[lx.pos]) {
-			lx.pos++
-		}
+		lx.pos = identEnd(lx.src, lx.pos)
 		lx.errorf(s, lx.pos, "unexpected suffix '%s' on numeric literal", lx.src[s:lx.pos])
 	}
 }
@@ -431,13 +425,10 @@ func (lx *Lexer) stringLit() {
 				lx.pos++ // closing brace
 				continue
 			}
-			if isIdentStart(lx.peekByte(1)) {
+			if identStartLen(lx.src, lx.pos+1) > 0 {
 				flush()
 				exprStart := lx.pos + 1
-				lx.pos++
-				for lx.pos < len(lx.src) && isIdentChar(lx.src[lx.pos]) {
-					lx.pos++
-				}
+				lx.pos = identEnd(lx.src, exprStart)
 				parts = append(parts, StringPart{IsExpr: true, Expr: lx.src[exprStart:lx.pos], Span: lx.span(exprStart, lx.pos)})
 				continue
 			}
@@ -445,6 +436,10 @@ func (lx *Lexer) stringLit() {
 		r, size := utf8.DecodeRuneInString(lx.src[lx.pos:])
 		if r == utf8.RuneError && size == 1 {
 			lx.errorf(lx.pos, lx.pos+1, "invalid UTF-8 in string literal")
+		}
+		if isBidiControl(r) {
+			// legitimate text, but invisible where it stands: an escape shows it
+			lx.diags.Warnf(lx.span(lx.pos, lx.pos+size), "this string contains U+%04X, a bidirectional control character, which changes how the code around it is displayed; write it as the escape \\u{%X}", r, r)
 		}
 		buf.WriteString(lx.src[lx.pos : lx.pos+size])
 		lx.pos += size
@@ -480,7 +475,7 @@ var operators = []struct {
 	text string
 	kind TokenKind
 }{
-	{"...", Ellipsis}, {"..<", RangeLt}, {"<<", Shl}, {">>", Shr}, {"::", DblColon}, {"?.", SafeDot}, {"?:", Elvis}, {"?!", OrFail}, {"=>", FatArrow},
+	{"...", Ellipsis}, {"..<", RangeLt}, {"<<", Shl}, {">>", Shr}, {"::", DblColon}, {"?.", SafeDot}, {"?:", Elvis}, {"?!", OrFail}, {"??", Coalesce}, {"=>", FatArrow},
 	{"->", Arrow}, {"..", Range}, {"+=", PlusEq}, {"-=", MinusEq}, {"*=", StarEq},
 	{"/=", SlashEq}, {"%=", PercentEq}, {"+%", WrapPlus}, {"-%", WrapMinus}, {"*%", WrapStar},
 	{"==", Eq}, {"!=", NotEq}, {"<=", LtEq}, {">=", GtEq}, {"&&", AndAnd}, {"||", OrOr},
@@ -502,7 +497,11 @@ func (lx *Lexer) operator() {
 	}
 	r, size := utf8.DecodeRuneInString(rest)
 	lx.pos += size
-	if showAsItself(r) {
+	if r >= utf8.RuneSelf {
+		// not an identifier character (UAX #31) and not an operator: name
+		// what it is, since an invisible one cannot be seen in the source
+		lx.errorf(start, lx.pos, "unexpected character %s", describeRune(r))
+	} else if showAsItself(r) {
 		lx.errorf(start, lx.pos, "unexpected character '%c'", r)
 	} else {
 		lx.errorf(start, lx.pos, "unexpected character U+%04X", r)
@@ -510,24 +509,11 @@ func (lx *Lexer) operator() {
 	lx.push(Illegal, start)
 }
 
-// showAsItself decides how an unexpected character is spelled in the
-// diagnostic: quoted as itself, or as U+XXXX. It replaces unicode.IsPrint,
-// which was doing nothing that ASCII did not already decide.
-//
-// Only ASCII reaches here. A byte at or above 0x80 begins an identifier
-// (isIdentStart, D18), so operator() is called for bytes below it and the
-// rune decoded above is always one byte long — which means the whole
-// non-ASCII half of unicode.IsPrint was unreachable, and a run of invisible
-// characters like U+00A0 or U+202E is lexed as an identifier rather than
-// reported here at all. (That it is lexed as an identifier is its own
-// question, and D18's, not this function's.)
-//
-// This is why the Veles front end can reproduce these diagnostics character
-// for character without a line of Unicode data
-// (veles-selfhost-frontend-plan.md §4.2): the rule is the ASCII half of
-// unicode.IsPrint, and there is no other half. The rune is still decoded,
-// and everything above ASCII still reads as printable, so the branch stays
-// correct if the identifier rule ever narrows.
+// showAsItself decides how an unexpected ASCII character is spelled in the
+// diagnostic: quoted as itself, or as U+XXXX (a control character or DEL).
+// Above ASCII, describeRune (ident.go) says what the character is, since the
+// ones that reach operator() are mostly the invisible ones UAX #31 keeps out
+// of identifiers.
 func showAsItself(r rune) bool { return r >= 0x20 && r != 0x7F }
 
 // TokenizeRange scans file.Content[start:end] with file-absolute positions.

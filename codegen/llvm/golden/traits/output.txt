@@ -1,0 +1,3 @@
+area 4.0
+circle
+9 b (1, 2)

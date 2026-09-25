@@ -734,10 +734,10 @@ type synth struct {
 }
 
 func (b *synth) ident(name string) *ast.Ident { return &ast.Ident{Name: name, Pos: b.sp} }
-func (b *synth) name(name string) ast.Expr  { return &ast.NameExpr{Name: name, Pos: b.sp} }
-func (b *synth) self() ast.Expr             { return &ast.SelfExpr{Pos: b.sp} }
-func (b *synth) null() ast.Expr             { return &ast.NullLit{Pos: b.sp} }
-func (b *synth) boolLit(v bool) ast.Expr    { return &ast.BoolLit{Value: v, Pos: b.sp} }
+func (b *synth) name(name string) ast.Expr    { return &ast.NameExpr{Name: name, Pos: b.sp} }
+func (b *synth) self() ast.Expr               { return &ast.SelfExpr{Pos: b.sp} }
+func (b *synth) null() ast.Expr               { return &ast.NullLit{Pos: b.sp} }
+func (b *synth) boolLit(v bool) ast.Expr      { return &ast.BoolLit{Value: v, Pos: b.sp} }
 func (b *synth) str(s string) ast.Expr {
 	return &ast.StringLit{Parts: []ast.StringPart{{Text: s}}, Pos: b.sp}
 }

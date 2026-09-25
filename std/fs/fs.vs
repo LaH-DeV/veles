@@ -11,6 +11,7 @@ extern "C" {
   fun veles_fs_write_file(path: string, text: string): i64
   fun veles_fs_append_file(path: string, text: string): i64
   fun veles_fs_stat(path: string): i64
+  fun veles_fs_lstat(path: string): i64
   fun veles_fs_list_dir(path: string, out: *raw string): i64
   fun veles_fs_mkdir(path: string): i64
   fun veles_fs_remove(path: string): i64
@@ -94,6 +95,43 @@ public fun listDir(path: string): List<string> throws IoError {
   if (code != 0) throw os.ioError(code, path)
   if (out.isEmpty()) return []
   out.split("\n").sorted()
+}
+
+/// Every file under `root`, recursively: full paths (joined onto `root`),
+/// depth-first, each directory's entries in name order — so the same tree
+/// always walks the same way. Directories themselves are not in the list.
+///
+/// Symbolic links are not followed below `root`: a link to a file is listed,
+/// a link to a directory (or, on Windows, a junction) is neither listed nor
+/// entered, so a link that loops back cannot make the walk endless. `root`
+/// itself may be a link, and a file (then the list is just `root`). A
+/// directory that cannot be read ends the walk with its `IoError`.
+public fun walk(root: string): List<string> throws IoError {
+  if (isFile(root)) return [root]
+  var out: MutableList<string> = []
+  // paths still to visit, the next one last: an explicit stack rather than
+  // recursion, so a deep tree cannot overflow the call stack
+  var pending: MutableList<string> = []
+  try pushEntries(root, pending)
+  loop {
+    val p = pending.pop() ?: break
+    val kind = unsafe {
+      veles_fs_lstat(p)
+    }
+    when (kind) {
+      2    => try pushEntries(p, pending)
+      3    => if (!isDir(p)) out.push(p)
+      else => out.push(p)
+    }
+  }
+  out.toList()
+}
+
+// pushEntries puts a directory's entries on the walk's stack in reverse, so
+// they come off in name order.
+fun pushEntries(dir: string, pending: MutableList<string>) throws IoError {
+  val names = try listDir(dir)
+  loop (i in (0..<names.len()).reversed()) pending.push(paths.join(dir, names.atOrPanic(i)))
 }
 
 /// Creates the directory and any missing parents.

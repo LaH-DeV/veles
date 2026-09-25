@@ -6,6 +6,7 @@
 
 extern "C" {
   fun veles_string_find(s: string, part: string, from: i64): i64
+  fun veles_parse_f64(s: string): f64
 }
 
 fun isAsciiSpace(b: u8): bool = b == 32 || b == 9 || b == 10 || b == 13 || b == 12 || b == 11
@@ -138,29 +139,25 @@ extend string {
   }
 
   /// Parses a decimal number with an optional fraction and exponent, or
-  /// `null` when the text is not one.
+  /// `null` when the text is not one. The result is the f64 *nearest* the
+  /// decimal value, correctly rounded, so the text an f64 prints as reads
+  /// back as the same f64 — what makes a JSON float survive a round trip.
   public fun toF64(): f64? {
     val s = self.trim()
     if (s.isEmpty()) return null
+    // the grammar is checked here; the value comes from the C library's
+    // strtod, which rounds correctly where summing digits in floating
+    // point does not (examples/fuzz found `-1.9223372036854771` drifting)
     var i: i64 = 0
-    var neg = false
-    if (s.byteAt(0) == 45 || s.byteAt(0) == 43) {
-      neg = s.byteAt(0) == 45
-      i = 1
-    }
-    var mantissa = 0.0
+    if (s.byteAt(0) == 45 || s.byteAt(0) == 43) i = 1
     var digits: i64 = 0
     loop (i < s.len() && isDigit(s.byteAt(i))) {
-      mantissa = mantissa * 10.0 + (s.byteAt(i) - 48) as f64
       i += 1
       digits += 1
     }
-    var scale: i64 = 0
     if (i < s.len() && s.byteAt(i) == 46) {
       i += 1
       loop (i < s.len() && isDigit(s.byteAt(i))) {
-        mantissa = mantissa * 10.0 + (s.byteAt(i) - 48) as f64
-        scale -= 1
         i += 1
         digits += 1
       }
@@ -168,24 +165,15 @@ extend string {
     if (digits == 0) return null
     if (i < s.len() && (s.byteAt(i) == 101 || s.byteAt(i) == 69)) {
       i += 1
-      var expNeg = false
-      if (i < s.len() && (s.byteAt(i) == 45 || s.byteAt(i) == 43)) {
-        expNeg = s.byteAt(i) == 45
-        i += 1
-      }
-      var exp: i64 = 0
-      var expDigits: i64 = 0
-      loop (i < s.len() && isDigit(s.byteAt(i))) {
-        exp = exp * 10 + (s.byteAt(i) - 48) as i64
-        i += 1
-        expDigits += 1
-      }
-      if (expDigits == 0) return null
-      scale += if (expNeg) -exp else exp
+      if (i < s.len() && (s.byteAt(i) == 45 || s.byteAt(i) == 43)) i += 1
+      val expStart = i
+      loop (i < s.len() && isDigit(s.byteAt(i))) i += 1
+      if (i == expStart) return null
     }
     if (i != s.len()) return null
-    val value = mantissa * 10.0.pow(scale as f64)
-    if (neg) -value else value
+    unsafe {
+      veles_parse_f64(s)
+    }
   }
 }
 

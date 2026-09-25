@@ -38,6 +38,9 @@ func selfAddress(name string, value ast.Expr) *ast.UnaryExpr {
 		case *ast.OrFailExpr:
 			walk(e.L)
 			walk(e.R)
+		case *ast.CoalesceExpr:
+			walk(e.L)
+			walk(e.R)
 		case *ast.CallExpr:
 			walk(e.Fun)
 			for _, a := range e.Args {

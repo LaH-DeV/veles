@@ -233,6 +233,8 @@ fun check(handler: http.Handler) throws IoError | EncodeError | net.TooLong {
     ("GET", "/static/", ""),
     ("GET", "/static/style.css", ""),
     ("GET", "/static/../main.vs", ""),
+    ("GET", "/static/..\\main.vs", ""),
+    ("GET", "/static/%2e%2e/main.vs", ""),
     ("GET", "/static/missing.txt", ""),
     ("GET", "/", ""),
     ("GET", "/nowhere", ""),

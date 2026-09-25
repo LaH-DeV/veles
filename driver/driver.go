@@ -298,3 +298,7 @@ func Explain(opts ExplainOptions) int {
 	}
 	return 0
 }
+
+// ClangPath reports the clang a build would use, for tests that need to
+// know whether native code can be produced on this machine.
+func ClangPath() (string, error) { return findClang() }

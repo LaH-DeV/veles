@@ -22,6 +22,9 @@ type fnCtx struct {
 	scope  *Scope
 	loops  []*loopFrame
 	narrow map[place]types.Type
+	// loopIters is the checked type of each `loop (x in iter)` head, for lints
+	// that look at the loop after it was checked (lint_count.go).
+	loopIters map[*ast.LoopStmt]types.Type
 
 	retType     types.Type // declared return type (never the Result wrapper)
 	throws      bool
@@ -155,6 +158,7 @@ func (f *fnCtx) reportUnused() {
 // function bodies
 
 func (c *Checker) checkBody(fn *Func) {
+	source.SetWhere("checking", fn.Display, fn.Span)
 	t := fn.tmpl
 	env := &typeEnv{module: t.Module, file: t.File, tps: map[string]*types.TypeParam{}}
 	for _, tp := range t.TypeParams {
@@ -408,6 +412,9 @@ func (f *fnCtx) checkBlock(b *ast.Block, expected types.Type, wantValue bool) *B
 		}
 		stmts, term := f.checkStmt(s)
 		out.Stmts = append(out.Stmts, stmts...)
+		if i > 0 {
+			f.lintCountingLoop(b.Stmts, i-1) // needs the loop at i checked
+		}
 		if term {
 			terminated = true
 			out.Type = types.TNever
@@ -503,6 +510,9 @@ func (f *fnCtx) findLoop(label *ast.Ident, span source.Span, what string) *Loop 
 }
 
 func (f *fnCtx) checkValStmt(s *ast.ValStmt) []Stmt {
+	if s.Else != nil {
+		return f.letElse(s)
+	}
 	mutable := s.Kind == ast.BindVar
 	if s.Kind == ast.BindConst {
 		f.errorf(s.Pos, "'const' is only allowed at module level; use 'val' for a local immutable binding")
@@ -1009,6 +1019,9 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 	// Narrowing established outside the loop may be invalidated by
 	// assignments in the body; drop it for assigned variables.
 	f.invalidateAssigned(s.Body)
+	if s.Cond != nil {
+		f.lintLoopTrue(s)
+	}
 
 	var pre []Stmt
 	f.pushScope()
@@ -1016,6 +1029,10 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 	switch {
 	case s.Var != nil:
 		iter := f.checkExpr(s.Iter, nil)
+		if f.loopIters == nil {
+			f.loopIters = map[*ast.LoopStmt]types.Type{}
+		}
+		f.loopIters[s] = iter.Type()
 		switch it := iter.Type().(type) {
 		case *types.Range:
 			// var i = lo; val hi = hi; loop (i < hi) { val x = i; body; post: i += 1 }

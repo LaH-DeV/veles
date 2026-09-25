@@ -244,7 +244,7 @@ fun main() {
   loop (i in 0..<200000) {
     n += i
   }
-  io.println("${sw.elapsed() < Duration.seconds(10)}")
+  io.println("${n > 0 && sw.elapsed() < Duration.seconds(10)}")
 
   val until = time.Deadline.after(Duration.seconds(30))
   io.println("${until.expired()}  ${until.remaining() <= Duration.seconds(30)}")

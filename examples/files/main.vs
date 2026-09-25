@@ -3,7 +3,7 @@
 use fs, io, os, path
 
 fun main() throws IoError {
-  val root = path.join(os.env("TEMP") ?: os.env("TMPDIR") ?: "/tmp", "veles-files-example")
+  val root = path.join(os.tempDir(), "veles-files-example")
   try fs.mkdir(path.join(root, "notes"))
   io.println("created: ${fs.isDir(root)} ${fs.isDir(path.join(root, "notes"))}")
 
@@ -43,4 +43,7 @@ fun main() throws IoError {
   try fs.remove(path.join(root, "notes"))
   try fs.remove(root)
   io.println("cleaned: ${!fs.exists(root)}")
+
+  // who and where this process is
+  io.println("process: pid ${os.pid() > 0}, host named ${(try os.hostname()).len() > 0}, temp is a dir ${fs.isDir(os.tempDir())}")
 }
