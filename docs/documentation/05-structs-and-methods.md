@@ -319,10 +319,9 @@ struct Point {
   static fun origin(): Point = Point(x: 0, y: 0)
 
   static fun fromText(s: string): Point? {
-    val parts = s.split(",")
-    if (parts.len() != 2) return null
-    val x = i64.parse(parts.atOrPanic(0)) ?: return null
-    val y = i64.parse(parts.atOrPanic(1)) ?: return null
+    val [xText, yText] = s.split(",") else return null
+    val x = i64.parse(xText) ?: return null
+    val y = i64.parse(yText) ?: return null
     Point(x, y)
   }
 

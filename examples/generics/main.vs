@@ -30,7 +30,7 @@ fun describe<T: Show>(x: T): string = x.shout()
 
 fun first<T>(xs: List<T>, fallback: T): T {
   if (xs.len() == 0) return fallback
-  xs.atOrPanic(0)
+  xs.at(0)  // a T: the check above proves the list is not empty
 }
 
 fun main() {

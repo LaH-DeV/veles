@@ -105,8 +105,10 @@ struct Parser {
   private val tokens: List<(Token, Position)>
   private var pos:    Position = 0
 
-  private fun peek(): Token = self.tokens.atOrPanic(self.pos).0
-  private fun col(): Position = self.tokens.atOrPanic(self.pos).1
+  // the token list ends with an end token, and the parser never moves past it
+  private fun here(): (Token, Position) = self.tokens.at(self.pos) ?: panic("calc: the parser stops at the end token")
+  private fun peek(): Token = self.here().0
+  private fun col(): Position = self.here().1
 
   private fun next(): Token {
     val t = self.peek()

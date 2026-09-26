@@ -326,13 +326,13 @@ fun segmentsOf(p: string): List<string> = p.split("/").filter(s => !s.isEmpty())
 fun matchRoute(pattern: List<string>, segments: List<string>): Map<string, string>? {
   val params: MutableMap<string, string> = [:]
   loop (i in 0..<pattern.len()) {
-    val p = pattern.atOrPanic(i)
+    val p = pattern.at(i)
     if (p == "*") {
       params.set("*", segments.drop(i).join("/"))
       return params.toMap()
     }
     if (i >= segments.len()) return null
-    val s = segments.atOrPanic(i)
+    val s = segments.at(i)
     if (p.startsWith("{") && p.endsWith("}")) {
       params.set(p.substring(1, p.len() - 1) ?: p, s)
     } else if (p != s) {
@@ -500,10 +500,10 @@ fun readRequest(c: net.Conn, limits: Limits): Request? throws Fail | IoError | T
     headerLines += 1
     if (headerBytes > limits.headerBytes) throw tooManyHeaders
     if (headerLines > limits.headerCount) throw tooManyHeaders
-    val colon = line.indexOf(":")
-    if (colon <= 0) throw badRequest("malformed header line")
-    val name = (line.substring(0, colon) ?: "").trim().toLower()
-    val value = (line.substring(colon + 1, line.len()) ?: "").trim()
+    val (rawName, rawValue) = line.splitOnce(":") else throw badRequest("malformed header line")
+    if (rawName.isEmpty()) throw badRequest("malformed header line")
+    val name = rawName.trim().toLower()
+    val value = rawValue.trim()
     headers.set(name, value)
   }
   if (headers.get("transfer-encoding") != null) throw Fail(status: 501, text: "chunked requests are not supported")
@@ -526,9 +526,7 @@ fun readRequest(c: net.Conn, limits: Limits): Request? throws Fail | IoError | T
       if (body.len() < length) throw badRequest("body shorter than content-length")
     }
   }
-  val q = target.indexOf("?")
-  val rawPath = if (q < 0) target else target.substring(0, q) ?: target
-  val rawQuery = if (q < 0) "" else target.substring(q + 1, target.len()) ?: ""
+  val (rawPath, rawQuery) = target.splitOnce("?") ?: (target, "")
   Request(method, path: percentDecode(rawPath, plusIsSpace: false), query: parseQuery(rawQuery), headers: headers.toMap(), body, peer: c.peer())
 }
 
@@ -537,14 +535,9 @@ fun parseQuery(text: string): Map<string, string> {
   if (text.isEmpty()) return out.toMap()
   loop (pair in text.split("&")) {
     if (pair.isEmpty()) continue
-    val eq = pair.indexOf("=")
-    if (eq < 0) {
-      out.set(percentDecode(pair, plusIsSpace: true), "")
-    } else {
-      val k = pair.substring(0, eq) ?: pair
-      val v = pair.substring(eq + 1, pair.len()) ?: ""
-      out.set(percentDecode(k, plusIsSpace: true), percentDecode(v, plusIsSpace: true))
-    }
+    // a key without `=` has the empty value
+    val (k, v) = pair.splitOnce("=") ?: (pair, "")
+    out.set(percentDecode(k, plusIsSpace: true), percentDecode(v, plusIsSpace: true))
   }
   out.toMap()
 }
@@ -564,10 +557,10 @@ public fun percentDecode(s: string, plusIsSpace: bool): string {
   val out: MutableList<u8> = []
   var i: i64 = 0
   loop (i < bytes.len()) {
-    val b = bytes.atOrPanic(i)
+    val b = bytes.at(i)
     if (b == '%' && i + 2 < bytes.len()) {
-      val hi = hexValue(bytes.atOrPanic(i + 1))
-      val lo = hexValue(bytes.atOrPanic(i + 2))
+      val hi = hexValue(bytes.at(i + 1) ?: panic("percentDecode: i + 2 < len was checked"))
+      val lo = hexValue(bytes.at(i + 2) ?: panic("percentDecode: i + 2 < len was checked"))
       if (hi >= 0 && lo >= 0) {
         out.push((hi * 16 + lo) as u8)
         i += 3

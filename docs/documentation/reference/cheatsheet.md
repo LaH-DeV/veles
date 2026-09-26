@@ -60,7 +60,7 @@ val (a, b) = (1, "one")         // tuple destructuring, nests: val ((x, y), z) =
 | address | `&x` → `*T`, `*p` reads through |
 | range | `a..b`, `a..<b` |
 | assignment | `= += -= *= /= %=` |
-| strings | `"a" + "b"`, `s.len()` (bytes), `s.trim()`, `s.split(",")`, `s.replace(a, b)`, `s.indexOf(p)`, `s.toUpper()`, `s.padStart(n)`, `s.toInt()`, `s.chars()`, `s.byteAt(i)` (a `u8`; `'"'` is a byte literal), `"$name ${expr}"`, escapes `\n \t \\ \" \$ \u{..}`; one code point at a time is `use utf8` — `utf8.decode(s, i)`, `utf8.encodeTo(out, code)` |
+| strings | `"a" + "b"`, `s.len()` (bytes), `s.trim()`, `s.split(",")`, `s.splitOnce("=")` (a `(string, string)?`), `s.replace(a, b)`, `s.indexOf(p)`, `s.toUpper()`, `s.padStart(n)`, `s.toInt()`, `s.chars()`, `s.byteAt(i)` (a `u8`; `'"'` is a byte literal), `"$name ${expr}"`, escapes `\n \t \\ \" \$ \u{..}`; one code point at a time is `use utf8` — `utf8.decode(s, i)`, `utf8.encodeTo(out, code)` |
 
 ## Control flow
 
@@ -178,11 +178,13 @@ smart-casts `r` to the payload; `r.message()` works on any error or error union.
 val xs = [1, 2, 3]              // List<i64>;   mut [1, 2] is MutableList (untyped only)
 val m = ["a": 1]                // Map<string, i64>;  mut ["a": 1]; typed: var m: MutableMap<string, i64> = [:]
 var s = MutableSet<i64>()
-xs.at(9) ?: -1; xs.atOrPanic(0); xs.atOrDefault(9, -1); xs.at(-1); xs.len(); xs.contains(2); xs.first(); xs.last(); xs.indexOf(2)
-// reads are copies; writes go through a reference: ml.refOrPanic(i).bump(); *ml.refOrPanic(i) += 1; ml.ref(i)?.n = 0; ml.set(i, x)
+xs.at(9) ?: -1; xs.at(0) ?: panic("why it is there"); xs.atOrDefault(9, -1); xs.at(-1); xs.len(); xs.contains(2); xs.first(); xs.last(); xs.indexOf(2)
+// reads are copies; writes go through a reference: ml.ref(i)?.bump(); ml.ref(i)?.n = 0; ml.set(i, x)
+// a T, not a T?, where the index is known: loop (i in xs.indices()) xs.at(i); if (xs.len() > 2) xs.at(2)
+val [first, ..rest] = xs else return; when (args) { [] => 0; [cmd, ..] => 1 }   // list patterns (D62)
 xs.map(f); xs.filter(p); xs.fold(0, f); xs.any(p); xs.all(p); xs.find(p); xs.forEach(f); xs.count(p); xs.mapNotNull(f); xs.partition(p)
 shapes.filterIs<Circle>(); maybes.filterNotNull()   // narrowed lists: List<Circle>, List<T>
-xs.take(2); xs.drop(2); xs.slice(1, 3); xs.zip(ys); xs.flatMap(f); xs.distinct(); xs.chunked(2); xs.windowed(2)
+xs.take(2); xs.drop(2); xs.slice(1, 3); xs.zip(ys); xs.enumerate(); xs.flatMap(f); xs.distinct(); xs.chunked(2); xs.windowed(2)
 xs.sorted(); xs.sortedBy(key); xs.sortedBy(e => (-e.size, e.name)); xs.sortedDescending(); xs.sortedWith((a, b) => ...); xs.reversed(); xs.min(); xs.max(); xs.sum(); xs.join(", "); xs.iter()  // tuples order element by element
 xs.minBy(key); xs.maxBy(key); xs.minWith(cmp); xs.maxWith(cmp); xs.distinctBy(key); xs == ys  // lists, maps, sets compare by content
 sorted.binarySearch(x); sorted.binarySearchBy(key, target); sorted.binarySearchWith(e => e.compareTo(x))  // first match or -1; the list must already be in order
@@ -191,8 +193,8 @@ ml.push(x); ml.pop(); ml.set(i, x); ml.insert(i, x); ml.removeAt(i); ml.addAll(y
 ml.swap(i, j); ml.fill(x); MutableList<bool>.repeat(false, n); MutableList<MutableList<i64>>.make(n, _ => [])
 val q = deque<i64>(); q.addLast(x); q.addFirst(x); q.removeFirst(); q.removeLast(); q.first(); q.last(); q.at(-1); q.len()
 val pq = priorityQueue<i64>(); pq.push(x); pq.pop(); pq.peek(); priorityQueueBy<i64>((a, b) => b.compareTo(a))
-m.get(k) ?: d; m.getOrPanic(k); m.getOrDefault(k, d); m.containsKey(k); m.keys(); m.values(); m.entries(); mm.set(k, v); mm.remove(k)
-mm.refOrPanic(k).bump(); mm.ref(k)?.n += 1   // a pointer to the stored value; get/getOrPanic return copies
+m.get(k) ?: d; m.get(k) ?: panic("why"); m.getOrDefault(k, d); m.containsKey(k); m.keys(); m.values(); m.entries(); mm.set(k, v); mm.remove(k)
+mm.ref(k)?.bump(); mm.ref(k)?.n += 1   // a pointer to the stored value; get returns a copy
 s.add(x); s.contains(x); s.remove(x); s.toList()
 xs.iter().filter(p).map(f).take(n).skip(n).enumerate().zip(ys.iter()).toList()
 it.count(); it.fold(z, f); it.any(p); it.all(p); it.find(p); it.last(); it.forEach(f)

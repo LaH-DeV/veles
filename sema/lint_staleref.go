@@ -7,7 +7,7 @@ import (
 	"github.com/LaH-DeV/veles/source"
 )
 
-// Lint: a reference into a collection (`xs.ref(i)`, `xs.refOrPanic(i)`,
+// Lint: a reference into a collection (`xs.ref(i)`,
 // `m.ref(k)`, `loop (&x in xs)`) is a pointer into the collection's
 // storage (D25). It stays valid as memory — the collector keeps the old
 // buffer alive — but once the collection is grown or rearranged it points
@@ -15,7 +15,7 @@ import (
 // lost or lands elsewhere. This lint warns when the collection is changed
 // that way while such a reference is still used:
 //
-//	val p = xs.refOrPanic(0)
+//	val p = xs.ref(0) ?: panic("…")
 //	xs.push(y)          // may move the elements
 //	p.n = 1             // written into the old buffer
 //
@@ -61,15 +61,18 @@ func (f *fnCtx) lintStaleRefs(stmts []ast.Stmt) {
 	}
 }
 
-// refSource recognises `<coll>.ref(...)` / `<coll>.refOrPanic(...)` and
-// returns the collection's source text.
+// refSource recognises `<coll>.ref(...)`, also as `<coll>.ref(...) ?: panic(…)`
+// (D62), and returns the collection's source text.
 func refSource(e ast.Expr) (string, bool) {
+	if el, isElvis := e.(*ast.ElvisExpr); isElvis {
+		e = el.L
+	}
 	call, ok := e.(*ast.CallExpr)
 	if !ok {
 		return "", false
 	}
 	m, ok := call.Fun.(*ast.MemberExpr)
-	if !ok || (m.Name.Name != "ref" && m.Name.Name != "refOrPanic") {
+	if !ok || m.Name.Name != "ref" {
 		return "", false
 	}
 	coll := srcText(m.X)

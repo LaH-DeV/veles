@@ -14,7 +14,8 @@ struct Indexed<R> {
 fun poolWorker<T, R, E>(items: List<T>, f: sendable fun(T): R suspends throws E, jobs: Channel<i64>, results: Channel<Indexed<R>>) throws E {
   loop {
     val i = await jobs.recv() ?: break
-    val value = try f(items.atOrPanic(i))
+    val item = items.at(i) ?: panic("mapConcurrent: feedIndexes sends only 0..<items.len()")
+    val value = try f(item)
     results.send(Indexed(index: i, value))
   }
 }

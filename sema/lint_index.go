@@ -11,8 +11,8 @@ import (
 
 // Bracket indexing was removed from the language (2026-09-18): `[...]` is
 // collection-literal syntax only, and reads and writes are methods —
-// `xs.at(i)` / `xs.atOrPanic(i)` / `xs.set(i, v)` on lists, `m.get(k)` /
-// `m.getOrPanic(k)` / `m.set(k, v)` on maps. The parser still accepts the
+// `xs.at(i)` / `xs.set(i, v)` on lists, `m.get(k)` / `m.set(k, v)` on
+// maps. The parser still accepts the
 // old forms so that they can be reported with a mechanical fix.
 
 // srcText is the source of an expression, for splicing into a fix.
@@ -30,9 +30,11 @@ func (f *fnCtx) indexRead(e *ast.IndexExpr, isMap bool) {
 	var repl, alt string
 	if isMap {
 		repl = x + ".get(" + i + ")"
-		alt = "'" + x + ".getOrPanic(" + i + ")' for a value that must be present"
+		alt = "'" + x + ".get(" + i + ") ?: panic(\"…\")' for a value that must be present"
 	} else {
-		repl = x + ".atOrPanic(" + i + ")"
+		// `x[i]` never answered null, so the fix keeps that: a panic whose
+		// reason the author writes (D62)
+		repl = "(" + x + ".at(" + i + ") ?: panic(\"" + panicReasonTODO + "\"))"
 		alt = "'" + x + ".at(" + i + ")' for a nullable read"
 	}
 	if x == "" || i == "" {
@@ -55,10 +57,11 @@ func (f *fnCtx) indexWrite(s *ast.AssignStmt, ix *ast.IndexExpr, isMap bool) {
 		repl = x + ".set(" + i + ", " + v + ")"
 	} else {
 		op := strings.TrimSuffix(s.Op.String(), "=")
-		read := x + ".atOrPanic(" + i + ")"
+		get := ".at("
 		if isMap {
-			read = x + ".getOrPanic(" + i + ")"
+			get = ".get("
 		}
+		read := "(" + x + get + i + ") ?: panic(\"" + panicReasonTODO + "\"))"
 		repl = x + ".set(" + i + ", " + read + " " + op + " " + v + ")"
 	}
 	f.c.errorFix(s.Pos, fixReplace("Replace with '"+repl+"'", s.Pos, repl),
@@ -66,7 +69,7 @@ func (f *fnCtx) indexWrite(s *ast.AssignStmt, ix *ast.IndexExpr, isMap bool) {
 }
 
 // listElemPlace is the element of `x` at `index` as an assignable place
-// (`list.ref`): the storage behind `xs.set(i, v)`, `xs.refOrPanic(i)` and
+// (`list.ref`): the storage behind `xs.set(i, v)`, `xs.ref(i)` and
 // `loop (&x in xs)`. A negative index counts from the end, as in the value
 // form; the list is read a second time for the length.
 func (f *fnCtx) listElemPlace(x Expr, lt *types.List, index ast.Expr, span source.Span, mutate bool) Expr {
@@ -87,7 +90,7 @@ func (f *fnCtx) listElemPlace(x Expr, lt *types.List, index ast.Expr, span sourc
 
 // isPlaceExpr reports whether a checked expression denotes storage that
 // can be written through: a dereference, a field of a place, or a list
-// element (`list.ref`, the storage behind `set` and `refOrPanic`).
+// element (`list.ref`, the storage behind `set` and `ref`).
 func isPlaceExpr(x Expr) bool {
 	switch x := x.(type) {
 	case *Deref, *VarRef:
@@ -106,11 +109,11 @@ func isPlaceExpr(x Expr) bool {
 	return false
 }
 
-// Element reads are values (D25, v0.27): `xs.at(i)`, `xs.atOrPanic(i)`,
-// `m.get(k)`, `m.getOrPanic(k)`, `first()`, `last()` and `find(p)` all copy
+// Element reads are values (D25, v0.27): `xs.at(i)`, `m.get(k)`,
+// `first()`, `last()` and `find(p)` all copy
 // a value struct out of the collection, exactly like binding it to a name
 // would. Writing into the collection goes through a reference — `ref` /
-// `refOrPanic` (a pointer to the element, only on MutableList/MutableMap)
+// (a pointer to the element, only on MutableList/MutableMap)
 // or `loop (&x in xs)` — so that a read and a write never look alike.
 
 // elemReadCall recognises a call that reads an element by value and
@@ -129,8 +132,8 @@ func elemReadCall(x ast.Expr) (fixed string, ok bool) {
 	switch m.Name.Name {
 	case "at", "get":
 		name = "ref"
-	case "atOrPanic", "getOrPanic":
-		name = "refOrPanic"
+	case "atOrPanic", "getOrPanic": // removed (D62), reported on their own
+		name = "ref"
 	default:
 		return "", false
 	}
@@ -149,7 +152,7 @@ func elemReadCall(x ast.Expr) (fixed string, ok bool) {
 }
 
 // copyMutationHint explains a mutation of an element copy and, when the
-// receiver is `at`/`atOrPanic`/`get`/`getOrPanic`, attaches the rewrite to
+// receiver is `at` or `get`, attaches the rewrite to
 // the reference form as a fix.
 func (f *fnCtx) copyMutationHint(recv ast.Expr, span source.Span, what string) {
 	if repl, ok := elemReadCall(recv); ok {
@@ -157,14 +160,14 @@ func (f *fnCtx) copyMutationHint(recv ast.Expr, span source.Span, what string) {
 			"%s: '%s' is a copy of the element, so the change would be lost; reach the element itself with '%s' (D25)", what, srcText(recv), repl)
 		return
 	}
-	f.errorf(span, "%s; bind it with 'var' to change a copy, or reach the element with 'ref' / 'refOrPanic' or 'loop (&x in xs)' (D25)", what)
+	f.errorf(span, "%s; bind it with 'var' to change a copy, or reach the element with 'ref' or 'loop (&x in xs)' (D25)", what)
 }
 
 // hoistPlace binds every sub-expression that locating target evaluates —
 // the collection and index of a `list.ref`, the map and key of a
 // `map.refOrPanic`, the pointer under a dereference — to a temporary, so
 // that a compound assignment, which reads the place and then writes it,
-// evaluates `xs.atOrPanic(f()) += 1` with one call to `f` and one bounds
+// evaluates `xs.set(f(), …)` with one call to `f` and one bounds
 // check. pre declares the temporaries and runs before the read.
 func (f *fnCtx) hoistPlace(target Expr) (Expr, []Stmt) {
 	var pre []Stmt

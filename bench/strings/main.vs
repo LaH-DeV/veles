@@ -8,7 +8,8 @@ fun main() {
     val sb = stringBuilder()
     loop (i in 0..<200000) sb.append("item-$i,")
     val parts = sb.toString().split(",")
-    check += parts.len() + parts.atOrPanic(123456).len()
+    val part = parts.at(123456) ?: panic("strings: the text has 200000 parts")
+    check += parts.len() + part.len()
   }
   io.println("BENCH strings 1000000 ${sw.elapsed().toNanos()} $check")
 }

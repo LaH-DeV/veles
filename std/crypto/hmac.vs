@@ -24,7 +24,7 @@ public struct Hmac<H: Hasher> {
     val opad: MutableList<u8> = []
     var i = 0
     loop (i < block) {
-      val b: u8 = if (i < k.len()) k.atOrPanic(i) else 0
+      val b: u8 = if (i < k.len()) k.at(i) else 0
       ipad.push(b ^ 0x36)
       opad.push(b ^ 0x5c)
       i = i + 1

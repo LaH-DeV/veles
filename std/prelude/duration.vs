@@ -254,8 +254,7 @@ fun parseSecondsText(s: string): Duration? {
 
 /// Whether ISO 8601 text uses Y, W, or an M before the T (months).
 fun calendarUnits(s: string): bool {
-  val t = s.indexOf("T")
-  val date = if (t < 0) s else s.substring(0, t) ?: s
+  val (date, _) = s.splitOnce("T") ?: (s, "")
   date.contains("Y") || date.contains("M") || date.contains("W")
 }
 

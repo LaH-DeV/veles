@@ -104,7 +104,7 @@ func (p *Parser) parseStmt() ast.Stmt {
 		// `val JObj(fields) = doc else { ... }`: a name followed by `(` is a
 		// variant pattern, which only a let-else can bind; so is a list
 		// pattern `val [a, b] = xs else { ... }` (D62)
-		if p.at(lexer.LBracket) || p.at(lexer.Ident) && (p.peek(1).Kind == lexer.LParen || (p.peek(1).Kind == lexer.Dot && p.peek(2).Kind == lexer.Ident && p.peek(3).Kind == lexer.LParen)) {
+		if p.at(lexer.LBracket) || p.at(lexer.LParen) && p.tupleHoldsPattern() || p.at(lexer.Ident) && (p.peek(1).Kind == lexer.LParen || (p.peek(1).Kind == lexer.Dot && p.peek(2).Kind == lexer.Ident && p.peek(3).Kind == lexer.LParen)) {
 			s.Pattern = p.parsePattern(true)
 		} else {
 			s.Binding = p.parseBinding()
@@ -325,4 +325,31 @@ func (p *Parser) parseHandler() *ast.Handler {
 	}
 	h.Pos = p.spanFrom(start)
 	return h
+}
+
+// tupleHoldsPattern reports whether the parenthesised binding at the cursor
+// nests a pattern that can fail — a list pattern or a variant — as in
+// `val (label, [a, b]) = pair else ...`. Such a `val` is parsed as a
+// pattern (a let-else); a plain `(a, b: i64)` stays a tuple binding.
+func (p *Parser) tupleHoldsPattern() bool {
+	depth := 0
+	for i := 0; ; i++ {
+		switch t := p.peek(i); t.Kind {
+		case lexer.LParen:
+			depth++
+		case lexer.RParen:
+			depth--
+			if depth == 0 {
+				return false
+			}
+		case lexer.LBracket:
+			return true
+		case lexer.Ident:
+			if p.peek(i+1).Kind == lexer.LParen && depth > 0 {
+				return true
+			}
+		case lexer.EOF, lexer.Assign, lexer.LBrace, lexer.Semi:
+			return false
+		}
+	}
 }

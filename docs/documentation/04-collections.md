@@ -14,7 +14,7 @@ use io
 
 fun main() {
   val primes = [2, 3, 5, 7]  // List<i64>
-  io.println("${primes.len()} ${primes.atOrPanic(0)} ${primes.at(10) ?: -1} ${primes.contains(5)}")
+  io.println("${primes.len()} ${primes.at(0)} ${primes.at(10) ?: -1} ${primes.contains(5)}")
 
   val names = mut ["ann", "bob"]  // MutableList<string>
   names.push("cy")
@@ -42,14 +42,68 @@ Output:
   from. A list literal where a `Set` is expected builds a set:
   `val seen: Set<i64> = [1, 2]`.
 - Reading is a method, never brackets — `[...]` only ever builds a literal.
-  `xs.at(i)` returns `T?`: null when `i` is out of range, for when the
-  index comes from data you do not control. `xs.atOrPanic(i)` returns `T`
-  and **panics** out of range, for indexes you know are valid — a loop
-  over `0..<xs.len()`, a table you filled yourself. `xs.atOrDefault(i, d)`
-  is `xs.at(i) ?: d`. A negative index counts from the end: `xs.at(-1)` is
-  the last element.
+  `xs.at(i)` returns `T?`: null when `i` is out of range. Where the
+  compiler can **see** that `i` is in range, it returns `T` instead (see
+  below). Where you know better than the compiler, say why:
+  `xs.at(i) ?: panic("the header always has three parts")`.
+  `xs.atOrDefault(i, d)` is `xs.at(i) ?: d`. A negative index counts from
+  the end: `xs.at(-1)` is the last element.
 - `push`, `pop` and `clear` exist only on `MutableList`; calling them on a
   `List` is a compile-time error, not a runtime one.
+- A `List` never changes, so a `MutableList` does not quietly become one.
+  `xs.toList()` copies it. The exception is a list you just built and
+  nobody else has seen: returning it, or passing it on as its last use,
+  hands it over without a copy (D63).
+
+### When the index is known to be in range
+
+The compiler tracks what your code has already checked, as it does for
+null (D62), and a read it can prove is in range has type `T`:
+
+```veles
+use io
+
+fun sum(xs: List<i64>): i64 {
+  var total: i64 = 0
+  loop (i in xs.indices()) {
+    total += xs.at(i)  // i64: i is one of xs's indexes
+  }
+  total
+}
+
+fun ends(xs: List<i64>): i64 {
+  if (xs.len() < 2) return 0
+  xs.at(0) + xs.at(-1)  // i64: the length was checked above
+}
+
+fun build(n: i64): List<i64> {
+  val out: MutableList<i64> = []
+  loop (i in 0..<n) out.push(i * i)
+  out  // handed over as a List, not copied
+}
+
+fun main() {
+  io.println("${sum([1, 2, 3])} ${ends([4, 5, 6])} ${build(4)}")
+}
+```
+
+Output:
+```text
+6 10 [0, 1, 4, 9]
+```
+
+- What counts: `loop (i in 0..<xs.len())` or `loop (i in xs.indices())`;
+  a check `i < xs.len()` when `i` cannot be negative (a `var i = 0` that
+  only counts up, or `i >= 0`); a constant index after `xs.len() >= n`,
+  `xs.len() == n` or `!xs.isEmpty()`. `first()` and `last()` are `T` once
+  the list is known not to be empty.
+- What ends it: assigning the list or the index. For a `MutableList`,
+  also any function call, because the call might shrink the list through
+  another name. Index arithmetic such as `xs.at(i + 1)` is not tracked.
+- When a proof is lost, for example because a refactor moved a call
+  between the check and the read, the read goes back to `T?` and the
+  compiler reports it. A `?:` after a read that became `T` is a warning
+  with a fix, not an error.
 
 ### Matching a list's shape
 
@@ -186,17 +240,17 @@ wrong, never a panic.
 
 ### Updating elements in place
 
-Every read is a **value**: `xs.at(i)`, `xs.atOrPanic(i)`, `xs.first()`,
-`xs.find(p)` and the loop variable of `loop (x in xs)` all hand you a
-copy of a struct element, exactly as `val t = xs.atOrPanic(i)` does. So a
-change to what you read never reaches the list — and the compiler says so
-rather than letting it vanish: `xs.atOrPanic(i).n += 1` is an error
-("a copy of the element"), as is `xs.at(i)?.bump()`.
+Every read is a **value**: `xs.at(i)`, `xs.first()`, `xs.find(p)` and
+the loop variable of `loop (x in xs)` all hand you a copy of a struct
+element, exactly as `val t = xs.at(i)` does. So a change to what you
+read never reaches the list — and the compiler says so rather than
+letting it vanish: `xs.at(i)?.bump()` is an error ("a copy of the
+element").
 
-To change an element, ask for a **reference** to it. `refOrPanic(i)` is a
-pointer to the element (`*T`, a panic when out of range), `ref(i)` the
-nullable pointer (`(*T)?`), and `loop (&x in xs)` visits every element by
-reference. A read and a write then never look alike:
+To change an element, ask for a **reference** to it. `ref(i)` is a
+pointer to the element, `(*T)?`: null when `i` is out of range, and a
+plain `*T` where the index is known to be in range. `loop (&x in xs)`
+visits every element by reference. A read and a write then never look alike:
 
 ```veles
 use io
@@ -212,18 +266,18 @@ struct Counter {
 
 fun main() {
   val counters: MutableList<Counter> = [Counter(name: "a"), Counter(name: "b")]
-  var copy = counters.atOrPanic(0)   // a copy: `var` because we change it
+  var copy = counters.at(0) ?: panic("two counters")  // a copy: `var` because we change it
   copy.n = 100
-  counters.refOrPanic(0).bump()      // the element itself
+  counters.ref(0)?.bump()            // the element itself
   counters.ref(1)?.n = 5             // in range: written; out of range: skipped
   counters.ref(7)?.n = 5
-  val p = counters.refOrPanic(1)     // a pointer may sit in a `val`
+  val p = counters.ref(1) ?: panic("two counters")  // a pointer may sit in a `val`
   p.bump()
   loop (&c in counters) c.n *= 10    // every element, in place
   io.println("${copy.n} ${counters.map(c => c.n)}")
 
   val nums: MutableList<i64> = [1, 2, 3]
-  *nums.refOrPanic(0) += 10          // a primitive: write through the pointer
+  if (nums.len() > 0) *nums.ref(0) += 10  // a primitive: write through the pointer
   loop (&n in nums) *n += 1
   nums.set(2, 0)                     // or replace the element outright
   io.println("$nums")
@@ -236,9 +290,8 @@ Output:
 [12, 3, 0]
 ```
 
-`ref` and `refOrPanic` exist only on `MutableList` and `MutableMap`; the
-same pair on maps (`m.ref(k)`, `m.refOrPanic(k)`) and `loop ((k, &v) in m)`
-reach map values. Two things to know about a reference: it is a pointer
+`ref` exists only on `MutableList` and `MutableMap`; `m.ref(k)` and
+`loop ((k, &v) in m)` reach map values. Two things to know about a reference: it is a pointer
 into the collection's storage, so keep it short-lived — after the list
 grows (`push`) an old reference points at the old buffer; and `&` in a
 loop head means the same as `ref`, so `loop (&x in xs)` on a read-only
@@ -324,12 +377,12 @@ bob is 29
 
 `m.get(key)` returns `V?` — null when the key is absent — which is why the
 reads above carry `?: 0`. This is the honest type: a lookup can fail.
-`m.getOrPanic(key)` returns `V` and panics when the key is absent, for
-keys you know are there; `m.getOrDefault(key, d)` is `m.get(key) ?: d`.
+For a key you know is there, say why: `m.get(key) ?: panic("…")`;
+`m.getOrDefault(key, d)` is `m.get(key) ?: d`.
 Writing `m.set(key, value)` requires a `MutableMap` and inserts or
 replaces. There is no bracket form: `[...]` only ever builds a literal.
 A read is a copy of the value; to change the stored value ask for a
-reference: `m.refOrPanic(key).bump()` and `m.ref(key)?.n += 1` update the
+reference: `m.ref(key)?.bump()` and `m.ref(key)?.n += 1` update the
 entry in the map, and `loop ((k, &v) in m)` visits every value by
 reference (see [Updating elements in place](#updating-elements-in-place)
 above; chapter 6 has the `?.` side).

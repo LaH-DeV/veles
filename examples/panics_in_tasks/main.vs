@@ -3,7 +3,7 @@ use io
 fun boom(n: i64): i64 {
   await sleep(Duration.millis(1))
   val xs = [1, 2]
-  xs.atOrPanic(n)
+  xs.at(n) ?: panic("boom: index $n is out of range")
 }
 
 fun fine(): i64 {

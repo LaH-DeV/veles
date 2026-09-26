@@ -131,7 +131,7 @@ public fun walk(root: string): List<string> throws IoError {
 // they come off in name order.
 fun pushEntries(dir: string, pending: MutableList<string>) throws IoError {
   val names = try listDir(dir)
-  loop (i in (0..<names.len()).reversed()) pending.push(paths.join(dir, names.atOrPanic(i)))
+  loop (name in names.reversed()) pending.push(paths.join(dir, name))
 }
 
 /// Creates the directory and any missing parents.

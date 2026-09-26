@@ -51,11 +51,11 @@ public struct Sha1 {
     var i = 0
     if (self.buffer.len() > 0) {
       loop (self.buffer.len() < 64 && i < n) {
-        self.buffer.push(data.atOrPanic(i))
+        self.buffer.push(data.at(i))
         i = i + 1
       }
       if (self.buffer.len() < 64) return
-      compress1(self.state, self.buffer, 0, self.scratch)
+      compress1(self.state, self.buffer.toList(), 0, self.scratch)
       self.buffer.clear()
     }
     loop (i + 64 <= n) {
@@ -63,7 +63,7 @@ public struct Sha1 {
       i = i + 64
     }
     loop (i < n) {
-      self.buffer.push(data.atOrPanic(i))
+      self.buffer.push(data.at(i))
       i = i + 1
     }
   }
@@ -76,16 +76,17 @@ fun compress1(state: MutableList<u32>, block: List<u8>, at: i64, w: MutableList<
     i = i + 1
   }
   loop (i < 80) {
-    val x = w.atOrPanic(i - 3) ^ w.atOrPanic(i - 8) ^ w.atOrPanic(i - 14) ^ w.atOrPanic(i - 16)
+    val x = schedule1(w, i - 3) ^ schedule1(w, i - 8) ^ schedule1(w, i - 14) ^ schedule1(w, i - 16)
     w.set(i, rotl32(x, 1))
     i = i + 1
   }
 
-  var a = state.atOrPanic(0)
-  var b = state.atOrPanic(1)
-  var c = state.atOrPanic(2)
-  var d = state.atOrPanic(3)
-  var e = state.atOrPanic(4)
+  val [a0, b0, c0, d0, e0] = state else panic("sha1: the state is 5 words")
+  var a = a0
+  var b = b0
+  var c = c0
+  var d = d0
+  var e = e0
 
   loop (r in 0..<80) {
     var f: u32 = 0
@@ -103,7 +104,7 @@ fun compress1(state: MutableList<u32>, block: List<u8>, at: i64, w: MutableList<
       f = b ^ c ^ d
       k = 0xca62c1d6
     }
-    val t = rotl32(a, 5) +% f +% e +% k +% w.atOrPanic(r)
+    val t = rotl32(a, 5) +% f +% e +% k +% schedule1(w, r)
     e = d
     d = c
     c = rotl32(b, 30)
@@ -111,9 +112,13 @@ fun compress1(state: MutableList<u32>, block: List<u8>, at: i64, w: MutableList<
     a = t
   }
 
-  state.set(0, state.atOrPanic(0) +% a)
-  state.set(1, state.atOrPanic(1) +% b)
-  state.set(2, state.atOrPanic(2) +% c)
-  state.set(3, state.atOrPanic(3) +% d)
-  state.set(4, state.atOrPanic(4) +% e)
+  state.set(0, a0 +% a)
+  state.set(1, b0 +% b)
+  state.set(2, c0 +% c)
+  state.set(3, d0 +% d)
+  state.set(4, e0 +% e)
 }
+
+/// Word `i` of the message schedule. The rounds read only 0..<80, and
+/// `w` has 80 words, so this cannot fail.
+fun schedule1(w: MutableList<u32>, i: i64): u32 = w.at(i) ?: panic("sha1: the rounds read the 80-word schedule inside 0..<80")

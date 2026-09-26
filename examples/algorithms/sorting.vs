@@ -9,7 +9,9 @@ public fun bubbleSort(xs: List<i64>): List<i64> {
   loop (i in 0..<n) {
     var swapped = false
     loop (j in 0..<n - i - 1) {
-      if (out.atOrPanic(j) > out.atOrPanic(j + 1)) {
+      val a = out.at(j) ?: panic("bubbleSort: j + 1 < n - i, inside the list")
+      val b = out.at(j + 1) ?: panic("bubbleSort: j + 1 < n - i, inside the list")
+      if (a > b) {
         out.swap(j, j + 1)
         swapped = true
       }
@@ -24,10 +26,12 @@ public fun bubbleSort(xs: List<i64>): List<i64> {
 public fun insertionSort<T: Comparable>(xs: List<T>): List<T> {
   val out = xs.toMutable()
   loop (i in 1..<out.len()) {
-    val key = out.atOrPanic(i)
+    val key = out.at(i)
     var j = i - 1
-    loop (j >= 0 && out.atOrPanic(j) > key) {
-      out.set(j + 1, out.atOrPanic(j))
+    loop (j >= 0) {
+      val prev = out.at(j) ?: panic("insertionSort: 0 <= j < i, inside the list")
+      if (prev <= key) break
+      out.set(j + 1, prev)
       j -= 1
     }
     out.set(j + 1, key)
@@ -42,7 +46,9 @@ public fun selectionSort(xs: List<i64>): List<i64> {
   loop (i in 0..<n) {
     var minAt = i
     loop (j in i + 1..<n) {
-      if (out.atOrPanic(j) < out.atOrPanic(minAt)) minAt = j
+      val candidate = out.at(j) ?: panic("selectionSort: j < n")
+      val best = out.at(minAt) ?: panic("selectionSort: minAt is an earlier j or i")
+      if (candidate < best) minAt = j
     }
     if (minAt != i) out.swap(i, minAt)
   }
@@ -63,11 +69,11 @@ fun merge(left: List<i64>, right: List<i64>): List<i64> {
   var i = 0
   var j = 0
   loop (i < left.len() && j < right.len()) {
-    if (left.atOrPanic(i) <= right.atOrPanic(j)) {
-      out.push(left.atOrPanic(i))
+    if (left.at(i) <= right.at(j)) {
+      out.push(left.at(i))
       i += 1
     } else {
-      out.push(right.atOrPanic(j))
+      out.push(right.at(j))
       j += 1
     }
   }
@@ -85,10 +91,11 @@ public fun quickSort(xs: List<i64>): List<i64> {
 
 fun quickSortRange(xs: MutableList<i64>, lo: i64, hi: i64) {
   if (lo >= hi) return
-  val pivot = xs.atOrPanic(hi)
+  val pivot = xs.at(hi) ?: panic("quickSortRange: lo < hi, and both are inside the list")
   var store = lo
   loop (i in lo..<hi) {
-    if (xs.atOrPanic(i) < pivot) {
+    val x = xs.at(i) ?: panic("quickSortRange: lo <= i < hi")
+    if (x < pivot) {
       xs.swap(i, store)
       store += 1
     }
@@ -101,17 +108,24 @@ fun quickSortRange(xs: MutableList<i64>, lo: i64, hi: i64) {
 /// Counting sort for small non-negative keys: O(n + k).
 public fun countingSort(xs: List<i64>, maxValue: i64): List<i64> {
   val counts = MutableList<i64>.repeat(0, maxValue + 1)
-  loop (x in xs) *counts.refOrPanic(x) += 1
+  loop (x in xs) {
+    val slot = counts.ref(x) ?: panic("countingSort: $x is outside 0..$maxValue")
+    *slot += 1
+  }
   val out: MutableList<i64> = []
-  loop (v in 0..maxValue) {
-    loop (_ in 0..<counts.atOrPanic(v)) out.push(v)
+  var v: i64 = 0
+  loop (c in counts) {
+    loop (_ in 0..<c) out.push(v)
+    v += 1
   }
   out.toList()
 }
 
 public fun isSorted(xs: List<i64>): bool {
-  loop (i in 1..<xs.len()) {
-    if (xs.atOrPanic(i - 1) > xs.atOrPanic(i)) return false
+  var prev: i64? = null
+  loop (x in xs) {
+    if (prev != null && prev > x) return false
+    prev = x
   }
   true
 }

@@ -421,6 +421,8 @@ D14 remains deferred; nothing here requires variance.
 
 **Element access is methods only (v0.24); reads are values, writes go through references (v0.27).** Brackets are collection-literal syntax and nothing else; there is no index operator, reading or writing. Lists read with `xs.at(i): T?` (null out of range, a negative index counting from the end), `xs.atOrPanic(i): T` (panics out of range — programmer error, D20, never a thrown error) and `xs.atOrDefault(i, d)`; maps with `m.get(k): V?`, `m.getOrPanic(k)` and `m.getOrDefault(k, d)`. Every read is a *value*: a struct element comes out as a copy, exactly as binding it to a name would copy it, so `xs.atOrPanic(i).n += 1` is the same mistake as `val t = xs.atOrPanic(i); t.n += 1` and both are errors ("a copy of the element"). The mutable kinds write with `xs.set(i, v)` and `m.set(k, v)`, or through a *reference* to the element: `xs.refOrPanic(i): *T` and `m.refOrPanic(k): *V` (panic when absent), `xs.ref(i): (*T)?` and `m.ref(k): (*V)?` (null when absent), and `loop (&x in xs)` / `loop ((k, &v) in m)` (D42). A reference is an ordinary pointer, so everything follows D10/D11 with no special case: `xs.refOrPanic(i).bump()`, `*counts.refOrPanic(x) += 1`, `m.ref(k)?.n += 1`, `val p = xs.refOrPanic(i)` (a `val` holding a pointer is still written through). `ref`/`refOrPanic` exist only on `MutableList`/`MutableMap` — a pointer into an immutable collection could change it. Sets are not addressable: an element is its own hash key. A pointer into a list or map stays valid as memory (D10, the collector keeps the old buffer alive) but points at stale storage once the collection has grown. Rationale: one spelling per operation with the failure mode in its name, and a read that can never be mistaken for a write — the earlier rule that made `xs.atOrPanic(i)` a place in some syntactic positions (v0.24–v0.26) meant two identical-looking expressions with different semantics. `&xs.atOrPanic(i)` is refused with a fix, since it would box a copy. The old forms are reported with fixes (`veles check --fix`).
 
+*Amended (v0.37, D62).* `atOrPanic`, `getOrPanic` and `refOrPanic` are removed. A read is `xs.at(i)` / `m.get(k)`, typed `T` where the checker can see the index is in range (D62 B); a read that can fail only through a bug says why where it is written, `xs.at(i) ?: panic("…")`. A pointer is `xs.ref(i)` / `m.ref(k)`, `*T` under the same proof. The paragraph above keeps the v0.27 wording for the record.
+
 **Literals are bracket-delimited** (Swift's form): `[1, 2, 3]` for lists, `["a": 1]` for maps, `[:]` for an empty map. `{}` was rejected because it already means block, lambda, and struct literal; a fourth meaning would make `{ port: port }` ambiguous between a map and a struct.
 
 A bare `[1, 2, 3]` with no expected type is a `List`. A growable collection therefore needs an annotation — `var xs: MutableList<i32> = []`, not `var xs = []` — or the `mut` prefix on the literal: `var xs = mut [1, 2, 3]` is a `MutableList<i32>` and `var m = mut ["k": 1]` a `MutableMap<string, i32>`. The empty forms `mut []` and `mut [:]` still need an annotation for the element types.
@@ -597,7 +599,7 @@ Required by D36's heterogeneous `gather`. Tuples destructure positionally in bot
 
 *Addendum (v0.28) — patterns everywhere a tuple is bound.* Destructuring nests to any depth in `val`/`var`, in loop heads and in lambda parameters: `groups.map(((size, hash), files) => ...)`, `sortedWith((((sa, _), _), ((sb, _), _)) => sa - sb)`. A lambda parameter written as a tuple pattern binds the whole element to a hidden variable and destructures it as the body's first statements; it composes with the tupling conversion above.
 
-*Addendum (v0.25) — destructuring assignment.* `(a, b) = expr` assigns to existing places (variables, fields, `*xs.refOrPanic(i)` elements) positionally. The right side is evaluated in full before the first store, so `(a, b) = (b, a)` swaps and `(a, b) = (b, a + b)` steps without a named temporary — Python's and Go's rule. Each place keeps its own mutability check (D11) and its own smart cast after the store (D5). Only plain `=` destructures; a compound `(a, b) += ...` is an error, since element-wise arithmetic on tuples is not defined. Nested tuples do not destructure in assignment, as they do not yet in bindings.
+*Addendum (v0.25) — destructuring assignment.* `(a, b) = expr` assigns to existing places (variables, fields, `*p` for a `p = xs.ref(i)` element) positionally. The right side is evaluated in full before the first store, so `(a, b) = (b, a)` swaps and `(a, b) = (b, a + b)` steps without a named temporary — Python's and Go's rule. Each place keeps its own mutability check (D11) and its own smart cast after the store (D5). Only plain `=` destructures; a compound `(a, b) += ...` is an error, since element-wise arithmetic on tuples is not defined. Nested tuples do not destructure in assignment, as they do not yet in bindings.
 
 ### D38 — `race { }` for the first-ready construct
 
@@ -1409,24 +1411,78 @@ reference, so an unknown call may shrink it through an alias. An
 immutable `List`'s facts survive calls. Arithmetic (`i + 1`) is not
 reasoned about; such reads stay `T?`. Losing a fact after a refactor is a
 compile error (a `T?` where a `T` was wanted), never a wrong program.
-Hover shows which fact made an `at` total.
+
+*As built (2026-09-26).* The facts ride in the smart-cast map (D5), so
+branches, `&&`/`||`/`!`, the early exit and the merge after an `if` treat
+them exactly as they treat a null check. `xs.first()` and `xs.last()` are
+`T` after a fact that the list is non-empty (`!xs.isEmpty()`,
+`xs.len() > 0`). A "call that could reach it" is, conservatively, any
+call except the list's own `at`/`len`/`set`/`ref`/`isEmpty`/`push`/`get`
+(and `byteAt`); a loop body is scanned before it is checked, because a
+call late in the body runs before the next iteration's read, and so is the
+right side of `&&`/`||`. A lambda body starts with no bounds facts. The
+proven read still goes through the runtime's checked get, so a case the
+rules miss is a panic, not an out-of-bounds read. A `while` over
+`var i = 0 … i += 1` is not covered (the assignment ends the fact); use
+`loop (i in xs.indices())`.
+
+*Gaining a fact must not break code.* When a read that used to be `T?`
+becomes `T`, a `?:` after it is a **warning** with a fix that drops the
+fallback, not the usual "needs a nullable left operand" error: adding a
+length check above working code should never make that code an error.
 
 **C — No `…OrPanic`.** `atOrPanic`, `getOrPanic` and `refOrPanic` are
 removed. A read that can only fail through a bug says so where it is
 written: `xs.at(i) ?: panic("json: the stack is never empty while
 parsing")`. `panic(message)` is the one way to panic from Veles code, so
 `panic(` finds every site. The removed names are errors carrying a fix to
-the `?: panic("...")` form with the reason left for the author.
+the `?: panic("...")` form with the reason left for the author. *(Built v0.37: the fix writes `(x.at(i) ?: panic("TODO: say why this cannot fail"))`; `panic(` never returns, so it does not end bounds facts.)*
 
 **D — Shapes instead of indexes, in std.** `xs.indices(): Range`,
 `s.splitOnce(sep): (string, string)?`, and `enumerate()`/`zip()` on
-`List` directly, so the common loops need no index at all.
+`List` directly, so the common loops need no index at all. *(Built v0.37: `enumerate()` is eager, like the other `List` adapters; `xs.iter().enumerate()` stays the lazy form.)*
 
 Rejected: keeping `atOrPanic` behind a lint (the short spelling stays the
 unchecked one); an `.expect("why")` method (a second spelling of
 `?: panic("why")`); fixed-size arrays for constant indexes (a larger
 feature, its own decision); reasoning about index arithmetic (a solver,
 and errors nobody can predict).
+
+### D63 — A MutableList becomes a List by moving or by copying (v0.38)
+
+D35 made `List` genuinely immutable and `mutableList.toList()` a copy, but
+the checker still let a `MutableList` stand where a `List` was expected,
+passing the *same* handle — so a "List" could change during a call (found
+by D62's bounds facts: a `List` parameter shrank through a global alias),
+and could be shared with a task while its owner kept writing. The same
+holds for `MutableMap`/`Map` and `MutableSet`/`Set`.
+
+**The rule.** A mutable collection is accepted where its immutable form is
+expected only when it is **moved**: a local that this function built
+fresh (a literal, or a `toMutable()` copy) and that has not escaped — used
+only as the receiver of the collection's own methods (not `ref`, `iter`)
+and in `loop (x in c)`, never passed, stored, aliased, captured, assigned
+or bound by `&` — at its **last use**: a `return`, the function's result,
+or textually the last mention outside any loop the local was not
+declared in. Nothing is copied; nobody else can see the storage any more.
+Anywhere else it is an error whose fix appends `.toList()` / `.toMap()` /
+`.toSet()`, which copies.
+
+```veles
+fun encode(bytes: List<u8>): List<u8> {
+  val out: MutableList<u8> = []
+  loop (b in bytes) out.push(b ^ 0x5A)
+  out                                  // moved: no copy
+}
+fun keep(buffer: MutableList<u8>) {
+  digest(buffer)                       // error: a parameter may be shared — 'buffer.toList()'
+}
+```
+
+Rejected: implicit copy (hidden O(n) cost); explicit `.toList()` always
+(a copy for every builder); keeping the view (D35's `Sendable List`
+would be false). The analysis is conservative: a case it cannot prove is
+a `.toList()` away, never a wrong program.
 
 ---
 

@@ -26,10 +26,10 @@ public fun sieve(limit: i64): List<i64> {
   if (limit < 2) return []
   val composite = MutableList<bool>.repeat(false, limit + 1)
   loop (p in 2..isqrt(limit)) {
-    if (composite.atOrPanic(p)) continue
+    if (composite.at(p) ?: panic("sieve: p <= isqrt(limit) <= limit")) continue
     loop (multiple in (p * p..limit).step(p)) composite.set(multiple, true)
   }
-  (2..limit).iter().filter(n => !composite.atOrPanic(n)).toList()
+  (2..limit).iter().filter(n => !(composite.at(n) ?: panic("sieve: n <= limit"))).toList()
 }
 
 /// Iterative Fibonacci: O(n), no recursion, no memo table needed.

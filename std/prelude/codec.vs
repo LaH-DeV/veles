@@ -31,6 +31,10 @@ public struct Problem {
   public fun toString(): string = if (self.path.isEmpty()) self.message else "${self.path}: ${self.message}"
 }
 
+// What a panic on an empty frame stack says: derived bodies call `key`,
+// `nextKey` and `hasNext` only between a `begin…` and its `end…`.
+const openFrame = "codec: a derived body calls this only between a begin and its end, so a frame is open"
+
 /// The parts of a path: `a.b[2].c` is `a`, `b`, `2`, `c`; a quoted key
 /// `a["x.y"]` is one part.
 fun splitPath(path: string): List<string> {
@@ -618,22 +622,19 @@ public struct ValueDecoder {
 
   /// The value about to be read.
   private fun current(): Value {
-    if (self.stack.isEmpty()) return self.root
-    val top = self.stack.refOrPanic(self.stack.lastIndex())
+    val top = self.stack.ref(-1) ?: return self.root
     if (top.isList) return top.values.at(top.next) ?: VNull()
     top.pending ?: VNull()
   }
 
   /// A read consumed the current value.
   private fun advance() {
-    if (self.stack.isEmpty()) return
-    val top = self.stack.refOrPanic(self.stack.lastIndex())
+    val top = self.stack.ref(-1) ?: return
     if (top.isList) top.next += 1 else top.pending = null
   }
 
   private fun here(): string {
-    if (self.stack.isEmpty()) return ""
-    val top = self.stack.refOrPanic(self.stack.lastIndex())
+    val top = self.stack.ref(-1) ?: return ""
     if (top.isList) return indexPath(top.path, top.next)
     childPath(top.path, top.keys.at(top.next - 1) ?: "")
   }
@@ -685,9 +686,8 @@ public struct ValueDecoder {
     }
 
     fun nextKey(): string? throws DecodeError {
-      val top = self.stack.refOrPanic(self.stack.lastIndex())
-      if (top.next >= top.keys.len()) return null
-      val k = top.keys.atOrPanic(top.next)
+      val top = self.stack.ref(-1) ?: panic(openFrame)
+      val k = top.keys.at(top.next) ?: return null
       top.pending = top.values.at(top.next)
       top.next += 1
       k
@@ -711,7 +711,7 @@ public struct ValueDecoder {
     }
 
     fun hasNext(): bool throws DecodeError {
-      val top = self.stack.refOrPanic(self.stack.lastIndex())
+      val top = self.stack.ref(-1) ?: panic(openFrame)
       top.next < top.values.len()
     }
 
@@ -844,11 +844,11 @@ public struct ValueEncoder {
   }
 
   private fun put(v: Value) {
-    if (self.stack.isEmpty()) {
+    val top = self.stack.ref(-1)
+    if (top == null) {
       self.state.result = v
       return
     }
-    val top = self.stack.refOrPanic(self.stack.lastIndex())
     if (!top.isList) top.keys.push(top.key)
     top.values.push(v)
   }
@@ -865,15 +865,16 @@ public struct ValueEncoder {
     }
 
     fun key(name: string) throws EncodeError {
-      self.stack.refOrPanic(self.stack.lastIndex()).key = name
+      val top = self.stack.ref(-1) ?: panic(openFrame)
+      top.key = name
     }
 
     fun endObject() throws EncodeError {
       val top = self.stack.removeAt(self.stack.lastIndex())
       val fields: MutableMap<string, Value> = [:]
-      var i = 0
-      loop (i < top.keys.len()) {
-        fields.set(top.keys.atOrPanic(i), top.values.atOrPanic(i))
+      var i: i64 = 0
+      loop (k in top.keys) {
+        fields.set(k, top.values.at(i) ?: panic("codec: an object's keys and values are pushed in pairs"))
         i += 1
       }
       self.put(VObject(fields: fields.toMap()))

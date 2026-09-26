@@ -81,8 +81,9 @@ public struct Digest {
     fun hash(): i64 {
       var h = 0
       var i = 0
-      loop (i < self.data.len() && i < 8) {
-        h = (h << 8) | (self.data.atOrPanic(i) as i64)
+      loop (i < 8) {
+        val b = self.data.at(i) ?: break
+        h = (h << 8) | (b as i64)
         i = i + 1
       }
       h
@@ -157,7 +158,7 @@ public fun equalBytes(a: List<u8>, b: List<u8>): bool {
   var i = 0
   val n = a.len()
   loop (i < n) {
-    diff = diff | (a.atOrPanic(i) ^ b.atOrPanic(i))
+    diff = diff | (a.at(i) ^ (b.at(i) ?: panic("equalBytes: the lengths were compared first")))
     i = i + 1
   }
   diff == 0
@@ -175,19 +176,23 @@ fun rotl32(x: u32, n: i64): u32 = (x << n) | (x >> (32 - n))
 /// `x` rotated right by `n` bits (`n` in 1..63).
 fun rotr64(x: u64, n: i64): u64 = (x >> n) | (x << (64 - n))
 
+/// Byte `i` of a block. The digests read a word only where the block holds
+/// all of its bytes: whole 64- or 128-byte blocks, at offsets inside them.
+fun blockByte(data: List<u8>, i: i64): u8 = data.at(i) ?: panic("crypto: a word is read only where the block holds all of its bytes")
+
 /// The big-endian 32-bit word at `at`.
 fun beU32(data: List<u8>, at: i64): u32 =
-  ((data.atOrPanic(at) as u32) << 24) |
-  ((data.atOrPanic(at + 1) as u32) << 16) |
-  ((data.atOrPanic(at + 2) as u32) << 8) |
-  (data.atOrPanic(at + 3) as u32)
+  ((blockByte(data, at) as u32) << 24) |
+  ((blockByte(data, at + 1) as u32) << 16) |
+  ((blockByte(data, at + 2) as u32) << 8) |
+  (blockByte(data, at + 3) as u32)
 
 /// The big-endian 64-bit word at `at`.
 fun beU64(data: List<u8>, at: i64): u64 {
   var v: u64 = 0
   var i = 0
   loop (i < 8) {
-    v = (v << 8) | (data.atOrPanic(at + i) as u64)
+    v = (v << 8) | (blockByte(data, at + i) as u64)
     i = i + 1
   }
   v
@@ -232,5 +237,5 @@ fun padding(buffered: i64, blockSize: i64, lengthBytes: i64, totalBytes: i64): L
     i = i - 1
   }
   pushU64(out, (totalBytes * 8) as u64)
-  out
+  out.toList()  // a copy: `out` was handed to pushU64 (D63)
 }

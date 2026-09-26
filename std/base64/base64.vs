@@ -65,14 +65,18 @@ public fun encodedLen(n: i64, pad: bool = true): i64 {
 // ---------------------------------------------------------------------------
 // encoding
 
+/// Byte `i` of the input, widened. `write` reads below `n` only: the loop
+/// runs while `i + 3 <= n`, and the tail reads just the `left` bytes after it.
+fun input(bytes: List<u8>, i: i64): i64 = (bytes.at(i) ?: panic("base64.encode: every read is below the input length")) as i64
+
 fun write(bytes: List<u8>, alphabet: string, pad: bool): string {
   val out: MutableList<u8> = []
   val n = bytes.len()
   var i = 0
   loop (i + 3 <= n) {
-    val v = ((bytes.atOrPanic(i) as i64) << 16) |
-      ((bytes.atOrPanic(i + 1) as i64) << 8) |
-      (bytes.atOrPanic(i + 2) as i64)
+    val v = ((input(bytes, i)) << 16) |
+      ((input(bytes, i + 1)) << 8) |
+      (input(bytes, i + 2))
     out.push(alphabet.byteAt((v >> 18) & 63))
     out.push(alphabet.byteAt((v >> 12) & 63))
     out.push(alphabet.byteAt((v >> 6) & 63))
@@ -81,7 +85,7 @@ fun write(bytes: List<u8>, alphabet: string, pad: bool): string {
   }
   val left = n - i
   if (left == 1) {
-    val a = bytes.atOrPanic(i) as i64
+    val a = input(bytes, i)
     out.push(alphabet.byteAt(a >> 2))
     out.push(alphabet.byteAt((a << 4) & 63))
     if (pad) {
@@ -89,8 +93,8 @@ fun write(bytes: List<u8>, alphabet: string, pad: bool): string {
       out.push(PAD)
     }
   } else if (left == 2) {
-    val a = bytes.atOrPanic(i) as i64
-    val b = bytes.atOrPanic(i + 1) as i64
+    val a = input(bytes, i)
+    val b = input(bytes, i + 1)
     out.push(alphabet.byteAt(a >> 2))
     out.push(alphabet.byteAt(((a << 4) | (b >> 4)) & 63))
     out.push(alphabet.byteAt((b << 2) & 63))

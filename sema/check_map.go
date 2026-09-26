@@ -142,8 +142,8 @@ func (f *fnCtx) mapMethod(recv Expr, mt *types.Map, name string, e *ast.CallExpr
 		k := f.checkExprTo(e.Args[0].Value, mt.Key)
 		return &Builtin{exprBase{&types.Nullable{Elem: mt.Value}}, "map.get", []Expr{recv, k}, span}
 	case "getOrPanic":
-		// `m.getOrPanic(k)`: `V`, a panic when absent — a copy of the value
-		// (D25, v0.27); `refOrPanic` is the pointer to it
+		// removed (D62 C); lowered as before so nothing else cascades
+		f.removedOrPanic(e, name)
 		if !need(1) {
 			return bad()
 		}
@@ -161,6 +161,9 @@ func (f *fnCtx) mapMethod(recv Expr, mt *types.Map, name string, e *ast.CallExpr
 		}
 		if !need(1) {
 			return bad()
+		}
+		if name == "refOrPanic" {
+			f.removedOrPanic(e, name) // D62 C
 		}
 		k := f.checkExprTo(e.Args[0].Value, mt.Key)
 		if name == "ref" {

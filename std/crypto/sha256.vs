@@ -67,11 +67,11 @@ public struct Sha256 {
     var i = 0
     if (self.buffer.len() > 0) {
       loop (self.buffer.len() < 64 && i < n) {
-        self.buffer.push(data.atOrPanic(i))
+        self.buffer.push(data.at(i))
         i = i + 1
       }
       if (self.buffer.len() < 64) return
-      compress256(self.state, self.buffer, 0, self.scratch)
+      compress256(self.state, self.buffer.toList(), 0, self.scratch)
       self.buffer.clear()
     }
     loop (i + 64 <= n) {
@@ -79,7 +79,7 @@ public struct Sha256 {
       i = i + 64
     }
     loop (i < n) {
-      self.buffer.push(data.atOrPanic(i))
+      self.buffer.push(data.at(i))
       i = i + 1
     }
   }
@@ -94,27 +94,28 @@ fun compress256(state: MutableList<u32>, block: List<u8>, at: i64, w: MutableLis
     i = i + 1
   }
   loop (i < 64) {
-    val a = w.atOrPanic(i - 15)
-    val b = w.atOrPanic(i - 2)
+    val a = schedule256(w, i - 15)
+    val b = schedule256(w, i - 2)
     val s0 = rotr32(a, 7) ^ rotr32(a, 18) ^ (a >> 3)
     val s1 = rotr32(b, 17) ^ rotr32(b, 19) ^ (b >> 10)
-    w.set(i, w.atOrPanic(i - 16) +% s0 +% w.atOrPanic(i - 7) +% s1)
+    w.set(i, schedule256(w, i - 16) +% s0 +% schedule256(w, i - 7) +% s1)
     i = i + 1
   }
 
-  var a = state.atOrPanic(0)
-  var b = state.atOrPanic(1)
-  var c = state.atOrPanic(2)
-  var d = state.atOrPanic(3)
-  var e = state.atOrPanic(4)
-  var f = state.atOrPanic(5)
-  var g = state.atOrPanic(6)
-  var h = state.atOrPanic(7)
+  val [a0, b0, c0, d0, e0, f0, g0, h0] = state else panic("sha256: the state is 8 words")
+  var a = a0
+  var b = b0
+  var c = c0
+  var d = d0
+  var e = e0
+  var f = f0
+  var g = g0
+  var h = h0
 
   loop (r in 0..<64) {
     val sum1 = rotr32(e, 6) ^ rotr32(e, 11) ^ rotr32(e, 25)
     val choose = (e & f) ^ ((~e) & g)
-    val t1 = h +% sum1 +% choose +% K256.atOrPanic(r) +% w.atOrPanic(r)
+    val t1 = h +% sum1 +% choose +% (K256.at(r) ?: panic("sha256: one constant per round")) +% schedule256(w, r)
     val sum0 = rotr32(a, 2) ^ rotr32(a, 13) ^ rotr32(a, 22)
     val major = (a & b) ^ (a & c) ^ (b & c)
     val t2 = sum0 +% major
@@ -128,12 +129,16 @@ fun compress256(state: MutableList<u32>, block: List<u8>, at: i64, w: MutableLis
     a = t1 +% t2
   }
 
-  state.set(0, state.atOrPanic(0) +% a)
-  state.set(1, state.atOrPanic(1) +% b)
-  state.set(2, state.atOrPanic(2) +% c)
-  state.set(3, state.atOrPanic(3) +% d)
-  state.set(4, state.atOrPanic(4) +% e)
-  state.set(5, state.atOrPanic(5) +% f)
-  state.set(6, state.atOrPanic(6) +% g)
-  state.set(7, state.atOrPanic(7) +% h)
+  state.set(0, a0 +% a)
+  state.set(1, b0 +% b)
+  state.set(2, c0 +% c)
+  state.set(3, d0 +% d)
+  state.set(4, e0 +% e)
+  state.set(5, f0 +% f)
+  state.set(6, g0 +% g)
+  state.set(7, h0 +% h)
 }
+
+/// Word `i` of the message schedule. The rounds read only 0..<64, and
+/// `w` has 64 words, so this cannot fail.
+fun schedule256(w: MutableList<u32>, i: i64): u32 = w.at(i) ?: panic("sha256: the rounds read the 64-word schedule inside 0..<64")

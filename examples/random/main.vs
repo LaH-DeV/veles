@@ -9,7 +9,7 @@ fun main() {
   io.println("dice $dice")
   val deck = mut ["A", "K", "Q", "J", "10"]
   random.shuffle(deck)
-  io.println("shuffled $deck, pick ${random.pick(deck)}")
+  io.println("shuffled $deck, pick ${random.pick(deck.toList())}")
   io.println("float ${random.float().toFixed(3)} coin ${random.boolean()}")
 
   var rng = random.Rng.seeded(7)

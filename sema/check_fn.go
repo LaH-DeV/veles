@@ -22,6 +22,15 @@ type fnCtx struct {
 	scope  *Scope
 	loops  []*loopFrame
 	narrow map[place]types.Type
+	// provenReads are the `at`/`first`/`last` calls a bounds fact made total
+	// (D62), so a `?:` after one is a warning, not an error.
+	provenReads map[*ast.CallExpr]bool
+	// lenAliases: `val n = xs.len()` makes n stand for xs.len() while the
+	// fact place{n, "$lenof:<xs>"} holds (D62).
+	lenAliases map[*Var]*Var
+	// bodyAST is the body being checked (a Block or an expression), for the
+	// whole-function look D63's move check takes.
+	bodyAST any
 	// loopIters is the checked type of each `loop (x in iter)` head, for lints
 	// that look at the loop after it was checked (lint_count.go).
 	loopIters map[*ast.LoopStmt]types.Type
@@ -196,6 +205,13 @@ func (c *Checker) checkBody(fn *Func) {
 	}
 	env.self = owner
 	f := c.newFnCtx(fn, t.Module, t.File, env, fn.subst)
+	if t.Decl != nil {
+		if t.Decl.Body != nil {
+			f.bodyAST = t.Decl.Body
+		} else if t.Decl.ExprBody != nil {
+			f.bodyAST = t.Decl.ExprBody
+		}
+	}
 	c.refFunc(t.Decl.Name.Pos, t)
 	f.retType = fn.Sig.Ret
 	f.throws = fn.Sig.Effects.Throws
@@ -547,6 +563,9 @@ func (f *fnCtx) checkValStmt(s *ast.ValStmt) []Stmt {
 			f.c.refVar(b.Name.Pos, v)     // re-record the declaration with it
 		}
 		f.declareChecked(b.Name.Name, v, b.Name.Pos)
+		if s.Value != nil {
+			f.declFacts(v, s.Value)
+		}
 		return []Stmt{&VarDecl{Var: v, Init: init}}
 	}
 	// tuple destructuring (D37)
@@ -609,7 +628,18 @@ func (f *fnCtx) checkReturn(s *ast.ReturnStmt) []Stmt {
 }
 
 // checkAssign handles `target = value` and compound assignment.
+// checkAssign checks an assignment; counting a non-negative index up keeps
+// it non-negative (D62).
 func (f *fnCtx) checkAssign(s *ast.AssignStmt) []Stmt {
+	keep := f.countsUp(s)
+	out := f.checkAssignInner(s)
+	if keep != nil {
+		f.narrow[nonNegKey(keep)] = types.TUnit
+	}
+	return out
+}
+
+func (f *fnCtx) checkAssignInner(s *ast.AssignStmt) []Stmt {
 	if safe := safeMemberOf(s.Target); safe != nil {
 		return f.safeAssign(s, safe)
 	}
@@ -831,7 +861,7 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 		if !isPlaceSyntax(e.X) {
 			// an rvalue such as a call result: a field behind a pointer it
 			// returns is writable (`ptrOf(h).n = 5`); a value is a temporary
-			// — `xs.atOrPanic(i)` included, which reads a copy (D25, v0.27)
+			// — `xs.at(i)` included, which reads a copy (D25, v0.27)
 			base = f.checkExpr(e.X, nil)
 			if types.IsInvalid(base.Type()) {
 				return nil, nil
@@ -893,7 +923,7 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 		}
 		return &FieldGet{exprBase{fld.Type}, base, fld.Index, fld.Name}, root
 	case *ast.IndexExpr:
-		// removed form (lint_index.go); `xs.atOrPanic(i)` is the place now
+		// removed form (lint_index.go); `xs.set(i, v)` and `xs.ref(i)` reach the place now
 		x := f.checkExpr(e.X, nil)
 		lt, ok := x.Type().(*types.List)
 		if !ok {
@@ -917,10 +947,10 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 		}
 	}
 	if repl, ok := elemReadCall(e); ok && !strings.Contains(repl, "?.") {
-		// `xs.atOrPanic(i) += 1`: the read is a copy; the element's storage
-		// is `*xs.refOrPanic(i)` (D25, v0.27)
+		// `xs.at(i) += 1`: the read is a copy; the element's storage is
+		// behind `xs.ref(i)`, a nullable pointer (D25 v0.27, D62)
 		f.checkExpr(e, nil) // so the names in it count as used
-		repl = "*" + repl
+		repl = "*(" + repl + " ?: panic(\"" + panicReasonTODO + "\"))"
 		f.c.errorFix(e.Span(), fixReplace("Replace with '"+repl+"'", e.Span(), repl),
 			"'%s' is a copy of the element, not the element; assign through '%s', or use 'set' (D25)", srcText(e), repl)
 		return nil, nil
@@ -1019,6 +1049,11 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 	// Narrowing established outside the loop may be invalidated by
 	// assignments in the body; drop it for assigned variables.
 	f.invalidateAssigned(s.Body)
+	// The body runs again after its last statement, so a call anywhere in it
+	// ends what was known about MutableList lengths everywhere in it (D62).
+	if astMayShrink(s.Body) || s.Cond != nil && astMayShrink(s.Cond) {
+		f.killMutableBounds()
+	}
 	if s.Cond != nil {
 		f.lintLoopTrue(s)
 	}
@@ -1056,6 +1091,9 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 			lp.Cond = &If{exprBase{types.TBool}, incl, &Block{Value: le, Type: types.TBool}, &Block{Value: lt, Type: types.TBool}}
 			lp.Post = []Stmt{&Assign{Target: &VarRef{exprBase{it.Elem}, idx}, Value: &Binary{exprBase{it.Elem}, OpWrapAdd, &VarRef{exprBase{it.Elem}, idx}, &IntConst{exprBase{it.Elem}, 1, false}, s.Pos}}}
 			v, parts := f.bindLoopVar(s.Var, it.Elem)
+			if s.Var.Name != nil {
+				f.rangeLoopFacts(s, v)
+			}
 			f.loops = append(f.loops, &loopFrame{hir: lp, label: label})
 			body := f.checkBlock(s.Body, nil, false)
 			f.loops = f.loops[:len(f.loops)-1]
@@ -1277,7 +1315,11 @@ func (f *fnCtx) invalidateAssigned(b *ast.Block) {
 			}
 			if n, ok := target.(*ast.NameExpr); ok {
 				if sym := f.scope.Lookup(n.Name); sym != nil && sym.Kind == SymLocal {
+					keep := f.countsUp(s)
 					f.invalidatePlace(pv(sym.Var))
+					if keep != nil {
+						f.narrow[nonNegKey(keep)] = types.TUnit
+					}
 				}
 			}
 		case *ast.Block:

@@ -44,12 +44,9 @@ public fun randomBytes(n: i64): List<u8> {
 /// 64 unpredictable bits. For a random *number* in a range use
 /// `std/random`; this is for keys, nonces and identifiers.
 public fun randomU64(): u64 {
-  val b = randomBytes(8)
   var v: u64 = 0
-  var i = 0
-  loop (i < 8) {
-    v = (v << 8) | (b.atOrPanic(i) as u64)
-    i = i + 1
+  loop (b in randomBytes(8)) {
+    v = (v << 8) | (b as u64)
   }
   v
 }

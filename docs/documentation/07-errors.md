@@ -304,8 +304,8 @@ fun main() {
   val results = [risky(1), risky(0), risky(2)]      // List<Result<i64, Oops>>
   io.println("${results.oks()} ${results.errors()}")
   loop (e in results.errors()) io.println("failed with code ${e.code}")
-  val first = results.atOrPanic(0)
-  io.println("${first.getOrNull()} ${results.atOrPanic(1).getOrDefault(-1)} ${first.errorOrNull()}")
+  val [first, second, _] = results else panic("three calls, three results")
+  io.println("${first.getOrNull()} ${second.getOrDefault(-1)} ${first.errorOrNull()}")
   val explicit: Result<i64, Oops> = Err(Oops(code: -1))
   io.println("$explicit")
 }

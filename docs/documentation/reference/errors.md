@@ -211,9 +211,10 @@ outside ASCII has no single byte to be; use a one-character string, `"é"`
 
 ### `panic: index 3 out of bounds for list of length 1`
 
-A runtime panic, not a compile error: `xs.atOrPanic(i)` with a bad index
-(the same message names the map key for `m.getOrPanic(k)`). Use
-`xs.at(i)`, which returns `T?`, when the index is not known to be valid.
+A runtime panic, not a compile error: `xs.set(i, v)` or `xs.swap(i, j)`
+with a bad index. A read is `xs.at(i)`, a `T?` — or a `T` where the
+compiler can see the index is in range (D62); where it cannot, say why
+the read cannot fail: `xs.at(i) ?: panic("…")`.
 Panics end the current task; a `gather` reports them as `Err(Panic)`,
 a `scope` re-raises them (D52).
 

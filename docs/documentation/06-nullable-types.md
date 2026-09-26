@@ -158,8 +158,8 @@ Output:
 Counter(n: 7) {hits: Counter(n: 11)}
 ```
 
-This is why get-and-update code rarely needs `getOrPanic`: `?.` *is* the
-presence test. What stays closed to it is anything that is a copy — the
+This is why get-and-update code rarely needs `get(k) ?: panic(…)`: `?.`
+*is* the presence test. What stays closed to it is anything that is a copy — the
 value `get(k)` or `at(i)` returns: `tally.get("hits")?.n += 10`
 is an error, because the change could never be observed ([chapter 4](04-collections.md#updating-elements-in-place)
 has the reading/writing rule).

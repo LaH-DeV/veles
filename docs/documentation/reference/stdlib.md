@@ -308,6 +308,7 @@ opens them. Both kinds are called the same way.
 | `byteAt(i)`, `bytes()` | `u8` (panics out of range), `List<u8>` |
 | `trim()`, `trimStart()`, `trimEnd()` | ASCII whitespace removed |
 | `split(sep)`, `lines()` | `List<string>`; `lines` drops `\r` and a final empty line |
+| `splitOnce(sep)` | `(string, string)?`: the text before and after the first `sep`, or `null` when it does not occur — `val (k, v) = line.splitOnce("=") ?: return` |
 | `replace(old, new)`, `repeat(n)` | `string` |
 | `toUpper()`, `toLower()` | ASCII letters only |
 | `padStart(width, pad: " ")`, `padEnd(width, pad: " ")` | `string` |
@@ -322,9 +323,9 @@ UTF-8.
 
 | Method | Result |
 |---|---|
-| `at(i)` | `T?`; null when out of range. A negative `i` counts from the end (`at(-1)` is the last) |
-| `atOrPanic(i)` | `T`; panics when out of range. A copy, like every read: changing it is an error unless bound with `var` |
-| `ref(i)`, `refOrPanic(i)` | `(*T)?`, `*T`: a pointer to the element itself (`MutableList` only). `xs.refOrPanic(i).bump()`, `*xs.refOrPanic(i) += 1`, `xs.ref(i)?.n = 0` change the element in place; `loop (&x in xs)` visits every element by reference |
+| `at(i)` | `T?`; null when out of range, or `T` where the index is known to be in range (D62). A negative `i` counts from the end (`at(-1)` is the last). A copy, like every read. Where it cannot fail, say why: `xs.at(i) ?: panic("…")` |
+| `ref(i)` | `(*T)?`: a pointer to the element itself (`MutableList` only), or `*T` where the index is known. `xs.ref(i)?.bump()`, `xs.ref(i)?.n = 0` change the element; `loop (&x in xs)` visits every element this way |
+| `indices()` | `0..<len()`; in `loop (i in xs.indices())` each `xs.at(i)` is a `T` |
 | `atOrDefault(i, d)` | `T`; `at(i) ?: d` |
 | `len()`, `isEmpty()`, `lastIndex()` | `lastIndex` is `len() - 1`: −1 when empty |
 | `contains(x)`, `indexOf(x)`, `count(p)` | `bool`, `i64` (−1 if absent), `i64` |
@@ -335,6 +336,7 @@ UTF-8.
 | `filterIs<V>()`, `filterNotNull()` | on a list of a sealed type: the elements of variant `V` as `List<V>`; on `List<T?>`: the present ones as `List<T>` |
 | `any(p)`, `all(p)`, `find(p)` | |
 | `zip(ys)`, `chunked(n)`, `windowed(n)`, `distinct()` | `List<(T, U)>`, `List<List<T>>`, `List<List<T>>`, `List<T>` |
+| `enumerate()` | `List<(i64, T)>`: each element with its index, eager; `xs.iter().enumerate()` is the lazy form |
 | `sorted()`, `sortedDescending()`, `sortedBy(key)`, `sortedByDescending(key)`, `reversed()` | new `List`; elements or `key` results must be `Comparable` (D48) |
 | `sortedWith(compare)`, `minWith(compare)`, `maxWith(compare)` | any order: `compare(a, b)` negative when `a` comes first; sorts are stable, O(n log n) |
 | `binarySearch(x)`, `binarySearchWith(compare)`, `binarySearchBy(key, target)` | `i64` index of the **first** match, −1 if absent, in O(log n). The list must already be in order; nothing checks, and a list that is not gives a wrong answer, never a panic. `compare(element)` says where the element sits relative to what is wanted |
@@ -359,8 +361,8 @@ call the mutating ones, since the list is a reference (D25).
 | Method | Result |
 |---|---|
 | `get(k)` | `V?` |
-| `getOrPanic(k)`, `getOrDefault(k, d)` | `V`; the first panics when `k` is absent. Copies of the value |
-| `ref(k)`, `refOrPanic(k)` | `(*V)?`, `*V`: a pointer to the stored value (`MutableMap` only): `m.refOrPanic(k).bump()`, `m.ref(k)?.n += 1`; `loop ((k, &v) in m)` visits every value by reference |
+| `getOrDefault(k, d)` | `V`: `get(k) ?: d`. A copy of the value. Where a key must be there, say why: `m.get(k) ?: panic("…")` |
+| `ref(k)` | `(*V)?`: a pointer to the stored value (`MutableMap` only): `m.ref(k)?.bump()`, `m.ref(k)?.n += 1`; `loop ((k, &v) in m)` visits every value by reference |
 | `containsKey(k)`, `len()`, `isEmpty()` | |
 | `keys()`, `values()`, `entries()` | `List<K>`, `List<V>`, `List<(K, V)>` in insertion order |
 | `toMap()`, `toMutable()` | copies |

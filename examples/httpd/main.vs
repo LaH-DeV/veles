@@ -27,7 +27,7 @@ struct Options {
     var dirGiven = false
     var i = 0
     loop (i < args.len()) {
-      val arg = args.atOrPanic(i)
+      val arg = args.at(i)
       when (arg) {
         "--port"  => {
           opts.port = args.at(i + 1)?.toInt() ?: throw UsageError(message: "--port needs a number")

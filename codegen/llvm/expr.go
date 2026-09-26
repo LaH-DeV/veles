@@ -86,9 +86,7 @@ func (g *gen) place(e sema.Expr) string {
 		if e.Op == "list.ref" {
 			list := g.expr(e.Args[0])
 			idx := g.expr(e.Args[1])
-			p := g.newTmp()
-			g.emit("%s = call ptr @veles_list_ref(ptr %s, i64 %s)", p, list, idx)
-			return p
+			return g.listElemPtr(list, idx)
 		}
 	}
 	// Not a place: materialise into a temporary.
@@ -1290,27 +1288,24 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		return v
 	case "list.len":
 		l := g.expr(e.Args[0])
-		v := g.newTmp()
-		g.emit("%s = call i64 @veles_list_len(ptr %s)", v, l)
-		return v
+		return g.listLen(l)
 	case "list.get":
 		l := g.expr(e.Args[0])
 		i := g.expr(e.Args[1])
-		p := g.newTmp()
-		g.emit("%s = call ptr @veles_list_ref(ptr %s, i64 %s)", p, l, i)
+		p := g.listElemPtr(l, i)
 		v := g.newTmp()
 		g.emit("%s = load %s, ptr %s", v, g.llType(e.Type()), p)
 		return v
 	case "list.ref":
-		// as a value: the element itself (`xs.set(i, v)` and `refOrPanic`
+		// as a value: the element itself (`xs.set(i, v)` and `ref`
 		// use it as a place; place() is what takes the address)
 		p := g.place(e)
 		v := g.newTmp()
 		g.emit("%s = load %s, ptr %s", v, g.llType(e.Type()), p)
 		return v
 	case "deref":
-		// a read through a pointer that is a value, not a place (the copy
-		// `m.getOrPanic(k)` returns)
+		// a read through a pointer that is a value, not a place (a copy of
+		// a stored map value)
 		p := g.expr(e.Args[0])
 		v := g.newTmp()
 		g.emit("%s = load %s, ptr %s", v, g.llType(e.Type()), p)
@@ -1687,4 +1682,44 @@ func (g *gen) shift(e *sema.Binary, llt, l, r string, signed bool) string {
 	v := g.newTmp()
 	g.emit("%s = select i1 %s, %s %s, %s %s", v, big, llt, fill, llt, raw)
 	return v
+}
+
+// The list header, as veles_rt.c lays it out: data, len, cap, elem, desc.
+const listHeader = "{ ptr, i64, i64, i64, ptr }"
+
+// listLen reads a list's length from its header, without a call.
+func (g *gen) listLen(l string) string {
+	p := g.newTmp()
+	g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 1", p, listHeader, l)
+	n := g.newTmp()
+	g.emit("%s = load i64, ptr %s", n, p)
+	return n
+}
+
+// listElemPtr is the address of element i, bounds-checked inline: an index
+// outside 0..<len (a negative one included, compared unsigned) goes to the
+// runtime's veles_list_ref, which reports the panic. The address is
+// data + elem*i from the header, so no assumption about the element's
+// LLVM layout is made.
+func (g *gen) listElemPtr(l, i string) string {
+	n := g.listLen(l)
+	ok := g.newTmp()
+	g.emit("%s = icmp ult i64 %s, %s", ok, i, n)
+	inL, outL := g.newLabel("idx.ok"), g.newLabel("idx.bad")
+	g.emitTerm("br i1 %s, label %%%s, label %%%s, !prof !{!\"branch_weights\", i32 2000, i32 1}", ok, inL, outL)
+	g.placeLabel(outL)
+	g.emit("call ptr @veles_list_ref(ptr %s, i64 %s)", l, i)
+	g.emitTerm("unreachable")
+	g.placeLabel(inL)
+	data := g.newTmp()
+	g.emit("%s = load ptr, ptr %s", data, l)
+	ep := g.newTmp()
+	g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 3", ep, listHeader, l)
+	es := g.newTmp()
+	g.emit("%s = load i64, ptr %s", es, ep)
+	off := g.newTmp()
+	g.emit("%s = mul i64 %s, %s", off, es, i)
+	p := g.newTmp()
+	g.emit("%s = getelementptr inbounds i8, ptr %s, i64 %s", p, data, off)
+	return p
 }

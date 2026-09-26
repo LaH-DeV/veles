@@ -84,7 +84,8 @@ fun main() {
   io.println(cache.peek())
 
   val counters: MutableList<Counter> = [Counter(label: "x")]
-  counters.refOrPanic(0).bump()
+  val first = counters.ref(0) ?: panic("one counter was added above")
+  first.bump()
   loop (&k in counters) k.n *= 10
   io.println("${counters.map(k => k.n)}")
 }

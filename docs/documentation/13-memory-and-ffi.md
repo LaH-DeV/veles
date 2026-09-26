@@ -211,7 +211,7 @@ struct Res {
 
 fun deep(i: i64): i64 {
   await sleep(Duration.zero)          // a suspending call: a task of its own underneath
-  [10, 20].atOrPanic(i)   // its panic continues in the caller
+  [10, 20].at(i) ?: panic("deep: index $i is out of range")  // the panic continues in the caller
 }
 
 fun risky(i: i64): i64 = with (a = Res(name: "a"), b = Res(name: "b")) {
@@ -235,7 +235,7 @@ close a
 value 20
 close b
 close a
-panicked: index 5 out of bounds for list of length 2
+panicked: deep: index 5 is out of range
 ```
 
 A `close()` that itself panics during that unwinding does not stop it:

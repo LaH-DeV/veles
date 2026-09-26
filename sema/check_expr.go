@@ -111,10 +111,11 @@ func (f *fnCtx) convertAt(x Expr, want types.Type, span source.Span) Expr {
 			return &MakeVariant{exprBase{want}, w, st, x}
 		}
 	case *types.List, *types.Map, *types.Set:
-		// D25: a mutable collection is usable as its immutable form (the
-		// same handle; the callee just cannot change it through this type)
+		// D63: a mutable collection becomes its immutable form by a move
+		// (a fresh local nobody else can see, at its last use) or not at
+		// all — the error's fix is the copying `.toList()`
 		if views := receiverViews(have); len(views) > 1 && types.Identical(views[1], want) {
-			return &Cast{exprBase{want}, x}
+			return f.convertMutable(x, want, span)
 		}
 	case *types.Trait:
 		// implicit boxing into a trait object (D9)
@@ -208,7 +209,15 @@ func numericHint(want types.Type) types.Type {
 
 // checkExpr checks an expression. want is a hint (may be nil); the caller
 // performs the final coercion.
+// checkExpr checks e; afterwards a call in it ends what is known about the
+// lengths of MutableLists (D62).
 func (f *fnCtx) checkExpr(e ast.Expr, want types.Type) Expr {
+	x := f.checkExprInner(e, want)
+	f.afterExpr(x)
+	return x
+}
+
+func (f *fnCtx) checkExprInner(e ast.Expr, want types.Type) Expr {
 	if p, ok := f.boundPlace[e]; ok {
 		return p // the receiver of a `?.` write (check_safe.go)
 	}
@@ -1031,8 +1040,8 @@ func (f *fnCtx) unaryExpr(e *ast.UnaryExpr, want types.Type) Expr {
 		// The address of a temporary boxes the value.
 		if !isPlaceSyntax(e.X) {
 			if repl, ok := elemReadCall(e.X); ok {
-				// `&xs.atOrPanic(i)` would box a copy of the element; the
-				// pointer to the element itself is `refOrPanic` (D25, v0.27)
+				// `&xs.at(i)` would box a copy of the element; the pointer to
+				// the element itself is `ref` (D25, v0.27)
 				f.c.errorFix(e.Pos, fixReplace("Replace with '"+repl+"'", e.Pos, repl),
 					"'&%s' is the address of a copy of the element, not of the element; use '%s' (D25)", srcText(e.X), repl)
 				f.checkExpr(e.X, nil)
@@ -1264,7 +1273,16 @@ func (f *fnCtx) equality(e *ast.BinaryExpr, op BinOp) Expr {
 	} else {
 		l = f.checkExpr(e.L, nil)
 		l = f.immutableView(l)
-		r = f.checkOperandFor(e.R, l.Type())
+		if isLiteralExpr(e.R) {
+			r = f.checkOperandFor(e.R, l.Type())
+		} else {
+			// comparing reads both sides and keeps neither: a MutableList is
+			// compared as it is, not converted (D63)
+			r = f.immutableView(f.checkExpr(e.R, nil))
+			if !types.Identical(r.Type(), l.Type()) {
+				r = f.coerce(r, l.Type(), e.R.Span())
+			}
+		}
 	}
 	t := l.Type()
 	if types.IsInvalid(t) || types.IsInvalid(r.Type()) {
@@ -1433,6 +1451,13 @@ func (f *fnCtx) elvisExpr(e *ast.ElvisExpr, want types.Type) Expr {
 			return bad()
 		}
 		if !types.IsInvalid(l.Type()) {
+			if c, isCall := e.L.(*ast.CallExpr); isCall && f.provenReads[c] {
+				// gaining a fact must not break code that was right without it
+				drop := source.Span{File: e.Pos.File, Start: e.L.Span().End, End: e.Pos.End}
+				f.warnFix(drop, fixReplace("Drop the fallback", drop, ""), "'%s' is known to be in range here, so it is never null; the fallback never runs (D62)", srcText(e.L))
+				f.checkExpr(e.R, l.Type())
+				return l
+			}
 			f.errorf(e.Pos, "'?:' needs a nullable left operand, found '%s'", l.Type())
 		}
 		return bad()
@@ -1719,6 +1744,10 @@ func (f *fnCtx) restoreNarrow(saved facts) {
 // drops everything rooted at it.
 func (f *fnCtx) invalidatePlace(p place) {
 	for k := range f.narrow {
+		if p.path == "" && (k.path == pathIn+strconv.Itoa(p.v.ID) || k.path == pathLenOf+strconv.Itoa(p.v.ID)) {
+			delete(f.narrow, k) // an index fact about the list p names (D62)
+			continue
+		}
 		if k.v != p.v {
 			continue
 		}
@@ -1733,6 +1762,10 @@ func (f *fnCtx) invalidatePlace(p place) {
 // but cannot change which variant v is.
 func (f *fnCtx) invalidatePaths(v *Var) {
 	for k := range f.narrow {
+		if k.path == pathIn+strconv.Itoa(v.ID) || k.path == pathLenOf+strconv.Itoa(v.ID) {
+			delete(f.narrow, k)
+			continue
+		}
 		if k.v == v && k.path != "" {
 			delete(f.narrow, k)
 		}
@@ -1894,6 +1927,7 @@ func (f *fnCtx) condFacts(cond ast.Expr, checked Expr) (whenTrue, whenFalse fact
 	whenTrue, whenFalse = facts{}, facts{}
 	switch c := cond.(type) {
 	case *ast.BinaryExpr:
+		f.boundsCondFacts(c, whenTrue, whenFalse)
 		switch c.Op {
 		case lexer.Eq, lexer.NotEq:
 			_, lNull := c.L.(*ast.NullLit)
@@ -1922,6 +1956,9 @@ func (f *fnCtx) condFacts(cond ast.Expr, checked Expr) (whenTrue, whenFalse fact
 		case lexer.AndAnd:
 			t1, _ := f.condFacts(c.L, nil)
 			t2, _ := f.condFacts(c.R, nil)
+			if astMayShrink(c.R) {
+				dropMutableBounds(t1) // the right side runs after the left learned them
+			}
 			for k, v := range t1 {
 				whenTrue[k] = v
 			}
@@ -1931,6 +1968,9 @@ func (f *fnCtx) condFacts(cond ast.Expr, checked Expr) (whenTrue, whenFalse fact
 		case lexer.OrOr:
 			_, f1 := f.condFacts(c.L, nil)
 			_, f2 := f.condFacts(c.R, nil)
+			if astMayShrink(c.R) {
+				dropMutableBounds(f1)
+			}
 			for k, v := range f1 {
 				whenFalse[k] = v
 			}
@@ -1943,6 +1983,8 @@ func (f *fnCtx) condFacts(cond ast.Expr, checked Expr) (whenTrue, whenFalse fact
 			t, fl := f.condFacts(c.X, nil)
 			return fl, t
 		}
+	case *ast.CallExpr:
+		f.isEmptyFacts(c, whenFalse)
 	case *ast.MemberExpr:
 		// `r.ok` / `r.err` narrow like `r is Ok` / `r is Err`
 		if c.Safe {

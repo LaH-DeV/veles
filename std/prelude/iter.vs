@@ -200,8 +200,7 @@ public struct ListIter<T> {
   implement Iterator {
     type Item = T
     fun next(): T? {
-      if (self.index >= self.list.len()) return null
-      val v = self.list.atOrPanic(self.index)
+      val v = self.list.at(self.index) ?: return null
       self.index += 1
       v
     }

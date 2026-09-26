@@ -120,9 +120,9 @@ fun main() {
   var ys: MutableList<i64> = [0, 0]
   var m: MutableMap<string, i64> = [:]
   val grid = [[1, 2], [3, 4]]
-  ys.set(0, xs.atOrPanic(1))
-  ys.set(1, ys.atOrPanic(1) + 2)
-  m.set("k", grid.atOrPanic(1).atOrPanic(0))
+  ys.set(0, xs.at(1) ?: panic("TODO: say why this cannot fail"))
+  ys.set(1, (ys.at(1) ?: panic("TODO: say why this cannot fail")) + 2)
+  m.set("k", (grid.at(1) ?: panic("TODO: say why this cannot fail")).at(0) ?: panic("TODO: say why this cannot fail"))
   io.println("$ys ${m.get("k") ?: 0}")
 }
 `

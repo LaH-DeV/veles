@@ -1,2 +1,4 @@
 # example fixtures are compared byte for byte by the tests
 examples/*/fixtures/** -text
+# expected outputs are compared byte for byte as well
+examples/**/*.txt -text

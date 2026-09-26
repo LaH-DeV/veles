@@ -251,6 +251,11 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 		if !need(1) {
 			return bad()
 		}
+		if f.receiverIndexProven(e, e.Args[0].Value) {
+			// the facts put the index in range (D62): a `T`, not a `T?`
+			f.markProven(e)
+			return finish(f.uncheckedGet(list, lt, e.Args[0].Value, span))
+		}
 		idx := f.newTemp(types.TI64)
 		pre = append(pre, &VarDecl{Var: idx, Init: f.checkExprTo(e.Args[0].Value, types.TI64)})
 		rt := &types.Nullable{Elem: lt.Elem}
@@ -265,19 +270,12 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 		get := &SomeWrap{exprBase{rt}, &Builtin{exprBase{lt.Elem}, "list.get", []Expr{ref(list), ref(idx)}, span}}
 		return finish(nil, &If{exprBase{rt}, inRange, &Block{Value: get, Type: rt}, &Block{Value: &NullConst{exprBase{rt}}, Type: rt}})
 	case "atOrPanic":
-		// `xs.atOrPanic(i)` is the unchecked read: `T`, a panic when out of
-		// range. A negative index counts from the end, as with `at`.
+		// removed (D62 C); lowered as before so nothing else cascades
+		f.removedOrPanic(e, name)
 		if !need(1) {
 			return bad()
 		}
-		idx := f.newTemp(types.TI64)
-		pre = append(pre, &VarDecl{Var: idx, Init: f.indexValue(e.Args[0].Value)})
-		n := &Builtin{exprBase{types.TI64}, "list.len", []Expr{ref(list)}, span}
-		fromEnd := &Assign{Target: ref(idx), Value: &Binary{exprBase{types.TI64}, OpWrapAdd, ref(idx), n, span}}
-		pre = append(pre, &ExprStmt{X: &If{exprBase{types.TUnit},
-			&Binary{exprBase{types.TBool}, OpLt, ref(idx), i64c(0), span},
-			&Block{Stmts: []Stmt{fromEnd}, Type: types.TUnit}, nil}})
-		return finish(nil, &Builtin{exprBase{lt.Elem}, "list.get", []Expr{ref(list), ref(idx)}, span})
+		return finish(f.uncheckedGet(list, lt, e.Args[0].Value, span))
 	case "ref", "refOrPanic":
 		// `xs.ref(i)`: `(*T)?`, null when out of range; `xs.refOrPanic(i)`:
 		// `*T`, a panic when out of range. A pointer to the element itself,
@@ -293,6 +291,12 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 		}
 		pt := &types.Pointer{Elem: lt.Elem}
 		if name == "refOrPanic" {
+			f.removedOrPanic(e, name) // D62 C
+		}
+		if name == "refOrPanic" || f.receiverIndexProven(e, e.Args[0].Value) {
+			if name == "ref" {
+				f.markProven(e)
+			}
 			place := f.listElemPlace(ref(list), lt, e.Args[0].Value, span, true)
 			return finish(nil, &AddrOf{exprBase{pt}, place})
 		}
@@ -332,6 +336,11 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 		var idx Expr = i64c(0)
 		if name == "last" {
 			idx = &Binary{exprBase{types.TI64}, OpWrapSub, n, i64c(1), span}
+		}
+		if m, ok := e.Fun.(*ast.MemberExpr); ok && f.indexProven(m.X, &ast.IntLit{Text: "0"}) {
+			f.markProven(e)
+			// the list is known not to be empty (D62)
+			return finish(nil, &Builtin{exprBase{lt.Elem}, "list.get", []Expr{ref(list), idx}, span})
 		}
 		empty := &Binary{exprBase{types.TBool}, OpEq, n, i64c(0), span}
 		get := &SomeWrap{exprBase{rt}, &Builtin{exprBase{lt.Elem}, "list.get", []Expr{ref(list), idx}, span}}
@@ -458,4 +467,20 @@ func (f *fnCtx) listFilterIs(recv Expr, lt *types.List, typeArgs []types.Type, e
 	})...)
 	result := &Cast{exprBase{&types.List{Elem: variant}}, ref(out)}
 	return &BlockExpr{exprBase{result.Type()}, &Block{Stmts: stmts, Value: result, Type: result.Type()}}
+}
+
+// uncheckedGet is the read behind `atOrPanic` and a proven `at` (D62): the
+// element as a value, a negative index counted from the end; the runtime
+// still panics out of range.
+func (f *fnCtx) uncheckedGet(list *Var, lt *types.List, index ast.Expr, span source.Span) ([]Stmt, Expr) {
+	idx := f.newTemp(types.TI64)
+	n := &Builtin{exprBase{types.TI64}, "list.len", []Expr{ref(list)}, span}
+	fromEnd := &Assign{Target: ref(idx), Value: &Binary{exprBase{types.TI64}, OpWrapAdd, ref(idx), n, span}}
+	stmts := []Stmt{
+		&VarDecl{Var: idx, Init: f.indexValue(index)},
+		&ExprStmt{X: &If{exprBase{types.TUnit},
+			&Binary{exprBase{types.TBool}, OpLt, ref(idx), i64c(0), span},
+			&Block{Stmts: []Stmt{fromEnd}, Type: types.TUnit}, nil}},
+	}
+	return stmts, &Builtin{exprBase{lt.Elem}, "list.get", []Expr{ref(list), ref(idx)}, span}
 }

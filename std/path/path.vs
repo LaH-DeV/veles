@@ -78,7 +78,7 @@ public fun clean(p: string): string {
     when {
       seg.isEmpty() || seg == "." => continue
       seg != ".." => parts.push(seg)
-      !parts.isEmpty() && parts.atOrPanic(-1) != ".." => parts.pop()
+      !parts.isEmpty() && parts.at(-1) != ".." => parts.pop()
       root.isEmpty() => parts.push("..")
     }
   }

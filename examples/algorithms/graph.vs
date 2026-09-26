@@ -12,7 +12,9 @@ public struct Graph {
     Graph(n, adj: MutableList<MutableList<i64>>.make(n, _ => []))
 
   fun addEdge(a: i64, b: i64) {
-    self.adj.atOrPanic(a).push(b)
+    if (b < 0 || b >= self.n) panic("graph: node $b is not in 0..<${self.n}")
+    val edges = self.adj.at(a) ?: panic("graph: node $a is not in 0..<${self.n}")
+    edges.push(b)
   }
 
   fun addUndirected(a: i64, b: i64) {
@@ -20,7 +22,7 @@ public struct Graph {
     self.addEdge(b, a)
   }
 
-  fun neighbours(v: i64): List<i64> = self.adj.atOrPanic(v).toList()
+  fun neighbours(v: i64): List<i64> = slot(self.adj, v).toList()
 
   /// Breadth-first order from `start`.
   fun bfs(start: i64): List<i64> {
@@ -33,7 +35,7 @@ public struct Graph {
       val v = queue.removeFirst() ?: break
       order.push(v)
       loop (w in self.neighbours(v)) {
-        if (seen.atOrPanic(w)) continue
+        if (slot(seen, w)) continue
         seen.set(w, true)
         queue.addLast(w)
       }
@@ -53,7 +55,7 @@ public struct Graph {
     seen.set(v, true)
     order.push(v)
     loop (w in self.neighbours(v)) {
-      if (!seen.atOrPanic(w)) self.dfsFrom(w, seen, order)
+      if (!slot(seen, w)) self.dfsFrom(w, seen, order)
     }
   }
 
@@ -65,9 +67,9 @@ public struct Graph {
     queue.addLast(start)
     loop {
       val v = queue.removeFirst() ?: break
-      val d = dist.atOrPanic(v) ?: 0
+      val d = slot(dist, v) ?: 0
       loop (w in self.neighbours(v)) {
-        if (dist.atOrPanic(w) != null) continue
+        if (slot(dist, w) != null) continue
         dist.set(w, d + 1)
         queue.addLast(w)
       }
@@ -79,19 +81,20 @@ public struct Graph {
   fun topologicalOrder(): List<i64>? {
     val indegree = MutableList<i64>.repeat(0, self.n)
     loop (v in 0..<self.n) {
-      loop (w in self.neighbours(v)) *indegree.refOrPanic(w) += 1
+      loop (w in self.neighbours(v)) indegree.set(w, slot(indegree, w) + 1)
     }
     val ready = deque<i64>()
     loop (v in 0..<self.n) {
-      if (indegree.atOrPanic(v) == 0) ready.addLast(v)
+      if (slot(indegree, v) == 0) ready.addLast(v)
     }
     val order: MutableList<i64> = []
     loop {
       val v = ready.removeFirst() ?: break
       order.push(v)
       loop (w in self.neighbours(v)) {
-        *indegree.refOrPanic(w) -= 1
-        if (indegree.atOrPanic(w) == 0) ready.addLast(w)
+        val left = slot(indegree, w) - 1
+        indegree.set(w, left)
+        if (left == 0) ready.addLast(w)
       }
     }
     if (order.len() == self.n) order.toList() else null
@@ -102,7 +105,7 @@ public struct Graph {
     val seen = self.flags()
     var count = 0
     loop (v in 0..<self.n) {
-      if (seen.atOrPanic(v)) continue
+      if (slot(seen, v)) continue
       count += 1
       val order: MutableList<i64> = []
       self.dfsFrom(v, seen, order)
@@ -112,6 +115,10 @@ public struct Graph {
 
   fun flags(): MutableList<bool> = MutableList<bool>.repeat(false, self.n)
 }
+
+/// Entry `v` of a table with one slot per node. Every node an edge names is
+/// in `0..<n` — `addEdge` checks it — so this cannot fail.
+fun slot<T>(table: MutableList<T>, v: i64): T = table.at(v) ?: panic("graph: every node is in 0..<n")
 
 /// A pending step for Dijkstra, ordered by distance so the priority queue
 /// yields the closest node first.
@@ -130,18 +137,22 @@ struct Hop {
 /// out.
 public fun dijkstra(n: i64, edges: List<(i64, i64, i64)>, start: i64): List<i64?> {
   val adj = MutableList<MutableList<(i64, i64)>>.make(n, _ => [])
-  loop ((from, to, weight) in edges) adj.atOrPanic(from).push((to, weight))
+  loop ((from, to, weight) in edges) {
+    if (to < 0 || to >= n) panic("dijkstra: an edge goes to $to, outside 0..<$n")
+    val out = adj.at(from) ?: panic("dijkstra: an edge comes from $from, outside 0..<$n")
+    out.push((to, weight))
+  }
   val dist = MutableList<i64?>.repeat(null, n)
   dist.set(start, 0)
   val pending = priorityQueue<Hop>()
   pending.push(Hop(dist: 0, node: start))
   loop {
     val hop = pending.pop() ?: break
-    val best = dist.atOrPanic(hop.node) ?: hop.dist
+    val best = slot(dist, hop.node) ?: hop.dist
     if (hop.dist > best) continue
-    loop ((to, weight) in adj.atOrPanic(hop.node)) {
+    loop ((to, weight) in slot(adj, hop.node)) {
       val candidate = hop.dist + weight
-      val known = dist.atOrPanic(to)
+      val known = slot(dist, to)
       if (known != null && known <= candidate) continue
       dist.set(to, candidate)
       pending.push(Hop(dist: candidate, node: to))

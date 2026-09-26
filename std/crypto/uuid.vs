@@ -24,8 +24,9 @@ public struct Uuid {
   /// 122-bit random numbers do — never, in practice.
   public static fun v4(): Uuid {
     val b = randomBytes(16).toMutable()
-    b.set(6, (b.atOrPanic(6) & 0x0f) | 0x40)  // version 4
-    b.set(8, (b.atOrPanic(8) & 0x3f) | 0x80)  // variant 10
+    if (b.len() != 16) panic("Uuid.v4: randomBytes(16) returned ${b.len()} bytes")
+    b.set(6, (b.at(6) & 0x0f) | 0x40)  // version 4
+    b.set(8, (b.at(8) & 0x3f) | 0x80)  // variant 10
     Uuid(data: b.toList())
   }
 
@@ -45,6 +46,7 @@ public struct Uuid {
   public static fun v7(): Uuid {
     val ms = nextTick()
     val r = randomBytes(8)
+    if (r.len() != 8) panic("Uuid.v7: randomBytes(8) returned ${r.len()} bytes")
     val b: MutableList<u8> = []
     var s = 40
     loop (s >= 0) {
@@ -53,12 +55,8 @@ public struct Uuid {
     }
     b.push(0x70 | ((v7Counter >> 8) & 0x0f) as u8)  // version 7 + counter high
     b.push((v7Counter & 255) as u8)                 // counter low
-    b.push((r.atOrPanic(0) & 0x3f) | 0x80)          // variant 10
-    var i = 1
-    loop (i < 8) {
-      b.push(r.atOrPanic(i))
-      i = i + 1
-    }
+    b.push((r.at(0) & 0x3f) | 0x80)                 // variant 10
+    loop (i in 1..<r.len()) b.push(r.at(i))
     Uuid(data: b.toList())
   }
 
@@ -99,11 +97,15 @@ public struct Uuid {
     Uuid(data: out.toList())
   }
 
+  /// Byte `i` of the id. Every constructor makes sixteen bytes, and the
+  /// readers ask for `i` in `0..<16`.
+  fun byte(i: i64): u8 = self.data.at(i) ?: panic("Uuid: the data is always sixteen bytes")
+
   /// The sixteen bytes, big-endian as the RFC lays them out.
   public fun bytes(): List<u8> = self.data
 
   /// The version digit: 4 for `v4()`, 7 for `v7()`, 0 for `zero()`.
-  public fun version(): i64 = ((self.data.atOrPanic(6) >> 4) & 0x0f) as i64
+  public fun version(): i64 = ((self.byte(6) >> 4) & 0x0f) as i64
 
   /// The milliseconds a version 7 id was made at, or `null` for any other
   /// version.
@@ -112,7 +114,7 @@ public struct Uuid {
     var v = 0
     var i = 0
     loop (i < 6) {
-      v = (v << 8) | (self.data.atOrPanic(i) as i64)
+      v = (v << 8) | (self.byte(i) as i64)
       i = i + 1
     }
     v
@@ -127,7 +129,7 @@ public struct Uuid {
       var i = 0
       loop (i < 16) {
         if (i == 4 || i == 6 || i == 8 || i == 10) out.appendByte(45)
-        val b = self.data.atOrPanic(i)
+        val b = self.byte(i)
         out.appendByte(hexDigit(b >> 4))
         out.appendByte(hexDigit(b & 15))
         i = i + 1
@@ -141,8 +143,8 @@ public struct Uuid {
     fun compareTo(other: Uuid): Ordering {
       var i = 0
       loop (i < 16) {
-        val a = self.data.atOrPanic(i)
-        val b = other.data.atOrPanic(i)
+        val a = self.byte(i)
+        val b = other.byte(i)
         if (a < b) return Ordering.Less
         if (a > b) return Ordering.Greater
         i = i + 1

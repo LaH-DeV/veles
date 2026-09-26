@@ -29,17 +29,20 @@ struct Task {
     if (words.first() == "x") {
       t.done = true
       words = words.drop(1)
-      if (isDate(words.first())) {
-        t.completedOn = words.atOrPanic(0)
+      val completed = words.first() ?: ""
+      if (isDate(completed)) {
+        t.completedOn = completed
         words = words.drop(1)
       }
     }
-    if (isPriority(words.first() ?: "")) {
-      t.priority = words.atOrPanic(0).substring(1, 2) ?: ""
+    val pri = words.first() ?: ""
+    if (isPriority(pri)) {
+      t.priority = pri.substring(1, 2) ?: ""
       words = words.drop(1)
     }
-    if (isDate(words.first())) {
-      t.createdOn = words.atOrPanic(0)
+    val created = words.first() ?: ""
+    if (isDate(created)) {
+      t.createdOn = created
       words = words.drop(1)
     }
     t.text = words.join(" ")
@@ -111,10 +114,8 @@ fun today(): string = os.env("TODO_TODAY") ?: time.now().local().date()
 
 /// Days since 1970-01-01 for an ISO date (Howard Hinnant's days_from_civil).
 fun dayNumber(date: string): i64 {
-  val parts = date.split("-").map(p => p.toInt() ?: 0)
-  var y = parts.atOrPanic(0)
-  val m = parts.atOrPanic(1)
-  val d = parts.atOrPanic(2)
+  val [year, m, d] = date.split("-").map(p => p.toInt() ?: 0) else panic("dayNumber: '$date' is not an ISO date")
+  var y = year
   if (m <= 2) y -= 1
   val era = (if (y >= 0) y else y - 399) / 400
   val yoe = y - era * 400
@@ -160,6 +161,10 @@ struct TodoFile {
     if (n < 1 || n > self.tasks.len()) throw UsageError(message: "no task $n (${self.tasks.len()} in ${path.base(self.file)})")
     n
   }
+
+  /// Task `n`, counting from 1. Every `n` comes from `number`, which accepts
+  /// only `1..len`.
+  fun task(n: i64): *Task = self.tasks.ref(n - 1) ?: panic("todo: number() accepts only 1..len")
 
   /// The numbered tasks, open ones first by priority, then by due date, then by number.
   fun listed(terms: List<string>, all: bool): List<(i64, Task)> {
@@ -254,7 +259,7 @@ fun run(args: List<string>) throws UsageError | IoError {
       if (rest.isEmpty()) throw UsageError(message: "done needs a task number")
       loop (arg in rest) {
         val n = try todo.number(arg)
-        val t = todo.tasks.refOrPanic(n - 1)
+        val t = todo.task(n)
         if (t.done) {
           io.println("$n is already done")
           continue
@@ -268,7 +273,7 @@ fun run(args: List<string>) throws UsageError | IoError {
     }
     "undo"                 => {
       val n = try todo.number(rest.first() ?: "")
-      val t = todo.tasks.refOrPanic(n - 1)
+      val t = todo.task(n)
       t.done = false
       t.completedOn = ""
       try todo.save()
@@ -278,22 +283,22 @@ fun run(args: List<string>) throws UsageError | IoError {
       val n = try todo.number(rest.first() ?: "")
       val p = (rest.at(1) ?: "").toUpper()
       if (!isPriority("($p)")) throw UsageError(message: "priority must be a letter A-Z, got '$p'")
-      todo.tasks.refOrPanic(n - 1).priority = p
+      todo.task(n).priority = p
       try todo.save()
-      io.println("$n ${todo.tasks.atOrPanic(n - 1).line()}")
+      io.println("$n ${todo.task(n).line()}")
     }
     "depri"                => {
       val n = try todo.number(rest.first() ?: "")
-      todo.tasks.refOrPanic(n - 1).priority = ""
+      todo.task(n).priority = ""
       try todo.save()
-      io.println("$n ${todo.tasks.atOrPanic(n - 1).line()}")
+      io.println("$n ${todo.task(n).line()}")
     }
     "edit"                 => {
       val n = try todo.number(rest.first() ?: "")
       if (rest.len() < 2) throw UsageError(message: "edit needs the new text")
-      todo.tasks.refOrPanic(n - 1).text = rest.drop(1).join(" ")
+      todo.task(n).text = rest.drop(1).join(" ")
       try todo.save()
-      io.println("$n ${todo.tasks.atOrPanic(n - 1).line()}")
+      io.println("$n ${todo.task(n).line()}")
     }
     "rm", "del"            => {
       val n = try todo.number(rest.first() ?: "")

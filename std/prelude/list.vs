@@ -1,7 +1,7 @@
 // Prelude — List, MutableList and Range methods (D25, D29, D46). In scope
 // in every file (D24).
 //
-// The compiler provides the primitives (`len`, `at`, `atOrPanic`, `set`, `push`, `pop`,
+// The compiler provides the primitives (`len`, `at`, `set`, `push`, `pop`,
 // `sorted`, the eager `map`/`filter`/`fold`, ...); the rest is Veles.
 
 extend<T> List<T> {
@@ -22,21 +22,27 @@ extend<T> List<T> {
     out.toList()
   }
 
+  /// The valid indexes, `0..<len()`. In `loop (i in xs.indices())` the
+  /// checker knows each `i` is in range, so `xs.at(i)` is a `T` (D62).
+  public fun indices(): Range<i64> = 0..<self.len()
+
   /// The elements in `from..<to`, clamped to the list; empty when `from >= to`.
   public fun slice(from: i64, to: i64): List<T> {
     val lo = from.max(0)
     val hi = to.min(self.len())
     var out: MutableList<T> = []
     loop (i in lo..<hi) {
-      out.push(self.atOrPanic(i))
+      out.push(self.at(i) ?: panic("slice: lo..<hi was clamped to the list"))
     }
     out.toList()
   }
 
   /// The index of the first element `pred` accepts, or -1.
   public fun indexOfFirst(pred: fun(T): bool): i64 {
-    loop (i in 0..<self.len()) {
-      if (pred(self.atOrPanic(i))) return i
+    var i: i64 = 0
+    loop (x in self) {
+      if (pred(x)) return i
+      i += 1
     }
     -1
   }
@@ -50,12 +56,27 @@ extend<T> List<T> {
     n
   }
 
+  /// Each element with its index: `["a", "b"].enumerate()` is
+  /// `[(0, "a"), (1, "b")]`. Eager, like `map`; `xs.iter().enumerate()` is
+  /// the lazy form.
+  public fun enumerate(): List<(i64, T)> {
+    var out: MutableList<(i64, T)> = []
+    var i: i64 = 0
+    loop (x in self) {
+      out.push((i, x))
+      i += 1
+    }
+    out
+  }
+
   /// Pairs of elements at the same index, as long as the shorter list.
   public fun zip<U>(other: List<U>): List<(T, U)> {
     var out: MutableList<(T, U)> = []
-    val n = self.len().min(other.len())
-    loop (i in 0..<n) {
-      out.push((self.atOrPanic(i), other.atOrPanic(i)))
+    var i: i64 = 0
+    loop (a in self) {
+      val b = other.at(i) ?: break
+      out.push((a, b))
+      i += 1
     }
     out.toList()
   }
@@ -142,11 +163,11 @@ extend<T> List<T> {
         var j = mid
         var k = lo
         loop (k < hi) {
-          if (i < mid && (j >= hi || compare(src.atOrPanic(i), src.atOrPanic(j)) <= 0)) {
-            dst.set(k, src.atOrPanic(i))
+          if (i < mid && (j >= hi || compare(src.at(i) ?: panic("sortedWith: i < mid <= n"), src.at(j) ?: panic("sortedWith: j < hi <= n")) <= 0)) {
+            dst.set(k, src.at(i) ?: panic("sortedWith: i < mid <= n"))
             i += 1
           } else {
-            dst.set(k, src.atOrPanic(j))
+            dst.set(k, src.at(j) ?: panic("sortedWith: j < hi <= n"))
             j += 1
           }
           k += 1
@@ -225,9 +246,10 @@ extend<T> List<T> {
 extend<T> MutableList<T> {
   /// Sorts in place by `compare` (see `sortedWith`).
   public fun sortWith(compare: fun(T, T): Ordering) {
-    val sorted = self.sortedWith(compare)
-    loop (i in 0..<self.len()) {
-      self.set(i, sorted.atOrPanic(i))
+    var i: i64 = 0
+    loop (x in self.sortedWith(compare)) {
+      self.set(i, x)
+      i += 1
     }
   }
 }
@@ -242,7 +264,7 @@ extend<T: Comparable> List<T> {
   /// The smallest element, or `null` when empty.
   public fun min(): T? {
     if (self.isEmpty()) return null
-    var best = self.atOrPanic(0)
+    var best = self.at(0)
     loop (x in self) {
       if (x < best) best = x
     }
@@ -252,7 +274,7 @@ extend<T: Comparable> List<T> {
   /// The largest element, or `null` when empty.
   public fun max(): T? {
     if (self.isEmpty()) return null
-    var best = self.atOrPanic(0)
+    var best = self.at(0)
     loop (x in self) {
       if (x > best) best = x
     }
@@ -285,7 +307,8 @@ extend<T> List<T> {
     var hi = self.len()
     loop (lo < hi) {
       val mid = lo + (hi - lo) / 2
-      if (pred(self.atOrPanic(mid))) lo = mid + 1 else hi = mid
+      val x = self.at(mid) ?: panic("partitionPoint: lo <= mid < hi <= len")
+      if (pred(x)) lo = mid + 1 else hi = mid
     }
     lo
   }
@@ -300,7 +323,8 @@ extend<T> List<T> {
   /// list flips the arguments: `xs.binarySearchWith(x => wanted.compareTo(x))`.
   public fun binarySearchWith(compare: fun(T): Ordering): i64 {
     val at = self.partitionPoint(x => compare(x) < 0)
-    if (at < self.len() && compare(self.atOrPanic(at)) == Ordering.Equal) at else -1
+    val found = self.at(at) ?: return -1  // at == len(): nothing is Equal
+    if (compare(found) == Ordering.Equal) at else -1
   }
 
   /// The index of the first element whose key equals `target`, or -1:
@@ -314,7 +338,8 @@ extend<T: Comparable> List<T> {
   /// any: a list with duplicates gives the same answer every time.
   public fun binarySearch(x: T): i64 {
     val at = self.lowerBound(x)
-    if (at < self.len() && self.atOrPanic(at).compareTo(x) == Ordering.Equal) at else -1
+    val found = self.at(at) ?: return -1  // at == len(): x belongs at the end
+    if (found.compareTo(x) == Ordering.Equal) at else -1
   }
 
   /// The first index whose element is not less than `x` — where `x` belongs
@@ -379,7 +404,10 @@ extend<T> MutableList<T> {
 
   /// Exchanges the elements at `i` and `j`.
   public fun swap(i: i64, j: i64) {
-    (*self.refOrPanic(i), *self.refOrPanic(j)) = (self.atOrPanic(j), self.atOrPanic(i))
+    val a = self.at(i) ?: panic("swap: index $i out of bounds for list of length ${self.len()}")
+    val b = self.at(j) ?: panic("swap: index $j out of bounds for list of length ${self.len()}")
+    self.set(i, b)
+    self.set(j, a)
   }
 
   /// Inserts `x` at index `i`, shifting the rest up; `i == len()` appends.
@@ -388,7 +416,7 @@ extend<T> MutableList<T> {
     self.push(x)
     var j = self.len() - 1
     loop (j > i) {
-      self.set(j, self.atOrPanic(j - 1))
+      self.set(j, self.at(j - 1) ?: panic("insert: i < j < len"))
       j -= 1
     }
     self.set(i, x)
@@ -396,9 +424,9 @@ extend<T> MutableList<T> {
 
   /// Removes and returns the element at index `i`, shifting the rest down.
   public fun removeAt(i: i64): T {
-    val removed = self.atOrPanic(i)
+    val removed = self.at(i) ?: panic("removeAt: index $i out of bounds for list of length ${self.len()}")
     loop (j in i..<(self.len() - 1)) {
-      self.set(j, self.atOrPanic(j + 1))
+      self.set(j, self.at(j + 1) ?: panic("removeAt: j + 1 < len"))
     }
     self.pop()
     removed
@@ -413,9 +441,10 @@ extend<T> MutableList<T> {
 
   /// Sorts in place (elements must be Comparable).
   public fun sort() {
-    val sorted = self.sorted()
-    loop (i in 0..<self.len()) {
-      self.set(i, sorted.atOrPanic(i))
+    var i: i64 = 0
+    loop (x in self.sorted()) {
+      self.set(i, x)
+      i += 1
     }
   }
 }

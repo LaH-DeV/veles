@@ -718,8 +718,8 @@ type coverage struct {
 	variants    map[*types.Struct]bool
 	members     map[string]bool            // error-union members (D45)
 	enumMembers map[*types.EnumMember]bool // enum members named by value patterns (D57)
-	listLens    map[int]bool // list lengths covered exactly by `[a, b]` (D62)
-	listMin     int          // lengths >= listMin covered by `[a, ..]`; -1 when none
+	listLens    map[int]bool               // list lengths covered exactly by `[a, b]` (D62)
+	listMin     int                        // lengths >= listMin covered by `[a, ..]`; -1 when none
 }
 
 func newCoverage() *coverage {

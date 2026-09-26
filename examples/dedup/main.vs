@@ -63,7 +63,7 @@ struct Options {
     var opts = Options(dir: "")
     var i = 0
     loop (i < args.len()) {
-      val arg = args.atOrPanic(i)
+      val arg = args.at(i)
       when (arg) {
         "--workers", "--min-size" => {
           val value = args.at(i + 1)?.toInt() ?: throw UsageError(message: "$arg needs a number")
@@ -112,7 +112,8 @@ fun run(args: List<string>) throws UsageError | IoError {
     .filter(e => e.1.len() > 1)
     .sortedWith((a, b) => {
       if (a.0.size != b.0.size) return b.0.size.compareTo(a.0.size)  // largest first
-      a.1.atOrPanic(0).compareTo(b.1.atOrPanic(0))
+      val first = a.1.first() ?: panic("dedup: a group of duplicates has at least two files")
+      first.compareTo(b.1.first() ?: panic("dedup: a group of duplicates has at least two files"))
     })
 
   var wasted = 0

@@ -65,6 +65,17 @@ extend string {
     out.toList()
   }
 
+  /// The text before and after the first `sep`, or `null` when `sep` does
+  /// not occur: `"key=a=b".splitOnce("=")` is `("key", "a=b")`. An empty
+  /// `sep` splits before the first character: `("", text)`.
+  public fun splitOnce(sep: string): (string, string)? {
+    val at = self.indexOf(sep)
+    if (at < 0) return null
+    val before = self.substring(0, at) ?: panic("splitOnce: indexOf found sep inside the text")
+    val after = self.substring(at + sep.len(), self.len()) ?: panic("splitOnce: indexOf found sep inside the text")
+    (before, after)
+  }
+
   /// The lines of the text, split on `\n`; a trailing `\r` on each line and
   /// a final empty line are dropped.
   public fun lines(): List<string> {
@@ -76,7 +87,7 @@ extend string {
         out.push(line)
       }
     }
-    if (out.len() > 0 && (out.last() ?: "").isEmpty()) out.pop()
+    if (out.len() > 0 && out.last().isEmpty()) out.pop()
     out.toList()
   }
 

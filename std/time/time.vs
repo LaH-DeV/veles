@@ -601,9 +601,8 @@ public fun formatHttp(t: Timestamp): string {
 /// today, as the RFC prescribes.
 public fun parseHttp(s: string): Timestamp? {
   val text = s.trim()
-  val comma = text.indexOf(",")
-  if (comma < 0) return parseAsctime(fieldsOf(text))
-  val rest = (text.substring(comma + 1, text.len()) ?: return null).trim()
+  val (_, afterDay) = text.splitOnce(",") else return parseAsctime(fieldsOf(text))
+  val rest = afterDay.trim()
   val f = fieldsOf(rest)
   if (f.len() == 3) return parseRfc850(f)
   parseImf(f)

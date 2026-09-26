@@ -54,7 +54,7 @@ public struct Deque<T> {
   public fun removeFirst(): T? {
     val s = self.state
     if (s.size == 0) return null
-    val x = s.buf.atOrPanic(s.head)
+    val x = self.slot(0)
     s.buf.set(s.head, null)
     s.head = (s.head + 1) % s.buf.len()
     s.size -= 1
@@ -66,9 +66,8 @@ public struct Deque<T> {
     val s = self.state
     if (s.size == 0) return null
     s.size -= 1
-    val i = (s.head + s.size) % s.buf.len()
-    val x = s.buf.atOrPanic(i)
-    s.buf.set(i, null)
+    val x = self.slot(s.size)
+    s.buf.set((s.head + s.size) % s.buf.len(), null)
     x
   }
 
@@ -84,7 +83,15 @@ public struct Deque<T> {
     val s = self.state
     val k = if (i < 0) i + s.size else i
     if (k < 0 || k >= s.size) return null
-    s.buf.atOrPanic((s.head + k) % s.buf.len())
+    self.slot(k)
+  }
+
+  /// The slot `k` places from the front. Every position is taken mod the
+  /// capacity, so it is inside the buffer whatever `k` is; it holds an
+  /// element when `k` is in `0..<size`.
+  fun slot(k: i64): T? {
+    val s = self.state
+    s.buf.at((s.head + k) % s.buf.len()) ?: panic("deque: a position taken mod the capacity is inside the buffer")
   }
 
   /// Removes every element.
@@ -100,7 +107,7 @@ public struct Deque<T> {
     val s = self.state
     var out: MutableList<T> = []
     loop (i in 0..<s.size) {
-      out.push(s.buf.atOrPanic((s.head + i) % s.buf.len()) ?: panic("deque: a live slot is empty"))
+      out.push(self.slot(i) ?: panic("deque: a live slot is empty"))
     }
     out.toList()
   }
@@ -112,7 +119,7 @@ public struct Deque<T> {
     val cap = s.buf.len()
     if (s.size < cap) return
     val fresh = MutableList<T?>.repeat(null, if (cap == 0) 4 else cap * 2)
-    loop (i in 0..<s.size) fresh.set(i, s.buf.atOrPanic((s.head + i) % cap))
+    loop (i in 0..<s.size) fresh.set(i, self.slot(i))
     s.buf = fresh
     s.head = 0
   }
@@ -191,12 +198,16 @@ public struct PriorityQueue<T> {
   /// not sorted.
   public fun toList(): List<T> = self.state.items.toList()
 
+  /// The element at heap position `i`; the sifts only ask for positions
+  /// below the heap's size.
+  fun item(i: i64): T = self.state.items.at(i) ?: panic("heap: a sift reads only positions below the size")
+
   fun siftUp(from: i64) {
     val s = self.state
     var i = from
     loop (i > 0) {
       val parent = (i - 1) / 2
-      if (s.compare(s.items.atOrPanic(i), s.items.atOrPanic(parent)) >= 0) break
+      if (s.compare(self.item(i), self.item(parent)) >= 0) break
       s.items.swap(i, parent)
       i = parent
     }
@@ -210,8 +221,8 @@ public struct PriorityQueue<T> {
       val left = 2 * i + 1
       val right = left + 1
       var smallest = i
-      if (left < n && s.compare(s.items.atOrPanic(left), s.items.atOrPanic(smallest)) < 0) smallest = left
-      if (right < n && s.compare(s.items.atOrPanic(right), s.items.atOrPanic(smallest)) < 0) smallest = right
+      if (left < n && s.compare(self.item(left), self.item(smallest)) < 0) smallest = left
+      if (right < n && s.compare(self.item(right), self.item(smallest)) < 0) smallest = right
       if (smallest == i) break
       s.items.swap(i, smallest)
       i = smallest

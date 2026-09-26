@@ -113,7 +113,7 @@ public struct Listener {
 // index of the first `b` at or after `from`, or -1
 fun findByte(xs: *MutableList<u8>, b: u8, from: i64): i64 {
   loop (i in from..<xs.len()) {
-    if (xs.atOrPanic(i) == b) return i
+    if (xs.at(i) == b) return i
   }
   -1
 }
@@ -190,7 +190,7 @@ public struct Conn {
         if (nl > max) throw self.tooLong("line", max)
         val line = self.buffer.withLock(b => {
           var end = nl
-          if (end > 0 && b.atOrPanic(end - 1) == 13) end -= 1
+          if (end > 0 && b.at(end - 1) == 13) end -= 1
           val line = b.take(end)
           b.removePrefix(nl + 1)
           line

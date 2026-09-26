@@ -23,7 +23,7 @@ public fun binarySearch(xs: List<i64>, target: i64): i64? {
   var hi = xs.len() - 1
   loop (lo <= hi) {
     val mid = lo + (hi - lo) / 2
-    val v = xs.atOrPanic(mid)
+    val v = xs.at(mid) ?: panic("binarySearch: lo <= mid <= hi < len")
     when {
       v == target => return mid
       v < target  => lo = mid + 1
@@ -40,7 +40,8 @@ public fun lowerBound(xs: List<i64>, target: i64): i64 {
   var hi = xs.len()
   loop (lo < hi) {
     val mid = lo + (hi - lo) / 2
-    if (xs.atOrPanic(mid) < target) lo = mid + 1 else hi = mid
+    val v = xs.at(mid) ?: panic("lowerBound: lo <= mid < hi <= len")
+    if (v < target) lo = mid + 1 else hi = mid
   }
   lo
 }
@@ -49,7 +50,7 @@ public fun lowerBound(xs: List<i64>, target: i64): i64 {
 public fun binarySearchRec(xs: List<i64>, target: i64, lo: i64, hi: i64): i64? {
   if (lo > hi) return null
   val mid = lo + (hi - lo) / 2
-  val v = xs.atOrPanic(mid)
+  val v = xs.at(mid) ?: panic("binarySearchRec: lo..hi must lie inside the list")
   when {
     v == target => mid
     v < target  => binarySearchRec(xs, target, mid + 1, hi)
@@ -68,7 +69,7 @@ public fun preludeAgrees(xs: List<i64>): bool {
     val here = binarySearch(sorted, target)
     val prelude = sorted.binarySearch(target)
     if ((here != null) != (prelude >= 0)) return false
-    if (prelude >= 0 && sorted.atOrPanic(prelude) != target) return false
+    if (prelude >= 0 && sorted.at(prelude) != target) return false
     // and it always answers the first of several equal elements
     if (prelude >= 0 && prelude != sorted.lowerBound(target)) return false
     // the half-open range [lowerBound, upperBound) is exactly the equals
@@ -84,9 +85,11 @@ public fun pairWithSum(xs: List<i64>, target: i64): (i64, i64)? {
   var i = 0
   var j = xs.len() - 1
   loop (i < j) {
-    val sum = xs.atOrPanic(i) + xs.atOrPanic(j)
+    val a = xs.at(i) ?: panic("pairWithSum: 0 <= i < j < len")
+    val b = xs.at(j) ?: panic("pairWithSum: 0 <= i < j < len")
+    val sum = a + b
     when {
-      sum == target => return (xs.atOrPanic(i), xs.atOrPanic(j))
+      sum == target => return (a, b)
       sum < target  => i += 1
       else          => j -= 1
     }

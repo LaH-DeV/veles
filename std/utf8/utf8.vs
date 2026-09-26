@@ -155,7 +155,7 @@ public fun decodeBytes(bytes: List<u8>, at: i64): Rune? {
   val n = bytes.len()
   if (at < 0 || at >= n) return null
   step(
-    bytes.atOrPanic(at),
+    bytes.at(at),
     bytes.atOrDefault(at + 1, 0),
     bytes.atOrDefault(at + 2, 0),
     bytes.atOrDefault(at + 3, 0),

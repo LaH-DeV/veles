@@ -5,10 +5,14 @@
 fun grid(rows: i64, cols: i64, value: i64): MutableList<MutableList<i64>> =
   MutableList<MutableList<i64>>.make(rows, _ => MutableList<i64>.repeat(value, cols))
 
-fun cell(dp: MutableList<MutableList<i64>>, row: i64, col: i64): i64 = dp.atOrPanic(row).atOrPanic(col)
+fun cell(dp: MutableList<MutableList<i64>>, row: i64, col: i64): i64 {
+  val r = dp.at(row) ?: panic("grid: row $row is outside the table")
+  r.at(col) ?: panic("grid: column $col is outside the table")
+}
 
 fun setCell(dp: MutableList<MutableList<i64>>, row: i64, col: i64, v: i64) {
-  dp.atOrPanic(row).set(col, v)
+  val r = dp.at(row) ?: panic("grid: row $row is outside the table")
+  r.set(col, v)
 }
 
 /// Length of the longest common subsequence of two strings (by bytes).
@@ -54,10 +58,12 @@ public fun knapsack(weights: List<i64>, values: List<i64>, capacity: i64): i64 {
   loop ((weight, value) in weights.zip(values)) {
     // walk capacities downwards so each item is used at most once
     loop (c in (weight..capacity).reversed()) {
-      best.set(c, best.atOrPanic(c).max(best.atOrPanic(c - weight) + value))
+      val keep = best.at(c) ?: panic("knapsack: weight <= c <= capacity")
+      val take = best.at(c - weight) ?: panic("knapsack: weight <= c <= capacity")
+      best.set(c, keep.max(take + value))
     }
   }
-  best.atOrPanic(capacity)
+  best.at(capacity) ?: panic("knapsack: the table has capacity + 1 slots")
 }
 
 /// Fewest coins that make `amount`; null when it cannot be made.
@@ -67,12 +73,13 @@ public fun coinChange(coins: List<i64>, amount: i64): i64? {
   loop (target in 1..amount) {
     loop (coin in coins) {
       if (coin > target) continue
-      val rest = fewest.atOrPanic(target - coin) ?: continue
-      val known = fewest.atOrPanic(target)
+      val slot = fewest.at(target - coin) ?: panic("coinChange: 0 <= target - coin < target")
+      val rest = slot ?: continue
+      val known = fewest.at(target) ?: panic("coinChange: target <= amount")
       if (known == null || rest + 1 < known) fewest.set(target, rest + 1)
     }
   }
-  fewest.atOrPanic(amount)
+  fewest.at(amount) ?: panic("coinChange: the table has amount + 1 slots")
 }
 
 /// Longest strictly increasing subsequence, O(n²).
@@ -80,8 +87,11 @@ public fun longestIncreasing(xs: List<i64>): i64 {
   val best = MutableList<i64>.repeat(1, xs.len())
   loop (i in 1..<xs.len()) {
     loop (j in 0..<i) {
-      if (xs.atOrPanic(j) < xs.atOrPanic(i)) {
-        best.set(i, best.atOrPanic(i).max(best.atOrPanic(j) + 1))
+      val earlier = xs.at(j) ?: panic("longestIncreasing: j < i < len")
+      if (earlier < xs.at(i)) {
+        val here = best.at(i) ?: panic("longestIncreasing: best has one slot per element")
+        val before = best.at(j) ?: panic("longestIncreasing: best has one slot per element")
+        best.set(i, here.max(before + 1))
       }
     }
   }

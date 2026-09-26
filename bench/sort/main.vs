@@ -15,7 +15,8 @@ fun main() {
   var check: i64 = 0
   loop (_ in 0..<3) {
     val s = input.sorted()
-    check += s.atOrPanic(0) + s.atOrPanic(150000) + s.atOrPanic(299999)
+    if (s.len() != 300000) panic("sort: the input has 300000 numbers")
+    check += s.at(0) + s.at(150000) + s.at(299999)
   }
   io.println("BENCH sort 900000 ${sw.elapsed().toNanos()} $check")
 }

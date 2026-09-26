@@ -187,7 +187,7 @@ fun thisOneFails() throws Mismatch {
 @test
 fun panicsAreReported() {
   val xs = [1]
-  io.println("${xs.atOrPanic(3)}")
+  io.println("${xs.at(3) ?: panic("index 3 is out of range")}")
 }
 
 fun main() {
@@ -205,7 +205,7 @@ ordinary run; tests are skipped
 ```text
 test additionWorks ... ok
 test thisOneFails ... FAILED: Mismatch(expected: 1, actual: 2)
-test panicsAreReported ... FAILED: panic: index 3 out of bounds for list of length 1
+test panicsAreReported ... FAILED: panic: index 3 is out of range
 ```
 
 and exits non-zero. Tests live next to the code they test, in the same

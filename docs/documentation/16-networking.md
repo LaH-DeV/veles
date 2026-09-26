@@ -102,14 +102,13 @@ fun handle(conn: net.Conn, store: Mutex<MutableMap<string, string>>) throws IoEr
   with (c = conn) {
     loop {
       val line = try c.readLine(max: 4096) ?: break
-      val parts = line.split(" ")
-      val reply = when (parts.first()) {
-        "SET" => {
-          store.withLock(m => m.set(parts.atOrPanic(1), parts.atOrPanic(2)))
+      val reply = when (line.split(" ")) {
+        ["SET", key, value] => {
+          store.withLock(m => m.set(key, value))
           "OK"
         }
-        "GET" => store.withLock(m => m.get(parts.atOrPanic(1))) ?: "(none)"
-        else  => "ERR unknown command"
+        ["GET", key]        => store.withLock(m => m.get(key)) ?: "(none)"
+        else                => "ERR unknown command"
       }
       try c.writeText("$reply\n")
     }

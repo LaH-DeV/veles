@@ -78,11 +78,11 @@ public struct Sha512 {
     var i = 0
     if (self.buffer.len() > 0) {
       loop (self.buffer.len() < 128 && i < n) {
-        self.buffer.push(data.atOrPanic(i))
+        self.buffer.push(data.at(i))
         i = i + 1
       }
       if (self.buffer.len() < 128) return
-      compress512(self.state, self.buffer, 0, self.scratch)
+      compress512(self.state, self.buffer.toList(), 0, self.scratch)
       self.buffer.clear()
     }
     loop (i + 128 <= n) {
@@ -90,7 +90,7 @@ public struct Sha512 {
       i = i + 128
     }
     loop (i < n) {
-      self.buffer.push(data.atOrPanic(i))
+      self.buffer.push(data.at(i))
       i = i + 1
     }
   }
@@ -105,27 +105,28 @@ fun compress512(state: MutableList<u64>, block: List<u8>, at: i64, w: MutableLis
     i = i + 1
   }
   loop (i < 80) {
-    val a = w.atOrPanic(i - 15)
-    val b = w.atOrPanic(i - 2)
+    val a = schedule512(w, i - 15)
+    val b = schedule512(w, i - 2)
     val s0 = rotr64(a, 1) ^ rotr64(a, 8) ^ (a >> 7)
     val s1 = rotr64(b, 19) ^ rotr64(b, 61) ^ (b >> 6)
-    w.set(i, w.atOrPanic(i - 16) +% s0 +% w.atOrPanic(i - 7) +% s1)
+    w.set(i, schedule512(w, i - 16) +% s0 +% schedule512(w, i - 7) +% s1)
     i = i + 1
   }
 
-  var a = state.atOrPanic(0)
-  var b = state.atOrPanic(1)
-  var c = state.atOrPanic(2)
-  var d = state.atOrPanic(3)
-  var e = state.atOrPanic(4)
-  var f = state.atOrPanic(5)
-  var g = state.atOrPanic(6)
-  var h = state.atOrPanic(7)
+  val [a0, b0, c0, d0, e0, f0, g0, h0] = state else panic("sha512: the state is 8 words")
+  var a = a0
+  var b = b0
+  var c = c0
+  var d = d0
+  var e = e0
+  var f = f0
+  var g = g0
+  var h = h0
 
   loop (r in 0..<80) {
     val sum1 = rotr64(e, 14) ^ rotr64(e, 18) ^ rotr64(e, 41)
     val choose = (e & f) ^ ((~e) & g)
-    val t1 = h +% sum1 +% choose +% K512.atOrPanic(r) +% w.atOrPanic(r)
+    val t1 = h +% sum1 +% choose +% (K512.at(r) ?: panic("sha512: one constant per round")) +% schedule512(w, r)
     val sum0 = rotr64(a, 28) ^ rotr64(a, 34) ^ rotr64(a, 39)
     val major = (a & b) ^ (a & c) ^ (b & c)
     val t2 = sum0 +% major
@@ -139,14 +140,14 @@ fun compress512(state: MutableList<u64>, block: List<u8>, at: i64, w: MutableLis
     a = t1 +% t2
   }
 
-  state.set(0, state.atOrPanic(0) +% a)
-  state.set(1, state.atOrPanic(1) +% b)
-  state.set(2, state.atOrPanic(2) +% c)
-  state.set(3, state.atOrPanic(3) +% d)
-  state.set(4, state.atOrPanic(4) +% e)
-  state.set(5, state.atOrPanic(5) +% f)
-  state.set(6, state.atOrPanic(6) +% g)
-  state.set(7, state.atOrPanic(7) +% h)
+  state.set(0, a0 +% a)
+  state.set(1, b0 +% b)
+  state.set(2, c0 +% c)
+  state.set(3, d0 +% d)
+  state.set(4, e0 +% e)
+  state.set(5, f0 +% f)
+  state.set(6, g0 +% g)
+  state.set(7, h0 +% h)
 }
 
 /// The initial state of SHA-384: the fractional parts of the square roots
@@ -203,11 +204,11 @@ public struct Sha384 {
     var i = 0
     if (self.buffer.len() > 0) {
       loop (self.buffer.len() < 128 && i < n) {
-        self.buffer.push(data.atOrPanic(i))
+        self.buffer.push(data.at(i))
         i = i + 1
       }
       if (self.buffer.len() < 128) return
-      compress512(self.state, self.buffer, 0, self.scratch)
+      compress512(self.state, self.buffer.toList(), 0, self.scratch)
       self.buffer.clear()
     }
     loop (i + 128 <= n) {
@@ -215,8 +216,12 @@ public struct Sha384 {
       i = i + 128
     }
     loop (i < n) {
-      self.buffer.push(data.atOrPanic(i))
+      self.buffer.push(data.at(i))
       i = i + 1
     }
   }
 }
+
+/// Word `i` of the message schedule. The rounds read only 0..<80, and
+/// `w` has 80 words, so this cannot fail.
+fun schedule512(w: MutableList<u64>, i: i64): u64 = w.at(i) ?: panic("sha512: the rounds read the 80-word schedule inside 0..<80")

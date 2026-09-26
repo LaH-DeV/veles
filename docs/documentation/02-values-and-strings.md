@@ -246,7 +246,7 @@ fun main() {
   var b = 2
   (a, b) = (b, a)
   var xs = mut [10, 20, 30]
-  xs.swap(0, 2)                     // or: (*xs.refOrPanic(0), *xs.refOrPanic(2)) = (xs.atOrPanic(2), xs.atOrPanic(0))
+  xs.swap(0, 2)                     // exchanges two elements; panics if either index is out of range
   var fibA = 0
   var fibB = 1
   loop (_ in 0..<10) (fibA, fibB) = (fibB, fibA + fibB)

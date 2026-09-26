@@ -64,10 +64,11 @@ fun main() {
   io.println("keep ${sum(keep)} checksum $checksum")
   var total: i64 = 0
   loop ((_, v) in keepMap) {
-    total += v.atOrPanic(0) + v.atOrPanic(1)
+    val [a, b] = v else panic("gc: every entry holds two numbers")
+    total += a + b
   }
   io.println("map ${keepMap.len()} $total ${keepMap.get("k7") ?: []}")
-  io.println("${boxes.map(b => b.name())} ${counter()} ${words.len()} ${words.atOrPanic(1999)}")
+  io.println("${boxes.map(b => b.name())} ${counter()} ${words.len()} ${words.at(1999) ?: panic("gc: 2000 words were pushed")}")
 
   // many small short-lived objects between two collections: linear time.
   // The allocator once scanned every slot of every full span on each

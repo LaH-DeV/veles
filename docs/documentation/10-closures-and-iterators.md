@@ -222,7 +222,7 @@ fun main() {
   val groups = [((3, 7), ["a"]), ((1, 2), ["b", "c"])]
   io.println("${groups.map(((size, hash), files) => size * files.len() + hash)}")
   val byName = groups.sortedWith((((sa, _), _), ((sb, _), _)) => sa.compareTo(sb))
-  val ((size, _), _) = byName.atOrPanic(0)
+  val [((size, _), _), ..] = byName else return
   io.println("$size")
 }
 ```

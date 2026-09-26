@@ -112,8 +112,7 @@ public struct JsonEncoder {
   /// Before a value: the separator, the newline and indent when pretty,
   /// and the key that was waiting.
   private fun beforeValue() {
-    if (self.stack.isEmpty()) return
-    val top = self.stack.refOrPanic(self.stack.len() - 1)
+    val top = self.stack.ref(-1) ?: return
     if (top.members > 0) self.out.append(",")
     top.members += 1
     self.newline()
@@ -250,6 +249,10 @@ struct Frame {
   var phantom: bool = false
 }
 
+// What a panic on an empty container stack says: `more`, `nextKey` and
+// `hasNext` run only inside a container `open` pushed.
+const openContainer = "json: this runs only inside an open container"
+
 /// The `Decoder` that reads JSON text. A wrong type is a problem at the
 /// path, recorded and read past; malformed text is a `DecodeError`.
 public struct JsonDecoder {
@@ -268,13 +271,13 @@ public struct JsonDecoder {
     if (self.pos() < self.src.len()) throw self.malformed("text after the value")
   }
 
-  private fun pos(): i64 = self.cursor.atOrPanic(0)
+  private fun pos(): i64 = self.cursor.at(0) ?: panic("json: the cursor is a one-element cell")
   private fun setPos(p: i64) = self.cursor.set(0, p)
 
   private fun malformed(what: string): DecodeError =
     DecodeError(problems: self.recorded.list().concat([Problem(path: "", message: "malformed JSON at byte ${self.pos()}: $what")]))
 
-  private fun peekByte(): u8? = if (self.pos() < self.src.len()) self.src.atOrPanic(self.pos()) else null
+  private fun peekByte(): u8? = self.src.at(self.pos())
 
   private fun skipSpace() {
     loop {
@@ -333,7 +336,7 @@ public struct JsonDecoder {
   private fun numberIsFloat(): bool {
     var i = self.pos()
     loop (i < self.src.len()) {
-      val b = self.src.atOrPanic(i)
+      val b = self.src.at(i) ?: break
       if (b == '.' || b == 'e' || b == 'E') return true
       if (b != '-' && (b < '0' || b > '9')) return false
       i += 1
@@ -375,7 +378,7 @@ public struct JsonDecoder {
           var cp = try self.hex4()
           if (utf8.isSurrogate(cp)) {
             // a surrogate pair: the low half follows as another \u escape
-            if (self.peekByte() != '\\' || self.pos() + 1 >= self.src.len() || self.src.atOrPanic(self.pos() + 1) != 'u') {
+            if (self.peekByte() != '\\' || self.src.at(self.pos() + 1) != 'u') {
               throw self.malformed("a lone surrogate in a \\u escape")
             }
             self.setPos(self.pos() + 2)
@@ -409,7 +412,7 @@ public struct JsonDecoder {
   /// Between members of the open container: the separator, or its end.
   /// True when another member follows.
   private fun more(closer: u8): bool throws DecodeError {
-    val top = self.stack.refOrPanic(self.stack.len() - 1)
+    val top = self.stack.ref(-1) ?: panic(openContainer)
     if (top.phantom) return false
     self.skipSpace()
     val b = self.peekByte() ?: throw self.malformed("unterminated container")
@@ -466,7 +469,7 @@ public struct JsonDecoder {
 
     fun nextKey(): string? throws DecodeError {
       if (!(try self.more('}'))) return null
-      val top = self.stack.refOrPanic(self.stack.len() - 1)
+      val top = self.stack.ref(-1) ?: panic(openContainer)
       self.skipSpace()
       val k = try self.quoted()
       self.skipSpace()
@@ -484,7 +487,8 @@ public struct JsonDecoder {
     fun hasNext(): bool throws DecodeError {
       val has = try self.more(']')
       if (has) {
-        self.stack.refOrPanic(self.stack.len() - 1).index += 1
+        val top = self.stack.ref(-1) ?: panic(openContainer)
+        top.index += 1
       }
       has
     }

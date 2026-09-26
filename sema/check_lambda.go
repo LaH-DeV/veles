@@ -39,7 +39,7 @@ func (f *fnCtx) localVar(v *Var) *Var {
 	// Smart casts on immutable outer bindings still hold inside (D5).
 	if !outer.Mutable {
 		for k, t := range f.parent.narrow {
-			if k.v == outer {
+			if k.v == outer && !isBoundsPath(k.path) {
 				f.narrow[place{v: inner, path: k.path}] = t
 			}
 		}
@@ -94,6 +94,7 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 	}
 	fn := &Func{Name: name, Display: "lambda", IsClosure: true, Span: e.Pos, Sig: &types.Func{}}
 	l := f.c.newFnCtx(fn, f.module, f.file, f.env, f.subst)
+	l.bodyAST = e.Body
 	l.parent = f
 	l.scope = NewScope(f.scope)
 	l.unsafe = f.unsafe

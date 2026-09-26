@@ -199,7 +199,7 @@ func (c *Checker) applyReceiver(call *Call) {
 }
 
 // lostCopy reports a write to a copy, with the fix when the copy is an
-// element read (`xs.atOrPanic(i)` → `*xs.refOrPanic(i)`, D25).
+// element read (`xs.at(i)` → `xs.ref(i)`, D25).
 func (c *Checker) lostCopy(call *Call, what string) {
 	if call.RecvExpr != nil {
 		if repl, ok := elemReadCall(call.RecvExpr); ok {
@@ -208,7 +208,7 @@ func (c *Checker) lostCopy(call *Call, what string) {
 			return
 		}
 	}
-	c.errorf(call.RecvSpan, "%s; bind it with 'var' to change a copy, or reach the element with 'ref' / 'refOrPanic' or 'loop (&x in xs)' (D25)", what)
+	c.errorf(call.RecvSpan, "%s; bind it with 'var' to change a copy, or reach the element with 'ref' or 'loop (&x in xs)' (D25)", what)
 }
 
 // fieldUsePass computes, for every method, which of the receiver's fields

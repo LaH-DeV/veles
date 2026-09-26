@@ -118,7 +118,7 @@ fun mayFail(n: i64): i64 throws Boom {
 
 fun crashes(): i64 {
   val xs = [1]
-  xs.atOrPanic(5)
+  xs.at(5) ?: panic("crashes: index 5 is out of range")
 }
 
 fun main() {
@@ -142,7 +142,7 @@ Output:
 ```text
 Ok(value: 10)
 Err(error: Boom(n: 2))
-panic: index 5 out of bounds for list of length 1
+panic: crashes: index 5 is out of range
 ```
 
 ## Channels

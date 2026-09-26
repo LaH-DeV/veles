@@ -13,7 +13,7 @@ public fun balanced(s: string): bool {
     when (byte) {
       '(', '[', '{' => stack.push(byte)
       ')', ']', '}' => {
-        if (stack.pop() != opener.getOrPanic(byte)) return false
+        if (stack.pop() != opener.get(byte)) return false
       }
       else          => { }
     }
@@ -31,13 +31,13 @@ public fun slidingMax(xs: List<i64>, k: i64): List<i64> {
     // drop smaller elements from the back: they can never be a maximum again
     loop {
       val back = window.last() ?: break
-      if (xs.atOrPanic(back) > x) break
+      if ((xs.at(back) ?: panic("slidingMax: the window holds indexes of xs")) > x) break
       window.removeLast()
     }
     window.addLast(i)
     // drop the front once it has left the window
     if (window.first() == i - k) window.removeFirst()
-    if (i >= k - 1) out.push(xs.atOrPanic(window.first() ?: i))
+    if (i >= k - 1) out.push(xs.at(window.first() ?: i) ?: panic("slidingMax: the window holds indexes of xs"))
   }
   out.toList()
 }
@@ -113,13 +113,17 @@ fun heightOf(node: (*TreeNode)?): i64 =
 public struct MinHeap {
   items: MutableList<i64> = []
 
+  /// The element at heap position `i`; the sifts read only positions below
+  /// the size.
+  fun item(i: i64): i64 = self.items.at(i) ?: panic("MinHeap: a sift reads only positions below the size")
+
   /// Appends, then sifts the new element up while it beats its parent.
   fun push(x: i64) {
     self.items.push(x)
     var i = self.items.len() - 1
     loop (i > 0) {
       val parent = (i - 1) / 2
-      if (self.items.atOrPanic(parent) <= self.items.atOrPanic(i)) break
+      if (self.item(parent) <= self.item(i)) break
       self.items.swap(parent, i)
       i = parent
     }
@@ -137,8 +141,8 @@ public struct MinHeap {
       val left = 2 * i + 1
       val right = left + 1
       var smallest = i
-      if (left < n && self.items.atOrPanic(left) < self.items.atOrPanic(smallest)) smallest = left
-      if (right < n && self.items.atOrPanic(right) < self.items.atOrPanic(smallest)) smallest = right
+      if (left < n && self.item(left) < self.item(smallest)) smallest = left
+      if (right < n && self.item(right) < self.item(smallest)) smallest = right
       if (smallest == i) break
       self.items.swap(i, smallest)
       i = smallest
