@@ -86,7 +86,7 @@ func (g *gen) place(e sema.Expr) string {
 		if e.Op == "list.ref" {
 			list := g.expr(e.Args[0])
 			idx := g.expr(e.Args[1])
-			return g.listElemPtr(list, idx)
+			return g.listElemPtr(list, idx, g.where(e.Span))
 		}
 	}
 	// Not a place: materialise into a temporary.
@@ -159,7 +159,7 @@ func (g *gen) expr(e sema.Expr) string {
 			g.emit("%s = sub %s 0, %s", v, g.llType(e.Type()), x)
 			return v
 		}
-		return g.checkedArith("ssub", g.llType(e.Type()), "0", x, e.Span.String())
+		return g.checkedArith("ssub", g.llType(e.Type()), "0", x, g.where(e.Span))
 	case *sema.Cast:
 		return g.cast(e)
 	case *sema.ToString:
@@ -338,7 +338,7 @@ func (g *gen) expr(e sema.Expr) string {
 		g.emit("%s = insertvalue %s %s, i1 %s, 2", c, llt, b, incl)
 		return c
 	case *sema.Panic:
-		g.panicMsg(e.Message)
+		g.panicAt(e.Message, "")
 		return "undef"
 	case *constExpr:
 		return e.v
@@ -539,7 +539,7 @@ func (g *gen) binary(e *sema.Binary) string {
 			} else {
 				intr = "u" + intr
 			}
-			return g.checkedArith(intr, llt, l, r, e.Span.String())
+			return g.checkedArith(intr, llt, l, r, g.where(e.Span))
 		case sema.OpWrapAdd:
 			g.emit("%s = add %s %s, %s", v, llt, l, r)
 		case sema.OpWrapSub:
@@ -555,7 +555,7 @@ func (g *gen) binary(e *sema.Binary) string {
 		case sema.OpShl, sema.OpShr:
 			return g.shift(e, llt, l, r, signed)
 		case sema.OpDiv, sema.OpRem:
-			g.divCheck(llt, l, r, signed, e.Span.String())
+			g.divCheck(llt, l, r, signed, g.where(e.Span))
 			op := "udiv"
 			if e.Op == sema.OpRem {
 				op = "urem"
@@ -629,7 +629,7 @@ func (g *gen) checkedArith(intr, llt, l, r, where string) string {
 	bad, ok := g.newLabel("overflow"), g.newLabel("arith.ok")
 	g.emitTerm("br i1 %s, label %%%s, label %%%s", of, bad, ok)
 	g.placeLabel(bad)
-	g.panicMsg("integer overflow at " + where)
+	g.panicAt("integer overflow", where)
 	g.placeLabel(ok)
 	return v
 }
@@ -640,7 +640,7 @@ func (g *gen) divCheck(llt, l, r string, signed bool, where string) {
 	bad, ok := g.newLabel("divzero"), g.newLabel("div.ok")
 	g.emitTerm("br i1 %s, label %%%s, label %%%s", isZero, bad, ok)
 	g.placeLabel(bad)
-	g.panicMsg("division by zero at " + where)
+	g.panicAt("division by zero", where)
 	g.placeLabel(ok)
 	if signed && !g.prog.Release {
 		// MIN / -1 overflows
@@ -655,7 +655,7 @@ func (g *gen) divCheck(llt, l, r string, signed bool, where string) {
 		bad2, ok2 := g.newLabel("divof"), g.newLabel("div.ok")
 		g.emitTerm("br i1 %s, label %%%s, label %%%s", both, bad2, ok2)
 		g.placeLabel(bad2)
-		g.panicMsg("integer overflow at " + where)
+		g.panicAt("integer overflow", where)
 		g.placeLabel(ok2)
 	}
 }
@@ -823,7 +823,7 @@ func (g *gen) match(m *sema.Match) string {
 	}
 	g.placeLabel(next)
 	if m.Exhaustive {
-		g.panicMsg("unreachable: non-exhaustive match at " + m.Span.String())
+		g.panicAt("unreachable: non-exhaustive match", g.where(m.Span))
 	} else {
 		g.emitTerm("br label %%%s", endL)
 	}
@@ -1063,7 +1063,7 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		if signed {
 			s = 1
 		}
-		p, l := g.strPtrLen(g.stringConst(e.Span.String()))
+		p, l := g.strPtrLen(g.stringConst(g.where(e.Span)))
 		r := g.newTmp()
 		g.emit("%s = call i64 @veles_int_pow(i64 %s, i64 %s, i64 %d, i1 %d, ptr %s, i64 %s)", r, bx, by, bits, s, p, l)
 		if ty == "i64" {
@@ -1200,7 +1200,7 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		x, y := g.expr(e.Args[0]), g.expr(e.Args[1])
 		ty := g.llType(e.Type())
 		signed := types.IsSigned(e.Type())
-		g.divCheck(ty, x, y, signed, e.Span.String())
+		g.divCheck(ty, x, y, signed, g.where(e.Span))
 		if !signed {
 			v := g.newTmp()
 			g.emit("%s = urem %s %s, %s", v, ty, x, y)
@@ -1292,7 +1292,7 @@ func (g *gen) builtin(e *sema.Builtin) string {
 	case "list.get":
 		l := g.expr(e.Args[0])
 		i := g.expr(e.Args[1])
-		p := g.listElemPtr(l, i)
+		p := g.listElemPtr(l, i, g.where(e.Span))
 		v := g.newTmp()
 		g.emit("%s = load %s, ptr %s", v, g.llType(e.Type()), p)
 		return v
@@ -1372,10 +1372,7 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		g.emit("%s = call ptr @veles_string_chars(ptr %s, ptr %s, i64 %s)", v, g.arrayDescOf(types.TString), sp, sl)
 		return v
 	case "panic":
-		s := g.expr(e.Args[0])
-		sp, sl := g.strPtrLen(s)
-		g.emit("call void @veles_panic(ptr %s, i64 %s)", sp, sl)
-		g.emitTerm("unreachable")
+		g.panicValueAt(g.expr(e.Args[0]), g.where(e.Span))
 		return "zeroinitializer"
 	case "string.byteAt":
 		s := g.expr(e.Args[0])
@@ -1698,17 +1695,18 @@ func (g *gen) listLen(l string) string {
 
 // listElemPtr is the address of element i, bounds-checked inline: an index
 // outside 0..<len (a negative one included, compared unsigned) goes to the
-// runtime's veles_list_ref, which reports the panic. The address is
+// runtime's veles_list_index_panic with the location `where`. The address is
 // data + elem*i from the header, so no assumption about the element's
 // LLVM layout is made.
-func (g *gen) listElemPtr(l, i string) string {
+func (g *gen) listElemPtr(l, i, where string) string {
 	n := g.listLen(l)
 	ok := g.newTmp()
 	g.emit("%s = icmp ult i64 %s, %s", ok, i, n)
 	inL, outL := g.newLabel("idx.ok"), g.newLabel("idx.bad")
 	g.emitTerm("br i1 %s, label %%%s, label %%%s, !prof !{!\"branch_weights\", i32 2000, i32 1}", ok, inL, outL)
 	g.placeLabel(outL)
-	g.emit("call ptr @veles_list_ref(ptr %s, i64 %s)", l, i)
+	wp, wl := g.strPtrLen(g.stringConst(where))
+	g.emit("call void @veles_list_index_panic(ptr %s, i64 %s, ptr %s, i64 %s)", l, i, wp, wl)
 	g.emitTerm("unreachable")
 	g.placeLabel(inL)
 	data := g.newTmp()

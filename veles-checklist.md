@@ -521,6 +521,7 @@ pros/cons before anything is built; the answer becomes a spec entry.
 | 2026-09-26 | A `catch` block for panics | **Not added; D52 stands** (user: "we use gather"). Panics are the bug channel, not exceptions: they stay unrecoverable inside a task and are observed only where a task ends (`gather`). Presented: function-level `fun f() { … } catch { p => … }` (recommended), a catch after any block, or none. Should it be revisited, the panic is bound with the D61 handler form `catch { p => … }`, not `this`, since `this` would hide a method's receiver. |
 | 2026-09-26 | `self` becomes `this` (user) | **Decided, not built.** The receiver is spelled `this` across the language, std, docs and tooling. It needs a spec pass, a lexer/sema rename, a `veles check --fix` for the old spelling and a repo-wide migration. |
 | 2026-09-26 | A MutableList where a List is expected (found by D62) | **Moved when unescaped, otherwise `.toList()`** (user, recommended of four): the checker passed the same handle, contradicting D35 (a List could shrink during a call, or be shared with a task while written). Now a fresh local that never escaped converts at its last use with no copy; anything else is an error with a `.toList()`/`.toMap()`/`.toSet()` fix. Rejected: implicit copy, always explicit, keeping the view. Spec D63. Built 2026-09-26 (sema/move.go; `==` and compiler-written code compare without converting; std: 4 `.toList()` copies, the sha leftover buffer and crypto padding). |
+| 2026-09-26 | A Kotlin-style `x!!` to panic on null (user: "controversial, so I'm not sure") | **Not added; every panic shows its location instead** (user, recommended of four): `!!` would be D62's cheatcode at two characters, for every `T?`, with no reason recorded. What it offered was the line, so panics now print `at file:line:col` (relative to the package root) under the message — `panic(...)`, overflow, division, `pow`, non-exhaustive match, list index; kept through `scope`'s re-raise, `Panic.location` at `gather`, printed by `veles test`. Rejected: `!!` everywhere, `!!` with a warning + fix, `!!` only in tests. Spec D64. Built 2026-09-26 (runtime `veles_panic_at`, `veles_list_index_panic`; codegen `g.where`). Known gap: a std panic for caller misuse (`swap`) reports the std line. |
 
 ## 11. Known limitations to revisit
 
@@ -528,6 +529,10 @@ pros/cons before anything is built; the answer becomes a spec entry.
   `joinPath` by name; a user declaration of the same name in the module
   shadows them and produces a confusing error. Fix: resolve prelude names
   from synthesized code directly (a `ResolvedFunc` node).
+- A panic std raises for a caller's misuse (`xs.swap(0, 7)`, `chunked(0)`)
+  reports the std line (`at std/prelude/list.vs:408:27`), not the caller's
+  (D64). Fix if it matters: a `#[track_caller]`-style attribute that passes
+  the call site's location down.
 - `T?.decode(from)` written by hand parses as a safe call on `T`; use a
   generic (`fun decodeIt<T: Decodable>(...)`) or a field. Derived code uses a
   resolved-type receiver and is unaffected.

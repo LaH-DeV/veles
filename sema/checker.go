@@ -1998,6 +1998,9 @@ func (c *Checker) runRound() *Program {
 		c.index.Refs = c.index.Refs[:c.collectRefs] // keep signature refs recorded during collection
 	}
 	c.prog = &Program{Release: c.release}
+	if c.pkg != nil {
+		c.prog.Root = c.pkg.Root
+	}
 	c.prog.ResultType = func(ok, err types.Type) types.Type { return c.ResultType(ok, err) }
 	c.queue = nil
 	c.instances = map[string]*Func{}

@@ -1484,6 +1484,42 @@ Rejected: implicit copy (hidden O(n) cost); explicit `.toList()` always
 would be false). The analysis is conservative: a case it cannot prove is
 a `.toList()` away, never a wrong program.
 
+### D64 — No `!!`; every panic says where it happened (v0.39)
+
+Asked after D62: a postfix `x!!` (Kotlin) that panics when `x` is null,
+reporting the line. **Not added.** It would bring back D62's cheatcode at
+two characters, for every `T?` rather than only index reads —
+`s.toInt()!!` makes a panic the easy answer to bad input, which is a
+thrown error's job — and it records no reason, where
+`?: panic("two counters")` states the assumption that failed. It also
+reads badly beside prefix `!` (`x!!` against `!!flag`).
+
+What `!!` offered that was missing: the location. `panic` printed only
+its message. Now every panic the compiler emits carries the site's
+`file:line:col`, relative to the package root with `/` separators (std
+files keep `std/...`), so a binary does not embed the build machine's
+directories:
+
+```text
+panic: index 3 is past the end of the list
+  at main.vs:7:31
+```
+
+It covers `panic(...)`, overflow, division by zero, `pow`, a
+non-exhaustive match and a list index out of range (`xs.set(9, v)`); a
+panic raised inside the runtime itself (a closed channel, a deadlock)
+has no line. A task's panic keeps its location through `scope`'s
+re-raise, `gather` exposes it as `Panic.location` (`""` when there is
+none; a field with a default, so `Panic(message: m)` still builds), and
+`veles test` prints it under `FAILED: panic:`.
+
+Rejected: `!!` everywhere; `!!` with a warning and a `--fix` to
+`?: panic("TODO…")`; `!!` only in tests.
+
+*Known gap:* a panic written in std for a caller's misuse
+(`xs.swap(0, 7)`, `chunked(0)`) reports the std line, not the caller's —
+Rust's `#[track_caller]` is the model if it proves to matter.
+
 ---
 
 ## 4b. Settled minor decisions

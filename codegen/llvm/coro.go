@@ -64,6 +64,7 @@ declare i64 @veles_race_closed(ptr)
 declare void @veles_run(ptr)
 declare i64 @veles_task_panicked(ptr)
 declare ptr @veles_task_panic_msg(ptr, ptr)
+declare ptr @veles_task_panic_loc(ptr, ptr)
 declare void @veles_task_repanic(ptr)
 declare void @veles_task_start(ptr, ptr, ptr)
 `
@@ -768,16 +769,19 @@ func (g *gen) runRoot(main *sema.Func) string {
 
 // panicValue builds the prelude Panic struct for a panicked task.
 func (g *gen) panicValue(task string, pt *types.Struct) string {
-	lenSlot := g.alloca("i64")
-	p := g.newTmp()
-	g.emit("%s = call ptr @veles_task_panic_msg(ptr %s, ptr %s)", p, task, lenSlot)
-	l := g.newTmp()
-	g.emit("%s = load i64, ptr %s", l, lenSlot)
-	a := g.newTmp()
-	g.emit("%s = insertvalue %s undef, ptr %s, 0", a, strType, p)
-	s := g.newTmp()
-	g.emit("%s = insertvalue %s %s, i64 %s, 1", s, strType, a, l)
-	return g.buildStruct(pt, []string{s})
+	field := func(accessor string) string {
+		lenSlot := g.alloca("i64")
+		p := g.newTmp()
+		g.emit("%s = call ptr @%s(ptr %s, ptr %s)", p, accessor, task, lenSlot)
+		l := g.newTmp()
+		g.emit("%s = load i64, ptr %s", l, lenSlot)
+		a := g.newTmp()
+		g.emit("%s = insertvalue %s undef, ptr %s, 0", a, strType, p)
+		s := g.newTmp()
+		g.emit("%s = insertvalue %s %s, i64 %s, 1", s, strType, a, l)
+		return s
+	}
+	return g.buildStruct(pt, []string{field("veles_task_panic_msg"), field("veles_task_panic_loc")})
 }
 
 // convertResult widens Result<T, E1> to Result<T, E2> (E1 within E2).
@@ -853,9 +857,18 @@ func (g *gen) testRunner() {
 		g.emitTerm("br i1 %s, label %%%s, label %%%s", pb, panL, resL)
 		g.placeLabel(panL)
 		pt := g.prog.PanicType.(*types.Struct)
-		pmsg := g.newTmp()
-		g.emit("%s = extractvalue %s %s, 0", pmsg, g.llType(pt), g.panicValue(root, pt))
-		fail(g.concat(g.concat(g.stringConst("FAILED: panic: "), pmsg), g.stringConst("\n")))
+		pv := g.panicValue(root, pt)
+		pmsg, ploc := g.newTmp(), g.newTmp()
+		g.emit("%s = extractvalue %s %s, 0", pmsg, g.llType(pt), pv)
+		g.emit("%s = extractvalue %s %s, 1", ploc, g.llType(pt), pv)
+		// the location line is left out for a panic raised inside the runtime
+		_, locLen := g.strPtrLen(ploc)
+		hasLoc := g.newTmp()
+		g.emit("%s = icmp ne i64 %s, 0", hasLoc, locLen)
+		where := g.newTmp()
+		g.emit("%s = select i1 %s, %s %s, %s %s", where, hasLoc, strType, g.concat(g.stringConst("\n  at "), ploc), strType, g.stringConst(""))
+		report := g.concat(g.concat(g.stringConst("FAILED: panic: "), pmsg), where)
+		fail(g.concat(report, g.stringConst("\n")))
 		g.emitTerm("br label %%%s", doneL)
 		g.placeLabel(resL)
 		if rs == nil {

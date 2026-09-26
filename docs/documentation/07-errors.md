@@ -471,5 +471,16 @@ being unwrapped. (D61)
 - **The program is broken** (index out of range, arithmetic overflow, a
   case you believed impossible): a panic. Panics are not caught by
   `try`; they stop the current task ([chapter 12](12-concurrency.md)).
+  A panic prints its message and where it happened, relative to the
+  package root. Had the list pattern in the `Result` example above not
+  matched, the program would have stopped with:
+
+  ```text
+  panic: three calls, three results
+    at main.vs:11:41
+  ```
+
+  There is no shorthand like Kotlin's `!!`: a read that cannot fail says
+  why with `?: panic("…")`, and the location comes for free (D64).
 
 Next: [Traits and generics](08-traits-and-generics.md).

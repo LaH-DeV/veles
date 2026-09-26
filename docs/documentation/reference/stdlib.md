@@ -84,11 +84,16 @@ duplicate: `MutableList<T>.repeat` and `fill` require it.
 
 ```veles
 // fragment
-public struct Panic { public message: string }    // a task's panic, as seen by `gather`
+public struct Panic {                             // a task's panic, as seen by `gather`
+  public message: string
+  public location: string = ""                   // "main.vs:7:31"; empty inside the runtime
+}
 ```
 
 `panic(message)` raises one deliberately (D20). It never returns, so it
-can stand in for a value: `val x = xs.at(i) ?: panic("index $i")`.
+can stand in for a value: `val x = xs.at(i) ?: panic("index $i")`. A panic
+prints its message and, on the next line, `at file:line:col` relative to the
+package root (D64).
 
 ### Recursion depth
 

@@ -24,6 +24,8 @@ type Program struct {
 	// (D4); nil when main does not throw.
 	MainReport *Func
 	Release    bool
+	// Root is the package root: panic locations are printed relative to it (D64).
+	Root string
 	// PanicType is the prelude Panic struct (D52).
 	PanicType types.Type
 	// Tests are the @test functions; in test mode the entry point runs them.

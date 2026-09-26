@@ -62,16 +62,28 @@ void *veles_gc_alloc(veles_desc *desc, int64_t size);
 
 /* ---- panics (D20: unwind to the task scope; bootstrap: exit) ------------ */
 
-int64_t veles_task_panic(const char *msg, int64_t len);
+int64_t veles_task_panic(const char *msg, int64_t len, const char *loc, int64_t loc_len);
 
-void veles_panic(const char *msg, int64_t len) {
-    if (veles_task_panic(msg, len)) return;
+/* veles_panic_at fails with a message and the source location the compiler
+ * wrote at the panicking site (D64: `file:line:col`, relative to the package
+ * root; empty for a panic raised inside the runtime itself). */
+void veles_panic_at(const char *msg, int64_t len, const char *loc, int64_t loc_len) {
+    if (veles_task_panic(msg, len, loc, loc_len)) return;
     fflush(stdout);
     fputs("panic: ", stderr);
     fwrite(msg, 1, (size_t)len, stderr);
     fputc('\n', stderr);
+    if (loc_len > 0) {
+        fputs("  at ", stderr);
+        fwrite(loc, 1, (size_t)loc_len, stderr);
+        fputc('\n', stderr);
+    }
     fflush(stderr);
     exit(101);
+}
+
+void veles_panic(const char *msg, int64_t len) {
+    veles_panic_at(msg, len, NULL, 0);
 }
 
 void veles_report_error(const char *msg, int64_t len) {
@@ -427,6 +439,14 @@ void *veles_list_ref(veles_list *l, int64_t i) {
     return l->data + l->elem * i;
 }
 
+/* veles_list_index_panic is the out-of-range branch of an inlined element
+ * access: the same message as veles_list_ref, with the site's location. */
+void veles_list_index_panic(veles_list *l, int64_t i, const char *loc, int64_t loc_len) {
+    char msg[80];
+    int n = snprintf(msg, sizeof msg, "index %" PRId64 " out of bounds for list of length %" PRId64, i, l->len);
+    veles_panic_at(msg, n, loc, loc_len);
+}
+
 bool veles_list_pop(veles_list *l, void *out) {
     if (l->len == 0) return false;
     l->len--;
@@ -685,9 +705,9 @@ veles_list *veles_map_entries(veles_map *m, veles_desc *tupleDesc, int64_t valOf
 int64_t veles_int_pow(int64_t base, int64_t exp, int64_t bits, bool is_signed, const char *where, int64_t where_len) {
     char msg[512];
     if (exp < 0) {
-        int n = snprintf(msg, sizeof msg, "negative exponent %" PRId64 " in integer pow at %.*s", exp, (int)where_len, where);
+        int n = snprintf(msg, sizeof msg, "negative exponent %" PRId64 " in integer pow", exp);
         if (n >= (int)sizeof msg) n = (int)sizeof msg - 1;
-        veles_panic(msg, n);
+        veles_panic_at(msg, n, where, where_len);
     }
     uint64_t lo = 0, hi = 0;
     if (is_signed) {
@@ -714,9 +734,9 @@ int64_t veles_int_pow(int64_t base, int64_t exp, int64_t bits, bool is_signed, c
         }
     }
     if (overflow) {
-        int n = snprintf(msg, sizeof msg, "integer overflow in pow at %.*s", (int)where_len, where);
+        int n = snprintf(msg, sizeof msg, "integer overflow in pow");
         if (n >= (int)sizeof msg) n = (int)sizeof msg - 1;
-        veles_panic(msg, n);
+        veles_panic_at(msg, n, where, where_len);
     }
     return result;
 }

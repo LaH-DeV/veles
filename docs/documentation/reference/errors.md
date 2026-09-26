@@ -215,6 +215,7 @@ A runtime panic, not a compile error: `xs.set(i, v)` or `xs.swap(i, j)`
 with a bad index. A read is `xs.at(i)`, a `T?` — or a `T` where the
 compiler can see the index is in range (D62); where it cannot, say why
 the read cannot fail: `xs.at(i) ?: panic("…")`.
+The line under the message, `at main.vs:7:31`, is where it happened (D64).
 Panics end the current task; a `gather` reports them as `Err(Panic)`,
 a `scope` re-raises them (D52).
 

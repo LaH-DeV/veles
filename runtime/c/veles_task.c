@@ -31,6 +31,7 @@ void *veles_alloc_words(int64_t size);
 void *veles_gc_alloc(veles_desc *desc, int64_t size);
 void veles_gc_root(void *addr, veles_desc *desc);
 void veles_panic(const char *msg, int64_t len);
+void veles_panic_at(const char *msg, int64_t len, const char *loc, int64_t loc_len);
 int64_t veles_desc_size(veles_desc *d);
 
 enum { T_RUNNABLE, T_BLOCKED, T_DONE, T_CANCELLED };
@@ -56,6 +57,8 @@ typedef struct veles_task {
     int64_t panicked;
     const char *panic_msg;
     int64_t panic_len;
+    const char *panic_loc;  /* D64: where it panicked; empty inside the runtime */
+    int64_t panic_loc_len;
     int64_t io_fd;          /* socket the task waits on (std/net); io_waiting set */
     int64_t io_write;       /* waiting to write rather than read */
     int64_t io_waiting;
@@ -839,7 +842,7 @@ void veles_cleanup_pop(void) {
  * children), then the task fails with the message and control returns to
  * the executor (D20: a panic unwinds to the enclosing task scope). A
  * panic inside a cleanup continues the unwinding with the first message. */
-int64_t veles_task_panic(const char *msg, int64_t len) {
+int64_t veles_task_panic(const char *msg, int64_t len, const char *loc, int64_t loc_len) {
     if (!in_resume || !current) return 0;
     veles_task *t = current;
     if (!t->unwinding) {
@@ -848,6 +851,10 @@ int64_t veles_task_panic(const char *msg, int64_t len) {
         memcpy(copy, msg, (size_t)len);
         t->panic_msg = copy;
         t->panic_len = len;
+        char *where = veles_alloc(loc_len + 1);
+        if (loc_len > 0) memcpy(where, loc, (size_t)loc_len);
+        t->panic_loc = where;
+        t->panic_loc_len = loc_len;
     }
     while (t->cleanups) {
         veles_cleanup *c = t->cleanups;
@@ -873,6 +880,11 @@ int64_t veles_task_panicked(veles_task *t) {
 const char *veles_task_panic_msg(veles_task *t, int64_t *len) {
     *len = t->panic_len;
     return t->panic_msg;
+}
+
+const char *veles_task_panic_loc(veles_task *t, int64_t *len) {
+    *len = t->panic_loc_len;
+    return t->panic_loc ? t->panic_loc : "";
 }
 
 static void resume(veles_task *t) {
@@ -926,7 +938,7 @@ int64_t veles_race_closed(veles_race *r) {
 
 /* re-raise a child's panic in the current context (scope re-raises, D52) */
 void veles_task_repanic(veles_task *t) {
-    veles_panic(t->panic_msg, t->panic_len);
+    veles_panic_at(t->panic_msg, t->panic_len, t->panic_loc, t->panic_loc_len);
 }
 
 /* veles_task_start runs a coroutine ramp through an entry thunk inside the

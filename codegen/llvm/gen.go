@@ -4,6 +4,7 @@ package llvm
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -147,6 +148,7 @@ const runtimeDecls = `declare void @veles_rt_init(i32, ptr)
 declare void @veles_print(ptr, i64)
 declare ptr @veles_alloc(i64)
 declare void @veles_panic(ptr, i64)
+declare void @veles_panic_at(ptr, i64, ptr, i64)
 declare void @veles_cleanup_push(ptr, ptr)
 declare void @veles_cleanup_pop()
 declare void @veles_report_error(ptr, i64)
@@ -172,6 +174,7 @@ declare ptr @veles_list_new(ptr, i64)
 declare i64 @veles_list_len(ptr)
 declare void @veles_list_push(ptr, ptr)
 declare ptr @veles_list_ref(ptr, i64)
+declare void @veles_list_index_panic(ptr, i64, ptr, i64)
 declare i1 @veles_list_pop(ptr, ptr)
 declare ptr @veles_list_copy(ptr)
 declare ptr @veles_list_slice(ptr, i64, i64)
@@ -379,12 +382,35 @@ func (g *gen) strPtrLen(v string) (string, string) {
 	return p, l
 }
 
-// panic emits a call to veles_panic with a message and terminates.
-func (g *gen) panicMsg(msg string) {
-	c := g.stringConst(msg)
-	p, l := g.strPtrLen(c)
-	g.emit("call void @veles_panic(ptr %s, i64 %s)", p, l)
+// panicAt emits a panic with a constant message and the location `where`
+// (from g.where; empty when there is none), and terminates.
+func (g *gen) panicAt(msg, where string) {
+	g.panicValueAt(g.stringConst(msg), where)
+}
+
+// panicValueAt emits a panic whose message is the string value msg.
+func (g *gen) panicValueAt(msg, where string) {
+	p, l := g.strPtrLen(msg)
+	wp, wl := g.strPtrLen(g.stringConst(where))
+	g.emit("call void @veles_panic_at(ptr %s, i64 %s, ptr %s, i64 %s)", p, l, wp, wl)
 	g.emitTerm("unreachable")
+}
+
+// where is the `file:line:col` a panic at span reports (D64): relative to
+// the package root with forward slashes, so a binary does not carry the
+// build machine's directories; std files keep their `std/...` path.
+func (g *gen) where(span source.Span) string {
+	if span.File == nil {
+		return ""
+	}
+	path := span.File.Path
+	if !span.File.Embedded && g.prog.Root != "" && filepath.IsAbs(path) {
+		if rel, err := filepath.Rel(g.prog.Root, path); err == nil && !strings.HasPrefix(rel, "..") {
+			path = rel
+		}
+	}
+	line, col := span.File.Position(span.Start)
+	return fmt.Sprintf("%s:%d:%d", filepath.ToSlash(path), line, col)
 }
 
 // ---------------------------------------------------------------------------
