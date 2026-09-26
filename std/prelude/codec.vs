@@ -6,7 +6,7 @@
 // format-agnostic: a format is one implementation of `Encoder` and
 // `Decoder` (`std/json` is the first), and the same derived code drives
 // every format. The traits are a flat event stream — begin/key/end and the
-// primitives — and a value encodes *itself* (`self.id.encode(to)`), so
+// primitives — and a value encodes *itself* (`this.id.encode(to)`), so
 // nothing here is generic and nothing is boxed on the way out.
 
 // ---------------------------------------------------------------------------
@@ -21,14 +21,14 @@ public struct Problem {
   /// The path as an RFC 6901 JSON pointer: `/user/address/2/zip`.
   public fun pointer(): string {
     val out = stringBuilder()
-    loop (part in splitPath(self.path)) {
+    loop (part in splitPath(this.path)) {
       out.append("/")
       out.append(part.replace("~", "~0").replace("/", "~1"))
     }
     out.toString()
   }
 
-  public fun toString(): string = if (self.path.isEmpty()) self.message else "${self.path}: ${self.message}"
+  public fun toString(): string = if (this.path.isEmpty()) this.message else "${this.path}: ${this.message}"
 }
 
 // What a panic on an empty frame stack says: derived bodies call `key`,
@@ -90,7 +90,7 @@ fun splitPath(path: string): List<string> {
 public error EncodeError {
   public message: string
   public path:    string = ""
-  fun message(): string = if (self.path.isEmpty()) self.message else "${self.path}: ${self.message}"
+  fun message(): string = if (this.path.isEmpty()) this.message else "${this.path}: ${this.message}"
 }
 
 /// Decoding failed. Every problem found is listed — a wrong type here, a
@@ -98,7 +98,7 @@ public error EncodeError {
 /// a malformed document is one problem, since nothing follows it.
 public error DecodeError {
   public problems: List<Problem>
-  fun message(): string = self.problems.map(p => p.toString()).join("\n")
+  fun message(): string = this.problems.map(p => p.toString()).join("\n")
 }
 
 // ---------------------------------------------------------------------------
@@ -254,7 +254,7 @@ public trait Decoder {
   /// Records a problem at `path`.
   fun problemAt(path: string, message: string)
   /// Records a problem at the current path.
-  fun problem(message: string) = self.problemAt(self.path(), message)
+  fun problem(message: string) = this.problemAt(this.path(), message)
   /// Every problem recorded so far.
   fun problems(): List<Problem>
 }
@@ -306,11 +306,11 @@ public struct Problems {
   public static fun capped(cap: i64): Problems = Problems(cap)
 
   public fun record(path: string, message: string) {
-    if (self.items.len() < self.cap) self.items.push(Problem(path, message))
+    if (this.items.len() < this.cap) this.items.push(Problem(path, message))
   }
 
-  public fun isEmpty(): bool = self.items.isEmpty()
-  public fun list(): List<Problem> = self.items.toList()
+  public fun isEmpty(): bool = this.items.isEmpty()
+  public fun list(): List<Problem> = this.items.toList()
 }
 
 /// The decoded value, or the problems found: what `json.decode` and every
@@ -325,46 +325,46 @@ public fun finish<T>(from: Decoder, value: T): T throws DecodeError {
 // the built-in types
 
 implement Encodable for i8 {
-  fun encode(to: Encoder) throws EncodeError = try to.writeI64(self as i64)
+  fun encode(to: Encoder) throws EncodeError = try to.writeI64(this as i64)
 }
 implement Encodable for i16 {
-  fun encode(to: Encoder) throws EncodeError = try to.writeI64(self as i64)
+  fun encode(to: Encoder) throws EncodeError = try to.writeI64(this as i64)
 }
 implement Encodable for i32 {
-  fun encode(to: Encoder) throws EncodeError = try to.writeI64(self as i64)
+  fun encode(to: Encoder) throws EncodeError = try to.writeI64(this as i64)
 }
 implement Encodable for i64 {
-  fun encode(to: Encoder) throws EncodeError = try to.writeI64(self)
+  fun encode(to: Encoder) throws EncodeError = try to.writeI64(this)
 }
 implement Encodable for isize {
-  fun encode(to: Encoder) throws EncodeError = try to.writeI64(self as i64)
+  fun encode(to: Encoder) throws EncodeError = try to.writeI64(this as i64)
 }
 implement Encodable for u8 {
-  fun encode(to: Encoder) throws EncodeError = try to.writeU64(self as u64)
+  fun encode(to: Encoder) throws EncodeError = try to.writeU64(this as u64)
 }
 implement Encodable for u16 {
-  fun encode(to: Encoder) throws EncodeError = try to.writeU64(self as u64)
+  fun encode(to: Encoder) throws EncodeError = try to.writeU64(this as u64)
 }
 implement Encodable for u32 {
-  fun encode(to: Encoder) throws EncodeError = try to.writeU64(self as u64)
+  fun encode(to: Encoder) throws EncodeError = try to.writeU64(this as u64)
 }
 implement Encodable for u64 {
-  fun encode(to: Encoder) throws EncodeError = try to.writeU64(self)
+  fun encode(to: Encoder) throws EncodeError = try to.writeU64(this)
 }
 implement Encodable for usize {
-  fun encode(to: Encoder) throws EncodeError = try to.writeU64(self as u64)
+  fun encode(to: Encoder) throws EncodeError = try to.writeU64(this as u64)
 }
 implement Encodable for f32 {
-  fun encode(to: Encoder) throws EncodeError = try to.writeF64(self as f64)
+  fun encode(to: Encoder) throws EncodeError = try to.writeF64(this as f64)
 }
 implement Encodable for f64 {
-  fun encode(to: Encoder) throws EncodeError = try to.writeF64(self)
+  fun encode(to: Encoder) throws EncodeError = try to.writeF64(this)
 }
 implement Encodable for bool {
-  fun encode(to: Encoder) throws EncodeError = try to.writeBool(self)
+  fun encode(to: Encoder) throws EncodeError = try to.writeBool(this)
 }
 implement Encodable for string {
-  fun encode(to: Encoder) throws EncodeError = try to.writeString(self)
+  fun encode(to: Encoder) throws EncodeError = try to.writeString(this)
 }
 
 implement Decodable for i8 {
@@ -431,7 +431,7 @@ fun narrowU64(from: Decoder, max: u64): u64 throws DecodeError {
 
 implement<T: Encodable> Encodable for T? {
   fun encode(to: Encoder) throws EncodeError {
-    if (self == null) try to.writeNull() else try self.encode(to)
+    if (this == null) try to.writeNull() else try this.encode(to)
   }
 }
 implement<T: Decodable> Decodable for T? {
@@ -447,12 +447,12 @@ implement<T: Decodable> Decodable for T? {
 implement<T: Encodable> Encodable for List<T> {
   fun encode(to: Encoder) throws EncodeError {
     try to.beginList()
-    loop (x in self) try x.encode(to)
+    loop (x in this) try x.encode(to)
     try to.endList()
   }
 }
 implement<T: Encodable> Encodable for MutableList<T> {
-  fun encode(to: Encoder) throws EncodeError = try self.toList().encode(to)
+  fun encode(to: Encoder) throws EncodeError = try this.toList().encode(to)
 }
 implement<T: Decodable> Decodable for List<T> {
   static fun decode(from: Decoder): List<T> throws DecodeError = (try MutableList<T>.decode(from)).toList()
@@ -470,7 +470,7 @@ implement<T: Decodable> Decodable for MutableList<T> {
 implement<V: Encodable> Encodable for Map<string, V> {
   fun encode(to: Encoder) throws EncodeError {
     try to.beginObject()
-    loop ((k, v) in self.entries()) {
+    loop ((k, v) in this.entries()) {
       try to.key(k)
       try v.encode(to)
     }
@@ -478,7 +478,7 @@ implement<V: Encodable> Encodable for Map<string, V> {
   }
 }
 implement<V: Encodable> Encodable for MutableMap<string, V> {
-  fun encode(to: Encoder) throws EncodeError = try self.toMap().encode(to)
+  fun encode(to: Encoder) throws EncodeError = try this.toMap().encode(to)
 }
 implement<V: Decodable> Decodable for Map<string, V> {
   static fun decode(from: Decoder): Map<string, V> throws DecodeError = (try MutableMap<string, V>.decode(from)).toMap()
@@ -526,51 +526,51 @@ public struct VObject : Value {
 
 extend Value {
   /// The member `key` of an object, or `null`.
-  public fun get(key: string): Value? = when (self) {
-    is VObject => self.fields.get(key)
+  public fun get(key: string): Value? = when (this) {
+    is VObject => this.fields.get(key)
     else       => null
   }
 
   /// Element `i` of a list, or `null`.
-  public fun at(i: i64): Value? = when (self) {
-    is VList => self.items.at(i)
+  public fun at(i: i64): Value? = when (this) {
+    is VList => this.items.at(i)
     else     => null
   }
 
-  public fun asString(): string? = when (self) {
-    is VString => self.value
+  public fun asString(): string? = when (this) {
+    is VString => this.value
     else       => null
   }
 
-  public fun asI64(): i64? = when (self) {
-    is VInt   => self.value
-    is VFloat => if (self.value == (self.value as i64) as f64) self.value as i64 else null
+  public fun asI64(): i64? = when (this) {
+    is VInt   => this.value
+    is VFloat => if (this.value == (this.value as i64) as f64) this.value as i64 else null
     else      => null
   }
 
-  public fun asF64(): f64? = when (self) {
-    is VInt   => self.value as f64
-    is VFloat => self.value
+  public fun asF64(): f64? = when (this) {
+    is VInt   => this.value as f64
+    is VFloat => this.value
     else      => null
   }
 
-  public fun asBool(): bool? = when (self) {
-    is VBool => self.value
+  public fun asBool(): bool? = when (this) {
+    is VBool => this.value
     else     => null
   }
 
-  public fun isNull(): bool = self is VNull
+  public fun isNull(): bool = this is VNull
 }
 
 implement Encodable for Value {
-  fun encode(to: Encoder) throws EncodeError = when (self) {
+  fun encode(to: Encoder) throws EncodeError = when (this) {
     is VNull   => try to.writeNull()
-    is VBool   => try to.writeBool(self.value)
-    is VInt    => try to.writeI64(self.value)
-    is VFloat  => try to.writeF64(self.value)
-    is VString => try to.writeString(self.value)
-    is VList   => try self.items.encode(to)
-    is VObject => try self.fields.encode(to)
+    is VBool   => try to.writeBool(this.value)
+    is VInt    => try to.writeI64(this.value)
+    is VFloat  => try to.writeF64(this.value)
+    is VString => try to.writeString(this.value)
+    is VList   => try this.items.encode(to)
+    is VObject => try this.fields.encode(to)
   }
 }
 
@@ -622,27 +622,27 @@ public struct ValueDecoder {
 
   /// The value about to be read.
   private fun current(): Value {
-    val top = self.stack.ref(-1) ?: return self.root
+    val top = this.stack.ref(-1) ?: return this.root
     if (top.isList) return top.values.at(top.next) ?: VNull()
     top.pending ?: VNull()
   }
 
   /// A read consumed the current value.
   private fun advance() {
-    val top = self.stack.ref(-1) ?: return
+    val top = this.stack.ref(-1) ?: return
     if (top.isList) top.next += 1 else top.pending = null
   }
 
   private fun here(): string {
-    val top = self.stack.ref(-1) ?: return ""
+    val top = this.stack.ref(-1) ?: return ""
     if (top.isList) return indexPath(top.path, top.next)
     childPath(top.path, top.keys.at(top.next - 1) ?: "")
   }
 
   private fun wrong(expected: string): Value {
-    val v = self.current()
-    self.recorded.record(self.here(), "expected $expected, found ${kindName(v)}")
-    self.advance()
+    val v = this.current()
+    this.recorded.record(this.here(), "expected $expected, found ${kindName(v)}")
+    this.advance()
     v
   }
 
@@ -651,17 +651,17 @@ public struct ValueDecoder {
   /// else produced (§2). Unlike a wrong type, this is not a problem to
   /// record and carry on from: the frames are already on the stack.
   private fun checkDepth() throws DecodeError {
-    if (self.stack.len() < self.maxDepth) return
-    throw DecodeError(problems: self.recorded.list().concat([Problem(path: self.here(), message: tooDeepMessage(self.maxDepth))]))
+    if (this.stack.len() < this.maxDepth) return
+    throw DecodeError(problems: this.recorded.list().concat([Problem(path: this.here(), message: tooDeepMessage(this.maxDepth))]))
   }
 
   implement Decoder {
-    fun format(): string = self.name
-    override fun enums(): EnumStyle = self.style
-    override fun durations(): DurationStyle = self.durationStyle
-    override fun keys(): KeyStyle = self.keyStyle
+    fun format(): string = this.name
+    override fun enums(): EnumStyle = this.style
+    override fun durations(): DurationStyle = this.durationStyle
+    override fun keys(): KeyStyle = this.keyStyle
 
-    fun peek(): Kind throws DecodeError = when (self.current()) {
+    fun peek(): Kind throws DecodeError = when (this.current()) {
       is VNull   => Kind.Null
       is VBool   => Kind.Bool
       is VInt    => Kind.Int
@@ -672,21 +672,21 @@ public struct ValueDecoder {
     }
 
     fun beginObject() throws DecodeError {
-      try self.checkDepth()
-      val v = self.current()
+      try this.checkDepth()
+      val v = this.current()
       when (v) {
         is VObject => {
-          self.stack.push(Frame(path: self.here(), keys: v.fields.keys(), values: v.fields.values(), isList: false))
+          this.stack.push(Frame(path: this.here(), keys: v.fields.keys(), values: v.fields.values(), isList: false))
         }
         else       => {
-          val _ = self.wrong("an object")
-          self.stack.push(Frame(path: self.here(), isList: false))
+          val _ = this.wrong("an object")
+          this.stack.push(Frame(path: this.here(), isList: false))
         }
       }
     }
 
     fun nextKey(): string? throws DecodeError {
-      val top = self.stack.ref(-1) ?: panic(openFrame)
+      val top = this.stack.ref(-1) ?: panic(openFrame)
       val k = top.keys.at(top.next) ?: return null
       top.pending = top.values.at(top.next)
       top.next += 1
@@ -694,100 +694,100 @@ public struct ValueDecoder {
     }
 
     fun endObject() throws DecodeError {
-      val _ = self.stack.removeAt(self.stack.lastIndex())
-      self.advance()
+      val _ = this.stack.removeAt(this.stack.lastIndex())
+      this.advance()
     }
 
     fun beginList() throws DecodeError {
-      try self.checkDepth()
-      val v = self.current()
+      try this.checkDepth()
+      val v = this.current()
       when (v) {
-        is VList => self.stack.push(Frame(path: self.here(), values: v.items, isList: true))
+        is VList => this.stack.push(Frame(path: this.here(), values: v.items, isList: true))
         else     => {
-          val _ = self.wrong("a list")
-          self.stack.push(Frame(path: self.here(), isList: true))
+          val _ = this.wrong("a list")
+          this.stack.push(Frame(path: this.here(), isList: true))
         }
       }
     }
 
     fun hasNext(): bool throws DecodeError {
-      val top = self.stack.ref(-1) ?: panic(openFrame)
+      val top = this.stack.ref(-1) ?: panic(openFrame)
       top.next < top.values.len()
     }
 
     fun endList() throws DecodeError {
-      val _ = self.stack.removeAt(self.stack.lastIndex())
-      self.advance()
+      val _ = this.stack.removeAt(this.stack.lastIndex())
+      this.advance()
     }
 
     fun readI64(): i64 throws DecodeError {
-      val v = self.current()
+      val v = this.current()
       val n = v.asI64()
       if (n == null) {
-        val _ = self.wrong("an integer")
+        val _ = this.wrong("an integer")
         return 0
       }
-      self.advance()
+      this.advance()
       n
     }
 
     fun readU64(): u64 throws DecodeError {
-      val n = try self.readI64()
+      val n = try this.readI64()
       if (n < 0) {
-        self.recorded.record(self.here(), "$n is negative")
+        this.recorded.record(this.here(), "$n is negative")
         return 0
       }
       n as u64
     }
 
     fun readF64(): f64 throws DecodeError {
-      val v = self.current()
+      val v = this.current()
       val n = v.asF64()
       if (n == null) {
-        val _ = self.wrong("a number")
+        val _ = this.wrong("a number")
         return 0.0
       }
-      self.advance()
+      this.advance()
       n
     }
 
     fun readBool(): bool throws DecodeError {
-      val v = self.current()
+      val v = this.current()
       val b = v.asBool()
       if (b == null) {
-        val _ = self.wrong("a boolean")
+        val _ = this.wrong("a boolean")
         return false
       }
-      self.advance()
+      this.advance()
       b
     }
 
     fun readString(): string throws DecodeError {
-      val v = self.current()
+      val v = this.current()
       val s = v.asString()
       if (s == null) {
-        val _ = self.wrong("a string")
+        val _ = this.wrong("a string")
         return ""
       }
-      self.advance()
+      this.advance()
       s
     }
 
     fun readNull() throws DecodeError {
-      if (!self.current().isNull()) {
-        val _ = self.wrong("null")
+      if (!this.current().isNull()) {
+        val _ = this.wrong("null")
         return
       }
-      self.advance()
+      this.advance()
     }
 
-    fun skip() throws DecodeError = self.advance()
+    fun skip() throws DecodeError = this.advance()
 
-    fun path(): string = self.here()
+    fun path(): string = this.here()
 
-    fun problemAt(path: string, message: string) = self.recorded.record(path, message)
+    fun problemAt(path: string, message: string) = this.recorded.record(path, message)
 
-    fun problems(): List<Problem> = self.recorded.list()
+    fun problems(): List<Problem> = this.recorded.list()
   }
 }
 
@@ -835,18 +835,18 @@ public struct ValueEncoder {
     ValueEncoder(state: &ValueEncoderState(), name: format, style: enums, keyStyle: keys, durationStyle: durations, maxDepth)
 
   /// The value built, once one whole value has been written.
-  public fun value(): Value = self.state.result ?: VNull()
+  public fun value(): Value = this.state.result ?: VNull()
 
   /// The same bound the text encoders keep (§2): a value nested deeper than
   /// this is refused rather than walked, whichever direction it is going.
   private fun checkDepth() throws EncodeError {
-    if (self.stack.len() >= self.maxDepth) throw EncodeError(message: tooDeepMessage(self.maxDepth))
+    if (this.stack.len() >= this.maxDepth) throw EncodeError(message: tooDeepMessage(this.maxDepth))
   }
 
   private fun put(v: Value) {
-    val top = self.stack.ref(-1)
+    val top = this.stack.ref(-1)
     if (top == null) {
-      self.state.result = v
+      this.state.result = v
       return
     }
     if (!top.isList) top.keys.push(top.key)
@@ -854,47 +854,47 @@ public struct ValueEncoder {
   }
 
   implement Encoder {
-    fun format(): string = self.name
-    override fun enums(): EnumStyle = self.style
-    override fun durations(): DurationStyle = self.durationStyle
-    override fun keys(): KeyStyle = self.keyStyle
+    fun format(): string = this.name
+    override fun enums(): EnumStyle = this.style
+    override fun durations(): DurationStyle = this.durationStyle
+    override fun keys(): KeyStyle = this.keyStyle
 
     fun beginObject() throws EncodeError {
-      try self.checkDepth()
-      self.stack.push(Building(isList: false))
+      try this.checkDepth()
+      this.stack.push(Building(isList: false))
     }
 
     fun key(name: string) throws EncodeError {
-      val top = self.stack.ref(-1) ?: panic(openFrame)
+      val top = this.stack.ref(-1) ?: panic(openFrame)
       top.key = name
     }
 
     fun endObject() throws EncodeError {
-      val top = self.stack.removeAt(self.stack.lastIndex())
+      val top = this.stack.removeAt(this.stack.lastIndex())
       val fields: MutableMap<string, Value> = [:]
       var i: i64 = 0
       loop (k in top.keys) {
         fields.set(k, top.values.at(i) ?: panic("codec: an object's keys and values are pushed in pairs"))
         i += 1
       }
-      self.put(VObject(fields: fields.toMap()))
+      this.put(VObject(fields: fields.toMap()))
     }
 
     fun beginList() throws EncodeError {
-      try self.checkDepth()
-      self.stack.push(Building(isList: true))
+      try this.checkDepth()
+      this.stack.push(Building(isList: true))
     }
 
     fun endList() throws EncodeError {
-      val top = self.stack.removeAt(self.stack.lastIndex())
-      self.put(VList(items: top.values.toList()))
+      val top = this.stack.removeAt(this.stack.lastIndex())
+      this.put(VList(items: top.values.toList()))
     }
 
-    fun writeI64(v: i64) throws EncodeError = self.put(VInt(value: v))
-    fun writeU64(v: u64) throws EncodeError = self.put(VInt(value: v as i64))
-    fun writeF64(v: f64) throws EncodeError = self.put(VFloat(value: v))
-    fun writeBool(v: bool) throws EncodeError = self.put(VBool(value: v))
-    fun writeString(v: string) throws EncodeError = self.put(VString(value: v))
-    fun writeNull() throws EncodeError = self.put(VNull())
+    fun writeI64(v: i64) throws EncodeError = this.put(VInt(value: v))
+    fun writeU64(v: u64) throws EncodeError = this.put(VInt(value: v as i64))
+    fun writeF64(v: f64) throws EncodeError = this.put(VFloat(value: v))
+    fun writeBool(v: bool) throws EncodeError = this.put(VBool(value: v))
+    fun writeString(v: string) throws EncodeError = this.put(VString(value: v))
+    fun writeNull() throws EncodeError = this.put(VNull())
   }
 }

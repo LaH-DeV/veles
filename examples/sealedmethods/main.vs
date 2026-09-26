@@ -2,14 +2,14 @@ use io
 
 sealed trait Shape {
   fun area(): f64
-  fun describe(): string = "shape with area ${self.area()}"
+  fun describe(): string = "shape with area ${this.area()}"
 }
 struct Circle : Shape {
   r: f64
 
   implement Shape {
-    fun area(): f64 = 3.0 * self.r * self.r
-    override fun describe(): string = "circle r=${self.r}"
+    fun area(): f64 = 3.0 * this.r * this.r
+    override fun describe(): string = "circle r=${this.r}"
   }
 }
 struct Rect : Shape {
@@ -17,7 +17,7 @@ struct Rect : Shape {
   h: f64
 
   implement Shape {
-    fun area(): f64 = self.w * self.h
+    fun area(): f64 = this.w * this.h
   }
 }
 

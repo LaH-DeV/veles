@@ -27,23 +27,23 @@ public struct Deque<T> {
   state: *DequeState<T>
 
   /// Number of elements.
-  public fun len(): i64 = self.state.size
+  public fun len(): i64 = this.state.size
 
   /// True when there are no elements.
-  public fun isEmpty(): bool = self.state.size == 0
+  public fun isEmpty(): bool = this.state.size == 0
 
   /// Appends `x` at the back.
   public fun addLast(x: T) {
-    val s = self.state
-    self.reserve()
+    val s = this.state
+    this.reserve()
     s.buf.set((s.head + s.size) % s.buf.len(), x)
     s.size += 1
   }
 
   /// Prepends `x` at the front.
   public fun addFirst(x: T) {
-    val s = self.state
-    self.reserve()
+    val s = this.state
+    this.reserve()
     val cap = s.buf.len()
     s.head = (s.head + cap - 1) % cap
     s.buf.set(s.head, x)
@@ -52,9 +52,9 @@ public struct Deque<T> {
 
   /// Removes and returns the front element, or `null` when empty.
   public fun removeFirst(): T? {
-    val s = self.state
+    val s = this.state
     if (s.size == 0) return null
-    val x = self.slot(0)
+    val x = this.slot(0)
     s.buf.set(s.head, null)
     s.head = (s.head + 1) % s.buf.len()
     s.size -= 1
@@ -63,40 +63,40 @@ public struct Deque<T> {
 
   /// Removes and returns the back element, or `null` when empty.
   public fun removeLast(): T? {
-    val s = self.state
+    val s = this.state
     if (s.size == 0) return null
     s.size -= 1
-    val x = self.slot(s.size)
+    val x = this.slot(s.size)
     s.buf.set((s.head + s.size) % s.buf.len(), null)
     x
   }
 
   /// The front element, or `null` when empty.
-  public fun first(): T? = self.at(0)
+  public fun first(): T? = this.at(0)
 
   /// The back element, or `null` when empty.
-  public fun last(): T? = self.at(-1)
+  public fun last(): T? = this.at(-1)
 
   /// The element `i` places from the front, or `null` when `i` is out of
   /// range; a negative `i` counts from the back, so `at(-1)` is the last.
   public fun at(i: i64): T? {
-    val s = self.state
+    val s = this.state
     val k = if (i < 0) i + s.size else i
     if (k < 0 || k >= s.size) return null
-    self.slot(k)
+    this.slot(k)
   }
 
   /// The slot `k` places from the front. Every position is taken mod the
   /// capacity, so it is inside the buffer whatever `k` is; it holds an
   /// element when `k` is in `0..<size`.
   fun slot(k: i64): T? {
-    val s = self.state
+    val s = this.state
     s.buf.at((s.head + k) % s.buf.len()) ?: panic("deque: a position taken mod the capacity is inside the buffer")
   }
 
   /// Removes every element.
   public fun clear() {
-    val s = self.state
+    val s = this.state
     s.buf.clear()
     s.head = 0
     s.size = 0
@@ -104,10 +104,10 @@ public struct Deque<T> {
 
   /// The elements front to back.
   public fun toList(): List<T> {
-    val s = self.state
+    val s = this.state
     var out: MutableList<T> = []
     loop (i in 0..<s.size) {
-      out.push(self.slot(i) ?: panic("deque: a live slot is empty"))
+      out.push(this.slot(i) ?: panic("deque: a live slot is empty"))
     }
     out.toList()
   }
@@ -115,22 +115,22 @@ public struct Deque<T> {
   /// Makes room for one more element: when the ring is full, the live
   /// elements move to the start of a buffer twice the size.
   fun reserve() {
-    val s = self.state
+    val s = this.state
     val cap = s.buf.len()
     if (s.size < cap) return
     val fresh = MutableList<T?>.repeat(null, if (cap == 0) 4 else cap * 2)
-    loop (i in 0..<s.size) fresh.set(i, self.slot(i))
+    loop (i in 0..<s.size) fresh.set(i, this.slot(i))
     s.buf = fresh
     s.head = 0
   }
 
   implement Iterable {
     type Iter = ListIter<T>
-    fun iterator(): ListIter<T> = ListIter(list: self.toList())
+    fun iterator(): ListIter<T> = ListIter(list: this.toList())
   }
 
   implement Display {
-    fun toString(): string = "[${self.toList().join(", ")}]"
+    fun toString(): string = "[${this.toList().join(", ")}]"
   }
 }
 
@@ -161,68 +161,68 @@ public struct PriorityQueue<T> {
   state: *PriorityQueueState<T>
 
   /// Number of elements.
-  public fun len(): i64 = self.state.items.len()
+  public fun len(): i64 = this.state.items.len()
 
   /// True when there are no elements.
-  public fun isEmpty(): bool = self.state.items.len() == 0
+  public fun isEmpty(): bool = this.state.items.len() == 0
 
   /// The element that `pop` would return, or `null` when empty.
-  public fun peek(): T? = self.state.items.first()
+  public fun peek(): T? = this.state.items.first()
 
   /// Adds `x`.
   public fun push(x: T) {
-    val items = self.state.items
+    val items = this.state.items
     items.push(x)
-    self.siftUp(items.len() - 1)
+    this.siftUp(items.len() - 1)
   }
 
   /// Removes and returns the first element in the queue's order, or `null`
   /// when empty.
   public fun pop(): T? {
-    val items = self.state.items
+    val items = this.state.items
     val top = items.first() ?: return null
     val last = items.pop() ?: return null
     if (items.len() > 0) {
       items.set(0, last)
-      self.siftDown(0)
+      this.siftDown(0)
     }
     top
   }
 
   /// Removes every element.
   public fun clear() {
-    self.state.items.clear()
+    this.state.items.clear()
   }
 
   /// The elements in heap order — the first is the smallest, the rest are
   /// not sorted.
-  public fun toList(): List<T> = self.state.items.toList()
+  public fun toList(): List<T> = this.state.items.toList()
 
   /// The element at heap position `i`; the sifts only ask for positions
   /// below the heap's size.
-  fun item(i: i64): T = self.state.items.at(i) ?: panic("heap: a sift reads only positions below the size")
+  fun item(i: i64): T = this.state.items.at(i) ?: panic("heap: a sift reads only positions below the size")
 
   fun siftUp(from: i64) {
-    val s = self.state
+    val s = this.state
     var i = from
     loop (i > 0) {
       val parent = (i - 1) / 2
-      if (s.compare(self.item(i), self.item(parent)) >= 0) break
+      if (s.compare(this.item(i), this.item(parent)) >= 0) break
       s.items.swap(i, parent)
       i = parent
     }
   }
 
   fun siftDown(from: i64) {
-    val s = self.state
+    val s = this.state
     val n = s.items.len()
     var i = from
     loop {
       val left = 2 * i + 1
       val right = left + 1
       var smallest = i
-      if (left < n && s.compare(self.item(left), self.item(smallest)) < 0) smallest = left
-      if (right < n && s.compare(self.item(right), self.item(smallest)) < 0) smallest = right
+      if (left < n && s.compare(this.item(left), this.item(smallest)) < 0) smallest = left
+      if (right < n && s.compare(this.item(right), this.item(smallest)) < 0) smallest = right
       if (smallest == i) break
       s.items.swap(i, smallest)
       i = smallest
@@ -230,6 +230,6 @@ public struct PriorityQueue<T> {
   }
 
   implement Display {
-    fun toString(): string = "[${self.state.items.join(", ")}]"
+    fun toString(): string = "[${this.state.items.join(", ")}]"
   }
 }

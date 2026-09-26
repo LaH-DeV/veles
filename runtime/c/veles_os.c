@@ -219,6 +219,91 @@ int64_t veles_os_pid(void) {
 #endif
 }
 
+/* ---- shutdown signals (D68) ----------------------------------------------
+ * Nothing is intercepted until veles_signal_watch() is first called, so a
+ * program that never asks keeps the default (the signal ends it). Each
+ * watch arms the handler for one signal, recorded for veles_signal_take();
+ * a second signal before the next watch has the default effect, so a
+ * shutdown that hangs can still be killed. Values: 2 = interrupt,
+ * 15 = terminate. */
+
+#if defined(_WIN32)
+static volatile LONG signal_pending;
+static volatile LONG signal_fired; /* the armed signal has come */
+static volatile LONG signal_watching;
+
+static BOOL WINAPI on_console_ctrl(DWORD kind) {
+    if (InterlockedCompareExchange(&signal_fired, 1, 0) != 0)
+        return FALSE; /* the second one: default handling ends the process */
+    LONG sig = kind == CTRL_C_EVENT ? 2 : 15;
+    InterlockedExchange(&signal_pending, sig);
+    if (kind == CTRL_CLOSE_EVENT || kind == CTRL_LOGOFF_EVENT || kind == CTRL_SHUTDOWN_EVENT) {
+        /* Windows ends the process as soon as this handler returns for these
+         * three; waiting here is the shutdown's time budget (about five
+         * seconds for a closed console). A normal exit ends this thread. */
+        Sleep(INFINITE);
+    }
+    return TRUE;
+}
+
+void veles_signal_watch(void) {
+    if (InterlockedCompareExchange(&signal_watching, 1, 0) == 0)
+        SetConsoleCtrlHandler(on_console_ctrl, TRUE);
+    InterlockedExchange(&signal_fired, 0); /* armed again */
+}
+
+int64_t veles_signal_take(void) {
+    return (int64_t)InterlockedExchange(&signal_pending, 0);
+}
+
+/* as if `sig` came from outside: recorded when watched, otherwise the
+ * default — the process ends */
+void veles_signal_raise(int64_t sig) {
+    if (signal_watching && InterlockedCompareExchange(&signal_fired, 1, 0) == 0) {
+        InterlockedExchange(&signal_pending, (LONG)sig);
+        return;
+    }
+    ExitProcess(sig == 2 ? 0xC000013A /* STATUS_CONTROL_C_EXIT */ : 1);
+}
+#else
+#include <signal.h>
+
+static volatile sig_atomic_t signal_pending;
+
+static void on_signal(int sig) {
+    signal_pending = sig == SIGINT ? 2 : 15;
+    /* disarm the other one too, as on Windows: whichever comes next has
+     * the default effect (sigaction is async-signal-safe) */
+    struct sigaction dfl;
+    memset(&dfl, 0, sizeof dfl);
+    dfl.sa_handler = SIG_DFL;
+    sigaction(sig == SIGINT ? SIGTERM : SIGINT, &dfl, NULL);
+}
+
+void veles_signal_watch(void) {
+    /* installed on every watch: SA_RESETHAND took it down after the last one */
+    struct sigaction sa;
+    memset(&sa, 0, sizeof sa);
+    sa.sa_handler = on_signal;
+    sigemptyset(&sa.sa_mask);
+    /* one-shot: the handler is reset to the default once it has run, and
+     * a slow system call is restarted rather than failing with EINTR */
+    sa.sa_flags = SA_RESETHAND | SA_RESTART;
+    sigaction(SIGINT, &sa, NULL);
+    sigaction(SIGTERM, &sa, NULL);
+}
+
+int64_t veles_signal_take(void) {
+    int64_t sig = signal_pending;
+    signal_pending = 0;
+    return sig;
+}
+
+void veles_signal_raise(int64_t sig) {
+    raise(sig == 2 ? SIGINT : SIGTERM);
+}
+#endif
+
 /* the host's name, as the network knows it; 0 or an error code */
 int64_t veles_os_hostname(veles_string *out) {
 #if defined(_WIN32)

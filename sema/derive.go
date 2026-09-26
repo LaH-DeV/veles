@@ -281,7 +281,7 @@ func variantName(v *types.Struct) string {
 // encoder or decoder `io`: the field's name styled by the format unless a
 // `@key` says otherwise, by format when it does.
 func (c *Checker) keyExpr(b *synth, df derivedField, io ast.Expr) ast.Expr {
-	styled := b.call(b.name("styleKey"), b.str(df.name), b.mcall(io, "keys"))
+	styled := b.call(b.prelude("styleKey"), b.str(df.name), b.mcall(io, "keys"))
 	if df.keys == nil {
 		return styled
 	}
@@ -432,7 +432,7 @@ func (c *Checker) decodeStruct(b *synth, st *types.Struct, fields []derivedField
 			absent = b.bin(lexer.AndAnd, absent, b.not(b.name(s.skipped)))
 		}
 		body = append(body, b.ifStmt(absent, []ast.Stmt{
-			b.stmt(b.mcall(from, "problemAt", b.call(b.name("childPath"), b.mcall(from, "path"), b.name(s.key)), b.str("missing"))),
+			b.stmt(b.mcall(from, "problemAt", b.call(b.prelude("childPath"), b.mcall(from, "path"), b.name(s.key)), b.str("missing"))),
 			b.assign(b.name("$broken"), b.boolLit(true)),
 		}, nil))
 	}
@@ -458,7 +458,7 @@ func (c *Checker) decodeStruct(b *synth, st *types.Struct, fields []derivedField
 		body = append(body, b.val("$x", nil, built))
 		built = &ast.IfExpr{Cond: &ast.IsExpr{X: b.name("$x"), Pat: &ast.TypePat{Type: &ast.ResolvedType{T: st, Pos: b.sp}, Pos: b.sp}, Pos: b.sp},
 			Then: b.block([]ast.Stmt{b.stmt(b.name("$x"))}),
-			Else: b.block([]ast.Stmt{b.stmt(b.call(b.name("panic"), b.str("unreachable: a freshly built variant")))}), Pos: b.sp}
+			Else: b.block([]ast.Stmt{b.stmt(b.call(b.prelude("panic"), b.str("unreachable: a freshly built variant")))}), Pos: b.sp}
 	}
 	body = append(body, b.stmt(built))
 	return b.fun("decode", true, []ast.Param{b.param("from", c.preludeType("Decoder"))}, st, c.preludeType("DecodeError"), body)
@@ -563,7 +563,7 @@ func (c *Checker) decodeSealed(b *synth, s *types.Sealed) *ast.FunDecl {
 	body = append(body, b.val("$out", s, &ast.WhenExpr{Subject: b.name("$tag"), Arms: arms, Pos: b.sp}))
 	// the variant's problems, re-rooted at this object's path
 	body = append(body, &ast.LoopStmt{Var: &ast.Binding{Name: b.ident("$p"), Pos: b.sp}, Iter: b.mcall(b.name("$sub"), "problems"),
-		Body: b.block([]ast.Stmt{b.stmt(b.mcall(from, "problemAt", b.call(b.name("joinPath"), b.mcall(from, "path"), b.member(b.name("$p"), "path")), b.member(b.name("$p"), "message")))}), Pos: b.sp})
+		Body: b.block([]ast.Stmt{b.stmt(b.mcall(from, "problemAt", b.call(b.prelude("joinPath"), b.mcall(from, "path"), b.member(b.name("$p"), "path")), b.member(b.name("$p"), "message")))}), Pos: b.sp})
 	body = append(body, b.stmt(b.name("$out")))
 	return b.fun("decode", true, []ast.Param{b.param("from", c.preludeType("Decoder"))}, s, c.preludeType("DecodeError"), body)
 }
@@ -736,6 +736,7 @@ type synth struct {
 func (b *synth) ident(name string) *ast.Ident { return &ast.Ident{Name: name, Pos: b.sp} }
 func (b *synth) name(name string) ast.Expr    { return &ast.NameExpr{Name: name, Pos: b.sp} }
 func (b *synth) self() ast.Expr               { return &ast.SelfExpr{Pos: b.sp} }
+func (b *synth) prelude(name string) ast.Expr { return &ast.PreludeName{Name: name, Pos: b.sp} }
 func (b *synth) null() ast.Expr               { return &ast.NullLit{Pos: b.sp} }
 func (b *synth) boolLit(v bool) ast.Expr      { return &ast.BoolLit{Value: v, Pos: b.sp} }
 func (b *synth) str(s string) ast.Expr {

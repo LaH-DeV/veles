@@ -38,14 +38,14 @@ public struct Rng {
 
   /// The next 64 random bits.
   public fun nextU64(): u64 {
-    val result = rotl(self.s1 *% 5, 7) *% 9
-    val t = self.s1 << 17
-    self.s2 = self.s2 ^ self.s0
-    self.s3 = self.s3 ^ self.s1
-    self.s1 = self.s1 ^ self.s2
-    self.s0 = self.s0 ^ self.s3
-    self.s2 = self.s2 ^ t
-    self.s3 = rotl(self.s3, 45)
+    val result = rotl(this.s1 *% 5, 7) *% 9
+    val t = this.s1 << 17
+    this.s2 = this.s2 ^ this.s0
+    this.s3 = this.s3 ^ this.s1
+    this.s1 = this.s1 ^ this.s2
+    this.s0 = this.s0 ^ this.s3
+    this.s2 = this.s2 ^ t
+    this.s3 = rotl(this.s3, 45)
     result
   }
 
@@ -53,22 +53,22 @@ public struct Rng {
   public fun range(lo: i64, hi: i64): i64 {
     if (hi <= lo) panic("random.range: empty range $lo..<$hi")
     val span = (hi - lo) as u64
-    lo + (self.nextU64() % span) as i64
+    lo + (this.nextU64() % span) as i64
   }
 
   /// A number in `0.0..<1.0`.
-  public fun float(): f64 = ((self.nextU64() >> 11) as f64) / 9007199254740992.0
+  public fun float(): f64 = ((this.nextU64() >> 11) as f64) / 9007199254740992.0
 
-  public fun boolean(): bool = (self.nextU64() & 1) == 1
+  public fun boolean(): bool = (this.nextU64() & 1) == 1
 
   /// One element of `xs`, or `null` when it is empty.
-  public fun pick<T>(xs: List<T>): T? = if (xs.isEmpty()) null else xs.at(self.range(0, xs.len()))
+  public fun pick<T>(xs: List<T>): T? = if (xs.isEmpty()) null else xs.at(this.range(0, xs.len()))
 
   /// Reorders `xs` in place (Fisher–Yates).
   public fun shuffle<T>(xs: MutableList<T>) {
     var i = xs.len() - 1
     loop (i > 0) {
-      val j = self.range(0, i + 1)
+      val j = this.range(0, i + 1)
       xs.swap(i, j)
       i -= 1
     }

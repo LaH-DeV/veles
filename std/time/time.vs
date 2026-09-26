@@ -190,38 +190,38 @@ public struct Timestamp {
   /// or microsecond that contains the instant, which is what a calendar
   /// conversion and a `Last-Modified` header both need, and which keeps
   /// working before 1970.
-  public fun toMicros(): i64 = self.us
-  public fun toMillis(): i64 = floorDiv(self.us, 1000)
-  public fun toSeconds(): i64 = floorDiv(self.us, 1000000)
+  public fun toMicros(): i64 = this.us
+  public fun toMillis(): i64 = floorDiv(this.us, 1000)
+  public fun toSeconds(): i64 = floorDiv(this.us, 1000000)
 
   /// The microsecond within the second, always 0..999999.
-  public fun subsecondMicros(): i64 = floorMod(self.us, 1000000)
+  public fun subsecondMicros(): i64 = floorMod(this.us, 1000000)
 
-  public fun plus(d: Duration): Timestamp = Timestamp(us: self.us + d.toMicros())
-  public fun minus(d: Duration): Timestamp = Timestamp(us: self.us - d.toMicros())
+  public fun plus(d: Duration): Timestamp = Timestamp(us: this.us + d.toMicros())
+  public fun minus(d: Duration): Timestamp = Timestamp(us: this.us - d.toMicros())
 
   /// How long after `earlier` this instant is; negative when it is before.
   public fun since(earlier: Timestamp): Duration =
-    Duration.micros(self.us - earlier.us)
+    Duration.micros(this.us - earlier.us)
 
   /// How long until `later`; negative when it has passed.
   public fun until(later: Timestamp): Duration =
-    Duration.micros(later.us - self.us)
+    Duration.micros(later.us - this.us)
 
   /// The calendar fields in UTC.
-  public fun utc(): DateTime = self.at(Offset.utc)
+  public fun utc(): DateTime = this.at(Offset.utc)
 
   /// The calendar fields in the host's time zone, at its offset for *this*
   /// instant — so a summer timestamp reads in summer time.
-  public fun local(): DateTime = self.at(Offset.local(at: self))
+  public fun local(): DateTime = this.at(Offset.local(at: this))
 
   /// The calendar fields at a fixed offset from UTC.
   public fun at(offset: Offset): DateTime {
     // the offset is applied to the day and the microsecond within it, not to
     // the microsecond count: `us + 18 hours` overflows for an instant near
     // the end of the i64 range, and every Timestamp has to be printable
-    val whole = floorDiv(self.us, 86400000000)
-    val within = floorMod(self.us, 86400000000) + offset.totalMinutes() * 60000000
+    val whole = floorDiv(this.us, 86400000000)
+    val within = floorMod(this.us, 86400000000) + offset.totalMinutes() * 60000000
     val days = whole + floorDiv(within, 86400000000)
     val rest = floorMod(within, 86400000000)
     val (y, mo, d) = civilFromDays(days)
@@ -236,14 +236,14 @@ public struct Timestamp {
   }
 
   implement Comparable {
-    fun compareTo(other: Timestamp): Ordering = self.us.compareTo(other.us)
+    fun compareTo(other: Timestamp): Ordering = this.us.compareTo(other.us)
   }
 
   implement Display {
     /// RFC 3339 in UTC: `2026-09-24T09:15:02.481Z`. The fraction is written
     /// only when there is one, to three digits when the microseconds are a
     /// whole millisecond and to six otherwise.
-    fun toString(): string = self.utc().toString()
+    fun toString(): string = this.utc().toString()
   }
 
   implement Parsable {
@@ -253,7 +253,7 @@ public struct Timestamp {
 
   implement Encodable {
     fun encode(to: Encoder) throws EncodeError {
-      try to.writeString(self.toString())
+      try to.writeString(this.toString())
     }
   }
 
@@ -324,21 +324,21 @@ public struct Offset {
   }
 
   /// Minutes east of UTC; negative west of it.
-  public fun totalMinutes(): i64 = self.mins
+  public fun totalMinutes(): i64 = this.mins
 
   /// The same offset as a length of time.
-  public fun duration(): Duration = Duration.minutes(self.mins)
+  public fun duration(): Duration = Duration.minutes(this.mins)
 
   implement Comparable {
-    fun compareTo(other: Offset): Ordering = self.mins.compareTo(other.mins)
+    fun compareTo(other: Offset): Ordering = this.mins.compareTo(other.mins)
   }
 
   implement Display {
     /// `Z`, `+02:00`, `-05:30`.
     fun toString(): string {
-      if (self.mins == 0) return "Z"
-      val sign = if (self.mins < 0) "-" else "+"
-      val m = if (self.mins < 0) 0 - self.mins else self.mins
+      if (this.mins == 0) return "Z"
+      val sign = if (this.mins < 0) "-" else "+"
+      val m = if (this.mins < 0) 0 - this.mins else this.mins
       "$sign${pad(m / 60, 2)}:${pad(m % 60, 2)}"
     }
   }
@@ -388,41 +388,41 @@ public struct DateTime {
   /// writing `year: 999999999`, but the answer then does not exist. Every
   /// parser here checks before it builds, so text from outside reaches a
   /// `null`, never this.
-  public fun timestamp(): Timestamp = instantOf(self)
-    ?: panic("${self.year}-${self.month}-${self.day} is outside the range a Timestamp holds")
+  public fun timestamp(): Timestamp = instantOf(this)
+    ?: panic("${this.year}-${this.month}-${this.day} is outside the range a Timestamp holds")
 
   /// The same instant with every field brought back into range.
-  public fun normalized(): DateTime = self.timestamp().at(self.offset)
+  public fun normalized(): DateTime = this.timestamp().at(this.offset)
 
   /// 0 for Sunday, 6 for Saturday.
   public fun weekday(): i64 =
-    floorMod(daysFromCivil(self.year, self.month, self.day) + 4, 7)
+    floorMod(daysFromCivil(this.year, this.month, this.day) + 4, 7)
 
   /// 1 for the first of January.
   public fun yearDay(): i64 =
-    daysFromCivil(self.year, self.month, self.day) - daysFromCivil(self.year, 1, 1) + 1
+    daysFromCivil(this.year, this.month, this.day) - daysFromCivil(this.year, 1, 1) + 1
 
   /// The same wall-clock instant told at another offset.
-  public fun at(offset: Offset): DateTime = self.timestamp().at(offset)
+  public fun at(offset: Offset): DateTime = this.timestamp().at(offset)
 
   /// `2026-09-24`
-  public fun date(): string = "${year4(self.year)}-${pad(self.month, 2)}-${pad(self.day, 2)}"
+  public fun date(): string = "${year4(this.year)}-${pad(this.month, 2)}-${pad(this.day, 2)}"
 
   /// `09:15:02`, without the fraction.
-  public fun time(): string = "${pad(self.hour, 2)}:${pad(self.minute, 2)}:${pad(self.second, 2)}"
+  public fun time(): string = "${pad(this.hour, 2)}:${pad(this.minute, 2)}:${pad(this.second, 2)}"
 
   implement Comparable {
     /// By the instant, so two `DateTime`s at different offsets order by
     /// when they happened, not by how they read.
     fun compareTo(other: DateTime): Ordering =
-      self.timestamp().compareTo(other.timestamp())
+      this.timestamp().compareTo(other.timestamp())
   }
 
   implement Display {
     /// RFC 3339: `2026-09-24T11:15:02.481+02:00`. The fraction appears only
     /// when it is not zero — three digits for a whole millisecond, six
     /// otherwise — and a zero offset is written `Z`.
-    fun toString(): string = "${self.date()}T${self.time()}${fraction(self.micros)}${self.offset}"
+    fun toString(): string = "${this.date()}T${this.time()}${fraction(this.micros)}${this.offset}"
   }
 
   implement Parsable {
@@ -711,11 +711,11 @@ public struct Stopwatch {
   public static fun start(): Stopwatch = Stopwatch(startedAt: monotonicNanos())
 
   /// How long it has been running.
-  public fun elapsed(): Duration = Duration.nanos(monotonicNanos() - self.startedAt)
+  public fun elapsed(): Duration = Duration.nanos(monotonicNanos() - this.startedAt)
 
   /// Starts over.
   public fun reset() {
-    self.startedAt = monotonicNanos()
+    this.startedAt = monotonicNanos()
   }
 }
 
@@ -743,22 +743,22 @@ public struct Deadline {
 
   /// How long is left, never negative: `Duration.zero` once it has passed.
   public fun remaining(): Duration {
-    val left = self.atNanos - monotonicNanos()
+    val left = this.atNanos - monotonicNanos()
     if (left <= 0) Duration.zero else Duration.nanos(left)
   }
 
   /// Whether the time is up.
-  public fun expired(): bool = monotonicNanos() >= self.atNanos
+  public fun expired(): bool = monotonicNanos() >= this.atNanos
 
   /// The same deadline, `d` later.
-  public fun extend(d: Duration): Deadline = Deadline(atNanos: self.atNanos + d.toNanos())
+  public fun extend(d: Duration): Deadline = Deadline(atNanos: this.atNanos + d.toNanos())
 
   /// Whichever of the two comes first — a request deadline against a
   /// configured one.
   public fun earlier(other: Deadline): Deadline =
-    if (self.atNanos <= other.atNanos) self else other
+    if (this.atNanos <= other.atNanos) this else other
 
   implement Comparable {
-    fun compareTo(other: Deadline): Ordering = self.atNanos.compareTo(other.atNanos)
+    fun compareTo(other: Deadline): Ordering = this.atNanos.compareTo(other.atNanos)
   }
 }

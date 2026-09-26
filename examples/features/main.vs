@@ -22,22 +22,22 @@ fun sign(n: i64): string = when {
 // Generic struct with methods, generic function with a trait bound (D6/D8)
 trait Area {
   fun area(): f64
-  fun describe(): string = "area ${self.area()}"
+  fun describe(): string = "area ${this.area()}"
 }
 
 struct Square {
   side: f64
 
   implement Area {
-    fun area(): f64 = self.side * self.side
-    override fun describe(): string = "square ${self.side}: " + "area ${self.area()}"
+    fun area(): f64 = this.side * this.side
+    override fun describe(): string = "square ${this.side}: " + "area ${this.area()}"
   }
 }
 
 struct Pair<A, B> {
   first:  A
   second: B
-  fun swap(): Pair<B, A> = Pair(first: self.second, second: self.first)
+  fun swap(): Pair<B, A> = Pair(first: this.second, second: this.first)
 }
 
 fun total<T: Area>(xs: List<T>): f64 {

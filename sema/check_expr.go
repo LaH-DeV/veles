@@ -269,26 +269,26 @@ func (f *fnCtx) checkExprInner(e ast.Expr, want types.Type) Expr {
 	case *ast.SelfExpr:
 
 		if in := f.initScope(); in != nil {
-			// `self` as a whole (a copy, "$self", an argument) needs every
+			// `this` as a whole (a copy, "$this", an argument) needs every
 			// owned field assigned; a method receiver is checked against
 			// what the method reads (receivers.go)
 			asRecv := f.selfAsRecv
 			f.selfAsRecv = false
 			if missing := in.initMissing(); len(missing) > 0 && (!asRecv || in != f) {
-				f.errorf(e.Pos, "'self' is used before 'init' has assigned '%s'; assign every field without a default first, or read the fields one by one (D28)", strings.Join(missing, "', '"))
+				f.errorf(e.Pos, "'this' is used before 'init' has assigned '%s'; assign every field without a default first, or read the fields one by one (D28)", strings.Join(missing, "', '"))
 			}
 		}
 		self := f.selfRef()
 		if self == nil {
 			if f.fn != nil && f.fn.tmpl != nil && f.fn.tmpl.Decl.Static {
-				f.errorf(e.Pos, "'self' is not available in a static function; it has no receiver (D23)")
+				f.errorf(e.Pos, "'this' is not available in a static function; it has no receiver (D23)")
 				return bad()
 			}
-			f.errorf(e.Pos, "'self' outside of a method")
+			f.errorf(e.Pos, "'this' outside of a method")
 			return bad()
 		}
 		// the receiver pointer, read as the value it points at (D22), with
-		// the smart casts on `self` in force
+		// the smart casts on `this` in force
 		x := &Deref{exprBase{self.Type.(*types.Pointer).Elem}, &VarRef{exprBase{self.Type}, self}}
 		return f.narrowPlace(x, pv(self))
 	case *ast.NameExpr:
@@ -435,7 +435,7 @@ func (f *fnCtx) stringLit(e *ast.StringLit) Expr {
 		}
 		x := f.checkExpr(p.Expr, nil)
 		if _, ok := p.Expr.(*ast.SelfExpr); ok && f.inOwnToString(x.Type()) {
-			f.errorf(p.Expr.Span(), "interpolating 'self' inside its own 'toString' calls this 'toString' again, forever; interpolate the fields instead, e.g. \"(${self.x}, ${self.y})\"")
+			f.errorf(p.Expr.Span(), "interpolating 'this' inside its own 'toString' calls the same 'toString' again, forever; interpolate the fields instead, e.g. \"(${this.x}, ${this.y})\"")
 		}
 		cat.Parts = append(cat.Parts, f.toString(x, p.Expr.Span()))
 	}
@@ -603,7 +603,7 @@ func (f *fnCtx) memberExpr(e *ast.MemberExpr, want types.Type) Expr {
 					f.errorf(e.Name.Pos, "'%s' is read before 'init' assigns it; it has no default, so it holds nothing until the block gives it a value (D28)", e.Name.Name)
 				}
 			}
-			f.selfAsRecv = true // a field read, not `self` as a whole
+			f.selfAsRecv = true // a field read, not `this` as a whole
 		}
 	}
 	// module member or sealed variant?
@@ -1816,7 +1816,7 @@ func (f *fnCtx) placeOf(e ast.Expr) (place, bool) {
 		}
 	case *ast.SelfExpr:
 		// the receiver is a pointer to its place (D22); a method call on
-		// `self` drops the facts about its `var` fields (invalidateVarPaths)
+		// `this` drops the facts about its `var` fields (invalidateVarPaths)
 		if self := f.selfRef(); self != nil {
 			return pv(self), true
 		}

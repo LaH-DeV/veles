@@ -4,7 +4,7 @@
 // thrown; an error union exposes message() directly.
 
 public trait Error {
-  fun message(): string = "$self"
+  fun message(): string = "$this"
 }
 
 /// A failed operating-system call (files, processes, environment): `detail`
@@ -14,5 +14,5 @@ public error IoError {
   public path:   string
   public code:   i64
   public detail: string
-  fun message(): string = if (self.path.isEmpty()) self.detail else "${self.detail}: ${self.path}"
+  fun message(): string = if (this.path.isEmpty()) this.detail else "${this.detail}: ${this.path}"
 }

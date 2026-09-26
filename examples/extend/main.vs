@@ -7,7 +7,7 @@ struct Vec2 {
   var y: f64
 
   implement Show {
-    fun show(): string = "(${self.x}, ${self.y})"
+    fun show(): string = "(${this.x}, ${this.y})"
   }
 }
 
@@ -20,24 +20,24 @@ trait Show {
 }
 
 extend Vec2 {
-  fun length(): f64 = (self.x * self.x + self.y * self.y).sqrt()
+  fun length(): f64 = (this.x * this.x + this.y * this.y).sqrt()
   fun scale(k: f64) {
-    self.x *= k
-    self.y *= k
+    this.x *= k
+    this.y *= k
   }
 }
 
 extend<T> Stack<T> {
   fun push(x: T) {
-    self.items.push(x)
+    this.items.push(x)
   }
-  fun pop(): T? = self.items.pop()
-  fun depth(): i64 = self.items.len()
+  fun pop(): T? = this.items.pop()
+  fun depth(): i64 = this.items.len()
 }
 
 // a bounded block: only stacks of showable things can render themselves
 extend<T: Show> Stack<T> {
-  fun render(): string = self.items.map(x => x.show()).join(" ")
+  fun render(): string = this.items.map(x => x.show()).join(" ")
 }
 
 fun main() {

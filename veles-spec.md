@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.34** — language design complete; D58 adds the derivation story D51 deferred, D59 the standard library's cryptography. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
+**Working draft v0.41** — language design complete; D58 adds the derivation story D51 deferred, D59 the standard library's cryptography. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -53,7 +53,7 @@ Consequence: `throws` and explicit `Result` interconvert freely; libraries canno
 
 **A `Result` must be consumed.** A `throws` call as a bare statement, or bound to a name that is never read, is an error — regardless of whether the caller is itself `throws`, since only `try` propagates. `val _ = f()` is the explicit discard. (Non-`Result` bindings that are never read are a warning.)
 
-**Errors are declared, and every error implements `Error`.** The prelude declares `trait Error { fun message(): string = "$self" }`. An error type is declared with a contextual keyword: `error ParseError { text: string; fun message(): string = ... }` is sugar for `struct ParseError { text: string }` plus `implement Error for ParseError { override fun message() ... }`. Inside an `error` body `message` needs no `override` (there is exactly one trait in play; writing it is allowed), and no other method may carry one — they are inherent. A field `message: string` with no `message()` written is used as the message, so `error Failed { message: string }` is thrown as `Failed(message: "...")`; `Panic` is exactly that. **Only errors can be in error position** (a `throws` clause, a `throw` operand, the `E` of a `Result`): throwing a plain struct is an error naming the fix (`error Dog { ... }`), non-structs are rejected, and a generic `throws X` needs the bound `X: Error`. `implement Error for T {}` on an existing struct is the escape hatch for types one does not own. Because every member of an error union implements `Error`, **the union exposes `Error`'s methods directly**: `e.message()` on a `ParseError | RangeError` compiles to a tag switch, no `when` required. An error escaping `main() throws` is reported through `message()`. This is Go's one-method `error` interface with structured payloads kept as fields, and the declaration form makes "is an error" a property of the type rather than of its uses. `error` is a keyword only at declaration position (`error Name`); elsewhere it is an ordinary identifier, so `is Err(error) => ...` is unaffected. Rejected: treating every struct as an implicit `Error` (it made `throw Dog()` legal); `struct X : Error` (in D12 that syntax means variant membership); and making `message` a mandatory field (it cannot be computed from the other fields, which is the common case).
+**Errors are declared, and every error implements `Error`.** The prelude declares `trait Error { fun message(): string = "$this" }`. An error type is declared with a contextual keyword: `error ParseError { text: string; fun message(): string = ... }` is sugar for `struct ParseError { text: string }` plus `implement Error for ParseError { override fun message() ... }`. Inside an `error` body `message` needs no `override` (there is exactly one trait in play; writing it is allowed), and no other method may carry one — they are inherent. A field `message: string` with no `message()` written is used as the message, so `error Failed { message: string }` is thrown as `Failed(message: "...")`; `Panic` is exactly that. **Only errors can be in error position** (a `throws` clause, a `throw` operand, the `E` of a `Result`): throwing a plain struct is an error naming the fix (`error Dog { ... }`), non-structs are rejected, and a generic `throws X` needs the bound `X: Error`. `implement Error for T {}` on an existing struct is the escape hatch for types one does not own. Because every member of an error union implements `Error`, **the union exposes `Error`'s methods directly**: `e.message()` on a `ParseError | RangeError` compiles to a tag switch, no `when` required. An error escaping `main() throws` is reported through `message()`. This is Go's one-method `error` interface with structured payloads kept as fields, and the declaration form makes "is an error" a property of the type rather than of its uses. `error` is a keyword only at declaration position (`error Name`); elsewhere it is an ordinary identifier, so `is Err(error) => ...` is unaffected. Rejected: treating every struct as an implicit `Error` (it made `throw Dog()` legal); `struct X : Error` (in D12 that syntax means variant membership); and making `message` a mandatory field (it cannot be computed from the other fields, which is the common case).
 
 **`is Ok` / `is Err` smart-cast to the payload.** After `if (r is Ok)` the subject `r` *is* the `T`; in the `else` branch (or after `!is Ok`) it is the `E`. `r.ok` and `r.err` are the same tests spelled as properties (v0.23): `if (r.ok)` narrows exactly like `if (r is Ok)`, and the teaching form. In a `when`, `is Ok` / `is Err` arms narrow the subject the same way, and `when (val r = expr)` names an expression subject for the arms. This is D5's `T?` → `T` rule applied to `Result` (and `Option`'s `Some`): the wrapper variants are handled, never held as values. A general two-variant sealed type gets the complementary narrowing in the failed branch too, but only `Result`/`Option` read through to a payload.
 
@@ -76,7 +76,7 @@ Rationale: Kotlin's collapsing `T?` makes generic lookups ambiguous — `map[key
 
 This follows the conventional rule that postfix binds tighter than prefix, but it hands the terse form to the rarer case — optional references are common, pointers to nullable values are not — and it reads against the representation note above, where the nullable pointer is the free one. Expect `(*T)?` to be frequent.
 
-**What a smart cast is about: a stable place.** A fact (`x != null`, `x is Circle`, `r is Ok`) attaches to a *place*: a local variable, or a chain of direct struct fields starting from one (`config.cause`, `self.address` in a non-`mut` method). Reads of the place are narrowed until something could change it: an assignment to the place or to a prefix of it (`u.address = ...`, `u = ...`), a `mut` method call on the root, or `&root` being taken — after which no new facts form on the root's fields either. Nothing reached through a pointer, `?.` or an index is a place: with `p: *User`, `p.address` may change through another pointer between the test and the use, so it is never narrowed (this is Kotlin's "stable value" rule with aliasing made explicit; Veles has pointers, Kotlin does not). Inside a `mut` method `self` is a pointer, so `self.field` is bound to a `val` first. Facts on the variable itself survive a `mut` call or `&` (they cannot change which variant a value is); only the field-path facts are dropped.
+**What a smart cast is about: a stable place.** A fact (`x != null`, `x is Circle`, `r is Ok`) attaches to a *place*: a local variable, or a chain of direct struct fields starting from one (`config.cause`, `this.address` in a non-`mut` method). Reads of the place are narrowed until something could change it: an assignment to the place or to a prefix of it (`u.address = ...`, `u = ...`), a `mut` method call on the root, or `&root` being taken — after which no new facts form on the root's fields either. Nothing reached through a pointer, `?.` or an index is a place: with `p: *User`, `p.address` may change through another pointer between the test and the use, so it is never narrowed (this is Kotlin's "stable value" rule with aliasing made explicit; Veles has pointers, Kotlin does not). Inside a `mut` method `this` is a pointer, so `this.field` is bound to a `val` first. Facts on the variable itself survive a `mut` call or `&` (they cannot change which variant a value is); only the field-path facts are dropped.
 
 **Smart casts and `?.` reach places, not copies (v0.24, revised v0.27).** A narrowed place is writable: after `if (p != null)` both `p.n = 5` and `p.bump()` act on the payload inside `p`, and after `is Circle` on the variant inside the sealed value — the same storage a read sees. `?.` has the same property, on calls and on assignment: `x?.f = v` and `x?.f op= v` write only when `x` is present and do nothing otherwise (Kotlin's and Swift's rule), and `x?.m()` calls a `mut fun` on the value where it lives. The receiver may be a nullable variable or field, or a nullable pointer — which is how a collection element is reached: `xs.ref(i)?.n += 1`, `m.ref(k)?.bump()` (D25). A write through `?.` into a temporary value (`make()?.n = 1`, and `xs.at(i)?.n = 1`, since `at` returns a copy) is an error rather than a silent no-op, and `val` bindings stay closed to it.
 
@@ -328,7 +328,7 @@ Go's MVS. Reproducible without lockfiles and far simpler to implement than SAT s
 
 Requires: a hard "no breaking changes within a major version" culture, since MVS trusts that promise completely; the major-version-in-import-path convention for v2 and later; and an explicit upgrade command, because MVS selects the *minimum* satisfying version and will not pick up security patches on its own.
 
-### D22 — Method receivers: implicit `self`; mutability is declared on the field (`var`)
+### D22 — Method receivers: implicit `this` (spelled `self` before v0.40, D65); mutability is declared on the field (`var`)
 
 **REVISED (v0.30).** The original rule — `mut fun` marks a method that assigns its receiver's fields, and only a `var` binding may call one — is withdrawn. It was honest for structs of scalars and silent for the common shape of a domain type, a struct holding a collection: `val s = Stack()` did not stop `s.items.push(x)` in a plain `fun`, so the signature said "does not mutate" and the reader was misled. Making `mut` transitive through reference fields was considered again and rejected again: it needs to know which structs are values and which are handles, which is a `class`/`struct` split (Swift's) that the language does not want, or an ownership system.
 
@@ -339,22 +339,22 @@ struct Counter {
   label: string          // bare: set by the constructor call, never assigned again
   var n:  i32 = 0        // var: assignable
 
-  fun get(): i32 = self.n
-  fun bump() { self.n += 1 }     // no marker: a method may assign the receiver's var fields
+  fun get(): i32 = this.n
+  fun bump() { this.n += 1 }     // no marker: a method may assign the receiver's var fields
 }
 ```
 
-- A **bare field** is never assigned after construction — not through `self`, not through a `var` binding, not through a pointer, not through `loop (&x in xs)`. The compiler reports it with a fix that inserts `var`.
-- A **`var` field** is assignable through any place: `self`, a binding whether `val` or `var`, a pointer, an element reference. `val`/`var` on a binding govern rebinding only (D11, amended) — as they always did for a `MutableList`.
+- A **bare field** is never assigned after construction — not through `this`, not through a `var` binding, not through a pointer, not through `loop (&x in xs)`. The compiler reports it with a fix that inserts `var`.
+- A **`var` field** is assignable through any place: `this`, a binding whether `val` or `var`, a pointer, an element reference. `val`/`var` on a binding govern rebinding only (D11, amended) — as they always did for a `MutableList`.
 - `var` governs *that slot*. `o.inner.x = 1` needs `x` to be `var`, not `inner`: what is inside a field is governed by its own type, and a method call on `o.inner` could always reach it. The guarantee is therefore stated transitively: **a type with no `var` fields and no mutable collections reachable by value cannot change, whoever holds it.** Fields hold the truth about mutability where a reader looks for it, and `private var` next to a bare handle (`private var next: i64; private items: MutableList<Note>`) says exactly which two things in a type ever move.
-- `self` is not assignable as a whole (`self = ...`): assign its fields, or return the new value.
+- `this` is not assignable as a whole (`this = ...`): assign its fields, or return the new value.
 - There is no method marker. Kotlin's `val`/`var` properties are the model; Swift's `mutating` and Rust's `&mut self` were the alternatives, and both exist to gate the *call* on the binding, which is the thing this design gives up. A struct is still a value: a method called on a temporary — `xs.at(i)?.bump()`, `make().bump()` — changes a copy that is discarded, which is an error when the method changes its receiver and returns nothing (the rule that guarded `mut fun` on a copy, D25 v0.27, kept). A struct passed to a function is a copy the callee may change without the caller seeing it; that is Go's value receiver and it is one rule rather than two.
 
-**Calling convention.** Every method receives a *pointer to the place it was called on*, and `self` reads as the value; a temporary is spilled first. The representation is not declared and not observable, as before. Two facts about each method are computed once every body is checked (the receiver pass), to a fixpoint over the call graph: whether it *may write* its receiver (assigns a field of `self`, takes a pointer into it, calls a method that does) — this is what the discarded-copy error uses — and whether the receiver *may escape* (a closure captures `self`, `&self` or a pointer into `self` is taken, a callee does either). A receiver that may escape cannot stay on the caller's stack: its variable is heap-allocated, the same promotion `&x` performs (D10). This closes a hole the `mut fun` design had: a closure over `self` in a `mut fun` held a pointer to the caller's stack frame.
+**Calling convention.** Every method receives a *pointer to the place it was called on*, and `this` reads as the value; a temporary is spilled first. The representation is not declared and not observable, as before. Two facts about each method are computed once every body is checked (the receiver pass), to a fixpoint over the call graph: whether it *may write* its receiver (assigns a field of `this`, takes a pointer into it, calls a method that does) — this is what the discarded-copy error uses — and whether the receiver *may escape* (a closure captures `this`, `&this` or a pointer into `this` is taken, a callee does either). A receiver that may escape cannot stay on the caller's stack: its variable is heap-allocated, the same promotion `&x` performs (D10). This closes a hole the `mut fun` design had: a closure over `this` in a `mut fun` held a pointer to the caller's stack frame.
 
-**Interaction with narrowing (D5).** `self` is a place like a local and its field paths narrow; a method call on a variable or on `self` drops the facts about paths through a `var` field and keeps those through bare fields, which no call can assign.
+**Interaction with narrowing (D5).** `this` is a place like a local and its field paths narrow; a method call on a variable or on `this` drops the facts about paths through a `var` field and keeps those through bare fields, which no call can assign.
 
-**Interaction with tasks (D35).** A sendable closure shares its captures by reference, so it may capture only `val`s of Sendable types *without `var` fields* (transitively, by value; collections and `Mutex` excluded as before) — another task could otherwise watch them change; the error names the capture. `self` is judged by the receiver's type. `async recv.m()` copies the receiver into the task, as it always copied arguments. Elements of an immutable `List` are read as copies, so `var` fields inside them are unreachable and do not count.
+**Interaction with tasks (D35).** A sendable closure shares its captures by reference, so it may capture only `val`s of Sendable types *without `var` fields* (transitively, by value; collections and `Mutex` excluded as before) — another task could otherwise watch them change; the error names the capture. `this` is judged by the receiver's type. `async recv.m()` copies the receiver into the task, as it always copied arguments. Elements of an immutable `List` are read as copies, so `var` fields inside them are unreachable and do not count.
 
 Rejected — Go's declared receiver (`(c Circle)` vs `(c *Circle)`): it declares representation, which produces two well-known failures. A value-receiver method that mutates silently modifies a copy with no diagnostic, and method sets diverge so that `Circle` does not satisfy an interface that `*Circle` does. Neither can arise here, because no representation is ever declared.
 
@@ -366,7 +366,7 @@ Rejected — private-by-default fields alongside `var`: with bare fields immutab
 
 On the word: `protected` means "the class and its subclasses" in Java, C#, C++ and Kotlin. Veles has no inheritance and will not get it — shared behaviour is a trait (D6/D9), closed families are sealed traits (D12) — so the subclass reading has nothing to attach to, and the word is free to mean what it says: protected from writes by anyone but the owner. The alternatives were weighed: `readonly` (TypeScript's and C#'s word for what Veles's *bare* field already is — it would invert the term for those readers, and it sits confusingly next to `val`), `var(private)` (not Veles syntax), Swift's `private(set)` (same). Making the protected level the *default* was proposed and rejected: it would take back the at-a-glance guarantee (a struct of bare fields cannot change) and make most `val` structs uncapturable by sendable closures.
 
-*Addendum (2026-09-25) — a changed parameter is a lost change.* A struct parameter is the caller's value copied (D7), and `val`/`var` govern rebinding only, so a function may assign a `var` field of a parameter, or call a method that writes `self` on it — and the caller never sees it: `fun step(f: Fuzzer) { f.rng.next() }` advances a copy of the generator. This is a **warning**, on the parameter, naming the change and the fixes (`f: *Fuzzer`, or return the value). Silent when the copy is the point (the function returns the parameter's type, or uses the parameter whole after changing it), when the parameter's address is taken, and for writes through a reference field (seen by the caller). Rejected: Swift's immutable parameters, which would change the rule above for one case.
+*Addendum (2026-09-25) — a changed parameter is a lost change.* A struct parameter is the caller's value copied (D7), and `val`/`var` govern rebinding only, so a function may assign a `var` field of a parameter, or call a method that writes `this` on it — and the caller never sees it: `fun step(f: Fuzzer) { f.rng.next() }` advances a copy of the generator. This is a **warning**, on the parameter, naming the change and the fixes (`f: *Fuzzer`, or return the value). Silent when the copy is the point (the function returns the parameter's type, or uses the parameter whole after changing it), when the parameter's address is taken, and for writes through a reference field (seen by the caller). Rejected: Swift's immutable parameters, which would change the rule above for one case.
 
 ### D23 — Methods in the struct body; `implement` blocks for traits; no extension functions
 
@@ -388,7 +388,7 @@ Consequence: inherent methods cannot be added to a type you do not own. Extensio
 
 ```vs
 extend<T> Stack<T> {
-  fun depth(): i64 = self.items.len()
+  fun depth(): i64 = this.items.len()
 }
 extend<T: Show> Stack<T> {          // bounded: only for showable elements
   fun render(): string = ...
@@ -462,9 +462,9 @@ Every struct gets an implicit constructor from its fields. Fields with declared 
 - **Declaring an explicit constructor suppresses the implicit one.** Otherwise invariants could always be bypassed by calling the generated version.
 - **The implicit constructor is callable only where every field is visible.** Otherwise a `public` struct with private fields would leak construction. *(v0.30: refined for `private` fields by M5's amendment — a private field without a default is supplied by the call, one with a default is not.)*
 
-*Addendum (v0.30) — a default is a constant; derived fields are `init`'s.* A field default cannot read `self` (error, with the `init` form suggested). Defaults derived from earlier fields — `positions: List<i64> = self.toks.map(t => t.1)`, evaluated in declaration order on a partially built value, with a per-method field-use check for calls on `self` — were implemented and withdrawn the same day in favour of the `init` block below: two mechanisms for one job, and the declaration-order rule was a subtlety the block does not need (definite assignment orders things for you). What survives from that work is the receiver pass's field-use analysis, which `init` relies on.
+*Addendum (v0.30) — a default is a constant; derived fields are `init`'s.* A field default cannot read `this` (error, with the `init` form suggested). Defaults derived from earlier fields — `positions: List<i64> = this.toks.map(t => t.1)`, evaluated in declaration order on a partially built value, with a per-method field-use check for calls on `this` — were implemented and withdrawn the same day in favour of the `init` block below: two mechanisms for one job, and the declaration-order rule was a subtlety the block does not need (definite assignment orders things for you). What survives from that work is the receiver pass's field-use analysis, which `init` relies on.
 
-*Addendum (v0.30) — the `init` block.* A struct body may contain one `init { }` block (Kotlin's `init`): it runs after every construction — the fields bound from the call and the defaults, in order — on the freshly built value, before anyone sees it. It is compiled as a hidden method the constructor calls (named `$init`, so no user code can name, call, hover or complete it). A field *without a default* that the block assigns (`self.f = ...`, found syntactically) is the block's: the constructor call refuses it, and the block must assign it on every path before it ends — definite assignment is tracked as flow facts in the narrowing state, so it joins at `if`/`when`, dies in loops and is discharged by a diverging branch exactly like a smart cast. Until such a field is assigned, reading it, using `self` as a whole, or calling a method whose field-use set includes it is an error (the receiver pass computes, for every method, the receiver fields it uses — directly, through the methods it calls on `self`, through closures over `self`; using `self` as a whole counts as every field); afterwards the block is ordinary method code. `init` cannot suspend, and has no `throws` (a failing construction is a `static fun ... throws`); it has no visibility, one per struct, runs for a sealed variant before the tag is applied. Spelled `init` rather than the proposed `constructor` because it is not the constructor: it cannot take parameters or replace the implicit call by fields, it only runs after it. `init` is contextual (`init { ` at member position), so a field or function named `init` stays legal. Deriving from a `var` field is a warning, since the stored copy would not follow later changes. The spelling is `self.f` rather than a bare `f` so that a default cannot be misread as a global. It composes with M5's constructor rule: a private field with a derived default cannot be overridden from outside, so the derivation is an invariant the type can rely on. Motivated by a parser holding token positions next to its tokens, which otherwise needed a `static fun` for nothing but the derivation.
+*Addendum (v0.30) — the `init` block.* A struct body may contain one `init { }` block (Kotlin's `init`): it runs after every construction — the fields bound from the call and the defaults, in order — on the freshly built value, before anyone sees it. It is compiled as a hidden method the constructor calls (named `$init`, so no user code can name, call, hover or complete it). A field *without a default* that the block assigns (`this.f = ...`, found syntactically) is the block's: the constructor call refuses it, and the block must assign it on every path before it ends — definite assignment is tracked as flow facts in the narrowing state, so it joins at `if`/`when`, dies in loops and is discharged by a diverging branch exactly like a smart cast. Until such a field is assigned, reading it, using `this` as a whole, or calling a method whose field-use set includes it is an error (the receiver pass computes, for every method, the receiver fields it uses — directly, through the methods it calls on `this`, through closures over `this`; using `this` as a whole counts as every field); afterwards the block is ordinary method code. `init` cannot suspend, and has no `throws` (a failing construction is a `static fun ... throws`); it has no visibility, one per struct, runs for a sealed variant before the tag is applied. Spelled `init` rather than the proposed `constructor` because it is not the constructor: it cannot take parameters or replace the implicit call by fields, it only runs after it. `init` is contextual (`init { ` at member position), so a field or function named `init` stays legal. Deriving from a `var` field is a warning, since the stored copy would not follow later changes. The spelling is `this.f` rather than a bare `f` so that a default cannot be misread as a global. It composes with M5's constructor rule: a private field with a derived default cannot be overridden from outside, so the derivation is an invariant the type can rely on. Motivated by a parser holding token positions next to its tokens, which otherwise needed a `static fun` for nothing but the derivation.
 
 **Named arguments are language-wide, not a constructor feature.** Consequences:
 
@@ -776,7 +776,7 @@ Rules:
 - `when` matches over union members with normal exhaustiveness checking.
 - An associated error type on a trait method (D40) may be a union, but it is declared rather than inferred.
 - **Named error sets.** `error PortErrors = ParseError | RangeError` names a union (Zig's named error sets). The name is transparent — it flattens into any union it appears in, `when` sees the members — and it is not a nominal type: it cannot be constructed, bound as a value type, or tested with `is`. It may appear only where a union may: after `throws`, inside another error set, or as the type of a field of an `error`. Cycles between sets are an error. Sets are resolved once, after collection, so an error set declared in another file or module works and its members are checked for being errors at that point.
-- **A cause field.** The one place a union appears outside `throws` is a field of an `error` (`error ConfigError { key: string, cause: PortErrors }`). This is how context wraps a cause (Go's `%w`, Rust's `source()`); `self.cause.message()` dispatches on the union like any other. Fields of plain structs may not hold unions.
+- **A cause field.** The one place a union appears outside `throws` is a field of an `error` (`error ConfigError { key: string, cause: PortErrors }`). This is how context wraps a cause (Go's `%w`, Rust's `source()`); `this.cause.message()` dispatches on the union like any other. Fields of plain structs may not hold unions.
 
 Rejected: Rust-style `From` conversion at `try`, which requires the caller to declare its error type and abandons inference; and boxing into an `Error` trait object, which discards the typing D4 exists to preserve and allocates on every error under D9.
 
@@ -1044,7 +1044,7 @@ trait Decoder {
 }
 ```
 
-A flat event stream: the derive writes `key("id")` and then the value encodes *itself* (`self.id.encode(to)`), so the traits carry no generic method (a boxed trait object could not, D9) and no value is boxed on the way out; a format is one implementation of each trait, and `std/json`, a row decoder and an environment decoder all drive the same synthesized code. The encoder is a **trait object**, one virtual call per primitive — `Encodable` stays object-safe and the derive stays simple; a program that links one JSON encoder devirtualizes later. The error types are fixed, as D40 requires of a trait used as an object. Rejected: a JSON-specific `toJson()`/`fromJson()` (a derive per format, a tree allocation per encode); Swift's container objects (`field<T>` is a generic method, impossible on a trait object, and its non-generic form boxes every value); a format-neutral `Value` tree as the intermediate (an allocation per field); a generic `fun encode<E: Encoder>(to: E)` (direct calls, but `Encodable` is no longer an object and every format stencils the world).
+A flat event stream: the derive writes `key("id")` and then the value encodes *itself* (`this.id.encode(to)`), so the traits carry no generic method (a boxed trait object could not, D9) and no value is boxed on the way out; a format is one implementation of each trait, and `std/json`, a row decoder and an environment decoder all drive the same synthesized code. The encoder is a **trait object**, one virtual call per primitive — `Encodable` stays object-safe and the derive stays simple; a program that links one JSON encoder devirtualizes later. The error types are fixed, as D40 requires of a trait used as an object. Rejected: a JSON-specific `toJson()`/`fromJson()` (a derive per format, a tree allocation per encode); Swift's container objects (`field<T>` is a generic method, impossible on a trait object, and its non-generic form boxes every value); a format-neutral `Value` tree as the intermediate (an allocation per field); a generic `fun encode<E: Encoder>(to: E)` (direct calls, but `Encodable` is no longer an object and every format stencils the world).
 
 **`Codable` is a supertrait, and supertraits now exist.** `trait Codable : Encodable + Decodable { }` is an ordinary prelude trait, its supers spelled like a bound with no members of its own. A bound `T: Codable` expands transitively, so `T` has `encode` and `decode`; `implement Codable for X { ... }` requires that `X` implements the supers — and an *empty* implement of a trait with supertraits synthesizes every super implement the type lacks, which is how one line derives both directions. A trait with supertraits **is** a trait object: its method table is the supers' tables laid end to end, most-derived declaration winning a name they share, so an object answers to every inherited method and a default body from a super is in the table like any other. Two supers that neither requires the other declaring the same name is an ambiguity and the trait is not object safe; every other object-safety rule (no associated types, no generic methods, no static functions, no `Self` in a signature) is now asked of the supers too — which is why `Codable` is still not an object, `Decodable.decode` being static and returning `Self`. A trait object is never converted to another trait's object: that needs the concrete type back (§9 item 14). Rejected: `Codable` as compiler-known sugar (a prelude name that is not a trait — hover, docs and errors would all special-case it); `implement Encodable + Decodable for X` (new implement syntax, two names on every DTO).
 
@@ -1519,6 +1519,128 @@ Rejected: `!!` everywhere; `!!` with a warning and a `--fix` to
 *Known gap:* a panic written in std for a caller's misuse
 (`xs.swap(0, 7)`, `chunked(0)`) reports the std line, not the caller's —
 Rust's `#[track_caller]` is the model if it proves to matter.
+
+### D65 — The receiver is `this` (v0.40)
+
+A method refers to its receiver as `this`, as in Kotlin, TypeScript, Java
+and C# (Rust, Swift and Python say `self`; the user chose Kotlin's word):
+
+```veles
+struct Counter {
+  var n: i64 = 0
+  fun bump() { this.n += 1 }
+  implement Display { fun toString(): string = "Counter(${this.n})" }
+}
+```
+
+Nothing else about the receiver changes — D22's calling convention, the
+receiver pass, `init` blocks, trait default bodies and `extend` blocks
+read `this` exactly as they read `self`. `Self`, the type, keeps its
+name: it names a type, not a value, and has no counterpart in Kotlin to
+borrow.
+
+`this` was reserved; `self` is not free for identifiers either. The old
+spelling still parses as the receiver so a file keeps checking, with an
+error per use whose fix writes `this` (`veles check --fix`, the LSP's
+quick fix), including inside `"$self"` and `"${self.x}"`. The VS Code
+grammar highlights `this` and marks `self` as illegal.
+
+### D66 — The executor: work-stealing M:N over one shared heap (v0.41)
+
+D35 promised that tasks run on several cores; this fixes how. **Tasks are
+scheduled M:N onto a pool of worker threads (one per core by default,
+`VELES_THREADS` to override) and a suspended task may resume on any of
+them** — Go's and Tokio's model. There is one garbage-collected heap;
+collection stops every worker at a *safepoint* (an allocation or a
+suspension point, both of which the compiler already knows) and marks
+from all their roots. Each worker allocates from a buffer of its own so
+the common allocation takes no lock. `Mutex<T>` becomes a real lock and
+`Atomic<T>` real atomics; channels, timers and the I/O poller become
+thread-safe inside the runtime.
+
+Built in two stages so each is measurable in `bench/`: first N workers
+on one global run queue, then per-worker queues with stealing.
+
+What becomes an error: a module-level `var` whose type is not
+synchronized (`Mutex`/`Atomic`) — two workers could write it at once,
+and D35 rules races out at compile time. std's own (the UUID v7 counter)
+move behind a `Mutex`. Nothing else in the language changes: `Sendable`
+and the `await`-under-lock ban were designed for this.
+
+Rejected: thread-per-core with pinned tasks (one hot connection starves
+a core, and it still needs safepoints and cross-thread channels, so it
+saves about a third of the work); staying single-threaded with an
+offload pool and scaling by processes (breaks D35's promise, no in-process
+parallel computation).
+
+### D67 — FFI: `extern` blocks anywhere, native libraries in the manifest (v0.41)
+
+`extern "C" { fun ... }` may appear in any package (the checker never
+restricted it to std; only the std used it). Every foreign function is
+`unsafe`: a call needs an `unsafe` block, and an extern function cannot
+be used as a value (so it cannot escape into a safe call later).
+`extern struct` gives C layout; C function pointers are a type for
+callbacks.
+
+Native libraries are declared in `veles.toml`, not in source, and a
+dependency's table links into every program that uses it:
+
+```toml
+[native]
+libs = ["pq"]                 # -lpq: the shared library (or its import library)
+static-libs = ["z"]           # the archive itself, so nothing is needed at run time
+lib-paths = ["vendor/lib"]    # searched first; relative to veles.toml
+pkg-config = ["libpq"]        # flags from `pkg-config --libs`
+```
+
+An entry with a directory part or a library extension (`"vendor/x.a"`,
+`"shim.o"`) is linked as that file. `static-libs` resolves the archive
+by name through `lib-paths` and clang's own library directories and
+passes its path, which is what makes a link static on every platform
+(a linker shown only `-lz` prefers the shared library).
+
+Bindings are written by hand for now. A `veles bindgen header.h` that
+writes the same `extern` blocks from clang's AST may come later; it
+would generate this form, so nothing written by hand is thrown away.
+Rejected: importing C headers into source at build time (Zig's
+`@cImport`): clang work on every build, macros that do not translate,
+and a compiler that depends on a C toolchain's AST format.
+
+### D68 — Shutdown: a signal is something you wait for (v0.41)
+
+```veles
+// fragment
+with (listener = try net.listen(port: 8080)) {
+  http.serve(listener, app.handler(), stop: () => os.shutdownSignal(), grace: Duration.seconds(10))
+}
+```
+
+`os.shutdownSignal(): os.Signal` suspends until the process is asked to
+stop — SIGINT or SIGTERM on POSIX; Ctrl+C, Ctrl+Break, closing the
+console, log-off or system shutdown on Windows — and says which
+(`Signal.Interrupt`, `Signal.Terminate`). Nothing is intercepted until a
+program first asks, so a program that never calls it keeps the default
+(the signal ends it). After the first signal is taken, a second one has
+the default effect again: a stuck shutdown can still be killed with a
+second Ctrl+C. A signal that arrives while nobody waits is kept for the
+next call.
+
+`http.serve(..., stop:, grace:)`: when `stop` returns, `serve` stops
+accepting, closes idle kept-alive connections, lets requests in flight
+finish (their responses carry `connection: close`) for up to `grace`,
+then cancels what is left — whose `with` blocks run (D43) — and returns.
+Without `stop` it runs until its task is cancelled, as before. A stop
+condition is ordinary code, so a test stops a server with a channel and
+a program with two servers waits once and stops both.
+
+Rejected: `os.onSignal(sig, callback)` (an unstructured entry point that
+must reach shared state through `sendable` captures); `serve` handling
+signals itself by default (hidden global behaviour that any second
+server or other cleanup has to undo).
+
+*Not taken with it (asked 2026-09-26):* making a std panic caused by the
+caller (`xs.swap(0, 7)`) report the caller's line. It keeps reporting the
+std line until stack traces exist (D64's known gap).
 
 ---
 

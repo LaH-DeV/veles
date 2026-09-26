@@ -1129,12 +1129,14 @@ func (p *printer) typ(t ast.Type) {
 			p.w(">")
 		}
 	case *ast.NullableType:
-		// `(*T)?` is a nullable pointer; `*T?` would be a pointer to a nullable
-		if _, ptr := t.Elem.(*ast.PointerType); ptr {
+		// `(*T)?` is a nullable pointer; `*T?` would be a pointer to a
+		// nullable. `(fun(): R)?` likewise: `fun(): R?` returns a nullable.
+		switch t.Elem.(type) {
+		case *ast.PointerType, *ast.FunType:
 			p.w("(")
 			p.typ(t.Elem)
 			p.w(")")
-		} else {
+		default:
 			p.typ(t.Elem)
 		}
 		p.w("?")
@@ -1449,7 +1451,7 @@ func (p *printer) exprInner(e ast.Expr) {
 	case *ast.NullLit:
 		p.w("null")
 	case *ast.SelfExpr:
-		p.w("self")
+		p.w("this")
 	case *ast.NameExpr:
 		p.w(e.Name)
 		if len(e.TypeArgs) > 0 {

@@ -18,7 +18,7 @@ struct Point {
     Point(x, y)
   }
 
-  fun shifted(dx: i64): Point = Point(x: self.x + dx, y: self.y)
+  fun shifted(dx: i64): Point = Point(x: this.x + dx, y: this.y)
 
   implement Parsable {
     static fun parse(s: string): Point? = Point.fromText(s)

@@ -39,9 +39,9 @@ type fnCtx struct {
 	throws      bool
 	errType     types.Type // declared error union, or nil when inferred
 	unsafe      int
-	selfVar     *Var           // `self`: a pointer to the receiver's place (D22 v0.30)
+	selfVar     *Var           // `this`: a pointer to the receiver's place (D22 v0.30)
 	initOwned   map[string]int // checking an `init { }` block: the fields it must assign, by index (D28)
-	selfAsRecv  bool           // the next `self` is a method receiver, not a value (init blocks)
+	selfAsRecv  bool           // the next `this` is a method receiver, not a value (init blocks)
 	isGlobal    bool           // checking a global initializer
 	staticOwner *types.Struct  // the struct whose `static val` this global initializer is, if any
 
@@ -88,7 +88,7 @@ func (f *fnCtx) resolve(t ast.Type) types.Type {
 func (f *fnCtx) newVar(name string, t types.Type, mutable bool, span source.Span) *Var {
 	f.c.nextVar++
 	v := &Var{Name: name, Type: t, Mutable: mutable, ID: f.c.nextVar, Span: span}
-	if name != "self" && !strings.HasPrefix(name, "$") && t != nil {
+	if name != "this" && !strings.HasPrefix(name, "$") && t != nil {
 		f.c.refVar(span, v)
 	}
 	f.vars[v] = true
@@ -224,9 +224,9 @@ func (c *Checker) checkBody(fn *Func) {
 	}
 	if owner != nil && !t.Decl.Static {
 		// D22 (v0.30): every method receives a pointer to the place it was
-		// called on, so it may assign the receiver's `var` fields; `self`
+		// called on, so it may assign the receiver's `var` fields; `this`
 		// still reads as the value (checkLValue/selfRef dereference it).
-		fn.Receiver = f.newVar("self", &types.Pointer{Elem: owner}, true, t.Decl.Name.Pos)
+		fn.Receiver = f.newVar("this", &types.Pointer{Elem: owner}, true, t.Decl.Name.Pos)
 		fn.Receiver.IsSelf = true
 		f.selfVar = fn.Receiver
 		if t.Name == "$init" {
@@ -842,11 +842,11 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 	case *ast.SelfExpr:
 		self := f.selfRef()
 		if self == nil {
-			f.errorf(e.Pos, "'self' outside of a method")
+			f.errorf(e.Pos, "'this' outside of a method")
 			return nil, nil
 		}
 		if mutate {
-			f.errorf(e.Pos, "cannot assign to 'self': assign its 'var' fields, or return the new value (D22)")
+			f.errorf(e.Pos, "cannot assign to 'this': assign its 'var' fields, or return the new value (D22)")
 		}
 		return &Deref{exprBase{self.Type.(*types.Pointer).Elem}, &VarRef{exprBase{self.Type}, self}}, self
 	case *ast.MemberExpr:
@@ -912,7 +912,7 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 		if mutate {
 			// D22 (v0.30): mutability is declared on the field, whoever holds
 			// the struct: a bare field is set once, by the constructor call
-			// — or by the `init { }` block through `self`, the one other place
+			// — or by the `init { }` block through `this`, the one other place
 			// (D28); a `protected var` is assigned only by the type's own
 			// declarations
 			if !fld.Var && !(root != nil && root.IsSelf && f.inInit(st)) {

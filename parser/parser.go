@@ -1270,6 +1270,19 @@ func (p *Parser) oldImplSpelling() {
 	p.toks[p.pos].Kind = lexer.KwImpl
 }
 
+// oldSelfSpelling reports the pre-v0.40 receiver `self` with a fix that
+// writes `this` (D65). The expression still parses as the receiver, so a
+// file with the old spelling checks normally apart from these errors and
+// `veles check --fix` migrates it in one pass.
+func (p *Parser) oldSelfSpelling(t lexer.Token) {
+	p.diags.Items = append(p.diags.Items, source.Diagnostic{
+		Severity: source.Error,
+		Span:     t.Span,
+		Message:  "the receiver is spelled 'this' (v0.40, D65)",
+		Fix:      &source.Fix{Title: "Replace 'self' with 'this'", Edits: []source.TextEdit{{Span: t.Span, NewText: "this"}}},
+	})
+}
+
 // peekIdentAfterTypeParams is the identifier that follows a `<...>` at the
 // cursor, for a message; "name" when there is none.
 func (p *Parser) peekIdentAfterTypeParams() string {

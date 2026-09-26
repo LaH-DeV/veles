@@ -52,39 +52,39 @@ struct Task {
   /// The line as it is stored: the inverse of `parse`.
   fun line(): string {
     val sb = stringBuilder()
-    if (self.done) {
+    if (this.done) {
       sb.append("x ")
-      if (!self.completedOn.isEmpty()) sb.append("${self.completedOn} ")
+      if (!this.completedOn.isEmpty()) sb.append("${this.completedOn} ")
     }
-    if (!self.priority.isEmpty()) sb.append("(${self.priority}) ")
-    if (!self.createdOn.isEmpty()) sb.append("${self.createdOn} ")
-    sb.append(self.text)
+    if (!this.priority.isEmpty()) sb.append("(${this.priority}) ")
+    if (!this.createdOn.isEmpty()) sb.append("${this.createdOn} ")
+    sb.append(this.text)
     sb.toString()
   }
 
-  fun words(): List<string> = self.text.split(" ")
-  fun projects(): List<string> = self.words().filter(w => w.startsWith("+") && w.len() > 1)
-  fun contexts(): List<string> = self.words().filter(w => w.startsWith("@") && w.len() > 1)
+  fun words(): List<string> = this.text.split(" ")
+  fun projects(): List<string> = this.words().filter(w => w.startsWith("+") && w.len() > 1)
+  fun contexts(): List<string> = this.words().filter(w => w.startsWith("@") && w.len() > 1)
 
   /// The value of a `key:value` tag, or null.
   fun tag(key: string): string? {
     val prefix = "$key:"
-    val w = self.words().find(w => w.startsWith(prefix)) ?: return null
+    val w = this.words().find(w => w.startsWith(prefix)) ?: return null
     w.substring(prefix.len(), w.len())
   }
 
   fun due(): string? {
-    val d = self.tag("due") ?: return null
+    val d = this.tag("due") ?: return null
     if (isDate(d)) d else null
   }
 
   /// Every term must match: `+proj` and `@ctx` match a tag, `-word` excludes,
   /// anything else is a case-insensitive substring of the line.
   fun matches(terms: List<string>): bool = terms.all(term => when {
-    term.startsWith("-") && term.len() > 1 => !self.matches([term.substring(1, term.len()) ?: ""])
-    term.startsWith("+") => self.projects().contains(term)
-    term.startsWith("@") => self.contexts().contains(term)
-    else => self.line().toLower().contains(term.toLower())
+    term.startsWith("-") && term.len() > 1 => !this.matches([term.substring(1, term.len()) ?: ""])
+    term.startsWith("+") => this.projects().contains(term)
+    term.startsWith("@") => this.contexts().contains(term)
+    else => this.line().toLower().contains(term.toLower())
   })
 }
 
@@ -152,24 +152,24 @@ struct TodoFile {
   }
 
   fun save() throws IoError {
-    try fs.writeFile(self.file, self.tasks.map(t => t.line() + "\n").join(""))
+    try fs.writeFile(this.file, this.tasks.map(t => t.line() + "\n").join(""))
   }
 
   /// Task numbers are 1-based line numbers.
   fun number(arg: string): i64 throws UsageError {
     val n = arg.toInt() ?: throw UsageError(message: "'$arg' is not a task number")
-    if (n < 1 || n > self.tasks.len()) throw UsageError(message: "no task $n (${self.tasks.len()} in ${path.base(self.file)})")
+    if (n < 1 || n > this.tasks.len()) throw UsageError(message: "no task $n (${this.tasks.len()} in ${path.base(this.file)})")
     n
   }
 
   /// Task `n`, counting from 1. Every `n` comes from `number`, which accepts
   /// only `1..len`.
-  fun task(n: i64): *Task = self.tasks.ref(n - 1) ?: panic("todo: number() accepts only 1..len")
+  fun task(n: i64): *Task = this.tasks.ref(n - 1) ?: panic("todo: number() accepts only 1..len")
 
   /// The numbered tasks, open ones first by priority, then by due date, then by number.
   fun listed(terms: List<string>, all: bool): List<(i64, Task)> {
     val rows: MutableList<(i64, Task)> = []
-    loop ((i, t) in self.tasks.iter().enumerate()) {
+    loop ((i, t) in this.tasks.iter().enumerate()) {
       if ((all || !t.done) && t.matches(terms)) rows.push((i + 1, t))
     }
     rows.sortedWith((a, b) => {

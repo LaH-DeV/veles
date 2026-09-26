@@ -10,10 +10,10 @@ struct Counter {
   var n: i64 = 0
 
   fun bump() {
-    self.n += 1
+    this.n += 1
   }
 
-  fun show(): string = "n=${self.n}"
+  fun show(): string = "n=${this.n}"
 }
 
 var picks = 0

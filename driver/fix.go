@@ -69,3 +69,15 @@ func ApplyFixes(diags *source.Diagnostics) (int, error) {
 	}
 	return n, nil
 }
+
+// applyAndReport runs ApplyFixes for `veles check --fix` and prints how
+// many were applied; false when writing a file failed.
+func applyAndReport(diags *source.Diagnostics) bool {
+	n, err := ApplyFixes(diags)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "veles:", err)
+		return false
+	}
+	fmt.Fprintf(os.Stderr, "%d fix(es) applied\n", n)
+	return true
+}

@@ -5,7 +5,7 @@ struct Res {
 
   implement Closeable {
     fun close() {
-      io.println("close ${self.name}")
+      io.println("close ${this.name}")
     }
   }
 }

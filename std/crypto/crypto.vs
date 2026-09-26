@@ -49,31 +49,31 @@ public struct Digest {
 
   /// The raw bytes. For *sending* the digest; comparing two `bytes()`
   /// results with `==` is not constant time, compare the digests instead.
-  public fun bytes(): List<u8> = self.data
+  public fun bytes(): List<u8> = this.data
 
   /// Length in bytes (32 for SHA-256, 64 for SHA-512, 20 for SHA-1).
-  public fun len(): i64 = self.data.len()
+  public fun len(): i64 = this.data.len()
 
   /// Lower-case hexadecimal, the usual way to write a digest down.
-  public fun toHex(): string = hex.encode(self.data)
+  public fun toHex(): string = hex.encode(this.data)
 
   /// URL-safe base64 with no padding: a JWT signature, an `ETag`, a
   /// cookie value.
-  public fun toBase64Url(): string = base64.encodeUrl(self.data)
+  public fun toBase64Url(): string = base64.encodeUrl(this.data)
 
   /// The first `n` bytes, as a digest: a shorter tag (an `ETag`, a cache
   /// key). Truncation is the accepted way to shorten a digest; taking
   /// bytes out of the middle is not.
-  public fun prefix(n: i64): Digest = Digest(data: self.data.take(n))
+  public fun prefix(n: i64): Digest = Digest(data: this.data.take(n))
 
   implement Display {
-    fun toString(): string = hex.encode(self.data)
+    fun toString(): string = hex.encode(this.data)
   }
 
   implement Equatable {
     /// Constant time in the contents: every byte is read whatever the
     /// first difference is.
-    fun equals(other: Digest): bool = equalBytes(self.data, other.data)
+    fun equals(other: Digest): bool = equalBytes(this.data, other.data)
   }
 
   implement Hashable {
@@ -82,7 +82,7 @@ public struct Digest {
       var h = 0
       var i = 0
       loop (i < 8) {
-        val b = self.data.at(i) ?: break
+        val b = this.data.at(i) ?: break
         h = (h << 8) | (b as i64)
         i = i + 1
       }

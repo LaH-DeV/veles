@@ -254,7 +254,7 @@ struct Countdown {
 
   implement Iterable {
     type Iter = CountdownIter
-    fun iterator(): CountdownIter = CountdownIter(current: self.from)
+    fun iterator(): CountdownIter = CountdownIter(current: this.from)
   }
 }
 
@@ -264,9 +264,9 @@ struct CountdownIter {
   implement Iterator {
     type Item = i64
     fun next(): i64? {
-      if (self.current <= 0) return null
-      val v = self.current
-      self.current -= 1
+      if (this.current <= 0) return null
+      val v = this.current
+      this.current -= 1
       v
     }
   }

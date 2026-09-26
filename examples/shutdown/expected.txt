@@ -1,0 +1,12 @@
+idle:  HTTP/1.1 200 OK | fast
+--- the process is asked to stop
+server: Terminate, draining
+idle:  closed by the server (0 more bytes)
+busy:  HTTP/1.1 200 OK | slow, but finished | connection: close
+server: serve returned
+
+server: told to stop, 100ms of grace
+stuck: the handler's resource was closed
+stuck: (closed without a response)
+server: serve returned
+exit=0

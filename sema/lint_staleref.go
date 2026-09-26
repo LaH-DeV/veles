@@ -21,7 +21,7 @@ import (
 //
 // and when the body of `loop (&x in xs)` changes `xs` itself. It is
 // syntactic: the collection is matched by its source text, so it sees
-// `xs` and `self.items` but not two names for one list.
+// `xs` and `this.items` but not two names for one list.
 
 // layoutChangers are the methods that may move or reorder elements.
 var layoutChangers = map[string]bool{

@@ -479,7 +479,7 @@ func TestBuiltinHoverAndDefinition(t *testing.T) {
 
 func TestExtendMethods(t *testing.T) {
 	// line 3: val s = " hi "; 4: io.println(s.trim())
-	src := "use io\n\nfun main() {\n  val s = \" hi \"\n  io.println(s.trim())\n}\n\nstruct P { x: i64 }\n\nextend P {\n  /// Twice x.\n  fun double(): i64 = self.x * 2\n}\n"
+	src := "use io\n\nfun main() {\n  val s = \" hi \"\n  io.println(s.trim())\n}\n\nstruct P { x: i64 }\n\nextend P {\n  /// Twice x.\n  fun double(): i64 = this.x * 2\n}\n"
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")
 	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
@@ -543,7 +543,7 @@ func TestStdSourceTreeDiagnostics(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	src := "extend string {\n  public fun shout(): string = self + \"!\"\n}\nfun wrong(): i64 = \"x\"\n"
+	src := "extend string {\n  public fun shout(): string = this + \"!\"\n}\nfun wrong(): i64 = \"x\"\n"
 	path := filepath.Join(dir, "zz_extra.vs")
 	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
 		t.Fatal(err)
@@ -713,7 +713,7 @@ func TestTypeAliasHover(t *testing.T) {
 // `internal` on every line only made the hover harder to read. A field's
 // hover names the struct and shows the field's line.
 func TestHoverSpellsOutModifiers(t *testing.T) {
-	src := "use io\n\npublic struct Notes {\n  private var next: i64 = 1\n  items: bool = false\n  public protected var count: i64 = 0\n  static val empty = Notes()\n  public fun add(text: string) {\n    self.next += text.len()\n    self.count += 1\n  }\n  private fun bump() { }\n  public static fun of(n: i64): Notes = Notes(count: n)\n}\n\nfun main() {\n  val n = Notes()\n  n.add(\"x\")\n  io.println(\"${n.count} ${n.items}\")\n}\n"
+	src := "use io\n\npublic struct Notes {\n  private var next: i64 = 1\n  items: bool = false\n  public protected var count: i64 = 0\n  static val empty = Notes()\n  public fun add(text: string) {\n    this.next += text.len()\n    this.count += 1\n  }\n  private fun bump() { }\n  public static fun of(n: i64): Notes = Notes(count: n)\n}\n\nfun main() {\n  val n = Notes()\n  n.add(\"x\")\n  io.println(\"${n.count} ${n.items}\")\n}\n"
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")
 	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
@@ -742,7 +742,7 @@ func TestHoverSpellsOutModifiers(t *testing.T) {
 // on its own line, the visibility written, `static`, `override`, a trait's
 // associated types and which methods have default bodies.
 func TestHoverMethodsAndTraits(t *testing.T) {
-	src := "use io\n\n/// Something with an area.\npublic trait Shape {\n  type Unit\n  fun area(): f64\n  fun describe(): string = \"area ${self.area()}\"\n  static fun unit(): string\n}\n\nstruct Square {\n  side: f64\n  fun grow(by: f64): Square = Square(side: self.side + by)\n  private fun check() { }\n  public static fun of(side: f64): Square = Square(side)\n}\n\nimplement Shape for Square {\n  type Unit = string\n  fun area(): f64 = self.side * self.side\n  override fun describe(): string = \"square\"\n  static fun unit(): string = \"m\"\n}\n\nimplement Display for Square {\n  fun toString(): string = \"sq\"\n}\n\nextend Square {\n  public fun doubled(): Square = self.grow(self.side)\n}\n\nsealed trait Tree {\n  fun size(): i64\n}\nstruct Leaf : Tree { implement Tree { fun size(): i64 = 1 } }\nstruct Node : Tree {\n  kids: List<Tree>\n  implement Tree { fun size(): i64 = self.kids.len() }\n}\n\nfun helper(): i64 = 1\n\nfun main() {\n  val s = Square(side: 2.0)\n  val a = s.area()\n  val d = s.describe()\n  val g = s.grow(1.0).doubled()\n  val o = Square.of(1.0)\n  val h = helper()\n  io.println(\"$a $d $g $o $h ${Leaf().size()}\")\n}\n"
+	src := "use io\n\n/// Something with an area.\npublic trait Shape {\n  type Unit\n  fun area(): f64\n  fun describe(): string = \"area ${this.area()}\"\n  static fun unit(): string\n}\n\nstruct Square {\n  side: f64\n  fun grow(by: f64): Square = Square(side: this.side + by)\n  private fun check() { }\n  public static fun of(side: f64): Square = Square(side)\n}\n\nimplement Shape for Square {\n  type Unit = string\n  fun area(): f64 = this.side * this.side\n  override fun describe(): string = \"square\"\n  static fun unit(): string = \"m\"\n}\n\nimplement Display for Square {\n  fun toString(): string = \"sq\"\n}\n\nextend Square {\n  public fun doubled(): Square = this.grow(this.side)\n}\n\nsealed trait Tree {\n  fun size(): i64\n}\nstruct Leaf : Tree { implement Tree { fun size(): i64 = 1 } }\nstruct Node : Tree {\n  kids: List<Tree>\n  implement Tree { fun size(): i64 = this.kids.len() }\n}\n\nfun helper(): i64 = 1\n\nfun main() {\n  val s = Square(side: 2.0)\n  val a = s.area()\n  val d = s.describe()\n  val g = s.grow(1.0).doubled()\n  val o = Square.of(1.0)\n  val h = helper()\n  io.println(\"$a $d $g $o $h ${Leaf().size()}\")\n}\n"
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")
 	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
@@ -849,7 +849,7 @@ func TestHoverValuesAndModules(t *testing.T) {
 func TestCompletionVisibility(t *testing.T) {
 	// one dangling `.` per buffer: `//A` (inside next) or `//B` (in main)
 	// is replaced with the receiver under test
-	base := "use io\n\nstruct Parser {\n  private toks: List<string>\n  private var pos: i64 = 0\n  public val tag: string = \"p\"\n  static val zero = 0\n  public static fun of(n: i64): Parser = Parser(toks: [])\n  fun next(): string? {\n    val t = self.toks.at(self.pos)\n    //A\n    t\n  }\n  private fun bump() { self.pos += 1 }\n  public fun done(): bool = self.pos >= self.toks.len()\n}\n\nextend Parser {\n  fun rewind() { self.pos = 0 }\n}\n\nfun main() {\n  val p = Parser(toks: [\"a\"])\n  //B\n  io.println(\"${p.done()} ${p.tag}\")\n}\n"
+	base := "use io\n\nstruct Parser {\n  private toks: List<string>\n  private var pos: i64 = 0\n  public val tag: string = \"p\"\n  static val zero = 0\n  public static fun of(n: i64): Parser = Parser(toks: [])\n  fun next(): string? {\n    val t = this.toks.at(this.pos)\n    //A\n    t\n  }\n  private fun bump() { this.pos += 1 }\n  public fun done(): bool = this.pos >= this.toks.len()\n}\n\nextend Parser {\n  fun rewind() { this.pos = 0 }\n}\n\nfun main() {\n  val p = Parser(toks: [\"a\"])\n  //B\n  io.println(\"${p.done()} ${p.tag}\")\n}\n"
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")
 	if err := os.WriteFile(path, []byte(base), 0o644); err != nil {
@@ -890,15 +890,15 @@ func TestCompletionVisibility(t *testing.T) {
 			t.Errorf("p. in main must not offer %q: %v", hidden, got)
 		}
 	}
-	// `self.` inside the type: every instance member, still no statics
-	got = labels(strings.Replace(base, "    //A\n", "    self.\n", 1), 10, 9)
+	// `this.` inside the type: every instance member, still no statics
+	got = labels(strings.Replace(base, "    //A\n", "    this.\n", 1), 10, 9)
 	for _, want := range []string{"toks", "pos", "bump", "tag", "next", "done", "rewind"} {
 		if !got[want] {
-			t.Errorf("self. inside Parser should offer %q: %v", want, got)
+			t.Errorf("this. inside Parser should offer %q: %v", want, got)
 		}
 	}
 	if got["zero"] || got["of"] {
-		t.Errorf("self. must not offer statics: %v", got)
+		t.Errorf("this. must not offer statics: %v", got)
 	}
 	// `Parser.` in main: the type's namespace — the public static only
 	got = labels(strings.Replace(base, "  //B\n", "  Parser.\n", 1), 23, 9)
@@ -952,7 +952,7 @@ func TestHoverLocals(t *testing.T) {
 
 // `init` is shown in the struct's hover and never offered by completion.
 func TestInitBlockInTooling(t *testing.T) {
-	src := "use io\n\nstruct P {\n  a: i64\n  b: string\n  init {\n    self.b = \"$a\"\n  }\n  fun f(): i64 = self.a\n}\n\nfun main() {\n  val p = P(a: 1)\n  //X\n  io.println(\"${p.b} ${p.f()}\")\n}\n"
+	src := "use io\n\nstruct P {\n  a: i64\n  b: string\n  init {\n    this.b = \"$a\"\n  }\n  fun f(): i64 = this.a\n}\n\nfun main() {\n  val p = P(a: 1)\n  //X\n  io.println(\"${p.b} ${p.f()}\")\n}\n"
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")
 	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
@@ -989,7 +989,7 @@ func TestHoverViewpoint(t *testing.T) {
 	root := t.TempDir()
 	os.WriteFile(filepath.Join(root, "veles.toml"), []byte("[package]\nname = \"app\"\nversion = \"0.1.0\"\n"), 0o644)
 	os.MkdirAll(filepath.Join(root, "store"), 0o755)
-	store := "public struct Notes {\n  private var next: i64 = 1\n  items: List<string> = []\n  public val tag: string = \"n\"\n  fun size(): i64 = self.items.len()\n  public fun add(text: string): i64 {\n    self.next += 1\n    self.next\n  }\n  private fun bump() { }\n}\n\nfun inModule(): i64 {\n  val n = Notes()\n  n.size()\n}\n"
+	store := "public struct Notes {\n  private var next: i64 = 1\n  items: List<string> = []\n  public val tag: string = \"n\"\n  fun size(): i64 = this.items.len()\n  public fun add(text: string): i64 {\n    this.next += 1\n    this.next\n  }\n  private fun bump() { }\n}\n\nfun inModule(): i64 {\n  val n = Notes()\n  n.size()\n}\n"
 	os.WriteFile(filepath.Join(root, "store", "store.vs"), []byte(store), 0o644)
 	main := "use io, store\n\nfun main() {\n  val n = store.Notes()\n  io.println(\"${n.add(\"x\")} ${n.tag}\")\n}\n"
 	os.WriteFile(filepath.Join(root, "main.vs"), []byte(main), 0o644)

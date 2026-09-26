@@ -48,15 +48,15 @@ fun describe(n: i32?): string = when (n) {
 struct Counter {
   n: i32 = 0
 
-  fun get(): i32 = self.n
+  fun get(): i32 = this.n
   fun bump() {
-    self.n += 1
+    this.n += 1
   }
 
   // D23 (v0.23) — a trait impl inside the body of your own type; a static
-  // function has no self and is called on the type: Counter.zero()
+  // function has no `this` and is called on the type: Counter.zero()
   implement Display {
-    fun toString(): string = "Counter(${self.n})"
+    fun toString(): string = "Counter(${this.n})"
   }
   static fun zero(): Counter = Counter()
 }
@@ -72,7 +72,7 @@ trait Iterator {
   fun next(): Item?
   fun count(): i32 {
     var n = 0
-    loop (x in self) {
+    loop (x in this) {
       n += 1
     }
     n
@@ -96,9 +96,9 @@ implement<T> Display for Stack<T> {
 
 // D23 addendum — extend blocks: inherent methods for a type you declare
 extend<T: Display> Stack<T> {
-  public fun render(): string = self.items.map(x => x.show()).join(" ")
+  public fun render(): string = this.items.map(x => x.show()).join(" ")
   fun drain() {
-    self.items.clear()
+    this.items.clear()
   }
 }
 

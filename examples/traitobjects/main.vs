@@ -3,14 +3,14 @@ use io
 trait Shape {
   fun area(): f64
   fun name(): string
-  fun describe(): string = "${self.name()} with area ${self.area()}"
+  fun describe(): string = "${this.name()} with area ${this.area()}"
 }
 
 struct Circle {
   r: f64
 
   implement Shape {
-    fun area(): f64 = 3.0 * self.r * self.r
+    fun area(): f64 = 3.0 * this.r * this.r
     fun name(): string = "circle"
   }
 }
@@ -18,9 +18,9 @@ struct Square {
   side: f64
 
   implement Shape {
-    fun area(): f64 = self.side * self.side
+    fun area(): f64 = this.side * this.side
     fun name(): string = "square"
-    override fun describe(): string = "a square of side ${self.side}"
+    override fun describe(): string = "a square of side ${this.side}"
   }
 }
 
@@ -33,8 +33,8 @@ struct Clicks {
 
   implement Counter {
     fun bump(): i64 {
-      self.n += 1
-      self.n
+      this.n += 1
+      this.n
     }
   }
 }

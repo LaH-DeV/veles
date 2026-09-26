@@ -85,7 +85,7 @@ public struct Listener {
   /// The port the listener is bound to — the system's choice when `listen`
   /// was asked for port 0.
   public fun port(): i64 = unsafe {
-    veles_net_port(self.fd)
+    veles_net_port(this.fd)
   }
 
   /// The next connection; suspends until a client arrives.
@@ -93,18 +93,18 @@ public struct Listener {
     loop {
       var fd: i64 = 0
       val code = unsafe {
-        veles_net_accept(self.fd, &fd)
+        veles_net_accept(this.fd, &fd)
       }
       if (code == 0) return Conn(fd, address: peerOf(fd))
-      if (code != wouldBlock) throw os.ioError(code, self.address)
-      await ioWait(self.fd, false)
+      if (code != wouldBlock) throw os.ioError(code, this.address)
+      await ioWait(this.fd, false)
     }
   }
 
   implement Closeable {
     fun close() {
       unsafe {
-        veles_net_close(self.fd)
+        veles_net_close(this.fd)
       }
     }
   }
@@ -143,21 +143,21 @@ public struct Conn {
   buffer:  Mutex<MutableList<u8>> = newBuffer()
 
   /// The peer's address, `host:port`.
-  public fun peer(): string = self.address
+  public fun peer(): string = this.address
 
   /// Up to `max` bytes, as soon as any are available; an empty list means
   /// the peer closed its side.
   public fun read(max: i64 = 65536): List<u8> suspends throws IoError {
-    val buffered = self.take(max)
+    val buffered = this.take(max)
     if (!buffered.isEmpty()) return buffered
     loop {
       var data = ""
       val code = unsafe {
-        veles_net_recv(self.fd, max, &data)
+        veles_net_recv(this.fd, max, &data)
       }
       if (code == 0) return data.bytes()
-      if (code != wouldBlock) throw os.ioError(code, self.address)
-      await ioWait(self.fd, false)
+      if (code != wouldBlock) throw os.ioError(code, this.address)
+      await ioWait(this.fd, false)
     }
   }
 
@@ -166,11 +166,11 @@ public struct Conn {
   /// — a `Content-Length` header, a length prefix — must check it against
   /// its own limit before calling, or the peer chooses the allocation.
   public fun readExact(n: i64): List<u8> suspends throws IoError {
-    loop (self.buffered() < n) {
-      val chunk = try self.fetch()
+    loop (this.buffered() < n) {
+      val chunk = try this.fetch()
       if (chunk.isEmpty()) break
     }
-    self.take(n)
+    this.take(n)
   }
 
   /// The next line as text, without its `\n` (and a `\r` before it), or
@@ -185,35 +185,35 @@ public struct Conn {
   public fun readLine(max: i64): string? suspends throws IoError | TooLong {
     var scanned: i64 = 0
     loop {
-      val nl = self.buffer.withLock(b => findByte(b, 10, from: scanned))
+      val nl = this.buffer.withLock(b => findByte(b, 10, from: scanned))
       if (nl >= 0) {
-        if (nl > max) throw self.tooLong("line", max)
-        val line = self.buffer.withLock(b => {
+        if (nl > max) throw this.tooLong("line", max)
+        val line = this.buffer.withLock(b => {
           var end = nl
           if (end > 0 && b.at(end - 1) == 13) end -= 1
           val line = b.take(end)
           b.removePrefix(nl + 1)
           line
         })
-        return line.decodeUtf8() ?: throw IoError(path: self.address, code: 0, detail: "line is not valid UTF-8")
+        return line.decodeUtf8() ?: throw IoError(path: this.address, code: 0, detail: "line is not valid UTF-8")
       }
-      scanned = self.buffered()
+      scanned = this.buffered()
       // no newline in what has arrived: stop before asking for more, or a
       // peer that never sends one decides how much we allocate
-      if (scanned > max) throw self.tooLong("line", max)
-      val chunk = try self.fetch()
+      if (scanned > max) throw this.tooLong("line", max)
+      val chunk = try this.fetch()
       if (chunk.isEmpty()) {
-        val rest = self.take(scanned)
+        val rest = this.take(scanned)
         if (rest.isEmpty()) return null
-        if (rest.len() > max) throw self.tooLong("line", max)
-        return rest.decodeUtf8() ?: throw IoError(path: self.address, code: 0, detail: "line is not valid UTF-8")
+        if (rest.len() > max) throw this.tooLong("line", max)
+        return rest.decodeUtf8() ?: throw IoError(path: this.address, code: 0, detail: "line is not valid UTF-8")
       }
     }
   }
 
   // the refusal, with the address so a log says which peer it was
   fun tooLong(what: string, max: i64): TooLong =
-    TooLong(message: "$what from ${self.address} is longer than $max bytes", limit: max)
+    TooLong(message: "$what from ${this.address} is longer than $max bytes", limit: max)
 
   /// Sends all of `bytes`; suspends while the peer catches up.
   public fun write(bytes: List<u8>) suspends throws IoError {
@@ -221,20 +221,20 @@ public struct Conn {
     loop (offset < bytes.len()) {
       var sent: i64 = 0
       val code = unsafe {
-        veles_net_send(self.fd, bytes, offset, &sent)
+        veles_net_send(this.fd, bytes, offset, &sent)
       }
       if (code == wouldBlock) {
-        await ioWait(self.fd, true)
+        await ioWait(this.fd, true)
         continue
       }
-      if (code != 0) throw os.ioError(code, self.address)
+      if (code != 0) throw os.ioError(code, this.address)
       offset += sent
     }
   }
 
   /// Sends `text` as UTF-8.
   public fun writeText(text: string) suspends throws IoError {
-    try self.write(text.bytes())
+    try this.write(text.bytes())
   }
 
   /// Tells the peer that nothing more will be sent (its reads see the end
@@ -242,15 +242,15 @@ public struct Conn {
   /// end of a request when the protocol has no other way to say so.
   public fun shutdownWrite() throws IoError {
     val code = unsafe {
-      veles_net_shutdown_write(self.fd)
+      veles_net_shutdown_write(this.fd)
     }
-    if (code != 0) throw os.ioError(code, self.address)
+    if (code != 0) throw os.ioError(code, this.address)
   }
 
   implement Closeable {
     fun close() {
       unsafe {
-        veles_net_close(self.fd)
+        veles_net_close(this.fd)
       }
     }
   }
@@ -260,23 +260,23 @@ public struct Conn {
     loop {
       var data = ""
       val code = unsafe {
-        veles_net_recv(self.fd, 65536, &data)
+        veles_net_recv(this.fd, 65536, &data)
       }
       if (code == 0) {
         val chunk = data.bytes()
-        self.buffer.withLock(b => b.addAll(chunk))
+        this.buffer.withLock(b => b.addAll(chunk))
         return chunk
       }
-      if (code != wouldBlock) throw os.ioError(code, self.address)
-      await ioWait(self.fd, false)
+      if (code != wouldBlock) throw os.ioError(code, this.address)
+      await ioWait(this.fd, false)
     }
   }
 
   // how many bytes are buffered
-  fun buffered(): i64 = self.buffer.withLock(b => b.len())
+  fun buffered(): i64 = this.buffer.withLock(b => b.len())
 
   // takes up to n buffered bytes
-  fun take(n: i64): List<u8> = self.buffer.withLock(b => {
+  fun take(n: i64): List<u8> = this.buffer.withLock(b => {
     val got = n.min(b.len())
     val out = b.take(got)
     b.removePrefix(got)
@@ -288,8 +288,8 @@ extend<T> MutableList<T> {
   // drops the first n elements
   fun removePrefix(n: i64) {
     if (n <= 0) return
-    val rest = self.drop(n)
-    self.clear()
-    self.addAll(rest)
+    val rest = this.drop(n)
+    this.clear()
+    this.addAll(rest)
   }
 }

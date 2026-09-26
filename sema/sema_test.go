@@ -71,7 +71,7 @@ func TestSpecRules(t *testing.T) {
 	}{
 		{"D11 val is immutable", prelude + `fun main() { val x = 1; x = 2 }`, "it is a 'val'"},
 		{"D22 assignment to a bare field", prelude + `
-struct C { n: i32 = 0; fun bump() { self.n += 1 } }
+struct C { n: i32 = 0; fun bump() { this.n += 1 } }
 fun main() { }`, "the field is immutable; declare it 'var n: i32'"},
 		{"D22 bare field through a var binding", prelude + `
 struct C { n: i32 = 0 }
@@ -79,15 +79,15 @@ fun main() { var c = C(); c.n = 2 }`, "the field is immutable"},
 		{"D22 bare field through a pointer", prelude + `
 struct C { n: i32 = 0 }
 fun main() { var c = C(); val p = &c; p.n = 2 }`, "the field is immutable"},
-		{"D22 self is not assignable", prelude + `
-struct C { var n: i32 = 0; fun reset() { self = C() } }
-fun main() { }`, "cannot assign to 'self'"},
+		{"D22 this is not assignable", prelude + `
+struct C { var n: i32 = 0; fun reset() { this = C() } }
+fun main() { }`, "cannot assign to 'this'"},
 		{"D22 var field of a global val", prelude + `
 struct C { var n: i32 = 0 }
 val g = C()
 fun main() { g.n = 2 }`, "a global 'val' is a constant"},
 		{"D22 method changing a global val", prelude + `
-struct C { var n: i32 = 0; fun bump() { self.n += 1 } }
+struct C { var n: i32 = 0; fun bump() { this.n += 1 } }
 val g = C()
 fun main() { g.bump() }`, "the method changes its receiver and a global 'val' is a constant"},
 		{"D12 variant in other module only", prelude + `
@@ -229,22 +229,22 @@ fun f(x: i32??): i32 = when (x) {
 }
 fun main() { }`,
 		"trait default and generic bound": prelude + `
-trait Show { fun show(): string; fun twice(): string = self.show() + self.show() }
+trait Show { fun show(): string; fun twice(): string = this.show() + this.show() }
 struct A { }
 implement Show for A { fun show(): string = "a" }
 fun p<T: Show>(x: T): string = x.twice()
 fun main() { io.println(p(A())) }`,
 		"struct methods on generic": prelude + `
-struct Stack<T> { items: MutableList<T> = []; fun push(x: T) { self.items.push(x) }; fun len(): i64 = self.items.len() }
+struct Stack<T> { items: MutableList<T> = []; fun push(x: T) { this.items.push(x) }; fun len(): i64 = this.items.len() }
 fun main() { val s = Stack<i32>(); s.push(1); io.println("${s.len()}") }`,
 		"mutation through pointer on val": prelude + `
 struct C { var n: i32 }
 fun main() { val c = C(n: 1); val p = &c; p.n = 2 }`,
 		"var field through a val binding": prelude + `
-struct C { var n: i32 = 0; fun bump() { self.n += 1 } }
+struct C { var n: i32 = 0; fun bump() { this.n += 1 } }
 fun main() { val c = C(); c.n = 2; c.bump(); io.println("${c.n}") }`,
 		"var field on a var global": prelude + `
-struct C { var n: i32 = 0; fun bump() { self.n += 1 } }
+struct C { var n: i32 = 0; fun bump() { this.n += 1 } }
 var g = C()
 fun main() { g.n = 2; g.bump() }`,
 		"Result value matched": prelude + `
@@ -435,7 +435,7 @@ func TestErrorTrait(t *testing.T) {
 	// explicit override, and dispatch on a union without a `when`
 	expectClean(t, prelude+`
 error ParseError { text: string }
-error RangeError { value: i64; fun message(): string = "out of range: ${self.value}" }
+error RangeError { value: i64; fun message(): string = "out of range: ${this.value}" }
 fun parse(s: string): i64 throws ParseError | RangeError {
   val n = s.toInt() ?: throw ParseError(text: s)
   if (n > 10) throw RangeError(value: n)
@@ -477,14 +477,14 @@ func TestErrorDeclarations(t *testing.T) {
 	expectClean(t, prelude+`
 error Plain
 error Tagged { message: string }
-error Parse { text: string; fun message(): string = "parse: ${self.text}" }
+error Parse { text: string; fun message(): string = "parse: ${this.text}" }
 error Bounds { value: i64; fun bound(): i64 = 65535 }
 error PortErrors = Parse | Bounds | Tagged | Plain
 error More = PortErrors | Panic
 error Wrapped {
   key: string
   cause: PortErrors
-  fun message(): string = "${self.key}: ${self.cause.message()}"
+  fun message(): string = "${this.key}: ${this.cause.message()}"
 }
 fun parse(s: string): i64 throws PortErrors {
   if (s == "t") throw Tagged(message: "tagged")
@@ -543,7 +543,7 @@ fun main() { val a = A(message: 1); io.println(a.message()) }`, "A(message: 1)"}
 }
 
 func TestFieldPathSmartCasts(t *testing.T) {
-	// D5: a chain of direct struct fields from a local (or value self) is a
+	// D5: a chain of direct struct fields from a local (or value this) is a
 	// stable place; tests on it narrow the path itself
 	expectClean(t, prelude+`
 error ParseError { text: string }
@@ -554,7 +554,7 @@ struct Address { city: string }
 struct User {
   var name: string
   address: Address?
-  fun city(): string = if (self.address != null) self.address.city else "?"
+  fun city(): string = if (this.address != null) this.address.city else "?"
 }
 struct Box { user: User }
 fun load(): i64 throws ConfigError = throw ConfigError(key: "k", cause: RangeError(value: 7))
@@ -588,14 +588,14 @@ fun main() {
   if (p.address != null) io.println(p.address.city)`},
 		{"assigned in loop", `
   if (u.address != null) { loop (i in 0..1) { u.address = null }; io.println(u.address.city) }`},
-		{"method on self clears the fact", `
+		{"method on this clears the fact", `
   io.println(u.reset())`},
 	} {
 		src := prelude + `
 struct Address { city: string }
-struct User { name: string, var address: Address?; fun clear() { self.address = null }
-  fun city(): string = if (self.address != null) self.address.city else "?"
-  fun reset(): string = if (self.address != null) { self.clear(); self.address.city } else "?" }
+struct User { name: string, var address: Address?; fun clear() { this.address = null }
+  fun city(): string = if (this.address != null) this.address.city else "?"
+  fun reset(): string = if (this.address != null) { this.clear(); this.address.city } else "?" }
 fun other(u: *User) { u.address = null }
 fun main() {
   var u = User(name: "a", address: Address(city: "x"))` + c.src + `
@@ -659,11 +659,11 @@ struct Box<T> { value: T }
 trait Show { fun show(): string }
 implement Show for Point { fun show(): string = "p" }
 extend Point {
-  public fun sum(): i64 = self.x + self.y
-  fun bump() { self.x += 1 }
+  public fun sum(): i64 = this.x + this.y
+  fun bump() { this.x += 1 }
 }
-extend<T: Show> Box<T> { fun label(): string = self.value.show() }
-extend<T> Box<T> { fun get(): T = self.value }
+extend<T: Show> Box<T> { fun label(): string = this.value.show() }
+extend<T> Box<T> { fun get(): T = this.value }
 fun main() {
   var p = Point(x: 1, y: 2)
   p.bump()
@@ -682,13 +682,13 @@ fun main() {
   io.println("$v")
 }`)
 	cases := []struct{ name, src, want string }{
-		{"builtin outside std", `extend string { fun shout(): string = self }`, "outside the standard library"},
+		{"builtin outside std", `extend string { fun shout(): string = this }`, "outside the standard library"},
 		{"foreign struct", `extend Panic { fun why(): string = "" }`, "declared outside this package"},
 		{"pointer target", `struct P { x: i64 }
 extend *P { fun z() {} }`, "only named types can be extended"},
 		{"type param target", `extend<T> T { fun z() {} }`, "only named types can be extended"},
 		{"struct body collision", `struct P { x: i64
-  fun sum(): i64 = self.x }
+  fun sum(): i64 = this.x }
 extend P { fun sum(): i64 = 1 }`, "already declared in the body"},
 		{"duplicate in block", `struct P { x: i64 }
 extend P { fun a(): i64 = 1
@@ -703,7 +703,7 @@ extend Show for P { }`, "names the type being extended"},
 		{"bound not met", `struct P { x: i64 }
 trait Show { fun show(): string }
 struct Box<T> { value: T }
-extend<T: Show> Box<T> { fun label(): string = self.value.show() }
+extend<T: Show> Box<T> { fun label(): string = this.value.show() }
 fun main() { val b = Box(value: P(x: 1)); b.label() }`, "requires 'P' to implement 'Show'"},
 		{"private across modules is still M5", `struct P { x: i64 }
 extend P { fun a(): i64 = 1 }
@@ -738,7 +738,7 @@ func TestStdSourceTreeIsStd(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	extra := "extend string {\n  public fun shout(): string = self + \"!\"\n}\nfun wrong(): i64 = \"x\"\n"
+	extra := "extend string {\n  public fun shout(): string = this + \"!\"\n}\nfun wrong(): i64 = \"x\"\n"
 	if err := os.WriteFile(filepath.Join(dir, "zz_extra.vs"), []byte(extra), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -810,18 +810,18 @@ func TestOperatorTraits(t *testing.T) {
 	expectClean(t, prelude+`
 struct Version { major: i64, minor: i64 }
 implement Comparable for Version {
-  fun compareTo(other: Version): Ordering = if (self.major != other.major) self.major.compareTo(other.major) else self.minor.compareTo(other.minor)
+  fun compareTo(other: Version): Ordering = if (this.major != other.major) this.major.compareTo(other.major) else this.minor.compareTo(other.minor)
 }
-implement Display for Version { fun toString(): string = "v${self.major}.${self.minor}" }
+implement Display for Version { fun toString(): string = "v${this.major}.${this.minor}" }
 struct Name { text: string }
-implement Equatable for Name { fun equals(other: Name): bool = self.text.toLower() == other.text.toLower() }
-implement Hashable for Name { fun hash(): i64 = self.text.toLower().len() }
+implement Equatable for Name { fun equals(other: Name): bool = this.text.toLower() == other.text.toLower() }
+implement Hashable for Name { fun hash(): i64 = this.text.toLower().len() }
 struct Pair<T> { a: T, b: T }
-implement<T: Display> Display for Pair<T> { fun toString(): string = "<${self.a}, ${self.b}>" }
+implement<T: Display> Display for Pair<T> { fun toString(): string = "<${this.a}, ${this.b}>" }
 sealed trait Shape
 struct Circle : Shape { r: f64 }
 struct Square : Shape { side: f64 }
-implement Comparable for Shape { fun compareTo(other: Shape): Ordering = area(self).compareTo(area(other)) }
+implement Comparable for Shape { fun compareTo(other: Shape): Ordering = area(this).compareTo(area(other)) }
 fun area(s: Shape): f64 = when (s) {
   is Circle => 3.14 * s.r * s.r
   is Square => s.side * s.side
@@ -946,8 +946,8 @@ fun main() {
 }`)
 	cases := []struct{ name, src, want string }{
 		{"top level", `static fun f() { }`, "a top-level function needs no marker"},
-		{"self in static", `struct P { x: i64
-  static fun make(): P = P(x: self.x) }`, "'self' is not available in a static function"},
+		{"this in static", `struct P { x: i64
+  static fun make(): P = P(x: this.x) }`, "'this' is not available in a static function"},
 		{"static called on a value", `struct P { x: i64
   static fun make(): P = P(x: 1) }
 fun main() { val p = P(x: 1); p.make() }`, "call it on the type: 'P.make(...)'"},
@@ -1007,7 +1007,7 @@ implement<T> Show for Box<T> { fun show(): string = "box" }`); !ok {
 	for name, src := range map[string]string{
 		"extra bound": `trait Show { fun show(): string }
 struct Box<T> { x: T }
-implement<T: Show> Show for Box<T> { fun show(): string = self.x.show() }`,
+implement<T: Show> Show for Box<T> { fun show(): string = this.x.show() }`,
 		"foreign type": `trait Show { fun show(): string }
 implement Show for i64 { fun show(): string = "n" }`,
 		"already inline": `trait Show { fun show(): string }
@@ -1061,7 +1061,7 @@ fun sum(xs: i64...): i64 {
 }
 trait Fmt { fun fmt(args: string...): string }
 struct P { x: i64
-  implement Fmt { fun fmt(args: string...): string = "${self.x} ${args.len()}" }
+  implement Fmt { fun fmt(args: string...): string = "${this.x} ${args.len()}" }
   static fun of(xs: i64...): P = P(x: xs.len())
 }
 fun main() {
@@ -1178,7 +1178,7 @@ func TestIndexingIsMethodsOnly(t *testing.T) {
 	}
 	expectClean(t, prelude+`
 struct C { var n: i64 = 0
-  fun bump() { self.n += 1 } }
+  fun bump() { this.n += 1 } }
 fun main() {
   val xs = [1, 2]
   val a: i64? = xs.at(5)
@@ -1251,7 +1251,7 @@ fun main() { io.println("${f(A())} ${g(B())} ${h(C())}") }`
 func TestLiteralMutabilityFromGenericParam(t *testing.T) {
 	expectClean(t, prelude+`
 struct Stack<T> { items: MutableList<T>
-  fun push(x: T) { self.items.push(x) } }
+  fun push(x: T) { this.items.push(x) } }
 fun fill<T>(xs: MutableList<T>, x: T): i64 { xs.push(x); xs.len() }
 fun keyed<K, V>(m: MutableMap<K, V>, k: K, v: V): i64 { m.set(k, v); m.len() }
 fun main() {
@@ -1267,8 +1267,8 @@ fun main() {
 func TestSafeCallThroughRef(t *testing.T) {
 	expectClean(t, prelude+`
 struct C { var n: i64 = 0
-  fun bump() { self.n += 1 }
-  fun show(): string = "${self.n}" }
+  fun bump() { this.n += 1 }
+  fun show(): string = "${this.n}" }
 fun make(f: fun(i64): i64): List<C> = [C(n: f(1))]
 fun main() {
   val cs: MutableList<C> = [C()]
@@ -1289,7 +1289,7 @@ fun main() {
 		{`fun main() { val cs = [C()]; cs.ref(0)?.bump() }`, "'ref' needs a MutableList"},
 		{`fun main() { val cs: MutableList<C> = [C()]; val p = &cs.at(0); p.n = 1 }`, "address of a copy of the element"},
 	} {
-		expectError(t, prelude+"struct C { var n: i64 = 0\n  fun bump() { self.n += 1 } }\n"+c.src, c.want)
+		expectError(t, prelude+"struct C { var n: i64 = 0\n  fun bump() { this.n += 1 } }\n"+c.src, c.want)
 	}
 }
 
@@ -1302,7 +1302,7 @@ fun main() {
 func TestPlacesThroughNullables(t *testing.T) {
 	expectClean(t, prelude+`
 struct C { var n: i64 = 0
-  fun bump() { self.n += 1 } }
+  fun bump() { this.n += 1 } }
 struct Box { var c: C? = null }
 fun main() {
   val m: MutableMap<string, C> = ["a": C()]
@@ -1348,7 +1348,7 @@ fun main() { make()?.n = 1 }`, "into a temporary value of type 'C' has no effect
 		{`fun main() { val p: C? = C(); p?.n = 1 }`, "it is a 'val'"},
 		{`fun main() { var p: C = C(); p?.n = 1 }`, "'?.' on a non-nullable value"},
 	} {
-		expectError(t, prelude+"struct C { var n: i64 = 0\n  fun bump() { self.n += 1 } }\n"+c.src, c.want)
+		expectError(t, prelude+"struct C { var n: i64 = 0\n  fun bump() { this.n += 1 } }\n"+c.src, c.want)
 	}
 }
 
@@ -1369,7 +1369,7 @@ struct Http { implement Fetcher {
   } } }
 struct Memory { data: Map<string, string>
   implement Fetcher {
-    fun fetch(url: string): string throws Missing = self.data.get(url) ?: throw Missing(name: url) } }
+    fun fetch(url: string): string throws Missing = this.data.get(url) ?: throw Missing(name: url) } }
 struct Always { implement Fetcher { fun fetch(url: string): string throws = url } }
 struct Pinned { implement Fetcher {
   type Error = HttpError
@@ -1401,7 +1401,7 @@ fun main() { io.println("${f(Ones())}") }`)
 }
 
 // Found by the calculator program: an arm body may be an assignment
-// (`cond => self.pos += 1`), a loop body may be a bare statement like an
+// (`cond => this.pos += 1`), a loop body may be a bare statement like an
 // `if` body, and `x = Node(child: &x)` is warned about (the pointer would
 // name the variable being assigned, making the value contain itself).
 func TestCalculatorFindings(t *testing.T) {
@@ -1409,10 +1409,10 @@ func TestCalculatorFindings(t *testing.T) {
 struct Cursor { var pos: i64 = 0
   fun step(b: u8) {
     when {
-      b == 32 => self.pos += 1
-      else => self.pos = 0
+      b == 32 => this.pos += 1
+      else => this.pos = 0
     }
-    loop (self.pos < 3) self.pos += 1
+    loop (this.pos < 3) this.pos += 1
   } }
 fun main() { var c = Cursor(); c.step(32); io.println("${c.pos}") }`)
 	diags := checkSource(t, prelude+`
@@ -1433,7 +1433,7 @@ fun main() {
 		}
 	}
 	if diags.HasErrors() || n != 1 {
-		t.Errorf("expected exactly one self-address warning, got:\n%s", diags.Render())
+		t.Errorf("expected exactly one this-address warning, got:\n%s", diags.Render())
 	}
 }
 
@@ -1527,7 +1527,7 @@ func TestPreludeCollections(t *testing.T) {
 struct Job {
   cost: i64
   implement Comparable {
-    fun compareTo(other: Job): Ordering = self.cost.compareTo(other.cost)
+    fun compareTo(other: Job): Ordering = this.cost.compareTo(other.cost)
   }
 }
 fun drain(q: Deque<i64>): i64 {
@@ -1713,7 +1713,7 @@ fun main() {
 func TestStaleReferenceLint(t *testing.T) {
 	src := prelude + `
 struct C { var n: i64 = 0
-  fun bump() { self.n += 1 } }
+  fun bump() { this.n += 1 } }
 fun main() {
   val xs: MutableList<C> = [C()]
   val p = xs.ref(0) ?: panic("one element")
@@ -2289,16 +2289,16 @@ struct Notes {
   private items:    MutableList<Note> = []
   static val seeded = Notes(next: 100)
   fun add(text: string): Note {
-    val n = Note(id: self.next, text)
-    self.items.push(n)
-    self.bump()
+    val n = Note(id: this.next, text)
+    this.items.push(n)
+    this.bump()
     n
   }
-  private fun bump() { self.next += 1 }
-  fun all(): List<Note> = self.items.toList()
+  private fun bump() { this.next += 1 }
+  fun all(): List<Note> = this.items.toList()
 }
 extend Notes {
-  fun count(): i64 = self.items.len()
+  fun count(): i64 = this.items.len()
 }
 `
 	expectClean(t, prelude+notes+`
@@ -2319,7 +2319,7 @@ struct Secret { private key: string }
 fun main() { val s = Secret(); io.println("$s") }`, "missing field 'key'")
 	expectClean(t, prelude+`
 struct Parser { private toks: List<string>; private var pos: i64 = 0
-  fun next(): string? { val t = self.toks.at(self.pos); self.pos += 1; t } }
+  fun next(): string? { val t = this.toks.at(this.pos); this.pos += 1; t } }
 fun main() { val p = Parser(toks: ["a"]); io.println("${p.next()}") }`)
 	expectError(t, prelude+`
 struct Parser { private toks: List<string>; private var pos: i64 = 0 }
@@ -2341,7 +2341,7 @@ fun main() { io.println("${helper()}") }`, "'private' belongs to a member of a s
 }
 
 // D22 (v0.30): mutability is declared on the field. A bare field is never
-// assigned; a `var` field is assignable through `self`, any binding or a
+// assigned; a `var` field is assignable through `this`, any binding or a
 // pointer; `val`/`var` on a binding only govern rebinding. Every method
 // takes a pointer to its receiver's place; the receiver pass reports a
 // change to a discarded copy and heap-allocates a receiver a method keeps
@@ -2351,10 +2351,10 @@ func TestVarFields(t *testing.T) {
 struct Counter {
   label: string
   var n: i64 = 0
-  fun bump() { self.n += 1 }
-  fun show(): string = "${self.label}=${self.n}"
-  fun ticker(): fun(): i64 = () => { self.n += 1; self.n }
-  fun handle(): *Counter = &self
+  fun bump() { this.n += 1 }
+  fun show(): string = "${this.label}=${this.n}"
+  fun ticker(): fun(): i64 = () => { this.n += 1; this.n }
+  fun handle(): *Counter = &this
 }
 `
 	expectClean(t, prelude+counter+`
@@ -2370,7 +2370,7 @@ fun main() {
   io.println("${c.show()} ${t()} ${d.show()}")
 }`)
 	for _, c := range []struct{ name, src, want string }{
-		{"bare field through self", `struct P { x: i64; fun move() { self.x += 1 } }
+		{"bare field through this", `struct P { x: i64; fun move() { this.x += 1 } }
 fun main() { }`, "'P.x': the field is immutable; declare it 'var x: i64'"},
 		{"bare field through a var binding", `struct P { x: i64 }
 fun main() { var p = P(x: 1); p.x = 2 }`, "the field is immutable"},
@@ -2381,9 +2381,9 @@ fun main() { val ps: MutableList<P> = [P(x: 1)]; loop (&p in ps) p.x = 2 }`, "th
 		{"only the last field decides", `struct In { x: i64 }
 struct Out { var inner: In }
 fun main() { var o = Out(inner: In(x: 1)); o.inner.x = 2 }`, "'In.x': the field is immutable"},
-		{"self cannot be replaced", counter + `
-extend Counter { fun reset() { self = Counter(label: "r") } }
-fun main() { }`, "cannot assign to 'self'"},
+		{"this cannot be replaced", counter + `
+extend Counter { fun reset() { this = Counter(label: "r") } }
+fun main() { }`, "cannot assign to 'this'"},
 		{"a global val is a constant", counter + `
 val g = Counter(label: "g")
 fun main() { g.n = 1 }`, "a global 'val' is a constant"},
@@ -2395,7 +2395,7 @@ fun make(): Counter = Counter(label: "m")
 fun main() { make().bump() }`, "'bump' changes a temporary copy of 'Counter' that is then discarded"},
 		{"an element read is a copy", counter + `
 fun main() { val cs: MutableList<Counter> = [Counter(label: "e")]; cs.at(0)?.bump() }`, "reach the element itself with 'cs.ref(0)'"},
-		{"mut fun is gone", `struct P { var x: i64; mut fun move() { self.x += 1 } }
+		{"mut fun is gone", `struct P { var x: i64; mut fun move() { this.x += 1 } }
 fun main() { }`, "'mut fun' no longer exists"},
 		{"tuple elements are not assignable", `fun main() { var t = (1, 2); t.0 = 3 }`, "cannot assign to a tuple element"},
 	} {
@@ -2418,7 +2418,7 @@ fun main() { val pair = (1, Counter(label: "t")); pair.1.bump(); io.println(pair
 }
 
 // A method's receiver is a place it may narrow like a local: a fact about
-// `self.f` survives calls that cannot assign `f` (a bare field) and is
+// `this.f` survives calls that cannot assign `f` (a bare field) and is
 // dropped by an assignment or by a call when `f` is `var`.
 func TestSelfNarrowing(t *testing.T) {
 	expectClean(t, prelude+`
@@ -2427,28 +2427,28 @@ struct User {
   address: Address?
   var nick: string? = null
   fun log() { }
-  fun city(): string = if (self.address != null) { self.log(); self.address.city } else "?"
-  fun nickLen(): i64 = if (self.nick != null) self.nick.len() else 0
+  fun city(): string = if (this.address != null) { this.log(); this.address.city } else "?"
+  fun nickLen(): i64 = if (this.nick != null) this.nick.len() else 0
 }
 fun main() { io.println(User(address: Address(city: "x")).city()) }`)
 	expectError(t, prelude+`
 struct User {
   var nick: string? = null
-  fun clear() { self.nick = null }
-  fun nickLen(): i64 = if (self.nick != null) { self.clear(); self.nick.len() } else 0
+  fun clear() { this.nick = null }
+  fun nickLen(): i64 = if (this.nick != null) { this.clear(); this.nick.len() } else 0
 }
 fun main() { }`, "may be null")
 	expectError(t, prelude+`
 struct User {
   var nick: string? = null
-  fun nickLen(): i64 = if (self.nick != null) { self.nick = null; self.nick.len() } else 0
+  fun nickLen(): i64 = if (this.nick != null) { this.nick = null; this.nick.len() } else 0
 }
 fun main() { }`, "may be null")
 }
 
 // D35 with var fields: a sendable lambda shares its captures, so a val
 // whose type has `var` fields may not cross — another task could see it
-// change. `self` counts by its type.
+// change. `this` counts by its type.
 func TestSendableCaptureVarFields(t *testing.T) {
 	expectError(t, prelude+`
 struct Counter { var n: i64 = 0 }
@@ -2456,13 +2456,13 @@ fun run(f: sendable fun(): i64): i64 = f()
 fun main() { val c = Counter(); io.println("${run(() => c.n)}") }`, "which has 'var' fields another task could see change")
 	expectError(t, prelude+`
 struct Counter { var n: i64 = 0
-  fun start(): i64 = run(() => self.n) }
+  fun start(): i64 = run(() => this.n) }
 fun run(f: sendable fun(): i64): i64 = f()
-fun main() { io.println("${Counter().start()}") }`, "captures 'self'")
+fun main() { io.println("${Counter().start()}") }`, "captures 'this'")
 	expectClean(t, prelude+`
 struct Config { name: string; items: List<i64> = [] }
 struct Server { config: Config
-  fun start(): i64 = run(() => self.config.items.len()) }
+  fun start(): i64 = run(() => this.config.items.len()) }
 fun run(f: sendable fun(): i64): i64 = f()
 fun main() { io.println("${Server(config: Config(name: "s")).start()}") }`)
 }
@@ -2477,13 +2477,13 @@ public struct Notes {
   public protected var count: i64 = 0
   private var next:      i64 = 1
   internal fun add(): Note {
-    self.count += 1
-    self.next += 1
-    Note(id: self.next, text: "n")
+    this.count += 1
+    this.next += 1
+    Note(id: this.next, text: "n")
   }
 }
 extend Notes {
-  fun reset() { self.count = 0 }
+  fun reset() { this.count = 0 }
 }
 internal val limit = 10
 internal fun helper(): i64 = limit
@@ -2513,24 +2513,24 @@ fun run(f: sendable fun(): i64): i64 = f()
 fun main() { val c = C(); io.println("${run(() => c.n)}") }`, "which has 'var' fields")
 }
 
-// D28 (v0.30): a field default is a constant — it cannot read `self`; a
+// D28 (v0.30): a field default is a constant — it cannot read `this`; a
 // field derived from the others is assigned in `init { }`.
 func TestDefaultsDoNotReadSelf(t *testing.T) {
 	expectError(t, prelude+`
-struct P { a: i64; b: i64 = self.a + 1 }
-fun main() { P(a: 1) }`, "a field default cannot read 'self'")
+struct P { a: i64; b: i64 = this.a + 1 }
+fun main() { P(a: 1) }`, "a field default cannot read 'this'")
 	expectError(t, prelude+`
-struct P { a: i64; b: i64 = self.twice(); fun twice(): i64 = self.a * 2 }
+struct P { a: i64; b: i64 = this.twice(); fun twice(): i64 = this.a * 2 }
 fun main() { P(a: 1) }`, "Derive 'b' in the 'init' block instead")
 	expectClean(t, prelude+`
-struct P { a: i64; b: i64; init { self.b = self.twice() }; fun twice(): i64 = self.a * 2 }
+struct P { a: i64; b: i64; init { this.b = this.twice() }; fun twice(): i64 = this.a * 2 }
 fun main() { io.println("${P(a: 1).b}") }`)
 }
 
 // D28 (v0.30): `init { }` runs after every field is bound; it owns the
 // fields without a default that it assigns (the constructor call does not
 // take them), must assign them on every path, and may not read them, use
-// `self` as a whole or call a method that reads them before then.
+// `this` as a whole or call a method that reads them before then.
 func TestInitBlock(t *testing.T) {
 	expectClean(t, prelude+`
 struct Parser {
@@ -2540,22 +2540,22 @@ struct Parser {
   private label:     string
   private var pos:   i64 = 0
   init {
-    self.positions = self.toks.map(t => t.1)
-    self.tokenSet = self.toks.map(t => t.0).toSet()
-    val n = self.tokenSet.len()          // assigned above: readable
-    self.label = if (n > 1) "many" else "few"
-    self.pos = self.span()               // a method that reads only bound fields
-    io.println(self.describe())          // everything assigned: any method
+    this.positions = this.toks.map(t => t.1)
+    this.tokenSet = this.toks.map(t => t.0).toSet()
+    val n = this.tokenSet.len()          // assigned above: readable
+    this.label = if (n > 1) "many" else "few"
+    this.pos = this.span()               // a method that reads only bound fields
+    io.println(this.describe())          // everything assigned: any method
   }
-  private fun span(): i64 = self.positions.len()
-  fun describe(): string = "${self.label} ${self.tokenSet.len()} ${self.pos}"
+  private fun span(): i64 = this.positions.len()
+  fun describe(): string = "${this.label} ${this.tokenSet.len()} ${this.pos}"
 }
 sealed trait Shape { fun area(): f64 }
 struct Sq : Shape {
   side: f64
   area2: f64
-  init { self.area2 = self.side * self.side }
-  implement Shape { fun area(): f64 = self.area2 }
+  init { this.area2 = this.side * this.side }
+  implement Shape { fun area(): f64 = this.area2 }
 }
 fun main() {
   val p = Parser(toks: [("a", 1), ("b", 2)])
@@ -2563,17 +2563,17 @@ fun main() {
   io.println("${p.describe()} ${s.area()}")
 }`)
 	for _, c := range []struct{ name, src, want string }{
-		{"read before assigned", `struct P { a: i64; b: string; init { io.println(self.b); self.b = "x" } }
+		{"read before assigned", `struct P { a: i64; b: string; init { io.println(this.b); this.b = "x" } }
 fun main() { P(a: 1) }`, "'b' is read before 'init' assigns it"},
-		{"not on every path", `struct P { a: i64; b: string; init { if (self.a > 0) self.b = "pos" } }
+		{"not on every path", `struct P { a: i64; b: string; init { if (this.a > 0) this.b = "pos" } }
 fun main() { P(a: 1) }`, "'init' does not assign 'b' on every path"},
-		{"assigned on both branches is fine", `struct P { a: i64; b: string; init { if (self.a > 0) self.b = "pos" else self.b = "neg" } }
+		{"assigned on both branches is fine", `struct P { a: i64; b: string; init { if (this.a > 0) this.b = "pos" else this.b = "neg" } }
 fun main() { io.println(P(a: 1).b) }`, ""},
-		{"self as a whole", `struct P { a: i64; b: string; init { io.println("$self"); self.b = "x" } }
-fun main() { P(a: 1) }`, "'self' is used before 'init' has assigned 'b'"},
-		{"a method that reads an unassigned field", `struct P { a: i64; b: string; init { val n = self.tally(); self.b = "$n" }; fun tally(): i64 = self.b.len() }
+		{"this as a whole", `struct P { a: i64; b: string; init { io.println("$this"); this.b = "x" } }
+fun main() { P(a: 1) }`, "'this' is used before 'init' has assigned 'b'"},
+		{"a method that reads an unassigned field", `struct P { a: i64; b: string; init { val n = this.tally(); this.b = "$n" }; fun tally(): i64 = this.b.len() }
 fun main() { P(a: 1) }`, "'init' calls 'tally' before assigning 'b', which the method reads"},
-		{"the caller cannot give an init field", `struct P { a: i64; b: string; init { self.b = "x" } }
+		{"the caller cannot give an init field", `struct P { a: i64; b: string; init { this.b = "x" } }
 fun main() { P(a: 1, b: "y") }`, "field 'b' is assigned by the 'init' block of 'P'"},
 		{"init cannot suspend", `struct P { a: i64; init { await sleep(Duration.millis(1)) } }
 fun main() { P(a: 1) }`, "an 'init' block cannot suspend"},
@@ -2785,6 +2785,16 @@ func TestDerivation(t *testing.T) {
 		{"struct Codable, braceless", `struct U { id: i64; name: string?
   implement Codable }
 fun main() { val e = ValueEncoder.of(); val _ = U(id: 1, name: null).encode(e); io.println("${U.decode(ValueDecoder.of(e.value())) is Ok}") }`, ""},
+		{"derived code is not shadowed by the module's own names", `struct U { id: i64; tags: List<string>
+  implement Codable }
+sealed trait S { }
+implement Codable for S
+struct A : S { n: i64 }
+fun styleKey(x: i64): i64 = x
+fun childPath(): string = "c"
+fun joinPath(a: i64): i64 = a
+fun panic(n: bool): bool = n
+fun main() { val e = ValueEncoder.of(); val _ = U(id: 1, tags: []).encode(e); io.println("${U.decode(ValueDecoder.of(e.value())) is Ok} ${S.decode(ValueDecoder.of(VNull())) is Err} ${styleKey(1)}${childPath()}${joinPath(2)}${panic(true)}") }`, ""},
 		{"struct Codable, top level, foreign-style", `struct U { id: i64 }
 implement Codable for U
 fun main() { io.println("${U.decode(ValueDecoder.of(VNull())) is Err}") }`, ""},
@@ -2849,15 +2859,15 @@ fun main() { io.println("${f(U(id: 3))}") }`, ""},
 trait Shape : Named { fun area(): f64 }
 struct Sq { side: f64
   implement Named { fun name(): string = "square" }
-  implement Shape { fun area(): f64 = self.side * self.side } }
+  implement Shape { fun area(): f64 = this.side * this.side } }
 fun show(s: Shape): string = "${s.name()}=${s.area()}"
 fun main() { io.println(show(Sq(side: 2.0))) }`, ""},
 		{"a supertrait's default body is in the object's table", `trait Named { fun name(): string
-  fun shout(): string = "${self.name()}!" }
+  fun shout(): string = "${this.name()}!" }
 trait Shape : Named { fun area(): f64 }
 struct Sq { side: f64
   implement Named { fun name(): string = "square" }
-  implement Shape { fun area(): f64 = self.side * self.side } }
+  implement Shape { fun area(): f64 = this.side * this.side } }
 fun main() { val s: Shape = Sq(side: 2.0)
   io.println(s.shout()) }`, ""},
 		{"a combination trait is a trait object built from its parts", `trait A { fun id(): i64 }
@@ -3029,22 +3039,22 @@ fun main() {
 	}
 }
 
-// `"$self"` inside the type's own Display.toString recurses forever and is
+// `"$this"` inside the type's own Display.toString recurses forever and is
 // an error; interpolating another value of the type (which may terminate)
 // and a generic type's field are fine.
 func TestDisplaySelfRecursion(t *testing.T) {
 	diags := checkSource(t, prelude+`
 struct P {
   x: i64
-  implement Display { fun toString(): string = "P$self" }
+  implement Display { fun toString(): string = "P$this" }
 }
 struct Frac {
   n: i64
-  implement Display { fun toString(): string = if (self.n < 0) "-${Frac(n: -self.n)}" else "${self.n}" }
+  implement Display { fun toString(): string = if (this.n < 0) "-${Frac(n: -this.n)}" else "${this.n}" }
 }
 struct Box<T> {
   v: T
-  implement Display { fun toString(): string = "box ${self.v}" }
+  implement Display { fun toString(): string = "box ${this.v}" }
 }
 fun main() { io.println("${P(x: 1)} ${Frac(n: -3)} ${Box(v: 1)}") }`)
 	n := 0
@@ -3072,7 +3082,7 @@ trait Shape {
 	missing := checkSource(t, prelude+shape+`
 struct Sq {
   s: f64
-  implement Shape { fun area(): f64 = self.s }
+  implement Shape { fun area(): f64 = this.s }
 }
 fun main() { }`).Render()
 	unimplemented := checkSource(t, prelude+shape+`
@@ -3130,6 +3140,32 @@ fun main() {
 	if !strings.Contains(diags.Render(), "cannot infer the type of 'null' here") || !strings.Contains(diags.Render(), "cannot infer the type of 'null' in this 'when'") {
 		t.Errorf("all-null branches must still be an error:\n%s", diags.Render())
 	}
+	// the same rule for `race` arms (found writing http's accept loop)
+	expectClean(t, prelude+`
+fun first(ch: Channel<string>, quit: Channel<bool>): string? = race {
+  val s = ch.recv() => s
+  val _ = quit.recv() => null
+}
+fun main() {
+  val ch = Channel<string>(capacity: 1)
+  val quit = Channel<bool>(capacity: 1)
+  quit.close()
+  val r = first(ch, quit)
+  val n = race {
+    val _ = quit.recv() => null
+    sleep(Duration.millis(1)) => 5
+  }
+  val m: i64? = n
+  io.println("${r ?: "-"} ${m ?: 0}")
+}`)
+	expectError(t, prelude+`
+fun main() {
+  val quit = Channel<bool>(capacity: 1)
+  val x = race {
+    val _ = quit.recv() => null
+    sleep(Duration.millis(1)) => null
+  }
+}`, "cannot infer the type of 'null' in this 'race'")
 }
 
 // Changing a by-value struct parameter warns at the parameter (R20
@@ -3137,7 +3173,7 @@ fun main() {
 // pointers and plain reads stay silent.
 func TestParamCopyLint(t *testing.T) {
 	diags := checkSource(t, prelude+`
-struct Counter { var n: i64 = 0; fun bump() { self.n += 1 } }
+struct Counter { var n: i64 = 0; fun bump() { this.n += 1 } }
 struct Box { var c: Counter = Counter(); items: MutableList<i64> = [] }
 fun lostCall(b: Box) { b.c.bump() }
 fun lostAssign(c: Counter) { c.n = 5 }

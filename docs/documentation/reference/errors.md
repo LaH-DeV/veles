@@ -111,6 +111,14 @@ and in comments: it makes a file display in a different order from how it
 compiles (the "Trojan source" attack). Inside a string it is a warning —
 write it as `\u{202E}` so it can be seen. (D18)
 
+### `the receiver is spelled 'this'`
+
+Before v0.40 a method named its receiver `self`. The old word still reads
+as the receiver, so the rest of the file checks, but every use is an error
+whose fix writes `this` — `veles check --fix` (or the editor's quick fix)
+migrates a whole package in one run, `"$self"` and `"${self.x}"` included.
+`Self`, the type, is unchanged. (D65)
+
 ### `'f' is a copy of the caller's 'Fuzzer': this function calls 'range', which changes 'f.rng', and the caller never sees the change`
 
 A warning. A struct is a value (D7), so a parameter is a copy of what the
@@ -119,12 +127,12 @@ caller passed; changing its `var` fields changes the copy. Take a pointer
 return the changed one. Fields that are references (a `MutableList`, a
 `*State`) are shared, so pushing into them is seen and is not reported.
 
-### `interpolating 'self' inside its own 'toString' calls this 'toString' again, forever`
+### `interpolating 'this' inside its own 'toString' calls the same 'toString' again, forever`
 
 Interpolation prints a value through its `Display` implementation, so
-`"$self"` inside that very `toString` is the function calling itself with
+`"$this"` inside that very `toString` is the function calling itself with
 the same argument — a stack overflow at run time. Interpolate the fields
-(`"(${self.x}, ${self.y})"`). Printing a *different* value of the type is
+(`"(${this.x}, ${this.y})"`). Printing a *different* value of the type is
 allowed, since that recursion can end. (P7)
 
 ### `'when' is not exhaustive: Rect`
@@ -141,7 +149,7 @@ collection's contents can still change.
 ### `cannot assign to 'T.f': the field is immutable; declare it 'var f: ...'`
 
 A bare field is set by the constructor call and never assigned again,
-whoever holds the struct — through a binding, a pointer or `self`. Mark
+whoever holds the struct — through a binding, a pointer or `this`. Mark
 the field `var` if it is meant to change, `protected var` if only the
 type's own code should change it, or build a new value (D22). A
 method call on a global `val` is refused the same way when the method

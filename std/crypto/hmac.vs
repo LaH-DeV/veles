@@ -42,21 +42,21 @@ public struct Hmac<H: Hasher> {
 
   /// Adds bytes to the message.
   public fun update(data: List<u8>) {
-    if (self.result != null) panic("crypto.Hmac: update after finish")
-    self.inner.update(data)
+    if (this.result != null) panic("crypto.Hmac: update after finish")
+    this.inner.update(data)
   }
 
   /// The MAC of everything added so far. Compare it with `==`, never by
   /// its bytes — see `equalBytes`.
   public fun finish(): Digest {
-    val done = self.result
+    val done = this.result
     if (done != null) return done
-    val innerDigest = self.inner.finish()
+    val innerDigest = this.inner.finish()
     var outer = H.start()
-    outer.update(self.outerPad)
+    outer.update(this.outerPad)
     outer.update(innerDigest.bytes())
     val d = outer.finish()
-    self.result = d
+    this.result = d
     d
   }
 }

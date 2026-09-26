@@ -36,7 +36,7 @@ extend<T: Sendable> List<T> {
   /// remaining work, as for the eager adapters (D46).
   public fun mapConcurrent<R: Sendable, E>(f: sendable fun(T): R suspends throws E, workers: i64 = 4): List<R> throws E {
     if (workers < 1) panic("mapConcurrent: workers must be at least 1, got $workers")
-    val n = self.len()
+    val n = this.len()
     val slots: MutableList<R?> = MutableList<R?>.make(n, _ => null)
     if (n == 0) return []
     val jobs = Channel<i64>(capacity: workers)
@@ -44,7 +44,7 @@ extend<T: Sendable> List<T> {
     results.closeAfter(n)
     scope {
       loop (_ in 1..workers.min(n)) {
-        async poolWorker(self, f, jobs, results)
+        async poolWorker(this, f, jobs, results)
       }
       async feedIndexes(n, jobs)
       loop {
@@ -58,7 +58,7 @@ extend<T: Sendable> List<T> {
   /// `mapConcurrent` for its effects: runs `f` on every element, at most
   /// `workers` at a time, and returns when all have finished.
   public fun forEachConcurrent<E>(f: sendable fun(T) suspends throws E, workers: i64 = 4) throws E {
-    val _ = try self.mapConcurrent(x => {
+    val _ = try this.mapConcurrent(x => {
       try f(x)
       true
     }, workers: workers)
@@ -72,7 +72,7 @@ fun invoke<R, E>(f: sendable fun(): R suspends throws E): R throws E = try f()
 public error Timeout {
   /// The limit that was reached — not how long the call actually took.
   public limit: Duration
-  fun message(): string = "timed out after ${self.limit}"
+  fun message(): string = "timed out after ${this.limit}"
 }
 
 /// Runs `f` with a time limit: its result, or a `Timeout` error when

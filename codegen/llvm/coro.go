@@ -351,13 +351,13 @@ func (g *gen) scopeBlock(e *sema.ScopeBlock) string {
 	if !e.Gather {
 		g.bodyScopes = g.bodyScopes[:len(g.bodyScopes)-1]
 	}
-	g.cleanups = g.cleanups[:len(g.cleanups)-1]
-	if !g.term {
-		g.emit("call void @veles_cleanup_pop()")
-	}
 	// wait for every child; the join is emitted even after a body that
 	// always returns or throws, because the fail-fast abort branch of a
-	// suspension point inside the body jumps here
+	// suspension point inside the body jumps here. The abandon cleanup
+	// stays active through the join: an owner cancelled while it waits
+	// here must cancel its children and wait for them to unwind before it
+	// unwinds itself, or they would outlive the block (D34) with their
+	// `with` blocks never closed (D43).
 	g.placeLabel(wait)
 	scv := g.newTmp()
 	g.emit("%s = load ptr, ptr %s", scv, slot)
@@ -370,6 +370,8 @@ func (g *gen) scopeBlock(e *sema.ScopeBlock) string {
 	g.suspendPoint()
 	g.emitTerm("br label %%%s", wait)
 	g.placeLabel(done)
+	g.cleanups = g.cleanups[:len(g.cleanups)-1]
+	g.emit("call void @veles_cleanup_pop()")
 	if e.Gather {
 		return g.gatherResults(e)
 	}

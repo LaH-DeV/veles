@@ -176,7 +176,7 @@ declaration is a struct plus an implement of the prelude trait `Error`:
 ```veles
 // fragment
 public trait Error {
-  fun message(): string = "$self"     // default: the value as `show` renders it
+  fun message(): string = "$this"     // default: the value as `show` renders it
 }
 ```
 
@@ -191,7 +191,7 @@ use io
 error NotFound { key: string }
 error Invalid {
   reason: string
-  fun message(): string = "invalid: ${self.reason}"
+  fun message(): string = "invalid: ${this.reason}"
 }
 
 fun lookup(key: string): string throws NotFound =
@@ -236,7 +236,7 @@ A long `throws A | B | C` repeats itself across a module. Name it:
 use io
 
 error NotFound { key: string }
-error Invalid { reason: string; fun message(): string = "invalid: ${self.reason}" }
+error Invalid { reason: string; fun message(): string = "invalid: ${this.reason}" }
 error Timeout
 
 error LookupErrors = NotFound | Invalid | Timeout
@@ -245,7 +245,7 @@ error LookupErrors = NotFound | Invalid | Timeout
 error ConfigError {
   file: string
   cause: LookupErrors
-  fun message(): string = "${self.file}: ${self.cause.message()}"
+  fun message(): string = "${this.file}: ${this.cause.message()}"
 }
 
 fun setting(key: string): string throws LookupErrors =
@@ -342,7 +342,7 @@ tools, both leaving `try` as the one place where propagation happens:
 ```veles
 use io
 
-error NotFound { id: string; fun message(): string = "no user ${self.id}" }
+error NotFound { id: string; fun message(): string = "no user ${this.id}" }
 error BadRequest { detail: string }
 error ParseError { at: i64 }
 

@@ -17,10 +17,10 @@ public trait Sendable { }
 public struct Mutex<T> {
   cell: *T
 
-  public fun withLock<R>(f: fun(*T): R): R = f(self.cell)
-  public fun get(): T = *self.cell
+  public fun withLock<R>(f: fun(*T): R): R = f(this.cell)
+  public fun get(): T = *this.cell
   public fun set(value: T) {
-    *self.cell = value
+    *this.cell = value
   }
 }
 
@@ -29,13 +29,13 @@ public fun mutex<T>(value: T): Mutex<T> = Mutex(cell: &value)
 public struct Atomic<T> {
   cell: *T
 
-  public fun load(): T = *self.cell
+  public fun load(): T = *this.cell
   public fun store(value: T) {
-    *self.cell = value
+    *this.cell = value
   }
   public fun swap(value: T): T {
-    val old = *self.cell
-    *self.cell = value
+    val old = *this.cell
+    *this.cell = value
     old
   }
 }

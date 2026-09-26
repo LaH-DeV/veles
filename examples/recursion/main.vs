@@ -16,7 +16,7 @@ error TooDeep {
   public limit: i64
   /// The byte offset the parser had reached.
   public at: i64
-  fun message(): string = "at byte ${self.at}: ${tooDeepMessage(self.limit)}"
+  fun message(): string = "at byte ${this.at}: ${tooDeepMessage(this.limit)}"
 }
 
 /// `expr := term ('+' term)*` and `term := digits | '(' expr ')'`, which is
@@ -31,39 +31,39 @@ struct Calc {
   fun parseExpr(): i64 throws TooDeep {
     // every path out of this body leaves the level it entered, except the
     // throw — which abandons the whole walk, counter and all
-    if (!self.depth.enter()) throw TooDeep(limit: self.depth.limit, at: self.pos)
-    var total = try self.parseTerm()
-    loop (self.peek() == '+') {
-      self.pos += 1
-      total += try self.parseTerm()
+    if (!this.depth.enter()) throw TooDeep(limit: this.depth.limit, at: this.pos)
+    var total = try this.parseTerm()
+    loop (this.peek() == '+') {
+      this.pos += 1
+      total += try this.parseTerm()
     }
-    self.depth.leave()
+    this.depth.leave()
     total
   }
 
   fun parseTerm(): i64 throws TooDeep {
-    if (self.peek() == '(') {
-      self.pos += 1
-      val inner = try self.parseExpr()
-      if (self.peek() == ')') self.pos += 1
+    if (this.peek() == '(') {
+      this.pos += 1
+      val inner = try this.parseExpr()
+      if (this.peek() == ')') this.pos += 1
       return inner
     }
     var n: i64 = 0
-    loop (isDigit(self.peek())) {
-      n = n * 10 + (self.peek() - '0') as i64
-      self.pos += 1
+    loop (isDigit(this.peek())) {
+      n = n * 10 + (this.peek() - '0') as i64
+      this.pos += 1
     }
     n
   }
 
-  fun peek(): u8 = if (self.pos < self.src.len()) self.src.byteAt(self.pos) else 0
+  fun peek(): u8 = if (this.pos < this.src.len()) this.src.byteAt(this.pos) else 0
 
   /// How deep this parse actually went — the number a benchmark reports and
   /// the one that says whether a limit is anywhere near being reached.
-  fun deepest(): i64 = self.depth.deepest()
+  fun deepest(): i64 = this.depth.deepest()
 
   /// Whether the walk unwound cleanly: every `enter` had its `leave`.
-  fun balanced(): bool = self.depth.depth() == 0
+  fun balanced(): bool = this.depth.depth() == 0
 }
 
 fun isDigit(b: u8): bool = b >= '0' && b <= '9'

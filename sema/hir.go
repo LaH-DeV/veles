@@ -54,7 +54,7 @@ type Func struct {
 	Display  string // for diagnostics and panics
 	Sig      *types.Func
 	Params   []*Var // excludes the receiver
-	Receiver *Var   // `self` for methods, always a pointer to the receiver's place (D22 v0.30)
+	Receiver *Var   // `this` for methods, always a pointer to the receiver's place (D22 v0.30)
 	Extern   bool   // C ABI, no body
 	Inline   int    // 1 @inline, -1 @noinline
 	// Closure functions take an environment pointer first; CapVars are the
@@ -79,7 +79,7 @@ type Func struct {
 	// Suspends is the inferred effect (D2): set by the suspension pass.
 	Suspends bool
 	// SelfEscapes: the method may keep a pointer to its receiver beyond
-	// the call (a closure capturing `self`, `&self`, or a callee that does);
+	// the call (a closure capturing `this`, `&this`, or a callee that does);
 	// WritesSelf: it may assign the receiver's fields, directly or through a
 	// callee. Both are set by the receiver pass (receivers.go, D22 v0.30).
 	SelfEscapes bool
@@ -251,7 +251,7 @@ type Call struct {
 	RecvSpan source.Span // the method name at the call
 	RecvType types.Type  // the receiver's type
 	RecvExpr ast.Expr    // the receiver as written, for fixes
-	// InitMissing: a call on `self` inside an `init` block while these
+	// InitMissing: a call on `this` inside an `init` block while these
 	// owned fields (by index) are not yet assigned; the receiver pass
 	// checks the method does not read them (D28).
 	InitMissing []int

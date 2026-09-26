@@ -12,21 +12,21 @@ public struct Graph {
     Graph(n, adj: MutableList<MutableList<i64>>.make(n, _ => []))
 
   fun addEdge(a: i64, b: i64) {
-    if (b < 0 || b >= self.n) panic("graph: node $b is not in 0..<${self.n}")
-    val edges = self.adj.at(a) ?: panic("graph: node $a is not in 0..<${self.n}")
+    if (b < 0 || b >= this.n) panic("graph: node $b is not in 0..<${this.n}")
+    val edges = this.adj.at(a) ?: panic("graph: node $a is not in 0..<${this.n}")
     edges.push(b)
   }
 
   fun addUndirected(a: i64, b: i64) {
-    self.addEdge(a, b)
-    self.addEdge(b, a)
+    this.addEdge(a, b)
+    this.addEdge(b, a)
   }
 
-  fun neighbours(v: i64): List<i64> = slot(self.adj, v).toList()
+  fun neighbours(v: i64): List<i64> = slot(this.adj, v).toList()
 
   /// Breadth-first order from `start`.
   fun bfs(start: i64): List<i64> {
-    val seen = self.flags()
+    val seen = this.flags()
     val order: MutableList<i64> = []
     val queue = deque<i64>()
     queue.addLast(start)
@@ -34,7 +34,7 @@ public struct Graph {
     loop {
       val v = queue.removeFirst() ?: break
       order.push(v)
-      loop (w in self.neighbours(v)) {
+      loop (w in this.neighbours(v)) {
         if (slot(seen, w)) continue
         seen.set(w, true)
         queue.addLast(w)
@@ -45,30 +45,30 @@ public struct Graph {
 
   /// Depth-first order from `start`, recursive.
   fun dfs(start: i64): List<i64> {
-    val seen = self.flags()
+    val seen = this.flags()
     val order: MutableList<i64> = []
-    self.dfsFrom(start, seen, order)
+    this.dfsFrom(start, seen, order)
     order.toList()
   }
 
   fun dfsFrom(v: i64, seen: MutableList<bool>, order: MutableList<i64>) {
     seen.set(v, true)
     order.push(v)
-    loop (w in self.neighbours(v)) {
-      if (!slot(seen, w)) self.dfsFrom(w, seen, order)
+    loop (w in this.neighbours(v)) {
+      if (!slot(seen, w)) this.dfsFrom(w, seen, order)
     }
   }
 
   /// Fewest edges from `start` to every node; null where unreachable.
   fun distances(start: i64): List<i64?> {
-    val dist = MutableList<i64?>.repeat(null, self.n)
+    val dist = MutableList<i64?>.repeat(null, this.n)
     dist.set(start, 0)
     val queue = deque<i64>()
     queue.addLast(start)
     loop {
       val v = queue.removeFirst() ?: break
       val d = slot(dist, v) ?: 0
-      loop (w in self.neighbours(v)) {
+      loop (w in this.neighbours(v)) {
         if (slot(dist, w) != null) continue
         dist.set(w, d + 1)
         queue.addLast(w)
@@ -79,41 +79,41 @@ public struct Graph {
 
   /// Kahn's algorithm; null when the graph has a cycle.
   fun topologicalOrder(): List<i64>? {
-    val indegree = MutableList<i64>.repeat(0, self.n)
-    loop (v in 0..<self.n) {
-      loop (w in self.neighbours(v)) indegree.set(w, slot(indegree, w) + 1)
+    val indegree = MutableList<i64>.repeat(0, this.n)
+    loop (v in 0..<this.n) {
+      loop (w in this.neighbours(v)) indegree.set(w, slot(indegree, w) + 1)
     }
     val ready = deque<i64>()
-    loop (v in 0..<self.n) {
+    loop (v in 0..<this.n) {
       if (slot(indegree, v) == 0) ready.addLast(v)
     }
     val order: MutableList<i64> = []
     loop {
       val v = ready.removeFirst() ?: break
       order.push(v)
-      loop (w in self.neighbours(v)) {
+      loop (w in this.neighbours(v)) {
         val left = slot(indegree, w) - 1
         indegree.set(w, left)
         if (left == 0) ready.addLast(w)
       }
     }
-    if (order.len() == self.n) order.toList() else null
+    if (order.len() == this.n) order.toList() else null
   }
 
   /// Number of connected components (treating edges as undirected).
   fun components(): i64 {
-    val seen = self.flags()
+    val seen = this.flags()
     var count = 0
-    loop (v in 0..<self.n) {
+    loop (v in 0..<this.n) {
       if (slot(seen, v)) continue
       count += 1
       val order: MutableList<i64> = []
-      self.dfsFrom(v, seen, order)
+      this.dfsFrom(v, seen, order)
     }
     count
   }
 
-  fun flags(): MutableList<bool> = MutableList<bool>.repeat(false, self.n)
+  fun flags(): MutableList<bool> = MutableList<bool>.repeat(false, this.n)
 }
 
 /// Entry `v` of a table with one slot per node. Every node an edge names is
@@ -127,7 +127,7 @@ struct Hop {
   node: i64
 
   implement Comparable {
-    fun compareTo(other: Hop): Ordering = self.dist.compareTo(other.dist)
+    fun compareTo(other: Hop): Ordering = this.dist.compareTo(other.dist)
   }
 }
 

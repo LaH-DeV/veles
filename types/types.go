@@ -160,7 +160,9 @@ func (n *Nullable) String() string {
 	if n.Alias != "" {
 		return n.Alias
 	}
-	if _, ok := n.Elem.(*Pointer); ok {
+	switch n.Elem.(type) {
+	case *Pointer, *Func:
+		// `fun(): R?` would read as returning a nullable
 		return "(" + n.Elem.String() + ")?"
 	}
 	return n.Elem.String() + "?"

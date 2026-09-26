@@ -102,14 +102,14 @@ value.
 ```veles
 // fragment
 struct Point {
-  var x: i64                    // var: assignable (through self, a binding, a pointer)
+  var x: i64                    // var: assignable (through this, a binding, a pointer)
   y: i64 = 0                    // bare (or `val`): set by the constructor, never assigned (D22); default
-  sum: i64                      // no default + assigned in init = init's, not the caller's (a default is a constant: no `self` in it)
-  init { self.sum = self.x + self.y }  // runs after every construction; must assign sum on every path; not callable (D28)
+  sum: i64                      // no default + assigned in init = init's, not the caller's (a default is a constant: no `this` in it)
+  init { this.sum = this.x + this.y }  // runs after every construction; must assign sum on every path; not callable (D28)
   public protected var hits: i64 = 0  // protected var: read wherever visible, assigned only by Point's own code
-  fun len(): i64 = self.x + self.y
-  fun move(dx: i64) { self.x += dx }   // no marker: a method may assign the var fields
-  static fun origin(): Point = Point(x: 0)  // no self; Point.origin()
+  fun len(): i64 = this.x + this.y
+  fun move(dx: i64) { this.x += dx }   // no marker: a method may assign the var fields
+  static fun origin(): Point = Point(x: 0)  // no this; Point.origin()
   static val unit = Point(x: 1)             // a constant in the type's namespace: Point.unit (public to export; never var)
   private count: i64 = 0                    // private: only Point's own methods/implement/extend blocks; no marker (or `internal`) = the module; public = the package
 }
@@ -118,19 +118,19 @@ val n = i64.parse("42")         // i64?; Parsable — T.parse(s) in generic code
 
 trait Shape {
   fun area(): f64
-  fun describe(): string = "area ${self.area()}"   // default
+  fun describe(): string = "area ${this.area()}"   // default
 }
-struct Sq { s: f64; implement Shape { fun area(): f64 = self.s * self.s; override fun describe(): string = "sq" } }   // your own type: implement in the body
+struct Sq { s: f64; implement Shape { fun area(): f64 = this.s * this.s; override fun describe(): string = "sq" } }   // your own type: implement in the body
 implement Shape for i64 { fun area(): f64 = 0.0 }   // a foreign type: top-level implement (for your own type it is a lint with a quick fix)
 val s: Shape = Sq(s: 2.0)       // trait object (D9)
 
 extend Point {                  // more inherent methods, outside the body (D23)
-  fun norm(): i64 = self.x.abs() + self.y.abs()
+  fun norm(): i64 = this.x.abs() + this.y.abs()
 }
 extend<T: Shape> Box<T> { ... } // only for types you declare; bounds allowed
 
 sealed trait Expr {             // fixed set of variants (D12)
-  fun eval(): i64 = when (self) { is Num(v) => v; is Neg(e) => -e.eval() }
+  fun eval(): i64 = when (this) { is Num(v) => v; is Neg(e) => -e.eval() }
 }
 struct Num : Expr { v: i64 }
 struct Neg : Expr { e: *Expr }
@@ -143,8 +143,8 @@ when (ph) { Phase.Red => ...; Phase.Amber => ...; Phase.Green => ... }   // exha
 trait Iterator { type Item; fun next(): Item? }   // associated type
 implement Iterator for Countdown { type Item = i64; fun next(): i64? { ... } }
 
-implement Comparable for Point { fun compareTo(other: Point): Ordering = self.x.compareTo(other.x) }  // <, sorted, min; Ordering = enum { Less = -1, Equal, Greater }
-implement Display for Point { fun toString(): string = "(${self.x})" }              // "$p"
+implement Comparable for Point { fun compareTo(other: Point): Ordering = this.x.compareTo(other.x) }  // <, sorted, min; Ordering = enum { Less = -1, Equal, Greater }
+implement Display for Point { fun toString(): string = "(${this.x})" }              // "$p"
 // also Equatable (==) and Hashable (map keys); structural by default
 ```
 
@@ -153,7 +153,7 @@ implement Display for Point { fun toString(): string = "(${self.x})" }          
 ```veles
 // fragment
 error NotFound { key: string }                          // a struct that is an Error; only errors can be thrown
-error Invalid { why: string; fun message(): string = self.why }
+error Invalid { why: string; fun message(): string = this.why }
 error Failed { message: string }                        // a `message` field is the message
 error GetErrors = NotFound | Invalid | Failed             // a named error set (D45)
 error Wrapped { cause: GetErrors }                      // an error's field may hold a set

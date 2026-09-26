@@ -23,7 +23,7 @@ use fs, io, net, path, random, time
 public error Fail {
   public status: i64
   public text:   string
-  fun message(): string = "${self.status} ${self.text}"
+  fun message(): string = "${this.status} ${this.text}"
 }
 
 public fun notFound(text: string = "not found"): Fail = Fail(status: 404, text)
@@ -84,25 +84,25 @@ public struct Request {
   public params:  Map<string, string> = [:]
 
   /// A header by name, case-insensitively.
-  public fun header(name: string): string? = self.headers.get(name.toLower())
+  public fun header(name: string): string? = this.headers.get(name.toLower())
 
   /// A route parameter (`{id}` in the pattern); empty when the route has none.
-  public fun param(name: string): string = self.params.get(name) ?: ""
+  public fun param(name: string): string = this.params.get(name) ?: ""
 
   /// The body as text; a body that is not UTF-8 is a 400.
-  public fun text(): string throws Fail = try self.body.decodeUtf8() ?! badRequest("body is not valid UTF-8")
+  public fun text(): string throws Fail = try this.body.decodeUtf8() ?! badRequest("body is not valid UTF-8")
 
   /// The same request with route parameters filled in.
   fun withParams(params: Map<string, string>): Request =
-    Request(method: self.method, path: self.path, query: self.query, headers: self.headers, body: self.body, peer: self.peer, params)
+    Request(method: this.method, path: this.path, query: this.query, headers: this.headers, body: this.body, peer: this.peer, params)
 
   /// The same request with a header set (names are lower-cased). This is
   /// how a middleware hands something to the handlers behind it — there
   /// are no task-local values yet.
   public fun withHeader(name: string, value: string): Request {
-    val h = self.headers.toMutable()
+    val h = this.headers.toMutable()
     h.set(name.toLower(), value)
-    Request(method: self.method, path: self.path, query: self.query, headers: h.toMap(), body: self.body, peer: self.peer, params: self.params)
+    Request(method: this.method, path: this.path, query: this.query, headers: h.toMap(), body: this.body, peer: this.peer, params: this.params)
   }
 }
 
@@ -137,9 +137,9 @@ public struct Response {
 
   /// The same response with a header set (names are lower-cased).
   public fun withHeader(name: string, value: string): Response {
-    val h = self.headers.toMutable()
+    val h = this.headers.toMutable()
     h.set(name.toLower(), value)
-    Response(status: self.status, headers: h.toMap(), body: self.body)
+    Response(status: this.status, headers: h.toMap(), body: this.body)
   }
 }
 
@@ -184,6 +184,35 @@ fun dispatch(h: Handler, req: Request): Response {
   }
 }
 
+/// Runs `handler` on a request built in memory — no socket, no port — and
+/// returns what a client would receive. The target is split and decoded
+/// as `serve` does it (`"/notes/1?full=yes"`), the handler runs behind the
+/// same panic boundary (a panic answers 500), and a `HEAD` answer or a
+/// 1xx/204/304 comes back without a body. Header names may be written in
+/// any case. The peer is `"test"`.
+///
+/// ```veles
+/// val resp = http.call(app.handler(), "POST", "/notes", body: "{\"text\":\"hi\"}")
+/// io.println("${resp.status} ${resp.body.decodeUtf8() ?: ""}")
+/// ```
+public fun call(handler: Handler, method: string, target: string, body: string = "", headers: Map<string, string> = [:]): Response {
+  val lower: MutableMap<string, string> = [:]
+  loop ((name, value) in headers.entries()) {
+    lower.set(name.toLower(), value)
+  }
+  val (rawPath, rawQuery) = target.splitOnce("?") ?: (target, "")
+  val req = Request(
+    method,
+    path: percentDecode(rawPath, plusIsSpace: false),
+    query: parseQuery(rawQuery),
+    headers: lower.toMap(),
+    body: body.bytes(),
+    peer: "test",
+  )
+  val resp = dispatch(handler, req)
+  if (method == "HEAD" || hasNoBody(resp.status)) Response(status: resp.status, headers: resp.headers) else resp
+}
+
 // ---------------------------------------------------------------------------
 // routing
 
@@ -201,24 +230,24 @@ public struct Router {
   middleware: MutableList<Middleware> = []
 
   public fun get<E>(pattern: string, h: sendable fun(Request): Response suspends throws E | Fail) {
-    self.add("GET", pattern, handler(h))
+    this.add("GET", pattern, handler(h))
   }
   public fun post<E>(pattern: string, h: sendable fun(Request): Response suspends throws E | Fail) {
-    self.add("POST", pattern, handler(h))
+    this.add("POST", pattern, handler(h))
   }
   public fun put<E>(pattern: string, h: sendable fun(Request): Response suspends throws E | Fail) {
-    self.add("PUT", pattern, handler(h))
+    this.add("PUT", pattern, handler(h))
   }
   public fun delete<E>(pattern: string, h: sendable fun(Request): Response suspends throws E | Fail) {
-    self.add("DELETE", pattern, handler(h))
+    this.add("DELETE", pattern, handler(h))
   }
   public fun any<E>(pattern: string, h: sendable fun(Request): Response suspends throws E | Fail) {
-    self.add("*", pattern, handler(h))
+    this.add("*", pattern, handler(h))
   }
 
   /// Registers an already adapted handler for `method` (`"*"` for any).
   public fun add(method: string, pattern: string, h: Handler) {
-    self.routes.push(Route(method, segments: segmentsOf(pattern), handler: h))
+    this.routes.push(Route(method, segments: segmentsOf(pattern), handler: h))
   }
 
   /// Puts `m` around everything this router answers — its 404s and 405s
@@ -229,16 +258,16 @@ public struct Router {
   /// (`use` is the keyword that imports a module, so the verb here is
   /// `wrap`.)
   public fun wrap(m: Middleware) {
-    self.middleware.push(m)
+    this.middleware.push(m)
   }
 
   /// The routes as one handler: first match wins, 405 when only the method
   /// differs, 404 otherwise — then the middleware, outermost first.
   public fun handler(): Handler {
-    val routes = self.routes.toList()
+    val routes = this.routes.toList()
     var h: Handler = req => route(routes, req)
     // applied last to first, so the first one wrapped ends up outside
-    loop (m in self.middleware.toList().reversed()) {
+    loop (m in this.middleware.toList().reversed()) {
       h = m(h)
     }
     h
@@ -305,18 +334,32 @@ public fun timeout(limit: Duration): Middleware = next => req => {
   }
 }
 
+// First match wins. When the path matches but the method does not, the
+// answer names the methods that would have worked (RFC 9110 §15.5.6: a
+// 405 must carry `Allow`); `HEAD` falls back to the `GET` route (the
+// writer drops the body, §9.3.2) and `OPTIONS` without a route of its own
+// answers 204 with the same `Allow`.
 fun route(routes: List<Route>, req: Request): Response {
   val segments = segmentsOf(req.path)
-  var methodMismatch = false
+  val allowed: MutableList<string> = []
   loop (r in routes) {
     val params = matchRoute(r.segments, segments) ?: continue
-    if (r.method != "*" && r.method != req.method) {
-      methodMismatch = true
-      continue
-    }
-    return r.handler(req.withParams(params))
+    if (r.method == "*" || r.method == req.method) return r.handler(req.withParams(params))
+    if (!allowed.contains(r.method)) allowed.push(r.method)
   }
-  if (methodMismatch) Response.text("method not allowed", status: 405) else Response.text("not found", status: 404)
+  if (req.method == "HEAD" && allowed.contains("GET")) {
+    loop (r in routes) {
+      if (r.method != "GET") continue
+      val params = matchRoute(r.segments, segments) ?: continue
+      return r.handler(req.withParams(params))
+    }
+  }
+  if (allowed.isEmpty()) return Response.text("not found", status: 404)
+  if (allowed.contains("GET") && !allowed.contains("HEAD")) allowed.push("HEAD")
+  if (!allowed.contains("OPTIONS")) allowed.push("OPTIONS")
+  val allow = allowed.join(", ")
+  if (req.method == "OPTIONS") return Response.empty(204).withHeader("allow", allow)
+  Response.text("method not allowed", status: 405).withHeader("allow", allow)
 }
 
 // the non-empty segments of a path or pattern: "/users/42/" → [users, 42]
@@ -387,33 +430,95 @@ public fun contentTypeOf(name: string): string = when (path.ext(name).toLower())
 // ---------------------------------------------------------------------------
 // the server
 
-/// Accepts connections forever, serving each in a task of its own, and
-/// returns only when its task is cancelled. A connection is kept open for
-/// further requests until the client closes it, asks for `Connection:
-/// close`, or stays silent for `limits.idleTimeout`. What one
+/// Accepts connections, serving each in a task of its own. A connection
+/// is kept open for further requests until the client closes it, asks for
+/// `Connection: close`, or stays silent for `limits.idleTimeout`. What one
 /// request may cost is `limits` (see `Limits`); every request is logged to
 /// standard error unless `log` is false.
-public fun serve(listener: net.Listener, handler: Handler, limits: Limits = Limits(), log: bool = true) {
+///
+/// Without `stop` it serves until its task is cancelled. With it, it
+/// serves until `stop` returns and then shuts down gracefully (D68): it
+/// stops accepting, closes kept-alive connections that are waiting for a
+/// next request, lets requests in flight finish — their responses say
+/// `connection: close` — for up to `grace`, cancels whatever is still
+/// running after that (its `with` blocks run), and returns.
+///
+/// ```veles
+/// http.serve(listener, app.handler(), stop: () => os.shutdownSignal())
+/// ```
+public fun serve(
+  listener: net.Listener,
+  handler: Handler,
+  limits: Limits = Limits(),
+  log: bool = true,
+  stop: (sendable fun() suspends)? = null,
+  grace: Duration = Duration.seconds(10),
+) {
+  val drain = Drain(stopping: atomic(false), wake: Channel<bool>(capacity: 1))
+  if (stop == null) return acceptAndServe(listener, handler, limits, log, drain)
   scope {
+    val serving = async acceptAndServe(listener, handler, limits, log, drain)
+    stop()
+    if (log) io.eprintln("http: stopping; requests in flight have $grace")
+    drain.begin()
+    race {
+      val _ = await serving => { }
+      sleep(grace)          => serving.cancel()
+    }
+  }
+}
+
+// How a stopping server reaches its connections: `stopping` is read after
+// each response, and closing `wake` ends every wait for a next request and
+// the wait for the next connection.
+struct Drain {
+  stopping: Atomic<bool>
+  wake:     Channel<bool>
+
+  fun begin() {
+    this.stopping.store(true)
+    this.wake.close()
+  }
+}
+
+fun acceptAndServe(listener: net.Listener, handler: Handler, limits: Limits, log: bool, drain: Drain) {
+  val accepted = Channel<net.Conn>(capacity: 16)
+  scope {
+    val acceptor = async acceptLoop(listener, accepted)
     loop {
-      when (listener.accept()) {
-        is Ok(conn) => {
-          async connection(conn, handler, limits, log)
-        }
-        is Err(e)   => {
-          // out of descriptors, a reset before accept: report and go on
-          io.eprintln("http: accept: ${e.message()}")
-          await sleep(Duration.millis(100))
-        }
+      val conn = race {
+        val c = accepted.recv()   => c
+        val _ = drain.wake.recv() => null
+      } ?: break
+      async connection(conn, handler, limits, log, drain)
+    }
+    acceptor.cancel()
+  }
+  // accepted but never served: close them instead of leaving the
+  // descriptors to the process's exit
+  loop {
+    val c = accepted.tryRecv() ?: break
+    c.close()
+  }
+}
+
+fun acceptLoop(listener: net.Listener, out: Channel<net.Conn>) {
+  loop {
+    when (listener.accept()) {
+      is Ok(conn) => out.send(conn)
+      is Err(e)   => {
+        // out of descriptors, a reset before accept: report and go on
+        io.eprintln("http: accept: ${e.message()}")
+        await sleep(Duration.millis(100))
       }
     }
   }
 }
 
-fun connection(conn: net.Conn, handler: Handler, limits: Limits, log: bool) {
+fun connection(conn: net.Conn, handler: Handler, limits: Limits, log: bool, drain: Drain) {
   with (c = conn) {
     loop {
-      val req = when (readRequest(c, limits)) {
+      val req = when (readRequest(c, limits, drain)) {
         is Ok(r)  => r ?: break
         is Err(e) => {
           when (e) {
@@ -427,11 +532,13 @@ fun connection(conn: net.Conn, handler: Handler, limits: Limits, log: bool) {
         }
       }
       val sw = time.Stopwatch.start()
-      val keepAlive = wantsKeepAlive(req)
       val resp = dispatch(handler, req)
-      val sent = writeResponse(c, resp, close: !keepAlive)
+      // read after the handler: a stop that began while it ran still
+      // closes this connection
+      val close = !wantsKeepAlive(req) || drain.stopping.load()
+      val sent = writeResponse(c, resp, close, headOnly: req.method == "HEAD")
       if (log) io.eprintln("${req.peer} ${req.method} ${req.path} ${resp.status} ${sw.elapsed()}")
-      if (sent is Err || !keepAlive) break
+      if (sent is Err || close) break
     }
   }
 }
@@ -458,18 +565,38 @@ fun headLine(c: net.Conn, max: i64, limit: Duration, tooLong: Fail): string? sus
   }
 }
 
+// The wait for a request line is the idle wait of a kept-alive
+// connection. It ends in the line; in null when the peer closed or the
+// server began to stop; in a Timeout when the peer stayed silent — the
+// quiet end of a connection, not a bad request — or in a 414.
+fun requestLine(c: net.Conn, limits: Limits, drain: Drain): string? suspends throws Fail | IoError | Timeout {
+  if (drain.stopping.load()) return null
+  scope {
+    val line = async readLineOf(c, limits.requestLineBytes)
+    race {
+      val r = await line        => return try r
+      sleep(limits.idleTimeout) => throw Timeout(limit: limits.idleTimeout)
+      val _ = drain.wake.recv() => return null
+    }
+  }
+}
+
+// the line, with a line past `max` already the 414 it answers
+fun readLineOf(c: net.Conn, max: i64): string? suspends throws Fail | IoError {
+  when (c.readLine(max: max)) {
+    is Ok(line) => line
+    is Err(e)   => when (e) {
+      is net.TooLong => throw Fail(status: 414, text: "URI too long")
+      is IoError     => throw e
+    }
+  }
+}
+
 // One request from the connection, or null when the peer closed between
-// requests; a malformed or oversized request is a Fail (400/411/413/414/
-// 431/501/505), a slow one a 408.
-fun readRequest(c: net.Conn, limits: Limits): Request? throws Fail | IoError | Timeout {
-  // the wait for the first line is the idle wait: a timeout here is the
-  // end of a kept-alive connection, not a bad request
-  val first = try headLine(
-    c,
-    limits.requestLineBytes,
-    limits.idleTimeout,
-    Fail(status: 414, text: "URI too long"),
-  ) ?: return null
+// requests or the server is stopping; a malformed or oversized request is
+// a Fail (400/411/413/414/431/501/505), a slow one a 408.
+fun readRequest(c: net.Conn, limits: Limits, drain: Drain): Request? throws Fail | IoError | Timeout {
+  val first = try requestLine(c, limits, drain) ?: return null
   // from here the whole head is on one clock, so a peer cannot hold the
   // connection open by sending one header every few seconds
   val headDeadline = time.Deadline.after(limits.headerTimeout)
@@ -573,7 +700,9 @@ public fun percentDecode(s: string, plusIsSpace: bool): string {
   out.toList().decodeUtf8() ?: s
 }
 
-fun writeResponse(c: net.Conn, resp: Response, close: bool) throws IoError {
+// `headOnly` is the answer to a HEAD request: every header a GET would
+// get, `content-length` included, and no body (RFC 9110 §9.3.2).
+fun writeResponse(c: net.Conn, resp: Response, close: bool, headOnly: bool = false) throws IoError {
   val head = stringBuilder()
   head.append("HTTP/1.1 ${resp.status} ${reasonOf(resp.status)}\r\n")
   var hasType = false
@@ -581,13 +710,22 @@ fun writeResponse(c: net.Conn, resp: Response, close: bool) throws IoError {
     if (name == "content-type") hasType = true
     head.append("$name: $value\r\n")
   }
-  if (!hasType && !resp.body.isEmpty()) head.append("content-type: application/octet-stream\r\n")
-  head.append("content-length: ${resp.body.len()}\r\n")
+  val bodyless = hasNoBody(resp.status)
+  if (!bodyless) {
+    if (!hasType && !resp.body.isEmpty()) head.append("content-type: application/octet-stream\r\n")
+    head.append("content-length: ${resp.body.len()}\r\n")
+  }
   head.append("date: ${httpDate(time.now())}\r\n")
   head.append(if (close) "connection: close\r\n" else "connection: keep-alive\r\n")
   head.append("\r\n")
-  try c.write(head.toString().bytes().concat(resp.body))
+  val bytes = head.toString().bytes()
+  try c.write(if (headOnly || bodyless) bytes else bytes.concat(resp.body))
 }
+
+// 1xx, 204 and 304 never carry a body, and a 1xx or 204 may not even say
+// `content-length` (RFC 9110 §6.4.1, §8.6); a 304's length would be the
+// 200's, which a handler returning `empty(304)` does not know.
+fun hasNoBody(status: i64): bool = (status >= 100 && status < 200) || status == 204 || status == 304
 
 /// The standard reason phrase for a status code (empty when unknown).
 public fun reasonOf(status: i64): string = when (status) {

@@ -38,9 +38,9 @@ public fun tooDeepMessage(limit: i64): string = "nesting deeper than $limit"
 ///   private depth: Depth = Depth.of(500)
 ///
 ///   fun parseExpr(): Expr {
-///     if (!self.depth.enter()) return self.tooDeep()
-///     val e = self.parseBinary(0)
-///     self.depth.leave()
+///     if (!this.depth.enter()) return this.tooDeep()
+///     val e = this.parseBinary(0)
+///     this.depth.leave()
 ///     e
 ///   }
 /// }
@@ -70,31 +70,31 @@ public struct Depth {
   /// already open — in which case nothing changed and there is no `leave`
   /// to pair with it.
   public fun enter(): bool {
-    if (self.level >= self.limit) return false
-    self.level += 1
-    if (self.level > self.peak) self.peak = self.level
+    if (this.level >= this.limit) return false
+    this.level += 1
+    if (this.level > this.peak) this.peak = this.level
     true
   }
 
   /// Comes back one level. Ignored at level zero, so an unbalanced `leave`
   /// cannot make the next `enter` succeed past the limit.
   public fun leave() {
-    if (self.level > 0) self.level -= 1
+    if (this.level > 0) this.level -= 1
   }
 
   /// How many levels are open.
-  public fun depth(): i64 = self.level
+  public fun depth(): i64 = this.level
 
   /// The deepest this walk ever went — what a benchmark reports and a test
   /// asserts on. Never reset by `leave`; `reset` clears it.
-  public fun deepest(): i64 = self.peak
+  public fun deepest(): i64 = this.peak
 
   /// Back to nothing open, ready to walk again.
   public fun reset() {
-    self.level = 0
-    self.peak = 0
+    this.level = 0
+    this.peak = 0
   }
 
-  /// What to say when `enter` refuses: `tooDeepMessage(self.limit)`.
-  public fun message(): string = tooDeepMessage(self.limit)
+  /// What to say when `enter` refuses: `tooDeepMessage(this.limit)`.
+  public fun message(): string = tooDeepMessage(this.limit)
 }

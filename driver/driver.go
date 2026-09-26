@@ -40,6 +40,11 @@ func Run(opts Options) int {
 	}
 	if diags.HasErrors() {
 		fmt.Fprint(os.Stderr, diags.Render())
+		// a parse error may carry a fix too (an old spelling: `self`,
+		// `::`, `mut fun`); apply those so one --fix run gets past them
+		if opts.Mode == "check" && opts.Fix {
+			applyAndReport(diags)
+		}
 		return 1
 	}
 	// only build/run need a program; check accepts a library or a module
@@ -55,12 +60,9 @@ func Run(opts Options) int {
 		// fixes hang off warnings (lints) and off errors for removed forms
 		// with a mechanical replacement; a run with errors applies what it
 		// can, and the next run reports what is left
-		n, err := ApplyFixes(diags)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "veles:", err)
+		if !applyAndReport(diags) {
 			return 1
 		}
-		fmt.Fprintf(os.Stderr, "%d fix(es) applied\n", n)
 	}
 	if diags.HasErrors() || prog == nil {
 		return 1
@@ -132,6 +134,12 @@ func Run(opts Options) int {
 		args = append(args, "-lws2_32")  // sockets (veles_net.c, WSAPoll in veles_task.c)
 		args = append(args, "-lbcrypt")  // BCryptGenRandom: the system CSPRNG (veles_os.c)
 	}
+	native, err := nativeFlags(clang, pkg.NativeManifests())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "veles:", err)
+		return 1
+	}
+	args = append(args, native...)
 	cmd := exec.Command(clang, args...)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	if err := cmd.Run(); err != nil {

@@ -9,7 +9,7 @@ import (
 // Lint: a function that changes a by-value struct parameter (R20 follow-up
 // 1, decided 2026-09-25 as a warning). A struct is a value (D7), so a
 // parameter is the caller's value copied; assigning one of its `var`
-// fields, or calling a method that writes `self` on it, changes the copy
+// fields, or calling a method that writes `this` on it, changes the copy
 // and the caller never sees it:
 //
 //	fun step(f: Fuzzer) { f.rng.next() }   // the caller's generator never moves

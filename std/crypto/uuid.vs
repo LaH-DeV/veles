@@ -99,29 +99,29 @@ public struct Uuid {
 
   /// Byte `i` of the id. Every constructor makes sixteen bytes, and the
   /// readers ask for `i` in `0..<16`.
-  fun byte(i: i64): u8 = self.data.at(i) ?: panic("Uuid: the data is always sixteen bytes")
+  fun byte(i: i64): u8 = this.data.at(i) ?: panic("Uuid: the data is always sixteen bytes")
 
   /// The sixteen bytes, big-endian as the RFC lays them out.
-  public fun bytes(): List<u8> = self.data
+  public fun bytes(): List<u8> = this.data
 
   /// The version digit: 4 for `v4()`, 7 for `v7()`, 0 for `zero()`.
-  public fun version(): i64 = ((self.byte(6) >> 4) & 0x0f) as i64
+  public fun version(): i64 = ((this.byte(6) >> 4) & 0x0f) as i64
 
   /// The milliseconds a version 7 id was made at, or `null` for any other
   /// version.
   public fun timestamp(): i64? {
-    if (self.version() != 7) return null
+    if (this.version() != 7) return null
     var v = 0
     var i = 0
     loop (i < 6) {
-      v = (v << 8) | (self.byte(i) as i64)
+      v = (v << 8) | (this.byte(i) as i64)
       i = i + 1
     }
     v
   }
 
   /// True for the all-zero UUID.
-  public fun isZero(): bool = self.data.all(b => b == 0)
+  public fun isZero(): bool = this.data.all(b => b == 0)
 
   implement Display {
     fun toString(): string {
@@ -129,7 +129,7 @@ public struct Uuid {
       var i = 0
       loop (i < 16) {
         if (i == 4 || i == 6 || i == 8 || i == 10) out.appendByte(45)
-        val b = self.byte(i)
+        val b = this.byte(i)
         out.appendByte(hexDigit(b >> 4))
         out.appendByte(hexDigit(b & 15))
         i = i + 1
@@ -143,7 +143,7 @@ public struct Uuid {
     fun compareTo(other: Uuid): Ordering {
       var i = 0
       loop (i < 16) {
-        val a = self.byte(i)
+        val a = this.byte(i)
         val b = other.byte(i)
         if (a < b) return Ordering.Less
         if (a > b) return Ordering.Greater

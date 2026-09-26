@@ -73,31 +73,31 @@ struct Notes {
   private var next: i64 = 1
   private items:    MutableList<Note> = []
 
-  fun all(): List<Note> = self.items.toList()
+  fun all(): List<Note> = this.items.toList()
 
-  fun find(id: i64): Note? = self.items.find(x => x.id == id)
+  fun find(id: i64): Note? = this.items.find(x => x.id == id)
 
   /// Stores a new note with the next id.
   fun add(text: string): Note {
-    val created = Note(id: self.next, text)
-    self.next += 1
-    self.items.push(created)
+    val created = Note(id: this.next, text)
+    this.next += 1
+    this.items.push(created)
     created
   }
 
   /// Removes the note with that id; false when there is none. (`items` is a
-  /// MutableList — a handle — so this needs no `mut`: only `self`'s own
+  /// MutableList — a handle — so this needs no `mut`: only `this`'s own
   /// fields are guarded by it, D22/D25.)
   fun remove(id: i64): bool {
-    val at = self.items.indexOfFirst(x => x.id == id)
-    if (at >= 0) self.items.removeAt(at)
+    val at = this.items.indexOfFirst(x => x.id == id)
+    if (at >= 0) this.items.removeAt(at)
     at >= 0
   }
 
   /// Replaces the text of a note; false when there is none.
   fun update(id: i64, text: string): bool {
-    val at = self.items.indexOfFirst(x => x.id == id)
-    if (at >= 0) self.items.set(at, Note(id, text))
+    val at = this.items.indexOfFirst(x => x.id == id)
+    if (at >= 0) this.items.set(at, Note(id, text))
     at >= 0
   }
 }
@@ -176,12 +176,21 @@ fun exchange(port: i64, method: string, target: string, body: string, extra: str
     val status = try conn.readLine(max: maxResponseLine) ?: "(no response)"
     var contentType = "-"
     var id = "-"
+    // shown only when the server sends them: the methods a 405 or an
+    // OPTIONS names, and the length a HEAD promises without a body
+    var more = ""
     loop {
       val line = try conn.readLine(max: maxResponseLine) ?: break
       if (line.isEmpty()) break
-      val low = line.toLower()
-      if (low.startsWith("content-type:")) contentType = (line.substring(13, line.len()) ?: "").trim()
-      if (low.startsWith("x-request-id:")) id = (line.substring(13, line.len()) ?: "").trim()
+      val (rawName, rawValue) = line.splitOnce(":") ?: continue
+      val value = rawValue.trim()
+      when (rawName.toLower()) {
+        "content-type"   => contentType = value
+        "x-request-id"   => id = value
+        "allow"          => more = more + " allow=$value"
+        "content-length" => if (method == "HEAD") more = more + " length=$value"
+        else             => { }
+      }
     }
     var text = ""
     loop {
@@ -189,7 +198,7 @@ fun exchange(port: i64, method: string, target: string, body: string, extra: str
       if (chunk.isEmpty()) break
       text = text + (chunk.decodeUtf8() ?: "<binary>")
     }
-    "< $status [$contentType] id=$id" + (if (text.isEmpty()) "" else "\n< $text")
+    "< $status [$contentType] id=$id$more" + (if (text.isEmpty()) "" else "\n< $text")
   }
 }
 
@@ -230,6 +239,10 @@ fun check(handler: http.Handler) throws IoError | EncodeError | net.TooLong {
     ("PUT", "/api/notes/9", "{\"text\": \"nope\"}"),
     ("GET", "/api/notes", ""),
     ("PUT", "/api/notes", "nope"),
+    // HEAD is answered by the GET route without the body; OPTIONS lists
+    // what the path accepts
+    ("HEAD", "/api/notes/2", ""),
+    ("OPTIONS", "/api/notes/2", ""),
     ("GET", "/static/", ""),
     ("GET", "/static/style.css", ""),
     ("GET", "/static/../main.vs", ""),
@@ -259,6 +272,13 @@ fun check(handler: http.Handler) throws IoError | EncodeError | net.TooLong {
       server.cancel()
     }
   }
+  // the same handler in memory — no socket, the same routing and panic
+  // boundary — which is how a handler is unit-tested
+  loop ((method, target) in [("GET", "/api/notes/2"), ("DELETE", "/api/echo")]) {
+    val resp = http.call(handler, method, target)
+    io.println("> $method $target (in memory)")
+    io.println("< ${resp.status} allow=${resp.headers.get("allow") ?: "-"} ${resp.body.decodeUtf8() ?: "<binary>"}")
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -271,8 +291,11 @@ fun run(args: List<string>) throws UsageError | IoError | EncodeError | net.TooL
     return try check(handler)
   }
   with (listener = try net.listen(host: opts.host, port: opts.port)) {
-    io.println("serving ${opts.dir} on http://${opts.host}:${listener.port()}/ — Ctrl+C stops")
-    http.serve(listener, handler, limits)
+    io.println("serving ${opts.dir} on http://${opts.host}:${listener.port()}/ — Ctrl+C stops it gracefully")
+    // Ctrl+C or a SIGTERM: stop accepting, finish what is in flight (up to
+    // ten seconds), then return and close the listener
+    http.serve(listener, handler, limits, stop: () => os.shutdownSignal())
+    io.println("stopped")
   }
 }
 

@@ -282,6 +282,9 @@ func (p *Parser) parsePrimary() ast.Expr {
 		return &ast.NullLit{Pos: t.Span}
 	case lexer.KwSelf:
 		p.next()
+		if t.Text == "self" {
+			p.oldSelfSpelling(t)
+		}
 		return &ast.SelfExpr{Pos: t.Span}
 	case lexer.Ident:
 		if p.peek(1).Kind == lexer.FatArrow && p.noLambda == 0 {

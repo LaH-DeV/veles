@@ -2,6 +2,8 @@ veles
 veles.exe
 *.exe*
 *.ll
+# the codegen goldens are the one kind of .ll that belongs in the tree
+!codegen/llvm/golden/**/*.ll
 
 **/testdata/*
 

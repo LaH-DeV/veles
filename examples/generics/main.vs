@@ -4,26 +4,26 @@ struct Stack<T> {
   items: MutableList<T> = []
 
   fun push(x: T) {
-    self.items.push(x)
+    this.items.push(x)
   }
-  fun pop(): T? = self.items.pop()
-  fun len(): i64 = self.items.len()
+  fun pop(): T? = this.items.pop()
+  fun len(): i64 = this.items.len()
 }
 
 trait Show {
   fun show(): string
-  fun shout(): string = self.show() + "!"
+  fun shout(): string = this.show() + "!"
 }
 
 struct Cat {
   name: string
 
   implement Show {
-    fun show(): string = "cat ${self.name}"
+    fun show(): string = "cat ${this.name}"
   }
 }
 implement Show for i64 {
-  fun show(): string = "int $self"
+  fun show(): string = "int $this"
 }
 
 fun describe<T: Show>(x: T): string = x.shout()

@@ -4,18 +4,18 @@ use io
 
 trait Shape {
   fun area(): f64
-  fun describe(): string = "area ${self.area()}"
+  fun describe(): string = "area ${this.area()}"
 }
 
 struct Square {
   side: f64
-  implement Shape { fun area(): f64 = self.side * self.side }
+  implement Shape { fun area(): f64 = this.side * this.side }
 }
 
 struct Circle {
   r: f64
   implement Shape {
-    fun area(): f64 = 3.0 * self.r * self.r
+    fun area(): f64 = 3.0 * this.r * this.r
     override fun describe(): string = "circle"
   }
 }
@@ -23,7 +23,7 @@ struct Circle {
 struct Point {
   x: i64
   y: i64
-  implement Display { fun toString(): string = "(${self.x}, ${self.y})" }
+  implement Display { fun toString(): string = "(${this.x}, ${this.y})" }
 }
 
 fun largest<T: Comparable>(xs: List<T>): T? = xs.max()

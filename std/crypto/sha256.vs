@@ -40,21 +40,21 @@ public struct Sha256 {
     static fun digestSize(): i64 = 32
 
     fun update(data: List<u8>) {
-      if (self.result != null) panic("crypto.Sha256: update after finish")
-      self.total = self.total + data.len()
-      self.absorb(data)
+      if (this.result != null) panic("crypto.Sha256: update after finish")
+      this.total = this.total + data.len()
+      this.absorb(data)
     }
 
     fun finish(): Digest {
-      val done = self.result
+      val done = this.result
       if (done != null) return done
-      self.absorb(padding(self.buffer.len(), 64, 8, self.total))
+      this.absorb(padding(this.buffer.len(), 64, 8, this.total))
       val out: MutableList<u8> = []
-      loop (w in self.state) {
+      loop (w in this.state) {
         pushU32(out, w)
       }
       val d = Digest.of(out.toList())
-      self.result = d
+      this.result = d
       d
     }
   }
@@ -65,21 +65,21 @@ public struct Sha256 {
   private fun absorb(data: List<u8>) {
     val n = data.len()
     var i = 0
-    if (self.buffer.len() > 0) {
-      loop (self.buffer.len() < 64 && i < n) {
-        self.buffer.push(data.at(i))
+    if (this.buffer.len() > 0) {
+      loop (this.buffer.len() < 64 && i < n) {
+        this.buffer.push(data.at(i))
         i = i + 1
       }
-      if (self.buffer.len() < 64) return
-      compress256(self.state, self.buffer.toList(), 0, self.scratch)
-      self.buffer.clear()
+      if (this.buffer.len() < 64) return
+      compress256(this.state, this.buffer.toList(), 0, this.scratch)
+      this.buffer.clear()
     }
     loop (i + 64 <= n) {
-      compress256(self.state, data, i, self.scratch)
+      compress256(this.state, data, i, this.scratch)
       i = i + 64
     }
     loop (i < n) {
-      self.buffer.push(data.at(i))
+      this.buffer.push(data.at(i))
       i = i + 1
     }
   }

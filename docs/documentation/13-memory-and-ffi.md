@@ -105,7 +105,7 @@ use io
 struct Res {
   name: string
   implement Closeable {
-    fun close() { io.println("close ${self.name}") }
+    fun close() { io.println("close ${this.name}") }
   }
 }
 
@@ -170,9 +170,9 @@ use io
 struct Handle {
   name: string
   implement Closeable {
-    fun close() { io.println("close ${self.name}") }
+    fun close() { io.println("close ${this.name}") }
   }
-  fun contents(): string = "<${self.name}>"
+  fun contents(): string = "<${this.name}>"
 }
 
 fun read(name: string): string = with (h = Handle(name)) { h.contents() }
@@ -205,7 +205,7 @@ use io
 struct Res {
   name: string
   implement Closeable {
-    fun close() { io.println("close ${self.name}") }
+    fun close() { io.println("close ${this.name}") }
   }
 }
 
@@ -285,10 +285,40 @@ Output:
 3.0 65
 ```
 
-Numeric types map to their C counterparts, `bool` to a byte, `string` to
-the runtime's string struct, `*raw T` to `T*`. Passing a `*T` to C is
-allowed but the C side must not keep it beyond the call, since the
-collector does not know about that reference. This is how the standard
+Numeric types map to their C counterparts (mind that C's `long` is 32
+bits on Windows and 64 on Linux and macOS), `bool` to a byte, `string` to
+the runtime's string struct, `*raw T` to `T*`, an `extern struct` to the
+C struct with the same fields. A GC-managed `*T` cannot be passed: the
+collector would not know C holds it (D44/D50). This is how the standard
 `io` module is written — it is a dozen lines over three C functions.
+
+### Linking a C library
+
+A library other than the C runtime is named in the package's
+`veles.toml`, never in source (D67):
+
+```toml
+[native]
+libs = ["pq"]                 # -lpq: the shared library (or its import library)
+static-libs = ["z"]           # the archive itself: nothing needed at run time
+lib-paths = ["vendor/lib"]    # searched first; relative to veles.toml
+pkg-config = ["libpq"]        # flags from `pkg-config --libs`
+```
+
+```veles
+// fragment
+extern "C" {
+  fun compressBound(sourceLen: u64): u64
+}
+
+fun main() {
+  io.println("${unsafe { compressBound(1000) }}")   // 1013, with static-libs = ["z"]
+}
+```
+
+An entry that names a file — `"vendor/libfoo.a"`, `"shim.o"` — is linked
+as that file. A dependency's `[native]` table links into every program
+that uses the dependency, so a package that binds a C library carries
+its link instructions with it.
 
 Next: [Attributes and the test runner](14-attributes-and-testing.md).

@@ -12,11 +12,11 @@ import (
 // facts about each method are needed only once every body is checked:
 //
 //   - WritesSelf: the method may change its receiver — it assigns a field
-//     of `self`, takes a pointer into it, or calls a method that does. A
+//     of `this`, takes a pointer into it, or calls a method that does. A
 //     call on a temporary copy then loses the change, which is reported
 //     (the rule that used to guard `mut fun` on a copy).
 //   - SelfEscapes: the method may keep the receiver pointer beyond the
-//     call — a closure captures `self`, `&self` (or a pointer into self)
+//     call — a closure captures `this`, `&this` (or a pointer into self)
 //     is taken, or a callee does either. A receiver in such a call cannot
 //     stay on the caller's stack: its variable is heap-allocated
 //     (AddrTaken), the same promotion `&x` performs (D10).
@@ -140,7 +140,7 @@ func selfUse(fn *Func, self *Var) (escapes, writes bool) {
 
 // rootVar is the variable whose own storage the place expression e
 // denotes: through fields and payloads, never through a pointer — except
-// the receiver's, which is how `self` reads its place.
+// the receiver's, which is how `this` reads its place.
 func rootVar(e Expr) *Var {
 	for {
 		switch x := e.(type) {
@@ -213,8 +213,8 @@ func (c *Checker) lostCopy(call *Call, what string) {
 
 // fieldUsePass computes, for every method, which of the receiver's fields
 // it uses (Func.FieldsUsed / AllFields), to a fixpoint over the calls on
-// self. `self.f` reads field f; any other use of `self` as a whole — a
-// copy, `&self`, a capture, a task launch — counts as every field.
+// self. `this.f` reads field f; any other use of `this` as a whole — a
+// copy, `&this`, a capture, a task launch — counts as every field.
 func (c *Checker) fieldUsePass(prog *Program) {
 	changed := true
 	for changed {

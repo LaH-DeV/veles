@@ -86,7 +86,7 @@ everything after it; `x != null && ...` narrows the right side of the
 `&&`; assigning a non-null value narrows a `var`.
 
 It also applies to a **field path** — a chain of plain struct fields from
-a local variable or from `self`:
+a local variable or from `this`:
 
 ```veles
 use io
@@ -133,7 +133,7 @@ struct Counter {
   var n: i64 = 0
 
   fun bump() {
-    self.n += 1
+    this.n += 1
   }
 }
 

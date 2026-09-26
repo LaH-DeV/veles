@@ -267,7 +267,7 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 	// type; where a `sendable fun` is expected, the offending capture is named.
 	fn.Sig.Sendable = true
 	for _, v := range l.captureList {
-		// `self` is captured as the pointer to the receiver's place (D22):
+		// `this` is captured as the pointer to the receiver's place (D22):
 		// what matters is the receiver's type, and it is never a `var`
 		ct := v.Type
 		isVar := v.Mutable

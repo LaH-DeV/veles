@@ -5,7 +5,7 @@ use io
 error ParseError {
   /// what we tried to parse
   text: string
-  fun message(): string = "parsing problem in \"${self.text}\""
+  fun message(): string = "parsing problem in \"${this.text}\""
 }
 /// A number outside 0..65535. Its message() is the default: the show rendering.
 error RangeError {
@@ -28,7 +28,7 @@ fun parsePort(text: string): i64 throws PortErrors {
 error ConfigError {
   key:   string
   cause: PortErrors
-  fun message(): string = "config '${self.key}': ${self.cause.message()}"
+  fun message(): string = "config '${this.key}': ${this.cause.message()}"
 }
 
 /** Codedoc */

@@ -24,7 +24,7 @@ struct JObj : Json {
 error ParseError {
   message: string
   pos:     i64
-  fun message(): string = "${self.message} at offset ${self.pos}"
+  fun message(): string = "${this.message} at offset ${this.pos}"
 }
 
 // the bytes the parser looks at: a byte literal is the u8 of one ASCII character
@@ -54,138 +54,138 @@ struct Parser {
 
   /// Parses the whole text: one value, surrounded by whitespace only.
   fun parseDocument(): Json throws ParseError {
-    val v = try self.parseValue()
-    self.skipSpace()
-    if (self.pos < self.src.len()) throw self.fail("trailing characters after the value")
+    val v = try this.parseValue()
+    this.skipSpace()
+    if (this.pos < this.src.len()) throw this.fail("trailing characters after the value")
     v
   }
 
-  fun fail(message: string): ParseError = ParseError(message, pos: self.pos)
+  fun fail(message: string): ParseError = ParseError(message, pos: this.pos)
 
-  fun peek(): u8? = if (self.pos < self.src.len()) self.src.byteAt(self.pos) else null
+  fun peek(): u8? = if (this.pos < this.src.len()) this.src.byteAt(this.pos) else null
 
   fun skipSpace() {
     loop {
-      val b = self.peek() ?: return
+      val b = this.peek() ?: return
       if (b != SPACE && b != TAB && b != LF && b != CR) return
-      self.pos += 1
+      this.pos += 1
     }
   }
 
   fun expect(b: u8, what: string) throws ParseError {
-    self.skipSpace()
-    if (self.peek() != b) throw self.fail("expected $what")
-    self.pos += 1
+    this.skipSpace()
+    if (this.peek() != b) throw this.fail("expected $what")
+    this.pos += 1
   }
 
   fun parseValue(): Json throws ParseError {
-    self.skipSpace()
-    val b = self.peek() ?: throw self.fail("unexpected end of input")
+    this.skipSpace()
+    val b = this.peek() ?: throw this.fail("unexpected end of input")
     when {
-      b == LBRACE => try self.parseObject()
-      b == LBRACKET => try self.parseArray()
-      b == QUOTE => JStr(value: try self.parseString())
-      b == MINUS || (b >= ZERO && b <= NINE) => try self.parseNumber()
-      self.src.substring(self.pos, self.pos + 4) == "true" => {
-        self.pos += 4
+      b == LBRACE => try this.parseObject()
+      b == LBRACKET => try this.parseArray()
+      b == QUOTE => JStr(value: try this.parseString())
+      b == MINUS || (b >= ZERO && b <= NINE) => try this.parseNumber()
+      this.src.substring(this.pos, this.pos + 4) == "true" => {
+        this.pos += 4
         JBool(value: true)
       }
-      self.src.substring(self.pos, self.pos + 5) == "false" => {
-        self.pos += 5
+      this.src.substring(this.pos, this.pos + 5) == "false" => {
+        this.pos += 5
         JBool(value: false)
       }
-      self.src.substring(self.pos, self.pos + 4) == "null" => {
-        self.pos += 4
+      this.src.substring(this.pos, this.pos + 4) == "null" => {
+        this.pos += 4
         JNull()
       }
-      else => throw self.fail("unexpected character")
+      else => throw this.fail("unexpected character")
     }
   }
 
   fun parseObject(): Json throws ParseError {
-    try self.expect(LBRACE, "'{'")
+    try this.expect(LBRACE, "'{'")
     var fields: MutableMap<string, Json> = [:]
-    self.skipSpace()
-    if (self.peek() == RBRACE) {
-      self.pos += 1
+    this.skipSpace()
+    if (this.peek() == RBRACE) {
+      this.pos += 1
       return JObj(fields: fields.toMap())
     }
     loop {
-      self.skipSpace()
-      if (self.peek() != QUOTE) throw self.fail("expected a string key")
-      val key = try self.parseString()
-      try self.expect(COLON, "':'")
-      fields.set(key, try self.parseValue())
-      self.skipSpace()
-      val b = self.peek() ?: throw self.fail("unterminated object")
-      self.pos += 1
+      this.skipSpace()
+      if (this.peek() != QUOTE) throw this.fail("expected a string key")
+      val key = try this.parseString()
+      try this.expect(COLON, "':'")
+      fields.set(key, try this.parseValue())
+      this.skipSpace()
+      val b = this.peek() ?: throw this.fail("unterminated object")
+      this.pos += 1
       if (b == RBRACE) break
-      if (b != COMMA) throw self.fail("expected ',' or '}'")
+      if (b != COMMA) throw this.fail("expected ',' or '}'")
     }
     JObj(fields: fields.toMap())
   }
 
   fun parseArray(): Json throws ParseError {
-    try self.expect(LBRACKET, "'['")
+    try this.expect(LBRACKET, "'['")
     var items: MutableList<Json> = []
-    self.skipSpace()
-    if (self.peek() == RBRACKET) {
-      self.pos += 1
+    this.skipSpace()
+    if (this.peek() == RBRACKET) {
+      this.pos += 1
       return JArr(items: items.toList())
     }
     loop {
-      items.push(try self.parseValue())
-      self.skipSpace()
-      val b = self.peek() ?: throw self.fail("unterminated array")
-      self.pos += 1
+      items.push(try this.parseValue())
+      this.skipSpace()
+      val b = this.peek() ?: throw this.fail("unterminated array")
+      this.pos += 1
       if (b == RBRACKET) break
-      if (b != COMMA) throw self.fail("expected ',' or ']'")
+      if (b != COMMA) throw this.fail("expected ',' or ']'")
     }
     JArr(items: items.toList())
   }
 
   fun parseNumber(): Json throws ParseError {
-    val start = self.pos
-    if (self.peek() == MINUS) self.pos += 1
-    self.digits()
-    if (self.peek() == DOT) {
-      self.pos += 1
-      self.digits()
+    val start = this.pos
+    if (this.peek() == MINUS) this.pos += 1
+    this.digits()
+    if (this.peek() == DOT) {
+      this.pos += 1
+      this.digits()
     }
-    val e = self.peek()
+    val e = this.peek()
     if (e == 'e' || e == 'E') {
-      self.pos += 1
-      val sign = self.peek()
-      if (sign == PLUS || sign == MINUS) self.pos += 1
-      self.digits()
+      this.pos += 1
+      val sign = this.peek()
+      if (sign == PLUS || sign == MINUS) this.pos += 1
+      this.digits()
     }
-    val text = self.src.substring(start, self.pos) ?: ""
+    val text = this.src.substring(start, this.pos) ?: ""
     val value = text.toF64() ?: throw ParseError(message: "malformed number '$text'", pos: start)
     JNum(value)
   }
 
   fun digits() {
     loop {
-      val b = self.peek() ?: return
+      val b = this.peek() ?: return
       if (b < ZERO || b > NINE) return
-      self.pos += 1
+      this.pos += 1
     }
   }
 
   /// A string literal, with escapes decoded; the cursor is on the opening quote.
   fun parseString(): string throws ParseError {
-    self.pos += 1
+    this.pos += 1
     var out: MutableList<u8> = []
     loop {
-      val b = self.peek() ?: throw self.fail("unterminated string")
-      self.pos += 1
+      val b = this.peek() ?: throw this.fail("unterminated string")
+      this.pos += 1
       if (b == QUOTE) break
       if (b != BACKSLASH) {
         out.push(b)
         continue
       }
-      val esc = self.peek() ?: throw self.fail("unterminated escape")
-      self.pos += 1
+      val esc = this.peek() ?: throw this.fail("unterminated escape")
+      this.pos += 1
       when {
         esc == QUOTE || esc == BACKSLASH || esc == '/' => out.push(esc)
         esc == 'n' => out.push(LF)
@@ -194,15 +194,15 @@ struct Parser {
         esc == 'b' => out.push(8)
         esc == 'f' => out.push(12)
         esc == 'u' => {
-          val hex = self.src.substring(self.pos, self.pos + 4) ?: throw self.fail("short \\u escape")
-          val cp = parseHex(hex) ?: throw self.fail("bad \\u escape '$hex'")
-          self.pos += 4
+          val hex = this.src.substring(this.pos, this.pos + 4) ?: throw this.fail("short \\u escape")
+          val cp = parseHex(hex) ?: throw this.fail("bad \\u escape '$hex'")
+          this.pos += 4
           encodeUtf8(cp, out)
         }
-        else => throw self.fail("unknown escape")
+        else => throw this.fail("unknown escape")
       }
     }
-    out.decodeUtf8() ?: throw self.fail("string is not valid UTF-8")
+    out.decodeUtf8() ?: throw this.fail("string is not valid UTF-8")
   }
 }
 
@@ -290,30 +290,30 @@ fun pretty(v: Json, indent: i64 = 0): string {
 
 extend Json {
   /// The field `name` of an object, or null.
-  public fun field(name: string): Json? = when (self) {
+  public fun field(name: string): Json? = when (this) {
     is JObj(fields) => fields.get(name)
     else            => null
   }
 
   /// The element `i` of an array, or null.
-  public fun item(i: i64): Json? = when (self) {
+  public fun item(i: i64): Json? = when (this) {
     is JArr(items) => items.at(i)
     else           => null
   }
 
-  public fun asString(): string? = when (self) {
+  public fun asString(): string? = when (this) {
     is JStr(value) => value
     else           => null
   }
 
-  public fun asNumber(): f64? = when (self) {
+  public fun asNumber(): f64? = when (this) {
     is JNum(value) => value
     else           => null
   }
 
   /// Walks a dotted path: "users.1.name".
   public fun path(p: string): Json? {
-    var cur: Json? = self
+    var cur: Json? = this
     loop (part in p.split(".")) {
       val here = cur ?: return null
       cur = when (val n = part.toInt()) {

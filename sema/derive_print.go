@@ -266,7 +266,7 @@ func dexpr(e ast.Expr, ind int) string {
 		}
 		return s
 	case *ast.SelfExpr:
-		return "self"
+		return "this"
 	case *ast.NullLit:
 		return "null"
 	case *ast.BoolLit:
@@ -337,6 +337,8 @@ func dexpr(e ast.Expr, ind int) string {
 		return dopnd(e.X, ind) + op + dpattern(e.Pat, ind)[len("is "):]
 	case *ast.TypeExpr:
 		return dtype(e.Type)
+	case *ast.PreludeName:
+		return e.Name
 	case *ast.FieldDefaultExpr:
 		return "<default of " + fieldDefaultName(e) + ">"
 	case *ast.ControlExpr:

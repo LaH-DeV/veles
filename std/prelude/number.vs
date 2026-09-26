@@ -29,7 +29,7 @@ extend i64 {
   /// The number written in `radix` (2 to 36; lower-case digits): `255.toString(radix: 16)` is `"ff"`.
   public fun toString(radix: i64 = 10): string {
     checkRadix(radix)
-    if (self < 0) "-" + unsignedToRadix((0 -% self) as u64, radix) else unsignedToRadix(self as u64, radix)
+    if (this < 0) "-" + unsignedToRadix((0 -% this) as u64, radix) else unsignedToRadix(this as u64, radix)
   }
 }
 
@@ -37,7 +37,7 @@ extend u64 {
   /// The number written in `radix` (2 to 36; lower-case digits).
   public fun toString(radix: i64 = 10): string {
     checkRadix(radix)
-    unsignedToRadix(self, radix)
+    unsignedToRadix(this, radix)
   }
 }
 
@@ -46,7 +46,7 @@ extend f64 {
   public fun toFixed(digits: i64): string {
     var out = ""
     unsafe {
-      veles_f64_to_fixed(self, digits, &out)
+      veles_f64_to_fixed(this, digits, &out)
     }
     out
   }
@@ -54,5 +54,5 @@ extend f64 {
 
 extend f32 {
   /// The number with exactly `digits` decimals, rounded.
-  public fun toFixed(digits: i64): string = (self as f64).toFixed(digits)
+  public fun toFixed(digits: i64): string = (this as f64).toFixed(digits)
 }

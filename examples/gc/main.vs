@@ -30,7 +30,7 @@ struct Thing {
   label: string
 
   implement Named {
-    fun name(): string = self.label
+    fun name(): string = this.label
   }
 }
 

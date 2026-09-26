@@ -260,7 +260,7 @@ struct Counter {
   var n: i64 = 0
 
   fun bump() {
-    self.n += 1
+    this.n += 1
   }
 }
 
@@ -458,7 +458,7 @@ struct Job {
   cost: i64
 
   implement Comparable {
-    fun compareTo(other: Job): Ordering = self.cost.compareTo(other.cost)
+    fun compareTo(other: Job): Ordering = this.cost.compareTo(other.cost)
   }
 }
 

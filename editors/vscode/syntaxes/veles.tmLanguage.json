@@ -158,11 +158,11 @@
         { "name": "keyword.control.flow.veles", "match": "\\b(return|throw|try|with)\\b" },
         { "name": "keyword.control.concurrency.veles", "match": "\\b(async|await|scope|gather|race)\\b" },
         { "name": "storage.modifier.veles", "match": "\\b(public|private|internal|protected|override|unsafe|extern|mut|static|sealed|sendable)\\b" },
-        { "name": "storage.type.veles", "match": "\\b(fun|struct|trait|implement|val|var|const|type)\\b" },
-        { "name": "keyword.operator.expression.veles", "match": "\\b(as|raw)\\b" },
-        { "name": "variable.language.self.veles", "match": "\\b(self)\\b" },
+        { "name": "storage.type.veles", "match": "\\b(fun|struct|trait|implement|enum|val|var|const|type)\\b" },
+        { "name": "keyword.operator.expression.veles", "match": "\\b(as|raw|for)\\b" },
+        { "name": "variable.language.this.veles", "match": "\\b(this)\\b" },
         { "name": "support.type.self.veles", "match": "\\b(Self)\\b" },
-        { "name": "invalid.illegal.reserved.veles", "match": "\\b(enum|match|defer|go|yield|where|super|this|catch|interface|class|while|do|finally|import|package|module|let|for)\\b" }
+        { "name": "invalid.illegal.reserved.veles", "match": "\\b(self|match|defer|go|yield|where|super|catch|interface|class|while|do|finally|import|package|module|let)\\b" }
       ]
     },
     "effects": {

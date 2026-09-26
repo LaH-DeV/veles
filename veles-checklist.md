@@ -38,6 +38,7 @@ answered from the shape, tuples get `Comparable`, enums get
 - [x] Nullable fields: missing → `null`, defaults on missing, `@required`
 - [x] Generic structs: bounds inferred for an empty implement; implement bounds are now checked at every method lookup and in `implements`
 - [x] Recursive types: `json.Options(maxDepth: 64)` in the decoder
+- [x] Derived code reaches prelude helpers (`styleKey`, `childPath`, `joinPath`, `panic`) through `ast.PreludeName`, so a module declaring a function of the same name no longer breaks `implement Codable` (2026-09-26; was §11)
 - [x] Fields that cannot be derived (functions, `Mutex`, raw pointers, handles):
       error at the use site naming the field, like the `Equatable`-key check
 - [x] Private fields / constructor rule (M5): decoding is construction (an inline implement may set them; a foreign implement may not)
@@ -57,14 +58,13 @@ answered from the shape, tuples get `Comparable`, enums get
 
 ### 1.2 Foreign function interface
 
-- [?] C ABI FFI design (spec §7 lists it as not designed; §8 scopes it)
+- [x] C ABI FFI design → D67 (2026-09-26): extern blocks in any package, native libraries in the manifest; marshaling of strings/buffers and callbacks still to decide
 - [ ] `extern "C"` blocks: calling convention, varargs, callbacks into Veles
 - [ ] `extern struct` layout: packed, explicit alignment, transparent wrappers
       (the "noted pressure point" under D51)
 - [ ] Ownership at the boundary: who frees, GC pinning for buffers handed to C
 - [ ] Panics/unwinds never cross into C; errors come back as codes
-- [ ] Linking: `veles.toml` declares native libs, pkg-config on POSIX,
-      the `.lib` equivalent on Windows
+- [x] Linking: `[native]` in `veles.toml` — `libs`, `static-libs` (archive resolved by name), `lib-paths`, `pkg-config`, file entries; dependencies' tables link too (2026-09-26, `driver/native.go`, TestNativeLinking)
 - [ ] Declaration files (`.d.vs`) so bindings are typed and shareable
 - [ ] Suspension-aware bindings: a blocking C call runs on a helper thread
       and parks the task (needs §1.3)
@@ -196,8 +196,8 @@ answered from the shape, tuples get `Comparable`, enums get
 
 ## 4. Runtime and operations
 
-- [ ] Signals: `os.onSignal`, `os.shutdownSignal()` (SIGTERM/SIGINT/Ctrl+C)
-- [ ] Graceful shutdown in `http.serve`: stop accepting, drain with deadline
+- [x] Signals: `os.shutdownSignal(): os.Signal` (D68, 2026-09-26; `os.onSignal` rejected) + `os.raiseSignal` for tests. Real console/POSIX delivery not exercised by the suite (no console in the test harness); the path from the recorded signal on is (`examples/shutdown`)
+- [x] Graceful shutdown in `http.serve(..., stop:, grace:)`: stop accepting, close idle keep-alive, drain with `connection: close`, cancel after `grace` (2026-09-26)
 - [ ] Panic in a task: stack trace with symbol names (DWARF unwinding is on
       the remaining list)
 - [ ] Crash report: what a production panic prints and where
@@ -234,16 +234,16 @@ answered from the shape, tuples get `Comparable`, enums get
 - [~] Standard middleware: `requestId()`, `logging()`, `timeout(d: Duration)` done; recovery
       needs nothing (a panic is already caught at the request boundary, D56) and
       body-limit is `Limits.bodyBytes`. Still open: CORS, auth hook, compression
-- [ ] Graceful shutdown (§4)
+- [x] Graceful shutdown (§4, D68)
 - [ ] Max concurrent connections with backpressure at `accept`
 - [ ] `Expect: 100-continue`
-- [ ] `HEAD`/`OPTIONS` defaults; `405` with `Allow` (today `PUT` → check)
+- [x] `HEAD`/`OPTIONS` defaults; `405` with `Allow` (2026-09-26: HEAD runs the GET route and the writer drops the body, keeping its `content-length`; OPTIONS answers 204 + `Allow`; a 1xx/204/304 is written without body or length)
 - [ ] Cookies: parse and set, with `SameSite`/`Secure`/`HttpOnly`
 - [ ] Forms: `x-www-form-urlencoded` (have `parseQuery`), multipart streamed to disk
 - [ ] Static files: `ETag`, `Last-Modified`, `Range`, `Cache-Control`, index files
-- [ ] Router: method-not-allowed vs not-found distinction, route groups,
+- [~] Router: method-not-allowed vs not-found distinction (done: 405 + `Allow`), route groups,
       typed path params (`{id: i64}`)
-- [ ] In-process test client: `http.call(handler, method, path, body)`
+- [x] In-process test client: `http.call(handler, method, target, body:, headers:)` (2026-09-26; same target parsing and panic boundary as `serve`; docs 17 "Testing a handler")
 - [~] Access log format: one line with peer, method, path, status, latency (a `Duration`, so the unit is in the line) and the
       request id (`logging()`); not structured (JSON/key=value) and no byte count yet
 - [ ] HTTP/2 (later; needed for gRPC-style internal traffic)
@@ -357,7 +357,7 @@ behind a name that says "crypto" (§10, 2026-09-23).
 
 - [ ] `std/config`: typed env parsing, all missing keys reported at once
 - [ ] `std/compress`: gzip/deflate via zlib binding
-- [~] `std/os`: `hostname`, `pid`, `tempDir` done (2026-09-25); `onSignal` open (§4)
+- [~] `std/os`: `hostname`, `pid`, `tempDir` done (2026-09-25); `shutdownSignal`/`raiseSignal` done (D68)
 - [~] `std/fs`: `walk` done (2026-09-25: depth-first, name order, links to
       directories not followed, its own stack); streaming reads/writes, atomic
       rename, file locks open
@@ -467,8 +467,8 @@ pros/cons before anything is built; the answer becomes a spec entry.
  12. ~~Function type parameters after the name~~ — decided, see §10.
 13. ~~`implement` → `implement`~~ — decided, see §10.
 14. **A check that a value implements a trait** (`x is Display`): trait-object RTTI (Go-style, a per-type trait table in every box) vs a compile-time `T implements X` in generics (per stencil, no runtime cost) vs neither. Deferred; to be designed as its own decision with the costs. *Open.*
-8. FFI design. *Not yet asked.*
-9. Executor threading model. *Not yet asked.*
+8. ~~FFI design~~ — decided 2026-09-26 (D67), see §10.
+9. ~~Executor threading model~~ — decided 2026-09-26 (D66), see §10.
 10. User-definable derivation (phase 2, once the compiler-known set is proven). *Not yet asked.*
 11. **Arithmetic operator traits** (`Addable`/`Subtractable`/… so `a + b` works on a `Duration`, a `Timestamp`, a vector, a money amount). D60 deliberately did not take it: the five operator traits today are about *comparison and text*, and adding arithmetic ones raises overflow, mixed operand types (`Timestamp + Duration` is not `Timestamp + Timestamp`) and whether `+=` follows. `Duration.plus`/`minus`/`times`/`dividedBy` are named so that such a trait could adopt them. *Not yet asked.*
 12. ~~How a `Duration` goes on the wire~~ — decided 2026-09-25, see §10.
@@ -519,16 +519,16 @@ pros/cons before anything is built; the answer becomes a spec entry.
 | 2026-09-25 | Guard binding (I1) | **Let-else plus `??` on Result** (user, after `veles-guard-design.md`): `val x = r else { e => ... }` binds or leaves (Result, nullable, variant pattern; one-statement `else return` allowed); `r ?? fallback` / `r ?? { e => ... }` is `?:` for a Result, and each operator on the other kind is an error with a fix that swaps it. Spec D61. Rejected: widening `?:` to Result (the recommendation), a `Fallible` trait (its own decision, later). |
 | 2026-09-26 | Fewer panics: prove the index (user: "atOrPanic is kind of a cheatcode") | **All four parts, in order A → B → C, D alongside.** A: list patterns in `when` and let-else (`val [h, p, s] = xs else ...`, `[x, ..rest]`). B: bounds facts — `xs.at(i)` is `T` where the checker knows the index is in range (index loops, `i < len` guards, constant indexes after a length check; a `MutableList`'s facts end at any call that could reach it). C: `atOrPanic`/`getOrPanic`/`refOrPanic` removed; the only way left is `?: panic("why")` (user's choice over `.expect("why")` and keeping the method with a lint). D: `indices()`, `splitOnce`, `enumerate`/`zip` on List. Spec D62. Built: **A** (2026-09-26: parser, checker, `list.slice` runtime op for `..rest`, examples/listpatterns, docs 04, std/jwt + std/http request line migrated). **B** (2026-09-26: sema/bounds.go — facts in the smart-cast map; `indices()`; `?:` after a proven read is a warning with a fix; ~20 std sites now plain `at`, the rest are index arithmetic or `self` with calls; found D63 on the way). **C** (2026-09-26: the three names are errors whose fix writes `(x.at(i) ?: panic("TODO: say why this cannot fail"))`; std, examples, bench, docs and tests migrated by hand — list patterns, iteration and `?: return` where they fit, a stated invariant elsewhere (one helper per data structure); codegen now inlines list `len` and the bounds-checked element read: sha256 301→72 ms, json 314→135 ms, sort 295→108 ms). **D** (2026-09-26): `indices()`, `s.splitOnce(sep): (string, string)?`, eager `List.enumerate(): List<(i64, T)>` (`zip` was already on List); splitOnce replaced the hand-split header, target, query, ISO-duration and HTTP-date code in std. |
 | 2026-09-26 | A `catch` block for panics | **Not added; D52 stands** (user: "we use gather"). Panics are the bug channel, not exceptions: they stay unrecoverable inside a task and are observed only where a task ends (`gather`). Presented: function-level `fun f() { … } catch { p => … }` (recommended), a catch after any block, or none. Should it be revisited, the panic is bound with the D61 handler form `catch { p => … }`, not `this`, since `this` would hide a method's receiver. |
-| 2026-09-26 | `self` becomes `this` (user) | **Decided, not built.** The receiver is spelled `this` across the language, std, docs and tooling. It needs a spec pass, a lexer/sema rename, a `veles check --fix` for the old spelling and a repo-wide migration. |
+| 2026-09-26 | `self` becomes `this` (user) | **Built 2026-09-26.** The receiver is spelled `this` across the language, std, docs and tooling (spec D65, v0.40). `self` still parses as the receiver with an error whose fix writes `this` (`veles check --fix`, LSP quick fix, inside interpolations too); 1,520 sites migrated by a token-level rewrite (code only, never comments or string text), prose by hand; `Self` the type is unchanged; the VS Code grammar highlights `this`, flags `self`, and no longer marks `enum`/`for` illegal. |
 | 2026-09-26 | A MutableList where a List is expected (found by D62) | **Moved when unescaped, otherwise `.toList()`** (user, recommended of four): the checker passed the same handle, contradicting D35 (a List could shrink during a call, or be shared with a task while written). Now a fresh local that never escaped converts at its last use with no copy; anything else is an error with a `.toList()`/`.toMap()`/`.toSet()` fix. Rejected: implicit copy, always explicit, keeping the view. Spec D63. Built 2026-09-26 (sema/move.go; `==` and compiler-written code compare without converting; std: 4 `.toList()` copies, the sha leftover buffer and crypto padding). |
 | 2026-09-26 | A Kotlin-style `x!!` to panic on null (user: "controversial, so I'm not sure") | **Not added; every panic shows its location instead** (user, recommended of four): `!!` would be D62's cheatcode at two characters, for every `T?`, with no reason recorded. What it offered was the line, so panics now print `at file:line:col` (relative to the package root) under the message — `panic(...)`, overflow, division, `pow`, non-exhaustive match, list index; kept through `scope`'s re-raise, `Panic.location` at `gather`, printed by `veles test`. Rejected: `!!` everywhere, `!!` with a warning + fix, `!!` only in tests. Spec D64. Built 2026-09-26 (runtime `veles_panic_at`, `veles_list_index_panic`; codegen `g.where`). Known gap: a std panic for caller misuse (`swap`) reports the std line. |
+| 2026-09-26 | Executor threading model (§9.9) | **Work-stealing M:N over one shared heap** (user, recommended of three): tasks may resume on any worker; GC stops workers at safepoints (allocation, suspension); per-worker allocation buffers; real `Mutex`/`Atomic`; thread-safe channels/timers/poller. Staged: global queue first, stealing second, each measured in `bench/`. A module-level `var` that is not `Mutex`/`Atomic` becomes an error. Spec D66. Rejected: thread-per-core (imbalance, still needs safepoints), single thread + offload pool (breaks D35). *Not built.* |
+| 2026-09-26 | FFI shape (§9.8) | **Hand-written `extern` blocks in any package + a `[native]` table in `veles.toml`** (`libs`, `pkg-config`, Windows lib paths), `extern struct`, C function-pointer types for callbacks; "maybe" a `veles bindgen` later that writes the same form (user). User asked that every extern be unsafe — it already is: a call needs `unsafe`, and an extern cannot be taken as a value. Spec D67. Rejected: `@cImport`-style header import. *Not built.* |
+| 2026-09-26 | Signals and graceful shutdown | **A signal is awaited** (user, recommended of three): `os.shutdownSignal(): os.Signal` suspends until SIGINT/SIGTERM (Ctrl+C/Break/close on Windows), installs its handlers only when first asked, a second signal has the default effect; `http.serve(..., stop:, grace:)` stops accepting, drains, cancels after `grace`. Spec D68. Rejected: `os.onSignal` callbacks, signals handled inside `serve` by default. |
+| 2026-09-26 | A std panic caused by the caller (D64's gap) | **Left as is** (user, over the recommended `@callerLocation` attribute): the std line is reported until stack traces exist. |
 
 ## 11. Known limitations to revisit
 
-- Derived code calls the prelude functions `styleKey`, `childPath` and
-  `joinPath` by name; a user declaration of the same name in the module
-  shadows them and produces a confusing error. Fix: resolve prelude names
-  from synthesized code directly (a `ResolvedFunc` node).
 - A panic std raises for a caller's misuse (`xs.swap(0, 7)`, `chunked(0)`)
   reports the std line (`at std/prelude/list.vs:408:27`), not the caller's
   (D64). Fix if it matters: a `#[track_caller]`-style attribute that passes

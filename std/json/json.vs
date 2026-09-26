@@ -107,26 +107,26 @@ public struct JsonEncoder {
   public static fun of(options: Options = Options()): JsonEncoder = JsonEncoder(options)
 
   /// The text written so far.
-  public fun text(): string = self.out.toString()
+  public fun text(): string = this.out.toString()
 
   /// Before a value: the separator, the newline and indent when pretty,
   /// and the key that was waiting.
   private fun beforeValue() {
-    val top = self.stack.ref(-1) ?: return
-    if (top.members > 0) self.out.append(",")
+    val top = this.stack.ref(-1) ?: return
+    if (top.members > 0) this.out.append(",")
     top.members += 1
-    self.newline()
-    if (!top.isList && !self.pending.isEmpty()) {
-      val k = self.pending.removeAt(self.pending.len() - 1)
-      writeQuoted(self.out, k)
-      self.out.append(if (self.options.pretty) ": " else ":")
+    this.newline()
+    if (!top.isList && !this.pending.isEmpty()) {
+      val k = this.pending.removeAt(this.pending.len() - 1)
+      writeQuoted(this.out, k)
+      this.out.append(if (this.options.pretty) ": " else ":")
     }
   }
 
   private fun newline() {
-    if (!self.options.pretty) return
-    self.out.append("\n")
-    loop (_ in 0..<self.stack.len()) self.out.append(self.options.indent)
+    if (!this.options.pretty) return
+    this.out.append("\n")
+    loop (_ in 0..<this.stack.len()) this.out.append(this.options.indent)
   }
 
   /// A tree nests as deep as whoever built it wanted, and `Value.encode`
@@ -134,78 +134,78 @@ public struct JsonEncoder {
   /// on the way in — a document that was refused as too deep must not come
   /// back as a stack overflow when something re-encodes it.
   private fun checkDepth() throws EncodeError {
-    if (self.stack.len() >= self.options.maxDepth) {
-      throw EncodeError(message: tooDeepMessage(self.options.maxDepth))
+    if (this.stack.len() >= this.options.maxDepth) {
+      throw EncodeError(message: tooDeepMessage(this.options.maxDepth))
     }
   }
 
   private fun close(what: string) {
-    val top = self.stack.removeAt(self.stack.len() - 1)
-    if (top.members > 0) self.newline()
-    self.out.append(what)
+    val top = this.stack.removeAt(this.stack.len() - 1)
+    if (top.members > 0) this.newline()
+    this.out.append(what)
   }
 
   implement Encoder {
     fun format(): string = "json"
-    override fun enums(): EnumStyle = self.options.enums
-    override fun durations(): DurationStyle = self.options.durations
-    override fun keys(): KeyStyle = self.options.keys
+    override fun enums(): EnumStyle = this.options.enums
+    override fun durations(): DurationStyle = this.options.durations
+    override fun keys(): KeyStyle = this.options.keys
 
     fun beginObject() throws EncodeError {
-      try self.checkDepth()
-      self.beforeValue()
-      self.out.append("{")
-      self.stack.push(Open(isList: false))
+      try this.checkDepth()
+      this.beforeValue()
+      this.out.append("{")
+      this.stack.push(Open(isList: false))
     }
 
     fun key(name: string) throws EncodeError {
-      self.pending.push(name)
+      this.pending.push(name)
     }
 
-    fun endObject() throws EncodeError = self.close("}")
+    fun endObject() throws EncodeError = this.close("}")
 
     fun beginList() throws EncodeError {
-      try self.checkDepth()
-      self.beforeValue()
-      self.out.append("[")
-      self.stack.push(Open(isList: true))
+      try this.checkDepth()
+      this.beforeValue()
+      this.out.append("[")
+      this.stack.push(Open(isList: true))
     }
 
-    fun endList() throws EncodeError = self.close("]")
+    fun endList() throws EncodeError = this.close("]")
 
     fun writeI64(v: i64) throws EncodeError {
-      self.beforeValue()
-      self.out.append("$v")
+      this.beforeValue()
+      this.out.append("$v")
     }
 
     fun writeU64(v: u64) throws EncodeError {
-      self.beforeValue()
-      self.out.append("$v")
+      this.beforeValue()
+      this.out.append("$v")
     }
 
     fun writeF64(v: f64) throws EncodeError {
       if (v.isNaN() || v.isInfinite()) throw EncodeError(message: "JSON has no representation for $v")
-      self.beforeValue()
-      self.out.append("$v")
+      this.beforeValue()
+      this.out.append("$v")
     }
 
     fun writeBool(v: bool) throws EncodeError {
-      self.beforeValue()
-      self.out.append(if (v) "true" else "false")
+      this.beforeValue()
+      this.out.append(if (v) "true" else "false")
     }
 
     fun writeString(v: string) throws EncodeError {
-      self.beforeValue()
-      writeQuoted(self.out, v)
+      this.beforeValue()
+      writeQuoted(this.out, v)
     }
 
     fun writeNull() throws EncodeError {
-      if (self.options.omitNulls && !self.pending.isEmpty()) {
-        val _ = self.pending.removeAt(self.pending.len() - 1)
+      if (this.options.omitNulls && !this.pending.isEmpty()) {
+        val _ = this.pending.removeAt(this.pending.len() - 1)
         return
       }
-      self.beforeValue()
-      self.out.append("null")
+      this.beforeValue()
+      this.out.append("null")
     }
   }
 }
@@ -267,28 +267,28 @@ public struct JsonDecoder {
 
   /// After the value: nothing but whitespace may follow.
   public fun end() throws DecodeError {
-    self.skipSpace()
-    if (self.pos() < self.src.len()) throw self.malformed("text after the value")
+    this.skipSpace()
+    if (this.pos() < this.src.len()) throw this.malformed("text after the value")
   }
 
-  private fun pos(): i64 = self.cursor.at(0) ?: panic("json: the cursor is a one-element cell")
-  private fun setPos(p: i64) = self.cursor.set(0, p)
+  private fun pos(): i64 = this.cursor.at(0) ?: panic("json: the cursor is a one-element cell")
+  private fun setPos(p: i64) = this.cursor.set(0, p)
 
   private fun malformed(what: string): DecodeError =
-    DecodeError(problems: self.recorded.list().concat([Problem(path: "", message: "malformed JSON at byte ${self.pos()}: $what")]))
+    DecodeError(problems: this.recorded.list().concat([Problem(path: "", message: "malformed JSON at byte ${this.pos()}: $what")]))
 
-  private fun peekByte(): u8? = self.src.at(self.pos())
+  private fun peekByte(): u8? = this.src.at(this.pos())
 
   private fun skipSpace() {
     loop {
-      val b = self.peekByte() ?: return
+      val b = this.peekByte() ?: return
       if (b != ' ' && b != '\t' && b != '\n' && b != '\r') return
-      self.setPos(self.pos() + 1)
+      this.setPos(this.pos() + 1)
     }
   }
 
   /// Describes the next value for a problem message.
-  private fun found(): string throws DecodeError = when (try self.peek()) {
+  private fun found(): string throws DecodeError = when (try this.peek()) {
     Kind.Null   => "null"
     Kind.Bool   => "a boolean"
     Kind.Int    => "a number"
@@ -300,43 +300,43 @@ public struct JsonDecoder {
 
   /// A value of the wrong type: recorded and read past.
   private fun wrong(expected: string) throws DecodeError {
-    self.recorded.record(self.path(), "expected $expected, found ${try self.found()}")
-    try self.skip()
+    this.recorded.record(this.path(), "expected $expected, found ${try this.found()}")
+    try this.skip()
   }
 
   /// The text of the number at the cursor, consumed.
   private fun number(): string throws DecodeError {
-    val start = self.pos()
-    if (self.peekByte() == '-') self.setPos(self.pos() + 1)
-    self.digits()
-    if (self.peekByte() == '.') {
-      self.setPos(self.pos() + 1)
-      self.digits()
+    val start = this.pos()
+    if (this.peekByte() == '-') this.setPos(this.pos() + 1)
+    this.digits()
+    if (this.peekByte() == '.') {
+      this.setPos(this.pos() + 1)
+      this.digits()
     }
-    val e = self.peekByte()
+    val e = this.peekByte()
     if (e == 'e' || e == 'E') {
-      self.setPos(self.pos() + 1)
-      val sign = self.peekByte()
-      if (sign == '+' || sign == '-') self.setPos(self.pos() + 1)
-      self.digits()
+      this.setPos(this.pos() + 1)
+      val sign = this.peekByte()
+      if (sign == '+' || sign == '-') this.setPos(this.pos() + 1)
+      this.digits()
     }
-    if (self.pos() == start) throw self.malformed("expected a number")
-    (self.src.slice(start, self.pos()).decodeUtf8() ?: "")
+    if (this.pos() == start) throw this.malformed("expected a number")
+    (this.src.slice(start, this.pos()).decodeUtf8() ?: "")
   }
 
   private fun digits() {
     loop {
-      val b = self.peekByte() ?: return
+      val b = this.peekByte() ?: return
       if (b < '0' || b > '9') return
-      self.setPos(self.pos() + 1)
+      this.setPos(this.pos() + 1)
     }
   }
 
   /// Whether the number at the cursor has a fraction or an exponent.
   private fun numberIsFloat(): bool {
-    var i = self.pos()
-    loop (i < self.src.len()) {
-      val b = self.src.at(i) ?: break
+    var i = this.pos()
+    loop (i < this.src.len()) {
+      val b = this.src.at(i) ?: break
       if (b == '.' || b == 'e' || b == 'E') return true
       if (b != '-' && (b < '0' || b > '9')) return false
       i += 1
@@ -346,27 +346,27 @@ public struct JsonDecoder {
 
   private fun literal(word: string) throws DecodeError {
     loop (i in 0..<word.len()) {
-      if (self.peekByte() != word.byteAt(i)) throw self.malformed("expected '$word'")
-      self.setPos(self.pos() + 1)
+      if (this.peekByte() != word.byteAt(i)) throw this.malformed("expected '$word'")
+      this.setPos(this.pos() + 1)
     }
   }
 
   /// A string literal at the cursor, escapes decoded.
   private fun quoted(): string throws DecodeError {
-    if (self.peekByte() != '"') throw self.malformed("expected a string")
-    self.setPos(self.pos() + 1)
+    if (this.peekByte() != '"') throw this.malformed("expected a string")
+    this.setPos(this.pos() + 1)
     val out: MutableList<u8> = []
     loop {
-      val b = self.peekByte() ?: throw self.malformed("unterminated string")
-      self.setPos(self.pos() + 1)
+      val b = this.peekByte() ?: throw this.malformed("unterminated string")
+      this.setPos(this.pos() + 1)
       if (b == '"') break
-      if (b < 32) throw self.malformed("a control character inside a string")
+      if (b < 32) throw this.malformed("a control character inside a string")
       if (b != '\\') {
         out.push(b)
         continue
       }
-      val esc = self.peekByte() ?: throw self.malformed("unterminated escape")
-      self.setPos(self.pos() + 1)
+      val esc = this.peekByte() ?: throw this.malformed("unterminated escape")
+      this.setPos(this.pos() + 1)
       when {
         esc == '"' || esc == '\\' || esc == '/' => out.push(esc)
         esc == 'n' => out.push('\n')
@@ -375,36 +375,36 @@ public struct JsonDecoder {
         esc == 'b' => out.push(8)
         esc == 'f' => out.push(12)
         esc == 'u' => {
-          var cp = try self.hex4()
+          var cp = try this.hex4()
           if (utf8.isSurrogate(cp)) {
             // a surrogate pair: the low half follows as another \u escape
-            if (self.peekByte() != '\\' || self.src.at(self.pos() + 1) != 'u') {
-              throw self.malformed("a lone surrogate in a \\u escape")
+            if (this.peekByte() != '\\' || this.src.at(this.pos() + 1) != 'u') {
+              throw this.malformed("a lone surrogate in a \\u escape")
             }
-            self.setPos(self.pos() + 2)
-            val low = try self.hex4()
-            cp = utf8.combineSurrogates(cp, low) ?: throw self.malformed("a lone surrogate in a \\u escape")
+            this.setPos(this.pos() + 2)
+            val low = try this.hex4()
+            cp = utf8.combineSurrogates(cp, low) ?: throw this.malformed("a lone surrogate in a \\u escape")
           }
           val _ = utf8.encodeTo(out, cp)
         }
-        else => throw self.malformed("unknown escape '\\${[esc].decodeUtf8() ?: "?"}'")
+        else => throw this.malformed("unknown escape '\\${[esc].decodeUtf8() ?: "?"}'")
       }
     }
-    out.decodeUtf8() ?: throw self.malformed("a string that is not valid UTF-8")
+    out.decodeUtf8() ?: throw this.malformed("a string that is not valid UTF-8")
   }
 
   private fun hex4(): i64 throws DecodeError {
     var n: i64 = 0
     loop (_ in 0..<4) {
-      val b = (self.peekByte() ?: throw self.malformed("short \\u escape")) as i64
+      val b = (this.peekByte() ?: throw this.malformed("short \\u escape")) as i64
       val d = when {
         b >= '0' && b <= '9' => b - '0'
         b >= 'a' && b <= 'f' => b - 'a' + 10
         b >= 'A' && b <= 'F' => b - 'A' + 10
-        else                 => throw self.malformed("bad \\u escape")
+        else                 => throw this.malformed("bad \\u escape")
       }
       n = n * 16 + d
-      self.setPos(self.pos() + 1)
+      this.setPos(this.pos() + 1)
     }
     n
   }
@@ -412,203 +412,203 @@ public struct JsonDecoder {
   /// Between members of the open container: the separator, or its end.
   /// True when another member follows.
   private fun more(closer: u8): bool throws DecodeError {
-    val top = self.stack.ref(-1) ?: panic(openContainer)
+    val top = this.stack.ref(-1) ?: panic(openContainer)
     if (top.phantom) return false
-    self.skipSpace()
-    val b = self.peekByte() ?: throw self.malformed("unterminated container")
+    this.skipSpace()
+    val b = this.peekByte() ?: throw this.malformed("unterminated container")
     if (b == closer) return false
     if (top.index == 0) return true
-    if (b != ',') throw self.malformed("expected ',' or '${[closer].decodeUtf8() ?: "?"}'")
-    self.setPos(self.pos() + 1)
-    self.skipSpace()
-    if (self.peekByte() == closer) throw self.malformed("a trailing comma")
+    if (b != ',') throw this.malformed("expected ',' or '${[closer].decodeUtf8() ?: "?"}'")
+    this.setPos(this.pos() + 1)
+    this.skipSpace()
+    if (this.peekByte() == closer) throw this.malformed("a trailing comma")
     true
   }
 
   private fun open(isList: bool, opener: u8, expected: string) throws DecodeError {
-    if (self.stack.len() >= self.options.maxDepth) throw self.malformed(tooDeepMessage(self.options.maxDepth))
-    self.skipSpace()
-    if (self.peekByte() == opener) {
-      self.setPos(self.pos() + 1)
-      self.stack.push(Frame(isList))
+    if (this.stack.len() >= this.options.maxDepth) throw this.malformed(tooDeepMessage(this.options.maxDepth))
+    this.skipSpace()
+    if (this.peekByte() == opener) {
+      this.setPos(this.pos() + 1)
+      this.stack.push(Frame(isList))
       return
     }
-    try self.wrong(expected)
-    self.stack.push(Frame(isList, phantom: true))
+    try this.wrong(expected)
+    this.stack.push(Frame(isList, phantom: true))
   }
 
   private fun closeContainer(closer: u8) throws DecodeError {
-    val top = self.stack.removeAt(self.stack.len() - 1)
+    val top = this.stack.removeAt(this.stack.len() - 1)
     if (top.phantom) return
-    self.skipSpace()
-    if (self.peekByte() != closer) throw self.malformed("expected '${[closer].decodeUtf8() ?: "?"}'")
-    self.setPos(self.pos() + 1)
+    this.skipSpace()
+    if (this.peekByte() != closer) throw this.malformed("expected '${[closer].decodeUtf8() ?: "?"}'")
+    this.setPos(this.pos() + 1)
   }
 
   implement Decoder {
     fun format(): string = "json"
-    override fun enums(): EnumStyle = self.options.enums
-    override fun durations(): DurationStyle = self.options.durations
-    override fun keys(): KeyStyle = self.options.keys
+    override fun enums(): EnumStyle = this.options.enums
+    override fun durations(): DurationStyle = this.options.durations
+    override fun keys(): KeyStyle = this.options.keys
 
     fun peek(): Kind throws DecodeError {
-      self.skipSpace()
-      val b = self.peekByte() ?: throw self.malformed("unexpected end of input")
+      this.skipSpace()
+      val b = this.peekByte() ?: throw this.malformed("unexpected end of input")
       when {
         b == '{' => Kind.Object
         b == '[' => Kind.List
         b == '"' => Kind.String
         b == 't' || b == 'f' => Kind.Bool
         b == 'n' => Kind.Null
-        b == '-' || (b >= '0' && b <= '9') => if (self.numberIsFloat()) Kind.Float else Kind.Int
-        else => throw self.malformed("unexpected character")
+        b == '-' || (b >= '0' && b <= '9') => if (this.numberIsFloat()) Kind.Float else Kind.Int
+        else => throw this.malformed("unexpected character")
       }
     }
 
-    fun beginObject() throws DecodeError = try self.open(false, '{', "an object")
+    fun beginObject() throws DecodeError = try this.open(false, '{', "an object")
 
     fun nextKey(): string? throws DecodeError {
-      if (!(try self.more('}'))) return null
-      val top = self.stack.ref(-1) ?: panic(openContainer)
-      self.skipSpace()
-      val k = try self.quoted()
-      self.skipSpace()
-      if (self.peekByte() != ':') throw self.malformed("expected ':' after a key")
-      self.setPos(self.pos() + 1)
+      if (!(try this.more('}'))) return null
+      val top = this.stack.ref(-1) ?: panic(openContainer)
+      this.skipSpace()
+      val k = try this.quoted()
+      this.skipSpace()
+      if (this.peekByte() != ':') throw this.malformed("expected ':' after a key")
+      this.setPos(this.pos() + 1)
       top.key = k
       top.index += 1
       k
     }
 
-    fun endObject() throws DecodeError = try self.closeContainer('}')
+    fun endObject() throws DecodeError = try this.closeContainer('}')
 
-    fun beginList() throws DecodeError = try self.open(true, '[', "a list")
+    fun beginList() throws DecodeError = try this.open(true, '[', "a list")
 
     fun hasNext(): bool throws DecodeError {
-      val has = try self.more(']')
+      val has = try this.more(']')
       if (has) {
-        val top = self.stack.ref(-1) ?: panic(openContainer)
+        val top = this.stack.ref(-1) ?: panic(openContainer)
         top.index += 1
       }
       has
     }
 
-    fun endList() throws DecodeError = try self.closeContainer(']')
+    fun endList() throws DecodeError = try this.closeContainer(']')
 
     fun readI64(): i64 throws DecodeError {
-      if (try self.peek() != Kind.Int) {
-        try self.wrong("an integer")
+      if (try this.peek() != Kind.Int) {
+        try this.wrong("an integer")
         return 0
       }
-      val text = try self.number()
+      val text = try this.number()
       val n = text.toInt()
       if (n == null) {
-        self.recorded.record(self.path(), "$text does not fit an integer")
+        this.recorded.record(this.path(), "$text does not fit an integer")
         return 0
       }
       n
     }
 
     fun readU64(): u64 throws DecodeError {
-      val n = try self.readI64()
+      val n = try this.readI64()
       if (n < 0) {
-        self.recorded.record(self.path(), "$n is negative")
+        this.recorded.record(this.path(), "$n is negative")
         return 0
       }
       n as u64
     }
 
     fun readF64(): f64 throws DecodeError {
-      val k = try self.peek()
+      val k = try this.peek()
       if (k != Kind.Int && k != Kind.Float) {
-        try self.wrong("a number")
+        try this.wrong("a number")
         return 0.0
       }
-      val text = try self.number()
+      val text = try this.number()
       val n = text.toF64()
       if (n == null) {
-        self.recorded.record(self.path(), "$text is not a number")
+        this.recorded.record(this.path(), "$text is not a number")
         return 0.0
       }
       if (n.isInfinite()) {
         // `1e400` is valid JSON grammar, but no f64 holds it; accepting it
         // as infinity would read a document that cannot be written back
         // (RFC 8259 §6 lets a parser limit range; Go refuses it too)
-        self.recorded.record(self.path(), "$text is out of range for a 64-bit float")
+        this.recorded.record(this.path(), "$text is out of range for a 64-bit float")
         return 0.0
       }
       n
     }
 
     fun readBool(): bool throws DecodeError {
-      if (try self.peek() != Kind.Bool) {
-        try self.wrong("a boolean")
+      if (try this.peek() != Kind.Bool) {
+        try this.wrong("a boolean")
         return false
       }
-      if (self.peekByte() == 't') {
-        try self.literal("true")
+      if (this.peekByte() == 't') {
+        try this.literal("true")
         return true
       }
-      try self.literal("false")
+      try this.literal("false")
       false
     }
 
     fun readString(): string throws DecodeError {
-      if (try self.peek() != Kind.String) {
-        try self.wrong("a string")
+      if (try this.peek() != Kind.String) {
+        try this.wrong("a string")
         return ""
       }
-      try self.quoted()
+      try this.quoted()
     }
 
     fun readNull() throws DecodeError {
-      if (try self.peek() != Kind.Null) {
-        return try self.wrong("null")
+      if (try this.peek() != Kind.Null) {
+        return try this.wrong("null")
       }
-      try self.literal("null")
+      try this.literal("null")
     }
 
     fun skip() throws DecodeError {
-      when (try self.peek()) {
-        Kind.Null   => try self.literal("null")
+      when (try this.peek()) {
+        Kind.Null   => try this.literal("null")
         Kind.Bool   => {
-          val _ = try self.readBool()
+          val _ = try this.readBool()
         }
         Kind.Int    => {
-          val _ = try self.number()
+          val _ = try this.number()
         }
         Kind.Float  => {
-          val _ = try self.number()
+          val _ = try this.number()
         }
         Kind.String => {
-          val _ = try self.quoted()
+          val _ = try this.quoted()
         }
         Kind.List   => {
-          try self.beginList()
-          loop (try self.hasNext()) try self.skip()
-          try self.endList()
+          try this.beginList()
+          loop (try this.hasNext()) try this.skip()
+          try this.endList()
         }
         Kind.Object => {
-          try self.beginObject()
+          try this.beginObject()
           loop {
-            val _ = try self.nextKey() ?: break
-            try self.skip()
+            val _ = try this.nextKey() ?: break
+            try this.skip()
           }
-          try self.endObject()
+          try this.endObject()
         }
       }
     }
 
     fun path(): string {
       var out = ""
-      loop (fr in self.stack) {
+      loop (fr in this.stack) {
         out = if (fr.isList) indexPath(out, fr.index - 1) else childPath(out, fr.key)
       }
       out
     }
 
-    fun problemAt(path: string, message: string) = self.recorded.record(path, message)
+    fun problemAt(path: string, message: string) = this.recorded.record(path, message)
 
-    fun problems(): List<Problem> = self.recorded.list()
+    fun problems(): List<Problem> = this.recorded.list()
   }
 }

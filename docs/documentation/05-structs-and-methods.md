@@ -9,8 +9,8 @@ struct Point {
   x: i64
   y: i64
 
-  fun manhattan(): i64 = if (self.x < 0) -self.x else self.x + (if (self.y < 0) -self.y else self.y)
-  fun moved(dx: i64, dy: i64): Point = Point(x: self.x + dx, y: self.y + dy)
+  fun manhattan(): i64 = if (this.x < 0) -this.x else this.x + (if (this.y < 0) -this.y else this.y)
+  fun moved(dx: i64, dy: i64): Point = Point(x: this.x + dx, y: this.y + dy)
 }
 
 fun main() {
@@ -32,7 +32,7 @@ Point(x: 3, y: -4) 7 Point(x: 4, y: -3) true
   field can stand alone: `Point(x, y)` is `Point(x: x, y: y)` (and
   writing `x: x` is a warning with a fix). Nothing else may be passed
   bare — `Point(3, -4)` is an error.
-- Methods live in the struct body and refer to the receiver as `self`.
+- Methods live in the struct body and refer to the receiver as `this`.
 - Every struct can be printed with `$p`, compared with `==`, and used as
   a map key, automatically. To order structs with `<` or `sorted()`, or
   to change what `==` and `$p` mean, implement the operator traits of
@@ -65,7 +65,7 @@ Config(host: localhost, port: 8080, debug: false)
 Config(host: localhost, port: 9000, debug: true)
 ```
 
-A default is a constant: it cannot read `self` or the other fields — at
+A default is a constant: it cannot read `this` or the other fields — at
 that moment there is no value yet. A field that is computed from the
 others is assigned in the `init` block.
 
@@ -75,7 +75,7 @@ When a field's value comes from the other fields, or setting up a value
 takes more than a constant — a loop, a temporary, several fields that
 depend on each other — write an `init` block. It runs once for every
 construction, right after the fields are bound (given by the caller or
-defaulted), with the whole `self` at hand:
+defaulted), with the whole `this` at hand:
 
 ```veles
 use io
@@ -88,13 +88,13 @@ struct Parser {
   private var pos:   i64 = 0
 
   init {
-    self.positions = self.toks.map(t => t.1)
-    self.count = self.positions.len()               // assigned above: readable
-    self.tokenSet = self.toks.map(t => t.0).toSet()
+    this.positions = this.toks.map(t => t.1)
+    this.count = this.positions.len()               // assigned above: readable
+    this.tokenSet = this.toks.map(t => t.0).toSet()
   }
 
-  fun describe(): string = "${self.count} tokens, ${self.tokenSet.len()} distinct"
-  fun has(t: string): bool = self.tokenSet.contains(t)
+  fun describe(): string = "${this.count} tokens, ${this.tokenSet.len()} distinct"
+  fun has(t: string): bool = this.tokenSet.contains(t)
 }
 
 fun main() {
@@ -113,12 +113,12 @@ The rules, all checked by the compiler:
 - A field **without a default that `init` assigns** belongs to `init`:
   the constructor call does not take it (`Parser(toks: ..., count: 3)`
   is an error), and `init` must assign it **on every path** before the
-  block ends. `if (cond) self.label = "a" else self.label = "b"` is
+  block ends. `if (cond) this.label = "a" else this.label = "b"` is
   fine; assigning only in one branch is not. This is the one place
   where a bare field is assigned after construction — once, by its
   owner, while the value is still being made.
 - Until such a field is assigned, it is not there: reading it is an
-  error, using `self` as a whole (`"$self"`, passing it on) is an error,
+  error, using `this` as a whole (`"$this"`, passing it on) is an error,
   and calling a method that reads it is an error — the compiler knows
   which fields every method touches, through the methods it calls in
   turn. Once all are assigned, anything goes: call any method, read any
@@ -136,7 +136,7 @@ The rules, all checked by the compiler:
 |---|---|---|
 | `toks: List<Token>` | the constructor call — required | at construction |
 | `pos: i64 = 0` | the default (a constant); the call may override it | at construction |
-| `count: i64` + `init { self.count = ... }` | the `init` block, with the whole `self` | right after construction, before anyone sees the value |
+| `count: i64` + `init { this.count = ... }` | the `init` block, with the whole `this` | right after construction, before anyone sees the value |
 | `private next: i64 = 1` | the default only — an outsider cannot pass it | at construction |
 | `private toks: List<Token>` | the constructor call, from anywhere the type is visible; private from then on | at construction |
 
@@ -195,7 +195,7 @@ sees where sharing happens.
 Whether a field can change is written on the field. A bare field is set
 once, by the constructor call, and never assigned again — by anyone,
 whatever holds the struct. A field declared `var` can be assigned: from a
-method through `self`, from outside through any binding, through a
+method through `this`, from outside through any binding, through a
 pointer (D22).
 
 ```veles
@@ -205,10 +205,10 @@ struct Account {
   owner:       string      // fixed for the life of the account
   var balance: i64         // the part that changes
 
-  fun deposit(amount: i64) { self.balance += amount }
+  fun deposit(amount: i64) { this.balance += amount }
   fun withdraw(amount: i64): bool {
-    if (amount > self.balance) return false
-    self.balance -= amount
+    if (amount > this.balance) return false
+    this.balance -= amount
     true
   }
 }
@@ -251,7 +251,7 @@ use io
 
 struct Stats {
   public protected var count: i64 = 0   // everyone reads it, only Stats writes it
-  fun record() { self.count += 1 }
+  fun record() { this.count += 1 }
 }
 
 fun main() {
@@ -305,7 +305,7 @@ uses it whole (stores it, passes it on).
 
 ## Static functions
 
-A `static fun` has no `self`: it belongs to the type and is called on the
+A `static fun` has no `this`: it belongs to the type and is called on the
 type name. That is where constructors with a story go — a default value,
 a parse from text — next to the fields they build.
 
@@ -325,7 +325,7 @@ struct Point {
     Point(x, y)
   }
 
-  fun shifted(dx: i64): Point = Point(x: self.x + dx, y: self.y)
+  fun shifted(dx: i64): Point = Point(x: this.x + dx, y: this.y)
 }
 
 fun main() {
@@ -363,7 +363,7 @@ struct Status {
   static val known    = [Status.ok, Status.notFound]
 
   static fun of(code: i64): Status = Status.known.find(s => s.code == code) ?: Status(code)
-  fun isError(): bool = self.code >= 400
+  fun isError(): bool = this.code >= 400
 }
 
 fun main() {
@@ -462,13 +462,13 @@ struct Notes {
   private items:    MutableList<Note> = []
 
   fun add(text: string): Note {
-    val n = Note(id: self.next, text)
-    self.items.push(n)
-    self.next += 1
+    val n = Note(id: this.next, text)
+    this.items.push(n)
+    this.next += 1
     n
   }
-  fun all(): List<Note> = self.items.toList()
-  fun find(id: i64): Note? = self.items.find(n => n.id == id)
+  fun all(): List<Note> = this.items.toList()
+  fun find(id: i64): Note? = this.items.find(n => n.id == id)
 }
 
 fun main() {
@@ -505,8 +505,8 @@ struct Parser {
   private var pos: i64 = 0        // the type's own bookkeeping
 
   fun next(): string? {
-    val t = self.toks.at(self.pos)
-    self.pos += 1
+    val t = this.toks.at(this.pos)
+    this.pos += 1
     t
   }
 }
@@ -534,7 +534,7 @@ use io
 struct Pair<A, B> {
   first: A
   second: B
-  fun swap(): Pair<B, A> = Pair(first: self.second, second: self.first)
+  fun swap(): Pair<B, A> = Pair(first: this.second, second: this.first)
 }
 
 fun main() {
@@ -634,11 +634,11 @@ struct Pair<A, B> {
 }
 
 extend<A, B> Pair<A, B> {
-  fun swap(): Pair<B, A> = Pair(first: self.second, second: self.first)
+  fun swap(): Pair<B, A> = Pair(first: this.second, second: this.first)
 }
 
 extend Pair<i64, i64> {
-  fun sum(): i64 = self.first + self.second
+  fun sum(): i64 = this.first + this.second
 }
 
 fun main() {

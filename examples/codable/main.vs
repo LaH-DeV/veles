@@ -53,7 +53,7 @@ struct Money {
   amount:   i64
   currency: string
   implement Codable {
-    fun encode(to: Encoder) throws EncodeError = try to.writeString("${self.amount} ${self.currency}")
+    fun encode(to: Encoder) throws EncodeError = try to.writeString("${this.amount} ${this.currency}")
   }
 }
 

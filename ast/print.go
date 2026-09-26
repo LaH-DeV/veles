@@ -392,11 +392,12 @@ func (p *printer) typ(t Type) {
 			p.w(">")
 		}
 	case *NullableType:
-		if _, ptr := t.Elem.(*PointerType); ptr {
+		switch t.Elem.(type) {
+		case *PointerType, *FunType:
 			p.w("(")
 			p.typ(t.Elem)
 			p.w(")")
-		} else {
+		default:
 			p.typ(t.Elem)
 		}
 		p.w("?")
@@ -603,9 +604,11 @@ func (p *printer) expr(e Expr) {
 	case *NullLit:
 		p.w("null")
 	case *SelfExpr:
-		p.w("self")
+		p.w("this")
 	case *TypeExpr:
 		p.typ(e.Type)
+	case *PreludeName:
+		p.w("(prelude " + e.Name + ")")
 	case *FieldDefaultExpr:
 		p.w(fmt.Sprintf("(default %v.%d)", e.Struct, e.Index))
 	case *NameExpr:

@@ -260,7 +260,7 @@ struct Money {
   amount:   i64
   currency: string
   implement Codable {
-    fun encode(to: Encoder) throws EncodeError = try to.writeString("${self.amount} ${self.currency}")
+    fun encode(to: Encoder) throws EncodeError = try to.writeString("${this.amount} ${this.currency}")
   }
 }
 
@@ -353,7 +353,7 @@ and the tree.
 A format is one implementation of each trait. They are a flat stream of
 events — `beginObject`, `key`, `endObject`, `beginList`, `endList`, and
 `writeI64` … `writeNull` (`readI64` … `readNull`, `peek`, `skip` on the
-way in) — and a value encodes *itself* (`self.id.encode(to)`), so the
+way in) — and a value encodes *itself* (`this.id.encode(to)`), so the
 traits carry no generics and nothing is boxed. A decoder also keeps the
 problems (`problem`, `problemAt`, `problems`) and the current `path`.
 `std/json` is ~500 lines of Veles; a row decoder for a database, or one

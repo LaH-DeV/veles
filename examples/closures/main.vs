@@ -17,7 +17,7 @@ fun double(x: i64): i64 = x * 2
 struct Acc {
   var total: i64 = 0
   fun addAll(xs: List<i64>) {
-    xs.forEach(x => self.total += x)
+    xs.forEach(x => this.total += x)
   }
 }
 

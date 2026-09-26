@@ -118,7 +118,7 @@ const (
 	KwTrue
 	KwFalse
 	KwNull
-	KwSelf   // self
+	KwSelf   // this (the receiver; spelled `self` before v0.40)
 	KwSelfTy // Self
 	KwRaw
 	KwType
@@ -171,7 +171,8 @@ var keywords = map[string]TokenKind{
 	"true":      KwTrue,
 	"false":     KwFalse,
 	"null":      KwNull,
-	"self":      KwSelf,
+	"this":      KwSelf,
+	"self":      KwSelf, // the pre-v0.40 spelling; the parser reports it with a fix
 	"Self":      KwSelfTy,
 	"raw":       KwRaw,
 	"type":      KwType,
@@ -180,7 +181,7 @@ var keywords = map[string]TokenKind{
 
 	// reserved
 	"match": KwReserved, "defer": KwReserved, "go": KwReserved,
-	"yield": KwReserved, "where": KwReserved, "super": KwReserved, "this": KwReserved,
+	"yield": KwReserved, "where": KwReserved, "super": KwReserved,
 	"catch": KwReserved, "interface": KwReserved, "class": KwReserved,
 	"while": KwReserved, "do": KwReserved, "finally": KwReserved,
 	"import": KwReserved, "package": KwReserved, "module": KwReserved, "let": KwReserved,

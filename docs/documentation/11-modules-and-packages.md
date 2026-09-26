@@ -128,6 +128,9 @@ utils = "../utils"            # a path dependency
 [format]
 indent = 2                    # spaces per level, or "tab"; the default is 2
 max_blank_lines = 1           # consecutive blank lines kept by `veles fmt`
+
+[native]
+static-libs = ["z"]           # C libraries the package's extern blocks need (chapter 13)
 ```
 
 - `exports` is the package's public surface. `public` makes something

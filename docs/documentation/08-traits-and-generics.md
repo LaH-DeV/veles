@@ -13,14 +13,14 @@ use io
 trait Shape {
   fun area(): f64
   fun name(): string
-  fun describe(): string = "${self.name()} with area ${self.area()}"   // default body
+  fun describe(): string = "${this.name()} with area ${this.area()}"   // default body
 }
 
 struct Circle {
   r: f64
 
   implement Shape {
-    fun area(): f64 = 3.0 * self.r * self.r
+    fun area(): f64 = 3.0 * this.r * this.r
     fun name(): string = "circle"
   }
 }
@@ -29,9 +29,9 @@ struct Square {
   side: f64
 
   implement Shape {
-    fun area(): f64 = self.side * self.side
+    fun area(): f64 = this.side * this.side
     fun name(): string = "square"
-    override fun describe(): string = "a square of side ${self.side}"
+    override fun describe(): string = "a square of side ${this.side}"
   }
 }
 
@@ -97,8 +97,8 @@ function you may call exactly the methods `Shape` promises:
 use io
 
 trait Shape { fun area(): f64 }
-struct Circle { r: f64; implement Shape { fun area(): f64 = 3.0 * self.r * self.r } }
-struct Square { side: f64; implement Shape { fun area(): f64 = self.side * self.side } }
+struct Circle { r: f64; implement Shape { fun area(): f64 = 3.0 * this.r * this.r } }
+struct Square { side: f64; implement Shape { fun area(): f64 = this.side * this.side } }
 
 fun largest<T: Shape>(shapes: List<T>): T? {
   var best: T? = null
@@ -140,14 +140,14 @@ trait Shape {
 struct Circle {
   r: f64
   implement Shape {
-    fun area(): f64 = 3.0 * self.r * self.r
+    fun area(): f64 = 3.0 * this.r * this.r
     fun name(): string = "circle"
   }
 }
 struct Square {
   side: f64
   implement Shape {
-    fun area(): f64 = self.side * self.side
+    fun area(): f64 = this.side * this.side
     fun name(): string = "square"
   }
 }
@@ -187,7 +187,7 @@ use io
 
 trait Named {
   fun name(): string
-  fun shout(): string = "${self.name()}!"
+  fun shout(): string = "${this.name()}!"
 }
 trait Shape : Named {
   fun area(): f64
@@ -195,7 +195,7 @@ trait Shape : Named {
 struct Square {
   side: f64
   implement Named { fun name(): string = "square" }
-  implement Shape { fun area(): f64 = self.side * self.side }
+  implement Shape { fun area(): f64 = this.side * this.side }
 }
 
 fun main() {
@@ -224,12 +224,12 @@ use io
 
 trait Show { fun show(): string }
 
-implement Show for i64 { fun show(): string = "#$self" }
-implement Show for string { fun show(): string = "'$self'" }
+implement Show for i64 { fun show(): string = "#$this" }
+implement Show for string { fun show(): string = "'$this'" }
 
 struct Box<T: Show> {
   item: T
-  fun label(): string = "[${self.item.show()}]"
+  fun label(): string = "[${this.item.show()}]"
 }
 
 fun showAll<T: Show>(xs: List<T>): string = xs.map(x => x.show()).join(" ")
@@ -248,7 +248,7 @@ Output:
 
 ## Static trait functions
 
-A trait may declare a `static fun` — a function without `self`, called
+A trait may declare a `static fun` — a function without `this`, called
 on the type. Implementations write `static fun` too, and generic code
 calls it on the type parameter: `T.parse(s)` picks the implement for whatever
 `T` is at each call. The prelude's `Parsable` is the standard example:
@@ -314,12 +314,12 @@ struct Version {
 
   implement Comparable {
     fun compareTo(other: Version): Ordering =
-      if (self.major != other.major) self.major.compareTo(other.major)
-      else self.minor.compareTo(other.minor)
+      if (this.major != other.major) this.major.compareTo(other.major)
+      else this.minor.compareTo(other.minor)
   }
 
   implement Display {
-    fun toString(): string = "v${self.major}.${self.minor}"
+    fun toString(): string = "v${this.major}.${this.minor}"
   }
 }
 
@@ -327,11 +327,11 @@ struct Name {
   text: string
 
   implement Equatable {
-    fun equals(other: Name): bool = self.text.toLower() == other.text.toLower()
+    fun equals(other: Name): bool = this.text.toLower() == other.text.toLower()
   }
 
   implement Hashable {
-    fun hash(): i64 = self.text.toLower().len()
+    fun hash(): i64 = this.text.toLower().len()
   }
 }
 
@@ -506,7 +506,7 @@ struct Memory {
   data: Map<string, string>
 
   implement Fetcher {
-    fun fetch(url: string): string throws Missing = self.data.get(url) ?: throw Missing(name: url)
+    fun fetch(url: string): string throws Missing = this.data.get(url) ?: throw Missing(name: url)
   }
 }
 

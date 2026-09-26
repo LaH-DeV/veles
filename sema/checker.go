@@ -2542,8 +2542,8 @@ func (c *Checker) implErrorType(impl *Impl) types.Type {
 	return types.TNever
 }
 
-// initAssigned lists the fields an `init { }` block assigns as `self.f = ...`
-// (or `self.f op= ...`), anywhere in it, in first-assignment order.
+// initAssigned lists the fields an `init { }` block assigns as `this.f = ...`
+// (or `this.f op= ...`), anywhere in it, in first-assignment order.
 func initAssigned(b *ast.Block) []string {
 	var names []string
 	seen := map[string]bool{}

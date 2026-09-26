@@ -1,6 +1,6 @@
 // Mutability lives on the field (D22): a bare field is set once by the
 // constructor; a `var` field may be assigned — by a method through
-// `self`, through any binding, through a pointer. `val` and `var` on a
+// `this`, through any binding, through a pointer. `val` and `var` on a
 // binding only say whether the name can be rebound.
 use io
 
@@ -9,15 +9,15 @@ struct Counter {
   var n: i64 = 0  // the mutable part
 
   fun bump() {
-    self.n += 1
+    this.n += 1
   }
-  /// A closure over `self` keeps pointing at the same counter, so the
+  /// A closure over `this` keeps pointing at the same counter, so the
   /// counter is moved to the heap for it (the receiver pass, D10).
   fun ticker(): fun(): i64 = () => {
-    self.n += 1
-    self.n
+    this.n += 1
+    this.n
   }
-  fun handle(): *Counter = &self
+  fun handle(): *Counter = &this
 }
 
 sealed trait Shape {
@@ -28,29 +28,29 @@ struct Circle : Shape {
   var r: f64
   implement Shape {
     fun grow(by: f64) {
-      self.r += by
+      this.r += by
     }
-    fun area(): f64 = 3.0 * self.r * self.r
+    fun area(): f64 = 3.0 * this.r * this.r
   }
 }
 struct Square : Shape {
   var side: f64
   implement Shape {
     fun grow(by: f64) {
-      self.side += by
+      this.side += by
     }
-    fun area(): f64 = self.side * self.side
+    fun area(): f64 = this.side * this.side
   }
 }
 
 struct Cache {
   var last: Counter? = null
   fun remember(c: Counter) {
-    self.last = c
+    this.last = c
   }
-  /// `self.last` is narrowed after the test and stays narrowed across a
+  /// `this.last` is narrowed after the test and stays narrowed across a
   /// call that cannot assign it; `remember` can, so the fact is dropped.
-  fun peek(): string = if (self.last != null) "${self.last.label}=${self.last.n}" else "-"
+  fun peek(): string = if (this.last != null) "${this.last.label}=${this.last.n}" else "-"
 }
 
 fun make(): fun(): i64 {

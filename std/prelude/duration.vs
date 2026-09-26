@@ -62,57 +62,57 @@ public struct Duration {
   }
 
   /// The whole nanoseconds. Every other accessor is derived from this one.
-  public fun toNanos(): i64 = self.ns
+  public fun toNanos(): i64 = this.ns
 
   /// Truncated toward zero, so `Duration.nanos(-1500).toMicros()` is -1.
-  public fun toMicros(): i64 = self.ns / 1000
-  public fun toMillis(): i64 = self.ns / 1000000
-  public fun toSeconds(): i64 = self.ns / 1000000000
-  public fun toMinutes(): i64 = self.ns / 60000000000
-  public fun toHours(): i64 = self.ns / 3600000000000
-  public fun toDays(): i64 = self.ns / 86400000000000
+  public fun toMicros(): i64 = this.ns / 1000
+  public fun toMillis(): i64 = this.ns / 1000000
+  public fun toSeconds(): i64 = this.ns / 1000000000
+  public fun toMinutes(): i64 = this.ns / 60000000000
+  public fun toHours(): i64 = this.ns / 3600000000000
+  public fun toDays(): i64 = this.ns / 86400000000000
 
   /// Seconds with the fraction kept — for a rate, a ratio or a report.
   /// `toSeconds()` is the truncating one.
-  public fun asSeconds(): f64 = (self.ns as f64) / 1000000000.0
+  public fun asSeconds(): f64 = (this.ns as f64) / 1000000000.0
 
   /// Milliseconds with the fraction kept.
-  public fun asMillis(): f64 = (self.ns as f64) / 1000000.0
+  public fun asMillis(): f64 = (this.ns as f64) / 1000000.0
 
-  public fun plus(other: Duration): Duration = Duration(ns: self.ns + other.ns)
-  public fun minus(other: Duration): Duration = Duration(ns: self.ns - other.ns)
-  public fun times(n: i64): Duration = Duration(ns: self.ns * n)
+  public fun plus(other: Duration): Duration = Duration(ns: this.ns + other.ns)
+  public fun minus(other: Duration): Duration = Duration(ns: this.ns - other.ns)
+  public fun times(n: i64): Duration = Duration(ns: this.ns * n)
 
   /// Truncated toward zero, as integer division is; `dividedBy(0)` panics
   /// for the same reason `1 / 0` does.
-  public fun dividedBy(n: i64): Duration = Duration(ns: self.ns / n)
+  public fun dividedBy(n: i64): Duration = Duration(ns: this.ns / n)
 
   /// How many times `other` fits in this one, truncated. `Duration.zero`
   /// divides nothing and panics.
-  public fun over(other: Duration): i64 = self.ns / other.ns
+  public fun over(other: Duration): i64 = this.ns / other.ns
 
-  public fun negated(): Duration = Duration(ns: 0 - self.ns)
+  public fun negated(): Duration = Duration(ns: 0 - this.ns)
 
   /// The length without its sign. The single most negative `Duration` has no
   /// positive counterpart, so it saturates at the largest one rather than
   /// overflowing — the same answer Go gives.
   public fun abs(): Duration =
-    if (self.ns >= 0) self
-    else if (self.ns + 1 == 0 - nanosMax) Duration(ns: nanosMax)
-    else Duration(ns: 0 - self.ns)
+    if (this.ns >= 0) this
+    else if (this.ns + 1 == 0 - nanosMax) Duration(ns: nanosMax)
+    else Duration(ns: 0 - this.ns)
 
-  public fun isZero(): bool = self.ns == 0
-  public fun isNegative(): bool = self.ns < 0
+  public fun isZero(): bool = this.ns == 0
+  public fun isNegative(): bool = this.ns < 0
 
   /// The shorter of the two — what a caller writes when a deadline and a
   /// configured limit both apply.
-  public fun min(other: Duration): Duration = if (self.ns <= other.ns) self else other
+  public fun min(other: Duration): Duration = if (this.ns <= other.ns) this else other
 
   /// The longer of the two.
-  public fun max(other: Duration): Duration = if (self.ns >= other.ns) self else other
+  public fun max(other: Duration): Duration = if (this.ns >= other.ns) this else other
 
   implement Comparable {
-    fun compareTo(other: Duration): Ordering = self.ns.compareTo(other.ns)
+    fun compareTo(other: Duration): Ordering = this.ns.compareTo(other.ns)
   }
 
   implement Display {
@@ -125,9 +125,9 @@ public struct Duration {
     /// value: the fraction is never rounded, because nanoseconds divide each
     /// unit exactly.
     fun toString(): string {
-      if (self.ns == 0) return "0s"
-      val sign = if (self.ns < 0) "-" else ""
-      val n = self.abs().toNanos()
+      if (this.ns == 0) return "0s"
+      val sign = if (this.ns < 0) "-" else ""
+      val n = this.abs().toNanos()
       if (n < 1000) return "$sign${n}ns"
       if (n < 1000000) return "$sign${decimal(n / 1000, n % 1000, 3)}µs"
       if (n < 1000000000) return "$sign${decimal(n / 1000000, n % 1000000, 6)}ms"
@@ -174,11 +174,11 @@ public struct Duration {
   implement Encodable {
     fun encode(to: Encoder) throws EncodeError {
       when (to.durations()) {
-        DurationStyle.Seconds => try to.writeString(secondsText(self))
-        DurationStyle.Iso8601 => try to.writeString(isoText(self))
-        DurationStyle.Text    => try to.writeString(self.toString())
-        DurationStyle.Nanos   => try to.writeI64(self.ns)
-        DurationStyle.Millis  => if (self.ns % 1000000 == 0) try to.writeI64(self.ns / 1000000) else try to.writeF64(self.asMillis())
+        DurationStyle.Seconds => try to.writeString(secondsText(this))
+        DurationStyle.Iso8601 => try to.writeString(isoText(this))
+        DurationStyle.Text    => try to.writeString(this.toString())
+        DurationStyle.Nanos   => try to.writeI64(this.ns)
+        DurationStyle.Millis  => if (this.ns % 1000000 == 0) try to.writeI64(this.ns / 1000000) else try to.writeF64(this.asMillis())
       }
     }
   }

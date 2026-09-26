@@ -110,17 +110,17 @@ public struct Claims {
   public extra: Map<string, Value> = [:]
 
   /// A private claim by name: `claims.claim("role")?.asString()`.
-  public fun claim(name: string): Value? = self.extra.get(name)
+  public fun claim(name: string): Value? = this.extra.get(name)
 
   /// A private claim that should be text, or `null` when it is missing or
   /// is something else.
-  public fun text(name: string): string? = self.extra.get(name)?.asString()
+  public fun text(name: string): string? = this.extra.get(name)?.asString()
 
   /// A private claim that should be a whole number.
-  public fun number(name: string): i64? = self.extra.get(name)?.asI64()
+  public fun number(name: string): i64? = this.extra.get(name)?.asI64()
 
   /// A private claim that should be a boolean.
-  public fun flag(name: string): bool? = self.extra.get(name)?.asBool()
+  public fun flag(name: string): bool? = this.extra.get(name)?.asBool()
 }
 
 /// What `verify` insists on. The defaults are the strict ones: HS256, an

@@ -44,7 +44,7 @@ var keywordCompletions = []string{
 	"fun", "val", "var", "const", "if", "else", "loop", "break", "continue", "return", "throw",
 	"struct", "enum", "error", "trait", "implement", "extend", "sealed", "public", "private", "internal", "protected", "use", "when", "is", "as", "in",
 	"throws", "suspends", "try", "async", "await", "scope", "gather", "race", "with",
-	"unsafe", "extern", "mut", "override", "true", "false", "null", "self", "Self", "type",
+	"unsafe", "extern", "mut", "override", "true", "false", "null", "this", "Self", "type",
 }
 
 var builtinTypeCompletions = []string{
@@ -160,8 +160,8 @@ func (s *Server) completion(params json.RawMessage) any {
 		if idx == nil {
 			idx = a.lastGood
 		}
-		if receiver == "self" {
-			// `self.`: the type whose body, impl or extend block holds the cursor
+		if receiver == "this" {
+			// `this.`: the type whose body, impl or extend block holds the cursor
 			sc := s.scopeAt(a, d, off)
 			if owner := sc.enclosingType(); owner != "" {
 				if ref := refNamedIn(idx, sema.OverlayKey(d.path), owner, len(d.text)); ref != nil && ref.Type != nil {

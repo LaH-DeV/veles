@@ -278,3 +278,54 @@ checker, grammar, docs 06/07, cheat sheet, errors page;
 not finishing to 0.3 s — fixed in `veles_gc.c`, guarded in `examples/gc`.
 Baseline: maps 0.5×, trees 0.3×, json 2.8×, sort 2.7×, strings 3.0×,
 sha256 22× (no SHA instructions), channels not comparable yet.
+
+### 2026-09-26
+
+D62 (A–D), D63 and D64 landed (see the checklist's decision log).
+
+**`self` → `this`, spec D65 (v0.40).** Lexer maps `this` to the receiver
+token; `self` still parses as the receiver with an error whose fix writes
+`this` (interpolations included). 1,520 sites migrated by a lexer-driven
+rewrite that touches tokens only (std, examples, bench, docs blocks, test
+fixtures); prose, messages, hover, completion and the VS Code grammar by
+hand. Found on the way: **`veles check --fix` never applied a fix attached
+to a parse error** (`::`, `mut fun`, now `self`) because loading stopped
+first — fixed in `driver.Run`, pinned by `TestCheckFixParseErrors`.
+
+**Derived code vs the module's names.** `ast.PreludeName`: derived
+`Codable` reaches `styleKey`/`childPath`/`joinPath`/`panic` in the prelude
+even when the module declares functions of those names (was §11).
+
+**HTTP correctness (checklist §5.2).** A 405 carries `Allow`; `HEAD` runs
+the `GET` route and the writer drops the body but keeps its
+`content-length`; `OPTIONS` answers 204 + `Allow`; 1xx/204/304 are sent
+without body or length. `http.call(handler, method, target, body:,
+headers:)` is the in-process test client. The stdlib reference's http
+lines still used milliseconds from before D60 — fixed.
+
+**Phase 3 second batch — asked and answered.** Threads: work-stealing M:N
+(D66). FFI: extern blocks anywhere + `[native]` in the manifest, bindgen
+maybe later (D67; the user's "every extern is unsafe" already holds).
+Shutdown: awaited signal + `serve(stop:, grace:)` (D68). The std panic's
+caller line: left as is.
+
+**D68 built.** `os.shutdownSignal()`, `os.Signal`, `os.raiseSignal`
+(`veles_signal_*` in veles_os.c: a one-shot handler per call, SIGINT/
+SIGTERM on POSIX, the console control handler on Windows);
+`http.serve(stop:, grace:)`; `examples/shutdown`, `examples/httpd` stops
+gracefully, docs 17 "Stopping gracefully". Found on the way:
+- **cancellation did not reach through a join**: a task cancelled while
+  parked at its `scope`/`gather` join unwound without cancelling its
+  children, which were orphaned with their `with` blocks never closed
+  (D34/D43 violated). The abandon cleanup now stays active through the
+  join (`codegen/llvm/coro.go`); `examples/cancel` pins it.
+- `race` arms did not type `=> null` from the others (`if`/`when` did).
+- **`veles fmt` changed a program's meaning**: `(fun(): T)?` was printed
+  `fun(): T?`; the formatter, `ast.Dump` and type display now keep the
+  parentheses (the round-trip test compared dumps, which had the same
+  ambiguity, so it could not see it).
+- **the codegen golden `.ll` files were never committed** (`*.ll` in
+  `.gitignore`), so the golden test failed on a fresh clone; now
+  un-ignored.
+- Not verified here: a real console Ctrl+C/`kill` reaching the handler —
+  the test environment has no console (`AllocConsole` is refused).

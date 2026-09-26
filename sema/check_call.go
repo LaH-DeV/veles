@@ -40,14 +40,7 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 			return f.ioWaitCall(e)
 		}
 		if callee.Name == "panic" && f.lookup(callee.Name) == nil {
-			// D20: `panic(message)` never returns; it unwinds to the task scope
-			if len(e.Args) != 1 {
-				f.errorf(e.Pos, "'panic' takes one argument: the message")
-				f.checkArgsLoosely(e.Args)
-				return bad()
-			}
-			msg := f.checkExprTo(e.Args[0].Value, types.TString)
-			return &Builtin{exprBase{types.TNever}, "panic", []Expr{msg}, e.Pos}
+			return f.panicCall(e)
 		}
 		sym := f.lookup(callee.Name)
 		if sym == nil {
@@ -56,6 +49,17 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 			return bad()
 		}
 		f.c.refSym(callee.Pos, sym)
+		return f.callSymbol(sym, callee.Name, typeArgs, e, want)
+	case *ast.PreludeName:
+		// synthesized code (D58): the prelude's function, whatever the
+		// module declares under the same name
+		if callee.Name == "panic" {
+			return f.panicCall(e)
+		}
+		sym := f.c.universe.LookupLocal(callee.Name)
+		if sym == nil || sym.Kind != SymFunc {
+			panic("synthesized call to a missing prelude function " + callee.Name)
+		}
 		return f.callSymbol(sym, callee.Name, typeArgs, e, want)
 	case *ast.MemberExpr:
 		if n, ok := callee.X.(*ast.NameExpr); ok {
@@ -653,7 +657,7 @@ func hasField(st *types.Struct, name string) bool {
 
 // fieldDefault checks a field's default expression in the struct's own
 // module, for a constructor call that did not supply the field. A default
-// is a constant: it may not read `self` — a field derived from the others
+// is a constant: it may not read `this` — a field derived from the others
 // is assigned in `init { }`, which sees the whole value (D28 v0.30).
 func (f *fnCtx) fieldDefault(st *types.Struct, i int) Expr {
 	tmpl := templateOf(st)
@@ -663,7 +667,7 @@ func (f *fnCtx) fieldDefault(st *types.Struct, i int) Expr {
 	}
 	d := ctx.decl.(*ast.StructDecl)
 	if sp, ok := mentionsSelf(d.Fields[i].Default); ok {
-		f.c.errorf(sp, "a field default cannot read 'self': the value does not exist yet. Derive '%s' in the 'init' block instead — declare it without a default and write 'init { self.%s = ... }' (D28)", d.Fields[i].Name.Name, d.Fields[i].Name.Name)
+		f.c.errorf(sp, "a field default cannot read 'this': the value does not exist yet. Derive '%s' in the 'init' block instead — declare it without a default and write 'init { this.%s = ... }' (D28)", d.Fields[i].Name.Name, d.Fields[i].Name.Name)
 		return bad()
 	}
 	env := f.c.envFor(ctx, st)
@@ -671,7 +675,7 @@ func (f *fnCtx) fieldDefault(st *types.Struct, i int) Expr {
 	return g.checkExprTo(d.Fields[i].Default, st.Fields[i].Type)
 }
 
-// mentionsSelf finds the first `self` in an expression.
+// mentionsSelf finds the first `this` in an expression.
 func mentionsSelf(e ast.Expr) (source.Span, bool) {
 	var at source.Span
 	found := false
@@ -688,7 +692,7 @@ func mentionsSelf(e ast.Expr) (source.Span, bool) {
 // method calls
 
 // methodCall checks `recv.name(args)`. Inside an `init` block a call on
-// `self` while owned fields are still unassigned is recorded on the Call
+// `this` while owned fields are still unassigned is recorded on the Call
 // (InitMissing), for the receiver pass to check against what the method
 // reads (D28).
 func (f *fnCtx) methodCall(callee *ast.MemberExpr, typeArgs []types.Type, e *ast.CallExpr, want types.Type) Expr {
@@ -875,7 +879,7 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 		if st, ok := rt.(*types.Struct); ok && st.Sealed != nil {
 			if trait := sealedTemplate(st.Sealed).Trait; trait != nil {
 				if dt := f.c.traitDefault(trait, name); dt != nil {
-					// the default body sees `self` as the whole sealed type, so
+					// the default body sees `this` as the whole sealed type, so
 					// `when (self)` over the variants works inside it
 					return f.callSealedDefault(dt, st.Sealed, &MakeVariant{exprBase{st.Sealed}, st.Sealed, st, recv}, callee, typeArgs, e, want)
 				}
@@ -903,7 +907,7 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 		f.checkArgsLoosely(e.Args)
 		return bad()
 	}
-	// a field holding a function value: `self.f(x)`
+	// a field holding a function value: `this.f(x)`
 	if st, ok := rt.(*types.Struct); ok {
 		for _, fld := range st.Fields {
 			if fld.Name == name {
@@ -1458,7 +1462,7 @@ func (f *fnCtx) sealedDispatch(recv Expr, s *types.Sealed, callee *ast.MemberExp
 	trait := sealedTemplate(s).Trait
 	name := callee.Name.Name
 	// A default body that no variant overrides runs directly on the sealed
-	// value; `self` inside it is the sealed type.
+	// value; `this` inside it is the sealed type.
 	if dt := f.c.traitDefault(trait, name); dt != nil {
 		overridden := false
 		for _, v := range s.Variants {
@@ -1604,4 +1608,16 @@ func (f *fnCtx) safeCallBranch(inner Expr, cond Expr) Expr {
 		thenBlock = &Block{Stmts: []Stmt{&ExprStmt{X: inner}}, Type: rt}
 	}
 	return &If{exprBase{rt}, cond, thenBlock, elseBlock}
+}
+
+// panicCall is `panic(message)` (D20): it never returns; it unwinds to the
+// task scope.
+func (f *fnCtx) panicCall(e *ast.CallExpr) Expr {
+	if len(e.Args) != 1 {
+		f.errorf(e.Pos, "'panic' takes one argument: the message")
+		f.checkArgsLoosely(e.Args)
+		return bad()
+	}
+	msg := f.checkExprTo(e.Args[0].Value, types.TString)
+	return &Builtin{exprBase{types.TNever}, "panic", []Expr{msg}, e.Pos}
 }

@@ -53,8 +53,13 @@ HTTP/1.1 404 Not Found | not found
 - `http.router()` collects routes; `get`/`post`/`put`/`delete`/`any` take
   a pattern and a handler. `{id}` captures one path segment into
   `req.param("id")`; a final `*` captures the rest under `req.param("*")`.
-  A path that matches a pattern with another method answers 405, no match
-  404.
+  A path that matches a pattern with another method answers 405 with an
+  `Allow` header naming the methods that would work; no match is 404.
+  `HEAD` is answered by the `GET` route with the body left off the wire
+  (the `content-length` is still the `GET`'s), and `OPTIONS` answers 204
+  with the same `Allow` — both only where you did not register the method
+  yourself. A 1xx, 204 or 304 is sent without a body whatever the handler
+  put in it.
 - `app.handler()` freezes the routes into one `Handler`; `http.serve`
   accepts connections forever, one task per connection, until its task is
   cancelled — which is how the program above ends. A real server calls
@@ -63,6 +68,48 @@ HTTP/1.1 404 Not Found | not found
   `body: List<u8>` and `text()`; `Response` is built with `text`, `html`,
   `json`, `bytes`, `empty(status)`, `redirect`, and adjusted with
   `withHeader`.
+
+## Testing a handler
+
+A `Handler` is a function, so a test does not need a socket.
+`http.call(handler, method, target, body:, headers:)` builds the request
+the way `serve` would — the target split into `path` and `query` and
+percent-decoded, header names in any case — runs the handler behind the
+same panic boundary, and returns what the client would receive:
+
+```veles
+use http, io
+
+fun main() {
+  val app = http.router()
+  app.get("/notes/{id}", req => http.Response.text("note ${req.param("id")}"))
+  app.post("/notes", req => http.Response.text("saved ${try req.text()}", status: 201))
+  app.get("/crash", _ => panic("a bug"))
+  val h = app.handler()
+  loop ((method, target) in [("GET", "/notes/7"), ("HEAD", "/notes/7"), ("DELETE", "/notes/7"), ("GET", "/crash")]) {
+    show("$method $target", http.call(h, method, target))
+  }
+  show("POST /notes", http.call(h, "POST", "/notes", body: "buy milk", headers: ["Content-Type": "text/plain"]))
+}
+
+fun show(what: string, resp: http.Response) {
+  val allow = resp.headers.get("allow")
+  val text = resp.body.decodeUtf8() ?: "?"
+  io.println("$what → ${resp.status}" + (if (allow == null) "" else " [allow: $allow]") + (if (text.isEmpty()) "" else " $text"))
+}
+```
+
+Output (the panic's line goes to standard error):
+```text
+GET /notes/7 → 200 note 7
+HEAD /notes/7 → 200
+DELETE /notes/7 → 405 [allow: GET, HEAD, OPTIONS] method not allowed
+GET /crash → 500 internal server error
+POST /notes → 201 saved buy milk
+```
+
+Middleware is part of the handler `app.handler()` returns, so it runs
+under `call` too.
 
 ## What an error means
 
@@ -212,6 +259,42 @@ nothing for `limits.idleTimeout` (15 s by default) — a
 `withTimeout` around each read, so a silent client costs one parked task
 and nothing else. Requests are logged to standard error as
 `peer METHOD path status ms` unless `log: false`.
+
+## Stopping gracefully
+
+A server in production is stopped by a signal — Ctrl+C, `kill`,
+systemd, Docker — and should not drop the requests it is answering.
+Give `serve` a `stop` condition:
+
+```veles
+// fragment
+fun main() throws IoError {
+  with (listener = try net.listen(host: "0.0.0.0", port: 8080)) {
+    http.serve(listener, app.handler(), stop: () => os.shutdownSignal(), grace: Duration.seconds(10))
+  }
+  io.println("bye")
+}
+```
+
+When `stop` returns, `serve`:
+
+1. stops accepting connections;
+2. closes kept-alive connections that are waiting for their next request;
+3. lets requests in flight finish, for up to `grace` — their responses
+   carry `connection: close`;
+4. cancels whatever is still running after that: the handler unwinds at
+   its next suspension point and every `with` it is inside closes;
+5. returns.
+
+`os.shutdownSignal()` suspends until SIGINT or SIGTERM (on Windows:
+Ctrl+C, Ctrl+Break, closing the console, log-off, shutdown) and returns
+which one. It intercepts nothing until it is first called, and each call
+takes one signal: a second Ctrl+C while the shutdown runs has the
+default effect and ends the process, so a shutdown that hangs can still
+be stopped. `stop` is ordinary code, so a test stops a server with a
+channel (`stop: () => { val _ = await quit.recv() }`), and a program with
+two servers waits once and stops both. `examples/shutdown` runs every
+case, using `os.raiseSignal` in place of a real Ctrl+C.
 
 ## What a request may cost
 

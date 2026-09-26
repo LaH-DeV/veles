@@ -8,12 +8,12 @@ struct Counter {
   var n: i64 = 0
   step:  i64 = 1
 
-  fun get(): i64 = self.n
+  fun get(): i64 = this.n
   /** testing doc for bump */
   fun bump() {
-    self.n += self.step
+    this.n += this.step
   }
-  fun withStep(s: i64): Counter = Counter(n: self.n, step: s)
+  fun withStep(s: i64): Counter = Counter(n: this.n, step: s)
 }
 
 struct Node {

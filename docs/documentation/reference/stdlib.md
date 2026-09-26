@@ -38,7 +38,7 @@ public trait Iterator {
 public trait Iterable {
   type Iter: Iterator
   fun iterator(): Iter
-  fun iter(): Iter = self.iterator()
+  fun iter(): Iter = this.iterator()
 }
 ```
 
@@ -132,7 +132,7 @@ is that parser, in forty lines.
 
 ```veles
 // fragment
-public trait Error { fun message(): string = "$self" }   // what `error Name { }` implements
+public trait Error { fun message(): string = "$this" }   // what `error Name { }` implements
 ```
 
 `error Name { fields; fun message() ... }` declares a struct with this
@@ -448,6 +448,9 @@ os.exit(code: i64)                               // flushes output, ends the pro
 os.pid(): i64                                    // this process's id
 os.hostname(): string throws IoError             // the host's network name
 os.tempDir(): string                             // TMPDIR or /tmp; TMP/TEMP on Windows; no trailing separator
+os.shutdownSignal(): os.Signal                    // suspends until SIGINT/SIGTERM (Ctrl+C/Break/close on Windows); arms on the first call, one signal per call
+os.raiseSignal(sig: os.Signal)                    // as if it came from outside — for testing a shutdown path
+// enum Signal { Interrupt = 2, Terminate = 15 }
 os.run(program: string, args: List<string> = [], mergeStderr: bool = false): Output throws IoError
 // Output { code: i64, stdout: string, fun ok(): bool }
 os.ioError(code: i64, path: string): IoError     // an IoError for a platform error number
@@ -515,17 +518,20 @@ use http
 val app = http.router()
 app.get("/users/{id}", req => ...)          // get / post / put / delete / any; `{name}` captures, a final `*` the rest
 app.get("/static/*", http.files("./public"))   // index.html for a directory, `..` refused, type by extension
-app.wrap(http.requestId()); app.wrap(http.timeout(1000)); app.wrap(http.logging())   // first wrap = outermost; wraps the 404s too
+app.wrap(http.requestId()); app.wrap(http.timeout(Duration.seconds(1))); app.wrap(http.logging())   // first wrap = outermost; wraps the 404s too
 type Middleware = sendable fun(Handler): Handler          // `next => req => ...`; req.withHeader(n, v) hands something to the handlers behind
 http.serve(listener, app.handler(), limits: http.Limits(), log: true)   // forever, one task per connection; cancel its task to stop
+http.serve(listener, h, stop: () => os.shutdownSignal(), grace: Duration.seconds(10))   // graceful: stop accepting, close idle, drain, cancel after grace
 http.Limits(requestLineBytes: 8192, headerLineBytes: 8192, headerCount: 100, headerBytes: 65536,
-            bodyBytes: 1048576, headerTimeout: 10000, bodyTimeout: 30000, idleTimeout: 15000)
+            bodyBytes: 1048576, headerTimeout: Duration.seconds(10), bodyTimeout: Duration.seconds(30), idleTimeout: Duration.seconds(15))
 // a byte ceiling answers 414 / 431 / 413 and closes; a time ceiling 408; idleTimeout just closes
 type Handler = sendable fun(Request): Response suspends   // the stored form; `http.handler(h)` adapts a throwing h
 error Fail { status, text }; http.notFound(text); http.badRequest(text); http.forbidden(text)   // thrown → that status; other errors → 500 + log; a panic → 500 + log
 req.method; req.path; req.query; req.headers; req.header(name); req.body; try req.text(); req.param(name); req.peer
 http.Response.text(s, status: 200); .html(s); .json(s); .bytes(b, contentType); .empty(status); .redirect(url); resp.withHeader(n, v)
-http.contentTypeOf(name); http.httpDate(ms); http.reasonOf(status); http.percentDecode(s, plusIsSpace)
+http.contentTypeOf(name); http.httpDate(t: time.Timestamp); http.reasonOf(status); http.percentDecode(s, plusIsSpace)
+// path matches, method does not → 405 + Allow; HEAD → the GET route, body dropped; OPTIONS → 204 + Allow; 1xx/204/304 never carry a body
+http.call(handler, "GET", "/notes/7?full=yes", body: "", headers: [:])   // in memory, no socket: same target parsing and panic boundary as serve
 ```
 
 ## Module `json`

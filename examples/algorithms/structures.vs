@@ -54,13 +54,13 @@ public struct Bst {
   var size: i64 = 0
 
   fun insert(v: i64) {
-    if (self.contains(v)) return
-    self.root = insertInto(self.root, v)
-    self.size += 1
+    if (this.contains(v)) return
+    this.root = insertInto(this.root, v)
+    this.size += 1
   }
 
   fun contains(v: i64): bool {
-    var cur = self.root
+    var cur = this.root
     loop (cur != null) {
       if (v == cur.value) return true
       cur = if (v < cur.value) cur.left else cur.right
@@ -71,20 +71,20 @@ public struct Bst {
   /// In-order walk yields the values sorted.
   fun inOrder(): List<i64> {
     val out: MutableList<i64> = []
-    walk(self.root, out)
+    walk(this.root, out)
     out.toList()
   }
 
-  fun height(): i64 = heightOf(self.root)
+  fun height(): i64 = heightOf(this.root)
 
   /// The leftmost node holds the smallest value.
   fun min(): i64? {
-    var cur = self.root ?: return null
+    var cur = this.root ?: return null
     loop cur = cur.left ?: return cur.value
   }
 
   fun max(): i64? {
-    var cur = self.root ?: return null
+    var cur = this.root ?: return null
     loop cur = cur.right ?: return cur.value
   }
 }
@@ -115,43 +115,43 @@ public struct MinHeap {
 
   /// The element at heap position `i`; the sifts read only positions below
   /// the size.
-  fun item(i: i64): i64 = self.items.at(i) ?: panic("MinHeap: a sift reads only positions below the size")
+  fun item(i: i64): i64 = this.items.at(i) ?: panic("MinHeap: a sift reads only positions below the size")
 
   /// Appends, then sifts the new element up while it beats its parent.
   fun push(x: i64) {
-    self.items.push(x)
-    var i = self.items.len() - 1
+    this.items.push(x)
+    var i = this.items.len() - 1
     loop (i > 0) {
       val parent = (i - 1) / 2
-      if (self.item(parent) <= self.item(i)) break
-      self.items.swap(parent, i)
+      if (this.item(parent) <= this.item(i)) break
+      this.items.swap(parent, i)
       i = parent
     }
   }
 
   /// Takes the root, moves the last element there and sifts it down.
   fun pop(): i64? {
-    val top = self.items.first() ?: return null
-    val last = self.items.pop() ?: return null
-    if (self.items.isEmpty()) return top
-    self.items.set(0, last)
-    val n = self.items.len()
+    val top = this.items.first() ?: return null
+    val last = this.items.pop() ?: return null
+    if (this.items.isEmpty()) return top
+    this.items.set(0, last)
+    val n = this.items.len()
     var i = 0
     loop {
       val left = 2 * i + 1
       val right = left + 1
       var smallest = i
-      if (left < n && self.item(left) < self.item(smallest)) smallest = left
-      if (right < n && self.item(right) < self.item(smallest)) smallest = right
+      if (left < n && this.item(left) < this.item(smallest)) smallest = left
+      if (right < n && this.item(right) < this.item(smallest)) smallest = right
       if (smallest == i) break
-      self.items.swap(i, smallest)
+      this.items.swap(i, smallest)
       i = smallest
     }
     top
   }
 
-  fun peek(): i64? = self.items.first()
-  fun len(): i64 = self.items.len()
+  fun peek(): i64? = this.items.first()
+  fun len(): i64 = this.items.len()
 }
 
 /// Heap sort, as a demonstration of the heap: O(n log n).

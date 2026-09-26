@@ -14,16 +14,16 @@ fun isAsciiSpace(b: u8): bool = b == 32 || b == 9 || b == 10 || b == 13 || b == 
 extend string {
   /// Byte index of the first occurrence of `part` at or after `from`, or -1.
   public fun indexOf(part: string, from: i64 = 0): i64 = unsafe {
-    veles_string_find(self, part, from)
+    veles_string_find(this, part, from)
   }
 
   /// Byte index of the last occurrence of `part`, or -1.
   public fun lastIndexOf(part: string): i64 {
     var last: i64 = -1
-    var at = self.indexOf(part)
+    var at = this.indexOf(part)
     loop (at >= 0) {
       last = at
-      at = self.indexOf(part, from: at + 1)
+      at = this.indexOf(part, from: at + 1)
     }
     last
   }
@@ -31,37 +31,37 @@ extend string {
   /// The text without leading ASCII whitespace.
   public fun trimStart(): string {
     var i: i64 = 0
-    loop (i < self.len() && isAsciiSpace(self.byteAt(i))) {
+    loop (i < this.len() && isAsciiSpace(this.byteAt(i))) {
       i += 1
     }
-    self.substring(i, self.len()) ?: self
+    this.substring(i, this.len()) ?: this
   }
 
   /// The text without trailing ASCII whitespace.
   public fun trimEnd(): string {
-    var j = self.len()
-    loop (j > 0 && isAsciiSpace(self.byteAt(j - 1))) {
+    var j = this.len()
+    loop (j > 0 && isAsciiSpace(this.byteAt(j - 1))) {
       j -= 1
     }
-    self.substring(0, j) ?: self
+    this.substring(0, j) ?: this
   }
 
   /// The text without leading or trailing ASCII whitespace.
-  public fun trim(): string = self.trimStart().trimEnd()
+  public fun trim(): string = this.trimStart().trimEnd()
 
   /// The pieces between occurrences of `sep`. An empty `sep` yields the
   /// code points; a `sep` that never occurs yields the whole text.
   public fun split(sep: string): List<string> {
-    if (sep.isEmpty()) return self.chars()
+    if (sep.isEmpty()) return this.chars()
     var out: MutableList<string> = []
     var start: i64 = 0
     loop {
-      val at = self.indexOf(sep, from: start)
+      val at = this.indexOf(sep, from: start)
       if (at < 0) break
-      out.push(self.substring(start, at) ?: "")
+      out.push(this.substring(start, at) ?: "")
       start = at + sep.len()
     }
-    out.push(self.substring(start, self.len()) ?: "")
+    out.push(this.substring(start, this.len()) ?: "")
     out.toList()
   }
 
@@ -69,10 +69,10 @@ extend string {
   /// not occur: `"key=a=b".splitOnce("=")` is `("key", "a=b")`. An empty
   /// `sep` splits before the first character: `("", text)`.
   public fun splitOnce(sep: string): (string, string)? {
-    val at = self.indexOf(sep)
+    val at = this.indexOf(sep)
     if (at < 0) return null
-    val before = self.substring(0, at) ?: panic("splitOnce: indexOf found sep inside the text")
-    val after = self.substring(at + sep.len(), self.len()) ?: panic("splitOnce: indexOf found sep inside the text")
+    val before = this.substring(0, at) ?: panic("splitOnce: indexOf found sep inside the text")
+    val after = this.substring(at + sep.len(), this.len()) ?: panic("splitOnce: indexOf found sep inside the text")
     (before, after)
   }
 
@@ -80,7 +80,7 @@ extend string {
   /// a final empty line are dropped.
   public fun lines(): List<string> {
     var out: MutableList<string> = []
-    loop (line in self.split("\n")) {
+    loop (line in this.split("\n")) {
       if (line.endsWith("\r")) {
         out.push(line.substring(0, line.len() - 1) ?: line)
       } else {
@@ -93,16 +93,16 @@ extend string {
 
   /// The text with every occurrence of `old` replaced by `new`.
   public fun replace(old: string, new: string): string {
-    if (old.isEmpty()) return self
-    val parts = self.split(old)
-    if (parts.len() == 1) return self
+    if (old.isEmpty()) return this
+    val parts = this.split(old)
+    if (parts.len() == 1) return this
     parts.join(new)
   }
 
   /// The text repeated `n` times (empty for `n <= 0`).
   public fun repeat(n: i64): string {
     var out: MutableList<u8> = []
-    val bytes = self.bytes()
+    val bytes = this.bytes()
     loop (_ in 0..<n) {
       loop (b in bytes) {
         out.push(b)
@@ -114,25 +114,25 @@ extend string {
   /// Copy with ASCII letters upper-cased.
   public fun toUpper(): string {
     var out: MutableList<u8> = []
-    loop (b in self.bytes()) {
+    loop (b in this.bytes()) {
       out.push(if (b >= 97 && b <= 122) b - 32 else b)
     }
-    out.decodeUtf8() ?: self
+    out.decodeUtf8() ?: this
   }
 
   /// Copy with ASCII letters lower-cased.
   public fun toLower(): string {
     var out: MutableList<u8> = []
-    loop (b in self.bytes()) {
+    loop (b in this.bytes()) {
       out.push(if (b >= 65 && b <= 90) b + 32 else b)
     }
-    out.decodeUtf8() ?: self
+    out.decodeUtf8() ?: this
   }
 
   /// The text preceded by `pad` until it is at least `width` bytes long.
   public fun padStart(width: i64, pad: string = " "): string {
-    if (pad.isEmpty() || self.len() >= width) return self
-    var s = self
+    if (pad.isEmpty() || this.len() >= width) return this
+    var s = this
     loop (s.len() < width) {
       s = pad + s
     }
@@ -141,8 +141,8 @@ extend string {
 
   /// The text followed by `pad` until it is at least `width` bytes long.
   public fun padEnd(width: i64, pad: string = " "): string {
-    if (pad.isEmpty() || self.len() >= width) return self
-    var s = self
+    if (pad.isEmpty() || this.len() >= width) return this
+    var s = this
     loop (s.len() < width) {
       s = s + pad
     }
@@ -154,7 +154,7 @@ extend string {
   /// decimal value, correctly rounded, so the text an f64 prints as reads
   /// back as the same f64 — what makes a JSON float survive a round trip.
   public fun toF64(): f64? {
-    val s = self.trim()
+    val s = this.trim()
     if (s.isEmpty()) return null
     // the grammar is checked here; the value comes from the C library's
     // strtod, which rounds correctly where summing digits in floating

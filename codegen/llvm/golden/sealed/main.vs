@@ -3,7 +3,7 @@
 use io
 
 sealed trait Expr {
-  fun eval(): i64 = when (self) {
+  fun eval(): i64 = when (this) {
     is Num(v) => v
     is Add(l, r) => l.eval() + r.eval()
     is Neg(e) => -e.eval()

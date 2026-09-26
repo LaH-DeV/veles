@@ -454,6 +454,7 @@ func (f *fnCtx) raceExpr(e *ast.RaceExpr, want types.Type) Expr {
 	r := &Race{}
 	asValue := want != nil && !types.IsUnit(want)
 	var resultType types.Type
+	var nullArms []*NullConst // `=> null` arms, typed from the others at the end
 	// exactly one arm runs: smart casts made inside an arm (an assignment
 	// to a `var`) hold afterwards only when every arm agrees (D5), as for
 	// the branches of an `if`
@@ -500,10 +501,23 @@ func (f *fnCtx) raceExpr(e *ast.RaceExpr, want types.Type) Expr {
 		if asValue {
 			body = f.valueBlock(f.checkExprTo(arm.Body, want))
 		} else if want == nil {
-			x := f.checkExpr(arm.Body, nil)
-			body = f.valueBlock(x)
-			if body.Value != nil && resultType == nil && !types.IsNever(body.Type) {
-				resultType = body.Type
+			if _, isNull := arm.Body.(*ast.NullLit); isNull {
+				// typed from the other arms at the end, as in `when` and
+				// `if`: `val c = ch.recv() => c` beside `... => null`
+				nc := &NullConst{exprBase{&types.Nullable{Elem: types.TNever}}}
+				nullArms = append(nullArms, nc)
+				body = &Block{Value: nc, Type: nc.T}
+			} else {
+				x := f.checkExpr(arm.Body, nil)
+				body = f.valueBlock(x)
+				if body.Value != nil && !types.IsNever(body.Type) {
+					switch {
+					case resultType == nil:
+						resultType = body.Type
+					case !f.assignableTo(body.Type, resultType) && f.assignableTo(resultType, body.Type):
+						resultType = body.Type // a later arm is the wider type (T after T's variant, T? after T)
+					}
+				}
 			}
 		} else {
 			x := f.checkExpr(arm.Body, types.TUnit)
@@ -547,7 +561,21 @@ func (f *fnCtx) raceExpr(e *ast.RaceExpr, want types.Type) Expr {
 		r.T = types.TNever
 	case asValue:
 		r.T = want
+	case want == nil && len(nullArms) > 0 && nullableOf(resultType) == nil:
+		f.errorf(e.Pos, "cannot infer the type of 'null' in this 'race'; annotate the binding, e.g. 'val x: T? = race { ... }'")
+		r.T = types.TInvalid
 	case want == nil && resultType != nil:
+		if len(nullArms) > 0 {
+			resultType = nullableOf(resultType)
+			for _, nc := range nullArms {
+				nc.T = resultType
+			}
+			for _, a := range r.Arms {
+				if _, ok := a.Body.Value.(*NullConst); ok {
+					a.Body.Type = resultType
+				}
+			}
+		}
 		for _, a := range r.Arms {
 			if a.Body.Value != nil && !types.IsNever(a.Body.Type) && !types.Identical(a.Body.Type, resultType) {
 				a.Body.Value = f.coerce(a.Body.Value, resultType, e.Pos)

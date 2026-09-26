@@ -602,6 +602,15 @@ type FieldDefaultExpr struct {
 	Pos    source.Span
 }
 
+// PreludeName is a prelude function named directly, in a synthesized
+// declaration (a derived impl, D58): the call reaches the prelude's
+// declaration even where the module declares a function of the same name.
+// It never comes from the parser.
+type PreludeName struct {
+	Name string
+	Pos  source.Span
+}
+
 // TypeExpr is a type in receiver position — `T.decode(from)` with `T`
 // already resolved — in a synthesized declaration (a derived impl, D58).
 // It never comes from the parser, which spells such a receiver as a name.
@@ -817,6 +826,7 @@ func (e *NullLit) Span() source.Span          { return e.Pos }
 func (e *SelfExpr) Span() source.Span         { return e.Pos }
 func (e *TypeExpr) Span() source.Span         { return e.Pos }
 func (e *FieldDefaultExpr) Span() source.Span { return e.Pos }
+func (e *PreludeName) Span() source.Span      { return e.Pos }
 func (e *NameExpr) Span() source.Span         { return e.Pos }
 func (e *MemberExpr) Span() source.Span       { return e.Pos }
 func (e *IndexExpr) Span() source.Span        { return e.Pos }
@@ -853,6 +863,7 @@ func (*NullLit) exprNode()          {}
 func (*SelfExpr) exprNode()         {}
 func (*TypeExpr) exprNode()         {}
 func (*FieldDefaultExpr) exprNode() {}
+func (*PreludeName) exprNode()      {}
 func (*NameExpr) exprNode()         {}
 func (*MemberExpr) exprNode()       {}
 func (*IndexExpr) exprNode()        {}

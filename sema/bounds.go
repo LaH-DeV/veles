@@ -50,7 +50,7 @@ func isBoundsPath(p string) bool {
 func (f *fnCtx) boundsList(e ast.Expr) (*Var, *types.List) {
 	v := varOf(e, f)
 	if _, isSelf := e.(*ast.SelfExpr); isSelf {
-		v = f.selfRef() // `self.len()` in an `extend List`
+		v = f.selfRef() // `this.len()` in an `extend List`
 	}
 	if v == nil || v.AddrTaken || v.Captured {
 		return nil, nil

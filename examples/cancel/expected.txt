@@ -1,0 +1,8 @@
+--- cancel the gather's owner
+closed: a child of a gather
+--- cancel two levels above the scope
+closed: a child of a scope, launched second
+closed: a child of a scope, launched first
+closed: the scope's owner
+done, nothing waited out: true
+exit=0

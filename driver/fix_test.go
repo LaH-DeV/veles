@@ -3,6 +3,7 @@ package driver
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -128,5 +129,26 @@ fun main() {
 `
 	if data, _ := os.ReadFile(path); string(data) != want {
 		t.Errorf("after --fix:\n%s\n--- want ---\n%s", data, want)
+	}
+}
+
+// A fix attached to a *parse* error is applied too: the old receiver
+// spelling (D65) stops the load, and one `check --fix` migrates it —
+// interpolations included — so the second run is clean.
+func TestCheckFixParseErrors(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	src := "use io\n\nstruct C {\n  var n: i64 = 0\n  fun bump() {\n    self.n += 1\n  }\n  fun show(): string = \"${self.n} $self\"\n}\n\nfun main() {\n  val c = C()\n  c.bump()\n  io.println(c.show())\n}\n"
+	os.WriteFile(path, []byte(src), 0o644)
+	if code := Run(Options{Path: dir, Mode: "check", Fix: true}); code == 0 {
+		t.Fatalf("first run: the old spelling is an error, got exit 0")
+	}
+	if code := Run(Options{Path: dir, Mode: "check", Fix: true}); code != 0 {
+		data, _ := os.ReadFile(path)
+		t.Fatalf("second run should be clean, exit %d:\n%s", code, data)
+	}
+	data, _ := os.ReadFile(path)
+	if strings.Contains(string(data), "self") || strings.Count(string(data), "this") != 3 {
+		t.Errorf("after --fix:\n%s", data)
 	}
 }

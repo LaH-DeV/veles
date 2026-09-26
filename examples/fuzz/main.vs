@@ -21,20 +21,20 @@ struct Fuzzer {
   var stats: MutableMap<string, Stats> = [:]
 
   fun record(target: string, accepted: bool, failure: string?) {
-    var s = self.stats.get(target) ?: Stats()
+    var s = this.stats.get(target) ?: Stats()
     s.runs += 1
     if (accepted) s.accepted += 1
     if (failure != null) {
       s.failures += 1
       if (s.failures <= 3) io.println("FAIL $target: $failure")
     }
-    self.stats.set(target, s)
+    this.stats.set(target, s)
   }
 
   fun bytes(max: i64): List<u8> {
-    val n = self.rng.range(0, max + 1)
+    val n = this.rng.range(0, max + 1)
     var out: MutableList<u8> = []
-    loop (_ in 0..<n) out.push(self.rng.range(0, 256) as u8)
+    loop (_ in 0..<n) out.push(this.rng.range(0, 256) as u8)
     out.toList()
   }
 
@@ -42,11 +42,11 @@ struct Fuzzer {
   /// test, with the occasional arbitrary byte turned into a character.
   fun textFrom(pieces: List<string>, maxPieces: i64): string {
     val sb = stringBuilder()
-    loop (_ in 0..<self.rng.range(0, maxPieces + 1)) {
-      if (self.rng.range(0, 10) == 0) {
-        sb.append(utf8.char(self.rng.range(1, 0x2FF)))
+    loop (_ in 0..<this.rng.range(0, maxPieces + 1)) {
+      if (this.rng.range(0, 10) == 0) {
+        sb.append(utf8.char(this.rng.range(1, 0x2FF)))
       } else {
-        sb.append(self.rng.pick(pieces) ?: "")
+        sb.append(this.rng.pick(pieces) ?: "")
       }
     }
     sb.toString()

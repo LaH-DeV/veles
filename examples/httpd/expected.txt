@@ -47,8 +47,12 @@ $ httpd fixtures/public --check
 < HTTP/1.1 200 OK [application/json] id=check
 < [{"id":2,"text":"call mum back"}]
 > PUT /api/notes "nope"
-< HTTP/1.1 405 Method Not Allowed [text/plain; charset=utf-8] id=check
+< HTTP/1.1 405 Method Not Allowed [text/plain; charset=utf-8] id=check allow=GET, POST, HEAD, OPTIONS
 < method not allowed
+> HEAD /api/notes/2
+< HTTP/1.1 200 OK [application/json] id=check length=31
+> OPTIONS /api/notes/2
+< HTTP/1.1 204 No Content [-] id=check allow=GET, PUT, DELETE, HEAD, OPTIONS
 > GET /static/
 < HTTP/1.1 200 OK [text/html; charset=utf-8] id=check
 < <!doctype html>
@@ -103,6 +107,10 @@ pre { background: #eee; padding: 1em; }
 > GET /api/notes (one long header)
 < HTTP/1.1 431 Request Header Fields Too Large [text/plain; charset=utf-8] id=-
 < request header fields too large
+> GET /api/notes/2 (in memory)
+< 200 allow=- {"id":2,"text":"call mum back"}
+> DELETE /api/echo (in memory)
+< 405 allow=GET, HEAD, OPTIONS method not allowed
 exit=0
 $ httpd nowhere --check
 httpd: 'nowhere' is not a directory (the files to serve)

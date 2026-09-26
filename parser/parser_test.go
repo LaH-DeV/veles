@@ -194,7 +194,7 @@ struct Point {
   y: i64
   /// distance to origin
   @inline
-  fun norm(): i64 = self.x
+  fun norm(): i64 = this.x
 }
 
 /// orphaned by a blank line
@@ -580,5 +580,35 @@ func TestV033Spellings(t *testing.T) {
 	}
 	if fn := f.Decls[len(f.Decls)-2].(*ast.FunDecl); fn.Name.Name != "show" || len(fn.TypeParams) != 1 {
 		t.Errorf("the old generic form should still parse: %s", ast.Dump(f))
+	}
+}
+
+// v0.40 (D65): the receiver is `this`. The old `self` still parses as the
+// receiver — in code and inside an interpolation — with an error whose fix
+// writes `this` over exactly the four bytes.
+func TestV040ThisSpelling(t *testing.T) {
+	src := "struct P { x: i64\n  fun a(): i64 = self.x\n  fun b(): string = \"${self.x} $self\"\n  fun c(): i64 = this.x\n}\n"
+	f, diags := parse(t, src)
+	var fixes int
+	for _, d := range diags.Items {
+		if !strings.Contains(d.Message, "the receiver is spelled 'this'") {
+			t.Errorf("unexpected diagnostic: %s", d.Message)
+			continue
+		}
+		if d.Fix == nil || len(d.Fix.Edits) != 1 || d.Fix.Edits[0].NewText != "this" {
+			t.Errorf("no fix on %s", d.Message)
+			continue
+		}
+		e := d.Fix.Edits[0].Span
+		if got := src[e.Start:e.End]; got != "self" {
+			t.Errorf("fix covers %q, want \"self\"", got)
+		}
+		fixes++
+	}
+	if fixes != 3 {
+		t.Errorf("want 3 fixes, got %d:\n%s", fixes, diags.Render())
+	}
+	if !strings.Contains(ast.Dump(f), "this") {
+		t.Errorf("the receiver should dump as 'this':\n%s", ast.Dump(f))
 	}
 }

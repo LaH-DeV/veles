@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -31,6 +32,30 @@ type Manifest struct {
 	// the default, a run of spaces, or a tab; MaxBlankLines is 0 for the
 	// default.
 	Format ManifestFormat
+	// Native is the `[native]` table (D67): the C libraries the package's
+	// `extern` blocks need at link time.
+	Native ManifestNative
+}
+
+// ManifestNative is what a package links besides Veles code (D67):
+//
+//	[native]
+//	libs = ["pq"]                 # -lpq: the shared library (or its import library)
+//	static-libs = ["z"]           # linked into the binary: no DLL/.so at run time
+//	lib-paths = ["vendor/lib"]    # searched first; relative to veles.toml
+//	pkg-config = ["libpq"]        # flags from `pkg-config --libs`
+//
+// A `libs`/`static-libs` entry that names a file (it has a directory or an
+// archive extension) is linked as that file, relative to veles.toml.
+type ManifestNative struct {
+	Libs       []string
+	StaticLibs []string
+	LibPaths   []string
+	PkgConfig  []string
+}
+
+func (n ManifestNative) empty() bool {
+	return len(n.Libs)+len(n.StaticLibs)+len(n.LibPaths)+len(n.PkgConfig) == 0
 }
 
 func readManifest(dir string) (*Manifest, error) {
@@ -100,6 +125,23 @@ func readManifest(dir string) (*Manifest, error) {
 				m.Format.MaxBlankLines = limit
 			default:
 				return nil, fmt.Errorf("%s:%d: unknown [format] key %q (indent, max_blank_lines)", path, n+1, key)
+			}
+		case "native":
+			if !strings.HasPrefix(val, "[") {
+				return nil, fmt.Errorf("%s:%d: [native] %s is a list, e.g. %s = [\"z\"]", path, n+1, key, key)
+			}
+			list := tomlStringList(val)
+			switch key {
+			case "libs":
+				m.Native.Libs = list
+			case "static-libs":
+				m.Native.StaticLibs = list
+			case "lib-paths":
+				m.Native.LibPaths = list
+			case "pkg-config":
+				m.Native.PkgConfig = list
+			default:
+				return nil, fmt.Errorf("%s:%d: unknown [native] key %q (libs, static-libs, lib-paths, pkg-config)", path, n+1, key)
 			}
 		}
 	}
@@ -189,4 +231,34 @@ func ReadManifest(path string) (*Manifest, error) {
 		return nil, err
 	}
 	return readManifest(root)
+}
+
+// NativeManifests is every manifest in the program with a `[native]`
+// table: this package's and its dependencies', each once. The driver turns
+// them into linker flags; paths in them are relative to Manifest.Dir.
+func (p *Package) NativeManifests() []*Manifest {
+	var out []*Manifest
+	seen := map[string]bool{}
+	var visit func(q *Package)
+	visit = func(q *Package) {
+		if q == nil {
+			return
+		}
+		if m := q.Manifest; m != nil && !seen[m.Dir] {
+			seen[m.Dir] = true
+			if !m.Native.empty() {
+				out = append(out, m)
+			}
+		}
+		names := make([]string, 0, len(q.Deps))
+		for name := range q.Deps {
+			names = append(names, name)
+		}
+		sort.Strings(names) // link order must not depend on map order
+		for _, name := range names {
+			visit(q.Deps[name])
+		}
+	}
+	visit(p)
+	return out
 }

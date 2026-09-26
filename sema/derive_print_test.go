@@ -49,7 +49,7 @@ func TestDumpDerivedIsVeles(t *testing.T) {
 		"fun encode(to: Encoder) throws EncodeError {",
 		"  try to.beginObject()",
 		"  try to.key(styleKey(\"id\", to.keys()))",
-		"  try self.id.encode(to)",
+		"  try this.id.encode(to)",
 		// a per-format @key is a `when` on the encoder's format
 		"  try to.key(when (to.format()) {",
 		"    \"json\" => \"userName\"",

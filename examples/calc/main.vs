@@ -21,7 +21,7 @@ struct End : Token { }
 error SyntaxError {
   message: string
   col:     i64
-  fun message(): string = "${self.message} (column ${self.col + 1})"
+  fun message(): string = "${this.message} (column ${this.col + 1})"
 }
 
 fun isDigit(b: u8): bool = b >= '0' && b <= '9'
@@ -35,30 +35,30 @@ struct Lexer {
   toks:    MutableList<(Token, Position)> = []
 
   fun run(): List<(Token, Position)> throws SyntaxError {
-    loop (self.pos < self.src.len()) {
-      val b = self.src.byteAt(self.pos)
-      val start = self.pos
+    loop (this.pos < this.src.len()) {
+      val b = this.src.byteAt(this.pos)
+      val start = this.pos
       when {
-        b == ' ' || b == '\t' => self.pos += 1
+        b == ' ' || b == '\t' => this.pos += 1
         isDigit(b) || b == '.' => {
-          loop (self.pos < self.src.len() && (isDigit(self.src.byteAt(self.pos)) || self.src.byteAt(self.pos) == '.')) self.pos += 1
-          val text = self.src.substring(start, self.pos) ?: ""
+          loop (this.pos < this.src.len() && (isDigit(this.src.byteAt(this.pos)) || this.src.byteAt(this.pos) == '.')) this.pos += 1
+          val text = this.src.substring(start, this.pos) ?: ""
           val v = text.toF64() ?: throw SyntaxError(message: "bad number '$text'", col: start)
-          self.toks.push((Num(value: v), start))
+          this.toks.push((Num(value: v), start))
         }
         isAlpha(b) => {
-          loop (self.pos < self.src.len() && (isAlpha(self.src.byteAt(self.pos)) || isDigit(self.src.byteAt(self.pos)))) self.pos += 1
-          self.toks.push((Name(text: self.src.substring(start, self.pos) ?: ""), start))
+          loop (this.pos < this.src.len() && (isAlpha(this.src.byteAt(this.pos)) || isDigit(this.src.byteAt(this.pos)))) this.pos += 1
+          this.toks.push((Name(text: this.src.substring(start, this.pos) ?: ""), start))
         }
-        "+-*/^%(),=".contains(self.src.substring(start, start + 1) ?: "?") => {
-          self.pos += 1
-          self.toks.push((Op(text: self.src.substring(start, self.pos) ?: ""), start))
+        "+-*/^%(),=".contains(this.src.substring(start, start + 1) ?: "?") => {
+          this.pos += 1
+          this.toks.push((Op(text: this.src.substring(start, this.pos) ?: ""), start))
         }
-        else => throw SyntaxError(message: "unexpected character '${self.src.substring(start, start + 1)}'", col: start)
+        else => throw SyntaxError(message: "unexpected character '${this.src.substring(start, start + 1)}'", col: start)
       }
     }
-    self.toks.push((End(), self.pos))
-    self.toks.toList()
+    this.toks.push((End(), this.pos))
+    this.toks.toList()
   }
 }
 
@@ -106,37 +106,37 @@ struct Parser {
   private var pos:    Position = 0
 
   // the token list ends with an end token, and the parser never moves past it
-  private fun here(): (Token, Position) = self.tokens.at(self.pos) ?: panic("calc: the parser stops at the end token")
-  private fun peek(): Token = self.here().0
-  private fun col(): Position = self.here().1
+  private fun here(): (Token, Position) = this.tokens.at(this.pos) ?: panic("calc: the parser stops at the end token")
+  private fun peek(): Token = this.here().0
+  private fun col(): Position = this.here().1
 
   private fun next(): Token {
-    val t = self.peek()
-    if (self.pos < self.tokens.lastIndex()) self.pos += 1
+    val t = this.peek()
+    if (this.pos < this.tokens.lastIndex()) this.pos += 1
     t
   }
 
   private fun expectOp(text: string) throws SyntaxError {
-    val t = self.next()
-    if (t !is Op || t.text != text) throw SyntaxError(message: "expected '$text'", col: self.col())
+    val t = this.next()
+    if (t !is Op || t.text != text) throw SyntaxError(message: "expected '$text'", col: this.col())
   }
 
   private fun parseExpr(minPower: i64): Expr throws SyntaxError {
-    var left = try self.parsePrefix()
+    var left = try this.parsePrefix()
     loop {
-      val t = self.peek()
+      val t = this.peek()
       if (t is Op && t.text == "=") {
         val target = left
-        if (target !is Variable) throw SyntaxError(message: "can only assign to a name", col: self.col())
-        self.next()
-        val value = try self.parseExpr(0)
+        if (target !is Variable) throw SyntaxError(message: "can only assign to a name", col: this.col())
+        this.next()
+        val value = try this.parseExpr(0)
         return Assign(name: target.name, value: &value)
       }
       val (lp, rp) = infixPower(t)
       if (lp == 0 || lp < minPower) break
-      val op = self.next()
+      val op = this.next()
       if (op !is Op) break
-      val right = try self.parseExpr(rp)
+      val right = try this.parseExpr(rp)
       // box the current `left`, not the variable: `&left` would point at
       // the variable being assigned, making the tree a cycle
       val boxed = left
@@ -146,28 +146,28 @@ struct Parser {
   }
 
   private fun parsePrefix(): Expr throws SyntaxError {
-    val col = self.col()
-    val t = self.next()
+    val col = this.col()
+    val t = this.next()
     when (t) {
       is Num(value) => Literal(value)
       is Name(text) => {
-        val nt = self.peek()
+        val nt = this.peek()
         if (nt is Op && nt.text == "(") {
-          self.next()
+          this.next()
           var args: MutableList<Expr> = []
-          val first = self.peek()
+          val first = this.peek()
           if (!(first is Op && first.text == ")")) {
             loop {
-              args.push(try self.parseExpr(0))
-              val sep = self.peek()
+              args.push(try this.parseExpr(0))
+              val sep = this.peek()
               if (sep is Op && sep.text == ",") {
-                self.next()
+                this.next()
                 continue
               }
               break
             }
           }
-          try self.expectOp(")")
+          try this.expectOp(")")
           Call(name: text, args: args.toList())
         } else {
           Variable(name: text)
@@ -175,10 +175,10 @@ struct Parser {
       }
       is Op(text)   => {
         when (text) {
-          "-"  => Unary(op: "-", operand: &(try self.parseExpr(25)))
+          "-"  => Unary(op: "-", operand: &(try this.parseExpr(25)))
           "("  => {
-            val inner = try self.parseExpr(0)
-            try self.expectOp(")")
+            val inner = try this.parseExpr(0)
+            try this.expectOp(")")
             inner
           }
           else => throw SyntaxError(message: "unexpected token", col)
@@ -189,8 +189,8 @@ struct Parser {
   }
 
   fun parseAll(): Expr throws SyntaxError {
-    val e = try self.parseExpr(0)
-    if (self.peek() !is End) throw SyntaxError(message: "unexpected token", col: self.col())
+    val e = try this.parseExpr(0)
+    if (this.peek() !is End) throw SyntaxError(message: "unexpected token", col: this.col())
     e
   }
 }
@@ -214,11 +214,11 @@ struct Env {
 
   fun eval(e: Expr): f64 throws EvalError = when (e) {
     is Literal(value)          => value
-    is Variable(name)          => self.vars.get(name) ?: throw EvalError(message: "unknown variable '$name'")
-    is Unary(operand)          => -(try self.eval(*operand))
+    is Variable(name)          => this.vars.get(name) ?: throw EvalError(message: "unknown variable '$name'")
+    is Unary(operand)          => -(try this.eval(*operand))
     is Binary(op, left, right) => {
-      val l = try self.eval(*left)
-      val r = try self.eval(*right)
+      val l = try this.eval(*left)
+      val r = try this.eval(*right)
       when (op) {
         "+"  => l + r
         "-"  => l - r
@@ -230,12 +230,12 @@ struct Env {
       }
     }
     is Call(name, args)        => {
-      val vals = try args.map(a => try self.eval(a))
-      try self.call(name, vals)
+      val vals = try args.map(a => try this.eval(a))
+      try this.call(name, vals)
     }
     is Assign(name, value)     => {
-      val v = try self.eval(*value)
-      self.vars.set(name, v)
+      val v = try this.eval(*value)
+      this.vars.set(name, v)
       v
     }
   }
@@ -262,7 +262,7 @@ struct Env {
     }
   }
 
-  fun peek(): Map<string, f64> = self.vars.toMap()
+  fun peek(): Map<string, f64> = this.vars.toMap()
 }
 
 fun show(e: Expr): string = when (e) {
