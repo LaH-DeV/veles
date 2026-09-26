@@ -3234,3 +3234,44 @@ fun main() {
 		t.Errorf("wanted the two operator fixes and no cascade, got %d fixes:\n%s", fixes, text)
 	}
 }
+
+// D62: list patterns in `when` and let-else.
+func TestListPatterns(t *testing.T) {
+	expectClean(t, prelude+`
+fun describe(args: List<string>): string = when (args) {
+  []            => "none"
+  ["help"]      => "help"
+  [cmd]         => cmd
+  [cmd, ..rest] => "$cmd ${rest.len()}"
+}
+fun ends(xs: List<i64>?): i64 {
+  val [first, .., last] = xs else return 0
+  first + last
+}
+fun main() { io.println("${describe(["a"])} ${ends([1, 2])}") }`)
+
+	for _, c := range []struct{ src, want string }{
+		{`fun f(xs: List<i64>): i64 = when (xs) {
+  [] => 0
+  [a, _] => a
+}`, "missing '[_]', '[_, _, _, ..]'"},
+		{`fun f(xs: List<i64>): i64 = when (xs) {
+  [1, ..] => 1
+  [_, ..] => 2
+}`, "missing '[]'"},
+		{`fun f(xs: List<i64>): i64 = when (xs) {
+  [a, .., b, ..] => a
+  else => 0
+}`, "at most one '..'"},
+		{`fun f(x: i64): i64 {
+  val [a] = x else return 0
+  a
+}`, "not a List"},
+		{`fun f(xs: List<i64>): i64 {
+  val [..all] = xs else return 0
+  all.len()
+}`, "always matches"},
+	} {
+		expectError(t, prelude+c.src+"\nfun main() {}", c.want)
+	}
+}

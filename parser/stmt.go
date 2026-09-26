@@ -102,8 +102,9 @@ func (p *Parser) parseStmt() ast.Stmt {
 			s.Kind = ast.BindConst
 		}
 		// `val JObj(fields) = doc else { ... }`: a name followed by `(` is a
-		// variant pattern, which only a let-else can bind
-		if p.at(lexer.Ident) && (p.peek(1).Kind == lexer.LParen || (p.peek(1).Kind == lexer.Dot && p.peek(2).Kind == lexer.Ident && p.peek(3).Kind == lexer.LParen)) {
+		// variant pattern, which only a let-else can bind; so is a list
+		// pattern `val [a, b] = xs else { ... }` (D62)
+		if p.at(lexer.LBracket) || p.at(lexer.Ident) && (p.peek(1).Kind == lexer.LParen || (p.peek(1).Kind == lexer.Dot && p.peek(2).Kind == lexer.Ident && p.peek(3).Kind == lexer.LParen)) {
 			s.Pattern = p.parsePattern(true)
 		} else {
 			s.Binding = p.parseBinding()
@@ -127,7 +128,11 @@ func (p *Parser) parseStmt() ast.Stmt {
 				s.Else = &ast.Handler{Body: body, Pos: p.spanFrom(hs)}
 			}
 		} else if s.Pattern != nil {
-			p.errorf(p.span(), "a pattern in a 'val' can fail to match, so it needs 'else { ... }' to say what happens then: 'val %s = x else { return }'", "Variant(field)")
+			example := "Variant(field)"
+			if _, isList := s.Pattern.(*ast.ListPat); isList {
+				example = "[a, b]"
+			}
+			p.errorf(p.span(), "a pattern in a 'val' can fail to match, so it needs 'else { ... }' to say what happens then: 'val %s = x else { return }'", example)
 		}
 		s.Pos = p.spanFrom(start)
 		return s

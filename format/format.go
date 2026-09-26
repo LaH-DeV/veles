@@ -1929,6 +1929,20 @@ func (p *printer) pattern(pat ast.Pattern) {
 			p.pattern(e)
 		}
 		p.w(")")
+	case *ast.ListPat:
+		p.w("[")
+		for i, e := range pat.Elems {
+			if i > 0 {
+				p.w(", ")
+			}
+			p.pattern(e)
+		}
+		p.w("]")
+	case *ast.RestPat:
+		p.w("..")
+		if pat.Name != nil {
+			p.w(pat.Name.Name)
+		}
 	}
 }
 

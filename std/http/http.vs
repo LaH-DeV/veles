@@ -473,11 +473,8 @@ fun readRequest(c: net.Conn, limits: Limits): Request? throws Fail | IoError | T
   // from here the whole head is on one clock, so a peer cannot hold the
   // connection open by sending one header every few seconds
   val headDeadline = time.Deadline.after(limits.headerTimeout)
-  val parts = first.split(" ")
-  if (parts.len() != 3) throw badRequest("malformed request line")
-  val method = parts.atOrPanic(0)
-  val target = parts.atOrPanic(1)
-  if (!parts.atOrPanic(2).startsWith("HTTP/1.")) throw Fail(status: 505, text: "HTTP version not supported")
+  val [method, target, version] = first.split(" ") else throw badRequest("malformed request line")
+  if (!version.startsWith("HTTP/1.")) throw Fail(status: 505, text: "HTTP version not supported")
   val tooManyHeaders = Fail(status: 431, text: "request header fields too large")
   val headers: MutableMap<string, string> = [:]
   var headerBytes: i64 = 0

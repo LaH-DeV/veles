@@ -929,12 +929,28 @@ type TuplePat struct {
 	Pos   source.Span
 }
 
+// ListPat destructures a list by position (D62): `[a, b]` matches exactly
+// two elements; one RestPat among Elems (`..` or `..rest`) matches any
+// number of them.
+type ListPat struct {
+	Elems []Pattern
+	Pos   source.Span
+}
+
+// RestPat is `..` or `..name` inside a ListPat; Name is nil for `..`.
+type RestPat struct {
+	Name *Ident
+	Pos  source.Span
+}
+
 func (p *WildcardPat) Span() source.Span { return p.Pos }
 func (p *BindPat) Span() source.Span     { return p.Name.Pos }
 func (p *LiteralPat) Span() source.Span  { return p.Value.Span() }
 func (p *RangePat) Span() source.Span    { return p.Pos }
 func (p *TypePat) Span() source.Span     { return p.Pos }
 func (p *TuplePat) Span() source.Span    { return p.Pos }
+func (p *ListPat) Span() source.Span     { return p.Pos }
+func (p *RestPat) Span() source.Span     { return p.Pos }
 
 func (*WildcardPat) patternNode() {}
 func (*BindPat) patternNode()     {}
@@ -942,6 +958,8 @@ func (*LiteralPat) patternNode()  {}
 func (*RangePat) patternNode()    {}
 func (*TypePat) patternNode()     {}
 func (*TuplePat) patternNode()    {}
+func (*ListPat) patternNode()     {}
+func (*RestPat) patternNode()     {}
 
 // ControlExpr is `return`, `break` or `continue` used in expression
 // position (e.g. `x ?: return null`); its type is Never.

@@ -1356,6 +1356,78 @@ recommended, and turned down so the operator shows the kind); a
 (a separate decision, not foreclosed by this one); Swift's `guard let`
 spelling (a second keyword for what `val` already says).
 
+### D62 — Proving an index instead of panicking on it (v0.37)
+
+`atOrPanic` made the unchecked read the short one, so code checked a
+length and then read with `atOrPanic` anyway, because nothing tied the
+check to the reads (`if (parts.len() != 3) throw ...` followed by
+`parts.atOrPanic(0)` in std/jwt). A survey of std's ~140 panicking reads
+found five shapes: (1) a length checked, then constant indexes; (2) a loop
+over the list's own indices; (3) index arithmetic (`i + 1`, `mid`);
+(4) a structural invariant (a parser's stack is never empty); (5) real
+misuse (`chunked(0)`). Only 3–5 need a panic. D62 gives 1 and 2 a
+spelling that cannot fail, and makes the rest say why they cannot.
+
+**A — List patterns**, in `when` arms and let-else (D61), beside the
+variant and tuple patterns (D13, D37):
+
+```veles
+val [header, payload, sig] = token.split(".") else throw Malformed()
+when (args) {
+  []            => usage()
+  [cmd]         => run(cmd, [])
+  [cmd, ..rest] => run(cmd, rest)
+}
+val [.., last] = xs else return null
+```
+
+`[p1, …, pn]` matches exactly `n` elements; one `..` (at most one, in
+any position) matches any number, and `..name` binds them as a new
+`List<T>` (a copy, like every read — D25). Elements are sub-patterns:
+names, `_`, literals, and nested tuple/variant/list patterns. The names
+are copies taken at the match, so a later change to a `MutableList`
+does not reach them. Exhaustiveness is by length: `[]`, `[x]` and
+`[x, ..]` together cover every list; a literal element never makes an arm
+cover. A list pattern `val` without `else` is an error, as for any
+pattern that can fail.
+
+**B — Bounds facts.** `xs.at(i)` (and `xs.ref(i)`) has type `T` (`*T`),
+not `T?`, where the checker knows `-xs.len() <= i < xs.len()` — D5's
+smart casts, applied to an index. What establishes a fact:
+
+- `loop (i in 0..<xs.len())` and `loop (i in xs.indices())`, for the loop body;
+- a guard `i < xs.len()` (with `i >= 0` also known, or `i` a loop
+  variable counting up from `0`) — `if`, `&&`, `while`, and the negated
+  early exit (`if (i >= xs.len()) return`), as for null checks;
+- a constant index `k` after `xs.len() == n` / `>= n` / `> n` with `k < n`,
+  or `-k` counted from the end.
+
+What ends it: assigning `xs` or `i`; on a `MutableList`, any call of a
+length-changing method on it (`push`, `pop`, `insert`, `removeAt`,
+`clear`, …) and **any call that could reach it** — a `MutableList` is a
+reference, so an unknown call may shrink it through an alias. An
+immutable `List`'s facts survive calls. Arithmetic (`i + 1`) is not
+reasoned about; such reads stay `T?`. Losing a fact after a refactor is a
+compile error (a `T?` where a `T` was wanted), never a wrong program.
+Hover shows which fact made an `at` total.
+
+**C — No `…OrPanic`.** `atOrPanic`, `getOrPanic` and `refOrPanic` are
+removed. A read that can only fail through a bug says so where it is
+written: `xs.at(i) ?: panic("json: the stack is never empty while
+parsing")`. `panic(message)` is the one way to panic from Veles code, so
+`panic(` finds every site. The removed names are errors carrying a fix to
+the `?: panic("...")` form with the reason left for the author.
+
+**D — Shapes instead of indexes, in std.** `xs.indices(): Range`,
+`s.splitOnce(sep): (string, string)?`, and `enumerate()`/`zip()` on
+`List` directly, so the common loops need no index at all.
+
+Rejected: keeping `atOrPanic` behind a lint (the short spelling stays the
+unchecked one); an `.expect("why")` method (a second spelling of
+`?: panic("why")`); fixed-size arrays for constant indexes (a larger
+feature, its own decision); reasoning about index arithmetic (a solver,
+and errors nobody can predict).
+
 ---
 
 ## 4b. Settled minor decisions

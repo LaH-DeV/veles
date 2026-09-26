@@ -51,6 +51,63 @@ Output:
 - `push`, `pop` and `clear` exist only on `MutableList`; calling them on a
   `List` is a compile-time error, not a runtime one.
 
+### Matching a list's shape
+
+When code needs particular elements, such as the three parts of a token
+or the command and its arguments, match the list's **shape** instead of
+checking its length and then reading indexes. A list pattern does both in
+one step, so no read can be out of range (D62):
+
+```veles
+use io
+
+fun describe(args: List<string>): string = when (args) {
+  []                  => "no arguments"
+  ["help"]            => "help"
+  [cmd]               => "just $cmd"
+  ["run", target, ..] => "run $target"
+  [cmd, ..rest]       => "$cmd and ${rest.len()} more"
+}
+
+fun ends(xs: List<i64>): string {
+  val [first, .., last] = xs else return "too short"
+  "$first to $last"
+}
+
+fun main() {
+  io.println(describe(["run", "tests", "-v"]))
+  io.println(describe(["fmt", "a", "b"]))
+  io.println(ends([3, 1, 4, 1, 5]))
+  io.println(ends([9]))
+
+  val [user, host] = "ann@example.com".split("@") else return
+  io.println("$user at $host")
+}
+```
+
+Output:
+```text
+run tests
+fmt and 2 more
+3 to 5
+too short
+ann at example.com
+```
+
+- `[a, b]` matches **exactly** two elements. A `..` matches any number of
+  elements (none included), in any position, at most once per pattern.
+  `..rest` binds those elements as a new `List`.
+- Elements are patterns themselves: names, `_`, literals such as
+  `"help"`, and nested tuple, variant or list patterns.
+- In `val`, a list pattern can fail to match, so it needs `else`, and the
+  `else` has to leave (`return`, `throw`, `break`, `continue`), as with
+  every let-else.
+- A `when` is exhaustive over lengths: `[]`, `[x]` and `[x, ..]` together
+  cover every list, and the compiler names any lengths you missed. An arm
+  with a literal element, such as `["help"]`, covers nothing on its own.
+- The names are copies taken when the match runs, so changing a
+  `MutableList` afterwards does not change them.
+
 ### Transforming lists
 
 The familiar higher-order operations are methods on both list kinds and

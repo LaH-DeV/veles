@@ -441,6 +441,18 @@ veles_list *veles_list_copy(veles_list *l) {
     return c;
 }
 
+/* The elements in from..<to as a new list, both ends clamped to the list;
+ * `..rest` in a list pattern (D62). */
+veles_list *veles_list_slice(veles_list *l, int64_t from, int64_t to) {
+    if (from < 0) from = 0;
+    if (to > l->len) to = l->len;
+    int64_t n = to > from ? to - from : 0;
+    veles_list *c = veles_list_new(l->desc, n);
+    memcpy(c->data, l->data + l->elem * from, (size_t)(l->elem * n));
+    c->len = n;
+    return c;
+}
+
 void veles_list_clear(veles_list *l) {
     l->len = 0;
 }

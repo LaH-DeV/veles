@@ -39,6 +39,33 @@ func (p *Parser) parsePattern(binding bool) ast.Pattern {
 		p.expect(lexer.RParen)
 		tp.Pos = p.spanFrom(start)
 		return tp
+	case lexer.LBracket:
+		// `[a, b]`, `[first, ..rest]`, `[.., last]` (D62)
+		p.next()
+		lp := &ast.ListPat{}
+		for !p.at(lexer.RBracket, lexer.EOF) {
+			if p.at(lexer.Range) {
+				rs := p.span()
+				p.next()
+				rp := &ast.RestPat{}
+				if p.at(lexer.Under) {
+					p.next() // `.._` is `..`
+				} else if p.at(lexer.Ident) {
+					t := p.next()
+					rp.Name = &ast.Ident{Name: t.Text, Pos: t.Span}
+				}
+				rp.Pos = p.spanFrom(rs)
+				lp.Elems = append(lp.Elems, rp)
+			} else {
+				lp.Elems = append(lp.Elems, p.parsePattern(true))
+			}
+			if !p.accept(lexer.Comma) {
+				break
+			}
+		}
+		p.expect(lexer.RBracket)
+		lp.Pos = p.spanFrom(start)
+		return lp
 	case lexer.KwNull, lexer.KwTrue, lexer.KwFalse, lexer.Int, lexer.Float, lexer.String, lexer.Char:
 		return &ast.LiteralPat{Value: p.parsePrimary()}
 	case lexer.Minus:

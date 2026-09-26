@@ -907,6 +907,20 @@ func (p *printer) pattern(pat Pattern) {
 			p.pattern(el)
 		}
 		p.w(")")
+	case *ListPat:
+		p.w("[")
+		for i, el := range pat.Elems {
+			if i > 0 {
+				p.w(", ")
+			}
+			p.pattern(el)
+		}
+		p.w("]")
+	case *RestPat:
+		p.w("..")
+		if pat.Name != nil {
+			p.w(pat.Name.Name)
+		}
 	default:
 		p.f("?pat(%T)", pat)
 	}

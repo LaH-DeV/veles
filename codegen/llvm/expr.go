@@ -1339,6 +1339,13 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		v := g.newTmp()
 		g.emit("%s = call ptr @veles_list_copy(ptr %s)", v, l)
 		return v
+	case "list.slice":
+		l := g.expr(e.Args[0])
+		from := g.expr(e.Args[1])
+		to := g.expr(e.Args[2])
+		v := g.newTmp()
+		g.emit("%s = call ptr @veles_list_slice(ptr %s, i64 %s, i64 %s)", v, l, from, to)
+		return v
 	case "list.clear":
 		l := g.expr(e.Args[0])
 		g.emit("call void @veles_list_clear(ptr %s)", l)

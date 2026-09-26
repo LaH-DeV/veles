@@ -189,10 +189,11 @@ fun claimsToObject(claims: Claims): Value {
   if (iss != null) out.set("iss", VString(value: iss))
   val sub = claims.subject
   if (sub != null) out.set("sub", VString(value: sub))
-  if (claims.audience.len() == 1) {
-    out.set("aud", VString(value: claims.audience.atOrPanic(0)))
-  } else if (claims.audience.len() > 1) {
-    out.set("aud", VList(items: claims.audience.map(a => VString(value: a))))
+  // one audience is written as a string, several as a list (RFC 7519 4.1.3)
+  when (claims.audience) {
+    []    => { }
+    [one] => out.set("aud", VString(value: one))
+    else  => out.set("aud", VList(items: claims.audience.map(a => VString(value: a))))
   }
   val exp = claims.expiresAt
   if (exp != null) out.set("exp", VInt(value: exp))
@@ -214,12 +215,13 @@ public fun verify(token: string, key: List<u8>, options: Options = Options()): C
   checkKey(key, options.algorithm, "jwt.verify")
 
   val parts = token.split(".")
-  if (parts.len() != 3) {
-    throw Invalid(message: "jwt: a compact token has three parts, found ${parts.len()}", reason: Reason.Malformed)
-  }
-  val headerText = try decodePart(parts.atOrPanic(0), "header")
-  val payloadText = try decodePart(parts.atOrPanic(1), "payload")
-  val signature = try base64.decodeUrl(parts.atOrPanic(2)) ?! Invalid(
+  val [headerPart, payloadPart, signaturePart] = parts else throw Invalid(
+    message: "jwt: a compact token has three parts, found ${parts.len()}",
+    reason: Reason.Malformed,
+  )
+  val headerText = try decodePart(headerPart, "header")
+  val payloadText = try decodePart(payloadPart, "payload")
+  val signature = try base64.decodeUrl(signaturePart) ?! Invalid(
     message: "jwt: the signature is not URL-safe base64",
     reason: Reason.Malformed,
   )
@@ -249,7 +251,7 @@ public fun verify(token: string, key: List<u8>, options: Options = Options()): C
   }
 
   // the signature covers the first two parts exactly as they were written
-  val signing = parts.atOrPanic(0) + "." + parts.atOrPanic(1)
+  val signing = headerPart + "." + payloadPart
   if (mac(options.algorithm, key, signing) != crypto.Digest.of(signature)) {
     throw Invalid(message: "jwt: the signature does not match", reason: Reason.BadSignature)
   }
@@ -268,10 +270,11 @@ public fun verify(token: string, key: List<u8>, options: Options = Options()): C
 /// your API. Use it to look a key up, then `verify`.
 public fun readHeader(token: string): Value throws Invalid {
   val parts = token.split(".")
-  if (parts.len() != 3) {
-    throw Invalid(message: "jwt: a compact token has three parts, found ${parts.len()}", reason: Reason.Malformed)
-  }
-  try parseObject(try decodePart(parts.atOrPanic(0), "header"), "header")
+  val [headerPart, _, _] = parts else throw Invalid(
+    message: "jwt: a compact token has three parts, found ${parts.len()}",
+    reason: Reason.Malformed,
+  )
+  try parseObject(try decodePart(headerPart, "header"), "header")
 }
 
 fun decodePart(part: string, what: string): string throws Invalid {
@@ -298,7 +301,10 @@ fun parseObject(text: string, what: string): Value throws Invalid {
 fun readClaims(payload: Value): Claims throws Invalid {
   val fields = when (payload) {
     is VObject => payload.fields
-    else       => panic("jwt.readClaims: the caller checks for an object first")
+    else       => throw Invalid(
+      message: "jwt: the payload is not a JSON object",
+      reason: Reason.Malformed,
+    )
   }
   var issuer: string? = null
   var subject: string? = null

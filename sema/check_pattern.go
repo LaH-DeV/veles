@@ -377,9 +377,116 @@ func (f *fnCtx) compilePattern(pat ast.Pattern, subj Expr, t types.Type, span so
 		return test, binds, irref
 	case *ast.TypePat:
 		return f.compileTypePattern(p, subj, t, span)
+	case *ast.ListPat:
+		return f.compileListPattern(p, subj, t, span)
+	case *ast.RestPat:
+		f.errorf(p.Pos, "'..' only stands inside a list pattern: '[first, ..rest]'")
+		return &BoolConst{exprBase{types.TBool}, false}, nil, false
 	}
 	f.errorf(pat.Span(), "unsupported pattern")
 	return &BoolConst{exprBase{types.TBool}, false}, nil, false
+}
+
+// listShape is a list pattern's length requirement: exactly n elements, or
+// at least n when it has a `..`. rest is the RestPat's index in Elems, -1
+// without one; ok is false (and reported) for a second `..`.
+func (f *fnCtx) listShape(p *ast.ListPat, report bool) (n int, rest int, ok bool) {
+	rest, ok = -1, true
+	for i, el := range p.Elems {
+		if _, isRest := el.(*ast.RestPat); isRest {
+			if rest >= 0 {
+				if report && ok {
+					f.errorf(el.Span(), "a list pattern has at most one '..'")
+				}
+				ok = false
+				continue
+			}
+			rest = i
+			continue
+		}
+		n++
+	}
+	return n, rest, ok
+}
+
+// compileListPattern matches a list by length and element (D62): `[a, b]`
+// tests `len == 2`, `[a, ..rest, z]` tests `len >= 2`, then each element
+// pattern against its element — counted from the front before the `..` and
+// from the back after it. The reads cannot fail, since the length test
+// guards them (`&&` short-circuits, and the bindings run only on a match).
+// `..rest` binds a new List of what lies between.
+func (f *fnCtx) compileListPattern(p *ast.ListPat, subj Expr, t types.Type, span source.Span) (Expr, []Stmt, bool) {
+	fail := func() (Expr, []Stmt, bool) { return &BoolConst{exprBase{types.TBool}, false}, nil, false }
+	and := func(a, b Expr) Expr {
+		if a == nil {
+			return b
+		}
+		if b == nil {
+			return a
+		}
+		return &Binary{exprBase{types.TBool}, OpAnd, a, b, span}
+	}
+	if ptr, ok := t.(*types.Pointer); ok && !ptr.Raw {
+		subj = &Deref{exprBase{ptr.Elem}, subj}
+		t = ptr.Elem
+	}
+	if nt, ok := t.(*types.Nullable); ok {
+		// `[a, b]` on a `List<T>?` also means "not null"
+		inner, b, _ := f.compileListPattern(p, &Unwrap{exprBase{nt.Elem}, subj}, nt.Elem, span)
+		notNull := &Unary{exprBase{types.TBool}, OpNot, &IsNull{exprBase{types.TBool}, subj}, span}
+		return and(notNull, inner), b, false
+	}
+	lt, ok := t.(*types.List)
+	if !ok {
+		f.errorf(p.Pos, "list pattern on a subject of type '%s', which is not a List", t)
+		return fail()
+	}
+	// a second `..` is reported and the arm never matches, but its names are
+	// still declared so the body does not cascade into "unknown name"
+	n, rest, shapeOK := f.listShape(p, true)
+	length := func() Expr { return &Builtin{exprBase{types.TI64}, "list.len", []Expr{subj}, span} }
+	var test Expr
+	if rest < 0 {
+		test = &Binary{exprBase{types.TBool}, OpEq, length(), i64c(uint64(n)), span}
+	} else if n > 0 {
+		test = &Binary{exprBase{types.TBool}, OpGe, length(), i64c(uint64(n)), span}
+	}
+	irref := test == nil
+	var binds []Stmt
+	after := 0 // elements after the `..`
+	if rest >= 0 {
+		after = len(p.Elems) - rest - 1
+	}
+	for i, el := range p.Elems {
+		if _, isRest := el.(*ast.RestPat); isRest && i != rest {
+			continue
+		}
+		if i == rest {
+			rp := el.(*ast.RestPat)
+			if rp.Name == nil {
+				continue
+			}
+			rt := &types.List{Elem: lt.Elem}
+			to := &Binary{exprBase{types.TI64}, OpWrapSub, length(), i64c(uint64(after)), span}
+			v := f.newVar(rp.Name.Name, rt, false, rp.Name.Pos)
+			v.checkUse = true
+			binds = append(binds, &VarDecl{Var: v, Init: &Builtin{exprBase{rt}, "list.slice", []Expr{subj, i64c(uint64(rest)), to}, span}})
+			continue
+		}
+		var idx Expr = i64c(uint64(i))
+		if rest >= 0 && i > rest {
+			idx = &Binary{exprBase{types.TI64}, OpWrapSub, length(), i64c(uint64(len(p.Elems) - i)), span}
+		}
+		get := &Builtin{exprBase{lt.Elem}, "list.get", []Expr{subj, idx}, span}
+		et, b, ir := f.compilePattern(el, get, lt.Elem, span)
+		test = and(test, et)
+		binds = append(binds, b...)
+		irref = irref && ir
+	}
+	if !shapeOK {
+		return &BoolConst{exprBase{types.TBool}, false}, binds, false
+	}
+	return test, binds, irref
 }
 
 // resolvePatternType resolves the type named in `is T` relative to the
@@ -611,10 +718,12 @@ type coverage struct {
 	variants    map[*types.Struct]bool
 	members     map[string]bool            // error-union members (D45)
 	enumMembers map[*types.EnumMember]bool // enum members named by value patterns (D57)
+	listLens    map[int]bool // list lengths covered exactly by `[a, b]` (D62)
+	listMin     int          // lengths >= listMin covered by `[a, ..]`; -1 when none
 }
 
 func newCoverage() *coverage {
-	return &coverage{variants: map[*types.Struct]bool{}, members: map[string]bool{}, enumMembers: map[*types.EnumMember]bool{}}
+	return &coverage{variants: map[*types.Struct]bool{}, members: map[string]bool{}, enumMembers: map[*types.EnumMember]bool{}, listLens: map[int]bool{}, listMin: -1}
 }
 
 func (f *fnCtx) cover(cov *coverage, pat ast.Pattern, t types.Type) {
@@ -653,6 +762,30 @@ func (f *fnCtx) cover(cov *coverage, pat ast.Pattern, t types.Type) {
 		}
 		if all {
 			cov.all = true
+		}
+	case *ast.ListPat:
+		if nt, ok := t.(*types.Nullable); ok {
+			if cov.someInner == nil {
+				cov.someInner = newCoverage()
+			}
+			f.cover(cov.someInner, p, nt.Elem)
+			return
+		}
+		// only a pattern whose elements all match anything covers a length
+		for _, el := range p.Elems {
+			if !f.irrefutablePat(el) {
+				return
+			}
+		}
+		n, rest, ok := f.listShape(p, false)
+		switch {
+		case !ok:
+		case rest < 0:
+			cov.listLens[n] = true
+		case n == 0:
+			cov.all = true
+		case cov.listMin < 0 || n < cov.listMin:
+			cov.listMin = n
 		}
 	case *ast.TypePat:
 		name := ""
@@ -722,7 +855,7 @@ func (f *fnCtx) irrefutableField(fp ast.FieldPat) bool {
 
 func (f *fnCtx) irrefutablePat(p ast.Pattern) bool {
 	switch p := p.(type) {
-	case *ast.WildcardPat, *ast.BindPat:
+	case *ast.WildcardPat, *ast.BindPat, *ast.RestPat:
 		return true
 	case *ast.TuplePat:
 		for _, el := range p.Elems {
@@ -731,6 +864,10 @@ func (f *fnCtx) irrefutablePat(p ast.Pattern) bool {
 			}
 		}
 		return true
+	case *ast.ListPat:
+		// only `[..]` / `[..rest]` matches every list
+		n, rest, ok := f.listShape(p, false)
+		return ok && rest >= 0 && n == 0
 	}
 	return false
 }
@@ -767,12 +904,36 @@ func (f *fnCtx) isExhaustive(cov *coverage, t types.Type, subjectless bool) bool
 			}
 		}
 		return len(tt.Members) > 0
+	case *types.List:
+		// every length below the shortest `[a, ..]` needs its own arm
+		if cov.listMin < 0 {
+			return false
+		}
+		for k := 0; k < cov.listMin; k++ {
+			if !cov.listLens[k] {
+				return false
+			}
+		}
+		return true
 	case *types.Basic:
 		if tt.Kind == types.Bool {
 			return cov.tru && cov.fals
 		}
 	}
 	return false
+}
+
+// listArm spells a list pattern of n wildcards, open-ended with `..`:
+// `[]`, `[_, _]`, `[_, ..]`.
+func listArm(n int, open bool) string {
+	parts := make([]string, 0, n+1)
+	for i := 0; i < n; i++ {
+		parts = append(parts, "_")
+	}
+	if open {
+		parts = append(parts, "..")
+	}
+	return "'[" + strings.Join(parts, ", ") + "]'"
 }
 
 func (f *fnCtx) missingArms(cov *coverage, t types.Type) string {
@@ -808,6 +969,28 @@ func (f *fnCtx) missingArms(cov *coverage, t types.Type) string {
 			if !cov.enumMembers[m] {
 				missing = append(missing, "'"+tt.Name+"."+m.Name+"'")
 			}
+		}
+		return "missing " + strings.Join(missing, ", ")
+	case *types.List:
+		limit := cov.listMin
+		if limit < 0 {
+			for k := range cov.listLens {
+				if k+1 > limit {
+					limit = k + 1
+				}
+			}
+			if limit < 0 {
+				limit = 0
+			}
+		}
+		var missing []string
+		for k := 0; k < limit; k++ {
+			if !cov.listLens[k] {
+				missing = append(missing, listArm(k, false))
+			}
+		}
+		if cov.listMin < 0 {
+			missing = append(missing, listArm(limit, true))
 		}
 		return "missing " + strings.Join(missing, ", ")
 	case *types.Basic:

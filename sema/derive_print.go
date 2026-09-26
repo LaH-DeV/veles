@@ -406,6 +406,17 @@ func dpattern(pat ast.Pattern, ind int) string {
 			es = append(es, dpattern(el, ind))
 		}
 		return "(" + strings.Join(es, ", ") + ")"
+	case *ast.ListPat:
+		var es []string
+		for _, el := range pat.Elems {
+			es = append(es, dpattern(el, ind))
+		}
+		return "[" + strings.Join(es, ", ") + "]"
+	case *ast.RestPat:
+		if pat.Name != nil {
+			return ".." + pat.Name.Name
+		}
+		return ".."
 	}
 	return fmt.Sprintf("<%T>", pat)
 }
