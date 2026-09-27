@@ -103,7 +103,7 @@ follows it. `Problem.pointer()` gives the path as a JSON pointer
 ## Keys, skips and styles
 
 ```veles
-use io, json
+use codec, io, json
 
 struct Account {
   @key("account_id") id: i64                 // this key, in every format
@@ -116,7 +116,7 @@ struct Account {
 fun main() throws EncodeError {
   val a = Account(id: 7, name: "ann", createdAt: 1, secret: "hunter2")
   io.println(try json.encode(a))
-  io.println(try json.encode(a, json.Options(keys: KeyStyle.SnakeCase)))
+  io.println(try json.encode(a, json.Options(keys: codec.KeyStyle.SnakeCase)))
 }
 ```
 
@@ -186,14 +186,14 @@ unknown variant "blob" of Shape (one of "circle", "Rect")
 ## Enums by name or by number
 
 ```veles
-use io, json
+use codec, io, json
 
 enum Status { Active, Suspended }
 
 fun main() throws EncodeError | DecodeError {
   io.println(try json.encode([Status.Active, Status.Suspended]))
-  io.println(try json.encode([Status.Active, Status.Suspended], json.Options(enums: EnumStyle.Number)))
-  io.println("${try json.decode<List<Status>>("[1]", json.Options(enums: EnumStyle.Number))}")
+  io.println(try json.encode([Status.Active, Status.Suspended], json.Options(enums: codec.EnumStyle.Number)))
+  io.println("${try json.decode<List<Status>>("[1]", json.Options(enums: codec.EnumStyle.Number))}")
 }
 ```
 
@@ -217,7 +217,7 @@ use. When the other side expects something else, say so once, in the
 options:
 
 ```veles
-use io, json
+use codec, io, json
 
 struct Job {
   name:    string
@@ -227,10 +227,10 @@ struct Job {
 
 fun main() throws EncodeError | DecodeError {
   val job = Job(name: "backup", timeout: Duration.seconds(90) + Duration.millis(500))
-  loop (style in DurationStyle.values()) {
+  loop (style in codec.DurationStyle.values()) {
     io.println("$style: ${try json.encode(job, json.Options(durations: style))}")
   }
-  val java = json.Options(durations: DurationStyle.Iso8601)
+  val java = json.Options(durations: codec.DurationStyle.Iso8601)
   io.println("${(try json.decode<Job>("{\"name\": \"x\", \"timeout\": \"PT2H\"}", java)).timeout}")
 }
 ```
@@ -254,13 +254,13 @@ length of time, since months differ — with a message that says so.
 ## Writing part by hand
 
 ```veles
-use io, json
+use codec, io, json
 
 struct Money {
   amount:   i64
   currency: string
   implement Codable {
-    fun encode(to: Encoder) throws EncodeError = try to.writeString("${this.amount} ${this.currency}")
+    fun encode(to: codec.Encoder) throws EncodeError = try to.writeString("${this.amount} ${this.currency}")
   }
 }
 
@@ -347,6 +347,13 @@ Output:
 `asBool`. It is `Codable` itself, so `json.parse` is `json.decode<Value>`
 and `json.toValue(x)` / `json.fromValue<T>(v)` move between a typed value
 and the tree.
+
+The tree, the styles (`KeyStyle`, `EnumStyle`, `DurationStyle`) and the
+`Encoder`/`Decoder` traits live in module `codec`: `use codec`, then
+`codec.Value`, `codec.KeyStyle.SnakeCase`. Deriving needs none of it —
+`implement Codable`, `EncodeError` and `DecodeError` are global — so only
+a program that walks a document whose shape it does not know, picks a
+style, or writes a format of its own imports it.
 
 ## Under the hood: `Encoder` and `Decoder`
 

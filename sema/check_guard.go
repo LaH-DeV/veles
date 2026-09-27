@@ -23,7 +23,16 @@ import (
 
 // coalesceExpr checks `r ?? fallback` and `r ?? { e => ... }`.
 func (f *fnCtx) coalesceExpr(e *ast.CoalesceExpr, want types.Type) Expr {
-	l := f.checkExpr(e.L, nil)
+	left := e.L
+	if t, isTry := e.L.(*ast.TryExpr); isTry {
+		// `try f() ?? 0`: the `try` would propagate the very error `??` is
+		// there to handle; one error with the fix, and the rest checked as
+		// if it were not written
+		cut := source.Span{File: t.Pos.File, Start: t.Pos.Start, End: t.X.Span().Start}
+		f.c.errorFix(cut, fixReplace("Remove 'try'", cut, ""), "'??' handles the error itself; drop the 'try': '%s ?? …'", srcText(t.X))
+		left = t.X
+	}
+	l := f.checkExpr(left, nil)
 	lt := l.Type()
 	if types.IsInvalid(lt) {
 		f.checkFallbackLoosely(e)

@@ -23,6 +23,134 @@ type Index struct {
 	// Inferred maps a function's name (its declaration) to what the
 	// compiler inferred and the source leaves unwritten, for inlay hints.
 	Inferred map[source.Span]Inferred
+	// Impls maps a trait's name (its declaration) to the implements of it
+	// the author wrote — a sealed trait's also to its variants — and a
+	// trait method's name to each method implementing it, for
+	// go-to-implementation.
+	Impls map[source.Span][]source.Span
+}
+
+// TypeDecl is where the type of a value is declared, for
+// go-to-type-definition: through a nullable, a pointer or a task to what
+// it holds, and from a built-in container (`List<Tag>`, `Map<K, Tag>`) to
+// the first element type that has a declaration. Invalid when nothing in
+// it was declared in source (`i64`, `List<string>`).
+func TypeDecl(t types.Type) source.Span {
+	name := func(d any) source.Span {
+		switch d := d.(type) {
+		case *ast.StructDecl:
+			return d.Name.Pos
+		case *ast.TraitDecl:
+			return d.Name.Pos
+		case *ast.EnumDecl:
+			return d.Name.Pos
+		}
+		return source.Span{}
+	}
+	var args []types.Type
+	switch t := t.(type) {
+	case *types.Struct:
+		if sp := name(t.Decl); sp.IsValid() {
+			return sp
+		}
+		args = t.TypeArgs
+	case *types.Sealed:
+		if sp := name(t.Decl); sp.IsValid() {
+			return sp
+		}
+		args = t.TypeArgs
+	case *types.Trait:
+		return name(t.Decl)
+	case *types.Enum:
+		return name(t.Decl)
+	case *types.Nullable:
+		return TypeDecl(t.Elem)
+	case *types.Pointer:
+		return TypeDecl(t.Elem)
+	case *types.List:
+		return TypeDecl(t.Elem)
+	case *types.Set:
+		return TypeDecl(t.Elem)
+	case *types.Channel:
+		return TypeDecl(t.Elem)
+	case *types.Task:
+		return TypeDecl(t.Result)
+	case *types.Map:
+		args = []types.Type{t.Key, t.Value}
+	case *types.Tuple:
+		args = t.Elems
+	}
+	for _, a := range args {
+		if sp := TypeDecl(a); sp.IsValid() {
+			return sp
+		}
+	}
+	return source.Span{}
+}
+
+// indexImpls fills Index.Impls from the implements collection found. It
+// runs whether or not the package checked, so it works mid-edit.
+func (c *Checker) indexImpls() {
+	if c.index == nil {
+		return
+	}
+	c.index.Impls = map[source.Span][]source.Span{}
+	add := func(key, at source.Span) {
+		if !key.IsValid() || !at.IsValid() {
+			return
+		}
+		for _, s := range c.index.Impls[key] {
+			if s == at {
+				return
+			}
+		}
+		c.index.Impls[key] = append(c.index.Impls[key], at)
+	}
+	methods := func(td *ast.TraitDecl, fns []*ast.FunDecl) {
+		for _, m := range td.Methods {
+			for _, fn := range fns {
+				if fn.Name.Name == m.Name.Name {
+					add(m.Name.Pos, fn.Name.Pos)
+				}
+			}
+		}
+	}
+	for trait, list := range c.impls {
+		td, ok := trait.Decl.(*ast.TraitDecl)
+		if !ok {
+			continue
+		}
+		for _, impl := range list {
+			// a compiler-made implement (a supertrait's, a variant's) is
+			// not where anything was written
+			if impl.Decl == nil || impl.Decl.Derived {
+				continue
+			}
+			add(td.Name.Pos, impl.Decl.Pos)
+			methods(td, impl.Decl.Methods)
+		}
+	}
+	for s := range c.sealedDecl {
+		td, ok := s.Decl.(*ast.TraitDecl)
+		if !ok {
+			continue
+		}
+		for _, v := range s.Variants {
+			if vd, ok := v.Decl.(*ast.StructDecl); ok {
+				add(td.Name.Pos, vd.Name.Pos)
+				methods(td, vd.Methods)
+			}
+		}
+	}
+	for _, spans := range c.index.Impls {
+		sort.Slice(spans, func(i, j int) bool {
+			a, b := spans[i], spans[j]
+			if a.File.Path != b.File.Path {
+				return a.File.Path < b.File.Path
+			}
+			return a.Start < b.Start
+		})
+	}
 }
 
 // Inferred is the unwritten part of a function's signature.
@@ -192,7 +320,8 @@ func (c *Checker) refSym(span source.Span, sym *Symbol) {
 		head, _ := moduleHead(sym.Mod)
 		c.index.Refs = append(c.index.Refs, Ref{Span: span, Def: def, Kind: "module", Name: sym.Name, Detail: head, Module: sym.Mod, Doc: sym.Mod.Doc(), Shape: c.moduleShape(sym.Mod)})
 	case SymVariantCtor:
-		c.index.Refs = append(c.index.Refs, Ref{Span: span, Kind: "fun", Name: sym.Name, Detail: "prelude " + sym.Name})
+		v := variantCtorDocs[sym.Name]
+		c.index.Refs = append(c.index.Refs, Ref{Span: span, Kind: "fun", Name: sym.Name, Detail: v[0], Where: v[1], Doc: v[2]})
 	}
 }
 
@@ -604,7 +733,29 @@ func constructorLine(st *types.Struct, v viewpoint) string {
 			parts = append(parts, fld.Name+": "+fld.Type.String())
 		}
 	}
+	parts = append(parts, InitParamLabels(st, "...")...)
 	return st.Name + "(" + strings.Join(parts, ", ") + ")"
+}
+
+// InitParamLabels spells the parameters `init(...)` adds to st's
+// constructor (D73) as written, a default shown as `= ` + dflt.
+func InitParamLabels(st *types.Struct, dflt string) []string {
+	d, _ := templateOf(st).Decl.(*ast.StructDecl)
+	if d == nil {
+		return nil
+	}
+	var out []string
+	for _, p := range d.InitParams {
+		label := p.Name.Name
+		if p.Type != nil {
+			label += ": " + ast.TypeString(p.Type)
+		}
+		if p.Default != nil {
+			label += " = " + dflt
+		}
+		out = append(out, label)
+	}
+	return out
 }
 
 // structHead is a struct's declaration line with its visibility spelled
@@ -644,7 +795,7 @@ func methodDecl(tmpl *types.Struct, t *FuncTemplate) string {
 // trait's default body. The owner is not repeated (see funWhere).
 func funDecl(t *FuncTemplate) string {
 	if t.Name == "$init" {
-		return "init { ... }  // runs after every construction; not callable"
+		return "init" + initParamList(t.Decl.Params) + " { ... }  // runs after every construction; not callable"
 	}
 	var sb strings.Builder
 	d := t.Decl
@@ -813,6 +964,9 @@ func (c *Checker) refType(span source.Span, name string, t types.Type, def sourc
 		detail = enumHead(tt)
 	case *types.Basic:
 		detail = "builtin type " + tt.Name
+		c.index.Refs = append(c.index.Refs, Ref{Span: span, Def: def, Kind: kind, Name: name, Type: t, Detail: detail,
+			Doc: basicTypeDocs[tt.Kind], Shape: c.basicShape(tt)})
+		return
 	}
 	c.index.Refs = append(c.index.Refs, Ref{Span: span, Def: def, Kind: kind, Name: name, Type: t, Detail: detail,
 		Doc: docOfType(t), Shape: c.shapeFrom(t, c.viewFrom(span))})
@@ -980,7 +1134,7 @@ func (c *Checker) shapeFrom(t types.Type, v viewpoint) string {
 			sb.WriteString("  " + methodDecl(tmpl, m) + "\n")
 		}
 		if d.Init != nil && v.insideType(tt) {
-			sb.WriteString("  init { ... }\n")
+			sb.WriteString("  init" + initParamList(d.InitParams) + " { ... }\n")
 		}
 		if hidden > 0 {
 			// the reader cannot name these from here; the count says the
@@ -1181,6 +1335,22 @@ func variantDefSpan(v *types.Struct) source.Span {
 // declaration of the same name in a module of the package or the standard
 // library ("did you mean 'io.println'? add 'use io'"), or nothing.
 func (c *Checker) suggestUnknown(m *Module, name string) string {
+	hit := c.unknownHit(m, name)
+	if hit == "" {
+		return ""
+	}
+	modName := hit[:strings.Index(hit, ".")]
+	for _, dep := range m.Deps {
+		if dep.Name() == modName {
+			return fmt.Sprintf("; did you mean '%s'?", hit)
+		}
+	}
+	return fmt.Sprintf("; did you mean '%s'? (add 'use %s' at the top of the file)", hit, modName)
+}
+
+// unknownHit is the qualified name (`codec.Value`, `io.println`) an
+// unresolved name most likely meant, or "".
+func (c *Checker) unknownHit(m *Module, name string) string {
 	seen := map[string]bool{}
 	var hits []string
 	consider := func(mod *Module) {
@@ -1197,12 +1367,21 @@ func (c *Checker) suggestUnknown(m *Module, name string) string {
 			}
 		}
 	}
+	if home := PreludeHome(name); home != "" {
+		hits = append(hits, home+"."+name) // written in the prelude, reached through its module (D75)
+	}
 	// modules already loaded (imported somewhere in the package)
 	for _, mod := range c.pkg.Modules {
+		if len(hits) > 0 {
+			break
+		}
 		consider(mod)
 	}
 	// standard modules that nothing has imported yet
 	for _, std := range c.pkg.stdModuleNames() {
+		if len(hits) > 0 {
+			break
+		}
 		if _, loaded := c.pkg.Modules["std/"+std]; !loaded {
 			if mod, ok := c.pkg.loadStd(std); ok {
 				consider(mod)
@@ -1212,17 +1391,78 @@ func (c *Checker) suggestUnknown(m *Module, name string) string {
 	if len(hits) == 0 {
 		return ""
 	}
-	modName := hits[0][:strings.Index(hits[0], ".")]
-	imported := false
-	for _, dep := range m.Deps {
-		if dep.Name() == modName {
-			imported = true
+	return hits[0]
+}
+
+// unknownFix writes the qualified name in place of the unresolved one and,
+// when the file does not import its module yet, the `use` too — one quick
+// fix for "did you mean 'codec.Value'? (add 'use codec' ...)".
+//
+// Only for a name the prelude writes for a module (D75), where the meaning
+// is certain: `veles check --fix` applies every fix, and qualifying any
+// other unknown name would be a guess at what a typo meant.
+func (c *Checker) unknownFix(file *ast.File, m *Module, span source.Span, name string) *source.Fix {
+	if PreludeHome(name) == "" || file == nil || span.File == nil {
+		return nil
+	}
+	hit := c.unknownHit(m, name)
+	if hit == "" {
+		return nil
+	}
+	modName := hit[:strings.Index(hit, ".")]
+	fix := fixReplace("Write '"+hit+"'", span, hit)
+	for _, d := range file.Decls {
+		if u, ok := d.(*ast.UseDecl); ok {
+			for _, s := range u.Specs {
+				if len(s.Path) > 0 && (s.Alias != nil && s.Alias.Name == modName || s.Alias == nil && s.Path[len(s.Path)-1].Name == modName) {
+					return fix
+				}
+			}
 		}
 	}
-	if imported {
-		return fmt.Sprintf("; did you mean '%s'?", hits[0])
+	at, beforeUse := useInsertAt(file, span.File.Content)
+	line := "use " + modName + "\n"
+	if !beforeUse {
+		line += "\n" // above a declaration: set apart like any use block
 	}
-	return fmt.Sprintf("; did you mean '%s'? (add 'use %s' at the top of the file)", hits[0], modName)
+	fix.Title = "Write '" + hit + "' and add 'use " + modName + "'"
+	fix.Edits = append(fix.Edits, source.TextEdit{Span: source.Span{File: span.File, Start: at, End: at}, NewText: line})
+	return fix
+}
+
+// useInsertAt is where a new `use` line goes: at the file's first `use`
+// (the formatter merges them afterwards), else above the first
+// declaration and the doc comment attached to it — never between the two.
+func useInsertAt(file *ast.File, src string) (int, bool) {
+	first := -1
+	for _, d := range file.Decls {
+		start := d.Span().Start
+		if _, ok := d.(*ast.UseDecl); ok {
+			return lineStart(src, start), true
+		}
+		if first < 0 || start < first {
+			first = start
+		}
+	}
+	if first < 0 {
+		return len(src), false
+	}
+	at := lineStart(src, first)
+	for at > 0 {
+		prev := lineStart(src, at-1)
+		if !strings.HasPrefix(strings.TrimSpace(src[prev:at]), "///") && !strings.HasPrefix(strings.TrimSpace(src[prev:at]), "@") {
+			break
+		}
+		at = prev
+	}
+	return at, false
+}
+
+func lineStart(src string, off int) int {
+	if off > len(src) {
+		off = len(src)
+	}
+	return strings.LastIndexByte(src[:off], '\n') + 1
 }
 
 func declName(d ast.Decl) string {
@@ -1301,4 +1541,22 @@ func monomorphic(t *FuncTemplate) bool {
 	return len(t.TypeParams) == 0 && t.Trait == nil &&
 		(t.Owner == nil || len(t.Owner.TypeParams) == 0) &&
 		(t.Impl == nil || len(t.Impl.TypeParams) == 0)
+}
+
+// initParamList is `init`'s parameter list as written, or nothing.
+func initParamList(params []ast.Param) string {
+	if len(params) == 0 {
+		return ""
+	}
+	parts := make([]string, len(params))
+	for i, p := range params {
+		parts[i] = p.Name.Name
+		if p.Type != nil {
+			parts[i] += ": " + ast.TypeString(p.Type)
+		}
+		if p.Default != nil {
+			parts[i] += " = ..."
+		}
+	}
+	return "(" + strings.Join(parts, ", ") + ")"
 }

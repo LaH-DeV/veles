@@ -44,7 +44,7 @@ func (c *Checker) derivable(t *types.Trait) string {
 
 // preludeType finds a prelude type by name (a trait, struct, enum).
 func (c *Checker) preludeType(name string) types.Type {
-	if sym := c.universe.LookupLocal(name); sym != nil && sym.Kind == SymType {
+	if sym := c.preludeSym(name); sym != nil && sym.Kind == SymType {
 		if t := c.symType(sym); t != nil {
 			return t
 		}
@@ -72,7 +72,7 @@ func (c *Checker) deriveMissing(d *ast.ImplDecl, impl *Impl, trait *types.Trait)
 		fd, why := c.deriveMethod(d, impl, trait, kind, name)
 		if fd == nil {
 			if why != "" {
-				c.errorf(d.Pos, "cannot derive '%s' for '%s': %s (D58)", trait.Name, impl.Target, why)
+				c.errorFix(d.Pos, c.skipFix(impl.Target, kind), "cannot derive '%s' for '%s': %s (D58)", trait.Name, impl.Target, why)
 				c.deriveFailed[impl] = true
 			}
 			return
@@ -180,6 +180,15 @@ func (c *Checker) derivedFields(st *types.Struct, kind string) ([]derivedField, 
 		}
 		out = append(out, df)
 	}
+	if kind == "Decodable" && decl != nil {
+		// a decoded value is built by the constructor, and the input has
+		// nothing to give `init(...)` (D73)
+		for _, p := range decl.InitParams {
+			if p.Default == nil {
+				return nil, fmt.Sprintf("its 'init' takes '%s', which the input cannot supply; give the parameter a default or write the implement", p.Name.Name)
+			}
+		}
+	}
 	if kind == "Decodable" {
 		seen := map[string]int{}
 		for _, df := range out {
@@ -199,6 +208,41 @@ func (c *Checker) derivedFields(st *types.Struct, kind string) ([]derivedField, 
 		}
 	}
 	return out, ""
+}
+
+// skipFix marks `@skip` the field that stops a coding derive, when it
+// has the default a skipped field needs; without one the edit would only
+// trade this error for "a @skip field needs a default", so none is offered.
+func (c *Checker) skipFix(target types.Type, kind string) *source.Fix {
+	st, ok := target.(*types.Struct)
+	if !ok || kind == "Comparable" {
+		return nil
+	}
+	decl, _ := templateOf(st).Decl.(*ast.StructDecl)
+	if decl == nil {
+		return nil
+	}
+	for _, fld := range st.Fields {
+		if fld.Index >= len(decl.Fields) {
+			continue
+		}
+		af := decl.Fields[fld.Index]
+		if formats, present := skippedFormats(af.Attrs); present && len(formats) == 0 {
+			continue
+		}
+		if c.notCodable(fld.Type) == "" {
+			continue
+		}
+		if af.Default == nil {
+			return nil
+		}
+		at := af.Pos
+		if len(af.Attrs) > 0 && af.Attrs[0].Pos.Start < at.Start {
+			at = af.Attrs[0].Pos
+		}
+		return fixReplace("Mark '"+fld.Name+"' @skip", source.Span{File: at.File, Start: at.Start, End: at.Start}, "@skip ")
+	}
+	return nil
 }
 
 // notCodable says why a field type can never be encoded or decoded — a

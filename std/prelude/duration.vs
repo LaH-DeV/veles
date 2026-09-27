@@ -306,7 +306,7 @@ fun parseIsoText(s: string): Duration? {
   var inTime = false
   var parts = 0
   var fraction = false
-  val out = stringBuilder()
+  val out = StringBuilder()
   out.append(sign)
   loop (i < s.len()) {
     if (s.byteAt(i) == 'T') {

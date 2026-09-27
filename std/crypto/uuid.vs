@@ -125,7 +125,7 @@ public struct Uuid {
 
   implement Display {
     fun toString(): string {
-      val out = stringBuilder()
+      val out = StringBuilder()
       var i = 0
       loop (i < 16) {
         if (i == 4 || i == 6 || i == 8 || i == 10) out.appendByte(45)
@@ -191,7 +191,7 @@ struct V7Clock {
   }
 }
 
-val v7Clock = mutex(V7Clock(millis: -1, counter: 0))
+val v7Clock = Mutex(value: V7Clock(millis: -1, counter: 0))
 
 // the timestamp and counter of the next v7 id, taken together
 fun nextTick(): (i64, i64) = v7Clock.withLock(c => c.tick())

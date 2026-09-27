@@ -59,14 +59,20 @@ type Checker struct {
 	// error-position types seen before the impls were collected, checked
 	// at the end of collection; collected marks that point
 	pendingErrorChecks []pendingErrorCheck
-	pendingAssocChecks []func() // associated-type bounds, run once all impls exist
-	pendingDerives     []func() // derived impl bodies and supertrait impls, once all impls exist (D58)
+	pendingBoundChecks []func()
+	pathReported       bool                  // lookupTypeName reported why a qualified type path failed
+	stdFiles           map[*source.File]bool // stdSpan
+	pendingAssocChecks []func()              // associated-type bounds, run once all impls exist
+	pendingDerives     []func()              // derived impl bodies and supertrait impls, once all impls exist (D58)
 	deriveFailed       map[*Impl]bool
 	debugDerive        bool                 // VELES_DEBUG_DERIVE: print every synthesized declaration
 	syntheticSpans     map[source.Span]bool // spans that derived code carries; no hover there
 	collected          bool
 	collectRefs        int // index refs recorded by collect(); rounds reset only past this
 	tests              []*FuncTemplate
+	testNames          map[*Module]map[string]source.Span // each module's qualified test and suite names, for duplicates (D78)
+	suites             int                                // suites declared, for unique helper symbols
+	suiteHelpers       map[string]string                  // a suite helper's name -> its suite, for "unknown function" (D78)
 	optionTmpl         *types.Sealed
 
 	// per-round state
@@ -93,13 +99,16 @@ type declCtx struct {
 }
 
 // Check runs the whole analysis over a loaded package.
-// CheckTests is Check for `veles test`: no main is required and @test
-// functions become the entry point.
+// CheckTests is Check for `veles test`: no main is required and the tests
+// (`test "..." { }`, D78) become the entry point.
 func CheckTests(pkg *Package, diags *source.Diagnostics, release bool) *Program {
 	return check(pkg, diags, release, true)
 }
 
 func Check(pkg *Package, diags *source.Diagnostics, release bool) *Program {
+	if pkg.NeedMain {
+		dropTestFiles(pkg) // a build or a run never sees *.test.vs (D78)
+	}
 	return check(pkg, diags, release, false)
 }
 
@@ -179,6 +188,7 @@ func checkCollect(pkg *Package, diags *source.Diagnostics, release bool, testMod
 	}
 	diags.Items = append(diags.Items, c.roundDiags.Items...)
 	c.dropSyntheticRefs()
+	c.indexImpls()
 	if diags.HasErrors() {
 		return nil, c
 	}
@@ -308,12 +318,20 @@ func (c *Checker) collect() {
 			}
 		}
 	}
-	// 1b. the prelude is in scope everywhere (D24)
+	// 1b. the prelude is in scope everywhere (D24), except the names that
+	// live in a module of their own (D75): `codec.Value`, `recursion.Depth`
 	if prelude, ok := c.pkg.Modules["std/prelude"]; ok {
 		for _, sym := range prelude.Scope.symbols {
-			if sym.Pub {
-				c.universe.Insert(sym)
+			if !sym.Pub {
+				continue
 			}
+			if home := PreludeHome(sym.Name); home != "" {
+				if m, ok := c.pkg.Modules["std/"+home]; ok {
+					m.Scope.Insert(sym)
+				}
+				continue
+			}
+			c.universe.Insert(sym)
 		}
 	}
 	// 2. wire imports (per file)
@@ -390,6 +408,11 @@ func (c *Checker) collect() {
 		c.checkErrorType(pc.t, pc.span)
 	}
 	c.pendingErrorChecks = nil
+	c.collected = true // the bound checks below need impls, and may defer no further
+	for _, check := range c.pendingBoundChecks {
+		check()
+	}
+	c.pendingBoundChecks = nil
 	c.collected = true
 	// the declaration sites themselves: a hover on `struct Notes {` or on a
 	// field where it is declared shows the same spelled-out form as a use
@@ -445,6 +468,10 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 	case *ast.FunDecl:
 		t := c.newTemplate(m, f, d, nil, nil)
 		c.insert(m, &Symbol{Name: d.Name.Name, Kind: SymFunc, Pub: d.Pub, Module: m, Span: d.Name.Pos, Func: t})
+	case *ast.TestDecl:
+		c.declareTest(m, f, d, fileSuite(f), nil)
+	case *ast.SuiteDecl:
+		c.declareSuite(m, f, d, fileSuite(f), nil)
 	case *ast.ExternBlock:
 		for _, fn := range d.Funs {
 			t := c.newTemplate(m, f, fn, nil, nil)
@@ -481,7 +508,7 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 			// `init { }` is checked and compiled as a hidden method the
 			// constructor calls on the freshly built value; `$` keeps it out
 			// of reach of any name a user can write (D28 v0.30)
-			decl := &ast.FunDecl{Doc: "", Private: true, Name: ast.Ident{Name: "$init", Pos: d.InitPos}, Body: d.Init, Pos: d.InitPos.To(d.Init.Pos)}
+			decl := &ast.FunDecl{Doc: "", Private: true, Name: ast.Ident{Name: "$init", Pos: d.InitPos}, Params: d.InitParams, Body: d.Init, Pos: d.InitPos.To(d.Init.Pos)}
 			c.methods[s]["$init"] = c.newTemplate(m, f, decl, s, ctx.tps)
 			c.initDecl[s] = decl
 		}
@@ -587,11 +614,17 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 func (c *Checker) newTemplate(m *Module, f *ast.File, d *ast.FunDecl, owner *types.Struct, outer map[string]*types.TypeParam) *FuncTemplate {
 	t := &FuncTemplate{Name: d.Name.Name, Module: m, File: f, Decl: d, Pub: d.Pub, Owner: owner, Extern: d.Extern}
 	t.Attrs = c.attrsOf(d.Attrs, "function")
-	if _, isTest := t.Attrs["test"]; isTest {
+	t.TestCode = d.Test || isTestFile(f)
+	if a, isTest := t.Attrs["test"]; isTest {
+		c.oldTestSpelling(a, d)
 		if len(d.Params) > 0 || d.Ret != nil || owner != nil {
-			c.errorf(d.Name.Pos, " functions take no parameters and return nothing")
+			c.errorf(d.Name.Pos, "a test takes no parameters and returns nothing")
 		}
+		t.TestCode = true
 		c.tests = append(c.tests, t)
+	}
+	if d.Test && owner != nil {
+		c.errorf(d.Name.Pos, "a 'test fun' is a top-level helper, not a method")
 	}
 	t.Instances = map[string]*Func{}
 	t.Mangled = m.prefix() + "." + d.Name.Name
@@ -808,11 +841,13 @@ func (c *Checker) lookupTypeName(env *typeEnv, path []ast.Ident) (*Symbol, *type
 		case SymModule:
 			next := sym.Mod.Scope.LookupLocal(path[i].Name)
 			if next == nil {
-				c.errorf(path[i].Pos, "module '%s' has no declaration '%s'", sym.Mod.Path, path[i].Name)
+				c.noMember(path[i-1].Pos, path[i].Pos, path[i-1].Name, path[i].Name)
+				c.pathReported = true
 				return nil, nil
 			}
 			if !next.Pub {
 				c.errorf(path[i].Pos, "'%s' is private to module '%s' (M5)", path[i].Name, sym.Mod.Path)
+				c.pathReported = true
 				return nil, nil
 			}
 			sym = next
@@ -822,14 +857,17 @@ func (c *Checker) lookupTypeName(env *typeEnv, path []ast.Ident) (*Symbol, *type
 				v := s.VariantByName(path[i].Name)
 				if v == nil {
 					c.errorf(path[i].Pos, "'%s' has no variant '%s'", s.Name, path[i].Name)
+					c.pathReported = true
 					return nil, nil
 				}
 				return &Symbol{Name: v.Name, Kind: SymType, Type: v, Pub: true}, s
 			}
 			c.errorf(path[i].Pos, "'%s' is not a module or sealed trait", path[i-1].Name)
+			c.pathReported = true
 			return nil, nil
 		default:
 			c.errorf(path[i-1].Pos, "'%s' is not a module", path[i-1].Name)
+			c.pathReported = true
 			return nil, nil
 		}
 	}
@@ -932,8 +970,18 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 			return base
 		}
 		sym, _ := c.lookupTypeName(env, t.Path)
+		if sym == nil && c.pathReported {
+			c.pathReported = false // the path already said what is wrong with it
+			return types.TInvalid
+		}
 		if sym == nil {
-			c.errorf(t.Pos, "unknown type '%s'", pathString(t.Path))
+			hint := ""
+			var fix *source.Fix
+			if len(t.Path) == 1 && env.module != nil {
+				hint = c.suggestUnknown(env.module, t.Path[0].Name)
+				fix = c.unknownFix(env.file, env.module, t.Path[0].Pos, t.Path[0].Name)
+			}
+			c.errorFix(t.Pos, fix, "unknown type '%s'%s", pathString(t.Path), hint)
 			return types.TInvalid
 		}
 		if sym.Kind != SymType {
@@ -1149,6 +1197,15 @@ func (c *Checker) resolveStruct(s *types.Struct) {
 			for _, fld := range s.Fields {
 				if fld.Name == name && !fld.HasDefault {
 					fld.Init = true
+				}
+			}
+		}
+		// `init(value: T)`: its parameters join the constructor's (D73), so
+		// one may not be named like a field the call can also pass
+		for _, prm := range d.InitParams {
+			for _, fld := range s.Fields {
+				if fld.Name == prm.Name.Name && !fld.Init {
+					c.errorf(prm.Name.Pos, "'init' parameter '%s' has the name of a field the constructor already takes; rename one of them (D73)", prm.Name.Name)
 				}
 			}
 		}
@@ -1767,7 +1824,7 @@ func (c *Checker) checkImplSignature(t *FuncTemplate, traitSig *types.Func, trai
 		if p.Name != traitSig.Params[i].Name {
 			c.errorf(md.Params[i].Name.Pos, "parameter must be named '%s' as in trait '%s' (D28: impls inherit the trait's parameter names)", traitSig.Params[i].Name, trait.Name)
 		}
-		if !types.Identical(p.Type, want) {
+		if !types.Identical(p.Type, want) && !types.IsInvalid(p.Type) {
 			c.errorf(md.Params[i].Pos, "parameter '%s' has type '%s' but trait '%s' declares '%s'", p.Name, p.Type, trait.Name, want)
 		} else if p.Variadic != traitSig.Params[i].Variadic {
 			c.errorf(md.Params[i].Pos, "parameter '%s' must be variadic exactly as in trait '%s'", p.Name, trait.Name)
@@ -1841,6 +1898,7 @@ func argsKey(args []types.Type) string {
 
 func (c *Checker) instantiateStruct(tmpl *types.Struct, args []types.Type, span source.Span) *types.Struct {
 	c.resolveStruct(tmpl)
+	c.checkTypeArgBounds(tmpl.Name, tmpl.TypeParams, args, span)
 	key := argsKey(args)
 	if inst, ok := tmpl.Instances[key]; ok {
 		return inst
@@ -1863,6 +1921,7 @@ func (c *Checker) instantiateStruct(tmpl *types.Struct, args []types.Type, span 
 }
 
 func (c *Checker) instantiateSealed(tmpl *types.Sealed, args []types.Type, span source.Span) *types.Sealed {
+	c.checkTypeArgBounds(tmpl.Name, tmpl.TypeParams, args, span)
 	key := argsKey(args)
 	if inst, ok := tmpl.Instances[key]; ok {
 		return inst
@@ -2129,6 +2188,11 @@ func (c *Checker) runRound() *Program {
 			c.prog.Tests = append(c.prog.Tests, inst)
 		}
 	}
+	// tests outside any suite first, so the report does not print one
+	// between two suites' groups (D78); otherwise declaration order
+	sort.SliceStable(c.prog.Tests, func(i, j int) bool {
+		return len(c.prog.Tests[i].Suite) == 0 && len(c.prog.Tests[j].Suite) > 0
+	})
 	// entry point: a package is a program when its root module has `main`
 	entry := c.pkg.Entry
 	if !c.testMode && (c.pkg.NeedMain || entry != nil) {
@@ -2244,7 +2308,7 @@ func (c *Checker) instantiate(t *FuncTemplate, ownerSubst map[*types.TypeParam]t
 	if key != "" {
 		name += "<" + key + ">"
 	}
-	fn := &Func{Name: mangleName(name), Display: t.Name, Sig: sig, Extern: t.Extern, Span: t.Decl.Name.Pos}
+	fn := &Func{Name: mangleName(name), Display: t.Name, Suite: t.Suite, Sig: sig, Extern: t.Extern, Span: t.Decl.Name.Pos}
 	if _, ok := t.Attrs["inline"]; ok {
 		fn.Inline = 1
 	}
@@ -2659,4 +2723,53 @@ func (c *Checker) assocFromMethods(env *typeEnv, d *ast.ImplDecl, trait *types.T
 		}
 	}
 	return nil
+}
+
+// checkTypeArgBounds refuses a generic struct or sealed type instantiated
+// with an argument that does not meet its parameter's bounds —
+// `Box<P>` for `struct Box<T: Comparable>` — at the place that wrote or
+// implied it. An argument that is itself a type parameter is checked
+// where the enclosing generic is instantiated, and an instantiation with
+// no place (a substitution inside the checker) was checked at its source,
+// and so was one inside the standard library, which only passes on the
+// arguments its caller chose (reporting it there would say it twice).
+// During collection the impls may not exist yet, so the check waits.
+func (c *Checker) checkTypeArgBounds(name string, tps []*types.TypeParam, args []types.Type, span source.Span) {
+	if !span.IsValid() || len(tps) != len(args) || c.stdSpan(span) {
+		return
+	}
+	check := func() {
+		f := &fnCtx{c: c}
+		for i, tp := range tps {
+			a := args[i]
+			if types.ContainsTypeParam(a) || types.IsInvalid(a) {
+				continue
+			}
+			for _, bound := range tp.Bounds {
+				if !f.implements(a, bound) {
+					c.errorFix(span, c.implementFix(a, bound), "type '%s' does not implement trait '%s' required by parameter '%s' of '%s'%s", a, bound.Name, tp.Name, name, implementHint(a, bound))
+				}
+			}
+		}
+	}
+	if !c.collected {
+		c.pendingBoundChecks = append(c.pendingBoundChecks, check)
+		return
+	}
+	check()
+}
+
+// stdSpan reports whether a span is in the standard library's source.
+func (c *Checker) stdSpan(span source.Span) bool {
+	if c.stdFiles == nil {
+		c.stdFiles = map[*source.File]bool{}
+		for _, m := range c.pkg.Modules {
+			if m.Std {
+				for _, f := range m.Files {
+					c.stdFiles[f.Source] = true
+				}
+			}
+		}
+	}
+	return c.stdFiles[span.File]
 }

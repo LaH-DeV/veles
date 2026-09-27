@@ -80,7 +80,7 @@ fun rotl(x: u64, k: i64): u64 = (x << k) | (x >> (64 - k))
 // The module's generator, shared by every task — on whichever thread each
 // runs (D66) — so each call takes its lock. A task drawing many numbers
 // in a hot loop is faster with an `Rng` of its own.
-val shared = mutex(Rng.seeded(time.now().toMicros()))
+val shared = Mutex(value: Rng.seeded(time.now().toMicros()))
 
 /// Reseeds the module's shared generator, for a reproducible run.
 public fun seed(n: i64) {

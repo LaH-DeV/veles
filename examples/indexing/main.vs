@@ -16,7 +16,7 @@ struct Counter {
   fun show(): string = "n=${this.n}"
 }
 
-val picks = atomic(0)
+val picks = Atomic(value: 0)
 fun pick(): i64 {
   val _ = picks.update(n => n + 1)
   0

@@ -190,9 +190,12 @@ fun loadConfig(path: string): Config throws IoError | ParseError {
   Config(port: port)
 }
 
+// D78 — a test: a sentence for a name, a test-only vocabulary
+test "a user query returns rows" {
+  expect(1 + 1 == 2)
+}
+
 // D51 — attributes
-@test
-fun userQueryReturnsRows() { }
 
 @deprecated("use parseConfig instead")
 fun oldLoad(path: string): Config throws = loadConfig(path)
@@ -207,4 +210,4 @@ fun typeTests(x: Shape, y: Any) {
 }
 
 public const PI: f64 = 3.14159265358979
-public val counter = atomic(0)  // D66: shared state sits behind a lock
+public val counter = Atomic(value: 0)  // D66: shared state sits behind a lock

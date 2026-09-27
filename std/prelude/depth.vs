@@ -35,7 +35,7 @@ public fun tooDeepMessage(limit: i64): string = "nesting deeper than $limit"
 ///
 /// ```veles
 /// struct Parser {
-///   private depth: Depth = Depth.of(500)
+///   private depth: Depth = Depth(limit: 500)
 ///
 ///   fun parseExpr(): Expr {
 ///     if (!this.depth.enter()) return this.tooDeep()
@@ -60,11 +60,6 @@ public struct Depth {
   public limit:      i64 = maxRecursionDepth
   private var level: i64 = 0
   private var peak:  i64 = 0
-
-  /// A counter at level zero. This is how one is made: the fields it counts
-  /// with are private, so the implicit constructor stays inside the prelude
-  /// (D28).
-  public static fun of(limit: i64 = maxRecursionDepth): Depth = Depth(limit)
 
   /// Goes one level deeper, or reports `false` when `limit` levels are
   /// already open — in which case nothing changed and there is no `leave`

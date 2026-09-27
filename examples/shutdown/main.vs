@@ -68,7 +68,7 @@ struct Resource {
 }
 
 fun app(): http.Handler {
-  val router = http.router()
+  val router = http.Router()
   router.get("/fast", _ => http.Response.text("fast"))
   router.get("/slow", _ => {
     await sleep(Duration.millis(600))

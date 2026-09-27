@@ -26,7 +26,7 @@ Skim Track 1 (the syntax is close to Kotlin's), then:
 8. [Traits and generics](08-traits-and-generics.md) — interfaces without inheritance, stenciled generics, trait objects, the operator traits.
 9. [Sealed types, enums and `when`](09-sealed-types.md) — algebraic data types and closed sets of values, with exhaustive matching.
 10. [Closures and iterators](10-closures-and-iterators.md) — lambdas, captures, lazy pipelines, `Iterable`.
-11. [Modules, packages and tests](11-modules-and-packages.md) — directories as modules, `veles.toml`, `@test`.
+11. [Modules, packages and tests](11-modules-and-packages.md) — directories as modules, `veles.toml`, tests.
 15. [Files, paths and processes](15-files-and-processes.md) — `fs`, `path`, `os`, `StringBuilder`, `IoError`, `time`, `random`.
 
 ## Track 3 — Systems and concurrency
@@ -35,7 +35,7 @@ For readers who want to know what the compiler actually does.
 
 12. [Concurrency](12-concurrency.md) — inferred suspension, `async`/`await`, `scope`, `gather`, `race`, channels, cancellation, `withTimeout`, task-local values.
 13. [Memory, `with`, `unsafe` and C](13-memory-and-ffi.md) — the collector, value vs pointer, cleanup, raw pointers, `extern "C"`.
-14. [Attributes and the test runner](14-attributes-and-testing.md) — `@test`, `@deprecated`, `@mustUse`, `@inline`.
+14. [Attributes and tests](14-attributes-and-testing.md) — `@deprecated`, `@mustUse`, `@inline`; `test "..." { }`, `expect`, `require`, `check`.
 16. [Networking](16-networking.md) — TCP with `net`: one task per connection, `readLine`/`write`, timeouts.
 17. [An HTTP server](17-http.md) — `http`: router, handlers and what their errors mean, static files, keep-alive.
 18. [Codable and JSON](18-codable-and-json.md) — `implement Codable` derives the wire code; `json` reads and writes it, reporting every problem with its path.

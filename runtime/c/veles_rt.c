@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <stdbool.h>
 #include <inttypes.h>
 #if defined(_WIN32)
@@ -244,6 +245,54 @@ bool veles_string_substring(veles_string *out, const char *s, int64_t len, int64
 veles_list *veles_list_new(veles_desc *desc, int64_t cap);
 void veles_list_push(veles_list *l, const void *item);
 
+/* veles_string_split: the parts of s between occurrences of a non-empty
+ * sep, as strings that share s's bytes (D10: the collector follows an
+ * interior pointer). Two passes — count, then fill a list of exactly that
+ * size — and memchr to find a one-byte separator. */
+veles_list *veles_string_split(veles_desc *desc, const char *s, int64_t len, const char *sep, int64_t slen) {
+    int64_t n = 1;
+    for (int64_t i = 0; i + slen <= len;) {
+        const char *hit = slen == 1 ? memchr(s + i, sep[0], (size_t)(len - i)) : NULL;
+        if (slen == 1) {
+            if (!hit) break;
+            n++;
+            i = (hit - s) + 1;
+            continue;
+        }
+        if (memcmp(s + i, sep, (size_t)slen) == 0) {
+            n++;
+            i += slen;
+        } else {
+            i++;
+        }
+    }
+    veles_list *l = veles_list_new(desc, n);
+    veles_string part;
+    int64_t start = 0;
+    for (int64_t i = 0; i + slen <= len;) {
+        int64_t at;
+        if (slen == 1) {
+            const char *hit = memchr(s + i, sep[0], (size_t)(len - i));
+            if (!hit) break;
+            at = hit - s;
+        } else if (memcmp(s + i, sep, (size_t)slen) == 0) {
+            at = i;
+        } else {
+            i++;
+            continue;
+        }
+        part.data = s + start;
+        part.len = at - start;
+        veles_list_push(l, &part);
+        start = at + slen;
+        i = start;
+    }
+    part.data = s + start;
+    part.len = len - start;
+    veles_list_push(l, &part);
+    return l;
+}
+
 /* D18: len() is bytes. These give the Unicode scalar view on demand. */
 int64_t veles_string_char_count(const char *s, int64_t len) {
     int64_t n = 0;
@@ -363,6 +412,56 @@ void veles_string_concat_n(veles_string *out, const veles_string *parts, int64_t
     out->len = len;
 }
 
+/* f64_short_decimal: the common case of float_to_string without a
+ * snprintf/strtod search (which costs ~1 us a value on the Windows CRT).
+ * For |v| in [1e-4, 1e15) — the range printed without an exponent — find
+ * the fewest decimals d such that k = round(v * 10^d) gives back v as
+ * k / 10^d. With |k| < 2^53 and 10^d exact (d <= 22), that division is
+ * correctly rounded, so equality proves "k with d decimals" reads back as
+ * v: the text round-trips, and the first d that works is the shortest in
+ * this notation. Returns the length written into buf (at least 64 bytes),
+ * or 0 when v is outside the fast path and the search must run. */
+static int f64_short_decimal(char *buf, double v) {
+    static const double pow10[] = {1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8,
+                                   1e9, 1e10, 1e11, 1e12, 1e13, 1e14, 1e15, 1e16, 1e17};
+    double a = v < 0 ? -v : v;
+    if (!(a >= 1e-4 && a < 1e15)) return 0; /* also NaN, the infinities and zero */
+    for (int d = 0; d <= 17; d++) {
+        double scaled = a * pow10[d];
+        if (scaled >= 9007199254740992.0) return 0; /* k would not be exact */
+        /* round the exact a * 10^d, not its rounded product, so the digits
+           are the correctly rounded ones printf would give: fma yields the
+           product's rounding error exactly, and scaled - floor(scaled) is
+           exact below 2^53 */
+        double err = fma(a, pow10[d], -scaled);
+        double fl = floor(scaled);
+        double frac = (scaled - fl) + err;
+        double k = frac > 0.5 ? fl + 1 : (frac < 0.5 ? fl : (fmod(fl, 2) == 0 ? fl : fl + 1));
+        if (k / pow10[d] == a) {
+            uint64_t ik = (uint64_t)k;
+            char digits[24];
+            int nd = 0;
+            do {
+                digits[nd++] = (char)('0' + ik % 10);
+                ik /= 10;
+            } while (ik);
+            while (nd <= d) digits[nd++] = '0'; /* at least one digit before the point */
+            int n = 0;
+            if (v < 0) buf[n++] = '-';
+            for (int i = nd - 1; i >= d; i--) buf[n++] = digits[i];
+            buf[n++] = '.';
+            if (d == 0) {
+                buf[n++] = '0';
+            } else {
+                for (int i = d - 1; i >= 0; i--) buf[n++] = digits[i];
+            }
+            buf[n] = 0;
+            return n;
+        }
+    }
+    return 0;
+}
+
 static void float_to_string(veles_string *out, double v, int is_f32) {
     char buf[64];
     /* one spelling on every platform (the MSVC runtime prints -nan(ind)) */
@@ -373,6 +472,13 @@ static void float_to_string(veles_string *out, double v, int is_f32) {
     if (v != 0 && v * 2 == v) { /* only the infinities satisfy this */
         if (v > 0) from_buf(out, "inf", 3); else from_buf(out, "-inf", 4);
         return;
+    }
+    if (!is_f32) {
+        int m = f64_short_decimal(buf, v);
+        if (m > 0) {
+            from_buf(out, buf, m);
+            return;
+        }
     }
     int n = snprintf(buf, sizeof buf, "%.17g", v);
     /* shortest representation that round-trips at the value's own precision */
@@ -435,6 +541,64 @@ void veles_f64_to_string(veles_string *out, double v) { float_to_string(out, v, 
  * are exact inverses. The caller (string.toF64) has checked the grammar;
  * out-of-range text gives an infinity or zero, as the value it names. */
 double veles_parse_f64(const char *s, int64_t len) {
+    /* Clinger's fast path: at most 15 significant digits (so the digits are
+       an exact integer m < 2^53) and a power of ten within 10^22 (exact as a
+       double) — then m * 10^e or m / 10^-e is one correctly rounded
+       operation, the same double strtod gives, for a fraction of its cost */
+    {
+        static const double pow10[] = {1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11,
+                                       1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22};
+        int64_t i = 0;
+        bool neg = false;
+        if (i < len && (s[i] == '-' || s[i] == '+')) neg = s[i++] == '-';
+        uint64_t m = 0;
+        int sig = 0, frac = 0;
+        bool point = false, ok = i < len;
+        for (; i < len; i++) {
+            char c = s[i];
+            if (c == '.' && !point) {
+                point = true;
+                continue;
+            }
+            if (c < '0' || c > '9') break;
+            if (m == 0 && c == '0') {
+                if (point) frac++;
+                continue; /* a leading zero is not significant */
+            }
+            if (++sig > 15) {
+                ok = false;
+                break;
+            }
+            m = m * 10 + (uint64_t)(c - '0');
+            if (point) frac++;
+        }
+        int64_t e = 0;
+        if (ok && i < len && (s[i] == 'e' || s[i] == 'E')) {
+            i++;
+            bool eneg = false;
+            if (i < len && (s[i] == '-' || s[i] == '+')) eneg = s[i++] == '-';
+            for (; i < len && e < 10000; i++) {
+                if (s[i] < '0' || s[i] > '9') break;
+                e = e * 10 + (s[i] - '0');
+            }
+            if (eneg) e = -e;
+        }
+        if (ok && i == len) {
+            int64_t p = e - frac;
+            double v;
+            if (m == 0) {
+                v = 0.0;
+            } else if (p >= 0 && p <= 22) {
+                v = (double)m * pow10[p];
+            } else if (p < 0 && p >= -22) {
+                v = (double)m / pow10[-p];
+            } else {
+                goto slow;
+            }
+            return neg ? -v : v;
+        }
+    }
+slow:;
     char small[128];
     char *buf = len < (int64_t)sizeof small ? small : veles_alloc(len + 1);
     memcpy(buf, s, (size_t)len);
@@ -471,6 +635,14 @@ veles_list *veles_string_bytes(veles_desc *desc, const char *s, int64_t len) {
 static bool veles_utf8_valid(const unsigned char *p, int64_t len) {
     int64_t i = 0;
     while (i < len) {
+        /* text is mostly ASCII: eight bytes with no high bit at a time */
+        while (i + 8 <= len) {
+            uint64_t w;
+            memcpy(&w, p + i, 8);
+            if (w & 0x8080808080808080ull) break;
+            i += 8;
+        }
+        if (i >= len) break;
         unsigned char c = p[i];
         if (c < 0x80) { i++; continue; }
         int n;
@@ -496,6 +668,20 @@ bool veles_bytes_decode_utf8(veles_string *out, veles_list *bytes) {
     memcpy(buf, bytes->data, (size_t)bytes->len);
     out->data = buf;
     out->len = bytes->len;
+    return true;
+}
+
+/* veles_bytes_decode_utf8_range: bytes[from:to] as text in one copy (std
+ * only: a parser taking a string out of its input); false when the range
+ * is out of bounds or not valid UTF-8. */
+bool veles_bytes_decode_utf8_range(veles_string *out, veles_list *bytes, int64_t from, int64_t to) {
+    if (from < 0 || to < from || to > bytes->len) return false;
+    const unsigned char *p = (const unsigned char *)bytes->data + from;
+    if (!veles_utf8_valid(p, to - from)) return false;
+    char *buf = veles_alloc(to - from + 1);
+    memcpy(buf, p, (size_t)(to - from));
+    out->data = buf;
+    out->len = to - from;
     return true;
 }
 

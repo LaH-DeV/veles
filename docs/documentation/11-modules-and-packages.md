@@ -150,6 +150,23 @@ static-libs = ["z"]           # C libraries the package's extern blocks need (ch
 `examples/packages` in the repository is a two-package project you can
 run: `veles run examples/packages/app`.
 
+### API documentation
+
+`///` comments are documentation: on a declaration they describe it, at
+the top of a file they describe the module. `veles doc` renders a
+package's public surface as Markdown — each module a reader outside the
+package can reach (the root and what `exports` lists), each public
+declaration spelled as the editor's hover spells it, its comment, and the
+comments of its documented members:
+
+```bash
+veles doc                 # every module, on standard output
+veles doc . -o api        # api/<module>.md, one file per module
+```
+
+Private members and modules the manifest keeps to itself are left out;
+a package with errors is refused, since its API is not settled.
+
 ## The standard library
 
 `use io` is the only import you need for the tutorials. The **prelude**
@@ -159,38 +176,20 @@ run: `veles run examples/packages/app`.
 
 ## Tests
 
-A function marked `@test` is a test. `veles test <dir>` compiles the
-module with tests included and runs each one as its own task; a test
-passes when it returns, and fails when it throws or panics.
+A test is `test "what it checks" { ... }` in the module it tests, so it
+can call private functions. `veles test <dir>` compiles the module with
+its tests and runs each as its own task; `veles run` and `veles build`
+leave them out. Inside a test, `expect(cond)` records a failure and goes
+on, and `require(x)` unwraps a `T?` or a `Result` or ends the test:
 
 ```veles
 use io
 
-error Mismatch {
-  expected: i64
-  actual:   i64
-}
-
 fun add(a: i64, b: i64) = a + b
 
-fun expectEq(expected: i64, actual: i64) throws Mismatch {
-  if (expected != actual) throw Mismatch(expected, actual)
-}
-
-@test
-fun additionWorks() throws Mismatch {
-  try expectEq(4, add(2, 2))
-}
-
-@test
-fun thisOneFails() throws Mismatch {
-  try expectEq(1, add(1, 1))
-}
-
-@test
-fun panicsAreReported() {
-  val xs = [1]
-  io.println("${xs.at(3) ?: panic("index 3 is out of range")}")
+test "adds small numbers" {
+  expect(add(2, 2) == 4)
+  expect(add(-1, 1) == 0)
 }
 
 fun main() {
@@ -203,23 +202,9 @@ Output:
 ordinary run; tests are skipped
 ```
 
-`veles test` on that module prints:
-
-```text
-test additionWorks ... ok
-test thisOneFails ... FAILED: Mismatch(expected: 1, actual: 2)
-test panicsAreReported ... FAILED: panic: index 3 is out of range
-  at main.vs:27:29
-
-1 passed, 2 failed: thisOneFails, panicsAreReported
-```
-
-and exits non-zero. Tests live next to the code they test, in the same
-module, so they can call private functions. `veles run` and `veles
-build` compile them out.
-
-There is no assertion library in the bootstrap; a small `expectEq`
-throwing a struct, as above, is the idiom. The error value is what gets
-printed, so make it descriptive.
+A module with many tests keeps them in `*.test.vs` files beside its
+source — part of the module, never part of a build.
+[Chapter 14](14-attributes-and-testing.md#writing-tests) has the whole
+vocabulary, the report, helpers and the runner's flags.
 
 Next: [Concurrency](12-concurrency.md), or [Files, paths and processes](15-files-and-processes.md) for the modules a tool needs.

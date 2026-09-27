@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -388,4 +389,86 @@ void veles_test_watch(int64_t timeout_ms, const char *name, int64_t len, int64_t
     watch_deadline = timeout_ms > 0 ? veles_time_monotonic_ns() + timeout_ms * 1000000 : 0;
     veles_cond_signal(watch_cond);
     veles_lock_release(watch_lock);
+}
+
+/* ---- test failures (D78) ---------------------------------------------------
+ * `expect`, `require`, `fail` and the rest record a failure here instead of
+ * ending the test (a soft `expect` lets the test go on), each line prefixed
+ * with the call's location. The runner calls veles_test_begin before a test
+ * and veles_test_take after it, and prints what was recorded. A test may
+ * record from tasks on any thread, hence the lock. */
+
+typedef struct {
+    char *data;
+    int64_t len;
+} veles_test_string;
+
+void *veles_alloc(int64_t size);
+
+static veles_lock *fail_lock;
+static char *fail_buf;
+static int64_t fail_len, fail_cap, fail_count, fail_stopped;
+
+static void fail_append(const char *s, int64_t n) {
+    if (fail_len + n > fail_cap) {
+        int64_t cap = fail_cap ? fail_cap * 2 : 256;
+        while (cap < fail_len + n) cap *= 2;
+        char *grown = realloc(fail_buf, (size_t)cap);
+        if (!grown) return; /* out of memory: the count still says it failed */
+        fail_buf = grown;
+        fail_cap = cap;
+    }
+    memcpy(fail_buf + fail_len, s, (size_t)n);
+    fail_len += n;
+}
+
+void veles_test_begin(void) {
+    if (!fail_lock) fail_lock = veles_lock_new();
+    veles_lock_acquire(fail_lock);
+    fail_len = fail_count = fail_stopped = 0;
+    veles_lock_release(fail_lock);
+}
+
+void veles_test_fail(const char *msg, int64_t len, const char *where, int64_t wlen, int64_t stop) {
+    if (!fail_lock) {
+        /* test code running outside `veles test`: nothing collects it */
+        fprintf(stderr, "%.*s: %.*s\n", (int)wlen, where, (int)len, msg);
+        return;
+    }
+    veles_lock_acquire(fail_lock);
+    fail_append("  ", 2);
+    fail_append(where, wlen);
+    fail_append(": ", 2);
+    fail_append(msg, len);
+    fail_append("\n", 1);
+    fail_count++;
+    if (stop) fail_stopped = 1;
+    veles_lock_release(fail_lock);
+}
+
+/* The failures a test recorded, as one string, and how many; *stopped is
+ * set when one ended the test (the panic that did it is not a failure of
+ * its own). Every line is indented by `indent` more spaces: the test's depth
+ * in its suites (D78). */
+int64_t veles_test_take(veles_test_string *out, int64_t *stopped, int64_t indent) {
+    veles_lock_acquire(fail_lock);
+    int64_t lines = 0;
+    for (int64_t i = 0; i < fail_len; i++) lines += fail_buf[i] == '\n';
+    char *text = veles_alloc(fail_len + lines * indent + 1);
+    int64_t w = 0;
+    for (int64_t i = 0; i < fail_len; i++) {
+        if (i == 0 || fail_buf[i - 1] == '\n') {
+            memset(text + w, ' ', (size_t)indent);
+            w += indent;
+        }
+        text[w++] = fail_buf[i];
+    }
+    text[w] = 0;
+    out->data = text;
+    out->len = w;
+    *stopped = fail_stopped;
+    int64_t n = fail_count;
+    fail_len = fail_count = fail_stopped = 0;
+    veles_lock_release(fail_lock);
+    return n;
 }

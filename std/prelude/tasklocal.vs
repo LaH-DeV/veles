@@ -17,7 +17,7 @@ extern "C" {
 /// piece of work with `withValue`, and read it anywhere inside with `get`:
 ///
 /// ```veles
-/// val requestId = taskLocal("-")
+/// val requestId = TaskLocal(fallback: "-")
 ///
 /// fun handle(req: Request) {
 ///   requestId.withValue(req.id, () => process(req))
@@ -31,10 +31,17 @@ extern "C" {
 /// A binding cannot change while it is in effect; a nested `withValue`
 /// shadows it until it ends. A task started inside sees the values bound
 /// where it was started, for as long as it runs. Outside every binding,
-/// `get` returns the value `taskLocal` was given.
+/// `get` returns the `fallback` it was made with.
 public struct TaskLocal<T: Sendable> {
-  key:      i64
-  fallback: T
+  private key:      i64
+  private fallback: T
+
+  init(fallback: T) {
+    this.key = unsafe {
+      veles_local_key()
+    }
+    this.fallback = fallback
+  }
 
   /// The value bound innermost in the current task, or the fallback.
   public fun get(): T {
@@ -58,14 +65,6 @@ public struct TaskLocal<T: Sendable> {
       return try f()
     }
   }
-}
-
-/// A task-local value whose `get` returns `fallback` outside any binding.
-public fun taskLocal<T: Sendable>(fallback: T): TaskLocal<T> {
-  val key = unsafe {
-    veles_local_key()
-  }
-  TaskLocal(key, fallback)
 }
 
 // One binding in effect: ends — the previous bindings back — when the

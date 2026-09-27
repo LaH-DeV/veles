@@ -114,6 +114,10 @@ struct Point {
   static val unit = Point(x: 1)             // a constant in the type's namespace: Point.unit (public to export; never var)
   private count: i64 = 0                    // private: only Point's own methods/implement/extend blocks; no marker (or `internal`) = the module; public = the package
 }
+struct Shared<T> {
+  private cell: *T
+  init(value: T) { this.cell = &value }     // init parameters join the constructor (D73): Shared(value: 1)
+}
 val p = Point(x: 1)             // named construction (Point(x, y) puns variables named like fields); p == q, "$p" work
 val n = i64.parse("42")         // i64?; Parsable — T.parse(s) in generic code
 
@@ -192,8 +196,8 @@ sorted.binarySearch(x); sorted.binarySearchBy(key, target); sorted.binarySearchW
 sorted.lowerBound(x); sorted.upperBound(x); sorted.partitionPoint(e => e < x)   // insertion points; upperBound - lowerBound is how many times x occurs
 ml.push(x); ml.pop(); ml.set(i, x); ml.insert(i, x); ml.removeAt(i); ml.addAll(ys); ml.sort(); ml.clear(); ml.toList(); xs.toMutable()
 ml.swap(i, j); ml.fill(x); MutableList<bool>.repeat(false, n); MutableList<MutableList<i64>>.make(n, _ => [])
-val q = deque<i64>(); q.addLast(x); q.addFirst(x); q.removeFirst(); q.removeLast(); q.first(); q.last(); q.at(-1); q.len()
-val pq = priorityQueue<i64>(); pq.push(x); pq.pop(); pq.peek(); priorityQueueBy<i64>((a, b) => b.compareTo(a))
+val q = Deque<i64>(); q.addLast(x); q.addFirst(x); q.removeFirst(); q.removeLast(); q.first(); q.last(); q.at(-1); q.len()
+val pq = PriorityQueue<i64>.natural(); pq.push(x); pq.pop(); pq.peek(); PriorityQueue<i64>(compare: (a, b) => b.compareTo(a))
 m.get(k) ?: d; m.get(k) ?: panic("why"); m.getOrDefault(k, d); m.containsKey(k); m.keys(); m.values(); m.entries(); mm.set(k, v); mm.remove(k)
 mm.ref(k)?.bump(); mm.ref(k)?.n += 1   // a pointer to the stored value; get returns a copy
 s.add(x); s.contains(x); s.remove(x); s.toList()
@@ -219,8 +223,8 @@ await sleep(d)                   // a Duration: Duration.millis(100), Duration.s
 t.cancel()                       // stop a task at its next suspension point; its `with` cleanups run, the scope still joins it
 val v = try withTimeout(Duration.seconds(1), () => try fetch())   // R throws E | Timeout; the task is cancelled and unwound before Timeout is thrown
 // leaving a scope body early (return / throw / cancellation) cancels and joins its children
-val m = mutex(state); m.withLock(s => s.n += 1); m.get(); m.set(v)
-val a = atomic(0); a.load(); a.store(1); a.swap(2); a.update(n => n + 1)
+val m = Mutex(value: state); m.withLock(s => s.n += 1); m.get(); m.set(v)
+val a = Atomic(value: 0); a.load(); a.store(1); a.swap(2); a.update(n => n + 1)
 ```
 
 Suspension is inferred; `await` only on `sleep`, `recv`, task handles.
@@ -245,7 +249,7 @@ val text = try fs.readFile(p); try fs.writeFile(p, text); try fs.appendFile(p, "
 fs.exists(p); fs.isFile(p); fs.isDir(p); try fs.listDir(d); try fs.walk(d); try fs.mkdir(d); try fs.remove(p); try fs.rename(a, b)
 path.join(a, b, c); path.join(parts...); path.dir(p); path.base(p); path.stem(p); path.ext(p); path.isAbsolute(p); path.clean(p); path.within(root, p)  // within: the check before opening a file named from outside
 os.args(); os.env("HOME"); os.pid(); try os.hostname(); os.tempDir(); os.exit(1); val r = try os.run("clang", ["--version"]); r.code; r.stdout; r.ok()
-val sb = stringBuilder(); sb.append("a"); sb.appendLine("b"); sb.toString()   // linear-time building
+val sb = StringBuilder(); sb.append("a"); sb.appendLine("b"); sb.toString()   // linear-time building
 ```
 
 Everything that can fail throws `IoError { path, code, detail }`.
@@ -270,7 +274,7 @@ Every waiting call suspends the task; failures throw `IoError` with the address 
 ```veles
 // fragment
 use http
-val app = http.router()
+val app = http.Router()
 app.get("/users/{id}", req => http.Response.json(try find(req.param("id")) ?! http.notFound()))   // Fail → its status, other errors → 500
 app.get("/static/*", http.files("./public"))
 with (listener = try net.listen(host: "", port: 8080)) { http.serve(listener, app.handler()) }
@@ -278,12 +282,30 @@ with (listener = try net.listen(host: "", port: 8080)) { http.serve(listener, ap
 
 ## Attributes (D51)
 
-`@test`, `@deprecated("msg")`, `@mustUse`, `@inline`, `@noinline`.
+`@deprecated("msg")`, `@mustUse`, `@inline`, `@noinline`; for the wire: `@key`, `@skip`, `@required`, `@tag`.
+
+## Tests (D78)
+
+```text
+test "parses a port" {                       // a sentence names it; no signature
+  expect(parsePort("80") == 80)               // soft: records (with both sides) and goes on
+  val cfg = require(load("app.toml"))         // T? or Result: the value, or the test ends
+  expectThrows<RangeError>(() => parsePort("70000"))
+  expectPanics(() => { val _ = [1].at(5) ?: panic("no") })
+  fail("not written yet")                    // ends the test
+}
+test fun expectSorted(xs: List<i64>) { ... }  // helper: test code only, left out of builds
+suite "parser" { test "..." { } suite "..." { } test fun h() { } }  // a group; its helpers are its own
+parser.test.vs                                // a file of tests, the suite "parser"; never built into the program
+veles test --filter "parser / rejects"        // a test's full name: its suites and its own, joined with " / "
+assert(n > 0, "why it must hold")            // anywhere: an invariant; panics with the reason and both sides
+```
 
 ## Tooling
 
 ```text
-veles run <dir>        veles build <dir> -o app [--release]
+veles new <dir>        veles run [dir]        veles build [dir] -o app [--release]
+veles doc [dir] [-o out]   (the public API as Markdown)
 veles check <dir>      veles test <dir> [--filter text] [--timeout 10m]
 veles parse <file>     veles lsp     (editor server)
 veles fmt <paths>      [--check | --stdout]   format in place; [format] in veles.toml: indent = 2 | "tab", max_blank_lines = 1

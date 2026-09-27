@@ -62,6 +62,9 @@ func filterTests(prog *sema.Program, filter string) bool {
 
 // Run executes the pipeline and returns a process exit code.
 func Run(opts Options) int {
+	if opts.Mode == "check" && opts.Fix {
+		return fixUntilDone(opts)
+	}
 	diags := &source.Diagnostics{}
 	pkg, err := sema.LoadPackage(opts.Path, diags)
 	if err != nil {
@@ -70,11 +73,6 @@ func Run(opts Options) int {
 	}
 	if diags.HasErrors() {
 		fmt.Fprint(os.Stderr, diags.Render())
-		// a parse error may carry a fix too (an old spelling: `self`,
-		// `::`, `mut fun`); apply those so one --fix run gets past them
-		if opts.Mode == "check" && opts.Fix {
-			applyAndReport(diags)
-		}
 		return 1
 	}
 	// only build/run need a program; check accepts a library or a module
@@ -86,14 +84,6 @@ func Run(opts Options) int {
 		prog = sema.Check(pkg, diags, opts.Release)
 	}
 	fmt.Fprint(os.Stderr, diags.Render())
-	if opts.Mode == "check" && opts.Fix {
-		// fixes hang off warnings (lints) and off errors for removed forms
-		// with a mechanical replacement; a run with errors applies what it
-		// can, and the next run reports what is left
-		if !applyAndReport(diags) {
-			return 1
-		}
-	}
 	if diags.HasErrors() || prog == nil {
 		return 1
 	}
@@ -112,6 +102,9 @@ func Run(opts Options) int {
 	name := opts.Output
 	if name == "" {
 		name = filepath.Base(strings.TrimSuffix(opts.Path, filepath.Ext(opts.Path)))
+		if pkg.Manifest != nil && pkg.Manifest.Name != "" && !strings.HasSuffix(opts.Path, ".vs") && !strings.HasSuffix(opts.Path, ".vss") {
+			name = pkg.Manifest.Name // a package builds to its own name, wherever it is run from
+		}
 		if name == "." || name == "" {
 			name = "main"
 		}

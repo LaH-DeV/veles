@@ -51,7 +51,7 @@ struct Task {
 
   /// The line as it is stored: the inverse of `parse`.
   fun line(): string {
-    val sb = stringBuilder()
+    val sb = StringBuilder()
     if (this.done) {
       sb.append("x ")
       if (!this.completedOn.isEmpty()) sb.append("${this.completedOn} ")

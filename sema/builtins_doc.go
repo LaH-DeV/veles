@@ -1,6 +1,7 @@
 package sema
 
 import (
+	"sort"
 	"strings"
 	"sync"
 
@@ -312,7 +313,7 @@ func (c *Checker) refBuiltin(span source.Span, recv types.Type, name string) {
 	BuiltinStub()
 	def := stubSpans[d.Recv+"."+name]
 	c.index.Refs = append(c.index.Refs, Ref{Span: span, Def: def, Kind: "fun", Name: name,
-		Detail: "fun " + recv.String() + "." + name + d.Sig + "  (built in)", Doc: d.Doc})
+		Detail: "fun " + recv.String() + "." + name + receiverSig(d.Sig, recv) + "  (built in)", Doc: d.Doc})
 }
 
 // BuiltinMethods lists the catalogued methods of a receiver type: those of
@@ -334,3 +335,126 @@ func BuiltinMethods(t types.Type) []BuiltinDoc {
 // BuiltinFamily names the catalogue family of a receiver type ("string",
 // "List", "MutableMap", "int", ...), or "" for types with no built-ins.
 func BuiltinFamily(t types.Type) string { return builtinFamily(t) }
+
+// basicTypeDocs describes the primitive types for hover.
+var basicTypeDocs = map[types.BasicKind]string{
+	types.Bool:   "`true` or `false`. `&&` and `||` short-circuit; there is no truthiness — a condition is a `bool`.",
+	types.I8:     "A signed 8-bit integer, -128 through 127.",
+	types.I16:    "A signed 16-bit integer, -32768 through 32767.",
+	types.I32:    "A signed 32-bit integer, -2147483648 through 2147483647.",
+	types.I64:    "A signed 64-bit integer, -9223372036854775808 through 9223372036854775807. The type of an integer literal with nothing else to go by.",
+	types.ISize:  "A signed integer the width of a pointer.",
+	types.U8:     "An unsigned 8-bit integer (a byte), 0 through 255. `'a'` is a `u8` literal.",
+	types.U16:    "An unsigned 16-bit integer, 0 through 65535.",
+	types.U32:    "An unsigned 32-bit integer, 0 through 4294967295.",
+	types.U64:    "An unsigned 64-bit integer, 0 through 18446744073709551615.",
+	types.USize:  "An unsigned integer the width of a pointer.",
+	types.F32:    "A 32-bit IEEE 754 floating-point number.",
+	types.F64:    "A 64-bit IEEE 754 floating-point number. The type of a literal with a `.` or an exponent.",
+	types.String: "Immutable UTF-8 text, indexed by byte (D18). Build it with interpolation `\"...$x...\"` or a `StringBuilder`; `s.chars()` walks code points.",
+	types.Unit:   "The type of an expression with no value; a function without `: T` returns it.",
+	types.Never:  "The type of an expression that does not finish: `return`, `break`, `throw`, `panic(...)`. It converts to every type.",
+}
+
+// basicShape spells a primitive type out the way a struct's hover does:
+// every method a value of it has — the compiler's own, then those the
+// prelude's `extend` blocks add — and the traits it implements.
+func (c *Checker) basicShape(t *types.Basic) string {
+	lines := map[string]string{}
+	for _, d := range BuiltinMethods(t) {
+		kw := "fun "
+		if d.Static() {
+			kw = "static fun "
+		}
+		lines[d.Name] = kw + d.Name + receiverSig(d.Sig, t)
+	}
+	for _, ext := range c.extends {
+		if !unify(ext.Target, t, map[*types.TypeParam]types.Type{}) {
+			continue
+		}
+		for name, m := range ext.Methods {
+			if _, dup := lines[name]; dup || m.Decl == nil || !m.Decl.Pub || strings.HasPrefix(name, "$") {
+				continue
+			}
+			lines[name] = funDecl(m)
+		}
+	}
+	names := make([]string, 0, len(lines))
+	for name := range lines {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var sb strings.Builder
+	sb.WriteString("builtin type " + t.Name + " {\n")
+	for _, name := range names {
+		sb.WriteString("  " + strings.TrimPrefix(lines[name], "public ") + "\n")
+	}
+	var impls []string
+	for trait, list := range c.impls {
+		for _, impl := range list {
+			if types.Identical(impl.Target, t) {
+				impls = append(impls, "  implement "+trait.Name+typeArgList(impl, trait))
+			}
+		}
+	}
+	sort.Strings(impls)
+	for _, line := range impls {
+		sb.WriteString(line + "\n")
+	}
+	sb.WriteString("}")
+	return sb.String()
+}
+
+// receiverSig writes a catalogue signature for a concrete receiver: the
+// element type where the catalogue says `T` (`List<i64>.sorted(): List<i64>`),
+// the key and value types for a map's `K` and `V`, the type itself for
+// `Self`.
+func receiverSig(sig string, recv types.Type) string {
+	sub := map[string]string{"Self": recv.String()}
+	switch r := recv.(type) {
+	case *types.List:
+		sub["T"] = r.Elem.String()
+	case *types.Set:
+		sub["T"] = r.Elem.String()
+	case *types.Channel:
+		sub["T"] = r.Elem.String()
+	case *types.Range:
+		sub["T"] = r.Elem.String()
+	case *types.Task:
+		sub["T"] = r.Result.String()
+	case *types.Map:
+		sub["K"] = r.Key.String()
+		sub["V"] = r.Value.String()
+	}
+	var sb strings.Builder
+	for i := 0; i < len(sig); {
+		j := i
+		for j < len(sig) && (sig[j] == '_' || sig[j] >= 'a' && sig[j] <= 'z' || sig[j] >= 'A' && sig[j] <= 'Z' || sig[j] >= '0' && sig[j] <= '9') {
+			j++
+		}
+		if j == i {
+			sb.WriteByte(sig[i])
+			i++
+			continue
+		}
+		word := sig[i:j]
+		if s, ok := sub[word]; ok {
+			word = s
+		}
+		sb.WriteString(word)
+		i = j
+	}
+	return sb.String()
+}
+
+// variantCtorDocs gives the hover of the built-in variant constructors:
+// the declaration, the type it belongs to, and when to write it at all.
+var variantCtorDocs = map[string][3]string{
+	"Ok":   {"Ok(value: T)", "sealed trait Result<T, E>", "A success. Rarely written: a `throws` function's value is its `Ok` (D4); `r is Ok` / `r.ok` smart-cast `r` to the value."},
+	"Err":  {"Err(error: E)", "sealed trait Result<T, E>", "A failure. Inside a `throws` function write `throw e`; `r is Err` / `r.err` smart-cast `r` to the error."},
+	"Some": {"Some(value: T)", "sealed trait Option<T>  // written T?", "A present value of a `T?`. Rarely written: a `T` converts to `T?` where one is expected (D5)."},
+	"None": {"None", "sealed trait Option<T>  // written T?", "The absent value of a `T?`; spelled `null` (D5)."},
+}
+
+// panicDoc is the hover of the built-in `panic`.
+const panicDoc = "Stops the task with `message` and the call's `file:line:col` (D64). For a bug — a state the program's own logic rules out — not for a failure the caller could handle: that is `throws` (D4)."

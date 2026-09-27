@@ -183,7 +183,7 @@ func (p *Parser) expectTerminator() {
 		return
 	}
 	if p.at(lexer.Arrow) {
-		p.errorf(p.span(), "'->' is not an operator; use '=>' (D33)")
+		p.thinArrow(p.span(), "'->' is not an operator; use '=>' (D33)")
 		p.syncStmt()
 		return
 	}
@@ -344,6 +344,14 @@ func withDoc(d ast.Decl, doc string) ast.Decl {
 		d.Doc = doc
 	case *ast.EnumDecl:
 		d.Doc = doc
+	case *ast.TestDecl:
+		if d.Doc == "" {
+			d.Doc = doc
+		}
+	case *ast.SuiteDecl:
+		if d.Doc == "" {
+			d.Doc = doc
+		}
 	}
 	return d
 }
@@ -423,6 +431,26 @@ func (p *Parser) parseDeclKind(attrs []*ast.Attribute, pub, marked bool, which s
 	case lexer.Ident:
 		if p.atErrorDecl() {
 			return p.parseErrorDecl(attrs, pub, start)
+		}
+		if p.cur().Text == "suite" && p.peek(1).Kind == lexer.String {
+			if marked {
+				p.errorf(start, "a suite cannot be %s; it only groups tests", which)
+			}
+			return p.parseSuite(attrs, start)
+		}
+		if p.cur().Text == "test" && p.peek(1).Kind == lexer.String {
+			if marked {
+				p.errorf(start, "a test cannot be %s; nothing calls it", which)
+			}
+			return p.parseTest(attrs, start)
+		}
+		if p.cur().Text == "test" && p.peek(1).Kind == lexer.KwFun {
+			p.next() // test
+			fn := p.parseFun(attrs, funContextFree)
+			fn.Test = true
+			fn.Pub = pub
+			fn.Pos = start.To(fn.Pos)
+			return fn
 		}
 		if p.atExtendDecl() {
 			if marked {
@@ -770,8 +798,9 @@ func (p *Parser) parseStruct(attrs []*ast.Attribute, pub, extern bool, start sou
 			}
 			switch p.peek(at).Kind {
 			case lexer.Ident, lexer.KwVar, lexer.KwVal, lexer.KwProtected:
-				if p.peek(at).Kind == lexer.Ident && p.peek(at).Text == "init" && p.peek(at+1).Kind == lexer.LBrace {
-					// `init { }`: contextual — a field named init is `init: T`
+				if p.peek(at).Kind == lexer.Ident && p.peek(at).Text == "init" && (p.peek(at+1).Kind == lexer.LBrace || p.peek(at+1).Kind == lexer.LParen) {
+					// `init { }` / `init(value: T) { }`: contextual — a field
+					// named init is `init: T`
 					if hasVis {
 						p.errorf(p.span(), "'init' has no visibility: it is not callable, it runs at every construction (D28)")
 						p.next()
@@ -781,6 +810,14 @@ func (p *Parser) parseStruct(attrs []*ast.Attribute, pub, extern bool, start sou
 					}
 					d.InitPos = p.span()
 					p.next() // init
+					if p.at(lexer.LParen) {
+						d.InitParams = p.parseParams()
+						for _, prm := range d.InitParams {
+							if prm.Type == nil {
+								p.errorf(prm.Name.Pos, "an 'init' parameter needs a type: '%s: T'", prm.Name.Name)
+							}
+						}
+					}
 					d.Init = p.parseBlock()
 					break
 				}
@@ -1131,6 +1168,86 @@ func (p *Parser) parseExportedFun(attrs []*ast.Attribute, pub bool, start source
 		p.errorf(fn.Name.Pos, "an 'extern \"C\" fun' is a Veles function C calls, so it needs a body; a C function Veles calls is declared in an 'extern \"C\" { }' block")
 	}
 	return fn
+}
+
+// parseTest parses `test "name" { body }` (D78). `test` is contextual: only
+// `test` followed by a string starts one, so a function or value named
+// `test` stays legal.
+func (p *Parser) parseTest(attrs []*ast.Attribute, start source.Span) ast.Decl {
+	doc := p.takeDoc()
+	p.next() // test
+	t := p.next()
+	d := &ast.TestDecl{Doc: doc, At: t.Span, Name: p.fixedName(t, "test", "test \"parses an empty list\" { ... }")}
+	if len(attrs) > 0 {
+		p.errorf(attrs[0].Pos, "a test takes no attributes")
+	}
+	if !p.at(lexer.LBrace) {
+		p.errorf(p.span(), "expected '{' to open the test's body, found %s", p.cur().Describe())
+		d.Pos = p.spanFrom(start)
+		return d
+	}
+	d.Body = p.parseBlock()
+	d.Pos = p.spanFrom(start)
+	return d
+}
+
+// fixedName is the text of a test's or a suite's name: a plain string,
+// neither interpolated nor blank.
+func (p *Parser) fixedName(t lexer.Token, what, example string) string {
+	name := ""
+	for _, part := range t.Parts {
+		if part.IsExpr {
+			p.errorf(t.Span, "a %s's name is fixed text; '${...}' has nothing to interpolate here", what)
+			return name
+		}
+		name += part.Text
+	}
+	if strings.TrimSpace(name) == "" {
+		p.errorf(t.Span, "a %s needs a name that says what it checks: %s", what, example)
+	}
+	return name
+}
+
+// parseSuite parses `suite "name" { ... }` (D78): tests, suites and `test fun`
+// helpers. `suite` is contextual, like `test`.
+func (p *Parser) parseSuite(attrs []*ast.Attribute, start source.Span) ast.Decl {
+	doc := p.takeDoc()
+	p.next() // suite
+	t := p.next()
+	d := &ast.SuiteDecl{Doc: doc, At: t.Span, Name: p.fixedName(t, "suite", "suite \"the router\" { ... }")}
+	if len(attrs) > 0 {
+		p.errorf(attrs[0].Pos, "a suite takes no attributes")
+	}
+	if _, ok := p.expect(lexer.LBrace); !ok {
+		d.Pos = p.spanFrom(start)
+		return d
+	}
+	for {
+		p.skipSemis()
+		if p.at(lexer.RBrace, lexer.EOF) {
+			break
+		}
+		before := p.pos
+		inner := p.parseDecl()
+		switch x := inner.(type) {
+		case *ast.TestDecl, *ast.SuiteDecl:
+			d.Decls = append(d.Decls, inner)
+		case *ast.FunDecl:
+			if !x.Test {
+				p.errorf(x.Name.Pos, "a suite holds tests, suites and helpers; a helper is 'test fun %s', and a function the program uses belongs outside the suite", x.Name.Name)
+			}
+			d.Decls = append(d.Decls, inner)
+		case *ast.BadDecl:
+		default:
+			p.errorf(inner.Span(), "a suite holds tests ('test \"...\" { }'), 'test fun' helpers and other suites")
+		}
+		if p.pos == before {
+			p.next()
+		}
+	}
+	p.expect(lexer.RBrace)
+	d.Pos = p.spanFrom(start)
+	return d
 }
 
 // atErrorDecl reports whether the cursor is at an `error Name` declaration.

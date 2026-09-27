@@ -37,7 +37,7 @@ public fun wordCounts(text: string): Map<string, i64> {
 /// Run-length encoding: "aaabcc" -> "3a1b2c".
 public fun runLengthEncode(s: string): string {
   val chars = s.chars()
-  val out = stringBuilder()
+  val out = StringBuilder()
   var current = chars.first() ?: return ""
   var run = 1
   loop (c in chars.drop(1)) {
@@ -55,7 +55,7 @@ public fun runLengthEncode(s: string): string {
 
 /// Caesar cipher over ASCII letters; other bytes pass through.
 public fun caesar(s: string, shift: i64): string {
-  val out = stringBuilder()
+  val out = StringBuilder()
   val by = (((shift % 26) + 26) % 26) as u8
   loop (byte in s.bytes()) {
     val shifted = when {

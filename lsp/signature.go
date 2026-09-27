@@ -203,6 +203,9 @@ func signatureOf(ref *sema.Ref) (signatureInfo, bool) {
 			}
 			prms = append(prms, parameterInfo{label})
 		}
+		for _, label := range sema.InitParamLabels(t, "…") {
+			prms = append(prms, parameterInfo{label}) // `init(value: T)` (D73)
+		}
 	default:
 		return signatureInfo{}, false
 	}

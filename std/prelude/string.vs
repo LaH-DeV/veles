@@ -53,16 +53,7 @@ extend string {
   /// code points; a `sep` that never occurs yields the whole text.
   public fun split(sep: string): List<string> {
     if (sep.isEmpty()) return this.chars()
-    var out: MutableList<string> = []
-    var start: i64 = 0
-    loop {
-      val at = this.indexOf(sep, from: start)
-      if (at < 0) break
-      out.push(this.substring(start, at) ?: "")
-      start = at + sep.len()
-    }
-    out.push(this.substring(start, this.len()) ?: "")
-    out.toList()
+    stringSplit(this, sep)
   }
 
   /// The text before and after the first `sep`, or `null` when `sep` does

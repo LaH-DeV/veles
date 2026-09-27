@@ -6,6 +6,7 @@ import (
 	"sort"
 
 	"github.com/LaH-DeV/veles/format"
+	"github.com/LaH-DeV/veles/sema"
 	"github.com/LaH-DeV/veles/source"
 )
 
@@ -21,15 +22,31 @@ func ApplyFixes(diags *source.Diagnostics) (int, error) {
 	byFile := map[*source.File][]edit{}
 	n := 0
 	order := 0
+	// two fixes that make the same edit (both add 'use codec') make it once
+	type key struct {
+		file       *source.File
+		start, end int
+		text       string
+	}
+	seen := map[key]bool{}
 	for _, d := range diags.Items {
 		if d.Fix == nil {
 			continue
 		}
-		n++
+		counted := false
 		for _, e := range d.Fix.Edits {
 			if e.Span.File == nil || e.Span.File.Embedded {
 				continue
 			}
+			if !counted {
+				n++ // a fix with somewhere to write
+				counted = true
+			}
+			k := key{e.Span.File, e.Span.Start, e.Span.End, e.NewText}
+			if seen[k] {
+				continue
+			}
+			seen[k] = true
 			byFile[e.Span.File] = append(byFile[e.Span.File], edit{e, order})
 			order++
 		}
@@ -70,14 +87,35 @@ func ApplyFixes(diags *source.Diagnostics) (int, error) {
 	return n, nil
 }
 
-// applyAndReport runs ApplyFixes for `veles check --fix` and prints how
-// many were applied; false when writing a file failed.
-func applyAndReport(diags *source.Diagnostics) bool {
-	n, err := ApplyFixes(diags)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "veles:", err)
-		return false
+// fixUntilDone is `veles check --fix`: check, apply every fix, and again
+// while a pass still finds one — a fix often uncovers the next (an error
+// in a declaration stops the checker before the bodies, so what the
+// bodies need is only seen once it is gone) — then report what is left.
+// Bounded, so a fix that undoes another cannot loop forever.
+func fixUntilDone(opts Options) int {
+	total := 0
+	for pass := 0; pass < 8; pass++ {
+		diags := &source.Diagnostics{}
+		pkg, err := sema.LoadPackage(opts.Path, diags)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "veles:", err)
+			return 1
+		}
+		if !diags.HasErrors() {
+			sema.Check(pkg, diags, opts.Release)
+		}
+		n, err := ApplyFixes(diags)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "veles:", err)
+			return 1
+		}
+		if n == 0 {
+			break
+		}
+		total += n
 	}
-	fmt.Fprintf(os.Stderr, "%d fix(es) applied\n", n)
-	return true
+	opts.Fix = false
+	code := Run(opts)
+	fmt.Fprintf(os.Stderr, "%d fix(es) applied\n", total)
+	return code
 }

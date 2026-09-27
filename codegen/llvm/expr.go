@@ -1483,6 +1483,14 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		v := g.newTmp()
 		g.emit("%s = call i64 @veles_string_char_count(ptr %s, i64 %s)", v, sp, sl)
 		return v
+	case "string.split":
+		s := g.expr(e.Args[0])
+		sp, sl := g.strPtrLen(s)
+		sep := g.expr(e.Args[1])
+		pp, pl := g.strPtrLen(sep)
+		v := g.newTmp()
+		g.emit("%s = call ptr @veles_string_split(ptr %s, ptr %s, i64 %s, ptr %s, i64 %s)", v, g.arrayDescOf(types.TString), sp, sl, pp, pl)
+		return v
 	case "string.chars":
 		s := g.expr(e.Args[0])
 		sp, sl := g.strPtrLen(s)
@@ -1491,6 +1499,21 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		return v
 	case "panic":
 		g.panicValueAt(g.expr(e.Args[0]), g.where(e.Span))
+		return "zeroinitializer"
+	case "test.fail", "test.stop":
+		// a test's failure, recorded with the call's location (D78); a stop
+		// then ends the test by panicking, which the runner does not report
+		// as a failure of its own
+		mp, ml := g.strPtrLen(g.expr(e.Args[0]))
+		wp, wl := g.strPtrLen(g.stringConst(g.where(e.Span)))
+		stop := 0
+		if e.Op == "test.stop" {
+			stop = 1
+		}
+		g.emit("call void @veles_test_fail(ptr %s, i64 %s, ptr %s, i64 %s, i64 %d)", mp, ml, wp, wl, stop)
+		if stop == 1 {
+			g.panicValueAt(g.stringConst("the test stopped"), g.where(e.Span))
+		}
 		return "zeroinitializer"
 	case "atomicLockFree", "atomicLoad", "atomicStore", "atomicSwap", "atomicCompareAndSwap":
 		return g.atomic(e)
@@ -1507,6 +1530,17 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		v := g.newTmp()
 		g.emit("%s = call ptr @veles_string_bytes(ptr %s, ptr %s, i64 %s)", v, g.arrayDescOf(types.TU8), sp, sl)
 		return v
+	case "list.decodeUtf8Range":
+		l := g.expr(e.Args[0])
+		lo := g.expr(e.Args[1])
+		hi := g.expr(e.Args[2])
+		out := g.alloca(strType)
+		g.emit("store %s zeroinitializer, ptr %s", strType, out)
+		ok := g.newTmp()
+		g.emit("%s = call i1 @veles_bytes_decode_utf8_range(ptr %s, ptr %s, i64 %s, i64 %s)", ok, out, l, lo, hi)
+		val := g.newTmp()
+		g.emit("%s = load %s, ptr %s", val, strType, out)
+		return g.makeNullable(e.Type().(*types.Nullable), ok, val)
 	case "list.decodeUtf8":
 		l := g.expr(e.Args[0])
 		out := g.alloca(strType)

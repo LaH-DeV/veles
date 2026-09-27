@@ -23,7 +23,7 @@ fun work(id: i64, d: Duration): i64 {
 
 fun main() {
   scope {
-    val a = async work(1, Duration.millis(20))
+    val a = async work(1, Duration.millis(100))
     val b = async work(2, Duration.millis(10))
     io.println("both started")
     io.println("results ${await a} ${await b}")
@@ -489,7 +489,7 @@ it to unwind before throwing — the rule above — so whatever `f` had open
 is closed by the time you see the `Timeout`. It is `scope` + `async` +
 `race` written once; go-to-definition shows the seven lines.
 
-## Values that follow a task: `taskLocal`
+## Values that follow a task: `TaskLocal`
 
 A request id, a trace context or a logger is needed deep inside the
 work, by functions that have no other reason to take it as a parameter.
@@ -500,7 +500,7 @@ tasks started there — reads it with `get`:
 ```veles
 use io
 
-val requestId = taskLocal("-")
+val requestId = TaskLocal(fallback: "-")
 
 fun log(msg: string) {
   io.println("[${requestId.get()}] $msg")
@@ -542,7 +542,7 @@ Output:
 [-] done
 ```
 
-- `taskLocal(fallback)` is declared once, usually at module level; `get`
+- `TaskLocal(fallback: v)` is declared once, usually at module level; `get`
   returns the fallback outside every binding.
 - A binding cannot be changed while it is in effect, only shadowed: a
   nested `withValue` wins until it ends, and then the outer value is
@@ -635,8 +635,8 @@ fun bump(m: Mutex<Counter>, total: Atomic<i64>, times: i64) {
 }
 
 fun main() {
-  val shared = mutex(Counter(hits: 0))
-  val total = atomic(0)
+  val shared = Mutex(value: Counter(hits: 0))
+  val total = Atomic(value: 0)
   scope {
     loop (_ in 0..<4) {
       async bump(shared, total, 1000)
@@ -664,8 +664,8 @@ Module state that changes is a `val` holding a lock:
 ```veles
 // fragment
 var served = 0              // error: module-level 'var served' is shared by every task …
-val served = atomic(0)      // ok: served.update(n => n + 1)
-val cache = mutex(MutableMap<string, string>())
+val served = Atomic(value: 0)      // ok: served.update(n => n + 1)
+val cache = Mutex(value: MutableMap<string, string>())
 ```
 
 ## How it compiles

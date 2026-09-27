@@ -5,7 +5,8 @@ report.md .md report notes
 a/b/c a/b /abs true
 listed: [a.txt, report.md]
 renamed: [report.md, z.txt]
-failed: No such file or directory (missing.txt) code true
+failed: No such file or directory (missing.txt) code true kind NotFound
+settings: # defaults
 cleaned: true
 process: pid true, host named true, temp is a dir true
 exit=0

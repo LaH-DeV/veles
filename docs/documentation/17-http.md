@@ -26,10 +26,10 @@ fun request(port: i64, target: string): string throws IoError | net.TooLong {
 }
 
 fun main() throws IoError | net.TooLong {
-  val app = http.router()
+  val app = http.Router()
   app.get("/", req => http.Response.text("hello ${req.query.get("name") ?: "world"}"))
   app.get("/users/{id}", req => http.Response.json("{\"id\": \"${req.param("id")}\"}"))
-  app.get("/secret", req => throw http.Fail(status: 403, text: "not for you"))
+  app.get("/secret", req => throw http.Fail(status: http.Status.forbidden, text: "not for you"))
   with (listener = try net.listen()) {
     scope {
       val server = async http.serve(listener, app.handler(), log: false)
@@ -50,7 +50,7 @@ HTTP/1.1 403 Forbidden | not for you
 HTTP/1.1 404 Not Found | not found
 ```
 
-- `http.router()` collects routes; `get`/`post`/`put`/`delete`/`any` take
+- `http.Router()` collects routes; `get`/`post`/`put`/`delete`/`any` take
   a pattern and a handler. `{id}` captures one path segment into
   `req.param("id")`; a final `*` captures the rest under `req.param("*")`.
   A path that matches a pattern with another method answers 405 with an
@@ -68,6 +68,14 @@ HTTP/1.1 404 Not Found | not found
   `body: List<u8>` and `text()`; `Response` is built with `text`, `html`,
   `json`, `bytes`, `empty(status)`, `redirect`, and adjusted with
   `withHeader`.
+- Statuses, methods and header names are named values, not numbers and
+  strings: `http.Status.notFound`, `http.Method.post`,
+  `http.Header.cacheControl`. Each is an open set — `http.Status(code: 418)`
+  and `http.Method(name: "PROPFIND")` are as good as the constants — and a
+  `Status` prints as its status line does, `404 Not Found`, with
+  `code`, `reason()` and `isSuccess()`/`isClientError()`/… to ask about it.
+  A number written where a `Status` is wanted is an error whose fix names
+  the constant: `status: 201` becomes `status: http.Status.created`.
 
 ## Testing a handler
 
@@ -81,19 +89,20 @@ same panic boundary, and returns what the client would receive:
 use http, io
 
 fun main() {
-  val app = http.router()
+  val app = http.Router()
   app.get("/notes/{id}", req => http.Response.text("note ${req.param("id")}"))
-  app.post("/notes", req => http.Response.text("saved ${try req.text()}", status: 201))
+  app.post("/notes", req => http.Response.text("saved ${try req.text()}", status: http.Status.created))
   app.get("/crash", _ => panic("a bug"))
   val h = app.handler()
-  loop ((method, target) in [("GET", "/notes/7"), ("HEAD", "/notes/7"), ("DELETE", "/notes/7"), ("GET", "/crash")]) {
+  val get = http.Method.get
+  loop ((method, target) in [(get, "/notes/7"), (http.Method.head, "/notes/7"), (http.Method.delete, "/notes/7"), (get, "/crash")]) {
     show("$method $target", http.call(h, method, target))
   }
-  show("POST /notes", http.call(h, "POST", "/notes", body: "buy milk", headers: ["Content-Type": "text/plain"]))
+  show("POST /notes", http.call(h, http.Method.post, "/notes", body: "buy milk", headers: ["Content-Type": "text/plain"]))
 }
 
 fun show(what: string, resp: http.Response) {
-  val allow = resp.headers.get("allow")
+  val allow = resp.headers.get(http.Header.allow)
   val text = resp.body.decodeUtf8() ?: "?"
   io.println("$what → ${resp.status}" + (if (allow == null) "" else " [allow: $allow]") + (if (text.isEmpty()) "" else " $text"))
 }
@@ -101,11 +110,11 @@ fun show(what: string, resp: http.Response) {
 
 Output (the panic's line goes to standard error):
 ```text
-GET /notes/7 → 200 note 7
-HEAD /notes/7 → 200
-DELETE /notes/7 → 405 [allow: GET, HEAD, OPTIONS] method not allowed
-GET /crash → 500 internal server error
-POST /notes → 201 saved buy milk
+GET /notes/7 → 200 OK note 7
+HEAD /notes/7 → 200 OK
+DELETE /notes/7 → 405 Method Not Allowed [allow: GET, HEAD, OPTIONS] method not allowed
+GET /crash → 500 Internal Server Error internal server error
+POST /notes → 201 Created saved buy milk
 ```
 
 Middleware is part of the handler `app.handler()` returns, so it runs
@@ -149,7 +158,7 @@ task boundary: a `Mutex` around the mutable state, captured as a `val`:
 
 ```veles
 // fragment
-val hits = mutex(0)
+val hits = Mutex(value: 0)
 app.get("/hits", req => http.Response.text("${hits.withLock(n => { *n += 1; *n })}"))
 ```
 
@@ -201,7 +210,7 @@ fun request(port: i64, target: string, extra: string): string throws IoError | n
 }
 
 fun main() throws IoError | net.TooLong {
-  val app = http.router()
+  val app = http.Router()
   app.wrap(http.requestId())                                        // outermost
   app.wrap(http.timeout(Duration.millis(50)))
   app.wrap(next => req => next(req).withHeader("x-served-by", "veles"))

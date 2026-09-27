@@ -170,6 +170,22 @@ recommendation; nothing below is built until the user answers.
 
 ---
 
+## Phase 5 — The user's cleanup notes (2026-09-27)
+
+From the user's side notes of 2026-09-27; decisions D73–D75.
+
+| # | Task | Acceptance |
+|---|---|---|
+| 5.1 | Same-named types read apart (note 1) | `throws hex.Invalid \| base64.Invalid`, never `Invalid \| Invalid`; mismatch messages likewise; sema test |
+| 5.2 | Hover for built-ins (note 3) | primitive types show doc + methods + implements; `Ok`/`Err`/`Some`/`None`, `panic` hover; built-in method signatures substituted for the receiver; lsp test |
+| 5.3 | Constructors instead of factories, no decision needed (note 2) | M5 v0.30 across modules; `StringBuilder()`, `Deque<T>()`, `http.Router()`, `Depth(limit:)`, `json.JsonEncoder()`; old calls error with a fix; tree migrated |
+| 5.4 | D73 `init(params)` | parser/formatter/AST dump, sema (params in the constructor, scope in the block, name clash with a passable field refused), hover/signature help show them; `Mutex`/`Atomic`/`TaskLocal`/`PriorityQueue` converted, factories removed with fixes, tree migrated, docs 05 + stdlib + cheat sheet |
+| 5.5 | D74 http named values | `Status`, `Method`, `Header` in `std/http`; every public status/method typed; examples/httpd, docs 17, stdlib reference |
+| 5.6 | D75 slim prelude | `std/codec`, `std/recursion`, `CLayout` in `std/ffi`; derived code needs no import; tree migrated; stdlib reference regrouped |
+| 5.7 | CLI: path optional, flags anywhere | `veles run` in a package directory; `veles check --fix <path>` |
+
+---
+
 ## Phase 4 — The large items, in order
 
 1. Multi-threaded executor (D35) — the throughput multiplier; `Mutex`,
@@ -531,3 +547,201 @@ is noisy today). `examples/algorithms` cross-checks it against
 `sortedWith` for i64/u8/string at 10 sizes around the run boundaries.
 An insertion-run pre-pass in the generic `sortedWith` was tried and
 measured no gain; not kept.
+**Phase 5 (user notes of 2026-09-27) — 5.1–5.4 and 5.7, 2026-09-27.**
+(1) Same-named types read apart: `types.Distinct` spells a named type
+with its module when another type in the same message shares its name —
+`throws base64.Invalid | hex.Invalid` was `Invalid | Invalid` (the user's
+"the same error multiple times"); the union's order breaks name ties by
+module. (2) Hover for the compiler's own names: primitive types show a
+description, every method (catalogue + prelude `extend` blocks) and the
+traits they implement; `Ok`/`Err`/`Some`/`None` and `panic` hover; a
+built-in method's signature is written for its receiver
+(`List<i64>.sorted(): List<i64>`, was `List<T>`). (3) M5 v0.30 (a
+`private` field with a default is left to it, one without is given by
+the call) held only inside the module; it holds across modules now, so
+`StringBuilder()`, `Deque<T>()`, `http.Router()`, `Depth(limit: n)`,
+`json.JsonEncoder()` are constructors; the factories are removed and an
+old call is an error with a fix (`sema/removed.go`). (4) D73 built:
+`init(params)`; `Mutex(value:)`, `Atomic(value:)`, `TaskLocal(fallback:)`,
+`PriorityQueue<T>(compare:)`, `PriorityQueue<T>.natural()`; generic
+inference and puns see init parameters; a derived `Decodable` is refused
+when `init` needs an argument. **Found on the way: a generic struct's or
+sealed type's bounds were never checked** — `Box<P>` for `struct Box<T:
+Comparable>` compiled; `checkTypeArgBounds` now checks every instantiation
+with a source position (deferred past collection, silent inside std,
+whose generics only pass on their caller's choice). (5) CLI: the path is
+optional for build/run/check/test (the current directory) and flags may
+precede it (`veles check --fix x.vs` said "unknown flag x.vs").
+Tests: sema TestSameNamedTypesAreQualified, TestRemovedFactories,
+TestInitParameters, TestStructTypeArgBounds, TestPrivateFieldsAndTheConstructorAcrossModules;
+lsp TestBuiltinNamesHover; parser TestInitParams; a format style case.
+**5.5 — D74 built, 2026-09-27.** `std/http/values.vs`: `Status` (47
+constants with RFC 9110 names — 413 is "Content Too Large" now —,
+`reason()`, `isSuccess()`…, prints `404 Not Found`, a code outside
+100..999 panics), `Method` (nine constants), `Header` (lower-case name
+constants). Every public status/method in `std/http` is typed; routes keep
+`Method?` (null = any), `Router.patch` added; `reasonOf` removed (error
+naming `Status(code: n).reason()`). The status line and the log lines
+still print the number. DX found on the way: a mismatch into a one-field
+value type now says how to build one and lists its constants, and a
+literal matching a constant (`status: 201`) gets that constant with a fix
+(`http.Status.created`), spelled as the reader's module names it.
+examples/httpd migrated with `veles check --fix`; its expected output
+changed only in the reason phrases. Test: sema TestHttpNamedValues.
+**5.6 — D75 built, 2026-09-27.** The declarations stay in the prelude's
+sources (its own `Encodable` impls and the derived code need them in one
+unit), and `sema/prelude_home.go` gives 27 names a home module: they go
+into that module's scope instead of the universe. `std/codec`,
+`std/recursion` are new modules whose files hold only documentation;
+`CLayout` joins `std/ffi`. Derived code and the checker's lowering look
+names up in the prelude module itself (`preludeSym`), so `implement
+Codable` needs no import. An unknown name that has a home says where
+(`unknown type 'Value'; did you mean 'codec.Value'? (add 'use codec' ...)`),
+and the "parameter has type '<invalid>'" error that used to follow a
+hand-written `encode(to: Encoder)` is gone. Completion: `codec.` offers
+them, the global list does not. Migrated: std json/jwt/time, examples
+codable/crypto/fuzz/recursion, docs 18/19, the stdlib reference (new
+`codec` and `recursion` sections). Tests: sema TestSlimPrelude, lsp
+TestCompletionOfPreludeHomes; TestDerivation's sources now `use codec`.
+**DX follow-ups, 2026-09-27.** (1) `veles check --fix` runs to a
+fixpoint (up to 8 passes) and reports what is left once: a fix often
+uncovers the next — an error in a declaration stops the checker before
+the bodies — so one run now settles what took several (nested index
+forms, D75 names). Identical edits from different fixes are applied once.
+(2) An unknown name the prelude writes for a module gets a fix that
+qualifies it and adds the `use` (above the first declaration's doc
+comment, or into the existing `use` block); only for those names — any
+other "did you mean" is a guess, and `--fix` applies every fix.
+(3) A binding whose value failed to check is still declared (as unknown):
+`loop (x in <bad>)` and `val (a, b) = <bad>` no longer report every use
+of the names. Tests: driver TestCheckFixQualifiesModuleNames (and the two
+fix tests now pin one-run convergence), sema TestNoCascadeFromABadBinding.
+**`veles new`, 2026-09-27.** `veles new <dir>` writes `veles.toml`,
+`main.vs` (a function, `main`, a passing `@test`) and `.gitignore`; the
+name must be an identifier (dependents write it in `use`); a non-empty
+directory is refused. `veles build` in a package names the executable
+after the package (it was `main` when run as `veles build` from inside).
+Docs 01 + cheat sheet; driver TestNew.
+**Performance: json and strings, 2026-09-27.** Measured by phase: a
+float took 1.2 µs to print (a printf/strtod search) and the JSON decoder
+paid a bounds-checked list access per byte. Fast paths in the runtime
+(shortest-digits printing, Clinger parsing, 8-byte ASCII UTF-8 check,
+one-pass `split`) and in `std/json` (pointer cursor, direct integers,
+one-copy strings via the std-only `listDecodeUtf8Range`). json 2.0× →
+0.9× Go, strings 1.7× → 1.4×; other rows unchanged. Both float paths
+were checked against the old code / `strtod` on millions of values in a
+standalone C harness; `examples/text` pins the edge cases. Output change:
+an exact tie in the last printed digit now rounds half to even on every
+platform (the Microsoft CRT rounded it away from zero).
+Also: docs 12's first concurrency example relied on a 10 ms gap between
+two sleeps and failed once on a loaded machine; the gap is 90 ms now.
+**Testing design — investigated, open, 2026-09-27.** Proposed a built-in
+`assert`; the user asked for a deeper look (test-only helpers, whether
+`@test` should be a `test` form). `veles-testing-design.md` lays out
+today's gaps, seven languages, five questions with options and examples,
+and a recommendation. Checklist §9 item 15. Nothing built.
+**Diagnostics that fix themselves, 2026-09-27.** (1) "type 'P' does not
+implement trait 'Encodable'" (and Decodable, Comparable; also "cannot
+order by 'P'") carries a fix inserting `implement Encodable` into the
+user's struct — the compiler derives the rest — and the hint says so
+instead of `{ ... }`. (2) A generic instance's failure names the element:
+"'List<T>' implements 'Encodable' when 'T' does, and 'Tag' does not",
+with the fix on `Tag`. (3) `try f() ?? x`: one error, "'??' handles the
+error itself; drop the 'try'", with the fix, instead of two unrelated
+ones. (4) `time.Duration` / `json.Value`: "'Duration' is global (the
+prelude): write 'Duration'" (fix) / "it is 'codec.Value'"; the "unknown
+type" that followed a failed qualified path is gone. (5) No "cannot infer
+type parameter" after an argument already failed; no unused-name warning
+from derived code (`struct E { implement Codable }` warned about `k`).
+Pinned: driver TestCheckFixDerivesMissingImplements (a broken program →
+one `check --fix` → runs), sema TestUnmetBoundThroughAnImpl,
+TestMemberOfTheWrongModule, TestDerivedCodeHasNoWarnings.
+**`veles doc`, 2026-09-27.** `veles doc [dir] [-o out]`: the package's
+public API as Markdown — each module an outside reader can reach (root and
+`exports`; `Package.LoadAll` loads modules nothing imports), each public
+declaration in source order as the hover spells it from outside
+(`sema.DocPackage`, reusing `shapeFrom`/`funDecl`/`globalDecl`), its `///`
+comment and its documented members; private members and unexported
+modules left out; a package with errors refused. Docs 11 + 01 + cheat
+sheet; driver TestDoc. Checklist §6 ticked.
+**Fuzzing, 2026-09-27.** FuzzFormat found `if (c) { !return }` formatted
+as `!(return)`, which did not parse: a bare `return` now also ends at `)`,
+`]` or `,`, where it stands as an expression. The input is kept in
+`format/testdata/fuzz`. FuzzCheckMutated ran 3.5 min (30k inputs) clean.
+**LSP navigation, 2026-09-27.** Go to type definition (`sema.TypeDecl`:
+through `?`, `*`, tasks and containers to the first declared type; a
+call goes to its result's type), go to implementation (`Index.Impls`,
+filled after checking even when the package has errors: a trait → the
+implements the author wrote, a sealed trait → its variants, a trait
+method → each implementing method) and folding ranges (from tokens:
+bracket pairs across lines, comment runs, `use` runs). lsp
+TestTypeDefinition, TestImplementation, TestFoldingRanges.
+**Quick fix: `@skip`, 2026-09-27.** "cannot derive 'Encodable' for 'Job':
+field 'onDone' is a function…" carries "Mark 'onDone' @skip" when the
+field has a default; without one no fix is offered, since the edit would
+only trade the error for "a @skip field needs a default". sema
+TestSkipFixForAnUncodableField (applies the fix and re-checks).
+**`->` for `=>`, 2026-09-27.** Kotlin's `1 -> "one"` in a `when` or
+`race` arm was four errors per arm ("expected '=>'", then "expected
+newline between arms" for each arm after it). Now one error per arrow,
+"'->' is not an operator; an arm is 'pattern => value' (D33)", with the
+fix, parsed as `=>` so the rest checks; the two older `->` errors
+(expression, statement end) carry the fix too. parser
+TestThinArrowInArms.
+**D76 `IoError.kind` + D77 `Weekday`, 2026-09-27** (user decisions, note
+#5). `IoKind` (17 members, `Other = 0`) sits in the prelude beside
+`IoError`, which gains `public kind: IoKind = IoKind.Other`; the runtime's
+`veles_io_kind` (in `veles_net.c`, the one file that sees errno and the
+Winsock codes; every errno case `#ifdef`-guarded) maps the number, and
+`os.ioError` fills it; `net`'s not-UTF-8 line is `InvalidData`. driver
+TestIoErrorKinds builds a program and checks NotFound / AddressInUse /
+ConnectionRefused (Windows; Linux not run). `time.Weekday` (ISO, Monday =
+1) is what `DateTime.weekday()` returns; `formatHttp` indexes by it.
+`examples/files` shows the default-on-missing idiom, `examples/time`
+prints day names; both regenerated. Docs 15, 20, stdlib reference.
+**D78 tests, 2026-09-27** (user decision: the recommended combination of
+`veles-testing-design.md`). Parser: `test "sentence" { }` (contextual;
+interpolated or empty names refused) and `test fun`; AST dump, formatter,
+grammar. Sema (`testing.go`, `testing_words.go`): a test is a synthesized
+function with an inferred `throws`, named by its sentence; duplicate names
+per module refused; `@test fun` errors with a fix to `test "words"`
+(`parsesURLQuickly` → "parses URL quickly"). The vocabulary lowers to HIR
+plus synthesized syntax over hidden locals: `expect`/`check` capture both
+sides of a comparison, `require` unwraps `T?`/`Result` or stops,
+`expectThrows<E>` (compile-time refusal when the body cannot throw `E`),
+`expectPanics` (through `gather` and a private prelude `runTestBody`),
+`fail`. Test code (test, `test fun`, `*.test.vs`, lambdas in them) is the
+only place the words and test helpers are allowed. Runtime: per-test
+failure buffer under a lock; the runner prints each test's recorded
+failures and counts a test with any as failed. `*.test.vs` never reaches
+`build`/`run`. LSP: hover for the words, tests in the outline. Migrated:
+`examples/testing` (six tests, all pass), syntax tour, `veles new`
+template, docs 01/11/14 (14 rewritten; its four stray table rows above the
+title moved into the table), index, cheat sheet, README. Pinned: driver
+TestTestVocabulary (exact report), TestTestRunner (new form), sema
+TestTestDeclarations, parser TestTestDecl, format "tests (D78)", lsp
+TestTestsInTheEditor. Known limits in checklist §11: test output not
+captured; `expectPanics` body must be sendable; a helper's failure reports
+the helper's line.
+**D78 amended: `assert`, 2026-09-27** (user: "the everywhere available
+'check' should be called 'assert' (and it should check condition and
+require string explanation like panic)"). `assert(cond, "why")`: the
+reason is required (one argument is an error saying so), evaluated only
+on failure, and leads the panic — `panic: <why>`, then `assert(cond)` and
+both sides of a comparison. `check(...)` with nothing declared under that
+name is an error naming `assert`; a user's own `check` is untouched
+(httpd and chapter 12 declare one). Example, docs 14, cheat sheet, spec,
+checklist; sema TestTestDeclarations.
+**D78 amended: suites, 2026-09-27** (user: "both" — blocks and files;
+report grouped, indented). `suite "name" { }` (contextual, parser checks
+it holds only tests, suites and `test fun`), AST dump, formatter, grammar,
+LSP outline (nested). Sema: a suite's helpers live in a scope of its own
+between the file's and its tests' (`FuncTemplate.SuiteScope`, unique
+mangled names), and "unknown function" names the suite a helper belongs
+to; qualified names `a / b / test`, unique per module; a `*.test.vs` file
+is the suite of its stem. Runner: headings when a test enters a suite,
+tests and recorded failures indented by depth (`veles_test_take` indents),
+tests outside suites first. driver TestTestSuites (exact report, filter by
+suite), sema TestTestSuites, parser TestSuiteDecl, format "suites",
+lsp outline; docs 14 "Suites", cheat sheet, `examples/testing` suite
+"ports". Per-test setup/teardown: rejected as proposed, open (§9 item 16).

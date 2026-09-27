@@ -116,7 +116,7 @@ fun handle(conn: net.Conn, store: Mutex<MutableMap<string, string>>) throws IoEr
 }
 
 fun server(listener: net.Listener, connections: i64) throws IoError | net.TooLong {
-  val store = mutex(MutableMap<string, string>())
+  val store = Mutex(value: MutableMap<string, string>())
   scope {
     loop (_ in 0..<connections) {
       val conn = try listener.accept()

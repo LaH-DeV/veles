@@ -189,5 +189,37 @@ func implementHint(t types.Type, trait *types.Trait) string {
 	if st.Module == "std" || strings.HasPrefix(st.Module, "std.") || strings.HasPrefix(st.Module, "<") {
 		return ""
 	}
+	if trait.Module == "std.prelude" && (trait.Name == "Encodable" || trait.Name == "Decodable" || trait.Name == "Comparable") {
+		// the compiler writes the body (D58)
+		return fmt.Sprintf("; add 'implement %s' inside 'struct %s' — the compiler derives it", trait.Name, st.Name)
+	}
 	return fmt.Sprintf("; add 'implement %s { ... }' inside 'struct %s'", trait.Name, st.Name)
+}
+
+// implementFix answers "type 'P' does not implement trait 'Encodable'"
+// with the one line that makes it true when the compiler can write the
+// rest (D58): `implement Encodable` inside the struct's body, derived.
+// Only for a struct of the user's own source and a derivable trait; any
+// other trait needs methods only the author can write.
+func (c *Checker) implementFix(t types.Type, trait *types.Trait) *source.Fix {
+	st, ok := t.(*types.Struct)
+	if !ok || c.derivable(trait) == "" {
+		return nil
+	}
+	d, _ := templateOf(st).Decl.(*ast.StructDecl)
+	if d == nil || !d.Pos.IsValid() || d.Pos.File.Embedded || d.Pos.End < 1 {
+		return nil
+	}
+	src := d.Pos.File.Content
+	brace := d.Pos.End - 1
+	if brace >= len(src) || src[brace] != '}' {
+		return nil
+	}
+	line := strings.LastIndexByte(src[:brace], '\n') + 1
+	at, text := brace, "\n  implement "+trait.Name+"\n"
+	if strings.TrimSpace(src[line:brace]) == "" {
+		at, text = line, "  implement "+trait.Name+"\n" // the brace has a line of its own
+	}
+	fix := fixReplace("Add 'implement "+trait.Name+"' to 'struct "+st.Name+"' (derived)", source.Span{File: d.Pos.File, Start: at, End: at}, text)
+	return fix
 }

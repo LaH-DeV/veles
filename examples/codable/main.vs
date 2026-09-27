@@ -3,7 +3,7 @@
 // same derived code would drive a database row or the environment, since
 // the traits are format-agnostic. Every problem in a document comes back
 // at once, with its path.
-use io, json
+use codec, io, json
 
 enum Role {
   Admin
@@ -53,7 +53,7 @@ struct Money {
   amount:   i64
   currency: string
   implement Codable {
-    fun encode(to: Encoder) throws EncodeError = try to.writeString("${this.amount} ${this.currency}")
+    fun encode(to: codec.Encoder) throws EncodeError = try to.writeString("${this.amount} ${this.currency}")
   }
 }
 
@@ -98,12 +98,12 @@ fun main() throws EncodeError | DecodeError {
     is Ok(s)  => io.println("unexpected: $s")
     is Err(e) => io.println("shape: ${e.message()}")
   }
-  io.println(try json.encode(Page(items: [Version(major: 1, minor: 2)], total: 1), json.Options(keys: KeyStyle.SnakeCase)))
+  io.println(try json.encode(Page(items: [Version(major: 1, minor: 2)], total: 1), json.Options(keys: codec.KeyStyle.SnakeCase)))
 
   // enums by name or by number: the format's choice
   io.println(try json.encode([Role.Admin, Role.Member]))
-  io.println(try json.encode([Role.Admin, Role.Member], json.Options(enums: EnumStyle.Number)))
-  io.println("${try json.decode<List<Role>>("[1, 0]", json.Options(enums: EnumStyle.Number))}")
+  io.println(try json.encode([Role.Admin, Role.Member], json.Options(enums: codec.EnumStyle.Number)))
+  io.println("${try json.decode<List<Role>>("[1, 0]", json.Options(enums: codec.EnumStyle.Number))}")
 
   // hand-written encode, derived decode; derived ordering
   io.println(try json.encode(Money(amount: 5, currency: "EUR")))
@@ -128,8 +128,8 @@ fun main() throws EncodeError | DecodeError {
     is Ok(v)  => io.println("unexpected: $v")
     is Err(e) => io.println("parse:   ${e.message()}")
   }
-  var nested: Value = VInt(value: 1)
-  loop (_ in 0..<200) nested = VList(items: [nested])
+  var nested: codec.Value = codec.VInt(value: 1)
+  loop (_ in 0..<200) nested = codec.VList(items: [nested])
   when (json.encode(nested, json.Options(maxDepth: 8))) {
     is Ok(t)  => io.println("unexpected: $t")
     is Err(e) => io.println("encode:  ${e.message()}")
@@ -138,15 +138,15 @@ fun main() throws EncodeError | DecodeError {
     is Ok(_)  => io.println("unexpected")
     is Err(e) => io.println("toValue: ${e.message()}")
   }
-  when (json.fromValue<Value>(nested, json.Options(maxDepth: 8))) {
+  when (json.fromValue<codec.Value>(nested, json.Options(maxDepth: 8))) {
     is Ok(_)  => io.println("unexpected")
     is Err(e) => io.println("fromValue: ${e.message()}")
   }
-  io.println("within the limit: ${try json.encode(VList(items: [VList(items: [VInt(value: 1)])]), json.Options(maxDepth: 8))}")
+  io.println("within the limit: ${try json.encode(codec.VList(items: [codec.VList(items: [codec.VInt(value: 1)])]), json.Options(maxDepth: 8))}")
   try durations()
 }
 
-// A Duration travels in the format's DurationStyle: "90.5s" unless the
+// A Duration travels in the format's codec.DurationStyle: "90.5s" unless the
 // options say otherwise; every style reads back to the same nanosecond.
 struct Job {
   name:    string
@@ -157,7 +157,7 @@ struct Job {
 
 fun durations() throws EncodeError | DecodeError {
   val ds = [Duration.seconds(90) + Duration.millis(500), Duration.zero, Duration.nanos(-1), Duration.hours(49) + Duration.nanos(1), Duration.millis(250)]
-  loop (style in DurationStyle.values()) {
+  loop (style in codec.DurationStyle.values()) {
     val o = json.Options(durations: style)
     var line = "$style:"
     loop (d in ds) {
@@ -168,12 +168,12 @@ fun durations() throws EncodeError | DecodeError {
     io.println(line)
   }
   // refusals, each named with its path
-  loop ((style, text) in [(DurationStyle.Seconds, "{\"name\": \"x\", \"timeout\": \"1m30s\"}"), (DurationStyle.Iso8601, "{\"name\": \"x\", \"timeout\": \"P1M\"}"), (DurationStyle.Iso8601, "{\"name\": \"x\", \"timeout\": \"PT1.5M30S\"}"), (DurationStyle.Iso8601, "{\"name\": \"x\", \"timeout\": \"PT\"}"), (DurationStyle.Seconds, "{\"name\": \"x\", \"timeout\": 90}"), (DurationStyle.Millis, "{\"name\": \"x\", \"timeout\": 1e300}")]) {
+  loop ((style, text) in [(codec.DurationStyle.Seconds, "{\"name\": \"x\", \"timeout\": \"1m30s\"}"), (codec.DurationStyle.Iso8601, "{\"name\": \"x\", \"timeout\": \"P1M\"}"), (codec.DurationStyle.Iso8601, "{\"name\": \"x\", \"timeout\": \"PT1.5M30S\"}"), (codec.DurationStyle.Iso8601, "{\"name\": \"x\", \"timeout\": \"PT\"}"), (codec.DurationStyle.Seconds, "{\"name\": \"x\", \"timeout\": 90}"), (codec.DurationStyle.Millis, "{\"name\": \"x\", \"timeout\": 1e300}")]) {
     when (val r = json.decode<Job>(text, json.Options(durations: style))) {
       is Ok  => io.println("unexpectedly read ${r.timeout}")
       is Err => io.println("$style refuses: ${r.message()}")
     }
   }
   io.println(try json.encode(Job(name: "y", timeout: Duration.seconds(5), retry: Duration.millis(1500))))
-  io.println("${(try json.decode<Job>("{\"name\": \"z\", \"timeout\": \"P1DT2H\"}", json.Options(durations: DurationStyle.Iso8601))).timeout}")
+  io.println("${(try json.decode<Job>("{\"name\": \"z\", \"timeout\": \"P1DT2H\"}", json.Options(durations: codec.DurationStyle.Iso8601))).timeout}")
 }

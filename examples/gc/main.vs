@@ -83,7 +83,7 @@ fun main() {
   val numbers = (0..<200000).iterator().toList()
   val joined = numbers.join(",")
   val replaced = joined.replace(",", "; ")
-  val sb = stringBuilder()
+  val sb = StringBuilder()
   loop (n in numbers) sb.append("$n,")
   io.println("text ${joined.len()} ${replaced.len()} ${sb.len()} ${replaced.substring(0, 12) ?: ""}")
 }

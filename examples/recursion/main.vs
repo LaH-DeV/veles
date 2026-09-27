@@ -5,18 +5,18 @@
 // of unknown depth: `((((((...1...))))))` costs one frame per bracket, and
 // Veles runs on the C stack and does not grow it. Without a bound, a file
 // of 50 000 brackets is a segmentation fault — the one failure mode a
-// program that reads other people's input may not have. With `Depth` it is
+// program that reads other people's input may not have. With `recursion.Depth` it is
 // an ordinary error, reported where it happened, in the sentence every
 // other limit in the library uses.
 
-use io
+use io, recursion
 
 /// The grammar refused the input because it nested too far.
 error TooDeep {
   public limit: i64
   /// The byte offset the parser had reached.
   public at: i64
-  fun message(): string = "at byte ${this.at}: ${tooDeepMessage(this.limit)}"
+  fun message(): string = "at byte ${this.at}: ${recursion.tooDeepMessage(this.limit)}"
 }
 
 /// `expr := term ('+' term)*` and `term := digits | '(' expr ')'`, which is
@@ -25,8 +25,8 @@ struct Calc {
   src:     string
   var pos: i64 = 0
   // deliberately small, so the example's output fits on a page; a real
-  // parser passes `maxRecursionDepth` or a fraction of it
-  depth: Depth = Depth.of(16)
+  // parser passes `recursion.maxRecursionDepth` or a fraction of it
+  depth: recursion.Depth = recursion.Depth(limit: 16)
 
   fun parseExpr(): i64 throws TooDeep {
     // every path out of this body leaves the level it entered, except the
@@ -91,7 +91,7 @@ fun main() {
   run(justUnder, "15 brackets")
 
   io.println("-- the counter on its own --")
-  var d = Depth.of(3)
+  var d = recursion.Depth(limit: 3)
   io.println("  limit ${d.limit}, at ${d.depth()}")
   io.println("  three enters: ${d.enter()} ${d.enter()} ${d.enter()}, now at ${d.depth()}")
   io.println("  the fourth:   ${d.enter()}, still at ${d.depth()}")

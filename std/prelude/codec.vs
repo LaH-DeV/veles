@@ -20,7 +20,7 @@ public struct Problem {
 
   /// The path as an RFC 6901 JSON pointer: `/user/address/2/zip`.
   public fun pointer(): string {
-    val out = stringBuilder()
+    val out = StringBuilder()
     loop (part in splitPath(this.path)) {
       out.append("/")
       out.append(part.replace("~", "~0").replace("/", "~1"))
@@ -39,7 +39,7 @@ const openFrame = "codec: a derived body calls this only between a begin and its
 /// `a["x.y"]` is one part.
 fun splitPath(path: string): List<string> {
   val parts: MutableList<string> = []
-  val cur = stringBuilder()
+  val cur = StringBuilder()
   var i = 0
   val n = path.len()
   loop (i < n) {
@@ -147,7 +147,7 @@ public enum KeyStyle {
 public fun styleKey(name: string, style: KeyStyle): string = when (style) {
   KeyStyle.AsWritten => name
   KeyStyle.SnakeCase => {
-    val out = stringBuilder()
+    val out = StringBuilder()
     var i = 0
     loop (i < name.len()) {
       val b = name.byteAt(i)
@@ -162,7 +162,7 @@ public fun styleKey(name: string, style: KeyStyle): string = when (style) {
     out.toString()
   }
   KeyStyle.CamelCase => {
-    val out = stringBuilder()
+    val out = StringBuilder()
     var up = false
     var i = 0
     loop (i < name.len()) {

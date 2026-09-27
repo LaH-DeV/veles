@@ -42,7 +42,7 @@
 /// bignum arithmetic or a native binding, and encryption (JWE) is a
 /// different specification. `HS256` covers a server that issues its own
 /// tokens.
-use base64, crypto, json, time
+use base64, codec, crypto, json, time
 
 /// The HMAC algorithms of RFC 7518. The name on the wire is the member
 /// name: `"HS256"`.
@@ -107,10 +107,10 @@ public struct Claims {
   /// `jti` — a unique id, for a replay list.
   public id: string? = null
   /// Every claim that is not one of the above.
-  public extra: Map<string, Value> = [:]
+  public extra: Map<string, codec.Value> = [:]
 
   /// A private claim by name: `claims.claim("role")?.asString()`.
-  public fun claim(name: string): Value? = this.extra.get(name)
+  public fun claim(name: string): codec.Value? = this.extra.get(name)
 
   /// A private claim that should be text, or `null` when it is missing or
   /// is something else.
@@ -168,42 +168,42 @@ public fun sign(
 ): string throws EncodeError {
   checkKey(key, algorithm, "jwt.sign")
 
-  val header: MutableMap<string, Value> = [:]
-  header.set("alg", VString(value: "$algorithm"))
-  header.set("typ", VString(value: "JWT"))
+  val header: MutableMap<string, codec.Value> = [:]
+  header.set("alg", codec.VString(value: "$algorithm"))
+  header.set("typ", codec.VString(value: "JWT"))
   val kid = keyId
-  if (kid != null) header.set("kid", VString(value: kid))
+  if (kid != null) header.set("kid", codec.VString(value: kid))
 
   val payload = claimsToObject(claims)
-  val signing = base64.encodeUrl((try json.encode(VObject(fields: header.toMap()))).bytes()) + "." +
+  val signing = base64.encodeUrl((try json.encode(codec.VObject(fields: header.toMap()))).bytes()) + "." +
     base64.encodeUrl((try json.encode(payload)).bytes())
   signing + "." + mac(algorithm, key, signing).toBase64Url()
 }
 
-fun claimsToObject(claims: Claims): Value {
-  val out: MutableMap<string, Value> = [:]
+fun claimsToObject(claims: Claims): codec.Value {
+  val out: MutableMap<string, codec.Value> = [:]
   loop ((name, v) in claims.extra) {
     out.set(name, v)
   }
   val iss = claims.issuer
-  if (iss != null) out.set("iss", VString(value: iss))
+  if (iss != null) out.set("iss", codec.VString(value: iss))
   val sub = claims.subject
-  if (sub != null) out.set("sub", VString(value: sub))
+  if (sub != null) out.set("sub", codec.VString(value: sub))
   // one audience is written as a string, several as a list (RFC 7519 4.1.3)
   when (claims.audience) {
     []    => { }
-    [one] => out.set("aud", VString(value: one))
-    else  => out.set("aud", VList(items: claims.audience.map(a => VString(value: a))))
+    [one] => out.set("aud", codec.VString(value: one))
+    else  => out.set("aud", codec.VList(items: claims.audience.map(a => codec.VString(value: a))))
   }
   val exp = claims.expiresAt
-  if (exp != null) out.set("exp", VInt(value: exp))
+  if (exp != null) out.set("exp", codec.VInt(value: exp))
   val nbf = claims.notBefore
-  if (nbf != null) out.set("nbf", VInt(value: nbf))
+  if (nbf != null) out.set("nbf", codec.VInt(value: nbf))
   val iat = claims.issuedAt
-  if (iat != null) out.set("iat", VInt(value: iat))
+  if (iat != null) out.set("iat", codec.VInt(value: iat))
   val jti = claims.id
-  if (jti != null) out.set("jti", VString(value: jti))
-  VObject(fields: out.toMap())
+  if (jti != null) out.set("jti", codec.VString(value: jti))
+  codec.VObject(fields: out.toMap())
 }
 
 // ---------------------------------------------------------------------------
@@ -268,7 +268,7 @@ public fun verify(token: string, key: List<u8>, options: Options = Options()): C
 ///
 /// Nothing in here is trustworthy — it is unsigned text from the caller of
 /// your API. Use it to look a key up, then `verify`.
-public fun readHeader(token: string): Value throws Invalid {
+public fun readHeader(token: string): codec.Value throws Invalid {
   val parts = token.split(".")
   val [headerPart, _, _] = parts else throw Invalid(
     message: "jwt: a compact token has three parts, found ${parts.len()}",
@@ -288,20 +288,20 @@ fun decodePart(part: string, what: string): string throws Invalid {
   )
 }
 
-fun parseObject(text: string, what: string): Value throws Invalid {
+fun parseObject(text: string, what: string): codec.Value throws Invalid {
   val v = try json.parse(text) ?! Invalid(message: "jwt: the $what is not JSON", reason: Reason.Malformed)
-  if (v !is VObject) {
+  if (v !is codec.VObject) {
     throw Invalid(message: "jwt: the $what is not a JSON object", reason: Reason.Malformed)
   }
   v
 }
 
 /// The registered claims out of a payload object; everything else lands in
-/// `extra` untouched, as the `Value` it was.
-fun readClaims(payload: Value): Claims throws Invalid {
+/// `extra` untouched, as the `codec.Value` it was.
+fun readClaims(payload: codec.Value): Claims throws Invalid {
   val fields = when (payload) {
-    is VObject => payload.fields
-    else       => throw Invalid(
+    is codec.VObject => payload.fields
+    else             => throw Invalid(
       message: "jwt: the payload is not a JSON object",
       reason: Reason.Malformed,
     )
@@ -313,7 +313,7 @@ fun readClaims(payload: Value): Claims throws Invalid {
   var notBefore: i64? = null
   var issuedAt: i64? = null
   var who: List<string> = []
-  val extra: MutableMap<string, Value> = [:]
+  val extra: MutableMap<string, codec.Value> = [:]
   loop ((name, v) in fields) {
     when (name) {
       "iss" => issuer = try text(v, "iss")
@@ -329,12 +329,12 @@ fun readClaims(payload: Value): Claims throws Invalid {
   Claims(issuer, subject, audience: who, expiresAt, notBefore, issuedAt, id, extra: extra.toMap())
 }
 
-fun text(v: Value, name: string): string throws Invalid =
+fun text(v: codec.Value, name: string): string throws Invalid =
   v.asString() ?: throw Invalid(message: "jwt: '$name' is not a string", reason: Reason.MissingClaim)
 
 /// A NumericDate: seconds since the epoch, which the specification allows
 /// to be fractional — the fraction is dropped.
-fun seconds(v: Value, name: string): i64 throws Invalid {
+fun seconds(v: codec.Value, name: string): i64 throws Invalid {
   val whole = v.asI64()
   if (whole != null) return whole
   val fraction = v.asF64() ?: throw Invalid(
@@ -345,11 +345,11 @@ fun seconds(v: Value, name: string): i64 throws Invalid {
 }
 
 /// `aud` is one string, or a list of them (RFC 7519 §4.1.3).
-fun audience(v: Value): List<string> throws Invalid {
+fun audience(v: codec.Value): List<string> throws Invalid {
   val one = v.asString()
   if (one != null) return [one]
   when (v) {
-    is VList => {
+    is codec.VList => {
       val out: MutableList<string> = []
       loop (item in v.items) {
         out.push(item.asString() ?: throw Invalid(
@@ -359,7 +359,7 @@ fun audience(v: Value): List<string> throws Invalid {
       }
       out.toList()
     }
-    else     => throw Invalid(
+    else           => throw Invalid(
       message: "jwt: 'aud' is neither a string nor a list of strings",
       reason: Reason.MissingClaim,
     )

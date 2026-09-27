@@ -480,3 +480,38 @@ func (p *Package) loadStdFromDisk(dir, name string) (*Module, bool) {
 	m.Std = true
 	return m, true
 }
+
+// LoadAll loads every module of the package — each directory under the
+// root holding `.vs` files — whether anything imports it or not: what
+// `veles doc` documents. A directory with a manifest of its own is another
+// package and is skipped, as are hidden directories.
+func (p *Package) LoadAll() {
+	if p.Script != "" {
+		return
+	}
+	filepath.WalkDir(p.Root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || !d.IsDir() {
+			return nil
+		}
+		if path != p.Root {
+			if strings.HasPrefix(d.Name(), ".") || d.Name() == "node_modules" {
+				return filepath.SkipDir
+			}
+			if _, err := os.Stat(filepath.Join(path, "veles.toml")); err == nil {
+				return filepath.SkipDir
+			}
+		}
+		rel := p.modulePathOf(path)
+		if rel == "" {
+			return nil // the root module is loaded already
+		}
+		if _, loaded := p.Modules[p.KeyPrefix+rel]; loaded {
+			return nil
+		}
+		if m, ok := p.loadLocal(rel); ok {
+			p.Modules[m.Path] = m
+			p.loadImports(m)
+		}
+		return nil
+	})
+}

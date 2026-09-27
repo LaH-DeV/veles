@@ -68,19 +68,19 @@ must be a `val` holding one of these — a module-level `var` is an error.
 ```veles
 // fragment
 public struct Mutex<T> {
+  init(value: T)                         // Mutex(value: 0)
   public fun withLock<R>(f: fun(*T): R): R
   public fun get(): T
   public fun set(value: T)
 }
-public fun mutex<T>(value: T): Mutex<T>
 
 public struct Atomic<T> {
+  init(value: T)                         // Atomic(value: 0)
   public fun load(): T
   public fun store(value: T)
   public fun swap(value: T): T           // the value it replaced
   public fun update(f: fun(T): T): T     // f of the value, stored as one step; the new value
 }
-public fun atomic<T>(value: T): Atomic<T>
 
 public trait Sendable { }   // derived from the type's shape; a bound, never implemented by hand
 ```
@@ -106,16 +106,16 @@ can stand in for a value: `val x = xs.at(i) ?: panic("index $i")`. A panic
 prints its message and, on the next line, `at file:line:col` relative to the
 package root (D64).
 
-### Recursion depth
+### Recursion depth — module `recursion` (D75)
 
 ```veles
 // fragment
+use recursion   // recursion.Depth(limit: 500), recursion.maxRecursionDepth
 public val maxRecursionDepth: i64 = 1000         // the default bound
 public fun tooDeepMessage(limit: i64): string    // "nesting deeper than 64"
 
 public struct Depth {
   public limit: i64 = maxRecursionDepth
-  public static fun of(limit: i64 = maxRecursionDepth): Depth
   public fun enter(): bool     // false at the limit, and then there is nothing to leave
   public fun leave()
   public fun depth(): i64
@@ -134,7 +134,7 @@ decoder, encoder and parser in the library uses them.
 A walk that already keeps a stack compares its length against a limit and
 reports `tooDeepMessage(limit)`; that is what `std/json` does, with
 `Options.maxDepth` (64) as its own policy. A walk whose depth is only its
-call frames — a recursive descent parser — counts them with `Depth.of(n)`,
+call frames — a recursive descent parser — counts them with `Depth(limit: n)`,
 where `enter` and `leave` pair like a push and a pop on every path out of
 the body except a throw, which abandons the walk anyway. `examples/recursion`
 is that parser, in forty lines.
@@ -155,12 +155,17 @@ error union directly.
 
 ```veles
 // fragment
-public error IoError { public path: string; public code: i64; public detail: string }
+public error IoError { public path: string; public code: i64; public detail: string; public kind: IoKind = IoKind.Other }
+public enum IoKind { Other = 0, NotFound, PermissionDenied, AlreadyExists, NotADirectory, IsADirectory, DirectoryNotEmpty,
+  ConnectionRefused, ConnectionReset, ConnectionAborted, TimedOut, AddressInUse, AddressNotAvailable,
+  BrokenPipe, Interrupted, InvalidInput, InvalidData }
 ```
 
-`IoError` is what `fs` and `os` throw: `detail` is the system's description
-("No such file or directory"), `path` the file or program involved, `code`
-the platform error number; `message()` is `"detail: path"`.
+`IoError` is what `fs`, `os` and `net` throw: `kind` is which failure,
+portably (D76) — decide by it; `detail` is the system's description
+("No such file or directory"), `path` the file, program or address
+involved, `code` the platform's own error number (errno, or a Winsock code
+on Windows), for logs; `message()` is `"detail: path"`.
 
 ### The operator traits
 
@@ -198,15 +203,10 @@ receiver and is called on the type (`Point.origin()`, `Stack<i64>.of(1)`).
 
 ```veles
 // fragment
-public trait Encodable { fun encode(to: Encoder) throws EncodeError }
-public trait Decodable { static fun decode(from: Decoder): Self throws DecodeError }
+public trait Encodable { fun encode(to: codec.Encoder) throws EncodeError }
+public trait Decodable { static fun decode(from: codec.Decoder): Self throws DecodeError }
 public trait Codable : Encodable + Decodable { }   // `implement Codable` in a struct body derives both; `implement Codable for pkg.T` at top level
-public trait Encoder { format(); enums(); keys(); beginObject(); key(name); endObject(); beginList(); endList(); writeI64/U64/F64/Bool/String/Null(v) }
-public trait Decoder { format(); enums(); keys(); peek(): Kind; beginObject(); nextKey(): string?; endObject(); beginList(); hasNext(); endList(); readI64/U64/F64/Bool/String/Null(); skip(); path(); problem(msg); problemAt(path, msg); problems() }
-public error EncodeError { message, path }; public error DecodeError { problems: List<Problem> }; struct Problem { path, message; pointer() }
-public enum EnumStyle { Name, Number }; public enum DurationStyle { Seconds, Iso8601, Text, Nanos, Millis }; public enum KeyStyle { AsWritten, SnakeCase, CamelCase }; public enum Kind { Null, Bool, Int, Float, String, List, Object }
-public sealed trait Value   // VNull, VBool, VInt, VFloat, VString, VList, VObject; get(k), at(i), asString/asI64/asF64/asBool(), isNull()
-ValueEncoder.of(format, enums, keys, durations); ValueDecoder.of(v, format, enums, keys, durations)   // a Value as the sink / the source
+public error EncodeError { message, path }; public error DecodeError { problems: List<codec.Problem> }
 ```
 
 The wire traits ([chapter 18](../18-codable-and-json.md)). Implemented
@@ -214,14 +214,31 @@ by the prelude for the numbers, `bool`, `string`, `T?`, `List`,
 `MutableList`, `Map<string, V>` and `MutableMap<string, V>`; derived for
 structs and sealed traits by an empty `implement`; automatic for enums.
 `Comparable` is derived the same way. A struct field takes `@key`, `@skip`
-and `@required`; a sealed trait `@tag`.
+and `@required`; a sealed trait `@tag`. Deriving needs no import; the
+machinery below is module `codec` (D75).
+
+### Module `codec`
+
+```veles
+// fragment
+use codec
+public trait Encoder { format(); enums(); keys(); beginObject(); key(name); endObject(); beginList(); endList(); writeI64/U64/F64/Bool/String/Null(v) }
+public trait Decoder { format(); enums(); keys(); peek(): Kind; beginObject(); nextKey(): string?; endObject(); beginList(); hasNext(); endList(); readI64/U64/F64/Bool/String/Null(); skip(); path(); problem(msg); problemAt(path, msg); problems() }
+public struct Problem { path, message; pointer() }; public struct Problems   // what a decoder records
+public enum EnumStyle { Name, Number }; public enum DurationStyle { Seconds, Iso8601, Text, Nanos, Millis }; public enum KeyStyle { AsWritten, SnakeCase, CamelCase }; public enum Kind { Null, Bool, Int, Float, String, List, Object }
+public sealed trait Value   // VNull, VBool, VInt, VFloat, VString, VList, VObject; get(k), at(i), asString/asI64/asF64/asBool(), isNull()
+ValueEncoder.of(format, enums, keys, durations); ValueDecoder.of(v, format, enums, keys, durations)   // a Value as the sink / the source
+```
+
+A program imports `codec` to walk a document whose shape it does not know
+(`codec.Value`), to pick a style (`json.Options(keys:
+codec.KeyStyle.SnakeCase)`), or to write a format of its own.
 
 ### StringBuilder
 
 ```veles
 // fragment
-public fun stringBuilder(): StringBuilder
-public struct StringBuilder {
+public struct StringBuilder {                 // StringBuilder() starts an empty one
   public fun append(s: string)
   public fun appendLine(s: string = "")
   public fun appendByte(b: u8)          // one UTF-8 byte, for code walking a string with byteAt
@@ -239,8 +256,7 @@ each time.
 
 ```veles
 // fragment
-public fun deque<T>(): Deque<T>
-public struct Deque<T> {
+public struct Deque<T> {                           // Deque<i64>() starts an empty one
   public fun addLast(x: T)
   public fun addFirst(x: T)
   public fun removeFirst(): T?
@@ -254,9 +270,9 @@ public struct Deque<T> {
   public fun toList(): List<T>       // front to back; also Iterable and Display
 }
 
-public fun priorityQueue<T: Comparable>(): PriorityQueue<T>        // smallest first
-public fun priorityQueueBy<T>(compare: fun(T, T): Ordering): PriorityQueue<T>
 public struct PriorityQueue<T> {
+  init(compare: fun(T, T): Ordering)  // PriorityQueue<Job>(compare: (a, b) => ...)
+  public static fun natural(): PriorityQueue<T>   // T: Comparable; smallest first
   public fun push(x: T)
   public fun pop(): T?               // the first element in the queue's order
   public fun peek(): T?
@@ -272,7 +288,7 @@ grow them and a callee shares the caller's. `Deque` is a ring buffer —
 O(1) at both ends, amortised O(1) growth — and serves as a FIFO queue
 (`addLast` / `removeFirst`), a stack, or a sliding window. `PriorityQueue`
 is a binary heap: `push` and `pop` are O(log n). For the largest first,
-`priorityQueueBy<i64>((a, b) => b.compareTo(a))`.
+`PriorityQueue<i64>(compare: (a, b) => b.compareTo(a))`.
 
 ### Result and Option
 
@@ -303,7 +319,7 @@ unreachable.
 | `await sleep(d: Duration)` | suspend for at least `d`; rounded up to the executor’s millisecond, so `Duration.zero` yields |
 | `async f(...)`: `Task<T>` | start a task in the enclosing `scope`; `await task`; `task.cancel()` asks it to stop at its next suspension point (its `with` cleanups run, the scope still waits for it) |
 | `withTimeout(limit: Duration, f): R throws E \| Timeout` | run the sendable `f` in a task of its own and throw `Timeout` (which carries the `limit` it reached) if it passes first — `f` is cancelled and has unwound by then; `f`'s own errors are rethrown |
-| `taskLocal(fallback: T): TaskLocal<T: Sendable>` | a value that follows a task (D72): `tl.withValue(v, f): R throws E` binds `v` while `f` runs — there and in every task started inside, which keep it — and ends the binding with `f`, however `f` ends; `tl.get(): T` is the innermost binding, or `fallback` |
+| `TaskLocal(fallback: T)`: `TaskLocal<T: Sendable>` | a value that follows a task (D72): `tl.withValue(v, f): R throws E` binds `v` while `f` runs — there and in every task started inside, which keep it — and ends the binding with `f`, however `f` ends; `tl.get(): T` is the innermost binding, or `fallback` |
 
 ## Built-in methods
 
@@ -528,7 +544,7 @@ An HTTP/1.1 server on `net` ([chapter 17](../17-http.md)).
 ```veles
 // fragment
 use http
-val app = http.router()
+val app = http.Router()
 app.get("/users/{id}", req => ...)          // get / post / put / delete / any; `{name}` captures, a final `*` the rest
 app.get("/static/*", http.files("./public"))   // index.html for a directory, `..` refused, type by extension
 app.wrap(http.requestId()); app.wrap(http.timeout(Duration.seconds(1))); app.wrap(http.logging())   // first wrap = outermost; wraps the 404s too
@@ -541,10 +557,13 @@ http.Limits(requestLineBytes: 8192, headerLineBytes: 8192, headerCount: 100, hea
 type Handler = sendable fun(Request): Response suspends   // the stored form; `http.handler(h)` adapts a throwing h
 error Fail { status, text }; http.notFound(text); http.badRequest(text); http.forbidden(text)   // thrown → that status; other errors → 500 + log; a panic → 500 + log
 req.method; req.path; req.query; req.headers; req.header(name); req.body; try req.text(); req.param(name); req.peer
-http.Response.text(s, status: 200); .html(s); .json(s); .bytes(b, contentType); .empty(status); .redirect(url); resp.withHeader(n, v)
-http.contentTypeOf(name); http.httpDate(t: time.Timestamp); http.reasonOf(status); http.percentDecode(s, plusIsSpace)
+http.Response.text(s, status: http.Status.ok); .html(s); .json(s); .bytes(b, contentType); .empty(status); .redirect(url); resp.withHeader(n, v)
+http.contentTypeOf(name); http.httpDate(t: time.Timestamp); http.percentDecode(s, plusIsSpace)
+http.Status.notFound; http.Status(code: 418); s.code; s.reason(); s.isSuccess() / isRedirect() / isClientError() / isServerError(); "$s" is "404 Not Found"
+http.Method.get / head / post / put / delete / patch / options / connect / trace; http.Method(name: "PROPFIND"); req.method == http.Method.post
+http.Header.contentType, .location, .allow, .authorization, .cacheControl, ...   // lower-case names, as req.header() and withHeader() store them
 // path matches, method does not → 405 + Allow; HEAD → the GET route, body dropped; OPTIONS → 204 + Allow; 1xx/204/304 never carry a body
-http.call(handler, "GET", "/notes/7?full=yes", body: "", headers: [:])   // in memory, no socket: same target parsing and panic boundary as serve
+http.call(handler, http.Method.get, "/notes/7?full=yes", body: "", headers: [:])   // in memory, no socket: same target parsing and panic boundary as serve
 ```
 
 ## Module `json`
@@ -556,9 +575,9 @@ JSON for anything Codable ([chapter 18](../18-codable-and-json.md)).
 use json
 try json.encode(x); try json.pretty(x)                 // T: Encodable → text; EncodeError for a NaN or infinity
 try json.decode<T>(text)                               // T: Decodable; DecodeError lists every problem with its path
-try json.parse(text): Value; try json.toValue(x); try json.fromValue<T>(v)
-json.Options(keys: KeyStyle.SnakeCase, enums: EnumStyle.Number, durations: DurationStyle.Iso8601, omitNulls: true, pretty: true, indent: "  ", maxDepth: 64, maxProblems: 100)
-json.JsonEncoder.of(options); json.JsonDecoder.of(text, options)   // the Encoder / Decoder themselves
+try json.parse(text): codec.Value; try json.toValue(x); try json.fromValue<T>(v)
+json.Options(keys: codec.KeyStyle.SnakeCase, enums: codec.EnumStyle.Number, durations: codec.DurationStyle.Iso8601, omitNulls: true, pretty: true, indent: "  ", maxDepth: 64, maxProblems: 100)
+json.JsonEncoder(options); json.JsonDecoder.of(text, options)   // the Encoder / Decoder themselves
 ```
 
 ## Module `path`
@@ -602,7 +621,7 @@ time.Offset.local(at: Timestamp): Offset              // the host zone's offset 
 
 DateTime(year:, month:, day:, hour: 0, minute: 0, second: 0, micros: 0, offset: Offset.utc)
 d.timestamp(): Timestamp;  d.normalized(): DateTime   // out-of-range fields carry (month 13 = next January)
-d.weekday(): i64 (0 = Sunday);  d.yearDay(): i64 (1 = Jan 1)
+d.weekday(): Weekday (Monday … Sunday; .value is ISO, Monday = 1);  d.yearDay(): i64 (1 = Jan 1)
 d.date(): string                      // 2026-09-24;  time(): 09:15:02;  "$d": full RFC 3339
 
 time.parseRfc3339(s): Timestamp?      // strict, plus lower-case t/z, a space separator, expanded years
@@ -747,7 +766,7 @@ use jwt
 jwt.sign(claims: Claims, key: List<u8>, algorithm: Algorithm = Algorithm.HS256,
          keyId: string? = null): string throws EncodeError
 jwt.verify(token: string, key: List<u8>, options: Options = Options()): Claims throws jwt.Invalid
-jwt.readHeader(token: string): Value throws jwt.Invalid   // unverified: for `kid`
+jwt.readHeader(token: string): codec.Value throws jwt.Invalid   // unverified: for `kid`
 jwt.now(): i64                                            // Unix seconds
 ```
 
@@ -777,7 +796,8 @@ unsafe ffi.readBytes(p: *raw u8, n: i64): List<u8>       // copies n bytes
 ffi.alloc(n: i64): *raw u8;  unsafe ffi.free(p: *raw u8)  // zeroed, unmanaged memory
 ffi.handle(value: T): Handle<T>                          // a Veles value as C's `void *userdata`; Closeable
 h.ptr(): *raw u8;  unsafe ffi.Handle<T>.from(p): T       // the value back, in the callback
-// prelude: xs.withRaw(p => ...) on a List<T: CLayout> lends the elements for the closure, no copy
+// ffi.CLayout: memory C can read as it is (derived from the shape, never implemented by hand)
+// prelude: xs.withRaw(p => ...) on a List<T: ffi.CLayout> lends the elements for the closure, no copy
 // language: extern "C" fun name(...) { }  and  &name: extern fun(...); p as *raw T in unsafe
 ```
 

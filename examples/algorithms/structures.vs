@@ -26,7 +26,7 @@ public fun balanced(s: string): bool {
 /// is always the current window's maximum: O(n) overall.
 public fun slidingMax(xs: List<i64>, k: i64): List<i64> {
   val out: MutableList<i64> = []
-  val window = deque<i64>()
+  val window = Deque<i64>()
   loop ((i, x) in xs.iter().enumerate()) {
     // drop smaller elements from the back: they can never be a maximum again
     loop {
@@ -108,7 +108,7 @@ fun heightOf(node: (*TreeNode)?): i64 =
   if (node == null) 0 else 1 + heightOf(node.left).max(heightOf(node.right))
 
 /// Binary min-heap in a list: the parent of `i` is `(i - 1) / 2`, its
-/// children are `2i + 1` and `2i + 2`. The prelude's `priorityQueue()` is
+/// children are `2i + 1` and `2i + 2`. The prelude's `PriorityQueue` is
 /// this structure made generic and comparator-driven.
 public struct MinHeap {
   items: MutableList<i64> = []

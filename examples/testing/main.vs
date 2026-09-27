@@ -1,34 +1,76 @@
+// Tests (D78): `test "sentence" { }` next to the code, the test-only
+// vocabulary (expect, require, expectThrows, expectPanics, fail), a
+// `test fun` helper, a suite, and `assert` for an invariant in ordinary code.
+// `veles test examples/testing` runs them; `veles run` leaves them out.
 use io
 
-error Mismatch {
-  expected: i64
-  actual:   i64
+error RangeError {
+  value: i64
 }
 
 fun add(a: i64, b: i64) = a + b
 
-fun expectEq(expected: i64, actual: i64) throws Mismatch {
-  if (expected != actual) throw Mismatch(expected, actual)
+fun parsePort(text: string): i64 throws RangeError {
+  val n = text.toInt() ?: 0
+  if (n < 0 || n > 65535) throw RangeError(value: n)
+  n
 }
 
-@test
-fun additionWorks() throws Mismatch {
-  try expectEq(4, add(2, 2))
+fun half(n: i64): i64? = if (n % 2 == 0) n / 2 else null
+
+/// A helper only tests can call: it may use the vocabulary itself.
+test fun expectSorted(xs: List<i64>) {
+  loop (i in 1..<xs.len()) {
+    val before = xs.at(i - 1) ?: 0
+    expect(before <= xs.at(i))
+  }
 }
 
-@test
-fun tasksRunInTests() throws Mismatch {
+test "adds small numbers" {
+  expect(add(2, 2) == 4)
+  expect(add(-1, 1) == 0)
+}
+
+// a suite groups tests under a name; its helpers are its own
+suite "ports" {
+  test fun expectPort(text: string, want: i64) {
+    expect(require(parsePort(text)) == want)
+  }
+
+  test "parses" {
+    expectPort("8080", 8080)
+    expectPort("0", 0)
+  }
+
+  test "refuses the rest" {
+    expectThrows<RangeError>(() => parsePort("70000"))
+    expectThrows<RangeError>(() => parsePort("-1"))
+  }
+}
+
+test "halves even numbers" {
+  val h = require(half(10))
+  expect(h == 5)
+  expect(half(3) == null)
+}
+
+test "tasks run in tests" {
   val ch = Channel<i64>(capacity: 1)
   scope {
     ch.send(41)
     val v = await ch.recv()
-    try expectEq(42, (v ?: 0) + 1)
+    expect((v ?: 0) + 1 == 42)
   }
 }
 
-@test
-fun thisOneFails() throws Mismatch {
-  try expectEq(1, add(1, 1))
+test "sorts" {
+  expectSorted([3, 1, 2].sorted())
+}
+
+test "panics are expected" {
+  expectPanics(() => {
+    val _ = [1].at(3) ?: panic("index 3 is out of range")
+  })
 }
 
 @deprecated("use add")
@@ -38,11 +80,7 @@ fun plus(a: i64, b: i64) = add(a, b)
 fun important(): i64 = 7
 
 fun main() {
-  io.println("${plus(1, 2)} ${important()}")
-}
-
-@test
-fun panicsAreReported() {
-  val xs = [1]
-  io.println("${xs.at(3) ?: panic("index 3 is out of range")}")
+  val total = plus(1, 2)
+  assert(total == 3, "plus adds")  // an invariant: panics with the reason and both sides
+  io.println("$total ${important()}")
 }

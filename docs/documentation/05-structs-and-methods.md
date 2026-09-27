@@ -130,6 +130,49 @@ The rules, all checked by the compiler:
 - One `init` per struct. It runs for every construction, including the
   type's own, and for a sealed variant before the value is wrapped.
 
+### `init` with parameters
+
+Sometimes what the caller gives is not what the value stores: a counter
+kept behind a pointer so copies share it, a table built from a seed.
+`init` may declare parameters; they are the constructor's parameters
+after the fields, named at the call like fields:
+
+```veles
+use io
+
+struct Tally {
+  private counts: MutableMap<string, i64> = [:]
+  private total:  i64
+
+  init(words: List<string>, weight: i64 = 1) {
+    loop (w in words) this.counts.set(w, (this.counts.get(w) ?: 0) + weight)
+    this.total = words.len() * weight
+  }
+
+  fun of(w: string): i64 = this.counts.get(w) ?: 0
+  fun total(): i64 = this.total
+}
+
+fun main() {
+  val t = Tally(words: ["a", "b", "a"], weight: 2)
+  io.println("${t.of("a")} ${t.total()}")
+}
+```
+
+Output:
+```text
+4 6
+```
+
+This is how the standard library's own types are made: `Mutex(value: 0)`,
+`Atomic(value: 0)`, `TaskLocal(fallback: "-")`,
+`PriorityQueue<Job>(compare: (a, b) => a.due.compareTo(b.due))` — every
+value is `Type(...)`, never a function you have to know about. A
+parameter may share its name with a field `init` assigns
+(`init(celsius: f64) { this.celsius = celsius }`), but not with one the
+call can pass, and a struct whose `init` takes a parameter without a
+default cannot derive `Decodable` — the input has nothing to give it.
+
 ### The ways a field gets its value
 
 | the field says | who gives the value | when |

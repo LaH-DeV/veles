@@ -306,3 +306,86 @@ void veles_net_peer(int64_t fd, veles_string *out) {
     }
     set_string(out, text, (int64_t)strlen(text));
 }
+
+/* ---- IoError.kind (D76) ----------------------------------------------------
+ * The platform's error number, as the portable kind std/prelude's `IoKind`
+ * names. It lives here because only this file sees both errno and the
+ * Winsock codes. The numbers are the enum's values; 0 is `Other`. Each
+ * errno case is guarded: a C library may leave a POSIX name undefined. */
+int64_t veles_io_kind(int64_t code) {
+    enum {
+        OTHER, NOT_FOUND, PERMISSION_DENIED, ALREADY_EXISTS, NOT_A_DIRECTORY,
+        IS_A_DIRECTORY, DIRECTORY_NOT_EMPTY, CONNECTION_REFUSED,
+        CONNECTION_RESET, CONNECTION_ABORTED, TIMED_OUT, ADDRESS_IN_USE,
+        ADDRESS_NOT_AVAILABLE, BROKEN_PIPE, INTERRUPTED, INVALID_INPUT,
+        INVALID_DATA
+    };
+#if defined(_WIN32)
+    switch (code) {
+    case WSAECONNREFUSED: return CONNECTION_REFUSED;
+    case WSAECONNRESET: return CONNECTION_RESET;
+    case WSAECONNABORTED: return CONNECTION_ABORTED;
+    case WSAETIMEDOUT: return TIMED_OUT;
+    case WSAEADDRINUSE: return ADDRESS_IN_USE;
+    case WSAEADDRNOTAVAIL: return ADDRESS_NOT_AVAILABLE;
+    case WSAEINTR: return INTERRUPTED;
+    case WSAEINVAL: return INVALID_INPUT;
+    case WSAEACCES: return PERMISSION_DENIED;
+    case WSAHOST_NOT_FOUND: return NOT_FOUND;
+    }
+#endif
+    switch (code) {
+#ifdef ENOENT
+    case ENOENT: return NOT_FOUND;
+#endif
+#ifdef EACCES
+    case EACCES: return PERMISSION_DENIED;
+#endif
+#ifdef EPERM
+    case EPERM: return PERMISSION_DENIED;
+#endif
+#ifdef EEXIST
+    case EEXIST: return ALREADY_EXISTS;
+#endif
+#ifdef ENOTDIR
+    case ENOTDIR: return NOT_A_DIRECTORY;
+#endif
+#ifdef EISDIR
+    case EISDIR: return IS_A_DIRECTORY;
+#endif
+#ifdef ENOTEMPTY
+    case ENOTEMPTY: return DIRECTORY_NOT_EMPTY;
+#endif
+#ifdef ECONNREFUSED
+    case ECONNREFUSED: return CONNECTION_REFUSED;
+#endif
+#ifdef ECONNRESET
+    case ECONNRESET: return CONNECTION_RESET;
+#endif
+#ifdef ECONNABORTED
+    case ECONNABORTED: return CONNECTION_ABORTED;
+#endif
+#ifdef ETIMEDOUT
+    case ETIMEDOUT: return TIMED_OUT;
+#endif
+#ifdef EADDRINUSE
+    case EADDRINUSE: return ADDRESS_IN_USE;
+#endif
+#ifdef EADDRNOTAVAIL
+    case EADDRNOTAVAIL: return ADDRESS_NOT_AVAILABLE;
+#endif
+#ifdef EPIPE
+    case EPIPE: return BROKEN_PIPE;
+#endif
+#ifdef EINTR
+    case EINTR: return INTERRUPTED;
+#endif
+#ifdef EINVAL
+    case EINVAL: return INVALID_INPUT;
+#endif
+#ifdef EILSEQ
+    case EILSEQ: return INVALID_DATA;
+#endif
+    }
+    return OTHER;
+}

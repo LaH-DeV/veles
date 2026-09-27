@@ -5,7 +5,7 @@ fun main() {
   val sw = time.Stopwatch.start()
   var check: i64 = 0
   loop (_ in 0..<5) {
-    val sb = stringBuilder()
+    val sb = StringBuilder()
     loop (i in 0..<200000) sb.append("item-$i,")
     val parts = sb.toString().split(",")
     val part = parts.at(123456) ?: panic("strings: the text has 200000 parts")

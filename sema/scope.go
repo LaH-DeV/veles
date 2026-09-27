@@ -144,6 +144,14 @@ type FuncTemplate struct {
 	// ValueUsed marks a function turned into a value (`run(plain)`); its
 	// signature may be shaped to fit a function type, so lints leave it be.
 	ValueUsed bool
+	// TestCode: a test, a `test fun`, or a function in a `*.test.vs` file
+	// (D78) — it may use the test vocabulary and call test helpers.
+	TestCode bool
+	// Suite is the path of suites a test is in (D78), outermost first;
+	// SuiteScope, for a test or helper inside a suite, holds the suite's
+	// helpers and is the parent of the body's scope.
+	Suite      []string
+	SuiteScope *Scope
 }
 
 // Impl records `impl Trait for Type` (D17: one per pair program-wide).
@@ -173,4 +181,13 @@ func (m *Module) Doc() string {
 		}
 	}
 	return strings.Join(parts, "\n\n")
+}
+
+// Symbols lists the scope's own symbols (not its parents'), in no order.
+func (s *Scope) Symbols() []*Symbol {
+	out := make([]*Symbol, 0, len(s.symbols))
+	for _, sym := range s.symbols {
+		out = append(out, sym)
+	}
+	return out
 }

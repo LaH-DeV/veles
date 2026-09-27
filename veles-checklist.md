@@ -438,8 +438,12 @@ behind a name that says "crypto" (§10, 2026-09-23).
       notice is the argument for the CI check
 - [~] `veles test`: `--filter` (no match is an error), per-test `--timeout`
       (default 10m; a watchdog thread reports the test and ends the run),
-      a summary line naming the failures — done 2026-09-27. Open: coverage,
-      parallel tests
+      a summary line naming the failures — done 2026-09-27. Tests are
+      `test "sentence" { }` with `expect`/`require`/`expectThrows`/
+      `expectPanics`/`fail` (expression capture, both sides, location; soft
+      failures reported together), `test fun` helpers, `*.test.vs` files,
+      `assert(cond, "why")` anywhere (reason required); `@test fun` errors with a fix (D78) — done
+      2026-09-27. Open: coverage, parallel tests, capturing a test's output
 - [ ] `veles bench`
 - [~] LSP: find references, document highlights and rename done
       (2026-09-27): across modules, into interpolations and named arguments,
@@ -448,14 +452,28 @@ behind a name that says "crypto" (§10, 2026-09-23).
       appears, spells out D28 puns, and refuses wire names of a derived
       `Codable` (fields, variants). Inlay hints for inferred binding types,
       expression-body return types, `suspends` and bare-`throws` sets done
-      the same day. Open: code actions ("add `@skip`",
-      "write `implement Codable`"). Signature help and workspace symbols done
-      (works mid-typing and inside `${}` interpolations)
+      the same day. Quick fix "add `implement Encodable`/`Decodable`/`Comparable`"
+      (derived) on every "does not implement" and "cannot order by" error,
+      explained through generic impls (`List<Tag>` → `Tag`) — done
+      2026-09-27. "Mark 'f' @skip" on a coding derive stopped by a field
+      with no wire form (a function, a channel, a Mutex), when the field
+      has the default a skipped field needs — done 2026-09-27. Signature help and workspace symbols done
+      (works mid-typing and inside `${}` interpolations). Go to type
+      definition (through `?`, `*`, lists and maps to the declared type),
+      go to implementation (a trait → its implements, a sealed trait → its
+      variants, a trait method → its implementations) and folding ranges
+      (bodies, argument lists, comment runs, `use` runs; token-based, so
+      they work while the file does not parse) — done 2026-09-27
 - [ ] Diagnostics: every error names the fix, with a `docs/` link
-- [ ] `veles doc`: rendered API docs from `///`
+- [x] `veles doc`: rendered API docs from `///` — Markdown per reachable
+      module (root + `exports`), declarations as hover shows them from
+      outside, member docs; `-o dir` for files (2026-09-27)
 - [ ] Package registry / MVS (on the remaining list)
 - [ ] Lockfile and reproducible builds
-- [ ] `veles new server` template with logging, health, graceful shutdown wired
+- [~] `veles new <dir>`: a package that runs and tests first try (manifest,
+      `main.vs` with a test, `.gitignore`); `veles build` in a package names
+      the binary after it — done 2026-09-27. Open: a `server` template with
+      logging, health, graceful shutdown wired
 
 ---
 
@@ -533,6 +551,8 @@ pros/cons before anything is built; the answer becomes a spec entry.
 12. ~~How a `Duration` goes on the wire~~ — decided 2026-09-25, see §10.
 13. ~~Task-local values~~ — decided 2026-09-27 (D72), see §10.
 14. **Send arms in `race`** (`queue.send(line) => {}` next to a `sleep` arm: send with a deadline without a task per send; a losing send arm never sent). Asked 2026-09-27; the user has not decided yet. Workaround today: `withTimeout(d, () => ch.send(v))` or `trySend` polling. *Open.*
+15. **Testing: how a test is declared, what it asserts with, where helpers live** (user, 2026-09-27: assertions "should only be usable inside test function"; is `@test` needed or a `test` form? "WE NEED TO INVESTIGATE THE TOPIC FURTHER"). Investigation in `veles-testing-design.md`: `test "sentence" { }`, a test-only `expect`/`require` vocabulary with expression capture, `test fun` helpers and `*.test.vs` files, `check` for invariants. ~~Open~~ — decided 2026-09-27, see §10 (D78).
+16. **Test setup and teardown per test or per suite** (user, 2026-09-27, on suites: "the setup for before and after isn't good... (no new keyword for them either)" — the proposal was a suite's own `+bt+`val`+bt+`s and `+bt+`with`+bt+`s running fresh before each test). Today: a helper plus `+bt+`with`+bt+` inside each test. Open.
 
 ## 10. Decision log
 
@@ -592,9 +612,23 @@ pros/cons before anything is built; the answer becomes a spec entry.
 | 2026-09-26 | FFI: callbacks | **`extern "C" fun name(...) { body }`** (user, recommended of three): C calling convention, `&name` is an `extern fun(...)` pointer, no suspend/throw, a panic ends the process. Spec D69. Rejected: `@cabi` attribute, no callbacks. Built 2026-09-26 (parser `parseExportedFun`, `types.Func.C`, codegen `exportWrapper`; C can also call it by symbol — TestNativeLinking). |
 | 2026-09-26 | `?.` through a chain (R8) | **Swift's rule** (user, recommended): a null after `?.` skips the rest of the postfix chain; `a?.b.c()` is `R?`. Spec D70. Rejected: Kotlin's one-step rule. Built 2026-09-26 (`safeBelow`/`safeChain` in sema/check_safe.go; `Grouped` on MemberExpr/CallExpr marks parentheses; a nullable place is used in place, so a mutating call lands). |
 | 2026-09-26 | Arithmetic operator traits (§9.11) | **The full set** (user, recommended of three): `+ - * /` and unary `-` on user types call `plus`/`minus`/`times`/`dividedBy`/`negate` through prelude traits with a right-hand and an output type; `+=` follows; `Duration`/`Timestamp` adopt them. Spec D71. Rejected: `+`/`-` only; methods only. Built 2026-09-26 (sema/operators.go; associated types inferred from the written method, a general rule; `Duration`/`Timestamp` adopted; `negated()` renamed `negate()`). |
+| 2026-09-27 | Constructors that do work (user note: a factory "should not be the required way") | **`init` takes parameters** (user, recommended of three; spec D73): `init(value: T) { ... }` parameters are constructor parameters — `Mutex(value: 0)`, `Atomic(value: 0)`, `TaskLocal(fallback: "-")`, `PriorityQueue<Job>(compare: c)`; the natural-order queue is `PriorityQueue<T>.natural()`. Before it, and needing no decision: M5 v0.30's private-field rule now holds across modules, so `StringBuilder()`, `Deque<T>()`, `http.Router()`, `Depth(limit: n)`, `json.JsonEncoder()` are constructors and their factories are removed (errors with fixes). Rejected: a `static fun of` convention; keeping the factories. |
+| 2026-09-27 | HTTP statuses, methods, headers (user note #5) | **Open value types with named constants** (user, recommended of three; spec D74): `http.Status.notFound`, `http.Status(code: 418)`, `http.Method.post`, `http.Header.cacheControl`. Rejected: closed enums (unknown codes unrepresentable); integer/string constants only. |
+| 2026-09-27 | What is global (user note #4) | **A slim prelude** (user, recommended of three; spec D75): codec machinery → `use codec`, `CLayout` → `use ffi`, `Depth`/`maxRecursionDepth`/`tooDeepMessage` → `use recursion`; the core types, traits, collections, `StringBuilder`, `Duration`, sync types and `Codable` stay global. Rejected: Go-minimal; as is. |
+| 2026-09-27 | Which I/O failure (user note #5) | **`IoError.kind: IoKind`** (user, recommended of four; spec D76): a prelude enum the runtime maps each platform code to; `code` stays. Rejected: separate error types, predicates, as is. |
+| 2026-09-27 | `DateTime.weekday()` (user note #5) | **`Weekday` enum, ISO Monday = 1** (user, recommended of three; spec D77); `month` stays `i64`. Rejected: a `Month` enum too; as is. |
+| 2026-09-27 | Testing (§9 item 15) | **`test "sentence" { }` + a test-only vocabulary** (user, the recommended combination of `veles-testing-design.md`; spec D78): `expect`/`require`/`expectThrows`/`expectPanics`/`fail` with expression capture, `test fun` helpers, `*.test.vs` files, `check(cond)` for invariants — amended the same day to `assert(cond, "why")` with the reason required (user: "should be called 'assert' ... require string explanation like panic"); `@test fun` errors with a fix. Rejected: `test fun` as the test form, an importable `testing` module, a global `assert` as the *test* vocabulary (it stops at the first failure). |
+| 2026-09-27 | Test suites (D78 amendment) | **`+bt+`suite "name" { }`+bt+` blocks and `+bt+`*.test.vs`+bt+` files as suites; the report grouped and indented** (user: "I think both is the answer"; report: grouped, over the recommended qualified-name lines). Suites hold tests, suites and `+bt+`test fun`+bt+` helpers scoped to the suite; names are qualified `+bt+`a / b / test`+bt+` for the summary and `+bt+`--filter`+bt+`. Setup/teardown: the lexical proposal rejected ("the setup for before and after isn't good... no new keyword for them either"); open as §9 item 16. |
 
 ## 11. Known limitations to revisit
 
+- A test's own output (`io.println` inside a test) is not captured: it
+  lands between `test name ... ` and the verdict. Capture per test, shown
+  only on failure, is the fix (D78 left it open).
+- `expectPanics(body)` runs `body` in a task of its own, so `body` must be
+  a sendable function: it cannot capture a `MutableList` of the test's.
+- A failure inside a `test fun` helper reports the helper's line, not the
+  test's call of it.
 - A panic std raises for a caller's misuse (`xs.swap(0, 7)`, `chunked(0)`)
   reports the std line (`at std/prelude/list.vs:408:27`), not the caller's
   (D64). Fix if it matters: a `#[track_caller]`-style attribute that passes

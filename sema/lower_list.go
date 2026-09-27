@@ -380,7 +380,11 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 			return bad()
 		}
 		if !f.ordered(keyT) {
-			f.errorf(span, "cannot order by '%s'; keys must be numbers, strings or implement 'Comparable' (D48: use a comparator otherwise)", keyT)
+			var fix *source.Fix
+			if cmp := f.c.traitNamed("Comparable"); cmp != nil {
+				fix = f.c.implementFix(keyT, cmp) // derived: field by field, in order (D58)
+			}
+			f.c.errorFix(span, fix, "cannot order by '%s'; keys must be numbers, strings or implement 'Comparable' (D48: use a comparator otherwise)", keyT)
 			return bad()
 		}
 		if keyFn == nil && (types.IsInteger(lt.Elem) || types.Identical(lt.Elem, types.TString)) {

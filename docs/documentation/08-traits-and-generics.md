@@ -454,7 +454,7 @@ negative number, zero or a positive number):
 | order by a field or derived value | `xs.sortedBy(x => x.age)`, `xs.sortedByDescending(key)`, `xs.minBy(key)`, `xs.maxBy(key)` |
 | any order at all | `xs.sortedWith((a, b) => ...)`, `xs.minWith(compare)`, `xs.maxWith(compare)`, `ml.sortWith(compare)` |
 | uniqueness by a key | `xs.distinctBy(x => x.email.toLower())` |
-| a queue in a custom order | `priorityQueueBy<T>((a, b) => ...)` |
+| a queue in a custom order | `PriorityQueue<T>(compare: (a, b) => ...)` |
 | several keys at once | a tuple key: `xs.sortedBy(e => (-e.size, e.name))` — tuples of `Comparable` elements compare lexicographically, so this is "largest first, then by name" |
 | equality with a different meaning | `xs.any(x => sameName(x, y))`, or a wrapper struct with its own `Equatable` |
 

@@ -28,7 +28,7 @@ public struct Graph {
   fun bfs(start: i64): List<i64> {
     val seen = this.flags()
     val order: MutableList<i64> = []
-    val queue = deque<i64>()
+    val queue = Deque<i64>()
     queue.addLast(start)
     seen.set(start, true)
     loop {
@@ -63,7 +63,7 @@ public struct Graph {
   fun distances(start: i64): List<i64?> {
     val dist = MutableList<i64?>.repeat(null, this.n)
     dist.set(start, 0)
-    val queue = deque<i64>()
+    val queue = Deque<i64>()
     queue.addLast(start)
     loop {
       val v = queue.removeFirst() ?: break
@@ -83,7 +83,7 @@ public struct Graph {
     loop (v in 0..<this.n) {
       loop (w in this.neighbours(v)) indegree.set(w, slot(indegree, w) + 1)
     }
-    val ready = deque<i64>()
+    val ready = Deque<i64>()
     loop (v in 0..<this.n) {
       if (slot(indegree, v) == 0) ready.addLast(v)
     }
@@ -144,7 +144,7 @@ public fun dijkstra(n: i64, edges: List<(i64, i64, i64)>, start: i64): List<i64?
   }
   val dist = MutableList<i64?>.repeat(null, n)
   dist.set(start, 0)
-  val pending = priorityQueue<Hop>()
+  val pending = PriorityQueue<Hop>.natural()
   pending.push(Hop(dist: 0, node: start))
   loop {
     val hop = pending.pop() ?: break

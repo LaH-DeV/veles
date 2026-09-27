@@ -152,8 +152,8 @@ func markUsed(v *Var) {
 // Assignments do not count as reads.
 func (f *fnCtx) reportUnused() {
 	for _, v := range f.fn.Locals {
-		if !v.checkUse || v.used || v.Outer != nil {
-			continue
+		if !v.checkUse || v.used || v.Outer != nil || f.c.syntheticSpans[v.Span] {
+			continue // a name in derived code (D58) is no one's to rename
 		}
 		if isResultType(v.Type) {
 			f.errorf(v.Span, "unused Result '%s': the call may fail; use 'try' to propagate the error or 'when' to handle it (D4)", v.Name)
@@ -205,6 +205,9 @@ func (c *Checker) checkBody(fn *Func) {
 	}
 	env.self = owner
 	f := c.newFnCtx(fn, t.Module, t.File, env, fn.subst)
+	if t.SuiteScope != nil {
+		f.scope = NewScope(t.SuiteScope) // the suite's helpers are in reach
+	}
 	if t.Decl != nil {
 		if t.Decl.Body != nil {
 			f.bodyAST = t.Decl.Body
@@ -377,9 +380,9 @@ func (c *Checker) checkGlobal(g *Global) {
 	}
 	if d.Kind == ast.BindVar && !isSynchronized(declared) {
 		// D66: every task sees the same globals, from whichever thread runs it
-		example := "val " + d.Name.Name + " = mutex(...)"
+		example := "val " + d.Name.Name + " = Mutex(value: ...)"
 		if _, ok := declared.(*types.Basic); ok {
-			example = "val " + d.Name.Name + " = atomic(...)"
+			example = "val " + d.Name.Name + " = Atomic(value: ...)"
 		}
 		c.errorf(d.Name.Pos, "module-level 'var %s' is shared by every task, and tasks run on several threads at once (D66); keep the state behind a lock: '%s'", d.Name.Name, example)
 	}
@@ -589,10 +592,12 @@ func (f *fnCtx) checkValStmt(s *ast.ValStmt) []Stmt {
 		if !types.IsInvalid(init.Type()) {
 			f.errorf(s.Value.Span(), "cannot destructure a value of type '%s'; only tuples destructure positionally (D37)", init.Type())
 		}
+		f.bindPattern(&b, types.TInvalid, mutable) // the names exist: one error, not one per use
 		return nil
 	}
 	if len(tt.Elems) != len(b.Tuple) {
 		f.errorf(b.Pos, "tuple has %d elements but %d names are bound", len(tt.Elems), len(b.Tuple))
+		f.bindPattern(&b, types.TInvalid, mutable)
 		return nil
 	}
 	tmp, parts := f.bindPattern(&b, tt, mutable)
@@ -1186,6 +1191,9 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 			if !types.IsInvalid(iter.Type()) {
 				f.errorf(s.Iter.Span(), "cannot iterate over '%s': it implements neither Iterable nor Iterator (D42)", iter.Type())
 			}
+			// the body is still checked, with the names bound (to nothing
+			// known), so a bad iterable is one error and not one per use
+			f.bindLoopVar(s.Var, types.TInvalid)
 			f.loops = append(f.loops, &loopFrame{hir: lp, label: label})
 			lp.Body = f.checkBlock(s.Body, nil, false)
 			f.loops = f.loops[:len(f.loops)-1]
@@ -1295,6 +1303,11 @@ func (f *fnCtx) bindPattern(b *ast.Binding, t types.Type, mutable bool) (*Var, [
 			if !types.IsInvalid(t) {
 				f.errorf(b.Pos, "cannot destructure a '%s' into %d names", t, len(b.Tuple))
 			}
+			// the names still exist, typed as unknown, so each use is not
+			// one more error
+			for i := range b.Tuple {
+				f.bindPattern(&b.Tuple[i], types.TInvalid, mutable)
+			}
 			return f.newTemp(t), nil
 		}
 		tmp := f.newTemp(t)
@@ -1379,7 +1392,7 @@ func nameOf(v *Var, span source.Span) *ast.NameExpr {
 
 // traitNamed finds a prelude trait by name.
 func (c *Checker) traitNamed(name string) *types.Trait {
-	if sym := c.universe.LookupLocal(name); sym != nil && sym.Kind == SymType {
+	if sym := c.preludeSym(name); sym != nil && sym.Kind == SymType {
 		if t, ok := sym.Type.(*types.Trait); ok {
 			return t
 		}

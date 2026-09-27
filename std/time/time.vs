@@ -30,6 +30,8 @@
 /// has no `mktime` ambiguity. The host zone is asked for one number only:
 /// its offset from UTC at a given instant.
 
+use codec
+
 extern "C" {
   fun veles_time_now_us(): i64
   fun veles_time_monotonic_ns(): i64
@@ -259,13 +261,13 @@ public struct Timestamp {
   }
 
   implement Encodable {
-    fun encode(to: Encoder) throws EncodeError {
+    fun encode(to: codec.Encoder) throws EncodeError {
       try to.writeString(this.toString())
     }
   }
 
   implement Decodable {
-    static fun decode(from: Decoder): Timestamp throws DecodeError {
+    static fun decode(from: codec.Decoder): Timestamp throws DecodeError {
       val text = try from.readString()
       val t = parseRfc3339(text)
       if (t != null) return t
@@ -371,6 +373,17 @@ fun parseOffset(s: string): Offset? {
 
 // ---- DateTime -------------------------------------------------------------
 
+/// A day of the week, numbered as ISO 8601 does: Monday is 1 (D77).
+public enum Weekday {
+  Monday = 1
+  Tuesday
+  Wednesday
+  Thursday
+  Friday
+  Saturday
+  Sunday
+}
+
 /// A calendar date, a time of day and the offset they are told at.
 ///
 /// The fields are data, not an invariant: nothing stops `month: 13` or
@@ -401,9 +414,9 @@ public struct DateTime {
   /// The same instant with every field brought back into range.
   public fun normalized(): DateTime = this.timestamp().at(this.offset)
 
-  /// 0 for Sunday, 6 for Saturday.
-  public fun weekday(): i64 =
-    floorMod(daysFromCivil(this.year, this.month, this.day) + 4, 7)
+  /// The day of the week (D77); `.value` is its ISO number, 1 for Monday.
+  public fun weekday(): Weekday =
+    Weekday.fromValue(floorMod(daysFromCivil(this.year, this.month, this.day) + 3, 7) + 1) ?: Weekday.Monday
 
   /// 1 for the first of January.
   public fun yearDay(): i64 =
@@ -577,7 +590,7 @@ public fun formatRfc3339(t: Timestamp): string = t.utc().toString()
 
 // ---- HTTP-date ------------------------------------------------------------
 
-val dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+val dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 val monthNames = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
@@ -587,7 +600,7 @@ val monthNames = [
 /// Always this form, always GMT — it is the only one a sender may use.
 public fun formatHttp(t: Timestamp): string {
   val d = t.utc()
-  val day = dayNames.atOrDefault(d.weekday(), "Sun")
+  val day = dayNames.atOrDefault(d.weekday().value - 1, "Mon")
   val mon = monthNames.atOrDefault(d.month - 1, "Jan")
   "$day, ${pad(d.day, 2)} $mon ${pad(d.year, 4)} ${d.time()} GMT"
 }

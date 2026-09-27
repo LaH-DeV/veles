@@ -16,15 +16,12 @@ struct DequeState<T> {
   var size: i64 = 0
 }
 
-/// An empty double-ended queue: `val q = deque<i64>()`, or
-/// `val q: Deque<i64> = deque()`.
-public fun deque<T>(): Deque<T> = Deque(state: &DequeState<T>())
-
 /// A double-ended queue over a ring buffer: O(1) at both ends, so it serves
 /// as a FIFO queue (`addLast` / `removeFirst`), a stack, or a sliding
-/// window. Amortised O(1) growth; `at(i)` is O(1).
+/// window. Amortised O(1) growth; `at(i)` is O(1). `Deque<i64>()` makes
+/// an empty one.
 public struct Deque<T> {
-  state: *DequeState<T>
+  private state: *DequeState<T> = &DequeState<T>()
 
   /// Number of elements.
   public fun len(): i64 = this.state.size
@@ -144,21 +141,20 @@ struct PriorityQueueState<T> {
   compare: fun(T, T): Ordering
 }
 
-/// An empty min-priority queue over the elements' natural order:
-/// `val pq = priorityQueue<i64>()`; `pop()` yields the smallest first.
-public fun priorityQueue<T: Comparable>(): PriorityQueue<T> =
-  PriorityQueue(state: &PriorityQueueState<T>(compare: (a, b) => a.compareTo(b)))
-
-/// An empty priority queue ordered by `compare`, which returns
-/// `Ordering.Less` when its first argument should come out first. For the largest
-/// first: `priorityQueueBy<i64>((a, b) => b.compareTo(a))`.
-public fun priorityQueueBy<T>(compare: fun(T, T): Ordering): PriorityQueue<T> =
-  PriorityQueue(state: &PriorityQueueState<T>(compare))
-
 /// A priority queue over a binary heap: `push` and `pop` are O(log n),
 /// `peek` O(1). Elements that compare equal come out in no particular order.
+///
+/// `PriorityQueue<i64>.natural()` pops the smallest first;
+/// `PriorityQueue<Job>(compare: (a, b) => a.due.compareTo(b.due))` orders
+/// by `compare`, which returns `Ordering.Less` when its first argument
+/// should come out first — for the largest first,
+/// `PriorityQueue<i64>(compare: (a, b) => b.compareTo(a))`.
 public struct PriorityQueue<T> {
-  state: *PriorityQueueState<T>
+  private state: *PriorityQueueState<T>
+
+  init(compare: fun(T, T): Ordering) {
+    this.state = &PriorityQueueState<T>(compare)
+  }
 
   /// Number of elements.
   public fun len(): i64 = this.state.items.len()
@@ -232,4 +228,10 @@ public struct PriorityQueue<T> {
   implement Display {
     fun toString(): string = "[${this.state.items.join(", ")}]"
   }
+}
+
+extend<T: Comparable> PriorityQueue<T> {
+  /// An empty queue over the elements' natural order: `pop()` yields the
+  /// smallest first.
+  public static fun natural(): PriorityQueue<T> = PriorityQueue<T>(compare: (a, b) => a.compareTo(b))
 }

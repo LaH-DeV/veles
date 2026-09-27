@@ -58,8 +58,8 @@ type gen struct {
 	// cleanupRecs are the frame slots holding each active cleanup's entry
 	// in the task's cleanup list: pushing a `with` allocates nothing
 	cleanupRecs map[sema.Expr]string
-	closeThunks  map[*sema.With]string // panic-path close functions, per `with`
-	thunkSeq     int
+	closeThunks map[*sema.With]string // panic-path close functions, per `with`
+	thunkSeq    int
 	// inCleanup is set while cleanups are emitted: a suspension point in a
 	// cleanup (the join of an abandoned scope) is non-cancellable (D47) and
 	// does not re-enter the cleanups
@@ -155,6 +155,7 @@ declare void @veles_print(ptr, i64)
 declare ptr @veles_alloc(i64)
 declare void @veles_panic(ptr, i64)
 declare void @veles_panic_at(ptr, i64, ptr, i64)
+declare void @veles_test_fail(ptr, i64, ptr, i64, i64)
 declare void @veles_cleanup_push(ptr, ptr, ptr)
 declare void @veles_cleanup_pop(ptr)
 declare i64 @veles_ffi_enter()
@@ -174,9 +175,11 @@ declare i1 @veles_string_substring(ptr, ptr, i64, i64, i64)
 declare i1 @veles_string_to_int(ptr, i64, ptr)
 declare i64 @veles_string_char_count(ptr, i64)
 declare ptr @veles_string_chars(ptr, ptr, i64)
+declare ptr @veles_string_split(ptr, ptr, i64, ptr, i64)
 declare i8 @veles_string_byte_at(ptr, i64, i64)
 declare ptr @veles_string_bytes(ptr, ptr, i64)
 declare i1 @veles_bytes_decode_utf8(ptr, ptr)
+declare i1 @veles_bytes_decode_utf8_range(ptr, ptr, i64, i64)
 declare void @veles_i64_to_string(ptr, i64)
 declare void @veles_u64_to_string(ptr, i64)
 declare i64 @veles_i64_format(ptr, i64)
@@ -883,7 +886,7 @@ func (g *gen) entryPoint() {
 		g.emitTerm("ret i32 0")
 	}
 	if g.prog.TestMode {
-		g.out.WriteString("declare void @veles_test_watch(i64, ptr, i64, i64)\n\n")
+		g.out.WriteString("declare void @veles_test_watch(i64, ptr, i64, i64)\ndeclare void @veles_test_begin()\ndeclare i64 @veles_test_take(ptr, ptr, i64)\n\n")
 	}
 	g.out.WriteString("define i32 @main(i32 %argc, ptr %argv) {\nentry:\n")
 	g.out.WriteString(g.allocas.String())

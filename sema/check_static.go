@@ -73,7 +73,7 @@ func (f *fnCtx) staticCall(rt types.Type, callee *ast.MemberExpr, typeArgs []typ
 			} else {
 				f.errorf(callee.Name.Pos, "enum '%s' has no function '%s'; an enum has 'values()', 'fromValue(n)', 'parse(s)' and 'decode(from)' (D57)", en.Name, name)
 			}
-		} else {
+		} else if !f.removedFactory(typeHead(rt)+"."+name, e) {
 			f.errorf(callee.Name.Pos, "no static function '%s' on type '%s'", name, rt)
 		}
 		f.checkArgsLoosely(e.Args)

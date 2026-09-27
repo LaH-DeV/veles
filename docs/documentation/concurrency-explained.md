@@ -299,8 +299,8 @@ fun countWords(text: string, total: Atomic<i64>, longest: Mutex<string>) {
 }
 
 fun main() {
-  val total = atomic(0)
-  val longest = mutex("")
+  val total = Atomic(value: 0)
+  val longest = Mutex(value: "")
   scope {
     async countWords("the quick brown fox", total, longest)
     async countWords("jumps over the lazy dog", total, longest)
@@ -348,7 +348,7 @@ stackless coroutines that pause at `await`, and Veles checks at compile
 time that tasks do not race on shared data.
 
 **"How do I get a request id to every log line without passing it
-everywhere?"** A task-local value: `val requestId = taskLocal("-")`,
+everywhere?"** A task-local value: `val requestId = TaskLocal(fallback: "-")`,
 bind it with `requestId.withValue(id, () => handle(req))`, read it with
 `requestId.get()` anywhere inside — tasks started there see it too. See
 "Values that follow a task" in [chapter 12](12-concurrency.md).

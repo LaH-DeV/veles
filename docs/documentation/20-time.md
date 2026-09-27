@@ -132,8 +132,18 @@ Output:
 
 `t.utc()`, `t.local()` and `t.at(offset)` give a `DateTime`: year, month,
 day, hour, minute, second, microsecond, and the `Offset` it is told at.
-`weekday()` (0 for Sunday) and `yearDay()` (1 for January 1st) are computed
-from the date, and `timestamp()` goes back to the instant.
+`weekday()` and `yearDay()` (1 for January 1st) are computed from the
+date, and `timestamp()` goes back to the instant. A weekday is a
+`time.Weekday` — `Monday` … `Sunday`, an enum whose `.value` is the ISO
+number (Monday is 1) — so a `when` over it names every day or says `else`:
+
+```veles
+// fragment
+fun isWeekend(d: time.DateTime): bool = when (d.weekday()) {
+  time.Weekday.Saturday, time.Weekday.Sunday => true
+  else => false
+}
+```
 
 An `Offset` is a fixed number of minutes east of UTC — `Offset.utc`,
 `Offset.of(2)`, `Offset.of(-5, 30)`, `Offset.ofMinutes(330)` — refused
@@ -269,7 +279,7 @@ deadline and a configured one both apply. This is what replaced
 // fragment
 val head = time.Deadline.after(limits.headerTimeout)
 loop {
-  if (head.expired()) throw Fail(status: 408, text: "request header timeout")
+  if (head.expired()) throw Fail(status: Status.requestTimeout, text: "request header timeout")
   val line = try headLine(c, limits.headerLineBytes, head.remaining(), tooLong)
   ...
 }

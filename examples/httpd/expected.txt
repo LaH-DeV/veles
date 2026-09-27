@@ -96,7 +96,7 @@ pre { background: #eee; padding: 1em; }
 < HTTP/1.1 404 Not Found [text/plain; charset=utf-8] id=check
 < not found
 > POST /api/notes "xxxxxxxxxxxxxxxxxxxxxxxx...(5000 bytes)"
-< HTTP/1.1 413 Payload Too Large [text/plain; charset=utf-8] id=-
+< HTTP/1.1 413 Content Too Large [text/plain; charset=utf-8] id=-
 < payload too large
 > GET /api/notes/9999999999999...(9011 bytes)
 < HTTP/1.1 414 URI Too Long [text/plain; charset=utf-8] id=-
@@ -108,9 +108,9 @@ pre { background: #eee; padding: 1em; }
 < HTTP/1.1 431 Request Header Fields Too Large [text/plain; charset=utf-8] id=-
 < request header fields too large
 > GET /api/notes/2 (in memory)
-< 200 allow=- {"id":2,"text":"call mum back"}
+< 200 OK allow=- {"id":2,"text":"call mum back"}
 > DELETE /api/echo (in memory)
-< 405 allow=GET, HEAD, OPTIONS method not allowed
+< 405 Method Not Allowed allow=GET, HEAD, OPTIONS method not allowed
 exit=0
 $ httpd nowhere --check
 httpd: 'nowhere' is not a directory (the files to serve)

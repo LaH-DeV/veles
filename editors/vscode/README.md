@@ -2,6 +2,8 @@
 
 Syntax highlighting for `.vs` files plus a language client for `veles lsp`:
 diagnostics as you type, hover with types and signatures, go to definition,
+go to type definition and to implementations (of a trait, a sealed trait,
+a trait method), folding,
 find all references, highlighting of the name under the cursor, rename,
 inlay hints for inferred types and effects, signature help inside a call,
 document outline, workspace symbols (Ctrl+T) and completion.

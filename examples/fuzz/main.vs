@@ -8,7 +8,7 @@
 //
 // A failure prints the target, the iteration and the input, and the exit
 // code is 1.
-use base64, hex, http, io, json, os, random, utf8
+use base64, codec, hex, http, io, json, os, random, utf8
 
 struct Stats {
   var runs:     i64 = 0
@@ -41,7 +41,7 @@ struct Fuzzer {
   /// Text built from pieces that are likely to matter to the decoder under
   /// test, with the occasional arbitrary byte turned into a character.
   fun textFrom(pieces: List<string>, maxPieces: i64): string {
-    val sb = stringBuilder()
+    val sb = StringBuilder()
     loop (_ in 0..<this.rng.range(0, maxPieces + 1)) {
       if (this.rng.range(0, 10) == 0) {
         sb.append(utf8.char(this.rng.range(1, 0x2FF)))
@@ -100,7 +100,7 @@ fun fuzzJson(f: *Fuzzer) {
 fun checkJson(f: *Fuzzer, text: string) {
   when (val r = json.parse(text)) {
     is Ok  => {
-      val v: Value = r
+      val v: codec.Value = r
       when (val e = json.encode(v)) {
         is Ok  => {
           val first: string = e
@@ -129,19 +129,19 @@ fun fuzzJsonValues(f: *Fuzzer) {
     is Ok  => {
       val text: string = e
       val back = json.parse(text).getOrNull()
-      f.record("json value round trip", true, if (back != v) "$v encodes as ${show(text)}, which reads back as ${back ?: VNull()}" else null)
+      f.record("json value round trip", true, if (back != v) "$v encodes as ${show(text)}, which reads back as ${back ?: codec.VNull()}" else null)
     }
     is Err => f.record("json value round trip", true, "$v does not encode: ${e.message()}")
   }
 }
 
-fun randomValue(f: *Fuzzer, depth: i64): Value {
+fun randomValue(f: *Fuzzer, depth: i64): codec.Value {
   val ints: List<i64> = [0, -1, 1, 9223372036854775807, -9223372036854775807 - 1, 4503599627370496, -9007199254740993]
   val strs = ["", "a", "é", "日本", "😀", "\"", "\\", "\n\t\r", "\u{1}", "\u{7f}", "</script>", "\u{2028}"]
   when (f.rng.range(0, if (depth <= 0) 5 else 7)) {
-    0    => return VNull()
-    1    => return VBool(value: f.rng.boolean())
-    2    => return VInt(value: if (f.rng.boolean()) f.rng.pick(ints) ?: 0 else f.rng.range(-1000000, 1000000))
+    0    => return codec.VNull()
+    1    => return codec.VBool(value: f.rng.boolean())
+    2    => return codec.VInt(value: if (f.rng.boolean()) f.rng.pick(ints) ?: 0 else f.rng.range(-1000000, 1000000))
     3    => {
       // a mantissa in [1, 10) times a power of ten anywhere an f64 can
       // hold, so the shortest-text printer and the parser are both
@@ -149,22 +149,22 @@ fun randomValue(f: *Fuzzer, depth: i64): Value {
       val mantissa = 1.0 + f.rng.float() * 9.0
       val exp = f.rng.range(-307, 308) as f64
       val sign = if (f.rng.boolean()) -1.0 else 1.0
-      return VFloat(value: sign * mantissa * 10.0.pow(exp))
+      return codec.VFloat(value: sign * mantissa * 10.0.pow(exp))
     }
     4    => {
-      val sb = stringBuilder()
+      val sb = StringBuilder()
       loop (_ in 0..<f.rng.range(0, 4)) sb.append(f.rng.pick(strs) ?: "")
-      return VString(value: sb.toString())
+      return codec.VString(value: sb.toString())
     }
     5    => {
-      var items: MutableList<Value> = []
+      var items: MutableList<codec.Value> = []
       loop (_ in 0..<f.rng.range(0, 4)) items.push(randomValue(f, depth - 1))
-      return VList(items: items.toList())
+      return codec.VList(items: items.toList())
     }
     else => {
-      var fields: MutableMap<string, Value> = [:]
+      var fields: MutableMap<string, codec.Value> = [:]
       loop (_ in 0..<f.rng.range(0, 4)) fields.set(f.rng.pick(strs) ?: "", randomValue(f, depth - 1))
-      return VObject(fields: fields.toMap())
+      return codec.VObject(fields: fields.toMap())
     }
   }
 }

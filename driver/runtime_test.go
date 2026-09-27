@@ -85,11 +85,11 @@ fun bump(n: Atomic<i64>, f: Atomic<f64>, w: Atomic<u16>, flips: Atomic<bool>, s:
 }
 
 fun main() {
-  val n = atomic(0)
-  val f = atomic(0.0)
-  val w = atomic(0 as u16)
-  val flips = atomic(false)
-  val s = atomic("")
+  val n = Atomic(value: 0)
+  val f = Atomic(value: 0.0)
+  val w = Atomic(value: 0 as u16)
+  val flips = Atomic(value: false)
+  val s = Atomic(value: "")
   scope {
     loop (_ in 0..<8) {
       async bump(n, f, w, flips, s)
@@ -148,8 +148,8 @@ fun consume(ch: Channel<i64>, sum: Atomic<i64>, count: Atomic<i64>) {
 fun run(capacity: i64): string {
   val ch = if (capacity == 0) Channel<i64>() else Channel<i64>(capacity: capacity)
   ch.closeAfter(8000)
-  val sum = atomic(0)
-  val count = atomic(0)
+  val sum = Atomic(value: 0)
+  val count = Atomic(value: 0)
   scope {
     loop (_ in 0..<8) {
       async produce(ch)
@@ -298,7 +298,7 @@ func TestTaskLocalsUnderThreads(t *testing.T) {
 	dir := t.TempDir()
 	src := `use io
 
-val requestId = taskLocal(-1)
+val requestId = TaskLocal(fallback: -1)
 
 fun leaf(): i64 {
   await sleep(Duration.zero)
@@ -346,5 +346,43 @@ fun main() {
 		if err != nil || strings.TrimSpace(string(out)) != want {
 			t.Fatalf("threads %s: got %q, want %q (%v)", threads, out, want, err)
 		}
+	}
+}
+
+// IoError.kind is the same on every platform (D76): the runtime maps
+// errno, and on Windows the Winsock codes, to one IoKind.
+func TestIoErrorKinds(t *testing.T) {
+	if _, err := findClang(); err != nil {
+		t.Skip("clang not available:", err)
+	}
+	dir := t.TempDir()
+	src := `use fs, io, net
+
+fun kindOf<T>(r: Result<T, IoError>): IoKind = when (r) {
+  is Ok(_) => IoKind.Other
+  is Err(e) => e.kind
+}
+
+fun main() {
+  io.println("${kindOf(fs.readFile("no/such/file.txt"))}")
+  val l = net.listen() ?? { e => panic("listen: $e") }
+  val port = l.port()
+  io.println("${kindOf(net.listen(port: port))}")
+  l.close()
+  io.println("${kindOf(net.connect("127.0.0.1", port))}")
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(dir, "kinds.exe")
+	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe}); code != 0 {
+		t.Fatalf("build failed with exit %d", code)
+	}
+	out, err := exec.Command(exe).CombinedOutput()
+	got := strings.Fields(string(out))
+	want := []string{"NotFound", "AddressInUse", "ConnectionRefused"}
+	if err != nil || strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("got %q, %v; want %v", out, err, want)
 	}
 }

@@ -16,21 +16,21 @@
 /// val text = try json.encode(User(id: 1, name: "ann", email: null))
 /// // {"id":1,"name":"ann","email":null}
 /// val user = try json.decode<User>(text)
-/// val tree = try json.parse(text)          // a Value, untyped
+/// val tree = try json.parse(text)          // a codec.Value, untyped
 /// ```
 
-use utf8
+use codec, recursion, utf8
 
 /// The policies of one encoder or decoder.
 public struct Options {
   /// How field names are spelled as keys: `passwordHash`, `password_hash`
   /// or `passwordHash`; a `@key` the author wrote is never restyled.
-  public keys: KeyStyle = KeyStyle.AsWritten
+  public keys: codec.KeyStyle = codec.KeyStyle.AsWritten
   /// Enums as their names (`"Active"`) or their numbers (`1`).
-  public enums: EnumStyle = EnumStyle.Name
+  public enums: codec.EnumStyle = codec.EnumStyle.Name
   /// Durations as `"90.5s"` (the default), ISO 8601, the `Display` text, or
-  /// a number of nanoseconds or milliseconds; see `DurationStyle`.
-  public durations: DurationStyle = DurationStyle.Seconds
+  /// a number of nanoseconds or milliseconds; see `codec.DurationStyle`.
+  public durations: codec.DurationStyle = codec.DurationStyle.Seconds
   /// Leave out object members whose value is null.
   public omitNulls: bool = false
   /// Newlines and indentation.
@@ -50,7 +50,7 @@ public struct Options {
 
 /// `value` as JSON text.
 public fun encode<T: Encodable>(value: T, options: Options = Options()): string throws EncodeError {
-  val enc = JsonEncoder.of(options)
+  val enc = JsonEncoder(options)
   try value.encode(enc)
   enc.text()
 }
@@ -65,24 +65,24 @@ public fun decode<T: Decodable>(text: string, options: Options = Options()): T t
   val dec = JsonDecoder.of(text, options)
   val value = try T.decode(dec)
   try dec.end()
-  try finish(dec, value)
+  try codec.finish(dec, value)
 }
 
-/// The document as a `Value` tree, untyped.
-public fun parse(text: string, options: Options = Options()): Value throws DecodeError = try decode<Value>(text, options)
+/// The document as a `codec.Value` tree, untyped.
+public fun parse(text: string, options: Options = Options()): codec.Value throws DecodeError = try decode<codec.Value>(text, options)
 
-/// `value` as a `Value` tree — what it would encode to, before it is text.
-public fun toValue<T: Encodable>(value: T, options: Options = Options()): Value throws EncodeError {
-  val enc = ValueEncoder.of("json", options.enums, options.keys, options.durations, options.maxDepth)
+/// `value` as a `codec.Value` tree — what it would encode to, before it is text.
+public fun toValue<T: Encodable>(value: T, options: Options = Options()): codec.Value throws EncodeError {
+  val enc = codec.ValueEncoder.of("json", options.enums, options.keys, options.durations, options.maxDepth)
   try value.encode(enc)
   enc.value()
 }
 
-/// A `T` read from a `Value` tree.
-public fun fromValue<T: Decodable>(v: Value, options: Options = Options()): T throws DecodeError {
-  val dec = ValueDecoder.of(v, "json", options.enums, options.keys, options.durations, options.maxDepth)
+/// A `T` read from a `codec.Value` tree.
+public fun fromValue<T: Decodable>(v: codec.Value, options: Options = Options()): T throws DecodeError {
+  val dec = codec.ValueDecoder.of(v, "json", options.enums, options.keys, options.durations, options.maxDepth)
   val value = try T.decode(dec)
-  try finish(dec, value)
+  try codec.finish(dec, value)
 }
 
 // ---------------------------------------------------------------------------
@@ -95,16 +95,14 @@ struct Open {
   isList:      bool
 }
 
-/// The `Encoder` that writes JSON text. Its state lives behind handles —
+/// The `codec.Encoder` that writes JSON text. Its state lives behind handles —
 /// a builder and a list — so the copy a trait object makes (D9) writes
-/// into the same text.
+/// into the same text. `json.JsonEncoder()`, or `JsonEncoder(options)`.
 public struct JsonEncoder {
-  private out:     StringBuilder = stringBuilder()
+  public options:  Options = Options()
+  private out:     StringBuilder = StringBuilder()
   private stack:   MutableList<Open> = []
   private pending: MutableList<string> = []  // the key waiting for its value, if any
-  private options: Options
-
-  public static fun of(options: Options = Options()): JsonEncoder = JsonEncoder(options)
 
   /// The text written so far.
   public fun text(): string = this.out.toString()
@@ -129,13 +127,13 @@ public struct JsonEncoder {
     loop (_ in 0..<this.stack.len()) this.out.append(this.options.indent)
   }
 
-  /// A tree nests as deep as whoever built it wanted, and `Value.encode`
+  /// A tree nests as deep as whoever built it wanted, and `codec.Value.encode`
   /// walks it by recursion, so the limit belongs on the way out as much as
   /// on the way in — a document that was refused as too deep must not come
   /// back as a stack overflow when something re-encodes it.
   private fun checkDepth() throws EncodeError {
     if (this.stack.len() >= this.options.maxDepth) {
-      throw EncodeError(message: tooDeepMessage(this.options.maxDepth))
+      throw EncodeError(message: recursion.tooDeepMessage(this.options.maxDepth))
     }
   }
 
@@ -145,11 +143,11 @@ public struct JsonEncoder {
     this.out.append(what)
   }
 
-  implement Encoder {
+  implement codec.Encoder {
     fun format(): string = "json"
-    override fun enums(): EnumStyle = this.options.enums
-    override fun durations(): DurationStyle = this.options.durations
-    override fun keys(): KeyStyle = this.options.keys
+    override fun enums(): codec.EnumStyle = this.options.enums
+    override fun durations(): codec.DurationStyle = this.options.durations
+    override fun keys(): codec.KeyStyle = this.options.keys
 
     fun beginObject() throws EncodeError {
       try this.checkDepth()
@@ -215,6 +213,21 @@ const HEX: string = "0123456789abcdef"
 /// `s` as a JSON string literal, escapes and all.
 fun writeQuoted(out: StringBuilder, s: string) {
   out.append("\"")
+  // most strings need no escape: one scan, then one copy instead of a
+  // push per byte
+  var plain = true
+  loop (i in 0..<s.len()) {
+    val b = s.byteAt(i)
+    if (b < 32 || b == '"' || b == '\\') {
+      plain = false
+      break
+    }
+  }
+  if (plain) {
+    out.append(s)
+    out.append("\"")
+    return
+  }
   loop (i in 0..<s.len()) {
     val b = s.byteAt(i)
     when {
@@ -253,17 +266,23 @@ struct Frame {
 // `hasNext` run only inside a container `open` pushed.
 const openContainer = "json: this runs only inside an open container"
 
-/// The `Decoder` that reads JSON text. A wrong type is a problem at the
+/// The `codec.Decoder` that reads JSON text. A wrong type is a problem at the
 /// path, recorded and read past; malformed text is a `DecodeError`.
+// Where a JsonDecoder is reading. A decoder is a value that trait objects
+// copy (D9), so the position lives behind a pointer every copy shares.
+struct Cursor {
+  var at: i64 = 0
+}
+
 public struct JsonDecoder {
   private src:      List<u8>
-  private cursor:   MutableList<i64> = [0]  // the position, behind a handle
+  private cursor:   *Cursor = &Cursor()  // the position, behind a handle
   private stack:    MutableList<Frame> = []
-  private recorded: Problems
+  private recorded: codec.Problems
   private options:  Options
 
   public static fun of(text: string, options: Options = Options()): JsonDecoder =
-    JsonDecoder(src: text.bytes(), recorded: Problems.capped(options.maxProblems), options)
+    JsonDecoder(src: text.bytes(), recorded: codec.Problems.capped(options.maxProblems), options)
 
   /// After the value: nothing but whitespace may follow.
   public fun end() throws DecodeError {
@@ -271,11 +290,13 @@ public struct JsonDecoder {
     if (this.pos() < this.src.len()) throw this.malformed("text after the value")
   }
 
-  private fun pos(): i64 = this.cursor.at(0) ?: panic("json: the cursor is a one-element cell")
-  private fun setPos(p: i64) = this.cursor.set(0, p)
+  private fun pos(): i64 = this.cursor.at
+  private fun setPos(p: i64) {
+    this.cursor.at = p
+  }
 
   private fun malformed(what: string): DecodeError =
-    DecodeError(problems: this.recorded.list().concat([Problem(path: "", message: "malformed JSON at byte ${this.pos()}: $what")]))
+    DecodeError(problems: this.recorded.list().concat([codec.Problem(path: "", message: "malformed JSON at byte ${this.pos()}: $what")]))
 
   private fun peekByte(): u8? = this.src.at(this.pos())
 
@@ -289,13 +310,13 @@ public struct JsonDecoder {
 
   /// Describes the next value for a problem message.
   private fun found(): string throws DecodeError = when (try this.peek()) {
-    Kind.Null   => "null"
-    Kind.Bool   => "a boolean"
-    Kind.Int    => "a number"
-    Kind.Float  => "a number"
-    Kind.String => "a string"
-    Kind.List   => "a list"
-    Kind.Object => "an object"
+    codec.Kind.Null   => "null"
+    codec.Kind.Bool   => "a boolean"
+    codec.Kind.Int    => "a number"
+    codec.Kind.Float  => "a number"
+    codec.Kind.String => "a string"
+    codec.Kind.List   => "a list"
+    codec.Kind.Object => "an object"
   }
 
   /// A value of the wrong type: recorded and read past.
@@ -321,7 +342,7 @@ public struct JsonDecoder {
       this.digits()
     }
     if (this.pos() == start) throw this.malformed("expected a number")
-    (this.src.slice(start, this.pos()).decodeUtf8() ?: "")
+    (listDecodeUtf8Range(this.src, start, this.pos()) ?: "")
   }
 
   private fun digits() {
@@ -355,6 +376,18 @@ public struct JsonDecoder {
   private fun quoted(): string throws DecodeError {
     if (this.peekByte() != '"') throw this.malformed("expected a string")
     this.setPos(this.pos() + 1)
+    // most strings have no escape: find the closing quote and copy once
+    val first = this.pos()
+    var end = first
+    loop (end < this.src.len()) {
+      val b = this.src.at(end) ?: break
+      if (b == '"') {
+        this.setPos(end + 1)
+        return listDecodeUtf8Range(this.src, first, end) ?: throw this.malformed("a string that is not valid UTF-8")
+      }
+      if (b == '\\' || b < 32) break
+      end += 1
+    }
     val out: MutableList<u8> = []
     loop {
       val b = this.peekByte() ?: throw this.malformed("unterminated string")
@@ -426,7 +459,7 @@ public struct JsonDecoder {
   }
 
   private fun open(isList: bool, opener: u8, expected: string) throws DecodeError {
-    if (this.stack.len() >= this.options.maxDepth) throw this.malformed(tooDeepMessage(this.options.maxDepth))
+    if (this.stack.len() >= this.options.maxDepth) throw this.malformed(recursion.tooDeepMessage(this.options.maxDepth))
     this.skipSpace()
     if (this.peekByte() == opener) {
       this.setPos(this.pos() + 1)
@@ -445,22 +478,22 @@ public struct JsonDecoder {
     this.setPos(this.pos() + 1)
   }
 
-  implement Decoder {
+  implement codec.Decoder {
     fun format(): string = "json"
-    override fun enums(): EnumStyle = this.options.enums
-    override fun durations(): DurationStyle = this.options.durations
-    override fun keys(): KeyStyle = this.options.keys
+    override fun enums(): codec.EnumStyle = this.options.enums
+    override fun durations(): codec.DurationStyle = this.options.durations
+    override fun keys(): codec.KeyStyle = this.options.keys
 
-    fun peek(): Kind throws DecodeError {
+    fun peek(): codec.Kind throws DecodeError {
       this.skipSpace()
       val b = this.peekByte() ?: throw this.malformed("unexpected end of input")
       when {
-        b == '{' => Kind.Object
-        b == '[' => Kind.List
-        b == '"' => Kind.String
-        b == 't' || b == 'f' => Kind.Bool
-        b == 'n' => Kind.Null
-        b == '-' || (b >= '0' && b <= '9') => if (this.numberIsFloat()) Kind.Float else Kind.Int
+        b == '{' => codec.Kind.Object
+        b == '[' => codec.Kind.List
+        b == '"' => codec.Kind.String
+        b == 't' || b == 'f' => codec.Kind.Bool
+        b == 'n' => codec.Kind.Null
+        b == '-' || (b >= '0' && b <= '9') => if (this.numberIsFloat()) codec.Kind.Float else codec.Kind.Int
         else => throw this.malformed("unexpected character")
       }
     }
@@ -496,17 +529,33 @@ public struct JsonDecoder {
     fun endList() throws DecodeError = try this.closeContainer(']')
 
     fun readI64(): i64 throws DecodeError {
-      if (try this.peek() != Kind.Int) {
+      if (try this.peek() != codec.Kind.Int) {
         try this.wrong("an integer")
         return 0
       }
-      val text = try this.number()
-      val n = text.toInt()
-      if (n == null) {
+      // the digits straight into the value; the text only for a number
+      // too big to hold
+      val start = this.pos()
+      val negative = this.peekByte() == '-'
+      if (negative) this.setPos(start + 1)
+      var n: i64 = 0
+      var fits = true
+      loop {
+        val b = this.peekByte() ?: break
+        if (b < '0' || b > '9') break
+        val d = (b - '0') as i64
+        // accumulate negatively: -9223372036854775808 has no positive twin
+        val next = n.checkedMul(10)?.checkedSub(d)
+        if (next == null) fits = false else n = next
+        this.setPos(this.pos() + 1)
+      }
+      if (this.pos() == start + (if (negative) 1 else 0)) throw this.malformed("expected a number")
+      if (!fits || !negative && n == -9223372036854775807 - 1) {
+        val text = listDecodeUtf8Range(this.src, start, this.pos()) ?: ""
         this.recorded.record(this.path(), "$text does not fit an integer")
         return 0
       }
-      n
+      if (negative) n else -n
     }
 
     fun readU64(): u64 throws DecodeError {
@@ -520,7 +569,7 @@ public struct JsonDecoder {
 
     fun readF64(): f64 throws DecodeError {
       val k = try this.peek()
-      if (k != Kind.Int && k != Kind.Float) {
+      if (k != codec.Kind.Int && k != codec.Kind.Float) {
         try this.wrong("a number")
         return 0.0
       }
@@ -541,7 +590,7 @@ public struct JsonDecoder {
     }
 
     fun readBool(): bool throws DecodeError {
-      if (try this.peek() != Kind.Bool) {
+      if (try this.peek() != codec.Kind.Bool) {
         try this.wrong("a boolean")
         return false
       }
@@ -554,7 +603,7 @@ public struct JsonDecoder {
     }
 
     fun readString(): string throws DecodeError {
-      if (try this.peek() != Kind.String) {
+      if (try this.peek() != codec.Kind.String) {
         try this.wrong("a string")
         return ""
       }
@@ -562,7 +611,7 @@ public struct JsonDecoder {
     }
 
     fun readNull() throws DecodeError {
-      if (try this.peek() != Kind.Null) {
+      if (try this.peek() != codec.Kind.Null) {
         return try this.wrong("null")
       }
       try this.literal("null")
@@ -570,25 +619,25 @@ public struct JsonDecoder {
 
     fun skip() throws DecodeError {
       when (try this.peek()) {
-        Kind.Null   => try this.literal("null")
-        Kind.Bool   => {
+        codec.Kind.Null   => try this.literal("null")
+        codec.Kind.Bool   => {
           val _ = try this.readBool()
         }
-        Kind.Int    => {
+        codec.Kind.Int    => {
           val _ = try this.number()
         }
-        Kind.Float  => {
+        codec.Kind.Float  => {
           val _ = try this.number()
         }
-        Kind.String => {
+        codec.Kind.String => {
           val _ = try this.quoted()
         }
-        Kind.List   => {
+        codec.Kind.List   => {
           try this.beginList()
           loop (try this.hasNext()) try this.skip()
           try this.endList()
         }
-        Kind.Object => {
+        codec.Kind.Object => {
           try this.beginObject()
           loop {
             val _ = try this.nextKey() ?: break
@@ -602,13 +651,13 @@ public struct JsonDecoder {
     fun path(): string {
       var out = ""
       loop (fr in this.stack) {
-        out = if (fr.isList) indexPath(out, fr.index - 1) else childPath(out, fr.key)
+        out = if (fr.isList) codec.indexPath(out, fr.index - 1) else codec.childPath(out, fr.key)
       }
       out
     }
 
     fun problemAt(path: string, message: string) = this.recorded.record(path, message)
 
-    fun problems(): List<Problem> = this.recorded.list()
+    fun problems(): List<codec.Problem> = this.recorded.list()
   }
 }

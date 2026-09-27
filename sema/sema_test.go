@@ -280,7 +280,7 @@ fun main() { var xs: MutableList<i32> = []; scope { async work(xs) } }`, "not Se
 		{"D16 recv must be awaited", prelude + `
 fun main() { val ch = Channel<i32>(); val x = ch.recv() }`, "must be awaited"},
 		{"D35 no await inside a lock", prelude + `
-fun main() { val m = mutex(1); m.withLock(p => { await sleep(Duration.millis(1)); 0 }) }`, "lambda suspends"},
+fun main() { val m = Mutex(value: 1); m.withLock(p => { await sleep(Duration.millis(1)); 0 }) }`, "lambda suspends"},
 		{"D40 impl must declare suspends", prelude + `
 trait T { fun f(): i32 }
 struct A { }
@@ -288,11 +288,11 @@ implement T for A { fun f(): i32 { await sleep(Duration.millis(1)); 1 } }
 fun main() { }`, "declares it non-suspending"},
 		{"D66 module-level var", prelude + `
 var hits = 0
-fun main() { hits += 1 }`, "'val hits = atomic(...)'"},
+fun main() { hits += 1 }`, "'val hits = Atomic(value: ...)'"},
 		{"D66 module-level var of a struct", prelude + `
 struct P { var n: i32 }
 var p = P(n: 1)
-fun main() { }`, "'val p = mutex(...)'"},
+fun main() { }`, "'val p = Mutex(value: ...)'"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) { expectError(t, c.src, c.want) })
@@ -317,8 +317,8 @@ fun main() throws {
 }`)
 	// D66: shared module state behind a lock
 	expectClean(t, prelude+`
-val hits = atomic(0)
-val names = mutex(MutableList<string>.make(0, _ => ""))
+val hits = Atomic(value: 0)
+val names = Mutex(value: MutableList<string>.make(0, _ => ""))
 fun main() {
   val _ = hits.update(n => n + 1)
   names.withLock(xs => xs.push("a"))
@@ -800,7 +800,7 @@ fun main() throws IoError {
   io.println("${fs.exists("a")} ${fs.isFile("a")} ${fs.isDir("a")} $names $here")
   val p: string = path.join(path.join("a", "b"), path.dir("c/d"), path.base("e"), path.ext("f.vs"), path.stem("g.vs"))
   io.println("$p ${path.isAbsolute(p)}")
-  val sb = stringBuilder()
+  val sb = StringBuilder()
   sb.append("a")
   sb.appendLine()
   sb.clear()
@@ -1551,18 +1551,18 @@ fun drain(q: Deque<i64>): i64 {
   n
 }
 fun main() {
-  val q = deque<i64>()
+  val q = Deque<i64>()
   q.addLast(1)
   q.addFirst(0)
-  val typed: Deque<string> = deque()
+  val typed = Deque<string>()
   typed.addLast("x")
   loop (x in q) io.println("$x")
   io.println("$q ${q.first()} ${q.last()} ${q.at(-1)} ${q.len()} ${drain(q)} ${q.isEmpty()} $typed")
-  val jobs = priorityQueue<Job>()
+  val jobs = PriorityQueue<Job>.natural()
   jobs.push(Job(cost: 3))
-  val words = priorityQueueBy<string>((a, b) => b.compareTo(a))
+  val words = PriorityQueue<string>(compare: (a, b) => b.compareTo(a))
   words.push("a")
-  val holes = deque<i64?>()
+  val holes = Deque<i64?>()
   holes.addLast(null)
   io.println("${holes.len()} ${holes.removeFirst()}")
   io.println("${jobs.pop()?.cost} ${jobs.peek()} ${words.pop()} ${words.len()}")
@@ -1595,7 +1595,7 @@ fun work(s: S?) { }
 // pointer that locates it is evaluated once (hoistPlace).
 func TestCompoundAssignmentEvaluatesPlaceOnce(t *testing.T) {
 	prog := checkProgram(t, prelude+`
-val calls = atomic(0)
+val calls = Atomic(value: 0)
 fun idx(): i64 { val _ = calls.update(n => n + 1); 0 }
 fun key(): string { val _ = calls.update(n => n + 1); "a" }
 fun main() {
@@ -2796,7 +2796,7 @@ func TestDerivation(t *testing.T) {
 	cases := []struct{ name, src, want string }{
 		{"struct Codable, braceless", `struct U { id: i64; name: string?
   implement Codable }
-fun main() { val e = ValueEncoder.of(); val _ = U(id: 1, name: null).encode(e); io.println("${U.decode(ValueDecoder.of(e.value())) is Ok}") }`, ""},
+fun main() { val e = codec.ValueEncoder.of(); val _ = U(id: 1, name: null).encode(e); io.println("${U.decode(codec.ValueDecoder.of(e.value())) is Ok}") }`, ""},
 		{"derived code is not shadowed by the module's own names", `struct U { id: i64; tags: List<string>
   implement Codable }
 sealed trait S { }
@@ -2806,60 +2806,60 @@ fun styleKey(x: i64): i64 = x
 fun childPath(): string = "c"
 fun joinPath(a: i64): i64 = a
 fun panic(n: bool): bool = n
-fun main() { val e = ValueEncoder.of(); val _ = U(id: 1, tags: []).encode(e); io.println("${U.decode(ValueDecoder.of(e.value())) is Ok} ${S.decode(ValueDecoder.of(VNull())) is Err} ${styleKey(1)}${childPath()}${joinPath(2)}${panic(true)}") }`, ""},
+fun main() { val e = codec.ValueEncoder.of(); val _ = U(id: 1, tags: []).encode(e); io.println("${U.decode(codec.ValueDecoder.of(e.value())) is Ok} ${S.decode(codec.ValueDecoder.of(codec.VNull())) is Err} ${styleKey(1)}${childPath()}${joinPath(2)}${panic(true)}") }`, ""},
 		{"struct Codable, top level, foreign-style", `struct U { id: i64 }
 implement Codable for U
-fun main() { io.println("${U.decode(ValueDecoder.of(VNull())) is Err}") }`, ""},
+fun main() { io.println("${U.decode(codec.ValueDecoder.of(codec.VNull())) is Err}") }`, ""},
 		{"partial override keeps the written method", `struct M { n: i64
-  implement Codable { fun encode(to: Encoder) throws EncodeError = try to.writeString("m") } }
-fun main() { val e = ValueEncoder.of(); val _ = M(n: 1).encode(e); io.println("${e.value()}") }`, ""},
+  implement Codable { fun encode(to: codec.Encoder) throws EncodeError = try to.writeString("m") } }
+fun main() { val e = codec.ValueEncoder.of(); val _ = M(n: 1).encode(e); io.println("${e.value()}") }`, ""},
 		{"generic struct infers the bound", `struct Page<T> { items: List<T>
   implement Codable }
-fun main() { val e = ValueEncoder.of(); val _ = Page(items: [1, 2]).encode(e); io.println("${e.value()}") }`, ""},
+fun main() { val e = codec.ValueEncoder.of(); val _ = Page(items: [1, 2]).encode(e); io.println("${e.value()}") }`, ""},
 		{"generic struct: an argument that is not Codable", `struct Page<T> { items: List<T>
   implement Codable }
 struct H { f: fun(i64): i64 }
-fun main() { val e = ValueEncoder.of(); val _ = Page(items: [H(f: x => x)]).encode(e) }`, "requires 'H' to implement 'Encodable'"},
+fun main() { val e = codec.ValueEncoder.of(); val _ = Page(items: [H(f: x => x)]).encode(e) }`, "requires 'H' to implement 'Encodable'"},
 		{"function field cannot be derived", `struct H { f: fun(i64): i64
   implement Codable }`, "field 'f' is a function"},
 		{"skipped function field is fine", `struct H { @skip f: fun(i64): i64 = x => x
   n: i64
   implement Codable }
-fun main() { io.println("${H.decode(ValueDecoder.of(VObject(fields: ["n": VInt(value: 1)]))) is Ok}") }`, ""},
+fun main() { io.println("${H.decode(codec.ValueDecoder.of(codec.VObject(fields: ["n": codec.VInt(value: 1)]))) is Ok}") }`, ""},
 		{"two fields on one key", `struct U { @key("x") a: i64; @key("x") b: i64
   implement Decodable }`, "share the key"},
 		{"sealed derives every variant", `sealed trait S
 struct A : S { x: i64 }
 struct B : S { y: string }
 implement Codable for S
-fun main() { val e = ValueEncoder.of(); val v: S = A(x: 1); val _ = v.encode(e); io.println("${S.decode(ValueDecoder.of(e.value())) is Ok}") }`, ""},
+fun main() { val e = codec.ValueEncoder.of(); val v: S = A(x: 1); val _ = v.encode(e); io.println("${S.decode(codec.ValueDecoder.of(e.value())) is Ok}") }`, ""},
 		{"sealed keeps a hand-written variant impl", `sealed trait S
 struct A : S { x: i64 }
 struct B : S { y: string }
-implement Encodable for A { fun encode(to: Encoder) throws EncodeError = try to.writeString("a") }
+implement Encodable for A { fun encode(to: codec.Encoder) throws EncodeError = try to.writeString("a") }
 implement Encodable for S
-fun main() { val e = ValueEncoder.of(); val v: S = A(x: 1); val _ = v.encode(e); io.println("${e.value()}") }`, ""},
+fun main() { val e = codec.ValueEncoder.of(); val v: S = A(x: 1); val _ = v.encode(e); io.println("${e.value()}") }`, ""},
 		{"Comparable by field order", `struct V { a: i64; b: string
   implement Comparable }
 fun main() { io.println("${V(a: 1, b: "x") < V(a: 1, b: "y")}") }`, ""},
 		{"Comparable needs ordered fields", `struct V { a: fun(): i64
   implement Comparable }`, "compareTo"},
 		{"an enum is Codable by itself", `enum E { A, B }
-fun main() { val e = ValueEncoder.of(); val _ = E.B.encode(e); io.println("${e.value()} ${E.decode(ValueDecoder.of(e.value())) is Ok}") }`, ""},
+fun main() { val e = codec.ValueEncoder.of(); val _ = E.B.encode(e); io.println("${e.value()} ${E.decode(codec.ValueDecoder.of(e.value())) is Ok}") }`, ""},
 		{"enums still refuse a written impl", `enum E { A, B }
 implement Codable for E`, "cannot implement 'Codable' for enum"},
 		{"a method of a super written in the Codable body", `struct U { id: i64
-  implement Codable { static fun decode(from: Decoder): U throws DecodeError = U(id: 0) } }
-fun main() { io.println("${U.decode(ValueDecoder.of(VNull())) is Ok}") }`, ""},
+  implement Codable { static fun decode(from: codec.Decoder): U throws DecodeError = U(id: 0) } }
+fun main() { io.println("${U.decode(codec.ValueDecoder.of(codec.VNull())) is Ok}") }`, ""},
 		{"a super the type already implements", `struct U { id: i64
-  implement Encodable { fun encode(to: Encoder) throws EncodeError = try to.writeI64(1) }
-  implement Codable { fun encode(to: Encoder) throws EncodeError = try to.writeI64(2) } }`, "already implements"},
+  implement Encodable { fun encode(to: codec.Encoder) throws EncodeError = try to.writeI64(1) }
+  implement Codable { fun encode(to: codec.Encoder) throws EncodeError = try to.writeI64(2) } }`, "already implements"},
 		{"Codable bound gives both methods", `struct U { id: i64
   implement Codable }
 fun roundTrip<T: Codable>(x: T): T throws DecodeError {
-  val e = ValueEncoder.of()
+  val e = codec.ValueEncoder.of()
   val _ = x.encode(e)
-  try T.decode(ValueDecoder.of(e.value()))
+  try T.decode(codec.ValueDecoder.of(e.value()))
 }
 fun main() { io.println("${roundTrip(U(id: 3))}") }`, ""},
 		{"a combination trait is satisfied by its parts", `struct U { id: i64
@@ -2910,10 +2910,10 @@ trait B : A { }`, "requires itself"},
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			if c.want == "" {
-				expectClean(t, prelude+c.src)
+				expectClean(t, prelude+"use codec\n"+c.src)
 				return
 			}
-			expectError(t, prelude+c.src, c.want)
+			expectError(t, prelude+"use codec\n"+c.src, c.want)
 		})
 	}
 }
@@ -3578,8 +3578,9 @@ fun main() { val g = &f; val y = g(1) }`, "requires an 'unsafe' block"},
 fun g(p: *raw u8) { val q = p as *raw i64 }`, "casting a raw pointer requires an 'unsafe' block"},
 		{"closure to C", `extern "C" { fun take(f: fun(i32): i32) }
 fun main() { }`, "a Veles function value cannot be handed to C"},
-		{"CLayout by hand", `struct S { x: i64 }
-implement CLayout for S
+		{"CLayout by hand", `use ffi
+struct S { x: i64 }
+implement ffi.CLayout for S
 fun main() { }`, "cannot be implemented by hand"},
 		{"withRaw on strings", `fun main() { val xs = ["a"]; xs.withRaw(p => 0) }`, "requires 'string' to implement 'CLayout'"},
 		{"a plain export is clean", `extern "C" fun f(x: i32): i32 = x
@@ -3599,13 +3600,254 @@ fun main() { }`, ""},
 // threads, so it must be Sendable; a TaskLocal of a Sendable value is
 // itself Sendable, so a sendable lambda may capture one.
 func TestTaskLocal(t *testing.T) {
-	expectClean(t, prelude+`val requestId = taskLocal("-")
+	expectClean(t, prelude+`val requestId = TaskLocal(fallback: "-")
 fun log(msg: string) { io.println("[${requestId.get()}] $msg") }
 fun main() {
   requestId.withValue("r1", () => log("in"))
   val xs = [1, 2]
   io.println("${xs.mapConcurrent(n => requestId.get().len() + n)}")
 }`)
-	expectError(t, prelude+`val cache = taskLocal(MutableList<i64>())
+	expectError(t, prelude+`val cache = TaskLocal(fallback: MutableList<i64>())
 fun main() { }`, "does not implement trait 'Sendable'")
+}
+
+// Two error types with one name from different modules used to read
+// `throws Invalid | Invalid` (note #1): a type that shares its name with
+// another one in the same message is spelled with its module.
+func TestSameNamedTypesAreQualified(t *testing.T) {
+	src := "use hex\nuse base64\n\nfun both(s: string): i64 throws {\n  val a = try hex.decode(s)\n  val b = try base64.decode(s)\n  a.len() + b.len()\n}\n\nfun main() {\n  val m: i64 = both(\"x\")\n}\n"
+	expectError(t, src, "found 'Result<i64, base64.Invalid | hex.Invalid>'")
+	src = "use hex\nuse base64\n\nfun other(): hex.Invalid = base64.Invalid(message: \"x\", position: 0)\n\nfun main() {}\n"
+	expectError(t, src, "expected 'hex.Invalid', found 'base64.Invalid'")
+}
+
+// Factory functions that stood in for a constructor are gone; calling one
+// names the constructor, with a fix when the arguments carry over.
+func TestRemovedFactories(t *testing.T) {
+	expectError(t, prelude+"fun main() { val sb = stringBuilder(); io.println(sb.toString()) }", "'stringBuilder' was removed: construct it — 'StringBuilder(…)'")
+	expectError(t, "use http\nfun main() { val _ = http.router() }", "'http.router' was removed: construct it — 'http.Router(…)'")
+	expectError(t, "use recursion\nfun main() { val _ = recursion.Depth.of(3) }", "'Depth.of' was removed: write 'Depth(limit: n)'")
+	expectError(t, "fun main() { val _ = deque<i64>() }", "'deque' was removed: construct it — 'Deque(…)'")
+	expectClean(t, "use http\nuse json\nuse recursion\nfun main() { val _ = StringBuilder(); val _ = http.Router(); val _ = recursion.Depth(limit: 3); val _ = json.JsonEncoder(); val _ = Deque<i64>() }")
+}
+
+// D73: `init(...)` parameters are constructor parameters after the fields.
+func TestInitParameters(t *testing.T) {
+	boxed := prelude + `struct Boxed<T> {
+  public label: string = "box"
+  private cell: *T
+  init(value: T, scale: i64 = 1) {
+    this.cell = &value
+  }
+  fun get(): T = *this.cell
+}
+`
+	expectClean(t, boxed+`fun main() {
+  val value = "pun"
+  io.println("${Boxed(value: 41).get()} ${Boxed<string>(label: "s", value: "x", scale: 3).get()} ${Boxed(value).get()}")
+}`)
+	expectError(t, boxed+`fun main() { val _ = Boxed<i64>(label: "x") }`, "missing argument 'value' in constructor of 'Boxed': its 'init' takes it (D73)")
+	expectError(t, prelude+`struct P {
+  name: string
+  init(name: string) { }
+}
+fun main() { }`, "'init' parameter 'name' has the name of a field the constructor already takes")
+	// a field the init assigns may share its parameter's name
+	expectClean(t, prelude+`struct Temp {
+  private celsius: f64
+  init(celsius: f64) { this.celsius = celsius }
+  fun f(): f64 = this.celsius
+}
+fun main() { io.println("${Temp(celsius: 1.0).f()}") }`)
+	expectError(t, prelude+`struct T2 {
+  name: string
+  private n: i64
+  init(seed: i64) { this.n = seed }
+  implement Codable
+}
+fun main() { }`, "its 'init' takes 'seed', which the input cannot supply")
+	// the prelude's own
+	expectClean(t, prelude+`val hits = Atomic(value: 0)
+fun main() {
+  val m = Mutex(value: 1)
+  val q = PriorityQueue<i64>.natural()
+  val big = PriorityQueue<i64>(compare: (a, b) => b.compareTo(a))
+  val tl = TaskLocal(fallback: "-")
+  q.push(2)
+  big.push(3)
+  io.println("${m.get()} ${hits.load()} ${q.pop()} ${big.pop()} ${tl.get()}")
+}`)
+	expectError(t, prelude+"fun main() { val _ = mutex(0) }", "'mutex' was removed: construct it — 'Mutex(value: …)'")
+	expectError(t, prelude+"fun main() { val _ = priorityQueue<i64>() }", "'priorityQueue' was removed: write 'PriorityQueue<T>.natural()'")
+}
+
+// A generic struct's bounds hold wherever it is instantiated: in a type,
+// with explicit arguments, and with arguments inferred from a constructor
+// (they were never checked before).
+func TestStructTypeArgBounds(t *testing.T) {
+	decl := prelude + "struct P { a: i64 }\nstruct Box<T: Comparable> {\n  v: T\n}\n"
+	expectError(t, decl+"fun f(b: Box<P>) { }\nfun main() { }", "type 'P' does not implement trait 'Comparable' required by parameter 'T' of 'Box'")
+	expectError(t, decl+"fun main() { val _ = Box<P>(v: P(a: 1)) }", "type 'P' does not implement trait 'Comparable' required by parameter 'T' of 'Box'")
+	expectError(t, decl+"fun main() { val _ = Box(v: P(a: 1)) }", "type 'P' does not implement trait 'Comparable' required by parameter 'T' of 'Box'")
+	expectClean(t, decl+"fun wrap<T: Comparable>(x: T): Box<T> = Box(v: x)\nfun main() { io.println(\"${wrap(1).v} ${Box(v: \"s\").v}\") }")
+}
+
+// D74: statuses and methods are values; a literal where one is wanted is
+// answered with the constant that holds it.
+func TestHttpNamedValues(t *testing.T) {
+	expectClean(t, prelude+`use http
+fun main() {
+  val r = http.Response.json("{}", status: http.Status.created)
+  val odd = http.Status(code: 499)
+  io.println("${r.status} ${odd} ${http.Status.notFound.isClientError()} ${http.Method.post} ${http.Header.contentType}")
+}`)
+	expectError(t, "use http\nfun main() { val _ = http.Response.empty(204) }", "the named value is 'http.Status.noContent'")
+	expectError(t, "use http\nfun main() { val _ = http.Response.empty(299) }", "build one with 'Status(code: …)' or use a named one: Status.accepted")
+	expectError(t, "use http\nfun main() { val _ = http.reasonOf(404) }", "'http.reasonOf' was removed: write 'http.Status(code: n).reason()'")
+}
+
+// D75: the codec machinery, the recursion guard and CLayout are reached
+// through their modules; deriving needs no import.
+func TestSlimPrelude(t *testing.T) {
+	expectClean(t, prelude+`use codec, recursion
+struct Pt {
+  x: i64
+  implement Codable
+}
+fun main() {
+  val e = codec.ValueEncoder.of()
+  val _ = Pt(x: 1).encode(e)
+  val d = recursion.Depth(limit: 3)
+  io.println("${e.value()} ${d.limit} ${recursion.maxRecursionDepth} ${codec.KeyStyle.SnakeCase}")
+}`)
+	expectClean(t, prelude+`struct Pt {
+  x: i64
+  implement Codable
+}
+fun main() { io.println("${Pt(x: 1)}") }`)
+	expectError(t, prelude+"fun f(v: Value) { }\nfun main() { }", "unknown type 'Value'; did you mean 'codec.Value'? (add 'use codec' at the top of the file)")
+	expectError(t, prelude+"fun main() { io.println(\"${maxRecursionDepth}\") }", "did you mean 'recursion.maxRecursionDepth'?")
+}
+
+// A binding whose value failed to check still exists (typed as unknown), so
+// one mistake is one error, not one more for every use of the name.
+func TestNoCascadeFromABadBinding(t *testing.T) {
+	diags := checkSource(t, prelude+"fun main() {\n  loop (style in Nope.values()) {\n    io.println(\"$style\")\n  }\n  val (a, b) = nope()\n  io.println(\"$a $b\")\n}\n")
+	n := 0
+	for _, d := range diags.Items {
+		if d.Severity == source.Error {
+			n++
+			if strings.Contains(d.Message, "'style'") || strings.Contains(d.Message, "'a'") || strings.Contains(d.Message, "'b'") {
+				t.Errorf("cascade: %s", d.Message)
+			}
+		}
+	}
+	if n != 2 {
+		t.Errorf("want 2 errors, got:\n%s", diags.Render())
+	}
+}
+
+// Derived code's own names are not the program's: a struct with no fields
+// derives a decoder whose key variable goes unread, and that is not a
+// warning at the user's `implement Codable`.
+func TestDerivedCodeHasNoWarnings(t *testing.T) {
+	diags := checkSource(t, "struct E {\n  implement Codable\n}\nfun main() { val _ = E() }\n")
+	if len(diags.Items) != 0 {
+		t.Errorf("derived code warned:\n%s", diags.Render())
+	}
+}
+
+// `time.Duration` for the prelude's `Duration`, `json.Value` for
+// `codec.Value`: the error says where the name is, once.
+func TestMemberOfTheWrongModule(t *testing.T) {
+	diags := checkSource(t, "use io, time, json\nfun main() {\n  val d = time.Duration.zero\n  val x: time.Duration = d\n  val v: json.Value? = null\n  io.println(\"$x $v\")\n}\n")
+	out := diags.Render()
+	if strings.Count(out, "'Duration' is global (the prelude): write 'Duration'") != 2 || !strings.Contains(out, "it is 'codec.Value' (add 'use codec')") || strings.Contains(out, "unknown type") {
+		t.Errorf("got:\n%s", out)
+	}
+}
+
+// Why a generic instance lacks a trait is said about the element that
+// lacks it.
+func TestUnmetBoundThroughAnImpl(t *testing.T) {
+	expectError(t, "use json\nstruct Tag { name: string }\nfun main() { val _ = json.encode([Tag(name: \"b\")]) ?? \"\" }\n",
+		"'List<T>' implements 'Encodable' when 'T' does, and 'Tag' does not; add 'implement Encodable' inside 'struct Tag' — the compiler derives it")
+}
+
+// A field that stops a coding derive is marked `@skip` by the fix when it
+// has the default a skipped field needs; without one there is no fix.
+func TestSkipFixForAnUncodableField(t *testing.T) {
+	src := "use codec\nstruct Job {\n  name: string\n  onDone: fun() = () => {}\n  implement Encodable\n}\nstruct Task {\n  run: fun()\n  implement Encodable\n}\nfun main() {}\n"
+	diags := checkSource(t, src)
+	var fixed string
+	n := 0
+	for _, d := range diags.Items {
+		if !strings.Contains(d.Message, "cannot derive 'Encodable'") {
+			continue
+		}
+		n++
+		switch {
+		case strings.Contains(d.Message, "'Job'"):
+			if d.Fix == nil || len(d.Fix.Edits) != 1 || d.Fix.Edits[0].NewText != "@skip " {
+				t.Fatalf("Job: fix %+v", d.Fix)
+			}
+			e := d.Fix.Edits[0]
+			fixed = src[:e.Span.Start] + e.NewText + src[e.Span.End:]
+		case d.Fix != nil:
+			t.Errorf("Task has no default to fall back on, yet a fix: %+v", d.Fix)
+		}
+	}
+	if n != 2 {
+		t.Fatalf("want two derive errors:\n%s", diags.Render())
+	}
+	if !strings.Contains(fixed, "  @skip onDone: fun() = ") {
+		t.Errorf("fixed source:\n%s", fixed)
+	}
+	if out := checkSource(t, fixed).Render(); strings.Contains(out, "'Job'") {
+		t.Errorf("the fix did not settle Job:\n%s", out)
+	}
+}
+
+// Tests are `test "sentence" { }` with a vocabulary only test code may use
+// (D78); the old `@test fun` is an error whose fix writes the new form.
+func TestTestDeclarations(t *testing.T) {
+	expectClean(t, "use io\nfun half(n: i64): i64? = if (n % 2 == 0) n / 2 else null\n"+
+		"test fun expectEven(n: i64) {\n  expect(n % 2 == 0)\n}\n"+
+		"test \"halves\" {\n  expectEven(4)\n  val h = require(half(4))\n  expect(h == 2)\n  val xs = [1, 2].map(x => {\n    expect(x > 0)\n    x\n  })\n  expect(xs.len() == 2)\n}\n"+
+		"fun main() {\n  assert(1 < 2, \"order\")\n  io.println(\"ok\")\n}\n")
+	expectError(t, "fun main() {\n  assert(1 < 2)\n}\n", "'assert' takes a condition and the reason it must hold")
+	expectError(t, "fun main() {\n  check(1 < 2)\n}\n", "an invariant is 'assert(cond, \"why it must hold\")'")
+	expectError(t, "fun main() {\n  expect(1 == 1)\n}\n", "'expect' is for tests")
+	expectError(t, "test fun helper() { }\nfun main() {\n  helper()\n}\n", "'helper' is test code")
+	expectError(t, "test \"a\" { }\ntest \"a\" { }\nfun main() { }\n", "another test or suite here is named \"a\"")
+	expectError(t, "test \"a\" {\n  expect(require(1))\n}\nfun main() { }\n", "'require' unwraps a nullable or a Result")
+	expectError(t, "fun f(): i64 = 1\ntest \"a\" {\n  expectThrows(() => f())\n}\nfun main() { }\n", "nothing in this function can throw")
+	expectError(t, "error A { }\nerror B { }\nfun f(): i64 throws A = throw A()\ntest \"a\" {\n  expectThrows<B>(() => f())\n}\nfun main() { }\n", "this function throws 'A', never 'B'")
+
+	// the old form: one error with a fix to the new one, the name as words
+	src := "@test\nfun parsesURLQuickly() throws E {\n  try f()\n}\nerror E { }\nfun f() throws E { }\nfun main() { }\n"
+	var fix *source.Fix
+	for _, d := range checkSource(t, src).Items {
+		if strings.Contains(d.Message, "a test is written 'test \"parses URL quickly\" { ... }' (D78)") {
+			fix = d.Fix
+		}
+	}
+	if fix == nil || len(fix.Edits) != 1 {
+		t.Fatalf("no fix for @test")
+	}
+	e := fix.Edits[0]
+	fixed := src[:e.Span.Start] + e.NewText + src[e.Span.End:]
+	if !strings.HasPrefix(fixed, "test \"parses URL quickly\" {\n  try f()\n}\n") {
+		t.Errorf("fixed:\n%s", fixed)
+	}
+	expectClean(t, fixed)
+}
+
+// Suites (D78): helpers are visible only inside their suite; names are
+// unique per suite, not per module.
+func TestTestSuites(t *testing.T) {
+	expectClean(t, "suite \"a\" {\n  test fun h() { }\n  test \"same\" { h() }\n  suite \"inner\" {\n    test \"same\" { h() }\n  }\n}\nsuite \"b\" {\n  test fun h() { }\n  test \"same\" { h() }\n}\nfun main() { }\n")
+	expectError(t, "suite \"a\" {\n  test fun h() { }\n}\ntest \"x\" { h() }\nfun main() { }\n", "'h' is a helper of suite \"a\", visible only inside it")
+	expectError(t, "suite \"a\" { }\nsuite \"a\" { }\nfun main() { }\n", "another test or suite here is named \"a\"")
+	expectError(t, "suite \"a\" {\n  test \"x\" { }\n  test \"x\" { }\n}\nfun main() { }\n", "another test or suite here is named \"a / x\"")
 }

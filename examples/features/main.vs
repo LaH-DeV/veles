@@ -40,21 +40,16 @@ struct Pair<A, B> {
   fun swap(): Pair<B, A> = Pair(first: this.second, second: this.first)
 }
 
-fun total<T: Area>(xs: List<T>): f64 {
-  var sum = 0.0
-  loop (x in xs) {
-    sum += x.area()
-  }
-  sum
-}
+fun total<T: Area>(xs: List<T>): f64 =
+  xs.fold(0.0, (acc, shape) => acc + shape.area())
 
 // Wrapping arithmetic (D21), casts, tuples (D37)
 fun wrap(): (i32, i64, u8) {
   val big: i32 = 2147483647
-  val w = big +% 1
+  val wrapped = big +% 1
   val widened = big as i64 + 1
   val small = 300 as u8
-  (w, widened, small)
+  (wrapped, widened, small)
 }
 
 // Smart casts on vars and sealed (D5/D13), pointer auto-deref (D39)
@@ -92,8 +87,8 @@ fun main() {
   val p = Pair(first: 1, second: "one")
   val s = p.swap()
   io.println("pair $p swapped $s ${s.first.len()}")
-  val (w, widened, small) = wrap()
-  io.println("wrap $w $widened $small")
+  val (wrapped, widened, small) = wrap()
+  io.println("wrap $wrapped $widened $small")
   val tree = Add(left: &Num(value: 2), right: &Mul(left: &Num(value: 3), right: &Num(value: 4)))
   io.println("${show(&tree)} = ${eval(tree)}")
   var name: string? = null

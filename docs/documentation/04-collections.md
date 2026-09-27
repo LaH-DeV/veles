@@ -463,13 +463,13 @@ struct Job {
 }
 
 fun main() {
-  val queue = deque<string>()
+  val queue = Deque<string>()
   queue.addLast("b")
   queue.addLast("c")
   queue.addFirst("a")
   io.println("$queue ${queue.removeFirst()} ${queue.last()} ${queue.len()}")
 
-  val jobs = priorityQueue<Job>()
+  val jobs = PriorityQueue<Job>.natural()
   jobs.push(Job(name: "deploy", cost: 5))
   jobs.push(Job(name: "lint", cost: 1))
   jobs.push(Job(name: "test", cost: 3))
@@ -479,7 +479,7 @@ fun main() {
   }
 
   // a comparator instead of the natural order: largest first
-  val biggest = priorityQueueBy<i64>((a, b) => b.compareTo(a))
+  val biggest = PriorityQueue<i64>(compare: (a, b) => b.compareTo(a))
   loop (x in [4, 9, 2]) biggest.push(x)
   io.println("${biggest.pop()} ${biggest.peek()}")
 }

@@ -3,7 +3,7 @@
 // and the two encodings that carry them. Every digest printed here is a
 // published test vector: FIPS 180-4 for the hashes, RFC 4231 and RFC 2202
 // for the MACs, RFC 4648 for base64, RFC 7515 for the token.
-use base64, crypto, hex, io, jwt
+use base64, codec, crypto, hex, io, jwt
 
 fun bytes(b: u8, n: i64): List<u8> = MutableList<u8>.repeat(b, n).toList()
 
@@ -144,7 +144,7 @@ fun tokens() throws base64.Invalid | EncodeError {
     audience: ["api", "web"],
     expiresAt: at + 3600,
     issuedAt: at,
-    extra: ["role": VString(value: "admin")],
+    extra: ["role": codec.VString(value: "admin")],
   ), own, keyId: "2026-09")
   report("mine        ", jwt.verify(mine, own, jwt.Options(now: at, audience: "web", issuer: "notes.example")))
   report("wrong aud   ", jwt.verify(mine, own, jwt.Options(now: at, audience: "admin")))

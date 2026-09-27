@@ -1,11 +1,9 @@
 // Prelude — StringBuilder: builds text piece by piece in linear time,
 // where repeated `+` would copy the whole string each time.
 
-/// Accumulates text. `stringBuilder()` starts one; `toString()` reads it.
-public fun stringBuilder(): StringBuilder = StringBuilder()
-
+/// Accumulates text. `StringBuilder()` starts one; `toString()` reads it.
 public struct StringBuilder {
-  bytes: MutableList<u8> = []
+  private bytes: MutableList<u8> = []
 
   /// Appends `s`.
   public fun append(s: string) {

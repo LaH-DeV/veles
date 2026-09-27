@@ -1,19 +1,20 @@
+# 14. Attributes and tests
+
+## Attributes
+
+An attribute is `@name` or `@name(args)` on the line before a
+declaration (D51). The compiler knows each one; an unknown one is an
+error, not a silent no-op.
+
+| Attribute | On | Effect |
+|---|---|---|
+| `@deprecated("why")` | any declaration | a warning at every use, with the message |
+| `@mustUse` | a function returning a value | an error if a call's result is discarded |
+| `@inline` / `@noinline` | a function | a hint to the optimiser (`--release`) |
 | `@key("k")` / `@key(json: "k", db: "c")` | a field, an enum member, a sealed variant | its name on the wire, for every format or by format ([chapter 18](18-codable-and-json.md)) |
 | `@skip` / `@skip(json)` | a field with a default | left out of the wire form, everywhere or in one format |
 | `@required` | a nullable field | the key must be present even though the value may be null |
 | `@tag("kind")` / `@tag("type", content: "value")` | a sealed trait | the key that names the variant; with `content`, the key the fields go under |
-# 14. Attributes and the test runner
-
-An attribute is `@name` or `@name(args)` on the line before a
-declaration (D51). The bootstrap compiler knows five; an unknown one is
-an error, not a silent no-op.
-
-| Attribute | On | Effect |
-|---|---|---|
-| `@test` | a function with no parameters | included and run by `veles test`; excluded from `veles build`/`run` |
-| `@deprecated("why")` | any declaration | a warning at every use, with the message |
-| `@mustUse` | a function returning a value | an error if a call's result is discarded |
-| `@inline` / `@noinline` | a function | a hint to the optimiser (`--release`) |
 
 ```veles
 use io
@@ -46,49 +47,52 @@ must be used (@mustUse)`.
 
 ## Writing tests
 
-Tests are ordinary functions marked `@test`, living in the module they
-test. A test **passes when it returns** and **fails when it throws or
-panics**. Since a `throws` function can fail with any struct, an
-assertion is just a function that throws a descriptive one:
+A test is `test "what it checks" { ... }`, next to the code it tests, in
+the same module — so it can call private functions (D78). The name is a
+sentence, not an identifier; it is what the report prints. A test has no
+signature: nothing calls it, it takes nothing, and it may throw and
+suspend without saying so.
+
+Inside a test, a small vocabulary is in scope:
+
+| | |
+|---|---|
+| `expect(cond)` | records a failure when `cond` is false, **and the test goes on** — one run reports every broken expectation. For a comparison it shows both sides. |
+| `require(x)` | the value of a `T?` or a `Result`; when there is none it records why and **ends the test**. |
+| `expectThrows<E>(() => ...)` | a failure unless the function throws (an `E`, when one is named) |
+| `expectPanics(() => ...)` | a failure unless the function panics (it runs in a task of its own) |
+| `fail("why")` | records `why` and ends the test |
 
 ```veles
 use io
 
-error Expected { what: string, expected: string, actual: string }
+error RangeError { value: i64 }
 
-fun expectEq<T>(what: string, expected: T, actual: T) throws Expected {
-  if (expected != actual) throw Expected(what, expected: "$expected", actual: "$actual")
-}
-
-fun wordCount(text: string): i64 {
-  var n = 0
-  var inWord = false
-  loop (i in 0..<text.len()) {
-    val c = text.substring(i, i + 1) ?: ""
-    if (c == " ") {
-      inWord = false
-    } else if (!inWord) {
-      inWord = true
-      n += 1
-    }
-  }
+fun parsePort(text: string): i64 throws RangeError {
+  val n = text.toInt() ?: 0
+  if (n < 0 || n > 65535) throw RangeError(value: n)
   n
 }
 
-@test
-fun countsWords() throws Expected {
-  try expectEq("simple", 3, wordCount("one two three"))
-  try expectEq("extra spaces", 2, wordCount("  a   b "))
-  try expectEq("empty", 0, wordCount(""))
+fun wordCount(text: string): i64 = text.split(" ").filter(w => !w.isEmpty()).len()
+
+test "counts words" {
+  expect(wordCount("one two three") == 3)
+  expect(wordCount("  a   b ") == 2)
+  expect(wordCount("") == 0)
 }
 
-@test
-fun tasksWorkInTests() throws Expected {
+test "parses ports and refuses the rest" {
+  expect(require(parsePort("8080")) == 8080)
+  expectThrows<RangeError>(() => parsePort("70000"))
+}
+
+test "tasks work in tests" {
   val ch = Channel<i64>(capacity: 1)
   scope {
     ch.send(41)
     val v = await ch.recv()
-    try expectEq("channel", 42, (v ?: 0) + 1)
+    expect((v ?: 0) + 1 == 42)
   }
 }
 
@@ -102,25 +106,44 @@ Output:
 4
 ```
 
-`veles test <dir>` on that module prints one line per test:
+`veles run` leaves the tests out; `veles test <dir>` runs each one as its
+own task and prints a line per test:
 
 ```text
-test countsWords ... ok
-test tasksWorkInTests ... ok
+test counts words ... ok
+test parses ports and refuses the rest ... ok
+test tasks work in tests ... ok
 
-2 passed, 0 failed
+3 passed, 0 failed
 ```
 
-A failing assertion prints the thrown value — `FAILED:
-Expected(what: simple, expected: 3, actual: 2)` — the summary line names
-every test that failed, and the exit code is non-zero. Each test runs as
-its own task on the executor, so tests may use `scope`, `async`, channels
-and `sleep` freely, and a panic in one test does not stop the others.
+A failure says where, what was written, and what each side was — without
+the test writing any of it. Drop the `filter` from `wordCount`, so empty
+pieces count as words, and the report is:
+
+```text
+test counts words ... FAILED
+  main.vs:15:3: expect(wordCount("  a   b ") == 2)
+      left:  7
+      right: 2
+  main.vs:16:3: expect(wordCount("") == 0)
+      left:  1
+      right: 0
+test parses ports and refuses the rest ... ok
+test tasks work in tests ... ok
+
+2 passed, 1 failed: counts words
+```
+
+Strings are shown quoted, so `""` and `" "` are visible; a `require` that
+finds nothing says `was null`, or `threw: RangeError(value: 99999)`. The
+summary line names every test that failed, and the exit code is non-zero.
+A panic in one test does not stop the others.
 
 Two flags shape a run:
 
 - `--filter text` runs only the tests whose name contains `text`
-  (`veles test . --filter Words`); the summary counts the rest as
+  (`veles test . --filter ports`); the summary counts the rest as
   filtered out. A filter that matches nothing is an error, so a typo in
   CI fails instead of passing with no tests run.
 - `--timeout 30s` bounds each test (default `10m`, `0` for no bound).
@@ -129,9 +152,127 @@ Two flags shape a run:
   loop cannot be stopped from outside; the report says how many tests
   after it did not run.
 
-Generic assertion helpers like `expectEq<T>` work for any `T` that
-supports `==` and interpolation — which is every struct, number,
-string, tuple and list.
+### Helpers and test files
+
+A check used by several tests is a `test fun`: it may use the vocabulary,
+only test code can call it, and a build leaves it out.
+
+```veles
+// fragment
+test fun expectSorted(xs: List<i64>) {
+  loop (i in 1..<xs.len()) {
+    val before = xs.at(i - 1) ?: 0
+    expect(before <= xs.at(i))
+  }
+}
+
+test "sorts" {
+  expectSorted([3, 1, 2].sorted())
+}
+```
+
+When a module's tests outgrow its files, move them to a file named
+`*.test.vs` in the same directory (`parser.test.vs` next to `parser.vs`).
+Everything in it is test code: it sees the module's private names, may
+use the vocabulary, and is never loaded by `veles build` or `veles run`.
+
+### Suites
+
+A suite groups tests under a name. There are two ways to have one, and
+they nest:
+
+- `suite "name" { ... }` holds tests, other suites and `test fun`
+  helpers. A helper declared in a suite is visible only inside it, so two
+  suites can each have their own `expectParses`.
+- A `*.test.vs` file is a suite by itself, named after the file:
+  everything in `config.test.vs` is in the suite `config`.
+
+```veles
+// fragment
+suite "parser" {
+  test fun expectParses(text: string, want: i64) {
+    expect(parseInt(text) == want)
+  }
+
+  test "parses ints" {
+    expectParses("42", 42)
+  }
+
+  suite "rejects" {
+    test "letters" {
+      expect(parseInt("x4") == null)
+    }
+    test "empty input" {
+      expectParses("", 0)
+    }
+  }
+}
+```
+
+The report groups a suite's tests under its name, indented, with tests
+outside any suite first; each failure stays under its test:
+
+```text
+test adds ... ok
+parser
+  test parses ints ... ok
+  rejects
+    test letters ... ok
+    test empty input ... FAILED
+      main.vs:5:5: expect(parseInt(text) == want)
+          left:  null
+          right: 0
+
+3 passed, 1 failed: parser / rejects / empty input
+```
+
+A test's full name is its suites' names and its own, joined with ` / `:
+that is what the summary lists and what `--filter` matches, so
+`veles test --filter "parser / rejects"` runs one suite. Names need to
+differ only within a suite — `parser / rejects / empty input` and
+`router / empty input` are two tests.
+
+### Invariants: `assert`
+
+Outside tests, the vocabulary is unknown — a program does not "expect".
+What a program has is invariants, and `assert(cond, "why")` states one
+anywhere. The reason is required, as `panic`'s message is: an invariant
+that breaks in production must say what was meant to hold. When `cond`
+is false it panics with the reason, then the report `expect` gives; the
+reason is only built then, so interpolating into it costs nothing on the
+happy path.
+
+```veles
+use io
+
+fun average(xs: List<i64>): i64 {
+  assert(!xs.isEmpty(), "an average needs at least one number")
+  xs.sum() / xs.len()
+}
+
+fun main() {
+  io.println("${average([2, 4, 6])}")
+}
+```
+
+Output:
+```text
+4
+```
+
+A comparison shows both sides, as in a test:
+
+```text
+panic: n is 3, so the total is off
+      assert(n * 2 == 7)
+      left:  6
+      right: 7
+  at main.vs:12:3
+```
+
+The pre-D78 form, `@test fun name() { }`, is an error whose fix writes
+the new one — `veles check --fix` turns `@test fun parsesDates()` into
+`test "parses dates"`.
 
 ## Conventions the compiler enforces so you need not
 
@@ -142,7 +283,9 @@ say is already a compile error in Veles:
   `val` that is assigned (2), a bare field assigned (5);
 - a `T?` used as a `T` (6), a `MutableList` handed to another task (12),
   a C call outside `unsafe` (13);
-- an import cycle (11), a private name used from another module (11).
+- an import cycle (11), a private name used from another module (11);
+- test code called from a program, and a test's vocabulary used outside
+  a test (this chapter).
 
 The remaining conventions are few: `camelCase` for functions and values,
 `CapitalCase` for types, two-space indentation, and a `veles.toml` at the

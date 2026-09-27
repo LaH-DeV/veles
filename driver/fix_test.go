@@ -84,7 +84,8 @@ fun main() {
 
 // The removed index forms (D25, v0.24) are errors with a fix, so
 // `check --fix` migrates a file even though it does not compile; nested
-// forms take further passes because their edits overlap.
+// forms need further passes because their edits overlap, and one run
+// makes them all (it checks again while a pass still finds a fix).
 func TestCheckFixIndexing(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")
@@ -102,17 +103,9 @@ fun main() {
 }
 `
 	os.WriteFile(path, []byte(src), 0o644)
-	if code := Run(Options{Path: dir, Mode: "check", Fix: true}); code == 0 {
-		t.Fatalf("first check --fix: expected errors to remain (nested forms), got exit 0")
-	}
-	passes := 1
-	for ; passes < 4; passes++ {
-		if Run(Options{Path: dir, Mode: "check", Fix: true}) == 0 {
-			break
-		}
-	}
-	if passes == 4 {
-		t.Fatalf("check --fix did not converge in %d passes", passes)
+	if code := Run(Options{Path: dir, Mode: "check", Fix: true}); code != 0 {
+		data, _ := os.ReadFile(path)
+		t.Fatalf("one check --fix should settle the nested forms too, exit %d:\n%s", code, data)
 	}
 	want := `use io
 
@@ -134,21 +127,57 @@ fun main() {
 
 // A fix attached to a *parse* error is applied too: the old receiver
 // spelling (D65) stops the load, and one `check --fix` migrates it —
-// interpolations included — so the second run is clean.
+// interpolations included — and checks the result clean.
 func TestCheckFixParseErrors(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")
 	src := "use io\n\nstruct C {\n  var n: i64 = 0\n  fun bump() {\n    self.n += 1\n  }\n  fun show(): string = \"${self.n} $self\"\n}\n\nfun main() {\n  val c = C()\n  c.bump()\n  io.println(c.show())\n}\n"
 	os.WriteFile(path, []byte(src), 0o644)
-	if code := Run(Options{Path: dir, Mode: "check", Fix: true}); code == 0 {
-		t.Fatalf("first run: the old spelling is an error, got exit 0")
-	}
 	if code := Run(Options{Path: dir, Mode: "check", Fix: true}); code != 0 {
 		data, _ := os.ReadFile(path)
-		t.Fatalf("second run should be clean, exit %d:\n%s", code, data)
+		t.Fatalf("check --fix should leave it clean, exit %d:\n%s", code, data)
 	}
 	data, _ := os.ReadFile(path)
 	if strings.Contains(string(data), "self") || strings.Count(string(data), "this") != 3 {
 		t.Errorf("after --fix:\n%s", data)
+	}
+}
+
+// A name the prelude writes for a module (D75) is qualified and its module
+// imported by one `check --fix`, the `use` above the first declaration's
+// doc comment, once however many names needed it.
+func TestCheckFixQualifiesModuleNames(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	src := "/// A module doc.\n\n/// Counts things.\nfun count(v: Value, w: Value): i64 = 1\n\nfun main() {\n  val d = Depth(limit: 3)\n  io.println(\"${count(VNull(), VNull())} ${d.limit}\")\n}\n"
+	os.WriteFile(path, []byte(src), 0o644)
+	if code := Run(Options{Path: dir, Mode: "check", Fix: true}); code == 0 {
+		// `io` is not a module name the fix may guess: the run ends with it
+		// still unknown, and says so
+		t.Fatalf("expected the unknown 'io' to remain")
+	}
+	data, _ := os.ReadFile(path)
+	want := "/// A module doc.\n\nuse codec, recursion\n\n/// Counts things.\nfun count(v: codec.Value, w: codec.Value): i64 = 1\n\nfun main() {\n  val d = recursion.Depth(limit: 3)\n  io.println(\"${count(codec.VNull(), codec.VNull())} ${d.limit}\")\n}\n"
+	if string(data) != want {
+		t.Errorf("after --fix:\n%s\n--- want ---\n%s", data, want)
+	}
+}
+
+// The mistakes a newcomer to Codable makes, each answered by a fix: a
+// struct that is not Encodable (or Comparable) gets `implement X`, derived;
+// `try` in front of `??` is dropped. One `check --fix` and it runs.
+func TestCheckFixDerivesMissingImplements(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	src := "use io, json\n\nstruct Point {\n  x: i64\n  y: i64\n}\n\nstruct Tag { name: string }\n\nfun main() {\n  io.println(try json.encode(Point(x: 1, y: 2)) ?? \"\")\n  val tags = [Tag(name: \"b\"), Tag(name: \"a\")].sorted()\n  io.println(json.encode(tags) ?? \"\")\n}\n"
+	os.WriteFile(path, []byte(src), 0o644)
+	if code := Run(Options{Path: dir, Mode: "check", Fix: true}); code != 0 {
+		data, _ := os.ReadFile(path)
+		t.Fatalf("check --fix did not settle it, exit %d:\n%s", code, data)
+	}
+	data, _ := os.ReadFile(path)
+	want := "use io, json\n\nstruct Point {\n  x: i64\n  y: i64\n  implement Encodable\n}\n\nstruct Tag {\n  name: string\n  implement Comparable\n  implement Encodable\n}\n\nfun main() {\n  io.println(json.encode(Point(x: 1, y: 2)) ?? \"\")\n  val tags = [Tag(name: \"b\"), Tag(name: \"a\")].sorted()\n  io.println(json.encode(tags) ?? \"\")\n}\n"
+	if string(data) != want {
+		t.Errorf("after --fix:\n%s\n--- want ---\n%s", data, want)
 	}
 }

@@ -226,7 +226,7 @@ the text never notices.
 refuses.
 
 ```veles
-use crypto, io, jwt
+use codec, crypto, io, jwt
 
 fun main() throws EncodeError {
   val key = crypto.randomBytes(32)
@@ -237,7 +237,7 @@ fun main() throws EncodeError {
     issuer: "notes.example",
     audience: ["web"],
     expiresAt: at + 3600,
-    extra: ["role": VString(value: "admin")],
+    extra: ["role": codec.VString(value: "admin")],
   ), key)
 
   when (val claims = jwt.verify(token, key, jwt.Options(now: at, issuer: "notes.example"))) {

@@ -18,11 +18,11 @@ import (
 // declared error that mentions a type parameter (whether it throws depends
 // on the instance), and a function used as a value (a function value does
 // not take on `throws`, so it may be written that way to fit a throwing
-// function type).
+// function type). A clause nobody wrote — a test's (D78) — is not linted.
 func (c *Checker) lintNeedlessThrows() {
 	for _, t := range c.templates {
 		d := t.Decl
-		if d == nil || !d.Effects.Throws || (d.Body == nil && d.ExprBody == nil) {
+		if d == nil || !d.Effects.Throws || !d.Effects.ThrowsSpan.IsValid() || (d.Body == nil && d.ExprBody == nil) {
 			continue
 		}
 		if t.Pub || t.Extern || t.Impl != nil || t.Trait != nil || t.ValueUsed || len(t.Instances) == 0 {

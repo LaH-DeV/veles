@@ -196,7 +196,10 @@ type FunDecl struct {
 	Extern   bool
 	// ExportC: `extern "C" fun name(...) { body }` — a Veles function C
 	// can call, under its own name, with the C calling convention (D69).
-	ExportC    bool
+	ExportC bool
+	// Test: `test fun name(...)` — a helper only test code may call, which
+	// may use the test vocabulary and is left out of a build (D78).
+	Test       bool
 	Name       Ident
 	TypeParams []TypeParam
 	Params     []Param
@@ -243,7 +246,10 @@ type StructDecl struct {
 	// assign the fields no caller supplied (D28 v0.30). Nil when absent.
 	Init    *Block
 	InitPos source.Span // the `init` keyword
-	Pos     source.Span
+	// InitParams are `init(value: T) { }`'s parameters: parameters of the
+	// implicit constructor after the fields (D73). Nil when it has none.
+	InitParams []Param
+	Pos        source.Span
 }
 
 type AssocTypeDecl struct {
@@ -375,6 +381,28 @@ type EnumMember struct {
 	Pos   source.Span
 }
 
+// TestDecl is `test "name" { body }` (D78): a test, named by a sentence,
+// with no signature — it cannot be called, takes nothing, and may throw
+// and suspend without saying so.
+type TestDecl struct {
+	Doc  string
+	Name string      // the sentence, unquoted
+	At   source.Span // the name's string literal
+	Body *Block
+	Pos  source.Span
+}
+
+// SuiteDecl is `suite "name" { ... }` (D78): a named group of tests. It
+// holds tests, nested suites and `test fun` helpers, which are visible only
+// inside it.
+type SuiteDecl struct {
+	Doc   string
+	Name  string      // unquoted
+	At    source.Span // the name's string literal
+	Decls []Decl      // *TestDecl, *SuiteDecl, *FunDecl with Test set
+	Pos   source.Span
+}
+
 // BadDecl stands in for a declaration that failed to parse.
 type BadDecl struct {
 	Pos source.Span
@@ -391,6 +419,8 @@ func (d *BadDecl) Span() source.Span        { return d.Pos }
 func (d *ErrorAliasDecl) Span() source.Span { return d.Pos }
 func (d *TypeAliasDecl) Span() source.Span  { return d.Pos }
 func (d *EnumDecl) Span() source.Span       { return d.Pos }
+func (d *TestDecl) Span() source.Span       { return d.Pos }
+func (d *SuiteDecl) Span() source.Span      { return d.Pos }
 
 func (*ErrorAliasDecl) declNode() {}
 func (*TypeAliasDecl) declNode()  {}
@@ -403,6 +433,8 @@ func (*ImplDecl) declNode()       {}
 func (*ValDecl) declNode()        {}
 func (*ExternBlock) declNode()    {}
 func (*BadDecl) declNode()        {}
+func (*TestDecl) declNode()       {}
+func (*SuiteDecl) declNode()      {}
 
 // ---------------------------------------------------------------------------
 // Statements

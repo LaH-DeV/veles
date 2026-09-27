@@ -140,7 +140,9 @@ func (p *Parser) parseStmt() ast.Stmt {
 	case lexer.KwReturn:
 		p.next()
 		s := &ast.ReturnStmt{}
-		if !p.at(lexer.Semi, lexer.RBrace, lexer.EOF) {
+		// a bare `return` also ends at a closing bracket or a comma, where
+		// it stands as an expression: `!(return)`, `f(x ?: return)`
+		if !p.at(lexer.Semi, lexer.RBrace, lexer.EOF, lexer.RParen, lexer.RBracket, lexer.Comma) {
 			s.Value = p.parseExpr()
 		}
 		s.Pos = p.spanFrom(start)

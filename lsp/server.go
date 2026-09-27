@@ -206,6 +206,9 @@ func (s *Server) handle(req *request) {
 				},
 				"hoverProvider":              true,
 				"definitionProvider":         true,
+				"typeDefinitionProvider":     true,
+				"implementationProvider":     true,
+				"foldingRangeProvider":       true,
 				"documentSymbolProvider":     true,
 				"documentFormattingProvider": true,
 				"codeActionProvider":         map[string]any{"codeActionKinds": []string{"quickfix"}},
@@ -270,6 +273,12 @@ func (s *Server) handle(req *request) {
 		s.reply(req.ID, s.hover(req.Params))
 	case "textDocument/definition":
 		s.reply(req.ID, s.definition(req.Params))
+	case "textDocument/typeDefinition":
+		s.reply(req.ID, s.typeDefinition(req.Params))
+	case "textDocument/implementation":
+		s.reply(req.ID, s.implementation(req.Params))
+	case "textDocument/foldingRange":
+		s.reply(req.ID, s.foldingRanges(req.Params))
 	case "textDocument/documentSymbol":
 		s.reply(req.ID, s.documentSymbols(req.Params))
 	case "textDocument/formatting":
@@ -511,6 +520,7 @@ const (
 	symEnum       = 10
 	symEnumMember = 22
 	symMethod     = 6
+	symNamespace  = 3
 )
 
 type docSymbol struct {
@@ -558,6 +568,17 @@ func declSymbol(decl ast.Decl) (docSymbol, bool) {
 	case *ast.TypeAliasDecl:
 		return docSymbol{Name: d.Name.Name, Detail: "type = " + ast.TypeString(d.Type), Kind: symStruct,
 			Range: spanToRange(d.Pos), SelectionRange: spanToRange(d.Name.Pos)}, true
+	case *ast.SuiteDecl:
+		sym := docSymbol{Name: d.Name, Detail: "suite", Kind: symNamespace, Range: spanToRange(d.Pos), SelectionRange: spanToRange(d.At)}
+		for _, inner := range d.Decls {
+			if child, ok := declSymbol(inner); ok {
+				sym.Children = append(sym.Children, child)
+			}
+		}
+		return sym, true
+	case *ast.TestDecl:
+		// a test is named by its sentence (D78)
+		return docSymbol{Name: d.Name, Detail: "test", Kind: symMethod, Range: spanToRange(d.Pos), SelectionRange: spanToRange(d.At)}, true
 	case *ast.EnumDecl:
 		sym := docSymbol{Name: d.Name.Name, Kind: symEnum, Range: spanToRange(d.Pos), SelectionRange: spanToRange(d.Name.Pos)}
 		if d.Base != nil {

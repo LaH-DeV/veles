@@ -28,7 +28,7 @@ type Program struct {
 	Root string
 	// PanicType is the prelude Panic struct (D52).
 	PanicType types.Type
-	// Tests are the @test functions; in test mode the entry point runs them.
+	// Tests are the tests (D78); in test mode the entry point runs them.
 	Tests    []*Func
 	TestMode bool
 	// TestTimeoutMs bounds each test's run (0: unbounded) and TestsFiltered
@@ -54,8 +54,10 @@ type CustomOps struct {
 
 // Func is a concrete (monomorphic) function.
 type Func struct {
-	Name     string // mangled, unique
-	Display  string // for diagnostics and panics
+	Name    string // mangled, unique
+	Display string // for diagnostics and panics
+	// Suite is a test's path of suites (D78), for the runner's grouping.
+	Suite    []string
 	Sig      *types.Func
 	Params   []*Var // excludes the receiver
 	Receiver *Var   // `this` for methods, always a pointer to the receiver's place (D22 v0.30)

@@ -12,8 +12,8 @@ fun bump(m: Mutex<Counter>, times: i64) {
 }
 
 fun main() {
-  val shared = mutex(Counter(hits: 0))
-  val total = atomic(0)
+  val shared = Mutex(value: Counter(hits: 0))
+  val total = Atomic(value: 0)
   scope {
     async bump(shared, 5)
     async bump(shared, 7)

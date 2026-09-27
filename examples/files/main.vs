@@ -8,7 +8,7 @@ fun main() throws IoError {
   io.println("created: ${fs.isDir(root)} ${fs.isDir(path.join(root, "notes"))}")
 
   // build a report in linear time, then write it
-  val report = stringBuilder()
+  val report = StringBuilder()
   report.appendLine("# report")
   loop (i in 1..3) {
     report.appendLine("line $i")
@@ -30,11 +30,17 @@ fun main() throws IoError {
   try fs.rename(path.join(root, "notes", "a.txt"), path.join(root, "notes", "z.txt"))
   io.println("renamed: ${try fs.listDir(path.join(root, "notes"))}")
 
-  // errors carry the path and the system's description
+  // errors carry the path, the system's description and a portable kind
   when (fs.readFile(path.join(root, "missing.txt"))) {
     is Ok(t)  => io.println("unexpected: $t")
-    is Err(e) => io.println("failed: ${e.detail} (${path.base(e.path)}) code ${e.code > 0}")
+    is Err(e) => io.println("failed: ${e.detail} (${path.base(e.path)}) code ${e.code > 0} kind ${e.kind}")
   }
+  // a missing file is a default; any other failure is still an error
+  val settings = fs.readFile(path.join(root, "settings.toml")) ?? { e =>
+    if (e.kind != IoKind.NotFound) throw e
+    "# defaults"
+  }
+  io.println("settings: $settings")
 
   // clean up: files first, then the directories
   loop (name in try fs.listDir(path.join(root, "notes"))) {

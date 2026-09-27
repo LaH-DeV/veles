@@ -105,8 +105,8 @@ struct Notes {
 /// The whole application as one handler: the routes below plus the files
 /// under `dir`.
 fun app(dir: string): http.Handler {
-  val notes = mutex(Notes())
-  val router = http.router()
+  val notes = Mutex(value: Notes())
+  val router = http.Router()
 
   // Middleware, outermost first: every answer carries the request id the
   // client sent (or a fresh one), and no handler may run for more than a
@@ -125,7 +125,7 @@ fun app(dir: string): http.Handler {
     val text = (try req.text()).trim()
     if (text.isEmpty()) throw http.badRequest("a note needs some text")
     val note = notes.withLock(n => n.add(text))
-    http.Response.json(try json.encode(note), status: 201).withHeader("location", "/api/notes/${note.id}")
+    http.Response.json(try json.encode(note), status: http.Status.created).withHeader(http.Header.location, "/api/notes/${note.id}")
   })
 
   router.get("/api/notes/{id}", req => {
@@ -150,7 +150,7 @@ fun app(dir: string): http.Handler {
     val id = try req.param("id").toInt() ?! http.badRequest("the id must be a number")
     val removed = notes.withLock(n => n.remove(id))
     if (!removed) throw http.notFound("no note $id")
-    http.Response.empty(204)
+    http.Response.empty(http.Status.noContent)
   })
 
   router.handler()
@@ -167,7 +167,7 @@ const maxResponseLine: i64 = 8192
 /// content type and the body, as the test output.
 fun exchange(port: i64, method: string, target: string, body: string, extra: string = ""): string throws IoError | net.TooLong {
   with (conn = try net.connect("127.0.0.1", port)) {
-    val head = stringBuilder()
+    val head = StringBuilder()
     head.append("$method $target HTTP/1.1\r\nHost: check\r\nConnection: close\r\nX-Request-Id: check\r\n")
     if (!body.isEmpty()) head.append("Content-Length: ${body.len()}\r\n")
     head.append(extra)
@@ -274,10 +274,10 @@ fun check(handler: http.Handler) throws IoError | EncodeError | net.TooLong {
   }
   // the same handler in memory — no socket, the same routing and panic
   // boundary — which is how a handler is unit-tested
-  loop ((method, target) in [("GET", "/api/notes/2"), ("DELETE", "/api/echo")]) {
+  loop ((method, target) in [(http.Method.get, "/api/notes/2"), (http.Method.delete, "/api/echo")]) {
     val resp = http.call(handler, method, target)
     io.println("> $method $target (in memory)")
-    io.println("< ${resp.status} allow=${resp.headers.get("allow") ?: "-"} ${resp.body.decodeUtf8() ?: "<binary>"}")
+    io.println("< ${resp.status} allow=${resp.headers.get(http.Header.allow) ?: "-"} ${resp.body.decodeUtf8() ?: "<binary>"}")
   }
 }
 

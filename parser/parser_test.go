@@ -612,3 +612,95 @@ func TestV040ThisSpelling(t *testing.T) {
 		t.Errorf("the receiver should dump as 'this':\n%s", ast.Dump(f))
 	}
 }
+
+// D73: `init` may take parameters; a field named `init` still parses.
+func TestInitParams(t *testing.T) {
+	src := "struct M<T> {\n  init: i64 = 0\n  private cell: *T\n  init(value: T, n: i64 = 1) {\n    this.cell = &value\n  }\n}\n"
+	f, diags := parse(t, src)
+	if diags.HasErrors() {
+		t.Fatalf("parse errors:\n%s", diags.Render())
+	}
+	d := f.Decls[0].(*ast.StructDecl)
+	if len(d.InitParams) != 2 || d.InitParams[0].Name.Name != "value" || len(d.Fields) != 2 {
+		t.Fatalf("init params %v, fields %d", d.InitParams, len(d.Fields))
+	}
+	if dump := ast.Dump(f); !strings.Contains(dump, "(init (value: T, n: i64 = 1) ") {
+		t.Errorf("dump lacks the parameters:\n%s", dump)
+	}
+	if _, diags = parse(t, "struct M {\n  init(value) { }\n}\n"); !strings.Contains(diags.Render(), "an 'init' parameter needs a type") {
+		t.Errorf("untyped init parameter accepted:\n%s", diags.Render())
+	}
+}
+
+// Kotlin's `->` in a `when` or `race` arm is one error with a fix per
+// arrow, and the arms after it parse normally.
+func TestThinArrowInArms(t *testing.T) {
+	src := "fun f(x: i64): string = when (x) {\n  1 -> \"one\"\n  2 => \"two\"\n  else -> \"many\"\n}\n"
+	_, diags := parse(t, src)
+	if len(diags.Items) != 2 {
+		t.Fatalf("want one error per '->':\n%s", diags.Render())
+	}
+	fixed := src
+	for i := len(diags.Items) - 1; i >= 0; i-- {
+		d := diags.Items[i]
+		if d.Fix == nil || len(d.Fix.Edits) != 1 || d.Fix.Edits[0].NewText != "=>" {
+			t.Fatalf("no fix: %+v", d)
+		}
+		e := d.Fix.Edits[0]
+		fixed = fixed[:e.Span.Start] + e.NewText + fixed[e.Span.End:]
+	}
+	if _, again := parse(t, fixed); again.HasErrors() {
+		t.Errorf("fixed source still fails:\n%s\n%s", fixed, again.Render())
+	}
+}
+
+// `test "name" { }` and `test fun` (D78). `test` is contextual: a function,
+// a value or a call named `test` still parses as before.
+func TestTestDecl(t *testing.T) {
+	src := "/// doc\ntest \"adds \\\"two\\\" numbers\" {\n  expect(1 + 1 == 2)\n}\ntest fun helper(x: i64) { }\nfun test(x: i64) { }\nval test2 = 1\nfun main() {\n  test(1)\n  val test = 2\n}\n"
+	f, diags := parse(t, src)
+	if diags.HasErrors() {
+		t.Fatalf("parse errors:\n%s", diags.Render())
+	}
+	d, ok := f.Decls[0].(*ast.TestDecl)
+	if !ok || d.Name != "adds \"two\" numbers" || d.Doc != "doc" || d.Body == nil {
+		t.Fatalf("test decl: %#v", f.Decls[0])
+	}
+	if fn := f.Decls[1].(*ast.FunDecl); !fn.Test || fn.Name.Name != "helper" {
+		t.Errorf("test fun: %#v", fn)
+	}
+	if fn := f.Decls[2].(*ast.FunDecl); fn.Test || fn.Name.Name != "test" {
+		t.Errorf("fun test: %#v", fn)
+	}
+	dump := ast.Dump(f)
+	if !strings.Contains(dump, `(test "adds \"two\" numbers"`) || !strings.Contains(dump, "(fun test helper(x: i64)") {
+		t.Errorf("dump:\n%s", dump)
+	}
+	_, diags = parse(t, "test \"n is ${n}\" { }\n")
+	if !strings.Contains(diags.Render(), "a test's name is fixed text") {
+		t.Errorf("interpolated name: %s", diags.Render())
+	}
+	_, diags = parse(t, "test \"\" { }\n")
+	if !strings.Contains(diags.Render(), "a test needs a name") {
+		t.Errorf("empty name: %s", diags.Render())
+	}
+}
+
+// `suite "name" { }` (D78) holds tests, suites and `test fun` helpers.
+func TestSuiteDecl(t *testing.T) {
+	f, diags := parse(t, "suite \"router\" {\n  test fun h() { }\n  test \"routes\" { }\n  suite \"auth\" {\n    test \"rejects\" { }\n  }\n}\nfun suite() { }\n")
+	if diags.HasErrors() {
+		t.Fatalf("parse errors:\n%s", diags.Render())
+	}
+	s, ok := f.Decls[0].(*ast.SuiteDecl)
+	if !ok || s.Name != "router" || len(s.Decls) != 3 {
+		t.Fatalf("suite: %#v", f.Decls[0])
+	}
+	if dump := ast.Dump(f); !strings.Contains(dump, `(suite "router"`) || !strings.Contains(dump, `(suite "auth"`) {
+		t.Errorf("dump:\n%s", dump)
+	}
+	_, diags = parse(t, "suite \"a\" {\n  fun f() { }\n  val v = 1\n}\n")
+	if out := diags.Render(); !strings.Contains(out, "a helper is 'test fun f'") || !strings.Contains(out, "a suite holds tests") {
+		t.Errorf("members: %s", out)
+	}
+}

@@ -1170,3 +1170,75 @@ func TestHoverShapeFoldsDerivedImpls(t *testing.T) {
 		t.Errorf("derived impls should be listed and marked: %s", h)
 	}
 }
+
+// The prelude and the compiler's own names hover like declared ones: a
+// primitive type shows what it has, a variant constructor what it builds,
+// `panic` its contract, and a built-in method its signature for this
+// receiver (`List<i64>.sorted(): List<i64>`, not `List<T>`).
+func TestBuiltinNamesHover(t *testing.T) {
+	src := "use io\n\nfun main() {\n  val xs = [3, 1, 2].sorted()\n  val o: i64? = null\n  val r: Result<i64, IoError> = Ok(1)\n  if (xs.len() > 5) panic(\"no\")\n  io.println(\"$o $r\")\n}\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := pathToURI(path)
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{})
+	c.notify("initialized", map[string]any{})
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": src}})
+	hover := func(line, ch int) string {
+		res, _ := c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": line, "character": ch}})
+		var h struct{ Contents struct{ Value string } }
+		json.Unmarshal(res, &h)
+		return h.Contents.Value
+	}
+	if h := hover(3, 23); !strings.Contains(h, "fun List\u003ci64\u003e.sorted(): List\u003ci64\u003e") {
+		t.Errorf("built-in method for its receiver: %s", h)
+	}
+	if h := hover(4, 11); !strings.Contains(h, "builtin type i64 {") || !strings.Contains(h, "fun saturatingAdd(y: i64): i64") || !strings.Contains(h, "implement Comparable") || !strings.Contains(h, "signed 64-bit integer") {
+		t.Errorf("primitive type: %s", h)
+	}
+	if h := hover(5, 33); !strings.Contains(h, "Ok(value: T)") || !strings.Contains(h, "sealed trait Result") {
+		t.Errorf("variant constructor: %s", h)
+	}
+	if h := hover(6, 21); !strings.Contains(h, "fun panic(message: string): Never") {
+		t.Errorf("panic: %s", h)
+	}
+}
+
+// D75: names the prelude writes for a module are completed after that
+// module's name, and not among the global names.
+func TestCompletionOfPreludeHomes(t *testing.T) {
+	src := "use codec, io\n\nfun main() {\n  val v = codec.VNull()\n  io.println(\"$v\")\n}\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := pathToURI(path)
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{})
+	c.notify("initialized", map[string]any{})
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": src}})
+	has := func(labels []string, want string) bool {
+		for _, l := range labels {
+			if l == want {
+				return true
+			}
+		}
+		return false
+	}
+	// `codec.V|` on line 3
+	res, _ := c.call("textDocument/completion", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": 3, "character": 16}})
+	if got := completionLabels(res); !has(got, "Value") || !has(got, "ValueEncoder") || !has(got, "KeyStyle") {
+		t.Errorf("codec. offered %v", got)
+	}
+	// a bare name at the start of line 4: global names, not the machinery
+	res, _ = c.call("textDocument/completion", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": 4, "character": 2}})
+	if got := completionLabels(res); has(got, "ValueEncoder") || has(got, "Depth") || !has(got, "StringBuilder") {
+		t.Errorf("global completion offered %v", got)
+	}
+}

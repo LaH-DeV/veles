@@ -87,7 +87,7 @@ fun main() {
   io.println("stairs ${climbStairs(10)}")
 
   io.println("== structures")
-  val q = deque<string>()
+  val q = Deque<string>()
   loop (s in ["a", "b", "c"]) q.addLast(s)
   q.addFirst("z")
   io.println("deque $q first ${q.removeFirst()} last ${q.removeLast()} -> $q len ${q.len()}")
@@ -100,7 +100,7 @@ fun main() {
   val heap = MinHeap()
   loop (x in [7, 3, 9, 1, 4]) heap.push(x)
   io.println("heap peek ${heap.peek()} pop ${heap.pop()} ${heap.pop()} len ${heap.len()}")
-  val words = priorityQueue<string>()
+  val words = PriorityQueue<string>.natural()
   loop (w in ["pear", "apple", "fig"]) words.push(w)
   io.println("priority ${words.pop()} ${words.pop()} ${words.pop()} ${words.pop()}")
 

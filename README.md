@@ -11,7 +11,7 @@ The remaining step of the plan — self-hosting — is future work.
 go build -o veles.exe .
 ./veles.exe run examples/hello              # compile and run a module directory
 ./veles.exe build examples/tasks -o tasks   # produce an executable
-./veles.exe test examples/testing           # run @test functions (§4b; --filter text, --timeout 30s)
+./veles.exe test examples/testing           # run the tests (D78; --filter text, --timeout 30s)
 ./veles.exe check examples/errors           # type-check only (--fix applies lint corrections)
 ./veles.exe parse examples/syntax_tour.vs   # dump the syntax tree
 ./veles.exe build examples/hello --emit-llvm   # write the LLVM IR instead of linking
@@ -45,7 +45,7 @@ compiler/clang/flag combination and cached under the user cache directory
 | `runtime/c/` | `veles_rt.c` (strings, lists, maps), `veles_gc.c` (collector), `veles_task.c` (executor), `veles_os.c` (files, bytes, processes, environment, clocks) |
 | `std/` | standard library in Veles, embedded in the compiler: `prelude` (D24: `Iterator`/`Iterable` and adapters, `extend` blocks for `string`, `List`, `Range`, the operator traits `Comparable`/`Equatable`/`Hashable`/`Display`, `Closeable`, `Mutex`/`Atomic`, `Panic`, `IoError`, `StringBuilder`), `io`, `os` (args, env, exit, run), `fs` (text and bytes), `path`, `time`, `random` |
 | `format/` | the formatter (`veles fmt`, and `textDocument/formatting` in the LSP): prettier-style — blocks always break, columns align, comments and the author's list/chain line breaks are kept |
-| `lsp/` | language server: diagnostics with quick fixes, hover, definition, references, rename (re-checked before it applies), highlights, inlay hints, signature help, symbols, completion, formatting over the compiler front end |
+| `lsp/` | language server: diagnostics with quick fixes, hover, definition, type definition, implementations, folding, references, rename (re-checked before it applies), highlights, inlay hints, signature help, symbols, completion, formatting over the compiler front end |
 | `editors/vscode/` | VS Code extension: TextMate grammar and client for `veles lsp` |
 | `docs/` | tutorials and reference; `go test ./docs/` runs every code block |
 | `examples/` | 32 programs with expected output; `go test ./...` compiles and runs them (a `commands.txt` scripts a command-line tool, `-update` rewrites `expected.txt`; a `name.vss` script is a test when `name.expected.txt` exists, fed `name.stdin.txt` when present) |
@@ -81,8 +81,8 @@ ranges. D31 infinite-size diagnostic. D32/D33/D37 lambdas, `=>`, tuples
 with tupling conversion. D35/D54 `Sendable` derivation, `Mutex`/`Atomic`.
 D40 declared effects on trait methods and function types. D43/D47 `with`
 cleanup on every exit path. D44/D50 `unsafe`, `*raw T`, `extern "C"`. D48
-comparator/key lambdas. D51 `@test`, `@deprecated`, `@mustUse`, `@inline`,
-`@noinline`.
+comparator/key lambdas. D51 `@deprecated`, `@mustUse`, `@inline`,
+`@noinline`; D78 `test "..." { }` with `expect`/`require`/`check`.
 
 **Modules and packages.** M1 `veles.toml` identity, M2/M3 directory
 modules, M4 cycle detection, M5 `public` plus manifest `exports`, M6 logical

@@ -109,6 +109,18 @@ func (p *printer) decl(d Decl) {
 		p.w(")")
 	case *FunDecl:
 		p.fun(d)
+	case *SuiteDecl:
+		p.open(fmt.Sprintf("suite %q", d.Name))
+		for _, inner := range d.Decls {
+			p.child(func() { p.decl(inner) })
+		}
+		p.close()
+	case *TestDecl:
+		p.open(fmt.Sprintf("test %q", d.Name))
+		if d.Body != nil {
+			p.child(func() { p.block(d.Body) })
+		}
+		p.close()
 	case *TypeAliasDecl:
 		p.attrs(d.Attrs)
 		p.open("type ")
@@ -215,6 +227,10 @@ func (p *printer) decl(d Decl) {
 		if d.Init != nil {
 			p.child(func() {
 				p.w("(init ")
+				if d.InitParams != nil {
+					p.paramList(d.InitParams)
+					p.w(" ")
+				}
 				p.block(d.Init)
 				p.w(")")
 			})
@@ -330,30 +346,15 @@ func (p *printer) fun(d *FunDecl) {
 	if d.ExportC {
 		p.w("extern-c ")
 	}
+	if d.Test {
+		p.w("test ")
+	}
 	if d.Unsafe {
 		p.w("unsafe ")
 	}
 	p.w(d.Name.Name)
 	p.typeParams(d.TypeParams)
-	p.w("(")
-	for i, prm := range d.Params {
-		if i > 0 {
-			p.w(", ")
-		}
-		p.w(prm.Name.Name)
-		if prm.Type != nil {
-			p.w(": ")
-			p.typ(prm.Type)
-			if prm.Variadic {
-				p.w("...")
-			}
-		}
-		if prm.Default != nil {
-			p.w(" = ")
-			p.expr(prm.Default)
-		}
-	}
-	p.w(")")
+	p.paramList(d.Params)
 	if d.Ret != nil {
 		p.w(": ")
 		p.typ(d.Ret)
@@ -943,4 +944,26 @@ func (p *printer) handler(h *Handler) {
 		return
 	}
 	p.block(h.Body)
+}
+
+func (p *printer) paramList(params []Param) {
+	p.w("(")
+	for i, prm := range params {
+		if i > 0 {
+			p.w(", ")
+		}
+		p.w(prm.Name.Name)
+		if prm.Type != nil {
+			p.w(": ")
+			p.typ(prm.Type)
+			if prm.Variadic {
+				p.w("...")
+			}
+		}
+		if prm.Default != nil {
+			p.w(" = ")
+			p.expr(prm.Default)
+		}
+	}
+	p.w(")")
 }

@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.42** — language design complete; D58 adds the derivation story D51 deferred, D59 the standard library's cryptography. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
+**Working draft v0.44** — language design complete; D58 adds the derivation story D51 deferred, D59 the standard library's cryptography. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -1799,6 +1799,201 @@ task-local (`set`/`get`, ThreadLocal-style — a helper that sets it changes
 what its caller sees, and a value nobody resets carries over); nothing in
 the language, an explicit context parameter (Go's `context.Context` —
 every function on the path carries it).
+
+### D73 — `init` takes parameters: every value is `Type(...)` (v0.43)
+
+```veles
+// fragment
+public struct Mutex<T> {
+  private cell: *T                    // assigned by init: not a parameter
+  private word: LockWord = newWord()
+  init(value: T) { this.cell = &value }
+}
+val counter = Mutex(value: 0)
+val jobs = PriorityQueue<Job>(compare: (a, b) => a.due.compareTo(b.due))
+```
+
+The user's note: a factory function "should not be the required way" of
+making a value. D28's implicit constructor covers a struct whose state is
+its fields; a type that does work at construction — a lock word to
+allocate, a value to put behind a pointer, a comparator to choose — needed
+a function beside it (`mutex(0)`, `priorityQueueBy(cmp)`), and a reader had
+to know it existed. **An `init` block may declare parameters**; they are
+parameters of the implicit constructor, after the field parameters, named
+at the call like fields (D28: by name, a bare argument only as a pun), with
+defaults allowed. Inside the block they are ordinary `val`s. Everything
+else about `init` holds (D28 v0.30 addendum): fields it assigns are not
+parameters and must be assigned on every path, it cannot suspend or throw.
+A parameter may not share a name with a field the call can pass (the call
+would be ambiguous). A type whose natural construction needs a bound the
+constructor cannot state (`T: Comparable` for a natural-order queue) keeps
+a `static fun` for that one form: `PriorityQueue<i64>.natural()`.
+
+Factories removed with it: `mutex(v)` → `Mutex(value: v)`, `atomic(v)` →
+`Atomic(value: v)`, `taskLocal(f)` → `TaskLocal(fallback: f)`,
+`priorityQueueBy(c)` → `PriorityQueue<T>(compare: c)`, `priorityQueue<T>()`
+→ `PriorityQueue<T>.natural()`; like `stringBuilder()`, `deque<T>()`,
+`http.router()` and `Depth.of(n)` before them (constructors since M5 v0.30
+was implemented across modules, 2026-09-27), each old call is an error
+naming the new one, with a fix where the arguments carry over.
+
+Rejected (user, recommended of three): a `static fun of` convention
+(`Mutex.of(0)` — still a function to know about); keeping the lowercase
+factories.
+
+### D74 — HTTP statuses, methods and headers are named values (v0.43)
+
+```veles
+// fragment
+throw http.Fail(status: http.Status.notFound, "no such note")
+if (req.method == http.Method.post) return Response.json(body, status: http.Status.created)
+resp.withHeader(http.Header.cacheControl, "no-store")
+val teapot = http.Status(code: 418)
+```
+
+The user's note: "the enums / mappings / consts should be a norm in std,
+like statuses, methods etc in http". A status, a method and a header name
+are **open** sets with well-known members — a client must carry a status
+it has never heard of, a server may answer WebDAV's `PROPFIND` — so they
+are value types with `static val` constants (D23 v0.29), not enums (D57 is
+for closed sets). `Status { code: i64 }` has `reason()`,
+`isInformational/isSuccess/isRedirect/isClientError/isServerError()`,
+prints as `404 Not Found`, compares and hashes by code. `Method { name:
+string }` constants for the nine RFC 9110 methods plus `PATCH`; it prints
+as its name. `Header` is a namespace of lower-case name constants
+(`Header.contentType == "content-type"`), since headers are looked up by
+string. Every public `status: i64` and `method: string` in `std/http`
+becomes `Status` / `Method`; `http.call(handler, Method.get, "/")`.
+Constants are lowerCamel like every `static val` (`Status.notFound`).
+
+Rejected (user, recommended of three): closed enums (an unknown code is
+unrepresentable, and an enum has no methods); integer/string constants
+only (no type to stop `status: 44`).
+
+### D75 — The prelude holds what almost every program uses (v0.43)
+
+The user's note: "carefully think about what should be a global-available
+built-in and what should be in its own module". Global: the primitives
+and their methods; `List`/`Map`/`Set`/`Deque`/`PriorityQueue`;
+`Option`/`Result`; `Error`, `IoError`, `Panic`; the core traits
+(`Comparable`, `Equatable`, `Hashable`, `Display`, `Parsable`, the
+arithmetic traits, `Iterator`/`Iterable`, `Closeable`, `Sendable`);
+`StringBuilder`, `Duration`, `Mutex`, `Atomic`, `TaskLocal`,
+`withTimeout`, `Timeout`; `Codable`/`Encodable`/`Decodable` with
+`EncodeError`/`DecodeError`. **Moved to modules**: the codec machinery
+(`Value` and its variants, `Encoder`/`Decoder`, `ValueEncoder`/
+`ValueDecoder`, the style enums, `Problems`/`Problem`, the path helpers) to
+`use codec`; `CLayout` to `use ffi`; `Depth`, `maxRecursionDepth`,
+`tooDeepMessage` to `use recursion`. Derived code reaches the codec
+helpers without an import (`ast.PreludeName` resolves into the module), so
+`implement Codable` still needs none. Rejected (user, recommended of
+three): a Go-minimal prelude (every program would start with `use sync`,
+`use time`); leaving about 70 global names, a third of them plumbing.
+
+### D76 — `IoError.kind`: which failure, portably (v0.44)
+
+```veles
+val text = fs.readFile(path) else { e =>
+  if (e.kind == IoKind.NotFound) return "{}"
+  throw e
+}
+```
+
+`IoError` gains `public kind: IoKind`, an enum in the prelude beside it:
+`NotFound`, `PermissionDenied`, `AlreadyExists`, `NotADirectory`,
+`IsADirectory`, `DirectoryNotEmpty`, `ConnectionRefused`,
+`ConnectionReset`, `ConnectionAborted`, `TimedOut`, `AddressInUse`,
+`AddressNotAvailable`, `BrokenPipe`, `Interrupted`, `InvalidInput`,
+`InvalidData` (text that is not UTF-8), `Other`. The runtime maps the platform's number (errno; a Winsock code on
+Windows) to the kind; `code` stays, for logs and for what the enum does
+not name (`Other`). One error type, so no `throws` set changes. User's
+note #5: enums, not magic numbers, are the norm in std. Rejected (user,
+recommended of four): separate error types per failure (every `throws
+IoError` widens); predicates (`e.isNotFound()`, not exhaustive); as is.
+
+### D77 — `DateTime.weekday()` is a `Weekday` (v0.44)
+
+`public enum Weekday { Monday = 1 … Sunday = 7 }` in `std/time`, ISO
+numbering (was `i64`, 0 = Sunday). `when (d.weekday())` is exhaustive;
+`.value` gives the ISO number. `month` stays an `i64`: constructors and
+arithmetic (`month + 1`) read better with a number. Rejected (user,
+recommended of three): a `Month` enum as well; as is.
+
+### D78 — Tests are `test "sentence" { }`, with a test-only vocabulary (v0.44)
+
+The user: assertions "should only be usable inside test function"; "do we
+need '@test' … maybe we could add "test" keyword". Investigation in
+`veles-testing-design.md`; the user took its recommended combination.
+
+```veles
+test "parses a port" {
+  expect(parsePort("80") == 80)                 // soft: recorded, the test goes on
+  val cfg = require(load("app.toml"))           // hard: ends the test; unwraps T? / Result
+  expectThrows<RangeError>(() => parsePort("70000"))
+  expectPanics(() => [1].at(5) ?: panic("no"))
+}
+```
+
+- **Declaring.** `test "name" { body }` at top level; `test` is contextual
+  (only `test "` starts one, so a function or value named `test` stays
+  legal). No signature: it cannot be called or take parameters; it may
+  throw and suspend without saying so (inferred like a lambda). Two tests
+  with one name in a module are an error; the name is a plain string (no
+  interpolation). `veles test --filter` matches the name. `@test fun`
+  keeps parsing, with an error and a fix to the new form.
+- **Vocabulary**, compiler-known and in scope only in test code (a test
+  block, a `test fun`, a `*.test.vs` file); elsewhere the names are
+  unknown with a hint. `expect(cond)` captures the expression: its source
+  text and, for a comparison, both sides' values; a failure is recorded
+  and the test goes on. `require(x)` unwraps a `T?` or a `Result` and
+  ends the test when there is nothing. `expectThrows<E>(f)`,
+  `expectPanics(f)`, `fail(why)`. Every failure carries the call's
+  location.
+- **Helpers.** `test fun name(...)` is callable only from test code, may
+  use the vocabulary, and is left out of `build`/`run`. Every declaration
+  in a `*.test.vs` file is test code: it sees the module's private names
+  and is never loaded by `build`/`run`.
+- **Invariants.** ~~`check(cond)`~~ `assert(cond, "why")`, anywhere (amended
+  2026-09-27, the user: "the everywhere available 'check' should be called
+  'assert' (and it should check condition and require string explanation
+  like panic)"). The reason is required and evaluated only on failure; the
+  panic is the reason, then the condition and, for a comparison, both
+  sides. A bare `check(...)` with no declaration of that name is an error
+  naming `assert`.
+
+*Built 2026-09-27.* A test lowers to a function with a bare `throws`
+(nobody wrote the clause, so D45's "needless throws" lint skips it); its
+name is the sentence, its symbol none. `expect(a OP b)` binds each side
+once, in source order (a literal side takes the other's type, as in the
+comparison), and a failure prints `  file:line:col: expect(...)` then
+`left:`/`right:` (strings quoted; a literal side as written). The runtime
+collects failures per test (`veles_test_fail`/`veles_test_take`, locked:
+tasks on any thread may record); `require`/`fail` record and then panic,
+and the runner shows their line instead of the panic. `expectThrows`
+refuses at compile time a body that cannot throw, or cannot throw the
+named `E`. `expectPanics` launches the body through a private prelude
+`runTestBody` inside `gather` (D52), so the body must be sendable.
+`assert`'s panic is its reason, then `assert(cond)` and the detail lines.
+`*.test.vs` files are dropped before checking in `build`/`run`; calling
+test code (a `test fun` or anything in a test file) from other code is an
+error, by name or `module.name`.
+
+*Amended 2026-09-27 — suites.* The user: "I think both is the answer" —
+`suite "name" { ... }` holds tests, nested suites and `test fun` helpers
+(visible only inside the suite, so two suites may each have their own),
+and a `*.test.vs` file is a suite named after the file. A test's full name
+is its suites' names and its own joined with ` / `; the summary lists it,
+`--filter` matches it, and names must differ only within one suite. The
+report is grouped (the user's choice over one qualified line per test): a
+heading per suite, its tests indented under it, nested suites further in,
+tests outside any suite first. A suite holds nothing else: setup that
+runs before and after each test was proposed as the suite's own `val`s
+and `with`s and rejected — "the setup for before and after isn't good...
+(no new keyword for them either)" — and is open (checklist §9 item 16).
+
+Rejected (user, recommended combination): `test fun name()` as the test
+form; a `testing` module anyone can import (leaks into programs, needs
+`try`, loses the location); a built-in `assert` everywhere.
 
 ---
 

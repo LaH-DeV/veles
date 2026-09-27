@@ -105,7 +105,7 @@ func (s *Server) completion(params json.RawMessage) any {
 				}
 				for _, f := range m.Files {
 					for _, decl := range f.Decls {
-						if !prelude || isPub(decl) {
+						if !prelude || isPub(decl) && sema.PreludeHome(declNameOf(decl)) == "" {
 							s.addDecl(add, decl)
 						}
 					}
@@ -246,6 +246,43 @@ func (s *Server) addModuleDecls(add adder, m *sema.Module) {
 			}
 		}
 	}
+	// a module whose names are written in the prelude (D75: `codec.Value`)
+	if m.Scope == nil {
+		return
+	}
+	home := m.Path[strings.LastIndexByte(m.Path, '/')+1:]
+	for _, sym := range m.Scope.Symbols() {
+		if sym.Module == nil || sym.Module == m || sym.Module.Path != "std/prelude" {
+			continue
+		}
+		for _, f := range sym.Module.Files {
+			for _, decl := range f.Decls {
+				if isPub(decl) && declNameOf(decl) == sym.Name && sema.PreludeHome(sym.Name) == home {
+					s.addDecl(add, decl)
+				}
+			}
+		}
+	}
+}
+
+func declNameOf(decl ast.Decl) string {
+	switch dd := decl.(type) {
+	case *ast.FunDecl:
+		return dd.Name.Name
+	case *ast.StructDecl:
+		return dd.Name.Name
+	case *ast.TraitDecl:
+		return dd.Name.Name
+	case *ast.EnumDecl:
+		return dd.Name.Name
+	case *ast.ValDecl:
+		return dd.Name.Name
+	case *ast.ErrorAliasDecl:
+		return dd.Name.Name
+	case *ast.TypeAliasDecl:
+		return dd.Name.Name
+	}
+	return ""
 }
 
 // addMembers offers the fields and methods of a value of type t: the

@@ -177,7 +177,7 @@ so has nothing to protect (D22).
 ### `argument of type 'MutableList<i64>' is not Sendable and cannot cross a task boundary`
 
 Tasks may only share immutable data (D35). Pass a `List` (`.toList()`),
-send items over a `Channel`, or guard shared state with `mutex(...)`.
+send items over a `Channel`, or guard shared state with `Mutex(value: ...)`.
 
 ### `'await' applies to channels, timers and task handles` / `'recv()' always suspends and must be awaited`
 

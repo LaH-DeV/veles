@@ -116,6 +116,13 @@
           }
         },
         {
+          "comment": "test \"name\" { }, suite \"name\" { }  and  test fun  (D78; contextual: only before a string or 'fun')",
+          "match": "^\\s*(test|suite)\\b(?=\\s*(\"|fun\\b))",
+          "captures": {
+            "1": { "name": "storage.type.test.veles" }
+          }
+        },
+        {
           "comment": "type Item = ...  (associated type)",
           "match": "\\b(type)\\s+([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {

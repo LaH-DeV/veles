@@ -350,7 +350,7 @@ func (p *Parser) parsePrimary() ast.Expr {
 	case lexer.KwReturn, lexer.KwThrow, lexer.KwBreak, lexer.KwContinue:
 		return &ast.ControlExpr{Stmt: p.parseStmt()}
 	case lexer.Arrow:
-		p.errorf(t.Span, "'->' is not an operator; use '=>' (D33)")
+		p.thinArrow(t.Span, "'->' is not an operator; use '=>' (D33)")
 		p.next()
 		return &ast.BadExpr{Pos: t.Span}
 	}
@@ -641,7 +641,7 @@ func (p *Parser) parseWhenArm(hasSubject bool) *ast.WhenArm {
 	default:
 		arm.Cond = p.parseArmHead()
 	}
-	if _, ok := p.expect(lexer.FatArrow); !ok {
+	if !p.expectArmArrow() {
 		p.syncStmt()
 		arm.Body = &ast.BadExpr{Pos: p.span()}
 		arm.Pos = p.spanFrom(start)
@@ -673,7 +673,7 @@ func (p *Parser) parseRace() ast.Expr {
 			p.expect(lexer.Assign)
 		}
 		arm.Source = p.parseArmHead()
-		if _, ok := p.expect(lexer.FatArrow); !ok {
+		if !p.expectArmArrow() {
 			p.syncStmt()
 			continue
 		}
@@ -688,6 +688,29 @@ func (p *Parser) parseRace() ast.Expr {
 	p.expect(lexer.RBrace)
 	r.Pos = p.spanFrom(start)
 	return r
+}
+
+// expectArmArrow expects the `=>` between an arm's head and its body. The
+// `->` of Kotlin and Java is reported with a fix and parsed as `=>`, so
+// the arm and the ones after it check normally.
+func (p *Parser) expectArmArrow() bool {
+	if t := p.cur(); t.Kind == lexer.Arrow {
+		p.thinArrow(t.Span, "'->' is not an operator; an arm is 'pattern => value' (D33)")
+		p.next()
+		return true
+	}
+	_, ok := p.expect(lexer.FatArrow)
+	return ok
+}
+
+// thinArrow reports a `->` written for `=>`, with the fix.
+func (p *Parser) thinArrow(span source.Span, msg string) {
+	p.diags.Items = append(p.diags.Items, source.Diagnostic{
+		Severity: source.Error,
+		Span:     span,
+		Message:  msg,
+		Fix:      &source.Fix{Title: "Replace '->' with '=>'", Edits: []source.TextEdit{{Span: span, NewText: "=>"}}},
+	})
 }
 
 // closeCondition expects the `)` after a condition, with a hint for the

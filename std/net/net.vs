@@ -124,7 +124,7 @@ fun findByte(xs: *MutableList<u8>, b: u8, from: i64): i64 {
 // non-suspending critical section; the socket reads happen outside.
 fun newBuffer(): Mutex<MutableList<u8>> {
   val empty: MutableList<u8> = []
-  mutex(empty)
+  Mutex(value: empty)
 }
 
 fun peerOf(fd: i64): string {
@@ -195,7 +195,7 @@ public struct Conn {
           b.removePrefix(nl + 1)
           line
         })
-        return line.decodeUtf8() ?: throw IoError(path: this.address, code: 0, detail: "line is not valid UTF-8")
+        return line.decodeUtf8() ?: throw IoError(path: this.address, code: 0, detail: "line is not valid UTF-8", kind: IoKind.InvalidData)
       }
       scanned = this.buffered()
       // no newline in what has arrived: stop before asking for more, or a
@@ -206,7 +206,7 @@ public struct Conn {
         val rest = this.take(scanned)
         if (rest.isEmpty()) return null
         if (rest.len() > max) throw this.tooLong("line", max)
-        return rest.decodeUtf8() ?: throw IoError(path: this.address, code: 0, detail: "line is not valid UTF-8")
+        return rest.decodeUtf8() ?: throw IoError(path: this.address, code: 0, detail: "line is not valid UTF-8", kind: IoKind.InvalidData)
       }
     }
   }

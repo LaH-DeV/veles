@@ -27,7 +27,18 @@ Put the resulting `veles` (or `veles.exe`) on your `PATH`.
 
 ## Hello
 
-Create a directory with one file, `main.vs`:
+The quickest start is `veles new`, which makes a package that runs and
+tests on the first try — a manifest, a `main.vs` with a test, and a
+`.gitignore`:
+
+```bash
+veles new hello
+cd hello
+veles run      # Hello, world!
+veles test     # test greets by name ... ok
+```
+
+By hand it is just as short. Create a directory with one file, `main.vs`:
 
 ```veles
 use io
@@ -67,10 +78,16 @@ The other commands you will use:
 
 | Command | What it does |
 |---|---|
-| `veles build <dir> -o app` | produce an executable |
+| `veles new <dir>` | create a package: manifest, `main.vs` with a test, `.gitignore` |
+| `veles doc [dir]` | the package's public API as Markdown (`-o dir` for one file per module) |
+| `veles build <dir> -o app` | produce an executable (named after the package without `-o`) |
 | `veles check <dir>` | type-check without compiling; `--fix` applies lint corrections |
-| `veles test <dir>` | run every `@test` function |
+| `veles test <dir>` | run every `test "..." { }` (chapter 14) |
 | `veles build <dir> --release` | optimise, and drop integer overflow checks |
+
+Leave out `<dir>` inside a package and these take the current directory:
+`veles run`, `veles test --filter parse`. Flags go before or after the
+path.
 
 ## Reading the first program
 

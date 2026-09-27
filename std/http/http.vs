@@ -7,7 +7,7 @@
 /// down (D56).
 ///
 /// ```veles
-/// val app = http.router()
+/// val app = http.Router()
 /// app.get("/users/{id}", req => http.Response.json(try loadUser(req.param("id")) ?! http.notFound()))
 /// app.get("/static/*", http.files("./public"))
 /// with (listener = try net.listen(host: "", port: 8080)) {
@@ -21,14 +21,14 @@ use fs, io, net, path, random, time
 
 /// "Answer this request with `status`": thrown from a handler.
 public error Fail {
-  public status: i64
+  public status: Status
   public text:   string
-  fun message(): string = "${this.status} ${this.text}"
+  fun message(): string = "${this.status.code} ${this.text}"
 }
 
-public fun notFound(text: string = "not found"): Fail = Fail(status: 404, text)
-public fun badRequest(text: string = "bad request"): Fail = Fail(status: 400, text)
-public fun forbidden(text: string = "forbidden"): Fail = Fail(status: 403, text)
+public fun notFound(text: string = "not found"): Fail = Fail(status: Status.notFound, text)
+public fun badRequest(text: string = "bad request"): Fail = Fail(status: Status.badRequest, text)
+public fun forbidden(text: string = "forbidden"): Fail = Fail(status: Status.forbidden, text)
 
 // ---------------------------------------------------------------------------
 // what a request may cost
@@ -75,7 +75,7 @@ public struct Limits {
 /// One request. Header names are lower-case; `params` holds the route's
 /// `{name}` captures and `*` the rest matched by a trailing wildcard.
 public struct Request {
-  public method:  string
+  public method:  Method
   public path:    string
   public query:   Map<string, string>
   public headers: Map<string, string>
@@ -108,32 +108,32 @@ public struct Request {
 
 /// One response. Build it with the statics, adjust with `withHeader`.
 public struct Response {
-  public status:  i64 = 200
+  public status:  Status = Status.ok
   public headers: Map<string, string> = [:]
   public body:    List<u8> = []
 
   /// Plain text.
-  public static fun text(body: string, status: i64 = 200): Response =
+  public static fun text(body: string, status: Status = Status.ok): Response =
     Response(status, headers: ["content-type": "text/plain; charset=utf-8"], body: body.bytes())
 
   /// HTML.
-  public static fun html(body: string, status: i64 = 200): Response =
+  public static fun html(body: string, status: Status = Status.ok): Response =
     Response(status, headers: ["content-type": "text/html; charset=utf-8"], body: body.bytes())
 
   /// JSON text the caller already produced.
-  public static fun json(body: string, status: i64 = 200): Response =
+  public static fun json(body: string, status: Status = Status.ok): Response =
     Response(status, headers: ["content-type": "application/json"], body: body.bytes())
 
   /// Raw bytes with a content type.
-  public static fun bytes(body: List<u8>, contentType: string, status: i64 = 200): Response =
+  public static fun bytes(body: List<u8>, contentType: string, status: Status = Status.ok): Response =
     Response(status, headers: ["content-type": contentType], body)
 
-  /// A status and nothing else (`204`, `404`, ...).
-  public static fun empty(status: i64): Response = Response(status)
+  /// A status and nothing else (`Status.noContent`, `Status.notFound`, ...).
+  public static fun empty(status: Status): Response = Response(status)
 
   /// A redirect to `location`.
-  public static fun redirect(location: string, status: i64 = 302): Response =
-    Response(status, headers: ["location": location])
+  public static fun redirect(location: string, status: Status = Status.found): Response =
+    Response(status, headers: [Header.location: location])
 
   /// The same response with a header set (names are lower-cased).
   public fun withHeader(name: string, value: string): Response {
@@ -161,7 +161,7 @@ public fun handler<E>(h: sendable fun(Request): Response suspends throws E | Fai
       is Fail => Response.text(e.text, status: e.status)
       else    => {
         io.eprintln("http: ${req.method} ${req.path}: ${e.message()}")
-        Response.text("internal server error", status: 500)
+        Response.text("internal server error", status: Status.internalServerError)
       }
     }
   }
@@ -179,7 +179,7 @@ fun dispatch(h: Handler, req: Request): Response {
     is Ok(resp) => resp
     is Err(p)   => {
       io.eprintln("http: ${req.method} ${req.path}: panic: ${p.message()}")
-      Response.text("internal server error", status: 500)
+      Response.text("internal server error", status: Status.internalServerError)
     }
   }
 }
@@ -192,10 +192,10 @@ fun dispatch(h: Handler, req: Request): Response {
 /// any case. The peer is `"test"`.
 ///
 /// ```veles
-/// val resp = http.call(app.handler(), "POST", "/notes", body: "{\"text\":\"hi\"}")
-/// io.println("${resp.status} ${resp.body.decodeUtf8() ?: ""}")
+/// val resp = http.call(app.handler(), http.Method.post, "/notes", body: "{\"text\":\"hi\"}")
+/// io.println("${resp.status} ${resp.body.decodeUtf8() ?: ""}")   // 201 Created ...
 /// ```
-public fun call(handler: Handler, method: string, target: string, body: string = "", headers: Map<string, string> = [:]): Response {
+public fun call(handler: Handler, method: Method, target: string, body: string = "", headers: Map<string, string> = [:]): Response {
   val lower: MutableMap<string, string> = [:]
   loop ((name, value) in headers.entries()) {
     lower.set(name.toLower(), value)
@@ -210,43 +210,47 @@ public fun call(handler: Handler, method: string, target: string, body: string =
     peer: "test",
   )
   val resp = dispatch(handler, req)
-  if (method == "HEAD" || hasNoBody(resp.status)) Response(status: resp.status, headers: resp.headers) else resp
+  if (method == Method.head || hasNoBody(resp.status)) Response(status: resp.status, headers: resp.headers) else resp
 }
 
 // ---------------------------------------------------------------------------
 // routing
 
 struct Route {
-  method:   string        // "*" for any
+  method:   Method?       // null for any
   segments: List<string>  // "users", "{id}", "*"
   handler:  Handler
 }
 
 /// Maps `METHOD /pattern` to handlers. A pattern segment `{name}` captures
 /// one path segment into `req.params`; a final `*` captures the rest under
-/// `"*"`. Register routes, then hand `handler()` to `serve`.
+/// `"*"`. `http.Router()` makes an empty one; register routes, then hand
+/// `handler()` to `serve`.
 public struct Router {
-  routes:     MutableList<Route> = []
-  middleware: MutableList<Middleware> = []
+  private routes:     MutableList<Route> = []
+  private middleware: MutableList<Middleware> = []
 
   public fun get<E>(pattern: string, h: sendable fun(Request): Response suspends throws E | Fail) {
-    this.add("GET", pattern, handler(h))
+    this.add(Method.get, pattern, handler(h))
   }
   public fun post<E>(pattern: string, h: sendable fun(Request): Response suspends throws E | Fail) {
-    this.add("POST", pattern, handler(h))
+    this.add(Method.post, pattern, handler(h))
   }
   public fun put<E>(pattern: string, h: sendable fun(Request): Response suspends throws E | Fail) {
-    this.add("PUT", pattern, handler(h))
+    this.add(Method.put, pattern, handler(h))
   }
   public fun delete<E>(pattern: string, h: sendable fun(Request): Response suspends throws E | Fail) {
-    this.add("DELETE", pattern, handler(h))
+    this.add(Method.delete, pattern, handler(h))
+  }
+  public fun patch<E>(pattern: string, h: sendable fun(Request): Response suspends throws E | Fail) {
+    this.add(Method.patch, pattern, handler(h))
   }
   public fun any<E>(pattern: string, h: sendable fun(Request): Response suspends throws E | Fail) {
-    this.add("*", pattern, handler(h))
+    this.routes.push(Route(method: null, segments: segmentsOf(pattern), handler: handler(h)))
   }
 
-  /// Registers an already adapted handler for `method` (`"*"` for any).
-  public fun add(method: string, pattern: string, h: Handler) {
+  /// Registers an already adapted handler for `method`.
+  public fun add(method: Method, pattern: string, h: Handler) {
     this.routes.push(Route(method, segments: segmentsOf(pattern), handler: h))
   }
 
@@ -274,9 +278,6 @@ public struct Router {
   }
 }
 
-/// A new, empty router.
-public fun router(): Router = Router()
-
 // ---------------------------------------------------------------------------
 // middleware
 
@@ -295,8 +296,8 @@ public type Middleware = sendable fun(Handler): Handler
 public fun logging(): Middleware = next => req => {
   val sw = time.Stopwatch.start()
   val resp = next(req)
-  val id = req.header("x-request-id")
-  io.eprintln("${req.peer} ${req.method} ${req.path} ${resp.status} ${sw.elapsed()}" +
+  val id = req.header(Header.requestId)
+  io.eprintln("${req.peer} ${req.method} ${req.path} ${resp.status.code} ${sw.elapsed()}" +
     (if (id == null) "" else " id=$id"))
   resp
 }
@@ -306,15 +307,15 @@ public fun logging(): Middleware = next => req => {
 /// behind it and on the response for the client. Wrap it outside
 /// `logging()` so the log line carries it.
 public fun requestId(): Middleware = next => req => {
-  val id = req.header("x-request-id") ?: newRequestId()
-  next(req.withHeader("x-request-id", id)).withHeader("x-request-id", id)
+  val id = req.header(Header.requestId) ?: newRequestId()
+  next(req.withHeader(Header.requestId, id)).withHeader(Header.requestId, id)
 }
 
 // 16 hex digits: enough to tell a day's requests apart in a log, and not
 // a claim to be unguessable — this is for tracing, not for security.
 fun newRequestId(): string {
   val digits = "0123456789abcdef"
-  val out = stringBuilder()
+  val out = StringBuilder()
   var bits = random.nextU64()
   loop (_ in 0..<16) {
     val d = (bits % 16) as i64
@@ -330,7 +331,7 @@ fun newRequestId(): string {
 public fun timeout(limit: Duration): Middleware = next => req => {
   when (withTimeout(limit, () => next(req))) {
     is Ok(resp) => resp
-    is Err      => Response.text("service unavailable", status: 503)
+    is Err      => Response.text("service unavailable", status: Status.serviceUnavailable)
   }
 }
 
@@ -341,25 +342,26 @@ public fun timeout(limit: Duration): Middleware = next => req => {
 // answers 204 with the same `Allow`.
 fun route(routes: List<Route>, req: Request): Response {
   val segments = segmentsOf(req.path)
-  val allowed: MutableList<string> = []
+  val allowed: MutableList<Method> = []
   loop (r in routes) {
     val params = matchRoute(r.segments, segments) ?: continue
-    if (r.method == "*" || r.method == req.method) return r.handler(req.withParams(params))
-    if (!allowed.contains(r.method)) allowed.push(r.method)
+    val m = r.method ?: return r.handler(req.withParams(params))
+    if (m == req.method) return r.handler(req.withParams(params))
+    if (!allowed.contains(m)) allowed.push(m)
   }
-  if (req.method == "HEAD" && allowed.contains("GET")) {
+  if (req.method == Method.head && allowed.contains(Method.get)) {
     loop (r in routes) {
-      if (r.method != "GET") continue
+      if (r.method != Method.get) continue
       val params = matchRoute(r.segments, segments) ?: continue
       return r.handler(req.withParams(params))
     }
   }
-  if (allowed.isEmpty()) return Response.text("not found", status: 404)
-  if (allowed.contains("GET") && !allowed.contains("HEAD")) allowed.push("HEAD")
-  if (!allowed.contains("OPTIONS")) allowed.push("OPTIONS")
-  val allow = allowed.join(", ")
-  if (req.method == "OPTIONS") return Response.empty(204).withHeader("allow", allow)
-  Response.text("method not allowed", status: 405).withHeader("allow", allow)
+  if (allowed.isEmpty()) return Response.text("not found", status: Status.notFound)
+  if (allowed.contains(Method.get) && !allowed.contains(Method.head)) allowed.push(Method.head)
+  if (!allowed.contains(Method.options)) allowed.push(Method.options)
+  val allow = allowed.map(m => m.name).join(", ")
+  if (req.method == Method.options) return Response.empty(Status.noContent).withHeader(Header.allow, allow)
+  Response.text("method not allowed", status: Status.methodNotAllowed).withHeader(Header.allow, allow)
 }
 
 // the non-empty segments of a path or pattern: "/users/42/" → [users, 42]
@@ -454,7 +456,7 @@ public fun serve(
   stop: (sendable fun() suspends)? = null,
   grace: Duration = Duration.seconds(10),
 ) {
-  val drain = Drain(stopping: atomic(false), wake: Channel<bool>(capacity: 1))
+  val drain = Drain(stopping: Atomic(value: false), wake: Channel<bool>(capacity: 1))
   if (stop == null) return acceptAndServe(listener, handler, limits, log, drain)
   scope {
     val serving = async acceptAndServe(listener, handler, limits, log, drain)
@@ -524,7 +526,7 @@ fun connection(conn: net.Conn, handler: Handler, limits: Limits, log: bool, drai
           when (e) {
             is Fail => {
               val _ = writeResponse(c, Response.text(e.text, status: e.status), close: true)
-              if (log) io.eprintln("${c.peer()} - ${e.status} ${e.text}")
+              if (log) io.eprintln("${c.peer()} - ${e.status.code} ${e.text}")
             }
             else    => { }  // the peer went away or stayed silent
           }
@@ -536,8 +538,8 @@ fun connection(conn: net.Conn, handler: Handler, limits: Limits, log: bool, drai
       // read after the handler: a stop that began while it ran still
       // closes this connection
       val close = !wantsKeepAlive(req) || drain.stopping.load()
-      val sent = writeResponse(c, resp, close, headOnly: req.method == "HEAD")
-      if (log) io.eprintln("${req.peer} ${req.method} ${req.path} ${resp.status} ${sw.elapsed()}")
+      val sent = writeResponse(c, resp, close, headOnly: req.method == Method.head)
+      if (log) io.eprintln("${req.peer} ${req.method} ${req.path} ${resp.status.code} ${sw.elapsed()}")
       if (sent is Err || close) break
     }
   }
@@ -586,7 +588,7 @@ fun readLineOf(c: net.Conn, max: i64): string? suspends throws Fail | IoError {
   when (c.readLine(max: max)) {
     is Ok(line) => line
     is Err(e)   => when (e) {
-      is net.TooLong => throw Fail(status: 414, text: "URI too long")
+      is net.TooLong => throw Fail(status: Status.uriTooLong, text: "URI too long")
       is IoError     => throw e
     }
   }
@@ -601,14 +603,14 @@ fun readRequest(c: net.Conn, limits: Limits, drain: Drain): Request? throws Fail
   // connection open by sending one header every few seconds
   val headDeadline = time.Deadline.after(limits.headerTimeout)
   val [method, target, version] = first.split(" ") else throw badRequest("malformed request line")
-  if (!version.startsWith("HTTP/1.")) throw Fail(status: 505, text: "HTTP version not supported")
-  val tooManyHeaders = Fail(status: 431, text: "request header fields too large")
+  if (!version.startsWith("HTTP/1.")) throw Fail(status: Status.httpVersionNotSupported, text: "HTTP version not supported")
+  val tooManyHeaders = Fail(status: Status.requestHeaderFieldsTooLarge, text: "request header fields too large")
   val headers: MutableMap<string, string> = [:]
   var headerBytes: i64 = 0
   // lines, not entries: repeating one name costs the server the same and
   // the map would collapse them to a single key
   var headerLines: i64 = 0
-  val headerTimeout = Fail(status: 408, text: "request header timeout")
+  val headerTimeout = Fail(status: Status.requestTimeout, text: "request header timeout")
   loop {
     // the deadline is answered with a status, not with a bare Timeout: a
     // Timeout out of `readRequest` is the *idle* wait above, which closes
@@ -633,7 +635,7 @@ fun readRequest(c: net.Conn, limits: Limits, drain: Drain): Request? throws Fail
     val value = rawValue.trim()
     headers.set(name, value)
   }
-  if (headers.get("transfer-encoding") != null) throw Fail(status: 501, text: "chunked requests are not supported")
+  if (headers.get("transfer-encoding") != null) throw Fail(status: Status.notImplemented, text: "chunked requests are not supported")
   var body: List<u8> = []
   val declared = headers.get("content-length")
   if (declared != null) {
@@ -641,12 +643,12 @@ fun readRequest(c: net.Conn, limits: Limits, drain: Drain): Request? throws Fail
     if (length < 0) throw badRequest("malformed content-length")
     // checked before the read, not after: `readExact` allocates what it
     // is asked for, and the number came from the peer
-    if (length > limits.bodyBytes) throw Fail(status: 413, text: "payload too large")
+    if (length > limits.bodyBytes) throw Fail(status: Status.contentTooLarge, text: "payload too large")
     if (length > 0) {
       when (withTimeout(limits.bodyTimeout, () => try c.readExact(length))) {
         is Ok(bytes) => body = bytes
         is Err(e)    => when (e) {
-          is Timeout => throw Fail(status: 408, text: "request body timeout")
+          is Timeout => throw Fail(status: Status.requestTimeout, text: "request body timeout")
           is IoError => throw e
         }
       }
@@ -654,7 +656,7 @@ fun readRequest(c: net.Conn, limits: Limits, drain: Drain): Request? throws Fail
     }
   }
   val (rawPath, rawQuery) = target.splitOnce("?") ?: (target, "")
-  Request(method, path: percentDecode(rawPath, plusIsSpace: false), query: parseQuery(rawQuery), headers: headers.toMap(), body, peer: c.peer())
+  Request(method: Method(name: method), path: percentDecode(rawPath, plusIsSpace: false), query: parseQuery(rawQuery), headers: headers.toMap(), body, peer: c.peer())
 }
 
 fun parseQuery(text: string): Map<string, string> {
@@ -703,8 +705,8 @@ public fun percentDecode(s: string, plusIsSpace: bool): string {
 // `headOnly` is the answer to a HEAD request: every header a GET would
 // get, `content-length` included, and no body (RFC 9110 §9.3.2).
 fun writeResponse(c: net.Conn, resp: Response, close: bool, headOnly: bool = false) throws IoError {
-  val head = stringBuilder()
-  head.append("HTTP/1.1 ${resp.status} ${reasonOf(resp.status)}\r\n")
+  val head = StringBuilder()
+  head.append("HTTP/1.1 ${resp.status.code} ${resp.status.reason()}\r\n")
   var hasType = false
   loop ((name, value) in resp.headers.entries()) {
     if (name == "content-type") hasType = true
@@ -725,40 +727,7 @@ fun writeResponse(c: net.Conn, resp: Response, close: bool, headOnly: bool = fal
 // 1xx, 204 and 304 never carry a body, and a 1xx or 204 may not even say
 // `content-length` (RFC 9110 §6.4.1, §8.6); a 304's length would be the
 // 200's, which a handler returning `empty(304)` does not know.
-fun hasNoBody(status: i64): bool = (status >= 100 && status < 200) || status == 204 || status == 304
-
-/// The standard reason phrase for a status code (empty when unknown).
-public fun reasonOf(status: i64): string = when (status) {
-  200  => "OK"
-  201  => "Created"
-  202  => "Accepted"
-  204  => "No Content"
-  301  => "Moved Permanently"
-  302  => "Found"
-  303  => "See Other"
-  304  => "Not Modified"
-  307  => "Temporary Redirect"
-  308  => "Permanent Redirect"
-  400  => "Bad Request"
-  401  => "Unauthorized"
-  403  => "Forbidden"
-  404  => "Not Found"
-  405  => "Method Not Allowed"
-  408  => "Request Timeout"
-  409  => "Conflict"
-  411  => "Length Required"
-  413  => "Payload Too Large"
-  414  => "URI Too Long"
-  415  => "Unsupported Media Type"
-  422  => "Unprocessable Entity"
-  429  => "Too Many Requests"
-  431  => "Request Header Fields Too Large"
-  500  => "Internal Server Error"
-  501  => "Not Implemented"
-  503  => "Service Unavailable"
-  505  => "HTTP Version Not Supported"
-  else => ""
-}
+fun hasNoBody(status: Status): bool = status.isInformational() || status == Status.noContent || status == Status.notModified
 
 /// A time in the format HTTP dates use: `Sun, 06 Nov 1994 08:49:37 GMT`.
 ///

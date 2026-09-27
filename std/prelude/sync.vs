@@ -48,13 +48,17 @@ struct Held {
 /// `Mutex` are the same lock and the same value.
 ///
 /// ```veles
-/// val hits = mutex(0)
+/// val hits = Mutex(value: 0)
 /// hits.withLock(n => *n += 1)  // from any number of tasks
 /// io.println(hits.get())
 /// ```
 public struct Mutex<T> {
-  cell: *T
-  word: *i64
+  private cell: *T
+  private word: *i64 = newWord()
+
+  init(value: T) {
+    this.cell = &value
+  }
 
   /// Runs `f` with the value locked and returns what it returns. `f`
   /// cannot suspend; locking the same `Mutex` again inside it panics.
@@ -75,8 +79,6 @@ public struct Mutex<T> {
   }
 }
 
-public fun mutex<T>(value: T): Mutex<T> = Mutex(cell: &value, word: newWord())
-
 /// A value that tasks read and replace whole, each operation indivisible.
 /// For a change that reads the value first, use `update`: a `load`
 /// followed by a `store` can lose another task's store in between.
@@ -84,8 +86,12 @@ public fun mutex<T>(value: T): Mutex<T> = Mutex(cell: &value, word: newWord())
 /// An `Atomic` of a number or a `bool` takes no lock: each operation is
 /// one processor instruction. Any other value is guarded by a lock word.
 public struct Atomic<T> {
-  cell: *T
-  word: *i64
+  private cell: *T
+  private word: *i64 = newWord()
+
+  init(value: T) {
+    this.cell = &value
+  }
 
   public fun load(): T {
     if (atomicLockFree(this.cell)) {
@@ -139,8 +145,6 @@ public struct Atomic<T> {
     }
   }
 }
-
-public fun atomic<T>(value: T): Atomic<T> = Atomic(cell: &value, word: newWord())
 
 // a lock word of its own, free
 fun newWord(): *i64 {

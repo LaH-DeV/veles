@@ -61,19 +61,54 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 			}
 			return &Builtin{exprBase{types.TUnit}, "list.appendText", []Expr{xs, s}, e.Pos}
 		}
+		if callee.Name == "stringSplit" && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 2 {
+			// std-only: String.split's loop in the runtime (a non-empty sep;
+			// the parts share the text's bytes)
+			s := f.checkExprTo(e.Args[0].Value, types.TString)
+			sep := f.checkExprTo(e.Args[1].Value, types.TString)
+			return &Builtin{exprBase{&types.List{Elem: types.TString}}, "string.split", []Expr{s, sep}, e.Pos}
+		}
+		if callee.Name == "listDecodeUtf8Range" && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 3 {
+			// std-only: xs[from:to] as text in one copy (a parser's string
+			// out of its input), not a slice and then a second copy
+			xs := f.checkExpr(e.Args[0].Value, nil)
+			lo := f.checkExprTo(e.Args[1].Value, types.TI64)
+			hi := f.checkExprTo(e.Args[2].Value, types.TI64)
+			if lt, ok := xs.Type().(*types.List); !ok || !types.Identical(lt.Elem, types.TU8) {
+				f.errorf(e.Pos, "listDecodeUtf8Range takes a List<u8> and two positions")
+				return bad()
+			}
+			return &Builtin{exprBase{&types.Nullable{Elem: types.TString}}, "list.decodeUtf8Range", []Expr{xs, lo, hi}, e.Pos}
+		}
 		if _, ok := atomicBuiltins[callee.Name]; ok && f.module.Std && f.lookup(callee.Name) == nil {
 			return f.atomicCall(callee.Name, e)
 		}
 		if callee.Name == "panic" && f.lookup(callee.Name) == nil {
 			return f.panicCall(e)
 		}
+		if (testWords[callee.Name] || callee.Name == "assert") && f.lookup(callee.Name) == nil {
+			return f.testCall(callee.Name, typeArgs, e, want)
+		}
+		if callee.Name == "$testFail" && len(e.Args) == 1 {
+			return f.testFailCall(e) // built by the test vocabulary
+		}
 		sym := f.lookup(callee.Name)
 		if sym == nil {
-			f.errorf(callee.Pos, "unknown function '%s'%s", callee.Name, f.c.suggestUnknown(f.module, callee.Name))
+			if suite, ok := f.c.suiteHelpers[callee.Name]; ok {
+				f.errorf(callee.Pos, "'%s' is a helper of suite %q, visible only inside it; move the test into the suite, or the helper out of it (D78)", callee.Name, suite)
+			} else if callee.Name == "check" {
+				// Kotlin's check(cond) — and this compiler's own, briefly
+				f.errorf(callee.Pos, "unknown function 'check'; an invariant is 'assert(cond, \"why it must hold\")' (D78)")
+			} else if !f.removedFactory(callee.Name, e) {
+				f.c.errorFix(callee.Pos, f.c.unknownFix(f.file, f.module, callee.Pos, callee.Name), "unknown function '%s'%s", callee.Name, f.c.suggestUnknown(f.module, callee.Name))
+			}
 			f.checkArgsLoosely(e.Args)
 			return bad()
 		}
 		f.c.refSym(callee.Pos, sym)
+		if sym.Kind == SymFunc && sym.Func.TestCode && !f.inTest() {
+			f.errorf(callee.Pos, "'%s' is test code (a 'test fun', or declared in a *.test.vs file); only tests can call it, and a build leaves it out (D78)", callee.Name)
+		}
 		return f.callSymbol(sym, callee.Name, typeArgs, e, want)
 	case *ast.PreludeName:
 		// synthesized code (D58): the prelude's function, whatever the
@@ -81,7 +116,7 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 		if callee.Name == "panic" {
 			return f.panicCall(e)
 		}
-		sym := f.c.universe.LookupLocal(callee.Name)
+		sym := f.c.preludeSym(callee.Name)
 		if sym == nil || sym.Kind != SymFunc {
 			panic("synthesized call to a missing prelude function " + callee.Name)
 		}
@@ -93,7 +128,9 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 				case SymModule:
 					member := sym.Mod.Scope.LookupLocal(callee.Name.Name)
 					if member == nil {
-						f.errorf(callee.Name.Pos, "module '%s' has no declaration '%s'", n.Name, callee.Name.Name)
+						if !f.removedFactory(n.Name+"."+callee.Name.Name, e) {
+							f.c.noMember(n.Pos, callee.Name.Pos, n.Name, callee.Name.Name)
+						}
 						f.checkArgsLoosely(e.Args)
 						return bad()
 					}
@@ -104,6 +141,9 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 					}
 					f.c.refSym(n.Pos, sym)
 					f.c.refSym(callee.Name.Pos, member)
+					if member.Kind == SymFunc && member.Func.TestCode && !f.inTest() {
+						f.errorf(callee.Name.Pos, "'%s' is test code (a 'test fun', or declared in a *.test.vs file); only tests can call it, and a build leaves it out (D78)", callee.Name.Name)
+					}
 					return f.callSymbol(member, callee.Name.Name, typeArgs, e, want)
 				case SymType:
 					if s, ok := sym.Type.(*types.Sealed); ok {
@@ -391,6 +431,7 @@ func (f *fnCtx) callTemplateRecv(t *FuncTemplate, ownerSubst map[*types.TypePara
 			order = append(order, i)
 		}
 	}
+	argFailed := false // an argument already reported: inference has nothing to say
 	for _, i := range order {
 		p := t.Sig.Params[i]
 		pt := f.c.hooks.Subst(p.Type, m)
@@ -403,6 +444,7 @@ func (f *fnCtx) callTemplateRecv(t *FuncTemplate, ownerSubst map[*types.TypePara
 			}
 			exprs[i] = x
 			if types.IsInvalid(x.Type()) {
+				argFailed = true
 				continue
 			}
 			if !unify(pt, x.Type(), m) {
@@ -428,12 +470,19 @@ func (f *fnCtx) callTemplateRecv(t *FuncTemplate, ownerSubst map[*types.TypePara
 	for _, tp := range t.TypeParams {
 		bt, ok := m[tp]
 		if !ok {
-			f.errorf(span, "cannot infer type parameter '%s' of '%s'; supply it explicitly: '%s<...>(...)'", tp.Name, t.Name, t.Name)
+			if !argFailed {
+				f.errorf(span, "cannot infer type parameter '%s' of '%s'; supply it explicitly: '%s<...>(...)'", tp.Name, t.Name, t.Name)
+			}
 			return bad()
 		}
 		for _, bound := range tp.Bounds {
 			if !f.implements(bt, bound) {
-				f.errorf(span, "type '%s' does not implement trait '%s' required by parameter '%s' of '%s'%s", bt, bound.Name, tp.Name, t.Name, implementHint(bt, bound))
+				if inner, innerTrait, why := f.unmetThrough(bt, bound); inner != nil {
+					// `List<Tag>` is Encodable when Tag is: say so, and fix Tag
+					f.c.errorFix(span, f.c.implementFix(inner, innerTrait), "type '%s' does not implement trait '%s' required by parameter '%s' of '%s'; %s%s", bt, bound.Name, tp.Name, t.Name, why, implementHint(inner, innerTrait))
+					return bad()
+				}
+				f.c.errorFix(span, f.c.implementFix(bt, bound), "type '%s' does not implement trait '%s' required by parameter '%s' of '%s'%s", bt, bound.Name, tp.Name, t.Name, implementHint(bt, bound))
 				return bad() // instantiating anyway would report the same inside the callee
 			}
 		}
@@ -537,19 +586,30 @@ func (f *fnCtx) inferStructArgs(t *types.Struct, args []ast.Arg, want types.Type
 	}
 	params := make([]types.Param, len(t.Fields))
 	for i, fld := range t.Fields {
-		params[i] = types.Param{Name: fld.Name, Type: fld.Type, HasDefault: fld.HasDefault}
+		params[i] = types.Param{Name: fld.Name, Type: fld.Type, HasDefault: true}
 	}
-	bound, ok := f.bindArgs(params, args, "struct '"+t.Name+"'", span)
+	if initT := f.c.methods[t]["$init"]; initT != nil && initT.Sig != nil {
+		params = append(params, initT.Sig.Params...) // D73: `Boxed(value: 1)` infers T too
+	}
+	// a pun names its parameter (D28); constructStruct reports the rest
+	named := make([]ast.Arg, len(args))
+	for i, a := range args {
+		named[i] = a
+		if n, isName := a.Value.(*ast.NameExpr); a.Name == nil && isName && len(n.TypeArgs) == 0 && (hasField(t, n.Name) || f.c.hasInitParam(t, n.Name)) {
+			named[i].Name = &ast.Ident{Name: n.Name, Pos: n.Pos}
+		}
+	}
+	bound, ok := f.bindArgs(params, named, "struct '"+t.Name+"'", span)
 	if !ok {
 		return nil
 	}
-	for i, fld := range t.Fields {
-		if bound[i] == nil || !types.ContainsTypeParam(fld.Type) {
+	for i, p := range params {
+		if bound[i] == nil || !types.ContainsTypeParam(p.Type) {
 			continue
 		}
-		x := f.checkExpr(bound[i], literalHint(bound[i], fld.Type))
+		x := f.checkExpr(bound[i], literalHint(bound[i], p.Type))
 		if !types.IsInvalid(x.Type()) {
-			unify(fld.Type, x.Type(), m)
+			unify(p.Type, x.Type(), m)
 		}
 	}
 	var targs []types.Type
@@ -573,8 +633,11 @@ func (f *fnCtx) constructStruct(st *types.Struct, args []ast.Arg, span source.Sp
 	}
 	if templateOf(st).Module != f.module.prefix() {
 		for _, fld := range st.Fields {
-			if !fld.Pub {
-				f.errorf(span, "cannot construct '%s' here: field '%s' is private, so the implicit constructor is only callable inside module '%s' (D28)", st.Name, fld.Name, st.Module)
+			// a `private` field is settled below (M5 v0.30): left to its
+			// default, or given by the call; an unmarked one belongs to the
+			// module, and the module alone may construct
+			if !fld.Pub && !fld.Private {
+				f.errorf(span, "cannot construct '%s' here: field '%s' belongs to module '%s', so the implicit constructor is only callable there (D28); mark the field 'private' to hide it and let other modules construct '%s'", st.Name, fld.Name, st.Module, st.Name)
 				f.checkArgsLoosely(args)
 				return bad()
 			}
@@ -584,6 +647,15 @@ func (f *fnCtx) constructStruct(st *types.Struct, args []ast.Arg, span source.Sp
 	for i, fld := range st.Fields {
 		// a field the `init` block assigns is not the caller's to give
 		params[i] = types.Param{Name: fld.Name, Type: fld.Type, HasDefault: fld.HasDefault || fld.Init}
+	}
+	// `init(value: T)`: its parameters follow the fields (D73)
+	initT := f.c.methods[templateOf(st)]["$init"]
+	var initFn *Func
+	if initT != nil {
+		initFn = f.c.instantiate(initT, substOf(st), nil, span)
+		for _, p := range initFn.Sig.Params {
+			params = append(params, types.Param{Name: p.Name, Type: p.Type, HasDefault: true})
+		}
 	}
 	written := args
 	args, ok := f.punFields(st, args)
@@ -633,12 +705,25 @@ func (f *fnCtx) constructStruct(st *types.Struct, args []ast.Arg, span source.Sp
 		lit.Fields[i] = v
 	}
 	var result Expr = lit
-	if initT := f.c.methods[templateOf(st)]["$init"]; initT != nil {
+	if initT != nil {
 		// `init { }`: the block runs on the freshly built value, then the
-		// value is the result (D28)
+		// value is the result (D28); its parameters are the arguments
+		// after the fields (D73)
 		built := f.newTemp(st)
-		fn := f.c.instantiate(initT, substOf(st), nil, span)
-		call := &Call{exprBase: exprBase{types.TUnit}, Fn: fn, Args: []Expr{&AddrOf{exprBase{&types.Pointer{Elem: st}}, ref(built)}}}
+		args := []Expr{&AddrOf{exprBase{&types.Pointer{Elem: st}}, ref(built)}}
+		for j, p := range initFn.Sig.Params {
+			k := len(st.Fields) + j
+			switch {
+			case bound[k] != nil:
+				args = append(args, f.checkExprTo(bound[k], p.Type))
+			case initT.Decl.Params[j].Default != nil:
+				args = append(args, f.defaultArg(initT, j, p.Type, initFn.subst))
+			default:
+				f.errorf(span, "missing argument '%s' in constructor of '%s': its 'init' takes it (D73)", p.Name, st.Name)
+				args = append(args, bad())
+			}
+		}
+		call := &Call{exprBase: exprBase{types.TUnit}, Fn: initFn, Args: args}
 		call.Recv, call.RecvRoot, call.RecvSpan, call.RecvType = RecvPlace, built, span, st
 		body := &Block{Stmts: []Stmt{&ExprStmt{X: call}}, Value: ref(built), Type: st}
 		result = &Let{exprBase{st}, built, lit, &BlockExpr{exprBase{st}, body}}
@@ -666,7 +751,7 @@ func (f *fnCtx) punFields(st *types.Struct, args []ast.Arg) ([]ast.Arg, bool) {
 			}
 			continue
 		}
-		if n, isName := a.Value.(*ast.NameExpr); isName && len(n.TypeArgs) == 0 && hasField(st, n.Name) {
+		if n, isName := a.Value.(*ast.NameExpr); isName && len(n.TypeArgs) == 0 && (hasField(st, n.Name) || f.c.hasInitParam(st, n.Name)) {
 			ident := ast.Ident{Name: n.Name, Pos: n.Pos}
 			out[i].Name = &ident
 			continue
@@ -1659,6 +1744,9 @@ func (f *fnCtx) panicCall(e *ast.CallExpr) Expr {
 		f.checkArgsLoosely(e.Args)
 		return bad()
 	}
+	if n, ok := e.Fun.(*ast.NameExpr); ok && f.c.index != nil {
+		f.c.index.Refs = append(f.c.index.Refs, Ref{Span: n.Pos, Kind: "fun", Name: "panic", Detail: "fun panic(message: string): Never  (built in)", Doc: panicDoc})
+	}
 	msg := f.checkExprTo(e.Args[0].Value, types.TString)
 	return &Builtin{exprBase{types.TNever}, "panic", []Expr{msg}, e.Pos}
 }
@@ -1716,4 +1804,53 @@ func (f *fnCtx) cFunctionPointer(e *ast.UnaryExpr) Expr {
 	sig.C = true
 	sig.Sendable = false
 	return &FuncRef{exprBase{&sig}, fn}
+}
+
+// initParams are the parameters `init(...)` adds to a struct's constructor
+// (D73); nil when its init takes none or it has no init.
+func (c *Checker) initParams(st *types.Struct) []ast.Param {
+	if d := c.initDecl[templateOf(st)]; d != nil {
+		return d.Params
+	}
+	return nil
+}
+
+func (c *Checker) hasInitParam(st *types.Struct, name string) bool {
+	for _, p := range c.initParams(st) {
+		if p.Name.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// unmetThrough explains why t lacks trait when an impl would serve it but
+// for one of its own bounds — `implement<T: Encodable> Encodable for
+// List<T>` and a `List<Tag>` — by naming the innermost type that fails:
+// ('Tag', Encodable, "'List<T>' implements 'Encodable' when 'T' does, and
+// 'Tag' does not"). nil when no impl comes that close.
+func (f *fnCtx) unmetThrough(t types.Type, trait *types.Trait) (types.Type, *types.Trait, string) {
+	for _, impl := range f.c.impls[trait] {
+		m := map[*types.TypeParam]types.Type{}
+		if !unify(impl.Target, t, m) {
+			continue
+		}
+		for _, tp := range impl.TypeParams {
+			bt, ok := m[tp]
+			if !ok || types.ContainsTypeParam(bt) {
+				continue
+			}
+			for _, b := range tp.Bounds {
+				if f.implements(bt, b) {
+					continue
+				}
+				why := fmt.Sprintf("'%s' implements '%s' when '%s' does, and '%s' does not", impl.Target, trait.Name, tp.Name, bt)
+				if deeper, dt, _ := f.unmetThrough(bt, b); deeper != nil {
+					return deeper, dt, why
+				}
+				return bt, b, why
+			}
+		}
+	}
+	return nil, nil, ""
 }

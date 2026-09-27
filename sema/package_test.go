@@ -127,3 +127,40 @@ func TestScriptIsItsOwnPackage(t *testing.T) {
 		t.Errorf("check of a script without main: %s", diags.Render())
 	}
 }
+
+// M5 v0.30 across modules: a `private` field with a default is left to it,
+// one without a default is given by the call, and only an unmarked field
+// keeps the implicit constructor inside its module.
+func TestPrivateFieldsAndTheConstructorAcrossModules(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, src string) {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("veles.toml", "[package]\nname = \"app\"\nversion = \"0.1.0\"\n")
+	write("geo/lib.vs", "public struct Acc {\n  public name: string\n  private items: MutableList<i64> = []\n  private seed: i64\n  public fun count(): i64 = this.items.len() + this.seed\n}\npublic struct Tied {\n  public name: string\n  hidden: i64 = 3\n}\n")
+	check := func(main string) string {
+		write("main.vs", main)
+		diags := &source.Diagnostics{}
+		pkg, err := LoadPackage(root, diags)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !diags.HasErrors() {
+			Check(pkg, diags, false)
+		}
+		return diags.Render()
+	}
+	if got := check("use io\nuse geo\nfun main() { val a = geo.Acc(name: \"x\", seed: 2)\n  io.println(\"${a.count()}\") }\n"); strings.Contains(got, "error") {
+		t.Errorf("private fields across modules: %s", got)
+	}
+	if got := check("use geo\nfun main() { val _ = geo.Acc(name: \"x\", seed: 2, items: mut [1]) }\n"); !strings.Contains(got, "field 'items' is private to 'Acc' and has a default") {
+		t.Errorf("a private field with a default was settable: %s", got)
+	}
+	if got := check("use geo\nfun main() { val _ = geo.Tied(name: \"x\") }\n"); !strings.Contains(got, "field 'hidden' belongs to module 'geo'") || !strings.Contains(got, "mark the field 'private'") {
+		t.Errorf("an unmarked field: %s", got)
+	}
+}

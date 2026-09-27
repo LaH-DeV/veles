@@ -54,9 +54,14 @@ loop (file in try fs.walk("src")) {
 }
 ```
 
-An `IoError` carries what went wrong and where: `detail` is the system's
-description, `path` the file, `code` the platform error number, and
-`message()` combines the first two.
+An `IoError` carries what went wrong and where: `kind` says which failure
+it is, the same on every platform (D76); `detail` is the system's
+description, `path` the file, `code` the platform's own error number, and
+`message()` combines description and path. Decide by `kind` —
+`IoKind.NotFound`, `PermissionDenied`, `AlreadyExists`, `IsADirectory`,
+`ConnectionRefused`, `TimedOut`, `AddressInUse`, `BrokenPipe`, … and
+`Other` for what the enum does not name — never by `code`, which differs
+between systems:
 
 ```veles
 use fs, io
@@ -64,14 +69,21 @@ use fs, io
 fun main() {
   when (val r = fs.readFile("no/such/file.txt")) {
     is Ok  => io.println("read ${r.len()} bytes")
-    is Err => io.println("${r.message()} (code ${r.code > 0})")
+    is Err => io.println("${r.message()} (${r.kind})")
   }
+  // a missing file is a default; any other failure is still an error
+  val config = fs.readFile("app.toml") ?? { e =>
+    if (e.kind != IoKind.NotFound) panic("cannot read app.toml: ${e.message()}")
+    ""
+  }
+  io.println("config: ${config.len()} bytes")
 }
 ```
 
 Output:
 ```text
-No such file or directory: no/such/file.txt (code true)
+No such file or directory: no/such/file.txt (NotFound)
+config: 0 bytes
 ```
 
 `readFile` insists on UTF-8, because a string is always well-formed text
@@ -138,13 +150,13 @@ on every platform — the third request is a real escape on Windows, where
 ## Building text
 
 `+` on strings copies both sides every time, so building a large file
-with it is quadratic. `stringBuilder()` appends in place:
+with it is quadratic. `StringBuilder()` appends in place:
 
 ```veles
 use io
 
 fun main() {
-  val out = stringBuilder()
+  val out = StringBuilder()
   out.appendLine("name,square")
   loop (i in 1..3) { out.appendLine("$i,${i * i}") }
   io.print(out.toString())

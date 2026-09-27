@@ -11,7 +11,7 @@ fun main() {
   val s = "  a,b,c  "
   io.println("$name $n $f $ok $t ${name.len()} ${name.byteAt(0)} ${name.toUpper()}")
   io.println("${s.trim().split(",")} ${name.replace("e", "E")} ${name.indexOf("l")} ${"ab".repeat(3)}")
-  val sb = stringBuilder()
+  val sb = StringBuilder()
   sb.append("x")
   sb.appendByte('y')
   io.println(sb.toString())

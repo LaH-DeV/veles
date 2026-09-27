@@ -376,6 +376,21 @@ func (p *printer) decl(d ast.Decl) {
 		p.useDecl(d)
 	case *ast.FunDecl:
 		p.fun(d)
+	case *ast.SuiteDecl:
+		p.w("suite " + p.src[d.At.Start:d.At.End] + " ")
+		p.members(p.openBrace(d.At.End, d.Pos.End), d.Pos.End, len(d.Decls) == 0, func(i int) bool { return i < len(d.Decls) }, func(i int) {
+			inner := d.Decls[i]
+			p.before(declStart(inner))
+			p.decl(inner)
+			p.after(inner.Span().End)
+		})
+	case *ast.TestDecl:
+		// the name as written, escapes and all
+		p.w("test " + p.src[d.At.Start:d.At.End])
+		if d.Body != nil {
+			p.w(" ")
+			p.block(d.Body)
+		}
 	case *ast.StructDecl:
 		p.structDecl(d)
 	case *ast.EnumDecl:
@@ -557,6 +572,9 @@ func (p *printer) fun(fn *ast.FunDecl) {
 	p.modifiers(fn)
 	if fn.ExportC {
 		p.w("extern \"C\" ")
+	}
+	if fn.Test {
+		p.w("test ")
 	}
 	p.w("fun ")
 	// type parameters follow the name, as on a struct: `fun encode<T>(...)`
@@ -865,7 +883,11 @@ func (p *printer) structDecl(d *ast.StructDecl) {
 	}
 	if d.Init != nil {
 		ms = append(ms, memberRef{d.InitPos.Start, func() {
-			p.w("init ")
+			p.w("init")
+			if d.InitParams != nil {
+				p.params(d.InitParams, d.InitPos.End, d.Init)
+			}
+			p.w(" ")
 			p.block(d.Init)
 		}})
 	}

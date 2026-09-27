@@ -18,7 +18,7 @@ entry:
   %a67 = alloca %str
   %a69 = alloca %str
   %a70 = alloca [7 x %str]
-  %a80 = alloca %S.std.prelude.StringBuilder
+  %a81 = alloca %S.std.prelude.StringBuilder
   store %str { ptr @.str.1, i64 5 }, ptr %a1
   store i64 42, ptr %a2
   store double 0x4004000000000000, ptr %a3
@@ -115,12 +115,13 @@ entry:
   call void @veles_string_concat_n(ptr %a69, ptr %a70, i64 7)
   %t78 = load %str, ptr %a69
   call void @v_std.io.println(%str %t78)
-  %t79 = call %S.std.prelude.StringBuilder @v_std.prelude.stringBuilder()
-  store %S.std.prelude.StringBuilder %t79, ptr %a80
-  call void @v_std.prelude.StringBuilder.append(ptr %a80, %str { ptr @.str.10, i64 1 })
-  call void @v_std.prelude.StringBuilder.appendByte(ptr %a80, i8 121)
-  %t81 = call %str @v_std.prelude.StringBuilder.toString(ptr %a80)
-  call void @v_std.io.println(%str %t81)
+  %t79 = call ptr @veles_list_new(ptr @adesc.u8, i64 0)
+  %t80 = insertvalue %S.std.prelude.StringBuilder undef, ptr %t79, 0
+  store %S.std.prelude.StringBuilder %t80, ptr %a81
+  call void @v_std.prelude.StringBuilder.append(ptr %a81, %str { ptr @.str.10, i64 1 })
+  call void @v_std.prelude.StringBuilder.appendByte(ptr %a81, i8 121)
+  %t82 = call %str @v_std.prelude.StringBuilder.toString(ptr %a81)
+  call void @v_std.io.println(%str %t82)
   ret void
 }
 

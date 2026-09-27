@@ -2,6 +2,7 @@ package sema
 
 import (
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -85,10 +86,16 @@ func (f *fnCtx) coerce(x Expr, want types.Type, span source.Span) Expr {
 		return x
 	}
 	if tr, ok := want.(*types.Trait); ok && !f.implements(have, tr) {
-		f.errorf(span, "type '%s' does not implement trait '%s', so it cannot be used as a '%s' value%s", have, tr.Name, tr.Name, implementHint(have, tr))
+		f.c.errorFix(span, f.c.implementFix(have, tr), "type '%s' does not implement trait '%s', so it cannot be used as a '%s' value%s", have, tr.Name, tr.Name, implementHint(have, tr))
 		return x
 	}
-	f.errorf(span, "type mismatch: expected '%s', found '%s'", want, have)
+	names := types.Distinct(want, have)
+	if name := f.namedConstantFor(want, span); name != "" {
+		// `status: 201` where a Status is wanted: the constant that holds it
+		f.c.errorFix(span, fixReplace("Replace with '"+name+"'", span, name), "type mismatch: expected '%s', found '%s'; the named value is '%s'", names[0], names[1], name)
+		return x
+	}
+	f.errorf(span, "type mismatch: expected '%s', found '%s'%s", names[0], names[1], f.c.wrapHint(want, have))
 	return x
 }
 
@@ -484,7 +491,7 @@ func (f *fnCtx) lookup(name string) *Symbol {
 func (f *fnCtx) nameExpr(e *ast.NameExpr, want types.Type) Expr {
 	sym := f.lookup(e.Name)
 	if sym == nil {
-		f.errorf(e.Pos, "unknown name '%s'%s", e.Name, f.c.suggestUnknownName(f.module, e.Name))
+		f.c.errorFix(e.Pos, f.c.unknownFix(f.file, f.module, e.Pos, e.Name), "unknown name '%s'%s", e.Name, f.c.suggestUnknownName(f.module, e.Name))
 		return bad()
 	}
 	if sym.Kind == SymLocal {
@@ -616,7 +623,7 @@ func (f *fnCtx) memberExpr(e *ast.MemberExpr, want types.Type) Expr {
 			case SymModule:
 				member := sym.Mod.Scope.LookupLocal(e.Name.Name)
 				if member == nil {
-					f.errorf(e.Name.Pos, "module '%s' has no declaration '%s'", n.Name, e.Name.Name)
+					f.c.noMember(n.Pos, e.Name.Pos, n.Name, e.Name.Name)
 					return bad()
 				}
 				if !member.Pub {
@@ -2320,4 +2327,64 @@ func isRawPointer(t types.Type) bool {
 	}
 	p, ok := t.(*types.Pointer)
 	return ok && p.Raw
+}
+
+// wrapHint helps where a value type stands for a raw one — an
+// `http.Status` for its `i64` code: when want is a struct with a single
+// field of have's type, the value is built by naming it, and the type's
+// constants (`Status.notFound`) are usually what was meant.
+func (c *Checker) wrapHint(want, have types.Type) string {
+	st, ok := want.(*types.Struct)
+	if !ok || len(st.Fields) != 1 || !types.Identical(st.Fields[0].Type, have) {
+		return ""
+	}
+	hint := "; build one with '" + st.Name + "(" + st.Fields[0].Name + ": …)'"
+	var named []string
+	for name, sym := range c.staticVals[templateOf(st)] {
+		if sym.Pub && sym.Global != nil && types.Identical(sym.Global.Type, want) {
+			named = append(named, st.Name+"."+name)
+		}
+	}
+	if len(named) > 0 {
+		sort.Strings(named)
+		if len(named) > 3 {
+			named = append(named[:3], "…")
+		}
+		hint += " or use a named one: " + strings.Join(named, ", ")
+	}
+	return hint
+}
+
+// namedConstantFor finds, for a literal written where a one-field value
+// type is wanted, the type's public constant built from that same literal
+// (`201` → `http.Status.created`), spelled as the reader's module names it.
+func (f *fnCtx) namedConstantFor(want types.Type, span source.Span) string {
+	st, ok := want.(*types.Struct)
+	if !ok || len(st.Fields) != 1 || span.File == nil {
+		return ""
+	}
+	lit := strings.TrimSpace(span.File.Content[span.Start:span.End])
+	if lit == "" || !(lit[0] >= '0' && lit[0] <= '9' || lit[0] == '"') {
+		return ""
+	}
+	for name, sym := range f.c.staticVals[templateOf(st)] {
+		d := f.c.globals[sym.Global]
+		if !sym.Pub || d == nil {
+			continue
+		}
+		call, ok := d.Value.(*ast.CallExpr)
+		if !ok || len(call.Args) != 1 || srcText(call.Args[0].Value) != lit {
+			continue
+		}
+		qual := st.Name + "." + name
+		if st.Module != f.module.prefix() {
+			mod := st.Module
+			if i := strings.LastIndexByte(mod, '.'); i >= 0 {
+				mod = mod[i+1:]
+			}
+			qual = mod + "." + qual
+		}
+		return qual
+	}
+	return ""
 }

@@ -10,6 +10,7 @@ extern "C" {
   fun veles_os_exit(code: i64): Never
   fun veles_os_run(cmd: string, out: *raw string, err: *raw i64): i64
   fun veles_os_strerror(code: i64, out: *raw string)
+  fun veles_io_kind(code: i64): i64
   fun veles_os_pid(): i64
   fun veles_os_hostname(out: *raw string): i64
   fun veles_os_temp_dir(out: *raw string)
@@ -160,13 +161,15 @@ public fun run(program: string, args: List<string> = [], mergeStderr: bool = fal
   Output(code, stdout: out)
 }
 
-/// Builds an `IoError` for a platform error number.
+/// Builds an `IoError` for a platform error number: its description and
+/// its portable `kind`.
 public fun ioError(code: i64, path: string): IoError {
   var detail = ""
-  unsafe {
+  val kind = unsafe {
     veles_os_strerror(code, &detail)
+    veles_io_kind(code)
   }
-  IoError(path, code, detail)
+  IoError(path, code, detail, kind: IoKind.fromValue(kind) ?: IoKind.Other)
 }
 
 fun quote(s: string): string {

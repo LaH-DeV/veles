@@ -111,3 +111,35 @@ size class where the last allocation succeeded.
 | spawn | 100000 | 36.64ms | 33.44ms | 1.1× |
 | strings | 1000000 | 65.94ms | 37.85ms | 1.7× |
 | trees | 14592688 | 155.12ms | 328.79ms | 0.5× |
+
+## 2026-09-27 15:54 — go1.23.2, windows/amd64 (HEAD 807eeb0, plus the working tree)
+
+| benchmark | ops | Veles | Go | Veles / Go |
+|---|---:|---:|---:|---:|
+| channels | 200000 | 4.59ms | 10.65ms | 0.4× |
+| json | 40000 | 44.62ms | 48.33ms | 0.9× |
+| maps | 2000000 | 45.63ms | 77.43ms | 0.6× |
+| parallel | 64 | 9.46ms | 13.97ms | 0.7× |
+| pipes | 1600000 | 14.96ms | 69.23ms | 0.2× |
+| sha256 | 16 | 83.88ms | 8.65ms | 9.7× |
+| sort | 900000 | 36.12ms | 54.78ms | 0.7× |
+| spawn | 100000 | 33.69ms | 30.65ms | 1.1× |
+| strings | 1000000 | 51.56ms | 35.82ms | 1.4× |
+| trees | 14592688 | 149.38ms | 302.21ms | 0.5× |
+
+`json` 95 → 45 ms (2.0× → 0.9× Go) and `strings` 60 → 52 ms (1.7× → 1.4×).
+Measured by phase first: a float cost **1.2 µs to print** — the shortest
+round-trip digits were found by up to 18 `snprintf` and 17 `strtod` calls,
+~1 µs on the Windows CRT — and the decoder read its position through a
+bounds-checked list cell on every byte, built a string before parsing an
+integer, and pushed string bytes one at a time. Now: an exact fast path
+for printing (the fewest decimals whose correctly rounded digits read
+back, `fma` for the exact product; 1.5M random values agree with the old
+search except exact ties, which now round half to even on every
+platform), Clinger's fast path for parsing (4M strings agree with
+`strtod` bit for bit), the decoder's cursor behind a pointer, integers
+accumulated directly, a string without escapes copied once
+(`listDecodeUtf8Range`), `writeQuoted` copying an escape-free string
+whole, UTF-8 validation eight ASCII bytes at a time, and `split` as one
+runtime pass (`veles_string_split`, parts sharing the text's bytes).
+`examples/text` pins split and float edge cases.

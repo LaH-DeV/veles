@@ -245,7 +245,7 @@ fun parse(text: string): Json throws ParseError {
 // printing
 
 fun quote(s: string): string {
-  val sb = stringBuilder()
+  val sb = StringBuilder()
   sb.append("\"")
   loop (i in 0..<s.len()) {
     val b = s.byteAt(i)

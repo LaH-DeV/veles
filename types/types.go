@@ -284,11 +284,49 @@ func (u *ErrorUnion) String() string {
 	if u.Alias != "" {
 		return u.Alias
 	}
-	parts := make([]string, len(u.Members))
-	for i, m := range u.Members {
-		parts[i] = m.String()
+	return strings.Join(Distinct(u.Members...), " | ")
+}
+
+// Distinct renders types side by side so that two different types never
+// read the same: a named type whose bare name another one shares
+// (`hex.Invalid` and `base64.Invalid`) is spelled with its module, the way
+// a reader outside both modules writes it. Everything else is String().
+func Distinct(ts ...Type) []string {
+	out := make([]string, len(ts))
+	for i, t := range ts {
+		out[i] = t.String()
 	}
-	return strings.Join(parts, " | ")
+	for i := range ts {
+		for j := range ts {
+			if i != j && out[i] == ts[j].String() && Key(ts[i]) != Key(ts[j]) {
+				out[i] = moduleQualified(ts[i])
+				break
+			}
+		}
+	}
+	return out
+}
+
+// moduleQualified spells a named type with the last segment of its module
+// (what `use std.hex` binds); the entry module and the prelude have no
+// qualifier to give.
+func moduleQualified(t Type) string {
+	var mod string
+	switch t := t.(type) {
+	case *Struct:
+		mod = t.Module
+	case *Sealed:
+		mod = t.Module
+	case *Enum:
+		mod = t.Module
+	}
+	if i := strings.LastIndexByte(mod, '.'); i >= 0 {
+		mod = mod[i+1:]
+	}
+	if mod == "" || mod == "main" || mod == "<prelude>" || mod == "prelude" {
+		return t.String()
+	}
+	return mod + "." + t.String()
 }
 
 // MakeErrorUnion flattens and sorts members; a single member is returned as
@@ -332,7 +370,13 @@ func MakeErrorUnion(members ...Type) Type {
 	case 1:
 		return flat[0]
 	}
-	sort.Slice(flat, func(i, j int) bool { return flat[i].String() < flat[j].String() })
+	sort.Slice(flat, func(i, j int) bool {
+		a, b := flat[i].String(), flat[j].String()
+		if a != b {
+			return a < b
+		}
+		return Key(flat[i]) < Key(flat[j]) // same name, different modules
+	})
 	return &ErrorUnion{Members: flat}
 }
 

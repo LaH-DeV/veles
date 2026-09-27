@@ -826,8 +826,9 @@ func (g *gen) convertResult(v string, from, to *types.Sealed) string {
 	return out
 }
 
-// testRunner emits the `veles test` entry point: every @test function runs
-// as a task in declaration order; a returned error or a panic fails the
+// testRunner emits the `veles test` entry point: every test runs
+// as a task in declaration order; a returned error, a panic or a recorded
+// failure (expect, require, fail — D78) fails the
 // test, and the exit code reports the outcome (§4b: testing is a build
 // mode).
 func (g *gen) testRunner() {
@@ -849,8 +850,53 @@ func (g *gen) testRunner() {
 	}
 	var fail func(text string)
 	okMsg := g.stringConst("ok\n")
+	// what the test's expect/require/fail calls recorded (D78): how many,
+	// whether one ended the test, and the report lines
+	depth := 0 // the running test's suite depth: its report lines are indented to it
+	take := func() (n, stopped, text string) {
+		buf, st := g.alloca(strType), g.alloca("i64")
+		n = g.newTmp()
+		g.emit("%s = call i64 @veles_test_take(ptr %s, ptr %s, i64 %d)", n, buf, st, 2*depth)
+		text, s, stopped := g.newTmp(), g.newTmp(), g.newTmp()
+		g.emit("%s = load %s, ptr %s", text, strType, buf)
+		g.emit("%s = load i64, ptr %s", s, st)
+		g.emit("%s = icmp ne i64 %s, 0", stopped, s)
+		return n, stopped, text
+	}
+	// passOrRecorded ends a test that returned: ok, unless it recorded
+	// failures on the way
+	passOrRecorded := func(doneL string) {
+		n, _, text := take()
+		any := g.newTmp()
+		g.emit("%s = icmp ne i64 %s, 0", any, n)
+		recL, passL := g.newLabel("test.recorded"), g.newLabel("test.pass")
+		g.emitTerm("br i1 %s, label %%%s, label %%%s", any, recL, passL)
+		g.placeLabel(recL)
+		fail(g.concat(g.stringConst("FAILED\n"), text))
+		g.emitTerm("br label %%%s", doneL)
+		g.placeLabel(passL)
+		say(okMsg)
+		bump(passes)
+		g.emitTerm("br label %%%s", doneL)
+	}
+	var open []string // the suites whose heading is printed, outermost first
 	for i, t := range g.prog.Tests {
-		say(g.stringConst("test " + t.Display + " ... "))
+		// suites are headings, their tests indented under them (D78):
+		// print the ones this test enters
+		same := 0
+		for same < len(open) && same < len(t.Suite) && open[same] == t.Suite[same] {
+			same++
+		}
+		for d := same; d < len(t.Suite); d++ {
+			say(g.stringConst(strings.Repeat("  ", d) + t.Suite[d] + "\n"))
+		}
+		open = t.Suite
+		depth = len(t.Suite)
+		leaf := t.Display
+		if depth > 0 {
+			leaf = strings.TrimPrefix(leaf, strings.Join(t.Suite, " / ")+" / ")
+		}
+		say(g.stringConst(strings.Repeat("  ", depth) + "test " + leaf + " ... "))
 		if g.prog.TestTimeoutMs > 0 {
 			// the watchdog ends the run if this test outlives its bound
 			np, nl := g.strPtrLen(g.stringConst(t.Display))
@@ -868,6 +914,7 @@ func (g *gen) testRunner() {
 		if t.Sig.Effects.Throws {
 			rs = g.prog.ResultType(t.Sig.Ret, t.Sig.Effects.Error).(*types.Sealed)
 		}
+		g.emit("call void @veles_test_begin()")
 		root := g.startRoot(t)
 		pan := g.newTmp()
 		g.emit("%s = call i64 @veles_task_panicked(ptr %s)", pan, root)
@@ -886,15 +933,19 @@ func (g *gen) testRunner() {
 		hasLoc := g.newTmp()
 		g.emit("%s = icmp ne i64 %s, 0", hasLoc, locLen)
 		where := g.newTmp()
-		g.emit("%s = select i1 %s, %s %s, %s %s", where, hasLoc, strType, g.concat(g.stringConst("\n  at "), ploc), strType, g.stringConst(""))
+		g.emit("%s = select i1 %s, %s %s, %s %s", where, hasLoc, strType, g.concat(g.stringConst("\n"+strings.Repeat("  ", depth)+"  at "), ploc), strType, g.stringConst(""))
 		report := g.concat(g.concat(g.stringConst("FAILED: panic: "), pmsg), where)
-		fail(g.concat(report, g.stringConst("\n")))
+		_, stopped, recorded := take()
+		// a require or fail ended the test with a panic: its own line says why
+		asPanic := g.concat(g.concat(report, g.stringConst("\n")), recorded)
+		asStop := g.concat(g.stringConst("FAILED\n"), recorded)
+		shown := g.newTmp()
+		g.emit("%s = select i1 %s, %s %s, %s %s", shown, stopped, strType, asStop, strType, asPanic)
+		fail(shown)
 		g.emitTerm("br label %%%s", doneL)
 		g.placeLabel(resL)
 		if rs == nil {
-			say(okMsg)
-			bump(passes)
-			g.emitTerm("br label %%%s", doneL)
+			passOrRecorded(doneL)
 			g.placeLabel(doneL)
 			continue
 		}
@@ -913,12 +964,11 @@ func (g *gen) testRunner() {
 		payload := g.extractTagged(g.llType(rs), result, g.llType(errVariant))
 		errVal := g.newTmp()
 		g.emit("%s = extractvalue %s %s, 0", errVal, g.llType(errVariant), payload)
-		fail(g.concat(g.concat(g.stringConst("FAILED: "), g.show(errVariant.Fields[0].Type, errVal)), g.stringConst("\n")))
+		_, _, thrownRecorded := take()
+		fail(g.concat(g.concat(g.concat(g.stringConst("FAILED: "), g.show(errVariant.Fields[0].Type, errVal)), g.stringConst("\n")), thrownRecorded))
 		g.emitTerm("br label %%%s", doneL)
 		g.placeLabel(okL)
-		say(okMsg)
-		bump(passes)
-		g.emitTerm("br label %%%s", doneL)
+		passOrRecorded(doneL)
 		g.placeLabel(doneL)
 	}
 	if g.prog.TestTimeoutMs > 0 {
