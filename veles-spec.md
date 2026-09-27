@@ -1587,6 +1587,25 @@ state is one word changed by compare-and-swap, so taking, running and
 requeueing a task, spawning one, and a successful finish take no global
 lock. Channels, races and timers stay one runtime structure under one
 lock.
+*Addendum (v0.42): word atomics and blocking calls.* An `Atomic<T>` whose
+`T` is an integer, a float or `bool` takes no lock: `load`, `store`
+and `swap` are single sequentially consistent instructions, and
+`update(f)` loops on compare-and-swap — so under contention `f` may run
+more than once, each time with the newer value, and must only compute
+(Java's `updateAndGet` contract). A float compares by its bits. Other
+types keep the lock word. The API does not change; the choice is made
+per instantiation by std-only builtins (`atomicLockFree`, `atomicLoad`,
+…), never visible to user code. A call that blocks its thread — a foreign
+function, a terminal read, a child process, a contended `Mutex` — marks
+the worker's run queue blocked; a monitor thread that finds the same call
+still running a millisecond later, with work waiting (tasks queued, a
+timer due, sockets to poll) and no worker idle, hands the queue to a
+spare thread (Go's sysmon/P handoff). The thread returning from the call
+learns by one compare-and-swap that it lost the queue, finishes its
+task's step down to the next suspension (the frame is on its stack), and
+waits as a spare. At most `VELES_THREADS` threads run Veles code at once;
+threads blocked in calls are extra. The monitor sleeps once nothing has
+blocked for 100 ms and is woken by the next blocking call.
 
 ### D67 — FFI: `extern` blocks anywhere, native libraries in the manifest (v0.41)
 

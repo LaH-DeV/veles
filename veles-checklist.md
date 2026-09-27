@@ -95,7 +95,15 @@ answered from the shape, tuples get `Comparable`, enums get
       re-locking inside its own `withLock` panics; released when `f` panics
 - [x] `Atomic<T>` operations are indivisible (same lock word); `update(f)`
       for read-modify-write (2026-09-27)
-- [ ] `Atomic` of a machine word without the lock (hardware atomics)
+- [x] `Atomic` of a machine word without the lock (D66 addendum, 2026-09-27):
+      integers, floats and `bool` use seq_cst load/store/xchg/cmpxchg; `update`
+      is a CAS loop. 8 threads × 3 atomics × 200k updates: 148 ms locked → 99 ms;
+      1 thread 6 ns/op (TestAtomicWordsUnderThreads)
+- [x] A blocking call hands its run queue to a spare thread (D66 addendum,
+      2026-09-27): a monitor thread (1 ms looks, asleep when nothing blocks)
+      hands off a queue whose thread stays blocked while work waits; with
+      `VELES_THREADS=1` three 600 ms C calls overlap and timers/computation run
+      meanwhile (TestBlockingCallHandsOffItsThread)
 - [x] A module-level `var` is an error unless it is a `Mutex`/`Atomic`
       (D66, 2026-09-27); std's UUID v7 clock and random's generator moved
       behind a `Mutex`

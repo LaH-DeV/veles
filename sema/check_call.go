@@ -50,6 +50,9 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 			}
 			return &Builtin{exprBase{&types.Pointer{Elem: lt.Elem, Raw: true}}, "list.rawData", []Expr{xs}, e.Pos}
 		}
+		if _, ok := atomicBuiltins[callee.Name]; ok && f.module.Std && f.lookup(callee.Name) == nil {
+			return f.atomicCall(callee.Name, e)
+		}
 		if callee.Name == "panic" && f.lookup(callee.Name) == nil {
 			return f.panicCall(e)
 		}

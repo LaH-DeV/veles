@@ -55,9 +55,13 @@ public trait Closeable { fun close() }     // for `with (r = ...) { }` (D43)
 
 ### Synchronisation (D35, D66)
 
-Real locks: tasks run on several threads. `withLock`'s function cannot
-suspend; locking a `Mutex` again inside its own `withLock` panics; the
-lock is released when the function panics. Copies of a `Mutex` or an
+Tasks run on several threads, so a `Mutex` is a real lock; an `Atomic`
+of a number or a `bool` takes none — each operation is one processor
+instruction, and `update` retries a compare-and-swap, so its function
+may run more than once under contention (keep it free of side effects).
+An `Atomic` of any other type is guarded by a lock. `withLock`'s
+function cannot suspend; locking a `Mutex` again inside its own
+`withLock` panics; the lock is released when the function panics. Copies of a `Mutex` or an
 `Atomic` share the lock and the value. Module-level state that changes
 must be a `val` holding one of these — a module-level `var` is an error.
 

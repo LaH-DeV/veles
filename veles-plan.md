@@ -417,6 +417,18 @@ the entry of `veles_enter_safe`/`veles_blocking_enter` record them exactly
 TestSpawnDuringCollections fails with the old recording. (2) The
 deadlock detector fired while a worker holding a runnext task waited for
 the lock, and after the root had just finished — it now checks both.
-STILL OPEN: lock-free `Atomic` for machine words; a blocking C call parking
-its task instead of occupying a worker; aarch64 register capture (falls
-back to setjmp).
+STILL OPEN: aarch64 register capture (falls back to setjmp).
+**D66 addendum — built 2026-09-27.** (1) `Atomic<T>` of an integer, float
+or bool is lock-free: std-only builtins `atomicLockFree/Load/Store/Swap/CompareAndSwap` (sema/atomic.go, codegen/llvm/atomic.go) resolve per
+instantiation — bodies are checked per instance, so the element type is
+concrete; a non-word instance compiles the dead branch to `unreachable`.
+`update` is a CAS loop (f may rerun). (2) Blocking calls hand off: the
+worker (a P) gets `bstate` RUNNING/BLOCKED/HANDED_OFF + `bseq`; a monitor
+thread hands a queue blocked across a whole look, while work waits and no
+worker is idle, to a spare (`free_workers`, `spare_cv`); the returning
+thread loses it by CAS, finishes its task's step and becomes a spare;
+`place()` inside a C callback uses the shared queue (the queue may be
+changing hands). Tests: TestAtomicWordsUnderThreads,
+TestBlockingCallHandsOffItsThread (fails with the monitor disabled).
+Docs: `docs/documentation/concurrency-explained.md` — the model for
+beginners (threads/tasks/coroutines/green threads, JS comparison).

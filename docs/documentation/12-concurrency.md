@@ -1,5 +1,8 @@
 # 12. Concurrency
 
+New to threads, coroutines and tasks? [Concurrency, explained from
+scratch](concurrency-explained.md) builds the picture first.
+
 Veles concurrency rests on two decisions. First, there is no `async`
 keyword on function declarations: whether a function *suspends* (may
 pause waiting for something) is **inferred** from its body, the same way
@@ -496,10 +499,15 @@ function does not fit a `suspends` parameter as a value: pass
 
 For state that genuinely must be shared and mutated, wrap it. A
 `Mutex<T>` runs a function on the value with its lock held; an `Atomic<T>`
-reads, replaces or `update`s the whole value in one step. Both are real
-locks — the tasks below run on different threads at once — and both are
-cheap when nobody else holds them (one atomic instruction to take, one
-to give back):
+reads, replaces or `update`s the whole value in one step. The tasks
+below run on different threads at once, so both really exclude each
+other: a `Mutex` is a lock, cheap when nobody else holds it (one atomic
+instruction to take, one to give back), and an `Atomic` of a number or a
+`bool` takes no lock at all — its operations are single processor
+instructions, and `update` retries a compare-and-swap until no other
+task got in between. Its function may therefore run more than once, so
+it should only compute the new value. An `Atomic` of any other type is
+guarded by a lock:
 
 ```veles
 use io
@@ -556,5 +564,13 @@ suspend is a plain function with a plain stack frame; deciding which is
 which is the inference pass. Trait methods declare `suspends` explicitly
 (D40) so that callers through the trait know which calling convention to
 use.
+
+A task gives up its thread only at a suspension point: the executor is
+cooperative, so a long computation keeps its thread (the other threads
+go on) until it reaches an `await` — `await sleep(Duration.zero)` offers
+the thread without waiting. A call that blocks the thread itself — a C
+function, a read from the terminal, waiting for a child process — is
+noticed by a monitor within about a millisecond, and the thread's queue
+of tasks goes to a spare thread until the call returns (D66).
 
 Next: [Memory, `with`, `unsafe` and C](13-memory-and-ffi.md).

@@ -179,4 +179,4 @@ public trait Negatable {
 /// pointers and `extern struct`s (D69). It is answered from a type's shape
 /// and cannot be implemented by hand, like `Sendable`; `List.withRaw`
 /// requires it of the elements it lends to C.
-public trait CLayout { }
+public trait CLayout

@@ -292,6 +292,12 @@ C struct with the same fields. A GC-managed `*T` cannot be passed: the
 collector would not know C holds it (D44/D50). This is how the standard
 `io` module is written — it is a dozen lines over three C functions.
 
+A C function may block — sleep, wait on a lock, read a file. That is
+fine: while the call runs, a collection does not wait for it, and if it
+lasts longer than about a millisecond while other tasks are waiting to
+run, its thread's work moves to a spare thread (D66). Other tasks never
+stall behind a slow C call.
+
 ### Linking a C library
 
 A library other than the C runtime is named in the package's

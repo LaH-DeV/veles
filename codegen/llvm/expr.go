@@ -1397,6 +1397,8 @@ func (g *gen) builtin(e *sema.Builtin) string {
 	case "panic":
 		g.panicValueAt(g.expr(e.Args[0]), g.where(e.Span))
 		return "zeroinitializer"
+	case "atomicLockFree", "atomicLoad", "atomicStore", "atomicSwap", "atomicCompareAndSwap":
+		return g.atomic(e)
 	case "string.byteAt":
 		s := g.expr(e.Args[0])
 		i := g.expr(e.Args[1])

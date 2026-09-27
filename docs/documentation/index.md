@@ -16,6 +16,8 @@ first language.
 5. [Structs and methods](05-structs-and-methods.md) — your own types, static functions.
 6. [Nothing, maybe: nullable types](06-nullable-types.md) — `T?`, `?.`, `?:` and smart casts.
 
+When you are ready for tasks: [Concurrency, explained from scratch](concurrency-explained.md) — threads, tasks, coroutines and `await` in plain words, compared with JavaScript.
+
 ## Track 2 — Coming from Go, Kotlin, Swift, TypeScript or Java
 
 Skim Track 1 (the syntax is close to Kotlin's), then:

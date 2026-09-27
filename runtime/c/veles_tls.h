@@ -37,6 +37,7 @@ typedef struct veles_tls {
     struct veles_thread *thread;  /* veles_gc.c: the collector's record of this thread */
     int64_t lock_tag;             /* veles_sync.c: the tag a Mutex holder leaves in the lock word */
     int64_t callback_depth;       /* veles_ffi.c: C frames below, from calls into Veles */
+    int64_t blocking;             /* veles_task.c: nested blocking calls in progress */
 } veles_tls;
 
 /* allocates the block of a thread on its first use (veles_sync.c) */
