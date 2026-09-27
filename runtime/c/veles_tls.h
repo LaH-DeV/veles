@@ -19,10 +19,12 @@
 
 struct veles_task;
 struct veles_thread;
+struct veles_local;
 
-/* the registers VELES_CAPTURE_ASM stores: rbx rbp rdi rsi r12-r15, the
- * caller's stack pointer, xmm6-15 (callee-saved on Windows) — and one
- * word of padding, so the jmp_buf after it stays 16-byte aligned */
+/* the registers VELES_CAPTURE_ASM stores: on x86-64 rbx rbp rdi rsi
+ * r12-r15, the caller's stack pointer, xmm6-15 (callee-saved on Windows);
+ * on AArch64 x19-x26, the stack pointer, x27-x29, d8-d15 — and padding,
+ * so the jmp_buf after it stays 16-byte aligned */
 #define VELES_CAPTURE_WORDS 30
 #define VELES_CAPTURE_SP 8
 
@@ -38,6 +40,7 @@ typedef struct veles_tls {
     int64_t lock_tag;             /* veles_sync.c: the tag a Mutex holder leaves in the lock word */
     int64_t callback_depth;       /* veles_ffi.c: C frames below, from calls into Veles */
     int64_t blocking;             /* veles_task.c: nested blocking calls in progress */
+    struct veles_local *locals;   /* veles_task.c: task-local bindings made outside any task */
 } veles_tls;
 
 /* allocates the block of a thread on its first use (veles_sync.c) */
@@ -65,9 +68,15 @@ static inline veles_tls *veles_tls_get(void) {
  * the call: it runs at the entry of a naked function, before any code
  * that could save one of them in a frame of its own and reuse it. A
  * thread becoming safe is scanned from this record (veles_gc.c), and the
- * frame that called stays live for as long as the thread is safe. A thread
- * with no block yet has nothing to record. Clobbers rax and r10 only. */
+ * frame that called stays live for as long as the thread is safe.
+ * VELES_ASM_TAIL(f) then continues in f as if it had been called. */
+#define VELES_STR(x) #x
+#define VELES_XSTR(x) VELES_STR(x)
+#define VELES_ASM_SYM(f) VELES_XSTR(__USER_LABEL_PREFIX__) #f
+
 #if defined(__x86_64__) && defined(_WIN32)
+/* A thread with no block yet has nothing to record. Clobbers rax and r10
+ * only. */
 #define VELES_CAPTURE_ASM                        \
     "movl veles_tls_slot(%rip), %eax\n\t"        \
     "movq %gs:0x1480(,%rax,8), %rax\n\t"         \
@@ -94,7 +103,7 @@ static inline veles_tls *veles_tls_get(void) {
     "movdqu %xmm14, 200(%rax)\n\t"               \
     "movdqu %xmm15, 216(%rax)\n\t"               \
     "1:\n\t"
-#elif defined(__x86_64__)
+#elif defined(__x86_64__) && defined(__ELF__)
 #define VELES_CAPTURE_ASM                        \
     "movq veles_tls_block@gottpoff(%rip), %rax\n\t" \
     "movq %fs:(%rax), %rax\n\t"                  \
@@ -109,6 +118,39 @@ static inline veles_tls *veles_tls_get(void) {
     "leaq 8(%rsp), %r10\n\t"                     \
     "movq %r10, 64(%rax)\n\t"                    \
     "1:\n\t"
+#elif defined(__aarch64__)
+/* Thread-locals are reached through a call on Mach-O and on Windows, so
+ * the registers go to the stack below the caller's frame first, and
+ * veles_capture_store (veles_sync.c) copies them into the block: an
+ * ordinary function, which leaves x19-x29 and d8-d15 as it found them.
+ * The stub's own frame keeps the return address. Clobbers x0, x16 and
+ * what veles_capture_store may. */
+#define VELES_CAPTURE_ASM                        \
+    "stp x29, x30, [sp, #-16]!\n\t"              \
+    "sub sp, sp, #160\n\t"                       \
+    "stp x19, x20, [sp, #0]\n\t"                 \
+    "stp x21, x22, [sp, #16]\n\t"                \
+    "stp x23, x24, [sp, #32]\n\t"                \
+    "stp x25, x26, [sp, #48]\n\t"                \
+    "add x16, sp, #176\n\t"                      \
+    "str x16, [sp, #64]\n\t"                     \
+    "stp x27, x28, [sp, #72]\n\t"                \
+    "str x29, [sp, #88]\n\t"                     \
+    "stp d8, d9, [sp, #96]\n\t"                  \
+    "stp d10, d11, [sp, #112]\n\t"               \
+    "stp d12, d13, [sp, #128]\n\t"               \
+    "stp d14, d15, [sp, #144]\n\t"               \
+    "mov x0, sp\n\t"                             \
+    "bl " VELES_ASM_SYM(veles_capture_store) "\n\t" \
+    "add sp, sp, #160\n\t"                       \
+    "ldp x29, x30, [sp], #16\n\t"
+#define VELES_CAPTURE_STORED 20
+#endif
+
+#if defined(__x86_64__)
+#define VELES_ASM_TAIL(f) "jmp " VELES_ASM_SYM(f) "\n\t"
+#elif defined(__aarch64__)
+#define VELES_ASM_TAIL(f) "b " VELES_ASM_SYM(f) "\n\t"
 #endif
 
 #endif

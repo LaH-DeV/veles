@@ -204,6 +204,48 @@ so `results.closeAfter(4)` says it once and the consumer loops until
 `recv()` returns `null`. A channel of `Result<T, E>` carries failures as
 values when one bad item should not stop the others.
 
+A channel made without a capacity, `Channel<T>()`, holds nothing: it is
+a **rendezvous**. `send` finishes only when a receiver has taken the
+value, so the two tasks meet — the sender knows its value has been
+picked up, not just queued:
+
+```veles
+use io
+
+fun hand(ch: Channel<string>, log: Channel<string>) {
+  ch.send("baton")
+  log.send("handed over")   // only once a receiver took the baton
+}
+
+fun main() {
+  val ch = Channel<string>()
+  val log = Channel<string>(capacity: 4)
+  var baton = ""
+  scope {
+    async hand(ch, log)
+    await sleep(Duration.millis(50))   // the sender waits all this time
+    log.send("receiver ready")
+    baton = await ch.recv() ?: ""
+  }
+  log.close()
+  loop {
+    io.println(await log.recv() ?: break)
+  }
+  io.println("got the $baton")
+}
+```
+
+Output:
+```text
+receiver ready
+handed over
+got the baton
+```
+
+With a capacity, `send` finishes as soon as the value is buffered and
+waits only when the buffer is full; blocked senders are served in the
+order they arrived.
+
 `send` and `recv` wait. When waiting is wrong — a best-effort
 notification that should be dropped rather than hold up the sender, or a
 loop that has other work to do — `trySend(v)` and `tryRecv()` ask and
@@ -398,8 +440,11 @@ first, and all of them before the scope's `return` completes.
 Cleanup itself is never cancelled (D47): a `close()` that runs during
 unwinding completes even if the task is cancelled again meanwhile. Note
 what cancellation is *not*: it is not a signal that interrupts running
-code. A loop that computes without ever suspending will not notice it,
-and does not need to — it cannot block anyone else.
+code. A loop that computes without ever suspending will not notice it
+until it reaches one. To make a long computation stoppable, give it a
+suspension point now and then: `await sleep(Duration.zero)` does not
+wait, offers the thread to other tasks, and is where a cancellation is
+seen.
 
 ### Time limits: `withTimeout`
 
@@ -443,6 +488,74 @@ On timeout the task running `f` is cancelled and `withTimeout` waits for
 it to unwind before throwing — the rule above — so whatever `f` had open
 is closed by the time you see the `Timeout`. It is `scope` + `async` +
 `race` written once; go-to-definition shows the seven lines.
+
+## Values that follow a task: `taskLocal`
+
+A request id, a trace context or a logger is needed deep inside the
+work, by functions that have no other reason to take it as a parameter.
+A **task-local value** carries it instead (D72): bind it around a piece
+of work with `withValue`, and everything that runs inside — including
+tasks started there — reads it with `get`:
+
+```veles
+use io
+
+val requestId = taskLocal("-")
+
+fun log(msg: string) {
+  io.println("[${requestId.get()}] $msg")
+}
+
+fun lookup(user: string): string {
+  await sleep(Duration.millis(1))
+  log("looked up $user")        // a task started inside the binding sees it
+  user
+}
+
+fun handle(id: string, user: string) {
+  requestId.withValue(id, () => {
+    log("start")
+    scope {
+      val name = async lookup(user)
+      log("found ${await name}")
+    }
+  })
+}
+
+fun main() {
+  log("booting")
+  handle("req-1", "ann")
+  handle("req-2", "bob")
+  log("done")
+}
+```
+
+Output:
+```text
+[-] booting
+[req-1] start
+[req-1] looked up ann
+[req-1] found ann
+[req-2] start
+[req-2] looked up bob
+[req-2] found bob
+[-] done
+```
+
+- `taskLocal(fallback)` is declared once, usually at module level; `get`
+  returns the fallback outside every binding.
+- A binding cannot be changed while it is in effect, only shadowed: a
+  nested `withValue` wins until it ends, and then the outer value is
+  back. It ends with `withValue`'s function, also when that throws,
+  panics or is cancelled.
+- A task keeps the values bound where it was started, for as long as it
+  runs — rebinding in the parent afterwards does not reach it.
+- The value is read from other tasks, on other threads, so it must be
+  Sendable (a `MutableList` is refused); a `TaskLocal` of a Sendable
+  value is itself Sendable and can be captured by a sendable lambda.
+- `withValue` may suspend (its function may), so it is not available
+  inside a function that cannot — a lambda given to `List.map`, a
+  `withLock`.
 
 ## What may cross a task boundary
 

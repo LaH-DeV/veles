@@ -53,6 +53,14 @@ static void tls_init(void) { }
 
 static void *must(void *p);
 
+#if defined(VELES_CAPTURE_STORED)
+/* the registers VELES_CAPTURE_ASM put on the stack (AArch64) */
+void veles_capture_store(const uint64_t *regs) {
+    veles_tls *t = veles_tls_get();
+    for (int i = 0; i < VELES_CAPTURE_STORED; i++) t->capture[i] = regs[i];
+}
+#endif
+
 veles_tls *veles_tls_first(void) {
     /* calloc aligns to 16, as the jmp_buf inside needs */
     veles_tls *t = must(calloc(1, sizeof *t));

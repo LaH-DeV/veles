@@ -248,6 +248,32 @@ var references = map[string]func() string{
 		}
 		return strconv.FormatInt(sum, 10)
 	},
+	"pipes": func() string {
+		sums := make([]int64, 8)
+		var wg sync.WaitGroup
+		for p := 0; p < 8; p++ {
+			ch := make(chan int64, 64)
+			go func() {
+				for i := int64(0); i < 200000; i++ {
+					ch <- i
+				}
+				close(ch)
+			}()
+			wg.Add(1)
+			go func(p int) {
+				defer wg.Done()
+				for v := range ch {
+					sums[p] += v
+				}
+			}(p)
+		}
+		wg.Wait()
+		var total int64
+		for _, s := range sums {
+			total += s
+		}
+		return strconv.FormatInt(total, 10)
+	},
 	"spawn": func() string {
 		square := func(i int64) int64 {
 			var acc int64

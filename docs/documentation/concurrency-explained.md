@@ -347,6 +347,12 @@ their own stacks and can be interrupted anywhere; Veles tasks are
 stackless coroutines that pause at `await`, and Veles checks at compile
 time that tasks do not race on shared data.
 
+**"How do I get a request id to every log line without passing it
+everywhere?"** A task-local value: `val requestId = taskLocal("-")`,
+bind it with `requestId.withValue(id, () => handle(req))`, read it with
+`requestId.get()` anywhere inside — tasks started there see it too. See
+"Values that follow a task" in [chapter 12](12-concurrency.md).
+
 **"What if a task crashes?"** Its scope cancels its sibling tasks (each
 stops at its next `await`), waits for them to stop, and then passes the
 failure on to the code around the scope. See "Fail fast" in

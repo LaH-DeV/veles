@@ -13,7 +13,10 @@ Caveats worth keeping in mind when reading them:
   producer and consumer on one worker (runnext), as Go's scheduler does.
   `spawn` measures the per-task cost: 100k tasks of ~100 ns each from one
   producer, so more threads mostly add handoffs; it is within ~1.2× of
-  Go since the per-worker run queues (D66 stage 2).
+  Go since the per-worker run queues (D66 stage 2). `pipes` runs eight
+  independent channel pairs at once: it scales only if channels that
+  share nothing share no lock (each has its own since 2026-09-27; under
+  the one runtime lock it took 1.2 s at 8 threads).
 - `sha256`: Go's uses the CPU's SHA instructions; Veles's is plain Veles
   (checklist §11).
 - One machine, one run; differences under ~10% are noise.
@@ -63,3 +66,18 @@ size class where the last allocation succeeded.
 | spawn | 100000 | 40.08ms | 31.43ms | 1.3× |
 | strings | 1000000 | 160.8ms | 33.99ms | 4.7× |
 | trees | 14592688 | 130.94ms | 268.13ms | 0.5× |
+
+## 2026-09-27 10:24 — go1.23.2, windows/amd64 (HEAD 544f12e, plus the working tree)
+
+| benchmark | ops | Veles | Go | Veles / Go |
+|---|---:|---:|---:|---:|
+| channels | 200000 | 4.56ms | 9.79ms | 0.5× |
+| json | 40000 | 144.74ms | 46.21ms | 3.1× |
+| maps | 2000000 | 43.93ms | 71.14ms | 0.6× |
+| parallel | 64 | 15.66ms | 16.56ms | 0.9× |
+| pipes | 1600000 | 13.48ms | 62.5ms | 0.2× |
+| sha256 | 16 | 78.88ms | 8.83ms | 8.9× |
+| sort | 900000 | 114.4ms | 51.38ms | 2.2× |
+| spawn | 100000 | 42.3ms | 28.07ms | 1.5× |
+| strings | 1000000 | 171.37ms | 34.86ms | 4.9× |
+| trees | 14592688 | 139.69ms | 292.42ms | 0.5× |

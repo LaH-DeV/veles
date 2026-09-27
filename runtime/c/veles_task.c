@@ -61,12 +61,15 @@ typedef struct veles_race veles_race;
 /* One entry in a channel's list of blocked receivers or senders. A task in
  * a plain send or recv waits through the node inside it; a race waits
  * through one node per channel arm, so one task can sit in several lists at
- * once without their links getting tangled. */
+ * once without their links getting tangled. A plain waiter's data is the
+ * value slot in its frame — what it sends, or where it receives — so the
+ * other side copies straight across (channels, below). */
 typedef struct veles_waiter {
     struct veles_task *task;
     struct veles_waiter *next;
     veles_race *race; /* the race the node belongs to; NULL for a plain wait */
     int64_t arm;      /* the race arm */
+    void *data;       /* a plain waiter's value slot */
 } veles_waiter;
 
 typedef struct veles_task {
@@ -103,8 +106,10 @@ typedef struct veles_task {
     void (*entry)(struct veles_task *, void *); /* spawned, not yet started: its ramp */
     struct veles_chan *chan_wait; /* the channel whose waiter list holds chan_node */
     int64_t chan_wait_send;
+    int64_t chan_done;            /* the other side completed its blocked send or recv */
     veles_waiter chan_node;       /* its entry there, for a plain send or recv */
     void *entry_args;
+    struct veles_local *locals;   /* task-local bindings, innermost first (D72) */
 } veles_task;
 
 /* One active cleanup (D43/D49): the close of a `with` binding or the
@@ -127,6 +132,7 @@ struct veles_scope {
 };
 
 typedef struct veles_chan {
+    int32_t lock;      /* a spinlock: every field below changes under it */
     char *buf;
     int64_t cap, len, head, elem;
     veles_desc *desc;
@@ -440,7 +446,7 @@ static void place(veles_task *t) {
  * that worker queue it again once the frame parks. Called with the runtime
  * lock held (the task's state is read). */
 static void enqueue(veles_task *t) {
-    if (t->state == T_DONE || t->state == T_CANCELLED) return;
+    if (__atomic_load_n(&t->state, __ATOMIC_SEQ_CST) >= T_DONE) return;
     for (;;) {
         int64_t s = __atomic_load_n(&t->sched, __ATOMIC_SEQ_CST);
         if (s == S_QUEUED || s == S_WOKEN) return;
@@ -450,7 +456,11 @@ static void enqueue(veles_task *t) {
         }
         if (__atomic_compare_exchange_n(&t->sched, &s, S_QUEUED, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) break;
     }
-    t->state = T_RUNNABLE;
+    /* only a blocked task becomes runnable: a wake that comes after the
+     * task finished (channels wake once their lock is released) leaves
+     * the state alone, and run_task drops the finished task */
+    int64_t blocked = T_BLOCKED;
+    __atomic_compare_exchange_n(&t->state, &blocked, T_RUNNABLE, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
     place(t);
 }
 
@@ -515,7 +525,8 @@ static int any_runnext(void) {
 static void wake(veles_task *t) {
     if (!t) return;
     int64_t s = __atomic_load_n(&t->sched, __ATOMIC_SEQ_CST);
-    if (t->state == T_BLOCKED || ((s == S_RUNNING || s == S_WOKEN) && t->state == T_RUNNABLE)) enqueue(t);
+    int64_t st = __atomic_load_n(&t->state, __ATOMIC_SEQ_CST);
+    if (st == T_BLOCKED || ((s == S_RUNNING || s == S_WOKEN) && st == T_RUNNABLE)) enqueue(t);
 }
 
 /* the frame of t has parked (or finished): a wake that came while it ran
@@ -599,7 +610,7 @@ void veles_blocking_enter_c(void) {
 }
 
 __attribute__((naked)) void veles_blocking_enter(void) {
-    __asm__ volatile(VELES_CAPTURE_ASM "jmp veles_blocking_enter_c\n\t");
+    __asm__ volatile(VELES_CAPTURE_ASM VELES_ASM_TAIL(veles_blocking_enter_c));
 }
 #else
 void veles_blocking_enter(void) {
@@ -705,7 +716,60 @@ veles_task *veles_task_new(void) {
     veles_task_init();
     veles_task *t = veles_alloc_words(sizeof *t);
     t->state = T_RUNNABLE;
+    /* a task started here — by async, or for a suspending call — sees the
+     * task-local values bound where it started (D72) */
+    veles_tls *tls = veles_tls_get();
+    t->locals = tls->task ? tls->task->locals : tls->locals;
     return t;
+}
+
+/* ---- task-local values (D72) ------------------------------------------------
+ * A task holds its bindings as a list, innermost first, that nothing ever
+ * changes in place: withValue puts a node in front and later puts the old
+ * head back, and a new task starts from its creator's head. So a child
+ * shares its parent's nodes without a lock, keeps the values bound when
+ * it started, and never sees a rebinding its parent makes afterwards.
+ * Code outside any task (a callback on a thread Veles did not start) binds
+ * on its thread instead. */
+typedef struct veles_local {
+    int64_t key;               /* the TaskLocal's identity */
+    void *cell;                /* the bound value, a GC cell */
+    struct veles_local *next;
+} veles_local;
+
+static int64_t local_keys;
+
+static veles_local **current_locals(void) {
+    veles_tls *tls = veles_tls_get();
+    return tls->task ? &tls->task->locals : &tls->locals;
+}
+
+int64_t veles_local_key(void) {
+    return __atomic_add_fetch(&local_keys, 1, __ATOMIC_RELAXED);
+}
+
+/* the cell bound to key in the current task, or NULL */
+void *veles_local_find(int64_t key) {
+    for (veles_local *l = *current_locals(); l; l = l->next) {
+        if (l->key == key) return l->cell;
+    }
+    return NULL;
+}
+
+/* binds key to cell in front of the current bindings; returns the head
+ * to put back when the binding ends */
+void *veles_local_bind(int64_t key, void *cell) {
+    veles_local *n = veles_alloc_words(sizeof *n);
+    n->key = key;
+    n->cell = cell;
+    veles_local **head = current_locals();
+    n->next = *head;
+    *head = n;
+    return n->next;
+}
+
+void veles_local_restore(void *head) {
+    *current_locals() = head;
 }
 
 veles_task *veles_task_current(void) {
@@ -946,13 +1010,59 @@ static int64_t veles_scope_failed_index_impl(veles_scope *s) {
     return s->failed ? s->failed->index : -1;
 }
 
-/* ---- channels (D16) -------------------------------------------------------- */
+/* ---- channels (D16) --------------------------------------------------------
+ * Each channel has a lock of its own — a spinlock held for a handful of
+ * instructions — so tasks on different channels never contend (D66); the
+ * runtime lock is not taken. A blocked sender or receiver waits with its
+ * value slot in its node, and the side that arrives second copies across:
+ * a sender into a waiting receiver's slot, a receiver out of a waiting
+ * sender's, marking the waiter's operation done (chan_done) before waking
+ * it — its retry then returns at once. So a channel without capacity is a
+ * rendezvous: a send completes when a receiver has the value, and blocked
+ * senders of a full channel keep their order (a receiver that frees a slot
+ * fills it from the first of them). An operation marked done has happened:
+ * a cancellation that arrives after it is seen at the task's next
+ * suspension point.
+ *
+ * Tasks are woken only after the channel's lock is released (wakes, below):
+ * waking may take the runtime lock to rouse an idle worker, and code
+ * holding the runtime lock takes channel locks (a race registering its
+ * arms, a cancellation unlinking a waiter) — never the other way round. */
+
+/* the tasks a channel operation woke, woken once its lock is released */
+typedef struct wakes {
+    veles_task *few[8];
+    veles_task **more;
+    int64_t n, cap;
+} wakes;
+
+static void wakes_add(wakes *k, veles_task *t) {
+    if (!t) return;
+    if (k->n < 8) {
+        k->few[k->n++] = t;
+        return;
+    }
+    int64_t i = k->n - 8;
+    if (i >= k->cap) {
+        k->cap = k->cap ? k->cap * 2 : 16;
+        veles_task **m = realloc(k->more, (size_t)k->cap * sizeof *m);
+        if (!m) veles_panic("out of memory", 13);
+        k->more = m;
+    }
+    k->more[i] = t;
+    k->n++;
+}
+
+static void wakes_run(wakes *k) {
+    for (int64_t i = 0; i < k->n; i++) wake(i < 8 ? k->few[i] : k->more[i - 8]);
+    free(k->more);
+}
 
 veles_chan *veles_chan_new(veles_desc *desc, int64_t cap) {
     veles_chan *c = veles_alloc_words(sizeof *c);
     c->desc = desc;
     c->elem = veles_desc_size(desc);
-    if (cap < 1) cap = 1; /* rendezvous channels behave as capacity 1 in the single-threaded executor */
+    if (cap < 0) cap = 0;
     c->cap = cap;
     c->remaining = -1;
     c->buf = veles_gc_alloc(desc, c->elem * cap + 1);
@@ -976,13 +1086,28 @@ static veles_task *pop_sender(veles_chan *c) {
     return w ? w->task : NULL;
 }
 
+/* the first blocked sender that is not being cancelled */
+static veles_waiter *pop_live_sender(veles_chan *c) {
+    veles_waiter *w;
+    while ((w = pop_waiter(&c->send_waiters))) {
+        veles_task *t = w->task;
+        if (__atomic_load_n(&t->state, __ATOMIC_ACQUIRE) != T_CANCELLED &&
+            !__atomic_load_n(&t->cancel_requested, __ATOMIC_ACQUIRE)) return w;
+    }
+    return NULL;
+}
+
+/* a blocked send or recv of t was completed by the other side */
+static void chan_complete(veles_task *t, wakes *k) {
+    __atomic_store_n(&t->chan_done, 1, __ATOMIC_SEQ_CST);
+    wakes_add(k, t);
+}
+
 static void push_waiter(veles_waiter **list, veles_waiter *w) {
     w->next = NULL;
     while (*list) list = &(*list)->next;
     *list = w;
 }
-
-static void race_deliver(veles_waiter *w, const void *item, int64_t elem);
 
 static void remove_waiter(veles_waiter **list, veles_waiter *w) {
     while (*list) {
@@ -995,35 +1120,48 @@ static void remove_waiter(veles_waiter **list, veles_waiter *w) {
     }
 }
 
-/* parks self in c's receivers (or senders) through its own node; a task
- * woken for another reason and blocking again is not added twice */
-static void chan_block(veles_task *self, veles_chan *c, int64_t send) {
+/* A race's winner is claimed by compare-and-swap — a value or a close on
+ * one of its channels (under that channel's lock), its timer, or the race
+ * itself finding an arm ready — so exactly one arm completes it. The
+ * claimer fills the arm's slot and only then publishes ready. */
+static bool race_claim(veles_race *r, int64_t arm) {
+    int64_t none = -1;
+    return __atomic_compare_exchange_n(&r->winner, &none, arm, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+}
+
+static void race_ready(veles_race *r, wakes *k) {
+    __atomic_store_n(&r->ready, 1, __ATOMIC_RELEASE);
+    wakes_add(k, r->task);
+}
+
+/* parks self in c's receivers (or senders) through its own node (c's lock
+ * held); a task woken for another reason and blocking again is moved to
+ * the back, not added twice */
+static void chan_block(veles_task *self, veles_chan *c, int64_t send, void *data) {
     veles_waiter **list = send ? &c->send_waiters : &c->recv_waiters;
     veles_waiter *w = &self->chan_node;
-    if (self->chan_wait) {
-        veles_chan *old = self->chan_wait;
-        remove_waiter(self->chan_wait_send ? &old->send_waiters : &old->recv_waiters, w);
-    }
+    if (self->chan_wait == c) remove_waiter(self->chan_wait_send ? &c->send_waiters : &c->recv_waiters, w);
     w->task = self;
     w->race = NULL;
     w->arm = 0;
+    w->data = data;
     push_waiter(list, w);
     self->chan_wait = c;
     self->chan_wait_send = send;
     self->state = T_BLOCKED;
 }
 
-static void remove_timer(veles_task *t) {
-    veles_task **pp = &timers;
-    while (*pp) {
-        if (*pp == t) {
-            *pp = t->timer_next;
-            t->timer_next = NULL;
-            continue;
-        }
-        pp = &(*pp)->timer_next;
+/* unlinks t's plain wait, on whichever channel it is (no channel lock
+ * held; the channel's own is taken) */
+static void leave_chan_wait(veles_task *t) {
+    veles_chan *c = t->chan_wait;
+    if (!c) return;
+    spin_lock(&c->lock);
+    if (t->chan_wait == c) {
+        remove_waiter(t->chan_wait_send ? &c->send_waiters : &c->recv_waiters, &t->chan_node);
+        t->chan_wait = NULL;
     }
-    t->wake_at = 0;
+    spin_unlock(&c->lock);
 }
 
 static void chan_push(veles_chan *c, const void *item) {
@@ -1039,109 +1177,160 @@ static void chan_pop(veles_chan *c, void *out) {
 }
 
 /* deliver to a waiting receiver if any; returns true if delivered */
-static bool chan_hand_off(veles_chan *c, const void *item) {
+static bool chan_hand_off(veles_chan *c, const void *item, wakes *k) {
     while (c->recv_waiters) {
         veles_waiter *w = pop_waiter(&c->recv_waiters);
         veles_task *r = w->task;
-        if (r->state == T_CANCELLED || r->cancel_requested) continue;
+        if (__atomic_load_n(&r->state, __ATOMIC_ACQUIRE) == T_CANCELLED ||
+            __atomic_load_n(&r->cancel_requested, __ATOMIC_ACQUIRE)) continue;
         if (w->race) {
-            if (w->race->winner >= 0) continue; /* already won elsewhere */
-            race_deliver(w, item, c->elem);
+            if (!race_claim(w->race, w->arm)) continue; /* already won elsewhere */
+            memcpy(w->race->arms[w->arm].out, item, (size_t)c->elem);
+            race_ready(w->race, k);
             return true;
         }
-        /* plain receiver: buffer the value and wake it */
-        chan_push(c, item);
-        wake(r);
+        /* plain receiver: straight into its slot */
+        memcpy(w->data, item, (size_t)c->elem);
+        chan_complete(r, k);
         return true;
     }
     return false;
 }
 
-static void veles_chan_close_impl(veles_chan *c);
+static void chan_close_locked(veles_chan *c, wakes *k);
 
-/* send: true when delivered or buffered; false blocks the sender */
-static int64_t veles_chan_send_impl(veles_task *self, veles_chan *c, const void *item) {
-    if (c->closed) veles_panic("send on a closed channel", 24);
-    if (c->len < c->cap) {
-        if (!chan_hand_off(c, item)) chan_push(c, item);
-        if (c->remaining > 0 && --c->remaining == 0) veles_chan_close_impl(c);
-        return 1;
+/* a value entered the channel's keeping: closeAfter counts it */
+static void chan_sent(veles_chan *c, wakes *k) {
+    if (c->remaining > 0 && --c->remaining == 0) chan_close_locked(c, k);
+}
+
+/* whether a value can be taken from c without blocking */
+static bool chan_takeable(veles_chan *c) {
+    if (c->len > 0) return true;
+    for (veles_waiter *w = c->send_waiters; w; w = w->next) {
+        veles_task *t = w->task;
+        if (__atomic_load_n(&t->state, __ATOMIC_ACQUIRE) != T_CANCELLED &&
+            !__atomic_load_n(&t->cancel_requested, __ATOMIC_ACQUIRE)) return true;
     }
-    chan_block(self, c, 1);
-    return 0;
+    return false;
+}
+
+/* a value from c into out, without blocking: from the buffer, whose freed
+ * slot takes the first blocked sender's value, or from a blocked sender
+ * directly (a rendezvous) */
+static bool chan_take(veles_chan *c, void *out, wakes *k) {
+    veles_waiter *s;
+    if (c->len > 0) {
+        chan_pop(c, out);
+        if ((s = pop_live_sender(c))) {
+            chan_push(c, s->data);
+            chan_complete(s->task, k);
+            chan_sent(c, k);
+        }
+        return true;
+    }
+    if ((s = pop_live_sender(c))) {
+        memcpy(out, s->data, (size_t)c->elem);
+        chan_complete(s->task, k);
+        chan_sent(c, k);
+        return true;
+    }
+    return false;
+}
+
+/* a send or recv this task blocked in was completed meanwhile */
+static bool chan_took_place(veles_task *self) {
+    if (!__atomic_load_n(&self->chan_done, __ATOMIC_SEQ_CST)) return false;
+    __atomic_store_n(&self->chan_done, 0, __ATOMIC_SEQ_CST);
+    return true;
+}
+
+/* send: 1 when a waiting receiver took the value or it was buffered; 0
+ * blocks the sender, and a receiver then takes the value from its slot;
+ * -1 for a closed channel (the caller panics, with the lock released) */
+static int64_t chan_send_locked(veles_task *self, veles_chan *c, const void *item, wakes *k) {
+    if (chan_took_place(self)) return 1;
+    if (c->closed) return -1;
+    if (!chan_hand_off(c, item, k)) {
+        if (c->len >= c->cap) {
+            chan_block(self, c, 1, (void *)item);
+            return 0;
+        }
+        chan_push(c, item);
+    }
+    chan_sent(c, k);
+    return 1;
 }
 
 /* recv: 1 value received, 2 closed and empty, 0 blocked */
-static int64_t veles_chan_recv_impl(veles_task *self, veles_chan *c, void *out) {
-    if (c->len > 0) {
-        chan_pop(c, out);
-        wake(pop_sender(c));
-        return 1;
-    }
+static int64_t chan_recv_locked(veles_task *self, veles_chan *c, void *out, wakes *k) {
+    if (chan_took_place(self)) return 1;
+    if (chan_take(c, out, k)) return 1;
     if (c->closed) return 2;
-    chan_block(self, c, 0);
+    chan_block(self, c, 0, out);
     return 0;
 }
 
-static void veles_chan_close_impl(veles_chan *c) {
+static void chan_close_locked(veles_chan *c, wakes *k) {
     c->closed = 1;
     veles_waiter *w;
     while ((w = pop_waiter(&c->recv_waiters))) {
         veles_race *r = w->race;
         if (r) {
-            if (r->winner < 0) {
-                /* a closed channel completes the race arm with "closed" */
-                r->winner = w->arm;
+            /* a closed channel completes the race arm with "closed" */
+            if (race_claim(r, w->arm)) {
                 r->closed = 1;
-                r->ready = 1;
-                w->task->race = NULL;
-                wake(w->task);
+                race_ready(r, k);
             }
             continue;
         }
-        wake(w->task);
+        wakes_add(k, w->task);
     }
     /* a sender blocked on a full channel is woken too: its retry finds the
      * channel closed and panics, as any send on a closed channel does */
     veles_task *t;
-    while ((t = pop_sender(c))) wake(t);
+    while ((t = pop_sender(c))) wakes_add(k, t);
 }
 
-static int64_t veles_chan_len_impl(veles_chan *c) {
-    return c->len;
-}
-
-/* trySend: 1 when delivered or buffered, 0 when the buffer is full; never
-   blocks. A closed channel panics, as send does: sending into it is a bug
-   in the program, not a condition to poll for. */
-static int64_t veles_chan_try_send_impl(veles_chan *c, const void *item) {
-    if (c->closed) veles_panic("send on a closed channel", 24);
-    if (c->len >= c->cap) return 0;
-    if (!chan_hand_off(c, item)) chan_push(c, item);
-    if (c->remaining > 0 && --c->remaining == 0) veles_chan_close_impl(c);
-    return 1;
-}
-
-/* tryRecv: 1 with a value in *out, 0 when nothing is buffered (empty, or
-   closed and drained); never blocks. */
-static int64_t veles_chan_try_recv_impl(veles_chan *c, void *out) {
-    if (c->len == 0) return 0;
-    chan_pop(c, out);
-    wake(pop_sender(c));
+/* trySend: 1 when a waiting receiver took the value or it was buffered, 0
+   when neither could (a full buffer; a rendezvous channel with no receiver
+   waiting), -1 for a closed channel; never blocks. */
+static int64_t chan_try_send_locked(veles_chan *c, const void *item, wakes *k) {
+    if (c->closed) return -1;
+    if (!chan_hand_off(c, item, k)) {
+        if (c->len >= c->cap) return 0;
+        chan_push(c, item);
+    }
+    chan_sent(c, k);
     return 1;
 }
 
 /* closeAfter(n): the channel closes itself once n more values have been sent,
    so several producers can end it without coordinating. */
-static void veles_chan_close_after_impl(veles_chan *c, int64_t n) {
+static void chan_close_after_locked(veles_chan *c, int64_t n, wakes *k) {
     if (n <= 0) {
-        veles_chan_close_impl(c);
+        chan_close_locked(c, k);
         return;
     }
     c->remaining = n;
 }
 
+static bool race_claim(veles_race *r, int64_t arm);
+
 /* ---- timers ------------------------------------------------------------------ */
+
+static void remove_timer(veles_task *t) {
+    veles_task **pp = &timers;
+    while (*pp) {
+        if (*pp == t) {
+            *pp = t->timer_next;
+            t->timer_next = NULL;
+            continue;
+        }
+        pp = &(*pp)->timer_next;
+    }
+    t->wake_at = 0;
+}
 
 static void add_timer(veles_task *t, int64_t ms) {
     t->wake_at = now_ms() + ms;
@@ -1193,17 +1382,14 @@ static void fire_timers(void) {
             *pp = t->timer_next;
             t->timer_next = NULL;
             if (t->race) {
-                if (t->race->winner < 0) {
-                    for (int64_t i = 0; i < t->race->narms; i++) {
-                        if (t->race->arms[i].deadline && t->race->arms[i].deadline <= now) {
-                            t->race->winner = i;
-                            break;
-                        }
+                /* the timer arm claims the race, unless another arm has */
+                veles_race *race = t->race;
+                t->wake_at = 0;
+                for (int64_t i = 0; i < race->narms; i++) {
+                    if (race->arms[i].deadline && race->arms[i].deadline <= now) {
+                        if (race_claim(race, i)) wake(t);
+                        break;
                     }
-                    t->race->ready = 1;
-                    t->race = NULL;
-                    t->wake_at = 0;
-                    wake(t);
                 }
             } else {
                 wake(t);
@@ -1326,7 +1512,14 @@ static void poll_io(int64_t timeout_ms) {
     free(tasks);
 }
 
-/* ---- race (D38) ------------------------------------------------------------ */
+/* ---- race (D38) ------------------------------------------------------------
+ * A race waits on several things at once: it registers a node on each
+ * channel arm (under that channel's lock), itself as the waiter of each
+ * awaited task, and one timer for the earliest deadline. Whatever becomes
+ * ready first claims the winner by compare-and-swap (race_claim) and fills
+ * the arm, and only the claimer does. The race's own entry point runs
+ * with the runtime lock held (timers, awaited tasks) and takes each
+ * channel's lock in turn — the lock order everywhere. */
 
 veles_race *veles_race_new(veles_task *t) {
     veles_race *r = veles_alloc_words(sizeof *r);
@@ -1352,96 +1545,92 @@ void veles_race_await(veles_race *r, veles_task *t) {
     r->arms[i].awaited = t;
 }
 
-static void race_deliver(veles_waiter *w, const void *item, int64_t elem) {
-    veles_race *r = w->race;
-    memcpy(r->arms[w->arm].out, item, (size_t)elem);
-    r->winner = w->arm;
-    r->ready = 1;
-    w->task->race = NULL;
-    wake(w->task);
-}
-
-/* returns the winning arm, or -1 to block; -2 for a closed channel arm */
+/* takes self's nodes off every list the race registered them on (runtime
+ * lock held; each channel's own is taken) */
 static void race_detach(veles_task *self, veles_race *r) {
     for (int64_t i = 0; i < r->narms; i++) {
-        if (r->arms[i].ch) remove_waiter(&r->arms[i].ch->recv_waiters, &r->arms[i].node);
+        veles_chan *c = r->arms[i].ch;
+        if (c) {
+            spin_lock(&c->lock);
+            remove_waiter(&c->recv_waiters, &r->arms[i].node);
+            spin_unlock(&c->lock);
+        }
         if (r->arms[i].awaited && r->arms[i].awaited->waiter == self) r->arms[i].awaited->waiter = NULL;
     }
     remove_timer(self);
-    self->race = NULL;
+    if (self->race == r) self->race = NULL;
 }
 
 /* unlinks t from whatever channel lists it is on: the arms of a race it
- * waits in, or the one channel it is blocked sending to or receiving from */
+ * waits in, or the one channel it is blocked sending to or receiving from
+ * (runtime lock held) */
 static void leave_channel_waits(veles_task *t) {
     if (t->race) race_detach(t, t->race);
-    if (t->chan_wait) {
-        veles_chan *c = t->chan_wait;
-        remove_waiter(t->chan_wait_send ? &c->send_waiters : &c->recv_waiters, &t->chan_node);
-        t->chan_wait = NULL;
-    }
+    leave_chan_wait(t);
 }
 
-static int64_t veles_race_wait_impl(veles_task *self, veles_race *r) {
-    if (r->ready) {
-        race_detach(self, r);
-        return r->winner;
+/* channel arm i, under its lock: a value or a close, claimed for the race
+ * — or nothing ready, and the node registered when register_node */
+static bool race_try_chan(veles_race *r, int64_t i, int register_node, wakes *k) {
+    veles_chan *c = r->arms[i].ch;
+    bool won = false;
+    spin_lock(&c->lock);
+    if (chan_takeable(c) || c->closed) {
+        if (race_claim(r, i)) {
+            if (!chan_take(c, r->arms[i].out, k)) r->closed = 1;
+            won = true;
+        }
+    } else if (register_node) {
+        veles_waiter *w = &r->arms[i].node;
+        w->task = r->task;
+        w->race = r;
+        w->arm = i;
+        w->data = NULL;
+        push_waiter(&c->recv_waiters, w);
     }
-    /* immediate checks */
+    spin_unlock(&c->lock);
+    return won;
+}
+
+/* returns the winning arm, or -1 to block */
+static int64_t veles_race_wait_impl(veles_task *self, veles_race *r) {
+    wakes k = {0};
+    int64_t won = -1;
+    /* woken for another reason while registered: start over from nothing,
+     * so no node is ever on a list twice. Whatever claimed the race first
+     * did all of it under a lock this takes, so a claim seen here is
+     * complete. */
+    if (self->race == r) race_detach(self, r);
+    if (__atomic_load_n(&r->winner, __ATOMIC_SEQ_CST) >= 0) {
+        race_detach(self, r);
+        return __atomic_load_n(&r->winner, __ATOMIC_SEQ_CST);
+    }
+    self->race = r;
+    /* ready now, or registered everywhere */
     int64_t now = now_ms();
-    for (int64_t i = 0; i < r->narms; i++) {
+    int64_t earliest = 0;
+    for (int64_t i = 0; i < r->narms && won < 0; i++) {
         if (r->arms[i].ch) {
-            veles_chan *c = r->arms[i].ch;
-            if (c->len > 0) {
-                chan_pop(c, r->arms[i].out);
-                wake(pop_sender(c));
-                r->ready = 1;
-                r->winner = i;
-                return i;
-            }
-            if (c->closed) {
-                r->ready = 1;
-                r->closed = 1;
-                r->winner = i;
-                return i;
-            }
+            if (race_try_chan(r, i, 1, &k)) won = i;
         } else if (r->arms[i].deadline) {
             if (now >= r->arms[i].deadline) {
-                r->ready = 1;
-                r->winner = i;
-                return i;
+                if (race_claim(r, i)) won = i;
+            } else if (!earliest || r->arms[i].deadline < earliest) {
+                earliest = r->arms[i].deadline;
             }
-        } else if (r->arms[i].awaited && r->arms[i].awaited->state == T_DONE) {
-            r->ready = 1;
-            r->winner = i;
-            return i;
-        }
-    }
-    /* register everywhere and block */
-    self->race = r;
-    int64_t earliest = 0;
-    for (int64_t i = 0; i < r->narms; i++) {
-        if (r->arms[i].ch) {
-            veles_waiter *w = &r->arms[i].node;
-            w->task = self;
-            w->race = r;
-            w->arm = i;
-            push_waiter(&r->arms[i].ch->recv_waiters, w);
-        } else if (r->arms[i].deadline) {
-            if (!earliest || r->arms[i].deadline < earliest) earliest = r->arms[i].deadline;
         } else if (r->arms[i].awaited) {
-            r->arms[i].awaited->waiter = self;
+            veles_task *a = r->arms[i].awaited;
+            a->waiter = self;
+            /* an awaited task that finishes without the lock publishes
+             * T_DONE and then reads its waiter (the await explains it) */
+            if (__atomic_load_n(&a->state, __ATOMIC_SEQ_CST) == T_DONE && race_claim(r, i)) won = i;
         }
+        if (won < 0 && __atomic_load_n(&r->winner, __ATOMIC_SEQ_CST) >= 0) break; /* claimed on an arm already registered */
     }
-    /* an awaited task that finished meanwhile, without the lock, saw no
-     * waiter yet (the await above explains the order) */
-    for (int64_t i = 0; i < r->narms; i++) {
-        if (r->arms[i].awaited && __atomic_load_n(&r->arms[i].awaited->state, __ATOMIC_SEQ_CST) == T_DONE) {
-            race_detach(self, r);
-            r->ready = 1;
-            r->winner = i;
-            return i;
-        }
+    if (won >= 0) {
+        race_detach(self, r);
+        wakes_run(&k);
+        return won;
     }
     if (earliest) {
         remove_timer(self);
@@ -1450,7 +1639,10 @@ static int64_t veles_race_wait_impl(veles_task *self, veles_race *r) {
         timers = self;
         note_timer(earliest);
     }
+    /* blocked — also when an arm registered above was claimed meanwhile:
+     * its claimer wakes this task once it has filled the arm */
     self->state = T_BLOCKED;
+    wakes_run(&k);
     return -1;
 }
 
@@ -1862,6 +2054,9 @@ void veles_task_finish(veles_task *t, const void *result, int64_t size, int64_t 
  * ever go from 0 to 1, and a request that lands just after the check is
  * seen at the next one, as it would be with the lock */
 int64_t veles_task_cancelled(veles_task *t) {
+    /* a send or recv the other side completed has happened: the retry
+     * returns it, and the request is seen at the next suspension point */
+    if (__atomic_load_n(&t->chan_done, __ATOMIC_ACQUIRE)) return 0;
     return __atomic_load_n(&t->cancel_requested, __ATOMIC_ACQUIRE) ||
            __atomic_load_n(&t->state, __ATOMIC_ACQUIRE) == T_CANCELLED;
 }
@@ -1925,51 +2120,75 @@ int64_t veles_scope_failed_index(veles_scope *s) {
     return result_;
 }
 
+/* The channel operations take the channel's own lock, never the runtime
+ * lock, and wake the tasks they completed once it is released. A task
+ * still listed on another channel — woken for another reason, then sent
+ * here — is unlinked there first, so no two channel locks are ever held. */
+static void closed_send(void) {
+    veles_panic("send on a closed channel", 24);
+}
+
 int64_t veles_chan_send(veles_task *self, veles_chan *c, const void *item) {
-    rt_enter();
-    int64_t result_ = veles_chan_send_impl(self, c, item);
-    rt_exit();
+    wakes k = {0};
+    if (self->chan_wait && self->chan_wait != c) leave_chan_wait(self);
+    spin_lock(&c->lock);
+    int64_t result_ = chan_send_locked(self, c, item, &k);
+    spin_unlock(&c->lock);
+    wakes_run(&k);
+    if (result_ < 0) closed_send();
     return result_;
 }
 
 int64_t veles_chan_recv(veles_task *self, veles_chan *c, void *out) {
-    rt_enter();
-    int64_t result_ = veles_chan_recv_impl(self, c, out);
-    rt_exit();
+    wakes k = {0};
+    if (self->chan_wait && self->chan_wait != c) leave_chan_wait(self);
+    spin_lock(&c->lock);
+    int64_t result_ = chan_recv_locked(self, c, out, &k);
+    spin_unlock(&c->lock);
+    wakes_run(&k);
     return result_;
 }
 
 void veles_chan_close(veles_chan *c) {
-    rt_enter();
-    veles_chan_close_impl(c);
-    rt_exit();
+    wakes k = {0};
+    spin_lock(&c->lock);
+    chan_close_locked(c, &k);
+    spin_unlock(&c->lock);
+    wakes_run(&k);
 }
 
 int64_t veles_chan_len(veles_chan *c) {
-    rt_enter();
-    int64_t result_ = veles_chan_len_impl(c);
-    rt_exit();
+    spin_lock(&c->lock);
+    int64_t result_ = c->len;
+    spin_unlock(&c->lock);
     return result_;
 }
 
 int64_t veles_chan_try_send(veles_chan *c, const void *item) {
-    rt_enter();
-    int64_t result_ = veles_chan_try_send_impl(c, item);
-    rt_exit();
+    wakes k = {0};
+    spin_lock(&c->lock);
+    int64_t result_ = chan_try_send_locked(c, item, &k);
+    spin_unlock(&c->lock);
+    wakes_run(&k);
+    if (result_ < 0) closed_send();
     return result_;
 }
 
 int64_t veles_chan_try_recv(veles_chan *c, void *out) {
-    rt_enter();
-    int64_t result_ = veles_chan_try_recv_impl(c, out);
-    rt_exit();
+    wakes k = {0};
+    spin_lock(&c->lock);
+    int64_t result_ = chan_take(c, out, &k) ? 1 : 0;
+    spin_unlock(&c->lock);
+    wakes_run(&k);
     return result_;
 }
 
 void veles_chan_close_after(veles_chan *c, int64_t n) {
-    rt_enter();
-    veles_chan_close_after_impl(c, n);
-    rt_exit();
+    wakes k = {0};
+    spin_lock(&c->lock);
+    chan_close_after_locked(c, n, &k);
+    spin_unlock(&c->lock);
+    wakes_run(&k);
 }
 
 int64_t veles_task_sleep(veles_task *self, int64_t ms) {

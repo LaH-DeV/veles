@@ -497,7 +497,7 @@ __attribute__((naked)) void veles_capture_regs(void) {
 void veles_enter_safe_c(void);
 
 __attribute__((naked)) void veles_enter_safe(void) {
-    __asm__ volatile(VELES_CAPTURE_ASM "jmp veles_enter_safe_c\n\t");
+    __asm__ volatile(VELES_CAPTURE_ASM VELES_ASM_TAIL(veles_enter_safe_c));
 }
 
 /* the record VELES_CAPTURE_ASM made at entry becomes the thread's */

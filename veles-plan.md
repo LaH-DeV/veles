@@ -417,7 +417,7 @@ the entry of `veles_enter_safe`/`veles_blocking_enter` record them exactly
 TestSpawnDuringCollections fails with the old recording. (2) The
 deadlock detector fired while a worker holding a runnext task waited for
 the lock, and after the root had just finished — it now checks both.
-STILL OPEN: aarch64 register capture (falls back to setjmp).
+(aarch64 register capture: built later the same day, below.)
 **D66 addendum — built 2026-09-27.** (1) `Atomic<T>` of an integer, float
 or bool is lock-free: std-only builtins `atomicLockFree/Load/Store/Swap/CompareAndSwap` (sema/atomic.go, codegen/llvm/atomic.go) resolve per
 instantiation — bodies are checked per instance, so the element type is
@@ -432,3 +432,18 @@ changing hands). Tests: TestAtomicWordsUnderThreads,
 TestBlockingCallHandsOffItsThread (fails with the monitor disabled).
 Docs: `docs/documentation/concurrency-explained.md` — the model for
 beginners (threads/tasks/coroutines/green threads, JS comparison).
+**Channels, 2026-09-27.** Measured first: 8 independent channel pairs
+took 58 ms at 1 thread and 1209 ms at 8 — every channel operation took
+the runtime lock. Now: a spinlock per channel; blocked waiters carry
+their value slot and the other side copies across (`chan_done` marks a
+completed op; `veles_task_cancelled` ignores a cancel until the retry
+returns it); wakes run after the channel lock is released (`wakes`),
+lock order runtime → channel; `race` winner by CAS, re-entry detaches
+first (the old code re-pushed listed nodes: a waiter behind it was cut
+off — deadlock, reproduced by TestRaceOverChannelsUnderThreads);
+`enqueue` only turns BLOCKED into RUNNABLE (a late wake of a finished
+task). `Channel<T>()` is a true rendezvous. pipes 13 ms (Go 62),
+channels 4.6 ms (Go 9.8). **AArch64 register capture:** the stub
+stores x19–x29, sp, d8–d15 on the stack and `veles_capture_store`
+copies them (no TLS access from assembly); checked by cross-compiling
+for aarch64-w64-mingw32 and disassembling — not run on hardware.

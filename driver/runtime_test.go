@@ -119,3 +119,232 @@ fun main() {
 		}
 	}
 }
+
+// Values cross a channel exactly once under threads (D16/D66): a blocked
+// sender's value is taken straight from its slot — the whole exchange on a
+// rendezvous channel, and the refill of a full buffer — and a blocked
+// receiver's value is written straight into its slot. Producers and
+// consumers race on both kinds; a value lost or delivered twice shows in
+// the totals.
+func TestChannelHandoffUnderThreads(t *testing.T) {
+	if _, err := findClang(); err != nil {
+		t.Skip("clang not available:", err)
+	}
+	dir := t.TempDir()
+	src := `use io
+
+fun produce(ch: Channel<i64>) {
+  loop (i in 1..1000) ch.send(i)
+}
+
+fun consume(ch: Channel<i64>, sum: Atomic<i64>, count: Atomic<i64>) {
+  loop {
+    val v = await ch.recv() ?: break
+    val _ = sum.update(s => s + v)
+    val _ = count.update(c => c + 1)
+  }
+}
+
+fun run(capacity: i64): string {
+  val ch = if (capacity == 0) Channel<i64>() else Channel<i64>(capacity: capacity)
+  ch.closeAfter(8000)
+  val sum = atomic(0)
+  val count = atomic(0)
+  scope {
+    loop (_ in 0..<8) {
+      async produce(ch)
+    }
+    loop (_ in 0..<4) {
+      async consume(ch, sum, count)
+    }
+  }
+  "${count.load()} ${sum.load()}"
+}
+
+fun main() {
+  io.println("${run(0)} ${run(1)} ${run(16)}")
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(dir, "chan.exe")
+	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: true}); code != 0 {
+		t.Fatalf("build failed with exit %d", code)
+	}
+	want := "8000 4004000 8000 4004000 8000 4004000"
+	for _, threads := range []string{"1", "8", "8", "8"} {
+		run := exec.Command(exe)
+		run.Env = append(os.Environ(), "VELES_THREADS="+threads)
+		out, err := run.CombinedOutput()
+		if err != nil || strings.TrimSpace(string(out)) != want {
+			t.Fatalf("threads %s: got %q, want %q (%v)", threads, out, want, err)
+		}
+	}
+}
+
+// A race over two channels under threads (D38/D66): senders on both —
+// one a rendezvous, one buffered — and a timer arm compete for the
+// winner, and the scope's short-lived children keep waking the racing
+// task for other reasons (it then registers again from nothing: it once
+// re-added nodes that were already listed, cutting the list). Every value
+// sent must be received exactly once.
+func TestRaceOverChannelsUnderThreads(t *testing.T) {
+	if _, err := findClang(); err != nil {
+		t.Skip("clang not available:", err)
+	}
+	dir := t.TempDir()
+	src := `use io
+
+fun feed(ch: Channel<i64>, from: i64) {
+  loop (i in from..<from + 1000) {
+    ch.send(i)
+    if (i % 3 == 0) await sleep(Duration.zero)   // slow enough that the race waits
+  }
+}
+
+fun blip(n: i64): i64 {
+  await sleep(Duration.zero)
+  n
+}
+
+fun listen(ch: Channel<i64>): i64 = await ch.recv() ?: -1
+
+fun nap(): i64 {
+  await sleep(Duration.millis(20))
+  0
+}
+
+// The racing task is woken while it waits — its scope's only child
+// finishes — with another receiver listed behind its node on the same
+// channel. Registering again must not cut that receiver off the list.
+fun wokenMidRace(): i64 {
+  val quiet = Channel<i64>(capacity: 1)
+  var heard = 0
+  scope {
+    val l = async listen(quiet)
+    scope {
+      val _ = async nap()
+      race {
+        val v = quiet.recv() => heard = -100
+        sleep(Duration.millis(100)) => {}
+      }
+    }
+    quiet.send(7)
+    heard += await l
+  }
+  heard
+}
+
+fun main() {
+  val a = Channel<i64>()
+  val b = Channel<i64>(capacity: 4)
+  var sum = 0
+  var got = 0
+  var timeouts = 0
+  scope {
+    loop (k in 0..<4) {
+      async feed(a, k * 1000)
+      async feed(b, 4000 + k * 1000)
+    }
+    // the only child of this scope: finishing, it wakes the owner, which
+    // is waiting in the race — a wake for another reason
+    scope {
+      loop (got < 8000) {
+        val _ = async blip(got)
+        race {
+          val x = a.recv() => {
+            sum += x ?: 0
+            got += 1
+          }
+          val y = b.recv() => {
+            sum += y ?: 0
+            got += 1
+          }
+          sleep(Duration.millis(500)) => timeouts += 1
+        }
+      }
+    }
+  }
+  io.println("$got $sum $timeouts ${wokenMidRace()}")
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(dir, "race.exe")
+	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: true}); code != 0 {
+		t.Fatalf("build failed with exit %d", code)
+	}
+	want := "8000 31996000 0 7" // 0 + 1 + … + 7999
+	for _, threads := range []string{"1", "2", "8", "8", "8"} {
+		run := exec.Command(exe)
+		run.Env = append(os.Environ(), "VELES_THREADS="+threads)
+		out, err := run.CombinedOutput()
+		if err != nil || strings.TrimSpace(string(out)) != want {
+			t.Fatalf("threads %s: got %q, want %q (%v)", threads, out, want, err)
+		}
+	}
+}
+
+// Task-local values under threads (D72): 200 requests at once, each bound
+// to its own id, each starting children that read it after suspending —
+// on whichever thread resumes them. A child keeps the value bound when it
+// started, and the binding ends with withValue also when the work throws.
+func TestTaskLocalsUnderThreads(t *testing.T) {
+	if _, err := findClang(); err != nil {
+		t.Skip("clang not available:", err)
+	}
+	dir := t.TempDir()
+	src := `use io
+
+val requestId = taskLocal(-1)
+
+fun leaf(): i64 {
+  await sleep(Duration.zero)
+  requestId.get()
+}
+
+fun handle(id: i64): i64 = requestId.withValue(id, () => {
+  var sum = 0
+  scope {
+    val a = async leaf()
+    val b = async leaf()
+    sum = await a + await b
+  }
+  sum + leaf()
+})
+
+error Nope { }
+
+fun fails(): i64 throws Nope {
+  await sleep(Duration.zero)
+  throw Nope()
+}
+
+fun main() {
+  val ids: MutableList<i64> = []
+  loop (i in 0..<200) ids.push(i)
+  val got = ids.toList().mapConcurrent(i => handle(i) - 3 * i, workers: 64)
+  val wrong = got.filter(d => d != 0).len()
+  val r = requestId.withValue(99, () => try fails())
+  io.println("$wrong wrong, threw: ${r is Err}, outside: ${requestId.get()}")
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(dir, "tl.exe")
+	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: true}); code != 0 {
+		t.Fatalf("build failed with exit %d", code)
+	}
+	want := "0 wrong, threw: true, outside: -1"
+	for _, threads := range []string{"1", "8", "8"} {
+		run := exec.Command(exe)
+		run.Env = append(os.Environ(), "VELES_THREADS="+threads, "VELES_GC_THRESHOLD=300000")
+		out, err := run.CombinedOutput()
+		if err != nil || strings.TrimSpace(string(out)) != want {
+			t.Fatalf("threads %s: got %q, want %q (%v)", threads, out, want, err)
+		}
+	}
+}

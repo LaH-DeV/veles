@@ -71,8 +71,8 @@ answered from the shape, tuples get `Comparable`, enums get
       region; a callback from C leaves it for the Veles code, and a thread
       Veles did not start is registered on its first callback (2026-09-27,
       TestForeignCallDoesNotStallCollection)
-- [ ] Suspension-aware bindings: a blocking C call runs on a helper thread
-      and parks the task (today it occupies one worker; the others go on)
+- [x] A blocking C call no longer holds up other tasks (2026-09-27): its
+      thread's run queue moves to a spare thread (D66 addendum)
 
 ### 1.3 Concurrency
 
@@ -107,11 +107,26 @@ answered from the shape, tuples get `Comparable`, enums get
 - [x] A module-level `var` is an error unless it is a `Mutex`/`Atomic`
       (D66, 2026-09-27); std's UUID v7 clock and random's generator moved
       behind a `Mutex`
-- [ ] Cancellation propagation API documented as a surface, not just D3's discipline
-- [ ] Task-local values (request id, trace context) that follow `async`
-- [ ] Bounded channels with backpressure; `select` over several waits
-- [ ] Deadlock/lost-wakeup detection in debug builds
-- [ ] Blocking-call detection: a syscall on the executor thread is a warning
+- [x] Cancellation documented as a surface (chapter 12 "Cancellation",
+      stdlib "Concurrency primitives"): the three causes, where it is seen,
+      unwinding order, shielded cleanup, `task.cancel()`, `withTimeout`, and
+      `await sleep(Duration.zero)` as the check in a long computation
+- [x] Task-local values (D72, 2026-09-27): `taskLocal(fallback)`, scoped
+      immutable `withValue(v, f)`, inherited by tasks started inside;
+      TestTaskLocalsUnderThreads, sema TestTaskLocal, chapter 12
+- [ ] `race` send arms (`ch.send(v) => ...`) — asked 2026-09-27, undecided (§9)
+- [x] Bounded channels with backpressure (`capacity: n`, blocked senders
+      served in order); `race` is the `select` over receives, sleeps and
+      tasks (D38). `Channel<T>()` is a true rendezvous (2026-09-27)
+- [x] Each channel has its own lock; `race` claims its winner by CAS
+      (2026-09-27): `bench/pipes` (8 independent pairs) 1209 → 13 ms at 8
+      threads, `channels` 7.2 → 4.6 ms (TestChannelHandoffUnderThreads,
+      TestRaceOverChannelsUnderThreads — the latter caught a race re-listing
+      its nodes after a wake for another reason, cutting other waiters off)
+- [x] Deadlock detection: "deadlock: every task is blocked" when no task
+      can run and no timer, socket or blocking call can wake one
+- [x] Blocking-call detection → superseded: a blocking call hands its
+      run queue to a spare thread (below), so it no longer stalls other tasks
 
 ### 1.4 Type system and syntax
 
@@ -504,6 +519,8 @@ pros/cons before anything is built; the answer becomes a spec entry.
 10. User-definable derivation (phase 2, once the compiler-known set is proven). *Not yet asked.*
 11. ~~Arithmetic operator traits~~ — decided 2026-09-26 (D71), see §10. Was: (`Addable`/`Subtractable`/… so `a + b` works on a `Duration`, a `Timestamp`, a vector, a money amount). D60 deliberately did not take it: the five operator traits today are about *comparison and text*, and adding arithmetic ones raises overflow, mixed operand types (`Timestamp + Duration` is not `Timestamp + Timestamp`) and whether `+=` follows. `Duration.plus`/`minus`/`times`/`dividedBy` are named so that such a trait could adopt them. *Not yet asked.*
 12. ~~How a `Duration` goes on the wire~~ — decided 2026-09-25, see §10.
+13. ~~Task-local values~~ — decided 2026-09-27 (D72), see §10.
+14. **Send arms in `race`** (`queue.send(line) => {}` next to a `sleep` arm: send with a deadline without a task per send; a losing send arm never sent). Asked 2026-09-27; the user has not decided yet. Workaround today: `withTimeout(d, () => ch.send(v))` or `trySend` polling. *Open.*
 
 ## 10. Decision log
 
@@ -545,6 +562,7 @@ pros/cons before anything is built; the answer becomes a spec entry.
 | 2026-09-25 | A sleeper woken early (runtime) | **It goes back to sleep.** `veles_task_sleep` returned 0 on an early wake without re-blocking the task, and `fire_timers` only wakes a blocked task, so a task sleeping when its scope's child finished was lost and the executor reported a deadlock — any `scope` whose body sleeps while a producer ends. And `sleep(Duration.zero)` returned at once instead of yielding, as the compiler, the cheat sheet and the stdlib page all said it would, so a polling loop starved the task it polled for. Both fixed in `veles_task.c`; `codegen/llvm/golden/tasks` runs both shapes. |
 | 2026-09-25 | What `fs.walk` returns (std) | **Every file, as a list, links to directories not followed.** Eager like `listDir` (one call, a stable order, sortable, `mapConcurrent`-able), files only (what every caller in the tree wanted), iterative (a deep tree cannot overflow the stack), and a symbolic link or junction to a directory is neither listed nor entered, so a cycle cannot loop the walk — `examples/dedup`'s own recursive walker would have. `root` itself may be a link. Rejected: a callback walker (no caller needs to prune yet); following links (cycles). |
 | 2026-09-25 | `os.hostname` can fail (std) | **`throws IoError`**, like Go's `os.Hostname`: rare, but a host can refuse, and `std/os` reports failures as `IoError`. `pid()` and `tempDir()` cannot fail and do not throw; `tempDir()` has no trailing separator so `path.join` reads right. |
+| 2026-09-27 | Task-local values (§9.13) | **Scoped, immutable bindings** (user, recommended of three): `val id = taskLocal(fallback)`; `id.withValue(v, f)` binds for `f` and every task started inside, which keep it; `id.get()`; `T: Sendable`. Spec D72. Rejected: a mutable ThreadLocal-style `set`/`get` (hidden mutation, values that outlive their step); an explicit context parameter (every signature carries it). |
 | 2026-09-25 | A `Duration` on the wire (§9.12) | **`"90.5s"` by default, any of five on request** (user: "90.5s, but we need to be able to convert to different"). `DurationStyle { Seconds, Iso8601, Text, Nanos, Millis }` is the format's policy, like `EnumStyle`. Spec D60 addendum. Rejected: ISO 8601 by default (Go/Python stdlib do not read it), seconds as a number (precision). |
 | 2026-09-25 | Identifiers and invisible characters (notes #21) | **UAX #31** (user's choice over the recommended fixed list): identifiers are `XID_Start XID_Continue*` plus `_`, so a bidi control, a zero-width character or a no-break space is no longer an identifier byte — the Trojan-source case (CVE-2021-42574) becomes a diagnostic. Costs Unicode tables in the lexer, and in the self-hosted one. |
 | 2026-09-25 | Changing a by-value struct parameter (R20 follow-up 1) | **A warning**: a function that assigns a `var` field of a value-struct parameter, directly or through a method that writes `self`, is told the caller never sees it, with `*T` or returning the value as the fixes. R20's rule (`val`/`var` govern rebinding only) is unchanged. Rejected: Swift's immutable parameters (changes R20). |

@@ -232,7 +232,13 @@ func runtimeObjects(clang string, release bool, tmpDir string) ([]string, error)
 		}
 		if partial != obj {
 			if err := os.Rename(partial, obj); err != nil {
-				return nil, err
+				// A concurrent build got there first (Windows refuses to
+				// rename over a file another process has open): the object
+				// it installed is the same — same sources, clang and flags.
+				// If none is there after all, link this build's own copy.
+				if _, serr := os.Stat(obj); serr != nil {
+					objs[len(objs)-1] = partial
+				}
 			}
 		}
 	}

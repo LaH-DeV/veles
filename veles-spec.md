@@ -1606,6 +1606,18 @@ task's step down to the next suspension (the frame is on its stack), and
 waits as a spare. At most `VELES_THREADS` threads run Veles code at once;
 threads blocked in calls are extra. The monitor sleeps once nothing has
 blocked for 100 ms and is woken by the next blocking call.
+*Addendum (v0.42): channels.* `Channel<T>()` — no capacity — is a
+rendezvous: `send` completes when a receiver has taken the value (it had
+behaved as capacity 1). A blocked sender or receiver waits with its value
+slot in its node and the side arriving second copies across (Go's
+sudog), so blocked senders of a full channel are served in order and
+`tryRecv` takes from a blocked sender. A send or receive completed this
+way has happened: a cancellation that lands after it is seen at the
+task's next suspension point, so a value is never lost to it. Each
+channel has a lock of its own; a `race` claims its winner by
+compare-and-swap, so a value, a close, a timer and a finished task on
+different threads cannot complete it twice. The runtime lock is left for
+timers and socket waits.
 
 ### D67 — FFI: `extern` blocks anywhere, native libraries in the manifest (v0.41)
 
@@ -1757,6 +1769,36 @@ thing per type — the difference of two `Timestamp`s stays
 `t.since(earlier)`. `a += b` is `a = a + b`. What overflow does is the implementation's
 business, as it is today for the methods. Comparison stays `Comparable`
 (D57/P7). Rejected: only `+`/`-`; method calls only.
+
+### D72 — Task-local values: scoped bindings that follow `async` (v0.42)
+
+```veles
+// fragment
+val requestId = taskLocal("-")                       // T: Sendable
+requestId.withValue(req.id, () => process(req))      // bound for f and every task started inside
+fun log(msg: string) = io.println("[${requestId.get()}] $msg")
+```
+
+A request id, a trace context or a logger follows the work without being
+a parameter of every function on the way. **A binding is scoped and
+immutable** (Swift's `@TaskLocal`, Java's `ScopedValue`): `withValue(v, f)`
+binds for the duration of `f` — ending however `f` ends: return, throw,
+panic, cancellation — and a nested `withValue` shadows it until it ends.
+**A task keeps what was bound where it started**: the bindings are a
+list nothing changes in place, a new task (by `async`, or the task a
+suspending call runs as) starts from its creator's head, and a later
+rebinding in the creator does not reach it. `get()` outside every binding
+returns the fallback given to `taskLocal`. The value is read on other
+threads, so `T: Sendable`; a `TaskLocal` of a Sendable value is Sendable.
+`withValue` takes a `suspends` function, so it is refused where nothing
+may suspend (a `withLock`, a lambda for `List.map`).
+
+Cost: a pointer copied when a task starts; `get` walks the bindings in
+effect (a handful). Rejected (user, recommended of three): a mutable
+task-local (`set`/`get`, ThreadLocal-style — a helper that sets it changes
+what its caller sees, and a value nobody resets carries over); nothing in
+the language, an explicit context parameter (Go's `context.Context` —
+every function on the path carries it).
 
 ---
 

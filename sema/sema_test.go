@@ -3594,3 +3594,18 @@ fun main() { }`, ""},
 		})
 	}
 }
+
+// Task-local values (D72): the value is read from other tasks, on other
+// threads, so it must be Sendable; a TaskLocal of a Sendable value is
+// itself Sendable, so a sendable lambda may capture one.
+func TestTaskLocal(t *testing.T) {
+	expectClean(t, prelude+`val requestId = taskLocal("-")
+fun log(msg: string) { io.println("[${requestId.get()}] $msg") }
+fun main() {
+  requestId.withValue("r1", () => log("in"))
+  val xs = [1, 2]
+  io.println("${xs.mapConcurrent(n => requestId.get().len() + n)}")
+}`)
+	expectError(t, prelude+`val cache = taskLocal(MutableList<i64>())
+fun main() { }`, "does not implement trait 'Sendable'")
+}

@@ -91,9 +91,9 @@ minimal version selection are not implemented.
 
 ## Known gaps and deviations
 
-- Channels, races and timers are one runtime structure behind one lock
-  (the run queues are per worker and lock-free). Rendezvous channels
-  behave as capacity 1.
+- Timers and socket waits share one runtime lock (channels and the run
+  queues have locks of their own); sockets are polled with `poll`, not
+  epoll/kqueue/IOCP.
 - Panics unwind via `setjmp`/`longjmp` to the executor rather than D49's
   DWARF tables; the task's active `with` cleanups run on the way.
 - Exhaustiveness is a variant-set check; nested refutable sub-patterns are
