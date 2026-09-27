@@ -237,6 +237,7 @@ Data passed to `async` must be Sendable (D35): no `Mutable*`.
 with (f = open("a"), g = open("b")) { ... }   // close() on every exit (D43); an expression: val text = with (f = open(p)) { f.readAll() }
 implement Closeable for File { fun close() { } }
 extern "C" { fun strlen(s: *raw u8): i64 }
+// SAFETY: p is a live NUL-terminated buffer  ← why the block is sound (a warning without it)
 val n = unsafe { strlen(p) }                  // C calls and raw pointers need unsafe (D44)
 ```
 

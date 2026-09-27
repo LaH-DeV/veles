@@ -753,6 +753,8 @@ unsafe {
 
 Raw pointer syntax and semantics are settled in D50.
 
+*Addendum (user decision 2026-09-18, built 2026-09-27) — the reason is written down.* An `unsafe { }` block in a function that is not `unsafe fun` carries a `// SAFETY:` comment saying why it is sound: on the lines directly above the line the block starts on, or as the first line inside the block (the place for a declaration's body, `fun pid(): i64 = unsafe {`, whose line above is its doc comment). Without one it is a **warning** (a lint, not a rule); the fix inserts `// SAFETY: ` and a comment with nothing after the marker still warns, so the fix cannot silence it. Blocks inside `unsafe fun` or inside another `unsafe` block are exempt — the obligation is already stated. Every block in the standard library carries a reason.
+
 ### D45 — Inferred error types are unions, confined to error position
 
 D4's inference silently assumed every callee throws the same type. It doesn't survive the most ordinary function in any program:

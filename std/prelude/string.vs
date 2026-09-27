@@ -14,6 +14,8 @@ fun isAsciiSpace(b: u8): bool = b == 32 || b == 9 || b == 10 || b == 13 || b == 
 extend string {
   /// Byte index of the first occurrence of `part` at or after `from`, or -1.
   public fun indexOf(part: string, from: i64 = 0): i64 = unsafe {
+    // SAFETY: a read-only search inside both strings' lengths; `from` is clamped
+    // by the runtime
     veles_string_find(this, part, from)
   }
 
@@ -170,6 +172,8 @@ extend string {
       if (i == expStart) return null
     }
     if (i != s.len()) return null
+    // SAFETY: `s` was checked above to be a well-formed decimal number, and
+    // strtod reads it within its length
     unsafe {
       veles_parse_f64(s)
     }

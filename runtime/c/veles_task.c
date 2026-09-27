@@ -772,6 +772,38 @@ void veles_local_restore(void *head) {
     *current_locals() = head;
 }
 
+/* Test helpers (D78): while test code calls a `test fun`, the call site is
+ * bound under a key veles_local_key never hands out, so a failure recorded
+ * inside the helper — or in a task it started — can say where the test
+ * called it from. The site text is a constant of the program. */
+#define TEST_SITE_KEY (-1)
+
+typedef struct {
+    const char *where;
+    int64_t len;
+} test_site;
+
+int64_t veles_test_enter(const char *where, int64_t len) {
+    test_site *s = veles_alloc_words(sizeof *s);
+    s->where = where;
+    s->len = len;
+    return (int64_t)(uintptr_t)veles_local_bind(TEST_SITE_KEY, s);
+}
+
+void veles_test_leave(int64_t prev) {
+    veles_local_restore((void *)(uintptr_t)prev);
+}
+
+/* calls each for every helper call site in effect, innermost first */
+void veles_test_sites(void (*each)(const char *where, int64_t len)) {
+    for (veles_local *l = *current_locals(); l; l = l->next) {
+        if (l->key == TEST_SITE_KEY) {
+            test_site *s = l->cell;
+            each(s->where, s->len);
+        }
+    }
+}
+
 veles_task *veles_task_current(void) {
     return current;
 }

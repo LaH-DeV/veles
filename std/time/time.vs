@@ -45,6 +45,7 @@ public fun now(): Timestamp = Timestamp.now()
 /// differences do. `Stopwatch` and `Deadline` are what this is for, and
 /// what almost every caller should use instead.
 public fun monotonicNanos(): i64 = unsafe {
+  // SAFETY: a clock query with no arguments
   veles_time_monotonic_ns()
 }
 
@@ -59,6 +60,7 @@ val referenceYear: i64 = 2019
 val leapReferenceYear: i64 = 2020
 
 fun hostOffsetMinutes(secs: i64): i64 = unsafe {
+  // SAFETY: takes a number and returns one; localtime_r keeps nothing
   veles_time_local_offset_minutes(secs)
 }
 
@@ -181,6 +183,7 @@ public struct Timestamp {
   /// What time it is, from the host's wall clock. It can go backwards
   /// between two calls; measure with `Stopwatch`, not with two of these.
   public static fun now(): Timestamp = Timestamp(us: unsafe {
+    // SAFETY: a clock query with no arguments
     veles_time_now_us()
   })
 

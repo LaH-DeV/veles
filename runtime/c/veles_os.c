@@ -8,6 +8,7 @@
  * Nothing here is reachable except through `extern "C"` declarations in
  * the standard library.
  */
+#include <ctype.h>
 #include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -24,6 +25,7 @@
 #include <direct.h>
 #include <io.h>
 #else
+#include <spawn.h>
 #include <unistd.h>
 #include <sys/wait.h>
 #if defined(__linux__)
@@ -357,50 +359,199 @@ void veles_os_temp_dir(veles_string *out) {
 #endif
 }
 
-/* veles_os_run runs a shell command line, capturing its standard output;
- * standard error is inherited. Returns the exit status, or -1 with errno
- * set when the process could not be started. */
-int64_t veles_os_run(const char *cmd, int64_t clen, veles_string *out, int64_t *err) {
-    fflush(stdout);
+/* veles_os_run starts a program with arguments — `argz` is the program
+ * and each argument, separated by NUL bytes — and captures its standard
+ * output (and standard error with `merge`; otherwise it is inherited).
+ * There is NO SHELL: an argument reaches the program as one argument,
+ * whatever it holds, so `;`, `|`, `$(...)`, `%VAR%` and quotes are text.
+ * Returns the exit status, or -1 with an errno value in *err when the
+ * program could not be started. */
 #if defined(_WIN32)
-    wchar_t *line = wstr(cmd, clen);
-#else
-    char *line = cstr(cmd, clen);
-#endif
+/* One argument on a Windows command line, quoted by the rules the C
+ * runtime's parser (and CommandLineToArgvW) reads back: backslashes are
+ * literal except before a quote, where they are doubled, and a quote is
+ * written \". */
+static void append_arg(buf_t *b, const char *s, int64_t n) {
+    bool plain = n > 0;
+    for (int64_t i = 0; i < n && plain; i++) {
+        plain = s[i] != ' ' && s[i] != '\t' && s[i] != '\n' && s[i] != '\v' && s[i] != '"';
+    }
+    if (plain) {
+        buf_push(b, s, n);
+        return;
+    }
+    buf_push(b, "\"", 1);
+    int64_t slashes = 0;
+    for (int64_t i = 0; i < n; i++) {
+        if (s[i] == '\\') {
+            slashes++;
+            continue;
+        }
+        for (int64_t k = 0; k < (s[i] == '"' ? 2 * slashes + 1 : slashes); k++) buf_push(b, "\\", 1);
+        slashes = 0;
+        buf_push(b, s + i, 1);
+    }
+    for (int64_t k = 0; k < 2 * slashes; k++) buf_push(b, "\\", 1); /* before the closing quote */
+    buf_push(b, "\"", 1);
+}
+
+static int64_t errno_of_win32(DWORD e) {
+    switch (e) {
+    case ERROR_FILE_NOT_FOUND:
+    case ERROR_PATH_NOT_FOUND:
+    case ERROR_INVALID_NAME:
+        return ENOENT;
+    case ERROR_ACCESS_DENIED:
+        return EACCES;
+    case ERROR_BAD_EXE_FORMAT:
+        return ENOEXEC;
+    case ERROR_NOT_ENOUGH_MEMORY:
+    case ERROR_OUTOFMEMORY:
+        return ENOMEM;
+    default:
+        return EIO;
+    }
+}
+
+int64_t veles_os_run(const char *argz, int64_t alen, bool merge, veles_string *out, int64_t *err) {
+    /* CreateProcess hands a .bat or .cmd file to cmd.exe, which parses the
+     * arguments again by rules no quoting here survives: refused (-2) */
+    int64_t plen = (int64_t)strnlen(argz, (size_t)alen);
+    if (plen >= 4 && argz[plen - 4] == '.' &&
+        ((tolower(argz[plen - 3]) == 'b' && tolower(argz[plen - 2]) == 'a' && tolower(argz[plen - 1]) == 't') ||
+         (tolower(argz[plen - 3]) == 'c' && tolower(argz[plen - 2]) == 'm' && tolower(argz[plen - 1]) == 'd'))) {
+        *err = EINVAL;
+        return -2;
+    }
+    fflush(stdout);
+    buf_t line = {0};
+    for (int64_t i = 0, start = 0; i <= alen; i++) {
+        if (i == alen || argz[i] == 0) {
+            if (start > 0) buf_push(&line, " ", 1);
+            append_arg(&line, argz + start, i - start);
+            start = i + 1;
+        }
+    }
+    wchar_t *cmd = wstr(line.data, line.len);
+    free(line.data);
+
+    SECURITY_ATTRIBUTES sa = {sizeof sa, NULL, TRUE};
+    HANDLE rd, wr;
+    if (!CreatePipe(&rd, &wr, &sa, 0)) {
+        *err = errno_of_win32(GetLastError());
+        return -1;
+    }
+    SetHandleInformation(rd, HANDLE_FLAG_INHERIT, 0); /* the child gets only the write end */
+    STARTUPINFOW si = {0};
+    si.cb = sizeof si;
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    si.hStdOutput = wr;
+    si.hStdError = merge ? wr : GetStdHandle(STD_ERROR_HANDLE);
+    PROCESS_INFORMATION pi;
     /* the child runs as long as it likes: this thread waits for it in a
      * safe region, out of the collector's way */
     veles_blocking_enter();
-#if defined(_WIN32)
-    FILE *p = _wpopen(line, L"r");
-#else
-    FILE *p = popen(line, "r");
-#endif
-    if (!p) {
-        *err = errno ? errno : EIO;
+    BOOL started = CreateProcessW(NULL, cmd, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi);
+    DWORD startErr = GetLastError();
+    CloseHandle(wr); /* else the read below never sees the end */
+    if (!started) {
+        CloseHandle(rd);
         veles_blocking_leave();
+        *err = errno_of_win32(startErr);
+        return -1;
+    }
+    CloseHandle(pi.hThread);
+    buf_t b = {0};
+    char chunk[8192];
+    DWORD n;
+    while (ReadFile(rd, chunk, sizeof chunk, &n, NULL) && n > 0) buf_push(&b, chunk, (int64_t)n);
+    CloseHandle(rd);
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    DWORD code = 0;
+    GetExitCodeProcess(pi.hProcess, &code);
+    CloseHandle(pi.hProcess);
+    veles_blocking_leave();
+    buf_finish(out, &b);
+    *err = 0;
+    return (int64_t)code;
+}
+#else
+extern char **environ;
+
+int64_t veles_os_run(const char *argz, int64_t alen, bool merge, veles_string *out, int64_t *err) {
+    fflush(stdout);
+    int64_t argc = 1;
+    for (int64_t i = 0; i < alen; i++) argc += argz[i] == 0;
+    char **argv = calloc((size_t)argc + 1, sizeof *argv);
+    char *copy = malloc((size_t)alen + 1);
+    if (!argv || !copy) veles_panic("out of memory", 13);
+    memcpy(copy, argz, (size_t)alen);
+    copy[alen] = 0;
+    for (int64_t i = 0, k = 0, start = 0; i <= alen; i++) {
+        if (i == alen || copy[i] == 0) {
+            argv[k++] = copy + start;
+            start = i + 1;
+        }
+    }
+    int fds[2];
+    if (pipe(fds) != 0) {
+        *err = errno;
+        free(argv);
+        free(copy);
+        return -1;
+    }
+    posix_spawn_file_actions_t fa;
+    posix_spawn_file_actions_init(&fa);
+    posix_spawn_file_actions_adddup2(&fa, fds[1], 1);
+    if (merge) posix_spawn_file_actions_adddup2(&fa, fds[1], 2);
+    posix_spawn_file_actions_addclose(&fa, fds[0]);
+    posix_spawn_file_actions_addclose(&fa, fds[1]);
+    veles_blocking_enter();
+    pid_t pid;
+    int rc = posix_spawnp(&pid, argv[0], &fa, NULL, argv, environ);
+    posix_spawn_file_actions_destroy(&fa);
+    close(fds[1]); /* else the read below never sees the end */
+    free(argv);
+    free(copy);
+    if (rc != 0) {
+        close(fds[0]);
+        veles_blocking_leave();
+        *err = rc;
         return -1;
     }
     buf_t b = {0};
-    int rerr = read_stream(p, &b);
-#if defined(_WIN32)
-    int status = _pclose(p);
-#else
-    int status = pclose(p);
-#endif
-    int perr = errno;
+    char chunk[8192];
+    int rerr = 0;
+    for (;;) {
+        ssize_t n = read(fds[0], chunk, sizeof chunk);
+        if (n > 0) {
+            buf_push(&b, chunk, (int64_t)n);
+        } else if (n < 0 && errno == EINTR) {
+            continue;
+        } else {
+            if (n < 0) rerr = errno;
+            break;
+        }
+    }
+    close(fds[0]);
+    int status;
+    while (waitpid(pid, &status, 0) < 0) {
+        if (errno != EINTR) {
+            status = -1;
+            break;
+        }
+    }
     veles_blocking_leave();
     buf_finish(out, &b);
     *err = rerr;
-#if defined(_WIN32)
-    return status;
-#else
     if (status == -1) {
-        *err = perr;
+        *err = ECHILD;
         return -1;
     }
     return WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
-#endif
 }
+#endif
 
 /* ---- files ------------------------------------------------------------- */
 

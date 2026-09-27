@@ -49,10 +49,13 @@ public struct CString {
 
   /// Copies `s` for C. A string holding a NUL byte is refused (`NulByte`).
   public static fun of(s: string): CString throws NulByte {
+    // SAFETY: a read-only scan of `s` for a NUL byte, within its length
     val at = unsafe {
       veles_ffi_nul_at(s)
     }
     if (at >= 0) throw NulByte(at)
+    // SAFETY: the runtime copies `s` into malloc'd memory it NUL-terminates; `s`
+    // has no NUL (checked above), so C reads exactly the text that was checked
     val state = CState(ptr: unsafe {
       veles_ffi_cstring(s)
     })
@@ -66,6 +69,8 @@ public struct CString {
     fun close() {
       val p = this.state.ptr ?: return
       this.state.ptr = null
+      // SAFETY: `ptr` came from veles_ffi_cstring and was set to null above, so
+      // this buffer is freed once; copies share `state` and see the null
       unsafe {
         veles_ffi_free(p)
       }
@@ -96,6 +101,7 @@ public unsafe fun readBytes(p: *raw u8, n: i64): List<u8> {
 /// `n` zeroed bytes of memory the collector does not manage — for a C API
 /// that keeps a buffer past the call. Give it back with `free`.
 public fun alloc(n: i64): *raw u8 = unsafe {
+  // SAFETY: returns zeroed malloc'd memory; nothing Veles owns is touched
   veles_ffi_alloc(n)
 }
 
@@ -141,6 +147,8 @@ public struct Handle<T> {
     fun close() {
       val h = this.state.ptr ?: return
       this.state.ptr = null
+      // SAFETY: `ptr` was set to null above, so the slot is released once; C may
+      // still hold the index, and `from` then panics instead of reading
       unsafe {
         veles_ffi_handle_release(h)
       }
@@ -151,9 +159,13 @@ public struct Handle<T> {
 /// Lends `value` to C as a `Handle`.
 public fun handle<T>(value: T): Handle<T> {
   var held = value
+  // SAFETY: `held` is a heap cell (its address is taken), and the handle table
+  // holds it, so the collector keeps it while the handle is open
   val box: *raw T = unsafe {
     &held
   }
+  // SAFETY: `box` points at `held`, which the table now keeps reachable; C only
+  // ever sees the slot's index, never this address
   val h = unsafe {
     veles_ffi_handle_new(box as *raw u8)
   }

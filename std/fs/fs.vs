@@ -21,7 +21,10 @@ extern "C" {
 
 /// The whole file as text; a file that is not valid UTF-8 is an error.
 public fun readFile(path: string): string throws IoError {
+  try checkPath(path)
   var out = ""
+  // SAFETY: takes `path` by value and stores the file's text in `out`, a local
+  // that outlives the call; it keeps no pointer
   val code = unsafe {
     veles_fs_read_file(path, &out)
   }
@@ -31,7 +34,10 @@ public fun readFile(path: string): string throws IoError {
 
 /// The whole file as bytes.
 public fun readBytes(path: string): List<u8> throws IoError {
+  try checkPath(path)
   var data = ""
+  // SAFETY: takes `path` by value and stores the bytes in `data`, a local that
+  // outlives the call; it keeps no pointer
   val code = unsafe {
     veles_fs_read_bytes(path, &data)
   }
@@ -41,6 +47,8 @@ public fun readBytes(path: string): List<u8> throws IoError {
 
 /// Writes `bytes` to `path`, replacing the file.
 public fun writeBytes(path: string, bytes: List<u8>) throws IoError {
+  try checkPath(path)
+  // SAFETY: reads `bytes` within its length and keeps nothing after the call
   val code = unsafe {
     veles_fs_write_bytes(path, bytes, false)
   }
@@ -49,6 +57,8 @@ public fun writeBytes(path: string, bytes: List<u8>) throws IoError {
 
 /// Appends `bytes` to `path`, creating the file when missing.
 public fun appendBytes(path: string, bytes: List<u8>) throws IoError {
+  try checkPath(path)
+  // SAFETY: reads `bytes` within its length and keeps nothing after the call
   val code = unsafe {
     veles_fs_write_bytes(path, bytes, true)
   }
@@ -57,6 +67,8 @@ public fun appendBytes(path: string, bytes: List<u8>) throws IoError {
 
 /// Writes `text` to `path`, replacing the file.
 public fun writeFile(path: string, text: string) throws IoError {
+  try checkPath(path)
+  // SAFETY: takes `path` and `text` by value; it keeps nothing after the call
   val code = unsafe {
     veles_fs_write_file(path, text)
   }
@@ -65,6 +77,8 @@ public fun writeFile(path: string, text: string) throws IoError {
 
 /// Appends `text` to `path`, creating the file when missing.
 public fun appendFile(path: string, text: string) throws IoError {
+  try checkPath(path)
+  // SAFETY: takes `path` and `text` by value; it keeps nothing after the call
   val code = unsafe {
     veles_fs_append_file(path, text)
   }
@@ -72,23 +86,40 @@ public fun appendFile(path: string, text: string) throws IoError {
 }
 
 /// True when a file or directory exists at `path`.
-public fun exists(path: string): bool = unsafe {
-  veles_fs_stat(path)
-} != 0
+public fun exists(path: string): bool = statKind(path) != 0
 
 /// True when `path` is a directory.
-public fun isDir(path: string): bool = unsafe {
-  veles_fs_stat(path)
-} == 2
+public fun isDir(path: string): bool = statKind(path) == 2
 
 /// True when `path` is a regular file.
-public fun isFile(path: string): bool = unsafe {
-  veles_fs_stat(path)
-} == 1
+public fun isFile(path: string): bool = statKind(path) == 1
+
+// 0 when nothing is there (or the path cannot name anything), 1 a file,
+// 2 a directory
+fun statKind(path: string): i64 {
+  if (path.contains("\u{0}")) return 0
+  // SAFETY: takes `path` by value and returns a number; it keeps nothing
+  unsafe {
+    veles_fs_stat(path)
+  }
+}
+
+// A path holding a NUL byte would reach the system cut short at the NUL —
+// naming a different file from the one the caller checked (`root/..\0/x`
+// passes a `..` check as a segment and opens `root/..`) — so it is refused,
+// as Go and Rust refuse it.
+fun checkPath(path: string) throws IoError {
+  if (path.contains("\u{0}")) {
+    throw IoError(path: path.replace("\u{0}", "\\0"), code: 22, detail: "a path cannot hold a NUL byte", kind: IoKind.InvalidInput)
+  }
+}
 
 /// The names in a directory (not paths), sorted.
 public fun listDir(path: string): List<string> throws IoError {
+  try checkPath(path)
   var out = ""
+  // SAFETY: takes `path` by value and stores the names in `out`, a local that
+  // outlives the call; it keeps no pointer
   val code = unsafe {
     veles_fs_list_dir(path, &out)
   }
@@ -107,6 +138,7 @@ public fun listDir(path: string): List<string> throws IoError {
 /// itself may be a link, and a file (then the list is just `root`). A
 /// directory that cannot be read ends the walk with its `IoError`.
 public fun walk(root: string): List<string> throws IoError {
+  try checkPath(root)
   if (isFile(root)) return [root]
   var out: MutableList<string> = []
   // paths still to visit, the next one last: an explicit stack rather than
@@ -115,6 +147,7 @@ public fun walk(root: string): List<string> throws IoError {
   try pushEntries(root, pending)
   loop {
     val p = pending.pop() ?: break
+    // SAFETY: takes `p` by value and returns a number; it keeps nothing
     val kind = unsafe {
       veles_fs_lstat(p)
     }
@@ -136,8 +169,10 @@ fun pushEntries(dir: string, pending: MutableList<string>) throws IoError {
 
 /// Creates the directory and any missing parents.
 public fun mkdir(path: string) throws IoError {
+  try checkPath(path)
   val parent = paths.dir(path)
   if (!parent.isEmpty() && parent != path && !exists(parent)) try mkdir(parent)
+  // SAFETY: takes `path` by value and returns an error code; it keeps nothing
   val code = unsafe {
     veles_fs_mkdir(path)
   }
@@ -146,6 +181,8 @@ public fun mkdir(path: string) throws IoError {
 
 /// Removes a file or an empty directory.
 public fun remove(path: string) throws IoError {
+  try checkPath(path)
+  // SAFETY: takes `path` by value and returns an error code; it keeps nothing
   val code = unsafe {
     veles_fs_remove(path)
   }
@@ -154,6 +191,9 @@ public fun remove(path: string) throws IoError {
 
 /// Renames (moves) `from` to `to`.
 public fun rename(from: string, to: string) throws IoError {
+  try checkPath(from)
+  try checkPath(to)
+  // SAFETY: takes both paths by value and returns an error code; it keeps nothing
   val code = unsafe {
     veles_fs_rename(from, to)
   }
@@ -163,6 +203,7 @@ public fun rename(from: string, to: string) throws IoError {
 /// The current working directory.
 public fun cwd(): string throws IoError {
   var out = ""
+  // SAFETY: stores the directory in `out`, a local that outlives the call
   val code = unsafe {
     veles_fs_cwd(&out)
   }

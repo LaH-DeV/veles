@@ -29,6 +29,7 @@ struct Held {
   word: *i64
 
   static fun take(word: *i64): Held {
+    // SAFETY: `word` is a heap cell this Held keeps reachable until it unlocks
     unsafe {
       veles_mutex_lock(word as *raw i64)
     }
@@ -37,6 +38,7 @@ struct Held {
 
   implement Closeable {
     fun close() {
+      // SAFETY: this Held took the lock in `take`, and `with` closes it once
       unsafe {
         veles_mutex_unlock(this.word as *raw i64)
       }

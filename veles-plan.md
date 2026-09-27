@@ -745,3 +745,60 @@ tests outside suites first. driver TestTestSuites (exact report, filter by
 suite), sema TestTestSuites, parser TestSuiteDecl, format "suites",
 lsp outline; docs 14 "Suites", cheat sheet, `examples/testing` suite
 "ports". Per-test setup/teardown: rejected as proposed, open (§9 item 16).
+**`// SAFETY:` lint + std `unsafe` audit, 2026-09-27** (notes #13, decided
+2026-09-18 as a lint; checklist §2). `sema/lint_unsafe.go`: an `unsafe`
+block outside `unsafe fun` (and not nested in another block) warns unless
+a `// SAFETY:` comment sits in the comment run above its line or first
+inside the block; the fix inserts the stub, and an empty reason still
+warns. All 73 blocks in std got a reason written against what the runtime
+function does (the ones that are declaration bodies carry it inside, so
+doc comments stay attached); `examples/ffi`, the syntax tour, docs 13
+(new paragraph), errors reference and cheat sheet likewise. sema
+TestUnsafeNeedsSafetyComment, TestStdIsWarningFree (a program importing
+every std module: no warning in std, since each would reach every user).
+BUG FOUND BY THE AUDIT: `net` closed a socket number again on a second
+`close()` — a closed `Conn` copy, or `close()` inside a `with`, closed
+whichever socket the system had given that number next (reproduced on
+Windows: `b` died when `a` was closed twice), and a read after close
+could reach another peer. `net.Socket` (private) keeps the number in an
+`Atomic<i64>` that `close` swaps to -1; driver TestSocketClosedTwice. Not
+fixed: a close racing a read on another thread (Go's fd refcount) — the
+read may still hit a reused number in that window.
+**`await` on a call, 2026-09-27.** `try await net.connect(...)` said
+"'await' applies to channels, timers and task handles, not
+'Result<Conn, IoError>'" — true, and no help. `await` on a plain call now
+says a suspending function is called like any other (D2) and carries a
+fix that removes the word; checking continues with the call's type, so
+nothing cascades. sema TestAwaitOnACall; errors reference.
+**Test output captured, helper call sites, 2026-09-27** (§11 known
+limits of D78). (1) While a test runs, `io.print`/`println`/`eprint`/
+`eprintln` go to a buffer (`veles_test_capture`, veles_sync.c, one atomic
+load when no test runs); `veles_test_take` ends the capture and appends it
+under `output:` to the report, so a passing test's output is dropped and
+a failing test's shows under its failure; a timed-out test prints what it
+had. (2) A call from test code to a `test fun` (or a `*.test.vs`
+function) is wrapped in `test.enter`/`test.leave` (sema traceHelperCall),
+which bind the call site in the task-local list under a reserved key, so
+tasks started inside inherit it; `veles_test_fail` appends `called from
+file:line:col` per site, innermost first. driver TestTestOutputCaptured,
+TestTestHelperCallSites; TestTestSuites now shows the call site. Docs 14.
+**`os.run` without a shell, 2026-09-27** (security; found reading std for
+the audit). `run(program, args)` built a command line for `popen` and
+quoted an argument only when it held a space or `"`: `x;echo pwned`
+ran a second command on POSIX, `$(...)` and backticks expanded even inside
+the quotes, and on Windows `%VAR%`, `&` and `|` were cmd.exe's. The
+runtime now takes program and arguments NUL-separated and spawns
+directly: `posix_spawnp` + a pipe (`mergeStderr` = dup onto fd 2), or
+`CreateProcessW` with the MSVC quoting rules (backslashes doubled only
+before a quote) and an inheritable pipe. `.bat`/`.cmd` are refused on
+Windows (cmd.exe re-parses; the "BatBadBut" family), a NUL byte in an
+argument is `InvalidInput`. driver TestRunPassesArgumentsVerbatim runs
+the program as its own child with ten hostile arguments. NOT VERIFIED:
+the POSIX branch was not compiled (no Linux headers here) — build it on
+Linux before relying on it. Docs 15, stdlib reference.
+**NUL bytes at the C boundary, 2026-09-27.** A Veles string may hold a
+NUL; the runtime hands paths and hosts to C, which stops at it. `fs`
+refuses such a path (`checkPath`, `InvalidInput`; `exists`/`isFile`/
+`isDir` answer false), `net.listen`/`connect` such a host (an
+`endsWith(".trusted.example")` allow-list otherwise resolved the part
+before the NUL), `os.env` answers null. driver TestPathsWithNulRefused.

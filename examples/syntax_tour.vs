@@ -172,6 +172,7 @@ fun resources(path: string) throws {
   with (f = File.open(path), g = File.open(path)) {
     process(f)
   }
+  // SAFETY: `ptr` points at a NUL-terminated string that outlives the block
   unsafe {
     val n = strlen(ptr)
     val next = ptr + 1

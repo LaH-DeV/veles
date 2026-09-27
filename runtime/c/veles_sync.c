@@ -341,6 +341,8 @@ static const char *watch_name;
 static int64_t watch_name_len;
 static int64_t watch_left; /* tests after the running one */
 
+static void print_captured(void);
+
 static void watch_main(void *arg) {
     (void)arg;
     veles_lock_acquire(watch_lock);
@@ -359,6 +361,7 @@ static void watch_main(void *arg) {
         } else {
             printf("FAILED: timed out after %lldms\n", (long long)watch_ms);
         }
+        print_captured(); /* what a hanging test printed is often why */
         printf("\ntimed out: %.*s", (int)watch_name_len, watch_name);
         if (watch_left > 0) {
             printf("; %lld test%s after it did not run", (long long)watch_left, watch_left == 1 ? "" : "s");
@@ -405,28 +408,89 @@ typedef struct {
 
 void *veles_alloc(int64_t size);
 
+typedef struct {
+    char *data;
+    int64_t len, cap;
+} text_buf;
+
 static veles_lock *fail_lock;
-static char *fail_buf;
-static int64_t fail_len, fail_cap, fail_count, fail_stopped;
+static text_buf fails;   /* the recorded failure lines */
+static text_buf output;  /* what the test printed, kept for its report */
+static int64_t fail_count, fail_stopped;
+static int capturing;    /* a test is running: io output goes to `output` */
+
+static void buf_append(text_buf *b, const char *s, int64_t n) {
+    if (b->len + n > b->cap) {
+        int64_t cap = b->cap ? b->cap * 2 : 256;
+        while (cap < b->len + n) cap *= 2;
+        char *grown = realloc(b->data, (size_t)cap);
+        if (!grown) return; /* out of memory: the count still says it failed */
+        b->data = grown;
+        b->cap = cap;
+    }
+    memcpy(b->data + b->len, s, (size_t)n);
+    b->len += n;
+}
 
 static void fail_append(const char *s, int64_t n) {
-    if (fail_len + n > fail_cap) {
-        int64_t cap = fail_cap ? fail_cap * 2 : 256;
-        while (cap < fail_len + n) cap *= 2;
-        char *grown = realloc(fail_buf, (size_t)cap);
-        if (!grown) return; /* out of memory: the count still says it failed */
-        fail_buf = grown;
-        fail_cap = cap;
-    }
-    memcpy(fail_buf + fail_len, s, (size_t)n);
-    fail_len += n;
+    buf_append(&fails, s, n);
 }
 
 void veles_test_begin(void) {
     if (!fail_lock) fail_lock = veles_lock_new();
     veles_lock_acquire(fail_lock);
-    fail_len = fail_count = fail_stopped = 0;
+    fails.len = output.len = fail_count = fail_stopped = 0;
+    __atomic_store_n(&capturing, 1, __ATOMIC_RELEASE);
     veles_lock_release(fail_lock);
+}
+
+/* io.print and friends while a test runs: the text is kept, and shown
+ * under the test's failure (or dropped when it passes), so a passing run
+ * reads as its verdicts alone. Returns 0 when no test is running. Standard
+ * output and error share the one buffer, in the order they were written. */
+int veles_test_capture(const char *s, int64_t len, int newline) {
+    if (!__atomic_load_n(&capturing, __ATOMIC_ACQUIRE)) return 0;
+    veles_lock_acquire(fail_lock);
+    if (!capturing) { /* the test ended while this task waited for the lock */
+        veles_lock_release(fail_lock);
+        return 0;
+    }
+    buf_append(&output, s, len);
+    if (newline) buf_append(&output, "\n", 1);
+    veles_lock_release(fail_lock);
+    return 1;
+}
+
+/* appends `b` to `to`, each line prefixed with `prefix` */
+static void append_indented(text_buf *to, const char *prefix, const text_buf *b) {
+    int64_t plen = (int64_t)strlen(prefix);
+    for (int64_t i = 0; i < b->len; i++) {
+        if (i == 0 || b->data[i - 1] == '\n') buf_append(to, prefix, plen);
+        buf_append(to, b->data + i, 1);
+    }
+    if (b->len > 0 && b->data[b->len - 1] != '\n') buf_append(to, "\n", 1);
+}
+
+/* for the watchdog: the timed-out test's output, as the report shows it */
+static void print_captured(void) {
+    if (!fail_lock) return;
+    veles_lock_acquire(fail_lock);
+    __atomic_store_n(&capturing, 0, __ATOMIC_RELEASE);
+    if (output.len > 0) {
+        text_buf shown = {0};
+        buf_append(&shown, "  output:\n", 10);
+        append_indented(&shown, "    ", &output);
+        fwrite(shown.data, 1, (size_t)shown.len, stdout);
+        free(shown.data);
+    }
+    veles_lock_release(fail_lock);
+}
+
+void veles_test_sites(void (*each)(const char *where, int64_t len));
+
+static void append_site(const char *where, int64_t len) {
+    fail_append("\n      called from ", 19);
+    fail_append(where, len);
 }
 
 void veles_test_fail(const char *msg, int64_t len, const char *where, int64_t wlen, int64_t stop) {
@@ -440,6 +504,7 @@ void veles_test_fail(const char *msg, int64_t len, const char *where, int64_t wl
     fail_append(where, wlen);
     fail_append(": ", 2);
     fail_append(msg, len);
+    veles_test_sites(append_site); /* inside a helper: where the test called it */
     fail_append("\n", 1);
     fail_count++;
     if (stop) fail_stopped = 1;
@@ -452,23 +517,33 @@ void veles_test_fail(const char *msg, int64_t len, const char *where, int64_t wl
  * in its suites (D78). */
 int64_t veles_test_take(veles_test_string *out, int64_t *stopped, int64_t indent) {
     veles_lock_acquire(fail_lock);
+    __atomic_store_n(&capturing, 0, __ATOMIC_RELEASE);
+    /* the failure lines, then what the test printed under `output:` —
+     * the caller shows it only for a test that failed */
+    text_buf all = {0};
+    buf_append(&all, fails.data, fails.len);
+    if (output.len > 0) {
+        buf_append(&all, "  output:\n", 10);
+        append_indented(&all, "    ", &output);
+    }
     int64_t lines = 0;
-    for (int64_t i = 0; i < fail_len; i++) lines += fail_buf[i] == '\n';
-    char *text = veles_alloc(fail_len + lines * indent + 1);
+    for (int64_t i = 0; i < all.len; i++) lines += all.data[i] == '\n';
+    char *text = veles_alloc(all.len + lines * indent + 1);
     int64_t w = 0;
-    for (int64_t i = 0; i < fail_len; i++) {
-        if (i == 0 || fail_buf[i - 1] == '\n') {
+    for (int64_t i = 0; i < all.len; i++) {
+        if (i == 0 || all.data[i - 1] == '\n') {
             memset(text + w, ' ', (size_t)indent);
             w += indent;
         }
-        text[w++] = fail_buf[i];
+        text[w++] = all.data[i];
     }
     text[w] = 0;
+    free(all.data);
     out->data = text;
     out->len = w;
     *stopped = fail_stopped;
     int64_t n = fail_count;
-    fail_len = fail_count = fail_stopped = 0;
+    fails.len = output.len = fail_count = fail_stopped = 0;
     veles_lock_release(fail_lock);
     return n;
 }

@@ -1515,6 +1515,16 @@ func (g *gen) builtin(e *sema.Builtin) string {
 			g.panicValueAt(g.stringConst("the test stopped"), g.where(e.Span))
 		}
 		return "zeroinitializer"
+	case "test.enter":
+		// a test helper is being called from here: failures inside it say
+		// so (D78); the handle puts the previous call site back
+		wp, wl := g.strPtrLen(g.stringConst(g.where(e.Span)))
+		v := g.newTmp()
+		g.emit("%s = call i64 @veles_test_enter(ptr %s, i64 %s)", v, wp, wl)
+		return v
+	case "test.leave":
+		g.emit("call void @veles_test_leave(i64 %s)", g.expr(e.Args[0]))
+		return "zeroinitializer"
 	case "atomicLockFree", "atomicLoad", "atomicStore", "atomicSwap", "atomicCompareAndSwap":
 		return g.atomic(e)
 	case "string.byteAt":

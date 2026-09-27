@@ -140,6 +140,24 @@ finds nothing says `was null`, or `threw: RangeError(value: 99999)`. The
 summary line names every test that failed, and the exit code is non-zero.
 A panic in one test does not stop the others.
 
+What a test prints — `io.println` for a quick look at a value, from the
+test or from the code it calls — is kept while it runs. A test that passes
+drops it, so a green run reads as its verdicts alone; a test that fails
+shows it under its failure, in the order it was written (standard output
+and error together):
+
+```text
+test counts words ... FAILED
+  main.vs:15:3: expect(wordCount("  a   b ") == 2)
+      left:  7
+      right: 2
+  output:
+    pieces: ["", "", "a", "", "", "b", ""]
+```
+
+A test that times out shows what it printed before the deadline, which is
+often the only clue to where it hung.
+
 Two flags shape a run:
 
 - `--filter text` runs only the tests whose name contains `text`
@@ -169,6 +187,15 @@ test fun expectSorted(xs: List<i64>) {
 test "sorts" {
   expectSorted([3, 1, 2].sorted())
 }
+```
+
+A failure inside a helper says where the helper is, and which line of the
+test called it — through helpers that call helpers, innermost first:
+
+```text
+test sorts ... FAILED
+  main.vs:4:5: expect(before <= xs.at(i))
+      called from main.vs:9:3
 ```
 
 When a module's tests outgrow its files, move them to a file named

@@ -187,6 +187,7 @@ suite "errors" {
 		"      main.vs:5:5: expect(parseInt(text) == want)\n" +
 		"          left:  null\n" +
 		"          right: 0\n" +
+		"          called from main.vs:17:7\n" +
 		"\n4 passed, 2 failed: config / errors / empty input, parser / rejects / empty input\n"
 	if out != want || code != 1 {
 		t.Fatalf("exit %d, output:\n%s\n--- want ---\n%s", code, out, want)
@@ -238,5 +239,107 @@ func TestTestRunner(t *testing.T) {
 	}
 	if time.Since(start) > time.Minute {
 		t.Errorf("the timed-out run took %v", time.Since(start))
+	}
+}
+
+// A test's own output (io.println inside it) is kept while it runs: a
+// passing test's is dropped, a failing test's is shown under its failure,
+// so the report is never interleaved with it (D78 known limit, fixed).
+func TestTestOutputCaptured(t *testing.T) {
+	if _, err := findClang(); err != nil {
+		t.Skip("clang not available:", err)
+	}
+	src := `use io
+
+test "quiet when it passes" {
+  io.println("you do not see this")
+  expect(1 + 1 == 2)
+}
+
+suite "noisy" {
+  test "shows what it printed" {
+    io.print("partial ")
+    io.println("line")
+    io.eprintln("to stderr")
+    expect(1 == 2)
+    io.print("no newline at the end")
+  }
+
+  test "panics" {
+    io.println("before the panic")
+    val _ = [1].at(3) ?: panic("gone")
+  }
+}
+`
+	out, code := runTests(t, src, Options{})
+	want := "test quiet when it passes ... ok\n" +
+		"noisy\n" +
+		"  test shows what it printed ... FAILED\n" +
+		"    main.vs:13:5: expect(1 == 2)\n        left:  1\n        right: 2\n" +
+		"    output:\n" +
+		"      partial line\n" +
+		"      to stderr\n" +
+		"      no newline at the end\n" +
+		"  test panics ... FAILED: panic: gone\n" +
+		"    at main.vs:19:26\n" +
+		"    output:\n" +
+		"      before the panic\n" +
+		"\n1 passed, 2 failed: noisy / shows what it printed, noisy / panics\n"
+	if out != want || code != 1 {
+		t.Fatalf("exit %d, output:\n%s\n--- want ---\n%s", code, out, want)
+	}
+}
+
+// A failure inside a `test fun` helper names the line of the test that
+// called it — through nested helpers, innermost first, and into a task the
+// helper started — and a call that returned leaves nothing behind.
+func TestTestHelperCallSites(t *testing.T) {
+	if _, err := findClang(); err != nil {
+		t.Skip("clang not available:", err)
+	}
+	src := `test fun expectEven(n: i64) {
+  expect(n % 2 == 0)
+}
+
+test fun expectAllEven(xs: List<i64>) {
+  loop (x in xs) expectEven(x)
+}
+
+test fun doubled(n: i64): i64 {
+  expect(n > 0)
+  n * 2
+}
+
+test "helpers" {
+  expectEven(4)
+  expectAllEven([2, 3])
+  expect(doubled(-1) == -2)
+  expect(1 == 2)
+}
+
+test "in a task" {
+  scope {
+    val t = async doubled(0)
+    val _ = await t
+  }
+}
+`
+	out, code := runTests(t, src, Options{})
+	want := "test helpers ... FAILED\n" +
+		"  main.vs:2:3: expect(n % 2 == 0)\n" +
+		"      left:  1\n      right: 0\n" +
+		"      called from main.vs:6:18\n" +
+		"      called from main.vs:16:3\n" +
+		"  main.vs:10:3: expect(n > 0)\n" +
+		"      left:  -1\n      right: 0\n" +
+		"      called from main.vs:17:10\n" +
+		"  main.vs:18:3: expect(1 == 2)\n" +
+		"      left:  1\n      right: 2\n" +
+		"test in a task ... FAILED\n" +
+		"  main.vs:10:3: expect(n > 0)\n" +
+		"      left:  0\n      right: 0\n" +
+		"\n0 passed, 2 failed: helpers, in a task\n"
+	if out != want || code != 1 {
+		t.Fatalf("exit %d, output:\n%s\n--- want ---\n%s", code, out, want)
 	}
 }

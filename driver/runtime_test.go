@@ -386,3 +386,145 @@ fun main() {
 		t.Fatalf("got %q, %v; want %v", out, err, want)
 	}
 }
+
+// A socket closed twice, or used after its close, must not reach the
+// socket the system has since given the same number: systems reuse a
+// freed number at once. Before the number was taken out on close, the
+// second `a.close()` here closed `b` (reproduced on Windows), and a read
+// on `a` would have read `b`'s peer.
+func TestSocketClosedTwice(t *testing.T) {
+	if _, err := findClang(); err != nil {
+		t.Skip("clang not available:", err)
+	}
+	dir := t.TempDir()
+	src := `use io, net
+
+fun main() throws {
+  val l = try net.listen()
+  val a = try net.connect("127.0.0.1", l.port())
+  val copy = a
+  val sa = try l.accept()
+  a.close()
+  val b = try net.connect("127.0.0.1", l.port())
+  val sb = try l.accept()
+  a.close()
+  copy.close()
+  io.println(if (a.read().err) "read after close: error" else "read after close: data")
+  try b.writeText("hello")
+  io.println("b: ${try sb.read().len()} bytes")
+  sa.close()
+  sb.close()
+  b.close()
+  l.close()
+  l.close()
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(dir, "sockets.exe")
+	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe}); code != 0 {
+		t.Fatalf("build failed with exit %d", code)
+	}
+	out, err := exec.Command(exe).CombinedOutput()
+	want := "read after close: error\nb: 5 bytes\n"
+	if got := strings.ReplaceAll(string(out), "\r\n", "\n"); err != nil || got != want {
+		t.Fatalf("got %q, %v; want %q", out, err, want)
+	}
+}
+
+// os.run starts the program with no shell: every argument arrives as one
+// argument, byte for byte. Before, the arguments were joined into a shell
+// command line and quoted only when they held a space or a quote, so
+// `x;echo pwned` ran a second command. The program runs itself as the child
+// and prints what it received.
+func TestRunPassesArgumentsVerbatim(t *testing.T) {
+	if _, err := findClang(); err != nil {
+		t.Skip("clang not available:", err)
+	}
+	dir := t.TempDir()
+	src := `use io, os
+
+fun main() throws {
+  val args = os.args()
+  if (args.at(0) == "child") {
+    loop (a in args.drop(1)) io.println("[$a]")
+    return
+  }
+  val tricky = ["a b", "x;echo pwned", "$(echo hi)", "q\"uote", "\\\"", "back\\slash\\", "", "%PATH%", "* ?", "tab\there"]
+  val r = try os.run(os.program(), ["child"].concat(tricky))
+  io.print(r.stdout.replace("\r\n", "\n"))
+  io.println("code ${r.code}")
+  when (os.run(os.program(), ["child", "nul\u{0}byte"])) {
+    is Ok     => io.println("a NUL was passed")
+    is Err(e) => io.println("${e.kind}")
+  }
+  when (os.run("no-such-program-anywhere")) {
+    is Ok     => io.println("ran")
+    is Err(e) => io.println("${e.kind}")
+  }
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(dir, "argv.exe")
+	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe}); code != 0 {
+		t.Fatalf("build failed with exit %d", code)
+	}
+	out, err := exec.Command(exe).CombinedOutput()
+	want := "[a b]\n[x;echo pwned]\n[$(echo hi)]\n[q\"uote]\n[\\\"]\n[back\\slash\\]\n[]\n[%PATH%]\n[* ?]\n[tab\there]\n" +
+		"code 0\nInvalidInput\nNotFound\n"
+	if got := strings.ReplaceAll(string(out), "\r\n", "\n"); err != nil || got != want {
+		t.Fatalf("got %q, %v; want %q", got, err, want)
+	}
+}
+
+// A path holding a NUL byte is refused, never cut short at the NUL on its
+// way to the system: `dir/..\0/x` would pass a `..` check as one odd
+// segment and then open `dir/..`.
+func TestPathsWithNulRefused(t *testing.T) {
+	if _, err := findClang(); err != nil {
+		t.Skip("clang not available:", err)
+	}
+	dir := t.TempDir()
+	src := `use fs, io, net, os
+
+fun report(r: Result<string, IoError>) {
+  when (r) {
+    is Ok     => io.println("read")
+    is Err(e) => io.println("${e.kind}: ${e.message()}")
+  }
+}
+
+fun main() throws {
+  try fs.writeFile("real.txt", "x")
+  report(fs.readFile("real.txt\u{0}.png"))
+  report(fs.readFile("real.txt"))
+  io.println("${fs.exists("real.txt\u{0}")} ${fs.isFile("real.txt\u{0}")} ${fs.exists("real.txt")}")
+  when (fs.rename("real.txt", "..\u{0}/x")) {
+    is Ok     => io.println("renamed")
+    is Err(e) => io.println("${e.kind}")
+  }
+  when (net.connect("localhost\u{0}.example", 80)) {
+    is Ok     => io.println("connected")
+    is Err(e) => io.println("${e.kind}")
+  }
+  io.println("${os.env("PATH\u{0}x")}")
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(dir, "nul.exe")
+	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe}); code != 0 {
+		t.Fatalf("build failed with exit %d", code)
+	}
+	run := exec.Command(exe)
+	run.Dir = dir
+	out, err := run.CombinedOutput()
+	want := "InvalidInput: a path cannot hold a NUL byte: real.txt\\0.png\nread\nfalse false true\nInvalidInput\nInvalidInput\nnull\n"
+	if got := strings.ReplaceAll(string(out), "\r\n", "\n"); err != nil || got != want {
+		t.Fatalf("got %q, %v; want %q", got, err, want)
+	}
+}

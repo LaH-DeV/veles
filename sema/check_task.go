@@ -337,9 +337,17 @@ func (f *fnCtx) awaitExpr(e *ast.AwaitExpr) Expr {
 	if tt, ok := x.Type().(*types.Task); ok {
 		return f.suspending(&AwaitTask{exprBase{tt.Result}, x}, e.Pos, "await")
 	}
-	if !types.IsInvalid(x.Type()) {
-		f.errorf(e.Pos, "'await' applies to channels, timers and task handles, not '%s' (D16)", x.Type())
+	if types.IsInvalid(x.Type()) {
+		return bad()
 	}
+	if call, ok := e.X.(*ast.CallExpr); ok && !call.Async {
+		// the Kotlin/JS habit: a suspending call is written as a plain
+		// call (D2), so `await f()` only ever means a stray `await`
+		drop := source.Span{File: e.Pos.File, Start: e.Pos.Start, End: e.X.Span().Start}
+		f.c.errorFix(e.Pos, fixReplace("Remove 'await'", drop, ""), "'await' is not written on a call: a function that suspends is called like any other and suspends by itself (D2/D16); 'await' applies to channels, timers and task handles")
+		return x
+	}
+	f.errorf(e.Pos, "'await' applies to channels, timers and task handles, not '%s' (D16)", x.Type())
 	return bad()
 }
 
@@ -352,7 +360,10 @@ func (f *fnCtx) launch(e *ast.CallExpr, want types.Type) Expr {
 	}
 	inner := *e
 	inner.Async = false
+	saved := f.launching
+	f.launching = &inner
 	x := f.checkExpr(&inner, nil)
+	f.launching = saved
 	call, ok := x.(*Call)
 	if !ok {
 		if !types.IsInvalid(x.Type()) {

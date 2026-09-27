@@ -37,6 +37,7 @@ public struct TaskLocal<T: Sendable> {
   private fallback: T
 
   init(fallback: T) {
+    // SAFETY: hands out a fresh number; no arguments
     this.key = unsafe {
       veles_local_key()
     }
@@ -45,9 +46,12 @@ public struct TaskLocal<T: Sendable> {
 
   /// The value bound innermost in the current task, or the fallback.
   public fun get(): T {
+    // SAFETY: a lookup in the current task's bindings; nothing is changed
     val cell = unsafe {
       veles_local_find(this.key)
     } ?: return this.fallback
+    // SAFETY: a cell bound to this key was bound by `withValue` of this
+    // TaskLocal<T>, so it holds a T; the binding keeps it reachable
     unsafe {
       *(cell as *raw T)
     }
@@ -58,6 +62,8 @@ public struct TaskLocal<T: Sendable> {
   /// also when `f` throws, panics or its task is cancelled.
   public fun withValue<R, E>(value: T, f: fun(): R suspends throws E): R throws E {
     var held = value
+    // SAFETY: `held` is a heap cell (its address is taken); the binding node
+    // that holds it is GC memory reachable from every task that can see it
     val cell: *raw u8 = unsafe {
       &held as *raw u8
     }
@@ -73,6 +79,8 @@ struct LocalBinding {
   previous: (*raw u8)?
 
   static fun take(key: i64, cell: *raw u8): LocalBinding {
+    // SAFETY: `cell` holds a T for this key (see withValue); the node is GC
+    // memory, so the cell lives as long as a task can find it
     val previous = unsafe {
       veles_local_bind(key, cell)
     }
@@ -81,6 +89,8 @@ struct LocalBinding {
 
   implement Closeable {
     fun close() {
+      // SAFETY: puts back the head `take` saw; the list is never changed in
+      // place, so tasks started meanwhile keep the bindings they had
       unsafe {
         veles_local_restore(this.previous)
       }

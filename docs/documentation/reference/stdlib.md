@@ -480,7 +480,7 @@ os.tempDir(): string                             // TMPDIR or /tmp; TMP/TEMP on 
 os.shutdownSignal(): os.Signal                    // suspends until SIGINT/SIGTERM (Ctrl+C/Break/close on Windows); arms on the first call, one signal per call
 os.raiseSignal(sig: os.Signal)                    // as if it came from outside — for testing a shutdown path
 // enum Signal { Interrupt = 2, Terminate = 15 }
-os.run(program: string, args: List<string> = [], mergeStderr: bool = false): Output throws IoError
+os.run(program: string, args: List<string> = [], mergeStderr: bool = false): Output throws IoError   // no shell: each arg is one argument, verbatim; program found on PATH
 // Output { code: i64, stdout: string, fun ok(): bool }
 os.ioError(code: i64, path: string): IoError     // an IoError for a platform error number
 ```

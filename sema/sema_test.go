@@ -3851,3 +3851,122 @@ func TestTestSuites(t *testing.T) {
 	expectError(t, "suite \"a\" { }\nsuite \"a\" { }\nfun main() { }\n", "another test or suite here is named \"a\"")
 	expectError(t, "suite \"a\" {\n  test \"x\" { }\n  test \"x\" { }\n}\nfun main() { }\n", "another test or suite here is named \"a / x\"")
 }
+
+func TestUnsafeNeedsSafetyComment(t *testing.T) {
+	const decls = `
+extern "C" {
+  fun abs(x: i32): i32
+}
+`
+	expectWarning(t, prelude+decls+`
+fun main() {
+  val n = unsafe { abs(-3) }
+  io.println("$n")
+}`, "needs a '// SAFETY:' comment")
+	// a reason on the line above (possibly over several comment lines) is enough
+	for _, ok := range []string{`
+fun main() {
+  // SAFETY: abs reads nothing but its argument
+  val n = unsafe { abs(-3) }
+  io.println("$n")
+}`, `
+fun main() {
+  // The C function is pure.
+  // SAFETY: abs reads nothing but its
+  //   argument
+  val n = unsafe { abs(-3) }
+  io.println("$n")
+}`, `
+unsafe fun raw(): i32 {
+  unsafe { abs(-3) }
+}
+fun main() {
+  // SAFETY: raw is abs
+  val n = unsafe {
+    // nested blocks and unsafe funs are already accounted for
+    unsafe { raw() }
+  }
+  io.println("$n")
+}`} {
+		diags := checkSource(t, prelude+decls+ok)
+		for _, d := range diags.Items {
+			if strings.Contains(d.Message, "SAFETY") {
+				t.Errorf("unexpected: %s\nin:%s", d.Message, ok)
+			}
+		}
+	}
+	// the stub the fix inserts does not silence the lint
+	expectWarning(t, prelude+decls+`
+fun main() {
+  // SAFETY:
+  val n = unsafe { abs(-3) }
+  io.println("$n")
+}`, "gives no reason")
+	// the fix inserts the stub above the line, indented like it
+	diags := checkSource(t, prelude+decls+"fun main() {\n  val n = unsafe { abs(-3) }\n  io.println(\"$n\")\n}\n")
+	var fixed bool
+	for _, d := range diags.Items {
+		if d.Fix != nil && strings.Contains(d.Message, "SAFETY") {
+			e := d.Fix.Edits[0]
+			src := e.Span.File.Content
+			got := src[:e.Span.Start] + e.NewText + src[e.Span.End:]
+			if !strings.Contains(got, "{\n  // SAFETY: \n  val n = unsafe") {
+				t.Errorf("fix produced:\n%s", got)
+			}
+			fixed = true
+		}
+	}
+	if !fixed {
+		t.Errorf("no fix attached:\n%s", diags.Render())
+	}
+}
+
+// TestStdIsWarningFree checks a program that imports every std module: a
+// warning in std would be printed to every user of it, so std has none —
+// in particular every `unsafe` block in it says why it is sound.
+func TestStdIsWarningFree(t *testing.T) {
+	entries, err := fs.ReadDir(std.FS, ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mods []string
+	for _, e := range entries {
+		if e.IsDir() && e.Name() != "prelude" {
+			mods = append(mods, e.Name())
+		}
+	}
+	diags := checkSource(t, "use "+strings.Join(mods, ", ")+"\nfun main() {}\n")
+	for _, d := range diags.Items {
+		if d.Span.File != nil && d.Span.File.Embedded {
+			t.Errorf("%s", d.String())
+		}
+	}
+}
+
+func TestAwaitOnACall(t *testing.T) {
+	src := prelude + `
+fun slow(): i64 {
+  await sleep(Duration.millis(1))
+  1
+}
+fun main() {
+  val n = await slow()
+  io.println("${n + 1}")
+}`
+	expectError(t, src, "'await' is not written on a call")
+	// one error, with a fix that removes the word; the rest still checks
+	diags := checkSource(t, src)
+	if n := len(diags.Items); n != 1 || diags.Items[0].Fix == nil {
+		t.Fatalf("want one error with a fix, got:\n%s", diags.Render())
+	}
+	e := diags.Items[0].Fix.Edits[0]
+	if got := e.Span.File.Content[e.Span.Start:e.Span.End]; got != "await " {
+		t.Errorf("fix removes %q", got)
+	}
+	// on a value that is not a task it stays the general message
+	expectError(t, prelude+`
+fun main() {
+  val n = 3
+  val m = await n
+}`, "applies to channels, timers and task handles, not 'i64'")
+}

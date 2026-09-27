@@ -111,11 +111,17 @@ void veles_report_error(const char *msg, int64_t len) {
 
 /* ---- console ------------------------------------------------------------ */
 
+/* while `veles test` runs a test, what it prints is kept for the report
+ * (veles_sync.c) and shown only if the test fails */
+int veles_test_capture(const char *s, int64_t len, int newline);
+
 void veles_print(const char *s, int64_t len) {
+    if (veles_test_capture(s, len, 0)) return;
     fwrite(s, 1, (size_t)len, stdout);
 }
 
 void veles_eprint(const char *s, int64_t len) {
+    if (veles_test_capture(s, len, 0)) return;
     fflush(stdout);
     fwrite(s, 1, (size_t)len, stderr);
 }
@@ -138,10 +144,12 @@ static void write_line(FILE *f, const char *s, int64_t len) {
 }
 
 void veles_println(const char *s, int64_t len) {
+    if (veles_test_capture(s, len, 1)) return;
     write_line(stdout, s, len);
 }
 
 void veles_eprintln(const char *s, int64_t len) {
+    if (veles_test_capture(s, len, 1)) return;
     fflush(stdout);
     write_line(stderr, s, len);
 }

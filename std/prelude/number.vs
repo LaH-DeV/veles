@@ -45,6 +45,7 @@ extend f64 {
   /// The number with exactly `digits` decimals, rounded: `(2.0 / 3.0).toFixed(2)` is `"0.67"`.
   public fun toFixed(digits: i64): string {
     var out = ""
+    // SAFETY: stores the text in `out`, a local that outlives the call
     unsafe {
       veles_f64_to_fixed(this, digits, &out)
     }

@@ -61,7 +61,9 @@ description, `path` the file, `code` the platform's own error number, and
 `IoKind.NotFound`, `PermissionDenied`, `AlreadyExists`, `IsADirectory`,
 `ConnectionRefused`, `TimedOut`, `AddressInUse`, `BrokenPipe`, … and
 `Other` for what the enum does not name — never by `code`, which differs
-between systems:
+between systems. A path holding a NUL byte is `InvalidInput` before
+anything is opened: the system would read it only up to the NUL, a
+different file from the one your code checked.
 
 ```veles
 use fs, io
@@ -193,6 +195,15 @@ standard error is passed through, or captured into the same text with
 `os.run("clang", ["--version"], mergeStderr: true)`. A non-zero exit is
 not an error — it is reported in `Output.code` — only a program that
 cannot be started throws.
+
+No shell runs in between. Each argument reaches the program as exactly
+one argument, whatever it holds — `os.run("git", ["log", name])` is safe
+with any `name`, including `x; rm -rf ~` or `$(curl ...)`, which arrive as
+text. The program is looked up on `PATH`. When you want a shell's
+features, run the shell and own the script: `os.run("sh", ["-c", script])`.
+On Windows a `.bat`/`.cmd` file is refused, because `cmd.exe` re-reads its
+arguments by rules no quoting survives; an argument holding a NUL byte is
+refused everywhere (`IoKind.InvalidInput`).
 
 ## Time and randomness
 

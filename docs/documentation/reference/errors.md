@@ -185,10 +185,25 @@ Suspension is inferred (D2/D16). Call ordinary functions normally, even
 those that suspend; write `await` only on `sleep(...)`, `ch.recv()` and
 task handles from `async`.
 
+### `'await' is not written on a call: a function that suspends is called like any other`
+
+`await net.connect(host, port)` is written `net.connect(host, port)`: the
+call suspends by itself (D2), and `try` goes straight on it
+(`try net.connect(...)`). The quick fix removes `await`.
+
 ### `calling extern "C" function 'strlen' requires an 'unsafe' block`
 
 Wrap the call: `unsafe { strlen(p) }`. The block marks the places where
 the compiler cannot vouch for memory safety (D44).
+
+### `an 'unsafe' block needs a '// SAFETY:' comment on the line above saying why it is sound`
+
+A warning. Write why the block is sound in a `// SAFETY:` comment on the
+line above it (or as the first line inside it) — what the C function
+reads and keeps, why the pointer is live. The quick fix inserts the
+comment; until the reason after `SAFETY:` is filled in, the warning says
+it "gives no reason". Or declare the function `unsafe fun`, so its
+callers take on the obligation.
 
 ### `import cycle: module 'a' is already being loaded`
 

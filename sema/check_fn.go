@@ -39,7 +39,8 @@ type fnCtx struct {
 	throws      bool
 	errType     types.Type // declared error union, or nil when inferred
 	unsafe      int
-	selfVar     *Var           // `this`: a pointer to the receiver's place (D22 v0.30)
+	launching   *ast.CallExpr  // the call `async` is launching: it must stay a plain Call
+	selfVar   *Var           // `this`: a pointer to the receiver's place (D22 v0.30)
 	initOwned   map[string]int // checking an `init { }` block: the fields it must assign, by index (D28)
 	selfAsRecv  bool           // the next `this` is a method receiver, not a value (init blocks)
 	isGlobal    bool           // checking a global initializer

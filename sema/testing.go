@@ -8,6 +8,7 @@ import (
 
 	"github.com/LaH-DeV/veles/ast"
 	"github.com/LaH-DeV/veles/source"
+	"github.com/LaH-DeV/veles/types"
 )
 
 // Tests (D78). A test is `test "sentence" { body }`: no signature, so it
@@ -172,4 +173,32 @@ func words(name string) string {
 		}
 	}
 	return strings.Join(parts, " ")
+}
+
+// traceHelperCall wraps a call from test code to a test helper (a `test
+// fun`, or a function of a `*.test.vs` file) so the runtime knows the call
+// site while it runs: a failure recorded inside the helper then says which
+// line of the test called it, not only the helper's own line (D78).
+//
+//	test.enter at the call; the call; test.leave — the value passes through
+func (f *fnCtx) traceHelperCall(sym *Symbol, call Expr, e *ast.CallExpr) Expr {
+	if sym == nil || sym.Kind != SymFunc || !sym.Func.TestCode || !f.inTest() || e == f.launching {
+		return call
+	}
+	span := e.Pos
+	t := call.Type()
+	if types.IsInvalid(t) || t == types.TNever {
+		return call // a helper that never returns ends the test anyway
+	}
+	prev := f.newTemp(types.TI64)
+	enter := &Builtin{exprBase{types.TI64}, "test.enter", nil, span}
+	leave := &ExprStmt{&Builtin{exprBase{types.TUnit}, "test.leave", []Expr{ref(prev)}, span}}
+	var body Expr
+	if types.Identical(t, types.TUnit) {
+		body = &BlockExpr{exprBase{types.TUnit}, &Block{Stmts: []Stmt{&ExprStmt{call}, leave}, Type: types.TUnit}}
+	} else {
+		r := f.newTemp(t)
+		body = &Let{exprBase{t}, r, call, &BlockExpr{exprBase{t}, &Block{Stmts: []Stmt{leave}, Value: ref(r), Type: t}}}
+	}
+	return &Let{exprBase{t}, prev, enter, body}
 }

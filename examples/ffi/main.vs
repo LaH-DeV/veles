@@ -14,9 +14,12 @@ extern "C" {
 
 // C's comparator shape: negative, zero or positive, like `compareTo`.
 extern "C" fun ascending(a: *raw u8, b: *raw u8): i32 {
+  // SAFETY: qsort and bsearch call this only with pointers into the list of
+  // i64 they were given
   val x = unsafe {
     *(a as *raw i64)
   }
+  // SAFETY: as for `a`
   val y = unsafe {
     *(b as *raw i64)
   }
@@ -27,6 +30,8 @@ extern "C" fun ascending(a: *raw u8, b: *raw u8): i32 {
 // written here in Veles so the example needs no C file.
 fun forEachDigit(text: string, visit: extern fun(i64, *raw u8), userdata: *raw u8) {
   loop (b in text.bytes()) {
+    // SAFETY: `visit` is a C function pointer taken from a Veles `extern fun`;
+    // it gets back the `userdata` it was handed
     if (b >= '0' && b <= '9') unsafe {
       visit((b - '0') as i64, userdata)
     }
@@ -38,6 +43,7 @@ struct Digits {
 }
 
 extern "C" fun onDigit(d: i64, userdata: *raw u8) {
+  // SAFETY: forEachDigit passes on the pointer `main` gave it, from a Handle<Digits>
   val digits = unsafe {
     ffi.Handle<Digits>.from(userdata)
   }
@@ -47,7 +53,10 @@ extern "C" fun onDigit(d: i64, userdata: *raw u8) {
 fun main() throws ffi.NulByte {
   // strings: a NUL-terminated copy C may read, freed by `with`
   with (hex = try ffi.CString.of("ff")) {
+    // SAFETY: `hex` is open inside this `with`, so ptr() is a live, NUL-terminated
+    // copy; strlen and strtoll only read it
     io.println("strlen: ${unsafe { strlen(hex.ptr()) }}, as hex: ${unsafe { strtoll(hex.ptr(), null, 16) }}")
+    // SAFETY: as above: readString copies up to the NUL
     io.println("read back: ${unsafe { ffi.readString(hex.ptr()) }}")
   }
   when (ffi.CString.of("evil\u{0}.txt")) {
@@ -57,6 +66,8 @@ fun main() throws ffi.NulByte {
 
   // a list lent for the length of a call: no copy
   val buf: MutableList<u8> = [1, 2, 3, 4, 5, 6]
+  // SAFETY: withRaw lends the list's storage for this call; memset writes 3 of
+  // its 6 bytes
   buf.withRaw(p => unsafe {
     memset(p, 0, 3)
   })
@@ -64,11 +75,13 @@ fun main() throws ffi.NulByte {
 
   // a Veles function as a C callback
   val xs: MutableList<i64> = [42, 7, 19, 3, 88, 21]
+  // SAFETY: qsort sorts xs.len() elements of 8 bytes inside the lent storage
   xs.withRaw(p => unsafe {
     qsort(p as *raw u8, xs.len() as u64, 8, &ascending)
   })
   io.println("qsort: $xs")
   val key: i64 = 19
+  // SAFETY: `key` outlives the call and bsearch reads xs.len() elements of 8 bytes
   val found = xs.withRaw(p => unsafe {
     bsearch(&key as *raw u8, p as *raw u8, xs.len() as u64, 8, &ascending)
   })
@@ -83,10 +96,13 @@ fun main() throws ffi.NulByte {
 
   // memory C keeps past a call: allocated and freed explicitly
   val block = ffi.alloc(4)
+  // SAFETY: `block` is 4 bytes from ffi.alloc
   unsafe {
     memset(block, 7, 4)
   }
+  // SAFETY: memset filled all 4 bytes of `block` above
   io.println("alloc: ${unsafe { ffi.readBytes(block, 4) }}")
+  // SAFETY: `block` came from ffi.alloc and is freed once, after its last use
   unsafe {
     ffi.free(block)
   }

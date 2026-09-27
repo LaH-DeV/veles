@@ -44,68 +44,111 @@ public error TooLong {
   public limit: i64
 }
 
+// A host holding a NUL byte would reach the resolver cut short at it:
+// `evil.example\0.trusted.example` passes an `endsWith` allow-list check
+// and then connects to `evil.example`. Refused instead.
+fun checkHost(host: string) throws IoError {
+  if (host.contains("\u{0}")) {
+    throw IoError(path: host.replace("\u{0}", "\\0"), code: 22, detail: "a host name cannot hold a NUL byte", kind: IoKind.InvalidInput)
+  }
+}
+
 /// Listens for TCP connections on `host:port`. `host` empty means every
 /// interface; `port` 0 lets the system pick one (read it back with
 /// `port()`).
 public fun listen(host: string = "127.0.0.1", port: i64 = 0): Listener throws IoError {
+  try checkHost(host)
   var fd: i64 = 0
+  // SAFETY: takes `host` by value and stores the new socket's number in `fd`,
+  // a local that outlives the call
   val code = unsafe {
     veles_net_listen(host, port, &fd)
   }
   if (code != 0) throw os.ioError(code, "$host:$port")
-  Listener(fd, address: "$host:$port")
+  Listener(fd: Socket(fd), address: "$host:$port")
 }
 
 /// Connects to `host:port`; suspends until the connection is up.
 public fun connect(host: string, port: i64): Conn suspends throws IoError {
+  try checkHost(host)
   var fd: i64 = 0
+  // SAFETY: takes `host` by value and stores the new socket's number in `fd`,
+  // a local that outlives the call
   var code = unsafe {
     veles_net_connect(host, port, &fd)
   }
   if (code == wouldBlock) {
     await ioWait(fd, true)
+    // SAFETY: `fd` is the socket connect just opened, which nothing else has seen
     code = unsafe {
       veles_net_connect_result(fd)
     }
   }
   if (code != 0) {
+    // SAFETY: `fd` never left this function, so it is closed exactly once
     unsafe {
       veles_net_close(fd)
     }
     throw os.ioError(code, "$host:$port")
   }
-  Conn(fd, address: "$host:$port")
+  Conn(fd: Socket(fd), address: "$host:$port")
+}
+
+// A socket's number, shared by every copy of the Listener or Conn that
+// owns it. Closing takes the number out, so a second close, or a read
+// after one, reaches no socket instead of whichever one the system has
+// since given the same number — systems hand a freed number straight to
+// the next socket they open.
+struct Socket {
+  private number: Atomic<i64>
+
+  init(fd: i64) {
+    this.number = Atomic(value: fd)
+  }
+
+  fun get(): i64 = this.number.load()
+
+  fun close() {
+    val fd = this.number.swap(-1)
+    if (fd < 0) return
+    // SAFETY: the swap handed this number to exactly one caller, so the
+    // socket is closed once, and every later use of it sees -1
+    unsafe {
+      veles_net_close(fd)
+    }
+  }
 }
 
 /// A listening socket. Close it with `with` or `close()`.
 public struct Listener {
-  fd:      i64
+  fd:      Socket
   address: string
 
   /// The port the listener is bound to — the system's choice when `listen`
   /// was asked for port 0.
   public fun port(): i64 = unsafe {
-    veles_net_port(this.fd)
+    // SAFETY: a query; on a closed listener the number is -1 and the call fails
+    veles_net_port(this.fd.get())
   }
 
   /// The next connection; suspends until a client arrives.
   public fun accept(): Conn suspends throws IoError {
     loop {
       var fd: i64 = 0
+      // SAFETY: stores the accepted socket's number in `fd`, a local that outlives
+      // the call; on a closed listener the number is -1 and the call fails
       val code = unsafe {
-        veles_net_accept(this.fd, &fd)
+        veles_net_accept(this.fd.get(), &fd)
       }
-      if (code == 0) return Conn(fd, address: peerOf(fd))
+      if (code == 0) return Conn(fd: Socket(fd), address: peerOf(fd))
       if (code != wouldBlock) throw os.ioError(code, this.address)
-      await ioWait(this.fd, false)
+      await ioWait(this.fd.get(), false)
     }
   }
 
   implement Closeable {
     fun close() {
-      unsafe {
-        veles_net_close(this.fd)
-      }
+      this.fd.close()
     }
   }
 }
@@ -129,6 +172,8 @@ fun newBuffer(): Mutex<MutableList<u8>> {
 
 fun peerOf(fd: i64): string {
   var out = ""
+  // SAFETY: `fd` was just accepted; the address goes into `out`, a local that
+  // outlives the call
   unsafe {
     veles_net_peer(fd, &out)
   }
@@ -138,7 +183,7 @@ fun peerOf(fd: i64): string {
 /// One TCP connection. Reads hand out whatever has arrived; `readLine`
 /// and `readExact` buffer on top of that.
 public struct Conn {
-  fd:      i64
+  fd:      Socket
   address: string
   buffer:  Mutex<MutableList<u8>> = newBuffer()
 
@@ -152,12 +197,14 @@ public struct Conn {
     if (!buffered.isEmpty()) return buffered
     loop {
       var data = ""
+      // SAFETY: stores what arrived in `data`, a local that outlives the call; on a
+      // closed connection the number is -1 and the call fails
       val code = unsafe {
-        veles_net_recv(this.fd, max, &data)
+        veles_net_recv(this.fd.get(), max, &data)
       }
       if (code == 0) return data.bytes()
       if (code != wouldBlock) throw os.ioError(code, this.address)
-      await ioWait(this.fd, false)
+      await ioWait(this.fd.get(), false)
     }
   }
 
@@ -220,11 +267,13 @@ public struct Conn {
     var offset: i64 = 0
     loop (offset < bytes.len()) {
       var sent: i64 = 0
+      // SAFETY: reads `bytes` from `offset` within its length and stores the count in
+      // `sent`, a local; on a closed connection the number is -1 and it fails
       val code = unsafe {
-        veles_net_send(this.fd, bytes, offset, &sent)
+        veles_net_send(this.fd.get(), bytes, offset, &sent)
       }
       if (code == wouldBlock) {
-        await ioWait(this.fd, true)
+        await ioWait(this.fd.get(), true)
         continue
       }
       if (code != 0) throw os.ioError(code, this.address)
@@ -241,17 +290,16 @@ public struct Conn {
   /// of the stream) while this side keeps reading — how a client marks the
   /// end of a request when the protocol has no other way to say so.
   public fun shutdownWrite() throws IoError {
+    // SAFETY: on a closed connection the number is -1 and the call fails
     val code = unsafe {
-      veles_net_shutdown_write(this.fd)
+      veles_net_shutdown_write(this.fd.get())
     }
     if (code != 0) throw os.ioError(code, this.address)
   }
 
   implement Closeable {
     fun close() {
-      unsafe {
-        veles_net_close(this.fd)
-      }
+      this.fd.close()
     }
   }
 
@@ -259,8 +307,10 @@ public struct Conn {
   fun fetch(): List<u8> suspends throws IoError {
     loop {
       var data = ""
+      // SAFETY: stores what arrived in `data`, a local that outlives the call; on a
+      // closed connection the number is -1 and the call fails
       val code = unsafe {
-        veles_net_recv(this.fd, 65536, &data)
+        veles_net_recv(this.fd.get(), 65536, &data)
       }
       if (code == 0) {
         val chunk = data.bytes()
@@ -268,7 +318,7 @@ public struct Conn {
         return chunk
       }
       if (code != wouldBlock) throw os.ioError(code, this.address)
-      await ioWait(this.fd, false)
+      await ioWait(this.fd.get(), false)
     }
   }
 

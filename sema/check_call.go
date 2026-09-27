@@ -109,7 +109,7 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 		if sym.Kind == SymFunc && sym.Func.TestCode && !f.inTest() {
 			f.errorf(callee.Pos, "'%s' is test code (a 'test fun', or declared in a *.test.vs file); only tests can call it, and a build leaves it out (D78)", callee.Name)
 		}
-		return f.callSymbol(sym, callee.Name, typeArgs, e, want)
+		return f.traceHelperCall(sym, f.callSymbol(sym, callee.Name, typeArgs, e, want), e)
 	case *ast.PreludeName:
 		// synthesized code (D58): the prelude's function, whatever the
 		// module declares under the same name
@@ -144,7 +144,7 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 					if member.Kind == SymFunc && member.Func.TestCode && !f.inTest() {
 						f.errorf(callee.Name.Pos, "'%s' is test code (a 'test fun', or declared in a *.test.vs file); only tests can call it, and a build leaves it out (D78)", callee.Name.Name)
 					}
-					return f.callSymbol(member, callee.Name.Name, typeArgs, e, want)
+					return f.traceHelperCall(member, f.callSymbol(member, callee.Name.Name, typeArgs, e, want), e)
 				case SymType:
 					if s, ok := sym.Type.(*types.Sealed); ok {
 						v := s.VariantByName(callee.Name.Name)

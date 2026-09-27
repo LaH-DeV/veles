@@ -367,6 +367,7 @@ func (f *fnCtx) checkExprInner(e ast.Expr, want types.Type) Expr {
 	case *ast.CastExpr:
 		return f.castExpr(e)
 	case *ast.UnsafeExpr:
+		f.lintUnsafeBlock(e)
 		f.unsafe++
 		b := f.checkBlock(e.Body, want, true)
 		f.unsafe--

@@ -14,6 +14,7 @@ extern "C" {
 
 /// Writes `s` and a newline to standard output.
 public fun println(s: string) {
+  // SAFETY: writes `s` within its length and keeps nothing; the stream is locked
   unsafe {
     veles_println(s)
   }
@@ -21,6 +22,7 @@ public fun println(s: string) {
 
 /// Writes `s` to standard output, without a newline.
 public fun print(s: string) {
+  // SAFETY: writes `s` within its length and keeps nothing; the stream is locked
   unsafe {
     veles_print(s)
   }
@@ -28,6 +30,7 @@ public fun print(s: string) {
 
 /// Writes `s` and a newline to standard error.
 public fun eprintln(s: string) {
+  // SAFETY: writes `s` within its length and keeps nothing; the stream is locked
   unsafe {
     veles_eprintln(s)
   }
@@ -37,6 +40,7 @@ public fun eprintln(s: string) {
 /// `null` at end of input.
 public fun readLine(): string? {
   var line = ""
+  // SAFETY: stores the line in `line`, a local that outlives the call
   val ok = unsafe {
     veles_read_line(&line)
   }
@@ -46,6 +50,7 @@ public fun readLine(): string? {
 /// Reads standard input to its end (the rest of it, after any `readLine`).
 public fun readAll(): string {
   var text = ""
+  // SAFETY: stores the input in `text`, a local that outlives the call
   unsafe {
     veles_read_all(&text)
   }

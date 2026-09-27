@@ -34,6 +34,8 @@ public fun randomBytes(n: i64): List<u8> {
   if (n < 0) panic("crypto.randomBytes: $n bytes")
   if (n == 0) return []
   var buf = ""
+  // SAFETY: the runtime fills a fresh string of exactly `n` bytes and stores it
+  // in `buf`, a local that outlives the call; it keeps no pointer
   val code = unsafe {
     veles_random_bytes(n, &buf)
   }

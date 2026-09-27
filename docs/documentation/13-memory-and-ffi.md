@@ -258,6 +258,25 @@ There are two pointer types, and the difference is the whole point:
 | dereference | anywhere | `unsafe` only |
 | arithmetic | no | `unsafe` only, C-style (D50) |
 
+An `unsafe` block is a promise the compiler cannot check, so the reason
+it holds is written down next to it: a `// SAFETY:` comment on the line
+above the block (or as the first line inside it) saying why it is sound.
+A block without one is a warning whose quick fix inserts the comment for
+you to finish — an empty reason still warns. The alternative is to
+declare the function `unsafe fun`: the obligation then moves to its
+callers, who need an `unsafe` block (and a reason) of their own.
+
+```veles
+// fragment
+fun length(s: ffi.CString): u64 {
+  // SAFETY: an open CString is a live, NUL-terminated copy; strlen only reads it
+  unsafe { strlen(s.ptr()) }
+}
+```
+
+Every `unsafe` block in the standard library carries one; that is how its
+uses of C were audited.
+
 ## Calling C
 
 Declare the C signature in an `extern "C"` block and call it inside
@@ -273,9 +292,13 @@ extern "C" {
   fun toupper(c: i32): i32
 }
 
-fun cubeRoot(x: f64): f64 = unsafe { cbrt(x) }
+fun cubeRoot(x: f64): f64 = unsafe {
+  // SAFETY: cbrt takes a number and returns one
+  cbrt(x)
+}
 
 fun main() {
+  // SAFETY: toupper takes a character code and returns one
   io.println("${cubeRoot(27.0)} ${unsafe { toupper(97) }}")
 }
 ```
@@ -318,6 +341,7 @@ extern "C" {
 }
 
 fun main() {
+  // SAFETY: compressBound takes a size and returns one
   io.println("${unsafe { compressBound(1000) }}")   // 1013, with static-libs = ["z"]
 }
 ```
@@ -358,9 +382,11 @@ extern "C" {
 }
 
 extern "C" fun ascending(a: *raw u8, b: *raw u8): i32 {
+  // SAFETY: qsort calls this only with pointers into the list of i64 it sorts
   val x = unsafe {
     *(a as *raw i64)
   }
+  // SAFETY: as for `a`
   val y = unsafe {
     *(b as *raw i64)
   }
@@ -369,10 +395,12 @@ extern "C" fun ascending(a: *raw u8, b: *raw u8): i32 {
 
 fun main() throws ffi.NulByte {
   val xs: MutableList<i64> = [42, 7, 19, 3]
+  // SAFETY: qsort sorts xs.len() elements of 8 bytes inside the lent storage
   xs.withRaw(p => unsafe {
     qsort(p as *raw u8, xs.len() as u64, 8, &ascending)
   })
   with (s = try ffi.CString.of("hello")) {
+    // SAFETY: `s` is open here; readString copies up to its NUL
     io.println("$xs ${unsafe { ffi.readString(s.ptr()) }}")
   }
 }

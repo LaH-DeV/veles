@@ -155,7 +155,15 @@ answered from the shape, tuples get `Comparable`, enums get
       `read(max)` and `readExact(n)` were already caller-bounded, and http checks
       `Content-Length` against `bodyBytes` before the read
 - [ ] Panic-freedom analysis on leaf functions (also a perf win)
-- [ ] `unsafe` blocks audited: each std use has a comment saying why it is sound
+- [x] `unsafe` blocks audited: each std use has a comment saying why it is sound.
+      The `// SAFETY:` lint (D44 addendum) warns on a block without a reason,
+      and sema `TestStdIsWarningFree` holds std to zero warnings. The audit
+      found a **real hole**: `net.Conn`/`Listener.close()` closed the socket
+      number again on a second call, and systems reuse a freed number at once —
+      a second `close()` of one connection closed another (reproduced), and a
+      read after close could have read another peer's bytes. The number is now
+      a shared atomic cell that `close` swaps out (driver
+      `TestSocketClosedTwice`) (2026-09-27)
 - [ ] Bounds checks stay on in release; a profile that removes them is opt-in
       and loud
 - [ ] Integer conversions (`as`) between widths: truncation is explicit
@@ -185,6 +193,22 @@ answered from the shape, tuples get `Comparable`, enums get
       on every JSON round trip — it now takes the value from `strtod`, which
       the printer already checks against (2026-09-25). Still open: the HTTP
       request parser (needs an in-process connection)
+- [x] Command injection: `os.run(program, args)` joined its arguments into a
+      shell command line (`popen`), quoting only those with a space or a
+      quote, so `x;echo pwned` ran a second command on POSIX and `%VAR%`,
+      `&`, `|` were live on Windows. It now spawns with no shell —
+      `posix_spawnp` with an argv, `CreateProcessW` with each argument
+      quoted by the MSVC rules — `mergeStderr` is a dup of the pipe, not
+      `2>&1`; `.bat`/`.cmd` refused on Windows (BatBadBut), a NUL byte
+      refused everywhere. driver `TestRunPassesArgumentsVerbatim` (Windows
+      run; the POSIX branch is not compiled on this machine) (2026-09-27)
+- [x] NUL bytes at the C boundary: a Veles string may hold `\0`, a C string
+      ends there. `fs` refuses a path holding one (`InvalidInput`), since
+      `dir/..\0/x` passed a `..` check as one odd segment and then opened
+      `dir/..`; `net.listen`/`connect` refuse such a host
+      (`evil.example\0.trusted.example` passes an `endsWith` allow-list and
+      resolved `evil.example`); `os.env` answers null; `os.run` refuses it.
+      driver `TestPathsWithNulRefused` (2026-09-27)
 - [ ] Resource leaks: a `Closeable` dropped without `with` is a warning
 - [x] Stack depth: one limit, in the prelude — `maxRecursionDepth` (1000),
       `tooDeepMessage(limit)` for the one sentence every caller reports, and
@@ -443,7 +467,7 @@ behind a name that says "crypto" (§10, 2026-09-23).
       `expectPanics`/`fail` (expression capture, both sides, location; soft
       failures reported together), `test fun` helpers, `*.test.vs` files,
       `assert(cond, "why")` anywhere (reason required); `@test fun` errors with a fix (D78) — done
-      2026-09-27. Open: coverage, parallel tests, capturing a test's output
+      2026-09-27. A test's output is captured and shown only under its failure (2026-09-27). Open: coverage, parallel tests
 - [ ] `veles bench`
 - [~] LSP: find references, document highlights and rename done
       (2026-09-27): across modules, into interpolations and named arguments,
@@ -622,13 +646,16 @@ pros/cons before anything is built; the answer becomes a spec entry.
 
 ## 11. Known limitations to revisit
 
-- A test's own output (`io.println` inside a test) is not captured: it
-  lands between `test name ... ` and the verdict. Capture per test, shown
-  only on failure, is the fix (D78 left it open).
+- ~~A test's own output is not captured~~ — fixed 2026-09-27: kept per
+  test, shown under a failure (and a timeout), dropped on a pass. Output C
+  code writes itself (`printf` through FFI) is not captured.
 - `expectPanics(body)` runs `body` in a task of its own, so `body` must be
   a sendable function: it cannot capture a `MutableList` of the test's.
-- A failure inside a `test fun` helper reports the helper's line, not the
-  test's call of it.
+- ~~A failure inside a `test fun` helper reports only the helper's line~~ —
+  fixed 2026-09-27: each helper call site follows as `called from`, into
+  tasks started inside the helper. Not traced: a helper launched directly
+  with `async helper()` (the launch must stay a plain call), and a plain
+  panic inside a helper (its location is the helper's).
 - A panic std raises for a caller's misuse (`xs.swap(0, 7)`, `chunked(0)`)
   reports the std line (`at std/prelude/list.vs:408:27`), not the caller's
   (D64). Fix if it matters: a `#[track_caller]`-style attribute that passes
