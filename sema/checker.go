@@ -175,6 +175,7 @@ func checkCollect(pkg *Package, diags *source.Diagnostics, release bool, testMod
 	if prog != nil && !c.roundDiags.HasErrors() {
 		c.receiverPass(prog)
 		c.inferSuspension(prog)
+		c.indexInferred(prog)
 	}
 	diags.Items = append(diags.Items, c.roundDiags.Items...)
 	c.dropSyntheticRefs()
@@ -411,6 +412,11 @@ func (c *Checker) collect() {
 		for tr, ctx := range c.traitDecl {
 			if d, ok := ctx.decl.(*ast.TraitDecl); ok && !d.Sealed {
 				c.refType(d.Name.Pos, tr.Name, tr, d.Name.Pos)
+				for _, m := range d.Methods {
+					if m.Body == nil && m.ExprBody == nil {
+						c.refTraitMethod(m.Name.Pos, tr, m.Name.Name)
+					}
+				}
 			}
 		}
 		for s, ctx := range c.sealedDecl {

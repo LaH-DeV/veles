@@ -121,25 +121,13 @@ entry:
   %a120 = alloca %S.std.prelude.RangeStepIter_i64_
   %a122 = alloca { i1, i64 }
   %a128 = alloca i64
-  %a130 = alloca %str
-  %a136 = alloca %str
-  %a141 = alloca %str
-  %a147 = alloca %str
-  %a150 = alloca %str
-  %a156 = alloca %str
+  %a130 = alloca [21 x i8]
+  %a134 = alloca %str
+  %a143 = alloca [21 x i8]
+  %a148 = alloca [21 x i8]
+  %a153 = alloca [21 x i8]
   %a162 = alloca %str
-  %a165 = alloca %str
-  %a171 = alloca %str
-  %a177 = alloca %str
-  %a184 = alloca %str
-  %a190 = alloca %str
-  %a197 = alloca %str
-  %a203 = alloca %str
-  %a210 = alloca %str
-  %a216 = alloca %str
-  %a223 = alloca %str
-  %a229 = alloca %str
-  %a236 = alloca %str
+  %a163 = alloca [15 x %str]
   store i64 0, ptr %a1
   %t2 = insertvalue { i64, i64, i1 } undef, i64 1, 0
   %t3 = insertvalue { i64, i64, i1 } %t2, i64 5, 1
@@ -380,125 +368,77 @@ if.end.52:
   %t127 = extractvalue { i1, i64 } %t126, 1
   store i64 %t127, ptr %a128
   %t129 = load i64, ptr %a128
-  call void @veles_i64_to_string(ptr %a130, i64 %t129)
-  %t131 = load %str, ptr %a130
-  %t132 = extractvalue %str { ptr @.str.17, i64 5 }, 0
-  %t133 = extractvalue %str { ptr @.str.17, i64 5 }, 1
-  %t134 = extractvalue %str %t131, 0
-  %t135 = extractvalue %str %t131, 1
-  call void @veles_string_concat(ptr %a136, ptr %t132, i64 %t133, ptr %t134, i64 %t135)
-  %t137 = load %str, ptr %a136
-  call void @v_std.io.println(%str %t137)
+  %t131 = call i64 @veles_i64_format(ptr %a130, i64 %t129)
+  %t132 = insertvalue %str undef, ptr %a130, 0
+  %t133 = insertvalue %str %t132, i64 %t131, 1
+  %t135 = extractvalue %str { ptr @.str.17, i64 5 }, 0
+  %t136 = extractvalue %str { ptr @.str.17, i64 5 }, 1
+  %t137 = extractvalue %str %t133, 0
+  %t138 = extractvalue %str %t133, 1
+  call void @veles_string_concat(ptr %a134, ptr %t135, i64 %t136, ptr %t137, i64 %t138)
+  %t139 = load %str, ptr %a134
+  call void @v_std.io.println(%str %t139)
   br label %loop.post.48
 loop.post.48:
-  %t138 = load volatile i32, ptr @veles_stop_requested, align 4
-  %t139 = icmp ne i32 %t138, 0
-  br i1 %t139, label %safepoint.53, label %safepoint.on.54, !prof !{!"branch_weights", i32 1, i32 100000}
+  %t140 = load volatile i32, ptr @veles_stop_requested, align 4
+  %t141 = icmp ne i32 %t140, 0
+  br i1 %t141, label %safepoint.53, label %safepoint.on.54, !prof !{!"branch_weights", i32 1, i32 100000}
 safepoint.53:
   call void @veles_gc_park()
   br label %safepoint.on.54
 safepoint.on.54:
   br label %loop.cond.47
 loop.end.49:
-  %t140 = load i64, ptr %a1
-  call void @veles_i64_to_string(ptr %a141, i64 %t140)
-  %t142 = load %str, ptr %a141
-  %t143 = extractvalue %str %t142, 0
-  %t144 = extractvalue %str %t142, 1
-  %t145 = extractvalue %str { ptr @.str.18, i64 1 }, 0
-  %t146 = extractvalue %str { ptr @.str.18, i64 1 }, 1
-  call void @veles_string_concat(ptr %a147, ptr %t143, i64 %t144, ptr %t145, i64 %t146)
-  %t148 = load %str, ptr %a147
-  %t149 = load i64, ptr %a87
-  call void @veles_i64_to_string(ptr %a150, i64 %t149)
-  %t151 = load %str, ptr %a150
-  %t152 = extractvalue %str %t148, 0
-  %t153 = extractvalue %str %t148, 1
-  %t154 = extractvalue %str %t151, 0
-  %t155 = extractvalue %str %t151, 1
-  call void @veles_string_concat(ptr %a156, ptr %t152, i64 %t153, ptr %t154, i64 %t155)
-  %t157 = load %str, ptr %a156
-  %t158 = extractvalue %str %t157, 0
-  %t159 = extractvalue %str %t157, 1
-  %t160 = extractvalue %str { ptr @.str.18, i64 1 }, 0
-  %t161 = extractvalue %str { ptr @.str.18, i64 1 }, 1
-  call void @veles_string_concat(ptr %a162, ptr %t158, i64 %t159, ptr %t160, i64 %t161)
-  %t163 = load %str, ptr %a162
-  %t164 = load i64, ptr %a101
-  call void @veles_i64_to_string(ptr %a165, i64 %t164)
-  %t166 = load %str, ptr %a165
-  %t167 = extractvalue %str %t163, 0
-  %t168 = extractvalue %str %t163, 1
-  %t169 = extractvalue %str %t166, 0
-  %t170 = extractvalue %str %t166, 1
-  call void @veles_string_concat(ptr %a171, ptr %t167, i64 %t168, ptr %t169, i64 %t170)
-  %t172 = load %str, ptr %a171
-  %t173 = extractvalue %str %t172, 0
-  %t174 = extractvalue %str %t172, 1
-  %t175 = extractvalue %str { ptr @.str.18, i64 1 }, 0
-  %t176 = extractvalue %str { ptr @.str.18, i64 1 }, 1
-  call void @veles_string_concat(ptr %a177, ptr %t173, i64 %t174, ptr %t175, i64 %t176)
-  %t178 = load %str, ptr %a177
-  %t179 = call %str @v_main.classify(i64 -2)
-  %t180 = extractvalue %str %t178, 0
-  %t181 = extractvalue %str %t178, 1
-  %t182 = extractvalue %str %t179, 0
-  %t183 = extractvalue %str %t179, 1
-  call void @veles_string_concat(ptr %a184, ptr %t180, i64 %t181, ptr %t182, i64 %t183)
-  %t185 = load %str, ptr %a184
-  %t186 = extractvalue %str %t185, 0
-  %t187 = extractvalue %str %t185, 1
-  %t188 = extractvalue %str { ptr @.str.18, i64 1 }, 0
-  %t189 = extractvalue %str { ptr @.str.18, i64 1 }, 1
-  call void @veles_string_concat(ptr %a190, ptr %t186, i64 %t187, ptr %t188, i64 %t189)
-  %t191 = load %str, ptr %a190
-  %t192 = call %str @v_main.classify(i64 0)
-  %t193 = extractvalue %str %t191, 0
-  %t194 = extractvalue %str %t191, 1
-  %t195 = extractvalue %str %t192, 0
-  %t196 = extractvalue %str %t192, 1
-  call void @veles_string_concat(ptr %a197, ptr %t193, i64 %t194, ptr %t195, i64 %t196)
-  %t198 = load %str, ptr %a197
-  %t199 = extractvalue %str %t198, 0
-  %t200 = extractvalue %str %t198, 1
-  %t201 = extractvalue %str { ptr @.str.18, i64 1 }, 0
-  %t202 = extractvalue %str { ptr @.str.18, i64 1 }, 1
-  call void @veles_string_concat(ptr %a203, ptr %t199, i64 %t200, ptr %t201, i64 %t202)
-  %t204 = load %str, ptr %a203
-  %t205 = call %str @v_main.classify(i64 4)
-  %t206 = extractvalue %str %t204, 0
-  %t207 = extractvalue %str %t204, 1
-  %t208 = extractvalue %str %t205, 0
-  %t209 = extractvalue %str %t205, 1
-  call void @veles_string_concat(ptr %a210, ptr %t206, i64 %t207, ptr %t208, i64 %t209)
-  %t211 = load %str, ptr %a210
-  %t212 = extractvalue %str %t211, 0
-  %t213 = extractvalue %str %t211, 1
-  %t214 = extractvalue %str { ptr @.str.18, i64 1 }, 0
-  %t215 = extractvalue %str { ptr @.str.18, i64 1 }, 1
-  call void @veles_string_concat(ptr %a216, ptr %t212, i64 %t213, ptr %t214, i64 %t215)
-  %t217 = load %str, ptr %a216
-  %t218 = call %str @v_main.digits(i64 3)
-  %t219 = extractvalue %str %t217, 0
-  %t220 = extractvalue %str %t217, 1
-  %t221 = extractvalue %str %t218, 0
-  %t222 = extractvalue %str %t218, 1
-  call void @veles_string_concat(ptr %a223, ptr %t219, i64 %t220, ptr %t221, i64 %t222)
-  %t224 = load %str, ptr %a223
-  %t225 = extractvalue %str %t224, 0
-  %t226 = extractvalue %str %t224, 1
-  %t227 = extractvalue %str { ptr @.str.18, i64 1 }, 0
-  %t228 = extractvalue %str { ptr @.str.18, i64 1 }, 1
-  call void @veles_string_concat(ptr %a229, ptr %t225, i64 %t226, ptr %t227, i64 %t228)
-  %t230 = load %str, ptr %a229
-  %t231 = call %str @v_main.digits(i64 9)
-  %t232 = extractvalue %str %t230, 0
-  %t233 = extractvalue %str %t230, 1
-  %t234 = extractvalue %str %t231, 0
-  %t235 = extractvalue %str %t231, 1
-  call void @veles_string_concat(ptr %a236, ptr %t232, i64 %t233, ptr %t234, i64 %t235)
-  %t237 = load %str, ptr %a236
-  call void @v_std.io.println(%str %t237)
+  %t142 = load i64, ptr %a1
+  %t144 = call i64 @veles_i64_format(ptr %a143, i64 %t142)
+  %t145 = insertvalue %str undef, ptr %a143, 0
+  %t146 = insertvalue %str %t145, i64 %t144, 1
+  %t147 = load i64, ptr %a87
+  %t149 = call i64 @veles_i64_format(ptr %a148, i64 %t147)
+  %t150 = insertvalue %str undef, ptr %a148, 0
+  %t151 = insertvalue %str %t150, i64 %t149, 1
+  %t152 = load i64, ptr %a101
+  %t154 = call i64 @veles_i64_format(ptr %a153, i64 %t152)
+  %t155 = insertvalue %str undef, ptr %a153, 0
+  %t156 = insertvalue %str %t155, i64 %t154, 1
+  %t157 = call %str @v_main.classify(i64 -2)
+  %t158 = call %str @v_main.classify(i64 0)
+  %t159 = call %str @v_main.classify(i64 4)
+  %t160 = call %str @v_main.digits(i64 3)
+  %t161 = call %str @v_main.digits(i64 9)
+  %t164 = getelementptr [15 x %str], ptr %a163, i64 0, i64 0
+  store %str %t146, ptr %t164
+  %t165 = getelementptr [15 x %str], ptr %a163, i64 0, i64 1
+  store %str { ptr @.str.18, i64 1 }, ptr %t165
+  %t166 = getelementptr [15 x %str], ptr %a163, i64 0, i64 2
+  store %str %t151, ptr %t166
+  %t167 = getelementptr [15 x %str], ptr %a163, i64 0, i64 3
+  store %str { ptr @.str.18, i64 1 }, ptr %t167
+  %t168 = getelementptr [15 x %str], ptr %a163, i64 0, i64 4
+  store %str %t156, ptr %t168
+  %t169 = getelementptr [15 x %str], ptr %a163, i64 0, i64 5
+  store %str { ptr @.str.18, i64 1 }, ptr %t169
+  %t170 = getelementptr [15 x %str], ptr %a163, i64 0, i64 6
+  store %str %t157, ptr %t170
+  %t171 = getelementptr [15 x %str], ptr %a163, i64 0, i64 7
+  store %str { ptr @.str.18, i64 1 }, ptr %t171
+  %t172 = getelementptr [15 x %str], ptr %a163, i64 0, i64 8
+  store %str %t158, ptr %t172
+  %t173 = getelementptr [15 x %str], ptr %a163, i64 0, i64 9
+  store %str { ptr @.str.18, i64 1 }, ptr %t173
+  %t174 = getelementptr [15 x %str], ptr %a163, i64 0, i64 10
+  store %str %t159, ptr %t174
+  %t175 = getelementptr [15 x %str], ptr %a163, i64 0, i64 11
+  store %str { ptr @.str.18, i64 1 }, ptr %t175
+  %t176 = getelementptr [15 x %str], ptr %a163, i64 0, i64 12
+  store %str %t160, ptr %t176
+  %t177 = getelementptr [15 x %str], ptr %a163, i64 0, i64 13
+  store %str { ptr @.str.18, i64 1 }, ptr %t177
+  %t178 = getelementptr [15 x %str], ptr %a163, i64 0, i64 14
+  store %str %t161, ptr %t178
+  call void @veles_string_concat_n(ptr %a162, ptr %a163, i64 15)
+  %t179 = load %str, ptr %a162
+  call void @v_std.io.println(%str %t179)
   ret void
 }
 

@@ -50,6 +50,17 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 			}
 			return &Builtin{exprBase{&types.Pointer{Elem: lt.Elem, Raw: true}}, "list.rawData", []Expr{xs}, e.Pos}
 		}
+		if callee.Name == "listAppendText" && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 2 {
+			// std-only: a string's bytes onto a MutableList<u8> in one copy
+			// (StringBuilder.append), not a list of them pushed one by one
+			xs := f.checkExpr(e.Args[0].Value, nil)
+			s := f.checkExprTo(e.Args[1].Value, types.TString)
+			if lt, ok := xs.Type().(*types.List); !ok || !lt.Mutable || !types.Identical(lt.Elem, types.TU8) {
+				f.errorf(e.Pos, "listAppendText takes a MutableList<u8> and a string")
+				return bad()
+			}
+			return &Builtin{exprBase{types.TUnit}, "list.appendText", []Expr{xs, s}, e.Pos}
+		}
 		if _, ok := atomicBuiltins[callee.Name]; ok && f.module.Std && f.lookup(callee.Name) == nil {
 			return f.atomicCall(callee.Name, e)
 		}
@@ -358,6 +369,7 @@ func (f *fnCtx) callTemplateRecv(t *FuncTemplate, ownerSubst map[*types.TypePara
 		}
 	}
 	what := fmt.Sprintf("'%s'", t.Name)
+	f.c.refArgLabels(args, t)
 	bound, ok := f.bindArgs(t.Sig.Params, args, what, span)
 	if !ok {
 		f.checkArgsLoosely(args)
@@ -573,10 +585,18 @@ func (f *fnCtx) constructStruct(st *types.Struct, args []ast.Arg, span source.Sp
 		// a field the `init` block assigns is not the caller's to give
 		params[i] = types.Param{Name: fld.Name, Type: fld.Type, HasDefault: fld.HasDefault || fld.Init}
 	}
+	written := args
 	args, ok := f.punFields(st, args)
 	if !ok {
 		f.checkArgsLoosely(args)
 		return bad()
+	}
+	if f.c.index != nil {
+		punned := make([]bool, len(args))
+		for i := range args {
+			punned[i] = written[i].Name == nil && args[i].Name != nil
+		}
+		f.c.refFieldLabels(st, args, punned)
 	}
 	bound, ok := f.bindArgs(params, args, "struct '"+st.Name+"'", span)
 	if !ok {
@@ -1453,6 +1473,7 @@ func (f *fnCtx) virtualCall(recv Expr, trait *types.Trait, callee *ast.MemberExp
 		return bad()
 	}
 	sig := slot.Sig
+	f.c.refTraitMethod(callee.Name.Pos, trait, name)
 	bound, ok := f.bindArgs(sig.Params, e.Args, "'"+name+"'", e.Pos)
 	if !ok {
 		f.checkArgsLoosely(e.Args)

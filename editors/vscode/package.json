@@ -1,7 +1,7 @@
 {
   "name": "veles",
   "displayName": "Veles",
-  "description": "Veles language support: syntax highlighting, diagnostics, hover, go to definition, completion (via `veles lsp`).",
+  "description": "Veles language support: syntax highlighting, diagnostics, hover, go to definition, references, rename, completion (via `veles lsp`).",
   "version": "0.1.0",
   "publisher": "veles-lang",
   "license": "MIT",

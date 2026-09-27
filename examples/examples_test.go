@@ -2,6 +2,7 @@ package examples
 
 import (
 	"bytes"
+	"context"
 	"flag"
 	"os"
 	"os/exec"
@@ -10,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/LaH-DeV/veles/internal/buildtest"
 )
@@ -85,10 +87,18 @@ func TestExamples(t *testing.T) {
 	}
 }
 
+// runTimeout bounds one run of an example. A hung example is killed and
+// fails; without the bound it held the suite until `go test` gave up, and
+// that left the process running (servers outlived the test for a day).
+const runTimeout = 2 * time.Minute
+
 // runOnce runs the program and returns its standard output and exit code.
 func runOnce(t *testing.T, exe string, args, env []string, dir string, stdin []byte) (string, int) {
 	t.Helper()
-	run := exec.Command(exe, args...)
+	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
+	defer cancel()
+	run := exec.CommandContext(ctx, exe, args...)
+	run.WaitDelay = 5 * time.Second
 	run.Dir = dir
 	if env != nil {
 		run.Env = append(os.Environ(), env...)
@@ -99,6 +109,9 @@ func runOnce(t *testing.T, exe string, args, env []string, dir string, stdin []b
 	var stdout bytes.Buffer
 	run.Stdout = &stdout
 	err := run.Run()
+	if ctx.Err() != nil {
+		t.Fatalf("%s %s did not finish in %v; killed. Output so far:\n%s", filepath.Base(exe), strings.Join(args, " "), runTimeout, stdout.String())
+	}
 	code := 0
 	if ee, ok := err.(*exec.ExitError); ok {
 		code = ee.ExitCode()

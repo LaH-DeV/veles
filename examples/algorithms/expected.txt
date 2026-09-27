@@ -62,4 +62,5 @@ bst [20, 30, 40, 50, 60, 70, 80] size 7 height 3 min 20 max 80
 bst has 60 true, 65 false
 heap peek 1 pop 1 3 len 3
 priority apple fig pear null
+sorted agrees at 10 of 10 sizes: [-7, -1, 2, 3] [a, b, ą]
 exit=0

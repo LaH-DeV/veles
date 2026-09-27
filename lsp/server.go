@@ -1,7 +1,8 @@
 // Package lsp implements a Language Server Protocol server for Veles over
-// stdio: diagnostics as you type, hover, go-to-definition, document symbols
-// and completion. It reuses the compiler front end; unsaved buffers are
-// passed to the loader as an overlay.
+// stdio: diagnostics as you type, hover, go-to-definition, references,
+// highlights, rename, inlay hints, signature help, document symbols and
+// completion. It reuses the compiler front end; unsaved buffers are passed
+// to the loader as an overlay.
 package lsp
 
 import (
@@ -61,6 +62,9 @@ type analysis struct {
 	index    *sema.Index             // nil while the package does not parse
 	lastGood *sema.Index             // the most recent index that did; used by completion
 	files    map[string]*source.File // OverlayKey -> parsed file
+	// the errors the package had, so a rename can tell the ones it adds
+	errors    int
+	errorMsgs []string
 }
 
 // ---------------------------------------------------------------------------
@@ -166,6 +170,17 @@ func (s *Server) replyError(id json.RawMessage, code int, msg string) {
 	s.send(errorResponse{JSONRPC: "2.0", ID: id, Error: &responseError{code, msg}})
 }
 
+// replyOrFail answers with the result, or with RequestFailed carrying the
+// error's message, which the editor shows the user.
+func (s *Server) replyOrFail(id json.RawMessage, handler func(json.RawMessage) (any, error), params json.RawMessage) {
+	result, err := handler(params)
+	if err != nil {
+		s.replyError(id, errRequestFailed, err.Error())
+		return
+	}
+	s.reply(id, result)
+}
+
 func (s *Server) notify(method string, params any) {
 	s.send(notification{JSONRPC: "2.0", Method: method, Params: params})
 }
@@ -195,6 +210,12 @@ func (s *Server) handle(req *request) {
 				"documentFormattingProvider": true,
 				"codeActionProvider":         map[string]any{"codeActionKinds": []string{"quickfix"}},
 				"completionProvider":         map[string]any{"triggerCharacters": []string{"."}},
+				"referencesProvider":         true,
+				"documentHighlightProvider":  true,
+				"renameProvider":             map[string]any{"prepareProvider": true},
+				"inlayHintProvider":          true,
+				"workspaceSymbolProvider":    true,
+				"signatureHelpProvider":      map[string]any{"triggerCharacters": []string{"(", ","}, "retriggerCharacters": []string{")"}},
 			},
 			"serverInfo": map[string]any{"name": "veles-lsp", "version": "0.1"},
 		})
@@ -257,6 +278,20 @@ func (s *Server) handle(req *request) {
 		s.reply(req.ID, s.codeAction(req.Params))
 	case "textDocument/completion":
 		s.reply(req.ID, s.completion(req.Params))
+	case "textDocument/references":
+		s.reply(req.ID, s.references(req.Params))
+	case "textDocument/documentHighlight":
+		s.reply(req.ID, s.documentHighlight(req.Params))
+	case "textDocument/signatureHelp":
+		s.reply(req.ID, s.signatureHelp(req.Params))
+	case "workspace/symbol":
+		s.reply(req.ID, s.workspaceSymbols(req.Params))
+	case "textDocument/inlayHint":
+		s.reply(req.ID, s.inlayHints(req.Params))
+	case "textDocument/prepareRename":
+		s.replyOrFail(req.ID, s.prepareRename, req.Params)
+	case "textDocument/rename":
+		s.replyOrFail(req.ID, s.rename, req.Params)
 	default:
 		if req.ID != nil {
 			s.replyError(req.ID, -32601, "method not found: "+req.Method)
@@ -297,6 +332,12 @@ func (s *Server) analyze(d *document) {
 		index = sema.CheckIndex(pkg, diags)
 	}
 	a := &analysis{pkg: pkg, index: index, lastGood: index, files: map[string]*source.File{}}
+	for _, it := range diags.Items {
+		if it.Severity == source.Error {
+			a.errors++
+			a.errorMsgs = append(a.errorMsgs, it.Message)
+		}
+	}
 	if index == nil {
 		if prev := s.analyses[pkg.Key()]; prev != nil {
 			a.lastGood = prev.lastGood

@@ -284,7 +284,7 @@ with (listener = try net.listen(host: "", port: 8080)) { http.serve(listener, ap
 
 ```text
 veles run <dir>        veles build <dir> -o app [--release]
-veles check <dir>      veles test <dir>
+veles check <dir>      veles test <dir> [--filter text] [--timeout 10m]
 veles parse <file>     veles lsp     (editor server)
 veles fmt <paths>      [--check | --stdout]   format in place; [format] in veles.toml: indent = 2 | "tab", max_blank_lines = 1
 VELES_CLANG=<path>     VELES_GC_TRACE=1     VELES_GC_THRESHOLD=<bytes>

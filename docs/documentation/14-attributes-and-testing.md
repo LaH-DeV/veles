@@ -107,13 +107,27 @@ Output:
 ```text
 test countsWords ... ok
 test tasksWorkInTests ... ok
+
+2 passed, 0 failed
 ```
 
 A failing assertion prints the thrown value — `FAILED:
-Expected(what: simple, expected: 3, actual: 2)` — and the exit code is
-non-zero. Each test runs as its own task on the executor, so tests may
-use `scope`, `async`, channels and `sleep` freely, and a panic in one test
-does not stop the others.
+Expected(what: simple, expected: 3, actual: 2)` — the summary line names
+every test that failed, and the exit code is non-zero. Each test runs as
+its own task on the executor, so tests may use `scope`, `async`, channels
+and `sleep` freely, and a panic in one test does not stop the others.
+
+Two flags shape a run:
+
+- `--filter text` runs only the tests whose name contains `text`
+  (`veles test . --filter Words`); the summary counts the rest as
+  filtered out. A filter that matches nothing is an error, so a typo in
+  CI fails instead of passing with no tests run.
+- `--timeout 30s` bounds each test (default `10m`, `0` for no bound).
+  A test still running at its deadline is reported —
+  `FAILED: timed out after 30s` — and ends the run, since a task busy in a
+  loop cannot be stopped from outside; the report says how many tests
+  after it did not run.
 
 Generic assertion helpers like `expectEq<T>` work for any `T` that
 supports `==` and interpolation — which is every struct, number,

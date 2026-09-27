@@ -447,3 +447,87 @@ channels 4.6 ms (Go 9.8). **AArch64 register capture:** the stub
 stores x19–x29, sp, d8–d15 on the stack and `veles_capture_store`
 copies them (no TLS access from assembly); checked by cross-compiling
 for aarch64-w64-mingw32 and disassembling — not run on hardware.
+**LSP references and rename, 2026-09-27.** `textDocument/references`,
+`documentHighlight`, `prepareRename`, `rename` (`lsp/references.go`),
+built on the checker's index grouped by declaration (`sema.Ref.Key`). The
+index gained what rename needs: named-argument labels as uses of the
+parameter or field (`scale(factor: 2)`, `Point(x: 1)`), D28 puns marked
+(`Point(x)` is spelled out `Point(col: x)` / `Point(x: row)` so the other
+name survives), a trait method's declaration and calls through a trait
+object, and `Family` tying each implementation to the trait's method. A
+rename is proved before it is sent: the package is checked again with the
+edits and the rename is refused, naming the place, if any use resolves to
+a different declaration (capture, shadowing) or an error appears. Fields
+and sealed variants a derived `Codable` writes on the wire (no `@key`,
+not `@skip`) are refused with the `@key` hint — the program would compile
+and stop reading its own data (`Index.Wire`). Tests: TestReferences,
+TestRename (10 cases incl. capture and pun), TestRenameKeepsWireNames,
+TestRenameAcrossModules. Not done: enum members are not guarded (every
+enum is Codable implicitly, so guarding would refuse every member rename).
+**`veles test` runner, 2026-09-27.** `--filter text` (substring of the
+test name; matching nothing exits 1 so a mistyped CI filter cannot pass
+green), `--timeout d` per test (default 10m, `0` unbounded): the runner
+arms `veles_test_watch` (runtime/c/veles_sync.c, a lazily started thread
+on a condvar) before each test; at the deadline it prints `FAILED: timed
+out after 300ms` and how many tests did not run, and ends the process —
+a task busy in a loop cannot be stopped from outside. A summary line
+closes every run: `1 passed, 2 failed: failing, panicking; 2 filtered
+out`. Pinned by driver TestTestRunner (exact output, filter, empty
+filter, timeout). Docs 11/14, cheat sheet, README. Also: three
+`httpd.exe` from `examples` runs on 2026-09-26 were still running a day
+later — a hung example held the suite until `go test` gave up, which
+leaves the child alive. `examples_test.go` now bounds each run (2 min,
+killed, the test fails with the output so far). Why those runs hung was
+not found (they were left running; the current tree passes).
+**LSP inlay hints, 2026-09-27.** `textDocument/inlayHint` (`lsp/inlay.go`):
+`: T` after an untyped `val`/`var`/loop/lambda binding (none when the
+initializer names the type — `Point(`, `Point.origin()`, `geo.Point(` —
+and none when a generic body's instances disagree), the return type of an
+expression-bodied function, `suspends` where inference added it (D2), and
+the set of a bare `throws` (D45). The checker records the unwritten parts
+per declaration after effect inference (`Index.Inferred`, only for
+functions with one meaning — no own/owner/impl type parameters, not a
+trait default). Tests: TestInlayHints (the rendered source with the hints
+spliced in), TestInlayHintsGeneric.
+**LSP signature help, 2026-09-27.** `textDocument/signatureHelp`
+(`lsp/signature.go`, triggers `(` `,`): the innermost unclosed `(` from
+the tokens before the cursor (so a call being typed, which breaks the
+parse, still answers from the last good index), inside `${}` too; the
+active parameter by position, by `name:` once written, the variadic one
+for the rest; constructors list the fields the caller gives (not `init`
+ones), defaults shown `= …`. TestSignatureHelp.
+Also `workspace/symbol` (Ctrl+T): every declaration and member of the
+analysed packages, letters-in-order matching (`nf` → `notFound`), the
+standard library left out. TestWorkspaceSymbols.
+**Strings performance, 2026-09-27.** Measured first: the `strings`
+workload split into its phases (interpolation 95 ms, `StringBuilder.append`
+75 ms, split 26 ms for 1M items). Four causes, all fixed: (1) integers
+were formatted with `snprintf` (~100 ns in the Windows CRT) — now a
+digit-pair loop, and inside an interpolation into a frame buffer that is
+copied once (`veles_i64_format`); (2) an interpolation of N parts made
+N−1 allocations, each copying the prefix — now one
+`veles_string_concat_n`; (3) `MutableList.push` was always an out-of-line
+runtime call with a memcpy — the fast path is inline now (every push in
+every program); (4) `StringBuilder.append` pushed byte by byte through a
+copied `bytes()` list — now one copy (std-only `listAppendText`). Found
+on the way: **`List.join` was quadratic** (it appended to an accumulator
+it copied whole each step; `replace` is split + join): 80 000 numbers
+took 38 s, now 5 ms (`veles_string_join`, one allocation);
+`examples/gc` pins it (the examples harness now bounds each run at
+2 minutes, so a regression fails instead of hanging).
+Measured (`go run ./bench`, --release, default threads, 2 runs each,
+spread under 10%): strings 180 → 64–70 ms (4.9× → 1.8× Go), json 143 →
+95–98 ms (3.1× → 2.0×); sort, maps, trees, channels unchanged. Recorded in
+`bench/results.md`.
+**`sorted()` on integers and strings, 2026-09-27.** The prelude merge
+sort paid one indirect comparator call (then `compareTo`) per comparison,
+17M for the `sort` workload. Two equal integers or byte-equal strings
+cannot be told apart, so stability is unobservable there and `sorted()`
+now sorts a copy in the runtime (`veles_list_sort_native`: the same
+runs-of-32 + bottom-up merge, direct comparisons, a malloc'd scratch
+buffer). Floats stay on the comparator path (NaN and ±0 make order among
+"equals" visible). sort 113 → 41–46 ms (2.2× → 0.5–0.9× Go; the Go side
+is noisy today). `examples/algorithms` cross-checks it against
+`sortedWith` for i64/u8/string at 10 sizes around the run boundaries.
+An insertion-run pre-pass in the generic `sortedWith` was tried and
+measured no gain; not kept.

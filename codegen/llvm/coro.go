@@ -831,21 +831,39 @@ func (g *gen) convertResult(v string, from, to *types.Sealed) string {
 // test, and the exit code reports the outcome (§4b: testing is a build
 // mode).
 func (g *gen) testRunner() {
-	failures := g.alloca("i32")
-	g.emit("store i32 0, ptr %s", failures)
-	fail := func(text string) {
+	failures, passes := g.alloca("i64"), g.alloca("i64")
+	g.emit("store i64 0, ptr %s", failures)
+	g.emit("store i64 0, ptr %s", passes)
+	// the failed tests' names, each after ", ", for the summary
+	failedNames := g.alloca(strType)
+	g.emit("store %s %s, ptr %s", strType, g.stringConst(""), failedNames)
+	bump := func(counter string) {
+		n, n1 := g.newTmp(), g.newTmp()
+		g.emit("%s = load i64, ptr %s", n, counter)
+		g.emit("%s = add i64 %s, 1", n1, n)
+		g.emit("store i64 %s, ptr %s", n1, counter)
+	}
+	say := func(text string) {
 		p, l := g.strPtrLen(text)
 		g.emit("call void @veles_print(ptr %s, i64 %s)", p, l)
-		n := g.newTmp()
-		g.emit("%s = load i32, ptr %s", n, failures)
-		n1 := g.newTmp()
-		g.emit("%s = add i32 %s, 1", n1, n)
-		g.emit("store i32 %s, ptr %s", n1, failures)
 	}
+	var fail func(text string)
 	okMsg := g.stringConst("ok\n")
-	for _, t := range g.prog.Tests {
-		p, l := g.strPtrLen(g.stringConst("test " + t.Display + " ... "))
-		g.emit("call void @veles_print(ptr %s, i64 %s)", p, l)
+	for i, t := range g.prog.Tests {
+		say(g.stringConst("test " + t.Display + " ... "))
+		if g.prog.TestTimeoutMs > 0 {
+			// the watchdog ends the run if this test outlives its bound
+			np, nl := g.strPtrLen(g.stringConst(t.Display))
+			g.emit("call void @veles_test_watch(i64 %d, ptr %s, i64 %s, i64 %d)", g.prog.TestTimeoutMs, np, nl, len(g.prog.Tests)-1-i)
+		}
+		name := t.Display
+		fail = func(text string) {
+			say(text)
+			bump(failures)
+			names := g.newTmp()
+			g.emit("%s = load %s, ptr %s", names, strType, failedNames)
+			g.emit("store %s %s, ptr %s", strType, g.concat(names, g.stringConst(", "+name)), failedNames)
+		}
 		var rs *types.Sealed
 		if t.Sig.Effects.Throws {
 			rs = g.prog.ResultType(t.Sig.Ret, t.Sig.Effects.Error).(*types.Sealed)
@@ -874,8 +892,8 @@ func (g *gen) testRunner() {
 		g.emitTerm("br label %%%s", doneL)
 		g.placeLabel(resL)
 		if rs == nil {
-			p, l := g.strPtrLen(okMsg)
-			g.emit("call void @veles_print(ptr %s, i64 %s)", p, l)
+			say(okMsg)
+			bump(passes)
 			g.emitTerm("br label %%%s", doneL)
 			g.placeLabel(doneL)
 			continue
@@ -898,15 +916,43 @@ func (g *gen) testRunner() {
 		fail(g.concat(g.concat(g.stringConst("FAILED: "), g.show(errVariant.Fields[0].Type, errVal)), g.stringConst("\n")))
 		g.emitTerm("br label %%%s", doneL)
 		g.placeLabel(okL)
-		p2, l2 := g.strPtrLen(okMsg)
-		g.emit("call void @veles_print(ptr %s, i64 %s)", p2, l2)
+		say(okMsg)
+		bump(passes)
 		g.emitTerm("br label %%%s", doneL)
 		g.placeLabel(doneL)
 	}
-	n := g.newTmp()
-	g.emit("%s = load i32, ptr %s", n, failures)
+	if g.prog.TestTimeoutMs > 0 {
+		g.emit("call void @veles_test_watch(i64 0, ptr null, i64 0, i64 0)")
+	}
+	// the summary: `3 passed, 1 failed: parsesDates` (and what a filter left out)
+	np, nf := g.newTmp(), g.newTmp()
+	g.emit("%s = load i64, ptr %s", np, passes)
+	g.emit("%s = load i64, ptr %s", nf, failures)
+	summary := g.concat(g.concat(g.stringConst("\n"), g.show(types.TI64, np)), g.stringConst(" passed, "))
+	summary = g.concat(g.concat(summary, g.show(types.TI64, nf)), g.stringConst(" failed"))
+	names := g.newTmp()
+	g.emit("%s = load %s, ptr %s", names, strType, failedNames)
+	// drop the first ", " — or, with nothing failed, nothing to drop
+	ptr, n := g.strPtrLen(names)
+	has := g.newTmp()
+	g.emit("%s = icmp ne i64 %s, 0", has, n)
+	cut, rest := g.newTmp(), g.newTmp()
+	g.emit("%s = select i1 %s, i64 2, i64 0", cut, has)
+	g.emit("%s = getelementptr i8, ptr %s, i64 %s", rest, ptr, cut)
+	restLen := g.newTmp()
+	g.emit("%s = sub i64 %s, %s", restLen, n, cut)
+	listed0, listed := g.newTmp(), g.newTmp()
+	g.emit("%s = insertvalue %s undef, ptr %s, 0", listed0, strType, rest)
+	g.emit("%s = insertvalue %s %s, i64 %s, 1", listed, strType, listed0, restLen)
+	colon := g.newTmp()
+	g.emit("%s = select i1 %s, %s %s, %s %s", colon, has, strType, g.stringConst(": "), strType, g.stringConst(""))
+	summary = g.concat(g.concat(summary, colon), listed)
+	if k := g.prog.TestsFiltered; k > 0 {
+		summary = g.concat(summary, g.stringConst(fmt.Sprintf("; %d filtered out", k)))
+	}
+	say(g.concat(summary, g.stringConst("\n")))
 	anyFail := g.newTmp()
-	g.emit("%s = icmp ne i32 %s, 0", anyFail, n)
+	g.emit("%s = icmp ne i64 %s, 0", anyFail, nf)
 	code := g.newTmp()
 	g.emit("%s = select i1 %s, i32 1, i32 0", code, anyFail)
 	g.emitTerm("ret i32 %s", code)

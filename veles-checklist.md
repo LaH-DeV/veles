@@ -213,7 +213,8 @@ answered from the shape, tuples get `Comparable`, enums get
 - [ ] Escape analysis: short-lived request objects on the stack
 - [ ] Coroutine frames: size report per function; pool frames of hot shapes
 - [ ] `string` representation: check that slicing and `substring` do not copy
-- [ ] `StringBuilder` growth policy and a `reserve`
+- [~] `StringBuilder` growth policy and a `reserve`: append is one copy into
+      doubling storage (2026-09-27); `reserve` is a public API, not decided
 - [ ] `List<u8>` ↔ socket: writev/readv, no intermediate copies
 - [ ] I/O: `poll` → `epoll`/`kqueue`/IOCP when connection counts justify it
 
@@ -435,10 +436,21 @@ behind a name that says "crypto" (§10, 2026-09-23).
       parameter list the author had wrapped: fixed, with two cases in
       `format/format_test.go`. That it took reading a formatted file to
       notice is the argument for the CI check
-- [ ] `veles test`: coverage, `--filter`, parallel, test timeouts
+- [~] `veles test`: `--filter` (no match is an error), per-test `--timeout`
+      (default 10m; a watchdog thread reports the test and ends the run),
+      a summary line naming the failures — done 2026-09-27. Open: coverage,
+      parallel tests
 - [ ] `veles bench`
-- [ ] LSP: rename, find references, code actions ("add `@json(skip)`",
-      "write `implement Json`"), inlay hints for inferred `suspends`/`throws`
+- [~] LSP: find references, document highlights and rename done
+      (2026-09-27): across modules, into interpolations and named arguments,
+      a trait method with its implementations; the rename re-checks the
+      package and refuses if any name would resolve differently or an error
+      appears, spells out D28 puns, and refuses wire names of a derived
+      `Codable` (fields, variants). Inlay hints for inferred binding types,
+      expression-body return types, `suspends` and bare-`throws` sets done
+      the same day. Open: code actions ("add `@skip`",
+      "write `implement Codable`"). Signature help and workspace symbols done
+      (works mid-typing and inside `${}` interpolations)
 - [ ] Diagnostics: every error names the fix, with a `docs/` link
 - [ ] `veles doc`: rendered API docs from `///`
 - [ ] Package registry / MVS (on the remaining list)

@@ -90,7 +90,8 @@ The other commands you will use:
 ## Setting up an editor
 
 The repository ships a Visual Studio Code extension in `editors/vscode`
-with syntax highlighting, live diagnostics, hover, go-to-definition and
+with syntax highlighting, live diagnostics, hover, go-to-definition,
+find-references, a rename that refuses to change what the program means, and
 completion. Its `README.md` has three-line install instructions. The
 language server is the compiler itself (`veles lsp`), so what the editor
 says and what the compiler says never disagree.

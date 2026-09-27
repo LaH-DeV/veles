@@ -102,11 +102,8 @@ extend string {
   /// The text repeated `n` times (empty for `n <= 0`).
   public fun repeat(n: i64): string {
     var out: MutableList<u8> = []
-    val bytes = this.bytes()
     loop (_ in 0..<n) {
-      loop (b in bytes) {
-        out.push(b)
-      }
+      listAppendText(out, this)
     }
     out.decodeUtf8() ?: ""
   }

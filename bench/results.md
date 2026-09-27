@@ -81,3 +81,33 @@ size class where the last allocation succeeded.
 | spawn | 100000 | 42.3ms | 28.07ms | 1.5× |
 | strings | 1000000 | 171.37ms | 34.86ms | 4.9× |
 | trees | 14592688 | 139.69ms | 292.42ms | 0.5× |
+
+## 2026-09-27 12:36 — go1.23.2, windows/amd64 (HEAD b3651be, plus the working tree)
+
+| benchmark | ops | Veles | Go | Veles / Go |
+|---|---:|---:|---:|---:|
+| channels | 200000 | 4.54ms | 10.42ms | 0.4× |
+| json | 40000 | 95.26ms | 48.36ms | 2.0× |
+| maps | 2000000 | 44.83ms | 71.9ms | 0.6× |
+| parallel | 64 | 17.02ms | 17.88ms | 1.0× |
+| pipes | 1600000 | 15.79ms | 71.83ms | 0.2× |
+| sha256 | 16 | 83.24ms | 8.64ms | 9.6× |
+| sort | 900000 | 112.85ms | 50.42ms | 2.2× |
+| spawn | 100000 | 40.81ms | 29.33ms | 1.4× |
+| strings | 1000000 | 63.88ms | 36.05ms | 1.8× |
+| trees | 14592688 | 144.82ms | 299.07ms | 0.5× |
+
+## 2026-09-27 12:43 — go1.23.2, windows/amd64 (HEAD b3651be, plus the working tree)
+
+| benchmark | ops | Veles | Go | Veles / Go |
+|---|---:|---:|---:|---:|
+| channels | 200000 | 12.79ms | 11.59ms | 1.1× |
+| json | 40000 | 95.32ms | 137.07ms | 0.7× |
+| maps | 2000000 | 46.66ms | 144.92ms | 0.3× |
+| parallel | 64 | 11.5ms | 24.18ms | 0.5× |
+| pipes | 1600000 | 17.71ms | 74.85ms | 0.2× |
+| sha256 | 16 | 84.44ms | 9.25ms | 9.1× |
+| sort | 900000 | 34.66ms | 78.01ms | 0.4× |
+| spawn | 100000 | 36.64ms | 33.44ms | 1.1× |
+| strings | 1000000 | 65.94ms | 37.85ms | 1.7× |
+| trees | 14592688 | 155.12ms | 328.79ms | 0.5× |

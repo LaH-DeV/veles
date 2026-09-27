@@ -16,6 +16,49 @@ import (
 // and a one-line description used for hover text.
 type Index struct {
 	Refs []Ref
+	// Wire maps the name of a declaration a derived coding implement writes
+	// out — a field, an enum member, a sealed variant — to what writes it
+	// (`Codable for Note`), so a rename can refuse to change a wire format.
+	Wire map[source.Span]string
+	// Inferred maps a function's name (its declaration) to what the
+	// compiler inferred and the source leaves unwritten, for inlay hints.
+	Inferred map[source.Span]Inferred
+}
+
+// Inferred is the unwritten part of a function's signature.
+type Inferred struct {
+	Ret      string // the return type of `fun f() = expr`; "" when written
+	Suspends bool   // suspends, and `suspends` is not written (D2)
+	Throws   string // the error set of a bare `throws` (D45)
+}
+
+// indexInferred fills Index.Inferred once effects are known. A generic
+// function suspends when any instance does.
+func (c *Checker) indexInferred(prog *Program) {
+	if c.index == nil {
+		return
+	}
+	c.index.Inferred = map[source.Span]Inferred{}
+	for _, fn := range prog.Funcs {
+		t := fn.tmpl
+		if fn.IsClosure || t == nil || t.Decl == nil || t.Sig == nil || !t.Decl.Name.Pos.IsValid() {
+			continue
+		}
+		d := t.Decl
+		inf := c.index.Inferred[d.Name.Pos]
+		if d.Ret == nil && d.ExprBody != nil && fn.Sig.Ret != nil && !types.IsUnit(fn.Sig.Ret) && !types.IsInvalid(fn.Sig.Ret) && monomorphic(t) {
+			inf.Ret = fn.Sig.Ret.String()
+		}
+		if fn.Suspends && !d.Effects.Suspends {
+			inf.Suspends = true
+		}
+		if d.Effects.Throws && d.Effects.Error == nil && fn.Sig.Effects.Error != nil && monomorphic(t) {
+			inf.Throws = fn.Sig.Effects.Error.String()
+		}
+		if inf != (Inferred{}) {
+			c.index.Inferred[d.Name.Pos] = inf
+		}
+	}
 }
 
 type Ref struct {
@@ -42,6 +85,23 @@ type Ref struct {
 	// Where names the declaration a member belongs to (`struct Notes` for a
 	// field), shown above Detail in the hover.
 	Where string
+	// Family, on a method that implements a trait's method, is the trait
+	// method's declaration: the trait's method and every implementation of
+	// it are one name to find-references and rename.
+	Family source.Span
+	// Pun marks a field reference written as a D28 pun (`Hashed(file)` for
+	// `file: file`): the span is also a use of the variable, so renaming one
+	// of the two spells the pair out instead of renaming both.
+	Pun bool
+}
+
+// Key is the declaration a reference groups under for find-references and
+// rename: the trait method for an implementation of one, else Def.
+func (r *Ref) Key() source.Span {
+	if r.Family.IsValid() {
+		return r.Family
+	}
+	return r.Def
 }
 
 // Unfold is a named error set and its members, each with its declaration.
@@ -341,12 +401,15 @@ func (c *Checker) refFunc(span source.Span, t *FuncTemplate) {
 	if t.Decl != nil {
 		ref.Doc = t.Decl.Doc
 	}
-	if ref.Doc == "" && t.Impl != nil && t.Impl.Trait != nil {
-		// an undocumented impl method inherits the trait's description of it
+	if t.Impl != nil && t.Impl.Trait != nil {
 		if d, ok := t.Impl.Trait.Decl.(*ast.TraitDecl); ok {
 			for _, m := range d.Methods {
 				if m.Name.Name == t.Name {
-					ref.Doc = m.Doc
+					ref.Family = m.Name.Pos
+					if ref.Doc == "" {
+						// an undocumented impl method inherits the trait's description of it
+						ref.Doc = m.Doc
+					}
 				}
 			}
 		}
@@ -375,6 +438,80 @@ func (c *Checker) errorSetOf(t *FuncTemplate) *Symbol {
 		return nil
 	}
 	return sym
+}
+
+// refTraitMethod records a use of a trait's method that is not a call of
+// one implementation: its declaration in the trait, or a call through a
+// trait object. Declared in a supertrait, it is found there.
+func (c *Checker) refTraitMethod(span source.Span, tr *types.Trait, name string) {
+	if c.index == nil || tr == nil || !span.IsValid() {
+		return
+	}
+	d, _ := tr.Decl.(*ast.TraitDecl)
+	if d == nil {
+		return
+	}
+	for _, m := range d.Methods {
+		if m.Name.Name != name {
+			continue
+		}
+		detail := "fun " + name
+		if sig := tr.Methods[name]; sig != nil {
+			detail += funSigString(sig)
+		}
+		c.index.Refs = append(c.index.Refs, Ref{Span: span, Def: m.Name.Pos, Kind: "fun", Name: name, Type: tr.Methods[name],
+			Detail: detail, Where: traitHead(tr), Doc: m.Doc})
+		return
+	}
+	for _, sup := range tr.Supers {
+		if _, ok := sup.Methods[name]; ok {
+			c.refTraitMethod(span, sup, name)
+			return
+		}
+	}
+}
+
+// refArgLabels records the names of a call's named arguments as uses of
+// the parameters (or, for a constructor, the fields) they bind, so
+// find-references and rename reach `send(to: x)` and `Point(x: 1)`.
+func (c *Checker) refArgLabels(args []ast.Arg, t *FuncTemplate) {
+	if c.index == nil || t == nil || t.Decl == nil {
+		return
+	}
+	for _, a := range args {
+		if a.Name == nil {
+			continue
+		}
+		for j, p := range t.Decl.Params {
+			if p.Name.Name == a.Name.Name && t.Sig != nil && j < len(t.Sig.Params) {
+				pt := t.Sig.Params[j].Type
+				c.index.Refs = append(c.index.Refs, Ref{Span: a.Name.Pos, Def: p.Name.Pos, Kind: "val", Name: p.Name.Name, Type: pt,
+					Detail: "val " + p.Name.Name + typeSuffix(pt) + "  (parameter of " + t.Name + ")"})
+			}
+		}
+	}
+}
+
+// refFieldLabels is refArgLabels for a constructor call; `punned` are the
+// arguments written as a bare variable named like the field.
+func (c *Checker) refFieldLabels(st *types.Struct, args []ast.Arg, punned []bool) {
+	if c.index == nil {
+		return
+	}
+	for i, a := range args {
+		if a.Name == nil {
+			continue
+		}
+		for _, fld := range st.Fields {
+			if fld.Name == a.Name.Name {
+				n := len(c.index.Refs)
+				c.refField(a.Name.Pos, st, fld)
+				if len(c.index.Refs) > n {
+					c.index.Refs[n].Pun = punned[i]
+				}
+			}
+		}
+	}
 }
 
 func (c *Checker) refField(span source.Span, st *types.Struct, fld *types.Field) {
@@ -1155,4 +1292,13 @@ func (c *Checker) compactStructShape(st *types.Struct) string {
 		parts[i] = fld.Name + ": " + fld.Type.String()
 	}
 	return kw + st.String() + " { " + strings.Join(parts, ", ") + " }"
+}
+
+// monomorphic reports whether a function has one meaning for its types:
+// no type parameters of its own or of the type it belongs to, and not a
+// trait's default body (checked once per implementing type).
+func monomorphic(t *FuncTemplate) bool {
+	return len(t.TypeParams) == 0 && t.Trait == nil &&
+		(t.Owner == nil || len(t.Owner.TypeParams) == 0) &&
+		(t.Impl == nil || len(t.Impl.TypeParams) == 0)
 }

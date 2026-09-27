@@ -9,9 +9,7 @@ public struct StringBuilder {
 
   /// Appends `s`.
   public fun append(s: string) {
-    loop (b in s.bytes()) {
-      this.bytes.push(b)
-    }
+    listAppendText(this.bytes, s)
   }
 
   /// Appends `s` and a newline.

@@ -99,6 +99,37 @@ func (g *gen) place(e sema.Expr) string {
 
 // expr evaluates an expression and returns its SSA value. Unit-typed
 // expressions return "zeroinitializer" (a `{}` constant).
+// stringPart is one piece of an interpolation as a `%str`. An integer is
+// formatted into a buffer in the frame: the concatenation copies it at once,
+// so the digits never need a heap string of their own.
+func (g *gen) stringPart(part sema.Expr) string {
+	ts, ok := part.(*sema.ToString)
+	if !ok || !types.IsInteger(ts.X.Type()) {
+		return g.expr(part)
+	}
+	x := g.expr(ts.X)
+	if llt := g.llType(ts.X.Type()); llt != "i64" {
+		wide := g.newTmp()
+		if types.IsSigned(ts.X.Type()) {
+			g.emit("%s = sext %s %s to i64", wide, llt, x)
+		} else {
+			g.emit("%s = zext %s %s to i64", wide, llt, x)
+		}
+		x = wide
+	}
+	buf := g.alloca("[21 x i8]")
+	fn := "veles_u64_format"
+	if types.IsSigned(ts.X.Type()) {
+		fn = "veles_i64_format"
+	}
+	n := g.newTmp()
+	g.emit("%s = call i64 @%s(ptr %s, i64 %s)", n, fn, buf, x)
+	s0, s := g.newTmp(), g.newTmp()
+	g.emit("%s = insertvalue %s undef, ptr %s, 0", s0, strType, buf)
+	g.emit("%s = insertvalue %s %s, i64 %s, 1", s, strType, s0, n)
+	return s
+}
+
 func (g *gen) expr(e sema.Expr) string {
 	switch e := e.(type) {
 	case *sema.IntConst:
@@ -166,17 +197,29 @@ func (g *gen) expr(e sema.Expr) string {
 		x := g.expr(e.X)
 		return g.show(e.X.Type(), x)
 	case *sema.StringConcat:
-		acc := g.expr(e.Parts[0])
-		for _, part := range e.Parts[1:] {
-			r := g.expr(part)
-			ap, al := g.strPtrLen(acc)
-			bp, bl := g.strPtrLen(r)
-			out := g.alloca(strType)
-			g.emit("call void @veles_string_concat(ptr %s, ptr %s, i64 %s, ptr %s, i64 %s)", out, ap, al, bp, bl)
-			acc = g.newTmp()
-			g.emit("%s = load %s, ptr %s", acc, strType, out)
+		// every part first, then one allocation for the whole text; an
+		// integer part is formatted into a stack buffer, never the heap
+		vals := make([]string, len(e.Parts))
+		for i, part := range e.Parts {
+			vals[i] = g.stringPart(part)
 		}
-		return acc
+		out := g.alloca(strType)
+		if len(vals) == 2 {
+			ap, al := g.strPtrLen(vals[0])
+			bp, bl := g.strPtrLen(vals[1])
+			g.emit("call void @veles_string_concat(ptr %s, ptr %s, i64 %s, ptr %s, i64 %s)", out, ap, al, bp, bl)
+		} else {
+			arr := g.alloca(fmt.Sprintf("[%d x %s]", len(vals), strType))
+			for i, v := range vals {
+				slot := g.newTmp()
+				g.emit("%s = getelementptr [%d x %s], ptr %s, i64 0, i64 %d", slot, len(vals), strType, arr, i)
+				g.emit("store %s %s, ptr %s", strType, v, slot)
+			}
+			g.emit("call void @veles_string_concat_n(ptr %s, ptr %s, i64 %d)", out, arr, len(vals))
+		}
+		r := g.newTmp()
+		g.emit("%s = load %s, ptr %s", r, strType, out)
+		return r
 	case *sema.FieldGet:
 		if isPlace(e.X) {
 			p := g.place(e)
@@ -1312,6 +1355,19 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		p := g.newTmp()
 		g.emit("%s = load ptr, ptr %s", p, l)
 		return p
+	case "list.joinText":
+		l := g.expr(e.Args[0])
+		sp, sl := g.strPtrLen(g.expr(e.Args[1]))
+		out := g.alloca(strType)
+		g.emit("call void @veles_string_join(ptr %s, ptr %s, ptr %s, i64 %s)", out, l, sp, sl)
+		r := g.newTmp()
+		g.emit("%s = load %s, ptr %s", r, strType, out)
+		return r
+	case "list.appendText":
+		l := g.expr(e.Args[0])
+		sp, sl := g.strPtrLen(g.expr(e.Args[1]))
+		g.emit("call void @veles_list_append_bytes(ptr %s, ptr %s, i64 %s)", l, sp, sl)
+		return "zeroinitializer"
 	case "list.get":
 		l := g.expr(e.Args[0])
 		i := g.expr(e.Args[1])
@@ -1337,9 +1393,34 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		l := g.expr(e.Args[0])
 		x := g.expr(e.Args[1])
 		et := g.llType(e.Args[1].Type())
+		// inline while there is room; the runtime grows the storage. A
+		// MutableList never crosses a task (D35), so no other thread sees it.
+		lenP, capP := g.newTmp(), g.newTmp()
+		g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 1", lenP, listHeader, l)
+		g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 2", capP, listHeader, l)
+		n, c, room := g.newTmp(), g.newTmp(), g.newTmp()
+		g.emit("%s = load i64, ptr %s", n, lenP)
+		g.emit("%s = load i64, ptr %s", c, capP)
+		g.emit("%s = icmp slt i64 %s, %s", room, n, c)
+		fastL, slowL, doneL := g.newLabel("push.fast"), g.newLabel("push.grow"), g.newLabel("push.done")
+		g.emitTerm("br i1 %s, label %%%s, label %%%s, !prof !{!\"branch_weights\", i32 2000, i32 1}", room, fastL, slowL)
+		g.placeLabel(fastL)
+		data, ep, es, off, p, n1 := g.newTmp(), g.newTmp(), g.newTmp(), g.newTmp(), g.newTmp(), g.newTmp()
+		g.emit("%s = load ptr, ptr %s", data, l)
+		g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 3", ep, listHeader, l)
+		g.emit("%s = load i64, ptr %s", es, ep)
+		g.emit("%s = mul i64 %s, %s", off, es, n)
+		g.emit("%s = getelementptr inbounds i8, ptr %s, i64 %s", p, data, off)
+		g.emit("store %s %s, ptr %s", et, x, p)
+		g.emit("%s = add i64 %s, 1", n1, n)
+		g.emit("store i64 %s, ptr %s", n1, lenP)
+		g.emitTerm("br label %%%s", doneL)
+		g.placeLabel(slowL)
 		tmp := g.alloca(et)
 		g.emit("store %s %s, ptr %s", et, x, tmp)
 		g.emit("call void @veles_list_push(ptr %s, ptr %s)", l, tmp)
+		g.emitTerm("br label %%%s", doneL)
+		g.placeLabel(doneL)
 		return "zeroinitializer"
 	case "list.pop":
 		l := g.expr(e.Args[0])
@@ -1352,6 +1433,20 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		val := g.newTmp()
 		g.emit("%s = load %s, ptr %s", val, et, tmp)
 		return g.makeNullable(nt, ok, val)
+	case "list.sortedNative":
+		l := g.expr(e.Args[0])
+		v := g.newTmp()
+		g.emit("%s = call ptr @veles_list_copy(ptr %s)", v, l)
+		et := e.Type().(*types.List).Elem
+		kind := 9 // string
+		if types.IsInteger(et) {
+			kind = map[string]int{"i8": 1, "i16": 2, "i32": 3, "i64": 4}[g.llType(et)]
+			if !types.IsSigned(et) {
+				kind += 4
+			}
+		}
+		g.emit("call void @veles_list_sort_native(ptr %s, i32 %d)", v, kind)
+		return v
 	case "list.copy":
 		l := g.expr(e.Args[0])
 		v := g.newTmp()

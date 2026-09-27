@@ -323,3 +323,69 @@ void veles_mutex_unlock(int64_t *w) {
         veles_lock_release(stripe_locks[s]);
     }
 }
+
+/* ---- `veles test --timeout`: a watchdog over the running test ----------
+ * The runner arms it before each test with the test's name and disarms it
+ * after the last. A test still running at its deadline cannot be stopped
+ * (a task busy in a loop never yields), so the watchdog reports it and ends
+ * the process; the tests after it do not run, and the report says so. */
+
+int64_t veles_time_monotonic_ns(void);
+
+static veles_lock *watch_lock;
+static veles_cond *watch_cond;
+static int64_t watch_deadline; /* monotonic ns; 0 while disarmed */
+static int64_t watch_ms;
+static const char *watch_name;
+static int64_t watch_name_len;
+static int64_t watch_left; /* tests after the running one */
+
+static void watch_main(void *arg) {
+    (void)arg;
+    veles_lock_acquire(watch_lock);
+    for (;;) {
+        if (watch_deadline == 0) {
+            veles_cond_wait(watch_cond, watch_lock, -1);
+            continue;
+        }
+        int64_t now = veles_time_monotonic_ns();
+        if (now < watch_deadline) {
+            veles_cond_wait(watch_cond, watch_lock, (watch_deadline - now) / 1000000 + 1);
+            continue;
+        }
+        if (watch_ms % 1000 == 0) {
+            printf("FAILED: timed out after %llds\n", (long long)(watch_ms / 1000));
+        } else {
+            printf("FAILED: timed out after %lldms\n", (long long)watch_ms);
+        }
+        printf("\ntimed out: %.*s", (int)watch_name_len, watch_name);
+        if (watch_left > 0) {
+            printf("; %lld test%s after it did not run", (long long)watch_left, watch_left == 1 ? "" : "s");
+        }
+        printf("\n");
+        fflush(stdout);
+        fflush(stderr);
+        _Exit(1);
+    }
+}
+
+void veles_test_watch(int64_t timeout_ms, const char *name, int64_t len, int64_t left) {
+    if (!watch_lock) {
+        if (timeout_ms <= 0) return;
+        watch_lock = veles_lock_new();
+        watch_cond = veles_cond_new();
+        if (veles_thread_spawn(watch_main, NULL) != 0) {
+            fputs("veles test: cannot start the timeout watchdog\n", stderr);
+            exit(101);
+        }
+    }
+    fflush(stdout); /* the `test name ... ` line is out before a timeout report */
+    veles_lock_acquire(watch_lock);
+    watch_ms = timeout_ms;
+    watch_name = name;
+    watch_name_len = len;
+    watch_left = left;
+    watch_deadline = timeout_ms > 0 ? veles_time_monotonic_ns() + timeout_ms * 1000000 : 0;
+    veles_cond_signal(watch_cond);
+    veles_lock_release(watch_lock);
+}

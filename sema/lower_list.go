@@ -383,6 +383,12 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 			f.errorf(span, "cannot order by '%s'; keys must be numbers, strings or implement 'Comparable' (D48: use a comparator otherwise)", keyT)
 			return bad()
 		}
+		if keyFn == nil && (types.IsInteger(lt.Elem) || types.Identical(lt.Elem, types.TString)) {
+			// equal integers or strings are indistinguishable, so the order
+			// among equals cannot be seen: the runtime sorts a copy with
+			// direct comparisons (the comparator call was most of the cost)
+			return finish(nil, &Builtin{exprBase{&types.List{Elem: lt.Elem}}, "list.sortedNative", []Expr{ref(list)}, span})
+		}
 		// delegate to the prelude's stable merge sort (list.vs sortedWith)
 		// with the natural comparison as the comparator: every ordered type
 		// answers `compareTo` (prelude impls for numbers and strings, the
@@ -413,20 +419,19 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 		sep := f.checkExprTo(e.Args[0].Value, types.TString)
 		sepV := f.newTemp(types.TString)
 		pre = append(pre, &VarDecl{Var: sepV, Init: sep})
-		acc := f.newTemp(types.TString)
-		stmts := []Stmt{&VarDecl{Var: acc, Init: &StringConst{exprBase{types.TString}, ""}}}
-		idxVar := f.newTemp(types.TI64)
-		stmts = append(stmts, &VarDecl{Var: idxVar, Init: i64c(0)})
+		// the texts first, then one allocation for the result: appending to
+		// an accumulator copied it whole each time, quadratic in its length
+		// (80 000 numbers took 38 s)
+		if types.Identical(lt.Elem, types.TString) {
+			return finish(nil, &Builtin{exprBase{types.TString}, "list.joinText", []Expr{ref(list), ref(sepV)}, span})
+		}
+		textsT := &types.List{Elem: types.TString, Mutable: true}
+		texts := f.newTemp(textsT)
+		stmts := []Stmt{&VarDecl{Var: texts, Init: &ListLit{exprBase{textsT}, nil}}}
 		stmts = append(stmts, f.listLoop(list, lt.Elem, span, func(x *Var, lp *Loop) []Stmt {
-			first := &Binary{exprBase{types.TBool}, OpEq, ref(idxVar), i64c(0), span}
-			withSep := &Block{Stmts: []Stmt{&Assign{Target: ref(acc), Value: &StringConcat{exprBase{types.TString}, []Expr{ref(acc), ref(sepV)}}}}, Type: types.TUnit}
-			return []Stmt{
-				&ExprStmt{X: &If{exprBase{types.TUnit}, &Unary{exprBase{types.TBool}, OpNot, first, span}, withSep, nil}},
-				&Assign{Target: ref(acc), Value: &StringConcat{exprBase{types.TString}, []Expr{ref(acc), f.toString(ref(x), span)}}},
-				&Assign{Target: ref(idxVar), Value: &Binary{exprBase{types.TI64}, OpWrapAdd, ref(idxVar), i64c(1), span}},
-			}
+			return []Stmt{&ExprStmt{X: &Builtin{exprBase{types.TUnit}, "list.push", []Expr{ref(texts), f.toString(ref(x), span)}, span}}}
 		})...)
-		return finish(stmts, ref(acc))
+		return finish(stmts, &Builtin{exprBase{types.TString}, "list.joinText", []Expr{ref(texts), ref(sepV)}, span})
 	}
 	return nil
 }

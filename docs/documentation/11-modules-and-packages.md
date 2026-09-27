@@ -210,6 +210,8 @@ test additionWorks ... ok
 test thisOneFails ... FAILED: Mismatch(expected: 1, actual: 2)
 test panicsAreReported ... FAILED: panic: index 3 is out of range
   at main.vs:27:29
+
+1 passed, 2 failed: thisOneFails, panicsAreReported
 ```
 
 and exits non-zero. Tests live next to the code they test, in the same

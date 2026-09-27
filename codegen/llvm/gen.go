@@ -179,6 +179,12 @@ declare ptr @veles_string_bytes(ptr, ptr, i64)
 declare i1 @veles_bytes_decode_utf8(ptr, ptr)
 declare void @veles_i64_to_string(ptr, i64)
 declare void @veles_u64_to_string(ptr, i64)
+declare i64 @veles_i64_format(ptr, i64)
+declare i64 @veles_u64_format(ptr, i64)
+declare void @veles_string_concat_n(ptr, ptr, i64)
+declare void @veles_list_append_bytes(ptr, ptr, i64)
+declare void @veles_string_join(ptr, ptr, ptr, i64)
+declare void @veles_list_sort_native(ptr, i32)
 declare void @veles_f64_to_string(ptr, double)
 declare void @veles_f32_to_string(ptr, float)
 declare void @veles_bool_to_string(ptr, i1 zeroext)
@@ -875,6 +881,9 @@ func (g *gen) entryPoint() {
 	} else {
 		g.emit("call void @%s()", main.Name)
 		g.emitTerm("ret i32 0")
+	}
+	if g.prog.TestMode {
+		g.out.WriteString("declare void @veles_test_watch(i64, ptr, i64, i64)\n\n")
 	}
 	g.out.WriteString("define i32 @main(i32 %argc, ptr %argv) {\nentry:\n")
 	g.out.WriteString(g.allocas.String())

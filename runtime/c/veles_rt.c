@@ -299,16 +299,68 @@ static void from_buf(veles_string *out, const char *buf, int n) {
     out->len = n;
 }
 
+/* Integer formatting writes the digits into a caller's buffer of at least
+ * VELES_INT_DIGITS bytes and returns their count. Interpolation formats into
+ * a stack buffer and copies once into the finished string; snprintf cost
+ * ~100 ns a number in the Windows CRT, most of `"item-$i"`. */
+#define VELES_INT_DIGITS 20
+
+static const char digit_pairs[201] =
+    "00010203040506070809101112131415161718192021222324252627282930313233343536373839"
+    "40414243444546474849505152535455565758596061626364656667686970717273747576777879"
+    "8081828384858687888990919293949596979899";
+
+int64_t veles_u64_format(char *buf, uint64_t v) {
+    char tmp[VELES_INT_DIGITS];
+    int i = VELES_INT_DIGITS;
+    while (v >= 100) {
+        unsigned r = (unsigned)(v % 100);
+        v /= 100;
+        tmp[--i] = digit_pairs[2 * r + 1];
+        tmp[--i] = digit_pairs[2 * r];
+    }
+    if (v >= 10) {
+        tmp[--i] = digit_pairs[2 * v + 1];
+        tmp[--i] = digit_pairs[2 * v];
+    } else {
+        tmp[--i] = (char)('0' + v);
+    }
+    int64_t n = VELES_INT_DIGITS - i;
+    memcpy(buf, tmp + i, (size_t)n);
+    return n;
+}
+
+/* one more byte than the digits for the sign */
+int64_t veles_i64_format(char *buf, int64_t v) {
+    if (v < 0) {
+        buf[0] = '-';
+        return 1 + veles_u64_format(buf + 1, 0 - (uint64_t)v);
+    }
+    return veles_u64_format(buf, (uint64_t)v);
+}
+
 void veles_i64_to_string(veles_string *out, int64_t v) {
-    char buf[32];
-    int n = snprintf(buf, sizeof buf, "%" PRId64, v);
-    from_buf(out, buf, n);
+    char buf[VELES_INT_DIGITS + 1];
+    from_buf(out, buf, (int)veles_i64_format(buf, v));
 }
 
 void veles_u64_to_string(veles_string *out, uint64_t v) {
-    char buf[32];
-    int n = snprintf(buf, sizeof buf, "%" PRIu64, v);
-    from_buf(out, buf, n);
+    char buf[VELES_INT_DIGITS];
+    from_buf(out, buf, (int)veles_u64_format(buf, v));
+}
+
+/* concatenates n strings with one allocation (interpolation, D18) */
+void veles_string_concat_n(veles_string *out, const veles_string *parts, int64_t n) {
+    int64_t len = 0;
+    for (int64_t i = 0; i < n; i++) len += parts[i].len;
+    char *buf = veles_alloc(len + 1);
+    char *p = buf;
+    for (int64_t i = 0; i < n; i++) {
+        if (parts[i].len) memcpy(p, parts[i].data, (size_t)parts[i].len);
+        p += parts[i].len;
+    }
+    out->data = buf;
+    out->len = len;
 }
 
 static void float_to_string(veles_string *out, double v, int is_f32) {
@@ -485,6 +537,107 @@ void veles_list_push(veles_list *l, const void *item) {
     }
     if (l->elem > 0) memcpy(l->data + l->elem * l->len, item, (size_t)l->elem);
     l->len++;
+}
+
+/* ---- List.sorted() on integers and strings ----------------------------
+ * Two equal integers (or byte-equal strings) cannot be told apart, so
+ * stability is not observable and the natural order needs no comparator
+ * call: the prelude's merge sort pays an indirect call per comparison.
+ * The same algorithm here: insertion-sorted runs of 32, then bottom-up
+ * merges through a scratch buffer. No GC allocation, so no collection
+ * can run while the elements are in the scratch buffer. */
+
+#define SORT_RUN 32
+
+#define DEFINE_SORT(NAME, T, LESS)                                            \
+static void NAME(T *a, int64_t n) {                                           \
+    for (int64_t s = 0; s < n; s += SORT_RUN) {                               \
+        int64_t e = s + SORT_RUN < n ? s + SORT_RUN : n;                      \
+        for (int64_t i = s + 1; i < e; i++) {                                 \
+            T x = a[i];                                                       \
+            int64_t j = i;                                                    \
+            while (j > s && LESS(x, a[j - 1])) { a[j] = a[j - 1]; j--; }      \
+            a[j] = x;                                                         \
+        }                                                                     \
+    }                                                                         \
+    if (n <= SORT_RUN) return;                                                \
+    T *buf = malloc(sizeof(T) * (size_t)n);                                   \
+    if (!buf) { fputs("panic: out of memory\n", stderr); exit(101); }         \
+    T *src = a, *dst = buf;                                                   \
+    for (int64_t w = SORT_RUN; w < n; w *= 2) {                               \
+        for (int64_t lo = 0; lo < n; lo += 2 * w) {                           \
+            int64_t mid = lo + w < n ? lo + w : n;                            \
+            int64_t hi = lo + 2 * w < n ? lo + 2 * w : n;                     \
+            int64_t i = lo, j = mid, k = lo;                                  \
+            while (i < mid && j < hi) dst[k++] = LESS(src[j], src[i]) ? src[j++] : src[i++]; \
+            while (i < mid) dst[k++] = src[i++];                              \
+            while (j < hi) dst[k++] = src[j++];                               \
+        }                                                                     \
+        T *t = src; src = dst; dst = t;                                       \
+    }                                                                         \
+    if (src != a) memcpy(a, src, sizeof(T) * (size_t)n);                      \
+    free(buf);                                                                \
+}
+
+#define NUM_LESS(x, y) ((x) < (y))
+#define STR_LESS(x, y) (veles_string_cmp((x).data, (x).len, (y).data, (y).len) < 0)
+DEFINE_SORT(sort_i8, int8_t, NUM_LESS)
+DEFINE_SORT(sort_i16, int16_t, NUM_LESS)
+DEFINE_SORT(sort_i32, int32_t, NUM_LESS)
+DEFINE_SORT(sort_i64, int64_t, NUM_LESS)
+DEFINE_SORT(sort_u8, uint8_t, NUM_LESS)
+DEFINE_SORT(sort_u16, uint16_t, NUM_LESS)
+DEFINE_SORT(sort_u32, uint32_t, NUM_LESS)
+DEFINE_SORT(sort_u64, uint64_t, NUM_LESS)
+DEFINE_SORT(sort_str, veles_string, STR_LESS)
+
+/* kind: 1–4 signed 8/16/32/64 bits, 5–8 unsigned, 9 string */
+void veles_list_sort_native(veles_list *l, int32_t kind) {
+    void *d = l->data;
+    switch (kind) {
+    case 1: sort_i8(d, l->len); break;
+    case 2: sort_i16(d, l->len); break;
+    case 3: sort_i32(d, l->len); break;
+    case 4: sort_i64(d, l->len); break;
+    case 5: sort_u8(d, l->len); break;
+    case 6: sort_u16(d, l->len); break;
+    case 7: sort_u32(d, l->len); break;
+    case 8: sort_u64(d, l->len); break;
+    case 9: sort_str(d, l->len); break;
+    }
+}
+
+/* the strings of a list joined with sep, one allocation (List.join) */
+void veles_string_join(veles_string *out, veles_list *l, const char *sep, int64_t seplen) {
+    const veles_string *parts = (const veles_string *)l->data;
+    int64_t len = l->len > 0 ? seplen * (l->len - 1) : 0;
+    for (int64_t i = 0; i < l->len; i++) len += parts[i].len;
+    char *buf = veles_alloc(len + 1);
+    char *p = buf;
+    for (int64_t i = 0; i < l->len; i++) {
+        if (i > 0 && seplen) {
+            memcpy(p, sep, (size_t)seplen);
+            p += seplen;
+        }
+        if (parts[i].len) memcpy(p, parts[i].data, (size_t)parts[i].len);
+        p += parts[i].len;
+    }
+    out->data = buf;
+    out->len = len;
+}
+
+/* appends n bytes to a list of u8 (StringBuilder.append) */
+void veles_list_append_bytes(veles_list *l, const char *p, int64_t n) {
+    if (l->len + n > l->cap) {
+        int64_t ncap = l->cap * 2;
+        if (ncap < l->len + n) ncap = l->len + n;
+        char *nd = veles_gc_alloc(l->desc, ncap);
+        memcpy(nd, l->data, (size_t)l->len);
+        l->data = nd;
+        l->cap = ncap;
+    }
+    if (n) memcpy(l->data + l->len, p, (size_t)n);
+    l->len += n;
 }
 
 void *veles_list_ref(veles_list *l, int64_t i) {

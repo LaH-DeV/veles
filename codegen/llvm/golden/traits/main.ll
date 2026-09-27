@@ -12,13 +12,11 @@ entry:
   %a33 = alloca { ptr, ptr }
   %a45 = alloca i64
   %a47 = alloca i64
-  %a52 = alloca %str
-  %a58 = alloca %str
-  %a61 = alloca %str
-  %a63 = alloca %str
-  %a72 = alloca %str
-  %a78 = alloca %str
-  %a87 = alloca %str
+  %a52 = alloca [21 x i8]
+  %a57 = alloca %str
+  %a59 = alloca %str
+  %a67 = alloca %str
+  %a68 = alloca [5 x %str]
   %t1 = call ptr @veles_list_new(ptr @adesc.Shape, i64 2)
   %t3 = insertvalue %S.main.Square undef, double 0x4000000000000000, 0
   %t4 = call ptr @veles_gc_alloc(ptr @desc.main.Square, i64 8)
@@ -107,54 +105,43 @@ elvis.default.9:
   br label %elvis.end.11
 elvis.end.11:
   %t51 = load i64, ptr %a47
-  call void @veles_i64_to_string(ptr %a52, i64 %t51)
-  %t53 = load %str, ptr %a52
-  %t54 = extractvalue %str %t53, 0
-  %t55 = extractvalue %str %t53, 1
-  %t56 = extractvalue %str { ptr @.str.2, i64 1 }, 0
-  %t57 = extractvalue %str { ptr @.str.2, i64 1 }, 1
-  call void @veles_string_concat(ptr %a58, ptr %t54, i64 %t55, ptr %t56, i64 %t57)
-  %t59 = load %str, ptr %a58
-  %t60 = call ptr @veles_list_new(ptr @adesc.string, i64 2)
-  store %str { ptr @.str.3, i64 1 }, ptr %a61
-  call void @veles_list_push(ptr %t60, ptr %a61)
-  store %str { ptr @.str.4, i64 1 }, ptr %a61
-  call void @veles_list_push(ptr %t60, ptr %a61)
-  %t62 = call { i1, %str } @v_main.largest__string(ptr %t60)
-  %t65 = extractvalue { i1, %str } %t62, 0
-  %t64 = xor i1 %t65, true
-  br i1 %t64, label %elvis.default.12, label %elvis.some.13
+  %t53 = call i64 @veles_i64_format(ptr %a52, i64 %t51)
+  %t54 = insertvalue %str undef, ptr %a52, 0
+  %t55 = insertvalue %str %t54, i64 %t53, 1
+  %t56 = call ptr @veles_list_new(ptr @adesc.string, i64 2)
+  store %str { ptr @.str.2, i64 1 }, ptr %a57
+  call void @veles_list_push(ptr %t56, ptr %a57)
+  store %str { ptr @.str.3, i64 1 }, ptr %a57
+  call void @veles_list_push(ptr %t56, ptr %a57)
+  %t58 = call { i1, %str } @v_main.largest__string(ptr %t56)
+  %t61 = extractvalue { i1, %str } %t58, 0
+  %t60 = xor i1 %t61, true
+  br i1 %t60, label %elvis.default.12, label %elvis.some.13
 elvis.some.13:
-  %t66 = extractvalue { i1, %str } %t62, 1
-  store %str %t66, ptr %a63
+  %t62 = extractvalue { i1, %str } %t58, 1
+  store %str %t62, ptr %a59
   br label %elvis.end.14
 elvis.default.12:
-  store %str { ptr @.str.5, i64 0 }, ptr %a63
+  store %str { ptr @.str.4, i64 0 }, ptr %a59
   br label %elvis.end.14
 elvis.end.14:
-  %t67 = load %str, ptr %a63
-  %t68 = extractvalue %str %t59, 0
-  %t69 = extractvalue %str %t59, 1
-  %t70 = extractvalue %str %t67, 0
-  %t71 = extractvalue %str %t67, 1
-  call void @veles_string_concat(ptr %a72, ptr %t68, i64 %t69, ptr %t70, i64 %t71)
-  %t73 = load %str, ptr %a72
-  %t74 = extractvalue %str %t73, 0
-  %t75 = extractvalue %str %t73, 1
-  %t76 = extractvalue %str { ptr @.str.2, i64 1 }, 0
-  %t77 = extractvalue %str { ptr @.str.2, i64 1 }, 1
-  call void @veles_string_concat(ptr %a78, ptr %t74, i64 %t75, ptr %t76, i64 %t77)
-  %t79 = load %str, ptr %a78
-  %t80 = insertvalue %S.main.Point undef, i64 1, 0
-  %t81 = insertvalue %S.main.Point %t80, i64 2, 1
-  %t82 = call %str @show.main.Point(%S.main.Point %t81)
-  %t83 = extractvalue %str %t79, 0
-  %t84 = extractvalue %str %t79, 1
-  %t85 = extractvalue %str %t82, 0
-  %t86 = extractvalue %str %t82, 1
-  call void @veles_string_concat(ptr %a87, ptr %t83, i64 %t84, ptr %t85, i64 %t86)
-  %t88 = load %str, ptr %a87
-  call void @v_std.io.println(%str %t88)
+  %t63 = load %str, ptr %a59
+  %t64 = insertvalue %S.main.Point undef, i64 1, 0
+  %t65 = insertvalue %S.main.Point %t64, i64 2, 1
+  %t66 = call %str @show.main.Point(%S.main.Point %t65)
+  %t69 = getelementptr [5 x %str], ptr %a68, i64 0, i64 0
+  store %str %t55, ptr %t69
+  %t70 = getelementptr [5 x %str], ptr %a68, i64 0, i64 1
+  store %str { ptr @.str.5, i64 1 }, ptr %t70
+  %t71 = getelementptr [5 x %str], ptr %a68, i64 0, i64 2
+  store %str %t63, ptr %t71
+  %t72 = getelementptr [5 x %str], ptr %a68, i64 0, i64 3
+  store %str { ptr @.str.5, i64 1 }, ptr %t72
+  %t73 = getelementptr [5 x %str], ptr %a68, i64 0, i64 4
+  store %str %t66, ptr %t73
+  call void @veles_string_concat_n(ptr %a67, ptr %a68, i64 5)
+  %t74 = load %str, ptr %a67
+  call void @v_std.io.println(%str %t74)
   ret void
 }
 
@@ -197,66 +184,54 @@ entry:
 define %str @v_main.Display.Point.toString(ptr %p0) {
 entry:
   %a1 = alloca ptr
-  %a5 = alloca %str
-  %a11 = alloca %str
-  %a17 = alloca %str
-  %a22 = alloca %str
-  %a28 = alloca %str
-  %a34 = alloca %str
+  %a5 = alloca [21 x i8]
+  %a12 = alloca [21 x i8]
+  %a16 = alloca %str
+  %a17 = alloca [5 x %str]
   store ptr %p0, ptr %a1
   %t2 = load ptr, ptr %a1
   %t3 = getelementptr inbounds %S.main.Point, ptr %t2, i32 0, i32 0
   %t4 = load i64, ptr %t3
-  call void @veles_i64_to_string(ptr %a5, i64 %t4)
-  %t6 = load %str, ptr %a5
-  %t7 = extractvalue %str { ptr @.str.7, i64 1 }, 0
-  %t8 = extractvalue %str { ptr @.str.7, i64 1 }, 1
-  %t9 = extractvalue %str %t6, 0
-  %t10 = extractvalue %str %t6, 1
-  call void @veles_string_concat(ptr %a11, ptr %t7, i64 %t8, ptr %t9, i64 %t10)
-  %t12 = load %str, ptr %a11
-  %t13 = extractvalue %str %t12, 0
-  %t14 = extractvalue %str %t12, 1
-  %t15 = extractvalue %str { ptr @.str.8, i64 2 }, 0
-  %t16 = extractvalue %str { ptr @.str.8, i64 2 }, 1
-  call void @veles_string_concat(ptr %a17, ptr %t13, i64 %t14, ptr %t15, i64 %t16)
-  %t18 = load %str, ptr %a17
-  %t19 = load ptr, ptr %a1
-  %t20 = getelementptr inbounds %S.main.Point, ptr %t19, i32 0, i32 1
-  %t21 = load i64, ptr %t20
-  call void @veles_i64_to_string(ptr %a22, i64 %t21)
-  %t23 = load %str, ptr %a22
-  %t24 = extractvalue %str %t18, 0
-  %t25 = extractvalue %str %t18, 1
-  %t26 = extractvalue %str %t23, 0
-  %t27 = extractvalue %str %t23, 1
-  call void @veles_string_concat(ptr %a28, ptr %t24, i64 %t25, ptr %t26, i64 %t27)
-  %t29 = load %str, ptr %a28
-  %t30 = extractvalue %str %t29, 0
-  %t31 = extractvalue %str %t29, 1
-  %t32 = extractvalue %str { ptr @.str.9, i64 1 }, 0
-  %t33 = extractvalue %str { ptr @.str.9, i64 1 }, 1
-  call void @veles_string_concat(ptr %a34, ptr %t30, i64 %t31, ptr %t32, i64 %t33)
-  %t35 = load %str, ptr %a34
-  ret %str %t35
+  %t6 = call i64 @veles_i64_format(ptr %a5, i64 %t4)
+  %t7 = insertvalue %str undef, ptr %a5, 0
+  %t8 = insertvalue %str %t7, i64 %t6, 1
+  %t9 = load ptr, ptr %a1
+  %t10 = getelementptr inbounds %S.main.Point, ptr %t9, i32 0, i32 1
+  %t11 = load i64, ptr %t10
+  %t13 = call i64 @veles_i64_format(ptr %a12, i64 %t11)
+  %t14 = insertvalue %str undef, ptr %a12, 0
+  %t15 = insertvalue %str %t14, i64 %t13, 1
+  %t18 = getelementptr [5 x %str], ptr %a17, i64 0, i64 0
+  store %str { ptr @.str.7, i64 1 }, ptr %t18
+  %t19 = getelementptr [5 x %str], ptr %a17, i64 0, i64 1
+  store %str %t8, ptr %t19
+  %t20 = getelementptr [5 x %str], ptr %a17, i64 0, i64 2
+  store %str { ptr @.str.8, i64 2 }, ptr %t20
+  %t21 = getelementptr [5 x %str], ptr %a17, i64 0, i64 3
+  store %str %t15, ptr %t21
+  %t22 = getelementptr [5 x %str], ptr %a17, i64 0, i64 4
+  store %str { ptr @.str.9, i64 1 }, ptr %t22
+  call void @veles_string_concat_n(ptr %a16, ptr %a17, i64 5)
+  %t23 = load %str, ptr %a16
+  ret %str %t23
 }
 
 define %str @v_main.Shape.describe_Self_main.Square_(ptr %p0) {
 entry:
   %a1 = alloca ptr
   %a4 = alloca %str
-  %a10 = alloca %str
+  %a6 = alloca %str
   store ptr %p0, ptr %a1
   %t2 = load ptr, ptr %a1
   %t3 = call double @v_main.Shape.Square.area(ptr %t2)
   call void @veles_f64_to_string(ptr %a4, double %t3)
   %t5 = load %str, ptr %a4
-  %t6 = extractvalue %str { ptr @.str.10, i64 5 }, 0
-  %t7 = extractvalue %str { ptr @.str.10, i64 5 }, 1
-  %t8 = extractvalue %str %t5, 0
-  %t9 = extractvalue %str %t5, 1
-  call void @veles_string_concat(ptr %a10, ptr %t6, i64 %t7, ptr %t8, i64 %t9)
-  %t11 = load %str, ptr %a10
+  %t7 = extractvalue %str { ptr @.str.10, i64 5 }, 0
+  %t8 = extractvalue %str { ptr @.str.10, i64 5 }, 1
+  %t9 = extractvalue %str %t5, 0
+  %t10 = extractvalue %str %t5, 1
+  call void @veles_string_concat(ptr %a6, ptr %t7, i64 %t8, ptr %t9, i64 %t10)
+  %t11 = load %str, ptr %a6
   ret %str %t11
 }
 
@@ -317,10 +292,10 @@ entry:
 }
 
 @.str.1 = private unnamed_addr constant [13 x i8] c"main.vs:33:3\00"
-@.str.2 = private unnamed_addr constant [2 x i8] c" \00"
-@.str.3 = private unnamed_addr constant [2 x i8] c"b\00"
-@.str.4 = private unnamed_addr constant [2 x i8] c"a\00"
-@.str.5 = private unnamed_addr constant [1 x i8] c"\00"
+@.str.2 = private unnamed_addr constant [2 x i8] c"b\00"
+@.str.3 = private unnamed_addr constant [2 x i8] c"a\00"
+@.str.4 = private unnamed_addr constant [1 x i8] c"\00"
+@.str.5 = private unnamed_addr constant [2 x i8] c" \00"
 @.str.6 = private unnamed_addr constant [7 x i8] c"circle\00"
 @.str.7 = private unnamed_addr constant [2 x i8] c"(\00"
 @.str.8 = private unnamed_addr constant [3 x i8] c", \00"

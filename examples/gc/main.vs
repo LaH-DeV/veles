@@ -76,4 +76,14 @@ fun main() {
   var bytes: i64 = 0
   loop (i in 0..<400000) bytes += "item-$i".bytes().len()
   io.println("small objects $bytes")
+
+  // text built from many pieces: linear time too. `join` once appended to
+  // an accumulator that it copied whole each time (80 000 numbers: 38 s),
+  // and `replace` is a split and a join.
+  val numbers = (0..<200000).iterator().toList()
+  val joined = numbers.join(",")
+  val replaced = joined.replace(",", "; ")
+  val sb = stringBuilder()
+  loop (n in numbers) sb.append("$n,")
+  io.println("text ${joined.len()} ${replaced.len()} ${sb.len()} ${replaced.substring(0, 12) ?: ""}")
 }

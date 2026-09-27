@@ -103,4 +103,26 @@ fun main() {
   val words = priorityQueue<string>()
   loop (w in ["pear", "apple", "fig"]) words.push(w)
   io.println("priority ${words.pop()} ${words.pop()} ${words.pop()} ${words.pop()}")
+
+  // `sorted()` on integers and strings sorts natively; it must agree with
+  // the comparator path at every size around its runs of 32
+  var seed: u64 = 12345
+  var agree = 0
+  loop (n in [0, 1, 2, 31, 32, 33, 64, 65, 1000, 4097]) {
+    val ints: MutableList<i64> = []
+    val bytes: MutableList<u8> = []
+    val texts: MutableList<string> = []
+    loop (_ in 0..<n) {
+      seed = seed ^ (seed << 13)
+      seed = seed ^ (seed >> 7)
+      seed = seed ^ (seed << 17)
+      ints.push((seed % 2001) as i64 - 1000)
+      bytes.push((seed % 256) as u8)
+      texts.push("ż${seed % 97}")
+    }
+    if (ints.sorted() == ints.sortedWith((a, b) => a.compareTo(b)) &&
+      bytes.sorted() == bytes.sortedWith((a, b) => a.compareTo(b)) &&
+      texts.sorted() == texts.sortedWith((a, b) => a.compareTo(b))) agree += 1
+  }
+  io.println("sorted agrees at $agree of 10 sizes: ${[3, -1, 2, -7].sorted()} ${["b", "ą", "a"].sorted()}")
 }

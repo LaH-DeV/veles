@@ -2,7 +2,9 @@
 
 Syntax highlighting for `.vs` files plus a language client for `veles lsp`:
 diagnostics as you type, hover with types and signatures, go to definition,
-document outline and completion.
+find all references, highlighting of the name under the cursor, rename,
+inlay hints for inferred types and effects, signature help inside a call,
+document outline, workspace symbols (Ctrl+T) and completion.
 
 ## Setup
 
@@ -39,6 +41,37 @@ unreachable `else` on a sealed subject (removed), and a top-level implement that
 belongs in the struct body (moved, across files when the struct lives in
 another file of the module). `veles check
 <dir> --fix` applies every such correction from the command line.
+
+## Find references and rename
+
+**Find All References** (Shift+F12) and **Rename Symbol** (F2) work on
+anything you declared: functions, methods, fields, parameters, locals,
+types, enum members. They follow a name everywhere the compiler resolved it
+— across the package's modules, into `"$name"` interpolations and into
+named arguments (`scale(factor: 2)`, `Point(x: 1)`). A trait's method and
+every implementation of it are one name.
+
+A rename is checked before it is applied: the server re-checks the package
+with the new name and refuses — saying where — if any name would then
+refer to something else (the new name shadows or is captured by another
+declaration) or if it would add an error. A field written as a pun,
+`Point(x)`, is spelled out (`Point(col: x)`) so the variable keeps its
+name. It also refuses to rename a field or a sealed variant whose name a
+derived `Codable` writes on the wire, since the program would compile and
+read none of its old data back: put `@key("old")` on it first. Modules
+(named by their directory), `this`, built-ins and the standard library are
+not renamed.
+
+## Inlay hints
+
+The editor shows, in grey, what the compiler inferred and the source does
+not say: the type of a binding written without one (`val n: i64 = ...`,
+lambda parameters too), the return type of `fun f(x: i64) = x * 2`,
+`suspends` on a function that suspends without declaring it, and the error
+set of a bare `throws`. A binding whose type is already on the line —
+`val p = Point(...)` — gets no hint, and neither does anything in a
+generic body whose instances disagree. Toggle them with VS Code's
+`editor.inlayHints.enabled`.
 
 ## How it works
 

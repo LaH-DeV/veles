@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/LaH-DeV/veles/codegen/llvm"
 	rt "github.com/LaH-DeV/veles/runtime"
@@ -28,6 +29,35 @@ type Options struct {
 	ProgramArgs       []string
 	// Fix applies the automatic corrections attached to warnings (check).
 	Fix bool
+	// Filter, in test mode, keeps the tests whose name contains it.
+	Filter string
+	// TestTimeout bounds each test (test mode); 0 means no bound.
+	TestTimeout time.Duration
+}
+
+// DefaultTestTimeout bounds each test when `--timeout` is not given: long
+// enough for any honest test, short enough that a hung one ends a CI run.
+const DefaultTestTimeout = 10 * time.Minute
+
+// filterTests applies `--filter` to a test program. No match is an error:
+// a mistyped filter that runs nothing must not pass.
+func filterTests(prog *sema.Program, filter string) bool {
+	if filter == "" {
+		return true
+	}
+	var kept []*sema.Func
+	for _, t := range prog.Tests {
+		if strings.Contains(t.Display, filter) {
+			kept = append(kept, t)
+		}
+	}
+	if len(kept) == 0 {
+		fmt.Fprintf(os.Stderr, "veles test: no test name contains %q (%d tests in the package)\n", filter, len(prog.Tests))
+		return false
+	}
+	prog.TestsFiltered = len(prog.Tests) - len(kept)
+	prog.Tests = kept
+	return true
 }
 
 // Run executes the pipeline and returns a process exit code.
@@ -69,6 +99,12 @@ func Run(opts Options) int {
 	}
 	if opts.Mode == "check" {
 		return 0
+	}
+	if opts.Mode == "test" {
+		if !filterTests(prog, opts.Filter) {
+			return 1
+		}
+		prog.TestTimeoutMs = opts.TestTimeout.Milliseconds()
 	}
 
 	ir := llvm.Generate(prog)

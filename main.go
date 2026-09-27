@@ -2,6 +2,7 @@
 //
 //	veles build <file.vs | dir>   compile a package to a native executable
 //	veles run   <file.vs | dir>   compile and run
+//	veles test  <file.vs | dir>   run the @test functions (--filter text, --timeout 10m)
 //	veles check <file.vs | dir>   type-check only (--fix applies lint corrections)
 //	veles parse <file.vs>         dump the syntax tree
 //	veles tokens <file.vs>        dump the token stream
@@ -14,6 +15,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/LaH-DeV/veles/ast"
 	"github.com/LaH-DeV/veles/driver"
@@ -24,7 +26,7 @@ import (
 )
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: veles <build|run|test|check|parse|tokens> <path> [-o output] [--emit-llvm] [--keep] [--release] [--fix] [-- args...] | veles explain <path> --derive [Type] | veles fmt <paths...> [--check] [--stdout] | veles lsp")
+	fmt.Fprintln(os.Stderr, "usage: veles <build|run|test|check|parse|tokens> <path> [-o output] [--emit-llvm] [--keep] [--release] [--fix] [--filter text] [--timeout 10m] [-- args...] | veles explain <path> --derive [Type] | veles fmt <paths...> [--check] [--stdout] | veles lsp")
 	os.Exit(2)
 }
 
@@ -110,9 +112,32 @@ func command() int {
 		return 0
 	case "build", "run", "check", "test":
 		opts := driver.Options{Path: path, Mode: cmd}
+		if cmd == "test" {
+			opts.TestTimeout = driver.DefaultTestTimeout
+		}
 		args := os.Args[3:]
 		for i := 0; i < len(args); i++ {
 			switch args[i] {
+			case "--filter", "--timeout":
+				if cmd != "test" {
+					fmt.Fprintf(os.Stderr, "%s is a flag of 'veles test'\n", args[i])
+					usage()
+				}
+				if i+1 >= len(args) {
+					fmt.Fprintf(os.Stderr, "%s needs a value\n", args[i])
+					usage()
+				}
+				if args[i] == "--filter" {
+					opts.Filter = args[i+1]
+				} else {
+					d, err := time.ParseDuration(args[i+1])
+					if err != nil || d < 0 {
+						fmt.Fprintf(os.Stderr, "--timeout takes a duration like 30s, 2m or 0 (no limit), not %q\n", args[i+1])
+						usage()
+					}
+					opts.TestTimeout = d
+				}
+				i++
 			case "-o":
 				if i+1 < len(args) {
 					opts.Output = args[i+1]

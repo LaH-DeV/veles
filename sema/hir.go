@@ -31,6 +31,10 @@ type Program struct {
 	// Tests are the @test functions; in test mode the entry point runs them.
 	Tests    []*Func
 	TestMode bool
+	// TestTimeoutMs bounds each test's run (0: unbounded) and TestsFiltered
+	// counts the tests `veles test --filter` left out; the driver sets both.
+	TestTimeoutMs int64
+	TestsFiltered int
 	// ResultType instantiates the prelude Result<T, E> for the backend.
 	ResultType func(ok, err types.Type) types.Type
 	// Custom maps types.Key of a struct or sealed type to the prelude-trait

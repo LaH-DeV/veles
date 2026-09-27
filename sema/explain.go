@@ -169,6 +169,7 @@ func (c *Checker) indexDerived(mods []*Module) {
 		for _, impl := range list {
 			if impl.Decl != nil && len(impl.Derived) > 0 {
 				byPos[impl.Decl.Pos] = append(byPos[impl.Decl.Pos], impl)
+				c.indexWire(impl)
 			}
 		}
 	}
@@ -208,6 +209,53 @@ func (c *Checker) indexDerived(mods []*Module) {
 				}
 				c.refDerivedImpl(d, text)
 			}
+		}
+	}
+}
+
+// indexWire records in Index.Wire the declarations whose names a derived
+// Encodable/Decodable/Codable implement puts on the wire: the fields not
+// skipped and the variants, each unless a `@key` names it for every
+// format. Enum members are left out: every enum is Codable without asking,
+// so marking them would refuse every member rename, encoded or not.
+func (c *Checker) indexWire(impl *Impl) {
+	switch impl.Trait.Name {
+	case "Encodable", "Decodable", "Codable":
+	default:
+		return
+	}
+	if c.index.Wire == nil {
+		c.index.Wire = map[source.Span]string{}
+	}
+	named := func(attrs []*ast.Attribute) bool {
+		_, ok := wireKeys(attrs)[""]
+		return ok
+	}
+	put := func(span source.Span, target string) {
+		if _, seen := c.index.Wire[span]; !seen && span.IsValid() {
+			c.index.Wire[span] = impl.Trait.Name + " for " + target
+		}
+	}
+	fields := func(st *types.Struct) {
+		d, ok := templateOf(st).Decl.(*ast.StructDecl)
+		if !ok {
+			return
+		}
+		for _, f := range d.Fields {
+			if !named(f.Attrs) && !hasAttr(f.Attrs, "skip") {
+				put(f.Name.Pos, d.Name.Name)
+			}
+		}
+	}
+	switch t := impl.Target.(type) {
+	case *types.Struct:
+		fields(t)
+	case *types.Sealed:
+		for _, v := range sealedTemplate(t).Variants {
+			if d, ok := templateOf(v).Decl.(*ast.StructDecl); ok && !named(d.Attrs) {
+				put(d.Name.Pos, t.Name)
+			}
+			fields(v)
 		}
 	}
 }

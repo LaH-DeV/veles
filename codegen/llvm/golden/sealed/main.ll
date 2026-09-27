@@ -122,24 +122,26 @@ entry:
   %a23 = alloca ptr
   %a27 = alloca %V.main.Expr
   %a31 = alloca %V.main.Expr
-  %a33 = alloca %str
-  %a36 = alloca i64
-  %a41 = alloca i64
-  %a43 = alloca { i1, i64 }
-  %a44 = alloca { i1, %str }
-  %a54 = alloca %str
-  %a59 = alloca %str
-  %a61 = alloca %str
-  %a67 = alloca %str
-  %a74 = alloca %str
-  %a77 = alloca %V._prelude_.Result_i64_main.TooBig_
-  %a84 = alloca %str
+  %a33 = alloca [21 x i8]
+  %a37 = alloca %str
+  %a38 = alloca [1 x %str]
+  %a42 = alloca i64
+  %a47 = alloca i64
+  %a49 = alloca { i1, i64 }
+  %a50 = alloca { i1, %str }
+  %a60 = alloca %str
+  %a65 = alloca %str
+  %a67 = alloca [21 x i8]
+  %a72 = alloca %str
+  %a73 = alloca [3 x %str]
+  %a79 = alloca %V._prelude_.Result_i64_main.TooBig_
+  %a86 = alloca [21 x i8]
   %a90 = alloca %str
-  %a99 = alloca %str
-  %a105 = alloca %str
-  %a112 = alloca %V._prelude_.Result_i64_main.TooBig_
-  %a119 = alloca %str
-  %a125 = alloca %str
+  %a103 = alloca [21 x i8]
+  %a107 = alloca %str
+  %a118 = alloca %V._prelude_.Result_i64_main.TooBig_
+  %a125 = alloca [21 x i8]
+  %a129 = alloca %str
   %t1 = insertvalue %S.main.Num undef, i64 1, 0
   store %V.main.Expr zeroinitializer, ptr %a2
   %t3 = getelementptr inbounds %V.main.Expr, ptr %a2, i32 0, i32 0
@@ -183,145 +185,150 @@ entry:
   %t30 = load %V.main.Expr, ptr %a27
   store %V.main.Expr %t30, ptr %a31
   %t32 = call i64 @v_main.Expr.eval_Self_main.Expr_(ptr %a31)
-  call void @veles_i64_to_string(ptr %a33, i64 %t32)
-  %t34 = load %str, ptr %a33
-  call void @v_std.io.println(%str %t34)
-  %t35 = call { i1, i64 } @v_main.half(i64 10)
-  %t38 = extractvalue { i1, i64 } %t35, 0
-  %t37 = xor i1 %t38, true
-  br i1 %t37, label %elvis.default.1, label %elvis.some.2
+  %t34 = call i64 @veles_i64_format(ptr %a33, i64 %t32)
+  %t35 = insertvalue %str undef, ptr %a33, 0
+  %t36 = insertvalue %str %t35, i64 %t34, 1
+  %t39 = getelementptr [1 x %str], ptr %a38, i64 0, i64 0
+  store %str %t36, ptr %t39
+  call void @veles_string_concat_n(ptr %a37, ptr %a38, i64 1)
+  %t40 = load %str, ptr %a37
+  call void @v_std.io.println(%str %t40)
+  %t41 = call { i1, i64 } @v_main.half(i64 10)
+  %t44 = extractvalue { i1, i64 } %t41, 0
+  %t43 = xor i1 %t44, true
+  br i1 %t43, label %elvis.default.1, label %elvis.some.2
 elvis.some.2:
-  %t39 = extractvalue { i1, i64 } %t35, 1
-  store i64 %t39, ptr %a36
+  %t45 = extractvalue { i1, i64 } %t41, 1
+  store i64 %t45, ptr %a42
   br label %elvis.end.3
 elvis.default.1:
-  store i64 -1, ptr %a36
+  store i64 -1, ptr %a42
   br label %elvis.end.3
 elvis.end.3:
-  %t40 = load i64, ptr %a36
-  store i64 %t40, ptr %a41
-  %t42 = call { i1, i64 } @v_main.half(i64 7)
-  store { i1, i64 } %t42, ptr %a43
-  %t45 = load { i1, i64 }, ptr %a43
-  %t47 = extractvalue { i1, i64 } %t45, 0
-  %t46 = xor i1 %t47, true
-  %t48 = xor i1 %t46, true
-  br i1 %t48, label %if.then.4, label %if.else.6
+  %t46 = load i64, ptr %a42
+  store i64 %t46, ptr %a47
+  %t48 = call { i1, i64 } @v_main.half(i64 7)
+  store { i1, i64 } %t48, ptr %a49
+  %t51 = load { i1, i64 }, ptr %a49
+  %t53 = extractvalue { i1, i64 } %t51, 0
+  %t52 = xor i1 %t53, true
+  %t54 = xor i1 %t52, true
+  br i1 %t54, label %if.then.4, label %if.else.6
 if.then.4:
-  %t49 = getelementptr inbounds { i1, i64 }, ptr %a43, i32 0, i32 1
-  %t50 = call %str @v_std.prelude.extend.i64.toString(ptr %t49, i64 10)
-  %t51 = insertvalue { i1, %str } undef, i1 true, 0
-  %t52 = insertvalue { i1, %str } %t51, %str %t50, 1
-  store { i1, %str } %t52, ptr %a44
+  %t55 = getelementptr inbounds { i1, i64 }, ptr %a49, i32 0, i32 1
+  %t56 = call %str @v_std.prelude.extend.i64.toString(ptr %t55, i64 10)
+  %t57 = insertvalue { i1, %str } undef, i1 true, 0
+  %t58 = insertvalue { i1, %str } %t57, %str %t56, 1
+  store { i1, %str } %t58, ptr %a50
   br label %if.end.5
 if.else.6:
-  store { i1, %str } zeroinitializer, ptr %a44
+  store { i1, %str } zeroinitializer, ptr %a50
   br label %if.end.5
 if.end.5:
-  %t53 = load { i1, %str }, ptr %a44
-  %t56 = extractvalue { i1, %str } %t53, 0
-  %t55 = xor i1 %t56, true
-  br i1 %t55, label %elvis.default.7, label %elvis.some.8
+  %t59 = load { i1, %str }, ptr %a50
+  %t62 = extractvalue { i1, %str } %t59, 0
+  %t61 = xor i1 %t62, true
+  br i1 %t61, label %elvis.default.7, label %elvis.some.8
 elvis.some.8:
-  %t57 = extractvalue { i1, %str } %t53, 1
-  store %str %t57, ptr %a54
+  %t63 = extractvalue { i1, %str } %t59, 1
+  store %str %t63, ptr %a60
   br label %elvis.end.9
 elvis.default.7:
-  store %str { ptr @.str.5, i64 3 }, ptr %a54
+  store %str { ptr @.str.5, i64 3 }, ptr %a60
   br label %elvis.end.9
 elvis.end.9:
-  %t58 = load %str, ptr %a54
-  store %str %t58, ptr %a59
-  %t60 = load i64, ptr %a41
-  call void @veles_i64_to_string(ptr %a61, i64 %t60)
-  %t62 = load %str, ptr %a61
-  %t63 = extractvalue %str %t62, 0
-  %t64 = extractvalue %str %t62, 1
-  %t65 = extractvalue %str { ptr @.str.6, i64 1 }, 0
-  %t66 = extractvalue %str { ptr @.str.6, i64 1 }, 1
-  call void @veles_string_concat(ptr %a67, ptr %t63, i64 %t64, ptr %t65, i64 %t66)
-  %t68 = load %str, ptr %a67
-  %t69 = load %str, ptr %a59
-  %t70 = extractvalue %str %t68, 0
-  %t71 = extractvalue %str %t68, 1
-  %t72 = extractvalue %str %t69, 0
-  %t73 = extractvalue %str %t69, 1
-  call void @veles_string_concat(ptr %a74, ptr %t70, i64 %t71, ptr %t72, i64 %t73)
-  %t75 = load %str, ptr %a74
-  call void @v_std.io.println(%str %t75)
-  %t76 = call %V._prelude_.Result_i64_main.TooBig_ @v_main.check(i64 500)
-  store %V._prelude_.Result_i64_main.TooBig_ %t76, ptr %a77
+  %t64 = load %str, ptr %a60
+  store %str %t64, ptr %a65
+  %t66 = load i64, ptr %a47
+  %t68 = call i64 @veles_i64_format(ptr %a67, i64 %t66)
+  %t69 = insertvalue %str undef, ptr %a67, 0
+  %t70 = insertvalue %str %t69, i64 %t68, 1
+  %t71 = load %str, ptr %a65
+  %t74 = getelementptr [3 x %str], ptr %a73, i64 0, i64 0
+  store %str %t70, ptr %t74
+  %t75 = getelementptr [3 x %str], ptr %a73, i64 0, i64 1
+  store %str { ptr @.str.6, i64 1 }, ptr %t75
+  %t76 = getelementptr [3 x %str], ptr %a73, i64 0, i64 2
+  store %str %t71, ptr %t76
+  call void @veles_string_concat_n(ptr %a72, ptr %a73, i64 3)
+  %t77 = load %str, ptr %a72
+  call void @v_std.io.println(%str %t77)
+  %t78 = call %V._prelude_.Result_i64_main.TooBig_ @v_main.check(i64 500)
+  store %V._prelude_.Result_i64_main.TooBig_ %t78, ptr %a79
   br label %when.arm.11
 when.arm.11:
-  %t78 = load %V._prelude_.Result_i64_main.TooBig_, ptr %a77
-  %t79 = extractvalue %V._prelude_.Result_i64_main.TooBig_ %t78, 0
-  %t80 = icmp eq i32 %t79, 0
-  br i1 %t80, label %when.bind.14, label %when.arm.12
+  %t80 = load %V._prelude_.Result_i64_main.TooBig_, ptr %a79
+  %t81 = extractvalue %V._prelude_.Result_i64_main.TooBig_ %t80, 0
+  %t82 = icmp eq i32 %t81, 0
+  br i1 %t82, label %when.bind.14, label %when.arm.12
 when.bind.14:
   br label %when.body.13
 when.body.13:
-  %t81 = getelementptr inbounds %V._prelude_.Result_i64_main.TooBig_, ptr %a77, i32 0, i32 1
-  %t82 = getelementptr inbounds %S._prelude_.Ok_i64_main.TooBig_, ptr %t81, i32 0, i32 0
-  %t83 = load i64, ptr %t82
-  call void @veles_i64_to_string(ptr %a84, i64 %t83)
-  %t85 = load %str, ptr %a84
-  %t86 = extractvalue %str { ptr @.str.7, i64 3 }, 0
-  %t87 = extractvalue %str { ptr @.str.7, i64 3 }, 1
-  %t88 = extractvalue %str %t85, 0
-  %t89 = extractvalue %str %t85, 1
-  call void @veles_string_concat(ptr %a90, ptr %t86, i64 %t87, ptr %t88, i64 %t89)
-  %t91 = load %str, ptr %a90
-  call void @v_std.io.println(%str %t91)
+  %t83 = getelementptr inbounds %V._prelude_.Result_i64_main.TooBig_, ptr %a79, i32 0, i32 1
+  %t84 = getelementptr inbounds %S._prelude_.Ok_i64_main.TooBig_, ptr %t83, i32 0, i32 0
+  %t85 = load i64, ptr %t84
+  %t87 = call i64 @veles_i64_format(ptr %a86, i64 %t85)
+  %t88 = insertvalue %str undef, ptr %a86, 0
+  %t89 = insertvalue %str %t88, i64 %t87, 1
+  %t91 = extractvalue %str { ptr @.str.7, i64 3 }, 0
+  %t92 = extractvalue %str { ptr @.str.7, i64 3 }, 1
+  %t93 = extractvalue %str %t89, 0
+  %t94 = extractvalue %str %t89, 1
+  call void @veles_string_concat(ptr %a90, ptr %t91, i64 %t92, ptr %t93, i64 %t94)
+  %t95 = load %str, ptr %a90
+  call void @v_std.io.println(%str %t95)
   br label %when.end.10
 when.arm.12:
-  %t92 = load %V._prelude_.Result_i64_main.TooBig_, ptr %a77
-  %t93 = extractvalue %V._prelude_.Result_i64_main.TooBig_ %t92, 0
-  %t94 = icmp eq i32 %t93, 1
-  br i1 %t94, label %when.bind.17, label %when.arm.15
+  %t96 = load %V._prelude_.Result_i64_main.TooBig_, ptr %a79
+  %t97 = extractvalue %V._prelude_.Result_i64_main.TooBig_ %t96, 0
+  %t98 = icmp eq i32 %t97, 1
+  br i1 %t98, label %when.bind.17, label %when.arm.15
 when.bind.17:
   br label %when.body.16
 when.body.16:
-  %t95 = getelementptr inbounds %V._prelude_.Result_i64_main.TooBig_, ptr %a77, i32 0, i32 1
-  %t96 = getelementptr inbounds %S._prelude_.Err_i64_main.TooBig_, ptr %t95, i32 0, i32 0
-  %t97 = getelementptr inbounds %S.main.TooBig, ptr %t96, i32 0, i32 0
-  %t98 = load i64, ptr %t97
-  call void @veles_i64_to_string(ptr %a99, i64 %t98)
-  %t100 = load %str, ptr %a99
-  %t101 = extractvalue %str { ptr @.str.8, i64 8 }, 0
-  %t102 = extractvalue %str { ptr @.str.8, i64 8 }, 1
-  %t103 = extractvalue %str %t100, 0
-  %t104 = extractvalue %str %t100, 1
-  call void @veles_string_concat(ptr %a105, ptr %t101, i64 %t102, ptr %t103, i64 %t104)
-  %t106 = load %str, ptr %a105
-  call void @v_std.io.println(%str %t106)
+  %t99 = getelementptr inbounds %V._prelude_.Result_i64_main.TooBig_, ptr %a79, i32 0, i32 1
+  %t100 = getelementptr inbounds %S._prelude_.Err_i64_main.TooBig_, ptr %t99, i32 0, i32 0
+  %t101 = getelementptr inbounds %S.main.TooBig, ptr %t100, i32 0, i32 0
+  %t102 = load i64, ptr %t101
+  %t104 = call i64 @veles_i64_format(ptr %a103, i64 %t102)
+  %t105 = insertvalue %str undef, ptr %a103, 0
+  %t106 = insertvalue %str %t105, i64 %t104, 1
+  %t108 = extractvalue %str { ptr @.str.8, i64 8 }, 0
+  %t109 = extractvalue %str { ptr @.str.8, i64 8 }, 1
+  %t110 = extractvalue %str %t106, 0
+  %t111 = extractvalue %str %t106, 1
+  call void @veles_string_concat(ptr %a107, ptr %t108, i64 %t109, ptr %t110, i64 %t111)
+  %t112 = load %str, ptr %a107
+  call void @v_std.io.println(%str %t112)
   br label %when.end.10
 when.arm.15:
-  %t107 = extractvalue %str { ptr @.str.9, i64 33 }, 0
-  %t108 = extractvalue %str { ptr @.str.9, i64 33 }, 1
-  %t109 = extractvalue %str { ptr @.str.10, i64 12 }, 0
-  %t110 = extractvalue %str { ptr @.str.10, i64 12 }, 1
-  call void @veles_panic_at(ptr %t107, i64 %t108, ptr %t109, i64 %t110)
+  %t113 = extractvalue %str { ptr @.str.9, i64 33 }, 0
+  %t114 = extractvalue %str { ptr @.str.9, i64 33 }, 1
+  %t115 = extractvalue %str { ptr @.str.10, i64 12 }, 0
+  %t116 = extractvalue %str { ptr @.str.10, i64 12 }, 1
+  call void @veles_panic_at(ptr %t113, i64 %t114, ptr %t115, i64 %t116)
   unreachable
 when.end.10:
-  %t111 = call %V._prelude_.Result_i64_main.TooBig_ @v_main.check(i64 5)
-  store %V._prelude_.Result_i64_main.TooBig_ %t111, ptr %a112
-  %t113 = load %V._prelude_.Result_i64_main.TooBig_, ptr %a112
-  %t114 = extractvalue %V._prelude_.Result_i64_main.TooBig_ %t113, 0
-  %t115 = icmp eq i32 %t114, 0
-  br i1 %t115, label %if.then.18, label %if.end.19
+  %t117 = call %V._prelude_.Result_i64_main.TooBig_ @v_main.check(i64 5)
+  store %V._prelude_.Result_i64_main.TooBig_ %t117, ptr %a118
+  %t119 = load %V._prelude_.Result_i64_main.TooBig_, ptr %a118
+  %t120 = extractvalue %V._prelude_.Result_i64_main.TooBig_ %t119, 0
+  %t121 = icmp eq i32 %t120, 0
+  br i1 %t121, label %if.then.18, label %if.end.19
 if.then.18:
-  %t116 = getelementptr inbounds %V._prelude_.Result_i64_main.TooBig_, ptr %a112, i32 0, i32 1
-  %t117 = getelementptr inbounds %S._prelude_.Ok_i64_main.TooBig_, ptr %t116, i32 0, i32 0
-  %t118 = load i64, ptr %t117
-  call void @veles_i64_to_string(ptr %a119, i64 %t118)
-  %t120 = load %str, ptr %a119
-  %t121 = extractvalue %str { ptr @.str.11, i64 5 }, 0
-  %t122 = extractvalue %str { ptr @.str.11, i64 5 }, 1
-  %t123 = extractvalue %str %t120, 0
-  %t124 = extractvalue %str %t120, 1
-  call void @veles_string_concat(ptr %a125, ptr %t121, i64 %t122, ptr %t123, i64 %t124)
-  %t126 = load %str, ptr %a125
-  call void @v_std.io.println(%str %t126)
+  %t122 = getelementptr inbounds %V._prelude_.Result_i64_main.TooBig_, ptr %a118, i32 0, i32 1
+  %t123 = getelementptr inbounds %S._prelude_.Ok_i64_main.TooBig_, ptr %t122, i32 0, i32 0
+  %t124 = load i64, ptr %t123
+  %t126 = call i64 @veles_i64_format(ptr %a125, i64 %t124)
+  %t127 = insertvalue %str undef, ptr %a125, 0
+  %t128 = insertvalue %str %t127, i64 %t126, 1
+  %t130 = extractvalue %str { ptr @.str.11, i64 5 }, 0
+  %t131 = extractvalue %str { ptr @.str.11, i64 5 }, 1
+  %t132 = extractvalue %str %t128, 0
+  %t133 = extractvalue %str %t128, 1
+  call void @veles_string_concat(ptr %a129, ptr %t130, i64 %t131, ptr %t132, i64 %t133)
+  %t134 = load %str, ptr %a129
+  call void @v_std.io.println(%str %t134)
   br label %if.end.19
 if.end.19:
   ret void
