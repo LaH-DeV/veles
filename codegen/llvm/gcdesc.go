@@ -46,6 +46,9 @@ func (g *gen) pointerOffsets(t types.Type) []int {
 	case *types.Pointer, *types.List, *types.Map, *types.Set, *types.Channel, *types.Task:
 		return []int{0}
 	case *types.Func:
+		if tt.C {
+			return nil // a C function pointer: code, not the collector's
+		}
 		return []int{8} // environment
 	case *types.Trait:
 		return []int{0} // boxed data

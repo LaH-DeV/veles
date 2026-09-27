@@ -37,6 +37,8 @@ typedef struct {
 } veles_string;
 
 void *veles_alloc(int64_t size);
+void veles_blocking_enter(void);
+void veles_blocking_leave(void);
 void veles_panic(const char *msg, int64_t len);
 
 /* cstr copies a Veles string into a NUL-terminated buffer the C library
@@ -91,7 +93,10 @@ static FILE *open_file(const char *path, int64_t plen, const char *mode) {
 }
 #endif
 
-/* growing byte buffer for reads */
+/* A growing byte buffer for reads. It lives outside the Veles heap, so a
+ * read can fill it inside a safe region (D66) — blocked on a pipe, a slow
+ * disk or the terminal without holding up a collection — and buf_finish
+ * copies the result into a string afterwards. */
 typedef struct {
     char *data;
     int64_t len, cap;
@@ -101,8 +106,8 @@ static void buf_push(buf_t *b, const char *p, int64_t n) {
     if (b->len + n > b->cap) {
         int64_t ncap = b->cap ? b->cap * 2 : 4096;
         while (ncap < b->len + n) ncap *= 2;
-        char *nd = veles_alloc(ncap);
-        if (b->len) memcpy(nd, b->data, (size_t)b->len);
+        char *nd = realloc(b->data, (size_t)ncap);
+        if (!nd) veles_panic("out of memory", 13);
         b->data = nd;
         b->cap = ncap;
     }
@@ -110,11 +115,21 @@ static void buf_push(buf_t *b, const char *p, int64_t n) {
     b->len += n;
 }
 
+static void buf_finish(veles_string *out, buf_t *b) {
+    set_string(out, b->data ? b->data : "", b->len);
+    free(b->data);
+    b->data = NULL;
+    b->len = b->cap = 0;
+}
+
 static int read_stream(FILE *f, buf_t *b) {
     char chunk[8192];
     size_t n;
+    veles_blocking_enter();
     while ((n = fread(chunk, 1, sizeof chunk, f)) > 0) buf_push(b, chunk, (int64_t)n);
-    return ferror(f) ? (errno ? errno : EIO) : 0;
+    int err = ferror(f) ? (errno ? errno : EIO) : 0;
+    veles_blocking_leave();
+    return err;
 }
 
 /* ---- errors ------------------------------------------------------------ */
@@ -348,12 +363,21 @@ void veles_os_temp_dir(veles_string *out) {
 int64_t veles_os_run(const char *cmd, int64_t clen, veles_string *out, int64_t *err) {
     fflush(stdout);
 #if defined(_WIN32)
-    FILE *p = _wpopen(wstr(cmd, clen), L"r");
+    wchar_t *line = wstr(cmd, clen);
 #else
-    FILE *p = popen(cstr(cmd, clen), "r");
+    char *line = cstr(cmd, clen);
+#endif
+    /* the child runs as long as it likes: this thread waits for it in a
+     * safe region, out of the collector's way */
+    veles_blocking_enter();
+#if defined(_WIN32)
+    FILE *p = _wpopen(line, L"r");
+#else
+    FILE *p = popen(line, "r");
 #endif
     if (!p) {
         *err = errno ? errno : EIO;
+        veles_blocking_leave();
         return -1;
     }
     buf_t b = {0};
@@ -363,13 +387,15 @@ int64_t veles_os_run(const char *cmd, int64_t clen, veles_string *out, int64_t *
 #else
     int status = pclose(p);
 #endif
-    set_string(out, b.data ? b.data : "", b.len);
+    int perr = errno;
+    veles_blocking_leave();
+    buf_finish(out, &b);
     *err = rerr;
 #if defined(_WIN32)
     return status;
 #else
     if (status == -1) {
-        *err = errno;
+        *err = perr;
         return -1;
     }
     return WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
@@ -386,8 +412,11 @@ static int64_t read_raw(const char *path, int64_t plen, veles_string *out) {
     buf_t b = {0};
     int err = read_stream(f, &b);
     fclose(f);
-    if (err) return err;
-    set_string(out, b.data ? b.data : "", b.len);
+    if (err) {
+        free(b.data);
+        return err;
+    }
+    buf_finish(out, &b);
     return 0;
 }
 
@@ -485,7 +514,7 @@ int64_t veles_fs_list_dir(const char *path, int64_t plen, veles_string *out) {
     }
     closedir(d);
 #endif
-    set_string(out, b.data ? b.data : "", b.len);
+    buf_finish(out, &b);
     return 0;
 }
 
@@ -592,8 +621,11 @@ int64_t veles_fs_write_bytes(const char *path, int64_t plen, veles_bytes_view *b
 int64_t veles_read_all(veles_string *out) {
     buf_t b = {0};
     int err = read_stream(stdin, &b);
-    if (err) return err;
-    set_string(out, b.data ? b.data : "", b.len);
+    if (err) {
+        free(b.data);
+        return err;
+    }
+    buf_finish(out, &b);
     return 0;
 }
 

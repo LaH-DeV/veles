@@ -156,7 +156,7 @@ struct Job {
 }
 
 fun durations() throws EncodeError | DecodeError {
-  val ds = [Duration.seconds(90).plus(Duration.millis(500)), Duration.zero, Duration.nanos(-1), Duration.hours(49).plus(Duration.nanos(1)), Duration.millis(250)]
+  val ds = [Duration.seconds(90) + Duration.millis(500), Duration.zero, Duration.nanos(-1), Duration.hours(49) + Duration.nanos(1), Duration.millis(250)]
   loop (style in DurationStyle.values()) {
     val o = json.Options(durations: style)
     var line = "$style:"

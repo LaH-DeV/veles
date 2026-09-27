@@ -72,7 +72,7 @@ func (g *gen) show(t types.Type, v string) string {
 			return g.stringConst("()")
 		case types.Bool:
 			out := g.alloca(strType)
-			g.emit("call void @veles_bool_to_string(ptr %s, i1 %s)", out, v)
+			g.emit("call void @veles_bool_to_string(ptr %s, i1 zeroext %s)", out, v)
 			r := g.newTmp()
 			g.emit("%s = load %s, ptr %s", r, strType, out)
 			return r

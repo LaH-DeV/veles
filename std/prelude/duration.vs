@@ -31,12 +31,10 @@ val nanosMax: i64 = 9223372036854775807
 /// handed more than the range holds overflows, which is checked in a debug
 /// build and wraps in release (D21).
 ///
-/// Arithmetic is methods — `a.plus(b)`, not `a + b` — because Veles has no
-/// arithmetic operator traits today. The two sums that get written most,
-/// "now plus a timeout" and "how much is left", are not written here at all:
-/// they are `time.Deadline`. Should the language gain operator overloading,
-/// `plus`, `minus`, `times` and `dividedBy` are named to be adopted by it
-/// without a second spelling appearing.
+/// The operators work on it (D71): `a + b`, `a - b`, `d * 3`, `d / 4`,
+/// `-d`, and `+=`/`-=`; `a.over(b)` is how many times `b` fits in `a`. The
+/// two sums that get written most, "now plus a timeout" and "how much is
+/// left", are not written here at all: they are `time.Deadline`.
 public struct Duration {
   private ns: i64
 
@@ -79,19 +77,29 @@ public struct Duration {
   /// Milliseconds with the fraction kept.
   public fun asMillis(): f64 = (this.ns as f64) / 1000000.0
 
-  public fun plus(other: Duration): Duration = Duration(ns: this.ns + other.ns)
-  public fun minus(other: Duration): Duration = Duration(ns: this.ns - other.ns)
-  public fun times(n: i64): Duration = Duration(ns: this.ns * n)
-
-  /// Truncated toward zero, as integer division is; `dividedBy(0)` panics
-  /// for the same reason `1 / 0` does.
-  public fun dividedBy(n: i64): Duration = Duration(ns: this.ns / n)
+  // The operators (D71): `a + b`, `a - b`, `d * 3`, `d / 2`, `-d`. Each
+  // overflows as the i64 underneath does — a panic, never a wrap.
+  implement Addable {
+    fun plus(other: Duration): Duration = Duration(ns: this.ns + other.ns)
+  }
+  implement Subtractable {
+    fun minus(other: Duration): Duration = Duration(ns: this.ns - other.ns)
+  }
+  implement Multipliable {
+    fun times(other: i64): Duration = Duration(ns: this.ns * other)
+  }
+  implement Divisible {
+    /// Truncated toward zero, as integer division is; `d / 0` panics for
+    /// the same reason `1 / 0` does.
+    fun dividedBy(other: i64): Duration = Duration(ns: this.ns / other)
+  }
+  implement Negatable {
+    fun negate(): Duration = Duration(ns: 0 - this.ns)
+  }
 
   /// How many times `other` fits in this one, truncated. `Duration.zero`
   /// divides nothing and panics.
   public fun over(other: Duration): i64 = this.ns / other.ns
-
-  public fun negated(): Duration = Duration(ns: 0 - this.ns)
 
   /// The length without its sign. The single most negative `Duration` has no
   /// positive counterpart, so it saturates at the largest one rather than

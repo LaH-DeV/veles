@@ -6,6 +6,8 @@
 extern "C" {
   fun veles_print(s: string)
   fun veles_eprint(s: string)
+  fun veles_println(s: string)
+  fun veles_eprintln(s: string)
   fun veles_read_line(out: *raw string): bool
   fun veles_read_all(out: *raw string): i64
 }
@@ -13,8 +15,7 @@ extern "C" {
 /// Writes `s` and a newline to standard output.
 public fun println(s: string) {
   unsafe {
-    veles_print(s)
-    veles_print("\n")
+    veles_println(s)
   }
 }
 
@@ -28,8 +29,7 @@ public fun print(s: string) {
 /// Writes `s` and a newline to standard error.
 public fun eprintln(s: string) {
   unsafe {
-    veles_eprint(s)
-    veles_eprint("\n")
+    veles_eprintln(s)
   }
 }
 

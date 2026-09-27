@@ -39,6 +39,12 @@ Three operators do most of the work:
 | `x?.member` | `null` if `x` is null, otherwise `x.member` — the result is nullable |
 | `x?.method()` | same for calls |
 
+A `null` skips the *rest of the chain*, not just the next step (D70):
+`user?.address.city.len()` is an `i64?` — `null` when there is no user,
+the length otherwise — with no `?.` needed after the first. Parentheses
+end a chain: `(user?.address).city` reads `.city` on a nullable, which is
+an error.
+
 `?:` also accepts a `return` or `throw` on its right: `val n =
 text.toInt() ?: return -1` bails out of the function when there is no
 number. The same thing can be written as a binding, `val n = text.toInt()

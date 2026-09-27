@@ -29,7 +29,7 @@ declare i64 @veles_task_await(ptr, ptr)
 declare ptr @veles_task_result(ptr)
 declare i64 @veles_task_failed(ptr)
 declare ptr @veles_scope_begin(ptr, i64)
-declare ptr @veles_task_launch(ptr)
+declare ptr @veles_task_launch(ptr, i64)
 declare i64 @veles_scope_wait(ptr, ptr)
 declare ptr @veles_scope_failed(ptr)
 declare i64 @veles_scope_failed_index(ptr)
@@ -67,6 +67,7 @@ declare ptr @veles_task_panic_msg(ptr, ptr)
 declare ptr @veles_task_panic_loc(ptr, ptr)
 declare void @veles_task_repanic(ptr)
 declare void @veles_task_start(ptr, ptr, ptr)
+declare void @veles_task_spawn(ptr, ptr, ptr)
 `
 
 type coroState struct {
@@ -257,14 +258,14 @@ func (g *gen) launch(e *sema.Launch) string {
 	scope := g.newTmp()
 	g.emit("%s = load ptr, ptr %s", scope, g.scopeSlots[e.Scope])
 	ct := g.newTmp()
-	g.emit("%s = call ptr @veles_task_launch(ptr %s)", ct, scope)
+	g.emit("%s = call ptr @veles_task_launch(ptr %s, i64 %d)", ct, scope, e.Index)
 	var argTypes []types.Type
 	var argVals []string
 	for _, a := range e.Call.Args {
 		argTypes = append(argTypes, a.Type())
 		argVals = append(argVals, g.expr(a))
 	}
-	g.startTask(ct, e.Call.Fn, argTypes, argVals)
+	g.startTaskAs(ct, e.Call.Fn, argTypes, argVals, true)
 	slot := g.alloca("ptr")
 	g.emit("store ptr %s, ptr %s", ct, slot)
 	g.launchSlots[e] = slot
@@ -342,8 +343,7 @@ func (g *gen) scopeBlock(e *sema.ScopeBlock) string {
 	// only the cleanups inside the body and joins through `wait` itself
 	abandon := &sema.Builtin{Op: "scope.abandon"}
 	g.abandonSlots[abandon] = slot
-	g.cleanups = append(g.cleanups, abandon)
-	g.emit("call void @veles_cleanup_push(ptr @scope.cancel.thunk, ptr %s)", slot)
+	g.pushCleanup(abandon, "@scope.cancel.thunk", slot)
 	if !e.Gather {
 		g.bodyScopes = append(g.bodyScopes, bodyScope{slot: slot, wait: wait, cleanups: len(g.cleanups)})
 	}
@@ -371,7 +371,7 @@ func (g *gen) scopeBlock(e *sema.ScopeBlock) string {
 	g.emitTerm("br label %%%s", wait)
 	g.placeLabel(done)
 	g.cleanups = g.cleanups[:len(g.cleanups)-1]
-	g.emit("call void @veles_cleanup_pop()")
+	g.popCleanup(abandon)
 	if e.Gather {
 		return g.gatherResults(e)
 	}
@@ -948,6 +948,13 @@ func (g *gen) entryThunk(fn *sema.Func, paramTypes []types.Type, extraLead []str
 
 // startTask packs args and runs fn as task through its entry thunk.
 func (g *gen) startTask(task string, fn *sema.Func, argTypes []types.Type, argVals []string) {
+	g.startTaskAs(task, fn, argTypes, argVals, false)
+}
+
+// startTaskAs is startTask; spawn hands the task to the run queue instead
+// of running its ramp here (an `async` launch, D66): any worker may start
+// it, which is what lets the children of a scope run in parallel.
+func (g *gen) startTaskAs(task string, fn *sema.Func, argTypes []types.Type, argVals []string, spawn bool) {
 	if !fn.Suspends {
 		fn = g.rampFor(fn)
 	}
@@ -973,6 +980,10 @@ func (g *gen) startTask(task string, fn *sema.Func, argTypes []types.Type, argVa
 		}
 	}
 	thunk := g.entryThunk(fn, argTypes, nil)
+	if spawn {
+		g.emit("call void @veles_task_spawn(ptr %s, ptr @%s, ptr %s)", task, thunk, args)
+		return
+	}
 	g.emit("call void @veles_task_start(ptr %s, ptr @%s, ptr %s)", task, thunk, args)
 }
 

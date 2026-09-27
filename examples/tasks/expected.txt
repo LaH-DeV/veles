@@ -3,6 +3,8 @@ squares 9 16
 gather Ok(value: 10) Err(error: Boom(n: 2)) Ok(value: 25)
 race message hello
 race timeout
+race a: first
+race shared: closed
+loop: Boom(2)
 Printing slowLoop iteration 0
-Printing slowLoop iteration 1
 exit=1

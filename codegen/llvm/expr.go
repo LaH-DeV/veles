@@ -359,6 +359,9 @@ func (g *gen) expr(e sema.Expr) string {
 	case *sema.CallIndirect:
 		return g.callIndirect(e)
 	case *sema.FuncRef:
+		if ft, ok := e.Type().(*types.Func); ok && ft.C {
+			return "@" + e.Fn.ExportC // `&callback`: the wrapper C calls (D69)
+		}
 		thunk := g.thunkFor(e.Fn)
 		a := g.newTmp()
 		g.emit("%s = insertvalue { ptr, ptr } undef, ptr @%s, 0", a, thunk)
@@ -437,6 +440,10 @@ func (g *gen) call(e *sema.Call) string {
 			continue
 		}
 		_ = i
+		if fn.Extern {
+			args = append(args, g.llType(a.Type())+cArgExt(a.Type())+" "+v)
+			continue
+		}
 		args = append(args, g.llType(a.Type())+" "+v)
 	}
 	if fn.Suspends {
@@ -452,15 +459,25 @@ func (g *gen) call(e *sema.Call) string {
 	if fn.Extern && (types.IsUnit(fn.Sig.Ret) || types.IsNever(fn.Sig.Ret)) {
 		ret = "void"
 	}
+	if fn.Foreign {
+		g.emit("call void @veles_blocking_enter()")
+	}
 	if ret == "void" {
 		g.emit("call void @%s(%s)", fn.Name, joinArgs(args))
 		if types.IsNever(fn.Sig.Ret) {
 			g.emitTerm("unreachable")
+			return "zeroinitializer"
+		}
+		if fn.Foreign {
+			g.emit("call void @veles_blocking_leave()")
 		}
 		return "zeroinitializer"
 	}
 	v := g.newTmp()
 	g.emit("%s = call %s @%s(%s)", v, ret, fn.Name, joinArgs(args))
+	if fn.Foreign {
+		g.emit("call void @veles_blocking_leave()")
+	}
 	return v
 }
 
@@ -1065,7 +1082,7 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		}
 		p, l := g.strPtrLen(g.stringConst(g.where(e.Span)))
 		r := g.newTmp()
-		g.emit("%s = call i64 @veles_int_pow(i64 %s, i64 %s, i64 %d, i1 %d, ptr %s, i64 %s)", r, bx, by, bits, s, p, l)
+		g.emit("%s = call i64 @veles_int_pow(i64 %s, i64 %s, i64 %d, i1 zeroext %d, ptr %s, i64 %s)", r, bx, by, bits, s, p, l)
 		if ty == "i64" {
 			return r
 		}
@@ -1289,6 +1306,12 @@ func (g *gen) builtin(e *sema.Builtin) string {
 	case "list.len":
 		l := g.expr(e.Args[0])
 		return g.listLen(l)
+	case "list.rawData":
+		// the element storage: veles_list's first field (D69, withRaw)
+		l := g.expr(e.Args[0])
+		p := g.newTmp()
+		g.emit("%s = load ptr, ptr %s", p, l)
+		return p
 	case "list.get":
 		l := g.expr(e.Args[0])
 		i := g.expr(e.Args[1])
@@ -1464,6 +1487,24 @@ func (g *gen) closure(e *sema.Closure) string {
 func (g *gen) callIndirect(e *sema.CallIndirect) string {
 	ft := e.Fn.Type().(*types.Func)
 	fv := g.expr(e.Fn)
+	if ft.C {
+		// a C function pointer: the address itself, no environment (D69)
+		var args []string
+		for _, a := range e.Args {
+			args = append(args, g.llType(a.Type())+cArgExt(a.Type())+" "+g.expr(a))
+		}
+		// foreign code, as a call to a foreign extern is (D66)
+		g.emit("call void @veles_blocking_enter()")
+		if ft.Ret == nil || types.IsUnit(ft.Ret) {
+			g.emit("call void %s(%s)", fv, joinArgs(args))
+			g.emit("call void @veles_blocking_leave()")
+			return "zeroinitializer"
+		}
+		v := g.newTmp()
+		g.emit("%s = call %s %s(%s)", v, g.llType(ft.Ret), fv, joinArgs(args))
+		g.emit("call void @veles_blocking_leave()")
+		return v
+	}
 	code := g.newTmp()
 	g.emit("%s = extractvalue { ptr, ptr } %s, 0", code, fv)
 	env := g.newTmp()

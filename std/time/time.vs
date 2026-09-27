@@ -197,8 +197,15 @@ public struct Timestamp {
   /// The microsecond within the second, always 0..999999.
   public fun subsecondMicros(): i64 = floorMod(this.us, 1000000)
 
-  public fun plus(d: Duration): Timestamp = Timestamp(us: this.us + d.toMicros())
-  public fun minus(d: Duration): Timestamp = Timestamp(us: this.us - d.toMicros())
+  // `t + d` and `t - d` (D71). The difference of two instants is a
+  // `Duration` and has its own names, `since` and `until`, because the
+  // operator can only mean one thing per type.
+  implement Addable {
+    fun plus(other: Duration): Timestamp = Timestamp(us: this.us + other.toMicros())
+  }
+  implement Subtractable {
+    fun minus(other: Duration): Timestamp = Timestamp(us: this.us - other.toMicros())
+  }
 
   /// How long after `earlier` this instant is; negative when it is before.
   public fun since(earlier: Timestamp): Duration =

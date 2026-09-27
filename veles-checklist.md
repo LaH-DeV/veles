@@ -59,22 +59,46 @@ answered from the shape, tuples get `Comparable`, enums get
 ### 1.2 Foreign function interface
 
 - [x] C ABI FFI design → D67 (2026-09-26): extern blocks in any package, native libraries in the manifest; marshaling of strings/buffers and callbacks still to decide
-- [ ] `extern "C"` blocks: calling convention, varargs, callbacks into Veles
+- [~] `extern "C"` blocks: calling convention and callbacks into Veles done (D69, 2026-09-26: `extern "C" fun` + `&name` : `extern fun(...)`, called through inside `unsafe`); varargs (`printf`) still open
 - [ ] `extern struct` layout: packed, explicit alignment, transparent wrappers
       (the "noted pressure point" under D51)
-- [ ] Ownership at the boundary: who frees, GC pinning for buffers handed to C
-- [ ] Panics/unwinds never cross into C; errors come back as codes
+- [x] Ownership at the boundary (D69): C keeps only copies (`ffi.CString`, `ffi.alloc`/`free`), a list is lent for a closure (`withRaw`, `CLayout` elements), a value C hands back travels as an `ffi.handle` (a scanned table index, never a GC address)
+- [x] Panics never cross into C: a panic inside an `extern "C" fun` ends the process with its location (runtime `veles_ffi_enter`/`leave` around the body); errors cannot cross either (an exported fun may not throw)
 - [x] Linking: `[native]` in `veles.toml` — `libs`, `static-libs` (archive resolved by name), `lib-paths`, `pkg-config`, file entries; dependencies' tables link too (2026-09-26, `driver/native.go`, TestNativeLinking)
 - [ ] Declaration files (`.d.vs`) so bindings are typed and shareable
+- [x] A foreign call cannot stall the collector: every call to an extern
+      outside std (and through an `extern fun` pointer) runs in a safe
+      region; a callback from C leaves it for the Veles code, and a thread
+      Veles did not start is registered on its first callback (2026-09-27,
+      TestForeignCallDoesNotStallCollection)
 - [ ] Suspension-aware bindings: a blocking C call runs on a helper thread
-      and parks the task (needs §1.3)
+      and parks the task (today it occupies one worker; the others go on)
 
 ### 1.3 Concurrency
 
-- [ ] Multi-threaded executor → D35 (single-threaded today)
-- [ ] Work stealing or per-thread queues — measure before choosing
-- [ ] `Mutex<T>` becomes a real lock once threads exist (today a cell)
-- [ ] `Atomic<T>` with real atomics and memory order
+- [x] Multi-threaded executor → D66 stage 1 (2026-09-27): N workers
+      (`VELES_THREADS`, default one per core) on one run queue; stop-the-world
+      collection at safepoints (allocation, suspension, loop back-edges);
+      per-thread span ownership, so allocation takes no lock; lock-free safe
+      regions around blocking runtime calls (stdin, `os.run`, file reads) and
+      foreign calls; `println` writes a line whole
+- [x] Work stealing (D66 stage 2, 2026-09-27): a ring per worker plus a shared
+      queue, runnext, stealing half a ring; a task's scheduling state is one CAS'd
+      word, so taking, running and requeueing a task take no runtime lock, and
+      neither do spawn, `await` of a finished task or a successful finish.
+      `bench/spawn` (100k tasks) 443 → 39 ms at 8 threads (Go 32 ms)
+- [x] The collector records a safe thread's registers in assembly at the
+      entry of `veles_enter_safe`/`veles_blocking_enter`: a C helper had lost
+      a register it reused (a just-spawned task was swept; TestSpawnDuringCollections)
+- [x] `Mutex<T>` is a real lock (2026-09-27): a heap word, one CAS each way
+      uncontended, spin then park on striped condvars in a safe region;
+      re-locking inside its own `withLock` panics; released when `f` panics
+- [x] `Atomic<T>` operations are indivisible (same lock word); `update(f)`
+      for read-modify-write (2026-09-27)
+- [ ] `Atomic` of a machine word without the lock (hardware atomics)
+- [x] A module-level `var` is an error unless it is a `Mutex`/`Atomic`
+      (D66, 2026-09-27); std's UUID v7 clock and random's generator moved
+      behind a `Mutex`
 - [ ] Cancellation propagation API documented as a surface, not just D3's discipline
 - [ ] Task-local values (request id, trace context) that follow `async`
 - [ ] Bounded channels with backpressure; `select` over several waits
@@ -159,7 +183,7 @@ answered from the shape, tuples get `Comparable`, enums get
 
 ### 3.1 Runtime
 
-- [ ] Threads (see 1.3) — the single largest throughput multiplier
+- [x] Threads (see 1.3) — the single largest throughput multiplier (D66 stage 1)
 - [ ] GC: pause-time metric exported; heap ceiling; allocation-rate counter
 - [ ] GC: generational or incremental marking once a server-shaped heap is
       measured (mark-sweep stop-the-world today)
@@ -470,7 +494,7 @@ pros/cons before anything is built; the answer becomes a spec entry.
 8. ~~FFI design~~ — decided 2026-09-26 (D67), see §10.
 9. ~~Executor threading model~~ — decided 2026-09-26 (D66), see §10.
 10. User-definable derivation (phase 2, once the compiler-known set is proven). *Not yet asked.*
-11. **Arithmetic operator traits** (`Addable`/`Subtractable`/… so `a + b` works on a `Duration`, a `Timestamp`, a vector, a money amount). D60 deliberately did not take it: the five operator traits today are about *comparison and text*, and adding arithmetic ones raises overflow, mixed operand types (`Timestamp + Duration` is not `Timestamp + Timestamp`) and whether `+=` follows. `Duration.plus`/`minus`/`times`/`dividedBy` are named so that such a trait could adopt them. *Not yet asked.*
+11. ~~Arithmetic operator traits~~ — decided 2026-09-26 (D71), see §10. Was: (`Addable`/`Subtractable`/… so `a + b` works on a `Duration`, a `Timestamp`, a vector, a money amount). D60 deliberately did not take it: the five operator traits today are about *comparison and text*, and adding arithmetic ones raises overflow, mixed operand types (`Timestamp + Duration` is not `Timestamp + Timestamp`) and whether `+=` follows. `Duration.plus`/`minus`/`times`/`dividedBy` are named so that such a trait could adopt them. *Not yet asked.*
 12. ~~How a `Duration` goes on the wire~~ — decided 2026-09-25, see §10.
 
 ## 10. Decision log
@@ -522,10 +546,14 @@ pros/cons before anything is built; the answer becomes a spec entry.
 | 2026-09-26 | `self` becomes `this` (user) | **Built 2026-09-26.** The receiver is spelled `this` across the language, std, docs and tooling (spec D65, v0.40). `self` still parses as the receiver with an error whose fix writes `this` (`veles check --fix`, LSP quick fix, inside interpolations too); 1,520 sites migrated by a token-level rewrite (code only, never comments or string text), prose by hand; `Self` the type is unchanged; the VS Code grammar highlights `this`, flags `self`, and no longer marks `enum`/`for` illegal. |
 | 2026-09-26 | A MutableList where a List is expected (found by D62) | **Moved when unescaped, otherwise `.toList()`** (user, recommended of four): the checker passed the same handle, contradicting D35 (a List could shrink during a call, or be shared with a task while written). Now a fresh local that never escaped converts at its last use with no copy; anything else is an error with a `.toList()`/`.toMap()`/`.toSet()` fix. Rejected: implicit copy, always explicit, keeping the view. Spec D63. Built 2026-09-26 (sema/move.go; `==` and compiler-written code compare without converting; std: 4 `.toList()` copies, the sha leftover buffer and crypto padding). |
 | 2026-09-26 | A Kotlin-style `x!!` to panic on null (user: "controversial, so I'm not sure") | **Not added; every panic shows its location instead** (user, recommended of four): `!!` would be D62's cheatcode at two characters, for every `T?`, with no reason recorded. What it offered was the line, so panics now print `at file:line:col` (relative to the package root) under the message — `panic(...)`, overflow, division, `pow`, non-exhaustive match, list index; kept through `scope`'s re-raise, `Panic.location` at `gather`, printed by `veles test`. Rejected: `!!` everywhere, `!!` with a warning + fix, `!!` only in tests. Spec D64. Built 2026-09-26 (runtime `veles_panic_at`, `veles_list_index_panic`; codegen `g.where`). Known gap: a std panic for caller misuse (`swap`) reports the std line. |
-| 2026-09-26 | Executor threading model (§9.9) | **Work-stealing M:N over one shared heap** (user, recommended of three): tasks may resume on any worker; GC stops workers at safepoints (allocation, suspension); per-worker allocation buffers; real `Mutex`/`Atomic`; thread-safe channels/timers/poller. Staged: global queue first, stealing second, each measured in `bench/`. A module-level `var` that is not `Mutex`/`Atomic` becomes an error. Spec D66. Rejected: thread-per-core (imbalance, still needs safepoints), single thread + offload pool (breaks D35). *Not built.* |
+| 2026-09-26 | Executor threading model (§9.9) | **Work-stealing M:N over one shared heap** (user, recommended of three): tasks may resume on any worker; GC stops workers at safepoints (allocation, suspension); per-worker allocation buffers; real `Mutex`/`Atomic`; thread-safe channels/timers/poller. Staged: global queue first, stealing second, each measured in `bench/`. A module-level `var` that is not `Mutex`/`Atomic` becomes an error. Spec D66. Rejected: thread-per-core (imbalance, still needs safepoints), single thread + offload pool (breaks D35). *Both stages built 2026-09-27.* |
 | 2026-09-26 | FFI shape (§9.8) | **Hand-written `extern` blocks in any package + a `[native]` table in `veles.toml`** (`libs`, `pkg-config`, Windows lib paths), `extern struct`, C function-pointer types for callbacks; "maybe" a `veles bindgen` later that writes the same form (user). User asked that every extern be unsafe — it already is: a call needs `unsafe`, and an extern cannot be taken as a value. Spec D67. Rejected: `@cImport`-style header import. *Not built.* |
 | 2026-09-26 | Signals and graceful shutdown | **A signal is awaited** (user, recommended of three): `os.shutdownSignal(): os.Signal` suspends until SIGINT/SIGTERM (Ctrl+C/Break/close on Windows), installs its handlers only when first asked, a second signal has the default effect; `http.serve(..., stop:, grace:)` stops accepting, drains, cancels after `grace`. Spec D68. Rejected: `os.onSignal` callbacks, signals handled inside `serve` by default. |
 | 2026-09-26 | A std panic caused by the caller (D64's gap) | **Left as is** (user, over the recommended `@callerLocation` attribute): the std line is reported until stack traces exist. |
+| 2026-09-26 | FFI: strings and buffers | **Explicit copies plus a scoped borrow** (user, recommended of three): `std/ffi` — `CString.of(s)` (Closeable), `ffi.string(p)`, `ffi.bytes(p, n)`, `alloc`/`free` — and `xs.withRaw(p => ...)` lending a `List<u8>`'s storage for a closure. Spec D69. Rejected: explicit only (a copy per big buffer), implicit `string`→`char*` bridging. Built 2026-09-26: `std/ffi` (`CString.of` refuses NUL bytes with `ffi.NulByte`, `readString`/`readBytes`, `alloc`/`free`, `handle`/`Handle<T>.from`), prelude `CLayout` + `withRaw`, raw-pointer casts in `unsafe`, runtime `veles_ffi.c`; examples/ffi. |
+| 2026-09-26 | FFI: callbacks | **`extern "C" fun name(...) { body }`** (user, recommended of three): C calling convention, `&name` is an `extern fun(...)` pointer, no suspend/throw, a panic ends the process. Spec D69. Rejected: `@cabi` attribute, no callbacks. Built 2026-09-26 (parser `parseExportedFun`, `types.Func.C`, codegen `exportWrapper`; C can also call it by symbol — TestNativeLinking). |
+| 2026-09-26 | `?.` through a chain (R8) | **Swift's rule** (user, recommended): a null after `?.` skips the rest of the postfix chain; `a?.b.c()` is `R?`. Spec D70. Rejected: Kotlin's one-step rule. Built 2026-09-26 (`safeBelow`/`safeChain` in sema/check_safe.go; `Grouped` on MemberExpr/CallExpr marks parentheses; a nullable place is used in place, so a mutating call lands). |
+| 2026-09-26 | Arithmetic operator traits (§9.11) | **The full set** (user, recommended of three): `+ - * /` and unary `-` on user types call `plus`/`minus`/`times`/`dividedBy`/`negate` through prelude traits with a right-hand and an output type; `+=` follows; `Duration`/`Timestamp` adopt them. Spec D71. Rejected: `+`/`-` only; methods only. Built 2026-09-26 (sema/operators.go; associated types inferred from the written method, a general rule; `Duration`/`Timestamp` adopted; `negated()` renamed `negate()`). |
 
 ## 11. Known limitations to revisit
 
@@ -548,10 +576,6 @@ pros/cons before anything is built; the answer becomes a spec entry.
 - `time.now()` is the only clock `uuidV7` has, so two processes on one host
   can produce the same (millisecond, counter) pair. Uniqueness comes from
   the 62 random bits, as in v4; only the ordering is per-process.
-- `Duration` arithmetic is methods (`a.plus(b)`), because the language has
-  no arithmetic operator traits. An `Arithmetic`/`Addable` trait is its own
-  decision, deliberately not taken with D60; the names were chosen so it
-  could adopt them later without a second spelling appearing.
 - `Offset.local(at:)` goes through the C library's `localtime_r`, so it
   reads the host's zone, honours `TZ`, and is as correct as the platform's
   tz data. A fixed offset still cannot answer a *local* time on a DST

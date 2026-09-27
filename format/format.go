@@ -555,6 +555,9 @@ func (p *printer) modifiers(fn *ast.FunDecl) {
 func (p *printer) fun(fn *ast.FunDecl) {
 	p.attrs(fn.Attrs)
 	p.modifiers(fn)
+	if fn.ExportC {
+		p.w("extern \"C\" ")
+	}
 	p.w("fun ")
 	// type parameters follow the name, as on a struct: `fun encode<T>(...)`
 	// (v0.33; the parser still reads `fun <T> encode` and rewrites it)
@@ -1156,6 +1159,9 @@ func (p *printer) typ(t ast.Type) {
 	case *ast.FunType:
 		if t.Sendable {
 			p.w("sendable ")
+		}
+		if t.C {
+			p.w("extern ")
 		}
 		p.w("fun(")
 		p.typeList(t.Params)

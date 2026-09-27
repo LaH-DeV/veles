@@ -1,9 +1,10 @@
 # The Veles programming language
 
 Bootstrap compiler for Veles, written in Go, implementing `veles-spec.md`
-(v0.24) through build-plan Stages 1–5: the whole surface syntax, the type
-system with inferred effects, a non-moving collector, a single-threaded
-executor for stackless coroutines, path-based packages, and a test runner.
+(v0.42) through build-plan Stages 1–5: the whole surface syntax, the type
+system with inferred effects, a non-moving collector, a multi-threaded
+executor for stackless coroutines (one worker per core, D66), path-based
+packages, C interop, and a test runner.
 The remaining step of the plan — self-hosting — is future work.
 
 ```bash
@@ -90,10 +91,11 @@ minimal version selection are not implemented.
 
 ## Known gaps and deviations
 
-- The executor is single-threaded (build plan §5 defers parallelism);
-  rendezvous channels behave as capacity 1.
+- Channels, races and timers are one runtime structure behind one lock
+  (the run queues are per worker and lock-free). Rendezvous channels
+  behave as capacity 1.
 - Panics unwind via `setjmp`/`longjmp` to the executor rather than D49's
-  DWARF tables; `with` cleanups do not run on a panic, only on cancellation.
+  DWARF tables; the task's active `with` cleanups run on the way.
 - Exhaustiveness is a variant-set check; nested refutable sub-patterns are
   only tracked for nullables.
 - Trait objects require object-safe traits (no associated types, generic

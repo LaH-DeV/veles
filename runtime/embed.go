@@ -17,3 +17,14 @@ var OSSource string
 
 //go:embed c/veles_net.c
 var NetSource string
+
+//go:embed c/veles_ffi.c
+var FFISource string
+
+//go:embed c/veles_sync.c
+var SyncSource string
+
+// TLSHeader is the per-thread block every runtime file includes.
+//
+//go:embed c/veles_tls.h
+var TLSHeader string

@@ -29,12 +29,14 @@ fun viaGather(): i64 {
   out ?? -1
 }
 
-// parked at the `scope`'s join, holding a resource of its own around it
+// parked at the `scope`'s join, holding a resource of its own around it.
+// Its two children are cancelled together and unwind in parallel, so they
+// may close in either order; both close before their owner does.
 fun viaScope() {
   with (held = Held(name: "the scope's owner")) {
     scope {
-      async slow("a child of a scope, launched first")
-      async slow("a child of a scope, launched second")
+      async slow("a child of a scope")
+      async slow("a child of a scope")
     }
   }
 }

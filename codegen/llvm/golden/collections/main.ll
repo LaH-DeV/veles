@@ -745,7 +745,7 @@ elvis.end.77:
   store i64 4, ptr %a468
   %t469 = call i64 @veles_map_find(ptr %t466, i64 4, ptr %a468, ptr @eqp.i64)
   %t470 = icmp sge i64 %t469, 0
-  call void @veles_bool_to_string(ptr %a471, i1 %t470)
+  call void @veles_bool_to_string(ptr %a471, i1 zeroext %t470)
   %t472 = load %str, ptr %a471
   %t473 = extractvalue %str %t465, 0
   %t474 = extractvalue %str %t465, 1

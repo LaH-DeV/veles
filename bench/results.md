@@ -8,9 +8,12 @@ whenever a commit touches the runtime or code generation.
 
 Caveats worth keeping in mind when reading them:
 
-- `channels` is not like for like: Veles's executor is single-threaded
-  coroutines, Go's channel hands values between OS threads. It will move
-  when the executor gets threads (checklist §1.3).
+- Since 2026-09-27 the executor runs tasks on one thread per core (D66
+  stage 1): `parallel` spreads CPU work over cores; `channels` keeps a
+  producer and consumer on one worker (runnext), as Go's scheduler does.
+  `spawn` measures the per-task cost: 100k tasks of ~100 ns each from one
+  producer, so more threads mostly add handoffs; it is within ~1.2× of
+  Go since the per-worker run queues (D66 stage 2).
 - `sha256`: Go's uses the CPU's SHA instructions; Veles's is plain Veles
   (checklist §11).
 - One machine, one run; differences under ~10% are noise.
@@ -32,3 +35,31 @@ slot of every full span on each allocation between collections: `json`
 took **376 s** (now 0.31 s) and `strings` did not finish in ten minutes
 (now 0.3 s). `veles_gc.c` now skips a full span in O(1) and resumes each
 size class where the last allocation succeeded.
+
+## 2026-09-27 02:27 — go1.23.2, windows/amd64 (HEAD b9b7ef0, plus the working tree)
+
+| benchmark | ops | Veles | Go | Veles / Go |
+|---|---:|---:|---:|---:|
+| channels | 200000 | 7.04ms | 10.4ms | 0.7× |
+| json | 40000 | 136.73ms | 47.27ms | 2.9× |
+| maps | 2000000 | 50.33ms | 86.08ms | 0.6× |
+| parallel | 64 | 16.73ms | 17.06ms | 1.0× |
+| sha256 | 16 | 80.36ms | 7.65ms | 10.5× |
+| sort | 900000 | 117.31ms | 53.34ms | 2.2× |
+| spawn | 100000 | 443.99ms | 32.37ms | 13.7× |
+| strings | 1000000 | 185.31ms | 39.78ms | 4.7× |
+| trees | 14592688 | 146.47ms | 318.18ms | 0.5× |
+
+## 2026-09-27 09:06 — go1.23.2, windows/amd64 (HEAD b9b7ef0, plus the working tree)
+
+| benchmark | ops | Veles | Go | Veles / Go |
+|---|---:|---:|---:|---:|
+| channels | 200000 | 7.21ms | 10.62ms | 0.7× |
+| json | 40000 | 126.98ms | 41.79ms | 3.0× |
+| maps | 2000000 | 46.6ms | 68.27ms | 0.7× |
+| parallel | 64 | 16.32ms | 13.52ms | 1.2× |
+| sha256 | 16 | 70.61ms | 7.2ms | 9.8× |
+| sort | 900000 | 106.85ms | 49.25ms | 2.2× |
+| spawn | 100000 | 40.08ms | 31.43ms | 1.3× |
+| strings | 1000000 | 160.8ms | 33.99ms | 4.7× |
+| trees | 14592688 | 130.94ms | 268.13ms | 0.5× |

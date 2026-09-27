@@ -207,4 +207,4 @@ fun typeTests(x: Shape, y: Any) {
 }
 
 public const PI: f64 = 3.14159265358979
-public var counter = 0
+public val counter = atomic(0)  // D66: shared state sits behind a lock

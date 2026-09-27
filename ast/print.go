@@ -327,6 +327,9 @@ func (p *printer) fun(d *FunDecl) {
 	if d.Override {
 		p.w("override ")
 	}
+	if d.ExportC {
+		p.w("extern-c ")
+	}
 	if d.Unsafe {
 		p.w("unsafe ")
 	}
@@ -419,6 +422,9 @@ func (p *printer) typ(t Type) {
 	case *FunType:
 		if t.Sendable {
 			p.w("sendable ")
+		}
+		if t.C {
+			p.w("extern ")
 		}
 		p.w("fun(")
 		for i, e := range t.Params {

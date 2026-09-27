@@ -225,6 +225,9 @@ func (f *fnCtx) moduleTypeNamed(x ast.Expr) types.Type {
 // sendableHint explains a failed `Sendable` bound: the value would be
 // shared, which is what the bound exists to refuse.
 func sendableHint(bound *types.Trait) string {
+	if isCLayoutTrait(bound) {
+		return "; C reads only numbers, bool, raw pointers and extern structs as they lie in memory — copy the data into a List of one of those first (D69)"
+	}
 	if !isSendableTrait(bound) {
 		return ""
 	}

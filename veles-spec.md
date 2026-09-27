@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.41** — language design complete; D58 adds the derivation story D51 deferred, D59 the standard library's cryptography. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
+**Working draft v0.42** — language design complete; D58 adds the derivation story D51 deferred, D59 the standard library's cryptography. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -1573,6 +1573,21 @@ saves about a third of the work); staying single-threaded with an
 offload pool and scaling by processes (breaks D35's promise, no in-process
 parallel computation).
 
+*Stage 1 built (v0.42).* What the decision left to the implementation:
+a call to a foreign function (an extern outside std, or through an
+`extern fun` pointer) runs in a *safe region* — the collector does not
+wait for a thread blocked in C, and a callback from C leaves the region
+for its Veles code. `Mutex` re-locked inside its own `withLock` panics
+rather than hanging, and a panicking `withLock` function releases the
+lock. `Atomic<T>` gains `update(f)`, the read-modify-write a
+`load`/`store` pair cannot do without losing a concurrent store.
+*Stage 2 built (v0.42).* Each worker has a run queue of its own that
+idle workers steal half of, plus a shared queue; a task's scheduling
+state is one word changed by compare-and-swap, so taking, running and
+requeueing a task, spawning one, and a successful finish take no global
+lock. Channels, races and timers stay one runtime structure under one
+lock.
+
 ### D67 — FFI: `extern` blocks anywhere, native libraries in the manifest (v0.41)
 
 `extern "C" { fun ... }` may appear in any package (the checker never
@@ -1641,6 +1656,88 @@ server or other cleanup has to undo).
 *Not taken with it (asked 2026-09-26):* making a std panic caused by the
 caller (`xs.swap(0, 7)`) report the caller's line. It keeps reporting the
 std line until stack traces exist (D64's known gap).
+
+### D69 — FFI: memory crosses explicitly; C calls back through `extern "C" fun` (v0.42)
+
+**Strings and buffers.** GC memory never becomes a `*raw` pointer that
+outlives a call (D50's provenance rule stands). What crosses is either
+copied into unmanaged memory or lent for the length of a closure:
+
+```veles
+// fragment
+use ffi
+
+with (name = try ffi.CString.of(path)) {      // malloc'd, NUL-terminated; `with` frees it
+  unsafe { sqlite3_open(name.ptr(), &db) }      // `&db`: *T becomes *raw T inside unsafe
+}
+val version = unsafe { ffi.readString(zlibVersion()) }   // copies up to the NUL
+val data = unsafe { ffi.readBytes(p, n) }                 // copies n bytes
+bytes.withRaw(p => unsafe { write(fd, p, bytes.len()) })  // lent: no copy
+```
+
+`CString.of` refuses a string holding a NUL byte (`ffi.NulByte`): C would
+read it as ending there, which is how a checked name becomes a different
+one. `readString`/`readBytes` trust their pointer, so they are `unsafe
+fun`s. `withRaw` hands C the list's own storage while the closure runs —
+sound because the collector does not move objects and the list is alive
+for the call; the pointer must not be kept past the closure, which the
+type cannot express, so the closure's calls are `unsafe` by contract. Its
+elements must be `CLayout` — a prelude marker answered from the shape,
+like `Sendable`: numbers, `bool`, raw pointers, `extern struct`s and
+`extern fun`s, what C reads as it lies in memory. `ffi.alloc(n)` /
+`ffi.free(p)` are the raw allocator. `p as *raw T` reinterprets a raw
+pointer (C's `void *`), and `&x as *raw U` gives C a Veles address for
+the length of a call; both only inside `unsafe`.
+
+**A value C hands back.** `ffi.handle(value)` lends a Veles value to C as
+an opaque `void *` — an index into a table the collector scans, never a
+GC address — and `unsafe ffi.Handle<T>.from(p)` gets it back in the
+callback. It is `Closeable`; the value stays alive while it is open.
+
+**Callbacks.** A function with a body in an `extern "C"` position is a
+Veles function with the C calling convention:
+
+```veles
+// fragment
+extern "C" fun byLength(a: *raw u8, b: *raw u8): i32 { ... }
+unsafe { qsort(base, n, 8, &byLength) }
+```
+
+`&byLength` is a C function pointer of type `extern fun(*raw u8, *raw u8):
+i32`. The body may not suspend or throw; a panic in it ends the process
+with its location, since it must not unwind through C frames. Context
+travels through the C API's `void *userdata` as a `*raw` value.
+
+Rejected: implicit bridging of `string` to `char*` (a hidden allocation,
+and a pointer C keeps dangles silently); an attribute spelling
+(`@cabi`) — one word, `extern "C"`, marks the boundary both ways.
+
+### D70 — `?.` short-circuits the rest of the chain (v0.42)
+
+After `?.`, a null skips everything to the end of the postfix chain, so
+`xs.ref(i)?.tags.push(x)` and `user?.address.city` work; the chain's type
+is the last step's, made nullable (Swift's optional chaining). R8 had kept
+Kotlin's rule — `?.` covers one step, `a?.b?.c` spelled out — and left the
+question open; the chain is what such code means, and the extra `?.`s
+said nothing a reader needed. The chain ends at the end of the postfix
+expression: `(a?.b).c` is a separate, non-chained access to a nullable.
+
+### D71 — Arithmetic operators on user types (v0.42)
+
+`a + b`, `a - b`, `a * b`, `a / b` and `-a` on a non-numeric type call
+`plus`, `minus`, `times`, `dividedBy` and `negate` — the names D60 chose
+for `Duration` so that this could adopt them. They are prelude traits
+(`Addable`, `Subtractable`, `Multipliable`, `Divisible`, `Negatable`)
+whose right operand and result are associated types (`type Rhs`,
+`type Out`), so the operand types may differ (`Timestamp + Duration →
+Timestamp`), a generic can require them, and an implement is only the
+method: an associated type an implement does not bind is read off the
+method's own parameter or result type (a general rule, not one for these
+traits). One implement per trait and type means an operator means one
+thing per type — the difference of two `Timestamp`s stays
+`t.since(earlier)`. `a += b` is `a = a + b`. What overflow does is the implementation's
+business, as it is today for the methods. Comparison stays `Comparable`
+(D57/P7). Rejected: only `+`/`-`; method calls only.
 
 ---
 

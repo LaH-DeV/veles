@@ -219,7 +219,10 @@ func (f *fnCtx) checkExpr(e ast.Expr, want types.Type) Expr {
 
 func (f *fnCtx) checkExprInner(e ast.Expr, want types.Type) Expr {
 	if p, ok := f.boundPlace[e]; ok {
-		return p // the receiver of a `?.` write (check_safe.go)
+		return p // the receiver of a `?.` write or chain (check_safe.go)
+	}
+	if s := f.safeBelow(e); s != nil {
+		return f.safeChain(e, s) // `a?.b.c`: the rest of the chain is skipped on null (D70)
 	}
 	switch e := e.(type) {
 	case *ast.IntLit:
@@ -1006,6 +1009,9 @@ func (f *fnCtx) unaryExpr(e *ast.UnaryExpr, want types.Type) Expr {
 		if types.IsInvalid(x.Type()) {
 			return x
 		}
+		if !types.IsNumeric(x.Type()) && !types.IsEnum(x.Type()) {
+			return f.negateCall(x, e.Pos) // -d on a user type (D71)
+		}
 		if !types.IsNumeric(x.Type()) || types.IsUnsigned(x.Type()) {
 			f.errorf(e.Pos, "cannot negate a value of type '%s'", x.Type())
 			return bad()
@@ -1036,6 +1042,9 @@ func (f *fnCtx) unaryExpr(e *ast.UnaryExpr, want types.Type) Expr {
 		}
 		return &Unary{exprBase{x.Type()}, OpBitNot, x, e.Pos}
 	case lexer.Amp:
+		if fp := f.cFunctionPointer(e); fp != nil {
+			return fp // `&callback`: a C function pointer (D69)
+		}
 		// D10: address of a local (heap-promoted); D50: always a GC pointer.
 		// The address of a temporary boxes the value.
 		if !isPlaceSyntax(e.X) {
@@ -1122,6 +1131,9 @@ func (f *fnCtx) binaryExpr(e *ast.BinaryExpr, want types.Type) Expr {
 		l = f.checkOperandFor(e.L, r.Type())
 	} else {
 		l = f.checkExpr(e.L, want)
+		if operandTakesOperator(op, l.Type()) {
+			return f.operatorCall(op, l, e.R, e.Pos) // a + b on a user type (D71)
+		}
 		r = f.checkOperandFor(e.R, l.Type())
 	}
 	return f.makeBinary(op, l, r, e.Pos)
@@ -1573,6 +1585,20 @@ func (f *fnCtx) castExpr(e *ast.CastExpr) Expr {
 	}
 	if conv := f.convert(x, to); conv != nil {
 		return conv
+	}
+	if gp, ok := from.(*types.Pointer); ok && !gp.Raw && isRawPointer(to) && f.unsafe > 0 {
+		// `&x as *raw u8`: the address C sees for the length of a call, as
+		// the implicit `*T` to `*raw T` inside unsafe is (the collector
+		// does not move objects)
+		return &Cast{exprBase{to}, x}
+	}
+	if isRawPointer(from) && isRawPointer(to) {
+		// C's `void *` to what it points at, and back (D69): a raw pointer
+		// only changes what it claims to point to
+		if f.unsafe == 0 {
+			f.errorf(e.Pos, "casting a raw pointer requires an 'unsafe' block (D44)")
+		}
+		return &Cast{exprBase{to}, x}
 	}
 	switch {
 	case types.IsEnum(from) && types.IsNumeric(to):
@@ -2285,4 +2311,13 @@ func errPolyCall(x Expr) bool {
 		return decl.Throws && decl.Error != nil && types.ContainsTypeParam(decl.Error)
 	}
 	return false
+}
+
+// isRawPointer: a `*raw T` or a nullable one, `(*raw T)?`.
+func isRawPointer(t types.Type) bool {
+	if n, ok := t.(*types.Nullable); ok {
+		t = n.Elem
+	}
+	p, ok := t.(*types.Pointer)
+	return ok && p.Raw
 }

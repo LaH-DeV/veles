@@ -46,6 +46,9 @@ func (c *Checker) inferSuspension(prog *Program) {
 			if t.Extern {
 				c.errorf(fn.Span, "extern functions cannot suspend")
 			}
+			if fn.ExportC != "" {
+				c.errorf(fn.Span, "an 'extern \"C\" fun' cannot suspend: C calls it and expects the answer before it returns (D69)")
+			}
 		}
 		if t.Decl.Effects.Suspends {
 			fn.Suspends = true

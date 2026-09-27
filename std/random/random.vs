@@ -77,28 +77,31 @@ public struct Rng {
 
 fun rotl(x: u64, k: i64): u64 = (x << k) | (x >> (64 - k))
 
-var shared = Rng.seeded(time.now().toMicros())
+// The module's generator, shared by every task — on whichever thread each
+// runs (D66) — so each call takes its lock. A task drawing many numbers
+// in a hot loop is faster with an `Rng` of its own.
+val shared = mutex(Rng.seeded(time.now().toMicros()))
 
 /// Reseeds the module's shared generator, for a reproducible run.
 public fun seed(n: i64) {
-  shared = Rng.seeded(n)
+  shared.set(Rng.seeded(n))
 }
 
 /// A number in `lo..<hi` from the shared generator.
-public fun range(lo: i64, hi: i64): i64 = shared.range(lo, hi)
+public fun range(lo: i64, hi: i64): i64 = shared.withLock(r => r.range(lo, hi))
 
 /// The next 64 random bits from the shared generator.
-public fun nextU64(): u64 = shared.nextU64()
+public fun nextU64(): u64 = shared.withLock(r => r.nextU64())
 
 /// A number in `0.0..<1.0` from the shared generator.
-public fun float(): f64 = shared.float()
+public fun float(): f64 = shared.withLock(r => r.float())
 
-public fun boolean(): bool = shared.boolean()
+public fun boolean(): bool = shared.withLock(r => r.boolean())
 
 /// One element of `xs`, or `null` when it is empty.
-public fun pick<T>(xs: List<T>): T? = shared.pick(xs)
+public fun pick<T>(xs: List<T>): T? = shared.withLock(r => r.pick(xs))
 
 /// Reorders `xs` in place.
 public fun shuffle<T>(xs: MutableList<T>) {
-  shared.shuffle(xs)
+  shared.withLock(r => r.shuffle(xs))
 }

@@ -10,15 +10,15 @@ entry:
   %a13 = alloca ptr
   %a14 = alloca i64
   %a33 = alloca { ptr, ptr }
-  %a43 = alloca i64
   %a45 = alloca i64
-  %a50 = alloca %str
-  %a56 = alloca %str
-  %a59 = alloca %str
+  %a47 = alloca i64
+  %a52 = alloca %str
+  %a58 = alloca %str
   %a61 = alloca %str
-  %a70 = alloca %str
-  %a76 = alloca %str
-  %a85 = alloca %str
+  %a63 = alloca %str
+  %a72 = alloca %str
+  %a78 = alloca %str
+  %a87 = alloca %str
   %t1 = call ptr @veles_list_new(ptr @adesc.Shape, i64 2)
   %t3 = insertvalue %S.main.Square undef, double 0x4000000000000000, 0
   %t4 = call ptr @veles_gc_alloc(ptr @desc.main.Square, i64 8)
@@ -78,76 +78,83 @@ loop.post.2:
   %t40 = load i64, ptr %a14
   %t41 = add i64 %t40, 1
   store i64 %t41, ptr %a14
+  %t42 = load volatile i32, ptr @veles_stop_requested, align 4
+  %t43 = icmp ne i32 %t42, 0
+  br i1 %t43, label %safepoint.7, label %safepoint.on.8, !prof !{!"branch_weights", i32 1, i32 100000}
+safepoint.7:
+  call void @veles_gc_park()
+  br label %safepoint.on.8
+safepoint.on.8:
   br label %loop.cond.1
 loop.end.3:
-  %t42 = call ptr @veles_list_new(ptr @adesc.i64, i64 3)
-  store i64 3, ptr %a43
-  call void @veles_list_push(ptr %t42, ptr %a43)
-  store i64 9, ptr %a43
-  call void @veles_list_push(ptr %t42, ptr %a43)
-  store i64 4, ptr %a43
-  call void @veles_list_push(ptr %t42, ptr %a43)
-  %t44 = call { i1, i64 } @v_main.largest__i64(ptr %t42)
-  %t47 = extractvalue { i1, i64 } %t44, 0
-  %t46 = xor i1 %t47, true
-  br i1 %t46, label %elvis.default.7, label %elvis.some.8
-elvis.some.8:
-  %t48 = extractvalue { i1, i64 } %t44, 1
-  store i64 %t48, ptr %a45
-  br label %elvis.end.9
-elvis.default.7:
-  store i64 0, ptr %a45
-  br label %elvis.end.9
-elvis.end.9:
-  %t49 = load i64, ptr %a45
-  call void @veles_i64_to_string(ptr %a50, i64 %t49)
-  %t51 = load %str, ptr %a50
-  %t52 = extractvalue %str %t51, 0
-  %t53 = extractvalue %str %t51, 1
-  %t54 = extractvalue %str { ptr @.str.2, i64 1 }, 0
-  %t55 = extractvalue %str { ptr @.str.2, i64 1 }, 1
-  call void @veles_string_concat(ptr %a56, ptr %t52, i64 %t53, ptr %t54, i64 %t55)
-  %t57 = load %str, ptr %a56
-  %t58 = call ptr @veles_list_new(ptr @adesc.string, i64 2)
-  store %str { ptr @.str.3, i64 1 }, ptr %a59
-  call void @veles_list_push(ptr %t58, ptr %a59)
-  store %str { ptr @.str.4, i64 1 }, ptr %a59
-  call void @veles_list_push(ptr %t58, ptr %a59)
-  %t60 = call { i1, %str } @v_main.largest__string(ptr %t58)
-  %t63 = extractvalue { i1, %str } %t60, 0
-  %t62 = xor i1 %t63, true
-  br i1 %t62, label %elvis.default.10, label %elvis.some.11
-elvis.some.11:
-  %t64 = extractvalue { i1, %str } %t60, 1
-  store %str %t64, ptr %a61
-  br label %elvis.end.12
-elvis.default.10:
-  store %str { ptr @.str.5, i64 0 }, ptr %a61
-  br label %elvis.end.12
-elvis.end.12:
-  %t65 = load %str, ptr %a61
-  %t66 = extractvalue %str %t57, 0
-  %t67 = extractvalue %str %t57, 1
-  %t68 = extractvalue %str %t65, 0
-  %t69 = extractvalue %str %t65, 1
-  call void @veles_string_concat(ptr %a70, ptr %t66, i64 %t67, ptr %t68, i64 %t69)
-  %t71 = load %str, ptr %a70
-  %t72 = extractvalue %str %t71, 0
-  %t73 = extractvalue %str %t71, 1
-  %t74 = extractvalue %str { ptr @.str.2, i64 1 }, 0
-  %t75 = extractvalue %str { ptr @.str.2, i64 1 }, 1
-  call void @veles_string_concat(ptr %a76, ptr %t72, i64 %t73, ptr %t74, i64 %t75)
-  %t77 = load %str, ptr %a76
-  %t78 = insertvalue %S.main.Point undef, i64 1, 0
-  %t79 = insertvalue %S.main.Point %t78, i64 2, 1
-  %t80 = call %str @show.main.Point(%S.main.Point %t79)
-  %t81 = extractvalue %str %t77, 0
-  %t82 = extractvalue %str %t77, 1
-  %t83 = extractvalue %str %t80, 0
-  %t84 = extractvalue %str %t80, 1
-  call void @veles_string_concat(ptr %a85, ptr %t81, i64 %t82, ptr %t83, i64 %t84)
-  %t86 = load %str, ptr %a85
-  call void @v_std.io.println(%str %t86)
+  %t44 = call ptr @veles_list_new(ptr @adesc.i64, i64 3)
+  store i64 3, ptr %a45
+  call void @veles_list_push(ptr %t44, ptr %a45)
+  store i64 9, ptr %a45
+  call void @veles_list_push(ptr %t44, ptr %a45)
+  store i64 4, ptr %a45
+  call void @veles_list_push(ptr %t44, ptr %a45)
+  %t46 = call { i1, i64 } @v_main.largest__i64(ptr %t44)
+  %t49 = extractvalue { i1, i64 } %t46, 0
+  %t48 = xor i1 %t49, true
+  br i1 %t48, label %elvis.default.9, label %elvis.some.10
+elvis.some.10:
+  %t50 = extractvalue { i1, i64 } %t46, 1
+  store i64 %t50, ptr %a47
+  br label %elvis.end.11
+elvis.default.9:
+  store i64 0, ptr %a47
+  br label %elvis.end.11
+elvis.end.11:
+  %t51 = load i64, ptr %a47
+  call void @veles_i64_to_string(ptr %a52, i64 %t51)
+  %t53 = load %str, ptr %a52
+  %t54 = extractvalue %str %t53, 0
+  %t55 = extractvalue %str %t53, 1
+  %t56 = extractvalue %str { ptr @.str.2, i64 1 }, 0
+  %t57 = extractvalue %str { ptr @.str.2, i64 1 }, 1
+  call void @veles_string_concat(ptr %a58, ptr %t54, i64 %t55, ptr %t56, i64 %t57)
+  %t59 = load %str, ptr %a58
+  %t60 = call ptr @veles_list_new(ptr @adesc.string, i64 2)
+  store %str { ptr @.str.3, i64 1 }, ptr %a61
+  call void @veles_list_push(ptr %t60, ptr %a61)
+  store %str { ptr @.str.4, i64 1 }, ptr %a61
+  call void @veles_list_push(ptr %t60, ptr %a61)
+  %t62 = call { i1, %str } @v_main.largest__string(ptr %t60)
+  %t65 = extractvalue { i1, %str } %t62, 0
+  %t64 = xor i1 %t65, true
+  br i1 %t64, label %elvis.default.12, label %elvis.some.13
+elvis.some.13:
+  %t66 = extractvalue { i1, %str } %t62, 1
+  store %str %t66, ptr %a63
+  br label %elvis.end.14
+elvis.default.12:
+  store %str { ptr @.str.5, i64 0 }, ptr %a63
+  br label %elvis.end.14
+elvis.end.14:
+  %t67 = load %str, ptr %a63
+  %t68 = extractvalue %str %t59, 0
+  %t69 = extractvalue %str %t59, 1
+  %t70 = extractvalue %str %t67, 0
+  %t71 = extractvalue %str %t67, 1
+  call void @veles_string_concat(ptr %a72, ptr %t68, i64 %t69, ptr %t70, i64 %t71)
+  %t73 = load %str, ptr %a72
+  %t74 = extractvalue %str %t73, 0
+  %t75 = extractvalue %str %t73, 1
+  %t76 = extractvalue %str { ptr @.str.2, i64 1 }, 0
+  %t77 = extractvalue %str { ptr @.str.2, i64 1 }, 1
+  call void @veles_string_concat(ptr %a78, ptr %t74, i64 %t75, ptr %t76, i64 %t77)
+  %t79 = load %str, ptr %a78
+  %t80 = insertvalue %S.main.Point undef, i64 1, 0
+  %t81 = insertvalue %S.main.Point %t80, i64 2, 1
+  %t82 = call %str @show.main.Point(%S.main.Point %t81)
+  %t83 = extractvalue %str %t79, 0
+  %t84 = extractvalue %str %t79, 1
+  %t85 = extractvalue %str %t82, 0
+  %t86 = extractvalue %str %t82, 1
+  call void @veles_string_concat(ptr %a87, ptr %t83, i64 %t84, ptr %t85, i64 %t86)
+  %t88 = load %str, ptr %a87
+  call void @v_std.io.println(%str %t88)
   ret void
 }
 

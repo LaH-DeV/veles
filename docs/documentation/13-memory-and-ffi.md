@@ -321,4 +321,68 @@ as that file. A dependency's `[native]` table links into every program
 that uses the dependency, so a package that binds a C library carries
 its link instructions with it.
 
+### Strings, buffers and callbacks
+
+The collector's memory never becomes a pointer C may keep (D69). Memory
+crosses one of three ways:
+
+- **Copied for C to keep** — `std/ffi`: `ffi.CString.of(s)` is a
+  NUL-terminated copy in C's own memory, freed by `with` (a string holding
+  a NUL byte is refused with `ffi.NulByte`, since C would read it as
+  ending there); `ffi.alloc(n)`/`ffi.free(p)` for raw buffers. Coming back,
+  `ffi.readString(p)` and `ffi.readBytes(p, n)` copy out of C memory; they
+  trust the pointer, so they are `unsafe fun`s.
+- **Lent for the length of a call** — `xs.withRaw(p => ...)` hands C a
+  pointer to the list's own elements, no copy. The elements must be
+  `CLayout`: numbers, `bool`, raw pointers and `extern struct`s — what C
+  reads as it lies in memory. The pointer is good only inside the lambda.
+- **A value C hands back** — `ffi.handle(value)` gives C an opaque
+  `void *` for a callback's `userdata`; the callback gets the value back
+  with `ffi.Handle<T>.from(p)`. The value stays alive while the handle is
+  open.
+
+A Veles function C can call is declared `extern "C" fun` with a body.
+`&name` is its address, of type `extern fun(...)` — a C function pointer:
+
+```veles
+use ffi, io
+
+extern "C" {
+  fun qsort(base: *raw u8, count: u64, size: u64, compare: extern fun(*raw u8, *raw u8): i32)
+}
+
+extern "C" fun ascending(a: *raw u8, b: *raw u8): i32 {
+  val x = unsafe {
+    *(a as *raw i64)
+  }
+  val y = unsafe {
+    *(b as *raw i64)
+  }
+  if (x < y) -1 else if (x > y) 1 else 0
+}
+
+fun main() throws ffi.NulByte {
+  val xs: MutableList<i64> = [42, 7, 19, 3]
+  xs.withRaw(p => unsafe {
+    qsort(p as *raw u8, xs.len() as u64, 8, &ascending)
+  })
+  with (s = try ffi.CString.of("hello")) {
+    io.println("$xs ${unsafe { ffi.readString(s.ptr()) }}")
+  }
+}
+```
+
+Output:
+```text
+[3, 7, 19, 42] hello
+```
+
+Its parameters and result must be `CLayout` (or an `extern fun`); it may
+not throw — C cannot receive the error, so return a status code — and
+may not suspend. A panic inside it ends the process with its location:
+it cannot unwind through C's frames. `p as *raw T` reinterprets a raw
+pointer (C's `void *`), and `&x as *raw u8` gives C the address of a
+Veles value for the length of a call; both need `unsafe`, as does calling
+through an `extern fun` value. `examples/ffi` puts all of it together.
+
 Next: [Attributes and the test runner](14-attributes-and-testing.md).

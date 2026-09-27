@@ -169,13 +169,26 @@ func codegenFlags(release bool) []string {
 	return []string{"-O0", "-g"}
 }
 
+// runtimeFlags compiles the C runtime. It is optimised in every build: a
+// debug build is for stepping through the program, not the executor, and
+// an unoptimised runtime makes every channel operation and allocation
+// several times slower.
+func runtimeFlags(release bool) []string {
+	if release {
+		return []string{"-O2"}
+	}
+	return []string{"-O2", "-g"}
+}
+
 // runtimeSources is the C runtime every executable links, in link order.
 var runtimeSources = []struct{ name, src string }{
+	{"veles_sync", rt.SyncSource},
 	{"veles_rt", rt.Source},
 	{"veles_gc", rt.GCSource},
 	{"veles_task", rt.TaskSource},
 	{"veles_os", rt.OSSource},
 	{"veles_net", rt.NetSource},
+	{"veles_ffi", rt.FFISource},
 }
 
 // runtimeObjects returns object files for the C runtime. The runtime never
@@ -183,12 +196,16 @@ var runtimeSources = []struct{ name, src string }{
 // once per (compiler, clang, flags) and kept in the user cache directory;
 // without a usable cache they are compiled into tmpDir instead.
 func runtimeObjects(clang string, release bool, tmpDir string) ([]string, error) {
-	flags := codegenFlags(release)
+	flags := runtimeFlags(release)
 	dir := runtimeCacheDir(clang, flags)
 	if dir == "" {
 		dir = tmpDir
 	}
 	var objs []string
+	// the header the sources include, next to them
+	if err := os.WriteFile(filepath.Join(tmpDir, "veles_tls.h"), []byte(rt.TLSHeader), 0o644); err != nil {
+		return nil, err
+	}
 	for _, s := range runtimeSources {
 		obj := filepath.Join(dir, s.name+".o")
 		objs = append(objs, obj)
@@ -239,6 +256,8 @@ func runtimeCacheDir(clang string, flags []string) string {
 		fmt.Fprintln(h, s.name, len(s.src))
 		h.Write([]byte(s.src))
 	}
+	fmt.Fprintln(h, "veles_tls.h", len(rt.TLSHeader))
+	h.Write([]byte(rt.TLSHeader))
 	return filepath.Join(base, "veles", "rt", hex.EncodeToString(h.Sum(nil))[:16])
 }
 

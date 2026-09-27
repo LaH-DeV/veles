@@ -243,10 +243,6 @@ fun main() { val c = C(n: 1); val p = &c; p.n = 2 }`,
 		"var field through a val binding": prelude + `
 struct C { var n: i32 = 0; fun bump() { this.n += 1 } }
 fun main() { val c = C(); c.n = 2; c.bump(); io.println("${c.n}") }`,
-		"var field on a var global": prelude + `
-struct C { var n: i32 = 0; fun bump() { this.n += 1 } }
-var g = C()
-fun main() { g.n = 2; g.bump() }`,
 		"Result value matched": prelude + `
 error E { code: i32 }
 fun f(): i32 throws E = Err(E(code: 1))
@@ -290,6 +286,13 @@ trait T { fun f(): i32 }
 struct A { }
 implement T for A { fun f(): i32 { await sleep(Duration.millis(1)); 1 } }
 fun main() { }`, "declares it non-suspending"},
+		{"D66 module-level var", prelude + `
+var hits = 0
+fun main() { hits += 1 }`, "'val hits = atomic(...)'"},
+		{"D66 module-level var of a struct", prelude + `
+struct P { var n: i32 }
+var p = P(n: 1)
+fun main() { }`, "'val p = mutex(...)'"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) { expectError(t, c.src, c.want) })
@@ -311,6 +314,15 @@ fun main() throws {
     val w = race { val m = ch.recv() => if (m == null) 1 else 2; sleep(Duration.millis(10)) => 2 }
     io.println("$v $x $y $w")
   }
+}`)
+	// D66: shared module state behind a lock
+	expectClean(t, prelude+`
+val hits = atomic(0)
+val names = mutex(MutableList<string>.make(0, _ => ""))
+fun main() {
+  val _ = hits.update(n => n + 1)
+  names.withLock(xs => xs.push("a"))
+  io.println("${hits.load()} ${names.withLock(xs => xs.len())}")
 }`)
 }
 
@@ -1583,15 +1595,15 @@ fun work(s: S?) { }
 // pointer that locates it is evaluated once (hoistPlace).
 func TestCompoundAssignmentEvaluatesPlaceOnce(t *testing.T) {
 	prog := checkProgram(t, prelude+`
-var calls = 0
-fun idx(): i64 { calls += 1; 0 }
-fun key(): string { calls += 1; "a" }
+val calls = atomic(0)
+fun idx(): i64 { val _ = calls.update(n => n + 1); 0 }
+fun key(): string { val _ = calls.update(n => n + 1); "a" }
 fun main() {
   var xs = mut [1, 2]
   *(xs.ref(idx()) ?: panic("idx() is 0")) += 1
   var m: MutableMap<string, i64> = ["a": 1]
   *(m.ref(key()) ?: panic("key() is \"a\"")) *= 2
-  io.println("$calls $xs $m")
+  io.println("${calls.load()} $xs $m")
 }`)
 	stmts := prog.Main.Body.Stmts
 	// each compound assignment is preceded by the temporaries for its
@@ -3471,5 +3483,114 @@ func TestOrPanicRemoved(t *testing.T) {
 		if !found {
 			t.Errorf("%s: want a removal error with the fix %q, got %v", c.src, c.want, diags.Items)
 		}
+	}
+}
+
+// D70: a null after `?.` skips the rest of the postfix chain; parentheses
+// end the chain.
+func TestSafeChain(t *testing.T) {
+	base := prelude + `
+struct Address { city: string
+  var visits: i64 = 0
+  fun visit() { this.visits += 1 } }
+struct User { name: string; address: Address; tags: MutableList<string> = [] }
+`
+	expectClean(t, base+`
+fun main() {
+  val u: User? = User(name: "a", address: Address(city: "x"))
+  val n: i64? = u?.address.city.len()
+  var m: User? = u
+  m?.address.visit()
+  val xs: MutableList<User> = [User(name: "y", address: Address(city: "z"))]
+  xs.ref(0)?.tags.push("t")
+  io.println("${n ?: 0} ${m?.address.visits ?: 0}")
+}`)
+	expectError(t, base+`
+fun main() {
+  val u: User? = null
+  io.println("${(u?.address).city}")
+}`, "may be null")
+	expectError(t, base+`
+fun main() {
+  val u = User(name: "a", address: Address(city: "x"))
+  io.println("${u?.address.city}")
+}`, "'?.' on a non-nullable value")
+}
+
+// D71: arithmetic operators on user types go through the prelude's
+// operator traits; Rhs/Out are inferred from the method written.
+func TestArithmeticOperatorTraits(t *testing.T) {
+	money := prelude + `
+struct Money { cents: i64
+  implement Addable { fun plus(other: Money): Money = Money(cents: this.cents + other.cents) }
+  implement Multipliable { fun times(other: i64): Money = Money(cents: this.cents * other) }
+  implement Negatable { fun negate(): Money = Money(cents: 0 - this.cents) } }
+`
+	expectClean(t, money+`
+fun sum<T: Addable>(a: T, b: T): T = a + b
+fun main() {
+  var m = Money(cents: 1) + Money(cents: 2)
+  m += Money(cents: 3)
+  m *= 2
+  val n = -m
+  val d = Duration.seconds(1) * 3 - Duration.millis(5)
+  io.println("${m.cents} ${n.cents} $d ${sum(m, m).cents}")
+}`)
+	expectError(t, money+`
+fun main() { val x = Money(cents: 1) - Money(cents: 2) }`, "operator '-' is not defined for 'Money'; implement 'Subtractable'")
+	expectError(t, money+`
+fun main() { val x = Money(cents: 1) * Money(cents: 2) }`, "type mismatch")
+	expectError(t, prelude+`
+struct P { x: i64 }
+fun main() { val p = -P(x: 1) }`, "implement 'Negatable'")
+}
+
+// D69: callbacks and the rules at the C boundary.
+func TestFFIBoundary(t *testing.T) {
+	expectClean(t, prelude+`
+extern "C" { fun qsort(base: *raw u8, n: u64, size: u64, cmp: extern fun(*raw u8, *raw u8): i32) }
+extern "C" fun cmp(a: *raw u8, b: *raw u8): i32 = 0
+fun main() {
+  val xs: MutableList<i64> = [2, 1]
+  xs.withRaw(p => unsafe { qsort(p as *raw u8, 2, 8, &cmp) })
+  val f = &cmp
+  val x: i64 = 1
+  io.println("${unsafe { f(&x as *raw u8, &x as *raw u8) }}")
+}`)
+	for _, c := range []struct{ name, src, want string }{
+		{"generic export", `extern "C" fun f<T>(x: T): i32 = 0
+fun main() { }`, "cannot be generic"},
+		{"string crosses", `extern "C" fun f(s: string): i32 = 0
+fun main() { }`, "'string' cannot cross into C"},
+		{"throws", `error E { }
+extern "C" fun f(x: i32): i32 throws E = throw E()
+fun main() { }`, "cannot throw"},
+		{"suspends", `extern "C" fun f(x: i32): i32 {
+  await sleep(Duration.millis(1))
+  x
+}
+fun main() { }`, "cannot suspend"},
+		{"no body", `extern "C" fun f(x: i32): i32
+fun main() { }`, "needs a body"},
+		{"C pointer outside unsafe", `extern "C" fun f(x: i32): i32 = x
+fun main() { val g = &f; val y = g(1) }`, "requires an 'unsafe' block"},
+		{"raw cast outside unsafe", `fun main(p: *raw u8) { }
+fun g(p: *raw u8) { val q = p as *raw i64 }`, "casting a raw pointer requires an 'unsafe' block"},
+		{"closure to C", `extern "C" { fun take(f: fun(i32): i32) }
+fun main() { }`, "a Veles function value cannot be handed to C"},
+		{"CLayout by hand", `struct S { x: i64 }
+implement CLayout for S
+fun main() { }`, "cannot be implemented by hand"},
+		{"withRaw on strings", `fun main() { val xs = ["a"]; xs.withRaw(p => 0) }`, "requires 'string' to implement 'CLayout'"},
+		{"a plain export is clean", `extern "C" fun f(x: i32): i32 = x
+fun main() { }`, ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if c.want == "" {
+				expectClean(t, prelude+c.src)
+				return
+			}
+			expectError(t, prelude+c.src, c.want)
+		})
 	}
 }

@@ -136,15 +136,21 @@ fun ask(port: i64, commands: List<string>): List<string> throws IoError | net.To
   }
 }
 
+// two clients, one after the other: the second sees what the first stored
+fun clients(port: i64): string throws IoError | net.TooLong {
+  val first = try ask(port, ["SET lang veles", "GET lang"])
+  val second = try ask(port, ["GET lang", "DEL lang"])
+  "$first $second"
+}
+
 fun main() throws IoError {
   with (listener = try net.listen()) {
     val port = listener.port()
     val results = gather {
       async server(listener, 2)
-      async ask(port, ["SET lang veles", "GET lang"])
-      async ask(port, ["GET lang", "DEL lang"])
+      async clients(port)
     }
-    io.println("${results.1.getOrDefault([])} ${results.2.getOrDefault([])}")
+    io.println(results.1.getOrDefault("failed"))
   }
 }
 ```

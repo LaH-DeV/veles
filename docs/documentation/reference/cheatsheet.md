@@ -53,7 +53,8 @@ val (a, b) = (1, "one")         // tuple destructuring, nests: val ((x, y), z) =
 | comparison | `== != < <= > >=` |
 | logic | `&& \|\| !` |
 | conversion | `x as T` (numeric only) |
-| nullable | `x ?: fallback`, `x?.member`, `x?.method()` |
+| operators on your types | `implement Addable { fun plus(other: T): Out }` → `a + b`, `+=`; also Subtractable, Multipliable, Divisible, Negatable (D71) |
+| nullable | `x ?: fallback`, `x?.member`, `x?.method()`; `x?.a.b()` skips the whole rest of the chain on null (D70) |
 | result | `r ?? fallback`, `r ?? { e => ... }` — `?:` for a Result; `val v = r else { e => ... }` binds or leaves |
 | or fail | `x ?! error` — a `T?` or `Result` becomes a `Result` failing with `error`; `try x ?! e` propagates it |
 | type test | `x is T`, `x !is T` |
@@ -219,7 +220,7 @@ t.cancel()                       // stop a task at its next suspension point; it
 val v = try withTimeout(Duration.seconds(1), () => try fetch())   // R throws E | Timeout; the task is cancelled and unwound before Timeout is thrown
 // leaving a scope body early (return / throw / cancellation) cancels and joins its children
 val m = mutex(state); m.withLock(s => s.n += 1); m.get(); m.set(v)
-val a = atomic(0); a.load(); a.store(1); a.swap(2)
+val a = atomic(0); a.load(); a.store(1); a.swap(2); a.update(n => n + 1)
 ```
 
 Suspension is inferred; `await` only on `sleep`, `recv`, task handles.

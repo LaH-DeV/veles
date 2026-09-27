@@ -329,3 +329,94 @@ gracefully, docs 17 "Stopping gracefully". Found on the way:
   un-ignored.
 - Not verified here: a real console Ctrl+C/`kill` reaching the handler —
   the test environment has no console (`AllocConsole` is refused).
+
+**D67 native linking built.** `[native]` in `veles.toml` (`libs`,
+`static-libs`, `lib-paths`, `pkg-config`, file entries), collected from the
+entry package and its dependencies (`driver/native.go`). `static-libs`
+names the archive to the linker, which is what makes a link static on
+every platform. `TestNativeLinking` compiles its own C with the same clang.
+
+**Phase 3 third batch — asked and answered, all built.**
+- D70 `?.` short-circuits the rest of the chain (Swift): `safeBelow`/
+  `safeChain` in sema; parentheses end a chain (`Grouped` on the AST); a
+  nullable place is used in place, so `maybe?.address.visit()` mutates the
+  stored value.
+- D71 arithmetic operators on user types through `Addable`/`Subtractable`/
+  `Multipliable`/`Divisible`/`Negatable` (associated `Rhs`/`Out`, inferred
+  from the method — a general rule for associated types now); `+=` follows;
+  `Duration`/`Timestamp` adopted (`negated()` → `negate()`), docs and
+  examples use the operators.
+- D69 FFI marshaling and callbacks: `std/ffi` (`CString`, `readString`/
+  `readBytes`, `alloc`/`free`, `handle`), prelude `CLayout` + `withRaw`,
+  `p as *raw T` in unsafe, `extern "C" fun` + `&name: extern fun(...)`, a
+  panic in a callback ends the process instead of unwinding through C;
+  `examples/ffi` (qsort/bsearch with Veles comparators, handles,
+  withRaw/memset, strtoll). Still open in FFI: varargs, `extern struct`
+  layout controls, `.d.vs` declaration files, blocking calls on a helper
+  thread (needs D66).
+
+**D66 stage 1 — built 2026-09-27.** `runtime/c/veles_sync.c` (threads,
+locks, condvars, the Mutex lock word); GC thread registry, lock-free safe
+regions (Dekker-style flags against `veles_stop_requested`), park and
+safepoints (allocation, suspension, loop back-edges), stop-the-world,
+multi-stack scan, per-thread span ownership (allocation takes no lock);
+executor on N workers (`VELES_THREADS`, default one per core) on one run
+queue; `async` spawns onto the queue. 64-task allocation benchmark: 72 ms →
+15 ms at 8 threads. Foreign calls and blocking runtime calls (stdin,
+`os.run`, file reads) run in safe regions (TestForeignCallDoesNotStallCollection
+fails without it); callbacks leave the region; `println` writes whole lines.
+`Mutex`/`Atomic` are real locks (re-lock panics, released on panic,
+`Atomic.update`); `with` cleanup records live in the frame, not the heap
+(uncontended lock op 56 → 40 ns). Module-level `var` is an error unless
+`Mutex`/`Atomic`; uuid v7 clock, random's generator, examples moved.
+Pre-existing bugs threads exposed, all fixed with regression tests:
+(1) a race waiting on two channels was linked into both waiter lists
+through its one `next` field — a send on one cut the other's list (the
+`examples/shutdown` failure; now one waiter node per arm, examples/tasks
+"two races"); (2) a scope's rethrow matched the failed child's *runtime*
+launch index against static sites, so a task launched in a loop that was
+not the first lost its error (`mapConcurrent` with a throwing `f` panicked
+"a slot was never filled"; examples/tasks "loop"); (3) cancel/abandon
+left stale channel waiter entries. Five docs/examples relied on the
+single-thread schedule's order and were rewritten to be deterministic.
+Stress: every example × threads 1/2/4/8 × 8 runs, docs × 2/16 × 2 — clean.
+Performance pass after: `bench/channels` had gone 2.5 ms → 60 ms with threads.
+Three causes, all fixed: (a) MinGW clang supports only *emulated* TLS
+(native TLS segfaults even in a hello-world with its GNU ld), so every
+`current`/`me` access was a function call — now one per-thread block
+(`runtime/c/veles_tls.h`) read from a TEB slot with one `%gs` load
+(`__thread` elsewhere); (b) every wake handed the task to another
+thread — now Go's *runnext*: a task woken by the running task runs next
+on the same worker (fair after 32 turns; flushed to the shared queue
+before any blocking call, `veles_blocking_enter`; the GC scans each
+thread's block); (c) the runtime was compiled at -O0 in debug builds —
+now always -O2. Result: channels 6.4 ms at 1/2/8 threads (Go 12.6 ms),
+uncontended Mutex op 40 → 12 ns, 8-thread contended 1.55 s → 0.89 s,
+parallel 64-task benchmark still 73 → 16 ms at 8 threads. The -O2
+runtime exposed a latent ABI bug: a `bool` passed to C as a bare `i1`
+has undefined upper bits and C reads the byte (`random.boolean()`
+printed "true\0false\0in") — C-ABI small integers now carry
+`zeroext`/`signext` like clang's (TestCABIExtension, golden strings).
+**D66 stage 2 — built 2026-09-27.** Measured first: `bench/spawn` (100k
+short tasks) and `bench/parallel` added with Go references; spawn got
+*slower* with threads (19 → 443 ms at 1 → default threads) because every
+task took the runtime lock ~5 times. Now: a 256-slot ring per worker +
+shared queue + runnext + steal-half; per-task `sched` word (IDLE/QUEUED/
+RUNNING/WOKEN) by CAS; spawn joins the scope under a per-scope spinlock;
+`started`, `cancelled`, `await` of a done task and a successful `finish`
+are lock-free (DONE published before the waiter is read; `await` and race
+registration look again after registering). spawn: 17 ms at 1 thread,
+39 ms at 8 (Go 32 ms). Two bugs found on the way: (1) the collector
+recorded a safe thread's registers with setjmp in a C helper whose own
+frame held a caller register it reused — dead after return, overwritten
+while the thread waited — so a task held only in a register between
+`async` and its spawn was swept (found with VELES_GC_POISON, a probe of
+unmarked pending tasks, and gdb); now a few instructions of assembly at
+the entry of `veles_enter_safe`/`veles_blocking_enter` record them exactly
+(`veles_tls.h`), callbacks restore the outer record;
+TestSpawnDuringCollections fails with the old recording. (2) The
+deadlock detector fired while a worker holding a runnext task waited for
+the lock, and after the root had just finished — it now checks both.
+STILL OPEN: lock-free `Atomic` for machine words; a blocking C call parking
+its task instead of occupying a worker; aarch64 register capture (falls
+back to setjmp).

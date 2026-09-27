@@ -47,9 +47,14 @@ scope finished
   (`sleep`, `recv`, task handles); a call to an ordinary function that
   happens to suspend needs nothing (D16).
 
-The bootstrap executor is single-threaded: tasks interleave at
-suspension points, in order. Everything in this chapter is written so
-that it stays correct when the executor becomes parallel.
+Tasks run in parallel, on one thread per core (D66): the executor
+spreads them over a pool of worker threads that share one heap, and a
+task that suspends may resume on another thread. `VELES_THREADS=n` in the
+environment sets the pool's size — `VELES_THREADS=1` runs everything
+on one thread, which is handy when debugging. What the compiler checks
+in this chapter — only Sendable values cross into a task, shared state
+sits in a `Mutex` or an `Atomic` — is what makes that safe: two tasks
+never change the same memory at once without a lock between them.
 
 ## Fail fast
 
@@ -62,7 +67,7 @@ use io
 error Boom { n: i64 }
 
 fun mayFail(n: i64): i64 throws Boom {
-  await sleep(Duration.millis(1))
+  await sleep(Duration.millis(10))
   if (n == 2) throw Boom(n)
   n * 10
 }
@@ -70,7 +75,7 @@ fun mayFail(n: i64): i64 throws Boom {
 fun slow() {
   loop (i in 0..<100) {
     io.println("slow tick $i")
-    await sleep(Duration.millis(1))
+    await sleep(Duration.millis(500))
   }
   io.println("never printed")
 }
@@ -88,7 +93,6 @@ fun main() throws {
 Output:
 ```text
 slow tick 0
-slow tick 1
 ```
 
 The program ends with `error: main failed with Boom(n: 2)` on standard
@@ -178,14 +182,16 @@ fun main() {
     loop {
       done.push(await results.recv() ?: break)
     }
-    io.println("${done.len()} results, first ${done.sorted().first() ?: ""}")
+    // which worker took which job is up to the scheduler
+    val jobsDone = done.map(line => line.splitOnce(" did ")?.1 ?: "?")
+    io.println("${done.len()} results, jobs ${jobsDone.sorted()}")
   }
 }
 ```
 
 Output:
 ```text
-4 results, first a did 1
+4 results, jobs [1, 2, 3, 4]
 ```
 
 That is the worker pool, spelled out: a bounded number of tasks pulling
@@ -243,13 +249,20 @@ fun fetch(n: i64): i64 {
   n * n
 }
 
-fun check(n: i64): i64 throws Rejected = if (n > 3) throw Rejected(n) else n
+fun check(n: i64): i64 throws Rejected = if (n == 4) throw Rejected(n) else n
 
 fun main() {
   val ids = [1, 2, 3, 4, 5]
   val offset = 100
   io.println("${ids.mapConcurrent(n => fetch(n) + offset, workers: 2)}")
-  ids.forEachConcurrent(n => io.println("handled $n"), workers: 3)
+  val handled = Channel<i64>(capacity: 5)
+  ids.forEachConcurrent(n => handled.send(n), workers: 3)
+  var total = 0
+  loop {
+    val n = handled.tryRecv() ?: break
+    total += n
+  }
+  io.println("handled all, total $total")
   when (val r = ids.mapConcurrent(n => try check(n))) {
     is Ok  => io.println("all $r")
     is Err => io.println("rejected ${r.n}")
@@ -260,16 +273,15 @@ fun main() {
 Output:
 ```text
 [101, 104, 109, 116, 125]
-handled 1
-handled 2
-handled 3
-handled 4
-handled 5
+handled all, total 15
 rejected 4
 ```
 
 `mapConcurrent` keeps the input order and runs at most `workers` calls at
-a time; `forEachConcurrent` is the same for effects. The function may
+a time; `forEachConcurrent` is the same for effects. The calls themselves
+run in parallel on the executor's threads, in no fixed order — here each
+reports on a channel rather than printing, so the output does not depend
+on which finished first. The function may
 suspend, and it may throw: then the whole call throws, and the first
 error cancels the work still queued — the rule the eager adapters follow
 ([chapter 10](10-closures-and-iterators.md)). Go-to-definition opens
@@ -351,7 +363,6 @@ fun worker(name: string) {
 fun firstReady(): string {
   scope {
     async worker("a")
-    async worker("b")
     await sleep(Duration.millis(1))
     return "gave up"
   }
@@ -370,12 +381,16 @@ fun main() {
 
 Output:
 ```text
-closed b
 closed a
 gave up
 closed c
 done
 ```
+
+Several children cancelled together unwind at the same time, on
+whichever threads are free, so their cleanups run in no fixed order
+between them; each task's own `with` blocks still close innermost
+first, and all of them before the scope's `return` completes.
 
 Cleanup itself is never cancelled (D47): a `close()` that runs during
 unwinding completes even if the task is cancelled again meanwhile. Note
@@ -479,17 +494,22 @@ as a state machine (see below), which is why a named non-suspending
 function does not fit a `suspends` parameter as a value: pass
 `x => f(x)` and the lambda is compiled the suspending way.
 
-For state that genuinely must be shared and mutated, wrap it:
+For state that genuinely must be shared and mutated, wrap it. A
+`Mutex<T>` runs a function on the value with its lock held; an `Atomic<T>`
+reads, replaces or `update`s the whole value in one step. Both are real
+locks — the tasks below run on different threads at once — and both are
+cheap when nobody else holds them (one atomic instruction to take, one
+to give back):
 
 ```veles
 use io
 
 struct Counter { var hits: i64 }
 
-fun bump(m: Mutex<Counter>, times: i64) {
+fun bump(m: Mutex<Counter>, total: Atomic<i64>, times: i64) {
   loop (_ in 0..<times) {
     m.withLock(c => c.hits += 1)
-    await sleep(Duration.zero)
+    val _ = total.update(n => n + 1)
   }
 }
 
@@ -497,17 +517,34 @@ fun main() {
   val shared = mutex(Counter(hits: 0))
   val total = atomic(0)
   scope {
-    async bump(shared, 5)
-    async bump(shared, 7)
+    loop (_ in 0..<4) {
+      async bump(shared, total, 1000)
+    }
   }
-  total.store(shared.get().hits)
-  io.println("hits ${shared.get().hits} atomic ${total.load()}")
+  io.println("hits ${shared.get().hits}, total ${total.load()}")
 }
 ```
 
 Output:
 ```text
-hits 12 atomic 12
+hits 4000, total 4000
+```
+
+Three rules keep this simple. `withLock`'s function cannot suspend, so
+no task ever waits at an `await` while holding a lock — the classic way
+to deadlock a coroutine runtime is ruled out by the compiler. Locking a
+`Mutex` again inside its own `withLock` panics with a message instead
+of hanging. And a lock is given back even when the function panics.
+
+A module-level `var` is an error for the same reason a captured one is:
+every task sees the module's bindings, from whichever thread it runs on.
+Module state that changes is a `val` holding a lock:
+
+```veles
+// fragment
+var served = 0              // error: module-level 'var served' is shared by every task …
+val served = atomic(0)      // ok: served.update(n => n + 1)
+val cache = mutex(MutableMap<string, string>())
 ```
 
 ## How it compiles

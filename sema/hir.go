@@ -56,7 +56,14 @@ type Func struct {
 	Params   []*Var // excludes the receiver
 	Receiver *Var   // `this` for methods, always a pointer to the receiver's place (D22 v0.30)
 	Extern   bool   // C ABI, no body
-	Inline   int    // 1 @inline, -1 @noinline
+	// Foreign: an extern outside std — code the runtime knows nothing
+	// about. Codegen runs each call in a safe region (D66), so a C call
+	// that blocks does not hold up a collection on other threads.
+	Foreign bool
+	// ExportC is the C symbol of an `extern "C" fun` (D69): codegen emits a
+	// wrapper under this name that C calls, around the Veles body.
+	ExportC string
+	Inline  int // 1 @inline, -1 @noinline
 	// Closure functions take an environment pointer first; CapVars are the
 	// inner variables standing for captured outer ones (index = env slot).
 	IsClosure bool

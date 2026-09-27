@@ -375,8 +375,22 @@ func (c *Checker) checkGlobal(g *Global) {
 	if types.IsNever(declared) || types.IsUnit(declared) {
 		c.errorf(d.Name.Pos, "a global cannot have type '%s'", declared)
 	}
+	if d.Kind == ast.BindVar && !isSynchronized(declared) {
+		// D66: every task sees the same globals, from whichever thread runs it
+		example := "val " + d.Name.Name + " = mutex(...)"
+		if _, ok := declared.(*types.Basic); ok {
+			example = "val " + d.Name.Name + " = atomic(...)"
+		}
+		c.errorf(d.Name.Pos, "module-level 'var %s' is shared by every task, and tasks run on several threads at once (D66); keep the state behind a lock: '%s'", d.Name.Name, example)
+	}
 	g.Type = declared
 	g.Init = init
+}
+
+// isSynchronized: a Mutex or an Atomic, whose operations take their lock
+func isSynchronized(t types.Type) bool {
+	st, ok := t.(*types.Struct)
+	return ok && st.Module == "std.prelude" && (st.Name == "Mutex" || st.Name == "Atomic")
 }
 
 func isConstExpr(e Expr) bool {
@@ -700,6 +714,11 @@ func (f *fnCtx) checkAssignInner(s *ast.AssignStmt) []Stmt {
 		op := BinOpFromToken(s.Op)
 		var pre []Stmt
 		target, pre = f.hoistPlace(target)
+		if operandTakesOperator(op, target.Type()) {
+			// t += d is t = t.plus(d) (D71); the result must fit the place
+			value = f.coerce(f.operatorCall(op, target, s.Value, s.Pos), target.Type(), s.Pos)
+			return append(pre, f.assignPlace(s.Target, target, root, value, rawType))
+		}
 		rhs := f.checkExprTo(s.Value, target.Type())
 		value = f.makeBinary(op, target, rhs, s.Pos)
 		return append(pre, f.assignPlace(s.Target, target, root, value, rawType))

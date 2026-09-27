@@ -131,3 +131,52 @@ implement Parsable for bool {
 implement Parsable for string {
   static fun parse(s: string): string? = s
 }
+
+/// `a + b` on a type that is not a number (D71): the operator calls `plus`.
+/// `Rhs` and `Out` are read off the method, so an implement is the method
+/// alone, and the right operand and the result may be other types:
+///
+/// ```veles
+/// implement Addable { fun plus(other: Duration): Timestamp = ... }
+/// ```
+///
+/// `a += b` is `a = a + b`. Whether it saturates, wraps or panics on
+/// overflow is the implementation's to say.
+public trait Addable {
+  type Rhs
+  type Out
+  fun plus(other: Rhs): Out
+}
+
+/// `a - b` on a type that is not a number: calls `minus` (D71).
+public trait Subtractable {
+  type Rhs
+  type Out
+  fun minus(other: Rhs): Out
+}
+
+/// `a * b` on a type that is not a number: calls `times` (D71).
+public trait Multipliable {
+  type Rhs
+  type Out
+  fun times(other: Rhs): Out
+}
+
+/// `a / b` on a type that is not a number: calls `dividedBy` (D71).
+public trait Divisible {
+  type Rhs
+  type Out
+  fun dividedBy(other: Rhs): Out
+}
+
+/// `-a` on a type that is not a number: calls `negate` (D71).
+public trait Negatable {
+  type Out
+  fun negate(): Out
+}
+
+/// Values C reads exactly as they lie in memory: numbers, `bool`, raw
+/// pointers and `extern struct`s (D69). It is answered from a type's shape
+/// and cannot be implemented by hand, like `Sendable`; `List.withRaw`
+/// requires it of the elements it lends to C.
+public trait CLayout { }

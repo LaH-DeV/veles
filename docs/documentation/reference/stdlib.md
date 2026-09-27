@@ -53,7 +53,13 @@ public trait Iterable {
 public trait Closeable { fun close() }     // for `with (r = ...) { }` (D43)
 ```
 
-### Synchronisation (D35)
+### Synchronisation (D35, D66)
+
+Real locks: tasks run on several threads. `withLock`'s function cannot
+suspend; locking a `Mutex` again inside its own `withLock` panics; the
+lock is released when the function panics. Copies of a `Mutex` or an
+`Atomic` share the lock and the value. Module-level state that changes
+must be a `val` holding one of these — a module-level `var` is an error.
 
 ```veles
 // fragment
@@ -67,7 +73,8 @@ public fun mutex<T>(value: T): Mutex<T>
 public struct Atomic<T> {
   public fun load(): T
   public fun store(value: T)
-  public fun swap(value: T): T
+  public fun swap(value: T): T           // the value it replaced
+  public fun update(f: fun(T): T): T     // f of the value, stored as one step; the new value
 }
 public fun atomic<T>(value: T): Atomic<T>
 
@@ -579,7 +586,7 @@ use time
 time.now(): Timestamp                 // Timestamp.now(); .epoch, .ofSeconds/.ofMillis/.ofMicros(n)
 t.toSeconds() / toMillis() / toMicros(): i64          // rounded down, so they work before 1970
 t.subsecondMicros(): i64              // 0..999999
-t.plus(d) / t.minus(d): Timestamp;  t.since(earlier) / t.until(later): Duration
+t + d / t - d: Timestamp;  t.since(earlier) / t.until(later): Duration
 t.utc() / t.local() / t.at(offset): DateTime
 "$t"                                  // RFC 3339 in UTC; Parsable and Codable are the same text
 
@@ -614,7 +621,7 @@ Duration.zero; Duration.nanos/micros/millis/seconds/minutes/hours/days(n: i64)
 Duration.ofSeconds(v: f64)            // a fractional count
 d.toNanos() / toMicros() / toMillis() / toSeconds() / toMinutes() / toHours() / toDays(): i64   // truncate toward zero
 d.asSeconds() / asMillis(): f64       // the fraction kept
-d.plus(o) / minus(o) / times(n) / dividedBy(n) / negated() / abs(): Duration
+a + b, a - b, d * n, d / n, -d (D71), d.abs(): Duration;  a.over(b): i64
 d.over(o): i64                        // how many times o fits in d
 d.isZero() / isNegative(): bool;  d.min(o) / d.max(o): Duration
 "$d"                                  // 0s, 250ms, 1.5s, 2m30s, 1d1h, -90ms
@@ -749,6 +756,24 @@ the algorithm is the caller's, never the token's.
 with `Reason`: `Malformed`, `UnsupportedAlgorithm`, `AlgorithmMismatch`,
 `UnsupportedExtension`, `BadSignature`, `Expired`, `NotYetValid`,
 `WrongAudience`, `WrongIssuer`, `MissingClaim`.
+
+## Module `ffi`
+
+Memory crossing into C (D69; [chapter 13](../13-memory-and-ffi.md)).
+
+```veles
+// fragment
+use ffi
+ffi.CString.of(s: string): CString throws ffi.NulByte   // malloc'd, NUL-terminated; Closeable (`with` frees)
+c.ptr(): *raw u8                                         // panics after close
+unsafe ffi.readString(p: *raw u8): string                // copies up to the NUL
+unsafe ffi.readBytes(p: *raw u8, n: i64): List<u8>       // copies n bytes
+ffi.alloc(n: i64): *raw u8;  unsafe ffi.free(p: *raw u8)  // zeroed, unmanaged memory
+ffi.handle(value: T): Handle<T>                          // a Veles value as C's `void *userdata`; Closeable
+h.ptr(): *raw u8;  unsafe ffi.Handle<T>.from(p): T       // the value back, in the callback
+// prelude: xs.withRaw(p => ...) on a List<T: CLayout> lends the elements for the closure, no copy
+// language: extern "C" fun name(...) { }  and  &name: extern fun(...); p as *raw T in unsafe
+```
 
 ## Not yet in the bootstrap
 

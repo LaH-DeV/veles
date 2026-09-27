@@ -59,10 +59,10 @@ fun durations() {
   ok("parse(d.toString()) == d", roundTrips)
 
   io.println("-- Duration: arithmetic and order --")
-  show("1s + 250ms", "${Duration.seconds(1).plus(Duration.millis(250))}")
-  show("1s - 250ms", "${Duration.seconds(1).minus(Duration.millis(250))}")
-  show("250ms * 6", "${Duration.millis(250).times(6)}")
-  show("1s / 4", "${Duration.seconds(1).dividedBy(4)}")
+  show("1s + 250ms", "${Duration.seconds(1) + Duration.millis(250)}")
+  show("1s - 250ms", "${Duration.seconds(1) - Duration.millis(250)}")
+  show("250ms * 6", "${Duration.millis(250) * 6}")
+  show("1s / 4", "${Duration.seconds(1) / 4}")
   show("1h / 250ms", "${Duration.hours(1).over(Duration.millis(250))}")
   show("-90ms abs", "${Duration.millis(-90).abs()}")
   show("sorted", "${[Duration.seconds(1), Duration.zero, Duration.millis(-5)].sorted()}")
@@ -270,7 +270,7 @@ fun clocks() {
       time.Offset.local(at: a).totalMinutes() <= 1080,
   )
   ok("local and UTC are the same instant", a.local().timestamp() == a.utc().timestamp())
-  ok("plus and minus undo each other", a.plus(Duration.hours(1)).minus(Duration.hours(1)) == a)
+  ok("plus and minus undo each other", a + Duration.hours(1) - Duration.hours(1) == a)
 }
 
 fun main() {

@@ -20,8 +20,11 @@ type Checker struct {
 	// the final round's are kept (D45 fixpoint).
 	roundDiags *source.Diagnostics
 	seen       map[string]bool
-	varFixes   map[*ast.Field]bool            // fields already offered the `var` insertion (fixes.go)
-	initDecl   map[*types.Struct]*ast.FunDecl // the synthetic `$init` method of structs with an `init { }` block
+	// exportedC: the `extern "C" fun`s by C symbol (D69), by declaration so
+	// a later inference round sees the same one again
+	exportedC map[string]*ast.FunDecl
+	varFixes  map[*ast.Field]bool            // fields already offered the `var` insertion (fixes.go)
+	initDecl  map[*types.Struct]*ast.FunDecl // the synthetic `$init` method of structs with an `init { }` block
 
 	universe *Scope
 	prog     *Program
@@ -1000,11 +1003,14 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 		}
 		return tt
 	case *ast.FunType:
-		ft := &types.Func{Ret: c.resolveType(env, t.Ret), Sendable: t.Sendable}
+		ft := &types.Func{Ret: c.resolveType(env, t.Ret), Sendable: t.Sendable, C: t.C}
 		for _, p := range t.Params {
 			ft.Params = append(ft.Params, types.Param{Type: c.resolveType(env, p)})
 		}
 		ft.Effects = c.resolveEffects(env, t.Effects, true)
+		if ft.C && (ft.Effects.Suspends || ft.Effects.Throws) {
+			c.errorf(t.Pos, "a C function pointer cannot suspend or throw; C has no way to wait for it or to receive the error (D69)")
+		}
 		return ft
 	case *ast.SelfType:
 		if env.self == nil {
@@ -1377,6 +1383,9 @@ func (c *Checker) resolveSignature(t *FuncTemplate) {
 		}
 		c.checkExternType(t.Sig.Ret, t.Decl.Name.Pos, t.Module.Std)
 	}
+	if t.Decl.ExportC {
+		c.checkExportC(t)
+	}
 
 	if t.Decl.Override && (t.Impl == nil || t.Impl.Trait == nil) {
 		c.errorf(t.Decl.Name.Pos, "'override' is only meaningful inside an implement block (D53)")
@@ -1386,9 +1395,53 @@ func (c *Checker) resolveSignature(t *FuncTemplate) {
 	}
 }
 
+// checkExportC validates an `extern "C" fun` (D69): a module-level,
+// non-generic function whose parameters and result C can read as they lie
+// in memory, and which cannot throw (suspending is refused once calls are
+// known, in suspend.go). Its name is a C symbol, so it is unique in the
+// program.
+func (c *Checker) checkExportC(t *FuncTemplate) {
+	pos := t.Decl.Name.Pos
+	if t.Owner != nil || t.Impl != nil || t.Trait != nil {
+		c.errorf(pos, "only a module-level function can be 'extern \"C\"'; C calls it by name (D69)")
+		return
+	}
+	if len(t.TypeParams) > 0 {
+		c.errorf(pos, "an 'extern \"C\" fun' cannot be generic: C calls one function with one signature (D69)")
+		return
+	}
+	bad := func(ty types.Type) {
+		c.errorf(pos, "'%s' cannot cross into C; an 'extern \"C\" fun' takes and returns numbers, bool, raw pointers, extern structs and 'extern fun' pointers (D69)", ty)
+	}
+	for _, p := range t.Sig.Params {
+		if !cLayout(p.Type) {
+			bad(p.Type)
+		}
+	}
+	if t.Sig.Ret != nil && !types.IsUnit(t.Sig.Ret) && !cLayout(t.Sig.Ret) {
+		bad(t.Sig.Ret)
+	}
+	if t.Sig.Effects.Throws {
+		c.errorf(pos, "an 'extern \"C\" fun' cannot throw: C has no way to receive the error; return a status code instead (D69)")
+	}
+	if prev, dup := c.exportedC[t.Name]; dup && prev != t.Decl {
+		c.errorf(pos, "'extern \"C\" fun %s' is already defined at %s; a C symbol is unique in a program", t.Name, prev.Name.Pos)
+		return
+	}
+	if c.exportedC == nil {
+		c.exportedC = map[string]*ast.FunDecl{}
+	}
+	c.exportedC[t.Name] = t.Decl
+}
+
 func (c *Checker) checkExternType(t types.Type, span source.Span, std bool) {
 	switch t := t.(type) {
 	case *types.Basic:
+		return
+	case *types.Func:
+		if !t.C {
+			c.errorf(span, "a Veles function value cannot be handed to C; declare the callback 'extern \"C\" fun name(...)' and pass '&name' (D69)")
+		}
 		return
 	case *types.Pointer:
 		if !t.Raw {
@@ -1533,6 +1586,10 @@ func (c *Checker) declareImpl(m *Module, f *ast.File, d *ast.ImplDecl) {
 		c.errorf(d.Trait.Span(), "Sendable is derived from a type's fields and cannot be implemented by hand (D35)")
 		return
 	}
+	if isCLayoutTrait(trait) {
+		c.errorf(d.Trait.Span(), "CLayout is derived from a type's shape (numbers, bool, raw pointers, extern structs) and cannot be implemented by hand (D69)")
+		return
+	}
 	impl.Trait = trait
 	impl.Target = c.resolveType(env, d.Target)
 	env.self = impl.Target
@@ -1576,6 +1633,10 @@ func (c *Checker) declareImpl(m *Module, f *ast.File, d *ast.ImplDecl) {
 		if _, ok := impl.AssocTypes[name]; !ok {
 			if name == "Error" && trait.ImplicitError {
 				impl.ImplicitError = true // defined by what the methods throw (resolveAssoc)
+				continue
+			}
+			if t := c.assocFromMethods(env, d, trait, name); t != nil {
+				impl.AssocTypes[name] = t // `fun plus(other: Duration): Duration` binds Rhs and Out (D71)
 				continue
 			}
 			c.errorf(d.Pos, "implement of '%s' for '%s' must bind associated type '%s': 'type %s = ...'", trait.Name, impl.Target, name, name)
@@ -2186,6 +2247,12 @@ func (c *Checker) instantiate(t *FuncTemplate, ownerSubst map[*types.TypeParam]t
 	}
 	if t.Extern {
 		fn.Name = t.Mangled // the C symbol
+		// std's externs are the runtime's own entry points; any other is
+		// foreign code that may block (D66)
+		fn.Foreign = t.Module == nil || !t.Module.Std
+	}
+	if t.Decl != nil && t.Decl.ExportC {
+		fn.ExportC = t.Name // the wrapper C calls; fn.Name stays the Veles body's
 	}
 	fn.tmpl = t
 	fn.subst = m
@@ -2559,4 +2626,31 @@ func initAssigned(b *ast.Block) []string {
 		return true
 	})
 	return names
+}
+
+// assocFromMethods infers an associated type an implement does not bind
+// from a method it writes: when the trait declares the type as a
+// parameter's or the result's type outright (`fun plus(other: Rhs): Out`),
+// the implement's own spelling at that position is the binding. Nil when no
+// written method pins it down.
+func (c *Checker) assocFromMethods(env *typeEnv, d *ast.ImplDecl, trait *types.Trait, name string) types.Type {
+	names := func(t types.Type) bool {
+		a, ok := t.(*types.Assoc)
+		return ok && a.Name == name && a.Trait == trait
+	}
+	for _, md := range d.Methods {
+		sig := trait.Methods[md.Name.Name]
+		if sig == nil {
+			continue
+		}
+		for i, p := range sig.Params {
+			if i < len(md.Params) && md.Params[i].Type != nil && names(p.Type) {
+				return c.resolveType(env, md.Params[i].Type)
+			}
+		}
+		if md.Ret != nil && names(sig.Ret) {
+			return c.resolveType(env, md.Ret)
+		}
+	}
+	return nil
 }

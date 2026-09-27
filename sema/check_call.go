@@ -39,6 +39,17 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 		if callee.Name == "ioWait" && f.module.Std && f.lookup(callee.Name) == nil {
 			return f.ioWaitCall(e)
 		}
+		if callee.Name == "listRawData" && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 1 {
+			// std-only (D69): the storage of a list, for `withRaw` to lend C
+			// for the length of a closure — never a pointer user code holds
+			xs := f.checkExpr(e.Args[0].Value, nil)
+			lt, ok := xs.Type().(*types.List)
+			if !ok {
+				f.errorf(e.Pos, "listRawData takes a list")
+				return bad()
+			}
+			return &Builtin{exprBase{&types.Pointer{Elem: lt.Elem, Raw: true}}, "list.rawData", []Expr{xs}, e.Pos}
+		}
 		if callee.Name == "panic" && f.lookup(callee.Name) == nil {
 			return f.panicCall(e)
 		}
@@ -459,6 +470,9 @@ func (f *fnCtx) implements(t types.Type, trait *types.Trait) bool {
 		// from an impl
 		return sendable(t)
 	}
+	if isCLayoutTrait(trait) {
+		return cLayout(t) // the same, for memory C can read as it is (D69)
+	}
 	if tt, ok := t.(*types.Tuple); ok && trait.Name == "Comparable" && trait.Module == "std.prelude" {
 		return f.c.tupleCompare(tt) != nil // lexicographic order (tuple_order.go)
 	}
@@ -837,7 +851,7 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 			for _, tp := range ext.TypeParams {
 				for _, bound := range tp.Bounds {
 					if bt, ok := m[tp]; ok && !f.implements(bt, bound) {
-						f.errorf(callee.Name.Pos, "'%s' on '%s' requires '%s' to implement '%s' (extend<%s: %s> %s)", name, rt, bt, bound.Name, tp.Name, bound.Name, ext.Target)
+						f.errorf(callee.Name.Pos, "'%s' on '%s' requires '%s' to implement '%s' (extend<%s: %s> %s)%s", name, rt, bt, bound.Name, tp.Name, bound.Name, ext.Target, sendableHint(bound))
 						f.checkArgsLoosely(e.Args)
 						return bad()
 					}
@@ -1260,6 +1274,9 @@ func (f *fnCtx) builtinMethod(recv Expr, rt types.Type, name string, e *ast.Call
 
 // callValue calls a function value (D28: positional arguments only).
 func (f *fnCtx) callValue(fnv Expr, ft *types.Func, args []ast.Arg, span source.Span) Expr {
+	if ft.C && f.unsafe == 0 {
+		f.errorf(span, "calling a C function pointer requires an 'unsafe' block (D44/D69)")
+	}
 	if len(args) != len(ft.Params) {
 		f.errorf(span, "function value takes %d argument(s), got %d", len(ft.Params), len(args))
 		f.checkArgsLoosely(args)
@@ -1620,4 +1637,59 @@ func (f *fnCtx) panicCall(e *ast.CallExpr) Expr {
 	}
 	msg := f.checkExprTo(e.Args[0].Value, types.TString)
 	return &Builtin{exprBase{types.TNever}, "panic", []Expr{msg}, e.Pos}
+}
+
+// isCLayoutTrait recognises the prelude's `CLayout` marker (D69).
+func isCLayoutTrait(trait *types.Trait) bool {
+	return trait != nil && trait.Name == "CLayout" && trait.Module == "std.prelude"
+}
+
+// cLayout: values C reads as they lie in memory — numbers, bool, raw
+// pointers, and `extern struct`s — so a list of them can be lent to C
+// element for element (`withRaw`, D69).
+func cLayout(t types.Type) bool {
+	if types.IsNumeric(t) || types.IsBool(t) {
+		return true
+	}
+	if n, ok := t.(*types.Nullable); ok {
+		t = n.Elem
+		if p, ok := t.(*types.Pointer); ok {
+			return p.Raw // a nullable raw pointer is a C pointer that may be NULL
+		}
+		return false
+	}
+	switch t := t.(type) {
+	case *types.Pointer:
+		return t.Raw
+	case *types.Struct:
+		return t.Extern
+	case *types.Func:
+		return t.C
+	}
+	return false
+}
+
+// cFunctionPointer is `&name` where name is an `extern "C" fun` (D69): the
+// address C calls, typed `extern fun(...)`. Nil when e is anything else,
+// which leaves `&` its ordinary meaning.
+func (f *fnCtx) cFunctionPointer(e *ast.UnaryExpr) Expr {
+	n, ok := e.X.(*ast.NameExpr)
+	if !ok {
+		return nil
+	}
+	sym := f.lookup(n.Name)
+	if sym == nil || sym.Kind != SymFunc || sym.Func == nil || sym.Func.Decl == nil || !sym.Func.Decl.ExportC {
+		return nil
+	}
+	t := sym.Func
+	f.c.refSym(n.Pos, sym)
+	f.c.resolveSignature(t)
+	if len(t.TypeParams) > 0 || t.Sig == nil {
+		return bad() // reported at the declaration
+	}
+	fn := f.c.instantiate(t, nil, nil, n.Pos)
+	sig := *fn.Sig
+	sig.C = true
+	sig.Sendable = false
+	return &FuncRef{exprBase{&sig}, fn}
 }

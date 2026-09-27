@@ -37,8 +37,12 @@ int64_t veles_desc_size(veles_desc *d);
 static int g_argc;
 static char **g_argv;
 void veles_gc_init(void);
+void veles_task_init(void);
+void veles_ffi_init(void);
+void veles_sync_init(void);
 
 void veles_rt_init(int32_t argc, char **argv) {
+    veles_sync_init(); /* the per-thread block's slot first: everything else uses it */
     g_argc = argc;
     g_argv = argv;
     setvbuf(stdout, NULL, _IOLBF, 0);
@@ -48,6 +52,8 @@ void veles_rt_init(int32_t argc, char **argv) {
     SetConsoleCP(CP_UTF8);
 #endif
     veles_gc_init();
+    veles_task_init(); /* the executor's lock, before any channel or task */
+    veles_ffi_init();
 }
 
 /* the process arguments, for std/os (veles_os.c) */
@@ -67,8 +73,13 @@ int64_t veles_task_panic(const char *msg, int64_t len, const char *loc, int64_t 
 /* veles_panic_at fails with a message and the source location the compiler
  * wrote at the panicking site (D64: `file:line:col`, relative to the package
  * root; empty for a panic raised inside the runtime itself). */
+int64_t veles_ffi_in_callback(void);
+
 void veles_panic_at(const char *msg, int64_t len, const char *loc, int64_t loc_len) {
-    if (veles_task_panic(msg, len, loc, loc_len)) return;
+    /* inside an `extern "C" fun` there are C frames below: unwinding to
+     * the task boundary would jump over them (D69), so the process ends */
+    int in_c = veles_ffi_in_callback() > 0;
+    if (!in_c && veles_task_panic(msg, len, loc, loc_len)) return;
     fflush(stdout);
     fputs("panic: ", stderr);
     fwrite(msg, 1, (size_t)len, stderr);
@@ -78,6 +89,8 @@ void veles_panic_at(const char *msg, int64_t len, const char *loc, int64_t loc_l
         fwrite(loc, 1, (size_t)loc_len, stderr);
         fputc('\n', stderr);
     }
+    if (in_c)
+        fputs("  (in a function called from C, which cannot be unwound: the process ends)\n", stderr);
     fflush(stderr);
     exit(101);
 }
@@ -106,25 +119,69 @@ void veles_eprint(const char *s, int64_t len) {
     fwrite(s, 1, (size_t)len, stderr);
 }
 
+/* A line goes out whole: tasks on other threads printing at the same time
+ * (D66) never land in the middle of it. */
+#if defined(_WIN32)
+#define lock_stream(f) _lock_file(f)
+#define unlock_stream(f) _unlock_file(f)
+#else
+#define lock_stream(f) flockfile(f)
+#define unlock_stream(f) funlockfile(f)
+#endif
+
+static void write_line(FILE *f, const char *s, int64_t len) {
+    lock_stream(f);
+    fwrite(s, 1, (size_t)len, f);
+    fputc('\n', f);
+    unlock_stream(f);
+}
+
+void veles_println(const char *s, int64_t len) {
+    write_line(stdout, s, len);
+}
+
+void veles_eprintln(const char *s, int64_t len) {
+    fflush(stdout);
+    write_line(stderr, s, len);
+}
+
+void veles_blocking_enter(void);
+void veles_blocking_leave(void);
+
+/* Waiting for the terminal can take forever: the line is read into memory
+ * outside the Veles heap, in a safe region (D66), then copied. */
 bool veles_read_line(veles_string *out) {
     size_t cap = 128, n = 0;
-    char *buf = veles_alloc((int64_t)cap);
+    char *buf = malloc(cap);
+    if (!buf) veles_panic("out of memory", 13);
     int c;
     bool any = false;
+    veles_blocking_enter();
     while ((c = fgetc(stdin)) != EOF) {
         any = true;
         if (c == '\n') break;
         if (n + 1 >= cap) {
             cap *= 2;
-            char *nb = veles_alloc((int64_t)cap);
-            memcpy(nb, buf, n);
+            char *nb = realloc(buf, cap);
+            if (!nb) {
+                veles_blocking_leave();
+                veles_panic("out of memory", 13);
+            }
             buf = nb;
         }
         buf[n++] = (char)c;
     }
-    if (!any) return false;
+    veles_blocking_leave();
+    if (!any) {
+        free(buf);
+        return false;
+    }
     if (n > 0 && buf[n - 1] == '\r') n--;
-    out->data = buf;
+    char *data = veles_alloc((int64_t)n + 1);
+    memcpy(data, buf, n);
+    data[n] = 0;
+    free(buf);
+    out->data = data;
     out->len = (int64_t)n;
     return true;
 }

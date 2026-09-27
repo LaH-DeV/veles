@@ -40,6 +40,17 @@ func (p *Parser) parseType() ast.Type {
 		ft := &ast.FunType{}
 		p.parseFunType(ft, start)
 		t = ft
+	case lexer.KwExtern:
+		// `extern fun(A): R`: a C function pointer (D69)
+		p.next()
+		if !p.at(lexer.KwFun) {
+			p.errorExpected("'fun' after 'extern' in a type (a C function pointer: 'extern fun(i32): i32')")
+			return &ast.NamedType{Path: []ast.Ident{{Name: "<error>", Pos: start}}, Pos: start}
+		}
+		p.next()
+		ft := &ast.FunType{C: true}
+		p.parseFunType(ft, start)
+		t = ft
 	case lexer.Ident:
 		if p.cur().Text == "sendable" && p.peek(1).Kind == lexer.KwFun {
 			// `sendable fun(A): R`: a function value that may cross a task

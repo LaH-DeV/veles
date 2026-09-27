@@ -69,6 +69,9 @@ func (g *gen) llType(t types.Type) string {
 	case *types.List, *types.Map, *types.Set, *types.Channel, *types.Task:
 		return "ptr"
 	case *types.Func:
+		if t.C {
+			return "ptr" // a C function pointer (D69)
+		}
 		return "{ ptr, ptr }" // code pointer + environment
 	case *types.Trait:
 		return "{ ptr, ptr }" // boxed data + vtable (D9)
@@ -87,9 +90,11 @@ func (g *gen) llType(t types.Type) string {
 // isPtrLike reports whether a type is represented as a raw `ptr`, giving
 // its nullable form a null niche.
 func isPtrLike(t types.Type) bool {
-	switch t.(type) {
+	switch t := t.(type) {
 	case *types.Pointer, *types.List, *types.Map, *types.Set, *types.Channel, *types.Task:
 		return true
+	case *types.Func:
+		return t.C // a nullable C function pointer is NULL or the address, as in C
 	}
 	return false
 }
@@ -192,7 +197,12 @@ func (g *gen) layout(t types.Type) (size, align int) {
 		}
 	case *types.Pointer, *types.List, *types.Map, *types.Set, *types.Channel, *types.Task:
 		return 8, 8
-	case *types.Func, *types.Trait:
+	case *types.Func:
+		if t.C {
+			return 8, 8
+		}
+		return 16, 8
+	case *types.Trait:
 		return 16, 8
 	case *types.Nullable:
 		if isPtrLike(t.Elem) {

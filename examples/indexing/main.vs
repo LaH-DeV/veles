@@ -16,9 +16,9 @@ struct Counter {
   fun show(): string = "n=${this.n}"
 }
 
-var picks = 0
+val picks = atomic(0)
 fun pick(): i64 {
-  picks += 1
+  val _ = picks.update(n => n + 1)
   0
 }
 
@@ -101,7 +101,7 @@ fun main() {
   // expression runs a single time
   *(ys.ref(pick()) ?: panic("ys is not empty")) += 1
   *(stock.ref(if (pick() == 0) "pears" else "") ?: panic("pears are in stock")) += 1
-  io.println("$picks ${ys.at(0)} ${stock.get("pears")}")
+  io.println("${picks.load()} ${ys.at(0)} ${stock.get("pears")}")
 
   // a missing entry the program cannot do without is a panic, with the
   // reason — never a thrown error

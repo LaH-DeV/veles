@@ -85,6 +85,7 @@ type FunType struct {
 	Ret      Type // nil means unit
 	Effects  Effects
 	Sendable bool
+	C        bool // `extern fun(...)`: a C function pointer (D69)
 	Pos      source.Span
 }
 
@@ -189,10 +190,13 @@ type FunDecl struct {
 	Internal bool // `internal`: the module level written out (M5); the default
 	Private  bool // `private fun` — callable only inside the type's own declarations
 
-	Static     bool // `static fun` — no receiver; called on the type (D23)
-	Override   bool
-	Unsafe     bool
-	Extern     bool
+	Static   bool // `static fun` — no receiver; called on the type (D23)
+	Override bool
+	Unsafe   bool
+	Extern   bool
+	// ExportC: `extern "C" fun name(...) { body }` — a Veles function C
+	// can call, under its own name, with the C calling convention (D69).
+	ExportC    bool
 	Name       Ident
 	TypeParams []TypeParam
 	Params     []Param
@@ -633,7 +637,10 @@ type MemberExpr struct {
 	// `mod.Name<T>` before `.f(...)`: a module-qualified generic type as a
 	// static call target.
 	TypeArgs []Type
-	Pos      source.Span
+	// Grouped: written in parentheses, which ends a `?.` chain (D70):
+	// `(a?.b).c` reads `.c` on the nullable, where `a?.b.c` skips it.
+	Grouped bool
+	Pos     source.Span
 }
 
 type IndexExpr struct {
@@ -655,6 +662,7 @@ type CallExpr struct {
 	TypeArgs []Type
 	Args     []Arg
 	Async    bool
+	Grouped  bool // written in parentheses: ends a `?.` chain (D70)
 	Pos      source.Span
 }
 

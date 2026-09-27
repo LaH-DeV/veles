@@ -237,7 +237,10 @@ type Func struct {
 	Ret      Type
 	Effects  Effects
 	Sendable bool
-	Alias    string
+	// C: `extern fun(...)`, a C function pointer (D69) — one machine word,
+	// no environment, called only inside `unsafe`.
+	C     bool
+	Alias string
 }
 
 func (f *Func) String() string {
@@ -251,6 +254,9 @@ func (f *Func) String() string {
 	s := "fun(" + strings.Join(parts, ", ") + ")"
 	if f.Sendable {
 		s = "sendable " + s
+	}
+	if f.C {
+		s = "extern " + s
 	}
 	if f.Ret != nil && !IsUnit(f.Ret) {
 		s += ": " + f.Ret.String()
@@ -586,7 +592,7 @@ func Identical(a, b Type) bool {
 				return false
 			}
 		}
-		if a.Effects.Suspends != b.Effects.Suspends || a.Effects.Throws != b.Effects.Throws || a.Sendable != b.Sendable {
+		if a.Effects.Suspends != b.Effects.Suspends || a.Effects.Throws != b.Effects.Throws || a.Sendable != b.Sendable || a.C != b.C {
 			return false
 		}
 		if a.Effects.Throws && !Identical(a.Effects.Error, b.Effects.Error) {
@@ -668,7 +674,7 @@ func (h *Hooks) Subst(t Type, m map[*TypeParam]Type) Type {
 	case *Task:
 		return &Task{Result: h.Subst(t.Result, m)}
 	case *Func:
-		out := &Func{Ret: h.Subst(t.Ret, m), Effects: t.Effects, Sendable: t.Sendable}
+		out := &Func{Ret: h.Subst(t.Ret, m), Effects: t.Effects, Sendable: t.Sendable, C: t.C}
 		out.Effects.Error = h.Subst(t.Effects.Error, m)
 		if out.Effects.Throws && out.Effects.Error != nil && IsNever(out.Effects.Error) {
 			// `throws E` with E bound to nothing: the function cannot fail,

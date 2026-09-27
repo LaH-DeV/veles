@@ -359,6 +359,65 @@ equal must hash alike. And the built-in types keep their meaning: an
 `implement Display for i64` in your package is accepted but interpolation of
 an `i64` still prints the number.
 
+### Arithmetic: `+ - * /` and unary `-`
+
+Five more traits give a type the arithmetic operators (D71). Each has
+associated types for the right operand and the result, read off the method
+you write, so an implement is just the method — and the operand and result
+may be other types:
+
+| Trait | Method | Operator |
+|---|---|---|
+| `Addable` | `plus(other: Rhs): Out` | `a + b`, `a += b` |
+| `Subtractable` | `minus(other: Rhs): Out` | `a - b`, `a -= b` |
+| `Multipliable` | `times(other: Rhs): Out` | `a * b`, `a *= b` |
+| `Divisible` | `dividedBy(other: Rhs): Out` | `a / b`, `a /= b` |
+| `Negatable` | `negate(): Out` | `-a` |
+
+```veles
+use io
+
+struct Money {
+  cents: i64
+
+  implement Addable {
+    fun plus(other: Money): Money = Money(cents: this.cents + other.cents)
+  }
+  implement Multipliable {
+    fun times(other: i64): Money = Money(cents: this.cents * other)
+  }
+  implement Display {
+    fun toString(): string = "€${this.cents / 100}.${"${this.cents % 100}".padStart(2, "0")}"
+  }
+}
+
+fun total<T: Addable>(items: List<T>, zero: T): T {
+  var sum = zero
+  loop (x in items) {
+    sum += x
+  }
+  sum
+}
+
+fun main() {
+  val coffee = Money(cents: 350)
+  io.println("${coffee * 2 + Money(cents: 120)} ${total([coffee, coffee], Money(cents: 0))}")
+  io.println("${Duration.seconds(90) + Duration.millis(500)} ${-Duration.seconds(1)}")
+}
+```
+
+Output:
+```text
+€8.20 €7.00
+1m30.5s -1s
+```
+
+`Duration` and `time.Timestamp` implement them (`t + Duration.days(1)`);
+the difference of two timestamps is `t.since(earlier)`, since an
+operator means one thing per type. Numbers keep their own arithmetic
+(D21); an operator a type does not implement is an error that names the
+trait to implement.
+
 ## Comparing values
 
 Three questions have three separate answers in Veles: *are these equal?*

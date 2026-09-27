@@ -206,12 +206,13 @@ val n = random.range(1, 7)               // 1..<7
 val x = random.float()                   // 0.0..<1.0
 val pick = random.pick(names)            // T?, null when empty
 random.shuffle(deck)                     // MutableList, in place
-var rng = random.Rng.seeded(7)           // a generator of your own, with the same methods
+var rng = random.Rng.seeded(7)           // a generator of your own: the same methods, no lock
 ```
 
-Times are plain `i64` milliseconds, the unit `sleep` and timers already
-use. The generator is xoshiro256** — fast and good for games, tests and
-sampling, not for secrets.
+The module's generator is shared by every task and takes a lock on each
+call, so a task drawing numbers in a hot loop is faster with an `Rng` of
+its own. The generator is xoshiro256** — fast and good for games, tests
+and sampling, not for secrets (`crypto.randomBytes` is for those).
 
 Next: [Networking](16-networking.md) for TCP, or [Attributes and the
 test runner](14-attributes-and-testing.md), or back to the

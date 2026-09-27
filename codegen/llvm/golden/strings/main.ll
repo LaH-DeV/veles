@@ -81,7 +81,7 @@ entry:
   call void @veles_string_concat(ptr %a44, ptr %t40, i64 %t41, ptr %t42, i64 %t43)
   %t45 = load %str, ptr %a44
   %t46 = load i1, ptr %a4
-  call void @veles_bool_to_string(ptr %a47, i1 %t46)
+  call void @veles_bool_to_string(ptr %a47, i1 zeroext %t46)
   %t48 = load %str, ptr %a47
   %t49 = extractvalue %str %t45, 0
   %t50 = extractvalue %str %t45, 1

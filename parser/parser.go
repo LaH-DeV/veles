@@ -448,6 +448,9 @@ func (p *Parser) parseDeclKind(attrs []*ast.Attribute, pub, marked bool, which s
 			p.next()
 			return p.parseStruct(attrs, pub, true, start)
 		}
+		if p.peek(1).Kind == lexer.String && p.peek(2).Kind == lexer.KwFun {
+			return p.parseExportedFun(attrs, pub, start)
+		}
 		return p.parseExternBlock()
 	}
 	p.errorf(p.span(), "expected a declaration, found %s", p.cur().Describe())
@@ -1106,6 +1109,28 @@ func (p *Parser) parseExternBlock() ast.Decl {
 	}
 	d.Pos = p.spanFrom(start)
 	return d
+}
+
+// parseExportedFun parses `extern "C" fun name(...): R { body }`: a Veles
+// function with the C calling convention, for C to call back (D69).
+func (p *Parser) parseExportedFun(attrs []*ast.Attribute, pub bool, start source.Span) ast.Decl {
+	doc := p.takeDoc() // a doc comment sits on `extern`, the first token
+	p.next()           // extern
+	t := p.next()
+	if len(t.Parts) != 1 || t.Parts[0].IsExpr || t.Parts[0].Text != "C" {
+		p.errorf(t.Span, "unsupported ABI; only \"C\" is defined")
+	}
+	fn := p.parseFun(attrs, funContextFree)
+	fn.ExportC = true
+	fn.Pub = fn.Pub || pub
+	fn.Pos = start.To(fn.Pos)
+	if fn.Doc == "" {
+		fn.Doc = doc
+	}
+	if fn.Body == nil && fn.ExprBody == nil {
+		p.errorf(fn.Name.Pos, "an 'extern \"C\" fun' is a Veles function C calls, so it needs a body; a C function Veles calls is declared in an 'extern \"C\" { }' block")
+	}
+	return fn
 }
 
 // atErrorDecl reports whether the cursor is at an `error Name` declaration.

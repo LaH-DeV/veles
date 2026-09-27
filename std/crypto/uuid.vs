@@ -44,7 +44,7 @@ public struct Uuid {
   /// millisecond from the future. A clock that jumps backwards is
   /// ignored rather than obeyed.
   public static fun v7(): Uuid {
-    val ms = nextTick()
+    val (ms, counter) = nextTick()
     val r = randomBytes(8)
     if (r.len() != 8) panic("Uuid.v7: randomBytes(8) returned ${r.len()} bytes")
     val b: MutableList<u8> = []
@@ -53,9 +53,9 @@ public struct Uuid {
       b.push(((ms >> s) & 255) as u8)
       s = s - 8
     }
-    b.push(0x70 | ((v7Counter >> 8) & 0x0f) as u8)  // version 7 + counter high
-    b.push((v7Counter & 255) as u8)                 // counter low
-    b.push((r.at(0) & 0x3f) | 0x80)                 // variant 10
+    b.push(0x70 | ((counter >> 8) & 0x0f) as u8)  // version 7 + counter high
+    b.push((counter & 255) as u8)                 // counter low
+    b.push((r.at(0) & 0x3f) | 0x80)               // variant 10
     loop (i in 1..<r.len()) b.push(r.at(i))
     Uuid(data: b.toList())
   }
@@ -165,27 +165,36 @@ public fun uuidV7(): Uuid = Uuid.v7()
 // counter, and a millisecond that runs out of counter borrows the next
 // one — so `v7()` never returns the same value twice and never goes
 // backwards, whatever the system clock does.
-var v7Millis: i64 = -1
-var v7Counter: i64 = 0
+// It is one clock for every task, whichever thread runs it (D66), so it
+// sits behind a lock.
+struct V7Clock {
+  var millis:  i64
+  var counter: i64
 
-fun nextTick(): i64 {
-  val now = time.now().toMillis()
-  if (now > v7Millis) {
-    v7Millis = now
-    // a random start in the lower half leaves 2048 increments and keeps
-    // the counter from being a visible sequence
-    v7Counter = (randomU64() % 2048) as i64
-    return v7Millis
+  fun tick(): (i64, i64) {
+    val now = time.now().toMillis()
+    if (now > this.millis) {
+      this.millis = now
+      // a random start in the lower half leaves 2048 increments and keeps
+      // the counter from being a visible sequence
+      this.counter = (randomU64() % 2048) as i64
+      return (this.millis, this.counter)
+    }
+    // the same millisecond, or a clock that went backwards: keep the
+    // timestamp we already published and count
+    this.counter = this.counter + 1
+    if (this.counter > 4095) {
+      this.millis = this.millis + 1
+      this.counter = (randomU64() % 2048) as i64
+    }
+    (this.millis, this.counter)
   }
-  // the same millisecond, or a clock that went backwards: keep the
-  // timestamp we already published and count
-  v7Counter = v7Counter + 1
-  if (v7Counter > 4095) {
-    v7Millis = v7Millis + 1
-    v7Counter = (randomU64() % 2048) as i64
-  }
-  v7Millis
 }
+
+val v7Clock = mutex(V7Clock(millis: -1, counter: 0))
+
+// the timestamp and counter of the next v7 id, taken together
+fun nextTick(): (i64, i64) = v7Clock.withLock(c => c.tick())
 
 fun hexDigit(nibble: u8): u8 = if (nibble < 10) 48 +% nibble else 87 +% nibble
 

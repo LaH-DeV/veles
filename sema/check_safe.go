@@ -122,3 +122,100 @@ func (f *fnCtx) safeReceiver(x ast.Expr) (pre []Stmt, cond Expr, place Expr, ok 
 	cond = &Unary{exprBase{types.TBool}, OpNot, &IsNull{exprBase{types.TBool}, ref(tmp)}, x.Span()}
 	return pre, cond, &Unwrap{exprBase{nt.Elem}, ref(tmp)}, true
 }
+
+// Reading through `?.` (D70): a null after `?.` skips the rest of the
+// postfix chain, as in Swift — `a?.b.c()` is `c`'s result made nullable,
+// where Kotlin would want `a?.b?.c()`. Parentheses end a chain
+// (`(a?.b).c` reads `.c` on the nullable), and so does an argument list:
+// only the receiver spine is followed.
+
+// safeBelow finds the `?.` member nearest the top of e's receiver spine,
+// strictly below e itself, or nil when e is not such a chain. A receiver
+// already bound (the chain being checked) ends the walk.
+func (f *fnCtx) safeBelow(e ast.Expr) *ast.MemberExpr {
+	var recv ast.Expr
+	switch e := e.(type) {
+	case *ast.MemberExpr:
+		if e.Safe {
+			return nil // `x?.name` itself: fieldAccess/methodCallOn handle it
+		}
+		recv = e.X
+	case *ast.CallExpr:
+		m, ok := e.Fun.(*ast.MemberExpr)
+		if !ok || m.Safe {
+			return nil
+		}
+		recv = m.X
+	default:
+		return nil
+	}
+	for {
+		if _, bound := f.boundPlace[recv]; bound {
+			return nil
+		}
+		switch r := recv.(type) {
+		case *ast.MemberExpr:
+			if r.Grouped {
+				return nil
+			}
+			if r.Safe {
+				return r
+			}
+			recv = r.X
+		case *ast.CallExpr:
+			m, ok := r.Fun.(*ast.MemberExpr)
+			if r.Grouped || !ok {
+				return nil
+			}
+			if m.Safe {
+				return m
+			}
+			recv = m.X
+		default:
+			return nil
+		}
+	}
+}
+
+// safeChain checks `top`, a chain with the `?.` member s below its top:
+// s's receiver is evaluated once; when it is null the chain is null (or
+// nothing, for a unit call), otherwise the rest runs on its payload. A
+// nullable variable or field is used in place, so a method that changes
+// its receiver changes the stored value (as methodCallOn does for one step).
+func (f *fnCtx) safeChain(top ast.Expr, s *ast.MemberExpr) Expr {
+	recv := f.checkExpr(s.X, nil)
+	if types.IsInvalid(recv.Type()) {
+		return recv
+	}
+	recv = f.flattenNullable(recv)
+	nt, ok := recv.Type().(*types.Nullable)
+	if !ok {
+		f.errorf(s.Pos, "'?.' on a non-nullable value of type '%s'; use '.'", recv.Type())
+		return bad()
+	}
+	var tmp *Var
+	payload := Expr(&Unwrap{exprBase{nt.Elem}, recv})
+	test := recv
+	if !isPlaceExpr(recv) {
+		tmp = f.newTemp(nt)
+		payload = &Unwrap{exprBase{nt.Elem}, &VarRef{exprBase{nt}, tmp}}
+		test = &VarRef{exprBase{nt}, tmp}
+	}
+	if f.boundPlace == nil {
+		f.boundPlace = map[ast.Expr]Expr{}
+	}
+	f.boundPlace[s.X] = payload
+	s.Safe = false // checked as `.` for the duration; restored below
+	inner := f.checkExpr(top, nil)
+	s.Safe = true
+	delete(f.boundPlace, s.X)
+	if types.IsInvalid(inner.Type()) {
+		return inner
+	}
+	notNull := &Unary{exprBase{types.TBool}, OpNot, &IsNull{exprBase{types.TBool}, test}, s.Pos}
+	body := f.safeCallBranch(inner, notNull)
+	if tmp == nil {
+		return body
+	}
+	return &Let{exprBase{body.Type()}, tmp, recv, body}
+}

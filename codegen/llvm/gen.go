@@ -55,6 +55,9 @@ type gen struct {
 	// slot: leaving a scope body early (return, throw, cancellation) cancels
 	// the children and joins them, so nothing outlives the block (D34).
 	abandonSlots map[*sema.Builtin]string
+	// cleanupRecs are the frame slots holding each active cleanup's entry
+	// in the task's cleanup list: pushing a `with` allocates nothing
+	cleanupRecs map[sema.Expr]string
 	closeThunks  map[*sema.With]string // panic-path close functions, per `with`
 	thunkSeq     int
 	// inCleanup is set while cleanups are emitted: a suspension point in a
@@ -95,6 +98,9 @@ func Generate(prog *sema.Program) string {
 			continue
 		}
 		g.function(fn)
+		if fn.ExportC != "" {
+			g.exportWrapper(fn)
+		}
 		g.flushPending()
 	}
 	g.globalsInit()
@@ -149,8 +155,14 @@ declare void @veles_print(ptr, i64)
 declare ptr @veles_alloc(i64)
 declare void @veles_panic(ptr, i64)
 declare void @veles_panic_at(ptr, i64, ptr, i64)
-declare void @veles_cleanup_push(ptr, ptr)
-declare void @veles_cleanup_pop()
+declare void @veles_cleanup_push(ptr, ptr, ptr)
+declare void @veles_cleanup_pop(ptr)
+declare i64 @veles_ffi_enter()
+declare void @veles_ffi_leave(i64)
+declare void @veles_blocking_enter()
+declare void @veles_blocking_leave()
+declare void @veles_gc_park()
+@veles_stop_requested = external global i32
 declare void @veles_report_error(ptr, i64)
 declare void @veles_string_concat(ptr, ptr, i64, ptr, i64)
 declare i1 @veles_string_eq(ptr, i64, ptr, i64)
@@ -169,7 +181,7 @@ declare void @veles_i64_to_string(ptr, i64)
 declare void @veles_u64_to_string(ptr, i64)
 declare void @veles_f64_to_string(ptr, double)
 declare void @veles_f32_to_string(ptr, float)
-declare void @veles_bool_to_string(ptr, i1)
+declare void @veles_bool_to_string(ptr, i1 zeroext)
 declare ptr @veles_list_new(ptr, i64)
 declare i64 @veles_list_len(ptr)
 declare void @veles_list_push(ptr, ptr)
@@ -216,7 +228,7 @@ declare double @hypot(double, double)
 declare float @tanf(float)
 declare float @atan2f(float, float)
 declare float @hypotf(float, float)
-declare i64 @veles_int_pow(i64, i64, i64, i1, ptr, i64)
+declare i64 @veles_int_pow(i64, i64, i64, i1 zeroext, ptr, i64)
 declare i8 @llvm.ctpop.i8(i8)
 declare i16 @llvm.ctpop.i16(i16)
 declare i32 @llvm.ctpop.i32(i32)
@@ -431,6 +443,7 @@ func (g *gen) resetFn(fn *sema.Func) {
 	g.coro = nil
 	g.scopeSlots = map[*sema.ScopeBlock]string{}
 	g.abandonSlots = map[*sema.Builtin]string{}
+	g.cleanupRecs = map[sema.Expr]string{}
 	g.inCleanup = 0
 	g.launchSlots = map[*sema.Launch]string{}
 }
@@ -465,7 +478,7 @@ func (g *gen) externDecl(fn *sema.Func) string {
 	}
 	ret := "void"
 	if !types.IsUnit(fn.Sig.Ret) {
-		ret = g.llType(fn.Sig.Ret)
+		ret = cExt(fn.Sig.Ret) + g.llType(fn.Sig.Ret)
 	}
 	return fmt.Sprintf("declare %s @%s(%s)\n", ret, fn.Name, strings.Join(params, ", "))
 }
@@ -476,7 +489,34 @@ func (g *gen) externParamTypes(t types.Type) []string {
 	if types.IsString(t) {
 		return []string{"ptr", "i64"}
 	}
-	return []string{g.llType(t)}
+	return []string{g.llType(t) + cArgExt(t)}
+}
+
+// cExt is the attribute the C ABI puts on a small integer crossing it, as
+// a prefix of the type: clang passes a bool or an unsigned char/short
+// zero-extended and a signed one sign-extended, and the other side reads
+// the whole register. Without it the bits above an i1 are undefined — a C
+// function taking `bool` would see garbage.
+func cExt(t types.Type) string {
+	b, ok := t.(*types.Basic)
+	if !ok {
+		return ""
+	}
+	switch b.Kind {
+	case types.Bool, types.U8, types.U16:
+		return "zeroext "
+	case types.I8, types.I16:
+		return "signext "
+	}
+	return ""
+}
+
+// cArgExt is cExt as a suffix of an argument's type: `i1 zeroext %x`.
+func cArgExt(t types.Type) string {
+	if e := cExt(t); e != "" {
+		return " " + strings.TrimSpace(e)
+	}
+	return ""
 }
 
 func (g *gen) function(fn *sema.Func) {
@@ -666,12 +706,11 @@ func (g *gen) stmt(s sema.Stmt) {
 		g.emit("store %s %s, ptr %s", g.llType(s.Var.Type), v, st)
 		// registered with the task as well, so that a panic inside the
 		// body closes the resource before the task is abandoned (D49)
-		g.emit("call void @veles_cleanup_push(ptr @%s, ptr %s)", g.closeThunk(s), st)
-		g.cleanups = append(g.cleanups, s.Close)
+		g.pushCleanup(s.Close, "@"+g.closeThunk(s), st)
 		g.block(s.Body)
 		g.cleanups = g.cleanups[:len(g.cleanups)-1]
 		if !g.term {
-			g.emit("call void @veles_cleanup_pop()")
+			g.popCleanup(s.Close)
 			g.expr(s.Close)
 		}
 	default:
@@ -741,8 +780,25 @@ func (g *gen) loop(l *sema.Loop) {
 	for _, s := range l.Post {
 		g.stmt(s)
 	}
+	g.safepointPoll()
 	g.emitTerm("br label %%%s", labels.cond)
 	g.placeLabel(labels.end)
+}
+
+// safepointPoll is a loop's back edge (D66): one load and a branch that is
+// never taken unless a collection is waiting for this thread, so a loop
+// that allocates nothing cannot hold the other threads stopped.
+func (g *gen) safepointPoll() {
+	flag := g.newTmp()
+	g.emit("%s = load volatile i32, ptr @veles_stop_requested, align 4", flag)
+	stop := g.newTmp()
+	g.emit("%s = icmp ne i32 %s, 0", stop, flag)
+	park, on := g.newLabel("safepoint"), g.newLabel("safepoint.on")
+	g.emitTerm("br i1 %s, label %%%s, label %%%s, !prof !{!\"branch_weights\", i32 1, i32 100000}", stop, park, on)
+	g.placeLabel(park)
+	g.emit("call void @veles_gc_park()")
+	g.emitTerm("br label %%%s", on)
+	g.placeLabel(on)
 }
 
 // ---------------------------------------------------------------------------
@@ -834,6 +890,22 @@ func (g *gen) flushPending() {
 	}
 }
 
+// pushCleanup registers a cleanup with the running task — fn(env) is what
+// a panic calls to run it — and makes it the innermost of g.cleanups. The
+// list entry lives in the function's frame (the coroutine frame, for a
+// suspending function), so entering a `with` costs no allocation.
+func (g *gen) pushCleanup(c sema.Expr, fn, env string) {
+	rec := g.alloca("{ ptr, ptr, ptr }")
+	g.cleanupRecs[c] = rec
+	g.emit("call void @veles_cleanup_push(ptr %s, ptr %s, ptr %s)", rec, fn, env)
+	g.cleanups = append(g.cleanups, c)
+}
+
+// popCleanup unregisters c, the innermost cleanup, from the task.
+func (g *gen) popCleanup(c sema.Expr) {
+	g.emit("call void @veles_cleanup_pop(ptr %s)", g.cleanupRecs[c])
+}
+
 // runCleanups emits the close calls of every `with` entered since depth,
 // innermost first, without popping them (the code after the jump still
 // belongs to those blocks).
@@ -842,7 +914,7 @@ func (g *gen) runCleanups(depth int) {
 	g.inCleanup++
 	for i := len(saved) - 1; i >= depth; i-- {
 		g.cleanups = saved[:i]
-		g.emit("call void @veles_cleanup_pop()") // this path runs it itself
+		g.popCleanup(saved[i]) // this path runs it itself
 		g.expr(saved[i])
 	}
 	g.inCleanup--
@@ -894,4 +966,29 @@ func (g *gen) recvOperand(fn *sema.Func, t types.Type, v string) string {
 	}
 	g.emit("store %s %s, ptr %s", llt, v, cell)
 	return "ptr " + cell
+}
+
+// exportWrapper emits the function C calls for an `extern "C" fun` (D69):
+// under the C name, with the C calling convention, it marks the runtime as
+// inside a callback — a panic there must end the process rather than
+// unwind through C's frames — and calls the Veles body.
+func (g *gen) exportWrapper(fn *sema.Func) {
+	var params, args []string
+	for i, p := range fn.Params {
+		llt := g.llType(p.Type)
+		params = append(params, fmt.Sprintf("%s%s %%a%d", llt, cArgExt(p.Type), i))
+		args = append(args, fmt.Sprintf("%s %%a%d", llt, i))
+	}
+	ret := g.retLL(fn)
+	retAttr := ""
+	if ret != "void" {
+		retAttr = cExt(fn.Sig.Ret)
+	}
+	fmt.Fprintf(&g.out, "define %s%s @%s(%s) {\nentry:\n", retAttr, ret, fn.ExportC, strings.Join(params, ", "))
+	g.out.WriteString("  %saved = call i64 @veles_ffi_enter()\n")
+	if ret == "void" {
+		fmt.Fprintf(&g.out, "  call void @%s(%s)\n  call void @veles_ffi_leave(i64 %%saved)\n  ret void\n}\n\n", fn.Name, strings.Join(args, ", "))
+		return
+	}
+	fmt.Fprintf(&g.out, "  %%r = call %s @%s(%s)\n  call void @veles_ffi_leave(i64 %%saved)\n  ret %s %%r\n}\n\n", ret, fn.Name, strings.Join(args, ", "), ret)
 }

@@ -226,7 +226,7 @@ struct Job {
 }
 
 fun main() throws EncodeError | DecodeError {
-  val job = Job(name: "backup", timeout: Duration.seconds(90).plus(Duration.millis(500)))
+  val job = Job(name: "backup", timeout: Duration.seconds(90) + Duration.millis(500))
   loop (style in DurationStyle.values()) {
     io.println("$style: ${try json.encode(job, json.Options(durations: style))}")
   }

@@ -27,6 +27,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -244,6 +245,58 @@ var references = map[string]func() string{
 		var sum int64
 		for v := range ch {
 			sum += v
+		}
+		return strconv.FormatInt(sum, 10)
+	},
+	"spawn": func() string {
+		square := func(i int64) int64 {
+			var acc int64
+			for k := int64(0); k < 50; k++ {
+				acc += (i + k) % 7
+			}
+			return acc
+		}
+		var sum int64
+		for b := int64(0); b < 100; b++ {
+			res := make([]int64, 1000)
+			var wg sync.WaitGroup
+			for j := 0; j < 1000; j++ {
+				wg.Add(1)
+				go func(j int) {
+					defer wg.Done()
+					res[j] = square(b*1000 + int64(j))
+				}(j)
+			}
+			wg.Wait()
+			for _, r := range res {
+				sum += r
+			}
+		}
+		return strconv.FormatInt(sum, 10)
+	},
+	"parallel": func() string {
+		work := func(seed int64) int64 {
+			var total int64
+			words := map[string]int64{}
+			for round := int64(0); round < 200; round++ {
+				var xs []int64
+				for i := int64(0); i < 200; i++ {
+					xs = append(xs, (seed*31+i*7+round)%1000)
+				}
+				sorted := slices.Clone(xs)
+				slices.Sort(sorted)
+				total += sorted[100]
+				words["k"+strconv.FormatInt((seed+round)%17, 10)]++
+			}
+			return total + int64(len(words))
+		}
+		out := make(chan int64, 64)
+		for s := int64(0); s < 64; s++ {
+			go func(s int64) { out <- work(s) }(s)
+		}
+		var sum int64
+		for i := 0; i < 64; i++ {
+			sum += <-out
 		}
 		return strconv.FormatInt(sum, 10)
 	},

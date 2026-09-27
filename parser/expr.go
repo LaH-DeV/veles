@@ -495,6 +495,13 @@ func (p *Parser) parseParenOrTuple() ast.Expr {
 			sp := elems[0].Span()
 			p.parens[[2]int{sp.Start, sp.End}] = true
 		}
+		// parentheses end a `?.` chain (D70)
+		switch e := elems[0].(type) {
+		case *ast.MemberExpr:
+			e.Grouped = true
+		case *ast.CallExpr:
+			e.Grouped = true
+		}
 		return elems[0]
 	}
 	return &ast.TupleExpr{Elems: elems, Pos: p.spanFrom(start)}

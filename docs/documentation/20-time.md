@@ -32,7 +32,7 @@ fun main() {
   val a = Duration.seconds(90)
   val b = Duration.millis(250)
   io.println("$a and $b")
-  io.println("${a.plus(b)}  ${a.minus(b)}  ${b.times(6)}  ${a.dividedBy(3)}")
+  io.println("${a + b}  ${a - b}  ${b * 6}  ${a / 3}  ${-b}")
   io.println("${a > b}  ${a.toMillis()}  ${b.asSeconds()}")
   io.println("${Duration.parse("1h30m")}  ${Duration.parse("1.5s")}  ${Duration.parse("5")}")
 }
@@ -41,7 +41,7 @@ fun main() {
 Output:
 ```text
 1m30s and 250ms
-1m30.25s  1m29.75s  1.5s  30s
+1m30.25s  1m29.75s  1.5s  30s  -250ms
 true  90000  0.25
 1h30m  1.5s  null
 ```
@@ -51,12 +51,12 @@ Constructors: `nanos`, `micros`, `millis`, `seconds`, `minutes`, `hours`,
 `toNanos` … `toDays` truncate toward zero; `asSeconds` and `asMillis` keep
 the fraction.
 
-Arithmetic is methods — `a.plus(b)`, not `a + b` — because Veles has no
-arithmetic operator traits. That is a smaller cost than it looks: the two
-sums that actually get written, "now plus a timeout" and "how much is
-left", are `Deadline`, below. If the language later gains operator
-overloading, `plus`, `minus`, `times` and `dividedBy` are named to be
-adopted by it, so no second spelling appears.
+The arithmetic operators are the prelude's operator traits (D71): a
+`Duration` adds and subtracts another, multiplies and divides by an
+`i64`, negates, and `+=`/`-=` work on a `var`. Dividing one length by
+another is `a.over(b)`, an `i64`. The two sums that actually get
+written, "now plus a timeout" and "how much is left", are usually
+`Deadline`, below.
 
 `Display` prints the largest units that fit and drops empty ones, and
 `Parsable` reads back exactly what `Display` writes — the fraction is
@@ -77,7 +77,7 @@ fun main() {
   io.println("$t")
   io.println("${t.at(time.Offset.of(2) ?: time.Offset.utc)}")
   io.println("${t.toSeconds()}  ${t.subsecondMicros()}")
-  io.println("${t.plus(Duration.days(1))}")
+  io.println("${t + Duration.days(1)}")
   io.println("${t.since(time.Timestamp.epoch).toDays()} days since the epoch")
 }
 ```

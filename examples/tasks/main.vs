@@ -82,6 +82,27 @@ fun main() throws {
     io.println("race $second")
   }
 
+  // two races waiting on one channel: the first also waits on another,
+  // wins there, and the second still hears the shared channel close
+  val first = Channel<string>(capacity: 1)
+  val shared = Channel<string>(capacity: 1)
+  scope {
+    val a = async raceTwo(first, shared)
+    val b = async raceOne(shared)
+    await sleep(Duration.millis(2))
+    first.send("first")
+    io.println("race ${await a}")
+    shared.close()
+    io.println("race ${await b}")
+  }
+
+  // a loop launches from one site; whichever of its tasks fails, the scope
+  // rethrows that task's error
+  when (val r = launchInLoop()) {
+    is Ok  => io.println("loop: no error")
+    is Err => io.println("loop: Boom(${r.n})")
+  }
+
   // fail-fast: the first child error cancels siblings and propagates
   scope {
     async mayFail(1)
@@ -89,6 +110,24 @@ fun main() throws {
     async slowLoop()
   }
   io.println("unreachable")
+}
+
+fun launchInLoop() throws Boom {
+  scope {
+    loop (i in 1..3) {
+      async mayFail(i)  // the second launch throws
+    }
+  }
+}
+
+fun raceTwo(a: Channel<string>, b: Channel<string>): string = race {
+  val msg = a.recv() => "a: ${msg ?: "closed"}"
+  val msg = b.recv() => "b: ${msg ?: "closed"}"
+}
+
+fun raceOne(ch: Channel<string>): string = race {
+  val msg = ch.recv()        => "shared: ${msg ?: "closed"}"
+  sleep(Duration.seconds(5)) => "timeout"
 }
 
 fun producer(ch: Channel<string>) {
@@ -99,7 +138,7 @@ fun producer(ch: Channel<string>) {
 fun slowLoop() {
   loop (i in 0..<100) {
     io.println("Printing slowLoop iteration $i")
-    await sleep(Duration.millis(1))
+    await sleep(Duration.millis(500))  // well after mayFail(2) fails: cancelled after iteration 0
   }
   io.println("slowLoop finished (should have been cancelled)")
 }
