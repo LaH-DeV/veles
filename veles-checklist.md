@@ -30,8 +30,7 @@ answered from the shape, tuples get `Comparable`, enums get
 - [x] **Target** decided: generic `Encodable`/`Decodable` (`Codable`) with
       `Encoder`/`Decoder` traits; JSON, rows, config reuse one derive; the
       `Json` tree is itself `Codable` for dynamic use (§10)
-- [x] Field-level attributes with arguments the derive can read (`@key`, `@key(json: ..)`, `@skip`, `@tag`, `@required`)
-      (`@key`, `@key(json: ..)`, `@skip`, `@tag`, `@required`) → D51 revisit
+- [x] Field-level attributes with arguments the derive can read (`@key`, `@key(json: ..)`, `@skip`, `@tag`, `@required`) → D51 revisit
 - [x] Sealed traits: internally tagged, `@tag`, `content:` for the adjacent layout
 - [ ] Sealed decode fast path: dispatch in-stream when the tag is the first key (today every sealed value buffers through `Value`)
 - [x] Enums: by name, number via encoder option
@@ -58,14 +57,14 @@ answered from the shape, tuples get `Comparable`, enums get
 
 ### 1.2 Foreign function interface
 
-- [x] C ABI FFI design → D67 (2026-09-26): extern blocks in any package, native libraries in the manifest; marshaling of strings/buffers and callbacks still to decide
-- [~] `extern "C"` blocks: calling convention and callbacks into Veles done (D69, 2026-09-26: `extern "C" fun` + `&name` : `extern fun(...)`, called through inside `unsafe`); varargs (`printf`) still open
-- [ ] `extern struct` layout: packed, explicit alignment, transparent wrappers
-      (the "noted pressure point" under D51)
+- [x] C ABI FFI design → D67 (2026-09-26): extern blocks in any package, native libraries in the manifest; marshaling of strings/buffers and callbacks → D69
+- [~] `extern "C"` blocks: calling convention and callbacks into Veles done (D69, 2026-09-26: `extern "C" fun` + `&name` : `extern fun(...)`, called through inside `unsafe`); varargs (`printf`) open [? §9 Q7]
+- [?] `extern struct` layout: packed, explicit alignment, transparent wrappers
+      (the "noted pressure point" under D51) — §9 Q7
 - [x] Ownership at the boundary (D69): C keeps only copies (`ffi.CString`, `ffi.alloc`/`free`), a list is lent for a closure (`withRaw`, `CLayout` elements), a value C hands back travels as an `ffi.handle` (a scanned table index, never a GC address)
 - [x] Panics never cross into C: a panic inside an `extern "C" fun` ends the process with its location (runtime `veles_ffi_enter`/`leave` around the body); errors cannot cross either (an exported fun may not throw)
 - [x] Linking: `[native]` in `veles.toml` — `libs`, `static-libs` (archive resolved by name), `lib-paths`, `pkg-config`, file entries; dependencies' tables link too (2026-09-26, `driver/native.go`, TestNativeLinking)
-- [ ] Declaration files (`.d.vs`) so bindings are typed and shareable
+- [?] Declaration files (`.d.vs`) so bindings are typed and shareable — §9 Q7
 - [x] A foreign call cannot stall the collector: every call to an extern
       outside std (and through an `extern fun` pointer) runs in a safe
       region; a callback from C leaves it for the Veles code, and a thread
@@ -114,7 +113,7 @@ answered from the shape, tuples get `Comparable`, enums get
 - [x] Task-local values (D72, 2026-09-27): `taskLocal(fallback)`, scoped
       immutable `withValue(v, f)`, inherited by tasks started inside;
       TestTaskLocalsUnderThreads, sema TestTaskLocal, chapter 12
-- [ ] `race` send arms (`ch.send(v) => ...`) — asked 2026-09-27, undecided (§9)
+- [?] `race` send arms (`ch.send(v) => ...`) — asked 2026-09-27, undecided (§9 Q1)
 - [x] Bounded channels with backpressure (`capacity: n`, blocked senders
       served in order); `race` is the `select` over receives, sleeps and
       tasks (D38). `Channel<T>()` is a true rendezvous (2026-09-27)
@@ -130,14 +129,16 @@ answered from the shape, tuples get `Comparable`, enums get
 
 ### 1.4 Type system and syntax
 
-- [ ] Attributes with typed arguments (needed by 1.1) → D51
-- [ ] Coherence/orphan rules for `implement` (spec: "TBD")
+- [ ] Attributes with typed arguments → D51 (today the derive attributes
+      check their own arguments; a general typed form is not designed)
+- [x] Coherence/orphan rules for `implement`: none beyond D17 — any implement
+      anywhere, one per (trait, type) pair program-wide (§10, derivation batch)
 - [ ] `Default` values for generics without a hand-written implement
-- [ ] Integer overflow policy per build profile (checked in debug, wrapping
-      explicit with `+%`) — verify it is actually what ships
-- [ ] `const` evaluation: what may appear in a `const` (today: literals)
-- [ ] Compile-time assertions (`static assert`) for wire-format invariants
-- [ ] Better inference for empty collection literals (`notes_to_change` §8)
+- [ ] Integer overflow policy per build profile (D21: checked in debug,
+      wrapping in release, `+%` always) — verify it is what ships (plan A3)
+- [?] `const` evaluation beyond literals; `static assert` — §9 Q10
+- [ ] Better inference for empty collection literals (`val xs = []` typed
+      from later use; the typed-context half landed with the old note #8)
 - [ ] Stable ABI story for `.vs` packages: none needed while source-only,
       but say so
 
@@ -154,7 +155,6 @@ answered from the shape, tuples get `Comparable`, enums get
       has no default and throws `net.TooLong`, so the unbounded call does not compile;
       `read(max)` and `readExact(n)` were already caller-bounded, and http checks
       `Content-Length` against `bodyBytes` before the read
-- [ ] Panic-freedom analysis on leaf functions (also a perf win)
 - [x] `unsafe` blocks audited: each std use has a comment saying why it is sound.
       The `// SAFETY:` lint (D44 addendum) warns on a block without a reason,
       and sema `TestStdIsWarningFree` holds std to zero warnings. The audit
@@ -164,14 +164,14 @@ answered from the shape, tuples get `Comparable`, enums get
       read after close could have read another peer's bytes. The number is now
       a shared atomic cell that `close` swaps out (driver
       `TestSocketClosedTwice`) (2026-09-27)
-- [ ] Bounds checks stay on in release; a profile that removes them is opt-in
-      and loud
-- [ ] Integer conversions (`as`) between widths: truncation is explicit
+- [?] Bounds checks stay on in release; a profile that removes them is opt-in
+      and loud — §9 Q11
+- [?] Integer conversions between widths: truncation is explicit — goes with §9 Q16
 - [x] Constant-time comparison primitive in `std/crypto`: `Digest`'s `==`, and
       `crypto.equalBytes` for raw bytes. Structural `==` on `List<u8>`
       short-circuits, so a MAC is compared as a `Digest`, never as bytes (D59)
-- [ ] Secrets: a `Secret<T>` wrapper that does not `Display`, does not derive,
-      and zeroes on collection
+- [?] Secrets: a `Secret<T>` wrapper that does not `Display`, does not derive,
+      and zeroes on collection — §9 Q9
 - [x] Path traversal: `path.within(root, p)` over a lexical `path.clean`,
       both separators on every platform, a `\\server\share` root kept.
       Writing it found a **real hole**: `http.files` split the request on
@@ -238,14 +238,14 @@ answered from the shape, tuples get `Comparable`, enums get
 - [ ] Coroutine frames: size report per function; pool frames of hot shapes
 - [ ] `string` representation: check that slicing and `substring` do not copy
 - [~] `StringBuilder` growth policy and a `reserve`: append is one copy into
-      doubling storage (2026-09-27); `reserve` is a public API, not decided
+      doubling storage (2026-09-27); `reserve` is a public API — §9 Q12
 - [ ] `List<u8>` ↔ socket: writev/readv, no intermediate copies
 - [ ] I/O: `poll` → `epoll`/`kqueue`/IOCP when connection counts justify it
 
 ### 3.2 Compiler
 
 - [ ] Release profile: `-O2`, LTO, no frame pointers unless profiling
-- [ ] Panic-freedom analysis (also §2)
+- [ ] Panic-freedom analysis on leaf functions (a safety and a perf win)
 - [ ] Devirtualisation of trait objects with one implement in the program
 - [ ] Incremental compilation or at least per-module caching of IR
 - [ ] Compile-time budget: `veles build --timings`
@@ -429,7 +429,7 @@ behind a name that says "crypto" (§10, 2026-09-23).
 
 - [ ] `std/config`: typed env parsing, all missing keys reported at once
 - [ ] `std/compress`: gzip/deflate via zlib binding
-- [~] `std/os`: `hostname`, `pid`, `tempDir` done (2026-09-25); `shutdownSignal`/`raiseSignal` done (D68)
+- [~] `std/os`: `hostname`, `pid`, `tempDir` done (2026-09-25); `shutdownSignal`/`raiseSignal` done (D68); `run` without a shell (2026-09-27, §2). Open: `run` with stdin and a separately captured stderr
 - [~] `std/fs`: `walk` done (2026-09-25: depth-first, name order, links to
       directories not followed, its own stack); streaming reads/writes, atomic
       rename, file locks open
@@ -442,8 +442,8 @@ behind a name that says "crypto" (§10, 2026-09-23).
       as Go and Rust do). `std/json` now decodes its `\u` escapes through it
       instead of a private copy; `examples/utf8` is the Table 3-7 and Kuhn
       stress vectors
-- [ ] Collections: queue/deque, priority queue, `Set` ops complete
-      (`notes_to_change` §9)
+- [x] Collections: `Deque<T>` (ring buffer) and `PriorityQueue<T>` (binary
+      heap) in the prelude; `Set` has `union`/`intersect`/`difference`/`isSubsetOf`
 - [x] Binary search in the prelude: `binarySearch`, `binarySearchWith`,
       `binarySearchBy`, `lowerBound`, `upperBound` and the `partitionPoint`
       they are all written in terms of. -1 for absent, as `indexOf` answers,
@@ -551,32 +551,79 @@ are listed in §4 of that file.
 
 ## 9. Decisions pending
 
-Each is answered in a conversation with options, examples, edge cases and
-pros/cons before anything is built; the answer becomes a spec entry.
+Only what is still open. Each is asked through `veles-decide` (options,
+examples, edge cases, pros/cons, a recommendation); the answer becomes a
+spec entry and a row in §10, and the item leaves this list. The labels are
+stable; §10 rows written before 2026-09-27 cite the old numbering (the
+list as it was is in `archive/progress-log-2026-09.md` and git history).
 
-1. ~~Derivation mechanism~~ — decided, see §10.
-2. ~~Derivation target~~ — decided, see §10.
-3. ~~Field attributes~~ — decided, see §10.
-4. ~~Sealed-variant discriminator~~ — decided, see §10.
-5. ~~Nullable fields~~ — decided, see §10.
-6. ~~Enum representation~~ — decided, see §10.
-7. ~~Encoder/Decoder surface~~ — decided, see §10.
-8. ~~Decode error model~~ — decided, see §10.
-9. ~~Generic structs / braceless empty implement~~ — decided, see §10.
-10. ~~First derivable set~~ — decided, see §10. (Orphan rule: none needed — D17 already allows any implement anywhere, one per pair program-wide.)
-11. ~~`Codable` via supertraits~~ — decided, see §10.
- 12. ~~Function type parameters after the name~~ — decided, see §10.
-13. ~~`implement` → `implement`~~ — decided, see §10.
-14. **A check that a value implements a trait** (`x is Display`): trait-object RTTI (Go-style, a per-type trait table in every box) vs a compile-time `T implements X` in generics (per stencil, no runtime cost) vs neither. Deferred; to be designed as its own decision with the costs. *Open.*
-8. ~~FFI design~~ — decided 2026-09-26 (D67), see §10.
-9. ~~Executor threading model~~ — decided 2026-09-26 (D66), see §10.
-10. User-definable derivation (phase 2, once the compiler-known set is proven). *Not yet asked.*
-11. ~~Arithmetic operator traits~~ — decided 2026-09-26 (D71), see §10. Was: (`Addable`/`Subtractable`/… so `a + b` works on a `Duration`, a `Timestamp`, a vector, a money amount). D60 deliberately did not take it: the five operator traits today are about *comparison and text*, and adding arithmetic ones raises overflow, mixed operand types (`Timestamp + Duration` is not `Timestamp + Timestamp`) and whether `+=` follows. `Duration.plus`/`minus`/`times`/`dividedBy` are named so that such a trait could adopt them. *Not yet asked.*
-12. ~~How a `Duration` goes on the wire~~ — decided 2026-09-25, see §10.
-13. ~~Task-local values~~ — decided 2026-09-27 (D72), see §10.
-14. **Send arms in `race`** (`queue.send(line) => {}` next to a `sleep` arm: send with a deadline without a task per send; a losing send arm never sent). Asked 2026-09-27; the user has not decided yet. Workaround today: `withTimeout(d, () => ch.send(v))` or `trySend` polling. *Open.*
-15. **Testing: how a test is declared, what it asserts with, where helpers live** (user, 2026-09-27: assertions "should only be usable inside test function"; is `@test` needed or a `test` form? "WE NEED TO INVESTIGATE THE TOPIC FURTHER"). Investigation in `veles-testing-design.md`: `test "sentence" { }`, a test-only `expect`/`require` vocabulary with expression capture, `test fun` helpers and `*.test.vs` files, `check` for invariants. ~~Open~~ — decided 2026-09-27, see §10 (D78).
-16. **Test setup and teardown per test or per suite** (user, 2026-09-27, on suites: "the setup for before and after isn't good... (no new keyword for them either)" — the proposal was a suite's own `+bt+`val`+bt+`s and `+bt+`with`+bt+`s running fresh before each test). Today: a helper plus `+bt+`with`+bt+` inside each test. Open.
+**Raised by the user, to prepare first (2026-09-28)** — asked together,
+since both are about `use` and `as`
+
+- **Q15. Named imports** (reopens R9, which removed them for Go's
+  always-qualified style). Evidence since: ~500 `io.` qualifiers in the
+  examples alone. To weigh: `use io.{println, eprintln}` vs one name per
+  `use`; how an imported name shadows or collides with a local one; what
+  the formatter's import block and the LSP (auto-import, rename) do; whether
+  `io.println` is just a prelude candidate. Every language that has both
+  forms keeps qualified access too.
+- **Q16. `as` stops meaning conversion** — `cast`/`to`, or conversion as a
+  call (`i64(x)`, Go/Swift), or methods (`x.toI64()`); `as` is left for
+  renaming (`use m as x`, maybe named imports, patterns). 141 conversions in
+  std and examples to migrate with a fix. The chance to split what `as`
+  blurs today: a checked conversion vs an explicit truncation/wrap (§2
+  "integer conversions between widths", §9 Q11), and numeric vs raw-pointer
+  casts.
+
+**Asked, awaiting an answer**
+
+- **Q1. Send arms in `race`** (`queue.send(line) => {}` next to a `sleep`
+  arm: a send with a deadline, no task per send; a losing send arm never
+  sent). Asked 2026-09-27: "idk yet". Today: `withTimeout(d, () =>
+  ch.send(v))` or `trySend` polling.
+- **Q2. Test setup and teardown per test or per suite** (user, 2026-09-27:
+  "the setup for before and after isn't good... (no new keyword for them
+  either)" — a suite's own `val`s and `with`s run fresh before each test
+  was the rejected proposal). Today: a helper plus `with` in each test.
+
+**Prepared or half-designed, not yet asked**
+
+- **Q3. Package surface in source** (notes #19): `public use geometry` in
+  the root module replaces the manifest's `exports`. Designed (whole
+  modules only since R9); wants a go-ahead.
+- **Q4. Read-only exposure of a mutable-collection field** (notes R32,
+  R18(b)): accessors vs `protected val` meaning "look, don't take".
+- **Q5. `is Trait`** (`x is Display`): trait-object RTTI (a per-type table
+  in every box) vs a compile-time `T implements X` in generics vs neither.
+  `sema/supers.go` refuses converting one trait object to another for the
+  same reason.
+- **Q6. User-definable derivation** — phase 2 of D58, once the compiler-known
+  set is proven.
+
+**Raised by the checklist, not yet designed**
+
+- **Q7. FFI surface still open**: varargs calls (`printf`), `extern struct`
+  layout (packed, alignment, transparent wrappers — the pressure point under
+  D51), `.d.vs` declaration files (with notes #16).
+- **Q8. Where a misuse panic points**: a `#[track_caller]`-style marker so
+  `xs.swap(0, 7)` reports the caller's line, not `std/prelude/list.vs` (§11).
+- **Q9. `Secret<T>`**: no `Display`, no derive, zeroed on collection (§2,
+  §5.5).
+- **Q10. Compile-time evaluation**: what a `const` may hold beyond literals,
+  and `static assert` for wire-format invariants (§1.4).
+- **Q11. Build profiles**: bounds checks off only when opted into loudly;
+  the release overflow policy (§1.4, §2).
+- **Q12. `StringBuilder.reserve`** and other capacity hints as public API
+  (§3.1).
+- **Q13. Small syntax consistencies** (notes I2, I3): `when (val n = ...)`
+  vs `loop (x in c)`; what mutating a `MutableList` while looping over it
+  means.
+- **Q14. Manifest dependency syntax** (notes #3, #17) — after M7 gives the
+  manifest real content.
+
+Every new public std API (http cookies/forms/client, `std/log`,
+`std/config`, metrics, ...) is its own decision when its turn comes in
+`veles-plan.md`; they are not pre-listed here.
 
 ## 10. Decision log
 
@@ -622,7 +669,7 @@ pros/cons before anything is built; the answer becomes a spec entry.
 | 2026-09-25 | A `Duration` on the wire (§9.12) | **`"90.5s"` by default, any of five on request** (user: "90.5s, but we need to be able to convert to different"). `DurationStyle { Seconds, Iso8601, Text, Nanos, Millis }` is the format's policy, like `EnumStyle`. Spec D60 addendum. Rejected: ISO 8601 by default (Go/Python stdlib do not read it), seconds as a number (precision). |
 | 2026-09-25 | Identifiers and invisible characters (notes #21) | **UAX #31** (user's choice over the recommended fixed list): identifiers are `XID_Start XID_Continue*` plus `_`, so a bidi control, a zero-width character or a no-break space is no longer an identifier byte — the Trojan-source case (CVE-2021-42574) becomes a diagnostic. Costs Unicode tables in the lexer, and in the self-hosted one. |
 | 2026-09-25 | Changing a by-value struct parameter (R20 follow-up 1) | **A warning**: a function that assigns a `var` field of a value-struct parameter, directly or through a method that writes `self`, is told the caller never sees it, with `*T` or returning the value as the fixes. R20's rule (`val`/`var` govern rebinding only) is unchanged. Rejected: Swift's immutable parameters (changes R20). |
-| 2026-09-25 | Guard binding (I1) | **Let-else plus `??` on Result** (user, after `veles-guard-design.md`): `val x = r else { e => ... }` binds or leaves (Result, nullable, variant pattern; one-statement `else return` allowed); `r ?? fallback` / `r ?? { e => ... }` is `?:` for a Result, and each operator on the other kind is an error with a fix that swaps it. Spec D61. Rejected: widening `?:` to Result (the recommendation), a `Fallible` trait (its own decision, later). |
+| 2026-09-25 | Guard binding (I1) | **Let-else plus `??` on Result** (user, after `archive/veles-guard-design.md`): `val x = r else { e => ... }` binds or leaves (Result, nullable, variant pattern; one-statement `else return` allowed); `r ?? fallback` / `r ?? { e => ... }` is `?:` for a Result, and each operator on the other kind is an error with a fix that swaps it. Spec D61. Rejected: widening `?:` to Result (the recommendation), a `Fallible` trait (its own decision, later). |
 | 2026-09-26 | Fewer panics: prove the index (user: "atOrPanic is kind of a cheatcode") | **All four parts, in order A → B → C, D alongside.** A: list patterns in `when` and let-else (`val [h, p, s] = xs else ...`, `[x, ..rest]`). B: bounds facts — `xs.at(i)` is `T` where the checker knows the index is in range (index loops, `i < len` guards, constant indexes after a length check; a `MutableList`'s facts end at any call that could reach it). C: `atOrPanic`/`getOrPanic`/`refOrPanic` removed; the only way left is `?: panic("why")` (user's choice over `.expect("why")` and keeping the method with a lint). D: `indices()`, `splitOnce`, `enumerate`/`zip` on List. Spec D62. Built: **A** (2026-09-26: parser, checker, `list.slice` runtime op for `..rest`, examples/listpatterns, docs 04, std/jwt + std/http request line migrated). **B** (2026-09-26: sema/bounds.go — facts in the smart-cast map; `indices()`; `?:` after a proven read is a warning with a fix; ~20 std sites now plain `at`, the rest are index arithmetic or `self` with calls; found D63 on the way). **C** (2026-09-26: the three names are errors whose fix writes `(x.at(i) ?: panic("TODO: say why this cannot fail"))`; std, examples, bench, docs and tests migrated by hand — list patterns, iteration and `?: return` where they fit, a stated invariant elsewhere (one helper per data structure); codegen now inlines list `len` and the bounds-checked element read: sha256 301→72 ms, json 314→135 ms, sort 295→108 ms). **D** (2026-09-26): `indices()`, `s.splitOnce(sep): (string, string)?`, eager `List.enumerate(): List<(i64, T)>` (`zip` was already on List); splitOnce replaced the hand-split header, target, query, ISO-duration and HTTP-date code in std. |
 | 2026-09-26 | A `catch` block for panics | **Not added; D52 stands** (user: "we use gather"). Panics are the bug channel, not exceptions: they stay unrecoverable inside a task and are observed only where a task ends (`gather`). Presented: function-level `fun f() { … } catch { p => … }` (recommended), a catch after any block, or none. Should it be revisited, the panic is bound with the D61 handler form `catch { p => … }`, not `this`, since `this` would hide a method's receiver. |
 | 2026-09-26 | `self` becomes `this` (user) | **Built 2026-09-26.** The receiver is spelled `this` across the language, std, docs and tooling (spec D65, v0.40). `self` still parses as the receiver with an error whose fix writes `this` (`veles check --fix`, LSP quick fix, inside interpolations too); 1,520 sites migrated by a token-level rewrite (code only, never comments or string text), prose by hand; `Self` the type is unchanged; the VS Code grammar highlights `this`, flags `self`, and no longer marks `enum`/`for` illegal. |
@@ -641,25 +688,26 @@ pros/cons before anything is built; the answer becomes a spec entry.
 | 2026-09-27 | What is global (user note #4) | **A slim prelude** (user, recommended of three; spec D75): codec machinery → `use codec`, `CLayout` → `use ffi`, `Depth`/`maxRecursionDepth`/`tooDeepMessage` → `use recursion`; the core types, traits, collections, `StringBuilder`, `Duration`, sync types and `Codable` stay global. Rejected: Go-minimal; as is. |
 | 2026-09-27 | Which I/O failure (user note #5) | **`IoError.kind: IoKind`** (user, recommended of four; spec D76): a prelude enum the runtime maps each platform code to; `code` stays. Rejected: separate error types, predicates, as is. |
 | 2026-09-27 | `DateTime.weekday()` (user note #5) | **`Weekday` enum, ISO Monday = 1** (user, recommended of three; spec D77); `month` stays `i64`. Rejected: a `Month` enum too; as is. |
-| 2026-09-27 | Testing (§9 item 15) | **`test "sentence" { }` + a test-only vocabulary** (user, the recommended combination of `veles-testing-design.md`; spec D78): `expect`/`require`/`expectThrows`/`expectPanics`/`fail` with expression capture, `test fun` helpers, `*.test.vs` files, `check(cond)` for invariants — amended the same day to `assert(cond, "why")` with the reason required (user: "should be called 'assert' ... require string explanation like panic"); `@test fun` errors with a fix. Rejected: `test fun` as the test form, an importable `testing` module, a global `assert` as the *test* vocabulary (it stops at the first failure). |
+| 2026-09-27 | Testing (§9 item 15) | **`test "sentence" { }` + a test-only vocabulary** (user, the recommended combination of `archive/veles-testing-design.md`; spec D78): `expect`/`require`/`expectThrows`/`expectPanics`/`fail` with expression capture, `test fun` helpers, `*.test.vs` files, `check(cond)` for invariants — amended the same day to `assert(cond, "why")` with the reason required (user: "should be called 'assert' ... require string explanation like panic"); `@test fun` errors with a fix. Rejected: `test fun` as the test form, an importable `testing` module, a global `assert` as the *test* vocabulary (it stops at the first failure). |
 | 2026-09-27 | Test suites (D78 amendment) | **`+bt+`suite "name" { }`+bt+` blocks and `+bt+`*.test.vs`+bt+` files as suites; the report grouped and indented** (user: "I think both is the answer"; report: grouped, over the recommended qualified-name lines). Suites hold tests, suites and `+bt+`test fun`+bt+` helpers scoped to the suite; names are qualified `+bt+`a / b / test`+bt+` for the summary and `+bt+`--filter`+bt+`. Setup/teardown: the lexical proposal rejected ("the setup for before and after isn't good... no new keyword for them either"); open as §9 item 16. |
 
 ## 11. Known limitations to revisit
 
-- ~~A test's own output is not captured~~ — fixed 2026-09-27: kept per
-  test, shown under a failure (and a timeout), dropped on a pass. Output C
-  code writes itself (`printf` through FFI) is not captured.
+- A test's output is captured through `io` only: what C code writes itself
+  (`printf` through FFI) goes straight to the terminal.
 - `expectPanics(body)` runs `body` in a task of its own, so `body` must be
   a sendable function: it cannot capture a `MutableList` of the test's.
-- ~~A failure inside a `test fun` helper reports only the helper's line~~ —
-  fixed 2026-09-27: each helper call site follows as `called from`, into
-  tasks started inside the helper. Not traced: a helper launched directly
-  with `async helper()` (the launch must stay a plain call), and a plain
-  panic inside a helper (its location is the helper's).
+- A `test fun` helper's call site is not traced when the helper is
+  launched directly (`async helper()` — the launch must stay a plain call),
+  and a plain panic inside a helper reports only the helper's line.
 - A panic std raises for a caller's misuse (`xs.swap(0, 7)`, `chunked(0)`)
   reports the std line (`at std/prelude/list.vs:408:27`), not the caller's
-  (D64). Fix if it matters: a `#[track_caller]`-style attribute that passes
-  the call site's location down.
+  (D64) — §9 Q8.
+- A socket closed on one thread while another thread is inside a read or
+  write on it can still, in that window, reach a number the system has
+  reused; Go guards this with a per-socket reference count.
+- `os.run`'s POSIX branch (`posix_spawnp`) has not been compiled or run:
+  this machine has no Linux headers (plan A1).
 - `T?.decode(from)` written by hand parses as a safe call on `T`; use a
   generic (`fun decodeIt<T: Decodable>(...)`) or a field. Derived code uses a
   resolved-type receiver and is unaffected.

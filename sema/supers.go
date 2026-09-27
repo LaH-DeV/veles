@@ -133,7 +133,7 @@ type objSlot struct {
 // (depth first). It is the order the vtable is laid out in, so a subtrait's
 // table starts with its first super's — not that anything depends on it
 // yet: a trait object is never converted to another trait's object, which
-// would need the concrete type back (§9 item 14).
+// would need the concrete type back (checklist §9 Q5, `is Trait`).
 func objectOrder(t *types.Trait) []*types.Trait {
 	var out []*types.Trait
 	seen := map[*types.Trait]bool{}

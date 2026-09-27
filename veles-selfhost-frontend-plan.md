@@ -3,7 +3,7 @@
 A plan for the first slice of self-hosting. Against `veles-spec.md` v0.34.
 This is a sequencing document with gates, not a schedule.
 
-`veles-build-plan.md` puts self-hosting at Stage 5 in one line. This file
+`archive/veles-build-plan.md` puts self-hosting at Stage 5 in one line. This file
 is that line expanded for the front end only — and argues that the front
 end is worth doing *before* the rest of Stage 5, because it is the one part
 that can be proved correct against the existing implementation instead of

@@ -1316,7 +1316,7 @@ standard libraries do not read it); a number of seconds as the default
 `try` hands a failure up; `?:` (D30) replaces a missing value. What was
 missing was the same for a `Result`, and a way to *bind* a value or leave,
 without burying the happy path in a `when` whose only job is to bail out
-(notes I1; the write-up with the alternatives is `veles-guard-design.md`).
+(notes I1; the write-up with the alternatives is `archive/veles-guard-design.md`).
 
 **`r ?? fallback`** — the value of a `Result<T, E>`, or `fallback` when it
 is an `Err`. `fallback` is a `T`, or `Never` (`?? return`, `?? continue`,
@@ -1925,7 +1925,7 @@ recommended of three): a `Month` enum as well; as is.
 
 The user: assertions "should only be usable inside test function"; "do we
 need '@test' … maybe we could add "test" keyword". Investigation in
-`veles-testing-design.md`; the user took its recommended combination.
+`archive/veles-testing-design.md`; the user took its recommended combination.
 
 ```veles
 test "parses a port" {
@@ -1991,7 +1991,7 @@ heading per suite, its tests indented under it, nested suites further in,
 tests outside any suite first. A suite holds nothing else: setup that
 runs before and after each test was proposed as the suite's own `val`s
 and `with`s and rejected — "the setup for before and after isn't good...
-(no new keyword for them either)" — and is open (checklist §9 item 16).
+(no new keyword for them either)" — and is open (checklist §9 Q2).
 
 Rejected (user, recommended combination): `test fun name()` as the test
 form; a `testing` module anyone can import (leaks into programs, needs

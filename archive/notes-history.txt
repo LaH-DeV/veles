@@ -1,0 +1,1370 @@
+Snapshot of notes_to_change.txt as of 2026-09-27, kept verbatim: the done
+items with their records (R1-R40, P1-P12, M1-M6, T1-T5, I1) and the open
+ones as they stood. The live file keeps only what is still open.
+
+Open design notes. Items are removed once done; numbering is historical.
+
+3. I kind of hate that we almost implemented rust in the syntax...
+- I do not like `items.iter().filter`, I like js's `items.filter` but I do not know we can do that.
+  (partly: List has eager map/filter/fold/etc. directly; `iter()` is only the lazy form, D46)
+- I do not like implicit returns but... maybe it is somewhat ok
+- I do not like impl blocks...
+- I do not like `  fun count(): i32 {
+    var n = 0
+    loop (x in self) { n += 1 }
+    n
+  }` so we really cannot have a better syntax for it?
+- I do not understand what the type Iter: Iterator does here `trait Iterable {
+  type Iter: Iterator
+  fun iterator(): Iter
+}`
+- I do not like how the dependencies in toml file are written...
+- I would prefer getting map indexing by .get() and list indexing with .at() than [i]...
+
+4. There is a lot of words to define a fetcher that are not easily understandable:
+`trait Fetcher {
+  type Error
+  fun fetch(url: string): Bytes suspends throws Self::Error
+}`
+
+5. I hate `Some(null)` and other Some and Ok and Err... this is rust.. WHY
+   (partly: `is Ok` / `is Err` now smart-cast to the payload, so Ok/Err are rarely spelled)
+
+7. we need very specialized tutorials and documentation for different levels for newcomers
+   (docs/ exists and is tested; "basic for now, to be expanded later")
+
+8. question: could we forget about 'mut' here and figure out the mutability based on 'val' and 'var'?
+I'm not sure it works in every example, but maybe?
+  val ages = ["ann": 41, "bob": 29]              // Map<string, i32>
+  var stock = mut ["apples": 3]                  // MutableMap<string, i32>
+would change to:
+  val ages = ["ann": 41, "bob": 29]              // Map<string, i32>
+  var stock = ["apples": 3]                      // MutableMap<string, i32>
+
+9. I would like the language / std to be prepared for efficiently implementing queues, stacks, maybe graphs? algorithms etc...
+   (2026-09-17: `extend` blocks landed, so Deque/PriorityQueue can be plain Veles in the prelude;
+   MutableList now has insert/removeAt/addAll/sort)
+
+12. "x does not implement y" when trait has something and the struct does not implement it, it should be reported at the struct, not when using the method
+
+13. `unsafe` hygiene (from the discussion on 2026-09-16): an `unsafe { }` block in a non-`unsafe fun`
+   should carry a `// SAFETY: ...` comment saying why it is sound, or the function should be
+   declared `unsafe fun` so the obligation moves to the caller. Not implemented; decide first.
+
+14. (2026-09-17) The built-in method list moved to Veles: `extend` blocks in std/prelude/string.vs
+   and list.vs provide trim/split/lines/replace/indexOf/repeat/toUpper/toLower/toF64/padStart/padEnd,
+   take/drop/slice/count/zip/flatMap/distinct/chunked/windowed/sortedDescending/min/max/sum,
+   insert/removeAt/addAll/sort, Range step/contains/reversed/len, plus `panic(msg)` and `xs.at(-1)`.
+   Only primitives stay in Go (sema/builtins_doc.go is now that list): string byteAt/bytes,
+   List<u8>.decodeUtf8, and the pre-existing ones. Still open from the old list:
+   - DONE (R39) Channel: trySend(x): bool, tryRecv(): T? (non-suspending) — runtime work, not prelude
+   - DONE (R39) int: saturatingMul (with.overflow + select)
+   - not as built-ins, on purpose: toString() (interpolation), parse<T>() (wants a FromString
+     trait once traits on primitives are allowed), width/precision formatting (a format module)
+   - the Go-lowered eager adapters (sema/lower_list.go, check_map.go) could move to the prelude
+     too once one is benchmarked at -O2 against the Veles version
+   - (done in P7) min/max/sorted now require Comparable, checked at the call site.
+
+15. DONE (2026-09-19, with R12): error sets keep their name in hover and diagnostics.
+
+16. The generated `builtins.vs` stub is reference-only (not compilable Veles). If a second
+   consumer for declaration files appears, consider a real `declare`-style form.
+
+--- Expansion roadmap (2026-09-17; phases from the review, in order) ---
+
+P1. DONE — `extend` blocks + the built-in method surface in Veles (string.vs, list.vs), panic(), at(-1).
+
+P2. DONE (2026-09-17) — std/os (args, program, env, exit, run, ioError), std/fs (readFile,
+   writeFile, appendFile, exists, isFile, isDir, listDir, mkdir, remove, rename, cwd), std/path
+   (join, joinAll, dir, base, ext, stem, isAbsolute), prelude IoError + StringBuilder; runtime
+   in runtime/c/veles_os.c. Left for later: reading/writing bytes (List<u8> cannot cross the
+   C ABI — needs a builtin), walking a directory tree, os.run capturing stderr / passing stdin,
+   time, random. `path.join` is binary (no variadics); `joinAll` takes a list.
+
+P2b. DONE (2026-09-17) — formatter: `veles fmt` (package format/, LSP textDocument/formatting,
+   `[format]` in veles.toml: indent, max_blank_lines). gofmt-style: fixed spacing, author line
+   breaks kept (one-line vs broken blocks/lists/chains), comments re-attached by position, author
+   parentheses kept (parser records them in Layout), columns aligned (trailing comments, `=>`
+   arms, struct field types). Braced bodies always break (prettier rule, user decision 2026-09-17);
+   only `{ }` stays inline. Tests: every repo .vs and docs block round-trips (identical AST,
+   idempotent). Not done: reflowing long lines (no max width), aligning `=` in val runs, a
+   `veles fmt` pass over the code blocks inside docs/*.md, an editor setting to disable alignment.
+
+P3. De-Rusting decisions (items 3/4/5/8 above) — each needs a decision, then is a small change:
+   - #8 `mut [..]`: recommend inferring from the expected type (`val xs: MutableList<i64> = []`
+     already works) and keeping `mut` only for untyped literals; tying it to `var` conflates
+     rebinding with element mutation.
+   - #3 `impl` blocks: keep for foreign-type impls, but allow `impl Trait { ... }` inline in a
+     struct body for types you own.
+   - #5 Some/Ok/Err: remaining spellings are in `when` patterns; give `when` the same
+     `is Ok => r` payload symmetry as the smart casts.
+   - #4 trait verbosity: `type Error` on traits could default to `Error`.
+   - `join` vs `joinToString` (both exist now): pick one.
+
+P4. Data structures (#9): Deque<T> (ring buffer over MutableList), PriorityQueue<T> (binary
+   heap; needs a comparator or the Ord marker from #14), Stack = MutableList. All Veles in the
+   prelude now that `extend` exists.
+
+P5. Engineering debt: `unsafe` hygiene (#13), missing-impl reported at the struct (#12), error-set
+   names in hover (#15), Ord marker bound (#14), Channel trySend/tryRecv, saturatingMul, moving
+   the Go-lowered eager adapters (lower_list.go/check_map.go) into the prelude after a benchmark,
+   then the big three: DWARF unwinding (D49), multi-threaded executor (D35), M7 registry/MVS —
+   and the self-hosting decision, for which P2 is the prerequisite.
+
+17. (2026-09-17, idea, not yet) A `.veles` file type could replace `veles.toml` and put the
+   package/build system fully in our hands (own syntax, parsed by the compiler). Not decided;
+   until then `veles.toml` stays and formatter options live there.
+
+18. Grammar conflict found by the formatter: a line that starts with `.` continues the previous
+   line (method chains), so a leading-dot variant pattern (`.none => ...`, `.some(x) => ...`, D5)
+   can never begin a `when` arm on its own line — only `null` / `Some(x)` work there. Also
+   fixed along the way: `Name => ...` and `... if x > limit => ...` in arm heads were read as
+   lambdas (parser `noLambda`, `parseArmHead`). Decide whether leading-dot patterns stay.
+
+19. (2026-09-17, user idea, decided "figure out and note") Package surface in source instead of
+   the manifest's `exports`:
+   - `public` inside a module = visible to the rest of the package (already the rule, M5).
+   - The root module (`lib.vs` by convention; any file of the root directory) re-exports with
+     `public use geometry` — that, and only that, is what other packages may import. Manifest
+     `exports` goes away (bootstrap has no users; no compatibility alias needed).
+   Design worked out so far:
+   - Forms mirror `use`: `public use geometry` re-exports the module under its name (outsiders write
+     `use mathlib.geometry`, as today); `public use geometry.{ area, Circle }` flattens those items
+     into the root (`use mathlib` → `mathlib.area`) — a facade that hides the internal layout,
+     which the manifest list cannot do; `public use geometry as geo` renames.
+   - Uniform rule, no root special case: `public use` in ANY module adds the named module/items to
+     that module's public surface; the root module's public surface is the package's.
+   - Only the package's own modules/items may be re-exported; re-exporting a dependency
+     (`public use utils.text`) is refused for now (keeps "nothing escapes except through the root",
+     avoids diamond questions). Revisit when M7 lands.
+   - M1 is untouched: the dependency graph still comes from manifests only. The loader parses a
+     dependency's root module (its `use` lines) to learn the surface before resolving
+     `use dep.mod`; error text: "module 'geometry' of package 'mathlib' is not re-exported; add
+     `public use geometry` to its root module".
+   - `public use` is a `use` edge for M4 cycle detection. Flattened names collide with root decls
+     like duplicate declarations. LSP definition/hover follow a re-export to the original.
+   - Fits #17: if `.veles` replaces the manifest, identity/deps live there and the surface stays
+     in code. Cost: small (loader + checker + LSP), one docs chapter, examples/packages update.
+
+P6. Completeness pass (2026-09-17 assessment; what a user hits before the big-ticket items):
+   Features still missing for ordinary programs:
+   - bytes I/O (fs.readBytes/writeBytes; List<u8> across the C ABI), io.readAll, os.run with
+     stdin/stderr, std/time (now, monotonic clock, sleep beyond `timer`), std/random.
+   - number formatting: f64 precision/width, integer radix/padding (a `format` module or
+     methods; interpolation stays the only concatenation).
+   - (done in P7) the operator traits; static trait functions still needed for FromString/parse<T>.
+   - P4 Deque/PriorityQueue, Channel trySend/tryRecv, saturatingMul.
+   - variadics or spread (`path.joinAll` is the workaround) — decision needed.
+   - `with` cleanups on panic (needs the unwinder), nested-pattern exhaustiveness,
+     `extern struct` by value.
+   Bug-freedom is a process, not a list — set up in this order:
+   - CI (none exists): build, vet, staticcheck, `go test ./...`, `veles fmt --check`.
+   - a spec conformance suite: one negative test per diagnostic in sema (`// error:` expectations
+     in .vs files, grouped by D-number); sema has ~16 Go tests today.
+   - Go native fuzzing of the parser, formatter and checker seeded with every repo .vs; the
+     formatter round-trip found two parser bugs in one afternoon.
+   - runtime under `-fsanitize=address,undefined` with a tiny VELES_GC_THRESHOLD over all examples.
+   - LSP: diagnostics on every prefix of every corpus file must not panic; `go test -race ./lsp`.
+   - 3–5 mid-size real programs (JSON parser, expression calculator, todo CLI over fs, worker
+     pool, text adventure) written as a user would — the best bug finder for a young language,
+     and they become examples/docs.
+   - one pass over every diagnostic: names the rule, says the fix.
+   Then the big three (P5): DWARF unwinding, multi-threaded executor, M7.
+
+--- Decisions 2026-09-17 (user) ---
+- Next phase P7: traits on primitives + Ord/Eq/Hash as real traits (structural behaviour stays the
+  default). Then CI/conformance, then std gaps.
+- #8: infer `mut` from the expected type; `mut [..]` stays only for untyped literals.
+- #3: `impl Trait { }` allowed inline in a struct body for types you own; top-level `impl` kept
+  for foreign types.
+- #18: leading-dot patterns dropped; `null` / `Some(x)` are the spellings (spec D5 to update).
+
+P7. DONE (2026-09-17) — operator traits in the prelude (std/prelude/traits.vs): Comparable
+   (compareTo → <, <=, >, >=, sorted/sortedBy/min/max/sortedDescending/sort), Equatable (equals →
+   ==, !=, contains, indexOf), Hashable (hash → map keys/set elements; required when Equatable is
+   implemented), Display (toString → interpolation, hence Error.message() default). Structural
+   behaviour stays the default; built-in types keep theirs. Numbers and strings impl Comparable in
+   Veles, so `T: Comparable` bounds accept them; min/max/sortedDescending moved under
+   `extend<T: Comparable> List<T>` (errors now at the call site — #14's Ord marker is done).
+   Implementation: sema/custom.go resolves impl methods for every concrete struct/sealed type
+   after the queue drains (Program.Custom); codegen eq/hash/show helpers call them first.
+   Traits on primitives already worked (impl Show for i64, trait objects on i64) — the README
+   note was stale. Still open from this area:
+   - static trait functions (`fun parse(s: string): Self?` called as `i64.parse(s)` / `T.parse(s)`):
+     every method has a `self` today; needs a syntax decision (`static fun`? Kotlin companion?).
+     Blocks FromString / parse<T>().
+   - `impl Trait { }` inline in struct bodies (#3, decided) would make these impls read better.
+   - a Display impl that interpolates `self` recurses forever; no diagnostic.
+   - `mut fun` stays (2026-09-17): it is the receiver's val/var and part of the signature;
+     inferring it (like effects) is feasible but makes `val` callers break on body edits. Revisit
+     after the mid-size programs. `static fun` decided as the marker for self-less functions.
+
+P3 progress (2026-09-17):
+   - DONE #18: leading-dot patterns and expressions (`.none`, `.some(x)`, `.Variant(..)`) removed
+     from the grammar; spec D5 updated. `null` / `Some(x)` / `Variant(..)` are the spellings.
+   - DONE #8: a list/map literal takes the expected type's mutability (`var xs: MutableList<i64>
+     = []`, `fill([1, 2])`); `mut [..]` is for untyped literals and a redundant one warns. A list
+     literal where a Set is expected builds a set (`val s: Set<i64> = [1, 2]`).
+   - DONE #3: `impl Trait { }` inside a struct body (parser desugars to a top-level impl with the
+     struct's type parameters, `ImplDecl.Inline`; formatter prints it back in the body). Spec D23
+     amended (v0.23). Extra bounds still need the top-level form.
+   - DONE static functions: `static fun` in struct/trait/impl/extend bodies, `Type.f()`,
+     `Stack<i64>.of(x)` (NameExpr.TypeArgs), `T.parse(s)` on a bounded type parameter. Prelude
+     `Parsable { static fun parse(s: string): Self? }` for i64/f64/bool/string. Not object-safe;
+     not on sealed traits. LSP completion after `Type.` does not list statics yet.
+   - OPEN #5: `when` payload symmetry for Ok/Err/Some (`is Ok => r`). OPEN #4: `type Error`
+     default on traits. OPEN: `join` vs `joinToString` (both exist). OPEN: `mut fun` stays (decided).
+   - DONE lint + autofix (user idea 2026-09-17): a top-level `impl Trait for T` for a struct of
+     the same module that the inline form can express warns ("can be written inside the body")
+     and carries a fix (source.Diagnostic.Fix → LSP `data` → codeAction quick fix, multi-file;
+     `veles check --fix` applies in bulk, then formats). Silent for foreign types, other modules,
+     extra bounds, specific instances, `error` decls, embedded std. std/examples/docs dogfooded.
+     Infrastructure is generic: any future lint can attach a Fix.
+   - DONE #5 (2026-09-17): `r.ok` / `r.err` on a Result = `r is Ok` / `r is Err` (VariantTest),
+     smart-casting the same way; `when (val r = expr) { is Ok => r ... }` binds the subject
+     (WhenExpr.Bind). Docs teach `.ok` and `when (val ...)`; `Ok(v)` patterns still work.
+   - DONE `join` only (joinToString removed; the Go-lowered adapter is now `join`).
+   - DONE variadics: `name: T...` last parameter (List<T> inside), trailing positionals collected,
+     `xs...` spreads a list, named `f(parts: xs)` passes it whole. Spec D28 amended. `path.join`
+     is variadic (`joinAll` gone). Not supported: `...` in function types / lambdas; no
+     implicit single-list pass (a lone list is an element — use `xs...`).
+   - Added `List.concat(other)` to the prelude (there was no way to append two lists).
+   - OPEN #4: `type Error` default on traits.
+
+P8. DONE (2026-09-17) — std gaps: fs.readBytes/writeBytes/appendBytes (List<u8> crosses the C
+   ABI as the runtime list pointer, std only; readFile now rejects non-UTF-8 with EILSEQ),
+   io.readAll, os.run(mergeStderr:), std/time (now, monotonic, monotonicNanos, utc/local →
+   DateTime, Stopwatch.start()), std/random (xoshiro256**: seed/range/float/boolean/pick/
+   shuffle/nextU64, Rng.seeded), number formatting as methods (f64.toFixed, i64/u64
+   .toString(radix:)). Found on the way and fixed:
+   - no bitwise operators existed → added `& | ^ << >> ~` (Go grouping, safe large shifts,
+     spec D21 amended); `>>` is split when it closes nested type lists.
+   - parser hang: syncStmt returned without consuming a stray `)`/`]` at depth 0 (infinite
+     recovery loop on `(b & 1)` inside an unclosed struct). Fixed.
+   - MutableList<T> did not pass where List<T> was expected, nor bind T in generic inference
+     (D25 said it should) → coerce/assignableTo/inference use receiverViews.
+   - `module.Type.static()` call form (was NameExpr-only).
+   - u64 literals above i64 max need a typed binding (`const K: u64 = ...`); `as u64` does not
+     retype a literal. A function named like a type (`fun f64()`) shadows the type in its module.
+   Left: os.run with stdin / separate stderr (needs real process spawning), directory walking.
+
+P9. DONE (2026-09-17) — fuzzing + more quick fixes (no CI, per user).
+   - Go fuzz targets: parser/FuzzParse, format/FuzzFormat (round trip + idempotence),
+     sema/FuzzCheck (raw bytes) and sema/FuzzCheckMutated (token-level edits of the examples:
+     ~50% still parse, so the checker is what gets exercised). Failing inputs are kept under
+     each package's testdata/fuzz and run with `go test`. Also sema/TestCheckEveryPrefix
+     (every line-prefix of every example, in parallel) and a `-race` run of the front end.
+   - Bugs found and fixed: lexer overrun on an unterminated `${` with a nested string; four
+     formatter defects (operator moved to the next line after an author's break-after, comment
+     in an empty body glued to `{`, comment at a chain break dumped twice on one line,
+     `(0,)` broken tuple double comma, `0 .0` reprinted as a float); `fun<>` empty type lists;
+     D31 infinite-size check recursed forever on a cycle not through the target; three pieces
+     of package-global checker state (selfParams, globalVars, the types.Subst hooks) made
+     per-checker — concurrent checks (tests, a future multi-threaded LSP) were unsound; the
+     TypeParam id counter is atomic now.
+   - Quick fixes added: redundant `mut` (removed), unused binding (renamed `_`), unreachable
+     `else` on a sealed subject (removed); the inline-impl lint now covers sealed variants too.
+     driver/TestCheckFix pins the `--fix` output.
+
+--- Decisions 2026-09-18 (user; from the review of these notes) ---
+- Next batch, in this order: (1) mid-size real programs + conformance suite (P6), (2) P4 data
+  structures, (3) the small debt items (#12, #15, #13 as a lint, Channel trySend/tryRecv,
+  saturatingMul, Display-recursion diagnostic, statics in `Type.` completion, fs directory walk).
+  #19 (`public use` surface) stays designed-but-unscheduled. Big three untouched until after.
+- #17: `veles.toml` stays until M7 gives the manifest real content.
+- #13: a LINT, not a rule — `unsafe { }` in a non-`unsafe fun` without a `// SAFETY:` comment
+  on the preceding line warns; quick fix inserts the stub.
+- #4 trait errors: both forms. `throws X` on a trait method = fixed type (works today);
+  bare `throws` on a trait method = impl-defined (an implicit associated `Error`, one per
+  trait; impl bodies infer it like any function, D45; erased to the prelude `Error` through a
+  trait object; precise under stenciling). Explicit `type Error` stays legal, no longer taught.
+  Spec D40 and docs to update. Open sub-point: two throwing methods in one trait share the one
+  implicit type.
+- `::` removed from the language: `Self::Error` → `Self.Error`, `F::Error` → `F.Error`
+  (dot already serves `Type.static()`).
+- Indexing (#3): brackets are ONLY collection literals. `xs[i]`, `m[k]`, `xs[i] = v`,
+  `m[k] = v` all go. Spec D25 ("assignable-index operator") and 4b to amend. New surface:
+    List:       at(i): T?   atOrPanic(i): T   atOrDefault(i, d): T   (negative i from the end)
+    Map:        get(k): V?  getOrPanic(k): V  getOrDefault(k, d): V
+    MutableList/MutableMap: set(i, v) / set(k, v)
+  `atOrDefault`/`getOrDefault` are sugar for `?:`. Out-of-range/missing is a PANIC (D20), never a
+  thrown error. ~145 read sites and 18 assignment sites in examples/docs/std to migrate — give
+  the removal a quick fix (`xs[i]` → `xs.atOrPanic(i)`, `m[k]` → `m.get(k)`, `c[k] = v` →
+  `c.set(k, v)`) and run `veles check --fix` over the repo.
+- Iterable's `type Iter: Iterator`: keep the associated type (a generic `Iterable<T>` would box
+  every iterator); fix it in docs chapter 10 with a one-sentence explanation + Iterable → Iter →
+  Item diagram.
+- Implicit returns: keep as is.
+
+P10 progress (2026-09-18):
+   - DONE indexing: brackets are literals only (spec D25 amended, v0.24; D18/D30/4b touched).
+     List: at / atOrPanic / atOrDefault / set; Map: get / getOrPanic / getOrDefault / set (the
+     `put` alias is gone). `xs.atOrPanic(i)` is a place (checkLValue + isPlaceSyntax), so
+     `xs.atOrPanic(i).bump()`, `xs.atOrPanic(i).f = v`, `&xs.atOrPanic(i)` and `xs.at(i)?.bump()` (listElemSafePlace: the
+     `?.` receiver `at`/`first`/`last` is lowered to a bounds-guarded place) work in place —
+     field assignment through an element is new (the old `xs[i].f = v` was refused as a
+     temporary). Negative indexes count from the end everywhere. Old forms: sema/lint_index.go
+     reports an ERROR carrying a fix; `veles check --fix` now applies fixes even when errors
+     remain (runs to convergence: nested `a[i][j]` needs a pass per level, overlapping edits
+     wait). Embedded std files are never written (`source.File.Embedded`). Migrated: std, all
+     examples, docs blocks (via a scratch tool that ran --fix per block; prose by hand),
+     cheatsheet/stdlib/errors references, builtins_doc.go, syntax_tour, README. New
+     examples/indexing. Found on the way and fixed: the sealed-`else` lint attached its
+     removal fix even when the else was load-bearing (else set cov.all — now the warning stays,
+     the fix only when the other arms cover everything); the redundant-`mut` fix broke
+     `Stack(items: mut [..])` for a generic struct (the literal without `mut` could not bind T) —
+     a collection literal now takes only the mutability from a still-generic expected type
+     (`literalHint` in check_call.go), so `Stack(items: [..])` infers and is mutable.
+   - Formatter reflowed trailing-comment alignment in several docs blocks (they were not
+     fmt-clean); harmless churn in the diff.
+   - DONE (2026-09-18) `::` → `.`: `Self.Item`, `I.Item` (parser: SelfType postfix, NamedType
+     path whose head is a type parameter → projection in resolveType); `::` is an error with a
+     fix. DONE #4: bare `throws` on a trait method = implicit associated `Error`
+     (types.Trait.ImplicitError, Impl.ImplicitError, `implErrorType` = union of the impl's
+     methods' declared/inferred errors, Never when nothing); spec D40 revised, docs 08 section.
+     Not object-safe (needs a dyn `Error` in unions + vtable thunks) — noted in D40 as open.
+     Found on the way: an impl method inheriting `throws Self.Error` never substituted Self
+     (fixed with hooks.Subst). Note: a generic function's INFERRED error is the union over
+     all its instantiations (template-level, D45 "module is the inference unit"); write
+     `throws F.Error` for per-instance precision — worth a docs line, maybe a lint.
+   - NEXT in P10: the mid-size programs (JSON parser, calculator, todo CLI, worker pool,
+     text adventure), then the conformance suite.
+
+20. (2026-09-18, idea, not yet) Lint: a `mut fun` called on a temporary value struct.
+   The situation, step by step:
+   - A struct is a VALUE (D7): passing it around copies it, like an i64. A List is a
+     REFERENCE (D25): copying the handle still points at the same elements.
+   - `m.get(k)` on a `Map<string, Counter>` returns a COPY of the Counter (a `Counter?`), not
+     the one stored in the map. Same for `makeCounter()`, `xs.first()` on a plain List, a
+     `val c = m.get(k)` read, etc. — any expression that produces a struct value rather than
+     naming storage produces a copy.
+   - A `mut fun` (e.g. `bump()`) mutates whatever it is called on. Called on a copy, it
+     mutates the copy; the copy is then thrown away, so nothing observable happens:
+       m.get("a")?.bump()     // compiles, runs, changes nothing — the map still holds n=0
+       makeCounter().bump()   // same: the fresh Counter is bumped and dropped
+   - This is not a bug in the compiler: the rule "a temporary mutates a fresh copy" is what
+     makes iterator chains work (`xs.iter().filter(..).next()` mutates the temporary iterator
+     and USES the result). The difference is whether the RESULT is used.
+   - `xs.atOrPanic(i)` and `xs.at(i)?.` are special-cased to be PLACES (they name the storage
+     inside the list), which is why `counters.at(1)?.bump()` does stick. Maps have no such
+     form: a map value is not addressable today.
+   The lint: when a `mut fun` that returns NOTHING (unit) is called on a receiver that is
+   not a place (a call result, a `?.` on a non-list, a literal) and the receiver's type is a
+   value struct (not a List/Map/Set/Channel, which are references), warn:
+     "'bump' mutates a temporary copy of 'Counter' that is then discarded; bind it first
+      (`var c = m.get("a") ?: ...; c.bump(); m.set("a", c)`)".
+   Unit-returning is the key filter: a mut method that returns something (`next()`) is
+   presumably called for its result and stays silent. Effort: half a day in `callMethod`
+   (check_call.go, the `isPlaceSyntax(callee.X)` branch). Open question: should map values be
+   addressable instead (`m.getOrPanic(k).bump()` in place, like lists)? That would need a
+   `map.ref` runtime primitive and would make the lint mostly moot for maps.
+
+P10 progress (2026-09-18, later) — decision B on item 20 (user): structs stay values; element
+   access and `?.` are PLACES. Done:
+   - map entries are addressable: codegen `map.ref` ((*V)?, null when absent) and
+     `map.refOrPanic` (*V) in codegen/llvm/maps.go; `m.getOrPanic(k)` is now Deref(map.refOrPanic)
+     — value and lvalue at once (`m.getOrPanic(k).bump()`, `m.getOrPanic(k).n = 1`,
+     `&m.getOrPanic(k)`).
+   - `?.` calls reach places: sema/lint_index.go `elemSafePlace` (list at/first/last, map get)
+     returns {pre, cond, place, value, mutable}; methodCall passes AddrOf(place) for a mutable
+     collection, the value for an immutable one (+ `readOnlyRecv` → error for a mut method).
+   - narrowed places are writable: codegen `place()` handles Unwrap ({i1,T} field 1; ptr-like =
+     itself) and VariantCast (tagged field 1); sema `narrowLValue` applies the smart cast to
+     lvalue bases (`if (p != null) p.n = 5`, `p.bump()`; `is Circle` then `shape.radius = 1`).
+   - assignment through `?.`: sema/check_safe.go (`safeMemberOf`, `safeAssign`, `safeReceiver`):
+     `x?.f = v`, `x?.f op= v`, `x?.a.b = v`; receiver = nullable var/field (payload place),
+     nullable pointer, or collection element; a value-struct temporary is an ERROR ("has no
+     effect"); val / immutable collections refused. Implementation trick: the receiver is bound
+     in `fnCtx.boundPlace` and the member's Safe flag is cleared while the target is checked as
+     an ordinary lvalue (restored by defer).
+   - `checkElemWritable`: a field write rooted in an element of an immutable List/Map errors.
+   - Spec D5 + D25 amended; docs 06 "Updating through `?.`", 04 note; examples/indexing extended.
+   Item 20's lint (mut fun on a temporary value struct, result discarded) is still open, now
+   only for genuine temporaries like `make().bump()`.
+
+--- Mid-size programs (P6/P10), findings log ---
+M1. examples/json (2026-09-18): sealed Json, byte-level recursive descent with positioned
+   errors, compact/pretty printers, dotted-path queries. Compiled on the first try; found:
+   - `substring` out of range PANICKED although its type is `string?` (docs said null) →
+     runtime now returns null for out-of-range too (D19 note in veles_rt.c, docs 02).
+   - StringBuilder had no way to copy a byte through (`appendByte(b: u8)` added); the natural
+     workaround `s.substring(i, i + 1)` silently drops multi-byte chars (null → `?: ""`).
+   - formatter: an arm body broken after `=>` left a trailing space (`=> $`) — fixed in
+     `armBody`, pinned in TestStyle.
+   - LINT NOISE (decision wanted): "else on a sealed subject" fired 6× on idiomatic
+     one-variant extraction (`fun asString(): string? = when (self) { is JStr(value) => value
+     else => null }`). D13 asks for the lint, but in this shape `else` is the honest spelling
+     and a new variant falling into `null` is correct. Options: (a) keep as is, (b) only warn
+     when the `when` yields different values per variant... not decidable, (c) only warn when
+     the else is dead (the fix case) — i.e. drop the "silences the check" warning, (d) warn only
+     when the arms cover all but one variant (the case where the author probably meant to
+     enumerate). Recommendation: (d), or (c) if simplicity wins.
+   - No char literals: byte constants (`const QUOTE: u8 = 34`) are the workaround; readable
+     enough with a comment, but `'"'` as a u8 literal would remove a whole table. Decision.
+M2. examples/calc (2026-09-18): tokenizer, Pratt parser into a sealed AST (recursive through
+   `*Expr`), evaluator with variables/functions, positioned errors. Found:
+   - `cond => self.pos += 1` in a `when` arm was a parse error ("expected newline between
+     arms, found '+='"); lambdas already allowed `x => total += x` → parseArmBody now wraps
+     an assignment for every arm kind (when, race, lambda).
+   - `loop (cond) stmt` required braces while `if (c) stmt` did not → loop bodies take a bare
+     statement too (parseBodyOrStmt), formatter unchanged.
+   - `left = Binary(left: &left, ...)` in a parser loop built a CYCLE (stack overflow at run
+     time): `&left` is the variable, not its current value (D10) — the classic Go trap. New
+     lint (sema/lint_selfaddr.go): "'&x' is the address of the variable being assigned...
+     box the old value first". Docs should show the `val old = x` idiom next to D31.
+   - `args.map(a => try self.eval(a))` is refused ("a throwing function cannot be passed to an
+     eager collection operation") — clear message, but the loop workaround is what everyone
+     writes. Improvement: let the eager adapters (map/filter/forEach/...) take a throwing
+     lambda and propagate with `try` at the call (they are inlined loops, so it is only a
+     matter of typing the result as Result). Worth doing before the docs teach the loop.
+   - Recursive sealed types need `*Expr` + `&`/`*` everywhere (D31): acceptable, but the
+     error message's hint ("e.g. '*Expr'") is what made it painless — keep that standard.
+   - Sealed `else` lint fired 2× more (M1's point again).
+   Decisions on M1/M2 (2026-09-18, user): (a) sealed-else lint scoped — warns when the else
+   stands for exactly one missing variant or is dead (fix); one-variant extraction silent
+   (spec D13 amended, TestSealedElseLint). (b) DONE: throwing lambdas in eager adapters →
+   `Result<T, E>`, loop stops at the first Err (sema/lower_try.go: adapterState, f.call,
+   adapterResult; sortedBy/getOrPut refuse via fnArgNoThrow); spec D46 amended, docs 10
+   section; calc uses `try args.map(a => try self.eval(a))`. (c) DONE: byte literal `'"'` is a
+   u8 (ASCII only; sema CharLit → IntConst; spec D18/4b, docs 02, errors.md, cheatsheet);
+   json/calc rewritten with them.
+   NEXT (then): M3 todo CLI over fs, M4 worker pool, M5 text adventure.
+M3. examples/todo (2026-09-19): a todo.txt manager (add/ls/due/done/undo/pri/edit/rm/projects/
+   contexts/archive) over fs/os/path/time; the examples harness gained scripted runs
+   (`commands.txt`: one shell-like line per invocation, `NAME=v` prefixes set the environment,
+   fresh temp cwd, transcript `$ line` + output + `exit=N`) and `go test ./examples -update`.
+   Found:
+   - `struct Task` was unreachable: the built-in generics (List, Map, Set, Channel, Task, Range,
+     Option) were matched by NAME in resolveType before any scope lookup, so a user type of the
+     same name silently became the builtin — while call sites already let declarations win
+     (`f.lookup` before `collectionCtor`). Fixed: a declared/imported type shadows the builtin
+     in type position too (TestUserTypeShadowsBuiltinGeneric).
+   - `try fs.readFile(f).lines()` parses as `try (fs.readFile(f).lines())` (`try` is a prefix
+     over the whole postfix chain, like Swift/Zig), so the error was "no method lines on
+     Result". Kept the grammar; the diagnostic now says `write (try f()).lines()`. Worth a
+     docs line in 08 — or a decision: should `try` bind tighter than `.` (Rust `?` postfix
+     avoids the question entirely)?
+   - No language friction otherwise: `loop ((i, t) in xs.iter().enumerate())`, `?: return null`,
+     `refOrPanic` for in-place edits, `sortedWith` with early returns in the lambda, static
+     ctors on structs all read fine. The formatter leaves `=>` unaligned when the arm heads
+     differ by more than 24 columns (maxAlignSpread) — by design, noted here so it is not
+     re-reported.
+   NEXT (then): M4 worker pool, M5 text adventure.
+M4. examples/dedup (2026-09-19): duplicate-file finder — a worker pool (N `async worker`
+   tasks over a jobs channel, results channel back, a feeder task closing the channel) hashing
+   files with FNV-1a in Veles, grouped by (size, hash), largest groups first, recoverable
+   bytes. Harness: an example's `fixtures/` dir is copied into the scripted temp cwd
+   (`.gitattributes` keeps fixtures byte-exact under autocrlf). Found:
+   - `a.0.0` lexed as `a` `.` `0.0` (a float) — nested tuple indexing was unwritable. Lexer:
+     after `.`/`?.` a number is always an Int (TestNestedTupleIndex).
+   - Everything else composed first time: `await ch.recv() ?: break`, `is Err` smart cast on
+     a Result binding (`bytes.detail`), `getOrPut((size, hash), () => [])` with a tuple key,
+     `loop (_ in files)` as a counted wait, sortedWith with early returns. The worker pool
+     is the straightforward shape; the single-threaded executor makes `--verbose` output
+     deterministic, which the transcript relies on (multi-threaded executor will need the
+     example to sort or drop that output).
+   NEXT: M5 text adventure, then the conformance suite / HTTP server (R4).
+IDEAS (2026-09-18, undecided — noted from reading examples/json, examples/syntax_tour):
+ I1. DONE 2026-09-25 (spec D61: let-else + `??` on Result). Guard / early-exit binding. `val doc = when (val r = parse(text)) { is Ok => r; is Err
+     => { ...; return } }` is correct (a Never arm drops out of the join, `return` targets the
+     enclosing fun — Kotlin/Rust/Swift semantics; keep that) but the happy-path value is buried
+     in a `when` whose only job is to bail out. Candidate spellings, in order of preference:
+     (a) `val doc = parse(text) else { e => ...; return }` — Rust let-else / Swift guard-let;
+         the block MUST diverge (checker enforces Never, explicit diagnostic). One rule covers
+         Result, Option and refutable patterns: `val Some(x) = m.get(k) else { return }`,
+         `val JObj(fields) = doc else { ... }`.
+     (b) `?:` on a Result (extend D30): `parse(text) ?: { e => ...; return }`, `parse(s) ?: 0`.
+         Cheapest; sugar for (a) in the Result/Option case.
+     (c) LSP rewrite hint only: a `when` with exactly one value arm + all-Never others.
+ I2. `when (val n = ...)` requires `val`, `loop (x in c)` does not. Different situations (the
+     when-subject is a general expression binding; the loop var is always a fresh binding), but
+     it reads inconsistent. Options: allow `when (n = part.toInt())`; or require nothing and
+     treat a bare `name = expr` in a when-head as the binding (assignment there is never wanted).
+ I3. (docs, low priority) Mutating a MutableList while looping over it: memory-safe (D42
+     iterator holds the old buffer) but the meaning is unspecified (snapshot? sees appends?).
+     Decide and document when it comes up; not blocking.
+
+TODO (2026-09-18, decided by user):
+ T1. DONE (2026-09-19, see R8) — `loop (&x in xs)` — mutate the ELEMENT in place while iterating. Today
+     `loop (x in xs)` copies a value struct, so mutating elements needs the index walk
+     `loop (i in 0..xs.len()) { xs.atOrPanic(i).bump() }`. `&x` binds `x: *Item` to the element's
+     storage (same place `atOrPanic(i)` names, D10/D25); only for addressable sources (List /
+     MutableList / Map values), an error for a plain Iterator. Spec: D42 addendum.
+ T2. DOCS ONLY (no new syntax): index + element is `loop ((i, x) in xs.iter().enumerate())`.
+     Hard to read but common — put it in 10-closures-and-iterators next to the loop forms and in
+     the cheatsheet under loops (not only under iterator adapters). Revisit sugar
+     (`loop (i, x in xs)`) only if it keeps hurting.
+ T3. DOCS ONLY: the counting loop (`var n = 0; loop (x in c) { n += 1 }; n`) is
+     `c.iter().count()`; likewise sum/accumulate → `fold`. Show the loop and the one-liner side
+     by side in the docs.
+ T4. LINTS (with `--fix`) for the simple shapes above:
+     - `loop (true) { ... }` → `loop { ... }`.
+     - `var n = 0; loop (x in c) { n += 1 }` where x is unused and n only incremented →
+       `c.iter().count()`.
+     - `when` with one value arm and all other arms Never (I1c) → hint, no fix until I1 is
+       decided.
+     Keep these in the sema lint family (lint_selfaddr.go style), each pinned by a test.
+ T5. RENAME `self` → `this` (user preference, 2026-09-18). Receiver keyword in methods, the
+     `when (self)` subject, `Self` type stays as is (or `This`? decide with it). Touches lexer
+     keyword table, parser, sema (`fnCtx` receiver binding, smart-cast place root), LSP hover/
+     completion, std/prelude/*.vs, every example, docs, spec (D22/D23 text), cheatsheet. Do it
+     in one sweep with `veles check --fix` offering the rewrite for old sources; pending go-ahead.
+M6. examples/algorithms (2026-09-18): sorting (bubble/insertion<T: Comparable>/selection/
+   merge/quick/counting/heap), searching (linear/binary/lowerBound/two-pointer), numbers
+   (gcd/sieve/fib+memo/powMod/isqrt/factorize), strings (reverse/palindrome/anagram/RLE/
+   caesar/naive+KMP find/common prefix), graph (BFS/DFS/distances/Kahn topo/components/
+   Dijkstra O(n²)), dp (LCS/edit distance/knapsack/coin change/LIS/Kadane), structures
+   (Stack<T>/Queue<T>/BST via *TreeNode/MinHeap). One file per topic in one module. Found:
+   - FIXED lexer bug: a line ending in `>>` (`adj: MutableList<MutableList<i64>>`) got no
+     auto-semicolon, so the next member/statement was glued on ("expected newline or ','
+     between members, found 'static'"). `Shr` added to semiAllowed (lexer.go); pinned by
+     parser TestSemicolonAfterDoubleGt.
+   - `val v = if (c)\n  a\nelse\n  b` (body on the next line, no braces) is a parse error;
+     Kotlin accepts it. Either accept a newline after `if (c)` / `else` in expression position
+     or make the diagnostic say "use braces or keep the branch on the same line".
+   - An `if (c) return false` as a when-ARM body swallows the `else =>` arm on the next line
+     as its own else ("expected an expression, found '=>'"). Fix: inside an arm body, an `else`
+     after a newline followed by `=>` belongs to the `when`. Workaround was braces.
+   - `List<string> == List<string>` is refused ("implement Equatable"): structural equality on
+     List/Map/Set of Equatable elements should be built in (D25 says structural by default).
+     Workaround `.join("")`.
+   - `s.substring(a, b)` returns `string?` — fine, but the algorithms all know their bounds are
+     valid; a `substringOrPanic` per the at/atOrPanic convention would match the rest of the API.
+   - FORMATTER bug: in a `when` with a multi-line block arm, `=>` alignment only pads the first
+     arm after the widest pattern (`')'           => {`) and leaves the rest unaligned. Either
+     align the whole group or none once a block arm breaks it.
+   - Nice: `val x = xs.first() ?: return ""`, `val u = best ?: break`, `loop ((i, x) in
+     xs.iter().enumerate())`, `loop ((from, to, w) in edges)` all read well; nullable pointer
+     BST with `val l = cur.left; if (l == null) ...; cur = l` works but is verbose (I1 again).
+   Decisions (2026-09-18, user): no C-style `for`; stepped loops are `(a..b).step(n)` /
+   `.reversed()` — documented in docs 03 (loop section) + cheatsheet. DONE: tuple assignment
+   `(a, b) = (b, a)` (sema tupleAssign/assignPlace in check_fn.go, TestTupleAssignment; spec D37
+   addendum v0.25; docs 02 tuples section + cheatsheet). Used in algorithms for swap/gcd/fib.
+M6b. examples/algorithms review pass (2026-09-18, user asked: use the language's own forms,
+   no `l`/`r` names, "something better than a Queue over a MutableList"). Done:
+   - P4 DONE: `std/prelude/collections.vs` — `Deque<T>` (ring buffer; addFirst/addLast/
+     removeFirst/removeLast/first/last/at/len/isEmpty/clear/toList, Iterable, Display) and
+     `PriorityQueue<T>` (binary heap; push/pop/peek/len/isEmpty/clear/toList, Display), built
+     by `deque<T>()`, `priorityQueue<T: Comparable>()`, `priorityQueueBy(compare)`. Both keep
+     their state behind `*State<T>` so they are reference types like MutableList (a `val`
+     can grow them, a callee shares them) — the value-struct-with-counters shape the example
+     Queue had copies its head/size on every pass. Stack = MutableList (no struct).
+     The ring is a `MutableList<T?>` with `null` marking a free slot: a removed element is
+     released at once. `T?` over a nullable `T` is a distinct type (an empty slot is not a
+     stored null — verified: `Deque<i64?>` keeps a `null` element), so this is honest.
+     Initial capacity 4, doubling.
+   - `MutableList<T>.fill(n, x)`, `MutableList<T>.make(n, make)` statics and
+     `swap(i, j)` (list.vs). The fill loop `loop (_ in 0..<n) xs.push(0)` appeared 12× in the
+     examples. `fill` shares a reference value across slots — doc'd, `make` is the fix.
+     Names decided by the user (2026-09-18): `fill` / `make` — not filled/generate; `from`
+     reads as a conversion from another collection.
+   - COMPILER: statics on a built-in generic type resolve when the type arguments are
+     written (`typeNamed` in check_static.go; `MutableList.filled` without them is an error
+     with the same wording as generic structs). Spec D23 amended (v0.25), TestBuiltinStatics.
+   - PARSER: `_ => ...` and `(_, x) => ...` — the discard as a lambda parameter, like
+     `loop (_ in xs)`. Spec D32 amended, TestLambdaDiscardParam, cheatsheet.
+   - CODEGEN BUG fixed: `xs.atOrPanic(i) += 1` emitted the element's ADDRESS as the operand
+     of the add (`list.ref` as an rvalue returned the pointer; only place() loaded). Now an
+     rvalue `list.ref` loads. Pinned in examples/indexing. (Compound assignment on an element
+     still evaluates the index expression twice — `xs.atOrPanic(f()) += 1` calls f twice;
+     same as before for map entries. Worth a temp in assignPlace some day.)
+   - Examples: Dijkstra is now O((n + m) log n) over `priorityQueue<Hop>()` with a Comparable
+     `Hop`; BFS/Kahn use `deque`; `slidingMax` shows the deque both ways; BST insert is a
+     recursive `insertInto` + the `loop cur = cur.left ?: return cur.value` one-liner for
+     min/max; MinHeap kept as the algorithm behind PriorityQueue; sieve/isPrime use
+     `.step()` + `isqrt`; knapsack uses `(w..capacity).reversed()` and `zip`.
+   - Docs: 04-collections "Queues and priority queues" (runnable), stdlib reference, cheatsheet.
+   LATER (user, 2026-09-18): plan a real std library — algorithms, json, collections beyond
+   these, text formatting, etc. — "efficient, optimized and safe"; NOT before the language is
+   stable. For now examples/ is where such code lives and gets exercised.
+   - fill and aliasing (user question, 2026-09-18): `fill(n, x)` pushes the same `x` n
+     times, so a mutable collection / pointer / closure would be ONE value aliased by every
+     slot (JS `Array(n).fill([])`). Copying generically is impossible (no Clone), so it is
+     refused instead: `Sendable` is now a nameable prelude marker trait (sync.vs; answered by
+     sema's `sendable()` shape check in `implements`, `impl Sendable for X` by hand is an
+     error) and `fill` lives in `extend<T: Sendable> MutableList<T>`. The bound failure adds
+     a hint pointing at `make(n, i => ...)`. Value structs, immutable lists, tuples,
+     nullables all pass. Spec D25/D35 amended (v0.25), TestBuiltinStatics extended.
+   - fill → repeat (user, 2026-09-18): JS's `fill` is an in-place overwrite of an existing
+     array, so calling the constructor `fill(n, x)` misled. Now `MutableList<T>.repeat(x,
+     count)` (Swift's `Array(repeating:count:)` order, echoes `"ab".repeat(3)`) builds the
+     list, and `xs.fill(x)` is the JS-style in-place overwrite (length unchanged). Both under
+     `extend<T: Sendable>`. User floated a Kotlin-style `mutableListOf(repeating: x, count: n)`
+     / `mutableListOf<i64>()` free-function family — see the reply of 2026-09-18; not adopted
+     for now (would imply `mutableListOf(1, 2, 3)` and the `listOf`/`mapOf` family, i.e. the
+     std naming plan that is deferred until the language is stable).
+
+--- 2026-09-19 (bug-review pass; decisions by user) ---
+R1. FIXED: compound assignment evaluated the index/key/pointer twice (`hoistPlace`); `f64 as
+    i64` saturates (was LLVM poison); release `MIN / -1` wraps (was a trap); checker hang on a
+    struct named like a builtin (`struct string { op: string }`, fuzz find; cycle guards in
+    unhashable/comparable/sendable); `if (c) stmt` arm body ate the next `else =>`; formatter
+    `=>` alignment spans a whole `when` across block arms; `veles_map_copy` NULL eq on a hash
+    collision; `ptrOf(h).n = 5` (field behind a pointer a call returns) is writable.
+R2. DONE (2026-09-19): structural `==` on List/Map/Set of comparable elements (built-in types get
+    Equatable by default); `if (c)` / `else` may be followed by a newline in expression position;
+    `reversed().step(n)` on ranges; nested-nullable diagnostics say so; float text drops the
+    exponent's leading zero (`1e-7`, JS style).
+R3. Platforms: Windows is the test platform now; Linux next, then macOS — every runtime binding
+    must work on all three. Windows text bindings (args, env, cwd, listDir, file paths) must go
+    through the wide (UTF-16) APIs so non-ASCII names stay valid UTF-8 (D18).
+R4. PLANNED (user, 2026-09-19): an HTTP server — the language needs the features for it (sockets,
+    bytes I/O, a threaded or async executor, timeouts, a request/response model, maybe TLS
+    later). Expect it to surface many things to add or fix; treat it as the next big proving
+    program after the mid-size ones.
+R5. Examples (small and mid-size) must DO something useful — real use cases, not demonstrations
+    of syntax: a tool someone would run (todo CLI, log analyser, file dedup, ...).
+R6. DONE (2026-09-19): comparison strategies in the prelude — sortedWith/sortWith (stable
+    bottom-up merge sort in Veles), sortedByDescending, minBy/maxBy, minWith/maxWith,
+    distinctBy; docs 08 "Comparing values" (table: what ==, <, keys mean per type; strategies
+    table + runnable example), docs 04 "Comparing collections". DONE (2026-09-19): the
+    Go-lowered `sorted`/`sortedBy` now rewrite to the prelude's merge sort —
+    `list.sortedWith(($a, $b) => key($a).compareTo(key($b)))` re-checked as AST, like `iter`
+    — so every sort is stable and O(n log n) (200k i64 in well under a second). Found on the
+    way: listAdapter cleared `f.pending` for a List method it does not handle, losing the
+    key function's declaration of an enclosing adapter (now handed back).
+R7. Decided (2026-09-19, question "should `xs.at(0)` return a reference?"): `at` stays `T?`, a
+    copy. In-place access is syntactic (`xs.atOrPanic(i).f = v`, `xs.at(i)?.bump()`,
+    `&xs.atOrPanic(i)` for an explicit pointer); a stored reference into a list would go stale
+    when the list grows (no borrow checker to catch it), and a pointer is heavier than an i64.
+R8. DONE (2026-09-19, user decision): reads are VALUES, writes go through REFERENCES (spec
+    v0.27, D25/D5/D42). `at`/`atOrPanic`/`get`/`getOrPanic`/`first`/`last`/`find`/loop vars are
+    copies, and mutating a copy that is not a `var` is an ERROR with a fix — this closes item 20
+    (unit `mut fun` on a temporary; Iterator types exempt) and removes the v0.24 "atOrPanic is a
+    place" special case, which made `val t = xs.atOrPanic(0); t.n += 1` and
+    `xs.atOrPanic(0).n += 1` look alike but behave differently. New surface (MutableList/
+    MutableMap only): `ref(i): (*T)?`, `refOrPanic(i): *T`, `ref(k)`, `refOrPanic(k)`, and T1
+    `loop (&x in xs)` / `loop ((k, &v) in m)` (x: *T; map loop snapshots the keys, skips removed
+    entries). Primitives: `*xs.refOrPanic(i) += 1`. `&xs.atOrPanic(i)` is refused (would box a
+    copy). Docs: 04 "Updating elements in place", 06 rewritten, 03 loop note, refs; examples/
+    indexing rewritten. DONE (2026-09-19): lint for a `ref` held across a layout change (sema/lint_staleref.go:
+    push/insert/addAll/removeAt/pop/clear/sort/sortWith/swap on lists, set/remove/clear on
+    maps, matched by the collection's source text; warns only when the reference is used
+    afterwards, and on any such call inside a `loop (&x in xs)` body over the same collection).
+    Reflective AST walker `walkAST` / `forEachCall` / `mentionsName` is reusable by other lints.
+    TO DECIDE: `xs.ref(i)?.tags.push(x)` is an error today (`?.` does not carry through `.tags`;
+    Kotlin's rule, D30) — Swift propagates optional chaining through the rest of the chain so
+    `a?.b.c()` works. User: "not sure yet" (2026-09-19).
+R9. DONE (2026-09-19, user decision): `use` takes a comma list — `use fs, io, os, path` — and
+    the formatter owns the import block: consecutive `use` lines are merged into one sorted
+    list per origin (std first, then everything else), one statement each, blank lines
+    dropped; a `use` line carrying a comment is left alone and the run restarts after it
+    (format.useRun; ast.UseDecl{Specs []*UseSpec}). No separate syntax for std vs external
+    imports (goimports-style convention instead; the compiler knows which is which). Spec M6
+    addendum v0.28; docs 11, cheatsheet, spec sketch; std/examples/docs reformatted.
+    DONE (2026-09-19, user decision, option "Go"): name imports are GONE — `use` imports
+    modules only, members are always qualified (`geo.Point`, `io.println()`), `use m as x`
+    renames the module. Alternatives weighed: Kotlin one-name-per-spec (`use geometry.Point
+    as P`), Python-style `use geometry: Point, norm`, other delimiters, wildcards. The parser
+    reports the old braced form with the qualify/alias hint. Consequence noted in the spec
+    addendum and docs 11: a parameter/local named like a module shadows it (std/fs had
+    `fun mkdir(path: string)` calling `dir` — now `use path as paths`); type aliases
+    (`type P = geo.Point`) do not exist yet and are the fallback if prefixed type names hurt.
+    Item 19's `public use geometry.{ area, Circle }` flattening form falls with this: re-exports
+    are whole modules (`public use geometry`, `public use geometry as geo`) when #19 is built.
+R10. DONE (2026-09-19, user): constructor puns — `Hashed(file, size: n)` means `file: file`
+    (a bare argument must be an identifier naming a field; anything else bare is an error with
+    the fix that names the field at that position; `x: x` is a warning with a fix). Positional
+    struct construction was allowed by bindArgs before and used nowhere — now refused. Spec D28
+    addendum; docs 05, cheatsheet; std/examples/docs rewritten with --fix (generic prelude
+    bodies by sed, as always). Functions keep positional-then-named; the pun is ctor-only.
+P11. DONE (2026-09-19; was PROPOSED): concurrency helpers in the prelude — see R11 below for what
+    the language needed first.
+    `xs.mapConcurrent(f, workers: n): List<R>` (eager, input order, at most n calls of f in
+    flight, written in Veles over scope + two channels) and `forEachConcurrent`; a throwing f
+    follows D46 (whole call throws, stops at the first error). Channels stay for streams,
+    per-worker state and pipelines; docs 12 shows the helper, then the machine it is made of.
+    Also: results channels should carry Result<T, E> rather than sentinels; the counted drain
+    exists because multiple producers cannot close a channel (docs line or Channel.closeAfter(n)).
+P12. DONE (2026-09-19; see R12): type aliases. `type Name<T> = Type` at module level, `public` allowed. Use cases: (1) naming
+    structural types — tuples, nested generics, function types (`type Handler =
+    fun(Request): Response throws HttpError`, needed by the HTTP server); (2) shortening a
+    qualified name after R9 (`type Point = geo.Point`; ctor, statics, `is` must work);
+    (3) generic aliases without bounds on the alias params; (4) transparent, never a new type
+    (one-field structs stay the newtype); (5) never a union — `error Set = A | B` keeps that;
+    (6) same keyword as associated `type Item = T`; public alias of a private type is an error;
+    (7) module level only; (8) impl/extend on an alias follow the underlying type's ownership
+    rule; (9) cycle = error (reuse the error-set `resolving` guard); (10) DISPLAY: diagnostics
+    and hover show the alias name where the source used it — same mechanism fixes #15 (error
+    sets flattened in hover); the one non-trivial part; (11) value printing unaffected;
+    (12) keep `error` and `type` as separate keywords.
+R11. DONE (2026-09-19): `mapConcurrent` / `forEachConcurrent` in std/prelude/concurrent.vs (the
+    worker pool written once: indexes over a jobs channel, `Indexed<R>` results, slots by index,
+    `results.closeAfter(n)`), `Channel.closeAfter(n)` (runtime `remaining` counter), and the
+    language pieces the helper forced — each a real gap the HTTP server would have hit:
+    - SENDABLE FUNCTIONS (D35 v0.28): `sendable fun(A): R` type flag; a lambda's type is
+      sendable iff every capture is a `val` of a Sendable type (named functions always); a
+      sendable fun coerces to the plain type, never the reverse; the error names the capture.
+      Syntax `sendable fun` is a contextual keyword in type position — revisit the spelling if
+      disliked (alternatives were `@sendable`, `fun(..) sendable`).
+    - ERROR-POLYMORPHIC HOFs (D46 v0.28): `f: fun(T): R throws E` with E a type param infers E
+      from the lambda (unify binds Effects.Error; Never when it does not throw); `throws Never`
+      is erased in Subst so the instance is a plain function; `try` on such a call in the
+      generic body is the identity (Var.ErrPoly / template Effects check, `errPolyCall`), and
+      `try` on a `Result<T, Never>` anywhere just unwraps. Without this no Veles-written HOF
+      could take a throwing lambda.
+    - FAIL-FAST REACHES THE BODY (D34): a child failure wakes the scope owner; the next
+      suspension point in the body checks the enclosing fail-fast scopes and jumps to the join
+      (codegen `bodyScopes` in suspendPoint; runtime `veles_task_leave_waits`). Before, a body
+      blocked on `recv` deadlocked when its producer task threw. Known gap: a stale channel
+      waiter entry can wake the owner early out of a later `sleep` (harmless spurious wake).
+    - dedup rewritten over `mapConcurrent`; the lambda returns `Result<Hashed, IoError>` as a
+      VALUE (no `try`) so one unreadable file is reported and skipped (user: "it should be a
+      result"). Docs 12: pool section, sendable functions, closeAfter in the channel example.
+    CANDIDATE HELPERS for later (not started; pick when a program needs them):
+      `withTimeout(ms, f)` DONE in R15 (throws Timeout, not R? — R? breaks for a nullable R
+      such as readLine's), `retry(times, f)` / `retry(times, delay,
+      f)`, `Semaphore` (`semaphore(n).withPermit(f)`, the primitive under mapConcurrent for
+      code that is not a list), `awaitAll(tasks)` for a List<Task<T>>, `Channel.forEach(f)` /
+      `Channel.toList()` drains, a `Ticker`/`interval(ms)` channel, `filterConcurrent`,
+      `firstConcurrent(f)` (race over elements), and pipeline stages
+      (`ch.mapConcurrent(f, workers)` channel→channel) once the HTTP server shows the shape.
+P12 refinements (2026-09-19, from the user's questions; still to implement, separate commit):
+    - Aliases chain: `type Index = i64; type Hash = u64; type Key = (Index, Hash)` — yes; hover
+      shows `Key = (Index, Hash)` and the full expansion `(i64, u64)`; go-to-definition on an
+      alias name opens its `type` line (reuse Ref.Unfold from error sets).
+    - `public type Handle = Internal` with a private Internal: ALLOWED (Go allows it, TS too) —
+      the alias is the facade; Internal's private members stay private. Drops list item (6b).
+    - No std aliases for numbers (`int = i64`, `float = f64`): two spellings for one type is the
+      import problem again; if a short canonical name is wanted it is a RENAME, not an alias.
+      Docs may use `type int = i64` as the "don't" example.
+    - Recursive aliases (`type Json = Map<string, Json>`): NOT now — needs coinductive type
+      identity/printing; the sealed-trait spelling (examples/json) names the cases and is what
+      to teach. Docs: a "when you would reach for X" section: bounds → bound at the use site
+      or a struct; unions → sealed trait / error set; recursion → sealed trait; keyof/mapped/
+      conditional types → associated types on traits (`Iterator.Item` is the Veles ReturnType).
+    - Document `type` strictly as "type alias" (a name, never a new type); newtype = struct.
+R12. DONE (2026-09-19): type aliases, spec D55. `type Name<T> = Type` at module level, `public`
+    allowed (also of a private type — the facade), transparent (same type, one instantiation),
+    no bounds on params, not recursive, never a union. Implementation: display names ride on
+    the structural type nodes (`Alias` field on Basic/Tuple/List/Map/Set/Func/... set by
+    `types.Aliased`; Identical/Key/codegen ignore it; `types.Unaliased(t, deep)` for hover),
+    named types keep their own name. sema: `Symbol.TypeAlias` (typeAlias{decl, tps, body},
+    `aliasBody` lazy with cycle guard, `resolveTypeAlias`, `symType` for value positions so
+    `Pt(x: 1)`, `Pt.origin()`, `mod.Alias.f()` work). Error sets are `Aliased` with their name
+    too (closes #15; hover shows `cause: PortErrors`, smart-cast notes say `from Both`). Hover
+    on an alias: `type Key = (Index, u64)  (= (i64, u64))` + doc. Docs 05 "Naming a type" with
+    the "when you want something an alias is not" list; cheatsheet; dedup uses `Fingerprint`.
+    Not done: aliases in `impl`/`extend` targets get the underlying type's messages (fine);
+    generic alias used bare in value position errors ("write the type arguments").
+R13. DONE (2026-09-19, from the dedup review): `Never` is a nameable type (universe; was the
+    unnameable `!`): `os.exit(code): Never`, `fun usage(): Never`, a `when` whose arms all
+    diverge is Never → "unreachable code" after it (the check existed; exit was `()`). Extern
+    `veles_os_exit(): Never` lowers to void + unreachable. Prelude: `Result.getOrNull/
+    getOrDefault/errorOrNull`, `List.mapNotNull/partition`, `List<Result<T,E>>.oks()/errors()`
+    (std may `extend` the built-in sealed types Result/Option now — ownsType). dedup: the key is
+    `struct Fingerprint { size, hash }` (reads `key.size`; the `(a.0.0, b.0.0)` destructuring is
+    gone), failures via `outcomes.errors()`, values via `outcomes.oks()`.
+    DONE (2026-09-19, R14): (a) tuples of ordered elements are Comparable lexicographically
+    (sema/tuple_order.go synthesizes a compareTo per tuple type, reached via customOps, so `<`,
+    sorted, sortedBy tuple keys, min, `T: Comparable` bounds and `a.compareTo(b)` all work);
+    (c) tuple patterns nest in val/var, loop heads and lambda parameters (`ast.Param.Pattern`,
+    `bindPattern` shared by all three; lambda patterns compose with the tupling conversion).
+    (b) comparator combinators NOT added: no overloading, and `sortedWith(cmp.compare)` reads
+    badly; the tuple key covers multi-key sorts, a comparator lambda covers descending strings.
+    Also R14: `xs.filterIs<Variant>()` (Go-lowered, `listFilterIs`) and `filterNotNull()` — the
+    answer to "can filter promise its type": a type ARGUMENT can, a predicate cannot; no
+    user-written type predicates (unverifiable). Spec D13/D37/D48 addenda; docs 08/09/10.
+R15. DONE (2026-09-19, "go towards the HTTP server"): std/net + the I/O reactor, and the
+    cancellation semantics the first server program exposed. Spec v0.29: D56 (networking),
+    D35/D34 v0.29 (structured cancellation), D38 and D46 addenda. Docs: 12 "Cancellation" and
+    "Time limits: withTimeout", new chapter 16 Networking (three runnable programs: echo,
+    one-task-per-connection key-value server, a read timeout), stdlib ref, cheatsheet.
+    - RUNTIME: runtime/c/veles_net.c (non-blocking sockets: listen/accept/connect/recv/send/
+      shutdown/close/peer/port; getaddrinfo; WSA codes on Windows, errno elsewhere; linked with
+      -lws2_32 on Windows) and an io-waiter list in veles_task.c: `veles_task_wait_io(task, fd,
+      write)` parks a task, `poll_io` (poll/WSAPoll) runs each executor iteration with timeout 0
+      when tasks are parked and replaces the sleep in the idle path (a server blocked in accept
+      is not a deadlock). veles_os_strerror describes Winsock codes (>= 10000) via
+      FormatMessageW. Sema intrinsic `await ioWait(fd, write)` (task.ioWait) only inside std.
+    - std/net/net.vs: listen(host="127.0.0.1", port=0)/connect, Listener{accept, port},
+      Conn{read, readExact, readLine, write, writeText, shutdownWrite, peer}; both Closeable;
+      Conn is SENDABLE because its read-ahead buffer is a Mutex<MutableList<u8>> (needed for
+      `async handle(conn)` and `withTimeout(ms, () => try conn.readLine())`). Byte copies:
+      recv → string out-param → .bytes() → buffer; fine for now, revisit for throughput.
+    - CANCELLATION (was broken in three ways, all found by withTimeout):
+      (1) a cancelled task blocked in sleep/recv/io never resumed, so its `with` cleanups never
+          ran (D43 promised they would). Now cancel is a REQUEST (`cancel_requested`): the task
+          is woken, unwinds at its suspension point (codegen's existing cancel check →
+          runCleanups → veles_task_finish_cancelled, which now decrements the scope's live count
+          and wakes the awaiter), and the scope waits for the unwinding.
+      (2) a suspending call is a child task awaited by the caller; cancelling the caller left
+          the callee running. `task->awaiting` records the await; cancel_task follows it down
+          (callees with no scope) so the innermost frame unwinds first and each finish wakes
+          the next one up — cleanups run inner to outer.
+      (3) return/throw out of a scope body orphaned the children (they kept running after the
+          function returned!). codegen pushes a "scope.abandon" cleanup for every scope/gather
+          body: veles_scope_cancel + join loop; `g.inCleanup` makes suspension points inside
+          cleanups non-cancellable (D47) and stops re-entry. The scope join is now emitted even
+          after a diverging body (the fail-fast abort branch jumped to a missing label before).
+      Also: `Task.cancel()` (task.cancel builtin), `scope { ... return x }` is Never-typed, a
+      race whose arms all return/throw is Never-typed, race arms JOIN narrowing facts (an
+      assignment in one arm no longer smart-casts after the race — was a soundness hole).
+    - `withTimeout(ms, f): R throws E | Timeout` in std/prelude/concurrent.vs (7 lines: scope +
+      async invoke(f) + race; the throw leaves the scope, which cancels and joins the task).
+      Needed: a TYPE PARAMETER IN AN ERROR UNION (`throws E | Timeout`; MakeErrorUnion drops
+      Never members, so E=Never gives `throws Timeout`), and `try` as the identity on a value
+      the template typed Result<R, E> when the instance's E is Never (`fnCtx.neverInstance`,
+      one step beyond errPolyCall: `await t` of a Task<Result<R, E>>).
+    - Sort fix (R6 OPEN closed): Go-lowered sorted/sortedBy delegate to the prelude merge sort;
+      listAdapter no longer drops an enclosing adapter's pending declarations.
+    - Codegen bug found by the prelude's `Timeout`: LLVM type/helper names came from the display
+      string, so a user `error Timeout` and the prelude's collided (invalid GEP). `mangleType`
+      now starts from `types.Key` (module-qualified), which fixes every same-named-struct
+      collision (descriptors, show/eq/hash helpers, vtables too). Docs 07 block 6 is the test.
+    KNOWN / NEXT for the HTTP server: `poll_io(0)` per executor iteration while sockets are
+    parked (cheap, but a syscall per resume — an epoll/IOCP reactor later); Listener has no
+    accept timeout/shutdown beyond cancelling the accepting task; no TLS/UDP; recv copies
+    twice; `with` is a statement (a `with` that ends in `return` inside a function returning a
+    value needs the `return` written — fine, but noted); gather results of throwing tasks are
+    `Result<T, E | Panic>` so `try` on them needs Panic in the signature (use getOrDefault/
+    when). Then: R4 the HTTP server itself (request parsing over readLine/readExact, a
+    Handler = sendable fun(Request): Response type alias, a router, static files, keep-alive
+    with withTimeout on the idle read).
+R16. DONE (2026-09-19, the HTTP server; decisions by the user). std/http + examples/httpd
+    (static files + JSON notes API; `httpd public --port 8080` tested from curl: keep-alive
+    reuse, 400/404/405/500, a panicking route leaves the server up; `--check` plays a scripted
+    in-process client for the examples suite). Docs chapter 17, stdlib ref, cheatsheet, D56.
+    Compiler pieces the server needed: unify(ErrorUnion with one type param, concrete) binds E
+    to the members beyond the fixed ones (sema/checker.go); a lambda checked against
+    `throws E | Fail` gets Fail added to its inferred union (check_lambda.go) so the instance
+    signature matches exactly; `indexOfFirst` in the prelude.
+    FOUND AND FIXED on the way: a panic inside a SUSPENDING CALLEE was silently swallowed — the
+    awaiter read a zeroed result (`awaitTask` never checked `veles_task_panicked`; now it
+    re-raises via veles_task_repanic, so a panic unwinds call by call to the scope/gather).
+    OPEN (small): `try req.text().trim()` still reads as `try (req.text().trim())` and needs
+    `(try req.text()).trim()`; consider whether `try` should distribute when the method is not
+    on Result but on its Ok type. `http.files` returns the throwing form so `app.get` takes it;
+    a plain Handler value cannot be passed where `throws E | Fail` is expected (no adapter
+    thunks for function-value width subtyping) — use `app.add(method, pattern, handler)`.
+    Details of the steps:
+    - HANDLER ERRORS: option A ("erase at registration") + B's helpers. Stored handler type
+      is `sendable fun(Request): Response suspends` (no throws); `app.get(path, h)` is generic
+      over what h throws (`throws E | Fail`); Fail(status, text) → that status, any other
+      error → 500 + log line. Option C (an open `Error` type) rejected again (D45).
+    - SYNTAX (user found `try http.orFail(x, 400)` Go-ugly): `x ?! e` OR-FAIL operator (spec
+      D30 addendum): T? or Result → Result failing with e; `try x ?! e` parses as `try (x ?! e)`
+      (parser KwTry loop; formatter parenthesises `(try x) ?! e`). `??` rejected (null-coalescing
+      elsewhere). Prelude `Result.mapError(f)`. `with` is now an EXPRESSION (ast.WithExpr,
+      sema withExpr: value carried out through a temp declared before the resources open).
+    - PANICS: P1 = per-request `gather` isolation inside http.serve (no language change; a
+      panic in a handler → 500 + log, connection stays up). P2 DONE = `with` cleanups (and
+      scope child cancellation) run on PANIC: per-task dynamic cleanup stack in the runtime
+      (`veles_cleanup_push/pop`, run by veles_task_panic before the longjmp, innermost first;
+      a panicking close continues with the first message); codegen pushes a `with.close.N`
+      thunk per `with` and `scope.cancel.thunk` per scope body, pops on every emitted exit
+      (runCleanups pops before each close). Docs 13 + spec D49 addendum. P3 (a `supervise`
+      scope, Erlang/Kotlin SupervisorScope) noted as a POSSIBILITY only; not built.
+    - Scope children are UNLINKED when they finish (a server's accept loop launched forever
+      and the list kept every connection task alive) — 50k children, live heap flat.
+    NEXT: std/http (parser, Response, serve with keep-alive + withTimeout, Router with
+    `{param}` paths, static files), unifier support for `throws E | Fail` expected types,
+    examples/httpd testable with curl/browser + in-process test.
+R17. DONE (2026-09-19, user: "maybe lint for it for now"): `try f().m()` where `m` is not a
+    method of the Result (extend/impl lookup, `fnCtx.hasMethod`) now checks as `(try f()).m()`
+    with a WARNING + fix that writes the parentheses (`fnCtx.tryChain`; only call/member
+    chains qualify as the receiver, a bare name stays as it reads). A Result method
+    (`mapError`, `?!`) still applies to the Result silently. Docs 07 updated.
+R18. DONE (2026-09-20): `static val name[: T] = expr` in a struct body (spec D23 addendum v0.29):
+    a module global in the type's namespace (`Status.ok`, `http.Status.ok`), `public` to export,
+    module-private otherwise, initialised with the globals in source order; never `var`; not
+    on generic structs. ast.StructDecl.Statics, sema `Checker.staticVals`, `fnCtx.staticValue`
+    (also `Type.name` for a static fun value → the existing "methods cannot be used as values"
+    message), formatter `staticVal`, LSP completion. Docs 05 "Constants on a type", cheatsheet.
+    Motivation recorded: HTTP's statuses/methods/content types are OPEN sets (value type +
+    constants), not enums; the enum design (closed sets of VALUES, see the 2026-09-20 write-up)
+    is PARKED by the user ("let's wait a minute").
+    OPEN (user, in examples/httpd): (a) encapsulation — a struct cannot hide a field from code
+    in its own module (Notes.next is poked by handler code); strategies discussed 2026-09-20,
+    decision pending. (b) user flagged as a bug: a non-`mut fun` may mutate a MutableList
+    field (`self.items.removeAt(i)`); this is the documented reference semantics of the mutable
+    collections (D25/D41: `Mutable` is the permission, the handle is the value) — Kotlin's
+    model, not Swift's/Rust's deep mutability; decision pending.
+R19. DONE (2026-09-20, user decisions): `pub` → `public` everywhere (keyword, ~330 uses in
+    std/examples, docs, spec, grammar; no compatibility shim — nobody uses the language yet),
+    and `private` for struct FIELDS and METHODS (also in impl/extend bodies): visible only inside
+    the type's own declarations — methods, impl/extend blocks in the same module, `static val`
+    initializers (`fnCtx.insideType`); enforced at field access, method call, constructor call
+    (a private field is not settable from outside and must have a default or a static
+    constructor) and in patterns. Levels: private (type) / nothing (module) / public (package).
+    `export` REJECTED as the spelling of `public` (it is what the package does in the
+    manifest); the user RESERVES the question whether the package boundary should later be
+    spelled `export` in source instead of the manifest's `exports` — note that, do not
+    prejudge. Spec M5 amendment; docs 05 "Visibility" (runnable), 11; cheatsheet; examples/
+    httpd Notes uses private (the user's refactor finished).
+    Still pending from R18: deep mutability (`fun` mutating a MutableList field is allowed by
+    design today; the user's comment in httpd called it a bug) — explained, not changed.
+R20. DONE (2026-09-20, user decisions): mutability moved from the method to the FIELD (spec
+    D22 rewritten, D11/D25/D35 amended, v0.30). `mut fun` REMOVED (parse error with a fix);
+    `var name: T` marks an assignable field, a bare field is set by the constructor and never
+    assigned (error with a fix inserting `var`; `val name: T` is refused); `val`/`var` on a
+    binding govern rebinding only, for structs as for MutableList; `self` is never assignable
+    as a whole; a global `val` stays a constant (no field writes, no receiver-changing method).
+    `var` governs the slot only (`o.inner.x = 1` needs `x` var, not `inner`); the deep
+    guarantee is "no var fields and no mutable collections reachable by value => cannot
+    change". User REJECTED a class/struct split ("I wanted to avoid classes"); the structural
+    "handle iff all fields are references" rule was considered and dropped (Conn{fd, buf}
+    would be a value); private-by-default fields REJECTED (immutable default already covers
+    it; one unmarked visibility level for everything). `readonly` keyword not introduced:
+    immutable is the default, `var` the opt-in.
+    Implementation: every method takes `*Self` (self reads as the value; temporaries spilled);
+    receiver pass sema/receivers.go (+ sema/walk.go generic HIR walker) computes WritesSelf /
+    SelfEscapes to a fixpoint and (a) heap-allocates (AddrTaken) a receiver a method may keep
+    a pointer to — this FIXED a real pre-existing segfault: a closure over `self` (or `&self`)
+    in a `mut fun` pointed at the caller's stack frame; (b) reports a receiver-changing,
+    unit-returning method on a temporary copy (old D25 v0.27 rule, iterators exempt);
+    (c) refuses such a method on a global val. Call.Recv/RecvRoot/RecvSpan/RecvType/RecvExpr
+    carry the receiver kind; `$`-temps bound by lowering count as copies. Sealed/union method
+    dispatch and `?.` calls now operate on the real place when the receiver is one (before, a
+    method on a sealed variable wrote a copy). `self` narrows like a local; a method call
+    drops facts through `var` fields only (invalidateVarPaths). Sendable lambdas may not
+    capture vals whose type has `var` fields (hasVarFields); `async recv.m()` copies the
+    receiver into the task. Custom ops (Equatable/Hashable/Comparable/Display) and vtable
+    thunks pass pointers; codegen recvOperand spills to the stack, or the heap when the
+    method's self escapes. Tuple elements are places for method calls (`pair.1.bump()`).
+    Migration: std (iterators, DequeState, Rng, Stopwatch, RangeStepIter fields → var),
+    examples (`veles check --fix` inserted `var`; one fix per field), docs 04/05/06/13/14,
+    errors/cheatsheet/stdlib references, README; new examples/varfields; sema tests
+    TestVarFields/TestSelfNarrowing/TestSendableCaptureVarFields.
+    NOT done / follow-ups: (1) lost-copy warning for a struct PARAMETER whose var field is
+    assigned and never read afterwards (Go's value-receiver footgun) — only temporaries are
+    diagnosed; (2) escapes by call are not tracked (`helper(self.items)` may push) — the
+    receiver pass is a path check on `self`; (3) `&self.x` marks the receiver variable
+    AddrTaken, which disables narrowing on self paths after it (conservative).
+R21. DONE (2026-09-20, user decisions after R20): (1) `internal` keyword = the unwritten module
+    level, optional, allowed wherever `public` is (top-level decls, fields, methods, statics);
+    formatter keeps it; `public internal` is an error. `protected` REJECTED for that level
+    (means subclasses everywhere else). examples/packages/mathlib/internal renamed `support`.
+    (2) `val` may be written on a field (= bare); formatter keeps it. (3) `readonly` field =
+    read wherever visible, assigned only inside the type (insideType); counts as var for
+    narrowing/Sendable; `private readonly` refused as redundant. `var(private)` REJECTED by the
+    user ("does not look like Veles"); making readonly the DEFAULT rejected by me (guarantee +
+    Sendable) and accepted. Spec D22/M5 addenda, docs 05/11, cheatsheet, errors reference,
+    grammar, LSP keywords, sema/format tests.
+R22. DONE (2026-09-20, user decision): `readonly` → `protected var` (R21 (3) superseded). The
+    user's reasoning: no inheritance now or later (traits are the alternative), so `protected`
+    is free to mean "protected from writes by anyone but the owner"; `public protected var i`
+    = everyone sees and reads, only the struct assigns. `protected` qualifies `var` (bare has
+    nothing to protect → error); `private protected var` redundant → error; never restricts
+    reading. Documented as a two-question grid (who sees / who assigns) in docs 05 with a table,
+    11, cheatsheet, errors reference; spec D22 addendum rewritten (records readonly,
+    var(private), private(set) as rejected), M5 addendum corrected. `readonly` is not a keyword.
+R23. DONE (2026-09-20): LSP hover shows a struct's/field's DEFINITION with every implicit word
+    spelled out — `internal` for the unwritten level, `val` for a bare field, `protected var`,
+    `static`, defaults (source text when short) and `static val` members (sema/index.go:
+    fieldDecl / structHead / methodDecl / visibilityWord; Ref.Where names the owner above a
+    field's line). Declaration sites (the struct name and each field name in `struct X { }`)
+    are indexed too, so the hover works at the declaration, not only at uses (end of
+    Checker.collect). Tests: lsp TestHoverSpellsOutModifiers + updated expectations.
+R24. DONE (2026-09-20): hover for methods, functions and traits in the same spelled-out form:
+    `Where` = the owner (`internal struct Notes`, `impl Display for Point`, `extend Point`,
+    `public trait Shape`), Detail = `internal static fun of(...)`, `override fun ...`, a trait
+    default marked `= ...`; impl/trait methods carry no visibility word (they follow the
+    trait); an undocumented impl method shows the trait's doc for it. Trait hover: head with
+    visibility/`sealed`/supertraits, `type Item` (+ bounds, implicit `type Error`), methods with
+    type params, `static`, default markers; sealed trait: methods then variants. Declaration
+    sites of traits, sealed traits and every function/method template are indexed (end of
+    collect); RefAt prefers the later ref on equal spans so a body check's richer ref wins.
+    lsp TestHoverMethodsAndTraits (decodes the JSON value; `<` arrives as \u003c).
+R25. DONE (2026-09-20): hover for values and modules in the declaration form. Globals:
+    `public val limit: i64 = 10`, `internal var hits: i64 = 0`, `internal const name: string =
+    "v"`; a static under its struct (`internal struct Status` / `public static val ok: Status =
+    Status(code: 200)`); declaration sites indexed after the globals are typed (runRound) and
+    names at assignment targets are refs now (`hits += 1`). Modules: `module io {  // std` /
+    `module mathlib.geometry {  // package mathlib` / `// this package`, then the public surface
+    (structs/traits/sealed/error sets/type aliases/functions/values in source order, capped at
+    40) and the module doc. Locals unchanged (kind, type, smart cast). lsp
+    TestHoverValuesAndModules. Free functions were already covered by R24.
+    Answered: a struct may implement any number of traits (inline `impl A {}` `impl B {}` or
+    top-level impls) and bounds compose (`T: A + B`); what is NOT supported yet is a supertrait
+    on a trait declaration (`trait Shape : Display` → "supertraits are not supported yet in the
+    bootstrap compiler").
+R26. DONE (2026-09-20): (1) Constructor rule for private fields RELAXED (spec M5 text, docs 05
+    with a runnable Parser example): a private field WITHOUT a default is the constructor
+    call's parameter — settable from anywhere the type is visible, private afterwards
+    (Kotlin's `class P(private val toks)`); a private field WITH a default stays the type's
+    own state (`Notes(next: 5)` refused). v0.29's Swift-like "private field ⇒ static
+    constructor" was dropped after the user hit it in examples/calc. (2) LSP completion filters
+    members by reachability (M5): private ones only when the cursor is inside the type's
+    struct body / impl / extend in the same module (`scope.insideType`), unmarked ones only
+    inside the type's module, public ones anywhere; statics and extend methods too
+    (lsp/completion.go `scope`; TestCompletionVisibility). (3) The struct hover lists the
+    traits the type implements (`impl Display`, `impl Comparable`, and `impl Error` for error
+    types) — that is how "which traits does this struct have" is answered; the header
+    `struct X : T` remains sealed-variant membership only (D12/D23), conformance is `impl`.
+R27. DONE (2026-09-20): derived field defaults (spec D28 addendum v0.30, docs 05 "Defaults
+    derived from other fields"): `private positions: List<i64> = self.toks.map(t => t.1)` —
+    a default may read fields declared ABOVE it as `self.<field>`; constructor lowering binds
+    fields to temporaries in order (Let chain) only for structs whose defaults mention self
+    (Checker.derived); `fnCtx.ctor`/ctorScope resolves `self.f` (lambdas inside see it);
+    errors for a later field, the field itself, methods/bare self; warning when derived from
+    a `var` field (computed once, goes stale). sema TestDerivedDefaults.
+
+PARKED — must be addressed later (user, 2026-09-20):
+  * ENUMS: DONE 2026-09-21, see R33 (spec D57).
+  * SUPERTRAITS: `trait Shape : Display` (a requirement on implementors, not inheritance);
+    parser accepts, sema says "not supported yet". First real customer will be
+    `Hashable : Equatable`; also lets a default body use the supertrait. Decide together with
+    enums when a std trait needs it.
+R28. DONE (2026-09-20): (1) a derived default may CALL METHODS on `self` (user's
+    `count = self.getCount()`): `self` in a default is the struct-so-far bound to a temporary
+    (Var.Partial, unbound fields `Zero`), and the receiver pass now computes Func.FieldsUsed /
+    AllFields (fields read or written through self, transitively via self-calls and closures;
+    whole-value uses = all) and refuses a call whose method reaches a field at/below the one
+    being initialized, naming it; any other use of the partial `self` is an error. A field
+    default counts as inside the type (private methods callable). Spec D28 addendum extended
+    ("Swift's definite initialization made precise per method"), docs 05 updated.
+    (2) Local hover shows the initializer as written (`val base: i64 = factor * 10`) and marks
+    parameters `(parameter)` (Var.InitText / IsParam; declaration ref re-recorded after the
+    initializer is known). lsp TestHoverLocals.
+R29. DONE (2026-09-20): (1) completion: `Type.` offers the type's namespace only (static vals,
+    static funs from the body and extend/impl blocks, a sealed trait's variants; builtins'
+    statics like MutableList.make via typeHeads), a value never offers statics; `self.`
+    resolves to the enclosing struct/impl/extend (scope.enclosingType) — before it fell to
+    the "unknown receiver" fallback; top-level completion offers this module's names, the
+    prelude's public ones and imported module names — not other modules' declarations
+    (unqualified they are not in scope). TestCompletionVisibility rewritten (one dangling
+    `.` per buffer; two made the buffer unrecoverable and the old test passed by accident
+    through the fallback). (2) `List.toSet()` / `toMutableSet()` and `Iterator.toSet()` in the
+    prelude (`toks.map(t => t.0).toSet()`). 
+    PENDING: `constructor { }` block (user proposal, see conversation 2026-09-20) — design
+    discussed, awaiting the user's answer on spelling/semantics.
+R30. DONE (2026-09-20, user decision: `init`, not `constructor`): `init { }` block in a struct
+    body (spec D28 addendum, docs 05 "The init block" + "The ways a field gets its value"
+    table, cheatsheet). Contextual keyword (a field/function named init stays legal);
+    compiled as hidden method `$init` (unreachable by name; hover shows `init { ... }`,
+    completion never lists it); called by the constructor on the built value (Let + BlockExpr)
+    before a sealed wrap. Fields without a default that the block assigns (syntactic scan
+    initAssigned → types.Field.Init) are not constructor params (error if passed); definite
+    assignment via flow facts `$init.<field>` in fnCtx.narrow (joins/loops/divergence for
+    free); errors: read before assigned, `self` as a whole before all assigned, method call
+    before assigned checked in the receiver pass against FieldsUsed (Call.InitMissing),
+    not-on-every-path at block end; cannot suspend (inferSuspension), no throws (ordinary
+    rule), no visibility, one per struct. Side quests: `List.lastIndex()`; lint `!(x is T)` →
+    `x !is T` with a fix (only that exact shape; `!(a is T && ...)` untouched).
+R31. DONE (2026-09-20, user direction): (1) derived field defaults WITHDRAWN — a default is a
+    constant; `self` in a default is an error pointing at `init` ("declare it without a
+    default and write init { self.x = ... }"); removed ctorScope/partialSelf/derivedDefaults/
+    checkPartialCall/Var.Partial (the field-use analysis stays for init). Spec D28 addendum
+    records the withdrawal. (2) `init` highlighted in the VS Code grammar (contextual, before
+    `{`). (3) Struct/field hover shows types only: defaults as `= ...`, statics as `= ...`,
+    init-owned fields marked `// assigned by init`, and a first line `// Parser(toks: ...,
+    pos: Position = ...)` = the implicit constructor as seen from outside (required fields,
+    then optional ones; private-with-default and init fields left out). Locals keep their
+    initializer (asked for earlier). Docs 05: derived section replaced, init example now
+    derives positions/count in init, field-source table updated; cheatsheet.
+R32. DONE (2026-09-20): hover respects the reader's viewpoint (sema/index.go viewpoint /
+    shapeFrom): inside the type everything; elsewhere in the module no private members; from
+    another module public only; hidden members counted ("// ... and N members not visible from
+    here"); the constructor line lists optional fields only when the reader may pass them;
+    `init { ... }` shown inside the type only. lsp TestHoverViewpoint.
+    OPEN (user question): read-only exposure of a mutable-collection field (`vars:
+    MutableMap` — outsiders may read, not mutate). Options laid out in conversation:
+    (a) private + accessor methods (works today, D25-clean); (b) `protected val` on
+    mutable-collection fields = "look, don't take": from outside the field may only be the
+    receiver of the immutable form's methods / a loop head / interpolation, never bound,
+    passed or returned (keeps D25's no-views rule); (c) read-only view types — rejected by D25/
+    D35. Awaiting decision.R33. DONE (2026-09-21, user decisions): ENUMS (spec D57, v0.32). `enum Name [: IntBase] { A = -1, B, C }`
+    — a closed set of named VALUES of one integer type (integers only; i64 default; +1 from
+    the previous member, first is 0; literal values only; duplicate/overflow/empty are errors;
+    not generic). Runtime = the base integer (types.Enum, `types.Underlying`; codegen maps
+    llType/layout/binary/cast/equal/hash/gcdesc through the base). Surface, all synthesized in
+    sema/enum.go (`enumFunc`, per round like tupleCmp — both reset in runRound now):
+    `x.value`, `x.toString()`/interpolation, `x.compareTo(y)`, `E.values()`, `E.fromValue(n): E?`,
+    `E.parse(s): E?`. Comparable/Hashable/Equatable/Display for free (customOps → enumOps);
+    Sendable. Compares with the base type (`o < 0`, `o == -1`; checkOperandFor + enumCompare)
+    but NEVER converts (errors name `E.fromValue(n)` / `.value`); different enums do not
+    compare. `when` arms name members (`E.A =>`), exhaustive by member + the D13 else lints
+    (coverage.enumMembers). No methods/fields/impl/extend on enums (refused). User chose:
+    Comparable only (no methods), integers only, comparable-with-base-not-swappable.
+    CONSEQUENCE: prelude `enum Ordering { Less = -1, Equal, Greater }`; `Comparable.compareTo`
+    returns Ordering (13 prelude impls, tuple_order.go, compareOp lowers to `cmp <op> Equal`);
+    comparators (`sortedWith`, `minWith`, `maxWith`, `sortWith`, `priorityQueueBy`) take
+    `fun(T, T): Ordering` — `a - b` comparators became `a.compareTo(b)` (todo, dedup, docs 10).
+    Tooling: formatter (enumDecl, `=` aligned like fields), LSP (hover on type/member/.value,
+    completion `E.` = members + statics, `e.` = value/toString/compareTo, document symbols),
+    builtins catalogue family "enum" (builtinStatics for the type-level ones), VS Code grammar.
+    Docs: chapter 09 "Enums: a closed set of values" (renamed chapter), cheatsheet, stdlib ref,
+    08 table; tutorial 02 uses Ordering. Tests: sema TestEnums, parser TestEnumDecl, format
+    style case, lsp TestEnumTooling, examples/operators expected updated (Less Greater Equal).
+    Rejected for now: string enums, methods on enums, `as` between enum and base.
+
+
+
+NEW TODO:
+- DONE (2026-09-25, R39): function that does not throw marked as throws should be linted to remove the throw
+R34. DONE (2026-09-22): closed the last two open items of the derivation section
+    (veles-checklist.md §1.1).
+    (1) TRAIT OBJECTS OF A TRAIT WITH SUPERTRAITS (spec D58 amended). The vtable is the
+    supers' tables laid end to end: `objectSlots`/`objectOrder` in sema/supers.go walk the
+    trait and its supers depth-first, supers first, each trait once; a name declared by both
+    a trait and a super is one slot, the most derived winning; two supers that neither
+    requires the other declaring one name is an ambiguity and the trait is not object safe.
+    `objectSafe` now asks every super for associated types, statics, generic methods and
+    `Self` (so `Codable` is still refused, naming `Decodable.decode` as the static one).
+    `boxValue` looks each slot up in its OWNER's impl (written or derived), so a default body
+    from a super lands in the table; a combination trait (only its supers) is boxed from
+    their impls — `isCombination` in the coercion in check_expr.go, since it has no impl of
+    its own. `CallVirtual` carries `Sig` now instead of codegen/suspend re-deriving it from
+    `Trait.MethodList[Index]`, which is no longer the layout. NOT done, and it needs RTTI:
+    converting a trait object to another trait's object (`val n: Named = shapeObj`) — same
+    family as §9 item 14. Tests in sema TestDerivation, docs 08 new section.
+    (2) HOVER ON A DERIVED IMPLEMENT (user decision: the summary in the hover, the code
+    behind a command). sema/derive_print.go is a printer for SYNTHESIZED ast nodes — the
+    formatter cannot be reused, it is source-guided (`p.src[...]` everywhere: literals copied
+    verbatim, the author's line breaks read out of the text) and every derived node carries
+    the implement's span. It covers the closed set derive.go builds; `DumpDerived` now
+    returns Veles, so VELES_DEBUG_DERIVE=1 is readable too. `Ref.Derived` + `indexDerived`
+    (sema/explain.go) put the summary on the implement's trait name: the implements produced
+    (grouped by the span of the line that asked for them — derived super impls share it),
+    the bounds inferred for a generic target (from `Impl.TypeParams`, not the ast), the
+    signatures, and the wire shape (keys / optional / skipped, `@key(json: ..)` shown as the
+    run-time `when` on `format()` that it is). New command `veles explain <path> --derive
+    [Type]` prints the bodies; with no type it skips std's own derives. `checkWith` split
+    into `checkCollect` so a caller can read the checker.
+    (3) HOVER NO LONGER SAYS `internal` (user decision). 5d050f5 had changed visibilityWord
+    to return "" but left `+ " "` at seven call sites (a stray leading space) and eight red
+    LSP tests; `visPrefix` is the one place now, enumHead follows it, tests updated.
+
+R35. DONE (2026-09-22): veles-checklist.md §2 + §5.2, first slice — the request is
+    measured before it is believed.
+    (1) `net.Conn.readLine(max:)` — REQUIRED, no default. The peer chooses where the
+    newline goes, so the old `readLine()` let a stranger decide how much the process
+    allocated; `readExact(n)` was already caller-bounded but now says in its doc that
+    `n` from the peer must be checked first. Over the ceiling throws the new
+    `net.TooLong { message, limit }` — a separate error, not an IoError, because the
+    caller answers differently (431/414, never 500). Cost: every caller's `throws`
+    grows by `| net.TooLong` (docs 16 and 17, examples/httpd). That is D45 working.
+    (2) `http.Limits` (8 fields: requestLineBytes, headerLineBytes, headerCount,
+    headerBytes, bodyBytes, headerTimeout, bodyTimeout, idleTimeout) replaces `serve`'s
+    `idleTimeout` parameter. The whole head is on ONE clock (`headDeadline`), so a peer
+    cannot hold a connection open by dribbling one header every few seconds; the body
+    has its own. Content-Length is checked against bodyBytes BEFORE readExact, so an
+    oversized body is never assembled. New statuses in `reasonOf`: 414, 431.
+    BUG FOUND BY THE TEST: headerCount was counting map entries, and repeated header
+    names collapse to one key — 40 `X-N:` lines passed. It counts LINES now.
+    (3) examples/httpd sets `Limits(bodyBytes: 4096, headerCount: 32)` (a notes API
+    takes a line of text) and the --check script provokes all four refusals; `exchange`
+    grew an `extra` parameter for raw header lines and `brief()` elides the
+    thousands-of-characters requests in the transcript.
+    STILL OPEN in that section: middleware (`type Middleware = fun(Handler): Handler`,
+    `router.use`), the standard ones (recovery/request-id/access-log/CORS/timeout),
+    graceful shutdown (needs §4 `os.onSignal`), max concurrent connections, chunked
+    encoding, streaming bodies, the in-process test client.
+
+R36. DONE (2026-09-22): MIDDLEWARE (checklist §5.2). `public type Middleware = sendable
+    fun(Handler): Handler` and `Router.wrap(m)` — the verb is `wrap`, not `use`, because
+    `use` is the keyword that imports a module and `app.use(...)` next to `use http`
+    would read badly. Middleware wraps the whole router (its 404s and 405s included),
+    first wrapped = outermost; `handler()` folds the list in reverse. Standard ones:
+    `requestId()` (the client's X-Request-Id or 16 fresh hex digits, onto the request
+    for the handlers behind and onto the response), `logging()` (peer/method/path/
+    status/ms/id on stderr — `serve(log:)` already prints a plainer line, so pass
+    `log: false` when wrapping it), `timeout(ms)` (503; the handler runs in its own task
+    and is cancelled, so its `with`s close). NO recovery middleware: a panic is already
+    caught at the request boundary (D56) and there would be nothing for it to do.
+    `Request.withHeader` added — with no task-local values (§1.3) that is how a
+    middleware hands something to the handlers behind it.
+    The ordering is visible in docs 17 and in examples/httpd: `timeout` sits outside the
+    header middleware, so a cancelled handler's 503 never passes through it, while
+    `requestId` (outermost) is on the response either way; and a request refused for its
+    SIZE shows `id=-` in the transcript, because it never reaches any middleware.
+    Open in §5.2 after this: CORS, auth hook, compression, structured access log with a
+    byte count, graceful shutdown (needs §4 os.onSignal), max concurrent connections,
+    chunked encoding, streaming bodies, the in-process test client.
+
+R37. DONE (2026-09-23): veles-checklist.md §5.5 — CRYPTOGRAPHY AND THE ENCODINGS
+    (spec D59, v0.34). Four new std modules; the shape of each was chosen so the
+    safe call is the short one.
+    (1) `std/crypto`: SHA-256/384/512 and SHA-1 behind a `Hasher` trait
+    (`start`/`update`/`finish` plus three statics, so HMAC is written ONCE over
+    `H: Hasher` and `Hmac<Sha256>` is an instantiation, not a copy). A hash
+    returns a `Digest`, not `List<u8>`: `Display` is lower-case hex and
+    `Equatable` is CONSTANT TIME, so `mac == expected` is the natural spelling
+    and the safe one — `List<u8>`'s structural `==` short-circuits and would
+    have been a timing oracle that compiles silently. `Digest.of(bytes)` wraps a
+    signature from a header so it compares the same way; `equalBytes` is the raw
+    version. `randomBytes` over BCryptGenRandom / getrandom(2) / arc4random_buf
+    (`veles_random_bytes` in veles_os.c, `-lbcrypt` on Windows) and PANICS on
+    failure — unrecoverable, not rare, and `throws` would spread to `uuidV4()`.
+    UUID v4 + v7, v7 with a counter in `rand_a` so ids are strictly increasing
+    (the example caught that random `rand_a` left same-millisecond ids
+    unordered).
+    (2) `std/hex` and `std/base64` are their OWN modules, not `crypto.` —
+    base64 is an encoding, and a name that suggests otherwise is how
+    `base64.encode(password)` happens. Both decoders are strict: the other
+    alphabet (naming the right function), whitespace, a misplaced `=`, an
+    impossible length, and a non-canonical last character (two texts, one
+    signature) — each with the byte offset.
+    (3) `std/jwt`: HS256/384/512. The expected algorithm comes from `Options`,
+    never from the token's `alg`; `exp` required by default; `crit` rejected; a
+    key shorter than the digest is a panic (RFC 7518 §3.2). `Invalid` carries a
+    `Reason` enum so `Expired` can be told from `BadSignature`.
+    (4) TWO COMPILER CHANGES fell out of writing it:
+      - `mod.Type<T>.f(...)` now parses. `tryTypeArgsBeforeCall` only allowed
+        the `.f(` continuation after a BARE name, so `crypto.Hmac<Sha256>.start`
+        — the natural spelling from outside the module — was a syntax error.
+        New `ast.MemberExpr.TypeArgs`; `moduleTypeNamed` resolves the instance;
+        the formatter prints them; a qualified generic with no arguments gets
+        the same error as an unqualified one.
+      - The formatter keeps the AUTHOR'S GROUPING inside a list it breaks
+        (`brokenList`). One element per line turned SHA-256's 64 round
+        constants into 64 lines; a newline now goes only where the author had
+        one, so a grid stays a grid. Same rule as the rest of the printer.
+    (5) Tests are published vectors, which is the only honest way: FIPS 180-4
+    (three messages per hash), RFC 4231 + RFC 2202 (HMAC), RFC 4648 (base64),
+    and the RFC 7515 A.1 token with its key — verifying someone else's token
+    proves interop in a way signing and verifying our own never could.
+    `examples/crypto` + docs 19; `go test ./...` is green except the
+    pre-existing `examples/tutorial/04-functions`.
+    LANGUAGE FACTS LEARNED: a `List<u64>` literal types its elements from the
+    annotation, so `0xffffffffffffffff` is fine where `0x... as u64` is a
+    range error; module-level `var` is a real mutable global (initialised in
+    `veles_init_globals`, in declaration order); `MutableList<T>` passes where
+    `List<T>` is wanted; `go` is a keyword (a method cannot be named `run`'s
+    sibling `go`); `when` arms need newlines, never commas; `[:]` is the empty
+    map; `try x ?! e` needs the `try` even though `?!` maps the error.
+    OPEN AFTER THIS: argon2id and RS256/ES256 (both want a binding), zeroing
+    keys (`Secret<T>`), a fuzz corpus for the two decoders, and a benchmark —
+    the hashes are plain Veles and nothing has measured how far that is from C.
+
+R38. DONE (2026-09-23): PREPARING THE LIBRARY FOR THE FRONT-END REWRITE —
+    veles-selfhost-frontend-plan.md §4, all four open decisions taken and the two
+    "just work" items that P0 and P3 wanted. Nothing here is about the rewrite
+    itself; it is the library the rewrite will sit on, and every piece has a
+    caller outside it already.
+    (1) `std/utf8` (decision 1a, checklist §5.10): `utf8.Rune { code, size }`,
+    `decode`/`decodeLast` over a `string`, `decodeBytes` over a buffer that
+    carries no promise, `encodeTo`/`encode`/`char` back, `size`, `isScalar`,
+    `isSurrogate`, `isContinuation`, `isStart`, `combineSurrogates`, `isValid`,
+    `count`. One decoder underneath all of them, `step(b0..b3, rest)`, written
+    as Table 3-7 of the Unicode standard: the FIRST byte fixes the length and
+    the RANGE OF THE SECOND, and it is that range, not a check afterwards, that
+    rejects the overlong forms and the surrogates. Strict in, lossy out (a value
+    that is not a code point encodes as U+FFFD, which is what Go and Rust do —
+    a text pipeline that stops dead on one bad code point is a denial of
+    service). `examples/utf8` is the Kuhn stress test plus Table 3-7: every
+    boundary code point round-trips, every overlong, surrogate, past-U+10FFFF,
+    truncated and stray-continuation row is rejected.
+    `std/json` deleted its private `encodeUtf8` and its hand-rolled surrogate
+    arithmetic and calls `utf8.encodeTo` / `utf8.combineSurrogates` instead, so
+    the module has a caller in the std from the day it landed.
+    (2) `binarySearch` and its family in `std/prelude/list.vs`: `binarySearch`,
+    `binarySearchWith(compare)`, `binarySearchBy(key, target)`, `lowerBound`,
+    `upperBound`, and the `partitionPoint(pred)` all five are written in terms
+    of. ABSENT IS -1, not null, to match `indexOf`/`indexOfFirst`/`lastIndexOf`
+    in the same file; the insertion point, which the negative-encoding
+    convention exists to carry, is `lowerBound`. Always the FIRST of several
+    equal elements, so a list with duplicates answers the same way every time.
+    None of them checks that the list is sorted — checking is the linear scan
+    they exist to avoid — and `examples/algorithms` now runs the prelude's
+    answers against its own hand-written ones for every target from below the
+    smallest element to above the largest.
+    (3) ONE RECURSION LIMIT (decision 3a, checklist §2), in the prelude:
+    `maxRecursionDepth` (1000 — a stack budget, reasoned from Windows' 1 MiB
+    default and ~1 KiB per level of a recursive descent), `tooDeepMessage(limit)`
+    so every caller says the same sentence, and `Depth` (`enter`/`leave`/
+    `depth`/`deepest`/`reset`) for a walk whose depth is only its call frames.
+    Two shapes deliberately, because both exist: a walk that already keeps a
+    stack has its depth in hand and only needs the limit and the wording;
+    duplicating the counter beside the stack would have been a second source of
+    truth. WRITING IT FOUND A HOLE: the JSON ENCODER was unbounded, so a
+    document refused on the way in as too deep could still be walked on the way
+    out — `json.encode` of a hostile `Value`, and `toValue`/`fromValue` through
+    `ValueEncoder`/`ValueDecoder`, were all a stack overflow away. All four are
+    bounded now, by `json.Options.maxDepth` (64, JSON's own policy) where the
+    caller is json, and by `maxRecursionDepth` otherwise. THE ROUTER, which
+    checklist §2 named, does not recurse: it matches path segments in a loop, so
+    there was nothing there to bound. Said so in the checklist rather than
+    inventing a limit for it.
+    (4) `unicode.IsPrint` (decision 2) TURNED OUT NOT TO BE A GAP, and neither
+    of the plan's two options was the answer. `isIdentStart` accepts every byte
+    >= 0x80 (D18), and `operator()` is the only caller of the IsPrint branch, so
+    the branch is only ever reached with a ONE-BYTE rune: the whole non-ASCII
+    half of `unicode.IsPrint` was unreachable. The Go lexer now says
+    `showAsItself(r)`, which is `r >= 0x20 && r != 0x7F`, the `unicode` import is
+    gone, and `lexer/lexer_test.go` (the package had no tests) pins the message
+    for punctuation, the ASCII controls and DEL — and, separately, pins the fact
+    that U+00A0, U+200B, U+202E and U+FEFF are lexed as IDENTIFIERS. The Veles
+    port therefore needs no Unicode data at all and has no documented
+    divergence, which is better than the "one-line divergence" the plan expected
+    to accept.
+    OPEN AFTER THIS: see #21 below — that a no-break space or a bidirectional
+    override is a legal identifier byte is a real question, and a D18 one. And
+    the Go-compatible `%q` of plan P3 is deliberately still open: getting
+    `strconv.Quote` right to the character is P3's job, and choosing its
+    permanent home (a `std/strconv`?) wants the caller to exist first.
+
+21. DONE (2026-09-25, user chose UAX #31; spec D18 addendum). (2026-09-23, found while doing R38) An invisible or
+    bidirectional-control character is a legal identifier byte.
+    D18 classifies identifier bytes by value: `_`, an ASCII letter, or ANY byte
+    >= 0x80. That is the right default for the common path — it means no Unicode
+    tables to scan an identifier, and `val café = 1` works — but it also means
+    U+00A0 (no-break space), U+200B (zero width space), U+202E (right-to-left
+    override) and U+FEFF (a byte order mark in the middle of a file) are each a
+    perfectly good identifier character. Consequences:
+    - a pasted no-break space produces "undeclared name" pointing at what looks
+      like an empty span, not "unexpected character";
+    - two identifiers that render identically can be different names;
+    - a bidirectional override inside an identifier is the "trojan source"
+      family (CVE-2021-42574): a file that reads one way to a human and compiles
+      another.
+    Rust, Go and the others answer this with UAX #31 (XID_Start/XID_Continue)
+    plus an explicit refusal of the bidi controls, which is Unicode tables — the
+    thing D18 was written to avoid, and the thing the front-end rewrite would
+    then have to reproduce in Veles.
+    A middle answer exists and is small: keep the byte rule, and refuse a short
+    explicit LIST of code points anywhere in a file outside a string literal —
+    the bidi controls (U+202A..U+202E, U+2066..U+2069), the zero-width marks
+    (U+200B..U+200F, U+2060, U+FEFF) and U+00A0. A dozen entries, reproducible
+    in the Veles lexer, and it turns the trojan-source case into a diagnostic
+    without making identifiers depend on Unicode versions.
+    Not done, because it changes what is a legal program.
+
+    (5) A defect found by WRITING THE EXAMPLE rather than the type: `Depth`'s
+    counters are private, so D28 made the implicit constructor module-private
+    and `Depth(limit: 500)` did not compile outside `std.prelude` — which is
+    every caller it has. `public static fun of(limit: i64 = maxRecursionDepth)`
+    fixes it, following the `JsonEncoder.of` / `ValueDecoder.of` convention.
+    Worth noting as a general shape: a public struct with any private field
+    needs an explicit constructor, and nothing says so until someone outside
+    the module tries. `examples/recursion` — a recursive-descent calculator
+    over `(1+(2+3))` that answers a diagnostic instead of a segmentation
+    fault — is both the test for `Depth` and the shape plan P5 should copy.
+
+R39. DONE (2026-09-25): veles-plan.md Phases 0–2 — the harness, then the debt
+    that needed no decision. Full account in veles-plan.md (progress log) and
+    veles-review-fixes.md (resolution).
+    - Harness: the examples/docs suites build a fresh compiler and key Go's
+      test cache on every compiler source (they reported `(cached)` after a
+      codegen edit before); an internal compiler error prints a report and
+      exits 3 instead of a Go stack trace; `veles fmt` writes atomically.
+    - codegen/llvm has golden-IR tests that also run each fixture (0% → 57%).
+    - Lints: needless `throws` (the NEW TODO above), `loop (true)`, the
+      hand-counting loop (T4); `"$self"` in its own toString is an error (P7);
+      missing-implement messages say what and where (#12).
+    - std: Channel.trySend/tryRecv and saturatingMul (#14), os.pid/hostname/
+      tempDir, path.clean/within, fs.walk.
+    FOUND AND FIXED:
+    - a sleeping task woken early (its scope's child finished) was lost and
+      the executor reported a deadlock; `sleep(Duration.zero)` did not yield.
+    - DIRECTORY TRAVERSAL on Windows in http.files: `GET /static/..\x` passed
+      the `..` check (split on `/` only) and served files outside the root.
+    LATER THE SAME DAY (still R39):
+    - `if (c) null else x` / `when { ... => null }` infer `T?` from the other
+      branches (was "cannot infer the type of 'null'").
+    - examples/fuzz (property fuzzer for base64/hex/json/percentDecode/utf8)
+      found: toF64 panic on `1e99999999999999999999`; json.parse accepting
+      `1e400`; toF64 not correctly rounded (JSON floats drifted per round
+      trip) — now strtod.
+    - FOOTGUN HIT, OPEN: passing a value struct to a function copies it, so a
+      `var` field advanced inside (an Rng) is lost to the caller, silently.
+      This is R20 follow-up (1). Decision wanted: see veles-plan.md Phase 3.
+
+R40. DONE (2026-09-25): I1 decided and built — let-else (`val x = r else { e => ... }`,
+    `else return`, `val Circle(r) = s else ...`) and `??` for a Result (`r ?? 0`,
+    `r ?? { e => ... }`); `?:` on a Result and `??` on a nullable are errors whose fix
+    swaps the operator. Spec D61. Then benchmarks (bench/, `go run ./bench`, a Go
+    reference per workload) — which found the GC allocator QUADRATIC between
+    collections: every full span was scanned slot by slot on each allocation. JSON of
+    40k records took 376 s (now 0.31 s). Fixed in veles_gc.c, guarded in examples/gc.

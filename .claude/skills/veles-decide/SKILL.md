@@ -17,7 +17,8 @@ No: internal structure, test layout, performance work that keeps behaviour,
 bug fixes that make code match the spec. When unsure, it is one.
 
 Check first that it is not already decided: search `veles-spec.md`, the
-checklist §10 log and `notes_to_change.txt`. Several ideas were considered
+checklist §10 log, `notes_to_change.txt` and (for older discussions)
+`archive/notes-history.txt`. Several ideas were considered
 and rejected (e.g. `!!`, a panic `catch`, `readonly`, classes, name
 imports) — do not re-propose a rejected option without new evidence, and
 say what is new.
@@ -34,6 +35,9 @@ Do all decision-free work first. Then, per decision:
    formatter, hover), what Go/Rust/Kotlin/Swift/TS do, and pros/cons.
 3. **Recommendation** and the one reason that decides it.
 4. **Cost**: what it touches (compiler layers, std, docs, migration).
+5. **Both levels and self-hosting** (user's principles, 2026-09-28): how
+   the high-level spelling reads, what the low-level escape is, and — when
+   it applies — what the option means for writing the compiler in Veles.
 
 Language facts in the options must be checked against the compiler — run
 the snippets that should compile today.
@@ -52,9 +56,10 @@ Batch related decisions; do not drip them one per turn. If the user says
    version in the header. Include the example, the rule, the edge cases,
    and "Rejected: …" with why. Superseded text is struck through, never
    deleted or renumbered.
-2. `veles-checklist.md`: strike the §9 item (`~~…~~ — decided <date>, see
-   §10`), add a §10 row: date, decision, **result** (user, recommended of
-   N — or "over the recommended X"), rejected options.
+2. `veles-checklist.md`: remove the §9 item (its `Qn` label is not reused),
+   add a §10 row: date, decision, **result** (user, recommended of
+   N — or "over the recommended X"), rejected options. A note it settles
+   leaves `notes_to_change.txt` (the full text stays in git history).
 3. `veles-plan.md`: the task it unblocks, with acceptance criteria.
 4. Then build it (`veles-develop`), unless the user said to wait.
 
