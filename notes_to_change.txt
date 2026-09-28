@@ -17,14 +17,15 @@ notes, not the user's text.
      `as` for conversions: §9 Q16 — asked together with Q15. Today: 141 `as` conversions
      in std/examples, 3 `use … as` renames; ~500 `io.` qualifiers in examples alone.
    → Self-hosting readiness is track S in veles-plan.md; the two principles lead the plan.
-   → WSL: Ubuntu 24.04 is installed but has no Go/clang yet (plan A1); macOS M4 is A7.
+   → WSL: Linux done 2026-09-28 (plan A1; the whole suite and the thread stress green,
+     `internal/wsl-test.sh` reruns it). macOS M4 is A7.
 
 === Standing directions ===
 
 R3. Platforms: Windows is the test platform now; Linux next, then macOS — every runtime binding
     must work on all three. Windows text bindings (args, env, cwd, listDir, file paths) must go
     through the wide (UTF-16) APIs so non-ASCII names stay valid UTF-8 (D18).
-    → Nothing has been built or run on Linux or macOS yet. veles-plan.md step A1.
+    → Linux x86-64 green since 2026-09-28 (plan A1). macOS not yet (A7).
 
 R5. Examples (small and mid-size) must DO something useful — real use cases, not demonstrations
     of syntax: a tool someone would run (todo CLI, log analyser, file dedup, ...).

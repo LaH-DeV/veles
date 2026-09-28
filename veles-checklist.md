@@ -72,6 +72,14 @@ answered from the shape, tuples get `Comparable`, enums get
       TestForeignCallDoesNotStallCollection)
 - [x] A blocking C call no longer holds up other tasks (2026-09-27): its
       thread's run queue moves to a spare thread (D66 addendum)
+- [x] Raw pointer arithmetic as D50 decided it (2026-09-28; decided and
+      documented long before, never built): `p + n`, `p - n`, `p += n`
+      element-scaled, `p - q` an element count, `<` `<=` `>` `>=` on
+      addresses, all inside `unsafe`; `*raw ()` refuses to step (cast to
+      `*raw u8`), `n + p` says to write the pointer first. A plain GEP, not
+      `inbounds` (sema/rawptr.go, golden `rawptr`, docs 13, examples/ffi
+      turns bsearch's result into an index)
+- [x] `--sanitize` for C code the program links (see §2)
 
 ### 1.3 Concurrency
 
@@ -134,8 +142,24 @@ answered from the shape, tuples get `Comparable`, enums get
 - [x] Coherence/orphan rules for `implement`: none beyond D17 — any implement
       anywhere, one per (trait, type) pair program-wide (§10, derivation batch)
 - [ ] `Default` values for generics without a hand-written implement
-- [ ] Integer overflow policy per build profile (D21: checked in debug,
-      wrapping in release, `+%` always) — verify it is what ships (plan A3)
+- [x] Integer overflow policy per build profile (D21: checked in debug,
+      wrapping in release, `+%` always) — verified 2026-09-28 (plan A3):
+      golden `overflow` is lowered and run in both profiles (`main.ll` /
+      `main.release.ll`): `+ - *`, unary `-`, `/` and `%` at MIN/-1, `+=`,
+      panic in debug and wrap in release; `+%` and `as` behave the same in
+      both. Found: an inclusive range ending at its type's maximum
+      (`loop (i in 250..255)` over u8) looped for ever in both profiles —
+      the loop and `RangeIter` now stop by a flag, measured free at -O2;
+      `(-128..127).len()` and `.step()`/`.reversed()` over more than half a
+      type overflowed or silently yielded one element — wrapping distances
+      now; `MIN.abs()` returned MIN silently in debug — now an overflow
+      panic like `-MIN`. `pow` panics on overflow in both profiles, as its
+      doc says
+- [ ] Generic prelude bodies are checked only when instantiated: a call
+      to a method the element type lacks (`this.holdsNothing()` inside a
+      `List<T>` extend) compiles until something uses it. Checking bodies
+      against their bounds at definition — which the self-hosted compiler
+      will want too
 - [?] `const` evaluation beyond literals; `static assert` — §9 Q10
 - [ ] Better inference for empty collection literals (`val xs = []` typed
       from later use; the typed-context half landed with the old note #8)
@@ -146,6 +170,16 @@ answered from the shape, tuples get `Comparable`, enums get
 
 ## 2. Safety
 
+- [x] Sanitizers (plan A2, 2026-09-28): `veles build/run/test --sanitize`
+      builds the C runtime under ASan + UBSan and links their runtimes (the
+      collector's stack scan is exempt; use-after-return fake frames are
+      turned off by the runtime, since they would hide roots). On Linux
+      every example (`go test ./examples -sanitize`, the collector every
+      4 KiB, threads 1/2/8) and the driver's runtime and test-runner
+      programs (`go test ./driver -sanitize`, ×3) are clean. One finding,
+      fixed: the test runner's capture buffer did `NULL + 0` on an empty
+      print (UB). Docs 13. Windows: needs MSYS2's compiler-rt (not
+      installed here; the build says so)
 - [x] `readRequest` limits: `http.Limits` — request line, header line, header
       count (lines, not map entries), header bytes, body bytes, and three clocks
       (header, body, idle). A byte ceiling answers 414/431/413 and closes, a time
@@ -164,6 +198,14 @@ answered from the shape, tuples get `Comparable`, enums get
       read after close could have read another peer's bytes. The number is now
       a shared atomic cell that `close` swaps out (driver
       `TestSocketClosedTwice`) (2026-09-27)
+- [x] Closing a socket while another thread reads it: each `net` call holds
+      the socket for its duration (a count, Go's fdMutex idea); `close()`
+      marks it closing, wakes every task waiting on it (they fail with an
+      `IoError`), and the number is freed by whichever of `close` and the
+      last call finishes second, so no call can land on a reused number.
+      Before, a read parked on the socket never woke (driver
+      `TestSocketCloseDuringRead` hung; 200 rounds at 1 and 8 threads now
+      pass on Windows and Linux, and under `--sanitize`) (2026-09-28)
 - [?] Bounds checks stay on in release; a profile that removes them is opt-in
       and loud — §9 Q11
 - [?] Integer conversions between widths: truncation is explicit — goes with §9 Q16
@@ -180,7 +222,7 @@ answered from the shape, tuples get `Comparable`, enums get
       file's contents). `files` now checks `within` *and* refuses any `..`
       segment on either separator; `examples/httpd` probes `..`, `..\` and
       `%2e%2e` (2026-09-25)
-- [~] Fuzzing: `examples/fuzz` (seeded, `fuzz [iterations] [seed]`) checks
+- [x] Fuzzing: `examples/fuzz` (seeded, `fuzz [iterations] [seed]`) checks
       properties, not examples — base64/hex round trips and canonical
       re-encoding, JSON text refused-or-round-trips, generated JSON values
       round-trip, `percentDecode` never panics, `std/utf8` and the runtime's
@@ -191,8 +233,22 @@ answered from the shape, tuples get `Comparable`, enums get
       `toF64` was **not correctly rounded** (digits summed in floating point),
       so a float's shortest text read back as a different float and drifted
       on every JSON round trip — it now takes the value from `strtod`, which
-      the printer already checks against (2026-09-25). Still open: the HTTP
-      request parser (needs an in-process connection)
+      the printer already checks against (2026-09-25). The HTTP request
+      parser is fuzzed over a real connection: `http.serve` in the same
+      process on loopback, one to three requests per connection, the last
+      with one of 21 faults (each with the status RFC 9112 asks for) or the
+      whole write mutated; every answer must be a well-formed response,
+      none a 500 or a timeout. Its first run found **response splitting**
+      (a path decoding to `\r\n`, echoed into a header, let the client
+      write headers into the response — values are now sent with line
+      breaks and NUL as spaces, and the server owns `content-length`/
+      `transfer-encoding`/`connection`), a line that is not UTF-8 closing
+      the connection without an answer (now 400), HTTP/1.0 kept alive by
+      default, and a lenient head a proxy could read differently: space
+      before a colon, folded lines, non-token names, CR/NUL in values,
+      `+5` or two differing `Content-Length`s, a missing or doubled `Host`,
+      `HTTP/1.1x` — all 400 now. The ten inputs are a corpus it checks
+      every run (2026-09-28)
 - [x] Command injection: `os.run(program, args)` joined its arguments into a
       shell command line (`popen`), quoting only those with a space or a
       quote, so `x;echo pwned` ran a second command on POSIX and `%VAR%`,
@@ -200,8 +256,8 @@ answered from the shape, tuples get `Comparable`, enums get
       `posix_spawnp` with an argv, `CreateProcessW` with each argument
       quoted by the MSVC rules — `mergeStderr` is a dup of the pipe, not
       `2>&1`; `.bat`/`.cmd` refused on Windows (BatBadBut), a NUL byte
-      refused everywhere. driver `TestRunPassesArgumentsVerbatim` (Windows
-      run; the POSIX branch is not compiled on this machine) (2026-09-27)
+      refused everywhere. driver `TestRunPassesArgumentsVerbatim` (2026-09-27;
+      the POSIX branch compiled and passing on Linux since 2026-09-28)
 - [x] NUL bytes at the C boundary: a Veles string may hold `\0`, a C string
       ends there. `fs` refuses a path holding one (`InvalidInput`), since
       `dir/..\0/x` passed a `..` check as one odd segment and then opened
@@ -241,6 +297,9 @@ answered from the shape, tuples get `Comparable`, enums get
       doubling storage (2026-09-27); `reserve` is a public API — §9 Q12
 - [ ] `List<u8>` ↔ socket: writev/readv, no intermediate copies
 - [ ] I/O: `poll` → `epoll`/`kqueue`/IOCP when connection counts justify it
+- [ ] Task handoff on Linux: `spawn` is 3.9× Go on Linux against 1.1× on
+      Windows, `parallel` 1.2× against 0.7× (bench/results.md, 2026-09-28) —
+      profile the wake-up path (futex condvars under the runtime lock)
 
 ### 3.2 Compiler
 
@@ -248,7 +307,20 @@ answered from the shape, tuples get `Comparable`, enums get
 - [ ] Panic-freedom analysis on leaf functions (a safety and a perf win)
 - [ ] Devirtualisation of trait objects with one implement in the program
 - [ ] Incremental compilation or at least per-module caching of IR
-- [ ] Compile-time budget: `veles build --timings`
+- [x] Compile-time budget: `veles build --timings` (also run/test/check)
+      prints each phase — load, check, codegen, runtime objects, clang —
+      and the ten modules that cost the most to parse + check (2026-09-28).
+      First reading, `examples/httpd`, debug build: 939ms, of which clang
+      853ms on 2.7 MB of IR, the front end 27ms — the build is bound by the
+      size of the IR handed to clang, so the per-module IR cache above is
+      where build time is won
+- [ ] IR size: 2.7 MB for `examples/httpd` (32 source files, 266 KB).
+      Measured 2026-09-28: no one culprit — 630 std functions make 2.3 MB,
+      and single bodies are large (`http.readRequest`, ~100 source lines,
+      is 109 KB of IR; `withTimeout` 50 KB over 3 instances): lowering
+      writes list adapters, checks and interpolation out inline in every
+      body. Plan B8 (the eager adapters as prelude functions) is the first
+      lever; measure `--timings`' clang line before and after
 
 ### 3.3 Benchmarks (so regressions are seen)
 
@@ -268,11 +340,20 @@ answered from the shape, tuples get `Comparable`, enums get
 
 ## 4. Runtime and operations
 
+- [x] Linux x86-64 (WSL2 Ubuntu 24.04, clang 18): `go test ./...` green,
+      every example under `VELES_THREADS=1/2/4/8` ×5, a tiny
+      `VELES_GC_THRESHOLD` and `VELES_GC_POISON`; a bench run recorded
+      (2026-09-28). Found on the way: the runtime needed `_GNU_SOURCE`
+      (`pthread_getattr_np`); Windows wrote the standard streams in C text
+      mode (`\n` → `\r\n`, stdin ended at a 0x1A byte) — binary now, so
+      output is the same bytes everywhere; two doc samples depended on the
+      platform (glibc's `cbrt` rounding, a 1 ms race). `internal/wsl-test.sh`
+      reruns it from the Windows tree
+- [ ] macOS arm64 (plan A7)
 - [x] Signals: `os.shutdownSignal(): os.Signal` (D68, 2026-09-26; `os.onSignal` rejected) + `os.raiseSignal` for tests. Real console/POSIX delivery not exercised by the suite (no console in the test harness); the path from the recorded signal on is (`examples/shutdown`)
 - [x] Graceful shutdown in `http.serve(..., stop:, grace:)`: stop accepting, close idle keep-alive, drain with `connection: close`, cancel after `grace` (2026-09-26)
-- [ ] Panic in a task: stack trace with symbol names (DWARF unwinding is on
-      the remaining list)
-- [ ] Crash report: what a production panic prints and where
+- [x] Panic in a task: the call chain with function names (D81, 2026-09-28): debug builds keep a per-task shadow stack; release builds print the location and say a debug build shows the chain. DWARF unwinding for release traces stays possible later (rejected for now, D81)
+- [x] Crash report: what a panic prints and where — message, `at file:line:col in fn`, `called from` lines, on standard error, exit 101 (D64, D81; chapter 7, errors reference)
 - [ ] Static binaries; cross-compile Windows → Linux (LLVM target triple)
 - [ ] Docker base image and a one-line `veles build --release --target linux`
 - [x] Environment: `os.env`, `os.hostname()`, `os.pid()`, `os.tempDir()`; the working
@@ -429,7 +510,7 @@ behind a name that says "crypto" (§10, 2026-09-23).
 
 - [ ] `std/config`: typed env parsing, all missing keys reported at once
 - [ ] `std/compress`: gzip/deflate via zlib binding
-- [~] `std/os`: `hostname`, `pid`, `tempDir` done (2026-09-25); `shutdownSignal`/`raiseSignal` done (D68); `run` without a shell (2026-09-27, §2). Open: `run` with stdin and a separately captured stderr
+- [~] `std/os`: `hostname`, `pid`, `tempDir` done (2026-09-25); `shutdownSignal`/`raiseSignal` done (D68); `run` without a shell (2026-09-27, §2); `run(..., input:, stderr: os.Stderr)` with `Output.stderr` (D82, 2026-09-28)
 - [~] `std/fs`: `walk` done (2026-09-25: depth-first, name order, links to
       directories not followed, its own stack); streaming reads/writes, atomic
       rename, file locks open
@@ -467,7 +548,7 @@ behind a name that says "crypto" (§10, 2026-09-23).
       `expectPanics`/`fail` (expression capture, both sides, location; soft
       failures reported together), `test fun` helpers, `*.test.vs` files,
       `assert(cond, "why")` anywhere (reason required); `@test fun` errors with a fix (D78) — done
-      2026-09-27. A test's output is captured and shown only under its failure (2026-09-27). Open: coverage, parallel tests
+      2026-09-27. A test's output is captured and shown only under its failure (2026-09-27). Tests run at once (D80, 2026-09-28): each its own record (failures, output) bound in its task's locals and inherited by what it starts, up to `--jobs` running (default: one per runtime thread), reports in declaration order, a watchdog per running test; a helper launched with `async` and a panic inside a helper both name the test's calling line. Open: coverage
 - [ ] `veles bench`
 - [~] LSP: find references, document highlights and rename done
       (2026-09-27): across modules, into interpolations and named arguments,
@@ -487,17 +568,48 @@ behind a name that says "crypto" (§10, 2026-09-23).
       go to implementation (a trait → its implements, a sealed trait → its
       variants, a trait method → its implementations) and folding ranges
       (bodies, argument lists, comment runs, `use` runs; token-based, so
-      they work while the file does not parse) — done 2026-09-27
-- [ ] Diagnostics: every error names the fix, with a `docs/` link
+      they work while the file does not parse) — done 2026-09-27. "Add the missing methods" (stubs that panic until written) on an implement lacking trait methods and on a sealed variant with no implement — a guess: offered, not preferred, never applied by `--fix` (2026-09-28)
+- [x] Conformance suite (plan A4, 2026-09-28): `sema/testdata/conform/`,
+      30 case files by D-number, each line's `// error:`/`// warning:`
+      checked strictly both ways; the checker's every diagnostic format is
+      read from its source, and a full `go test ./sema` fails for one no
+      test provokes unless `uncovered.txt` lists it with the reason no
+      program reaches it (parser-guarded, std-internal, defensive, …) —
+      a listed entry without a reason fails too. 267 → 46, every one with
+      its reason; the two-module rules are covered by sema package tests
+- [x] Diagnostics: every error names the fix, with a `docs/` link. Done
+      2026-09-28: "did you mean" on every unknown name, function, method,
+      field and module member (edit distance with transpositions, case,
+      long prefixes, and other languages' names — `size`→`len`,
+      `append`→`push`, `toUpperCase`→`toUpper`, `has`→`containsKey` — only
+      when the type has the target); a field called as a method and a method
+      read as a field are told which they are; the guess is an editor quick
+      fix (not preferred) that `check --fix` never applies; a local named by
+      a typo is not "never used". The docs link, D79 (2026-09-28): every
+      diagnostic belongs to one of 34 named families (`source/family.go`,
+      matched on the message); the CLI prints `see: veles explain
+      <family>` once per family, `veles explain <family>` prints its
+      section of `reference/errors.md` (embedded; offline, version-matched,
+      "did you mean" on a wrong name), the LSP sends `code` +
+      `codeDescription`; sema `TestEveryDiagnosticHasAFamily` (all 612
+      formats of sema/parser/lexer, filled with sample arguments) and docs
+      `TestEveryFamilyIsExplained` hold both ends. The audit (plan B1):
+      every message names what to write, unless its fix is simply undoing
+      the one fact it states (`duplicate field 'x'`, `'None' takes no
+      arguments`) or it is a compiler-internal check
 - [x] `veles doc`: rendered API docs from `///` — Markdown per reachable
       module (root + `exports`), declarations as hover shows them from
       outside, member docs; `-o dir` for files (2026-09-27)
 - [ ] Package registry / MVS (on the remaining list)
 - [ ] Lockfile and reproducible builds
-- [~] `veles new <dir>`: a package that runs and tests first try (manifest,
+- [x] `veles new <dir>`: a package that runs and tests first try (manifest,
       `main.vs` with a test, `.gitignore`); `veles build` in a package names
-      the binary after it — done 2026-09-27. Open: a `server` template with
-      logging, health, graceful shutdown wired
+      the binary after it — done 2026-09-27. `--template server`: an HTTP
+      service with `/healthz`, request logging, a request id and a time
+      limit per request, HOST/PORT from the environment, a graceful stop on
+      Ctrl+C/SIGTERM, and in-memory tests of its handlers; driver
+      `TestNewServer` builds it, tests it, starts it on PORT=0 and asks
+      `/healthz` (2026-09-28)
 
 ---
 
@@ -620,6 +732,14 @@ since both are about `use` and `as`
   means.
 - **Q14. Manifest dependency syntax** (notes #3, #17) — after M7 gives the
   manifest real content.
+- **Q17. Small ergonomics found writing the D21 golden (2026-09-28)**:
+  (a) `gather` with one task yields a 1-tuple, so `when (gather { async
+  f() }) { is Ok ... }` fails with "'Ok' is not a type" — should one task
+  yield its `Result` itself?; (b) `async f()` where `f` is a function value
+  is refused ("launches a direct call of a named function") — a trampoline
+  `fun call(f) = f()` works, so the rule costs code, not safety; (c)
+  `Range.isEmpty()` for symmetry with every collection (written internally
+  as `holdsNothing` in the prelude until decided).
 
 Every new public std API (http cookies/forms/client, `std/log`,
 `std/config`, metrics, ...) is its own decision when its turn comes in
@@ -690,6 +810,12 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-09-27 | `DateTime.weekday()` (user note #5) | **`Weekday` enum, ISO Monday = 1** (user, recommended of three; spec D77); `month` stays `i64`. Rejected: a `Month` enum too; as is. |
 | 2026-09-27 | Testing (§9 item 15) | **`test "sentence" { }` + a test-only vocabulary** (user, the recommended combination of `archive/veles-testing-design.md`; spec D78): `expect`/`require`/`expectThrows`/`expectPanics`/`fail` with expression capture, `test fun` helpers, `*.test.vs` files, `check(cond)` for invariants — amended the same day to `assert(cond, "why")` with the reason required (user: "should be called 'assert' ... require string explanation like panic"); `@test fun` errors with a fix. Rejected: `test fun` as the test form, an importable `testing` module, a global `assert` as the *test* vocabulary (it stops at the first failure). |
 | 2026-09-27 | Test suites (D78 amendment) | **`+bt+`suite "name" { }`+bt+` blocks and `+bt+`*.test.vs`+bt+` files as suites; the report grouped and indented** (user: "I think both is the answer"; report: grouped, over the recommended qualified-name lines). Suites hold tests, suites and `+bt+`test fun`+bt+` helpers scoped to the suite; names are qualified `+bt+`a / b / test`+bt+` for the summary and `+bt+`--filter`+bt+`. Setup/teardown: the lexical proposal rejected ("the setup for before and after isn't good... no new keyword for them either"); open as §9 item 16. |
+| 2026-09-28 | How a diagnostic links its docs (plan B1) | **Named families** (user, recommended of 4; spec D79): every diagnostic belongs to a family with a readable name that is its anchor in `reference/errors.md`; the CLI prints `see: veles explain <family>` once per family after the errors, `veles explain` prints the section from the copy compiled into the binary (offline, version-matched), the LSP sends the family as `code` and the GitHub anchor as `codeDescription`; a test makes every format belong to a family. Rejected: a GitHub URL per error (network, follows `main`), numbered codes `error[V0105]`, no link. |
+| 2026-09-28 | Parallel tests (plan B3) | **Parallel by default** (user, recommended of 4; spec D80): tests run as tasks across threads, `--jobs N` bounds them, `--jobs 1` is sequential; the report stays in declaration order, each test's lines together. Safe because D66/D35 already rule out data races between tests. Rejected: sequential by default with `--jobs` to opt in, a `@serial` attribute, leaving it sequential. |
+| 2026-09-28 | Panic call chains (plan B4) | **A shadow stack in debug builds** (user, recommended of 3, after DWARF and the shadow stack were explained; spec D81): each call records callee and call site on the task's own stack; a panic prints it under `at`; release prints the panic's line and a note. Rejected: DWARF unwinding (three binary formats, a coroutine walker, debug info in release, no wasm — possible later for release), a shadow stack in release too. |
+| 2026-09-28 | `os.run` input and stderr (plan B5) | **`input:` + `stderr: os.Stderr` (Capture/Inherit/Merge, default Capture); `Output.stderr`; `mergeStderr` removed with a fix** (user, recommended of 3; spec D82). Rejected: two more booleans, a `Command` builder. |
+| 2026-09-28 | List capacity | **`xs.reserve(n)`** — room for at least n in total (user, recommended of 4; spec D83). Rejected: `withCapacity(n)`, both, neither. |
+| 2026-09-28 | Q18: two bounds declaring one associated type | **Refuse `T.Item` and name it `T.Trait.Item`** (user, recommended of 3; spec D84). Rejected: refusing with no qualified form, keeping the first bound. |
 
 ## 11. Known limitations to revisit
 
@@ -697,17 +823,9 @@ Every new public std API (http cookies/forms/client, `std/log`,
   (`printf` through FFI) goes straight to the terminal.
 - `expectPanics(body)` runs `body` in a task of its own, so `body` must be
   a sendable function: it cannot capture a `MutableList` of the test's.
-- A `test fun` helper's call site is not traced when the helper is
-  launched directly (`async helper()` — the launch must stay a plain call),
-  and a plain panic inside a helper reports only the helper's line.
 - A panic std raises for a caller's misuse (`xs.swap(0, 7)`, `chunked(0)`)
   reports the std line (`at std/prelude/list.vs:408:27`), not the caller's
   (D64) — §9 Q8.
-- A socket closed on one thread while another thread is inside a read or
-  write on it can still, in that window, reach a number the system has
-  reused; Go guards this with a per-socket reference count.
-- `os.run`'s POSIX branch (`posix_spawnp`) has not been compiled or run:
-  this machine has no Linux headers (plan A1).
 - `T?.decode(from)` written by hand parses as a safe call on `T`; use a
   generic (`fun decodeIt<T: Decodable>(...)`) or a field. Derived code uses a
   resolved-type receiver and is unaffected.
@@ -750,3 +868,6 @@ Every new public std API (http cookies/forms/client, `std/log`,
   `Duration.micros(1)` sleeps for one millisecond rather than a
   microsecond. Sub-millisecond waiting needs a finer timer wheel in
   `veles_task.c`, which is a runtime change, not a library one.
+- A generic function's type argument is inferred from its arguments only,
+  not from the type expected of the call: `val x: i8 = id(127)` infers
+  `T = i64` from the literal and then fails, where `id<i8>(127)` works.

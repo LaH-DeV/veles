@@ -352,7 +352,7 @@ func (f *fnCtx) enumStaticCall(e *types.Enum, callee *ast.MemberExpr, call *ast.
 		if m := e.MemberByName(name); m != nil {
 			f.errorf(callee.Name.Pos, "'%s.%s' is a value, not a function", e.Name, name)
 		} else {
-			f.errorf(callee.Name.Pos, "enum '%s' has no function '%s'; an enum has 'values()', 'fromValue(n)' and 'parse(s)' (D57)", e.Name, name)
+			f.errorf(callee.Name.Pos, "enum '%s' has no function '%s'; an enum has 'values()', 'fromValue(n)', 'parse(s)' and 'decode(from)' (D57)", e.Name, name)
 		}
 		f.checkArgsLoosely(call.Args)
 		return bad()

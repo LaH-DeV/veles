@@ -109,25 +109,31 @@ entry:
   %a8 = alloca i64
   %a11 = alloca i64
   %a12 = alloca i1
-  %a23 = alloca i64
-  %a28 = alloca { i64, i64, i1 }
-  %a31 = alloca i64
-  %a34 = alloca i64
-  %a35 = alloca i1
-  %a46 = alloca i64
-  %a87 = alloca i64
-  %a101 = alloca i64
-  %a118 = alloca { i64, i64, i1 }
-  %a120 = alloca %S.std.prelude.RangeStepIter_i64_
-  %a122 = alloca { i1, i64 }
-  %a128 = alloca i64
-  %a130 = alloca [21 x i8]
-  %a134 = alloca %str
-  %a143 = alloca [21 x i8]
-  %a148 = alloca [21 x i8]
-  %a153 = alloca [21 x i8]
-  %a162 = alloca %str
-  %a163 = alloca [15 x %str]
+  %a13 = alloca i1
+  %a15 = alloca i1
+  %a27 = alloca i64
+  %a32 = alloca { i64, i64, i1 }
+  %a35 = alloca i64
+  %a38 = alloca i64
+  %a39 = alloca i1
+  %a40 = alloca i1
+  %a42 = alloca i1
+  %a54 = alloca i64
+  %a87 = alloca i1
+  %a98 = alloca i1
+  %a109 = alloca i64
+  %a123 = alloca i64
+  %a140 = alloca { i64, i64, i1 }
+  %a144 = alloca %S.std.prelude.RangeStepIter_i64_
+  %a148 = alloca { i1, i64 }
+  %a154 = alloca i64
+  %a156 = alloca [21 x i8]
+  %a160 = alloca %str
+  %a171 = alloca [21 x i8]
+  %a176 = alloca [21 x i8]
+  %a181 = alloca [21 x i8]
+  %a200 = alloca %str
+  %a201 = alloca [15 x %str]
   store i64 0, ptr %a1
   %t2 = insertvalue { i64, i64, i1 } undef, i64 1, 0
   %t3 = insertvalue { i64, i64, i1 } %t2, i64 5, 1
@@ -139,306 +145,402 @@ entry:
   %t9 = getelementptr inbounds { i64, i64, i1 }, ptr %a5, i32 0, i32 1
   %t10 = load i64, ptr %t9
   store i64 %t10, ptr %a11
+  store i1 false, ptr %a12
   br label %loop.cond.1
 loop.cond.1:
-  %t13 = getelementptr inbounds { i64, i64, i1 }, ptr %a5, i32 0, i32 2
-  %t14 = load i1, ptr %t13
+  %t14 = load i1, ptr %a12
   br i1 %t14, label %if.then.5, label %if.else.7
 if.then.5:
-  %t15 = load i64, ptr %a8
-  %t16 = load i64, ptr %a11
-  %t17 = icmp sle i64 %t15, %t16
-  store i1 %t17, ptr %a12
+  store i1 false, ptr %a13
   br label %if.end.6
 if.else.7:
+  %t16 = getelementptr inbounds { i64, i64, i1 }, ptr %a5, i32 0, i32 2
+  %t17 = load i1, ptr %t16
+  br i1 %t17, label %if.then.8, label %if.else.10
+if.then.8:
   %t18 = load i64, ptr %a8
   %t19 = load i64, ptr %a11
-  %t20 = icmp slt i64 %t18, %t19
-  store i1 %t20, ptr %a12
+  %t20 = icmp sle i64 %t18, %t19
+  store i1 %t20, ptr %a15
+  br label %if.end.9
+if.else.10:
+  %t21 = load i64, ptr %a8
+  %t22 = load i64, ptr %a11
+  %t23 = icmp slt i64 %t21, %t22
+  store i1 %t23, ptr %a15
+  br label %if.end.9
+if.end.9:
+  %t24 = load i1, ptr %a15
+  store i1 %t24, ptr %a13
   br label %if.end.6
 if.end.6:
-  %t21 = load i1, ptr %a12
-  br i1 %t21, label %loop.body.4, label %loop.end.3
+  %t25 = load i1, ptr %a13
+  br i1 %t25, label %loop.body.4, label %loop.end.3
 loop.body.4:
-  %t22 = load i64, ptr %a8
-  store i64 %t22, ptr %a23
-  %t24 = load i64, ptr %a23
-  %t25 = insertvalue { i64, i64, i1 } undef, i64 0, 0
-  %t26 = insertvalue { i64, i64, i1 } %t25, i64 %t24, 1
-  %t27 = insertvalue { i64, i64, i1 } %t26, i1 false, 2
-  store { i64, i64, i1 } %t27, ptr %a28
-  %t29 = getelementptr inbounds { i64, i64, i1 }, ptr %a28, i32 0, i32 0
-  %t30 = load i64, ptr %t29
-  store i64 %t30, ptr %a31
-  %t32 = getelementptr inbounds { i64, i64, i1 }, ptr %a28, i32 0, i32 1
-  %t33 = load i64, ptr %t32
-  store i64 %t33, ptr %a34
-  br label %loop.cond.8
-loop.cond.8:
-  %t36 = getelementptr inbounds { i64, i64, i1 }, ptr %a28, i32 0, i32 2
-  %t37 = load i1, ptr %t36
-  br i1 %t37, label %if.then.12, label %if.else.14
-if.then.12:
-  %t38 = load i64, ptr %a31
-  %t39 = load i64, ptr %a34
-  %t40 = icmp sle i64 %t38, %t39
-  store i1 %t40, ptr %a35
-  br label %if.end.13
-if.else.14:
-  %t41 = load i64, ptr %a31
-  %t42 = load i64, ptr %a34
-  %t43 = icmp slt i64 %t41, %t42
-  store i1 %t43, ptr %a35
-  br label %if.end.13
-if.end.13:
-  %t44 = load i1, ptr %a35
-  br i1 %t44, label %loop.body.11, label %loop.end.10
-loop.body.11:
-  %t45 = load i64, ptr %a31
-  store i64 %t45, ptr %a46
-  %t47 = load i64, ptr %a46
-  %t48 = icmp eq i64 %t47, 3
-  br i1 %t48, label %if.then.15, label %if.end.16
+  %t26 = load i64, ptr %a8
+  store i64 %t26, ptr %a27
+  %t28 = load i64, ptr %a27
+  %t29 = insertvalue { i64, i64, i1 } undef, i64 0, 0
+  %t30 = insertvalue { i64, i64, i1 } %t29, i64 %t28, 1
+  %t31 = insertvalue { i64, i64, i1 } %t30, i1 false, 2
+  store { i64, i64, i1 } %t31, ptr %a32
+  %t33 = getelementptr inbounds { i64, i64, i1 }, ptr %a32, i32 0, i32 0
+  %t34 = load i64, ptr %t33
+  store i64 %t34, ptr %a35
+  %t36 = getelementptr inbounds { i64, i64, i1 }, ptr %a32, i32 0, i32 1
+  %t37 = load i64, ptr %t36
+  store i64 %t37, ptr %a38
+  store i1 false, ptr %a39
+  br label %loop.cond.11
+loop.cond.11:
+  %t41 = load i1, ptr %a39
+  br i1 %t41, label %if.then.15, label %if.else.17
 if.then.15:
-  br label %loop.post.2
+  store i1 false, ptr %a40
+  br label %if.end.16
+if.else.17:
+  %t43 = getelementptr inbounds { i64, i64, i1 }, ptr %a32, i32 0, i32 2
+  %t44 = load i1, ptr %t43
+  br i1 %t44, label %if.then.18, label %if.else.20
+if.then.18:
+  %t45 = load i64, ptr %a35
+  %t46 = load i64, ptr %a38
+  %t47 = icmp sle i64 %t45, %t46
+  store i1 %t47, ptr %a42
+  br label %if.end.19
+if.else.20:
+  %t48 = load i64, ptr %a35
+  %t49 = load i64, ptr %a38
+  %t50 = icmp slt i64 %t48, %t49
+  store i1 %t50, ptr %a42
+  br label %if.end.19
+if.end.19:
+  %t51 = load i1, ptr %a42
+  store i1 %t51, ptr %a40
+  br label %if.end.16
 if.end.16:
-  %t49 = load i64, ptr %a23
-  %t50 = load i64, ptr %a46
-  %t52 = call { i64, i1 } @llvm.smul.with.overflow.i64(i64 %t49, i64 %t50)
-  %t53 = extractvalue { i64, i1 } %t52, 0
-  %t54 = extractvalue { i64, i1 } %t52, 1
-  br i1 %t54, label %overflow.17, label %arith.ok.18
-overflow.17:
-  %t55 = extractvalue %str { ptr @.str.11, i64 16 }, 0
-  %t56 = extractvalue %str { ptr @.str.11, i64 16 }, 1
-  %t57 = extractvalue %str { ptr @.str.12, i64 13 }, 0
-  %t58 = extractvalue %str { ptr @.str.12, i64 13 }, 1
-  call void @veles_panic_at(ptr %t55, i64 %t56, ptr %t57, i64 %t58)
-  unreachable
-arith.ok.18:
-  %t59 = icmp sgt i64 %t53, 8
-  br i1 %t59, label %if.then.19, label %if.end.20
-if.then.19:
-  br label %loop.end.3
-if.end.20:
-  %t60 = load i64, ptr %a1
-  %t61 = load i64, ptr %a23
-  %t62 = load i64, ptr %a46
-  %t64 = call { i64, i1 } @llvm.smul.with.overflow.i64(i64 %t61, i64 %t62)
-  %t65 = extractvalue { i64, i1 } %t64, 0
-  %t66 = extractvalue { i64, i1 } %t64, 1
-  br i1 %t66, label %overflow.21, label %arith.ok.22
-overflow.21:
-  %t67 = extractvalue %str { ptr @.str.11, i64 16 }, 0
-  %t68 = extractvalue %str { ptr @.str.11, i64 16 }, 1
-  %t69 = extractvalue %str { ptr @.str.13, i64 13 }, 0
-  %t70 = extractvalue %str { ptr @.str.13, i64 13 }, 1
-  call void @veles_panic_at(ptr %t67, i64 %t68, ptr %t69, i64 %t70)
-  unreachable
-arith.ok.22:
-  %t72 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %t60, i64 %t65)
-  %t73 = extractvalue { i64, i1 } %t72, 0
-  %t74 = extractvalue { i64, i1 } %t72, 1
-  br i1 %t74, label %overflow.23, label %arith.ok.24
+  %t52 = load i1, ptr %a40
+  br i1 %t52, label %loop.body.14, label %loop.end.13
+loop.body.14:
+  %t53 = load i64, ptr %a35
+  store i64 %t53, ptr %a54
+  %t55 = load i64, ptr %a54
+  %t56 = icmp eq i64 %t55, 3
+  br i1 %t56, label %if.then.21, label %if.end.22
+if.then.21:
+  br label %loop.post.2
+if.end.22:
+  %t57 = load i64, ptr %a27
+  %t58 = load i64, ptr %a54
+  %t60 = call { i64, i1 } @llvm.smul.with.overflow.i64(i64 %t57, i64 %t58)
+  %t61 = extractvalue { i64, i1 } %t60, 0
+  %t62 = extractvalue { i64, i1 } %t60, 1
+  br i1 %t62, label %overflow.23, label %arith.ok.24
 overflow.23:
-  %t75 = extractvalue %str { ptr @.str.11, i64 16 }, 0
-  %t76 = extractvalue %str { ptr @.str.11, i64 16 }, 1
-  %t77 = extractvalue %str { ptr @.str.14, i64 12 }, 0
-  %t78 = extractvalue %str { ptr @.str.14, i64 12 }, 1
-  call void @veles_panic_at(ptr %t75, i64 %t76, ptr %t77, i64 %t78)
+  %t63 = extractvalue %str { ptr @.str.11, i64 16 }, 0
+  %t64 = extractvalue %str { ptr @.str.11, i64 16 }, 1
+  %t65 = extractvalue %str { ptr @.str.12, i64 13 }, 0
+  %t66 = extractvalue %str { ptr @.str.12, i64 13 }, 1
+  call void @veles_panic_at(ptr %t63, i64 %t64, ptr %t65, i64 %t66)
   unreachable
 arith.ok.24:
-  store i64 %t73, ptr %a1
-  br label %loop.post.9
-loop.post.9:
-  %t79 = load i64, ptr %a31
-  %t80 = add i64 %t79, 1
-  store i64 %t80, ptr %a31
-  %t81 = load volatile i32, ptr @veles_stop_requested, align 4
-  %t82 = icmp ne i32 %t81, 0
-  br i1 %t82, label %safepoint.25, label %safepoint.on.26, !prof !{!"branch_weights", i32 1, i32 100000}
-safepoint.25:
+  %t67 = icmp sgt i64 %t61, 8
+  br i1 %t67, label %if.then.25, label %if.end.26
+if.then.25:
+  br label %loop.end.3
+if.end.26:
+  %t68 = load i64, ptr %a1
+  %t69 = load i64, ptr %a27
+  %t70 = load i64, ptr %a54
+  %t72 = call { i64, i1 } @llvm.smul.with.overflow.i64(i64 %t69, i64 %t70)
+  %t73 = extractvalue { i64, i1 } %t72, 0
+  %t74 = extractvalue { i64, i1 } %t72, 1
+  br i1 %t74, label %overflow.27, label %arith.ok.28
+overflow.27:
+  %t75 = extractvalue %str { ptr @.str.11, i64 16 }, 0
+  %t76 = extractvalue %str { ptr @.str.11, i64 16 }, 1
+  %t77 = extractvalue %str { ptr @.str.13, i64 13 }, 0
+  %t78 = extractvalue %str { ptr @.str.13, i64 13 }, 1
+  call void @veles_panic_at(ptr %t75, i64 %t76, ptr %t77, i64 %t78)
+  unreachable
+arith.ok.28:
+  %t80 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %t68, i64 %t73)
+  %t81 = extractvalue { i64, i1 } %t80, 0
+  %t82 = extractvalue { i64, i1 } %t80, 1
+  br i1 %t82, label %overflow.29, label %arith.ok.30
+overflow.29:
+  %t83 = extractvalue %str { ptr @.str.11, i64 16 }, 0
+  %t84 = extractvalue %str { ptr @.str.11, i64 16 }, 1
+  %t85 = extractvalue %str { ptr @.str.14, i64 12 }, 0
+  %t86 = extractvalue %str { ptr @.str.14, i64 12 }, 1
+  call void @veles_panic_at(ptr %t83, i64 %t84, ptr %t85, i64 %t86)
+  unreachable
+arith.ok.30:
+  store i64 %t81, ptr %a1
+  br label %loop.post.12
+loop.post.12:
+  %t88 = getelementptr inbounds { i64, i64, i1 }, ptr %a32, i32 0, i32 2
+  %t89 = load i1, ptr %t88
+  store i1 %t89, ptr %a87
+  br i1 %t89, label %sc.rhs.31, label %sc.end.32
+sc.rhs.31:
+  %t90 = load i64, ptr %a35
+  %t91 = load i64, ptr %a38
+  %t92 = icmp eq i64 %t90, %t91
+  store i1 %t92, ptr %a87
+  br label %sc.end.32
+sc.end.32:
+  %t93 = load i1, ptr %a87
+  br i1 %t93, label %if.then.33, label %if.else.35
+if.then.33:
+  store i1 true, ptr %a39
+  br label %if.end.34
+if.else.35:
+  %t94 = load i64, ptr %a35
+  %t95 = add i64 %t94, 1
+  store i64 %t95, ptr %a35
+  br label %if.end.34
+if.end.34:
+  %t96 = load volatile i32, ptr @veles_stop_requested, align 4
+  %t97 = icmp ne i32 %t96, 0
+  br i1 %t97, label %safepoint.36, label %safepoint.on.37, !prof !{!"branch_weights", i32 1, i32 100000}
+safepoint.36:
   call void @veles_gc_park()
-  br label %safepoint.on.26
-safepoint.on.26:
-  br label %loop.cond.8
-loop.end.10:
+  br label %safepoint.on.37
+safepoint.on.37:
+  br label %loop.cond.11
+loop.end.13:
   br label %loop.post.2
 loop.post.2:
-  %t83 = load i64, ptr %a8
-  %t84 = add i64 %t83, 1
-  store i64 %t84, ptr %a8
-  %t85 = load volatile i32, ptr @veles_stop_requested, align 4
-  %t86 = icmp ne i32 %t85, 0
-  br i1 %t86, label %safepoint.27, label %safepoint.on.28, !prof !{!"branch_weights", i32 1, i32 100000}
-safepoint.27:
+  %t99 = getelementptr inbounds { i64, i64, i1 }, ptr %a5, i32 0, i32 2
+  %t100 = load i1, ptr %t99
+  store i1 %t100, ptr %a98
+  br i1 %t100, label %sc.rhs.38, label %sc.end.39
+sc.rhs.38:
+  %t101 = load i64, ptr %a8
+  %t102 = load i64, ptr %a11
+  %t103 = icmp eq i64 %t101, %t102
+  store i1 %t103, ptr %a98
+  br label %sc.end.39
+sc.end.39:
+  %t104 = load i1, ptr %a98
+  br i1 %t104, label %if.then.40, label %if.else.42
+if.then.40:
+  store i1 true, ptr %a12
+  br label %if.end.41
+if.else.42:
+  %t105 = load i64, ptr %a8
+  %t106 = add i64 %t105, 1
+  store i64 %t106, ptr %a8
+  br label %if.end.41
+if.end.41:
+  %t107 = load volatile i32, ptr @veles_stop_requested, align 4
+  %t108 = icmp ne i32 %t107, 0
+  br i1 %t108, label %safepoint.43, label %safepoint.on.44, !prof !{!"branch_weights", i32 1, i32 100000}
+safepoint.43:
   call void @veles_gc_park()
-  br label %safepoint.on.28
-safepoint.on.28:
+  br label %safepoint.on.44
+safepoint.on.44:
   br label %loop.cond.1
 loop.end.3:
-  store i64 10, ptr %a87
-  br label %loop.cond.29
-loop.cond.29:
-  %t88 = load i64, ptr %a87
-  %t89 = icmp sgt i64 %t88, 0
-  br i1 %t89, label %loop.body.32, label %loop.end.31
-loop.body.32:
-  %t90 = load i64, ptr %a87
-  %t92 = call { i64, i1 } @llvm.ssub.with.overflow.i64(i64 %t90, i64 3)
-  %t93 = extractvalue { i64, i1 } %t92, 0
-  %t94 = extractvalue { i64, i1 } %t92, 1
-  br i1 %t94, label %overflow.33, label %arith.ok.34
-overflow.33:
-  %t95 = extractvalue %str { ptr @.str.11, i64 16 }, 0
-  %t96 = extractvalue %str { ptr @.str.11, i64 16 }, 1
-  %t97 = extractvalue %str { ptr @.str.15, i64 13 }, 0
-  %t98 = extractvalue %str { ptr @.str.15, i64 13 }, 1
-  call void @veles_panic_at(ptr %t95, i64 %t96, ptr %t97, i64 %t98)
+  store i64 10, ptr %a109
+  br label %loop.cond.45
+loop.cond.45:
+  %t110 = load i64, ptr %a109
+  %t111 = icmp sgt i64 %t110, 0
+  br i1 %t111, label %loop.body.48, label %loop.end.47
+loop.body.48:
+  %t112 = load i64, ptr %a109
+  %t114 = call { i64, i1 } @llvm.ssub.with.overflow.i64(i64 %t112, i64 3)
+  %t115 = extractvalue { i64, i1 } %t114, 0
+  %t116 = extractvalue { i64, i1 } %t114, 1
+  br i1 %t116, label %overflow.49, label %arith.ok.50
+overflow.49:
+  %t117 = extractvalue %str { ptr @.str.11, i64 16 }, 0
+  %t118 = extractvalue %str { ptr @.str.11, i64 16 }, 1
+  %t119 = extractvalue %str { ptr @.str.15, i64 13 }, 0
+  %t120 = extractvalue %str { ptr @.str.15, i64 13 }, 1
+  call void @veles_panic_at(ptr %t117, i64 %t118, ptr %t119, i64 %t120)
   unreachable
-arith.ok.34:
-  store i64 %t93, ptr %a87
-  br label %loop.post.30
-loop.post.30:
-  %t99 = load volatile i32, ptr @veles_stop_requested, align 4
-  %t100 = icmp ne i32 %t99, 0
-  br i1 %t100, label %safepoint.35, label %safepoint.on.36, !prof !{!"branch_weights", i32 1, i32 100000}
-safepoint.35:
+arith.ok.50:
+  store i64 %t115, ptr %a109
+  br label %loop.post.46
+loop.post.46:
+  %t121 = load volatile i32, ptr @veles_stop_requested, align 4
+  %t122 = icmp ne i32 %t121, 0
+  br i1 %t122, label %safepoint.51, label %safepoint.on.52, !prof !{!"branch_weights", i32 1, i32 100000}
+safepoint.51:
   call void @veles_gc_park()
-  br label %safepoint.on.36
-safepoint.on.36:
-  br label %loop.cond.29
-loop.end.31:
-  store i64 0, ptr %a101
-  br label %loop.cond.37
-loop.cond.37:
-  br label %loop.body.40
-loop.body.40:
-  %t102 = load i64, ptr %a101
-  %t104 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %t102, i64 1)
-  %t105 = extractvalue { i64, i1 } %t104, 0
-  %t106 = extractvalue { i64, i1 } %t104, 1
-  br i1 %t106, label %overflow.41, label %arith.ok.42
-overflow.41:
-  %t107 = extractvalue %str { ptr @.str.11, i64 16 }, 0
-  %t108 = extractvalue %str { ptr @.str.11, i64 16 }, 1
-  %t109 = extractvalue %str { ptr @.str.16, i64 12 }, 0
-  %t110 = extractvalue %str { ptr @.str.16, i64 12 }, 1
-  call void @veles_panic_at(ptr %t107, i64 %t108, ptr %t109, i64 %t110)
+  br label %safepoint.on.52
+safepoint.on.52:
+  br label %loop.cond.45
+loop.end.47:
+  store i64 0, ptr %a123
+  br label %loop.cond.53
+loop.cond.53:
+  br label %loop.body.56
+loop.body.56:
+  %t124 = load i64, ptr %a123
+  %t126 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %t124, i64 1)
+  %t127 = extractvalue { i64, i1 } %t126, 0
+  %t128 = extractvalue { i64, i1 } %t126, 1
+  br i1 %t128, label %overflow.57, label %arith.ok.58
+overflow.57:
+  %t129 = extractvalue %str { ptr @.str.11, i64 16 }, 0
+  %t130 = extractvalue %str { ptr @.str.11, i64 16 }, 1
+  %t131 = extractvalue %str { ptr @.str.16, i64 12 }, 0
+  %t132 = extractvalue %str { ptr @.str.16, i64 12 }, 1
+  call void @veles_panic_at(ptr %t129, i64 %t130, ptr %t131, i64 %t132)
   unreachable
-arith.ok.42:
-  store i64 %t105, ptr %a101
-  %t111 = load i64, ptr %a101
-  %t112 = icmp eq i64 %t111, 4
-  br i1 %t112, label %if.then.43, label %if.end.44
-if.then.43:
-  br label %loop.end.39
-if.end.44:
-  br label %loop.post.38
-loop.post.38:
-  %t113 = load volatile i32, ptr @veles_stop_requested, align 4
-  %t114 = icmp ne i32 %t113, 0
-  br i1 %t114, label %safepoint.45, label %safepoint.on.46, !prof !{!"branch_weights", i32 1, i32 100000}
-safepoint.45:
+arith.ok.58:
+  store i64 %t127, ptr %a123
+  %t133 = load i64, ptr %a123
+  %t134 = icmp eq i64 %t133, 4
+  br i1 %t134, label %if.then.59, label %if.end.60
+if.then.59:
+  br label %loop.end.55
+if.end.60:
+  br label %loop.post.54
+loop.post.54:
+  %t135 = load volatile i32, ptr @veles_stop_requested, align 4
+  %t136 = icmp ne i32 %t135, 0
+  br i1 %t136, label %safepoint.61, label %safepoint.on.62, !prof !{!"branch_weights", i32 1, i32 100000}
+safepoint.61:
   call void @veles_gc_park()
-  br label %safepoint.on.46
-safepoint.on.46:
-  br label %loop.cond.37
-loop.end.39:
-  %t115 = insertvalue { i64, i64, i1 } undef, i64 0, 0
-  %t116 = insertvalue { i64, i64, i1 } %t115, i64 10, 1
-  %t117 = insertvalue { i64, i64, i1 } %t116, i1 true, 2
-  store { i64, i64, i1 } %t117, ptr %a118
-  %t119 = call %S.std.prelude.RangeStepIter_i64_ @v_std.prelude.extend.Range_T.step_T_i64_(ptr %a118, i64 5)
-  store %S.std.prelude.RangeStepIter_i64_ %t119, ptr %a120
-  br label %loop.cond.47
-loop.cond.47:
-  br label %loop.body.50
-loop.body.50:
-  %t121 = call { i1, i64 } @v_std.prelude.Iterator.RangeStepIter_T.next_T_i64_(ptr %a120)
-  store { i1, i64 } %t121, ptr %a122
-  %t123 = load { i1, i64 }, ptr %a122
-  %t125 = extractvalue { i1, i64 } %t123, 0
-  %t124 = xor i1 %t125, true
-  br i1 %t124, label %if.then.51, label %if.end.52
-if.then.51:
-  br label %loop.end.49
-if.end.52:
-  %t126 = load { i1, i64 }, ptr %a122
-  %t127 = extractvalue { i1, i64 } %t126, 1
-  store i64 %t127, ptr %a128
-  %t129 = load i64, ptr %a128
-  %t131 = call i64 @veles_i64_format(ptr %a130, i64 %t129)
-  %t132 = insertvalue %str undef, ptr %a130, 0
-  %t133 = insertvalue %str %t132, i64 %t131, 1
-  %t135 = extractvalue %str { ptr @.str.17, i64 5 }, 0
-  %t136 = extractvalue %str { ptr @.str.17, i64 5 }, 1
-  %t137 = extractvalue %str %t133, 0
-  %t138 = extractvalue %str %t133, 1
-  call void @veles_string_concat(ptr %a134, ptr %t135, i64 %t136, ptr %t137, i64 %t138)
-  %t139 = load %str, ptr %a134
-  call void @v_std.io.println(%str %t139)
-  br label %loop.post.48
-loop.post.48:
-  %t140 = load volatile i32, ptr @veles_stop_requested, align 4
-  %t141 = icmp ne i32 %t140, 0
-  br i1 %t141, label %safepoint.53, label %safepoint.on.54, !prof !{!"branch_weights", i32 1, i32 100000}
-safepoint.53:
+  br label %safepoint.on.62
+safepoint.on.62:
+  br label %loop.cond.53
+loop.end.55:
+  %t137 = insertvalue { i64, i64, i1 } undef, i64 0, 0
+  %t138 = insertvalue { i64, i64, i1 } %t137, i64 10, 1
+  %t139 = insertvalue { i64, i64, i1 } %t138, i1 true, 2
+  store { i64, i64, i1 } %t139, ptr %a140
+  %t141 = extractvalue %str { ptr @.str.17, i64 18 }, 0
+  %t142 = extractvalue %str { ptr @.str.17, i64 18 }, 1
+  call void @veles_call_push(ptr %t141)
+  %t143 = call %S.std.prelude.RangeStepIter_i64_ @v_std.prelude.extend.Range_T.step_T_i64_(ptr %a140, i64 5)
+  call void @veles_call_pop()
+  store %S.std.prelude.RangeStepIter_i64_ %t143, ptr %a144
+  br label %loop.cond.63
+loop.cond.63:
+  br label %loop.body.66
+loop.body.66:
+  %t145 = extractvalue %str { ptr @.str.18, i64 18 }, 0
+  %t146 = extractvalue %str { ptr @.str.18, i64 18 }, 1
+  call void @veles_call_push(ptr %t145)
+  %t147 = call { i1, i64 } @v_std.prelude.Iterator.RangeStepIter_T.next_T_i64_(ptr %a144)
+  call void @veles_call_pop()
+  store { i1, i64 } %t147, ptr %a148
+  %t149 = load { i1, i64 }, ptr %a148
+  %t151 = extractvalue { i1, i64 } %t149, 0
+  %t150 = xor i1 %t151, true
+  br i1 %t150, label %if.then.67, label %if.end.68
+if.then.67:
+  br label %loop.end.65
+if.end.68:
+  %t152 = load { i1, i64 }, ptr %a148
+  %t153 = extractvalue { i1, i64 } %t152, 1
+  store i64 %t153, ptr %a154
+  %t155 = load i64, ptr %a154
+  %t157 = call i64 @veles_i64_format(ptr %a156, i64 %t155)
+  %t158 = insertvalue %str undef, ptr %a156, 0
+  %t159 = insertvalue %str %t158, i64 %t157, 1
+  %t161 = extractvalue %str { ptr @.str.19, i64 5 }, 0
+  %t162 = extractvalue %str { ptr @.str.19, i64 5 }, 1
+  %t163 = extractvalue %str %t159, 0
+  %t164 = extractvalue %str %t159, 1
+  call void @veles_string_concat(ptr %a160, ptr %t161, i64 %t162, ptr %t163, i64 %t164)
+  %t165 = load %str, ptr %a160
+  %t166 = extractvalue %str { ptr @.str.20, i64 21 }, 0
+  %t167 = extractvalue %str { ptr @.str.20, i64 21 }, 1
+  call void @veles_call_push(ptr %t166)
+  call void @v_std.io.println(%str %t165)
+  call void @veles_call_pop()
+  br label %loop.post.64
+loop.post.64:
+  %t168 = load volatile i32, ptr @veles_stop_requested, align 4
+  %t169 = icmp ne i32 %t168, 0
+  br i1 %t169, label %safepoint.69, label %safepoint.on.70, !prof !{!"branch_weights", i32 1, i32 100000}
+safepoint.69:
   call void @veles_gc_park()
-  br label %safepoint.on.54
-safepoint.on.54:
-  br label %loop.cond.47
-loop.end.49:
-  %t142 = load i64, ptr %a1
-  %t144 = call i64 @veles_i64_format(ptr %a143, i64 %t142)
-  %t145 = insertvalue %str undef, ptr %a143, 0
-  %t146 = insertvalue %str %t145, i64 %t144, 1
-  %t147 = load i64, ptr %a87
-  %t149 = call i64 @veles_i64_format(ptr %a148, i64 %t147)
-  %t150 = insertvalue %str undef, ptr %a148, 0
-  %t151 = insertvalue %str %t150, i64 %t149, 1
-  %t152 = load i64, ptr %a101
-  %t154 = call i64 @veles_i64_format(ptr %a153, i64 %t152)
-  %t155 = insertvalue %str undef, ptr %a153, 0
-  %t156 = insertvalue %str %t155, i64 %t154, 1
-  %t157 = call %str @v_main.classify(i64 -2)
-  %t158 = call %str @v_main.classify(i64 0)
-  %t159 = call %str @v_main.classify(i64 4)
-  %t160 = call %str @v_main.digits(i64 3)
-  %t161 = call %str @v_main.digits(i64 9)
-  %t164 = getelementptr [15 x %str], ptr %a163, i64 0, i64 0
-  store %str %t146, ptr %t164
-  %t165 = getelementptr [15 x %str], ptr %a163, i64 0, i64 1
-  store %str { ptr @.str.18, i64 1 }, ptr %t165
-  %t166 = getelementptr [15 x %str], ptr %a163, i64 0, i64 2
-  store %str %t151, ptr %t166
-  %t167 = getelementptr [15 x %str], ptr %a163, i64 0, i64 3
-  store %str { ptr @.str.18, i64 1 }, ptr %t167
-  %t168 = getelementptr [15 x %str], ptr %a163, i64 0, i64 4
-  store %str %t156, ptr %t168
-  %t169 = getelementptr [15 x %str], ptr %a163, i64 0, i64 5
-  store %str { ptr @.str.18, i64 1 }, ptr %t169
-  %t170 = getelementptr [15 x %str], ptr %a163, i64 0, i64 6
-  store %str %t157, ptr %t170
-  %t171 = getelementptr [15 x %str], ptr %a163, i64 0, i64 7
-  store %str { ptr @.str.18, i64 1 }, ptr %t171
-  %t172 = getelementptr [15 x %str], ptr %a163, i64 0, i64 8
-  store %str %t158, ptr %t172
-  %t173 = getelementptr [15 x %str], ptr %a163, i64 0, i64 9
-  store %str { ptr @.str.18, i64 1 }, ptr %t173
-  %t174 = getelementptr [15 x %str], ptr %a163, i64 0, i64 10
-  store %str %t159, ptr %t174
-  %t175 = getelementptr [15 x %str], ptr %a163, i64 0, i64 11
-  store %str { ptr @.str.18, i64 1 }, ptr %t175
-  %t176 = getelementptr [15 x %str], ptr %a163, i64 0, i64 12
-  store %str %t160, ptr %t176
-  %t177 = getelementptr [15 x %str], ptr %a163, i64 0, i64 13
-  store %str { ptr @.str.18, i64 1 }, ptr %t177
-  %t178 = getelementptr [15 x %str], ptr %a163, i64 0, i64 14
-  store %str %t161, ptr %t178
-  call void @veles_string_concat_n(ptr %a162, ptr %a163, i64 15)
-  %t179 = load %str, ptr %a162
-  call void @v_std.io.println(%str %t179)
+  br label %safepoint.on.70
+safepoint.on.70:
+  br label %loop.cond.63
+loop.end.65:
+  %t170 = load i64, ptr %a1
+  %t172 = call i64 @veles_i64_format(ptr %a171, i64 %t170)
+  %t173 = insertvalue %str undef, ptr %a171, 0
+  %t174 = insertvalue %str %t173, i64 %t172, 1
+  %t175 = load i64, ptr %a109
+  %t177 = call i64 @veles_i64_format(ptr %a176, i64 %t175)
+  %t178 = insertvalue %str undef, ptr %a176, 0
+  %t179 = insertvalue %str %t178, i64 %t177, 1
+  %t180 = load i64, ptr %a123
+  %t182 = call i64 @veles_i64_format(ptr %a181, i64 %t180)
+  %t183 = insertvalue %str undef, ptr %a181, 0
+  %t184 = insertvalue %str %t183, i64 %t182, 1
+  %t185 = extractvalue %str { ptr @.str.21, i64 22 }, 0
+  %t186 = extractvalue %str { ptr @.str.21, i64 22 }, 1
+  call void @veles_call_push(ptr %t185)
+  %t187 = call %str @v_main.classify(i64 -2)
+  call void @veles_call_pop()
+  %t188 = extractvalue %str { ptr @.str.22, i64 22 }, 0
+  %t189 = extractvalue %str { ptr @.str.22, i64 22 }, 1
+  call void @veles_call_push(ptr %t188)
+  %t190 = call %str @v_main.classify(i64 0)
+  call void @veles_call_pop()
+  %t191 = extractvalue %str { ptr @.str.23, i64 22 }, 0
+  %t192 = extractvalue %str { ptr @.str.23, i64 22 }, 1
+  call void @veles_call_push(ptr %t191)
+  %t193 = call %str @v_main.classify(i64 4)
+  call void @veles_call_pop()
+  %t194 = extractvalue %str { ptr @.str.24, i64 20 }, 0
+  %t195 = extractvalue %str { ptr @.str.24, i64 20 }, 1
+  call void @veles_call_push(ptr %t194)
+  %t196 = call %str @v_main.digits(i64 3)
+  call void @veles_call_pop()
+  %t197 = extractvalue %str { ptr @.str.25, i64 20 }, 0
+  %t198 = extractvalue %str { ptr @.str.25, i64 20 }, 1
+  call void @veles_call_push(ptr %t197)
+  %t199 = call %str @v_main.digits(i64 9)
+  call void @veles_call_pop()
+  %t202 = getelementptr [15 x %str], ptr %a201, i64 0, i64 0
+  store %str %t174, ptr %t202
+  %t203 = getelementptr [15 x %str], ptr %a201, i64 0, i64 1
+  store %str { ptr @.str.26, i64 1 }, ptr %t203
+  %t204 = getelementptr [15 x %str], ptr %a201, i64 0, i64 2
+  store %str %t179, ptr %t204
+  %t205 = getelementptr [15 x %str], ptr %a201, i64 0, i64 3
+  store %str { ptr @.str.26, i64 1 }, ptr %t205
+  %t206 = getelementptr [15 x %str], ptr %a201, i64 0, i64 4
+  store %str %t184, ptr %t206
+  %t207 = getelementptr [15 x %str], ptr %a201, i64 0, i64 5
+  store %str { ptr @.str.26, i64 1 }, ptr %t207
+  %t208 = getelementptr [15 x %str], ptr %a201, i64 0, i64 6
+  store %str %t187, ptr %t208
+  %t209 = getelementptr [15 x %str], ptr %a201, i64 0, i64 7
+  store %str { ptr @.str.26, i64 1 }, ptr %t209
+  %t210 = getelementptr [15 x %str], ptr %a201, i64 0, i64 8
+  store %str %t190, ptr %t210
+  %t211 = getelementptr [15 x %str], ptr %a201, i64 0, i64 9
+  store %str { ptr @.str.26, i64 1 }, ptr %t211
+  %t212 = getelementptr [15 x %str], ptr %a201, i64 0, i64 10
+  store %str %t193, ptr %t212
+  %t213 = getelementptr [15 x %str], ptr %a201, i64 0, i64 11
+  store %str { ptr @.str.26, i64 1 }, ptr %t213
+  %t214 = getelementptr [15 x %str], ptr %a201, i64 0, i64 12
+  store %str %t196, ptr %t214
+  %t215 = getelementptr [15 x %str], ptr %a201, i64 0, i64 13
+  store %str { ptr @.str.26, i64 1 }, ptr %t215
+  %t216 = getelementptr [15 x %str], ptr %a201, i64 0, i64 14
+  store %str %t199, ptr %t216
+  call void @veles_string_concat_n(ptr %a200, ptr %a201, i64 15)
+  %t217 = load %str, ptr %a200
+  %t218 = extractvalue %str { ptr @.str.27, i64 20 }, 0
+  %t219 = extractvalue %str { ptr @.str.27, i64 20 }, 1
+  call void @veles_call_push(ptr %t218)
+  call void @v_std.io.println(%str %t217)
+  call void @veles_call_pop()
   ret void
 }
 
@@ -458,5 +560,14 @@ loop.end.49:
 @.str.14 = private unnamed_addr constant [13 x i8] c"main.vs:23:7\00"
 @.str.15 = private unnamed_addr constant [14 x i8] c"main.vs:27:16\00"
 @.str.16 = private unnamed_addr constant [13 x i8] c"main.vs:30:5\00"
-@.str.17 = private unnamed_addr constant [6 x i8] c"step \00"
-@.str.18 = private unnamed_addr constant [2 x i8] c" \00"
+@.str.17 = private unnamed_addr constant [19 x i8] c"main.vs:33:14\00step\00"
+@.str.18 = private unnamed_addr constant [19 x i8] c"main.vs:33:14\00next\00"
+@.str.19 = private unnamed_addr constant [6 x i8] c"step \00"
+@.str.20 = private unnamed_addr constant [22 x i8] c"main.vs:33:31\00println\00"
+@.str.21 = private unnamed_addr constant [23 x i8] c"main.vs:34:34\00classify\00"
+@.str.22 = private unnamed_addr constant [23 x i8] c"main.vs:34:50\00classify\00"
+@.str.23 = private unnamed_addr constant [23 x i8] c"main.vs:34:65\00classify\00"
+@.str.24 = private unnamed_addr constant [21 x i8] c"main.vs:34:80\00digits\00"
+@.str.25 = private unnamed_addr constant [21 x i8] c"main.vs:34:93\00digits\00"
+@.str.26 = private unnamed_addr constant [2 x i8] c" \00"
+@.str.27 = private unnamed_addr constant [21 x i8] c"main.vs:34:3\00println\00"

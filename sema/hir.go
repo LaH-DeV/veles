@@ -35,6 +35,9 @@ type Program struct {
 	// counts the tests `veles test --filter` left out; the driver sets both.
 	TestTimeoutMs int64
 	TestsFiltered int
+	// TestJobs is how many tests run at once (D80): 0 is one per worker
+	// thread, 1 runs them one at a time.
+	TestJobs int64
 	// ResultType instantiates the prelude Result<T, E> for the backend.
 	ResultType func(ok, err types.Type) types.Type
 	// Custom maps types.Key of a struct or sealed type to the prelude-trait
@@ -258,6 +261,10 @@ type Call struct {
 	exprBase
 	Fn   *Func
 	Args []Expr
+	// Span is where the call is written; zero for a call the compiler made
+	// (a comparison, a derived body). A debug build records it for the
+	// panic call chain (D81).
+	Span source.Span
 
 	Recv     RecvKind
 	RecvRoot *Var        // RecvPlace: the local or global the place is rooted in, if any

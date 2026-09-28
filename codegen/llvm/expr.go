@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/LaH-DeV/veles/sema"
+	"github.com/LaH-DeV/veles/source"
 	"github.com/LaH-DeV/veles/types"
 )
 
@@ -489,6 +490,8 @@ func (g *gen) call(e *sema.Call) string {
 		}
 		args = append(args, g.llType(a.Type())+" "+v)
 	}
+	// a debug build records the call for a panic's chain (D81)
+	pushed := g.chainPush(e.Span, fn)
 	if fn.Suspends {
 		var ats []types.Type
 		var avs []string
@@ -496,7 +499,9 @@ func (g *gen) call(e *sema.Call) string {
 			ats = append(ats, a.Type())
 			avs = append(avs, strings.TrimPrefix(args[i], g.llType(a.Type())+" "))
 		}
-		return g.callSuspending(fn, ats, avs, g.resultTypeOf(fn.Sig))
+		v := g.callSuspending(fn, ats, avs, g.resultTypeOf(fn.Sig), pushed)
+		g.chainPop(pushed)
+		return v
 	}
 	ret := g.retLL(fn)
 	if fn.Extern && (types.IsUnit(fn.Sig.Ret) || types.IsNever(fn.Sig.Ret)) {
@@ -514,6 +519,7 @@ func (g *gen) call(e *sema.Call) string {
 		if fn.Foreign {
 			g.emit("call void @veles_blocking_leave()")
 		}
+		g.chainPop(pushed)
 		return "zeroinitializer"
 	}
 	v := g.newTmp()
@@ -521,7 +527,31 @@ func (g *gen) call(e *sema.Call) string {
 	if fn.Foreign {
 		g.emit("call void @veles_blocking_leave()")
 	}
+	g.chainPop(pushed)
 	return v
+}
+
+// chainPush records a call of fn written at span on the task's call chain
+// (D81) and says whether it did: only in a debug build, only for a call
+// the programmer wrote, and never for C — a panic there is not Veles'.
+func (g *gen) chainPush(span source.Span, fn *sema.Func) bool {
+	if g.prog.Release || fn.Extern || span.File == nil {
+		return false
+	}
+	g.emit("call void @veles_call_push(ptr %s)", g.chainRecord(g.where(span), fn))
+	return true
+}
+
+func (g *gen) chainPop(pushed bool) {
+	if pushed {
+		g.emit("call void @veles_call_pop()")
+	}
+}
+
+// chainRecord is the constant "site\0callee\0" a chain frame points at.
+func (g *gen) chainRecord(site string, fn *sema.Func) string {
+	p, _ := g.strPtrLen(g.stringConst(site + "\x00" + fn.Display))
+	return p
 }
 
 func joinArgs(args []string) string {
@@ -1330,6 +1360,17 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		if types.IsUnsigned(e.Type()) {
 			return x
 		}
+		if !g.prog.Release {
+			// MIN has no positive counterpart: an overflow, like `-x` (D21)
+			bits := map[string]int{"i8": 8, "i16": 16, "i32": 32, "i64": 64}[ty]
+			isMin := g.newTmp()
+			g.emit("%s = icmp eq %s %s, -%d", isMin, ty, x, uint64(1)<<(bits-1))
+			bad, ok := g.newLabel("overflow"), g.newLabel("abs.ok")
+			g.emitTerm("br i1 %s, label %%%s, label %%%s", isMin, bad, ok)
+			g.placeLabel(bad)
+			g.panicAt("integer overflow", g.where(e.Span))
+			g.placeLabel(ok)
+		}
 		v := g.newTmp()
 		g.emit("%s = call %s @llvm.abs.%s(%s %s, i1 false)", v, ty, ty, ty, x)
 		return v
@@ -1349,6 +1390,34 @@ func (g *gen) builtin(e *sema.Builtin) string {
 	case "list.len":
 		l := g.expr(e.Args[0])
 		return g.listLen(l)
+	case "rawptr.add", "rawptr.sub":
+		// D50: element-scaled as in C; not `inbounds`, since nothing says
+		// the result stays inside one object
+		p, n := g.expr(e.Args[0]), g.expr(e.Args[1])
+		if e.Op == "rawptr.sub" {
+			neg := g.newTmp()
+			g.emit("%s = sub i64 0, %s", neg, n)
+			n = neg
+		}
+		v := g.newTmp()
+		g.emit("%s = getelementptr %s, ptr %s, i64 %s", v, g.llType(e.Type().(*types.Pointer).Elem), p, n)
+		return v
+	case "rawptr.diff":
+		// the elements between two pointers: bytes over the element's size
+		a, b := g.expr(e.Args[0]), g.expr(e.Args[1])
+		elem := g.llType(e.Args[0].Type().(*types.Pointer).Elem)
+		ai, bi, d, size, v := g.newTmp(), g.newTmp(), g.newTmp(), g.newTmp(), g.newTmp()
+		g.emit("%s = ptrtoint ptr %s to i64", ai, a)
+		g.emit("%s = ptrtoint ptr %s to i64", bi, b)
+		g.emit("%s = sub i64 %s, %s", d, ai, bi)
+		g.emit("%s = ptrtoint ptr getelementptr (%s, ptr null, i64 1) to i64", size, elem)
+		g.emit("%s = sdiv i64 %s, %s", v, d, size)
+		return v
+	case "rawptr.lt", "rawptr.le", "rawptr.gt", "rawptr.ge":
+		a, b := g.expr(e.Args[0]), g.expr(e.Args[1])
+		v := g.newTmp()
+		g.emit("%s = icmp u%s ptr %s, %s", v, strings.TrimPrefix(e.Op, "rawptr."), a, b)
+		return v
 	case "list.rawData":
 		// the element storage: veles_list's first field (D69, withRaw)
 		l := g.expr(e.Args[0])
@@ -1389,6 +1458,11 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		v := g.newTmp()
 		g.emit("%s = load %s, ptr %s", v, g.llType(e.Type()), p)
 		return v
+	case "list.reserve":
+		l := g.expr(e.Args[0])
+		n := g.expr(e.Args[1])
+		g.emit("call void @veles_list_reserve(ptr %s, i64 %s)", l, n)
+		return "zeroinitializer"
 	case "list.push":
 		l := g.expr(e.Args[0])
 		x := g.expr(e.Args[1])

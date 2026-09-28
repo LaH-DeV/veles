@@ -147,7 +147,7 @@ func (f *fnCtx) channelCtor(typeArgs []types.Type, e *ast.CallExpr, want types.T
 		return bad()
 	}
 	if !sendable(elem) {
-		f.errorf(e.Pos, "'%s' is not Sendable and cannot cross a task boundary through a channel (D35/D54)", elem)
+		f.errorf(e.Pos, "'%s' is not Sendable and cannot cross a task boundary through a channel; send immutable data (a List, not a MutableList: '.toList()') or share state behind a 'Mutex' (D35/D54)", elem)
 	}
 	var cap Expr = &IntConst{exprBase{types.TI64}, 0, false}
 	if len(e.Args) > 1 {
@@ -168,7 +168,7 @@ func (f *fnCtx) channelMethod(recv Expr, ct *types.Channel, name string, e *ast.
 	span := e.Pos
 	need := func(n int) bool {
 		if len(e.Args) != n {
-			f.errorf(span, "'%s' takes %d argument(s)", name, n)
+			f.arityError(span, ct, name, n)
 			f.checkArgsLoosely(e.Args)
 			return false
 		}
@@ -232,7 +232,7 @@ func (f *fnCtx) channelMethod(recv Expr, ct *types.Channel, name string, e *ast.
 // rejects suspension where the executor cannot reach.
 func (f *fnCtx) suspending(x Expr, span source.Span, what string) Expr {
 	if f.isGlobal {
-		f.errorf(span, "'%s' suspends; a global initializer cannot suspend", what)
+		f.errorf(span, "'%s' suspends; a global initializer cannot suspend — compute the value in 'main' and pass it down", what)
 		return x
 	}
 	f.fn.suspends = true
@@ -388,7 +388,7 @@ func (f *fnCtx) launch(e *ast.CallExpr, want types.Type) Expr {
 			if j := i - len(call.Args) + len(e.Args); j >= 0 && j < len(e.Args) {
 				span = e.Args[j].Value.Span()
 			}
-			f.errorf(span, "argument of type '%s' is not Sendable and cannot cross a task boundary (D35)", t)
+			f.errorf(span, "argument of type '%s' is not Sendable and cannot cross a task boundary; pass immutable data (a List, not a MutableList: '.toList()') or share state behind a 'Mutex' (D35)", t)
 		}
 	}
 	sc := f.scopes[len(f.scopes)-1]
@@ -418,12 +418,24 @@ func (f *fnCtx) launch(e *ast.CallExpr, want types.Type) Expr {
 			}
 		}
 	}
+	// a test helper launched from test code: the call site is bound around
+	// the launch, so the task inherits it and a failure recorded inside the
+	// helper says where the test launched it from (D78); the launching task
+	// has its own sites back at once
+	if call.Fn.tmpl != nil && call.Fn.tmpl.TestCode && f.inTest() {
+		prev := f.newTemp(types.TI64)
+		enter := &Builtin{exprBase{types.TI64}, "test.enter", nil, e.Pos}
+		leave := &ExprStmt{&Builtin{exprBase{types.TUnit}, "test.leave", []Expr{ref(prev)}, e.Pos}}
+		h := f.newTemp(l.Type())
+		return &Let{exprBase{l.Type()}, prev, enter, &Let{exprBase{l.Type()}, h, l,
+			&BlockExpr{exprBase{l.Type()}, &Block{Stmts: []Stmt{leave}, Value: ref(h), Type: l.Type()}}}}
+	}
 	return l
 }
 
 func (f *fnCtx) scopeStmt(s *ast.ScopeStmt) []Stmt {
 	if f.isGlobal {
-		f.errorf(s.Pos, "'scope' cannot appear in a global initializer")
+		f.errorf(s.Pos, "'scope' cannot appear in a global initializer; compute the value in 'main' and pass it down")
 		return nil
 	}
 	sb := &ScopeBlock{Span: s.Pos}
@@ -442,7 +454,7 @@ func (f *fnCtx) scopeStmt(s *ast.ScopeStmt) []Stmt {
 
 func (f *fnCtx) gatherExpr(e *ast.GatherExpr) Expr {
 	if f.isGlobal {
-		f.errorf(e.Pos, "'gather' cannot appear in a global initializer")
+		f.errorf(e.Pos, "'gather' cannot appear in a global initializer; compute the value in 'main' and pass it down")
 		return bad()
 	}
 	sb := &ScopeBlock{Gather: true, Span: e.Pos}
@@ -459,7 +471,7 @@ func (f *fnCtx) gatherExpr(e *ast.GatherExpr) Expr {
 
 func (f *fnCtx) raceExpr(e *ast.RaceExpr, want types.Type) Expr {
 	if f.isGlobal {
-		f.errorf(e.Pos, "'race' cannot appear in a global initializer")
+		f.errorf(e.Pos, "'race' cannot appear in a global initializer; compute the value in 'main' and pass it down")
 		return bad()
 	}
 	r := &Race{}
@@ -552,7 +564,9 @@ func (f *fnCtx) raceExpr(e *ast.RaceExpr, want types.Type) Expr {
 		}
 	}
 	if len(r.Arms) == 0 {
-		f.errorf(e.Pos, "'race' needs at least one arm")
+		if len(e.Arms) == 0 { // otherwise every arm was refused, and said why
+			f.errorf(e.Pos, "'race' needs at least one arm")
+		}
 		f.restoreNarrow(saved)
 		return bad()
 	}

@@ -6,6 +6,8 @@ veles.exe
 !codegen/llvm/golden/**/*.ll
 
 **/testdata/*
+# the conformance cases (plan A4) are sources, not generated data
+!sema/testdata/conform/
 
 
 node_modules

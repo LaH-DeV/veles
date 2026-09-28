@@ -5,6 +5,10 @@
  * point, and one entry point may call another. A condition variable is
  * only ever waited on with its lock held exactly once. */
 
+/* glibc declares its extensions (pthread_getattr_np, ...) only when asked. */
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE
+#endif
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -325,101 +329,47 @@ void veles_mutex_unlock(int64_t *w) {
     }
 }
 
-/* ---- `veles test --timeout`: a watchdog over the running test ----------
- * The runner arms it before each test with the test's name and disarms it
- * after the last. A test still running at its deadline cannot be stopped
- * (a task busy in a loop never yields), so the watchdog reports it and ends
- * the process; the tests after it do not run, and the report says so. */
+/* ---- `veles test`: one record per running test (D78, D80) -----------------
+ * Tests run at once, on any threads, so what a test records is its own: a
+ * record is bound as a task-local value of the test's task (under a key
+ * veles_local_key never hands out), and every task the test starts
+ * inherits it. `expect` and the rest append failure lines to it, `io`
+ * output goes to it while it runs, and the runner takes it when the test
+ * is done and prints the report in declaration order. */
 
 int64_t veles_time_monotonic_ns(void);
+void *veles_alloc_words(int64_t size);
+void *veles_alloc(int64_t size);
+void *veles_local_find(int64_t key);
+void *veles_local_bind(int64_t key, void *cell);
+void veles_local_restore(void *head);
 
-static veles_lock *watch_lock;
-static veles_cond *watch_cond;
-static int64_t watch_deadline; /* monotonic ns; 0 while disarmed */
-static int64_t watch_ms;
-static const char *watch_name;
-static int64_t watch_name_len;
-static int64_t watch_left; /* tests after the running one */
-
-static void print_captured(void);
-
-static void watch_main(void *arg) {
-    (void)arg;
-    veles_lock_acquire(watch_lock);
-    for (;;) {
-        if (watch_deadline == 0) {
-            veles_cond_wait(watch_cond, watch_lock, -1);
-            continue;
-        }
-        int64_t now = veles_time_monotonic_ns();
-        if (now < watch_deadline) {
-            veles_cond_wait(watch_cond, watch_lock, (watch_deadline - now) / 1000000 + 1);
-            continue;
-        }
-        if (watch_ms % 1000 == 0) {
-            printf("FAILED: timed out after %llds\n", (long long)(watch_ms / 1000));
-        } else {
-            printf("FAILED: timed out after %lldms\n", (long long)watch_ms);
-        }
-        print_captured(); /* what a hanging test printed is often why */
-        printf("\ntimed out: %.*s", (int)watch_name_len, watch_name);
-        if (watch_left > 0) {
-            printf("; %lld test%s after it did not run", (long long)watch_left, watch_left == 1 ? "" : "s");
-        }
-        printf("\n");
-        fflush(stdout);
-        fflush(stderr);
-        _Exit(1);
-    }
-}
-
-void veles_test_watch(int64_t timeout_ms, const char *name, int64_t len, int64_t left) {
-    if (!watch_lock) {
-        if (timeout_ms <= 0) return;
-        watch_lock = veles_lock_new();
-        watch_cond = veles_cond_new();
-        if (veles_thread_spawn(watch_main, NULL) != 0) {
-            fputs("veles test: cannot start the timeout watchdog\n", stderr);
-            exit(101);
-        }
-    }
-    fflush(stdout); /* the `test name ... ` line is out before a timeout report */
-    veles_lock_acquire(watch_lock);
-    watch_ms = timeout_ms;
-    watch_name = name;
-    watch_name_len = len;
-    watch_left = left;
-    watch_deadline = timeout_ms > 0 ? veles_time_monotonic_ns() + timeout_ms * 1000000 : 0;
-    veles_cond_signal(watch_cond);
-    veles_lock_release(watch_lock);
-}
-
-/* ---- test failures (D78) ---------------------------------------------------
- * `expect`, `require`, `fail` and the rest record a failure here instead of
- * ending the test (a soft `expect` lets the test go on), each line prefixed
- * with the call's location. The runner calls veles_test_begin before a test
- * and veles_test_take after it, and prints what was recorded. A test may
- * record from tasks on any thread, hence the lock. */
+#define TEST_REC_KEY (-2)
 
 typedef struct {
     char *data;
     int64_t len;
 } veles_test_string;
 
-void *veles_alloc(int64_t size);
-
 typedef struct {
     char *data;
     int64_t len, cap;
 } text_buf;
 
-static veles_lock *fail_lock;
-static text_buf fails;   /* the recorded failure lines */
-static text_buf output;  /* what the test printed, kept for its report */
-static int64_t fail_count, fail_stopped;
-static int capturing;    /* a test is running: io output goes to `output` */
+typedef struct veles_test_rec {
+    veles_lock *lock;
+    text_buf fails;  /* the recorded failure lines */
+    text_buf output; /* what the test printed, kept for its report */
+    int64_t count, stopped;
+    int64_t taken;   /* the runner has the report: nothing more is kept */
+    const char *name;
+    int64_t name_len;
+    int64_t deadline; /* monotonic ns while it runs under --timeout; else 0 */
+    struct veles_test_rec *next;
+} veles_test_rec;
 
 static void buf_append(text_buf *b, const char *s, int64_t n) {
+    if (n <= 0) return; /* an empty print: data may still be NULL, and NULL + 0 is undefined in C */
     if (b->len + n > b->cap) {
         int64_t cap = b->cap ? b->cap * 2 : 256;
         while (cap < b->len + n) cap *= 2;
@@ -432,35 +382,6 @@ static void buf_append(text_buf *b, const char *s, int64_t n) {
     b->len += n;
 }
 
-static void fail_append(const char *s, int64_t n) {
-    buf_append(&fails, s, n);
-}
-
-void veles_test_begin(void) {
-    if (!fail_lock) fail_lock = veles_lock_new();
-    veles_lock_acquire(fail_lock);
-    fails.len = output.len = fail_count = fail_stopped = 0;
-    __atomic_store_n(&capturing, 1, __ATOMIC_RELEASE);
-    veles_lock_release(fail_lock);
-}
-
-/* io.print and friends while a test runs: the text is kept, and shown
- * under the test's failure (or dropped when it passes), so a passing run
- * reads as its verdicts alone. Returns 0 when no test is running. Standard
- * output and error share the one buffer, in the order they were written. */
-int veles_test_capture(const char *s, int64_t len, int newline) {
-    if (!__atomic_load_n(&capturing, __ATOMIC_ACQUIRE)) return 0;
-    veles_lock_acquire(fail_lock);
-    if (!capturing) { /* the test ended while this task waited for the lock */
-        veles_lock_release(fail_lock);
-        return 0;
-    }
-    buf_append(&output, s, len);
-    if (newline) buf_append(&output, "\n", 1);
-    veles_lock_release(fail_lock);
-    return 1;
-}
-
 /* appends `b` to `to`, each line prefixed with `prefix` */
 static void append_indented(text_buf *to, const char *prefix, const text_buf *b) {
     int64_t plen = (int64_t)strlen(prefix);
@@ -471,60 +392,98 @@ static void append_indented(text_buf *to, const char *prefix, const text_buf *b)
     if (b->len > 0 && b->data[b->len - 1] != '\n') buf_append(to, "\n", 1);
 }
 
-/* for the watchdog: the timed-out test's output, as the report shows it */
-static void print_captured(void) {
-    if (!fail_lock) return;
-    veles_lock_acquire(fail_lock);
-    __atomic_store_n(&capturing, 0, __ATOMIC_RELEASE);
-    if (output.len > 0) {
-        text_buf shown = {0};
-        buf_append(&shown, "  output:\n", 10);
-        append_indented(&shown, "    ", &output);
-        fwrite(shown.data, 1, (size_t)shown.len, stdout);
-        free(shown.data);
-    }
-    veles_lock_release(fail_lock);
+static veles_test_rec *current_rec(void) {
+    return veles_local_find(TEST_REC_KEY);
 }
 
-void veles_test_sites(void (*each)(const char *where, int64_t len));
+/* every record, for the watchdog; they live until the process ends */
+static veles_lock *recs_lock;
+static veles_test_rec *recs;
+static int64_t tests_total, tests_done;
 
-static void append_site(const char *where, int64_t len) {
-    fail_append("\n      called from ", 19);
-    fail_append(where, len);
+/* a new record for the test named `name`; the runner binds it around the
+ * creation of the test's task (veles_test_bind / veles_test_unbind) */
+void *veles_test_new(const char *name, int64_t len) {
+    veles_test_rec *r = veles_alloc_words(sizeof *r);
+    r->lock = veles_lock_new();
+    r->name = name;
+    r->name_len = len;
+    if (!recs_lock) recs_lock = veles_lock_new();
+    veles_lock_acquire(recs_lock);
+    r->next = recs;
+    recs = r;
+    veles_lock_release(recs_lock);
+    return r;
+}
+
+void *veles_test_bind(void *rec) {
+    return veles_local_bind(TEST_REC_KEY, rec);
+}
+
+void veles_test_unbind(void *prev) {
+    veles_local_restore(prev);
+}
+
+/* io.print and friends inside a test: the text is kept, and shown under the
+ * test's failure (or dropped when it passes), so a passing run reads as its
+ * verdicts alone. Returns 0 outside a test. Standard output and error share
+ * the one buffer, in the order they were written. */
+int veles_test_capture(const char *s, int64_t len, int newline) {
+    veles_test_rec *r = current_rec();
+    if (!r) return 0;
+    veles_lock_acquire(r->lock);
+    if (r->taken) { /* the report is out: nothing would show it */
+        veles_lock_release(r->lock);
+        return 0;
+    }
+    buf_append(&r->output, s, len);
+    if (newline) buf_append(&r->output, "\n", 1);
+    veles_lock_release(r->lock);
+    return 1;
+}
+
+void veles_test_sites(void (*each)(void *ctx, const char *where, int64_t len), void *ctx);
+
+static void append_site(void *ctx, const char *where, int64_t len) {
+    veles_test_rec *r = ctx;
+    buf_append(&r->fails, "\n      called from ", 19);
+    buf_append(&r->fails, where, len);
 }
 
 void veles_test_fail(const char *msg, int64_t len, const char *where, int64_t wlen, int64_t stop) {
-    if (!fail_lock) {
+    veles_test_rec *r = current_rec();
+    if (!r) {
         /* test code running outside `veles test`: nothing collects it */
         fprintf(stderr, "%.*s: %.*s\n", (int)wlen, where, (int)len, msg);
         return;
     }
-    veles_lock_acquire(fail_lock);
-    fail_append("  ", 2);
-    fail_append(where, wlen);
-    fail_append(": ", 2);
-    fail_append(msg, len);
-    veles_test_sites(append_site); /* inside a helper: where the test called it */
-    fail_append("\n", 1);
-    fail_count++;
-    if (stop) fail_stopped = 1;
-    veles_lock_release(fail_lock);
+    veles_lock_acquire(r->lock);
+    buf_append(&r->fails, "  ", 2);
+    buf_append(&r->fails, where, wlen);
+    buf_append(&r->fails, ": ", 2);
+    buf_append(&r->fails, msg, len);
+    veles_test_sites(append_site, r); /* inside a helper: where the test called it */
+    buf_append(&r->fails, "\n", 1);
+    r->count++;
+    if (stop) r->stopped = 1;
+    veles_lock_release(r->lock);
 }
 
 /* The failures a test recorded, as one string, and how many; *stopped is
  * set when one ended the test (the panic that did it is not a failure of
  * its own). Every line is indented by `indent` more spaces: the test's depth
  * in its suites (D78). */
-int64_t veles_test_take(veles_test_string *out, int64_t *stopped, int64_t indent) {
-    veles_lock_acquire(fail_lock);
-    __atomic_store_n(&capturing, 0, __ATOMIC_RELEASE);
+int64_t veles_test_take(void *rec, veles_test_string *out, int64_t *stopped, int64_t indent) {
+    veles_test_rec *r = rec;
+    veles_lock_acquire(r->lock);
+    r->taken = 1;
     /* the failure lines, then what the test printed under `output:` —
      * the caller shows it only for a test that failed */
     text_buf all = {0};
-    buf_append(&all, fails.data, fails.len);
-    if (output.len > 0) {
+    buf_append(&all, r->fails.data, r->fails.len);
+    if (r->output.len > 0) {
         buf_append(&all, "  output:\n", 10);
-        append_indented(&all, "    ", &output);
+        append_indented(&all, "    ", &r->output);
     }
     int64_t lines = 0;
     for (int64_t i = 0; i < all.len; i++) lines += all.data[i] == '\n';
@@ -539,11 +498,103 @@ int64_t veles_test_take(veles_test_string *out, int64_t *stopped, int64_t indent
     }
     text[w] = 0;
     free(all.data);
+    free(r->fails.data);
+    free(r->output.data);
+    r->fails = (text_buf){0};
+    r->output = (text_buf){0};
     out->data = text;
     out->len = w;
-    *stopped = fail_stopped;
-    int64_t n = fail_count;
-    fails.len = output.len = fail_count = fail_stopped = 0;
-    veles_lock_release(fail_lock);
+    *stopped = r->stopped;
+    int64_t n = r->count;
+    veles_lock_release(r->lock);
     return n;
+}
+
+/* ---- `veles test --timeout`: a watchdog over the running tests ---------
+ * A test is armed when it starts and disarmed when it ends (the runtime's
+ * test queue calls in). A test still running at its deadline cannot be
+ * stopped — a task busy in a loop never yields — so the watchdog reports
+ * it, with what it printed, and ends the process. */
+
+static veles_lock *watch_lock;
+static veles_cond *watch_cond;
+static int64_t watch_ms;
+
+static void watch_main(void *arg) {
+    (void)arg;
+    veles_lock_acquire(watch_lock);
+    for (;;) {
+        int64_t soonest = 0;
+        veles_test_rec *late = NULL;
+        int64_t now = veles_time_monotonic_ns();
+        veles_lock_acquire(recs_lock);
+        for (veles_test_rec *r = recs; r; r = r->next) {
+            int64_t d = __atomic_load_n(&r->deadline, __ATOMIC_ACQUIRE);
+            if (d == 0) continue;
+            if (d <= now) late = r;
+            if (soonest == 0 || d < soonest) soonest = d;
+        }
+        veles_lock_release(recs_lock);
+        if (!late) {
+            veles_cond_wait(watch_cond, watch_lock, soonest == 0 ? -1 : (soonest - now) / 1000000 + 1);
+            continue;
+        }
+        fflush(stdout);
+        printf("test %.*s ... ", (int)late->name_len, late->name);
+        if (watch_ms % 1000 == 0) {
+            printf("FAILED: timed out after %llds\n", (long long)(watch_ms / 1000));
+        } else {
+            printf("FAILED: timed out after %lldms\n", (long long)watch_ms);
+        }
+        veles_lock_acquire(late->lock); /* what a hanging test printed is often why */
+        if (late->output.len > 0) {
+            text_buf shown = {0};
+            buf_append(&shown, "  output:\n", 10);
+            append_indented(&shown, "    ", &late->output);
+            fwrite(shown.data, 1, (size_t)shown.len, stdout);
+            free(shown.data);
+        }
+        veles_lock_release(late->lock);
+        int64_t left = tests_total - __atomic_load_n(&tests_done, __ATOMIC_SEQ_CST) - 1;
+        printf("\ntimed out: %.*s", (int)late->name_len, late->name);
+        if (left > 0) {
+            printf("; %lld other test%s did not finish", (long long)left, left == 1 ? "" : "s");
+        }
+        printf(" (tests run at once; `--jobs 1` runs them one at a time)\n");
+        fflush(stdout);
+        fflush(stderr);
+        _Exit(1);
+    }
+}
+
+void veles_test_jobs(int64_t jobs);
+
+/* The runner's first call: how many tests may run at once (0: one per
+ * worker thread), each one's bound (0: none), and how many there are. */
+void veles_gc_root(void *addr, void *desc);
+
+void veles_test_setup(int64_t jobs, int64_t timeout_ms, int64_t total) {
+    if (!recs_lock) recs_lock = veles_lock_new();
+    veles_gc_root(&recs, NULL); /* the records, until the process ends */
+    tests_total = total;
+    veles_test_jobs(jobs);
+    if (timeout_ms <= 0) return;
+    watch_ms = timeout_ms;
+    watch_lock = veles_lock_new();
+    watch_cond = veles_cond_new();
+    if (veles_thread_spawn(watch_main, NULL) != 0) {
+        fputs("veles test: cannot start the timeout watchdog\n", stderr);
+        exit(101);
+    }
+}
+
+/* the test whose record `rec` is starts / has ended: arm / disarm it */
+void veles_test_watch_rec(void *rec, int64_t running) {
+    veles_test_rec *r = rec;
+    if (!running) __atomic_add_fetch(&tests_done, 1, __ATOMIC_SEQ_CST);
+    if (!r || watch_ms <= 0) return;
+    __atomic_store_n(&r->deadline, running ? veles_time_monotonic_ns() + watch_ms * 1000000 : 0, __ATOMIC_RELEASE);
+    veles_lock_acquire(watch_lock);
+    veles_cond_signal(watch_cond);
+    veles_lock_release(watch_lock);
 }

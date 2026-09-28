@@ -163,6 +163,23 @@ func TestCheckFixQualifiesModuleNames(t *testing.T) {
 	}
 }
 
+// A typo's nearest name is a guess: the editor offers it, but `check --fix`
+// never rewrites a program to what it only probably meant. Nor does it
+// throw away the binding the typo meant: `counter` is not "never used"
+// (whose fix renames it to `_`) when `countr` was its use.
+func TestCheckFixLeavesGuesses(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	src := "use io\n\nfun main() {\n  val counter = [1, 2]\n  io.printn(\"${countr.size()}\")\n}\n"
+	os.WriteFile(path, []byte(src), 0o644)
+	if code := Run(Options{Path: dir, Mode: "check", Fix: true}); code == 0 {
+		t.Fatalf("expected the misspelt names to remain errors")
+	}
+	if data, _ := os.ReadFile(path); string(data) != src {
+		t.Errorf("--fix applied a guess:\n%s", data)
+	}
+}
+
 // The mistakes a newcomer to Codable makes, each answered by a fix: a
 // struct that is not Encodable (or Comparable) gets `implement X`, derived;
 // `try` in front of `??` is dropped. One `check --fix` and it runs.

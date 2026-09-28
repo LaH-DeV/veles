@@ -16,7 +16,7 @@ the build, so examples in docs are real programs.
 |---|---|
 | new/changed syntax | the tutorial chapter that teaches it, `reference/cheatsheet.md` |
 | new/changed std API | the chapter for that module, `reference/stdlib.md` |
-| new diagnostic users will meet | `reference/errors.md` — message, why, how to fix, `(Dn)` |
+| new diagnostic users will meet | `reference/errors.md`: a `####` entry (message, why, how to fix, `(Dn)`) under its family's `### name` section — `veles explain` prints that section (D79) |
 | a new area (module, big feature) | a new numbered chapter + a line in `index.md` under the right track |
 | a decided rule | `veles-spec.md` (see `veles-decide`) |
 | a tracked item done | tick `veles-checklist.md`; dated entry in the `veles-plan.md` progress log |

@@ -71,6 +71,13 @@ Reading it:
 - `with` closes the connection and the listener on every way out,
   including a thrown error or the task being cancelled
   ([chapter 13](13-memory-and-ffi.md)).
+- `close()` may come from another task, on another thread, while a
+  read, write or `accept` is waiting on the same socket: that call fails
+  with an `IoError` at once rather than waiting for data that can no
+  longer come. The socket itself is released only when the last call
+  using it has returned, so a call never lands on a newer socket that
+  happens to get the same number from the system. Closing twice is
+  harmless.
 - `serve` and `client` are ordinary functions; the `scope` waits for
   both. Neither says `suspends`: it is inferred from the calls inside.
 

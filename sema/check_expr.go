@@ -294,7 +294,7 @@ func (f *fnCtx) checkExprInner(e ast.Expr, want types.Type) Expr {
 				f.errorf(e.Pos, "'this' is not available in a static function; it has no receiver (D23)")
 				return bad()
 			}
-			f.errorf(e.Pos, "'this' outside of a method")
+			f.errorf(e.Pos, "'this' is only inside a method; a function outside a type takes the value as a parameter")
 			return bad()
 		}
 		// the receiver pointer, read as the value it points at (D22), with
@@ -398,7 +398,7 @@ func (f *fnCtx) intLit(e *ast.IntLit, want types.Type, neg bool) Expr {
 	text := strings.ReplaceAll(e.Text, "_", "")
 	v, err := strconv.ParseUint(text, 0, 64)
 	if err != nil {
-		f.errorf(e.Pos, "integer literal is too large")
+		f.errorf(e.Pos, "integer literal does not fit in 64 bits; a float ('1e20') holds it approximately")
 		return &IntConst{exprBase{t}, 0, false}
 	}
 	if types.IsFloat(t) {
@@ -426,7 +426,16 @@ func (f *fnCtx) intLit(e *ast.IntLit, want types.Type, neg bool) Expr {
 		}
 	}
 	if v > max {
-		f.errorf(e.Pos, "literal %s does not fit in '%s'", e.Text, t)
+		// the range the type does hold, so the reader can pick a wider one
+		lo, hi, sign := "0", max, ""
+		if types.IsSigned(t) {
+			lo = "-" + strconv.FormatUint(uint64(1)<<(bits-1), 10)
+			hi = uint64(1)<<(bits-1) - 1
+		}
+		if neg {
+			sign = "-"
+		}
+		f.errorf(e.Pos, "literal %s%s does not fit in '%s', which holds %s..%d", sign, e.Text, t, lo, hi)
 	}
 	return &IntConst{exprBase{t}, v, neg}
 }
@@ -476,7 +485,7 @@ func (f *fnCtx) toString(x Expr, span source.Span) Expr {
 		return x
 	}
 	if types.IsUnit(t) || types.IsNever(t) {
-		f.errorf(span, "cannot interpolate a value of type '%s'", t)
+		f.errorf(span, "cannot interpolate a value of type '%s': the expression gives no value to print", t)
 		return x
 	}
 	return &ToString{exprBase{types.TString}, x}
@@ -492,7 +501,8 @@ func (f *fnCtx) lookup(name string) *Symbol {
 func (f *fnCtx) nameExpr(e *ast.NameExpr, want types.Type) Expr {
 	sym := f.lookup(e.Name)
 	if sym == nil {
-		f.c.errorFix(e.Pos, f.c.unknownFix(f.file, f.module, e.Pos, e.Name), "unknown name '%s'%s", e.Name, f.c.suggestUnknownName(f.module, e.Name))
+		hint, fix := f.unknownNameHint(e.Pos, e.Name, true)
+		f.c.errorFix(e.Pos, fix, "unknown name '%s'%s", e.Name, hint)
 		return bad()
 	}
 	if sym.Kind == SymLocal {
@@ -624,11 +634,11 @@ func (f *fnCtx) memberExpr(e *ast.MemberExpr, want types.Type) Expr {
 			case SymModule:
 				member := sym.Mod.Scope.LookupLocal(e.Name.Name)
 				if member == nil {
-					f.c.noMember(n.Pos, e.Name.Pos, n.Name, e.Name.Name)
+					f.c.noMember(n.Pos, e.Name.Pos, n.Name, e.Name.Name, sym.Mod)
 					return bad()
 				}
 				if !member.Pub {
-					f.errorf(e.Name.Pos, "'%s' is private to module '%s' (M5)", e.Name.Name, n.Name)
+					f.errorf(e.Name.Pos, "'%s' is private to module '%s'%s (M5)", e.Name.Name, n.Name, privateHint(sym.Mod.Path))
 					return bad()
 				}
 				return f.symbolValue(member, e.Name.Pos, want)
@@ -697,14 +707,18 @@ func (f *fnCtx) staticValue(st *types.Struct, e *ast.MemberExpr, want types.Type
 	}
 	if sym, ok := f.c.staticVals[tmpl][name]; ok {
 		if !sym.Pub && sym.Module != f.module {
-			f.errorf(e.Name.Pos, "'%s.%s' is private to module '%s' (M5)", st.Name, name, sym.Module.Name())
+			f.errorf(e.Name.Pos, "'%s.%s' is private to module '%s'%s (M5)", st.Name, name, sym.Module.Name(), privateHint(sym.Module.Path))
 			return bad()
 		}
 		f.c.refSym(e.Name.Pos, sym)
 		return f.symbolValue(sym, e.Name.Pos, want)
 	}
-	if t, _, _ := f.findMethod(st, name); t != nil && t.Decl.Static {
-		return f.funcValue(t, e.Name.Pos)
+	if t, _, _ := f.findMethod(st, name); t != nil {
+		if t.Decl.Static {
+			return f.funcValue(t, e.Name.Pos)
+		}
+		f.errorf(e.Name.Pos, "'%s' is a method of '%s'; call it on a value, 'x.%s()', or wrap that call in a lambda to pass it", name, st.Name, name)
+		return bad()
 	}
 	f.errorf(e.Name.Pos, "'%s' has no static '%s'; a 'static val' or 'static fun' in its body declares one (D23)", st.Name, name)
 	return bad()
@@ -829,7 +843,8 @@ func (f *fnCtx) fieldOf(x Expr, name ast.Ident, span source.Span) Expr {
 	if types.IsInvalid(t) {
 		return bad()
 	}
-	f.errorf(span, "type '%s' has no field '%s'", t, name.Name)
+	hint, hit := f.noFieldHint(t, name.Name)
+	f.c.errorFix(span, typoFix(name.Pos, hit), "type '%s' has no field '%s'%s", t, name.Name, hint)
 	return bad()
 }
 
@@ -884,7 +899,7 @@ func (f *fnCtx) variantValue(v *types.Struct, want types.Type, span source.Span)
 		if s, ok := numericHint(want).(*types.Sealed); ok && sealedTemplate(s) == v.Sealed {
 			v = s.Variants[v.Tag]
 		} else {
-			f.errorf(span, "cannot infer the type arguments of '%s' here", v.Name)
+			f.errorf(span, "cannot infer the type arguments of '%s' here; write the type where it is bound, e.g. 'val x: %s<...> = %s'", v.Name, sealedTemplate(v.Sealed).Name, v.Name)
 			return bad()
 		}
 	}
@@ -970,11 +985,15 @@ func (f *fnCtx) throwExpr(errv Expr, span source.Span) Expr {
 	return &Throw{exprBase{types.TNever}, errv, et, f.currentErrType()}
 }
 
+// globalCannotFail: a global initializer has no caller to fail to — a
+// `throw`, a `try` or a raised error there has nowhere to go.
+const globalCannotFail = "a global initializer cannot fail: there is no caller to pass the error to; handle the Result with 'when' or give a fallback with '??' (D4)"
+
 // recordError adds an error type to the function's inferred set or checks
 // it against the declared set.
 func (f *fnCtx) recordError(t types.Type, span source.Span) {
 	if f.isGlobal {
-		f.errorf(span, "errors cannot be raised in a global initializer")
+		f.errorf(span, globalCannotFail)
 		return
 	}
 	if f.fn != nil {
@@ -1136,9 +1155,16 @@ func (f *fnCtx) binaryExpr(e *ast.BinaryExpr, want types.Type) Expr {
 	var l, r Expr
 	if isLiteralExpr(e.L) && !isLiteralExpr(e.R) {
 		r = f.checkExpr(e.R, want)
+		if rawPointer(r.Type()) != nil && op == OpAdd {
+			f.errorf(e.Pos, "write the pointer first: '%s + %s' (D50)", srcText(e.R), srcText(e.L))
+			return bad()
+		}
 		l = f.checkOperandFor(e.L, r.Type())
 	} else {
 		l = f.checkExpr(e.L, want)
+		if rawPointer(l.Type()) != nil {
+			return f.rawPointerBinary(op, l, e.R, e.Pos)
+		}
 		if operandTakesOperator(op, l.Type()) {
 			return f.operatorCall(op, l, e.R, e.Pos) // a + b on a user type (D71)
 		}
@@ -1197,7 +1223,7 @@ func (f *fnCtx) makeBinary(op BinOp, l, r Expr, span source.Span) Expr {
 			return bad()
 		}
 		if op == OpRem && types.IsFloat(t) {
-			f.errorf(span, "'%%' is not defined for floats")
+			f.errorf(span, "'%%' is not defined for floats; 'x.mod(y)' is the remainder, in 0.0..<|y|")
 			return bad()
 		}
 		return &Binary{exprBase{t}, op, l, r, span}
@@ -1275,7 +1301,7 @@ func (f *fnCtx) equality(e *ast.BinaryExpr, op BinOp) Expr {
 				}
 			}
 			if !types.IsInvalid(x.Type()) {
-				f.errorf(e.Pos, "comparing a non-nullable '%s' with null is always %v", x.Type(), op == OpNe)
+				f.errorf(e.Pos, "comparing a non-nullable '%s' with null is always %v; remove the test", x.Type(), op == OpNe)
 			}
 			return &BoolConst{exprBase{types.TBool}, op == OpNe}
 		}
@@ -1729,6 +1755,10 @@ func (f *fnCtx) tryOn(x Expr, pos source.Span) Expr {
 		var payload Expr = &FieldGet{exprBase{okT}, &VariantCast{exprBase{okV}, &VarRef{exprBase{rs}, tmp}, okV}, 0, okV.Fields[0].Name}
 		return &Let{exprBase{okT}, tmp, x, payload}
 	}
+	if f.isGlobal {
+		f.errorf(e.Pos, globalCannotFail)
+		return &ResultValue{exprBase{okT}, x, false}
+	}
 	if !f.throws {
 		f.errorf(e.Pos, "'try' propagates an error, but the enclosing function is not declared 'throws'; add 'throws' or handle the Result with 'when' (D4)")
 		return &ResultValue{exprBase{okT}, x, false}
@@ -2134,6 +2164,9 @@ func (f *fnCtx) ifExpr(e *ast.IfExpr, want types.Type) Expr {
 			then.Value = nil
 			then.Type = types.TUnit
 		}
+		if asValue {
+			rt = types.TInvalid // reported above; not also a mismatch with '()'
+		}
 		return &If{exprBase{rt}, cond, then, nil}
 	}
 	tt, et := then.Type, els.Type
@@ -2207,7 +2240,7 @@ func (f *fnCtx) unifyBranches(a, b *Block, span source.Span) types.Type {
 		b.Type = ta
 		return ta
 	}
-	f.errorf(span, "branches have incompatible types '%s' and '%s'", ta, tb)
+	f.errorf(span, "branches have incompatible types '%s' and '%s'; make both give the same type, or annotate the result ('val x: T = if ...')", ta, tb)
 	return ta
 }
 
@@ -2219,7 +2252,12 @@ func (f *fnCtx) isExpr(e *ast.IsExpr) Expr {
 	if e.Pat.HasArg {
 		f.errorf(e.Pos, "destructuring patterns are only allowed in 'when' arms; use 'when' to bind fields")
 	}
-	test, _, _ := f.compilePattern(e.Pat, x, x.Type(), e.Pos)
+	test, binds, _ := f.compilePattern(e.Pat, x, x.Type(), e.Pos)
+	for _, b := range binds {
+		if vd, ok := b.(*VarDecl); ok {
+			markUsed(vd.Var) // refused above; not also "never used"
+		}
+	}
 	if test == nil {
 		test = &BoolConst{exprBase{types.TBool}, true}
 	}

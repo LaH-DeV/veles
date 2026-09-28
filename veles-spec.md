@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.44** — language design complete; D58 adds the derivation story D51 deferred, D59 the standard library's cryptography. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
+**Working draft v0.45** — language design complete; D58 adds the derivation story D51 deferred, D59 the standard library's cryptography. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -1996,6 +1996,125 @@ and `with`s and rejected — "the setup for before and after isn't good...
 Rejected (user, recommended combination): `test fun name()` as the test
 form; a `testing` module anyone can import (leaks into programs, needs
 `try`, loses the location); a built-in `assert` everywhere.
+
+### D79 — A diagnostic belongs to a named family; `veles explain <family>` (v0.45)
+
+Every diagnostic the compiler reports belongs to a **family** with a
+readable name — `private-to-module`, `missing-return`, `not-sendable` —
+which is also the heading anchor of its section in
+`docs/documentation/reference/errors.md`. No numbers.
+
+```
+main.vs:5:15: error: 'helper' is private to module 'geo'; declare it 'public' there to use it from here (M5)
+    val _ = geo.helper()
+                ^^^^^^
+see: veles explain private-to-module
+```
+
+- The command line prints the `see:` lines after the diagnostics, one per
+  family that occurred, not one per diagnostic.
+- `veles explain <family>` prints that section from the copy of
+  `errors.md` compiled into the binary: it works offline and matches the
+  compiler in hand. An unknown name is answered with the nearest family
+  names ("did you mean").
+- The language server sends the family as the diagnostic's `code` and a
+  link to the same anchor of `errors.md` on GitHub as `codeDescription`,
+  so an editor shows a clickable link.
+- Every diagnostic format belongs to a family, which a test enforces the
+  way the conformance suite enforces a case per diagnostic.
+
+Rejected (user, recommended of 4): a GitHub URL printed with every error
+(needs a network, follows `main` rather than the compiler in hand);
+Rust-style numbered codes `error[V0105]` (opaque, a numbering to keep
+forever); no link.
+
+### D80 — `veles test` runs tests in parallel by default (v0.45)
+
+Tests run as tasks across the runtime's threads; `veles test --jobs N`
+bounds how many run at once, and `--jobs 1` runs them one at a time, in
+declaration order, as before. The report does not change with it: each
+test's lines — its result, its recorded failures, its captured output —
+are printed together, in declaration order, whatever order the tests
+finished in.
+
+Parallel is a safe default here rather than a gamble because the language
+already rules out data races between tests: a module-level `var` is
+behind a lock (D66), and only Sendable values cross between tasks (D35).
+What remains is logical interference — two tests resetting one counter,
+binding one port — and `--jobs 1` is the way out; the watchdog's message
+for a test that outlives its bound says so.
+
+Rejected (user, recommended of 4): sequential by default with `--jobs N`
+to opt in (Go's model; nobody gets the speed without asking); a
+`@serial` attribute per test or suite (more vocabulary, for a need
+`--jobs 1` meets); leaving tests sequential.
+
+### D81 — A panic prints its call chain in debug builds, from a shadow stack (v0.45)
+
+```
+panic: index 7 out of bounds for list of length 3
+  at main.vs:12:5 in parse
+  called from main.vs:30:9 in load
+  called from main.vs:41:3 in main
+```
+
+In a debug build every call of a Veles function records, in a small stack
+belonging to the current task, the callee and the line it is called from,
+and removes it on return; a panic prints that stack under its `at` line.
+The stack is the task's, not the machine's, so the chain is complete
+through suspension and across threads, and it is the same on every
+platform (WebAssembly included). A release build keeps no stack and
+prints the panic's own line, with a note that a debug build shows the
+chain.
+
+Rejected (user, recommended of 3, after the two were explained): DWARF
+unwinding and line tables at the panic (D49's route) — zero cost in
+normal execution, but a decoder for three binary formats in the runtime,
+a second walker for suspended coroutine frames (most server code
+suspends), debug info in release binaries, and nothing for WebAssembly;
+it stays possible later for release traces. A shadow stack in release
+builds too (a cost on every call, in the build that matters for speed).
+
+### D82 — `os.run` takes input and captures standard error (v0.45)
+
+```veles
+val r = try os.run("git", ["apply", "-"], input: patch)
+if (!r.ok()) io.eprintln(r.stderr)
+```
+
+`os.run(program, args, input: string = "", stderr: os.Stderr = os.Stderr.Capture)`.
+`input` is written to the program's standard input, which is then closed.
+`os.Stderr` is `Capture` (into `Output.stderr`), `Inherit` (to this
+process's standard error, as before) or `merge` (into `Output.stdout`, in
+order). `Output` gains `stderr: string`. `mergeStderr:` is removed; it
+still parses, with an error whose fix writes `stderr: os.Stderr.Merge`.
+
+Rejected (user, recommended of 3): two more booleans beside `mergeStderr`
+(flags that interact); a `Command` builder (more API for one call).
+
+### D83 — `MutableList.reserve(n)` (v0.45)
+
+`xs.reserve(n)` makes room for at least `n` elements in total, so pushing
+up to `n` does not grow the list again. It never shrinks and never
+changes the elements.
+
+Rejected (user, recommended of 4): `MutableList<T>.withCapacity(n)`;
+both; neither.
+
+### D84 — An associated type two bounds declare is named through its trait (v0.45)
+
+```veles
+fun f<T: HasItem + AlsoItem>(x: T.AlsoItem.Item) { }
+```
+
+When more than one bound of a type parameter declares an associated type
+of the name, `T.Item` is an error that lists the traits and the
+qualified form; `T.Trait.Item` names the one meant, and is allowed
+whenever `Trait` is a bound of `T` (with one bound it is merely longer).
+Before, `T.Item` silently meant the first bound's.
+
+Rejected (user, recommended of 3): refusing without a qualified form (the
+traits would have to avoid each other's names); keeping the first bound.
 
 ---
 

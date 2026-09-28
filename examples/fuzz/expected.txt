@@ -2,6 +2,9 @@ base64 decode: 500 runs, 58 accepted, 0 failures
 base64 round trip: 500 runs, 500 accepted, 0 failures
 hex decode: 500 runs, 87 accepted, 0 failures
 hex round trip: 500 runs, 500 accepted, 0 failures
+http corpus: 10 runs, 10 accepted, 0 failures
+http mutated: 134 runs, 32 accepted, 0 failures
+http requests: 366 runs, 238 accepted, 0 failures
 json parse: 506 runs, 28 accepted, 0 failures
 json value round trip: 500 runs, 500 accepted, 0 failures
 percentDecode: 500 runs, 500 accepted, 0 failures

@@ -143,3 +143,26 @@ accumulated directly, a string without escapes copied once
 whole, UTF-8 validation eight ASCII bytes at a time, and `split` as one
 runtime pass (`veles_string_split`, parts sharing the text's bytes).
 `examples/text` pins split and float edge cases.
+
+## 2026-09-28 11:48 — go1.23.2, linux/amd64 (HEAD 76b8eb1, plus the working tree)
+
+| benchmark | ops | Veles | Go | Veles / Go |
+|---|---:|---:|---:|---:|
+| channels | 200000 | 7.46ms | 7.35ms | 1.0× |
+| json | 40000 | 42.66ms | 53.29ms | 0.8× |
+| maps | 2000000 | 44.08ms | 84.89ms | 0.5× |
+| parallel | 64 | 24.98ms | 19.98ms | 1.2× |
+| pipes | 1600000 | 17.64ms | 62.9ms | 0.3× |
+| sha256 | 16 | 86.2ms | 9.6ms | 9.0× |
+| sort | 900000 | 39.62ms | 53.32ms | 0.7× |
+| spawn | 100000 | 105.1ms | 26.87ms | 3.9× |
+| strings | 1000000 | 52.92ms | 43.94ms | 1.2× |
+| trees | 14592688 | 121.08ms | 291.97ms | 0.4× |
+
+First run on Linux (WSL2 Ubuntu 24.04 on the same 32-thread machine as
+the Windows runs, clang 18). Single-threaded work matches Windows within
+noise. The executor does not: `spawn` is 3.9× Go here against 1.1× on
+Windows the day before, and `parallel` 1.2× against 0.7× — the
+per-task handoff and worker wake-ups cost more on Linux (futex-backed
+condition variables through the runtime lock, vs SRW locks on Windows).
+Checklist §3.1 has the item.

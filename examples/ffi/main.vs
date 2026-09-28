@@ -81,11 +81,14 @@ fun main() throws ffi.NulByte {
   })
   io.println("qsort: $xs")
   val key: i64 = 19
-  // SAFETY: `key` outlives the call and bsearch reads xs.len() elements of 8 bytes
-  val found = xs.withRaw(p => unsafe {
-    bsearch(&key as *raw u8, p as *raw u8, xs.len() as u64, 8, &ascending)
+  // SAFETY: `key` outlives the call and bsearch reads xs.len() elements of 8
+  // bytes; what it returns points into the same lent storage as `p`, so the
+  // difference counts the elements between them (D50)
+  val at = xs.withRaw(p => unsafe {
+    val hit = bsearch(&key as *raw u8, p as *raw u8, xs.len() as u64, 8, &ascending)
+    if (hit != null) (hit as *raw i64) - p else -1
   })
-  io.println("bsearch 19: ${found != null}")
+  io.println("bsearch 19: at index $at")
 
   // a Veles value through C's `void *userdata`
   val digits = Digits(seen: [])

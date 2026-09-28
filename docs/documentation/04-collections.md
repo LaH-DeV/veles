@@ -78,6 +78,7 @@ fun ends(xs: List<i64>): i64 {
 
 fun build(n: i64): List<i64> {
   val out: MutableList<i64> = []
+  out.reserve(n)  // room for all n: the pushes below never grow it
   loop (i in 0..<n) out.push(i * i)
   out  // handed over as a List, not copied
 }

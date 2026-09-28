@@ -15,6 +15,8 @@ every compiler source, so `(cached)` is trustworthy and a stale
 | Behaviour | Test | Where |
 |---|---|---|
 | a checker rule / diagnostic text | `expectError` / `expectClean` / `expectWarning` table case | `sema/sema_test.go` (sources start with `prelude`) |
+| a new diagnostic (any `errorf`/`warnf`/`errorFix`/`warnFix`) | a line ending `// error: text` or `// warning: text` in a case file, strict both ways; declaration-level and body-level mistakes in separate files (the first stops the second) | `sema/testdata/conform/D<nn>-topic.vs`. A full `go test ./sema` fails for a diagnostic no test provokes unless `uncovered.txt` lists it (with `# why` when it cannot be reached); `-conform-update` rewrites the list. Its wording must also fall in a family (`source/family.go`, D79) whose `### name` section is in `reference/errors.md` — `TestEveryDiagnosticHasAFamily` (sema) and `TestEveryFamilyIsExplained` (docs) |
+| an IR change per build profile | `main.release.ll` + `output.release.txt` next to the golden | `codegen/llvm/golden/<name>/` |
 | a program's output | an example dir with `main.vs` + `expected.txt` | `examples/<name>/` |
 | a CLI program | `commands.txt` (one invocation per line, `NAME=v` env prefixes, `fixtures/` copied in) | `examples/<name>/` |
 | a one-file script | `name.vss` + `name.expected.txt` (+ `name.stdin.txt`) | `examples/<dir>/` |
@@ -51,6 +53,10 @@ runtime, codegen of tasks/channels, or a concurrent example:
 - `VELES_GC_THRESHOLD=256 go test ./examples` — collects constantly.
 - `VELES_GC_POISON=1` — swept objects are filled with 0xCD, so a use after
   free crashes instead of passing.
+- `go test ./examples -sanitize` — every example built `--sanitize` (the C
+  runtime under ASan + UBSan) with the collector running every 4 KiB; a
+  sanitizer report fails it. Linux only for now (MSYS2 lacks compiler-rt).
+- All of the above on Linux too, through `internal/wsl-test.sh` (CLAUDE.md).
 
 ## Fuzzing (by hand; there is no CI)
 

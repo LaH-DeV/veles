@@ -3,7 +3,7 @@ read back: ff
 refused: a C string cannot hold a NUL byte (one is at byte 4)
 memset: [0, 0, 0, 4, 5, 6]
 qsort: [3, 7, 19, 21, 42, 88]
-bsearch 19: true
+bsearch 19: at index 2
 digits: [1, 2, 2, 3, 3, 3]
 alloc: [7, 7, 7, 7]
 exit=0

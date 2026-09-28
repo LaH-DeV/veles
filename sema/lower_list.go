@@ -48,7 +48,7 @@ func (f *fnCtx) fnArg(arg ast.Expr, expected *types.Func) (*Var, bool) {
 		return nil, false
 	}
 	if len(ft.Params) != len(expected.Params) {
-		f.errorf(arg.Span(), "expected a function taking %d argument(s), found '%s'", len(expected.Params), ft)
+		f.errorf(arg.Span(), "expected a function taking %d %s, found '%s'", len(expected.Params), plural(len(expected.Params), "argument"), ft)
 		return nil, false
 	}
 	for i := range ft.Params {
@@ -75,7 +75,7 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 	span := e.Pos
 	need := func(n int) bool {
 		if len(e.Args) != n {
-			f.errorf(span, "'%s' takes %d argument(s)", name, n)
+			f.arityError(span, lt, name, n)
 			f.checkArgsLoosely(e.Args)
 			return false
 		}
@@ -204,7 +204,7 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 		} else {
 			needle := f.checkExprTo(e.Args[0].Value, lt.Elem)
 			if !f.comparable(lt.Elem) {
-				f.errorf(span, "elements of type '%s' cannot be compared", lt.Elem)
+				f.errorf(span, "elements of type '%s' cannot be compared with '=='; 'find' takes a test of your own", lt.Elem)
 				return bad()
 			}
 			nv := f.newTemp(lt.Elem)
@@ -272,7 +272,8 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 	case "atOrPanic":
 		// removed (D62 C); lowered as before so nothing else cascades
 		f.removedOrPanic(e, name)
-		if !need(1) {
+		if len(e.Args) != 1 { // the removal is the one thing to report
+			f.checkArgsLoosely(e.Args)
 			return bad()
 		}
 		return finish(f.uncheckedGet(list, lt, e.Args[0].Value, span))

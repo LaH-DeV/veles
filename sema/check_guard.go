@@ -185,6 +185,7 @@ func (f *fnCtx) letElse(s *ast.ValStmt) []Stmt {
 	tt, ok := payload.Type().(*types.Tuple)
 	if !ok || len(tt.Elems) != len(b.Tuple) {
 		f.errorf(b.Pos, "cannot destructure a value of type '%s' into %d names (D37)", payload.Type(), len(b.Tuple))
+		f.declareBindingSilently(b)
 		return out
 	}
 	whole, parts := f.bindPattern(&b, tt, mutable)

@@ -379,7 +379,9 @@ the same thing happens (D20/D34/D43):
 
 - the task keeps running until its **next suspension point** (an `await`,
   a `sleep`, a channel operation, a socket read); a task that never
-  suspends finishes on its own;
+  suspends finishes on its own, and one cancelled before it got a thread
+  never starts — which is why the example below waits until each worker
+  holds its resource;
 - there it **unwinds**: every `with` it is inside runs its `close()`,
   innermost first — a cancelled task calling a suspending function
   unwinds from the innermost call outwards, so a connection opened three
@@ -398,26 +400,29 @@ struct Res {
   }
 }
 
-fun worker(name: string) {
+fun worker(name: string, opened: Channel<string>) {
   with (r = Res(name)) {
+    opened.send(name)
     await sleep(Duration.seconds(1))
     io.println("never printed")
   }
 }
 
 fun firstReady(): string {
+  val opened = Channel<string>(capacity: 1)
   scope {
-    async worker("a")
-    await sleep(Duration.millis(1))
+    async worker("a", opened)
+    await opened.recv()   // "a" holds its resource now
     return "gave up"
   }
 }
 
 fun main() {
   io.println(firstReady())
+  val opened = Channel<string>(capacity: 1)
   scope {
-    val t = async worker("c")
-    await sleep(Duration.millis(1))
+    val t = async worker("c", opened)
+    await opened.recv()
     t.cancel()
   }
   io.println("done")

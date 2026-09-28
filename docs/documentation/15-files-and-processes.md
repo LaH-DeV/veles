@@ -186,14 +186,20 @@ val scratch = os.tempDir()           // TMPDIR or /tmp; TMP/TEMP on Windows
 val who = "${os.pid()}@${try os.hostname()}"   // process id and host name, e.g. for a log line
 os.exit(2)                           // flushes output first
 
-val r = try os.run("clang", ["--version"])   // Output { code, stdout, ok() }
-if (!r.ok()) io.eprintln("clang failed with ${r.code}")
+val r = try os.run("clang", ["--version"])   // Output { code, stdout, stderr, ok() }
+if (!r.ok()) io.eprintln("clang failed with ${r.code}: ${r.stderr}")
+val applied = try os.run("git", ["apply", "-"], input: patch)   // patch on its standard input
 ```
 
-`os.run` waits for the program and captures its standard output; its
-standard error is passed through, or captured into the same text with
-`os.run("clang", ["--version"], mergeStderr: true)`. A non-zero exit is
-not an error — it is reported in `Output.code` — only a program that
+`os.run` waits for the program and captures its standard output and,
+apart, its standard error (`Output.stderr`). `stderr: os.Stderr.Merge`
+puts both into `stdout`, in the order the program wrote them;
+`os.Stderr.Inherit` lets its errors through to yours as it writes them.
+`input:` is written to the program's standard input, which is then
+closed; without it the program reads an empty input rather than waiting
+on yours. The input goes in while the output comes out, so a program that
+writes a lot before it has read everything cannot stall. A non-zero exit
+is not an error — it is reported in `Output.code` — only a program that
 cannot be started throws.
 
 No shell runs in between. Each argument reaches the program as exactly

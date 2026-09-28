@@ -100,7 +100,8 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 				// Kotlin's check(cond) — and this compiler's own, briefly
 				f.errorf(callee.Pos, "unknown function 'check'; an invariant is 'assert(cond, \"why it must hold\")' (D78)")
 			} else if !f.removedFactory(callee.Name, e) {
-				f.c.errorFix(callee.Pos, f.c.unknownFix(f.file, f.module, callee.Pos, callee.Name), "unknown function '%s'%s", callee.Name, f.c.suggestUnknown(f.module, callee.Name))
+				hint, fix := f.unknownNameHint(callee.Pos, callee.Name, false)
+				f.c.errorFix(callee.Pos, fix, "unknown function '%s'%s", callee.Name, hint)
 			}
 			f.checkArgsLoosely(e.Args)
 			return bad()
@@ -129,13 +130,13 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 					member := sym.Mod.Scope.LookupLocal(callee.Name.Name)
 					if member == nil {
 						if !f.removedFactory(n.Name+"."+callee.Name.Name, e) {
-							f.c.noMember(n.Pos, callee.Name.Pos, n.Name, callee.Name.Name)
+							f.c.noMember(n.Pos, callee.Name.Pos, n.Name, callee.Name.Name, sym.Mod)
 						}
 						f.checkArgsLoosely(e.Args)
 						return bad()
 					}
 					if !member.Pub {
-						f.errorf(callee.Name.Pos, "'%s' is private to module '%s' (M5)", callee.Name.Name, n.Name)
+						f.errorf(callee.Name.Pos, "'%s' is private to module '%s'%s (M5)", callee.Name.Name, n.Name, privateHint(sym.Mod.Path))
 						f.checkArgsLoosely(e.Args)
 						return bad()
 					}
@@ -168,10 +169,16 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 					}
 				}
 			}
-			if rt := f.typeNamed(n); rt != nil {
+			if rt := f.typeNamed(n, callee.Name.Name); rt != nil {
 				// `Type.f(args)`: a static function (D23)
 				if len(typeArgs) == 0 {
 					if st, ok := rt.(*types.Struct); ok && len(st.TypeParams) > 0 && st.TypeArgs == nil {
+						if !f.staticNamed(st, callee.Name.Name) {
+							// the name, not the type arguments, is what is wrong
+							f.errorf(callee.Name.Pos, "no static function '%s' on type '%s'%s", callee.Name.Name, st.Name, f.staticHint(st, callee.Name.Name))
+							f.checkArgsLoosely(e.Args)
+							return bad()
+						}
 						f.errorf(n.Pos, "'%s' is generic; write the type arguments, e.g. '%s<T>.%s(...)'", st.Name, st.Name, callee.Name.Name)
 						f.checkArgsLoosely(e.Args)
 						return bad()
@@ -207,9 +214,22 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 }
 
 func (f *fnCtx) checkArgsLoosely(args []ast.Arg) {
+	f.looseArgs++
 	for _, a := range args {
 		f.checkExpr(a.Value, nil)
 	}
+	f.looseArgs--
+}
+
+// inLooseArgs: an argument of a call that already failed is being checked;
+// a lambda there cannot know its parameter types, and saying so is noise.
+func (f *fnCtx) inLooseArgs() bool {
+	for ctx := f; ctx != nil; ctx = ctx.parent {
+		if ctx.looseArgs > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func (f *fnCtx) callSymbol(sym *Symbol, name string, typeArgs []types.Type, e *ast.CallExpr, want types.Type) Expr {
@@ -254,7 +274,7 @@ func (f *fnCtx) callSymbol(sym *Symbol, name string, typeArgs []types.Type, e *a
 					st = f.c.instantiateStruct(t, typeArgs, e.Pos)
 				}
 			} else if len(typeArgs) > 0 {
-				f.errorf(e.Pos, "'%s' is not generic", t.Name)
+				f.errorf(e.Pos, "'%s' is not generic: write it without '<...>'", t.Name)
 			}
 			return f.constructStruct(st, e.Args, e.Pos)
 		case *types.Sealed:
@@ -360,6 +380,18 @@ func (f *fnCtx) bindArgs(params []types.Param, args []ast.Arg, what string, span
 				idx = j
 			}
 		}
+		if idx < 0 && a.Name.Name == "mergeStderr" {
+			// D82: `os.run`'s flag became `stderr: os.Stderr`; `true` merged,
+			// and `false` — the old default — let standard error through
+			repl := "stderr: os.Stderr.Merge"
+			if b, isBool := a.Value.(*ast.BoolLit); isBool && !b.Value {
+				repl = "stderr: os.Stderr.Inherit"
+			}
+			span := source.Span{File: a.Name.Pos.File, Start: a.Name.Pos.Start, End: a.Value.Span().End}
+			f.c.errorFix(a.Name.Pos, fixReplace("Write '"+repl+"'", span, repl), "'mergeStderr' was removed: write '%s' (D82)", repl)
+			ok = false
+			continue
+		}
 		if idx < 0 {
 			if strings.HasPrefix(what, "struct ") {
 				f.errorf(a.Name.Pos, "%s has no field named '%s'", what, a.Name.Name)
@@ -431,12 +463,21 @@ func (f *fnCtx) callTemplateRecv(t *FuncTemplate, ownerSubst map[*types.TypePara
 			order = append(order, i)
 		}
 	}
-	argFailed := false // an argument already reported: inference has nothing to say
+	argFailed := false  // an argument already reported: inference has nothing to say
+	mismatched := false // an argument cannot fit its parameter: the call is reported, nothing to coerce
 	for _, i := range order {
 		p := t.Sig.Params[i]
 		pt := f.c.hooks.Subst(p.Type, m)
 		if types.ContainsTypeParam(pt) {
 			var x Expr
+			if deferredArg(bound[i]) && argFailed {
+				// the type parameters it needed were to come from the argument
+				// that failed: saying its lambda cannot be typed would report
+				// that one mistake a second time
+				f.checkArgsLoosely([]ast.Arg{{Value: bound[i]}})
+				exprs[i] = bad()
+				continue
+			}
 			if deferredArg(bound[i]) {
 				x = f.checkExpr(bound[i], pt)
 			} else {
@@ -457,10 +498,14 @@ func (f *fnCtx) callTemplateRecv(t *FuncTemplate, ownerSubst map[*types.TypePara
 					continue
 				}
 				f.errorf(bound[i].Span(), "cannot infer type parameters: argument of type '%s' does not match parameter type '%s'", x.Type(), pt)
+				mismatched = true
 			}
 		} else {
 			exprs[i] = f.checkExprTo(bound[i], pt)
 		}
+	}
+	if mismatched {
+		return bad()
 	}
 	// Unbound type parameters may still come from the expected return type.
 	if want != nil && types.ContainsTypeParam(f.c.hooks.Subst(t.Sig.Ret, m)) {
@@ -514,7 +559,7 @@ func (f *fnCtx) callTemplateRecv(t *FuncTemplate, ownerSubst map[*types.TypePara
 	if fn.Sig.Effects.Throws {
 		rt = f.c.ResultType(fn.Sig.Ret, fn.Sig.Effects.Error)
 	}
-	return &Call{exprBase: exprBase{rt}, Fn: fn, Args: callArgs}
+	return &Call{exprBase: exprBase{rt}, Fn: fn, Args: callArgs, Span: span}
 }
 
 // defaultArg evaluates a parameter's default expression in the callee's
@@ -697,7 +742,7 @@ func (f *fnCtx) constructStruct(st *types.Struct, args []ast.Arg, span source.Sp
 		case bound[i] != nil:
 			v = f.checkExprTo(bound[i], fld.Type)
 		case !fld.HasDefault:
-			f.errorf(span, "missing field '%s' in constructor of '%s'", fld.Name, st.Name)
+			f.errorf(span, "missing field '%s' in constructor of '%s'; add '%s: ...' to the call, or give the field a default", fld.Name, st.Name, fld.Name)
 			v = bad()
 		default:
 			v = f.fieldDefault(st, i)
@@ -1062,7 +1107,8 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 	case *types.Trait:
 		f.errorf(callee.Pos, "trait objects (boxed '%s') are not supported yet in the bootstrap compiler; use a generic bound instead (D9)", tt)
 	default:
-		f.errorf(callee.Name.Pos, "no method '%s' on type '%s'", name, rt)
+		hint, hit := f.noMethodHint(rt, name)
+		f.c.errorFix(callee.Name.Pos, typoFix(callee.Name.Pos, hit), "no method '%s' on type '%s'%s", name, rt, hint)
 	}
 	f.checkArgsLoosely(e.Args)
 	return bad()
@@ -1119,7 +1165,7 @@ func (f *fnCtx) callMethod(t *FuncTemplate, ownerSubst map[*types.TypeParam]type
 			f.errorf(callee.Name.Pos, "method '%s' is private to '%s': only its own methods, impl and extend blocks may call it", t.Name, owner.Name)
 		}
 	} else if inherent && !t.Pub && t.Module != f.module {
-		f.errorf(callee.Name.Pos, "method '%s' is private to module '%s' (M5)", t.Name, t.Module.Path)
+		f.errorf(callee.Name.Pos, "method '%s' is private to module '%s'%s (M5)", t.Name, t.Module.Path, privateHint(t.Module.Path))
 	}
 	// D22 (v0.30): every method takes a pointer to its receiver's place.
 	var recvArg Expr
@@ -1174,7 +1220,7 @@ func (f *fnCtx) callMethod(t *FuncTemplate, ownerSubst map[*types.TypeParam]type
 func (f *fnCtx) builtinMethod(recv Expr, rt types.Type, name string, e *ast.CallExpr) Expr {
 	nargs := func(n int) bool {
 		if len(e.Args) != n {
-			f.errorf(e.Pos, "'%s' takes %d argument(s)", name, n)
+			f.arityError(e.Pos, rt, name, n)
 			f.checkArgsLoosely(e.Args)
 			return false
 		}
@@ -1355,6 +1401,17 @@ func (f *fnCtx) builtinMethod(recv Expr, rt types.Type, name string, e *ast.Call
 			}
 			x := f.checkExprTo(e.Args[0].Value, t.Elem)
 			return &Builtin{exprBase{types.TUnit}, "list.push", []Expr{recv, x}, e.Pos}
+		case "reserve":
+			if !t.Mutable {
+				f.errorf(e.Pos, "cannot reserve room in an immutable List; use MutableList (D25)")
+				f.checkArgsLoosely(e.Args)
+				return bad()
+			}
+			if !nargs(1) {
+				return bad()
+			}
+			n := f.checkExprTo(e.Args[0].Value, types.TI64)
+			return &Builtin{exprBase{types.TUnit}, "list.reserve", []Expr{recv, n}, e.Pos}
 		case "pop":
 			if !t.Mutable {
 				f.errorf(e.Pos, "cannot pop from an immutable List; use MutableList (D25)")
@@ -1386,7 +1443,7 @@ func (f *fnCtx) callValue(fnv Expr, ft *types.Func, args []ast.Arg, span source.
 		f.errorf(span, "calling a C function pointer requires an 'unsafe' block (D44/D69)")
 	}
 	if len(args) != len(ft.Params) {
-		f.errorf(span, "function value takes %d argument(s), got %d", len(ft.Params), len(args))
+		f.errorf(span, "function value takes %d %s, got %d", len(ft.Params), plural(len(ft.Params), "argument"), len(args))
 		f.checkArgsLoosely(args)
 		return bad()
 	}
@@ -1409,7 +1466,7 @@ func (f *fnCtx) callValue(fnv Expr, ft *types.Func, args []ast.Arg, span source.
 func (f *fnCtx) funcValue(t *FuncTemplate, span source.Span) Expr {
 	f.c.resolveSignature(t)
 	if len(t.TypeParams) > 0 {
-		f.errorf(span, "generic function '%s' cannot be used as a value without instantiation", t.Name)
+		f.errorf(span, "generic function '%s' cannot be used as a value; wrap the call in a lambda, whose parameter types pick the instance: '(x) => %s(x)'", t.Name, t.Name)
 		return bad()
 	}
 	if t.Extern || t.Decl.Unsafe {
@@ -1513,7 +1570,7 @@ func (f *fnCtx) boxValue(x Expr, trait *types.Trait, span source.Span) Expr {
 	// a combination trait (only its supers) is boxed from their impls, so
 	// ask the predicate rather than for an impl of the trait itself
 	if !f.implements(t, trait) {
-		f.errorf(span, "'%s' does not implement '%s'", t, trait.Name)
+		f.errorf(span, "'%s' does not implement '%s'; add 'implement %s { ... }' to its declaration", t, trait.Name, trait.Name)
 		return bad()
 	}
 	slots, _ := objectSlots(trait)
@@ -1552,7 +1609,15 @@ func (f *fnCtx) virtualCall(recv Expr, trait *types.Trait, callee *ast.MemberExp
 		if clash != "" {
 			f.errorf(callee.Name.Pos, "'%s' cannot be a trait object: %s (D9)", trait.Name, clash)
 		} else {
-			f.errorf(callee.Name.Pos, "trait '%s' has no method '%s'", trait.Name, name)
+			names := make([]string, 0, len(slots))
+			for _, s := range slots {
+				names = append(names, s.Name)
+			}
+			hint := ""
+			if hit := didYouMean(name, names); hit != "" {
+				hint = "; did you mean '" + hit + "'?"
+			}
+			f.errorf(callee.Name.Pos, "trait '%s' has no method '%s'%s", trait.Name, name, hint)
 		}
 		f.checkArgsLoosely(e.Args)
 		return bad()

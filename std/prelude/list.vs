@@ -464,11 +464,16 @@ public struct RangeStepIter<T> {
       if (this.up && this.current > this.last) return null
       if (!this.up && this.current < this.last) return null
       val v = this.current
-      // stop rather than wrap when the next step would leave the type's range
-      if (this.up) {
-        if (this.last -% this.current < this.step) this.done = true else this.current += this.step
+      // stop rather than wrap when the next step would pass `last`. The
+      // distance left is computed wrapping: it reads negative only when it
+      // is more than half the type's range, and then no step is too long.
+      val left = if (this.up) this.last -% this.current else this.current -% this.last
+      if (left >= 0 && left < this.step) {
+        this.done = true
+      } else if (this.up) {
+        this.current += this.step
       } else {
-        if (this.current -% this.last < this.step) this.done = true else this.current -= this.step
+        this.current -= this.step
       }
       v
     }
@@ -485,10 +490,17 @@ public struct RangeStepIter<T> {
   /// is 9, 6, 3, 0.
   public fun reversed(): RangeStepIter<T> {
     if (this.done) return this
-    // the last value this sequence reaches, then walk back from it
-    val span = if (this.up) this.last - this.current else this.current - this.last
-    val steps = span / this.step
-    val end = if (this.up) this.current + steps * this.step else this.current - steps * this.step
+    // the last value this sequence reaches, then walk back from it. The
+    // span is wrapping (see next()); one wider than half the type is
+    // measured in i64, which holds it for every type but a 64-bit one
+    val span = if (this.up) this.last -% this.current else this.current -% this.last
+    val reach: T = if (span >= 0) {
+      span - span % this.step
+    } else {
+      val wide = if (this.up) (this.last as i64) - (this.current as i64) else (this.current as i64) - (this.last as i64)
+      (wide - wide % (this.step as i64)) as T
+    }
+    val end = if (this.up) this.current +% reach else this.current -% reach
     RangeStepIter(current: end, last: this.current, step: this.step, up: !this.up)
   }
 }
@@ -496,10 +508,15 @@ public struct RangeStepIter<T> {
 extend<T> Range<T> {
   /// Number of values in the range (0 when empty).
   public fun len(): i64 {
-    val last = if (this.inclusive) this.hi else this.hi -% 1
-    if (last < this.lo) return 0
-    (last - this.lo) as i64 + 1
+    if (this.holdsNothing()) return 0
+    val last = if (this.inclusive) this.hi else this.hi - 1
+    // wrapping, as in RangeStepIter.next: negative only past half the type
+    val span = last -% this.lo
+    if (span >= 0) span as i64 + 1 else (last as i64) - (this.lo as i64) + 1
   }
+
+  // no value at all: `5..<5`, `5..4` (internal until a public `isEmpty` is decided)
+  fun holdsNothing(): bool = if (this.inclusive) this.hi < this.lo else this.hi <= this.lo
 
   /// True when `x` lies inside the range.
   public fun contains(x: T): bool {
@@ -510,14 +527,14 @@ extend<T> Range<T> {
   /// Every `step`-th value, starting at the low end.
   public fun step(step: T): RangeStepIter<T> {
     if (step <= 0) panic("step: must be positive")
-    val last = if (this.inclusive) this.hi else this.hi -% 1
-    RangeStepIter(current: this.lo, last, step, up: true, done: last < this.lo)
+    val last = if (this.inclusive || this.holdsNothing()) this.hi else this.hi - 1
+    RangeStepIter(current: this.lo, last, step, up: true, done: this.holdsNothing())
   }
 
   /// The values from the high end down to the low end.
   public fun reversed(): RangeStepIter<T> {
-    val last = if (this.inclusive) this.hi else this.hi -% 1
-    RangeStepIter(current: last, last: this.lo, step: 1, up: false, done: last < this.lo)
+    val last = if (this.inclusive || this.holdsNothing()) this.hi else this.hi - 1
+    RangeStepIter(current: last, last: this.lo, step: 1, up: false, done: this.holdsNothing())
   }
 }
 

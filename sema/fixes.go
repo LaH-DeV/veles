@@ -16,6 +16,39 @@ func fixReplace(title string, span source.Span, text string) *source.Fix {
 	return &source.Fix{Title: title, Edits: []source.TextEdit{{Span: span, NewText: text}}}
 }
 
+// fixAddMembers inserts declarations before the closing brace of the block
+// that ends `span` (an implement), one per line, indented one level in
+// from the line the block starts on: `implement Shape for Sq { }` and a
+// body with methods already in it both come out as a formatted block. Nil
+// when the span does not end in a brace.
+func fixAddMembers(title string, span source.Span, members []string) *source.Fix {
+	if span.File == nil || span.End < 1 || span.End > len(span.File.Content) {
+		return nil
+	}
+	src := span.File.Content
+	closing := span.End - 1
+	if src[closing] != '}' {
+		return nil
+	}
+	lineStart := strings.LastIndexByte(src[:span.Start], '\n') + 1
+	indent := ""
+	for i := lineStart; i < len(src) && (src[i] == ' ' || src[i] == '\t'); i++ {
+		indent += string(src[i])
+	}
+	from := closing // back over the blank run before the brace
+	for from > span.Start && strings.ContainsRune(" \t\r\n", rune(src[from-1])) {
+		from--
+	}
+	var sb strings.Builder
+	for _, m := range members {
+		for _, line := range strings.Split(m, "\n") { // a member may be a block
+			sb.WriteString("\n" + indent + "  " + line)
+		}
+	}
+	sb.WriteString("\n" + indent)
+	return &source.Fix{Title: title, Edits: []source.TextEdit{{Span: source.Span{File: span.File, Start: from, End: closing}, NewText: sb.String()}}}
+}
+
 // fixDeleteLine deletes a span together with the rest of its line when
 // nothing else is on it: leading indentation and the line break after.
 func fixDeleteLine(title string, span source.Span) *source.Fix {

@@ -118,6 +118,52 @@ Output:
 Recursive variants hold pointers (`*Expr`) — a value cannot contain
 itself, and the compiler reports an infinite-size type if you try (D31).
 
+A method declared without a body is written by each variant instead, in
+an `implement` block of its body; a method with a body is a default a
+variant may `override`:
+
+```veles
+use io
+
+sealed trait Shape {
+  fun area(): f64
+  fun describe(): string = "shape with area ${this.area()}"
+}
+struct Circle : Shape {
+  r: f64
+
+  implement Shape {
+    fun area(): f64 = 3.0 * this.r * this.r
+    override fun describe(): string = "circle r=${this.r}"
+  }
+}
+struct Rect : Shape {
+  w: f64
+  h: f64
+
+  implement Shape {
+    fun area(): f64 = this.w * this.h
+  }
+}
+
+fun main() {
+  val shapes: List<Shape> = [Circle(r: 1.0), Rect(w: 2.0, h: 3.0)]
+  loop (s in shapes) {
+    io.println("${s.describe()} -> ${s.area()}")
+  }
+}
+```
+
+Output:
+```text
+circle r=1.0 -> 3.0
+shape with area 6.0 -> 6.0
+```
+
+A variant that leaves such a method out is an error at the variant, not
+at some later call: `variant 'Rect' of 'Shape' does not implement 'area';
+add 'implement Shape { fun area(): f64 }' to its body`.
+
 ## Enums: a closed set of values
 
 A sealed trait is a closed set of *shapes*; an **enum** is a closed set of

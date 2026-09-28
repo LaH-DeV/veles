@@ -7,6 +7,10 @@
  * no struct crosses the C ABI by value (the compiler passes `string` as a
  * (data, len) pair and receives strings through `veles_string*`).
  */
+/* glibc declares its extensions (pthread_getattr_np, ...) only when asked. */
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE
+#endif
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,6 +20,10 @@
 #include <inttypes.h>
 #if defined(_WIN32)
 #include <windows.h>
+#include <fcntl.h> /* _O_BINARY */
+#include <io.h>    /* _setmode */
+#else
+#include <sys/stat.h> /* fstat: is stdout a file */
 #endif
 
 typedef struct {
@@ -42,12 +50,31 @@ void veles_task_init(void);
 void veles_ffi_init(void);
 void veles_sync_init(void);
 
+/* stdout goes somewhere someone may be watching — a terminal, a pipe into
+ * `docker logs` or the journal — rather than to a regular file: each line
+ * is written out as it ends (veles_print). To a file, lines are buffered:
+ * a million of them take a tenth of the time. */
+static int flush_lines = 1;
+
 void veles_rt_init(int32_t argc, char **argv) {
     veles_sync_init(); /* the per-thread block's slot first: everything else uses it */
     g_argc = argc;
     g_argv = argv;
-    setvbuf(stdout, NULL, _IOLBF, 0);
 #if defined(_WIN32)
+    flush_lines = GetFileType(GetStdHandle(STD_OUTPUT_HANDLE)) != FILE_TYPE_DISK;
+#else
+    struct stat st;
+    flush_lines = !(fstat(1, &st) == 0 && S_ISREG(st.st_mode));
+#endif
+    setvbuf(stdout, NULL, flush_lines ? _IOLBF : _IOFBF, 0);
+#if defined(_WIN32)
+    /* The standard streams carry the bytes the program wrote, as on every
+     * other platform and as files already do ("rb"/"wb"): text mode turned
+     * each '\n' into "\r\n" and ended stdin at the first 0x1A byte.
+     * readLine still drops a line's trailing '\r'. */
+    _setmode(_fileno(stdin), _O_BINARY);
+    _setmode(_fileno(stdout), _O_BINARY);
+    _setmode(_fileno(stderr), _O_BINARY);
     /* the console shows UTF-8 as such (D18); pipes and files are bytes anyway */
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
@@ -75,6 +102,8 @@ int64_t veles_task_panic(const char *msg, int64_t len, const char *loc, int64_t 
  * wrote at the panicking site (D64: `file:line:col`, relative to the package
  * root; empty for a panic raised inside the runtime itself). */
 int64_t veles_ffi_in_callback(void);
+void veles_panic_print_report(const char *loc, int64_t loc_len, int64_t indent);
+int veles_chain_recorded(void);
 
 void veles_panic_at(const char *msg, int64_t len, const char *loc, int64_t loc_len) {
     /* inside an `extern "C" fun` there are C frames below: unwinding to
@@ -84,12 +113,10 @@ void veles_panic_at(const char *msg, int64_t len, const char *loc, int64_t loc_l
     fflush(stdout);
     fputs("panic: ", stderr);
     fwrite(msg, 1, (size_t)len, stderr);
+    veles_panic_print_report(loc, loc_len, 2);
     fputc('\n', stderr);
-    if (loc_len > 0) {
-        fputs("  at ", stderr);
-        fwrite(loc, 1, (size_t)loc_len, stderr);
-        fputc('\n', stderr);
-    }
+    if (!veles_chain_recorded())
+        fputs("  (a debug build shows the call chain)\n", stderr);
     if (in_c)
         fputs("  (in a function called from C, which cannot be unwound: the process ends)\n", stderr);
     fflush(stderr);
@@ -115,9 +142,15 @@ void veles_report_error(const char *msg, int64_t len) {
  * (veles_sync.c) and shown only if the test fails */
 int veles_test_capture(const char *s, int64_t len, int newline);
 
+/* Standard output is written out at the end of every line, terminal or
+ * not (as Rust's is): a service's log line reaches `docker logs` or the
+ * journal when it is printed, not when a buffer fills or the process ends.
+ * C's line buffering would do it on Unix, but Windows' runtime treats it
+ * as full buffering, so the flush is explicit. */
 void veles_print(const char *s, int64_t len) {
     if (veles_test_capture(s, len, 0)) return;
     fwrite(s, 1, (size_t)len, stdout);
+    if (flush_lines && len > 0 && memchr(s, '\n', (size_t)len)) fflush(stdout);
 }
 
 void veles_eprint(const char *s, int64_t len) {
@@ -140,6 +173,7 @@ static void write_line(FILE *f, const char *s, int64_t len) {
     lock_stream(f);
     fwrite(s, 1, (size_t)len, f);
     fputc('\n', f);
+    if (f != stdout || flush_lines) fflush(f); /* a line is out when it is printed (see veles_print) */
     unlock_stream(f);
 }
 
@@ -719,6 +753,16 @@ veles_list *veles_list_new(veles_desc *desc, int64_t cap) {
 
 int64_t veles_list_len(veles_list *l) {
     return l->len;
+}
+
+/* room for at least n elements in all (D83): pushing up to n does not grow
+ * the storage again; never shrinks */
+void veles_list_reserve(veles_list *l, int64_t n) {
+    if (n <= l->cap) return;
+    char *nd = veles_gc_alloc(l->desc, l->elem * n);
+    memcpy(nd, l->data, (size_t)(l->elem * l->len));
+    l->data = nd;
+    l->cap = n;
 }
 
 void veles_list_push(veles_list *l, const void *item) {

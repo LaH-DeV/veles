@@ -11,6 +11,10 @@
  * against the page table, so a payload that is only sometimes a pointer
  * (a sealed union) is simply listed as a candidate.
  */
+/* glibc declares its extensions (pthread_getattr_np, ...) only when asked. */
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE
+#endif
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -395,7 +399,28 @@ static void mark_candidate(uintptr_t word) {
     push_work(s->start + idx * s->objsize);
 }
 
-static void scan_range(const char *lo, const char *hi) {
+/* Under `veles build --sanitize` (AddressSanitizer): the collector reads
+ * whole stacks, the redzones between a C frame's locals included — those
+ * reads are the point, so the scan is not instrumented. And a C local must
+ * live on the real stack, where the scan finds it: in the sanitizer's
+ * use-after-return mode it lives in a "fake frame" on the side, and a heap
+ * object held only there would be swept while in use. */
+#if defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define VELES_ASAN 1
+#endif
+#endif
+#if defined(__SANITIZE_ADDRESS__) && !defined(VELES_ASAN)
+#define VELES_ASAN 1
+#endif
+#if defined(VELES_ASAN)
+#define NO_ASAN __attribute__((no_sanitize("address")))
+const char *__asan_default_options(void) { return "detect_stack_use_after_return=0"; }
+#else
+#define NO_ASAN
+#endif
+
+NO_ASAN static void scan_range(const char *lo, const char *hi) {
     lo = (const char *)(((uintptr_t)lo + 7) & ~(uintptr_t)7);
     for (const char *p = lo; p + 8 <= hi; p += 8) {
         mark_candidate(*(const uintptr_t *)p);

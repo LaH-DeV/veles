@@ -103,8 +103,9 @@ public struct Panic {                             // a task's panic, as seen by 
 
 `panic(message)` raises one deliberately (D20). It never returns, so it
 can stand in for a value: `val x = xs.at(i) ?: panic("index $i")`. A panic
-prints its message and, on the next line, `at file:line:col` relative to the
-package root (D64).
+prints its message and, on the next line, `at file:line:col in function`
+relative to the package root (D64), then in a debug build a `called from`
+line per call that led there (D81).
 
 ### Recursion depth — module `recursion` (D75)
 
@@ -465,6 +466,12 @@ io.readLine(): string?           // null at end of input
 io.readAll(): string             // the rest of standard input
 ```
 
+Each line goes out whole — tasks printing at once never interleave inside
+one — and as it ends, whether standard output is a terminal or a pipe
+(`docker logs`, the journal, `| grep`), so a service's log is live. Only
+when it is redirected to a regular file are lines collected and written in
+blocks, which is several times faster for bulk output.
+
 ## Module `os`
 
 ```veles
@@ -480,7 +487,8 @@ os.tempDir(): string                             // TMPDIR or /tmp; TMP/TEMP on 
 os.shutdownSignal(): os.Signal                    // suspends until SIGINT/SIGTERM (Ctrl+C/Break/close on Windows); arms on the first call, one signal per call
 os.raiseSignal(sig: os.Signal)                    // as if it came from outside — for testing a shutdown path
 // enum Signal { Interrupt = 2, Terminate = 15 }
-os.run(program: string, args: List<string> = [], mergeStderr: bool = false): Output throws IoError   // no shell: each arg is one argument, verbatim; program found on PATH
+os.run(program: string, args: List<string> = [], input: string = "", stderr: os.Stderr = os.Stderr.Capture): Output throws IoError   // no shell: each arg is one argument, verbatim; program found on PATH
+// Output { code, stdout, stderr, ok() }; os.Stderr: Capture (apart, in stderr), Merge (into stdout), Inherit (to yours)
 // Output { code: i64, stdout: string, fun ok(): bool }
 os.ioError(code: i64, path: string): IoError     // an IoError for a platform error number
 ```

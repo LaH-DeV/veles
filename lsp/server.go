@@ -385,7 +385,7 @@ func (s *Server) analyze(d *document) {
 			Source:   "veles",
 			Message:  it.Message,
 			Data:     s.fixData(it.Fix),
-		})
+		}.withFamily())
 	}
 	s.analyses[pkg.Key()] = a
 	for f, items := range byFile {
@@ -691,6 +691,10 @@ type lspDiagnostic struct {
 	Severity int      `json:"severity"`
 	Source   string   `json:"source"`
 	Message  string   `json:"message"`
+	// Code is the diagnostic's family (D79), and CodeDescription links its
+	// section of reference/errors.md; the editor shows it as a link.
+	Code            string              `json:"code,omitempty"`
+	CodeDescription *lspCodeDescription `json:"codeDescription,omitempty"`
 	// Data carries a lint's autofix as a ready workspace edit; the client
 	// hands it back with a codeAction request (LSP round-trips `data`).
 	Data *lspFix `json:"data,omitempty"`
@@ -699,6 +703,7 @@ type lspDiagnostic struct {
 type lspFix struct {
 	Title   string                   `json:"title"`
 	Changes map[string][]lspTextEdit `json:"changes"`
+	Guess   bool                     `json:"guess,omitempty"`
 }
 
 type lspTextEdit struct {
@@ -711,7 +716,7 @@ func (s *Server) fixData(fix *source.Fix) *lspFix {
 	if fix == nil {
 		return nil
 	}
-	out := &lspFix{Title: fix.Title, Changes: map[string][]lspTextEdit{}}
+	out := &lspFix{Title: fix.Title, Changes: map[string][]lspTextEdit{}, Guess: fix.Guess}
 	for _, e := range fix.Edits {
 		if e.Span.File == nil {
 			return nil
@@ -723,7 +728,9 @@ func (s *Server) fixData(fix *source.Fix) *lspFix {
 }
 
 // codeAction offers the autofix of every diagnostic in the request's
-// context that carries one, as a quick fix.
+// context that carries one, as a quick fix. A certain fix is preferred
+// (an editor's "fix all" applies it); a guess — a typo's nearest name —
+// is only offered.
 func (s *Server) codeAction(params json.RawMessage) any {
 	var p struct {
 		Context struct {
@@ -741,6 +748,7 @@ func (s *Server) codeAction(params json.RawMessage) any {
 			"kind":        "quickfix",
 			"diagnostics": []lspDiagnostic{d},
 			"edit":        map[string]any{"changes": d.Data.Changes},
+			"isPreferred": !d.Data.Guess,
 		})
 	}
 	return actions
@@ -887,4 +895,17 @@ func derivedTarget(summary string) string {
 		name = name[j+1:]
 	}
 	return name
+}
+
+type lspCodeDescription struct {
+	Href string `json:"href"`
+}
+
+// withFamily names the diagnostic's family and links its explanation.
+func (d lspDiagnostic) withFamily() lspDiagnostic {
+	if f := source.FamilyOf(d.Message); f != "" {
+		d.Code = f
+		d.CodeDescription = &lspCodeDescription{Href: source.ErrorsDocURL + "#" + f}
+	}
+	return d
 }

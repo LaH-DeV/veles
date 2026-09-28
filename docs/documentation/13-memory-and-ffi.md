@@ -258,6 +258,36 @@ There are two pointer types, and the difference is the whole point:
 | dereference | anywhere | `unsafe` only |
 | arithmetic | no | `unsafe` only, C-style (D50) |
 
+Arithmetic on a `*raw T` is C's: `p + n` and `p - n` step by whole
+elements (`*raw u8` steps by bytes), `p - q` counts the elements between
+two pointers of one type, and `<` `<=` `>` `>=` order addresses. Nothing
+is checked — that is what `unsafe` means here:
+
+```veles
+use ffi, io
+
+fun main() {
+  val n = 5
+  // SAFETY: every step stays inside the n i64 of `block`, freed once after its last use
+  unsafe {
+    val block = ffi.alloc(n * 8) as *raw i64
+    val end = block + n
+    var p = block
+    loop (p < end) {
+      *p = (p - block) * 2
+      p += 1
+    }
+    io.println("${*(end - 1)} ${end - block}")
+    ffi.free(block as *raw u8)
+  }
+}
+```
+
+Output:
+```text
+8 5
+```
+
 An `unsafe` block is a promise the compiler cannot check, so the reason
 it holds is written down next to it: a `// SAFETY:` comment on the line
 above the block (or as the first line inside it) saying why it is sound.
@@ -288,24 +318,25 @@ built into the language — `x.sqrt()` — so they never go through C.)
 use io
 
 extern "C" {
-  fun cbrt(x: f64): f64
+  fun ldexp(x: f64, exp: i32): f64
   fun toupper(c: i32): i32
 }
 
-fun cubeRoot(x: f64): f64 = unsafe {
-  // SAFETY: cbrt takes a number and returns one
-  cbrt(x)
+// x times 2 to the power `exp`, exact
+fun scaled(x: f64, exp: i32): f64 = unsafe {
+  // SAFETY: ldexp takes two numbers and returns one
+  ldexp(x, exp)
 }
 
 fun main() {
   // SAFETY: toupper takes a character code and returns one
-  io.println("${cubeRoot(27.0)} ${unsafe { toupper(97) }}")
+  io.println("${scaled(3.0, 4)} ${unsafe { toupper(97) }}")
 }
 ```
 
 Output:
 ```text
-3.0 65
+48.0 65
 ```
 
 Numeric types map to their C counterparts (mind that C's `long` is 32
@@ -418,5 +449,29 @@ it cannot unwind through C's frames. `p as *raw T` reinterprets a raw
 pointer (C's `void *`), and `&x as *raw u8` gives C the address of a
 Veles value for the length of a call; both need `unsafe`, as does calling
 through an `extern fun` value. `examples/ffi` puts all of it together.
+
+### When C goes wrong: `--sanitize`
+
+A mistake on the C side of the boundary — a buffer one byte short, a
+pointer used after `free` — corrupts memory silently, and the crash, if
+any, comes later somewhere else. `veles build --sanitize` (also on `run`
+and `test`) builds the runtime under AddressSanitizer and
+UndefinedBehaviorSanitizer and links their runtimes: the first bad access
+stops the program with a report naming the access and the call chain,
+Veles functions included:
+
+```text
+==685==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x502000000014
+WRITE of size 5 at 0x502000000014 thread T0
+    #0 in memset
+    #1 in v_main.main
+```
+
+Libc functions (`memset`, `strcpy`, ...) are checked as they are; compile
+your own C code with `-fsanitize=address,undefined` to have it checked
+too. The Veles code itself needs no instrumentation — it is bounds-checked
+already — and the program runs a few times slower, so this is a debugging
+build. On Windows it needs clang's sanitizer runtimes installed (MSYS2:
+`pacman -S mingw-w64-ucrt-x86_64-compiler-rt`).
 
 Next: [Attributes and the test runner](14-attributes-and-testing.md).

@@ -28,7 +28,7 @@ func operandTakesOperator(op BinOp, t types.Type) bool {
 	if _, ok := operatorTraits[op]; !ok {
 		return false
 	}
-	if types.IsInvalid(t) || types.IsNumeric(t) || types.IsEnum(t) {
+	if types.IsInvalid(t) || types.IsNumeric(t) || types.IsEnum(t) || rawPointer(t) != nil {
 		return false
 	}
 	return !(op == OpAdd && types.IsString(t))
@@ -50,7 +50,12 @@ func (f *fnCtx) operatorCall(op BinOp, lhs Expr, rhs ast.Expr, span source.Span)
 	names := operatorTraits[op]
 	trait := f.c.preludeTrait(names[0])
 	if trait == nil || !f.implements(lhs.Type(), trait) {
-		f.errorf(span, "operator '%s' is not defined for '%s'; implement '%s' (fun %s(other: R): Out) to give it one (D71)", op, lhs.Type(), names[0], names[1])
+		if declaredType(lhs.Type()) {
+			f.errorf(span, "operator '%s' is not defined for '%s'; implement '%s' (fun %s(other: R): Out) to give it one (D71)", op, lhs.Type(), names[0], names[1])
+		} else {
+			// bool, a tuple, a list: nothing a program can implement for
+			f.errorf(span, "operator '%s' is not defined for '%s'", op, lhs.Type())
+		}
 		f.checkExpr(rhs, nil)
 		return bad()
 	}
@@ -61,10 +66,24 @@ func (f *fnCtx) operatorCall(op BinOp, lhs Expr, rhs ast.Expr, span source.Span)
 func (f *fnCtx) negateCall(x Expr, span source.Span) Expr {
 	trait := f.c.preludeTrait("Negatable")
 	if trait == nil || !f.implements(x.Type(), trait) {
-		f.errorf(span, "cannot negate a value of type '%s'; implement 'Negatable' (fun negate(): Out) to give it '-' (D71)", x.Type())
+		if declaredType(x.Type()) {
+			f.errorf(span, "cannot negate a value of type '%s'; implement 'Negatable' (fun negate(): Out) to give it '-' (D71)", x.Type())
+		} else {
+			f.errorf(span, "cannot negate a value of type '%s'", x.Type())
+		}
 		return bad()
 	}
 	return f.callOnChecked(x, "negate", nil, span)
+}
+
+// declaredType reports whether a type is a struct or sealed trait, the
+// kinds a program declares and so can give an operator (D71).
+func declaredType(t types.Type) bool {
+	switch t.(type) {
+	case *types.Struct, *types.Sealed:
+		return true
+	}
+	return false
 }
 
 // callOnChecked checks `recv.name(args)` where recv is already checked.

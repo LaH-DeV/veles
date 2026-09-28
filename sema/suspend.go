@@ -60,7 +60,7 @@ func (c *Checker) inferSuspension(prog *Program) {
 	}
 	for _, g := range prog.Globals {
 		if g.Init != nil && exprSuspends(g.Init) {
-			c.errorf(g.Span, "a global initializer cannot suspend")
+			c.errorf(g.Span, "a global initializer cannot suspend; compute the value in 'main' and pass it down")
 		}
 	}
 }

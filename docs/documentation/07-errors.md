@@ -483,4 +483,19 @@ being unwrapped. (D61)
   There is no shorthand like Kotlin's `!!`: a read that cannot fail says
   why with `?: panic("…")`, and the location comes for free (D64).
 
+  A debug build (`veles run`, `veles test`) adds the calls that led there,
+  innermost first, so the report reads like a stack trace (D81):
+
+  ```text
+  panic: index 7 is out of range
+    at main.vs:4:24 in parse
+    called from main.vs:9:12 in load
+    called from main.vs:13:19 in main
+  ```
+
+  The chain is complete through functions that suspend; a task started
+  with `async` begins its own chain at the function it runs. A release
+  build (`--release`) keeps no chain — that is what makes calls free — and
+  prints the location with a note that a debug build shows the rest.
+
 Next: [Traits and generics](08-traits-and-generics.md).

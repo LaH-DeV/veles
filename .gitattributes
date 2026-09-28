@@ -2,3 +2,5 @@
 examples/*/fixtures/** -text
 # expected outputs are compared byte for byte as well
 examples/**/*.txt -text
+# shell scripts run inside WSL/Linux: a CRLF would break them
+*.sh text eol=lf

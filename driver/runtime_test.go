@@ -1,11 +1,13 @@
 package driver
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Collections landing while tasks are spawned on many threads (D66): a
@@ -51,7 +53,7 @@ fun main() {
 		t.Fatal(err)
 	}
 	exe := filepath.Join(dir, "spawn.exe")
-	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: true}); code != 0 {
+	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: true, Sanitize: *sanitize}); code != 0 {
 		t.Fatalf("build failed with exit %d", code)
 	}
 	for i := 0; i < 16; i++ {
@@ -104,7 +106,7 @@ fun main() {
 		t.Fatal(err)
 	}
 	exe := filepath.Join(dir, "atomic.exe")
-	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: true}); code != 0 {
+	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: true, Sanitize: *sanitize}); code != 0 {
 		t.Fatalf("build failed with exit %d", code)
 	}
 	// 160000 updates each: 160000 × 3 mod 65536 = 21248; an even number of
@@ -169,7 +171,7 @@ fun main() {
 		t.Fatal(err)
 	}
 	exe := filepath.Join(dir, "chan.exe")
-	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: true}); code != 0 {
+	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: true, Sanitize: *sanitize}); code != 0 {
 		t.Fatalf("build failed with exit %d", code)
 	}
 	want := "8000 4004000 8000 4004000 8000 4004000"
@@ -273,7 +275,7 @@ fun main() {
 		t.Fatal(err)
 	}
 	exe := filepath.Join(dir, "race.exe")
-	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: true}); code != 0 {
+	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: true, Sanitize: *sanitize}); code != 0 {
 		t.Fatalf("build failed with exit %d", code)
 	}
 	want := "8000 31996000 0 7" // 0 + 1 + … + 7999
@@ -335,7 +337,7 @@ fun main() {
 		t.Fatal(err)
 	}
 	exe := filepath.Join(dir, "tl.exe")
-	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: true}); code != 0 {
+	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: true, Sanitize: *sanitize}); code != 0 {
 		t.Fatalf("build failed with exit %d", code)
 	}
 	want := "0 wrong, threw: true, outside: -1"
@@ -376,7 +378,7 @@ fun main() {
 		t.Fatal(err)
 	}
 	exe := filepath.Join(dir, "kinds.exe")
-	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe}); code != 0 {
+	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Sanitize: *sanitize}); code != 0 {
 		t.Fatalf("build failed with exit %d", code)
 	}
 	out, err := exec.Command(exe).CombinedOutput()
@@ -423,13 +425,92 @@ fun main() throws {
 		t.Fatal(err)
 	}
 	exe := filepath.Join(dir, "sockets.exe")
-	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe}); code != 0 {
+	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Sanitize: *sanitize}); code != 0 {
 		t.Fatalf("build failed with exit %d", code)
 	}
 	out, err := exec.Command(exe).CombinedOutput()
 	want := "read after close: error\nb: 5 bytes\n"
 	if got := strings.ReplaceAll(string(out), "\r\n", "\n"); err != nil || got != want {
 		t.Fatalf("got %q, %v; want %q", out, err, want)
+	}
+}
+
+// A connection closed by one task while another is inside a read on it
+// (plan A5): the read fails promptly instead of waiting for data that can
+// no longer come, the descriptor really closes once the read lets go (the
+// peer sees the end of the stream), and while connections come and go on
+// eight threads a read never returns bytes sent to a newer connection that
+// was given the same descriptor number. The socket keeps a count of the
+// operations holding it and closes only when the last one lets go (Go's
+// fdMutex); the close wakes the parked operations.
+func TestSocketCloseDuringRead(t *testing.T) {
+	if _, err := findClang(); err != nil {
+		t.Skip("clang not available:", err)
+	}
+	dir := t.TempDir()
+	src := `use io, net
+
+// what a read on c ended with
+fun readOutcome(c: net.Conn): string = when (val r = c.read()) {
+  is Ok(bytes) => if (bytes.isEmpty()) "end" else "data ${bytes.decodeUtf8() ?: "?"}"
+  is Err       => "error"
+}
+
+fun round(l: net.Listener, i: i64): string throws IoError {
+  val client = try net.connect("127.0.0.1", l.port())
+  val server = try l.accept()
+  var outcome = ""
+  scope {
+    val reader = async readOutcome(server)
+    await sleep(Duration.millis(2))
+    server.close()
+    // a newer connection, likely on the number just freed, with data waiting
+    val other = try net.connect("127.0.0.1", l.port())
+    val otherServer = try l.accept()
+    try other.writeText("stray $i")
+    outcome = await reader
+    other.close()
+    otherServer.close()
+  }
+  val peer = readOutcome(client)
+  client.close()
+  if (outcome != "error" || peer != "end") return "round $i: reader $outcome, peer $peer"
+  ""
+}
+
+fun main() throws IoError {
+  val l = try net.listen()
+  val sw = time.Stopwatch.start()
+  var bad = 0
+  loop (i in 1..200) {
+    val problem = try round(l, i)
+    if (!problem.isEmpty()) {
+      bad += 1
+      if (bad <= 3) io.println(problem)
+    }
+  }
+  l.close()
+  io.println("bad rounds: $bad, prompt: ${sw.elapsed() < Duration.seconds(20)}")
+}
+`
+	src = strings.Replace(src, "use io, net", "use io, net, time", 1)
+	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(dir, "closeread.exe")
+	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Sanitize: *sanitize}); code != 0 {
+		t.Fatalf("build failed with exit %d", code)
+	}
+	for _, threads := range []string{"1", "8"} {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		run := exec.CommandContext(ctx, exe)
+		run.Env = append(os.Environ(), "VELES_THREADS="+threads)
+		out, err := run.CombinedOutput()
+		cancel()
+		want := "bad rounds: 0, prompt: true\n"
+		if got := strings.ReplaceAll(string(out), "\r\n", "\n"); err != nil || got != want {
+			t.Fatalf("VELES_THREADS=%s: got %q, %v; want %q", threads, got, err, want)
+		}
 	}
 }
 
@@ -469,7 +550,7 @@ fun main() throws {
 		t.Fatal(err)
 	}
 	exe := filepath.Join(dir, "argv.exe")
-	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe}); code != 0 {
+	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Sanitize: *sanitize}); code != 0 {
 		t.Fatalf("build failed with exit %d", code)
 	}
 	out, err := exec.Command(exe).CombinedOutput()
@@ -477,6 +558,82 @@ fun main() throws {
 		"code 0\nInvalidInput\nNotFound\n"
 	if got := strings.ReplaceAll(string(out), "\r\n", "\n"); err != nil || got != want {
 		t.Fatalf("got %q, %v; want %q", got, err, want)
+	}
+}
+
+// os.run (D82): input goes in and the pipe closes, standard error is kept
+// apart by default, merged or let through on request, no input is an empty
+// one; and a child that writes a megabyte of errors before it reads a
+// megabyte of input, then writes a megabyte of output, finishes — the
+// three pipes are served at once, or it and its parent would wait for
+// each other for ever.
+func TestRunInputAndStderr(t *testing.T) {
+	if _, err := findClang(); err != nil {
+		t.Skip("clang not available:", err)
+	}
+	dir := t.TempDir()
+	src := `use io, os
+
+fun child(mode: string) {
+  when (mode) {
+    "echo"    => {
+      io.eprintln("to stderr")
+      io.print(io.readAll())
+    }
+    "noinput" => io.println("${io.readAll().len()} bytes in")
+    "flood"   => {
+      io.eprintln("e".repeat(1000000))
+      val input = io.readAll()
+      io.println("${input.len()} " + "o".repeat(1000000))
+    }
+    else      => { }
+  }
+}
+
+fun main() throws {
+  val args = os.args()
+  if (args.at(0) == "child") return child(args.at(1) ?: "")
+  val me = os.program()
+  val a = try os.run(me, ["child", "echo"], input: "hello\nworld\n")
+  io.println("echo: stdout ${a.stdout.len()} ${a.stdout.startsWith("hello")} stderr '${a.stderr.trim()}'")
+  val b = try os.run(me, ["child", "echo"], input: "abc", stderr: os.Stderr.Merge)
+  io.println("merge: ${b.stdout.contains("to stderr")} ${b.stdout.contains("abc")} stderr '${b.stderr}'")
+  val c = try os.run(me, ["child", "noinput"])
+  io.println("no input: ${c.stdout.trim()}")
+  val d = try os.run(me, ["child", "flood"], input: "i".repeat(1000000))
+  io.println("flood: stdout ${d.stdout.len()} stderr ${d.stderr.len()} ${d.stdout.startsWith("1000000 ")}")
+  val e = try os.run(me, ["child", "echo"], input: "x", stderr: os.Stderr.Inherit)
+  io.println("inherit: stderr '${e.stderr}'")
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(dir, "runio.exe")
+	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Sanitize: *sanitize}); code != 0 {
+		t.Fatalf("build failed with exit %d", code)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, exe)
+	var stdout, stderr strings.Builder
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	err := cmd.Run()
+	if ctx.Err() != nil {
+		t.Fatal("os.run did not finish: the pipes deadlocked")
+	}
+	nl := func(s string) string { return strings.ReplaceAll(s, "\r\n", "\n") }
+	want := "echo: stdout 12 true stderr 'to stderr'\n" +
+		"merge: true true stderr ''\n" +
+		"no input: 0 bytes in\n" +
+		"flood: stdout 1000009 stderr 1000001 true\n" +
+		"inherit: stderr ''\n"
+	if got := nl(stdout.String()); err != nil || got != want {
+		t.Fatalf("got %q, %v; want %q", got, err, want)
+	}
+	// Inherit let the child's line through to this process's error stream
+	if !strings.Contains(stderr.String(), "to stderr") {
+		t.Errorf("inherited standard error: %q", stderr.String())
 	}
 }
 
@@ -517,7 +674,7 @@ fun main() throws {
 		t.Fatal(err)
 	}
 	exe := filepath.Join(dir, "nul.exe")
-	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe}); code != 0 {
+	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Sanitize: *sanitize}); code != 0 {
 		t.Fatalf("build failed with exit %d", code)
 	}
 	run := exec.Command(exe)
@@ -526,5 +683,107 @@ fun main() throws {
 	want := "InvalidInput: a path cannot hold a NUL byte: real.txt\\0.png\nread\nfalse false true\nInvalidInput\nInvalidInput\nnull\n"
 	if got := strings.ReplaceAll(string(out), "\r\n", "\n"); err != nil || got != want {
 		t.Fatalf("got %q, %v; want %q", got, err, want)
+	}
+}
+
+// The standard streams carry bytes unchanged on every platform. On Windows
+// they were C text streams: each "\n" printed came out as "\r\n", and stdin
+// ended at the first 0x1A byte. readLine still drops a trailing '\r', so a
+// CRLF input reads the same everywhere; readAll keeps the bytes as sent.
+func TestStandardStreamsAreBytes(t *testing.T) {
+	if _, err := findClang(); err != nil {
+		t.Skip("clang not available:", err)
+	}
+	dir := t.TempDir()
+	src := `use io
+
+fun main() {
+  io.print("[${io.readLine() ?: "-"}]")
+  io.print("[${io.readLine() ?: "-"}]")
+  io.print("[${io.readAll()}]")
+  io.println("end")
+  io.eprintln("err")
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(dir, "streams.exe")
+	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Sanitize: *sanitize}); code != 0 {
+		t.Fatalf("build failed with exit %d", code)
+	}
+	run := exec.Command(exe)
+	run.Stdin = strings.NewReader("one\r\ntwo\x1athree\nrest\r\nlast")
+	var stdout, stderr strings.Builder
+	run.Stdout, run.Stderr = &stdout, &stderr
+	if err := run.Run(); err != nil {
+		t.Fatal(err)
+	}
+	if want := "[one][two\x1athree][rest\r\nlast]end\n"; stdout.String() != want {
+		t.Errorf("stdout %q, want %q", stdout.String(), want)
+	}
+	if stderr.String() != "err\n" {
+		t.Errorf("stderr %q, want %q", stderr.String(), "err\n")
+	}
+}
+
+// A panic in a debug build prints the calls that led to it (D81) — through
+// nested calls, through a function that suspends, and with a note in a
+// release build, which keeps no chain.
+func TestPanicPrintsCallChain(t *testing.T) {
+	if _, err := findClang(); err != nil {
+		t.Skip("clang not available:", err)
+	}
+	dir := t.TempDir()
+	src := `use io, time
+
+fun check(x: i64): i64 {
+  if (x > 2) panic("too big: $x")
+  return x
+}
+
+fun step(x: i64): i64 {
+  await sleep(Duration.millis(1))
+  return check(x)
+}
+
+fun outer(x: i64): i64 = step(x) + 1
+
+fun main() {
+  io.println("${outer(1)}")
+  scope {
+    val a = async outer(5)
+    io.println("${await a}")
+  }
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	panicOf := func(release bool) string {
+		exe := filepath.Join(dir, "chain.exe")
+		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release}); code != 0 {
+			t.Fatalf("build failed with exit %d", code)
+		}
+		var stderr strings.Builder
+		cmd := exec.Command(exe)
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err == nil {
+			t.Fatal("the program should panic")
+		}
+		return strings.ReplaceAll(stderr.String(), "\r\n", "\n")
+	}
+	want := "panic: too big: 5\n" +
+		"  at main.vs:4:14 in check\n" +
+		"  called from main.vs:10:10 in step\n" +
+		"  called from main.vs:13:26 in outer\n"
+	if got := panicOf(false); got != want {
+		t.Errorf("debug build:\n%s\nwant:\n%s", got, want)
+	}
+	want = "panic: too big: 5\n" +
+		"  at main.vs:4:14\n" +
+		"  (a debug build shows the call chain)\n"
+	if got := panicOf(true); got != want {
+		t.Errorf("release build:\n%s\nwant:\n%s", got, want)
 	}
 }

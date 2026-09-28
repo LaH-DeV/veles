@@ -53,8 +53,7 @@ func paramWrite(fn *Func, p *Var) string {
 	escaped := false
 	placed := map[*VarRef]bool{} // VarRefs of p that only root a place
 	recvs := map[*AddrOf]bool{}
-	var mark func(e Expr)
-	mark = func(e Expr) {
+	mark := func(e Expr) {
 		for {
 			switch x := e.(type) {
 			case *VarRef:

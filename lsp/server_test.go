@@ -645,14 +645,15 @@ func TestCodeActionInlineImpl(t *testing.T) {
 		"context":      map[string]any{"diagnostics": diags},
 	})
 	var actions []struct {
-		Title string `json:"title"`
-		Kind  string `json:"kind"`
-		Edit  struct {
+		Title       string `json:"title"`
+		Kind        string `json:"kind"`
+		IsPreferred bool   `json:"isPreferred"`
+		Edit        struct {
 			Changes map[string][]lspTextEdit `json:"changes"`
 		} `json:"edit"`
 	}
 	json.Unmarshal(res, &actions)
-	if len(actions) != 1 || actions[0].Kind != "quickfix" || actions[0].Title != "Move into the body of 'P'" {
+	if len(actions) != 1 || actions[0].Kind != "quickfix" || actions[0].Title != "Move into the body of 'P'" || !actions[0].IsPreferred {
 		t.Fatalf("code actions: %s", res)
 	}
 	edits := actions[0].Edit.Changes[uri]
@@ -677,6 +678,68 @@ func TestCodeActionInlineImpl(t *testing.T) {
 	want := "trait Show {\n  fun show(): string\n}\n\nstruct P {\n  x: i64\n\n  implement Show {\n    fun show(): string = \"p\"\n  }\n}\n\nfun main() { }\n"
 	if text != want {
 		t.Errorf("after the fix:\n%s\n--- want ---\n%s", text, want)
+	}
+}
+
+// A typo's nearest name comes back as a quick fix too, but not a preferred
+// one: an editor's "fix all" must not rewrite code to a guess.
+func TestCodeActionTypoGuess(t *testing.T) {
+	src := "use io\n\nfun main() {\n  val counter = 1\n  io.println(\"${countr}\")\n}\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := pathToURI(path)
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{})
+	c.notify("initialized", map[string]any{})
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": src}})
+	_, notes := c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": 0, "character": 0}})
+	var diags []lspDiagnostic
+	for _, n := range notes {
+		var env struct {
+			Method string `json:"method"`
+			Params struct {
+				Diagnostics []lspDiagnostic `json:"diagnostics"`
+			} `json:"params"`
+		}
+		json.Unmarshal(n, &env)
+		if env.Method == "textDocument/publishDiagnostics" {
+			diags = nil
+			for _, d := range env.Params.Diagnostics {
+				if d.Severity == 1 {
+					diags = append(diags, d) // the errors; 'counter' is never used is a warning
+				}
+			}
+		}
+	}
+	if len(diags) != 1 || diags[0].Data == nil || !strings.Contains(diags[0].Message, "did you mean 'counter'?") {
+		t.Fatalf("expected one error with a guess, got %+v", diags)
+	}
+	// the family, linked to its explanation (D79)
+	if d := diags[0]; d.Code != "unknown-name" || d.CodeDescription == nil || !strings.HasSuffix(d.CodeDescription.Href, "errors.md#unknown-name") {
+		t.Errorf("code %q, description %+v", d.Code, d.CodeDescription)
+	}
+	res, _ := c.call("textDocument/codeAction", map[string]any{
+		"textDocument": map[string]any{"uri": uri},
+		"range":        diags[0].Range,
+		"context":      map[string]any{"diagnostics": diags},
+	})
+	var actions []struct {
+		Title       string `json:"title"`
+		IsPreferred bool   `json:"isPreferred"`
+		Edit        struct {
+			Changes map[string][]lspTextEdit `json:"changes"`
+		} `json:"edit"`
+	}
+	json.Unmarshal(res, &actions)
+	if len(actions) != 1 || actions[0].Title != "Change to 'counter'" || actions[0].IsPreferred {
+		t.Fatalf("code actions: %s", res)
+	}
+	if edits := actions[0].Edit.Changes[uri]; len(edits) != 1 || edits[0].NewText != "counter" {
+		t.Errorf("edits: %s", res)
 	}
 }
 

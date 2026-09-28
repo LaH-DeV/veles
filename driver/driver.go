@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/LaH-DeV/veles/codegen/llvm"
+	"github.com/LaH-DeV/veles/docs"
 	rt "github.com/LaH-DeV/veles/runtime"
 	"github.com/LaH-DeV/veles/sema"
 	"github.com/LaH-DeV/veles/source"
@@ -26,13 +27,24 @@ type Options struct {
 	EmitLLVM          bool
 	KeepIntermediates bool
 	Release           bool
-	ProgramArgs       []string
+	// Sanitize builds the C runtime under AddressSanitizer and
+	// UndefinedBehaviorSanitizer and links their runtimes, so a memory error
+	// in the runtime or in C code the program links (built with the same
+	// flags) stops the program with a report.
+	Sanitize    bool
+	ProgramArgs []string
 	// Fix applies the automatic corrections attached to warnings (check).
 	Fix bool
 	// Filter, in test mode, keeps the tests whose name contains it.
 	Filter string
 	// TestTimeout bounds each test (test mode); 0 means no bound.
 	TestTimeout time.Duration
+	// Jobs bounds how many tests run at once (D80): 0 is one per worker
+	// thread, 1 runs them one at a time, in order.
+	Jobs int
+	// Timings prints the time each phase took, and the modules that cost
+	// the most to parse and check, on standard error.
+	Timings bool
 }
 
 // DefaultTestTimeout bounds each test when `--timeout` is not given: long
@@ -66,7 +78,8 @@ func Run(opts Options) int {
 		return fixUntilDone(opts)
 	}
 	diags := &source.Diagnostics{}
-	pkg, err := sema.LoadPackage(opts.Path, diags)
+	clk := newClock(opts.Timings)
+	pkg, err := sema.LoadPackageTimed(opts.Path, diags, clk.frontEnd())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "veles:", err)
 		return 1
@@ -75,6 +88,7 @@ func Run(opts Options) int {
 		fmt.Fprint(os.Stderr, diags.Render())
 		return 1
 	}
+	clk.lap("load", clk.frontEndNote())
 	// only build/run need a program; check accepts a library or a module
 	pkg.NeedMain = opts.Mode == "build" || opts.Mode == "run"
 	var prog *sema.Program
@@ -87,7 +101,9 @@ func Run(opts Options) int {
 	if diags.HasErrors() || prog == nil {
 		return 1
 	}
+	clk.lap("check", "types, effects, lowering")
 	if opts.Mode == "check" {
+		clk.report(os.Stderr)
 		return 0
 	}
 	if opts.Mode == "test" {
@@ -95,9 +111,11 @@ func Run(opts Options) int {
 			return 1
 		}
 		prog.TestTimeoutMs = opts.TestTimeout.Milliseconds()
+		prog.TestJobs = int64(opts.Jobs)
 	}
 
 	ir := llvm.Generate(prog)
+	clk.lap("codegen", size(len(ir))+" of LLVM IR")
 
 	name := opts.Output
 	if name == "" {
@@ -148,14 +166,18 @@ func Run(opts Options) int {
 		fmt.Fprintln(os.Stderr, "veles:", err)
 		return 1
 	}
-	objs, err := runtimeObjects(clang, opts.Release, tmpDir)
+	objs, err := runtimeObjects(clang, opts.Release, opts.Sanitize, tmpDir)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "veles:", err)
 		return 1
 	}
+	clk.lap("runtime", "the C runtime's objects (built once, then cached)")
 	args := append([]string{"-o", exe, llPath}, objs...)
 	args = append(args, "-Wno-override-module")
 	args = append(args, codegenFlags(opts.Release)...)
+	if opts.Sanitize {
+		args = append(args, sanitizeFlags...)
+	}
 	if runtime.GOOS != "windows" {
 		args = append(args, "-lm") // tan, atan2, hypot: libm is separate outside the UCRT
 	} else {
@@ -173,8 +195,13 @@ func Run(opts Options) int {
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	if err := cmd.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "veles: clang failed:", err)
+		if opts.Sanitize {
+			fmt.Fprintln(os.Stderr, "veles: --sanitize links clang's sanitizer runtimes (compiler-rt): with MSYS2, `pacman -S mingw-w64-ucrt-x86_64-compiler-rt`; on Linux they come with clang")
+		}
 		return 1
 	}
+	clk.lap("clang", strings.Join(codegenFlags(opts.Release), " ")+": compile the IR and link")
+	clk.report(os.Stderr)
 	if opts.Mode == "build" {
 		return 0
 	}
@@ -202,12 +229,23 @@ func codegenFlags(release bool) []string {
 // debug build is for stepping through the program, not the executor, and
 // an unoptimised runtime makes every channel operation and allocation
 // several times slower.
-func runtimeFlags(release bool) []string {
+func runtimeFlags(release, sanitize bool) []string {
+	if sanitize {
+		// -O1 keeps the reports' stacks readable at a bearable speed
+		return append([]string{"-O1", "-g"}, sanitizeFlags...)
+	}
 	if release {
 		return []string{"-O2"}
 	}
 	return []string{"-O2", "-g"}
 }
+
+// sanitizeFlags instrument the C runtime and link the sanitizer runtimes
+// (`--sanitize`). Undefined behaviour stops the program like a memory
+// error does, rather than printing and carrying on. The Veles code itself
+// is not instrumented: it is bounds-checked already, and its heap is the
+// collector's, which AddressSanitizer does not see into.
+var sanitizeFlags = []string{"-fsanitize=address,undefined", "-fno-sanitize-recover=undefined", "-fno-omit-frame-pointer"}
 
 // runtimeSources is the C runtime every executable links, in link order.
 var runtimeSources = []struct{ name, src string }{
@@ -224,8 +262,8 @@ var runtimeSources = []struct{ name, src string }{
 // changes between builds of the same compiler, so the objects are compiled
 // once per (compiler, clang, flags) and kept in the user cache directory;
 // without a usable cache they are compiled into tmpDir instead.
-func runtimeObjects(clang string, release bool, tmpDir string) ([]string, error) {
-	flags := runtimeFlags(release)
+func runtimeObjects(clang string, release, sanitize bool, tmpDir string) ([]string, error) {
+	flags := runtimeFlags(release, sanitize)
 	dir := runtimeCacheDir(clang, flags)
 	if dir == "" {
 		dir = tmpDir
@@ -364,3 +402,20 @@ func Explain(opts ExplainOptions) int {
 // ClangPath reports the clang a build would use, for tests that need to
 // know whether native code can be produced on this machine.
 func ClangPath() (string, error) { return findClang() }
+
+// ExplainFamily prints the explanation of a diagnostic family — the name
+// after "see: veles explain" — from the copy of reference/errors.md the
+// compiler carries (D79).
+func ExplainFamily(name string) int {
+	if text, ok := docs.Explain(name); ok {
+		fmt.Println(text)
+		return 0
+	}
+	msg := fmt.Sprintf("veles explain: there is no family %q", name)
+	if hit := sema.Nearest(name, source.Families()); hit != "" {
+		msg += "; did you mean '" + hit + "'?"
+	}
+	fmt.Fprintln(os.Stderr, msg)
+	fmt.Fprintln(os.Stderr, "families: "+strings.Join(source.Families(), ", "))
+	return 1
+}

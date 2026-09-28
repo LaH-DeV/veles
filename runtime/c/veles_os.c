@@ -8,6 +8,10 @@
  * Nothing here is reachable except through `extern "C"` declarations in
  * the standard library.
  */
+/* glibc declares its extensions (pthread_getattr_np, ...) only when asked. */
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE
+#endif
 #include <ctype.h>
 #include <errno.h>
 #include <stdint.h>
@@ -28,6 +32,9 @@
 #include <spawn.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <fcntl.h>
+#include <poll.h>
+#include <signal.h>
 #if defined(__linux__)
 #include <sys/random.h>
 #endif
@@ -359,9 +366,15 @@ void veles_os_temp_dir(veles_string *out) {
 #endif
 }
 
+/* what happens to the child's standard error (os.Stderr, D82) */
+#define RUN_CAPTURE 0 /* into its own text, errout */
+#define RUN_INHERIT 1 /* to this process's standard error */
+#define RUN_MERGE 2   /* into the output, in order */
+
 /* veles_os_run starts a program with arguments — `argz` is the program
- * and each argument, separated by NUL bytes — and captures its standard
- * output (and standard error with `merge`; otherwise it is inherited).
+ * and each argument, separated by NUL bytes — writes `input` to its
+ * standard input and closes it (no input: it reads the end at once), and
+ * captures its standard output, and its standard error as `mode` says.
  * There is NO SHELL: an argument reaches the program as one argument,
  * whatever it holds, so `;`, `|`, `$(...)`, `%VAR%` and quotes are text.
  * Returns the exit status, or -1 with an errno value in *err when the
@@ -413,7 +426,40 @@ static int64_t errno_of_win32(DWORD e) {
     }
 }
 
-int64_t veles_os_run(const char *argz, int64_t alen, bool merge, veles_string *out, int64_t *err) {
+typedef struct {
+    HANDLE h;
+    const char *data;
+    int64_t len;
+} run_writer;
+
+/* writes the child's input and closes the pipe, so it sees the end */
+static DWORD WINAPI write_input(LPVOID arg) {
+    run_writer *w = arg;
+    int64_t off = 0;
+    while (off < w->len) {
+        DWORD n = 0, want = (DWORD)(w->len - off > 65536 ? 65536 : w->len - off);
+        if (!WriteFile(w->h, w->data + off, want, &n, NULL)) break; /* the child stopped reading */
+        off += n;
+    }
+    CloseHandle(w->h);
+    return 0;
+}
+
+typedef struct {
+    HANDLE h;
+    buf_t b;
+} run_reader;
+
+static DWORD WINAPI read_all(LPVOID arg) {
+    run_reader *r = arg;
+    char chunk[8192];
+    DWORD n;
+    while (ReadFile(r->h, chunk, sizeof chunk, &n, NULL) && n > 0) buf_push(&r->b, chunk, (int64_t)n);
+    CloseHandle(r->h);
+    return 0;
+}
+
+int64_t veles_os_run(const char *argz, int64_t alen, const char *input, int64_t inlen, int64_t mode, veles_string *out, veles_string *errout, int64_t *err) {
     /* CreateProcess hands a .bat or .cmd file to cmd.exe, which parses the
      * arguments again by rules no quoting here survives: refused (-2) */
     int64_t plen = (int64_t)strnlen(argz, (size_t)alen);
@@ -435,51 +481,105 @@ int64_t veles_os_run(const char *argz, int64_t alen, bool merge, veles_string *o
     wchar_t *cmd = wstr(line.data, line.len);
     free(line.data);
 
+    /* three pipes: the input the child reads, its output, and — when it is
+     * captured apart — its errors; the parent's ends are not inherited */
     SECURITY_ATTRIBUTES sa = {sizeof sa, NULL, TRUE};
-    HANDLE rd, wr;
-    if (!CreatePipe(&rd, &wr, &sa, 0)) {
+    HANDLE out_r, out_w, in_r, in_w, err_r = NULL, err_w = NULL;
+    if (!CreatePipe(&out_r, &out_w, &sa, 0)) {
         *err = errno_of_win32(GetLastError());
         return -1;
     }
-    SetHandleInformation(rd, HANDLE_FLAG_INHERIT, 0); /* the child gets only the write end */
+    if (!CreatePipe(&in_r, &in_w, &sa, 0)) {
+        *err = errno_of_win32(GetLastError());
+        CloseHandle(out_r);
+        CloseHandle(out_w);
+        return -1;
+    }
+    if (mode == RUN_CAPTURE && !CreatePipe(&err_r, &err_w, &sa, 0)) {
+        *err = errno_of_win32(GetLastError());
+        CloseHandle(out_r);
+        CloseHandle(out_w);
+        CloseHandle(in_r);
+        CloseHandle(in_w);
+        return -1;
+    }
+    SetHandleInformation(out_r, HANDLE_FLAG_INHERIT, 0);
+    SetHandleInformation(in_w, HANDLE_FLAG_INHERIT, 0);
+    if (err_r) SetHandleInformation(err_r, HANDLE_FLAG_INHERIT, 0);
     STARTUPINFOW si = {0};
     si.cb = sizeof si;
     si.dwFlags = STARTF_USESTDHANDLES;
-    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-    si.hStdOutput = wr;
-    si.hStdError = merge ? wr : GetStdHandle(STD_ERROR_HANDLE);
+    si.hStdInput = in_r;
+    si.hStdOutput = out_w;
+    si.hStdError = mode == RUN_MERGE ? out_w : mode == RUN_CAPTURE ? err_w : GetStdHandle(STD_ERROR_HANDLE);
     PROCESS_INFORMATION pi;
     /* the child runs as long as it likes: this thread waits for it in a
      * safe region, out of the collector's way */
     veles_blocking_enter();
     BOOL started = CreateProcessW(NULL, cmd, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi);
     DWORD startErr = GetLastError();
-    CloseHandle(wr); /* else the read below never sees the end */
+    /* else the reads below never see the end */
+    CloseHandle(out_w);
+    CloseHandle(in_r);
+    if (err_w) CloseHandle(err_w);
     if (!started) {
-        CloseHandle(rd);
+        CloseHandle(out_r);
+        CloseHandle(in_w);
+        if (err_r) CloseHandle(err_r);
         veles_blocking_leave();
         *err = errno_of_win32(startErr);
         return -1;
     }
     CloseHandle(pi.hThread);
+    /* the input goes in, and the errors come out, at the same time as the
+     * output is read: a child that fills one pipe while this thread waits
+     * on another would otherwise wait for ever, and so would this */
+    run_writer wr = {in_w, input, inlen};
+    HANDLE tw = CreateThread(NULL, 0, write_input, &wr, 0, NULL);
+    if (!tw) CloseHandle(in_w); /* no input then: the child sees its end */
+    run_reader er = {err_r, {0}};
+    HANDLE te = err_r ? CreateThread(NULL, 0, read_all, &er, 0, NULL) : NULL;
     buf_t b = {0};
     char chunk[8192];
     DWORD n;
-    while (ReadFile(rd, chunk, sizeof chunk, &n, NULL) && n > 0) buf_push(&b, chunk, (int64_t)n);
-    CloseHandle(rd);
+    while (ReadFile(out_r, chunk, sizeof chunk, &n, NULL) && n > 0) buf_push(&b, chunk, (int64_t)n);
+    CloseHandle(out_r);
+    if (err_r && !te) read_all(&er); /* no thread for it: read it now */
+    if (tw) {
+        WaitForSingleObject(tw, INFINITE);
+        CloseHandle(tw);
+    }
+    if (te) {
+        WaitForSingleObject(te, INFINITE);
+        CloseHandle(te);
+    }
     WaitForSingleObject(pi.hProcess, INFINITE);
     DWORD code = 0;
     GetExitCodeProcess(pi.hProcess, &code);
     CloseHandle(pi.hProcess);
     veles_blocking_leave();
     buf_finish(out, &b);
+    buf_finish(errout, &er.b);
     *err = 0;
     return (int64_t)code;
 }
 #else
 extern char **environ;
 
-int64_t veles_os_run(const char *argz, int64_t alen, bool merge, veles_string *out, int64_t *err) {
+/* reads what is there on fd into b; closes it and returns -1 at its end */
+static int drain_fd(int fd, buf_t *b) {
+    char chunk[8192];
+    ssize_t n = read(fd, chunk, sizeof chunk);
+    if (n > 0) {
+        buf_push(b, chunk, (int64_t)n);
+        return fd;
+    }
+    if (n < 0 && (errno == EINTR || errno == EAGAIN)) return fd;
+    close(fd);
+    return -1;
+}
+
+int64_t veles_os_run(const char *argz, int64_t alen, const char *input, int64_t inlen, int64_t mode, veles_string *out, veles_string *errout, int64_t *err) {
     fflush(stdout);
     int64_t argc = 1;
     for (int64_t i = 0; i < alen; i++) argc += argz[i] == 0;
@@ -494,47 +594,92 @@ int64_t veles_os_run(const char *argz, int64_t alen, bool merge, veles_string *o
             start = i + 1;
         }
     }
-    int fds[2];
-    if (pipe(fds) != 0) {
+    /* three pipes: the input the child reads, its output, and — when it is
+     * captured apart — its errors */
+    int outp[2], inp[2], errp[2] = {-1, -1};
+    if (pipe(outp) != 0) {
         *err = errno;
         free(argv);
         free(copy);
         return -1;
     }
+    if (pipe(inp) != 0 || (mode == RUN_CAPTURE && pipe(errp) != 0)) {
+        *err = errno;
+        close(outp[0]);
+        close(outp[1]);
+        if (inp[0] >= 0) { close(inp[0]); close(inp[1]); }
+        free(argv);
+        free(copy);
+        return -1;
+    }
+    /* a child that stops reading its input is an EPIPE here, not a signal
+     * that ends this process */
+    signal(SIGPIPE, SIG_IGN);
     posix_spawn_file_actions_t fa;
     posix_spawn_file_actions_init(&fa);
-    posix_spawn_file_actions_adddup2(&fa, fds[1], 1);
-    if (merge) posix_spawn_file_actions_adddup2(&fa, fds[1], 2);
-    posix_spawn_file_actions_addclose(&fa, fds[0]);
-    posix_spawn_file_actions_addclose(&fa, fds[1]);
+    posix_spawn_file_actions_adddup2(&fa, inp[0], 0);
+    posix_spawn_file_actions_adddup2(&fa, outp[1], 1);
+    if (mode == RUN_MERGE) posix_spawn_file_actions_adddup2(&fa, outp[1], 2);
+    if (mode == RUN_CAPTURE) posix_spawn_file_actions_adddup2(&fa, errp[1], 2);
+    int ends[] = {inp[0], inp[1], outp[0], outp[1], errp[0], errp[1]};
+    for (int i = 0; i < 6; i++)
+        if (ends[i] > 2) posix_spawn_file_actions_addclose(&fa, ends[i]);
     veles_blocking_enter();
     pid_t pid;
     int rc = posix_spawnp(&pid, argv[0], &fa, NULL, argv, environ);
     posix_spawn_file_actions_destroy(&fa);
-    close(fds[1]); /* else the read below never sees the end */
+    /* else the reads below never see the end */
+    close(inp[0]);
+    close(outp[1]);
+    if (errp[1] >= 0) close(errp[1]);
     free(argv);
     free(copy);
     if (rc != 0) {
-        close(fds[0]);
+        close(inp[1]);
+        close(outp[0]);
+        if (errp[0] >= 0) close(errp[0]);
         veles_blocking_leave();
         *err = rc;
         return -1;
     }
-    buf_t b = {0};
-    char chunk[8192];
-    int rerr = 0;
-    for (;;) {
-        ssize_t n = read(fds[0], chunk, sizeof chunk);
-        if (n > 0) {
-            buf_push(&b, chunk, (int64_t)n);
-        } else if (n < 0 && errno == EINTR) {
-            continue;
-        } else {
-            if (n < 0) rerr = errno;
+    /* the input goes in and both outputs come out at once: a child that
+     * fills one pipe while this waits on another would wait for ever, and
+     * so would this */
+    int in_fd = inp[1], out_fd = outp[0], err_fd = errp[0];
+    if (inlen == 0) {
+        close(in_fd);
+        in_fd = -1;
+    } else {
+        fcntl(in_fd, F_SETFL, fcntl(in_fd, F_GETFL) | O_NONBLOCK);
+    }
+    buf_t b = {0}, eb = {0};
+    int64_t off = 0;
+    while (in_fd >= 0 || out_fd >= 0 || err_fd >= 0) {
+        struct pollfd p[3];
+        int n = 0, at_in = -1, at_out = -1, at_err = -1;
+        if (in_fd >= 0) { at_in = n; p[n].fd = in_fd; p[n++].events = POLLOUT; }
+        if (out_fd >= 0) { at_out = n; p[n].fd = out_fd; p[n++].events = POLLIN; }
+        if (err_fd >= 0) { at_err = n; p[n].fd = err_fd; p[n++].events = POLLIN; }
+        if (poll(p, (nfds_t)n, -1) < 0) {
+            if (errno == EINTR) continue;
             break;
         }
+        if (at_in >= 0 && p[at_in].revents) {
+            int64_t want = inlen - off > 65536 ? 65536 : inlen - off;
+            ssize_t w = write(in_fd, input + off, (size_t)want);
+            if (w > 0) off += w;
+            if ((w < 0 && errno != EAGAIN && errno != EINTR) || off >= inlen) {
+                close(in_fd); /* written, or the child stopped reading */
+                in_fd = -1;
+            }
+        }
+        if (at_out >= 0 && p[at_out].revents) out_fd = drain_fd(out_fd, &b);
+        if (at_err >= 0 && p[at_err].revents) err_fd = drain_fd(err_fd, &eb);
     }
-    close(fds[0]);
+    if (in_fd >= 0) close(in_fd);
+    if (out_fd >= 0) close(out_fd);
+    if (err_fd >= 0) close(err_fd);
+    int rerr = 0;
     int status;
     while (waitpid(pid, &status, 0) < 0) {
         if (errno != EINTR) {
@@ -544,6 +689,7 @@ int64_t veles_os_run(const char *argz, int64_t alen, bool merge, veles_string *o
     }
     veles_blocking_leave();
     buf_finish(out, &b);
+    buf_finish(errout, &eb);
     *err = rerr;
     if (status == -1) {
         *err = ECHILD;

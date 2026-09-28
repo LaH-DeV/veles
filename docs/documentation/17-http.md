@@ -263,7 +263,9 @@ behind you is `req.withHeader(...)`, as `requestId` does.
 ## Connections and time
 
 `serve` keeps a connection open for further requests (HTTP/1.1
-keep-alive) until the client closes it, sends `Connection: close`, or says
+keep-alive) until the client closes it, sends `Connection: close` (an
+HTTP/1.0 client, unless it sends `Connection: keep-alive`), the handler's
+response says `connection: close`, or the client says
 nothing for `limits.idleTimeout` (15 s by default) — a
 `withTimeout` around each read, so a silent client costs one parked task
 and nothing else. Requests are logged to standard error as
@@ -336,6 +338,31 @@ of this reaches a handler: the refusal happens while the request is being
 read, which is the point — a body is never assembled in order to discover
 it was too big, and `headerCount` counts *lines*, so repeating one header
 name a thousand times costs what it should.
+
+The head is read strictly, the way RFC 9112 asks of a server, and a
+request is refused with `400` wherever two readers could disagree about
+where a header or the body ends — which matters as soon as a proxy stands
+in front of the server and reads the same bytes first:
+
+- a space between a header name and its colon (`Content-Length : 5`), a
+  name that is not a token, or a line that starts with whitespace (the
+  obsolete folded form);
+- a CR or NUL inside a header value, or a line that is not UTF-8;
+- a `Content-Length` that is not plain digits (`+5`, `0x10`), or two that
+  disagree;
+- an HTTP/1.1 request without exactly one `Host`, and a version that is
+  not `HTTP/` digit `.` digit (a major version other than 1 is `505`).
+
+On the way out, the server owns the framing: a handler's
+`content-length`, `transfer-encoding` and `connection` headers are not
+sent (the last is still obeyed: `connection: close` closes), and a line
+break or NUL in a header value is sent as a space. A value often comes
+from the request — a redirect's `location`, an echoed path, which can
+decode to `\r\n` — and a line break there would let the client write
+headers of its own into your response.
+
+`examples/fuzz` throws generated and mutated requests at a server in the
+same process and checks every answer against these rules.
 
 Two ceilings are worth setting for your own server rather than taking the
 default. `bodyBytes` should be as small as the largest thing you accept —

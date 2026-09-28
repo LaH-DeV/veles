@@ -221,12 +221,17 @@ public struct RangeIter<T> {
   var current: T
   hi:          T
   inclusive:   bool
+  // an inclusive range ends by this flag on its last value, not by
+  // stepping past it: past the type's maximum, `current` would wrap
+  var done: bool = false
 
   implement Iterator {
     type Item = T
     fun next(): T? {
+      if (this.done) return null
       if (this.inclusive) {
         if (this.current > this.hi) return null
+        if (this.current == this.hi) this.done = true
       } else {
         if (this.current >= this.hi) return null
       }

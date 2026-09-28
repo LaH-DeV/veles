@@ -158,17 +158,29 @@ test counts words ... FAILED
 A test that times out shows what it printed before the deadline, which is
 often the only clue to where it hung.
 
-Two flags shape a run:
+Tests run at once, as tasks on the runtime's threads, so a suite takes
+about as long as its slowest tests rather than all of them added up. The
+report does not change with it: each test's lines — its verdict, what it
+recorded, what it printed — come together, in declaration order, whichever
+test finished first. Tests cannot race on memory (a module-level `var` is
+behind a lock, D66, and only Sendable values cross between tasks), but
+they can still step on each other's toes — two tests resetting one
+counter, binding one port; `--jobs 1` runs them one at a time (D80).
+
+Three flags shape a run:
 
 - `--filter text` runs only the tests whose name contains `text`
   (`veles test . --filter ports`); the summary counts the rest as
   filtered out. A filter that matches nothing is an error, so a typo in
   CI fails instead of passing with no tests run.
+- `--jobs n` runs at most `n` tests at once (default: one per thread of
+  the runtime, `VELES_THREADS` or the machine's cores); `--jobs 1` runs
+  them in order, one after another.
 - `--timeout 30s` bounds each test (default `10m`, `0` for no bound).
   A test still running at its deadline is reported —
   `FAILED: timed out after 30s` — and ends the run, since a task busy in a
-  loop cannot be stopped from outside; the report says how many tests
-  after it did not run.
+  loop cannot be stopped from outside; the report says how many other
+  tests had not finished.
 
 ### Helpers and test files
 
@@ -190,7 +202,9 @@ test "sorts" {
 ```
 
 A failure inside a helper says where the helper is, and which line of the
-test called it — through helpers that call helpers, innermost first:
+test called it — through helpers that call helpers, innermost first, into
+a helper the test launched with `async`, and for a panic inside a helper
+as well as for a failed `expect`:
 
 ```text
 test sorts ... FAILED

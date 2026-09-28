@@ -58,6 +58,10 @@ a square of side 2.0
   Pair<T>`). Writing it at top level for your own type in the same
   module is a lint: the compiler warns, and the editor's quick fix moves
   it into the body (`veles check --fix` does the same in bulk).
+- An implement must write every method the trait declares without a
+  body; one that leaves some out is an error per method, and the
+  editor's **Add the missing methods** writes them for you as stubs
+  (`fun name(): string = panic("'name' is not written yet")`) to fill in.
 - A type may implement any number of traits, and you may implement
   *your* trait for a type you did not write — `implement Shape for i64` is
   legal. What is not legal is two impls of the same trait for the same
@@ -527,6 +531,15 @@ Each iterator names its `Item`; `next()` returns `Item?`, null at the
 end. Inside the trait the associated type is used by its bare name;
 outside, as `I.Item`. [Chapter 10](10-closures-and-iterators.md) shows
 an implementation and what it buys you.
+
+When two bounds of one type parameter both declare an associated type of
+the same name, `T.Item` would have to guess, so it is an error; name the
+trait whose `Item` you mean (D84):
+
+```veles
+// fragment
+fun keys<T: Keyed + Iterable>(x: T): List<T.Keyed.Item> { ... }
+```
 
 ## Effects on trait methods
 

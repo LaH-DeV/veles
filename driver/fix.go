@@ -11,7 +11,8 @@ import (
 )
 
 // ApplyFixes applies the automatic corrections attached to diagnostics
-// (`veles check --fix`): every edit of every fix, latest offset first so
+// (`veles check --fix`): every edit of every fix but the guesses (a typo's
+// nearest name, offered only by the editor), latest offset first so
 // earlier offsets stay valid, then the formatter over each changed file.
 // It returns the number of fixes applied.
 func ApplyFixes(diags *source.Diagnostics) (int, error) {
@@ -30,7 +31,7 @@ func ApplyFixes(diags *source.Diagnostics) (int, error) {
 	}
 	seen := map[key]bool{}
 	for _, d := range diags.Items {
-		if d.Fix == nil {
+		if d.Fix == nil || d.Fix.Guess {
 			continue
 		}
 		counted := false

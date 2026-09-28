@@ -65,6 +65,11 @@ declare void @veles_run(ptr)
 declare i64 @veles_task_panicked(ptr)
 declare ptr @veles_task_panic_msg(ptr, ptr)
 declare ptr @veles_task_panic_loc(ptr, ptr)
+declare ptr @veles_task_panic_report(ptr, i64, ptr)
+declare void @veles_call_push(ptr)
+declare void @veles_call_pop()
+declare void @veles_call_base(ptr, ptr)
+declare void @veles_call_link(ptr)
 declare void @veles_task_repanic(ptr)
 declare void @veles_task_start(ptr, ptr, ptr)
 declare void @veles_task_spawn(ptr, ptr, ptr)
@@ -239,9 +244,13 @@ func (g *gen) awaitTask(task string, rt types.Type) string {
 }
 
 // callSuspending runs a suspending function as a child task and awaits it.
-func (g *gen) callSuspending(fn *sema.Func, argTypes []types.Type, argVals []string, rt types.Type) string {
+func (g *gen) callSuspending(fn *sema.Func, argTypes []types.Type, argVals []string, rt types.Type, chained bool) string {
 	ct := g.newTmp()
 	g.emit("%s = call ptr @veles_task_new()", ct)
+	if chained {
+		// the call's frame is on this task's chain: the callee's task continues it
+		g.emit("call void @veles_call_link(ptr %s)", ct)
+	}
 	g.startTask(ct, fn, argTypes, argVals)
 	return g.awaitTask(ct, rt)
 }
@@ -853,10 +862,11 @@ func (g *gen) testRunner() {
 	// what the test's expect/require/fail calls recorded (D78): how many,
 	// whether one ended the test, and the report lines
 	depth := 0 // the running test's suite depth: its report lines are indented to it
+	rec := ""  // the reported test's record (D80)
 	take := func() (n, stopped, text string) {
 		buf, st := g.alloca(strType), g.alloca("i64")
 		n = g.newTmp()
-		g.emit("%s = call i64 @veles_test_take(ptr %s, ptr %s, i64 %d)", n, buf, st, 2*depth)
+		g.emit("%s = call i64 @veles_test_take(ptr %s, ptr %s, ptr %s, i64 %d)", n, rec, buf, st, 2*depth)
 		text, s, stopped := g.newTmp(), g.newTmp(), g.newTmp()
 		g.emit("%s = load %s, ptr %s", text, strType, buf)
 		g.emit("%s = load i64, ptr %s", s, st)
@@ -879,6 +889,26 @@ func (g *gen) testRunner() {
 		bump(passes)
 		g.emitTerm("br label %%%s", doneL)
 	}
+	// every test is queued first, each with its own record bound around its
+	// task's creation so the task and all it starts record into it; the
+	// runtime runs up to `jobs` at once (D80). The reports then follow in
+	// declaration order, each printed when its test is done.
+	g.emit("call void @veles_test_setup(i64 %d, i64 %d, i64 %d)", g.prog.TestJobs, g.prog.TestTimeoutMs, len(g.prog.Tests))
+	recs, tasks := make([]string, len(g.prog.Tests)), make([]string, len(g.prog.Tests))
+	for i, t := range g.prog.Tests {
+		np, nl := g.strPtrLen(g.stringConst(t.Display))
+		recs[i], tasks[i] = g.newTmp(), g.newTmp()
+		g.emit("%s = call ptr @veles_test_new(ptr %s, i64 %s)", recs[i], np, nl)
+		prev := g.newTmp()
+		g.emit("%s = call ptr @veles_test_bind(ptr %s)", prev, recs[i])
+		g.emit("%s = call ptr @veles_task_new()", tasks[i])
+		g.emit("call void @veles_test_unbind(ptr %s)", prev)
+		fn := t
+		if !fn.Suspends {
+			fn = g.rampFor(fn)
+		}
+		g.emit("call void @veles_test_queue(ptr %s, ptr @%s, ptr null)", tasks[i], g.entryThunk(fn, nil, nil))
+	}
 	var open []string // the suites whose heading is printed, outermost first
 	for i, t := range g.prog.Tests {
 		// suites are headings, their tests indented under them (D78):
@@ -896,12 +926,12 @@ func (g *gen) testRunner() {
 		if depth > 0 {
 			leaf = strings.TrimPrefix(leaf, strings.Join(t.Suite, " / ")+" / ")
 		}
+		// wait for this test — the ones after it run on meanwhile — then
+		// report it; a test that outlives --timeout is the watchdog's to report
+		root := tasks[i]
+		rec = recs[i]
+		g.emit("call void @veles_run(ptr %s)", root)
 		say(g.stringConst(strings.Repeat("  ", depth) + "test " + leaf + " ... "))
-		if g.prog.TestTimeoutMs > 0 {
-			// the watchdog ends the run if this test outlives its bound
-			np, nl := g.strPtrLen(g.stringConst(t.Display))
-			g.emit("call void @veles_test_watch(i64 %d, ptr %s, i64 %s, i64 %d)", g.prog.TestTimeoutMs, np, nl, len(g.prog.Tests)-1-i)
-		}
 		name := t.Display
 		fail = func(text string) {
 			say(text)
@@ -914,8 +944,6 @@ func (g *gen) testRunner() {
 		if t.Sig.Effects.Throws {
 			rs = g.prog.ResultType(t.Sig.Ret, t.Sig.Effects.Error).(*types.Sealed)
 		}
-		g.emit("call void @veles_test_begin()")
-		root := g.startRoot(t)
 		pan := g.newTmp()
 		g.emit("%s = call i64 @veles_task_panicked(ptr %s)", pan, root)
 		pb := g.newTmp()
@@ -925,16 +953,18 @@ func (g *gen) testRunner() {
 		g.placeLabel(panL)
 		pt := g.prog.PanicType.(*types.Struct)
 		pv := g.panicValue(root, pt)
-		pmsg, ploc := g.newTmp(), g.newTmp()
+		pmsg := g.newTmp()
 		g.emit("%s = extractvalue %s %s, 0", pmsg, g.llType(pt), pv)
-		g.emit("%s = extractvalue %s %s, 1", ploc, g.llType(pt), pv)
-		// the location line is left out for a panic raised inside the runtime
-		_, locLen := g.strPtrLen(ploc)
-		hasLoc := g.newTmp()
-		g.emit("%s = icmp ne i64 %s, 0", hasLoc, locLen)
-		where := g.newTmp()
-		g.emit("%s = select i1 %s, %s %s, %s %s", where, hasLoc, strType, g.concat(g.stringConst("\n"+strings.Repeat("  ", depth)+"  at "), ploc), strType, g.stringConst(""))
-		report := g.concat(g.concat(g.stringConst("FAILED: panic: "), pmsg), where)
+		// under the message: where it panicked, the call chain of a debug
+		// build (D81) and, inside a test helper, where the test called it (D78)
+		tailLen := g.alloca("i64")
+		tailPtr := g.newTmp()
+		g.emit("%s = call ptr @veles_task_panic_report(ptr %s, i64 %d, ptr %s)", tailPtr, root, 2*depth+2, tailLen)
+		tl, t0, tail := g.newTmp(), g.newTmp(), g.newTmp()
+		g.emit("%s = load i64, ptr %s", tl, tailLen)
+		g.emit("%s = insertvalue %s undef, ptr %s, 0", t0, strType, tailPtr)
+		g.emit("%s = insertvalue %s %s, i64 %s, 1", tail, strType, t0, tl)
+		report := g.concat(g.concat(g.stringConst("FAILED: panic: "), pmsg), tail)
 		_, stopped, recorded := take()
 		// a require or fail ended the test with a panic: its own line says why
 		asPanic := g.concat(g.concat(report, g.stringConst("\n")), recorded)
@@ -970,9 +1000,6 @@ func (g *gen) testRunner() {
 		g.placeLabel(okL)
 		passOrRecorded(doneL)
 		g.placeLabel(doneL)
-	}
-	if g.prog.TestTimeoutMs > 0 {
-		g.emit("call void @veles_test_watch(i64 0, ptr null, i64 0, i64 0)")
 	}
 	// the summary: `3 passed, 1 failed: parsesDates` (and what a filter left out)
 	np, nf := g.newTmp(), g.newTmp()
@@ -1032,6 +1059,10 @@ func (g *gen) entryThunk(fn *sema.Func, paramTypes []types.Type, extraLead []str
 				v := g.newTmp()
 				g.emit("%s = load %s, ptr %s", v, ll, p)
 				args = append(args, ll+" "+v)
+			}
+			if !g.prog.Release {
+				// the first frame of the task's call chain (D81)
+				g.emit("call void @veles_call_base(ptr %%task, ptr %s)", g.chainRecord("", fn))
 			}
 			h := g.newTmp()
 			g.emit("%s = call ptr @%s(%s)", h, fn.Name, joinArgs(args))

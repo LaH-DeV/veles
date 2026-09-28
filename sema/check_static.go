@@ -16,7 +16,7 @@ import (
 // typeNamed resolves a name used as a call target to the type it denotes:
 // a declared or built-in type, or a type parameter (concrete inside a
 // stencil). nil when the name is not a type.
-func (f *fnCtx) typeNamed(n *ast.NameExpr) types.Type {
+func (f *fnCtx) typeNamed(n *ast.NameExpr, member string) types.Type {
 	if sym := f.lookup(n.Name); sym != nil {
 		if sym.Kind != SymType {
 			return nil
@@ -40,7 +40,13 @@ func (f *fnCtx) typeNamed(n *ast.NameExpr) types.Type {
 		// `MutableList<bool>.repeat(false, n)`: statics the prelude adds to a
 		// built-in generic type with `extend`; the type arguments are required.
 		if len(n.TypeArgs) == 0 {
-			f.errorf(n.Pos, "'%s' is generic; write the type arguments, e.g. '%s<T>.f(...)'", n.Name, n.Name)
+			// the hint names the static itself exactly when the type has it
+			if hint := f.staticHintHead(n.Name, member); !strings.Contains(hint, "'"+n.Name+"<T>."+member+"(") {
+				// the name, not the type arguments, is what is wrong
+				f.errorf(n.Pos, "no static function '%s' on type '%s'%s", member, n.Name, hint)
+				return types.TInvalid
+			}
+			f.errorf(n.Pos, "'%s' is generic; write the type arguments, e.g. '%s<T>.%s(...)'", n.Name, n.Name, member)
 			return types.TInvalid
 		}
 		path := []ast.Ident{{Name: n.Name, Pos: n.Pos}}
@@ -74,7 +80,7 @@ func (f *fnCtx) staticCall(rt types.Type, callee *ast.MemberExpr, typeArgs []typ
 				f.errorf(callee.Name.Pos, "enum '%s' has no function '%s'; an enum has 'values()', 'fromValue(n)', 'parse(s)' and 'decode(from)' (D57)", en.Name, name)
 			}
 		} else if !f.removedFactory(typeHead(rt)+"."+name, e) {
-			f.errorf(callee.Name.Pos, "no static function '%s' on type '%s'", name, rt)
+			f.errorf(callee.Name.Pos, "no static function '%s' on type '%s'%s", name, rt, f.staticHint(rt, name))
 		}
 		f.checkArgsLoosely(e.Args)
 		return bad()
@@ -82,7 +88,7 @@ func (f *fnCtx) staticCall(rt types.Type, callee *ast.MemberExpr, typeArgs []typ
 	f.c.refFunc(callee.Name.Pos, t)
 	inherent := t.Owner != nil || (t.Impl != nil && t.Impl.Trait == nil)
 	if inherent && !t.Pub && t.Module != f.module {
-		f.errorf(callee.Name.Pos, "static function '%s' is private to module '%s' (M5)", name, t.Module.Path)
+		f.errorf(callee.Name.Pos, "static function '%s' is private to module '%s'%s (M5)", name, t.Module.Path, privateHint(t.Module.Path))
 	}
 	return f.callTemplateRecv(t, subst, typeArgs, nil, e.Args, e.Pos, want)
 }
@@ -206,7 +212,7 @@ func (f *fnCtx) moduleTypeNamed(x ast.Expr) types.Type {
 		return nil
 	}
 	if !member.Pub {
-		f.errorf(m.Name.Pos, "'%s' is private to module '%s' (M5)", m.Name.Name, n.Name)
+		f.errorf(m.Name.Pos, "'%s' is private to module '%s'%s (M5)", m.Name.Name, n.Name, privateHint(sym.Mod.Path))
 		return types.TInvalid
 	}
 	f.c.refSym(n.Pos, sym)

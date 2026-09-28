@@ -15,7 +15,7 @@ import (
 // receiver nor hand out a pointer into it. `ref` and `iter`
 // are missing on purpose: a pointer or an iterator would outlive the move.
 var moveMethods = map[string]bool{
-	"push": true, "pop": true, "set": true, "at": true, "atOrDefault": true,
+	"push": true, "reserve": true, "pop": true, "set": true, "at": true, "atOrDefault": true,
 	"len": true, "isEmpty": true, "clear": true, "insert": true, "removeAt": true, "addAll": true,
 	"sort": true, "sortWith": true, "sortBy": true, "sortDescending": true, "sortByDescending": true,
 	"reverse": true, "swap": true, "contains": true, "indexOf": true, "first": true, "last": true,

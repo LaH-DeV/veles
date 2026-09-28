@@ -40,11 +40,12 @@ type fnCtx struct {
 	errType     types.Type // declared error union, or nil when inferred
 	unsafe      int
 	launching   *ast.CallExpr  // the call `async` is launching: it must stay a plain Call
-	selfVar   *Var           // `this`: a pointer to the receiver's place (D22 v0.30)
+	selfVar     *Var           // `this`: a pointer to the receiver's place (D22 v0.30)
 	initOwned   map[string]int // checking an `init { }` block: the fields it must assign, by index (D28)
 	selfAsRecv  bool           // the next `this` is a method receiver, not a value (init blocks)
 	isGlobal    bool           // checking a global initializer
 	staticOwner *types.Struct  // the struct whose `static val` this global initializer is, if any
+	looseArgs   int            // inside checkArgsLoosely: the call already failed, its lambdas have no expected type
 
 	// lambda support
 	parent      *fnCtx
@@ -377,7 +378,7 @@ func (c *Checker) checkGlobal(g *Global) {
 		c.errorf(d.Value.Span(), "'const' requires a compile-time constant (§4: 'const' is reserved for compile-time constants); use 'val' for runtime values")
 	}
 	if types.IsNever(declared) || types.IsUnit(declared) {
-		c.errorf(d.Name.Pos, "a global cannot have type '%s'", declared)
+		c.errorf(d.Name.Pos, "a global cannot have type '%s': its initializer gives no value to keep", declared)
 	}
 	if d.Kind == ast.BindVar && !isSynchronized(declared) {
 		// D66: every task sees the same globals, from whichever thread runs it
@@ -422,7 +423,7 @@ func (f *fnCtx) checkBlock(b *ast.Block, expected types.Type, wantValue bool) *B
 	terminated := false
 	for i, s := range b.Stmts {
 		if terminated {
-			f.errorf(s.Span(), "unreachable code")
+			f.errorf(s.Span(), "unreachable code: the statement before it always leaves; remove it or move it up")
 			break
 		}
 		last := i == len(b.Stmts)-1
@@ -430,7 +431,15 @@ func (f *fnCtx) checkBlock(b *ast.Block, expected types.Type, wantValue bool) *B
 			if es, ok := s.(*ast.ExprStmt); ok {
 				var x Expr
 				if expected != nil {
-					x = f.checkExprTo(es.X, expected)
+					x = f.checkExpr(es.X, expected)
+					if types.IsUnit(x.Type()) && !types.IsUnit(expected) && !types.IsNever(expected) && f.isResultBlock(b) {
+						// a function or lambda body ending in a call with no value
+						// (`io.println(...)`): "missing return" says what
+						// is wrong where "expected 'i64', found '()'" does not
+						out.Stmts = append(out.Stmts, &ExprStmt{X: x})
+						continue
+					}
+					x = f.coerce(x, expected, es.X.Span())
 				} else {
 					x = f.checkExpr(es.X, nil)
 				}
@@ -528,7 +537,7 @@ func (f *fnCtx) checkStmt(s ast.Stmt) (stmts []Stmt, term bool) {
 
 func (f *fnCtx) findLoop(label *ast.Ident, span source.Span, what string) *Loop {
 	if len(f.loops) == 0 {
-		f.errorf(span, "'%s' outside of a loop", what)
+		f.errorf(span, "'%s' outside of a loop: it leaves or restarts a loop, and none encloses it; 'return' leaves the function", what)
 		return nil
 	}
 	if label == nil {
@@ -539,7 +548,7 @@ func (f *fnCtx) findLoop(label *ast.Ident, span source.Span, what string) *Loop 
 			return f.loops[i].hir
 		}
 	}
-	f.errorf(label.Pos, "no enclosing loop labelled '%s'", label.Name)
+	f.errorf(label.Pos, "no enclosing loop labelled '%s'; label the loop: 'loop :%s (...) { ... }'", label.Name, label.Name)
 	return nil
 }
 
@@ -565,10 +574,10 @@ func (f *fnCtx) checkValStmt(s *ast.ValStmt) []Stmt {
 				init = f.checkExpr(s.Value, nil)
 				declared = init.Type()
 				if types.IsUnit(declared) {
-					f.errorf(s.Value.Span(), "cannot bind a value of type '()'")
+					f.errorf(s.Value.Span(), "cannot bind a value of type '()': the expression gives no value; write it as a statement")
 				}
 				if types.IsNever(declared) {
-					f.errorf(s.Value.Span(), "initializer never produces a value")
+					f.errorf(s.Value.Span(), "initializer never produces a value: it always leaves (return, throw, panic), so the binding could never exist; drop the binding")
 				}
 			}
 		}
@@ -607,7 +616,7 @@ func (f *fnCtx) checkValStmt(s *ast.ValStmt) []Stmt {
 
 func (f *fnCtx) checkReturn(s *ast.ReturnStmt) []Stmt {
 	if f.isGlobal {
-		f.errorf(s.Pos, "'return' outside of a function")
+		f.errorf(s.Pos, "'return' outside of a function: a global's value is its initializer; move the code into a function")
 		return nil
 	}
 	if f.retType == nil {
@@ -626,7 +635,7 @@ func (f *fnCtx) checkReturn(s *ast.ReturnStmt) []Stmt {
 	}
 	if s.Value == nil {
 		if !types.IsUnit(f.retType) {
-			f.errorf(s.Pos, "missing return value of type '%s'", f.retType)
+			f.errorf(s.Pos, "missing return value: this function returns '%s'; write 'return' followed by one", f.retType)
 		}
 		return []Stmt{&Return{}}
 	}
@@ -636,7 +645,7 @@ func (f *fnCtx) checkReturn(s *ast.ReturnStmt) []Stmt {
 			return []Stmt{&ExprStmt{X: x}}
 		}
 		if !types.IsUnit(x.Type()) {
-			f.errorf(s.Value.Span(), "function returns nothing but a value of type '%s' is returned", x.Type())
+			f.errorf(s.Value.Span(), "this function returns nothing, but this 'return' has a value of type '%s'; declare the result type (': %s') or return without a value", x.Type(), x.Type())
 		}
 		return []Stmt{&ExprStmt{X: x}, &Return{}}
 	}
@@ -720,6 +729,11 @@ func (f *fnCtx) checkAssignInner(s *ast.AssignStmt) []Stmt {
 		op := BinOpFromToken(s.Op)
 		var pre []Stmt
 		target, pre = f.hoistPlace(target)
+		if rawPointer(target.Type()) != nil {
+			// p += n steps a raw pointer (D50)
+			value = f.rawPointerBinary(op, target, s.Value, s.Pos)
+			return append(pre, f.assignPlace(s.Target, target, root, value, rawType))
+		}
 		if operandTakesOperator(op, target.Type()) {
 			// t += d is t = t.plus(d) (D71); the result must fit the place
 			value = f.coerce(f.operatorCall(op, target, s.Value, s.Pos), target.Type(), s.Pos)
@@ -837,7 +851,13 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 	case *ast.NameExpr:
 		sym := f.scope.Lookup(e.Name)
 		if sym == nil {
-			f.errorf(e.Pos, "unknown name '%s'", e.Name)
+			// assigning to a name nothing declared: most often a typo, else
+			// a variable that was never introduced
+			hint, fix := f.unknownNameHint(e.Pos, e.Name, true)
+			if hint == "" {
+				hint = "; declare it first: 'var " + e.Name + " = ...'"
+			}
+			f.c.errorFix(e.Pos, fix, "unknown name '%s'%s", e.Name, hint)
 			return nil, nil
 		}
 		switch sym.Kind {
@@ -856,18 +876,18 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 		case SymGlobal:
 			g := sym.Global
 			if mutate && !g.Mutable {
-				f.errorf(e.Pos, "cannot assign to '%s': it is not a 'var'", e.Name)
+				f.errorf(e.Pos, "cannot assign to '%s': it is a module-level 'val'; state every task shares is a 'var' behind a lock (D66)", e.Name)
 			}
 			v := f.globalVar(g)
 			f.c.refGlobal(e.Pos, e.Name, g)
 			return &VarRef{exprBase{v.Type}, v}, v
 		}
-		f.errorf(e.Pos, "'%s' is not assignable", e.Name)
+		f.errorf(e.Pos, "'%s' is not assignable: only a variable, a field or what a pointer points at can be", e.Name)
 		return nil, nil
 	case *ast.SelfExpr:
 		self := f.selfRef()
 		if self == nil {
-			f.errorf(e.Pos, "'this' outside of a method")
+			f.errorf(e.Pos, "'this' is only inside a method; a function outside a type takes the value as a parameter")
 			return nil, nil
 		}
 		if mutate {
@@ -876,7 +896,7 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 		return &Deref{exprBase{self.Type.(*types.Pointer).Elem}, &VarRef{exprBase{self.Type}, self}}, self
 	case *ast.MemberExpr:
 		if e.Safe {
-			f.errorf(e.Pos, "cannot assign through '?.'")
+			f.errorf(e.Pos, "cannot assign through '?.': there may be nothing to assign to; check for null first, 'if (x != null) x.f = v'")
 			return nil, nil
 		}
 		// Through a pointer, mutability is not gated by the binding (D11).
@@ -980,7 +1000,7 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 			"'%s' is a copy of the element, not the element; assign through '%s', or use 'set' (D25)", srcText(e), repl)
 		return nil, nil
 	}
-	f.errorf(e.Span(), "expression is not assignable")
+	f.errorf(e.Span(), "this expression is not assignable: only a variable, a field or what a pointer points at can be")
 	return nil, nil
 }
 
@@ -1030,13 +1050,14 @@ func (f *fnCtx) lookupField(st *types.Struct, name string, span source.Span) *ty
 			if fld.Private && !f.insideType(st) {
 				f.errorf(span, "field '%s' is private to '%s': only its own methods, impl and extend blocks may use it", name, st.Name)
 			} else if !fld.Pub && st.Module != f.module.prefix() {
-				f.errorf(span, "field '%s' of '%s' is private to module '%s' (M5)", name, st.Name, st.Module)
+				f.errorf(span, "field '%s' of '%s' is private to module '%s'%s (M5)", name, st.Name, st.Module, privateHint(st.Module))
 			}
 			f.c.refField(span, st, fld)
 			return fld
 		}
 	}
-	f.errorf(span, "'%s' has no field '%s'", st, name)
+	hint, hit := f.noFieldHint(st, name)
+	f.c.errorFix(span, typoFix(span, hit), "'%s' has no field '%s'%s", st, name, hint)
 	return nil
 }
 
@@ -1110,11 +1131,22 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 			pre = append(pre, &VarDecl{Var: hi, Init: &FieldGet{exprBase{it.Elem}, &VarRef{exprBase{it}, rangeTmp}, 1, "hi"}})
 			// condition: inclusive ? i <= hi : i < hi — decided at runtime
 			// through the range's flag so both forms share one lowering.
-			incl := &FieldGet{exprBase{types.TBool}, &VarRef{exprBase{it}, rangeTmp}, 2, "inclusive"}
-			lt := &Binary{exprBase{types.TBool}, OpLt, &VarRef{exprBase{it.Elem}, idx}, &VarRef{exprBase{it.Elem}, hi}, s.Pos}
-			le := &Binary{exprBase{types.TBool}, OpLe, &VarRef{exprBase{it.Elem}, idx}, &VarRef{exprBase{it.Elem}, hi}, s.Pos}
-			lp.Cond = &If{exprBase{types.TBool}, incl, &Block{Value: le, Type: types.TBool}, &Block{Value: lt, Type: types.TBool}}
-			lp.Post = []Stmt{&Assign{Target: &VarRef{exprBase{it.Elem}, idx}, Value: &Binary{exprBase{it.Elem}, OpWrapAdd, &VarRef{exprBase{it.Elem}, idx}, &IntConst{exprBase{it.Elem}, 1, false}, s.Pos}}}
+			// An inclusive range stops by a flag set on its last element
+			// rather than by stepping past it: `120..127` over i8 would
+			// step to -128 and satisfy `i <= hi` for ever (Rust's
+			// RangeInclusive keeps the same flag).
+			incl := func() Expr { return &FieldGet{exprBase{types.TBool}, &VarRef{exprBase{it}, rangeTmp}, 2, "inclusive"} }
+			ref := func(v *Var) Expr { return &VarRef{exprBase{v.Type}, v} }
+			done := f.newTemp(types.TBool)
+			pre = append(pre, &VarDecl{Var: done, Init: &BoolConst{exprBase{types.TBool}, false}})
+			lt := &Binary{exprBase{types.TBool}, OpLt, ref(idx), ref(hi), s.Pos}
+			le := &Binary{exprBase{types.TBool}, OpLe, ref(idx), ref(hi), s.Pos}
+			inRange := &If{exprBase{types.TBool}, incl(), &Block{Value: le, Type: types.TBool}, &Block{Value: lt, Type: types.TBool}}
+			lp.Cond = &If{exprBase{types.TBool}, ref(done), &Block{Value: &BoolConst{exprBase{types.TBool}, false}, Type: types.TBool}, &Block{Value: inRange, Type: types.TBool}}
+			atLast := &Binary{exprBase{types.TBool}, OpAnd, incl(), &Binary{exprBase{types.TBool}, OpEq, ref(idx), ref(hi), s.Pos}, s.Pos}
+			step := &Assign{Target: ref(idx), Value: &Binary{exprBase{it.Elem}, OpWrapAdd, ref(idx), &IntConst{exprBase{it.Elem}, 1, false}, s.Pos}}
+			stop := &Assign{Target: ref(done), Value: &BoolConst{exprBase{types.TBool}, true}}
+			lp.Post = []Stmt{&ExprStmt{&If{exprBase{types.TUnit}, atLast, &Block{Stmts: []Stmt{stop}, Type: types.TUnit}, &Block{Stmts: []Stmt{step}, Type: types.TUnit}}}}
 			v, parts := f.bindLoopVar(s.Var, it.Elem)
 			if s.Var.Name != nil {
 				f.rangeLoopFacts(s, v)
@@ -1539,7 +1571,7 @@ func (f *fnCtx) checkThrow(s *ast.ThrowStmt) []Stmt {
 		return nil
 	}
 	if f.isGlobal {
-		f.errorf(s.Pos, "'throw' outside of a function")
+		f.errorf(s.Pos, globalCannotFail)
 		return nil
 	}
 	if !f.throws {
@@ -1553,4 +1585,16 @@ func (f *fnCtx) checkThrow(s *ast.ThrowStmt) []Stmt {
 		return nil
 	}
 	return []Stmt{&ExprStmt{X: x}}
+}
+
+// isResultBlock: b is the body of the function or lambda being checked,
+// whose last expression is its result.
+func (f *fnCtx) isResultBlock(b *ast.Block) bool {
+	switch body := f.bodyAST.(type) {
+	case *ast.Block:
+		return body == b
+	case *ast.BlockExpr:
+		return body.Block == b
+	}
+	return false
 }

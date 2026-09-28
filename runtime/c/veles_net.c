@@ -10,6 +10,10 @@
  * os.ioError turns into an IoError. Strings follow veles_os.c: (data, len)
  * in, a veles_string out-pointer out.
  */
+/* glibc declares its extensions (pthread_getattr_np, ...) only when asked. */
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE
+#endif
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>

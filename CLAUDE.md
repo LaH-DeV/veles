@@ -52,8 +52,17 @@ compiler be written with this?" (veles-plan.md, Principles and track S).
 - Write new `.vs` files with the Write tool, not heredocs.
 - Probe programs go in the scratchpad, never `%TEMP%` directly: stray `.vs`
   files next to a program load as sibling modules.
-- Never hand-edit `examples/*/expected.txt` (CRLF lines + a bare-LF
-  `exit=N`); regenerate with `-update` (see `veles-test`).
+- Never hand-edit `examples/*/expected.txt` (compared byte for byte,
+  `-text` in `.gitattributes`); regenerate with `-update` (see `veles-test`).
+
+## Linux (WSL)
+
+`wsl -d Ubuntu -- bash /mnt/c/Users/lahpo/Code/veles/internal/wsl-test.sh [cmd]`
+runs `cmd` (default: build, vet, every test) against this working tree in a
+clone at `~/veles` inside WSL; from Git Bash set `MSYS_NO_PATHCONV=1` first,
+and write a `$` meant for `cmd` as `\$` (wsl.exe re-parses its command line).
+Go is in `~/.local/go` there, clang 18 from apt. A change to the runtime,
+codegen, std or a test's expected output is verified there too.
 
 ## Done means
 

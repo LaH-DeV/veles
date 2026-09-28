@@ -44,6 +44,13 @@ belongs in the struct body (moved, across files when the struct lives in
 another file of the module). `veles check
 <dir> --fix` applies every such correction from the command line.
 
+Some errors come with a suggestion rather than a correction — the nearest
+name to a typo, or **Add the missing methods** on an implement that lacks
+some of its trait's methods (each added as a stub that panics until you
+write it; a sealed variant without its `implement` gets the whole block).
+The editor offers these too, not preferred; `veles check --fix` never
+applies them, since only you know what you meant.
+
 ## Find references and rename
 
 **Find All References** (Shift+F12) and **Rename Symbol** (F2) work on

@@ -8,7 +8,7 @@ extern "C" {
   fun veles_os_arg(i: i64, out: *raw string)
   fun veles_os_getenv(name: string, out: *raw string): bool
   fun veles_os_exit(code: i64): Never
-  fun veles_os_run(argz: string, merge: bool, out: *raw string, err: *raw i64): i64
+  fun veles_os_run(argz: string, input: string, mode: i64, out: *raw string, errout: *raw string, err: *raw i64): i64
   fun veles_os_strerror(code: i64, out: *raw string)
   fun veles_io_kind(code: i64): i64
   fun veles_os_pid(): i64
@@ -154,13 +154,33 @@ public fun raiseSignal(sig: Signal) {
 public struct Output {
   public code:   i64
   public stdout: string
+  /// Its standard error, when `run` captured it apart (the default);
+  /// empty with `Stderr.Inherit` or `Stderr.Merge`.
+  public stderr: string = ""
   public fun ok(): bool = this.code == 0
 }
 
+/// What `run` does with the program's standard error (D82).
+public enum Stderr {
+  /// Kept apart, in `Output.stderr`.
+  Capture = 0
+  /// Written to this process's standard error as the program writes it.
+  Inherit = 1
+  /// Into `Output.stdout`, in the order the program wrote the two.
+  Merge = 2
+}
+
 /// Runs `program` with `args`, waits for it, and captures its standard
-/// output; standard error passes through, or is captured into the same
-/// text with `mergeStderr`. Throws when the program cannot be started; a
-/// non-zero exit is reported in `Output.code`, not thrown.
+/// output and — unless `stderr` says otherwise — its standard error apart.
+/// `input` is written to its standard input, which is then closed; with
+/// none, the program reads the end of its input at once. Throws when the
+/// program cannot be started; a non-zero exit is reported in
+/// `Output.code`, not thrown.
+///
+/// ```veles
+/// val r = try os.run("git", ["apply", "-"], input: patch)
+/// if (!r.ok()) io.eprintln(r.stderr)
+/// ```
 ///
 /// No shell is involved: each argument reaches the program as exactly one
 /// argument, so `;`, `|`, `$(...)`, `*` and quotes in it are plain text —
@@ -169,7 +189,7 @@ public struct Output {
 /// (`os.run("sh", ["-c", script])`) and own what the script contains. On
 /// Windows a `.bat` or `.cmd` file is refused: `cmd.exe` would re-read its
 /// arguments with rules no quoting can make safe.
-public fun run(program: string, args: List<string> = [], mergeStderr: bool = false): Output throws IoError {
+public fun run(program: string, args: List<string> = [], input: string = "", stderr: Stderr = Stderr.Capture): Output throws IoError {
   // the runtime takes the program and its arguments as one text, each
   // ended by a NUL — which is why none of them may contain one
   var argz = StringBuilder()
@@ -181,15 +201,17 @@ public fun run(program: string, args: List<string> = [], mergeStderr: bool = fal
   }
   if (program.isEmpty() || program.contains("\u{0}")) throw invalidArgument("not a program name", program)
   var out = ""
+  var errText = ""
   var err: i64 = 0
-  // SAFETY: takes the text by value and stores the output and the error
-  // number in `out` and `err`, locals that outlive the call
+  // SAFETY: takes the texts by value — the runtime reads `input` only
+  // until the call returns — and stores the outputs and the error number
+  // in `out`, `errText` and `err`, locals that outlive the call
   val code = unsafe {
-    veles_os_run(argz.toString(), mergeStderr, &out, &err)
+    veles_os_run(argz.toString(), input, stderr.value, &out, &errText, &err)
   }
   if (code == -2) throw invalidArgument("a batch file runs through cmd.exe, which re-reads its arguments; run 'cmd' with '/c' yourself", program)
   if (code < 0) throw ioError(err, program)
-  Output(code, stdout: out)
+  Output(code, stdout: out, stderr: errText)
 }
 
 fun invalidArgument(why: string, program: string): IoError =

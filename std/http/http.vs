@@ -520,7 +520,7 @@ fun acceptLoop(listener: net.Listener, out: Channel<net.Conn>) {
 fun connection(conn: net.Conn, handler: Handler, limits: Limits, log: bool, drain: Drain) {
   with (c = conn) {
     loop {
-      val req = when (readRequest(c, limits, drain)) {
+      val (req, http10) = when (readRequest(c, limits, drain)) {
         is Ok(r)  => r ?: break
         is Err(e) => {
           when (e) {
@@ -537,7 +537,7 @@ fun connection(conn: net.Conn, handler: Handler, limits: Limits, log: bool, drai
       val resp = dispatch(handler, req)
       // read after the handler: a stop that began while it ran still
       // closes this connection
-      val close = !wantsKeepAlive(req) || drain.stopping.load()
+      val close = !wantsKeepAlive(req, http10) || drain.stopping.load() || resp.headers.get(Header.connection)?.toLower() == "close"
       val sent = writeResponse(c, resp, close, headOnly: req.method == Method.head)
       if (log) io.eprintln("${req.peer} ${req.method} ${req.path} ${resp.status.code} ${sw.elapsed()}")
       if (sent is Err || close) break
@@ -545,10 +545,13 @@ fun connection(conn: net.Conn, handler: Handler, limits: Limits, log: bool, drai
   }
 }
 
-fun wantsKeepAlive(req: Request): bool = when (req.header("connection")?.toLower()) {
+// HTTP/1.1 keeps a connection unless told otherwise; HTTP/1.0 closes it
+// unless told otherwise (RFC 9112 §9.3), and a 1.0 client that reads to
+// the end of the connection would otherwise wait out the idle timeout.
+fun wantsKeepAlive(req: Request, http10: bool): bool = when (req.header("connection")?.toLower()) {
   "close"      => false
   "keep-alive" => true
-  else         => true  // HTTP/1.1 default
+  else         => !http10
 }
 
 // ---------------------------------------------------------------------------
@@ -562,9 +565,16 @@ fun headLine(c: net.Conn, max: i64, limit: Duration, tooLong: Fail): string? sus
     is Err(e)   => when (e) {
       is net.TooLong => throw tooLong
       is Timeout     => throw e
-      is IoError     => throw e
+      is IoError     => try rethrow(e)
     }
   }
+}
+
+// A line that is not UTF-8 is the client's mistake, answered with a 400;
+// any other read error is the connection's, which closes without a word.
+fun rethrow(e: IoError): Never throws Fail | IoError {
+  if (e.kind == IoKind.InvalidData) throw badRequest("request is not valid UTF-8")
+  throw e
 }
 
 // The wait for a request line is the idle wait of a kept-alive
@@ -589,21 +599,34 @@ fun readLineOf(c: net.Conn, max: i64): string? suspends throws Fail | IoError {
     is Ok(line) => line
     is Err(e)   => when (e) {
       is net.TooLong => throw Fail(status: Status.uriTooLong, text: "URI too long")
-      is IoError     => throw e
+      is IoError     => try rethrow(e)
     }
   }
 }
 
-// One request from the connection, or null when the peer closed between
-// requests or the server is stopping; a malformed or oversized request is
-// a Fail (400/411/413/414/431/501/505), a slow one a 408.
-fun readRequest(c: net.Conn, limits: Limits, drain: Drain): Request? throws Fail | IoError | Timeout {
+// One request from the connection, and whether it spoke HTTP/1.0; null
+// when the peer closed between requests or the server is stopping. A
+// malformed or oversized request is a Fail (400/413/414/431/501/505), a
+// slow one a 408.
+//
+// The head is read strictly, as RFC 9112 asks of a server: wherever two
+// readers could disagree about where a header or the body ends — a space
+// before a colon, a folded line, two lengths, a stray CR or NUL — the
+// request is refused rather than read one way, since a proxy in front of
+// the server may have read it the other way.
+fun readRequest(c: net.Conn, limits: Limits, drain: Drain): (Request, bool)? throws Fail | IoError | Timeout {
   val first = try requestLine(c, limits, drain) ?: return null
   // from here the whole head is on one clock, so a peer cannot hold the
   // connection open by sending one header every few seconds
   val headDeadline = time.Deadline.after(limits.headerTimeout)
   val [method, target, version] = first.split(" ") else throw badRequest("malformed request line")
-  if (!version.startsWith("HTTP/1.")) throw Fail(status: Status.httpVersionNotSupported, text: "HTTP version not supported")
+  if (!isToken(method) || target.isEmpty()) throw badRequest("malformed request line")
+  // `HTTP/` DIGIT `.` DIGIT (RFC 9112 §2.3)
+  val (protocol, number) = version.splitOnce("/") ?: ("", "")
+  val [major, minor] = number.split(".") else throw badRequest("malformed HTTP version")
+  if (protocol != "HTTP" || major.len() != 1 || minor.len() != 1 || !isDigits(major) || !isDigits(minor)) throw badRequest("malformed HTTP version")
+  if (major != "1") throw Fail(status: Status.httpVersionNotSupported, text: "HTTP version not supported")
+  val http10 = minor == "0"
   val tooManyHeaders = Fail(status: Status.requestHeaderFieldsTooLarge, text: "request header fields too large")
   val headers: MutableMap<string, string> = [:]
   var headerBytes: i64 = 0
@@ -629,18 +652,33 @@ fun readRequest(c: net.Conn, limits: Limits, drain: Drain): Request? throws Fail
     headerLines += 1
     if (headerBytes > limits.headerBytes) throw tooManyHeaders
     if (headerLines > limits.headerCount) throw tooManyHeaders
+    // a line that starts with whitespace continues the one before it in
+    // the obsolete folded form, which a server must refuse or unfold
+    if (line.startsWith(" ") || line.startsWith("\t")) throw badRequest("folded header line")
     val (rawName, rawValue) = line.splitOnce(":") else throw badRequest("malformed header line")
-    if (rawName.isEmpty()) throw badRequest("malformed header line")
-    val name = rawName.trim().toLower()
+    // the name runs up to the colon with nothing in between (RFC 9112
+    // §5.1): `Content-Length : 5` is refused, not trimmed
+    if (!isToken(rawName)) throw badRequest("malformed header name")
+    if (rawValue.contains("\r") || rawValue.contains("\u{0}")) throw badRequest("CR or NUL in a header value")
+    val name = rawName.toLower()
     val value = rawValue.trim()
+    val earlier = headers.get(name)
+    if (earlier != null) {
+      if (name == "host") throw badRequest("more than one Host header")
+      if (name == "content-length" && earlier != value) throw badRequest("conflicting content-length")
+    }
     headers.set(name, value)
   }
+  // HTTP/1.1 names the host it asks (RFC 9112 §3.2)
+  if (!http10 && headers.get("host") == null) throw badRequest("missing Host header")
   if (headers.get("transfer-encoding") != null) throw Fail(status: Status.notImplemented, text: "chunked requests are not supported")
   var body: List<u8> = []
   val declared = headers.get("content-length")
   if (declared != null) {
+    // digits and nothing else: `+5`, `0x10` and `5.0` read differently
+    // elsewhere
+    if (!isDigits(declared)) throw badRequest("malformed content-length")
     val length = try declared.toInt() ?! badRequest("malformed content-length")
-    if (length < 0) throw badRequest("malformed content-length")
     // checked before the read, not after: `readExact` allocates what it
     // is asked for, and the number came from the peer
     if (length > limits.bodyBytes) throw Fail(status: Status.contentTooLarge, text: "payload too large")
@@ -656,8 +694,17 @@ fun readRequest(c: net.Conn, limits: Limits, drain: Drain): Request? throws Fail
     }
   }
   val (rawPath, rawQuery) = target.splitOnce("?") ?: (target, "")
-  Request(method: Method(name: method), path: percentDecode(rawPath, plusIsSpace: false), query: parseQuery(rawQuery), headers: headers.toMap(), body, peer: c.peer())
+  val req = Request(method: Method(name: method), path: percentDecode(rawPath, plusIsSpace: false), query: parseQuery(rawQuery), headers: headers.toMap(), body, peer: c.peer())
+  (req, http10)
 }
+
+// The characters a method or a header name may hold (RFC 9110 §5.6.2).
+fun isToken(s: string): bool =
+  !s.isEmpty() && s.bytes().all(b => (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || tokenMarks.contains(b))
+
+val tokenMarks: List<u8> = "!#$%&'*+-.^_`|~".bytes()
+
+fun isDigits(s: string): bool = !s.isEmpty() && s.bytes().all(b => b >= '0' && b <= '9')
 
 fun parseQuery(text: string): Map<string, string> {
   val out: MutableMap<string, string> = [:]
@@ -708,21 +755,31 @@ fun writeResponse(c: net.Conn, resp: Response, close: bool, headOnly: bool = fal
   val head = StringBuilder()
   head.append("HTTP/1.1 ${resp.status.code} ${resp.status.reason()}\r\n")
   var hasType = false
+  var hasDate = false
   loop ((name, value) in resp.headers.entries()) {
-    if (name == "content-type") hasType = true
-    head.append("$name: $value\r\n")
+    // the server frames the response itself; a second length or a
+    // connection header of the handler's would contradict it
+    if (!isToken(name) || framing.contains(name.toLower())) continue
+    if (name.toLower() == "content-type") hasType = true
+    if (name.toLower() == "date") hasDate = true
+    // a value often comes from the request — a redirect's location, an
+    // echoed path that decoded to `\r\n` — and a line break in it would
+    // let the client write the rest of the response (RFC 9110 §5.5)
+    head.append("$name: ${value.replace("\r", " ").replace("\n", " ").replace("\u{0}", " ")}\r\n")
   }
   val bodyless = hasNoBody(resp.status)
   if (!bodyless) {
     if (!hasType && !resp.body.isEmpty()) head.append("content-type: application/octet-stream\r\n")
     head.append("content-length: ${resp.body.len()}\r\n")
   }
-  head.append("date: ${httpDate(time.now())}\r\n")
+  if (!hasDate) head.append("date: ${httpDate(time.now())}\r\n")
   head.append(if (close) "connection: close\r\n" else "connection: keep-alive\r\n")
   head.append("\r\n")
   val bytes = head.toString().bytes()
   try c.write(if (headOnly || bodyless) bytes else bytes.concat(resp.body))
 }
+
+val framing = ["content-length", "transfer-encoding", "connection"]
 
 // 1xx, 204 and 304 never carry a body, and a 1xx or 204 may not even say
 // `content-length` (RFC 9110 §6.4.1, §8.6); a 304's length would be the

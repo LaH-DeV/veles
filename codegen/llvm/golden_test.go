@@ -38,35 +38,50 @@ func TestGolden(t *testing.T) {
 		dir := filepath.Dir(main)
 		t.Run(filepath.Base(dir), func(t *testing.T) {
 			t.Parallel()
-			diags := &source.Diagnostics{}
-			pkg, err := sema.LoadPackage(dir, diags)
-			if err != nil {
-				t.Fatal(err)
-			}
-			pkg.NeedMain = true
-			prog := sema.Check(pkg, diags, false)
-			if len(diags.Items) > 0 || prog == nil {
-				t.Fatalf("a fixture must check without diagnostics:\n%s", diags.Render())
-			}
-			compare(t, filepath.Join(dir, "main.ll"), ModuleIR(llvm.Generate(prog), "main"))
-
-			if clangErr != nil {
-				t.Skipf("not running: %v", clangErr)
-			}
-			exe := filepath.Join(t.TempDir(), "fixture")
-			if runtime.GOOS == "windows" {
-				exe += ".exe"
-			}
-			if code := driver.Run(driver.Options{Path: dir, Mode: "build", Output: exe}); code != 0 {
-				t.Fatalf("veles build: exit %d", code)
-			}
-			out, err := exec.Command(exe).Output()
-			if err != nil {
-				t.Fatalf("running the fixture: %v", err)
-			}
-			compare(t, filepath.Join(dir, "output.txt"), strings.ReplaceAll(string(out), "\r\n", "\n"))
+			golden(t, dir, false, "main.ll", "output.txt", clangErr)
 		})
+		// A fixture whose meaning depends on the build profile (D21: `+`
+		// checked in debug, wrapping in release) has a second pair of
+		// files, main.release.ll and output.release.txt, for `--release`.
+		if _, err := os.Stat(filepath.Join(dir, "main.release.ll")); err == nil {
+			t.Run(filepath.Base(dir)+"/release", func(t *testing.T) {
+				t.Parallel()
+				golden(t, dir, true, "main.release.ll", "output.release.txt", clangErr)
+			})
+		}
 	}
+}
+
+// golden checks one fixture in one build profile: its IR against irFile,
+// and, when clang is there, what it prints against outFile.
+func golden(t *testing.T, dir string, release bool, irFile, outFile string, clangErr error) {
+	diags := &source.Diagnostics{}
+	pkg, err := sema.LoadPackage(dir, diags)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg.NeedMain = true
+	prog := sema.Check(pkg, diags, release)
+	if len(diags.Items) > 0 || prog == nil {
+		t.Fatalf("a fixture must check without diagnostics:\n%s", diags.Render())
+	}
+	compare(t, filepath.Join(dir, irFile), ModuleIR(llvm.Generate(prog), "main"))
+
+	if clangErr != nil {
+		t.Skipf("not running: %v", clangErr)
+	}
+	exe := filepath.Join(t.TempDir(), "fixture")
+	if runtime.GOOS == "windows" {
+		exe += ".exe"
+	}
+	if code := driver.Run(driver.Options{Path: dir, Mode: "build", Output: exe, Release: release}); code != 0 {
+		t.Fatalf("veles build: exit %d", code)
+	}
+	out, err := exec.Command(exe).Output()
+	if err != nil {
+		t.Fatalf("running the fixture: %v", err)
+	}
+	compare(t, filepath.Join(dir, outFile), strings.ReplaceAll(string(out), "\r\n", "\n"))
 }
 
 func compare(t *testing.T, path, got string) {

@@ -52,20 +52,20 @@ entry:
   %a340 = alloca { i1, i64 }
   %a351 = alloca %str
   %a352 = alloca [9 x %str]
-  %a367 = alloca %str
-  %a370 = alloca { i1, i64 }
-  %a376 = alloca i64
-  %a381 = alloca [21 x i8]
-  %a389 = alloca %str
-  %a392 = alloca { i1, i64 }
-  %a398 = alloca i64
-  %a403 = alloca [21 x i8]
-  %a409 = alloca [21 x i8]
-  %a415 = alloca [21 x i8]
-  %a421 = alloca i64
-  %a424 = alloca %str
+  %a369 = alloca %str
+  %a372 = alloca { i1, i64 }
+  %a378 = alloca i64
+  %a383 = alloca [21 x i8]
+  %a391 = alloca %str
+  %a394 = alloca { i1, i64 }
+  %a400 = alloca i64
+  %a405 = alloca [21 x i8]
+  %a411 = alloca [21 x i8]
+  %a417 = alloca [21 x i8]
+  %a423 = alloca i64
   %a426 = alloca %str
-  %a427 = alloca [9 x %str]
+  %a428 = alloca %str
+  %a429 = alloca [9 x %str]
   %t1 = call ptr @veles_list_new(ptr @adesc.i64, i64 3)
   store i64 3, ptr %a2
   call void @veles_list_push(ptr %t1, ptr %a2)
@@ -623,110 +623,118 @@ if.end.72:
   store %str %t350, ptr %t361
   call void @veles_string_concat_n(ptr %a351, ptr %a352, i64 9)
   %t362 = load %str, ptr %a351
+  %t363 = extractvalue %str { ptr @.str.14, i64 20 }, 0
+  %t364 = extractvalue %str { ptr @.str.14, i64 20 }, 1
+  call void @veles_call_push(ptr %t363)
   call void @v_std.io.println(%str %t362)
-  %t363 = load ptr, ptr %a98
-  %t365 = extractvalue %str { ptr @.str.4, i64 1 }, 0
-  %t366 = extractvalue %str { ptr @.str.4, i64 1 }, 1
-  %t364 = call i64 @veles_hash_bytes(ptr %t365, i64 %t366)
-  store %str { ptr @.str.4, i64 1 }, ptr %a367
-  %t368 = call i64 @veles_map_find(ptr %t363, i64 %t364, ptr %a367, ptr @eqp.string)
-  %t369 = icmp sge i64 %t368, 0
-  store { i1, i64 } zeroinitializer, ptr %a370
-  br i1 %t369, label %map.hit.74, label %map.end.75
+  call void @veles_call_pop()
+  %t365 = load ptr, ptr %a98
+  %t367 = extractvalue %str { ptr @.str.4, i64 1 }, 0
+  %t368 = extractvalue %str { ptr @.str.4, i64 1 }, 1
+  %t366 = call i64 @veles_hash_bytes(ptr %t367, i64 %t368)
+  store %str { ptr @.str.4, i64 1 }, ptr %a369
+  %t370 = call i64 @veles_map_find(ptr %t365, i64 %t366, ptr %a369, ptr @eqp.string)
+  %t371 = icmp sge i64 %t370, 0
+  store { i1, i64 } zeroinitializer, ptr %a372
+  br i1 %t371, label %map.hit.74, label %map.end.75
 map.hit.74:
-  %t371 = call ptr @veles_map_val_at(ptr %t363, i64 %t368)
-  %t372 = load i64, ptr %t371
-  %t373 = insertvalue { i1, i64 } undef, i1 true, 0
-  %t374 = insertvalue { i1, i64 } %t373, i64 %t372, 1
-  store { i1, i64 } %t374, ptr %a370
+  %t373 = call ptr @veles_map_val_at(ptr %t365, i64 %t370)
+  %t374 = load i64, ptr %t373
+  %t375 = insertvalue { i1, i64 } undef, i1 true, 0
+  %t376 = insertvalue { i1, i64 } %t375, i64 %t374, 1
+  store { i1, i64 } %t376, ptr %a372
   br label %map.end.75
 map.end.75:
-  %t375 = load { i1, i64 }, ptr %a370
-  %t378 = extractvalue { i1, i64 } %t375, 0
-  %t377 = xor i1 %t378, true
-  br i1 %t377, label %elvis.default.76, label %elvis.some.77
+  %t377 = load { i1, i64 }, ptr %a372
+  %t380 = extractvalue { i1, i64 } %t377, 0
+  %t379 = xor i1 %t380, true
+  br i1 %t379, label %elvis.default.76, label %elvis.some.77
 elvis.some.77:
-  %t379 = extractvalue { i1, i64 } %t375, 1
-  store i64 %t379, ptr %a376
+  %t381 = extractvalue { i1, i64 } %t377, 1
+  store i64 %t381, ptr %a378
   br label %elvis.end.78
 elvis.default.76:
-  store i64 0, ptr %a376
+  store i64 0, ptr %a378
   br label %elvis.end.78
 elvis.end.78:
-  %t380 = load i64, ptr %a376
-  %t382 = call i64 @veles_i64_format(ptr %a381, i64 %t380)
-  %t383 = insertvalue %str undef, ptr %a381, 0
-  %t384 = insertvalue %str %t383, i64 %t382, 1
-  %t385 = load ptr, ptr %a98
-  %t387 = extractvalue %str { ptr @.str.5, i64 1 }, 0
-  %t388 = extractvalue %str { ptr @.str.5, i64 1 }, 1
-  %t386 = call i64 @veles_hash_bytes(ptr %t387, i64 %t388)
-  store %str { ptr @.str.5, i64 1 }, ptr %a389
-  %t390 = call i64 @veles_map_find(ptr %t385, i64 %t386, ptr %a389, ptr @eqp.string)
-  %t391 = icmp sge i64 %t390, 0
-  store { i1, i64 } zeroinitializer, ptr %a392
-  br i1 %t391, label %map.hit.79, label %map.end.80
+  %t382 = load i64, ptr %a378
+  %t384 = call i64 @veles_i64_format(ptr %a383, i64 %t382)
+  %t385 = insertvalue %str undef, ptr %a383, 0
+  %t386 = insertvalue %str %t385, i64 %t384, 1
+  %t387 = load ptr, ptr %a98
+  %t389 = extractvalue %str { ptr @.str.5, i64 1 }, 0
+  %t390 = extractvalue %str { ptr @.str.5, i64 1 }, 1
+  %t388 = call i64 @veles_hash_bytes(ptr %t389, i64 %t390)
+  store %str { ptr @.str.5, i64 1 }, ptr %a391
+  %t392 = call i64 @veles_map_find(ptr %t387, i64 %t388, ptr %a391, ptr @eqp.string)
+  %t393 = icmp sge i64 %t392, 0
+  store { i1, i64 } zeroinitializer, ptr %a394
+  br i1 %t393, label %map.hit.79, label %map.end.80
 map.hit.79:
-  %t393 = call ptr @veles_map_val_at(ptr %t385, i64 %t390)
-  %t394 = load i64, ptr %t393
-  %t395 = insertvalue { i1, i64 } undef, i1 true, 0
-  %t396 = insertvalue { i1, i64 } %t395, i64 %t394, 1
-  store { i1, i64 } %t396, ptr %a392
+  %t395 = call ptr @veles_map_val_at(ptr %t387, i64 %t392)
+  %t396 = load i64, ptr %t395
+  %t397 = insertvalue { i1, i64 } undef, i1 true, 0
+  %t398 = insertvalue { i1, i64 } %t397, i64 %t396, 1
+  store { i1, i64 } %t398, ptr %a394
   br label %map.end.80
 map.end.80:
-  %t397 = load { i1, i64 }, ptr %a392
-  %t400 = extractvalue { i1, i64 } %t397, 0
-  %t399 = xor i1 %t400, true
-  br i1 %t399, label %elvis.default.81, label %elvis.some.82
+  %t399 = load { i1, i64 }, ptr %a394
+  %t402 = extractvalue { i1, i64 } %t399, 0
+  %t401 = xor i1 %t402, true
+  br i1 %t401, label %elvis.default.81, label %elvis.some.82
 elvis.some.82:
-  %t401 = extractvalue { i1, i64 } %t397, 1
-  store i64 %t401, ptr %a398
+  %t403 = extractvalue { i1, i64 } %t399, 1
+  store i64 %t403, ptr %a400
   br label %elvis.end.83
 elvis.default.81:
-  store i64 0, ptr %a398
+  store i64 0, ptr %a400
   br label %elvis.end.83
 elvis.end.83:
-  %t402 = load i64, ptr %a398
-  %t404 = call i64 @veles_i64_format(ptr %a403, i64 %t402)
-  %t405 = insertvalue %str undef, ptr %a403, 0
-  %t406 = insertvalue %str %t405, i64 %t404, 1
-  %t407 = load ptr, ptr %a98
-  %t408 = call i64 @veles_map_len(ptr %t407)
-  %t410 = call i64 @veles_i64_format(ptr %a409, i64 %t408)
-  %t411 = insertvalue %str undef, ptr %a409, 0
-  %t412 = insertvalue %str %t411, i64 %t410, 1
-  %t413 = load ptr, ptr %a147
-  %t414 = call i64 @veles_map_len(ptr %t413)
-  %t416 = call i64 @veles_i64_format(ptr %a415, i64 %t414)
-  %t417 = insertvalue %str undef, ptr %a415, 0
-  %t418 = insertvalue %str %t417, i64 %t416, 1
-  %t419 = load ptr, ptr %a147
-  store i64 4, ptr %a421
-  %t422 = call i64 @veles_map_find(ptr %t419, i64 4, ptr %a421, ptr @eqp.i64)
-  %t423 = icmp sge i64 %t422, 0
-  call void @veles_bool_to_string(ptr %a424, i1 zeroext %t423)
-  %t425 = load %str, ptr %a424
-  %t428 = getelementptr [9 x %str], ptr %a427, i64 0, i64 0
-  store %str %t384, ptr %t428
-  %t429 = getelementptr [9 x %str], ptr %a427, i64 0, i64 1
-  store %str { ptr @.str.13, i64 1 }, ptr %t429
-  %t430 = getelementptr [9 x %str], ptr %a427, i64 0, i64 2
-  store %str %t406, ptr %t430
-  %t431 = getelementptr [9 x %str], ptr %a427, i64 0, i64 3
+  %t404 = load i64, ptr %a400
+  %t406 = call i64 @veles_i64_format(ptr %a405, i64 %t404)
+  %t407 = insertvalue %str undef, ptr %a405, 0
+  %t408 = insertvalue %str %t407, i64 %t406, 1
+  %t409 = load ptr, ptr %a98
+  %t410 = call i64 @veles_map_len(ptr %t409)
+  %t412 = call i64 @veles_i64_format(ptr %a411, i64 %t410)
+  %t413 = insertvalue %str undef, ptr %a411, 0
+  %t414 = insertvalue %str %t413, i64 %t412, 1
+  %t415 = load ptr, ptr %a147
+  %t416 = call i64 @veles_map_len(ptr %t415)
+  %t418 = call i64 @veles_i64_format(ptr %a417, i64 %t416)
+  %t419 = insertvalue %str undef, ptr %a417, 0
+  %t420 = insertvalue %str %t419, i64 %t418, 1
+  %t421 = load ptr, ptr %a147
+  store i64 4, ptr %a423
+  %t424 = call i64 @veles_map_find(ptr %t421, i64 4, ptr %a423, ptr @eqp.i64)
+  %t425 = icmp sge i64 %t424, 0
+  call void @veles_bool_to_string(ptr %a426, i1 zeroext %t425)
+  %t427 = load %str, ptr %a426
+  %t430 = getelementptr [9 x %str], ptr %a429, i64 0, i64 0
+  store %str %t386, ptr %t430
+  %t431 = getelementptr [9 x %str], ptr %a429, i64 0, i64 1
   store %str { ptr @.str.13, i64 1 }, ptr %t431
-  %t432 = getelementptr [9 x %str], ptr %a427, i64 0, i64 4
-  store %str %t412, ptr %t432
-  %t433 = getelementptr [9 x %str], ptr %a427, i64 0, i64 5
+  %t432 = getelementptr [9 x %str], ptr %a429, i64 0, i64 2
+  store %str %t408, ptr %t432
+  %t433 = getelementptr [9 x %str], ptr %a429, i64 0, i64 3
   store %str { ptr @.str.13, i64 1 }, ptr %t433
-  %t434 = getelementptr [9 x %str], ptr %a427, i64 0, i64 6
-  store %str %t418, ptr %t434
-  %t435 = getelementptr [9 x %str], ptr %a427, i64 0, i64 7
+  %t434 = getelementptr [9 x %str], ptr %a429, i64 0, i64 4
+  store %str %t414, ptr %t434
+  %t435 = getelementptr [9 x %str], ptr %a429, i64 0, i64 5
   store %str { ptr @.str.13, i64 1 }, ptr %t435
-  %t436 = getelementptr [9 x %str], ptr %a427, i64 0, i64 8
-  store %str %t425, ptr %t436
-  call void @veles_string_concat_n(ptr %a426, ptr %a427, i64 9)
-  %t437 = load %str, ptr %a426
-  call void @v_std.io.println(%str %t437)
+  %t436 = getelementptr [9 x %str], ptr %a429, i64 0, i64 6
+  store %str %t420, ptr %t436
+  %t437 = getelementptr [9 x %str], ptr %a429, i64 0, i64 7
+  store %str { ptr @.str.13, i64 1 }, ptr %t437
+  %t438 = getelementptr [9 x %str], ptr %a429, i64 0, i64 8
+  store %str %t427, ptr %t438
+  call void @veles_string_concat_n(ptr %a428, ptr %a429, i64 9)
+  %t439 = load %str, ptr %a428
+  %t440 = extractvalue %str { ptr @.str.15, i64 20 }, 0
+  %t441 = extractvalue %str { ptr @.str.15, i64 20 }, 1
+  call void @veles_call_push(ptr %t440)
+  call void @v_std.io.println(%str %t439)
+  call void @veles_call_pop()
   ret void
 }
 
@@ -743,3 +751,5 @@ elvis.end.83:
 @.str.11 = private unnamed_addr constant [14 x i8] c"main.vs:21:68\00"
 @.str.12 = private unnamed_addr constant [14 x i8] c"main.vs:21:83\00"
 @.str.13 = private unnamed_addr constant [2 x i8] c" \00"
+@.str.14 = private unnamed_addr constant [21 x i8] c"main.vs:21:3\00println\00"
+@.str.15 = private unnamed_addr constant [21 x i8] c"main.vs:22:3\00println\00"

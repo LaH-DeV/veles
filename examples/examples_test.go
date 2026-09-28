@@ -19,6 +19,14 @@ import (
 // -update rewrites the expected.txt of every example whose output differs.
 var update = flag.Bool("update", false, "rewrite expected.txt with the actual output")
 
+// -sanitize builds every example with `veles build --sanitize` (the C runtime
+// under AddressSanitizer and UndefinedBehaviorSanitizer) and runs it with the
+// collector running every few kilobytes; a sanitizer report fails the example.
+var sanitize = flag.Bool("sanitize", false, "build with --sanitize and collect constantly")
+
+// sanitizeEnv is the environment of a -sanitize run.
+var sanitizeEnv = []string{"VELES_GC_THRESHOLD=4096", "UBSAN_OPTIONS=print_stacktrace=1"}
+
 // TestExamples compiles every example directory with the veles binary and
 // compares its standard output and exit code against expected.txt. An
 // example with a commands.txt is a command-line tool: see runScript. A
@@ -59,6 +67,9 @@ func TestExamples(t *testing.T) {
 				exe += ".exe"
 			}
 			build := exec.Command(veles, "build", ex.source, "-o", exe)
+			if *sanitize {
+				build.Args = append(build.Args, "--sanitize")
+			}
 			if out, err := build.CombinedOutput(); err != nil {
 				t.Fatalf("veles build failed: %v\n%s", err, out)
 			}
@@ -100,15 +111,21 @@ func runOnce(t *testing.T, exe string, args, env []string, dir string, stdin []b
 	run := exec.CommandContext(ctx, exe, args...)
 	run.WaitDelay = 5 * time.Second
 	run.Dir = dir
+	if *sanitize {
+		env = append(append([]string(nil), sanitizeEnv...), env...)
+	}
 	if env != nil {
 		run.Env = append(os.Environ(), env...)
 	}
 	if stdin != nil {
 		run.Stdin = bytes.NewReader(stdin)
 	}
-	var stdout bytes.Buffer
-	run.Stdout = &stdout
+	var stdout, stderr bytes.Buffer
+	run.Stdout, run.Stderr = &stdout, &stderr
 	err := run.Run()
+	if report := stderr.String(); *sanitize && (strings.Contains(report, "Sanitizer") || strings.Contains(report, "runtime error:")) {
+		t.Errorf("%s %s: sanitizer report:\n%s", filepath.Base(exe), strings.Join(args, " "), report)
+	}
 	if ctx.Err() != nil {
 		t.Fatalf("%s %s did not finish in %v; killed. Output so far:\n%s", filepath.Base(exe), strings.Join(args, " "), runTimeout, stdout.String())
 	}

@@ -115,6 +115,9 @@ type Diagnostic struct {
 type Fix struct {
 	Title string
 	Edits []TextEdit
+	// Guess marks a likely correction rather than a certain one (a typo's
+	// nearest name): the editor offers it, `veles check --fix` leaves it.
+	Guess bool
 }
 
 type TextEdit struct {
@@ -177,6 +180,14 @@ func (d *Diagnostics) Render() string {
 				width = max(1, len(text)-(col-1))
 			}
 			sb.WriteString("  " + strings.Repeat(" ", col-1) + strings.Repeat("^", width) + "\n")
+		}
+	}
+	// where to read more (D79): once per family, in the order they came up
+	seen := map[string]bool{}
+	for _, it := range d.Items {
+		if f := FamilyOf(it.Message); f != "" && !seen[f] {
+			seen[f] = true
+			sb.WriteString("see: veles explain " + f + "\n")
 		}
 	}
 	return sb.String()

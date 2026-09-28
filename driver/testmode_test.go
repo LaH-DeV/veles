@@ -1,12 +1,19 @@
 package driver
 
 import (
+	"flag"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+// -sanitize builds the programs of the runtime tests and the `veles test`
+// programs below with `--sanitize`: threads, the collector, the test
+// runner's capture, soft failures and panics under ASan and UBSan
+// (a report ends the program, so the expected exit code no longer matches).
+var sanitize = flag.Bool("sanitize", false, "build the test programs with --sanitize")
 
 // runTests runs `veles test` on src and returns the program's output and
 // the exit code; stdout is redirected to a file for the duration.
@@ -32,6 +39,7 @@ func runTestFiles(t *testing.T, files map[string]string, opts Options) (string, 
 	saved := os.Stdout
 	os.Stdout = out
 	opts.Path, opts.Mode = dir, "test"
+	opts.Sanitize = opts.Sanitize || *sanitize
 	code := Run(opts)
 	os.Stdout = saved
 	out.Close()
@@ -206,7 +214,7 @@ func TestTestRunner(t *testing.T) {
 	// the summary names every failure; the exit code is 1
 	out, code := runTests(t, testModeSrc, Options{Filter: "in"})
 	want := "test failing ... FAILED: Mismatch(expected: 1, actual: 2)\n" +
-		"test panicking ... FAILED: panic: boom\n  at main.vs:13:21\n" +
+		"test panicking ... FAILED: panic: boom\n  at main.vs:13:21 in panicking\n" +
 		"test after the spin ... ok\n" +
 		"\n1 passed, 2 failed: failing, panicking; 2 filtered out\n"
 	if out != want || code != 1 {
@@ -228,14 +236,23 @@ func TestTestRunner(t *testing.T) {
 		t.Errorf("an empty filter match exited %d", code)
 	}
 
-	// a test that never ends is reported and ends the run
+	// a test that never ends is reported and ends the run; the tests after
+	// it ran at the same time (D80), so how many were still running when the
+	// watchdog fired depends on timing, and the report is not printed for
+	// any test after the one that timed out
 	start := time.Now()
 	out, code = runTests(t, testModeSrc, Options{TestTimeout: 300 * time.Millisecond})
-	if !strings.Contains(out, "test endless ... FAILED: timed out after 300ms\n\ntimed out: endless; 1 test after it did not run\n") || code != 1 {
+	if !strings.Contains(out, "test endless ... FAILED: timed out after 300ms\n\ntimed out: endless") ||
+		!strings.Contains(out, "(tests run at once; `--jobs 1` runs them one at a time)\n") || code != 1 {
 		t.Errorf("timeout: exit %d\n%s", code, out)
 	}
 	if strings.Contains(out, "after the spin") {
-		t.Errorf("a test ran after the timeout:\n%s", out)
+		t.Errorf("a test after the timed-out one was reported:\n%s", out)
+	}
+	// one at a time, the tests after it never start
+	out, code = runTests(t, testModeSrc, Options{TestTimeout: 300 * time.Millisecond, Jobs: 1})
+	if !strings.Contains(out, "timed out: endless; 1 other test did not finish") || code != 1 {
+		t.Errorf("timeout with --jobs 1: exit %d\n%s", code, out)
 	}
 	if time.Since(start) > time.Minute {
 		t.Errorf("the timed-out run took %v", time.Since(start))
@@ -281,7 +298,7 @@ suite "noisy" {
 		"      to stderr\n" +
 		"      no newline at the end\n" +
 		"  test panics ... FAILED: panic: gone\n" +
-		"    at main.vs:19:26\n" +
+		"    at main.vs:19:26 in noisy / panics\n" +
 		"    output:\n" +
 		"      before the panic\n" +
 		"\n1 passed, 2 failed: noisy / shows what it printed, noisy / panics\n"
@@ -290,9 +307,97 @@ suite "noisy" {
 	}
 }
 
+// Tests run at once (D80): four that each sleep 300ms take about 300ms,
+// not 1.2s; the report is in declaration order although the first test is
+// the last to finish; and each failing test shows its own output only.
+// `--jobs 1` runs them one after another.
+func TestTestsRunAtOnceReportInOrder(t *testing.T) {
+	if _, err := findClang(); err != nil {
+		t.Skip("clang not available:", err)
+	}
+	src := `use io
+
+test "slowest first" {
+  await sleep(Duration.millis(600))
+  io.println("from slowest")
+  expect(1 == 2)
+}
+
+test "second" {
+  await sleep(Duration.millis(300))
+  io.println("from second")
+  expect(3 == 4)
+}
+
+test "third" {
+  await sleep(Duration.millis(300))
+}
+
+test "fourth" {
+  await sleep(Duration.millis(300))
+}
+`
+	want := "test slowest first ... FAILED\n" +
+		"  main.vs:6:3: expect(1 == 2)\n" +
+		"      left:  1\n      right: 2\n" +
+		"  output:\n    from slowest\n" +
+		"test second ... FAILED\n" +
+		"  main.vs:12:3: expect(3 == 4)\n" +
+		"      left:  3\n      right: 4\n" +
+		"  output:\n    from second\n" +
+		"test third ... ok\n" +
+		"test fourth ... ok\n" +
+		"\n2 passed, 2 failed: slowest first, second\n"
+	start := time.Now()
+	out, code := runTests(t, src, Options{Jobs: 4})
+	took := time.Since(start)
+	if out != want || code != 1 {
+		t.Fatalf("exit %d, output:\n%s\n--- want ---\n%s", code, out, want)
+	}
+	start = time.Now()
+	out, code = runTests(t, src, Options{Jobs: 1})
+	serial := time.Since(start)
+	if out != want || code != 1 {
+		t.Fatalf("--jobs 1: exit %d, output:\n%s", code, out)
+	}
+	// the build is in both; one after another adds at least 900ms of sleep
+	if serial-took < 700*time.Millisecond {
+		t.Errorf("at once took %v, one at a time %v: the tests did not overlap", took, serial)
+	}
+}
+
+// A panic inside a `test fun` helper says where the test called it, as a
+// recorded failure does; the panic's own location is unchanged.
+func TestTestHelperPanicCallSites(t *testing.T) {
+	if _, err := findClang(); err != nil {
+		t.Skip("clang not available:", err)
+	}
+	src := `test fun positive(n: i64): i64 {
+  if (n <= 0) panic("not positive: $n")
+  n
+}
+
+test fun twice(n: i64): i64 = positive(n) * 2
+
+test "panics in a helper" {
+  expect(twice(-1) == -2)
+}
+`
+	out, code := runTests(t, src, Options{})
+	want := "test panics in a helper ... FAILED: panic: not positive: -1\n" +
+		"  at main.vs:2:15 in positive\n" +
+		"  called from main.vs:6:31 in twice\n" +
+		"  called from main.vs:9:10 in panics in a helper\n" +
+		"\n0 passed, 1 failed: panics in a helper\n"
+	if out != want || code != 1 {
+		t.Fatalf("exit %d, output:\n%s\n--- want ---\n%s", code, out, want)
+	}
+}
+
 // A failure inside a `test fun` helper names the line of the test that
-// called it — through nested helpers, innermost first, and into a task the
-// helper started — and a call that returned leaves nothing behind.
+// called it — through nested helpers, innermost first, into a task the
+// helper started, and into a helper the test launched itself (`async
+// doubled(0)`) — and a call or launch that returned leaves nothing behind.
 func TestTestHelperCallSites(t *testing.T) {
 	if _, err := findClang(); err != nil {
 		t.Skip("clang not available:", err)
@@ -322,6 +427,7 @@ test "in a task" {
     val t = async doubled(0)
     val _ = await t
   }
+  expect(3 == 4)
 }
 `
 	out, code := runTests(t, src, Options{})
@@ -338,6 +444,9 @@ test "in a task" {
 		"test in a task ... FAILED\n" +
 		"  main.vs:10:3: expect(n > 0)\n" +
 		"      left:  0\n      right: 0\n" +
+		"      called from main.vs:23:13\n" +
+		"  main.vs:26:3: expect(3 == 4)\n" +
+		"      left:  3\n      right: 4\n" +
 		"\n0 passed, 2 failed: helpers, in a task\n"
 	if out != want || code != 1 {
 		t.Fatalf("exit %d, output:\n%s\n--- want ---\n%s", code, out, want)

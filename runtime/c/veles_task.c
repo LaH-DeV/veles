@@ -10,6 +10,10 @@
  * executor's own list heads are registered as roots, so suspended frames
  * stay reachable through their tasks.
  */
+/* glibc declares its extensions (pthread_getattr_np, ...) only when asked. */
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE
+#endif
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,6 +30,7 @@
 #include <poll.h>
 #endif
 
+#include "veles_tls.h"
 typedef struct veles_desc veles_desc;
 void *veles_alloc(int64_t size);
 void *veles_alloc_words(int64_t size);
@@ -72,6 +77,15 @@ typedef struct veles_waiter {
     void *data;       /* a plain waiter's value slot */
 } veles_waiter;
 
+/* what a panic report shows under its message besides the location (D81, D78) */
+typedef struct panic_trace {
+    const char *in;         /* the function the panic is in (constant); NULL in a release build */
+    const char *chain;      /* "site in caller" lines, newline-joined, innermost first */
+    int64_t chain_len;
+    const char *sites;      /* test helpers' call sites in effect, newline-joined, innermost first */
+    int64_t sites_len;
+} panic_trace;
+
 typedef struct veles_task {
     void *hdl;              /* coroutine frame; NULL after completion */
     int64_t state;
@@ -93,7 +107,11 @@ typedef struct veles_task {
     int64_t panic_len;
     const char *panic_loc;  /* D64: where it panicked; empty inside the runtime */
     int64_t panic_loc_len;
+    panic_trace trace; /* the call chain and the test helpers' call sites at the panic */
+    veles_shadow shadow;     /* the calls in progress in a debug build (D81) */
+    struct veles_task *chain_parent; /* the task whose suspending call this one runs (D81) */
     int64_t io_fd;          /* socket the task waits on (std/net); io_waiting set */
+    int64_t test_task;      /* a test the runner queued (D80): its end starts the next */
     int64_t io_write;       /* waiting to write rather than read */
     int64_t io_waiting;
     int64_t io_ready;
@@ -160,7 +178,6 @@ struct veles_race {
 
 static veles_task *timers;
 static veles_task *io_waiters;
-#include "veles_tls.h"
 #define current (veles_tls_get()->task)
 static int64_t start_ms;
 static veles_task *gq_head, *gq_tail; /* the shared queue (run queues, below) */
@@ -795,13 +812,88 @@ void veles_test_leave(int64_t prev) {
 }
 
 /* calls each for every helper call site in effect, innermost first */
-void veles_test_sites(void (*each)(const char *where, int64_t len)) {
+void veles_test_sites(void (*each)(void *ctx, const char *where, int64_t len), void *ctx) {
     for (veles_local *l = *current_locals(); l; l = l->next) {
         if (l->key == TEST_SITE_KEY) {
             test_site *s = l->cell;
-            each(s->where, s->len);
+            each(ctx, s->where, s->len);
         }
     }
+}
+
+/* ---- the test runner's queue (D80) -----------------------------------------
+ * The runner queues every test as a task; at most `test_jobs` run at once,
+ * and a test that ends starts the next one waiting. A test's task is known
+ * by the record bound in its locals (veles_sync.c), which the watchdog is
+ * told about as the test starts and ends. */
+#define TEST_REC_KEY (-2)
+
+typedef struct test_pending {
+    veles_task *t;
+    void (*entry)(veles_task *, void *);
+    void *args;
+    struct test_pending *next;
+} test_pending;
+
+static veles_lock *test_q_lock;
+static test_pending *test_q_head, *test_q_tail;
+static int64_t test_jobs, test_running;
+
+static int64_t worker_count(void);
+void veles_test_watch_rec(void *rec, int64_t running);
+void veles_task_spawn(veles_task *t, void (*entry)(veles_task *, void *), void *args);
+
+static void *test_rec_of(veles_task *t) {
+    for (veles_local *l = t->locals; l; l = l->next)
+        if (l->key == TEST_REC_KEY) return l->cell;
+    return NULL;
+}
+
+void veles_test_jobs(int64_t jobs) {
+    test_q_lock = veles_lock_new();
+    test_jobs = jobs > 0 ? jobs : worker_count();
+    /* a waiting test is known only to the queue until it starts */
+    veles_gc_root(&test_q_head, NULL);
+    veles_gc_root(&test_q_tail, NULL);
+}
+
+static void test_start(veles_task *t, void (*entry)(veles_task *, void *), void *args) {
+    veles_test_watch_rec(test_rec_of(t), 1);
+    veles_task_spawn(t, entry, args);
+}
+
+void veles_test_queue(veles_task *t, void (*entry)(veles_task *, void *), void *args) {
+    t->test_task = 1;
+    veles_lock_acquire(test_q_lock);
+    if (test_running < test_jobs) {
+        test_running++;
+        veles_lock_release(test_q_lock);
+        test_start(t, entry, args);
+        return;
+    }
+    test_pending *p = veles_alloc_words(sizeof *p);
+    p->t = t;
+    p->entry = entry;
+    p->args = args;
+    if (test_q_tail) test_q_tail->next = p; else test_q_head = p;
+    test_q_tail = p;
+    veles_lock_release(test_q_lock);
+}
+
+/* a test's task is done (returned, failed or panicked): its slot goes to
+ * the next test waiting */
+static void test_task_done(veles_task *t) {
+    veles_test_watch_rec(test_rec_of(t), 0);
+    veles_lock_acquire(test_q_lock);
+    test_pending *p = test_q_head;
+    if (p) {
+        test_q_head = p->next;
+        if (!test_q_head) test_q_tail = NULL;
+    } else {
+        test_running--;
+    }
+    veles_lock_release(test_q_lock);
+    if (p) test_start(p->t, p->entry, p->args);
 }
 
 veles_task *veles_task_current(void) {
@@ -1452,8 +1544,11 @@ static void remove_io_waiter(veles_task *t) {
     t->io_ready = 0;
 }
 
+static int is_closing(int64_t fd);
+
 /* wait for fd: true once the poll saw it ready; the first call parks the
- * task, a wake for any other reason parks it again */
+ * task, a wake for any other reason parks it again. A closed socket's -1,
+ * or a descriptor being closed, is "ready" at once: the retry fails. */
 static int64_t veles_task_wait_io_impl(veles_task *self, int64_t fd, int64_t write) {
     if (self->io_waiting) {
         if (self->io_ready) {
@@ -1464,6 +1559,7 @@ static int64_t veles_task_wait_io_impl(veles_task *self, int64_t fd, int64_t wri
         self->state = T_BLOCKED;
         return 0;
     }
+    if (fd < 0 || is_closing(fd)) return 1;
     self->io_fd = fd;
     self->io_write = write;
     self->io_waiting = 1;
@@ -1706,6 +1802,173 @@ void veles_cleanup_pop(veles_cleanup *c) {
  * children), then the task fails with the message and control returns to
  * the executor (D20: a panic unwinds to the enclosing task scope). A
  * panic inside a cleanup continues the unwinding with the first message. */
+/* ---- the call chain (D81) ----------------------------------------------
+ * A debug build brackets every call of a Veles function with
+ * veles_call_push(record) and veles_call_pop, the record being the constant
+ * "site\0callee\0" the compiler wrote for that call. The chain is the
+ * task's own — a suspended task keeps it, whichever thread resumes it — and
+ * outside any task this thread's. A panic copies it as text; the release
+ * build makes no calls and keeps nothing. */
+#define SHADOW_MAX 4096 /* deeper than this the chain is not kept */
+
+static int chain_recorded; /* a debug build ran: there is a chain to show */
+
+static veles_shadow *shadow_now(void) {
+    veles_task *t = current;
+    return t ? &t->shadow : &veles_tls_get()->shadow;
+}
+
+static void shadow_push(veles_shadow *s, int collected, const char *rec) {
+    if (s->depth < SHADOW_MAX) {
+        if (s->depth == s->cap) {
+            int64_t cap = s->cap ? s->cap * 2 : 16;
+            /* a task's chain lives in collected memory, a thread's outside it */
+            const char **at = collected ? veles_alloc_words(cap * (int64_t)sizeof *at) : malloc((size_t)cap * sizeof *at);
+            if (!at) return;
+            if (s->depth) memcpy(at, s->at, (size_t)s->depth * sizeof *at);
+            if (!collected) free(s->at);
+            s->at = at;
+            s->cap = cap;
+        }
+        s->at[s->depth] = rec;
+    }
+    s->depth++;
+}
+
+void veles_call_push(const char *rec) {
+    veles_task *t = current;
+    shadow_push(t ? &t->shadow : &veles_tls_get()->shadow, t != NULL, rec);
+}
+
+/* the task started for a suspending call continues the chain of the one that awaits it */
+void veles_call_link(veles_task *t) {
+    t->chain_parent = current;
+}
+
+void veles_call_pop(void) {
+    veles_shadow *s = shadow_now();
+    if (s->depth > 0) s->depth--;
+}
+
+/* a task's or the program's first frame: the function it runs, with no site */
+void veles_call_base(veles_task *t, const char *rec) {
+    if (!chain_recorded) chain_recorded = 1;
+    if (t && t->chain_parent) return; /* a suspending call: the caller's frame names it */
+    veles_shadow *s = t ? &t->shadow : &veles_tls_get()->shadow;
+    s->depth = 0;
+    shadow_push(s, t != NULL, rec);
+}
+
+static const char *frame_name(const char *rec) {
+    return rec + strlen(rec) + 1;
+}
+
+/* the panic's function and the "site in caller" lines above it: the
+ * frames of t (or of this thread, outside any task), then those of the
+ * task that awaits it through a suspending call, and so on */
+static void trace_capture(panic_trace *tr, veles_task *t, int collected) {
+    tr->in = NULL;
+    tr->chain = NULL;
+    tr->chain_len = 0;
+    int64_t n = 0, cap = 64, size = 0;
+    const char **fr = malloc((size_t)cap * sizeof *fr);
+    if (!fr) return;
+    veles_task *owner = t;
+    veles_shadow *s = t ? &t->shadow : &veles_tls_get()->shadow;
+    while (s) {
+        if (s->depth > SHADOW_MAX) { n = 0; break; }
+        for (int64_t i = s->depth - 1; i >= 0; i--) {
+            if (n == cap) {
+                cap *= 2;
+                const char **grown = realloc(fr, (size_t)cap * sizeof *fr);
+                if (!grown) { free(fr); return; }
+                fr = grown;
+            }
+            fr[n++] = s->at[i];
+        }
+        owner = owner ? owner->chain_parent : NULL;
+        s = owner ? &owner->shadow : NULL;
+    }
+    if (n > 0) {
+        tr->in = frame_name(fr[0]);
+        for (int64_t i = 0; i + 1 < n; i++)
+            size += (int64_t)strlen(fr[i]) + 4 + (int64_t)strlen(frame_name(fr[i + 1])) + 1;
+    }
+    char *out = size > 0 ? (collected ? veles_alloc(size) : malloc((size_t)size)) : NULL;
+    if (out) {
+        int64_t at = 0;
+        for (int64_t i = 0; i + 1 < n; i++) {
+            const char *site = fr[i], *caller = frame_name(fr[i + 1]);
+            if (at) out[at++] = '\n';
+            memcpy(out + at, site, strlen(site));
+            at += (int64_t)strlen(site);
+            memcpy(out + at, " in ", 4);
+            at += 4;
+            memcpy(out + at, caller, strlen(caller));
+            at += (int64_t)strlen(caller);
+        }
+        tr->chain = out;
+        tr->chain_len = at;
+    }
+    free(fr);
+}
+
+/* a helper's call site is in the chain already when a "site in caller" line
+ * starts with it */
+static int in_chain(const panic_trace *tr, const char *site, int64_t len) {
+    for (int64_t i = 0; i + len + 4 <= tr->chain_len; i++) {
+        if (i > 0 && tr->chain[i - 1] != '\n') continue;
+        if (memcmp(tr->chain + i, site, (size_t)len) == 0 && memcmp(tr->chain + i + len, " in ", 4) == 0) return 1;
+    }
+    return 0;
+}
+
+/* The lines a report shows under the panic's message, each led by a newline
+ * and indent spaces: "at LOC in FN", a "called from" line per call of the
+ * chain, then the test helpers' call sites the chain does not have. */
+static const char *trace_report(const panic_trace *tr, const char *loc, int64_t loc_len, int64_t indent, int collected, int64_t *len) {
+    int64_t in_len = tr->in ? (int64_t)strlen(tr->in) : 0;
+    int64_t lines = 1 + tr->chain_len / 4 + tr->sites_len / 4 + 2;
+    int64_t size = loc_len + in_len + tr->chain_len + tr->sites_len + lines * (1 + indent + 16) + 16;
+    char *out = collected ? veles_alloc(size) : malloc((size_t)size);
+    if (!out) { *len = 0; return ""; }
+    int64_t at = 0;
+#define LINE(label) do { out[at++] = '\n'; memset(out + at, ' ', (size_t)indent); at += indent; \
+    memcpy(out + at, label, strlen(label)); at += (int64_t)strlen(label); } while (0)
+#define PUT(p, n) do { memcpy(out + at, (p), (size_t)(n)); at += (n); } while (0)
+    if (loc_len > 0 || tr->in) {
+        LINE(loc_len > 0 ? "at " : "in ");
+        if (loc_len > 0) {
+            PUT(loc, loc_len);
+            if (tr->in) PUT(" in ", 4);
+        }
+        if (tr->in) PUT(tr->in, in_len);
+    }
+    for (int64_t i = 0, from = 0; i <= tr->chain_len && tr->chain_len > 0; i++) {
+        if (i < tr->chain_len && tr->chain[i] != '\n') continue;
+        LINE("called from ");
+        PUT(tr->chain + from, i - from);
+        from = i + 1;
+    }
+    for (int64_t i = 0, from = 0; i <= tr->sites_len && tr->sites_len > 0; i++) {
+        if (i < tr->sites_len && tr->sites[i] != '\n') continue;
+        if (!in_chain(tr, tr->sites + from, i - from)) {
+            LINE("called from ");
+            PUT(tr->sites + from, i - from);
+        }
+        from = i + 1;
+    }
+#undef LINE
+#undef PUT
+    if (at == 0 && !collected) {
+        free(out);
+        *len = 0;
+        return "";
+    }
+    *len = at;
+    return out;
+}
+
 int64_t veles_task_panic(const char *msg, int64_t len, const char *loc, int64_t loc_len) {
     if (!in_resume || !current) return 0;
     veles_task *t = current;
@@ -1722,6 +1985,36 @@ int64_t veles_task_panic(const char *msg, int64_t len, const char *loc, int64_t 
         if (loc_len > 0) memcpy(where, loc, (size_t)loc_len);
         t->panic_loc = where;
         t->panic_loc_len = loc_len;
+        /* the call chain: the panic's own (debug build), or the one a scope
+         * re-raises from the child that panicked (D81) */
+        veles_tls *tls = veles_tls_get();
+        veles_task *from = tls->carry;
+        tls->carry = NULL;
+        if (from) {
+            t->trace.in = from->trace.in;
+            t->trace.chain = from->trace.chain;
+            t->trace.chain_len = from->trace.chain_len;
+        } else {
+            trace_capture(&t->trace, t, 1);
+        }
+        /* inside a test helper: where the test called it (D78) — read now,
+         * while the bindings are the panicking code's */
+        int64_t n = 0;
+        for (veles_local *l = *current_locals(); l; l = l->next)
+            if (l->key == TEST_SITE_KEY) n += ((test_site *)l->cell)->len + 1;
+        if (n > 0) {
+            char *sites = veles_alloc(n);
+            int64_t at = 0;
+            for (veles_local *l = *current_locals(); l; l = l->next) {
+                if (l->key != TEST_SITE_KEY) continue;
+                test_site *s = l->cell;
+                if (at > 0) sites[at++] = '\n';
+                memcpy(sites + at, s->where, (size_t)s->len);
+                at += s->len;
+            }
+            t->trace.sites = sites;
+            t->trace.sites_len = at;
+        }
     }
     while (t->cleanups) {
         veles_cleanup *c = t->cleanups;
@@ -1739,6 +2032,7 @@ int64_t veles_task_panic(const char *msg, int64_t len, const char *loc, int64_t 
     t->waiter = NULL;
     scope_child_finished(t);
     rt_exit();
+    if (t->test_task) test_task_done(t);
     longjmp(panic_return, 1);
     return 1;
 }
@@ -1755,6 +2049,38 @@ const char *veles_task_panic_msg(veles_task *t, int64_t *len) {
 const char *veles_task_panic_loc(veles_task *t, int64_t *len) {
     *len = t->panic_loc_len;
     return t->panic_loc ? t->panic_loc : "";
+}
+
+/* the lines under a panicked task's message (see trace_report) */
+const char *veles_task_panic_report(veles_task *t, int64_t indent, int64_t *len) {
+    return trace_report(&t->trace, t->panic_loc, t->panic_loc_len, indent, 1, len);
+}
+
+/* the same for a panic that ends the process, written to standard error:
+ * this thread's own chain, or the one a scope re-raises */
+int veles_chain_recorded(void) {
+    return chain_recorded;
+}
+
+void veles_panic_print_report(const char *loc, int64_t loc_len, int64_t indent) {
+    veles_tls *tls = veles_tls_get();
+    panic_trace tr = {0};
+    int carried = tls->carry != NULL;
+    if (carried) {
+        tr.in = tls->carry->trace.in;
+        tr.chain = tls->carry->trace.chain;
+        tr.chain_len = tls->carry->trace.chain_len;
+        tls->carry = NULL;
+    } else {
+        trace_capture(&tr, current, 0);
+    }
+    int64_t len = 0;
+    const char *report = trace_report(&tr, loc, loc_len, indent, 0, &len);
+    if (len > 0) {
+        fwrite(report, 1, (size_t)len, stderr);
+        free((void *)report);
+    }
+    if (!carried && tr.chain) free((void *)tr.chain);
 }
 
 static void resume(veles_task *t) {
@@ -1965,7 +2291,14 @@ static int64_t worker_count(void) {
 void veles_run(veles_task *root) {
     veles_task_init();
     rt_enter();
-    start_ms = now_ms();
+    /* once: the test runner calls this once per test while the others run
+     * on (D80), and their timers count from this */
+    if (start_ms == 0) start_ms = now_ms();
+    int64_t st = __atomic_load_n(&root->state, __ATOMIC_SEQ_CST);
+    if (st == T_DONE || st == T_CANCELLED) { /* a test that finished while an earlier one was awaited */
+        rt_exit();
+        return;
+    }
     root_task = root;
     if (!workers_started) {
         workers_started = 1;
@@ -1987,6 +2320,7 @@ int64_t veles_race_closed(veles_race *r) {
 
 /* re-raise a child's panic in the current context (scope re-raises, D52) */
 void veles_task_repanic(veles_task *t) {
+    veles_tls_get()->carry = t;
     veles_panic_at(t->panic_msg, t->panic_len, t->panic_loc, t->panic_loc_len);
 }
 
@@ -2061,6 +2395,7 @@ void veles_task_finish(veles_task *t, const void *result, int64_t size, int64_t 
         rt_enter();
         veles_task_finish_impl(t, result, size, failed);
         rt_exit();
+        if (t->test_task) test_task_done(t);
         return;
     }
     void *cell = veles_alloc_words(size > 0 ? size : 8);
@@ -2080,6 +2415,7 @@ void veles_task_finish(veles_task *t, const void *result, int64_t size, int64_t 
         if (left <= 0) wake(t->scope->owner);
         rt_exit();
     }
+    if (t->test_task) test_task_done(t);
 }
 
 /* checked at every suspension point, so it takes no lock: both flags only
@@ -2235,6 +2571,66 @@ int64_t veles_task_wait_io(veles_task *self, int64_t fd, int64_t write) {
     int64_t result_ = veles_task_wait_io_impl(self, fd, write);
     rt_exit();
     return result_;
+}
+
+/* ---- closing sockets (std/net's Socket) --------------------------------------
+ * std/net closes a socket's descriptor only when no operation holds it any
+ * more (Go's fdMutex), and the operations holding it must stop waiting:
+ * veles_io_closing wakes every task parked on the descriptor, as if the
+ * poll had reported it ready, and until veles_io_closed no task parks on
+ * it again — the wait returns at once. Each retries, finds the socket
+ * closing, fails and lets go; the last to let go closes the descriptor.
+ * Both under the runtime lock, which a task registering its wait holds
+ * too: an operation that checked "not closing" just before the close
+ * cannot then park unseen. */
+static int64_t *closing_fds;
+static int64_t closing_len, closing_cap;
+
+static int is_closing(int64_t fd) {
+    for (int64_t i = 0; i < closing_len; i++) {
+        if (closing_fds[i] == fd) return 1;
+    }
+    return 0;
+}
+
+void veles_io_closing(int64_t fd) {
+    rt_enter();
+    if (!is_closing(fd)) {
+        if (closing_len == closing_cap) {
+            closing_cap = closing_cap ? closing_cap * 2 : 16;
+            int64_t *grown = realloc(closing_fds, (size_t)closing_cap * sizeof *closing_fds);
+            if (!grown) {
+                rt_exit();
+                veles_panic("out of memory", 13);
+            }
+            closing_fds = grown;
+        }
+        closing_fds[closing_len++] = fd;
+    }
+    veles_task *t = io_waiters;
+    while (t) {
+        veles_task *next = t->io_next;
+        if (t->io_fd == fd && t->io_waiting && !t->io_ready) {
+            remove_io_waiter(t);
+            t->io_waiting = 1; /* stays "waiting" so the retry sees ready */
+            t->io_ready = 1;
+            wake(t);
+        }
+        t = next;
+    }
+    rt_exit();
+}
+
+/* the descriptor is closed: its number may belong to a new socket now */
+void veles_io_closed(int64_t fd) {
+    rt_enter();
+    for (int64_t i = 0; i < closing_len; i++) {
+        if (closing_fds[i] == fd) {
+            closing_fds[i] = closing_fds[--closing_len];
+            break;
+        }
+    }
+    rt_exit();
 }
 
 int64_t veles_race_wait(veles_task *self, veles_race *r) {

@@ -81,7 +81,7 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 		}
 	}
 	if expected != nil && !tupleAdapt && len(expected.Params) != len(e.Params) {
-		f.errorf(e.Pos, "lambda takes %d parameter(s) but a function of %d is expected here", len(e.Params), len(expected.Params))
+		f.errorf(e.Pos, "lambda takes %d %s but a function of %d is expected here", len(e.Params), plural(len(e.Params), "parameter"), len(expected.Params))
 		return bad()
 	}
 
@@ -156,11 +156,16 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 				pt = f.resolve(p.Type)
 				if expected != nil && !types.ContainsTypeParam(expected.Params[i].Type) && !types.Identical(pt, expected.Params[i].Type) {
 					f.errorf(p.Pos, "parameter '%s' is declared '%s' but '%s' is expected here", p.Name.Name, pt, expected.Params[i].Type)
+					// the expected type from here on: otherwise every use of the
+					// lambda reports the same mismatch again
+					pt = expected.Params[i].Type
 				}
 			} else if expected != nil && !types.ContainsTypeParam(expected.Params[i].Type) {
 				pt = expected.Params[i].Type
 			} else {
-				f.errorf(p.Name.Pos, "cannot infer the type of lambda parameter '%s'; annotate it: '(%s: T) => ...'", p.Name.Name, p.Name.Name)
+				if !f.inLooseArgs() {
+					f.errorf(p.Name.Pos, "cannot infer the type of lambda parameter '%s'; annotate it: '(%s: T) => ...'", p.Name.Name, p.Name.Name)
+				}
 				pt = types.TInvalid
 			}
 			v := l.newVar(p.Name.Name, pt, false, p.Name.Pos)

@@ -41,8 +41,9 @@ func (c *Checker) preludeSym(name string) *Symbol {
 // noMember reports `mod.name` where the module has no such declaration.
 // Two mistakes get a fix: a global name written with a module
 // (`time.Duration` — the prelude's, D75), and a name the prelude writes for
-// another module (`json.Value` for `codec.Value`).
-func (c *Checker) noMember(modSpan, nameSpan source.Span, mod, name string) {
+// another module (`json.Value` for `codec.Value`). Anything else gets the
+// module's closest public name as a guess (`io.printn`).
+func (c *Checker) noMember(modSpan, nameSpan source.Span, mod, name string, m *Module) {
 	whole := source.Span{File: modSpan.File, Start: modSpan.Start, End: nameSpan.End}
 	if sym := c.universe.LookupLocal(name); sym != nil && sym.Pub {
 		c.errorFix(nameSpan, fixReplace("Write '"+name+"'", whole, name),
@@ -51,6 +52,10 @@ func (c *Checker) noMember(modSpan, nameSpan source.Span, mod, name string) {
 	}
 	if home := PreludeHome(name); home != "" && home != mod {
 		c.errorf(nameSpan, "module '%s' has no declaration '%s'; it is '%s.%s' (add 'use %s')", mod, name, home, name, home)
+		return
+	}
+	if hit := didYouMean(name, moduleMembers(m)); hit != "" {
+		c.errorFix(nameSpan, typoFix(nameSpan, hit), "module '%s' has no declaration '%s'; did you mean '%s.%s'?", mod, name, mod, hit)
 		return
 	}
 	c.errorf(nameSpan, "module '%s' has no declaration '%s'", mod, name)

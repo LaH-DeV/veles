@@ -211,7 +211,15 @@ func (c *Checker) dropSyntheticRefs() {
 	c.index.Refs = kept
 }
 
+// noteDiagnostic, when a test sets it, is told the format of every
+// diagnostic the checker reports: the conformance suite's coverage
+// (conform_test.go). Set once, before any checking starts.
+var noteDiagnostic func(format string)
+
 func (c *Checker) errorf(span source.Span, format string, args ...any) {
+	if noteDiagnostic != nil {
+		noteDiagnostic(format)
+	}
 	msg := fmt.Sprintf(format, args...)
 	key := span.String() + msg
 	if c.seen[key] {
@@ -222,6 +230,9 @@ func (c *Checker) errorf(span source.Span, format string, args ...any) {
 }
 
 func (c *Checker) warnf(span source.Span, format string, args ...any) {
+	if noteDiagnostic != nil {
+		noteDiagnostic(format)
+	}
 	msg := fmt.Sprintf(format, args...)
 	key := "w" + span.String() + msg
 	if c.seen[key] {
@@ -233,6 +244,9 @@ func (c *Checker) warnf(span source.Span, format string, args ...any) {
 
 // warnFix is warnf with an automatic correction attached (a lint).
 func (c *Checker) warnFix(span source.Span, fix *source.Fix, format string, args ...any) {
+	if noteDiagnostic != nil {
+		noteDiagnostic(format)
+	}
 	msg := fmt.Sprintf(format, args...)
 	key := "w" + span.String() + msg
 	if c.seen[key] {
@@ -245,6 +259,9 @@ func (c *Checker) warnFix(span source.Span, fix *source.Fix, format string, args
 // errorFix is errorf with an automatic correction attached: for a form
 // that was removed from the language and has a mechanical replacement.
 func (c *Checker) errorFix(span source.Span, fix *source.Fix, format string, args ...any) {
+	if noteDiagnostic != nil {
+		noteDiagnostic(format)
+	}
 	msg := fmt.Sprintf(format, args...)
 	key := span.String() + msg
 	if c.seen[key] {
@@ -376,6 +393,7 @@ func (c *Checker) collect() {
 			}
 		}
 	}
+	c.checkSealedVariants()
 	c.deriveEnumCodecs()
 	// derived bodies, supertrait impls and variant impls, in the order
 	// they were asked for; each may ask for more (D58)
@@ -568,6 +586,11 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 			if len(d.AssocTypes) > 0 {
 				c.errorf(d.Name.Pos, "sealed traits cannot declare associated types")
 			}
+			if len(d.Supers) > 0 {
+				// here too: a sealed trait without methods never reaches
+				// resolveSupers, and its supertraits were silently dropped
+				c.errorf(d.Supers[0].Span(), "a sealed trait has no supertraits: its variants implement traits one by one (D12)")
+			}
 			if len(d.Methods) > 0 {
 				// the trait half: methods implemented per variant, dispatched by tag
 				t := &types.Trait{Name: d.Name.Name, Module: m.prefix(), Pub: d.Pub, Decl: d, Methods: map[string]*types.Func{}}
@@ -735,7 +758,7 @@ func (c *Checker) resolveTypeAlias(sym *Symbol, args []types.Type, span source.S
 	}
 	if len(args) != len(a.tps) {
 		if len(a.tps) == 0 {
-			c.errorf(span, "'%s' is not generic", sym.Name)
+			c.errorf(span, "'%s' is not generic: write it without '<...>'", sym.Name)
 		} else {
 			c.errorf(span, "'%s' expects %d type arguments, got %d", sym.Name, len(a.tps), len(args))
 		}
@@ -841,12 +864,12 @@ func (c *Checker) lookupTypeName(env *typeEnv, path []ast.Ident) (*Symbol, *type
 		case SymModule:
 			next := sym.Mod.Scope.LookupLocal(path[i].Name)
 			if next == nil {
-				c.noMember(path[i-1].Pos, path[i].Pos, path[i-1].Name, path[i].Name)
+				c.noMember(path[i-1].Pos, path[i].Pos, path[i-1].Name, path[i].Name, sym.Mod)
 				c.pathReported = true
 				return nil, nil
 			}
 			if !next.Pub {
-				c.errorf(path[i].Pos, "'%s' is private to module '%s' (M5)", path[i].Name, sym.Mod.Path)
+				c.errorf(path[i].Pos, "'%s' is private to module '%s'%s (M5)", path[i].Name, sym.Mod.Path, privateHint(sym.Mod.Path))
 				c.pathReported = true
 				return nil, nil
 			}
@@ -958,7 +981,22 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 			// (the dot is a path in the grammar; a type parameter in scope
 			// cannot also name a module)
 			var base types.Type = tp
-			for _, seg := range t.Path[1:] {
+			for i := 1; i < len(t.Path); i++ {
+				seg := t.Path[i]
+				// `T.Trait.Item`: the associated type of one bound, named
+				// through it (D84) — how two bounds declaring `Item` are told apart
+				if btp, isTP := base.(*types.TypeParam); isTP && i+1 < len(t.Path) {
+					if tr := boundNamed(btp, seg.Name); tr != nil {
+						next := t.Path[i+1].Name
+						if !containsString(tr.AssocTypes, next) {
+							c.errorf(t.Pos, "trait '%s' has no associated type '%s'", tr.Name, next)
+							return types.TInvalid
+						}
+						base = &types.Assoc{Base: btp, Trait: tr, Name: next}
+						i++
+						continue
+					}
+				}
 				base = c.projectAssoc(env, base, seg.Name, t.Pos)
 				if types.IsInvalid(base) {
 					return base
@@ -1008,7 +1046,7 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 				c.index.Refs[len(c.index.Refs)-1].Doc = sym.Alias.decl.Doc
 			}
 			if len(t.Args) > 0 {
-				c.errorf(t.Pos, "'%s' is not generic", sym.Name)
+				c.errorf(t.Pos, "'%s' is not generic: write it without '<...>'", sym.Name)
 			}
 			if !env.errorPos && !types.IsInvalid(u) {
 				c.errorf(t.Pos, "'%s' names an error set; it can only appear after 'throws', in another error set, or as the type of an error's field (D45)", sym.Name)
@@ -1040,7 +1078,7 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 			return st
 		}
 		if len(args) > 0 {
-			c.errorf(t.Pos, "'%s' is not generic", sym.Name)
+			c.errorf(t.Pos, "'%s' is not generic: write it without '<...>'", sym.Name)
 		}
 		return sym.Type
 	case *ast.NullableType:
@@ -1124,7 +1162,7 @@ func pathString(path []ast.Ident) string {
 func (c *Checker) applyStructArgs(st *types.Struct, args []types.Type, span source.Span) types.Type {
 	if len(args) != len(st.TypeParams) {
 		if len(st.TypeParams) == 0 {
-			c.errorf(span, "'%s' is not generic", st.Name)
+			c.errorf(span, "'%s' is not generic: write it without '<...>'", st.Name)
 		} else {
 			c.errorf(span, "'%s' expects %d type arguments, got %d", st.Name, len(st.TypeParams), len(args))
 		}
@@ -1139,7 +1177,7 @@ func (c *Checker) applyStructArgs(st *types.Struct, args []types.Type, span sour
 func (c *Checker) applySealedArgs(st *types.Sealed, args []types.Type, span source.Span) types.Type {
 	if len(args) != len(st.TypeParams) {
 		if len(st.TypeParams) == 0 {
-			c.errorf(span, "'%s' is not generic", st.Name)
+			c.errorf(span, "'%s' is not generic: write it without '<...>'", st.Name)
 		} else {
 			c.errorf(span, "'%s' expects %d type arguments, got %d", st.Name, len(st.TypeParams), len(args))
 		}
@@ -1418,7 +1456,7 @@ func (c *Checker) resolveSignature(t *FuncTemplate) {
 	}
 	for _, tp := range t.TypeParams {
 		if _, dup := env.tps[tp.Name]; dup {
-			c.errorf(t.Decl.Name.Pos, "type parameter '%s' shadows an outer type parameter", tp.Name)
+			c.errorf(t.Decl.Name.Pos, "type parameter '%s' shadows an outer type parameter; give it another name", tp.Name)
 		}
 		env.tps[tp.Name] = tp
 	}
@@ -1738,7 +1776,15 @@ func (c *Checker) declareImpl(m *Module, f *ast.File, d *ast.ImplDecl) {
 func (c *Checker) declareImplMethod(m *Module, f *ast.File, d *ast.ImplDecl, impl *Impl, trait *types.Trait, ctx *declCtx, md *ast.FunDecl) {
 	sig, declared := trait.Methods[md.Name.Name]
 	if !declared {
-		c.errorf(md.Name.Pos, "trait '%s' has no method '%s'", trait.Name, md.Name.Name)
+		names := make([]string, 0, len(trait.Methods))
+		for n := range trait.Methods {
+			names = append(names, n)
+		}
+		hint := "; a method of the type's own belongs in its body or an 'extend' block"
+		if hit := didYouMean(md.Name.Name, names); hit != "" {
+			hint = "; did you mean '" + hit + "'?"
+		}
+		c.errorf(md.Name.Pos, "trait '%s' has no method '%s'%s", trait.Name, md.Name.Name, hint)
 		return
 	}
 	t := c.newTemplate(m, f, md, nil, ctx.tps)
@@ -1760,18 +1806,81 @@ func (c *Checker) declareImplMethod(m *Module, f *ast.File, d *ast.ImplDecl, imp
 
 // checkImplComplete reports the trait methods an impl neither writes nor
 // derives.
+// checkSealedVariants reports, at its declaration, a variant with no
+// `implement` of its sealed trait while the trait has methods without a
+// default (D12): a call on the sealed value dispatches to every variant, so
+// each needs the body. A variant with an implement that lacks a method is
+// checkImplComplete's to report.
+func (c *Checker) checkSealedVariants() {
+	for _, s := range c.sealeds {
+		if s.Template != nil || len(s.TypeParams) > 0 || s.Trait == nil {
+			continue
+		}
+		var required []string
+		for _, name := range s.Trait.MethodList {
+			if c.traitDefault(s.Trait, name) == nil {
+				required = append(required, name)
+			}
+		}
+		if len(required) == 0 {
+			continue
+		}
+		for _, v := range s.Variants {
+			sd, ok := v.Decl.(*ast.StructDecl)
+			if !ok || c.findImplFor(v, s.Trait) != nil {
+				continue
+			}
+			hint := fmt.Sprintf("; add 'implement %s { %s }' to its body", s.Name, traitMethodText(s.Trait, required[0]))
+			for _, md := range sd.Methods {
+				if md.Name.Name == required[0] {
+					// the method is there, one level too far out
+					hint = fmt.Sprintf("; '%s' is declared in its body, outside any implement: move it inside 'implement %s { }'", md.Name.Name, s.Name)
+				}
+			}
+			// the block, with a stub per method, added to the variant's body —
+			// scaffolding, as for an implement missing methods
+			block := "implement " + s.Name + " {"
+			for _, name := range required {
+				block += "\n  " + traitMethodText(s.Trait, name) + " = panic(\"'" + name + "' is not written yet\")"
+			}
+			fix := fixAddMembers(fmt.Sprintf("Implement '%s' in '%s'", s.Name, v.Name), sd.Pos, []string{block + "\n}"})
+			if fix != nil {
+				fix.Guess = true
+			}
+			c.errorFix(sd.Name.Pos, fix, "variant '%s' of '%s' does not implement '%s'%s", v.Name, s.Name, strings.Join(required, "', '"), hint)
+		}
+	}
+}
+
 func (c *Checker) checkImplComplete(d *ast.ImplDecl, impl *Impl, trait *types.Trait) {
 	if c.deriveFailed[impl] {
 		return // the reason was reported
 	}
+	var missing, stubs []string
 	for _, name := range trait.MethodList {
 		if _, ok := impl.Methods[name]; !ok && c.traitDefault(trait, name) == nil {
-			msg := fmt.Sprintf("implement of '%s' for '%s' is missing method '%s'", trait.Name, impl.Target, name)
+			missing = append(missing, name)
 			if sig := traitMethodText(trait, name); sig != "" {
-				msg += "; add: " + sig
+				stubs = append(stubs, sig+" = panic(\"'"+name+"' is not written yet\")")
 			}
-			c.errorf(d.Pos, "%s", msg)
 		}
+	}
+	// one quick fix, on every one of the errors: add all the missing methods,
+	// each a stub that panics until it is written — scaffolding, so the
+	// editor offers it and `check --fix` does not apply it
+	var fix *source.Fix
+	if len(stubs) == len(missing) && !d.Braceless && !d.Derived {
+		fix = fixAddMembers(fmt.Sprintf("Add the missing methods of '%s'", trait.Name), d.Pos, stubs)
+		if fix != nil {
+			fix.Guess = true
+		}
+	}
+	for _, name := range missing {
+		msg := fmt.Sprintf("implement of '%s' for '%s' is missing method '%s'", trait.Name, impl.Target, name)
+		if sig := traitMethodText(trait, name); sig != "" {
+			msg += "; add: " + sig
+		}
+		c.errorFix(d.Pos, fix, "%s", msg)
 	}
 }
 
@@ -1817,7 +1926,10 @@ func (c *Checker) checkImplSignature(t *FuncTemplate, traitSig *types.Func, trai
 			subst[tp] = t.TypeParams[i]
 		}
 	} else {
+		// the trait's own type parameters have no counterpart to compare
+		// against: its parameter and result types would all "differ"
 		c.errorf(md.Name.Pos, "method '%s' must declare the same type parameters as in trait '%s'", md.Name.Name, trait.Name)
+		return
 	}
 	for i, p := range t.Sig.Params {
 		want := c.hooks.Subst(traitSig.Params[i].Type, subst)
@@ -2405,12 +2517,23 @@ func (c *Checker) projectAssoc(env *typeEnv, base types.Type, name string, span 
 		}
 	}
 	if tp, ok := base.(*types.TypeParam); ok {
+		var hits []*types.Trait
 		for _, bound := range tp.Bounds {
 			if containsString(bound.AssocTypes, name) {
-				return &types.Assoc{Base: tp, Trait: bound, Name: name}
+				hits = append(hits, bound)
 			}
 		}
-		c.errorf(span, "type parameter '%s' has no bound declaring an associated type '%s'", tp.Name, name)
+		switch len(hits) {
+		case 0:
+			c.errorf(span, "type parameter '%s' has no bound declaring an associated type '%s'", tp.Name, name)
+			return types.TInvalid
+		case 1:
+			return &types.Assoc{Base: tp, Trait: hits[0], Name: name}
+		}
+		// two bounds declare it: which one is meant is the writer's to say,
+		// through the trait (D84) — the first was taken silently before
+		c.errorf(span, "'%s.%s' is ambiguous: bounds '%s' and '%s' both declare '%s'; name the one meant: '%s.%s.%s' (D84)",
+			tp.Name, name, hits[0].Name, hits[1].Name, name, tp.Name, hits[0].Name, name)
 		return types.TInvalid
 	}
 	if types.ContainsTypeParam(base) {
@@ -2606,7 +2729,7 @@ func (c *Checker) drainQueue() {
 		if fn.checked {
 			continue
 		}
-		c.checkBody(fn)
+		c.timeBody(fn, func() { c.checkBody(fn) })
 	}
 }
 
@@ -2772,4 +2895,14 @@ func (c *Checker) stdSpan(span source.Span) bool {
 		}
 	}
 	return c.stdFiles[span.File]
+}
+
+// boundNamed is the bound of tp called name, or nil.
+func boundNamed(tp *types.TypeParam, name string) *types.Trait {
+	for _, b := range tp.Bounds {
+		if b.Name == name {
+			return b
+		}
+	}
+	return nil
 }

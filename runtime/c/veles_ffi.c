@@ -5,6 +5,10 @@
  * not manage, and freed explicitly. These are the copies and the
  * allocator behind std/ffi; a C callback's panic guard is here too. */
 
+/* glibc declares its extensions (pthread_getattr_np, ...) only when asked. */
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE
+#endif
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>

@@ -196,6 +196,7 @@ declare void @veles_bool_to_string(ptr, i1 zeroext)
 declare ptr @veles_list_new(ptr, i64)
 declare i64 @veles_list_len(ptr)
 declare void @veles_list_push(ptr, ptr)
+declare void @veles_list_reserve(ptr, i64)
 declare ptr @veles_list_ref(ptr, i64)
 declare void @veles_list_index_panic(ptr, i64, ptr, i64)
 declare i1 @veles_list_pop(ptr, ptr)
@@ -884,11 +885,14 @@ func (g *gen) entryPoint() {
 		g.runRoot(main)
 		g.emitTerm("ret i32 0")
 	} else {
+		if !g.prog.Release {
+			g.emit("call void @veles_call_base(ptr null, ptr %s)", g.chainRecord("", main))
+		}
 		g.emit("call void @%s()", main.Name)
 		g.emitTerm("ret i32 0")
 	}
 	if g.prog.TestMode {
-		g.out.WriteString("declare void @veles_test_watch(i64, ptr, i64, i64)\ndeclare void @veles_test_begin()\ndeclare i64 @veles_test_take(ptr, ptr, i64)\n\n")
+		g.out.WriteString("declare void @veles_test_setup(i64, i64, i64)\ndeclare ptr @veles_test_new(ptr, i64)\ndeclare ptr @veles_test_bind(ptr)\ndeclare void @veles_test_unbind(ptr)\ndeclare void @veles_test_queue(ptr, ptr, ptr)\ndeclare i64 @veles_test_take(ptr, ptr, ptr, i64)\n\n")
 	}
 	g.out.WriteString("define i32 @main(i32 %argc, ptr %argv) {\nentry:\n")
 	g.out.WriteString(g.allocas.String())

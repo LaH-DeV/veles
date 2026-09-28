@@ -110,7 +110,7 @@ func (f *fnCtx) mapMethod(recv Expr, mt *types.Map, name string, e *ast.CallExpr
 	span := e.Pos
 	need := func(n int) bool {
 		if len(e.Args) != n {
-			f.errorf(span, "'%s' takes %d argument(s)", name, n)
+			f.arityError(span, mt, name, n)
 			f.checkArgsLoosely(e.Args)
 			return false
 		}
@@ -144,7 +144,8 @@ func (f *fnCtx) mapMethod(recv Expr, mt *types.Map, name string, e *ast.CallExpr
 	case "getOrPanic":
 		// removed (D62 C); lowered as before so nothing else cascades
 		f.removedOrPanic(e, name)
-		if !need(1) {
+		if len(e.Args) != 1 { // the removal is the one thing to report
+			f.checkArgsLoosely(e.Args)
 			return bad()
 		}
 		k := f.checkExprTo(e.Args[0].Value, mt.Key)
@@ -233,7 +234,7 @@ func (f *fnCtx) setMethod(recv Expr, st *types.Set, name string, e *ast.CallExpr
 	span := e.Pos
 	need := func(n int) bool {
 		if len(e.Args) != n {
-			f.errorf(span, "'%s' takes %d argument(s)", name, n)
+			f.arityError(span, st, name, n)
 			f.checkArgsLoosely(e.Args)
 			return false
 		}
@@ -303,7 +304,7 @@ func (f *fnCtx) mapAdapter(recv Expr, mt *types.Map, name string, e *ast.CallExp
 	span := e.Pos
 	need := func(n int) bool {
 		if len(e.Args) != n {
-			f.errorf(span, "'%s' takes %d argument(s)", name, n)
+			f.arityError(span, mt, name, n)
 			f.checkArgsLoosely(e.Args)
 			return false
 		}

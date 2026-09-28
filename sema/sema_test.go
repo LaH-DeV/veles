@@ -1520,6 +1520,11 @@ fun main() {
 }`)
 	expectError(t, prelude+`fun main() { val xs = MutableList.repeat(0, 3); io.println("$xs") }`, "'MutableList' is generic; write the type arguments")
 	expectError(t, prelude+`fun main() { val xs = MutableList<i64>.nope(3); io.println("$xs") }`, "no static function 'nope'")
+	// a builder another language has leads to the one Veles has, not to a
+	// type argument that would not help (`List<T>.generate` does not exist)
+	expectError(t, prelude+`fun main() { val xs = List.generate(3, i => i); io.println("$xs") }`, "no static function 'generate' on type 'List'; did you mean 'MutableList<T>.make(...)'?")
+	expectError(t, prelude+`fun main() { val xs = List<i64>.generate(3, i => i); io.println("$xs") }`, "no static function 'generate' on type 'List<i64>'; did you mean 'MutableList<T>.make(...)'?")
+	expectError(t, prelude+`fun main() { val xs = MutableList<i64>.mak(3, i => i); io.println("$xs") }`, "did you mean 'MutableList<T>.make(...)'?")
 	// `repeat` duplicates its value, so the element type must be Sendable (D35):
 	// a mutable collection, a pointer or a closure would be shared by every slot
 	expectError(t, prelude+`fun main() { val xs = MutableList<MutableList<i64>>.repeat(mut [1], 2); io.println("$xs") }`, "requires 'MutableList<i64>' to implement 'Sendable'")

@@ -78,12 +78,15 @@ The other commands you will use:
 
 | Command | What it does |
 |---|---|
-| `veles new <dir>` | create a package: manifest, `main.vs` with a test, `.gitignore` |
+| `veles new <dir>` | create a package: manifest, `main.vs` with a test, `.gitignore`; `--template server` makes an HTTP service (health check, logging, graceful stop, tests of its handlers) |
 | `veles doc [dir]` | the package's public API as Markdown (`-o dir` for one file per module) |
 | `veles build <dir> -o app` | produce an executable (named after the package without `-o`) |
 | `veles check <dir>` | type-check without compiling; `--fix` applies lint corrections |
-| `veles test <dir>` | run every `test "..." { }` (chapter 14) |
+| `veles explain <family>` | what a kind of error means and how to fix it (the `see:` line) |
+| `veles test <dir>` | run every `test "..." { }` (chapter 14), several at once (`--jobs 1`: one at a time) |
 | `veles build <dir> --release` | optimise, and drop integer overflow checks |
+| `veles build <dir> --sanitize` | the C runtime and the link under AddressSanitizer and UBSan (chapter 13) |
+| `veles build <dir> --timings` | how long each phase took, and the modules that cost the most to check — for a build that feels slow |
 
 Leave out `<dir>` inside a package and these take the current directory:
 `veles run`, `veles test --filter parse`. Flags go before or after the
@@ -132,9 +135,27 @@ look it up in `veles-spec.md`:
 main.vs:4:21: error: type mismatch: expected 'i64', found 'string'
   val n: i64 = "one"
                ^^^^^
+see: veles explain type-mismatch
 ```
 
 Fix the first error and re-run; later errors are often consequences of
-it.
+it. Every message belongs to a family, and the `see:` line under the
+errors names each family that came up: `veles explain type-mismatch`
+prints what that kind of error means and how it is usually fixed, from
+[the error reference](reference/errors.md) the compiler carries, so it
+works offline. In the editor the family is a link to the same page.
+
+A name the compiler does not know comes with its best guess — a typo, or
+what another language calls the same thing:
+
+```text
+main.vs:5:17: error: no method 'size' on type 'List<i64>'; did you mean 'len'?
+main.vs:6:6: error: module 'io' has no declaration 'printn'; did you mean 'io.println'?
+```
+
+In the editor each guess is a quick fix. Fixes the compiler is sure of —
+a removed spelling, an unused binding — are applied by
+`veles check --fix`; a guess never is, since only you know what you
+meant.
 
 Next: [Values, types and strings](02-values-and-strings.md).

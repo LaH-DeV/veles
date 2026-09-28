@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/LaH-DeV/veles/ast"
-	"github.com/LaH-DeV/veles/parser"
 	"github.com/LaH-DeV/veles/source"
 	"github.com/LaH-DeV/veles/std"
 )
@@ -36,6 +35,8 @@ type Package struct {
 	diags     *source.Diagnostics
 	// overlay maps OverlayKey(path) to unsaved editor contents (LSP).
 	overlay map[string]string
+	// timings records per-module time for `--timings`; nil otherwise
+	timings *Timings
 }
 
 // readSource reads a source file, preferring an editor overlay.
@@ -87,7 +88,7 @@ func (p *Package) loadScript(path string) (*Module, bool) {
 		return nil, false
 	}
 	m := &Module{Path: "", Dir: filepath.Dir(path), Pkg: p}
-	m.Files = append(m.Files, parser.ParseFile(source.NewFile(path, string(data)), p.diags))
+	m.Files = append(m.Files, p.parse(m, source.NewFile(path, string(data))))
 	return m, true
 }
 
@@ -160,7 +161,7 @@ func (p *Package) loadLocal(modPath string) (*Module, bool) {
 			p.diags.Errorf(source.Span{}, "cannot read %s: %v", full, err)
 			continue
 		}
-		f := parser.ParseFile(source.NewFile(full, string(data)), p.diags)
+		f := p.parse(m, source.NewFile(full, string(data)))
 		m.Files = append(m.Files, f)
 	}
 	return m, true
@@ -183,7 +184,7 @@ func (p *Package) loadStd(modPath string) (*Module, bool) {
 		data, _ := fs.ReadFile(std.FS, modPath+"/"+name)
 		sf := source.NewFile("std/"+modPath+"/"+name, string(data))
 		sf.Embedded = true
-		f := parser.ParseFile(sf, p.diags)
+		f := p.parse(m, sf)
 		m.Files = append(m.Files, f)
 	}
 	return m, len(names) > 0
@@ -283,13 +284,17 @@ func LoadPackage(entry string, diags *source.Diagnostics) (*Package, error) {
 // LoadPackageOverlay is LoadPackage with unsaved editor buffers, keyed by
 // OverlayKey, standing in for files on disk.
 func LoadPackageOverlay(entry string, diags *source.Diagnostics, overlay map[string]string) (*Package, error) {
+	return loadPackage(entry, diags, overlay, nil)
+}
+
+func loadPackage(entry string, diags *source.Diagnostics, overlay map[string]string, timings *Timings) (*Package, error) {
 	if IsScript(entry) {
 		abs, err := filepath.Abs(entry)
 		if err != nil {
 			return nil, err
 		}
 		dir := filepath.Dir(abs)
-		p := &Package{Root: dir, Script: abs, GivenDir: dir, Modules: map[string]*Module{}, Deps: map[string]*Package{}, diags: diags, overlay: overlay}
+		p := &Package{Root: dir, Script: abs, GivenDir: dir, Modules: map[string]*Module{}, Deps: map[string]*Package{}, diags: diags, overlay: overlay, timings: timings}
 		given, ok := p.loadScript(abs)
 		if !ok {
 			return p, nil
@@ -307,7 +312,7 @@ func LoadPackageOverlay(entry string, diags *source.Diagnostics, overlay map[str
 	if err != nil {
 		return nil, err
 	}
-	p := &Package{Root: root, Modules: map[string]*Module{}, Deps: map[string]*Package{}, diags: diags, overlay: overlay}
+	p := &Package{Root: root, Modules: map[string]*Module{}, Deps: map[string]*Package{}, diags: diags, overlay: overlay, timings: timings}
 	man, err := readManifest(root)
 	if err != nil {
 		return nil, err
@@ -407,7 +412,7 @@ func (p *Package) resolveDep(name, depPath string, rest []string, span source.Sp
 			p.diags.Errorf(span, "dependency '%s' at %s has no veles.toml (M1)", name, root)
 			return nil
 		}
-		dep = &Package{Root: root, Modules: p.Modules, Manifest: man, Deps: map[string]*Package{}, KeyPrefix: "dep/" + name + "/", diags: p.diags, overlay: p.overlay}
+		dep = &Package{Root: root, Modules: p.Modules, Manifest: man, Deps: map[string]*Package{}, KeyPrefix: "dep/" + name + "/", diags: p.diags, overlay: p.overlay, timings: p.timings}
 		p.Deps[name] = dep
 	}
 	modPath := strings.Join(rest, "/")

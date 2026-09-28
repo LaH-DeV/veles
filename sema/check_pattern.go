@@ -71,7 +71,7 @@ func (f *fnCtx) whenExpr(e *ast.WhenExpr, want types.Type) Expr {
 			for i, pat := range arm.Patterns {
 				test, binds, _ := f.compilePattern(pat, subjRef, subjType, pat.Span())
 				if len(binds) > 0 && len(arm.Patterns) > 1 {
-					f.errorf(pat.Span(), "a pattern that binds names cannot be combined with other patterns in one arm")
+					f.errorf(pat.Span(), "a pattern that binds names cannot be combined with other patterns in one arm; give it an arm of its own")
 				}
 				if test != nil {
 					tests = append(tests, test)
@@ -104,6 +104,9 @@ func (f *fnCtx) whenExpr(e *ast.WhenExpr, want types.Type) Expr {
 				if vd, ok := b.(*VarDecl); ok {
 					f.declareLocal(vd.Var.Name, vd.Var, vd.Var.Span)
 				}
+			}
+			for _, pat := range arm.Patterns {
+				f.declareUnbound(pat)
 			}
 			if arm.Guard != nil {
 				ha.Guard = f.checkExprTo(arm.Guard, types.TBool)
@@ -224,6 +227,7 @@ func (f *fnCtx) whenExpr(e *ast.WhenExpr, want types.Type) Expr {
 				}
 			}
 		}
+		incompatible := false
 		for _, ha := range valueArms {
 			if !types.Identical(ha.Body.Type, rt) {
 				if f.assignableTo(ha.Body.Type, rt) {
@@ -232,14 +236,19 @@ func (f *fnCtx) whenExpr(e *ast.WhenExpr, want types.Type) Expr {
 				} else if f.assignableTo(rt, ha.Body.Type) {
 					rt = ha.Body.Type
 				} else {
-					f.errorf(e.Pos, "'when' arms have incompatible types '%s' and '%s'", rt, ha.Body.Type)
+					f.errorf(e.Pos, "'when' arms have incompatible types '%s' and '%s'; make every arm give the same type, or annotate the result ('val x: T = when ...')", rt, ha.Body.Type)
+					incompatible = true
 				}
 			}
 		}
-		for _, ha := range valueArms {
-			if !types.Identical(ha.Body.Type, rt) {
-				ha.Body.Value = f.coerce(ha.Body.Value, rt, e.Pos)
-				ha.Body.Type = rt
+		if incompatible {
+			rt = types.TInvalid // reported once; coercing each arm would report it again
+		} else {
+			for _, ha := range valueArms {
+				if !types.Identical(ha.Body.Type, rt) {
+					ha.Body.Value = f.coerce(ha.Body.Value, rt, e.Pos)
+					ha.Body.Type = rt
+				}
 			}
 		}
 		m.T = rt
@@ -321,7 +330,7 @@ func (f *fnCtx) compilePattern(pat ast.Pattern, subj Expr, t types.Type, span so
 		}
 		if _, isNull := p.Value.(*ast.NullLit); isNull {
 			if _, ok := t.(*types.Nullable); !ok {
-				f.errorf(p.Span(), "'null' pattern on a non-nullable subject of type '%s'", t)
+				f.errorf(p.Span(), "'null' pattern on a non-nullable subject of type '%s': it never matches; remove the arm", t)
 				return &BoolConst{exprBase{types.TBool}, false}, nil, false
 			}
 			return &IsNull{exprBase{types.TBool}, subj}, nil, false
@@ -331,12 +340,16 @@ func (f *fnCtx) compilePattern(pat ast.Pattern, subj Expr, t types.Type, span so
 			notNull := &Unary{exprBase{types.TBool}, OpNot, &IsNull{exprBase{types.TBool}, subj}, span}
 			return and(notNull, inner), b, false
 		}
+		// refused before the constant is checked against the subject's
+		// type: a constant can never be a value of it, and saying so as a
+		// type mismatch too would report one mistake twice
+		if !f.comparable(t) {
+			f.errorf(p.Span(), "values of type '%s' cannot be matched against a constant; match its fields, or test it with a guard", t)
+			return &BoolConst{exprBase{types.TBool}, false}, nil, false
+		}
 		v := f.checkExprTo(p.Value, t)
 		if types.IsInvalid(v.Type()) {
 			return &BoolConst{exprBase{types.TBool}, false}, nil, false
-		}
-		if !f.comparable(t) {
-			f.errorf(p.Span(), "values of type '%s' cannot be matched against a constant", t)
 		}
 		return &Binary{exprBase{types.TBool}, OpEq, subj, v, span}, nil, false
 	case *ast.RangePat:
@@ -508,6 +521,8 @@ func (f *fnCtx) resolvePatternType(subjType types.Type, t ast.Type) types.Type {
 				return nil
 			}
 			base = n.Elem
+		} else if sym := f.lookup(name); (name == "Some" || name == "None") && (sym == nil || sym.Kind == SymVariantCtor) {
+			return nil // on a non-nullable subject: compileTypePattern says so
 		}
 		if s, isSealed := base.(*types.Sealed); isSealed {
 			if v := s.VariantByName(name); v != nil {
@@ -589,11 +604,14 @@ func (f *fnCtx) compileTypePattern(p *ast.TypePat, subj Expr, t types.Type, span
 		it, b, _ := f.compileTypePattern(p, inner, nt.Elem, span)
 		return and(notNull, it), b, false
 	}
+	if sym := f.lookup(name); (name == "None" || name == "Some") && (sym == nil || sym.Kind == SymVariantCtor) {
+		// before resolving: they are not types, and "'Some' is not a type"
+		// would not say what is wrong
+		f.errorf(p.Pos, "'%s' pattern on a non-nullable subject of type '%s': the value is always there; match it directly", name, t)
+		return fail()
+	}
 	target := f.resolvePatternType(t, p.Type)
 	if target == nil {
-		if name == "None" || name == "Some" {
-			f.errorf(p.Pos, "'%s' pattern on a non-nullable subject of type '%s'", name, t)
-		}
 		return fail()
 	}
 	if u, ok := t.(*types.ErrorUnion); ok {
@@ -626,7 +644,7 @@ func (f *fnCtx) compileTypePattern(p *ast.TypePat, subj Expr, t types.Type, span
 	case *types.Struct:
 		v, ok := target.(*types.Struct)
 		if !ok || v != st {
-			f.errorf(p.Pos, "subject has type '%s', which can never be '%s'", t, target)
+			f.errorf(p.Pos, "subject has type '%s', which can never be '%s', so this never matches; remove it", t, target)
 			return fail()
 		}
 		return f.compileFields(p, subj, v, span)
@@ -637,13 +655,13 @@ func (f *fnCtx) compileTypePattern(p *ast.TypePat, subj Expr, t types.Type, span
 			}
 			return nil, nil, true
 		}
-		f.errorf(p.Pos, "subject has type '%s', which can never be '%s'", t, target)
+		f.errorf(p.Pos, "subject has type '%s', which can never be '%s', so this never matches; remove it", t, target)
 		return fail()
 	}
 	if types.Identical(target, t) {
 		return nil, nil, true
 	}
-	f.errorf(p.Pos, "subject has type '%s', which can never be '%s'", t, target)
+	f.errorf(p.Pos, "subject has type '%s', which can never be '%s', so this never matches; remove it", t, target)
 	return fail()
 }
 
@@ -1067,4 +1085,62 @@ func enumMemberPattern(en *types.Enum, p *ast.LiteralPat) *types.EnumMember {
 		return nil
 	}
 	return en.MemberByName(m.Name.Name)
+}
+
+// declareUnbound gives each name a pattern would bind, but that a rejected
+// pattern did not, a binding of no type: the arm's guard and body then
+// report their own mistakes rather than an "unknown name" for every one.
+func (f *fnCtx) declareUnbound(pat ast.Pattern) {
+	declare := f.declareSilently
+	var walk func(p ast.Pattern)
+	walk = func(p ast.Pattern) {
+		switch p := p.(type) {
+		case *ast.BindPat:
+			declare(p.Name)
+		case *ast.TypePat:
+			for _, fp := range p.Fields {
+				if fp.Pat == nil {
+					declare(fp.Name)
+				} else {
+					walk(fp.Pat)
+				}
+			}
+		case *ast.TuplePat:
+			for _, e := range p.Elems {
+				walk(e)
+			}
+		case *ast.ListPat:
+			for _, e := range p.Elems {
+				walk(e)
+			}
+		case *ast.RestPat:
+			if p.Name != nil {
+				declare(*p.Name)
+			}
+		}
+	}
+	walk(pat)
+}
+
+// declareSilently declares name with no type unless it is declared already;
+// what failed to bind it was reported, so neither a use of it nor its
+// never being used is an error of its own.
+func (f *fnCtx) declareSilently(name ast.Ident) {
+	if name.Name == "" || name.Name == "_" || f.scope.LookupLocal(name.Name) != nil {
+		return
+	}
+	v := f.newVar(name.Name, types.TInvalid, false, name.Pos)
+	markUsed(v)
+	f.declareLocal(name.Name, v, name.Pos)
+}
+
+// declareBindingSilently is declareSilently for every name of a
+// destructuring binding whose value could not be destructured.
+func (f *fnCtx) declareBindingSilently(b ast.Binding) {
+	if b.Name != nil {
+		f.declareSilently(*b.Name)
+	}
+	for _, sub := range b.Tuple {
+		f.declareBindingSilently(sub)
+	}
 }

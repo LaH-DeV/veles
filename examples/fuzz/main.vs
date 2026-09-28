@@ -1,5 +1,6 @@
 // A property fuzzer for the standard library's decoders: everything that
-// reads text someone else wrote. Each target feeds generated input and
+// reads text someone else wrote, the HTTP server's request parser included
+// (over a real connection, see `fuzzHttp`). Each target feeds generated input and
 // checks an invariant that must hold for *every* input — a decoder may
 // refuse, but it may never panic, and what it accepts must survive the
 // trip back out. Seeded, so a failure is reproducible from its seed.
@@ -8,7 +9,7 @@
 //
 // A failure prints the target, the iteration and the input, and the exit
 // code is 1.
-use base64, codec, hex, http, io, json, os, random, utf8
+use base64, codec, hex, http, io, json, net, os, random, utf8
 
 struct Stats {
   var runs:     i64 = 0
@@ -29,6 +30,14 @@ struct Fuzzer {
       if (s.failures <= 3) io.println("FAIL $target: $failure")
     }
     this.stats.set(target, s)
+  }
+
+  /// Up to `maxPieces` of `pieces`, joined: text made only of what the
+  /// caller allows, for inputs where one stray byte would be a fault.
+  fun join(pieces: List<string>, maxPieces: i64): string {
+    val sb = StringBuilder()
+    loop (_ in 0..<this.rng.range(0, maxPieces + 1)) sb.append(this.rng.pick(pieces) ?: "")
+    sb.toString()
   }
 
   fun bytes(max: i64): List<u8> {
@@ -193,6 +202,403 @@ fun fuzzUtf8(f: *Fuzzer) {
   f.record("utf8 validators agree", std, if (std != runtime) "${hex.encode(bytes)}: std/utf8 says $std, decodeUtf8 says $runtime" else null)
 }
 
+// ---------------------------------------------------------------------------
+// http: the request parser, over a real connection
+//
+// `http.serve` runs in this process on a loopback listener. Each run opens
+// a connection, sends one to three requests in one write and closes its
+// side. The last request may carry one fault — a ceiling passed, a
+// malformed line, framing the server must refuse — and each fault has the
+// status RFC 9112 asks for; or the whole write may be mutated at random,
+// and then any refusal will do. Either way every answer must be a
+// well-formed response, none a 500, and none may wait for a timeout: the
+// client has closed, so every read on the server ends.
+
+/// Small ceilings, so each is within reach of a generated request.
+val fuzzLimits = http.Limits(requestLineBytes: 200, headerLineBytes: 100, headerCount: 6, headerBytes: 400, bodyBytes: 64)
+
+/// What the parser produced, sent back: the method and decoded path in a
+/// header (a path can decode to anything, `\r\n` included) and the body.
+fun echo(req: http.Request): http.Response =
+  http.Response.bytes(req.body, "application/octet-stream").withHeader("x-echo", "${req.method} ${req.path}")
+
+/// One request, in parts a fault can edit before they are joined.
+struct Draft {
+  var method:  string
+  var target:  string
+  var version: string = "HTTP/1.1"
+  var line:    string? = null  // the whole request line, when a fault wrote it
+  var headers: MutableList<string> = []
+  var body:    List<u8> = []
+  var eol:     string = "\r\n"
+
+  fun wire(): List<u8> {
+    val sb = StringBuilder()
+    sb.append(this.line ?: "${this.method} ${this.target} ${this.version}")
+    sb.append(this.eol)
+    loop (h in this.headers) sb.append("$h${this.eol}")
+    sb.append(this.eol)
+    sb.toString().bytes().concat(this.body)
+  }
+}
+
+/// What must come back for one request.
+struct Want {
+  status: i64
+  echo:   string = ""
+  body:   List<u8> = []
+  closes: bool = false  // the response says `connection: close` and is the last
+}
+
+/// A request the server must accept. `last` may end the connection
+/// (`Connection: close`, or HTTP/1.0 without keep-alive); `framed` leaves
+/// out the body and the connection headers, for a fault to add its own.
+fun draft(f: *Fuzzer, last: bool, framed: bool): (Draft, Want) {
+  val method = f.rng.pick(["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "BREW", "M-SEARCH"]) ?: "GET"
+  val path = "/" + f.join(["a", "b/", "..", "~", "%20", "%2F", "%zz", "%", "+", "%0d%0a", "%0A", "%00", "%e2%82%ac", "%ff"], 5)
+  val query = if (f.rng.boolean()) "" else "?" + f.join(["a=1", "&", "b", "=", "%26", "+", "%C3%A9"], 4)
+  var d = Draft(method, target: path + query)
+  if (f.rng.range(0, 4) == 0) d.eol = "\n"
+  d.headers.push("Host: fuzz")
+  loop (_ in 0..<f.rng.range(0, 3)) {
+    val name = f.rng.pick(["X-A", "Accept", "user-agent", "x!#$%&'*+.^`|~"]) ?: "X-A"
+    val value = f.rng.pick(["v", " v", " a b ", "\t\u{e9}\t", "", " x:y", " 1"]) ?: ""
+    d.headers.push("$name:$value")
+  }
+  var closes = false
+  if (!framed) {
+    if (f.rng.range(0, 3) == 0) {
+      d.body = f.bytes(fuzzLimits.bodyBytes)
+      d.headers.push("Content-Length: ${d.body.len()}")
+    } else if (f.rng.range(0, 6) == 0) {
+      d.headers.push("Content-Length: 0")
+    }
+    if (last && f.rng.range(0, 4) == 0) {
+      d.headers.push("Connection: close")
+      closes = true
+    } else if (last && f.rng.range(0, 6) == 0) {
+      d.version = "HTTP/1.0"
+      closes = true
+    }
+  }
+  val decoded = http.percentDecode(path, plusIsSpace: false).replace("\r", " ").replace("\n", " ").replace("\u{0}", " ")
+  (d, Want(status: 200, echo: "$method $decoded", body: d.body, closes))
+}
+
+/// The last request, with one fault: its bytes, the status it must get,
+/// and a name for a failure message.
+fun faulty(f: *Fuzzer): (List<u8>, i64, string) {
+  var (d, _) = draft(f, last: true, framed: true)
+  when (f.rng.range(0, 21)) {
+    0    => {
+      d.target = "/" + "a".repeat(fuzzLimits.requestLineBytes)
+      return (d.wire(), 414, "long target")
+    }
+    1    => {
+      d.headers.push("X-Long: " + "v".repeat(fuzzLimits.headerLineBytes))
+      return (d.wire(), 431, "long header")
+    }
+    2    => {
+      loop (_ in 0..<fuzzLimits.headerCount) d.headers.push("X-N: 1")
+      return (d.wire(), 431, "many headers")
+    }
+    3    => {
+      loop (_ in 0..<5) d.headers.push("X-B: " + "b".repeat(80))
+      return (d.wire(), 431, "header bytes")
+    }
+    4    => {
+      d.headers.push("Content-Length: ${f.rng.range(fuzzLimits.bodyBytes + 1, 100000)}")
+      return (d.wire(), 413, "large body")
+    }
+    5    => {
+      val length = f.rng.pick(["abc", "-1", "+5", "1 2", "0x10", "", "5.0", "99999999999999999999"]) ?: ""
+      d.headers.push("Content-Length: $length")
+      d.body = "hello".bytes()
+      return (d.wire(), 400, "content-length \"$length\"")
+    }
+    6    => {
+      d.headers.push("Content-Length: 5")
+      d.headers.push("Content-Length: 6")
+      d.body = "hello!".bytes()
+      return (d.wire(), 400, "two content-lengths")
+    }
+    7    => {
+      d.headers.push("Transfer-Encoding: chunked")
+      return (d.wire(), 501, "chunked")
+    }
+    8    => {
+      val (version, status) = f.rng.pick([("HTTP/2.0", 505), ("HTTP/3.0", 505), ("HTTP/1.1x", 400), ("http/1.1", 400), ("HTTP/1", 400), ("HTTP/1.", 400), ("HTTP/11.1", 400)]) ?: ("HTTP/2.0", 505)
+      d.version = version
+      return (d.wire(), status, "version $version")
+    }
+    9    => {
+      val line = f.rng.pick(["GET /", "GET  / HTTP/1.1", "GET / HTTP/1.1 x", " GET / HTTP/1.1", "GET\t/\tHTTP/1.1", "GET / HTTP/1.1 ", "/ HTTP/1.1"]) ?: "GET /"
+      d.line = line
+      return (d.wire(), 400, "request line \"$line\"")
+    }
+    10   => {
+      d.headers.push("NoColon")
+      return (d.wire(), 400, "header without a colon")
+    }
+    11   => {
+      d.headers.push(": v")
+      return (d.wire(), 400, "header without a name")
+    }
+    12   => {
+      val h = f.rng.pick(["X-A : v", "X-A\t: v", "Content-Length : 0"]) ?: "X-A : v"
+      d.headers.push(h)
+      return (d.wire(), 400, "space before the colon: \"$h\"")
+    }
+    13   => {
+      val fold = f.rng.pick([" folded: x", "\tmore"]) ?: " folded: x"
+      d.headers.push("X-A: v")
+      d.headers.push(fold)
+      return (d.wire(), 400, "folded header")
+    }
+    14   => {
+      val h = f.rng.pick(["X A: v", "X\u{1}B: v", "X(A): v", "\u{e9}: v", "X\"Q: v", "X/A: v"]) ?: "X A: v"
+      d.headers.push(h)
+      return (d.wire(), 400, "header name \"$h\"")
+    }
+    15   => {
+      val h = f.rng.pick(["X-A: a\u{0}b", "X-A: a\rb"]) ?: "X-A: a\rb"
+      d.headers.push(h)
+      return (d.wire(), 400, "NUL or CR in a value")
+    }
+    16   => {
+      // the client closes with the head unfinished
+      val w = d.wire()
+      return (w.take(w.len() - d.eol.len()), 400, "closed inside the headers")
+    }
+    17   => {
+      d.headers.push("Content-Length: 10")
+      d.body = "four".bytes()
+      return (d.wire(), 400, "body shorter than its length")
+    }
+    18   => {
+      // a byte that is not UTF-8 in the target
+      var w = d.wire().toMutable()
+      w.insert(d.method.len() + 2, 0xFF)
+      return (w.toList(), 400, "target not UTF-8")
+    }
+    19   => {
+      val _ = d.headers.removeAt(0)
+      return (d.wire(), 400, "no Host")
+    }
+    else => {
+      d.headers.push("Host: other")
+      return (d.wire(), 400, "two Hosts")
+    }
+  }
+}
+
+/// Up to three bytes changed, inserted or removed, preferring the bytes
+/// the parser splits on.
+fun mutate(f: *Fuzzer, wire: List<u8>): List<u8> {
+  val special: List<u8> = [' ', ':', '\r', '\n', '\t', '%', '0', '9', '-', 0x00, 0x7F, 0xC3, 0xFF]
+  var out = wire.toMutable()
+  loop (_ in 0..<f.rng.range(1, 4)) {
+    if (out.isEmpty()) break
+    val at = f.rng.range(0, out.len())
+    val b: u8 = if (f.rng.boolean()) f.rng.pick(special) ?: 0 else f.rng.range(0, 256) as u8
+    when (f.rng.range(0, 3)) {
+      0    => out.set(at, b)
+      1    => out.insert(at, b)
+      else => {
+        val _ = out.removeAt(at)
+      }
+    }
+  }
+  out.toList()
+}
+
+fun fuzzHttp(f: *Fuzzer, port: i64) {
+  val n = f.rng.range(1, 4)
+  val mode = f.rng.range(0, 4)  // 0: the last request is faulty, 1: all of it mutated
+  var wire: MutableList<u8> = []
+  var wants: MutableList<Want> = []
+  var fault = ""
+  loop (i in 0..<n) {
+    if (i == n - 1 && mode == 0) {
+      val (bytes, status, name) = faulty(f)
+      wire.addAll(bytes)
+      wants.push(Want(status, closes: true))
+      fault = name
+    } else {
+      val (d, want) = draft(f, last: i == n - 1, framed: false)
+      wire.addAll(d.wire())
+      wants.push(want)
+    }
+  }
+  val sent = if (mode == 1) mutate(f, wire.toList()) else wire.toList()
+  val target = if (mode == 1) "http mutated" else "http requests"
+  when (val r = exchange(port, sent)) {
+    is Ok     => {
+      val (got, broken) = parseResponses(r)
+      val problem = if (!broken.isEmpty()) broken else if (mode == 1) judgeMutated(got) else judge(got, wants.toList())
+      val accepted = if (mode == 1) got.all(g => g.status == 200) else mode != 0
+      f.record(target, accepted, if (problem.isEmpty()) null else "$problem\n  sent ${showBytes(sent)}" + (if (fault.isEmpty()) "" else " ($fault)") + "\n  got  ${showBytes(r)}")
+    }
+    is Err(e) => f.record(target, false, "${e.message()}\n  sent ${showBytes(sent)}" + (if (fault.isEmpty()) "" else " ($fault)"))
+  }
+}
+
+/// Requests that once got a wrong answer, checked on every run before the
+/// generated ones; each was found by this program.
+fun httpCorpus(): List<(List<u8>, List<Want>)> {
+  val refused = [Want(status: 400, closes: true)]
+  [
+    // a path that decodes to a line break, echoed into a header, split
+    // the response: the client wrote a header of its own
+    ("GET /a%0d%0aSet-Cookie:%20x=1 HTTP/1.1\r\nHost: fuzz\r\n\r\n".bytes(), [Want(status: 200, echo: "GET /a  Set-Cookie: x=1")]),
+    // a line that is not UTF-8 closed the connection without an answer
+    ("GET / HTTP/1.1\r\nHost: fuzz\r\nX-A: ".bytes().concat([0x87]).concat("\r\n\r\n".bytes()), refused),
+    // read one way here and another way by a proxy in front
+    ("POST / HTTP/1.1\r\nHost: fuzz\r\nContent-Length : 5\r\n\r\nhello".bytes(), refused),
+    ("POST / HTTP/1.1\r\nHost: fuzz\r\nContent-Length: +5\r\n\r\nhello".bytes(), refused),
+    ("POST / HTTP/1.1\r\nHost: fuzz\r\nContent-Length: 5\r\nContent-Length: 6\r\n\r\nhello!".bytes(), refused),
+    ("GET / HTTP/1.1\r\nHost: fuzz\r\nX-A: v\r\n folded: x\r\n\r\n".bytes(), refused),
+    ("GET / HTTP/1.1\r\nHost: fuzz\r\nX-A: a\rb\r\n\r\n".bytes(), refused),
+    ("GET / HTTP/1.1x\r\nHost: fuzz\r\n\r\n".bytes(), refused),
+    ("GET / HTTP/1.1\r\n\r\n".bytes(), refused),
+    // HTTP/1.0 without keep-alive kept the connection open
+    ("GET / HTTP/1.0\r\n\r\n".bytes(), [Want(status: 200, echo: "GET /", closes: true)]),
+  ]
+}
+
+fun checkHttp(f: *Fuzzer, port: i64, wire: List<u8>, wants: List<Want>) {
+  when (val r = exchange(port, wire)) {
+    is Ok     => {
+      val (got, broken) = parseResponses(r)
+      val problem = if (broken.isEmpty()) judge(got, wants) else broken
+      f.record("http corpus", true, if (problem.isEmpty()) null else "$problem\n  sent ${showBytes(wire)}\n  got  ${showBytes(r)}")
+    }
+    is Err(e) => f.record("http corpus", true, "${e.message()}\n  sent ${showBytes(wire)}")
+  }
+}
+
+/// Sends `wire`, closes the sending side, and reads until the server closes.
+fun exchange(port: i64, wire: List<u8>): List<u8> suspends throws IoError | Timeout {
+  with (conn = try net.connect("127.0.0.1", port)) {
+    try conn.write(wire)
+    try conn.shutdownWrite()
+    // the client has closed its side, so every read on the server ends:
+    // a server still waiting after this is a bug, not a slow peer
+    try withTimeout(Duration.seconds(5), () => try readAll(conn))
+  }
+}
+
+fun readAll(c: net.Conn): List<u8> suspends throws IoError {
+  var out: MutableList<u8> = []
+  loop (out.len() <= 1048576) {
+    val chunk = try c.read()
+    if (chunk.isEmpty()) break
+    out.addAll(chunk)
+  }
+  out.toList()
+}
+
+/// One response as the client read it.
+struct Got {
+  status:  i64
+  headers: Map<string, string>
+  body:    List<u8>
+}
+
+/// Where the CRLF at or after `from` starts, or -1.
+fun crlf(data: List<u8>, from: i64): i64 {
+  var i = from
+  loop (i + 1 < data.len()) {
+    if (data.at(i) == '\r' && data.at(i + 1) == '\n') return i
+    i += 1
+  }
+  -1
+}
+
+/// Everything the server sent, as responses; the text says what is not a
+/// well-formed HTTP/1.1 response, and is empty when all of it is.
+fun parseResponses(data: List<u8>): (List<Got>, string) {
+  var out: MutableList<Got> = []
+  var at: i64 = 0
+  loop (at < data.len()) {
+    val end = crlf(data, at)
+    if (end < 0) return (out.toList(), "response ${out.len() + 1} has no status line")
+    val statusLine = data.slice(at, end).decodeUtf8() ?: ""
+    val (proto, rest) = statusLine.splitOnce(" ") ?: ("", "")
+    val (code, _) = rest.splitOnce(" ") ?: ("", "")
+    val status = code.toInt() ?: 0
+    if (proto != "HTTP/1.1" || code.len() != 3 || status < 100) return (out.toList(), "status line \"$statusLine\"")
+    at = end + 2
+    val headers: MutableMap<string, string> = [:]
+    loop {
+      val e = crlf(data, at)
+      if (e < 0) return (out.toList(), "response ${out.len() + 1}: headers without an end")
+      if (e == at) {
+        at += 2
+        break
+      }
+      val line = data.slice(at, e).decodeUtf8() ?: ""
+      val (name, value) = line.splitOnce(": ") ?: ("", "")
+      if (name.isEmpty() || name != name.toLower() || name.contains(" ") || value.contains("\r") || value.contains("\n")) {
+        return (out.toList(), "response ${out.len() + 1}: header line \"$line\"")
+      }
+      headers.set(name, value)
+      at = e + 2
+    }
+    val length = headers.get("content-length")?.toInt() ?: return (out.toList(), "response ${out.len() + 1} has no content-length")
+    if (at + length > data.len()) return (out.toList(), "response ${out.len() + 1}: body shorter than its content-length")
+    out.push(Got(status, headers: headers.toMap(), body: data.slice(at, at + length)))
+    at += length
+  }
+  (out.toList(), "")
+}
+
+/// Every response is the one wanted, and a refusal ends the connection.
+fun judge(got: List<Got>, wants: List<Want>): string {
+  val statuses = got.map(g => g.status)
+  if (got.len() != wants.len()) return "${got.len()} responses ($statuses), wanted ${wants.map(w => w.status)}"
+  loop ((g, w) in got.zip(wants)) {
+    if (g.status != w.status) return "status ${g.status}, wanted ${w.status} ($statuses)"
+    if (w.status == 200) {
+      val echoed = g.headers.get("x-echo") ?: ""
+      if (echoed != w.echo) return "x-echo \"$echoed\", wanted \"${w.echo}\""
+      if (g.body != w.body) return "body ${showBytes(g.body)}, wanted ${showBytes(w.body)}"
+    }
+    val closes = g.headers.get("connection") == "close"
+    if (closes != (w.closes || w.status != 200)) return "status ${g.status} says connection: ${g.headers.get("connection") ?: "-"}"
+  }
+  ""
+}
+
+/// A mutated request may be refused any way the server refuses, but not
+/// with a 500 or a timeout, and a refusal ends the connection.
+fun judgeMutated(got: List<Got>): string {
+  if (got.isEmpty()) return "no response"
+  var i: i64 = 0
+  loop (g in got) {
+    i += 1
+    if (![200, 400, 413, 414, 431, 501, 505].contains(g.status)) return "status ${g.status}"
+    if (g.status != 200 && i != got.len()) return "a ${g.status} is not the last response"
+    if (g.status != 200 && g.headers.get("connection") != "close") return "a ${g.status} keeps the connection"
+  }
+  ""
+}
+
+/// Bytes as a quoted string, `\r`, `\n` and anything unprintable escaped.
+fun showBytes(b: List<u8>): string {
+  val sb = StringBuilder()
+  loop (x in b.take(200)) {
+    when {
+      x == '\r'          => sb.append("\\r")
+      x == '\n'          => sb.append("\\n")
+      x >= 32 && x < 127 => sb.append(utf8.char(x as i64))
+      else               => sb.append("\\x${hex.encode([x])}")
+    }
+  }
+  if (b.len() > 200) sb.append("...")
+  "\"${sb.toString()}\" (${b.len()} bytes)"
+}
+
 fun main() {
   val args = os.args()
   val iterations = args.at(0)?.toInt() ?: 500
@@ -210,6 +616,13 @@ fun main() {
     fuzzJsonValues(&f)
     fuzzPercent(&f)
     fuzzUtf8(&f)
+  }
+  val listener = net.listen().getOrNull() ?: panic("fuzz: cannot listen on loopback")
+  scope {
+    val server = async http.serve(listener, req => echo(req), fuzzLimits, log: false)
+    loop ((wire, wants) in httpCorpus()) checkHttp(&f, listener.port(), wire, wants)
+    loop (_ in 0..<iterations) fuzzHttp(&f, listener.port())
+    server.cancel()
   }
   var failed = false
   loop ((target, s) in f.stats.entries().sortedBy(e => e.0)) {

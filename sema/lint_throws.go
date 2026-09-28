@@ -20,6 +20,11 @@ import (
 // not take on `throws`, so it may be written that way to fit a throwing
 // function type). A clause nobody wrote — a test's (D78) — is not linted.
 func (c *Checker) lintNeedlessThrows() {
+	if c.roundDiags.HasErrors() {
+		// an error in a body may be the very expression that would have
+		// thrown; "nothing here can throw" would then be wrong advice
+		return
+	}
 	for _, t := range c.templates {
 		d := t.Decl
 		if d == nil || !d.Effects.Throws || !d.Effects.ThrowsSpan.IsValid() || (d.Body == nil && d.ExprBody == nil) {
