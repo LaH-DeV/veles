@@ -2,7 +2,7 @@
 // and the reads it guards are one step — there is no index to get wrong
 // and nothing to panic on. `[a, b]` matches exactly two elements, `..`
 // any number of them, and `..rest` binds those as a new List.
-use io
+use io { println }
 
 sealed trait Shape
 struct Circle : Shape {
@@ -49,53 +49,53 @@ fun area(shapes: List<Shape>): f64 = when (shapes) {
 }
 
 fun main() {
-  io.println(describe([]))
-  io.println(describe(["help"]))
-  io.println(describe(["build"]))
-  io.println(describe(["run", "tests", "-v"]))
-  io.println(describe(["run"]))
-  io.println(describe(["fmt", "a", "b"]))
+  println(describe([]))
+  println(describe(["help"]))
+  println(describe(["build"]))
+  println(describe(["run", "tests", "-v"]))
+  println(describe(["run"]))
+  println(describe(["fmt", "a", "b"]))
 
-  io.println(ends([1, 2, 3, 4]))
-  io.println(ends([7, 8]))
-  io.println(ends([9]))
+  println(ends([1, 2, 3, 4]))
+  println(ends([7, 8]))
+  println(ends([9]))
 
-  io.println("${middle([1, 2, 3, 4, 5])} ${middle([1, 2])} ${middle([1])}")
+  println("${middle([1, 2, 3, 4, 5])} ${middle([1, 2])} ${middle([1])}")
 
-  io.println(split3("aa.bb.cc"))
-  io.println(split3("aa.bb"))
-  io.println(split3("a.b.c.d"))
+  println(split3("aa.bb.cc"))
+  println(split3("aa.bb"))
+  println(split3("a.b.c.d"))
 
-  io.println(maybe(null))
-  io.println(maybe([]))
-  io.println(maybe([5, 6]))
+  println(maybe(null))
+  println(maybe([]))
+  println(maybe([5, 6]))
 
-  io.println("${area([Circle(radius: 1.0)])} ${area([Square(side: 2.0), Circle(radius: 1.0)])} ${area([])}")
+  println("${area([Circle(radius: 1.0)])} ${area([Square(side: 2.0), Circle(radius: 1.0)])} ${area([])}")
 
   // nested: a list of pairs, and a list inside a tuple
   val pairs = [(1, "one"), (2, "two")]
   val [(n, name), ..] = pairs else return
-  io.println("$n $name")
+  println("$n $name")
   val tagged = ("sum", [3, 4])
   when (tagged) {
-    (label, [a, b]) => io.println("$label ${a + b}")
-    else            => io.println("other")
+    (label, [a, b]) => println("$label ${a + b}")
+    else            => println("other")
   }
   val (op, [x, y]) = tagged else return
-  io.println("$op ${x * y}")
+  println("$op ${x * y}")
 
   // the names are copies taken at the match: a later push does not reach them
   var live: MutableList<i64> = [1, 2, 3]
   val [head, ..tail] = live else return
   live.push(4)
   live.set(0, 100)
-  io.println("$head $tail ${live.len()}")
+  println("$head $tail ${live.len()}")
 
   // two parts are a tuple, not a list: `splitOnce` answers null when the
   // separator is missing, so a let-else reads it in one line
   loop (setting in ["name=ann", "debug", "path=/a=b"]) {
     val (key, value) = setting.splitOnce("=") else continue
-    io.println("$key -> $value")
+    println("$key -> $value")
   }
-  loop ((i, word) in ["zero", "one"].enumerate()) io.println("$i $word")
+  loop ((i, word) in ["zero", "one"].enumerate()) println("$i $word")
 }

@@ -14,8 +14,9 @@ import (
 )
 
 type Checker struct {
-	pkg   *Package
-	diags *source.Diagnostics
+	namedImports []namedImport // every bound name of a braced import (D85)
+	pkg          *Package
+	diags        *source.Diagnostics
 	// roundDiags collects diagnostics of the current inference round; only
 	// the final round's are kept (D45 fixpoint).
 	roundDiags *source.Diagnostics
@@ -330,6 +331,7 @@ func (c *Checker) collect() {
 		m.Imports = map[*ast.File]*Scope{}
 		for _, f := range m.Files {
 			m.Imports[f] = NewScope(m.Scope)
+			m.Imports[f].used = map[string]bool{}
 			for _, d := range f.Decls {
 				c.declare(m, f, d)
 			}
@@ -676,6 +678,165 @@ func (c *Checker) declareUse(m *Module, f *ast.File, u *ast.UseSpec) {
 	}
 	// the module name in the `use` line hovers like any other reference
 	c.refSym(u.Path[len(u.Path)-1].Pos, &Symbol{Name: name, Kind: SymModule, Mod: dep, Span: u.Pos})
+	c.declareUseNames(m, f, u, dep, scope)
+}
+
+// declareUseNames binds the names of `use m { f, T as U }` (D85) in the
+// file's import scope. The bound symbol is the module's own, so a call or a
+// type written bare means exactly what the qualified one would; a rename
+// gets a copy under its new name.
+func (c *Checker) declareUseNames(m *Module, f *ast.File, u *ast.UseSpec, dep *Module, scope *Scope) {
+	mod := pathString(u.Path)
+	for _, n := range u.Names {
+		member := dep.Scope.LookupLocal(n.Name.Name)
+		if member == nil {
+			c.noNamedMember(n, mod, dep)
+			continue
+		}
+		if !member.Pub {
+			c.errorf(n.Name.Pos, "'%s' is private to module '%s'%s (M5)", n.Name.Name, mod, privateHint(dep.Path))
+			continue
+		}
+		if member.Kind == SymFunc && member.Func.TestCode && !isTestFile(f) {
+			c.errorf(n.Name.Pos, "'%s' is test code (a 'test fun', or declared in a *.test.vs file); only tests can use it, and a build leaves it out (D78)", n.Name.Name)
+			continue
+		}
+		bound := member
+		name := n.Name.Name
+		if n.Alias != nil {
+			name = n.Alias.Name
+			cp := *member
+			cp.Name = name
+			bound = &cp
+		}
+		if own := m.Scope.LookupLocal(name); own != nil {
+			c.errorf(n.Pos, "'%s' is already declared in this module (at %s): import it under another name, '%s { %s as … }'", name, own.Span, mod, n.Name.Name)
+			continue
+		}
+		if old := scope.Insert(bound); old != nil {
+			c.errorf(n.Pos, "'%s' is already imported in this file: import one of them under another name, '%s { %s as … }'", name, mod, n.Name.Name)
+			continue
+		}
+		c.refSym(n.Name.Pos, member)
+		c.namedImports = append(c.namedImports, namedImport{u, n, scope, name})
+	}
+}
+
+// namedImport is a bound name of a braced import, kept for the unused check.
+type namedImport struct {
+	spec  *ast.UseSpec
+	name  *ast.UseName
+	scope *Scope
+	bound string
+}
+
+// finishImportRefs makes the index tell a braced import's names apart from the
+// module's own (D85). A bare use of a renamed name becomes a reference to the
+// alias — its own declaration, at the alias in the `use` line — so renaming it
+// leaves the member alone, and renaming the member leaves the alias uses
+// alone; a bare use of an unrenamed name says which module it came from.
+func (c *Checker) finishImportRefs() {
+	if c.index == nil {
+		return
+	}
+	for _, ni := range c.namedImports {
+		file := ni.name.Name.Pos.File
+		var member *Ref
+		for i := range c.index.Refs {
+			if r := &c.index.Refs[i]; r.Span == ni.name.Name.Pos {
+				member = r
+			}
+		}
+		if file == nil || member == nil {
+			continue
+		}
+		def := member.Key()
+		from := "module " + pathString(ni.spec.Path)
+		for i := range c.index.Refs {
+			r := &c.index.Refs[i]
+			if r.Span.File != file || r.Span == ni.name.Name.Pos || r.Key() != def {
+				continue
+			}
+			if r.Span.Start > 0 && file.Content[r.Span.Start-1] == '.' {
+				continue // written through the module
+			}
+			if file.Content[r.Span.Start:r.Span.End] != ni.bound {
+				continue
+			}
+			if ni.name.Alias != nil {
+				r.Name = ni.bound
+				r.Def = ni.name.Alias.Pos
+				r.Family = source.Span{}
+				r.Where = "alias of " + pathString(ni.spec.Path) + "." + ni.name.Name.Name
+			} else if r.Where == "" {
+				r.Where = from
+			}
+		}
+		if ni.name.Alias != nil {
+			decl := *member
+			decl.Span, decl.Def, decl.Name = ni.name.Alias.Pos, ni.name.Alias.Pos, ni.bound
+			decl.Family = source.Span{}
+			decl.Where = "alias of " + pathString(ni.spec.Path) + "." + ni.name.Name.Name
+			c.index.Refs = append(c.index.Refs, decl)
+		}
+	}
+}
+
+// lintUnusedNames warns about each imported name no lookup in its file
+// found, with the edit that removes it (D85).
+func (c *Checker) lintUnusedNames() {
+	for _, ni := range c.namedImports {
+		if ni.scope.used[ni.bound] {
+			continue
+		}
+		c.warnFix(ni.name.Pos, unusedNameFix(ni.spec, ni.name), "'%s' is imported but never used", ni.bound)
+	}
+}
+
+// unusedNameFix removes one name from a braced import — with its comma —
+// or, when it is the only one, the whole brace group.
+func unusedNameFix(u *ast.UseSpec, n *ast.UseName) *source.Fix {
+	title := "Remove '" + n.Name.Name + "' from the import"
+	at := -1
+	for i, x := range u.Names {
+		if x == n {
+			at = i
+		}
+	}
+	span := func(from, to int) source.Span { return source.Span{File: n.Pos.File, Start: from, End: to} }
+	switch {
+	case at < 0:
+		return nil
+	case len(u.Names) == 1:
+		end := u.Path[len(u.Path)-1].Pos.End
+		if u.Alias != nil {
+			end = u.Alias.Pos.End
+		}
+		return fixReplace(title, span(end, u.Pos.End), "")
+	case at+1 < len(u.Names):
+		return fixReplace(title, span(n.Pos.Start, u.Names[at+1].Pos.Start), "")
+	default:
+		return fixReplace(title, span(u.Names[at-1].Pos.End, n.Pos.End), "")
+	}
+}
+
+// noNamedMember reports a name a braced import asks of a module that does
+// not have it, with the closest member as the fix.
+func (c *Checker) noNamedMember(n *ast.UseName, mod string, dep *Module) {
+	name := n.Name.Name
+	if sym := c.universe.LookupLocal(name); sym != nil && sym.Pub {
+		c.errorf(n.Name.Pos, "module '%s' has no declaration '%s'; '%s' is global (the prelude): it needs no import", mod, name, name)
+		return
+	}
+	if home := PreludeHome(name); home != "" && home != mod {
+		c.errorf(n.Name.Pos, "module '%s' has no declaration '%s'; it is '%s.%s': import it from '%s'", mod, name, home, name, home)
+		return
+	}
+	if hit := didYouMean(name, moduleMembers(dep)); hit != "" {
+		c.errorFix(n.Name.Pos, typoFix(n.Name.Pos, hit), "module '%s' has no declaration '%s'; did you mean '%s'?", mod, name, hit)
+		return
+	}
+	c.errorf(n.Name.Pos, "module '%s' has no declaration '%s'", mod, name)
 }
 
 // ---------------------------------------------------------------------------
@@ -2344,6 +2505,8 @@ func (c *Checker) runRound() *Program {
 		}
 	}
 	c.lintNeedlessThrows()
+	c.lintUnusedNames()
+	c.finishImportRefs()
 	c.prog.Funcs = c.funcs
 	c.prog.Structs = nil
 	for _, s := range c.structs {

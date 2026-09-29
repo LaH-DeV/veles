@@ -1,5 +1,5 @@
 // A tour of the Veles surface syntax, taken from veles-spec.md.
-use io
+use io { println }
 use math.geometry as geo, otherModule
 
 fun main() throws {
@@ -10,7 +10,7 @@ fun main() throws {
 fun add(a: i32, b: i32) = a + b
 
 fun printSum(sum: i32) {
-  io.println("The sum is $sum and ${sum * 2}")
+  println("The sum is $sum and ${sum * 2}")
   otherModule.someFunc()
 }
 
@@ -130,7 +130,7 @@ fun collections(nums: List<i32>, counts: Map<string, i32>, word: string, a: A?) 
   val n = counts.get(word) ?: 0
   val deep = a?.b?.c
   loop (i in 0..<nums.len()) {
-    io.println("$i")
+    println("$i")
   }
   loop (i in 1..100) { }
   val sorted = nums

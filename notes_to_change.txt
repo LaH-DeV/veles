@@ -7,15 +7,12 @@ notes, not the user's text.
 
 === 2026-09-28 (user) ===
 
-* we would need named imports so the code is not spammed with {module}.whatINeedFun()
-
 * maybe `as` should not be a type casting but `cast` or `to`, and `as` would be free to renaming imports (and maybe different things)
+   → `as` for conversions: §9 Q16 (named imports, the other half, are built: D85). Today: 141 `as` conversions
+     in std/examples, 3 `use … as` renames; ~500 `io.` qualifiers in examples alone.
 * we should be on track to self-hosting, slowly but surely, not yet writing Veles compiler, but ensuring we're going towards it.
 * every feature must be complete, performant, manageable on 'lower level' but with the highest possible devex for higher level usage.
 * we'll be using WSL for Linux (it is installed), and we'll be self-running it on macos (m4), but later.
-   → Named imports reopen R9 (2026-09-19 removed them, "Go" option): checklist §9 Q15.
-     `as` for conversions: §9 Q16 — asked together with Q15. Today: 141 `as` conversions
-     in std/examples, 3 `use … as` renames; ~500 `io.` qualifiers in examples alone.
    → Self-hosting readiness is track S in veles-plan.md; the two principles lead the plan.
    → WSL: Linux done 2026-09-28 (plan A1; the whole suite and the thread stress green,
      `internal/wsl-test.sh` reruns it). macOS M4 is A7.

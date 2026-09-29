@@ -1,4 +1,4 @@
-use io
+use io { println }
 
 sealed trait Shape
 struct Circle : Shape {
@@ -28,10 +28,10 @@ fun describe(shape: Shape): string = when (shape) {
 fun main() {
   val shapes: List<Shape> = [Circle(radius: 1.0), Rect(w: 2.0, h: 3.0), Shape.Point()]
   loop (s in shapes) {
-    io.println("${describe(s)} area=${area(s)}")
+    println("${describe(s)} area=${area(s)}")
   }
   val c = Circle(radius: 2.0)
   if (c is Circle) {
-    io.println("still a circle: $c")
+    println("still a circle: $c")
   }
 }

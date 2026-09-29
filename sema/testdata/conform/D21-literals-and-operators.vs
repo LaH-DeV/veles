@@ -11,6 +11,9 @@ fun belowRange(): i8 = -129 // error: literal -129 does not fit in 'i8', which h
 fun byteRange(): u8 = 256 // error: literal 256 does not fit in 'u8', which holds 0..255
 fun negateText(): string = -"x" // error: cannot negate a value of type 'string'
 fun derefNumber(n: i64): i64 = *n // error: cannot dereference a value of type 'i64'
+fun writeThroughNumber(n: i64) { *n = 1 } // error: cannot dereference 'i64'
+fun twoOf(x: i64, y: i64): i64 = x + y
+fun namedTwice(): i64 = twoOf(x: 1, y: 2, x: 3) // error: argument 'x' given more than once
 fun multiplyText(): string = "a" * "b" // error: operator '*' is not defined for 'string'
 fun subtractBools(): bool = true - false // error: operator '-' is not defined for 'bool'
 struct Money {

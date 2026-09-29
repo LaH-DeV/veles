@@ -1,7 +1,7 @@
 // Tasks: 8 independent producer/consumer pairs, 200k values each over a
 // channel of their own — whether channels that share nothing also share
 // no lock (D66: each channel has its own).
-use io, time
+use io { println }, time
 
 fun produce(ch: Channel<i64>) {
   loop (i in 0..<200000) ch.send(i)
@@ -28,5 +28,5 @@ fun main() {
   }
   var total: i64 = 0
   loop (t in sums) total += await t
-  io.println("BENCH pipes 1600000 ${sw.elapsed().toNanos()} $total")
+  println("BENCH pipes 1600000 ${sw.elapsed().toNanos()} $total")
 }

@@ -1,4 +1,4 @@
-use io
+use io { println }
 
 struct User {
   name: string
@@ -18,24 +18,24 @@ fun greet(u: User?): string {
 fun main() {
   val a = find("ann")
   val b = find("bob")
-  io.println(greet(a))
-  io.println(greet(b))
+  println(greet(a))
+  println(greet(b))
   val age = a?.age ?: -1
   val bage = b?.age ?: -1
-  io.println("ages: $age $bage")
+  println("ages: $age $bage")
   when (a) {
-    null          => io.println("none")
-    is User(name) => io.println("some $name")
+    null          => println("none")
+    is User(name) => println("some $name")
   }
   val nested: i64?? = Some(null)
   when (nested) {
-    null          => io.println("outer null")
-    Some(null)    => io.println("inner null")
-    Some(Some(x)) => io.println("value $x")
+    null          => println("outer null")
+    Some(null)    => println("inner null")
+    Some(Some(x)) => println("value $x")
   }
   var maybe: string? = null
   maybe = "set"
   if (maybe != null && maybe.len() > 2) {
-    io.println("len ${maybe.len()}")
+    println("len ${maybe.len()}")
   }
 }

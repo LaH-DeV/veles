@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.45** — language design complete; D58 adds the derivation story D51 deferred, D59 the standard library's cryptography. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
+**Working draft v0.46** — language design complete; D58 adds the derivation story D51 deferred, D59 the standard library's cryptography. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -150,7 +150,7 @@ Consequence: library authors get a deliberately curated public surface, consumer
 
 Resolved by the package manager against the manifest. No filesystem-relative string paths.
 
-*Addendum (v0.28) — modules only, one statement, many imports.* A `use` imports modules and nothing smaller: members are always qualified (`geometry.Point`, `io.println()`), and `use geometry as geo` renames the module when the prefix is long. The braced name-import form (`use geometry.{ Point as P, norm }`) is gone — Go's reasoning: a qualified name says at the use site where a thing comes from, two modules may both declare a `Point` with no renaming, and there is one way to write a call. A parameter or local named like a module shadows it (`fun mkdir(path: string)` cannot call `path.dir`); the answer is an alias at the import, not a name-import escape hatch. Type aliases (`type P = geo.Point`) are the remaining way to shorten a type name and are not in the language yet; add them if the prefix on types proves to hurt. `use` takes a comma-separated list: `use fs, io, os`, `use geometry as geo, shapes`; a comma at the end of a line continues the list. Import order and grouping carry no meaning, so the formatter owns them: consecutive `use` lines become one sorted list per origin — the standard library first, then everything else — one `use` statement each. Go groups its imports the same way (goimports), by convention rather than syntax: a separate spelling for standard-library imports would turn every move of a module between the library and a package into a source edit, and the compiler already knows which is which.
+*Addendum (v0.28) — modules only, one statement, many imports.* *(names since D85: `use m { f }` adds bare names; the rest below stands.)* A `use` imports modules and nothing smaller: members are always qualified (`geometry.Point`, `io.println()`), and `use geometry as geo` renames the module when the prefix is long. The braced name-import form (`use geometry.{ Point as P, norm }`) is gone — Go's reasoning: a qualified name says at the use site where a thing comes from, two modules may both declare a `Point` with no renaming, and there is one way to write a call. A parameter or local named like a module shadows it (`fun mkdir(path: string)` cannot call `path.dir`); the answer is an alias at the import, not a name-import escape hatch. Type aliases (`type P = geo.Point`) are the remaining way to shorten a type name and are not in the language yet; add them if the prefix on types proves to hurt. `use` takes a comma-separated list: `use fs, io, os`, `use geometry as geo, shapes`; a comma at the end of a line continues the list. Import order and grouping carry no meaning, so the formatter owns them: consecutive `use` lines become one sorted list per origin — the standard library first, then everything else — one `use` statement each. Go groups its imports the same way (goimports), by convention rather than syntax: a separate spelling for standard-library imports would turn every move of a module between the library and a package into a source edit, and the compiler already knows which is which.
 
 ---
 
@@ -2115,6 +2115,45 @@ Before, `T.Item` silently meant the first bound's.
 
 Rejected (user, recommended of 3): refusing without a qualified form (the
 traits would have to avoid each other's names); keeping the first bound.
+
+### D85 — Named imports: `use m { f, T as U }` (v0.46)
+
+```veles
+use io { println, eprintln as warn, readLine }, http { Request, Response }
+
+fun main() {
+  println("hello")            // bare
+  warn("to standard error")   // renamed with `as`
+  io.println("qualified")     // the module keeps its name
+}
+```
+
+A `use` entry may end in a brace group naming members of the module: a
+function, a type (struct, enum, sealed type, trait) or a `static val`. Each
+name is bound bare in the file, as the module's own symbol; `as` renames it
+the way it renames a module. `m.` stays available — braces add names, they
+never replace the qualifier. The old `use m.{ … }` (M6, removed by R9) is an
+error whose fix drops the dot.
+
+Rules: no `{ * }` (an error saying to name what is used); a name may not be
+imported twice in a file nor equal a declaration of the importing module
+(the message says to rename with `as`); a parameter or local of the same name
+shadows an import, as it shadows a module; an explicit import wins over a
+prelude name; a private member or test code is refused as when qualified; a
+name nothing uses is a warning whose fix removes it; the formatter sorts
+names inside the braces; completion inside the braces offers the module's
+names, bare completion offers the imported ones, and typing the start of a
+name a module offers but the file has not imported completes it together
+with the edit that imports it. A renamed name is a declaration of its own at
+the alias (hover: `alias of m.f`; rename changes the alias and its uses, not
+the member), an unrenamed bare use hovers with its module. `as` inside the braces
+does not depend on Q16 (what `as` means for conversions).
+
+Rejected (user, recommended of 4): `from m import { … }` (a second import
+syntax, two new keywords), `::` and `:` for renaming (a new operator; a colon
+already means "type of" and "name of argument"), `use m.{ … }` (the removed
+spelling); braces that replace the qualifier (`use io, io { println }` to have
+both).
 
 ---
 

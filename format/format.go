@@ -491,8 +491,12 @@ func (p *printer) useRun(decls []ast.Decl) bool {
 }
 
 // SortUseSpecs orders imports the way the formatter prints them: standard
-// library modules first, then by path; the order is stable.
+// library modules first, then by path, the names inside braces by name; the
+// order is stable.
 func SortUseSpecs(specs []*ast.UseSpec) {
+	for _, s := range specs {
+		sort.SliceStable(s.Names, func(i, j int) bool { return s.Names[i].Name.Name < s.Names[j].Name.Name })
+	}
 	sort.SliceStable(specs, func(i, j int) bool {
 		a, b := isStdImport(specs[i]), isStdImport(specs[j])
 		if a != b {
@@ -553,6 +557,19 @@ func (p *printer) useSpec(s *ast.UseSpec) {
 	}
 	if s.Alias != nil {
 		p.w(" as " + s.Alias.Name)
+	}
+	if len(s.Names) > 0 {
+		p.w(" { ")
+		for i, n := range s.Names {
+			if i > 0 {
+				p.w(", ")
+			}
+			p.w(n.Name.Name)
+			if n.Alias != nil {
+				p.w(" as " + n.Alias.Name)
+			}
+		}
+		p.w(" }")
 	}
 }
 

@@ -14,7 +14,7 @@
 ///   http.serve(listener, app.handler())
 /// }
 /// ```
-use fs, io, net, path, random, time
+use fs, io { eprintln }, net, path, random, time
 
 // ---------------------------------------------------------------------------
 // failing a request
@@ -160,7 +160,7 @@ public fun handler<E>(h: sendable fun(Request): Response suspends throws E | Fai
     is Err(e)   => when (e) {
       is Fail => Response.text(e.text, status: e.status)
       else    => {
-        io.eprintln("http: ${req.method} ${req.path}: ${e.message()}")
+        eprintln("http: ${req.method} ${req.path}: ${e.message()}")
         Response.text("internal server error", status: Status.internalServerError)
       }
     }
@@ -178,7 +178,7 @@ fun dispatch(h: Handler, req: Request): Response {
   when (outcome) {
     is Ok(resp) => resp
     is Err(p)   => {
-      io.eprintln("http: ${req.method} ${req.path}: panic: ${p.message()}")
+      eprintln("http: ${req.method} ${req.path}: panic: ${p.message()}")
       Response.text("internal server error", status: Status.internalServerError)
     }
   }
@@ -297,7 +297,7 @@ public fun logging(): Middleware = next => req => {
   val sw = time.Stopwatch.start()
   val resp = next(req)
   val id = req.header(Header.requestId)
-  io.eprintln("${req.peer} ${req.method} ${req.path} ${resp.status.code} ${sw.elapsed()}" +
+  eprintln("${req.peer} ${req.method} ${req.path} ${resp.status.code} ${sw.elapsed()}" +
     (if (id == null) "" else " id=$id"))
   resp
 }
@@ -461,7 +461,7 @@ public fun serve(
   scope {
     val serving = async acceptAndServe(listener, handler, limits, log, drain)
     stop()
-    if (log) io.eprintln("http: stopping; requests in flight have $grace")
+    if (log) eprintln("http: stopping; requests in flight have $grace")
     drain.begin()
     race {
       val _ = await serving => { }
@@ -510,7 +510,7 @@ fun acceptLoop(listener: net.Listener, out: Channel<net.Conn>) {
       is Ok(conn) => out.send(conn)
       is Err(e)   => {
         // out of descriptors, a reset before accept: report and go on
-        io.eprintln("http: accept: ${e.message()}")
+        eprintln("http: accept: ${e.message()}")
         await sleep(Duration.millis(100))
       }
     }
@@ -526,7 +526,7 @@ fun connection(conn: net.Conn, handler: Handler, limits: Limits, log: bool, drai
           when (e) {
             is Fail => {
               val _ = writeResponse(c, Response.text(e.text, status: e.status), close: true)
-              if (log) io.eprintln("${c.peer()} - ${e.status.code} ${e.text}")
+              if (log) eprintln("${c.peer()} - ${e.status.code} ${e.text}")
             }
             else    => { }  // the peer went away or stayed silent
           }
@@ -539,7 +539,7 @@ fun connection(conn: net.Conn, handler: Handler, limits: Limits, log: bool, drai
       // closes this connection
       val close = !wantsKeepAlive(req, http10) || drain.stopping.load() || resp.headers.get(Header.connection)?.toLower() == "close"
       val sent = writeResponse(c, resp, close, headOnly: req.method == Method.head)
-      if (log) io.eprintln("${req.peer} ${req.method} ${req.path} ${resp.status.code} ${sw.elapsed()}")
+      if (log) eprintln("${req.peer} ${req.method} ${req.path} ${resp.status.code} ${sw.elapsed()}")
       if (sent is Err || close) break
     }
   }

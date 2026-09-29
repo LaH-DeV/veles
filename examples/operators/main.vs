@@ -1,7 +1,7 @@
 // The operator traits (prelude): a struct gets structural `==`, hashing
 // and `Name(field: value)` text for free, and replaces any of them by
 // implementing Equatable, Hashable, Comparable or Display.
-use io
+use io { println }
 
 /// An impl for your own type may sit inside its body (D23); the
 /// top-level `implement Trait for Type` below is the same thing written apart.
@@ -80,18 +80,18 @@ fun largest<T: Comparable>(xs: List<T>): T? {
 fun main() {
   val a = Version(major: 1, minor: 10)
   val b = Version(major: 1, minor: 9)
-  io.println("$a > $b: ${a > b}; sorted: ${[a, b, Version(major: 0, minor: 99)].sorted()}")
-  io.println("min ${[a, b].min()}, max ${[a, b].max()}, descending ${[b, a].sortedDescending()}")
+  println("$a > $b: ${a > b}; sorted: ${[a, b, Version(major: 0, minor: 99)].sorted()}")
+  println("min ${[a, b].min()}, max ${[a, b].max()}, descending ${[b, a].sortedDescending()}")
 
   val ann = Name(text: "Ann")
-  io.println("${ann == Name(text: "ANN")} ${ann != Name(text: "Bob")} ${[ann].contains(Name(text: "ann"))}")
+  println("${ann == Name(text: "ANN")} ${ann != Name(text: "Bob")} ${[ann].contains(Name(text: "ann"))}")
   var counts = mut [ann: 1]
   counts.set(Name(text: "ANN"), 2)
-  io.println("${counts.len()} entry, value ${counts.get(Name(text: "aNN"))}")
+  println("${counts.len()} entry, value ${counts.get(Name(text: "aNN"))}")
 
-  io.println("${Pair(a, b)} ${Pair(a: 1, b: 2)}")
+  println("${Pair(a, b)} ${Pair(a: 1, b: 2)}")
   val shapes: List<Shape> = [Square(side: 2.0), Circle(r: 1.0), Square(side: 1.0)]
-  io.println("${shapes.sorted()} largest ${shapes.max()}")
-  io.println("${largest([3, 9, 4])} ${largest(["pear", "apple"])} ${largest(shapes)}")
-  io.println("${(5).compareTo(7)} ${"b".compareTo("a")} ${(2.5).compareTo(2.5)}")
+  println("${shapes.sorted()} largest ${shapes.max()}")
+  println("${largest([3, 9, 4])} ${largest(["pear", "apple"])} ${largest(shapes)}")
+  println("${(5).compareTo(7)} ${"b".compareTo("a")} ${(2.5).compareTo(2.5)}")
 }

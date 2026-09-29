@@ -1,5 +1,5 @@
 // A hash map: 200k inserts then 200k lookups, five rounds.
-use io, time
+use io { println }, time
 
 fun main() {
   val sw = time.Stopwatch.start()
@@ -9,5 +9,5 @@ fun main() {
     loop (k in 0..<200000) m.set(k * 2654435761 % 1000000007, k)
     loop (k in 0..<200000) sum += m.get(k * 2654435761 % 1000000007) ?: 0
   }
-  io.println("BENCH maps 2000000 ${sw.elapsed().toNanos()} $sum")
+  println("BENCH maps 2000000 ${sw.elapsed().toNanos()} $sum")
 }

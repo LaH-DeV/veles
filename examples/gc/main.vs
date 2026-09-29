@@ -1,4 +1,4 @@
-use io
+use io { println }
 
 struct Node {
   value: i64
@@ -61,21 +61,21 @@ fun main() {
   loop (i in 0..<2000) {
     words.push("w" + "$i")
   }
-  io.println("keep ${sum(keep)} checksum $checksum")
+  println("keep ${sum(keep)} checksum $checksum")
   var total: i64 = 0
   loop ((_, v) in keepMap) {
     val [a, b] = v else panic("gc: every entry holds two numbers")
     total += a + b
   }
-  io.println("map ${keepMap.len()} $total ${keepMap.get("k7") ?: []}")
-  io.println("${boxes.map(b => b.name())} ${counter()} ${words.len()} ${words.at(1999) ?: panic("gc: 2000 words were pushed")}")
+  println("map ${keepMap.len()} $total ${keepMap.get("k7") ?: []}")
+  println("${boxes.map(b => b.name())} ${counter()} ${words.len()} ${words.at(1999) ?: panic("gc: 2000 words were pushed")}")
 
   // many small short-lived objects between two collections: linear time.
   // The allocator once scanned every slot of every full span on each
   // allocation, which made this loop take minutes (bench/results.md).
   var bytes: i64 = 0
   loop (i in 0..<400000) bytes += "item-$i".bytes().len()
-  io.println("small objects $bytes")
+  println("small objects $bytes")
 
   // text built from many pieces: linear time too. `join` once appended to
   // an accumulator that it copied whole each time (80 000 numbers: 38 s),
@@ -85,5 +85,5 @@ fun main() {
   val replaced = joined.replace(",", "; ")
   val sb = StringBuilder()
   loop (n in numbers) sb.append("$n,")
-  io.println("text ${joined.len()} ${replaced.len()} ${sb.len()} ${replaced.substring(0, 12) ?: ""}")
+  println("text ${joined.len()} ${replaced.len()} ${sb.len()} ${replaced.substring(0, 12) ?: ""}")
 }

@@ -1,7 +1,7 @@
 // A JSON parser and printer: a sealed value type, a recursive-descent parser
 // over the bytes of the text with positioned errors, a compact and a pretty
 // printer, and a few queries on the parsed tree.
-use io
+use io { println }
 
 sealed trait Json
 struct JNull : Json { }
@@ -336,22 +336,22 @@ fun main() {
     "  \"author\": {\"name\": \"Lah\", \"langs\": [\"pl\", \"en\"]}, \"stars\": 1e3,\n" +
     "  \"escaped\": \"line\\nbreak \\\"quoted\\\" \\u0041\\u00e9\", \"nothing\": null, \"ok\": true}"
   val doc = parse(text) else { e =>
-    io.println("parse failed: ${e.message()}")
+    println("parse failed: ${e.message()}")
     return
   }
-  io.println(compact(doc))
-  io.println(pretty(doc))
-  io.println("name=${doc.path("name")?.asString()} second tag=${doc.path("tags.1")?.asString()} author=${doc.path("author.name")?.asString()}")
-  io.println("stars=${doc.path("stars")?.asNumber()} missing=${doc.path("author.age")?.asNumber()} depth=${depth(doc)}")
-  io.println("escaped=${doc.path("escaped")?.asString()} chars=${doc.path("escaped")?.asString()?.charCount()}")
+  println(compact(doc))
+  println(pretty(doc))
+  println("name=${doc.path("name")?.asString()} second tag=${doc.path("tags.1")?.asString()} author=${doc.path("author.name")?.asString()}")
+  println("stars=${doc.path("stars")?.asNumber()} missing=${doc.path("author.age")?.asNumber()} depth=${depth(doc)}")
+  println("escaped=${doc.path("escaped")?.asString()} chars=${doc.path("escaped")?.asString()?.charCount()}")
 
   // round trip: printing and parsing again gives the same compact text
   val again = parse(compact(doc))
-  io.println("round trip ${if (again.ok) compact(again) == compact(doc) else false}")
+  println("round trip ${if (again.ok) compact(again) == compact(doc) else false}")
 
   // errors carry a position
   loop (bad in ["{\"a\": }", "[1, 2", "\"open", "{\"a\": 1} x", "[1, 2,]", "tru", "\"\\q\""]) {
     val r = parse(bad)
-    if (r.err) io.println("$bad -> ${r.message()}")
+    if (r.err) println("$bad -> ${r.message()}")
   }
 }

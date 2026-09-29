@@ -1,5 +1,5 @@
 // Tasks: 200k values through a channel between two tasks.
-use io, time
+use io { println }, time
 
 fun produce(ch: Channel<i64>) {
   loop (i in 0..<200000) ch.send(i)
@@ -17,5 +17,5 @@ fun main() {
       sum += v
     }
   }
-  io.println("BENCH channels 200000 ${sw.elapsed().toNanos()} $sum")
+  println("BENCH channels 200000 ${sw.elapsed().toNanos()} $sum")
 }

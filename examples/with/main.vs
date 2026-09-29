@@ -1,17 +1,17 @@
-use io
+use io { println }
 
 struct Res {
   name: string
 
   implement Closeable {
     fun close() {
-      io.println("close ${this.name}")
+      println("close ${this.name}")
     }
   }
 }
 
 fun open(name: string): Res {
-  io.println("open $name")
+  println("open $name")
   Res(name)
 }
 
@@ -20,7 +20,7 @@ error Oops { }
 fun early(flag: bool): i64 {
   with (a = open("a"), b = open("b")) {
     if (flag) return 1
-    io.println("body ${a.name} ${b.name}")
+    println("body ${a.name} ${b.name}")
   }
   2
 }
@@ -33,17 +33,17 @@ fun failing(): i64 throws Oops {
 }
 
 fun main() {
-  io.println("early ${early(true)}")
-  io.println("early ${early(false)}")
+  println("early ${early(true)}")
+  println("early ${early(false)}")
   loop (i in 0..3) {
     with (l = open("loop$i")) {
       if (i == 1) continue
       if (i == 2) break
-      io.println("used ${l.name}")
+      println("used ${l.name}")
     }
   }
   when (failing()) {
-    is Ok(v)  => io.println("ok $v")
-    is Err(e) => io.println("failed $e")
+    is Ok(v)  => println("ok $v")
+    is Err(e) => println("failed $e")
   }
 }

@@ -53,7 +53,7 @@ var families = []family{
 		`belongs to module`),
 	fam("private-to-type", `is private to '`, `the field is 'protected var'`),
 	fam("manifest", `^%s:%d: `, `^%s: \[`, `\[(package|format|native)\]`),
-	fam("modules", `^unknown module`, `import cycle`, `^dependency`, `has no module`, `^'use' `,
+	fam("modules", `^unknown module`, `import cycle`, `^dependency`, `has no module`, `^'use' `, `^'use %s `,
 		`is already imported`, `^'%s' is not a module`, `is a module, not a value`, `^no \.vs files`,
 		`^module '%s' has no declaration`),
 	fam("unknown-name", `^unknown (name|function|type)`, `^cannot resolve`),

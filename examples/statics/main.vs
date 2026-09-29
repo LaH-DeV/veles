@@ -1,7 +1,7 @@
 // Static functions (D23): a `static fun` has no receiver and is called on
 // the type. Struct bodies use them for constructors, traits for
 // construction from data, and generic code calls them on a type parameter.
-use io
+use io { println }
 
 struct Point {
   x: i64
@@ -39,10 +39,10 @@ struct Stack<T> {
 fun parseAll<T: Parsable>(xs: List<string>): List<T?> = xs.map(x => T.parse(x))
 
 fun main() {
-  io.println("${Point.origin()} ${Point.origin().shifted(3)} ${Point.fromText("1, 2")} ${Point.fromText("1")}")
+  println("${Point.origin()} ${Point.origin().shifted(3)} ${Point.fromText("1, 2")} ${Point.fromText("1")}")
   val p: Point? = Point.parse("5,6")
-  io.println("$p ${i64.parse("42")} ${f64.parse("2.5")} ${bool.parse("yes")}")
+  println("$p ${i64.parse("42")} ${f64.parse("2.5")} ${bool.parse("yes")}")
   val ns: List<i64?> = parseAll(["1", "two", "3"])
   val ps: List<Point?> = parseAll(["0,0", "x"])
-  io.println("$ns $ps ${Stack<string>.of("top").items}")
+  println("$ns $ps ${Stack<string>.of("top").items}")
 }

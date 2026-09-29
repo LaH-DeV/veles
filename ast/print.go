@@ -105,6 +105,19 @@ func (p *printer) decl(d Decl) {
 			if s.Alias != nil {
 				p.w(" as " + s.Alias.Name)
 			}
+			if len(s.Names) > 0 {
+				p.w(" {")
+				for i, n := range s.Names {
+					if i > 0 {
+						p.w(",")
+					}
+					p.w(" " + n.Name.Name)
+					if n.Alias != nil {
+						p.w(" as " + n.Alias.Name)
+					}
+				}
+				p.w(" }")
+			}
 		}
 		p.w(")")
 	case *FunDecl:

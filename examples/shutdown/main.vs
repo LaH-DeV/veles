@@ -6,7 +6,7 @@
 // `os.raiseSignal` plays the part of Ctrl+C or `kill`, so the run is
 // deterministic; a real program writes the same `stop:` and is stopped
 // from outside.
-use http, io, net, os
+use http, io { println }, net, os
 
 // What a client sees of one response: the status line, whether the server
 // said it will close, and the body.
@@ -37,9 +37,9 @@ fun ask(c: net.Conn, path: string): string throws IoError | net.TooLong {
 // browser keeps open. A stopping server closes it at once.
 fun idleClient(port: i64) throws IoError | net.TooLong {
   with (c = try net.connect("127.0.0.1", port)) {
-    io.println("idle:  ${try ask(c, "/fast")}")
+    println("idle:  ${try ask(c, "/fast")}")
     val rest = try c.read()
-    io.println("idle:  closed by the server (${rest.len()} more bytes)")
+    println("idle:  closed by the server (${rest.len()} more bytes)")
   }
 }
 
@@ -47,7 +47,7 @@ fun idleClient(port: i64) throws IoError | net.TooLong {
 // the connection's last.
 fun busyClient(port: i64) throws IoError | net.TooLong {
   with (c = try net.connect("127.0.0.1", port)) {
-    io.println("busy:  ${try ask(c, "/slow")}")
+    println("busy:  ${try ask(c, "/slow")}")
   }
 }
 
@@ -55,14 +55,14 @@ fun busyClient(port: i64) throws IoError | net.TooLong {
 // closes, and the client gets no response.
 fun stuckClient(port: i64) throws IoError | net.TooLong {
   with (c = try net.connect("127.0.0.1", port)) {
-    io.println("stuck: ${try ask(c, "/stuck")}")
+    println("stuck: ${try ask(c, "/stuck")}")
   }
 }
 
 struct Resource {
   implement Closeable {
     fun close() {
-      io.println("stuck: the handler's resource was closed")
+      println("stuck: the handler's resource was closed")
     }
   }
 }
@@ -85,7 +85,7 @@ fun app(): http.Handler {
 
 fun stopLater(after: Duration) {
   await sleep(after)
-  io.println("--- the process is asked to stop")
+  println("--- the process is asked to stop")
   os.raiseSignal(os.Signal.Terminate)
 }
 
@@ -94,7 +94,7 @@ fun untilSignal() {
   scope {
     async stopLater(Duration.millis(100))
     val sig = os.shutdownSignal()
-    io.println("server: $sig, draining")
+    println("server: $sig, draining")
   }
 }
 
@@ -113,7 +113,7 @@ fun run(
       async start(clients, port)
       http.serve(listener, app(), log: false, stop: stop, grace: grace)
     }
-    io.println("server: serve returned")
+    println("server: serve returned")
   }
 }
 
@@ -126,7 +126,7 @@ fun main() throws IoError | net.TooLong {
       async busyClient(port)
     }
   }, stop: () => untilSignal(), grace: Duration.seconds(5))
-  io.println("")
+  println("")
   // a handler that does not finish in time; the stop condition is any
   // code at all — here a channel
   val stopNow = Channel<bool>(capacity: 1)
@@ -138,6 +138,6 @@ fun main() throws IoError | net.TooLong {
     }
   }, stop: () => {
     val _ = await stopNow.recv()
-    io.println("server: told to stop, 100ms of grace")
+    println("server: told to stop, 100ms of grace")
   }, grace: Duration.millis(100))
 }

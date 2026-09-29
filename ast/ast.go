@@ -160,9 +160,19 @@ type UseDecl struct {
 	Pos   source.Span
 }
 
-// UseSpec is one import: `a.b` or `a.b as c`.
+// UseSpec is one import: `a.b`, `a.b as c`, or with names — `a.b { f, T as U }`
+// (D85): the module stays reachable as `a.b`, and each name is also
+// written bare.
 type UseSpec struct {
 	Path  []Ident
+	Alias *Ident
+	Names []*UseName // the braced names; nil without braces
+	Pos   source.Span
+}
+
+// UseName is one name of a braced import: `f` or `f as g`.
+type UseName struct {
+	Name  Ident
 	Alias *Ident
 	Pos   source.Span
 }

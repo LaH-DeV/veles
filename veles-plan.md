@@ -520,3 +520,35 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   `TestPanicPrintsCallChain` (three calls, through a suspension, release
   note), updated test-runner reports; the goldens carry the push/pop.
   Chapter 7, the errors and stdlib references.
+
+- **2026-09-29, D85 — named imports (checklist Q15 decided, built)**:
+  `use io { println, eprintln as warn }`, spelled with `as`, braces add bare
+  names on top of `io.` (user's choice among `from … import`, `::`, `:`,
+  `as`). `ast.UseSpec.Names`; the parser reads the braces, refuses `{ * }` and
+  `{ }`, and reads the removed `use m.{ }` with a fix that drops the dot;
+  `declareUseNames` binds the module's own symbols into the file's import
+  scope (a copy under the alias), refuses private, test-code, missing (with a
+  typo guess), prelude-global and prelude-home names, and collisions with
+  another import or a module declaration; `lintUnusedNames` warns with a
+  fix (the scope records which names a lookup found). Formatter sorts the
+  names; completion offers the module's names inside braces and the bound
+  names elsewhere; TextMate colours them. Tests: conform `D85-*` (three
+  files), `TestNamedImports` (across modules: type, enum, function, alias,
+  shadowing, private, test code, unused), format and LSP cases; example
+  `examples/named`. Docs: chapter 11, cheat sheet, errors reference. Not
+  done: auto-import on completion of a name the file has not imported;
+  rename of an aliased name follows the member, not the alias. `as` for
+  conversions (Q16) is untouched.
+- **2026-09-29, D85 follow-ups** (the two "not done" items above are done,
+  and the tree is migrated): auto-import on completion — the standard
+  modules' public names are read once from the embedded sources, the loaded
+  modules' from the package; the edit goes into the braces, after a bare
+  `use m`, or on a new line, and only with a typed prefix. A renamed import
+  is a declaration of its own (`finishImportRefs`): uses of the alias
+  reference the alias, hover says `alias of io.eprintln`, an unrenamed bare
+  use hovers `module io`, and renaming the alias leaves the member alone.
+  Migration: `io.println/print/eprintln/eprint/readLine` became bare in std,
+  examples, bench and the `veles new` templates (63 files; a small Go
+  program did the text change, `veles fmt` the layout; every expected output
+  unchanged). Docs and the compiler's own Go tests keep the qualified form.
+  Tests: `TestAutoImportOnCompletion`, `TestRenamedImportHoverAndRename`.

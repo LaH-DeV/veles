@@ -41,6 +41,9 @@ type Scope struct {
 	symbols map[string]*Symbol
 	// module is set on module-level scopes so lookups can enforce `public`.
 	module *Module
+	// used records the names a lookup found here; only a file's import scope
+	// keeps it, for the unused-import warning (D85).
+	used map[string]bool
 }
 
 func NewScope(parent *Scope) *Scope {
@@ -64,6 +67,9 @@ func (s *Scope) LookupLocal(name string) *Symbol {
 func (s *Scope) Lookup(name string) *Symbol {
 	for sc := s; sc != nil; sc = sc.parent {
 		if sym, ok := sc.symbols[name]; ok {
+			if sc.used != nil {
+				sc.used[name] = true
+			}
 			return sym
 		}
 	}

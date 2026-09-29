@@ -39,12 +39,11 @@ scratch/
 ## Importing
 
 `use geometry` brings the module in under its own name, and its members
-are always reached through that name: `geometry.Point`, `geometry.norm()`.
-There is no way to import a single name — the prefix is the point (M6):
-at the use site it says where a thing comes from, and two modules may
-both have a `Point` without anyone renaming anything. When the prefix is
-long, rename the module with `as`. One `use` lists any number of
-imports, separated by commas:
+are reached through that name: `geometry.Point`, `geometry.norm()`. The
+prefix says where a thing comes from, and two modules may both have a
+`Point` without anyone renaming anything. When the prefix is long, rename
+the module with `as`. One `use` lists any number of imports, separated by
+commas:
 
 ```veles
 // fragment — main.vs, next to a geometry/ directory
@@ -60,6 +59,44 @@ fun main() {
 A parameter or local named like a module shadows it inside its scope
 (`fun mkdir(path: string)` cannot call `path.dir(path)`); rename the
 module at the import (`use path as paths`) when that happens.
+
+### Names you use all the time
+
+A name written on every other line does not need its prefix. List it in
+braces after the module (D85):
+
+```veles
+use io { println, eprintln as warn, readLine }, http { Request, Response }
+
+fun main() {
+  println("hello")           // bare
+  warn("to standard error")  // renamed with `as`, like a module
+  io.println("still works")  // the module keeps its name too
+}
+```
+
+Functions, types (structs, enums, sealed types, traits) and `static val`s
+can be named. A name is the module's own symbol, so `Request` means
+exactly what `http.Request` means. The rules are short:
+
+- `use m { … }` never removes `m.`: braces add bare names on top.
+- There is no `{ * }`: name what you use, so a reader sees where each
+  name comes from.
+- Two imported names may not be the same, nor a name this module
+  declares; the message says to rename one with `as`.
+- A parameter or local of the same name shadows an imported one, as it
+  does a module.
+- A name nothing uses is a warning (`veles check --fix` removes it).
+- `veles fmt` sorts the names inside the braces.
+- Completion inside the braces offers the module's names; the old
+  `use m.{ … }` spelling is an error whose fix removes the dot.
+
+The editor does the bookkeeping. Typing the start of a name a module
+offers — `readL` — completes to `readLine` and adds it to the braces of
+your `use io { … }` (or writes the line) in the same edit. A renamed name
+is a declaration of its own at the alias: hover says `alias of
+io.eprintln`, and renaming `warn` changes the alias and its uses and
+nothing of the module's.
 
 Import paths are logical, resolved by the compiler against the package
 (M6): never a file path, never a URL. Nested directories use dots:

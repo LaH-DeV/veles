@@ -1,17 +1,17 @@
-use io
+use io { println }
 
 fun main() {
   var count = 0
   loop :countingUp {
-    io.println("count = $count")
+    println("count = $count")
     var remaining = 10
     loop {
-      io.println("remaining = $remaining")
+      println("remaining = $remaining")
       if (remaining == 9) break
       if (count == 2) break countingUp
       remaining -= 1
     }
     count += 1
   }
-  io.println("End count = $count")
+  println("End count = $count")
 }

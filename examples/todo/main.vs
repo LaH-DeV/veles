@@ -6,7 +6,7 @@
 //
 // The file lives at $TODO_FILE, or todo.txt in the current directory. Tasks
 // are numbered by line; `todo help` lists the commands.
-use fs, io, os, path, time
+use fs, io { print, println }, os, path, time
 
 error UsageError {
   message: string
@@ -191,10 +191,10 @@ fun printRows(rows: List<(i64, Task)>, total: i64, width: i64) {
   loop ((n, t) in rows) {
     val due = t.due()
     val note = if (due != null && !t.done) "  <- ${describeDue(due, now)}" else ""
-    io.println("${"$n".padStart(width)} ${t.line()}$note")
+    println("${"$n".padStart(width)} ${t.line()}$note")
   }
-  io.println("--")
-  io.println("${rows.len()} of $total ${if (total == 1) "task" else "tasks"} shown")
+  println("--")
+  println("${rows.len()} of $total ${if (total == 1) "task" else "tasks"} shown")
 }
 
 fun counts(tasks: List<Task>, pick: fun(Task): List<string>) {
@@ -206,7 +206,7 @@ fun counts(tasks: List<Task>, pick: fun(Task): List<string>) {
     }
   }
   loop ((tag, n) in tally.entries().sortedWith((a, b) => if (a.1 != b.1) b.1.compareTo(a.1) else a.0.compareTo(b.0))) {
-    io.println("${"$n".padStart(3)} $tag")
+    println("${"$n".padStart(3)} $tag")
   }
 }
 
@@ -238,14 +238,14 @@ fun run(args: List<string>) throws UsageError | IoError {
   val width = "${todo.tasks.len() + 1}".len()
 
   when (command) {
-    "help", "-h", "--help" => io.print(HELP)
+    "help", "-h", "--help" => print(HELP)
     "add"                  => {
       if (rest.isEmpty()) throw UsageError(message: "add needs the task text")
       var t = Task.parse(rest.join(" "))
       t.createdOn = today()
       todo.tasks.push(t)
       try todo.save()
-      io.println("${todo.tasks.len()} ${t.line()}")
+      println("${todo.tasks.len()} ${t.line()}")
     }
     "ls", "list"           => {
       val terms = rest.filter(a => a != "-a" && a != "--all")
@@ -261,13 +261,13 @@ fun run(args: List<string>) throws UsageError | IoError {
         val n = try todo.number(arg)
         val t = todo.task(n)
         if (t.done) {
-          io.println("$n is already done")
+          println("$n is already done")
           continue
         }
         t.done = true
         t.completedOn = today()
         t.priority = ""
-        io.println("$n ${t.line()}")
+        println("$n ${t.line()}")
       }
       try todo.save()
     }
@@ -277,7 +277,7 @@ fun run(args: List<string>) throws UsageError | IoError {
       t.done = false
       t.completedOn = ""
       try todo.save()
-      io.println("$n ${t.line()}")
+      println("$n ${t.line()}")
     }
     "pri"                  => {
       val n = try todo.number(rest.first() ?: "")
@@ -285,33 +285,33 @@ fun run(args: List<string>) throws UsageError | IoError {
       if (!isPriority("($p)")) throw UsageError(message: "priority must be a letter A-Z, got '$p'")
       todo.task(n).priority = p
       try todo.save()
-      io.println("$n ${todo.task(n).line()}")
+      println("$n ${todo.task(n).line()}")
     }
     "depri"                => {
       val n = try todo.number(rest.first() ?: "")
       todo.task(n).priority = ""
       try todo.save()
-      io.println("$n ${todo.task(n).line()}")
+      println("$n ${todo.task(n).line()}")
     }
     "edit"                 => {
       val n = try todo.number(rest.first() ?: "")
       if (rest.len() < 2) throw UsageError(message: "edit needs the new text")
       todo.task(n).text = rest.drop(1).join(" ")
       try todo.save()
-      io.println("$n ${todo.task(n).line()}")
+      println("$n ${todo.task(n).line()}")
     }
     "rm", "del"            => {
       val n = try todo.number(rest.first() ?: "")
       val t = todo.tasks.removeAt(n - 1)
       try todo.save()
-      io.println("removed $n ${t.line()}")
+      println("removed $n ${t.line()}")
     }
     "projects"             => counts(todo.tasks.toList(), t => t.projects())
     "contexts"             => counts(todo.tasks.toList(), t => t.contexts())
     "archive"              => {
       val done = todo.tasks.filter(t => t.done)
       if (done.isEmpty()) {
-        io.println("nothing to archive")
+        println("nothing to archive")
         return
       }
       val archive = path.join(path.dir(file), "done.txt")
@@ -320,7 +320,7 @@ fun run(args: List<string>) throws UsageError | IoError {
       todo.tasks.clear()
       todo.tasks.addAll(open)
       try todo.save()
-      io.println("archived ${done.len()} to ${path.base(archive)}, ${open.len()} left")
+      println("archived ${done.len()} to ${path.base(archive)}, ${open.len()} left")
     }
     else                   => throw UsageError(message: "unknown command '$command' (try: todo help)")
   }
@@ -329,7 +329,7 @@ fun run(args: List<string>) throws UsageError | IoError {
 fun main() {
   when (val r = run(os.args())) {
     is Err => {
-      io.println("todo: ${r.message()}")
+      println("todo: ${r.message()}")
       os.exit(if (r is UsageError) 2 else 1)
     }
     is Ok  => { }

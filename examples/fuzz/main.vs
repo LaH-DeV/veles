@@ -9,7 +9,7 @@
 //
 // A failure prints the target, the iteration and the input, and the exit
 // code is 1.
-use base64, codec, hex, http, io, json, net, os, random, utf8
+use base64, codec, hex, http, io { println }, json, net, os, random, utf8
 
 struct Stats {
   var runs:     i64 = 0
@@ -27,7 +27,7 @@ struct Fuzzer {
     if (accepted) s.accepted += 1
     if (failure != null) {
       s.failures += 1
-      if (s.failures <= 3) io.println("FAIL $target: $failure")
+      if (s.failures <= 3) println("FAIL $target: $failure")
     }
     this.stats.set(target, s)
   }
@@ -626,7 +626,7 @@ fun main() {
   }
   var failed = false
   loop ((target, s) in f.stats.entries().sortedBy(e => e.0)) {
-    io.println("$target: ${s.runs} runs, ${s.accepted} accepted, ${s.failures} failures")
+    println("$target: ${s.runs} runs, ${s.accepted} accepted, ${s.failures} failures")
     if (s.failures > 0) failed = true
   }
   if (failed) os.exit(1)

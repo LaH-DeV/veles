@@ -1,0 +1,5 @@
+bare println
+the module name still works
+1500 ms
+exit 0, 2 bytes
+exit=0

@@ -24,6 +24,10 @@ type completionItem struct {
 	Label  string `json:"label"`
 	Kind   int    `json:"kind"`
 	Detail string `json:"detail,omitempty"`
+	// SortText puts a name that needs an import after the ones in scope
+	SortText string `json:"sortText,omitempty"`
+	// AdditionalTextEdits is the import an auto-import item adds (D85)
+	AdditionalTextEdits []lspTextEdit `json:"additionalTextEdits,omitempty"`
 }
 
 const (
@@ -64,7 +68,7 @@ func (s *Server) completion(params json.RawMessage) any {
 			return
 		}
 		seen[label] = true
-		items = append(items, completionItem{label, kind, detail})
+		items = append(items, completionItem{Label: label, Kind: kind, Detail: detail})
 	}
 	finish := func() any {
 		sort.Slice(items, func(i, j int) bool { return items[i].Label < items[j].Label })
@@ -92,6 +96,16 @@ func (s *Server) completion(params json.RawMessage) any {
 		}
 	}
 
+	if !afterDot && a != nil && d != nil {
+		// inside the braces of `use m { … }`: what the module offers (D85)
+		if name := useBraceModule(d.text, off); name != "" {
+			if target := s.braceModule(a, d, name); target != nil {
+				s.addModuleDecls(add, target)
+			}
+			return finish()
+		}
+	}
+
 	if !afterDot {
 		if a != nil {
 			// the names in scope unqualified (M5): this module's own
@@ -111,16 +125,19 @@ func (s *Server) completion(params json.RawMessage) any {
 					}
 				}
 			}
-			if _, f := s.moduleOf(a, d); f != nil {
-				for _, decl := range f.Decls {
+			m0, f0 := s.moduleOf(a, d)
+			if f0 != nil {
+				for _, decl := range f0.Decls {
 					if ud, ok := decl.(*ast.UseDecl); ok {
 						for _, u := range ud.Specs {
 							add(importedName(u), ciModule, "module "+pathString(u.Path))
+							s.addImportedNames(add, m0, u)
 						}
 					}
 				}
 			}
 		}
+		items = append(items, s.autoImports(a, d, off, seen)...)
 		for _, k := range keywordCompletions {
 			add(k, ciKeyword, "keyword")
 		}
@@ -740,4 +757,80 @@ func (sc *scope) allows(owner string, ownerMod *sema.Module, pub, private bool) 
 		return pub
 	}
 	return true
+}
+
+// addImportedNames offers the names a braced import (D85) brought in, as
+// the file writes them: the module member's own kind and doc, under the
+// alias when there is one.
+func (s *Server) addImportedNames(add adder, cur *sema.Module, u *ast.UseSpec) {
+	if len(u.Names) == 0 {
+		return
+	}
+	var target *sema.Module
+	if cur != nil {
+		target = cur.Uses[u]
+	}
+	for _, n := range u.Names {
+		label := n.Name.Name
+		if n.Alias != nil {
+			label = n.Alias.Name
+		}
+		if target != nil {
+			member := n.Name.Name
+			s.addModuleDecls(func(l string, kind int, detail string) {
+				if l == member {
+					add(label, kind, detail)
+				}
+			}, target)
+		}
+		add(label, ciFunction, "from "+pathString(u.Path))
+	}
+}
+
+// useBraceModule is the module named by the braced import the cursor is
+// inside — `use io { pr▮ }` gives "io" — or "" when it is not in one.
+func useBraceModule(text string, off int) string {
+	i := strings.LastIndexByte(text[:off], '{')
+	if i < 0 || strings.ContainsAny(text[i:off], "}") {
+		return ""
+	}
+	j := i
+	for j > 0 && (text[j-1] == ' ' || text[j-1] == '\t') {
+		j--
+	}
+	k := j
+	for k > 0 && (isIdentByte(text[k-1]) || text[k-1] == '.') {
+		k--
+	}
+	if k == j {
+		return ""
+	}
+	ls := strings.LastIndexByte(text[:k], '\n') + 1
+	head := strings.TrimSpace(text[ls:k])
+	if head != "use" && !strings.HasPrefix(head, "use ") {
+		return ""
+	}
+	return text[k:j]
+}
+
+// braceModule finds the module a `use name { … }` in this file imports.
+func (s *Server) braceModule(a *analysis, d *document, name string) *sema.Module {
+	m, f := s.moduleOf(a, d)
+	if m == nil || f == nil {
+		return nil
+	}
+	for _, decl := range f.Decls {
+		ud, ok := decl.(*ast.UseDecl)
+		if !ok {
+			continue
+		}
+		for _, u := range ud.Specs {
+			if importedName(u) == name || pathString(u.Path) == name {
+				if target := m.Uses[u]; target != nil {
+					return target
+				}
+			}
+		}
+	}
+	return nil
 }

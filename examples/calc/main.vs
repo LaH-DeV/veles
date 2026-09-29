@@ -1,7 +1,7 @@
 // An expression calculator: a tokenizer, a Pratt parser into a sealed AST,
 // an evaluator with variables and a few functions, and a tiny REPL-style
 // driver over a fixed script. Errors carry the column they were found at.
-use io
+use io { println }
 
 // ---------------------------------------------------------------------------
 // tokens
@@ -302,15 +302,15 @@ fun main() {
   loop (line in script) {
     val ast = parse(line)
     if (ast.err) {
-      io.println("$line  => syntax error: ${ast.message()}")
+      println("$line  => syntax error: ${ast.message()}")
       continue
     }
     val result = env.eval(ast)
     if (result.err) {
-      io.println("${show(ast)}  => error: ${result.message()}")
+      println("${show(ast)}  => error: ${result.message()}")
       continue
     }
-    io.println("${show(ast)}  => ${render(result)}")
+    println("${show(ast)}  => ${render(result)}")
   }
-  io.println("variables: ${env.peek()}")
+  println("variables: ${env.peek()}")
 }

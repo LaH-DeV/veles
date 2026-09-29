@@ -1,4 +1,4 @@
-use io
+use io { println }
 
 /// The text could not be read as a port number.
 /// (`error` declares a struct that is an Error, D4: only these can be thrown.)
@@ -43,17 +43,17 @@ fun main() throws {
     val config = loadConfig("port", setting)
     // `is Ok` smart-casts config to the i64 inside; in the else branch it is the error
     if (config is Ok) {
-      io.println("$setting -> $config")
+      println("$setting -> $config")
     } else {
-      io.println("$setting -> ${config.message()}")  // no need to know the fields
-      when (config.cause) {                          // a field path narrows too (D5)
-        is RangeError => io.println("  ${config.cause.value} is outside 0..65535")
-        else          => io.println("  (not a range problem)")
+      println("$setting -> ${config.message()}")  // no need to know the fields
+      when (config.cause) {                       // a field path narrows too (D5)
+        is RangeError => println("  ${config.cause.value} is outside 0..65535")
+        else          => println("  (not a range problem)")
       }
     }
   }
   val doubled = try loadConfig("port", "21")
-  io.println("doubled $doubled")
+  println("doubled $doubled")
   val fail = try loadConfig("port", "nope")
-  io.println("unreachable $fail")
+  println("unreachable $fail")
 }

@@ -1,5 +1,5 @@
 // Sorting 300k pseudo-random integers (xorshift), three times.
-use io, time
+use io { println }, time
 
 fun main() {
   var x: u64 = 88172645463325252
@@ -18,5 +18,5 @@ fun main() {
     if (s.len() != 300000) panic("sort: the input has 300000 numbers")
     check += s.at(0) + s.at(150000) + s.at(299999)
   }
-  io.println("BENCH sort 900000 ${sw.elapsed().toNanos()} $check")
+  println("BENCH sort 900000 ${sw.elapsed().toNanos()} $check")
 }

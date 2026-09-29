@@ -512,34 +512,26 @@ func (p *Parser) parseUse() ast.Decl {
 func (p *Parser) parseUseSpec() *ast.UseSpec {
 	start := p.span()
 	s := &ast.UseSpec{}
+	var dot source.Span // the `.` before a brace: the removed spelling `use m.{ a }`
 	for {
-		if p.at(lexer.LBrace) {
-			// the removed name-import form `use m.{ a, b as c }` (M6): skip
-			// the braces so the rest of the file still parses
-			braceStart := p.span()
-			depth := 0
-			for !p.at(lexer.EOF) {
-				if p.at(lexer.LBrace) {
-					depth++
-				} else if p.at(lexer.RBrace) {
-					depth--
-				}
-				p.next()
-				if depth == 0 {
-					break
-				}
+		if p.at(lexer.LBrace) && len(s.Path) > 0 {
+			p.parseUseNames(s)
+			if dot.IsValid() {
+				p.errorf(dot, "'use %s.{ … }' is spelled 'use %s { … }' (D85)", pathString(s.Path), pathString(s.Path))
+				p.diags.Items[len(p.diags.Items)-1].Fix = &source.Fix{Title: "Remove the '.'", Edits: []source.TextEdit{{Span: dot}}}
 			}
-			p.errorf(p.spanFrom(braceStart), "names are not imported one by one; import the module and qualify its members (%s.name), or rename it with 'use %s as m' (M6)", pathString(s.Path), pathString(s.Path))
-			break
+			s.Pos = p.spanFrom(start)
+			return s
 		}
 		seg, ok := p.expectIdent()
 		if !ok {
 			break
 		}
 		s.Path = append(s.Path, seg)
-		if !p.accept(lexer.Dot) {
+		if !p.at(lexer.Dot) {
 			break
 		}
+		dot = p.next().Span
 	}
 	if len(s.Path) == 0 {
 		return nil
@@ -548,8 +540,50 @@ func (p *Parser) parseUseSpec() *ast.UseSpec {
 		alias, _ := p.expectIdent()
 		s.Alias = &alias
 	}
+	if p.at(lexer.LBrace) {
+		p.parseUseNames(s)
+	}
 	s.Pos = p.spanFrom(start)
 	return s
+}
+
+// parseUseNames parses the braces of `use m { f, T as U }` (D85): names
+// separated by commas, a line break or a trailing comma allowed.
+func (p *Parser) parseUseNames(s *ast.UseSpec) {
+	open := p.next() // {
+	p.skipSemis()
+	starred := false
+	for !p.at(lexer.RBrace) && !p.at(lexer.EOF) {
+		start := p.span()
+		if p.at(lexer.Star) {
+			p.errorf(start, "'use %s { * }' does not exist: name what you use, so a reader sees where each name comes from (D85)", pathString(s.Path))
+			starred = true
+			p.next()
+		} else {
+			name, ok := p.expectIdent()
+			if !ok {
+				break
+			}
+			n := &ast.UseName{Name: name}
+			if p.accept(lexer.KwAs) {
+				alias, _ := p.expectIdent()
+				n.Alias = &alias
+			}
+			n.Pos = p.spanFrom(start)
+			s.Names = append(s.Names, n)
+		}
+		p.skipSemis()
+		if !p.accept(lexer.Comma) {
+			break
+		}
+		p.skipSemis()
+	}
+	p.skipSemis()
+	closer := p.span()
+	p.expect(lexer.RBrace)
+	if len(s.Names) == 0 && !starred {
+		p.errorf(source.Span{File: open.Span.File, Start: open.Span.Start, End: closer.End}, "'use %s { }' names nothing: list what to import, or write 'use %s'", pathString(s.Path), pathString(s.Path))
+	}
 }
 
 type funContext int

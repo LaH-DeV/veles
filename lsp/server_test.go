@@ -1305,3 +1305,157 @@ func TestCompletionOfPreludeHomes(t *testing.T) {
 		t.Errorf("global completion offered %v", got)
 	}
 }
+
+// Named imports (D85): inside `use m { }` the module's members are offered,
+// and what a braced import brought in is a bare name in scope — under its
+// alias when it has one.
+func TestCompletionOfNamedImports(t *testing.T) {
+	src := "use io { println, eprintln as warn }, os\n\nfun main() {\n  println(\"x\")\n  \n}\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := pathToURI(path)
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{})
+	c.notify("initialized", map[string]any{})
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": src}})
+	has := func(labels []string, want string) bool {
+		for _, l := range labels {
+			if l == want {
+				return true
+			}
+		}
+		return false
+	}
+	at := func(line, ch int) []string {
+		res, _ := c.call("textDocument/completion", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": line, "character": ch}})
+		return completionLabels(res)
+	}
+	// on the empty line in main: the imported names, the alias, not the original
+	if got := at(4, 2); !has(got, "println") || !has(got, "warn") || has(got, "eprintln") {
+		t.Errorf("bare completion offered %v", got)
+	}
+	// inside the braces, after `println, `: the members of io
+	if got := at(0, 15); !has(got, "readLine") || !has(got, "eprintln") {
+		t.Errorf("completion inside use io { } offered %v", got)
+	}
+}
+
+// Auto-import (D85): completing `readL` offers readLine from io with the
+// import as an additional edit — into the braces of an existing `use io {
+// … }`, after a bare `use io`, or as a new line.
+func TestAutoImportOnCompletion(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	if err := os.WriteFile(path, []byte("fun main() { }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := pathToURI(path)
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{})
+	c.notify("initialized", map[string]any{})
+	version := 0
+	edits := func(src string, line, ch int) (string, bool) {
+		version++
+		method := "textDocument/didChange"
+		if version == 1 {
+			method = "textDocument/didOpen"
+			c.notify(method, map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": version, "text": src}})
+		} else {
+			c.notify(method, map[string]any{"textDocument": map[string]any{"uri": uri, "version": version}, "contentChanges": []map[string]any{{"text": src}}})
+		}
+		res, _ := c.call("textDocument/completion", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": line, "character": ch}})
+		var list struct {
+			Items []struct {
+				Label string `json:"label"`
+				Edits []struct {
+					Range   lspRange `json:"range"`
+					NewText string   `json:"newText"`
+				} `json:"additionalTextEdits"`
+			} `json:"items"`
+		}
+		json.Unmarshal(res, &list)
+		for _, it := range list.Items {
+			if it.Label == "readLine" && len(it.Edits) == 1 {
+				e := it.Edits[0]
+				return fmt.Sprintf("%d:%d %q", e.Range.Start.Line, e.Range.Start.Character, e.NewText), true
+			}
+		}
+		return "", false
+	}
+	if got, ok := edits("fun main() {\n  readL\n}\n", 1, 7); !ok || got != `0:0 "use io { readLine }\n\n"` {
+		t.Errorf("no import yet: %q %v", got, ok)
+	}
+	if got, ok := edits("use os\n\nfun main() {\n  readL\n}\n", 3, 7); !ok || got != `0:6 "\nuse io { readLine }"` {
+		t.Errorf("after the last use: %q %v", got, ok)
+	}
+	if got, ok := edits("use io\n\nfun main() {\n  readL\n}\n", 3, 7); !ok || got != `0:6 " { readLine }"` {
+		t.Errorf("bare use io: %q %v", got, ok)
+	}
+	if got, ok := edits("use io { println }\n\nfun main() {\n  readL\n}\n", 3, 7); !ok || got != `0:16 ", readLine"` {
+		t.Errorf("braces: %q %v", got, ok)
+	}
+	// no prefix, no flood; an imported name is not offered twice
+	if _, ok := edits("use io { readLine }\n\nfun main() {\n  \n}\n", 3, 2); ok {
+		t.Error("an imported name should not be offered for import again")
+	}
+}
+
+// A renamed import (D85) is a declaration of its own at the alias in the
+// `use` line: hover says what it stands for, and renaming it changes the
+// alias and its uses and nothing of the module's; a bare unrenamed name
+// hovers with the module it came from.
+func TestRenamedImportHoverAndRename(t *testing.T) {
+	src := "use io { println, eprintln as warn }\n\nfun main() {\n  println(\"a\")\n  warn(\"b\")\n  warn(\"c\")\n}\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := pathToURI(path)
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{})
+	c.notify("initialized", map[string]any{})
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": src}})
+	doc := map[string]any{"uri": uri}
+
+	hover := func(pos map[string]any) string {
+		res, _ := c.call("textDocument/hover", map[string]any{"textDocument": doc, "position": pos})
+		return string(res)
+	}
+	if got := hover(at(t, src, "warn", 1)); !strings.Contains(got, "alias of io.eprintln") || !strings.Contains(got, "eprintln") {
+		t.Errorf("hover on an alias use: %s", got)
+	}
+	if got := hover(at(t, src, "warn", 0)); !strings.Contains(got, "alias of io.eprintln") {
+		t.Errorf("hover on the alias in the use line: %s", got)
+	}
+	if got := hover(at(t, src, "println(\"a\")", 0)); !strings.Contains(got, "module io") {
+		t.Errorf("hover on a bare imported name: %s", got)
+	}
+
+	// rename from a use: the alias and both uses, and no edit at `eprintln`
+	res, fail := c.try("textDocument/rename", map[string]any{"textDocument": doc, "position": at(t, src, "warn", 2), "newName": "alert"})
+	if fail != "" {
+		t.Fatalf("rename refused: %s", fail)
+	}
+	var edit struct {
+		Changes map[string][]lspTextEdit `json:"changes"`
+	}
+	json.Unmarshal(res, &edit)
+	edits := edit.Changes[uri]
+	if len(edits) != 3 {
+		t.Fatalf("rename of an alias made %d edits, want 3: %s", len(edits), res)
+	}
+	f := source.NewFile("x", src)
+	for _, e := range edits {
+		off := positionToOffset(f, e.Range.Start)
+		if src[off:off+4] != "warn" || e.NewText != "alert" {
+			t.Errorf("edit %+v at %q", e, src[off:off+4])
+		}
+	}
+}

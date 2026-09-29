@@ -669,16 +669,8 @@ spec entry and a row in §10, and the item leaves this list. The labels are
 stable; §10 rows written before 2026-09-27 cite the old numbering (the
 list as it was is in `archive/progress-log-2026-09.md` and git history).
 
-**Raised by the user, to prepare first (2026-09-28)** — asked together,
-since both are about `use` and `as`
+**Raised by the user, to prepare first (2026-09-28)** (Q15, named imports, was decided 2026-09-29: D85)
 
-- **Q15. Named imports** (reopens R9, which removed them for Go's
-  always-qualified style). Evidence since: ~500 `io.` qualifiers in the
-  examples alone. To weigh: `use io.{println, eprintln}` vs one name per
-  `use`; how an imported name shadows or collides with a local one; what
-  the formatter's import block and the LSP (auto-import, rename) do; whether
-  `io.println` is just a prelude candidate. Every language that has both
-  forms keeps qualified access too.
 - **Q16. `as` stops meaning conversion** — `cast`/`to`, or conversion as a
   call (`i64(x)`, Go/Swift), or methods (`x.toI64()`); `as` is left for
   renaming (`use m as x`, maybe named imports, patterns). 141 conversions in
@@ -816,6 +808,7 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-09-28 | `os.run` input and stderr (plan B5) | **`input:` + `stderr: os.Stderr` (Capture/Inherit/Merge, default Capture); `Output.stderr`; `mergeStderr` removed with a fix** (user, recommended of 3; spec D82). Rejected: two more booleans, a `Command` builder. |
 | 2026-09-28 | List capacity | **`xs.reserve(n)`** — room for at least n in total (user, recommended of 4; spec D83). Rejected: `withCapacity(n)`, both, neither. |
 | 2026-09-28 | Q18: two bounds declaring one associated type | **Refuse `T.Item` and name it `T.Trait.Item`** (user, recommended of 3; spec D84). Rejected: refusing with no qualified form, keeping the first bound. |
+| 2026-09-29 | Q15: named imports | **`use m { f, T as U }`, one statement, `as` renames, `m.` stays** (user, recommended of 4, and braces add names on top of the qualifier; spec D85). Rejected: `from m import { … }`, `::`/`:` renames, the dotted `use m.{ }`. Q16 (`as` for conversions) stays open. |
 
 ## 11. Known limitations to revisit
 

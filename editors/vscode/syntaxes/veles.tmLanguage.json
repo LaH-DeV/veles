@@ -57,6 +57,16 @@
       "beginCaptures": { "1": { "name": "keyword.control.import.veles" } },
       "end": "$",
       "patterns": [
+        {
+          "comment": "use m { name, other as alias } (D85): the names are members, not modules",
+          "begin": "\\{",
+          "end": "\\}",
+          "patterns": [
+            { "name": "keyword.control.import.veles", "match": "\\bas\\b" },
+            { "name": "entity.name.function.veles", "match": "[A-Za-z_][A-Za-z0-9_]*" },
+            { "include": "#punctuation" }
+          ]
+        },
         { "name": "keyword.control.import.veles", "match": "\\bas\\b" },
         { "name": "entity.name.namespace.veles", "match": "[A-Za-z_][A-Za-z0-9_]*" },
         { "include": "#punctuation" }

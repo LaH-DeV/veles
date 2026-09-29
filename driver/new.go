@@ -57,13 +57,13 @@ func New(dir, template string) int {
 	return 0
 }
 
-const appTemplate = `use io
+const appTemplate = `use io { println }
 
 /// What the program says to ` + "`name`" + `.
 fun greeting(name: string): string = "Hello, $name!"
 
 fun main() {
-  io.println(greeting("world"))
+  println(greeting("world"))
 }
 
 test "greets by name" {
@@ -85,7 +85,7 @@ const serverTemplate = `// NAME: an HTTP service.
 // Every request is logged to standard error. Ctrl+C or SIGTERM stops it
 // gracefully: it stops accepting, lets the requests in flight finish, and
 // returns.
-use http, io, json, net, os
+use http, io { println }, json, net, os
 
 /// What ` + "`GET /api/hello`" + ` answers.
 struct Greeting {
@@ -115,9 +115,9 @@ fun main() throws {
   val host = os.env("HOST") ?: "127.0.0.1"
   val port = os.env("PORT")?.toInt() ?: 8080
   with (listener = try net.listen(host, port)) {
-    io.println("listening on http://$host:${listener.port()}/ — Ctrl+C stops it")
+    println("listening on http://$host:${listener.port()}/ — Ctrl+C stops it")
     http.serve(listener, app(), stop: () => os.shutdownSignal())
-    io.println("stopped")
+    println("stopped")
   }
 }
 

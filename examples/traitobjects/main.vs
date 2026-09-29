@@ -1,4 +1,4 @@
-use io
+use io { println }
 
 trait Shape {
   fun area(): f64
@@ -50,14 +50,14 @@ fun total(shapes: List<Shape>): f64 {
 fun main() {
   val shapes: List<Shape> = [Circle(r: 1.0), Square(side: 2.0)]
   loop (s in shapes) {
-    io.println(s.describe())
+    println(s.describe())
   }
-  io.println("total ${total(shapes)}")
+  println("total ${total(shapes)}")
   val one: Shape = Circle(r: 2.0)
-  io.println("${one.name()} ${one.area()} $one")
+  println("${one.name()} ${one.area()} $one")
   var c: Counter = Clicks()
   c.bump()
-  io.println("bumped ${c.bump()}")
+  println("bumped ${c.bump()}")
   val holder = (c, "pair")
-  io.println("bumped again ${holder.0.bump()}")
+  println("bumped again ${holder.0.bump()}")
 }

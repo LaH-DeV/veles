@@ -1,4 +1,4 @@
-use io
+use io { println }
 
 fun boom(n: i64): i64 {
   await sleep(Duration.millis(1))
@@ -17,16 +17,16 @@ fun main() {
     async boom(5)
     async fine()
   }
-  io.println("$a $b")
+  println("$a $b")
   when (a) {
-    is Ok(v)  => io.println("ok $v")
+    is Ok(v)  => println("ok $v")
     is Err(e) => when (e) {
-      is Panic(message) => io.println("captured panic: $message")
+      is Panic(message) => println("captured panic: $message")
     }
   }
   scope {
     async fine()
     async boom(9)
   }
-  io.println("not reached")
+  println("not reached")
 }

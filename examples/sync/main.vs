@@ -1,4 +1,4 @@
-use io
+use io { println }
 
 struct Counter {
   var hits: i64
@@ -19,5 +19,5 @@ fun main() {
     async bump(shared, 7)
   }
   total.store(shared.get().hits)
-  io.println("hits ${shared.get().hits} atomic ${total.load()} swapped ${total.swap(1)} now ${total.load()}")
+  println("hits ${shared.get().hits} atomic ${total.load()} swapped ${total.swap(1)} now ${total.load()}")
 }

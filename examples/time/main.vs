@@ -9,20 +9,20 @@
 // exercised at the end, by the only assertions that hold for every reading
 // of it.
 
-use io, time
+use io { println }, time
 
 fun show(label: string, value: string) {
-  io.println("  ${label.padEnd(34)} $value")
+  println("  ${label.padEnd(34)} $value")
 }
 
 fun ok(label: string, cond: bool) {
-  io.println("  ${label.padEnd(34)} ${if (cond) "ok" else "FAILED"}")
+  println("  ${label.padEnd(34)} ${if (cond) "ok" else "FAILED"}")
 }
 
 // ---------------------------------------------------------------------------
 
 fun durations() {
-  io.println("-- Duration: what it prints --")
+  println("-- Duration: what it prints --")
   loop (d in [
     Duration.zero, Duration.nanos(1), Duration.nanos(1500),
     Duration.micros(250), Duration.millis(1), Duration.millis(1500),
@@ -32,18 +32,18 @@ fun durations() {
     show("${d.toNanos()} ns", "$d")
   }
 
-  io.println("-- Duration: what it reads --")
+  println("-- Duration: what it reads --")
   loop (text in ["0", "90s", "1h30m", "250ms", "1.5s", "-2m30s", "1d1h", "1.000001ms"]) {
     show("\"$text\"", "${Duration.parse(text)}")
   }
 
-  io.println("-- Duration: what it refuses --")
+  println("-- Duration: what it refuses --")
   loop (text in ["", "5", "5 s", "s", "1h30", "1x", "1.s", "1.0000000001s", "-"]) {
     val d = Duration.parse(text)
     show("\"$text\"", if (d == null) "rejected" else "$d")
   }
 
-  io.println("-- Duration: the round trip --")
+  println("-- Duration: the round trip --")
   var roundTrips = true
   loop (d in [
     Duration.zero, Duration.nanos(1), Duration.nanos(999999999),
@@ -52,13 +52,13 @@ fun durations() {
     Duration.nanos(-1), Duration.millis(-1500),
   ]) {
     if (Duration.parse("$d") != d) {
-      io.println("  BROKEN: $d -> ${Duration.parse("$d")}")
+      println("  BROKEN: $d -> ${Duration.parse("$d")}")
       roundTrips = false
     }
   }
   ok("parse(d.toString()) == d", roundTrips)
 
-  io.println("-- Duration: arithmetic and order --")
+  println("-- Duration: arithmetic and order --")
   show("1s + 250ms", "${Duration.seconds(1) + Duration.millis(250)}")
   show("1s - 250ms", "${Duration.seconds(1) - Duration.millis(250)}")
   show("250ms * 6", "${Duration.millis(250) * 6}")
@@ -75,7 +75,7 @@ fun durations() {
 // ---------------------------------------------------------------------------
 
 fun calendar() {
-  io.println("-- the calendar, across the awkward dates --")
+  println("-- the calendar, across the awkward dates --")
   loop (t in [
     time.Timestamp.epoch,
     time.Timestamp.ofSeconds(-1),
@@ -88,13 +88,13 @@ fun calendar() {
     show("${t.toSeconds()}", "$d weekday ${d.weekday()} day ${d.yearDay()}")
   }
 
-  io.println("-- civil conversion is its own inverse --")
+  println("-- civil conversion is its own inverse --")
   var exact = true
   var day: i64 = -800000
   loop (day < 800000) {
     val (y, m, d) = time.civilFromDays(day)
     if (time.daysFromCivil(y, m, d) != day) {
-      io.println("  BROKEN at day $day")
+      println("  BROKEN at day $day")
       exact = false
       day = 800000
     }
@@ -105,7 +105,7 @@ fun calendar() {
   ok("1900 is not", !time.isLeapYear(1900))
   ok("February 2024 has 29 days", time.daysInMonth(2024, 2) == 29)
 
-  io.println("-- out-of-range fields carry, as a human means them --")
+  println("-- out-of-range fields carry, as a human means them --")
   show("2026-13-01", "${time.DateTime(year: 2026, month: 13, day: 1).normalized().date()}")
   show("2026-01-32", "${time.DateTime(year: 2026, month: 1, day: 32).normalized().date()}")
   show("2026-03-00", "${time.DateTime(year: 2026, month: 3, day: 0).normalized().date()}")
@@ -114,7 +114,7 @@ fun calendar() {
 // ---------------------------------------------------------------------------
 
 fun rfc3339() {
-  io.println("-- RFC 3339: what it reads --")
+  println("-- RFC 3339: what it reads --")
   loop (text in [
     "2026-09-24T09:15:02Z",
     "2026-09-24T09:15:02.481Z",
@@ -131,7 +131,7 @@ fun rfc3339() {
     show(text, "${time.parseRfc3339(text)}")
   }
 
-  io.println("-- RFC 3339: what it refuses --")
+  println("-- RFC 3339: what it refuses --")
   loop (text in [
     "2026-09-24T09:15:02",   // no offset
     "2026-09-24",            // a date is not a timestamp
@@ -165,13 +165,13 @@ fun rfc3339() {
     show("ofMicros($us)", "$t")
   }
 
-  io.println("-- RFC 3339: the offset is kept when the fields are --")
+  println("-- RFC 3339: the offset is kept when the fields are --")
   val fields = time.parseRfc3339Fields("2026-09-24T11:15:02.481+02:00")
   show("parseRfc3339Fields", "$fields")
   show("  same instant in UTC", "${fields?.timestamp()}")
   show("  offset", "${fields?.offset}")
 
-  io.println("-- an offset is a value of its own --")
+  println("-- an offset is a value of its own --")
   loop (o in [
     time.Offset.utc, time.Offset.of(2) ?: time.Offset.utc,
     time.Offset.of(-5, 30) ?: time.Offset.utc,
@@ -182,7 +182,7 @@ fun rfc3339() {
   show("beyond 18 hours", "${time.Offset.ofMinutes(1100)}")
   show("parse \"+05:45\"", "${time.Offset.parse("+05:45")}")
 
-  io.println("-- the round trip, at both ends of the range --")
+  println("-- the round trip, at both ends of the range --")
   var roundTrips = true
   loop (t in [
     time.Timestamp.epoch,
@@ -192,7 +192,7 @@ fun rfc3339() {
     time.Timestamp.ofSeconds(300000000000),
   ]) {  // an expanded year
     if (time.parseRfc3339("$t") != t) {
-      io.println("  BROKEN: $t")
+      println("  BROKEN: $t")
       roundTrips = false
     }
   }
@@ -203,7 +203,7 @@ fun rfc3339() {
 // ---------------------------------------------------------------------------
 
 fun httpDates() {
-  io.println("-- HTTP-date: the three forms of one instant --")
+  println("-- HTTP-date: the three forms of one instant --")
   loop (text in [
     "Sun, 06 Nov 1994 08:49:37 GMT",   // IMF-fixdate
     "Sunday, 06-Nov-94 08:49:37 GMT",  // RFC 850
@@ -212,7 +212,7 @@ fun httpDates() {
     show(text, "${time.parseHttp(text)}")
   }
 
-  io.println("-- HTTP-date: what a sender writes --")
+  println("-- HTTP-date: what a sender writes --")
   loop (t in [
     time.Timestamp.ofSeconds(784111777),
     time.Timestamp.epoch,
@@ -226,7 +226,7 @@ fun httpDates() {
       == time.Timestamp.ofSeconds(1790000000),
   )
 
-  io.println("-- HTTP-date: what it refuses --")
+  println("-- HTTP-date: what it refuses --")
   loop (text in [
     "Sun, 06 Nov 1994 08:49:37",  // no zone
     "Sun, 06 Nov 1994 08:49:37 UTC",
@@ -243,7 +243,7 @@ fun httpDates() {
 // ---------------------------------------------------------------------------
 
 fun clocks() {
-  io.println("-- the clocks: what holds for every reading --")
+  println("-- the clocks: what holds for every reading --")
   val a = time.now()
   val sw = time.Stopwatch.start()
   val deadline = time.Deadline.after(Duration.seconds(30))
@@ -252,7 +252,7 @@ fun clocks() {
     spin += 1
   }
   val b = time.now()
-  if (spin != 200000) io.println("  the spin loop did not run")
+  if (spin != 200000) println("  the spin loop did not run")
 
   ok("now() is after the epoch", a > time.Timestamp.epoch)
   ok("now() does not run backwards", b >= a)

@@ -9,7 +9,7 @@
 // an ordinary error, reported where it happened, in the sentence every
 // other limit in the library uses.
 
-use io, recursion
+use io { println }, recursion
 
 /// The grammar refused the input because it nested too far.
 error TooDeep {
@@ -71,18 +71,18 @@ fun isDigit(b: u8): bool = b >= '0' && b <= '9'
 fun run(text: string, shown: string) {
   var calc = Calc(src: text)
   when (calc.parseExpr()) {
-    is Ok(value) => io.println("  ${shown.padEnd(18)} = ${"$value".padEnd(6)} deepest ${calc.deepest()}, balanced ${calc.balanced()}")
-    is Err(e)    => io.println("  ${shown.padEnd(18)} ! ${e.message()}")
+    is Ok(value) => println("  ${shown.padEnd(18)} = ${"$value".padEnd(6)} deepest ${calc.deepest()}, balanced ${calc.balanced()}")
+    is Err(e)    => println("  ${shown.padEnd(18)} ! ${e.message()}")
   }
 }
 
 fun main() {
-  io.println("-- within the limit --")
+  println("-- within the limit --")
   run("1+2+3", "1+2+3")
   run("(1+(2+3))", "(1+(2+3))")
   run("((((((1))))))", "((((((1))))))")
 
-  io.println("-- past it --")
+  println("-- past it --")
   val deep = "(".repeat(40) + "1" + ")".repeat(40)
   run(deep, "40 brackets")
   val justOver = "(".repeat(16) + "1" + ")".repeat(16)
@@ -90,20 +90,20 @@ fun main() {
   val justUnder = "(".repeat(15) + "1" + ")".repeat(15)
   run(justUnder, "15 brackets")
 
-  io.println("-- the counter on its own --")
+  println("-- the counter on its own --")
   var d = recursion.Depth(limit: 3)
-  io.println("  limit ${d.limit}, at ${d.depth()}")
-  io.println("  three enters: ${d.enter()} ${d.enter()} ${d.enter()}, now at ${d.depth()}")
-  io.println("  the fourth:   ${d.enter()}, still at ${d.depth()}")
+  println("  limit ${d.limit}, at ${d.depth()}")
+  println("  three enters: ${d.enter()} ${d.enter()} ${d.enter()}, now at ${d.depth()}")
+  println("  the fourth:   ${d.enter()}, still at ${d.depth()}")
   d.leave()
-  io.println("  after a leave: at ${d.depth()}, and a fourth enter is ${d.enter()}")
-  io.println("  deepest ${d.deepest()}")
-  d.leave()
-  d.leave()
+  println("  after a leave: at ${d.depth()}, and a fourth enter is ${d.enter()}")
+  println("  deepest ${d.deepest()}")
   d.leave()
   d.leave()
-  io.println("  an extra leave does not go negative: ${d.depth()}")
-  io.println("  and does not let the next enter run past the limit: ${d.enter()} at ${d.depth()}")
+  d.leave()
+  d.leave()
+  println("  an extra leave does not go negative: ${d.depth()}")
+  println("  and does not let the next enter run past the limit: ${d.enter()} at ${d.depth()}")
   d.reset()
-  io.println("  after reset: at ${d.depth()}, deepest ${d.deepest()}")
+  println("  after reset: at ${d.depth()}, deepest ${d.deepest()}")
 }

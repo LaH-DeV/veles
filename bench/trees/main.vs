@@ -1,6 +1,6 @@
 // The GC under pressure: build and walk complete binary trees
 // (the benchmarks-game shape), depth 4 to 16.
-use io, time
+use io { println }, time
 
 struct Node {
   left:  (*Node)?
@@ -29,5 +29,5 @@ fun main() {
     loop (_ in 0..<trees) check += count(build(d))
     d += 2
   }
-  io.println("BENCH trees $check ${sw.elapsed().toNanos()} $check")
+  println("BENCH trees $check ${sw.elapsed().toNanos()} $check")
 }

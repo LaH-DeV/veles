@@ -3,13 +3,13 @@
 // those children first, waiting for them to unwind — each closing what
 // it holds, innermost first — and only then unwinding itself. Nothing
 // outlives the block that launched it, and nothing it opened stays open.
-use io, time
+use io { println }, time
 
 struct Held {
   name: string
   implement Closeable {
     fun close() {
-      io.println("closed: ${this.name}")
+      println("closed: ${this.name}")
     }
   }
 }
@@ -53,12 +53,12 @@ fun main() {
     val g = async viaGather()
     val s = async twoLevels()
     await sleep(Duration.millis(20))
-    io.println("--- cancel the gather's owner")
+    println("--- cancel the gather's owner")
     g.cancel()
     await sleep(Duration.millis(20))
-    io.println("--- cancel two levels above the scope")
+    println("--- cancel two levels above the scope")
     s.cancel()
   }
   // a child left running would have held the scope for 30 seconds
-  io.println("done, nothing waited out: ${sw.elapsed() < Duration.seconds(5)}")
+  println("done, nothing waited out: ${sw.elapsed() < Duration.seconds(5)}")
 }

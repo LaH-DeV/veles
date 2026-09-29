@@ -1,4 +1,4 @@
-use io
+use io { println }
 
 struct Stack<T> {
   items: MutableList<T> = []
@@ -37,8 +37,8 @@ fun main() {
   val s = Stack<i64>()
   s.push(1)
   s.push(2)
-  io.println("len ${s.len()} pop ${s.pop() ?: -1} pop ${s.pop() ?: -1} pop ${s.pop() ?: -1}")
-  io.println(describe(Cat(name: "Tom")))
-  io.println(describe(42))
-  io.println("first ${first([7, 8], 0)} ${first([] as List<string>, "none")}")
+  println("len ${s.len()} pop ${s.pop() ?: -1} pop ${s.pop() ?: -1} pop ${s.pop() ?: -1}")
+  println(describe(Cat(name: "Tom")))
+  println(describe(42))
+  println("first ${first([7, 8], 0)} ${first([] as List<string>, "none")}")
 }

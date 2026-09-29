@@ -48,7 +48,9 @@ type Server struct {
 	// last analysis per package root, so hover/definition need no re-check
 	analyses map[string]*analysis
 	shutdown bool
-	stdDir   string // materialised standard library, for go-to-definition into std
+	stdDir   string            // materialised standard library, for go-to-definition into std
+	stdOnce  sync.Once         // stdNames is read from the embedded sources once (auto-import)
+	stdNames []importCandidate // the standard modules' public names
 }
 
 type document struct {

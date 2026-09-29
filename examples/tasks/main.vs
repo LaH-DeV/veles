@@ -1,4 +1,4 @@
-use io
+use io { println }
 
 struct Job {
   id: i64
@@ -48,14 +48,14 @@ fun main() throws {
       val d = await results.recv()
       if (d != null) got.push(d.id)
     }
-    io.println("results ${got.sorted()}")
+    println("results ${got.sorted()}")
   }
 
   // task handles and await
   scope {
     val a = async square(3)
     val b = async square(4)
-    io.println("squares ${await a} ${await b}")
+    println("squares ${await a} ${await b}")
   }
 
   // D36: gather collects every outcome as a tuple of Results
@@ -64,7 +64,7 @@ fun main() throws {
     async mayFail(2)
     async square(5)
   }
-  io.println("gather $r1 $r2 $r3")
+  println("gather $r1 $r2 $r3")
 
   // D38: race — first ready arm wins
   val ch = Channel<string>(capacity: 1)
@@ -74,12 +74,12 @@ fun main() throws {
       val msg = ch.recv()        => "message ${msg ?: "closed"}"
       sleep(Duration.seconds(1)) => "timeout"
     }
-    io.println("race $winner")
+    println("race $winner")
     val second = race {
       val msg = ch.recv()       => "message ${msg ?: "closed"}"
       sleep(Duration.millis(5)) => "timeout"
     }
-    io.println("race $second")
+    println("race $second")
   }
 
   // two races waiting on one channel: the first also waits on another,
@@ -91,16 +91,16 @@ fun main() throws {
     val b = async raceOne(shared)
     await sleep(Duration.millis(2))
     first.send("first")
-    io.println("race ${await a}")
+    println("race ${await a}")
     shared.close()
-    io.println("race ${await b}")
+    println("race ${await b}")
   }
 
   // a loop launches from one site; whichever of its tasks fails, the scope
   // rethrows that task's error
   when (val r = launchInLoop()) {
-    is Ok  => io.println("loop: no error")
-    is Err => io.println("loop: Boom(${r.n})")
+    is Ok  => println("loop: no error")
+    is Err => println("loop: Boom(${r.n})")
   }
 
   // fail-fast: the first child error cancels siblings and propagates
@@ -109,7 +109,7 @@ fun main() throws {
     async mayFail(2)
     async slowLoop()
   }
-  io.println("unreachable")
+  println("unreachable")
 }
 
 fun launchInLoop() throws Boom {
@@ -137,8 +137,8 @@ fun producer(ch: Channel<string>) {
 
 fun slowLoop() {
   loop (i in 0..<100) {
-    io.println("Printing slowLoop iteration $i")
+    println("Printing slowLoop iteration $i")
     await sleep(Duration.millis(500))  // well after mayFail(2) fails: cancelled after iteration 0
   }
-  io.println("slowLoop finished (should have been cancelled)")
+  println("slowLoop finished (should have been cancelled)")
 }

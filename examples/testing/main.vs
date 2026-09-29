@@ -2,7 +2,7 @@
 // vocabulary (expect, require, expectThrows, expectPanics, fail), a
 // `test fun` helper, a suite, and `assert` for an invariant in ordinary code.
 // `veles test examples/testing` runs them; `veles run` leaves them out.
-use io
+use io { println }
 
 error RangeError {
   value: i64
@@ -82,5 +82,5 @@ fun important(): i64 = 7
 fun main() {
   val total = plus(1, 2)
   assert(total == 3, "plus adds")  // an invariant: panics with the reason and both sides
-  io.println("$total ${important()}")
+  println("$total ${important()}")
 }

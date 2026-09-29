@@ -1,13 +1,14 @@
-use io
-// use io { println :: write, eprintln :: writeErr, readLine }
-// use io { println : write, readLine }
-// use io { println as write, readLine }
-// from io import { println as write, readLine }
-// from io import { println::write, readLine }
+// Named imports (D85): `use m { f, T as U }` brings names in bare, on top of
+// the module's own name.
+use io { eprintln as warn, println }, os { Output }
+
+fun describe(out: Output): string = "exit ${out.code}, ${out.stdout.trim().len()} bytes"
 
 fun main() {
-  io.println("Named imports could be good")
-  io.println("I think from io import { println::write, readLine } looks good")
-  io.println("And in that case we have two syntaxes for imports, but one is import-ing, second one is use-ing")
-  io.println("Only import would be possible to get named and renamed, use would work as currently (no named uses)")
+  println("bare println")
+  warn("renamed eprintln goes to standard error")
+  io.println("the module name still works")
+  val d = Duration.millis(1500)
+  println("${d.toMillis()} ms")
+  println(describe(Output(stdout: "hi\n", stderr: "", code: 0)))
 }

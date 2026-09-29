@@ -1,4 +1,4 @@
-use io
+use io { println }
 
 // Labeled loops (§4b), subjectless when (D13), ranges (D29)
 fun primes(limit: i64): List<i64> {
@@ -79,28 +79,28 @@ fun show(e: *Expr): string = when (e) {
 }
 
 fun main() {
-  io.println("primes ${primes(30)}")
-  io.println("${sign(-5)} ${sign(0)} ${sign(7)}")
+  println("primes ${primes(30)}")
+  println("${sign(-5)} ${sign(0)} ${sign(7)}")
   val sq = Square(side: 3.0)
-  io.println(sq.describe())
-  io.println("total ${total([Square(side: 1.0), Square(side: 2.0)])}")
+  println(sq.describe())
+  println("total ${total([Square(side: 1.0), Square(side: 2.0)])}")
   val p = Pair(first: 1, second: "one")
   val s = p.swap()
-  io.println("pair $p swapped $s ${s.first.len()}")
+  println("pair $p swapped $s ${s.first.len()}")
   val (wrapped, widened, small) = wrap()
-  io.println("wrap $wrapped $widened $small")
+  println("wrap $wrapped $widened $small")
   val tree = Add(left: &Num(value: 2), right: &Mul(left: &Num(value: 3), right: &Num(value: 4)))
-  io.println("${show(&tree)} = ${eval(tree)}")
+  println("${show(&tree)} = ${eval(tree)}")
   var name: string? = null
   if (name == null) name = "filled"
-  io.println("name ${name.len()} $name")
+  println("name ${name.len()} $name")
   val eq = Pair(first: 1, second: 2) == Pair(first: 1, second: 2)
   val neq = Num(value: 1) == Num(value: 2)
-  io.println("eq $eq $neq ${(1, "a") == (1, "a")} ${"abc" < "abd"}")
+  println("eq $eq $neq ${(1, "a") == (1, "a")} ${"abc" < "abd"}")
   var counted = 0
   loop {
     counted += 1
     if (counted == 3) break
   }
-  io.println("counted $counted ${"héllo".len()} ${"hello".substring(1, 3) ?: "?"} ${"42".toInt() ?: 0}")
+  println("counted $counted ${"héllo".len()} ${"hello".substring(1, 3) ?: "?"} ${"42".toInt() ?: 0}")
 }

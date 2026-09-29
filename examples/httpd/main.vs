@@ -10,7 +10,7 @@
 // test suite runs this program.
 //
 //   httpd [<dir>] [--host H] [--port N] [--check]
-use fs, http, io, json, net, os
+use fs, http, io { println }, json, net, os
 
 error UsageError {
   message: string
@@ -260,14 +260,14 @@ fun check(handler: http.Handler) throws IoError | EncodeError | net.TooLong {
     scope {
       val server = async http.serve(listener, handler, limits, log: false)
       loop ((method, target, body) in script) {
-        io.println("> $method ${brief(target)}" + (if (body.isEmpty()) "" else " ${try json.encode(brief(body))}"))
-        io.println(try exchange(port, method, target, body))
+        println("> $method ${brief(target)}" + (if (body.isEmpty()) "" else " ${try json.encode(brief(body))}"))
+        println(try exchange(port, method, target, body))
       }
       // the header ceilings need raw header lines, which the script above
       // does not carry
       loop ((what, extra) in headerScript) {
-        io.println("> GET /api/notes ($what)")
-        io.println(try exchange(port, "GET", "/api/notes", "", extra))
+        println("> GET /api/notes ($what)")
+        println(try exchange(port, "GET", "/api/notes", "", extra))
       }
       server.cancel()
     }
@@ -276,8 +276,8 @@ fun check(handler: http.Handler) throws IoError | EncodeError | net.TooLong {
   // boundary — which is how a handler is unit-tested
   loop ((method, target) in [(http.Method.get, "/api/notes/2"), (http.Method.delete, "/api/echo")]) {
     val resp = http.call(handler, method, target)
-    io.println("> $method $target (in memory)")
-    io.println("< ${resp.status} allow=${resp.headers.get(http.Header.allow) ?: "-"} ${resp.body.decodeUtf8() ?: "<binary>"}")
+    println("> $method $target (in memory)")
+    println("< ${resp.status} allow=${resp.headers.get(http.Header.allow) ?: "-"} ${resp.body.decodeUtf8() ?: "<binary>"}")
   }
 }
 
@@ -291,18 +291,18 @@ fun run(args: List<string>) throws UsageError | IoError | EncodeError | net.TooL
     return try check(handler)
   }
   with (listener = try net.listen(host: opts.host, port: opts.port)) {
-    io.println("serving ${opts.dir} on http://${opts.host}:${listener.port()}/ — Ctrl+C stops it gracefully")
+    println("serving ${opts.dir} on http://${opts.host}:${listener.port()}/ — Ctrl+C stops it gracefully")
     // Ctrl+C or a SIGTERM: stop accepting, finish what is in flight (up to
     // ten seconds), then return and close the listener
     http.serve(listener, handler, limits, stop: () => os.shutdownSignal())
-    io.println("stopped")
+    println("stopped")
   }
 }
 
 fun main() {
   when (val result = run(os.args())) {
     is Err => {
-      io.println("httpd: ${result.message()}")
+      println("httpd: ${result.message()}")
       os.exit(if (result is UsageError) 2 else 1)
     }
     is Ok  => { }

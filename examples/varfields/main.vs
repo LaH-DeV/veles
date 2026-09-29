@@ -2,7 +2,7 @@
 // constructor; a `var` field may be assigned — by a method through
 // `this`, through any binding, through a pointer. `val` and `var` on a
 // binding only say whether the name can be rebound.
-use io
+use io { println }
 
 struct Counter {
   label: string   // never changes
@@ -64,28 +64,28 @@ fun main() {
   c.n += 10
   var d = c  // a copy: independent from here on
   d.bump()
-  io.println("${c.label} ${c.n} ${d.n}")
+  println("${c.label} ${c.n} ${d.n}")
 
   val tick = make()  // the Counter outlived make()
-  io.println("${tick()} ${tick()} ${tick()}")
+  println("${tick()} ${tick()} ${tick()}")
 
   val p = c.handle()  // a pointer into c's storage
   p.bump()
-  io.println("${c.n} ${p.n}")
+  println("${c.n} ${p.n}")
 
   var shape: Shape = Circle(r: 1.0)
   shape.grow(1.0)  // dispatched on the variant in place
-  io.println("${shape.area()}")
+  println("${shape.area()}")
 
   val cache = Cache()
-  io.println(cache.peek())
+  println(cache.peek())
   cache.remember(c)
   cache.last?.bump()  // through `?.` into the field itself
-  io.println(cache.peek())
+  println(cache.peek())
 
   val counters: MutableList<Counter> = [Counter(label: "x")]
   val first = counters.ref(0) ?: panic("one counter was added above")
   first.bump()
   loop (&k in counters) k.n *= 10
-  io.println("${counters.map(k => k.n)}")
+  println("${counters.map(k => k.n)}")
 }

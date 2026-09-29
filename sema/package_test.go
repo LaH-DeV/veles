@@ -224,3 +224,49 @@ func TestPrivateFieldsAndTheConstructorAcrossModules(t *testing.T) {
 		t.Errorf("an unmarked field: %s", got)
 	}
 }
+
+// A braced import (D85) binds the module's own symbols: a type, a function
+// and an enum written bare mean what the qualified names mean; a private
+// name and test code are refused; an unused name is a warning whose fix
+// removes it; a local of the same name shadows.
+func TestNamedImports(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, src string) {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	check := func(main string) string {
+		write("main.vs", main)
+		diags := &source.Diagnostics{}
+		pkg, err := LoadPackage(root, diags)
+		if err != nil {
+			t.Fatal(err)
+		}
+		Check(pkg, diags, false)
+		return diags.Render()
+	}
+	write("veles.toml", "[package]\nname = \"app\"\nversion = \"0.1.0\"\n")
+	write("geo/lib.vs", "public struct Point {\n  public x: i64\n  public y: i64\n}\npublic enum Kind { Flat, Round }\npublic fun norm(p: Point): i64 = p.x + p.y\npublic test fun probe(): i64 = 1\nfun secret(): i64 = 1\n")
+
+	ok := check("use geo { Point, Kind, norm as length }\n\nfun main() {\n  val p = Point(x: 1, y: 2)\n  val k: geo.Kind = Kind.Flat\n  val n: i64 = length(p) + geo.norm(p)\n  val shadow = 1\n  val length = shadow\n}\n")
+	if strings.Contains(ok, "error") {
+		t.Errorf("a braced import should check clean, got:\n%s", ok)
+	}
+	got := check("use geo { Point, secret, probe, missing }\n\nfun main() {\n  val _ = Point(x: 1, y: 2)\n}\n")
+	for _, want := range []string{
+		"'secret' is private to module 'geo'; declare it 'public' there to use it from here (M5)",
+		"'probe' is test code",
+		"module 'geo' has no declaration 'missing'",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+	unused := check("use geo { Point, Kind }\n\nfun main() {\n  val _ = Point(x: 1, y: 2)\n}\n")
+	if !strings.Contains(unused, "'Kind' is imported but never used") {
+		t.Errorf("an unused name should warn, got:\n%s", unused)
+	}
+}

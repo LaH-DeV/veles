@@ -78,8 +78,10 @@ module 'a' is already being loaded`.
 
 A module is a directory of the package, a dependency named in
 `veles.toml`, or a standard module. Its members are reached through its
-name — `io.println`, never `println` alone; names are not imported one by
-one (M6).
+name — `io.println` — or, when a braced import lists it, bare
+(`use io { println }`, D85). There is no `{ * }`; a bare name may not equal
+another import or a declaration of the module, and a listed name nothing
+uses is a warning.
 
 #### `import cycle: module 'a' is already being loaded`
 

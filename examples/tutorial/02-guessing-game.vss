@@ -1,26 +1,26 @@
-use io, random
+use io { println, readLine }, random
 
 fun main() {
-  io.println("Guess the number!")
+  println("Guess the number!")
 
   val secret = random.range(0, 101)
 
   loop :game {
-    io.println("Please input your guess.")
+    println("Please input your guess.")
 
-    val guess = when (val input = io.readLine()) {
+    val guess = when (val input = readLine()) {
       is string => i64.parse(input.trim())
       else      => continue
     }
 
     if (guess !is i64) continue
-    io.println("You guessed: $guess")
+    println("You guessed: $guess")
 
     when (guess.compareTo(secret)) {
-      Ordering.Less    => io.println("Too small!")
-      Ordering.Greater => io.println("Too big!")
+      Ordering.Less    => println("Too small!")
+      Ordering.Greater => println("Too big!")
       Ordering.Equal   => {
-        io.println("You win!")
+        println("You win!")
         break game
       }
     }

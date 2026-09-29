@@ -6,7 +6,7 @@
 // duplicated and how much space it costs.
 //
 //   dedup <dir> [--workers N] [--min-size BYTES] [--verbose]
-use fs, io, os, path
+use fs, io { println }, os, path
 
 error UsageError {
   message: string
@@ -48,7 +48,7 @@ fun fnv1a(bytes: List<u8>): u64 {
 /// IoError; the caller decides that one bad file does not stop the run.
 fun hashFile(file: string, verbose: bool): Hashed throws IoError {
   val bytes = try fs.readBytes(file)
-  if (verbose) io.println("hashed ${bytes.len()} bytes ${path.base(file)}")
+  if (verbose) println("hashed ${bytes.len()} bytes ${path.base(file)}")
   Hashed(file, size: bytes.len(), hash: fnv1a(bytes))
 }
 
@@ -99,7 +99,7 @@ fun run(args: List<string>) throws UsageError | IoError {
   // Result itself (no `try`), so a failure is a value in the list
   val verbose = opts.verbose
   val outcomes = files.mapConcurrent(file => hashFile(file, verbose), workers: opts.workers)
-  loop (err in outcomes.errors()) io.println("cannot read: ${err.message()}")
+  loop (err in outcomes.errors()) println("cannot read: ${err.message()}")
   val hashed = outcomes.oks()
 
   // group by fingerprint; a group of one is not a duplicate
@@ -118,20 +118,20 @@ fun run(args: List<string>) throws UsageError | IoError {
 
   var wasted = 0
   loop ((key, members) in dupes) {
-    io.println("${members.len()} identical files, ${plural(key.size, "byte")} each:")
+    println("${members.len()} identical files, ${plural(key.size, "byte")} each:")
     loop (file in members.sorted()) {
-      io.println("  $file")
+      println("  $file")
     }
     wasted += key.size * (members.len() - 1)
   }
   val total = hashed.fold(0, (acc, h) => acc + h.size)
-  io.println("${plural(hashed.len(), "file")}, ${plural(total, "byte")}, ${plural(opts.workers, "worker")}: ${plural(dupes.len(), "duplicate group")}, ${plural(wasted, "byte")} recoverable")
+  println("${plural(hashed.len(), "file")}, ${plural(total, "byte")}, ${plural(opts.workers, "worker")}: ${plural(dupes.len(), "duplicate group")}, ${plural(wasted, "byte")} recoverable")
 }
 
 fun main() {
   when (val r = run(os.args())) {
     is Err => {
-      io.println("dedup: ${r.message()}")
+      println("dedup: ${r.message()}")
       os.exit(if (r is UsageError) 2 else 1)
     }
     is Ok  => { }

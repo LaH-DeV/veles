@@ -1,5 +1,5 @@
 // JSON: encode 2000 records and decode them back, 20 times (std/json).
-use io, json, time
+use io { println }, json, time
 
 struct Record {
   id:    i64
@@ -20,5 +20,5 @@ fun main() throws EncodeError | DecodeError {
     val back = try json.decode<List<Record>>(text)
     loop (r in back) check += r.id
   }
-  io.println("BENCH json 40000 ${sw.elapsed().toNanos()} $check")
+  println("BENCH json 40000 ${sw.elapsed().toNanos()} $check")
 }
