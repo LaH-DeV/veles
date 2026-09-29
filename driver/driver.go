@@ -250,6 +250,7 @@ var sanitizeFlags = []string{"-fsanitize=address,undefined", "-fno-sanitize-reco
 // runtimeSources is the C runtime every executable links, in link order.
 var runtimeSources = []struct{ name, src string }{
 	{"veles_sync", rt.SyncSource},
+	{"veles_stack", rt.StackSource},
 	{"veles_rt", rt.Source},
 	{"veles_gc", rt.GCSource},
 	{"veles_task", rt.TaskSource},

@@ -51,6 +51,7 @@ void veles_cond_wait(veles_cond *c, veles_lock *l, int64_t timeout_ms);
 void veles_cond_signal(veles_cond *c);
 void veles_cond_broadcast(veles_cond *c);
 int64_t veles_thread_spawn(void (*fn)(void *), void *arg);
+int64_t veles_thread_spawn_small(void (*fn)(void *), void *arg);
 int64_t veles_cpu_count(void);
 void veles_lock_enter(veles_lock *l);
 void veles_lock_acquire(veles_lock *l);
@@ -2087,6 +2088,24 @@ int veles_chain_recorded(void) {
     return chain_recorded;
 }
 
+/* For the stack-overflow report (veles_stack.c), which runs in a fault
+ * handler: reads, allocates nothing. Stores the innermost `max` records of
+ * the running task's (or thread's) chain that were kept, innermost first;
+ * `depth` is how many calls are in progress and `kept` how many of them
+ * the chain holds (the first SHADOW_MAX). Returns how many it stored. */
+int64_t veles_shadow_peek(const char **frames, int64_t max, int64_t *depth, int64_t *kept) {
+    veles_shadow *s = shadow_now();
+    int64_t held = s->depth < SHADOW_MAX ? s->depth : SHADOW_MAX;
+    *depth = s->depth;
+    *kept = held;
+    int64_t n = 0;
+    while (n < max && n < held) {
+        frames[n] = s->at[held - 1 - n];
+        n++;
+    }
+    return n;
+}
+
 void veles_panic_print_report(const char *loc, int64_t loc_len, int64_t indent) {
     veles_tls *tls = veles_tls_get();
     panic_trace tr = {0};
@@ -2331,7 +2350,7 @@ void veles_run(veles_task *root) {
         for (int64_t i = 1; i < worker_target; i++) veles_thread_spawn(worker_main, NULL);
         monitor_lock = veles_lock_new();
         monitor_cv = veles_cond_new();
-        veles_thread_spawn(monitor_main, NULL);
+        veles_thread_spawn_small(monitor_main, NULL);
     }
     veles_cond_broadcast(work_cv);
     work(0);

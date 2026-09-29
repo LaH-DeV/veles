@@ -126,11 +126,13 @@ public struct Depth {
 }
 ```
 
-Veles runs on the C stack and does not grow it, so a recursive walk over
-input someone else wrote — a JSON document of 100 000 `[`, a source file of
-50 000 `(` — has to be bounded or it is a crash rather than an error. There
-is one default for that and one sentence to report reaching it, and every
-decoder, encoder and parser in the library uses them.
+Veles runs on the C stack and does not grow it — it is 256 MB per thread
+(`VELES_STACK`, chapter 7), and running out is a `stack overflow` panic that
+cannot be caught — so a recursive walk over input someone else wrote, a JSON
+document of 100 000 `[` or a source file of 50 000 `(`, has to be bounded to
+answer with an *error* instead. There is one default for that and one
+sentence to report reaching it, and every decoder, encoder and parser in the
+library uses them.
 
 A walk that already keeps a stack compares its length against a limit and
 reports `tooDeepMessage(limit)`; that is what `std/json` does, with

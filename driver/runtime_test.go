@@ -840,3 +840,97 @@ fun main() {
 		t.Errorf("release build:\n%s\nwant:\n%s", got, want)
 	}
 }
+
+// Stack overflow is a panic, and the stack is big (D92): a recursion of a
+// million frames runs, and one that never ends prints `panic: stack
+// overflow` with the size of the stack and — in a debug build — the calls
+// it was in, then exits with the panic exit code 101, in main and inside a
+// task alike. VELES_STACK sets the size in megabytes.
+func TestStackOverflowIsReported(t *testing.T) {
+	dir := t.TempDir()
+	src := `use io { println }, os
+
+fun depth(n: i64): i64 {
+  if (n == 0) return 1
+  val r = depth(n - 1)
+  (r ^ (r << 1)) + n % 7
+}
+
+fun main() {
+  val n = (os.args().at(0) ?: "10").toInt() ?: 10
+  if (os.args().at(1) == "task") {
+    scope {
+      val t = async depth(n)
+      println("depth $n: ${await t}")
+    }
+  } else {
+    println("depth $n: ${depth(n)}")
+  }
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	build := func(release bool) string {
+		exe := filepath.Join(dir, "stack.exe")
+		if release {
+			exe = filepath.Join(dir, "stack-release.exe")
+		}
+		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release}); code != 0 {
+			t.Fatalf("build failed with exit %d", code)
+		}
+		return exe
+	}
+	run := func(exe string, env []string, args ...string) (string, string, int) {
+		var stdout, stderr strings.Builder
+		cmd := exec.Command(exe, args...)
+		cmd.Env = append(os.Environ(), env...)
+		cmd.Stdout, cmd.Stderr = &stdout, &stderr
+		code := 0
+		if err := cmd.Run(); err != nil {
+			ee, ok := err.(*exec.ExitError)
+			if !ok {
+				t.Fatal(err)
+			}
+			code = ee.ExitCode()
+		}
+		return strings.ReplaceAll(stdout.String(), "\r\n", "\n"), strings.ReplaceAll(stderr.String(), "\r\n", "\n"), code
+	}
+	for _, release := range []bool{false, true} {
+		exe := build(release)
+		profile := map[bool]string{false: "debug", true: "release"}[release]
+		for _, mode := range []string{"main", "task"} {
+			// a million frames fit
+			out, errText, code := run(exe, nil, "1000000", mode)
+			if code != 0 || !strings.HasPrefix(out, "depth 1000000: ") {
+				t.Errorf("%s/%s: a million frames: exit %d, stdout %q, stderr %q", profile, mode, code, out, errText)
+			}
+			// one that never ends is a panic naming the stack
+			out, errText, code = run(exe, nil, "1000000000", mode)
+			if code != 101 || out != "" {
+				t.Errorf("%s/%s: overflow: exit %d, stdout %q (want 101 and nothing)", profile, mode, code, out)
+			}
+			if !strings.HasPrefix(errText, "panic: stack overflow\n  the stack is 256 MB; VELES_STACK=<megabytes> sets it\n") {
+				t.Errorf("%s/%s: overflow report:\n%s", profile, mode, errText)
+			}
+			if release {
+				if !strings.Contains(errText, "(a debug build shows the call chain)") {
+					t.Errorf("%s/%s: the release report should say a debug build has the chain:\n%s", profile, mode, errText)
+				}
+			} else if !strings.Contains(errText, "  in depth\n  called from main.vs:5:11 in depth\n") ||
+				!strings.Contains(errText, " calls deep; the chain keeps the first 4096)") {
+				t.Errorf("%s/%s: the debug report should name the recursion:\n%s", profile, mode, errText)
+			}
+		}
+		// VELES_STACK sizes it: 1 MB does not hold a million frames and says so
+		_, errText, code := run(exe, []string{"VELES_STACK=1"}, "1000000", "main")
+		if code != 101 || !strings.Contains(errText, "the stack is 1 MB;") {
+			t.Errorf("%s: VELES_STACK=1: exit %d, stderr %q", profile, code, errText)
+		}
+		// and a value that is not a size is reported and ignored
+		out, errText, code := run(exe, []string{"VELES_STACK=lots"}, "10", "main")
+		if code != 0 || !strings.HasPrefix(out, "depth 10: ") || !strings.Contains(errText, "VELES_STACK=lots is not a number of megabytes from 1 to 4096; using 256") {
+			t.Errorf("%s: VELES_STACK=lots: exit %d, stdout %q, stderr %q", profile, code, out, errText)
+		}
+	}
+}

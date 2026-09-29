@@ -193,44 +193,77 @@ typedef struct {
     void *arg;
 } thread_start;
 
+void veles_stack_thread_init(void);
+void veles_stack_thread_done(void);
+size_t veles_stack_size(void);
+
 #if defined(_WIN32)
 static DWORD WINAPI thread_main(LPVOID p) {
     thread_start s = *(thread_start *)p;
     free(p);
+    veles_stack_thread_init();
     s.fn(s.arg);
+    veles_stack_thread_done();
     return 0;
 }
 #else
 static void *thread_main(void *p) {
     thread_start s = *(thread_start *)p;
     free(p);
+    veles_stack_thread_init();
     s.fn(s.arg);
+    veles_stack_thread_done();
     return NULL;
 }
 #endif
 
-/* starts a detached OS thread running fn(arg); 0 on success */
-int64_t veles_thread_spawn(void (*fn)(void *), void *arg) {
-    thread_start *s = must(malloc(sizeof *s));
-    s->fn = fn;
-    s->arg = arg;
+/* one attempt at a detached OS thread with a stack of `size` bytes (0: the
+ * system's default); 0 on success */
+static int64_t spawn_once(thread_start *s, size_t size) {
 #if defined(_WIN32)
-    HANDLE h = CreateThread(NULL, 0, thread_main, s, 0, NULL);
-    if (!h) {
-        free(s);
-        return -1;
-    }
+    HANDLE h = CreateThread(NULL, size, thread_main, s, size ? STACK_SIZE_PARAM_IS_A_RESERVATION : 0, NULL);
+    if (!h) return -1;
     CloseHandle(h);
     return 0;
 #else
+    pthread_attr_t attr;
     pthread_t t;
-    if (pthread_create(&t, NULL, thread_main, s) != 0) {
-        free(s);
+    if (pthread_attr_init(&attr) != 0) return -1;
+    if (size && pthread_attr_setstacksize(&attr, size) != 0) {
+        pthread_attr_destroy(&attr);
         return -1;
     }
+    int rc = pthread_create(&t, &attr, thread_main, s);
+    pthread_attr_destroy(&attr);
+    if (rc != 0) return -1;
     pthread_detach(t);
     return 0;
 #endif
+}
+
+/* starts a detached OS thread running fn(arg) on a stack of `size` bytes; a
+ * reservation the system refuses is retried at half, down to 8 MB, and then
+ * at the default. 0 on success */
+static int64_t spawn_sized(void (*fn)(void *), void *arg, size_t size) {
+    for (;;) {
+        thread_start *s = must(malloc(sizeof *s));
+        s->fn = fn;
+        s->arg = arg;
+        if (spawn_once(s, size) == 0) return 0;
+        free(s);
+        if (size == 0) return -1;
+        size = size / 2 >= (8u << 20) ? size / 2 : 0;
+    }
+}
+
+/* a thread that runs Veles code: the big stack (veles_stack.c) */
+int64_t veles_thread_spawn(void (*fn)(void *), void *arg) {
+    return spawn_sized(fn, arg, veles_stack_size());
+}
+
+/* a helper thread that runs only runtime code and needs no deep stack */
+int64_t veles_thread_spawn_small(void (*fn)(void *), void *arg) {
+    return spawn_sized(fn, arg, 0);
 }
 
 int64_t veles_cpu_count(void) {
@@ -582,7 +615,7 @@ void veles_test_setup(int64_t jobs, int64_t timeout_ms, int64_t total) {
     watch_ms = timeout_ms;
     watch_lock = veles_lock_new();
     watch_cond = veles_cond_new();
-    if (veles_thread_spawn(watch_main, NULL) != 0) {
+    if (veles_thread_spawn_small(watch_main, NULL) != 0) {
         fputs("veles test: cannot start the timeout watchdog\n", stderr);
         exit(101);
     }

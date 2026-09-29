@@ -509,4 +509,29 @@ being unwrapped. (D61)
     at main.vs:6:3 in main
   ```
 
+  A recursion that never ends is a panic too, not a silent death (D92). Every
+  thread that runs Veles code — the one that starts `main` and each task
+  worker — has a stack of 256 MB, reserved when the thread starts and
+  committed only as the calls reach it, so a million frames are unremarkable.
+  When it is used up anyway the process prints and exits with the panic exit
+  code, 101:
+
+  ```text
+  panic: stack overflow
+    the stack is 256 MB; VELES_STACK=<megabytes> sets it
+    in depth
+    called from main.vs:5:11 in depth
+    called from main.vs:5:11 in depth
+    called from main.vs:5:11 in depth
+    (2795412 calls deep; the chain keeps the first 4096)
+  ```
+
+  The chain is a debug build's; a release build says so instead, as above.
+  `VELES_STACK=64` runs with 64 MB (1 to 4096); a value that is not a number
+  is reported and ignored. A stack overflow cannot be caught and does not
+  unwind, since there is no stack left to unwind with — a walk over input
+  someone else wrote should still bound its own depth
+  (`recursion.Depth`, stdlib reference), so that the user gets an error message
+  rather than a panic.
+
 Next: [Traits and generics](08-traits-and-generics.md).

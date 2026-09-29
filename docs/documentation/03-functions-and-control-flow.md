@@ -252,6 +252,10 @@ Output:
 true true 832040
 ```
 
+Recursion is as deep as the stack allows, which is a lot — 256 MB per thread,
+about two million frames of a small function — and a recursion that never
+ends stops with a `stack overflow` panic that names the function (chapter 7).
+
 ## Generic functions, briefly
 
 A function can take a type parameter. The compiler generates one copy

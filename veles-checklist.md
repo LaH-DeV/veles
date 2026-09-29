@@ -281,19 +281,21 @@ answered from the shape, tuples get `Comparable`, enums get
       rewrite takes `Depth` as it stands (`veles-selfhost-frontend-plan.md` §4.3),
       and `examples/recursion` is that parser in miniature — a recursive descent
       that answers a diagnostic rather than a segmentation fault
-- [ ] **Stack exhaustion is silent and the stack is the OS default** (found by
-      plan S3, 2026-09-29). A recursion that is not a loop overflows at about
-      30 000–50 000 frames on Windows (1 MB stack) and 200 000–1 000 000 on
-      Linux (8 MB); the process dies with exit code 127 (Windows) or a bare
-      SIGSEGV (Linux) and prints nothing — no task, no function, no line.
-      Tasks are stackless but run on a worker thread's stack, so the same
-      limit holds inside one. Wanted: (a) a guard-page / vectored-exception
-      handler that prints `stack overflow in <function> at <file:line>` and
-      exits non-zero, in the sentence style of the other panics; (b) a stack
-      size a program can rely on (main and worker threads created with a
-      larger reserved stack, committed lazily). Measure with a recursion over
-      a deep sealed tree. The conventional answer for input-driven walks
-      stays `recursion.Depth`
+- [x] Stack exhaustion is a panic and the stack is big (D92, found by plan
+      S3, 2026-09-29; built 2026-09-29). Before: a recursion that is not a
+      loop died silently at 30 000–50 000 frames on Windows (1 MB, exit 127)
+      and 200 000–1 000 000 on Linux (8 MB, SIGSEGV). Now every thread that
+      runs Veles code has 256 MB reserved and committed lazily
+      (`VELES_STACK=<MB>`, 1–4096, a refused reservation retried at half), the
+      program starts on such a thread (`main` is the runtime's,
+      `runtime/c/veles_stack.c`; the generated one is `veles_main`), and
+      running out prints `panic: stack overflow` with the size and, in a debug
+      build, the innermost calls of the D81 chain, exit code 101. Tests:
+      driver `TestStackOverflowIsReported` (a million frames fit in main and in
+      a task; overflow in both profiles; `VELES_STACK=1`; a bad value), on
+      Windows and Linux. Measured: `spawn`, `parallel`, `channels`, `pipes`
+      unchanged. Open: a single frame larger than the guard region can jump
+      it (clang stack probes), macOS untested (A7)
 
 ---
 
@@ -824,6 +826,7 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-09-29 | Q4: protected mutable-collection field | **`protected` = look, don't take** (user, recommended of 3; spec D87). Rejected: leave it, read-only view types. |
 | 2026-09-29 | Q8: where a misuse panic points | **`@caller_location`, std only for now** (user, recommended of 3; spec D88). Rejected: leave it, automatic for every std panic. |
 | 2026-09-29 | Q3: package surface in source | **`public use m` and `public use m { a, T as U }`; manifest `exports` goes away** (user, recommended of 3; spec D89). Rejected: keep manifest exports, whole modules only. |
+| 2026-09-29 | Stack overflow (found by plan S3) | **A fault handler that prints a named panic, 256 MB reserved stacks on every thread, and the program started on a big-stack thread on every platform** (user, recommended of 3, 3 and 3; spec D92). Rejected: compiler-inserted stack probes (cost on every call); leaving it silent; 64 MB; the OS defaults with a diagnostic only; raising `RLIMIT_STACK` at startup; leaving the Linux main thread at 8 MB. |
 | 2026-09-29 | std/log design (plan C1) | **`lazy` modifier on a `fun(): T` parameter (std-only), `field(key, value)` tail, text on a terminal / JSON otherwise with `VELES_LOG`, `withFields` on a task-local** (user, recommended of 3, 3, 3 and 2; specs D90, D91). Rejected: `@lazy` attribute, a compiler special case, a lambda-only call, a manual guard, a field map, a struct per message, text only, a sink trait, an explicit Logger value. |
 
 ## 11. Known limitations to revisit

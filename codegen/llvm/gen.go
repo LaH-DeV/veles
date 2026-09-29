@@ -897,7 +897,7 @@ func (g *gen) entryPoint() {
 	if g.prog.TestMode {
 		g.out.WriteString("declare void @veles_test_setup(i64, i64, i64)\ndeclare ptr @veles_test_new(ptr, i64)\ndeclare ptr @veles_test_bind(ptr)\ndeclare void @veles_test_unbind(ptr)\ndeclare void @veles_test_queue(ptr, ptr, ptr)\ndeclare i64 @veles_test_take(ptr, ptr, ptr, i64)\n\n")
 	}
-	g.out.WriteString("define i32 @main(i32 %argc, ptr %argv) {\nentry:\n")
+	g.out.WriteString("define i32 @veles_main(i32 %argc, ptr %argv) {\nentry:\n")
 	g.out.WriteString(g.allocas.String())
 	g.out.WriteString(g.body.String())
 	g.out.WriteString("}\n\n")

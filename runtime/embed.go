@@ -28,3 +28,6 @@ var SyncSource string
 //
 //go:embed c/veles_tls.h
 var TLSHeader string
+
+//go:embed c/veles_stack.c
+var StackSource string

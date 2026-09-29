@@ -35,6 +35,7 @@ An internal compiler error prints the phase and position and exits 3;
 | Variable | Effect |
 |---|---|
 | `VELES_THREADS=n` | worker count; `1` separates logic bugs from races |
+| `VELES_STACK=mb` | each thread's stack in megabytes (default 256); a `stack overflow` panic reports it |
 | `VELES_GC_THRESHOLD=bytes` | collect early and often — shakes out missing roots |
 | `VELES_GC_POISON=1` | fill swept objects with 0xCD — a use-after-sweep crashes deterministically |
 | `VELES_GC_OFF=1` | if the bug disappears, it is GC-related (roots, descriptors, write ordering) |

@@ -684,3 +684,23 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   `f64`↔`u64` bit reinterpretation (§5.10, needs a decision). Not done: the
   compile time and peak memory of a 30 000-line program by a Veles-written
   compiler, which belong to E4.
+
+- **2026-09-29, stack overflow (S3 finding): D92.** `runtime/c/veles_stack.c`
+  is new: the process's `main` (the generated one is now `veles_main`) starts
+  the program on a thread with a 256 MB reserved stack (`VELES_STACK=<MB>`,
+  1–4096; a refused reservation is retried at half down to 8 MB), and
+  `veles_thread_spawn` gives every worker the same, while the timer monitor
+  and the mutex watchdog use `veles_thread_spawn_small` (OS default). A fault
+  handler — SIGSEGV/SIGBUS on a per-thread `sigaltstack` on POSIX, a vectored
+  exception handler with `SetThreadStackGuarantee(64 KB)` on Windows — prints
+  `panic: stack overflow`, the size and, in a debug build, the innermost
+  calls of the D81 chain (`veles_shadow_peek` in `veles_task.c`), using no
+  allocation and no formatted output, then exits 101. Found on the way: below
+  the 8 MB floor the size loop never tried a thread (fixed), and `_exit` needed
+  more stack than a 1 MB stack leaves on Windows (`TerminateProcess`).
+  Test: driver `TestStackOverflowIsReported` (a million frames in main and in
+  a task; overflow in both profiles; `VELES_STACK=1`; a bad value), green on
+  Windows and WSL, as is the full suite; `spawn`/`parallel`/`channels`/`pipes`
+  benchmarks unchanged. Docs: chapter 7, chapter 3, the stdlib reference,
+  `veles-debug`. Open: a frame bigger than the guard region (clang stack
+  probes), macOS (A7).

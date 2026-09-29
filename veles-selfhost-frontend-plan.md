@@ -520,7 +520,7 @@ table.
 | File I/O, directory walk, paths, args, env, exit codes | **has** | `std/fs`, `std/path`, `std/os` |
 | Parallel work (per-function codegen) | **has** | tasks on one thread per core (D66); `mapConcurrent` |
 | Emitting a float constant in LLVM's hex form | **partial** | see below |
-| Deep recursion | **gap** | see below |
+| Deep recursion | **gap, closed 2026-09-29 (D92)** | see below |
 
 **Partial — float bits.** There is no `f64` ↔ `u64` bit reinterpretation in
 std. It works with an `unsafe` cast (`p.cast<*raw u64>()`: 1.5 gives
@@ -528,7 +528,7 @@ std. It works with an `unsafe` cast (`p.cast<*raw u64>()`: 1.5 gives
 safe `toBits()` / `fromBits()` is a std decision; it goes through
 `veles-decide` when the code generator is on the horizon (checklist §5.10).
 
-**Gap — deep recursion.** A task runs on a worker thread's native stack, at
+**Gap — deep recursion (closed the same day, D92: 256 MB stacks on every thread, the program started on one, and a `stack overflow` panic that names the function; a million frames run).** As found: a task runs on a worker thread's native stack, at
 the OS default. A recursion that cannot be turned into a loop overflows at
 roughly 30 000–50 000 frames on Windows (1 MB) and 200 000–1 000 000 on Linux
 (8 MB), and the failure is **silent**: exit code 127 on Windows, a bare

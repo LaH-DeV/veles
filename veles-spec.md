@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.49** — language design complete; D58 adds the derivation story D51 deferred, D59 the standard library's cryptography. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
+**Working draft v0.50** — language design complete; D58 adds the derivation story D51 deferred, D59 the standard library's cryptography. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -2334,6 +2334,73 @@ Rejected (user, recommended of 3, 3 and 2): the lambda-only call, a manual
 `enabled` guard; a map of fields, a derived struct per message; text only,
 a pluggable sink trait (later, if wanted); an explicit `Logger` value
 threaded through calls.
+
+---
+
+### D92 — Stack size and stack overflow (v0.50)
+
+```veles
+fun depth(n: i64): i64 {
+  if (n == 0) return 1
+  val r = depth(n - 1)
+  (r ^ (r << 1)) + n % 7
+}
+// depth(1_000_000) runs; depth(1_000_000_000) prints
+//   panic: stack overflow
+//     the stack is 256 MB; VELES_STACK=<megabytes> sets it
+//     in depth
+//     called from main.vs:5:11 in depth
+//     ...
+// and exits with the panic exit code, 101
+```
+
+Found by the self-host audit (plan S3, `veles-selfhost-frontend-plan.md`
+§9): a recursion that is not a loop killed the process silently — exit code
+127 on Windows at 30–50k frames (1 MB stack), a bare SIGSEGV on Linux at
+200k–1M (8 MB) — with no message, and tasks ran on worker threads' stacks
+of the same OS default.
+
+**Size.** Every thread that runs Veles code has a stack of 256 MB, reserved
+and not committed (pages appear as the recursion reaches them; address space
+only — eight workers reserve 2 GB), or `VELES_STACK` megabytes (1 to 4096;
+anything else is reported once and ignored). A refused reservation is
+retried at half, down to 8 MB. Worker threads get it from
+`veles_thread_spawn`; the runtime's own helper threads (the timer monitor, the
+mutex watchdog) keep the OS default.
+
+**The main thread.** The process's `main` belongs to the runtime
+(`veles_stack.c`); the generated one is `veles_main`. It starts the program
+on a thread with the big stack and waits: the main thread's own stack is
+whatever the OS gave the process and cannot be sized from inside, and a
+program that behaved differently on the thread that happened to run `main`
+would be worse than one that behaves the same everywhere.
+
+**The panic.** A fault handler recognises the guard region (a SIGSEGV or
+SIGBUS on a per-thread alternate stack on POSIX; a vectored exception
+handler for `EXCEPTION_STACK_OVERFLOW`, with 64 KB reserved for it, on
+Windows) and prints in the style of D64/D81, using no allocation and no
+formatted output, since it runs on the exhausted stack: `panic: stack
+overflow`, the stack size, and in a debug build the innermost calls of the
+D81 chain (`in f`, `called from site in caller`, three of them, and how deep
+the recursion was — the chain keeps the first 4096 calls); a release build
+says a debug build shows the chain. Exit code 101 as any panic that ends the
+process. It is not catchable and does not unwind — there is no stack to
+unwind on — so `recursion.Depth` (D75) stays the way a walk over input
+turns depth into an *error*.
+
+Not covered: a single frame larger than the guard region (a huge local
+array) can jump the guard and fault elsewhere — clang's stack probes would
+close it; a fault that is not near the guard is an ordinary crash, as before;
+macOS and other threads not created by the runtime (a C library's callbacks
+on its own thread) are untested or outside it.
+
+Rejected (user, recommended of 3, 3 and 3): compiler-inserted stack probes
+(a check on every call for a failure a guard page already reports); leaving
+the failure silent with `recursion.Depth` as the only answer; 64 MB (a
+million frames in a small function, against the same address-space bill);
+the OS defaults with only the diagnostic; raising `RLIMIT_STACK` at startup
+(unverified against the kernel's mmap layout); leaving the main thread at 8
+MB (recursion depth would depend on which thread the task landed on).
 
 ---
 
