@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.57** — language design complete; D58 adds the derivation story D51 deferred, D59 the standard library's cryptography. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
+**Working draft v0.58** — language design complete; D58 adds the derivation story D51 deferred, D59 the standard library's cryptography. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -2921,6 +2921,46 @@ trait (D61's open item); a fail-fast `scope` inside a block.
 `Result` ABI underneath is unchanged. A compiler in Veles needs exactly this
 shape — parse a statement and, when it fails, record the error, resynchronise and
 carry on with the next one.
+
+### D99 — `std/http`: connection limit, CORS, `guard`, and `std/compress` (v0.58)
+
+```veles
+http.serve(listener, app.handler(), limits: http.Limits(connections: 2000))
+app.wrap(http.cors(origins: ["https://app.example.com", "https://*.example.org"], credentials: true))
+app.wrap(http.bearer(token => crypto.equalBytes(token.bytes(), secret.bytes())))
+app.wrap(http.guard(req => if (req.path.startsWith("/admin") && !isAdmin(req)) http.Response.text("no", status: Status.forbidden) else null))
+```
+
+C2's last task. The user chose the recommended option of each of four.
+
+- **Connections.** `Limits.connections: i64 = 10_000`, `0` = unlimited.
+  Backpressure at `accept`: a permit is taken before `accept()` and given back
+  when the connection task ends, so a full server stops accepting and the kernel
+  backlog absorbs the burst. No refused connection costs a task or a write.
+  A graceful stop wakes an accept that waits for a permit. Rejected: accept then
+  503 (each refusal still costs a task and a write under a flood); unbounded.
+- **CORS.** `http.cors(origins:, methods:, headers:, expose:, credentials:,
+  maxAge:)`. The default allows no origin. `origins` is exact strings, `["*"]`,
+  or `https://*.example.com` (matched by the library on a dot boundary, so
+  `evilexample.com` never matches). Preflight (`OPTIONS` with
+  `Access-Control-Request-Method`) is answered by the middleware before routing;
+  `Vary: Origin` is added whenever the answer depends on the origin; a request
+  with no `Origin` passes through untouched; `["*"]` with `credentials: true`
+  panics at the caller's line (the cookie rule, D94). Rejected: a predicate
+  `allow: fun(origin): bool` (invites `endsWith("example.com")`); it can be added
+  later without breaking this.
+- **Auth.** `http.guard(check: sendable fun(Request): Response?)` — `null` lets the
+  request on, a `Response` answers it instead, and a `throw Fail` is the answer
+  too; `http.basicAuth(realm, verify: (user, pass) => bool)` and
+  `http.bearer(verify: token => bool)` are built on it and send
+  `WWW-Authenticate`. No new std function for the secret comparison: the brief
+  said std had no constant-time compare, which was wrong — `crypto.equalBytes`
+  is one, and the docs example uses it. A guard wraps the whole router;
+  per-route guards wait for route groups.
+- **Compression.** `std/compress` is written in Veles (inflate and deflate, gzip
+  framing), then `http.compress()` (gzip only) follows. Rejected: vendoring
+  miniz into the runtime (kept as the fallback if the measured speed is poor);
+  linking system zlib (a build dependency on every platform).
 
 ---
 

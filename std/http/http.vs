@@ -71,6 +71,11 @@ public struct Limits {
   /// How long a kept-alive connection may stay silent before the next
   /// request. Reaching it is not an error: the connection closes.
   public idleTimeout: Duration = Duration.seconds(15)
+  /// How many connections are served at once; `0` is no limit. At the limit
+  /// the server stops accepting until one closes, so the burst waits in the
+  /// operating system's backlog (or is refused there) instead of costing a
+  /// task each. A kept-alive connection holds its place until `idleTimeout`.
+  public connections: i64 = 10000
 }
 
 // ---------------------------------------------------------------------------
@@ -623,14 +628,17 @@ struct Drain {
 
 fun acceptAndServe(listener: net.Listener, handler: Handler, limits: Limits, log: bool, drain: Drain) {
   val accepted = Channel<net.Conn>(capacity: 16)
+  // one item per connection being served: `accept` waits while the channel
+  // is full, so the limit costs nothing for what it holds back
+  val permits: Channel<bool>? = if (limits.connections > 0) Channel<bool>(capacity: limits.connections) else null
   scope {
-    val acceptor = async acceptLoop(listener, accepted)
+    val acceptor = async acceptLoop(listener, accepted, permits)
     loop {
       val conn = race {
         val c = accepted.recv()   => c
         val _ = drain.wake.recv() => null
       } ?: break
-      async connection(conn, handler, limits, log, drain)
+      async serveConnection(conn, handler, limits, log, drain, permits)
     }
     acceptor.cancel()
   }
@@ -642,17 +650,31 @@ fun acceptAndServe(listener: net.Listener, handler: Handler, limits: Limits, log
   }
 }
 
-fun acceptLoop(listener: net.Listener, out: Channel<net.Conn>) {
+fun acceptLoop(listener: net.Listener, out: Channel<net.Conn>, permits: Channel<bool>?) {
   loop {
+    // a place first, then the connection: at the limit this is where the
+    // server waits, and cancelling it (a stop) ends the wait
+    if (permits != null) permits.send(true)
     when (listener.accept()) {
       is Ok(conn) => out.send(conn)
       is Err(e)   => {
+        if (permits != null) release(permits)
         // out of descriptors, a reset before accept: report and go on
         logs.warn("accept failed", field("error", e.message()))
         await sleep(Duration.millis(100))
       }
     }
   }
+}
+
+// gives one place back
+fun release(permits: Channel<bool>) {
+  val _ = permits.tryRecv()
+}
+
+fun serveConnection(conn: net.Conn, handler: Handler, limits: Limits, log: bool, drain: Drain, permits: Channel<bool>?) {
+  connection(conn, handler, limits, log, drain)
+  if (permits != null) release(permits)
 }
 
 fun connection(conn: net.Conn, handler: Handler, limits: Limits, log: bool, drain: Drain) {

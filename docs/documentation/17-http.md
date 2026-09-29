@@ -619,6 +619,8 @@ What the module gives you:
 | `http.logging()` | one `log` line per request ([chapter 21](21-logging.md)): peer, method, path, status, duration, and the request id when `requestId()` wraps it |
 | `http.requestId()` | the client's `X-Request-Id`, or a fresh 16 hex digits, on the request for the handlers and on the response for the client; also the log field `id` for every line logged while the request is handled |
 | `http.timeout(d)` | 503 when the handler takes longer; it runs in its own task and is cancelled, so its `with`s close |
+| `http.cors(origins: [...])` | lets browser pages from other origins in ([below](#other-origins-and-who-may-call)) |
+| `http.guard(check)`, `http.basicAuth(realm, verify)`, `http.bearer(verify)` | answer a request before the handlers do ([below](#other-origins-and-who-may-call)) |
 
 `serve` logs the same request line itself (through `log`, so it follows
 `VELES_LOG`), so pass `log: false` when you wrap `logging()`. A **recovery** middleware is not among
@@ -630,6 +632,62 @@ capture `val`s of Sendable types and nothing mutable. There are no
 task-local values yet, so the way to hand something to the handlers
 behind you is `req.withHeader(...)`, as `requestId` does.
 
+## Other origins, and who may call
+
+A browser lets a page read a response from another origin only when the
+server says so. It says so with `Access-Control-*` headers, and for
+anything beyond a plain GET or form post the browser first sends a
+**preflight**, an `OPTIONS` asking what is allowed. `http.cors` answers both:
+
+```veles
+// fragment
+app.wrap(http.cors(origins: ["https://app.example.com", "https://*.example.org"], headers: ["authorization", "content-type"], credentials: true, maxAge: Duration.hours(1)))
+```
+
+Nothing is allowed by default — `http.cors()` alone changes no response — and
+every origin you list is spelled out: exactly (`https://app.example.com`,
+scheme and port included), `"*"` for all of them, or `https://*.example.com` for
+any subdomain, matched on a dot, so `https://evilexample.com` is not one. A
+request without an `Origin` header is not cross-origin and passes untouched;
+so does one from an origin you did not list, which the browser then refuses
+to show to the page. A preflight from a listed origin is answered by the
+middleware (204) and never reaches the router; its
+`Access-Control-Allow-Headers` is your `headers`, or the headers the browser
+asked about when you gave none. Responses that depend on the origin say
+`Vary: Origin`, so a cache keeps them apart. The combinations browsers refuse
+are refused earlier: `"*"` with `credentials: true`, a pattern that is not one
+of the three forms, and a negative `maxAge` panic at the line that wrote them.
+
+Who may call at all is a `guard`: a function that sees the request first and
+returns `null` to let it on or a `Response` to answer instead (a thrown `Fail`
+is an answer too):
+
+```veles
+// fragment
+app.wrap(http.guard(req => if (req.path.startsWith("/admin") && req.header("x-admin") == null) http.Response.text("no", status: http.Status.forbidden) else null))
+```
+
+The two schemes nearly every API uses are built on it. `basicAuth(realm,
+verify)` wants `Authorization: Basic …` and calls `verify(user, password)`;
+`bearer(verify)` wants `Authorization: Bearer <token>` and calls `verify(token)`.
+A missing or refused credential is a 401 with the `WWW-Authenticate` challenge;
+a request that passes `basicAuth` carries the user in `x-remote-user`
+(`http.Header.remoteUser`), replacing whatever the client sent under that
+name.
+
+```veles
+// fragment
+app.wrap(http.basicAuth("admin", (user, pass) => user == "root" && crypto.equalBytes(pass.bytes(), secret.bytes())))
+app.wrap(http.bearer(token => crypto.equalBytes(token.bytes(), apiKey.bytes())))
+```
+
+Compare a secret with `crypto.equalBytes`, not `==`: the time `==` takes says
+how many leading bytes were right. Basic sends the password with every
+request, so serve it over TLS. A guard wraps the whole router, its 404s
+included; a rule for some routes tests the path itself until route groups
+exist. Wrap `cors` outside the auth middleware, so a preflight — which
+carries no credentials — is answered before anything asks for them.
+
 ## Connections and time
 
 `serve` keeps a connection open for further requests (HTTP/1.1
@@ -640,6 +698,12 @@ nothing for `limits.idleTimeout` (15 s by default) — a
 `withTimeout` around each read, so a silent client costs one parked task
 and nothing else. Requests are logged to standard error as
 `peer METHOD path status ms` unless `log: false`.
+
+At most `limits.connections` (10 000 by default; `0` for no limit) are served
+at once. A full server stops accepting: the next clients wait in the operating
+system's backlog, which is a queue that costs no task and no memory here, and
+are served as places free up. A kept-alive connection holds its place until it
+closes or reaches `idleTimeout`.
 
 ## Stopping gracefully
 
@@ -699,6 +763,7 @@ http.serve(listener, app, limits: http.Limits(bodyBytes: 8 * 1024 * 1024))
 | `headerTimeout` | `Duration.seconds(10)` | request line to the blank line, on one clock |
 | `bodyTimeout` | `Duration.seconds(30)` | the longest silence while the body is read |
 | `idleTimeout` | `Duration.seconds(15)` | silence between requests on a kept-alive connection |
+| `connections` | 10000 | connections served at once (`0`: no limit); a full server stops accepting |
 
 A request that reaches a byte ceiling is answered and the connection
 closed: `414` for the request line, `431` for the headers, `413` for the

@@ -852,3 +852,20 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   postfix, `try` chain, optional binding and next-line cases and their refusals;
   `D98-do-syntax` with the three old spellings), format cases for postfix and
   `try ... catch`, lsp hover; `examples/catchblock` output unchanged.
+
+- **2026-09-30, C2 limits and middleware: D99.** The user chose every recommended
+  option. `Limits.connections` (default 10000, 0 = none) bounds the connections
+  served at once with backpressure at `accept` (a permit channel taken before
+  `accept()` and returned when the connection task ends; a stop cancels the wait).
+  `http.cors` (`std/http/cors.vs`): explicit origins, `["*"]`, or `https://*.example.com`
+  matched on a dot; preflight answered before the router; `Vary: Origin`; `*` with
+  credentials and malformed patterns panic at the caller. `http.guard`, `basicAuth`,
+  `bearer` (`std/http/auth.vs`): a check that answers or lets on; Basic puts the
+  user in `x-remote-user` (`Header.remoteUser`) over a forged one. The brief said
+  std had no constant-time compare; `crypto.equalBytes` is one, so nothing was
+  added (corrected in D99). Tests: `limits.test.vs` (real sockets), `cors.test.vs`
+  (12), `auth.test.vs` (10). Docs chapter 17 ("Other origins, and who may call",
+  connections, the `Limits` table), stdlib reference. `Expect: 100-continue` ticked
+  (it was built in D97). Next in C2: `std/compress` in Veles (inflate, deflate, gzip;
+  measured with veles-bench, miniz as the fallback), then `http.compress()` and
+  precompressed `.gz` siblings for `files`; then C3 `std/config`.

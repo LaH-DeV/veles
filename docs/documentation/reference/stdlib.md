@@ -566,11 +566,15 @@ app.get("/users/{id}", req => ...)          // get / post / put / delete / any; 
 app.get("/static/*", http.files("./public"))   // ETag + Last-Modified + 304/412, one Range (206/416), `no-cache`, index.html, dotfiles 404, `..` refused
 http.files(dir, maxAge: null, immutable: false, index: ["index.html"], dotfiles: false, redirect: true, etag: true, lastModified: true)   // D96; immutable needs a maxAge
 app.wrap(http.requestId()); app.wrap(http.timeout(Duration.seconds(1))); app.wrap(http.logging())   // first wrap = outermost; wraps the 404s too
+app.wrap(http.cors(origins: ["https://app.example.com", "https://*.example.org"], methods: [...], headers: [...], expose: [...], credentials: false, maxAge: null))   // D99: nothing allowed by default; preflight answered before the router; Vary: Origin; "*" + credentials panics
+app.wrap(http.guard(req => null))   // Response? — null lets on, a Response answers, a thrown Fail answers (D99)
+app.wrap(http.basicAuth("realm", (user, pass) => ok)); app.wrap(http.bearer(token => ok, realm: null))   // 401 + WWW-Authenticate; basicAuth puts the user in x-remote-user (Header.remoteUser); compare secrets with crypto.equalBytes
 type Middleware = sendable fun(Handler): Handler          // `next => req => ...`; req.withHeader(n, v) hands something to the handlers behind
 http.serve(listener, app.handler(), limits: http.Limits(), log: true)   // forever, one task per connection; cancel its task to stop
 http.serve(listener, h, stop: () => os.shutdownSignal(), grace: Duration.seconds(10))   // graceful: stop accepting, close idle, drain, cancel after grace
 http.Limits(requestLineBytes: 8192, headerLineBytes: 8192, headerCount: 100, headerBytes: 65536,
-            bodyBytes: 1048576, headerTimeout: Duration.seconds(10), bodyTimeout: Duration.seconds(30), idleTimeout: Duration.seconds(15))
+            bodyBytes: 1048576, headerTimeout: Duration.seconds(10), bodyTimeout: Duration.seconds(30), idleTimeout: Duration.seconds(15),
+            connections: 10000)   // connections: served at once, 0 = no limit; a full server stops accepting (backlog waits) (D99)
 // a byte ceiling answers 414 / 431 / 413 and closes; a time ceiling 408; idleTimeout just closes
 type Handler = sendable fun(Request): Response suspends   // the stored form; `http.handler(h)` adapts a throwing h
 error Fail { status, text }; http.notFound(text); http.badRequest(text); http.forbidden(text)   // thrown → that status; other errors → 500 + log; a panic → 500 + log

@@ -176,6 +176,7 @@ public struct Header {
   public static val lastModified: string = "last-modified"
   public static val location: string = "location"
   public static val origin: string = "origin"
+  public static val remoteUser: string = "x-remote-user"
   public static val requestId: string = "x-request-id"
   public static val retryAfter: string = "retry-after"
   public static val setCookie: string = "set-cookie"

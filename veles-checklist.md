@@ -406,12 +406,14 @@ answered from the shape, tuples get `Comparable`, enums get
 - [x] Middleware: `type Middleware = sendable fun(Handler): Handler`; `router.wrap(m)`
       (`use` is the import keyword, so the verb is `wrap`) — outermost first, around
       the router's own 404s and 405s too
-- [~] Standard middleware: `requestId()`, `logging()`, `timeout(d: Duration)` done; recovery
-      needs nothing (a panic is already caught at the request boundary, D56) and
-      body-limit is `Limits.bodyBytes`. Still open: CORS, auth hook, compression
+- [~] Standard middleware: `requestId()`, `logging()`, `timeout(d: Duration)`, `cors(...)`, `guard`,
+      `basicAuth`, `bearer` done (D99, 2026-09-30: `std/http/cors.vs`, `auth.vs`, tests `cors.test.vs`,
+      `auth.test.vs`; docs 17 "Other origins, and who may call"); recovery needs nothing (a panic
+      is already caught at the request boundary, D56) and body-limit is `Limits.bodyBytes`. Still
+      open: compression (needs `std/compress`, §5.10), per-route guards (route groups)
 - [x] Graceful shutdown (§4, D68)
-- [ ] Max concurrent connections with backpressure at `accept`
-- [ ] `Expect: 100-continue`
+- [x] Max concurrent connections with backpressure at `accept` (D99, 2026-09-30: `Limits.connections`, default 10000, 0 = none; a permit channel taken before `accept`, so a full server stops accepting; `std/http/limits.test.vs`; docs 17)
+- [x] `Expect: 100-continue` (D97: sent on the handler's first body read)
 - [x] `HEAD`/`OPTIONS` defaults; `405` with `Allow` (2026-09-26: HEAD runs the GET route and the writer drops the body, keeping its `content-length`; OPTIONS answers 204 + `Allow`; a 1xx/204/304 is written without body or length)
 - [x] Cookies (D94, 2026-09-29): `req.cookie(name)`/`cookies()`; `resp.withCookie(Cookie(...))`
       and `withoutCookie` — `Response.cookies` written as one `Set-Cookie` line each;
@@ -863,6 +865,7 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-09-29 | Q3: package surface in source | **`public use m` and `public use m { a, T as U }`; manifest `exports` goes away** (user, recommended of 3; spec D89). Rejected: keep manifest exports, whole modules only. |
 | 2026-09-29 | Binding a nullable in a condition (found writing `setCookieLine`) | **`if (val x = e && ...)`, bindings chaining with `&&`, and no `loop` form** (user: "we need something like `?.let` in Kotlin ... execute some code without letting nullable"; recommended A of 3, chains of 2; `loop` "No"; spec D95). Rejected: `x?.let(v => ...)` (a lambda: no `return`/`break`/`continue` out of it); nothing new; a single binding per condition; `loop (val x = e)`. |
 | 2026-09-29 | std/http cookies and forms (plan C2, first task) | **Order: cookies+forms, static-file caching, body model, limits/middleware; `Response.cookies` list with `withCookie`; safe defaults, percent-encoded values, footguns panic at the caller; typed `form<T>()`/`query<T>()` plus `formValue(s)`** (user, all four recommended; spec D94). Rejected: the body model first; multi-map headers now (breaks every `headers:` literal — decided with the body model); Go-style raw cookies with everything off; strict cookies with no encoding; untyped-only and untyped multi-valued forms. |
+| 2026-09-30 | Connection limit, CORS, auth hook, compression source (plan C2) | **`Limits.connections` with backpressure at `accept`; `http.cors` with an explicit origin list and no predicate; `guard` + `basicAuth` + `bearer` (the brief wrongly said std lacked a constant-time compare; `crypto.equalBytes` is it, nothing added); `std/compress` written in Veles** (user, recommended of 3, 3, 4 and 4; spec D99). Rejected: accept-then-503; a CORS predicate; guard-only or helpers-only; miniz in the runtime (fallback if the speed is poor); system zlib. |
 | 2026-09-29 | Float bit patterns (found by plan S3) | **`x.toBits()` / `f64.fromBits(bits)` (and `f32` with `u32`), in std over `unsafe`, only those** (user, recommended of 3, 2 and "only `toBits`/`fromBits`, but note the rest to be made with another decision later" — the rest is Q20; spec D93). Rejected: instance methods both ways in the D86 style (float-only methods on every integer); leaving it to `unsafe`; a compiler builtin for now. |
 | 2026-09-29 | Stack overflow (found by plan S3) | **A fault handler that prints a named panic, 256 MB reserved stacks on every thread, and the program started on a big-stack thread on every platform** (user, recommended of 3, 3 and 3; spec D92). Rejected: compiler-inserted stack probes (cost on every call); leaving it silent; 64 MB; the OS defaults with a diagnostic only; raising `RLIMIT_STACK` at startup; leaving the Linux main thread at 8 MB. |
 | 2026-09-29 | std/log design (plan C1) | **`lazy` modifier on a `fun(): T` parameter (std-only), `field(key, value)` tail, text on a terminal / JSON otherwise with `VELES_LOG`, `withFields` on a task-local** (user, recommended of 3, 3, 3 and 2; specs D90, D91). Rejected: `@lazy` attribute, a compiler special case, a lambda-only call, a manual guard, a field map, a struct per message, text only, a sink trait, an explicit Logger value. |
