@@ -1,0 +1,68 @@
+> GET /login
+< HTTP/1.1 200 OK
+< <form method=post action=/login>...</form>
+> POST /login user=ada&password=nope
+< HTTP/1.1 401 Unauthorized
+< wrong password
+> POST /login user=ada
+< HTTP/1.1 400 Bad Request
+< invalid form:
+password: missing
+> POST /login user=ada&password=open+sesame
+< HTTP/1.1 303 See Other
+<   location: /me
+<   set-cookie: sid=s1; Path=/; HttpOnly; SameSite=Lax
+> POST /login user=ada&password=open+sesame&remember=on
+< HTTP/1.1 303 See Other
+<   location: /me
+<   set-cookie: sid=s2; Max-Age=2592000; Path=/; HttpOnly; SameSite=Lax
+> POST /login user=ada&password=open+sesame&remember=maybe
+< HTTP/1.1 400 Bad Request
+< invalid form:
+remember: expected true or false (or on/off, yes/no, 1/0), found "maybe"
+> POST /login {"user":"ada"}
+< HTTP/1.1 415 Unsupported Media Type
+< expected application/x-www-form-urlencoded, got 'application/json'
+> GET /me
+< HTTP/1.1 200 OK
+< hello, ada
+> GET /me
+< HTTP/1.1 200 OK
+< hello, ada
+> GET /me
+< HTTP/1.1 401 Unauthorized
+< log in first
+> GET /me
+< HTTP/1.1 401 Unauthorized
+< unknown session
+> GET /prefs
+< HTTP/1.1 200 OK
+<   set-cookie: theme=dark%20mode%3B%20yes; Max-Age=31536000; Path=/; Secure; HttpOnly; SameSite=Lax
+<   set-cookie: lang=en; Path=/; SameSite=Strict
+< saved
+> GET /find?q=cookie+jar&tags=a&tags=b&page=2
+< HTTP/1.1 200 OK
+< q=cookie jar page=2 tags=[a, b]
+> GET /find?q=x
+< HTTP/1.1 200 OK
+< q=x page=1 tags=[]
+> GET /find?page=two&tags=
+< HTTP/1.1 400 Bad Request
+< invalid query:
+page: expected an integer, found "two"
+q: missing
+> POST /logout
+< HTTP/1.1 303 See Other
+<   location: /login
+<   set-cookie: sid=; Max-Age=0; Path=/
+> GET /me
+< HTTP/1.1 401 Unauthorized
+< unknown session
+> GET /bad-name
+< HTTP/1.1 500 Internal Server Error
+< internal server error
+> GET /bad-samesite
+< HTTP/1.1 500 Internal Server Error
+< internal server error
+names [a, b, flag] a=[1, 3] first a=1 b=x y flag= nope=null
+exit=0

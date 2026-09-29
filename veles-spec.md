@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.51** — language design complete; D58 adds the derivation story D51 deferred, D59 the standard library's cryptography. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
+**Working draft v0.53** — language design complete; D58 adds the derivation story D51 deferred, D59 the standard library's cryptography. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -2440,6 +2440,137 @@ float sign and neighbour helpers (`copySign`, `signBit`, `nextUp`,
 `nextDown`) and the integer bit operations that do not exist yet
 (`rotateLeft`, `rotateRight`, `byteSwap`, `reverseBits`; `countOnes`,
 `leadingZeros` and `trailingZeros` already do).
+
+---
+
+### D94 — `std/http`: cookies and forms (v0.52)
+
+```veles
+struct Signup { name: string, age: i64, newsletter: bool = false, tags: List<string> = [] }
+
+app.post("/signup", req => {
+  val s = try req.form<Signup>()                    // 400 naming every bad field; 415 for another content type
+  http.Response.redirect("/welcome", status: http.Status.seeOther)
+    .withCookie(http.Cookie(name: "sid", value: newSession(s), maxAge: Duration.days(30)))
+})
+app.get("/me", req => http.Response.text(req.cookie("sid") ?: "nobody"))
+app.get("/find", req => { val q = try req.query<Search>(); ... })   // /find?q=veles&tags=a&tags=b
+```
+
+The first of the C2 tasks (plan C, checklist §5.2), taken in the order the
+user chose: cookies and forms, then static-file caching, then the body model
+(chunked, streaming, multipart, `Expect: 100-continue`), then limits and
+middleware.
+
+**Cookies.** `Response` gains `cookies: List<Cookie>`, written as one
+`Set-Cookie` line each — a header map holds a name once and a response may set
+many. `resp.withCookie(c)` and `resp.withoutCookie(name, path:, domain:,
+secure:)` (a `Max-Age=0` cookie) add to it. `Cookie` has `name`, `value`,
+`path = "/"`, `domain = null`, `maxAge: Duration? = null` (a session cookie),
+`secure = false`, `httpOnly = true`, `sameSite: SameSite? = Lax`, with `enum
+SameSite { Lax, Strict, None }`. The defaults are the safe ones; `secure`
+stays off so a program served over plain http while it is written works.
+The value is percent-encoded on the way out (every byte but `A-Za-z0-9-._~`
+as `%XX`) and decoded on the way in, so any string round-trips and none can
+end the header early. What cannot be encoded is checked, and a bad one
+panics at the caller's line (`@caller_location`, D88) — a handler's panic is
+already a 500 with a log line: a name that is not a token, a path that does
+not start with `/` or holds `;` or a control character, a domain that is not
+a host name, a negative `maxAge` (use `withoutCookie`), `SameSite.None`
+without `secure` (browsers drop it), a `__Host-` name that is not secure, at
+`/` and without a domain, a `__Secure-` name that is not secure.
+`req.cookies(): Map<string, string>` and `req.cookie(name): string?` read the
+`Cookie` header (quoted values unquoted, percent sequences decoded, the first
+of a repeated name winning). The server keeps one header per name, so a
+client that sent two `Cookie` lines has the last one read — HTTP/1.1 clients
+send one.
+
+**Forms and query strings.** `Request.rawQuery` keeps the query text as it
+came. `Fields` (`Fields.parse(text)`, `get(name)`, `all(name)`, `names()`) is
+the ordered list of pairs with repeats kept; `req.queryFields()` and
+`req.formFields()` (an `application/x-www-form-urlencoded` body; another type
+is a 415, a body that is not UTF-8 a 400) return one, and `req.formValue(name)`
+and `req.formValues(name)` are the low-level shortcuts. `req.form<T>()` and
+`req.query<T>()` read a `T: Decodable` through the codec layer (D58) with a
+`FormDecoder` — a `codec.Decoder` whose format name is `form`, so
+`@key(form: "...")` selects on it and `keys:` applies a `KeyStyle`: the
+fields are one flat object; text is parsed into what the struct asks for
+(integers, numbers, booleans — `true`/`false`, `on`/`off`, `yes`/`no`,
+`1`/`0`, which is what a checkbox sends —, strings, enums by name); a `List`
+field takes every value of its name, and a single value reads as a list of
+one; an empty value is `null` for an optional field and an empty list for a
+list; a bad value or a missing required field is recorded at the field's name
+and every problem is reported together as a 400, `invalid form:` (or
+`invalid query:`) and one line per problem. Nested structs and lists of lists
+are not forms and are problems. `req.query` (the field) still holds the last
+value of each name; `req.query<T>()` (the method) is the typed reader — a
+struct may have both.
+
+Not included, left for later decisions: signed and encrypted cookies (session
+storage on `std/crypto`), multipart forms (they need streaming bodies, the
+body-model task), a multi-valued `headers` type (decided with the body model).
+
+Rejected (user, recommended of 2, 2, 3 and 3): the body model first;
+multi-map headers now (breaks every `headers:` literal); raw, everything-off
+cookies as in Go, and strict cookies with no encoding; untyped-only forms,
+and untyped multi-valued maps.
+
+---
+
+### D95 — `if (val x = e && ...)`: binding a nullable's value in a condition (v0.53)
+
+```veles
+if (val age = c.maxAge) out.append("; Max-Age=${age.toSeconds()}")
+if (val d = c.domain) out.append("; Domain=$d") else out.append("; no domain")
+if (val n = header(name)?.toInt() && n > 40) return "big $n"        // chain: n is an i64 in the rest of it
+if (ready && val v = expensive() && val w = v.next()) use(v, w)      // expensive() only runs when ready is true
+val label = if (val n = header("n")) "n=$n" else "none"              // an expression, too
+```
+
+Found writing `std/http`'s `setCookieLine`, where "do this if the field has a
+value" took either a temporary `val` and a null test, or a `when` with a
+`null` arm and `?.` in the other. Smart casts (D5) cover a variable or a
+field path (`if (c.maxAge != null) ... c.maxAge.toSeconds()`), not a call
+result or a `?.` chain, and `val x = e else ...` (D61) leaves when the value is
+missing but does not run a short block when it is present.
+
+**The form.** `val name = expr` is an operand of the `&&` chain that forms an
+`if` condition. It is true when `expr` — any expression of type `T?` — is not
+null, and `name` is then the `T`. Bindings chain left to right and each name
+is in scope for the operands after it and for the `then` branch; not for the
+`else` (`else if (val ...)` binds again) and not after the `if`. Evaluation is
+the `&&` chain's: a failed operand stops it, so a later value is not
+computed. The expression binds tighter than `&&`, so `val a = x || y` needs
+parentheses, and a value with a lower-precedence operator is parenthesised by
+the formatter as the author wrote it. `val` is immutable and the name is a
+plain local — hover, go-to-definition, rename and the unused-name warning
+treat it like any other.
+
+**Refused.** A value that cannot be null (`if (val n = 5)`: a plain `val`
+binds it); a binding anywhere but the `&&` chain of an `if` condition — under
+`||` or `!`, in a call, in a `when` arm, in a `loop` head. Both messages carry
+`(D95)` and belong to the `nullable` family.
+
+**Lowering.** The checker turns each binding into a `Let` (evaluate into a
+variable, test it against null) and a fact that narrows the variable to its
+non-null type, the machinery of smart casts; code generation, the formatter's
+layout and the effect analysis see nothing new. The parser accepts
+`val name = expr` at an operand position and the checker decides where it may
+stand, so the error names the rule instead of reporting a syntax error.
+
+**Both levels and self-hosting.** It is a block, not a lambda: `return`,
+`break`, `continue`, `throw`, `try` and calls that suspend work inside it, which
+a parser or code generator written in Veles needs ("if the next token is a
+comma, take it and go on"). Kotlin's `x?.let { }` cannot leave the enclosing
+function from inside; Swift's `if let` and Rust's `if let` (with let chains) are
+the model.
+
+Rejected (user, recommended of 3, 2 and 2): Kotlin's `x?.let(v => ...)` (a
+lambda: no `return`/`break`/`continue` out of it, and a result of `R?`);
+nothing new (smart cast plus a `val` for unstable places); a single binding
+per condition (the chain avoids the nesting); the same form on `loop`
+(`loop (val line = readLine())` — `loop { val line = readLine() ?: break }`
+already says it; the user answered "No").
 
 ---
 

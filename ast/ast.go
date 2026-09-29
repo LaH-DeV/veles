@@ -796,6 +796,15 @@ type IfExpr struct {
 	Pos  source.Span
 }
 
+// LetCond is `val name = value` as a part of the condition of an `if`, joined
+// to the rest by `&&` (D95): true when value is not null, and name holds the
+// non-null value for the rest of the condition and the then-branch.
+type LetCond struct {
+	Name  Ident
+	Value Expr
+	Pos   source.Span
+}
+
 // WhenExpr is `when (subject) { arms }` or the subjectless `when { }` (D13).
 type WhenExpr struct {
 	Subject Expr
@@ -897,6 +906,7 @@ func (e *TupleExpr) Span() source.Span        { return e.Pos }
 func (e *ListLit) Span() source.Span          { return e.Pos }
 func (e *MapLit) Span() source.Span           { return e.Pos }
 func (e *IfExpr) Span() source.Span           { return e.Pos }
+func (e *LetCond) Span() source.Span          { return e.Pos }
 func (e *WhenExpr) Span() source.Span         { return e.Pos }
 func (e *BlockExpr) Span() source.Span        { return e.Block.Pos }
 func (e *TryExpr) Span() source.Span          { return e.Pos }
@@ -934,6 +944,7 @@ func (*TupleExpr) exprNode()        {}
 func (*ListLit) exprNode()          {}
 func (*MapLit) exprNode()           {}
 func (*IfExpr) exprNode()           {}
+func (*LetCond) exprNode()          {}
 func (*WhenExpr) exprNode()         {}
 func (*BlockExpr) exprNode()        {}
 func (*TryExpr) exprNode()          {}

@@ -122,6 +122,74 @@ assign (D22). Fields reached *through a pointer* (`p.address` with
 `p: *User`) are never narrowed — another pointer to the same value could
 change them in between; bind the field to a `val` first.
 
+## Binding the value in the condition: `if (val x = e)`
+
+A smart cast needs a place — a variable or a field path. When the nullable
+is a call, or a `?.` chain, and you want to *do something if it is there*,
+bind it in the condition:
+
+```veles
+use io
+
+struct Cookie {
+  name:   string
+  maxAge: Duration? = null
+  domain: string? = null
+}
+
+fun header(name: string): string? = if (name == "n") "42" else null
+
+fun line(c: Cookie): string {
+  val out = StringBuilder()
+  out.append(c.name)
+  if (val age = c.maxAge) out.append("; Max-Age=${age.toSeconds()}")
+  if (val d = c.domain) out.append("; Domain=$d") else out.append("; no domain")
+  out.toString()
+}
+
+fun main() {
+  io.println(line(Cookie(name: "a")))
+  io.println(line(Cookie(name: "a", maxAge: Duration.seconds(5), domain: "x.org")))
+  // any nullable expression, and as an expression
+  val label = if (val n = header("n")?.toInt()) "n=${n + 1}" else "none"
+  io.println(label)
+}
+```
+
+Output:
+```text
+a; no domain
+a; Max-Age=5; Domain=x.org
+n=43
+```
+
+`val x = e` is true when `e` is not null, and `x` is then the plain value —
+a `T` where `e` is a `T?` (D95). Its scope is the rest of the condition and
+the `then` branch: not the `else`, and not the code after the `if`.
+
+Bindings chain with `&&`, left to right, and each is in scope for what
+follows it:
+
+```veles
+// fragment
+if (val a = header("n") && val b = a.toInt() && b > 1) io.println("a=$a b=$b")
+if (ready && val v = expensive()) use(v)   // expensive() runs only when ready is true
+```
+
+The chain stops at the first operand that fails, so a value further along
+is not even computed. A binding is only allowed in the `&&` chain of an
+`if` condition — not under `||` or `!`, not in a `while`/`loop` head (a
+`loop { val x = next() ?: break ... }` says the same) — and the value must
+be able to be null: `if (val n = 5)` says so, since a plain `val` binds it.
+A binding that is never read is the usual unused-name warning.
+
+It is a block, not a lambda, so `return`, `break`, `continue`, `throw` and
+`try` inside it leave the enclosing function or loop, and a call that
+suspends needs nothing declared — which is why Veles has this rather than
+Kotlin's `x?.let { ... }`. To leave when the value is missing, `val x = e
+else return` (chapter 7) is the other half: use `if (val ...)` when the
+present case is the short one.
+
 ## Updating through `?.`
 
 A narrowed value is not a copy: after the null test you can write to its

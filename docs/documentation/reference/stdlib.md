@@ -576,6 +576,15 @@ http.Method.get / head / post / put / delete / patch / options / connect / trace
 http.Header.contentType, .location, .allow, .authorization, .cacheControl, ...   // lower-case names, as req.header() and withHeader() store them
 // path matches, method does not → 405 + Allow; HEAD → the GET route, body dropped; OPTIONS → 204 + Allow; 1xx/204/304 never carry a body
 http.call(handler, http.Method.get, "/notes/7?full=yes", body: "", headers: [:])   // in memory, no socket: same target parsing and panic boundary as serve
+// cookies (D94): one Set-Cookie line each; value percent-encoded; a bad name/path/domain, SameSite.None without secure, a broken __Host-/__Secure- name panic at the call
+http.Cookie(name:, value:, path: "/", domain: null, maxAge: null /* Duration?, null = session */, secure: false, httpOnly: true, sameSite: http.SameSite.Lax)   // enum SameSite { Lax, Strict, None }
+resp.withCookie(c); resp.withoutCookie(name, path: "/", domain: null, secure: false); resp.cookies      // Max-Age=0 to forget
+req.cookie(name); req.cookies()                                                                         // string?; Map<string, string>, first of a repeated name
+// forms and query strings (D94): urlencoded, repeats kept
+try req.form<T>(keys: KeyStyle.AsWritten); try req.query<T>(keys:)    // T: Decodable, flat; 400 "invalid form:"/"invalid query:" + one line per problem; 415 for another content type
+try req.formFields(); req.queryFields(); req.rawQuery                 // http.Fields: pairs; .get(name) first; .all(name); .names(); Fields.parse(text)
+try req.formValue(name); try req.formValues(name)                     // string?; List<string>
+http.FormDecoder.of(fields, keys:)                                    // the codec.Decoder behind them, format name "form"
 ```
 
 ## Module `json`

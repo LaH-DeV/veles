@@ -1670,6 +1670,9 @@ func (p *printer) exprInner(e ast.Expr) {
 			p.expr(en.Value, 0)
 		})
 		p.w("]")
+	case *ast.LetCond:
+		p.w("val " + e.Name.Name + " = ")
+		p.expr(e.Value, bpAnd+1)
 	case *ast.IfExpr:
 		p.ifExpr(e)
 	case *ast.WhenExpr:

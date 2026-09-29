@@ -200,6 +200,19 @@ A nullable value is not a value (D5). `x ?: fallback`, `x?.member`, or
 mistakes — `?.` on a value that cannot be null, comparing one with
 `null` — are reported too: the check can never do anything.
 
+#### `'val x = ...' in a condition needs a value that can be null`
+
+`if (val n = 5)` binds the value of a nullable when there is one, so the
+value has to be a `T?`; for a plain value `val n = 5` is the binding. (D95)
+
+#### `'val x = ...' is only allowed in the condition of an 'if', joined to the rest by '&&'`
+
+The binding lives from where it is written to the end of the `then`
+branch, which only makes sense along an `&&` chain: under `||` or `!` the
+name might not have a value, and outside an `if` there is no branch to
+scope it to. Bind with a `val` statement first, or use `val x = e else ...`
+to leave when it is missing. (D95)
+
 #### `'?:' is for a nullable; a Result's value-or-fallback is '??'` (and the reverse)
 
 `?:` unwraps a `T?`, `??` unwraps a `Result` — one idea, split by what is

@@ -355,3 +355,18 @@ func TestLazyParameterRoundTrips(t *testing.T) {
 		t.Errorf("formatted:\n%s\nwant:\n%s", got, src)
 	}
 }
+
+// `if (val x = e && ...)` (D95) prints as written: the value binds tighter
+// than `&&`, so a value with `||` keeps its parentheses, and chains, else
+// branches and else-if survive.
+func TestIfValRoundTrips(t *testing.T) {
+	src := "fun f(c: Cookie, xs: List<string>) {\n" +
+		"  if (val age = c.maxAge) out.append(age)\n" +
+		"  if (val d = c.domain && d.len() > 1) out.append(d) else out.append(\"-\")\n" +
+		"  if (ready && val a = first(xs) && val b = a.toInt() && b > 1) {\n    show(a, b)\n  }\n" +
+		"  if (val v = (x || y)) show(v) else if (val w = z ?: q) show(w)\n" +
+		"}\n"
+	if got := checkRoundTrip(t, "ifval.vs", src); got != src {
+		t.Errorf("formatted:\n%s\nwant:\n%s", got, src)
+	}
+}

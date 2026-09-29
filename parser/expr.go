@@ -114,6 +114,14 @@ func (p *Parser) parseUnary() ast.Expr {
 		op := p.next().Kind
 		x := p.parseUnary()
 		return &ast.UnaryExpr{Op: op, X: x, Pos: p.spanFrom(start)}
+	case lexer.KwVal:
+		// `val name = value` inside an `if` condition (D95); the checker refuses
+		// it anywhere else. The value binds tighter than `&&`, so the chain goes on.
+		p.next()
+		name, _ := p.expectIdent()
+		p.expect(lexer.Assign)
+		value := p.parseBinary(bpAnd)
+		return &ast.LetCond{Name: name, Value: value, Pos: p.spanFrom(start)}
 	case lexer.KwTry:
 		p.next()
 		x := p.parseUnary()

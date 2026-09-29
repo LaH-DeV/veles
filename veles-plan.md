@@ -728,3 +728,37 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   ordinary parameter, and that a rename on the word is refused). Not done:
   completion offers no `lazy` (std-only for now); the packaged
   `editors/vscode/veles-0.1.0.vsix` is rebuilt by the user.
+
+- **2026-09-29, C2 (first task): cookies and forms, D94.** New files
+  `std/http/cookie.vs` (`SameSite`, `Cookie`, the checks, `Set-Cookie` text,
+  the `Cookie` header parser) and `std/http/form.vs` (`Fields`, `FormDecoder`
+  — a `codec.Decoder` over the fields, format name `form` — and
+  `decodeFields`). `http.vs`: `Response.cookies` written one `Set-Cookie` line
+  each (and kept through `withHeader` and a head-only copy), `withCookie` /
+  `withoutCookie` (`@caller_location` panics for a bad cookie);
+  `Request.rawQuery`, `cookie`/`cookies`, `queryFields`, `formFields`,
+  `formValue(s)`, `form<T>`, `query<T>` (a field and a method may share the
+  name `query`). Found on the way: a decoder's `path()` between members must be
+  the object's own path (a derived decoder names a missing field under it);
+  constructors are by field name (D28), so the API is `Cookie(name:, value:)`.
+  Tests: `std/http/cookie.test.vs` and `form.test.vs` (35, run by driver
+  `TestStdHttpUnitTests`), `examples/session` over a real socket (both
+  `Set-Cookie` lines, the encoded value, 400/415, the refused cookies);
+  docs chapter 17 (two sections) and the stdlib reference. Next in C2, in the
+  order chosen: static-file caching (`ETag`, `Last-Modified`, `Range`,
+  `Cache-Control`), then the body model, then limits and middleware.
+
+- **2026-09-29, `if (val x = e && ...)`: D95.** The user found `setCookieLine`
+  clumsy ("something like `?.let` in Kotlin ... execute some code without
+  letting nullable") and chose the block form over a lambda. `ast.LetCond`
+  (`val name = value` as an operand; the parser reads the value above `&&` so
+  the chain goes on), the formatter and the AST dump print it; the checker
+  (`sema/letcond.go`) lowers each binding to a `Let` (evaluate, test against
+  null) plus a fact narrowing the variable (`condFacts`), opens a scope in
+  `ifExpr` that closes before the `else`, and refuses a non-nullable value or a
+  binding outside the `&&` chain of an `if` (family `nullable`, `(D95)`). No
+  code generation change. `std/http/cookie.vs` uses it. Tests: conformance
+  `D95-if-val` (scopes, both errors, the unused warning), format
+  `TestIfValRoundTrips`, lsp `TestHoverOnIfValBinding`, `examples/nullbind`
+  (evaluation order, chains, else-if, early return, as an expression); docs
+  chapter 6, the errors reference and the cheat sheet.

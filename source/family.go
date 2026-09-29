@@ -70,7 +70,7 @@ var families = []family{
 		`is not an error`, `cannot be an error`, `^'Err\(`, `^error type`, `'message' can be overridden`,
 		`only a Result has`, `error union`, `'Ok\(\.\.\.\)'`, `\(D4\)`),
 	fam("val-else", `'val \.\.\. else'`, `needs 'else \{`, `the 'else' can never run`),
-	fam("nullable", `may be null`, `^'null'`, `'\?\.'`, `non-nullable`, `'\?:'`, `never null`, `\(D5\)`),
+	fam("nullable", `may be null`, `^'null'`, `'\?\.'`, `non-nullable`, `'\?:'`, `never null`, `\(D5\)`, `\(D95\)`),
 	fam("enums", `\benum\b`, `\(D57\)`),
 	fam("generics", `not generic`, `is generic`, `type arguments?`, `type parameters?`, `^cannot infer type parameters`,
 		`generic function`, `generic traits`, `associated type`, `^bound '`),

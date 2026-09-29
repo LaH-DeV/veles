@@ -408,8 +408,19 @@ answered from the shape, tuples get `Comparable`, enums get
 - [ ] Max concurrent connections with backpressure at `accept`
 - [ ] `Expect: 100-continue`
 - [x] `HEAD`/`OPTIONS` defaults; `405` with `Allow` (2026-09-26: HEAD runs the GET route and the writer drops the body, keeping its `content-length`; OPTIONS answers 204 + `Allow`; a 1xx/204/304 is written without body or length)
-- [ ] Cookies: parse and set, with `SameSite`/`Secure`/`HttpOnly`
-- [ ] Forms: `x-www-form-urlencoded` (have `parseQuery`), multipart streamed to disk
+- [x] Cookies (D94, 2026-09-29): `req.cookie(name)`/`cookies()`; `resp.withCookie(Cookie(...))`
+      and `withoutCookie` — `Response.cookies` written as one `Set-Cookie` line each;
+      safe defaults (`Path=/`, `HttpOnly`, `SameSite=Lax`, `secure` opt-in), value
+      percent-encoded, a bad name/path/domain, `SameSite=None` without `secure`, a
+      broken `__Host-`/`__Secure-` name a panic at the caller's line. Tests:
+      `std/http/cookie.test.vs` (run by driver `TestStdHttpUnitTests`),
+      `examples/session` over a socket. Open: signed/encrypted session cookies
+- [~] Forms (D94, 2026-09-29): `x-www-form-urlencoded` done — `req.form<T>()`,
+      `req.query<T>()` through the codec layer (`http.FormDecoder`, format `form`;
+      400 with every problem at its field, 415 for another type), `formFields`,
+      `formValue(s)`, `queryFields` (`http.Fields` keeps repeats), `Request.rawQuery`;
+      `std/http/form.test.vs`, `examples/session`. Multipart streamed to disk open
+      (needs the streaming body model)
 - [ ] Static files: `ETag`, `Last-Modified`, `Range`, `Cache-Control`, index files
 - [~] Router: method-not-allowed vs not-found distinction (done: 405 + `Allow`), route groups,
       typed path params (`{id: i64}`)
@@ -837,6 +848,8 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-09-29 | Q4: protected mutable-collection field | **`protected` = look, don't take** (user, recommended of 3; spec D87). Rejected: leave it, read-only view types. |
 | 2026-09-29 | Q8: where a misuse panic points | **`@caller_location`, std only for now** (user, recommended of 3; spec D88). Rejected: leave it, automatic for every std panic. |
 | 2026-09-29 | Q3: package surface in source | **`public use m` and `public use m { a, T as U }`; manifest `exports` goes away** (user, recommended of 3; spec D89). Rejected: keep manifest exports, whole modules only. |
+| 2026-09-29 | Binding a nullable in a condition (found writing `setCookieLine`) | **`if (val x = e && ...)`, bindings chaining with `&&`, and no `loop` form** (user: "we need something like `?.let` in Kotlin ... execute some code without letting nullable"; recommended A of 3, chains of 2; `loop` "No"; spec D95). Rejected: `x?.let(v => ...)` (a lambda: no `return`/`break`/`continue` out of it); nothing new; a single binding per condition; `loop (val x = e)`. |
+| 2026-09-29 | std/http cookies and forms (plan C2, first task) | **Order: cookies+forms, static-file caching, body model, limits/middleware; `Response.cookies` list with `withCookie`; safe defaults, percent-encoded values, footguns panic at the caller; typed `form<T>()`/`query<T>()` plus `formValue(s)`** (user, all four recommended; spec D94). Rejected: the body model first; multi-map headers now (breaks every `headers:` literal — decided with the body model); Go-style raw cookies with everything off; strict cookies with no encoding; untyped-only and untyped multi-valued forms. |
 | 2026-09-29 | Float bit patterns (found by plan S3) | **`x.toBits()` / `f64.fromBits(bits)` (and `f32` with `u32`), in std over `unsafe`, only those** (user, recommended of 3, 2 and "only `toBits`/`fromBits`, but note the rest to be made with another decision later" — the rest is Q20; spec D93). Rejected: instance methods both ways in the D86 style (float-only methods on every integer); leaving it to `unsafe`; a compiler builtin for now. |
 | 2026-09-29 | Stack overflow (found by plan S3) | **A fault handler that prints a named panic, 256 MB reserved stacks on every thread, and the program started on a big-stack thread on every platform** (user, recommended of 3, 3 and 3; spec D92). Rejected: compiler-inserted stack probes (cost on every call); leaving it silent; 64 MB; the OS defaults with a diagnostic only; raising `RLIMIT_STACK` at startup; leaving the Linux main thread at 8 MB. |
 | 2026-09-29 | std/log design (plan C1) | **`lazy` modifier on a `fun(): T` parameter (std-only), `field(key, value)` tail, text on a terminal / JSON otherwise with `VELES_LOG`, `withFields` on a task-local** (user, recommended of 3, 3, 3 and 2; specs D90, D91). Rejected: `@lazy` attribute, a compiler special case, a lambda-only call, a manual guard, a field map, a struct per message, text only, a sink trait, an explicit Logger value. |

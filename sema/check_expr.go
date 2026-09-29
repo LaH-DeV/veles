@@ -355,6 +355,8 @@ func (f *fnCtx) checkExprInner(e ast.Expr, want types.Type) Expr {
 		return f.mapLit(e, want)
 	case *ast.IfExpr:
 		return f.ifExpr(e, want)
+	case *ast.LetCond:
+		return f.letCond(e)
 	case *ast.WhenExpr:
 		return f.whenExpr(e, want)
 	case *ast.BlockExpr:
@@ -2052,6 +2054,13 @@ func (f *fnCtx) condFacts(cond ast.Expr, checked Expr) (whenTrue, whenFalse fact
 				whenFalse[k] = v
 			}
 		}
+	case *ast.LetCond:
+		// D95: the bound name is the non-null value while the condition holds
+		if v := f.letVars[c]; v != nil {
+			if nt, ok := v.Type.(*types.Nullable); ok {
+				whenTrue[pv(v)] = nt.Elem
+			}
+		}
 	case *ast.UnaryExpr:
 		if c.Op == lexer.Bang {
 			t, fl := f.condFacts(c.X, nil)
@@ -2119,6 +2128,15 @@ func (f *fnCtx) patternTargetType(from types.Type, pat *ast.TypePat) types.Type 
 }
 
 func (f *fnCtx) ifExpr(e *ast.IfExpr, want types.Type) Expr {
+	// `if (val x = e && ...)` (D95): the names live from their binding to the
+	// end of the then-branch, so a scope opens here and closes before `else`
+	lets := letConds(e.Cond)
+	if len(lets) > 0 {
+		f.pushScope()
+		for _, l := range lets {
+			f.letOK[l] = true
+		}
+	}
 	cond := f.checkExprTo(e.Cond, types.TBool)
 	whenTrue, whenFalse := f.condFacts(e.Cond, cond)
 	saved := f.saveNarrow()
@@ -2144,6 +2162,9 @@ func (f *fnCtx) ifExpr(e *ast.IfExpr, want types.Type) Expr {
 		thenState = f.saveNarrow()
 	}
 	f.restoreNarrow(saved)
+	if len(lets) > 0 {
+		f.popScope()
+	}
 
 	var els *Block
 	f.applyFacts(whenFalse)

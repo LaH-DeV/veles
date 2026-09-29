@@ -65,9 +65,9 @@ HTTP/1.1 404 Not Found | not found
   cancelled — which is how the program above ends. A real server calls
   `serve` from `main` and runs until killed.
 - `Request` has `method`, `path`, `query`, `headers` (lower-case names),
-  `body: List<u8>` and `text()`; `Response` is built with `text`, `html`,
-  `json`, `bytes`, `empty(status)`, `redirect`, and adjusted with
-  `withHeader`.
+  `body: List<u8>` and `text()`, plus cookies and forms (below); `Response`
+  is built with `text`, `html`, `json`, `bytes`, `empty(status)`,
+  `redirect`, and adjusted with `withHeader` and `withCookie`.
 - Statuses, methods and header names are named values, not numbers and
   strings: `http.Status.notFound`, `http.Method.post`,
   `http.Header.cacheControl`. Each is an open set — `http.Status(code: 418)`
@@ -177,6 +177,131 @@ type follows the extension:
 app.get("/static/*", http.files("./public"))
 app.get("/", req => http.Response.redirect("/static/"))
 ```
+
+## Cookies
+
+`req.cookie("name")` reads one cookie (`string?`), `req.cookies()` all of
+them; `resp.withCookie(cookie)` sets one, and a response may set as many as
+it likes, each as its own `Set-Cookie` line:
+
+```veles
+use http, io
+
+fun main() {
+  val app = http.Router()
+  app.get("/visit", req => {
+    val n = (req.cookie("visits") ?: "0").toInt() ?: 0
+    http.Response.text("visit ${n + 1}").withCookie(http.Cookie(name: "visits", value: "${n + 1}", maxAge: Duration.days(30)))
+  })
+  val h = app.handler()
+  var jar = ""
+  loop (_ in 0..<3) {
+    val resp = http.call(h, http.Method.get, "/visit", headers: ["Cookie": jar])
+    val c = resp.cookies.at(0) ?: panic("no cookie")
+    jar = "${c.name}=${c.value}"
+    io.println("${resp.body.decodeUtf8() ?: ""} - cookie ${c.name}=${c.value}, kept ${c.maxAge?.toDays()} days")
+  }
+}
+```
+
+Output:
+```text
+visit 1 - cookie visits=1, kept 30 days
+visit 2 - cookie visits=2, kept 30 days
+visit 3 - cookie visits=3, kept 30 days
+```
+
+On the wire that is `set-cookie: visits=1; Max-Age=2592000; Path=/;
+HttpOnly; SameSite=Lax`. The defaults of `http.Cookie` are the safe ones:
+the whole site (`path: "/"`), hidden from scripts (`httpOnly: true`), not
+sent cross-site (`sameSite: http.SameSite.Lax`), and a session cookie until
+you give it a `maxAge`. `secure` is off, so a program served over plain
+http while you write it still works — switch it on for anything deployed.
+
+- **The value is encoded for you.** Every byte but letters, digits and
+  `-._~` is written as `%XX` and decoded again by `req.cookie`, so any
+  string round-trips and none can end the header early: `"dark mode; yes"`
+  goes out as `dark%20mode%3B%20yes`.
+- **What cannot be encoded is checked**, and a bad one is a panic at the
+  line that wrote it (a handler's panic is a 500 and a log line): a name
+  that is not a token (`"no spaces"`), a path that does not start with `/`,
+  a domain that is not a host name, `sameSite: http.SameSite.None` without
+  `secure: true` (browsers drop such a cookie), a negative `maxAge`, and the
+  browsers' `__Host-` and `__Secure-` prefixes used without what they
+  require.
+- **Forgetting a cookie** is `resp.withoutCookie("sid")`, a `Max-Age=0`
+  cookie; give it the `path` and `domain` it was set with.
+- **Reading:** a quoted value is unquoted, and when the browser sends a name
+  twice the first counts. The server keeps one header of each name, so a
+  client that sent two `Cookie` lines has the last read; HTTP/1.1 clients
+  send one.
+
+`examples/session` is a login built on these, over a real socket, showing
+the lines a browser would see. Signed or encrypted session cookies are not
+here yet.
+
+## Forms and query strings
+
+`req.form<T>()` reads an `application/x-www-form-urlencoded` body into a
+struct, the way `json.decode` reads a document, and `req.query<T>()` does
+the same with the query string. The struct writes `implement Decodable`
+(chapter 18) and nothing else:
+
+```veles
+use http, io
+
+struct Signup {
+  name:       string
+  age:        i64
+  newsletter: bool = false
+  tags:       List<string> = []
+  implement Decodable
+}
+
+fun main() {
+  val app = http.Router()
+  app.post("/signup", req => {
+    val s = try req.form<Signup>()
+    http.Response.text("${s.name} is ${s.age}, newsletter ${s.newsletter}, tags ${s.tags}")
+  })
+  val h = app.handler()
+  val form = ["Content-Type": "application/x-www-form-urlencoded"]
+  loop (body in ["name=Ada+L&age=36&newsletter=on&tags=a&tags=b", "name=Ada&age=old"]) {
+    val resp = http.call(h, http.Method.post, "/signup", body: body, headers: form)
+    io.println("${resp.status} ${resp.body.decodeUtf8() ?: ""}")
+  }
+}
+```
+
+Output:
+```text
+200 OK Ada L is 36, newsletter true, tags [a, b]
+400 Bad Request invalid form:
+age: expected an integer, found "old"
+```
+
+- Text becomes what the field asks for: integers and numbers are parsed,
+  booleans are `true`/`false`, `on`/`off`, `yes`/`no` or `1`/`0` (a checkbox
+  sends `on` when ticked and nothing at all when not, so a `bool` with a
+  default of `false` is the checkbox's field), an enum is read by name.
+- A `List` field takes every value of its name (`tags=a&tags=b`); a single
+  value is a list of one, and an empty one an empty list. An optional field
+  is `null` when its value is empty.
+- A bad value or a missing required field is a **400** that lists every
+  problem, one per line, each at its field's name — `invalid form:` for a
+  body, `invalid query:` for a query string. Another content type is a
+  **415**. The body is bounded by `Limits.bodyBytes` like any other.
+- A form is flat: a nested struct, or a list of lists, is a problem.
+  `req.form<T>(keys: KeyStyle.SnakeCase)` reads `first_name` into
+  `firstName`.
+- `req.query` (the field) is still the last value of each name;
+  `req.query<T>()` (the method) is the typed reader, and both exist.
+
+The low-level readers are there when a struct is more than you need:
+`req.formValue("a")` (first value, `string?`), `req.formValues("a")` (all of
+them), and `req.formFields()` / `req.queryFields()`, an `http.Fields` with
+`get`, `all` and `names`, repeats and order kept. Uploaded files
+(`multipart/form-data`) are not here yet; they need streaming bodies.
 
 ## Middleware
 

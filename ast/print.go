@@ -840,6 +840,10 @@ func (p *printer) expr(e Expr) {
 		p.w("(await ")
 		p.expr(e.X)
 		p.w(")")
+	case *LetCond:
+		p.w("(val " + e.Name.Name + " ")
+		p.expr(e.Value)
+		p.w(")")
 	case *IsExpr:
 		if e.Not {
 			p.w("(!is ")

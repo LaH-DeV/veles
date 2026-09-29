@@ -14,7 +14,7 @@
 ///   http.serve(listener, app.handler())
 /// }
 /// ```
-use fs, log as logs { field }, net, path, random, time
+use codec, fs, log as logs { field }, net, path, random, time
 
 // ---------------------------------------------------------------------------
 // failing a request
@@ -82,6 +82,9 @@ public struct Request {
   public body:    List<u8>
   public peer:    string
   public params:  Map<string, string> = [:]
+  /// The query string as it came, after the `?` and before decoding: what
+  /// `queryFields()` and `query<T>()` read, repeats and order kept.
+  public rawQuery: string = ""
 
   /// A header by name, case-insensitively.
   public fun header(name: string): string? = this.headers.get(name.toLower())
@@ -94,7 +97,7 @@ public struct Request {
 
   /// The same request with route parameters filled in.
   fun withParams(params: Map<string, string>): Request =
-    Request(method: this.method, path: this.path, query: this.query, headers: this.headers, body: this.body, peer: this.peer, params)
+    Request(method: this.method, path: this.path, query: this.query, headers: this.headers, body: this.body, peer: this.peer, params, rawQuery: this.rawQuery)
 
   /// The same request with a header set (names are lower-cased). This is
   /// how a middleware hands something to the handlers behind it — there
@@ -102,8 +105,63 @@ public struct Request {
   public fun withHeader(name: string, value: string): Request {
     val h = this.headers.toMutable()
     h.set(name.toLower(), value)
-    Request(method: this.method, path: this.path, query: this.query, headers: h.toMap(), body: this.body, peer: this.peer, params: this.params)
+    Request(method: this.method, path: this.path, query: this.query, headers: h.toMap(), body: this.body, peer: this.peer, params: this.params, rawQuery: this.rawQuery)
   }
+
+  /// Every cookie the browser sent, by name. A value is percent-decoded (see
+  /// `Cookie`), and when a name is sent twice the first counts.
+  public fun cookies(): Map<string, string> = parseCookies(this.header(Header.cookie) ?: "")
+
+  /// One cookie by name, or null.
+  public fun cookie(name: string): string? = this.cookies().get(name)
+
+  /// The query string's fields, repeats kept (`req.query` keeps the last of
+  /// each name).
+  public fun queryFields(): Fields = Fields.parse(this.rawQuery)
+
+  /// The query string read into a `T`, as `form<T>()` reads a body: a value
+  /// that does not fit, or a missing required field, is a 400 naming the fields.
+  ///
+  /// ```veles
+  /// struct Search { q: string, page: i64 = 1, tags: List<string> = [] }
+  /// val s = try req.query<Search>()   // /find?q=veles&tags=a&tags=b
+  /// ```
+  public fun query<T: Decodable>(keys: codec.KeyStyle = codec.KeyStyle.AsWritten): T throws Fail =
+    when (decodeFields<T>(this.queryFields(), keys)) {
+      is Ok(v)  => v
+      is Err(e) => throw badRequest("invalid query:\n" + e.message())
+    }
+
+  /// The fields of an `application/x-www-form-urlencoded` body. Another
+  /// content type is a 415, a body that is not UTF-8 a 400.
+  public fun formFields(): Fields throws Fail {
+    val media = (this.header(Header.contentType) ?: "").split(";").at(0)?.trim()?.toLower() ?: ""
+    if (media != "application/x-www-form-urlencoded") {
+      throw Fail(status: Status.unsupportedMediaType, text: "expected application/x-www-form-urlencoded, got '${if (media.isEmpty()) "nothing" else media}'")
+    }
+    Fields.parse(try this.text())
+  }
+
+  /// The first value of a form field, or null.
+  public fun formValue(name: string): string? throws Fail = (try this.formFields()).get(name)
+
+  /// Every value of a form field (a checkbox group, a multiple select).
+  public fun formValues(name: string): List<string> throws Fail = (try this.formFields()).all(name)
+
+  /// The form read into a `T`: numbers and booleans are parsed from the
+  /// text, a `List` field takes every value of its name, an optional field
+  /// is null when empty, and every problem is reported together as a 400 —
+  /// one line per field, at its name. Nested structs are not forms.
+  ///
+  /// ```veles
+  /// struct Signup { name: string, age: i64, newsletter: bool = false }
+  /// val s = try req.form<Signup>()
+  /// ```
+  public fun form<T: Decodable>(keys: codec.KeyStyle = codec.KeyStyle.AsWritten): T throws Fail =
+    when (decodeFields<T>(try this.formFields(), keys)) {
+      is Ok(v)  => v
+      is Err(e) => throw badRequest("invalid form:\n" + e.message())
+    }
 }
 
 /// One response. Build it with the statics, adjust with `withHeader`.
@@ -111,6 +169,9 @@ public struct Response {
   public status:  Status = Status.ok
   public headers: Map<string, string> = [:]
   public body:    List<u8> = []
+  /// The cookies to set, one `Set-Cookie` line each (a header map holds a
+  /// name once, and a response may set many).
+  public cookies: List<Cookie> = []
 
   /// Plain text.
   public static fun text(body: string, status: Status = Status.ok): Response =
@@ -139,8 +200,29 @@ public struct Response {
   public fun withHeader(name: string, value: string): Response {
     val h = this.headers.toMutable()
     h.set(name.toLower(), value)
-    Response(status: this.status, headers: h.toMap(), body: this.body)
+    Response(status: this.status, headers: h.toMap(), body: this.body, cookies: this.cookies)
   }
+
+  /// The same response setting `cookie` as well. The value is percent-encoded;
+  /// a cookie the browsers would refuse or that cannot be written safely — a
+  /// bad name, path or domain, `SameSite.None` without `secure`, a `__Host-`
+  /// name that breaks its rules — panics at this call.
+  ///
+  /// ```veles
+  /// resp.withCookie(http.Cookie(name: "sid", value: id, maxAge: Duration.days(7)))
+  /// ```
+  @caller_location
+  public fun withCookie(cookie: Cookie): Response {
+    checkCookie(cookie)
+    Response(status: this.status, headers: this.headers, body: this.body, cookies: this.cookies.concat([cookie]))
+  }
+
+  /// The same response telling the browser to forget a cookie: it must be
+  /// named with the `path` and `domain` it was set with (`secure` for a
+  /// `__Host-` or `__Secure-` name).
+  @caller_location
+  public fun withoutCookie(name: string, path: string = "/", domain: string? = null, secure: bool = false): Response =
+    this.withCookie(Cookie(name, value: "", path, domain, maxAge: Duration.seconds(0), secure, httpOnly: false, sameSite: null))
 }
 
 // ---------------------------------------------------------------------------
@@ -208,9 +290,10 @@ public fun call(handler: Handler, method: Method, target: string, body: string =
     headers: lower.toMap(),
     body: body.bytes(),
     peer: "test",
+    rawQuery,
   )
   val resp = dispatch(handler, req)
-  if (method == Method.head || hasNoBody(resp.status)) Response(status: resp.status, headers: resp.headers) else resp
+  if (method == Method.head || hasNoBody(resp.status)) Response(status: resp.status, headers: resp.headers, cookies: resp.cookies) else resp
 }
 
 // ---------------------------------------------------------------------------
@@ -694,7 +777,7 @@ fun readRequest(c: net.Conn, limits: Limits, drain: Drain): (Request, bool)? thr
     }
   }
   val (rawPath, rawQuery) = target.splitOnce("?") ?: (target, "")
-  val req = Request(method: Method(name: method), path: percentDecode(rawPath, plusIsSpace: false), query: parseQuery(rawQuery), headers: headers.toMap(), body, peer: c.peer())
+  val req = Request(method: Method(name: method), path: percentDecode(rawPath, plusIsSpace: false), query: parseQuery(rawQuery), headers: headers.toMap(), body, peer: c.peer(), rawQuery)
   (req, http10)
 }
 
@@ -766,6 +849,9 @@ fun writeResponse(c: net.Conn, resp: Response, close: bool, headOnly: bool = fal
     // echoed path that decoded to `\r\n` — and a line break in it would
     // let the client write the rest of the response (RFC 9110 §5.5)
     head.append("$name: ${value.replace("\r", " ").replace("\n", " ").replace("\u{0}", " ")}\r\n")
+  }
+  loop (cookie in resp.cookies) {
+    head.append("set-cookie: ${setCookieLine(cookie)}\r\n")
   }
   val bodyless = hasNoBody(resp.status)
   if (!bodyless) {

@@ -173,6 +173,7 @@ val n = try parse(s) ?! Invalid(why: "not a number")     // the old error is dro
 val m = try parse(s).mapError(e => Invalid(why: e.message()))
 val n = parse(s) ?? 0; parse(s) ?? { e => fallback(e) }; parse(s) ?? return   // ?? is ?: for a Result: the value, or the fallback
 val v = parse(s) else continue; val w = parse(s) else { e => log(e); return }  // let-else: the else must leave (also T? and patterns: val Circle(r) = s else return 0.0)
+if (val age = c.maxAge) out.append(age.toSeconds()); if (val a = f() && val b = g(a) && b > 1) ...   // binds a T? non-null for the rest of the && chain and the then-branch (D95); not in the else
 ```
 
 Unused `Result` is an error. `try` needs an enclosing `throws`. `if (r.ok)` (or `r is Ok`)

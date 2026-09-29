@@ -1602,3 +1602,39 @@ func TestHoverOnLazyWord(t *testing.T) {
 		}
 	}
 }
+
+// The name of `if (val x = e)` (D95) is an ordinary local: hover shows its
+// non-null value's type where it is used, definition goes to the binding,
+// and the name is gone in the else branch.
+func TestHoverOnIfValBinding(t *testing.T) {
+	src := "use io { println }\n\nfun find(name: string): string? = null\n\nfun main() {\n  if (val found = find(\"a\") && found.len() > 1) println(found)\n  else println(\"none\")\n}\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := pathToURI(path)
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{})
+	c.notify("initialized", map[string]any{})
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": src}})
+	at := func(method string, line, col int) string {
+		res, _ := c.call(method, map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": line, "character": col}})
+		return string(res)
+	}
+	// the binding itself, and its use in the rest of the chain
+	if got := at("textDocument/hover", 5, 10); !strings.Contains(got, "found") {
+		t.Errorf("hover on the binding: %s", got)
+	}
+	if got := at("textDocument/hover", 5, 32); !strings.Contains(got, "found") {
+		t.Errorf("hover on its use in the condition: %s", got)
+	}
+	if got := at("textDocument/hover", 5, 58); !strings.Contains(got, "found") {
+		t.Errorf("hover on its use in the branch: %s", got)
+	}
+	// go-to-definition from the use lands on the binding's line
+	if got := at("textDocument/definition", 5, 58); !strings.Contains(got, `"line":5`) {
+		t.Errorf("definition of the use: %s", got)
+	}
+}

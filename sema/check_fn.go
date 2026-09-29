@@ -27,6 +27,10 @@ type fnCtx struct {
 	scope       *Scope
 	loops       []*loopFrame
 	narrow      map[place]types.Type
+	// D95: the `val x = e` operands of the `if` condition being checked, and the
+	// variable each one declared
+	letOK   map[*ast.LetCond]bool
+	letVars map[*ast.LetCond]*Var
 	// provenReads are the `at`/`first`/`last` calls a bounds fact made total
 	// (D62), so a `?:` after one is a warning, not an error.
 	provenReads map[*ast.CallExpr]bool
@@ -79,7 +83,7 @@ func (c *Checker) newFnCtx(fn *Func, module *Module, file *ast.File, env *typeEn
 	if scope.parent == nil {
 		scope = NewScope(module.Scope)
 	}
-	return &fnCtx{c: c, fn: fn, module: module, file: file, env: env, subst: subst, scope: scope, narrow: map[place]types.Type{}, vars: map[*Var]bool{}, captures: map[*Var]*Var{}}
+	return &fnCtx{c: c, fn: fn, module: module, file: file, env: env, subst: subst, scope: scope, narrow: map[place]types.Type{}, letOK: map[*ast.LetCond]bool{}, letVars: map[*ast.LetCond]*Var{}, vars: map[*Var]bool{}, captures: map[*Var]*Var{}}
 }
 
 func (f *fnCtx) errorf(span source.Span, format string, args ...any) {
