@@ -56,13 +56,17 @@ public struct Limits {
   /// Every header line added up, so many small headers cost as much as
   /// one large one.
   public headerBytes: i64 = 65536
-  /// The body, whatever `Content-Length` claims. A handler that streams
-  /// a larger upload raises this for its own server.
+  /// What `req.bytes()`, `req.text()` and `req.form()` collect into memory,
+  /// whatever `Content-Length` claims; more is a 413 before its first byte
+  /// when the length says so. A handler that takes a larger upload streams it,
+  /// with a ceiling of its own: `req.stream(max:)`, `req.multipart(max:)`.
   public bodyBytes: i64 = 1048576
   /// From the request line to the blank line that ends the headers. This
   /// is what a connection holding its headers open half-sent runs into.
   public headerTimeout: Duration = Duration.seconds(10)
-  /// From the end of the headers to the last byte of the body.
+  /// The longest silence while the body is read: between two reads, not
+  /// the whole upload, so a large body that keeps arriving is never cut off
+  /// and one that stalls is.
   public bodyTimeout: Duration = Duration.seconds(30)
   /// How long a kept-alive connection may stay silent before the next
   /// request. Reaching it is not an error: the connection closes.
@@ -79,7 +83,7 @@ public struct Request {
   public path:    string
   public query:   Map<string, string>
   public headers: Map<string, string>
-  public body:    List<u8>
+  body:           Body
   public peer:    string
   public params:  Map<string, string> = [:]
   /// The query string as it came, after the `?` and before decoding: what
@@ -92,8 +96,58 @@ public struct Request {
   /// A route parameter (`{id}` in the pattern); empty when the route has none.
   public fun param(name: string): string = this.params.get(name) ?: ""
 
-  /// The body as text; a body that is not UTF-8 is a 400.
-  public fun text(): string throws Fail = try this.body.decodeUtf8() ?! badRequest("body is not valid UTF-8")
+  /// The whole body, read now: at most `max` bytes (`Limits.bodyBytes` when
+  /// not said), and a longer one is a 413 — before its first byte when its
+  /// `Content-Length` already says so. A slow sender is a 408, a body that
+  /// ends short or is framed wrongly a 400. What was read is kept, so
+  /// `bytes()`, `text()`, `form()` and the form readers can each be called
+  /// again and see the same body; `stream` reads from the wire and does not
+  /// share it, so after `bytes()` a stream is at its end.
+  public fun bytes(max: i64? = null): List<u8> suspends throws Fail | IoError {
+    val limit = max ?: this.body.defaultMax
+    if (val kept = this.body.cached()) {
+      if (kept.len() > limit) throw tooLarge()
+      return kept
+    }
+    val all = try this.body.withLimit(limit).readAll()
+    this.body.remember(all)
+    all
+  }
+
+  /// The body as text; a body that is not UTF-8 is a 400. Reads like `bytes`.
+  public fun text(max: i64? = null): string suspends throws Fail | IoError =
+    try (try this.bytes(max)).decodeUtf8() ?! badRequest("body is not valid UTF-8")
+
+  /// The body as it arrives, a piece at a time, for one too large to hold or
+  /// worth handling early: `req.stream(max: 1024 * 1024 * 1024)` allows a gigabyte. `max`
+  /// has no default on purpose — the sender decides how much comes, and a
+  /// handler that never says would take whatever a stranger sends.
+  ///
+  /// ```veles
+  /// with (f = try fs.open(target, fs.FileMode.Write)) {
+  ///   val body = req.stream(max: 100 * 1024 * 1024)
+  ///   loop {
+  ///     val chunk = try body.read()
+  ///     if (chunk.isEmpty()) break
+  ///     try f.write(chunk)
+  ///   }
+  /// }
+  /// ```
+  public fun stream(max: i64): Body = this.body.withLimit(max)
+
+  /// The parts of a `multipart/form-data` body, read one at a time as the
+  /// upload arrives; `max` is the ceiling for the whole body, as in `stream`,
+  /// and `maxParts` how many parts are allowed. Another content type is a
+  /// 415, a missing boundary a 400. See `Multipart`.
+  public fun multipart(max: i64, maxParts: i64 = 100): Multipart throws Fail {
+    val (kind, params) = parseParams(this.header(Header.contentType) ?: "")
+    if (kind.toLower() != "multipart/form-data") {
+      throw Fail(status: Status.unsupportedMediaType, text: "expected multipart/form-data, got '${if (kind.isEmpty()) "nothing" else kind.toLower()}'")
+    }
+    val boundary = params.get("boundary") ?: throw badRequest("multipart/form-data without a boundary")
+    if (boundary.isEmpty() || boundary.len() > 70) throw badRequest("malformed multipart boundary")
+    Multipart(source: this.body.withLimit(max), delimiter: "\r\n--$boundary".bytes(), maxParts)
+  }
 
   /// The same request with route parameters filled in.
   fun withParams(params: Map<string, string>): Request =
@@ -134,7 +188,7 @@ public struct Request {
 
   /// The fields of an `application/x-www-form-urlencoded` body. Another
   /// content type is a 415, a body that is not UTF-8 a 400.
-  public fun formFields(): Fields throws Fail {
+  public fun formFields(): Fields suspends throws Fail | IoError {
     val media = (this.header(Header.contentType) ?: "").split(";").at(0)?.trim()?.toLower() ?: ""
     if (media != "application/x-www-form-urlencoded") {
       throw Fail(status: Status.unsupportedMediaType, text: "expected application/x-www-form-urlencoded, got '${if (media.isEmpty()) "nothing" else media}'")
@@ -143,10 +197,10 @@ public struct Request {
   }
 
   /// The first value of a form field, or null.
-  public fun formValue(name: string): string? throws Fail = (try this.formFields()).get(name)
+  public fun formValue(name: string): string? suspends throws Fail | IoError = (try this.formFields()).get(name)
 
   /// Every value of a form field (a checkbox group, a multiple select).
-  public fun formValues(name: string): List<string> throws Fail = (try this.formFields()).all(name)
+  public fun formValues(name: string): List<string> suspends throws Fail | IoError = (try this.formFields()).all(name)
 
   /// The form read into a `T`: numbers and booleans are parsed from the
   /// text, a `List` field takes every value of its name, an optional field
@@ -157,7 +211,7 @@ public struct Request {
   /// struct Signup { name: string, age: i64, newsletter: bool = false }
   /// val s = try req.form<Signup>()
   /// ```
-  public fun form<T: Decodable>(keys: codec.KeyStyle = codec.KeyStyle.AsWritten): T throws Fail =
+  public fun form<T: Decodable>(keys: codec.KeyStyle = codec.KeyStyle.AsWritten): T suspends throws Fail | IoError =
     when (decodeFields<T>(try this.formFields(), keys)) {
       is Ok(v)  => v
       is Err(e) => throw badRequest("invalid form:\n" + e.message())
@@ -172,6 +226,39 @@ public struct Response {
   /// The cookies to set, one `Set-Cookie` line each (a header map holds a
   /// name once, and a response may set many).
   public cookies: List<Cookie> = []
+  /// A body produced while it is sent, instead of `body`: see `Response.stream`.
+  public stream: (sendable fun(BodyWriter) suspends throws IoError)? = null
+  /// The length of a streamed body, when known (see `Response.stream`).
+  public streamLength: i64? = null
+
+  /// A body written as it is produced, for what is too large to hold, is not
+  /// ready yet, or never ends: a big download, a live feed, server-sent
+  /// events. The server sends the head, then calls `producer` with a
+  /// `BodyWriter`; each `write` goes out at once, framed as a chunk
+  /// (`transfer-encoding: chunked`; an HTTP/1.0 client gets the bytes
+  /// followed by the end of the connection). The response is complete when
+  /// `producer` returns.
+  ///
+  /// A failed `write` means the client went away; the producer stops with
+  /// that error. A panic in the producer, or an error it lets escape, can no
+  /// longer become a 500 — the head has gone — so the connection is closed
+  /// without the final chunk and the client sees a truncated body, never one
+  /// that looks complete. A `HEAD` request gets the head and no call.
+  ///
+  /// The producer runs after the handler has returned, so middleware that
+  /// waits for the handler (`timeout`) does not bound it, and it must be a
+  /// sendable function: capture values and handles, not a `var`.
+  ///
+  /// ```veles
+  /// http.Response.stream(http.MediaType.eventStream, out => {
+  ///   loop (i in 0..<3) {
+  ///     try out.writeText("data: tick $i\n\n")
+  ///     await sleep(Duration.seconds(1))
+  ///   }
+  /// })
+  /// ```
+  public static fun stream<T: AsMediaType>(contentType: T, producer: sendable fun(BodyWriter) suspends throws IoError, length: i64? = null, status: Status = Status.ok): Response =
+    Response(status, headers: ["content-type": contentType.mediaType().name], stream: producer, streamLength: length)
 
   /// Plain text.
   public static fun text(body: string, status: Status = Status.ok): Response =
@@ -186,8 +273,8 @@ public struct Response {
     Response(status, headers: ["content-type": "application/json"], body: body.bytes())
 
   /// Raw bytes with a content type.
-  public static fun bytes(body: List<u8>, contentType: string, status: Status = Status.ok): Response =
-    Response(status, headers: ["content-type": contentType], body)
+  public static fun bytes<T: AsMediaType>(body: List<u8>, contentType: T, status: Status = Status.ok): Response =
+    Response(status, headers: ["content-type": contentType.mediaType().name], body)
 
   /// A status and nothing else (`Status.noContent`, `Status.notFound`, ...).
   public static fun empty(status: Status): Response = Response(status)
@@ -200,7 +287,7 @@ public struct Response {
   public fun withHeader(name: string, value: string): Response {
     val h = this.headers.toMutable()
     h.set(name.toLower(), value)
-    Response(status: this.status, headers: h.toMap(), body: this.body, cookies: this.cookies)
+    Response(status: this.status, headers: h.toMap(), body: this.body, cookies: this.cookies, stream: this.stream, streamLength: this.streamLength)
   }
 
   /// The same response setting `cookie` as well. The value is percent-encoded;
@@ -214,7 +301,7 @@ public struct Response {
   @caller_location
   public fun withCookie(cookie: Cookie): Response {
     checkCookie(cookie)
-    Response(status: this.status, headers: this.headers, body: this.body, cookies: this.cookies.concat([cookie]))
+    Response(status: this.status, headers: this.headers, body: this.body, cookies: this.cookies.concat([cookie]), stream: this.stream, streamLength: this.streamLength)
   }
 
   /// The same response telling the browser to forget a cookie: it must be
@@ -243,7 +330,8 @@ public fun handler<E>(h: sendable fun(Request): Response suspends throws E | Fai
       is Fail => Response.text(e.text, status: e.status)
       else    => {
         logs.error("handler failed", field("method", "${req.method}"), field("path", req.path), field("error", e.message()))
-        Response.text("internal server error", status: Status.internalServerError)
+        val status = Status.internalServerError
+        Response.text(body: status.reason(), status: status)
       }
     }
   }
@@ -261,7 +349,8 @@ fun dispatch(h: Handler, req: Request): Response {
     is Ok(resp) => resp
     is Err(p)   => {
       logs.error("handler panicked", field("method", "${req.method}"), field("path", req.path), field("panic", p.message()))
-      Response.text("internal server error", status: Status.internalServerError)
+      val status = Status.internalServerError
+      Response.text(body: status.reason(), status: status)
     }
   }
 }
@@ -288,11 +377,11 @@ public fun call(handler: Handler, method: Method, target: string, body: string =
     path: percentDecode(rawPath, plusIsSpace: false),
     query: parseQuery(rawQuery),
     headers: lower.toMap(),
-    body: body.bytes(),
+    body: Body.hold(body.bytes(), Limits()),
     peer: "test",
     rawQuery,
   )
-  val resp = dispatch(handler, req)
+  val resp = collect(dispatch(handler, req))
   if (method == Method.head || hasNoBody(resp.status)) Response(status: resp.status, headers: resp.headers, cookies: resp.cookies) else resp
 }
 
@@ -414,7 +503,10 @@ fun newRequestId(): string {
 public fun timeout(limit: Duration): Middleware = next => req => {
   when (withTimeout(limit, () => next(req))) {
     is Ok(resp) => resp
-    is Err      => Response.text("service unavailable", status: Status.serviceUnavailable)
+    is Err      => {
+      val status = Status.serviceUnavailable
+      Response.text(status.reason(), status: status)
+    }
   }
 }
 
@@ -439,12 +531,16 @@ fun route(routes: List<Route>, req: Request): Response {
       return r.handler(req.withParams(params))
     }
   }
-  if (allowed.isEmpty()) return Response.text("not found", status: Status.notFound)
+  if (allowed.isEmpty()) {
+    val status = Status.notFound
+    return Response.text(status.reason(), status: status)
+  }
   if (allowed.contains(Method.get) && !allowed.contains(Method.head)) allowed.push(Method.head)
   if (!allowed.contains(Method.options)) allowed.push(Method.options)
   val allow = allowed.map(m => m.name).join(", ")
   if (req.method == Method.options) return Response.empty(Status.noContent).withHeader(Header.allow, allow)
-  Response.text("method not allowed", status: Status.methodNotAllowed).withHeader(Header.allow, allow)
+  val status = Status.methodNotAllowed
+  Response.text(status.reason(), status: status).withHeader(Header.allow, allow)
 }
 
 // the non-empty segments of a path or pattern: "/users/42/" → [users, 42]
@@ -469,47 +565,6 @@ fun matchRoute(pattern: List<string>, segments: List<string>): Map<string, strin
   }
   if (segments.len() != pattern.len()) return null
   params.toMap()
-}
-
-// ---------------------------------------------------------------------------
-// static files
-
-/// A handler serving files under `dir` for a route ending in `*`:
-/// `app.get("/static/*", http.files("./public"))`. A directory serves its
-/// `index.html`; `..` is refused; the content type follows the extension.
-/// It throws like a handler you would write (a missing file is a 404, a
-/// read error a 500), so the router adapts it; `http.handler(http.files(d))`
-/// is the form `serve` takes directly.
-public fun files(dir: string): sendable fun(Request): Response suspends throws Fail | IoError = req => {
-  val rel = req.param("*")
-  var p = if (rel.isEmpty()) dir else path.join(dir, rel)
-  // Two checks, either enough on its own today. `within` is the one that
-  // holds by construction: whatever the request spells, the file must be
-  // under `dir` once `.`, `..` and both separators are resolved — a
-  // `..\secret` is a traversal on Windows even though it has no `/`. A `..`
-  // segment is refused outright as well, since a browser never sends one.
-  if (!path.within(dir, p) || rel.replace("\\", "/").split("/").contains("..")) throw forbidden()
-  if (fs.isDir(p)) p = path.join(p, "index.html")
-  if (!fs.isFile(p)) throw notFound("no such file: /$rel")
-  Response.bytes(try fs.readBytes(p), contentType: contentTypeOf(p))
-}
-
-/// The media type for a file name, by extension; `application/octet-stream`
-/// when unknown.
-public fun contentTypeOf(name: string): string = when (path.ext(name).toLower()) {
-  ".html", ".htm" => "text/html; charset=utf-8"
-  ".css"          => "text/css; charset=utf-8"
-  ".js", ".mjs"   => "text/javascript; charset=utf-8"
-  ".json"         => "application/json"
-  ".txt", ".md"   => "text/plain; charset=utf-8"
-  ".svg"          => "image/svg+xml"
-  ".png"          => "image/png"
-  ".jpg", ".jpeg" => "image/jpeg"
-  ".gif"          => "image/gif"
-  ".ico"          => "image/x-icon"
-  ".wasm"         => "application/wasm"
-  ".pdf"          => "application/pdf"
-  else            => "application/octet-stream"
 }
 
 // ---------------------------------------------------------------------------
@@ -620,10 +675,13 @@ fun connection(conn: net.Conn, handler: Handler, limits: Limits, log: bool, drai
       val resp = dispatch(handler, req)
       // read after the handler: a stop that began while it ran still
       // closes this connection
-      val close = !wantsKeepAlive(req, http10) || drain.stopping.load() || resp.headers.get(Header.connection)?.toLower() == "close"
-      val sent = writeResponse(c, resp, close, headOnly: req.method == Method.head)
+      val close = !wantsKeepAlive(req, http10) || drain.stopping.load() || resp.headers.get(Header.connection)?.toLower() == "close" || !req.body.reusable(drainCap) || (resp.stream != null && http10 && resp.streamLength == null)
+      val sent = writeResponse(c, resp, close, headOnly: req.method == Method.head, http10: http10)
       if (log) logs.info("request", field("peer", "${req.peer}"), field("method", "${req.method}"), field("path", req.path), field("status", resp.status.code), field("took", "${sw.elapsed()}"))
       if (sent is Err || close) break
+      // what the handler left unread is read and dropped, after the answer
+      // has gone out, so that the next request starts where it should
+      if (!req.body.drain(drainCap)) break
     }
   }
 }
@@ -754,27 +812,29 @@ fun readRequest(c: net.Conn, limits: Limits, drain: Drain): (Request, bool)? thr
   }
   // HTTP/1.1 names the host it asks (RFC 9112 §3.2)
   if (!http10 && headers.get("host") == null) throw badRequest("missing Host header")
-  if (headers.get("transfer-encoding") != null) throw Fail(status: Status.notImplemented, text: "chunked requests are not supported")
-  var body: List<u8> = []
+  // Where the body ends is what a proxy in front may have read differently,
+  // so a request that says it two ways is refused (RFC 9112 §6.1); the body
+  // itself is not read here but when the handler asks (see `Body`)
+  val coding = headers.get("transfer-encoding")
   val declared = headers.get("content-length")
-  if (declared != null) {
+  // `Expect: 100-continue` holds the client back until the handler reads;
+  // any other expectation cannot be met (RFC 9110 §10.1.1)
+  val expect = headers.get("expect")
+  if (expect != null && expect.toLower() != "100-continue") throw Fail(status: Status.expectationFailed, text: "expectation failed")
+  val waiting = expect != null && !http10
+  val body = if (coding != null) {
+    if (http10) throw badRequest("transfer-encoding in an HTTP/1.0 request")
+    if (declared != null) throw badRequest("both transfer-encoding and content-length")
+    if (coding.toLower() != "chunked") throw Fail(status: Status.notImplemented, text: "unsupported transfer coding")
+    Body.wire(conn: c, framing: 2, length: 0, waiting: waiting, limits: limits)
+  } else if (declared != null) {
     // digits and nothing else: `+5`, `0x10` and `5.0` read differently
     // elsewhere
     if (!isDigits(declared)) throw badRequest("malformed content-length")
     val length = try declared.toInt() ?! badRequest("malformed content-length")
-    // checked before the read, not after: `readExact` allocates what it
-    // is asked for, and the number came from the peer
-    if (length > limits.bodyBytes) throw Fail(status: Status.contentTooLarge, text: "payload too large")
-    if (length > 0) {
-      when (withTimeout(limits.bodyTimeout, () => try c.readExact(length))) {
-        is Ok(bytes) => body = bytes
-        is Err(e)    => when (e) {
-          is Timeout => throw Fail(status: Status.requestTimeout, text: "request body timeout")
-          is IoError => throw e
-        }
-      }
-      if (body.len() < length) throw badRequest("body shorter than content-length")
-    }
+    if (length == 0) Body.none(limits) else Body.wire(conn: c, framing: 1, length: length, waiting: waiting, limits: limits)
+  } else {
+    Body.none(limits)
   }
   val (rawPath, rawQuery) = target.splitOnce("?") ?: (target, "")
   val req = Request(method: Method(name: method), path: percentDecode(rawPath, plusIsSpace: false), query: parseQuery(rawQuery), headers: headers.toMap(), body, peer: c.peer(), rawQuery)
@@ -834,7 +894,7 @@ public fun percentDecode(s: string, plusIsSpace: bool): string {
 
 // `headOnly` is the answer to a HEAD request: every header a GET would
 // get, `content-length` included, and no body (RFC 9110 §9.3.2).
-fun writeResponse(c: net.Conn, resp: Response, close: bool, headOnly: bool = false) throws IoError {
+fun writeResponse(c: net.Conn, resp: Response, close: bool, headOnly: bool = false, http10: bool = false) suspends throws IoError {
   val head = StringBuilder()
   head.append("HTTP/1.1 ${resp.status.code} ${resp.status.reason()}\r\n")
   var hasType = false
@@ -854,14 +914,35 @@ fun writeResponse(c: net.Conn, resp: Response, close: bool, headOnly: bool = fal
     head.append("set-cookie: ${setCookieLine(cookie)}\r\n")
   }
   val bodyless = hasNoBody(resp.status)
+  val producer = if (bodyless) null else resp.stream
   if (!bodyless) {
-    if (!hasType && !resp.body.isEmpty()) head.append("content-type: application/octet-stream\r\n")
-    head.append("content-length: ${resp.body.len()}\r\n")
+    if (!hasType && (!resp.body.isEmpty() || producer != null)) head.append("content-type: application/octet-stream\r\n")
+    // a streamed body has no length to announce: chunks say where it ends,
+    // and an HTTP/1.0 client, which has no chunks, reads to the close
+    if (producer == null) {
+      head.append("content-length: ${resp.body.len()}\r\n")
+    } else if (val n = resp.streamLength) {
+      head.append("content-length: $n\r\n")
+    } else if (!http10) {
+      head.append("transfer-encoding: chunked\r\n")
+    }
   }
   if (!hasDate) head.append("date: ${httpDate(time.now())}\r\n")
   head.append(if (close) "connection: close\r\n" else "connection: keep-alive\r\n")
   head.append("\r\n")
   val bytes = head.toString().bytes()
+  if (val p = producer) {
+    try c.write(bytes)
+    if (headOnly) return
+    val chunked = !http10 && resp.streamLength == null
+    val out = BodyWriter.toConn(c, chunked: chunked, length: resp.streamLength)
+    val complete = produce(p, out) && out.missing() == 0
+    // the head has gone, so a failure cannot be a 500: the connection ends
+    // without the last chunk, and the client sees a body that stops short
+    if (!complete) throw IoError(path: c.peer(), code: 0, detail: "the response body could not be completed", kind: IoKind.Other)
+    if (chunked) try c.write("0\r\n\r\n".bytes())
+    return
+  }
   try c.write(if (headOnly || bodyless) bytes else bytes.concat(resp.body))
 }
 

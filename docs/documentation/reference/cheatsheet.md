@@ -250,7 +250,7 @@ val n = unsafe { strlen(p) }                  // C calls and raw pointers need u
 // fragment
 use fs; use path; use os
 val text = try fs.readFile(p); try fs.writeFile(p, text); try fs.appendFile(p, "x")
-fs.exists(p); fs.isFile(p); fs.isDir(p); try fs.listDir(d); try fs.walk(d); try fs.mkdir(d); try fs.remove(p); try fs.rename(a, b)
+fs.exists(p); fs.isFile(p); fs.isDir(p); try fs.stat(p) /* size, modified, isDir */; with (f = try fs.open(p)) { try f.read(4096); try f.readAt(off, n) }; try fs.listDir(d); try fs.walk(d); try fs.mkdir(d); try fs.remove(p); try fs.rename(a, b)
 path.join(a, b, c); path.join(parts...); path.dir(p); path.base(p); path.stem(p); path.ext(p); path.isAbsolute(p); path.clean(p); path.within(root, p)  // within: the check before opening a file named from outside
 os.args(); os.env("HOME"); os.pid(); try os.hostname(); os.tempDir(); os.exit(1); val r = try os.run("clang", ["--version"]); r.code; r.stdout; r.stderr; r.ok(); try os.run("git", ["apply", "-"], input: patch)
 val sb = StringBuilder(); sb.append("a"); sb.appendLine("b"); sb.toString()   // linear-time building
@@ -280,7 +280,7 @@ Every waiting call suspends the task; failures throw `IoError` with the address 
 use http
 val app = http.Router()
 app.get("/users/{id}", req => http.Response.json(try find(req.param("id")) ?! http.notFound()))   // Fail → its status, other errors → 500
-app.get("/static/*", http.files("./public"))
+app.get("/static/*", http.files("./public"))                                          // 304/206/416, no-cache; maxAge:, immutable:, index:, dotfiles:, redirect: (D96)
 with (listener = try net.listen(host: "", port: 8080)) { http.serve(listener, app.handler()) }
 ```
 

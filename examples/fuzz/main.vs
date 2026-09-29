@@ -219,8 +219,39 @@ val fuzzLimits = http.Limits(requestLineBytes: 200, headerLineBytes: 100, header
 
 /// What the parser produced, sent back: the method and decoded path in a
 /// header (a path can decode to anything, `\r\n` included) and the body.
-fun echo(req: http.Request): http.Response =
-  http.Response.bytes(req.body, "application/octet-stream").withHeader("x-echo", "${req.method} ${req.path}")
+fun echo(req: http.Request): http.Response suspends throws http.Fail | IoError =
+  http.Response.bytes(try req.bytes(), "application/octet-stream").withHeader("x-echo", "${req.method} ${req.path}")
+
+/// `data` as a chunked body: pieces of random size, some with a chunk
+/// extension, then the last chunk and sometimes a trailer field.
+fun chunked(f: *Fuzzer, data: List<u8>): List<u8> {
+  val out: MutableList<u8> = []
+  var at: i64 = 0
+  loop (at < data.len()) {
+    val n = f.rng.range(1, data.len() - at + 1)
+    val ext = if (f.rng.range(0, 4) == 0) ";x=1" else ""
+    out.addAll("${hexNumber(n)}$ext\r\n".bytes())
+    out.addAll(data.slice(at, at + n))
+    out.addAll("\r\n".bytes())
+    at += n
+  }
+  out.addAll("0\r\n".bytes())
+  if (f.rng.range(0, 3) == 0) out.addAll("X-Trailer: 1\r\n".bytes())
+  out.addAll("\r\n".bytes())
+  out.toList()
+}
+
+fun hexNumber(n: i64): string {
+  if (n == 0) return "0"
+  val digits = "0123456789abcdef"
+  var out = ""
+  var rest = n
+  loop (rest > 0) {
+    out = (digits.substring(rest % 16, rest % 16 + 1) ?: "0") + out
+    rest /= 16
+  }
+  out
+}
 
 /// One request, in parts a fault can edit before they are joined.
 struct Draft {
@@ -266,30 +297,41 @@ fun draft(f: *Fuzzer, last: bool, framed: bool): (Draft, Want) {
     d.headers.push("$name:$value")
   }
   var closes = false
+  // what the handler must read back: the body as sent, or as a chunked
+  // framing decodes it
+  var decodedBody: List<u8> = []
+  var chunkedBody = false
   if (!framed) {
     if (f.rng.range(0, 3) == 0) {
       d.body = f.bytes(fuzzLimits.bodyBytes)
+      decodedBody = d.body
       d.headers.push("Content-Length: ${d.body.len()}")
+    } else if (f.rng.range(0, 4) == 0) {
+      decodedBody = f.bytes(fuzzLimits.bodyBytes)
+      d.body = chunked(f, decodedBody)
+      d.headers.push("Transfer-Encoding: chunked")
+      chunkedBody = true
     } else if (f.rng.range(0, 6) == 0) {
       d.headers.push("Content-Length: 0")
     }
     if (last && f.rng.range(0, 4) == 0) {
       d.headers.push("Connection: close")
       closes = true
-    } else if (last && f.rng.range(0, 6) == 0) {
+    } else if (last && !chunkedBody && f.rng.range(0, 6) == 0) {
+      // HTTP/1.0 has no chunked coding
       d.version = "HTTP/1.0"
       closes = true
     }
   }
   val decoded = http.percentDecode(path, plusIsSpace: false).replace("\r", " ").replace("\n", " ").replace("\u{0}", " ")
-  (d, Want(status: 200, echo: "$method $decoded", body: d.body, closes))
+  (d, Want(status: 200, echo: "$method $decoded", body: decodedBody, closes))
 }
 
 /// The last request, with one fault: its bytes, the status it must get,
 /// and a name for a failure message.
 fun faulty(f: *Fuzzer): (List<u8>, i64, string) {
   var (d, _) = draft(f, last: true, framed: true)
-  when (f.rng.range(0, 21)) {
+  when (f.rng.range(0, 25)) {
     0    => {
       d.target = "/" + "a".repeat(fuzzLimits.requestLineBytes)
       return (d.wire(), 414, "long target")
@@ -323,8 +365,10 @@ fun faulty(f: *Fuzzer): (List<u8>, i64, string) {
       return (d.wire(), 400, "two content-lengths")
     }
     7    => {
-      d.headers.push("Transfer-Encoding: chunked")
-      return (d.wire(), 501, "chunked")
+      // chunked is understood; these codings are not
+      val name = f.rng.pick(["gzip", "gzip, chunked", "identity", "chunked, chunked"]) ?: "gzip"
+      d.headers.push("Transfer-Encoding: $name")
+      return (d.wire(), 501, "transfer coding $name")
     }
     8    => {
       val (version, status) = f.rng.pick([("HTTP/2.0", 505), ("HTTP/3.0", 505), ("HTTP/1.1x", 400), ("http/1.1", 400), ("HTTP/1", 400), ("HTTP/1.", 400), ("HTTP/11.1", 400)]) ?: ("HTTP/2.0", 505)
@@ -384,6 +428,30 @@ fun faulty(f: *Fuzzer): (List<u8>, i64, string) {
     19   => {
       val _ = d.headers.removeAt(0)
       return (d.wire(), 400, "no Host")
+    }
+    20   => {
+      d.headers.push("Transfer-Encoding: chunked")
+      d.headers.push("Content-Length: 5")
+      d.body = "0\r\n\r\n".bytes()
+      return (d.wire(), 400, "chunked and a length")
+    }
+    21   => {
+      d.headers.push("Transfer-Encoding: chunked")
+      val body = f.rng.pick(["zz\r\nabc\r\n0\r\n\r\n", "-1\r\na\r\n0\r\n\r\n", "\r\n0\r\n\r\n", "1 2\r\nab\r\n0\r\n\r\n"]) ?: "zz\r\n"
+      d.body = body.bytes()
+      return (d.wire(), 400, "chunk size in ${showBytes(d.body)}")
+    }
+    22   => {
+      // the client closes inside a chunk
+      d.headers.push("Transfer-Encoding: chunked")
+      d.body = "5\r\nab".bytes()
+      return (d.wire(), 400, "closed inside a chunk")
+    }
+    23   => {
+      // a chunk larger than the ceiling is refused before its data
+      d.headers.push("Transfer-Encoding: chunked")
+      d.body = "${hexNumber(fuzzLimits.bodyBytes + 1)}\r\n".bytes()
+      return (d.wire(), 413, "large chunk")
     }
     else => {
       d.headers.push("Host: other")
@@ -619,7 +687,7 @@ fun main() {
   }
   val listener = net.listen().getOrNull() ?: panic("fuzz: cannot listen on loopback")
   scope {
-    val server = async http.serve(listener, req => echo(req), fuzzLimits, log: false)
+    val server = async http.serve(listener, http.handler(echo), fuzzLimits, log: false)
     loop ((wire, wants) in httpCorpus()) checkHttp(&f, listener.port(), wire, wants)
     loop (_ in 0..<iterations) fuzzHttp(&f, listener.port())
     server.cancel()

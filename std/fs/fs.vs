@@ -2,9 +2,15 @@
 ///
 /// Implemented on top of runtime/c/veles_os.c; every extern call is confined
 /// to one `unsafe` block (D44).
-use os, path as paths
+use os, path as paths, time
 
 extern "C" {
+  fun veles_fs_open(path: string, mode: i64, handle: *raw i64): i64
+  fun veles_fs_file_read_at(handle: i64, offset: i64, max: i64, out: *raw string): i64
+  fun veles_fs_file_write(handle: i64, bytes: List<u8>): i64
+  fun veles_fs_file_size(handle: i64, size: *raw i64): i64
+  fun veles_fs_file_close(handle: i64): i64
+  fun veles_fs_info(path: string, kind: *raw i64, size: *raw i64, mtime: *raw i64): i64
   fun veles_fs_read_file(path: string, out: *raw string): i64
   fun veles_fs_read_bytes(path: string, out: *raw string): i64
   fun veles_fs_write_bytes(path: string, bytes: List<u8>, append: bool): i64
@@ -93,6 +99,146 @@ public fun isDir(path: string): bool = statKind(path) == 2
 
 /// True when `path` is a regular file.
 public fun isFile(path: string): bool = statKind(path) == 1
+
+/// What the file system says about a path, following symbolic links.
+public struct Stat {
+  /// The length in bytes (of a directory, whatever the system reports).
+  public size: i64
+  /// The last write, to the microsecond where the file system keeps that
+  /// much (whole seconds on some).
+  public modified: time.Timestamp
+  public isDir:    bool
+
+  /// Anything that is not a directory.
+  public fun isFile(): bool = !this.isDir
+}
+
+/// Size, last-write time and kind of the entry at `path`; a missing one is
+/// an `IoError` (`kind` NotFound). `isFile` and `isDir` answer only the kind
+/// and never throw.
+public fun stat(path: string): Stat throws IoError {
+  try checkPath(path)
+  var kind: i64 = 0
+  var size: i64 = 0
+  var mtime: i64 = 0
+  // SAFETY: takes `path` by value and stores three numbers in locals that
+  // outlive the call; it keeps no pointer
+  val code = unsafe {
+    veles_fs_info(path, &kind, &size, &mtime)
+  }
+  if (code != 0) throw os.ioError(code, path)
+  Stat(size, modified: time.Timestamp.ofMicros(mtime), isDir: kind == 2)
+}
+
+/// How `open` opens a file.
+public enum FileMode {
+  /// An existing file, for `read` and `readAt`.
+  Read
+  /// A new file, or an existing one emptied, for `write`.
+  Write
+  /// A file created when missing, for `write` at its end.
+  Append
+}
+
+/// An open file, for what does not fit in memory or should not be held
+/// whole: reading a piece at a time, or writing as the data arrives. Close it
+/// with `with` or `close()`. A file opened to read cannot be written, and the
+/// other way round; every failure throws `IoError`.
+///
+/// ```veles
+/// with (f = try fs.open("big.bin")) {
+///   val header = try f.readAt(0, 16)             // any place, in any order
+///   loop {
+///     val chunk = try f.read(65536)              // then from where the last read ended
+///     if (chunk.isEmpty()) break
+///   }
+/// }
+/// ```
+public struct File {
+  private handle: i64
+  private path:   string
+  private next:   Atomic<i64> = Atomic(value: 0)
+  private isOpen: Atomic<bool> = Atomic(value: true)
+
+  /// The length in bytes, now.
+  public fun size(): i64 throws IoError {
+    try this.check()
+    var size: i64 = 0
+    // SAFETY: stores the length in `size`, a local that outlives the call
+    val code = unsafe {
+      veles_fs_file_size(this.handle, &size)
+    }
+    if (code != 0) throw os.ioError(code, this.path)
+    size
+  }
+
+  /// Up to `max` bytes from where the last `read` ended; empty at the end of
+  /// the file. Fewer than `max` is normal and does not mean the end.
+  public fun read(max: i64 = 65536): List<u8> throws IoError {
+    val at = this.next.load()
+    val chunk = try this.readAt(at, max)
+    this.next.store(at + chunk.len())
+    chunk
+  }
+
+  /// Up to `max` bytes at `offset`, whatever `read` has done; empty at or past
+  /// the end.
+  public fun readAt(offset: i64, max: i64): List<u8> throws IoError {
+    try this.check()
+    var data = ""
+    // SAFETY: stores the bytes in `data`, a local that outlives the call; the
+    // handle is open (checked above) and nothing else closes it during the call
+    val code = unsafe {
+      veles_fs_file_read_at(this.handle, offset, max, &data)
+    }
+    if (code != 0) throw os.ioError(code, this.path)
+    data.bytes()
+  }
+
+  /// All of `bytes`, at the end of what was written so far.
+  public fun write(bytes: List<u8>) throws IoError {
+    try this.check()
+    // SAFETY: reads `bytes` within its length and keeps nothing after the call
+    val code = unsafe {
+      veles_fs_file_write(this.handle, bytes)
+    }
+    if (code != 0) throw os.ioError(code, this.path)
+  }
+
+  fun check() throws IoError {
+    if (!this.isOpen.load()) throw IoError(path: this.path, code: 9, detail: "the file is closed", kind: IoKind.InvalidInput)
+  }
+
+  implement Closeable {
+    fun close() {
+      if (!this.isOpen.swap(false)) return
+      // SAFETY: the swap lets exactly one caller through, so the handle is
+      // closed once
+      val _ = unsafe {
+        veles_fs_file_close(this.handle)
+      }
+    }
+  }
+}
+
+/// Opens `path`. `Read` needs the file to exist; `Write` creates it or
+/// empties it; `Append` creates it or keeps what it holds.
+public fun open(path: string, mode: FileMode = FileMode.Read): File throws IoError {
+  try checkPath(path)
+  var handle: i64 = 0
+  val m = when (mode) {
+    FileMode.Read   => 0
+    FileMode.Write  => 1
+    FileMode.Append => 2
+  }
+  // SAFETY: takes `path` by value and stores the handle in `handle`, a local
+  // that outlives the call
+  val code = unsafe {
+    veles_fs_open(path, m, &handle)
+  }
+  if (code != 0) throw os.ioError(code, path)
+  File(handle, path)
+}
 
 // 0 when nothing is there (or the path cannot name anything), 1 a file,
 // 2 a directory

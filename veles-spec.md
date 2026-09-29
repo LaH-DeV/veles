@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.53** — language design complete; D58 adds the derivation story D51 deferred, D59 the standard library's cryptography. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
+**Working draft v0.55** — language design complete; D58 adds the derivation story D51 deferred, D59 the standard library's cryptography. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -2571,6 +2571,195 @@ nothing new (smart cast plus a `val` for unstable places); a single binding
 per condition (the chain avoids the nesting); the same form on `loop`
 (`loop (val line = readLine())` — `loop { val line = readLine() ?: break }`
 already says it; the user answered "No").
+
+### D96 — `std/http`: static files, and `fs.stat` (v0.54)
+
+```veles
+app.get("/assets/*", http.files("./public", maxAge: Duration.days(365), immutable: true))
+app.get("/docs/*", http.files("./site", redirect: false))
+val st = try fs.stat("report.pdf")           // Stat { size, modified: Timestamp, isDir, isFile() }
+```
+
+C2's second task. `http.files` sent a file and a content type; a browser, a
+CDN or a video player expects validators, ranges and a cache policy, and a
+`.env` in the served directory was served like any other file.
+
+**`fs.stat(path): Stat throws IoError`** (public std API): the size, the write
+time as a `time.Timestamp` — microseconds, from the 100 ns NTFS keeps or the
+nanoseconds POSIX does — and whether it is a directory; links are followed; a
+missing entry is `IoError` (`NotFound`). It is the base of every decision
+below, so a `304` or a `412` never reads the file.
+
+**Validators.** `last-modified` and a weak `etag` `W/"<size>-<write µs>"`. The
+conditions run in RFC 9110 §13.2.2's order: `If-Match` (strong comparison, so
+only `*` passes a weak tag) and `If-Unmodified-Since` → 412;
+`If-None-Match` (weak comparison, a list, `*`) and, only when it is absent,
+`If-Modified-Since` → 304, which carries `etag`, `last-modified` and
+`cache-control` and no body. A date that does not parse is ignored.
+`etag: false` / `lastModified: false` drop a header with its conditions.
+
+**One range.** `accept-ranges: bytes`; `bytes=a-b`, `a-`, `-n` → 206 with
+`content-range`; a `b` past the end is cut, a suffix longer than the file is
+the file; a start past the end, or `-0`, → 416 with `content-range: bytes
+*/size`. Several ranges, another unit, `b < a` and unparsable text are ignored
+and the file is sent whole (RFC 9110 §14.2 permits). `If-Range`: a date is
+honoured only if it is the file's to the second; an entity tag needs a strong
+match, which a weak tag never gives, so it means "everything". The body is
+still read whole and sliced until the streaming body model (C2 next task)
+turns that into a seek.
+
+**`Cache-Control`.** `no-cache` by default — safe, and cheap through the 304 —
+or `max-age=N` from `maxAge:`, plus `immutable` from `immutable: true`. No
+`public`/`private`: the handler cannot know whether the route is behind
+authorization. `immutable` without `maxAge`, or a negative `maxAge`, panics at
+the `files` call (`@caller_location`, as D94's cookies).
+
+**Directories and hidden files** (the user: "the code must be configurable
+like web frameworks, so probably no slash pathing should be also an option").
+A directory serves the first of `index: List<string> = ["index.html"]` it
+holds, else 404, with no listing. `/docs` with no slash is a 308 to `/docs/`
+so relative links resolve, keeping the query; `redirect: false` serves the
+index at `/docs` instead. The redirect target is rebuilt from the decoded
+segments, each percent-encoded, so `//docs` or `/\docs` can never become a
+protocol-relative `//host`. A path segment starting with `.` is a 404 — not a
+403, which would confirm the file — unless `dotfiles: true`. Only GET and HEAD
+are served, anything else is a 405 with `allow`.
+
+`contentTypeOf` grew `csv xml webp avif woff woff2 mp3 wav ogg mp4 webm zip`
+(range requests are what media needs).
+
+Rejected (user, recommended of 4, 3, 3 and 3): a content-hash strong ETag
+(reads and hashes the file on every request, and a 304 would save bandwidth
+but not IO); Last-Modified only; `multipart/byteranges` (no client asks for
+it); no ranges; a general `CacheControl` value on any `Response` (can be added
+on top of `maxAge`/`immutable` without breaking them); no header (clients
+guess a lifetime from `Last-Modified`); only an `index` parameter, or nothing
+new (the `.git`/`.env` exposure and the broken relative links stay).
+
+**Both levels and self-hosting.** The high-level spelling is one call with
+named options; the low-level piece is `fs.stat`, which any tool that asks "is
+this out of date" (a build system, the compiler's own incremental cache) needs.
+
+*Addendum (D97):* the body is no longer read whole — `http.files` streams from
+disk with a declared length, so a range is a seek and `HEAD` never opens the
+file. `contentTypeOf` is gone: `MediaType.ofExtension` (D97) is its one spelling.
+
+### D97 — `std/http`: the body model, streaming, multipart, `fs.File`, `MediaType` (v0.55)
+
+```veles
+val text = try req.text()                                   // whole body, at most Limits.bodyBytes
+val body = req.stream(max: 100 * 1024 * 1024)               // as it arrives; `max` has no default
+val form = try req.multipart(max: 50 * 1024 * 1024)         // part by part
+http.Response.stream(http.MediaType.eventStream, out => try out.writeText("data: tick\n\n"))
+with (f = try fs.open(path, fs.FileMode.Write)) { try f.write(chunk) }
+```
+
+C2's third task. A request's body was read whole before the handler ran, into a
+`List<u8>`, only under `Content-Length` (chunked was a 501); a response was a
+`List<u8>` with a computed length. That could not take an upload larger than
+memory, multipart, server-sent events, or a download that is not held whole,
+and `Expect: 100-continue` was ignored. The user chose the recommended option
+of each of four, and asked that the media-type table sit with the named values
+("shouldn't things like `".html", ".htm" => "text/html; charset=utf-8"` sit in
+the 'values' file in the http?").
+
+**A lazy request body.** `Request.body` is gone; the body is read when asked:
+`req.bytes(max:)`, `req.text(max:)` and the form readers collect it — at most
+`Limits.bodyBytes` unless told, 413 over it, before the first byte when the
+`Content-Length` already says so — and keep what they read, so they can be
+called again in any mix (without that, `formValue` then `formValues` would see
+an empty body the second time: found by the existing form test). `req.stream(
+max:)` returns a `Body` with `read(max)`, `readAll()` and `length()` (null when
+chunked); `max` has no default, as `Conn.readLine`'s, since the sender decides
+how much comes. Reads that fail, or are refused over the ceiling, mark the
+connection unusable. `Request` holds shared reader state (a `Mutex`, like
+`Conn`'s buffer), so copies made by `withHeader` see one body. `http.call`
+builds an in-memory body, so tests do not change. Migration: `req.body` →
+`try req.bytes()`; `formFields`/`formValue(s)`/`form<T>`/`text` now
+`suspends throws Fail | IoError`.
+
+**Chunked and framing.** `Transfer-Encoding: chunked` is decoded (extensions
+ignored, chunk-size lines and trailers capped, trailers dropped, the ceiling on
+the decoded size, a chunk that cannot fit refused before its data). Both
+`Transfer-Encoding` and `Content-Length`, or any coding in an HTTP/1.0 request,
+is 400 (RFC 9112 §6.1); a coding other than `chunked` is 501; an unknown
+`Expect` is 417.
+
+**`Expect: 100-continue`** is answered on the first read, not at the head: a
+handler that refuses without reading never invites the upload (and the
+connection closes after, the body having never been sent). **What the handler
+left unread** is read and dropped after the response, up to 64 KiB, so a
+kept-alive connection stays in step; more, or a failed read, closes it.
+**`bodyTimeout`** is now the longest silence between two reads, not the time
+the whole body may take, so a large upload that keeps arriving is not cut off
+(nginx's `client_body_timeout` is the same). A 413 for `Content-Length` over
+the limit now reaches the handler's middleware (it carries a request id); it
+used to be refused in `readRequest` before any handler existed.
+
+**`Response.stream(type, producer, length:)`.** The producer, a sendable
+`fun(BodyWriter) suspends throws IoError`, runs after the head is sent; each
+`write` goes out at once as a chunk (`transfer-encoding: chunked`), or as bare
+bytes with `content-length` when `length:` is given (a download needs one for
+progress and resume; writing more or fewer than declared fails), or as bare
+bytes ended by the connection for an HTTP/1.0 client. An empty write sends
+nothing (an empty chunk would end the body). A write error means the client
+left; a panic in the producer is caught behind the D56 boundary, and either
+closes the connection without the final chunk — the head has gone, so no 500 —
+so a truncated body never looks complete. `HEAD` gets the head and no call. The
+producer runs after the handler returns, so `http.timeout` does not bound it.
+`http.call` collects a stream whole (a never-ending one never returns).
+
+**`http.files` streams**: `sendFile` reads the file 64 KiB at a time with
+`readAt`, with `length:` from the stat.
+
+**`fs.open(path, mode): File`** (`FileMode { Read, Write, Append }`),
+`Closeable`, with `read(max)` (from where the last read ended), `readAt(offset,
+max)`, `write`, `size`. `read` and `readAt` are positional (`pread`,
+`ReadFile` with an offset), the place `read` continues from is the Veles
+side's, so on Windows and POSIX alike a `readAt` does not disturb it. A file
+opened to read refuses writes and the other way round; a closed one refuses.
+Reads and writes run synchronously (no worker-thread offload yet).
+
+**`req.multipart(max:, maxParts: 100)`** returns a `Multipart` whose
+`next(): Part?` yields parts in order; `Part` has `name`, `filename`,
+`contentType`, `headers` and `read(max)`, `bytes(max:)`, `text(max:)`,
+`saveTo(path, max:)` (the part `max`es have no default; over one is 413 and
+`saveTo` removes its file). A part left unread is skipped by `next`; only the
+full boundary line ends a part, so data that resembles the start of one is
+data; a preamble, an epilogue and transport padding are tolerated. Malformed
+framing, a missing boundary/name/Content-Disposition, a part that is not
+`form-data`, oversized part headers (8192) or a body ending inside a part are
+400; another content type is 415. `filename` is the client's word and never a
+path: `saveTo` takes the caller's. Typed `req.form<T>()` for multipart, with a
+file-field type, is not part of this decision (open).
+
+**`MediaType`** joins `Status`, `Method` and `Header` in `values.vs` (D74): a
+value type with constants (`text html css javascript csv eventStream json xml
+form pdf zip wasm octetStream svg png jpeg gif webp avif icon woff woff2 mp3
+wav ogg mp4 webm`), `MediaType.ofExtension(".png" | "png")` (case-insensitive,
+`octetStream` when unknown), `essence()` (type/subtype without parameters,
+lower-cased) and `Display`. `Response.bytes` and `Response.stream` take `T:
+AsMediaType` — a `MediaType`, or a plain string through `implement AsMediaType
+for string` — so both spellings work. `http.contentTypeOf` is removed.
+
+Rejected (user, recommended of 3, 3, 3 and 3): buffered bodies with chunked
+support only (no upload larger than memory, multipart only buffered); a
+per-route stream mode (the server must choose before routing; two paths; a
+streaming route that reads `body` silently sees nothing); a `Response.stream`
+without files, or none (`Range` would keep slicing memory); buffered multipart
+(`List<Part>` inside `bodyBytes`) and deferring it; moving `contentTypeOf` to
+`values.vs` unchanged, and leaving it in `files.vs`.
+
+**Not built (open):** request-body decompression; a bound on a producer from
+`http.timeout`; typed multipart forms; an SSE helper (`out.event(...)`); a
+zero-copy `sendfile`; blocking-thread offload for `fs.File`.
+
+**Both levels and self-hosting.** High level: `req.text()`, `req.form<T>()`,
+`http.files`, a `Response.stream` producer that reads like the loop it is; low
+level: `req.stream`, `Body.read`, `BodyWriter`, `fs.File` with `readAt` — the
+same pieces the std is built from. A compiler in Veles needs `fs.File` and
+`readAt` to read sources incrementally and to write output as it is produced
+without holding a whole file.
 
 ---
 

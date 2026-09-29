@@ -395,9 +395,14 @@ answered from the shape, tuples get `Comparable`, enums get
 ### 5.2 `std/http` — server
 
 - [x] Request limits (§2)
-- [ ] Chunked transfer-encoding: requests (501 today) and responses
-- [ ] Streaming bodies: `Request.body`/`Response.body` as reader/writer,
-      not `List<u8>`; `http.files` streams
+- [x] Chunked transfer-encoding: requests (decoded; extensions/trailers handled, framing conflicts 400/501) and
+      responses (`Response.stream`), D97, 2026-09-29; `examples/fuzz` generates chunked requests and faults
+- [x] Streaming bodies (D97): lazy request body (`req.bytes/text/stream/multipart`, `Expect: 100-continue`,
+      unread bodies drained), `Response.stream` (+ `length:`), `http.files` streams from disk,
+      `fs.open` → `File`, `MediaType`. Tests: `std/http/body.test.vs`, `stream.test.vs`, `multipart.test.vs`,
+      `std/fs/fs.test.vs`; docs 15, 17. Open: request-body decompression, a bound on a producer from
+      `http.timeout`, typed multipart forms, an SSE helper, zero-copy `sendfile`, `fs.File` off the event loop
+- [~] Multipart: streamed parts to disk done (D97); typed `req.form<T>()` with a file field open
 - [x] Middleware: `type Middleware = sendable fun(Handler): Handler`; `router.wrap(m)`
       (`use` is the import keyword, so the verb is `wrap`) — outermost first, around
       the router's own 404s and 405s too
@@ -419,9 +424,13 @@ answered from the shape, tuples get `Comparable`, enums get
       `req.query<T>()` through the codec layer (`http.FormDecoder`, format `form`;
       400 with every problem at its field, 415 for another type), `formFields`,
       `formValue(s)`, `queryFields` (`http.Fields` keeps repeats), `Request.rawQuery`;
-      `std/http/form.test.vs`, `examples/session`. Multipart streamed to disk open
-      (needs the streaming body model)
-- [ ] Static files: `ETag`, `Last-Modified`, `Range`, `Cache-Control`, index files
+      `std/http/form.test.vs`, `examples/session`. Multipart: streamed to disk
+      since D97 (typed `req.form<T>()` with a file field open)
+- [x] Static files (D96, 2026-09-29): `fs.stat`; `http.files` sends `last-modified` + weak `etag`, answers
+      `If-None-Match`/`If-Modified-Since` 304 and `If-Match`/`If-Unmodified-Since` 412 from the stat alone, one
+      `Range` (206/416, `If-Range`), `cache-control` (`no-cache`, or `maxAge:`/`immutable:`), `index:` list,
+      308 to the slash (`redirect: false` off), dotfiles 404 (`dotfiles: true` on), GET/HEAD only.
+      `std/http/files.test.vs`; docs 15, 17. Streams from disk since D97. Open: precompressed `.gz`/`.br` siblings (with compression), directory listing (not offered)
 - [~] Router: method-not-allowed vs not-found distinction (done: 405 + `Allow`), route groups,
       typed path params (`{id: i64}`)
 - [x] In-process test client: `http.call(handler, method, target, body:, headers:)` (2026-09-26; same target parsing and panic boundary as `serve`; docs 17 "Testing a handler")
@@ -847,6 +856,8 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-09-29 | Q19: converting to a type parameter | **`x.wrapTo<T>()`** (user, recommended of 4; spec D86 addendum). Rejected: an `Integer` trait with `T.wrap(from:)`, keeping the std-only `as` exemption, rewriting `Range.reversed()`. |
 | 2026-09-29 | Q4: protected mutable-collection field | **`protected` = look, don't take** (user, recommended of 3; spec D87). Rejected: leave it, read-only view types. |
 | 2026-09-29 | Q8: where a misuse panic points | **`@caller_location`, std only for now** (user, recommended of 3; spec D88). Rejected: leave it, automatic for every std panic. |
+| 2026-09-29 | Body model (plan C2, third task) | **A lazy request body (`req.bytes/text/stream/multipart`, `body` field removed), `Response.stream` with `fs.File` and a streaming `http.files`, streamed multipart, and a `MediaType` value type** (user, recommended of 3, 3, 3 and 3; on the last, the user's note: "shouldn't things like `".html", ".htm" => "text/html; charset=utf-8"` sit in the 'values' file in the http?"; spec D97). Rejected: buffered bodies with chunked support only; a per-route stream mode; `Response.stream` without files, or none; buffered or deferred multipart; moving `contentTypeOf` unchanged, leaving it in `files.vs`. |
+| 2026-09-29 | Static files (plan C2, second task) | **`fs.stat` + weak ETag/Last-Modified with 304/412 from the stat, one byte range (206/416), `no-cache` by default with `maxAge:`/`immutable:` parameters, redirect to the slash + dotfiles 404 + `index:` list, all switchable** (user, recommended of 4, 3, 3 and 3; on directories "the code must be configurable like web frameworks, so probably no slash pathing should be also an option" — hence `redirect: false`; spec D96). Rejected: content-hash strong ETag; Last-Modified only; `multipart/byteranges`; no ranges; a general `CacheControl` value now; no cache header; `index:` only; leaving directories and dotfiles as they were. |
 | 2026-09-29 | Q3: package surface in source | **`public use m` and `public use m { a, T as U }`; manifest `exports` goes away** (user, recommended of 3; spec D89). Rejected: keep manifest exports, whole modules only. |
 | 2026-09-29 | Binding a nullable in a condition (found writing `setCookieLine`) | **`if (val x = e && ...)`, bindings chaining with `&&`, and no `loop` form** (user: "we need something like `?.let` in Kotlin ... execute some code without letting nullable"; recommended A of 3, chains of 2; `loop` "No"; spec D95). Rejected: `x?.let(v => ...)` (a lambda: no `return`/`break`/`continue` out of it); nothing new; a single binding per condition; `loop (val x = e)`. |
 | 2026-09-29 | std/http cookies and forms (plan C2, first task) | **Order: cookies+forms, static-file caching, body model, limits/middleware; `Response.cookies` list with `withCookie`; safe defaults, percent-encoded values, footguns panic at the caller; typed `form<T>()`/`query<T>()` plus `formValue(s)`** (user, all four recommended; spec D94). Rejected: the body model first; multi-map headers now (breaks every `headers:` literal — decided with the body model); Go-style raw cookies with everything off; strict cookies with no encoding; untyped-only and untyped multi-valued forms. |

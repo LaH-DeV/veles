@@ -40,6 +40,58 @@ true true true
 false
 ```
 
+`fs.stat(path)` says more than the three questions above: the size, the time
+of the last write and whether it is a directory. A link is followed, and a
+missing entry is an `IoError` (`NotFound`):
+
+```veles
+// fragment
+val st = try fs.stat("report.pdf")
+io.println("${st.size} bytes, written ${st.modified}, directory: ${st.isDir}")
+```
+
+`st.modified` is a `Timestamp` ([chapter 20](20-time.md)), to the microsecond
+where the file system keeps that much (NTFS keeps 100 ns, ext4 a nanosecond,
+some systems only whole seconds); it is what a `Last-Modified` header and a
+build tool's "is this out of date" both read.
+
+`fs.open(path, mode)` opens a file for what does not fit in memory or should
+not be held whole: reading a piece at a time, or writing as the data arrives.
+`FileMode.Read` (the default) needs the file to exist, `Write` creates it or
+empties it, `Append` creates it or keeps what it has. A `File` is `Closeable`,
+so `with` closes it:
+
+```veles
+use fs, io, os, path
+
+fun main() throws IoError {
+  val p = path.join(os.tempDir(), "veles-tutorial-15-open.bin")
+  with (f = try fs.open(p, fs.FileMode.Write)) {
+    try f.write("0123456789".bytes())
+    try f.write("abcdef".bytes())
+  }
+  with (f = try fs.open(p)) {
+    io.println("${try f.size()} bytes")
+    io.println("${(try f.readAt(8, 4)).decodeUtf8() ?: ""}")
+    io.println("${(try f.read(4)).decodeUtf8() ?: ""} ${(try f.read(100)).decodeUtf8() ?: ""}")
+  }
+  try fs.remove(p)
+}
+```
+
+Output:
+```text
+16 bytes
+89ab
+0123 456789abcdef
+```
+
+`read(max)` continues from where the last `read` ended and returns an empty
+list at the end of the file; fewer than `max` bytes is normal, not the end.
+`readAt(offset, max)` reads anywhere, in any order, and does not move the
+place `read` continues from. A file opened to read cannot be written and the
+other way round, and a closed file refuses; every failure is an `IoError`.
+
 `listDir` gives one directory's names. `fs.walk(root)` gives every file
 under a directory, as paths, depth-first with each directory's entries in
 name order — the same tree always walks the same way. It does not follow

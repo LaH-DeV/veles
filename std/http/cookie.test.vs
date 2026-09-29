@@ -2,11 +2,11 @@
 // what is refused.
 
 test "a value is percent-encoded but for the unreserved bytes" {
-  expect(encodeCookieValue("plain-Text_1.~") == "plain-Text_1.~")
-  expect(encodeCookieValue("a b;c,d\"e\\f") == "a%20b%3Bc%2Cd%22e%5Cf")
-  expect(encodeCookieValue("é") == "%C3%A9")
-  expect(encodeCookieValue("") == "")
-  expect(encodeCookieValue("a=b\r\nSet-Cookie: x") == "a%3Db%0D%0ASet-Cookie%3A%20x")
+  expect(percentEncode("plain-Text_1.~") == "plain-Text_1.~")
+  expect(percentEncode("a b;c,d\"e\\f") == "a%20b%3Bc%2Cd%22e%5Cf")
+  expect(percentEncode("é") == "%C3%A9")
+  expect(percentEncode("") == "")
+  expect(percentEncode("a=b\r\nSet-Cookie: x") == "a%3Db%0D%0ASet-Cookie%3A%20x")
 }
 
 test "the defaults are the safe ones" {

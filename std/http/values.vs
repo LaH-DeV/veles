@@ -183,3 +183,93 @@ public struct Header {
   public static val userAgent: string = "user-agent"
   public static val wwwAuthenticate: string = "www-authenticate"
 }
+
+/// A media type, as a `Content-Type` says it: `text/html; charset=utf-8`.
+/// The constants are what a server most often sends; any other is
+/// `MediaType(name: "application/vnd.api+json")`. `Response.bytes` and
+/// `Response.stream` take one, or a plain string.
+public struct MediaType {
+  public name: string
+
+  public static val text = MediaType(name: "text/plain; charset=utf-8")
+  public static val html = MediaType(name: "text/html; charset=utf-8")
+  public static val css = MediaType(name: "text/css; charset=utf-8")
+  public static val javascript = MediaType(name: "text/javascript; charset=utf-8")
+  public static val csv = MediaType(name: "text/csv; charset=utf-8")
+  public static val eventStream = MediaType(name: "text/event-stream")
+  public static val json = MediaType(name: "application/json")
+  public static val xml = MediaType(name: "application/xml")
+  public static val form = MediaType(name: "application/x-www-form-urlencoded")
+  public static val pdf = MediaType(name: "application/pdf")
+  public static val zip = MediaType(name: "application/zip")
+  public static val wasm = MediaType(name: "application/wasm")
+  public static val octetStream = MediaType(name: "application/octet-stream")
+  public static val svg = MediaType(name: "image/svg+xml")
+  public static val png = MediaType(name: "image/png")
+  public static val jpeg = MediaType(name: "image/jpeg")
+  public static val gif = MediaType(name: "image/gif")
+  public static val webp = MediaType(name: "image/webp")
+  public static val avif = MediaType(name: "image/avif")
+  public static val icon = MediaType(name: "image/x-icon")
+  public static val woff = MediaType(name: "font/woff")
+  public static val woff2 = MediaType(name: "font/woff2")
+  public static val mp3 = MediaType(name: "audio/mpeg")
+  public static val wav = MediaType(name: "audio/wav")
+  public static val ogg = MediaType(name: "audio/ogg")
+  public static val mp4 = MediaType(name: "video/mp4")
+  public static val webm = MediaType(name: "video/webm")
+
+  /// The type for a file extension, with or without the dot and in any
+  /// case (`".PNG"`, `"png"`); `octetStream` when it is not known.
+  public static fun ofExtension(ext: string): MediaType {
+    val e = ext.toLower()
+    when (if (e.startsWith(".")) e.substring(1, e.len()) ?: "" else e) {
+      "html", "htm" => MediaType.html
+      "css"         => MediaType.css
+      "js", "mjs"   => MediaType.javascript
+      "json"        => MediaType.json
+      "txt", "md"   => MediaType.text
+      "csv"         => MediaType.csv
+      "xml"         => MediaType.xml
+      "svg"         => MediaType.svg
+      "png"         => MediaType.png
+      "jpg", "jpeg" => MediaType.jpeg
+      "gif"         => MediaType.gif
+      "webp"        => MediaType.webp
+      "avif"        => MediaType.avif
+      "ico"         => MediaType.icon
+      "woff"        => MediaType.woff
+      "woff2"       => MediaType.woff2
+      "mp3"         => MediaType.mp3
+      "wav"         => MediaType.wav
+      "ogg"         => MediaType.ogg
+      "mp4"         => MediaType.mp4
+      "webm"        => MediaType.webm
+      "wasm"        => MediaType.wasm
+      "pdf"         => MediaType.pdf
+      "zip"         => MediaType.zip
+      else          => MediaType.octetStream
+    }
+  }
+
+  /// The type and subtype alone, lower-cased, without parameters:
+  /// `text/html; charset=utf-8` → `text/html`. What to compare.
+  public fun essence(): string = (this.name.split(";").at(0) ?: "").trim().toLower()
+
+  implement Display {
+    fun toString(): string = this.name
+  }
+  implement AsMediaType {
+    fun mediaType(): MediaType = this
+  }
+}
+
+/// What names a media type: a `MediaType`, or a string that already spells
+/// one (`"application/vnd.api+json"`).
+public trait AsMediaType {
+  fun mediaType(): MediaType
+}
+
+implement AsMediaType for string {
+  fun mediaType(): MediaType = MediaType(name: this)
+}

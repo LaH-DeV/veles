@@ -758,6 +758,47 @@ int64_t veles_fs_stat(const char *path, int64_t plen) {
     return S_ISDIR(st.st_mode) ? 2 : 1;
 }
 
+/* veles_fs_info: what fs.stat reports, following links. Returns 0 or an
+ * errno; *kind is 1 for a file (anything not a directory), 2 for a
+ * directory, *size the length in bytes and *mtime_us the last write in
+ * microseconds since 1970. */
+int64_t veles_fs_info(const char *path, int64_t plen, int64_t *kind, int64_t *size, int64_t *mtime_us) {
+#if defined(_WIN32)
+    /* a handle, not _stat64: st_mtime there is whole seconds, and a
+     * validator wants the 100 ns the file system keeps */
+    HANDLE h = CreateFileW(wstr(path, plen), 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                           OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (h == INVALID_HANDLE_VALUE) {
+        DWORD e = GetLastError();
+        return (e == ERROR_FILE_NOT_FOUND || e == ERROR_PATH_NOT_FOUND) ? ENOENT : (e == ERROR_ACCESS_DENIED ? EACCES : EIO);
+    }
+    BY_HANDLE_FILE_INFORMATION fi;
+    BOOL ok = GetFileInformationByHandle(h, &fi);
+    CloseHandle(h);
+    if (!ok) return EIO;
+    uint64_t ticks = ((uint64_t)fi.ftLastWriteTime.dwHighDateTime << 32) | fi.ftLastWriteTime.dwLowDateTime;
+    *kind = (fi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ? 2 : 1;
+    *size = (int64_t)(((uint64_t)fi.nFileSizeHigh << 32) | fi.nFileSizeLow);
+    /* 100 ns ticks since 1601 → microseconds since 1970 */
+    *mtime_us = (int64_t)(ticks / 10) - 11644473600000000LL;
+    return 0;
+#else
+    struct stat st;
+    if (stat(cstr(path, plen), &st) != 0) return errno;
+#if defined(__APPLE__)
+    int64_t ns = st.st_mtimespec.tv_nsec;
+    int64_t sec = st.st_mtimespec.tv_sec;
+#else
+    int64_t ns = st.st_mtim.tv_nsec;
+    int64_t sec = st.st_mtim.tv_sec;
+#endif
+    *kind = S_ISDIR(st.st_mode) ? 2 : 1;
+    *size = (int64_t)st.st_size;
+    *mtime_us = sec * 1000000 + ns / 1000;
+    return 0;
+#endif
+}
+
 /* veles_fs_lstat: like veles_fs_stat, but a symbolic link is 3 and is not
  * followed. On Windows a junction counts as a link too; other reparse
  * points (OneDrive placeholders, deduplicated files) are ordinary entries,
@@ -912,6 +953,140 @@ bool veles_utf8_valid(const char *s, int64_t len) {
 
 int64_t veles_fs_write_bytes(const char *path, int64_t plen, veles_bytes_view *bytes, bool append) {
     return write_file(path, plen, bytes->data, bytes->len, append ? "ab" : "wb");
+}
+
+/* ---- open files (fs.File) ---------------------------------------------- */
+
+#if defined(_WIN32)
+static int64_t win_errno(DWORD e) {
+    switch (e) {
+    case ERROR_FILE_NOT_FOUND:
+    case ERROR_PATH_NOT_FOUND: return ENOENT;
+    case ERROR_ACCESS_DENIED:
+    case ERROR_SHARING_VIOLATION: return EACCES;
+    case ERROR_FILE_EXISTS:
+    case ERROR_ALREADY_EXISTS: return EEXIST;
+    case ERROR_DIRECTORY: return ENOTDIR;
+    case ERROR_DISK_FULL:
+    case ERROR_HANDLE_DISK_FULL: return ENOSPC;
+    case ERROR_INVALID_HANDLE: return EBADF;
+    default: return EIO;
+    }
+}
+#endif
+
+/* One read is at most this much, so a caller's `max` cannot ask for the
+ * whole address space; a short read is an ordinary answer. */
+#define VELES_FILE_CHUNK ((int64_t)64 << 20)
+
+/* veles_fs_open: mode 0 reads, 1 writes (creating, truncating), 2 appends
+ * (creating). *handle is a descriptor, or a HANDLE on Windows. */
+int64_t veles_fs_open(const char *path, int64_t plen, int64_t mode, int64_t *handle) {
+#if defined(_WIN32)
+    DWORD access = mode == 0 ? GENERIC_READ : (mode == 1 ? GENERIC_WRITE : FILE_APPEND_DATA);
+    DWORD disp = mode == 0 ? OPEN_EXISTING : (mode == 1 ? CREATE_ALWAYS : OPEN_ALWAYS);
+    HANDLE h = CreateFileW(wstr(path, plen), access, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, disp,
+                           FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE) return win_errno(GetLastError());
+    *handle = (int64_t)(intptr_t)h;
+    return 0;
+#else
+    int flags = mode == 0 ? O_RDONLY : (mode == 1 ? (O_WRONLY | O_CREAT | O_TRUNC) : (O_WRONLY | O_CREAT | O_APPEND));
+    int fd = open(cstr(path, plen), flags | O_CLOEXEC, 0666);
+    if (fd < 0) return errno;
+    struct stat st;
+    if (mode == 0 && fstat(fd, &st) == 0 && S_ISDIR(st.st_mode)) {
+        close(fd);
+        return EISDIR;
+    }
+    *handle = fd;
+    return 0;
+#endif
+}
+
+/* veles_fs_file_read_at: up to max bytes at offset, in a string-shaped
+ * buffer; empty at the end of the file. The position of the descriptor is
+ * not used, so the Veles side owns it. */
+int64_t veles_fs_file_read_at(int64_t handle, int64_t offset, int64_t max, veles_string *out) {
+    if (max > VELES_FILE_CHUNK) max = VELES_FILE_CHUNK;
+    if (max <= 0 || offset < 0) {
+        set_string(out, "", 0);
+        return 0;
+    }
+    char *tmp = malloc((size_t)max);
+    if (!tmp) veles_panic("out of memory", 13);
+    int64_t got = 0;
+    int64_t err = 0;
+    veles_blocking_enter();
+#if defined(_WIN32)
+    OVERLAPPED ov;
+    memset(&ov, 0, sizeof ov);
+    ov.Offset = (DWORD)(offset & 0xFFFFFFFF);
+    ov.OffsetHigh = (DWORD)((uint64_t)offset >> 32);
+    DWORD n = 0;
+    if (ReadFile((HANDLE)(intptr_t)handle, tmp, (DWORD)max, &n, &ov)) got = n;
+    else if (GetLastError() != ERROR_HANDLE_EOF) err = win_errno(GetLastError());
+#else
+    ssize_t n;
+    do {
+        n = pread((int)handle, tmp, (size_t)max, (off_t)offset);
+    } while (n < 0 && errno == EINTR);
+    if (n < 0) err = errno;
+    else got = n;
+#endif
+    veles_blocking_leave();
+    if (err) {
+        free(tmp);
+        return err;
+    }
+    set_string(out, tmp, got);
+    free(tmp);
+    return 0;
+}
+
+/* veles_fs_file_write writes all of bytes at the descriptor's position (the
+ * end, for an appended file). */
+int64_t veles_fs_file_write(int64_t handle, veles_bytes_view *bytes) {
+    int64_t done = 0;
+    while (done < bytes->len) {
+#if defined(_WIN32)
+        DWORD n = 0;
+        int64_t left = bytes->len - done;
+        if (!WriteFile((HANDLE)(intptr_t)handle, bytes->data + done, (DWORD)(left > 0x40000000 ? 0x40000000 : left), &n, NULL))
+            return win_errno(GetLastError());
+        done += n;
+#else
+        ssize_t n = write((int)handle, bytes->data + done, (size_t)(bytes->len - done));
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            return errno;
+        }
+        done += n;
+#endif
+    }
+    return 0;
+}
+
+int64_t veles_fs_file_size(int64_t handle, int64_t *size) {
+#if defined(_WIN32)
+    LARGE_INTEGER li;
+    if (!GetFileSizeEx((HANDLE)(intptr_t)handle, &li)) return win_errno(GetLastError());
+    *size = (int64_t)li.QuadPart;
+    return 0;
+#else
+    struct stat st;
+    if (fstat((int)handle, &st) != 0) return errno;
+    *size = (int64_t)st.st_size;
+    return 0;
+#endif
+}
+
+int64_t veles_fs_file_close(int64_t handle) {
+#if defined(_WIN32)
+    return CloseHandle((HANDLE)(intptr_t)handle) ? 0 : win_errno(GetLastError());
+#else
+    return close((int)handle) == 0 ? 0 : errno;
+#endif
 }
 
 /* veles_read_all reads standard input to its end. */

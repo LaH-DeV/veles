@@ -96,7 +96,7 @@ pre { background: #eee; padding: 1em; }
 < HTTP/1.1 404 Not Found [text/plain; charset=utf-8] id=check
 < not found
 > POST /api/notes "xxxxxxxxxxxxxxxxxxxxxxxx...(5000 bytes)"
-< HTTP/1.1 413 Content Too Large [text/plain; charset=utf-8] id=-
+< HTTP/1.1 413 Content Too Large [text/plain; charset=utf-8] id=check
 < payload too large
 > GET /api/notes/9999999999999...(9011 bytes)
 < HTTP/1.1 414 URI Too Long [text/plain; charset=utf-8] id=-

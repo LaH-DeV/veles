@@ -517,6 +517,11 @@ fs.appendFile(path: string, text: string) throws IoError   // creates when missi
 fs.exists(path: string): bool
 fs.isFile(path: string): bool
 fs.isDir(path: string): bool
+fs.stat(path: string): Stat throws IoError                 // Stat { size: i64, modified: Timestamp, isDir: bool, isFile() }; follows links
+fs.open(path: string, mode: FileMode = FileMode.Read): File throws IoError   // enum FileMode { Read, Write /* creates, empties */, Append }; Closeable (D97)
+file.read(max: i64 = 65536): List<u8> throws IoError       // from where the last read ended; [] at the end
+file.readAt(offset: i64, max: i64): List<u8> throws IoError  // anywhere; does not move `read`'s place
+file.write(bytes: List<u8>) throws IoError; file.size(): i64 throws IoError
 fs.listDir(path: string): List<string> throws IoError      // names, sorted
 fs.walk(root: string): List<string> throws IoError         // every file below root, depth-first in name order; links to directories not followed
 fs.mkdir(path: string) throws IoError                      // with parents
@@ -558,7 +563,8 @@ An HTTP/1.1 server on `net` ([chapter 17](../17-http.md)).
 use http
 val app = http.Router()
 app.get("/users/{id}", req => ...)          // get / post / put / delete / any; `{name}` captures, a final `*` the rest
-app.get("/static/*", http.files("./public"))   // index.html for a directory, `..` refused, type by extension
+app.get("/static/*", http.files("./public"))   // ETag + Last-Modified + 304/412, one Range (206/416), `no-cache`, index.html, dotfiles 404, `..` refused
+http.files(dir, maxAge: null, immutable: false, index: ["index.html"], dotfiles: false, redirect: true, etag: true, lastModified: true)   // D96; immutable needs a maxAge
 app.wrap(http.requestId()); app.wrap(http.timeout(Duration.seconds(1))); app.wrap(http.logging())   // first wrap = outermost; wraps the 404s too
 type Middleware = sendable fun(Handler): Handler          // `next => req => ...`; req.withHeader(n, v) hands something to the handlers behind
 http.serve(listener, app.handler(), limits: http.Limits(), log: true)   // forever, one task per connection; cancel its task to stop
@@ -568,9 +574,15 @@ http.Limits(requestLineBytes: 8192, headerLineBytes: 8192, headerCount: 100, hea
 // a byte ceiling answers 414 / 431 / 413 and closes; a time ceiling 408; idleTimeout just closes
 type Handler = sendable fun(Request): Response suspends   // the stored form; `http.handler(h)` adapts a throwing h
 error Fail { status, text }; http.notFound(text); http.badRequest(text); http.forbidden(text)   // thrown → that status; other errors → 500 + log; a panic → 500 + log
-req.method; req.path; req.query; req.headers; req.header(name); req.body; try req.text(); req.param(name); req.peer
-http.Response.text(s, status: http.Status.ok); .html(s); .json(s); .bytes(b, contentType); .empty(status); .redirect(url); resp.withHeader(n, v)
-http.contentTypeOf(name); http.httpDate(t: time.Timestamp); http.percentDecode(s, plusIsSpace)
+req.method; req.path; req.query; req.headers; req.header(name); req.param(name); req.peer
+try req.bytes(max: null); try req.text(max: null)   // the body, read now, at most max (Limits.bodyBytes): 413 over it; kept, so form()/text() can follow (D97)
+req.stream(max: n): Body                            // body.read(max = 65536): List<u8> (empty at the end); body.readAll(); body.length(): i64? (null when chunked); `max` has no default
+try req.multipart(max: n, maxParts: 100): Multipart // try form.next(): Part?; part.name / .filename / .contentType / .headers; try part.read(max) / .bytes(max:) / .text(max:) / .saveTo(path, max:)
+// Transfer-Encoding: chunked decoded; Expect: 100-continue answered on the first read; an unread body is drained (64 KiB) or the connection closes
+http.Response.text(s, status: http.Status.ok); .html(s); .json(s); .bytes(b, contentType); .empty(status); .redirect(url); resp.withHeader(n, v)   // contentType: a MediaType or a string
+http.Response.stream(http.MediaType.eventStream, out => { try out.writeText("data: x\n\n") }, length: null)   // sent as produced: chunked, or content-length when `length` is given; out.write(bytes) / out.writeText(s) (D97)
+http.MediaType.html / .json / .png / ...; http.MediaType.ofExtension(".png"); http.MediaType(name: "application/vnd.api+json"); m.essence()   // D97
+http.httpDate(t: time.Timestamp); http.percentDecode(s, plusIsSpace)
 http.Status.notFound; http.Status(code: 418); s.code; s.reason(); s.isSuccess() / isRedirect() / isClientError() / isServerError(); "$s" is "404 Not Found"
 http.Method.get / head / post / put / delete / patch / options / connect / trace; http.Method(name: "PROPFIND"); req.method == http.Method.post
 http.Header.contentType, .location, .allow, .authorization, .cacheControl, ...   // lower-case names, as req.header() and withHeader() store them

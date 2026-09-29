@@ -65,7 +65,7 @@ HTTP/1.1 404 Not Found | not found
   cancelled — which is how the program above ends. A real server calls
   `serve` from `main` and runs until killed.
 - `Request` has `method`, `path`, `query`, `headers` (lower-case names),
-  `body: List<u8>` and `text()`, plus cookies and forms (below); `Response`
+  `bytes()`, `text()`, `stream(max:)` and `multipart(max:)` for the body, plus cookies and forms (below); `Response`
   is built with `text`, `html`, `json`, `bytes`, `empty(status)`,
   `redirect`, and adjusted with `withHeader` and `withCookie`.
 - Statuses, methods and header names are named values, not numbers and
@@ -169,14 +169,259 @@ registration — the handler would not be a sendable function
 ## Static files
 
 `http.files(dir)` serves the files under a directory for a route ending in
-`*`; a directory serves its `index.html`, `..` is refused, and the content
-type follows the extension:
+`*`. The content type follows the extension and `..` is refused. It also
+does what a browser or a cache expects of a file it may keep (D96):
+
+```veles
+use fs, http, io, os, path
+
+fun main() throws IoError {
+  val root = path.join(os.tempDir(), "veles-doc-static")
+  try fs.mkdir(path.join(root, "docs"))
+  try fs.writeFile(path.join(root, "hello.txt"), "0123456789")
+  try fs.writeFile(path.join(root, "docs", "index.html"), "<h1>docs</h1>")
+
+  val app = http.Router()
+  app.get("/static/*", http.files(root))
+  val h = app.handler()
+  val get = http.Method.get
+
+  val first = http.call(h, get, "/static/hello.txt")
+  io.println("${first.status.code} ${first.headers.get("cache-control") ?: ""}")
+
+  // the client keeps the copy and asks whether it is still good
+  val tag = first.headers.get("etag") ?: ""
+  val again = http.call(h, get, "/static/hello.txt", headers: ["If-None-Match": tag])
+  io.println("${again.status.code} with ${again.body.len()} bytes")
+
+  // and can fetch a piece of it
+  val part = http.call(h, get, "/static/hello.txt", headers: ["Range": "bytes=2-4"])
+  io.println("${part.status.code} ${part.headers.get("content-range") ?: ""} ${part.body.decodeUtf8() ?: ""}")
+
+  val dir = http.call(h, get, "/static/docs")
+  io.println("${dir.status.code} ${dir.headers.get("location") ?: ""}")
+  val hidden = http.call(h, get, "/static/.env")
+  io.println("${hidden.status.code}")
+}
+```
+
+Output:
+```text
+200 no-cache
+304 with 0 bytes
+206 bytes 2-4/10 234
+308 /static/docs/
+404
+```
+
+- **Validators.** Every response carries `last-modified` and a weak `etag`
+  made of the file's size and write time. `If-None-Match` and
+  `If-Modified-Since` are answered with `304` and no body, and `If-Match` and
+  `If-Unmodified-Since` with `412`; all of it is decided from `fs.stat`
+  alone, so a `304` never reads the file. `etag: false` or
+  `lastModified: false` turns one off, with its conditions.
+- **Ranges.** One `Range: bytes=…` is a `206` with `content-range` (video and
+  audio seek with it, downloads resume); a range that starts past the end is a
+  `416` naming the size; a header it cannot honour — several ranges, another
+  unit, nonsense — is ignored and the whole file is sent, as RFC 9110 allows.
+  `If-Range` keeps the range only when its date is the file's. The file is
+  streamed from disk with its length announced, so a range is a seek and a
+  large file is never held in memory.
+- **`Cache-Control`.** `no-cache` by default: the client may keep a copy but
+  asks before using it, which the `304` makes cheap. To let it use the copy
+  unasked, say for how long: `maxAge: Duration.hours(1)`; for a fingerprinted
+  name that never changes, `maxAge: Duration.days(365), immutable: true`. A
+  negative `maxAge`, or `immutable` without one, panics where `files` is
+  called.
+- **Directories.** A directory serves the first of `index` (default
+  `["index.html"]`) it holds, and is a `404` when it holds none; there is no
+  listing. `/docs` without the slash is a `308` to `/docs/` (keeping the
+  query), so the links inside the page resolve; `redirect: false` serves the
+  index at `/docs` itself instead.
+- **Dotfiles.** A path with a segment that starts with `.` (`.env`,
+  `.git/config`) is a `404` — not a `403`, which would confirm the file —
+  unless `dotfiles: true`; serve `/.well-known/` with that, or by mounting the
+  directory on its own.
+- **Methods.** Only `GET` and `HEAD`; another method is a `405` with `allow`.
 
 ```veles
 // fragment
-app.get("/static/*", http.files("./public"))
-app.get("/", req => http.Response.redirect("/static/"))
+app.get("/assets/*", http.files("./public", maxAge: Duration.days(365), immutable: true))
+app.get("/docs/*", http.files("./site", redirect: false, index: ["index.html", "index.htm"]))
+app.get("/", req => http.Response.redirect("/assets/"))
 ```
+
+## Reading a request body
+
+A request's body is not read with its head. The handler asks for it, and it
+is read then, off the wire, under a ceiling the handler can see (D97):
+
+```veles
+use http, io
+
+fun main() {
+  val app = http.Router()
+  app.post("/echo", req => http.Response.text(try req.text()))
+  app.post("/count", req => {
+    val body = req.stream(max: 1000)
+    var bytes = 0
+    var pieces = 0
+    loop {
+      val piece = try body.read(4)
+      if (piece.isEmpty()) break
+      bytes += piece.len()
+      pieces += 1
+    }
+    http.Response.text("$bytes bytes in $pieces pieces")
+  })
+  val h = app.handler()
+  val post = http.Method.post
+  io.println(http.call(h, post, "/echo", body: "hello").body.decodeUtf8() ?: "")
+  io.println(http.call(h, post, "/count", body: "0123456789").body.decodeUtf8() ?: "")
+  io.println("${http.call(h, post, "/count", body: "x".repeat(2000)).status}")
+}
+```
+
+Output:
+```text
+hello
+10 bytes in 3 pieces
+413 Content Too Large
+```
+
+- **Into memory.** `req.bytes()`, `req.text()` and the form readers
+  (`req.form<T>()`, `formValue`) collect the whole body, at most
+  `Limits.bodyBytes` (1 MiB by default) — or the `max:` you pass to `bytes`
+  and `text`. A longer body is a `413`, before its first byte when its
+  `Content-Length` already says so. What was read is kept, so these can be
+  called again, in any mix, and see the same body.
+- **As it arrives.** `req.stream(max: n)` gives a `Body` whose `read(max)`
+  hands out what has come, a piece at a time, so a body larger than memory
+  can go to a file or a parser as it comes. `max` has no default, on purpose:
+  the sender decides how much arrives, and a handler that never says would
+  take whatever a stranger sends. `body.length()` is the `Content-Length`,
+  or `null` when the body is chunked. After `bytes()` a stream is at its end.
+- **Chunked.** `Transfer-Encoding: chunked` is decoded for you, whatever the
+  pieces and chunk extensions; trailer fields are read and dropped. A request
+  that says both `Transfer-Encoding` and `Content-Length`, an unknown chunk
+  size, or a body that stops inside a chunk is a `400`; a coding other than
+  `chunked` is a `501`; the ceiling applies to the decoded size, and a chunk
+  that could not fit under it is refused before its data.
+- **`Expect: 100-continue`.** A client that sends it waits for the server
+  before sending a body. The `100 Continue` goes out when the handler first
+  reads, so a handler that answers `401` or `413` without reading never
+  invites the upload — and the connection closes after such an answer, since
+  the body was never sent. Any other expectation is a `417`.
+- **What the handler did not read.** After the response is sent the rest of
+  the body is read and dropped (up to 64 KiB), so the next request on a
+  kept-alive connection starts where it should; a body longer than that, or
+  one whose read failed, closes the connection instead.
+- **Time.** `bodyTimeout` is the longest silence between two reads, not the
+  time the whole upload may take: a large body that keeps arriving is never
+  cut off, and one that stalls is a `408`.
+
+## Streaming a response
+
+`http.Response.stream(type, producer)` sends a body as the producer writes
+it, for what is too large to hold, is not ready yet, or never ends:
+
+```veles
+use http, io
+
+fun main() {
+  val app = http.Router()
+  app.get("/count", req => http.Response.stream(http.MediaType.text, out => {
+    loop (i in 1..3) {
+      try out.writeText("$i\n")
+    }
+  }))
+  val r = http.call(app.handler(), http.Method.get, "/count")
+  io.println("${r.status} ${(r.body.decodeUtf8() ?: "").replace("\n", ",")}")
+}
+```
+
+Output:
+```text
+200 OK 1,2,3,
+```
+
+The server sends the head, then calls the producer with a `BodyWriter`; each
+`write` goes out at once as a chunk (`transfer-encoding: chunked`; an
+HTTP/1.0 client, which has no chunks, gets the bare bytes and then the end of
+the connection). With `length: n` the body is announced with `content-length`
+and sent unframed — what a download needs for a progress bar and for resuming
+— and a producer that writes more or fewer than `n` bytes fails.
+
+A failed `write` means the client went away, and the producer stops with that
+error. A panic in the producer, or an error it lets escape, can no longer be a
+`500` — the head has gone — so the connection is closed without the final
+chunk and the client sees a truncated body, never one that looks complete. A
+`HEAD` request gets the head and no call. The producer runs after the handler
+has returned, so `http.timeout` does not bound it, and it must be a sendable
+function: capture values and handles, not a `var`. `http.call` collects a
+streamed body whole (a stream that never ends never returns from it), and
+`http.files` streams from disk with a declared length, so a range is a seek and
+a large file is never in memory.
+
+## Uploads: multipart forms
+
+A form with files is `multipart/form-data`. `req.multipart(max:)` reads it
+part by part off the body, so an upload goes to disk as it arrives and only
+the part being read is ever held:
+
+```veles
+use fs, http, io, os, path
+
+fun main() throws IoError {
+  val dir = path.join(os.tempDir(), "veles-doc-upload")
+  try fs.mkdir(dir)
+  val app = http.Router()
+  app.post("/upload", req => {
+    val form = try req.multipart(max: 1024 * 1024)
+    val out = StringBuilder()
+    loop {
+      val part = try form.next() ?: break
+      if (val original = part.filename) {
+        val n = try part.saveTo(path.join(dir, "saved.txt"), max: 64 * 1024)
+        out.append("${part.name}: $original, $n bytes\n")
+      } else {
+        out.append("${part.name} = ${try part.text(max: 256)}\n")
+      }
+    }
+    http.Response.text(out.toString())
+  })
+  val body = "--b\r\nContent-Disposition: form-data; name=\"title\"\r\n\r\nholiday\r\n--b\r\nContent-Disposition: form-data; name=\"photo\"; filename=\"beach.txt\"\r\nContent-Type: text/plain\r\n\r\nsand and sea\r\n--b--\r\n"
+  val resp = http.call(app.handler(), http.Method.post, "/upload", body: body, headers: ["Content-Type": "multipart/form-data; boundary=b"])
+  io.println((resp.body.decodeUtf8() ?: "").trim())
+  io.println(try fs.readFile(path.join(dir, "saved.txt")))
+  try fs.remove(path.join(dir, "saved.txt"))
+  try fs.remove(dir)
+}
+```
+
+Output:
+```text
+title = holiday
+photo: beach.txt, 12 bytes
+sand and sea
+```
+
+- `form.next()` returns the next `Part`, or `null` after the last. A part is
+  read from where the last one left off; one left unread is skipped.
+- A `Part` has `name`, `filename` (only for a file), `contentType` and
+  `headers`, and is read with `read(max)` (a piece), `bytes(max:)`,
+  `text(max:)` or `saveTo(path, max:)`. The `max` of the part functions has
+  no default, and a longer part is a `413`; `saveTo` removes the file it was
+  writing when that happens.
+- **The file name is the client's word.** `part.filename` is what the browser
+  sent — `..\..\x`, `C:\dir\a.png`, anything — so it never names a path:
+  `saveTo` takes the path, built from something you chose.
+- `req.multipart(max:)` bounds the whole body like `stream` does, and
+  `maxParts:` (100) the number of parts. Another content type is a `415`; a
+  missing or overlong boundary, a part without a name, headers that are too
+  large, or a body that ends short is a `400`.
+- Data that looks like the start of a boundary is data: only the full
+  boundary line ends a part.
 
 ## Cookies
 
@@ -450,9 +695,9 @@ http.serve(listener, app, limits: http.Limits(bodyBytes: 8 * 1024 * 1024))
 | `headerLineBytes` | 8192 | one header line |
 | `headerCount` | 100 | how many header lines |
 | `headerBytes` | 65536 | every header line added up |
-| `bodyBytes` | 1048576 | the body, whatever `Content-Length` claims |
+| `bodyBytes` | 1048576 | what `bytes()`, `text()` and `form()` collect, whatever `Content-Length` claims |
 | `headerTimeout` | `Duration.seconds(10)` | request line to the blank line, on one clock |
-| `bodyTimeout` | `Duration.seconds(30)` | the body |
+| `bodyTimeout` | `Duration.seconds(30)` | the longest silence while the body is read |
 | `idleTimeout` | `Duration.seconds(15)` | silence between requests on a kept-alive connection |
 
 A request that reaches a byte ceiling is answered and the connection
@@ -476,7 +721,9 @@ in front of the server and reads the same bytes first:
 - a `Content-Length` that is not plain digits (`+5`, `0x10`), or two that
   disagree;
 - an HTTP/1.1 request without exactly one `Host`, and a version that is
-  not `HTTP/` digit `.` digit (a major version other than 1 is `505`).
+  not `HTTP/` digit `.` digit (a major version other than 1 is `505`);
+- both `Transfer-Encoding` and `Content-Length`, or a chunked coding in an
+  HTTP/1.0 request (a coding other than `chunked` is `501`).
 
 On the way out, the server owns the framing: a handler's
 `content-length`, `transfer-encoding` and `connection` headers are not
@@ -492,15 +739,16 @@ same process and checks every answer against these rules.
 Two ceilings are worth setting for your own server rather than taking the
 default. `bodyBytes` should be as small as the largest thing you accept —
 a JSON API that takes a line of text wants kilobytes, not a megabyte. And
-if a handler streams uploads, raise it there rather than everywhere.
+a handler that takes a larger upload streams it — `req.stream(max:)`,
+`req.multipart(max:)` — with a ceiling of its own, rather than raising this
+for everything.
 
 Below `http`, `net.Conn.readLine(max:)` is where the byte ceiling is
 actually enforced; it has no unbounded form, so a program that reads
 lines from a socket has to say how long a line it will hold
 ([chapter 16](16-networking.md)).
 
-Not in the module yet: TLS, chunked request bodies (answered with 501),
-a client, WebSockets, and graceful shutdown on a signal. Cancelling the
+Not in the module yet: TLS, a client, WebSockets, and graceful shutdown on a signal. Cancelling the
 `serve` task closes the listener and unwinds every connection task —
 that is the shutdown, once a signal can request it.
 

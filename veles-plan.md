@@ -762,3 +762,47 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   `TestIfValRoundTrips`, lsp `TestHoverOnIfValBinding`, `examples/nullbind`
   (evaluation order, chains, else-if, early return, as an expression); docs
   chapter 6, the errors reference and the cheat sheet.
+
+- **2026-09-29, C2 static files: D96.** The user chose every recommended
+  option (validators, one range, `no-cache` default, redirect + dotfiles) and
+  asked that directory handling be configurable, so `redirect: false` serves the
+  index without the slash. `fs.stat` (`veles_fs_info` in `veles_os.c`: a handle
+  and `GetFileInformationByHandle` on Windows for the 100 ns write time,
+  `st_mtim`/`st_mtimespec` elsewhere) returns `Stat { size, modified, isDir }`.
+  `http.files` moved to `std/http/files.vs` as a `FileServer` struct behind the
+  same `sendable fun` and takes `maxAge`, `immutable`, `index`, `dotfiles`,
+  `redirect`, `etag`, `lastModified`; conditions in RFC 9110 order, 304/412
+  decided from the stat, one range with `If-Range`, the slash redirect rebuilt
+  from encoded segments so `//host` cannot appear, only GET/HEAD. Found by the
+  tests: the parallel tests truncated each other's fixture files, so the tree is
+  built once at start-up; `bytes=10-` on ten bytes was read as invalid
+  (fixed, pinned). Tests: `std/http/files.test.vs` (15 tests, run by driver
+  `TestStdHttpUnitTests`); docs chapters 15 and 17 (a run example), the stdlib
+  reference and the cheat sheet. Next in C2: the body model (chunked,
+  streaming, multipart, `Expect: 100-continue`), then limits/middleware.
+
+- **2026-09-29, C2 body model: D97.** The user chose every recommended option
+  (lazy request body, `Response.stream` + `fs.File`, streamed multipart,
+  `MediaType`), the last after asking why the extension table was not with the
+  named values. `std/http/body.vs` (`Body`: Content-Length, chunked and in-memory
+  framing behind a `Mutex`; `100 Continue` on the first read; drain of an
+  unread body up to 64 KiB; the longest-silence timeout), `stream.vs`
+  (`BodyWriter`, `produce` behind the D56 boundary), `multipart.vs`
+  (`Multipart`/`Part` over the body reader), `files.vs` streaming with
+  `readAt`, `values.vs` `MediaType`; `std/fs`: `open` → `File`, backed by
+  `veles_fs_open/file_read_at/file_write/file_size/file_close` in
+  `veles_os.c` (a HANDLE and `ReadFile` with an offset on Windows, `pread`
+  elsewhere). `Response.stream` gained a `length:` (not in the brief) because
+  a download without `content-length` loses progress and resume; a producer that
+  writes more or fewer bytes than declared fails. The fuzz example now sends
+  valid chunked requests and four chunk faults (found: an IoError from a
+  non-UTF-8 chunk line was a 500 — it is a 400 like the head's; a chunked body
+  with HTTP/1.0 is refused by the server, so the generator no longer
+  produces it); the form readers keep what they read so `formValue` then
+  `formValues` still works. Tests: `std/http/body.test.vs`, `stream.test.vs`,
+  `multipart.test.vs` (real sockets for chunked, 100-continue, draining, the
+  stall, truncated streams), `std/fs/fs.test.vs` (`TestStdFsUnitTests`),
+  `examples/fuzz` and `httpd` regenerated (a 413 now carries a request id); docs
+  15 and 17 with five new run examples, the stdlib reference and the cheat
+  sheet. Next in C2: limits and middleware (max connections, CORS, auth hook,
+  compression).

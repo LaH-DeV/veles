@@ -66,7 +66,7 @@ fun setCookieLine(c: Cookie): string {
   val out = StringBuilder()
   out.append(c.name)
   out.append("=")
-  out.append(encodeCookieValue(c.value))
+  out.append(percentEncode(c.value))
   if (val age = c.maxAge) out.append("; Max-Age=${age.toSeconds()}")
   if (val domain = c.domain) out.append("; Domain=$domain")
   out.append("; Path=${c.path}")
@@ -77,8 +77,9 @@ fun setCookieLine(c: Cookie): string {
 }
 
 // Every byte but the unreserved ones (letters, digits, `-._~`) as `%XX`,
-// which is also what keeps `;`, `,`, spaces, quotes and line breaks out.
-fun encodeCookieValue(v: string): string {
+// which is also what keeps `;`, `,`, spaces, quotes and line breaks out of a
+// cookie, and `/` and `\` out of a redirect's path segment.
+fun percentEncode(v: string): string {
   val out = StringBuilder()
   val hex = "0123456789ABCDEF"
   loop (b in v.bytes()) {
