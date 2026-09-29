@@ -1253,7 +1253,7 @@ func funSigString(sig *types.Func) string {
 		if i > 0 {
 			sb.WriteString(", ")
 		}
-		sb.WriteString(p.Name + ": " + p.Type.String())
+		sb.WriteString(lazyPrefix(p) + p.Name + ": " + p.Type.String())
 	}
 	sb.WriteString(")")
 	if sig.Ret != nil && !types.IsUnit(sig.Ret) {
@@ -1311,7 +1311,7 @@ func funDetail(t *FuncTemplate) string {
 				sb.WriteString(", ")
 			}
 			if p.Name != "" {
-				sb.WriteString(p.Name + ": ")
+				sb.WriteString(lazyPrefix(p) + p.Name + ": ")
 			}
 			if lt, ok := p.Type.(*types.List); ok && p.Variadic {
 				sb.WriteString(lt.Elem.String() + "...")

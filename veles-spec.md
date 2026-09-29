@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.48** — language design complete; D58 adds the derivation story D51 deferred, D59 the standard library's cryptography. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
+**Working draft v0.49** — language design complete; D58 adds the derivation story D51 deferred, D59 the standard library's cryptography. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -2276,6 +2276,64 @@ go-to-definition follow a re-export to the original.
 
 Rejected (user, recommended of 3): keeping manifest `exports`, whole modules
 only.
+
+### D90 — `lazy` parameters (v0.49, std-only for now)
+
+```veles
+public fun debug(lazy msg: fun(): string, fields: Field...) {
+  if (!enabled(Level.Debug)) return
+  emit(Level.Debug, msg(), fields)
+}
+
+log.debug("loaded $n rows from $path")   // the string is built only if Debug is on
+log.debug(() => expensiveDump())         // a lambda is passed as it is
+```
+
+A parameter marked `lazy` must have a zero-argument function type,
+`fun(): T`, that does not suspend or throw. At a call, an argument that is
+not itself a lambda is wrapped in one — `f(expr)` is `f(() => expr)` — so it
+runs only if, and each time, the function calls `msg()`. The wrapped
+expression cannot suspend or throw (it runs inside the callee). The
+modifier is refused outside the standard library for now ("reserved for the
+standard library"); lifting that, and a sugar that lets the body read `msg`
+without the call, are open. Swift's `@autoclosure` is the model: the
+parameter stays visibly a function.
+
+Rejected (user, recommended of 3): an `@lazy` attribute spelling; a compiler
+special case for `std/log` alone.
+
+### D91 — `std/log` (v0.49)
+
+```veles
+use log { field }
+
+log.info("served", field("path", req.path), field("ms", 3))
+log.debug("cache miss for $key")                 // `lazy`: built only when Debug is on
+log.setLevel(Level.Warn)                          // default Info; VELES_LOG=debug|info|warn|error|off
+log.withFields([field("id", id)], () => handle(req))   // task-local: children inherit
+```
+
+Levels are `enum Level { Debug, Info, Warn, Error }` (no Fatal: a panic
+already stops the task, D56), with functions `debug info warn error`;
+`Level.Off` is a fifth, threshold-only member (`VELES_LOG=off`), and
+`log.enabled(level)` says whether a message would be logged — the guard for
+calls whose `field(...)` arguments are expensive, since those are evaluated
+at the call (only the message is `lazy`).
+`field<T: Encodable>(key, value): Field` keeps the value's JSON type.
+Output goes to standard error, one line per call written whole under a lock
+(threads do not interleave): on a terminal, text —
+`2026-09-29T10:15:03.123Z INFO  served path=/x ms=3 id=abc` (the level padded to five) — otherwise one
+JSON object per line —
+`{"time":"…","level":"info","msg":"served","path":"/x","ms":3,"id":"abc"}`.
+`withFields` binds fields in a task-local (D72) for the task and the tasks
+it starts; `http.logging()` and `requestId()` use it, so a handler's lines
+carry the request id. The level comes from `VELES_LOG` at startup or
+`setLevel`.
+
+Rejected (user, recommended of 3, 3 and 2): the lambda-only call, a manual
+`enabled` guard; a map of fields, a derived struct per message; text only,
+a pluggable sink trait (later, if wanted); an explicit `Logger` value
+threaded through calls.
 
 ---
 

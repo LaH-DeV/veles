@@ -694,6 +694,9 @@ func (p *printer) params(params []ast.Param, open int, owner ast.Node) {
 		} else if i > 0 {
 			p.w(", ")
 		}
+		if prm.Lazy {
+			p.w("lazy ")
+		}
 		p.w(prm.Name.Name)
 		if prm.Type != nil {
 			p.w(": ")

@@ -661,6 +661,22 @@ d.isZero() / isNegative(): bool;  d.min(o) / d.max(o): Duration
 Duration.parse(s): Duration?          // reads back exactly what "$d" writes; 1h30m, 250ms, 1.5s, -2m30s
 ```
 
+## Module `log`
+
+```veles
+// fragment
+use log { field }
+log.debug(lazy msg, fields: Field...)   // also info, warn, error; the message is built only when the level is on
+field<T: Encodable>(key, value): Field  // a named value; keeps its JSON type
+log.setLevel(level: Level)              // Debug | Info | Warn | Error | Off; starts at Info or VELES_LOG
+log.enabled(level: Level): bool
+log.withFields(fields, f)               // fields on every line logged inside f, child tasks too
+```
+
+One line per call on standard error, written whole: text on a terminal,
+one JSON object otherwise. `http.requestId()` binds the request id this
+way. See [chapter 21](../21-logging.md).
+
 ## Module `random`
 
 ```veles

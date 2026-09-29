@@ -50,3 +50,4 @@
 "variant '%s.%s' does not implement '%s'"  # a variant without the implement is reported at its declaration now (checkSealedVariants), which stops the body checks
 "variants of '%s' disagree on the type of '%s'"  # a sealed trait's method has one signature, which every variant's implement must match
 "variants of sealed trait '%s' must be declared in the same module as the trait (D12)"  # needs two modules; conformance cases are one file each
+"a 'lazy' parameter must be a plain 'fun(): T' — no arguments, effects, default or '...' (D90)"  # std-only, after the reserved check: user code is refused first, and std writes only well-formed ones

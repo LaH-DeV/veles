@@ -1583,7 +1583,10 @@ func (c *Checker) signatureOf(env *typeEnv, d *ast.FunDecl, isTrait bool) *types
 				pt = &types.List{Elem: pt}
 			}
 		}
-		sig.Params = append(sig.Params, types.Param{Name: p.Name.Name, Type: pt, HasDefault: p.Default != nil, Variadic: p.Variadic})
+		if p.Lazy {
+			c.checkLazyParam(env, p, pt, d)
+		}
+		sig.Params = append(sig.Params, types.Param{Name: p.Name.Name, Type: pt, HasDefault: p.Default != nil, Variadic: p.Variadic, Lazy: p.Lazy})
 	}
 	sig.Effects = c.resolveEffects(env, d.Effects, isTrait || d.Extern)
 	return sig

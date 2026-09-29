@@ -486,9 +486,13 @@ behind a name that says "crypto" (§10, 2026-09-23).
 
 ### 5.7 `std/log`
 
-- [ ] Levels, structured fields, JSON or key=value output
-- [ ] Request-scoped logger (task-local, 1.3)
-- [ ] No interpolation cost when the level is off
+- [x] Levels, structured fields, JSON or key=value output (2026-09-29, D91: text on a terminal,
+      JSON otherwise; `VELES_LOG`; `examples`/docs chapter 21)
+- [x] Request-scoped logger (task-local, 1.3): `log.withFields`; `http.requestId()` binds `id`
+- [~] No interpolation cost when the level is off: the message is `lazy` (D90) and is not built;
+      the call still makes a closure (~30 ns a disabled `log.debug` at -O2, measured 2026-09-29;
+      the guarded form is ~0.3 ns) and `field(...)` arguments are evaluated — hoisting the level
+      check before the closure (inlining a lazy callee, or escape analysis) would close it
 
 ### 5.8 `std/db`
 
@@ -801,6 +805,7 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-09-29 | Q4: protected mutable-collection field | **`protected` = look, don't take** (user, recommended of 3; spec D87). Rejected: leave it, read-only view types. |
 | 2026-09-29 | Q8: where a misuse panic points | **`@caller_location`, std only for now** (user, recommended of 3; spec D88). Rejected: leave it, automatic for every std panic. |
 | 2026-09-29 | Q3: package surface in source | **`public use m` and `public use m { a, T as U }`; manifest `exports` goes away** (user, recommended of 3; spec D89). Rejected: keep manifest exports, whole modules only. |
+| 2026-09-29 | std/log design (plan C1) | **`lazy` modifier on a `fun(): T` parameter (std-only), `field(key, value)` tail, text on a terminal / JSON otherwise with `VELES_LOG`, `withFields` on a task-local** (user, recommended of 3, 3, 3 and 2; specs D90, D91). Rejected: `@lazy` attribute, a compiler special case, a lambda-only call, a manual guard, a field map, a struct per message, text only, a sink trait, an explicit Logger value. |
 
 ## 11. Known limitations to revisit
 

@@ -74,7 +74,7 @@ is ready, so the user's answers are never the bottleneck.
 
 In this order, because each unblocks the next real program:
 
-1. **`std/log`** — levels, structured fields, request-scoped through
+1. **Done 2026-09-29.** **`std/log`** — levels, structured fields, request-scoped through
    task-locals, no cost when a level is off (checklist §5.7).
 2. **`std/http` server completeness** — cookies, forms (urlencoded,
    multipart to disk), static-file caching (`ETag`, `Range`), max
@@ -639,3 +639,24 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   `D89-public-use`, format `TestPublicUseIsNotMerged`, LSP
   `TestDefinitionFollowsReexport`, docs chapter 11 ("What a package shows"),
   errors reference, cheat sheet. Notes #19 leaves the notes file.
+
+- **2026-09-29, C1 / D90 + D91: `lazy` parameters and `std/log`.**
+  `lazy` (parser, `ast.Param.Lazy`, `types.Param.Lazy`, `sema/lazy.go`): a
+  parameter of type `fun(): T` (no arguments or effects, std-only) takes a
+  plain expression at the call, wrapped in a lambda by `bindArgs`;
+  formatter, hover and signature help spell the modifier. `std/log`: `Level`
+  (Debug, Info, Warn, Error, Off), `debug/info/warn/error(lazy msg, Field...)`,
+  `field<T: Encodable>`, `setLevel`, `enabled`, `withFields` (a `TaskLocal`,
+  D72), `VELES_LOG`; text on a terminal (a runtime `veles_stderr_is_terminal`,
+  both platforms), JSON otherwise; one `eprintln` per line, which the runtime
+  already writes whole under the stream lock. `http`: `serve`, `logging()`
+  and the handler-failure lines go through `log`; `requestId()` binds `id`
+  for the request, so `logging()` no longer reads the header itself (it needs
+  `requestId()` outside it, as documented). Tests: `std/log/log.test.vs`
+  (both line formats, quoting, level names, thresholds — run by
+  `TestStdLogUnitTests`), `TestLogInAProgram` (typed JSON, laziness, scope
+  through a child task, `VELES_LOG`, 400 lines from 8 tasks all whole),
+  conform `D90-lazy`, format round trip; docs chapter 21, the stdlib
+  reference, chapter 17. Measured: a disabled `log.debug` is ~30 ns (a
+  closure per call), the guarded form ~0.3 ns — checklist §5.7 keeps the
+  hoisting as an open item.

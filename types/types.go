@@ -226,6 +226,7 @@ type Param struct {
 	Type       Type
 	HasDefault bool
 	Variadic   bool // Type is the List<T> the trailing arguments are collected into
+	Lazy       bool // `lazy`: an argument that is not a lambda is wrapped in one (D90)
 }
 
 // Func is a function signature. Sendable marks a value that may cross a

@@ -246,12 +246,12 @@ What the module gives you:
 
 | call | what it does |
 |---|---|
-| `http.logging()` | one line per request on standard error: peer, method, path, status, duration, request id when there is one |
-| `http.requestId()` | the client's `X-Request-Id`, or a fresh 16 hex digits, on the request for the handlers and on the response for the client |
+| `http.logging()` | one `log` line per request ([chapter 21](21-logging.md)): peer, method, path, status, duration, and the request id when `requestId()` wraps it |
+| `http.requestId()` | the client's `X-Request-Id`, or a fresh 16 hex digits, on the request for the handlers and on the response for the client; also the log field `id` for every line logged while the request is handled |
 | `http.timeout(d)` | 503 when the handler takes longer; it runs in its own task and is cancelled, so its `with`s close |
 
-`serve` logs a plainer version of `logging()`'s line itself, so pass
-`log: false` when you wrap it. A **recovery** middleware is not among
+`serve` logs the same request line itself (through `log`, so it follows
+`VELES_LOG`), so pass `log: false` when you wrap `logging()`. A **recovery** middleware is not among
 these because it would have nothing to do: a panic in a handler is
 already caught at the request boundary and answered with a 500.
 

@@ -167,7 +167,7 @@ func signatureOf(ref *sema.Ref) (signatureInfo, bool) {
 	switch t := ref.Type.(type) {
 	case *types.Func:
 		for _, prm := range t.Params {
-			label := prm.Name + ": " + prm.Type.String()
+			label := sema.LazyWord(prm) + prm.Name + ": " + prm.Type.String()
 			if prm.Variadic {
 				if l, ok := prm.Type.(*types.List); ok {
 					label = prm.Name + ": " + l.Elem.String() + "..."

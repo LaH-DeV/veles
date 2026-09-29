@@ -24,6 +24,7 @@
 #include <io.h>    /* _setmode */
 #else
 #include <sys/stat.h> /* fstat: is stdout a file */
+#include <unistd.h>   /* isatty */
 #endif
 
 typedef struct {
@@ -186,6 +187,15 @@ void veles_eprintln(const char *s, int64_t len) {
     if (veles_test_capture(s, len, 1)) return;
     fflush(stdout);
     write_line(stderr, s, len);
+}
+
+/* std/log picks text for a person and JSON for everything else (D91) */
+bool veles_stderr_is_terminal(void) {
+#if defined(_WIN32)
+    return _isatty(_fileno(stderr)) != 0;
+#else
+    return isatty(2) != 0;
+#endif
 }
 
 void veles_blocking_enter(void);

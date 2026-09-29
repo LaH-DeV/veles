@@ -347,3 +347,11 @@ func TestPublicUseIsNotMerged(t *testing.T) {
 		t.Errorf("formatted:\n%s\nwant:\n%s", got, want)
 	}
 }
+
+// A `lazy` parameter (D90) keeps its modifier through the formatter.
+func TestLazyParameterRoundTrips(t *testing.T) {
+	src := "fun debug(lazy msg: fun(): string, fields: Field...) {\n  emit(msg, fields)\n}\n"
+	if got := checkRoundTrip(t, "lazy.vs", src); got != src {
+		t.Errorf("formatted:\n%s\nwant:\n%s", got, src)
+	}
+}

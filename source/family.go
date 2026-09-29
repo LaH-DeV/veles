@@ -44,7 +44,7 @@ var families = []family{
 		`reads better as`, `can be written '`),
 	fam("tests", `\(D78\)`, `says what it checks`, `^a (test|suite)\b`, `^another test`, `\bsuites?\b`,
 		`'test`, `test code`, `the test's body`, `expectThrows`, `'require'`, `'assert'`),
-	fam("attributes", `^@`, `@caller_location`, `@(key|tag|skip|required)`, `attribute`, `is deprecated`, `cannot derive`,
+	fam("attributes", `^@`, `@caller_location`, `^'lazy' is reserved`, `a 'lazy' parameter must be`, `@(key|tag|skip|required)`, `attribute`, `is deprecated`, `cannot derive`,
 		`\(D58\)`, `\(D51\)`),
 	fam("unsafe-and-ffi", `unsafe`, `SAFETY`, `extern`, `C ABI`, `into C`, `handed to C`, `C function pointer`,
 		`raw pointer`, `pointer arithmetic`, `\(D50\)`, `\(D69\)`, `^cannot dereference`, `CLayout`,

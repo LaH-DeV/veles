@@ -14,7 +14,7 @@
 ///   http.serve(listener, app.handler())
 /// }
 /// ```
-use fs, io { eprintln }, net, path, random, time
+use fs, log as logs { field }, net, path, random, time
 
 // ---------------------------------------------------------------------------
 // failing a request
@@ -160,7 +160,7 @@ public fun handler<E>(h: sendable fun(Request): Response suspends throws E | Fai
     is Err(e)   => when (e) {
       is Fail => Response.text(e.text, status: e.status)
       else    => {
-        eprintln("http: ${req.method} ${req.path}: ${e.message()}")
+        logs.error("handler failed", field("method", "${req.method}"), field("path", req.path), field("error", e.message()))
         Response.text("internal server error", status: Status.internalServerError)
       }
     }
@@ -178,7 +178,7 @@ fun dispatch(h: Handler, req: Request): Response {
   when (outcome) {
     is Ok(resp) => resp
     is Err(p)   => {
-      eprintln("http: ${req.method} ${req.path}: panic: ${p.message()}")
+      logs.error("handler panicked", field("method", "${req.method}"), field("path", req.path), field("panic", p.message()))
       Response.text("internal server error", status: Status.internalServerError)
     }
   }
@@ -289,26 +289,26 @@ public struct Router {
 /// ```
 public type Middleware = sendable fun(Handler): Handler
 
-/// One line per request on standard error: peer, method, path, status,
-/// how long it took and the request id when there is one. `serve` logs a
-/// plainer version of the same line itself, so pass `log: false` when you
-/// wrap this one.
+/// One log line per request (std/log: text on a terminal, JSON elsewhere):
+/// peer, method, path, status and how long it took — a `Duration`, so the
+/// unit is in the line — plus the request id when `requestId()` wraps this
+/// one from the outside. `serve` logs the same line itself, so pass
+/// `log: false` when you wrap this one.
 public fun logging(): Middleware = next => req => {
   val sw = time.Stopwatch.start()
   val resp = next(req)
-  val id = req.header(Header.requestId)
-  eprintln("${req.peer} ${req.method} ${req.path} ${resp.status.code} ${sw.elapsed()}" +
-    (if (id == null) "" else " id=$id"))
+  logs.info("request", field("peer", "${req.peer}"), field("method", "${req.method}"), field("path", req.path), field("status", resp.status.code), field("took", "${sw.elapsed()}"))
   resp
 }
 
 /// Gives every request an id — the client's `X-Request-Id` if it sent one,
 /// a fresh one otherwise — and puts it on the request for the handlers
-/// behind it and on the response for the client. Wrap it outside
-/// `logging()` so the log line carries it.
+/// behind it and on the response for the client. It is also bound as the
+/// log field `id` (`log.withFields`) for the whole request, so every line a
+/// handler logs — and `logging()`'s, wrapped inside — carries it.
 public fun requestId(): Middleware = next => req => {
   val id = req.header(Header.requestId) ?: newRequestId()
-  next(req.withHeader(Header.requestId, id)).withHeader(Header.requestId, id)
+  logs.withFields([field("id", id)], () => next(req.withHeader(Header.requestId, id))).withHeader(Header.requestId, id)
 }
 
 // 16 hex digits: enough to tell a day's requests apart in a log, and not
@@ -461,7 +461,7 @@ public fun serve(
   scope {
     val serving = async acceptAndServe(listener, handler, limits, log, drain)
     stop()
-    if (log) eprintln("http: stopping; requests in flight have $grace")
+    if (log) logs.info("stopping", field("grace", "$grace"))
     drain.begin()
     race {
       val _ = await serving => { }
@@ -510,7 +510,7 @@ fun acceptLoop(listener: net.Listener, out: Channel<net.Conn>) {
       is Ok(conn) => out.send(conn)
       is Err(e)   => {
         // out of descriptors, a reset before accept: report and go on
-        eprintln("http: accept: ${e.message()}")
+        logs.warn("accept failed", field("error", e.message()))
         await sleep(Duration.millis(100))
       }
     }
@@ -526,7 +526,7 @@ fun connection(conn: net.Conn, handler: Handler, limits: Limits, log: bool, drai
           when (e) {
             is Fail => {
               val _ = writeResponse(c, Response.text(e.text, status: e.status), close: true)
-              if (log) eprintln("${c.peer()} - ${e.status.code} ${e.text}")
+              if (log) logs.warn("bad request", field("peer", "${c.peer()}"), field("status", e.status.code), field("error", e.text))
             }
             else    => { }  // the peer went away or stayed silent
           }
@@ -539,7 +539,7 @@ fun connection(conn: net.Conn, handler: Handler, limits: Limits, log: bool, drai
       // closes this connection
       val close = !wantsKeepAlive(req, http10) || drain.stopping.load() || resp.headers.get(Header.connection)?.toLower() == "close"
       val sent = writeResponse(c, resp, close, headOnly: req.method == Method.head)
-      if (log) eprintln("${req.peer} ${req.method} ${req.path} ${resp.status.code} ${sw.elapsed()}")
+      if (log) logs.info("request", field("peer", "${req.peer}"), field("method", "${req.method}"), field("path", req.path), field("status", resp.status.code), field("took", "${sw.elapsed()}"))
       if (sent is Err || close) break
     }
   }

@@ -408,6 +408,11 @@ func (f *fnCtx) bindArgs(params []types.Param, args []ast.Arg, what string, span
 		}
 		bound[idx] = a.Value
 	}
+	for i, p := range params {
+		if p.Lazy && bound[i] != nil {
+			bound[i] = lazyArgument(bound[i]) // D90
+		}
+	}
 	return bound, ok
 }
 
