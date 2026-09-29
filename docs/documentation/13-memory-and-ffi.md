@@ -25,7 +25,7 @@ fun build(n: i64): (*Node)? {
 }
 
 fun sum(list: (*Node)?): i64 {
-  var total = 0 as i64
+  var total = 0
   var cur = list
   loop (cur != null) {
     total += cur.value
@@ -35,7 +35,7 @@ fun sum(list: (*Node)?): i64 {
 }
 
 fun main() {
-  var grand = 0 as i64
+  var grand = 0
   loop (_ in 0..<50) {
     grand += sum(build(1000))    // each list becomes garbage after this line
   }
@@ -270,7 +270,7 @@ fun main() {
   val n = 5
   // SAFETY: every step stays inside the n i64 of `block`, freed once after its last use
   unsafe {
-    val block = ffi.alloc(n * 8) as *raw i64
+    val block = ffi.alloc(n * 8).cast<*raw i64>()
     val end = block + n
     var p = block
     loop (p < end) {
@@ -278,7 +278,7 @@ fun main() {
       p += 1
     }
     io.println("${*(end - 1)} ${end - block}")
-    ffi.free(block as *raw u8)
+    ffi.free(block.cast<*raw u8>())
   }
 }
 ```
@@ -415,11 +415,11 @@ extern "C" {
 extern "C" fun ascending(a: *raw u8, b: *raw u8): i32 {
   // SAFETY: qsort calls this only with pointers into the list of i64 it sorts
   val x = unsafe {
-    *(a as *raw i64)
+    *(a.cast<*raw i64>())
   }
   // SAFETY: as for `a`
   val y = unsafe {
-    *(b as *raw i64)
+    *(b.cast<*raw i64>())
   }
   if (x < y) -1 else if (x > y) 1 else 0
 }
@@ -428,7 +428,7 @@ fun main() throws ffi.NulByte {
   val xs: MutableList<i64> = [42, 7, 19, 3]
   // SAFETY: qsort sorts xs.len() elements of 8 bytes inside the lent storage
   xs.withRaw(p => unsafe {
-    qsort(p as *raw u8, xs.len() as u64, 8, &ascending)
+    qsort(p.cast<*raw u8>(), xs.len().wrapU64(), 8, &ascending)
   })
   with (s = try ffi.CString.of("hello")) {
     // SAFETY: `s` is open here; readString copies up to its NUL
@@ -445,8 +445,8 @@ Output:
 Its parameters and result must be `CLayout` (or an `extern fun`); it may
 not throw — C cannot receive the error, so return a status code — and
 may not suspend. A panic inside it ends the process with its location:
-it cannot unwind through C's frames. `p as *raw T` reinterprets a raw
-pointer (C's `void *`), and `&x as *raw u8` gives C the address of a
+it cannot unwind through C's frames. `p.cast<*raw T>()` reinterprets a raw
+pointer (C's `void *`), and `(&x).cast<*raw u8>()` gives C the address of a
 Veles value for the length of a call; both need `unsafe`, as does calling
 through an `extern fun` value. `examples/ffi` puts all of it together.
 

@@ -40,5 +40,5 @@ fun main() {
   println("len ${s.len()} pop ${s.pop() ?: -1} pop ${s.pop() ?: -1} pop ${s.pop() ?: -1}")
   println(describe(Cat(name: "Tom")))
   println(describe(42))
-  println("first ${first([7, 8], 0)} ${first([] as List<string>, "none")}")
+  println("first ${first([7, 8], 0)} ${first([], "none")}")
 }

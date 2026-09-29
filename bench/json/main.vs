@@ -11,7 +11,7 @@ struct Record {
 
 fun main() throws EncodeError | DecodeError {
   var records: MutableList<Record> = []
-  loop (i in 0..<2000) records.push(Record(id: i, name: "record number $i", score: (i as f64) * 0.5, tags: ["a", "bb", "ccc"]))
+  loop (i in 0..<2000) records.push(Record(id: i, name: "record number $i", score: (i.toF64()) * 0.5, tags: ["a", "bb", "ccc"]))
   val input = records.toList()
   val sw = time.Stopwatch.start()
   var check: i64 = 0

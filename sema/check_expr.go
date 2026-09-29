@@ -1608,23 +1608,30 @@ func (f *fnCtx) castExpr(e *ast.CastExpr) Expr {
 		x = f.checkExpr(e.X, to)
 	}
 	from := x.Type()
+	_, internal := e.Type.(*ast.ResolvedType) // the compiler's own (derive)
+	done := func(r Expr) Expr {
+		if !internal {
+			f.removedAs(e, from, to)
+		}
+		return r
+	}
 	if types.IsInvalid(from) || types.IsInvalid(to) {
 		return bad()
 	}
 	if types.Identical(from, to) {
-		return x
+		return done(x)
 	}
 	if types.IsNumeric(from) && types.IsNumeric(to) {
-		return &Cast{exprBase{to}, x}
+		return done(&Cast{exprBase{to}, x})
 	}
 	if conv := f.convert(x, to); conv != nil {
-		return conv
+		return done(conv)
 	}
 	if gp, ok := from.(*types.Pointer); ok && !gp.Raw && isRawPointer(to) && f.unsafe > 0 {
 		// `&x as *raw u8`: the address C sees for the length of a call, as
 		// the implicit `*T` to `*raw T` inside unsafe is (the collector
 		// does not move objects)
-		return &Cast{exprBase{to}, x}
+		return done(&Cast{exprBase{to}, x})
 	}
 	if isRawPointer(from) && isRawPointer(to) {
 		// C's `void *` to what it points at, and back (D69): a raw pointer
@@ -1632,7 +1639,7 @@ func (f *fnCtx) castExpr(e *ast.CastExpr) Expr {
 		if f.unsafe == 0 {
 			f.errorf(e.Pos, "casting a raw pointer requires an 'unsafe' block (D44)")
 		}
-		return &Cast{exprBase{to}, x}
+		return done(&Cast{exprBase{to}, x})
 	}
 	switch {
 	case types.IsEnum(from) && types.IsNumeric(to):
@@ -1640,7 +1647,7 @@ func (f *fnCtx) castExpr(e *ast.CastExpr) Expr {
 	case types.IsNumeric(from) && types.IsEnum(to):
 		f.errorf(e.Pos, "cannot cast '%s' to '%s'; an enum is not its number — look the member up with '%s.fromValue(n)' (D57)", from, to, to)
 	default:
-		f.errorf(e.Pos, "cannot cast '%s' to '%s'; 'as' converts between numeric types only", from, to)
+		f.errorf(e.Pos, "cannot cast '%s' to '%s'; 'as' no longer converts (D86); numeric conversions are methods, e.g. '.toI64()'", from, to)
 	}
 	return bad()
 }

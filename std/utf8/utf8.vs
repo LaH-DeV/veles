@@ -175,7 +175,7 @@ public fun decodeBytes(bytes: List<u8>, at: i64): Rune? {
 /// surrogate), `F0` only by `90..BF`, and `F4` only by `80..8F` (above that
 /// is past U+10FFFF).
 fun step(b0: u8, b1: u8, b2: u8, b3: u8, rest: i64): Rune? {
-  if (b0 < 0x80) return Rune(code: b0 as i64, size: 1)
+  if (b0 < 0x80) return Rune(code: b0.toI64(), size: 1)
   // 0x80..0xC1 is a stray continuation byte or an overlong two-byte lead
   if (b0 < 0xC2 || b0 > 0xF4) return null
 
@@ -199,14 +199,14 @@ fun step(b0: u8, b1: u8, b2: u8, b3: u8, rest: i64): Rune? {
     size == 3 => 0x0F
     else      => 0x07
   }
-  var code = (((b0 & mask) as i64) << 6) | ((b1 & 0x3F) as i64)
+  var code = (((b0 & mask).toI64()) << 6) | ((b1 & 0x3F).toI64())
   if (size > 2) {
     if (!isContinuation(b2)) return null
-    code = (code << 6) | ((b2 & 0x3F) as i64)
+    code = (code << 6) | ((b2 & 0x3F).toI64())
   }
   if (size > 3) {
     if (!isContinuation(b3)) return null
-    code = (code << 6) | ((b3 & 0x3F) as i64)
+    code = (code << 6) | ((b3 & 0x3F).toI64())
   }
   Rune(code, size)
 }
@@ -227,25 +227,25 @@ public fun encodeTo(out: MutableList<u8>, code: i64): i64 {
   val cp = if (isScalar(code)) code else replacement
   when {
     cp < 0x80    => {
-      out.push(cp as u8)
+      out.push(cp.wrapU8())
       1
     }
     cp < 0x800   => {
-      out.push((0xC0 | (cp >> 6)) as u8)
-      out.push((0x80 | (cp & 0x3F)) as u8)
+      out.push((0xC0 | (cp >> 6)).wrapU8())
+      out.push((0x80 | (cp & 0x3F)).wrapU8())
       2
     }
     cp < 0x10000 => {
-      out.push((0xE0 | (cp >> 12)) as u8)
-      out.push((0x80 | ((cp >> 6) & 0x3F)) as u8)
-      out.push((0x80 | (cp & 0x3F)) as u8)
+      out.push((0xE0 | (cp >> 12)).wrapU8())
+      out.push((0x80 | ((cp >> 6) & 0x3F)).wrapU8())
+      out.push((0x80 | (cp & 0x3F)).wrapU8())
       3
     }
     else         => {
-      out.push((0xF0 | (cp >> 18)) as u8)
-      out.push((0x80 | ((cp >> 12) & 0x3F)) as u8)
-      out.push((0x80 | ((cp >> 6) & 0x3F)) as u8)
-      out.push((0x80 | (cp & 0x3F)) as u8)
+      out.push((0xF0 | (cp >> 18)).wrapU8())
+      out.push((0x80 | ((cp >> 12) & 0x3F)).wrapU8())
+      out.push((0x80 | ((cp >> 6) & 0x3F)).wrapU8())
+      out.push((0x80 | (cp & 0x3F)).wrapU8())
       4
     }
   }

@@ -50,12 +50,12 @@ public struct Uuid {
     val b: MutableList<u8> = []
     var s = 40
     loop (s >= 0) {
-      b.push(((ms >> s) & 255) as u8)
+      b.push(((ms >> s) & 255).wrapU8())
       s = s - 8
     }
-    b.push(0x70 | ((counter >> 8) & 0x0f) as u8)  // version 7 + counter high
-    b.push((counter & 255) as u8)                 // counter low
-    b.push((r.at(0) & 0x3f) | 0x80)               // variant 10
+    b.push(0x70 | ((counter >> 8) & 0x0f).wrapU8())  // version 7 + counter high
+    b.push((counter & 255).wrapU8())                 // counter low
+    b.push((r.at(0) & 0x3f) | 0x80)                  // variant 10
     loop (i in 1..<r.len()) b.push(r.at(i))
     Uuid(data: b.toList())
   }
@@ -105,7 +105,7 @@ public struct Uuid {
   public fun bytes(): List<u8> = this.data
 
   /// The version digit: 4 for `v4()`, 7 for `v7()`, 0 for `zero()`.
-  public fun version(): i64 = ((this.byte(6) >> 4) & 0x0f) as i64
+  public fun version(): i64 = ((this.byte(6) >> 4) & 0x0f).toI64()
 
   /// The milliseconds a version 7 id was made at, or `null` for any other
   /// version.
@@ -114,7 +114,7 @@ public struct Uuid {
     var v = 0
     var i = 0
     loop (i < 6) {
-      v = (v << 8) | (this.byte(i) as i64)
+      v = (v << 8) | (this.byte(i).toI64())
       i = i + 1
     }
     v
@@ -177,7 +177,7 @@ struct V7Clock {
       this.millis = now
       // a random start in the lower half leaves 2048 increments and keeps
       // the counter from being a visible sequence
-      this.counter = (randomU64() % 2048) as i64
+      this.counter = (randomU64() % 2048).wrapI64()
       return (this.millis, this.counter)
     }
     // the same millisecond, or a clock that went backwards: keep the
@@ -185,7 +185,7 @@ struct V7Clock {
     this.counter = this.counter + 1
     if (this.counter > 4095) {
       this.millis = this.millis + 1
-      this.counter = (randomU64() % 2048) as i64
+      this.counter = (randomU64() % 2048).wrapI64()
     }
     (this.millis, this.counter)
   }

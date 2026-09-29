@@ -299,23 +299,21 @@ entry:
   %a11 = alloca i64
   %a14 = alloca i32
   %a17 = alloca double
-  %a20 = alloca i64
-  %a23 = alloca i8
-  %a26 = alloca float
-  %a29 = alloca double
-  %a32 = alloca float
-  %a35 = alloca [21 x i8]
-  %a41 = alloca [21 x i8]
-  %a46 = alloca [21 x i8]
-  %a52 = alloca [21 x i8]
-  %a57 = alloca %str
-  %a60 = alloca [21 x i8]
-  %a66 = alloca [21 x i8]
-  %a71 = alloca %str
+  %a25 = alloca { i1, i64 }
+  %a33 = alloca { i1, i8 }
+  %a36 = alloca float
+  %a39 = alloca double
+  %a42 = alloca float
+  %a45 = alloca [21 x i8]
+  %a51 = alloca [21 x i8]
+  %a56 = alloca [21 x i8]
+  %a62 = alloca [21 x i8]
+  %a67 = alloca %str
   %a74 = alloca %str
   %a77 = alloca %str
-  %a79 = alloca %str
-  %a80 = alloca [19 x %str]
+  %a80 = alloca %str
+  %a82 = alloca %str
+  %a83 = alloca [19 x %str]
   store i64 %p1, ptr %a1
   store double %p2, ptr %a2
   %t3 = load i64, ptr %a1
@@ -335,103 +333,108 @@ entry:
   store double %t16, ptr %a17
   %t18 = load double, ptr %a2
   %t19 = call i64 @llvm.fptosi.sat.i64.f64(double %t18)
-  store i64 %t19, ptr %a20
-  %t21 = load double, ptr %a2
-  %t22 = call i8 @llvm.fptoui.sat.i8.f64(double %t21)
-  store i8 %t22, ptr %a23
-  %t24 = load double, ptr %a2
-  %t25 = fptrunc double %t24 to float
-  store float %t25, ptr %a26
-  %t27 = load float, ptr %a26
-  %t28 = fpext float %t27 to double
-  store double %t28, ptr %a29
-  %t30 = load i64, ptr %a1
-  %t31 = uitofp i64 %t30 to float
-  store float %t31, ptr %a32
-  %t33 = load i8, ptr %a5
-  %t34 = zext i8 %t33 to i64
-  %t36 = call i64 @veles_u64_format(ptr %a35, i64 %t34)
-  %t37 = insertvalue %str undef, ptr %a35, 0
-  %t38 = insertvalue %str %t37, i64 %t36, 1
-  %t39 = load i16, ptr %a8
-  %t40 = sext i16 %t39 to i64
-  %t42 = call i64 @veles_i64_format(ptr %a41, i64 %t40)
-  %t43 = insertvalue %str undef, ptr %a41, 0
-  %t44 = insertvalue %str %t43, i64 %t42, 1
-  %t45 = load i64, ptr %a11
-  %t47 = call i64 @veles_i64_format(ptr %a46, i64 %t45)
-  %t48 = insertvalue %str undef, ptr %a46, 0
-  %t49 = insertvalue %str %t48, i64 %t47, 1
-  %t50 = load i32, ptr %a14
-  %t51 = zext i32 %t50 to i64
-  %t53 = call i64 @veles_u64_format(ptr %a52, i64 %t51)
-  %t54 = insertvalue %str undef, ptr %a52, 0
-  %t55 = insertvalue %str %t54, i64 %t53, 1
-  %t56 = load double, ptr %a17
-  call void @veles_f64_to_string(ptr %a57, double %t56)
-  %t58 = load %str, ptr %a57
-  %t59 = load i64, ptr %a20
-  %t61 = call i64 @veles_i64_format(ptr %a60, i64 %t59)
-  %t62 = insertvalue %str undef, ptr %a60, 0
-  %t63 = insertvalue %str %t62, i64 %t61, 1
-  %t64 = load i8, ptr %a23
-  %t65 = zext i8 %t64 to i64
-  %t67 = call i64 @veles_u64_format(ptr %a66, i64 %t65)
-  %t68 = insertvalue %str undef, ptr %a66, 0
-  %t69 = insertvalue %str %t68, i64 %t67, 1
-  %t70 = load float, ptr %a26
-  call void @veles_f32_to_string(ptr %a71, float %t70)
-  %t72 = load %str, ptr %a71
-  %t73 = load double, ptr %a29
-  call void @veles_f64_to_string(ptr %a74, double %t73)
+  %t20 = fcmp oge double %t18, -9223372036854775808.0
+  %t21 = fcmp olt double %t18, 9223372036854775808.0
+  %t22 = and i1 %t20, %t21
+  %t23 = insertvalue { i1, i64 } undef, i1 %t22, 0
+  %t24 = insertvalue { i1, i64 } %t23, i64 %t19, 1
+  store { i1, i64 } %t24, ptr %a25
+  %t26 = load double, ptr %a2
+  %t27 = call i8 @llvm.fptoui.sat.i8.f64(double %t26)
+  %t28 = fcmp ogt double %t26, -1.0
+  %t29 = fcmp olt double %t26, 256.0
+  %t30 = and i1 %t28, %t29
+  %t31 = insertvalue { i1, i8 } undef, i1 %t30, 0
+  %t32 = insertvalue { i1, i8 } %t31, i8 %t27, 1
+  store { i1, i8 } %t32, ptr %a33
+  %t34 = load double, ptr %a2
+  %t35 = fptrunc double %t34 to float
+  store float %t35, ptr %a36
+  %t37 = load float, ptr %a36
+  %t38 = fpext float %t37 to double
+  store double %t38, ptr %a39
+  %t40 = load i64, ptr %a1
+  %t41 = uitofp i64 %t40 to float
+  store float %t41, ptr %a42
+  %t43 = load i8, ptr %a5
+  %t44 = zext i8 %t43 to i64
+  %t46 = call i64 @veles_u64_format(ptr %a45, i64 %t44)
+  %t47 = insertvalue %str undef, ptr %a45, 0
+  %t48 = insertvalue %str %t47, i64 %t46, 1
+  %t49 = load i16, ptr %a8
+  %t50 = sext i16 %t49 to i64
+  %t52 = call i64 @veles_i64_format(ptr %a51, i64 %t50)
+  %t53 = insertvalue %str undef, ptr %a51, 0
+  %t54 = insertvalue %str %t53, i64 %t52, 1
+  %t55 = load i64, ptr %a11
+  %t57 = call i64 @veles_i64_format(ptr %a56, i64 %t55)
+  %t58 = insertvalue %str undef, ptr %a56, 0
+  %t59 = insertvalue %str %t58, i64 %t57, 1
+  %t60 = load i32, ptr %a14
+  %t61 = zext i32 %t60 to i64
+  %t63 = call i64 @veles_u64_format(ptr %a62, i64 %t61)
+  %t64 = insertvalue %str undef, ptr %a62, 0
+  %t65 = insertvalue %str %t64, i64 %t63, 1
+  %t66 = load double, ptr %a17
+  call void @veles_f64_to_string(ptr %a67, double %t66)
+  %t68 = load %str, ptr %a67
+  %t69 = load { i1, i64 }, ptr %a25
+  %t70 = call %str @show.T_i64_N({ i1, i64 } %t69)
+  %t71 = load { i1, i8 }, ptr %a33
+  %t72 = call %str @show.T_u8_N({ i1, i8 } %t71)
+  %t73 = load float, ptr %a36
+  call void @veles_f32_to_string(ptr %a74, float %t73)
   %t75 = load %str, ptr %a74
-  %t76 = load float, ptr %a32
-  call void @veles_f32_to_string(ptr %a77, float %t76)
+  %t76 = load double, ptr %a39
+  call void @veles_f64_to_string(ptr %a77, double %t76)
   %t78 = load %str, ptr %a77
-  %t81 = getelementptr [19 x %str], ptr %a80, i64 0, i64 0
-  store %str %t38, ptr %t81
-  %t82 = getelementptr [19 x %str], ptr %a80, i64 0, i64 1
-  store %str { ptr @.str.10, i64 1 }, ptr %t82
-  %t83 = getelementptr [19 x %str], ptr %a80, i64 0, i64 2
-  store %str %t44, ptr %t83
-  %t84 = getelementptr [19 x %str], ptr %a80, i64 0, i64 3
-  store %str { ptr @.str.10, i64 1 }, ptr %t84
-  %t85 = getelementptr [19 x %str], ptr %a80, i64 0, i64 4
-  store %str %t49, ptr %t85
-  %t86 = getelementptr [19 x %str], ptr %a80, i64 0, i64 5
-  store %str { ptr @.str.10, i64 1 }, ptr %t86
-  %t87 = getelementptr [19 x %str], ptr %a80, i64 0, i64 6
-  store %str %t55, ptr %t87
-  %t88 = getelementptr [19 x %str], ptr %a80, i64 0, i64 7
-  store %str { ptr @.str.10, i64 1 }, ptr %t88
-  %t89 = getelementptr [19 x %str], ptr %a80, i64 0, i64 8
-  store %str %t58, ptr %t89
-  %t90 = getelementptr [19 x %str], ptr %a80, i64 0, i64 9
-  store %str { ptr @.str.10, i64 1 }, ptr %t90
-  %t91 = getelementptr [19 x %str], ptr %a80, i64 0, i64 10
-  store %str %t63, ptr %t91
-  %t92 = getelementptr [19 x %str], ptr %a80, i64 0, i64 11
-  store %str { ptr @.str.10, i64 1 }, ptr %t92
-  %t93 = getelementptr [19 x %str], ptr %a80, i64 0, i64 12
-  store %str %t69, ptr %t93
-  %t94 = getelementptr [19 x %str], ptr %a80, i64 0, i64 13
-  store %str { ptr @.str.10, i64 1 }, ptr %t94
-  %t95 = getelementptr [19 x %str], ptr %a80, i64 0, i64 14
-  store %str %t72, ptr %t95
-  %t96 = getelementptr [19 x %str], ptr %a80, i64 0, i64 15
-  store %str { ptr @.str.10, i64 1 }, ptr %t96
-  %t97 = getelementptr [19 x %str], ptr %a80, i64 0, i64 16
-  store %str %t75, ptr %t97
-  %t98 = getelementptr [19 x %str], ptr %a80, i64 0, i64 17
-  store %str { ptr @.str.10, i64 1 }, ptr %t98
-  %t99 = getelementptr [19 x %str], ptr %a80, i64 0, i64 18
-  store %str %t78, ptr %t99
-  call void @veles_string_concat_n(ptr %a79, ptr %a80, i64 19)
-  %t100 = load %str, ptr %a79
-  %t101 = extractvalue %str { ptr @.str.11, i64 20 }, 0
-  %t102 = extractvalue %str { ptr @.str.11, i64 20 }, 1
-  call void @veles_call_push(ptr %t101)
-  call void @v_std.io.println(%str %t100)
+  %t79 = load float, ptr %a42
+  call void @veles_f32_to_string(ptr %a80, float %t79)
+  %t81 = load %str, ptr %a80
+  %t84 = getelementptr [19 x %str], ptr %a83, i64 0, i64 0
+  store %str %t48, ptr %t84
+  %t85 = getelementptr [19 x %str], ptr %a83, i64 0, i64 1
+  store %str { ptr @.str.10, i64 1 }, ptr %t85
+  %t86 = getelementptr [19 x %str], ptr %a83, i64 0, i64 2
+  store %str %t54, ptr %t86
+  %t87 = getelementptr [19 x %str], ptr %a83, i64 0, i64 3
+  store %str { ptr @.str.10, i64 1 }, ptr %t87
+  %t88 = getelementptr [19 x %str], ptr %a83, i64 0, i64 4
+  store %str %t59, ptr %t88
+  %t89 = getelementptr [19 x %str], ptr %a83, i64 0, i64 5
+  store %str { ptr @.str.10, i64 1 }, ptr %t89
+  %t90 = getelementptr [19 x %str], ptr %a83, i64 0, i64 6
+  store %str %t65, ptr %t90
+  %t91 = getelementptr [19 x %str], ptr %a83, i64 0, i64 7
+  store %str { ptr @.str.10, i64 1 }, ptr %t91
+  %t92 = getelementptr [19 x %str], ptr %a83, i64 0, i64 8
+  store %str %t68, ptr %t92
+  %t93 = getelementptr [19 x %str], ptr %a83, i64 0, i64 9
+  store %str { ptr @.str.10, i64 1 }, ptr %t93
+  %t94 = getelementptr [19 x %str], ptr %a83, i64 0, i64 10
+  store %str %t70, ptr %t94
+  %t95 = getelementptr [19 x %str], ptr %a83, i64 0, i64 11
+  store %str { ptr @.str.10, i64 1 }, ptr %t95
+  %t96 = getelementptr [19 x %str], ptr %a83, i64 0, i64 12
+  store %str %t72, ptr %t96
+  %t97 = getelementptr [19 x %str], ptr %a83, i64 0, i64 13
+  store %str { ptr @.str.10, i64 1 }, ptr %t97
+  %t98 = getelementptr [19 x %str], ptr %a83, i64 0, i64 14
+  store %str %t75, ptr %t98
+  %t99 = getelementptr [19 x %str], ptr %a83, i64 0, i64 15
+  store %str { ptr @.str.10, i64 1 }, ptr %t99
+  %t100 = getelementptr [19 x %str], ptr %a83, i64 0, i64 16
+  store %str %t78, ptr %t100
+  %t101 = getelementptr [19 x %str], ptr %a83, i64 0, i64 17
+  store %str { ptr @.str.10, i64 1 }, ptr %t101
+  %t102 = getelementptr [19 x %str], ptr %a83, i64 0, i64 18
+  store %str %t81, ptr %t102
+  call void @veles_string_concat_n(ptr %a82, ptr %a83, i64 19)
+  %t103 = load %str, ptr %a82
+  %t104 = extractvalue %str { ptr @.str.11, i64 20 }, 0
+  %t105 = extractvalue %str { ptr @.str.11, i64 20 }, 1
+  call void @veles_call_push(ptr %t104)
+  call void @v_std.io.println(%str %t103)
   call void @veles_call_pop()
   ret void
 }

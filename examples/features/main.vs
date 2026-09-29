@@ -47,8 +47,8 @@ fun total<T: Area>(xs: List<T>): f64 =
 fun wrap(): (i32, i64, u8) {
   val big: i32 = 2147483647
   val wrapped = big +% 1
-  val widened = big as i64 + 1
-  val small = 300 as u8
+  val widened = big.toI64() + 1
+  val small = 300.wrapU8()
   (wrapped, widened, small)
 }
 

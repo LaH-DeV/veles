@@ -266,7 +266,7 @@ struct Env {
 }
 
 fun show(e: Expr): string = when (e) {
-  is Literal(value)          => if (value == value.trunc()) "${value as i64}" else "$value"
+  is Literal(value)          => if (value == value.trunc()) "${value.toI64()}" else "$value"
   is Variable(name)          => name
   is Unary(op, operand)      => "($op${show(*operand)})"
   is Binary(op, left, right) => "(${show(*left)} $op ${show(*right)})"
@@ -274,7 +274,7 @@ fun show(e: Expr): string = when (e) {
   is Assign(name, value)     => "$name = ${show(*value)}"
 }
 
-fun render(x: f64): string = if (x == x.trunc() && x.abs() < 1.0e15) "${x as i64}" else x.toFixed(4)
+fun render(x: f64): string = if (x == x.trunc() && x.abs() < 1.0e15) "${x.toI64()}" else x.toFixed(4)
 
 fun main() {
   val script = [

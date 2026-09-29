@@ -50,7 +50,7 @@ struct Calc {
     }
     var n: i64 = 0
     loop (isDigit(this.peek())) {
-      n = n * 10 + (this.peek() - '0') as i64
+      n = n * 10 + (this.peek() - '0').toI64()
       this.pos += 1
     }
     n

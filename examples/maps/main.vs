@@ -29,7 +29,7 @@ fun main() {
   println("$m ${m.get(Point(x: 1, y: 2)) ?: "?"} removed ${m.remove(Point(x: 3, y: 4))} ${m.remove(Point(x: 9, y: 9))} $m")
   var seen = MutableSet<i64>()
   loop (x in [3, 1, 3, 2, 1]) {
-    if (!seen.add(x as i64)) println("dup $x")
+    if (!seen.add(x)) println("dup $x")
   }
   println("$seen ${seen.contains(2)} ${seen.len()} ${seen.toList()}")
   var byKey: MutableMap<(i64, bool), List<string>> = [:]
@@ -44,11 +44,11 @@ fun main() {
   println("")
   var big: MutableMap<i64, i64> = [:]
   loop (i in 0..<1000) {
-    val k = i as i64
+    val k = i
     big.set(k, k * k)
   }
   loop (i in 0..<500) {
-    big.remove((i * 2) as i64)
+    big.remove(i * 2)
   }
   println("${big.len()} ${big.get(999) ?: -1} ${big.get(998) ?: -1}")
   var stock = mut ["apples": 3, "pears": 0]

@@ -1,5 +1,5 @@
 // D21/D57 and the operators: literals fit their type, operators are defined
-// for the types that have them, `as` converts numbers only.
+// for the types that have them, `as` only renames (D86).
 use io
 
 enum Color { Red, Green }
@@ -24,7 +24,7 @@ fun floatRemainder(x: f64): f64 = x % 2.0 // error: '%' is not defined for float
 fun wrapFloat(x: f64): f64 = x +% 1.0 // error: wrapping operator '+%' is only defined for integers
 fun colorNumber(c: Color): i64 = c as i64 // error: an enum is not its number — read it with '.value'
 fun numberColor(n: i64): Color = n as Color // error: look the member up with 'Color.fromValue(n)'
-fun textNumber(s: string): i64 = s as i64 // error: 'as' converts between numeric types only
+fun textNumber(s: string): i64 = s as i64 // error: 'as' no longer converts (D86)
 fun floatRange(): Range<f64> = 1.0..2.0 // error: ranges are over integers, found 'f64'
 fun emptyList() {
   val xs = [] // error: cannot infer the element type of an empty list

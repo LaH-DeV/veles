@@ -85,7 +85,7 @@ fun parseAll(items: List<string>): List<i64> throws ParseError {
 
 fun total(items: List<string>): i64 throws ParseError {
   val numbers = try parseAll(items)
-  numbers.fold(0 as i64, (a, b) => a + b)
+  numbers.fold(0, (a, b) => a + b)
 }
 
 fun main() {

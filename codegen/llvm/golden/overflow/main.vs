@@ -17,12 +17,12 @@ fun bump(a: i8): i8 {
   x
 }
 fun wrapped(a: i8, b: i8): i8 = a +% b
-fun narrow(x: i64): u8 = x as u8
+fun narrow(x: i64): u8 = x.wrapU8()
 
 fun sumUpTo(hi: u8): i64 {
   var n = 0
   loop (i in 250..hi) {
-    n += i as i64
+    n += i.toI64()
   }
   n
 }
@@ -49,13 +49,13 @@ fun attempt(what: string, f: sendable fun(): i64) {
 }
 
 fun main() {
-  attempt("127 + 1 (i8)", () => add(127, 1) as i64)
-  attempt("0 - 1 (u8)", () => sub(0, 1) as i64)
+  attempt("127 + 1 (i8)", () => (add(127, 1)).toI64())
+  attempt("0 - 1 (u8)", () => (sub(0, 1)).toI64())
   attempt("MIN * -1", () => mul(-9223372036854775807 - 1, -1))
-  attempt("-MIN (i32)", () => neg(-2147483647 - 1) as i64)
+  attempt("-MIN (i32)", () => (neg(-2147483647 - 1)).toI64())
   attempt("MIN / -1", () => quot(-9223372036854775807 - 1, -1))
-  attempt("MIN.abs() (i16)", () => absolute(-32768) as i64)
-  attempt("x += 1 at 127 (i8)", () => bump(127) as i64)
+  attempt("MIN.abs() (i16)", () => (absolute(-32768)).toI64())
+  attempt("x += 1 at 127 (i8)", () => bump(127).toI64())
   io.println("127 +% 1 (i8) = ${wrapped(127, 1)}")
   io.println("300 as u8 = ${narrow(300)}, -1 as u8 = ${narrow(-1)}")
   io.println("sum of 250..255 (u8) = ${sumUpTo(255)}")

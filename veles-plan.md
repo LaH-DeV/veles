@@ -68,6 +68,8 @@ is ready, so the user's answers are never the bottleneck.
 | B7 | **Done 2026-09-28.** `veles new --template server` (checklist §6) | logging, `/healthz`, graceful shutdown wired; runs and tests first try |
 | B8 | **Blocked 2026-09-28: not by speed (with `reserve` the prelude form is as fast at -O2) but by effects — the lowered adapters let a lambda throw or suspend (`xs.map(a => try eval(a))` is a `Result`); a prelude function would need to be generic over its argument's effects. See the progress log.** Move the Go-lowered eager adapters into the prelude (notes #14) | benchmark first (`veles-bench`); move only what is not slower at -O2 |
 
+| B9 | **Done 2026-09-29.** **D86: numeric conversions are methods; `as` only renames** (decided 2026-09-29) | `toT()` / `wrapT()` on all ten numeric types and `p.cast<*raw U>()`; `x as T` an error with a fix and a lint migrating std, examples, docs and tests; literal overflow is a compile error; formatter, LSP hover, docs (tutorial, cheat sheet, errors), a codegen golden and sema conformance cases; Windows and WSL green |
+
 ## C — Standard library breadth (each public API asked first)
 
 In this order, because each unblocks the next real program:
@@ -552,3 +554,27 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   program did the text change, `veles fmt` the layout; every expected output
   unchanged). Docs and the compiler's own Go tests keep the qualified form.
   Tests: `TestAutoImportOnCompletion`, `TestRenamedImportHoverAndRename`.
+
+- **2026-09-29, B9 / D86: numeric conversions are methods, `as` only
+  renames.** `x.toT()` on all twelve numeric types (`i8…usize`, `f32`, `f64`):
+  total where nothing can be lost, a `T?` (null when out of range) otherwise;
+  a float truncates toward zero and NaN is null. `x.wrapT()` between integers
+  keeps the low bits; a literal that cannot fit (`300.toU8()`) is a compile
+  error. `p.cast<*raw U>()` replaces `as *raw U` (unsafe). Codegen:
+  `num.toChecked` (range test by converting back and comparing, with the sign
+  flip check; floats by bounds, NaN false) beside the existing cast. `x as T`
+  keeps parsing with an error naming the method and a fix — `veles check --fix`
+  migrated std, examples, bench and the goldens (~140 sites; nested casts took
+  two passes); docs (chapters 2, 3, 6, 7, 13, 19, cheat sheet, errors
+  reference: three new anchors under `numbers`) and the Go tests' embedded
+  programs by hand. Two float→int sites became explicit decisions
+  (`Duration.ofSeconds` panics when the count does not fit, `jwt` refuses an
+  out-of-range NumericDate) and `Value.asI64` reads a float only when
+  integral. Hover/completion entries for every method. Tests: conform
+  `D86-conversions`, `examples/conversions` (edges of every family), golden
+  `arith` regenerated. Q19 (decided the same day): `x.wrapTo<T>()` is
+  `wrapT()` with the target as a type argument, for generic code (the range
+  iterators use it); the embedded-std `as` exemption is gone. Also: `internal/wsl-test.sh`
+  cleaned the clone after, not before, checking out HEAD, so a file the
+  commit began to track aborted the checkout and the run used a stale base;
+  order fixed.

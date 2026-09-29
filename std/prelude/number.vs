@@ -12,9 +12,9 @@ fun unsignedToRadix(v: u64, radix: i64): string {
   if (v == 0) return "0"
   var n = v
   var out = ""
-  val base = radix as u64
+  val base = radix.wrapU64()
   loop (n > 0) {
-    val d = (n % base) as i64
+    val d = (n % base).wrapI64()
     out = (DIGITS.substring(d, d + 1) ?: "?") + out
     n = n / base
   }
@@ -29,7 +29,7 @@ extend i64 {
   /// The number written in `radix` (2 to 36; lower-case digits): `255.toString(radix: 16)` is `"ff"`.
   public fun toString(radix: i64 = 10): string {
     checkRadix(radix)
-    if (this < 0) "-" + unsignedToRadix((0 -% this) as u64, radix) else unsignedToRadix(this as u64, radix)
+    if (this < 0) "-" + unsignedToRadix((0 -% this).wrapU64(), radix) else unsignedToRadix(this.wrapU64(), radix)
   }
 }
 
@@ -55,5 +55,5 @@ extend f64 {
 
 extend f32 {
   /// The number with exactly `digits` decimals, rounded.
-  public fun toFixed(digits: i64): string = (this as f64).toFixed(digits)
+  public fun toFixed(digits: i64): string = (this.toF64()).toFixed(digits)
 }

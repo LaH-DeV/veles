@@ -318,7 +318,7 @@ fun newRequestId(): string {
   val out = StringBuilder()
   var bits = random.nextU64()
   loop (_ in 0..<16) {
-    val d = (bits % 16) as i64
+    val d = (bits % 16).wrapI64()
     out.append(digits.substring(d, d + 1) ?: "0")
     bits = bits / 16
   }
@@ -719,9 +719,9 @@ fun parseQuery(text: string): Map<string, string> {
 }
 
 fun hexValue(b: u8): i64 {
-  if (b >= '0' && b <= '9') return (b - '0') as i64
-  if (b >= 'a' && b <= 'f') return (b - 'a') as i64 + 10
-  if (b >= 'A' && b <= 'F') return (b - 'A') as i64 + 10
+  if (b >= '0' && b <= '9') return (b - '0').toI64()
+  if (b >= 'a' && b <= 'f') return (b - 'a').toI64() + 10
+  if (b >= 'A' && b <= 'F') return (b - 'A').toI64() + 10
   -1
 }
 
@@ -738,7 +738,7 @@ public fun percentDecode(s: string, plusIsSpace: bool): string {
       val hi = hexValue(bytes.at(i + 1) ?: panic("percentDecode: i + 2 < len was checked"))
       val lo = hexValue(bytes.at(i + 2) ?: panic("percentDecode: i + 2 < len was checked"))
       if (hi >= 0 && lo >= 0) {
-        out.push((hi * 16 + lo) as u8)
+        out.push((hi * 16 + lo).wrapU8())
         i += 3
         continue
       }

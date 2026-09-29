@@ -778,6 +778,51 @@ func (g *gen) cast(e *sema.Cast) string {
 	if _, ok := from.(*types.List); ok {
 		return x // MutableList to List: same representation
 	}
+	return g.convertValue(x, from, to)
+}
+
+// fitsConversion is the i1 saying `x` (of type `from`) is inside the range of
+// `to`, given `val`, the same value already converted. An integer fits when
+// converting back gives it again and the sign did not flip; a float fits
+// when its truncation is inside the range (NaN compares false).
+func (g *gen) fitsConversion(x, val string, from, to types.Type) string {
+	fl, tl := g.llType(from), g.llType(to)
+	and := func(a, b string) string {
+		v := g.newTmp()
+		g.emit("%s = and i1 %s, %s", v, a, b)
+		return v
+	}
+	if types.IsFloat(from) {
+		n := types.BitSize(to)
+		hi := strconv.FormatFloat(math.Ldexp(1, n), 'f', 1, 64)
+		lo, loOp := "-1.0", "ogt"
+		if types.IsSigned(to) {
+			hi = strconv.FormatFloat(math.Ldexp(1, n-1), 'f', 1, 64)
+			lo, loOp = "-"+hi, "oge"
+		}
+		a, b := g.newTmp(), g.newTmp()
+		g.emit("%s = fcmp %s %s %s, %s", a, loOp, fl, x, lo)
+		g.emit("%s = fcmp olt %s %s, %s", b, fl, x, hi)
+		return and(a, b)
+	}
+	back := g.convertValue(val, to, from)
+	eq := g.newTmp()
+	g.emit("%s = icmp eq %s %s, %s", eq, fl, back, x)
+	switch {
+	case types.IsSigned(from) && !types.IsSigned(to):
+		nonNeg := g.newTmp()
+		g.emit("%s = icmp sge %s %s, 0", nonNeg, fl, x)
+		return and(eq, nonNeg)
+	case !types.IsSigned(from) && types.IsSigned(to):
+		nonNeg := g.newTmp()
+		g.emit("%s = icmp sge %s %s, 0", nonNeg, tl, val)
+		return and(eq, nonNeg)
+	}
+	return eq
+}
+
+// convertValue converts a numeric value already computed as `x`.
+func (g *gen) convertValue(x string, from, to types.Type) string {
 	fl, tl := g.llType(from), g.llType(to)
 	if fl == tl {
 		return x
@@ -1232,6 +1277,13 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		v := g.newTmp()
 		g.emit("%s = insertvalue %s %s, %s %s, 1", v, nt, a, ty, val)
 		return v
+	case "num.toChecked":
+		// D86: `x.toU8()` on a value that may not fit: { fits, converted }
+		x := g.expr(e.Args[0])
+		nt := e.Type().(*types.Nullable)
+		from, to := types.Underlying(e.Args[0].Type()), types.Underlying(nt.Elem)
+		val := g.convertValue(x, from, to)
+		return g.makeNullable(nt, g.fitsConversion(x, val, from, to), val)
 	case "int.countOnes", "int.leadingZeros", "int.trailingZeros":
 		x := g.expr(e.Args[0])
 		ty := g.llType(e.Type())

@@ -186,7 +186,7 @@ use base64, hex, io
 fun main() {
   io.println(hex.encode("abc".bytes()))
   io.println(base64.encode("foobar".bytes()))
-  io.println(base64.encodeUrl([251 as u8, 255 as u8, 254 as u8]))
+  io.println(base64.encodeUrl([251, 255, 254]))
   when (val bytes = base64.decode("Zm9vYmE")) {
     is Ok  => io.println("${bytes.decodeUtf8()}")
     is Err => io.println(bytes.message)

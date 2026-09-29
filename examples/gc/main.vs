@@ -39,7 +39,7 @@ fun main() {
   val keep = build(2000)
   var keepMap: MutableMap<string, List<i64>> = [:]
   loop (i in 0..<50) {
-    keepMap.set("k$i", [i as i64, (i * 2) as i64])
+    keepMap.set("k$i", [i, i * 2])
   }
   val boxes: List<Named> = [Thing(label: "a"), Thing(label: "b")]
   var n: i64 = 0
@@ -55,7 +55,7 @@ fun main() {
     loop (s in strs) {
       m.set(s.len(), s)
     }
-    checksum += sum(garbage) + m.len() as i64 + counter()
+    checksum += sum(garbage) + m.len() + counter()
   }
   val words: MutableList<string> = []
   loop (i in 0..<2000) {

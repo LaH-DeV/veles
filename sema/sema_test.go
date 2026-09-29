@@ -622,11 +622,11 @@ fun main() {
   val x = 2.0
   val a: f64 = x.sqrt() + x.abs() + x.floor() + x.ceil() + x.round() + x.trunc() + x.pow(2.0) + x.min(1.0) + x.max(3.0)
   val b: bool = x.isNaN() || x.isFinite() || x.isInfinite()
-  val f: f32 = (9.0 as f32).sqrt()
+  val f: f32 = (9.0).toF32().sqrt()
   val n = -7
   val c: i64 = n.abs() + n.min(3) + n.max(3) + n.mod(3) + n.clamp(0, 5) + n.sign()
   val d: f64 = x.mod(1.5) + x.clamp(0.0, 1.0) + x.sign()
-  val u: u8 = (200 as u8).min(3 as u8)
+  val u: u8 = (200).wrapU8().min((3).wrapU8())
   io.println("$a $b $f $c $u")
 }`)
 	expectError(t, prelude+`fun main() { val s = "x".sqrt() }`, "no method 'sqrt'")
@@ -644,7 +644,7 @@ fun main() {
   val d: i64? = n.checkedSub(1)
   val e: i64? = n.checkedMul(2)
   val f: i64 = n.countOnes() + n.leadingZeros() + n.trailingZeros()
-  val g: u8 = (3 as u8).pow(2 as u8).saturatingAdd(1 as u8)
+  val g: u8 = (3).wrapU8().pow((2).wrapU8()).saturatingAdd((1).wrapU8())
   val m: MutableMap<string, i64> = [:]
   val got: i64 = m.getOrPut("k", () => 1)
   val ages = ["ann": 41]
@@ -1133,11 +1133,11 @@ fun main() throws IoError {
   try fs.writeBytes("a.bin", bytes)
   try fs.appendBytes("a.bin", [1, 2])
   val all: string = io.readAll()
-  io.println("${bytes.len()} ${all.len()} ${(2.0 / 3.0).toFixed(2)} ${(255).toString(radix: 16)} ${(7 as u64).toString(radix: 2)} ${(1.5 as f32).toFixed(1)}")
+  io.println("${bytes.len()} ${all.len()} ${(2.0 / 3.0).toFixed(2)} ${(255).toString(radix: 16)} ${(7).wrapU64().toString(radix: 2)} ${(1.5).toF32().toFixed(1)}")
   val flags: u8 = 0b1010
   val nested: List<List<i64>> = [[1]]
   val m: Map<string, List<Set<i64>>> = [:]
-  io.println("${flags & 3} ${flags | 1} ${flags ^ 0xFF} ${~flags} ${flags << 2} ${(-8) >> 1} ${(1 as u64) << 63} ${nested.len()} ${m.len()}")
+  io.println("${flags & 3} ${flags | 1} ${flags ^ 0xFF} ${~flags} ${flags << 2} ${(-8) >> 1} ${(1).wrapU64() << 63} ${nested.len()} ${m.len()}")
 }`)
 	cases := []struct{ name, src, want string }{
 		{"bitwise on floats", `fun main() { io.println("${1.5 & 2.0}") }`, "only defined for integers"},
@@ -3557,10 +3557,10 @@ extern "C" { fun qsort(base: *raw u8, n: u64, size: u64, cmp: extern fun(*raw u8
 extern "C" fun cmp(a: *raw u8, b: *raw u8): i32 = 0
 fun main() {
   val xs: MutableList<i64> = [2, 1]
-  xs.withRaw(p => unsafe { qsort(p as *raw u8, 2, 8, &cmp) })
+  xs.withRaw(p => unsafe { qsort(p.cast<*raw u8>(), 2, 8, &cmp) })
   val f = &cmp
   val x: i64 = 1
-  io.println("${unsafe { f(&x as *raw u8, &x as *raw u8) }}")
+  io.println("${unsafe { f((&x).cast<*raw u8>(), (&x).cast<*raw u8>()) }}")
 }`)
 	for _, c := range []struct{ name, src, want string }{
 		{"generic export", `extern "C" fun f<T>(x: T): i32 = 0
@@ -3580,7 +3580,7 @@ fun main() { }`, "needs a body"},
 		{"C pointer outside unsafe", `extern "C" fun f(x: i32): i32 = x
 fun main() { val g = &f; val y = g(1) }`, "requires an 'unsafe' block"},
 		{"raw cast outside unsafe", `fun main(p: *raw u8) { }
-fun g(p: *raw u8) { val q = p as *raw i64 }`, "casting a raw pointer requires an 'unsafe' block"},
+fun g(p: *raw u8) { val q = p.cast<*raw i64>() }`, "casting a raw pointer requires an 'unsafe' block"},
 		{"closure to C", `extern "C" { fun take(f: fun(i32): i32) }
 fun main() { }`, "a Veles function value cannot be handed to C"},
 		{"CLayout by hand", `use ffi

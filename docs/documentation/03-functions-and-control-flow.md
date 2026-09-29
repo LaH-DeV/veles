@@ -240,7 +240,7 @@ use io
 fun isEven(n: i64): bool = if (n == 0) true else isOdd(n - 1)
 fun isOdd(n: i64): bool = if (n == 0) false else isEven(n - 1)
 
-fun fib(n: i64): i64 = if (n < 2) n as i64 else fib(n - 1) + fib(n - 2)
+fun fib(n: i64): i64 = if (n < 2) n else fib(n - 1) + fib(n - 2)
 
 fun main() {
   io.println("${isEven(10)} ${isOdd(7)} ${fib(30)}")

@@ -53,7 +53,7 @@ val (a, b) = (1, "one")         // tuple destructuring, nests: val ((x, y), z) =
 | bitwise | `& \| ^ << >> ~` on integers; `&` and shifts bind like `*`, `\|` `^` like `+` |
 | comparison | `== != < <= > >=` |
 | logic | `&& \|\| !` |
-| conversion | `x as T` (numeric only) |
+| conversion | `x.toI64()` (`T?` when it can lose), `x.wrapU8()`, `p.cast<*raw T>()` |
 | operators on your types | `implement Addable { fun plus(other: T): Out }` → `a + b`, `+=`; also Subtractable, Multipliable, Divisible, Negatable (D71) |
 | nullable | `x ?: fallback`, `x?.member`, `x?.method()`; `x?.a.b()` skips the whole rest of the chain on null (D70) |
 | result | `r ?? fallback`, `r ?? { e => ... }` — `?:` for a Result; `val v = r else { e => ... }` binds or leaves |

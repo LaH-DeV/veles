@@ -116,8 +116,8 @@ fun main() {
       seed = seed ^ (seed << 13)
       seed = seed ^ (seed >> 7)
       seed = seed ^ (seed << 17)
-      ints.push((seed % 2001) as i64 - 1000)
-      bytes.push((seed % 256) as u8)
+      ints.push((seed % 2001).wrapI64() - 1000)
+      bytes.push((seed % 256).wrapU8())
       texts.push("ż${seed % 97}")
     }
     if (ints.sorted() == ints.sortedWith((a, b) => a.compareTo(b)) &&

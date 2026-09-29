@@ -15,7 +15,7 @@ extern struct Pair {
 fun main() {
   // SAFETY: every access stays inside the four i64 allocated here, freed once
   unsafe {
-    val base = malloc(32) as *raw i64
+    val base = malloc(32).cast<*raw i64>()
     var p = base
     loop (i in 0..<4) {
       *p = i * 10
@@ -23,8 +23,8 @@ fun main() {
     }
     val last = p - 1
     io.println("${*last} ${p - base} ${base < p} ${last >= p}")
-    val pairs = base as *raw Pair
-    io.println("${((pairs + 1) as *raw u8) - (base as *raw u8)}")
-    free(base as *raw u8)
+    val pairs = base.cast<*raw Pair>()
+    io.println("${((pairs + 1).cast<*raw u8>()) - (base.cast<*raw u8>())}")
+    free(base.cast<*raw u8>())
   }
 }

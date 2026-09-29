@@ -75,7 +75,7 @@ fun describe(b: u8): string {
     return "'${one.decodeUtf8() ?: "?"}'"
   }
   val d = "0123456789abcdef"
-  val hi = (b >> 4) as i64
-  val lo = (b & 15) as i64
+  val hi = (b >> 4).toI64()
+  val lo = (b & 15).toI64()
   "0x${d.substring(hi, hi + 1) ?: ""}${d.substring(lo, lo + 1) ?: ""}"
 }

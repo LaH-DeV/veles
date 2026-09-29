@@ -7,9 +7,6 @@ notes, not the user's text.
 
 === 2026-09-28 (user) ===
 
-* maybe `as` should not be a type casting but `cast` or `to`, and `as` would be free to renaming imports (and maybe different things)
-   → `as` for conversions: §9 Q16 (named imports, the other half, are built: D85). Today: 141 `as` conversions
-     in std/examples, 3 `use … as` renames; ~500 `io.` qualifiers in examples alone.
 * we should be on track to self-hosting, slowly but surely, not yet writing Veles compiler, but ensuring we're going towards it.
 * every feature must be complete, performant, manageable on 'lower level' but with the highest possible devex for higher level usage.
 * we'll be using WSL for Linux (it is installed), and we'll be self-running it on macos (m4), but later.

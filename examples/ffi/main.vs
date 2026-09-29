@@ -17,11 +17,11 @@ extern "C" fun ascending(a: *raw u8, b: *raw u8): i32 {
   // SAFETY: qsort and bsearch call this only with pointers into the list of
   // i64 they were given
   val x = unsafe {
-    *(a as *raw i64)
+    *(a.cast<*raw i64>())
   }
   // SAFETY: as for `a`
   val y = unsafe {
-    *(b as *raw i64)
+    *(b.cast<*raw i64>())
   }
   if (x < y) -1 else if (x > y) 1 else 0
 }
@@ -33,7 +33,7 @@ fun forEachDigit(text: string, visit: extern fun(i64, *raw u8), userdata: *raw u
     // SAFETY: `visit` is a C function pointer taken from a Veles `extern fun`;
     // it gets back the `userdata` it was handed
     if (b >= '0' && b <= '9') unsafe {
-      visit((b - '0') as i64, userdata)
+      visit((b - '0').toI64(), userdata)
     }
   }
 }
@@ -77,7 +77,7 @@ fun main() throws ffi.NulByte {
   val xs: MutableList<i64> = [42, 7, 19, 3, 88, 21]
   // SAFETY: qsort sorts xs.len() elements of 8 bytes inside the lent storage
   xs.withRaw(p => unsafe {
-    qsort(p as *raw u8, xs.len() as u64, 8, &ascending)
+    qsort(p.cast<*raw u8>(), xs.len().wrapU64(), 8, &ascending)
   })
   println("qsort: $xs")
   val key: i64 = 19
@@ -85,8 +85,8 @@ fun main() throws ffi.NulByte {
   // bytes; what it returns points into the same lent storage as `p`, so the
   // difference counts the elements between them (D50)
   val at = xs.withRaw(p => unsafe {
-    val hit = bsearch(&key as *raw u8, p as *raw u8, xs.len() as u64, 8, &ascending)
-    if (hit != null) (hit as *raw i64) - p else -1
+    val hit = bsearch((&key).cast<*raw u8>(), p.cast<*raw u8>(), xs.len().wrapU64(), 8, &ascending)
+    if (hit != null) (hit.cast<*raw i64>()) - p else -1
   })
   println("bsearch 19: at index $at")
 

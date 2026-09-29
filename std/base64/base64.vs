@@ -67,7 +67,7 @@ public fun encodedLen(n: i64, pad: bool = true): i64 {
 
 /// Byte `i` of the input, widened. `write` reads below `n` only: the loop
 /// runs while `i + 3 <= n`, and the tail reads just the `left` bytes after it.
-fun input(bytes: List<u8>, i: i64): i64 = (bytes.at(i) ?: panic("base64.encode: every read is below the input length")) as i64
+fun input(bytes: List<u8>, i: i64): i64 = (bytes.at(i) ?: panic("base64.encode: every read is below the input length")).toI64()
 
 fun write(bytes: List<u8>, alphabet: string, pad: bool): string {
   val out: MutableList<u8> = []
@@ -131,7 +131,7 @@ fun read(text: string, url: bool): List<u8> throws Invalid {
     bits = bits + 6
     if (bits >= 8) {
       bits = bits - 8
-      out.push(((acc >> bits) & 255) as u8)
+      out.push(((acc >> bits) & 255).wrapU8())
     }
     i = i + 1
   }
@@ -154,9 +154,9 @@ fun read(text: string, url: bool): List<u8> throws Invalid {
 }
 
 fun sextet(b: u8, url: bool, at: i64): i64 throws Invalid {
-  if (b >= 65 && b <= 90) return (b -% 65) as i64        // 'A'..'Z' → 0..25
-  if (b >= 97 && b <= 122) return (b -% 97) as i64 + 26  // 'a'..'z' → 26..51
-  if (b >= 48 && b <= 57) return (b -% 48) as i64 + 52   // '0'..'9' → 52..61
+  if (b >= 65 && b <= 90) return (b -% 65).toI64()        // 'A'..'Z' → 0..25
+  if (b >= 97 && b <= 122) return (b -% 97).toI64() + 26  // 'a'..'z' → 26..51
+  if (b >= 48 && b <= 57) return (b -% 48).toI64() + 52   // '0'..'9' → 52..61
   if (url) {
     if (b == MINUS) return 62
     if (b == UNDER) return 63
@@ -187,7 +187,7 @@ fun describe(b: u8): string {
     return "'${one.decodeUtf8() ?: "?"}'"
   }
   val d = "0123456789abcdef"
-  val hi = (b >> 4) as i64
-  val lo = (b & 15) as i64
+  val hi = (b >> 4).toI64()
+  val lo = (b & 15).toI64()
   "0x${d.substring(hi, hi + 1) ?: ""}${d.substring(lo, lo + 1) ?: ""}"
 }

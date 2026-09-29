@@ -187,7 +187,7 @@ fun main() {
   var total = 0
   loop (w in words) {
     val n = w.toInt() ?: continue
-    total += n as i64
+    total += n
   }
   io.println("$total ${words.at(5) ?: "none"} ${words.first()?.len() ?: 0}")
 }

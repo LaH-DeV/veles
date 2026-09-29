@@ -489,7 +489,7 @@ fun digitsAt(s: string, i: i64, count: i64): i64? {
   loop (k in 0..<count) {
     val b = s.byteAt(i + k)
     if (!isDigit(b)) return null
-    n = n * 10 + ((b - '0') as i64)
+    n = n * 10 + ((b - '0').toI64())
   }
   n
 }
@@ -554,7 +554,7 @@ public fun parseRfc3339Fields(s: string): DateTime? {
     var kept: i64 = 0
     loop (i < s.len() && isDigit(s.byteAt(i))) {
       if (kept < 6) {
-        micros = micros * 10 + ((s.byteAt(i) - '0') as i64)
+        micros = micros * 10 + ((s.byteAt(i) - '0').toI64())
         kept += 1
       }
       i += 1

@@ -89,7 +89,7 @@ fun bump(n: Atomic<i64>, f: Atomic<f64>, w: Atomic<u16>, flips: Atomic<bool>, s:
 fun main() {
   val n = Atomic(value: 0)
   val f = Atomic(value: 0.0)
-  val w = Atomic(value: 0 as u16)
+  val w = Atomic(value: (0).wrapU16())
   val flips = Atomic(value: false)
   val s = Atomic(value: "")
   scope {

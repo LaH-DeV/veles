@@ -280,7 +280,7 @@ func (f *fnCtx) callSymbol(sym *Symbol, name string, typeArgs []types.Type, e *a
 		case *types.Sealed:
 			f.errorf(e.Pos, "'%s' is a sealed trait; construct one of its variants, e.g. '%s.%s(...)'", t.Name, t.Name, firstVariantName(t))
 		case *types.Basic:
-			f.errorf(e.Pos, "'%s' is not callable; convert with 'as'", t.Name)
+			f.errorf(e.Pos, "'%s' is not callable; convert with a method: 'x.to%s()' (returns '%s?' when it can lose) or 'x.wrap%s()' (D86)", t.Name, upperFirst(t.Name), t.Name, upperFirst(t.Name))
 		default:
 			f.errorf(e.Pos, "'%s' is not callable", name)
 		}
@@ -919,6 +919,9 @@ func (f *fnCtx) methodCallOn(callee *ast.MemberExpr, typeArgs []types.Type, e *a
 func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []types.Type, e *ast.CallExpr, want types.Type) Expr {
 	name := callee.Name.Name
 	rt := recv.Type()
+	if _, ok := rt.(*types.Pointer); ok && name == "cast" {
+		return f.rawPointerCast(recv, name, typeArgs, e) // D86
+	}
 	// auto-deref (D39)
 	viaPointer := false
 	if p, ok := rt.(*types.Pointer); ok {
@@ -933,6 +936,10 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 	if lt, isList := rt.(*types.List); isList && name == "filterIs" {
 		f.c.refBuiltin(callee.Name.Pos, rt, name)
 		return f.listFilterIs(recv, lt, typeArgs, e)
+	}
+	if bt, ok := rt.(*types.Basic); ok && name == "wrapTo" && types.IsNumeric(bt) {
+		f.c.refBuiltin(callee.Name.Pos, rt, name)
+		return f.wrapTo(recv, rt, typeArgs, e) // D86
 	}
 	if b := f.builtinMethod(recv, rt, name, e); b != nil {
 		f.c.refBuiltin(callee.Name.Pos, rt, name)
@@ -1283,6 +1290,9 @@ func (f *fnCtx) builtinMethod(recv Expr, rt types.Type, name string, e *ast.Call
 				}
 				return &Builtin{exprBase{&types.Nullable{Elem: types.TI64}}, "string.toInt", []Expr{recv}, e.Pos}
 			}
+		}
+		if conv := f.numericConversion(recv, t, name, e); conv != nil {
+			return conv // D86
 		}
 		// math on numbers: single LLVM instructions/intrinsics, no runtime call
 		if types.IsFloat(t) {

@@ -8,7 +8,7 @@ fun main() {
     x = x ^ (x << 13)
     x = x ^ (x >> 7)
     x = x ^ (x << 17)
-    xs.push((x % 1000000) as i64)
+    xs.push((x % 1000000).wrapI64())
   }
   val input = xs.toList()
   val sw = time.Stopwatch.start()

@@ -27,7 +27,7 @@ clone=$HOME/veles
 [ -d "$clone/.git" ] || git clone -q "$here" "$clone" || exit 1
 cd "$clone" || exit 1
 # the clone follows the Windows tree's HEAD; its own edits are only the copies below
-git fetch -q "$here" HEAD && git checkout -q --detach FETCH_HEAD && git checkout -q -- . && git clean -qfd
+git checkout -q -- . && git clean -qfd && git fetch -q "$here" HEAD && git checkout -q --detach FETCH_HEAD
 # WSL's git has no core.autocrlf, so it also lists files that differ only in
 # CRLF; copying those is harmless. Files marked -text are copied as bytes.
 (cd "$here" && git -c core.quotepath=off status --porcelain --untracked-files=all | cut -c4-) | while read -r f; do

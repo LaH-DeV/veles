@@ -806,7 +806,7 @@ ffi.handle(value: T): Handle<T>                          // a Veles value as C's
 h.ptr(): *raw u8;  unsafe ffi.Handle<T>.from(p): T       // the value back, in the callback
 // ffi.CLayout: memory C can read as it is (derived from the shape, never implemented by hand)
 // prelude: xs.withRaw(p => ...) on a List<T: ffi.CLayout> lends the elements for the closure, no copy
-// language: extern "C" fun name(...) { }  and  &name: extern fun(...); p as *raw T in unsafe
+// language: extern "C" fun name(...) { }  and  &name: extern fun(...); p.cast<*raw T>() in unsafe
 ```
 
 ## Not yet in the bootstrap

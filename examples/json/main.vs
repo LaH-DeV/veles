@@ -209,7 +209,7 @@ struct Parser {
 fun parseHex(text: string): i64? {
   var n: i64 = 0
   loop (i in 0..<text.len()) {
-    val b = text.byteAt(i) as i64
+    val b = text.byteAt(i).toI64()
     val d = when {
       b >= '0' && b <= '9' => b - '0'
       b >= 'a' && b <= 'f' => b - 'a' + 10
@@ -223,15 +223,15 @@ fun parseHex(text: string): i64? {
 
 fun encodeUtf8(cp: i64, out: MutableList<u8>) {
   when {
-    cp < 0x80  => out.push(cp as u8)
+    cp < 0x80  => out.push(cp.wrapU8())
     cp < 0x800 => {
-      out.push((0xC0 | (cp >> 6)) as u8)
-      out.push((0x80 | (cp & 0x3F)) as u8)
+      out.push((0xC0 | (cp >> 6)).wrapU8())
+      out.push((0x80 | (cp & 0x3F)).wrapU8())
     }
     else       => {
-      out.push((0xE0 | (cp >> 12)) as u8)
-      out.push((0x80 | ((cp >> 6) & 0x3F)) as u8)
-      out.push((0x80 | (cp & 0x3F)) as u8)
+      out.push((0xE0 | (cp >> 12)).wrapU8())
+      out.push((0x80 | ((cp >> 6) & 0x3F)).wrapU8())
+      out.push((0x80 | (cp & 0x3F)).wrapU8())
     }
   }
 }
@@ -262,7 +262,7 @@ fun quote(s: string): string {
   sb.toString()
 }
 
-fun number(x: f64): string = if (x == x.trunc() && x.abs() < 1.0e15) "${x as i64}" else "$x"
+fun number(x: f64): string = if (x == x.trunc() && x.abs() < 1.0e15) "${x.toI64()}" else "$x"
 
 fun compact(v: Json): string = when (v) {
   is JNull        => "null"

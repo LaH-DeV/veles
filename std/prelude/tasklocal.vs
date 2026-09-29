@@ -53,7 +53,7 @@ public struct TaskLocal<T: Sendable> {
     // SAFETY: a cell bound to this key was bound by `withValue` of this
     // TaskLocal<T>, so it holds a T; the binding keeps it reachable
     unsafe {
-      *(cell as *raw T)
+      *(cell.cast<*raw T>())
     }
   }
 
@@ -65,7 +65,7 @@ public struct TaskLocal<T: Sendable> {
     // SAFETY: `held` is a heap cell (its address is taken); the binding node
     // that holds it is GC memory reachable from every task that can see it
     val cell: *raw u8 = unsafe {
-      &held as *raw u8
+      (&held).cast<*raw u8>()
     }
     with (binding = LocalBinding.take(this.key, cell)) {
       return try f()

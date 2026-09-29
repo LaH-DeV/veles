@@ -139,7 +139,7 @@ public struct Handle<T> {
       veles_ffi_handle_get(p)
     }
     unsafe {
-      *(box as *raw T)
+      *(box.cast<*raw T>())
     }
   }
 
@@ -167,7 +167,7 @@ public fun handle<T>(value: T): Handle<T> {
   // SAFETY: `box` points at `held`, which the table now keeps reachable; C only
   // ever sees the slot's index, never this address
   val h = unsafe {
-    veles_ffi_handle_new(box as *raw u8)
+    veles_ffi_handle_new(box.cast<*raw u8>())
   }
   val state = CState(ptr: h)
   Handle(state: &state)

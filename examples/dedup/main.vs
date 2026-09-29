@@ -36,7 +36,7 @@ const FNV_PRIME: u64 = 1099511628211
 fun fnv1a(bytes: List<u8>): u64 {
   var h = FNV_OFFSET
   loop (b in bytes) {
-    h = (h ^ (b as u64)) *% FNV_PRIME
+    h = (h ^ (b.toU64())) *% FNV_PRIME
   }
   h
 }

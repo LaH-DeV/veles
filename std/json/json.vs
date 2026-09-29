@@ -240,8 +240,8 @@ fun writeQuoted(out: StringBuilder, s: string) {
       b == 12   => out.append("\\f")
       b < 32    => {
         out.append("\\u00")
-        out.appendByte(HEX.byteAt((b >> 4) as i64))
-        out.appendByte(HEX.byteAt((b & 15) as i64))
+        out.appendByte(HEX.byteAt((b >> 4).toI64()))
+        out.appendByte(HEX.byteAt((b & 15).toI64()))
       }
       else      => out.appendByte(b)
     }
@@ -429,7 +429,7 @@ public struct JsonDecoder {
   private fun hex4(): i64 throws DecodeError {
     var n: i64 = 0
     loop (_ in 0..<4) {
-      val b = (this.peekByte() ?: throw this.malformed("short \\u escape")) as i64
+      val b = (this.peekByte() ?: throw this.malformed("short \\u escape")).toI64()
       val d = when {
         b >= '0' && b <= '9' => b - '0'
         b >= 'a' && b <= 'f' => b - 'a' + 10
@@ -543,7 +543,7 @@ public struct JsonDecoder {
       loop {
         val b = this.peekByte() ?: break
         if (b < '0' || b > '9') break
-        val d = (b - '0') as i64
+        val d = (b - '0').toI64()
         // accumulate negatively: -9223372036854775808 has no positive twin
         val next = n.checkedMul(10)?.checkedSub(d)
         if (next == null) fits = false else n = next
@@ -564,7 +564,7 @@ public struct JsonDecoder {
         this.recorded.record(this.path(), "$n is negative")
         return 0
       }
-      n as u64
+      n.wrapU64()
     }
 
     fun readF64(): f64 throws DecodeError {

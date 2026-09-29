@@ -12,16 +12,16 @@ fun floats(a: f64, b: f64): f64 = a * b + a / b
 fun single(a: f32, b: f32): f32 = a * b
 
 fun casts(x: i64, f: f64) {
-  val a = x as u8
-  val b = x as i16
-  val c = a as i64
-  val d = b as u32
-  val e = x as f64
-  val g = f as i64
-  val h = f as u8
-  val i = f as f32
-  val j = i as f64
-  val k = (x as u64) as f32
+  val a = x.wrapU8()
+  val b = x.wrapI16()
+  val c = a.toI64()
+  val d = b.wrapU32()
+  val e = x.toF64()
+  val g = f.toI64()
+  val h = f.toU8()
+  val i = f.toF32()
+  val j = i.toF64()
+  val k = x.wrapU64().toF32()
   io.println("$a $b $c $d $e $g $h $i $j $k")
 }
 

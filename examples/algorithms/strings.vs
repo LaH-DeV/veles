@@ -56,7 +56,7 @@ public fun runLengthEncode(s: string): string {
 /// Caesar cipher over ASCII letters; other bytes pass through.
 public fun caesar(s: string, shift: i64): string {
   val out = StringBuilder()
-  val by = (((shift % 26) + 26) % 26) as u8
+  val by = (((shift % 26) + 26) % 26).wrapU8()
   loop (byte in s.bytes()) {
     val shifted = when {
       byte >= 'a' && byte <= 'z' => 'a' + (byte - 'a' + by) % 26

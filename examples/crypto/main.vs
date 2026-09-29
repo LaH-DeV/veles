@@ -78,7 +78,7 @@ fun encodings() throws base64.Invalid | hex.Invalid {
   loop (s in ["", "f", "fo", "foo", "foob", "fooba", "foobar"]) {
     println("'${s.padEnd(6)}' std=${base64.encode(s.bytes()).padEnd(8)} url=${base64.encodeUrl(s.bytes())}")
   }
-  val edge = [251 as u8, 255 as u8, 254 as u8]
+  val edge = [251.wrapU8(), 255.wrapU8(), 254.wrapU8()]
   println("alphabets  std=${base64.encode(edge)} url=${base64.encodeUrl(edge)}")
   println("hex        ${hex.encode(edge)} ${hex.encodeUpper(edge)}")
   println("round trip ${(try base64.decode("Zm9vYmFy")).decodeUtf8()} ${(try hex.decode("666f6f")).decodeUtf8()}")

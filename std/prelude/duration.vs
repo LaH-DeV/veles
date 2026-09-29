@@ -56,7 +56,7 @@ public struct Duration {
   public static fun ofSeconds(v: f64): Duration {
     val scaled = v * 1000000000.0
     val rounded: f64 = if (scaled < 0.0) scaled - 0.5 else scaled + 0.5
-    Duration(ns: rounded as i64)
+    Duration(ns: rounded.toI64() ?: panic("Duration.ofSeconds: $v seconds do not fit in nanoseconds"))
   }
 
   /// The whole nanoseconds. Every other accessor is derived from this one.
@@ -72,10 +72,10 @@ public struct Duration {
 
   /// Seconds with the fraction kept — for a rate, a ratio or a report.
   /// `toSeconds()` is the truncating one.
-  public fun asSeconds(): f64 = (this.ns as f64) / 1000000000.0
+  public fun asSeconds(): f64 = (this.ns.toF64()) / 1000000000.0
 
   /// Milliseconds with the fraction kept.
-  public fun asMillis(): f64 = (this.ns as f64) / 1000000.0
+  public fun asMillis(): f64 = (this.ns.toF64()) / 1000000.0
 
   // The operators (D71): `a + b`, `a - b`, `d * 3`, `d / 2`, `-d`. Each
   // overflows as the i64 underneath does — a panic, never a wrap.
@@ -389,7 +389,7 @@ fun parseDuration(s: string): Duration? {
     var whole: i64 = 0
     loop (i < s.len() && isAsciiDigit(s.byteAt(i))) {
       if (whole > nanosMax / 10) return null
-      whole = whole * 10 + ((s.byteAt(i) - '0') as i64)
+      whole = whole * 10 + ((s.byteAt(i) - '0').toI64())
       i += 1
     }
     // the fraction, in whole decimal places, so no float is involved and
@@ -402,7 +402,7 @@ fun parseDuration(s: string): Duration? {
       if (i >= s.len() || !isAsciiDigit(s.byteAt(i))) return null  // a point with no digits
       loop (i < s.len() && isAsciiDigit(s.byteAt(i))) {
         if (fracDigits < 9) {
-          frac = frac * 10 + ((s.byteAt(i) - '0') as i64)
+          frac = frac * 10 + ((s.byteAt(i) - '0').toI64())
           den *= 10
           fracDigits += 1
         } else if (s.byteAt(i) != '0') {

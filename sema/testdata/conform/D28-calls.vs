@@ -40,7 +40,7 @@ fun genericStruct() {
   val _ = Box // error: 'Box' is a type, not a value
 }
 fun sealedCall(): Shape = Shape() // error: 'Shape' is a sealed trait; construct one of its variants, e.g. 'Shape.Dot(...)'
-fun basicCall(): i64 = i64(3) // error: 'i64' is not callable; convert with 'as'
+fun basicCall(): i64 = i64(3) // error: 'i64' is not callable; convert with a method: 'x.toI64()'
 fun notCallable(n: i64): i64 = n(1) // error: 'n' has type 'i64' and is not callable
 fun valueNotCallable(): i64 = (1 + 2)(3) // error: value of type 'i64' is not callable
 fun byPosition(): Point = Point(1, 2) // error: construct 'Point' by field name

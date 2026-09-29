@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.46** — language design complete; D58 adds the derivation story D51 deferred, D59 the standard library's cryptography. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
+**Working draft v0.47** — language design complete; D58 adds the derivation story D51 deferred, D59 the standard library's cryptography. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -2154,6 +2154,55 @@ syntax, two new keywords), `::` and `:` for renaming (a new operator; a colon
 already means "type of" and "name of argument"), `use m.{ … }` (the removed
 spelling); braces that replace the qualifier (`use io, io { println }` to have
 both).
+
+### D86 — Conversions are methods split by risk; `as` only renames (v0.47)
+
+```veles
+val i = b.toI64()             // u8 → i64 cannot lose: an i64
+val small = n.toU8()          // i64 → u8 may lose: a u8?, null when out of range
+val low = (acc >> bits).wrapU8()   // keep the low 8 bits — truncation, spelled out
+val x = count.toF64()
+val p = raw.cast<*raw Header>()    // raw pointer to raw pointer, unsafe only
+```
+
+`x as T` no longer converts. Every numeric conversion is a method named
+`to<T>` or `wrap<T>` on the numeric types (`i8 i16 i32 i64 u8 u16 u32 u64 f32
+f64`); `as` is left to renaming (`use m as x`, D85).
+
+- `toT()` — on an integer receiver whose whole range fits `T` (or float
+  widening `f32.toF64()`, and integer to float) it is total and returns `T`;
+  where a value could be lost it returns `T?`, null when out of range. Float
+  to integer truncates toward zero and gives null for NaN or an out-of-range
+  value. Integer to float rounds to nearest (`i64`/`u64` above 2^53 may
+  round; that is the meaning of a float, not a lost range). `f64.toF32()`
+  is total and rounds.
+- `wrapT()` — integer to integer only, always total, keeps the low bits
+  (two's complement), the conversion `+%` is to `+`. Available from every
+  integer type, including where `toT()` is total.
+- A literal that does not fit is a compile-time error (`300.toU8()`);
+  the constant forms `toT()` of a literal are folded.
+- `p.cast<*raw U>()`: reinterpret a raw pointer; requires `unsafe` (D44).
+  `&x` to `*raw U` is `(&x).cast<*raw U>()` inside `unsafe`.
+- `x.wrapTo<T>()` (addendum, Q19): `wrapT()` with the target as a type
+  argument, so generic code can convert to its own type parameter
+  (`(wide - r).wrapTo<T>()`); both sides must be integers once `T` is known,
+  checked where the function is instantiated. Rejected (user, recommended of
+  4): an `Integer` trait with `T.wrap(from:)` (later, if bounds are wanted),
+  keeping a std-only `as` exemption, rewriting `Range.reversed()` without a
+  conversion.
+- An enum is still not its number (D57): `.value`, `E.fromValue(n)`.
+- The old `x as T` keeps parsing with an error naming the method to write
+  (`sema/removed.go`), with a fix.
+
+Both levels: `toI64()` reads as the safe default and never surprises;
+truncation and pointer reinterpretation are visible words in the source.
+Self-hosting: a lexer/hash/emitter is byte↔int code; the lossless forms are
+free and every wrap is greppable.
+
+Rejected (user, recommended of 5): keeping `as` for conversions (A), `as`
+for lossless only (E), call-style `i64(x)` (B), an operator `to`/`cast` (C).
+Naming (user, recommended of 3): `toU8()` checked + `wrapU8()`, over
+`truncateU8()` and `u8OrNull()`.
 
 ---
 

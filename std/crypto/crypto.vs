@@ -83,7 +83,7 @@ public struct Digest {
       var i = 0
       loop (i < 8) {
         val b = this.data.at(i) ?: break
-        h = (h << 8) | (b as i64)
+        h = (h << 8) | (b.toI64())
         i = i + 1
       }
       h
@@ -182,17 +182,17 @@ fun blockByte(data: List<u8>, i: i64): u8 = data.at(i) ?: panic("crypto: a word 
 
 /// The big-endian 32-bit word at `at`.
 fun beU32(data: List<u8>, at: i64): u32 =
-  ((blockByte(data, at) as u32) << 24) |
-  ((blockByte(data, at + 1) as u32) << 16) |
-  ((blockByte(data, at + 2) as u32) << 8) |
-  (blockByte(data, at + 3) as u32)
+  (((blockByte(data, at)).toU32()) << 24) |
+  (((blockByte(data, at + 1)).toU32()) << 16) |
+  (((blockByte(data, at + 2)).toU32()) << 8) |
+  ((blockByte(data, at + 3)).toU32())
 
 /// The big-endian 64-bit word at `at`.
 fun beU64(data: List<u8>, at: i64): u64 {
   var v: u64 = 0
   var i = 0
   loop (i < 8) {
-    v = (v << 8) | (blockByte(data, at + i) as u64)
+    v = (v << 8) | ((blockByte(data, at + i)).toU64())
     i = i + 1
   }
   v
@@ -200,17 +200,17 @@ fun beU64(data: List<u8>, at: i64): u64 {
 
 /// Appends `w` as four big-endian bytes.
 fun pushU32(out: MutableList<u8>, w: u32) {
-  out.push((w >> 24) as u8)
-  out.push((w >> 16) as u8)
-  out.push((w >> 8) as u8)
-  out.push(w as u8)
+  out.push((w >> 24).wrapU8())
+  out.push((w >> 16).wrapU8())
+  out.push((w >> 8).wrapU8())
+  out.push(w.wrapU8())
 }
 
 /// Appends `w` as eight big-endian bytes.
 fun pushU64(out: MutableList<u8>, w: u64) {
   var s = 56
   loop (s >= 0) {
-    out.push((w >> s) as u8)
+    out.push((w >> s).wrapU8())
     s = s - 8
   }
 }
@@ -236,6 +236,6 @@ fun padding(buffered: i64, blockSize: i64, lengthBytes: i64, totalBytes: i64): L
     out.push(0)
     i = i - 1
   }
-  pushU64(out, (totalBytes * 8) as u64)
+  pushU64(out, (totalBytes * 8).wrapU64())
   out.toList()  // a copy: `out` was handed to pushU64 (D63)
 }

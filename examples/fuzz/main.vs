@@ -43,7 +43,7 @@ struct Fuzzer {
   fun bytes(max: i64): List<u8> {
     val n = this.rng.range(0, max + 1)
     var out: MutableList<u8> = []
-    loop (_ in 0..<n) out.push(this.rng.range(0, 256) as u8)
+    loop (_ in 0..<n) out.push((this.rng.range(0, 256)).wrapU8())
     out.toList()
   }
 
@@ -156,7 +156,7 @@ fun randomValue(f: *Fuzzer, depth: i64): codec.Value {
       // hold, so the shortest-text printer and the parser are both
       // exercised at the edges of the range
       val mantissa = 1.0 + f.rng.float() * 9.0
-      val exp = f.rng.range(-307, 308) as f64
+      val exp = (f.rng.range(-307, 308)).toF64()
       val sign = if (f.rng.boolean()) -1.0 else 1.0
       return codec.VFloat(value: sign * mantissa * 10.0.pow(exp))
     }
@@ -194,7 +194,7 @@ fun fuzzUtf8(f: *Fuzzer) {
   val special: List<u8> = [0x7F, 0x80, 0xBF, 0xC0, 0xC1, 0xC2, 0xDF, 0xE0, 0xED, 0xEF, 0xF0, 0xF4, 0xF5, 0xFF, 0x9F, 0xA0, 0x8F, 0x90]
   var data: MutableList<u8> = []
   loop (_ in 0..<f.rng.range(0, 12)) {
-    data.push(if (f.rng.range(0, 3) == 0) f.rng.range(0, 256) as u8 else f.rng.pick(special) ?: 0)
+    data.push(if (f.rng.range(0, 3) == 0) (f.rng.range(0, 256)).wrapU8() else f.rng.pick(special) ?: 0)
   }
   val bytes = data.toList()
   val std = utf8.isValid(bytes)
@@ -400,7 +400,7 @@ fun mutate(f: *Fuzzer, wire: List<u8>): List<u8> {
   loop (_ in 0..<f.rng.range(1, 4)) {
     if (out.isEmpty()) break
     val at = f.rng.range(0, out.len())
-    val b: u8 = if (f.rng.boolean()) f.rng.pick(special) ?: 0 else f.rng.range(0, 256) as u8
+    val b: u8 = if (f.rng.boolean()) f.rng.pick(special) ?: 0 else (f.rng.range(0, 256)).wrapU8()
     when (f.rng.range(0, 3)) {
       0    => out.set(at, b)
       1    => out.insert(at, b)
@@ -591,7 +591,7 @@ fun showBytes(b: List<u8>): string {
     when {
       x == '\r'          => sb.append("\\r")
       x == '\n'          => sb.append("\\n")
-      x >= 32 && x < 127 => sb.append(utf8.char(x as i64))
+      x >= 32 && x < 127 => sb.append(utf8.char(x.toI64()))
       else               => sb.append("\\x${hex.encode([x])}")
     }
   }

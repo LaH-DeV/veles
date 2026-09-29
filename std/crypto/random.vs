@@ -48,7 +48,7 @@ public fun randomBytes(n: i64): List<u8> {
 public fun randomU64(): u64 {
   var v: u64 = 0
   loop (b in randomBytes(8)) {
-    v = (v << 8) | (b as u64)
+    v = (v << 8) | (b.toU64())
   }
   v
 }

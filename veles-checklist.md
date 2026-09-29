@@ -146,7 +146,7 @@ answered from the shape, tuples get `Comparable`, enums get
       wrapping in release, `+%` always) — verified 2026-09-28 (plan A3):
       golden `overflow` is lowered and run in both profiles (`main.ll` /
       `main.release.ll`): `+ - *`, unary `-`, `/` and `%` at MIN/-1, `+=`,
-      panic in debug and wrap in release; `+%` and `as` behave the same in
+      panic in debug and wrap in release; `+%` and the conversions (`wrapT()`, D86) behave the same in
       both. Found: an inclusive range ending at its type's maximum
       (`loop (i in 250..255)` over u8) looped for ever in both profiles —
       the loop and `RangeIter` now stop by a flag, measured free at -O2;
@@ -208,7 +208,9 @@ answered from the shape, tuples get `Comparable`, enums get
       pass on Windows and Linux, and under `--sanitize`) (2026-09-28)
 - [?] Bounds checks stay on in release; a profile that removes them is opt-in
       and loud — §9 Q11
-- [?] Integer conversions between widths: truncation is explicit — goes with §9 Q16
+- [x] Integer conversions between widths: `toT()` is checked (`T?`), `wrapT()` is the explicit
+      truncation, a literal that cannot fit is a compile error (D86, 2026-09-29;
+      `examples/conversions`, conform `D86-conversions`, golden `arith`)
 - [x] Constant-time comparison primitive in `std/crypto`: `Digest`'s `==`, and
       `crypto.equalBytes` for raw bytes. Structural `==` on `List<u8>`
       short-circuits, so a MAC is compared as a `Digest`, never as bytes (D59)
@@ -669,15 +671,7 @@ spec entry and a row in §10, and the item leaves this list. The labels are
 stable; §10 rows written before 2026-09-27 cite the old numbering (the
 list as it was is in `archive/progress-log-2026-09.md` and git history).
 
-**Raised by the user, to prepare first (2026-09-28)** (Q15, named imports, was decided 2026-09-29: D85)
-
-- **Q16. `as` stops meaning conversion** — `cast`/`to`, or conversion as a
-  call (`i64(x)`, Go/Swift), or methods (`x.toI64()`); `as` is left for
-  renaming (`use m as x`, maybe named imports, patterns). 141 conversions in
-  std and examples to migrate with a fix. The chance to split what `as`
-  blurs today: a checked conversion vs an explicit truncation/wrap (§2
-  "integer conversions between widths", §9 Q11), and numeric vs raw-pointer
-  casts.
+(Q15 named imports was decided 2026-09-29: D85; Q16 `as` conversions the same day: D86.)
 
 **Asked, awaiting an answer**
 
@@ -808,7 +802,9 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-09-28 | `os.run` input and stderr (plan B5) | **`input:` + `stderr: os.Stderr` (Capture/Inherit/Merge, default Capture); `Output.stderr`; `mergeStderr` removed with a fix** (user, recommended of 3; spec D82). Rejected: two more booleans, a `Command` builder. |
 | 2026-09-28 | List capacity | **`xs.reserve(n)`** — room for at least n in total (user, recommended of 4; spec D83). Rejected: `withCapacity(n)`, both, neither. |
 | 2026-09-28 | Q18: two bounds declaring one associated type | **Refuse `T.Item` and name it `T.Trait.Item`** (user, recommended of 3; spec D84). Rejected: refusing with no qualified form, keeping the first bound. |
-| 2026-09-29 | Q15: named imports | **`use m { f, T as U }`, one statement, `as` renames, `m.` stays** (user, recommended of 4, and braces add names on top of the qualifier; spec D85). Rejected: `from m import { … }`, `::`/`:` renames, the dotted `use m.{ }`. Q16 (`as` for conversions) stays open. |
+| 2026-09-29 | Q15: named imports | **`use m { f, T as U }`, one statement, `as` renames, `m.` stays** (user, recommended of 4, and braces add names on top of the qualifier; spec D85). Rejected: `from m import { … }`, `::`/`:` renames, the dotted `use m.{ }`. Q16 (`as` for conversions) stays open.
+| 2026-09-29 | Q16: numeric conversions | **Methods split by risk, `as` only renames** (user, recommended of 4; spec D86): `toT()` total where lossless else `T?`, `wrapT()` explicit truncation, `p.cast<*raw U>()` in `unsafe`. Naming: `toU8()` + `wrapU8()` (user, recommended of 3). Rejected: keep `as`, `as` lossless-only, call style `i64(x)`. |
+| 2026-09-29 | Q19: converting to a type parameter | **`x.wrapTo<T>()`** (user, recommended of 4; spec D86 addendum). Rejected: an `Integer` trait with `T.wrap(from:)`, keeping the std-only `as` exemption, rewriting `Range.reversed()`. |
 
 ## 11. Known limitations to revisit
 

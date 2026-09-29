@@ -23,7 +23,7 @@ public struct Rng {
   /// A generator with its own state, seeded from `n`.
   public static fun seeded(n: i64): Rng {
     // splitmix64 expands one seed into four words
-    var x = n as u64
+    var x = n.wrapU64()
     var s: MutableList<u64> = []
     loop (_ in 0..<4) {
       x = x +% GOLDEN
@@ -52,12 +52,12 @@ public struct Rng {
   /// A number in `lo..<hi`; `hi` must exceed `lo`.
   public fun range(lo: i64, hi: i64): i64 {
     if (hi <= lo) panic("random.range: empty range $lo..<$hi")
-    val span = (hi - lo) as u64
-    lo + (this.nextU64() % span) as i64
+    val span = (hi - lo).wrapU64()
+    lo + (this.nextU64() % span).wrapI64()
   }
 
   /// A number in `0.0..<1.0`.
-  public fun float(): f64 = ((this.nextU64() >> 11) as f64) / 9007199254740992.0
+  public fun float(): f64 = ((this.nextU64() >> 11).toF64()) / 9007199254740992.0
 
   public fun boolean(): bool = (this.nextU64() & 1) == 1
 

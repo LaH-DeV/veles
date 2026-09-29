@@ -128,13 +128,13 @@ outside writes are intended (D22).
 'i32', found 'i64'`, `branches have incompatible types 'string' and 'i64'`.
 
 There are no implicit conversions. When a conversion is the usual fix the
-message names it: `as` between numbers, `.value` for an enum's number,
+message names it: `.toI64()` / `.wrapU8()` between numbers, `.value` for an enum's number,
 interpolation for building a string, `?:` for a nullable.
 
 #### `type mismatch: expected 'i32', found 'i64'`
 
-There are no implicit numeric conversions (D21). Convert with `as`:
-`n as i32`. Integer literals, lengths, indices and `toInt()` are all
+There are no implicit numeric conversions (D21). Convert with a method (D86):
+`n.toI32()` is an `i32?` (null when it does not fit), `n.wrapI32()` keeps the low bits. Integer literals, lengths, indices and `toInt()` are all
 `i64`, so the mismatch usually means a signature was written with `i32`
 for no particular reason — use `i64` unless the width matters.
 
@@ -269,7 +269,28 @@ does not fit in 64 bits`, `negative literal for unsigned type 'u8'`.
 
 Pick a type that holds the value, or write a float (`1e20`) when an
 approximation will do. Ranges, indices and shift counts are integers;
-convert a float with `as`.
+convert a float with `.toI64()` (null when it does not fit).
+
+#### `'as' no longer converts (D86; it only renames)`
+
+`x as i64` was the old spelling of every numeric conversion. Conversions are
+methods now, each naming what it can lose (`n.toI64()`, `n.toU8()`,
+`n.wrapU8()`, `p.cast<*raw T>()` — see chapter 2). The message names the one
+that replaces the cast and the editor offers it as a fix; `veles check --fix`
+applies it across a project. The fix for a narrowing between integers is
+`wrapT()` (what `as` did); for a float to an integer it is `toT()`, a `T?`
+that is null when the value does not fit, so the surrounding code decides
+what that case means.
+
+#### `the literal does not fit 'u8' (D86)`
+
+`300.toU8()` can never succeed, so it is refused. Write `300.wrapU8()` for
+the low bits, or a value that fits.
+
+#### `'wrapI64' keeps the low bits of an integer`
+
+`wrapT()` is integer to integer. A float becomes an integer with `toT()`
+(null when it does not fit); an integer becomes a float with `toF64()`.
 
 ### operators
 
@@ -279,8 +300,8 @@ not defined for floats; 'x.mod(y)' is the remainder`.
 
 Arithmetic comes with the numbers; a type of your own gets an operator by
 implementing its trait (D71). `==` needs `Equatable` and `<` needs
-`Comparable` — both derived for most types. `as` converts between numbers
-only.
+`Comparable` — both derived for most types. `.toI64()` and `.wrapU8()` convert
+between numbers.
 
 ### text
 

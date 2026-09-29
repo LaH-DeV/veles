@@ -341,7 +341,10 @@ fun seconds(v: codec.Value, name: string): i64 throws Invalid {
     message: "jwt: '$name' is not a number of seconds",
     reason: Reason.MissingClaim,
   )
-  fraction.floor() as i64
+  fraction.floor().toI64() ?: throw Invalid(
+    message: "jwt: '$name' is out of range",
+    reason: Reason.MissingClaim,
+  )
 }
 
 /// `aud` is one string, or a list of them (RFC 7519 §4.1.3).

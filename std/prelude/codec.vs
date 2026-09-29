@@ -325,37 +325,37 @@ public fun finish<T>(from: Decoder, value: T): T throws DecodeError {
 // the built-in types
 
 implement Encodable for i8 {
-  fun encode(to: Encoder) throws EncodeError = try to.writeI64(this as i64)
+  fun encode(to: Encoder) throws EncodeError = try to.writeI64(this.toI64())
 }
 implement Encodable for i16 {
-  fun encode(to: Encoder) throws EncodeError = try to.writeI64(this as i64)
+  fun encode(to: Encoder) throws EncodeError = try to.writeI64(this.toI64())
 }
 implement Encodable for i32 {
-  fun encode(to: Encoder) throws EncodeError = try to.writeI64(this as i64)
+  fun encode(to: Encoder) throws EncodeError = try to.writeI64(this.toI64())
 }
 implement Encodable for i64 {
   fun encode(to: Encoder) throws EncodeError = try to.writeI64(this)
 }
 implement Encodable for isize {
-  fun encode(to: Encoder) throws EncodeError = try to.writeI64(this as i64)
+  fun encode(to: Encoder) throws EncodeError = try to.writeI64(this.toI64())
 }
 implement Encodable for u8 {
-  fun encode(to: Encoder) throws EncodeError = try to.writeU64(this as u64)
+  fun encode(to: Encoder) throws EncodeError = try to.writeU64(this.toU64())
 }
 implement Encodable for u16 {
-  fun encode(to: Encoder) throws EncodeError = try to.writeU64(this as u64)
+  fun encode(to: Encoder) throws EncodeError = try to.writeU64(this.toU64())
 }
 implement Encodable for u32 {
-  fun encode(to: Encoder) throws EncodeError = try to.writeU64(this as u64)
+  fun encode(to: Encoder) throws EncodeError = try to.writeU64(this.toU64())
 }
 implement Encodable for u64 {
   fun encode(to: Encoder) throws EncodeError = try to.writeU64(this)
 }
 implement Encodable for usize {
-  fun encode(to: Encoder) throws EncodeError = try to.writeU64(this as u64)
+  fun encode(to: Encoder) throws EncodeError = try to.writeU64(this.toU64())
 }
 implement Encodable for f32 {
-  fun encode(to: Encoder) throws EncodeError = try to.writeF64(this as f64)
+  fun encode(to: Encoder) throws EncodeError = try to.writeF64(this.toF64())
 }
 implement Encodable for f64 {
   fun encode(to: Encoder) throws EncodeError = try to.writeF64(this)
@@ -368,37 +368,37 @@ implement Encodable for string {
 }
 
 implement Decodable for i8 {
-  static fun decode(from: Decoder): i8 throws DecodeError = try narrowI64(from, -128, 127) as i8
+  static fun decode(from: Decoder): i8 throws DecodeError = (try narrowI64(from, -128, 127)).wrapI8()
 }
 implement Decodable for i16 {
-  static fun decode(from: Decoder): i16 throws DecodeError = try narrowI64(from, -32768, 32767) as i16
+  static fun decode(from: Decoder): i16 throws DecodeError = (try narrowI64(from, -32768, 32767)).wrapI16()
 }
 implement Decodable for i32 {
-  static fun decode(from: Decoder): i32 throws DecodeError = try narrowI64(from, -2147483648, 2147483647) as i32
+  static fun decode(from: Decoder): i32 throws DecodeError = (try narrowI64(from, -2147483648, 2147483647)).wrapI32()
 }
 implement Decodable for i64 {
   static fun decode(from: Decoder): i64 throws DecodeError = try from.readI64()
 }
 implement Decodable for isize {
-  static fun decode(from: Decoder): isize throws DecodeError = try from.readI64() as isize
+  static fun decode(from: Decoder): isize throws DecodeError = (try from.readI64()).toIsize()
 }
 implement Decodable for u8 {
-  static fun decode(from: Decoder): u8 throws DecodeError = try narrowU64(from, 255) as u8
+  static fun decode(from: Decoder): u8 throws DecodeError = (try narrowU64(from, 255)).wrapU8()
 }
 implement Decodable for u16 {
-  static fun decode(from: Decoder): u16 throws DecodeError = try narrowU64(from, 65535) as u16
+  static fun decode(from: Decoder): u16 throws DecodeError = (try narrowU64(from, 65535)).wrapU16()
 }
 implement Decodable for u32 {
-  static fun decode(from: Decoder): u32 throws DecodeError = try narrowU64(from, 4294967295) as u32
+  static fun decode(from: Decoder): u32 throws DecodeError = (try narrowU64(from, 4294967295)).wrapU32()
 }
 implement Decodable for u64 {
   static fun decode(from: Decoder): u64 throws DecodeError = try from.readU64()
 }
 implement Decodable for usize {
-  static fun decode(from: Decoder): usize throws DecodeError = try from.readU64() as usize
+  static fun decode(from: Decoder): usize throws DecodeError = (try from.readU64()).toUsize()
 }
 implement Decodable for f32 {
-  static fun decode(from: Decoder): f32 throws DecodeError = try from.readF64() as f32
+  static fun decode(from: Decoder): f32 throws DecodeError = (try from.readF64()).toF32()
 }
 implement Decodable for f64 {
   static fun decode(from: Decoder): f64 throws DecodeError = try from.readF64()
@@ -544,12 +544,12 @@ extend Value {
 
   public fun asI64(): i64? = when (this) {
     is VInt   => this.value
-    is VFloat => if (this.value == (this.value as i64) as f64) this.value as i64 else null
+    is VFloat => if (this.value == this.value.trunc()) this.value.toI64() else null
     else      => null
   }
 
   public fun asF64(): f64? = when (this) {
-    is VInt   => this.value as f64
+    is VInt   => this.value.toF64()
     is VFloat => this.value
     else      => null
   }
@@ -737,7 +737,7 @@ public struct ValueDecoder {
         this.recorded.record(this.here(), "$n is negative")
         return 0
       }
-      n as u64
+      n.wrapU64()
     }
 
     fun readF64(): f64 throws DecodeError {
@@ -891,7 +891,7 @@ public struct ValueEncoder {
     }
 
     fun writeI64(v: i64) throws EncodeError = this.put(VInt(value: v))
-    fun writeU64(v: u64) throws EncodeError = this.put(VInt(value: v as i64))
+    fun writeU64(v: u64) throws EncodeError = this.put(VInt(value: v.wrapI64()))
     fun writeF64(v: f64) throws EncodeError = this.put(VFloat(value: v))
     fun writeBool(v: bool) throws EncodeError = this.put(VBool(value: v))
     fun writeString(v: string) throws EncodeError = this.put(VString(value: v))

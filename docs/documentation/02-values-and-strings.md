@@ -33,7 +33,7 @@ use io
 fun main() {
   val n: i64 = 5
   var ratio: f64 = 0.5
-  ratio = n as f64 / 2.0
+  ratio = n.toF64() / 2.0
   io.println("$ratio")
 }
 ```
@@ -56,8 +56,8 @@ types when layout or memory matters (struct fields in bulk data, C
 interop, bit manipulation).
 
 There is **no implicit conversion** between numeric types (D21). Mixing
-`i32` and `i64` in one expression is an error; say what you mean with
-`as`:
+`i32` and `i64` in one expression is an error; say what you mean with a
+conversion method (D86). Each one names what it can lose:
 
 ```veles
 use io
@@ -65,24 +65,38 @@ use io
 fun main() {
   val a = 7
   val b = 2
-  io.println("${a / b} ${a % b} ${a as f64 / b as f64}")
+  io.println("${a / b} ${a % b} ${a.toF64() / b.toF64()}")
   val small: i32 = 7
-  val wide = small as i64 * 1000000000
-  val narrow = 300 as u8        // wraps: 44
-  io.println("$wide $narrow ${-7 / 2}")
+  val wide = small.toI64() * 1000000000     // cannot lose: an i64
+  val narrow = 300.wrapU8()                 // keeps the low 8 bits: 44
+  val fits = 200.toU8()                     // may lose: a u8?, here 200
+  val count = 300
+  val big = count.toU8()                    // out of range: null
+  io.println("$wide $narrow $fits $big ${-7 / 2}")
 }
 ```
 
 Output:
 ```text
 3 1 3.5
-7000000000 44 -3
+7000000000 44 200 null -3
 ```
 
-Integer division truncates towards zero. `as` between numeric types
-converts and, when narrowing, wraps. A float cast to an integer drops
-the fraction and saturates: `1e20 as i64` is the largest `i64`,
-`-1.0 as u8` is 0, and NaN becomes 0.
+Integer division truncates towards zero. The conversions are methods on
+every numeric type:
+
+- `x.toT()` where nothing can be lost (`u8` to `i64`, an integer to a
+  float, `f32` to `f64`) returns a `T`. Where a value could be lost
+  (`i64` to `u8`, a float to an integer) it returns a `T?` that is null
+  when the value does not fit. A float truncates toward zero and NaN is
+  null: `1e20.toI64()` and `(-1.0).toU8()` are null, `2.9.toI32()` is 2.
+- `x.wrapT()` between integers keeps the low bits, the conversion `+%`
+  is to `+`: `300.wrapU8()` is 44, `(-1).wrapU8()` is 255. Generic code that only knows its target as a
+  type parameter writes it as a type argument: `n.wrapTo<T>()`.
+
+A literal that cannot fit is an error at compile time (`300.toU8()`
+says to use `wrapU8()` if the low bits are what you want). `as` no
+longer converts; it only renames (`use io { println as say }`).
 
 ### Overflow is an error, unless you ask for wrapping
 
