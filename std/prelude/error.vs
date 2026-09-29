@@ -52,7 +52,7 @@ public trait Error {
 /// and `code` the platform's own error number, for logs.
 ///
 /// ```veles
-/// val text = fs.readFile(path) else { e =>
+/// val text = fs.readFile(path) catch (e) {
 ///   if (e.kind == IoKind.NotFound) return "{}"
 ///   throw e
 /// }

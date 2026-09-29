@@ -1603,6 +1603,37 @@ func TestHoverOnLazyWord(t *testing.T) {
 	}
 }
 
+// The name a `catch (e)` binds (D98) is an ordinary local: hover shows the
+// error union where it is used and definition goes to the binding.
+func TestHoverOnCatchBinding(t *testing.T) {
+	src := "use io { println }\n\nerror Bad { message: string }\n\nfun parse(s: string): i64 throws Bad = try s.toInt() ?! Bad(message: \"no\")\n\nfun main() {\n  do {\n    println(\"${try parse(\"1\")}\")\n  } catch (problem) {\n    println(problem.message())\n  }\n}\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := pathToURI(path)
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{})
+	c.notify("initialized", map[string]any{})
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": src}})
+	at := func(method string, line, col int) string {
+		res, _ := c.call(method, map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": line, "character": col}})
+		return string(res)
+	}
+	// the bound error and its use in the handler: named, and typed as the error
+	if got := at("textDocument/hover", 9, 14); !strings.Contains(got, "problem") || !strings.Contains(got, "Bad") {
+		t.Errorf("hover on the bound error: %s", got)
+	}
+	if got := at("textDocument/hover", 10, 14); !strings.Contains(got, "problem") || !strings.Contains(got, "Bad") {
+		t.Errorf("hover on its use: %s", got)
+	}
+	if got := at("textDocument/definition", 10, 14); !strings.Contains(got, `"line":9`) {
+		t.Errorf("definition of the use: %s", got)
+	}
+}
+
 // The name of `if (val x = e)` (D95) is an ordinary local: hover shows its
 // non-null value's type where it is used, definition goes to the binding,
 // and the name is gone in the else branch.

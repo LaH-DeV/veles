@@ -28,6 +28,12 @@ type Parser struct {
 	// appears (a cause, D45).
 	errorFields bool
 
+	// inTry is set while parsing the operand of a `try`: a `catch` after it
+	// belongs to the whole `try` expression (`try f().g() catch (e) { ... }`),
+	// not to the last call in the chain (D98). Any nested expression — an
+	// argument, a parenthesis, a block — clears it.
+	inTry bool
+
 	// leadDoc is a documentation comment seen on a declaration's attributes,
 	// handed to the declaration that follows them.
 	leadDoc string

@@ -68,7 +68,7 @@ var families = []family{
 		`this loop`, `^cannot iterate over`, `^'next\(\)' must return`),
 	fam("results-and-errors", `\btry\b`, `throw`, `unused Result`, `'\?\?'`, `'\?!'`, `error set`,
 		`is not an error`, `cannot be an error`, `^'Err\(`, `^error type`, `'message' can be overridden`,
-		`only a Result has`, `error union`, `'Ok\(\.\.\.\)'`, `\(D4\)`),
+		`only a Result has`, `error union`, `'Ok\(\.\.\.\)'`, `\(D4\)`, `\(D98\)`),
 	fam("val-else", `'val \.\.\. else'`, `needs 'else \{`, `the 'else' can never run`),
 	fam("nullable", `may be null`, `^'null'`, `'\?\.'`, `non-nullable`, `'\?:'`, `never null`, `\(D5\)`, `\(D95\)`),
 	fam("enums", `\benum\b`, `\(D57\)`),

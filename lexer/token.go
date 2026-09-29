@@ -124,6 +124,8 @@ const (
 	KwType
 	KwEnum
 	KwFor
+	KwDo    // `do { ... } catch (e) { ... }` (D98)
+	KwCatch // the failure branch of a `do` block (D98)
 	// Reserved for future use; lexed as keywords so they cannot be identifiers.
 	KwReserved
 	keywordEnd
@@ -178,12 +180,14 @@ var keywords = map[string]TokenKind{
 	"type":      KwType,
 	"enum":      KwEnum,
 	"for":       KwFor,
+	"do":        KwDo,
+	"catch":     KwCatch,
 
 	// reserved
 	"match": KwReserved, "defer": KwReserved, "go": KwReserved,
 	"yield": KwReserved, "where": KwReserved, "super": KwReserved,
-	"catch": KwReserved, "interface": KwReserved, "class": KwReserved,
-	"while": KwReserved, "do": KwReserved, "finally": KwReserved,
+	"interface": KwReserved, "class": KwReserved,
+	"while": KwReserved, "finally": KwReserved,
 	"import": KwReserved, "package": KwReserved, "module": KwReserved, "let": KwReserved,
 }
 

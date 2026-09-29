@@ -1,0 +1,24 @@
+3
+failed: not a number: x
+failed: Worse(code: -4)
+fine bad input negative
+skip: not a number: x
+skip: Worse(code: -3)
+6
+caught zero
+ok 3
+42 -1
+4 -9
+close d1
+opened d1 got 5
+close d1
+handled: not a number: x
+sum 11
+async failed: not a number: no
+6
+total 3
+lambda: not a number: z
+5 0
+7 null
+3 -1
+exit=0

@@ -22,9 +22,10 @@ something compiles, write it to the scratchpad and run
   (`val [a, b] = xs else return …`, `when (xs) { [x, ..rest] => … }`),
   index loops the checker understands, or `xs.at(i) ?: panic("why this
   cannot fail")` with a real reason.
-- Guards: `val x = r else { e => … }` (let-else), `?:` for nullables,
-  `??` for a Result. Errors are `error Name { }`; functions `throws`,
-  callers `try`.
+- Guards: `val x = r else return` (let-else), `?:` for nullables, `??` for a
+  Result value, `r catch (e) { … }` when the handler needs the error, and
+  `do { … try … } catch (e) { … }` for several calls sharing one handler.
+  Errors are `error Name { }`; functions `throws`, callers `try`.
 - Element access is methods only: `at`/`set` on lists, `get`/`set` on
   maps; `ref` for a write through a pointer. Brackets are literals; `[:]`
   is the empty map.

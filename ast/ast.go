@@ -486,7 +486,7 @@ type ValStmt struct {
 }
 
 // Handler is `{ body }` or `{ e => body }`: the failure branch of a let-else
-// or of `r ?? { e => ... }`, with a Result's error bound to Err.
+// or of `r catch (e) { ... }`, with a Result's error bound to Err.
 type Handler struct {
 	Err  *Ident
 	Body *Block
@@ -732,13 +732,27 @@ type OrFailExpr struct {
 	Pos  source.Span
 }
 
-// CoalesceExpr is `r ?? fallback` or `r ?? { e => ... }`: a Result's value,
+// CoalesceExpr is `r ?? fallback`: a Result's value,
 // or the fallback (a value, or a handler that yields one or leaves) when it
 // is an Err. `??` is to a Result what `?:` is to a nullable.
 type CoalesceExpr struct {
 	L       Expr
 	R       Expr     // nil when Handler is set
-	Handler *Handler // `?? { e => ... }`
+	Handler *Handler // `?? { ... }`: a handler that does not see the error
+	Pos     source.Span
+}
+
+// CatchExpr is `do { body } catch (e) { handler }` (D98): a block whose
+// failed `try`s and `throw`s go to the handler instead of leaving the
+// function. Its value is the block's, or what the handler yields.
+//
+// With X set it is the postfix form, `x catch (e) { handler }` (D98): the
+// error of a Result-valued x, or of the failing calls of `try x`, goes to the
+// handler. Then Body is nil.
+type CatchExpr struct {
+	Body    *Block
+	X       Expr
+	Handler *Handler
 	Pos     source.Span
 }
 
@@ -898,6 +912,7 @@ func (e *UnaryExpr) Span() source.Span        { return e.Pos }
 func (e *BinaryExpr) Span() source.Span       { return e.Pos }
 func (e *ElvisExpr) Span() source.Span        { return e.Pos }
 func (e *CoalesceExpr) Span() source.Span     { return e.Pos }
+func (e *CatchExpr) Span() source.Span        { return e.Pos }
 func (e *OrFailExpr) Span() source.Span       { return e.Pos }
 func (e *WithExpr) Span() source.Span         { return e.Pos }
 func (e *RangeExpr) Span() source.Span        { return e.Pos }
@@ -936,6 +951,7 @@ func (*UnaryExpr) exprNode()        {}
 func (*BinaryExpr) exprNode()       {}
 func (*ElvisExpr) exprNode()        {}
 func (*CoalesceExpr) exprNode()     {}
+func (*CatchExpr) exprNode()        {}
 func (*OrFailExpr) exprNode()       {}
 func (*WithExpr) exprNode()         {}
 func (*RangeExpr) exprNode()        {}

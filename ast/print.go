@@ -702,6 +702,16 @@ func (p *printer) expr(e Expr) {
 		p.w(" ")
 		p.expr(e.R)
 		p.w(")")
+	case *CatchExpr:
+		p.open("catch")
+		if e.X != nil {
+			p.child(func() { p.expr(e.X) })
+		} else {
+			p.child(func() { p.block(e.Body) })
+		}
+		p.w(" ")
+		p.handler(e.Handler)
+		p.close()
 	case *CoalesceExpr:
 		p.w("(?? ")
 		p.expr(e.L)

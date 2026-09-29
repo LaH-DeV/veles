@@ -172,7 +172,7 @@
       "patterns": [
         { "name": "keyword.control.conditional.veles", "match": "\\b(if|else|when|is)\\b" },
         { "name": "keyword.control.loop.veles", "match": "\\b(loop|break|continue|in)\\b" },
-        { "name": "keyword.control.flow.veles", "match": "\\b(return|throw|try|with)\\b" },
+        { "name": "keyword.control.flow.veles", "match": "\\b(return|throw|try|do|catch|with)\\b" },
         { "name": "keyword.control.concurrency.veles", "match": "\\b(async|await|scope|gather|race)\\b" },
         { "name": "storage.modifier.veles", "match": "\\b(public|private|internal|protected|override|unsafe|extern|mut|static|sealed|sendable)\\b" },
         { "name": "storage.modifier.veles", "match": "\\b(lazy)\\b(?=\\s+[A-Za-z_][A-Za-z0-9_]*\\s*:)" },

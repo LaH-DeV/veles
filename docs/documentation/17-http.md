@@ -47,7 +47,7 @@ Output:
 HTTP/1.1 200 OK | hello veles
 HTTP/1.1 200 OK | {"id": "42"}
 HTTP/1.1 403 Forbidden | not for you
-HTTP/1.1 404 Not Found | not found
+HTTP/1.1 404 Not Found | Not Found
 ```
 
 - `http.Router()` collects routes; `get`/`post`/`put`/`delete`/`any` take

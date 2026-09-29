@@ -13,7 +13,7 @@ import (
 //
 //	x ?: fallback            T?  — the value, or the fallback (D30)
 //	r ?? fallback            Result — the value, or the fallback
-//	r ?? { e => ... }        Result — the value, or what the handler yields
+//	r catch (e) { ... }      Result — the value, or what the handler yields (D98)
 //	val v = x else { ... }   T? or Result — bind the value, or leave
 //	val P(f) = x else { ... }  a pattern — bind its fields, or leave
 //
@@ -21,10 +21,17 @@ import (
 // error and a fix naming the other, so the operator says which kind of
 // "maybe" is being unwrapped.
 
-// coalesceExpr checks `r ?? fallback` and `r ?? { e => ... }`.
+// coalesceExpr checks `r ?? fallback`.
 func (f *fnCtx) coalesceExpr(e *ast.CoalesceExpr, want types.Type) Expr {
-	left := e.L
-	if t, isTry := e.L.(*ast.TryExpr); isTry {
+	return f.coalesceOf(e.L, e.R, e.Handler, e.Pos, want, "??")
+}
+
+// coalesceOf is the value of the Result l, or what the fallback r or the
+// handler h yields when it is an Err. op is the word the source used, `??` or
+// `catch` (D98), for the messages.
+func (f *fnCtx) coalesceOf(l ast.Expr, r ast.Expr, h *ast.Handler, pos source.Span, want types.Type, op string) Expr {
+	left := l
+	if t, isTry := l.(*ast.TryExpr); isTry && op == "??" {
 		// `try f() ?? 0`: the `try` would propagate the very error `??` is
 		// there to handle; one error with the fix, and the rest checked as
 		// if it were not written
@@ -32,48 +39,57 @@ func (f *fnCtx) coalesceExpr(e *ast.CoalesceExpr, want types.Type) Expr {
 		f.c.errorFix(cut, fixReplace("Remove 'try'", cut, ""), "'??' handles the error itself; drop the 'try': '%s ?? …'", srcText(t.X))
 		left = t.X
 	}
-	l := f.checkExpr(left, nil)
-	lt := l.Type()
+	lv := f.checkExpr(left, nil)
+	lt := lv.Type()
 	if types.IsInvalid(lt) {
-		f.checkFallbackLoosely(e)
+		f.checkFallbackLoosely(r)
 		return bad()
 	}
 	if _, isNullable := lt.(*types.Nullable); isNullable {
-		op := operatorSpan(e.L, "??")
-		f.c.errorFix(op, fixReplace("Use '?:'", op, "?:"), "'??' is for a Result; a nullable's value-or-fallback is '?:': '%s ?: fallback'", srcText(e.L))
-		f.checkFallbackLoosely(e)
+		if op == "catch" {
+			f.errorf(pos, "'catch' handles the error of a Result, and a nullable has none; its fallback is '?:': '%s ?: fallback' (D98)", srcText(l))
+		} else {
+			sp := operatorSpan(l, "??")
+			f.c.errorFix(sp, fixReplace("Use '?:'", sp, "?:"), "'??' is for a Result; a nullable's value-or-fallback is '?:': '%s ?: fallback'", srcText(l))
+		}
+		f.checkFallbackLoosely(r)
 		return bad()
 	}
 	rs, ok := lt.(*types.Sealed)
 	if !ok || !isResultType(rs) {
-		f.errorf(e.Pos, "'??' needs a Result on its left (a call to a 'throws' function), found '%s'", lt)
-		f.checkFallbackLoosely(e)
+		if op == "catch" {
+			f.errorf(pos, "'catch' needs a Result before it (a call to a 'throws' function), or 'try' with a chain, or a 'do' block; found '%s', which cannot fail (D98)", lt)
+		} else {
+			f.errorf(pos, "'??' needs a Result on its left (a call to a 'throws' function), found '%s'", lt)
+		}
+		f.checkFallbackLoosely(r)
 		return bad()
 	}
 	okT := rs.TypeArgs[0]
 	tmp := f.newTemp(lt)
 	okV, errV := rs.Variants[0], rs.Variants[1]
+	l2 := lv
 	ref := &VarRef{exprBase{lt}, tmp}
 	failed := &VariantTest{exprBase{types.TBool}, ref, errV}
 	payload := &FieldGet{exprBase{okT}, &VariantCast{exprBase{okV}, ref, okV}, 0, okV.Fields[0].Name}
 
 	var fallback *Block
-	if e.Handler != nil {
+	if h != nil {
 		errValue := &FieldGet{exprBase{errV.Fields[0].Type}, &VariantCast{exprBase{errV}, ref, errV}, 0, errV.Fields[0].Name}
-		fallback = f.handlerBlock(e.Handler, errValue, okT, false)
+		fallback = f.handlerBlock(h, errValue, okT, false)
 	} else {
-		x := f.checkExprTo(e.R, okT)
+		x := f.checkExprTo(r, okT)
 		fallback = f.valueBlock(x)
 	}
 	pick := &If{exprBase{okT}, failed, fallback, &Block{Value: payload, Type: okT}}
-	return &Let{exprBase{okT}, tmp, l, pick}
+	return &Let{exprBase{okT}, tmp, l2, pick}
 }
 
 // checkFallbackLoosely checks the right side of a `??` whose left side was
 // wrong, so its own mistakes are still reported.
-func (f *fnCtx) checkFallbackLoosely(e *ast.CoalesceExpr) {
-	if e.R != nil {
-		f.checkExpr(e.R, nil)
+func (f *fnCtx) checkFallbackLoosely(r ast.Expr) {
+	if r != nil {
+		f.checkExpr(r, nil)
 	}
 }
 
@@ -84,14 +100,12 @@ func (f *fnCtx) handlerBlock(h *ast.Handler, errValue Expr, t types.Type, leave 
 	f.pushScope()
 	defer f.popScope()
 	var decl Stmt
-	if h.Err != nil {
-		if errValue == nil {
-			f.errorf(h.Err.Pos, "only a Result has an error to bind; write 'else { ... }' without '%s =>'", h.Err.Name)
-		} else if h.Err.Name != "_" {
-			v := f.newVar(h.Err.Name, errValue.Type(), false, h.Err.Pos)
-			f.declareLocal(h.Err.Name, v, h.Err.Pos)
-			decl = &VarDecl{Var: v, Init: errValue}
-		}
+	// only `catch (e)` binds an error, and only on a Result (D98), so a name
+	// and no error to bind cannot reach here
+	if h.Err != nil && errValue != nil && h.Err.Name != "_" {
+		v := f.newVar(h.Err.Name, errValue.Type(), false, h.Err.Pos)
+		f.declareLocal(h.Err.Name, v, h.Err.Pos)
+		decl = &VarDecl{Var: v, Init: errValue}
 	}
 	var b *Block
 	if leave {

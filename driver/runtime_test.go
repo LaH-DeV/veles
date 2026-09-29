@@ -367,7 +367,7 @@ fun kindOf<T>(r: Result<T, IoError>): IoKind = when (r) {
 
 fun main() {
   io.println("${kindOf(fs.readFile("no/such/file.txt"))}")
-  val l = net.listen() ?? { e => panic("listen: $e") }
+  val l = net.listen() catch (e) { panic("listen: $e") }
   val port = l.port()
   io.println("${kindOf(net.listen(port: port))}")
   l.close()

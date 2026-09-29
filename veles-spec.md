@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.55** — language design complete; D58 adds the derivation story D51 deferred, D59 the standard library's cryptography. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
+**Working draft v0.57** — language design complete; D58 adds the derivation story D51 deferred, D59 the standard library's cryptography. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -1359,6 +1359,11 @@ recommended, and turned down so the operator shows the kind); a
 `Fallible` trait letting user types take part in `?:`/`??`/`try`/let-else
 (a separate decision, not foreclosed by this one); Swift's `guard let`
 spelling (a second keyword for what `val` already says).
+
+*Amended by D98:* the handler forms that bound the error, `r ?? { e => ... }` and
+`val x = r else { e => ... }`, are removed; `r catch (e) { ... }` is the one
+spelling that sees the error. `r ?? fallback`, `r ?? return`, and let-else
+without a binding stay as written above.
 
 ### D62 — Proving an index instead of panicking on it (v0.37)
 
@@ -2760,6 +2765,162 @@ level: `req.stream`, `Body.read`, `BodyWriter`, `fs.File` with `readAt` — the
 same pieces the std is built from. A compiler in Veles needs `fs.File` and
 `readAt` to read sources incrementally and to write output as it is produced
 without holding a whole file.
+
+### D98 — `do { ... } catch (e) { ... }`: one handler for several `try`s (v0.56)
+
+```veles
+val text = do {
+  val a = try req.text()
+  val n = try parse(a)
+  "got $n"
+} catch (e) {
+  "cannot read: ${e.message()}"
+}
+
+loop (line in lines) {
+  do {
+    sum += try check(try parse(line))
+    if (sum > 100) break            // the loop's own break
+  } catch (e) {
+    log.warn("skipping: ${e.message()}")
+    continue                        // the loop's own continue
+  }
+}
+```
+
+The user, while D97's tests were being written: "we probably need to add some
+kind of 'catch', so we could spam the 'try' like we do, but catch AND deal with
+the one that failed". Veles had handlers for one call (`r ?? { e => }`, D61's
+`val x = r else { e => }`, `when`), and the immediately called closure
+`(() => { ... })()` with a `??` after it worked for several — but a closure is a
+lambda, so `continue`/`break` in its body is refused ("outside of a loop") and
+`return` returns from the closure. The rejection of a `catch` for *panics*
+(2026-09-26, D52) is a different thing and stands: a panic is the bug channel;
+`do/catch` handles typed errors (`Result`/`throws`), which are ordinary values
+(D4).
+
+**The handler's spelling, revised the same day (user).** The first form was
+`catch { e => ... }`. The user: "I think the catch syntax is still not the best...
+We should make `catch (e) {` like we have `when (v) {` ... (the same with "else"
+with errors and other syntaxes like that)". Every other head in Veles binds in
+parentheses and then takes an ordinary block — `if (c)`, `loop (x in xs)`,
+`when (v)`, `with (d = x)` — and `{ e => }` was the odd one out, a block that
+looks like a lambda body and is not. It is now one spelling everywhere an error
+is bound:
+
+```veles
+val n = parse(s) catch (e) { return -1 }             // one call, was `else { e => }`
+val m = parse(s) catch (e) { -e.line.len() }         // was `?? { e => }`
+val k = parse(s) catch { 0 }                         // the binding is optional
+val t = try parse(s).len() catch (e) { -1 }          // a chain: try marks the call, catch covers the chain
+val u = do { val a = try f(); try g(a) } catch (e) { "failed: ${e.message()}" }
+```
+
+- **`catch (e) { ... }` is a postfix** on a `Result`-valued expression, on a
+  `try` expression, and on a `do` block. It binds tighter than any operator
+  (the user chose the tight postfix): `a + parse(s) catch (e) { 0 }` is
+  `a + (parse(s) catch ...)`. It may start the next line.
+- **Removed, not deprecated** (the user: nobody else uses the old spelling
+  yet): `r ?? { e => ... }` and `val x = r else { e => ... }` — the parser
+  refuses them with one line naming `catch (e) { ... }`, and so it does
+  `catch { e => ... }`. What stays: `r ?? fallback`, `r ?? return`, `x ?: y`,
+  `val x = r else return` and the pattern and nullable let-else, none of which
+  see an error. So "give me the error" has exactly one spelling, and D61's
+  toolbox has one form fewer.
+- **`try chain catch (e) { }`** (the user's question: "`(parse(s) catch (e) {
+  0 }).len()` is not looking good... what about `parse(s)?.len() catch (e) {}`
+  working as well?"). `try` already covers a whole method chain by grammar, so
+  `try parse(s).len() catch (e) { -1 }` is `do { try parse(s).len() } catch (e)
+  { -1 }`: the `catch` after a `try` belongs to the whole `try` expression, the
+  handler yields the chain's type, and the "write the parentheses" warning of
+  `try f().m()` stays quiet because a `catch` follows. (A `catch` after a bare
+  Result still attaches to that Result.) A chain with two failing calls still
+  wants `do { }` or parentheses: a postfix marker per call (`?.` for a Result,
+  or `!.`) was not chosen — `?.` means nullable chaining (D70, and D61's "one
+  operator per kind of maybe"), and `!.` reads as the rejected `!!` (D64); it
+  stays open as a separate decision if such chains turn out to be common.
+- **Refused:** `catch` after a nullable ("a nullable has none; its fallback is
+  `?:`"), after a value that cannot fail, alone, and `catch (e)` written as
+  `catch { e => }`; `try f() catch` is *not* refused (unlike `try f() ?? 0`,
+  where `try` would propagate the very error `??` handles, a `catch` intercepts
+  it).
+- **Patterns** (the user: "one way of addressing it would be the patterns but
+  I'm not sure"): none now. `when (e) { is A => ... is B => ... }` inside the
+  handler is exhaustive-checked over the union today; typed clauses
+  (`catch (e: A) { } catch (e: B) { }`, exhaustive, explicit `throw e` to
+  propagate) would be a superset of this head and can be added without
+  changing anything written now.
+
+**The form.** `do { block } catch (e) { handler }` is an expression. Its value
+is the block's last expression, or what the handler yields; the handler is the
+handler block of D61's `??` — `(e) { ... }` or `{ ... }` — yielding
+the block's type or leaving (`return`, `break`, `continue`, `throw`, `panic`).
+A failed `try` or a `throw` anywhere in the block (not inside a lambda in it,
+which has its own rules) jumps to the handler. `try` stays: a call that can fail
+and is not marked is still D4's "unused Result" error, so every place a failure
+can start stays visible (the user chose this over an implicit-propagation
+variant). `e` is the union of the error types the block can raise (D45), in the
+order they appear, so `e.message()` works and `when (e) { is A => ... }` tells
+them apart; `catch (_) { }` and `catch { ... }` ignore it. The `catch` may
+start the next line, as an `else` may (D61).
+
+**Block, not lambda.** `return` leaves the function, `break`/`continue` the loop
+(or labelled loop) around the `do`, and a call that suspends needs nothing
+declared, exactly as in D95's `if (val ...)`. The handler is *outside* the
+block: a `try` or `throw` in it belongs to the function or to a `do` around it,
+so `catch (e) { throw Wrapped(cause: e) }` makes the function `throws Wrapped`.
+Errors the handler catches are not the function's: a function whose only
+`try`s are in a `do` need not be `throws` (they are not recorded, so D45's
+"declared throws but nothing throws" lint is right about it too).
+What the block proved (smart-cast facts) does not hold after it, since the
+handler may run from anywhere in it; nor do facts about what it assigned.
+
+**Diagnostics** (family `results-and-errors`, all end `(D98)`): a `do` without
+`catch`, and `do { } while (c)` (there is no do-while; the message says
+`loop { ...; if (!cond) break }`); a `catch` with no `do`; a block in which
+nothing can fail ("the `catch` could never run"); and — refused rather than
+mis-compiled — a fail-fast `scope` inside the block that launches a child which
+can fail, because a scope passes its error to the *function*, past the handler:
+put the scope in its own function and `try` that.
+
+**`do` and `catch` were already reserved words** (the lexer refused them as
+identifiers, next to `while` and `finally`); they are now keywords, so no program
+that compiled before changes meaning. The user asked whether `do` would be a
+contextual keyword — it is not needed: with no do-while and no trailing lambdas,
+`do {` at the start of an expression can only mean this. Completion offers both;
+the TextMate grammar colours them as control flow.
+
+**Lowering, no code generation change.** The checker turns the block into a
+one-shot loop that the block's failing `try`s leave, the technique the eager
+collection adapters already use for a throwing function argument (lower_try.go):
+`var err: E? = null; var value: T? = null; loop { ...; value = Some(last); break }`
+then `if (err == null) value! else handler`. A `try` becomes `let r = x; if (r is
+Err) { err = Some(convert(e)); break } else payload`; the union `E` is only known
+when the block is done, so the nodes built on the way are patched at the end. The
+loop is only in the lowering — the checker's loop stack does not contain it — so
+`break`/`continue` written in the block name the program's own loops. A `with`
+left by a failing `try` closes (tested). Hover, go-to-definition and rename on
+`e` work as for any binding; `e` is typed as the union.
+
+Rejected (user, recommended of 4 and 3, then revisited): the spelling
+`catch { block } else { e => }` — chosen first, then withdrawn: "other languages
+have 'success story' in a try, and catch block is where the error happens" —
+and `attempt { } else { e => }` (a new word), `try { } catch (e) { }` (`try` is
+already the propagate prefix: `try` inside `try`), `on { e => }`; implicit
+propagation with no `try` in the block (the failure points stop being visible;
+a helper that becomes `throws` changes behaviour silently); a function-level
+`fun f() { } catch (e) { }` (coarse: no help inside a loop iteration); leaving
+the closure idiom. `throw` inside the block goes to the handler (Swift's rule),
+not out of the function — otherwise `try` and `throw` two lines apart would
+disagree.
+
+**Open:** patterns in the handler (`catch { is Bad => ... }`); a `Fallible`
+trait (D61's open item); a fail-fast `scope` inside a block.
+
+**Both levels and self-hosting.** A loop that skips bad input reads as prose; the
+`Result` ABI underneath is unchanged. A compiler in Veles needs exactly this
+shape — parse a statement and, when it fails, record the error, resynchronise and
+carry on with the next one.
 
 ---
 

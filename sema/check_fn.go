@@ -31,6 +31,9 @@ type fnCtx struct {
 	// variable each one declared
 	letOK   map[*ast.LetCond]bool
 	letVars map[*ast.LetCond]*Var
+	// D98: the `do { } catch { }` block being checked; a failing `try` or `throw`
+	// in it goes to its handler instead of leaving the function
+	catching *catchFrame
 	// provenReads are the `at`/`first`/`last` calls a bounds fact made total
 	// (D62), so a `?:` after one is a warning, not an error.
 	provenReads map[*ast.CallExpr]bool
@@ -1583,11 +1586,11 @@ func (f *fnCtx) checkThrow(s *ast.ThrowStmt) []Stmt {
 	if s.Value == nil {
 		return nil
 	}
-	if f.isGlobal {
+	if f.isGlobal && f.catching == nil {
 		f.errorf(s.Pos, globalCannotFail)
 		return nil
 	}
-	if !f.throws {
+	if !f.throws && f.catching == nil {
 		f.errorf(s.Pos, "'throw' fails the function, but it is not declared 'throws' (D4)")
 		f.checkExpr(s.Value, nil)
 		return nil

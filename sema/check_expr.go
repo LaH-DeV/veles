@@ -319,6 +319,8 @@ func (f *fnCtx) checkExprInner(e ast.Expr, want types.Type) Expr {
 		return f.withExpr(e, want)
 	case *ast.ElvisExpr:
 		return f.elvisExpr(e, want)
+	case *ast.CatchExpr:
+		return f.catchExpr(e, want)
 	case *ast.CoalesceExpr:
 		return f.coalesceExpr(e, want)
 	case *ast.RangeExpr:
@@ -987,6 +989,9 @@ func (f *fnCtx) throwExpr(errv Expr, span source.Span) Expr {
 		f.recordError(et, span)
 	}
 	f.c.checkErrorType(et, span)
+	if f.catching != nil {
+		return f.catchThrow(errv)
+	}
 	return &Throw{exprBase{types.TNever}, errv, et, f.currentErrType()}
 }
 
@@ -1700,6 +1705,14 @@ func (f *fnCtx) tryChain(e *ast.TryExpr) (Expr, bool) {
 		return f.tryOn(f.dispatchMethod(recv, mem, typeArgs, call, nil), e.Pos), true
 	}
 	span := source.Span{File: e.Pos.File, Start: e.Pos.Start, End: mem.X.Span().End}
+	if f.catching != nil && f.catching.quiet {
+		unwrapped := f.tryOn(recv, e.Pos)
+		if types.IsInvalid(unwrapped.Type()) {
+			f.checkArgsLoosely(call.Args)
+			return bad(), true
+		}
+		return f.dispatchMethod(unwrapped, mem, typeArgs, call, nil), true
+	}
 	f.warnFix(e.Pos, fixReplace("Write '(try ...)' around the call", span, "(try "+srcText(mem.X)+")"),
 		"'try' covers the whole chain, but '%s' is not a method of '%s'; read as '(try %s).%s(...)' — write the parentheses", mem.Name.Name, rs, srcText(mem.X), mem.Name.Name)
 	unwrapped := f.tryOn(recv, e.Pos)
@@ -1766,6 +1779,9 @@ func (f *fnCtx) tryOn(x Expr, pos source.Span) Expr {
 		okV := rs.Variants[0]
 		var payload Expr = &FieldGet{exprBase{okT}, &VariantCast{exprBase{okV}, &VarRef{exprBase{rs}, tmp}, okV}, 0, okV.Fields[0].Name}
 		return &Let{exprBase{okT}, tmp, x, payload}
+	}
+	if f.catching != nil {
+		return f.catchTry(x, rs)
 	}
 	if f.isGlobal {
 		f.errorf(e.Pos, globalCannotFail)

@@ -806,3 +806,49 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   15 and 17 with five new run examples, the stdlib reference and the cheat
   sheet. Next in C2: limits and middleware (max connections, CORS, auth hook,
   compression).
+
+- **2026-09-29, `do { } catch { e => }`: D98.** Raised while testing D97: several
+  `try`s that should fail into one local handler in a function that carries on;
+  the closure-called-at-once idiom cannot `continue`/`break`/`return` past
+  itself. The user chose a block form with `try` kept (over implicit
+  propagation, a function-level suffix, or leaving it), then — "other languages
+  have 'success story' in a try, and catch block is where the error happens" —
+  changed the spelling from `catch { } else { e => }` to `do { } catch { e => }`.
+  `do` and `catch` were reserved words; `lexer` makes them keywords, `ast.CatchExpr`
+  holds the block and the existing `Handler`, the parser reads it (with clean
+  errors for a missing `catch`, `do`-`while` and a stray `catch`, each a
+  well-formed node so the statement parser does not resynchronise and cascade),
+  the formatter prints it. `sema/catch.go` lowers the block to a one-shot HIR loop
+  with failure slots, the adapters' technique: `try`/`throw` inside route to the
+  slot through `f.catching` (a `catchFrame` on `fnCtx`), and the nodes built
+  before the error union is known are patched at the end — no code generation
+  change. A fail-fast `scope` child inside the block is refused, since the scope
+  passes its error to the function. Tests: conformance `D98-do-catch` and
+  `D98-do-syntax`, lsp `TestHoverOnCatchBinding`, `examples/catchblock` (`with`
+  closing on a failing `try`, a suspending call, `break outer`, a lambda inside,
+  nested blocks, a rethrow); docs chapter 7 (a run example), the errors
+  reference, the cheat sheet; completion and the TextMate grammar know both
+  words. Found on the way: the D97 commit changed 500 bodies to the reason
+  phrase but not the two examples that print them (`session`, `httpd`), so their
+  expected output was regenerated.
+
+- **2026-09-29, D98 revised: `catch (e) { }`.** Two more rounds with the user:
+  the spelling `catch { e => }` "is still not the best" (every other head binds
+  in parentheses — `when (v)`, `loop (x in xs)`), and the same for the handlers
+  of `??` and let-else. Result: one spelling, `catch (e) { ... }`, a tight postfix
+  on a `Result`, on `try chain` and on a `do` block; `?? { e => }`, `else { e => }`
+  and `catch { e => }` are refused with one line naming the new form (no
+  deprecation period, per the user); no patterns yet (`when (e)` inside is
+  exhaustive over the union). `try f().g() catch (e) { }` covers the whole chain
+  (the user disliked `(parse(s) catch (e) { 0 }).len()`); a per-call postfix
+  marker for Results stays a separate, open decision. Parser: `parseCatchHandler`
+  and `parseCatchPostfix`, a `catch` may start the next line, `inTry` keeps a
+  `catch` after a `try` operand from binding to its last call; sema: a postfix
+  `catch` on a Result reuses the `??` lowering (`coalesceOf`, with `catch` in the
+  messages), on a `try` it is checked as `do { try ... } catch`, and the dead
+  "only a Result has an error to bind" branch is gone. Migrated: 8 `??` and about
+  6 `else` handlers plus the 22 `catch { e => }` in std, examples, docs, Go test
+  sources and the veles-code skill. Tests: conformance (`D98-do-catch` with the
+  postfix, `try` chain, optional binding and next-line cases and their refusals;
+  `D98-do-syntax` with the three old spellings), format cases for postfix and
+  `try ... catch`, lsp hover; `examples/catchblock` output unchanged.

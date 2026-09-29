@@ -49,7 +49,11 @@ func infixBp(k lexer.TokenKind) int {
 }
 
 func (p *Parser) parseExpr() ast.Expr {
-	return p.parseBinary(bpNone)
+	saved := p.inTry
+	p.inTry = false
+	x := p.parseBinary(bpNone)
+	p.inTry = saved
+	return x
 }
 
 func (p *Parser) parseBinary(minBp int) ast.Expr {
@@ -124,7 +128,10 @@ func (p *Parser) parseUnary() ast.Expr {
 		return &ast.LetCond{Name: name, Value: value, Pos: p.spanFrom(start)}
 	case lexer.KwTry:
 		p.next()
+		savedTry := p.inTry
+		p.inTry = true
 		x := p.parseUnary()
+		p.inTry = savedTry
 		// `try x ?! e` is `try (x ?! e)`: the operator rewrites the failure,
 		// `try` propagates it — `(try x) ?! e` would need x to be nullable
 		// and is written with the parentheses
@@ -133,7 +140,12 @@ func (p *Parser) parseUnary() ast.Expr {
 			right := p.parseBinary(bpElvis - 1)
 			x = &ast.OrFailExpr{L: x, R: right, Pos: p.spanFrom(start)}
 		}
-		return &ast.TryExpr{X: x, Pos: p.spanFrom(start)}
+		tried := &ast.TryExpr{X: x, Pos: p.spanFrom(start)}
+		// `try f().g() catch (e) { ... }`: the pair covers the whole chain (D98)
+		if p.atCatch() {
+			return p.parseCatchPostfix(tried, start)
+		}
+		return tried
 	case lexer.KwAwait:
 		p.next()
 		x := p.parseUnary()
@@ -177,6 +189,18 @@ func (p *Parser) parsePostfix() ast.Expr {
 		case lexer.LParen:
 			args := p.parseArgs()
 			x = &ast.CallExpr{Fun: x, Args: args, Pos: p.spanFrom(start)}
+		case lexer.KwCatch:
+			if p.inTry {
+				return x
+			}
+			x = p.parseCatchPostfix(x, start)
+		case lexer.Semi:
+			// a `catch` may start the next line, as an `else` may
+			if !p.inTry && p.atCatch() {
+				p.next()
+				continue
+			}
+			return x
 		case lexer.LBracket:
 			p.next()
 			idx := p.parseExpr()
@@ -347,6 +371,13 @@ func (p *Parser) parsePrimary() ast.Expr {
 		return &ast.UnsafeExpr{Body: body, Pos: p.spanFrom(start)}
 	case lexer.KwRace:
 		return p.parseRace()
+	case lexer.KwDo:
+		return p.parseDoCatch()
+	case lexer.KwCatch:
+		p.errorf(t.Span, "'catch' follows an expression that can fail or a 'do' block: 'f() catch (e) { ... }', 'do { ... } catch (e) { ... }' (D98)")
+		p.next()
+		h := p.parseCatchHandler()
+		return &ast.CatchExpr{Body: &ast.Block{Pos: t.Span}, Handler: h, Pos: p.spanFrom(start)}
 	case lexer.KwScope:
 		p.errorf(t.Span, "'scope' is a statement, not an expression; use 'gather' to collect results (D36)")
 		p.next()

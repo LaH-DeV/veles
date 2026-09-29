@@ -157,25 +157,47 @@ func TestStyle(t *testing.T) {
 		{"let-else and ??",
 			`fun f() {
 val a=g()??0
-val b = g() ?? { e => e.n }
+val b = g() catch (e) { e.n }
 val c = g() else return
 val d = g()
-else { e => return }
+catch (_) { return }
 val Some(x) = h() else continue
 val t: i64?? = null
 }
 `,
 			`fun f() {
   val a = g() ?? 0
-  val b = g() ?? { e =>
+  val b = g() catch (e) {
     e.n
   }
   val c = g() else return
-  val d = g() else { e =>
+  val d = g() catch (_) {
     return
   }
   val Some(x) = h() else continue
   val t: i64?? = null
+}
+`},
+		{"do and catch (D98)",
+			`fun f() {
+val a = do { try g() } catch (e) { 0 }
+val b = try g().h() catch (e) { -1 }
+val c = g()
+  catch { 0 }
+}
+`,
+			`fun f() {
+  val a = do {
+    try g()
+  } catch (e) {
+    0
+  }
+  val b = try g().h() catch (e) {
+    -1
+  }
+  val c = g() catch {
+    0
+  }
 }
 `},
 		{"nested unary keeps parens",

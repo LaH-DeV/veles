@@ -412,7 +412,12 @@ func (f *fnCtx) launch(e *ast.CallExpr, want types.Type) Expr {
 	} else if isResultType(call.Type()) {
 		// fail-fast: the scope rethrows the child's error
 		et := call.Type().(*types.Sealed).TypeArgs[1]
-		if !types.IsNever(et) {
+		if !types.IsNever(et) && f.catching != nil {
+			// the scope would hand the child's error to the function, past
+			// the handler of the `do` block around it
+			f.errorf(e.Pos, "a child that can fail cannot be launched in a 'scope' inside a 'do' block: the scope passes its error to the function, not to the 'catch'; put the scope in its own function and 'try' that (D98)")
+			f.catching.poisoned = true
+		} else if !types.IsNever(et) {
 			for _, m := range types.UnionMembers(et) {
 				f.recordError(m, e.Pos)
 			}

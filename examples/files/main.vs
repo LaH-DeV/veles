@@ -36,7 +36,7 @@ fun main() throws IoError {
     is Err(e) => println("failed: ${e.detail} (${path.base(e.path)}) code ${e.code > 0} kind ${e.kind}")
   }
   // a missing file is a default; any other failure is still an error
-  val settings = fs.readFile(path.join(root, "settings.toml")) ?? { e =>
+  val settings = fs.readFile(path.join(root, "settings.toml")) catch (e) {
     if (e.kind != IoKind.NotFound) throw e
     "# defaults"
   }

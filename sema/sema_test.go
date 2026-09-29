@@ -3235,7 +3235,7 @@ fun radius(s: Shape): f64 {
   r
 }
 fun describe(text: string): string {
-  val n = parse(text) else { e =>
+  val n = parse(text) catch (e) {
     return e.why
   }
   "got $n"
@@ -3248,7 +3248,7 @@ fun main() {
     total += v + w
   }
   val a = parse("x") ?? 0
-  val b = parse("x") ?? { e => e.why.len() }
+  val b = parse("x") catch (e) { e.why.len() }
   val c = parse("x") ?? return
   io.println("$total $a $b $c ${radius(Rect(w: 1.0))} ${describe("q")}")
 }`)
@@ -3260,7 +3260,7 @@ fun main() {
   val b = "2".toInt() ?? 0
   val c = parse("3") else { io.println("no") }
   val d = 4 else return
-  val e = "5".toInt() else { err => return }
+  val e = "5".toInt() catch (err) { return }
   io.println("$a $b $c $d $e")
 }`)
 	text := diags.Render()
@@ -3269,7 +3269,7 @@ fun main() {
 		"'??' is for a Result; a nullable's value-or-fallback is '?:'",
 		"must leave",
 		"nothing here can fail",
-		"only a Result has an error to bind",
+		"a nullable has none",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing %q in:\n%s", want, text)

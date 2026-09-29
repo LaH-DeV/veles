@@ -313,10 +313,82 @@ func (p *Parser) atHandler() bool { return p.at(lexer.LBrace) }
 
 // parseHandler is `{ stmts }` or `{ e => stmts }`: the failure branch of a
 // let-else and of `r ?? { ... }`, with a Result's error bound to `e`.
+// parseDoCatch reads `do { body } catch (e) { handler }` (D98), with the
+// cursor on `do`. The `catch` may start the next line, as an `else` may.
+func (p *Parser) parseDoCatch() ast.Expr {
+	start := p.span()
+	p.next() // do
+	body := p.parseBlock()
+	if p.at(lexer.Semi) && p.cur().AutoSemi && p.peek(1).Kind == lexer.KwCatch {
+		p.next()
+	}
+	if !p.at(lexer.KwCatch) {
+		if p.at(lexer.KwReserved) && p.cur().Text == "while" {
+			p.errorf(p.span(), "there is no do-while: write 'loop { ...; if (!cond) break }', or 'loop (cond) { ... }' to test first; 'do' opens 'do { ... } catch (e) { ... }' (D98)")
+		} else {
+			p.errorf(p.span(), "a 'do' block needs a 'catch (e) { ... }' after it: what to do when a 'try' or 'throw' inside fails (D98)")
+		}
+		// a well-formed placeholder, not a BadExpr: the statement parser would
+		// resynchronise on a BadExpr and swallow the terminator, and the next
+		// statement would be reported too
+		return &ast.CatchExpr{Body: body, Handler: &ast.Handler{Body: &ast.Block{Pos: p.spanFrom(start)}, Pos: p.spanFrom(start)}, Pos: p.spanFrom(start)}
+	}
+	p.next() // catch
+	h := p.parseCatchHandler()
+	return &ast.CatchExpr{Body: body, Handler: h, Pos: p.spanFrom(start)}
+}
+
+// atCatch reports a `catch` at the cursor, or on the next line.
+func (p *Parser) atCatch() bool {
+	if p.at(lexer.KwCatch) {
+		return true
+	}
+	return p.at(lexer.Semi) && p.cur().AutoSemi && p.peek(1).Kind == lexer.KwCatch
+}
+
+// parseCatchPostfix reads `catch (e) { handler }` after an expression (D98),
+// with the cursor on `catch` or on the line break before it.
+func (p *Parser) parseCatchPostfix(x ast.Expr, start source.Span) ast.Expr {
+	if p.at(lexer.Semi) {
+		p.next()
+	}
+	p.next() // catch
+	h := p.parseCatchHandler()
+	return &ast.CatchExpr{X: x, Handler: h, Pos: p.spanFrom(start)}
+}
+
+// parseCatchHandler is what follows the word `catch` (D98): `(e) { ... }`,
+// which binds the error, or `{ ... }`, which does not. The binding is in a
+// head like `when (v)` and `loop (x in xs)`; the block is an ordinary one.
+func (p *Parser) parseCatchHandler() *ast.Handler {
+	start := p.span()
+	h := &ast.Handler{}
+	switch {
+	case p.at(lexer.LParen):
+		p.next()
+		if p.at(lexer.Ident) || p.at(lexer.Under) {
+			t := p.next()
+			h.Err = &ast.Ident{Name: t.Text, Pos: t.Span}
+		} else {
+			p.errorExpected("the name for the error")
+		}
+		p.expect(lexer.RParen)
+		h.Body = p.parseBlock()
+	case p.at(lexer.LBrace) && (p.peek(1).Kind == lexer.Ident || p.peek(1).Kind == lexer.Under) && p.peek(2).Kind == lexer.FatArrow:
+		p.errorf(p.span(), "the error is named in a head: 'catch (%s) { ... }', not 'catch { %s => ... }' (D98)", p.peek(1).Text, p.peek(1).Text)
+		return p.parseHandler()
+	default:
+		h.Body = p.parseBlock()
+	}
+	h.Pos = p.spanFrom(start)
+	return h
+}
+
 func (p *Parser) parseHandler() *ast.Handler {
 	start := p.span()
 	h := &ast.Handler{}
 	if (p.peek(1).Kind == lexer.Ident || p.peek(1).Kind == lexer.Under) && p.peek(2).Kind == lexer.FatArrow {
+		p.errorf(p.span(), "a handler that sees the error is 'catch (%s) { ... }' now: 'r catch (%s) { ... }' (D98)", p.peek(1).Text, p.peek(1).Text)
 		p.next() // {
 		t := p.next()
 		h.Err = &ast.Ident{Name: t.Text, Pos: t.Span}

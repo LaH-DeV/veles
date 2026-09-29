@@ -280,6 +280,55 @@ type of a field of an `error` (a cause). It is not a value type — use
 Two error sets include each other. Sets flatten, so a cycle adds nothing;
 remove one direction.
 
+#### `a 'do' block needs a 'catch (e) { ... }' after it`
+
+`do { ... }` exists to give a failing `try` or `throw` inside it somewhere
+to go in the same function; without the `catch` it has nowhere. Write
+`do { ... } catch (e) { ... }`. There is no `do`-`while`: for a loop that
+runs once before it tests, `loop { ...; if (!cond) break }`. (D98)
+
+#### `'catch' follows an expression that can fail or a 'do' block`
+
+`catch (e) { ... }` is the failure branch of what comes before it — a call
+to a `throws` function, `try chain`, or a `do { ... }` block — and does not
+stand alone. (D98)
+
+#### `'catch' handles the error of a Result, and a nullable has none`
+
+`f() catch (e) { ... }` needs a `Result`, since a nullable fails with nothing
+to bind. Its fallback is `f() ?: fallback`, and to leave when it is null,
+`val x = f() else return`. (D98)
+
+#### `'catch' needs a Result before it ... which cannot fail`
+
+Whatever stands before `catch` has no failure to handle: it is not a call to
+a `throws` function, not a `try` chain and not a `do` block. Drop the `catch`.
+(D98)
+
+#### `a handler that sees the error is 'catch (e) { ... }' now`
+
+The spellings `r ?? { e => ... }` and `val x = r else { e => ... }` are gone;
+one form gives a handler the error: `r catch (e) { ... }`. A fallback that
+does not need the error is still `r ?? value`, and a let-else that does not
+is still `val x = r else return`. (D98)
+
+#### `the error is named in a head: 'catch (e) { ... }', not 'catch { e => ... }'`
+
+The name goes in parentheses after `catch`, as `when (v)` and `loop (x in xs)`
+take theirs; the block after it is an ordinary one. (D98)
+
+#### `nothing in this 'do' block can fail`
+
+No `try` of something that can fail and no `throw` in the block reaches the
+`catch`, so it could never run. Drop the `do` and the `catch`, or put the
+calls that can fail inside. (D98)
+
+#### `a child that can fail cannot be launched in a 'scope' inside a 'do' block`
+
+A `scope` passes a failing child's error to the function that contains it,
+not to a handler around it. Put the `scope` in a function of its own and
+`try` that function inside the `do`. (D98)
+
 ### val-else
 
 **`val ... else`: binding a value that may not be there.**

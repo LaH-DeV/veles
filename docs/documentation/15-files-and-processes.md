@@ -126,7 +126,7 @@ fun main() {
     is Err => io.println("${r.message()} (${r.kind})")
   }
   // a missing file is a default; any other failure is still an error
-  val config = fs.readFile("app.toml") ?? { e =>
+  val config = fs.readFile("app.toml") catch (e) {
     if (e.kind != IoKind.NotFound) panic("cannot read app.toml: ${e.message()}")
     ""
   }

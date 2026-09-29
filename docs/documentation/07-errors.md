@@ -398,21 +398,26 @@ A `Never` value fits anywhere (`val n = xs.first() ?: usage()` is an `i64`), a
 `when` whose arms all end in one is itself `Never`, and code after such a
 statement is reported as unreachable.
 
-## Falling back and bailing out: `??` and `val ... else`
+## Falling back and bailing out: `??`, `val ... else` and `catch`
 
 `try` passes a failure up. Often the right answer is closer: a default,
 a value worked out from the error, or leaving the function (or the loop
-iteration) right here. Two forms say that in one line.
+iteration) right here. Three forms say that in one line.
 
 `r ?? fallback` is the value of a `Result`, or the fallback when it is an
-`Err` — what `?:` is to a nullable. The fallback may be a value, something
-that leaves (`return`, `continue`, `throw`), or a handler that sees the
-error: `r ?? { e => ... }`.
+`Err` — what `?:` is to a nullable. The fallback may be a value or something
+that leaves (`return`, `continue`, `throw`); it does not see the error.
 
 `val x = r else ...` binds the value and runs the `else` otherwise — and
 the `else` **must leave**, since `x` does not exist on that path. It works
-on a `Result` (write `else { e => ... }` to see the error), on a nullable,
-and on a pattern: `val Circle(radius) = shape else return 0.0`.
+on a `Result`, on a nullable, and on a pattern:
+`val Circle(radius) = shape else return 0.0`. It does not see the error
+either.
+
+`r catch (e) { ... }` is the one that does: the value of a `Result`, or what
+the block yields when it is an `Err`, with the error bound to `e` (D98). The
+block yields the same type or leaves (`return`, `continue`, `throw`), and
+binds nothing when written `catch { ... }`.
 
 ```veles
 use io
@@ -432,7 +437,7 @@ fun total(lines: List<string>): i64 {
 
 fun firstOrReport(lines: List<string>): string {
   val first = lines.first() else return "empty"    // a nullable
-  val n = number(first) else { e =>                // a Result, with its error
+  val n = number(first) catch (e) {                // a Result, with its error
     return "not a number: '${e.line}'"
   }
   "first is $n"
@@ -444,7 +449,7 @@ fun main() {
   io.println(firstOrReport(lines))
   io.println(firstOrReport(["y"]))
   io.println(firstOrReport([]))
-  io.println("${number("x") ?? 0} ${number("x") ?? { e => -e.line.len() }}")
+  io.println("${number("x") ?? 0} ${number("x") catch (e) { -e.line.len() }}")
 }
 ```
 
@@ -461,6 +466,98 @@ The two operators are split by what is on their left: `?:` for a
 nullable, `??` for a `Result`. Writing the other one is an error whose
 quick fix swaps it, so the operator always says which kind of "maybe" is
 being unwrapped. (D61)
+
+## Several calls, one handler: `do { } catch (e) { }`
+
+`catch` after a call answers for that call. When several calls in a row
+should fail into the same place and the function should carry on afterwards,
+put them in a `do` block and say what happens in its `catch` (D98). One call
+followed by methods takes `try` and `catch` around the whole chain:
+`try parse(s).len() catch (e) { -1 }` — `try` marks the call that can fail,
+and `catch` says where the failure goes, with no parentheses needed:
+
+```veles
+use io
+
+error Invalid { line: string }
+error Negative { value: i64 }
+
+fun number(line: string): i64 throws Invalid = line.trim().toInt() ?: throw Invalid(line)
+
+fun positive(n: i64): i64 throws Negative {
+  if (n < 0) throw Negative(value: n)
+  n
+}
+
+// one handler for the calls in the block; this function does not throw
+fun describe(a: string, b: string): string {
+  do {
+    val x = try positive(try number(a))
+    val y = try positive(try number(b))
+    "sum ${x + y}"
+  } catch (e) {
+    "cannot add: ${e.message()}"
+  }
+}
+
+// in a loop, `continue` and `break` are the loop's own
+fun total(lines: List<string>): i64 {
+  var sum = 0
+  loop (line in lines) {
+    do {
+      sum += try positive(try number(line))
+      if (sum > 100) break
+    } catch (e) {
+      io.println("skipped '${line.trim()}'")
+      continue
+    }
+  }
+  sum
+}
+
+fun main() {
+  io.println(describe("2", "3"))
+  io.println(describe("2", "x"))
+  io.println(describe("2", "-4"))
+  io.println("${total(["5", "x", "-1", "7", "500", "9"])}")
+}
+```
+
+Output:
+```text
+sum 5
+cannot add: Invalid(line: x)
+cannot add: Negative(value: -4)
+skipped 'x'
+skipped '-1'
+512
+```
+
+- **The block is an expression.** Its value is the block's last expression,
+  or what the handler yields; the handler yields the same type or leaves
+  (`return`, `break`, `continue`, `throw`), exactly like a `??` handler.
+- **`try` stays.** A failed `try` — or a `throw` — anywhere in the block goes
+  to the handler; a call that can fail and is not marked with `try` is still an
+  error, so every place a failure can start is visible.
+- **`e` is the union of the errors the block can raise**, so `e.message()`
+  works and `when (e) { is Invalid => ... is Negative => ... }` tells them
+  apart. The function around it does not have to be `throws`: the errors the
+  handler catches are not its own.
+- **It is a block, not a lambda.** `return` leaves the function, `break` and
+  `continue` the loop around the `do`, and a call that suspends needs nothing
+  declared. That is what the immediately called closure `(() => { ... })()`,
+  which does the same job, cannot do.
+- **The handler is outside the block.** A `try` or `throw` in it is the
+  function's (or the next `do` out): `catch (e) { throw Wrapped(cause: e) }`
+  makes the function `throws Wrapped`.
+- **What it does not catch.** A panic still ends the task (D52). A `scope`
+  that launches a child which can fail passes the error to the function, past
+  the handler, so that is refused inside a `do`: put the scope in its own
+  function and `try` it. A block with nothing in it that can fail is an
+  error, since the `catch` could never run.
+
+Use `??`, `val ... else` or a plain `catch` when one call needs its own answer, and `do` when
+several share one.
 
 ## When to throw, when to return `T?`
 

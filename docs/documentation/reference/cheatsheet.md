@@ -57,7 +57,8 @@ val (a, b) = (1, "one")         // tuple destructuring, nests: val ((x, y), z) =
 | conversion | `x.toI64()` (`T?` when it can lose), `x.wrapU8()`, `p.cast<*raw T>()` |
 | operators on your types | `implement Addable { fun plus(other: T): Out }` → `a + b`, `+=`; also Subtractable, Multipliable, Divisible, Negatable (D71) |
 | nullable | `x ?: fallback`, `x?.member`, `x?.method()`; `x?.a.b()` skips the whole rest of the chain on null (D70) |
-| result | `r ?? fallback`, `r ?? { e => ... }` — `?:` for a Result; `val v = r else { e => ... }` binds or leaves |
+| result | `r ?? fallback` (`?:` for a Result; the fallback may leave), `r catch (e) { ... }` sees the error, `val v = r else return` binds or leaves |
+| several `try`s, one handler | `do { val a = try f(); try g(a) } catch (e) { fallback }`, and `try f().g() catch (e) { fallback }` for one call and a chain — a failed `try` or `throw` goes to the handler; `e` is the union of the errors; `return`/`break`/`continue` leave the function or loop (D98) |
 | or fail | `x ?! error` — a `T?` or `Result` becomes a `Result` failing with `error`; `try x ?! e` propagates it |
 | type test | `x is T`, `x !is T` |
 | address | `&x` → `*T`, `*p` reads through |
@@ -171,8 +172,8 @@ val r: Result<i64, NotFound> = Ok(1); r.getOrNull(); r.getOrDefault(0); r.errorO
 val user = try users.get(id) ?! NotFound(key: id)        // `x ?! e`: absence (T?) or failure (Result) becomes failure with e; try propagates
 val n = try parse(s) ?! Invalid(why: "not a number")     // the old error is dropped; keep it with mapError:
 val m = try parse(s).mapError(e => Invalid(why: e.message()))
-val n = parse(s) ?? 0; parse(s) ?? { e => fallback(e) }; parse(s) ?? return   // ?? is ?: for a Result: the value, or the fallback
-val v = parse(s) else continue; val w = parse(s) else { e => log(e); return }  // let-else: the else must leave (also T? and patterns: val Circle(r) = s else return 0.0)
+val n = parse(s) ?? 0; parse(s) catch (e) { fallback(e) }; parse(s) ?? return   // ?? is ?: for a Result: the value, or the fallback; catch sees the error
+val v = parse(s) else continue; val w = parse(s) catch (e) { log(e); return }  // let-else: the else must leave (also T? and patterns: val Circle(r) = s else return 0.0)
 if (val age = c.maxAge) out.append(age.toSeconds()); if (val a = f() && val b = g(a) && b > 1) ...   // binds a T? non-null for the rest of the && chain and the then-branch (D95); not in the else
 ```
 

@@ -1250,7 +1250,7 @@ func (p *printer) typeList(ts []ast.Type) {
 func (p *printer) block(b *ast.Block) { p.blockHead(b, "") }
 
 // blockHead prints a block whose `{` is followed by head on the same line —
-// ` e =>` in a handler (`?? { e => ... }`, `val ... else { e => ... }`).
+// ` e =>` in a handler block (an old `{ e => ... }` still prints, the parser refuses it).
 func (p *printer) blockHead(b *ast.Block, head string) {
 	if !p.braced(b) {
 		if len(b.Stmts) == 1 {
@@ -1679,6 +1679,18 @@ func (p *printer) exprInner(e ast.Expr) {
 		p.whenExpr(e)
 	case *ast.BlockExpr:
 		p.block(e.Block)
+	case *ast.CatchExpr:
+		if e.X != nil {
+			p.expr(e.X, 0)
+		} else {
+			p.w("do ")
+			p.block(e.Body)
+		}
+		p.w(" catch ")
+		if e.Handler.Err != nil {
+			p.w("(" + e.Handler.Err.Name + ") ")
+		}
+		p.block(e.Handler.Body)
 	case *ast.GatherExpr:
 		p.w("gather ")
 		p.block(e.Body)
