@@ -281,6 +281,19 @@ answered from the shape, tuples get `Comparable`, enums get
       rewrite takes `Depth` as it stands (`veles-selfhost-frontend-plan.md` §4.3),
       and `examples/recursion` is that parser in miniature — a recursive descent
       that answers a diagnostic rather than a segmentation fault
+- [ ] **Stack exhaustion is silent and the stack is the OS default** (found by
+      plan S3, 2026-09-29). A recursion that is not a loop overflows at about
+      30 000–50 000 frames on Windows (1 MB stack) and 200 000–1 000 000 on
+      Linux (8 MB); the process dies with exit code 127 (Windows) or a bare
+      SIGSEGV (Linux) and prints nothing — no task, no function, no line.
+      Tasks are stackless but run on a worker thread's stack, so the same
+      limit holds inside one. Wanted: (a) a guard-page / vectored-exception
+      handler that prints `stack overflow in <function> at <file:line>` and
+      exits non-zero, in the sentence style of the other panics; (b) a stack
+      size a program can rely on (main and worker threads created with a
+      larger reserved stack, committed lazily). Measure with a recursion over
+      a deep sealed tree. The conventional answer for input-driven walks
+      stays `recursion.Depth`
 
 ---
 
@@ -514,6 +527,12 @@ behind a name that says "crypto" (§10, 2026-09-23).
 
 ### 5.10 Misc
 
+- [ ] Float bits without `unsafe` (found by plan S3, 2026-09-29): `f64` ↔
+      `u64` and `f32` ↔ `u32` reinterpretation (`toBits()`/`fromBits()` in the
+      style of Go's `math.Float64bits`). A code generator needs it to write
+      LLVM's hexadecimal float constants; today only
+      `unsafe { p.cast<*raw u64>() }` does it. A std decision — `veles-decide`
+      first
 - [ ] `std/config`: typed env parsing, all missing keys reported at once
 - [ ] `std/compress`: gzip/deflate via zlib binding
 - [~] `std/os`: `hostname`, `pid`, `tempDir` done (2026-09-25); `shutdownSignal`/`raiseSignal` done (D68); `run` without a shell (2026-09-27, §2); `run(..., input:, stderr: os.Stderr)` with `Output.stderr` (D82, 2026-09-28)

@@ -72,9 +72,10 @@ func main() {
 		out, err := exec.Command(bin).Output()
 		must(err)
 		r := parse(name, out)
+		goSetup = 0
 		start := time.Now()
 		sum := ref()
-		r.goTime = time.Since(start)
+		r.goTime = time.Since(start) - goSetup
 		if sum != r.checksum {
 			fmt.Fprintf(os.Stderr, "bench: %s: Veles computed %s, Go %s — not the same work\n", name, r.checksum, sum)
 			failed = true
@@ -130,6 +131,10 @@ func parse(name string, out []byte) result {
 
 // ---------------------------------------------------------------------------
 // Go references: the same work as bench/<name>/main.vs, the same checksum.
+
+// goSetup is the time a reference spent on work the Veles side does before
+// its clock starts (building the input text); the runner subtracts it.
+var goSetup time.Duration
 
 var references = map[string]func() string{
 	"sha256": func() string {

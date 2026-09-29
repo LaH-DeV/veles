@@ -109,9 +109,9 @@ on course for it, a little at a time, alongside A–C.
 
 | # | Task | Acceptance |
 |---|---|---|
-| S1 | **Refresh `veles-selfhost-frontend-plan.md`** against D60–D78 | its §4 "not gaps" list re-checked (a module-level `var` is now an error unless `Mutex`/`Atomic` — the keyword table and any interning move to a `val` or into a struct; `this`; `init(params)`; D78 tests for the harness; the UAX #31 table generator); stale claims struck with the date |
-| S2 | **Compiler-shaped benchmarks** in `bench/` | Veles vs Go on: tokenising a large file, building a sealed-tree AST and walking it with `when`, a string-interning map, emitting text through `StringBuilder`; recorded, and each gap over 3× Go gets a checklist item |
-| S3 | **Capability audit for a whole compiler**, not only the front end | a section in the self-host plan: what sema/codegen in Veles would lean on (large pointer graphs under the GC, maps keyed by structs, deterministic iteration order, sorting, `os.run` of clang, file I/O, deep recursion) — each marked has / gap, gaps become checklist items |
+| S1 | **Done 2026-09-29.** **Refresh `veles-selfhost-frontend-plan.md`** against D60–D78 | its §4 "not gaps" list re-checked (a module-level `var` is now an error unless `Mutex`/`Atomic` — the keyword table and any interning move to a `val` or into a struct; `this`; `init(params)`; D78 tests for the harness; the UAX #31 table generator); stale claims struck with the date |
+| S2 | **Done 2026-09-29.** **Compiler-shaped benchmarks** in `bench/` | Veles vs Go on: tokenising a large file, building a sealed-tree AST and walking it with `when`, a string-interning map, emitting text through `StringBuilder`; recorded, and each gap over 3× Go gets a checklist item |
+| S3 | **Done 2026-09-29.** **Capability audit for a whole compiler**, not only the front end | a section in the self-host plan: what sema/codegen in Veles would lean on (large pointer graphs under the GC, maps keyed by structs, deterministic iteration order, sorting, `os.run` of clang, file I/O, deep recursion) — each marked has / gap, gaps become checklist items |
 | S4 | **Readiness in every decision** | `veles-decide` prepares a "what this means for writing the compiler in Veles" line when it applies (Q15/Q16 first) |
 | S5 | Start E4's P0 (`source` + harness) | once A1 is green and S1 is done |
 
@@ -660,3 +660,27 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   reference, chapter 17. Measured: a disabled `log.debug` is ~30 ns (a
   closure per call), the guarded form ~0.3 ns — checklist §5.7 keeps the
   hoisting as an open item.
+
+- **2026-09-29, S1–S3: self-host readiness.** S1: `veles-selfhost-frontend-plan.md`
+  refreshed against v0.49 — line counts (6353 non-test lines, was 5472), corpus
+  size (173 files), the "module-level `var` is a real mutable global" claim
+  struck (D66), stale `binarySearch` and `partitionPoint` references fixed,
+  and a new §8 listing what D60–D91 change for the port (`this`/`init`, D78
+  tests, D86 conversion methods, D85 named imports, D89 `public use`, panic
+  chains, `lazy`/`std/log`). S2: four compiler-shaped benchmarks, each with a
+  Go reference (`bench/compiler_refs.go`; the runner now subtracts the setup
+  a reference does before Veles's clock starts, `goSetup`): `lexer` (byte
+  scan, keyword map, token structs), `ast` (sealed family built and walked
+  with `when`), `intern` (string-keyed symbol table), `emit` (250 000 lines of
+  IR through a `StringBuilder`). Ratios to Go 0.4–2.0×, none over 3×, so no
+  checklist item; the Go side swung 2–3× between runs on a loaded machine
+  (caveat in `bench/results.md`). S3: §9 of the self-host plan audits what a
+  whole compiler would lean on, each row probed with a program: large
+  cyclic pointer graphs, struct- and sealed-keyed maps, insertion-ordered
+  iteration, stable sorting, `os.run` of clang, file I/O, parallel tasks all
+  **have** it. Two findings became checklist items: stack exhaustion is
+  silent (exit 127 / SIGSEGV at ~30–50k frames on Windows, ~200k–1M on
+  Linux) and the stack size is the OS default (§2), and there is no safe
+  `f64`↔`u64` bit reinterpretation (§5.10, needs a decision). Not done: the
+  compile time and peak memory of a 30 000-line program by a Veles-written
+  compiler, which belong to E4.

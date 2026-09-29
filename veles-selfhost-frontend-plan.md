@@ -1,6 +1,8 @@
 # Veles — rewriting the lexer and parser in Veles
 
-A plan for the first slice of self-hosting. Against `veles-spec.md` v0.34.
+A plan for the first slice of self-hosting. Written against `veles-spec.md`
+v0.34; **refreshed against v0.49 on 2026-09-29 (plan S1)** — what changed is
+in §8, and the capability audit for the *whole* compiler is §9 (plan S3).
 This is a sequencing document with gates, not a schedule.
 
 `archive/veles-build-plan.md` puts self-hosting at Stage 5 in one line. This file
@@ -30,13 +32,15 @@ five times the work and a different decision.
 
 | Package | Non-test lines | What it is |
 |---|---|---|
-| `lexer/` | 891 | 106 token kinds, automatic semicolons, interpolated strings, doc comments |
-| `ast/` | 1822 | 92 node structs in five disjoint families, plus the S-expression printer |
-| `parser/` | 2576 | recursive descent, Pratt expressions, error recovery, the formatter's `Layout` |
-| `source/` | 183 | files, byte spans, line/column, diagnostics |
-| | **5472** | |
+| `lexer/` | 1036 | ~107 token kinds, automatic semicolons, interpolated strings, doc comments, UAX #31 identifiers |
+| `ast/` | 2017 | ~100 node structs in five disjoint families, plus the S-expression printer |
+| `parser/` | 2945 | recursive descent, Pratt expressions, error recovery, the formatter's `Layout` |
+| `source/` | 355 | files, byte spans, line/column, diagnostics |
+| | **6353** | |
 
-Expect 1.2–1.5× that in Veles — call it 6500–8000 lines — most of it
+*(2026-09-29: was 5472 lines at v0.34; `wc -l` of the non-test files.)*
+
+Expect 1.2–1.5× that in Veles — call it 7500–9500 lines — most of it
 mechanical. The interesting part is not the volume.
 
 ---
@@ -75,12 +79,13 @@ This is the load-bearing idea; everything else is ordinary porting.
 
 ### The corpus
 
-87 `.vs` and `.vss` files in the repository today (`std/`, `examples/`,
-`docs/`), plus:
+173 `.vs` and `.vss` files in the repository today (`std/`, `examples/`,
+`docs/`, `bench/`; 87 when this was written), plus:
 
 - the ```veles blocks the docs test already extracts,
-- `parser/testdata/fuzz/` and `sema/testdata/fuzz/` — the interesting
-  ones, because they are malformed and exercise error recovery,
+- `parser/testdata/fuzz/` and the conformance suite's error files
+  (`sema/testdata/conform/*.vs`, deliberately wrong programs) — the
+  interesting ones, because they are malformed and exercise error recovery,
 - deliberately broken files written for the purpose: unterminated strings,
   stray brackets, a `when` with no arms, tabs and CRLF, a file of 10 000
   lines.
@@ -135,8 +140,8 @@ Each phase ends in something runnable. No phase is "port the rest".
 `Warnf`, `Render`.
 
 The line table is built once in the constructor and searched with a binary
-search — the prelude has no `binarySearch`, so write one here and consider
-promoting it later (`notes_to_change`).
+search — the prelude's `partitionPoint` (§4: `binarySearch` and its family
+exist since 2026-09-23).
 
 Deliverable: a program that reads a file and prints
 `path:line:col` for a byte offset given on the command line, matching
@@ -148,7 +153,7 @@ past the end.
 
 ### P1 — tokens (≈900 lines)
 
-`selfhost/lexer/`: `TokenKind` as an `enum` (D57 — 106 members, and
+`selfhost/lexer/`: `TokenKind` as an `enum` (D57 — ~107 members, and
 `toString()` comes free, which is exactly what G1 needs to print),
 `Token`, `Comment`, `StringPart`, the scanner, the keyword map, automatic
 semicolon insertion, `--tokens`.
@@ -349,7 +354,8 @@ modules `vsource`, `vlexer`, … which is ugly but unambiguous.
 - **Go-compatible `%q`** (P3) — 40 lines. Worth a home in std later.
 - **A keyword map** — `Map<string, TokenKind>` works; a module-level `val`
   is initialised once at start-up (D59's note), so it costs nothing per
-  file.
+  file. Measured 2026-09-29: `bench/lexer` (byte scan, keyword map, token
+  structs) runs at 0.6–1.5× Go.
 
 ### Things that turned out not to be gaps
 
@@ -365,8 +371,13 @@ Worth writing down, because each was a plausible blocker:
   than Go's type switch with a `default: panic`.
 - Speculative parsing needs only an index to save and restore, and a
   scratch `Diagnostics` to throw away. Both are ordinary values.
-- Module-level `var` is a real mutable global, if any interning table
-  wants one.
+- ~~Module-level `var` is a real mutable global, if any interning table
+  wants one.~~ **Struck 2026-09-29 (D66, built 2026-09-27):** a module-level
+  `var` whose type is not `Mutex`/`Atomic` is a compile error, because tasks
+  run on one thread per core. An interning table is a value the parser or
+  lexer *owns* (a struct field, as `bench/intern` does with `Interner`), or a
+  module-level `val` of a `Mutex<...>`; the keyword table is a plain
+  module-level `val`.
 - Enums give `toString()` for free, which is what G1 prints.
 
 ---
@@ -455,3 +466,80 @@ first, and both are done (2026-09-23), so P0 is unblocked:
    ticked, and `std/json` is already a caller.
 
 And it *produces* one: `bench/parse` belongs in §3.3 from P1 onward.
+
+---
+
+## 8. What changed since v0.34 (S1, 2026-09-29)
+
+Checked against D60–D91 and the compiler as it stands. Nothing here moves a
+gate; each line is something P0–P6 would otherwise have tripped over.
+
+| Change | What it means for the port |
+|---|---|
+| **D66 — a module-level `var` must be `Mutex`/`Atomic`** | struck the "real mutable global" claim (§4). State lives in a struct the lexer or parser owns; the keyword table is a `val`. |
+| **D65 — `this` replaces `self`; the `init { }` block (v0.30)** | structs with derived fields (line tables, keyword sets) use `init` as-is; a parser that keeps token positions next to its tokens needs no `static fun` for the derivation. |
+| **D78 — `test "sentence" { }` with `expect`/`require`** | unit tests of the Veles lexer and parser sit beside the code in `*.test.vs` and run with `veles test`; the equivalence harness stays a Go test, because it compares against the Go front end. |
+| **D86 — no `as`; conversions are methods** | a byte-to-digit step is `(b - '0').toI64()`-shaped, truncation is `wrapU8()`; every `as` in the plan's sketches reads as a method. |
+| **D85 — named imports** | `use lexer { Token, TokenKind }` instead of qualifying every use; the Go package names (`lexer`, `ast`) collide with nothing. |
+| **D89 — `public use`** | `selfhost/` can present one facade module (`public use lexer`, `public use parser`) without a flat namespace. |
+| **D18 addendum — UAX #31 identifiers** | already in §4: a generated ID_Start/ID_Continue table (P1). |
+| **D64, D81, D88 — panics carry locations, call chains and the caller's line** | an invariant broken in the port reports `at file:line:col`, and in a debug build the chain, which makes a G1–G3 mismatch easier to chase. |
+| **D90, D91 — `lazy`, `std/log`** | `log.debug("token $t")` costs a closure while off (~30 ns, checklist §5.7): fine for diagnostics, not for the scanner's per-byte path, where the port logs nothing. |
+
+Still true as written: `std/utf8`, `partitionPoint`, `recursion.Depth`, the
+disjoint AST families, `substring` not copying, `selfhost/` as the location.
+Not yet true: a Go-compatible `quote()` (P3's job).
+
+Measured 2026-09-29 (`bench/lexer`, `bench/ast`): scanning with a keyword map
+and token structs runs at 0.6–1.5× Go, and a sealed-family tree built and
+walked with `when` at 0.4–0.6× Go. The §5 "allocation rate" risk is therefore
+not expected to bite; the check at the end of P1 stays as written.
+
+---
+
+## 9. Capability audit for the whole compiler (S3, 2026-09-29)
+
+The front end is the cheap slice. `sema`, `types`, `codegen` and `driver` are
+a different program: large graphs, interning, maps of structured keys,
+reproducible ordering, a subprocess, and recursion over user input. Each row
+was probed with a small program, not assumed. **has** means it works today
+and is measured or tested; **partial** and **gap** are listed below the
+table.
+
+| Need | Verdict | Evidence |
+|---|---|---|
+| Large pointer graphs, with cycles, under the GC | **has** | 800 000 nodes with parent↔child cycles (`var parent: (*Node)?`, `kids: MutableList<*Node>`) build and walk; `bench/trees` 0.2–0.5× Go |
+| A sealed family walked with `when`, exhaustively | **has** | `bench/ast` 0.4–0.6× Go; a missing arm is a compile error |
+| Interning: a string-keyed map handing out dense ids | **has** | `bench/intern` 0.6–2.0× Go |
+| Maps keyed by a struct, and by a sealed-family value | **has** | `MutableMap<Key, i64>` with `Key { a: i64, b: string }`, and `MutableMap<Type, i64>` over a sealed `Type`: equal values find the same entry |
+| Deterministic iteration order | **has** | maps and sets are insertion-ordered by guarantee (D25), so output is reproducible without sorting keys |
+| Sorting: stable, by key, by comparator | **has** | `sorted`, `sortedBy`, `sortedWith`, `sortWith`; stable (chapter 8) |
+| Building large text | **has** | `bench/emit`: 250 000 lines of IR through one `StringBuilder`, 0.4–1.2× Go |
+| Tokenising a large source | **has** | `bench/lexer` 0.6–1.5× Go |
+| A subprocess with captured output and its exit code | **has** | a C file compiled and run through `os.run("clang", ...)`; `Output.code`, `ok()`, stdin and stderr capture |
+| File I/O, directory walk, paths, args, env, exit codes | **has** | `std/fs`, `std/path`, `std/os` |
+| Parallel work (per-function codegen) | **has** | tasks on one thread per core (D66); `mapConcurrent` |
+| Emitting a float constant in LLVM's hex form | **partial** | see below |
+| Deep recursion | **gap** | see below |
+
+**Partial — float bits.** There is no `f64` ↔ `u64` bit reinterpretation in
+std. It works with an `unsafe` cast (`p.cast<*raw u64>()`: 1.5 gives
+0x3FF8000000000000), but a code generator should not need `unsafe` for it. A
+safe `toBits()` / `fromBits()` is a std decision; it goes through
+`veles-decide` when the code generator is on the horizon (checklist §5.10).
+
+**Gap — deep recursion.** A task runs on a worker thread's native stack, at
+the OS default. A recursion that cannot be turned into a loop overflows at
+roughly 30 000–50 000 frames on Windows (1 MB) and 200 000–1 000 000 on Linux
+(8 MB), and the failure is **silent**: exit code 127 on Windows, a bare
+segmentation fault on Linux, no message and no function name.
+`recursion.Depth` stays the answer for walks over input (a limit of 1000 with
+one sentence for the error). What is missing is (a) a diagnostic when the
+stack is exhausted anyway and (b) a stack size the program can rely on (a
+larger main and worker stack, reserved and not committed). Checklist §2.
+
+What this means for a self-hosted `sema`: nothing found blocks it. The two
+findings become checklist items (§2 and §5.10). Not probed, because it has no
+bearing until the rewrite starts: the compile time of a 30 000-line Veles
+program by the Veles compiler itself, and the peak memory of a whole-program
+HIR under the collector; both are E4 measurements.

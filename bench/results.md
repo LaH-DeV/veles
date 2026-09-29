@@ -19,6 +19,16 @@ Caveats worth keeping in mind when reading them:
   the one runtime lock it took 1.2 s at 8 threads).
 - `sha256`: Go's uses the CPU's SHA instructions; Veles's is plain Veles
   (checklist §11).
+- `lexer`, `ast`, `intern`, `emit` (2026-09-29, plan S2) are the shapes a
+  compiler written in Veles would lean on: a byte-scanning tokeniser with a
+  keyword map, a sealed-family tree built and walked with `when`, a
+  string-interning map, and text emitted through one `StringBuilder`. The
+  input text of `lexer` and `intern` is built before the clock starts, and
+  the Go reference leaves the same work out (`goSetup`). On a quiet machine
+  they were 1.5× (`lexer`), 0.6× (`ast`), 2.0× (`intern`) and 1.2× (`emit`)
+  of Go; on a loaded one the Go side swung 2–3× between runs while Veles
+  stayed put, so read a ratio only from a run where `maps` and `trees` are
+  near their usual numbers. None is over 3×, so none opens a checklist item.
 - One machine, one run; differences under ~10% are noise.
 
 ## 2026-09-25 23:50 — go1.23.2, windows/amd64 (HEAD 77c6e95, plus the working tree)
@@ -166,3 +176,22 @@ Windows the day before, and `parallel` 1.2× against 0.7× — the
 per-task handoff and worker wake-ups cost more on Linux (futex-backed
 condition variables through the runtime lock, vs SRW locks on Windows).
 Checklist §3.1 has the item.
+
+## 2026-09-29 14:37 — go1.23.2, windows/amd64 (HEAD d2dfde7, plus the working tree)
+
+| benchmark | ops | Veles | Go | Veles / Go |
+|---|---:|---:|---:|---:|
+| ast | 861841 | 39.89ms | 91.08ms | 0.4× |
+| channels | 200000 | 12.71ms | 15.34ms | 0.8× |
+| emit | 1000000 | 71.07ms | 174.72ms | 0.4× |
+| intern | 1000000 | 37ms | 48.92ms | 0.8× |
+| json | 40000 | 65.15ms | 106.41ms | 0.6× |
+| lexer | 2100000 | 70.92ms | 184.9ms | 0.4× |
+| maps | 2000000 | 45.51ms | 182.46ms | 0.2× |
+| parallel | 64 | 11.33ms | 57.09ms | 0.2× |
+| pipes | 1600000 | 19.52ms | 69.52ms | 0.3× |
+| sha256 | 16 | 87.59ms | 12.71ms | 6.9× |
+| sort | 900000 | 38.73ms | 93.06ms | 0.4× |
+| spawn | 100000 | 46.71ms | 41.02ms | 1.1× |
+| strings | 1000000 | 68.49ms | 145.12ms | 0.5× |
+| trees | 14592688 | 149.39ms | 806.4ms | 0.2× |
