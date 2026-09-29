@@ -1459,3 +1459,47 @@ func TestRenamedImportHoverAndRename(t *testing.T) {
 		}
 	}
 }
+
+// A function that suspends without saying so (D2) shows it in its hover, at
+// its declaration and at every call — the effect is part of what a caller
+// must know, and the inlay hint alone is easy to miss.
+func TestHoverShowsInferredSuspends(t *testing.T) {
+	src := "struct Pacer {\n  gap: Duration\n\n  fun pause() {\n    await sleep(this.gap)\n  }\n}\n\nfun wait() {\n  await sleep(Duration.millis(1))\n}\n\nfun outer() { wait() }\n\nfun pure(): i64 = 1\n\nfun main() {\n  outer()\n  Pacer(gap: Duration.millis(1)).pause()\n  val _ = pure()\n}\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := pathToURI(path)
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{})
+	c.notify("initialized", map[string]any{})
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": src}})
+	hover := func(line, col int) string {
+		res, _ := c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": line, "character": col}})
+		return string(res)
+	}
+	for _, tc := range []struct {
+		what      string
+		line, col int
+		want      string
+		suspends  bool
+	}{
+		{"declaration", 8, 5, "fun wait() suspends", true},
+		{"transitive declaration", 12, 5, "fun outer() suspends", true},
+		{"call site", 12, 15, "fun wait() suspends", true},
+		{"call in main", 17, 3, "fun outer() suspends", true},
+		{"method declaration", 3, 7, "fun pause() suspends", true},
+		{"method call", 18, 35, "fun pause() suspends", true},
+		{"pure function", 14, 5, "fun pure(): i64", false},
+	} {
+		got := hover(tc.line, tc.col)
+		if !strings.Contains(got, tc.want) {
+			t.Errorf("%s: hover has no %q: %s", tc.what, tc.want, got)
+		}
+		if !tc.suspends && strings.Contains(got, "suspends") {
+			t.Errorf("%s: hover says suspends: %s", tc.what, got)
+		}
+	}
+}

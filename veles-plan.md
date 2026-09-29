@@ -578,3 +578,12 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   cleaned the clone after, not before, checking out HEAD, so a file the
   commit began to track aborted the checkout and the run used a stale base;
   order fixed.
+
+- **2026-09-29, hover shows an inferred `suspends`** (user's ordering: this,
+  then Q3/Q4/Q8, `std/log`). Hovers were rendered from the written signature
+  before the suspension pass ran, so only the inlay hint knew. Now
+  `showInferredSuspends` (`sema/index.go`) adds ` suspends` to the hover of
+  every reference to a function whose effect was inferred, at its declaration
+  and at each call, methods included (before ` throws`). Test
+  `TestHoverShowsInferredSuspends` (declaration, transitive, call site,
+  method, and a pure function that must not say it); docs chapter 12.

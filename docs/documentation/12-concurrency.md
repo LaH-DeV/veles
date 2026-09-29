@@ -6,7 +6,9 @@ scratch](concurrency-explained.md) builds the picture first.
 Veles concurrency rests on two decisions. First, there is no `async`
 keyword on function declarations: whether a function *suspends* (may
 pause waiting for something) is **inferred** from its body, the same way
-its error type is (D2). Second, tasks are always **structured**: a task
+its error type is (D2). The editor shows what was inferred: hovering a
+function, at its declaration or at any call, reads `fun wait() suspends`,
+and an inlay hint marks the declaration. Second, tasks are always **structured**: a task
 is started inside a `scope`, and the scope does not finish until every
 task in it has (D3). Nothing leaks, nothing is fire-and-forget.
 

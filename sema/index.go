@@ -187,6 +187,30 @@ func (c *Checker) indexInferred(prog *Program) {
 			c.index.Inferred[d.Name.Pos] = inf
 		}
 	}
+	c.showInferredSuspends()
+}
+
+// showInferredSuspends makes every hover of a function that suspends
+// without saying so (D2) spell `suspends`, at its declaration and at each
+// call: hovers were rendered from the written signature, before the
+// suspension pass knew.
+func (c *Checker) showInferredSuspends() {
+	for i := range c.index.Refs {
+		r := &c.index.Refs[i]
+		if r.Kind != "fun" || !r.Def.IsValid() || !c.index.Inferred[r.Def].Suspends || strings.Contains(r.Detail, " suspends") {
+			continue
+		}
+		line, rest, _ := strings.Cut(r.Detail, "\n")
+		if at := strings.Index(line, " throws"); at >= 0 {
+			line = line[:at] + " suspends" + line[at:]
+		} else {
+			line += " suspends"
+		}
+		if rest != "" {
+			line += "\n" + rest
+		}
+		r.Detail = line
+	}
 }
 
 type Ref struct {
