@@ -168,7 +168,7 @@ type UseSpec struct {
 	Path  []Ident
 	Alias *Ident
 	Names []*UseName // the braced names; nil without braces
-	Pub   bool        // the declaration is `public use` (D89)
+	Pub   bool       // the declaration is `public use` (D89)
 	Pos   source.Span
 }
 
@@ -188,9 +188,10 @@ type Param struct {
 	Name     Ident
 	Type     Type
 	Default  Expr
-	Variadic bool     // `name: T...` — the last parameter takes any number of arguments (a List<T> inside)
-	Lazy     bool     // `lazy name: fun(): T` — a plain argument is wrapped in a lambda (D90)
-	Pattern  *Binding // lambda only: `((size, hash), files) => ...` destructures the argument (D37)
+	Variadic bool        // `name: T...` — the last parameter takes any number of arguments (a List<T> inside)
+	Lazy     bool        // `lazy name: fun(): T` — a plain argument is wrapped in a lambda (D90)
+	LazyPos  source.Span // the word `lazy`, when Lazy (the editor's hover)
+	Pattern  *Binding    // lambda only: `((size, hash), files) => ...` destructures the argument (D37)
 	Pos      source.Span
 }
 

@@ -43,3 +43,14 @@ func lazyArgument(e ast.Expr) ast.Expr {
 	}
 	return &ast.LambdaExpr{Body: e, Pos: e.Span()}
 }
+
+// lazyDoc is what hovering the word `lazy` says.
+const lazyDoc = "A parameter modifier (D90). A `lazy` parameter is a `fun(): T` that the call site fills with a plain expression: the compiler wraps the argument in a lambda, and the function evaluates it only if and when it calls the parameter — `log.debug(\"state: ${dump()}\")` builds its message only while debug logging is on. A lambda is passed as it is. Only the standard library may declare one for now."
+
+// refLazyWord records the word `lazy` of a parameter for the editor's hover.
+func (c *Checker) refLazyWord(p ast.Param) {
+	if c.index == nil || !p.LazyPos.IsValid() {
+		return
+	}
+	c.index.Refs = append(c.index.Refs, Ref{Span: p.LazyPos, Kind: "keyword", Name: "lazy", Detail: "lazy  (parameter modifier)", Doc: lazyDoc})
+}

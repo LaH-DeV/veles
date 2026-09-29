@@ -1585,6 +1585,7 @@ func (c *Checker) signatureOf(env *typeEnv, d *ast.FunDecl, isTrait bool) *types
 		}
 		if p.Lazy {
 			c.checkLazyParam(env, p, pt, d)
+			c.refLazyWord(p)
 		}
 		sig.Params = append(sig.Params, types.Param{Name: p.Name.Name, Type: pt, HasDefault: p.Default != nil, Variadic: p.Variadic, Lazy: p.Lazy})
 	}

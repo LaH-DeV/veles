@@ -715,3 +715,16 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   fraction taken apart), identical in debug and release. Docs: chapter 2, the
   stdlib reference. The float sign helpers and the missing integer bit
   operations were left out on purpose and recorded as checklist Q20.
+
+- **2026-09-29, editor support for `lazy` (D90).** The word had no hover and no
+  highlighting: it is contextual, so neither the lexer's keyword table nor the
+  TextMate grammar knew it. `ast.Param.LazyPos` (the parser records the word's
+  span); the checker records a hover reference for it (`refLazyWord`, kind
+  "keyword") that says what a `lazy` parameter is; the shared grammar
+  (`editors/vscode/syntaxes/veles.tmLanguage.json`, which the docs site's
+  Shiki also loads) colours `lazy` as a storage modifier only when a parameter
+  name and `:` follow, so `val lazy = 1` and a field called `lazy` stay plain.
+  Test: lsp `TestHoverOnLazyWord` (the word, the function signature, an
+  ordinary parameter, and that a rename on the word is refused). Not done:
+  completion offers no `lazy` (std-only for now); the packaged
+  `editors/vscode/veles-0.1.0.vsix` is rebuilt by the user.

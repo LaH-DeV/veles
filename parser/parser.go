@@ -642,7 +642,9 @@ func (p *Parser) parseParams() []ast.Param {
 		start := p.span()
 		// `lazy` is a modifier only in front of a parameter's name (D90)
 		lazy := p.at(lexer.Ident) && p.cur().Text == "lazy" && p.peek(1).Kind == lexer.Ident
+		var lazyPos source.Span
 		if lazy {
+			lazyPos = p.span()
 			p.next()
 		}
 		name, ok := p.expectIdent()
@@ -650,7 +652,7 @@ func (p *Parser) parseParams() []ast.Param {
 			p.syncParen()
 			break
 		}
-		prm := ast.Param{Name: name, Lazy: lazy}
+		prm := ast.Param{Name: name, Lazy: lazy, LazyPos: lazyPos}
 		if _, ok := p.expect(lexer.Colon); ok {
 			prm.Type = p.parseType()
 			if p.accept(lexer.Ellipsis) {

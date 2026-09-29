@@ -1546,3 +1546,59 @@ func TestDefinitionFollowsReexport(t *testing.T) {
 		t.Errorf("definition through a re-exported module: %s", def)
 	}
 }
+
+// Hovering the word `lazy` of a parameter explains it (D90), and hovering
+// the parameter still shows it in the signature. The word is not a name: a
+// rename or find-references on it changes nothing.
+func TestHoverOnLazyWord(t *testing.T) {
+	src := "fun show(lazy msg: fun(): string, times: i64 = 1) {\n  println(msg())\n}\n\nfun main() {\n  show(\"hi\")\n}\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := pathToURI(path)
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{})
+	c.notify("initialized", map[string]any{})
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": src}})
+	at := func(method string, line, col int, extra map[string]any) string {
+		p := map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": line, "character": col}}
+		for k, v := range extra {
+			p[k] = v
+		}
+		res, _ := c.call(method, p)
+		return string(res)
+	}
+	got := at("textDocument/hover", 0, 10, nil) // inside the word `lazy`
+	for _, want := range []string{"lazy", "parameter modifier", "wraps the argument in a lambda", "only if and when it calls the parameter"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("hover on `lazy` has no %q: %s", want, got)
+		}
+	}
+	if got := at("textDocument/hover", 0, 5, nil); !strings.Contains(got, "lazy msg: fun(): string") { // the function name
+		t.Errorf("hover on the function should keep `lazy` in its signature: %s", got)
+	}
+	if got := at("textDocument/hover", 0, 34, nil); strings.Contains(got, "parameter modifier") {
+		t.Errorf("hover on an ordinary parameter must not describe `lazy`: %s", got)
+	}
+	// the word is not a name: a rename is refused, not applied
+	c.nextID++
+	id := c.nextID
+	c.send(map[string]any{"jsonrpc": "2.0", "id": id, "method": "textDocument/rename", "params": map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": 0, "character": 10}, "newName": "eager"}})
+	for msg := range c.out {
+		var env struct {
+			ID     *int            `json:"id"`
+			Result json.RawMessage `json:"result"`
+			Error  *responseError  `json:"error"`
+		}
+		json.Unmarshal(msg, &env)
+		if env.ID != nil && *env.ID == id {
+			if env.Error == nil {
+				t.Errorf("rename on the word `lazy` must be refused, got %s", env.Result)
+			}
+			break
+		}
+	}
+}
