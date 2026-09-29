@@ -568,6 +568,9 @@ func (g *gen) function(fn *sema.Func) {
 	for i, p := range fn.Params {
 		bind(p, i+1)
 	}
+	if fn.CallerLoc {
+		params = append(params, strType+" %callerloc") // D88: the site this call was made from
+	}
 	if fn.Suspends {
 		g.coroPrologue()
 	}
@@ -1009,4 +1012,36 @@ func (g *gen) exportWrapper(fn *sema.Func) {
 		return
 	}
 	fmt.Fprintf(&g.out, "  %%r = call %s @%s(%s)\n  call void @veles_ffi_leave(i64 %%saved)\n  ret %s %%r\n}\n\n", ret, fn.Name, strings.Join(args, ", "), ret)
+}
+
+// callerLocArg is the constant or value a call of a `@caller_location`
+// function passes as its site (D88): where the call is written, or — from
+// inside another such function — the site that one was itself given, so a
+// misuse reaches the first caller that is not std's own. A call the compiler
+// made has no site: the empty string, which the callee answers with its own.
+func (g *gen) callerLocArg(span source.Span) string {
+	if g.fn != nil && g.fn.CallerLoc {
+		return "%callerloc"
+	}
+	if span.File == nil {
+		return g.stringConst("")
+	}
+	return g.stringConst(g.where(span))
+}
+
+// panicAtCaller emits a panic in a `@caller_location` function: it reports
+// the site the function was called from (D88), or its own `where` when it
+// was given none.
+func (g *gen) panicAtCaller(msg, where string) {
+	p, l := g.strPtrLen(msg)
+	own := g.stringConst(where)
+	op, ol := g.strPtrLen(own)
+	cp, cl := g.strPtrLen("%callerloc")
+	empty := g.newTmp()
+	g.emit("%s = icmp eq i64 %s, 0", empty, cl)
+	wp, wl := g.newTmp(), g.newTmp()
+	g.emit("%s = select i1 %s, ptr %s, ptr %s", wp, empty, op, cp)
+	g.emit("%s = select i1 %s, i64 %s, i64 %s", wl, empty, ol, cl)
+	g.emit("call void @veles_panic_at(ptr %s, i64 %s, ptr %s, i64 %s)", p, l, wp, wl)
+	g.emitTerm("unreachable")
 }

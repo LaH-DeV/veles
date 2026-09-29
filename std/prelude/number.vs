@@ -21,12 +21,14 @@ fun unsignedToRadix(v: u64, radix: i64): string {
   out
 }
 
+@caller_location
 fun checkRadix(radix: i64) {
   if (radix < 2 || radix > 36) panic("toString: radix must be between 2 and 36, got $radix")
 }
 
 extend i64 {
   /// The number written in `radix` (2 to 36; lower-case digits): `255.toString(radix: 16)` is `"ff"`.
+  @caller_location
   public fun toString(radix: i64 = 10): string {
     checkRadix(radix)
     if (this < 0) "-" + unsignedToRadix((0 -% this).wrapU64(), radix) else unsignedToRadix(this.wrapU64(), radix)
@@ -35,6 +37,7 @@ extend i64 {
 
 extend u64 {
   /// The number written in `radix` (2 to 36; lower-case digits).
+  @caller_location
   public fun toString(radix: i64 = 10): string {
     checkRadix(radix)
     unsignedToRadix(this, radix)

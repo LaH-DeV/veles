@@ -67,6 +67,7 @@ public struct Uuid {
   /// Sixteen bytes as a UUID, whatever they say about their version — for
   /// reading an id out of a binary column. Panics unless there are exactly
   /// sixteen.
+  @caller_location
   public static fun of(bytes: List<u8>): Uuid {
     if (bytes.len() != 16) panic("crypto.Uuid.of: a UUID is 16 bytes, got ${bytes.len()}")
     Uuid(data: bytes)

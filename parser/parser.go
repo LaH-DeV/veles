@@ -417,10 +417,18 @@ func (p *Parser) parseDeclKind(attrs []*ast.Attribute, pub, marked bool, which s
 	p.oldImplSpelling()
 	switch p.cur().Kind {
 	case lexer.KwUse:
-		if marked {
+		if marked && !pub {
 			p.errorf(start, "'use' cannot be %s", which)
 		}
-		return p.parseUse()
+		d := p.parseUse().(*ast.UseDecl)
+		if pub { // a re-export (D89)
+			d.Pub = true
+			d.Pos = start.To(d.Pos)
+			for _, s := range d.Specs {
+				s.Pub = true
+			}
+		}
+		return d
 	case lexer.KwFun, lexer.KwUnsafe, lexer.KwStatic:
 		fn := p.parseFun(attrs, funContextFree)
 		fn.Pub = pub

@@ -103,6 +103,7 @@ extend<T> List<T> {
   }
 
   /// Consecutive pieces of `n` elements; the last may be shorter.
+  @caller_location
   public fun chunked(n: i64): List<List<T>> {
     if (n <= 0) panic("chunked: size must be positive, got $n")
     var out: MutableList<List<T>> = []
@@ -115,6 +116,7 @@ extend<T> List<T> {
   }
 
   /// Every window of `n` consecutive elements (none when the list is shorter).
+  @caller_location
   public fun windowed(n: i64): List<List<T>> {
     if (n <= 0) panic("windowed: size must be positive, got $n")
     var out: MutableList<List<T>> = []
@@ -403,6 +405,7 @@ extend<T> MutableList<T> {
   }
 
   /// Exchanges the elements at `i` and `j`.
+  @caller_location
   public fun swap(i: i64, j: i64) {
     val a = this.at(i) ?: panic("swap: index $i out of bounds for list of length ${this.len()}")
     val b = this.at(j) ?: panic("swap: index $j out of bounds for list of length ${this.len()}")
@@ -411,6 +414,7 @@ extend<T> MutableList<T> {
   }
 
   /// Inserts `x` at index `i`, shifting the rest up; `i == len()` appends.
+  @caller_location
   public fun insert(i: i64, x: T) {
     if (i < 0 || i > this.len()) panic("insert: index $i out of bounds for list of length ${this.len()}")
     this.push(x)
@@ -423,6 +427,7 @@ extend<T> MutableList<T> {
   }
 
   /// Removes and returns the element at index `i`, shifting the rest down.
+  @caller_location
   public fun removeAt(i: i64): T {
     val removed = this.at(i) ?: panic("removeAt: index $i out of bounds for list of length ${this.len()}")
     loop (j in i..<(this.len() - 1)) {
@@ -481,6 +486,7 @@ public struct RangeStepIter<T> {
 
   /// Every `step`-th value of this sequence, from its start:
   /// `(0..10).reversed().step(3)` is 10, 7, 4, 1.
+  @caller_location
   public fun step(step: T): RangeStepIter<T> {
     if (step <= 0) panic("step: must be positive")
     RangeStepIter(current: this.current, last: this.last, step, up: this.up, done: this.done)
@@ -525,6 +531,7 @@ extend<T> Range<T> {
   }
 
   /// Every `step`-th value, starting at the low end.
+  @caller_location
   public fun step(step: T): RangeStepIter<T> {
     if (step <= 0) panic("step: must be positive")
     val last = if (this.inclusive || this.holdsNothing()) this.hi else this.hi - 1

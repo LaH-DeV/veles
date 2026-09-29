@@ -881,7 +881,9 @@ func (f *fnCtx) methodCall(callee *ast.MemberExpr, typeArgs []types.Type, e *ast
 }
 
 func (f *fnCtx) methodCallOn(callee *ast.MemberExpr, typeArgs []types.Type, e *ast.CallExpr, want types.Type) Expr {
+	f.lookOnly(callee.X) // D87: a protected collection may be a receiver...
 	recv := f.checkExpr(callee.X, nil)
+	f.pendingLook = f.takeLooked() // ...of a method that does not change it (dispatchMethod)
 	if types.IsInvalid(recv.Type()) {
 		f.checkArgsLoosely(e.Args)
 		return bad()
@@ -918,6 +920,8 @@ func (f *fnCtx) methodCallOn(callee *ast.MemberExpr, typeArgs []types.Type, e *a
 
 func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []types.Type, e *ast.CallExpr, want types.Type) Expr {
 	name := callee.Name.Name
+	look := f.pendingLook
+	f.pendingLook = nil
 	rt := recv.Type()
 	if _, ok := rt.(*types.Pointer); ok && name == "cast" {
 		return f.rawPointerCast(recv, name, typeArgs, e) // D86
@@ -940,6 +944,9 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 	if bt, ok := rt.(*types.Basic); ok && name == "wrapTo" && types.IsNumeric(bt) {
 		f.c.refBuiltin(callee.Name.Pos, rt, name)
 		return f.wrapTo(recv, rt, typeArgs, e) // D86
+	}
+	if look != nil && mutatesCollection(rt, name) {
+		f.refuseContentsChange(look, name, callee.Name.Pos)
 	}
 	if b := f.builtinMethod(recv, rt, name, e); b != nil {
 		f.c.refBuiltin(callee.Name.Pos, rt, name)
@@ -998,11 +1005,14 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 	// (checkCoherence rejects overlapping ones). A mutable collection also
 	// has its immutable form's methods (D25: MutableList<T> is a List<T>),
 	// looked up after any block naming the mutable type itself.
-	for _, view := range receiverViews(rt) {
+	for vi, view := range receiverViews(rt) {
 		for _, ext := range f.c.extends {
 			t, ok := ext.Methods[name]
 			if !ok {
 				continue
+			}
+			if look != nil && vi == 0 && isMutableCollection(rt) {
+				f.refuseContentsChange(look, name, callee.Name.Pos) // a block naming the mutable type itself
 			}
 			m := map[*types.TypeParam]types.Type{}
 			if !unify(ext.Target, view, m) {

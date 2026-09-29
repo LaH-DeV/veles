@@ -15,7 +15,6 @@ import (
 //	[package]
 //	name = "app"
 //	version = "0.1.0"
-//	exports = ["geometry"]          # modules other packages may import
 //
 //	[dependencies]
 //	mathlib = "../mathlib"                 # short for { path = "../mathlib" }
@@ -25,7 +24,6 @@ import (
 type Manifest struct {
 	Name    string
 	Version string
-	Exports []string
 	Deps    map[string]string // name -> path (relative to the manifest)
 	Dir     string
 	// Format holds the `[format]` table for `veles fmt`: Indent is "" for
@@ -92,7 +90,7 @@ func readManifest(dir string) (*Manifest, error) {
 			case "version":
 				m.Version = tomlString(val)
 			case "exports":
-				m.Exports = tomlStringList(val)
+				return nil, fmt.Errorf("%s:%d: 'exports' was removed (D89): a package's surface is what its root module re-exports — write 'public use geometry' in lib.vs for each module listed here", path, n+1)
 			}
 		case "dependencies":
 			// `name = "../dir"` is the short form of `name = { path = "../dir" }`.
@@ -185,20 +183,6 @@ func tomlInlinePath(v string) string {
 		}
 	}
 	return ""
-}
-
-// exported reports whether a module path of this package may be imported
-// from another package: listed in exports, or the root module.
-func (m *Manifest) exported(modPath string) bool {
-	if modPath == "" {
-		return true
-	}
-	for _, e := range m.Exports {
-		if e == modPath {
-			return true
-		}
-	}
-	return false
 }
 
 // stripComment removes a `#` comment that is not inside a string.

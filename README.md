@@ -85,7 +85,7 @@ comparator/key lambdas. D51 `@deprecated`, `@mustUse`, `@inline`,
 `@noinline`; D78 `test "..." { }` with `expect`/`require`/`check`.
 
 **Modules and packages.** M1 `veles.toml` identity, M2/M3 directory
-modules, M4 cycle detection, M5 `public` plus manifest `exports`, M6 logical
+modules, M4 cycle detection, M5 `public` plus the root module's `public use` re-exports (D89), M6 logical
 paths; path dependencies (`name = "../dir"` or `name = { path = "../dir" }`). M7's registry and
 minimal version selection are not implemented.
 

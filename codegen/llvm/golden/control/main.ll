@@ -418,15 +418,15 @@ loop.end.55:
   %t141 = extractvalue %str { ptr @.str.17, i64 18 }, 0
   %t142 = extractvalue %str { ptr @.str.17, i64 18 }, 1
   call void @veles_call_push(ptr %t141)
-  %t143 = call %S.std.prelude.RangeStepIter_i64_ @v_std.prelude.extend.Range_T.step_T_i64_(ptr %a140, i64 5)
+  %t143 = call %S.std.prelude.RangeStepIter_i64_ @v_std.prelude.extend.Range_T.step_T_i64_(ptr %a140, i64 5, %str { ptr @.str.18, i64 13 })
   call void @veles_call_pop()
   store %S.std.prelude.RangeStepIter_i64_ %t143, ptr %a144
   br label %loop.cond.63
 loop.cond.63:
   br label %loop.body.66
 loop.body.66:
-  %t145 = extractvalue %str { ptr @.str.18, i64 18 }, 0
-  %t146 = extractvalue %str { ptr @.str.18, i64 18 }, 1
+  %t145 = extractvalue %str { ptr @.str.19, i64 18 }, 0
+  %t146 = extractvalue %str { ptr @.str.19, i64 18 }, 1
   call void @veles_call_push(ptr %t145)
   %t147 = call { i1, i64 } @v_std.prelude.Iterator.RangeStepIter_T.next_T_i64_(ptr %a144)
   call void @veles_call_pop()
@@ -445,14 +445,14 @@ if.end.68:
   %t157 = call i64 @veles_i64_format(ptr %a156, i64 %t155)
   %t158 = insertvalue %str undef, ptr %a156, 0
   %t159 = insertvalue %str %t158, i64 %t157, 1
-  %t161 = extractvalue %str { ptr @.str.19, i64 5 }, 0
-  %t162 = extractvalue %str { ptr @.str.19, i64 5 }, 1
+  %t161 = extractvalue %str { ptr @.str.20, i64 5 }, 0
+  %t162 = extractvalue %str { ptr @.str.20, i64 5 }, 1
   %t163 = extractvalue %str %t159, 0
   %t164 = extractvalue %str %t159, 1
   call void @veles_string_concat(ptr %a160, ptr %t161, i64 %t162, ptr %t163, i64 %t164)
   %t165 = load %str, ptr %a160
-  %t166 = extractvalue %str { ptr @.str.20, i64 21 }, 0
-  %t167 = extractvalue %str { ptr @.str.20, i64 21 }, 1
+  %t166 = extractvalue %str { ptr @.str.21, i64 21 }, 0
+  %t167 = extractvalue %str { ptr @.str.21, i64 21 }, 1
   call void @veles_call_push(ptr %t166)
   call void @v_std.io.println(%str %t165)
   call void @veles_call_pop()
@@ -479,65 +479,65 @@ loop.end.65:
   %t182 = call i64 @veles_i64_format(ptr %a181, i64 %t180)
   %t183 = insertvalue %str undef, ptr %a181, 0
   %t184 = insertvalue %str %t183, i64 %t182, 1
-  %t185 = extractvalue %str { ptr @.str.21, i64 22 }, 0
-  %t186 = extractvalue %str { ptr @.str.21, i64 22 }, 1
+  %t185 = extractvalue %str { ptr @.str.22, i64 22 }, 0
+  %t186 = extractvalue %str { ptr @.str.22, i64 22 }, 1
   call void @veles_call_push(ptr %t185)
   %t187 = call %str @v_main.classify(i64 -2)
   call void @veles_call_pop()
-  %t188 = extractvalue %str { ptr @.str.22, i64 22 }, 0
-  %t189 = extractvalue %str { ptr @.str.22, i64 22 }, 1
+  %t188 = extractvalue %str { ptr @.str.23, i64 22 }, 0
+  %t189 = extractvalue %str { ptr @.str.23, i64 22 }, 1
   call void @veles_call_push(ptr %t188)
   %t190 = call %str @v_main.classify(i64 0)
   call void @veles_call_pop()
-  %t191 = extractvalue %str { ptr @.str.23, i64 22 }, 0
-  %t192 = extractvalue %str { ptr @.str.23, i64 22 }, 1
+  %t191 = extractvalue %str { ptr @.str.24, i64 22 }, 0
+  %t192 = extractvalue %str { ptr @.str.24, i64 22 }, 1
   call void @veles_call_push(ptr %t191)
   %t193 = call %str @v_main.classify(i64 4)
   call void @veles_call_pop()
-  %t194 = extractvalue %str { ptr @.str.24, i64 20 }, 0
-  %t195 = extractvalue %str { ptr @.str.24, i64 20 }, 1
+  %t194 = extractvalue %str { ptr @.str.25, i64 20 }, 0
+  %t195 = extractvalue %str { ptr @.str.25, i64 20 }, 1
   call void @veles_call_push(ptr %t194)
   %t196 = call %str @v_main.digits(i64 3)
   call void @veles_call_pop()
-  %t197 = extractvalue %str { ptr @.str.25, i64 20 }, 0
-  %t198 = extractvalue %str { ptr @.str.25, i64 20 }, 1
+  %t197 = extractvalue %str { ptr @.str.26, i64 20 }, 0
+  %t198 = extractvalue %str { ptr @.str.26, i64 20 }, 1
   call void @veles_call_push(ptr %t197)
   %t199 = call %str @v_main.digits(i64 9)
   call void @veles_call_pop()
   %t202 = getelementptr [15 x %str], ptr %a201, i64 0, i64 0
   store %str %t174, ptr %t202
   %t203 = getelementptr [15 x %str], ptr %a201, i64 0, i64 1
-  store %str { ptr @.str.26, i64 1 }, ptr %t203
+  store %str { ptr @.str.27, i64 1 }, ptr %t203
   %t204 = getelementptr [15 x %str], ptr %a201, i64 0, i64 2
   store %str %t179, ptr %t204
   %t205 = getelementptr [15 x %str], ptr %a201, i64 0, i64 3
-  store %str { ptr @.str.26, i64 1 }, ptr %t205
+  store %str { ptr @.str.27, i64 1 }, ptr %t205
   %t206 = getelementptr [15 x %str], ptr %a201, i64 0, i64 4
   store %str %t184, ptr %t206
   %t207 = getelementptr [15 x %str], ptr %a201, i64 0, i64 5
-  store %str { ptr @.str.26, i64 1 }, ptr %t207
+  store %str { ptr @.str.27, i64 1 }, ptr %t207
   %t208 = getelementptr [15 x %str], ptr %a201, i64 0, i64 6
   store %str %t187, ptr %t208
   %t209 = getelementptr [15 x %str], ptr %a201, i64 0, i64 7
-  store %str { ptr @.str.26, i64 1 }, ptr %t209
+  store %str { ptr @.str.27, i64 1 }, ptr %t209
   %t210 = getelementptr [15 x %str], ptr %a201, i64 0, i64 8
   store %str %t190, ptr %t210
   %t211 = getelementptr [15 x %str], ptr %a201, i64 0, i64 9
-  store %str { ptr @.str.26, i64 1 }, ptr %t211
+  store %str { ptr @.str.27, i64 1 }, ptr %t211
   %t212 = getelementptr [15 x %str], ptr %a201, i64 0, i64 10
   store %str %t193, ptr %t212
   %t213 = getelementptr [15 x %str], ptr %a201, i64 0, i64 11
-  store %str { ptr @.str.26, i64 1 }, ptr %t213
+  store %str { ptr @.str.27, i64 1 }, ptr %t213
   %t214 = getelementptr [15 x %str], ptr %a201, i64 0, i64 12
   store %str %t196, ptr %t214
   %t215 = getelementptr [15 x %str], ptr %a201, i64 0, i64 13
-  store %str { ptr @.str.26, i64 1 }, ptr %t215
+  store %str { ptr @.str.27, i64 1 }, ptr %t215
   %t216 = getelementptr [15 x %str], ptr %a201, i64 0, i64 14
   store %str %t199, ptr %t216
   call void @veles_string_concat_n(ptr %a200, ptr %a201, i64 15)
   %t217 = load %str, ptr %a200
-  %t218 = extractvalue %str { ptr @.str.27, i64 20 }, 0
-  %t219 = extractvalue %str { ptr @.str.27, i64 20 }, 1
+  %t218 = extractvalue %str { ptr @.str.28, i64 20 }, 0
+  %t219 = extractvalue %str { ptr @.str.28, i64 20 }, 1
   call void @veles_call_push(ptr %t218)
   call void @v_std.io.println(%str %t217)
   call void @veles_call_pop()
@@ -561,13 +561,14 @@ loop.end.65:
 @.str.15 = private unnamed_addr constant [14 x i8] c"main.vs:27:16\00"
 @.str.16 = private unnamed_addr constant [13 x i8] c"main.vs:30:5\00"
 @.str.17 = private unnamed_addr constant [19 x i8] c"main.vs:33:14\00step\00"
-@.str.18 = private unnamed_addr constant [19 x i8] c"main.vs:33:14\00next\00"
-@.str.19 = private unnamed_addr constant [6 x i8] c"step \00"
-@.str.20 = private unnamed_addr constant [22 x i8] c"main.vs:33:31\00println\00"
-@.str.21 = private unnamed_addr constant [23 x i8] c"main.vs:34:34\00classify\00"
-@.str.22 = private unnamed_addr constant [23 x i8] c"main.vs:34:50\00classify\00"
-@.str.23 = private unnamed_addr constant [23 x i8] c"main.vs:34:65\00classify\00"
-@.str.24 = private unnamed_addr constant [21 x i8] c"main.vs:34:80\00digits\00"
-@.str.25 = private unnamed_addr constant [21 x i8] c"main.vs:34:93\00digits\00"
-@.str.26 = private unnamed_addr constant [2 x i8] c" \00"
-@.str.27 = private unnamed_addr constant [21 x i8] c"main.vs:34:3\00println\00"
+@.str.18 = private unnamed_addr constant [14 x i8] c"main.vs:33:14\00"
+@.str.19 = private unnamed_addr constant [19 x i8] c"main.vs:33:14\00next\00"
+@.str.20 = private unnamed_addr constant [6 x i8] c"step \00"
+@.str.21 = private unnamed_addr constant [22 x i8] c"main.vs:33:31\00println\00"
+@.str.22 = private unnamed_addr constant [23 x i8] c"main.vs:34:34\00classify\00"
+@.str.23 = private unnamed_addr constant [23 x i8] c"main.vs:34:50\00classify\00"
+@.str.24 = private unnamed_addr constant [23 x i8] c"main.vs:34:65\00classify\00"
+@.str.25 = private unnamed_addr constant [21 x i8] c"main.vs:34:80\00digits\00"
+@.str.26 = private unnamed_addr constant [21 x i8] c"main.vs:34:93\00digits\00"
+@.str.27 = private unnamed_addr constant [2 x i8] c" \00"
+@.str.28 = private unnamed_addr constant [21 x i8] c"main.vs:34:3\00println\00"

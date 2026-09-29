@@ -100,10 +100,22 @@ standard module the message says instead that the name is not part of
 the standard library's API: it is an internal helper, and the public
 functions around it are the way in.
 
-#### `module 'x' of package 'lib' is not in its exports`
+#### `module 'x' of package 'lib' is not re-exported`
 
-The dependency's `veles.toml` decides what leaves the package. Import an
-exported module, or add `x` to that package's `exports` (M5).
+A package's root module decides what leaves the package: `public use x`
+there (D89). Import a module it re-exports, or add that line to the
+dependency's root module. The message names the line to add.
+
+#### `'public use m' re-exports a module of another package`
+
+Only a package's own modules can be re-exported; a dependency's or a
+standard module's stays where it is — import it where it is used.
+
+#### `'x' is already declared in this module` (a re-export)
+
+A re-exported name lives in the module's namespace like a declaration.
+Re-export it under another name: `public use m as other`, or
+`public use m { x as other }`.
 
 ### private-to-type
 
@@ -121,6 +133,16 @@ A `protected var` field is assigned only inside the type's own
 declarations — its methods, `implement` and `extend` blocks; everyone else
 reads it. Call a method of the type, or make the field a plain `var` if
 outside writes are intended (D22).
+
+#### `cannot take 'T.f' out of 'T': the field is 'protected var'`, `cannot call 'push' on 'T.f'`
+
+On a `protected var` field whose type is a mutable collection, the
+contents belong to the type too (D87). From outside, read it through a
+method that does not change it (`t.items.len()`, `.first()`, `.contains(x)`),
+loop over it, or interpolate it. Binding, passing or returning the field
+would hand out the handle, and a mutating method (`push`, `set`, `clear`,
+`swap`, `ref`, ...) changes it: give the type a method that does the change,
+or copy with `t.items.toList()`.
 
 ### type-mismatch
 
@@ -552,6 +574,14 @@ callers take on the obligation.
 Attributes shape what the compiler derives (D58): `@key` renames a field
 on the wire, `@skip` leaves it out, `@tag` names a sealed variant.
 `veles explain <path> --derive` prints the code a derive wrote.
+
+#### `'@caller_location' is reserved for the standard library for now`
+
+`@caller_location` makes a function's misuse panics point at its caller
+(D88). Only std uses it so far; write the check in your own function
+with a `panic` that names the argument, and the chain in a debug build
+shows the caller. It cannot mark a trait implementation, an extern
+function, or a function that suspends.
 
 ### tests
 

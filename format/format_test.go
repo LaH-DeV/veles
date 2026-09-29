@@ -336,3 +336,14 @@ func TestOptions(t *testing.T) {
 		t.Errorf("four spaces:\n--- got ---\n%s--- want ---\n%s", out, want)
 	}
 }
+
+// A `public use` (D89) is a declaration of its own: the formatter neither
+// merges it into the run of plain imports around it nor sorts its specs, and
+// keeps its `public`.
+func TestPublicUseIsNotMerged(t *testing.T) {
+	src := "use os,io\npublic use geometry\nuse time\npublic   use shapes { area,   Circle as Round }, util as tools\nuse io\n"
+	want := "use io, os\npublic use geometry\nuse time\npublic use shapes { area, Circle as Round }, util as tools\nuse io\n"
+	if got := checkRoundTrip(t, "public_use.vs", src); got != want {
+		t.Errorf("formatted:\n%s\nwant:\n%s", got, want)
+	}
+}

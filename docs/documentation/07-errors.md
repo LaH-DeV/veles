@@ -498,4 +498,15 @@ being unwrapped. (D61)
   build (`--release`) keeps no chain — that is what makes calls free — and
   prints the location with a note that a debug build shows the rest.
 
+  A panic that says you called something wrongly — `xs.swap(0, 7)` on a
+  three-element list, `list.chunked(0)`, `255.toString(radix: 1)` — points at
+  **your** call, not at the line inside the standard library that noticed
+  (D88). Those functions are marked `@caller_location`, which hands them
+  the site they were called from; both build profiles report it:
+
+  ```text
+  panic: swap: index 7 out of bounds for list of length 3
+    at main.vs:6:3 in main
+  ```
+
 Next: [Traits and generics](08-traits-and-generics.md).

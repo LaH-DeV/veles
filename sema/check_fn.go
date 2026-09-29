@@ -13,15 +13,20 @@ import (
 
 // fnCtx is the per-function checking state.
 type fnCtx struct {
-	c      *Checker
-	fn     *Func
-	module *Module
-	file   *ast.File
-	env    *typeEnv
-	subst  map[*types.TypeParam]types.Type
-	scope  *Scope
-	loops  []*loopFrame
-	narrow map[place]types.Type
+	// D87: the member expression checked next may be a protected collection
+	// looked at, and the one the last such check saw
+	lookAt      source.Span
+	looked      *lookedField
+	pendingLook *lookedField
+	c           *Checker
+	fn          *Func
+	module      *Module
+	file        *ast.File
+	env         *typeEnv
+	subst       map[*types.TypeParam]types.Type
+	scope       *Scope
+	loops       []*loopFrame
+	narrow      map[place]types.Type
 	// provenReads are the `at`/`first`/`last` calls a bounds fact made total
 	// (D62), so a `?:` after one is a warning, not an error.
 	provenReads map[*ast.CallExpr]bool
@@ -1109,7 +1114,11 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 	defer f.popScope()
 	switch {
 	case s.Var != nil:
+		if !hasRefBinding(s.Var) {
+			f.lookOnly(s.Iter) // D87: a value loop only looks
+		}
 		iter := f.checkExpr(s.Iter, nil)
+		f.takeLooked()
 		if f.loopIters == nil {
 			f.loopIters = map[*ast.LoopStmt]types.Type{}
 		}

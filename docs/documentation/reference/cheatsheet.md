@@ -18,8 +18,9 @@ fun main() { }                  // entry point
 ```
 
 A module is a directory; every `.vs` in it shares a namespace (M2).
-`public` exports from the module (M5). `veles.toml` names the package and
-its `exports` and `[dependencies]` (M1).
+`public` exports from the module (M5); `public use m` in the root module
+shows a module to other packages (D89). `veles.toml` names the package and
+its `[dependencies]` (M1).
 
 ## Bindings and types
 

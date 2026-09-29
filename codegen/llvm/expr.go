@@ -490,6 +490,9 @@ func (g *gen) call(e *sema.Call) string {
 		}
 		args = append(args, g.llType(a.Type())+" "+v)
 	}
+	if fn.CallerLoc {
+		args = append(args, strType+" "+g.callerLocArg(e.Span))
+	}
 	// a debug build records the call for a panic's chain (D81)
 	pushed := g.chainPush(e.Span, fn)
 	if fn.Suspends {
@@ -1624,6 +1627,10 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		g.emit("%s = call ptr @veles_string_chars(ptr %s, ptr %s, i64 %s)", v, g.arrayDescOf(types.TString), sp, sl)
 		return v
 	case "panic":
+		if g.fn != nil && g.fn.CallerLoc {
+			g.panicAtCaller(g.expr(e.Args[0]), g.where(e.Span))
+			return "zeroinitializer"
+		}
 		g.panicValueAt(g.expr(e.Args[0]), g.where(e.Span))
 		return "zeroinitializer"
 	case "test.fail", "test.stop":
@@ -1834,6 +1841,9 @@ func (g *gen) thunkFor(fn *sema.Func) string {
 			llt := g.llType(p.Type)
 			params = append(params, fmt.Sprintf("%s %%p%d", llt, i))
 			args = append(args, fmt.Sprintf("%s %%p%d", llt, i))
+		}
+		if fn.CallerLoc {
+			args = append(args, strType+" zeroinitializer") // a function value has no call site to report
 		}
 		ret := g.retLL(fn)
 		g.defineHelper(name, ret, params, func() {

@@ -157,6 +157,7 @@ type Attribute struct {
 // always qualified (`geometry.Point`), and `as` renames the module.
 type UseDecl struct {
 	Specs []*UseSpec
+	Pub   bool // `public use`: a re-export, part of the module's public surface (D89)
 	Pos   source.Span
 }
 
@@ -167,6 +168,7 @@ type UseSpec struct {
 	Path  []Ident
 	Alias *Ident
 	Names []*UseName // the braced names; nil without braces
+	Pub   bool        // the declaration is `public use` (D89)
 	Pos   source.Span
 }
 

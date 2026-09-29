@@ -333,6 +333,42 @@ no inheritance — shared behaviour is a trait (chapter 8) — so the
 it says: the field is protected from writes by anyone but its owner. And
 `protected` never restricts *reading*: `public protected var` is the
 normal spelling, "public to read, protected to write".
+
+On a field whose type is a mutable collection, `protected` covers the
+*contents* too (D87), because a collection is a handle: whoever holds it
+can change what it holds. From outside the type the field may only be
+looked at — the receiver of a method that does not change it, a loop head,
+an interpolated value. Changing it, binding it, passing it and returning it
+are errors that say so; `.toList()` makes a copy anyone may keep:
+
+```veles
+use io
+
+struct Inbox {
+  public protected var lines: MutableList<string> = []
+
+  public fun receive(line: string) {
+    this.lines.push(line)
+  }
+}
+
+fun main() {
+  val inbox = Inbox()
+  inbox.receive("first")
+  inbox.receive("second")
+  val n = inbox.lines.len()
+  val copy = inbox.lines.toList()
+  io.println("$n ${inbox.lines} ${copy.first()}")
+  // inbox.lines.push("x")   error: only Inbox changes its contents
+  // val taken = inbox.lines error: cannot take it; copy it with .toList()
+}
+```
+
+Output:
+```text
+2 [first, second] first
+```
+
 Because a struct is a value, a method changes the copy it was called on.
 `var b = acct; b.deposit(1)` leaves `acct` alone, and a method called
 on a temporary — `accounts.at(0)?.deposit(1)`, a copy of the element —

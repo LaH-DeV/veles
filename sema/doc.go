@@ -30,16 +30,25 @@ func DocPackage(pkg *Package, diags *source.Diagnostics) []ModuleDoc {
 	var out []ModuleDoc
 	var paths []string
 	exported := map[string]bool{}
-	if pkg.Manifest != nil {
-		for _, e := range pkg.Manifest.Exports {
-			exported[e] = true
+	// what the root module re-exports (D89: `public use geometry`)
+	if root := pkg.Modules[""]; root != nil {
+		for _, f := range root.Files {
+			for _, d := range f.Decls {
+				if u, ok := d.(*ast.UseDecl); ok && u.Pub {
+					for _, s := range u.Specs {
+						if dep := root.Uses[s]; dep != nil && len(s.Names) == 0 {
+							exported[dep.Path] = true
+						}
+					}
+				}
+			}
 		}
 	}
 	for p, m := range pkg.Modules {
 		if m.Std || strings.HasPrefix(p, "dep/") {
 			continue
 		}
-		// a library's surface is its root and what the manifest exports;
+		// a library's surface is its root and what the root module re-exports;
 		// a module it keeps to itself is not API
 		if len(exported) > 0 && p != "" && !exported[p] {
 			continue

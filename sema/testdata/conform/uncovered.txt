@@ -18,12 +18,14 @@
 "'%s' is not a value"  # no syntax reaches it: guards an AST node kind the checker does not handle
 "'%s.%s' is ambiguous: declared by traits '%s' and '%s'"  # a concrete type's associated type is only reached through a type parameter, whose ambiguity is refused first (D84)
 "'..' only stands inside a list pattern: '[first, ..rest]'"  # the parser refuses the form first
+"'@caller_location' applies to plain functions and inherent methods, not to trait implementations or extern functions (D88)"  # std-only: user code is refused first (reserved for the standard library), and std marks neither
 "'[...] =' is not index assignment; brackets are for collection literals only (D25)"  # only when the source text is missing, i.e. synthesized code, which never writes brackets
 "'[...]' after a value is not indexing; brackets are for collection literals only (D25)"  # only when the source text is missing, i.e. synthesized code, which never writes brackets
 "'ioWait' takes two arguments: the descriptor and whether to wait for writing"  # std-internal intrinsic: only std calls it, and std calls it right
 "'ioWait()' always suspends and must be awaited: 'await ioWait(fd, write)' (D16)"  # std-internal intrinsic: only std calls it, and std calls it right
 "'next()' must return 'Item?', found '%s'"  # an Iterator implementation is checked against the trait first
 "a 'test fun' is a top-level helper, not a method"  # the parser refuses `test fun` in a type body; guards ASTs built another way
+"a function marked '@caller_location' cannot suspend (D88)"  # std-only, after the reserved check: user code never reaches the suspension pass with the attribute
 "a type is not a value"  # the parser refuses the form first
 "cannot assign through '?.': there may be nothing to assign to; check for null first, 'if (x != null) x.f = v'"  # defensive: check_safe.go binds every '?.' write (plain, compound, nested, '&') before an assignment target is checked
 "close() of '%s' throws; throwing cleanup is not supported yet"  # Closeable.close is declared non-throwing, so an implementation cannot throw

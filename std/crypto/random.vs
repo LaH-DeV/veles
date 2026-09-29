@@ -30,6 +30,7 @@ extern "C" {
 /// a panic (which a server still catches at the request boundary, D56)
 /// rather than an error every call site must thread through. It has never
 /// been observed on a booted system.
+@caller_location
 public fun randomBytes(n: i64): List<u8> {
   if (n < 0) panic("crypto.randomBytes: $n bytes")
   if (n == 0) return []

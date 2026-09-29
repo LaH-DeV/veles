@@ -72,34 +72,6 @@ R5. Examples (small and mid-size) must DO something useful — real use cases, n
    until then `veles.toml` stays and formatter options live there.
    → Decided 2026-09-18: `veles.toml` stays until M7 (registry) gives the manifest real content.
 
-19. (2026-09-17, user idea, decided "figure out and note") Package surface in source instead of
-   the manifest's `exports`:
-   - `public` inside a module = visible to the rest of the package (already the rule, M5).
-   - The root module (`lib.vs` by convention; any file of the root directory) re-exports with
-     `public use geometry` — that, and only that, is what other packages may import. Manifest
-     `exports` goes away (bootstrap has no users; no compatibility alias needed).
-   Design worked out so far:
-   - Forms mirror `use`: `public use geometry` re-exports the module under its name (outsiders write
-     `use mathlib.geometry`, as today); `public use geometry.{ area, Circle }` flattens those items
-     into the root (`use mathlib` → `mathlib.area`) — a facade that hides the internal layout,
-     which the manifest list cannot do; `public use geometry as geo` renames.
-   - Uniform rule, no root special case: `public use` in ANY module adds the named module/items to
-     that module's public surface; the root module's public surface is the package's.
-   - Only the package's own modules/items may be re-exported; re-exporting a dependency
-     (`public use utils.text`) is refused for now (keeps "nothing escapes except through the root",
-     avoids diamond questions). Revisit when M7 lands.
-   - M1 is untouched: the dependency graph still comes from manifests only. The loader parses a
-     dependency's root module (its `use` lines) to learn the surface before resolving
-     `use dep.mod`; error text: "module 'geometry' of package 'mathlib' is not re-exported; add
-     `public use geometry` to its root module".
-   - `public use` is a `use` edge for M4 cycle detection. Flattened names collide with root decls
-     like duplicate declarations. LSP definition/hover follow a re-export to the original.
-   - Fits #17: if `.veles` replaces the manifest, identity/deps live there and the surface stays
-     in code. Cost: small (loader + checker + LSP), one docs chapter, examples/packages update.
-   → Since (R9, 2026-09-19): name imports are gone, so the flattening form
-     `public use geometry.{ area, Circle }` falls; re-exports are whole modules. Designed,
-     not scheduled — wants a go-ahead (veles-plan.md, decisions).
-
  I2. `when (val n = ...)` requires `val`, `loop (x in c)` does not. Different situations (the
      when-subject is a general expression binding; the loop var is always a fresh binding), but
      it reads inconsistent. Options: allow `when (n = part.toInt())`; or require nothing and
@@ -108,21 +80,6 @@ R5. Examples (small and mid-size) must DO something useful — real use cases, n
  I3. (docs, low priority) Mutating a MutableList while looping over it: memory-safe (D42
      iterator holds the old buffer) but the meaning is unspecified (snapshot? sees appends?).
      Decide and document when it comes up; not blocking.
-
-R18(b). (user flagged as a bug in examples/httpd) a non-`mut fun` may mutate a MutableList
-    field (`self.items.removeAt(i)`); this is the documented reference semantics of the mutable
-    collections (D25/D41: `Mutable` is the permission, the handle is the value) — Kotlin's
-    model, not Swift's/Rust's deep mutability; decision pending.
-    → R20 (2026-09-20) moved mutability to fields (`var`); a collection field's CONTENTS stay
-      changeable through a method by design. Explained, not changed. Goes with R32 below.
-
-R32. OPEN (user question): read-only exposure of a mutable-collection field (`vars:
-    MutableMap` — outsiders may read, not mutate). Options laid out in conversation:
-    (a) private + accessor methods (works today, D25-clean); (b) `protected val` on
-    mutable-collection fields = "look, don't take": from outside the field may only be the
-    receiver of the immutable form's methods / a loop head / interpolation, never bound,
-    passed or returned (keeps D25's no-views rule); (c) read-only view types — rejected by D25/
-    D35. Awaiting decision.
 
 P11. CANDIDATE HELPERS for later (not started; pick when a program needs them):
       `retry(times, f)` / `retry(times, delay, f)`, `Semaphore` (`semaphore(n).withPermit(f)`,

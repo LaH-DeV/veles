@@ -600,7 +600,7 @@ behind a name that says "crypto" (§10, 2026-09-23).
       the one fact it states (`duplicate field 'x'`, `'None' takes no
       arguments`) or it is a compiler-internal check
 - [x] `veles doc`: rendered API docs from `///` — Markdown per reachable
-      module (root + `exports`), declarations as hover shows them from
+      module (root + what it re-exports, D89), declarations as hover shows them from
       outside, member docs; `-o dir` for files (2026-09-27)
 - [ ] Package registry / MVS (on the remaining list)
 - [ ] Lockfile and reproducible builds
@@ -671,7 +671,7 @@ spec entry and a row in §10, and the item leaves this list. The labels are
 stable; §10 rows written before 2026-09-27 cite the old numbering (the
 list as it was is in `archive/progress-log-2026-09.md` and git history).
 
-(Q15 named imports was decided 2026-09-29: D85; Q16 `as` conversions the same day: D86.)
+(Q15 named imports was decided 2026-09-29: D85; Q16 `as` conversions the same day: D86; Q19 the same; Q4 D87, Q8 D88, Q3 D89 — decided 2026-09-29, being built in that order.)
 
 **Asked, awaiting an answer**
 
@@ -686,11 +686,6 @@ list as it was is in `archive/progress-log-2026-09.md` and git history).
 
 **Prepared or half-designed, not yet asked**
 
-- **Q3. Package surface in source** (notes #19): `public use geometry` in
-  the root module replaces the manifest's `exports`. Designed (whole
-  modules only since R9); wants a go-ahead.
-- **Q4. Read-only exposure of a mutable-collection field** (notes R32,
-  R18(b)): accessors vs `protected val` meaning "look, don't take".
 - **Q5. `is Trait`** (`x is Display`): trait-object RTTI (a per-type table
   in every box) vs a compile-time `T implements X` in generics vs neither.
   `sema/supers.go` refuses converting one trait object to another for the
@@ -703,8 +698,6 @@ list as it was is in `archive/progress-log-2026-09.md` and git history).
 - **Q7. FFI surface still open**: varargs calls (`printf`), `extern struct`
   layout (packed, alignment, transparent wrappers — the pressure point under
   D51), `.d.vs` declaration files (with notes #16).
-- **Q8. Where a misuse panic points**: a `#[track_caller]`-style marker so
-  `xs.swap(0, 7)` reports the caller's line, not `std/prelude/list.vs` (§11).
 - **Q9. `Secret<T>`**: no `Display`, no derive, zeroed on collection (§2,
   §5.5).
 - **Q10. Compile-time evaluation**: what a `const` may hold beyond literals,
@@ -805,6 +798,9 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-09-29 | Q15: named imports | **`use m { f, T as U }`, one statement, `as` renames, `m.` stays** (user, recommended of 4, and braces add names on top of the qualifier; spec D85). Rejected: `from m import { … }`, `::`/`:` renames, the dotted `use m.{ }`. Q16 (`as` for conversions) stays open.
 | 2026-09-29 | Q16: numeric conversions | **Methods split by risk, `as` only renames** (user, recommended of 4; spec D86): `toT()` total where lossless else `T?`, `wrapT()` explicit truncation, `p.cast<*raw U>()` in `unsafe`. Naming: `toU8()` + `wrapU8()` (user, recommended of 3). Rejected: keep `as`, `as` lossless-only, call style `i64(x)`. |
 | 2026-09-29 | Q19: converting to a type parameter | **`x.wrapTo<T>()`** (user, recommended of 4; spec D86 addendum). Rejected: an `Integer` trait with `T.wrap(from:)`, keeping the std-only `as` exemption, rewriting `Range.reversed()`. |
+| 2026-09-29 | Q4: protected mutable-collection field | **`protected` = look, don't take** (user, recommended of 3; spec D87). Rejected: leave it, read-only view types. |
+| 2026-09-29 | Q8: where a misuse panic points | **`@caller_location`, std only for now** (user, recommended of 3; spec D88). Rejected: leave it, automatic for every std panic. |
+| 2026-09-29 | Q3: package surface in source | **`public use m` and `public use m { a, T as U }`; manifest `exports` goes away** (user, recommended of 3; spec D89). Rejected: keep manifest exports, whole modules only. |
 
 ## 11. Known limitations to revisit
 
@@ -812,9 +808,11 @@ Every new public std API (http cookies/forms/client, `std/log`,
   (`printf` through FFI) goes straight to the terminal.
 - `expectPanics(body)` runs `body` in a task of its own, so `body` must be
   a sendable function: it cannot capture a `MutableList` of the test's.
-- A panic std raises for a caller's misuse (`xs.swap(0, 7)`, `chunked(0)`)
-  reports the std line (`at std/prelude/list.vs:408:27`), not the caller's
-  (D64) — §9 Q8.
+- A panic std raises for a caller's misuse points at the caller only for the
+  functions marked `@caller_location` (D88: `swap`, `insert`, `removeAt`,
+  `chunked`, `windowed`, `step`, `toString(radix:)`, `randomBytes`, `Uuid.of`,
+  `random.range`); other std panics (`Hmac.update` after finish, the JWT key
+  length check, `mapConcurrent` — which suspends) still report the std line.
 - `T?.decode(from)` written by hand parses as a safe call on `T`; use a
   generic (`fun decodeIt<T: Decodable>(...)`) or a field. Derived code uses a
   resolved-type receiver and is unaffected.

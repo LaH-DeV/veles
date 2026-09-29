@@ -679,6 +679,9 @@ func (c *Checker) declareUse(m *Module, f *ast.File, u *ast.UseSpec) {
 	// the module name in the `use` line hovers like any other reference
 	c.refSym(u.Path[len(u.Path)-1].Pos, &Symbol{Name: name, Kind: SymModule, Mod: dep, Span: u.Pos})
 	c.declareUseNames(m, f, u, dep, scope)
+	if u.Pub {
+		c.reexport(m, u, dep) // D89
+	}
 }
 
 // declareUseNames binds the names of `use m { f, T as U }` (D85) in the
@@ -786,8 +789,8 @@ func (c *Checker) finishImportRefs() {
 // found, with the edit that removes it (D85).
 func (c *Checker) lintUnusedNames() {
 	for _, ni := range c.namedImports {
-		if ni.scope.used[ni.bound] {
-			continue
+		if ni.scope.used[ni.bound] || ni.spec.Pub {
+			continue // a re-exported name is used by whoever imports this module (D89)
 		}
 		c.warnFix(ni.name.Pos, unusedNameFix(ni.spec, ni.name), "'%s' is imported but never used", ni.bound)
 	}
@@ -2589,6 +2592,15 @@ func (c *Checker) instantiate(t *FuncTemplate, ownerSubst map[*types.TypeParam]t
 	}
 	if _, ok := t.Attrs["noinline"]; ok {
 		fn.Inline = -1
+	}
+	if a, ok := t.Attrs["caller_location"]; ok {
+		fn.CallerLoc = true
+		switch {
+		case t.Module == nil || !t.Module.Std:
+			c.errorf(a.Pos, "'@caller_location' is reserved for the standard library for now (D88)")
+		case t.Impl != nil && t.Impl.Trait != nil, t.Extern:
+			c.errorf(a.Pos, "'@caller_location' applies to plain functions and inherent methods, not to trait implementations or extern functions (D88)")
+		}
 	}
 	if t.Extern {
 		fn.Name = t.Mangled // the C symbol

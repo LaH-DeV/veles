@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.47** — language design complete; D58 adds the derivation story D51 deferred, D59 the standard library's cryptography. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
+**Working draft v0.48** — language design complete; D58 adds the derivation story D51 deferred, D59 the standard library's cryptography. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -112,7 +112,7 @@ Distinct syntax for boxed trait objects was considered and rejected in favour of
 
 ### M1 — Package identity lives in a manifest
 
-`veles.toml` at the package root holds name, version, dependencies, license, exports, build config. **No source file declares package identity.** The resolver builds a dependency graph by reading manifests, never by parsing Veles source.
+`veles.toml` at the package root holds name, version, dependencies, license, ~~exports,~~ build config (D89: a package's surface is what its root module re-exports). **No source file declares package identity.** The resolver builds a dependency graph by reading manifests, never by parsing Veles source.
 
 A monorepo contains multiple manifests, one per package.
 
@@ -138,7 +138,7 @@ This is not a style rule. Both of Veles' inferred effects (D2 suspension, D4 err
 
 ### M5 — `public` grants package-wide visibility
 
-Default visibility is module-private. `public` makes a declaration visible to the rest of the package. Nothing escapes the package except through the manifest's `exports` field.
+Default visibility is module-private. `public` makes a declaration visible to the rest of the package. ~~Nothing escapes the package except through the manifest's `exports` field.~~ *(D89, v0.48)* Nothing escapes the package except what its root module re-exports with `public use`; the manifest has no `exports` field.
 
 Consequence: library authors get a deliberately curated public surface, consumers cannot reach into internals, and Veles never needs Go's magic `internal/` directories.
 
@@ -2203,6 +2203,79 @@ Rejected (user, recommended of 5): keeping `as` for conversions (A), `as`
 for lossless only (E), call-style `i64(x)` (B), an operator `to`/`cast` (C).
 Naming (user, recommended of 3): `toU8()` checked + `wrapU8()`, over
 `truncateU8()` and `u8OrNull()`.
+
+### D87 — `protected` on a mutable-collection field: look, don't take (v0.48)
+
+```veles
+struct Bag {
+  public protected var items: MutableList<i64> = []
+  public fun count(): i64 = this.items.len()   // the type's own code: unrestricted
+}
+
+fun main() {
+  val b = Bag()
+  b.items.len()          // fine: an immutable-form method
+  loop (x in b.items) { }   // fine: a loop head
+  "${b.items}"           // fine: interpolation
+  b.items.push(9)        // error: 'items' is protected: only Bag changes its contents
+  val taken = b.items    // error: cannot take 'items'; copy it with 'b.items.toList()'
+}
+```
+
+`protected var` already meant "assigned only by its type" (D22). For a field
+whose type is a mutable collection (`MutableList`, `MutableMap`, `MutableSet`,
+`Deque`) it also means the collection's *contents* are the type's:
+outside the type's own declarations the field may only be the receiver of the
+immutable form's methods, a loop head, or interpolated; a mutating method,
+binding it, passing it and returning it are errors, keeping D25's no-views
+rule. `.toList()` / `.toMap()` copy and are unrestricted. A bare or `val`
+field of a mutable collection is unchanged (the documented reference
+semantics of D25/D41).
+
+Rejected (user, recommended of 3): leaving it (accessors on a `private`
+field still work), read-only view types (D25/D35).
+
+### D88 — `@caller_location`: a misuse panic points at the caller (v0.48)
+
+A function marked `@caller_location` receives its call site as a hidden
+argument, and a `panic(...)` written directly in its body reports that
+location as its `at` instead of the panic's own line (the panic's own line
+stays the innermost frame of the call chain in debug builds). Both profiles:
+release prints the caller's `file:line:col` where it used to print
+`std/prelude/list.vs:408`. Std only for now (the attribute is refused in
+user code with a message saying it is reserved; making it public is a later
+decision). Marked: the prelude's misuse panics — `swap`, `set`, `insert`,
+`removeAt`, `chunked`, `windowed`, `step`, `pow` and the like.
+
+Rejected (user, recommended of 3): leaving it (debug's `called from` only),
+automatic caller reporting for every std panic (needs the frame chain in
+release).
+
+### D89 — Package surface in source: `public use` (v0.48)
+
+```veles
+// mathlib/lib.vs — the root module
+public use geometry                      // outsiders: use mathlib.geometry
+public use shapes { area, Circle as Round }   // flattened: use mathlib → mathlib.area
+```
+
+`public use` in any module adds the named module, or the named items, to that
+module's public surface; the root module's public surface is the package's,
+and the manifest's `exports` list goes away (the bootstrap has no users to
+keep compatible; a manifest that still has one gets an error naming the fix).
+Forms mirror `use` (D85): `public use m` re-exports the module under its
+name, `public use m { a, T as U }` flattens those items into this module
+(`use mathlib` then gives `mathlib.a`), `as` renames. Only the package's own
+modules and items may be re-exported; re-exporting a dependency is an error
+for now (revisit with M7). `public use` is a `use` edge for import-cycle
+detection; a flattened name collides with a declaration of the module as a
+duplicate does. The dependency graph still comes from manifests; the loader
+reads a dependency's root module to learn its surface, and the error for a
+module that is not re-exported names the `public use` to add. Hover and
+go-to-definition follow a re-export to the original.
+
+Rejected (user, recommended of 3): keeping manifest `exports`, whole modules
+only.
 
 ---
 

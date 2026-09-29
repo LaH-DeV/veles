@@ -453,7 +453,9 @@ func (f *fnCtx) stringLit(e *ast.StringLit) Expr {
 			cat.Parts = append(cat.Parts, &StringConst{exprBase{types.TString}, p.Text})
 			continue
 		}
+		f.lookOnly(p.Expr) // D87: interpolating only looks
 		x := f.checkExpr(p.Expr, nil)
+		f.takeLooked()
 		if _, ok := p.Expr.(*ast.SelfExpr); ok && f.inOwnToString(x.Type()) {
 			f.errorf(p.Expr.Span(), "interpolating 'this' inside its own 'toString' calls the same 'toString' again, forever; interpolate the fields instead, e.g. \"(${this.x}, ${this.y})\"")
 		}
@@ -809,6 +811,7 @@ func (f *fnCtx) fieldOf(x Expr, name ast.Ident, span source.Span) Expr {
 		if fld == nil {
 			return bad()
 		}
+		f.guardProtectedContents(tt, fld, span)
 		return &FieldGet{exprBase{fld.Type}, x, fld.Index, fld.Name}
 	case *types.Tuple:
 		idx, err := strconv.Atoi(name.Name)

@@ -144,8 +144,8 @@ package. These say who can *see* a name. Who can *assign* a field is a
 separate question with its own words — bare, `protected var`, `var`
 ([chapter 5](05-structs-and-methods.md#protected-var-everyone-reads-the-type-writes)) —
 so `public protected var count` reads "everyone sees it, only the type
-changes it". What leaves the *package* is not a keyword but the manifest's
-`exports` list, below.
+changes it". What leaves the *package* is what its root module re-exports
+with `public use`, below.
 
 ## Packages and `veles.toml`
 
@@ -157,7 +157,6 @@ holds the package's identity and dependencies; source files never do
 [package]
 name = "mathlib"
 version = "0.1.0"
-exports = ["geometry"]        # modules other packages may import
 
 [dependencies]
 utils = "../utils"            # a path dependency
@@ -170,9 +169,8 @@ max_blank_lines = 1           # consecutive blank lines kept by `veles fmt`
 static-libs = ["z"]           # C libraries the package's extern blocks need (chapter 13)
 ```
 
-- `exports` is the package's public surface. `public` makes something
-  visible to the *rest of the package*; only modules listed in `exports`
-  (plus the root module) can be imported from *outside* it (M5).
+- What other packages may import is written in source, not here: see
+  [What a package shows](#what-a-package-shows) below (D89).
 - A dependency is imported by its manifest name: `use utils`,
   `use utils.text`. In the bootstrap compiler dependencies are
   path-based (`name = "path"` or `name = { path = "..." }`); a registry
@@ -184,6 +182,35 @@ static-libs = ["z"]           # C libraries the package's extern blocks need (ch
   library. `veles check` accepts any module or library. Without a
   `veles.toml`, a directory is taken as its own single-module package.
 
+### What a package shows
+
+`public` makes something visible to the *rest of the package*. What other
+packages may reach is what the package's **root module** (`lib.vs`, or any
+file of the root directory) re-exports with `public use` (D89):
+
+```veles
+// fragment: mathlib/lib.vs
+public use geometry                    // `use mathlib.geometry` works
+public use support { root as sqrt }    // `mathlib.sqrt(x)`; `support` stays hidden
+
+public fun twice(x: i64): i64 = x * 2
+```
+
+- `public use geometry` re-exports the module under its name; `as` gives it
+  another (`public use geometry as geo` is `use mathlib.geo`).
+- `public use support { root as sqrt }` puts those items into the module
+  itself, flattened: `use mathlib { sqrt }` or `mathlib.sqrt(x)`, while the
+  module `support` is not reachable — a facade that hides the layout.
+- A module that is not re-exported cannot be imported from another package:
+  `module 'hidden' of package 'mathlib' is not re-exported; add 'public
+  use hidden' to its root module`.
+- `public use` in any module works the same way for that module's importers,
+  so a module can pass on what it re-exports: `use mathlib.geometry.deep`
+  is fine when `geometry` says `public use deep`.
+- Only the package's own modules can be re-exported, not a dependency's or
+  a standard module's. The old manifest `exports` list is gone; a manifest
+  that still has one gets an error naming this form.
+
 `examples/packages` in the repository is a two-package project you can
 run: `veles run examples/packages/app`.
 
@@ -192,7 +219,7 @@ run: `veles run examples/packages/app`.
 `///` comments are documentation: on a declaration they describe it, at
 the top of a file they describe the module. `veles doc` renders a
 package's public surface as Markdown — each module a reader outside the
-package can reach (the root and what `exports` lists), each public
+package can reach (the root and what it re-exports), each public
 declaration spelled as the editor's hover spells it, its comment, and the
 comments of its documented members:
 
@@ -201,7 +228,7 @@ veles doc                 # every module, on standard output
 veles doc . -o api        # api/<module>.md, one file per module
 ```
 
-Private members and modules the manifest keeps to itself are left out;
+Private members and modules the root does not re-export are left out;
 a package with errors is refused, since its API is not settled.
 
 ## The standard library

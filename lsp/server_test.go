@@ -1503,3 +1503,46 @@ func TestHoverShowsInferredSuspends(t *testing.T) {
 		}
 	}
 }
+
+// Go-to-definition and hover follow a re-export (D89) to the declaration it
+// stands for: a flattened, renamed item and a re-exported module.
+func TestDefinitionFollowsReexport(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, src string) string {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	write("lib/veles.toml", "[package]\nname = \"mathlib\"\nversion = \"0.1.0\"\n")
+	write("lib/lib.vs", "public use shapes { area as surface }\npublic use geometry\n")
+	write("lib/shapes/lib.vs", "/// The area of a unit.\npublic fun area(n: i64): i64 = n * n\n")
+	write("lib/geometry/lib.vs", "public fun twice(n: i64): i64 = n * 2\n")
+	write("app/veles.toml", "[package]\nname = \"app\"\nversion = \"0.1.0\"\n\n[dependencies]\nmathlib = \"../lib\"\n")
+	src := "use io { println }\nuse mathlib, mathlib.geometry\n\nfun main() {\n  println(\"${mathlib.surface(3)} ${geometry.twice(2)}\")\n}\n"
+	path := write("app/main.vs", src)
+	uri := pathToURI(path)
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{})
+	c.notify("initialized", map[string]any{})
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": src}})
+	at := func(method string, line, col int) string {
+		res, _ := c.call(method, map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": line, "character": col}})
+		return string(res)
+	}
+	// `surface` in `mathlib.surface(3)` (line 4): the declaration is `area` in shapes
+	def := at("textDocument/definition", 4, 24)
+	if !strings.Contains(def, "shapes/lib.vs") {
+		t.Errorf("definition of a re-exported item: %s", def)
+	}
+	if hov := at("textDocument/hover", 4, 24); !strings.Contains(hov, "fun area(n: i64): i64") || !strings.Contains(hov, "The area of a unit.") {
+		t.Errorf("hover of a re-exported item: %s", hov)
+	}
+	// `twice` through the re-exported module `geometry` (line 4)
+	if def := at("textDocument/definition", 4, 46); !strings.Contains(def, "geometry/lib.vs") {
+		t.Errorf("definition through a re-exported module: %s", def)
+	}
+}

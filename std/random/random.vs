@@ -50,6 +50,7 @@ public struct Rng {
   }
 
   /// A number in `lo..<hi`; `hi` must exceed `lo`.
+  @caller_location
   public fun range(lo: i64, hi: i64): i64 {
     if (hi <= lo) panic("random.range: empty range $lo..<$hi")
     val span = (hi - lo).wrapU64()

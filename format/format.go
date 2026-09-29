@@ -290,11 +290,12 @@ func (p *printer) file(f *ast.File) {
 		if impl, ok := d.(*ast.ImplDecl); ok && synth[impl] {
 			continue
 		}
-		if _, ok := d.(*ast.UseDecl); ok {
-			// consecutive `use` declarations form one group (see useRun)
+		if ud, ok := d.(*ast.UseDecl); ok && !ud.Pub {
+			// consecutive `use` declarations form one group (see useRun); a
+			// `public use` is a declaration of its own (D89)
 			j := i + 1
 			for j < len(f.Decls) {
-				if _, ok := f.Decls[j].(*ast.UseDecl); !ok {
+				if next, ok := f.Decls[j].(*ast.UseDecl); !ok || next.Pub {
 					break
 				}
 				j++
@@ -539,6 +540,9 @@ var (
 )
 
 func (p *printer) useDecl(d *ast.UseDecl) {
+	if d.Pub {
+		p.w("public ")
+	}
 	p.w("use ")
 	for i, s := range d.Specs {
 		if i > 0 {

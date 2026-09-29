@@ -73,6 +73,10 @@ type Func struct {
 	// wrapper under this name that C calls, around the Veles body.
 	ExportC string
 	Inline  int // 1 @inline, -1 @noinline
+	// CallerLoc (D88, `@caller_location`): the function takes the site it is
+	// called from as a hidden last parameter, and a panic written in its body
+	// reports that site.
+	CallerLoc bool
 	// Closure functions take an environment pointer first; CapVars are the
 	// inner variables standing for captured outer ones (index = env slot).
 	IsClosure bool

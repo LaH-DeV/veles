@@ -787,3 +787,56 @@ fun main() {
 		t.Errorf("release build:\n%s\nwant:\n%s", got, want)
 	}
 }
+
+// D88: a misuse panic in a `@caller_location` std function reports the
+// caller's line in both profiles — through a marked function that calls
+// another marked one (`toString(radix:)` and its `checkRadix`) too — and
+// the debug chain says it once, not again as a "called from".
+func TestCallerLocationPanics(t *testing.T) {
+	dir := t.TempDir()
+	src := `use io
+
+fun bad(xs: MutableList<i64>) {
+  xs.swap(0, 7)
+}
+
+fun badRadix(n: i64) {
+  io.println(n.toString(radix: 1))
+}
+
+fun main() {
+  val xs: MutableList<i64> = [1, 2, 3]
+  io.println(255.toString(radix: 16))
+  if (xs.len() == 3) badRadix(5)
+  bad(xs)
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	panicOf := func(release bool) string {
+		exe := filepath.Join(dir, "caller.exe")
+		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release}); code != 0 {
+			t.Fatalf("build failed with exit %d", code)
+		}
+		var stderr strings.Builder
+		cmd := exec.Command(exe)
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err == nil {
+			t.Fatal("the program should panic")
+		}
+		return strings.ReplaceAll(stderr.String(), "\r\n", "\n")
+	}
+	want := "panic: toString: radix must be between 2 and 36, got 1\n" +
+		"  at main.vs:8:14 in badRadix\n" +
+		"  called from main.vs:14:22 in main\n"
+	if got := panicOf(false); got != want {
+		t.Errorf("debug build:\n%s\nwant:\n%s", got, want)
+	}
+	want = "panic: toString: radix must be between 2 and 36, got 1\n" +
+		"  at main.vs:8:14\n" +
+		"  (a debug build shows the call chain)\n"
+	if got := panicOf(true); got != want {
+		t.Errorf("release build:\n%s\nwant:\n%s", got, want)
+	}
+}

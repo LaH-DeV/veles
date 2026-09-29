@@ -587,3 +587,55 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   and at each call, methods included (before ` throws`). Test
   `TestHoverShowsInferredSuspends` (declaration, transitive, call site,
   method, and a pure function that must not say it); docs chapter 12.
+
+- **2026-09-29, Q4 / D87: `protected` on a mutable-collection field is "look,
+  don't take".** `sema/protected_contents.go`: a read of such a field from
+  outside the type is refused unless it is a method receiver, a value-loop
+  head or an interpolated value (`lookOnly` marks the expression checked
+  next); a receiver is then refused when the method mutates — a built-in of
+  the mutable family (the catalogue lists those apart), or an `extend` block
+  naming the mutable type itself. `loop (&x in …)`, binding, passing and
+  returning are refused; `.toList()` copies. Nothing in std or examples used
+  a protected collection, so no migration. Tests: conform
+  `D87-protected-collections` (every refusal and every allowed look), docs
+  chapter 5 (a run block), errors reference. Notes R18(b) and R32 leave
+  the notes file.
+
+- **2026-09-29, Q8 / D88: `@caller_location`.** A marked function takes the
+  site it is called from as a hidden last parameter (`Func.CallerLoc`; the
+  checker refuses the attribute outside std, on trait implementations,
+  externs, and on anything that suspends); a call passes its own span, or —
+  from inside another marked function — the site it was itself given, so
+  `n.toString(radix: 1)` through `checkRadix` reports the user's line; a
+  `panic(...)` in the body reports that site (its own line when the site is
+  empty: a compiler-made call, a function value's thunk). Both profiles. The
+  debug chain says the site once: the runtime finds the chain line whose site
+  is the panic's, prints `at SITE in CALLER` and drops the std frames above
+  it. Marked: `swap insert removeAt chunked windowed step` (both), `toString
+  (radix:)` + `checkRadix`, `randomBytes`, `Uuid.of`, `random.range`. Not
+  marked: trait implementations (`Hmac.update`), the JWT key check, and
+  `mapConcurrent` (suspends). Tests: driver `TestCallerLocationPanics`
+  (debug + release, through two marked frames), conform `D88-*`, goldens
+  regenerated (an extra argument on every marked call); docs chapter 7 and the
+  errors reference.
+
+- **2026-09-29, Q3 / D89: `public use`.** Parser and formatter: a `public use`
+  is a declaration of its own (`UseDecl.Pub`; the formatter neither merges it
+  into the run of plain imports nor sorts it). Checker (`sema/reexport.go`):
+  `public use m` puts the module symbol into the module's scope under its name
+  or alias, `public use m { a, T as U }` puts those items there (the module's
+  own symbol, so hover and go-to-definition land on the declaration);
+  collisions with declarations are errors; std and dependencies cannot be
+  re-exported; a re-exported name is never "unused". Loader (`resolveDep`): a
+  dependency's surface is read from its root module's `public use` — one per
+  path segment, so a module passes on what it re-exports — replacing the
+  manifest list; the error names the line to add. The manifest's `exports` is
+  an error naming the replacement (`Manifest.Exports` and `exported` are
+  gone); `veles doc` lists the root plus what it re-exports. Migrated:
+  `examples/packages` (root re-exports `geometry` and flattens
+  `support { root as sqrt }`, a module that stays hidden). Tests:
+  `TestPublicUse` (facade, alias, hidden module, flattened-only module, chain,
+  std/dependency refused, both collisions, manifest error), conform
+  `D89-public-use`, format `TestPublicUseIsNotMerged`, LSP
+  `TestDefinitionFollowsReexport`, docs chapter 11 ("What a package shows"),
+  errors reference, cheat sheet. Notes #19 leaves the notes file.

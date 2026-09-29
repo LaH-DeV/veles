@@ -37,6 +37,9 @@ func (c *Checker) inferSuspension(prog *Program) {
 			continue
 		}
 		t := fn.tmpl
+		if fn.Suspends && fn.CallerLoc {
+			c.errorf(fn.Span, "a function marked '@caller_location' cannot suspend (D88)")
+		}
 		if fn.Suspends {
 			if t.Impl != nil && t.Impl.Trait != nil {
 				if sig := t.Impl.Trait.Methods[t.Name]; sig != nil && !sig.Effects.Suspends {

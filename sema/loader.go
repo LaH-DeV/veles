@@ -394,7 +394,7 @@ func (p *Package) SortedModules() []*Module {
 	return out
 }
 
-// resolveDep loads a module of a path dependency, honouring its exports.
+// resolveDep loads a module of a path dependency, honouring what it re-exports.
 func (p *Package) resolveDep(name, depPath string, rest []string, span source.Span) *Module {
 	dep, ok := p.Deps[name]
 	if !ok {
@@ -415,7 +415,35 @@ func (p *Package) resolveDep(name, depPath string, rest []string, span source.Sp
 		dep = &Package{Root: root, Modules: p.Modules, Manifest: man, Deps: map[string]*Package{}, KeyPrefix: "dep/" + name + "/", diags: p.diags, overlay: p.overlay, timings: p.timings}
 		p.Deps[name] = dep
 	}
-	modPath := strings.Join(rest, "/")
+	// the module the path names: the dependency's root module, then one
+	// `public use` per segment (D89: nothing escapes a package except what
+	// its modules re-export)
+	cur := p.depModule(dep, name, "", span)
+	for i, seg := range rest {
+		if cur == nil {
+			return nil
+		}
+		spec := publicUseOf(cur, seg)
+		if spec == nil {
+			where := "its root module"
+			if i > 0 {
+				where = "module '" + strings.Join(rest[:i], ".") + "'"
+			}
+			p.diags.Errorf(span, "module '%s' of package '%s' is not re-exported; add 'public use %s' to %s (D89: nothing escapes a package except what its modules re-export)", strings.Join(rest[:i+1], "."), name, seg, where)
+			return nil
+		}
+		var target []string
+		for _, s := range spec.Path {
+			target = append(target, s.Name)
+		}
+		cur = p.depModule(dep, name, strings.Join(target, "/"), span)
+	}
+	return cur
+}
+
+// depModule loads a module of a dependency package by its path in that
+// package ("" is its root module).
+func (p *Package) depModule(dep *Package, name, modPath string, span source.Span) *Module {
 	key := dep.KeyPrefix + modPath
 	if modPath == "" {
 		key = strings.TrimSuffix(dep.KeyPrefix, "/")
@@ -426,10 +454,6 @@ func (p *Package) resolveDep(name, depPath string, rest []string, span source.Sp
 			return nil
 		}
 		return m
-	}
-	if !dep.Manifest.exported(modPath) {
-		p.diags.Errorf(span, "module '%s' of package '%s' is not in its exports (M5: nothing escapes a package except through the manifest's exports)", modPath, name)
-		return nil
 	}
 	local := modPath
 	if local == "" {
@@ -443,6 +467,32 @@ func (p *Package) resolveDep(name, depPath string, rest []string, span source.Sp
 	p.Modules[key] = m
 	dep.loadImports(m)
 	return m
+}
+
+// publicUseOf finds the `public use` of a whole module that a module
+// exposes under `name` (its alias, else the last segment of its path).
+func publicUseOf(m *Module, name string) *ast.UseSpec {
+	for _, f := range m.Files {
+		for _, d := range f.Decls {
+			u, ok := d.(*ast.UseDecl)
+			if !ok || !u.Pub {
+				continue
+			}
+			for _, s := range u.Specs {
+				if len(s.Names) > 0 || len(s.Path) == 0 {
+					continue
+				}
+				exposed := s.Path[len(s.Path)-1].Name
+				if s.Alias != nil {
+					exposed = s.Alias.Name
+				}
+				if exposed == name {
+					return s
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // stdModuleNames lists the standard modules embedded in the compiler.

@@ -1936,7 +1936,32 @@ static const char *trace_report(const panic_trace *tr, const char *loc, int64_t 
 #define LINE(label) do { out[at++] = '\n'; memset(out + at, ' ', (size_t)indent); at += indent; \
     memcpy(out + at, label, strlen(label)); at += (int64_t)strlen(label); } while (0)
 #define PUT(p, n) do { memcpy(out + at, (p), (size_t)(n)); at += (n); } while (0)
-    if (loc_len > 0 || tr->in) {
+    /* a `@caller_location` function reported the site it was called from (D88):
+     * that site is a line of the chain, below the frames of the marked
+     * functions themselves, so the report says "at SITE in CALLER" and goes on
+     * with the lines under it */
+    int64_t first = 0, skip = 0;
+    int at_site = 0;
+    if (loc_len > 0) {
+        for (int64_t start = 0; start < tr->chain_len; ) {
+            int64_t end = start;
+            while (end < tr->chain_len && tr->chain[end] != '\n') end++;
+            if (end - start >= loc_len + 4 && memcmp(tr->chain + start, loc, (size_t)loc_len) == 0 &&
+                memcmp(tr->chain + start + loc_len, " in ", 4) == 0) {
+                at_site = 1;
+                first = start;
+                skip = end < tr->chain_len ? end + 1 : end;
+                break;
+            }
+            start = end + 1;
+        }
+    }
+    if (at_site) {
+        int64_t end = first;
+        while (end < tr->chain_len && tr->chain[end] != '\n') end++;
+        LINE("at ");
+        PUT(tr->chain + first, end - first);
+    } else if (loc_len > 0 || tr->in) {
         LINE(loc_len > 0 ? "at " : "in ");
         if (loc_len > 0) {
             PUT(loc, loc_len);
@@ -1944,7 +1969,7 @@ static const char *trace_report(const panic_trace *tr, const char *loc, int64_t 
         }
         if (tr->in) PUT(tr->in, in_len);
     }
-    for (int64_t i = 0, from = 0; i <= tr->chain_len && tr->chain_len > 0; i++) {
+    for (int64_t i = skip, from = skip; i <= tr->chain_len && tr->chain_len > skip; i++) {
         if (i < tr->chain_len && tr->chain[i] != '\n') continue;
         LINE("called from ");
         PUT(tr->chain + from, i - from);

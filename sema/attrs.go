@@ -10,7 +10,7 @@ import (
 // `@key`, `@skip`, `@required`, `@tag` — carry data that the derived
 // `Codable` impls read (D58); they are still compiler-known.
 
-var knownAttrs = map[string]bool{"test": true, "deprecated": true, "inline": true, "noinline": true, "mustUse": true, "specialize": true,
+var knownAttrs = map[string]bool{"test": true, "deprecated": true, "inline": true, "noinline": true, "caller_location": true, "mustUse": true, "specialize": true,
 	"key": true, "skip": true, "required": true, "tag": true}
 
 // attrsOf validates a declaration's attributes and returns them by name.
@@ -35,7 +35,7 @@ func (c *Checker) attrsOf(attrs []*ast.Attribute, what string) map[string]*ast.A
 			} else if _, ok := a.Args[0].Value.(*ast.StringLit); !ok {
 				c.errorf(a.Args[0].Value.Span(), "@deprecated reason must be a string literal")
 			}
-		case "test", "inline", "noinline", "mustUse", "specialize":
+		case "test", "inline", "noinline", "caller_location", "mustUse", "specialize":
 			if len(a.Args) != 0 {
 				c.errorf(a.Pos, "@%s takes no arguments", a.Name.Name)
 			}
