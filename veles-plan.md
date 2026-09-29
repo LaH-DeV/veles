@@ -704,3 +704,14 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   benchmarks unchanged. Docs: chapter 7, chapter 3, the stdlib reference,
   `veles-debug`. Open: a frame bigger than the guard region (clang stack
   probes), macOS (A7).
+
+- **2026-09-29, float bits (S3 finding): D93.** `x.toBits()` on `f64`/`f32`
+  (`u64`/`u32`) and the statics `f64.fromBits(bits)` / `f32.fromBits(bits)`,
+  in `std/prelude/number.vs` over the `unsafe` reinterpretation the caller
+  would otherwise write (with SAFETY comments; no compiler change).
+  `examples/floatbits` pins it (LLVM-style 16-digit hex constants for 1.5,
+  0.1, -0.0, pi, infinity; exact round trips; a signalling-NaN payload kept;
+  `-0.0 == 0.0` yet different bits; the `f32` pair; sign, exponent and
+  fraction taken apart), identical in debug and release. Docs: chapter 2, the
+  stdlib reference. The float sign helpers and the missing integer bit
+  operations were left out on purpose and recorded as checklist Q20.

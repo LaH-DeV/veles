@@ -119,6 +119,17 @@ extend string {
     out.decodeUtf8() ?: this
   }
 
+  /// Copy with the first ASCII letter upper-cased, the rest unchanged.
+  public fun capitalize(): string {
+    if (this.isEmpty()) return this
+    val first = this.byteAt(0)
+    if (first < 97 || first > 122) return this
+    val rest = this.substring(1, this.len()) ?: ""
+    val out: MutableList<u8> = [first - 32]
+    listAppendText(out, rest)
+    out.decodeUtf8() ?: this
+  }
+
   /// The text preceded by `pad` until it is at least `width` bytes long.
   public fun padStart(width: i64, pad: string = " "): string {
     if (pad.isEmpty() || this.len() >= width) return this

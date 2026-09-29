@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.50** — language design complete; D58 adds the derivation story D51 deferred, D59 the standard library's cryptography. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
+**Working draft v0.51** — language design complete; D58 adds the derivation story D51 deferred, D59 the standard library's cryptography. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -2401,6 +2401,45 @@ million frames in a small function, against the same address-space bill);
 the OS defaults with only the diagnostic; raising `RLIMIT_STACK` at startup
 (unverified against the kernel's mmap layout); leaving the main thread at 8
 MB (recursion depth would depend on which thread the task landed on).
+
+---
+
+### D93 — Float bit patterns: `toBits` / `fromBits` (v0.51)
+
+```veles
+val bits = (1.5).toBits()            // u64: 0x3FF8000000000000
+val x = f64.fromBits(bits)           // 1.5
+val single: f32 = 1.5
+single.toBits()                      // u32: 0x3FC00000
+f32.fromBits(0x40490FDB)             // 3.1415927
+```
+
+Found by the self-host audit (plan S3): a code generator writes an LLVM
+`double` constant as its exact hexadecimal bit pattern, the way the Go
+compiler does with `math.Float64bits`, and until now the only spelling was an
+`unsafe` cast of a local's address. `x.toBits()` on `f64` and `f32` gives the
+IEEE 754 pattern as `u64` and `u32`; the static `f64.fromBits(bits)` and
+`f32.fromBits(bits)` give the number back. Nothing is rounded or
+canonicalised: a NaN keeps its payload (a signalling NaN stays signalling as
+far as the hardware allows), `-0.0` and `0.0` differ, and the pair round-trips
+every pattern. Every pattern is a number, so `fromBits` cannot fail.
+
+Implemented in `std/prelude/number.vs`, in Veles, over the same `unsafe`
+reinterpretation the user would have written, with its SAFETY comments; no
+compiler change. At `-O2` LLVM turns the local into a `bitcast`; a debug
+build pays a store and a load. A builtin lowered to `bitcast` can replace it
+later without changing what a program means. The spelling is Rust's
+(`to_bits`/`from_bits`), close to Kotlin's `toRawBits` and Go's
+`Float64bits`.
+
+Rejected (user, recommended of 3, 2 and 3): instance methods both ways in the
+D86 conversion style (`x.toBitsU64()`, `bits.bitsToF64()` — float-only methods
+on every integer); leaving it to `unsafe`; a compiler builtin for now.
+Deliberately not included, and left for a later decision (checklist Q20): the
+float sign and neighbour helpers (`copySign`, `signBit`, `nextUp`,
+`nextDown`) and the integer bit operations that do not exist yet
+(`rotateLeft`, `rotateRight`, `byteSwap`, `reverseBits`; `countOnes`,
+`leadingZeros` and `trailingZeros` already do).
 
 ---
 

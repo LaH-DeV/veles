@@ -529,12 +529,14 @@ behind a name that says "crypto" (§10, 2026-09-23).
 
 ### 5.10 Misc
 
-- [ ] Float bits without `unsafe` (found by plan S3, 2026-09-29): `f64` ↔
-      `u64` and `f32` ↔ `u32` reinterpretation (`toBits()`/`fromBits()` in the
-      style of Go's `math.Float64bits`). A code generator needs it to write
-      LLVM's hexadecimal float constants; today only
-      `unsafe { p.cast<*raw u64>() }` does it. A std decision — `veles-decide`
-      first
+- [x] Float bits without `unsafe` (D93, found by plan S3, built
+      2026-09-29): `x.toBits()` on `f64`/`f32` gives the IEEE 754 pattern as
+      `u64`/`u32`, `f64.fromBits(bits)` / `f32.fromBits(bits)` invert it;
+      nothing is rounded, a NaN keeps its payload, `-0.0` differs from `0.0`.
+      In `std/prelude/number.vs` over the same `unsafe` cast (LLVM folds it to
+      a `bitcast` at -O2). `examples/floatbits` (LLVM-style hex constants,
+      round trips, NaN payload, `-0.0`, sign/exponent/fraction), docs chapter 2
+      and the stdlib reference. A compiler builtin can replace it later
 - [ ] `std/config`: typed env parsing, all missing keys reported at once
 - [ ] `std/compress`: gzip/deflate via zlib binding
 - [~] `std/os`: `hostname`, `pid`, `tempDir` done (2026-09-25); `shutdownSignal`/`raiseSignal` done (D68); `run` without a shell (2026-09-27, §2); `run(..., input:, stderr: os.Stderr)` with `Output.stderr` (D82, 2026-09-28)
@@ -736,6 +738,15 @@ list as it was is in `archive/progress-log-2026-09.md` and git history).
   means.
 - **Q14. Manifest dependency syntax** (notes #3, #17) — after M7 gives the
   manifest real content.
+- **Q20. Float sign helpers and integer bit operations** (user, 2026-09-29,
+  left out of D93 on purpose: "note rest of them to be made with another
+  decision later"): `copySign`, `signBit`, `nextUp`, `nextDown` on floats;
+  `rotateLeft`, `rotateRight`, `byteSwap`, `reverseBits` on integers
+  (`countOnes`, `leadingZeros`, `trailingZeros` exist). A code generator, a
+  hash and a binary-format reader all want the integer ones; the float ones
+  come with `toBits`. To be prepared as one brief: names (Rust/Go/Java
+  differ), widths, the generic-target spelling of D86 where it applies.
+
 - **Q17. Small ergonomics found writing the D21 golden (2026-09-28)**:
   (a) `gather` with one task yields a 1-tuple, so `when (gather { async
   f() }) { is Ok ... }` fails with "'Ok' is not a type" — should one task
@@ -826,6 +837,7 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-09-29 | Q4: protected mutable-collection field | **`protected` = look, don't take** (user, recommended of 3; spec D87). Rejected: leave it, read-only view types. |
 | 2026-09-29 | Q8: where a misuse panic points | **`@caller_location`, std only for now** (user, recommended of 3; spec D88). Rejected: leave it, automatic for every std panic. |
 | 2026-09-29 | Q3: package surface in source | **`public use m` and `public use m { a, T as U }`; manifest `exports` goes away** (user, recommended of 3; spec D89). Rejected: keep manifest exports, whole modules only. |
+| 2026-09-29 | Float bit patterns (found by plan S3) | **`x.toBits()` / `f64.fromBits(bits)` (and `f32` with `u32`), in std over `unsafe`, only those** (user, recommended of 3, 2 and "only `toBits`/`fromBits`, but note the rest to be made with another decision later" — the rest is Q20; spec D93). Rejected: instance methods both ways in the D86 style (float-only methods on every integer); leaving it to `unsafe`; a compiler builtin for now. |
 | 2026-09-29 | Stack overflow (found by plan S3) | **A fault handler that prints a named panic, 256 MB reserved stacks on every thread, and the program started on a big-stack thread on every platform** (user, recommended of 3, 3 and 3; spec D92). Rejected: compiler-inserted stack probes (cost on every call); leaving it silent; 64 MB; the OS defaults with a diagnostic only; raising `RLIMIT_STACK` at startup; leaving the Linux main thread at 8 MB. |
 | 2026-09-29 | std/log design (plan C1) | **`lazy` modifier on a `fun(): T` parameter (std-only), `field(key, value)` tail, text on a terminal / JSON otherwise with `VELES_LOG`, `withFields` on a task-local** (user, recommended of 3, 3, 3 and 2; specs D90, D91). Rejected: `@lazy` attribute, a compiler special case, a lambda-only call, a manual guard, a field map, a struct per message, text only, a sink trait, an explicit Logger value. |
 

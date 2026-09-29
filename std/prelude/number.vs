@@ -54,9 +54,51 @@ extend f64 {
     }
     out
   }
+
+  /// The IEEE 754 binary64 bit pattern of the number, as an integer: sign in
+  /// the top bit, then 11 exponent bits, then 52 of fraction. Nothing is
+  /// rounded or canonicalised — a NaN keeps its payload, and `-0.0` differs
+  /// from `0.0`. `1.5.toBits()` is `0x3FF8000000000000`.
+  public fun toBits(): u64 {
+    var v = this
+    // SAFETY: reads the eight bytes of a local f64 as a u64, the same size
+    return unsafe {
+      *(&v).cast<*raw u64>()
+    }
+  }
+
+  /// The number whose bit pattern is `bits`; the inverse of `toBits()`. Every
+  /// pattern is a number (some are NaNs), so it cannot fail.
+  public static fun fromBits(bits: u64): f64 {
+    var b = bits
+    // SAFETY: reads the eight bytes of a local u64 as an f64, the same size
+    return unsafe {
+      *(&b).cast<*raw f64>()
+    }
+  }
 }
 
 extend f32 {
   /// The number with exactly `digits` decimals, rounded.
   public fun toFixed(digits: i64): string = (this.toF64()).toFixed(digits)
+
+  /// The IEEE 754 binary32 bit pattern of the number, as an integer: sign,
+  /// 8 exponent bits, 23 of fraction. Nothing is rounded or canonicalised.
+  /// For 1.5 it is `0x3FC00000`.
+  public fun toBits(): u32 {
+    var v = this
+    // SAFETY: reads the four bytes of a local f32 as a u32, the same size
+    return unsafe {
+      *(&v).cast<*raw u32>()
+    }
+  }
+
+  /// The number whose bit pattern is `bits`; the inverse of `toBits()`.
+  public static fun fromBits(bits: u32): f32 {
+    var b = bits
+    // SAFETY: reads the four bytes of a local u32 as an f32, the same size
+    return unsafe {
+      *(&b).cast<*raw f32>()
+    }
+  }
 }

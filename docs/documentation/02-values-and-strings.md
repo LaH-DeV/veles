@@ -147,6 +147,28 @@ Output:
 0.667 000042 1235
 ```
 
+A float's bits are one call away, without `unsafe` (D93): `x.toBits()` is
+the IEEE 754 pattern as a `u64` (`u32` for an `f32`), and `f64.fromBits(bits)`
+gives the number back. Nothing is rounded and a NaN keeps its payload, so the
+pair is exact; it is what writes a constant the way LLVM wants it, or stores a
+float in a binary format.
+
+```veles
+use io
+
+fun main() {
+  val bits = (1.5).toBits()
+  io.println("${bits.toString(radix: 16)} ${f64.fromBits(bits)}")
+  io.println("${(-0.0).toBits() == (0.0).toBits()} ${-0.0 == 0.0}")
+}
+```
+
+Output:
+```text
+3ff8000000000000 1.5
+false true
+```
+
 ## Text
 
 `string` is immutable UTF-8 text. Concatenate with `+`, compare with

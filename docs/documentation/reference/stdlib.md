@@ -441,6 +441,8 @@ Each is a single machine instruction (an LLVM intrinsic), not a runtime call.
 | `countOnes()`, `leadingZeros()`, `trailingZeros()` | every integer type | same type |
 | `toString(radix: i64 = 10)` | `i64`, `u64` | `string`; digits `0-9a-z`, radix 2 to 36 |
 | `toFixed(digits)` | `f64`, `f32` | `string` with exactly that many decimals, rounded |
+| `toBits()` | `f64`, `f32` | the IEEE 754 bit pattern, `u64` / `u32`; nothing rounded, a NaN keeps its payload (D93) |
+| `f64.fromBits(bits)`, `f32.fromBits(bits)` | static | the number with that pattern; the inverse, and every pattern is a number |
 
 The bitwise operators `&`, `|`, `^`, `<<`, `>>` and `~` work on every integer
 type; `&`, `<<`, `>>` bind like `*`, `|` and `^` like `+` (Go's grouping), and a

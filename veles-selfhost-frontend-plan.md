@@ -519,10 +519,10 @@ table.
 | A subprocess with captured output and its exit code | **has** | a C file compiled and run through `os.run("clang", ...)`; `Output.code`, `ok()`, stdin and stderr capture |
 | File I/O, directory walk, paths, args, env, exit codes | **has** | `std/fs`, `std/path`, `std/os` |
 | Parallel work (per-function codegen) | **has** | tasks on one thread per core (D66); `mapConcurrent` |
-| Emitting a float constant in LLVM's hex form | **partial** | see below |
+| Emitting a float constant in LLVM's hex form | **has, since 2026-09-29 (D93)** | `x.toBits()` / `f64.fromBits(bits)`; was **partial**, see below |
 | Deep recursion | **gap, closed 2026-09-29 (D92)** | see below |
 
-**Partial — float bits.** There is no `f64` ↔ `u64` bit reinterpretation in
+**Partial — float bits (closed the same day, D93: `toBits()` / `fromBits()` in std, `examples/floatbits`).** As found: there was no `f64` ↔ `u64` bit reinterpretation in
 std. It works with an `unsafe` cast (`p.cast<*raw u64>()`: 1.5 gives
 0x3FF8000000000000), but a code generator should not need `unsafe` for it. A
 safe `toBits()` / `fromBits()` is a std decision; it goes through

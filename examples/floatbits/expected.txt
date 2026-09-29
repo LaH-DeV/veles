@@ -1,0 +1,12 @@
+1.5       0x3FF8000000000000
+0.1       0x3FB999999999999A
+-0.0      0x8000000000000000
+pi        0x400921FB54442D18
+infinity  0x7FF0000000000000
+0x3FB999999999999A is 0.1, and true
+NaN payload kept: true true
+-0.0 == 0.0: true, same bits: false
+f32 1.5   0x3FC00000
+0x40490FDB is 3.1415927
+-6.25 = sign 1, exponent 1025 (unbiased 2), fraction 0x9000000000000
+exit=0

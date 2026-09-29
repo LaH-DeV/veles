@@ -154,7 +154,7 @@ fun textLine(now: string, level: Level, text: string, fields: List<Field>): stri
   val out = StringBuilder()
   out.append(now)
   out.append(" ")
-  out.append(levelWord(level).toUpper().padEnd(5))
+  out.append(level.toString().toUpper().padEnd(5))
   out.append(" ")
   out.append(text)
   loop (f in fields) {
@@ -171,7 +171,7 @@ fun jsonLine(now: string, level: Level, text: string, fields: List<Field>): stri
   out.append("{\"time\":\"")
   out.append(now)
   out.append("\",\"level\":\"")
-  out.append(levelWord(level))
+  out.append(level.toString().toLower())
   out.append("\",\"msg\":")
   out.append(quote(text))
   loop (f in fields) {
@@ -182,13 +182,6 @@ fun jsonLine(now: string, level: Level, text: string, fields: List<Field>): stri
   }
   out.append("}")
   out.toString()
-}
-
-fun levelWord(level: Level): string = when (level) {
-  Level.Debug => "debug"
-  Level.Info  => "info"
-  Level.Warn  => "warn"
-  else        => "error"
 }
 
 fun quote(s: string): string = json.encode(s) ?? "\"\""
