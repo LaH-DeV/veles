@@ -19,7 +19,8 @@ import (
 //	xs.push(y)          // may move the elements
 //	p.n = 1             // written into the old buffer
 //
-// and when the body of `loop (&x in xs)` changes `xs` itself. It is
+// (A loop that changes the collection it walks is an error now, D102:
+// loopchange.go.) It is
 // syntactic: the collection is matched by its source text, so it sees
 // `xs` and `this.items` but not two names for one list.
 
@@ -51,13 +52,6 @@ func (f *fnCtx) lintStaleRefs(stmts []ast.Stmt) {
 				live = append(live, liveRef{vs.Binding.Name.Name, coll, vs.Value.Span()})
 			}
 		}
-		if ls, ok := s.(*ast.LoopStmt); ok && ls.Var != nil && hasRefBinding(ls.Var) {
-			coll := srcText(ls.Iter)
-			refs := []liveRef{{refBindingName(ls.Var), coll, ls.Var.Pos}}
-			forEachCall(ls.Body, func(c *ast.CallExpr) {
-				f.reportLayoutChange(c, refs, true)
-			})
-		}
 	}
 }
 
@@ -79,20 +73,6 @@ func refSource(e ast.Expr) (string, bool) {
 	return coll, coll != ""
 }
 
-// refBindingName is the `&name` of a loop binding (the value part of a
-// `(k, &v)` tuple).
-func refBindingName(b *ast.Binding) string {
-	if b.Ref && b.Name != nil {
-		return b.Name.Name
-	}
-	for i := range b.Tuple {
-		if n := refBindingName(&b.Tuple[i]); n != "" {
-			return n
-		}
-	}
-	return ""
-}
-
 // checkLayoutChanges reports a layout-changing call inside s on a
 // collection that a live reference points into, when that reference is
 // still mentioned in the statements after s.
@@ -107,13 +87,13 @@ func (f *fnCtx) checkLayoutChanges(s ast.Stmt, rest []ast.Stmt, live []liveRef) 
 		return
 	}
 	forEachCall(s, func(c *ast.CallExpr) {
-		f.reportLayoutChange(c, stillUsed, false)
+		f.reportLayoutChange(c, stillUsed)
 	})
 }
 
 // reportLayoutChange warns when call is `<coll>.<changer>(...)` for the
 // collection of one of the references.
-func (f *fnCtx) reportLayoutChange(call *ast.CallExpr, refs []liveRef, inLoop bool) {
+func (f *fnCtx) reportLayoutChange(call *ast.CallExpr, refs []liveRef) {
 	m, ok := call.Fun.(*ast.MemberExpr)
 	if !ok || !layoutChangers[m.Name.Name] {
 		return
@@ -123,11 +103,7 @@ func (f *fnCtx) reportLayoutChange(call *ast.CallExpr, refs []liveRef, inLoop bo
 		if r.coll != coll {
 			continue
 		}
-		if inLoop {
-			f.c.warnf(call.Pos, "'%s.%s' changes the collection while 'loop (%s in %s)' walks it by reference; '%s' may go stale and the loop may not end — collect the changes and apply them after the loop", coll, m.Name.Name, spanText(r.span), coll, r.name)
-		} else {
-			f.c.warnf(call.Pos, "'%s.%s' may move or reorder the elements while '%s' (a reference into '%s' taken at %s) is still used; a write through it would be lost — take the reference after this call", coll, m.Name.Name, r.name, coll, refLine(r.span))
-		}
+		f.c.warnf(call.Pos, "'%s.%s' may move or reorder the elements while '%s' (a reference into '%s' taken at %s) is still used; a write through it would be lost — take the reference after this call", coll, m.Name.Name, r.name, coll, refLine(r.span))
 		return
 	}
 }

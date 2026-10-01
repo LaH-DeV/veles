@@ -231,7 +231,7 @@ fun main() throws EncodeError | DecodeError {
     io.println("$style: ${try json.encode(job, json.Options(durations: style))}")
   }
   val java = json.Options(durations: codec.DurationStyle.Iso8601)
-  io.println("${(try json.decode<Job>("{\"name\": \"x\", \"timeout\": \"PT2H\"}", java)).timeout}")
+  io.println("${try json.decode<Job>("{\"name\": \"x\", \"timeout\": \"PT2H\"}", java).timeout}")
 }
 ```
 

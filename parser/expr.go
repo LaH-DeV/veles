@@ -596,7 +596,18 @@ func (p *Parser) parseIf() ast.Expr {
 	p.next() // if
 	e := &ast.IfExpr{}
 	if _, ok := p.expect(lexer.LParen); ok {
-		e.Cond = p.parseExpr()
+		if p.missingVal() {
+			// read as the binding it was meant to be, so nothing cascades
+			name := p.next()
+			p.next() // =
+			var cond ast.Expr = &ast.LetCond{Name: ast.Ident{Name: name.Text, Pos: name.Span}, Value: p.parseBinary(bpAnd), Pos: p.spanFrom(name.Span)}
+			for p.accept(lexer.AndAnd) {
+				cond = &ast.BinaryExpr{Op: lexer.AndAnd, L: cond, R: p.parseBinary(bpAnd), Pos: p.spanFrom(name.Span)}
+			}
+			e.Cond = cond
+		} else {
+			e.Cond = p.parseExpr()
+		}
 		p.closeCondition()
 	} else {
 		e.Cond = &ast.BadExpr{Pos: p.span()}
@@ -630,6 +641,10 @@ func (p *Parser) parseWhen() ast.Expr {
 			p.next()
 			name, _ := p.expectIdent()
 			w.Bind = &name
+			p.next() // =
+		} else if p.missingVal() {
+			name := p.next()
+			w.Bind = &ast.Ident{Name: name.Text, Pos: name.Span}
 			p.next() // =
 		}
 		w.Subject = p.parseExpr()
@@ -780,4 +795,19 @@ func (p *Parser) paramName(t lexer.Token) ast.Ident {
 		return ast.Ident{Name: "_", Pos: t.Span}
 	}
 	return ast.Ident{Name: t.Text, Pos: t.Span}
+}
+
+// missingVal: an `if`/`when` head that starts `name =`, the binding of D95
+// written without its `val` (D101). An assignment is a statement, never a
+// condition, so this is always a missing `val`: one error, with the fix
+// that inserts it; the caller then parses the head as that binding.
+func (p *Parser) missingVal() bool {
+	if !p.at(lexer.Ident) || p.peek(1).Kind != lexer.Assign {
+		return false
+	}
+	name := p.cur()
+	p.errorf(name.Span, "a binding in a condition is written 'val %s = …' (D101)", name.Text)
+	at := source.Span{File: name.Span.File, Start: name.Span.Start, End: name.Span.Start}
+	p.diags.Items[len(p.diags.Items)-1].Fix = &source.Fix{Title: "Insert 'val '", Edits: []source.TextEdit{{Span: at, NewText: "val "}}}
+	return true
 }

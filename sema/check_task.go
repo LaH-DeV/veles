@@ -364,10 +364,19 @@ func (f *fnCtx) launch(e *ast.CallExpr, want types.Type) Expr {
 	f.launching = &inner
 	x := f.checkExpr(&inner, nil)
 	f.launching = saved
+	if ci, isValue := x.(*CallIndirect); isValue {
+		// D103: a function value runs in a task like a named function
+		ft := ci.Fn.Type().(*types.Func)
+		if !ft.Sendable {
+			f.errorf(e.Fun.Span(), "'%s' is not a sendable function, so it cannot cross into a task; declare its type 'sendable fun(...)' (D35/D103)", srcText(e.Fun))
+			return bad()
+		}
+		x = &Call{exprBase: exprBase{ci.Type()}, Fn: f.c.launchTrampoline(ft), Args: append([]Expr{ci.Fn}, ci.Args...), Span: e.Pos}
+	}
 	call, ok := x.(*Call)
 	if !ok {
 		if !types.IsInvalid(x.Type()) {
-			f.errorf(e.Pos, "'async' launches a direct call of a named function or method")
+			f.errorf(e.Pos, "'async' starts a call: 'async f(args)' with f a named function, a method or a 'sendable fun' value, its arguments evaluated here (D3/D103)")
 		}
 		return bad()
 	}
@@ -466,9 +475,15 @@ func (f *fnCtx) gatherExpr(e *ast.GatherExpr) Expr {
 	f.scopes = append(f.scopes, sb)
 	sb.Body = f.checkBlock(e.Body, nil, false)
 	f.scopes = f.scopes[:len(f.scopes)-1]
-	sb.T = &types.Tuple{Elems: sb.Elems}
-	if len(sb.Elems) == 0 {
+	switch len(sb.Elems) {
+	case 0:
 		sb.T = types.TUnit
+	case 1:
+		// D103: one task's outcome is its Result itself — a 1-tuple exists
+		// nowhere else
+		sb.T = sb.Elems[0]
+	default:
+		sb.T = &types.Tuple{Elems: sb.Elems}
 	}
 	f.suspending(sb, e.Pos, "gather")
 	return sb
@@ -633,4 +648,51 @@ func (c *Checker) panicType() types.Type {
 		return sym.Type
 	}
 	return nil
+}
+
+// launchTrampoline is the function `async f(args)` starts when f is a
+// function value (D103): it takes the value and the arguments, evaluated in
+// the parent, and calls one with the others. One per function type; its
+// suspension is inferred from the call, its error is the type's.
+func (c *Checker) launchTrampoline(ft *types.Func) *Func {
+	key := types.Key(ft)
+	if fn, ok := c.trampolines[key]; ok {
+		return fn
+	}
+	if c.trampolines == nil {
+		c.trampolines = map[string]*Func{}
+	}
+	newVar := func(name string, t types.Type) *Var {
+		c.nextVar++
+		return &Var{Name: name, Type: t, ID: c.nextVar, IsParam: true}
+	}
+	fv := newVar("$f", ft)
+	vars := []*Var{fv}
+	params := []types.Param{{Name: "f", Type: ft}}
+	var args []Expr
+	for i, p := range ft.Params {
+		v := newVar("$a"+itoa(i), p.Type)
+		vars = append(vars, v)
+		params = append(params, types.Param{Name: v.Name, Type: p.Type})
+		args = append(args, &VarRef{exprBase{p.Type}, v})
+	}
+	rt := ft.Ret
+	if ft.Effects.Throws {
+		rt = c.ResultType(ft.Ret, ft.Effects.Error)
+	}
+	var value Expr = &CallIndirect{exprBase{rt}, &VarRef{exprBase{ft}, fv}, args}
+	if ft.Effects.Throws {
+		value = &Try{exprBase{ft.Ret}, value, ft.Effects.Error, ft.Effects.Error}
+	}
+	body := &Block{Type: types.TNever}
+	if types.IsUnit(ft.Ret) {
+		body.Stmts = []Stmt{&ExprStmt{X: value}, &Return{}}
+	} else {
+		body.Stmts = []Stmt{&Return{Value: value}}
+	}
+	fn := &Func{Name: mangleName("veles.launch<" + key + ">"), Display: "async", Params: vars, Body: body, checked: true,
+		Sig: &types.Func{Params: params, Ret: ft.Ret, Effects: types.Effects{Throws: ft.Effects.Throws, Error: ft.Effects.Error}, Sendable: true}}
+	c.funcs = append(c.funcs, fn)
+	c.trampolines[key] = fn
+	return fn
 }

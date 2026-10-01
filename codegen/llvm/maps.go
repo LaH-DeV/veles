@@ -17,6 +17,8 @@ declare ptr @veles_map_val_at(ptr, i64)
 declare i64 @veles_map_used(ptr)
 declare i1 @veles_map_live(ptr, i64)
 declare void @veles_map_clear(ptr)
+declare void @veles_map_reserve(ptr, i64)
+declare i64 @veles_map_mods(ptr)
 declare ptr @veles_map_copy(ptr)
 declare ptr @veles_map_keys(ptr)
 declare ptr @veles_map_values(ptr)
@@ -182,6 +184,10 @@ func (g *gen) mapBuiltin(e *sema.Builtin) (string, bool) {
 	case "map.clear":
 		m := g.expr(e.Args[0])
 		g.emit("call void @veles_map_clear(ptr %s)", m)
+		return "zeroinitializer", true
+	case "map.reserve":
+		m, n := g.expr(e.Args[0]), g.expr(e.Args[1])
+		g.emit("call void @veles_map_reserve(ptr %s, i64 %s)", m, n)
 		return "zeroinitializer", true
 	case "map.copy":
 		m := g.expr(e.Args[0])

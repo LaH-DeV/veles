@@ -1944,6 +1944,14 @@ func (p *printer) whenArm(arm *ast.WhenArm) {
 		}
 	}
 	p.mark(alignArrow)
+	if l, ok := arm.Body.(*ast.LambdaExpr); ok && !strings.HasSuffix(strings.TrimRight(p.src[:l.Pos.Start], " \t"), "(") {
+		// D106: `cond => (x => x * 2)` — a lambda as an arm's value is
+		// parenthesized, so the two arrows are not read as one chain
+		p.w(" => (")
+		p.expr(l, 0)
+		p.w(")")
+		return
+	}
 	p.armBody(arm.Body)
 }
 

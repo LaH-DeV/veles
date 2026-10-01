@@ -213,7 +213,9 @@ it is fine: passing the resource, or a lambda that uses it, as an
 argument compiles, because the call ends before the block does. The
 compiler does not follow the value into the function you pass it to, so
 a function that *keeps* what it was lent is not caught — do not keep a
-resource you were passed.
+resource you were passed. Nor is a `with` value closed by hand: `with`
+closes it already, so `r.close()` on it is an error (D136) — use the block
+form to close it earlier.
 
 ```veles
 // fragment
@@ -256,7 +258,7 @@ fun risky(i: i64): i64 = with (a = Res(name: "a"), b = Res(name: "b")) {
 
 fun main() {
   loop (i in [1, 5]) {
-    when ((gather { async risky(i) }).0) {
+    when (gather { async risky(i) }) {
       is Ok(v)  => io.println("value $v")
       is Err(p) => io.println("panicked: ${p.message()}")
     }

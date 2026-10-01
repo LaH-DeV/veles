@@ -20,7 +20,7 @@ fun main() throws IoError {
 
   try fs.writeFile(file, "milk\n")        // replaces
   try fs.appendFile(file, "bread\n")      // creates when missing
-  val items = (try fs.readFile(file)).lines()
+  val items = try fs.readFile(file).lines()
   io.println("${items.len()} items: ${items.join(", ")}")
 
   io.println("${fs.exists(file)} ${fs.isFile(file)} ${fs.isDir(dir)}")

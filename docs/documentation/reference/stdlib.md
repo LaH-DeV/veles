@@ -245,6 +245,7 @@ public struct StringBuilder {                 // StringBuilder() starts an empty
   public fun append(s: string)
   public fun appendLine(s: string = "")
   public fun appendByte(b: u8)          // one UTF-8 byte, for code walking a string with byteAt
+  public fun reserve(n: i64)           // room for n bytes in all: appending up to n never grows it (D105)
   public fun len(): i64
   public fun isEmpty(): bool
   public fun clear()
@@ -269,6 +270,7 @@ public struct Deque<T> {                           // Deque<i64>() starts an emp
   public fun at(i: i64): T?          // from the front; a negative i counts from the back
   public fun len(): i64
   public fun isEmpty(): bool
+  public fun reserve(n: i64)         // room for n elements in all (D105)
   public fun clear()
   public fun toList(): List<T>       // front to back; also Iterable and Display
 }
@@ -384,7 +386,7 @@ UTF-8.
 | `iter()` | lazy iterator |
 | `toList()`, `toMutable()` | copies (D25) |
 | `toSet()`, `toMutableSet()` | the distinct elements as a set (iterators have `toSet()` too) |
-| `push(x)`, `pop(): T?`, `set(i, x)`, `clear()` | `MutableList` only |
+| `push(x)`, `pop(): T?`, `set(i, x)`, `clear()`, `reserve(n)` | `MutableList` only; `reserve` makes room for `n` in all, so pushing up to `n` never grows the list (D83) |
 | `insert(i, x)`, `removeAt(i): T`, `addAll(xs)`, `sort()` | `MutableList` only; `sort` is in place |
 | `swap(i, j)`, `sortWith(compare)` | `MutableList` only; in place |
 | `fill(x)` | `MutableList` only; overwrites every element, length unchanged |
@@ -403,7 +405,7 @@ call the mutating ones, since the list is a reference (D25).
 | `containsKey(k)`, `len()`, `isEmpty()` | |
 | `keys()`, `values()`, `entries()` | `List<K>`, `List<V>`, `List<(K, V)>` in insertion order |
 | `toMap()`, `toMutable()` | copies |
-| `set(k, v)`, `remove(k): bool`, `clear()` | `MutableMap` only |
+| `set(k, v)`, `remove(k): bool`, `clear()`, `reserve(n)` | `MutableMap` only; after `reserve(n)` inserting up to `n` entries never grows or rehashes (D105) |
 | `forEach((k, v) => ...)`, `mapValues(v => ...)`, `filter((k, v) => ...)` | iterate; new `Map` |
 | `getOrPut(k, () => v)` | `V` — `MutableMap` only: stores `v` when `k` is absent |
 
@@ -414,13 +416,13 @@ fields.
 
 `contains(x)`, `len()`, `isEmpty()`, `toList()`, `toSet()`, `toMutable()`,
 `union(s)`, `intersect(s)`, `difference(s)`, `isSubsetOf(s)`; on `MutableSet`:
-`add(x): bool`, `remove(x): bool`, `clear()`. Construct with `Set<T>()` /
+`add(x): bool`, `remove(x): bool`, `clear()`, `reserve(n)` (D105). Construct with `Set<T>()` /
 `MutableSet<T>()`, or with a list literal where a set type is expected:
 `val s: Set<i64> = [1, 2]`.
 
 ### `Range<T>`
 
-Fields `lo`, `hi`, `inclusive`; iterable. `len()`, `contains(x)`, `step(n)` and
+Fields `lo`, `hi`, `inclusive`; iterable. `len()`, `isEmpty()` (D106), `contains(x)`, `step(n)` and
 `reversed()` (the last two are iterators that combine either way:
 `(1..10).step(3).toList()`, `(0..10).reversed().step(3)` is 10, 7, 4, 1).
 
@@ -434,11 +436,15 @@ Each is a single machine instruction (an LLVM intrinsic), not a runtime call.
 | `pow(y)`, `min(y)`, `max(y)`, `mod(y)`, `clamp(lo, hi)`, `sign()` | `f64`, `f32` | same type; `mod` is Euclidean (never negative for `y > 0`) |
 | `log()`, `log2()`, `log10()`, `exp()`, `sin()`, `cos()`, `tan()`, `atan2(x)`, `hypot(y)` | `f64`, `f32` | same type; radians |
 | `isNaN()`, `isFinite()`, `isInfinite()` | `f64`, `f32` | `bool` |
+| `isSignNegative()`, `copySign(y)` | `f64`, `f32` | the sign bit — true for `-0.0` and a negative NaN; this magnitude with `y`'s sign (D104) |
+| `nextUp()`, `nextDown()` | `f64`, `f32` | the nearest representable number above / below (IEEE 754); NaN stays NaN, an infinity in its own direction stays (D104) |
 | `abs()`, `min(y)`, `max(y)`, `mod(y)`, `clamp(lo, hi)`, `sign()` | every integer type | same type; `abs` on an unsigned type is the identity; `mod` is Euclidean where `%` truncates (`(-7).mod(3)` is 2, `-7 % 3` is -1) |
 | `pow(n)` | every integer type | same type; panics on overflow or `n < 0` |
 | `wrappingAdd/Sub/Mul(y)`, `saturatingAdd/Sub/Mul(y)` | every integer type | same type — the overflow policies other than the default panic (D21) |
 | `checkedAdd/Sub/Mul(y)` | every integer type | `T?`: `null` on overflow |
 | `countOnes()`, `leadingZeros()`, `trailingZeros()` | every integer type | same type |
+| `rotateLeft(n)`, `rotateRight(n)` | every integer type | same type; bits rotated by `n` modulo the width, a negative `n` the other way (D104) |
+| `swapBytes()`, `reverseBits()` | every integer type | same type; byte order (big- ↔ little-endian; identity on 8-bit types) or bit order reversed (D104) |
 | `toString(radix: i64 = 10)` | `i64`, `u64` | `string`; digits `0-9a-z`, radix 2 to 36 |
 | `toFixed(digits)` | `f64`, `f32` | `string` with exactly that many decimals, rounded |
 | `toBits()` | `f64`, `f32` | the IEEE 754 bit pattern, `u64` / `u32`; nothing rounded, a NaN keeps its payload (D93) |

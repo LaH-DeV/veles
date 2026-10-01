@@ -22,12 +22,14 @@ func TestRenderNamesEachFamilyOnce(t *testing.T) {
 
 func TestFamilyOfRealMessages(t *testing.T) {
 	for msg, want := range map[string]string{
-		"module 'io' has no declaration 'prinln'; did you mean 'io.println'?":                           "modules",
-		"'helper' is private to module 'geo'; declare it 'public' there to use it from here (M5)":       "private-to-module",
-		"'%' is not defined for floats; 'x.mod(y)' is the remainder, in 0.0..<|y|":                      "operators",
-		"comparing a non-nullable 'i64' with null is always false; remove the test":                     "nullable",
-		"this loop never repeats: every path through its body leaves it (break, return or throw); drop": "control-flow",
-		"no sensible family would claim this":                                                           "",
+		"module 'io' has no declaration 'prinln'; did you mean 'io.println'?":                                                                  "modules",
+		"'helper' is private to module 'geo'; declare it 'public' there to use it from here (M5)":                                              "private-to-module",
+		"'%' is not defined for floats; 'x.mod(y)' is the remainder, in 0.0..<|y|":                                                             "operators",
+		"comparing a non-nullable 'i64' with null is always false; remove the test":                                                            "nullable",
+		"this loop never repeats: every path through its body leaves it (break, return or throw); drop":                                        "control-flow",
+		"'f' declares 'throws', but nothing in its body can throw, so every caller pays for a 'try' it does not need; remove the clause (D45)": "results-and-errors",
+		"'conn' cannot be returned: it is closed when its 'with' block ends (D100)":                                                            "resources",
+		"no sensible family would claim this":                                                                                                  "",
 	} {
 		if got := FamilyOf(msg); got != want {
 			t.Errorf("%q: family %q, want %q", msg, got, want)

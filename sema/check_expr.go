@@ -1579,9 +1579,9 @@ func (f *fnCtx) listLit(e *ast.ListLit, want types.Type) Expr {
 	}
 	if elem == nil {
 		if e.Mut {
-			f.errorf(e.Pos, "cannot infer the element type of an empty list; annotate it, e.g. 'var xs: MutableList<i32> = []' (D25)")
+			f.errorf(e.Pos, "cannot infer the element type of an empty list; annotate it, e.g. 'var xs: MutableList<i64> = []' (D25)")
 		} else {
-			f.errorf(e.Pos, "cannot infer the element type of an empty list; annotate it, e.g. 'val xs: List<i32> = []' (D25)")
+			f.errorf(e.Pos, "cannot infer the element type of an empty list; annotate it, e.g. 'val xs: List<i64> = []' (D25)")
 		}
 		return bad()
 	}
@@ -1670,57 +1670,108 @@ func (f *fnCtx) tryExpr(e *ast.TryExpr) Expr {
 	return f.tryOn(x, e.Pos)
 }
 
-// tryChain handles `try f().m(...)` where `f()` is a Result and `m` is not
-// a method of Result: `try` covers the whole chain by grammar, so `m`
-// would be looked up on the Result and fail. What was meant is
-// `(try f()).m(...)`, and that is what this checks — with a warning and
-// the fix that writes the parentheses, so the source says what it does.
-// Only a call or member chain qualifies as the receiver (a bare name may
-// be a type, and `try r.m()` on a Result variable stays as it reads).
+// tryChain handles `try a().b().c()` (D134, Swift's rule): one `try`
+// covers every failing call in the receiver chain after it. Each link whose
+// value is a Result and is followed by a member that is not a method of
+// Result is unwrapped where it stands, its errors joining the function's;
+// the chain's last value is unwrapped by the `try` as before. Arguments are
+// not links: `try f(g()).h()` passes g()'s Result as a value. Only a call or
+// member chain qualifies (a bare name may be a type, and `try r.m()` on a
+// Result variable stays as it reads).
 func (f *fnCtx) tryChain(e *ast.TryExpr) (Expr, bool) {
-	call, ok := e.X.(*ast.CallExpr)
-	if !ok || call.Async {
+	if !isChainLink(f, e.X) {
 		return nil, false
 	}
-	mem, ok := call.Fun.(*ast.MemberExpr)
-	if !ok || mem.Safe {
-		return nil, false
+	unwrapped := false
+	x := f.tryLinks(e.X, e.Pos, &unwrapped)
+	if rs, ok := x.Type().(*types.Sealed); unwrapped && (!ok || !isResultType(rs)) {
+		return x, true // the failing calls were inside the chain
 	}
-	switch mem.X.(type) {
-	case *ast.CallExpr, *ast.MemberExpr:
+	return f.tryOn(x, e.Pos), true
+}
+
+// isChainLink: x is `recv.m(...)` or `recv.field` whose receiver is itself
+// a call or member chain (not a module or a type), so it can be split there.
+func isChainLink(f *fnCtx, x ast.Expr) bool {
+	var recv ast.Expr
+	switch x := x.(type) {
+	case *ast.CallExpr:
+		mem, ok := x.Fun.(*ast.MemberExpr)
+		if !ok || mem.Safe || x.Async {
+			return false
+		}
+		recv = mem.X
+	case *ast.MemberExpr:
+		if x.Safe {
+			return false
+		}
+		recv = x.X
 	default:
-		return nil, false
+		return false
 	}
-	if mx, isMember := mem.X.(*ast.MemberExpr); isMember && f.moduleTypeNamed(mx) != nil {
-		return nil, false
+	switch r := recv.(type) {
+	case *ast.CallExpr, *ast.TryExpr:
+		return true
+	case *ast.MemberExpr:
+		return f.moduleTypeNamed(r) == nil
 	}
-	recv := f.checkExpr(mem.X, nil)
+	return false
+}
+
+// tryLinks checks the chain x under a `try`, unwrapping each failing link
+// before the member that follows it.
+func (f *fnCtx) tryLinks(x ast.Expr, pos source.Span, unwrapped *bool) Expr {
+	if !isChainLink(f, x) {
+		return f.checkExpr(x, nil)
+	}
+	var mem *ast.MemberExpr
+	call, isCall := x.(*ast.CallExpr)
+	if isCall {
+		mem = call.Fun.(*ast.MemberExpr)
+	} else {
+		mem = x.(*ast.MemberExpr)
+	}
+	var recv Expr
+	if inner, ok := mem.X.(*ast.TryExpr); ok {
+		// `try (try f()).g()`: the outer `try` would unwrap f() by itself
+		operand := f.tryLinks(inner.X, inner.Pos, unwrapped)
+		if rs, isR := operand.Type().(*types.Sealed); isR && isResultType(rs) && !f.hasMethod(rs, mem.Name.Name) {
+			span, text := inner.Pos, srcText(inner.X)
+			if src := inner.Pos.File.Content; span.Start > 0 && span.End < len(src) && src[span.Start-1] == '(' && src[span.End] == ')' {
+				span = source.Span{File: span.File, Start: span.Start - 1, End: span.End + 1}
+			}
+			f.warnFix(inner.Pos, fixReplace("Remove the inner 'try'", span, text),
+				"the inner 'try' is redundant: one 'try' covers every failing call in its chain (D134)")
+		}
+		recv = f.tryOn(operand, inner.Pos)
+		*unwrapped = true
+	} else {
+		recv = f.tryLinks(mem.X, pos, unwrapped)
+	}
+	if types.IsInvalid(recv.Type()) {
+		if isCall {
+			f.checkArgsLoosely(call.Args)
+		}
+		return bad()
+	}
+	if rs, ok := recv.Type().(*types.Sealed); ok && isResultType(rs) && (!isCall || !f.hasMethod(rs, mem.Name.Name)) {
+		recv = f.tryOn(recv, pos)
+		*unwrapped = true
+		if types.IsInvalid(recv.Type()) {
+			if isCall {
+				f.checkArgsLoosely(call.Args)
+			}
+			return bad()
+		}
+	}
+	if !isCall {
+		return f.fieldAccess(recv, mem, nil)
+	}
 	var typeArgs []types.Type
 	for _, ta := range call.TypeArgs {
 		typeArgs = append(typeArgs, f.resolve(ta))
 	}
-	rs, isSealed := recv.Type().(*types.Sealed)
-	if !isSealed || !isResultType(rs) || f.hasMethod(rs, mem.Name.Name) {
-		// the ordinary reading: the method applies to what f() returned
-		return f.tryOn(f.dispatchMethod(recv, mem, typeArgs, call, nil), e.Pos), true
-	}
-	span := source.Span{File: e.Pos.File, Start: e.Pos.Start, End: mem.X.Span().End}
-	if f.catching != nil && f.catching.quiet {
-		unwrapped := f.tryOn(recv, e.Pos)
-		if types.IsInvalid(unwrapped.Type()) {
-			f.checkArgsLoosely(call.Args)
-			return bad(), true
-		}
-		return f.dispatchMethod(unwrapped, mem, typeArgs, call, nil), true
-	}
-	f.warnFix(e.Pos, fixReplace("Write '(try ...)' around the call", span, "(try "+srcText(mem.X)+")"),
-		"'try' covers the whole chain, but '%s' is not a method of '%s'; read as '(try %s).%s(...)' — write the parentheses", mem.Name.Name, rs, srcText(mem.X), mem.Name.Name)
-	unwrapped := f.tryOn(recv, e.Pos)
-	if types.IsInvalid(unwrapped.Type()) {
-		f.checkArgsLoosely(call.Args)
-		return bad(), true
-	}
-	return f.dispatchMethod(unwrapped, mem, typeArgs, call, nil), true
+	return f.dispatchMethod(recv, mem, typeArgs, call, nil)
 }
 
 // hasMethod reports whether a method of that name applies to the type

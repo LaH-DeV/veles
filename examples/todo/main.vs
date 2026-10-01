@@ -144,7 +144,7 @@ struct TodoFile {
   static fun open(file: string): TodoFile throws IoError {
     val t = TodoFile(file)
     if (fs.exists(file)) {
-      loop (line in (try fs.readFile(file)).lines()) {
+      loop (line in try fs.readFile(file).lines()) {
         if (!line.trim().isEmpty()) t.tasks.push(Task.parse(line))
       }
     }

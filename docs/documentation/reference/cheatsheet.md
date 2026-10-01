@@ -59,6 +59,7 @@ val (a, b) = (1, "one")         // tuple destructuring, nests: val ((x, y), z) =
 | nullable | `x ?: fallback`, `x?.member`, `x?.method()`; `x?.a.b()` skips the whole rest of the chain on null (D70) |
 | result | `r ?? fallback` (`?:` for a Result; the fallback may leave), `r catch (e) { ... }` sees the error, `val v = r else return` binds or leaves |
 | several `try`s, one handler | `do { val a = try f(); try g(a) } catch (e) { fallback }`, and `try f().g() catch (e) { fallback }` for one call and a chain — a failed `try` or `throw` goes to the handler; `e` is the union of the errors; `return`/`break`/`continue` leave the function or loop (D98) |
+| a chain | `try client.fetch(url).json<User>()` — one `try` covers every failing call in the chain; the error type is their union; arguments are not covered (D134) |
 | or fail | `x ?! error` — a `T?` or `Result` becomes a `Result` failing with `error`; `try x ?! e` propagates it |
 | type test | `x is T`, `x !is T` |
 | address | `&x` → `*T`, `*p` reads through |
@@ -73,7 +74,7 @@ val (a, b) = (1, "one")         // tuple destructuring, nests: val ((x, y), z) =
 if (c) a else b                       // expression
 loop { ... break }                    // forever
 loop (cond) { ... }                   // while
-loop (x in xs) { ... }                // any Iterable, Range, Map ((k, v) in m); (a..b).step(n), (a..b).reversed(), (a..b).reversed().step(n)
+loop (x in xs) { ... }                // any Iterable, Range, Map ((k, v) in m); (a..b).step(n), (a..b).reversed(), (a..b).reversed().step(n); the body may not push/remove on xs itself (D102)
 loop (&x in xs) x.bump()             // by reference: x is *T (MutableList only); loop ((k, &v) in m) for map values
 loop :outer (x in xs) { continue outer; break outer }
 when (v) { 1 => "one"; 2, 3 => "few"; else => "many" }
@@ -217,7 +218,7 @@ scope {                          // every task started inside finishes here
   val t = async work(1)          // Task<i64>
   val v = await t
 }
-val (a, b) = gather { async f(); async g() }   // (Result<A, E|Panic>, Result<B, ...>)
+val (a, b) = gather { async f(); async g() }   // (Result<A, E|Panic>, Result<B, ...>); one task: its Result — when (gather { async f() }) { ... } (D103)
 val winner = race { val m = ch.recv() => ...; sleep(Duration.millis(100)) => "timeout"; val v = t => ... }
 val ch = Channel<i64>(capacity: 8); ch.send(1); await ch.recv(); ch.close(); ch.closeAfter(n)  // closes itself after n sends
 ch.trySend(1); ch.tryRecv()      // never wait: false when full, null when nothing is buffered

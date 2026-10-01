@@ -2,6 +2,7 @@ package sema
 
 import (
 	"github.com/LaH-DeV/veles/ast"
+	"github.com/LaH-DeV/veles/source"
 	"github.com/LaH-DeV/veles/types"
 )
 
@@ -208,4 +209,46 @@ func storesArguments(t types.Type) bool {
 		return t.Module == "std.prelude" && (t.Name == "Deque" || t.Name == "PriorityQueue")
 	}
 	return false
+}
+
+// refuseHandClose: `r.close()` on a `with` value closes it twice — the
+// block's end closes it again (D136). The fix removes the call; closing
+// earlier is the block form's job.
+func (f *fnCtx) refuseHandClose(callee *ast.MemberExpr, e *ast.CallExpr) {
+	if callee.Name.Name != "close" || len(e.Args) != 0 || callee.Safe {
+		return
+	}
+	n, ok := callee.X.(*ast.NameExpr)
+	if !ok {
+		return
+	}
+	r := f.resourceNamed(n.Name)
+	if r == nil {
+		return
+	}
+	if _, isTask := r.Type.(*types.Task); isTask {
+		return
+	}
+	f.c.errorFix(e.Pos, fixReplace("Remove the call", wholeLine(e.Pos), ""),
+		"'%s' is closed when its 'with' block ends; closing it here would close it twice — remove the call, or give it a block of its own, 'with (%s = …) { … }', to close it earlier (D136)", n.Name, r.Name)
+}
+
+// wholeLine widens span to its whole line when nothing else is on it, so
+// removing it leaves no blank line behind.
+func wholeLine(span source.Span) source.Span {
+	src := span.File.Content
+	start, end := span.Start, span.End
+	for start > 0 && (src[start-1] == ' ' || src[start-1] == '\t') {
+		start--
+	}
+	for end < len(src) && (src[end] == ' ' || src[end] == '\t' || src[end] == '\r') {
+		end++
+	}
+	if (start == 0 || src[start-1] == '\n') && (end == len(src) || src[end] == '\n') {
+		if end < len(src) {
+			end++
+		}
+		return source.Span{File: span.File, Start: start, End: end}
+	}
+	return span
 }

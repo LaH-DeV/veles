@@ -31,6 +31,14 @@ fun main() {
   with second = Res(name: "second")
   io.println("${first.name} ${second.name} ${listener.name}")
 }
+
+fun awaited(flag: bool) {
+  with r = Res(name: "r")
+  with done = async serve()
+  with maybe = async serve()
+  if (flag) await maybe
+  await done
+}
 `
 
 // D100: hovering `with` says where the resource closes, and an inlay hint
@@ -67,6 +75,11 @@ func TestWithInTheEditor(t *testing.T) {
 	}
 	got := applyHints(withSrc, hints)
 	if want := "}« closes second, first; cancels server; closes listener»\n"; !strings.Contains(got, want) {
+		t.Errorf("missing %q in\n%s", want, got)
+	}
+	// an awaited task has finished by the end of its block; one awaited
+	// only on some path may still be running
+	if want := "  await done\n}« cancels maybe; closes r»\n"; !strings.Contains(got, want) {
 		t.Errorf("missing %q in\n%s", want, got)
 	}
 }

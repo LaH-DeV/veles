@@ -248,6 +248,7 @@ extend<T> List<T> {
 extend<T> MutableList<T> {
   /// Sorts in place by `compare` (see `sortedWith`).
   public fun sortWith(compare: fun(T, T): Ordering) {
+    listTouched(this)
     var i: i64 = 0
     loop (x in this.sortedWith(compare)) {
       this.set(i, x)
@@ -411,6 +412,7 @@ extend<T> MutableList<T> {
     val b = this.at(j) ?: panic("swap: index $j out of bounds for list of length ${this.len()}")
     this.set(i, b)
     this.set(j, a)
+    listTouched(this)
   }
 
   /// Inserts `x` at index `i`, shifting the rest up; `i == len()` appends.
@@ -446,6 +448,7 @@ extend<T> MutableList<T> {
 
   /// Sorts in place (elements must be Comparable).
   public fun sort() {
+    listTouched(this)
     var i: i64 = 0
     loop (x in this.sorted()) {
       this.set(i, x)
@@ -514,15 +517,15 @@ public struct RangeStepIter<T> {
 extend<T> Range<T> {
   /// Number of values in the range (0 when empty).
   public fun len(): i64 {
-    if (this.holdsNothing()) return 0
+    if (this.isEmpty()) return 0
     val last = if (this.inclusive) this.hi else this.hi - 1
     // wrapping, as in RangeStepIter.next: negative only past half the type
     val span = last -% this.lo
     if (span >= 0) span.wrapI64() + 1 else last.wrapI64() - this.lo.wrapI64() + 1
   }
 
-  // no value at all: `5..<5`, `5..4` (internal until a public `isEmpty` is decided)
-  fun holdsNothing(): bool = if (this.inclusive) this.hi < this.lo else this.hi <= this.lo
+  /// True when the range holds no value: `5..<5`, `5..4` (D106).
+  public fun isEmpty(): bool = if (this.inclusive) this.hi < this.lo else this.hi <= this.lo
 
   /// True when `x` lies inside the range.
   public fun contains(x: T): bool {
@@ -534,14 +537,14 @@ extend<T> Range<T> {
   @caller_location
   public fun step(step: T): RangeStepIter<T> {
     if (step <= 0) panic("step: must be positive")
-    val last = if (this.inclusive || this.holdsNothing()) this.hi else this.hi - 1
-    RangeStepIter(current: this.lo, last, step, up: true, done: this.holdsNothing())
+    val last = if (this.inclusive || this.isEmpty()) this.hi else this.hi - 1
+    RangeStepIter(current: this.lo, last, step, up: true, done: this.isEmpty())
   }
 
   /// The values from the high end down to the low end.
   public fun reversed(): RangeStepIter<T> {
-    val last = if (this.inclusive || this.holdsNothing()) this.hi else this.hi - 1
-    RangeStepIter(current: last, last: this.lo, step: 1, up: false, done: this.holdsNothing())
+    val last = if (this.inclusive || this.isEmpty()) this.hi else this.hi - 1
+    RangeStepIter(current: last, last: this.lo, step: 1, up: false, done: this.isEmpty())
   }
 }
 

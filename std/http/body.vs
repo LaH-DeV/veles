@@ -189,7 +189,7 @@ public struct Body {
     if (chunk.isEmpty()) throw badRequest("body ended inside a chunk")
     remaining -= chunk.len()
     // the line break that ends a chunk's data
-    if (remaining == 0 && !(try this.recvLine(c, 2)).isEmpty()) throw badRequest("malformed chunk end")
+    if (remaining == 0 && !(try this.recvLine(c, 2).isEmpty())) throw badRequest("malformed chunk end")
     this.state.withLock(s => {
       s.remaining = remaining
       s.total += chunk.len()

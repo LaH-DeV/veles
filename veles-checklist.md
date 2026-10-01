@@ -164,7 +164,11 @@ answered from the shape, tuples get `Comparable`, enums get
       'Display'", and `p is Frag` on a trait object that `Frag` implements
       says "can never be 'Frag'" — both wrong (found 2026-10-01); D117 and
       D135 replace them (plan B15)
-- [ ] One `try` over a chain (D134) — decided 2026-10-01, plan B11
+- [x] One `try` over a chain (D134) — built 2026-10-01 (plan B11):
+      `tryChain` unwraps every failing link of the receiver chain; `try (try
+      f()).g()` warns that the inner `try` is redundant, with a fix; the `(try f()).g()` sites in std, examples and docs that
+      end an expression written as one `try`.
+      Tests: conformance `D134-try-chain`, sema `TestTryChain`
 - [x] Integer overflow policy per build profile (D21: checked in debug,
       wrapping in release, `+%` always) — verified 2026-09-28 (plan A3):
       golden `overflow` is lowered and run in both profiles (`main.ll` /
@@ -179,7 +183,7 @@ answered from the shape, tuples get `Comparable`, enums get
       panic like `-MIN`. `pow` panics on overflow in both profiles, as its
       doc says
 - [ ] Generic prelude bodies are checked only when instantiated: a call
-      to a method the element type lacks (`this.holdsNothing()` inside a
+      to a method the element type lacks (`this.isEmpty()` inside a
       `List<T>` extend) compiles until something uses it. Checking bodies
       against their bounds at definition — which the self-hosted compiler
       will want too
@@ -198,11 +202,21 @@ answered from the shape, tuples get `Comparable`, enums get
       `D100-with-syntax`, driver `TestWithStatementExits` (every exit path,
       both profiles), lsp `TestWithInTheEditor`, parser
       `TestWithStatement`, format "with statement", `examples/with`
-- [ ] D101–D106 (heads, loop mutation, one-task gather and `async` on a
-      value, bit operations, `reserve`, empty literals / `Range.isEmpty` /
-      lambda arms) — decided 2026-09-30, not built (plan B11)
-- [ ] A generic call's type argument inferred from the expected type
-      (`val small: i8 = id(12)`; §11) — decision-free, plan B11
+- [x] D101–D106 — built 2026-10-01 (plan B11): `if (m = …)` one error with
+      the `val` fix (D101, conformance `D101-heads`); loop mutation refused at
+      compile time and caught at run time by a modification count on lists
+      and maps (D102, `D102-loop-changes`, driver
+      `TestLoopOverChangedCollection`); a one-task `gather` is its Result and
+      `async` runs `sendable fun` values (D103, `D103-gather-and-values`);
+      rotate/swap/reverse/copySign/isSignNegative/nextUp/nextDown (D104,
+      `examples/bits`, golden `bits`); `reserve` on StringBuilder, maps, sets,
+      deques (D105, `examples/reserve`); empty-literal message and fix,
+      `Range.isEmpty`, lambda arms parenthesized (D106, `D106-empty-literals`,
+      format "lambda arm")
+- [x] A generic call's type argument inferred from the expected type
+      (`val small: i8 = id(12)`) — built 2026-10-01 (plan B11): a literal
+      argument takes the type the expected result binds; conformance
+      `D25-type-arguments`
 
 ---
 
@@ -642,9 +656,10 @@ behind a name that says "crypto" (§10, 2026-09-23).
 
 ## 6. Tooling and developer experience
 
-- [ ] The needless-`throws` warning (D45) alone prints `see: veles explain
-      type-mismatch`: it is sorted into the wrong family in
-      `source/family.go` (found 2026-09-30 by the spec review)
+- [x] The needless-`throws` warning (D45) alone printed `see: veles explain
+      type-mismatch` (found 2026-09-30 by the spec review): reworded
+      ("declares 'throws', but …") so `results-and-errors` claims it; pinned
+      in `source/TestFamilyOfRealMessages` (2026-10-01, plan B11)
 - [x] `veles fmt` stable on every example: `format/TestCorpus` now fails on any
       file under `examples/` or `std/` that `veles fmt` would change (2026-09-25).
       (docs blocks are not held to it: they align comments by hand)
@@ -918,6 +933,7 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-09-30 | Q20: bit operations | **Rust's names camel-cased: `rotateLeft/rotateRight(n)` (mod width, negative reverses), `swapBytes`, `reverseBits` on every integer type; `copySign`, `isSignNegative`, `nextUp`, `nextDown` on floats** (user, recommended of 3; spec D104). Rejected: a Go-style `bits` module, Java's names. |
 | 2026-09-30 | Q12: capacity hints | **`reserve(n)` on `StringBuilder`, `MutableMap`, `MutableSet`, `Deque`** with D83's meaning (user, recommended of 3; spec D105). Rejected: `StringBuilder` only, leaving it. |
 | 2026-09-30 | Q17c, §6.1, empty literals | **`var xs = []` keeps needing its type and the tool writes it from the first deciding use; `Range.isEmpty()`; `veles fmt` prints `cond => (x => …)`** (user, recommended of 3; both small ones accepted; spec D106). Rejected: Rust-style inference from later use, the message only; a lint for the lambda arm. |
+| 2026-10-01 | Closing a `with` value by hand (found building B10: the close hint showed `close()` running twice) | **Refused: `close()` on a `with`-bound value or its alias is an error with a fix that removes it; close earlier with the block form** (user, recommended of 3; spec D136). Rejected: `with` noticing the hand close and skipping its own; leaving it and requiring every `close()` to tolerate a second call. |
 
 ## 11. Known limitations to revisit
 
@@ -977,6 +993,3 @@ Every new public std API (http cookies/forms/client, `std/log`,
   `Duration.micros(1)` sleeps for one millisecond rather than a
   microsecond. Sub-millisecond waiting needs a finer timer wheel in
   `veles_task.c`, which is a runtime change, not a library one.
-- A generic function's type argument is inferred from its arguments only,
-  not from the type expected of the call: `val x: i8 = id(127)` infers
-  `T = i64` from the literal and then fails, where `id<i8>(127)` works.

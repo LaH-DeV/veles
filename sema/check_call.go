@@ -50,6 +50,16 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 			}
 			return &Builtin{exprBase{&types.Pointer{Elem: lt.Elem, Raw: true}}, "list.rawData", []Expr{xs}, e.Pos}
 		}
+		if callee.Name == "listTouched" && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 1 {
+			// std-only: an order change made element by element (sort, swap)
+			// counts as a change of the list for a loop walking it (D102)
+			xs := f.checkExpr(e.Args[0].Value, nil)
+			if lt, ok := xs.Type().(*types.List); !ok || !lt.Mutable {
+				f.errorf(e.Pos, "listTouched takes a MutableList")
+				return bad()
+			}
+			return &Builtin{exprBase{types.TUnit}, "list.touch", []Expr{xs}, e.Pos}
+		}
 		if callee.Name == "listAppendText" && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 2 {
 			// std-only: a string's bytes onto a MutableList<u8> in one copy
 			// (StringBuilder.append), not a list of them pushed one by one
@@ -468,6 +478,18 @@ func (f *fnCtx) callTemplateRecv(t *FuncTemplate, ownerSubst map[*types.TypePara
 			order = append(order, i)
 		}
 	}
+	// a literal argument takes its type from the expected result when that
+	// binds the parameter: `val small: i8 = id(12)` is id<i8>, where the
+	// literal's default would make it id<i64> and then a mismatch
+	seeded := map[*types.TypeParam]types.Type{}
+	if want != nil && len(typeArgs) == 0 && types.ContainsTypeParam(f.c.hooks.Subst(t.Sig.Ret, m)) {
+		for k, v := range m {
+			seeded[k] = v
+		}
+		if !unify(f.c.hooks.Subst(t.Sig.Ret, m), want, seeded) {
+			seeded = map[*types.TypeParam]types.Type{}
+		}
+	}
 	argFailed := false  // an argument already reported: inference has nothing to say
 	mismatched := false // an argument cannot fit its parameter: the call is reported, nothing to coerce
 	for _, i := range order {
@@ -485,6 +507,8 @@ func (f *fnCtx) callTemplateRecv(t *FuncTemplate, ownerSubst map[*types.TypePara
 			}
 			if deferredArg(bound[i]) {
 				x = f.checkExpr(bound[i], pt)
+			} else if hint := f.c.hooks.Subst(p.Type, seeded); len(seeded) > 0 && isLiteral(bound[i]) && !types.ContainsTypeParam(hint) {
+				x = f.checkExpr(bound[i], hint)
 			} else {
 				x = f.checkExpr(bound[i], literalHint(bound[i], pt))
 			}
@@ -868,6 +892,7 @@ func mentionsSelf(e ast.Expr) (source.Span, bool) {
 // (InitMissing), for the receiver pass to check against what the method
 // reads (D28).
 func (f *fnCtx) methodCall(callee *ast.MemberExpr, typeArgs []types.Type, e *ast.CallExpr, want types.Type) Expr {
+	f.refuseHandClose(callee, e)
 	var initMissing []int
 	if _, isSelf := callee.X.(*ast.SelfExpr); isSelf {
 		if in := f.initScope(); in != nil && in == f {
@@ -1334,6 +1359,16 @@ func (f *fnCtx) builtinMethod(recv Expr, rt types.Type, name string, e *ast.Call
 					return bad()
 				}
 				return &Builtin{exprBase{t}, "float.clamp", []Expr{recv, f.checkExprTo(e.Args[0].Value, t), f.checkExprTo(e.Args[1].Value, t)}, e.Pos}
+			case "copySign":
+				if !nargs(1) {
+					return bad()
+				}
+				return &Builtin{exprBase{t}, "float.copySign", []Expr{recv, f.checkExprTo(e.Args[0].Value, t)}, e.Pos}
+			case "isSignNegative":
+				if !nargs(0) {
+					return bad()
+				}
+				return &Builtin{exprBase{types.TBool}, "float.isSignNegative", []Expr{recv}, e.Pos}
 			case "isNaN", "isFinite", "isInfinite":
 				if !nargs(0) {
 					return bad()
@@ -1385,6 +1420,17 @@ func (f *fnCtx) builtinMethod(recv Expr, rt types.Type, name string, e *ast.Call
 					return bad()
 				}
 				return &Builtin{exprBase{t}, "int." + name, []Expr{recv}, e.Pos}
+			case "swapBytes", "reverseBits":
+				// D104: on the bit pattern, so a signed value cannot overflow
+				if !nargs(0) {
+					return bad()
+				}
+				return &Builtin{exprBase{t}, "int." + name, []Expr{recv}, e.Pos}
+			case "rotateLeft", "rotateRight":
+				if !nargs(1) {
+					return bad()
+				}
+				return &Builtin{exprBase{t}, "int." + name, []Expr{recv, f.checkExprTo(e.Args[0].Value, types.TI64)}, e.Pos}
 			}
 		}
 	case *types.List:

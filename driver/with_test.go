@@ -122,7 +122,7 @@ fun main() {
   loops()
   println("failed try ${failedTry() is Err}")
   println("throw ${thrown() is Err}")
-  println("panic ${(gather { async panics() }).0 is Err}")
+  println("panic ${gather { async panics() } is Err}")
   println("cancellation")
   cancelled()
   println("fail fast ${failFast() is Err}")

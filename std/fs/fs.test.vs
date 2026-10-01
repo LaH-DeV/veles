@@ -21,9 +21,9 @@ test "a file is read from where the last read ended, and at any offset" {
     // readAt does not move the place `read` continues from
     expect((try f.readAt(1, 3)).decodeUtf8() == "123")
     expect((try f.read(4)).decodeUtf8() == "89")
-    expect((try f.read(4)).isEmpty())
-    expect((try f.readAt(10, 4)).isEmpty())
-    expect((try f.readAt(50, 4)).isEmpty())
+    expect(try f.read(4).isEmpty())
+    expect(try f.readAt(10, 4).isEmpty())
+    expect(try f.readAt(50, 4).isEmpty())
     expect((try f.readAt(8, 100)).decodeUtf8() == "89")
   }
   try remove(p)

@@ -533,7 +533,7 @@ entry:
   %a32 = alloca i64
   %a40 = alloca %V._prelude_.Result_i64_std.prelude.Panic_
   %a46 = alloca %V._prelude_.Result_i64_std.prelude.Panic_
-  %a52 = alloca { %V._prelude_.Result_i64_std.prelude.Panic_ }
+  %a53 = alloca %V._prelude_.Result_i64_std.prelude.Panic_
   %a55 = alloca %V._prelude_.Result_i64_std.prelude.Panic_
   %a62 = alloca i64
   %a65 = alloca [21 x i8]
@@ -632,9 +632,9 @@ gather.value.12:
 gather.join.13:
   %t50 = load %V._prelude_.Result_i64_std.prelude.Panic_, ptr %a24
   %t51 = insertvalue { %V._prelude_.Result_i64_std.prelude.Panic_ } undef, %V._prelude_.Result_i64_std.prelude.Panic_ %t50, 0
-  store { %V._prelude_.Result_i64_std.prelude.Panic_ } %t51, ptr %a52
-  %t53 = load { %V._prelude_.Result_i64_std.prelude.Panic_ }, ptr %a52
-  %t54 = extractvalue { %V._prelude_.Result_i64_std.prelude.Panic_ } %t53, 0
+  %t52 = extractvalue { %V._prelude_.Result_i64_std.prelude.Panic_ } %t51, 0
+  store %V._prelude_.Result_i64_std.prelude.Panic_ %t52, ptr %a53
+  %t54 = load %V._prelude_.Result_i64_std.prelude.Panic_, ptr %a53
   store %V._prelude_.Result_i64_std.prelude.Panic_ %t54, ptr %a55
   br label %when.arm.15
 when.arm.15:

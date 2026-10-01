@@ -32,7 +32,7 @@ public struct Deque<T> {
   /// Appends `x` at the back.
   public fun addLast(x: T) {
     val s = this.state
-    this.reserve()
+    this.grow()
     s.buf.set((s.head + s.size) % s.buf.len(), x)
     s.size += 1
   }
@@ -40,7 +40,7 @@ public struct Deque<T> {
   /// Prepends `x` at the front.
   public fun addFirst(x: T) {
     val s = this.state
-    this.reserve()
+    this.grow()
     val cap = s.buf.len()
     s.head = (s.head + cap - 1) % cap
     s.buf.set(s.head, x)
@@ -109,13 +109,24 @@ public struct Deque<T> {
     out.toList()
   }
 
-  /// Makes room for one more element: when the ring is full, the live
-  /// elements move to the start of a buffer twice the size.
-  fun reserve() {
+  /// Makes room for `n` elements in all, so adding up to `n` does not grow
+  /// the buffer; never shrinks, never changes the contents (D105).
+  public fun reserve(n: i64) {
+    if (n > this.state.buf.len()) this.moveTo(n)
+  }
+
+  // Makes room for one more element: when the ring is full, the live
+  // elements move to the start of a buffer twice the size.
+  fun grow() {
+    val cap = this.state.buf.len()
+    if (this.state.size < cap) return
+    this.moveTo(if (cap == 0) 4 else cap * 2)
+  }
+
+  // the live elements, in order, at the start of a buffer of `cap` slots
+  fun moveTo(cap: i64) {
     val s = this.state
-    val cap = s.buf.len()
-    if (s.size < cap) return
-    val fresh = MutableList<T?>.repeat(null, if (cap == 0) 4 else cap * 2)
+    val fresh = MutableList<T?>.repeat(null, cap)
     loop (i in 0..<s.size) fresh.set(i, this.slot(i))
     s.buf = fresh
     s.head = 0

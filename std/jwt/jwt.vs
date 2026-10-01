@@ -176,7 +176,7 @@ public fun sign(
 
   val payload = claimsToObject(claims)
   val signing = base64.encodeUrl((try json.encode(codec.VObject(fields: header.toMap()))).bytes()) + "." +
-    base64.encodeUrl((try json.encode(payload)).bytes())
+    base64.encodeUrl(try json.encode(payload).bytes())
   signing + "." + mac(algorithm, key, signing).toBase64Url()
 }
 

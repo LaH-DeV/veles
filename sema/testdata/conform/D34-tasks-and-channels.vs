@@ -36,9 +36,9 @@ fun sleepText() {
 fun sleepNotAwaited() {
   sleep(Duration.millis(1)) // error: 'sleep()' always suspends and must be awaited
 }
-fun asyncValue(f: sendable fun(): i64) {
+fun asyncValue(f: fun(): i64) {
   scope {
-    async f() // error: 'async' launches a direct call of a named function or method
+    async f() // error: 'f' is not a sendable function
   }
 }
 fun raceOnNumber() {

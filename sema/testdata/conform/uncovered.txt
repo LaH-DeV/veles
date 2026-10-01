@@ -35,6 +35,7 @@
 "listAppendText takes a MutableList<u8> and a string"  # std-internal intrinsic: only std calls it, and std calls it right
 "listDecodeUtf8Range takes a List<u8> and two positions"  # std-internal intrinsic: only std calls it, and std calls it right
 "listRawData takes a list"  # std-internal intrinsic: only std calls it, and std calls it right
+"listTouched takes a MutableList"  # std-internal intrinsic: only std calls it, and std calls it right
 "method '%s' is a compiler built-in on '%s' and cannot be redeclared"  # only std may extend a built-in type, and std does not redeclare
 "methods cannot be used as values; wrap the call in a lambda"  # defensive: every way to name a method as a value is answered earlier ('is a method of', 'is a method: call it')
 "module-level '%s' needs an initializer"  # the parser refuses the form first

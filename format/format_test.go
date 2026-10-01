@@ -323,6 +323,10 @@ val c = g()
 		{"concurrency",
 			"fun main() {\n  scope {\n    val t = async work(1)\n    val (a, b) = gather { async f(); async g() }\n    val w = race { val m = ch.recv() => m; sleep(100) => \"t\" }\n    with (f = open(\"a\")) { process(f) }\n  }\n}\n",
 			"fun main() {\n  scope {\n    val t = async work(1)\n    val (a, b) = gather {\n      async f()\n      async g()\n    }\n    val w = race {\n      val m = ch.recv() => m\n      sleep(100)        => \"t\"\n    }\n    with (f = open(\"a\")) {\n      process(f)\n    }\n  }\n}\n"},
+		// D106: a lambda that is an arm's value gets parentheses
+		{"lambda arm",
+			"fun pick(double: bool): fun(i64): i64 = when {\n  double => x => x * 2\n  else   => (x => x)\n}\n",
+			"fun pick(double: bool): fun(i64): i64 = when {\n  double => (x => x * 2)\n  else   => (x => x)\n}\n"},
 		// D100: printed as written — never converted to or from the block form
 		{"with statement",
 			"fun main() {\n  with  f = open(\"a\")\n  with t =   async work(1)\n  with (g = open(\"b\")) { take(g) }\n  take(f)\n}\n",

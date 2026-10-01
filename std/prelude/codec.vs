@@ -368,37 +368,37 @@ implement Encodable for string {
 }
 
 implement Decodable for i8 {
-  static fun decode(from: Decoder): i8 throws DecodeError = (try narrowI64(from, -128, 127)).wrapI8()
+  static fun decode(from: Decoder): i8 throws DecodeError = try narrowI64(from, -128, 127).wrapI8()
 }
 implement Decodable for i16 {
-  static fun decode(from: Decoder): i16 throws DecodeError = (try narrowI64(from, -32768, 32767)).wrapI16()
+  static fun decode(from: Decoder): i16 throws DecodeError = try narrowI64(from, -32768, 32767).wrapI16()
 }
 implement Decodable for i32 {
-  static fun decode(from: Decoder): i32 throws DecodeError = (try narrowI64(from, -2147483648, 2147483647)).wrapI32()
+  static fun decode(from: Decoder): i32 throws DecodeError = try narrowI64(from, -2147483648, 2147483647).wrapI32()
 }
 implement Decodable for i64 {
   static fun decode(from: Decoder): i64 throws DecodeError = try from.readI64()
 }
 implement Decodable for isize {
-  static fun decode(from: Decoder): isize throws DecodeError = (try from.readI64()).toIsize()
+  static fun decode(from: Decoder): isize throws DecodeError = try from.readI64().toIsize()
 }
 implement Decodable for u8 {
-  static fun decode(from: Decoder): u8 throws DecodeError = (try narrowU64(from, 255)).wrapU8()
+  static fun decode(from: Decoder): u8 throws DecodeError = try narrowU64(from, 255).wrapU8()
 }
 implement Decodable for u16 {
-  static fun decode(from: Decoder): u16 throws DecodeError = (try narrowU64(from, 65535)).wrapU16()
+  static fun decode(from: Decoder): u16 throws DecodeError = try narrowU64(from, 65535).wrapU16()
 }
 implement Decodable for u32 {
-  static fun decode(from: Decoder): u32 throws DecodeError = (try narrowU64(from, 4294967295)).wrapU32()
+  static fun decode(from: Decoder): u32 throws DecodeError = try narrowU64(from, 4294967295).wrapU32()
 }
 implement Decodable for u64 {
   static fun decode(from: Decoder): u64 throws DecodeError = try from.readU64()
 }
 implement Decodable for usize {
-  static fun decode(from: Decoder): usize throws DecodeError = (try from.readU64()).toUsize()
+  static fun decode(from: Decoder): usize throws DecodeError = try from.readU64().toUsize()
 }
 implement Decodable for f32 {
-  static fun decode(from: Decoder): f32 throws DecodeError = (try from.readF64()).toF32()
+  static fun decode(from: Decoder): f32 throws DecodeError = try from.readF64().toF32()
 }
 implement Decodable for f64 {
   static fun decode(from: Decoder): f64 throws DecodeError = try from.readF64()
@@ -455,7 +455,7 @@ implement<T: Encodable> Encodable for MutableList<T> {
   fun encode(to: Encoder) throws EncodeError = try this.toList().encode(to)
 }
 implement<T: Decodable> Decodable for List<T> {
-  static fun decode(from: Decoder): List<T> throws DecodeError = (try MutableList<T>.decode(from)).toList()
+  static fun decode(from: Decoder): List<T> throws DecodeError = try MutableList<T>.decode(from).toList()
 }
 implement<T: Decodable> Decodable for MutableList<T> {
   static fun decode(from: Decoder): MutableList<T> throws DecodeError {
@@ -481,7 +481,7 @@ implement<V: Encodable> Encodable for MutableMap<string, V> {
   fun encode(to: Encoder) throws EncodeError = try this.toMap().encode(to)
 }
 implement<V: Decodable> Decodable for Map<string, V> {
-  static fun decode(from: Decoder): Map<string, V> throws DecodeError = (try MutableMap<string, V>.decode(from)).toMap()
+  static fun decode(from: Decoder): Map<string, V> throws DecodeError = try MutableMap<string, V>.decode(from).toMap()
 }
 implement<V: Decodable> Decodable for MutableMap<string, V> {
   static fun decode(from: Decoder): MutableMap<string, V> throws DecodeError {

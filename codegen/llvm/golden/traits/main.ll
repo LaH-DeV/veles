@@ -40,14 +40,14 @@ entry:
 loop.cond.1:
   %t15 = load i64, ptr %a14
   %t16 = load ptr, ptr %a13
-  %t17 = getelementptr inbounds { ptr, i64, i64, i64, ptr }, ptr %t16, i32 0, i32 1
+  %t17 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64 }, ptr %t16, i32 0, i32 1
   %t18 = load i64, ptr %t17
   %t19 = icmp slt i64 %t15, %t18
   br i1 %t19, label %loop.body.4, label %loop.end.3
 loop.body.4:
   %t20 = load ptr, ptr %a13
   %t21 = load i64, ptr %a14
-  %t22 = getelementptr inbounds { ptr, i64, i64, i64, ptr }, ptr %t20, i32 0, i32 1
+  %t22 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64 }, ptr %t20, i32 0, i32 1
   %t23 = load i64, ptr %t22
   %t24 = icmp ult i64 %t21, %t23
   br i1 %t24, label %idx.ok.5, label %idx.bad.6, !prof !{!"branch_weights", i32 2000, i32 1}
@@ -58,7 +58,7 @@ idx.bad.6:
   unreachable
 idx.ok.5:
   %t27 = load ptr, ptr %t20
-  %t28 = getelementptr inbounds { ptr, i64, i64, i64, ptr }, ptr %t20, i32 0, i32 3
+  %t28 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64 }, ptr %t20, i32 0, i32 3
   %t29 = load i64, ptr %t28
   %t30 = mul i64 %t29, %t21
   %t31 = getelementptr inbounds i8, ptr %t27, i64 %t30

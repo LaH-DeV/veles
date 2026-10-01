@@ -200,10 +200,10 @@ public struct Request {
   }
 
   /// The first value of a form field, or null.
-  public fun formValue(name: string): string? suspends throws Fail | IoError = (try this.formFields()).get(name)
+  public fun formValue(name: string): string? suspends throws Fail | IoError = try this.formFields().get(name)
 
   /// Every value of a form field (a checkbox group, a multiple select).
-  public fun formValues(name: string): List<string> suspends throws Fail | IoError = (try this.formFields()).all(name)
+  public fun formValues(name: string): List<string> suspends throws Fail | IoError = try this.formFields().all(name)
 
   /// The form read into a `T`: numbers and booleans are parsed from the
   /// text, a `List` field takes every value of its name, an optional field
@@ -339,15 +339,12 @@ public fun handler<E>(h: sendable fun(Request): Response suspends throws E | Fai
     }
   }
 
-/// The named function a task needs: calls the handler.
-fun invoke(h: Handler, req: Request): Response = h(req)
-
 /// Runs the handler in a task of its own, so a panic inside it answers 500
 /// (and is logged) instead of failing the connection's task (D52).
 fun dispatch(h: Handler, req: Request): Response {
-  val outcome = (gather {
-    async invoke(h, req)
-  }).0
+  val outcome = gather {
+    async h(req)
+  }
   when (outcome) {
     is Ok(resp) => resp
     is Err(p)   => {

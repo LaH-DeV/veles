@@ -916,7 +916,7 @@ fun main() {
 			t.Errorf("expected a redundant-mut warning and no errors for %q, got:\n%s", src, diags.Render())
 		}
 	}
-	expectError(t, prelude+`fun main() { val xs = []; io.println("$xs") }`, "val xs: List<i32> = []")
+	expectError(t, prelude+`fun main() { val xs = []; io.println("$xs") }`, "val xs: List<i64> = []")
 	expectError(t, prelude+`struct P { f: fun(): i64 }
 fun main() { val s: Set<P> = [P(f: () => 1)]; io.println("${s.len()}") }`, "cannot be a map key or set element")
 }
@@ -1755,7 +1755,8 @@ fun main() {
 	diags := checkSource(t, src)
 	var got []string
 	for _, d := range diags.Items {
-		if strings.Contains(d.Message, "may move or reorder") || strings.Contains(d.Message, "walks it by reference") {
+		// the two loops that change what they walk are D102 errors now
+		if strings.Contains(d.Message, "may move or reorder") || strings.Contains(d.Message, "while the loop at line") {
 			line, _ := d.Span.File.Position(d.Span.Start)
 			got = append(got, itoa(line))
 		}
@@ -1782,16 +1783,24 @@ fun main() {
 fun main() { val t: Task<i64> = 1 }`, "expected 'Task<i64>', found 'i64'")
 }
 
-// `try f().m()` applies `try` to the whole chain; the message says how to
-// unwrap first instead of reporting a missing method on the Result.
+// `try f().m()` unwraps f() before m (D134); on a Result held in a name the
+// message still says how to unwrap first.
 func TestTryCoversChainHint(t *testing.T) {
+	expectClean(t, prelude+`
+error E { message: string }
+fun f(s: string): string throws E = if (s.isEmpty()) throw E(message: "empty") else s
+fun main() throws E {
+  val n = try f("a b").split(" ").len()
+  io.println("$n")
+}`)
 	expectError(t, prelude+`
 error E { message: string }
-fun f(): string throws E = "a b"
+fun f(s: string): string throws E = if (s.isEmpty()) throw E(message: "empty") else s
 fun main() throws E {
-  val n = try f().split(" ").len()
+  val r = f("a b")
+  val n = try r.split(" ")
   io.println("$n")
-}`, "write '(try f()).split(...)' to unwrap first")
+}`, "write '(try r).split(...)' to unwrap first")
 }
 
 // One `use` may list several imports (M6 addendum); each behaves as its
@@ -2248,15 +2257,19 @@ fun main() {
 }`)
 }
 
-func TestTryChainLint(t *testing.T) {
-	// `try f().m()` with m not a Result method reads as `(try f()).m()`,
-	// with a warning and the fix that writes the parentheses
-	src := prelude + `
+func TestTryChain(t *testing.T) {
+	// D134: one `try` covers every failing link of its chain
+	expectClean(t, prelude+`
 error Bad { }
 fun text(): string throws Bad = "  hi  "
 fun a(): string throws Bad = try text().trim()
-fun main() { io.println("${a()}") }`
-	expectWarning(t, src, "read as '(try text()).trim(...)'")
+fun main() { io.println("${a()}") }`)
+	// a written inner `try` still compiles, and is said to be redundant
+	expectWarning(t, prelude+`
+error Bad { }
+fun text(): string throws Bad = "  hi  "
+fun a(): string throws Bad = try (try text()).trim()
+fun main() { io.println("${a()}") }`, "the inner 'try' is redundant")
 	// a Result method still applies to the Result, silently
 	expectClean(t, prelude+`
 error Bad { }

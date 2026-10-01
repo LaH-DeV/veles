@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.67** — decisions D1–D135. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.68** — decisions D1–D136. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -15,6 +15,7 @@ Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-p
 | D124–D130, D133 | compression, config, OpenTelemetry, the HTTP client, `io.Stream` + TLS, template literals + `std/db`, small std additions, health endpoints |
 | D131–D132 | the manifest is `package.vs`; decentralized packages |
 | D134–D135 | (consistency pass) one `try` over a chain; `is T` downcast on a trait object |
+| D136 | `close()` by hand on a `with` value is refused |
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -3303,6 +3304,34 @@ User, 2026-09-30, recommended of 3. Rejected: `StringBuilder` only; leaving it.
 
 User, 2026-09-30, recommended of 3, and both small ones accepted.
 
+*(2026-10-01, D101–D106 built — plan B11; decision-free details.)* **D101**:
+the parser reads `IDENT =` opening an `if`/`when` head as the binding, so the
+head goes on (`&&` included) without a second error. **D102**: the
+compile-time check matches the loop's collection by its source text (a
+local, a parameter or a `this.f` path) and refuses, besides the listed
+calls, any method of an `extend` block whose target is the mutable type;
+`fill` (an `extend` method) is therefore refused too. The run-time count is
+a trailing `mods` field of the list and map headers (codegen's header type
+gained an `i64`), bumped by `push` (inline and in the runtime), `pop`,
+`clear`, the byte appends, a map's new entry, `remove` and `clear`, and —
+through the std-only `listTouched` — by `sort`, `sortWith` and `swap`; not
+by `reserve`, `set` or a map's compaction. Map and set loops already walked
+a snapshot; they are checked all the same, so the rule is one. Iterators
+(`iter()`, `iterator()`) of the mutable types already walk a copy, so a
+change cannot disturb one and they carry no check. A `Deque` loop walks a
+copy too: the compile-time rule covers it, the run-time count does not.
+Measured: no change beyond noise on any benchmark (`bench/results.md`,
+2026-10-01). **D103**: `async f(args)` on a function value starts a
+synthesized function per function type that calls the value; the
+trampolines `invoke` (prelude, `http`) are gone. **D104**: `nextUp`/`nextDown`
+are prelude methods over `toBits`; the rest are LLVM intrinsics.
+**D105**: a map's `reserve` compacts dead entries first, then sizes the
+entry arrays to `n` and the index so that no insertion up to `n` rehashes.
+**D106**: the fix is offered when a later `push`/`add`/`insert`/`set` takes
+a literal or a local declared earlier, or the binding is passed to a
+non-generic named function; the kind is mutable when a call changes it in
+place or the literal says `mut`.
+
 ### D107 — `with p = m.lock()`: a `Mutex` held to the end of a block (v0.61)
 
 ```veles
@@ -4276,6 +4305,12 @@ it. The user chose it (recommended of 2).
 
 Rejected: keeping one `try` per failing call (parentheses or two lines).
 
+*(2026-10-01, built — plan B11.)* A field link (`try f().body`) is a link
+too. When the chain's last value is not a `Result` but an inner link was
+unwrapped, the `try` is satisfied by those links. A `(try x).m()` followed
+by an operator (`== `, `?:`) stays parenthesized: one `try` would take the
+whole operator expression.
+
 ### D135 — `x is T` on a trait object: a downcast (v0.67)
 
 ```veles
@@ -4298,6 +4333,35 @@ The user chose it (recommended of 2, over a `asSql(): Sql?` method on
   the "never matches" error, now correct; a type parameter `T` is refused
   (D117's `T implements X` is the compile-time form).
 - Sealed traits already narrow by variant (D12); this is for open traits.
+
+### D136 — `close()` by hand on a `with` value is refused (v0.68)
+
+```veles
+fun copy(src: string, dst: string) throws IoError {
+  with out = try fs.open(dst, fs.FileMode.Write)
+  try out.write(try fs.readBytes(src))
+  out.close()        // error: 'out' is closed when its 'with' block ends; closing it here would close it twice
+}
+```
+
+Found building B10: `with` calls `close()` on every way out of its block, so a
+hand-written `close()` on the same value closes it twice — the editor's close
+hint said so (user, 2026-10-01). The user chose the recommended of 3.
+
+- **Rule.** Calling `close()` on a value bound by `with` (either form), or on
+  a `val` alias of one (D100 part 3's alias tracking), is an error, family
+  `resources`, with the fix that removes the call. To close earlier, give the
+  resource a block of its own: `with (x = e) { … }` closes at that `}`.
+- `t.cancel()` on a with-task stays allowed: it asks the task to stop, and
+  the block's end then joins it; a second cancel is a no-op, and stopping a
+  background task early is a use the form has (D100 part 2).
+- Not caught: a function the resource is lent to that closes it (as for D100
+  part 3, stated in the docs).
+
+Rejected: `with` noticing a hand-written `close()` and skipping its own (a
+hidden flag per binding, and only within one function); leaving it, with
+every `Closeable` required to tolerate a second close (Go's `io.Closer`
+advice — a footgun the compiler can refuse).
 
 ---
 

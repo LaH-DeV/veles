@@ -122,7 +122,7 @@ fun app(dir: string): http.Handler {
   router.get("/api/notes", req => http.Response.json(try json.encode(notes.withLock(n => n.all()))))
 
   router.post("/api/notes", req => {
-    val text = (try req.text()).trim()
+    val text = try req.text().trim()
     if (text.isEmpty()) throw http.badRequest("a note needs some text")
     val note = notes.withLock(n => n.add(text))
     http.Response.json(try json.encode(note), status: http.Status.created).withHeader(http.Header.location, "/api/notes/${note.id}")

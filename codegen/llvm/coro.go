@@ -462,7 +462,11 @@ func (g *gen) gatherResults(e *sema.ScopeBlock) string {
 	if len(e.Launches) == 0 {
 		return "zeroinitializer"
 	}
-	tt := e.Type().(*types.Tuple)
+	// one launch: the gather's value is that Result itself (D103)
+	tt, isTuple := e.Type().(*types.Tuple)
+	if !isTuple {
+		tt = &types.Tuple{Elems: []types.Type{e.Type()}}
+	}
 	llt := g.llType(tt)
 	acc := "undef"
 	for i, l := range e.Launches {
@@ -510,6 +514,11 @@ func (g *gen) gatherResults(e *sema.ScopeBlock) string {
 		n := g.newTmp()
 		g.emit("%s = insertvalue %s %s, %s %s, %d", n, llt, acc, wantLL, v, i)
 		acc = n
+	}
+	if !isTuple {
+		v := g.newTmp()
+		g.emit("%s = extractvalue %s %s, 0", v, llt, acc)
+		return v
 	}
 	return acc
 }

@@ -5,7 +5,7 @@
 
 use net
 
-fun reader(): Handler = handler(req => Response.text("${(try req.bytes()).len()}:${try req.text()}"))
+fun reader(): Handler = handler(req => Response.text("${try req.bytes().len()}:${try req.text()}"))
 
 fun ignorer(): Handler = handler(req => Response.text("ignored"))
 
@@ -13,7 +13,7 @@ test "the body is read when asked, and kept for the next reader" {
   val h = handler(req => {
     val first = try req.text()
     val second = try req.text()
-    val n = (try req.bytes()).len()
+    val n = try req.bytes().len()
     Response.text("$first/$second/$n")
   })
   expect(text(call(h, Method.post, "/", body: "hello")) == "hello/hello/5")
@@ -21,7 +21,7 @@ test "the body is read when asked, and kept for the next reader" {
 }
 
 test "a body counts in bytes and reads as text in UTF-8" {
-  val h = handler(req => Response.text("${(try req.bytes()).len()}:${try req.text()}"))
+  val h = handler(req => Response.text("${try req.bytes().len()}:${try req.text()}"))
   expect(text(call(h, Method.post, "/", body: "abc")) == "3:abc")
   // two bytes, one character
   expect(text(call(h, Method.post, "/", body: "\u{e9}")) == "2:\u{e9}")
@@ -46,13 +46,13 @@ test "a body that is not UTF-8 is a 400 as text and fine as bytes" {
 
 test "a body over the ceiling is a 413, and max: moves the ceiling" {
   val big = "x".repeat(1048577)
-  val h = handler(req => Response.text("${(try req.bytes()).len()}"))
+  val h = handler(req => Response.text("${try req.bytes().len()}"))
   expect(call(h, Method.post, "/", body: big).status == Status.contentTooLarge)
   expect(call(h, Method.post, "/", body: "x".repeat(1048576)).status == Status.ok)
-  val small = handler(req => Response.text("${(try req.bytes(max: 4)).len()}"))
+  val small = handler(req => Response.text("${try req.bytes(max: 4).len()}"))
   expect(text(call(small, Method.post, "/", body: "abcd")) == "4")
   expect(call(small, Method.post, "/", body: "abcde").status == Status.contentTooLarge)
-  val wide = handler(req => Response.text("${(try req.bytes(max: 2000000)).len()}"))
+  val wide = handler(req => Response.text("${try req.bytes(max: 2000000).len()}"))
   expect(text(call(wide, Method.post, "/", body: big)) == "1048577")
 }
 
@@ -74,7 +74,7 @@ test "a stream hands out pieces, knows its length, and has a ceiling of its own"
 }
 
 test "the untyped and typed form readers can share one body" {
-  val h = handler(req => Response.text("${(try req.formValue("a")) ?: "-"}/${try req.formValues("a")}/${(try req.text()).len()}"))
+  val h = handler(req => Response.text("${(try req.formValue("a")) ?: "-"}/${try req.formValues("a")}/${try req.text().len()}"))
   val r = call(h, Method.post, "/", body: "a=x&a=y", headers: ["Content-Type": "application/x-www-form-urlencoded"])
   expect(text(r) == "x/[x, y]/7")
 }
@@ -150,7 +150,7 @@ test "a chunk or a length over the ceiling is refused before its data" {
 test "a stream may take more than the server's default ceiling" {
   val big = handler(req => {
     val body = req.stream(max: 1000)
-    Response.text("${(try body.readAll()).len()}")
+    Response.text("${try body.readAll().len()}")
   })
   try withServer(big, Limits(bodyBytes: 10), port => {
     val r = try talk(port, [head("Content-Length: 500\r\n") + "y".repeat(500)])

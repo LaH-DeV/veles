@@ -73,9 +73,9 @@ fun hexLength(n: i64): string {
 // Runs a response's producer behind the same boundary a handler has (D56): a
 // panic is logged and is a failure, not a crash. True when it returned.
 fun produce(producer: sendable fun(BodyWriter) suspends throws IoError, out: BodyWriter): bool suspends {
-  val outcome = (gather {
+  val outcome = gather {
     async runProducer(producer, out)
-  }).0
+  }
   when (outcome) {
     is Ok(done) => done
     is Err(p)   => {

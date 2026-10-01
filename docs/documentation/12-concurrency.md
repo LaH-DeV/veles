@@ -51,6 +51,11 @@ scope finished
 - `await` is only written on the primitives that are known to suspend
   (`sleep`, `recv`, task handles); a call to an ordinary function that
   happens to suspend needs nothing (D16).
+- `async` also starts a function *value* whose type is `sendable fun(...)`
+  — a parameter, a field, a local: `async handler(req)`. The function and
+  its arguments are evaluated here, and the task's errors are the ones its
+  type declares (D103). A plain `fun(...)` value is refused: what it
+  captures may not cross into another task.
 
 Tasks run in parallel, on one thread per core (D66): the executor
 spreads them over a pool of worker threads that share one heap, and a
@@ -209,6 +214,10 @@ Ok(value: 10)
 Err(error: Boom(n: 2))
 panic: crashes: index 5 is out of range
 ```
+
+With a single task, `gather` gives that task's `Result` itself rather than
+a one-element tuple: `when (gather { async risky() }) { ... }` is how a
+program runs code and finds out whether it panicked (D103).
 
 ## Channels
 

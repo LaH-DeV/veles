@@ -42,7 +42,7 @@ fun attempt(what: string, f: sendable fun(): i64) {
   val outcome = gather {
     async call(f)
   }
-  when (val r = outcome.0) {
+  when (val r = outcome) {
     is Ok(v)  => io.println("$what = $v")
     is Err(e) => io.println("$what: ${e.message}")
   }

@@ -87,6 +87,7 @@ type Checker struct {
 	changed        bool
 	nextVar        int
 	tupleCmp       map[string]*Func // synthesized tuple comparisons by type key (tuple_order.go)
+	trampolines    map[string]*Func // what `async f(...)` starts for a function value, by its type (D103)
 	enumFns        map[string]*Func // synthesized enum functions by type key and name (enum.go)
 	nextLoop       int
 	nextTmp        int
@@ -2414,7 +2415,7 @@ func (c *Checker) runRound() *Program {
 	c.queue = nil
 	c.instances = map[string]*Func{}
 	c.funcs = nil
-	c.tupleCmp, c.enumFns = nil, nil // synthesized per round, like every other function
+	c.tupleCmp, c.enumFns, c.trampolines = nil, nil, nil // synthesized per round, like every other function
 	c.checkedGlobals = map[*Global]bool{}
 	c.nextVar, c.nextLoop, c.nextTmp = 0, 0, 0
 	for _, t := range c.templates {

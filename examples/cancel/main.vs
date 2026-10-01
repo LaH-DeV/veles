@@ -23,9 +23,9 @@ fun slow(name: string): i64 {
 
 // parked at the `gather`'s join
 fun viaGather(): i64 {
-  val out = (gather {
+  val out = gather {
     async slow("a child of a gather")
-  }).0
+  }
   out ?? -1
 }
 

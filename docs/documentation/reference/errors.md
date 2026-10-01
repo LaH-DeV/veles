@@ -244,7 +244,7 @@ Add `throws` to the function (the error type is inferred), or handle the
 Same fix: add `throws`, or return a `T?` if "nothing" is the right
 answer rather than "failure".
 
-#### `'f' is declared 'throws' but nothing in its body can throw`
+#### `'f' declares 'throws', but nothing in its body can throw`
 
 A warning: no `throw`, and no `try` of something that can fail, anywhere
 in the body — so the clause only makes every caller write a `try` that
@@ -452,6 +452,21 @@ changes its receiver: a global is shared by every task (D35).
 `MutableList<T>` annotation), or build a new list with `map`/`filter`.
 (D25)
 
+#### `'xs.push' changes 'xs' while the loop at line 12 walks it`
+
+A loop walks the collection as it is, so a call in its body that changes
+its length or order — `push`, `pop`, `insert`, `removeAt`, `clear`,
+`sort`, a map's `remove` or `set` of a new key, a set's `add` — would
+make it visit elements twice or skip them (D102). Loop over a copy
+(`loop (x in xs.toList())`, the quick fix), or collect the changes and
+apply them after the loop. Replacing an element in place (`xs.set(i, v)`,
+`*x = v` in `loop (&x in xs)`, `m.set(k, v)` for the key being visited)
+is allowed, and so is a loop over `xs.indices()` or a range, which walks
+no collection — the way to grow a worklist while walking it. A change
+made where the compiler cannot see it (a function handed the same list)
+panics instead, when the loop next steps: `'xs' changed while a loop
+walked it`.
+
 ### references
 
 **Changing a copy when the original was meant.** `'p' is a copy of the
@@ -644,6 +659,14 @@ that captures it. Return or store what you read from it instead. Passing
 it, or a lambda capturing it, as an argument is allowed
 (`withTimeout(d, () => try read(conn))`); a function that keeps what it is
 passed is not caught, so do not keep a resource you are lent.
+
+#### `'out' is closed when its 'with' block ends; closing it here would close it twice`
+
+`with` calls `close()` on every way out of its block, so calling it by hand
+as well closes the resource twice (D136). Remove the call (the quick fix);
+to close earlier than the end of the enclosing block, give the resource a
+block of its own: `with (out = …) { … }` closes at that `}`. A with-task's
+`t.cancel()` is fine: it stops the task early, and the block's end joins it.
 
 #### `'r' is closed as soon as it is opened`
 

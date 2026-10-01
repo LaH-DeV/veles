@@ -40,6 +40,8 @@ typedef struct {
     int64_t cap;
     int64_t elem;
     veles_desc *desc; /* array descriptor of the elements */
+    int64_t mods;      /* D102: changes of length or order so far; a loop over
+                        * the list compares it on every step */
 } veles_list;
 
 int64_t veles_desc_size(veles_desc *d);
@@ -785,6 +787,7 @@ void veles_list_push(veles_list *l, const void *item) {
     }
     if (l->elem > 0) memcpy(l->data + l->elem * l->len, item, (size_t)l->elem);
     l->len++;
+    l->mods++;
 }
 
 /* ---- List.sorted() on integers and strings ----------------------------
@@ -886,6 +889,7 @@ void veles_list_append_bytes(veles_list *l, const char *p, int64_t n) {
     }
     if (n) memcpy(l->data + l->len, p, (size_t)n);
     l->len += n;
+    l->mods++;
 }
 
 void *veles_list_ref(veles_list *l, int64_t i) {
@@ -908,6 +912,7 @@ void veles_list_index_panic(veles_list *l, int64_t i, const char *loc, int64_t l
 bool veles_list_pop(veles_list *l, void *out) {
     if (l->len == 0) return false;
     l->len--;
+    l->mods++;
     if (l->elem > 0) memcpy(out, l->data + l->elem * l->len, (size_t)l->elem);
     return true;
 }
@@ -933,6 +938,7 @@ veles_list *veles_list_slice(veles_list *l, int64_t from, int64_t to) {
 
 void veles_list_clear(veles_list *l) {
     l->len = 0;
+    l->mods++;
 }
 
 /* ---- maps and sets (D25: insertion-ordered; a set is a map with no values) */
@@ -957,6 +963,7 @@ typedef struct {
     int64_t cap;
     int64_t keySize;
     int64_t valSize;
+    int64_t mods; /* D102: entries added or removed so far */
 } veles_map;
 
 int64_t veles_hash_bytes(const char *p, int64_t len) {
@@ -1005,6 +1012,10 @@ veles_map *veles_map_new(veles_desc *keyDesc, veles_desc *valDesc) {
 
 int64_t veles_map_len(veles_map *m) {
     return m->len;
+}
+
+int64_t veles_map_mods(veles_map *m) {
+    return m->mods;
 }
 
 int64_t veles_map_find(veles_map *m, int64_t hash, const void *key, veles_eq_fn eq) {
@@ -1062,6 +1073,7 @@ static int64_t map_append(veles_map *m, int64_t hash, const void *key, const voi
     m->meta[e].hash = hash;
     m->meta[e].live = true;
     m->len++;
+    m->mods++;
     map_index_insert(m, hash, e);
     return e;
 }
@@ -1088,6 +1100,7 @@ bool veles_map_remove(veles_map *m, int64_t hash, const void *key, veles_eq_fn e
                 m->meta[e].live = false;
                 m->index[i] = -1;
                 m->len--;
+                m->mods++;
                 return true;
             }
         }
@@ -1113,8 +1126,33 @@ bool veles_map_live(veles_map *m, int64_t e) {
 
 void veles_map_clear(veles_map *m) {
     m->len = 0;
+    m->mods++;
     m->used = 0;
     map_rebuild(m, m->icap);
+}
+
+/* D105: room for n live entries in all, so that inserting until there are
+ * n neither grows the arrays nor rebuilds the index (map_append's two
+ * conditions). Never shrinks; the contents and their order stay. */
+void veles_map_reserve(veles_map *m, int64_t n) {
+    if (n <= 0) return;
+    if (m->used > m->len) map_compact(m); /* dead entries would count against n */
+    if (n > m->cap) {
+        char *nk = veles_gc_alloc(m->keyDesc, m->keySize * n + 1);
+        char *nv = m->valDesc ? veles_gc_alloc(m->valDesc, m->valSize * n + 1) : veles_alloc(1);
+        veles_meta *nm = veles_alloc((int64_t)sizeof(veles_meta) * n);
+        memcpy(nk, m->keys, (size_t)(m->keySize * m->used));
+        memcpy(nv, m->vals, (size_t)(m->valSize * m->used));
+        memcpy(nm, m->meta, sizeof(veles_meta) * (size_t)m->used);
+        m->keys = nk;
+        m->vals = nv;
+        m->meta = nm;
+        m->cap = n;
+    }
+    /* an append rebuilds once used * 2 reaches icap: keep (n - 1) * 2 below it */
+    int64_t icap = m->icap;
+    while ((n - 1) * 2 >= icap) icap *= 2;
+    if (icap != m->icap) map_rebuild(m, icap);
 }
 
 veles_map *veles_map_copy(veles_map *m) {

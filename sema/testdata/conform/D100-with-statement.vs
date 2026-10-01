@@ -127,6 +127,30 @@ fun taskNotStartedHere() {
   }
 }
 
+// D136: closing a `with` value by hand would close it twice
+fun closedByHand() {
+  with r = open(1)
+  io.println("${r.n}")
+  r.close() // error: 'r' is closed when its 'with' block ends; closing it here would close it twice
+}
+
+fun closedThroughAlias() {
+  with (r = open(1)) {
+    val same = r
+    call(() => { same.close(); 0 }) // error: closing it here would close it twice
+  }
+}
+
+fun closedPlain() {
+  val r = open(1) // not a `with`: closing it is the program's own business
+  r.close()
+}
+
+fun stoppedEarly() {
+  with t = async work(1)
+  t.cancel() // a with-task may be stopped early; the block's end joins it
+}
+
 fun inScope() {
   scope {
     with t = async work(1)

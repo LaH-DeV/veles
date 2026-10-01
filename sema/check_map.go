@@ -44,9 +44,9 @@ func (f *fnCtx) mapLit(e *ast.MapLit, want types.Type) Expr {
 	}
 	if kt == nil {
 		if e.Mut {
-			f.errorf(e.Pos, "cannot infer the type of an empty map; annotate it, e.g. 'var m: MutableMap<string, i32> = [:]' (D25)")
+			f.errorf(e.Pos, "cannot infer the type of an empty map; annotate it, e.g. 'var m: MutableMap<string, i64> = [:]' (D25)")
 		} else {
-			f.errorf(e.Pos, "cannot infer the type of an empty map; annotate it, e.g. 'val m: Map<string, i32> = [:]' (D25)")
+			f.errorf(e.Pos, "cannot infer the type of an empty map; annotate it, e.g. 'val m: Map<string, i64> = [:]' (D25)")
 		}
 		return bad()
 	}
@@ -224,6 +224,12 @@ func (f *fnCtx) mapMethod(recv Expr, mt *types.Map, name string, e *ast.CallExpr
 			return bad()
 		}
 		return &Builtin{exprBase{types.TUnit}, "map.clear", []Expr{recv}, span}
+	case "reserve":
+		// D105: room for n entries in all, so inserting up to n never rehashes
+		if !mutating() || !need(1) {
+			return bad()
+		}
+		return &Builtin{exprBase{types.TUnit}, "map.reserve", []Expr{recv, f.checkExprTo(e.Args[0].Value, types.TI64)}, span}
 	case "getOrPut", "forEach", "mapValues", "filter":
 		return f.mapAdapter(recv, mt, name, e)
 	}
@@ -292,6 +298,12 @@ func (f *fnCtx) setMethod(recv Expr, st *types.Set, name string, e *ast.CallExpr
 			return bad()
 		}
 		return &Builtin{exprBase{types.TUnit}, "map.clear", []Expr{recv}, span}
+	case "reserve":
+		// D105: room for n entries in all, so inserting up to n never rehashes
+		if !mutating() || !need(1) {
+			return bad()
+		}
+		return &Builtin{exprBase{types.TUnit}, "map.reserve", []Expr{recv, f.checkExprTo(e.Args[0].Value, types.TI64)}, span}
 	case "union", "intersect", "difference", "isSubsetOf":
 		return f.setAdapter(recv, st, name, e)
 	}

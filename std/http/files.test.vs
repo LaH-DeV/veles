@@ -224,7 +224,7 @@ test "fs.stat reports size, kind and a recent write time" {
   expect(file.size == 10 && file.isFile() && !file.isDir)
   val now = time.now().toSeconds()
   expect(file.modified.toSeconds() > now - 3600 && file.modified.toSeconds() < now + 3600)
-  expect((try fs.stat(root)).isDir)
+  expect(try fs.stat(root).isDir)
   expect(when (fs.stat(path.join(root, "nope"))) {
     is Err(_) => true
     is Ok(_)  => false

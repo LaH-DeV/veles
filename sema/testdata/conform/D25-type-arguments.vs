@@ -25,6 +25,16 @@ fun n(x: Option<i64, i64>) { } // error: Option takes exactly one type argument
 fun projected<I: Iterable>(x: I.Iter<i64>) { } // error: 'I.Iter' cannot take type arguments
 fun genericTrait(x: Convert<i64>) { } // error: generic traits as types are not supported
 
+// a literal argument takes the type the expected result binds (B11)
+fun ident<T>(x: T): T = x
+fun pairOf<T>(a: T, b: T): List<T> = [a, b]
+fun fromExpected(): i64 {
+  val small: i8 = ident(12)
+  val bytes: List<u8> = pairOf(1, 255)
+  val half: f32 = ident(0.5)
+  small.toI64() + bytes.len()
+}
+
 fun main() {
-  io.println("types")
+  io.println("types ${fromExpected()}")
 }

@@ -81,7 +81,7 @@ fun encodings() throws base64.Invalid | hex.Invalid {
   val edge = [251.wrapU8(), 255.wrapU8(), 254.wrapU8()]
   println("alphabets  std=${base64.encode(edge)} url=${base64.encodeUrl(edge)}")
   println("hex        ${hex.encode(edge)} ${hex.encodeUpper(edge)}")
-  println("round trip ${(try base64.decode("Zm9vYmFy")).decodeUtf8()} ${(try hex.decode("666f6f")).decodeUtf8()}")
+  println("round trip ${try base64.decode("Zm9vYmFy").decodeUtf8()} ${try hex.decode("666f6f").decodeUtf8()}")
   println("lengths    ${base64.encodedLen(32)} ${base64.encodedLen(32, pad: false)}")
 
   // every decoder refusal names the position, so a log line locates the

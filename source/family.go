@@ -88,7 +88,7 @@ var families = []family{
 	fam("references", `copy of the element`, `reach the element`, `the address of`, `^'&' `, `^a map key cannot`,
 		`'loop \(&x in xs\)' needs`, `'loop \(\(k, &v\) in m\)' needs`, `a pointer into an immutable`,
 		`copy of the caller's`, `while 'loop`, `move or reorder`, `is a pointer to a`),
-	fam("mutability", `^cannot assign`, `not assignable`, `immutable List|immutable Map|immutable Set`,
+	fam("mutability", `^cannot assign`, `while the loop at line`, `not assignable`, `immutable List|immutable Map|immutable Set`,
 		`\bMutable(List|Map|Set)\b`, `'mut'`, `^compound assignment`, `global 'val' is a constant`,
 		`never changes: copy it`, `'getOrPut'`),
 	fam("traits", `does not implement`, `not a trait`, `supertrait`, `^trait '`, `conflicting impl`,
@@ -114,7 +114,7 @@ var families = []family{
 		`^'protected'`, `^'private protected'`, `^a field is`, `extend`, `impl`, `^'main' must`, `infinite size`, `type alias`,
 		`^'const'`, `^a global cannot`, `^'%s' binding needs`, `^'suspends' must`),
 	fam("unused", `never used`, `must be used`),
-	fam("syntax", `escape`, `^expected`, `^unexpected`, `^unterminated`, `^empty type`),
+	fam("syntax", `escape`, `a binding in a condition`, `^expected`, `^unexpected`, `^unterminated`, `^empty type`),
 }
 
 // FamilyOf names the family of a diagnostic message, or "" when none

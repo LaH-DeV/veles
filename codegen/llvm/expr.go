@@ -1313,6 +1313,47 @@ func (g *gen) builtin(e *sema.Builtin) string {
 			g.emit("%s = call %s @llvm.cttz.%s(%s %s, i1 false)", v, ty, ty, ty, x)
 		}
 		return v
+	case "int.swapBytes", "int.reverseBits":
+		x := g.expr(e.Args[0])
+		ty := g.llType(e.Type())
+		if e.Op == "int.swapBytes" && ty == "i8" {
+			return x // one byte: nothing to swap
+		}
+		intr := map[string]string{"int.swapBytes": "bswap", "int.reverseBits": "bitreverse"}[e.Op]
+		v := g.newTmp()
+		g.emit("%s = call %s @llvm.%s.%s(%s %s)", v, ty, intr, ty, ty, x)
+		return v
+	case "int.rotateLeft", "int.rotateRight":
+		// the funnel shift of x with itself takes the amount modulo the width,
+		// so a negative n (its low bits, two's complement) turns the other way
+		x, n := g.expr(e.Args[0]), g.expr(e.Args[1])
+		ty := g.llType(e.Type())
+		if ty != "i64" {
+			t := g.newTmp()
+			g.emit("%s = trunc i64 %s to %s", t, n, ty)
+			n = t
+		}
+		intr := map[string]string{"int.rotateLeft": "fshl", "int.rotateRight": "fshr"}[e.Op]
+		v := g.newTmp()
+		g.emit("%s = call %s @llvm.%s.%s(%s %s, %s %s, %s %s)", v, ty, intr, ty, ty, x, ty, x, ty, n)
+		return v
+	case "float.copySign":
+		x, y := g.expr(e.Args[0]), g.expr(e.Args[1])
+		ty := g.llType(e.Type())
+		v := g.newTmp()
+		g.emit("%s = call %s @llvm.copysign.%s(%s %s, %s %s)", v, ty, llFloatSuffix(ty), ty, x, ty, y)
+		return v
+	case "float.isSignNegative":
+		x := g.expr(e.Args[0])
+		ty := g.llType(e.Args[0].Type())
+		it := "i64"
+		if ty == "float" {
+			it = "i32"
+		}
+		bits, v := g.newTmp(), g.newTmp()
+		g.emit("%s = bitcast %s %s to %s", bits, ty, x, it)
+		g.emit("%s = icmp slt %s %s, 0", v, it, bits)
+		return v
 	case "float.pow", "float.min", "float.max":
 		x, y := g.expr(e.Args[0]), g.expr(e.Args[1])
 		ty := g.llType(e.Type())
@@ -1556,6 +1597,7 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		g.emit("store %s %s, ptr %s", et, x, p)
 		g.emit("%s = add i64 %s, 1", n1, n)
 		g.emit("store i64 %s, ptr %s", n1, lenP)
+		g.bumpMods(l)
 		g.emitTerm("br label %%%s", doneL)
 		g.placeLabel(slowL)
 		tmp := g.alloca(et)
@@ -1601,6 +1643,26 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		v := g.newTmp()
 		g.emit("%s = call ptr @veles_list_slice(ptr %s, i64 %s, i64 %s)", v, l, from, to)
 		return v
+	case "list.touch":
+		// an order change made through `set` (sort, swap): D102 counts it
+		g.bumpMods(g.expr(e.Args[0]))
+		return "zeroinitializer"
+	case "list.checkMods", "map.checkMods":
+		// D102: the collection changed since the loop began — through a
+		// path the compiler could not see — so this step would read storage
+		// that is not what the loop started over
+		c, saved := g.expr(e.Args[0]), g.expr(e.Args[1])
+		now := g.mods(e.Op == "map.checkMods", c)
+		same := g.newTmp()
+		g.emit("%s = icmp eq i64 %s, %s", same, now, saved)
+		okL, badL := g.newLabel("mods.same"), g.newLabel("mods.changed")
+		g.emitTerm("br i1 %s, label %%%s, label %%%s, !prof !{!\"branch_weights\", i32 2000, i32 1}", same, okL, badL)
+		g.placeLabel(badL)
+		g.panicAt(e.Args[2].(*sema.StringConst).Value, g.where(e.Span))
+		g.placeLabel(okL)
+		return "zeroinitializer"
+	case "list.mods", "map.mods":
+		return g.mods(e.Op == "map.mods", g.expr(e.Args[0]))
 	case "list.clear":
 		l := g.expr(e.Args[0])
 		g.emit("call void @veles_list_clear(ptr %s)", l)
@@ -2017,7 +2079,7 @@ func (g *gen) shift(e *sema.Binary, llt, l, r string, signed bool) string {
 }
 
 // The list header, as veles_rt.c lays it out: data, len, cap, elem, desc.
-const listHeader = "{ ptr, i64, i64, i64, ptr }"
+const listHeader = "{ ptr, i64, i64, i64, ptr, i64 }" // data, len, cap, elem size, descriptor, mods (D102)
 
 // listLen reads a list's length from its header, without a call.
 func (g *gen) listLen(l string) string {
@@ -2055,4 +2117,26 @@ func (g *gen) listElemPtr(l, i, where string) string {
 	p := g.newTmp()
 	g.emit("%s = getelementptr inbounds i8, ptr %s, i64 %s", p, data, off)
 	return p
+}
+
+// mods reads a list's or a map's modification count (D102).
+func (g *gen) mods(isMap bool, c string) string {
+	v := g.newTmp()
+	if isMap {
+		g.emit("%s = call i64 @veles_map_mods(ptr %s)", v, c)
+		return v
+	}
+	p := g.newTmp()
+	g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 5", p, listHeader, c)
+	g.emit("%s = load i64, ptr %s", v, p)
+	return v
+}
+
+// bumpMods counts one change of a list's length or order (D102).
+func (g *gen) bumpMods(l string) {
+	p, v, n := g.newTmp(), g.newTmp(), g.newTmp()
+	g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 5", p, listHeader, l)
+	g.emit("%s = load i64, ptr %s", v, p)
+	g.emit("%s = add i64 %s, 1", n, v)
+	g.emit("store i64 %s, ptr %s", n, p)
 }

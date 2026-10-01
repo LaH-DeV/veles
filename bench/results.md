@@ -195,3 +195,30 @@ Checklist §3.1 has the item.
 | spawn | 100000 | 46.71ms | 41.02ms | 1.1× |
 | strings | 1000000 | 68.49ms | 145.12ms | 0.5× |
 | trees | 14592688 | 149.39ms | 806.4ms | 0.2× |
+
+## 2026-10-01 — go1.23.2, windows/amd64 (HEAD 627814f, plus the working tree: B10, B11)
+
+| benchmark | ops | Veles | Go | Veles / Go |
+|---|---:|---:|---:|---:|
+| ast | 861841 | 40.36ms | 42.63ms | 0.9× |
+| channels | 200000 | 4.6ms | 9.69ms | 0.5× |
+| emit | 1000000 | 71.53ms | 56.68ms | 1.3× |
+| intern | 1000000 | 38.29ms | 34.96ms | 1.1× |
+| json | 40000 | 42.05ms | 47.34ms | 0.9× |
+| lexer | 2100000 | 61.55ms | 43.36ms | 1.4× |
+| maps | 2000000 | 47.04ms | 69.56ms | 0.7× |
+| parallel | 64 | 10.07ms | 12.76ms | 0.8× |
+| pipes | 1600000 | 14.55ms | 75.83ms | 0.2× |
+| sha256 | 16 | 89.87ms | 10.52ms | 8.5× |
+| sort | 900000 | 34.34ms | 52.72ms | 0.7× |
+| spawn | 100000 | 40.74ms | 31.38ms | 1.3× |
+| strings | 1000000 | 52.86ms | 35.31ms | 1.5× |
+| trees | 14592688 | 160.72ms | 286.78ms | 0.6× |
+
+D102 adds a modification count to every list and map header, bumped by each
+change of length or order (the inline `push` included), and a load and compare
+per step of a loop over a mutable list or map. Against HEAD on the same machine
+(run alternately, twice each for the ones that moved) every benchmark was
+within noise: sha256 84–94 ms at HEAD, 84–93 ms after; maps 44–56 vs 47–54;
+intern 34–35 vs 34–38; sort 39.8 vs 34.3; json 48.6 vs 42.1. `spawn` swung
+30–53 ms on both trees and touches nothing that changed.

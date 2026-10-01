@@ -219,6 +219,9 @@ func closeHints(f *source.File, file *ast.File) []inlayHint {
 			}
 			v := "closes"
 			if c, isCall := w.Binding.Value.(*ast.CallExpr); isCall && c.Async {
+				if awaitedAfter(b.Stmts[i+1:], w.Binding.Name.Name) {
+					continue // finished by then: the end has nothing to stop
+				}
 				v = "cancels"
 			}
 			if v != verb {
@@ -264,4 +267,54 @@ func walkNodes(v reflect.Value, visit func(any)) {
 			walkNodes(v.Index(i), visit)
 		}
 	}
+}
+
+// awaitedAfter reports whether one of stmts certainly awaits the task
+// named name: `await name` outside any branch, loop, lambda or nested
+// block, where it might not run.
+func awaitedAfter(stmts []ast.Stmt, name string) bool {
+	found := false
+	var walk func(v reflect.Value)
+	walk = func(v reflect.Value) {
+		if found {
+			return
+		}
+		switch v.Kind() {
+		case reflect.Interface:
+			if !v.IsNil() {
+				walk(v.Elem())
+			}
+		case reflect.Ptr:
+			if v.IsNil() {
+				return
+			}
+			switch n := v.Interface().(type) {
+			case *ast.LambdaExpr, *ast.IfExpr, *ast.WhenExpr, *ast.LoopStmt, *ast.Block, *ast.BlockExpr, *ast.RaceExpr, *ast.CoalesceExpr:
+				return
+			case *ast.AwaitExpr:
+				if ne, ok := n.X.(*ast.NameExpr); ok && ne.Name == name {
+					found = true
+					return
+				}
+			}
+			walk(v.Elem())
+		case reflect.Struct:
+			if v.Type() == reflect.TypeOf(source.Span{}) {
+				return
+			}
+			for i := 0; i < v.NumField(); i++ {
+				if v.Type().Field(i).IsExported() {
+					walk(v.Field(i))
+				}
+			}
+		case reflect.Slice:
+			for i := 0; i < v.Len(); i++ {
+				walk(v.Index(i))
+			}
+		}
+	}
+	for _, s := range stmts {
+		walk(reflect.ValueOf(s))
+	}
+	return found
 }

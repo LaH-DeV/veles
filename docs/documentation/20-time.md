@@ -118,7 +118,7 @@ fun main() throws {
   val n = Note(id: 7, createdAt: time.Timestamp.ofSeconds(1790000000))
   val text = try json.encode(n)
   io.println(text)
-  io.println("${(try json.decode<Note>(text)).createdAt.utc().date()}")
+  io.println("${try json.decode<Note>(text).createdAt.utc().date()}")
 }
 ```
 

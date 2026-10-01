@@ -353,7 +353,8 @@ func (f *fnCtx) expectPanicsCall(head string, arg ast.Expr, span source.Span) Ex
 	// the body is checked as the argument of the prelude's runTestBody, so
 	// a lambda is checked as the sendable function a task needs
 	launch := &ast.CallExpr{Fun: &ast.PreludeName{Name: "runTestBody", Pos: span}, Args: []ast.Arg{{Value: arg}}, Async: true, Pos: span}
-	outcome := b.member(&ast.GatherExpr{Body: b.block([]ast.Stmt{b.stmt(launch)}), Pos: span}, "0")
+	// one launch: the gather is its Result (D103)
+	outcome := &ast.GatherExpr{Body: b.block([]ast.Stmt{b.stmt(launch)}), Pos: span}
 	notPanic := &ast.IsExpr{X: b.name(errName), Pat: &ast.TypePat{Type: b.typ(f.c.panicType()), Pos: span}, Not: true, Pos: span}
 	w := &ast.WhenExpr{Subject: outcome, Pos: span, Arms: []*ast.WhenArm{
 		{Patterns: []ast.Pattern{b.resultPat("Ok", "")}, Body: b.call(b.name("$testFail"), b.str(head+failIndent+"it returned without panicking")), Pos: span},

@@ -578,6 +578,9 @@ func (f *fnCtx) checkValStmt(s *ast.ValStmt) []Stmt {
 	if s.Else != nil {
 		return f.letElse(s)
 	}
+	if f.emptyLiteralBinding(s) {
+		return nil
+	}
 	mutable := s.Kind == ast.BindVar
 	if s.Kind == ast.BindConst {
 		f.errorf(s.Pos, "'const' is only allowed at module level; use 'val' for a local immutable binding")
@@ -1149,6 +1152,7 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 			f.loopIters = map[*ast.LoopStmt]types.Type{}
 		}
 		f.loopIters[s] = iter.Type()
+		f.refuseLoopChanges(s, iter.Type())
 		switch it := iter.Type().(type) {
 		case *types.Range:
 			// var i = lo; val hi = hi; loop (i < hi) { val x = i; body; post: i += 1 }
@@ -1201,6 +1205,12 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 			}
 			listTmp := f.newTemp(it)
 			pre = append(pre, &VarDecl{Var: listTmp, Init: iter})
+			var guard []Stmt
+			if it.Mutable {
+				decl, check := f.modsGuard(listTmp, false, s)
+				pre = append(pre, decl)
+				guard = []Stmt{check}
+			}
 			idx := f.newTemp(types.TI64)
 			pre = append(pre, &VarDecl{Var: idx, Init: &IntConst{exprBase{types.TI64}, 0, false}})
 			lenExpr := &Builtin{exprBase{types.TI64}, "list.len", []Expr{&VarRef{exprBase{it}, listTmp}}, s.Pos}
@@ -1219,7 +1229,7 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 				// `loop (&x in xs)`: x is a pointer to the element's storage (D42)
 				get = &AddrOf{exprBase{elemT}, &Builtin{exprBase{it.Elem}, "list.ref", []Expr{&VarRef{exprBase{it}, listTmp}, &VarRef{exprBase{types.TI64}, idx}}, s.Pos}}
 			}
-			body.Stmts = append(append([]Stmt{&VarDecl{Var: v, Init: get}}, parts...), body.Stmts...)
+			body.Stmts = append(append(append(guard, &VarDecl{Var: v, Init: get}), parts...), body.Stmts...)
 			lp.Body = body
 		case *types.Map, *types.Set:
 			if mt, isMap := it.(*types.Map); isMap && s.Var.Name == nil && len(s.Var.Tuple) == 2 && s.Var.Tuple[1].Ref && !s.Var.Tuple[0].Ref {
@@ -1239,7 +1249,8 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 				op, elem = "map.keys", it.(*types.Set).Elem
 			}
 			listT := &types.List{Elem: elem}
-			snapshot := &Builtin{exprBase{listT}, op, []Expr{iter}, s.Pos}
+			collTmp := f.newTemp(it)
+			snapshot := &Builtin{exprBase{listT}, op, []Expr{&VarRef{exprBase{it}, collTmp}}, s.Pos}
 			copy := *s
 			if hasRefBinding(s.Var) {
 				copy.Var = withoutRefs(s.Var) // reported above; the snapshot loop is by value
@@ -1248,7 +1259,19 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 			sv, decl := f.hidden("snapshot", snapshot, false)
 			copy.Iter = nameOf(sv, s.Iter.Span())
 			inner := f.checkLoop(&copy)
-			return append([]Stmt{decl}, inner...)
+			out := []Stmt{&VarDecl{Var: collTmp, Init: iter}}
+			if mutableColl(it) {
+				// the snapshot is walked safely; a change to the map itself is
+				// still refused, at run time as at compile time (D102)
+				mods, check := f.modsGuard(collTmp, true, s)
+				out = append(out, mods)
+				if n := len(inner); n > 0 {
+					if ilp, ok := inner[n-1].(*Loop); ok && ilp.Body != nil {
+						ilp.Body.Stmts = append([]Stmt{check}, ilp.Body.Stmts...)
+					}
+				}
+			}
+			return append(append(out, decl), inner...)
 		default:
 			if hasRefBinding(s.Var) && !types.IsInvalid(iter.Type()) {
 				f.errorf(s.Var.Pos, "'&' binds an element of a MutableList or a value of a MutableMap in place; an iterator yields values (D42)")
@@ -1333,6 +1356,8 @@ func (f *fnCtx) mapRefLoop(s *ast.LoopStmt, m Expr, mt *types.Map, lp *Loop, lab
 		&VarDecl{Var: keys, Init: &Builtin{exprBase{keysT}, "map.keys", []Expr{ref(mapTmp)}, s.Pos}},
 		&VarDecl{Var: idx, Init: i64c(0)},
 	}
+	mods, check := f.modsGuard(mapTmp, true, s)
+	pre = append(pre, mods)
 	lp.Cond = &Binary{exprBase{types.TBool}, OpLt, ref(idx), &Builtin{exprBase{types.TI64}, "list.len", []Expr{ref(keys)}, s.Pos}, s.Pos}
 	lp.Post = []Stmt{&Assign{Target: ref(idx), Value: &Binary{exprBase{types.TI64}, OpWrapAdd, ref(idx), i64c(1), s.Pos}}}
 	ptrT := &types.Pointer{Elem: mt.Value}
@@ -1343,7 +1368,7 @@ func (f *fnCtx) mapRefLoop(s *ast.LoopStmt, m Expr, mt *types.Map, lp *Loop, lab
 	f.loops = f.loops[:len(f.loops)-1]
 	slot := f.newTemp(&types.Nullable{Elem: ptrT})
 	lp.hasContinue = true
-	prefix := []Stmt{&VarDecl{Var: k, Init: &Builtin{exprBase{mt.Key}, "list.get", []Expr{ref(keys), ref(idx)}, s.Pos}}}
+	prefix := []Stmt{check, &VarDecl{Var: k, Init: &Builtin{exprBase{mt.Key}, "list.get", []Expr{ref(keys), ref(idx)}, s.Pos}}}
 	prefix = append(prefix, kParts...)
 	prefix = append(prefix,
 		&VarDecl{Var: slot, Init: &Builtin{exprBase{slot.Type}, "map.ref", []Expr{ref(mapTmp), ref(k)}, s.Pos}},
@@ -1615,7 +1640,6 @@ func (f *fnCtx) withBindings(s *ast.WithExpr, i int, closeable *types.Trait, wan
 		}
 		return nil, types.TInvalid
 	}
-	f.markResource(v, v)
 	f.refWith(s, i, v, false)
 	// synthesize `name.close()` (a method call works on any binding, D22)
 	call := &ast.CallExpr{Fun: &ast.MemberExpr{X: nameOf(v, b.Name.Pos), Name: ast.Ident{Name: "close", Pos: b.Name.Pos}, Pos: b.Name.Pos}, Pos: b.Name.Pos}
@@ -1623,6 +1647,9 @@ func (f *fnCtx) withBindings(s *ast.WithExpr, i int, closeable *types.Trait, wan
 	if isResultType(closeCall.Type()) {
 		f.errorf(b.Name.Pos, "close() of '%s' throws; throwing cleanup is not supported yet", init.Type())
 	}
+	// a resource from here on: after the compiler's own close, which D136
+	// would otherwise refuse as a second one
+	f.markResource(v, v)
 	inner, bodyT := f.withBindings(s, i+1, closeable, want, asValue, result)
 	body := &Block{Stmts: inner, Type: types.TUnit}
 	if types.IsNever(bodyT) {

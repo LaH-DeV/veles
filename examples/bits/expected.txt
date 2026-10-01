@@ -1,0 +1,17 @@
+u8  3 192 240 135
+i8  1 -128 1
+u16 65280 13330 32768
+i16 1 513
+u32 2018915346 2147483648 1
+i32 1 2130706432
+u64 578437695752307201 9223372036854775808 9223372036854775808
+i64 1 1 1 -1 true
+usize 9223372036854775808 isize 72057594037927936
+u8 swap 171 twice 171
+sign false true true false true
+copySign -3.0 3.0 -2.0 -inf
+nextUp true true true true true
+nextDown true true true true
+max true true
+f32 true -1.0 true true
+exit=0

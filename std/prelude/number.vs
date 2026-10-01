@@ -76,6 +76,21 @@ extend f64 {
       *(&b).cast<*raw f64>()
     }
   }
+
+  /// The nearest representable number above this one (IEEE 754-2008
+  /// `nextUp`): NaN stays NaN, `+∞` stays `+∞`, and both zeros step to the
+  /// smallest positive subnormal (D104).
+  public fun nextUp(): f64 {
+    if (this.isNaN() || this == f64.fromBits(0x7FF0000000000000)) return this
+    if (this == 0.0) return f64.fromBits(1)
+    val bits = this.toBits()
+    // the bit pattern orders the magnitudes: one step away from zero for a
+    // positive number, one step towards it for a negative one
+    f64.fromBits(if (this > 0.0) bits + 1 else bits - 1)
+  }
+
+  /// The nearest representable number below this one: `-((-x).nextUp())`.
+  public fun nextDown(): f64 = -((-this).nextUp())
 }
 
 extend f32 {
@@ -101,4 +116,19 @@ extend f32 {
       *(&b).cast<*raw f32>()
     }
   }
+
+  /// The nearest representable number above this one (IEEE 754-2008
+  /// `nextUp`): NaN stays NaN, `+∞` stays `+∞`, and both zeros step to the
+  /// smallest positive subnormal (D104).
+  public fun nextUp(): f32 {
+    if (this.isNaN() || this == f32.fromBits(0x7F800000)) return this
+    if (this == 0.0) return f32.fromBits(1)
+    val bits = this.toBits()
+    // the bit pattern orders the magnitudes: one step away from zero for a
+    // positive number, one step towards it for a negative one
+    f32.fromBits(if (this > 0.0) bits + 1 else bits - 1)
+  }
+
+  /// The nearest representable number below this one: `-((-x).nextUp())`.
+  public fun nextDown(): f32 = -((-this).nextUp())
 }

@@ -2,11 +2,13 @@
 use io
 
 fun emptyMap() {
-  val _ = [:] // error: cannot infer the type of an empty map; annotate it, e.g. 'val m: Map<string, i32> = [:]'
+  val _ = [:] // error: cannot infer the types of an empty map; annotate it, e.g. 'val _: Map<string, i64> = [:]'
+  io.println("${[].len()} ${[:].len()}") // error: e.g. 'val xs: List<i64> = []' // error: e.g. 'val m: Map<string, i64> = [:]'
 }
 fun emptyMutable() {
-  var xs = mut [] // error: cannot infer the element type of an empty list; annotate it, e.g. 'var xs: MutableList<i32> = []'
-  var m = mut [:] // error: cannot infer the type of an empty map; annotate it, e.g. 'var m: MutableMap<string, i32> = [:]'
+  var xs = mut [] // error: annotate it, e.g. 'var xs: MutableList<i64> = mut []'
+  var m = mut [:] // error: annotate it, e.g. 'var m: MutableMap<string, i64> = mut [:]'
+  io.println("${(mut []).len()} ${(mut [:]).len()}") // error: e.g. 'var xs: MutableList<i64> = []' // error: e.g. 'var m: MutableMap<string, i64> = [:]'
   io.println("$xs $m")
 }
 fun ctorWithArgs() {

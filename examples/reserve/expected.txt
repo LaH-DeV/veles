@@ -1,0 +1,6 @@
+builder ab012 5
+map [one, three, k0, k1, k2, k3, k4] 7 3
+set [3, 1, 2, 10, 11, 12] true
+deque [0, 1, 2, 3, 4, 5] 0 5
+list [1, 2]
+exit=0

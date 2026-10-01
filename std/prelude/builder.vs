@@ -22,6 +22,12 @@ public struct StringBuilder {
     this.bytes.push(b)
   }
 
+  /// Makes room for `n` bytes in all, so appending up to `n` does not grow
+  /// the buffer; never shrinks, never changes the text (D105).
+  public fun reserve(n: i64) {
+    this.bytes.reserve(n)
+  }
+
   /// Length in bytes so far.
   public fun len(): i64 = this.bytes.len()
 

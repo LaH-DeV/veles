@@ -107,12 +107,15 @@ bad input two
 `try` is only allowed in a function declared `throws`; using it
 elsewhere is an error that tells you exactly that.
 
-`try` is a prefix that covers the whole chain after it, which is what
-you want when the method belongs to the `Result` — `try parse(s).mapError(...)`,
-`try parse(s) ?! e`. When it does not, as in `try fs.readFile(p).lines()`,
-the compiler reads it as `(try fs.readFile(p)).lines()` and warns, with a
-fix that writes those parentheses (`veles check --fix`), so the source says
-what it does; or bind the value on its own line.
+One `try` covers every call in the chain after it that can fail (D134):
+in `try client.fetch(url).json<User>()` both `fetch` and `json` may
+throw, each failure propagates where it happens, and the function's
+error type is the union of both. A method that belongs to the `Result`
+itself applies to the `Result` — `try parse(s).mapError(...)`,
+`try parse(s) ?! e`. Arguments are not part of the chain: in
+`try f(g()).h()`, `g()`'s `Result` is passed to `f` as a value. The old
+spelling `try (try f()).g()` still compiles, with a warning that the
+inner `try` is redundant and a fix that removes it.
 
 ## Letting the compiler work out the error type
 

@@ -39,7 +39,9 @@ Output:
   return — the literal takes it, mutability included, and `mut` is not
   written: `var xs: MutableList<i64> = []`, `fill([1, 2])`. An **empty**
   literal always needs such a type, because there is nothing to infer it
-  from. A list literal where a `Set` is expected builds a set:
+  from; when a later line decides it (`var xs = []` then `xs.push(1)`),
+  the error comes with a fix that writes `var xs: MutableList<i64> = []`
+  for you (`veles check --fix`, or the editor's quick fix; D106). A list literal where a `Set` is expected builds a set:
   `val seen: Set<i64> = [1, 2]`.
 - Reading is a method, never brackets — `[...]` only ever builds a literal.
   `xs.at(i)` returns `T?`: null when `i` is out of range. Where the
@@ -297,6 +299,47 @@ into the collection's storage, so keep it short-lived — after the list
 grows (`push`) an old reference points at the old buffer; and `&` in a
 loop head means the same as `ref`, so `loop (&x in xs)` on a read-only
 `List` is an error.
+
+### Changing a collection while a loop walks it
+
+A loop over a `MutableList`, `MutableMap`, `MutableSet` or `Deque` walks
+the collection as it is, so the body may not change its length or order
+(D102): `loop (x in xs) { if (x < 3) xs.push(x) }` is an error naming the
+call and the loop. Replacing an element in place is fine — `xs.set(i, v)`,
+`*x = v` in `loop (&x in xs)`, `m.set(k, v)` for the key being visited.
+To change the collection, loop over a copy (`xs.toList()`, the quick fix)
+or collect the changes and apply them after the loop; to grow a worklist
+while walking it, loop over its indices or a range, which walks no
+collection:
+
+```veles
+use io
+
+fun main() {
+  val work: MutableList<i64> = [3]
+  var i = 0
+  loop (i < work.len()) {          // a condition loop: the list may grow
+    val n = work.at(i) ?: 0
+    if (n > 1) work.push(n - 1)
+    i += 1
+  }
+  val evens: MutableList<i64> = []
+  loop (n in work) {
+    if (n % 2 == 0) evens.push(n)  // another list: fine
+  }
+  io.println("$work $evens")
+}
+```
+
+Output:
+```text
+[3, 2, 1] [2]
+```
+
+A change the compiler cannot see — a function handed the same list —
+is caught when the loop next steps: the program panics with
+`'xs' changed while a loop walked it` at the loop's line, in debug and
+release builds alike.
 
 ### Comparing collections
 

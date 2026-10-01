@@ -143,23 +143,23 @@ test "a key style renames the fields the struct is read from" {
 
 test "form<T> answers 400 with the problems and 415 for another type" {
   val form = ["Content-Type": "application/x-www-form-urlencoded; charset=utf-8"]
-  val ok = call(handler(req => Response.text((try req.form<Profile>()).name)), Method.post, "/", body: "name=Ada&age=1", headers: form)
+  val ok = call(handler(req => Response.text(try req.form<Profile>().name)), Method.post, "/", body: "name=Ada&age=1", headers: form)
   expect(ok.status == Status.ok)
-  val bad = call(handler(req => Response.text((try req.form<Profile>()).name)), Method.post, "/", body: "age=x", headers: form)
+  val bad = call(handler(req => Response.text(try req.form<Profile>().name)), Method.post, "/", body: "age=x", headers: form)
   expect(bad.status == Status.badRequest)
   val text = bad.body.decodeUtf8() ?: ""
   expect(text.startsWith("invalid form:\n"))
   expect(text.contains("name: missing"))
-  val json = call(handler(req => Response.text((try req.form<Profile>()).name)), Method.post, "/", body: "{}", headers: ["Content-Type": "application/json"])
+  val json = call(handler(req => Response.text(try req.form<Profile>().name)), Method.post, "/", body: "{}", headers: ["Content-Type": "application/json"])
   expect(json.status == Status.unsupportedMediaType)
-  val none = call(handler(req => Response.text((try req.form<Profile>()).name)), Method.post, "/", body: "name=a&age=1")
+  val none = call(handler(req => Response.text(try req.form<Profile>().name)), Method.post, "/", body: "name=a&age=1")
   expect(none.status == Status.unsupportedMediaType)
 }
 
 test "query<T> reads the query string, repeats included" {
-  val resp = call(handler(req => Response.text("${(try req.query<Profile>()).tags}")), Method.get, "/find?name=a&age=1&tags=x&tags=y")
+  val resp = call(handler(req => Response.text("${try req.query<Profile>().tags}")), Method.get, "/find?name=a&age=1&tags=x&tags=y")
   expect((resp.body.decodeUtf8() ?: "") == "[x, y]")
-  val bad = call(handler(req => Response.text("${(try req.query<Profile>()).tags}")), Method.get, "/find?age=z")
+  val bad = call(handler(req => Response.text("${try req.query<Profile>().tags}")), Method.get, "/find?age=z")
   expect(bad.status == Status.badRequest)
   expect((bad.body.decodeUtf8() ?: "").startsWith("invalid query:\n"))
 }

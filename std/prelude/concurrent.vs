@@ -65,9 +65,6 @@ extend<T: Sendable> List<T> {
   }
 }
 
-/// Calls `f`; the named function `async` needs for a function value.
-fun invoke<R, E>(f: sendable fun(): R suspends throws E): R throws E = try f()
-
 /// `withTimeout` ran out of time.
 public error Timeout {
   /// The limit that was reached — not how long the call actually took.
@@ -85,7 +82,7 @@ public error Timeout {
 /// ```
 public fun withTimeout<R: Sendable, E>(limit: Duration, f: sendable fun(): R suspends throws E): R throws E | Timeout {
   scope {
-    val t = async invoke(f)
+    val t = async f()
     race {
       val r = await t => return try r
       // leaving the scope by a throw cancels `t` and waits for it to unwind
