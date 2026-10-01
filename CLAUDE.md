@@ -18,7 +18,7 @@ compiler be written with this?" (veles-plan.md, Principles and track S).
 |---|---|---|
 | `veles-spec.md` | language decisions, `D`/`M`-numbered | IDs never renumbered; a superseded entry is struck through |
 | `veles-checklist.md` | production-readiness work; §9 open decisions (`Q`-labels, removed when decided), §10 decision log, §11 known limits | tick only what is built, tested and documented |
-| `veles-plan.md` | order of work (tracks A–E) + acceptance; progress log at the bottom | continue from the first unfinished item of track A, then B |
+| `veles-plan.md` | order of work (tracks A–E) + acceptance; progress log at the bottom | continue from the first unfinished step of its "Build order" list (D100–D135), then track A, then B |
 | `notes_to_change.txt` | the user's open design notes and standing directions | read at session start; never rewrite the user's text; a done item leaves the file (status lines of ours start with `→`) |
 | `veles-selfhost-frontend-plan.md` | the Veles rewrite of lexer/parser | gates on byte-identical output vs the Go front end |
 | `archive/` | finished plans, decided design notes, the old logs and notes | read-only history; nothing there is open |

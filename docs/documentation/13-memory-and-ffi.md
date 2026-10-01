@@ -346,6 +346,37 @@ C struct with the same fields. A GC-managed `*T` cannot be passed: the
 collector would not know C holds it (D44/D50). This is how the standard
 `io` module is written — it is a dozen lines over three C functions.
 
+An `extern struct` can be passed and returned by value, in both
+directions — to a C function, through an `extern fun` pointer, and from C
+into an `extern "C" fun`. The compiler follows each platform's C calling
+convention for it (Windows x64, System V on Linux and Intel macOS, AAPCS64
+on ARM), so a struct travels in the registers or memory a C compiler would
+use:
+
+```veles
+use io
+
+extern struct LDiv {
+  quot: i64
+  rem: i64
+}
+
+extern "C" {
+  fun lldiv(n: i64, d: i64): LDiv   // long long on every platform
+}
+
+fun main() {
+  // SAFETY: lldiv takes two numbers and returns a struct of two
+  val r = unsafe { lldiv(70000000001, 7) }
+  io.println("${r.quot} remainder ${r.rem}")
+}
+```
+
+Output:
+```text
+10000000000 remainder 1
+```
+
 A C function may block — sleep, wait on a lock, read a file. That is
 fine: while the call runs, a collection does not wait for it, and if it
 lasts longer than about a millisecond while other tasks are waiting to

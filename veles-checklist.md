@@ -58,13 +58,22 @@ answered from the shape, tuples get `Comparable`, enums get
 ### 1.2 Foreign function interface
 
 - [x] C ABI FFI design → D67 (2026-09-26): extern blocks in any package, native libraries in the manifest; marshaling of strings/buffers and callbacks → D69
-- [~] `extern "C"` blocks: calling convention and callbacks into Veles done (D69, 2026-09-26: `extern "C" fun` + `&name` : `extern fun(...)`, called through inside `unsafe`); varargs (`printf`) open [? §9 Q7]
-- [?] `extern struct` layout: packed, explicit alignment, transparent wrappers
-      (the "noted pressure point" under D51) — §9 Q7
+- [~] `extern "C"` blocks: calling convention and callbacks into Veles done (D69, 2026-09-26: `extern "C" fun` + `&name` : `extern fun(...)`, called through inside `unsafe`); variadic calls decided 2026-10-01 (D123), not built (plan B16)
+- [x] **Bug (found 2026-10-01): a struct passed or returned by value across
+      the C boundary had no C ABI lowering** — `lldiv` (16-byte return)
+      segfaulted on Windows, `div` was right by luck. Fixed the same day
+      (plan A8): a classifier per target in `codegen/llvm/cabi.go`; driver
+      `TestCStructsByValue` (17 shapes × 3 directions + register
+      exhaustion, debug and release) on Windows and Linux, codegen
+      `TestCStructClassification` against clang for Win64, SysV and
+      AAPCS64 (ARM64 not run on hardware until A7)
+- [ ] `extern struct` layout: `@packed`, `@align(n)`, `extern union`,
+      `@transparent` (D120), `Array<T, N>` with const generics (D121) —
+      decided 2026-10-01, not built (plan B16)
 - [x] Ownership at the boundary (D69): C keeps only copies (`ffi.CString`, `ffi.alloc`/`free`), a list is lent for a closure (`withRaw`, `CLayout` elements), a value C hands back travels as an `ffi.handle` (a scanned table index, never a GC address)
 - [x] Panics never cross into C: a panic inside an `extern "C" fun` ends the process with its location (runtime `veles_ffi_enter`/`leave` around the body); errors cannot cross either (an exported fun may not throw)
 - [x] Linking: `[native]` in `veles.toml` — `libs`, `static-libs` (archive resolved by name), `lib-paths`, `pkg-config`, file entries; dependencies' tables link too (2026-09-26, `driver/native.go`, TestNativeLinking)
-- [?] Declaration files (`.d.vs`) so bindings are typed and shareable — §9 Q7
+- [x] ~~Declaration files (`.d.vs`)~~ — dropped 2026-10-01 (D122): a binding is an ordinary package
 - [x] A foreign call cannot stall the collector: every call to an extern
       outside std (and through an `extern fun` pointer) runs in a safe
       region; a callback from C leaves it for the Veles code, and a thread
@@ -121,7 +130,12 @@ answered from the shape, tuples get `Comparable`, enums get
 - [x] Task-local values (D72, 2026-09-27): `taskLocal(fallback)`, scoped
       immutable `withValue(v, f)`, inherited by tasks started inside;
       TestTaskLocalsUnderThreads, sema TestTaskLocal, chapter 12
-- [?] `race` send arms (`ch.send(v) => ...`) — asked 2026-09-27, undecided (§9 Q1)
+- [ ] `race` send arms (`ch.send(v) => ...`) — decided 2026-10-01 (D108), not built (plan B12)
+- [ ] `with p = m.lock()` (D107), `with expr` without a name (D109), `retry` /
+      `Semaphore` / channel drains / `ticker` (D110) — decided 2026-10-01, not
+      built (plan B12)
+- [ ] Which `race` arm wins when several are ready at once is unwritten
+      (found 2026-10-01 preparing D108): document it in chapter 12 and D38
 - [x] Bounded channels with backpressure (`capacity: n`, blocked senders
       served in order); `race` is the `select` over receives, sleeps and
       tasks (D38). `Channel<T>()` is a true rendezvous (2026-09-27)
@@ -141,7 +155,16 @@ answered from the shape, tuples get `Comparable`, enums get
       check their own arguments; a general typed form is not designed)
 - [x] Coherence/orphan rules for `implement`: none beyond D17 — any implement
       anywhere, one per (trait, type) pair program-wide (§10, derivation batch)
-- [ ] `Default` values for generics without a hand-written implement
+- [ ] `Default` values for generics without a hand-written implement —
+      decided 2026-10-01 (D119), plan B15
+- [ ] Suspension follows the argument (D116) and `is Trait` at run time and
+      `T implements X` at compile time (D117) — decided 2026-10-01, plan B15
+      (D116 unblocks B8)
+- [ ] `x is Display` on a non-trait-object says "'i64' can never be
+      'Display'", and `p is Frag` on a trait object that `Frag` implements
+      says "can never be 'Frag'" — both wrong (found 2026-10-01); D117 and
+      D135 replace them (plan B15)
+- [ ] One `try` over a chain (D134) — decided 2026-10-01, plan B11
 - [x] Integer overflow policy per build profile (D21: checked in debug,
       wrapping in release, `+%` always) — verified 2026-09-28 (plan A3):
       golden `overflow` is lowered and run in both profiles (`main.ll` /
@@ -160,11 +183,19 @@ answered from the shape, tuples get `Comparable`, enums get
       `List<T>` extend) compiles until something uses it. Checking bodies
       against their bounds at definition — which the self-hosted compiler
       will want too
-- [?] `const` evaluation beyond literals; `static assert` — §9 Q10
+- [ ] Compile-time evaluation: constant expressions, constant tables,
+      `const fun`, `static assert` (D113, decided 2026-10-01) — plan B14
 - [ ] Better inference for empty collection literals (`val xs = []` typed
       from later use; the typed-context half landed with the old note #8)
 - [ ] Stable ABI story for `.vs` packages: none needed while source-only,
       but say so
+- [ ] D100 `with x = e` as a statement and `with t = async f()` — decided
+      2026-09-30, not built (plan B10)
+- [ ] D101–D106 (heads, loop mutation, one-task gather and `async` on a
+      value, bit operations, `reserve`, empty literals / `Range.isEmpty` /
+      lambda arms) — decided 2026-09-30, not built (plan B11)
+- [ ] A generic call's type argument inferred from the expected type
+      (`val small: i8 = id(12)`; §11) — decision-free, plan B11
 
 ---
 
@@ -206,16 +237,16 @@ answered from the shape, tuples get `Comparable`, enums get
       Before, a read parked on the socket never woke (driver
       `TestSocketCloseDuringRead` hung; 200 rounds at 1 and 8 threads now
       pass on Windows and Linux, and under `--sanitize`) (2026-09-28)
-- [?] Bounds checks stay on in release; a profile that removes them is opt-in
-      and loud — §9 Q11
+- [ ] Bounds checks stay on in every profile; `atUnchecked` /
+      `setUnchecked` / `byteAtUnchecked` in `unsafe` (D114, decided
+      2026-10-01) — plan B13
 - [x] Integer conversions between widths: `toT()` is checked (`T?`), `wrapT()` is the explicit
       truncation, a literal that cannot fit is a compile error (D86, 2026-09-29;
       `examples/conversions`, conform `D86-conversions`, golden `arith`)
 - [x] Constant-time comparison primitive in `std/crypto`: `Digest`'s `==`, and
       `crypto.equalBytes` for raw bytes. Structural `==` on `List<u8>`
       short-circuits, so a MAC is compared as a `Digest`, never as bytes (D59)
-- [?] Secrets: a `Secret<T>` wrapper that does not `Display`, does not derive,
-      and zeroes on collection — §9 Q9
+- [ ] Secrets: `Secret<T>` (D112, decided 2026-10-01) — plan B13
 - [x] Path traversal: `path.within(root, p)` over a lexical `path.clean`,
       both separators on every platform, a `\\server\share` root kept.
       Writing it found a **real hole**: `http.files` split the request on
@@ -267,7 +298,13 @@ answered from the shape, tuples get `Comparable`, enums get
       (`evil.example\0.trusted.example` passes an `endsWith` allow-list and
       resolved `evil.example`); `os.env` answers null; `os.run` refuses it.
       driver `TestPathsWithNulRefused` (2026-09-27)
-- [ ] Resource leaks: a `Closeable` dropped without `with` is a warning
+- [ ] Resource leaks: a `Closeable` never closed is a warning (D115,
+      decided 2026-10-01) — plan B13
+- [ ] A value holding a `Task` is received with `with` (D111, decided
+      2026-10-01) — plan B13
+- [ ] D100: a `with`-bound value (either form) cannot be returned, yielded,
+      stored outside its block or captured by a returned/stored lambda
+      (plan B10)
 - [x] Stack depth: one limit, in the prelude — `maxRecursionDepth` (1000),
       `tooDeepMessage(limit)` for the one sentence every caller reports, and
       `Depth` (`enter`/`leave`/`deepest`) for a walk whose depth is only its
@@ -311,7 +348,8 @@ answered from the shape, tuples get `Comparable`, enums get
 - [ ] Coroutine frames: size report per function; pool frames of hot shapes
 - [ ] `string` representation: check that slicing and `substring` do not copy
 - [~] `StringBuilder` growth policy and a `reserve`: append is one copy into
-      doubling storage (2026-09-27); `reserve` is a public API — §9 Q12
+      doubling storage (2026-09-27); `reserve` decided 2026-09-30 (D105,
+      plan B11)
 - [ ] `List<u8>` ↔ socket: writev/readv, no intermediate copies
 - [ ] I/O: `poll` → `epoll`/`kqueue`/IOCP when connection counts justify it
 - [ ] Task handoff on Linux: `spawn` is 3.9× Go on Linux against 1.1× on
@@ -443,7 +481,9 @@ answered from the shape, tuples get `Comparable`, enums get
 
 ### 5.3 `std/http` — client
 
-- [ ] `http.get/post/...` and a `Client` with pooling, timeouts, redirects
+- [ ] `http.get/post/...` and a `Client` with pooling, timeouts, redirects —
+      decided 2026-10-01 as `http.fetch` + the Go spellings (D127), not built
+      (plan C7)
 - [ ] TLS (5.4)
 - [ ] Retries with backoff and idempotency awareness
 - [ ] Proxy environment variables
@@ -481,7 +521,8 @@ behind a name that says "crypto" (§10, 2026-09-23).
 - [ ] Password hashing (argon2id) via binding
 - [ ] RS256/ES256 — needs bignum or a binding (blocked on 1.2)
 - [ ] A `Hasher` that is not a SHA: BLAKE3 or SHA-3 when something asks
-- [ ] Zeroing: a key or a pad is left to the GC (see `Secret<T>` in §2)
+- [ ] Zeroing: a key or a pad is left to the GC — `Secret<T>` (D112) is the
+      answer; std's HMAC/JWT keys move to it once it is built
 - [ ] Not benchmarked; the compression functions allocate nothing per block
       but are plain Veles, so they are far from a hand-tuned C hash (§3.3)
 
@@ -544,9 +585,11 @@ behind a name that says "crypto" (§10, 2026-09-23).
 
 ### 5.9 Observability
 
-- [ ] `/healthz`, `/readyz` helpers
-- [ ] Metrics registry: counters, gauges, histograms; Prometheus exposition
-- [ ] W3C `traceparent` propagation in the request-id middleware
+- [ ] `/healthz`, `/readyz` helpers — decided 2026-10-01 as `http.Health`
+      (D133), not built (plan C4)
+- [ ] Metrics, traces and logs as OpenTelemetry over OTLP/protobuf, with
+      W3C `traceparent` in and out — decided 2026-10-01 (D126), not built
+      (plan C4); a Prometheus pull exporter not decided
 - [ ] Runtime metrics: GC pauses, heap, tasks, open connections
 
 ### 5.10 Misc
@@ -559,8 +602,12 @@ behind a name that says "crypto" (§10, 2026-09-23).
       a `bitcast` at -O2). `examples/floatbits` (LLVM-style hex constants,
       round trips, NaN payload, `-0.0`, sign/exponent/fraction), docs chapter 2
       and the stdlib reference. A compiler builtin can replace it later
-- [ ] `std/config`: typed env parsing, all missing keys reported at once
-- [ ] `std/compress`: gzip/deflate via zlib binding
+- [ ] `std/config`: typed env parsing, all missing keys reported at once —
+      decided 2026-10-01 (D125), not built (plan C3)
+- [ ] `std/compress`: gzip/deflate written in Veles (D99, D124: 64 MiB
+      default ceiling) — not built (plan C2)
+- [ ] `io.Stream` (D128), template literals (D129 part 1), endian bytes and
+      the `fs` additions (D130) — decided 2026-10-01, not built (plan C5–C8)
 - [~] `std/os`: `hostname`, `pid`, `tempDir` done (2026-09-25); `shutdownSignal`/`raiseSignal` done (D68); `run` without a shell (2026-09-27, §2); `run(..., input:, stderr: os.Stderr)` with `Output.stderr` (D82, 2026-09-28)
 - [~] `std/fs`: `walk` done (2026-09-25: depth-first, name order, links to
       directories not followed, its own stack); streaming reads/writes, atomic
@@ -585,6 +632,9 @@ behind a name that says "crypto" (§10, 2026-09-23).
 
 ## 6. Tooling and developer experience
 
+- [ ] The needless-`throws` warning (D45) alone prints `see: veles explain
+      type-mismatch`: it is sorted into the wrong family in
+      `source/family.go` (found 2026-09-30 by the spec review)
 - [x] `veles fmt` stable on every example: `format/TestCorpus` now fails on any
       file under `examples/` or `std/` that `veles fmt` would change (2026-09-25).
       (docs blocks are not held to it: they align comments by hand)
@@ -651,8 +701,11 @@ behind a name that says "crypto" (§10, 2026-09-23).
 - [x] `veles doc`: rendered API docs from `///` — Markdown per reachable
       module (root + what it re-exports, D89), declarations as hover shows them from
       outside, member docs; `-o dir` for files (2026-09-27)
-- [ ] Package registry / MVS (on the remaining list)
-- [ ] Lockfile and reproducible builds
+- [ ] Packages: `package.vs` (D131), decentralized fetching with MVS per
+      (repository, major), `veles.sum`, `veles add/update/remove/deps/vendor`
+      (D132) — decided 2026-10-01, not built (plan E7)
+- [x] ~~Lockfile~~ — none, by decision (D132): MVS + `veles.sum` give
+      reproducible builds
 - [x] `veles new <dir>`: a package that runs and tests first try (manifest,
       `main.vs` with a test, `.gitignore`); `veles build` in a package names
       the binary after it — done 2026-09-27. `--template server`: an HTTP
@@ -722,61 +775,10 @@ list as it was is in `archive/progress-log-2026-09.md` and git history).
 
 (Q15 named imports was decided 2026-09-29: D85; Q16 `as` conversions the same day: D86; Q19 the same; Q4 D87, Q8 D88, Q3 D89 — decided 2026-09-29, being built in that order.)
 
-**Asked, awaiting an answer**
+**Open: none** (2026-10-01; the health endpoints were confirmed the same
+day, D133).
 
-- **Q1. Send arms in `race`** (`queue.send(line) => {}` next to a `sleep`
-  arm: a send with a deadline, no task per send; a losing send arm never
-  sent). Asked 2026-09-27: "idk yet". Today: `withTimeout(d, () =>
-  ch.send(v))` or `trySend` polling.
-- **Q2. Test setup and teardown per test or per suite** (user, 2026-09-27:
-  "the setup for before and after isn't good... (no new keyword for them
-  either)" — a suite's own `val`s and `with`s run fresh before each test
-  was the rejected proposal). Today: a helper plus `with` in each test.
-
-**Prepared or half-designed, not yet asked**
-
-- **Q5. `is Trait`** (`x is Display`): trait-object RTTI (a per-type table
-  in every box) vs a compile-time `T implements X` in generics vs neither.
-  `sema/supers.go` refuses converting one trait object to another for the
-  same reason.
-- **Q6. User-definable derivation** — phase 2 of D58, once the compiler-known
-  set is proven.
-
-**Raised by the checklist, not yet designed**
-
-- **Q7. FFI surface still open**: varargs calls (`printf`), `extern struct`
-  layout (packed, alignment, transparent wrappers — the pressure point under
-  D51), `.d.vs` declaration files (with notes #16).
-- **Q9. `Secret<T>`**: no `Display`, no derive, zeroed on collection (§2,
-  §5.5).
-- **Q10. Compile-time evaluation**: what a `const` may hold beyond literals,
-  and `static assert` for wire-format invariants (§1.4).
-- **Q11. Build profiles**: bounds checks off only when opted into loudly;
-  the release overflow policy (§1.4, §2).
-- **Q12. `StringBuilder.reserve`** and other capacity hints as public API
-  (§3.1).
-- **Q13. Small syntax consistencies** (notes I2, I3): `when (val n = ...)`
-  vs `loop (x in c)`; what mutating a `MutableList` while looping over it
-  means.
-- **Q14. Manifest dependency syntax** (notes #3, #17) — after M7 gives the
-  manifest real content.
-- **Q20. Float sign helpers and integer bit operations** (user, 2026-09-29,
-  left out of D93 on purpose: "note rest of them to be made with another
-  decision later"): `copySign`, `signBit`, `nextUp`, `nextDown` on floats;
-  `rotateLeft`, `rotateRight`, `byteSwap`, `reverseBits` on integers
-  (`countOnes`, `leadingZeros`, `trailingZeros` exist). A code generator, a
-  hash and a binary-format reader all want the integer ones; the float ones
-  come with `toBits`. To be prepared as one brief: names (Rust/Go/Java
-  differ), widths, the generic-target spelling of D86 where it applies.
-
-- **Q17. Small ergonomics found writing the D21 golden (2026-09-28)**:
-  (a) `gather` with one task yields a 1-tuple, so `when (gather { async
-  f() }) { is Ok ... }` fails with "'Ok' is not a type" — should one task
-  yield its `Result` itself?; (b) `async f()` where `f` is a function value
-  is refused ("launches a direct call of a named function") — a trampoline
-  `fun call(f) = f()` works, so the rule costs code, not safety; (c)
-  `Range.isEmpty()` for symmetry with every collection (written internally
-  as `holdsNothing` in the prelude until decided).
+(Q12, Q13, Q17 and Q20 were decided 2026-09-30: D101–D106. Q1 was decided 2026-10-01: D108; Q2, Q9, Q10, Q11 the same day: D111–D114; Q5, Q6 the same day: D117, D118; Q7 the same day: D120–D123; Q14 the same day: D131, D132.)
 
 Every new public std API (http cookies/forms/client, `std/log`,
 `std/config`, metrics, ...) is its own decision when its turn comes in
@@ -869,6 +871,43 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-09-29 | Float bit patterns (found by plan S3) | **`x.toBits()` / `f64.fromBits(bits)` (and `f32` with `u32`), in std over `unsafe`, only those** (user, recommended of 3, 2 and "only `toBits`/`fromBits`, but note the rest to be made with another decision later" — the rest is Q20; spec D93). Rejected: instance methods both ways in the D86 style (float-only methods on every integer); leaving it to `unsafe`; a compiler builtin for now. |
 | 2026-09-29 | Stack overflow (found by plan S3) | **A fault handler that prints a named panic, 256 MB reserved stacks on every thread, and the program started on a big-stack thread on every platform** (user, recommended of 3, 3 and 3; spec D92). Rejected: compiler-inserted stack probes (cost on every call); leaving it silent; 64 MB; the OS defaults with a diagnostic only; raising `RLIMIT_STACK` at startup; leaving the Linux main thread at 8 MB. |
 | 2026-09-29 | std/log design (plan C1) | **`lazy` modifier on a `fun(): T` parameter (std-only), `field(key, value)` tail, text on a terminal / JSON otherwise with `VELES_LOG`, `withFields` on a task-local** (user, recommended of 3, 3, 3 and 2; specs D90, D91). Rejected: `@lazy` attribute, a compiler special case, a lambda-only call, a manual guard, a field map, a struct per message, text only, a sink trait, an explicit Logger value. |
+| 2026-09-30 | Less nesting (user: "I do not want to have to create 'towers of terrors' when programming safely and 'properly'"; batch 1 of `archive/veles-spec-prep.md`) | **`with x = e` as a statement — the rest of the enclosing block is its body — and `with t = async f()`, a fail-fast background child cancelled then joined when the block ends; a with-bound value may not outlive its block; the whole tree migrated, no warning kept for the old shape** (user, recommended of 3 for resources, of 4 for tasks, of 3 for the spelling; migration: "just migrate all of our codebase, not needed support for later"; spec D100). Rejected: `defer`, blocks only, a bare `scope` statement, implicit scopes in every block, `with val f =` / `val f = with`, a warning plus fix. |
+| 2026-10-01 | `Mutex` as a `with` guard (spec §7, open since D43) | **`with p = m.lock()` binds `*T`, the held region refuses suspension, `withLock` kept for one expression** (user, recommended of 3; spec D107). Rejected: replacing `withLock`, `withLock` only. |
+| 2026-10-01 | Q1: send arms in `race` | **`ch.send(v) => body` arms; a losing send arm never sent; operands evaluated once at the start** (user, recommended of 3, after the example of a logger dropping a line when its queue stays full; spec D108). Rejected: leaving it, keeping it open. |
+| 2026-10-01 | `with expr` without a name | **Allowed in both forms, items mix in the block form** (user, recommended of 2; spec D109). Rejected: requiring `with _ =`. |
+| 2026-10-01 | Concurrency helpers (notes P11) | **Pre-approved: `retry(times, f, delay:)`, `Semaphore(permits:)` with a `Closeable` `Permit`, `ch.forEach` / `ch.toList`, `ticker(every:)`** (user, all four ticked; spec D110). Asked later: `filterConcurrent`, `firstConcurrent`, stages, `awaitAll`. |
+| 2026-10-01 | Q2: setup/teardown, asked again with D100 | **Still open** (first round). Presented: suite-level `with` lines around each test, lending functions (`with fun … yield v`), both, neither. User: "I'm not sure yet, I still kinda don't understand what this should do in normal language... Are lending functions like function generators in js". |
+| 2026-10-01 | Q2: setup/teardown, the user's own idea | **Go-style values: a value holding a `Task` must be received with `with`; its tasks are fail-fast children of that block, cancelled and joined before its `close()`** (user: "maybe returned reference to something should work like in golang? and that would work with `with` no?"; then recommended of 4; spec D111). Rejected: lending functions ("not convinced"), suite-level setup, leaving it open. |
+| 2026-10-01 | Q9: `Secret<T>` | **Prelude `Secret<string>` / `Secret<List<u8>>`: `[redacted]` when printed, not Encodable, Decodable, `expose()`, constant-time `==`, zeroed on `close()` and by the collector when freed** (user, "also zero when collected" over the recommended close-only; spec D112). Rejected: leaving it. |
+| 2026-10-01 | Q10: compile-time evaluation | **Constant expressions over consts, constant tables read-only in the binary, `const fun` evaluated by the compiler, `static assert(cond, "why")`** (user: "I think expressions and tables and comptime functions", over the recommended expressions + tables; `const fun` recommended of 3; spec D113). Rejected: `comptime fun`, unmarked inference, expressions only. |
+| 2026-10-01 | Q11: bounds checks | **No global switch; `atUnchecked` / `setUnchecked` / `byteAtUnchecked` in `unsafe`, still checked in debug** (user, recommended; spec D114). Rejected: `--release-unchecked`, no unchecked access. D21's overflow policy not reopened. |
+| 2026-10-01 | One `try` over a chain (left open by D98; found in the consistency pass) | **Swift's rule: one `try` unwraps every failing link of its receiver chain; arguments not covered; the parentheses warning removed, an inner `try` redundant** (user, recommended of 2; spec D134). Rejected: one `try` per failing call. |
+| 2026-10-01 | Downcast on a trait object (found in the consistency pass: D129 needs it) | **`x is T` for a concrete `T` on an open trait object, by type id, narrowing** (user, recommended of 2; spec D135). Rejected: an `asSql()` method instead. |
+| 2026-10-01 | Health endpoints (left out of D126) | **`http.Health` builder: `/healthz` runs no checks, `/readyz` runs them all with timeouts and answers 503 once a graceful stop begins; details logged, not returned** (user: "yes, add health endpoints"; spec D133). |
+| 2026-10-01 | Q14: the manifest | **`package.vs`: one typed constant `const package = Package(…)`, evaluated alone under D113; the same declaration in `.vss` scripts; conditions on target facts only (`target.os/arch/release`; spelled `build.os` when asked), no environment** (user, after seeing TOML, `veles.mod` and this in full: "having 'Package' struct, might tell us, that in .vss files we could have similar thing"; the recommendation then moved to it; spec D131). Rejected: `veles.mod` (recommended first), flattened TOML, environment conditions, no conditions. Notes #3 (dependencies) and #17 close. |
+| 2026-10-01 | Where packages come from | **Decentralized: git repositories with `github:`-style shorthands, the major version in the version not the path, tags only (explicit `commit(…)` pins, no pseudo-versions), MVS per (repository, major), mandatory `veles.sum`, optional proxy, no lockfile, a search index later** (user: "decentralized but … go works fine but look awful"; all four refinements; no lockfile recommended; spec D132). Rejected: a central registry, Go's `/v2` paths and pseudo-versions, a lockfile. |
+| 2026-10-01 | `std/compress` ceiling | **A 64 MiB default, `max:` to change it** (user, over the recommended required `max:`; spec D124). Rejected: required `max:`, no limit. |
+| 2026-10-01 | `std/config` | **A struct decoded from the environment, dotenv/JSON files beneath it, every problem at once** (user, recommended of 3; spec D125). Rejected: env only, getters. |
+| 2026-10-01 | Observability | **OpenTelemetry: metrics, traces and logs, OTLP over HTTP with protobuf** (user: "OpenTelemetry" over the recommended Prometheus-shaped metrics; then "All signals + protobuf" over metrics + traces with OTLP/JSON; spec D126). Rejected: Prometheus-shaped metrics, counters/gauges only, metrics first. Health endpoints left to confirm. |
+| 2026-10-01 | HTTP client | **Both: `http.fetch(url, …)` and `http.get/post/…` + `http.Client`** (user, over the recommended `fetch` only; spec D127). |
+| 2026-10-01 | Streams and TLS | **`io.Stream` implemented by `net.Conn`, `tls.Conn`, `fs.File`; HTTP over any stream; TLS verification on, `dangerouslyAcceptAnyCertificate` the only opt-out** (user, recommended of 2; spec D128). |
+| 2026-10-01 | SQL injection | **Template literals (`@template`, `tag"…"`) and `std/db` taking only `db.Sql` from `sql"…"`** (user, after asking "how tagged literal would look and work, will it be safe for injections?" and the example; recommended of 3; spec D129). Rejected: constant SQL + arguments, plain strings. |
+| 2026-10-01 | Small std additions | **`http.testServer`, endian bytes, `fs.writeAtomic`/locks/`lines`/…, argon2id password hashing** (user, all ticked; spec D130). |
+| 2026-10-01 | Q7: C layout | **Compiler-known `@packed`, `@align(n)` (any struct), `@transparent` (one-field struct), and `extern union` (fields only in `unsafe`)** (user, recommended of 3; spec D120). Rejected: a layout clause, leaving it. |
+| 2026-10-01 | Fixed-size arrays | **`Array<T, N>` everywhere, inline value type, with `<const N: i64>` parameters** (user, recommended of 4; spec D121). Rejected: `[T; N]`, extern-only arrays, leaving it. |
+| 2026-10-01 | Q7: `.d.vs` | **Dropped: a binding is an ordinary package** (user, recommended of 3; spec D122; notes #16 closed). Rejected: a declaration-only file kind, later. |
+| 2026-10-01 | Q7: variadic C functions | **Calls only, with C's default promotions; never defined in Veles** (user, recommended of 2; spec D123, superseding §4b). New evidence: POSIX `open`/`fcntl`; LLVM does the per-platform call. Rejected: keeping them excluded. |
+| 2026-10-01 | Suspension through a function parameter (plan B8's blocker) | **Follows the argument: a `suspends` parameter means "may"; the function is compiled plain and as a coroutine, each call picks; the eager adapters move into the prelude** (user, recommended of 3; spec D116). Rejected: an explicit marker, leaving it. |
+| 2026-10-01 | Q5: `is Trait` | **Both: `x is Trait` at run time on trait objects (a program-wide type→method-table lookup, narrowing), and `T implements Trait` at compile time in generics** (user, "Both" over the recommended run-time form; spec D117). Rejected: one form only, neither. |
+| 2026-10-01 | Q6: user-defined derivation | **Later, through compile-time reflection on `const fun`** (user, recommended of 3; spec D118). Rejected: macros, designing it now. |
+| 2026-10-01 | `Default` | **Prelude trait, opt-in by empty `implement Default`, `T.default()`** (user, recommended of 3; spec D119). Rejected: automatic, leaving it. |
+| 2026-10-01 | A `Closeable` never closed | **A warning with the fix `val` → `with`; passing counts as a hand-off** (user, recommended; spec D115). Rejected: an error, nothing. |
+| 2026-09-30 | Q13 (I2): which heads write `val` | **A head that holds an expression (`if`, `when`) writes `val`; one that can only bind (`with`, `loop`, `catch`) does not; `when (m = …)` is one error with a fix** (user, recommended of 3; spec D101). Rejected: no `val` in `if`/`when`, `val` in every head. |
+| 2026-09-30 | Q13 (I3): changing a collection while a loop walks it | **Refused: a length/order change on the looped path is a compile error; a change through another path panics at the loop's line (a modification count in the header); element replacement allowed** (user, recommended of 4; spec D102). Rejected: compile time only, snapshot, documenting the live-index behaviour. |
+| 2026-09-30 | Q17 (a, b): one-task `gather`; `async` on a function value | **One launch yields its `Result` itself; `async f()` allowed on a `sendable fun` value, refused with a fix on a plain `fun`** (user, recommended of 3 and 3; spec D103). Rejected: the 1-tuple, an `attempt(f)` function, any function value, keeping the refusal. |
+| 2026-09-30 | Q20: bit operations | **Rust's names camel-cased: `rotateLeft/rotateRight(n)` (mod width, negative reverses), `swapBytes`, `reverseBits` on every integer type; `copySign`, `isSignNegative`, `nextUp`, `nextDown` on floats** (user, recommended of 3; spec D104). Rejected: a Go-style `bits` module, Java's names. |
+| 2026-09-30 | Q12: capacity hints | **`reserve(n)` on `StringBuilder`, `MutableMap`, `MutableSet`, `Deque`** with D83's meaning (user, recommended of 3; spec D105). Rejected: `StringBuilder` only, leaving it. |
+| 2026-09-30 | Q17c, §6.1, empty literals | **`var xs = []` keeps needing its type and the tool writes it from the first deciding use; `Range.isEmpty()`; `veles fmt` prints `cond => (x => …)`** (user, recommended of 3; both small ones accepted; spec D106). Rejected: Rust-style inference from later use, the message only; a lint for the lambda arm. |
 
 ## 11. Known limitations to revisit
 

@@ -30,27 +30,6 @@ R5. Examples (small and mid-size) must DO something useful — real use cases, n
 
 === Open ===
 
-3. I kind of hate that we almost implemented rust in the syntax...
-- I do not like `items.iter().filter`, I like js's `items.filter` but I do not know we can do that.
-  (partly: List has eager map/filter/fold/etc. directly; `iter()` is only the lazy form, D46)
-- I do not like implicit returns but... maybe it is somewhat ok
-- I do not like impl blocks...
-- I do not like `  fun count(): i32 {
-    var n = 0
-    loop (x in self) { n += 1 }
-    n
-  }` so we really cannot have a better syntax for it?
-- I do not understand what the type Iter: Iterator does here `trait Iterable {
-  type Iter: Iterator
-  fun iterator(): Iter
-}`
-- I do not like how the dependencies in toml file are written...
-- I would prefer getting map indexing by .get() and list indexing with .at() than [i]...
-   → Done: eager `xs.filter` (D46); implicit returns kept (decided 2026-09-18); `implement`
-     inside the struct body (D23); the counting loop is `c.iter().count()` with a lint and
-     fix; `type Iter` explained in docs 10; `.get()`/`.at()` are the only indexing (D25).
-     Open: how dependencies are written in `veles.toml` (see #17).
-
 5. I hate `Some(null)` and other Some and Ok and Err... this is rust.. WHY
    (partly: `is Ok` / `is Err` now smart-cast to the payload, so Ok/Err are rarely spelled)
    → Also since: `r.ok` / `r.err`, `when (val r = ...) { is Ok => r }`, let-else
@@ -62,24 +41,7 @@ R5. Examples (small and mid-size) must DO something useful — real use cases, n
 
 14. (remaining part) the Go-lowered eager adapters (sema/lower_list.go, check_map.go) could
    move to the prelude too once one is benchmarked at -O2 against the Veles version
-
-16. The generated `builtins.vs` stub is reference-only (not compilable Veles). If a second
-   consumer for declaration files appears, consider a real `declare`-style form.
-   → Related: `.d.vs` declaration files for FFI bindings (checklist §1.2).
-
-17. (2026-09-17, idea, not yet) A `.veles` file type could replace `veles.toml` and put the
-   package/build system fully in our hands (own syntax, parsed by the compiler). Not decided;
-   until then `veles.toml` stays and formatter options live there.
-   → Decided 2026-09-18: `veles.toml` stays until M7 (registry) gives the manifest real content.
-
- I2. `when (val n = ...)` requires `val`, `loop (x in c)` does not. Different situations (the
-     when-subject is a general expression binding; the loop var is always a fresh binding), but
-     it reads inconsistent. Options: allow `when (n = part.toInt())`; or require nothing and
-     treat a bare `name = expr` in a when-head as the binding (assignment there is never wanted).
-
- I3. (docs, low priority) Mutating a MutableList while looping over it: memory-safe (D42
-     iterator holds the old buffer) but the meaning is unspecified (snapshot? sees appends?).
-     Decide and document when it comes up; not blocking.
+   → 2026-10-01: unblocked by D116 (suspension follows the argument); built as part of plan B15.
 
 P11. CANDIDATE HELPERS for later (not started; pick when a program needs them):
       `retry(times, f)` / `retry(times, delay, f)`, `Semaphore` (`semaphore(n).withPermit(f)`,
@@ -87,3 +49,6 @@ P11. CANDIDATE HELPERS for later (not started; pick when a program needs them):
       List<Task<T>>, `Channel.forEach(f)` / `Channel.toList()` drains, a `Ticker`/`interval(ms)`
       channel, `filterConcurrent`, `firstConcurrent(f)` (race over elements), and pipeline stages
       (`ch.mapConcurrent(f, workers)` channel→channel) once the HTTP server shows the shape.
+   → 2026-10-01: `retry`, `Semaphore` (`with sem.acquire()`), the channel drains and `ticker`
+     decided (spec D110, plan B12). Still open here: `awaitAll`, `filterConcurrent`,
+     `firstConcurrent`, channel-to-channel stages.

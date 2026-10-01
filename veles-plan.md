@@ -41,6 +41,45 @@ Order rule: **A** (the compiler is right on every platform) before **B**
 first) and **E** (large items). **D** is asked in batches whenever a batch
 is ready, so the user's answers are never the bottleneck.
 
+### Build order for the 2026-09-30/10-01 decisions (D100–D135)
+
+Every decision is recorded (checklist §9 is empty), so an agent can work down
+this list without asking; each step is green on Windows and WSL before the
+next. A step names what it needs; the reason for the order is in brackets.
+
+1. ~~**A8**~~ **Done 2026-10-01.** C ABI for structs by value — refuse first, then the classifier
+   [a crash today; B16 builds on it].
+2. **B10** D100 `with` statement, `with t = async`, no escape [B12, B13 extend it].
+3. **B11** D101–D106, D134 small consistencies [independent; touches everyday
+   code; D134 before the client and `std/db` are written].
+4. **B12** D107–D110 lock guard, `race` send arms, `with expr`, helpers
+   (`time.ticker` lives in `std/time`) [needs B10].
+5. **B13** D111, D112, D114, D115 task-holding values, `Secret`, unchecked
+   access, never-closed warning [needs B10].
+6. **B15** D116, D117, D119, D135 suspension follows the argument + B8, `is
+   Trait`, `Default`, the downcast [independent; shrinks the IR before the big
+   std work; D135 before E2].
+7. **B14** D113 parts 1–3 (constant expressions, tables, `static assert`)
+   [B16's `Array<T, N>` needs constant lengths; E7 needs part 1–2].
+8. **B16** D120–D123 C layout, `Array<T, N>`, variadic calls [needs A8, B14].
+9. **C2** `io.Stream` (D128, the trait and its three implementations) → 
+   `std/compress` + `http.compress()` (D124) → `http.testServer` (D130, needs
+   B13) [compress streams over `Stream`].
+10. **C3** `std/config` (D125) [needs B13's `Secret`].
+11. **C5/C6** `std/fs` additions, endian bytes (D130), helpers (D110 if not in B12).
+12. **C8** template literals (D129 part 1) [before E2].
+13. **C7** the HTTP client over TCP (D127) [needs C2's `Stream`].
+14. **C4** health endpoints (D133), then `std/otel` (D126) [OTLP export needs
+    C7 and C2's gzip].
+15. **E1** TLS (D128) → HTTPS for the client and OTLP.
+16. **E2** `std/db` (D129 part 2) + password hashing (D130) [needs C8, B13].
+17. **B14 part 4** `const fun` [large; E7 needs it only if a manifest helper
+    is a `const fun`].
+18. **E7** packages (D131, D132) [needs B14 parts 1–2].
+
+Then the rest of track E in its own order (reactor, self-hosted front end, GC,
+release engineering, compiler speed), and A7 (macOS) when the M4 is at hand.
+
 ---
 
 ## A — Correct everywhere (next)
@@ -53,6 +92,7 @@ is ready, so the user's answers are never the bottleneck.
 | A4 | **Done 2026-09-28** (every diagnostic has a case or the reason no program reaches it). **Conformance suite** (the old P6 item) | `sema/testdata/conform/*.vs` with `// error: text` / `// warning: text` expectations, grouped by D-number, one negative case per diagnostic the checker emits; a test runs them all and lists diagnostics without a case |
 | A5 | **Done 2026-09-28.** **Socket close vs a read in flight** (§11) | a per-socket in-use count (Go's fdMutex idea) so a close on one thread waits for, or fails, I/O in progress on another; a threaded test that closes during reads |
 | A6 | **Done 2026-09-28.** **Fuzz the HTTP request parser** (checklist §2) | an in-process fuzz target over the request parsing `http.call` shares with `serve`; corpus kept; no panic, limits hold |
+| A8 | **Done 2026-10-01** (the classifier landed in the same change, so the interim refusal was not needed). **C ABI for structs by value** (bug found 2026-10-01: `lldiv` segfaults on Windows; decision-free) | first, at once: a by-value `extern struct` in an `extern` signature, an `extern fun` type or an exported `extern "C" fun` is an error naming the pointer form (a footgun refused until it works); then a classifier per target — Win64 (≤ 8 bytes of size 1/2/4/8 in a register, else by hidden pointer / `sret`), SysV x86-64 (INTEGER/SSE eightbyte classes, ≤ 16 bytes in registers, else memory), AAPCS64 (HFA/HVA, ≤ 16 bytes in registers, else indirect) — applied to calls, `extern fun` pointer calls and exported functions, the error lifted; a C file in a driver test with functions taking and returning structs of each class (1–4 `i32`, two `i64`, `{u8, i64, u16}`, two `f64`, `{f32, f32, f32}`, 24 bytes) called both ways, on Windows and WSL (aarch64 cross-compiled only until A7) |
 | A7 | macOS (later; the user runs it on an M4) | as A1, on macOS arm64 — the aarch64 register capture is so far only cross-compiled |
 
 ## B — Daily developer experience (decision-free unless marked)
@@ -66,8 +106,15 @@ is ready, so the user's answers are never the bottleneck.
 | B5 | **Done 2026-09-28** (D82). `os.run` with stdin and a separately captured stderr (checklist §5.10) — **public API, ask first** | both platforms; docs 15 |
 | B6 | **Done 2026-09-28.** LSP leftovers | code action "implement missing trait members"; whatever the B1 audit shows missing |
 | B7 | **Done 2026-09-28.** `veles new --template server` (checklist §6) | logging, `/healthz`, graceful shutdown wired; runs and tests first try |
-| B8 | **Blocked 2026-09-28: not by speed (with `reserve` the prelude form is as fast at -O2) but by effects — the lowered adapters let a lambda throw or suspend (`xs.map(a => try eval(a))` is a `Result`); a prelude function would need to be generic over its argument's effects. See the progress log.** Move the Go-lowered eager adapters into the prelude (notes #14) | benchmark first (`veles-bench`); move only what is not slower at -O2 |
+| B8 | *(2026-10-01: unblocked by D116 — built as part of B15.)* **Blocked 2026-09-28: not by speed (with `reserve` the prelude form is as fast at -O2) but by effects — the lowered adapters let a lambda throw or suspend (`xs.map(a => try eval(a))` is a `Result`); a prelude function would need to be generic over its argument's effects. See the progress log.** Move the Go-lowered eager adapters into the prelude (notes #14) | benchmark first (`veles-bench`); move only what is not slower at -O2 |
 
+| B10 | **D100: `with x = e` as a statement, `with t = async f()`, resources cannot outlive their block; whole tree migrated** (decided 2026-09-30) | parser: `with name = expr` in a braced statement list (not module level, expression bodies, braceless bodies or operands — each an error naming the block form), one binding per statement; checker: lowers to D43's block form over the rest of the block, one cleanup stack per block with block-form `with`s (last registered closes first); a statement-form `with` as the last statement warns "closed as soon as it is opened"; `async` allowed as a `with` value — a fail-fast child of the rest of the block, cancelled then joined at every exit unless finished, `await t` gives its value, errors join the inferred `throws`, captures under D35; the "`async` must be inside scope/gather" error names the `with` form; new family `resources` with the D43 not-Closeable message and D100 part 3's escape error (return, block value, stored outside, captured by a returned/stored lambda; passing as an argument allowed); formatter round trip; LSP hover on `with` says where it closes, inlay hint after the enclosing `}` lists the closes in order, completion; conformance `D100-*` (every error and warning, the ordering, loop iterations); driver/run tests that each exit path (end, return, break, continue, failed try, throw, panic, cancellation) closes in order and that a with-task is cancelled at the end, fails fast, and is not waited for when awaited; `examples/with` extended; migration of every statement-position `with` block that ends its block and every `scope { … t.cancel() }` background-task shape in std, examples, bench, templates, docs and Go test programs, expected outputs unchanged; docs chapters 7 and 12, cheat sheet, errors reference; Windows and WSL green |
+| B16 | **D120–D123: C layout attributes, `extern union`, `Array<T, N>` and const generics, variadic C calls** (decided 2026-10-01; after A8, which they rely on for by-value layout) | **D120**: `@packed` (unaligned field loads, `&` on a packed field refused), `@align(n)` on structs and extern fields (checked power of two ≥ natural), `extern union` (construction with one field, access in `unsafe`, `CLayout`, no `==`/`Display`), `@transparent` (ABI of its field in extern signatures); a driver test against a C file checking `sizeof`/`offsetof` of each shape agrees with Veles (`epoll_event`-like packed struct with a union, an aligned struct, a transparent handle). **D121**: `Array<T, N>` type (sema/types, layout, GC descriptor repeating the element's), literals with length check, `at`/`set`/`len`/loops/read-only adapters/`toList`/`toArray<N>`/`make`, `==`/hash/`Display`/`Codable`/`Default`/`Sendable`/`CLayout`/`withRaw`; const generic parameters on functions, structs and `extend` (inference from argument types, explicit `<16>`, `N + 1` refused), per-`N` instances; constant indexes compile to plain loads (golden); std's SHA-256 state and similar fixed buffers moved to it with `veles-bench` before/after; conformance, an example, formatter, hover. **D122**: notes #16 closed, docs say how a binding package is laid out. **D123**: `...` in extern declarations, promotions, refusals; `printf` and `fcntl`/`open` (POSIX) called in a driver test on both platforms. Docs chapter 13, the cheat sheet, the errors reference. Windows and WSL green |
+| B15 | **D116, D117, D119, D135: suspension follows the argument (and B8), `is Trait` both ways, `Default`, `is T` downcast** (decided 2026-10-01) | **D135** (with D117's run-time part): `x is T` on an open trait object by type-id comparison, narrowing, `when` arms, the "never matches" error only when `T` does not implement the trait, a type parameter refused; conformance and a run case. **D116**: the suspension pass gains *conditional* suspension (calls of, or passing on, a `suspends` function parameter); call sites suspend only when a bound argument does; codegen emits a plain and a coroutine instance on demand (stenciling key bit); hover "suspends if `f` does"; trait methods unchanged; conformance and run tests (a pure lambda through a `suspends` parameter inside `withLock` and a D107 region; a suspending one suspends; cancellation inside it); then **B8**: the eager adapters move from `sema/lower_list.go`/`check_map.go` into the prelude over `throws E` + conditional suspension, `xs.map(x => slow(x))` allowed, `veles-bench` before/after (no regression over noise) and the `--timings` IR size of `examples/httpd` recorded, the Go lowering deleted. **D117**: the decision-free message fix first; run-time `is Trait` on trait objects with narrowing, `!is`, `when` arms, the per-trait type-id table, the limits (object-safe, fully applied, supertrait limit) and the static warning; compile-time `T implements Trait` in `if`/`static assert`, the bound added in the true branch, dead branch dropped per instance, dictionary entry for shared instances; conformance, a run example (a `Flusher` upgrade, a generic `show`). **D119**: prelude `Default` with the listed implements, derive by empty `implement` (field default, else the type's `default()`, else an error naming the field; generic bounds inferred; refusals for sealed/enum/`Secret`/task-holding), `T.default()`; conformance and an example. Docs: chapters 8, 10, 12, the cheat sheet, stdlib and errors references. Windows and WSL green |
+| B13 | **D111, D112, D114, D115: task-holding values, `Secret<T>`, unchecked access, never-closed warning** (decided 2026-10-01; D111 after B10) | **D111**: task-holding types computed from declared fields; such a value must be a `with` value or returned straight up (error family `tasks` with the fix elsewhere); `async` accepted as a field argument of such a constructor that is returned or `with`-bound; held tasks become fail-fast background children of the receiving block (D100 part 2 machinery), cancelled and joined in reverse field order before `close()`; a failure between the `async` and the return cancels and joins first; hover; conformance cases; `std/http/limits.test.vs` rewritten with a `TestServer` helper and every other server test migrated where it repeats setup; a run test that a held task's `Err` fails the receiving block and that close order is tasks then `close()`. **D112**: prelude `Secret<T>` for `string`/`List<u8>` (other `T` refused), redaction everywhere text is produced (interpolation, `expect` capture), not `Encodable` (derive error names `@skip`), `Decodable`, constant-time `==`, not `Hashable`/`Comparable`, `close()` wipes and later `expose()` panics at the caller; runtime: a wipe flag in the object header and a `memset` at sweep (test with `VELES_GC_THRESHOLD` that the freed bytes are zero — a runtime test reading the span); docs (chapter 7 or a security page), stdlib reference; std's keys (HMAC, JWT) moved to it. **D114**: the three unchecked built-ins, refused outside `unsafe`, checked with a panic in debug, unchecked in release (codegen golden in both profiles). **D115**: the local hand-off analysis, the warning and fix, measured over std/examples/bench (each hit fixed or argued), conformance cases including no warning on `serve(listener)`. Windows and WSL green |
+| B14 | **D113: compile-time evaluation** (decided 2026-10-01; large — the parts land in order, each green) | (1) constant expressions over consts with cycles refused, compile-time overflow/division/shift errors, string `+`/interpolation, `len`, conversions, `if`/`when`, tuples/enums/structs without `init`, `at(i)` on tables; (2) constant `List`/`Map`/`Set` emitted read-only in the binary (the collector skips them; a test that a table is not rebuilt at start-up and is shared), elements in `when` patterns; (3) `static assert(cond, "why")` at module level and in bodies, the failure quoting the reason and the constants' values; (4) `const fun` — declaration-time checking of the body rules (each refusal an error with its rule), the HIR evaluator `sema/consteval` with a step budget (`--const-steps`, default 10 000 000) and the recursion limit, panics and throws as compile errors with the call chain, IEEE-exact floats (`f32` rounded each step), std functions marked `const fun` as programs need them (strings, numbers, list building first); a differential test: every `const fun` in the test corpus evaluated at compile time equals its run-time result; migrate std's start-up tables (SHA-256 constants, base64 alphabets, keyword tables) to constants and measure start-up and binary size; docs chapter 2/3 and the cheat sheet; self-host plan notes the evaluator as a port cost. Windows and WSL green |
+| B12 | **D107–D110: `Mutex` guard, `race` send arms, `with expr`, concurrency helpers** (decided 2026-10-01; build after B10, which they extend) | **D107**: `lock()` accepted only as a `with` value (error with fix elsewhere), binds `*T`; the held region (the `with`'s body) refuses every suspension with the message in the spec; the pointer under D100 part 3; re-locking panics; conformance cases (suspension in statement and block form, escape, outside `with`), a threaded run test (8 tasks × 10 000 increments through `with n = counter.lock()` equal the total), hover. **D108**: parser/checker accept `ch.send(v) =>` arms (operands evaluated once in arm order at the start); the runtime claim makes win and commit one step; tests: a losing send arm never delivered (a receiver after the race sees nothing), a winning one delivered, a closed channel panics, under `VELES_THREADS` 1/2/4/8 ×5 and `--sanitize` on Linux; the which-arm-wins rule documented (checklist §1.3). **D109**: `with expr` and mixed block items; conformance and format cases. **D110**: the four helpers with doc comments, catalogue/hover entries, `std/…test.vs` unit tests (retry counts and delay, cancellation during the wait; Semaphore never exceeds n under 8 threads, `tryAcquire`; drains end at close; ticker drops ticks for a slow reader and stops on close), docs chapter 12 and the stdlib reference. Windows and WSL green |
+| B11 | **D101–D106 and D134, the small consistencies** (decided 2026-09-30/10-01), plus three decision-free fixes found preparing them | **D134**: `tryChain` (`sema/check_expr.go`) unwraps every failing link of the receiver chain instead of warning, the error type the union, arguments not covered, a `Result` method link read as today; the old warning becomes "the inner `try` is redundant" with a fix; conformance cases (two and three failing links, a `Result` method in the chain, an argument Result, with `catch`); `(try f()).g()` sites in std/examples/docs migrated. **D101**: the parser reads `IDENT =` at the start of an `if`/`when` head as a missing `val` — one `syntax` error with a fix, no cascade; conformance case. **D102**: the compile-time refusal (the call list in the spec, map `set` allowed for the loop's own key, `extend` methods on the mutable type count, lambdas called in the body count), replacing `lint_staleref`'s warning; the runtime modification count on list/map/set/deque headers, bumped by structural operations only, checked each step of `loop` and of `iter()`, panicking at the loop's line in both profiles; `veles-bench` before/after (sort, json, sha256, list workloads) recorded, with no regression over noise or a stated cost; migrate any std/example loop the rule refuses; conformance and a run test for the indirect panic. **D103**: one-launch `gather` typed as the `Result` (checker, lowering, hover), `.0` sites migrated; `async` on a `sendable fun` value (local, parameter, field, expression) with effects from the type, plain `fun` refused with a fix; prelude trampolines removed; conformance, a run example, `with t = async f()` covered once B10 lands. **D104**: eight built-ins with catalogue entries (LLVM `fshl`/`fshr`/`bswap`/`bitreverse`/`copysign`; `nextUp`/`nextDown` in the prelude over `toBits`), an example with the edges of every width, identical in debug and release, codegen golden. **D105**: `reserve` on `StringBuilder`, `MutableMap`, `MutableSet`, `Deque`, allowed before a move (D63), catalogue entries, one test each that inserting up to `n` does not grow. **D106**: empty-literal message names `MutableList`/`List` and the default element type, fix from the first deciding use (preferred, applied by `check --fix`); `Range.isEmpty()` public (`holdsNothing` renamed); formatter parenthesizes a lambda that is a `when` arm's value (format case, corpus unchanged or reformatted). **Decision-free**: the `async` direct-call error names what to write; the needless-`throws` warning's family (checklist §6); a type argument inferred from the expected type (`val small: i8 = id(12)`, §11 limit removed). Docs: cheat sheet, chapters 4 (collections, loops), 6 (`when`), 12 (tasks), the stdlib and errors references. Windows and WSL green |
 | B9 | **Done 2026-09-29.** **D86: numeric conversions are methods; `as` only renames** (decided 2026-09-29) | `toT()` / `wrapT()` on all ten numeric types and `p.cast<*raw U>()`; `x as T` an error with a fix and a lint migrating std, examples, docs and tests; literal overflow is a compile error; formatter, LSP hover, docs (tutorial, cheat sheet, errors), a codegen golden and sema conformance cases; Windows and WSL green |
 
 ## C — Standard library breadth (each public API asked first)
@@ -76,31 +123,47 @@ In this order, because each unblocks the next real program:
 
 1. **Done 2026-09-29.** **`std/log`** — levels, structured fields, request-scoped through
    task-locals, no cost when a level is off (checklist §5.7).
+*(2026-10-01: every public API below is decided — batch 7 of
+`archive/veles-spec-prep.md`, spec D124–D130 — so this track needs no further
+questions; each item's acceptance is its spec entry built in full, tests in
+`std/<module>/*.test.vs`, docs (a chapter section and the stdlib reference),
+Windows and WSL green.)*
+
 2. **`std/http` server completeness** — cookies, forms (urlencoded,
    multipart to disk), static-file caching (`ETag`, `Range`), max
    connections with backpressure, chunked encoding, streaming bodies, CORS
-   (checklist §5.2).
-3. **`std/config`** — typed env parsing, every missing key reported at
-   once (§5.10).
-4. **Observability** — `/healthz` `/readyz`, a metrics registry with
-   Prometheus text, `traceparent`, runtime metrics (§5.9; the GC counters
-   come from E5).
-5. **`std/fs`** — streaming reads/writes, atomic rename, file locks (§5.10).
-6. The candidate concurrency helpers, when a program needs one (notes P11).
+   (checklist §5.2). Remaining: **`std/compress` + `http.compress()` (D124)**,
+   benchmarked against Go's `compress/flate`; `http.testServer` (D130, after
+   B13's D111).
+3. **`std/config`** (D125) — `config.load<T>`, env + dotenv/JSON files, every
+   problem at once, `config.describe<T>()`; `examples/` service template
+   (`veles new --template server`) moved to it.
+4. **Observability** (D126) — `std/otel`: metrics, traces, logs; OTLP/protobuf
+   export (needs C7 and, for `https`, E1); spans in `http.serve`, the client and
+   `std/db`; runtime metrics (GC counters from E5). Health endpoints
+   (`http.Health`, D133) first — they need neither the client nor TLS — and
+   the server template moved to them.
+5. **`std/fs`** (D130) — `writeAtomic`, `lock`/`tryLock`, `sync`, `seek`,
+   `lines`, `copy`; streaming already through `fs.File`, and `io.Stream`
+   (D128).
+6. The concurrency helpers (D110 — after B12) and endian bytes (D130).
+7. **The HTTP client over plain TCP** (D127) — `http.fetch`, `get`/`post`/…,
+   `http.Client`; `io.Stream` (D128) first, so TLS (E1) plugs in.
+8. **Template literals** (D129 part 1) — the language feature (`@template`,
+   `tag"…"`), before E2 needs it.
 
 ## D — Decisions to ask (checklist §9)
 
-First, raised by the user: **Q15** named imports and **Q16** `as` no
-longer meaning conversion — prepared together (they share `use` and
-`as`), and early, because each rewrites much of std, the examples and the
-docs, and every week adds code to migrate. Q3 `public use` is a natural
-third in the same message (it is also about imports).
+*(2026-09-30)* The order of asking is now the batch table of
+`archive/veles-spec-prep.md` §3: batches 1 (nesting, D100) and 2 (small
+consistencies, D101–D106) are decided; next are 3 tests and concurrency (Q2,
+Q1, P11, a `Mutex` guard), 4 safety and build (Q9, Q11, Q10, unused
+`Closeable`), 5 types and effects (effect-generic functions — B8's blocker —
+Q5, Q6, `Default`), 6 FFI (Q7), 7 the std APIs ahead of track C/E, 8 packages
+(Q14).
 
-Then, in this order: **Q3** `public use` (if not asked with Q15), **Q4**
-read-only collection fields, **Q8** caller location for
-std's misuse panics, **Q7** FFI varargs / `extern struct` layout / `.d.vs`,
-**Q13** the small syntax consistencies. Waiting on the user: **Q1** race
-send arms, **Q2** test setup/teardown. Later: Q5, Q6, Q9–Q12, Q14.
+~~First, raised by the user: Q15 … Later: Q5, Q6, Q9–Q12, Q14.~~ (Q3, Q4, Q8,
+Q15, Q16 decided 2026-09-29.)
 
 ## S — Towards self-hosting (ongoing; no compiler rewrite yet)
 
@@ -117,10 +180,11 @@ on course for it, a little at a time, alongside A–C.
 
 ## E — Large items, in order
 
-1. **TLS** through a system binding (SChannel / OpenSSL) → `std/tls` → the
-   HTTP client (§5.3, §5.4); then `examples/apiclient`.
-2. **PostgreSQL**: libpq binding, pool, transactions as `with`, rows
-   mapped through the derive → `examples/pgnotes` (§5.8).
+1. **TLS** through a system binding (SChannel / OpenSSL) → `std/tls` (D128)
+   → the HTTP client over it (§5.3, §5.4); then `examples/apiclient`.
+2. **PostgreSQL**: libpq binding, `std/db` as D129 (`sql"…"`, pool as a
+   task-holding value, transactions as `with`, rows through the derive) →
+   `examples/pgnotes` (§5.8). Password hashing (D130) with it.
 3. **I/O reactor**: `poll` → epoll/kqueue/IOCP, writev/readv; an HTTP
    hello load test added to `bench/` first, to measure it (§3.1, §3.3).
 4. **Self-hosted front end**, P0 → P6 (`veles-selfhost-frontend-plan.md`).
@@ -129,8 +193,20 @@ on course for it, a little at a time, alongside A–C.
 6. **Release engineering**: an `-O2` + LTO profile, static binaries,
    Windows → Linux cross-compile, a Docker image, the "deploying Veles"
    page (§3.2, §4, §7).
-7. **Packages**: M7 registry/MVS, lockfile, reproducible builds; then the
-   manifest questions (Q14, notes #17).
+7. **Packages** (D131, D132; decided 2026-10-01). In order, each green:
+   (a) `package.vs` replaces `veles.toml` — the `build` std module (`Package`,
+   `Native`, `Format`, dependency constructors, `target.os/arch/release`), the
+   manifest evaluated alone under D113 (needs B14's parts 1–2; part 4 only if
+   a `const fun` helper is used), the error for a `veles.toml` with the
+   equivalent printed, every manifest in the tree migrated, `veles new`, LSP,
+   docs 11 and 13; (b) scripts' `const package`; (c) fetching: git into the
+   module cache, `VELES_PROXY`, MVS per (repository, major), `veles.sum`
+   written and verified (a tampered cache is a hard error — test), commit pins
+   with the library warning; (d) `veles add/update/remove/deps/vendor`, editing
+   literal `require` lists through the formatter; (e) a driver test against
+   local bare git repositories (tags, two majors under two names, a commit pin,
+   a sum mismatch) on Windows and WSL; `examples/packages` uses one published
+   (local-repo) dependency.
 8. **Compiler speed and code quality**: per-module IR caching,
    devirtualisation, escape analysis, panic-freedom analysis (§3.2).
 
@@ -869,3 +945,118 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   (it was built in D97). Next in C2: `std/compress` in Veles (inflate, deflate, gzip;
   measured with veles-bench, miniz as the fallback), then `http.compress()` and
   precompressed `.gz` siblings for `files`; then C3 `std/config`.
+
+### 2026-09-30
+
+- **Spec review and preparation (`archive/veles-spec-prep.md`).** The user asked for a
+  review of the language's state and for the spec to be prepared, together, so
+  that another agent can build the rest without close supervision. The review
+  (in that file): state per track; seven stale or contradictory spec passages,
+  fixed in the spec the same day (the header, §4b varargs vs Q7 and `testing`
+  vs D78, §5 and §4b interface files marked not built, §6.2's missing manifest
+  file, §7's "not designed" list, D43's §6.1 remark); one bug (the
+  needless-`throws` warning's family, checklist §6); the open questions ordered
+  into eight batches. **Batch 1 decided: D100** (`with x = e` as a statement,
+  `with t = async f()`, no escape of a with-bound value, the tree migrated) —
+  plan B10, not built.
+- **Batch 2 decided: D101–D106**, every recommended option (Q12, Q13, Q17,
+  Q20, spec §6.1 and empty literals leave the open lists). Probed first: a
+  list loop saw its own appends and skipped after a removal (now refused,
+  D102); a one-task `gather` was the only 1-tuple in the language (D103).
+  Plan B11, not built. Notes I2 and I3 leave `notes_to_change.txt`.
+
+### 2026-10-01
+
+- **Batch 3 (tests and concurrency): D107–D110 decided, Q2 still open.**
+  `with p = m.lock()` beside `withLock` (D107), send arms in `race` (D108, Q1
+  closed), `with expr` without a name (D109), and `retry` / `Semaphore` /
+  channel drains / `ticker` pre-approved (D110, notes P11) — plan B12, not
+  built. Q2 (shared setup) was explained twice — suite-level `with` lines run
+  around each test, and lending functions (`with fun … yield v`) for fixtures
+  that start a task — and the user is not sure yet; it stays in §9 with both
+  shapes written down. Found: which `race` arm wins when several are ready is
+  unwritten (checklist §1.3).
+- **Q2 decided from the user's own idea (D111), and batch 4 (safety and
+  build): D112–D115.** The user was not convinced by lending functions and
+  asked for Go's shape — a helper returning a value; a value holding a `Task`
+  is now received with `with`, its tasks living until that block ends (D111),
+  which answers shared test setup without a test feature. `Secret<T>` wiped on
+  close and by the collector (D112, over the recommendation), compile-time
+  evaluation with constant tables and `const fun` (D113, beyond the
+  recommendation), unchecked access only inside `unsafe` (D114), a warning for
+  a `Closeable` never closed (D115). Plan B13 and B14, not built. Q2, Q9, Q10,
+  Q11 leave §9.
+- **Batch 5 (types and effects): D116–D119.** Probed first: `throws E`
+  already followed the argument, suspension did not (a `suspends` parameter
+  made every call suspend, and the adapters refused suspending lambdas) — D116
+  makes it follow the argument, which unblocks B8. `is Trait` both at run time
+  and at compile time (D117, over the recommendation), derivation by
+  compile-time reflection later (D118), `Default` (D119). Plan B15. Q5, Q6
+  leave §9. Found: `x is Display` gives a wrong message (checklist §1.4).
+- **Batch 6 (FFI, Q7): D120–D123.** Probed first and found a **bug**: structs
+  passed or returned by value across the C boundary had no C ABI lowering
+  (`lldiv` segfaulted on Windows) — plan A8, refused until fixed. Decided:
+  `@packed`/`@align`/`@transparent` and `extern union` (D120), `Array<T, N>`
+  with const generic parameters as a general inline value type (D121), no
+  `.d.vs` (D122, notes #16 closed), calls of variadic C functions (D123,
+  superseding §4b — POSIX `open`/`fcntl` are the new evidence). Plan B16. Q7
+  leaves §9; only Q14 (after M7) remains there.
+- **Batch 7 (the std APIs): D124–D130.** Compression with a 64 MiB default
+  ceiling (user over the recommended required `max:`), config from a struct
+  over env + files, **OpenTelemetry with all three signals and OTLP/protobuf**
+  (user over the recommended Prometheus-shaped metrics, then over metrics +
+  traces with OTLP/JSON), the HTTP client in both `fetch` and Go spellings
+  (user), `io.Stream` shared by TCP, TLS and files, **template literals** and
+  `std/db` built on `sql"…"` (asked twice; the second time with how it sends
+  values apart from the text), and four small additions. Track C needs no more
+  questions. **Not asked, assumed — to confirm**: the `/healthz`/`/readyz`
+  helpers were bundled with the Prometheus option the user did not take; they
+  are independent of telemetry and stay in checklist §5.9 as open.
+- **Batch 8 (packages): D131, D132 — checklist §9 is empty.** The user asked
+  to see each manifest format in full with pros and cons, then reasoned that a
+  `Package` struct could also serve scripts and that `const` already forbids
+  logic; the recommendation moved from a `veles.mod` line format to
+  `package.vs` (D131: one typed constant, conditions on target facts only).
+  Packages stay decentralized but drop Go's look: host shorthands, the major in
+  the version, no pseudo-versions, a search index later; no lockfile (D132).
+  Plan E7 rewritten with acceptance. Notes #3 and #17 leave the notes file.
+- **Consistency pass over D100–D133, and D133–D135.** Health endpoints added
+  (D133, user confirmed). Probed two assumptions the new entries made and both
+  were false: one `try` did not cover a chain's second failing call (D134,
+  Swift's rule, closing what D98 left open), and `is Sql` on a trait object was
+  refused (D135, the downcast D129 needs). Fixed in the spec: `ticker` moves to
+  `std/time` (its ticks are `Timestamp`s), constant `Array` tables (D113/D121),
+  the manifest's `build.os` renamed `target.os` (the module's names are in scope
+  unqualified), `net.TooLong` → `io.TooLong` under `io.Stream`, an attribute on
+  its own line (D51), nameless `with` in the OpenTelemetry example, `log.field`,
+  three stale "batch"/"§9 Q7" references, and the header rewritten as an index of
+  D100–D135. The plan gained a **Build order** for all of it (dependencies in
+  brackets), and CLAUDE.md points agents at it.
+
+- **A8 done: structs by value across the C boundary.** The bug found preparing
+  batch 6 (`lldiv`, a 16-byte return, crashed on Windows; `div` was right only
+  because an 8-byte `{i32, i32}` happens to come back in RAX) was that an
+  `extern struct` was handed to LLVM as a first-class aggregate, which LLVM
+  splits by rules no C compiler uses. `codegen/llvm/cabi.go` now does what
+  clang's front end does, per target: Win64 (1/2/4/8 bytes as an integer,
+  anything else by pointer to a caller copy and `sret`), SysV x86-64
+  (eightbytes classed INTEGER/SSE and coerced — `i24`, `{ i64, i32 }`,
+  `<2 x float>`, `{ double, i64 }` — `byval` beyond 16 bytes *or when the
+  registers left cannot hold the whole struct*, `sret` for large results),
+  AAPCS64 (homogeneous float aggregates as `[n x float|double]`, other
+  structs up to 16 bytes as `i64`/`[2 x i64]`, larger by pointer, `sret`).
+  One classification serves the four places a struct crosses: extern
+  declarations, direct extern calls, calls through `extern fun` pointers, and
+  the wrapper of an exported `extern "C" fun`. Scalars, std's string pairs and
+  lists are unchanged (no golden moved). Tests: driver `TestCStructsByValue`
+  generates a C file and a Veles program over 17 shapes (every class above,
+  a nested struct), each called C-from-Veles, Veles-from-C by name and through
+  an `extern fun` pointer, plus two register-exhaustion calls — debug and
+  release; red at HEAD (access violation in a HEAD worktree), green on
+  Windows and Linux. Codegen `TestCStructClassification` checks the
+  signatures for all three conventions against what `clang -S -emit-llvm`
+  writes for the same C, so ARM64 is covered before A7 can run it. The
+  planned interim refusal was skipped: the classifier landed in the same
+  change. Docs chapter 13 has a runnable `lldiv` sample; spec D67 addendum.
+  Not done: `@packed` structs and unions (D120, plan B16) will need the
+  classifier's MEMORY rule for unaligned fields when they land.

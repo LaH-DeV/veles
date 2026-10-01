@@ -484,15 +484,31 @@ func (g *gen) resultOf(fn *sema.Func) types.Type {
 }
 
 func (g *gen) externDecl(fn *sema.Func) string {
+	sig := g.cSignature(paramTypes(fn.Sig.Params), fn.Sig.Ret)
 	var params []string
-	for _, p := range fn.Sig.Params {
+	if !sig.void && sig.ret.pass == cIndirect {
+		params = append(params, sig.sretDecl())
+	}
+	for i, p := range fn.Sig.Params {
+		if isCStruct(p.Type) {
+			params = append(params, sig.params[i].decl(""))
+			continue
+		}
 		params = append(params, g.externParamTypes(p.Type)...)
 	}
 	ret := "void"
 	if !types.IsUnit(fn.Sig.Ret) {
-		ret = cExt(fn.Sig.Ret) + g.llType(fn.Sig.Ret)
+		ret = sig.retDecl(g.llType(fn.Sig.Ret), cExt(fn.Sig.Ret))
 	}
 	return fmt.Sprintf("declare %s @%s(%s)\n", ret, fn.Name, strings.Join(params, ", "))
+}
+
+func paramTypes(ps []types.Param) []types.Type {
+	var out []types.Type
+	for _, p := range ps {
+		out = append(out, p.Type)
+	}
+	return out
 }
 
 // externParamTypes lowers a parameter for the C ABI: strings become a
@@ -994,24 +1010,53 @@ func (g *gen) recvOperand(fn *sema.Func, t types.Type, v string) string {
 // inside a callback — a panic there must end the process rather than
 // unwind through C's frames — and calls the Veles body.
 func (g *gen) exportWrapper(fn *sema.Func) {
+	var pts []types.Type
+	for _, p := range fn.Params {
+		pts = append(pts, p.Type)
+	}
+	sig := g.cSignature(pts, fn.Sig.Ret)
 	var params, args []string
+	var body strings.Builder
+	if !sig.void && sig.ret.pass == cIndirect {
+		params = append(params, sig.sretDecl()+" %sret")
+	}
 	for i, p := range fn.Params {
 		llt := g.llType(p.Type)
-		params = append(params, fmt.Sprintf("%s%s %%a%d", llt, cArgExt(p.Type), i))
-		args = append(args, fmt.Sprintf("%s %%a%d", llt, i))
+		cv := sig.params[i]
+		params = append(params, fmt.Sprintf("%s %%a%d", cv.decl(cArgExt(p.Type)), i))
+		switch cv.pass {
+		case cCoerce:
+			// what C passed, back to the struct through memory
+			fmt.Fprintf(&body, "  %%c%d = alloca %s\n  store %s %%a%d, ptr %%c%d\n  %%v%d = load %s, ptr %%c%d\n", i, cv.ty, cv.ty, i, i, i, llt, i)
+			args = append(args, fmt.Sprintf("%s %%v%d", llt, i))
+		case cIndirect, cByval:
+			fmt.Fprintf(&body, "  %%v%d = load %s, ptr %%a%d\n", i, llt, i)
+			args = append(args, fmt.Sprintf("%s %%v%d", llt, i))
+		default:
+			args = append(args, fmt.Sprintf("%s %%a%d", llt, i))
+		}
 	}
 	ret := g.retLL(fn)
-	retAttr := ""
+	retDecl := "void"
 	if ret != "void" {
-		retAttr = cExt(fn.Sig.Ret)
+		retDecl = sig.retDecl(ret, cExt(fn.Sig.Ret))
 	}
-	fmt.Fprintf(&g.out, "define %s%s @%s(%s) {\nentry:\n", retAttr, ret, fn.ExportC, strings.Join(params, ", "))
+	fmt.Fprintf(&g.out, "define %s @%s(%s) {\nentry:\n", retDecl, fn.ExportC, strings.Join(params, ", "))
+	g.out.WriteString(body.String())
 	g.out.WriteString("  %saved = call i64 @veles_ffi_enter()\n")
 	if ret == "void" {
 		fmt.Fprintf(&g.out, "  call void @%s(%s)\n  call void @veles_ffi_leave(i64 %%saved)\n  ret void\n}\n\n", fn.Name, strings.Join(args, ", "))
 		return
 	}
-	fmt.Fprintf(&g.out, "  %%r = call %s @%s(%s)\n  call void @veles_ffi_leave(i64 %%saved)\n  ret %s %%r\n}\n\n", ret, fn.Name, strings.Join(args, ", "), ret)
+	fmt.Fprintf(&g.out, "  %%r = call %s @%s(%s)\n  call void @veles_ffi_leave(i64 %%saved)\n", ret, fn.Name, strings.Join(args, ", "))
+	switch sig.ret.pass {
+	case cIndirect:
+		fmt.Fprintf(&g.out, "  store %s %%r, ptr %%sret\n  ret void\n}\n\n", ret)
+	case cCoerce:
+		fmt.Fprintf(&g.out, "  %%rc = alloca %s\n  store %s %%r, ptr %%rc\n  %%rv = load %s, ptr %%rc\n  ret %s %%rv\n}\n\n", sig.ret.ty, ret, sig.ret.ty, sig.ret.ty)
+	default:
+		fmt.Fprintf(&g.out, "  ret %s %%r\n}\n\n", ret)
+	}
 }
 
 // callerLocArg is the constant or value a call of a `@caller_location`

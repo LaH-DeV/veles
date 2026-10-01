@@ -475,6 +475,10 @@ func (g *gen) extractTagged(taggedLL string, value string, payloadLL string) str
 
 func (g *gen) call(e *sema.Call) string {
 	fn := e.Fn
+	var sig cSig
+	if fn.Extern {
+		sig = g.cSignature(paramTypes(fn.Sig.Params), fn.Sig.Ret)
+	}
 	var args []string
 	for i, a := range e.Args {
 		v := g.expr(a)
@@ -483,12 +487,21 @@ func (g *gen) call(e *sema.Call) string {
 			args = append(args, "ptr "+p, "i64 "+l)
 			continue
 		}
-		_ = i
 		if fn.Extern {
-			args = append(args, g.llType(a.Type())+cArgExt(a.Type())+" "+v)
+			args = append(args, g.cArg(sig.params[i], v, cArgExt(a.Type())))
 			continue
 		}
 		args = append(args, g.llType(a.Type())+" "+v)
+	}
+	if fn.Extern && isCStruct(fn.Sig.Ret) {
+		if fn.Foreign {
+			g.emit("call void @veles_blocking_enter()")
+		}
+		v := g.cCall(sig, "@"+fn.Name, g.llType(fn.Sig.Ret), "", args)
+		if fn.Foreign {
+			g.emit("call void @veles_blocking_leave()")
+		}
+		return v
 	}
 	if fn.CallerLoc {
 		args = append(args, strType+" "+g.callerLocArg(e.Span))
@@ -1762,20 +1775,24 @@ func (g *gen) callIndirect(e *sema.CallIndirect) string {
 	ft := e.Fn.Type().(*types.Func)
 	fv := g.expr(e.Fn)
 	if ft.C {
-		// a C function pointer: the address itself, no environment (D69)
+		// a C function pointer: the address itself, no environment (D69),
+		// called by the C convention (plan A8)
+		var pts []types.Type
+		for _, p := range ft.Params {
+			pts = append(pts, p.Type)
+		}
+		sig := g.cSignature(pts, ft.Ret)
 		var args []string
-		for _, a := range e.Args {
-			args = append(args, g.llType(a.Type())+cArgExt(a.Type())+" "+g.expr(a))
+		for i, a := range e.Args {
+			args = append(args, g.cArg(sig.params[i], g.expr(a), cArgExt(a.Type())))
 		}
 		// foreign code, as a call to a foreign extern is (D66)
 		g.emit("call void @veles_blocking_enter()")
-		if ft.Ret == nil || types.IsUnit(ft.Ret) {
-			g.emit("call void %s(%s)", fv, joinArgs(args))
-			g.emit("call void @veles_blocking_leave()")
-			return "zeroinitializer"
+		retLL, retExt := "", ""
+		if !sig.void {
+			retLL, retExt = g.llType(ft.Ret), cExt(ft.Ret)
 		}
-		v := g.newTmp()
-		g.emit("%s = call %s %s(%s)", v, g.llType(ft.Ret), fv, joinArgs(args))
+		v := g.cCall(sig, fv, retLL, retExt, args)
 		g.emit("call void @veles_blocking_leave()")
 		return v
 	}

@@ -1,6 +1,20 @@
 # Veles — Language Specification
 
-**Working draft v0.58** — language design complete; D58 adds the derivation story D51 deferred, D59 the standard library's cryptography. Remaining work is not language design: C ABI FFI, and the v0.1 build plan.
+**Working draft v0.67** — decisions D1–D135. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
+
+Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
+
+| Entries | Subject |
+|---|---|
+| D100 | `with x = e` as a statement; `with t = async f()` |
+| D101–D106 | heads and `val`, a collection changed while looped, one-task `gather`, `async` on a value, bit operations, `reserve`, empty literals |
+| D107–D111 | `with p = m.lock()`, `race` send arms, `with expr`, concurrency helpers, values that hold a task |
+| D112–D115 | `Secret<T>`, compile-time evaluation and `const fun`, unchecked access, never-closed warning |
+| D116–D119 | suspension follows the argument, `is Trait`, derivation direction, `Default` |
+| D120–D123 | C layout attributes, `Array<T, N>` and const generics, no `.d.vs`, variadic C calls |
+| D124–D130, D133 | compression, config, OpenTelemetry, the HTTP client, `io.Stream` + TLS, template literals + `std/db`, small std additions, health endpoints |
+| D131–D132 | the manifest is `package.vs`; decentralized packages |
+| D134–D135 | (consistency pass) one `try` over a chain; `is T` downcast on a trait object |
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -112,7 +126,7 @@ Distinct syntax for boxed trait objects was considered and rejected in favour of
 
 ### M1 — Package identity lives in a manifest
 
-`veles.toml` at the package root holds name, version, dependencies, license, ~~exports,~~ build config (D89: a package's surface is what its root module re-exports). **No source file declares package identity.** The resolver builds a dependency graph by reading manifests, never by parsing Veles source.
+*(v0.66, D131: the manifest is `package.vs`, one typed constant evaluated alone; read `veles.toml` below as that file, and "never by parsing Veles source" as "parsing only that constant". No `version` field — versions are tags, D132.)* `veles.toml` at the package root holds name, version, dependencies, license, ~~exports,~~ build config (D89: a package's surface is what its root module re-exports). **No source file declares package identity.** The resolver builds a dependency graph by reading manifests, never by parsing Veles source.
 
 A monorepo contains multiple manifests, one per package.
 
@@ -326,7 +340,7 @@ Rust's model, plus an explicit operator. `+` is checked in debug builds and wrap
 
 Go's MVS. Reproducible without lockfiles and far simpler to implement than SAT solving.
 
-Requires: a hard "no breaking changes within a major version" culture, since MVS trusts that promise completely; the major-version-in-import-path convention for v2 and later; and an explicit upgrade command, because MVS selects the *minimum* satisfying version and will not pick up security patches on its own.
+*(v0.66, D132: the major version is part of the version, not the path — identity is (repository, major).)* Requires: a hard "no breaking changes within a major version" culture, since MVS trusts that promise completely; ~~the major-version-in-import-path convention for v2 and later;~~ and an explicit upgrade command, because MVS selects the *minimum* satisfying version and will not pick up security patches on its own.
 
 ### D22 — Method receivers: implicit `this` (spelled `self` before v0.40, D65); mutability is declared on the field (`var`)
 
@@ -525,7 +539,7 @@ val area = when (s) {
 }
 ```
 
-*Known hazard:* a `when` branch returning a lambda reads `cond => x => x * 2`. It parses unambiguously — `=>` is right-associative — but it is hard to read. Accepted for now; a lint is the likely eventual answer.
+*Known hazard:* a `when` branch returning a lambda reads `cond => x => x * 2`. It parses unambiguously — `=>` is right-associative — but it is hard to read. Accepted for now; a lint is the likely eventual answer. *(v0.60, D106: no lint — `veles fmt` prints it `cond => (x => x * 2)`.)*
 
 ### D34 — `scope` is a language construct, not a function
 
@@ -580,7 +594,7 @@ val results = gather {
 
 Two constructs rather than one construct with a policy flag, because the two have different *types* — fail-fast produces nothing, collect-all must yield results — and a flag that changes a construct's type is hard to infer and harder to read.
 
-`gather` is **heterogeneous and tuple-typed**: children may return different types, and the result is a tuple of `Result`s in launch order.
+`gather` is **heterogeneous and tuple-typed**: children may return different types, and the result is a tuple of `Result`s in launch order. *(v0.60, D103: with exactly one launch the result is that task's `Result` itself.)*
 
 This would normally require variadic generics — a feature Rust still hasn't shipped and Swift only got in 5.9. It doesn't here, because `gather` is a language construct like `scope`, so the compiler special-cases its typing rather than exposing general variadic generics. Tuples themselves (D37) are a real addition.
 
@@ -617,7 +631,7 @@ race {
 }
 ```
 
-`race` is itself the suspension point, so arms carry no `await`.
+`race` is itself the suspension point, so arms carry no `await`. *(v0.61, D108: an arm may also be `ch.send(v)`.)*
 
 *Addendum (v0.29).* Exactly one arm runs, so a smart cast made inside an arm (an assignment to a `var`) survives the race only when every arm makes it — the `if`/`else` join rule (D5). A race whose arms all return or throw is `Never`-typed, which is what lets `withTimeout` be written as `race { val r = await t => return try r; sleep(ms) => throw Timeout() }` inside a scope whose early exit cancels `t`.
 
@@ -712,7 +726,7 @@ loop {
 
 ### D43 — `with` blocks for scoped resource cleanup
 
-Veles has a GC and therefore no destructors, and no `defer`. Before this, nothing in the language released a file descriptor, a socket, a lock, or a C allocation.
+Veles has a GC and therefore no destructors, and no `defer` (rejected again in D100; the word stays reserved). *(v0.59)* D100 adds the statement form `with x = e`, whose body is the rest of the enclosing block, and `with t = async f()`. Before this, nothing in the language released a file descriptor, a socket, a lock, or a C allocation.
 
 ```vs
 with (f = File.open(path)) {
@@ -728,9 +742,9 @@ Named `with` rather than `use`, because `use` is already the import keyword and 
 - If `close()` fails and the body also failed, the body's error wins and the close failure is attached rather than replacing it — Kotlin's suppression rule.
 - *(v0.29)* `with` is an expression: its value is the body's, and the resources close before the value is used (`val text = with (f = open(p)) { f.readAll() }`), so an "open, use, close" function has no `return` in its middle. In statement position the body is a plain block, as before.
 
-**This raises the stakes on §6.1.** The panic mechanism is still undecided, and `with` cleanup has to run during unwinding: under a hidden error-return path it is an ordinary code path, under DWARF it needs landing pads. Either works, but the choice is no longer purely internal.
+~~**This raises the stakes on §6.1.** The panic mechanism is still undecided, and~~ *(v0.59: stale — the mechanism is D49 and its v0.29 addendum; kept for history.)* `with` cleanup has to run during unwinding: under a hidden error-return path it is an ordinary code path, under DWARF it needs landing pads. Either works, but the choice is no longer purely internal.
 
-`Mutex.withLock` predates this and takes a lambda instead. Whether it is rewritten as a `with` resource is an open stdlib question.
+`Mutex.withLock` predates this and takes a lambda instead. Whether it is rewritten as a `with` resource is an open stdlib question. *(v0.61: answered by D107 — `with p = m.lock()` beside `withLock`.)*
 
 ### D44 — `unsafe` blocks, and two kinds of pointer
 
@@ -889,7 +903,7 @@ Initial compiler-known set:
 
 `extern struct` (FFI §3) is **retained as a keyword** rather than folded into a layout attribute.
 
-*Noted pressure point:* `extern struct` does not extend. Packed layout, explicit alignment, and transparent single-field wrappers all come up in FFI and wire-format work, and there is currently nowhere to express them without inventing further keywords or revisiting this.
+*Noted pressure point (answered in v0.64 by D120):* `extern struct` does not extend. Packed layout, explicit alignment, and transparent single-field wrappers all come up in FFI and wire-format work, and there is currently nowhere to express them without inventing further keywords or revisiting this.
 
 ### D52 — A panic surfaces as a `Result` error at a `gather` boundary
 
@@ -1651,6 +1665,13 @@ An entry with a directory part or a library extension (`"vendor/x.a"`,
 by name through `lib-paths` and clang's own library directories and
 passes its path, which is what makes a link static on every platform
 (a linker shown only `-lz` prefers the shared library).
+
+*(2026-10-01, plan A8 — a bug fixed, no change of meaning.)* An `extern
+struct` passed or returned by value follows the platform's C calling
+convention — Windows x64, System V x86-64, AAPCS64 — in calls to C, calls
+through `extern fun` pointers and exported `extern "C" fun`s
+(`codegen/llvm/cabi.go`). Before, the struct was handed to LLVM as an
+aggregate, which no C compiler expects: `lldiv` crashed on Windows.
 
 Bindings are written by hand for now. A `veles bindgen header.h` that
 writes the same `extern` blocks from clang's AST may come later; it
@@ -2835,7 +2856,8 @@ val u = do { val a = try f(); try g(a) } catch (e) { "failed: ${e.message()}" }
   handler yields the chain's type, and the "write the parentheses" warning of
   `try f().m()` stays quiet because a `catch` follows. (A `catch` after a bare
   Result still attaches to that Result.) A chain with two failing calls still
-  wants `do { }` or parentheses: a postfix marker per call (`?.` for a Result,
+  wants `do { }` or parentheses *(v0.67: no longer — D134, one `try` covers
+  every failing call in its chain)*: a postfix marker per call (`?.` for a Result,
   or `!.`) was not chosen — `?.` means nullable chaining (D70, and D61's "one
   operator per kind of maybe"), and `!.` reads as the rejected `!!` (D64); it
   stays open as a separate decision if such chains turn out to be common.
@@ -2962,6 +2984,1295 @@ C2's last task. The user chose the recommended option of each of four.
   miniz into the runtime (kept as the fallback if the measured speed is poor);
   linking system zlib (a build dependency on every platform).
 
+### D100 — `with` as a statement, and `with t = async f()` (v0.59)
+
+```veles
+test "at the connection limit a new connection waits until one closes" {
+  with listener = try net.listen()
+  with server = async serve(listener, limitedOk(), limits: Limits(connections: 1), log: false)
+  val port = listener.port()
+  with first = try net.connect("127.0.0.1", port)
+  try first.writeText(limitedGet(false))
+  with second = try net.connect("127.0.0.1", port)
+  try second.writeText(limitedGet(true))
+  expect(withTimeout(Duration.millis(300), () => try limitedRead(second)) is Err)
+  try first.shutdownWrite()
+  expect((try limitedRead(second)).startsWith("HTTP/1.1 200"))
+}   // closes second, first; cancels and joins server; closes listener
+```
+
+User, 2026-09-30: "are we able to make Veles safe, performant, intuitive, but
+less indented by default? … I do not want to have to create 'towers of
+terrors' when programming safely and 'properly'." The same test was five
+levels deep: a `with` block per resource opened after other statements, a
+`scope` to be allowed to write `async`, and a `server.cancel()` whose omission
+hung the test for ever. The user chose the recommended option of N1, N2 and N4
+(`archive/veles-spec-prep.md` §4); on migration: "just migrate all of our codebase, not
+needed support for later".
+
+**1. The statement form.** In a braced block, the statement `with x = e`
+followed by statements `S…` means exactly `with (x = e) { S… }` (D43): the rest
+of the enclosing block is its body. Every D43 rule holds unchanged — `e` must
+be `Closeable` (a `T?` is refused; unwrap first); `close()` runs on every exit
+(the end of the block, `return`, `break`/`continue`, a failed `try`, `throw`,
+a panic, cancellation); several close in reverse order; the body's error wins
+over a close error, which is attached (Kotlin's suppression rule); the close
+is shielded from cancellation (D47). One binding per statement (the block form
+keeps `with (a = …, b = …)`). If the block ends in an expression that is its
+value, the value is computed first and the resources close before it is used
+(D43 v0.29).
+
+- *Where.* Any braced statement block: function, test, `test fun`, lambda,
+  loop body (it closes at the end of every iteration), `if`/`else`/`when`-arm
+  block, `do` block, `scope`/`gather` body. Refused, each with an error naming
+  the block form: at module level; as an expression-bodied function
+  (`fun f() = …`); as a braceless `if`/`loop`/arm body (nothing would follow
+  it); as the operand of an expression.
+- *Order.* Statement-form `with`s, block-form `with`s and the with-tasks of
+  part 2 in one block form one stack: the last registered is closed first.
+- *A `with` that is the last statement* has an empty body: the value is closed
+  at once. That is a warning ("closed as soon as it is opened") with no fix.
+- *Nothing changes for tooling that reads the tree*: the formatter prints the
+  statement as written and never converts between forms; the parser keeps it as
+  its own node (`ast.WithStmt`, or a flag on the existing `With` node with the
+  body span running to the enclosing `}`), so hover, rename and go-to work on
+  `x`. Hover on `with` says where it closes ("closed at the end of this block,
+  line 42"); an LSP inlay hint after the enclosing `}` lists what closes there
+  in order (`closes second, first; cancels server; closes listener`).
+- *Code generation*: none new. The checker lowers it to the block form, so the
+  IR is identical to the nested program.
+
+**2. A task bound by `with`.** `with t = async f(args)` (and the block form
+`with (t = async f(args)) { }`) starts `f` as a *background child* of the rest
+of the block:
+
+- It is fail-fast like a `scope` child (D34/D35 v0.28): if it throws or panics,
+  the rest of the block is cancelled at its next suspension point and the error
+  propagates from the block — its error types join the enclosing function's
+  inferred `throws` exactly as a scope child's do.
+- At the end of the block (every exit, in the stack order of part 1) it is
+  **cancelled, then joined** — closing a task stops it — unless it has already
+  finished. `await t` waits for it and gives its value as for any task handle,
+  after which the close has nothing to do. The `Cancelled` its own close causes
+  is not an error; a failure raised while it unwinds follows D43's suppression
+  rule; the join is shielded cleanup (D47).
+- `async` is therefore allowed in exactly two places: lexically inside
+  `scope`/`gather`, and as the whole value of a `with` binding. *(v0.62,
+  D111: and as a field of a task-holding value that is returned or
+  `with`-bound.)* The error for
+  `async` elsewhere names both. The value must be the `async` call itself — a
+  `Task` obtained another way is not a with-resource (`Task` does not implement
+  `Closeable`).
+- Captures follow the `async` rules unchanged (Sendable, D35). Inside a `scope`
+  body a with-task is cancelled at the end of its own block, before the scope
+  joins its other children; inside `gather` it is not one of the gathered
+  results.
+- Lowering: `with t = async f(); S…` is a scope whose body is `S…` and whose
+  child `t` is flagged *cancel at end*; the runtime already cancels children
+  when a scope body leaves early, so the new path is the same request made on
+  the normal exit before the join.
+
+`scope { }` stays for tasks that are to be *waited for* (a worker pool).
+
+**3. A resource must not outlive its block** (new, both forms). It is an error
+(a new family `resources` in `source/family.go` and `reference/errors.md`,
+which also takes D43's existing "not Closeable" message; "'x' is closed when its
+block ends") to `return` the bound
+value or yield it as the block's value, to assign it to anything declared
+outside the block (a field, an outer `var`, a global), to store it in a
+collection, or to return or store a lambda that captures it. Passing it — or a
+lambda capturing it — as an argument is allowed (`withTimeout(d, () => try
+read(second))` must keep compiling); a callee that keeps it is not caught, which
+is stated in the docs. Checked today: none of these is refused yet.
+
+**4. Migration** (user: "just migrate all of our codebase … as is"). In the same
+change, every statement-position `with (…) { }` that is the last statement of
+its enclosing block becomes the statement form, and every
+`scope { … t.cancel() }` whose only reason was a background task becomes
+`with t = async …`, in std, examples, bench, templates, docs and the Go tests'
+embedded programs. A `with` block followed by more statements stays a block
+(flattening it would delay the close), as does an expression-valued one. No
+warning or fix is kept for the old shape — the block form remains legal and is
+the way to close before the block ends.
+
+**Low level / self-hosting.** `close()` can still be called by hand on a plain
+`val`; the block form is the explicit short scope. The compiler opens few
+resources, so self-hosting is neutral; the rule removes one reason for helper
+functions.
+
+Rejected: `defer f.close()` (Go/Zig/Swift — two statements where one does,
+forgetting it compiles, a failing close in a `defer` has no good answer, and it
+is a second way to do D43's job; `defer` stays reserved); leaving blocks only; a
+bare `scope` statement (keeps the manual cancel and its hang); implicit scopes in
+every block, Swift `async let` style (any `}` or `return` may wait invisibly);
+`with val f = …` and `val f = with …` spellings; a warning plus fix for the old
+shape.
+
+### D101 — Which heads write `val` (v0.60)
+
+**Rule:** *a head that holds an expression writes `val` to bind a name in it;
+a head that can only bind does not.* `if (val x = e && …)` (D95) and
+`when (val n = e)` take any expression, so `val` marks the binding; `with (f =
+e)`, `with f = e` (D100), `loop (x in c)` and `catch (e)` can only bind, so
+they do not. This states what already holds; nothing changes in meaning.
+
+The one change is the error: `when (m = parse(s))` and `if (m = parse(s))`
+today give two parser errors (`expected ')', found '='` and a stray `)`). The
+parser now reads `IDENT =` at the start of an `if`/`when` head as a missing
+`val`: one error, family `syntax`, "a binding in a condition is written 'val m
+= …'", with a fix inserting `val `, and the head parsed as the binding so no
+error follows it. When `m` is an existing `var` the message is the same (an
+assignment is a statement, never a condition).
+
+User, 2026-09-30, recommended of 3 (notes I2). Rejected: dropping `val` from
+`if`/`when` (reads as assignment; C's `if (x = e)` bug when `x` exists);
+`val` in every head (`loop (val x in xs)`, `catch (val e)` — noise, and
+contradicts D100's spelling).
+
+### D102 — A collection cannot change while a loop walks it (v0.60)
+
+```veles
+loop (x in xs) {
+  if (x < 3) xs.push(x + 10)   // error: 'xs.push' changes 'xs' while this loop walks it
+}
+loop ((k, n) in counts) counts.set(k, n + 1)   // fine: replaces the value of the key being visited
+```
+
+Before this (probed 2026-09-30) the meaning was unspecified: a value loop over
+a `MutableList` read by index against the live length, so appends were visited
+(`xs.push(x)` in every step never ended) and removing an earlier element
+skipped one; by-reference loops only warned (`sema/lint_staleref.go`).
+
+**Compile time.** In the body of `loop (… in c)` over a `MutableList`,
+`MutableMap`, `MutableSet` or `Deque` named by a local, parameter or `this.f`
+path, a call on the same path that changes the collection's **length or
+order** is an error, family `mutability`, naming the call and the loop, with
+two fixes: loop over a copy (`xs.toList()` / `.toMap()` / `.toSet()`), or
+"collect the changes and apply them after the loop". Such calls: on a list
+`push`, `pop`, `clear`, `insert`, `removeAt`, `addAll`, `sort`, `sortWith`,
+`swap`; on a map `remove`, `clear`, `getOrPut`, and `set` unless its key
+argument is the loop's own key variable; on a set `add`, `remove`, `clear`; on
+a deque every push and remove — and any method of an `extend` block on the
+mutable type (it may do any of these). Allowed: replacing an element in place
+(`xs.set(i, v)`, `*x = v` in `loop (&x in xs)`, `m.set(k, v)` for the visited
+key, `loop ((k, &v) in m)`), `reserve` (it changes neither), reads. The same
+rule covers the by-reference loops, so `lint_staleref`'s warning becomes this
+error. It applies inside lambdas in the body only when they are called
+there (a lambda passed as an argument counts as called).
+
+**Run time.** A change through another path (a function that reaches the same
+collection, an alias) is caught when the loop next steps: the collection's
+header carries a modification count, incremented by every length- or
+order-changing operation (not by element replacement or `reserve`); the loop
+reads it at the start and compares it on each step; a difference panics
+"'xs' changed while a loop walked it" at the loop's line (D64 location, D81
+chain). Both profiles. It also covers the iterators D42 hands out
+(`xs.iter()`) for the four types. Cost: one 8-byte field per collection, an
+increment per structural change, a load and compare per step — measured with
+`veles-bench` (sort, json, sha256, the list benchmarks) before it lands; LLVM
+hoists the compare out of loops that make no calls.
+
+Edge cases: a loop over a `List` (immutable) needs nothing; a loop over
+`xs.indices()` or a range, or a condition loop (`loop (i < xs.len())`), walks
+no collection — they are the way to grow a worklist while walking it
+(self-hosting: the compiler's worklists use them or a `Deque`); `break` right
+after the change does not make it legal (keep it simple and uniform); nested
+loops over the same collection: the inner change is refused for both.
+
+User, 2026-09-30, recommended of 4 (notes I3). Rejected: compile-time only
+(indirect changes stay unspecified); a snapshot (a copy per loop, or
+copy-on-write in the runtime); documenting the live-index behaviour.
+
+### D103 — A one-task `gather` is its `Result`; `async` on a `sendable fun` value (v0.60)
+
+```veles
+when (val r = gather { async work(9) }) {
+  is Ok  => println("done: $r")
+  is Err => println("failed: ${r.message()}")
+}
+val t = async handler(req)        // handler: sendable fun(Request): Response
+```
+
+**One task.** A `gather` whose body launches exactly one task yields that
+task's `Result<T, E>` itself, not a 1-tuple (D36): the 1-tuple exists nowhere
+else, so tuples start at two elements everywhere. With two or more launches the
+result is the tuple as before. A one-task `gather` is how a program runs code
+and observes whether it panicked (D52); the error type is the one the tuple
+element had. Migration: every `.0` read of a one-task gather in std, examples,
+docs and tests (Q17a).
+
+**Function values.** `async f(args)` where `f` is a local, parameter, field or
+any expression of type `sendable fun(…)` launches it as a task: `f` and the
+arguments are evaluated in the parent (as for a method's receiver), the task's
+effects come from the function type (D40: its `throws` joins the scope's
+errors; a function type that suspends may be launched — it is a task), and
+sendability is already guaranteed by the type (D35 v0.28). A value of a plain
+`fun(…)` type is refused, family `tasks`: "'f' is not a sendable function; declare
+its type 'sendable fun(…)'", with the fix on the declaration when it is in the
+same file. The direct-call error that stays ("'async' launches a call") names
+what to write. Works everywhere `async` does, including `with t = async f()`
+(D100). Migration: the prelude's trampolines (`withTimeout`,
+`mapConcurrent`/`forEachConcurrent`, any `fun call(f) = f()`) launch the value
+directly (Q17b).
+
+User, 2026-09-30, recommended of 3 and 3. Rejected: leaving the 1-tuple; an
+`attempt(f)` prelude function; any function value (a non-sendable closure's
+captures would cross tasks); keeping the refusal.
+
+### D104 — Bit operations: rotate, swap, reverse; float sign and neighbours (v0.60)
+
+Rust's names, camel-cased, as the existing `countOnes`, `leadingZeros`,
+`trailingZeros` (Q20). Compiler built-ins in the catalogue (hover, completion,
+docs), on every integer type (`i8 i16 i32 i64 isize u8 u16 u32 u64 usize`):
+
+| Method | Result | Meaning | LLVM |
+|---|---|---|---|
+| `x.rotateLeft(n: i64)` | same type | bits rotated left by `n` mod width; a negative `n` rotates right (Go) | `fshl` |
+| `x.rotateRight(n: i64)` | same type | the reverse | `fshr` |
+| `x.swapBytes()` | same type | byte order reversed (identity on 8-bit types) | `bswap` |
+| `x.reverseBits()` | same type | bit order reversed | `bitreverse` |
+
+Signed types operate on the bit pattern (no overflow is possible). On `f32`/`f64`:
+`x.copySign(y)` (magnitude of `x`, sign of `y`; `llvm.copysign`),
+`x.isSignNegative()` (the sign bit: true for `-0.0` and a negative NaN — next
+to `isNaN`/`isFinite`), `x.nextUp()` / `x.nextDown()` (IEEE 754-2008: the
+nearest representable value above/below; NaN stays NaN, `+∞.nextUp()` is `+∞`,
+`0.0.nextUp()` and `-0.0.nextUp()` are the smallest positive subnormal) —
+written in the prelude over `toBits`/`fromBits` (D93). Tests: an example with
+the edges of every width, debug and release identical.
+
+Out of scope here: reading and writing integers as big/little endian bytes
+(decided later the same day, D130).
+
+User, 2026-09-30, recommended of 3. Rejected: a Go-style `bits` module of free
+functions (breaks with the existing methods); Java's names.
+
+### D105 — `reserve(n)` on every growable container (v0.60)
+
+D83's `reserve(n)` — room for at least `n` in total, never shrinks, never
+changes the contents — on `StringBuilder` (bytes), `MutableMap` and
+`MutableSet` (entries: no rehash while inserting up to `n`) and `Deque`
+(elements), besides `MutableList`. A negative `n` is a no-op as on
+`MutableList`. Allowed on a local that is later moved (D63's list), like
+`MutableList.reserve`; not a structural change for D102. Q12.
+
+User, 2026-09-30, recommended of 3. Rejected: `StringBuilder` only; leaving it.
+
+### D106 — Three small ones: `var xs = []`, `Range.isEmpty`, `cond => (x => …)` (v0.60)
+
+- **An empty literal still needs its type, and the tool writes it.** `var xs =
+  []` / `val m = [:]` stays an error, but its message names the right kind
+  (`MutableList` for a `var` that is changed, `List` otherwise; `i64`/`f64` as
+  the literal defaults) and, when a later use in the same function fixes the
+  element type (`xs.push(1)`, an argument, an assignment), carries a fix that
+  writes the annotation (`var xs: MutableList<i64> = []`), applied by `veles
+  check --fix` and the editor (preferred). No fix when no use decides it.
+  Rejected: inference from later use (Rust — larger checker change, type not
+  visible at the declaration); the message only.
+- **`Range.isEmpty()`**: public on every range, what the prelude called
+  `holdsNothing` (renamed), completion and hover (Q17c).
+- **A lambda returned by a `when` arm is printed in parentheses**: `veles fmt`
+  writes `cond => x => x * 2` as `cond => (x => x * 2)`; no warning (closes spec
+  §6.1).
+
+User, 2026-09-30, recommended of 3, and both small ones accepted.
+
+### D107 — `with p = m.lock()`: a `Mutex` held to the end of a block (v0.61)
+
+```veles
+with n = notes.lock()          // n: *Notes; the lock is held to the end of the block
+n.add(text)
+n.save()
+
+val all = notes.withLock(n => n.all())   // one expression: unchanged
+```
+
+`Mutex<T>.lock()` is usable only as the value of a `with` (both forms; else an
+error with the fix) and binds a `*T` to the value inside. The **held region** is
+the `with`'s body — the rest of the enclosing block for the statement form, the
+braces for the block form. Inside it:
+
+- **a suspension is a compile error** (family `tasks`): any suspending call,
+  `await`, `race`, `scope`, `gather`, `async` — "the lock on 'notes' is held
+  until the end of this block; release it first with the block form `with (n =
+  notes.lock()) { … }`". This is D35's rule, which `withLock` gets from its
+  lambda type (`fun(*T): R` cannot suspend); the guard gets it from the region;
+- the pointer cannot leave the region (D100 part 3);
+- locking the same `Mutex` again panics, as inside `withLock`; holding two
+  different ones is allowed (lock order is the program's, as today).
+
+The unlock is the close: on every exit, shielded (D43/D47). Compiler-known (the
+prelude implements it over the existing `Held.take`); lending functions, which
+would have made it ordinary library code, were not adopted (D111). `with notes.lock()` with no name
+(D109) is a bare critical section. `withLock` stays for one-expression uses.
+
+User, 2026-10-01, recommended of 3 (spec §7, open since D43). Rejected: the
+guard replacing `withLock` (longer one-liners); `withLock` only.
+
+### D108 — Send arms in `race` (v0.61)
+
+```veles
+race {
+  queue.send(line)            => { }             // there was room: sent
+  sleep(Duration.millis(50))  => dropped += 1    // still full: the line was not sent
+}
+```
+
+A `race` arm may be `ch.send(v)`: it is ready when the channel can take `v`
+(buffer room, or a receiver waiting). When it wins, `v` is in the channel;
+**when another arm wins, `v` was not sent** — the commit and the win are one
+step. The channel and `v` are evaluated once, in arm order, when the race starts
+(Go's `select`), not again while it waits. A send arm on a channel that is
+closed when it would be chosen panics, as `send` does (2026-09-25 decision on
+`trySend`). The arm binds nothing (`ch.send(v) => body`). When several arms are
+ready at once the existing `race` rule applies; that rule is unwritten today, so
+the implementer documents it in chapter 12 and D38 (and, if it is not
+deterministic or not fair, asks before changing it). Runtime: a send waiter on
+the channel that claims the race before writing, the same claim receive arms
+use. No task per send; `trySend` and `withTimeout(d, () => ch.send(v))` keep
+working.
+
+User, 2026-10-01, recommended of 3 (§9 Q1, asked 2026-09-27). Rejected: leaving
+it (a task per bounded send); keeping it open.
+
+### D109 — `with expr` without a name (v0.61)
+
+`with sem.acquire()` / `with (sem.acquire()) { … }` hold and close a value the
+block does not use. In the block form, an item without `name =` is an
+expression, and items mix: `with (f = try open(p), sem.acquire()) { }`. A bare
+existing name is allowed (`with conn` takes over closing `conn`; Python's `with
+f:`). `with _ = expr` stays legal. Every D43/D100 rule holds; D100's "closed as
+soon as it is opened" warning applies when the statement is last.
+
+User, 2026-10-01, recommended of 2. Rejected: requiring `with _ = expr`.
+
+### D110 — Concurrency helpers: `retry`, `Semaphore`, channel drains, `ticker` (v0.61)
+
+Pre-approved so they are added when a program needs them, without another
+question (notes P11). Prelude unless noted; each `@caller_location` for its
+misuse panics (D88).
+
+- **`retry<R, E>(times: i64, f: fun(): R suspends throws E, delay: Duration =
+  Duration.zero): R throws E`** — calls `f` until it returns; after a thrown
+  error, waits `delay` and tries again, up to `times` calls in all; then throws
+  the last error. A panic is not retried. Cancellation stops it at the wait.
+  `times < 1` panics.
+- **`Semaphore(permits: n)`** (Sendable): `acquire(): Permit` suspends until a
+  permit is free (cancellable); `tryAcquire(): Permit?` does not wait;
+  `available(): i64`. `Permit` is `Closeable` — closing returns the permit, a
+  second close does nothing. Used as `with sem.acquire()` (D109). `n < 1`
+  panics.
+- **`ch.forEach(f: fun(T) suspends throws E) throws E`** and **`ch.toList():
+  List<T>`** on `Channel<T>`: receive until the channel is closed and drained.
+- **`time.ticker(every: Duration): time.Ticker`** — in `std/time`, not the
+  prelude, because its ticks are `Timestamp`s (consistency pass 2026-10-01).
+  `Ticker` is `Closeable` and has
+  `ticks: Channel<Timestamp>` (capacity 1): a runtime timer, no task, does a
+  `trySend` each period, so a slow reader misses ticks rather than queueing
+  them (Go's ticker); the first tick after one period; `close()` stops the timer
+  and closes `ticks`. A race arm is `val at = clock.ticks.recv() => …`.
+  `every <= 0` panics.
+
+Not approved yet, asked when a program needs them: `filterConcurrent`,
+`firstConcurrent`, channel-to-channel stages, `awaitAll`.
+
+User, 2026-10-01: all four ticked.
+
+### D111 — A value that holds a task is received with `with` (v0.62)
+
+```veles
+struct TestServer {
+  listener: net.Listener
+  server: Task<()>
+  fun port(): i64 = this.listener.port()
+  implement Closeable { fun close() { this.listener.close() } }
+}
+
+fun serving(limits: Limits): TestServer throws IoError {
+  val listener = try net.listen()
+  TestServer(listener, server: async serve(listener, limitedOk(), limits: limits, log: false))
+}
+
+test "at the connection limit a new connection waits until one closes" {
+  with srv = try serving(Limits(connections: 1))
+  with first = try net.connect("127.0.0.1", srv.port())
+  ...
+}   // srv's task is cancelled and joined, then srv.close() closes the listener
+```
+
+Go's `httptest.NewServer` shape — a helper returns a value with a running task
+inside — without unstructured tasks. The user, after lending functions were
+proposed (§9 Q2): "I'm not convinced for lend functions, maybe returned
+reference to something should work like in golang? and that would work with
+`with` no?" It answers Q2 (shared test setup) with no test-specific feature: a
+fixture is an ordinary function returning an ordinary value.
+
+- **Task-holding types.** A struct or sealed variant with a field of type
+  `Task<…>`, or of a task-holding type, is *task-holding* (from its declared
+  fields; a generic instantiated with `Task` is not, so a `Task` cannot reach
+  one). Hover on the type and on a call returning one: "holds a task: receive
+  it with `with`".
+- **Received with `with`.** A task-holding value produced by a call or
+  constructor must be the value of a `with` (either form, D100) where it is
+  produced, or be returned straight to the caller (the rule then applies
+  there); anything else — `val`, an argument, a field of a non-task-holding
+  value, a collection, discarding it — is an error, family `tasks`, with the
+  fix `with x = …`. A `with`-bound one cannot leave its block (D100 part 3).
+- **Its tasks belong to that block.** They are fail-fast background children
+  of the `with`'s block exactly as in D100 part 2: a task that panics, or ends
+  with an `Err` (an async call of a throwing function is `Task<Result<R, E>>`,
+  so `E` is in the field type), cancels the rest of the block and the error
+  propagates from it (joining the enclosing function's inferred `throws`); at
+  the end of the block every held task is cancelled and joined, in reverse
+  field order, **before** the value's own `close()` (so the listener closes
+  after the server stops). A task-holding value need not be `Closeable`.
+- **Where `async` may appear.** Besides `scope`/`gather` bodies and a `with`
+  value (D100), `async f()` may be a field argument of a constructor of a
+  task-holding type whose value is returned from the function or bound by
+  `with`. If the function fails between that `async` and its return (a later
+  argument's `try`), the task is cancelled and joined before the error leaves.
+  Storing the `Task` in a local first is not allowed (it would need flow
+  tracking; revisit if a program needs it).
+- **std** may then offer `with srv = try http.testServer(handler)` (asked with
+  the std APIs of batch 7 — decided: D130).
+
+User, 2026-10-01, recommended of 4 (§9 Q2, open since 2026-09-27). Rejected:
+lending functions (`with fun … yield v` — "not convinced"); suite-level setup
+lines (the 2026-09-27 rejection stands); leaving it open.
+
+### D112 — `Secret<T>`: redacted, not encodable, wiped (v0.62)
+
+```veles
+struct Config {
+  port: i64 = 8080
+  databaseUrl: Secret<string>
+  implement Decodable
+}
+log.info("starting", log.field("db", cfg.databaseUrl))   // error: Secret is not Encodable
+println("db: ${cfg.databaseUrl}")                      // prints "db: [redacted]"
+val conn = try pg.connect(cfg.databaseUrl.expose())
+```
+
+A prelude type (it has to be the easy spelling in every config struct, as
+`Duration` is), for `T` = `string` or `List<u8>` only (other types are an
+error: "a Secret holds text or bytes"); it owns a private copy of the bytes.
+
+- `Secret.of(v)` makes one; **`s.expose(): T` is the only way to the value**
+  (a fresh copy, grep-able); `toString()`, interpolation, `expect` capture
+  and the debugger print `[redacted]`.
+- **Not `Encodable`**: passing it where an `Encodable` is needed is a compile
+  error, and deriving `Codable`/`Encodable` on a struct with a `Secret` field
+  is an error naming `@skip` or a hand-written `encode`. **`Decodable`**: a
+  config file or the environment fills it.
+- `==` is constant-time (as `Digest`, D59); not `Hashable`, not `Comparable`;
+  `Sendable`.
+- **Wiped twice.** `Closeable`: `close()` zeroes its bytes, after which
+  `expose()` panics at the caller (D88). And the collector zeroes them when it
+  frees them: the bytes live in an object whose header carries a *wipe* flag,
+  and the sweep `memset`s flagged objects before reusing them — no finalizer,
+  no ordering. Honest limit, stated in the docs: what `expose()` returned is
+  ordinary memory.
+
+User, 2026-10-01: "also zero when collected" (over the recommended
+redact-and-zero-on-close only). Rejected: leaving it.
+
+### D113 — Compile-time evaluation: constant expressions, constant tables, `const fun`, `static assert` (v0.62)
+
+```veles
+const KB: i64 = 1024
+const MB: i64 = KB * 1024
+const KEYWORDS: Map<string, Kind> = ["fun": Kind.Fun, "val": Kind.Val, "when": Kind.When]
+const fun crc32Table(): List<u32> { … }          // runs in the compiler for a const, at run time otherwise
+const CRC: List<u32> = crc32Table()
+static assert(HEADER_SIZE == 16, "the wire header is 16 bytes")
+```
+
+Today (probed): only literals and operators over literals are constant —
+`KB * 1024` is refused. The user chose all three levels: "I think expressions
+and tables and comptime functions"; marked `const fun` (recommended of 3).
+
+**1. Constant expressions.** Literals; other `const`s (any module, as visible;
+a cycle is an error); arithmetic, bitwise, shifts, comparison and logic on
+numbers and `bool` — an overflow, a division by zero or a shift past the width
+is a **compile error** in every profile (it is a constant someone wrote);
+string `+` and interpolation of constants; `len()`; `toT()`/`wrapT()` (D86);
+`if`/`when` expressions; tuples, enum members, `null`, and constructors of
+structs without an `init` block whose fields are constants; `at(i)` on a
+constant table (an index out of range is a compile error); calls of `const
+fun`s.
+
+**2. Constant tables.** A `const` of type `List<T>`, `Map<K, V>`, `Set<T>`
+(the read-only types) or `Array<T, N>` (D121) built from constant elements is
+laid out read-only in the binary: no start-up cost, one storage however often it is used. The
+collector treats pointers into it as outside the heap. Usable wherever a value
+of its type is; elements usable in `when` patterns where a constant pattern is.
+
+**3. `const fun`.** A function declared `const fun` may be called in a constant
+expression; it is an ordinary function at run time. Its body is checked
+against the rules **at its declaration** (so an edit cannot silently break a
+caller's constant in another package): locals, `val`/`var`, loops,
+`if`/`when`, recursion, constructors, building `MutableList`/`MutableMap`/
+`StringBuilder` locally and returning their read-only form, calls of other
+`const fun`s and of std functions std marks `const fun` (string, number and
+collection operations, as they are needed). Refused, each an error naming the
+rule: I/O, suspension, `async`, `unsafe`/FFI, reading a module-level `val`,
+`Mutex`/`Atomic`, task-locals. Generic `const fun`s are allowed. At compile
+time: a `panic` (or a thrown error) is a compile error at the `const` with the
+message and the call chain; evaluation has a step budget (default 10 million
+steps, `--const-steps n`) and the recursion limit, and exceeding either is a
+compile error naming the constant. Results equal run-time results: integers
+are checked as in part 1, floats follow IEEE 754 binary64/binary32 exactly
+(`f32` rounded after every operation), string and collection operations are
+the std implementations evaluated, not reimplemented. Implementation: an
+evaluator over checked HIR (`sema/consteval`), a constant then lowered as a
+table or literal. Self-hosting: a Veles-written compiler must carry the same
+evaluator — recorded as a cost; it is also what lets the self-hosted lexer
+build its UAX #31 and keyword tables as constants.
+
+**4. `static assert(cond, "why")`** at module level or in a body, `cond` a
+constant expression, checked at compile time; the reason is required (as
+D78's `assert`); failing is a compile error quoting it and the values of the
+constants in `cond`.
+
+Rejected: expressions only; expressions and tables without functions;
+`comptime fun` (a second word beside `const`); no marker (Zig-style inference
+— an edit inside a function breaks constants in other packages).
+
+### D114 — No global switch for bounds checks; an unchecked access in `unsafe` (v0.62)
+
+Bounds checks stay on in every profile; there is no `--release-unchecked`. The
+low-level escape is local: `xs.atUnchecked(i): T` on `List`/`MutableList`,
+`xs.setUnchecked(i, v)` on `MutableList`, `s.byteAtUnchecked(i): u8` on
+`string` (a lexer's hot loop) — callable only inside `unsafe` (D44, with the
+`// SAFETY:` lint). In a debug build they still check and panic "unchecked
+index out of bounds" at the caller (Rust's debug assertion in
+`get_unchecked`); in a release build an out-of-range index is undefined
+behaviour. The compiler keeps removing the checks it can prove (D62 B).
+D21's overflow policy is not reopened.
+
+User, 2026-10-01, recommended (§9 Q11). Rejected: a loud global profile
+(every index in every dependency at once); leaving no unchecked access.
+
+### D115 — A `Closeable` never closed is a warning (v0.62)
+
+A local holding a `Closeable` that is never `with`-bound, `close()`d,
+returned, stored (a field, a collection, an outer variable), passed as an
+argument or captured warns "'f' is never closed" (family `resources`), with
+the fix turning `val f =` into `with f =`; a call whose `Closeable` result is
+discarded warns too. Passing counts as handing it off (`serve(listener)`), so
+the analysis is local and has no false positive on a hand-off; it can miss a
+callee that drops it. Measured over std and examples before it lands, each
+hit fixed. Task-holding values (D111) need no warning — not receiving them
+with `with` is an error.
+
+User, 2026-10-01, recommended. Rejected: an error (refuses hand-offs it cannot
+see); nothing.
+
+### D116 — Suspension follows the argument (v0.63)
+
+```veles
+fun mapS<T, U, E>(xs: List<T>, f: fun(T): U suspends throws E): List<U> throws E { … }
+
+m.withLock(p => mapS(xs, x => x + *p))     // fine: nothing passed suspends, so the call does not
+val pages = urls.map(u => try fetch(u))     // fine: map suspends here, because the lambda does
+```
+
+Probed 2026-10-01: `throws E` already follows the argument (`E` is empty for a
+pure lambda), but a `suspends` parameter made every call suspend — refused under
+a lock, spreading to every caller of `log.withFields` and `TaskLocal.withValue`
+— and the built-in adapters refused a suspending lambda outright. That, not
+speed, is what blocked moving them into the prelude (plan B8).
+
+**Rule.** A parameter whose type is a function type marked `suspends` (also
+`(… suspends)?`) means *may suspend*. A function's suspension then has two
+sources: *unconditional* (an `await`, a call that suspends unconditionally,
+`scope`/`race`/`async`) and *conditional* (calling such a parameter, or passing
+it on to another function's such parameter). A function whose only suspension
+is conditional is **conditionally suspending**; a call of it suspends exactly
+when an argument bound to one of those parameters suspends — a lambda whose
+body suspends, or a function value whose type says `suspends`. Inference is the
+existing D2 pass with one more state; hover says "suspends if `f` does".
+
+- **Instances.** Such a function is compiled at most twice — a plain instance
+  and a coroutine instance — and each call site picks one (D8's stenciling key
+  gains one bit). A plain call is an ordinary call: allowed in a lock region
+  (D107), under `withLock`, in `init`, in a `const fun` (D113) when the rest
+  allows it.
+- **Nothing loses a suspension point it relied on**: a call that suspended
+  before stops suspending only when nothing it passes can suspend, so there is
+  no cancellation point inside it either.
+- **Not for dynamic dispatch (for now).** A trait method keeps the effects it
+  declares (D40): a method table holds one instance.
+- **Storing the parameter** (in a field, an escaping lambda) is allowed; a later
+  call through the stored value suspends by that value's type, as today.
+- **`throws E`** is unchanged — it already works this way.
+
+**Consequences, in the same change** (plan B8, unblocked): the eager adapters
+(`map`, `filter`, `fold`, `flatMap`, `any`, `all`, `count`, `find`, `sumOf`…)
+move from the Go lowering (`sema/lower_list.go`, `check_map.go`) into the
+prelude as ordinary Veles generic over `throws E` and conditional suspension,
+with `reserve` (D83/D105); `xs.map(x => slow(x))` works (sequentially;
+`mapConcurrent` is the concurrent form); `withFields`/`withValue`/`withLock`
+callers stop suspending when their lambda does not. Measured before and after
+with `veles-bench` (B8 found the prelude form 0.53 s against 0.56 s at
+`--release`) and the IR size of `examples/httpd` (B2).
+
+Self-hosting: a compiler's passes are higher-order functions over trees; they
+are written once and stay plain where nothing suspends.
+
+User, 2026-10-01, recommended of 3. Rejected: an explicit marker on the
+parameter (`suspends?` — more to write on every higher-order function);
+leaving it (B8 blocked, the lowered adapters kept).
+
+### D117 — `is Trait`: at run time on trait objects, at compile time in generics (v0.63)
+
+```veles
+fun finish(w: Writer) {
+  if (w is Flusher) w.flush()          // run time: w's concrete type implements Flusher
+}
+
+fun show<T>(x: T): string {
+  if (T implements Display) return "$x" // compile time: decided per instantiation
+  "<not printable>"
+}
+```
+
+Q5, open since 2026-09-21. The user chose both forms (over the recommended run-
+time one alone). Probed: `x is Display` was refused with a wrong message
+("'i64' can never be 'Display'").
+
+**Run time.** `x is Trait` (and `!is`, and `is Trait` arms in `when`) where `x`
+is a trait-object value tests whether its concrete type implements `Trait`; in
+the true branch `x` is narrowed to `Trait` (a trait object over the same data
+with `Trait`'s method table) — the conversion `sema/supers.go` refuses
+elsewhere. The program is linked whole, so the compiler emits, for each trait
+named in an `is`, a table from type id to method table over every type that
+implements it; the type id comes from the box's method table. A lookup per
+check, no per-box cost. Limits: the trait must be object-safe and fully applied
+(`is Into<string>`, not `is Into`); a trait with supertraits follows the
+existing trait-object limit (D58 log: supertraits cannot yet be a trait
+object). On a concrete static type the answer is known: a warning "always
+true/false" with the fix. On a type parameter it is an error naming the
+compile-time form.
+
+**Compile time.** `T implements Trait` is a condition, where `T` is a type
+parameter in scope: usable in `if` (with `&&`, `||`, `!`), `static assert`
+(D113) and `const` contexts. In the true branch `T` is treated as bounded by
+`Trait` (its methods can be called on values of `T`); the branch not taken is
+removed per instance. Both branches are type-checked once, generically. With
+D8's shared instances, the condition and the method table come from the
+instance's dictionary (one entry per `implements` in the body).
+
+Rejected: run time only, compile time only, neither.
+
+### D118 — User-defined derivation: later, through compile-time reflection (v0.63)
+
+Q6. Not built now; std's own needs are covered by D58's compiler-known set
+(`Codable`, `Comparable`). The direction is fixed so no one starts a macro
+system: once D113's `const fun` evaluator exists, a trait's author writes the
+derivation once, as ordinary Veles that walks a type's fields at compile time
+(Zig's `@typeInfo` + `inline for`), and an empty `implement` of that trait runs
+it. Designed when a library asks; the design goes through `veles-decide`.
+
+User, 2026-10-01, recommended of 3. Rejected: macros (a second language for
+authors, slow builds, unreadable errors); designing it now.
+
+### D119 — `Default` (v0.63)
+
+```veles
+struct Stats {
+  count: i64
+  names: List<string>
+  implement Default
+}
+fun fill<T: Default>(n: i64): List<T> = MutableList<T>.make(n, T.default()).toList()
+```
+
+A prelude trait `Default { static fun default(): Self }`, implemented for every
+number (`0`), `bool` (`false`), `string` (`""`), `List`/`Map`/`Set` and their
+mutable forms (empty), `T?` (`null`), tuples of `Default` types, and
+`Duration` (`zero`). A struct opts in with an empty `implement Default` (D58's
+rule): each field takes its declared default, or else its type's `default()`;
+a field with neither is an error naming it. A generic struct's empty implement
+infers the bounds (D58). A sealed trait, an enum, `Secret` (D112) and a
+task-holding type (D111) are not derivable (an error saying to write
+`default()` by hand, which is allowed). D58 deferred it ("field defaults cover
+it"); generic code is what field defaults do not reach.
+
+User, 2026-10-01, recommended of 3. Rejected: automatic for every struct whose
+fields all have defaults (a contract nobody declared); leaving it.
+
+### D120 — C layout: `@packed`, `@align(n)`, `extern union`, `@transparent` (v0.64)
+
+```veles
+@packed
+extern struct EpollEvent {
+  events: u32
+  data: EpollData
+}
+extern union EpollData {
+  ptr: *raw ()
+  fd: i32
+  u64: u64
+}
+@transparent struct Fd { raw: i32 }      // passed to C exactly as an i32
+@align(64) struct Counter { hits: Atomic<i64> }   // a cache line of its own
+```
+
+Answers D51's "noted pressure point" (Q7) with compiler-known attributes, as
+D51 intends attributes to be.
+
+- **`@packed`** on an `extern struct` or `extern union`: no padding, alignment
+  1. A field read copies with an unaligned load; `&s.field` on a packed field
+  is an error (the pointer would be misaligned — Rust's rule). Refused on a
+  plain struct (its layout is the compiler's).
+- **`@align(n)`** on any struct, or on a field of an `extern struct`: `n` a
+  power of two not below the natural alignment (else an error naming it);
+  the size rounds up to it. On a plain struct it is the low-level tool for
+  keeping hot `Atomic`s apart (false sharing).
+- **`extern union U { … }`**: fields of `CLayout` types (D69); size the
+  largest field, alignment the strictest; built with exactly one field
+  (`EpollData(fd: 3)`); **reading or writing a field only inside `unsafe`**
+  (which field is live is C's business); `CLayout` and `Sendable`; no `==`, no
+  `Display`, not derivable.
+- **`@transparent`** on a struct with exactly one field: its layout and C ABI
+  are the field's, so it may appear in `extern` signatures and in `extern
+  struct`s wherever the field's type may; otherwise an ordinary struct
+  (methods, implements). A binding gives its handles their own types at no
+  cost.
+
+User, 2026-10-01, recommended of 3. Rejected: a layout clause
+`extern(packed, align: 16) struct` (a second syntax for what attributes
+express); leaving it.
+
+### D121 — `Array<T, N>`: fixed-size inline arrays, and const generic parameters (v0.64)
+
+```veles
+extern struct SockaddrIn {
+  family: u16
+  port: u16
+  addr: u32
+  zero: Array<u8, 8>
+}
+struct Sha256 {
+  var state: Array<u32, 8> = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+                              0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]
+}
+fun sum<const N: i64>(a: Array<i64, N>): i64 = a.fold(0, (s, x) => s + x)
+```
+
+A prelude value type: `N` elements of `T` stored inline — in a local, a field,
+another array, an `extern struct` (C's `T x[N]`) — with no heap allocation.
+
+- **`N`** is a constant expression (D113) of type `i64`, `0 ≤ N`, the whole
+  value at most 1 GiB (else a compile error).
+- **Value semantics**, like a value struct (D7): assignment and passing copy.
+  Mutable through a `var` binding or field: `a.set(i, v)`, `loop (&x in a)`.
+- **Reads** as a list's (D25/D62): `a.at(i): T?`, `T` where the index is
+  proven — a constant index is always proven, so it compiles to a plain load;
+  `atUnchecked` in `unsafe` (D114). `len()` is the constant `N`. `loop (x in
+  a)`, the read-only collection methods (`map`, `fold`, `contains`, …, D46),
+  `a.toList()`, `xs.toArray<N>(): Array<T, N>?` (null on a length mismatch).
+- **Construction**: a literal `[…]` where the type is expected (the length
+  must match: a compile error otherwise); `Array<T, N>.make(value)` fills;
+  `Default` when `T` is (D119).
+- **Structural** `==`, hashing and `Display` as a list's; `Codable` as a list
+  (decoding requires exactly `N` elements); `Sendable` when `T` is; `CLayout`
+  when `T` is (D69), and `withRaw` on an `Array<u8, N>` like on a list.
+- **Const generic parameters**: `<const N: i64>` on functions, structs and
+  `extend` blocks; `N` is inferred from argument types or written
+  (`zeros<16>()`); inside, `N` is a constant. A type position takes a const
+  parameter or a constant expression without parameters — `Array<u8, N + 1>`
+  is refused for now (Rust's `generic_const_exprs` lesson). Instances are per
+  `N` (the size is part of D8's shape). The GC descriptor of an inline array of
+  pointers repeats its element's.
+
+Self-hosting: inline tables and buffers without a heap object each; SHA and
+the lexer's small buffers. Brackets stay literal syntax (D25).
+
+User, 2026-10-01, recommended of 4. Rejected: `[T; N]` (a second meaning for
+brackets); arrays only inside `extern struct`; leaving it.
+
+### D122 — No `.d.vs` declaration files (v0.64)
+
+A binding is an ordinary package (D67 allows `extern` blocks anywhere): by
+convention a raw package of `extern` declarations and a safe wrapper package
+on top of it (Rust's `-sys` crates, Go's cgo packages). A future `veles
+bindgen` writes ordinary `.vs`. The generated `builtins.vs` stub stays a
+reference document (notes #16 closed). Q7.
+
+User, 2026-10-01, recommended of 3. Rejected: a declaration-only file kind;
+deciding later.
+
+### D123 — Calling variadic C functions (v0.64)
+
+```veles
+extern "C" {
+  fun fcntl(fd: i32, cmd: i32, ...): i32
+  fun printf(format: *raw u8, ...): i32
+}
+```
+
+`...` may end the parameter list of a function in an `extern "C"` block.
+A call (inside `unsafe`, as every extern call) passes the extra arguments with
+C's default promotions: `bool`, `i8`, `i16`, `u8`, `u16` widen to `i32`; `f32`
+to `f64`; `i32`, `u32`, `i64`, `u64`, `isize`, `usize`, `f64`, raw pointers,
+`(*raw T)?`, `extern fun` pointers and `@transparent` wrappers of those pass as
+they are; anything else (a struct, a string, a list, a Veles value) is an error.
+LLVM implements each platform's variadic call convention (`call i32 (i32, i32,
+...) @fcntl(…)`), given the target triple. A Veles function cannot be variadic,
+and `extern "C" fun` (a callback) cannot either. Supersedes the §4b entry.
+New evidence over §4b: POSIX `open` and `fcntl` are variadic, and calling is
+the easy half.
+
+User, 2026-10-01, recommended of 2 (Q7). Rejected: keeping them excluded (a C
+wrapper file per variadic function).
+
+### D124 — `std/compress` and `http.compress()` (v0.65)
+
+Written in Veles (D99), measured against Go's `compress/flate` with
+`veles-bench`; miniz in the runtime stays the fallback if it is far slower.
+
+- `compress.gzip(bytes, level: i64 = 6): List<u8>`, `compress.gunzip(bytes,
+  max: i64 = 64 * 1024 * 1024): List<u8> throws CompressError`; raw
+  `deflate`/`inflate` the same; streaming `compress.GzipWriter(to: io.Stream,
+  level:)` and `compress.GzipReader(from: io.Stream, max:)` (D128).
+  `CompressError.kind`: `Corrupt`, `Truncated`, `TooLarge` (the output passed
+  `max`). `level` 0–9, else a panic at the caller (D88).
+- **The decompression ceiling is a default, 64 MiB**, changeable with `max:`
+  (user's choice over the recommended required `max:`).
+- `http.compress(minBytes: 1024)` middleware: gzip when `Accept-Encoding`
+  allows it, the body is at least `minBytes`, the type is textual (`text/*`,
+  JSON, JavaScript, SVG, XML) and the handler set no `Content-Encoding`; adds
+  `Vary: Accept-Encoding`; a streamed body (D97) is compressed as it streams.
+  `http.files` serves `name.gz` when it exists beside `name` and the client
+  accepts gzip. Compressed *request* bodies are not decoded unless asked
+  (`http.decompressRequests(max:)`).
+
+User, 2026-10-01: default 64 MiB (over the recommended required `max:`).
+Rejected: a required `max:`; no limit.
+
+### D125 — `std/config`: a struct read from the environment (v0.65)
+
+```veles
+struct Config {
+  port: i64 = 8080
+  databaseUrl: Secret<string>          // DATABASE_URL
+  @key("LOG_LEVEL")
+  level: log.Level = log.Level.Info
+  db: DbConfig                         // DB_POOL_SIZE, DB_TIMEOUT, ...
+  implement Decodable
+}
+val cfg = try config.load<Config>(files: [".env"])
+```
+
+- `config.load<T: Decodable>(files: List<string> = [], prefix: string = ""):
+  T throws config.Error` decodes `T` through a `codec.Decoder` (format name
+  `env`, so `@key(env: "…")` works) over the variables.
+- **Names**: a field `databaseUrl` is `DATABASE_URL`; a nested struct
+  prefixes (`db.poolSize` → `DB_POOL_SIZE`); `@key` replaces the name; `prefix:
+  "APP_"` goes in front of every name.
+- **Values by type**: numbers, `bool` (`true`/`false` only), `string`,
+  `Secret` (D112), `Duration` (`"30s"`, D60), `Timestamp` (RFC 3339), enums
+  by member name (exact, D58), `List<T>` comma-separated, `T?` (absent →
+  `null`); a field default is used when the variable is absent; other types
+  (maps) are an error at the type.
+- **Sources, strongest first**: the real environment, then `files` in reverse
+  order, then field defaults. A file is dotenv format (`KEY=value`, `#`
+  comments, quotes, an `export ` prefix ignored) or JSON by extension (keys by
+  field name, nested objects for nested structs). A missing file is skipped (the
+  dotenv convention); one that cannot be parsed is a problem.
+- **Every problem at once**: `config.Error { problems: List<Problem> }` (the
+  `DecodeError` shape), each naming the variable, the expected type and the
+  source — and never printing the value of a `Secret` field.
+- `config.describe<T>(): List<config.Variable>` lists the variables a config
+  reads with their types and defaults (for `--help` and docs).
+
+User, 2026-10-01, recommended of 3. Rejected: environment only; getters.
+
+### D126 — OpenTelemetry: metrics, traces and logs over OTLP/protobuf (v0.65)
+
+```veles
+fun main() throws IoError | config.Error {
+  val cfg = try config.load<Config>()
+  with try otel.start(service: "notes", endpoint: cfg.otlpEndpoint)   // D109: no name needed
+  val created = otel.meter("notes").counter("notes.created", unit: "1")
+  ...
+}
+
+fun load(id: i64): Note throws db.Error {
+  with otel.span("load note", attrs: [otel.attr("note.id", id)])
+  ...
+}
+```
+
+The user chose all three signals and the protobuf encoding (over the
+recommended metrics + traces with OTLP/JSON). Module `std/otel`.
+
+- **Start**: `otel.start(service:, endpoint:, headers: Map<string, Secret<string>>,
+  interval: Duration = 10s, resource: attrs)` returns a task-holding value
+  (D111) that batches and exports in the background; received with `with` in
+  `main`, its close flushes. Before `start` (and in tests) every instrument is
+  a no-op costing one load and branch.
+- **Metrics**: `otel.meter(name)` → `counter`, `upDownCounter`, `histogram`
+  (explicit buckets, `record(f64)` or `record(Duration)` in seconds),
+  `gauge` (`set`); `add(n, attrs: List<Attr>)`; delta-free cumulative
+  aggregation per attribute set; runtime metrics (GC pauses and heap from E5,
+  tasks, threads, open connections) registered automatically.
+- **Traces**: `with span = otel.span(name, attrs:, kind:)` (D109 allows `with
+  otel.span(…)` without a name); the current span is a task-local (D72), so
+  child tasks continue it; `span.set(attr)`, `span.event(name)`,
+  `span.fail(error)` (status error + exception event); a span that ends by a
+  panic or a thrown error records it. `http.serve` opens a server span per
+  request from an incoming W3C `traceparent` (or a new trace), `http.fetch`
+  (D127) a client span and sends `traceparent`, `std/db` (D129) a span per
+  query; attribute names follow the OpenTelemetry semantic conventions.
+  Sampling: parent-based, ratio from `start(sampleRatio: 1.0)`.
+- **Logs**: once started, every `std/log` line (D91) is also an OTLP log record
+  with the trace and span ids of its task; text/JSON output is unchanged and
+  carries `trace_id` too.
+- **Export**: OTLP over HTTP, `application/x-protobuf`, to `/v1/metrics`,
+  `/v1/traces`, `/v1/logs`, gzipped (D124), retried with backoff (D110),
+  dropping (and counting) data when the collector is down rather than
+  growing without bound. The protobuf encoding is a small hand-written encoder
+  for the OTLP messages inside `std/otel` (no code generator, no general
+  protobuf module). Needs the HTTP client (D127) and TLS (E1) for `https`.
+- Not in this decision: a Prometheus pull endpoint (an extra exporter, asked
+  when wanted).
+
+User, 2026-10-01: "All signals + protobuf" (over the recommended metrics +
+traces with OTLP/JSON and a Prometheus exporter). Rejected: Prometheus-shaped
+metrics as the model; metrics first; counters and gauges only.
+
+### D127 — The HTTP client: `fetch` and the Go spellings (v0.65)
+
+```veles
+val res = try http.fetch("https://api.example.com/notes", method: Method.post, json: note)
+val created = try res.json<Note>()
+val page = try http.get("https://example.com").text()
+with client = http.Client(timeout: Duration.seconds(5), headers: ["user-agent": "notes/1.0"])
+val users = try client.get("https://api.example.com/users").json<List<User>>()
+```
+
+The user chose both spellings.
+
+- `http.fetch(url, method: Method = Method.get, headers:, body: List<u8>? =
+  null, text: string? = null, json: T? = null, form: …, timeout: Duration =
+  30s, redirect: bool = true, retry: i64 = 0): http.ClientResponse throws
+  http.FetchError`; `http.get/post/put/patch/delete(url, …)` are the same with
+  the method fixed; a `http.Client(timeout:, headers:, maxRedirects: 10,
+  maxIdlePerHost: 8, proxy:)` has the same methods (`client.fetch`,
+  `client.get`, …) and is `Closeable` (closes idle connections); the
+  top-level functions use a shared default client.
+- `ClientResponse`: `status`, `headers`, `ok` (2xx), `ensureSuccess()` (throws
+  `http.StatusError` for a non-2xx — a non-2xx is not an error by itself,
+  as in `fetch` and Go), `text(max:)`, `bytes(max:)`, `json<T>(max:)` (whole
+  reads, `max` defaulting to 64 MiB as D124), `stream()` (the D97 body).
+- Connection pooling per host (keep-alive; idle connections dropped lazily on
+  use, no background task), a total timeout by default and per-phase limits,
+  redirects for GET/HEAD only (others returned as is), `HTTP_PROXY` /
+  `HTTPS_PROXY` / `NO_PROXY`, retries only when `retry:` asks and only for
+  idempotent methods (D110's `retry` with backoff), TLS verification on
+  (D128), a client span and `traceparent` (D126).
+
+User, 2026-10-01: "Both spellings" (over the recommended `fetch` only).
+Rejected: one spelling only; a separate request type with `send(req)` (the
+named parameters already describe a request).
+
+### D128 — `io.Stream`, and the TLS API (v0.65)
+
+`trait io.Stream : Closeable` with `read(max: i64 = 65536): List<u8>`
+(empty at the end), `readExact(n)`, `readLine(max)` (the 2026-09-22 bound;
+its `net.TooLong` moves to `io.TooLong`, every use migrated in the same
+change),
+`write(bytes)`, `writeText(s)`, `shutdownWrite()`; its effects are declared
+(D40: `suspends`, `throws IoError | TooLong`). `net.Conn`, `tls.Conn` and
+`fs.File` (where `shutdownWrite` does nothing) implement it; `http`'s server
+and client take a `Stream`, so HTTPS is the same code as HTTP; D124's streaming
+compressors wrap one.
+
+TLS (`std/tls`, plan E1; backends SChannel on Windows, OpenSSL elsewhere):
+`tls.connect(host, port, options: tls.Options = tls.Options()): tls.Conn`
+(SNI from `host`); `tls.listen(host, port, cert:)` → `tls.Listener`, or
+`tls.wrap(listener, cert)`; `tls.Certificate.load(certPath, keyPath)` (the key
+read into a `Secret`, D112); `tls.CertificateReloader(certPath, keyPath, every:
+Duration)` — a task-holding value (D111) that swaps the certificate for new
+connections; TLS 1.2 minimum, 1.3 preferred; `Options(roots:, serverName:,
+alpn:, dangerouslyAcceptAnyCertificate: false)` — verification against the
+system roots is on, and the only opt-out says what it is.
+
+User, 2026-10-01, recommended of 2. Rejected: a separate `tls.Conn` with its
+own HTTP path.
+
+### D129 — Template literals, and `std/db` with `sql"…"` (v0.65)
+
+```veles
+val users = try pool.query<User>(sql"select id, name from users where name = ${name} and age > ${minAge}")
+val order = db.ident(column) ?: throw http.badRequest("unknown column")
+val page = try pool.query<User>(sql"select * from users order by ${order} desc limit ${n}")
+```
+
+The user asked how a tagged literal would look and whether it is safe; after
+the example (the database receives the text with `$1`, `$2` and the values in
+separate protocol fields, and a plain string is refused), chose it
+(recommended of 3).
+
+**1. Template literals (language).** An identifier — or a qualified name
+(`db.sql`) — written directly before a string literal, with no space, is a
+*template literal*: `sql"…"`. The name must resolve to a function marked
+`@template` whose parameters are `(parts: List<string>, values: List<V>)`; the
+compiler calls it with the literal's text pieces (escapes processed; always
+written in the source, never input — one more piece than values) and the
+interpolated values (`$x` and `${expr}` as in any string), each converted to
+`V` — usually a trait object, so each value's type must implement it (an error
+at the `${…}` otherwise). Its result type is the literal's type; it is not a
+`string` and converts to none. `@template` is allowed in any package. Formatter,
+hover (the template function), highlighting (the tag coloured; embedded SQL
+highlighting may come later). Later uses: `html"…"` that escapes, `regex"…"`.
+
+**2. `std/db`** (plan E2, libpq first):
+- `db.Sql` is made only by `@template fun sql(parts, values: List<db.Param>)`;
+  `db.Param` is implemented for the numbers, `bool`, `string`, `List<u8>`,
+  `Timestamp`, `Duration`, `Uuid`, `T?` of those, `Secret` (sent, never
+  logged) — and `Sql` itself, which is spliced as SQL with its own parameters
+  renumbered (checked with `is Sql`, D135). **Every query method takes `Sql`**;
+  there is no `string` overload. `db.ident(name): Sql?` quotes a plain
+  identifier (letters, digits, `_`, dotted parts) and is `null` for anything
+  else; `db.Sql.dangerouslyRaw(text)` exists for migrations and DDL files, named
+  like D128's opt-out.
+- `with pool = try db.open(url: Secret<string>, size: 10)` — a task-holding
+  value (D111: its health checks run in the background); `pool.query<T:
+  Decodable>(sql): List<T>`, `queryOne<T>(sql): T?`, `exec(sql): i64` (rows
+  affected), `pool.ping()`; rows decode by the derive with column names as keys
+  (`@key(db: "user_id")`, D58; `Number` enums, D58 part 2); statement and
+  connection timeouts (`timeout:` per call, defaults on the pool).
+- **Transactions**: `with tx = try pool.begin()` — `tx.query/exec` as on the
+  pool, `try tx.commit()` explicit; leaving the block without a commit (an
+  error, a panic, cancellation, or simply forgetting) rolls back.
+- A span per query (D126) with the statement text, never the values.
+
+Self-hosting: neutral (the compiler emits IR through `StringBuilder`).
+
+Rejected: constant SQL plus a list of arguments (as safe, placeholders counted
+by hand); a plain string plus arguments.
+
+### D130 — Small std additions (v0.65)
+
+Pre-approved together (user, all four ticked):
+- **`with srv = try http.testServer(handler)`** (D111): a real listener on a
+  free loopback port running `serve`; `srv.url`, `srv.port()`.
+- **Endian bytes** (D104's naming, D121's arrays): `x.toBeBytes()` /
+  `x.toLeBytes(): Array<u8, N>` and `u32.fromBeBytes(a)` / `fromLeBytes(a)` on
+  every integer type; on `List<u8>`, `readU16Be(offset): u16?` … `readI64Le`
+  for every width, signedness and order (null when out of range), and
+  `MutableList<u8>.pushU32Be(x)`-style writers.
+- **`std/fs`**: `fs.writeAtomic(path, bytes)` (temp file in the same
+  directory, fsync, rename, fsync of the directory on POSIX), `with lock = try
+  file.lock()` / `file.tryLock(): Lock?` (exclusive advisory: `flock` /
+  `LockFileEx`), `file.sync()`, `file.seek(offset)`, `fs.lines(path, max:)`
+  (a lazy iterator, each line bounded), `fs.copy(from, to)`.
+- **Password hashing**: `crypto.hashPassword(Secret<string>): string` (PHC
+  string format, argon2id with OWASP's parameters) and
+  `crypto.verifyPassword(Secret<string>, hash): bool`, through a binding
+  (libargon2) declared in std's `[native]`.
+
+### D131 — The manifest is `package.vs`, one typed constant (v0.66)
+
+```veles
+// package.vs
+const package = Package(
+  name: "notes",
+  license: "MIT",
+  require: [
+    path("../mathlib"),
+    github("acme/httputil", "1.4.2"),
+    github("veles-db/pg", "2.1.0"),
+  ],
+  testRequire: [codeberg("lah/fakeclock", "0.3.0")],
+  native: if (target.os == Os.Windows) Native(libs: ["libpq"]) else Native(pkgConfig: ["libpq"]),
+  format: Format(indent: 2),
+)
+```
+
+Q14 and notes #3/#17. The user was shown the same manifest as flattened TOML,
+a `veles.mod` line format and this, and reasoned: "package.vs might introduce
+noise, but having 'Package' struct, might tell us, that in .vss files we could
+have similar thing… most of the language features shouldn't be possible (but
+`const` should already do it for us)… there could be a reason for 'if's".
+
+- **The file.** `package.vs` at the package root replaces `veles.toml` and
+  marks the root (the nearest `package.vs` above a path, M1). It is not part of
+  the root module. It holds `const package = Package(…)` and may hold other
+  `const`s and `const fun`s it uses; nothing else (no `use`, no `fun`, no
+  types) — each an error.
+- **Evaluated alone, as a constant (D113).** The resolver parses and checks
+  `package.vs` by itself before any module exists: only its own declarations
+  and std's `build` module are in scope — the latter unqualified (`Package`,
+  `Native`, `Format`, `path`, `github`, `gitlab`, `codeberg`, `sourcehut`,
+  `git`, `commit`, `target`, `Os`, `Arch`, …). D113's rules are what keep
+  logic out: no I/O, no loops outside a `const fun`, no reading anything but
+  constants. M1 is amended accordingly: the resolver reads Veles source, but
+  only this one constant.
+- **Conditions on the target only**: the constant `target` — `target.os`
+  (`Os.Windows`, `Os.Linux`, `Os.MacOS`), `target.arch` (`Arch.X64`,
+  `Arch.Arm64`), `target.release` — describes the target, so a cross-compile
+  sees the target. (Spelled `build.os` while being asked; renamed in the
+  consistency pass, since the module's names are in scope unqualified.) **No environment variables**
+  (user, recommended): a checkout builds the same in every shell, which
+  reproducibility, `veles.sum` and caching rely on.
+- **`Package`**: `name` (required in a package), `description`, `license`,
+  `require: List<Dependency>`, `testRequire` (only for `veles test` and
+  `*.test.vs`), `native: Native` (D67's table: `libs`, `staticLibs`,
+  `libPaths`, `pkgConfig`), `format: Format` (`indent`, `maxBlankLines`). No
+  `version`: versions are tags (D132).
+- **Dependencies**: `path(dir)`, `github(repo, version)`, `gitlab`,
+  `codeberg`, `sourcehut`, `git(url, version)`, each with an optional `as:`
+  local name; the local name is otherwise the dependency's own package name
+  (`use httputil`). A version is a string checked at compile time (`"1.4.2"`)
+  or `commit("3f2a9c1")` (D132).
+- **Scripts**: a `.vss` may declare the same top-level `const package =
+  Package(require: […])` (name defaulting to the file's); the `build` names
+  are in scope in that initializer; checksums go in `<script>.vss.sum` beside
+  it. This closes M1's "scripts will import dependencies… (open)".
+- **Tools.** `veles add/remove/update` (D132) edit the `require` list
+  through the formatter when it is a literal list, and ask for a hand edit
+  when it is computed; the LSP gives completion, hover and errors as in any
+  file; `veles fmt` reads `format`; `veles new` writes `package.vs`.
+- **Migration.** Every `veles.toml` in the tree (examples, templates, test
+  fixtures, docs chapters 11 and 13) becomes `package.vs`; a `veles.toml`
+  found by the tools is an error naming `package.vs` and printing the
+  equivalent constant. `sema/manifest.go` reads the evaluated constant.
+- Self-hosting: no TOML parser to write; the manifest is read by the
+  compiler's own front end and D113's evaluator.
+
+Rejected: a `veles.mod` line format (the recommendation until the user's point
+about scripts and conditions — least noise, but new syntax in scripts and no
+conditions); TOML, flattened (a TOML parser in Veles for self-hosting);
+environment variables in conditions; no conditions.
+
+### D132 — Where packages come from: decentralized, without Go's look (v0.66)
+
+The user: "decentralized but I would like to see more ideas, because go works
+fine but look awful"; then chose all four refinements below. M7 (minimal
+version selection) stands; its major-version-in-the-path convention is
+replaced.
+
+- **Identity is (repository, major version).** `github:` / `gitlab:` /
+  `codeberg:` / `sourcehut:` shorthands in `Package` (`github("acme/httputil",
+  …)`) expand to the https git URL; any other host is written in full with
+  `git("git.example.com/team/lib", …)`. Paths appear in `package.vs` only —
+  code says `use httputil` (M6).
+- **The major is in the version, not the path.** `github("veles-db/pg",
+  "2.1.0")`, never `…/pg/v2`. Two majors of one repository coexist only under
+  two local names (`as: "pg1"`). MVS selects per (repository, major).
+- **Versions are tags**: `v1.4.2` or `1.4.2` in the repository, written
+  `"1.4.2"`; a pre-release is selected only when written exactly. **No
+  pseudo-versions**: an untagged revision is an explicit `commit("3f2a9c1")`
+  pin; a library (no `main`) that depends on a commit pin gets a warning
+  (its users cannot run MVS over it); a tag and a commit pin of the same
+  (repository, major) in one build list is an error naming both.
+- **Fetching**: git into a module cache (`~/.veles/pkg/<host>/<repo>@<version>`),
+  or through `VELES_PROXY` — a plain HTTP protocol (`/<repo>/@v/list`,
+  `/<repo>/@v/<version>.zip`, Go's GOPROXY shape) — when set.
+- **`veles.sum` is mandatory** (§4b): one line per module version in the build
+  list, `<repo> <version> h1:<sha256 of the file tree>`; verified on every
+  fetch, a mismatch is a hard error; committed with the source.
+- **No lockfile** (user, recommended): MVS makes the `require` lists the exact
+  build list, `veles.sum` makes it byte-reproducible.
+- **Commands**: `veles add <spec>[@version]` (the latest tag of the newest
+  major when none), `veles update [name | --all]` (the explicit upgrade M7
+  requires), `veles remove <name>`, `veles deps [--why <name>]`, `veles vendor`
+  (copies the build list into `vendor/`, used when present).
+- **Publishing is pushing a tag.** A search index of names → repositories can
+  come later and changes no manifest.
+
+Rejected: a central registry (a service to build, run and secure); Go's
+`/v2` paths and pseudo-versions; a lockfile.
+
+### D133 — Health endpoints: `http.Health` (v0.67)
+
+```veles
+val health = http.Health()
+health.check("db", () => try pool.ping())
+health.check("cache", () => try cache.ping(), timeout: Duration.millis(500))
+app.wrap(health.endpoints())
+```
+
+Left out of D126 (they came with the Prometheus option the user did not
+take); the user confirmed them 2026-10-01.
+
+- `http.Health()` is a builder like `Router`; `check<E>(name, f: sendable
+  fun() suspends throws E, timeout: Duration = Duration.seconds(2))` is
+  error-polymorphic per call (the router's erasure rule, D-std/http v0.29).
+- `endpoints(live: "/healthz", ready: "/readyz")` is middleware that answers
+  those two paths before routing:
+  - **`/healthz`** (liveness): `200 ok` whenever the process can answer — it
+    runs no checks, so a slow database never gets the process restarted;
+  - **`/readyz`** (readiness): runs every check at once, each under its
+    timeout; `200` with `{"status": "ok", "checks": {"db": "ok", …}}` when all
+    pass, `503` with the failing names otherwise; and **`503` as soon as a
+    graceful stop has begun** (D68's `stop:`), so a load balancer drains the
+    instance before it closes. Failure details go to the log (D91), not into
+    the response (they may describe infrastructure).
+- Health requests are skipped by `logging()` and get no spans (D126) by
+  default — a probe every few seconds is noise.
+- `veles new --template server` (B7) uses it instead of its hand-written
+  `/healthz`.
+
+User, 2026-10-01: "yes, add health endpoints".
+
+### D134 — One `try` covers every failing call in its chain (v0.67)
+
+```veles
+val users = try http.get(url).json<List<User>>()        // was: try (try http.get(url)).json<List<User>>()
+val page = try client.fetch(url, timeout: d).text()      // each failing link unwrapped
+```
+
+D98 left this open "if such chains turn out to be common"; the consistency
+pass found that D127 (`fetch(…).json()`) and D129 make them the normal shape.
+Swift's rule: one `try` marks an expression and covers every throwing call in
+it. The user chose it (recommended of 2).
+
+- **Rule.** In `try E` where `E` is a postfix chain (`a.b(…).c(…)…`), each
+  link whose value is a `Result` and is followed by a member that is not a
+  method of `Result` is unwrapped there (its error propagates), and the
+  chain's last value is unwrapped by the `try` as before. The error type is
+  the union of every unwrapped link's errors (D45). A link followed by a
+  `Result` method (`try f().ok`) keeps today's reading. `?.` links compose as
+  D70.
+- **The receiver chain only**: an argument is not covered — `try f(g()).h()`
+  passes `g()`'s `Result` as a value, as it does today (a `Result` is a value
+  you may pass on purpose).
+- `try chain catch (e) { }` (D98) handles the union; `do { }` unchanged.
+- The "write the parentheses" warning and its fix are removed; `try (try
+  f()).g()` stays legal but warns that the inner `try` is redundant, with a
+  fix; std, examples and docs migrated in the same change.
+
+Rejected: keeping one `try` per failing call (parentheses or two lines).
+
+### D135 — `x is T` on a trait object: a downcast (v0.67)
+
+```veles
+fun param(v: db.Param, out: *SqlBuilder) {
+  if (v is db.Sql) out.splice(v) else out.bind(v)
+}
+```
+
+D117 tests whether a trait object's concrete type implements a *trait*; this
+tests whether it *is* a concrete type — Go's type assertion, Kotlin's `is`.
+Found in the consistency pass: D129 splices a `Sql` given as a `${…}` value by
+exactly this test, which was refused with a wrong message ("can never be").
+The user chose it (recommended of 2, over a `asSql(): Sql?` method on
+`db.Param`).
+
+- `x is T` / `!is T` / `is T` arms in `when`, where `x` is an open trait
+  object and `T` a concrete type implementing that trait: a comparison of the
+  box's type id with `T`'s — no table; in the true branch `x` is `T` (a value
+  struct is read out by value, D7). A `T` that does not implement the trait is
+  the "never matches" error, now correct; a type parameter `T` is refused
+  (D117's `T implements X` is the compile-time form).
+- Sealed traits already narrow by variant (D12); this is for open traits.
+
 ---
 
 ## 4b. Settled minor decisions
@@ -2974,11 +4285,11 @@ C2's last task. The user chose the recommended option of each of four.
 - **`gc.retain` handles** — `Closeable`, acquired through `with` (D43).
 - **`implement`, not `implement`** *(v0.33)* — the keyword is the word: `implement Display for Point { }`, `implement Codable` in a struct body. `implement` was the Rust abbreviation; the parser still reads it and reports the spelling with the fix. The AST node keeps its name.
 - **A function's type parameters follow its name** *(v0.33)* — `fun encode<T: Encodable>(value: T)`, as on a struct (`struct Page<T>`) and at the call (`decode<User>(text)`); Swift, TypeScript, Go and Rust agree. Kotlin's `fun <T> encode(...)` was accepted alongside it since v0.1 and is now an error with the fix: one spelling.
-- **Module interface files** — build cache, regenerated. Packages distribute as source under the decentralized registry model (manifest §7), so there is nothing to ship them in.
+- **Module interface files** — build cache, regenerated. Packages distribute as source under the decentralized registry model (manifest §7), so there is nothing to ship them in. *(v0.59: not built — the bootstrap checks a package whole; see §5 and plan E8.)*
 - **`veles.sum`** — mandatory. Supply-chain integrity is not opt-in.
-- **Variadic C functions** — excluded. The varargs calling convention differs per platform and is the nastiest corner of the C ABI; bind a fixed-arity wrapper instead.
-- **`testing`** — stdlib, with a `test` build mode. Go's version of this is a genuine strength.
-- **Discarded `async` handles** — no different from bound ones. `scope` joins either way, so there is nothing to warn about.
+- ~~**Variadic C functions** — excluded. The varargs calling convention differs per platform and is the nastiest corner of the C ABI; bind a fixed-arity wrapper instead.~~ *(v0.64: superseded by D123 — calling is allowed, defining is not.)*
+- ~~**`testing`** — stdlib, with a `test` build mode. Go's version of this is a genuine strength.~~ Superseded by D78 (`test "…" { }`, a test-only vocabulary, no importable `testing` module).
+- **Discarded `async` handles** — no different from bound ones. `scope` joins either way, so there is nothing to warn about. *(v0.59: a task bound by `with` (D100) is the exception — it is cancelled, not waited for, when its block ends.)*
 
 ---
 
@@ -3009,26 +4320,32 @@ Self-hosting sets stdlib priority order: the first thing Veles must be able to w
 
 Combined with M2, the **module is the inference unit**, and one interface file is generated per module. This format is load-bearing far beyond error handling; it is the backbone of the module system and the package manager, and should be designed early rather than treated as a compiler implementation detail.
 
+*(v0.59, state)* Not built: the bootstrap loads and checks a whole package, dependencies included, from source on every build, and infers across modules in one pass. Interface files arrive with per-module caching (plan E8) and the registry (E7).
+
 ---
 
 ## 6. Open questions requiring a decision
 
-**6.1 — Whether to lint the `cond => x => ...` case.** See D33. Accepted as-is for now.
+~~**6.1 — Whether to lint the `cond => x => ...` case.** See D33. Accepted as-is for now.~~ Decided in D106: the formatter parenthesizes the lambda, no lint.
 
-**6.2 — Manifest schema.** Drafted in `veles-manifest.md`.
+**6.2 — Manifest schema.** ~~Drafted in `veles-manifest.md`.~~ *(v0.59: that file does not exist; `veles.toml` as built is described in the docs, chapter 11, and its open syntax is checklist §9 Q14.)* *(v0.66: decided — D131, `package.vs`.)*
+
+*(v0.59)* The open questions now live in `veles-checklist.md` §9; this section keeps 6.1 and 6.2 for their history.
 
 ## 7. Not yet designed
 
-- Trait declaration syntax (generic bound syntax settled v0.33: `fun name<T: Ord>(...)`, the parameters after the name as on a struct)
-- Closure representation and capture semantics (syntax is settled in D32)
-- Whether `Mutex.withLock` becomes a `with` resource (D43)
-- Whether collection literals are wired to fixed types or an opt-in trait (D41)
-- `Mutex<T>`, `Atomic<T>`, and the rest of the synchronization surface (D35)
-- `for` loop syntax and its desugaring onto `Iterator`
-- Task API surface: spawning, joining, cancellation propagation (D3 states the discipline, not the API)
-- C ABI FFI design
-- Standard library scope beyond the self-hosting minimum
-- Build tooling, formatter, LSP
+*(v0.59, reviewed.)* Most of this list has since been designed and built; the struck items name where.
+
+- ~~Trait declaration syntax~~ — built (D23, D40, D84; bounds after the name, v0.33)
+- ~~Closure representation and capture semantics~~ — built (D32, D35 v0.28 sendable functions)
+- ~~Whether `Mutex.withLock` becomes a `with` resource (D43)~~ — decided: D107 adds `with n = notes.lock()`, `withLock` stays
+- Whether collection literals are wired to fixed types or an opt-in trait (D41) — still open
+- ~~`Mutex<T>`, `Atomic<T>`, and the rest of the synchronization surface~~ — built (D66, D73)
+- ~~`for` loop syntax and its desugaring onto `Iterator`~~ — built (`loop (x in c)`, D42)
+- ~~Task API surface~~ — built (D34–D36, D72, D100)
+- ~~C ABI FFI design~~ — built (D67, D69); the rest decided (D120–D123)
+- Standard library scope beyond the self-hosting minimum — decided API by API (plan track C)
+- ~~Build tooling, formatter, LSP~~ — built
 
 
 ---
@@ -3041,6 +4358,6 @@ The tractable version:
 
 - **C ABI FFI** for native targets — reaches C, C++, Rust, Zig, and anything else speaking the C ABI
 - **JS import/export** for the WebAssembly target when it arrives
-- **A declaration-file system**, in the spirit of `.d.ts`, so foreign libraries can be bound with Veles-side type safety
+- ~~**A declaration-file system**, in the spirit of `.d.ts`, so foreign libraries can be bound with Veles-side type safety~~ *(v0.64, D122: bindings are ordinary packages of `extern` blocks; no separate file kind.)*
 
 This covers the large majority of the practical value at a small fraction of the cost.
