@@ -17,17 +17,16 @@ fun counted(calls: Atomic<i64>): Handler = handler(req => Response.stream(MediaT
 
 // one request over a fresh connection, everything read until the server closes it
 fun ask(port: i64, request: string): string throws IoError {
-  with (conn = try net.connect("127.0.0.1", port)) {
-    try conn.writeText(request)
-    try conn.shutdownWrite()
-    var out = ""
-    loop {
-      val chunk = try conn.read()
-      if (chunk.isEmpty()) break
-      out = out + (chunk.decodeUtf8() ?: "<binary>")
-    }
-    out
+  with conn = try net.connect("127.0.0.1", port)
+  try conn.writeText(request)
+  try conn.shutdownWrite()
+  var out = ""
+  loop {
+    val chunk = try conn.read()
+    if (chunk.isEmpty()) break
+    out = out + (chunk.decodeUtf8() ?: "<binary>")
   }
+  out
 }
 
 test "call collects a streamed body" {
@@ -112,20 +111,19 @@ test "pieces arrive as they are written, not when the response is done" {
     try out.writeText("data: two\n\n")
   }))
   try withServer(slow, Limits(), port => {
-    with (conn = try net.connect("127.0.0.1", port)) {
-      try conn.writeText("GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")
-      val sw = time.Stopwatch.start()
-      var seen = ""
-      loop (!seen.contains("one")) {
-        val chunk = try conn.read()
-        if (chunk.isEmpty()) break
-        seen = seen + (chunk.decodeUtf8() ?: "<binary>")
-      }
-      expect(seen.contains("data: one"))
-      // the second piece is still half a second away
-      expect(!seen.contains("two"))
-      expect(sw.elapsed().toMillis() < 450)
+    with conn = try net.connect("127.0.0.1", port)
+    try conn.writeText("GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")
+    val sw = time.Stopwatch.start()
+    var seen = ""
+    loop (!seen.contains("one")) {
+      val chunk = try conn.read()
+      if (chunk.isEmpty()) break
+      seen = seen + (chunk.decodeUtf8() ?: "<binary>")
     }
+    expect(seen.contains("data: one"))
+    // the second piece is still half a second away
+    expect(!seen.contains("two"))
+    expect(sw.elapsed().toMillis() < 450)
   })
 }
 

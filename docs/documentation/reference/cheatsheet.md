@@ -224,6 +224,7 @@ ch.trySend(1); ch.tryRecv()      // never wait: false when full, null when nothi
 xs.mapConcurrent(f, workers: 4); xs.forEachConcurrent(f, workers: 4)   // the worker pool, results in order; f may suspend/throw
 fun run(f: sendable fun(i64): i64)   // a function that may cross a task boundary: named, or a lambda over vals of Sendable types
 await sleep(d)                   // a Duration: Duration.millis(100), Duration.seconds(5); zero yields
+with server = async serve(l)     // a background task until the block ends: then cancelled, then joined; fail-fast; `await server` for its value (D100)
 t.cancel()                       // stop a task at its next suspension point; its `with` cleanups run, the scope still joins it
 val v = try withTimeout(Duration.seconds(1), () => try fetch())   // R throws E | Timeout; the task is cancelled and unwound before Timeout is thrown
 // leaving a scope body early (return / throw / cancellation) cancels and joins its children
@@ -238,7 +239,9 @@ Data passed to `async` must be Sendable (D35): no `Mutable*`.
 
 ```veles
 // fragment
-with (f = open("a"), g = open("b")) { ... }   // close() on every exit (D43); an expression: val text = with (f = open(p)) { f.readAll() }
+with f = open("a")                            // closed when this block ends, and on every way out before (D43/D100)
+with g = open("b")                            // the last opened closes first; must not be returned or stored outside the block
+with (f = open("a"), g = open("b")) { ... }   // block form: closes at its `}`; an expression: val text = with (f = open(p)) { f.readAll() }
 implement Closeable for File { fun close() { } }
 extern "C" { fun strlen(s: *raw u8): i64 }
 // SAFETY: p is a live NUL-terminated buffer  ← why the block is sound (a warning without it)
@@ -264,13 +267,11 @@ Everything that can fail throws `IoError { path, code, detail }`.
 ```veles
 // fragment
 use net
-with (listener = try net.listen(host: "", port: 8080)) {   // defaults: loopback, any free port (listener.port())
-  loop { val conn = try listener.accept(); async handle(conn) }   // inside a scope; Conn is Sendable
-}
-with (conn = try net.connect("example.org", 80)) {
-  try conn.writeText("ping\n"); val line = try conn.readLine() ?: "closed"   // readLine: string?, null at end of stream
-  val body = try conn.readExact(n); val chunk = try conn.read(); try conn.write(bytes); try conn.shutdownWrite()
-}
+with listener = try net.listen(host: "", port: 8080)   // defaults: loopback, any free port (listener.port())
+scope { loop { val conn = try listener.accept(); async handle(conn) } }   // Conn is Sendable
+with conn = try net.connect("example.org", 80)
+try conn.writeText("ping\n"); val line = try conn.readLine() ?: "closed"   // readLine: string?, null at end of stream
+val body = try conn.readExact(n); val chunk = try conn.read(); try conn.write(bytes); try conn.shutdownWrite()
 val line = try withTimeout(Duration.seconds(5), () => try conn.readLine())   // throws IoError | Timeout
 ```
 
@@ -282,7 +283,8 @@ use http
 val app = http.Router()
 app.get("/users/{id}", req => http.Response.json(try find(req.param("id")) ?! http.notFound()))   // Fail → its status, other errors → 500
 app.get("/static/*", http.files("./public"))                                          // 304/206/416, no-cache; maxAge:, immutable:, index:, dotfiles:, redirect: (D96)
-with (listener = try net.listen(host: "", port: 8080)) { http.serve(listener, app.handler()) }
+with listener = try net.listen(host: "", port: 8080)
+http.serve(listener, app.handler())
 ```
 
 ## Attributes (D51)

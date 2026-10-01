@@ -10,9 +10,8 @@
 /// val app = http.Router()
 /// app.get("/users/{id}", req => http.Response.json(try loadUser(req.param("id")) ?! http.notFound()))
 /// app.get("/static/*", http.files("./public"))
-/// with (listener = try net.listen(host: "", port: 8080)) {
-///   http.serve(listener, app.handler())
-/// }
+/// with listener = try net.listen(host: "", port: 8080)
+/// http.serve(listener, app.handler())
 /// ```
 use codec, fs, log as logs { field }, net, path, random, time
 
@@ -129,13 +128,12 @@ public struct Request {
   /// handler that never says would take whatever a stranger sends.
   ///
   /// ```veles
-  /// with (f = try fs.open(target, fs.FileMode.Write)) {
-  ///   val body = req.stream(max: 100 * 1024 * 1024)
-  ///   loop {
-  ///     val chunk = try body.read()
-  ///     if (chunk.isEmpty()) break
-  ///     try f.write(chunk)
-  ///   }
+  /// with f = try fs.open(target, fs.FileMode.Write)
+  /// val body = req.stream(max: 100 * 1024 * 1024)
+  /// loop {
+  ///   val chunk = try body.read()
+  ///   if (chunk.isEmpty()) break
+  ///   try f.write(chunk)
   /// }
   /// ```
   public fun stream(max: i64): Body = this.body.withLimit(max)
@@ -632,7 +630,8 @@ fun acceptAndServe(listener: net.Listener, handler: Handler, limits: Limits, log
   // is full, so the limit costs nothing for what it holds back
   val permits: Channel<bool>? = if (limits.connections > 0) Channel<bool>(capacity: limits.connections) else null
   scope {
-    val acceptor = async acceptLoop(listener, accepted, permits)
+    // accepts until the loop below stops taking connections
+    with acceptor = async acceptLoop(listener, accepted, permits)
     loop {
       val conn = race {
         val c = accepted.recv()   => c
@@ -640,7 +639,6 @@ fun acceptAndServe(listener: net.Listener, handler: Handler, limits: Limits, log
       } ?: break
       async serveConnection(conn, handler, limits, log, drain, permits)
     }
-    acceptor.cancel()
   }
   // accepted but never served: close them instead of leaving the
   // descriptors to the process's exit
@@ -678,33 +676,29 @@ fun serveConnection(conn: net.Conn, handler: Handler, limits: Limits, log: bool,
 }
 
 fun connection(conn: net.Conn, handler: Handler, limits: Limits, log: bool, drain: Drain) {
-  with (c = conn) {
-    loop {
-      val (req, http10) = when (readRequest(c, limits, drain)) {
-        is Ok(r)  => r ?: break
-        is Err(e) => {
-          when (e) {
-            is Fail => {
-              val _ = writeResponse(c, Response.text(e.text, status: e.status), close: true)
-              if (log) logs.warn("bad request", field("peer", "${c.peer()}"), field("status", e.status.code), field("error", e.text))
-            }
-            else    => { }  // the peer went away or stayed silent
-          }
-          break
+  with c = conn
+  loop {
+    val (req, http10) = when (readRequest(c, limits, drain)) {
+      is Ok(r)  => r ?: break
+      is Err(e) => {
+        if (e is Fail) {
+          val _ = writeResponse(c, Response.text(e.text, status: e.status), close: true)
+          if (log) logs.warn("bad request", field("peer", "${c.peer()}"), field("status", e.status.code), field("error", e.text))
         }
+        break
       }
-      val sw = time.Stopwatch.start()
-      val resp = dispatch(handler, req)
-      // read after the handler: a stop that began while it ran still
-      // closes this connection
-      val close = !wantsKeepAlive(req, http10) || drain.stopping.load() || resp.headers.get(Header.connection)?.toLower() == "close" || !req.body.reusable(drainCap) || (resp.stream != null && http10 && resp.streamLength == null)
-      val sent = writeResponse(c, resp, close, headOnly: req.method == Method.head, http10: http10)
-      if (log) logs.info("request", field("peer", "${req.peer}"), field("method", "${req.method}"), field("path", req.path), field("status", resp.status.code), field("took", "${sw.elapsed()}"))
-      if (sent is Err || close) break
-      // what the handler left unread is read and dropped, after the answer
-      // has gone out, so that the next request starts where it should
-      if (!req.body.drain(drainCap)) break
     }
+    val sw = time.Stopwatch.start()
+    val resp = dispatch(handler, req)
+    // read after the handler: a stop that began while it ran still
+    // closes this connection
+    val close = !wantsKeepAlive(req, http10) || drain.stopping.load() || resp.headers.get(Header.connection)?.toLower() == "close" || !req.body.reusable(drainCap) || (resp.stream != null && http10 && resp.streamLength == null)
+    val sent = writeResponse(c, resp, close, headOnly: req.method == Method.head, http10: http10)
+    if (log) logs.info("request", field("peer", "${req.peer}"), field("method", "${req.method}"), field("path", req.path), field("status", resp.status.code), field("took", "${sw.elapsed()}"))
+    if (sent is Err || close) break
+    // what the handler left unread is read and dropped, after the answer
+    // has gone out, so that the next request starts where it should
+    if (!req.body.drain(drainCap)) break
   }
 }
 

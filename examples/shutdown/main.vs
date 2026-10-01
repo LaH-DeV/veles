@@ -36,27 +36,24 @@ fun ask(c: net.Conn, path: string): string throws IoError | net.TooLong {
 // Connected, one request answered, then quiet: the kind of connection a
 // browser keeps open. A stopping server closes it at once.
 fun idleClient(port: i64) throws IoError | net.TooLong {
-  with (c = try net.connect("127.0.0.1", port)) {
-    println("idle:  ${try ask(c, "/fast")}")
-    val rest = try c.read()
-    println("idle:  closed by the server (${rest.len()} more bytes)")
-  }
+  with c = try net.connect("127.0.0.1", port)
+  println("idle:  ${try ask(c, "/fast")}")
+  val rest = try c.read()
+  println("idle:  closed by the server (${rest.len()} more bytes)")
 }
 
 // Mid-request when the stop comes: the answer still arrives, marked as
 // the connection's last.
 fun busyClient(port: i64) throws IoError | net.TooLong {
-  with (c = try net.connect("127.0.0.1", port)) {
-    println("busy:  ${try ask(c, "/slow")}")
-  }
+  with c = try net.connect("127.0.0.1", port)
+  println("busy:  ${try ask(c, "/slow")}")
 }
 
 // A handler that outlives `grace`: it is cancelled, its `with` still
 // closes, and the client gets no response.
 fun stuckClient(port: i64) throws IoError | net.TooLong {
-  with (c = try net.connect("127.0.0.1", port)) {
-    println("stuck: ${try ask(c, "/stuck")}")
-  }
+  with c = try net.connect("127.0.0.1", port)
+  println("stuck: ${try ask(c, "/stuck")}")
 }
 
 struct Resource {
@@ -107,14 +104,13 @@ fun run(
   stop: sendable fun() suspends,
   grace: Duration,
 ) throws IoError | net.TooLong {
-  with (listener = try net.listen()) {
-    val port = listener.port()
-    scope {
-      async start(clients, port)
-      http.serve(listener, app(), log: false, stop: stop, grace: grace)
-    }
-    println("server: serve returned")
+  with listener = try net.listen()
+  val port = listener.port()
+  scope {
+    async start(clients, port)
+    http.serve(listener, app(), log: false, stop: stop, grace: grace)
   }
+  println("server: serve returned")
 }
 
 fun main() throws IoError | net.TooLong {

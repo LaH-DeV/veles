@@ -712,7 +712,10 @@ type ScopeBlock struct {
 	Gather   bool
 	Elems    []types.Type
 	ErrTo    types.Type // enclosing function's error type (fail-fast rethrow)
-	Span     source.Span
+	// Cancel: the scope of a `with t = async f()` (D100): when the body ends
+	// its children are cancelled before the join, as when it leaves early
+	Cancel bool
+	Span   source.Span
 }
 
 func (*ScopeBlock) hirStmt() {}

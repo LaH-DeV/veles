@@ -494,6 +494,11 @@ func (p *Parser) parseDeclKind(attrs []*ast.Attribute, pub, marked bool, which s
 			return p.parseExportedFun(attrs, pub, start)
 		}
 		return p.parseExternBlock()
+	case lexer.KwWith:
+		// read whole, so the error is one and the next declaration parses
+		p.errorf(p.span(), "'with' closes its resource when a block ends, and a module has no end; open it inside a function: 'with x = e' or 'with (x = e) { ... }' (D100)")
+		p.parseStmt()
+		return &ast.BadDecl{Pos: p.spanFrom(start)}
 	}
 	p.errorf(p.span(), "expected a declaration, found %s", p.cur().Describe())
 	return &ast.BadDecl{Pos: p.span()}

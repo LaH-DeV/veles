@@ -547,13 +547,12 @@ fun checkHttp(f: *Fuzzer, port: i64, wire: List<u8>, wants: List<Want>) {
 
 /// Sends `wire`, closes the sending side, and reads until the server closes.
 fun exchange(port: i64, wire: List<u8>): List<u8> suspends throws IoError | Timeout {
-  with (conn = try net.connect("127.0.0.1", port)) {
-    try conn.write(wire)
-    try conn.shutdownWrite()
-    // the client has closed its side, so every read on the server ends:
-    // a server still waiting after this is a bug, not a slow peer
-    try withTimeout(Duration.seconds(5), () => try readAll(conn))
-  }
+  with conn = try net.connect("127.0.0.1", port)
+  try conn.write(wire)
+  try conn.shutdownWrite()
+  // the client has closed its side, so every read on the server ends:
+  // a server still waiting after this is a bug, not a slow peer
+  try withTimeout(Duration.seconds(5), () => try readAll(conn))
 }
 
 fun readAll(c: net.Conn): List<u8> suspends throws IoError {
@@ -686,11 +685,9 @@ fun main() {
     fuzzUtf8(&f)
   }
   val listener = net.listen().getOrNull() ?: panic("fuzz: cannot listen on loopback")
-  scope {
-    val server = async http.serve(listener, http.handler(echo), fuzzLimits, log: false)
+  with (server = async http.serve(listener, http.handler(echo), fuzzLimits, log: false)) {
     loop ((wire, wants) in httpCorpus()) checkHttp(&f, listener.port(), wire, wants)
     loop (_ in 0..<iterations) fuzzHttp(&f, listener.port())
-    server.cancel()
   }
   var failed = false
   loop ((target, s) in f.stats.entries().sortedBy(e => e.0)) {

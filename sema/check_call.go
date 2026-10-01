@@ -1168,6 +1168,7 @@ func receiverViews(rt types.Type) []types.Type {
 }
 
 func (f *fnCtx) callMethod(t *FuncTemplate, ownerSubst map[*types.TypeParam]types.Type, typeArgs []types.Type, recv Expr, viaPointer bool, callee *ast.MemberExpr, e *ast.CallExpr, want types.Type) Expr {
+	f.checkStoreEscape(recv.Type(), e)
 	if t.Decl.Static {
 		f.errorf(callee.Name.Pos, "'%s' is a static function; call it on the type: '%s.%s(...)'", t.Name, recv.Type(), t.Name)
 		f.checkArgsLoosely(e.Args)
@@ -1240,6 +1241,7 @@ func (f *fnCtx) callMethod(t *FuncTemplate, ownerSubst map[*types.TypeParam]type
 
 // builtinMethod resolves methods on string, List and MutableList.
 func (f *fnCtx) builtinMethod(recv Expr, rt types.Type, name string, e *ast.CallExpr) Expr {
+	f.checkStoreEscape(rt, e)
 	nargs := func(n int) bool {
 		if len(e.Args) != n {
 			f.arityError(e.Pos, rt, name, n)

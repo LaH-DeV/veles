@@ -14,62 +14,44 @@ fun limitedRead(conn: net.Conn): string throws IoError {
 }
 
 test "at the connection limit a new connection waits until one closes" {
-  with (listener = try net.listen()) {
-    scope {
-      val server = async serve(listener, limitedOk(), limits: Limits(connections: 1), log: false)
-      val port = listener.port()
-      with (first = try net.connect("127.0.0.1", port)) {
-        try first.writeText(limitedGet(false))
-        expect((try limitedRead(first)).startsWith("HTTP/1.1 200"))
-        // the first connection is kept alive and holds the only place
-        with (second = try net.connect("127.0.0.1", port)) {
-          try second.writeText(limitedGet(true))
-          val early = withTimeout(Duration.millis(300), () => try limitedRead(second))
-          expect(when (early) {
-            is Ok  => false
-            is Err => true
-          })
-          // the first one ends: the server sees the end of its requests, closes
-          // it, and accepts the second
-          try first.shutdownWrite()
-          expect((try limitedRead(second)).startsWith("HTTP/1.1 200"))
-        }
-      }
-      server.cancel()
-    }
-  }
+  with listener = try net.listen()
+  with server = async serve(listener, limitedOk(), limits: Limits(connections: 1), log: false)
+  val port = listener.port()
+  with first = try net.connect("127.0.0.1", port)
+  try first.writeText(limitedGet(false))
+  expect((try limitedRead(first)).startsWith("HTTP/1.1 200"))
+  // the first connection is kept alive and holds the only place
+  with second = try net.connect("127.0.0.1", port)
+  try second.writeText(limitedGet(true))
+  expect(withTimeout(Duration.millis(300), () => try limitedRead(second)) is Err)
+  // the first one ends: the server sees the end of its requests, closes
+  // it, and accepts the second
+  try first.shutdownWrite()
+  expect((try limitedRead(second)).startsWith("HTTP/1.1 200"))
 }
 
 test "a limit of zero serves every connection at once" {
-  with (listener = try net.listen()) {
-    scope {
-      val server = async serve(listener, limitedOk(), limits: Limits(connections: 0), log: false)
-      val port = listener.port()
-      with (first = try net.connect("127.0.0.1", port)) {
-        try first.writeText(limitedGet(false))
-        expect((try limitedRead(first)).startsWith("HTTP/1.1 200"))
-        with (second = try net.connect("127.0.0.1", port)) {
-          try second.writeText(limitedGet(true))
-          expect((try limitedRead(second)).startsWith("HTTP/1.1 200"))
-        }
-      }
-      server.cancel()
-    }
-  }
+  with listener = try net.listen()
+  with server = async serve(listener, limitedOk(), limits: Limits(connections: 0), log: false)
+  val port = listener.port()
+  with first = try net.connect("127.0.0.1", port)
+  try first.writeText(limitedGet(false))
+  expect((try limitedRead(first)).startsWith("HTTP/1.1 200"))
+  with second = try net.connect("127.0.0.1", port)
+  try second.writeText(limitedGet(true))
+  expect((try limitedRead(second)).startsWith("HTTP/1.1 200"))
 }
 
 test "stopping a full server does not wait for a place" {
-  with (listener = try net.listen()) {
-    scope {
-      val server = async serve(listener, limitedOk(), limits: Limits(connections: 1), log: false)
-      val port = listener.port()
-      with (first = try net.connect("127.0.0.1", port)) {
-        try first.writeText(limitedGet(false))
-        expect((try limitedRead(first)).startsWith("HTTP/1.1 200"))
-        // the accept loop is now waiting for a place; cancelling ends the wait
-        await sleep(Duration.millis(50))
-        server.cancel()
-      }
-    }
-  }
+  with listener = try net.listen()
+  with server = async serve(listener, limitedOk(), limits: Limits(connections: 1), log: false)
+  val port = listener.port()
+  with first = try net.connect("127.0.0.1", port)
+  try first.writeText(limitedGet(false))
+  expect((try limitedRead(first)).startsWith("HTTP/1.1 200"))
+  // the accept loop is now waiting for a place; cancelling it while `first`
+  // still holds the place must end the wait (were it to wait on, it would
+  // take the place `first` gives up when it closes, and serve for ever)
+  await sleep(Duration.millis(50))
+  server.cancel()
 }

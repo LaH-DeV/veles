@@ -26,6 +26,9 @@ type Checker struct {
 	exportedC map[string]*ast.FunDecl
 	varFixes  map[*ast.Field]bool            // fields already offered the `var` insertion (fixes.go)
 	initDecl  map[*types.Struct]*ast.FunDecl // the synthetic `$init` method of structs with an `init { }` block
+	// resources: each `with` binding and each local that aliases one, to the
+	// binding (D100 part 3, resources.go)
+	resources map[*Var]*Var
 
 	universe *Scope
 	prog     *Program

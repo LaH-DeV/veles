@@ -1348,6 +1348,11 @@ func (p *printer) stmt(s ast.Stmt) {
 	case *ast.ScopeStmt:
 		p.w("scope ")
 		p.block(s.Body)
+	case *ast.WithStmt:
+		// as written: the formatter never converts between the statement
+		// and the block form (D100)
+		p.w("with " + s.Binding.Name.Name + " = ")
+		p.initExpr(s.Binding.Value)
 	case *ast.FunStmt:
 		p.fun(s.Fun)
 	case *ast.Block:

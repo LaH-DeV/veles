@@ -537,7 +537,6 @@ type LoopStmt struct {
 	Pos   source.Span
 }
 
-// WithStmt is `with (a = expr, b = expr) { }` (D43).
 // WithExpr is `with (r = open()) { ... }` (D43): the bindings are closed
 // on every way out of the body. It is an expression — its value is the
 // body's — and appears as a statement through ExprStmt.
@@ -550,6 +549,15 @@ type WithExpr struct {
 type WithBinding struct {
 	Name  Ident
 	Value Expr
+}
+
+// WithStmt is the statement form `with x = e` (D100): the statements after
+// it in its block are its body, so x closes when that block ends. The tree
+// keeps it flat, as written; the checker reads the rest of the block as the
+// body of D43's block form.
+type WithStmt struct {
+	Binding WithBinding
+	Pos     source.Span
 }
 
 // ScopeStmt is a structured-concurrency `scope { }` (D34).
@@ -578,6 +586,7 @@ func (s *ContinueStmt) Span() source.Span { return s.Pos }
 func (s *LoopStmt) Span() source.Span     { return s.Pos }
 
 func (s *ScopeStmt) Span() source.Span { return s.Pos }
+func (s *WithStmt) Span() source.Span  { return s.Pos }
 func (s *FunStmt) Span() source.Span   { return s.Fun.Pos }
 func (s *BadStmt) Span() source.Span   { return s.Pos }
 
@@ -592,6 +601,7 @@ func (*ContinueStmt) stmtNode() {}
 func (*LoopStmt) stmtNode()     {}
 
 func (*ScopeStmt) stmtNode() {}
+func (*WithStmt) stmtNode()  {}
 func (*FunStmt) stmtNode()   {}
 func (*BadStmt) stmtNode()   {}
 

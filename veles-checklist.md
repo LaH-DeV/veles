@@ -189,8 +189,15 @@ answered from the shape, tuples get `Comparable`, enums get
       from later use; the typed-context half landed with the old note #8)
 - [ ] Stable ABI story for `.vs` packages: none needed while source-only,
       but say so
-- [ ] D100 `with x = e` as a statement and `with t = async f()` — decided
-      2026-09-30, not built (plan B10)
+- [x] D100 `with x = e` as a statement and `with t = async f()` — built
+      2026-10-01 (plan B10): `ast.WithStmt` read by the checker as the
+      block form over the rest of the block; with-tasks lower to a scope
+      cancelled at the end of its body; refusals and the "closed as soon as
+      it is opened" warning; hover on `with` and the close-order inlay hint;
+      the tree migrated. Tests: conformance `D100-with-statement`,
+      `D100-with-syntax`, driver `TestWithStatementExits` (every exit path,
+      both profiles), lsp `TestWithInTheEditor`, parser
+      `TestWithStatement`, format "with statement", `examples/with`
 - [ ] D101–D106 (heads, loop mutation, one-task gather and `async` on a
       value, bit operations, `reserve`, empty literals / `Range.isEmpty` /
       lambda arms) — decided 2026-09-30, not built (plan B11)
@@ -302,9 +309,12 @@ answered from the shape, tuples get `Comparable`, enums get
       decided 2026-10-01) — plan B13
 - [ ] A value holding a `Task` is received with `with` (D111, decided
       2026-10-01) — plan B13
-- [ ] D100: a `with`-bound value (either form) cannot be returned, yielded,
-      stored outside its block or captured by a returned/stored lambda
-      (plan B10)
+- [x] D100: a `with`-bound value (either form) cannot be returned, yielded,
+      stored outside its block or captured by a returned/stored lambda —
+      built 2026-10-01 (`sema/resources.go`, error family `resources`); the
+      check is local (names, `val` aliases, literals and lambdas around the
+      value; stores into mutable collections, `Deque`, `PriorityQueue`,
+      channels), so a callee that keeps what it is lent is not caught (§11)
 - [x] Stack depth: one limit, in the prelude — `maxRecursionDepth` (1000),
       `tooDeepMessage(limit)` for the one sentence every caller reports, and
       `Depth` (`enter`/`leave`/`deepest`) for a walk whose depth is only its
@@ -911,6 +921,11 @@ Every new public std API (http cookies/forms/client, `std/log`,
 
 ## 11. Known limitations to revisit
 
+- A `with` resource may not leave its block (D100 part 3), but the check is
+  local: it sees the value returned, assigned, stored in a collection or
+  captured, directly or through a `val` alias or a literal around it — not
+  what a function it is lent to does with it (by the decision), nor a value
+  derived from it by a call (`conn.reader()`).
 - A test's output is captured through `io` only: what C code writes itself
   (`printf` through FFI) goes straight to the terminal.
 - `expectPanics(body)` runs `body` in a task of its own, so `body` must be

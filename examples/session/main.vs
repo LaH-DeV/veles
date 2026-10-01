@@ -95,30 +95,29 @@ const maxResponseLine: i64 = 8192
 /// One raw exchange over a fresh connection: the status line, then each
 /// Set-Cookie or Location header as sent, then the body.
 fun exchange(port: i64, method: string, target: string, body: string, extra: string = ""): string throws IoError | net.TooLong {
-  with (conn = try net.connect("127.0.0.1", port)) {
-    val head = StringBuilder()
-    head.append("$method $target HTTP/1.1\r\nHost: check\r\nConnection: close\r\n")
-    if (!body.isEmpty()) head.append("Content-Length: ${body.len()}\r\n")
-    head.append(extra)
-    head.append("\r\n")
-    try conn.writeText(head.toString() + body)
-    val out = StringBuilder()
-    out.append("< ${try conn.readLine(max: maxResponseLine) ?: "(no response)"}")
-    loop {
-      val line = try conn.readLine(max: maxResponseLine) ?: break
-      if (line.isEmpty()) break
-      val name = line.splitOnce(":")?.0?.toLower() ?: ""
-      if (name == "set-cookie" || name == "location") out.append("\n<   $line")
-    }
-    var text = ""
-    loop {
-      val chunk = try conn.read()
-      if (chunk.isEmpty()) break
-      text = text + (chunk.decodeUtf8() ?: "<binary>")
-    }
-    if (!text.isEmpty()) out.append("\n< $text")
-    out.toString()
+  with conn = try net.connect("127.0.0.1", port)
+  val head = StringBuilder()
+  head.append("$method $target HTTP/1.1\r\nHost: check\r\nConnection: close\r\n")
+  if (!body.isEmpty()) head.append("Content-Length: ${body.len()}\r\n")
+  head.append(extra)
+  head.append("\r\n")
+  try conn.writeText(head.toString() + body)
+  val out = StringBuilder()
+  out.append("< ${try conn.readLine(max: maxResponseLine) ?: "(no response)"}")
+  loop {
+    val line = try conn.readLine(max: maxResponseLine) ?: break
+    if (line.isEmpty()) break
+    val name = line.splitOnce(":")?.0?.toLower() ?: ""
+    if (name == "set-cookie" || name == "location") out.append("\n<   $line")
   }
+  var text = ""
+  loop {
+    val chunk = try conn.read()
+    if (chunk.isEmpty()) break
+    text = text + (chunk.decodeUtf8() ?: "<binary>")
+  }
+  if (!text.isEmpty()) out.append("\n< $text")
+  out.toString()
 }
 
 val form = "Content-Type: application/x-www-form-urlencoded\r\n"
@@ -148,13 +147,10 @@ fun check() throws {
   ]
   with (listener = try net.listen()) {
     val port = listener.port()
-    scope {
-      val server = async http.serve(listener, app(), log: false)
-      loop ((method, target, body, extra) in script) {
-        println("> $method $target" + (if (body.isEmpty()) "" else " $body"))
-        println(try exchange(port, method, target, body, extra))
-      }
-      server.cancel()
+    with server = async http.serve(listener, app(), log: false)
+    loop ((method, target, body, extra) in script) {
+      println("> $method $target" + (if (body.isEmpty()) "" else " $body"))
+      println(try exchange(port, method, target, body, extra))
     }
   }
   // the fields and cookies on their own, without a server

@@ -8,9 +8,8 @@
 /// of a callback, travels as a `Handle`.
 ///
 /// ```veles
-/// with (path = try ffi.CString.of("notes.db")) {
-///   unsafe { sqlite3_open(path.ptr(), &db) }
-/// }
+/// with path = try ffi.CString.of("notes.db")    // freed when the block ends
+/// unsafe { sqlite3_open(path.ptr(), &db) }
 /// ```
 ///
 /// Reading through a raw pointer is `unsafe`, so `readString` and

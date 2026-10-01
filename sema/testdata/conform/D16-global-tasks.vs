@@ -11,6 +11,9 @@ val scoped: i64 = if (true) {
   1
 } else 0
 
+// nor start one with `with t = async f()` (D100)
+val background: i64 = with (t = async two()) { 1 } // error: 'async' cannot appear in a global initializer
+
 fun main() {
-  io.println("$scoped")
+  io.println("$scoped $background")
 }

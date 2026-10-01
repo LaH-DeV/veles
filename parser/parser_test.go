@@ -704,3 +704,37 @@ func TestSuiteDecl(t *testing.T) {
 		t.Errorf("members: %s", out)
 	}
 }
+
+// D100: `with x = e` is a statement of its own, kept flat in its block — the
+// checker reads the statements after it as its body — while `with (` is
+// the block form.
+func TestWithStatement(t *testing.T) {
+	src := `
+fun f() {
+  with conn = try net.connect(host, port)
+  with t = async serve(conn)
+  with (g = open()) { g.read() }
+  conn.write(x)
+}
+`
+	f, diags := parse(t, src)
+	if diags.HasErrors() {
+		t.Fatalf("parse errors:\n%s", diags.Render())
+	}
+	stmts := f.Decls[0].(*ast.FunDecl).Body.Stmts
+	if len(stmts) != 4 {
+		t.Fatalf("expected 4 statements, got %d:\n%s", len(stmts), ast.Dump(f))
+	}
+	if w, ok := stmts[0].(*ast.WithStmt); !ok || w.Binding.Name.Name != "conn" {
+		t.Errorf("statement 0 is %T, want a WithStmt binding conn", stmts[0])
+	}
+	if w, ok := stmts[1].(*ast.WithStmt); !ok || !w.Binding.Value.(*ast.CallExpr).Async {
+		t.Errorf("statement 1 is %T, want a WithStmt over an async call", stmts[1])
+	}
+	if _, ok := stmts[2].(*ast.ExprStmt).X.(*ast.WithExpr); !ok {
+		t.Errorf("statement 2 is %T, want the block form", stmts[2])
+	}
+	if dump := ast.Dump(f); !strings.Contains(dump, "(with-stmt conn (try") {
+		t.Errorf("dump lacks the statement:\n%s", dump)
+	}
+}

@@ -42,7 +42,7 @@ var builtinFamilies = []struct{ family, header, doc string }{
 	{"Set", "struct Set<T>", "An immutable hash set."},
 	{"MutableSet", "struct MutableSet<T> : Set<T>", "A hash set that can be changed in place."},
 	{"Channel", "struct Channel<T>", "A bounded channel between tasks (D16). `Channel<T>(capacity: n)` creates one."},
-	{"Task", "struct Task<T>", "A handle to a running child of a `scope`, from `async f()`; `await t` is its result, `t.cancel()` stops it."},
+	{"Task", "struct Task<T>", "A handle to a running child of a `scope`, from `async f()` — or of a block, from `with t = async f()`, which cancels it when the block ends (D100); `await t` is its result, `t.cancel()` stops it."},
 	{"Range", "struct Range<T>", "`lo..hi` (inclusive) or `lo..<hi` (exclusive); iterate with `loop (i in r)`."},
 	{"float", "struct f64", "Floating-point numbers (`f64`, `f32`). Every method is a single machine instruction."},
 	{"int", "struct i64", "Integers (`i8`..`i64`, `u8`..`u64`). Arithmetic panics on overflow in debug builds."},

@@ -166,40 +166,39 @@ const maxResponseLine: i64 = 8192
 /// One raw HTTP/1.1 exchange over a fresh connection: the status line, the
 /// content type and the body, as the test output.
 fun exchange(port: i64, method: string, target: string, body: string, extra: string = ""): string throws IoError | net.TooLong {
-  with (conn = try net.connect("127.0.0.1", port)) {
-    val head = StringBuilder()
-    head.append("$method $target HTTP/1.1\r\nHost: check\r\nConnection: close\r\nX-Request-Id: check\r\n")
-    if (!body.isEmpty()) head.append("Content-Length: ${body.len()}\r\n")
-    head.append(extra)
-    head.append("\r\n")
-    try conn.writeText(head.toString() + body)
-    val status = try conn.readLine(max: maxResponseLine) ?: "(no response)"
-    var contentType = "-"
-    var id = "-"
-    // shown only when the server sends them: the methods a 405 or an
-    // OPTIONS names, and the length a HEAD promises without a body
-    var more = ""
-    loop {
-      val line = try conn.readLine(max: maxResponseLine) ?: break
-      if (line.isEmpty()) break
-      val (rawName, rawValue) = line.splitOnce(":") ?: continue
-      val value = rawValue.trim()
-      when (rawName.toLower()) {
-        "content-type"   => contentType = value
-        "x-request-id"   => id = value
-        "allow"          => more = more + " allow=$value"
-        "content-length" => if (method == "HEAD") more = more + " length=$value"
-        else             => { }
-      }
+  with conn = try net.connect("127.0.0.1", port)
+  val head = StringBuilder()
+  head.append("$method $target HTTP/1.1\r\nHost: check\r\nConnection: close\r\nX-Request-Id: check\r\n")
+  if (!body.isEmpty()) head.append("Content-Length: ${body.len()}\r\n")
+  head.append(extra)
+  head.append("\r\n")
+  try conn.writeText(head.toString() + body)
+  val status = try conn.readLine(max: maxResponseLine) ?: "(no response)"
+  var contentType = "-"
+  var id = "-"
+  // shown only when the server sends them: the methods a 405 or an
+  // OPTIONS names, and the length a HEAD promises without a body
+  var more = ""
+  loop {
+    val line = try conn.readLine(max: maxResponseLine) ?: break
+    if (line.isEmpty()) break
+    val (rawName, rawValue) = line.splitOnce(":") ?: continue
+    val value = rawValue.trim()
+    when (rawName.toLower()) {
+      "content-type"   => contentType = value
+      "x-request-id"   => id = value
+      "allow"          => more = more + " allow=$value"
+      "content-length" => if (method == "HEAD") more = more + " length=$value"
+      else             => { }
     }
-    var text = ""
-    loop {
-      val chunk = try conn.read()
-      if (chunk.isEmpty()) break
-      text = text + (chunk.decodeUtf8() ?: "<binary>")
-    }
-    "< $status [$contentType] id=$id$more" + (if (text.isEmpty()) "" else "\n< $text")
   }
+  var text = ""
+  loop {
+    val chunk = try conn.read()
+    if (chunk.isEmpty()) break
+    text = text + (chunk.decodeUtf8() ?: "<binary>")
+  }
+  "< $status [$contentType] id=$id$more" + (if (text.isEmpty()) "" else "\n< $text")
 }
 
 // What one request may cost this server. A note is a line of text and the
@@ -257,19 +256,16 @@ fun check(handler: http.Handler) throws IoError | EncodeError | net.TooLong {
   ]
   with (listener = try net.listen()) {
     val port = listener.port()
-    scope {
-      val server = async http.serve(listener, handler, limits, log: false)
-      loop ((method, target, body) in script) {
-        println("> $method ${brief(target)}" + (if (body.isEmpty()) "" else " ${try json.encode(brief(body))}"))
-        println(try exchange(port, method, target, body))
-      }
-      // the header ceilings need raw header lines, which the script above
-      // does not carry
-      loop ((what, extra) in headerScript) {
-        println("> GET /api/notes ($what)")
-        println(try exchange(port, "GET", "/api/notes", "", extra))
-      }
-      server.cancel()
+    with server = async http.serve(listener, handler, limits, log: false)
+    loop ((method, target, body) in script) {
+      println("> $method ${brief(target)}" + (if (body.isEmpty()) "" else " ${try json.encode(brief(body))}"))
+      println(try exchange(port, method, target, body))
+    }
+    // the header ceilings need raw header lines, which the script above
+    // does not carry
+    loop ((what, extra) in headerScript) {
+      println("> GET /api/notes ($what)")
+      println(try exchange(port, "GET", "/api/notes", "", extra))
     }
   }
   // the same handler in memory — no socket, the same routing and panic
@@ -290,13 +286,12 @@ fun run(args: List<string>) throws UsageError | IoError | EncodeError | net.TooL
   if (opts.check) {
     return try check(handler)
   }
-  with (listener = try net.listen(host: opts.host, port: opts.port)) {
-    println("serving ${opts.dir} on http://${opts.host}:${listener.port()}/ — Ctrl+C stops it gracefully")
-    // Ctrl+C or a SIGTERM: stop accepting, finish what is in flight (up to
-    // ten seconds), then return and close the listener
-    http.serve(listener, handler, limits, stop: () => os.shutdownSignal())
-    println("stopped")
-  }
+  with listener = try net.listen(host: opts.host, port: opts.port)
+  println("serving ${opts.dir} on http://${opts.host}:${listener.port()}/ — Ctrl+C stops it gracefully")
+  // Ctrl+C or a SIGTERM: stop accepting, finish what is in flight (up to
+  // ten seconds), then return and close the listener
+  http.serve(listener, handler, limits, stop: () => os.shutdownSignal())
+  println("stopped")
 }
 
 fun main() {

@@ -65,9 +65,8 @@ public struct Mutex<T> {
   /// Runs `f` with the value locked and returns what it returns. `f`
   /// cannot suspend; locking the same `Mutex` again inside it panics.
   public fun withLock<R>(f: fun(*T): R): R {
-    with (held = Held.take(this.word)) {
-      return f(this.cell)
-    }
+    with held = Held.take(this.word)
+    return f(this.cell)
   }
 
   /// A copy of the value, read under the lock.
@@ -99,9 +98,8 @@ public struct Atomic<T> {
     if (atomicLockFree(this.cell)) {
       return atomicLoad(this.cell)
     }
-    with (held = Held.take(this.word)) {
-      return *this.cell
-    }
+    with held = Held.take(this.word)
+    return *this.cell
   }
 
   public fun store(value: T) {
@@ -109,9 +107,8 @@ public struct Atomic<T> {
       atomicStore(this.cell, value)
       return
     }
-    with (held = Held.take(this.word)) {
-      *this.cell = value
-    }
+    with held = Held.take(this.word)
+    *this.cell = value
   }
 
   /// Stores `value` and returns the value it replaced.
@@ -119,11 +116,10 @@ public struct Atomic<T> {
     if (atomicLockFree(this.cell)) {
       return atomicSwap(this.cell, value)
     }
-    with (held = Held.take(this.word)) {
-      val old = *this.cell
-      *this.cell = value
-      return old
-    }
+    with held = Held.take(this.word)
+    val old = *this.cell
+    *this.cell = value
+    return old
   }
 
   /// Replaces the value with `f` of it, as one step, and returns the new
@@ -140,11 +136,10 @@ public struct Atomic<T> {
         }
       }
     }
-    with (held = Held.take(this.word)) {
-      val next = f(*this.cell)
-      *this.cell = next
-      return next
-    }
+    with held = Held.take(this.word)
+    val next = f(*this.cell)
+    *this.cell = next
+    return next
   }
 }
 

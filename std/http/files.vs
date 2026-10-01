@@ -143,17 +143,16 @@ struct FileServer {
 
 // the producer of a file's bytes `from`.. for `count` of them
 fun sendFile(p: string, from: i64, count: i64): sendable fun(BodyWriter) suspends throws IoError = out => {
-  with (f = try fs.open(p)) {
-    var at = from
-    var left = count
-    loop (left > 0) {
-      val chunk = try f.readAt(at, if (left < 65536) left else 65536)
-      // the file is shorter than it was: what was announced cannot be sent
-      if (chunk.isEmpty()) break
-      try out.write(chunk)
-      at += chunk.len()
-      left -= chunk.len()
-    }
+  with f = try fs.open(p)
+  var at = from
+  var left = count
+  loop (left > 0) {
+    val chunk = try f.readAt(at, if (left < 65536) left else 65536)
+    // the file is shorter than it was: what was announced cannot be sent
+    if (chunk.isEmpty()) break
+    try out.write(chunk)
+    at += chunk.len()
+    left -= chunk.len()
   }
 }
 

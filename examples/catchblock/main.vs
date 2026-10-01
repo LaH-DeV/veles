@@ -103,10 +103,9 @@ fun rethrow(a: string): i64 throws Bad {
 // a `with` left by a failing `try` still closes
 fun guarded(s: string): string {
   do {
-    with (d = Door(name: "d1")) {
-      val n = try parse(s)
-      "opened ${d.name} got $n"
-    }
+    with d = Door(name: "d1")
+    val n = try parse(s)
+    "opened ${d.name} got $n"
   } catch (e) {
     "handled: ${e.message()}"
   }

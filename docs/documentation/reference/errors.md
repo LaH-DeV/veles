@@ -589,7 +589,15 @@ The `val`/`var`, loop, destructuring or pattern binding is never read
 
 **Tasks, suspension and what may cross between them.** `argument of type
 'MutableList<i64>' is not Sendable and cannot cross a task boundary`,
-`'async' must be lexically inside a 'scope' or 'gather' block`.
+`'async' must be lexically inside a 'scope' or 'gather' block, or be the
+value of a 'with'`.
+
+#### `'async' must be lexically inside a 'scope' or 'gather' block, or be the value of a 'with'`
+
+A task cannot outlive the block that started it (D3/D34). Start it
+inside `scope { }` when the block should wait for it (a pool of workers),
+or as `with t = async f()` when it runs in the background until the block
+ends, which cancels it then (D100) — a server in a test, a ticker.
 
 #### `argument of type 'MutableList<i64>' is not Sendable and cannot cross a task boundary`
 
@@ -607,6 +615,50 @@ task handles from `async`.
 `await net.connect(host, port)` is written `net.connect(host, port)`: the
 call suspends by itself (D2), and `try` goes straight on it
 (`try net.connect(...)`). The quick fix removes `await`.
+
+### resources
+
+**`with` and what it closes.** `'NoClose' is not Closeable; 'with'
+resources must implement Closeable`, `'conn' cannot be returned: it is
+closed when its 'with' block ends`.
+
+`with conn = open(…)` closes `conn` when its block ends — the rest of the
+block is its body — and on every way out before then: `return`,
+`break`/`continue`, a failed `try`, `throw`, a panic, cancellation
+(D43/D100). `with (conn = open(…)) { … }` is the same with a block of its
+own, for closing before the enclosing block ends.
+
+#### `'Res' is not Closeable; 'with' resources must implement Closeable`
+
+Only a type that implements `Closeable` (one method, `close()`) can be a
+`with` resource. A nullable is refused: unwrap it first
+(`val f = open(p) ?: return`, then `with`). A task is a resource only
+where `with` starts it: `with t = async f()`.
+
+#### `'conn' cannot be returned: it is closed when its 'with' block ends`
+
+A resource does not outlive its block (D100): it cannot be returned, be
+the block's value, be stored in a variable or field declared outside the
+block, be put in a collection or sent on a channel — nor can a lambda
+that captures it. Return or store what you read from it instead. Passing
+it, or a lambda capturing it, as an argument is allowed
+(`withTimeout(d, () => try read(conn))`); a function that keeps what it is
+passed is not caught, so do not keep a resource you are lent.
+
+#### `'r' is closed as soon as it is opened`
+
+A warning: `with r = …` is the last statement of its block, so nothing
+can use `r` before the block's end closes it. Use it in the statements
+after the `with`, or drop the `with`.
+
+#### `'with x = e' is a statement` / `a module has no end` / `a body without braces has nothing after it`
+
+The statement form closes its resource where the enclosing block ends, so
+it needs a braced block with statements after it: not at module level,
+not as an expression body (`fun f() = …`), an operand, a `when` arm or a
+braceless `if`/`loop` body. Write the block form `with (x = e) { ... }`
+there, or add braces. One binding per statement: `with a = …` and
+`with b = …` on two lines (they close in reverse order).
 
 ### unsafe-and-ffi
 

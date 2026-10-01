@@ -19,4 +19,13 @@ close loop2
 open r
 close r
 failed Oops
+open first
+open second
+close second
+close first
+lengths 11
+open before the ticker
+ticked: true
+close before the ticker
+done
 exit=0

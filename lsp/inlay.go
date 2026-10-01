@@ -2,6 +2,7 @@ package lsp
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 
 	"github.com/LaH-DeV/veles/ast"
@@ -74,15 +75,18 @@ func (s *Server) inlayHints(params json.RawMessage) any {
 			out = append(out, inlayHint{Position: offsetToPosition(f, end), Label: l, Kind: hintType})
 		}
 	}
-	if len(a.index.Inferred) > 0 {
-		// parsed again from the same File, so spans compare equal to the index's
-		file := parser.ParseFile(f, &source.Diagnostics{})
-		for _, fn := range funDecls(file) {
-			inf, ok := a.index.Inferred[fn.Name.Pos]
-			if !ok || !in(fn.Name.Pos.Start) {
-				continue
-			}
-			out = append(out, effectHints(f, fn, inf)...)
+	// parsed again from the same File, so spans compare equal to the index's
+	file := parser.ParseFile(f, &source.Diagnostics{})
+	for _, fn := range funDecls(file) {
+		inf, ok := a.index.Inferred[fn.Name.Pos]
+		if !ok || !in(fn.Name.Pos.Start) {
+			continue
+		}
+		out = append(out, effectHints(f, fn, inf)...)
+	}
+	for _, h := range closeHints(f, file) {
+		if in(positionToOffset(f, h.Position)) {
+			out = append(out, h)
 		}
 	}
 	return out
@@ -194,4 +198,70 @@ func effectHints(f *source.File, fn *ast.FunDecl, inf sema.Inferred) []inlayHint
 		out = append(out, inlayHint{Position: offsetToPosition(f, fn.Effects.ThrowsSpan.End), Label: inf.Throws, Kind: hintType, PaddingLeft: true})
 	}
 	return out
+}
+
+// closeHints places, after the `}` of every block that holds statement-form
+// `with`s (D100), what that brace closes and in which order — the last
+// opened first: `closes second, first; cancels server; closes listener`.
+func closeHints(f *source.File, file *ast.File) []inlayHint {
+	var out []inlayHint
+	walkNodes(reflect.ValueOf(file), func(n any) {
+		b, ok := n.(*ast.Block)
+		if !ok || b.Pos.End <= 0 || b.Pos.End > len(f.Content) || f.Content[b.Pos.End-1] != '}' {
+			return
+		}
+		var parts []string
+		verb := ""
+		for i := len(b.Stmts) - 1; i >= 0; i-- {
+			w, ok := b.Stmts[i].(*ast.WithStmt)
+			if !ok {
+				continue
+			}
+			v := "closes"
+			if c, isCall := w.Binding.Value.(*ast.CallExpr); isCall && c.Async {
+				v = "cancels"
+			}
+			if v != verb {
+				parts = append(parts, v+" "+w.Binding.Name.Name)
+				verb = v
+			} else {
+				parts[len(parts)-1] += ", " + w.Binding.Name.Name
+			}
+		}
+		if len(parts) > 0 {
+			out = append(out, inlayHint{Position: offsetToPosition(f, b.Pos.End), Label: strings.Join(parts, "; "), Kind: hintType, PaddingLeft: true})
+		}
+	})
+	return out
+}
+
+// walkNodes calls visit on every AST node reachable from v.
+func walkNodes(v reflect.Value, visit func(any)) {
+	switch v.Kind() {
+	case reflect.Interface:
+		if !v.IsNil() {
+			walkNodes(v.Elem(), visit)
+		}
+	case reflect.Ptr:
+		if v.IsNil() {
+			return
+		}
+		if v.Type().Elem().Kind() == reflect.Struct {
+			visit(v.Interface())
+		}
+		walkNodes(v.Elem(), visit)
+	case reflect.Struct:
+		if v.Type() == reflect.TypeOf(source.Span{}) {
+			return
+		}
+		for i := 0; i < v.NumField(); i++ {
+			if v.Type().Field(i).IsExported() {
+				walkNodes(v.Field(i), visit)
+			}
+		}
+	case reflect.Slice:
+		for i := 0; i < v.Len(); i++ {
+			walkNodes(v.Index(i), visit)
+		}
+	}
 }

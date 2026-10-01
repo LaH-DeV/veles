@@ -94,10 +94,12 @@ for recursive structures.
 
 Files, sockets and locks are not memory; the collector will not close
 them for you at a useful time. A type that implements `Closeable` — one
-method, `fun close()` — can be bound in a `with` statement, and
-`close()` runs on **every** way out of the block: normal completion,
-`return`, `break`, `continue`, a thrown error, or cancellation of the
-task (D43/D47):
+method, `fun close()` — can be bound with `with`. The statement
+`with x = e` opens `x` for the rest of the block it is written in:
+`close()` runs when that block ends, and on **every** way out of it
+before then — `return`, `break`, `continue`, a failed `try`, a thrown
+error, a panic, or cancellation of the task (D43/D47/D100). Several
+close in reverse order of opening:
 
 ```veles
 use io
@@ -117,17 +119,16 @@ fun open(name: string): Res {
 error Oops { }
 
 fun early(flag: bool): i64 {
-  with (a = open("a"), b = open("b")) {
-    if (flag) return 1
-    io.println("body ${a.name} ${b.name}")
-  }
+  with a = open("a")
+  with b = open("b")
+  if (flag) return 1
+  io.println("body ${a.name} ${b.name}")
   2
 }
 
 fun failing(): i64 throws Oops {
-  with (r = open("r")) {
-    throw Oops()
-  }
+  with r = open("r")
+  throw Oops()
 }
 
 fun main() {
@@ -158,11 +159,21 @@ close r
 failed Oops
 ```
 
-Resources close in reverse order of acquisition.
+When the block ends in a value — `2` above — the value is computed
+first and the resources close before it is used. In a loop body the
+block ends with every iteration, so a resource opened there is closed
+before the next one opens.
 
-`with` is an expression: its value is the body's, and the resources are
-closed before that value is used — the shape of every "open, read,
-close" function:
+`with x = e` needs statements after it in a braced block: as the last
+statement it would close at once (a warning), and it is refused where
+there is no "rest of the block" — at module level, as an expression
+body, inside an expression, or as a body without braces.
+
+To close a resource *before* its block ends, give it a block of its
+own: `with (x = e) { ... }` closes `x` at that `}`. The block form also
+opens several at once, `with (a = …, b = …) { }`, and is an expression:
+its value is the body's, and the resources are closed before that value
+is used — the shape of every "open, read, close" function:
 
 ```veles
 use io
@@ -191,6 +202,31 @@ close b
 close a
 close r
 <r> <a><b>
+```
+
+A resource is closed when its block ends, so it must not outlive the
+block (D100): returning it, making it the block's value, storing it in a
+variable or field declared outside the block, putting it in a collection
+or sending it on a channel are errors — and so is returning or storing a
+lambda that captures it. Return what you read from it instead. Lending
+it is fine: passing the resource, or a lambda that uses it, as an
+argument compiles, because the call ends before the block does. The
+compiler does not follow the value into the function you pass it to, so
+a function that *keeps* what it was lent is not caught — do not keep a
+resource you were passed.
+
+```veles
+// fragment
+fun leak(path: string): fs.File throws IoError {
+  with f = try fs.open(path)
+  return f                                      // error: 'f' cannot be returned: it is closed when its 'with' block ends
+}
+
+fun firstLine(path: string): string throws IoError {
+  with f = try fs.open(path)
+  val text = try withTimeout(Duration.seconds(1), () => try f.read(4096))   // lent: fine
+  text.decodeUtf8() ?: ""
+}
 ```
 
 A panic unwinds through `with` as well. The task that panicked is lost
@@ -461,10 +497,9 @@ fun main() throws ffi.NulByte {
   xs.withRaw(p => unsafe {
     qsort(p.cast<*raw u8>(), xs.len().wrapU64(), 8, &ascending)
   })
-  with (s = try ffi.CString.of("hello")) {
-    // SAFETY: `s` is open here; readString copies up to its NUL
-    io.println("$xs ${unsafe { ffi.readString(s.ptr()) }}")
-  }
+  with s = try ffi.CString.of("hello")
+  // SAFETY: `s` is open here; readString copies up to its NUL
+  io.println("$xs ${unsafe { ffi.readString(s.ptr()) }}")
 }
 ```
 

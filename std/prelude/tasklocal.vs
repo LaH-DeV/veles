@@ -67,9 +67,8 @@ public struct TaskLocal<T: Sendable> {
     val cell: *raw u8 = unsafe {
       (&held).cast<*raw u8>()
     }
-    with (binding = LocalBinding.take(this.key, cell)) {
-      return try f()
-    }
+    with binding = LocalBinding.take(this.key, cell)
+    return try f()
   }
 }
 

@@ -29,19 +29,18 @@ test "a body counts in bytes and reads as text in UTF-8" {
 
 test "a body that is not UTF-8 is a 400 as text and fine as bytes" {
   try withServer(reader(), Limits(), port => {
-    with (conn = try net.connect("127.0.0.1", port)) {
-      try conn.write("POST / HTTP/1.1\r\nHost: t\r\nConnection: close\r\nContent-Length: 2\r\n\r\n".bytes().concat([0xFF, 0xFE]))
-      try conn.shutdownWrite()
-      var all = ""
-      loop {
-        val chunk = try conn.read()
-        if (chunk.isEmpty()) break
-        all = all + (chunk.decodeUtf8() ?: "<binary>")
-      }
-      // reader() asks for bytes, then for text
-      expect(all.startsWith("HTTP/1.1 400"))
-      expect(all.endsWith("body is not valid UTF-8"))
+    with conn = try net.connect("127.0.0.1", port)
+    try conn.write("POST / HTTP/1.1\r\nHost: t\r\nConnection: close\r\nContent-Length: 2\r\n\r\n".bytes().concat([0xFF, 0xFE]))
+    try conn.shutdownWrite()
+    var all = ""
+    loop {
+      val chunk = try conn.read()
+      if (chunk.isEmpty()) break
+      all = all + (chunk.decodeUtf8() ?: "<binary>")
     }
+    // reader() asks for bytes, then for text
+    expect(all.startsWith("HTTP/1.1 400"))
+    expect(all.endsWith("body is not valid UTF-8"))
   })
 }
 
@@ -81,33 +80,28 @@ test "the untyped and typed form readers can share one body" {
 }
 
 fun withServer(h: Handler, limits: Limits, client: fun(i64) suspends throws IoError | net.TooLong) throws IoError | net.TooLong {
-  with (listener = try net.listen()) {
-    scope {
-      val server = async serve(listener, h, limits: limits, log: false)
-      try client(listener.port())
-      server.cancel()
-    }
-  }
+  with listener = try net.listen()
+  with server = async serve(listener, h, limits: limits, log: false)
+  try client(listener.port())
 }
 
 // what the server sends for `parts`, written one after the other with a pause
 // between, until it closes the connection
 fun talk(port: i64, parts: List<string>, finish: bool = true): string throws IoError {
-  with (conn = try net.connect("127.0.0.1", port)) {
-    loop (p in parts) {
-      try conn.writeText(p)
-      await sleep(Duration.millis(30))
-    }
-    // the client is done writing: a server waiting for more sees the end
-    if (finish) try conn.shutdownWrite()
-    var out = ""
-    loop {
-      val chunk = try conn.read()
-      if (chunk.isEmpty()) break
-      out = out + (chunk.decodeUtf8() ?: "<binary>")
-    }
-    out
+  with conn = try net.connect("127.0.0.1", port)
+  loop (p in parts) {
+    try conn.writeText(p)
+    await sleep(Duration.millis(30))
   }
+  // the client is done writing: a server waiting for more sees the end
+  if (finish) try conn.shutdownWrite()
+  var out = ""
+  loop {
+    val chunk = try conn.read()
+    if (chunk.isEmpty()) break
+    out = out + (chunk.decodeUtf8() ?: "<binary>")
+  }
+  out
 }
 
 fun head(extra: string): string = "POST / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n$extra\r\n"
@@ -168,23 +162,22 @@ test "a stream may take more than the server's default ceiling" {
 
 test "Expect: 100-continue is answered when the handler reads, and not before" {
   try withServer(reader(), Limits(), port => {
-    with (conn = try net.connect("127.0.0.1", port)) {
-      try conn.writeText("POST / HTTP/1.1\r\nHost: t\r\nConnection: close\r\nExpect: 100-continue\r\nContent-Length: 5\r\n\r\n")
-      // the server has nothing to say yet, except to tell us to go on
-      val interim = try conn.readLine(max: 200) ?: "(none)"
-      expect(interim == "HTTP/1.1 100 Continue")
-      val blank = try conn.readLine(max: 200) ?: "(none)"
-      expect(blank.isEmpty())
-      try conn.writeText("hello")
-      var rest = ""
-      loop {
-        val chunk = try conn.read()
-        if (chunk.isEmpty()) break
-        rest = rest + (chunk.decodeUtf8() ?: "<binary>")
-      }
-      expect(rest.startsWith("HTTP/1.1 200 OK"))
-      expect(rest.endsWith("5:hello"))
+    with conn = try net.connect("127.0.0.1", port)
+    try conn.writeText("POST / HTTP/1.1\r\nHost: t\r\nConnection: close\r\nExpect: 100-continue\r\nContent-Length: 5\r\n\r\n")
+    // the server has nothing to say yet, except to tell us to go on
+    val interim = try conn.readLine(max: 200) ?: "(none)"
+    expect(interim == "HTTP/1.1 100 Continue")
+    val blank = try conn.readLine(max: 200) ?: "(none)"
+    expect(blank.isEmpty())
+    try conn.writeText("hello")
+    var rest = ""
+    loop {
+      val chunk = try conn.read()
+      if (chunk.isEmpty()) break
+      rest = rest + (chunk.decodeUtf8() ?: "<binary>")
     }
+    expect(rest.startsWith("HTTP/1.1 200 OK"))
+    expect(rest.endsWith("5:hello"))
   })
 }
 
@@ -200,19 +193,18 @@ test "a handler that answers without reading never invites the body" {
 
 test "a body the handler left unread is thrown away and the connection goes on" {
   try withServer(ignorer(), Limits(), port => {
-    with (conn = try net.connect("127.0.0.1", port)) {
-      try conn.writeText("POST /a HTTP/1.1\r\nHost: t\r\nContent-Length: 10\r\n\r\n0123456789")
-      try conn.writeText("POST /b HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nabc\r\n0\r\n\r\n")
-      try conn.writeText("GET /c HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")
-      var all = ""
-      loop {
-        val chunk = try conn.read()
-        if (chunk.isEmpty()) break
-        all = all + (chunk.decodeUtf8() ?: "<binary>")
-      }
-      // three requests, three answers, none of them confused by a body
-      expect(all.split("HTTP/1.1 200 OK").len() == 4)
+    with conn = try net.connect("127.0.0.1", port)
+    try conn.writeText("POST /a HTTP/1.1\r\nHost: t\r\nContent-Length: 10\r\n\r\n0123456789")
+    try conn.writeText("POST /b HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nabc\r\n0\r\n\r\n")
+    try conn.writeText("GET /c HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")
+    var all = ""
+    loop {
+      val chunk = try conn.read()
+      if (chunk.isEmpty()) break
+      all = all + (chunk.decodeUtf8() ?: "<binary>")
     }
+    // three requests, three answers, none of them confused by a body
+    expect(all.split("HTTP/1.1 200 OK").len() == 4)
   })
 }
 

@@ -17,20 +17,18 @@ the client is another machine.
 use io, net
 
 fun serve(listener: net.Listener) throws IoError | net.TooLong {
-  with (conn = try listener.accept()) {
-    loop {
-      val line = try conn.readLine(max: 4096) ?: break
-      try conn.writeText("echo: $line\n")
-    }
+  with conn = try listener.accept()
+  loop {
+    val line = try conn.readLine(max: 4096) ?: break
+    try conn.writeText("echo: $line\n")
   }
 }
 
 fun client(port: i64) throws IoError | net.TooLong {
-  with (conn = try net.connect("127.0.0.1", port)) {
-    loop (word in ["one", "two"]) {
-      try conn.writeText("$word\n")
-      io.println("client got: ${try conn.readLine(max: 4096)}")
-    }
+  with conn = try net.connect("127.0.0.1", port)
+  loop (word in ["one", "two"]) {
+    try conn.writeText("$word\n")
+    io.println("client got: ${try conn.readLine(max: 4096)}")
   }
 }
 
@@ -106,19 +104,18 @@ The handler owns the connection from then on; the accept loop is back to
 use io, net
 
 fun handle(conn: net.Conn, store: Mutex<MutableMap<string, string>>) throws IoError | net.TooLong {
-  with (c = conn) {
-    loop {
-      val line = try c.readLine(max: 4096) ?: break
-      val reply = when (line.split(" ")) {
-        ["SET", key, value] => {
-          store.withLock(m => m.set(key, value))
-          "OK"
-        }
-        ["GET", key]        => store.withLock(m => m.get(key)) ?: "(none)"
-        else                => "ERR unknown command"
+  with c = conn
+  loop {
+    val line = try c.readLine(max: 4096) ?: break
+    val reply = when (line.split(" ")) {
+      ["SET", key, value] => {
+        store.withLock(m => m.set(key, value))
+        "OK"
       }
-      try c.writeText("$reply\n")
+      ["GET", key]        => store.withLock(m => m.get(key)) ?: "(none)"
+      else                => "ERR unknown command"
     }
+    try c.writeText("$reply\n")
   }
 }
 
@@ -133,14 +130,13 @@ fun server(listener: net.Listener, connections: i64) throws IoError | net.TooLon
 }
 
 fun ask(port: i64, commands: List<string>): List<string> throws IoError | net.TooLong {
-  with (conn = try net.connect("127.0.0.1", port)) {
-    var replies: MutableList<string> = []
-    loop (cmd in commands) {
-      try conn.writeText("$cmd\n")
-      replies.push(try conn.readLine(max: 4096) ?: "closed")
-    }
-    return replies.toList()
+  with conn = try net.connect("127.0.0.1", port)
+  var replies: MutableList<string> = []
+  loop (cmd in commands) {
+    try conn.writeText("$cmd\n")
+    replies.push(try conn.readLine(max: 4096) ?: "closed")
   }
+  return replies.toList()
 }
 
 // two clients, one after the other: the second sees what the first stored
@@ -151,14 +147,13 @@ fun clients(port: i64): string throws IoError | net.TooLong {
 }
 
 fun main() throws IoError {
-  with (listener = try net.listen()) {
-    val port = listener.port()
-    val results = gather {
-      async server(listener, 2)
-      async clients(port)
-    }
-    io.println(results.1.getOrDefault("failed"))
+  with listener = try net.listen()
+  val port = listener.port()
+  val results = gather {
+    async server(listener, 2)
+    async clients(port)
   }
+  io.println(results.1.getOrDefault("failed"))
 }
 ```
 
@@ -187,26 +182,23 @@ read was inside one — has run, and `Timeout` is thrown:
 use io, net
 
 fun greetOrDrop(conn: net.Conn): string throws IoError | net.TooLong | Timeout {
-  with (c = conn) {
-    return try withTimeout(Duration.millis(50), () => try c.readLine(max: 4096)) ?: "closed"
-  }
+  with c = conn
+  return try withTimeout(Duration.millis(50), () => try c.readLine(max: 4096)) ?: "closed"
 }
 
 fun silent(port: i64) throws IoError {
-  with (conn = try net.connect("127.0.0.1", port)) {
-    await sleep(Duration.millis(500))
-  }
+  with conn = try net.connect("127.0.0.1", port)
+  await sleep(Duration.millis(500))
 }
 
 fun main() throws IoError {
-  with (listener = try net.listen()) {
-    scope {
-      async silent(listener.port())
-      val conn = try listener.accept()
-      when (greetOrDrop(conn)) {
-        is Ok(line) => io.println("got $line")
-        is Err(e)   => io.println("dropped: ${e.message()}")
-      }
+  with listener = try net.listen()
+  scope {
+    async silent(listener.port())
+    val conn = try listener.accept()
+    when (greetOrDrop(conn)) {
+      is Ok(line) => io.println("got $line")
+      is Err(e)   => io.println("dropped: ${e.message()}")
     }
   }
 }

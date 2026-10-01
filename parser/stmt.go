@@ -53,6 +53,9 @@ func (p *Parser) parseBodyOrStmt() *ast.Block {
 		}
 	}
 	start := p.span()
+	if p.atWithStmt() {
+		p.errorf(p.span(), "'with x = e' closes x when its block ends, and a body without braces has nothing after it; write braces around the body, or the block form 'with (x = e) { ... }' (D100)")
+	}
 	s := p.parseStmt()
 	return &ast.Block{Stmts: []ast.Stmt{s}, Pos: p.spanFrom(start)}
 }
@@ -179,6 +182,9 @@ func (p *Parser) parseStmt() ast.Stmt {
 		return p.parseLoop(start)
 
 	case lexer.KwWith:
+		if p.atWithStmt() {
+			return p.parseWithStmt()
+		}
 		w := p.parseWith()
 		return &ast.ExprStmt{X: w}
 
@@ -280,8 +286,41 @@ func (p *Parser) looksLikeForIn() bool {
 	}
 }
 
+// atWithStmt: `with name =`, the statement form (D100), as against the
+// block form's `with (`.
+func (p *Parser) atWithStmt() bool {
+	return p.at(lexer.KwWith) && p.peek(1).Kind == lexer.Ident && p.peek(2).Kind == lexer.Assign
+}
+
+// parseWithStmt reads `with name = expr` (D100). One binding: a second
+// `, b = …` is its own statement.
+func (p *Parser) parseWithStmt() *ast.WithStmt {
+	start := p.span()
+	p.next() // with
+	name, _ := p.expectIdent()
+	p.expect(lexer.Assign)
+	s := &ast.WithStmt{Binding: ast.WithBinding{Name: name, Value: p.parseExpr()}}
+	if p.at(lexer.Comma) {
+		p.errorf(p.span(), "'with x = e' binds one resource; write each on its own line ('with a = …' then 'with b = …'), or use the block form 'with (a = …, b = …) { ... }' (D100)")
+		for p.accept(lexer.Comma) { // read the rest as written, so nothing cascades
+			p.expectIdent()
+			p.expect(lexer.Assign)
+			p.parseExpr()
+		}
+	}
+	s.Pos = p.spanFrom(start)
+	return s
+}
+
 func (p *Parser) parseWith() *ast.WithExpr {
 	start := p.span()
+	if p.atWithStmt() {
+		// an operand, an expression body or an arm: there is no "rest of
+		// the block" for the resource to live through
+		p.errorf(p.span(), "'with x = e' is a statement: it closes x when its block ends, so it cannot stand inside an expression; write the block form 'with (x = e) { ... }', or put it on its own line in a braced block (D100)")
+		w := p.parseWithStmt()
+		return &ast.WithExpr{Bindings: []ast.WithBinding{w.Binding}, Body: &ast.Block{Pos: w.Pos}, Pos: p.spanFrom(start)}
+	}
 	p.next() // with
 	s := &ast.WithExpr{}
 	if _, ok := p.expect(lexer.LParen); ok {

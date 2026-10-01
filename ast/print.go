@@ -573,6 +573,10 @@ func (p *printer) stmt(s Stmt) {
 		p.open("scope")
 		p.child(func() { p.block(s.Body) })
 		p.close()
+	case *WithStmt:
+		p.w("(with-stmt " + s.Binding.Name.Name + " ")
+		p.expr(s.Binding.Value)
+		p.w(")")
 	case *FunStmt:
 		p.fun(s.Fun)
 	case *BadStmt:

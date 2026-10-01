@@ -13,16 +13,15 @@ built on it; this chapter is the parts.
 use http, io, net
 
 fun request(port: i64, target: string): string throws IoError | net.TooLong {
-  with (conn = try net.connect("127.0.0.1", port)) {
-    try conn.writeText("GET $target HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
-    val status = try conn.readLine(max: 8192) ?: ""
-    loop {
-      val line = try conn.readLine(max: 8192) ?: break   // skip the headers
-      if (line.isEmpty()) break
-    }
-    val body = try conn.read()
-    "$status | ${body.decodeUtf8() ?: "?"}"
+  with conn = try net.connect("127.0.0.1", port)
+  try conn.writeText("GET $target HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+  val status = try conn.readLine(max: 8192) ?: ""
+  loop {
+    val line = try conn.readLine(max: 8192) ?: break   // skip the headers
+    if (line.isEmpty()) break
   }
+  val body = try conn.read()
+  "$status | ${body.decodeUtf8() ?: "?"}"
 }
 
 fun main() throws IoError | net.TooLong {
@@ -30,14 +29,10 @@ fun main() throws IoError | net.TooLong {
   app.get("/", req => http.Response.text("hello ${req.query.get("name") ?: "world"}"))
   app.get("/users/{id}", req => http.Response.json("{\"id\": \"${req.param("id")}\"}"))
   app.get("/secret", req => throw http.Fail(status: http.Status.forbidden, text: "not for you"))
-  with (listener = try net.listen()) {
-    scope {
-      val server = async http.serve(listener, app.handler(), log: false)
-      loop (t in ["/?name=veles", "/users/42", "/secret", "/nothing"]) {
-        io.println(try request(listener.port(), t))
-      }
-      server.cancel()
-    }
+  with listener = try net.listen()
+  with server = async http.serve(listener, app.handler(), log: false)
+  loop (t in ["/?name=veles", "/users/42", "/secret", "/nothing"]) {
+    io.println(try request(listener.port(), t))
   }
 }
 ```
@@ -62,7 +57,9 @@ HTTP/1.1 404 Not Found | Not Found
   put in it.
 - `app.handler()` freezes the routes into one `Handler`; `http.serve`
   accepts connections forever, one task per connection, until its task is
-  cancelled — which is how the program above ends. A real server calls
+  cancelled — which is how the program above ends: `with server = async
+  http.serve(…)` runs the server in the background until `main`'s block
+  ends, then cancels it, then closes the listener (D100). A real server calls
   `serve` from `main` and runs until killed.
 - `Request` has `method`, `path`, `query`, `headers` (lower-case names),
   `bytes()`, `text()`, `stream(max:)` and `multipart(max:)` for the body, plus cookies and forms (below); `Response`
@@ -563,20 +560,19 @@ imports a module.)
 use http, io, net
 
 fun request(port: i64, target: string, extra: string): string throws IoError | net.TooLong {
-  with (conn = try net.connect("127.0.0.1", port)) {
-    try conn.writeText("GET $target HTTP/1.1\r\nHost: x\r\nConnection: close\r\n" + extra + "\r\n")
-    val status = try conn.readLine(max: 8192) ?: ""
-    var id = "-"
-    var by = "-"
-    loop {
-      val line = try conn.readLine(max: 8192) ?: break
-      if (line.isEmpty()) break
-      val low = line.toLower()
-      if (low.startsWith("x-request-id:")) id = (line.substring(13, line.len()) ?: "").trim()
-      if (low.startsWith("x-served-by:")) by = (line.substring(12, line.len()) ?: "").trim()
-    }
-    "$status id=$id by=$by"
+  with conn = try net.connect("127.0.0.1", port)
+  try conn.writeText("GET $target HTTP/1.1\r\nHost: x\r\nConnection: close\r\n" + extra + "\r\n")
+  val status = try conn.readLine(max: 8192) ?: ""
+  var id = "-"
+  var by = "-"
+  loop {
+    val line = try conn.readLine(max: 8192) ?: break
+    if (line.isEmpty()) break
+    val low = line.toLower()
+    if (low.startsWith("x-request-id:")) id = (line.substring(13, line.len()) ?: "").trim()
+    if (low.startsWith("x-served-by:")) by = (line.substring(12, line.len()) ?: "").trim()
   }
+  "$status id=$id by=$by"
 }
 
 fun main() throws IoError | net.TooLong {
@@ -589,14 +585,10 @@ fun main() throws IoError | net.TooLong {
     await sleep(Duration.millis(500))
     http.Response.text("eventually")
   })
-  with (listener = try net.listen()) {
-    scope {
-      val server = async http.serve(listener, app.handler(), log: false)
-      io.println(try request(listener.port(), "/fast", "X-Request-Id: abc123\r\n"))
-      io.println(try request(listener.port(), "/slow", "X-Request-Id: def456\r\n"))
-      server.cancel()
-    }
-  }
+  with listener = try net.listen()
+  with server = async http.serve(listener, app.handler(), log: false)
+  io.println(try request(listener.port(), "/fast", "X-Request-Id: abc123\r\n"))
+  io.println(try request(listener.port(), "/slow", "X-Request-Id: def456\r\n"))
 }
 ```
 

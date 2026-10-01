@@ -354,7 +354,7 @@ func (f *fnCtx) awaitExpr(e *ast.AwaitExpr) Expr {
 // launch checks `async call(...)`.
 func (f *fnCtx) launch(e *ast.CallExpr, want types.Type) Expr {
 	if len(f.scopes) == 0 {
-		f.errorf(e.Pos, "'async' must be lexically inside a 'scope' or 'gather' block: tasks cannot outlive their scope (D3/D34)")
+		f.errorf(e.Pos, "'async' must be lexically inside a 'scope' or 'gather' block, or be the value of a 'with' — 'with t = async f()' runs f until the block ends: tasks cannot outlive their block (D3/D34/D100)")
 		f.checkArgsLoosely(e.Args)
 		return bad()
 	}

@@ -105,6 +105,62 @@ error. Cancellation is checked at every suspension point, so `slow()`
 stops at its next `await sleep`. A task that never suspends cannot be
 cancelled — and does not need to be, since it also cannot block anyone.
 
+## Background tasks: `with t = async f()`
+
+A `scope` waits for its tasks, which is right for work you want
+finished. A task that should run only *while* something else happens —
+a server under test, a ticker, a reader draining a socket — is started
+with `with` instead (D100). It runs in the background until the block it
+is written in ends, and is then **cancelled, then joined**; a task that
+has already finished has nothing left to stop:
+
+```veles
+use io
+
+fun ticker(ticks: Channel<i64>) {
+  var n = 0
+  loop {
+    await sleep(Duration.millis(5))
+    n += 1
+    ticks.send(n)
+  }
+}
+
+fun work(): i64 {
+  await sleep(Duration.millis(30))
+  42
+}
+
+fun main() {
+  val ticks = Channel<i64>(capacity: 100)
+  with t = async ticker(ticks)
+  with w = async work()
+  io.println("work gave ${await w}")
+  io.println("ticked meanwhile: ${ticks.len() > 0}")
+}   // ticker cancelled here, then joined
+```
+
+Output:
+```text
+work gave 42
+ticked meanwhile: true
+```
+
+- It is fail-fast like a `scope` child: if the task throws or panics,
+  the rest of the block is cancelled at its next suspension point and the
+  failure comes out of the block, its error joining the function's
+  `throws`.
+- `await t` waits for it and gives its value; the end of the block then
+  has nothing to do.
+- With other `with`s in the same block it forms one stack: the last
+  opened is closed — or cancelled — first. In the program above, `w` is
+  dealt with before `t`.
+- `with (t = async f()) { ... }` stops the task at that `}` instead.
+- `async` is allowed in exactly these places: inside `scope` or `gather`,
+  and as the whole value of a `with`. Inside a `scope`, a `with`-task is
+  cancelled at the end of its own block, before the scope waits for its
+  other children.
+
 ## Collecting every outcome: `gather`
 
 When you want all results, failures included, use `gather`. It waits
@@ -373,9 +429,10 @@ got hello / timeout
 
 ## Cancellation
 
-A task is cancelled in three situations: a sibling in a fail-fast `scope`
+A task is cancelled in four situations: a sibling in a fail-fast `scope`
 failed; the body of its `scope` left early — a `return`, a `throw` or a
 `try` that failed, a cancellation coming from further out — while it was
+still running; the block of a `with t = async …` ended while it was
 still running; or someone called `cancel()` on its handle. In each case
 the same thing happens (D20/D34/D43):
 
@@ -403,11 +460,10 @@ struct Res {
 }
 
 fun worker(name: string, opened: Channel<string>) {
-  with (r = Res(name)) {
-    opened.send(name)
-    await sleep(Duration.seconds(1))
-    io.println("never printed")
-  }
+  with r = Res(name)
+  opened.send(name)
+  await sleep(Duration.seconds(1))
+  io.println("never printed")
 }
 
 fun firstReady(): string {
@@ -422,10 +478,8 @@ fun firstReady(): string {
 fun main() {
   io.println(firstReady())
   val opened = Channel<string>(capacity: 1)
-  scope {
-    val t = async worker("c", opened)
-    await opened.recv()
-    t.cancel()
+  with (t = async worker("c", opened)) {
+    await opened.recv()   // the block ends: "c" is cancelled, then joined
   }
   io.println("done")
 }

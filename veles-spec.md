@@ -3108,6 +3108,32 @@ every block, Swift `async let` style (any `}` or `return` may wait invisibly);
 `with val f = …` and `val f = with …` spellings; a warning plus fix for the old
 shape.
 
+*(2026-10-01, built — plan B10; decision-free details recorded here.)*
+`ast.WithStmt` holds one binding and stays flat in its block; the checker
+reads the statements after it as the body of D43's block form, so codegen
+sees the nested program. A with-task lowers to a `ScopeBlock` flagged
+`Cancel`, whose only child is the launch: an `async` written in the body
+still needs a `scope`/`gather` of its own and joins *that* scope. Codegen
+cancels the flagged scope's children when its body ends, before the join.
+On the fail-fast abort path of a suspension point (an enclosing scope's
+child failed), the innermost scope's children are now cancelled before its
+join — before, an inner `scope`'s children were waited for, and a
+with-task there would have been waited for for ever. Part 3 is a local
+check (`sema/resources.go`): a value counts as the resource when it is its
+name, a `val` alias of it, a tuple/list/map/struct literal around it, or a
+lambda naming it; "outside the block" is a global, a parameter, `this`, a
+place through a pointer, or a local declared before the resource; the
+storing calls are those of mutable collections, `Deque`, `PriorityQueue`
+and channels. A task obtained elsewhere is refused as a resource with a
+message naming `with t = async f()`. The hover on `with` names the line of
+the closing brace; the inlay hint is syntactic. Migration: the
+statement-position sites (38 in std and examples, 14 in docs samples, 4 in
+std doc comments), and the `scope { … t.cancel() }` shapes
+in `std/http` (tests, the acceptor of `acceptAndServe`), `examples/httpd`,
+`session`, `fuzz` and docs chapters 12 and 17; the cancels in
+`examples/cancel` and in `serve`'s grace race are what those programs are
+about, and stay.
+
 ### D101 — Which heads write `val` (v0.60)
 
 **Rule:** *a head that holds an expression writes `val` to bind a name in it;

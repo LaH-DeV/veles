@@ -146,12 +146,11 @@ public enum FileMode {
 /// other way round; every failure throws `IoError`.
 ///
 /// ```veles
-/// with (f = try fs.open("big.bin")) {
-///   val header = try f.readAt(0, 16)             // any place, in any order
-///   loop {
-///     val chunk = try f.read(65536)              // then from where the last read ended
-///     if (chunk.isEmpty()) break
-///   }
+/// with f = try fs.open("big.bin")              // closed when the block ends
+/// val header = try f.readAt(0, 16)             // any place, in any order
+/// loop {
+///   val chunk = try f.read(65536)              // then from where the last read ended
+///   if (chunk.isEmpty()) break
 /// }
 /// ```
 public struct File {

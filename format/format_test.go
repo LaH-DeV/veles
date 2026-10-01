@@ -323,6 +323,10 @@ val c = g()
 		{"concurrency",
 			"fun main() {\n  scope {\n    val t = async work(1)\n    val (a, b) = gather { async f(); async g() }\n    val w = race { val m = ch.recv() => m; sleep(100) => \"t\" }\n    with (f = open(\"a\")) { process(f) }\n  }\n}\n",
 			"fun main() {\n  scope {\n    val t = async work(1)\n    val (a, b) = gather {\n      async f()\n      async g()\n    }\n    val w = race {\n      val m = ch.recv() => m\n      sleep(100)        => \"t\"\n    }\n    with (f = open(\"a\")) {\n      process(f)\n    }\n  }\n}\n"},
+		// D100: printed as written — never converted to or from the block form
+		{"with statement",
+			"fun main() {\n  with  f = open(\"a\")\n  with t =   async work(1)\n  with (g = open(\"b\")) { take(g) }\n  take(f)\n}\n",
+			"fun main() {\n  with f = open(\"a\")\n  with t = async work(1)\n  with (g = open(\"b\")) {\n    take(g)\n  }\n  take(f)\n}\n"},
 		{"trailing whitespace and CRLF",
 			"use io\r\n\r\nfun main() {   \r\n  io.println(\"x\")  \r\n}\r\n",
 			"use io\n\nfun main() {\n  io.println(\"x\")\n}\n"},

@@ -166,6 +166,12 @@ func (g *gen) suspendPoint() {
 		g.placeLabel(abort)
 		inner := g.bodyScopes[n-1]
 		g.emit("call void @veles_task_leave_waits(ptr %s)", c.task)
+		// the body is abandoned: what the innermost scope still runs is
+		// cancelled before its join (a `with` task, D100, would otherwise
+		// be waited for; a scope whose own child failed has cancelled them)
+		isc := g.newTmp()
+		g.emit("%s = load ptr, ptr %s", isc, inner.slot)
+		g.emit("call void @veles_scope_cancel(ptr %s)", isc)
 		g.runCleanups(inner.cleanups)
 		g.emitTerm("br label %%%s", inner.wait)
 		g.placeLabel(go_on)
@@ -359,6 +365,13 @@ func (g *gen) scopeBlock(e *sema.ScopeBlock) string {
 	g.block(e.Body)
 	if !e.Gather {
 		g.bodyScopes = g.bodyScopes[:len(g.bodyScopes)-1]
+	}
+	if e.Cancel && !g.term {
+		// `with t = async f()` (D100): the body is over, so the task is
+		// stopped and then joined, as when the body leaves early
+		scv := g.newTmp()
+		g.emit("%s = load ptr, ptr %s", scv, slot)
+		g.emit("call void @veles_scope_cancel(ptr %s)", scv)
 	}
 	// wait for every child; the join is emitted even after a body that
 	// always returns or throws, because the fail-fast abort branch of a

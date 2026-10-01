@@ -1,6 +1,7 @@
 package sema
 
 import (
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -433,12 +434,21 @@ func (f *fnCtx) checkBlock(b *ast.Block, expected types.Type, wantValue bool) *B
 	f.lintStaleRefs(b.Stmts)
 	out := &Block{Type: types.TUnit}
 	terminated := false
+	absorbed := false // a statement-form `with` took the rest of the block
 	for i, s := range b.Stmts {
+		if absorbed {
+			break
+		}
 		if terminated {
 			f.errorf(s.Span(), "unreachable code: the statement before it always leaves; remove it or move it up")
 			break
 		}
 		last := i == len(b.Stmts)-1
+		if ws, ok := s.(*ast.WithStmt); ok {
+			// D100: the rest of the block is the body of D43's block form,
+			// checked (and lowered) exactly as if it had been written so
+			s, last, absorbed = f.withRest(ws, b, i), true, true
+		}
 		if last && wantValue {
 			if es, ok := s.(*ast.ExprStmt); ok {
 				var x Expr
@@ -601,6 +611,11 @@ func (f *fnCtx) checkValStmt(s *ast.ValStmt) []Stmt {
 			v.InitText = srcText(s.Value) // for the hover
 			f.c.refVar(b.Name.Pos, v)     // re-record the declaration with it
 		}
+		// an alias of a `with` resource may not leave its block either (D100);
+		// looked up before the name is declared, which may shadow it
+		if r, _ := f.heldResource(s.Value); r != nil {
+			f.markResource(v, r)
+		}
 		f.declareChecked(b.Name.Name, v, b.Name.Pos)
 		if s.Value != nil {
 			f.declFacts(v, s.Value)
@@ -630,6 +645,9 @@ func (f *fnCtx) checkReturn(s *ast.ReturnStmt) []Stmt {
 	if f.isGlobal {
 		f.errorf(s.Pos, "'return' outside of a function: a global's value is its initializer; move the code into a function")
 		return nil
+	}
+	if s.Value != nil {
+		f.checkReturnEscape(s.Value)
 	}
 	if f.retType == nil {
 		// lambda with an inferred return type: the first return decides
@@ -672,6 +690,7 @@ func (f *fnCtx) checkReturn(s *ast.ReturnStmt) []Stmt {
 // checkAssign checks an assignment; counting a non-negative index up keeps
 // it non-negative (D62).
 func (f *fnCtx) checkAssign(s *ast.AssignStmt) []Stmt {
+	f.checkAssignEscape(s)
 	keep := f.countsUp(s)
 	out := f.checkAssignInner(s)
 	if keep != nil {
@@ -1506,13 +1525,27 @@ func (f *fnCtx) iteratorLoop(s *ast.LoopStmt, iter Expr, lp *Loop, label string)
 	return append(pre, lp), true
 }
 
-// checkWith lowers `with (a = x, b = y) { body }` into nested With
-// statements so that resources close in reverse order.
+// withRest is the statement form `with x = e` (D100) as D43's block form:
+// its body is every statement after it in b, so the resource closes where b
+// ends. The rest of the block's value, if it has one, is the with's value
+// and is computed before the close (D43 v0.29).
+func (f *fnCtx) withRest(ws *ast.WithStmt, b *ast.Block, i int) ast.Stmt {
+	rest := b.Stmts[i+1:]
+	name := ws.Binding.Name.Name
+	if len(rest) == 0 {
+		f.warnf(ws.Pos, "'%s' is closed as soon as it is opened: nothing follows 'with %s = …' in its block, and the block's end closes it (D100)", name, name)
+	}
+	end := source.Span{File: b.Pos.File, Start: b.Pos.End, End: b.Pos.End}
+	body := &ast.Block{Stmts: rest, Pos: ws.Pos.To(end)}
+	return &ast.ExprStmt{X: &ast.WithExpr{Bindings: []ast.WithBinding{ws.Binding}, Body: body, Pos: ws.Pos.To(end)}}
+}
+
 // withExpr checks `with (r = init) { body }` (D43). It is an expression:
 // in statement position (want is unit) the body is a plain block; where a
 // value is wanted the body's value is the result, carried out through a
 // temporary declared before the resources are opened, so the close calls
-// run between the body and the use of the value.
+// run between the body and the use of the value. The bindings nest, so
+// the resources close in reverse order.
 func (f *fnCtx) withExpr(e *ast.WithExpr, want types.Type) Expr {
 	closeable := f.c.traitNamed("Closeable")
 	f.pushScope()
@@ -1520,6 +1553,9 @@ func (f *fnCtx) withExpr(e *ast.WithExpr, want types.Type) Expr {
 	asValue := want == nil || !types.IsUnit(want)
 	var result *Var
 	stmts, bodyT := f.withBindings(e, 0, closeable, want, asValue, &result)
+	if types.IsInvalid(bodyT) {
+		return bad() // a binding said what is wrong; its value is no '()'
+	}
 	out := &Block{Type: types.TUnit}
 	if result != nil {
 		out.Stmts = append(out.Stmts, &VarDecl{Var: result})
@@ -1542,6 +1578,11 @@ func (f *fnCtx) withBindings(s *ast.WithExpr, i int, closeable *types.Trait, wan
 			return []Stmt{b}, b.Type
 		}
 		b := f.checkBlock(s.Body, want, true)
+		if b.Value != nil && len(s.Body.Stmts) > 0 {
+			if es, ok := s.Body.Stmts[len(s.Body.Stmts)-1].(*ast.ExprStmt); ok {
+				f.refuseEscape(es.X, "be the value of its block")
+			}
+		}
 		if b.Value != nil && !types.IsUnit(b.Type) && !types.IsNever(b.Type) {
 			*result = f.newTemp(b.Type)
 			b.Stmts = append(b.Stmts, &Assign{Target: &VarRef{exprBase{b.Type}, *result}, Value: b.Value})
@@ -1557,6 +1598,9 @@ func (f *fnCtx) withBindings(s *ast.WithExpr, i int, closeable *types.Trait, wan
 		return []Stmt{b}, b.Type
 	}
 	b := s.Bindings[i]
+	if call, ok := b.Value.(*ast.CallExpr); ok && call.Async {
+		return f.withTask(s, i, closeable, want, asValue, result)
+	}
 	init := f.checkExpr(b.Value, nil)
 	if types.IsInvalid(init.Type()) {
 		return nil, types.TInvalid
@@ -1564,9 +1608,15 @@ func (f *fnCtx) withBindings(s *ast.WithExpr, i int, closeable *types.Trait, wan
 	v := f.newVar(b.Name.Name, init.Type(), false, b.Name.Pos)
 	f.declareLocal(b.Name.Name, v, b.Name.Pos)
 	if closeable == nil || f.findImpl(init.Type(), closeable) == nil {
-		f.errorf(b.Value.Span(), "'%s' is not Closeable; 'with' resources must implement Closeable (D43)", init.Type())
+		if _, isTask := init.Type().(*types.Task); isTask {
+			f.errorf(b.Value.Span(), "a task is a 'with' resource only where 'with' starts it: 'with %s = async f(...)' (D100); this one belongs to the 'scope' that started it", b.Name.Name)
+		} else {
+			f.errorf(b.Value.Span(), "'%s' is not Closeable; 'with' resources must implement Closeable (D43)", init.Type())
+		}
 		return nil, types.TInvalid
 	}
+	f.markResource(v, v)
+	f.refWith(s, i, v, false)
 	// synthesize `name.close()` (a method call works on any binding, D22)
 	call := &ast.CallExpr{Fun: &ast.MemberExpr{X: nameOf(v, b.Name.Pos), Name: ast.Ident{Name: "close", Pos: b.Name.Pos}, Pos: b.Name.Pos}, Pos: b.Name.Pos}
 	closeCall := f.checkExpr(call, types.TUnit)
@@ -1579,6 +1629,65 @@ func (f *fnCtx) withBindings(s *ast.WithExpr, i int, closeable *types.Trait, wan
 		body.Type = types.TNever
 	}
 	return []Stmt{&With{Var: v, Init: init, Close: closeCall, Body: body}}, bodyT
+}
+
+// withTask is `with t = async f(...)` (D100 part 2): f runs as a background
+// child of the with's body — fail-fast like a `scope` child, so its error
+// fails the block — and is cancelled, then joined, when the body ends,
+// unless it has finished. It lowers to a scope of its own whose body is the
+// with's body and whose children are cancelled when that body ends; the
+// runtime already cancels them when the body leaves early. Only the launch
+// belongs to that scope: an `async` written in the body still needs a
+// `scope` or `gather` of its own around it.
+func (f *fnCtx) withTask(s *ast.WithExpr, i int, closeable *types.Trait, want types.Type, asValue bool, result **Var) ([]Stmt, types.Type) {
+	b := s.Bindings[i]
+	if f.isGlobal {
+		f.errorf(b.Value.Span(), "'async' cannot appear in a global initializer; compute the value in 'main' and pass it down")
+		return nil, types.TInvalid
+	}
+	sb := &ScopeBlock{Span: b.Value.Span(), Cancel: true}
+	sb.T = types.TUnit
+	f.scopes = append(f.scopes, sb)
+	init := f.checkExpr(b.Value, nil)
+	f.scopes = f.scopes[:len(f.scopes)-1]
+	if types.IsInvalid(init.Type()) {
+		return nil, types.TInvalid
+	}
+	v := f.newVar(b.Name.Name, init.Type(), false, b.Name.Pos)
+	f.declareLocal(b.Name.Name, v, b.Name.Pos)
+	f.markResource(v, v)
+	f.refWith(s, i, v, true)
+	inner, bodyT := f.withBindings(s, i+1, closeable, want, asValue, result)
+	sb.Body = &Block{Stmts: append([]Stmt{&VarDecl{Var: v, Init: init}}, inner...), Type: types.TUnit}
+	if types.IsNever(bodyT) {
+		sb.Body.Type = types.TNever
+	}
+	sb.ErrTo = f.currentErrType()
+	if f.errType == nil && f.throws {
+		// inferred: filled in at codegen time from the function signature
+		sb.ErrTo = nil
+	}
+	f.suspending(sb, b.Value.Span(), "async")
+	return []Stmt{sb}, bodyT
+}
+
+// refWith records the hover of a `with` keyword (D100): what it binds and
+// where that is closed. One record per keyword — the first binding's.
+func (f *fnCtx) refWith(s *ast.WithExpr, i int, v *Var, task bool) {
+	if f.c.index == nil || i > 0 || !s.Pos.IsValid() {
+		return
+	}
+	kw := source.Span{File: s.Pos.File, Start: s.Pos.Start, End: s.Pos.Start + len("with")}
+	line, _ := s.Pos.File.Position(s.Body.Pos.End - 1)
+	what := "closed"
+	if task {
+		what = "cancelled, then joined (unless it has finished),"
+	}
+	doc := fmt.Sprintf("`%s` is %s at the end of this block, line %d, and on every way out of it before then (D43/D100).", v.Name, what, line)
+	if len(s.Bindings) > 1 {
+		doc = fmt.Sprintf("Closed in reverse order at the end of this block, line %d, and on every way out of it before then (D43).", line)
+	}
+	f.c.index.Refs = append(f.c.index.Refs, Ref{Span: kw, Kind: "keyword", Name: "with", Type: v.Type, Detail: "with " + v.Name + typeSuffix(v.Type), Doc: doc})
 }
 
 // checkThrow is `throw e`: `return Err(e)` in a throwing function (D4).

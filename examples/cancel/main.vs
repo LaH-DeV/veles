@@ -33,11 +33,10 @@ fun viaGather(): i64 {
 // Its two children are cancelled together and unwind in parallel, so they
 // may close in either order; both close before their owner does.
 fun viaScope() {
-  with (held = Held(name: "the scope's owner")) {
-    scope {
-      async slow("a child of a scope")
-      async slow("a child of a scope")
-    }
+  with held = Held(name: "the scope's owner")
+  scope {
+    async slow("a child of a scope")
+    async slow("a child of a scope")
   }
 }
 
