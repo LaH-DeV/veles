@@ -352,13 +352,18 @@ func (f *fnCtx) awaitExpr(e *ast.AwaitExpr) Expr {
 
 // launch checks `async call(...)`.
 func (f *fnCtx) launch(e *ast.CallExpr, want types.Type) Expr {
-	if len(f.scopes) == 0 {
+	// D111: a field argument of a task-holding constructor starts a task
+	// the value holds, which the block receiving the value owns
+	// (a value that is not received is the one error: heldInside)
+	how, held := f.heldLaunchAllowed(e)
+	if len(f.scopes) == 0 && !held {
 		f.errorf(e.Pos, "'async' must be lexically inside a 'scope' or 'gather' block, or be the value of a 'with' — 'with t = async f()' runs f until the block ends: tasks cannot outlive their block (D3/D34/D100)")
 		f.checkArgsLoosely(e.Args)
 		return bad()
 	}
 	inner := *e
 	inner.Async = false
+	f.allowHeld(&inner, heldInside) // a held result is refused below, once
 	saved := f.launching
 	f.launching = &inner
 	x := f.checkExpr(&inner, nil)
@@ -398,6 +403,22 @@ func (f *fnCtx) launch(e *ast.CallExpr, want types.Type) Expr {
 			}
 			f.errorf(span, "argument of type '%s' is not Sendable and cannot cross a task boundary; pass immutable data (a List, not a MutableList: '.toList()') or share state behind a 'Mutex' (D35)", t)
 		}
+	}
+	if hv := f.c.heldValue(call.Type()); hv != nil {
+		f.errorf(e.Pos, "'async' would start a task whose result, a '%s', holds a task of its own that no block could receive; call it and receive the value with 'with' (D111)", hv)
+		return bad()
+	}
+	if held {
+		if how == heldReturn {
+			// the task outlives this function: it may not be handed what
+			// this function's `with` blocks close
+			for _, a := range e.Args {
+				if r, _ := f.heldResource(a.Value); r != nil && f.owns(r) {
+					f.refuseEscape(a.Value, "be handed to a task that outlives this function")
+				}
+			}
+		}
+		return &Launch{exprBase{&types.Task{Result: call.Type()}}, call, nil, -1}
 	}
 	sc := f.scopes[len(f.scopes)-1]
 	l := &Launch{exprBase{&types.Task{Result: call.Type()}}, call, sc, len(sc.Launches)}

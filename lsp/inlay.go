@@ -84,7 +84,7 @@ func (s *Server) inlayHints(params json.RawMessage) any {
 		}
 		out = append(out, effectHints(f, fn, inf)...)
 	}
-	for _, h := range closeHints(f, file) {
+	for _, h := range closeHints(f, file, a.index.Held) {
 		if in(positionToOffset(f, h.Position)) {
 			out = append(out, h)
 		}
@@ -203,7 +203,7 @@ func effectHints(f *source.File, fn *ast.FunDecl, inf sema.Inferred) []inlayHint
 // closeHints places, after the `}` of every block that holds statement-form
 // `with`s (D100), what that brace closes and in which order — the last
 // opened first: `closes second, first; cancels server; closes listener`.
-func closeHints(f *source.File, file *ast.File) []inlayHint {
+func closeHints(f *source.File, file *ast.File, held map[source.Span]bool) []inlayHint {
 	var out []inlayHint
 	walkNodes(reflect.ValueOf(file), func(n any) {
 		b, ok := n.(*ast.Block)
@@ -226,6 +226,9 @@ func closeHints(f *source.File, file *ast.File) []inlayHint {
 					continue // finished by then: the end has nothing to stop
 				}
 				v = "cancels"
+			} else if held[w.Binding.Value.Span()] {
+				// D111: the value's tasks are stopped, then it is closed
+				v = "stops tasks of, then closes"
 			} else if m, isLock := lockCallee(w.Binding.Value); isLock {
 				// `with n = notes.lock()` (D107): the close is the unlock
 				v, name = "unlocks", strings.TrimSpace(f.Content[m.X.Span().Start:m.X.Span().End])

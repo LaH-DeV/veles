@@ -28,20 +28,20 @@ test "a body counts in bytes and reads as text in UTF-8" {
 }
 
 test "a body that is not UTF-8 is a 400 as text and fine as bytes" {
-  try withServer(reader(), Limits(), port => {
-    with conn = try net.connect("127.0.0.1", port)
-    try conn.write("POST / HTTP/1.1\r\nHost: t\r\nConnection: close\r\nContent-Length: 2\r\n\r\n".bytes().concat([0xFF, 0xFE]))
-    try conn.shutdownWrite()
-    var all = ""
-    loop {
-      val chunk = try conn.read()
-      if (chunk.isEmpty()) break
-      all = all + (chunk.decodeUtf8() ?: "<binary>")
-    }
-    // reader() asks for bytes, then for text
-    expect(all.startsWith("HTTP/1.1 400"))
-    expect(all.endsWith("body is not valid UTF-8"))
-  })
+  with srv = try serving(reader())
+  val port = srv.port()
+  with conn = try net.connect("127.0.0.1", port)
+  try conn.write("POST / HTTP/1.1\r\nHost: t\r\nConnection: close\r\nContent-Length: 2\r\n\r\n".bytes().concat([0xFF, 0xFE]))
+  try conn.shutdownWrite()
+  var all = ""
+  loop {
+    val chunk = try conn.read()
+    if (chunk.isEmpty()) break
+    all = all + (chunk.decodeUtf8() ?: "<binary>")
+  }
+  // reader() asks for bytes, then for text
+  expect(all.startsWith("HTTP/1.1 400"))
+  expect(all.endsWith("body is not valid UTF-8"))
 }
 
 test "a body over the ceiling is a 413, and max: moves the ceiling" {
@@ -79,12 +79,6 @@ test "the untyped and typed form readers can share one body" {
   expect(text(r) == "x/[x, y]/7")
 }
 
-fun withServer(h: Handler, limits: Limits, client: fun(i64) suspends throws IoError | net.TooLong) throws IoError | net.TooLong {
-  with listener = try net.listen()
-  with server = async serve(listener, h, limits: limits, log: false)
-  try client(listener.port())
-}
-
 // what the server sends for `parts`, written one after the other with a pause
 // between, until it closes the connection
 fun talk(port: i64, parts: List<string>, finish: bool = true): string throws IoError {
@@ -107,44 +101,44 @@ fun talk(port: i64, parts: List<string>, finish: bool = true): string throws IoE
 fun head(extra: string): string = "POST / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n$extra\r\n"
 
 test "a chunked body is decoded, whatever the pieces and extensions" {
-  try withServer(reader(), Limits(), port => {
-    val whole = try talk(port, [head("Transfer-Encoding: chunked\r\n"), "5\r\nhello\r\n", "6;ext=1\r\n world\r\n", "0\r\nX-Trailer: 1\r\n\r\n"])
-    expect(whole.startsWith("HTTP/1.1 200 OK"))
-    expect(whole.endsWith("11:hello world"))
-    // one write, then a chunk split across two
-    val split = try talk(port, [head("Transfer-Encoding: chunked\r\n") + "A\r\n0123", "45678", "9\r\n0\r\n\r\n"])
-    expect(split.endsWith("10:0123456789"))
-    val empty = try talk(port, [head("Transfer-Encoding: chunked\r\n") + "0\r\n\r\n"])
-    expect(empty.endsWith("0:"))
-  })
+  with srv = try serving(reader())
+  val port = srv.port()
+  val whole = try talk(port, [head("Transfer-Encoding: chunked\r\n"), "5\r\nhello\r\n", "6;ext=1\r\n world\r\n", "0\r\nX-Trailer: 1\r\n\r\n"])
+  expect(whole.startsWith("HTTP/1.1 200 OK"))
+  expect(whole.endsWith("11:hello world"))
+  // one write, then a chunk split across two
+  val split = try talk(port, [head("Transfer-Encoding: chunked\r\n") + "A\r\n0123", "45678", "9\r\n0\r\n\r\n"])
+  expect(split.endsWith("10:0123456789"))
+  val empty = try talk(port, [head("Transfer-Encoding: chunked\r\n") + "0\r\n\r\n"])
+  expect(empty.endsWith("0:"))
 }
 
 test "framing that could be read two ways is refused" {
-  try withServer(reader(), Limits(), port => {
-    val both = try talk(port, [head("Transfer-Encoding: chunked\r\nContent-Length: 5\r\n") + "0\r\n\r\n"])
-    expect(both.startsWith("HTTP/1.1 400"))
-    val gzip = try talk(port, [head("Transfer-Encoding: gzip\r\n")])
-    expect(gzip.startsWith("HTTP/1.1 501"))
-    val size = try talk(port, [head("Transfer-Encoding: chunked\r\n") + "zz\r\nabc\r\n0\r\n\r\n"])
-    expect(size.startsWith("HTTP/1.1 400"))
-    val cut = try talk(port, [head("Transfer-Encoding: chunked\r\n") + "5\r\nab"])
-    expect(cut.startsWith("HTTP/1.1 400"))
-    val unknown = try talk(port, [head("Expect: 200-ok\r\nContent-Length: 0\r\n")])
-    expect(unknown.startsWith("HTTP/1.1 417"))
-  })
+  with srv = try serving(reader())
+  val port = srv.port()
+  val both = try talk(port, [head("Transfer-Encoding: chunked\r\nContent-Length: 5\r\n") + "0\r\n\r\n"])
+  expect(both.startsWith("HTTP/1.1 400"))
+  val gzip = try talk(port, [head("Transfer-Encoding: gzip\r\n")])
+  expect(gzip.startsWith("HTTP/1.1 501"))
+  val size = try talk(port, [head("Transfer-Encoding: chunked\r\n") + "zz\r\nabc\r\n0\r\n\r\n"])
+  expect(size.startsWith("HTTP/1.1 400"))
+  val cut = try talk(port, [head("Transfer-Encoding: chunked\r\n") + "5\r\nab"])
+  expect(cut.startsWith("HTTP/1.1 400"))
+  val unknown = try talk(port, [head("Expect: 200-ok\r\nContent-Length: 0\r\n")])
+  expect(unknown.startsWith("HTTP/1.1 417"))
 }
 
 test "a chunk or a length over the ceiling is refused before its data" {
-  try withServer(reader(), Limits(bodyBytes: 10), port => {
-    val chunk = try talk(port, [head("Transfer-Encoding: chunked\r\n") + "B\r\n"])
-    expect(chunk.startsWith("HTTP/1.1 413"))
-    expect(chunk.contains("connection: close"))
-    val length = try talk(port, [head("Content-Length: 11\r\n")])
-    expect(length.startsWith("HTTP/1.1 413"))
-    expect(length.contains("connection: close"))
-    val fine = try talk(port, [head("Content-Length: 10\r\n") + "0123456789"])
-    expect(fine.endsWith("10:0123456789"))
-  })
+  with srv = try serving(reader(), Limits(bodyBytes: 10))
+  val port = srv.port()
+  val chunk = try talk(port, [head("Transfer-Encoding: chunked\r\n") + "B\r\n"])
+  expect(chunk.startsWith("HTTP/1.1 413"))
+  expect(chunk.contains("connection: close"))
+  val length = try talk(port, [head("Content-Length: 11\r\n")])
+  expect(length.startsWith("HTTP/1.1 413"))
+  expect(length.contains("connection: close"))
+  val fine = try talk(port, [head("Content-Length: 10\r\n") + "0123456789"])
+  expect(fine.endsWith("10:0123456789"))
 }
 
 test "a stream may take more than the server's default ceiling" {
@@ -152,73 +146,73 @@ test "a stream may take more than the server's default ceiling" {
     val body = req.stream(max: 1000)
     Response.text("${try body.readAll().len()}")
   })
-  try withServer(big, Limits(bodyBytes: 10), port => {
-    val r = try talk(port, [head("Content-Length: 500\r\n") + "y".repeat(500)])
-    expect(r.endsWith("500"))
-    val over = try talk(port, [head("Content-Length: 2000\r\n")])
-    expect(over.startsWith("HTTP/1.1 413"))
-  })
+  with srv = try serving(big, Limits(bodyBytes: 10))
+  val port = srv.port()
+  val r = try talk(port, [head("Content-Length: 500\r\n") + "y".repeat(500)])
+  expect(r.endsWith("500"))
+  val over = try talk(port, [head("Content-Length: 2000\r\n")])
+  expect(over.startsWith("HTTP/1.1 413"))
 }
 
 test "Expect: 100-continue is answered when the handler reads, and not before" {
-  try withServer(reader(), Limits(), port => {
-    with conn = try net.connect("127.0.0.1", port)
-    try conn.writeText("POST / HTTP/1.1\r\nHost: t\r\nConnection: close\r\nExpect: 100-continue\r\nContent-Length: 5\r\n\r\n")
-    // the server has nothing to say yet, except to tell us to go on
-    val interim = try conn.readLine(max: 200) ?: "(none)"
-    expect(interim == "HTTP/1.1 100 Continue")
-    val blank = try conn.readLine(max: 200) ?: "(none)"
-    expect(blank.isEmpty())
-    try conn.writeText("hello")
-    var rest = ""
-    loop {
-      val chunk = try conn.read()
-      if (chunk.isEmpty()) break
-      rest = rest + (chunk.decodeUtf8() ?: "<binary>")
-    }
-    expect(rest.startsWith("HTTP/1.1 200 OK"))
-    expect(rest.endsWith("5:hello"))
-  })
+  with srv = try serving(reader())
+  val port = srv.port()
+  with conn = try net.connect("127.0.0.1", port)
+  try conn.writeText("POST / HTTP/1.1\r\nHost: t\r\nConnection: close\r\nExpect: 100-continue\r\nContent-Length: 5\r\n\r\n")
+  // the server has nothing to say yet, except to tell us to go on
+  val interim = try conn.readLine(max: 200) ?: "(none)"
+  expect(interim == "HTTP/1.1 100 Continue")
+  val blank = try conn.readLine(max: 200) ?: "(none)"
+  expect(blank.isEmpty())
+  try conn.writeText("hello")
+  var rest = ""
+  loop {
+    val chunk = try conn.read()
+    if (chunk.isEmpty()) break
+    rest = rest + (chunk.decodeUtf8() ?: "<binary>")
+  }
+  expect(rest.startsWith("HTTP/1.1 200 OK"))
+  expect(rest.endsWith("5:hello"))
 }
 
 test "a handler that answers without reading never invites the body" {
   val refuse = handler(req => Response.text("no", status: Status.unauthorized))
-  try withServer(refuse, Limits(), port => {
-    val r = try talk(port, ["POST / HTTP/1.1\r\nHost: t\r\nExpect: 100-continue\r\nContent-Length: 5000000\r\n\r\n"])
-    expect(r.startsWith("HTTP/1.1 401"))
-    expect(!r.contains("100 Continue"))
-    expect(r.contains("connection: close"))
-  })
+  with srv = try serving(refuse)
+  val port = srv.port()
+  val r = try talk(port, ["POST / HTTP/1.1\r\nHost: t\r\nExpect: 100-continue\r\nContent-Length: 5000000\r\n\r\n"])
+  expect(r.startsWith("HTTP/1.1 401"))
+  expect(!r.contains("100 Continue"))
+  expect(r.contains("connection: close"))
 }
 
 test "a body the handler left unread is thrown away and the connection goes on" {
-  try withServer(ignorer(), Limits(), port => {
-    with conn = try net.connect("127.0.0.1", port)
-    try conn.writeText("POST /a HTTP/1.1\r\nHost: t\r\nContent-Length: 10\r\n\r\n0123456789")
-    try conn.writeText("POST /b HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nabc\r\n0\r\n\r\n")
-    try conn.writeText("GET /c HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")
-    var all = ""
-    loop {
-      val chunk = try conn.read()
-      if (chunk.isEmpty()) break
-      all = all + (chunk.decodeUtf8() ?: "<binary>")
-    }
-    // three requests, three answers, none of them confused by a body
-    expect(all.split("HTTP/1.1 200 OK").len() == 4)
-  })
+  with srv = try serving(ignorer())
+  val port = srv.port()
+  with conn = try net.connect("127.0.0.1", port)
+  try conn.writeText("POST /a HTTP/1.1\r\nHost: t\r\nContent-Length: 10\r\n\r\n0123456789")
+  try conn.writeText("POST /b HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nabc\r\n0\r\n\r\n")
+  try conn.writeText("GET /c HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")
+  var all = ""
+  loop {
+    val chunk = try conn.read()
+    if (chunk.isEmpty()) break
+    all = all + (chunk.decodeUtf8() ?: "<binary>")
+  }
+  // three requests, three answers, none of them confused by a body
+  expect(all.split("HTTP/1.1 200 OK").len() == 4)
 }
 
 test "an unread body too long to be worth reading closes the connection" {
-  try withServer(ignorer(), Limits(bodyBytes: 100000000), port => {
-    val r = try talk(port, ["POST / HTTP/1.1\r\nHost: t\r\nContent-Length: 1000000\r\n\r\n" + "z".repeat(100)])
-    expect(r.startsWith("HTTP/1.1 200 OK"))
-    expect(r.contains("connection: close"))
-  })
+  with srv = try serving(ignorer(), Limits(bodyBytes: 100000000))
+  val port = srv.port()
+  val r = try talk(port, ["POST / HTTP/1.1\r\nHost: t\r\nContent-Length: 1000000\r\n\r\n" + "z".repeat(100)])
+  expect(r.startsWith("HTTP/1.1 200 OK"))
+  expect(r.contains("connection: close"))
 }
 
 test "a sender that stalls in the body is a 408" {
-  try withServer(reader(), Limits(bodyTimeout: Duration.millis(200)), port => {
-    val r = try talk(port, [head("Content-Length: 10\r\n") + "abc", "..."], finish: false)
-    expect(r.startsWith("HTTP/1.1 408"))
-  })
+  with srv = try serving(reader(), Limits(bodyTimeout: Duration.millis(200)))
+  val port = srv.port()
+  val r = try talk(port, [head("Content-Length: 10\r\n") + "abc", "..."], finish: false)
+  expect(r.startsWith("HTTP/1.1 408"))
 }

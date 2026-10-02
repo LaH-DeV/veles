@@ -540,8 +540,9 @@ deploy (5)
 
 `removeFirst`, `removeLast`, `first`, `last`, `at(i)` and `pop`, `peek`
 return `T?`: null when the container is empty, never a panic. To build a
-list of a known size up front, `MutableList<bool>.repeat(false, n)` gives
-`n` copies of a value and `MutableList<MutableList<i64>>.make(n, _ => [])`
+list of a known size up front, `MutableList.repeat(false, n)` gives
+`n` copies of a value (a `MutableList<bool>`: the type comes from the
+value, D137) and `MutableList<MutableList<i64>>.make(n, _ => [])`
 calls the function once per slot. `xs.fill(x)` overwrites every element of
 an existing list. `repeat` and `fill` refuse an element type with shared
 mutable state — a mutable collection, a pointer, a closure — because every

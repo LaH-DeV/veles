@@ -46,6 +46,17 @@ declare i64 @veles_task_sleep(ptr, i64)
 declare i64 @veles_task_wait_io(ptr, i64, i64)
 declare void @veles_task_cancel(ptr)
 declare void @veles_scope_cancel(ptr)
+declare ptr @veles_receiving_bind(ptr)
+declare void @veles_receiving_restore(ptr)
+declare ptr @veles_receiving()
+
+; a panic while a held value is computed (D111) puts the receiving scope back
+define internal void @receiving.restore.thunk(ptr %env) {
+entry:
+  %head = load ptr, ptr %env
+  call void @veles_receiving_restore(ptr %head)
+  ret void
+}
 
 ; a panic inside a scope body cancels the children (the join is left to
 ; them: their owner is gone); env is the slot holding the scope pointer
@@ -147,9 +158,14 @@ func (g *gen) suspendPoint() {
 	g.emit("call void @veles_task_finish_cancelled(ptr %s)", c.task)
 	g.emitTerm("br label %%%s", c.finalL)
 	g.placeLabel(cont)
-	// fail-fast (D34): a child of an enclosing scope has failed, so the body
-	// stops here — whatever it was waiting for will not come — and the
-	// innermost scope joins its children and re-raises
+	g.failFastCheck()
+}
+
+// failFastCheck: a child of an enclosing scope has failed (D34), so the
+// body stops here — whatever it was waiting for will not come — and the
+// innermost scope joins its children and re-raises.
+func (g *gen) failFastCheck() {
+	c := g.coro
 	if n := len(g.bodyScopes); n > 0 {
 		abort := g.newLabel("scope.abort")
 		for _, bs := range g.bodyScopes {
@@ -273,7 +289,12 @@ func (g *gen) resultTypeOf(sig *types.Func) types.Type {
 
 func (g *gen) launch(e *sema.Launch) string {
 	scope := g.newTmp()
-	g.emit("%s = load ptr, ptr %s", scope, g.scopeSlots[e.Scope])
+	if e.Scope == nil {
+		// held by a value (D111): the scope of the `with` receiving it
+		g.emit("%s = call ptr @veles_receiving()", scope)
+	} else {
+		g.emit("%s = load ptr, ptr %s", scope, g.scopeSlots[e.Scope])
+	}
 	ct := g.newTmp()
 	g.emit("%s = call ptr @veles_task_launch(ptr %s, i64 %d)", ct, scope, e.Index)
 	var argTypes []types.Type
@@ -345,6 +366,9 @@ func (g *gen) defineCoroHelper(fn *sema.Func, params []string, body func()) {
 }
 
 func (g *gen) scopeBlock(e *sema.ScopeBlock) string {
+	if e.Held != nil {
+		return g.heldScope(e)
+	}
 	failFast := "1"
 	if e.Gather {
 		failFast = "0"
@@ -711,6 +735,11 @@ func (g *gen) taskBuiltin(e *sema.Builtin) (string, bool) {
 	case "task.cancel":
 		t := g.expr(e.Args[0])
 		g.emit("call void @veles_task_cancel(ptr %s)", t)
+		return "zeroinitializer", true
+	case "receiving.restore":
+		head := g.newTmp()
+		g.emit("%s = load ptr, ptr %s", head, g.receivingSlots[e])
+		g.emit("call void @veles_receiving_restore(ptr %s)", head)
 		return "zeroinitializer", true
 	case "scope.abandon":
 		// the body is being left early: cancel the children and join them

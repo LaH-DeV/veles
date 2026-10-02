@@ -353,6 +353,7 @@ opens them. Both kinds are called the same way.
 | `indexOf(part, from: 0)`, `lastIndexOf(part)` | `i64` byte index, −1 if absent |
 | `substring(from, to)` | `string?` — byte offsets; null if a boundary splits a character |
 | `byteAt(i)`, `bytes()` | `u8` (panics out of range), `List<u8>` |
+| `byteAtUnchecked(i)` | `u8`; only in `unsafe`, checked in a debug build only (D114) |
 | `trim()`, `trimStart()`, `trimEnd()` | ASCII whitespace removed |
 | `split(sep)`, `lines()` | `List<string>`; `lines` drops `\r` and a final empty line |
 | `splitOnce(sep)` | `(string, string)?`: the text before and after the first `sep`, or `null` when it does not occur — `val (k, v) = line.splitOnce("=") ?: return` |
@@ -371,6 +372,7 @@ UTF-8.
 | Method | Result |
 |---|---|
 | `at(i)` | `T?`; null when out of range, or `T` where the index is known to be in range (D62). A negative `i` counts from the end (`at(-1)` is the last). A copy, like every read. Where it cannot fail, say why: `xs.at(i) ?: panic("…")` |
+| `atUnchecked(i)`, `setUnchecked(i, v)` | `T`, `()`; only in `unsafe`, `0 <= i < len`, checked in a debug build only (D114); `set…` on `MutableList` |
 | `ref(i)` | `(*T)?`: a pointer to the element itself (`MutableList` only), or `*T` where the index is known. `xs.ref(i)?.bump()`, `xs.ref(i)?.n = 0` change the element; `loop (&x in xs)` visits every element this way |
 | `indices()` | `0..<len()`; in `loop (i in xs.indices())` each `xs.at(i)` is a `T` |
 | `atOrDefault(i, d)` | `T`; `at(i) ?: d` |
@@ -398,7 +400,7 @@ UTF-8.
 | `insert(i, x)`, `removeAt(i): T`, `addAll(xs)`, `sort()` | `MutableList` only; `sort` is in place |
 | `swap(i, j)`, `sortWith(compare)` | `MutableList` only; in place |
 | `fill(x)` | `MutableList` only; overwrites every element, length unchanged |
-| `MutableList<T>.repeat(x, count)`, `MutableList<T>.make(n, i => ...)` | statics: `count` copies of `x`, or `init(i)` called once per slot. `repeat` and `fill` need `T: Sendable` (D35): a mutable collection or pointer would be one value aliased by every slot, which is what `make` is for |
+| `MutableList<T>.repeat(x, count)`, `MutableList<T>.make(n, i => ...)` | statics (the `<T>` may be left out when the arguments or the expected type give it, D137): `count` copies of `x`, or `init(i)` called once per slot. `repeat` and `fill` need `T: Sendable` (D35): a mutable collection or pointer would be one value aliased by every slot, which is what `make` is for |
 
 A `MutableList<T>` has every `List<T>` method; a `val` binding is enough to
 call the mutating ones, since the list is a reference (D25).
@@ -705,6 +707,22 @@ d.isZero() / isNegative(): bool;  d.min(o) / d.max(o): Duration
 Duration.parse(s): Duration?          // reads back exactly what "$d" writes; 1h30m, 250ms, 1.5s, -2m30s
 ```
 
+## Prelude type `Secret<T>` (D112)
+
+```veles
+// fragment
+Secret.of(v): Secret<T>               // T = string or List<u8> only; a private copy of v
+s.expose(): T                         // a fresh copy; panics at the caller after close()
+s.len(): i64                          // bytes; the length is not secret
+"$s"                                  // [redacted] — so are expect captures and derived Display
+s == t                                // constant time in the contents; never hashed or ordered
+s.close()                             // zeroes the bytes now; the collector zeroes them when freed
+```
+
+`Decodable` (a config file or the environment fills it), not `Encodable`:
+deriving `Encodable` over a `Secret` field asks for `@skip` or a hand-written
+`encode`. `Sendable`. What `expose()` returns is ordinary memory.
+
 ## Module `log`
 
 ```veles
@@ -749,8 +767,8 @@ crypto.digest<H: Hasher>(data: List<u8>): Digest
 crypto.Sha256.start(): Sha256                // also Sha384, Sha512, Sha1
   h.update(data: List<u8>)                   // any number of times
   h.finish(): Digest                         // once; update after it panics
-crypto.hmacSha256(key: List<u8>, message: List<u8>): Digest  // also 384, 512, Sha1Legacy
-crypto.hmac<H: Hasher>(key: List<u8>, message: List<u8>): Digest
+crypto.hmacSha256(key: Secret<List<u8>>, message: List<u8>): Digest  // also 384, 512, Sha1Legacy
+crypto.hmac<H: Hasher>(key: Secret<List<u8>>, message: List<u8>): Digest
 crypto.Hmac<Sha256>.start(key: List<u8>): Hmac<Sha256>       // update/finish as above
 crypto.equalBytes(a: List<u8>, b: List<u8>): bool            // constant time
 crypto.randomBytes(n: i64): List<u8>         // the OS CSPRNG; panics if it refuses
@@ -831,9 +849,9 @@ code point writes U+FFFD rather than failing. See `examples/utf8`.
 ```veles
 // fragment
 use jwt
-jwt.sign(claims: Claims, key: List<u8>, algorithm: Algorithm = Algorithm.HS256,
+jwt.sign(claims: Claims, key: Secret<List<u8>>, algorithm: Algorithm = Algorithm.HS256,
          keyId: string? = null): string throws EncodeError
-jwt.verify(token: string, key: List<u8>, options: Options = Options()): Claims throws jwt.Invalid
+jwt.verify(token: string, key: Secret<List<u8>>, options: Options = Options()): Claims throws jwt.Invalid
 jwt.readHeader(token: string): codec.Value throws jwt.Invalid   // unverified: for `kid`
 jwt.now(): i64                                            // Unix seconds
 ```

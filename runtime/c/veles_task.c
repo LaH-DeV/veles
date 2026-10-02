@@ -841,6 +841,30 @@ void veles_test_sites(void (*each)(void *ctx, const char *where, int64_t len), v
  * told about as the test starts and ends. */
 #define TEST_REC_KEY (-2)
 
+/* ---- the receiving scope (D111) ---------------------------------------------
+ * While a `with` computes a value that holds tasks, the running task carries
+ * the with's scope as a binding under this key; an `async` field argument
+ * of the value's constructor launches into it, and a task started for a
+ * suspending call inherits it with the other bindings. */
+#define RECEIVING_KEY (-3)
+
+void *veles_receiving_bind(veles_scope *s) {
+    return veles_local_bind(RECEIVING_KEY, s);
+}
+
+void veles_receiving_restore(void *head) {
+    veles_local_restore(head);
+}
+
+veles_scope *veles_receiving(void) {
+    veles_scope *s = veles_local_find(RECEIVING_KEY);
+    if (!s) {
+        const char *m = "internal error: a held task has no receiving scope (D111)";
+        veles_panic(m, (int64_t)strlen(m));
+    }
+    return s;
+}
+
 typedef struct test_pending {
     veles_task *t;
     void (*entry)(veles_task *, void *);

@@ -200,7 +200,7 @@ xs.minBy(key); xs.maxBy(key); xs.minWith(cmp); xs.maxWith(cmp); xs.distinctBy(ke
 sorted.binarySearch(x); sorted.binarySearchBy(key, target); sorted.binarySearchWith(e => e.compareTo(x))  // first match or -1; the list must already be in order
 sorted.lowerBound(x); sorted.upperBound(x); sorted.partitionPoint(e => e < x)   // insertion points; upperBound - lowerBound is how many times x occurs
 ml.push(x); ml.pop(); ml.set(i, x); ml.insert(i, x); ml.removeAt(i); ml.addAll(ys); ml.sort(); ml.clear(); ml.toList(); xs.toMutable()
-ml.swap(i, j); ml.fill(x); MutableList<bool>.repeat(false, n); MutableList<MutableList<i64>>.make(n, _ => [])
+ml.swap(i, j); ml.fill(x); MutableList.repeat(false, n) /* MutableList<bool>: a generic static infers its type, D137 */; MutableList<MutableList<i64>>.make(n, _ => [])
 val q = Deque<i64>(); q.addLast(x); q.addFirst(x); q.removeFirst(); q.removeLast(); q.first(); q.last(); q.at(-1); q.len()
 val pq = PriorityQueue<i64>.natural(); pq.push(x); pq.pop(); pq.peek(); PriorityQueue<i64>(compare: (a, b) => b.compareTo(a))
 m.get(k) ?: d; m.get(k) ?: panic("why"); m.getOrDefault(k, d); m.containsKey(k); m.keys(); m.values(); m.entries(); mm.set(k, v); mm.remove(k)
@@ -248,12 +248,17 @@ Data passed to `async` must be Sendable (D35): no `Mutable*`.
 // fragment
 with f = open("a")                            // closed when this block ends, and on every way out before (D43/D100)
 with g = open("b")                            // the last opened closes first; must not be returned or stored outside the block
+val h = open("c")                             // warning unless closed or handed on (returned, stored, passed, captured) (D115); val _ = open(p) drops it on purpose
 with (f = open("a"), g = open("b")) { ... }   // block form: closes at its `}`; an expression: val text = with (f = open(p)) { f.readAll() }
 with sem.acquire()                            // held and closed, never named (D109); `with conn` hands closing conn to the with
+with srv = try serving()                      // a value with a Task field: received with `with` or returned; its tasks stop, then it closes (D111)
 implement Closeable for File { fun close() { } }
 extern "C" { fun strlen(s: *raw u8): i64 }
 // SAFETY: p is a live NUL-terminated buffer  ← why the block is sound (a warning without it)
 val n = unsafe { strlen(p) }                  // C calls and raw pointers need unsafe (D44)
+unsafe { s.byteAtUnchecked(i) }               // also xs.atUnchecked(i), xs.setUnchecked(i, v): checked in debug only (D114)
+with key = Secret.of(crypto.randomBytes(32))  // Secret<List<u8>>: prints [redacted], not Encodable, == constant time, wiped on close and when freed (D112)
+val url = cfg.databaseUrl.expose()            // the only way to the value: a fresh copy
 ```
 
 ## Files, paths, processes

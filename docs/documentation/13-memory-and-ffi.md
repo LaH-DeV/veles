@@ -238,6 +238,23 @@ fun firstLine(path: string): string throws IoError {
 }
 ```
 
+The other way round, a resource held with `val` that is never closed is a
+warning (D115): `'f' is never closed`, with a quick fix that turns the
+`val` into `with`. Closing it by hand, returning it, storing it, passing
+it to a function (`serve(listener)` hands it on) or capturing it in a
+lambda all count as dealing with it, so the warning never fires on a
+hand-off — and it cannot see a function that drops what it was handed.
+A call whose `Closeable` result is thrown away warns too; write
+`val _ = open(p)` when that is what you mean.
+
+```veles
+// fragment
+fun size(path: string): i64 throws IoError {
+  val f = try fs.open(path)        // warning: 'f' is never closed — fix: with f = try fs.open(path)
+  try f.size()
+}
+```
+
 A panic unwinds through `with` as well. The task that panicked is lost
 (D20 — there is no catching it inside the task), but everything it held
 is released on the way out, innermost first, so a bug in one request
@@ -351,6 +368,51 @@ fun length(s: ffi.CString): u64 {
 
 Every `unsafe` block in the standard library carries one; that is how its
 uses of C were audited.
+
+### Indexing without the bounds check
+
+Every index is checked, in every build profile; there is no switch that
+turns the checks off for a whole program, and the compiler already drops
+the checks it can prove (chapter 4). For the hot loop where it cannot —
+a lexer walking its input byte by byte — three accesses skip the check
+in a release build (D114):
+
+| Access | On | Checked spelling |
+|---|---|---|
+| `xs.atUnchecked(i): T` | `List`, `MutableList` | `xs.at(i)` |
+| `xs.setUnchecked(i, v)` | `MutableList` | `xs.set(i, v)` |
+| `s.byteAtUnchecked(i): u8` | `string` | `s.byteAt(i)` |
+
+They are allowed only inside `unsafe`, and `i` is the plain offset
+(`0 <= i < len`, no counting from the end). A debug build still checks
+them and panics "unchecked index … out of bounds" at the call, so tests
+catch a wrong index; in a release build an index out of range is
+undefined behaviour.
+
+```veles
+use io
+
+fun digits(s: string): i64 {
+  var n = 0
+  var i = 0
+  loop (i < s.len()) {
+    // SAFETY: i < s.len() by the loop condition
+    val b = unsafe { s.byteAtUnchecked(i) }
+    if (b >= '0' && b <= '9') n += 1
+    i += 1
+  }
+  n
+}
+
+fun main() {
+  io.println("${digits("veles 0.68, 2026")}")
+}
+```
+
+Output:
+```text
+7
+```
 
 ## Calling C
 

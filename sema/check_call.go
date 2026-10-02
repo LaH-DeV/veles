@@ -93,6 +93,9 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 		if _, ok := atomicBuiltins[callee.Name]; ok && f.module.Std && f.lookup(callee.Name) == nil {
 			return f.atomicCall(callee.Name, e)
 		}
+		if _, ok := secretBuiltins[callee.Name]; ok && f.module.Std && f.lookup(callee.Name) == nil {
+			return f.secretCall(callee.Name, typeArgs, e)
+		}
 		if callee.Name == "panic" && f.lookup(callee.Name) == nil {
 			return f.panicCall(e)
 		}
@@ -179,6 +182,13 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 					}
 				}
 			}
+			if rt, ok := f.collectionStatic(n, callee, e, want); ok {
+				if rt == nil {
+					f.checkArgsLoosely(e.Args)
+					return bad()
+				}
+				return f.staticCall(rt, callee, typeArgs, e, want)
+			}
 			if rt := f.typeNamed(n, callee.Name.Name); rt != nil {
 				// `Type.f(args)`: a static function (D23)
 				if len(typeArgs) == 0 {
@@ -189,9 +199,14 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 							f.checkArgsLoosely(e.Args)
 							return bad()
 						}
-						f.errorf(n.Pos, "'%s' is generic; write the type arguments, e.g. '%s<T>.%s(...)'", st.Name, st.Name, callee.Name.Name)
-						f.checkArgsLoosely(e.Args)
-						return bad()
+						// D137: the type arguments come from the call, as a
+						// constructor's do: `Box.of("x")` is a Box<string>
+						inst := f.inferStaticArgs(st, callee, e, want)
+						if inst == nil {
+							f.checkArgsLoosely(e.Args)
+							return bad()
+						}
+						return f.staticCall(inst, callee, typeArgs, e, want)
 					}
 				}
 				return f.staticCall(rt, callee, typeArgs, e, want)
@@ -200,9 +215,12 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 		if rt := f.moduleTypeNamed(callee.X); rt != nil {
 			// `module.Type.f(args)`
 			if st, ok := rt.(*types.Struct); ok && len(st.TypeParams) > 0 && st.TypeArgs == nil {
-				f.errorf(callee.X.Span(), "'%s' is generic; write the type arguments, e.g. '%s<T>.%s(...)'", st.Name, st.Name, callee.Name.Name)
-				f.checkArgsLoosely(e.Args)
-				return bad()
+				inst := f.inferStaticArgs(st, callee, e, want) // D137
+				if inst == nil {
+					f.checkArgsLoosely(e.Args)
+					return bad()
+				}
+				rt = inst
 			}
 			return f.staticCall(rt, callee, typeArgs, e, want)
 		}
@@ -696,6 +714,49 @@ func (f *fnCtx) inferStructArgs(t *types.Struct, args []ast.Arg, want types.Type
 		targs = append(targs, bt)
 	}
 	return f.c.instantiateStruct(t, targs, span)
+}
+
+// inferStaticArgs infers a generic struct's type arguments for a call of
+// one of its static functions written without them (D137): from the
+// expected type when it is an instance of the struct, else from the
+// arguments bound to parameters that mention them — the way a
+// constructor infers its own (inferStructArgs). nil when one cannot be
+// inferred (reported here).
+func (f *fnCtx) inferStaticArgs(st *types.Struct, callee *ast.MemberExpr, e *ast.CallExpr, want types.Type) *types.Struct {
+	f.c.resolveStruct(st)
+	name := callee.Name.Name
+	t, _, _ := f.findMethod(st, name)
+	if t == nil || t.Sig == nil {
+		return nil
+	}
+	m := map[*types.TypeParam]types.Type{}
+	unifyWant(t.Sig.Ret, want, m)
+	if !f.pinsAll(st, m) {
+		bound, ok := f.bindArgs(t.Sig.Params, e.Args, "'"+st.Name+"."+name+"'", e.Pos)
+		if !ok || f.inferFromArgs(t.Sig.Params, bound, m) {
+			return nil
+		}
+	}
+	var targs []types.Type
+	for _, tp := range st.TypeParams {
+		bt, ok := m[tp]
+		if !ok {
+			f.errorf(callee.X.Span(), "cannot infer type parameter '%s' of '%s' from this call; write the type arguments, e.g. '%s<T>.%s(...)', or annotate the binding", tp.Name, st.Name, st.Name, name)
+			return nil
+		}
+		targs = append(targs, bt)
+	}
+	return f.c.instantiateStruct(st, targs, e.Pos)
+}
+
+// pinsAll: m gives every type parameter of st.
+func (f *fnCtx) pinsAll(st *types.Struct, m map[*types.TypeParam]types.Type) bool {
+	for _, tp := range st.TypeParams {
+		if _, ok := m[tp]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // constructStruct implements the implicit constructor (D28).
@@ -1320,6 +1381,14 @@ func (f *fnCtx) builtinMethod(recv Expr, rt types.Type, name string, e *ast.Call
 				}
 				i := f.checkExprTo(e.Args[0].Value, types.TI64)
 				return &Builtin{exprBase{types.TU8}, "string.byteAt", []Expr{recv, i}, e.Pos}
+			case "byteAtUnchecked":
+				// D114: a lexer's hot loop; checked only in a debug build
+				f.requireUnsafeIndex(e.Pos, name)
+				if !nargs(1) {
+					return bad()
+				}
+				i := f.checkExprTo(e.Args[0].Value, types.TI64)
+				return &Builtin{exprBase{types.TU8}, "string.byteAtUnchecked", []Expr{recv, i}, e.Pos}
 			case "bytes":
 				if !nargs(0) {
 					return bad()

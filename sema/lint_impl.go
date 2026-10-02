@@ -183,6 +183,12 @@ func implementHint(t types.Type, trait *types.Trait) string {
 	if !ok {
 		return ""
 	}
+	if isSecretStruct(st) {
+		if trait.Name == "Encodable" {
+			return "; a Secret is never written out (D112) — leave the field out with @skip, or pass what the value is for"
+		}
+		return ""
+	}
 	if st.Template != nil {
 		st = st.Template
 	}

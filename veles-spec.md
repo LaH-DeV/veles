@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.68** — decisions D1–D136. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.69** — decisions D1–D137. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -16,6 +16,7 @@ Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-p
 | D131–D132 | the manifest is `package.vs`; decentralized packages |
 | D134–D135 | (consistency pass) one `try` over a chain; `is T` downcast on a trait object |
 | D136 | `close()` by hand on a `with` value is refused |
+| D137 | a static of a generic type infers its type arguments |
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -3535,6 +3536,22 @@ User, 2026-10-01, recommended of 4 (§9 Q2, open since 2026-09-27). Rejected:
 lending functions (`with fun … yield v` — "not convinced"); suite-level setup
 lines (the 2026-09-27 rejection stands); leaving it open.
 
+*Built 2026-10-02 (B13).* How the tasks reach the block, the user's choice
+when adopting them after the return proved racy (a finishing task against
+the move; a cancelled caller orphaning them): while a `with` computes a
+value that holds tasks, the running task carries that `with`'s scope as its
+*receiving scope* (a task-local binding, so a suspending callee inherits it),
+and an `async` field argument launches straight into it. `return helper()`
+passes it through untouched. An `async` field argument's own arguments are
+evaluated in place, but the task starts only after every field of the value
+(nested task-holding constructors included), so "fails between the `async`
+and its return" cannot leave a started task. Also refused: `async f()` where
+`f` returns a value holding a task (no block could receive it), and handing a
+returned value's task what the function's own `with`s close. A variant of a
+sealed type that holds no task is free where it is made (`val s: Slot =
+Free()`). Hover on such a type or a function returning one, and an inlay
+hint `stops tasks of, then closes`.
+
 ### D112 — `Secret<T>`: redacted, not encodable, wiped (v0.62)
 
 ```veles
@@ -3570,6 +3587,15 @@ error: "a Secret holds text or bytes"); it owns a private copy of the bytes.
 
 User, 2026-10-01: "also zero when collected" (over the recommended
 redact-and-zero-on-close only). Rejected: leaving it.
+
+*Built 2026-10-02 (B13).* Implementation choices, the user's (recommended
+of 3 each): the wipe flag is a bit of the type descriptor's `kind`
+(`DESC_WIPE`, objects do not grow); std's keys move to `Secret`:
+`jwt.sign`/`verify` and `crypto.hmac…()` take `Secret<List<u8>>`, while
+`Hmac.start` keeps raw bytes as the low level. `Secret.of(v)` compiles
+through D137. A Secret is a `Closeable`, so D115 warns on a local one never
+closed. `s.len()` gives the length, which is not secret. Not built: a
+debugger's view (Veles has no debugger integration yet).
 
 ### D113 — Compile-time evaluation: constant expressions, constant tables, `const fun`, `static assert` (v0.62)
 
@@ -3645,6 +3671,10 @@ index out of bounds" at the caller (Rust's debug assertion in
 behaviour. The compiler keeps removing the checks it can prove (D62 B).
 D21's overflow policy is not reopened.
 
+*Built 2026-10-02 (B13).* `i` is the plain offset (`0 <= i < len`), never
+counted from the end; the debug panic reads "unchecked index 3 out of
+bounds for list of length 3" at the caller.
+
 User, 2026-10-01, recommended (§9 Q11). Rejected: a loud global profile
 (every index in every dependency at once); leaving no unchecked access.
 
@@ -3659,6 +3689,15 @@ the analysis is local and has no false positive on a hand-off; it can miss a
 callee that drops it. Measured over std and examples before it lands, each
 hit fixed. Task-holding values (D111) need no warning — not receiving them
 with `with` is an error.
+
+*Built 2026-10-02 (B13).* The discard that silences the second warning is
+Veles's existing `val _ = …` (user: the explicit discard silences it, over
+warning anyway); the quick fix writes `with _ = …`. A local counts as made
+here only when its initializer is a call or a constructor (under `try`), so
+`val l = srv.listener` borrows and never warns; a method whose receiver
+escapes (`SelfEscapes`) counts as a hand-off. Measured over std, examples,
+bench and std's test files: no hits (B10's migration already put every
+resource under `with`).
 
 User, 2026-10-01, recommended. Rejected: an error (refuses hand-offs it cannot
 see); nothing.
@@ -4402,6 +4441,39 @@ Rejected: `with` noticing a hand-written `close()` and skipping its own (a
 hidden flag per binding, and only within one function); leaving it, with
 every `Closeable` required to tolerate a second close (Go's `io.Closer`
 advice — a footgun the compiler can refuse).
+
+### D137 — A static of a generic type infers its type arguments (v0.69)
+
+```veles
+struct Box<T> {
+  value: T
+  public static fun of(v: T): Box<T> = Box(value: v)
+  public static fun none(): Box<T>? = null
+}
+val b = Box.of("x")                          // Box<string>
+val n: Box<i64>? = Box.none()                // from the expected type
+val flags = MutableList.repeat(false, 3)     // MutableList<bool>
+val rows = MutableList.make(4, i => i * i)   // MutableList<i64>
+val e = Box.none()                           // error: cannot infer type parameter 'T' of 'Box' from this call; write the type arguments, e.g. 'Box<T>.none(...)', or annotate the binding
+```
+
+Found building D112, whose `Secret.of(v)` did not compile: a static function
+called on a generic struct needed its type arguments written
+(`Secret<string>.of(v)`). User, 2026-10-02, recommended of 3.
+
+- **Rule.** `Type.f(args)` on a generic struct, or on a built-in collection
+  whose static the prelude adds (`MutableList.repeat`, `MutableList.make`),
+  written without type arguments, infers them as a constructor does (D28):
+  from the expected type when the result names the type (`Box<T>?` against
+  `Box<i64>?`, or against `Box<i64>` when the result is not nullable), else
+  from the arguments whose parameter types mention them — other arguments
+  first, then lambdas and empty literals against what is bound so far.
+- What nothing pins is an error asking for the type arguments; an argument
+  that fails on its own reports only its own error. Written type arguments
+  (`Box<string>.of(…)`) stay valid and win.
+
+Rejected: inferring for `Secret.of` alone (a rule for one type); changing
+D112's spelling to `Secret<string>.of(v)`.
 
 ---
 

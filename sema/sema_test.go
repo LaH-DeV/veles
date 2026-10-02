@@ -1506,7 +1506,8 @@ fun main() {
 
 // Statics the prelude adds to a built-in generic type (`extend<T>
 // MutableList<T> { static fun repeat ... }`) are called with the type
-// arguments written, like a generic struct's statics.
+// arguments written or, like a generic struct's statics, inferred from the
+// call (D137).
 func TestBuiltinStatics(t *testing.T) {
 	expectClean(t, prelude+`
 fun main() {
@@ -1518,7 +1519,7 @@ fun main() {
   flags.swap(0, 2)
   io.println("$flags $slots $rows")
 }`)
-	expectError(t, prelude+`fun main() { val xs = MutableList.repeat(0, 3); io.println("$xs") }`, "'MutableList' is generic; write the type arguments")
+	expectClean(t, prelude+`fun main() { val xs = MutableList.repeat(0, 3); io.println("$xs") }`)
 	expectError(t, prelude+`fun main() { val xs = MutableList<i64>.nope(3); io.println("$xs") }`, "no static function 'nope'")
 	// a builder another language has leads to the one Veles has, not to a
 	// type argument that would not help (`List<T>.generate` does not exist)
@@ -2954,7 +2955,7 @@ fun main() {
 }`)
 	expectError(t, uses+`
 fun main() { io.println("${crypto.Hmac.digestSize()}") }`,
-		"'Hmac' is generic; write the type arguments")
+		"cannot infer type parameter 'H' of 'Hmac' from this call; write the type arguments") // D137
 }
 
 // A `throws` clause on a body that cannot raise anything warns, with a fix

@@ -32,10 +32,25 @@
 
 typedef struct veles_desc {
     int64_t size;     /* object size in bytes (element size for arrays) */
-    int64_t kind;     /* 0 object, 1 array of elements */
+    int64_t kind;     /* DESC_ARRAY: an array of elements; DESC_WIPE: zeroed when freed */
     int64_t nptrs;    /* number of candidate word offsets */
     int64_t offsets[]; /* byte offsets of candidate pointer words */
 } veles_desc;
+
+#define DESC_ARRAY 1
+/* D112: the bytes of a Secret live in objects of a descriptor with this bit,
+ * and the sweep zeroes such an object when it frees it — no finalizer, no
+ * ordering; the memory holds no copy of the secret once it is garbage. */
+#define DESC_WIPE 2
+
+/* the byte buffer of a Secret (veles_secret_bytes) */
+veles_desc veles_wipe_u8_desc = {1, DESC_ARRAY | DESC_WIPE, 0};
+
+/* zeroes n bytes in a way the C compiler cannot drop as a dead store */
+static void *(*volatile wipe_memset)(void *, int, size_t) = memset;
+void veles_wipe(void *p, size_t n) {
+    wipe_memset(p, 0, n);
+}
 
 #define SPAN_SHIFT 16
 #define SPAN_SIZE ((size_t)1 << SPAN_SHIFT)
@@ -431,7 +446,7 @@ static void scan_object(char *obj, size_t objsize) {
     veles_desc *d = *(veles_desc **)obj;
     char *body = obj + HEADER;
     if (!d || d->nptrs == 0) return;
-    if (d->kind == 1) {
+    if (d->kind & DESC_ARRAY) {
         if (d->size <= 0) return;
         size_t count = (objsize - HEADER) / (size_t)d->size;
         for (size_t i = 0; i < count; i++) {
@@ -769,7 +784,10 @@ static void sweep(void) {
         for (size_t k = 0; k < s->nobjs; k++) {
             if (s->used[k] && !s->marks[k]) {
                 s->used[k] = 0;
-                if (gc_poison) memset(s->start + k * s->objsize, 0xCD, s->objsize);
+                char *obj = s->start + k * s->objsize;
+                veles_desc *d = *(veles_desc **)obj;
+                if (d && (d->kind & DESC_WIPE)) veles_wipe(obj + HEADER, s->objsize - HEADER);
+                if (gc_poison) memset(obj, 0xCD, s->objsize);
             } else if (s->used[k]) {
                 live++;
             }
@@ -800,6 +818,46 @@ static void sweep(void) {
             }
         }
     }
+}
+
+/* ---- D112 test hook -------------------------------------------------------
+ * Whether a sweep zeroes a freed object of a wiping descriptor and leaves
+ * an ordinary one as it was: 1 yes, 0 no, -1 when a probe object was not
+ * freed (the test cannot tell). The probes' addresses are kept masked, so
+ * the conservative scan cannot find them on this stack and keep them. */
+#define PROBE_MASK ((uintptr_t)0xA5A5A5A5A5A5A5A5u)
+static veles_desc plain_u8_desc = {1, DESC_ARRAY, 0};
+
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#endif
+static uintptr_t wipe_probe(veles_desc *d) {
+    char *p = veles_gc_alloc(d, 48);
+    memset(p, 0x5A, 48);
+    return (uintptr_t)p ^ PROBE_MASK;
+}
+
+static int probe_freed(const char *p) {
+    veles_span *s = span_of(p);
+    if (!s) return 0;
+    size_t k = (size_t)(p - HEADER - s->start) / s->objsize;
+    return !s->used[k];
+}
+
+void veles_gc_collect(void);
+
+int64_t veles_gc_test_wipe(void) {
+    uintptr_t wiped = wipe_probe(&veles_wipe_u8_desc);
+    uintptr_t plain = wipe_probe(&plain_u8_desc);
+    veles_gc_collect();
+    const char *w = (const char *)(wiped ^ PROBE_MASK);
+    const char *p = (const char *)(plain ^ PROBE_MASK);
+    if (!probe_freed(w) || !probe_freed(p)) return -1;
+    for (int i = 0; i < 48; i++) {
+        if (w[i] != 0) return 0;          /* the secret's bytes survived */
+        if (p[i] != 0x5A) return 0;       /* an ordinary object was touched */
+    }
+    return 1;
 }
 
 /* an explicit collection (tests, the gc example) */

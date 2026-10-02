@@ -2193,6 +2193,7 @@ func argsKey(args []types.Type) string {
 func (c *Checker) instantiateStruct(tmpl *types.Struct, args []types.Type, span source.Span) *types.Struct {
 	c.resolveStruct(tmpl)
 	c.checkTypeArgBounds(tmpl.Name, tmpl.TypeParams, args, span)
+	c.checkSecretArg(tmpl, args, span)
 	key := argsKey(args)
 	if inst, ok := tmpl.Instances[key]; ok {
 		return inst
@@ -2789,6 +2790,9 @@ func (c *Checker) unhashable(t types.Type) string {
 // reported by the size check) must not recurse forever here.
 func (c *Checker) unhashableIn(t types.Type, seen map[types.Type]bool) string {
 	const structural = "it has no structural equality"
+	if isSecretStruct(t) {
+		return "a Secret is never hashed, so its bytes cannot leak through a hash or a key's order (D112)"
+	}
 	switch t := t.(type) {
 	case *types.Basic:
 		if t.Kind == types.Unit || t.Kind == types.Never || t.Kind == types.Invalid {

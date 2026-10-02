@@ -130,17 +130,17 @@ test "a large upload arrives chunk by chunk and lands on disk whole" {
   val size = 300000
   val body = mpFile("big", "big.txt", "0123456789".repeat(size / 10)) + mpField("after", "done") + mpEnd
   val handlerFor = uploader()
-  try withServer(handlerFor, Limits(), port => {
-    val head = "POST / HTTP/1.1\r\nHost: t\r\nConnection: close\r\nContent-Type: multipart/form-data; boundary=XyZ\r\nContent-Length: ${body.len()}\r\n\r\n"
-    val r = try talk(port, [head, body.substring(0, 100000) ?: "", body.substring(100000, 200000) ?: "", body.substring(200000, body.len()) ?: ""])
-    expect(r.startsWith("HTTP/1.1 200 OK"))
-    expect(r.endsWith("file big=big.txt text/plain 300000\nfield after=done\n"))
-    // the same form, chunked
-    val chunkHead = "POST / HTTP/1.1\r\nHost: t\r\nConnection: close\r\nContent-Type: multipart/form-data; boundary=XyZ\r\nTransfer-Encoding: chunked\r\n\r\n"
-    val a = body.substring(0, 150001) ?: ""
-    val b = body.substring(150001, body.len()) ?: ""
-    val chunked = try talk(port, [chunkHead + "${hexLength(a.len())}\r\n" + a + "\r\n", "${hexLength(b.len())}\r\n" + b + "\r\n0\r\n\r\n"])
-    expect(chunked.endsWith("file big=big.txt text/plain 300000\nfield after=done\n"))
-  })
+  with srv = try serving(handlerFor)
+  val port = srv.port()
+  val head = "POST / HTTP/1.1\r\nHost: t\r\nConnection: close\r\nContent-Type: multipart/form-data; boundary=XyZ\r\nContent-Length: ${body.len()}\r\n\r\n"
+  val r = try talk(port, [head, body.substring(0, 100000) ?: "", body.substring(100000, 200000) ?: "", body.substring(200000, body.len()) ?: ""])
+  expect(r.startsWith("HTTP/1.1 200 OK"))
+  expect(r.endsWith("file big=big.txt text/plain 300000\nfield after=done\n"))
+  // the same form, chunked
+  val chunkHead = "POST / HTTP/1.1\r\nHost: t\r\nConnection: close\r\nContent-Type: multipart/form-data; boundary=XyZ\r\nTransfer-Encoding: chunked\r\n\r\n"
+  val a = body.substring(0, 150001) ?: ""
+  val b = body.substring(150001, body.len()) ?: ""
+  val chunked = try talk(port, [chunkHead + "${hexLength(a.len())}\r\n" + a + "\r\n", "${hexLength(b.len())}\r\n" + b + "\r\n0\r\n\r\n"])
+  expect(chunked.endsWith("file big=big.txt text/plain 300000\nfield after=done\n"))
   expect((try fs.stat(path.join(uploads, "up-big"))).size == 300000)
 }

@@ -173,6 +173,10 @@ func (c *Checker) derivedFields(st *types.Struct, kind string) ([]derivedField, 
 			}
 			df.required = hasAttr(af.Attrs, "required")
 		}
+		if kind == "Encodable" && !df.skipAll && isSecretStruct(nonNull(fld.Type)) {
+			// D112: the one wire type that only comes in
+			return nil, fmt.Sprintf("field '%s' is a Secret, which is never written out (D112); mark it @skip (with a default) or write 'encode' by hand", fld.Name)
+		}
 		if kind != "Comparable" && !df.skipAll {
 			if why := c.notCodable(fld.Type); why != "" {
 				return nil, fmt.Sprintf("field '%s' %s; mark it @skip (with a default) or write the impl", fld.Name, why)

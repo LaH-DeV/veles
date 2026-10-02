@@ -104,7 +104,7 @@ func isPlaceExpr(x Expr) bool {
 	case *VariantCast:
 		return isPlaceExpr(x.X)
 	case *Builtin:
-		return x.Op == "list.ref"
+		return x.Op == "list.ref" || x.Op == "list.refUnchecked"
 	}
 	return false
 }
@@ -210,7 +210,7 @@ func (f *fnCtx) hoistPlace(target Expr) (Expr, []Stmt) {
 			}
 			return &n
 		case *Builtin:
-			if x.Op == "list.ref" {
+			if x.Op == "list.ref" || x.Op == "list.refUnchecked" {
 				n := *x
 				n.Args = []Expr{bind(x.Args[0]), bind(x.Args[1])}
 				return &n

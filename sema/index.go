@@ -28,6 +28,9 @@ type Index struct {
 	// trait method's name to each method implementing it, for
 	// go-to-implementation.
 	Impls map[source.Span][]source.Span
+	// Held marks the value of each `with` that receives a value holding
+	// tasks (D111): its brace stops those tasks before it closes the value.
+	Held map[source.Span]bool
 }
 
 // TypeDecl is where the type of a value is declared, for
@@ -554,6 +557,11 @@ func (c *Checker) refFunc(span source.Span, t *FuncTemplate) {
 	if t.Decl != nil {
 		ref.Doc = t.Decl.Doc
 	}
+	if t.Sig != nil {
+		if hv := c.heldValue(t.Sig.Ret); hv != nil {
+			ref.Doc = c.withHeldNote(ref.Doc, hv)
+		}
+	}
 	if t.Impl != nil && t.Impl.Trait != nil {
 		if d, ok := t.Impl.Trait.Decl.(*ast.TraitDecl); ok {
 			for _, m := range d.Methods {
@@ -993,7 +1001,21 @@ func (c *Checker) refType(span source.Span, name string, t types.Type, def sourc
 		return
 	}
 	c.index.Refs = append(c.index.Refs, Ref{Span: span, Def: def, Kind: kind, Name: name, Type: t, Detail: detail,
-		Doc: docOfType(t), Shape: c.shapeFrom(t, c.viewFrom(span))})
+		Doc: c.withHeldNote(docOfType(t), t), Shape: c.shapeFrom(t, c.viewFrom(span))})
+}
+
+// heldNote is what a hover adds for a type that holds a task (D111).
+const heldNote = "Holds a running task: receive it with `with` where it is made, or return it — its tasks belong to the receiving block (D111)."
+
+// withHeldNote appends heldNote to doc when values of t hold a task.
+func (c *Checker) withHeldNote(doc string, t types.Type) string {
+	if t == nil || !c.taskHolding(t) {
+		return doc
+	}
+	if doc == "" {
+		return heldNote
+	}
+	return doc + "\n\n" + heldNote
 }
 
 // docOfType is the documentation comment on a type's declaration.

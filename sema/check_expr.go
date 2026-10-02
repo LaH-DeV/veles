@@ -308,7 +308,8 @@ func (f *fnCtx) checkExprInner(e ast.Expr, want types.Type) Expr {
 	case *ast.IndexExpr:
 		return f.indexExpr(e)
 	case *ast.CallExpr:
-		return f.callExpr(e, want)
+		f.preHeld(e)
+		return f.postHeld(e, f.callExpr(e, want))
 	case *ast.UnaryExpr:
 		return f.unaryExpr(e, want)
 	case *ast.BinaryExpr:
@@ -1267,6 +1268,10 @@ func (f *fnCtx) makeBinary(op BinOp, l, r Expr, span source.Span) Expr {
 		}
 		if cmp := f.compareOp(op, l, r, span); cmp != nil {
 			return cmp
+		}
+		if isSecretStruct(t) {
+			f.errorf(span, "operator '%s' is not defined for '%s': a Secret is never ordered, only compared with '==' (D112)", op, t)
+			return bad()
 		}
 		f.errorf(span, "operator '%s' is not defined for '%s'; implement 'Comparable' to order it", op, t)
 		return bad()

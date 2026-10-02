@@ -39,18 +39,18 @@ fun digests() {
 /// cannot.
 fun macs() {
   println("-- MACs (RFC 4231, RFC 2202)")
-  println("hs256 t1 ${crypto.hmacSha256(bytes(0x0b, 20), "Hi There".bytes())}")
-  println("hs256 t2 ${crypto.hmacSha256("Jefe".bytes(), "what do ya want for nothing?".bytes())}")
-  println("hs256 t3 ${crypto.hmacSha256(bytes(0xaa, 20), bytes(0xdd, 50))}")
-  println("hs256 t6 ${crypto.hmacSha256(bytes(0xaa, 131), "Test Using Larger Than Block-Size Key - Hash Key First".bytes())}")
-  println("hs384 t1 ${crypto.hmacSha384(bytes(0x0b, 20), "Hi There".bytes())}")
-  println("hs512 t1 ${crypto.hmacSha512(bytes(0x0b, 20), "Hi There".bytes())}")
-  println("hs1   t1 ${crypto.hmacSha1Legacy(bytes(0x0b, 20), "Hi There".bytes())}")
+  println("hs256 t1 ${crypto.hmacSha256(Secret.of(bytes(0x0b, 20)), "Hi There".bytes())}")
+  println("hs256 t2 ${crypto.hmacSha256(Secret.of("Jefe".bytes()), "what do ya want for nothing?".bytes())}")
+  println("hs256 t3 ${crypto.hmacSha256(Secret.of(bytes(0xaa, 20)), bytes(0xdd, 50))}")
+  println("hs256 t6 ${crypto.hmacSha256(Secret.of(bytes(0xaa, 131)), "Test Using Larger Than Block-Size Key - Hash Key First".bytes())}")
+  println("hs384 t1 ${crypto.hmacSha384(Secret.of(bytes(0x0b, 20)), "Hi There".bytes())}")
+  println("hs512 t1 ${crypto.hmacSha512(Secret.of(bytes(0x0b, 20)), "Hi There".bytes())}")
+  println("hs1   t1 ${crypto.hmacSha1Legacy(Secret.of(bytes(0x0b, 20)), "Hi There".bytes())}")
 
   var m = crypto.Hmac<crypto.Sha256>.start("Jefe".bytes())
   m.update("what do ya ".bytes())
   m.update("want for nothing?".bytes())
-  println("streamed same=${m.finish() == crypto.hmacSha256("Jefe".bytes(), "what do ya want for nothing?".bytes())}")
+  println("streamed same=${m.finish() == crypto.hmacSha256(Secret.of("Jefe".bytes()), "what do ya want for nothing?".bytes())}")
   println("name     ${crypto.Hmac<crypto.Sha256>.algorithm()}")
 }
 
@@ -60,7 +60,7 @@ fun macs() {
 /// close they were.
 fun webhook() throws hex.Invalid {
   println("-- verifying a signature")
-  val secret = "shhh".bytes()
+  with secret = Secret.of("shhh".bytes())  // printed by accident, it says [redacted]
   val body = "{\"event\":\"push\"}"
   val header = crypto.hmacSha256(secret, body.bytes()).toHex()
   println("header   sha256=$header")
@@ -123,7 +123,7 @@ fun identifiers() {
 fun tokens() throws base64.Invalid | EncodeError {
   println("-- JSON Web Tokens (RFC 7515)")
   val token = "eyJ0eXAiOiJKV1QiLA0KICJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJqb2UiLA0KICJleHAiOjEzMDA4MTkzODAsDQogImh0dHA6Ly9leGFtcGxlLmNvbS9pc19yb290Ijp0cnVlfQ.dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
-  val key = try base64.decodeUrl("AyM1SysPpbyDfgZld3umj1qzKObwVMkoqQ-EstJQLr_T-1qS0gZH75aKtMN3Yj0iPS4hcgUuTwjAzZr1Z9CAow")
+  with key = Secret.of(try base64.decodeUrl("AyM1SysPpbyDfgZld3umj1qzKObwVMkoqQ-EstJQLr_T-1qS0gZH75aKtMN3Yj0iPS4hcgUuTwjAzZr1Z9CAow"))
 
   // the token expired in 2011, so the tests pin the moment
   report("rfc token   ", jwt.verify(token, key, jwt.Options(now: 1300819300)))
@@ -131,12 +131,12 @@ fun tokens() throws base64.Invalid | EncodeError {
   report("with leeway ", jwt.verify(token, key, jwt.Options(now: 1300819400, leeway: 100)))
   report("wrong issuer", jwt.verify(token, key, jwt.Options(now: 1300819300, issuer: "jane")))
   report("as HS512    ", jwt.verify(token, key, jwt.Options(now: 1300819300, algorithm: jwt.Algorithm.HS512)))
-  report("wrong key   ", jwt.verify(token, crypto.randomBytes(32), jwt.Options(now: 1300819300)))
+  report("wrong key   ", jwt.verify(token, Secret.of(crypto.randomBytes(32)), jwt.Options(now: 1300819300)))
   report("two parts   ", jwt.verify("header.payload", key, jwt.Options()))
 
   // one signed here: the header carries a key id, the payload a private
   // claim, and `verify` is the only way back in
-  val own = crypto.randomBytes(32)
+  with own = Secret.of(crypto.randomBytes(32))
   val at = 1700000000
   val mine = try jwt.sign(jwt.Claims(
     subject: "user-42",

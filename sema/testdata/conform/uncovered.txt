@@ -3,6 +3,7 @@
 # sema/testdata/conform instead; a covered one must leave this list (`go test ./sema -conform-update`
 # rewrites it, keeping the reasons).
 "%s takes %d arguments"  # std-internal intrinsic: only std calls it, and std calls it right
+"%s takes 1 argument"  # std-internal intrinsic: only std calls it, and std calls it right
 "%s takes a pointer"  # std-internal intrinsic: only std calls it, and std calls it right
 "'%s' cannot be an error without the bound '%s: Error' (D4)"  # bodies are checked per instantiation, so a thrown type parameter is always substituted by then
 "'%s' cannot be used as a value"  # no syntax reaches it: guards an AST node kind the checker does not handle
@@ -14,6 +15,7 @@
 "'%s' has no static '%s'"  # defensive: a type that is not a struct, enum or sealed trait is refused as a value before its members are looked at
 "'%s' is deprecated"  # @deprecated requires its reason (checked on the attribute), so a reasonless one cannot arise
 "'%s' is generic; supply type arguments"  # defensive: an uninferable constructor call is refused first ('cannot infer type parameter')
+"'%s' is generic; write the type arguments, e.g. '%s<T>.%s(...)'"  # every static the prelude adds to a built-in collection returns that collection, so collectionStatic infers it (D137); a name with no such static gets 'no static function' first
 "'%s' is not a struct"  # only derived (synthesized) code constructs through a resolved type
 "'%s' is not a value"  # no syntax reaches it: guards an AST node kind the checker does not handle
 "'%s.%s' is ambiguous: declared by traits '%s' and '%s'"  # a concrete type's associated type is only reached through a type parameter, whose ambiguity is refused first (D84)
@@ -24,10 +26,12 @@
 "'ioWait' takes two arguments: the descriptor and whether to wait for writing"  # std-internal intrinsic: only std calls it, and std calls it right
 "'ioWait()' always suspends and must be awaited: 'await ioWait(fd, write)' (D16)"  # std-internal intrinsic: only std calls it, and std calls it right
 "'next()' must return 'Item?', found '%s'"  # an Iterator implementation is checked against the trait first
+"a 'lazy' parameter must be a plain 'fun(): T' — no arguments, effects, default or '...' (D90)"  # std-only, after the reserved check: user code is refused first, and std writes only well-formed ones
 "a 'test fun' is a top-level helper, not a method"  # the parser refuses `test fun` in a type body; guards ASTs built another way
 "a function marked '@caller_location' cannot suspend (D88)"  # std-only, after the reserved check: user code never reaches the suspension pass with the attribute
 "a type is not a value"  # the parser refuses the form first
 "cannot assign through '?.': there may be nothing to assign to; check for null first, 'if (x != null) x.f = v'"  # defensive: check_safe.go binds every '?.' write (plain, compound, nested, '&') before an assignment target is checked
+"cannot infer the type arguments of '%s' from this call; write them, e.g. '%s<T>.%s(...)', or annotate the binding"  # every static the prelude adds to a built-in collection takes an argument of the element type, so the type is inferred or that argument reports its own error first (D137)
 "close() of '%s' throws; throwing cleanup is not supported yet"  # Closeable.close is declared non-throwing, so an implementation cannot throw
 "extern functions cannot suspend"  # a function in an 'extern "C" { }' block has no body, so nothing in it can suspend
 "field '%s' of '%s' is private (M5)"  # needs two modules; conformance cases are one file each
@@ -41,6 +45,7 @@
 "module-level '%s' needs an initializer"  # the parser refuses the form first
 "only a module-level function can be 'extern \"C\"'; C calls it by name (D69)"  # the parser refuses `extern "C" fun` in a type body; guards ASTs built another way
 "parameter '%s' needs a type"  # the parser refuses the form first
+"secretExpose takes the type to copy out: secretExpose<string>(bytes) or secretExpose<List<u8>>(bytes)"  # std-internal intrinsic: only std calls it, and std calls it right
 "trait objects (boxed '%s') are not supported yet in the bootstrap compiler; use a generic bound instead (D9)"  # defensive: a call on a trait-typed receiver takes the trait-object path first
 "unsupported expression"  # no syntax reaches it: guards an AST node kind the checker does not handle
 "unsupported operator"  # no syntax reaches it: guards an AST node kind the checker does not handle
@@ -51,4 +56,3 @@
 "variant '%s.%s' does not implement '%s'"  # a variant without the implement is reported at its declaration now (checkSealedVariants), which stops the body checks
 "variants of '%s' disagree on the type of '%s'"  # a sealed trait's method has one signature, which every variant's implement must match
 "variants of sealed trait '%s' must be declared in the same module as the trait (D12)"  # needs two modules; conformance cases are one file each
-"a 'lazy' parameter must be a plain 'fun(): T' — no arguments, effects, default or '...' (D90)"  # std-only, after the reserved check: user code is refused first, and std writes only well-formed ones

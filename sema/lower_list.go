@@ -328,6 +328,26 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 		place := f.listElemPlace(ref(list), lt, e.Args[0].Value, span, true)
 		v := f.checkExprTo(e.Args[1].Value, lt.Elem)
 		return finish([]Stmt{&Assign{Target: place, Value: v}}, &UnitConst{exprBase{types.TUnit}})
+	case "atUnchecked", "setUnchecked":
+		// D114: the local escape from the bounds check. Only in `unsafe`;
+		// a debug build still checks (and panics), a release build does not.
+		// No negative-from-end index: `i` is the plain offset.
+		if name == "setUnchecked" && !lt.Mutable {
+			f.errorf(span, "cannot set an element of an immutable List; use MutableList (D25)")
+			f.checkArgsLoosely(e.Args)
+			return bad()
+		}
+		f.requireUnsafeIndex(span, name)
+		if !need(map[string]int{"atUnchecked": 1, "setUnchecked": 2}[name]) {
+			return bad()
+		}
+		idx := f.checkExprTo(e.Args[0].Value, types.TI64)
+		elem := &Builtin{exprBase{lt.Elem}, "list.refUnchecked", []Expr{ref(list), idx}, span}
+		if name == "atUnchecked" {
+			return finish(nil, elem)
+		}
+		v := f.checkExprTo(e.Args[1].Value, lt.Elem)
+		return finish([]Stmt{&Assign{Target: elem, Value: v}}, &UnitConst{exprBase{types.TUnit}})
 	case "first", "last":
 		if !need(0) {
 			return bad()
@@ -482,6 +502,16 @@ func (f *fnCtx) listFilterIs(recv Expr, lt *types.List, typeArgs []types.Type, e
 // uncheckedGet is the read behind `atOrPanic` and a proven `at` (D62): the
 // element as a value, a negative index counted from the end; the runtime
 // still panics out of range.
+// requireUnsafeIndex refuses an unchecked access (D114) outside `unsafe`,
+// naming the checked spelling to use instead.
+func (f *fnCtx) requireUnsafeIndex(span source.Span, name string) {
+	if f.unsafe > 0 {
+		return
+	}
+	checked := map[string]string{"atUnchecked": "at(i)", "setUnchecked": "set(i, v)", "byteAtUnchecked": "byteAt(i)"}[name]
+	f.errorf(span, "'%s' skips the bounds check in a release build, so it needs an 'unsafe' block (D114); write '%s', or wrap the call in 'unsafe { }' with a '// SAFETY:' comment saying why the index is in range", name, checked)
+}
+
 func (f *fnCtx) uncheckedGet(list *Var, lt *types.List, index ast.Expr, span source.Span) ([]Stmt, Expr) {
 	idx := f.newTemp(types.TI64)
 	n := &Builtin{exprBase{types.TI64}, "list.len", []Expr{ref(list)}, span}

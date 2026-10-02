@@ -55,6 +55,9 @@ type gen struct {
 	// slot: leaving a scope body early (return, throw, cancellation) cancels
 	// the children and joins them, so nothing outlives the block (D34).
 	abandonSlots map[*sema.Builtin]string
+	// receivingSlots map the "receiving.restore" cleanup entries (D111) to
+	// the slot holding the bindings to put back
+	receivingSlots map[*sema.Builtin]string
 	// cleanupRecs are the frame slots holding each active cleanup's entry
 	// in the task's cleanup list: pushing a `with` allocates nothing
 	cleanupRecs map[sema.Expr]string
@@ -199,6 +202,11 @@ declare void @veles_list_push(ptr, ptr)
 declare void @veles_list_reserve(ptr, i64)
 declare ptr @veles_list_ref(ptr, i64)
 declare void @veles_list_index_panic(ptr, i64, ptr, i64)
+declare void @veles_unchecked_index_panic(i64, i64, i64, ptr, i64)
+declare ptr @veles_secret_bytes(ptr, i64)
+declare void @veles_secret_wipe(ptr)
+declare void @veles_secret_text(ptr, ptr)
+declare ptr @veles_secret_copy(ptr, ptr)
 declare i1 @veles_list_pop(ptr, ptr)
 declare ptr @veles_list_copy(ptr)
 declare ptr @veles_list_slice(ptr, i64, i64)
@@ -472,6 +480,7 @@ func (g *gen) resetFn(fn *sema.Func) {
 	g.coro = nil
 	g.scopeSlots = map[*sema.ScopeBlock]string{}
 	g.abandonSlots = map[*sema.Builtin]string{}
+	g.receivingSlots = map[*sema.Builtin]string{}
 	g.cleanupRecs = map[sema.Expr]string{}
 	g.inCleanup = 0
 	g.launchSlots = map[*sema.Launch]string{}

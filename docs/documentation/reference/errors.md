@@ -188,7 +188,16 @@ without '<...>'`, `cannot infer type parameter 'T' of 'first'; write
 'first<...>(...)'`.
 
 Type arguments are usually inferred from the arguments. When there are
-none to infer from, write them after the name: `parse<Config>(text)`.
+none to infer from, write them after the name: `parse<Config>(text)`. A
+static function of a generic type infers them the same way (D137):
+`Box.of("x")` is a `Box<string>`; `Box.empty()` with nothing to go on
+needs `Box<string>.empty()` or a typed binding.
+
+#### `a Secret holds text or bytes: 'Secret<string>' or 'Secret<List<u8>>', not 'Secret<i64>'`
+
+`Secret<T>` (D112) keeps its bytes in storage the collector wipes, so it
+holds text or bytes only. Keep a number or a struct secret by storing its
+text form, or keep the struct and mark the sensitive fields `Secret`.
 
 ### nullable
 
@@ -614,6 +623,22 @@ inside `scope { }` when the block should wait for it (a pool of workers),
 or as `with t = async f()` when it runs in the background until the block
 ends, which cancels it then (D100) — a server in a test, a ticker.
 
+#### `'TestServer' holds a running task, so it must be received with 'with' where it is made`
+
+A struct with a `Task` field — or a field that holds one — keeps a task
+running, and a task must belong to a block (D111). Receive the value with
+`with srv = try serving()` (the quick fix turns `val` into `with`), or
+return it straight to your caller, who then receives it. At the end of
+the block its tasks are cancelled and joined, then it is closed. Storing
+it, passing it, putting it in a collection or dropping it would leave
+its task with no block to stop it.
+
+#### `'async' would start a task whose result, a 'Worker', holds a task of its own`
+
+A task's result reaches whoever awaits it, not a `with`, so a value
+holding a task cannot come out of one (D111). Call the function directly
+and receive what it returns with `with`.
+
 #### `argument of type 'MutableList<i64>' is not Sendable and cannot cross a task boundary`
 
 Tasks may only share immutable data (D35). Pass a `List` (`.toList()`),
@@ -675,6 +700,23 @@ it, or a lambda capturing it, as an argument is allowed
 (`withTimeout(d, () => try read(conn))`); a function that keeps what it is
 passed is not caught, so do not keep a resource you are lent.
 
+#### `'f' is never closed: bind it with 'with f = …' so it is closed at the end of the block`
+
+A warning (D115). A `Closeable` made here — by a call or a constructor —
+is neither closed nor handed on. The quick fix turns `val f =` into
+`with f =`. Anything that hands it on silences it: `f.close()`, returning
+it, storing it in a field, a collection or an outer variable, passing it
+as an argument, capturing it in a lambda. The check stays inside the
+function, so it never reports a hand-off — and cannot see a callee that
+drops what it was given.
+
+#### `the 'File' this returns is never closed: bind it with 'with', or discard it on purpose with 'val _ = …'`
+
+A warning (D115): a statement throws away the `Closeable` a call just
+returned, so nothing can close it. The quick fix writes `with _ = …`,
+which closes it at the end of the block; `val _ = …` says the drop is
+deliberate.
+
 #### `'out' is closed when its 'with' block ends; closing it here would close it twice`
 
 `with` calls `close()` on every way out of its block, so calling it by hand
@@ -726,6 +768,15 @@ reads and keeps, why the pointer is live. The quick fix inserts the
 comment; until the reason after `SAFETY:` is filled in, the warning says
 it "gives no reason". Or declare the function `unsafe fun`, so its
 callers take on the obligation.
+
+#### `'atUnchecked' skips the bounds check in a release build, so it needs an 'unsafe' block`
+
+`atUnchecked`, `setUnchecked` and `byteAtUnchecked` (D114) are undefined
+behaviour in a release build when the index is out of range, so they are
+written inside `unsafe { }` with a `// SAFETY:` comment saying why the
+index is in range. Most code wants the checked form the message names
+(`at(i)`, `set(i, v)`, `byteAt(i)`); the compiler already drops a check
+it can prove.
 
 ### attributes
 

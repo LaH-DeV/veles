@@ -43,7 +43,7 @@ func isPlace(e sema.Expr) bool {
 	case *sema.VariantCast:
 		return isPlace(e.X)
 	case *sema.Builtin:
-		return e.Op == "list.ref"
+		return e.Op == "list.ref" || e.Op == "list.refUnchecked"
 	}
 	return false
 }
@@ -88,6 +88,11 @@ func (g *gen) place(e sema.Expr) string {
 			list := g.expr(e.Args[0])
 			idx := g.expr(e.Args[1])
 			return g.listElemPtr(list, idx, g.where(e.Span))
+		}
+		if e.Op == "list.refUnchecked" {
+			list := g.expr(e.Args[0])
+			idx := g.expr(e.Args[1])
+			return g.listElemPtrUnchecked(list, idx, e.Span)
 		}
 	}
 	// Not a place: materialise into a temporary.
@@ -1553,7 +1558,7 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		v := g.newTmp()
 		g.emit("%s = load %s, ptr %s", v, g.llType(e.Type()), p)
 		return v
-	case "list.ref":
+	case "list.ref", "list.refUnchecked":
 		// as a value: the element itself (`xs.set(i, v)` and `ref`
 		// use it as a place; place() is what takes the address)
 		p := g.place(e)
@@ -1741,6 +1746,45 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		sp, sl := g.strPtrLen(s)
 		v := g.newTmp()
 		g.emit("%s = call i8 @veles_string_byte_at(ptr %s, i64 %s, i64 %s)", v, sp, sl, i)
+		return v
+	case "secret.of":
+		// D112: a copy of the text or bytes in storage the collector wipes
+		x := g.expr(e.Args[0])
+		var p, n string
+		if types.Identical(e.Args[0].Type(), types.TString) {
+			p, n = g.strPtrLen(x)
+		} else {
+			p = g.newTmp()
+			g.emit("%s = load ptr, ptr %s", p, x)
+			n = g.listLen(x)
+		}
+		v := g.newTmp()
+		g.emit("%s = call ptr @veles_secret_bytes(ptr %s, i64 %s)", v, p, n)
+		return v
+	case "secret.wipe":
+		g.emit("call void @veles_secret_wipe(ptr %s)", g.expr(e.Args[0]))
+		return "zeroinitializer"
+	case "secret.expose":
+		l := g.expr(e.Args[0])
+		if types.Identical(e.Type(), types.TString) {
+			out := g.alloca(strType)
+			g.emit("call void @veles_secret_text(ptr %s, ptr %s)", out, l)
+			v := g.newTmp()
+			g.emit("%s = load %s, ptr %s", v, strType, out)
+			return v
+		}
+		v := g.newTmp()
+		g.emit("%s = call ptr @veles_secret_copy(ptr %s, ptr %s)", v, g.arrayDescOf(types.TU8), l)
+		return v
+	case "string.byteAtUnchecked":
+		s := g.expr(e.Args[0])
+		i := g.expr(e.Args[1])
+		sp, sl := g.strPtrLen(s)
+		g.uncheckedIndexCheck(i, sl, "string", e.Span)
+		p := g.newTmp()
+		g.emit("%s = getelementptr inbounds i8, ptr %s, i64 %s", p, sp, i)
+		v := g.newTmp()
+		g.emit("%s = load i8, ptr %s", v, p)
 		return v
 	case "string.bytes":
 		s := g.expr(e.Args[0])
@@ -2117,6 +2161,45 @@ func (g *gen) listElemPtr(l, i, where string) string {
 	p := g.newTmp()
 	g.emit("%s = getelementptr inbounds i8, ptr %s, i64 %s", p, data, off)
 	return p
+}
+
+// listElemPtrUnchecked is the element address for `atUnchecked` and
+// `setUnchecked` (D114): no bounds check in a release build.
+func (g *gen) listElemPtrUnchecked(l, i string, span source.Span) string {
+	g.uncheckedIndexCheck(i, g.listLen(l), "list", span)
+	data := g.newTmp()
+	g.emit("%s = load ptr, ptr %s", data, l)
+	ep := g.newTmp()
+	g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 3", ep, listHeader, l)
+	es := g.newTmp()
+	g.emit("%s = load i64, ptr %s", es, ep)
+	off := g.newTmp()
+	g.emit("%s = mul i64 %s, %s", off, es, i)
+	p := g.newTmp()
+	g.emit("%s = getelementptr inbounds i8, ptr %s, i64 %s", p, data, off)
+	return p
+}
+
+// uncheckedIndexCheck is D114's debug assertion: in a debug build an
+// unchecked access still checks `0 <= i < n` and panics "unchecked index
+// out of bounds" at the caller; a release build emits nothing.
+func (g *gen) uncheckedIndexCheck(i, n, what string, span source.Span) {
+	if g.prog.Release {
+		return
+	}
+	ok := g.newTmp()
+	g.emit("%s = icmp ult i64 %s, %s", ok, i, n)
+	inL, outL := g.newLabel("uidx.ok"), g.newLabel("uidx.bad")
+	g.emitTerm("br i1 %s, label %%%s, label %%%s, !prof !{!\"branch_weights\", i32 2000, i32 1}", ok, inL, outL)
+	g.placeLabel(outL)
+	wp, wl := g.strPtrLen(g.stringConst(g.where(span)))
+	kind := int64(0)
+	if what == "string" {
+		kind = 1
+	}
+	g.emit("call void @veles_unchecked_index_panic(i64 %s, i64 %s, i64 %d, ptr %s, i64 %s)", i, n, kind, wp, wl)
+	g.emitTerm("unreachable")
+	g.placeLabel(inL)
 }
 
 // mods reads a list's or a map's modification count (D102).

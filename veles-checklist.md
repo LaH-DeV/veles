@@ -272,16 +272,24 @@ answered from the shape, tuples get `Comparable`, enums get
       Before, a read parked on the socket never woke (driver
       `TestSocketCloseDuringRead` hung; 200 rounds at 1 and 8 threads now
       pass on Windows and Linux, and under `--sanitize`) (2026-09-28)
-- [ ] Bounds checks stay on in every profile; `atUnchecked` /
-      `setUnchecked` / `byteAtUnchecked` in `unsafe` (D114, decided
-      2026-10-01) — plan B13
+- [x] Bounds checks stay on in every profile; `atUnchecked` /
+      `setUnchecked` / `byteAtUnchecked` in `unsafe` (D114) — built
+      2026-10-02: refused outside `unsafe` with the checked spelling named,
+      a debug panic "unchecked index … out of bounds" at the caller, a plain
+      load/store in release (golden `unchecked` in both profiles, driver
+      `TestUncheckedAccess`, conform `D114-unchecked-access`)
 - [x] Integer conversions between widths: `toT()` is checked (`T?`), `wrapT()` is the explicit
       truncation, a literal that cannot fit is a compile error (D86, 2026-09-29;
       `examples/conversions`, conform `D86-conversions`, golden `arith`)
 - [x] Constant-time comparison primitive in `std/crypto`: `Digest`'s `==`, and
       `crypto.equalBytes` for raw bytes. Structural `==` on `List<u8>`
       short-circuits, so a MAC is compared as a `Digest`, never as bytes (D59)
-- [ ] Secrets: `Secret<T>` (D112, decided 2026-10-01) — plan B13
+- [x] Secrets: `Secret<T>` (D112) — built 2026-10-02: prelude
+      `std/prelude/secret.vs`, `[redacted]` everywhere text is made, not
+      Encodable (derive asks for `@skip`), Decodable, constant-time `==`,
+      never hashed or ordered, wiped by `close()` and by the sweep (a
+      `DESC_WIPE` descriptor bit; runtime probe `veles_gc_test_wipe`); jwt and
+      `crypto.hmac…()` keys take it (driver `TestSecret`, conform `D112-*`)
 - [x] Path traversal: `path.within(root, p)` over a lexical `path.clean`,
       both separators on every platform, a `\\server\share` root kept.
       Writing it found a **real hole**: `http.files` split the request on
@@ -333,10 +341,18 @@ answered from the shape, tuples get `Comparable`, enums get
       (`evil.example\0.trusted.example` passes an `endsWith` allow-list and
       resolved `evil.example`); `os.env` answers null; `os.run` refuses it.
       driver `TestPathsWithNulRefused` (2026-09-27)
-- [ ] Resource leaks: a `Closeable` never closed is a warning (D115,
-      decided 2026-10-01) — plan B13
-- [ ] A value holding a `Task` is received with `with` (D111, decided
-      2026-10-01) — plan B13
+- [x] Resource leaks: a `Closeable` never closed is a warning (D115) —
+      built 2026-10-02 (`sema/lint_closeable.go`, fixes `with x =` and
+      `with _ =`, `val _ =` discards); no hits over std, examples, bench
+      and std's tests (conform `D115-never-closed`, driver
+      `TestCheckFixNeverClosed`)
+- [x] A value holding a `Task` is received with `with` (D111) — built
+      2026-10-02: tasks launch into the receiving block's scope, carried by
+      the running task while the value is computed; joined before
+      `close()`; a failing later field starts nothing (`sema/taskheld.go`,
+      `codegen/llvm/held.go`, driver `TestHeldTasks` on 1/2/4/8 threads,
+      conform `D111-task-holding`, lsp `TestHeldInTheEditor`); std/http's
+      tests use a `TestServer` value instead of a lending function
 - [x] D100: a `with`-bound value (either form) cannot be returned, yielded,
       stored outside its block or captured by a returned/stored lambda —
       built 2026-10-01 (`sema/resources.go`, error family `resources`); the
@@ -559,8 +575,9 @@ behind a name that says "crypto" (§10, 2026-09-23).
 - [ ] Password hashing (argon2id) via binding
 - [ ] RS256/ES256 — needs bignum or a binding (blocked on 1.2)
 - [ ] A `Hasher` that is not a SHA: BLAKE3 or SHA-3 when something asks
-- [ ] Zeroing: a key or a pad is left to the GC — `Secret<T>` (D112) is the
-      answer; std's HMAC/JWT keys move to it once it is built
+- [x] Zeroing: std's HMAC/JWT keys are `Secret<List<u8>>` (D112, 2026-10-02);
+      `Hmac.start` keeps raw bytes as the low level, and its pads are
+      ordinary memory (§11)
 - [ ] Not benchmarked; the compression functions allocate nothing per block
       but are plain Veles, so they are far from a hand-tuned C hash (§3.3)
 
@@ -947,6 +964,8 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-09-30 | Q20: bit operations | **Rust's names camel-cased: `rotateLeft/rotateRight(n)` (mod width, negative reverses), `swapBytes`, `reverseBits` on every integer type; `copySign`, `isSignNegative`, `nextUp`, `nextDown` on floats** (user, recommended of 3; spec D104). Rejected: a Go-style `bits` module, Java's names. |
 | 2026-09-30 | Q12: capacity hints | **`reserve(n)` on `StringBuilder`, `MutableMap`, `MutableSet`, `Deque`** with D83's meaning (user, recommended of 3; spec D105). Rejected: `StringBuilder` only, leaving it. |
 | 2026-09-30 | Q17c, §6.1, empty literals | **`var xs = []` keeps needing its type and the tool writes it from the first deciding use; `Range.isEmpty()`; `veles fmt` prints `cond => (x => …)`** (user, recommended of 3; both small ones accepted; spec D106). Rejected: Rust-style inference from later use, the message only; a lint for the lambda arm. |
+| 2026-10-02 | A static of a generic type without type arguments (found building D112: `Secret.of(v)` did not compile) | **Inferred from the arguments and the expected type, as a constructor's are, for every generic struct and the prelude's collection statics** (user, recommended of 3; spec D137). Rejected: inferring for `Secret.of` alone, respelling D112 as `Secret<string>.of(v)`. |
+| 2026-10-02 | D111's hand-off, found unsafe while building (a finishing task can race the move between scopes; a cancelled caller can orphan staged tasks) | **The running task carries the receiving `with`'s scope while the value is computed; held tasks launch straight into it** (user, recommended of 2; spec D111 note). Rejected: adopting after the return with the races patched. |
 | 2026-10-01 | Closing a `with` value by hand (found building B10: the close hint showed `close()` running twice) | **Refused: `close()` on a `with`-bound value or its alias is an error with a fix that removes it; close earlier with the block form** (user, recommended of 3; spec D136). Rejected: `with` noticing the hand close and skipping its own; leaving it and requiring every `close()` to tolerate a second call. |
 
 ## 11. Known limitations to revisit
@@ -973,8 +992,12 @@ Every new public std API (http cookies/forms/client, `std/log`,
   buffer and `.bytes()`, the convention `fs.readBytes` already uses. It
   works (the length, not a NUL, delimits the buffer) but a `List<u8>` out
   parameter would be one copy cheaper.
-- Keys and HMAC pads are ordinary garbage-collected memory: nothing is
-  zeroed after use. `Secret<T>` (§2) is where that belongs.
+- A `Secret`'s bytes are wiped (D112), but what `expose()` returns, the
+  text a `Secret` was made from, and HMAC's pads are ordinary memory.
+- A function value that returns a value holding a task (D111), passed
+  through a generic std function (`withTimeout(d, () => serving())`), is
+  refused — but the error points into the std function's body, where the
+  value is kept in a variable, not at the call that passed it.
 - Hashes are plain Veles. They allocate nothing per block, but expect a
   multiple of a hand-tuned C implementation's time; there is no benchmark
   yet to say which multiple (§3.3).

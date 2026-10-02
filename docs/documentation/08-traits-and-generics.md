@@ -250,6 +250,37 @@ Output:
 #1 #2 #3
 ```
 
+`Box(item: 7)` is a `Box<i64>`: a constructor takes its type arguments
+from what it is given. So does a static function of a generic type (D137):
+`Pair.of(1, "a")` below is a `Pair<i64, string>`, and the prelude's
+`MutableList.repeat(false, 3)` a `MutableList<bool>`. When the arguments
+say nothing — `Pair.empty()` — the expected type can
+(`val p: Pair<i64, string>? = Pair.empty()`), or the type arguments are
+written: `Pair<i64, string>.empty()`.
+
+```veles
+use io
+
+struct Pair<A, B> {
+  first: A
+  second: B
+  public static fun of(a: A, b: B): Pair<A, B> = Pair(first: a, second: b)
+  public static fun empty(): Pair<A, B>? = null
+}
+
+fun main() {
+  val p = Pair.of(1, "a")
+  val none: Pair<i64, string>? = Pair.empty()
+  val flags = MutableList.repeat(false, 3)
+  io.println("${p.first} ${p.second} ${none == null} $flags")
+}
+```
+
+Output:
+```text
+1 a true [false, false, false]
+```
+
 ## Static trait functions
 
 A trait may declare a `static fun` — a function without `this`, called

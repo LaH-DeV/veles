@@ -4,7 +4,7 @@
 /// ```veles
 /// use jwt
 ///
-/// val key = crypto.randomBytes(32)   // keep this; it is the whole secret
+/// val key = Secret.of(crypto.randomBytes(32))   // keep this; it is the whole secret
 ///
 /// val token = try jwt.sign(jwt.Claims(
 ///   subject: "user-42",
@@ -162,7 +162,7 @@ public fun now(): i64 = time.now().toSeconds()
 /// served with it.
 public fun sign(
   claims: Claims,
-  key: List<u8>,
+  key: Secret<List<u8>>,
   algorithm: Algorithm = Algorithm.HS256,
   keyId: string? = null,
 ): string throws EncodeError {
@@ -211,7 +211,7 @@ fun claimsToObject(claims: Claims): codec.Value {
 
 /// The claims of `token`, once its signature and its time claims have been
 /// checked. Everything this refuses is listed at the top of the module.
-public fun verify(token: string, key: List<u8>, options: Options = Options()): Claims throws Invalid {
+public fun verify(token: string, key: Secret<List<u8>>, options: Options = Options()): Claims throws Invalid {
   checkKey(key, options.algorithm, "jwt.verify")
 
   val parts = token.split(".")
@@ -403,7 +403,7 @@ fun checkParties(claims: Claims, options: Options) throws Invalid {
 // ---------------------------------------------------------------------------
 // keys and MACs
 
-fun mac(algorithm: Algorithm, key: List<u8>, signing: string): crypto.Digest = when (algorithm) {
+fun mac(algorithm: Algorithm, key: Secret<List<u8>>, signing: string): crypto.Digest = when (algorithm) {
   Algorithm.HS256 => crypto.hmacSha256(key, signing.bytes())
   Algorithm.HS384 => crypto.hmacSha384(key, signing.bytes())
   Algorithm.HS512 => crypto.hmacSha512(key, signing.bytes())
@@ -412,10 +412,10 @@ fun mac(algorithm: Algorithm, key: List<u8>, signing: string): crypto.Digest = w
 /// RFC 7518 §3.2: an HMAC key must be at least as long as the digest. A
 /// shorter one is a configuration mistake, and serving requests with it
 /// would be worse than stopping.
-fun checkKey(key: List<u8>, algorithm: Algorithm, who: string) {
+fun checkKey(key: Secret<List<u8>>, algorithm: Algorithm, who: string) {
   val least = keyBytes(algorithm)
   if (key.len() < least) {
-    panic("$who: an $algorithm key must be at least $least bytes (RFC 7518 §3.2), got ${key.len()} — use crypto.randomBytes($least), not a password")
+    panic("$who: an $algorithm key must be at least $least bytes (RFC 7518 §3.2), got ${key.len()} — use Secret.of(crypto.randomBytes($least)), not a password")
   }
 }
 

@@ -55,6 +55,126 @@ func (f *fnCtx) typeNamed(n *ast.NameExpr, member string) types.Type {
 	return nil
 }
 
+// collectionStatic is `MutableList.repeat(false, n)`: a static the prelude
+// adds to a built-in collection, called without type arguments (D137).
+// They are inferred from the arguments and the expected type through the
+// static's result, which names the collection itself. ok is false when n
+// is not such a call (another path handles it); a nil type means an error
+// was reported.
+func (f *fnCtx) collectionStatic(n *ast.NameExpr, callee *ast.MemberExpr, e *ast.CallExpr, want types.Type) (types.Type, bool) {
+	if len(n.TypeArgs) > 0 || f.lookup(n.Name) != nil {
+		return nil, false
+	}
+	k := &types.TypeParam{Name: "K"}
+	v := &types.TypeParam{Name: "V"}
+	var open types.Type
+	switch n.Name {
+	case "List", "MutableList":
+		open = &types.List{Elem: v, Mutable: n.Name == "MutableList"}
+	case "Map", "MutableMap":
+		open = &types.Map{Key: k, Value: v, Mutable: n.Name == "MutableMap"}
+	case "Set", "MutableSet":
+		open = &types.Set{Elem: v, Mutable: n.Name == "MutableSet"}
+	default:
+		return nil, false
+	}
+	name := callee.Name.Name
+	t, _, _ := f.findMethod(open, name)
+	if t == nil || !t.Decl.Static || t.Sig == nil || !sameCollection(t.Sig.Ret, open) {
+		return nil, false // the existing messages say what is wrong
+	}
+	m := map[*types.TypeParam]types.Type{}
+	unifyWant(t.Sig.Ret, want, m)
+	ret := f.c.hooks.Subst(t.Sig.Ret, m)
+	if types.ContainsTypeParam(ret) {
+		bound, ok := f.bindArgs(t.Sig.Params, e.Args, "'"+n.Name+"."+name+"'", e.Pos)
+		if !ok || f.inferFromArgs(t.Sig.Params, bound, m) {
+			return nil, true
+		}
+		ret = f.c.hooks.Subst(t.Sig.Ret, m)
+	}
+	if types.ContainsTypeParam(ret) {
+		f.errorf(n.Pos, "cannot infer the type arguments of '%s' from this call; write them, e.g. '%s<T>.%s(...)', or annotate the binding", n.Name, n.Name, name)
+		return nil, true
+	}
+	return ret, true
+}
+
+// unifyWant binds what the expected type says about a result's type
+// parameters: as written (`Box<T>?` against `Box<i64>?`), else without the
+// expected type's `?` (a `Box<T>` result where a `Box<i64>?` is wanted). A
+// failed attempt leaves m as it was.
+func unifyWant(ret, want types.Type, m map[*types.TypeParam]types.Type) {
+	if want == nil || types.IsInvalid(want) {
+		return
+	}
+	try := func(w types.Type) bool {
+		trial := map[*types.TypeParam]types.Type{}
+		for k, v := range m {
+			trial[k] = v
+		}
+		if !unify(ret, w, trial) {
+			return false
+		}
+		for k, v := range trial {
+			m[k] = v
+		}
+		return true
+	}
+	if try(want) {
+		return
+	}
+	if n, ok := want.(*types.Nullable); ok {
+		try(n.Elem)
+	}
+}
+
+// inferFromArgs extends m from the arguments bound to parameters that
+// mention a type parameter, as a generic call does: other arguments
+// first, then lambdas and empty literals against the parameter type with
+// what is bound so far filled in. The arguments are checked again once the
+// instance is known, so what this checks is only read for its type. It
+// reports whether an argument failed (and said why), so the caller does
+// not add that it cannot infer.
+func (f *fnCtx) inferFromArgs(params []types.Param, bound []ast.Expr, m map[*types.TypeParam]types.Type) (failed bool) {
+	for _, deferred := range []bool{false, true} {
+		for i, p := range params {
+			if bound[i] == nil || !types.ContainsTypeParam(p.Type) || deferredArg(bound[i]) != deferred {
+				continue
+			}
+			pt := f.c.hooks.Subst(p.Type, m)
+			var x Expr
+			if deferred {
+				x = f.checkExpr(bound[i], pt)
+			} else {
+				x = f.checkExpr(bound[i], literalHint(bound[i], pt))
+			}
+			if types.IsInvalid(x.Type()) {
+				failed = true
+				continue
+			}
+			unify(pt, x.Type(), m)
+		}
+	}
+	return failed
+}
+
+// sameCollection: a and b are the same kind of built-in collection.
+func sameCollection(a, b types.Type) bool {
+	switch a := a.(type) {
+	case *types.List:
+		bl, ok := b.(*types.List)
+		return ok && a.Mutable == bl.Mutable
+	case *types.Map:
+		bm, ok := b.(*types.Map)
+		return ok && a.Mutable == bm.Mutable
+	case *types.Set:
+		bs, ok := b.(*types.Set)
+		return ok && a.Mutable == bs.Mutable
+	}
+	return false
+}
+
 // staticCall checks `Type.name(args)`.
 func (f *fnCtx) staticCall(rt types.Type, callee *ast.MemberExpr, typeArgs []types.Type, e *ast.CallExpr, want types.Type) Expr {
 	name := callee.Name.Name

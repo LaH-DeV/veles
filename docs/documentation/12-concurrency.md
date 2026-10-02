@@ -162,9 +162,72 @@ ticked meanwhile: true
   dealt with before `t`.
 - `with (t = async f()) { ... }` stops the task at that `}` instead.
 - `async` is allowed in exactly these places: inside `scope` or `gather`,
-  and as the whole value of a `with`. Inside a `scope`, a `with`-task is
-  cancelled at the end of its own block, before the scope waits for its
-  other children.
+  as the whole value of a `with`, and as a field of a value that holds a
+  task (below). Inside a `scope`, a `with`-task is cancelled at the end of
+  its own block, before the scope waits for its other children.
+
+### A value that holds a task
+
+A helper that starts something and hands back a value to use it — Go's
+`httptest.NewServer` — is a struct with a `Task` field (D111). Such a
+value is **received with `with`** where it is made, or returned straight
+to the caller, where the same rule applies; its tasks then belong to that
+block, exactly as a `with`-task does:
+
+```veles
+use io
+
+struct Ticker {
+  ticks:   Channel<i64>
+  running: Task<()>
+
+  implement Closeable {
+    fun close() { io.println("closed after the ticker stopped") }
+  }
+}
+
+fun count(ticks: Channel<i64>) {
+  var n = 0
+  loop {
+    await sleep(Duration.millis(2))
+    n += 1
+    ticks.send(n)
+  }
+}
+
+fun ticking(): Ticker {
+  val ticks = Channel<i64>(capacity: 100)
+  Ticker(ticks, running: async count(ticks))
+}
+
+fun main() {
+  with t = ticking()
+  io.println("first tick: ${await t.ticks.recv() ?: 0}")
+}   // the ticker is cancelled and joined here, then t.close() runs
+```
+
+Output:
+```text
+first tick: 1
+closed after the ticker stopped
+```
+
+- Anything else is an error with the fix: `val t = ticking()`, passing it
+  as an argument, putting it in a list or a field of a value that holds no
+  task, or dropping it — a task with no block to own it would outlive
+  everything.
+- `async f()` is allowed as a field argument of such a constructor whose
+  value is received or returned. Its arguments are evaluated where they
+  are written, but the task starts only once every field has been, so a
+  later field whose `try` fails starts nothing.
+- At the end of the block the tasks are cancelled and joined, **then** the
+  value's `close()` runs (a value holding a task need not be `Closeable`).
+  A task that panics or ends with an `Err` fails the block, its error
+  joining the function's `throws`.
+- A returned value's tasks may not be given what the function's own
+  `with`s close: they outlive it.
+- The task-holding types are read from declared fields: a `List<Task<T>>`
+  or a generic `Box<Task<T>>` does not count.
 
 ## Collecting every outcome: `gather`
 
@@ -426,7 +489,8 @@ fun produce(ch: Channel<i64>) {
 
 fun query(db: Semaphore, inside: Atomic<i64>, most: Atomic<i64>) {
   with db.acquire()                  // at most two at a time
-  most.update(m => m.max(inside.update(n => n + 1)))
+  val now = inside.update(n => n + 1)
+  most.update(m => m.max(now))       // update may rerun its lambda: no side effects in it
   await sleep(Duration.millis(1))
   inside.update(n => n - 1)
 }

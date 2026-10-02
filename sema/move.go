@@ -25,7 +25,7 @@ var moveMethods = map[string]bool{
 	"sorted": true, "sortedWith": true, "sortedBy": true, "sortedDescending": true, "reversed": true,
 	"distinct": true, "indices": true, "get": true, "remove": true, "add": true, "keys": true,
 	"values": true, "entries": true, "containsKey": true, "getOrDefault": true,
-	"byteAt": true, "decodeUtf8": true, "isNotEmpty": true, "toString": true,
+	"byteAt": true, "byteAtUnchecked": true, "atUnchecked": true, "setUnchecked": true, "decodeUtf8": true, "isNotEmpty": true, "toString": true,
 }
 
 // copyMethod is the method that copies a mutable collection into its

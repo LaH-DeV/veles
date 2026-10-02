@@ -693,7 +693,10 @@ type CallVirtual struct {
 // Launch starts Call as a child task of the lexically enclosing scope.
 type Launch struct {
 	exprBase
-	Call  *Call
+	Call *Call
+	// Scope is the scope the task joins; nil for a task held by a value
+	// (D111), which joins the running task's receiving scope — the scope of
+	// the `with` that receives the value.
 	Scope *ScopeBlock
 	Index int
 }
@@ -717,10 +720,38 @@ type ScopeBlock struct {
 	// Cancel: the scope of a `with t = async f()` (D100): when the body ends
 	// its children are cancelled before the join, as when it leaves early
 	Cancel bool
-	Span   source.Span
+	// Held (D111): the scope of `with x = e` where e's value holds tasks.
+	// e is evaluated with this scope as the task's receiving scope, so its
+	// tasks launch into it; x is bound and Body runs; the tasks are then
+	// cancelled and joined, and only then is Close (x.close(), or nil) run.
+	Held *HeldValue
+	Span source.Span
 }
 
 func (*ScopeBlock) hirStmt() {}
+
+// HeldValue is the value a held scope receives (D111).
+type HeldValue struct {
+	Var   *Var
+	Init  Expr
+	Close Expr // nil when the value is not Closeable
+	Tasks []HeldTask
+}
+
+// HeldTask is where one task of a held value is — a path of fields from
+// the value — and the Result it ends with (rethrown when it fails).
+type HeldTask struct {
+	Path   []HeldStep
+	Result types.Type
+}
+
+// HeldStep is one step of the path: field Field of the struct (Variant
+// -1), or of variant Variant of a sealed value, or (Nullable) the task
+// inside a `Task<…>?`.
+type HeldStep struct {
+	Variant, Field int
+	Nullable       bool
+}
 
 type RaceArmKind int
 

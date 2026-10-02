@@ -3,6 +3,27 @@
 
 use net
 
+// A server for a test, Go's httptest shape without an unstructured task
+// (D111): `with srv = try serving(h, limits)` — the server runs until the
+// test's block ends, then stops, and then its listener closes.
+struct TestServer {
+  listener: net.Listener
+  server:   Task<()>
+
+  fun port(): i64 = this.listener.port()
+
+  implement Closeable {
+    fun close() {
+      this.listener.close()
+    }
+  }
+}
+
+fun serving(h: Handler, limits: Limits = Limits()): TestServer throws IoError {
+  val listener = try net.listen()
+  TestServer(listener, server: async serve(listener, h, limits: limits, log: false))
+}
+
 fun limitedOk(): Handler = handler(req => Response.text("ok"))
 
 fun limitedGet(close: bool): string =
@@ -14,9 +35,8 @@ fun limitedRead(conn: net.Conn): string throws IoError {
 }
 
 test "at the connection limit a new connection waits until one closes" {
-  with listener = try net.listen()
-  with server = async serve(listener, limitedOk(), limits: Limits(connections: 1), log: false)
-  val port = listener.port()
+  with srv = try serving(limitedOk(), Limits(connections: 1))
+  val port = srv.port()
   with first = try net.connect("127.0.0.1", port)
   try first.writeText(limitedGet(false))
   expect(try limitedRead(first).startsWith("HTTP/1.1 200"))
@@ -31,9 +51,8 @@ test "at the connection limit a new connection waits until one closes" {
 }
 
 test "a limit of zero serves every connection at once" {
-  with listener = try net.listen()
-  with server = async serve(listener, limitedOk(), limits: Limits(connections: 0), log: false)
-  val port = listener.port()
+  with srv = try serving(limitedOk(), Limits(connections: 0))
+  val port = srv.port()
   with first = try net.connect("127.0.0.1", port)
   try first.writeText(limitedGet(false))
   expect(try limitedRead(first).startsWith("HTTP/1.1 200"))
@@ -43,9 +62,8 @@ test "a limit of zero serves every connection at once" {
 }
 
 test "stopping a full server does not wait for a place" {
-  with listener = try net.listen()
-  with server = async serve(listener, limitedOk(), limits: Limits(connections: 1), log: false)
-  val port = listener.port()
+  with srv = try serving(limitedOk(), Limits(connections: 1))
+  val port = srv.port()
   with first = try net.connect("127.0.0.1", port)
   try first.writeText(limitedGet(false))
   expect(try limitedRead(first).startsWith("HTTP/1.1 200"))
@@ -53,5 +71,5 @@ test "stopping a full server does not wait for a place" {
   // still holds the place must end the wait (were it to wait on, it would
   // take the place `first` gives up when it closes, and serve for ever)
   await sleep(Duration.millis(50))
-  server.cancel()
+  srv.server.cancel()
 }

@@ -269,7 +269,7 @@ func hirMayShrink(x Expr) bool {
 // list; every other call is assumed to be able to.
 var pureListMethods = map[string]bool{
 	"at": true, "len": true, "set": true, "ref": true, "isEmpty": true, "push": true,
-	"byteAt": true, "get": true,
+	"byteAt": true, "get": true, "atUnchecked": true, "setUnchecked": true, "byteAtUnchecked": true,
 }
 
 // astMayShrink reports whether running node could shrink a MutableList:

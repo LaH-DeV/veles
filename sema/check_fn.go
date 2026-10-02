@@ -74,6 +74,11 @@ type fnCtx struct {
 	held        []*HeldLock             // the `with … = m.lock()` regions around the code being checked (D107)
 	lockOK      *ast.CallExpr           // the `with` value being checked, where `m.lock()` is allowed
 	lockSeen    bool                    // lockOK turned out to be `m.lock()`
+	// D111: the calls that may produce a task-holding value (a `with` value,
+	// a returned value, a field of one), and the `async` field arguments of
+	// task-holding constructors, with how the value is received
+	heldOK    map[*ast.CallExpr]heldBy
+	heldAsync map[*ast.CallExpr]heldBy
 	stmtWiths   map[*ast.WithExpr]bool  // block forms made from the statement form by withRest
 	awaitNext   bool
 	inRaceArm   bool
@@ -274,6 +279,16 @@ func (c *Checker) checkBody(fn *Func) {
 		f.declareLocal(p.Name.Name, v, p.Name.Pos)
 	}
 	defer f.reportUnused()
+	// D111: the body's value is returned straight to the caller
+	if f.retType != nil && types.IsUnit(f.retType) {
+		// nothing is returned: a last expression is discarded
+	} else if t.Decl.ExprBody != nil {
+		f.allowHeld(t.Decl.ExprBody, heldReturn)
+	} else if t.Decl.Body != nil && len(t.Decl.Body.Stmts) > 0 {
+		if es, ok := t.Decl.Body.Stmts[len(t.Decl.Body.Stmts)-1].(*ast.ExprStmt); ok {
+			f.allowHeld(es.X, heldReturn)
+		}
+	}
 	if t.Decl.ExprBody != nil {
 		f.pushScope()
 		var body *Block
@@ -505,6 +520,7 @@ func (f *fnCtx) checkStmt(s ast.Stmt) (stmts []Stmt, term bool) {
 				f.errorf(s.X.Span(), "result of '%s' must be used (@mustUse)", call.Fn.Display)
 			}
 		}
+		f.discardedCloseable(s, x)
 		if isResultType(x.Type()) {
 			f.errorf(s.X.Span(), "unused Result: the call may fail; use 'try' to propagate the error or 'when' to handle it (D4)")
 		}
@@ -655,6 +671,7 @@ func (f *fnCtx) checkReturn(s *ast.ReturnStmt) []Stmt {
 	}
 	if s.Value != nil {
 		f.checkReturnEscape(s.Value)
+		f.allowHeld(s.Value, heldReturn) // D111: returned straight to the caller
 	}
 	if f.retType == nil {
 		// lambda with an inferred return type: the first return decides
@@ -1640,6 +1657,7 @@ func (f *fnCtx) withBindings(s *ast.WithExpr, i int, closeable *types.Trait, wan
 	}
 	call, _ := b.Value.(*ast.CallExpr)
 	f.lockOK, f.lockSeen = call, false
+	f.allowHeld(b.Value, heldWith) // D111: a value holding a task is received here
 	init := f.checkExpr(b.Value, nil)
 	locked := f.lockSeen && call != nil
 	f.lockOK, f.lockSeen = nil, false
@@ -1648,6 +1666,9 @@ func (f *fnCtx) withBindings(s *ast.WithExpr, i int, closeable *types.Trait, wan
 	}
 	if locked {
 		return f.withLocked(s, i, call, init, closeable, want, asValue, result)
+	}
+	if _, bare := init.Type().(*types.Task); !bare && f.c.taskHolding(init.Type()) {
+		return f.withHeld(s, i, init, closeable, want, asValue, result)
 	}
 	v := f.withVar(b, init.Type())
 	if closeable == nil || f.findImpl(init.Type(), closeable) == nil {

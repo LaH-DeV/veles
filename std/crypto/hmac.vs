@@ -62,23 +62,25 @@ public struct Hmac<H: Hasher> {
 }
 
 /// The MAC of `message` under `key` and `H`, in one call:
-/// `crypto.hmac<Sha256>(key, message)`.
-public fun hmac<H: Hasher>(key: List<u8>, message: List<u8>): Digest {
-  var m = Hmac<H>.start(key)
+/// `crypto.hmac<Sha256>(key, message)`. The key is a `Secret` (D112), so it
+/// never reaches a log line; `Hmac.start` takes the raw bytes when a program
+/// manages them itself.
+public fun hmac<H: Hasher>(key: Secret<List<u8>>, message: List<u8>): Digest {
+  var m = Hmac<H>.start(key.expose())
   m.update(message)
   m.finish()
 }
 
 /// HMAC-SHA-256 — the default MAC: signed cookies, webhook signatures,
 /// JWT `HS256`.
-public fun hmacSha256(key: List<u8>, message: List<u8>): Digest = hmac<Sha256>(key, message)
+public fun hmacSha256(key: Secret<List<u8>>, message: List<u8>): Digest = hmac<Sha256>(key, message)
 
 /// HMAC-SHA-512, for `HS512` and for keys longer than 256 bits.
-public fun hmacSha512(key: List<u8>, message: List<u8>): Digest = hmac<Sha512>(key, message)
+public fun hmacSha512(key: Secret<List<u8>>, message: List<u8>): Digest = hmac<Sha512>(key, message)
 
 /// HMAC-SHA-1. Unlike plain SHA-1 this is not broken — collisions do not
 /// help an attacker without the key — but nothing new should ask for it.
-public fun hmacSha1Legacy(key: List<u8>, message: List<u8>): Digest = hmac<Sha1>(key, message)
+public fun hmacSha1Legacy(key: Secret<List<u8>>, message: List<u8>): Digest = hmac<Sha1>(key, message)
 
 /// HMAC-SHA-384, for `HS384`.
-public fun hmacSha384(key: List<u8>, message: List<u8>): Digest = hmac<Sha384>(key, message)
+public fun hmacSha384(key: Secret<List<u8>>, message: List<u8>): Digest = hmac<Sha384>(key, message)

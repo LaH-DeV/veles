@@ -77,6 +77,56 @@ fell. A hasher is finished once: `update` after `finish` panics, and
 Every digest type implements the `Hasher` trait, so code can be written
 against the trait and told the algorithm later: `crypto.digest<Sha512>(bytes)`.
 
+## `Secret`: a value that is never printed
+
+A password, a signing key or a connection string must not end up in a log
+line, a JSON body or a crash report. `Secret<T>` — in the prelude, for `T`
+= `string` or `List<u8>` — holds one so that it cannot (D112):
+
+```veles
+use io, json
+
+struct Config {
+  port: i64 = 8080
+  databaseUrl: Secret<string>
+  implement Decodable
+}
+
+fun main() throws DecodeError {
+  val cfg = try json.decode<Config>("{\"databaseUrl\": \"postgres://app:pw@db/notes\"}")
+  io.println("$cfg")
+  io.println("connecting to ${cfg.databaseUrl.expose().len()} bytes of URL")
+  with token = Secret.of("s3cret")
+  io.println("${token == Secret.of("s3cret")} ${token.len()}")
+}
+```
+
+Output:
+```text
+Config(port: 8080, databaseUrl: [redacted])
+connecting to 26 bytes of URL
+true 6
+```
+
+- **`expose()` is the only way to the value**, and it returns a fresh
+  copy — so every use of a secret is one search away. `Secret.of(v)` makes
+  one from a copy of `v`.
+- Printing, interpolation and `expect` show `[redacted]`.
+- It is **not `Encodable`**: handing one to `json.encode` or `log.field`
+  is a compile error, and deriving `Encodable` on a struct with a `Secret`
+  field asks you to `@skip` it or write `encode`. It *is* `Decodable`, so a
+  config file or the environment fills it.
+- `==` is constant time, like a `Digest`'s. A `Secret` is never hashed or
+  ordered, so it cannot be a map key.
+- **Wiped twice.** `close()` zeroes the bytes at once — `expose()` panics
+  after that — and the collector zeroes them when it frees them. A local
+  `Secret` is a `Closeable` like any other: `with token = Secret.of(…)`.
+
+The honest limit: what `expose()` returned, and the text a `Secret` was
+made from, are ordinary memory. Keep them short-lived; pass the `Secret`
+itself as far as you can. The functions below that take a key take a
+`Secret<List<u8>>` for that reason.
+
 ## MACs: a hash with a key
 
 A hash says "these are the bytes". It does not say "the holder of the
@@ -86,7 +136,7 @@ secret wrote them" — anyone can hash anything. That is what HMAC is for:
 use crypto, hex, io
 
 fun main() throws hex.Invalid {
-  val secret = "shhh".bytes()
+  with secret = Secret.of("shhh".bytes())
   val body = "{\"event\":\"push\"}"
 
   // the sender computes this and puts it in a header
@@ -107,7 +157,8 @@ altered  false
 
 `hmacSha384`, `hmacSha512` and `hmacSha1Legacy` are the same shape, and
 `Hmac<Sha256>.start(key)` is the streaming form for a body you do not want
-to buffer.
+to buffer; it takes the raw `List<u8>`, for a program that manages its key
+bytes itself.
 
 ### Why `==` and not `bytes()`
 
@@ -128,7 +179,7 @@ Anything an attacker must not guess comes from `crypto.randomBytes`:
 ```veles
 // fragment
 val session = base64.encodeUrl(crypto.randomBytes(32))
-val key = crypto.randomBytes(32)   // an HMAC-SHA-256 key
+val key = Secret.of(crypto.randomBytes(32))   // an HMAC-SHA-256 key
 ```
 
 This is the operating system's generator — `BCryptGenRandom` on Windows,
@@ -229,7 +280,7 @@ refuses.
 use codec, crypto, io, jwt
 
 fun main() throws EncodeError {
-  val key = crypto.randomBytes(32)
+  with key = Secret.of(crypto.randomBytes(32))
   val at = 1700000000
 
   val token = try jwt.sign(jwt.Claims(
@@ -278,8 +329,8 @@ Unix **seconds** (the specification's NumericDate), not the milliseconds
 - `crit` in the header is rejected: it means "you must understand this
   extension", and this module understands none.
 - An HMAC key shorter than the digest is refused outright (RFC 7518
-  §3.2) — 32 bytes for HS256. A password is not a key; `crypto.randomBytes(32)`
-  is.
+  §3.2) — 32 bytes for HS256. A password is not a key;
+  `Secret.of(crypto.randomBytes(32))` is.
 - The signature is compared through `crypto.Digest`, so in constant time.
 
 `Options` also holds `audience`, `issuer` and `leeway` (seconds of

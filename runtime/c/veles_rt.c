@@ -909,6 +909,49 @@ void veles_list_index_panic(veles_list *l, int64_t i, const char *loc, int64_t l
     veles_panic_at(msg, n, loc, loc_len);
 }
 
+/* ---- Secret (D112) -----------------------------------------------------
+ * A Secret's bytes are a List<u8> whose storage has the wipe descriptor:
+ * the collector zeroes it when it is freed, and close() zeroes it at once.
+ * Nothing grows the list, so its bytes are never copied elsewhere. */
+extern veles_desc veles_wipe_u8_desc;
+void veles_wipe(void *p, size_t n);
+
+veles_list *veles_secret_bytes(const char *p, int64_t len) {
+    veles_list *l = veles_list_new(&veles_wipe_u8_desc, len);
+    if (len > 0) memcpy(l->data, p, (size_t)len);
+    l->len = len;
+    return l;
+}
+
+void veles_secret_wipe(veles_list *l) {
+    veles_wipe(l->data, (size_t)(l->cap * l->elem));
+}
+
+/* expose(): an ordinary copy, as text (the bytes came from a string, so
+ * they are valid UTF-8) or as a List<u8> of the given element descriptor */
+void veles_secret_text(veles_string *out, veles_list *l) {
+    char *buf = veles_alloc(l->len + 1);
+    if (l->len > 0) memcpy(buf, l->data, (size_t)l->len);
+    out->data = buf;
+    out->len = l->len;
+}
+
+veles_list *veles_secret_copy(veles_desc *desc, veles_list *l) {
+    veles_list *c = veles_list_new(desc, l->len);
+    if (l->len > 0) memcpy(c->data, l->data, (size_t)l->len);
+    c->len = l->len;
+    return c;
+}
+
+/* veles_unchecked_index_panic is D114's debug assertion for atUnchecked,
+ * setUnchecked (kind 0, a list) and byteAtUnchecked (kind 1, a string). */
+void veles_unchecked_index_panic(int64_t i, int64_t len, int64_t kind, const char *loc, int64_t loc_len) {
+    char msg[96];
+    int n = snprintf(msg, sizeof msg, "unchecked index %" PRId64 " out of bounds for %s of length %" PRId64,
+                     i, kind ? "string" : "list", len);
+    veles_panic_at(msg, n, loc, loc_len);
+}
+
 bool veles_list_pop(veles_list *l, void *out) {
     if (l->len == 0) return false;
     l->len--;

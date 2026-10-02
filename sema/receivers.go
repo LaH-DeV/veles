@@ -50,6 +50,7 @@ func (c *Checker) receiverPass(prog *Program) {
 	}
 	c.fieldUsePass(prog)
 	c.lintParamCopies(prog)
+	c.lintNeverClosed(prog)
 	for _, fn := range prog.Funcs {
 		if fn.Body == nil {
 			continue
