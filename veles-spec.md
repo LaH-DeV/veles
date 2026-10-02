@@ -636,6 +636,8 @@ race {
 
 *Addendum (v0.29).* Exactly one arm runs, so a smart cast made inside an arm (an assignment to a `var`) survives the race only when every arm makes it — the `if`/`else` join rule (D5). A race whose arms all return or throw is `Never`-typed, which is what lets `withTimeout` be written as `race { val r = await t => return try r; sleep(ms) => throw Timeout() }` inside a scope whose early exit cancels `t`.
 
+*Addendum (2026-10-02, written down while building D108; not a change).* **Which arm wins.** When the race starts, the arms are tried in written order and the first one ready wins, so an always-ready arm shadows the ones after it. If none is ready the race waits, and the first arm to become ready wins. The rule is deterministic and biased towards earlier arms; it is not fair in Go's sense (Go picks among ready cases at random). Changing it would be a decision.
+
 Named `race` rather than Go's `select` because the three constructs then share a vocabulary — each name says what it does with the set of children — instead of borrowing the third from an unrelated tradition. Recorded against it: `select` is what anyone arriving from Go will look for, and Go's `select` is typically driven in a loop to service channels repeatedly, which "race" slightly undersells.
 
 ### D39 — `.` auto-dereferences pointers
@@ -3364,6 +3366,18 @@ would have made it ordinary library code, were not adopted (D111). `with notes.l
 User, 2026-10-01, recommended of 3 (spec §7, open since D43). Rejected: the
 guard replacing `withLock` (longer one-liners); `withLock` only.
 
+*Built 2026-10-02.* `lock()` returns the prelude's private `Locked<T>` (the
+`Held` and the `*T`); the `with` holds it under a hidden name and binds `n` to
+the pointer. Suspension points the checker sees (`await`, `race`, `scope`,
+`gather`, `async`, `send`, `recv`, `sleep`, a call of a suspending function
+value) are refused as checked; a call of a named function that suspends is
+refused after suspension inference, so that error appears only once the rest
+of the program has none. The escape message for `n` is "points into a Mutex
+that is unlocked when its 'with' block ends"; `n.close()` closes the value,
+not the lock, and is not refused (D136). The re-lock panic now reads "a Mutex
+was locked again while this task holds it". The editor's hint after the block
+says `unlocks notes`.
+
 ### D108 — Send arms in `race` (v0.61)
 
 ```veles
@@ -3390,6 +3404,14 @@ working.
 User, 2026-10-01, recommended of 3 (§9 Q1, asked 2026-09-27). Rejected: leaving
 it (a task per bounded send); keeping it open.
 
+*Built 2026-10-02.* The which-arm rule is now written in D38 (first ready in
+written order, else first to become ready; not random). A send arm's node waits
+in the channel's senders; whoever takes its value claims its race first, and a
+send arm that meets another race's receive arm on the same channel takes both
+claims or neither (the race's task marks its own race busy for those few
+instructions; other claimers wait instead of failing). `val x = ch.send(v) =>`
+is an error: a send arm binds nothing.
+
 ### D109 — `with expr` without a name (v0.61)
 
 `with sem.acquire()` / `with (sem.acquire()) { … }` hold and close a value the
@@ -3400,6 +3422,11 @@ f:`). `with _ = expr` stays legal. Every D43/D100 rule holds; D100's "closed as
 soon as it is opened" warning applies when the statement is last.
 
 User, 2026-10-01, recommended of 2. Rejected: requiring `with _ = expr`.
+
+*Built 2026-10-02.* `with _ = expr` did not parse before; it does now, and
+means `with expr`. In the statement form, `with` followed by anything but `(`
+is the statement; `with (` is the block form. `with conn` holds a copy of
+`conn` and closes it; `conn` is a resource from there on (D100 part 3, D136).
 
 ### D110 — Concurrency helpers: `retry`, `Semaphore`, channel drains, `ticker` (v0.61)
 
@@ -3432,6 +3459,19 @@ Not approved yet, asked when a program needs them: `filterConcurrent`,
 `firstConcurrent`, channel-to-channel stages, `awaitAll`.
 
 User, 2026-10-01: all four ticked.
+
+*Built 2026-10-02.* `retry` is not `@caller_location`: it suspends, and D88
+forbids that, so its `times < 1` panic reports the std line (checklist §11).
+`Semaphore` is a channel of permits; `Permit` closes once through an
+`Atomic<bool>`. `ch.forEach`/`ch.toList` are a prelude `extend<T> Channel<T>`
+(channel methods the compiler does not know now fall through to extend
+blocks). `Ticker` is fed by a runtime ticker list beside the task timers; std
+alone may pass a `Channel` across the C ABI for it. Closing a ticker closes
+`ticks`, and a tick already in it can still be received, as from any closed
+channel. Building `retry` needed generic `do { } catch` to work in an
+instance where `E` is `Never`: the handler is kept (nothing reaches it) and
+a `throw` of a `Never` value there is unreachable, instead of "nothing in this
+'do' block can fail" and "'throw' fails the function" errors.
 
 ### D111 — A value that holds a task is received with `with` (v0.62)
 

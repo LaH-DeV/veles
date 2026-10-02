@@ -286,26 +286,38 @@ func (p *Parser) looksLikeForIn() bool {
 	}
 }
 
-// atWithStmt: `with name =`, the statement form (D100), as against the
-// block form's `with (`.
+// atWithStmt: `with name = e` or `with e` (D100, D109), the statement form,
+// as against the block form's `with (`.
 func (p *Parser) atWithStmt() bool {
-	return p.at(lexer.KwWith) && p.peek(1).Kind == lexer.Ident && p.peek(2).Kind == lexer.Assign
+	return p.at(lexer.KwWith) && p.peek(1).Kind != lexer.LParen
 }
 
-// parseWithStmt reads `with name = expr` (D100). One binding: a second
-// `, b = …` is its own statement.
+// atNamedWithItem: `name =` begins a binding; any other item is an
+// expression held without a name (D109).
+func (p *Parser) atNamedWithItem() bool {
+	return p.at(lexer.Ident, lexer.Under) && p.peek(1).Kind == lexer.Assign
+}
+
+// parseWithItem reads one `name = e`, `_ = e` or `e`.
+func (p *Parser) parseWithItem() ast.WithBinding {
+	if !p.atNamedWithItem() {
+		return ast.WithBinding{Value: p.parseExpr()}
+	}
+	t := p.next()
+	p.next() // =
+	return ast.WithBinding{Name: ast.Ident{Name: t.Text, Pos: t.Span}, Value: p.parseExpr()}
+}
+
+// parseWithStmt reads `with name = expr` or `with expr` (D100, D109). One
+// item: a second `, b = …` is its own statement.
 func (p *Parser) parseWithStmt() *ast.WithStmt {
 	start := p.span()
 	p.next() // with
-	name, _ := p.expectIdent()
-	p.expect(lexer.Assign)
-	s := &ast.WithStmt{Binding: ast.WithBinding{Name: name, Value: p.parseExpr()}}
+	s := &ast.WithStmt{Binding: p.parseWithItem()}
 	if p.at(lexer.Comma) {
 		p.errorf(p.span(), "'with x = e' binds one resource; write each on its own line ('with a = …' then 'with b = …'), or use the block form 'with (a = …, b = …) { ... }' (D100)")
 		for p.accept(lexer.Comma) { // read the rest as written, so nothing cascades
-			p.expectIdent()
-			p.expect(lexer.Assign)
-			p.parseExpr()
+			p.parseWithItem()
 		}
 	}
 	s.Pos = p.spanFrom(start)
@@ -325,16 +337,7 @@ func (p *Parser) parseWith() *ast.WithExpr {
 	s := &ast.WithExpr{}
 	if _, ok := p.expect(lexer.LParen); ok {
 		for !p.at(lexer.RParen, lexer.EOF) {
-			name, ok := p.expectIdent()
-			if !ok {
-				p.syncParen()
-				break
-			}
-			b := ast.WithBinding{Name: name}
-			if _, ok := p.expect(lexer.Assign); ok {
-				b.Value = p.parseExpr()
-			}
-			s.Bindings = append(s.Bindings, b)
+			s.Bindings = append(s.Bindings, p.parseWithItem())
 			if !p.accept(lexer.Comma) {
 				break
 			}

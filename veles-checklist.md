@@ -130,12 +130,21 @@ answered from the shape, tuples get `Comparable`, enums get
 - [x] Task-local values (D72, 2026-09-27): `taskLocal(fallback)`, scoped
       immutable `withValue(v, f)`, inherited by tasks started inside;
       TestTaskLocalsUnderThreads, sema TestTaskLocal, chapter 12
-- [ ] `race` send arms (`ch.send(v) => ...`) — decided 2026-10-01 (D108), not built (plan B12)
-- [ ] `with p = m.lock()` (D107), `with expr` without a name (D109), `retry` /
-      `Semaphore` / channel drains / `ticker` (D110) — decided 2026-10-01, not
-      built (plan B12)
-- [ ] Which `race` arm wins when several are ready at once is unwritten
-      (found 2026-10-01 preparing D108): document it in chapter 12 and D38
+- [x] `race` send arms (`ch.send(v) => ...`, D108, 2026-10-02): a send waiter
+      that claims the race before its value moves; a send arm meeting another
+      race's receive arm takes both claims or neither (`race_pair`); a closed
+      channel panics. TestRaceSendArms (1/2/4/8 threads ×5), conformance
+      D108-race-send, chapter 12. Clean under `--sanitize` on Linux, 1/2/4/8
+      threads ×5, with the D107 and D110 programs (2026-10-02)
+- [x] `with p = m.lock()` (D107), `with expr` without a name (D109), `retry` /
+      `Semaphore` / channel drains / `time.ticker` (D110) — built 2026-10-02:
+      TestLockGuard, TestConcurrencyHelpers, std/time/ticker.test.vs,
+      conformance D107-lock-guard, D107-lock-call, D109-with-unnamed, LSP
+      TestLockInTheEditor; chapters 12, 13, 20
+- [x] Which `race` arm wins when several are ready at once (2026-10-02):
+      the first ready in written order when the race starts, else the first
+      to become ready — deterministic, biased to earlier arms, not Go's
+      random pick; chapter 12 and the D38 addendum
 - [x] Bounded channels with backpressure (`capacity: n`, blocked senders
       served in order); `race` is the `select` over receives, sleeps and
       tasks (D38). `Channel<T>()` is a true rendezvous (2026-09-27)
@@ -231,7 +240,12 @@ answered from the shape, tuples get `Comparable`, enums get
       programs (`go test ./driver -sanitize`, ×3) are clean. One finding,
       fixed: the test runner's capture buffer did `NULL + 0` on an empty
       print (UB). Docs 13. Windows: needs MSYS2's compiler-rt (not
-      installed here; the build says so)
+      installed here; the build says so). 2026-10-02: every sanitized
+      program had come to abort as its first thread ended — the runtime's
+      malloc'd alternate signal stack was still installed, and ASan unmaps
+      the installed one; the runtime now puts the previous one back
+      (`veles_stack_thread_done`, now called by the main thread too).
+      TestSanitizedProgramEndsCleanly runs on Linux in every `go test`
 - [x] `readRequest` limits: `http.Limits` — request line, header line, header
       count (lines, not map entries), header bytes, body bytes, and three clocks
       (header, body, idle). A byte ceiling answers 414/431/413 and closes, a time
@@ -950,7 +964,8 @@ Every new public std API (http cookies/forms/client, `std/log`,
   functions marked `@caller_location` (D88: `swap`, `insert`, `removeAt`,
   `chunked`, `windowed`, `step`, `toString(radix:)`, `randomBytes`, `Uuid.of`,
   `random.range`); other std panics (`Hmac.update` after finish, the JWT key
-  length check, `mapConcurrent` — which suspends) still report the std line.
+  length check, `mapConcurrent` and `retry(0, …)` — which suspend) still
+  report the std line. `Semaphore(permits:)` and `time.ticker` are marked.
 - `T?.decode(from)` written by hand parses as a safe call on `T`; use a
   generic (`fun decodeIt<T: Decodable>(...)`) or a field. Derived code uses a
   resolved-type receiver and is unaffected.

@@ -46,6 +46,19 @@ struct Held {
   }
 }
 
+// What `with n = m.lock()` holds (D107): the taken lock and the value it
+// guards. The compiler binds `n` to `value`; the close is the unlock.
+struct Locked<T> {
+  held:  Held
+  value: *T
+
+  implement Closeable {
+    fun close() {
+      this.held.close()
+    }
+  }
+}
+
 /// A value that tasks share and change, one at a time. Copies of a
 /// `Mutex` are the same lock and the same value.
 ///
@@ -53,6 +66,9 @@ struct Held {
 /// val hits = Mutex(value: 0)
 /// hits.withLock(n => *n += 1)  // from any number of tasks
 /// io.println(hits.get())
+///
+/// with n = hits.lock()         // held to the end of the block
+/// *n += 1
 /// ```
 public struct Mutex<T> {
   private cell: *T
@@ -68,6 +84,13 @@ public struct Mutex<T> {
     with held = Held.take(this.word)
     return f(this.cell)
   }
+
+  /// Locks the value to the end of the `with` that holds it:
+  /// `with n = notes.lock()` binds `n` to a pointer to the value, and the
+  /// block's end — or any way out of it — unlocks it. Usable only as a
+  /// `with` value; nothing inside the block may suspend, and locking the
+  /// same `Mutex` again before it ends panics (D107).
+  public fun lock(): Locked<T> = Locked(held: Held.take(this.word), value: this.cell)
 
   /// A copy of the value, read under the lock.
   public fun get(): T = this.withLock(p => *p)

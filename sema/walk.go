@@ -164,6 +164,7 @@ func walkExpr(e Expr, visit func(node any)) {
 	case *Race:
 		for _, arm := range e.Arms {
 			walkExpr(arm.Source, visit)
+			walkExpr(arm.Value, visit)
 			walkBlock(arm.Body, visit)
 		}
 	}

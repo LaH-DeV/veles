@@ -71,6 +71,10 @@ type fnCtx struct {
 	boundPlace  map[ast.Expr]Expr // receiver of a `?.` assignment, already lowered to its place (check_safe.go)
 	adapter     *adapterState     // the eager collection operation being lowered (lower_try.go)
 	scopes      []*ScopeBlock
+	held        []*HeldLock             // the `with … = m.lock()` regions around the code being checked (D107)
+	lockOK      *ast.CallExpr           // the `with` value being checked, where `m.lock()` is allowed
+	lockSeen    bool                    // lockOK turned out to be `m.lock()`
+	stmtWiths   map[*ast.WithExpr]bool  // block forms made from the statement form by withRest
 	awaitNext   bool
 	inRaceArm   bool
 	inferThrows bool
@@ -1556,13 +1560,21 @@ func (f *fnCtx) iteratorLoop(s *ast.LoopStmt, iter Expr, lp *Loop, label string)
 // and is computed before the close (D43 v0.29).
 func (f *fnCtx) withRest(ws *ast.WithStmt, b *ast.Block, i int) ast.Stmt {
 	rest := b.Stmts[i+1:]
-	name := ws.Binding.Name.Name
 	if len(rest) == 0 {
-		f.warnf(ws.Pos, "'%s' is closed as soon as it is opened: nothing follows 'with %s = …' in its block, and the block's end closes it (D100)", name, name)
+		if name := ws.Binding.Name.Name; name != "" {
+			f.warnf(ws.Pos, "'%s' is closed as soon as it is opened: nothing follows 'with %s = …' in its block, and the block's end closes it (D100)", name, name)
+		} else {
+			f.warnf(ws.Pos, "'%s' is closed as soon as it is opened: nothing follows 'with %s' in its block, and the block's end closes it (D100, D109)", srcText(ws.Binding.Value), srcText(ws.Binding.Value))
+		}
 	}
 	end := source.Span{File: b.Pos.File, Start: b.Pos.End, End: b.Pos.End}
 	body := &ast.Block{Stmts: rest, Pos: ws.Pos.To(end)}
-	return &ast.ExprStmt{X: &ast.WithExpr{Bindings: []ast.WithBinding{ws.Binding}, Body: body, Pos: ws.Pos.To(end)}}
+	w := &ast.WithExpr{Bindings: []ast.WithBinding{ws.Binding}, Body: body, Pos: ws.Pos.To(end)}
+	if f.stmtWiths == nil {
+		f.stmtWiths = map[*ast.WithExpr]bool{}
+	}
+	f.stmtWiths[w] = true
+	return &ast.ExprStmt{X: w}
 }
 
 // withExpr checks `with (r = init) { body }` (D43). It is an expression:
@@ -1626,30 +1638,40 @@ func (f *fnCtx) withBindings(s *ast.WithExpr, i int, closeable *types.Trait, wan
 	if call, ok := b.Value.(*ast.CallExpr); ok && call.Async {
 		return f.withTask(s, i, closeable, want, asValue, result)
 	}
+	call, _ := b.Value.(*ast.CallExpr)
+	f.lockOK, f.lockSeen = call, false
 	init := f.checkExpr(b.Value, nil)
+	locked := f.lockSeen && call != nil
+	f.lockOK, f.lockSeen = nil, false
 	if types.IsInvalid(init.Type()) {
 		return nil, types.TInvalid
 	}
-	v := f.newVar(b.Name.Name, init.Type(), false, b.Name.Pos)
-	f.declareLocal(b.Name.Name, v, b.Name.Pos)
+	if locked {
+		return f.withLocked(s, i, call, init, closeable, want, asValue, result)
+	}
+	v := f.withVar(b, init.Type())
 	if closeable == nil || f.findImpl(init.Type(), closeable) == nil {
 		if _, isTask := init.Type().(*types.Task); isTask {
-			f.errorf(b.Value.Span(), "a task is a 'with' resource only where 'with' starts it: 'with %s = async f(...)' (D100); this one belongs to the 'scope' that started it", b.Name.Name)
+			f.errorf(b.Value.Span(), "a task is a 'with' resource only where 'with' starts it: 'with %s = async f(...)' (D100); this one belongs to the 'scope' that started it", withLabel(b))
 		} else {
 			f.errorf(b.Value.Span(), "'%s' is not Closeable; 'with' resources must implement Closeable (D43)", init.Type())
 		}
 		return nil, types.TInvalid
 	}
-	f.refWith(s, i, v, false)
+	f.refWith(s, i, v, "closed")
 	// synthesize `name.close()` (a method call works on any binding, D22)
-	call := &ast.CallExpr{Fun: &ast.MemberExpr{X: nameOf(v, b.Name.Pos), Name: ast.Ident{Name: "close", Pos: b.Name.Pos}, Pos: b.Name.Pos}, Pos: b.Name.Pos}
-	closeCall := f.checkExpr(call, types.TUnit)
+	at := v.Span
+	closer := &ast.CallExpr{Fun: &ast.MemberExpr{X: nameOf(v, at), Name: ast.Ident{Name: "close", Pos: at}, Pos: at}, Pos: at}
+	closeCall := f.checkExpr(closer, types.TUnit)
 	if isResultType(closeCall.Type()) {
-		f.errorf(b.Name.Pos, "close() of '%s' throws; throwing cleanup is not supported yet", init.Type())
+		f.errorf(at, "close() of '%s' throws; throwing cleanup is not supported yet", init.Type())
 	}
 	// a resource from here on: after the compiler's own close, which D136
 	// would otherwise refuse as a second one
 	f.markResource(v, v)
+	if held := f.takenOver(b); held != nil {
+		f.markResource(held, held)
+	}
 	inner, bodyT := f.withBindings(s, i+1, closeable, want, asValue, result)
 	body := &Block{Stmts: inner, Type: types.TUnit}
 	if types.IsNever(bodyT) {
@@ -1680,10 +1702,9 @@ func (f *fnCtx) withTask(s *ast.WithExpr, i int, closeable *types.Trait, want ty
 	if types.IsInvalid(init.Type()) {
 		return nil, types.TInvalid
 	}
-	v := f.newVar(b.Name.Name, init.Type(), false, b.Name.Pos)
-	f.declareLocal(b.Name.Name, v, b.Name.Pos)
+	v := f.withVar(b, init.Type())
 	f.markResource(v, v)
-	f.refWith(s, i, v, true)
+	f.refWith(s, i, v, "cancelled, then joined (unless it has finished),")
 	inner, bodyT := f.withBindings(s, i+1, closeable, want, asValue, result)
 	sb.Body = &Block{Stmts: append([]Stmt{&VarDecl{Var: v, Init: init}}, inner...), Type: types.TUnit}
 	if types.IsNever(bodyT) {
@@ -1700,21 +1721,58 @@ func (f *fnCtx) withTask(s *ast.WithExpr, i int, closeable *types.Trait, want ty
 
 // refWith records the hover of a `with` keyword (D100): what it binds and
 // where that is closed. One record per keyword — the first binding's.
-func (f *fnCtx) refWith(s *ast.WithExpr, i int, v *Var, task bool) {
+func (f *fnCtx) refWith(s *ast.WithExpr, i int, v *Var, what string) {
 	if f.c.index == nil || i > 0 || !s.Pos.IsValid() {
 		return
 	}
 	kw := source.Span{File: s.Pos.File, Start: s.Pos.Start, End: s.Pos.Start + len("with")}
 	line, _ := s.Pos.File.Position(s.Body.Pos.End - 1)
-	what := "closed"
-	if task {
-		what = "cancelled, then joined (unless it has finished),"
-	}
-	doc := fmt.Sprintf("`%s` is %s at the end of this block, line %d, and on every way out of it before then (D43/D100).", v.Name, what, line)
+	label := withLabel(s.Bindings[i])
+	doc := fmt.Sprintf("`%s` is %s at the end of this block, line %d, and on every way out of it before then (D43/D100).", label, what, line)
 	if len(s.Bindings) > 1 {
 		doc = fmt.Sprintf("Closed in reverse order at the end of this block, line %d, and on every way out of it before then (D43).", line)
 	}
-	f.c.index.Refs = append(f.c.index.Refs, Ref{Span: kw, Kind: "keyword", Name: "with", Type: v.Type, Detail: "with " + v.Name + typeSuffix(v.Type), Doc: doc})
+	detail := "with " + label
+	if s.Bindings[i].Name.Name != "" {
+		detail += typeSuffix(v.Type)
+	}
+	f.c.index.Refs = append(f.c.index.Refs, Ref{Span: kw, Kind: "keyword", Name: "with", Type: v.Type, Detail: detail, Doc: doc})
+}
+
+// withVar declares the variable a `with` item binds: its name, or for an
+// item without one (D109) a name the program cannot write.
+func (f *fnCtx) withVar(b ast.WithBinding, t types.Type) *Var {
+	name, at := b.Name.Name, b.Name.Pos
+	if name == "" || name == "_" {
+		f.c.nextTmp++
+		name, at = "$with"+itoa(f.c.nextTmp), b.Value.Span()
+	}
+	v := f.newVar(name, t, false, at)
+	f.declareLocal(name, v, at)
+	return v
+}
+
+// withLabel is how messages and hovers name a `with` item: its name, or
+// the expression it holds.
+func withLabel(b ast.WithBinding) string {
+	if b.Name.Name != "" {
+		return b.Name.Name
+	}
+	return srcText(b.Value)
+}
+
+// takenOver is the local a bare `with conn` takes over closing (D109): it
+// is a resource from here on, as if it had been opened by the `with`.
+func (f *fnCtx) takenOver(b ast.WithBinding) *Var {
+	if b.Name.Name != "" {
+		return nil
+	}
+	if n, ok := b.Value.(*ast.NameExpr); ok {
+		if sym := f.scope.Lookup(n.Name); sym != nil && sym.Kind == SymLocal {
+			return sym.Var
+		}
+	}
+	return nil
 }
 
 // checkThrow is `throw e`: `return Err(e)` in a throwing function (D4).
@@ -1725,6 +1783,14 @@ func (f *fnCtx) checkThrow(s *ast.ThrowStmt) []Stmt {
 	if f.isGlobal && f.catching == nil {
 		f.errorf(s.Pos, globalCannotFail)
 		return nil
+	}
+	if !f.throws && f.catching == nil && f.neverInstance() {
+		if errv := f.checkExpr(s.Value, nil); types.IsNever(errv.Type()) {
+			// `throw e` of an error typed E, in an instance where E is
+			// Never (a handler nothing reaches, catch.go): it cannot run
+			msg := &StringConst{exprBase{types.TString}, "unreachable: a throw of a Never error"}
+			return []Stmt{&ExprStmt{X: &Builtin{exprBase{types.TNever}, "panic", []Expr{msg}, s.Pos}}}
+		}
 	}
 	if !f.throws && f.catching == nil {
 		f.errorf(s.Pos, "'throw' fails the function, but it is not declared 'throws' (D4)")

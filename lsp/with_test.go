@@ -83,3 +83,58 @@ func TestWithInTheEditor(t *testing.T) {
 		t.Errorf("missing %q in\n%s", want, got)
 	}
 }
+
+const lockSrc = `use io
+
+struct Notes {
+  var count: i64 = 0
+}
+
+fun main() {
+  val notes = Mutex(value: Notes())
+  val sem = Res2()
+  with n = notes.lock()
+  with sem
+  n.count += 1
+  io.println("${n.count}")
+}
+
+struct Res2 {
+  implement Closeable {
+    fun close() { }
+  }
+}
+`
+
+// D107/D109: hovering the `with` of a lock shows the pointer it binds and
+// that the region may not suspend; the inlay hint says the brace unlocks
+// it, and names an item without a name by its expression.
+func TestLockInTheEditor(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	if err := os.WriteFile(path, []byte(lockSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := pathToURI(path)
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{})
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": lockSrc}})
+	doc := map[string]any{"uri": uri}
+	res, _ := c.call("textDocument/hover", map[string]any{"textDocument": doc, "position": at(t, lockSrc, "with n", 0)})
+	var h struct{ Contents struct{ Value string } }
+	json.Unmarshal(res, &h)
+	if !strings.Contains(h.Contents.Value, "with n: *Notes") || !strings.Contains(h.Contents.Value, "nothing in between may suspend") {
+		t.Errorf("hover on the with of a lock: %s", h.Contents.Value)
+	}
+	res, _ = c.call("textDocument/inlayHint", map[string]any{"textDocument": doc,
+		"range": map[string]any{"start": map[string]any{"line": 0, "character": 0}, "end": map[string]any{"line": 100, "character": 0}}})
+	var hints []inlayHint
+	if err := json.Unmarshal(res, &hints); err != nil {
+		t.Fatalf("inlayHint: %s", res)
+	}
+	got := applyHints(lockSrc, hints)
+	if want := "}« closes sem; unlocks notes»\n"; !strings.Contains(got, want) {
+		t.Errorf("missing %q in\n%s", want, got)
+	}
+}

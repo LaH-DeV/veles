@@ -574,7 +574,10 @@ func (p *printer) stmt(s Stmt) {
 		p.child(func() { p.block(s.Body) })
 		p.close()
 	case *WithStmt:
-		p.w("(with-stmt " + s.Binding.Name.Name + " ")
+		p.w("(with-stmt ")
+		if s.Binding.Name.Name != "" {
+			p.w(s.Binding.Name.Name + " ")
+		}
 		p.expr(s.Binding.Value)
 		p.w(")")
 	case *FunStmt:
@@ -729,7 +732,11 @@ func (p *printer) expr(e Expr) {
 	case *WithExpr:
 		p.open("with")
 		for _, b := range e.Bindings {
-			p.w(" (" + b.Name.Name + " = ")
+			if b.Name.Name != "" {
+				p.w(" (" + b.Name.Name + " = ")
+			} else {
+				p.w(" (")
+			}
 			p.expr(b.Value)
 			p.w(")")
 		}

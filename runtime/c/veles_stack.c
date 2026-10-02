@@ -173,6 +173,9 @@ static int run_on_thread(size_t size, main_args *a) {
 static __thread char *stack_lo;    /* the lowest usable stack address of this thread */
 static __thread size_t stack_size; /* and how big the stack is */
 static __thread void *alt_memory;
+/* the alternate stack the thread had before ours — a sanitizer's, which it
+ * unmaps itself when the thread ends, so it must be the one installed then */
+static __thread stack_t alt_before;
 
 static void on_fault(int sig, siginfo_t *si, void *ctx) {
     (void)ctx;
@@ -226,15 +229,25 @@ void veles_stack_thread_init(void) {
         ss.ss_sp = alt_memory;
         ss.ss_size = ALT_STACK_SIZE;
         ss.ss_flags = 0;
-        sigaltstack(&ss, NULL);
+        if (sigaltstack(&ss, &alt_before) != 0) {
+            free(alt_memory);
+            alt_memory = NULL;
+        }
     }
 }
 
+/* what a thread does last: give back the alternate stack it had before
+ * (AddressSanitizer's, under --sanitize: it unmaps that one as the thread
+ * ends, and cannot unmap ours, which is malloc'd), or none */
 void veles_stack_thread_done(void) {
     if (!alt_memory) return;
-    stack_t ss;
-    memset(&ss, 0, sizeof ss);
-    ss.ss_flags = SS_DISABLE;
+    stack_t ss = alt_before;
+    if (ss.ss_flags & SS_DISABLE || !ss.ss_sp) {
+        memset(&ss, 0, sizeof ss);
+        ss.ss_flags = SS_DISABLE;
+    } else {
+        ss.ss_flags = 0;
+    }
     sigaltstack(&ss, NULL);
     free(alt_memory);
     alt_memory = NULL;
@@ -251,6 +264,7 @@ static void *main_thread(void *p) {
     main_args *a = p;
     veles_stack_thread_init();
     a->code = veles_main(a->argc, a->argv);
+    veles_stack_thread_done();
     return NULL;
 }
 

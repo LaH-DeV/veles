@@ -217,18 +217,24 @@ func closeHints(f *source.File, file *ast.File) []inlayHint {
 			if !ok {
 				continue
 			}
-			v := "closes"
+			v, name := "closes", w.Binding.Name.Name
+			if name == "" { // `with sem.acquire()` (D109): the expression
+				name = strings.TrimSpace(f.Content[w.Binding.Value.Span().Start:w.Binding.Value.Span().End])
+			}
 			if c, isCall := w.Binding.Value.(*ast.CallExpr); isCall && c.Async {
-				if awaitedAfter(b.Stmts[i+1:], w.Binding.Name.Name) {
+				if w.Binding.Name.Name != "" && awaitedAfter(b.Stmts[i+1:], w.Binding.Name.Name) {
 					continue // finished by then: the end has nothing to stop
 				}
 				v = "cancels"
+			} else if m, isLock := lockCallee(w.Binding.Value); isLock {
+				// `with n = notes.lock()` (D107): the close is the unlock
+				v, name = "unlocks", strings.TrimSpace(f.Content[m.X.Span().Start:m.X.Span().End])
 			}
 			if v != verb {
-				parts = append(parts, v+" "+w.Binding.Name.Name)
+				parts = append(parts, v+" "+name)
 				verb = v
 			} else {
-				parts[len(parts)-1] += ", " + w.Binding.Name.Name
+				parts[len(parts)-1] += ", " + name
 			}
 		}
 		if len(parts) > 0 {
@@ -236,6 +242,16 @@ func closeHints(f *source.File, file *ast.File) []inlayHint {
 		}
 	})
 	return out
+}
+
+// lockCallee is the `x.lock` of a call `x.lock()`.
+func lockCallee(e ast.Expr) (*ast.MemberExpr, bool) {
+	c, ok := e.(*ast.CallExpr)
+	if !ok || len(c.Args) != 0 {
+		return nil, false
+	}
+	m, ok := c.Fun.(*ast.MemberExpr)
+	return m, ok && m.Name.Name == "lock"
 }
 
 // walkNodes calls visit on every AST node reachable from v.

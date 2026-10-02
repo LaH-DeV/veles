@@ -659,6 +659,8 @@ type With struct {
 	Init  Expr
 	Close Expr // the close() call on Var
 	Body  *Block
+	// Lock: a `with … = m.lock()` (D107), whose body may not suspend
+	Lock *HeldLock
 }
 
 func (*With) hirStmt() {}
@@ -726,11 +728,13 @@ const (
 	RaceRecv RaceArmKind = iota
 	RaceSleep
 	RaceTask
+	RaceSend // `ch.send(v) =>` (D108): Source is the channel, Value the value
 )
 
 type RaceArm struct {
 	Kind   RaceArmKind
 	Source Expr // channel, milliseconds, or task
+	Value  Expr // what a send arm sends
 	Var    *Var // bound value for recv/task arms (nullable for recv)
 	Body   *Block
 }

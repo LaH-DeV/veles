@@ -57,6 +57,8 @@ entry:
 }
 declare ptr @veles_race_new(ptr)
 declare void @veles_race_recv(ptr, ptr, ptr)
+declare void @veles_race_send(ptr, ptr, ptr)
+declare void @veles_race_sent(ptr)
 declare void @veles_race_sleep(ptr, i64)
 declare void @veles_race_await(ptr, ptr)
 declare i64 @veles_race_wait(ptr, ptr)
@@ -535,6 +537,14 @@ func (g *gen) race(e *sema.Race) string {
 			slots[i] = g.alloca(g.llType(ct.Elem))
 			g.emit("store %s zeroinitializer, ptr %s", g.llType(ct.Elem), slots[i])
 			g.emit("call void @veles_race_recv(ptr %s, ptr %s, ptr %s)", r, ch, slots[i])
+		case sema.RaceSend:
+			// the channel and the value, once, as the race starts (D108)
+			ch := g.expr(arm.Source)
+			v := g.expr(arm.Value)
+			et := g.llType(arm.Value.Type())
+			slots[i] = g.alloca(et)
+			g.emit("store %s %s, ptr %s", et, v, slots[i])
+			g.emit("call void @veles_race_send(ptr %s, ptr %s, ptr %s)", r, ch, slots[i])
 		case sema.RaceSleep:
 			ms := g.expr(arm.Source)
 			g.emit("call void @veles_race_sleep(ptr %s, i64 %s)", r, ms)
@@ -574,6 +584,9 @@ func (g *gen) race(e *sema.Race) string {
 	g.emitTerm("switch i64 %s, label %%%s [ %s ]", w, end, strings.Join(cases, " "))
 	for i, arm := range e.Arms {
 		g.placeLabel(labels[i])
+		if arm.Kind == sema.RaceSend {
+			g.emit("call void @veles_race_sent(ptr %s)", r)
+		}
 		if arm.Var != nil {
 			st := g.declareVar(arm.Var)
 			switch arm.Kind {

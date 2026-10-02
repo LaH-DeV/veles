@@ -220,6 +220,7 @@ scope {                          // every task started inside finishes here
 }
 val (a, b) = gather { async f(); async g() }   // (Result<A, E|Panic>, Result<B, ...>); one task: its Result — when (gather { async f() }) { ... } (D103)
 val winner = race { val m = ch.recv() => ...; sleep(Duration.millis(100)) => "timeout"; val v = t => ... }
+race { queue.send(line) => { }; sleep(d) => dropped += 1 }   // a send arm: sent only if it wins (D108); arms tried in order, first ready wins
 val ch = Channel<i64>(capacity: 8); ch.send(1); await ch.recv(); ch.close(); ch.closeAfter(n)  // closes itself after n sends
 ch.trySend(1); ch.tryRecv()      // never wait: false when full, null when nothing is buffered
 xs.mapConcurrent(f, workers: 4); xs.forEachConcurrent(f, workers: 4)   // the worker pool, results in order; f may suspend/throw
@@ -230,7 +231,12 @@ t.cancel()                       // stop a task at its next suspension point; it
 val v = try withTimeout(Duration.seconds(1), () => try fetch())   // R throws E | Timeout; the task is cancelled and unwound before Timeout is thrown
 // leaving a scope body early (return / throw / cancellation) cancels and joins its children
 val m = Mutex(value: state); m.withLock(s => s.n += 1); m.get(); m.set(v)
+with s = m.lock()                // s: *State, locked to the end of the block; nothing in it may suspend (D107)
 val a = Atomic(value: 0); a.load(); a.store(1); a.swap(2); a.update(n => n + 1)
+val sem = Semaphore(permits: 8); with sem.acquire(); sem.tryAcquire(); sem.available()   // (D110)
+try retry(3, () => try fetch(), delay: Duration.millis(200))   // again after an error; the last error after the last call
+ch.toList(); ch.forEach(v => ...)   // until closed and drained
+with clock = time.ticker(Duration.seconds(1)); await clock.ticks.recv()   // a slow reader misses ticks
 ```
 
 Suspension is inferred; `await` only on `sleep`, `recv`, task handles.
@@ -243,6 +249,7 @@ Data passed to `async` must be Sendable (D35): no `Mutable*`.
 with f = open("a")                            // closed when this block ends, and on every way out before (D43/D100)
 with g = open("b")                            // the last opened closes first; must not be returned or stored outside the block
 with (f = open("a"), g = open("b")) { ... }   // block form: closes at its `}`; an expression: val text = with (f = open(p)) { f.readAll() }
+with sem.acquire()                            // held and closed, never named (D109); `with conn` hands closing conn to the with
 implement Closeable for File { fun close() { } }
 extern "C" { fun strlen(s: *raw u8): i64 }
 // SAFETY: p is a live NUL-terminated buffer  ← why the block is sound (a warning without it)

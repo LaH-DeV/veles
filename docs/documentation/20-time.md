@@ -315,6 +315,49 @@ are in milliseconds, so a duration is rounded *up* to one — a sleep is
 never shorter than it was asked for, and `sleep(Duration.zero)` still
 yields.
 
+### Ticking
+
+`time.ticker(every)` returns a `Ticker` whose `ticks` channel receives
+the time once a period, the first tick one period from now (D110). No
+task does the sending — the runtime's timers do — and `ticks` holds one
+tick, so a reader that falls behind misses ticks rather than finding a
+queue of stale ones. Hold it with `with`: closing it stops the ticks and
+closes the channel (a tick already in it can still be received, as from
+any closed channel). In a `race` it is one arm among others:
+
+```veles
+use io, time
+
+fun main() {
+  with clock = time.ticker(Duration.millis(5))
+  val lines = Channel<string>(capacity: 4)
+  lines.send("a")
+  lines.send("b")
+  lines.close()
+  var ticks = 0
+  loop {
+    val done = race {
+      val line = lines.recv()     => line == null
+      clock.ticks.recv()          => {
+        ticks += 1
+        false
+      }
+    }
+    if (done) break
+  }
+  // the lines were waiting, so they won before any tick was due
+  io.println("ticks before the end: $ticks")
+}
+```
+
+Output:
+```text
+ticks before the end: 0
+```
+
+`every` must be positive (a panic otherwise), and is rounded up to a
+millisecond, as `sleep` is.
+
 `http.Limits` says its three clocks the same way
 (`Limits(headerTimeout: Duration.seconds(10))`), and `Timeout` carries the
 limit it reached as a `Duration`, which is why its message reads `20ms`

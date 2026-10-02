@@ -1351,7 +1351,12 @@ func (p *printer) stmt(s ast.Stmt) {
 	case *ast.WithStmt:
 		// as written: the formatter never converts between the statement
 		// and the block form (D100)
-		p.w("with " + s.Binding.Name.Name + " = ")
+		p.w("with ")
+		if s.Binding.Name.Name == "" {
+			p.expr(s.Binding.Value, 0)
+			break
+		}
+		p.w(s.Binding.Name.Name + " = ")
 		p.initExpr(s.Binding.Value)
 	case *ast.FunStmt:
 		p.fun(s.Fun)
@@ -1599,7 +1604,9 @@ func (p *printer) exprInner(e ast.Expr) {
 			if i > 0 {
 				p.w(", ")
 			}
-			p.w(b.Name.Name + " = ")
+			if b.Name.Name != "" {
+				p.w(b.Name.Name + " = ")
+			}
 			p.expr(b.Value, 0)
 		}
 		p.w(") ")

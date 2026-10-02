@@ -204,6 +204,13 @@ close r
 <r> <a><b>
 ```
 
+A value the block holds but never uses needs no name (D109): `with
+sem.acquire()` holds a permit to the end of the block, and in the block
+form the items mix, `with (f = try fs.open(p), sem.acquire()) { … }`.
+`with conn`, naming a value you already have, hands its closing to the
+`with`; from there on `conn` is a resource like any other. `with _ = e`
+says the same as `with e`.
+
 A resource is closed when its block ends, so it must not outlive the
 block (D100): returning it, making it the block's value, storing it in a
 variable or field declared outside the block, putting it in a collection

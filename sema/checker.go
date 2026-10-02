@@ -29,6 +29,9 @@ type Checker struct {
 	// resources: each `with` binding and each local that aliases one, to the
 	// binding (D100 part 3, resources.go)
 	resources map[*Var]*Var
+	// lockVars: the `n` of each `with n = m.lock()`, a pointer into the
+	// Mutex that is unlocked, not closed, when the block ends (D107)
+	lockVars map[*Var]bool
 
 	universe *Scope
 	prog     *Program
@@ -189,6 +192,7 @@ func checkCollect(pkg *Package, diags *source.Diagnostics, release bool, testMod
 	if prog != nil && !c.roundDiags.HasErrors() {
 		c.receiverPass(prog)
 		c.inferSuspension(prog)
+		c.checkHeldRegions(prog)
 		c.indexInferred(prog)
 	}
 	diags.Items = append(diags.Items, c.roundDiags.Items...)
@@ -1732,6 +1736,12 @@ func (c *Checker) checkExternType(t types.Type, span source.Span, std bool) {
 		// the runtime's own list layout: `List<u8>` is passed as a pointer to
 		// it, for the standard library's byte I/O
 		if !std || !types.Identical(t.Elem, types.TU8) {
+			c.errorf(span, "type '%s' cannot cross the C ABI", t)
+		}
+	case *types.Channel:
+		// the runtime's own channel object, for std/time's ticker (D110),
+		// which the runtime feeds from its timers
+		if !std {
 			c.errorf(span, "type '%s' cannot cross the C ABI", t)
 		}
 	default:

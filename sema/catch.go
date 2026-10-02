@@ -107,14 +107,23 @@ func (f *fnCtx) catchExpr(e *ast.CatchExpr, want types.Type) Expr {
 	f.catching = prev
 	f.restoreNarrow(saved)
 
-	if len(fr.members) == 0 {
-		if fr.poisoned {
-			return &BlockExpr{exprBase{body.Type}, body}
-		}
+	var u types.Type
+	switch {
+	case len(fr.members) > 0:
+		u = types.MakeErrorUnion(fr.members...)
+	case fr.poisoned:
+		return &BlockExpr{exprBase{body.Type}, body}
+	case f.neverInstance():
+		// generic code whose failures come through a `throws E` it was
+		// handed (`retry`'s `f`): in this instance E is Never, so nothing
+		// reaches the handler, but the template's shape — a handler that
+		// may fall through to the code after it — is kept, so that code is
+		// not unreachable here
+		u = types.TNever
+	default:
 		f.errorf(e.Pos, "nothing in this 'do' block can fail: no 'try' or 'throw' in it reaches the 'catch'; drop the 'do' and the 'catch' (D98)")
 		return &BlockExpr{exprBase{body.Type}, body}
 	}
-	u := types.MakeErrorUnion(fr.members...)
 	slotType := &types.Nullable{Elem: u}
 	fr.errVal.Type = slotType
 	for _, fix := range fr.fixes {

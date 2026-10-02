@@ -401,6 +401,74 @@ error cancels the work still queued — the rule the eager adapters follow
 names on it; write the machine yourself when the shape is different — a
 stream you do not want to collect first, a pipeline, per-worker state.
 
+## Draining, limiting, retrying
+
+Three more shapes come up often enough to be in the prelude (D110).
+`ch.toList()` and `ch.forEach(f)` receive until the channel is closed and
+drained. A `Semaphore(permits: n)` lets at most `n` holders in at once:
+`acquire()` waits for a permit and returns a `Permit` that gives it back
+when closed, so it is held with `with`; `tryAcquire()` does not wait. And
+`retry(times, f, delay:)` calls `f` again after a thrown error, waiting
+`delay` between calls, and throws the last error when the calls run out —
+a panic is not retried, and a cancelled task stops at the wait:
+
+```veles
+use io
+
+error Busy { }
+
+fun produce(ch: Channel<i64>) {
+  loop (i in 1..4) {
+    ch.send(i)
+  }
+  ch.close()
+}
+
+fun query(db: Semaphore, inside: Atomic<i64>, most: Atomic<i64>) {
+  with db.acquire()                  // at most two at a time
+  most.update(m => m.max(inside.update(n => n + 1)))
+  await sleep(Duration.millis(1))
+  inside.update(n => n - 1)
+}
+
+fun flaky(calls: Atomic<i64>): string throws Busy {
+  if (calls.update(n => n + 1) < 3) throw Busy()
+  "answered on call ${calls.load()}"
+}
+
+fun main() {
+  val ch = Channel<i64>(capacity: 2)
+  scope {
+    async produce(ch)
+    io.println("${ch.toList()}")
+  }
+  val db = Semaphore(permits: 2)
+  val inside = Atomic(value: 0)
+  val most = Atomic(value: 0)
+  scope {
+    loop (_ in 0..<10) {
+      async query(db, inside, most)
+    }
+  }
+  io.println("at most ${most.load()} at once")
+  val calls = Atomic(value: 0)
+  when (val r = retry(5, () => try flaky(calls), delay: Duration.millis(1))) {
+    is Ok  => io.println(r)
+    is Err => io.println("gave up")
+  }
+}
+```
+
+Output:
+```text
+[1, 2, 3, 4]
+at most 2 at once
+answered on call 3
+```
+
+A ticker — a channel that receives the time every period — is
+`time.ticker` ([chapter 20](20-time.md)).
+
 ## First one wins: `race`
 
 `race` waits for whichever arm is ready first and cancels the rest.
@@ -435,6 +503,45 @@ Output:
 ```text
 got hello / timeout
 ```
+
+An arm can also **send**: `ch.send(v) => …` is ready when the channel can
+take `v` — room in its buffer, or a receiver waiting (D108). When it wins,
+`v` is in the channel; when another arm wins, `v` was **not** sent. That
+is the bounded send with a deadline, without a task to do the sending:
+
+```veles
+use io
+
+fun offer(queue: Channel<string>, line: string): bool {
+  race {
+    queue.send(line)           => true    // there was room: sent
+    sleep(Duration.millis(20)) => false   // still full: not sent
+  }
+}
+
+fun main() {
+  val queue = Channel<string>(capacity: 1)
+  io.println("${offer(queue, "first")} ${offer(queue, "second")}")
+  io.println("${await queue.recv()} then ${queue.tryRecv() ?: "nothing"}")
+}
+```
+
+Output:
+```text
+true false
+first then nothing
+```
+
+The channel and the value are evaluated once, in arm order, when the race
+starts, not again while it waits. A send arm binds nothing. A send arm on
+a channel that is closed when it would be chosen panics, as `send` does.
+
+**Which arm wins.** When the race starts, the arms are tried in the order
+they are written, and the first one ready wins — so an arm that is always
+ready (a `sleep(Duration.zero)`, a channel with a value waiting) shadows
+the arms after it. If none is ready, the race waits, and the first arm to
+become ready wins. The rule is deterministic and favours earlier arms; it
+is not fair in Go's sense (Go picks among ready cases at random).
 
 ## Cancellation
 
@@ -726,6 +833,57 @@ no task ever waits at an `await` while holding a lock — the classic way
 to deadlock a coroutine runtime is ruled out by the compiler. Locking a
 `Mutex` again inside its own `withLock` panics with a message instead
 of hanging. And a lock is given back even when the function panics.
+
+When the work under the lock is more than one expression, hold the lock
+with `with` instead (D107). `with n = notes.lock()` binds `n` to a
+pointer to the value and keeps the lock until the block ends — on every
+way out of it, as for any `with` ([chapter 13](13-memory-and-ffi.md)):
+
+```veles
+use io
+
+struct Notes {
+  var lines: MutableList<string> = []
+  var saved: i64 = 0
+
+  fun add(text: string) {
+    this.lines.push(text)
+  }
+}
+
+fun record(notes: Mutex<Notes>, text: string) {
+  with n = notes.lock()     // held to the end of the block
+  n.add(text)
+  n.saved = n.lines.len()
+}
+
+fun main() {
+  val notes = Mutex(value: Notes())
+  scope {
+    loop (i in 1..3) {
+      async record(notes, "note $i")
+    }
+  }
+  io.println("saved ${notes.withLock(n => n.saved)}")
+}
+```
+
+Output:
+```text
+saved 3
+```
+
+The rules are `withLock`'s, applied to the block. Nothing in it may
+suspend — `await`, `sleep`, a channel `send` or `recv`, a call of a
+function that suspends — and the error points at the suspension and says
+how to end the lock sooner, with the block form `with (n = notes.lock())
+{ … }`. The pointer cannot leave the block: returning it, storing it or
+capturing it in an escaping lambda is the same error as for any `with`
+value. `lock()` is only a `with` value — `val n = notes.lock()` is an
+error whose fix writes `with`. Locking the same `Mutex` again before the
+block ends panics, as inside `withLock`; holding two different ones is
+allowed, and the order is the program's. `with notes.lock()`, with no
+name, is a bare critical section.
 
 A module-level `var` is an error for the same reason a captured one is:
 every task sees the module's bindings, from whichever thread it runs on.

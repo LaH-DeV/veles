@@ -738,3 +738,26 @@ fun f() {
 		t.Errorf("dump lacks the statement:\n%s", dump)
 	}
 }
+
+// D109: an item without `name =` is an expression, in both forms; `_ =`
+// is a name.
+func TestWithUnnamed(t *testing.T) {
+	src := `
+fun f() {
+  with sem.acquire()
+  with conn
+  with _ = open()
+  with (g = open(), sem.acquire()) { g.read() }
+}
+`
+	f, diags := parse(t, src)
+	if diags.HasErrors() {
+		t.Fatalf("parse errors:\n%s", diags.Render())
+	}
+	dump := ast.Dump(f)
+	for _, want := range []string{"(with-stmt (call (. sem acquire)))", "(with-stmt conn)", "(with-stmt _ (call open))", "(with (g = (call open)) ((call (. sem acquire)))"} {
+		if !strings.Contains(dump, want) {
+			t.Errorf("dump lacks %s:\n%s", want, dump)
+		}
+	}
+}

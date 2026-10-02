@@ -978,6 +978,9 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 	if look != nil && mutatesCollection(rt, name) {
 		f.refuseContentsChange(look, name, callee.Name.Pos)
 	}
+	if isMutexLock(rt, name) {
+		f.lockUse(callee, e)
+	}
 	if b := f.builtinMethod(recv, rt, name, e); b != nil {
 		f.c.refBuiltin(callee.Name.Pos, rt, name)
 		return b
@@ -996,8 +999,12 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 			return f.unionDispatch(recv, ct, callee, typeArgs, e, want)
 		}
 	case *types.Channel:
-		f.c.refBuiltin(callee.Name.Pos, rt, name)
-		return f.channelMethod(recv, ct, name, e)
+		// the built-in operations; the rest (forEach, toList, D110) are the
+		// prelude's extend block, below
+		if x := f.channelMethod(recv, ct, name, e); x != nil {
+			f.c.refBuiltin(callee.Name.Pos, rt, name)
+			return x
+		}
 	case *types.Task:
 		if name == "cancel" {
 			f.c.refBuiltin(callee.Name.Pos, rt, name)
@@ -1530,6 +1537,9 @@ func (f *fnCtx) callValue(fnv Expr, ft *types.Func, args []ast.Arg, span source.
 	rt := ft.Ret
 	if ft.Effects.Throws {
 		rt = f.c.ResultType(ft.Ret, ft.Effects.Error)
+	}
+	if ft.Effects.Suspends {
+		f.refuseHeldSuspension(span, "this call")
 	}
 	return &CallIndirect{exprBase{rt}, fnv, vals}
 }

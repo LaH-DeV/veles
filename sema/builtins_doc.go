@@ -127,7 +127,7 @@ var builtinDocs = []BuiltinDoc{
 	{"MutableSet", "remove", "(x: T): bool", "Removes `x`; true when it was a member."},
 	{"MutableSet", "clear", "()", "Removes every member."},
 
-	{"Channel", "send", "(x: T) suspends", "Sends `x`, suspending while the channel is full."},
+	{"Channel", "send", "(x: T) suspends", "Sends `x`, suspending while the channel is full. As a `race` arm, `ch.send(x) => …`, `x` is sent only if that arm wins (D108)."},
 	{"Channel", "recv", "(): T? suspends", "Receives the next value, suspending while empty; `null` once closed and drained."},
 	{"Channel", "trySend", "(x: T): bool", "Sends `x` if there is room, without waiting; `false` when the channel is full. Panics on a closed channel, as `send` does."},
 	{"Channel", "tryRecv", "(): T?", "Takes the next buffered value without waiting; `null` when there is none — empty now, or closed and drained. `len()` or `recv` tells the two apart."},

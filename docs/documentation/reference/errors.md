@@ -631,6 +631,21 @@ task handles from `async`.
 call suspends by itself (D2), and `try` goes straight on it
 (`try net.connect(...)`). The quick fix removes `await`.
 
+#### `'recv' suspends, and the lock on 'notes' is held until the end of this block`
+
+`with n = notes.lock()` holds the lock to the end of its block (D107), and
+a task that waits while holding a lock can stall every other task that
+needs it — the rule `withLock` gets from its lambda type. Do the waiting
+before the lock or after it: give the lock a block of its own,
+`with (n = notes.lock()) { … }`, and suspend after that `}`. Named
+functions that suspend are refused the same way (`'fetch' suspends, …`),
+and so is a call of a suspending function value (`this call suspends`).
+
+#### `a send arm binds nothing`
+
+`ch.send(v) => …` in a `race` has no value to bind (D108): when the arm
+wins, `v` is in the channel. Drop the `val x =`.
+
 ### resources
 
 **`with` and what it closes.** `'NoClose' is not Closeable; 'with'
@@ -667,6 +682,15 @@ as well closes the resource twice (D136). Remove the call (the quick fix);
 to close earlier than the end of the enclosing block, give the resource a
 block of its own: `with (out = …) { … }` closes at that `}`. A with-task's
 `t.cancel()` is fine: it stops the task early, and the block's end joins it.
+
+#### `'lock()' holds the lock to the end of a 'with' block, so it is usable only as a 'with' value`
+
+`notes.lock()` returns the taken lock and a pointer to the value, and only
+`with` gives the lock back on every way out (D107). Write
+`with n = notes.lock()` (the quick fix turns `val` into `with`), or, for
+one expression, `notes.withLock(n => …)`. The pointer `n` is refused
+where a resource is: it `points into a Mutex that is unlocked when its
+'with' block ends`.
 
 #### `'r' is closed as soon as it is opened`
 

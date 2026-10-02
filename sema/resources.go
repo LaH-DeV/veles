@@ -109,16 +109,19 @@ func (f *fnCtx) refuseEscape(e ast.Expr, doing string) bool {
 		return false
 	}
 	if n, ok := e.(*ast.NameExpr); ok && n.Name != r.Name {
-		f.errorf(e.Span(), "'%s' cannot %s: it holds '%s', which %s when its 'with' block ends (D100)", n.Name, doing, r.Name, closedWord(r))
+		f.errorf(e.Span(), "'%s' cannot %s: it holds '%s', which %s when its 'with' block ends (D100)", n.Name, doing, r.Name, f.closedWord(r))
 	} else if viaLambda {
-		f.errorf(e.Span(), "this lambda captures '%s', which %s when its 'with' block ends, so the lambda cannot %s; pass it as an argument instead, or keep it inside the block (D100)", r.Name, closedWord(r), doing)
+		f.errorf(e.Span(), "this lambda captures '%s', which %s when its 'with' block ends, so the lambda cannot %s; pass it as an argument instead, or keep it inside the block (D100)", r.Name, f.closedWord(r), doing)
 	} else {
-		f.errorf(e.Span(), "'%s' cannot %s: it %s when its 'with' block ends (D100)", r.Name, doing, closedWord(r))
+		f.errorf(e.Span(), "'%s' cannot %s: it %s when its 'with' block ends (D100)", r.Name, doing, f.closedWord(r))
 	}
 	return true
 }
 
-func closedWord(r *Var) string {
+func (f *fnCtx) closedWord(r *Var) string {
+	if f.c.lockVars[r] {
+		return "points into a Mutex that is unlocked" // D107
+	}
 	if _, isTask := r.Type.(*types.Task); isTask {
 		return "is cancelled"
 	}
@@ -223,7 +226,7 @@ func (f *fnCtx) refuseHandClose(callee *ast.MemberExpr, e *ast.CallExpr) {
 		return
 	}
 	r := f.resourceNamed(n.Name)
-	if r == nil {
+	if r == nil || f.c.lockVars[r] { // `n.close()` on a locked value closes the value, not the lock
 		return
 	}
 	if _, isTask := r.Type.(*types.Task); isTask {

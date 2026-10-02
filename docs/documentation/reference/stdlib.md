@@ -61,7 +61,10 @@ instruction, and `update` retries a compare-and-swap, so its function
 may run more than once under contention (keep it free of side effects).
 An `Atomic` of any other type is guarded by a lock. `withLock`'s
 function cannot suspend; locking a `Mutex` again inside its own
-`withLock` panics; the lock is released when the function panics. Copies of a `Mutex` or an
+`withLock` panics; the lock is released when the function panics. For
+more than one expression, `with n = m.lock()` holds the lock to the end
+of the block, with the same rules: nothing in the block may suspend, `n`
+cannot leave it, and `lock()` is usable only as a `with` value (D107). Copies of a `Mutex` or an
 `Atomic` share the lock and the value. Module-level state that changes
 must be a `val` holding one of these — a module-level `var` is an error.
 
@@ -70,6 +73,7 @@ must be a `val` holding one of these — a module-level `var` is an error.
 public struct Mutex<T> {
   init(value: T)                         // Mutex(value: 0)
   public fun withLock<R>(f: fun(*T): R): R
+  public fun lock(): Locked<T>           // only as `with n = m.lock()`: n is a *T, held to the block's end (D107)
   public fun get(): T
   public fun set(value: T)
 }
@@ -320,6 +324,10 @@ unreachable.
 |---|---|
 | `Channel<T>()` | a rendezvous: `send` completes when a receiver has the value |
 | `Channel<T>(capacity: n)` | bounded channel; `send(v)`, `await recv(): T?`, `close()`, `closeAfter(n)` (closes itself after `n` more sends), `len()`; `trySend(v): bool` and `tryRecv(): T?` never wait (`false` when full, `null` when nothing is buffered) |
+| `race { ch.send(v) => … }` | a send arm (D108): ready when `ch` can take `v`; when it wins `v` is in the channel, when another arm wins it was not sent; on a closed channel it panics |
+| `ch.toList(): List<T>`, `ch.forEach(f)` | receive until `ch` is closed and drained; an error from `f` stops `forEach` and is thrown (D110) |
+| `Semaphore(permits: n)` | at most `n` holders (D110): `acquire(): Permit` waits for one (cancellable), `tryAcquire(): Permit?` does not, `available(): i64`; a `Permit` is `Closeable` — `with sem.acquire()` — and a second close does nothing; `n < 1` panics |
+| `retry(times, f, delay: Duration.zero): R throws E` | call `f` until it returns, waiting `delay` after each thrown error, `times` calls in all, then throw the last error; a panic is not retried, cancellation stops it at the wait; `times < 1` panics (D110) |
 | `xs.mapConcurrent(f, workers: 4)`, `xs.forEachConcurrent(f, workers: 4)` | `List<T: Sendable>`: the worker pool — at most `workers` calls of `f` in flight, results in order; `f` is a `sendable fun` that may suspend and throw (then the call throws) |
 | `await sleep(d: Duration)` | suspend for at least `d`; rounded up to the executor’s millisecond, so `Duration.zero` yields |
 | `async f(...)`: `Task<T>` | start a task in the enclosing `scope` — or, as `with t = async f(...)`, in the background until the block ends, which cancels then joins it (D100); `await task`; `task.cancel()` asks it to stop at its next suspension point (its `with` cleanups run, the scope still waits for it) |
@@ -676,6 +684,7 @@ time.parseHttp(s): Timestamp?         // IMF-fixdate, RFC 850 and asctime (RFC 9
 time.Stopwatch.start(): Stopwatch     // elapsed(): Duration, reset()
 time.Deadline.after(d): Deadline      // remaining(): Duration (never negative), expired(), extend(d), earlier(other)
 time.monotonicNanos(): i64            // the raw reading, for a benchmark
+time.ticker(every: Duration): Ticker  // .ticks: Channel<Timestamp> (holds one; a slow reader misses ticks); Closeable: stops and closes ticks (D110)
 
 time.daysFromCivil(y, m, d): i64;  time.civilFromDays(days): (i64, i64, i64)
 time.isLeapYear(y): bool;  time.daysInMonth(y, m): i64

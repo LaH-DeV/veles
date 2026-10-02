@@ -90,3 +90,102 @@ public fun withTimeout<R: Sendable, E>(limit: Duration, f: sendable fun(): R sus
     }
   }
 }
+
+/// Calls `f` until it returns, and returns what it returns. After a thrown
+/// error it waits `delay` and tries again, up to `times` calls in all; then
+/// it throws the last error. A panic is not retried, and a cancelled task
+/// stops at the wait. Panics when `times` is less than 1 (D110).
+///
+/// ```veles
+/// val body = try retry(3, () => try http.get(url), delay: Duration.millis(200))
+/// ```
+public fun retry<R, E>(times: i64, f: fun(): R suspends throws E, delay: Duration = Duration.zero): R throws E {
+  if (times < 1) panic("retry: times must be at least 1, got $times")
+  var left = times
+  loop {
+    do {
+      return try f()
+    } catch (e) {
+      left -= 1
+      if (left == 0) throw e
+    }
+    await sleep(delay)
+  }
+}
+
+/// At most `permits` holders at a time: a limit on connections, open
+/// files or requests in flight that tasks share. `acquire` waits for a
+/// permit; the `Permit` it returns gives it back when closed, so it is
+/// held with `with` (D109, D110):
+///
+/// ```veles
+/// val db = Semaphore(permits: 8)
+/// // in each task:
+/// with db.acquire()
+/// try query(conn, sql)
+/// ```
+public struct Semaphore {
+  private free: Channel<bool>
+
+  /// Panics when `permits` is less than 1.
+
+  init(permits: i64) {
+    if (permits < 1) panic("Semaphore: permits must be at least 1, got $permits")
+    this.free = Channel<bool>(capacity: permits)
+    loop (_ in 0..<permits) {
+      val _ = this.free.trySend(true)
+    }
+  }
+
+  /// A permit, waiting until one is free; a cancelled task stops waiting.
+  public fun acquire(): Permit {
+    val _ = await this.free.recv()
+    Permit(free: this.free)
+  }
+
+  /// A permit if one is free now, or `null`; never waits.
+  public fun tryAcquire(): Permit? {
+    val _ = this.free.tryRecv() ?: return null
+    Permit(free: this.free)
+  }
+
+  /// How many permits are free at this moment — by the time the caller
+  /// looks, another task may have taken one.
+  public fun available(): i64 = this.free.len()
+}
+
+/// One of a `Semaphore`'s permits; closing it gives it back. A second
+/// close does nothing.
+public struct Permit {
+  private free:     Channel<bool>
+  private returned: Atomic<bool> = Atomic(value: false)
+
+  implement Closeable {
+    fun close() {
+      if (!this.returned.swap(true)) {
+        val _ = this.free.trySend(true)
+      }
+    }
+  }
+}
+
+extend<T> Channel<T> {
+  /// Receives until the channel is closed and drained, calling `f` on each
+  /// value; an error from `f` stops it and is thrown (D110).
+  public fun forEach<E>(f: fun(T) suspends throws E) throws E {
+    loop {
+      val v = await this.recv() ?: break
+      try f(v)
+    }
+  }
+
+  /// Every value until the channel is closed and drained, in order.
+  public fun toList(): List<T> {
+    val out = MutableList<T>()
+    loop {
+      val v = await this.recv() ?: break
+      out.push(v)
+    }
+    out.toList()
+  }
+}

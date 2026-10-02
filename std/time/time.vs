@@ -36,6 +36,8 @@ extern "C" {
   fun veles_time_now_us(): i64
   fun veles_time_monotonic_ns(): i64
   fun veles_time_local_offset_minutes(secs: i64): i64
+  fun veles_ticker_start(ticks: Channel<Timestamp>, periodMs: i64): *raw u8
+  fun veles_ticker_stop(ticker: *raw u8)
 }
 
 /// What time it is, now.
@@ -719,6 +721,58 @@ fun fullYear(yy: i64): i64 {
   val thisYear = now().utc().year
   val candidate = (thisYear / 100) * 100 + yy
   if (candidate > thisYear + 50) candidate - 100 else candidate
+}
+
+// ---- ticking --------------------------------------------------------------
+
+/// A `Ticker` whose `ticks` receives the time every `every`, the first one
+/// period from now. A reader that falls behind misses ticks rather than
+/// finding them queued — `ticks` holds one — so each tick is fresh. Hold
+/// it with `with`; closing it stops the ticks and closes `ticks`. Panics
+/// when `every` is not positive (D110).
+///
+/// ```veles
+/// with clock = time.ticker(Duration.seconds(1))
+/// loop {
+///   race {
+///     val at = clock.ticks.recv() => report(at)
+///     val line = input.recv()     => handle(line ?: break)
+///   }
+/// }
+/// ```
+@caller_location
+public fun ticker(every: Duration): Ticker {
+  if (every.toNanos() <= 0) panic("time.ticker: every must be positive, got $every")
+  // the runtime's timers count milliseconds: round up, as sleep does
+  val ms = (every.toNanos() + 999999) / 1000000
+  val ticks = Channel<Timestamp>(capacity: 1)
+  val handle = unsafe {
+    // SAFETY: the runtime keeps the channel reachable until the ticker stops
+    veles_ticker_start(ticks, ms)
+  }
+  Ticker(ticks, handle)
+}
+
+/// What `time.ticker` returns: a channel of ticks fed by a runtime timer —
+/// no task — until it is closed.
+public struct Ticker {
+  /// The ticks: the time each one was sent.
+  public ticks:    Channel<Timestamp>
+  private handle:  *raw u8
+  private stopped: Atomic<bool> = Atomic(value: false)
+
+  implement Closeable {
+    /// Stops the ticks and closes `ticks` (a tick already waiting can still
+    /// be received); a second close does nothing.
+    fun close() {
+      if (this.stopped.swap(true)) return
+      unsafe {
+        // SAFETY: stopped once; the runtime forgets the ticker here
+        veles_ticker_stop(this.handle)
+      }
+      this.ticks.close()
+    }
+  }
 }
 
 // ---- measuring ------------------------------------------------------------

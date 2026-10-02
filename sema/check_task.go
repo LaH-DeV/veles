@@ -223,9 +223,7 @@ func (f *fnCtx) channelMethod(recv Expr, ct *types.Channel, name string, e *ast.
 		}
 		return &Builtin{exprBase{types.TI64}, "chan.len", []Expr{recv}, span}
 	}
-	f.errorf(e.Fun.Span(), "no method '%s' on '%s'", name, ct)
-	f.checkArgsLoosely(e.Args)
-	return bad()
+	return nil
 }
 
 // suspending records that the current function suspends at this point and
@@ -236,6 +234,7 @@ func (f *fnCtx) suspending(x Expr, span source.Span, what string) Expr {
 		return x
 	}
 	f.fn.suspends = true
+	f.refuseHeldSuspension(span, "'"+what+"'")
 	return x
 }
 
@@ -518,18 +517,25 @@ func (f *fnCtx) raceExpr(e *ast.RaceExpr, want types.Type) Expr {
 				ha.Kind, ha.Source = RaceRecv, s.Args[0]
 			case "task.sleep":
 				ha.Kind, ha.Source = RaceSleep, s.Args[0]
+			case "chan.send":
+				ha.Kind, ha.Source, ha.Value = RaceSend, s.Args[0], s.Args[1]
 			}
 		case *AwaitTask:
 			ha.Kind, ha.Source = RaceTask, s.X
 		}
 		if ha.Source == nil {
 			if !types.IsInvalid(src.Type()) {
-				f.errorf(arm.Source.Span(), "a race arm waits on 'ch.recv()', 'sleep(d)' or 'await task', not '%s'", src.Type())
+				f.errorf(arm.Source.Span(), "a race arm waits on 'ch.recv()', 'ch.send(v)', 'sleep(d)' or 'await task', not '%s'", src.Type())
 			}
 			f.popScope()
 			continue
 		}
-		if arm.Binding != nil {
+		if arm.Binding != nil && ha.Kind == RaceSend {
+			f.errorf(arm.Binding.Pos, "a send arm binds nothing: when it wins, the value is in the channel; write 'ch.send(v) => …' (D108)")
+			if arm.Binding.Name != nil { // declared, so its uses say nothing more
+				f.declareLocal(arm.Binding.Name.Name, f.newVar(arm.Binding.Name.Name, types.TInvalid, false, arm.Binding.Name.Pos), arm.Binding.Name.Pos)
+			}
+		} else if arm.Binding != nil {
 			if arm.Binding.Name == nil {
 				f.errorf(arm.Binding.Pos, "race arms bind a single name")
 			} else {
@@ -537,7 +543,7 @@ func (f *fnCtx) raceExpr(e *ast.RaceExpr, want types.Type) Expr {
 				ha.Var = f.newVar(arm.Binding.Name.Name, vt, false, arm.Binding.Name.Pos)
 				f.declareChecked(arm.Binding.Name.Name, ha.Var, arm.Binding.Name.Pos)
 			}
-		} else if ha.Kind != RaceSleep {
+		} else if ha.Kind != RaceSleep && ha.Kind != RaceSend {
 			ha.Var = f.newTemp(src.Type())
 		}
 		var body *Block

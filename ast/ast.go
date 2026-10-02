@@ -546,6 +546,8 @@ type WithExpr struct {
 	Pos      source.Span
 }
 
+// WithBinding is `name = e`, or `e` alone (D109): Name.Name is "" when the
+// value is held and closed but not named.
 type WithBinding struct {
 	Name  Ident
 	Value Expr

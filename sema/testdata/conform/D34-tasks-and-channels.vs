@@ -22,7 +22,7 @@ fun wrongName() {
   val _ = Channel<i64>(size: 1) // error: Channel has no parameter 'size'; use 'capacity'
 }
 fun noSuchChannelMethod(ch: Channel<i64>) {
-  ch.peek() // error: no method 'peek' on 'Channel<i64>'
+  ch.peek() // error: no method 'peek' on type 'Channel<i64>'
 }
 fun sleepTwo() {
   await sleep(Duration.millis(1), Duration.millis(2)) // error: 'sleep' takes one argument: a 'Duration'
@@ -43,7 +43,7 @@ fun asyncValue(f: fun(): i64) {
 }
 fun raceOnNumber() {
   val _ = race {
-    work() => 1 // error: a race arm waits on 'ch.recv()', 'sleep(d)' or 'await task', not 'i64'
+    work() => 1 // error: a race arm waits on 'ch.recv()', 'ch.send(v)', 'sleep(d)' or 'await task', not 'i64'
   }
 }
 

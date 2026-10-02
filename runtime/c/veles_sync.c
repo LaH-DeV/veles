@@ -329,7 +329,7 @@ void veles_mutex_lock(int64_t *w) {
     int64_t me = tag();
     if (try_take(w, me)) return;
     if ((__atomic_load_n(w, __ATOMIC_RELAXED) & ~(int64_t)1) == me) {
-        veles_panic("a Mutex was locked again inside its own withLock", 48);
+        veles_panic("a Mutex was locked again while this task holds it", 49);
     }
     for (int i = 0; i < 64; i++) {
         cpu_relax();
