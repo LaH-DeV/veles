@@ -31,7 +31,14 @@ func runTestFiles(t *testing.T, files map[string]string, opts Options) (string, 
 			t.Fatal(err)
 		}
 	}
-	outPath := filepath.Join(dir, "out.txt")
+	return runTestDir(t, dir, opts)
+}
+
+// runTestDir runs `veles test` on a directory, returning the output and
+// the exit code.
+func runTestDir(t *testing.T, dir string, opts Options) (string, int) {
+	t.Helper()
+	outPath := filepath.Join(t.TempDir(), "out.txt")
 	out, err := os.Create(outPath)
 	if err != nil {
 		t.Fatal(err)
@@ -139,6 +146,30 @@ test "expectations about failing" {
 // Suites (D78): a `suite "name" { }` block and a `*.test.vs` file group their
 // tests under a heading, nested and indented; tests outside any suite come
 // first; the summary and --filter use the qualified name.
+// `veles test` runs the package's own tests, not those of the std modules
+// it imports (std/time has ticker.test.vs; found 2026-10-02).
+func TestTestSkipsImportedStdTests(t *testing.T) {
+	if _, err := findClang(); err != nil {
+		t.Skip("clang not available:", err)
+	}
+	out, code := runTests(t, `use time
+
+test "a second is a thousand milliseconds" {
+  expect(Duration.seconds(1).toMillis() == 1000)
+  expect(time.now().toString().len() > 0)
+}
+`, Options{})
+	want := "test a second is a thousand milliseconds ... ok\n\n1 passed, 0 failed\n"
+	if out != want || code != 0 {
+		t.Fatalf("exit %d, output:\n%s\n--- want ---\n%s", code, out, want)
+	}
+	// the std module given as the directory still runs its own
+	out, code = runTestDir(t, filepath.Join("..", "std", "time"), Options{})
+	if code != 0 || !strings.Contains(out, "ticker\n") || strings.Contains(out, "\n0 passed") {
+		t.Fatalf("veles test std/time: exit %d, output:\n%s", code, out)
+	}
+}
+
 func TestTestSuites(t *testing.T) {
 	if _, err := findClang(); err != nil {
 		t.Skip("clang not available:", err)

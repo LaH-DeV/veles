@@ -27,7 +27,23 @@ func isTestFile(f *ast.File) bool {
 // dropTestFiles leaves `*.test.vs` files out of a package being built:
 // they hold tests and their helpers, which a program never runs.
 func dropTestFiles(pkg *Package) {
+	dropTestFilesIf(pkg, func(*Module) bool { return true })
+}
+
+// dropForeignTestFiles leaves out the `*.test.vs` files of the modules
+// `veles test` reaches but does not test: an embedded std module or a
+// dependency's. Their tests are their authors' to run; testing a std module
+// itself goes through its directory (`veles test std/fs`), which loads it
+// as the package under test (a std module still, but the given one).
+func dropForeignTestFiles(pkg *Package) {
+	dropTestFilesIf(pkg, func(m *Module) bool { return m != pkg.Given && (m.Std || m.Pkg != pkg) })
+}
+
+func dropTestFilesIf(pkg *Package, foreign func(*Module) bool) {
 	for _, m := range pkg.Modules {
+		if !foreign(m) {
+			continue
+		}
 		kept := m.Files[:0]
 		for _, f := range m.Files {
 			if !isTestFile(f) {

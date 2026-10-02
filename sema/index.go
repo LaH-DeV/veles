@@ -160,7 +160,10 @@ func (c *Checker) indexImpls() {
 type Inferred struct {
 	Ret      string // the return type of `fun f() = expr`; "" when written
 	Suspends bool   // suspends, and `suspends` is not written (D2)
-	Throws   string // the error set of a bare `throws` (D45)
+	// SuspendsIf: it suspends only when what these parameters are given
+	// does (D116)
+	SuspendsIf []string
+	Throws     string // the error set of a bare `throws` (D45)
 }
 
 // indexInferred fills Index.Inferred once effects are known. A generic
@@ -181,12 +184,20 @@ func (c *Checker) indexInferred(prog *Program) {
 			inf.Ret = fn.Sig.Ret.String()
 		}
 		if fn.Suspends && !d.Effects.Suspends {
-			inf.Suspends = true
+			if fn.Conditional {
+				for _, p := range fn.Params {
+					if isSuspendParam(p) && !containsString(inf.SuspendsIf, p.Name) {
+						inf.SuspendsIf = append(inf.SuspendsIf, p.Name)
+					}
+				}
+			} else {
+				inf.Suspends = true // any instance that always suspends decides
+			}
 		}
 		if d.Effects.Throws && d.Effects.Error == nil && fn.Sig.Effects.Error != nil && monomorphic(t) {
 			inf.Throws = fn.Sig.Effects.Error.String()
 		}
-		if inf != (Inferred{}) {
+		if inf.Ret != "" || inf.Suspends || inf.Throws != "" || len(inf.SuspendsIf) > 0 {
 			c.index.Inferred[d.Name.Pos] = inf
 		}
 	}
@@ -200,20 +211,50 @@ func (c *Checker) indexInferred(prog *Program) {
 func (c *Checker) showInferredSuspends() {
 	for i := range c.index.Refs {
 		r := &c.index.Refs[i]
-		if r.Kind != "fun" || !r.Def.IsValid() || !c.index.Inferred[r.Def].Suspends || strings.Contains(r.Detail, " suspends") {
+		if r.Kind != "fun" || !r.Def.IsValid() {
 			continue
 		}
+		inf := c.index.Inferred[r.Def]
 		line, rest, _ := strings.Cut(r.Detail, "\n")
-		if at := strings.Index(line, " throws"); at >= 0 {
-			line = line[:at] + " suspends" + line[at:]
-		} else {
-			line += " suspends"
+		params := sigParamsEnd(line)
+		switch {
+		case inf.Suspends && !strings.Contains(line[params:], " suspends"):
+			// after the parameters: a parameter's own type may say `suspends`
+			if at := strings.Index(line[params:], " throws"); at >= 0 {
+				line = line[:params+at] + " suspends" + line[params+at:]
+			} else {
+				line += " suspends"
+			}
+		case len(inf.SuspendsIf) > 0:
+			// D116: the call suspends when what it is given does
+			line += "\n// suspends if `" + strings.Join(inf.SuspendsIf, "` or `") + "` does"
+		default:
+			continue
 		}
 		if rest != "" {
 			line += "\n" + rest
 		}
 		r.Detail = line
 	}
+}
+
+// sigParamsEnd is where a rendered signature's parameter list ends: after
+// the parenthesis that closes the first one opened, so a parameter's
+// function type is not read as the function's effects.
+func sigParamsEnd(line string) int {
+	depth := 0
+	for i, r := range line {
+		switch r {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return i + 1
+			}
+		}
+	}
+	return 0
 }
 
 type Ref struct {

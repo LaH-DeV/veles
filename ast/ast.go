@@ -871,6 +871,14 @@ type IsExpr struct {
 	Pos source.Span
 }
 
+// ImplementsExpr is `T implements Trait` (D117): a condition about a type
+// parameter, answered per instance at compile time.
+type ImplementsExpr struct {
+	Type  Type
+	Trait Type
+	Pos   source.Span
+}
+
 // CastExpr is `x as T`.
 type CastExpr struct {
 	X    Expr
@@ -940,6 +948,7 @@ func (e *TryExpr) Span() source.Span          { return e.Pos }
 func (e *AwaitExpr) Span() source.Span        { return e.Pos }
 func (e *IsExpr) Span() source.Span           { return e.Pos }
 func (e *CastExpr) Span() source.Span         { return e.Pos }
+func (e *ImplementsExpr) Span() source.Span   { return e.Pos }
 func (e *GatherExpr) Span() source.Span       { return e.Pos }
 func (e *RaceExpr) Span() source.Span         { return e.Pos }
 func (e *UnsafeExpr) Span() source.Span       { return e.Pos }
@@ -979,6 +988,7 @@ func (*TryExpr) exprNode()          {}
 func (*AwaitExpr) exprNode()        {}
 func (*IsExpr) exprNode()           {}
 func (*CastExpr) exprNode()         {}
+func (*ImplementsExpr) exprNode()   {}
 func (*GatherExpr) exprNode()       {}
 func (*RaceExpr) exprNode()         {}
 func (*UnsafeExpr) exprNode()       {}

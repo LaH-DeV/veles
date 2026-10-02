@@ -369,6 +369,8 @@ func (f *fnCtx) checkExprInner(e ast.Expr, want types.Type) Expr {
 		return f.tryExpr(e)
 	case *ast.IsExpr:
 		return f.isExpr(e)
+	case *ast.ImplementsExpr:
+		return f.implementsCond(e)
 	case *ast.CastExpr:
 		return f.castExpr(e)
 	case *ast.UnsafeExpr:
@@ -583,6 +585,12 @@ func narrowExpr(x Expr, to types.Type) Expr {
 				return x
 			}
 			return &UnionCast{exprBase{to}, x, to}
+		case *types.Trait:
+			// a trait object after `is` (D117, D135)
+			if _, isTrait := to.(*types.Trait); isTrait {
+				return &TraitCast{exprBase{to}, x}
+			}
+			return &Downcast{exprBase{to}, x}
 		default:
 			return x
 		}
@@ -2163,7 +2171,7 @@ func (f *fnCtx) condFacts(cond ast.Expr, checked Expr) (whenTrue, whenFalse fact
 		}
 		from := f.currentTypeOf(v)
 		target := f.patternTargetType(from, c.Pat)
-		if target == nil {
+		if target == nil || !narrowsTo(from, target) {
 			return
 		}
 		// On a two-variant sealed the failed test pins the other variant,
@@ -2189,6 +2197,25 @@ func (f *fnCtx) condFacts(cond ast.Expr, checked Expr) (whenTrue, whenFalse fact
 	return
 }
 
+// narrowsTo reports whether a successful `is target` on a value of type from
+// gives it a new type. A trait is a type a trait object can be viewed as
+// (D117) — not a concrete value, which already is what it is, and not an
+// object of a trait that already requires it; a type parameter is refused
+// as a target.
+func narrowsTo(from, target types.Type) bool {
+	if n, ok := from.(*types.Nullable); ok {
+		from = n.Elem
+	}
+	switch tt := target.(type) {
+	case *types.TypeParam:
+		return false
+	case *types.Trait:
+		obj, ok := from.(*types.Trait)
+		return ok && obj != tt && !containsTrait(allSupers(obj), tt)
+	}
+	return true
+}
+
 // patternTargetType returns the narrowed type a successful `is` test on a
 // value of type from establishes, or nil.
 func (f *fnCtx) patternTargetType(from types.Type, pat *ast.TypePat) types.Type {
@@ -2210,13 +2237,15 @@ func (f *fnCtx) ifExpr(e *ast.IfExpr, want types.Type) Expr {
 		}
 	}
 	cond := f.checkExprTo(e.Cond, types.TBool)
-	whenTrue, whenFalse := f.condFacts(e.Cond, cond)
-	saved := f.saveNarrow()
-
 	asValue := want != nil && !types.IsUnit(want)
 	if e.Else == nil && asValue {
 		f.errorf(e.Pos, "'if' used as a value needs an 'else' branch")
 	}
+	if taken, known := f.staticCond(e.Cond); known && len(lets) == 0 {
+		return f.staticIf(e, taken, want, asValue)
+	}
+	whenTrue, whenFalse := f.condFacts(e.Cond, cond)
+	saved := f.saveNarrow()
 	// A branch that is only `null`, where nothing says what type is wanted,
 	// takes the other branch's type made nullable: `if (c) null else x` is
 	// a `T?` for a `T` x, as in Kotlin. The `null` branch is checked last,
@@ -2355,7 +2384,11 @@ func (f *fnCtx) isExpr(e *ast.IsExpr) Expr {
 	if e.Pat.HasArg {
 		f.errorf(e.Pos, "destructuring patterns are only allowed in 'when' arms; use 'when' to bind fields")
 	}
+	whole := source.Span{File: e.Pos.File, Start: e.X.Span().Start, End: e.Pat.Pos.End}
+	savedAt, savedNot, savedTP := f.isExprAt, f.isExprNot, f.patSubjectTP
+	f.isExprAt, f.isExprNot, f.patSubjectTP = &whole, e.Not, f.declaredTypeParam(e.X)
 	test, binds, _ := f.compilePattern(e.Pat, x, x.Type(), e.Pos)
+	f.isExprAt, f.isExprNot, f.patSubjectTP = savedAt, savedNot, savedTP
 	for _, b := range binds {
 		if vd, ok := b.(*VarDecl); ok {
 			markUsed(vd.Var) // refused above; not also "never used"

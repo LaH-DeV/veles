@@ -1456,6 +1456,8 @@ func bp(e ast.Expr) int {
 		return bpNamed
 	case *ast.CastExpr:
 		return bpCast
+	case *ast.ImplementsExpr:
+		return bpNamed
 	case *ast.UnaryExpr, *ast.TryExpr, *ast.AwaitExpr:
 		return bpUnary
 	case *ast.CallExpr:
@@ -1643,6 +1645,10 @@ func (p *printer) exprInner(e ast.Expr) {
 		p.expr(e.X, bpCast)
 		p.w(" as ")
 		p.typ(e.Type)
+	case *ast.ImplementsExpr:
+		p.typ(e.Type)
+		p.w(" implements ")
+		p.typ(e.Trait)
 	case *ast.LambdaExpr:
 		p.lambda(e)
 	case *ast.TupleExpr:

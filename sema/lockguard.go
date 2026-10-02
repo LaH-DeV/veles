@@ -158,7 +158,7 @@ func (c *Checker) checkHeldRegions(prog *Program) {
 				return
 			}
 			walkBlock(w.Body, func(n any) {
-				if call, ok := n.(*Call); ok && call.Fn.Suspends && call.Span.IsValid() && !reported[call.Span] {
+				if call, ok := n.(*Call); ok && (susp{}).call(call) && call.Span.IsValid() && !reported[call.Span] {
 					reported[call.Span] = true
 					c.errorf(call.Span, "%s", w.Lock.message("'"+call.Fn.Display+"'"))
 				}

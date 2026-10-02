@@ -66,6 +66,18 @@ func (p *Parser) parseBinary(minBp int) ast.Expr {
 		if notIs {
 			op = lexer.KwIs
 		}
+		// `T implements Trait` (D117): `implements` is a word only here,
+		// after a name, at the level of `is`
+		if name, isName := left.(*ast.NameExpr); isName && op == lexer.Ident && p.cur().Text == "implements" {
+			if bpNamed <= minBp {
+				return left
+			}
+			p.next()
+			trait := p.parseType()
+			ty := &ast.NamedType{Path: []ast.Ident{{Name: name.Name, Pos: name.Pos}}, Args: name.TypeArgs, Pos: name.Pos}
+			left = &ast.ImplementsExpr{Type: ty, Trait: trait, Pos: p.spanFrom(start)}
+			continue
+		}
 		bp := infixBp(op)
 		if bp == bpNone || bp <= minBp {
 			return left

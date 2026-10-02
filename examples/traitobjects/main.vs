@@ -39,6 +39,62 @@ struct Clicks {
   }
 }
 
+// A sink takes lines; some sinks also buffer them and can be flushed.
+// `is Flusher` asks the value's own type at run time (D117), so `finish`
+// works for every sink and flushes the ones that buffer.
+trait Sink {
+  fun write(line: string)
+}
+
+trait Flusher {
+  fun flush(): i64
+}
+
+struct Console {
+  implement Sink {
+    fun write(line: string) {
+      println("console: $line")
+    }
+  }
+}
+
+struct Buffered {
+  pending: MutableList<string> = []
+
+  implement Sink {
+    fun write(line: string) {
+      this.pending.push(line)
+    }
+  }
+  implement Flusher {
+    fun flush(): i64 {
+      loop (line in this.pending) {
+        println("buffered: $line")
+      }
+      val n = this.pending.len()
+      this.pending.clear()
+      n
+    }
+  }
+}
+
+fun finish(sink: Sink) {
+  if (sink is Flusher) println("flushed ${sink.flush()} lines")
+}
+
+// `is Circle` asks whether a shape is that type, and reads it back (D135).
+fun widest(shapes: List<Shape>): string {
+  var best = 0.0
+  loop (s in shapes) {
+    when (s) {
+      is Circle(r) => best = best.max(2.0 * r)
+      is Square    => best = best.max(s.side)
+      else         => { }
+    }
+  }
+  "widest $best"
+}
+
 fun total(shapes: List<Shape>): f64 {
   var sum = 0.0
   loop (s in shapes) {
@@ -60,4 +116,14 @@ fun main() {
   println("bumped ${c.bump()}")
   val holder = (c, "pair")
   println("bumped again ${holder.0.bump()}")
+  // narrowed, `c` is the Clicks inside the object: a write changes it
+  if (c is Clicks) c.n = 10
+  println("reset, then bumped ${c.bump()}")
+  println(widest(shapes))
+  val sinks: List<Sink> = [Console(), Buffered()]
+  loop (sink in sinks) {
+    sink.write("hello")
+    sink.write("world")
+    finish(sink)
+  }
 }

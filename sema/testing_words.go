@@ -142,13 +142,14 @@ func isComparison(op lexer.TokenKind) bool {
 }
 
 // hiddenName declares a checked value under a name source cannot spell, for
-// the syntax built around it; the caller binds it with a Let.
-func (f *fnCtx) hiddenName(prefix string, x Expr) (*Var, ast.Expr) {
+// the syntax built around it; the caller binds it with a Let. It carries
+// the span of the source it stands for, so an error about it points there.
+func (f *fnCtx) hiddenName(prefix string, x Expr, at source.Span) (*Var, ast.Expr) {
 	f.c.nextTmp++
 	name := "$" + prefix + itoa(f.c.nextTmp)
 	v := f.newVar(name, x.Type(), false, source.Span{})
 	f.declareLocal(name, v, source.Span{})
-	return v, &ast.NameExpr{Name: name}
+	return v, &ast.NameExpr{Name: name, Pos: at}
 }
 
 // shown is how a failure prints a value: a string quoted, so "" and " "
@@ -211,8 +212,8 @@ func (f *fnCtx) expectCall(word, head string, cond ast.Expr, why Expr, span sour
 	if types.IsInvalid(l.Type()) || types.IsInvalid(r.Type()) {
 		return bad()
 	}
-	lv, ln := f.hiddenName("left", l)
-	rv, rn := f.hiddenName("right", r)
+	lv, ln := f.hiddenName("left", l, b.L.Span())
+	rv, rn := f.hiddenName("right", r, b.R.Span())
 	c := f.checkExprTo(&ast.BinaryExpr{Op: b.Op, L: ln, R: rn, Pos: b.Pos}, types.TBool)
 	if types.IsInvalid(c.Type()) {
 		return bad()
@@ -282,7 +283,7 @@ func (f *fnCtx) body(word string, arg ast.Expr) (Expr, *Var, ast.Expr, *types.Fu
 		f.errorf(arg.Span(), "'%s' calls its function with no arguments; wrap the call: '() => ...'", word)
 		return nil, nil, nil, nil
 	}
-	v, n := f.hiddenName("body", fx)
+	v, n := f.hiddenName("body", fx, arg.Span())
 	return fx, v, n, ft
 }
 

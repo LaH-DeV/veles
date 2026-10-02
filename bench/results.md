@@ -222,3 +222,32 @@ per step of a loop over a mutable list or map. Against HEAD on the same machine
 within noise: sha256 84–94 ms at HEAD, 84–93 ms after; maps 44–56 vs 47–54;
 intern 34–35 vs 34–38; sort 39.8 vs 34.3; json 48.6 vs 42.1. `spawn` swung
 30–53 ms on both trees and touches nothing that changed.
+
+## 2026-10-02 15:02 — go1.23.2, windows/amd64 (HEAD 9937139, plus the working tree)
+
+| benchmark | ops | Veles | Go | Veles / Go |
+|---|---:|---:|---:|---:|
+| adapters | 24000000 | 53.82ms | 59.13ms | 0.9× |
+| ast | 861841 | 49.72ms | 132.8ms | 0.4× |
+| channels | 200000 | 9.28ms | 27.08ms | 0.3× |
+| emit | 1000000 | 66.51ms | 129.16ms | 0.5× |
+| intern | 1000000 | 39.89ms | 77.98ms | 0.5× |
+| json | 40000 | 43.63ms | 76.33ms | 0.6× |
+| lexer | 2100000 | 65.81ms | 175.34ms | 0.4× |
+| maps | 2000000 | 57.48ms | 111.31ms | 0.5× |
+| parallel | 64 | 21.63ms | 28.07ms | 0.8× |
+| pipes | 1600000 | 29.01ms | 74.58ms | 0.4× |
+| sha256 | 16 | 99.13ms | 12.28ms | 8.1× |
+| sort | 900000 | 35.9ms | 75.64ms | 0.5× |
+| spawn | 100000 | 42.44ms | 37.75ms | 1.1× |
+| strings | 1000000 | 62.36ms | 138.93ms | 0.4× |
+| trees | 14592688 | 181.25ms | 937.03ms | 0.2× |
+
+Plan B8 / D116 (the eager list and map adapters moved from compiler lowering
+into the prelude, generic over `throws E` and conditional suspension). The
+new `adapters` workload (map, filter, fold, any, all, find over 200k
+integers, 20 rounds), three runs each: 64–73 ms lowered, 43–46 ms in the
+prelude — `map` reserves its output once, which the lowering never did. The
+other rows against HEAD in a worktree: within run-to-run noise (`lexer`
+62–78 ms at HEAD, 64–69 ms now). The Go column swung 2× between runs on this
+machine today; compare the Veles column.

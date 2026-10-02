@@ -4,4 +4,11 @@ total 7.0
 circle 12.0 <Shape>
 bumped 2
 bumped again 3
+reset, then bumped 11
+widest 2.0
+console: hello
+console: world
+buffered: hello
+buffered: world
+flushed 2 lines
 exit=0

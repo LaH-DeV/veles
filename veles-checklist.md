@@ -49,7 +49,7 @@ answered from the shape, tuples get `Comparable`, enums get
       no tree except for sealed values (see the fast-path item) — not yet benchmarked (§3.3)
 - [x] LSP: hover on a derived implement shows what was synthesized — the implements produced, the bounds inferred for a generic target, the signatures, and the wire shape (keys, optional, skipped); the bodies are behind `veles explain <path> --derive [Type]`, which prints them as Veles (`sema/derive_print.go`)
 - [x] Derivable set: `Codable` (`Encodable`, `Decodable`) and `Comparable`
-      (`==`, hashing, printing already structural; `Default` deferred)
+      (`==`, hashing, printing already structural); `Default` added 2026-10-02 (D119)
 - [x] Supertraits: `trait A : B + C`, transitive bounds, super check on impls
 - [x] Trait objects of a trait with supertraits: the table composes the supers' (`objectSlots` in `sema/supers.go`), inherited methods and their default bodies included; a combination trait is an object built from its parts; two supers declaring one name is an ambiguity and object safety is asked of the supers too
 - [x] Parser: braceless empty `implement Trait` (body and top level); field attributes kept; formatter drops empty braces
@@ -157,6 +157,10 @@ answered from the shape, tuples get `Comparable`, enums get
       can run and no timer, socket or blocking call can wake one
 - [x] Blocking-call detection → superseded: a blocking call hands its
       run queue to a spare thread (below), so it no longer stalls other tasks
+- [ ] A side effect inside `Atomic.update`'s lambda (found 2026-10-02 in
+      chapter 12's Semaphore sample: a counter bumped in the lambda counted
+      every retry under contention) is only warned about in the docs. Refusing
+      it at compile time needs a rule for what the lambda may do — a decision
 
 ### 1.4 Type system and syntax
 
@@ -164,15 +168,26 @@ answered from the shape, tuples get `Comparable`, enums get
       check their own arguments; a general typed form is not designed)
 - [x] Coherence/orphan rules for `implement`: none beyond D17 — any implement
       anywhere, one per (trait, type) pair program-wide (§10, derivation batch)
-- [ ] `Default` values for generics without a hand-written implement —
-      decided 2026-10-01 (D119), plan B15
-- [ ] Suspension follows the argument (D116) and `is Trait` at run time and
-      `T implements X` at compile time (D117) — decided 2026-10-01, plan B15
-      (D116 unblocks B8)
-- [ ] `x is Display` on a non-trait-object says "'i64' can never be
+- [x] `Default` (D119) — built 2026-10-02 (plan B15): prelude trait with
+      the listed implements (tuples to eight), derived by an empty
+      `implement Default`, `T.default()`; conformance `D119-default`,
+      `examples/generics`, chapter 8, stdlib reference
+- [x] Suspension follows the argument (D116) and `is Trait` at run time and
+      `T implements X` at compile time (D117) — built 2026-10-02 (plan B15):
+      plain and coroutine instances per call (`TestConditionalSuspension`,
+      `D116-conditional-suspension`, hover "suspends if `f` does"); a type id
+      in every method table, per-trait tables, narrowing (`D135-is-on-trait-
+      objects`, `examples/traitobjects`); `T implements X` decided per
+      instance, only the taken branch checked (`D117-implements`). B8 moved
+      the eager adapters into the prelude with it
+- [x] `x is Display` on a non-trait-object said "'i64' can never be
       'Display'", and `p is Frag` on a trait object that `Frag` implements
-      says "can never be 'Frag'" — both wrong (found 2026-10-01); D117 and
-      D135 replace them (plan B15)
+      said "can never be 'Frag'" — replaced 2026-10-02 by D117's
+      always-true/false warnings (with a fix on `is` expressions) and D135's
+      downcast
+- [x] A call through a suspending function value evaluated its arguments
+      twice (found 2026-10-02 building D116): fixed, pinned in
+      `TestConditionalSuspension`
 - [x] One `try` over a chain (D134) — built 2026-10-01 (plan B11):
       `tryChain` unwraps every failing link of the receiver chain; `try (try
       f()).g()` warns that the inner `try` is redundant, with a fix; the `(try f()).g()` sites in std, examples and docs that
@@ -429,7 +444,11 @@ answered from the shape, tuples get `Comparable`, enums get
       is 109 KB of IR; `withTimeout` 50 KB over 3 instances): lowering
       writes list adapters, checks and interpolation out inline in every
       body. Plan B8 (the eager adapters as prelude functions) is the first
-      lever; measure `--timings`' clang line before and after
+      lever; measure `--timings`' clang line before and after. B8 done
+      2026-10-02: 4.4 MB now (4 607 016 → 4 594 632 bytes at HEAD → after;
+      the IR had grown with std since 09-28) — a call instead of an inlined
+      loop per adapter, but each element type still gets its own instance.
+      Interpolation and checks written out inline remain the bulk
 
 ### 3.3 Benchmarks (so regressions are seen)
 
@@ -686,6 +705,18 @@ behind a name that says "crypto" (§10, 2026-09-23).
 ---
 
 ## 6. Tooling and developer experience
+
+- [x] Bug (found 2026-10-02): `veles test <dir>` also ran the embedded
+      std test files (`*.test.vs`) of every std module the code imports —
+      seen with `fs` and `ticker`. Fixed 2026-10-02: test mode drops the test
+      files of std and dependency modules other than the one given
+      (`veles test std/time` still runs its own); driver
+      `TestTestSkipsImportedStdTests`
+- [x] Bug (found 2026-10-02): a mismatched comparison in `expect`
+      (`expect(1 == "1")`) was reported at `<builtin>`, with no file or
+      line: the names standing for the captured sides had no span. Fixed
+      2026-10-02; they carry the side's span (conformance
+      `D78-test-vocabulary`)
 
 - [x] The needless-`throws` warning (D45) alone printed `see: veles explain
       type-mismatch` (found 2026-09-30 by the spec review): reworded
@@ -998,6 +1029,17 @@ Every new public std API (http cookies/forms/client, `std/log`,
   through a generic std function (`withTimeout(d, () => serving())`), is
   refused — but the error points into the std function's body, where the
   value is kept in a variable, not at the call that passed it.
+- Conditional suspension (D116) covers first-order `suspends` parameters
+  only: one whose own parameters are suspending functions (a callback that
+  takes a callback) makes its function suspend whenever called. So does a
+  parameter the function keeps — stores, returns, or hands to a function
+  that is not itself conditional. Trait methods keep their declared
+  effects.
+- `T implements X` (D117): each instance checks only the branch it takes,
+  so a mistake in a branch no instance takes is not reported until one
+  does. `static assert` and `const` uses come with B14.
+- The built-in types print, compare and hash without the prelude traits,
+  so `i64 implements Display` is false although `"$n"` prints it.
 - Hashes are plain Veles. They allocate nothing per block, but expect a
   multiple of a hand-tuned C implementation's time; there is no benchmark
   yet to say which multiple (§3.3).

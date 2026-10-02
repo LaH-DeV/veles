@@ -15,6 +15,10 @@ test "words" {
   expectThrows<Boom, Bust>(() => 1) // error: 'expectThrows' takes one error type // error: nothing in this function can throw
   expectThrows(5) // error: 'expectThrows' takes a function to call, like '() => parse(text)'; found 'i64'
   expectThrows((x: i64) => x) // error: 'expectThrows' calls its function with no arguments; wrap the call
+  // a comparison's sides are checked apart, then compared: the mismatch
+  // points at the side, not at '<builtin>'
+  expect(1 == "1") // error: type mismatch: expected 'i64', found 'string'
+  expect("a" < 3) // error: type mismatch: expected 'string', found 'i64'
 }
 
 fun main() {

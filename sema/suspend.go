@@ -4,26 +4,291 @@ import (
 	"github.com/LaH-DeV/veles/types"
 )
 
-// Suspension inference (D2, amended by D40): a function suspends when it
-// contains a suspension point or directly calls a function that suspends.
+// Suspension inference (D2, amended by D40 and D116): a function suspends
+// when it contains a suspension point or calls something that suspends.
 // The set is computed to a fixpoint over the call graph; dynamic dispatch
 // (function values, trait objects) uses the effect declared on the type.
+//
+// D116: a parameter of a suspending function type (`f: fun(T): U
+// suspends`) means *may* suspend. A function that suspends only by
+// calling such parameters, or by passing them on to another function's, is
+// conditional: a call of it suspends only when a function value it is
+// given for one does — a lambda whose body suspends, or a value whose type
+// says so. Such a function has two instances, a coroutine one and a plain
+// one (codegen emits the plain one, `.plain`, when a call needs it), and a
+// plain call is an ordinary call: allowed under a lock, in `init`, in a
+// global initializer. A lambda passed to it follows the call: plain when
+// the call is.
+//
+// Only first-order parameters count: one whose own parameters are not
+// suspending functions, so that the values passed to it are known by the
+// same rule. A trait method keeps the effects it declares (D40).
+
+// susp walks a body for suspension. env holds the suspend-parameters known
+// not to suspend in the instance being looked at — a function's own in its
+// plain instance, and through a closure's captures the enclosing
+// function's. The zero susp is the coroutine instance's view: every value
+// suspends as its type says.
+type susp struct{ env map[*Var]bool }
+
+// plainVar reports whether v, or the variable it captures, is known not to
+// suspend.
+func (w susp) plainVar(v *Var) bool {
+	for ; v != nil; v = v.Outer {
+		if w.env[v] {
+			return true
+		}
+	}
+	return false
+}
+
+// call reports whether a call of a named function suspends here (its
+// arguments' own evaluation aside).
+func (w susp) call(e *Call) bool {
+	fn := e.Fn
+	if !fn.Suspends {
+		return false
+	}
+	if !fn.Conditional {
+		return true
+	}
+	off := 0
+	if fn.Receiver != nil {
+		off = 1 // the receiver's pointer comes first
+	}
+	for i, p := range fn.Params {
+		if i+off < len(e.Args) && isSuspendParam(p) && w.argSuspends(e.Args[i+off]) {
+			return true
+		}
+	}
+	return false
+}
+
+// argSuspends reports whether a function value passed for a
+// suspend-parameter suspends when it is called.
+func (w susp) argSuspends(a Expr) bool {
+	switch v := FuncValueOf(a).(type) {
+	case *Closure:
+		return v.Fn.suspends || w.block(v.Fn.Body)
+	case *NullConst:
+		return false
+	case *VarRef:
+		if w.plainVar(v.Var) {
+			return false
+		}
+	}
+	return funcTypeSuspends(a.Type())
+}
+
+// FuncValueOf is the function value an expression passes on unchanged:
+// through a nullable's wrapping or unwrapping, and a conversion between
+// function types that keeps the representation (dropping `sendable`).
+func FuncValueOf(x Expr) Expr {
+	for {
+		switch y := x.(type) {
+		case *SomeWrap:
+			x = y.X
+		case *Unwrap:
+			x = y.X
+		case *Cast:
+			if funcTypeOf(y.X.Type()) == nil || funcTypeOf(y.Type()) == nil {
+				return x
+			}
+			x = y.X
+		default:
+			return x
+		}
+	}
+}
+
+// indirect reports whether a call of a function value suspends here.
+func (w susp) indirect(e *CallIndirect) bool {
+	if ref, ok := FuncValueOf(e.Fn).(*VarRef); ok && w.plainVar(ref.Var) {
+		return false
+	}
+	return funcTypeSuspends(e.Fn.Type())
+}
+
+// CallSuspendsIn and the functions below are what codegen asks while it
+// emits an instance: plain lists the suspend-parameters that instance
+// knows do not suspend (nil for a coroutine instance).
+func CallSuspendsIn(e *Call, plain map[*Var]bool) bool { return susp{plain}.call(e) }
+
+func IndirectSuspendsIn(e *CallIndirect, plain map[*Var]bool) bool {
+	return susp{plain}.indirect(e)
+}
+
+// ClosureSuspendsIn reports whether a lambda passed for a suspend-parameter
+// suspends, which decides the instance the call takes and the lambda's own.
+func ClosureSuspendsIn(cl *Closure, plain map[*Var]bool) bool {
+	return susp{plain}.argSuspends(cl)
+}
+
+// PlainEnv is a conditional function's plain instance's view: its own
+// suspend-parameters do not suspend.
+func PlainEnv(fn *Func) map[*Var]bool {
+	env := map[*Var]bool{}
+	for _, p := range fn.Params {
+		if isSuspendParam(p) {
+			env[p] = true
+		}
+	}
+	return env
+}
+
+// IsSuspendParam reports whether a parameter is one a call can bind to a
+// function value that does not suspend (D116): its type is a first-order
+// suspending function type, or that made nullable.
+func IsSuspendParam(p *Var) bool { return isSuspendParam(p) }
+
+func isSuspendParam(p *Var) bool {
+	ft := funcTypeOf(p.Type)
+	if ft == nil || ft.C || !ft.Effects.Suspends {
+		return false
+	}
+	for _, q := range ft.Params {
+		if funcTypeSuspends(q.Type) {
+			return false
+		}
+	}
+	return true
+}
+
+func funcTypeOf(t types.Type) *types.Func {
+	if n, ok := t.(*types.Nullable); ok {
+		t = n.Elem
+	}
+	ft, _ := t.(*types.Func)
+	return ft
+}
+
+func funcTypeSuspends(t types.Type) bool {
+	ft := funcTypeOf(t)
+	return ft != nil && ft.Effects.Suspends
+}
+
+// rootVar is the variable v stands for: itself, or through a closure's
+// captures the enclosing function's.
+func rootOf(v *Var) *Var {
+	for v.Outer != nil {
+		v = v.Outer
+	}
+	return v
+}
+
+// escapedSuspendParams lists the suspend-parameters whose value is used other
+// than by calling it, passing it on to a conditional function's
+// suspend-parameter, testing it for null, or capturing it. In a plain
+// instance such a parameter holds a plain function, which a later call by
+// its type would call as a coroutine: its function stays unconditional.
+func escapedSuspendParams(prog *Program, candidates map[*Var]bool) map[*Var]bool {
+	escaped := map[*Var]bool{}
+	for _, fn := range prog.Funcs {
+		if fn.Body == nil {
+			continue
+		}
+		allowed := map[*VarRef]bool{}
+		allow := func(x Expr) {
+			if ref, ok := FuncValueOf(x).(*VarRef); ok {
+				allowed[ref] = true
+			}
+		}
+		walkBlock(fn.Body, func(n any) {
+			switch e := n.(type) {
+			case *CallIndirect:
+				allow(e.Fn)
+			case *IsNull:
+				allow(e.X)
+			case *Call:
+				if !e.Fn.Conditional {
+					return
+				}
+				off := 0
+				if e.Fn.Receiver != nil {
+					off = 1
+				}
+				for i, p := range e.Fn.Params {
+					if i+off < len(e.Args) && isSuspendParam(p) {
+						allow(e.Args[i+off])
+					}
+				}
+			}
+		})
+		walkBlock(fn.Body, func(n any) {
+			if ref, ok := n.(*VarRef); ok && !allowed[ref] {
+				if root := rootOf(ref.Var); candidates[root] {
+					escaped[root] = true
+				}
+			}
+		})
+	}
+	return escaped
+}
 
 func (c *Checker) inferSuspension(prog *Program) {
+	// Each function's view in its coroutine instance (all) and, when it has
+	// suspend-parameters, in its plain one (none). Both only grow as callees
+	// are found to suspend, so the fixpoint is reached; a function whose
+	// suspend-parameter escapes then loses its plain view, and the fixpoint
+	// runs again.
+	plain := map[*Func]map[*Var]bool{}
+	candidates := map[*Var]bool{}
+	for _, fn := range prog.Funcs {
+		if !fn.IsClosure {
+			if env := PlainEnv(fn); len(env) > 0 {
+				plain[fn] = env
+				for p := range env {
+					candidates[p] = true
+				}
+			}
+		}
+	}
+	for {
+		c.suspensionFixpoint(prog, plain)
+		escaped := escapedSuspendParams(prog, candidates)
+		dropped := false
+		for fn, env := range plain {
+			for p := range env {
+				if escaped[p] {
+					delete(plain, fn)
+					fn.Conditional = false
+					dropped = true
+					break
+				}
+			}
+		}
+		if !dropped {
+			break
+		}
+	}
+	c.checkDeclaredSuspension(prog)
+}
+
+// suspensionFixpoint computes Suspends and Conditional for every function.
+func (c *Checker) suspensionFixpoint(prog *Program, plain map[*Func]map[*Var]bool) {
 	changed := true
 	for changed {
 		changed = false
 		for _, fn := range prog.Funcs {
-			if fn.Suspends || fn.Body == nil {
+			if fn.Body == nil {
 				continue
 			}
-			if fn.suspends || blockSuspends(fn.Body) {
-				fn.Suspends = true
+			all := fn.suspends || susp{}.block(fn.Body)
+			cond := false
+			if env := plain[fn]; all && env != nil {
+				cond = !(fn.suspends || susp{env}.block(fn.Body))
+			}
+			if all != fn.Suspends || cond != fn.Conditional {
+				fn.Suspends, fn.Conditional = all, cond
 				changed = true
 			}
 		}
 	}
-	// declared effects on function types must agree with inference
+}
+
+// checkDeclaredSuspension holds declared effects on function types to what
+// inference found, and refuses suspension where it cannot be.
+func (c *Checker) checkDeclaredSuspension(prog *Program) {
 	for _, fn := range prog.Funcs {
 		if fn.IsClosure {
 			if fn.Sig.Effects.Suspends {
@@ -31,6 +296,7 @@ func (c *Checker) inferSuspension(prog *Program) {
 			} else if fn.Suspends {
 				c.errorf(fn.Span, "this lambda suspends, so its type must be a suspending function type: 'fun(...): T suspends' (D40)")
 			}
+			fn.Conditional = false
 			continue
 		}
 		if fn.tmpl == nil {
@@ -54,9 +320,9 @@ func (c *Checker) inferSuspension(prog *Program) {
 			}
 		}
 		if t.Decl.Effects.Suspends {
-			fn.Suspends = true
+			fn.Suspends, fn.Conditional = true, false // declared: always
 		}
-		if fn.Suspends && t.Name == "$init" {
+		if fn.Suspends && !fn.Conditional && t.Name == "$init" {
 			c.errorf(fn.Span, "an 'init' block cannot suspend: construction is a plain expression (D28); do the waiting in a static function that builds the value")
 		}
 		fn.Sig.Effects.Suspends = fn.Suspends
@@ -68,160 +334,165 @@ func (c *Checker) inferSuspension(prog *Program) {
 	}
 }
 
-func blockSuspends(b *Block) bool {
+// exprSuspends is the coroutine instance's view.
+func exprSuspends(e Expr) bool { return susp{}.expr(e) }
+
+func (w susp) block(b *Block) bool {
 	if b == nil {
 		return false
 	}
 	for _, s := range b.Stmts {
-		if stmtSuspends(s) {
+		if w.stmt(s) {
 			return true
 		}
 	}
-	return b.Value != nil && exprSuspends(b.Value)
+	return b.Value != nil && w.expr(b.Value)
 }
 
-func stmtSuspends(s Stmt) bool {
+func (w susp) stmt(s Stmt) bool {
 	switch s := s.(type) {
 	case *Block:
-		return blockSuspends(s)
+		return w.block(s)
 	case *VarDecl:
-		return s.Init != nil && exprSuspends(s.Init)
+		return s.Init != nil && w.expr(s.Init)
 	case *Assign:
-		return exprSuspends(s.Target) || exprSuspends(s.Value)
+		return w.expr(s.Target) || w.expr(s.Value)
 	case *ExprStmt:
-		return exprSuspends(s.X)
+		return w.expr(s.X)
 	case *Return:
-		return s.Value != nil && exprSuspends(s.Value)
+		return s.Value != nil && w.expr(s.Value)
 	case *Loop:
-		if s.Cond != nil && exprSuspends(s.Cond) {
+		if s.Cond != nil && w.expr(s.Cond) {
 			return true
 		}
 		for _, p := range s.Post {
-			if stmtSuspends(p) {
+			if w.stmt(p) {
 				return true
 			}
 		}
-		return blockSuspends(s.Body)
+		return w.block(s.Body)
 	case *With:
-		return exprSuspends(s.Init) || exprSuspends(s.Close) || blockSuspends(s.Body)
+		return w.expr(s.Init) || w.expr(s.Close) || w.block(s.Body)
 	case *ScopeBlock:
 		return true
 	}
 	return false
 }
 
-func exprSuspends(e Expr) bool {
+func (w susp) expr(e Expr) bool {
 	switch e := e.(type) {
 	case nil:
 		return false
 	case *Call:
-		if e.Fn.Suspends {
-			return true
-		}
-		return anySuspends(e.Args)
+		return w.call(e) || w.any(e.Args)
 	case *CallIndirect:
-		if ft, ok := e.Fn.Type().(*types.Func); ok && ft.Effects.Suspends {
-			return true
-		}
-		return exprSuspends(e.Fn) || anySuspends(e.Args)
+		return w.indirect(e) || w.expr(e.Fn) || w.any(e.Args)
 	case *CallVirtual:
 		if e.Sig.Effects.Suspends {
 			return true
 		}
-		return exprSuspends(e.Obj) || anySuspends(e.Args)
+		return w.expr(e.Obj) || w.any(e.Args)
 	case *Builtin:
 		switch e.Op {
 		case "chan.send", "chan.recv", "task.sleep":
 			return true
 		}
-		return anySuspends(e.Args)
+		return w.any(e.Args)
 	case *AwaitTask, *ScopeBlock, *Race, *Launch:
 		return true
 	case *Binary:
-		return exprSuspends(e.L) || exprSuspends(e.R)
+		return w.expr(e.L) || w.expr(e.R)
 	case *Unary:
-		return exprSuspends(e.X)
+		return w.expr(e.X)
 	case *Cast:
-		return exprSuspends(e.X)
+		return w.expr(e.X)
 	case *ToString:
-		return exprSuspends(e.X)
+		return w.expr(e.X)
 	case *StringConcat:
-		return anySuspends(e.Parts)
+		return w.any(e.Parts)
 	case *FieldGet:
-		return exprSuspends(e.X)
+		return w.expr(e.X)
 	case *TupleGet:
-		return exprSuspends(e.X)
+		return w.expr(e.X)
 	case *StructLit:
-		return anySuspends(e.Fields)
+		return w.any(e.Fields)
 	case *TupleLit:
-		return anySuspends(e.Elems)
+		return w.any(e.Elems)
 	case *AddrOf:
-		return exprSuspends(e.X)
+		return w.expr(e.X)
 	case *Deref:
-		return exprSuspends(e.X)
+		return w.expr(e.X)
 	case *SomeWrap:
-		return exprSuspends(e.X)
+		return w.expr(e.X)
 	case *IsNull:
-		return exprSuspends(e.X)
+		return w.expr(e.X)
 	case *Unwrap:
-		return exprSuspends(e.X)
+		return w.expr(e.X)
 	case *MakeVariant:
-		return exprSuspends(e.Value)
+		return w.expr(e.Value)
 	case *VariantTest:
-		return exprSuspends(e.X)
+		return w.expr(e.X)
 	case *VariantCast:
-		return exprSuspends(e.X)
+		return w.expr(e.X)
+	case *TypeTest:
+		return w.expr(e.X)
+	case *Downcast:
+		return w.expr(e.X)
+	case *TraitTest:
+		return w.expr(e.X)
+	case *TraitCast:
+		return w.expr(e.X)
 	case *UnionTest:
-		return exprSuspends(e.X)
+		return w.expr(e.X)
 	case *UnionCast:
-		return exprSuspends(e.X)
+		return w.expr(e.X)
 	case *ErrorConvert:
-		return exprSuspends(e.X)
+		return w.expr(e.X)
 	case *If:
-		return exprSuspends(e.Cond) || blockSuspends(e.Then) || blockSuspends(e.Else)
+		return w.expr(e.Cond) || w.block(e.Then) || w.block(e.Else)
 	case *BlockExpr:
-		return blockSuspends(e.Block)
+		return w.block(e.Block)
 	case *Match:
-		if e.Init != nil && exprSuspends(e.Init) {
+		if e.Init != nil && w.expr(e.Init) {
 			return true
 		}
 		for _, arm := range e.Arms {
-			if exprSuspends(arm.Test) || exprSuspends(arm.Guard) || blockSuspends(arm.Body) {
+			if w.expr(arm.Test) || w.expr(arm.Guard) || w.block(arm.Body) {
 				return true
 			}
 			for _, b := range arm.Binds {
-				if stmtSuspends(b) {
+				if w.stmt(b) {
 					return true
 				}
 			}
 		}
 	case *Try:
-		return exprSuspends(e.X)
+		return w.expr(e.X)
 	case *Throw:
-		return exprSuspends(e.Value)
+		return w.expr(e.Value)
 	case *Elvis:
-		return exprSuspends(e.L) || exprSuspends(e.R)
+		return w.expr(e.L) || w.expr(e.R)
 	case *Let:
-		return exprSuspends(e.Init) || exprSuspends(e.Body)
+		return w.expr(e.Init) || w.expr(e.Body)
 	case *ListLit:
-		return anySuspends(e.Elems)
+		return w.any(e.Elems)
 	case *MapLit:
 		for _, en := range e.Entries {
-			if exprSuspends(en[0]) || exprSuspends(en[1]) {
+			if w.expr(en[0]) || w.expr(en[1]) {
 				return true
 			}
 		}
 	case *RangeLit:
-		return exprSuspends(e.Lo) || exprSuspends(e.Hi)
+		return w.expr(e.Lo) || w.expr(e.Hi)
 	case *Box:
-		return exprSuspends(e.X)
+		return w.expr(e.X)
 	}
 	return false
 }
 
-func anySuspends(es []Expr) bool {
+func (w susp) any(es []Expr) bool {
 	for _, e := range es {
-		if exprSuspends(e) {
+		if w.expr(e) {
 			return true
 		}
 	}

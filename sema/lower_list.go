@@ -30,14 +30,9 @@ func (f *fnCtx) listLoop(list *Var, elem types.Type, span source.Span, body func
 	return []Stmt{&VarDecl{Var: idx, Init: i64c(0)}, lp}
 }
 
-func callFn(fv *Var, args ...Expr) Expr {
-	ft := fv.Type.(*types.Func)
-	return &CallIndirect{exprBase{ft.Ret}, ref(fv), args}
-}
-
-// checkLambdaArg checks a function-valued argument against the expected
+// fnArg checks a function-valued argument against the expected
 // type and binds it to a temporary. Throwing function values are
-// rejected: eager adapters run the function inline.
+// rejected: what is lowered here (sortedBy's key) runs the function inline.
 func (f *fnCtx) fnArg(arg ast.Expr, expected *types.Func) (*Var, bool) {
 	x := f.checkExpr(arg, expected)
 	ft, ok := x.Type().(*types.Func)
@@ -61,7 +56,7 @@ func (f *fnCtx) fnArg(arg ast.Expr, expected *types.Func) (*Var, bool) {
 		f.errorf(arg.Span(), "expected a function returning '%s', found '%s'", expected.Ret, ft.Ret)
 		return nil, false
 	}
-	if ft.Effects.Throws && !f.throwingFn(ft, arg.Span()) {
+	if ft.Effects.Throws {
 		f.errorf(arg.Span(), "a throwing function cannot be passed here; handle the Result inside it")
 		return nil, false
 	}
@@ -92,146 +87,33 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 			f.pending = savedPending
 		}
 	}()
-	savedAdapter := f.adapter
-	f.adapter = &adapterState{}
-	defer func() { f.adapter = savedAdapter }()
 	pre := []Stmt{&VarDecl{Var: list, Init: recv}}
 	finish := func(stmts []Stmt, value Expr) Expr {
-		value = f.adapterResult(value)
 		all := append(pre, f.pending...)
 		f.pending = nil
 		all = append(all, stmts...)
 		return &BlockExpr{exprBase{value.Type()}, &Block{Stmts: all, Value: value, Type: value.Type()}}
 	}
 	switch name {
-	case "map":
+	case "indexOf":
 		if !need(1) {
 			return bad()
 		}
-		fv, ok := f.fnArg(e.Args[0].Value, &types.Func{Params: []types.Param{{Type: lt.Elem}}})
-		if !ok {
+		needle := f.checkExprTo(e.Args[0].Value, lt.Elem)
+		if !f.comparable(lt.Elem) {
+			f.errorf(span, "elements of type '%s' cannot be compared with '=='; 'find' takes a test of your own", lt.Elem)
 			return bad()
 		}
-		ut := fv.Type.(*types.Func).Ret
-		if types.IsUnit(ut) {
-			f.errorf(span, "'map' needs a function that returns a value; use 'forEach' for side effects")
-			return bad()
-		}
-		outT := &types.List{Elem: ut, Mutable: true}
-		out := f.newTemp(outT)
-		stmts := []Stmt{&VarDecl{Var: out, Init: &ListLit{exprBase{outT}, nil}}}
-		stmts = append(stmts, f.listLoop(list, lt.Elem, span, func(x *Var, lp *Loop) []Stmt {
-			return []Stmt{&ExprStmt{X: &Builtin{exprBase{types.TUnit}, "list.push", []Expr{ref(out), f.call(lp, fv, ref(x))}, span}}}
-		})...)
-		return finish(stmts, &Cast{exprBase{&types.List{Elem: ut}}, ref(out)})
-	case "filter":
-		if !need(1) {
-			return bad()
-		}
-		fv, ok := f.fnArg(e.Args[0].Value, &types.Func{Params: []types.Param{{Type: lt.Elem}}, Ret: types.TBool})
-		if !ok {
-			return bad()
-		}
-		outT := &types.List{Elem: lt.Elem, Mutable: true}
-		out := f.newTemp(outT)
-		stmts := []Stmt{&VarDecl{Var: out, Init: &ListLit{exprBase{outT}, nil}}}
-		stmts = append(stmts, f.listLoop(list, lt.Elem, span, func(x *Var, lp *Loop) []Stmt {
-			push := &Block{Stmts: []Stmt{&ExprStmt{X: &Builtin{exprBase{types.TUnit}, "list.push", []Expr{ref(out), ref(x)}, span}}}, Type: types.TUnit}
-			return []Stmt{&ExprStmt{X: &If{exprBase{types.TUnit}, f.call(lp, fv, ref(x)), push, nil}}}
-		})...)
-		return finish(stmts, &Cast{exprBase{&types.List{Elem: lt.Elem}}, ref(out)})
-	case "forEach":
-		if !need(1) {
-			return bad()
-		}
-		fv, ok := f.fnArg(e.Args[0].Value, &types.Func{Params: []types.Param{{Type: lt.Elem}}, Ret: types.TUnit})
-		if !ok {
-			return bad()
-		}
-		stmts := f.listLoop(list, lt.Elem, span, func(x *Var, lp *Loop) []Stmt {
-			return []Stmt{&ExprStmt{X: f.call(lp, fv, ref(x))}}
-		})
-		return finish(stmts, &UnitConst{exprBase{types.TUnit}})
-	case "fold":
-		if !need(2) {
-			return bad()
-		}
-		init := f.checkExpr(e.Args[0].Value, nil)
-		if types.IsInvalid(init.Type()) {
-			return bad()
-		}
-		acc := f.newTemp(init.Type())
-		fv, ok := f.fnArg(e.Args[1].Value, &types.Func{Params: []types.Param{{Type: init.Type()}, {Type: lt.Elem}}, Ret: init.Type()})
-		if !ok {
-			return bad()
-		}
-		stmts := []Stmt{&VarDecl{Var: acc, Init: init}}
-		stmts = append(stmts, f.listLoop(list, lt.Elem, span, func(x *Var, lp *Loop) []Stmt {
-			return []Stmt{&Assign{Target: ref(acc), Value: f.call(lp, fv, ref(acc), ref(x))}}
-		})...)
-		return finish(stmts, ref(acc))
-	case "any", "all":
-		if !need(1) {
-			return bad()
-		}
-		fv, ok := f.fnArg(e.Args[0].Value, &types.Func{Params: []types.Param{{Type: lt.Elem}}, Ret: types.TBool})
-		if !ok {
-			return bad()
-		}
-		res := f.newTemp(types.TBool)
-		isAny := name == "any"
-		stmts := []Stmt{&VarDecl{Var: res, Init: &BoolConst{exprBase{types.TBool}, !isAny}}}
-		stmts = append(stmts, f.listLoop(list, lt.Elem, span, func(x *Var, lp *Loop) []Stmt {
-			cond := f.call(lp, fv, ref(x))
-			if !isAny {
-				cond = &Unary{exprBase{types.TBool}, OpNot, cond, span}
-			}
-			hit := &Block{Stmts: []Stmt{&Assign{Target: ref(res), Value: &BoolConst{exprBase{types.TBool}, isAny}}, &Break{Loop: lp}}, Type: types.TNever}
-			return []Stmt{&ExprStmt{X: &If{exprBase{types.TUnit}, cond, hit, nil}}}
-		})...)
-		return finish(stmts, ref(res))
-	case "find", "indexOf":
-		if !need(1) {
-			return bad()
-		}
-		var test func(x *Var, lp *Loop) Expr
-		if name == "find" {
-			fv, ok := f.fnArg(e.Args[0].Value, &types.Func{Params: []types.Param{{Type: lt.Elem}}, Ret: types.TBool})
-			if !ok {
-				return bad()
-			}
-			test = func(x *Var, lp *Loop) Expr { return f.call(lp, fv, ref(x)) }
-		} else {
-			needle := f.checkExprTo(e.Args[0].Value, lt.Elem)
-			if !f.comparable(lt.Elem) {
-				f.errorf(span, "elements of type '%s' cannot be compared with '=='; 'find' takes a test of your own", lt.Elem)
-				return bad()
-			}
-			nv := f.newTemp(lt.Elem)
-			pre = append(pre, &VarDecl{Var: nv, Init: needle})
-			test = func(x *Var, _ *Loop) Expr { return &Binary{exprBase{types.TBool}, OpEq, ref(x), ref(nv), span} }
-		}
-		var res *Var
-		var found func(x *Var, idx Expr) Expr
-		if name == "find" {
-			rt := &types.Nullable{Elem: lt.Elem}
-			res = f.newTemp(rt)
-			found = func(x *Var, _ Expr) Expr { return &SomeWrap{exprBase{rt}, ref(x)} }
-		} else {
-			res = f.newTemp(types.TI64)
-			found = func(_ *Var, idx Expr) Expr { return idx }
-		}
-		var init Expr = &NullConst{exprBase{res.Type}}
-		if name == "indexOf" {
-			init = &IntConst{exprBase{types.TI64}, 1, true}
-		}
-		stmts := []Stmt{&VarDecl{Var: res, Init: init}}
+		nv := f.newTemp(lt.Elem)
+		pre = append(pre, &VarDecl{Var: nv, Init: needle})
+		res := f.newTemp(types.TI64)
+		stmts := []Stmt{&VarDecl{Var: res, Init: &IntConst{exprBase{types.TI64}, 1, true}}}
 		idxVar := f.newTemp(types.TI64)
 		stmts = append(stmts, &VarDecl{Var: idxVar, Init: i64c(0)})
 		stmts = append(stmts, f.listLoop(list, lt.Elem, span, func(x *Var, lp *Loop) []Stmt {
-			hit := &Block{Stmts: []Stmt{&Assign{Target: ref(res), Value: found(x, ref(idxVar))}, &Break{Loop: lp}}, Type: types.TNever}
+			hit := &Block{Stmts: []Stmt{&Assign{Target: ref(res), Value: ref(idxVar)}, &Break{Loop: lp}}, Type: types.TNever}
 			return []Stmt{
-				&ExprStmt{X: &If{exprBase{types.TUnit}, test(x, lp), hit, nil}},
+				&ExprStmt{X: &If{exprBase{types.TUnit}, &Binary{exprBase{types.TBool}, OpEq, ref(x), ref(nv), span}, hit, nil}},
 				&Assign{Target: ref(idxVar), Value: &Binary{exprBase{types.TI64}, OpWrapAdd, ref(idxVar), i64c(1), span}},
 			}
 		})...)
@@ -391,7 +273,7 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 			if !need(1) {
 				return bad()
 			}
-			fv, ok := f.fnArgNoThrow(e.Args[0].Value, &types.Func{Params: []types.Param{{Type: lt.Elem}}})
+			fv, ok := f.fnArg(e.Args[0].Value, &types.Func{Params: []types.Param{{Type: lt.Elem}}})
 			if !ok {
 				return bad()
 			}

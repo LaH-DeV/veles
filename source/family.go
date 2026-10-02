@@ -90,7 +90,7 @@ var families = []family{
 		`copy of the caller's`, `while 'loop`, `move or reorder`, `is a pointer to a`),
 	fam("mutability", `^cannot assign`, `while the loop at line`, `not assignable`, `immutable List|immutable Map|immutable Set`,
 		`\bMutable(List|Map|Set)\b`, `'mut'`, `^compound assignment`, `global 'val' is a constant`,
-		`never changes: copy it`, `'getOrPut'`),
+		`never changes: copy it`, `'getOrPut'`, `' changes the %s; use %s \(D25\)`),
 	fam("traits", `does not implement`, `not a trait`, `supertrait`, `^trait '`, `conflicting impl`,
 		`^implement of`, `in trait '`, `trait '%s' declares`, `'override'`, `ambiguous`, `extend<`, `trait object`,
 		`already implements`, `sealed trait '%s' declares no methods`, `cannot be implemented by hand`,

@@ -42,6 +42,8 @@ func isPlace(e sema.Expr) bool {
 		return isPlace(e.X)
 	case *sema.VariantCast:
 		return isPlace(e.X)
+	case *sema.Downcast:
+		return true // the boxed value itself (D135)
 	case *sema.Builtin:
 		return e.Op == "list.ref" || e.Op == "list.refUnchecked"
 	}
@@ -66,6 +68,12 @@ func (g *gen) place(e sema.Expr) string {
 		p := g.newTmp()
 		g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 1", p, g.llType(nt), base)
 		return p
+	case *sema.Downcast:
+		// the value inside a trait object (D135): writes through a narrowed
+		// object change what its methods see
+		data := g.newTmp()
+		g.emit("%s = extractvalue { ptr, ptr } %s, 0", data, g.expr(e.X))
+		return data
 	case *sema.VariantCast:
 		// the payload of a sealed place (after `is Variant`): field 1 of the
 		// tagged union, read as the variant's own layout
@@ -318,6 +326,14 @@ func (g *gen) expr(e sema.Expr) string {
 	case *sema.VariantCast:
 		x := g.expr(e.X)
 		return g.extractTagged(g.llType(e.X.Type()), x, g.llType(e.Variant))
+	case *sema.TypeTest:
+		return g.typeTest(e)
+	case *sema.Downcast:
+		return g.downcast(e)
+	case *sema.TraitTest:
+		return g.traitTest(e)
+	case *sema.TraitCast:
+		return g.traitCast(e)
 	case *sema.UnionTest:
 		x := g.expr(e.X)
 		u := e.X.Type()
@@ -479,7 +495,7 @@ func (g *gen) extractTagged(taggedLL string, value string, payloadLL string) str
 // calls
 
 func (g *gen) call(e *sema.Call) string {
-	fn := e.Fn
+	fn := g.callee(e) // a conditional function's plain instance, when the call allows (D116)
 	var sig cSig
 	if fn.Extern {
 		sig = g.cSignature(paramTypes(fn.Sig.Params), fn.Sig.Ret)
@@ -487,6 +503,9 @@ func (g *gen) call(e *sema.Call) string {
 	var args []string
 	for i, a := range e.Args {
 		v := g.expr(a)
+		if cl := lambdaArg(a); cl != nil {
+			delete(g.plainLambdas, cl) // emitted: the mark was for this call
+		}
 		if fn.Extern && types.IsString(a.Type()) {
 			p, l := g.strPtrLen(v)
 			args = append(args, "ptr "+p, "i64 "+l)
@@ -1871,7 +1890,7 @@ func (g *gen) closure(e *sema.Closure) string {
 		}
 	}
 	a := g.newTmp()
-	g.emit("%s = insertvalue { ptr, ptr } undef, ptr @%s, 0", a, e.Fn.Name)
+	g.emit("%s = insertvalue { ptr, ptr } undef, ptr @%s, 0", a, g.lambdaFn(e).Name)
 	b := g.newTmp()
 	g.emit("%s = insertvalue { ptr, ptr } %s, ptr %s, 1", b, a, env)
 	return b
@@ -1907,19 +1926,21 @@ func (g *gen) callIndirect(e *sema.CallIndirect) string {
 	env := g.newTmp()
 	g.emit("%s = extractvalue { ptr, ptr } %s, 1", env, fv)
 	args := []string{"ptr " + env}
-	for _, a := range e.Args {
-		args = append(args, g.llType(a.Type())+" "+g.expr(a))
+	vals := make([]string, len(e.Args)) // each argument is evaluated once
+	for i, a := range e.Args {
+		vals[i] = g.expr(a)
+		args = append(args, g.llType(a.Type())+" "+vals[i])
 	}
-	if ft.Effects.Suspends {
+	if sema.IndirectSuspendsIn(e, g.view()) { // by its type, unless the instance knows it is plain (D116)
 		ct := g.newTmp()
 		g.emit("%s = call ptr @veles_task_new()", ct)
 		var ats []types.Type
 		var avs []string
 		ats = append(ats, &types.Pointer{Elem: types.TUnit, Raw: true}, &types.Pointer{Elem: types.TUnit, Raw: true})
 		avs = append(avs, code, env)
-		for _, a := range e.Args {
+		for i, a := range e.Args {
 			ats = append(ats, a.Type())
-			avs = append(avs, g.expr(a))
+			avs = append(avs, vals[i])
 		}
 		g.startIndirect(ct, ft, ats, avs)
 		return g.awaitTask(ct, g.resultTypeOf(ft))
@@ -2001,14 +2022,23 @@ func (g *gen) box(e *sema.Box) string {
 
 // vtable emits (once) the method table of a (trait, type) pair, built from
 // thunks that adapt the impl's calling convention to `(ptr self, args...)`.
+// Slot 0 is the type's identity (D117, D135); the methods follow.
 func (g *gen) vtable(e *sema.Box) string {
-	name := "vt." + e.Trait.Name + "." + mangleType(e.X.Type())
+	return g.vtableFor(e.Trait, e.X.Type(), e.Methods)
+}
+
+func vtableName(trait *types.Trait, t types.Type) string {
+	return "vt." + mangleModule(trait.Module) + "." + trait.Name + "." + mangleType(t)
+}
+
+func (g *gen) vtableFor(trait *types.Trait, t types.Type, methods []*sema.Func) string {
+	name := vtableName(trait, t)
 	if _, done := g.vtables[name]; done {
 		return name
 	}
 	g.vtables[name] = true
-	var entries []string
-	for i, fn := range e.Methods {
+	entries := []string{"ptr @" + g.typeInfo(t)}
+	for i, fn := range methods {
 		thunk := g.vtableThunk(name, i, fn)
 		entries = append(entries, "ptr @"+thunk)
 	}
@@ -2052,7 +2082,7 @@ func (g *gen) callVirtual(e *sema.CallVirtual) string {
 	vt := g.newTmp()
 	g.emit("%s = extractvalue { ptr, ptr } %s, 1", vt, obj)
 	slot := g.newTmp()
-	g.emit("%s = getelementptr ptr, ptr %s, i64 %d", slot, vt, e.Index)
+	g.emit("%s = getelementptr ptr, ptr %s, i64 %d", slot, vt, e.Index+1) // slot 0 is the type
 	fnp := g.newTmp()
 	g.emit("%s = load ptr, ptr %s", fnp, slot)
 	args := []string{"ptr " + data}

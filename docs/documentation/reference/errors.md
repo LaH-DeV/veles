@@ -589,6 +589,16 @@ which can never be 'string'`.
 A `when` over a sealed type must cover every variant or end with `else`
 (D13). Prefer listing the variant so the next one you add is caught too.
 
+#### `subject has type 'Shape', which can never be 'Plain'`
+
+On a trait object, `is T` asks for a concrete type the object may hold
+(D135). A type that does not implement the object's trait can never be
+inside it; check the name, or implement the trait for the type. The
+warnings `… so this test is always true/false` mean the answer is known
+where the test is written: the value's type is concrete, or the object's
+trait already requires the one tested. Remove the test (an `is`
+expression gets a fix that writes the answer).
+
 ### control-flow
 
 **Where execution goes.** `missing return: function 'f' must return a

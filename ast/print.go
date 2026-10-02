@@ -878,6 +878,12 @@ func (p *printer) expr(e Expr) {
 			p.w("(...)")
 		}
 		p.w(")")
+	case *ImplementsExpr:
+		p.w("(implements ")
+		p.typ(e.Type)
+		p.w(" ")
+		p.typ(e.Trait)
+		p.w(")")
 	case *CastExpr:
 		p.w("(as ")
 		p.expr(e.X)

@@ -206,6 +206,23 @@ Construction from text, implemented for `i64`, `f64`, `bool` and `string`;
 `null` when the text is not a value of the type. A `static fun` has no
 receiver and is called on the type (`Point.origin()`, `Stack<i64>.of(1)`).
 
+### Default (D119)
+
+```veles
+// fragment
+public trait Default { static fun default(): Self }   // i64.default(), T.default()
+```
+
+A value to start from, for generic code that has to make one: `0` for every
+number, `false`, `""`, empty `List`/`Map`/`Set` and their mutable forms,
+`null` for `T?`, `Duration.zero`, and a tuple (up to eight elements) of
+`Default` types. A struct derives it with an empty `implement Default`:
+each field takes its declared default, or else its type's `default()`; a
+field with neither is an error naming it, and a generic struct's type
+parameters get the `Default` bound they need. A sealed trait, a `Secret` and
+a value holding a task are not derived (write `static fun default(): Self`
+by hand); an enum cannot implement it (D57).
+
 ### Codable (D58)
 
 ```veles
@@ -380,7 +397,7 @@ UTF-8.
 | `contains(x)`, `indexOf(x)`, `count(p)` | `bool`, `i64` (−1 if absent), `i64` |
 | `first()`, `last()`, `min()`, `max()` | `T?`; `min`/`max` need `Comparable` elements |
 | `take(n)`, `drop(n)`, `slice(from, to)` | new `List`, bounds clamped |
-| `map(f)`, `filter(p)`, `fold(z, f)`, `forEach(f)`, `flatMap(f)` | eager; return `List` |
+| `map(f)`, `filter(p)`, `fold(z, f)`, `forEach(f)`, `flatMap(f)` | eager; return `List`. These and `any`, `all`, `find`, `count`, `indexOfFirst`, `mapNotNull`, `partition` are prelude Veles generic over what the function does: they throw what it throws (`xs.map(a => try parse(a))` is a `Result` until `try`) and suspend only when it suspends (D116) — `xs.map(x => fetch(x))` waits for each in turn |
 | `mapNotNull(f)`, `partition(p)` | `f` returns `U?`, nulls dropped; `(List<T>, List<T>)` of accepted and rest |
 | `filterIs<V>()`, `filterNotNull()` | on a list of a sealed type: the elements of variant `V` as `List<V>`; on `List<T?>`: the present ones as `List<T>` |
 | `any(p)`, `all(p)`, `find(p)` | |
@@ -416,7 +433,7 @@ call the mutating ones, since the list is a reference (D25).
 | `keys()`, `values()`, `entries()` | `List<K>`, `List<V>`, `List<(K, V)>` in insertion order |
 | `toMap()`, `toMutable()` | copies |
 | `set(k, v)`, `remove(k): bool`, `clear()`, `reserve(n)` | `MutableMap` only; after `reserve(n)` inserting up to `n` entries never grows or rehashes (D105) |
-| `forEach((k, v) => ...)`, `mapValues(v => ...)`, `filter((k, v) => ...)` | iterate; new `Map` |
+| `forEach((k, v) => ...)`, `mapValues(v => ...)`, `filter((k, v) => ...)` | iterate over the entries as they were when the call starts; new `Map`. Prelude Veles: they throw and suspend as the function does (D116) |
 | `getOrPut(k, () => v)` | `V` — `MutableMap` only: stores `v` when `k` is absent |
 
 Keys must be hashable: scalars, strings, tuples and structs of hashable

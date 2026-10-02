@@ -93,7 +93,7 @@ func (f *fnCtx) listElemPlace(x Expr, lt *types.List, index ast.Expr, span sourc
 // element (`list.ref`, the storage behind `set` and `ref`).
 func isPlaceExpr(x Expr) bool {
 	switch x := x.(type) {
-	case *Deref, *VarRef:
+	case *Deref, *VarRef, *Downcast: // a downcast is the boxed value (D135)
 		return true
 	case *FieldGet:
 		return isPlaceExpr(x.X)
@@ -198,6 +198,10 @@ func (f *fnCtx) hoistPlace(target Expr) (Expr, []Stmt) {
 		case *VariantCast:
 			n := *x
 			n.X = walk(x.X)
+			return &n
+		case *Downcast:
+			n := *x
+			n.X = bind(x.X) // the trait object, evaluated once
 			return &n
 		case *Deref:
 			n := *x

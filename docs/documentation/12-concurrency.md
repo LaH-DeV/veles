@@ -843,13 +843,55 @@ captures a `Mutex` or an `Atomic`, which are Sendable by design.
 `suspends` on a function type means calling it may pause the current
 task. Two consequences. It can only be called from a function that may
 itself suspend — which is inferred, so in practice the only place this
-bites is a lambda passed to a non-suspending parameter: `xs.map(x =>
-fetch(x))` is refused, because `map` runs its function in a plain loop
-and cannot pause; `xs.mapConcurrent(x => fetch(x))` is fine, because its
-parameter is declared `suspends`. And a suspending function is compiled
+bites is a lambda passed to a non-suspending parameter, such as
+`withLock`'s: its function runs with a lock held and cannot pause. The
+list adapters take suspending functions: `xs.map(x => fetch(x))` fetches
+one after another, and `xs.mapConcurrent(x => fetch(x))` all at once. And
+a suspending function is compiled
 as a state machine (see below), which is why a named non-suspending
 function does not fit a `suspends` parameter as a value: pass
 `x => f(x)` and the lambda is compiled the suspending way.
+
+On a parameter, `suspends` means *may* suspend (D116). A function whose
+only waiting is calling such a parameter — or passing it on to another
+function's — suspends exactly when what it is given does. Given a lambda
+that does not suspend, the call is an ordinary call, allowed wherever
+waiting is not: under a lock, in `init`, in a global's initializer.
+
+```veles
+use io
+
+fun eachTwice(xs: List<i64>, f: fun(i64): () suspends) {
+  loop (x in xs) {
+    f(x)
+    f(x)
+  }
+}
+
+fun main() {
+  val total = Mutex(value: 0)
+  total.withLock(t => eachTwice([1, 2, 3], x => *t += x))   // nothing passed suspends: a plain call
+  io.println("total ${total.get()}")
+  eachTwice([1], x => {
+    await sleep(Duration.millis(1))                       // this one suspends, and so does the call
+    io.println("waited for $x")
+  })
+}
+```
+
+Output:
+```text
+total 12
+waited for 1
+waited for 1
+```
+
+The compiler makes two copies of such a function, an ordinary one and a
+suspending one, and each call picks the one it needs; the hover says
+"suspends if `f` does". A function that *keeps* the parameter — stores it,
+returns it, hands it to a function that keeps it — cannot know how it will
+be called later, so it suspends whenever it is called. A trait method
+keeps the effects its trait declares.
 
 For state that genuinely must be shared and mutated, wrap it. A
 `Mutex<T>` runs a function on the value with its lock held; an `Atomic<T>`

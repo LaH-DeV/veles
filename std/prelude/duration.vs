@@ -123,6 +123,11 @@ public struct Duration {
     fun compareTo(other: Duration): Ordering = this.ns.compareTo(other.ns)
   }
 
+  implement Default {
+    /// `Duration.zero` (D119).
+    static fun default(): Duration = Duration.zero
+  }
+
   implement Display {
     /// The largest units that fit, smallest first omitted: `0s`, `250ms`,
     /// `1.5s`, `2m30s`, `1d1h`, `-90ms`. Below a second one unit is used

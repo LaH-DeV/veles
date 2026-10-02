@@ -32,6 +32,8 @@ type Checker struct {
 	// lockVars: the `n` of each `with n = m.lock()`, a pointer into the
 	// Mutex that is unlocked, not closed, when the block ends (D107)
 	lockVars map[*Var]bool
+	// tt: the run-time `is` tables (D117, traittest.go)
+	tt traitTests
 
 	universe *Scope
 	prog     *Program
@@ -110,6 +112,7 @@ type declCtx struct {
 // CheckTests is Check for `veles test`: no main is required and the tests
 // (`test "..." { }`, D78) become the entry point.
 func CheckTests(pkg *Package, diags *source.Diagnostics, release bool) *Program {
+	dropForeignTestFiles(pkg)
 	return check(pkg, diags, release, true)
 }
 
@@ -2475,7 +2478,7 @@ func (c *Checker) runRound() *Program {
 		c.instantiate(t, nil, nil, t.Decl.Name.Pos)
 	}
 	c.drainQueue()
-	c.resolveAllCustom()
+	c.finishInstances()
 	c.prog.TestMode = c.testMode
 	c.prog.PanicType = c.panicType()
 	for _, t := range c.tests {
@@ -2505,6 +2508,7 @@ func (c *Checker) runRound() *Program {
 				if eff := inst.Sig.Effects; eff.Throws && eff.Error != nil && !types.IsNever(eff.Error) {
 					c.prog.MainReport = c.synthReporter(eff.Error, t)
 					c.drainQueue() // the message() instances it calls
+					c.finishInstances()
 				}
 			}
 		} else if c.pkg.NeedMain {

@@ -22,14 +22,14 @@ entry:
   %t4 = call ptr @veles_gc_alloc(ptr @desc.main.Square, i64 8)
   store %S.main.Square %t3, ptr %t4
   %t5 = insertvalue { ptr, ptr } undef, ptr %t4, 0
-  %t6 = insertvalue { ptr, ptr } %t5, ptr @vt.Shape.main.Square, 1
+  %t6 = insertvalue { ptr, ptr } %t5, ptr @vt.main.Shape.main.Square, 1
   store { ptr, ptr } %t6, ptr %a2
   call void @veles_list_push(ptr %t1, ptr %a2)
   %t7 = insertvalue %S.main.Circle undef, double 0x3FF0000000000000, 0
   %t8 = call ptr @veles_gc_alloc(ptr @desc.main.Circle, i64 8)
   store %S.main.Circle %t7, ptr %t8
   %t9 = insertvalue { ptr, ptr } undef, ptr %t8, 0
-  %t10 = insertvalue { ptr, ptr } %t9, ptr @vt.Shape.main.Circle, 1
+  %t10 = insertvalue { ptr, ptr } %t9, ptr @vt.main.Shape.main.Circle, 1
   store { ptr, ptr } %t10, ptr %a2
   call void @veles_list_push(ptr %t1, ptr %a2)
   store ptr %t1, ptr %a11
@@ -67,7 +67,7 @@ idx.ok.5:
   %t34 = load { ptr, ptr }, ptr %a33
   %t35 = extractvalue { ptr, ptr } %t34, 0
   %t36 = extractvalue { ptr, ptr } %t34, 1
-  %t37 = getelementptr ptr, ptr %t36, i64 1
+  %t37 = getelementptr ptr, ptr %t36, i64 2
   %t38 = load ptr, ptr %t37
   %t39 = call %str %t38(ptr %t35)
   %t40 = extractvalue %str { ptr @.str.2, i64 21 }, 0
@@ -285,32 +285,32 @@ entry:
   ret { i1, %str } %t6
 }
 
-define internal double @vt.Shape.main.Square.0(ptr %self) {
+define internal double @vt.main.Shape.main.Square.0(ptr %self) {
 entry:
   %t1 = call double @v_main.Shape.Square.area(ptr %self)
   ret double %t1
 }
 
-define internal %str @vt.Shape.main.Square.1(ptr %self) {
+define internal %str @vt.main.Shape.main.Square.1(ptr %self) {
 entry:
   %t1 = call %str @v_main.Shape.describe_Self_main.Square_(ptr %self)
   ret %str %t1
 }
 
-@vt.Shape.main.Square = internal constant [2 x ptr] [ptr @vt.Shape.main.Square.0, ptr @vt.Shape.main.Square.1]
-define internal double @vt.Shape.main.Circle.0(ptr %self) {
+@vt.main.Shape.main.Square = internal constant [3 x ptr] [ptr @ti.main.Square, ptr @vt.main.Shape.main.Square.0, ptr @vt.main.Shape.main.Square.1]
+define internal double @vt.main.Shape.main.Circle.0(ptr %self) {
 entry:
   %t1 = call double @v_main.Shape.Circle.area(ptr %self)
   ret double %t1
 }
 
-define internal %str @vt.Shape.main.Circle.1(ptr %self) {
+define internal %str @vt.main.Shape.main.Circle.1(ptr %self) {
 entry:
   %t1 = call %str @v_main.Shape.Circle.describe(ptr %self)
   ret %str %t1
 }
 
-@vt.Shape.main.Circle = internal constant [2 x ptr] [ptr @vt.Shape.main.Circle.0, ptr @vt.Shape.main.Circle.1]
+@vt.main.Shape.main.Circle = internal constant [3 x ptr] [ptr @ti.main.Circle, ptr @vt.main.Shape.main.Circle.0, ptr @vt.main.Shape.main.Circle.1]
 define internal %str @show.main.Point(%S.main.Point %v) {
 entry:
   %a2 = alloca %S.main.Point
@@ -318,6 +318,9 @@ entry:
   %t1 = call %str @v_main.Display.Point.toString(ptr %a2)
   ret %str %t1
 }
+
+@ti.main.Square = internal constant i64 0
+@ti.main.Circle = internal constant i64 1
 
 @.str.1 = private unnamed_addr constant [13 x i8] c"main.vs:33:3\00"
 @.str.2 = private unnamed_addr constant [22 x i8] c"main.vs:33:22\00println\00"

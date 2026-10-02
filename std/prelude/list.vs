@@ -38,20 +38,20 @@ extend<T> List<T> {
   }
 
   /// The index of the first element `pred` accepts, or -1.
-  public fun indexOfFirst(pred: fun(T): bool): i64 {
+  public fun indexOfFirst<E>(pred: fun(T): bool suspends throws E): i64 throws E {
     var i: i64 = 0
     loop (x in this) {
-      if (pred(x)) return i
+      if (try pred(x)) return i
       i += 1
     }
     -1
   }
 
   /// The number of elements `pred` accepts.
-  public fun count(pred: fun(T): bool): i64 {
+  public fun count<E>(pred: fun(T): bool suspends throws E): i64 throws E {
     var n: i64 = 0
     loop (x in this) {
-      if (pred(x)) n += 1
+      if (try pred(x)) n += 1
     }
     n
   }
@@ -82,14 +82,14 @@ extend<T> List<T> {
   }
 
   /// The lists `f` returns for each element, concatenated.
-  public fun flatMap<U>(f: fun(T): List<U>): List<U> {
+  public fun flatMap<U, E>(f: fun(T): List<U> suspends throws E): List<U> throws E {
     var out: MutableList<U> = []
     loop (x in this) {
-      loop (y in f(x)) {
+      loop (y in try f(x)) {
         out.push(y)
       }
     }
-    out.toList()
+    out
   }
 
   /// The elements with duplicates removed, first occurrences kept in order.
@@ -551,22 +551,22 @@ extend<T> Range<T> {
 extend<T> List<T> {
   /// `map` that drops the nulls: `f` returns `U?` and the result holds the
   /// values that were present, in order (Kotlin's `mapNotNull`).
-  public fun mapNotNull<U>(f: fun(T): U?): List<U> {
+  public fun mapNotNull<U, E>(f: fun(T): U? suspends throws E): List<U> throws E {
     val out: MutableList<U> = []
     loop (x in this) {
-      val y = f(x) ?: continue
+      val y = (try f(x)) ?: continue
       out.push(y)
     }
-    out.toList()
+    out
   }
 
   /// Splits the list in two: the elements `p` accepts, then the rest, each
   /// in the original order.
-  public fun partition(p: fun(T): bool): (List<T>, List<T>) {
+  public fun partition<E>(p: fun(T): bool suspends throws E): (List<T>, List<T>) throws E {
     val yes: MutableList<T> = []
     val no: MutableList<T> = []
     loop (x in this) {
-      if (p(x)) yes.push(x) else no.push(x)
+      if (try p(x)) yes.push(x) else no.push(x)
     }
     (yes.toList(), no.toList())
   }

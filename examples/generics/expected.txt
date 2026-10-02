@@ -2,4 +2,8 @@ len 2 pop 2 pop 1 pop -1
 cat Tom!
 int 42!
 first 7 none
+counts {a: 2, b: 1}
+scores {a: Score(points: 20, bonus: true, tags: []), b: Score(points: 10, bonus: false, tags: [])}
+empty Score(points: 0, bonus: false, tags: [])
+int 5! (ordered); cat Tom!; something unshowable
 exit=0

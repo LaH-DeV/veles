@@ -3754,6 +3754,33 @@ with `veles-bench` (B8 found the prelude form 0.53 s against 0.56 s at
 Self-hosting: a compiler's passes are higher-order functions over trees; they
 are written once and stay plain where nothing suspends.
 
+*Built 2026-10-02 (B15, with B8).* Sema: the suspension pass computes two
+views per function, its coroutine instance's and (when it has
+suspend-parameters) its plain instance's; a call of a conditional function
+suspends when an argument bound to one of them does — a lambda whose body
+suspends under the caller's view, or a value typed `suspends` — and the
+lock-region, `init`, global and lambda-type rules ask the call, not the
+callee. Decisions made building it (user, 2026-10-02: clone after
+inference): codegen emits a plain instance (`.plain`) on demand as a copy of
+the function's header over the same body, with its view attached; a lambda
+is emitted when a value of it is made, under the view of the instance making
+it, plain when the call it is passed to is; a conditional function's
+coroutine copy is kept only if something refers to it. Limits, by
+construction: only first-order parameters count (one whose own parameters
+are not suspending functions); a function that *keeps* such a parameter
+(stores, returns, or hands it to a function that is not conditional) is not
+conditional, since a plain instance would hand out a plain function where a
+coroutine is called later. Found on the way: a call through a suspending
+function value evaluated its arguments twice (fixed). B8: `map`, `filter`,
+`forEach`, `fold`, `any`, `all`, `find` and Map's `forEach`, `mapValues`,
+`filter`, `getOrPut` are prelude Veles (`std/prelude/adapters.vs`); `count`,
+`flatMap`, `indexOfFirst`, `mapNotNull`, `partition` gained `suspends throws
+E`; the Go lowering and its `Result` machinery are deleted. Measured:
+`bench/adapters` 64–73 ms lowered → 43–46 ms prelude (`reserve` up front);
+`examples/httpd` IR 4 607 016 → 4 594 632 bytes. Driver
+`TestConditionalSuspension`, conformance `D116-conditional-suspension`, LSP
+`TestHoverShowsConditionalSuspension`, chapter 12.
+
 User, 2026-10-01, recommended of 3. Rejected: an explicit marker on the
 parameter (`suspends?` — more to write on every higher-order function);
 leaving it (B8 blocked, the lowered adapters kept).
@@ -3799,6 +3826,22 @@ instance's dictionary (one entry per `implements` in the body).
 
 Rejected: run time only, compile time only, neither.
 
+*Built 2026-10-02 (B15).* Run time: with D135 (its build note). A trait whose
+supertraits make it an object is allowed (supertrait objects were built with
+D58 since this was written). The "always true/false" warning also covers a
+trait the object's own trait already requires; on an `is` expression its fix
+writes the answer. Compile time: a body is checked per instance (D8 as built
+stencils every type set; there are no shared instances), so "checked once,
+generically" becomes: each instance checks and compiles only the branch it
+takes, and the other is not checked for it (locals named there count as used).
+A statement-form `if` stays an `if` over the constant, so a branch that
+leaves does not make the code after it unreachable for other instances.
+`static assert` and `const` contexts come with B14. `implements` is a word
+only after a name in an expression; the built-in types print, compare and hash
+without the traits, so `i64 implements Display` is false. Conformance
+`D117-implements`, `D135-is-on-trait-objects`; `examples/generics`,
+`traitobjects`; chapter 8.
+
 ### D118 — User-defined derivation: later, through compile-time reflection (v0.63)
 
 Q6. Not built now; std's own needs are covered by D58's compiler-known set
@@ -3819,7 +3862,7 @@ struct Stats {
   names: List<string>
   implement Default
 }
-fun fill<T: Default>(n: i64): List<T> = MutableList<T>.make(n, T.default()).toList()
+fun fill<T: Default>(n: i64): List<T> = MutableList.repeat(T.default(), n).toList()
 ```
 
 A prelude trait `Default { static fun default(): Self }`, implemented for every
@@ -3835,6 +3878,14 @@ it"); generic code is what field defaults do not reach.
 
 User, 2026-10-01, recommended of 3. Rejected: automatic for every struct whose
 fields all have defaults (a contract nobody declared); leaving it.
+
+*Built 2026-10-02 (B15):* `std/prelude/default.vs`; tuples up to eight
+elements (prelude implements, as for any arity a program writes by hand). An
+enum cannot implement any trait (D57), so it cannot write `default()` by hand
+either — the D57 error stands. A struct whose `init` takes a parameter with no
+default is not derived. The example above said `make(n, …)`, which takes a
+function of the index; `repeat(value, n)` is the value form. Conformance
+`D119-default`, `examples/generics`, chapter 8, the stdlib reference.
 
 ### D120 — C layout: `@packed`, `@align(n)`, `extern union`, `@transparent` (v0.64)
 
@@ -4407,11 +4458,23 @@ The user chose it (recommended of 2, over a `asSql(): Sql?` method on
 
 - `x is T` / `!is T` / `is T` arms in `when`, where `x` is an open trait
   object and `T` a concrete type implementing that trait: a comparison of the
-  box's type id with `T`'s — no table; in the true branch `x` is `T` (a value
-  struct is read out by value, D7). A `T` that does not implement the trait is
+  box's type id with `T`'s — no table; in the true branch `x` is `T`.
+  ~~A value struct is read out by value (D7).~~ **Amended 2026-10-02 (user,
+  recommended of 3, found building it):** the narrowed `x` is the value
+  *inside* the box, not a copy — a field write or a method that changes
+  `this` reaches what the object's own methods see next (Kotlin's smart
+  cast). Read by value, a write would have changed a copy silently; refusing
+  writes was the other option. A `T` that does not implement the trait is
   the "never matches" error, now correct; a type parameter `T` is refused
   (D117's `T implements X` is the compile-time form).
 - Sealed traits already narrow by variant (D12); this is for open traits.
+- *Built 2026-10-02 (B15), with D117's run-time half:* slot 0 of every method
+  table points to the type's info global (a dense id); `is T` compares that
+  pointer, `is Trait` loads Trait's table at the id (null: not implemented)
+  and narrows to an object over the same data. The tables cover every type
+  boxed anywhere in the program and are built after checking, to a fixpoint
+  with instantiation. Conformance `D135-is-on-trait-objects`, the
+  `traitobjects` example, chapter 8.
 
 ### D136 — `close()` by hand on a `with` value is refused (v0.68)
 

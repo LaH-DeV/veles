@@ -105,6 +105,14 @@ func walkExpr(e Expr, visit func(node any)) {
 		walkExpr(e.X, visit)
 	case *VariantCast:
 		walkExpr(e.X, visit)
+	case *TypeTest:
+		walkExpr(e.X, visit)
+	case *Downcast:
+		walkExpr(e.X, visit)
+	case *TraitTest:
+		walkExpr(e.X, visit)
+	case *TraitCast:
+		walkExpr(e.X, visit)
 	case *If:
 		walkExpr(e.Cond, visit)
 		walkBlock(e.Then, visit)

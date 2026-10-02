@@ -1,6 +1,7 @@
 package sema
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/LaH-DeV/veles/ast"
@@ -69,7 +70,10 @@ func (f *fnCtx) whenExpr(e *ast.WhenExpr, want types.Type) Expr {
 			var tests []Expr
 			subjRef := &VarRef{exprBase{subjType}, m.Subject}
 			for i, pat := range arm.Patterns {
+				savedTP := f.patSubjectTP
+				f.patSubjectTP = f.declaredTypeParam(e.Subject)
 				test, binds, _ := f.compilePattern(pat, subjRef, subjType, pat.Span())
+				f.patSubjectTP = savedTP
 				if len(binds) > 0 && len(arm.Patterns) > 1 {
 					f.errorf(pat.Span(), "a pattern that binds names cannot be combined with other patterns in one arm; give it an arm of its own")
 				}
@@ -87,7 +91,7 @@ func (f *fnCtx) whenExpr(e *ast.WhenExpr, want types.Type) Expr {
 				// smart cast of the subject variable inside the arm
 				if subjOK && len(arm.Patterns) == 1 {
 					if tp, ok := pat.(*ast.TypePat); ok {
-						if target := f.resolvePatternType(subjType, tp.Type); target != nil && !types.Identical(target, subjType) {
+						if target := f.resolvePatternType(subjType, tp.Type); target != nil && !types.Identical(target, subjType) && narrowsTo(subjType, target) {
 							f.narrow[subjPlace] = target
 						}
 					}
@@ -554,6 +558,16 @@ func (f *fnCtx) compileTypePattern(p *ast.TypePat, subj Expr, t types.Type, span
 		t = ptr.Elem
 	}
 	fail := func() (Expr, []Stmt, bool) { return &BoolConst{exprBase{types.TBool}, false}, nil, false }
+	if tp := f.typeParamNamed(p.Type); tp != nil {
+		// checked per instance, where it stands for its argument: refused
+		// by what is written (D135)
+		if _, isObj := t.(*types.Trait); isObj {
+			f.errorf(p.Pos, "'%s' is a type parameter; a trait object is tested against a concrete type or a trait — for a type parameter ask at compile time: 'if (%s implements Trait)'", tp.Name, tp.Name)
+		} else {
+			f.errorf(p.Pos, "'%s' is a type parameter; whether a value is of type '%s' is known at compile time: write 'if (%s implements Trait)' to ask what it can do", tp.Name, tp.Name, tp.Name)
+		}
+		return fail()
+	}
 	and := func(a, b Expr) Expr {
 		if a == nil {
 			return b
@@ -599,6 +613,11 @@ func (f *fnCtx) compileTypePattern(p *ast.TypePat, subj Expr, t types.Type, span
 		if types.Identical(target, nt.Elem) && !p.HasArg {
 			return notNull, nil, false
 		}
+		if tr, ok := target.(*types.Trait); ok && concreteSubject(nt.Elem) && f.implements(nt.Elem, tr) {
+			// the value is known to implement it: what is tested is null
+			f.warnf(p.Pos, "'%s' implements '%s', so this test is the same as '!= null'; write that", nt.Elem, tr.Name)
+			return notNull, nil, false
+		}
 		// `is Variant(...)` through the nullable
 		inner := &Unwrap{exprBase{nt.Elem}, subj}
 		it, b, _ := f.compileTypePattern(p, inner, nt.Elem, span)
@@ -629,6 +648,32 @@ func (f *fnCtx) compileTypePattern(p *ast.TypePat, subj Expr, t types.Type, span
 			f.errorf(p.Pos, "'%s' has no fields to destructure", target)
 		}
 		return test, nil, false
+	}
+	if obj, ok := t.(*types.Trait); ok {
+		return f.objectPattern(p, subj, obj, target, span)
+	}
+	if tr, ok := target.(*types.Trait); ok {
+		if tp := f.patSubjectTP; tp != nil {
+			f.errorf(p.Pos, "'%s' is a type parameter, so whether it implements '%s' is known at compile time: write 'if (%s implements %s)'", tp.Name, tr.Name, tp.Name, tr.Name)
+			return fail()
+		}
+		// a concrete static type: the answer is known (D117)
+		known := f.implements(t, tr)
+		msg := "'%s' does not implement '%s', so this test is always false; remove it"
+		if known {
+			msg = "'%s' implements '%s', so this test is always true; remove it"
+		}
+		if f.isExprAt != nil {
+			// on an `is` expression, the fix writes the answer
+			word := strconv.FormatBool(known != f.isExprNot)
+			f.warnFix(p.Pos, fixReplace("Replace with '"+word+"'", *f.isExprAt, word), msg, t, tr.Name)
+		} else {
+			f.warnf(p.Pos, msg, t, tr.Name)
+		}
+		if known {
+			return nil, nil, true
+		}
+		return &BoolConst{exprBase{types.TBool}, false}, nil, false
 	}
 	switch st := t.(type) {
 	case *types.Sealed:
@@ -663,6 +708,86 @@ func (f *fnCtx) compileTypePattern(p *ast.TypePat, subj Expr, t types.Type, span
 	}
 	f.errorf(p.Pos, "subject has type '%s', which can never be '%s', so this never matches; remove it", t, target)
 	return fail()
+}
+
+// typeParamNamed is the type parameter a type's syntax names, when it is
+// a bare one (`T`). An instance's body is checked with its type arguments
+// substituted, so this is how a rule about type parameters sees them.
+func (f *fnCtx) typeParamNamed(t ast.Type) *types.TypeParam {
+	nt, ok := t.(*ast.NamedType)
+	if !ok || len(nt.Path) != 1 || len(nt.Args) != 0 || f.env == nil {
+		return nil
+	}
+	return f.env.tps[nt.Path[0].Name]
+}
+
+// declaredTypeParam is the type parameter an expression is declared as: a
+// parameter of the function being checked whose type is written `T`.
+func (f *fnCtx) declaredTypeParam(x ast.Expr) *types.TypeParam {
+	v := varOf(x, f)
+	if v == nil || f.fn == nil || f.fn.tmpl == nil {
+		return nil
+	}
+	for _, p := range f.fn.tmpl.Decl.Params {
+		if p.Name.Name == v.Name && p.Type != nil {
+			for _, fp := range f.fn.Params {
+				if fp == v {
+					return f.typeParamNamed(p.Type)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// concreteSubject reports whether a subject's static type is a concrete
+// one, whose implements are known where it is checked.
+func concreteSubject(t types.Type) bool {
+	switch t.(type) {
+	case *types.Trait, *types.TypeParam:
+		return false
+	}
+	return !types.IsInvalid(t)
+}
+
+// objectPattern is `is T` on a trait object of an open trait: a concrete
+// type it may hold (D135, a downcast) or another trait its type may
+// implement (D117).
+func (f *fnCtx) objectPattern(p *ast.TypePat, subj Expr, obj *types.Trait, target types.Type, span source.Span) (Expr, []Stmt, bool) {
+	fail := func() (Expr, []Stmt, bool) { return &BoolConst{exprBase{types.TBool}, false}, nil, false }
+	switch tt := target.(type) {
+	case *types.Trait:
+		if p.HasArg {
+			f.errorf(p.Pos, "'%s' is a trait: there are no fields to destructure; test 'is %s' and call its methods", tt.Name, tt.Name)
+			return fail()
+		}
+		if reason, ok := f.objectSafe(tt); !ok {
+			f.errorf(p.Pos, "'%s' cannot be a trait object: %s (D9), so 'is %s' cannot view the value as one", tt.Name, reason, tt.Name)
+			return fail()
+		}
+		f.c.noteTraitTest(tt)
+		if tt == obj || containsTrait(allSupers(obj), tt) {
+			f.warnf(p.Pos, "every '%s' implements '%s', so this test is always true; remove it", obj.Name, tt.Name)
+			return nil, nil, true
+		}
+		return &TraitTest{exprBase{types.TBool}, subj, tt}, nil, false
+	}
+	if !f.implements(target, obj) {
+		f.errorf(p.Pos, "subject has type '%s', which can never be '%s', so this never matches: '%s' does not implement '%s'; remove it", obj.Name, target, target, obj.Name)
+		return fail()
+	}
+	test := &TypeTest{exprBase{types.TBool}, subj, target}
+	if st, ok := target.(*types.Struct); ok {
+		it, b, _ := f.compileFields(p, &Downcast{exprBase{target}, subj}, st, span)
+		if it == nil {
+			return test, b, false
+		}
+		return &Binary{exprBase{types.TBool}, OpAnd, test, it, span}, b, false
+	}
+	if p.HasArg {
+		f.errorf(p.Pos, "'%s' has no fields to destructure", target)
+	}
+	return test, nil, false
 }
 
 // compileFields handles destructuring `V(a, b: pat)` against a struct

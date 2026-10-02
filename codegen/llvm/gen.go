@@ -27,11 +27,19 @@ type gen struct {
 	thunks    map[string]bool
 	hashFns   map[string]string
 	vtables   map[string]bool
-	descs     map[string]string
-	descNames map[string]bool
-	descOut   strings.Builder
-	eqPtrFns  map[string]string
-	pending   []func() // helper bodies to generate after the current function
+	typeIDs   map[string]int // type identity of a method table's type, by its info global (D117, D135)
+	typeInfos []string       // the info globals, in id order
+	// plain and viewed instances of functions (D116, plain.go)
+	instances     map[plainKey]*sema.Func
+	instanceCount map[*sema.Func]int
+	plainEnvs     map[*sema.Func]map[*sema.Var]bool
+	plainLambdas  map[*sema.Closure]bool
+	held          []heldFn // coroutine copies of conditional functions, until referenced
+	descs         map[string]string
+	descNames     map[string]bool
+	descOut       strings.Builder
+	eqPtrFns      map[string]string
+	pending       []func() // helper bodies to generate after the current function
 
 	// per-function state
 	fn               *sema.Func
@@ -79,26 +87,31 @@ type loopLabels struct {
 // Generate returns the LLVM IR module for a checked program.
 func Generate(prog *sema.Program) string {
 	g := &gen{
-		prog:        prog,
-		typeDecls:   map[string]string{},
-		strs:        map[string]string{},
-		showFns:     map[string]string{},
-		eqFns:       map[string]string{},
-		thunks:      map[string]bool{},
-		hashFns:     map[string]string{},
-		vtables:     map[string]bool{},
-		descs:       map[string]string{},
-		ramps:       map[*sema.Func]*sema.Func{},
-		closeThunks: map[*sema.With]string{},
-		descNames:   map[string]bool{},
-		eqPtrFns:    map[string]string{},
+		prog:          prog,
+		typeDecls:     map[string]string{},
+		strs:          map[string]string{},
+		showFns:       map[string]string{},
+		eqFns:         map[string]string{},
+		thunks:        map[string]bool{},
+		hashFns:       map[string]string{},
+		vtables:       map[string]bool{},
+		typeIDs:       map[string]int{},
+		instances:     map[plainKey]*sema.Func{},
+		instanceCount: map[*sema.Func]int{},
+		plainEnvs:     map[*sema.Func]map[*sema.Var]bool{},
+		plainLambdas:  map[*sema.Closure]bool{},
+		descs:         map[string]string{},
+		ramps:         map[*sema.Func]*sema.Func{},
+		closeThunks:   map[*sema.With]string{},
+		descNames:     map[string]bool{},
+		eqPtrFns:      map[string]string{},
 	}
 	g.typeDecls[strType] = "{ ptr, i64 }"
 	g.typeOrder = append(g.typeOrder, strType)
 
 	for _, fn := range prog.Funcs {
-		if fn.Extern {
-			continue
+		if fn.Extern || fn.IsClosure {
+			continue // a lambda is emitted when a value of it is made (plain.go)
 		}
 		g.function(fn)
 		if fn.ExportC != "" {
@@ -109,6 +122,9 @@ func Generate(prog *sema.Program) string {
 	g.globalsInit()
 	g.entryPoint()
 	g.flushPending()
+	g.traitTables()
+	g.flushPending()
+	g.typeInfoGlobals()
 
 	var sb strings.Builder
 	sb.WriteString("; Veles bootstrap compiler output\n")
@@ -142,8 +158,10 @@ func Generate(prog *sema.Program) string {
 		}
 	}
 	sb.WriteString("\n")
-	sb.WriteString(g.out.String())
-	sb.WriteString(g.helpers.String())
+	out, helpers := g.out.String(), g.helpers.String()
+	sb.WriteString(out)
+	sb.WriteString(helpers)
+	sb.WriteString(g.referencedHeld(out + helpers))
 	return sb.String()
 }
 
@@ -639,13 +657,29 @@ func (g *gen) function(fn *sema.Func) {
 	} else if fn.Inline < 0 {
 		attrs += " noinline"
 	}
-	fmt.Fprintf(&g.out, "define %s @%s(%s)%s {\nentry:\n", g.retLL(fn), fn.Name, strings.Join(params, ", "), attrs)
-	g.out.WriteString(g.allocas.String())
-	for _, p := range prologue {
-		g.out.WriteString(p + "\n")
+	out := &g.out
+	var held strings.Builder
+	if fn.Conditional && fn.Plain == nil && !fn.IsClosure && fn.ExportC == "" {
+		// the coroutine copy of a conditional function (D116): kept only if
+		// something calls it, since every plain call uses `.plain`
+		out = &held
 	}
-	g.out.WriteString(g.body.String())
-	g.out.WriteString("}\n\n")
+	fmt.Fprintf(out, "define %s @%s(%s)%s {\nentry:\n", g.retLL(fn), fn.Name, strings.Join(params, ", "), attrs)
+	out.WriteString(g.allocas.String())
+	for _, p := range prologue {
+		out.WriteString(p + "\n")
+	}
+	out.WriteString(g.body.String())
+	out.WriteString("}\n\n")
+	if out == &held {
+		g.held = append(g.held, heldFn{fn.Name, held.String()})
+	}
+}
+
+// heldFn is a function's text kept out of the output until something is
+// found to refer to it (plain.go).
+type heldFn struct {
+	name, text string
 }
 
 // varStorage returns the pointer to a variable's storage, creating it on

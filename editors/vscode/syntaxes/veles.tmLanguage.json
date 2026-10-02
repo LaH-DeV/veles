@@ -178,6 +178,7 @@
         { "name": "storage.modifier.veles", "match": "\\b(lazy)\\b(?=\\s+[A-Za-z_][A-Za-z0-9_]*\\s*:)" },
         { "name": "storage.type.veles", "match": "\\b(fun|struct|trait|implement|enum|val|var|const|type)\\b" },
         { "name": "keyword.operator.expression.veles", "match": "\\b(as|raw|for)\\b" },
+        { "name": "keyword.operator.expression.veles", "match": "\\b(implements)\\b" },
         { "name": "variable.language.this.veles", "match": "\\b(this)\\b" },
         { "name": "support.type.self.veles", "match": "\\b(Self)\\b" },
         { "name": "invalid.illegal.reserved.veles", "match": "\\b(self|match|defer|go|yield|where|super|catch|interface|class|while|do|finally|import|package|module|let)\\b" }

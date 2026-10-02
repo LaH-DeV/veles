@@ -329,6 +329,8 @@ func dexpr(e ast.Expr, ind int) string {
 		return dopnd(e.L, ind) + " ?: " + dopnd(e.R, ind)
 	case *ast.CastExpr:
 		return dopnd(e.X, ind) + " as " + dtype(e.Type)
+	case *ast.ImplementsExpr:
+		return dtype(e.Type) + " implements " + dtype(e.Trait)
 	case *ast.IsExpr:
 		op := " is "
 		if e.Not {

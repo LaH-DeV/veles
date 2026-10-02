@@ -544,7 +544,9 @@ func (f *fnCtx) callTemplateRecv(t *FuncTemplate, ownerSubst map[*types.TypePara
 				if views := receiverViews(x.Type()); len(views) > 1 && unify(pt, views[1], m) {
 					continue
 				}
-				f.errorf(bound[i].Span(), "cannot infer type parameters: argument of type '%s' does not match parameter type '%s'", x.Type(), pt)
+				if !f.funcArgMismatch(bound[i].Span(), pt, x.Type()) {
+					f.errorf(bound[i].Span(), "cannot infer type parameters: argument of type '%s' does not match parameter type '%s'", x.Type(), pt)
+				}
 				mismatched = true
 			}
 		} else {
@@ -1125,7 +1127,9 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 					}
 				}
 			}
-			return f.callMethod(t, m, typeArgs, recv, viaPointer, callee, e, want)
+			x := f.callMethod(t, m, typeArgs, recv, viaPointer, callee, e, want)
+			f.refuseUnitMap(t, x, e.Pos)
+			return x
 		}
 	}
 	// trait impls (D26: any trait method is callable; ambiguity is an error)
@@ -1222,11 +1226,45 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 	case *types.Trait:
 		f.errorf(callee.Pos, "trait objects (boxed '%s') are not supported yet in the bootstrap compiler; use a generic bound instead (D9)", tt)
 	default:
+		if kind, mutable := f.mutableOnly(rt, name); kind != "" {
+			f.errorf(callee.Name.Pos, "'%s' changes the %s; use %s (D25)", name, kind, mutable)
+			break
+		}
 		hint, hit := f.noMethodHint(rt, name)
 		f.c.errorFix(callee.Name.Pos, typoFix(callee.Name.Pos, hit), "no method '%s' on type '%s'%s", name, rt, hint)
 	}
 	f.checkArgsLoosely(e.Args)
 	return bad()
+}
+
+// mutableOnly: a method an extend block gives only the mutable form of an
+// immutable collection (`getOrPut` on a Map) — the collection's kind and
+// the mutable type's name, or "".
+func (f *fnCtx) mutableOnly(rt types.Type, name string) (kind, mutable string) {
+	var mt types.Type
+	switch t := rt.(type) {
+	case *types.List:
+		if !t.Mutable {
+			mt, kind, mutable = &types.List{Elem: t.Elem, Mutable: true}, "list", "MutableList"
+		}
+	case *types.Map:
+		if !t.Mutable {
+			mt, kind, mutable = &types.Map{Key: t.Key, Value: t.Value, Mutable: true}, "map", "MutableMap"
+		}
+	case *types.Set:
+		if !t.Mutable {
+			mt, kind, mutable = &types.Set{Elem: t.Elem, Mutable: true}, "set", "MutableSet"
+		}
+	}
+	if mt == nil {
+		return "", ""
+	}
+	for _, ext := range f.c.extends {
+		if _, ok := ext.Methods[name]; ok && unify(ext.Target, mt, map[*types.TypeParam]types.Type{}) {
+			return kind, mutable
+		}
+	}
+	return "", ""
 }
 
 // isReferenceType reports whether values of t are handles to shared
@@ -1712,6 +1750,56 @@ func mentions(t types.Type, p *types.TypeParam) bool {
 	return false
 }
 
+// funcArgMismatch reports an argument that does not fit a parameter of a
+// function type by what is wrong with it — not a function, the wrong
+// number of arguments, the wrong result — and says whether it did. The
+// expected type is shown without its effects: a generic one's `suspends
+// throws E` says what it allows, not what is wanted.
+func (f *fnCtx) funcArgMismatch(span source.Span, pt, at types.Type) bool {
+	want := funcTypeOf(pt)
+	if want == nil {
+		return false
+	}
+	shown := &types.Func{Params: want.Params, Ret: want.Ret}
+	have := funcTypeOf(at)
+	switch {
+	case have == nil:
+		f.errorf(span, "expected a function of type '%s', found '%s'", shown, at)
+	case len(have.Params) != len(want.Params):
+		f.errorf(span, "expected a function taking %d %s, found '%s'", len(want.Params), plural(len(want.Params), "argument"), at)
+	case !types.ContainsTypeParam(want.Ret) && !types.Identical(have.Ret, want.Ret):
+		f.errorf(span, "expected a function returning '%s', found '%s'", want.Ret, have.Ret)
+	default:
+		return false
+	}
+	return true
+}
+
+// refuseUnitMap: the prelude's `map` and `mapValues` given a function that
+// returns nothing make a collection of `()` — a `forEach` written as a
+// `map` (B8 moved them out of the compiler; the error came with them).
+func (f *fnCtx) refuseUnitMap(t *FuncTemplate, x Expr, span source.Span) {
+	if t.Module == nil || !t.Module.Std || t.Module.Path != "std/prelude" || (t.Name != "map" && t.Name != "mapValues") {
+		return
+	}
+	rt := x.Type()
+	if isResultType(rt) {
+		if fld := payloadField(rt.(*types.Sealed).Variants[0]); fld != nil {
+			rt = fld.Type
+		}
+	}
+	var elem types.Type
+	switch c := rt.(type) {
+	case *types.List:
+		elem = c.Elem
+	case *types.Map:
+		elem = c.Value
+	}
+	if elem != nil && types.IsUnit(elem) {
+		f.errorf(span, "'%s' needs a function that returns a value; use 'forEach' for side effects", t.Name)
+	}
+}
+
 // boxValue builds the trait object for a concrete value.
 func (f *fnCtx) boxValue(x Expr, trait *types.Trait, span source.Span) Expr {
 	t := x.Type()
@@ -1725,15 +1813,26 @@ func (f *fnCtx) boxValue(x Expr, trait *types.Trait, span source.Span) Expr {
 		f.errorf(span, "'%s' does not implement '%s'; add 'implement %s { ... }' to its declaration", t, trait.Name, trait.Name)
 		return bad()
 	}
+	methods, ok := f.objectMethods(t, trait, span)
+	if !ok {
+		return bad()
+	}
+	f.c.noteBoxed(t)
+	return &Box{exprBase{trait}, x, trait, methods}
+}
+
+// objectMethods instantiates the methods of t's table as a trait's object,
+// in slot order.
+func (f *fnCtx) objectMethods(t types.Type, trait *types.Trait, span source.Span) ([]*Func, bool) {
 	slots, _ := objectSlots(trait)
-	box := &Box{exprBase{trait}, x, trait, nil}
+	var methods []*Func
 	for _, s := range slots {
 		// a supertrait's methods live in that super's own impl, written or
 		// derived (D58); each is instantiated for the concrete type
 		impl := f.findImpl(t, s.Owner)
 		if impl == nil {
 			f.errorf(span, "'%s' does not implement '%s', required by '%s'", t, s.Owner.Name, trait.Name)
-			return bad()
+			return nil, false
 		}
 		subst := map[*types.TypeParam]types.Type{}
 		unify(impl.Target, t, subst)
@@ -1744,12 +1843,11 @@ func (f *fnCtx) boxValue(x Expr, trait *types.Trait, span source.Span) Expr {
 		}
 		if tmpl == nil {
 			f.errorf(span, "'%s' does not implement '%s.%s'", t, s.Owner.Name, s.Name)
-			return bad()
+			return nil, false
 		}
-		fn := f.c.instantiate(tmpl, subst, nil, span)
-		box.Methods = append(box.Methods, fn)
+		methods = append(methods, f.c.instantiate(tmpl, subst, nil, span))
 	}
-	return box
+	return methods, true
 }
 
 // virtualCall checks a method call on a trait object.

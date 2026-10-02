@@ -94,6 +94,7 @@ fun greet(name: string, punct: string = "!") { }    // default; call greet("x", 
 fun sum(xs: i64...): i64 = xs.fold(0, (a, b) => a + b)  // variadic: sum(1, 2), sum(list...)
 fun show<T: Show>(x: T): string = x.show()         // generic with bound
 fun fetch(url: string): string suspends throws E    // effects (inferred for free functions)
+fun each(xs: List<i64>, f: fun(i64): () suspends)  // a `suspends` parameter: the call suspends only if what is passed does (D116)
 val f = x => x * 2                                  // lambda; (a, b) => ..., (x: i64) => ..., _ => ... ignores its argument
 val g = () => { var n = 0; n }                      // block body
 val h = (a: i64) => (b: i64) => a + b               // curried
@@ -124,6 +125,7 @@ struct Shared<T> {
 }
 val p = Point(x: 1)             // named construction (Point(x, y) puns variables named like fields); p == q, "$p" work
 val n = i64.parse("42")         // i64?; Parsable — T.parse(s) in generic code
+val z = T.default()             // Default (D119): 0, false, "", empty, null; a struct: `implement Default` (fields' defaults, else their types')
 
 trait Shape {
   fun area(): f64
@@ -132,6 +134,9 @@ trait Shape {
 struct Sq { s: f64; implement Shape { fun area(): f64 = this.s * this.s; override fun describe(): string = "sq" } }   // your own type: implement in the body
 implement Shape for i64 { fun area(): f64 = 0.0 }   // a foreign type: top-level implement (for your own type it is a lint with a quick fix)
 val s: Shape = Sq(s: 2.0)       // trait object (D9)
+if (s is Sq) s.s                // its concrete type, narrowed — the boxed value itself, writes reach it (D135)
+if (w is Flusher) w.flush()     // does its type implement another trait: viewed as that trait's object (D117)
+if (T implements Show) x.show() // generic code, compile time: each instance compiles only the branch it takes (D117)
 
 extend Point {                  // more inherent methods, outside the body (D23)
   fun norm(): i64 = this.x.abs() + this.y.abs()

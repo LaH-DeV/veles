@@ -43,6 +43,9 @@ type Program struct {
 	// Custom maps types.Key of a struct or sealed type to the prelude-trait
 	// methods that replace its structural equality, hash, ordering and text.
 	Custom map[string]*CustomOps
+	// TraitTables are the tables `x is Trait` looks up (D117), one per
+	// trait tested for, in the order first tested.
+	TraitTables []*TraitTable
 }
 
 // CustomOps are the instantiated impl methods of the prelude's Equatable,
@@ -98,6 +101,14 @@ type Func struct {
 
 	// Suspends is the inferred effect (D2): set by the suspension pass.
 	Suspends bool
+	// Conditional (D116): it suspends only through its suspend-parameters
+	// (IsSuspendParam), so a call that binds none of them to a function
+	// that suspends is a plain call, of its plain instance.
+	Conditional bool
+	// Plain is the view of an instance codegen emits (D116): the
+	// suspend-parameters it knows do not suspend. Nil for the function as
+	// the checker made it.
+	Plain map[*Var]bool
 	// SelfEscapes: the method may keep a pointer to its receiver beyond
 	// the call (a closure capturing `this`, `&this`, or a callee that does);
 	// WritesSelf: it may assign the receiver's fields, directly or through a
@@ -492,6 +503,49 @@ type VariantCast struct {
 	exprBase
 	X       Expr
 	Variant *types.Struct
+}
+
+// TypeTest checks whether a trait object holds a value of the concrete type
+// Target (D135): its method table's type identity against Target's.
+type TypeTest struct {
+	exprBase
+	X      Expr
+	Target types.Type
+}
+
+// Downcast reads the value out of a trait object known to hold one of its
+// own type (D135) — a copy, for a value type (D7).
+type Downcast struct {
+	exprBase
+	X Expr
+}
+
+// TraitTest checks whether a trait object's concrete type implements Trait
+// (D117): a lookup in Trait's table, indexed by the type identity.
+type TraitTest struct {
+	exprBase
+	X     Expr
+	Trait *types.Trait
+}
+
+// TraitCast views a trait object known to implement Trait as Trait's object:
+// the same data, Trait's method table for its type (D117).
+type TraitCast struct {
+	exprBase
+	X Expr
+}
+
+// TraitTable lists, for a trait some `is` tests for at run time (D117),
+// every type that becomes a trait object anywhere in the program and
+// implements it, with the methods of its table in slot order.
+type TraitTable struct {
+	Trait   *types.Trait
+	Entries []TraitEntry
+}
+
+type TraitEntry struct {
+	Type    types.Type
+	Methods []*Func
 }
 
 // If is the conditional expression; when used as a statement Type is unit.

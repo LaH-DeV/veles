@@ -35,6 +35,15 @@ type fnCtx struct {
 	// D98: the `do { } catch { }` block being checked; a failing `try` or `throw`
 	// in it goes to its handler instead of leaving the function
 	catching *catchFrame
+	// isExprAt is the `x is T` expression whose pattern is being checked
+	// (nil in a `when` arm), and whether it is `!is`: a test whose answer is
+	// known offers to write the answer there (D117)
+	isExprAt  *source.Span
+	isExprNot bool
+	// patSubjectTP is the type parameter the subject of the `is` or `when`
+	// being checked is declared as (a body is checked per instance, so its
+	// type no longer says): its implements are asked at compile time (D117)
+	patSubjectTP *types.TypeParam
 	// provenReads are the `at`/`first`/`last` calls a bounds fact made total
 	// (D62), so a `?:` after one is a warning, not an error.
 	provenReads map[*ast.CallExpr]bool
@@ -69,7 +78,6 @@ type fnCtx struct {
 	isLambda    bool
 	pending     []Stmt            // statements hoisted by adapter lowering
 	boundPlace  map[ast.Expr]Expr // receiver of a `?.` assignment, already lowered to its place (check_safe.go)
-	adapter     *adapterState     // the eager collection operation being lowered (lower_try.go)
 	scopes      []*ScopeBlock
 	held        []*HeldLock             // the `with … = m.lock()` regions around the code being checked (D107)
 	lockOK      *ast.CallExpr           // the `with` value being checked, where `m.lock()` is allowed

@@ -36,7 +36,7 @@ func (c *Checker) derivable(t *types.Trait) string {
 		return ""
 	}
 	switch t.Name {
-	case "Encodable", "Decodable", "Comparable":
+	case "Encodable", "Decodable", "Comparable", "Default":
 		return t.Name
 	}
 	return ""
@@ -92,6 +92,9 @@ func (c *Checker) deriveMissing(d *ast.ImplDecl, impl *Impl, trait *types.Trait)
 func (c *Checker) deriveMethod(d *ast.ImplDecl, impl *Impl, trait *types.Trait, kind, name string) (*ast.FunDecl, string) {
 	b := &synth{sp: d.Pos}
 	c.syntheticSpans[d.Pos] = true
+	if kind == "Default" {
+		return c.deriveDefault(b, impl, trait)
+	}
 	switch t := impl.Target.(type) {
 	case *types.Struct:
 		fields, why := c.derivedFields(t, kind)
@@ -219,7 +222,7 @@ func (c *Checker) derivedFields(st *types.Struct, kind string) ([]derivedField, 
 // trade this error for "a @skip field needs a default", so none is offered.
 func (c *Checker) skipFix(target types.Type, kind string) *source.Fix {
 	st, ok := target.(*types.Struct)
-	if !ok || kind == "Comparable" {
+	if !ok || kind == "Comparable" || kind == "Default" {
 		return nil
 	}
 	decl, _ := templateOf(st).Decl.(*ast.StructDecl)
@@ -510,6 +513,50 @@ func (c *Checker) decodeStruct(b *synth, st *types.Struct, fields []derivedField
 	}
 	body = append(body, b.stmt(built))
 	return b.fun("decode", true, []ast.Param{b.param("from", c.preludeType("Decoder"))}, st, c.preludeType("DecodeError"), body)
+}
+
+// deriveDefault writes `static fun default(): Self` (D119): the constructor
+// with each field that has no declared default given its type's
+// `default()`. A generic struct's type parameters that such a field
+// mentions are bounded by Default, as D58 infers a derive's bounds.
+func (c *Checker) deriveDefault(b *synth, impl *Impl, trait *types.Trait) (*ast.FunDecl, string) {
+	byHand := "write 'static fun default(): Self' in the implement"
+	switch t := impl.Target.(type) {
+	case *types.Sealed:
+		return nil, "a sealed trait has no one variant to start from; " + byHand
+	case *types.Struct:
+		if isSecretStruct(t) {
+			return nil, "a Secret is made from a value that is secret (D112), never from nothing"
+		}
+		if c.taskHolding(t) {
+			return nil, "it holds a running task, which starts where the value is built (D111); " + byHand
+		}
+		c.resolveStruct(templateOf(t))
+		if decl, _ := templateOf(t).Decl.(*ast.StructDecl); decl != nil {
+			for _, p := range decl.InitParams {
+				if p.Default == nil {
+					return nil, fmt.Sprintf("its 'init' takes '%s', which nothing supplies; give the parameter a default or %s", p.Name.Name, byHand)
+				}
+			}
+		}
+		f := &fnCtx{c: c}
+		var args []ast.Arg
+		var fields []derivedField
+		for i, fld := range t.Fields {
+			if fld.HasDefault || fld.Init {
+				continue // the constructor fills it
+			}
+			if !types.ContainsTypeParam(fld.Type) && !f.implements(fld.Type, trait) {
+				return nil, fmt.Sprintf("field '%s' has no default, and its type '%s' is not Default; give the field a default (`%s: %s = ...`) or %s", fld.Name, fld.Type, fld.Name, fld.Type, byHand)
+			}
+			fields = append(fields, derivedField{index: i, name: fld.Name, typ: fld.Type})
+			args = append(args, b.namedArg(fld.Name, b.call(b.member(b.typeExpr(fld.Type), "default"))))
+		}
+		c.inferDeriveBounds(impl, trait, fields)
+		built := ast.Expr(&ast.CallExpr{Fun: b.typeExpr(t), Args: args, Pos: b.sp})
+		return b.fun("default", true, nil, t, nil, []ast.Stmt{b.stmt(built)}), ""
+	}
+	return nil, fmt.Sprintf("'%s' is not a struct; %s", impl.Target, byHand)
 }
 
 func (c *Checker) compareStruct(b *synth, st *types.Struct, fields []derivedField) *ast.FunDecl {

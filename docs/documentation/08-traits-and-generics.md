@@ -128,6 +128,47 @@ called stenciling (D8). The call `s.area()` becomes a direct call to
 `Square.area`; there is no dynamic dispatch and nothing is boxed. This is
 the form to prefer when all elements have the same type.
 
+### Asking about `T`: `T implements Trait`
+
+A bound is a promise every `T` must keep. When a function can do *more*
+for the types that implement something, it asks instead (D117):
+
+```veles
+use io
+
+trait Show { fun show(): string }
+struct Cat {
+  name: string
+  implement Show { fun show(): string = "cat ${this.name}" }
+}
+struct Rock { }
+
+fun describe<T>(x: T): string {
+  if (T implements Show) return x.show()
+  "something unshowable"
+}
+
+fun main() {
+  io.println("${describe(Cat(name: "Tom"))}; ${describe(Rock())}")
+}
+```
+
+Output:
+```text
+cat Tom; something unshowable
+```
+
+Because each `T` gets its own copy of the function, the answer is known
+when that copy is compiled: the copy for `Cat` holds only the first
+`return`, the copy for `Rock` only the second. That is also why
+`x.show()` may be written there although `T` is not bounded by `Show` —
+a copy for which the condition is false does not check or compile that
+branch. The condition can combine tests with `&&`, `||` and `!`; the word
+on the left must be a type parameter (for a value whose type is a trait
+object, ask at run time with `x is Trait`, below). The built-in types
+print, compare and hash by themselves rather than through the traits, so
+`i64 implements Display` is false although `"$n"` prints a number.
+
 ## Trait objects: mixing types at run time
 
 Sometimes a list must hold *different* shapes. Use the trait itself as
@@ -217,9 +258,91 @@ A trait whose whole content is its requirements — `trait Codable :
 Encodable + Decodable { }` — is an object too, built from the implements
 of its parts; nothing implements it directly. Two required traits that
 declare the same method name are an ambiguity, and the compiler refuses
-the object rather than pick one. What a trait object still cannot do is
-become *another* trait's object: `val n: Named = s` needs the concrete
-type back, and a trait object has forgotten it.
+the object rather than pick one. A trait object does not convert to
+*another* trait's object by itself — `val n: Named = s` is refused — but
+it can be asked, which the next section shows.
+
+### Asking what a trait object holds: `is`
+
+A trait object remembers the type it was made from, so `is` can ask about
+it at run time. `s is Circle` tests for a concrete type (D135); `s is
+Flusher` tests whether the value's type implements another trait (D117).
+In the branch where the test holds, `s` *is* that type or that trait's
+object, with its fields and methods:
+
+```veles
+use io
+
+trait Sink {
+  fun write(line: string)
+}
+trait Flusher {
+  fun flush(): i64
+}
+
+struct Console {
+  implement Sink {
+    fun write(line: string) {
+      io.println("console: $line")
+    }
+  }
+}
+struct Buffered {
+  pending: MutableList<string> = []
+  implement Sink {
+    fun write(line: string) {
+      this.pending.push(line)
+    }
+  }
+  implement Flusher {
+    fun flush(): i64 {
+      val n = this.pending.len()
+      this.pending.clear()
+      n
+    }
+  }
+}
+
+fun finish(sink: Sink): string {
+  if (sink is Flusher) return "flushed ${sink.flush()}"
+  when (sink) {
+    is Console => "nothing to flush"
+    else       => "unknown sink"
+  }
+}
+
+fun main() {
+  val sinks: List<Sink> = [Console(), Buffered()]
+  loop (sink in sinks) {
+    sink.write("hello")
+    io.println(finish(sink))
+  }
+}
+```
+
+Output:
+```text
+console: hello
+nothing to flush
+flushed 1
+```
+
+- `!is` and `is` arms in `when` work the same way; `is Circle(r)` in a
+  `when` arm destructures the fields.
+- Narrowed to a concrete type, the name is the value *inside* the object,
+  not a copy: `if (c is Clicks) c.n = 0` changes what the object's methods
+  see next.
+- A type that does not implement the object's trait can never be there,
+  so `s is Plain` is an error. A trait the object's own trait already
+  requires is always there: a warning says the test is always true.
+- On a value whose type is known where it is written, the answer is too:
+  `circle is Named` warns that it is always true (or false), with a fix
+  that writes the answer.
+- A type parameter is not asked at run time: `x is Named` with `x: T` is an
+  error that points to the compile-time form, `if (T implements Named)`.
+- Each test costs a load and a compare; `is Trait` reads one entry from a
+  table the compiler builds for that trait over every type that becomes a
+  trait object in the program.
 
 ## Traits on built-in types, and generic structs
 
@@ -318,6 +441,52 @@ Output:
 
 A trait with a static function cannot be a trait object (there is no
 value to dispatch on), and sealed traits cannot declare one.
+
+### `Default`: a value to start from
+
+The prelude's `Default` (D119) is the static trait generic code reaches
+for when it has to *make* a `T`: `T.default()` is `0`, `false`, `""`, an
+empty collection, `null` for a `T?`, `Duration.zero`, or a tuple of those.
+A struct opts in with an empty `implement Default`, which builds the value
+from each field's declared default, or else its type's `default()`:
+
+```veles
+use io
+
+struct Score {
+  points: i64
+  bonus: bool
+  tags: List<string>
+  limit: i64 = 10
+
+  implement Default
+}
+
+fun counts<V: Default>(keys: List<string>, add: fun(V): V): Map<string, V> {
+  val out: MutableMap<string, V> = [:]
+  loop (k in keys) {
+    out.set(k, add(out.get(k) ?: V.default()))
+  }
+  out.toMap()
+}
+
+fun main() {
+  io.println("${Score.default()}")
+  io.println("${counts(["a", "b", "a"], (n: i64) => n + 1)}")
+}
+```
+
+Output:
+```text
+Score(points: 0, bonus: false, tags: [], limit: 10)
+{a: 2, b: 1}
+```
+
+A field with neither a default nor a `Default` type is an error that names
+it. Nothing is `Default` unless it says so: a sealed trait has no one
+variant to start from, a `Secret` is never made from nothing, and a value
+holding a task starts that task where it is built, so those write
+`static fun default(): Self` by hand if they want one.
 
 ## The operator traits
 

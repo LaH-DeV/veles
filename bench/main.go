@@ -161,6 +161,69 @@ var references = map[string]func() string{
 		}
 		return strconv.FormatInt(sum, 10)
 	},
+	"adapters": func() string {
+		// the same loops the eager adapters run, each element through a
+		// closure as Veles calls its lambda
+		x := uint64(88172645463325252)
+		input := make([]int64, 0, 200000)
+		for i := 0; i < 200000; i++ {
+			x ^= x << 13
+			x ^= x >> 7
+			x ^= x << 17
+			input = append(input, int64(x%1000000))
+		}
+		mapF := func(xs []int64, f func(int64) int64) []int64 {
+			out := make([]int64, 0, len(xs))
+			for _, v := range xs {
+				out = append(out, f(v))
+			}
+			return out
+		}
+		filterF := func(xs []int64, f func(int64) bool) []int64 {
+			var out []int64
+			for _, v := range xs {
+				if f(v) {
+					out = append(out, v)
+				}
+			}
+			return out
+		}
+		var check int64
+		for round := int64(0); round < 20; round++ {
+			scaled := mapF(input, func(n int64) int64 { return n*3 + round })
+			even := filterF(scaled, func(n int64) bool { return n%2 == 0 })
+			var acc int64
+			for _, n := range even {
+				acc += n % 1000
+			}
+			check += acc
+			for _, n := range even {
+				if n > 2999990 {
+					check++
+					break
+				}
+			}
+			all := true
+			for _, n := range scaled {
+				if n < 0 {
+					all = false
+					break
+				}
+			}
+			if all {
+				check += 2
+			}
+			found := int64(-1)
+			for _, n := range even {
+				if n%7 == 3 {
+					found = n
+					break
+				}
+			}
+			check += found
+		}
+		return strconv.FormatInt(check, 10)
+	},
 	"sort": func() string {
 		x := uint64(88172645463325252)
 		input := make([]int64, 0, 300000)
