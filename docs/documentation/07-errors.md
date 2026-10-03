@@ -113,9 +113,7 @@ throw, each failure propagates where it happens, and the function's
 error type is the union of both. A method that belongs to the `Result`
 itself applies to the `Result` — `try parse(s).mapError(...)`,
 `try parse(s) ?! e`. Arguments are not part of the chain: in
-`try f(g()).h()`, `g()`'s `Result` is passed to `f` as a value. The old
-spelling `try (try f()).g()` still compiles, with a warning that the
-inner `try` is redundant and a fix that removes it.
+`try f(g()).h()`, `g()`'s `Result` is passed to `f` as a value.
 
 ## Letting the compiler work out the error type
 

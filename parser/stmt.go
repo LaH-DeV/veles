@@ -95,6 +95,9 @@ func (p *Parser) parseBinding() ast.Binding {
 
 func (p *Parser) parseStmt() ast.Stmt {
 	start := p.span()
+	if p.atStaticAssert() {
+		return p.parseStaticAssert()
+	}
 	switch p.cur().Kind {
 	case lexer.KwVal, lexer.KwVar, lexer.KwConst:
 		s := &ast.ValStmt{}

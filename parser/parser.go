@@ -436,6 +436,15 @@ func (p *Parser) parseDeclKind(attrs []*ast.Attribute, pub, marked bool, which s
 		}
 		return d
 	case lexer.KwFun, lexer.KwUnsafe, lexer.KwStatic:
+		if p.atStaticAssert() {
+			if marked {
+				p.errorf(start, "a 'static assert' cannot be %s; it declares nothing", which)
+			}
+			if len(attrs) > 0 {
+				p.errorf(attrs[0].Pos, "a 'static assert' takes no attributes")
+			}
+			return p.parseStaticAssert()
+		}
 		fn := p.parseFun(attrs, funContextFree)
 		fn.Pub = pub
 		fn.Pos = start.To(fn.Pos)
@@ -829,6 +838,30 @@ func (p *Parser) parseMemberSeparator() bool {
 	p.errorf(p.span(), "expected newline or ',' between members, found %s", p.cur().Describe())
 	p.syncStmt()
 	return false
+}
+
+// atStaticAssert: `static assert(` starts a compile-time assertion (D113).
+func (p *Parser) atStaticAssert() bool {
+	return p.at(lexer.KwStatic) && p.peek(1).Kind == lexer.Ident && p.peek(1).Text == "assert" && p.peek(2).Kind == lexer.LParen
+}
+
+// parseStaticAssert parses `static assert(cond, "why")`; the reason is
+// required, as for a test's `assert` (D78).
+func (p *Parser) parseStaticAssert() *ast.StaticAssert {
+	start := p.span()
+	p.next() // static
+	p.next() // assert
+	p.next() // (
+	d := &ast.StaticAssert{Cond: p.parseExpr()}
+	if p.accept(lexer.Comma) && !p.at(lexer.RParen) {
+		d.Reason = p.parseExpr()
+		p.accept(lexer.Comma)
+	} else {
+		p.errorf(p.span(), "a 'static assert' needs a reason, said when it fails: 'static assert(cond, \"why it must hold\")' (D113)")
+	}
+	p.expect(lexer.RParen)
+	d.Pos = p.spanFrom(start)
+	return d
 }
 
 func (p *Parser) parseStruct(attrs []*ast.Attribute, pub, extern bool, start source.Span) ast.Decl {

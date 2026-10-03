@@ -385,6 +385,8 @@ func (p *printer) decl(d ast.Decl) {
 			p.decl(inner)
 			p.after(inner.Span().End)
 		})
+	case *ast.StaticAssert:
+		p.staticAssert(d)
 	case *ast.TestDecl:
 		// the name as written, escapes and all
 		p.w("test " + p.src[d.At.Start:d.At.End])
@@ -1284,8 +1286,20 @@ func (p *printer) braced(b *ast.Block) bool {
 	return b.Pos.Start < len(p.src) && p.src[b.Pos.Start] == '{'
 }
 
+func (p *printer) staticAssert(d *ast.StaticAssert) {
+	p.w("static assert(")
+	p.expr(d.Cond, 0)
+	if d.Reason != nil {
+		p.w(", ")
+		p.expr(d.Reason, 0)
+	}
+	p.w(")")
+}
+
 func (p *printer) stmt(s ast.Stmt) {
 	switch s := s.(type) {
+	case *ast.StaticAssert:
+		p.staticAssert(s)
 	case *ast.ValStmt:
 		p.w(s.Kind.String() + " ")
 		if s.Pattern != nil {

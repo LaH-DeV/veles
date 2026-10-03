@@ -212,7 +212,14 @@ answered from the shape, tuples get `Comparable`, enums get
       against their bounds at definition — which the self-hosted compiler
       will want too
 - [ ] Compile-time evaluation: constant expressions, constant tables,
-      `const fun`, `static assert` (D113, decided 2026-10-01) — plan B14
+      `const fun`, `static assert` (D113, decided 2026-10-01) — plan B14.
+      Parts 1–3 built 2026-10-03 (`sema/consteval.go`, `codegen/llvm/consts.go`,
+      `static assert`); open: part 4, `const fun`
+- [x] Module-level values are initialized in dependency order (through the
+      functions their initializers call); a cycle is an error — built
+      2026-10-03. Before, `val a = f()` with `f` reading a later `val` saw
+      its zero bits, and a cycle between globals overflowed the compiler's
+      stack
 - [ ] Better inference for empty collection literals (`val xs = []` typed
       from later use; the typed-context half landed with the old note #8)
 - [ ] Stable ABI story for `.vs` packages: none needed while source-only,
@@ -1037,7 +1044,17 @@ Every new public std API (http cookies/forms/client, `std/log`,
   effects.
 - `T implements X` (D117): each instance checks only the branch it takes,
   so a mistake in a branch no instance takes is not reported until one
-  does. `static assert` and `const` uses come with B14.
+  does. `static assert(T implements X, "…")` states the requirement per
+  instance (B14).
+- Constants (D113, before `const fun`): a constant cannot call a function,
+  std's included; a constant `Map`/`Set` whose key type has its own
+  `hash`/`equals` is refused (the compiler lays the table out with the
+  structural hash); a sealed variant is not a constant value; a table's
+  element is a `when` pattern only through a named `const`
+  (`const FIRST = T.at(0)`), patterns being names and literals.
+- An initialization cycle is found through direct calls and lambdas; a
+  call through a trait object or a function value read from elsewhere is
+  not followed.
 - The built-in types print, compare and hash without the prelude traits,
   so `i64 implements Display` is false although `"$n"` prints it.
 - Hashes are plain Veles. They allocate nothing per block, but expect a

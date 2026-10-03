@@ -959,7 +959,7 @@ fun writeResponse(c: net.Conn, resp: Response, close: bool, headOnly: bool = fal
   try c.write(if (headOnly || bodyless) bytes else bytes.concat(resp.body))
 }
 
-val framing = ["content-length", "transfer-encoding", "connection"]
+const framing = ["content-length", "transfer-encoding", "connection"]
 
 // 1xx, 204 and 304 never carry a body, and a 1xx or 204 may not even say
 // `content-length` (RFC 9110 §6.4.1, §8.6); a 304's length would be the

@@ -23,7 +23,7 @@ struct Counter {
 
 val limit: i64 = 3
 const pi: f64 = 3.14
-const bad: i64 = limit + 1 // error: 'const' requires a compile-time constant
+const bad: i64 = limit + 1 // error: 'limit' is a 'val', computed at run time, not a constant
 
 fun redeclared() {
   val a = 1

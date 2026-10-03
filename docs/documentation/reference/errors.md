@@ -385,6 +385,33 @@ the low bits, or a value that fits.
 `wrapT()` is integer to integer. A float becomes an integer with `toT()`
 (null when it does not fit); an integer becomes a float with `toF64()`.
 
+### constants
+
+**What a `const` may hold, and what fails when it is computed.**
+`constant overflow: 9223372036854775807 + 1 is 9223372036854775808, outside
+'i64'`, `a constant cannot call 'three'`, `static assert failed: the wire
+header is 16 bytes (HEADER_SIZE = 16)`, `initialization cycle: 'a' reads 'b',
+which reads 'a'`.
+
+A `const` is computed when the program is compiled (D113): literals, other
+constants, operators, interpolation, `len()`, `toT()`/`wrapT()`, `if` and
+`when`, tuples, enum members, structs built without an `init`, and the
+read-only `List`, `Map` and `Set` — laid out once in the binary, never built
+at start-up. What would fail at run time fails the build instead, in every
+profile: an overflow (write `+%` to wrap on purpose), a division by zero, a
+shift past the width, `TABLE.at(i)` out of range. A function call, a `val`,
+anything mutable or made at run time is refused: compute it with `val`.
+
+`static assert(cond, "why")` checks a constant condition at compile time, at
+module level or in a body; in a generic body it is checked per instance,
+so `static assert(T implements Comparable, "…")` states what a type argument
+must provide.
+
+Module-level values (`val` too) are computed before `main` in the order they
+need each other — through the functions their initializers call as well. A
+value that needs itself, directly or round a cycle, has no first value:
+compute it in a function, or pass it as a parameter.
+
 ### operators
 
 **An operator the type does not have.** `operator '-' is not defined for

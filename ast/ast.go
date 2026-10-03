@@ -417,6 +417,19 @@ type SuiteDecl struct {
 	Pos   source.Span
 }
 
+// StaticAssert is `static assert(cond, "why")` (D113): a condition over
+// constants, checked at compile time — at module level or in a body, so it
+// is both a declaration and a statement.
+type StaticAssert struct {
+	Cond   Expr
+	Reason Expr // nil when it was left out (an error)
+	Pos    source.Span
+}
+
+func (d *StaticAssert) Span() source.Span { return d.Pos }
+func (*StaticAssert) declNode()           {}
+func (*StaticAssert) stmtNode()           {}
+
 // BadDecl stands in for a declaration that failed to parse.
 type BadDecl struct {
 	Pos source.Span

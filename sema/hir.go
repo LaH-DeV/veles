@@ -154,6 +154,9 @@ type Global struct {
 	Mutable bool
 	Init    Expr
 	Span    source.Span
+	// Const is a `const`'s value (D113): every use is it written in, so a
+	// constant is not a run-time global at all.
+	Const ConstVal
 }
 
 // ---------------------------------------------------------------------------
@@ -698,6 +701,14 @@ type CallIndirect struct {
 	exprBase
 	Fn   Expr
 	Args []Expr
+}
+
+// ConstTable is a constant collection (D113): laid out once, read-only, in
+// the binary; every use of the same Value is the same storage.
+type ConstTable struct {
+	exprBase
+	Value ConstVal // a *CList, *CMap or *CSet
+	Name  string   // the constant's own name, when the use names one: names the storage
 }
 
 // MapLit constructs a Map/MutableMap from key/value pairs.

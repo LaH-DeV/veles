@@ -46,14 +46,14 @@
 /// so text recovered this way agrees with theirs byte for byte.
 
 /// The largest code point: U+10FFFF.
-public val maxCode: i64 = 0x10FFFF
+public const maxCode: i64 = 0x10FFFF
 
 /// U+FFFD REPLACEMENT CHARACTER — what a decoder substitutes for bytes it
 /// cannot read.
-public val replacement: i64 = 0xFFFD
+public const replacement: i64 = 0xFFFD
 
 /// The most bytes one code point takes: 4.
-public val maxSize: i64 = 4
+public const maxSize: i64 = 4
 
 /// A code point and the number of bytes it occupied: `size` is what to add
 /// to an index to reach the next one, 1 to 4.

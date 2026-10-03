@@ -54,12 +54,12 @@ public fun monotonicNanos(): i64 = unsafe {
 /// What the host answers when it will not convert an instant at all. Not
 /// zero: zero is the offset of every machine running in UTC, and a correct
 /// answer must not be spelled like a failure.
-val offsetUnknown: i64 = 100000
+const offsetUnknown: i64 = 100000
 
 /// Two years the host is certain to be able to convert, one of each
 /// leap-year parity, for the fallback in `Offset.local`.
-val referenceYear: i64 = 2019
-val leapReferenceYear: i64 = 2020
+const referenceYear: i64 = 2019
+const leapReferenceYear: i64 = 2020
 
 fun hostOffsetMinutes(secs: i64): i64 = unsafe {
   // SAFETY: takes a number and returns one; localtime_r keeps nothing
@@ -125,8 +125,8 @@ public fun civilFromDays(days: i64): (i64, i64, i64) {
 // header is a number someone else chose, and `+999999-01-01T00:00:00Z` is
 // 3.2e19 microseconds, which is not a panic a server may have (D21 checks
 // the overflow in a debug build and wraps in release; neither is an answer).
-val maxSeconds: i64 = 9223372036854  // i64 microseconds, floored
-val maxDays: i64 = 106751991         // maxSeconds / 86400
+const maxSeconds: i64 = 9223372036854  // i64 microseconds, floored
+const maxDays: i64 = maxSeconds / 86400
 
 /// The instant a set of calendar fields names, or `null` when it is outside
 /// the ±292,277 years a `Timestamp` holds. Out-of-range months and days
@@ -595,8 +595,8 @@ public fun formatRfc3339(t: Timestamp): string = t.utc().toString()
 
 // ---- HTTP-date ------------------------------------------------------------
 
-val dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-val monthNames = [
+const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+const monthNames = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ]

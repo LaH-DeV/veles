@@ -167,6 +167,8 @@ func (g *gen) expr(e sema.Expr) string {
 		return "false"
 	case *sema.StringConst:
 		return g.stringConst(e.Value)
+	case *sema.ConstTable:
+		return g.constTable(e.Value, e.Name)
 	case *sema.UnitConst:
 		return "zeroinitializer"
 	case *sema.Zero:

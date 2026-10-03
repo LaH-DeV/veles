@@ -280,4 +280,4 @@ fun parseChunkSize(line: string): i64? {
 
 // How much an unread body may be to keep the connection: more is closed on
 // rather than read for nothing
-val drainCap: i64 = 65536
+const drainCap: i64 = 65536

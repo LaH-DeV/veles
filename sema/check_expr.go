@@ -524,8 +524,7 @@ func (f *fnCtx) nameExpr(e *ast.NameExpr, want types.Type) Expr {
 	f.c.refSym(e.Pos, sym)
 	switch sym.Kind {
 	case SymGlobal:
-		v := f.globalVar(sym.Global)
-		return &VarRef{exprBase{v.Type}, v}
+		return f.globalValue(sym.Global)
 	case SymFunc:
 		return f.funcValue(sym.Func, e.Pos)
 	case SymType:
@@ -746,8 +745,7 @@ func (f *fnCtx) symbolValue(sym *Symbol, span source.Span, want types.Type) Expr
 		markUsed(v)
 		return f.narrowedRef(v)
 	case SymGlobal:
-		v := f.globalVar(sym.Global)
-		return &VarRef{exprBase{v.Type}, v}
+		return f.globalValue(sym.Global)
 	case SymFunc:
 		return f.funcValue(sym.Func, span)
 	case SymType:

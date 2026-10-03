@@ -434,6 +434,12 @@ func (c *Checker) globalDecl(name string, g *Global) string {
 			sb.WriteString(" = ...")
 		}
 	}
+	if g.Const != nil && d.Value != nil {
+		// what the compiler computed (D113), when it is not what is written
+		if v := constString(g.Const); len(v) <= 60 && v != srcText(d.Value) {
+			sb.WriteString("  // " + v)
+		}
+	}
 	return sb.String()
 }
 

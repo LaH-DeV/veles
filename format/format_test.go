@@ -403,3 +403,13 @@ func TestIfValRoundTrips(t *testing.T) {
 		t.Errorf("formatted:\n%s\nwant:\n%s", got, src)
 	}
 }
+
+// `static assert(cond, "why")` (D113) prints as written, at module level
+// and in a body.
+func TestStaticAssertRoundTrips(t *testing.T) {
+	src := "const KB: i64 = 1024\n\nstatic assert(KB * 4 == 4096, \"a page is ${KB * 4} bytes\")\n\n" +
+		"fun f<T>(x: T): T {\n  static assert(T implements Comparable, \"T sorts\")\n  return x\n}\n"
+	if got := checkRoundTrip(t, "assert.vs", src); got != src {
+		t.Errorf("formatted:\n%s\nwant:\n%s", got, src)
+	}
+}

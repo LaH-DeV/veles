@@ -116,7 +116,7 @@ line per call that led there (D81).
 ```veles
 // fragment
 use recursion   // recursion.Depth(limit: 500), recursion.maxRecursionDepth
-public val maxRecursionDepth: i64 = 1000         // the default bound
+public const maxRecursionDepth: i64 = 1000       // the default bound
 public fun tooDeepMessage(limit: i64): string    // "nesting deeper than 64"
 
 public struct Depth {

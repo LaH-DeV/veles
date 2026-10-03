@@ -391,7 +391,25 @@ func selfParamOf(t *types.Trait) *types.TypeParam {
 // ---------------------------------------------------------------------------
 // globals
 
+const (
+	globalChecking int8 = iota + 1
+	globalChecked
+)
+
 func (c *Checker) checkGlobal(g *Global) {
+	switch c.globalState[g] {
+	case globalChecked:
+		return
+	case globalChecking:
+		// its initializer reads it before its type is known (only an
+		// unannotated global gets here: a declared type is set first)
+		c.errorf(g.Span, "initialization cycle: '%s' is read while its own initializer is computed, before it has a value; compute the value in a function instead, or pass it as a parameter", g.Display)
+		g.Type = types.TInvalid
+		return
+	}
+	c.globalState[g] = globalChecking
+	defer func() { c.globalState[g] = globalChecked }()
+	g.Const = nil
 	d := c.globals[g]
 	m := c.globalMod[g]
 	file := c.globalFile[g]
@@ -402,6 +420,7 @@ func (c *Checker) checkGlobal(g *Global) {
 	var declared types.Type
 	if d.Type != nil {
 		declared = f.resolve(d.Type)
+		g.Type = declared // a cycle through the initializer is then an ordering error (orderGlobals)
 	}
 	if d.Value == nil {
 		c.errorf(d.Pos, "module-level '%s' needs an initializer", d.Kind)
@@ -414,8 +433,8 @@ func (c *Checker) checkGlobal(g *Global) {
 		init = f.checkExpr(d.Value, nil)
 		declared = init.Type()
 	}
-	if d.Kind == ast.BindConst && !isConstExpr(init) {
-		c.errorf(d.Value.Span(), "'const' requires a compile-time constant (§4: 'const' is reserved for compile-time constants); use 'val' for runtime values")
+	if d.Kind == ast.BindConst && !types.IsInvalid(init.Type()) {
+		g.Const = c.constValue(init, declared, d.Value.Span())
 	}
 	if types.IsNever(declared) || types.IsUnit(declared) {
 		c.errorf(d.Name.Pos, "a global cannot have type '%s': its initializer gives no value to keep", declared)
@@ -438,17 +457,6 @@ func isSynchronized(t types.Type) bool {
 	return ok && st.Module == "std.prelude" && (st.Name == "Mutex" || st.Name == "Atomic")
 }
 
-func isConstExpr(e Expr) bool {
-	switch e := e.(type) {
-	case *IntConst, *FloatConst, *BoolConst, *StringConst:
-		return true
-	case *Unary:
-		return isConstExpr(e.X)
-	case *Binary:
-		return isConstExpr(e.L) && isConstExpr(e.R)
-	}
-	return false
-}
 
 // ---------------------------------------------------------------------------
 // blocks and statements
@@ -519,6 +527,9 @@ func (f *fnCtx) checkBlock(b *ast.Block, expected types.Type, wantValue bool) *B
 // continue past it.
 func (f *fnCtx) checkStmt(s ast.Stmt) (stmts []Stmt, term bool) {
 	switch s := s.(type) {
+	case *ast.StaticAssert:
+		f.staticAssert(s)
+		return nil, false
 	case *ast.ValStmt:
 		return f.checkValStmt(s), false
 	case *ast.ExprStmt:
@@ -1122,6 +1133,20 @@ func (f *fnCtx) lookupField(st *types.Struct, name string, span source.Span) *ty
 	hint, hit := f.noFieldHint(st, name)
 	f.c.errorFix(span, typoFix(span, hit), "'%s' has no field '%s'%s", st, name, hint)
 	return nil
+}
+
+// globalValue is a module-level binding read as a value: a constant is its
+// value written in (D113), anything else a read of the global.
+func (f *fnCtx) globalValue(g *Global) Expr {
+	v := f.globalVar(g)
+	if g.Const != nil {
+		x := constExpr(g.Const)
+		if t, ok := x.(*ConstTable); ok {
+			t.Name = g.Name
+		}
+		return x
+	}
+	return &VarRef{exprBase{v.Type}, v}
 }
 
 // globalVar returns the Var standing for a module-level binding.

@@ -6,10 +6,10 @@ use fs
 // the longest header block a part may have
 const maxPartHeaderBytes: i64 = 8192
 
-val crlf: List<u8> = [13, 10]
-val dashes: List<u8> = [45, 45]
-val space: List<u8> = [32]
-val tab: List<u8> = [9]
+const crlf: List<u8> = [13, 10]
+const dashes: List<u8> = [45, 45]
+const space: List<u8> = [32]
+const tab: List<u8> = [9]
 
 // where the reader has got to
 struct MultipartState {

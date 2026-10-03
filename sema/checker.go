@@ -79,6 +79,7 @@ type Checker struct {
 	collected          bool
 	collectRefs        int // index refs recorded by collect(); rounds reset only past this
 	tests              []*FuncTemplate
+	staticAsserts      []moduleAssert // module-level `static assert`s (D113)
 	testNames          map[*Module]map[string]source.Span // each module's qualified test and suite names, for duplicates (D78)
 	suites             int                                // suites declared, for unique helper symbols
 	suiteHelpers       map[string]string                  // a suite helper's name -> its suite, for "unknown function" (D78)
@@ -88,7 +89,7 @@ type Checker struct {
 	queue          []*Func
 	instances      map[string]*Func
 	funcs          []*Func
-	checkedGlobals map[*Global]bool
+	globalState    map[*Global]int8 // globalChecking / globalChecked, this round
 	changed        bool
 	nextVar        int
 	tupleCmp       map[string]*Func // synthesized tuple comparisons by type key (tuple_order.go)
@@ -193,6 +194,7 @@ func checkCollect(pkg *Package, diags *source.Diagnostics, release bool, testMod
 		}
 	}
 	if prog != nil && !c.roundDiags.HasErrors() {
+		c.orderGlobals(prog)
 		c.receiverPass(prog)
 		c.inferSuspension(prog)
 		c.checkHeldRegions(prog)
@@ -499,6 +501,8 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 	case *ast.FunDecl:
 		t := c.newTemplate(m, f, d, nil, nil)
 		c.insert(m, &Symbol{Name: d.Name.Name, Kind: SymFunc, Pub: d.Pub, Module: m, Span: d.Name.Pos, Func: t})
+	case *ast.StaticAssert:
+		c.staticAsserts = append(c.staticAsserts, moduleAssert{m, f, d})
 	case *ast.TestDecl:
 		c.declareTest(m, f, d, fileSuite(f), nil)
 	case *ast.SuiteDecl:
@@ -2430,7 +2434,7 @@ func (c *Checker) runRound() *Program {
 	c.instances = map[string]*Func{}
 	c.funcs = nil
 	c.tupleCmp, c.enumFns, c.trampolines = nil, nil, nil // synthesized per round, like every other function
-	c.checkedGlobals = map[*Global]bool{}
+	c.globalState = map[*Global]int8{}
 	c.nextVar, c.nextLoop, c.nextTmp = 0, 0, 0
 	for _, t := range c.templates {
 		t.Instances = map[string]*Func{}
@@ -2455,7 +2459,12 @@ func (c *Checker) runRound() *Program {
 	})
 	for _, g := range globals {
 		c.checkGlobal(g)
-		c.prog.Globals = append(c.prog.Globals, g)
+		if c.globals[g].Kind != ast.BindConst { // a constant is written in where it is used (D113)
+			c.prog.Globals = append(c.prog.Globals, g)
+		}
+	}
+	for _, a := range c.staticAsserts {
+		c.checkModuleAssert(a)
 	}
 	// every value at its declaration, now that its type is known
 	if c.index != nil {

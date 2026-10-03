@@ -35,6 +35,7 @@
 "close() of '%s' throws; throwing cleanup is not supported yet"  # Closeable.close is declared non-throwing, so an implementation cannot throw
 "extern functions cannot suspend"  # a function in an 'extern "C" { }' block has no body, so nothing in it can suspend
 "field '%s' of '%s' is private (M5)"  # needs two modules; conformance cases are one file each
+"index %s is out of range for a constant list of length %d (D113)"  # defensive (D113): every indexed read of a constant table the checker lowers is either 'at', answered at compile time, or guarded by its own length test
 "invalid float literal"  # the parser refuses the form first
 "listAppendText takes a MutableList<u8> and a string"  # std-internal intrinsic: only std calls it, and std calls it right
 "listDecodeUtf8Range takes a List<u8> and two positions"  # std-internal intrinsic: only std calls it, and std calls it right
@@ -43,9 +44,13 @@
 "method '%s' is a compiler built-in on '%s' and cannot be redeclared"  # only std may extend a built-in type, and std does not redeclare
 "methods cannot be used as values; wrap the call in a lambda"  # defensive: every way to name a method as a value is answered earlier ('is a method of', 'is a method: call it')
 "module-level '%s' needs an initializer"  # the parser refuses the form first
+"no arm of the 'when' matches the constant"  # a 'when' with a value is exhaustive or has an 'else', so a constant subject always meets an arm
 "only a module-level function can be 'extern \"C\"'; C calls it by name (D69)"  # the parser refuses `extern "C" fun` in a type body; guards ASTs built another way
 "parameter '%s' needs a type"  # the parser refuses the form first
 "secretExpose takes the type to copy out: secretExpose<string>(bytes) or secretExpose<List<u8>>(bytes)"  # std-internal intrinsic: only std calls it, and std calls it right
+"this conversion is not a constant expression (D113)"  # defensive (D113): before `const fun` (part 4) the evaluator sees only the HIR of constant expressions, whose conversions are numeric or retype a collection
+"this operator is not a constant expression (D113)"  # defensive (D113): before `const fun` (part 4) the evaluator sees only the HIR of constant expressions, whose operand types the checker already matched to the operator
+"this statement is not a constant expression (D113)"  # defensive (D113): before `const fun` (part 4) the evaluator sees only the HIR of constant expressions, whose blocks hold only initialized temporaries
 "trait objects (boxed '%s') are not supported yet in the bootstrap compiler; use a generic bound instead (D9)"  # defensive: a call on a trait-typed receiver takes the trait-object path first
 "unsupported expression"  # no syntax reaches it: guards an AST node kind the checker does not handle
 "unsupported operator"  # no syntax reaches it: guards an AST node kind the checker does not handle

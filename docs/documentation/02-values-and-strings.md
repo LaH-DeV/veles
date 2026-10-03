@@ -95,8 +95,7 @@ every numeric type:
   type parameter writes it as a type argument: `n.wrapTo<T>()`.
 
 A literal that cannot fit is an error at compile time (`300.toU8()`
-says to use `wrapU8()` if the low bits are what you want). `as` no
-longer converts; it only renames (`use io { println as say }`).
+says to use `wrapU8()` if the low bits are what you want).
 
 ### Overflow is an error, unless you ask for wrapping
 
@@ -123,7 +122,7 @@ Output:
 
 Integers have the bitwise operators `&`, `|`, `^`, `<<`, `>>` and `~`.
 `&` and the shifts bind like `*`, `|` and `^` like `+`, so `2 + 4 & 7`
-is `2 + (4 & 7)` (Go's grouping, which reads the way you mean it). A
+is `2 + (4 & 7)` (grouping which reads the way you mean it). A
 shift by the width or more gives 0 rather than something undefined.
 Literals may be written in hex or binary: `0xFF`, `0b1010`.
 
@@ -216,7 +215,7 @@ Two things worth knowing early:
 - `substring(from, to)` takes byte offsets and returns `string?` — null
   when the offsets fall outside the text or would cut a multi-byte
   character, so a parser can probe `s.substring(pos, pos + 4)` near the
-  end without a bounds check. The `?: "?"` after
+  end without a bounds check. The `?:` after
   it supplies a fallback; nullable types get [a chapter of their own](06-nullable-types.md).
 
 There is no separate character type; a one-character string is what you
@@ -230,7 +229,7 @@ dollar) and `\u{1F600}` for a code point.
 ## Booleans
 
 `bool` is `true` or `false`. `&&` and `||` short-circuit; `!` negates.
-Comparison operators `== != < <= > >=` work on numbers and strings and,
+Comparison operators `==`, `!=`, `<`, `<=`, `>`, `>=` work on numbers and strings and,
 as you will see, on structs and tuples too.
 
 ```veles
@@ -282,7 +281,8 @@ fun main() {
   var b = 2
   (a, b) = (b, a)
   var xs = mut [10, 20, 30]
-  xs.swap(0, 2)                     // exchanges two elements; panics if either index is out of range
+  // exchanges two elements; panics if either index is out of range
+  xs.swap(0, 2)
   var fibA = 0
   var fibB = 1
   loop (_ in 0..<10) (fibA, fibB) = (fibB, fibA + fibB)
@@ -316,5 +316,47 @@ Output:
 ```text
 == report == 3
 ```
+
+A `const` is computed when the program is compiled (D113). It can use other
+constants, arithmetic, interpolation, `len()`, conversions, `if` and `when`,
+tuples, enum members and structs, and it can be a read-only `List`, `Map` or
+`Set` — a table laid out once in the binary, never built at start-up. Every
+use of a constant is its value written in, so it also works as a `when`
+pattern. `static assert(cond, "why")` checks a constant condition at compile
+time:
+
+```veles
+use io
+
+const KB: i64 = 1024
+const PAGE = KB * 4
+const LABEL = "page of ${PAGE} bytes"
+const PRIMES: List<i64> = [2, 3, 5, 7]
+const PORTS: Map<string, i64> = ["http": 80, "https": 443]
+
+static assert(PAGE == 4096, "a page is four kilobytes")
+
+fun main() {
+  io.println("$LABEL, ${PRIMES.at(2)}, ${PORTS.get("https") ?: 0}")
+  when (8192) {
+    PAGE => io.println("one page")
+    else => io.println("not one page")
+  }
+}
+```
+
+Output:
+```text
+page of 4096 bytes, 5, 443
+not one page
+```
+
+What would fail at run time fails the build instead, in every profile:
+`const BIG: i64 = 9223372036854775807 + 1` is a compile error (write `+%` to
+wrap on purpose), and so are a division by zero and `PRIMES.at(9)`. With a
+constant index, `PRIMES.at(2)` is an `i64`, not an `i64?`: the compiler has
+read it. A constant cannot call a function or read a `val` — compute such a
+value with `val`. Module-level `val`s are computed before `main`, in the
+order they need each other.
 
 Next: [Functions and control flow](03-functions-and-control-flow.md).

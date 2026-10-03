@@ -158,7 +158,7 @@ ann at example.com
   `"help"`, and nested tuple, variant or list patterns.
 - In `val`, a list pattern can fail to match, so it needs `else`, and the
   `else` has to leave (`return`, `throw`, `break`, `continue`), as with
-  every let-else.
+  every val-else.
 - A `when` is exhaustive over lengths: `[]`, `[x]` and `[x, ..]` together
   cover every list, and the compiler names any lengths you missed. An arm
   with a literal element, such as `["help"]`, covers nothing on its own.

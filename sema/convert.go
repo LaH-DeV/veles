@@ -1,6 +1,7 @@
 package sema
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/LaH-DeV/veles/ast"
@@ -70,6 +71,15 @@ func (f *fnCtx) numericConversion(recv Expr, from types.Type, name string, e *as
 		return &Cast{exprBase{to}, recv}
 	}
 	if c, isConst := recv.(*IntConst); isConst && !intConstFits(c, to) {
+		if sel, ok := e.Fun.(*ast.MemberExpr); ok && !isLiteralExpr(sel.X) {
+			// a constant written in (D113): its value is known, so is the answer
+			v := strconv.FormatUint(c.Value, 10)
+			if c.Neg {
+				v = "-" + v
+			}
+			f.errorf(e.Pos, "'%s' is the constant %s, which does not fit '%s', so this is always null (D86, D113); use '.wrap%s()' to keep the low bits", srcText(sel.X), v, to, name[len("to"):])
+			return bad()
+		}
 		f.errorf(e.Pos, "the literal does not fit '%s' (D86); use '.wrap%s()' to keep the low bits", to, name[len("to"):])
 		return bad()
 	}

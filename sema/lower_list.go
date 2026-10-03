@@ -133,13 +133,34 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 		if !need(1) {
 			return bad()
 		}
-		if f.receiverIndexProven(e, e.Args[0].Value) {
+		var idxExpr Expr
+		if tbl, ok := recv.(*ConstTable); ok {
+			// a constant index into a constant table is read at compile
+			// time (D113): the element itself, and out of range an error
+			idxExpr = f.checkExprTo(e.Args[0].Value, types.TI64)
+			if k, ok := f.c.tryConst(idxExpr).(*CInt); ok {
+				elems := tbl.Value.(*CList).Elems
+				i := k.V.Int64()
+				if i < 0 {
+					i += int64(len(elems))
+				}
+				if !k.V.IsInt64() || i < 0 || i >= int64(len(elems)) {
+					f.errorf(e.Args[0].Value.Span(), "index %s is out of range for a constant list of length %d, so 'at' is always null (D113)", k.V, len(elems))
+					return bad()
+				}
+				return constExpr(elems[i])
+			}
+		}
+		if idxExpr == nil && f.receiverIndexProven(e, e.Args[0].Value) {
 			// the facts put the index in range (D62): a `T`, not a `T?`
 			f.markProven(e)
 			return finish(f.uncheckedGet(list, lt, e.Args[0].Value, span))
 		}
 		idx := f.newTemp(types.TI64)
-		pre = append(pre, &VarDecl{Var: idx, Init: f.checkExprTo(e.Args[0].Value, types.TI64)})
+		if idxExpr == nil {
+			idxExpr = f.checkExprTo(e.Args[0].Value, types.TI64)
+		}
+		pre = append(pre, &VarDecl{Var: idx, Init: idxExpr})
 		rt := &types.Nullable{Elem: lt.Elem}
 		n := &Builtin{exprBase{types.TI64}, "list.len", []Expr{ref(list)}, span}
 		fromEnd := &Assign{Target: ref(idx), Value: &Binary{exprBase{types.TI64}, OpWrapAdd, ref(idx), n, span}}

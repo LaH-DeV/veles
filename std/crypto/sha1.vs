@@ -3,7 +3,7 @@
 // content address or a password. `crypto.sha1Legacy` is the name on
 // purpose.
 
-val IV1: List<u32> = [0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476, 0xc3d2e1f0]
+const IV1: List<u32> = [0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476, 0xc3d2e1f0]
 
 /// SHA-1, fed in pieces. See `crypto.sha1Legacy` for why the name says so:
 /// this is here for the WebSocket handshake (RFC 6455) and for reading

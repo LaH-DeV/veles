@@ -16,7 +16,7 @@
 
 /// The largest `i64`. Used to recognise the most negative one without
 /// writing a literal that would have to be negated to be written.
-val nanosMax: i64 = 9223372036854775807
+const nanosMax: i64 = 9223372036854775807
 
 /// A length of time, to the nanosecond.
 ///

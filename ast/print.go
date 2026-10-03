@@ -128,6 +128,8 @@ func (p *printer) decl(d Decl) {
 			p.child(func() { p.decl(inner) })
 		}
 		p.close()
+	case *StaticAssert:
+		p.staticAssert(d)
 	case *TestDecl:
 		p.open(fmt.Sprintf("test %q", d.Name))
 		if d.Body != nil {
@@ -500,8 +502,20 @@ func (p *printer) binding(b Binding) {
 	p.w(")")
 }
 
+func (p *printer) staticAssert(d *StaticAssert) {
+	p.w("(static-assert ")
+	p.expr(d.Cond)
+	if d.Reason != nil {
+		p.w(" ")
+		p.expr(d.Reason)
+	}
+	p.w(")")
+}
+
 func (p *printer) stmt(s Stmt) {
 	switch s := s.(type) {
+	case *StaticAssert:
+		p.staticAssert(s)
 	case *Block:
 		p.block(s)
 	case *ValStmt:

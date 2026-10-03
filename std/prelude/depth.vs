@@ -23,7 +23,7 @@
 /// value returned by copy — should say so and pass a smaller `limit`; a
 /// format with its own convention should follow the format (`json.Options`
 /// defaults to 64, which is what JSON documents in the wild look like).
-public val maxRecursionDepth: i64 = 1000
+public const maxRecursionDepth: i64 = 1000
 
 /// What every recursion limit in the standard library says when it is
 /// reached — `nesting deeper than 64` — so the wording is one sentence and

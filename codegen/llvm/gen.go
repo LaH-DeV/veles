@@ -38,6 +38,8 @@ type gen struct {
 	descs         map[string]string
 	descNames     map[string]bool
 	descOut       strings.Builder
+	consts        map[sema.ConstVal]string // constant tables (consts.go)
+	constOut      strings.Builder
 	eqPtrFns      map[string]string
 	pending       []func() // helper bodies to generate after the current function
 
@@ -105,6 +107,7 @@ func Generate(prog *sema.Program) string {
 		closeThunks:   map[*sema.With]string{},
 		descNames:     map[string]bool{},
 		eqPtrFns:      map[string]string{},
+		consts:        map[sema.ConstVal]string{},
 	}
 	g.typeDecls[strType] = "{ ptr, i64 }"
 	g.typeOrder = append(g.typeOrder, strType)
@@ -147,6 +150,7 @@ func Generate(prog *sema.Program) string {
 	sb.WriteString(gcDecls)
 	sb.WriteString(coroDecls)
 	sb.WriteString(g.descOut.String())
+	sb.WriteString(g.constOut.String())
 	declared := map[string]bool{}
 	for _, m := range declRe.FindAllStringSubmatch(runtimeDecls+mapDecls+gcDecls+coroDecls, -1) {
 		declared[m[1]] = true

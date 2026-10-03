@@ -3659,6 +3659,35 @@ Rejected: expressions only; expressions and tables without functions;
 `comptime fun` (a second word beside `const`); no marker (Zig-style inference
 — an edit inside a function breaks constants in other packages).
 
+*Built 2026-10-03 (B14 parts 1, 2 and 4 of this entry — `const fun`, part 3
+above, is still open).* Implementation choices (user, recommended of each):
+a constant `Map`/`Set` is laid out whole by the compiler — entries,
+metadata and hash index, hashed by a Go copy of the runtime's structural
+hash (a differential test checks every key is found at run time) — so a
+key type with its own `hash`/`equals` is refused until `const fun`;
+scalars, structs and tuples are written in as literals at every use, a
+table is one `constant` global (rodata: a write faults) named after its
+`const`; a `const` is no run-time global at all. Details settled while
+building: the evaluator is `sema/consteval.go` (not a separate package,
+which would import the HIR it reads); integers are evaluated exactly and
+checked against the type, so `+%`/`-%`/`*%` and `wrapT()` wrap and
+everything else overflowing is an error; float division by zero gives the
+IEEE result (an infinity), as at run time; `CONST.at(i)` with a constant
+`i` is read by the compiler — the element, typed `T` not `T?`, and out of
+range an error, in any code, not only in constants; `KB.toU8()` where the
+constant does not fit is refused as a literal is (D86). `static assert`
+in a generic body is checked per instance. Interpolation formats a float
+as the runtime does (shortest round-trip text); an enum or struct is not
+interpolated in a constant. Hover on a constant shows the computed value
+when it differs from the text.
+
+Found with it: module-level values were initialized in source order, so
+`val a = f()` with `f` reading a later `val` saw that value's zero bits
+(a crash for a list), and a cycle between untyped globals overflowed the
+compiler's stack. Now they are initialized in dependency order — reads
+through called functions and lambdas count — and a cycle is an error,
+family `constants` (as Go does).
+
 ### D114 — No global switch for bounds checks; an unchecked access in `unsafe` (v0.62)
 
 Bounds checks stay on in every profile; there is no `--release-unchecked`. The

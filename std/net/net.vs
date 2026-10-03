@@ -34,7 +34,7 @@ extern "C" {
 }
 
 /// The runtime's "would block" answer: wait and retry.
-val wouldBlock: i64 = 1
+const wouldBlock: i64 = 1
 
 /// A read that would have exceeded the ceiling its caller gave. The bytes
 /// read so far are dropped and the connection is left where it stood, so
