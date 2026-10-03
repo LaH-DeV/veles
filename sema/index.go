@@ -1354,6 +1354,9 @@ func typeParamList(tps []*types.TypeParam) string {
 	names := make([]string, len(tps))
 	for i, tp := range tps {
 		names[i] = tp.Name
+		if tp.Const {
+			names[i] = "const " + tp.Name + ": i64" // a constant, not a type (D121)
+		}
 	}
 	return "<" + strings.Join(names, ", ") + ">"
 }

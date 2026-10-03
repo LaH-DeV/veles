@@ -44,6 +44,9 @@ func isPlace(e sema.Expr) bool {
 		return isPlace(e.X)
 	case *sema.Downcast:
 		return true // the boxed value itself (D135)
+	case *sema.ConstTable:
+		_, isArray := e.Value.(*sema.CArray)
+		return isArray // read in place
 	case *sema.Builtin:
 		return e.Op == "list.ref" || e.Op == "list.refUnchecked"
 	}
@@ -68,6 +71,10 @@ func (g *gen) place(e sema.Expr) string {
 		p := g.newTmp()
 		g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 1", p, g.llType(nt), base)
 		return p
+	case *sema.ConstTable:
+		if _, isArray := e.Value.(*sema.CArray); isArray {
+			return g.constTable(e.Value, e.Name) // the array's read-only storage
+		}
 	case *sema.Downcast:
 		// the value inside a trait object (D135): writes through a narrowed
 		// object change what its methods see
@@ -95,6 +102,9 @@ func (g *gen) place(e sema.Expr) string {
 		g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d", p, g.llType(e.X.Type()), base, e.Index)
 		return p
 	case *sema.Builtin:
+		if _, ok := e.Args[0].Type().(*types.Array); ok && (e.Op == "list.ref" || e.Op == "list.refUnchecked") {
+			return g.arrayElemPtr(e.Args[0], g.expr(e.Args[1]), e.Op == "list.refUnchecked", e.Span)
+		}
 		if e.Op == "list.ref" {
 			list := g.expr(e.Args[0])
 			idx := g.expr(e.Args[1])
@@ -108,6 +118,9 @@ func (g *gen) place(e sema.Expr) string {
 	}
 	// Not a place: materialise into a temporary.
 	v := g.expr(e)
+	if g.isMem(e.Type()) {
+		return v // already in memory
+	}
 	llt := g.llType(e.Type())
 	tmp := g.alloca(llt)
 	g.emit("store %s %s, ptr %s", llt, v, tmp)
@@ -171,21 +184,33 @@ func (g *gen) expr(e sema.Expr) string {
 	case *sema.StringConst:
 		return g.stringConst(e.Value)
 	case *sema.ConstTable:
+		if _, isArray := e.Value.(*sema.CArray); isArray {
+			if g.isMem(e.Type()) {
+				return g.constTable(e.Value, e.Name) // read where it is: its storage is the value
+			}
+			v := g.newTmp() // an array is a value: read from its read-only storage
+			g.emit("%s = load %s, ptr %s", v, g.llType(e.Type()), g.constTable(e.Value, e.Name))
+			return v
+		}
 		return g.constTable(e.Value, e.Name)
 	case *sema.UnitConst:
 		return "zeroinitializer"
 	case *sema.Zero:
+		if g.isMem(e.Type()) {
+			return g.zeroMem(e.Type())
+		}
 		return "zeroinitializer"
 	case *sema.NullConst:
 		if isPtrLike(e.Type().(*types.Nullable).Elem) {
 			return "null"
 		}
+		if g.isMem(e.Type()) {
+			return g.zeroMem(e.Type())
+		}
 		return "zeroinitializer"
 	case *sema.VarRef:
 		p := g.varPtr(e.Var)
-		v := g.newTmp()
-		g.emit("%s = load %s, ptr %s", v, g.llType(e.Type()), p)
-		return v
+		return g.loadVal(e.Type(), p)
 	case *sema.Call:
 		return g.call(e)
 	case *sema.Binary:
@@ -242,18 +267,25 @@ func (g *gen) expr(e sema.Expr) string {
 	case *sema.FieldGet:
 		if isPlace(e.X) && !g.mayBeMisaligned(e) {
 			p := g.place(e)
-			v := g.newTmp()
-			g.emit("%s = load %s, ptr %s", v, g.llType(e.Type()), p)
-			return v
+			return g.loadVal(e.Type(), p)
 		}
 		x := g.expr(e.X)
 		return g.fieldOf(e.X.Type(), x, e.Index)
 	case *sema.TupleGet:
 		x := g.expr(e.X)
-		v := g.newTmp()
-		g.emit("%s = extractvalue %s %s, %d", v, g.llType(e.X.Type()), x, e.Index)
-		return v
+		return g.part(e.X.Type(), x, e.Index, e.Type())
 	case *sema.StructLit:
+		if g.isMem(e.Type()) {
+			// each field is stored as it is evaluated: a later one may change
+			// what an earlier one was read from
+			tmp := g.newMem(e.Struct)
+			for i, f := range e.Fields {
+				if f != nil {
+					g.putField(e.Struct, tmp, i, g.expr(f))
+				}
+			}
+			return tmp
+		}
 		vals := make([]string, len(e.Fields))
 		for i, f := range e.Fields {
 			if f != nil { // a union is built with one field (D120)
@@ -262,6 +294,13 @@ func (g *gen) expr(e sema.Expr) string {
 		}
 		return g.buildStruct(e.Struct, vals)
 	case *sema.TupleLit:
+		if g.isMem(e.Type()) {
+			tmp := g.newMem(e.Type())
+			for i, el := range e.Elems {
+				g.storeVal(el.Type(), g.expr(el), g.fieldPtr(g.llType(e.Type()), tmp, i))
+			}
+			return tmp
+		}
 		llt := g.llType(e.Type())
 		acc := "undef"
 		for i, el := range e.Elems {
@@ -278,18 +317,19 @@ func (g *gen) expr(e sema.Expr) string {
 		// box a temporary on the heap
 		v := g.expr(e.X)
 		cell := g.gcAlloc(e.X.Type())
-		g.emit("store %s %s, ptr %s", g.llType(e.X.Type()), v, cell)
+		g.storeVal(e.X.Type(), v, cell)
 		return cell
 	case *sema.Deref:
 		p := g.expr(e.X)
-		v := g.newTmp()
-		g.emit("%s = load %s, ptr %s", v, g.llType(e.Type()), p)
-		return v
+		return g.loadVal(e.Type(), p)
 	case *sema.SomeWrap:
 		x := g.expr(e.X)
 		nt := e.Type().(*types.Nullable)
 		if isPtrLike(nt.Elem) {
 			return x
+		}
+		if g.isMem(nt) {
+			return g.makeNullableT(nt, "true", x)
 		}
 		llt := g.llType(nt)
 		a := g.newTmp()
@@ -305,8 +345,7 @@ func (g *gen) expr(e sema.Expr) string {
 			g.emit("%s = icmp eq ptr %s, null", v, x)
 			return v
 		}
-		tag := g.newTmp()
-		g.emit("%s = extractvalue %s %s, 0", tag, g.llType(nt), x)
+		tag := g.nullFlag(nt, x)
 		g.emit("%s = xor i1 %s, true", v, tag)
 		return v
 	case *sema.Unwrap:
@@ -315,22 +354,19 @@ func (g *gen) expr(e sema.Expr) string {
 		if isPtrLike(nt.Elem) {
 			return x
 		}
-		v := g.newTmp()
-		g.emit("%s = extractvalue %s %s, 1", v, g.llType(nt), x)
-		return v
+		return g.nullVal(nt, x)
 	case *sema.MakeVariant:
 		payload := g.expr(e.Value)
-		return g.makeTagged(g.llType(e.Sealed), e.Variant.Tag, g.llType(e.Variant), payload)
+		return g.makeTaggedT(e.Sealed, e.Variant.Tag, e.Variant, payload)
 	case *sema.VariantTest:
 		x := g.expr(e.X)
-		tag := g.newTmp()
-		g.emit("%s = extractvalue %s %s, 0", tag, g.llType(e.X.Type()), x)
+		tag := g.tagOf(e.X.Type(), x)
 		v := g.newTmp()
 		g.emit("%s = icmp eq i32 %s, %d", v, tag, e.Variant.Tag)
 		return v
 	case *sema.VariantCast:
 		x := g.expr(e.X)
-		return g.extractTagged(g.llType(e.X.Type()), x, g.llType(e.Variant))
+		return g.extractTaggedT(e.X.Type(), x, e.Variant)
 	case *sema.TypeTest:
 		return g.typeTest(e)
 	case *sema.Downcast:
@@ -346,8 +382,7 @@ func (g *gen) expr(e sema.Expr) string {
 		if _, isUnion := u.(*types.ErrorUnion); !isUnion {
 			return "true"
 		}
-		tag := g.newTmp()
-		g.emit("%s = extractvalue %s %s, 0", tag, g.llType(u), x)
+		tag := g.tagOf(u, x)
 		v := g.newTmp()
 		g.emit("%s = icmp eq i32 %s, %d", v, tag, idx)
 		return v
@@ -357,7 +392,7 @@ func (g *gen) expr(e sema.Expr) string {
 		if _, isUnion := u.(*types.ErrorUnion); !isUnion {
 			return x
 		}
-		return g.extractTagged(g.llType(u), x, g.llType(e.Member))
+		return g.extractTaggedT(u, x, e.Member)
 	case *sema.ErrorConvert:
 		return g.errorConvert(e)
 	case *sema.If:
@@ -377,13 +412,19 @@ func (g *gen) expr(e sema.Expr) string {
 	case *sema.Let:
 		v := g.expr(e.Init)
 		st := g.declareVar(e.Var)
-		g.emit("store %s %s, ptr %s", g.llType(e.Var.Type), v, st)
+		g.storeVal(e.Var.Type, v, st)
 		return g.expr(e.Body)
 	case *sema.ListLit:
+		if _, isArray := e.Type().(*types.Array); isArray {
+			return g.arrayLit(e)
+		}
 		return g.listLit(e)
 	case *sema.MapLit:
 		return g.mapLit(e)
 	case *sema.Builtin:
+		if v, ok := g.arrayBuiltin(e); ok {
+			return v
+		}
 		if v, ok := g.mapBuiltin(e); ok {
 			return v
 		}
@@ -450,11 +491,29 @@ func floatConst(v float64) string {
 	return fmt.Sprintf("0x%016X", math.Float64bits(v))
 }
 
+// putField stores v as field i of the struct of type st stored at p.
+func (g *gen) putField(st *types.Struct, p string, i int, v string) {
+	if st.Union {
+		g.storeVal(st.Fields[i].Type, v, p) // every field of a union is at its start (D120)
+		return
+	}
+	g.storeVal(st.Fields[i].Type, v, g.fieldPtr(g.llType(st), p, g.fidx(st, i)))
+}
+
 // buildStruct assembles a struct value from field values.
 func (g *gen) buildStruct(st *types.Struct, vals []string) string {
 	llt := g.llType(st)
 	if len(vals) == 0 {
 		return "zeroinitializer"
+	}
+	if g.isMem(st) {
+		tmp := g.newMem(st)
+		for i, v := range vals {
+			if v != "" {
+				g.putField(st, tmp, i, v)
+			}
+		}
+		return tmp
 	}
 	if st.Union {
 		// built with one field (D120): the others are nil
@@ -477,6 +536,12 @@ func (g *gen) buildStruct(st *types.Struct, vals []string) string {
 // for a union (D120) a load of the field's type from where x is stored.
 func (g *gen) fieldOf(t types.Type, x string, i int) string {
 	st, _ := t.(*types.Struct)
+	if g.isMem(t) {
+		if st.Union {
+			return g.loadVal(st.Fields[i].Type, x)
+		}
+		return g.loadVal(st.Fields[i].Type, g.fieldPtr(g.llType(t), x, g.fidx(t, i)))
+	}
 	v := g.newTmp()
 	if st != nil && st.Union {
 		tmp := g.alloca(g.llType(st))
@@ -491,6 +556,11 @@ func (g *gen) fieldOf(t types.Type, x string, i int) string {
 // withField is struct value x of type t with field i set to v.
 func (g *gen) withField(t types.Type, x string, i int, v string) string {
 	st := t.(*types.Struct)
+	if g.isMem(t) {
+		tmp := g.ownCopy(t, x) // a copy with the one field replaced
+		g.putField(st, tmp, i, v)
+		return tmp
+	}
 	out := g.newTmp()
 	if st.Union {
 		tmp := g.alloca(g.llType(st))
@@ -532,7 +602,7 @@ func (g *gen) assign(target sema.Expr, v string) {
 		return
 	}
 	p := g.place(target)
-	g.emit("store %s %s, ptr %s", g.llType(target.Type()), v, p)
+	g.storeVal(target.Type(), v, p)
 }
 
 // makeTagged builds a `{ i32, [N x i64] }` value holding payload under tag.
@@ -577,7 +647,12 @@ func (g *gen) call(e *sema.Call) string {
 	}
 	var args []string
 	for i, a := range e.Args {
-		v := g.expr(a)
+		var v string
+		if g.isMem(a.Type()) && !fn.Extern {
+			v = g.exprOwned(a) // a copy of its own, made now: a later argument may change the original
+		} else {
+			v = g.expr(a)
+		}
 		if cl := lambdaArg(a); cl != nil {
 			delete(g.plainLambdas, cl) // emitted: the mark was for this call
 		}
@@ -594,7 +669,7 @@ func (g *gen) call(e *sema.Call) string {
 			args = append(args, g.cArg(sig.params[i], v, cArgExt(a.Type())))
 			continue
 		}
-		args = append(args, g.llType(a.Type())+" "+v)
+		args = append(args, g.vt(a.Type())+" "+v)
 	}
 	if fn.Extern && isCStruct(fn.Sig.Ret) {
 		if fn.Foreign {
@@ -616,11 +691,18 @@ func (g *gen) call(e *sema.Call) string {
 		var avs []string
 		for i, a := range e.Args {
 			ats = append(ats, a.Type())
-			avs = append(avs, strings.TrimPrefix(args[i], g.llType(a.Type())+" "))
+			avs = append(avs, strings.TrimPrefix(args[i], g.vt(a.Type())+" "))
 		}
 		v := g.callSuspending(fn, ats, avs, g.resultTypeOf(fn.Sig), pushed)
 		g.chainPop(pushed)
 		return v
+	}
+	if rt := g.fnRet(fn); !fn.Extern && rt != nil && g.isMem(rt) {
+		// the result comes back through memory (mem.go)
+		tmp := g.newMem(rt)
+		g.emit("call void @%s(%s)", fn.Name, joinArgs(append([]string{g.sretParam(rt) + " " + tmp}, args...)))
+		g.chainPop(pushed)
+		return tmp
 	}
 	ret := g.retLL(fn)
 	if fn.Extern && (types.IsUnit(fn.Sig.Ret) || types.IsNever(fn.Sig.Ret)) {
@@ -1010,7 +1092,7 @@ func (g *gen) ifExpr(e *sema.If) string {
 	g.placeLabel(thenL)
 	v := g.block(e.Then)
 	if hasValue && !g.term && e.Then.Value != nil {
-		g.emit("store %s %s, ptr %s", llt, v, res)
+		g.storeVal(e.Type(), v, res)
 	}
 	if !g.term {
 		g.emitTerm("br label %%%s", endL)
@@ -1019,7 +1101,7 @@ func (g *gen) ifExpr(e *sema.If) string {
 		g.placeLabel(elseL)
 		v := g.block(e.Else)
 		if hasValue && !g.term && e.Else.Value != nil {
-			g.emit("store %s %s, ptr %s", llt, v, res)
+			g.storeVal(e.Type(), v, res)
 		}
 		if !g.term {
 			g.emitTerm("br label %%%s", endL)
@@ -1033,9 +1115,7 @@ func (g *gen) ifExpr(e *sema.If) string {
 	if !hasValue {
 		return "zeroinitializer"
 	}
-	out := g.newTmp()
-	g.emit("%s = load %s, ptr %s", out, llt, res)
-	return out
+	return g.loadVal(e.Type(), res)
 }
 
 func (g *gen) match(m *sema.Match) string {
@@ -1048,7 +1128,7 @@ func (g *gen) match(m *sema.Match) string {
 	if m.Subject != nil {
 		v := g.expr(m.Init)
 		st := g.declareVar(m.Subject)
-		g.emit("store %s %s, ptr %s", g.llType(m.Subject.Type), v, st)
+		g.storeVal(m.Subject.Type, v, st)
 	}
 	endL := g.newLabel("when.end")
 	next := g.newLabel("when.arm")
@@ -1075,7 +1155,7 @@ func (g *gen) match(m *sema.Match) string {
 		g.placeLabel(bodyL)
 		v := g.block(arm.Body)
 		if hasValue && !g.term && arm.Body.Value != nil {
-			g.emit("store %s %s, ptr %s", llt, v, res)
+			g.storeVal(m.Type(), v, res)
 		}
 		if !g.term {
 			g.emitTerm("br label %%%s", endL)
@@ -1095,9 +1175,7 @@ func (g *gen) match(m *sema.Match) string {
 	if !hasValue {
 		return "zeroinitializer"
 	}
-	out := g.newTmp()
-	g.emit("%s = load %s, ptr %s", out, llt, res)
-	return out
+	return g.loadVal(m.Type(), res)
 }
 
 func (g *gen) elvis(e *sema.Elvis) string {
@@ -1109,31 +1187,26 @@ func (g *gen) elvis(e *sema.Elvis) string {
 	if isPtrLike(nt.Elem) {
 		g.emit("%s = icmp eq ptr %s, null", isNull, l)
 	} else {
-		tag := g.newTmp()
-		g.emit("%s = extractvalue %s %s, 0", tag, g.llType(nt), l)
+		tag := g.nullFlag(nt, l)
 		g.emit("%s = xor i1 %s, true", isNull, tag)
 	}
 	defL, someL, endL := g.newLabel("elvis.default"), g.newLabel("elvis.some"), g.newLabel("elvis.end")
 	g.emitTerm("br i1 %s, label %%%s, label %%%s", isNull, defL, someL)
 	g.placeLabel(someL)
 	if isPtrLike(nt.Elem) {
-		g.emit("store %s %s, ptr %s", llt, l, res)
+		g.storeVal(e.Type(), l, res)
 	} else {
-		inner := g.newTmp()
-		g.emit("%s = extractvalue %s %s, 1", inner, g.llType(nt), l)
-		g.emit("store %s %s, ptr %s", llt, inner, res)
+		g.storeVal(e.Type(), g.nullVal(nt, l), res)
 	}
 	g.emitTerm("br label %%%s", endL)
 	g.placeLabel(defL)
 	r := g.expr(e.R)
 	if !g.term {
-		g.emit("store %s %s, ptr %s", llt, r, res)
+		g.storeVal(e.Type(), r, res)
 		g.emitTerm("br label %%%s", endL)
 	}
 	g.placeLabel(endL)
-	out := g.newTmp()
-	g.emit("%s = load %s, ptr %s", out, llt, res)
-	return out
+	return g.loadVal(e.Type(), res)
 }
 
 // ---------------------------------------------------------------------------
@@ -1151,13 +1224,12 @@ func (g *gen) errorConvert(e *sema.ErrorConvert) string {
 	toLL := g.llType(toU)
 	if _, fromIsUnion := from.(*types.ErrorUnion); !fromIsUnion {
 		idx := types.UnionIndex(toU, from)
-		return g.makeTagged(toLL, idx, g.llType(from), x)
+		return g.makeTaggedT(toU, idx, from, x)
 	}
 	// union to union: map tags, copy payload words
 	fromU := from.(*types.ErrorUnion)
 	fromLL := g.llType(fromU)
-	oldTag := g.newTmp()
-	g.emit("%s = extractvalue %s %s, 0", oldTag, fromLL, x)
+	oldTag := g.tagOf(fromU, x)
 	newTag := "0"
 	for i, m := range fromU.Members {
 		j := types.UnionIndex(toU, m)
@@ -1167,10 +1239,13 @@ func (g *gen) errorConvert(e *sema.ErrorConvert) string {
 		g.emit("%s = select i1 %s, i32 %d, i32 %s", sel, is, j, newTag)
 		newTag = sel
 	}
-	src := g.alloca(fromLL)
-	g.emit("store %s %s, ptr %s", fromLL, x, src)
+	src := g.spill(fromU, x)
 	dst := g.alloca(toLL)
-	g.emit("store %s zeroinitializer, ptr %s", toLL, dst)
+	if g.isMem(toU) {
+		g.emit("call void @llvm.memset.p0.i64(ptr %s, i8 0, i64 %d, i1 false)", dst, g.memSize(toU))
+	} else {
+		g.emit("store %s zeroinitializer, ptr %s", toLL, dst)
+	}
 	tagP := g.newTmp()
 	g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 0", tagP, toLL, dst)
 	g.emit("store i32 %s, ptr %s", newTag, tagP)
@@ -1183,9 +1258,7 @@ func (g *gen) errorConvert(e *sema.ErrorConvert) string {
 		words = w
 	}
 	g.emit("call void @llvm.memcpy.p0.p0.i64(ptr %s, ptr %s, i64 %d, i1 false)", dp, sp, 8*words)
-	v := g.newTmp()
-	g.emit("%s = load %s, ptr %s", v, toLL, dst)
-	return v
+	return g.loadVal(toU, dst)
 }
 
 // throwValue returns Err(errValue) from the current throwing function.
@@ -1196,12 +1269,8 @@ func (g *gen) throwValue(errValue string, from types.Type) {
 	conv := g.convertError(errValue, from, to)
 	g.runCleanups(0)
 	payload := g.buildStruct(errVariant, []string{conv})
-	r := g.makeTagged(g.llType(rs), 1, g.llType(errVariant), payload)
-	if g.coro != nil {
-		g.coroReturn(g.llType(rs), r, true)
-		return
-	}
-	g.emitTerm("ret %s %s", g.llType(rs), r)
+	r := g.makeTaggedT(rs, 1, errVariant, payload)
+	g.emitRet(rs, r, true)
 }
 
 // constExpr wraps an already-evaluated SSA value as an expression.
@@ -1227,32 +1296,27 @@ func (g *gen) convertError(v string, from, to types.Type) string {
 
 func (g *gen) try(e *sema.Try) string {
 	rs := e.X.Type().(*types.Sealed)
-	rsLL := g.llType(rs)
 	x := g.expr(e.X)
-	tag := g.newTmp()
-	g.emit("%s = extractvalue %s %s, 0", tag, rsLL, x)
+	tag := g.tagOf(rs, x)
 	isErr := g.newTmp()
 	g.emit("%s = icmp eq i32 %s, 1", isErr, tag)
 	errL, okL := g.newLabel("try.err"), g.newLabel("try.ok")
 	g.emitTerm("br i1 %s, label %%%s, label %%%s", isErr, errL, okL)
 	g.placeLabel(errL)
 	errVariant := rs.Variants[1]
-	payload := g.extractTagged(rsLL, x, g.llType(errVariant))
+	payload := g.extractTaggedT(rs, x, errVariant)
 	errVal := "zeroinitializer"
 	if g.llType(errVariant) != "{}" {
-		errVal = g.newTmp()
-		g.emit("%s = extractvalue %s %s, 0", errVal, g.llType(errVariant), payload)
+		errVal = g.part(errVariant, payload, 0, errVariant.Fields[0].Type)
 	}
 	g.throwValue(errVal, errVariant.Fields[0].Type)
 	g.placeLabel(okL)
 	okVariant := rs.Variants[0]
-	okPayload := g.extractTagged(rsLL, x, g.llType(okVariant))
+	okPayload := g.extractTaggedT(rs, x, okVariant)
 	if g.llType(okVariant) == "{}" {
 		return "zeroinitializer"
 	}
-	v := g.newTmp()
-	g.emit("%s = extractvalue %s %s, 0", v, g.llType(okVariant), okPayload)
-	return v
+	return g.part(okVariant, okPayload, 0, okVariant.Fields[0].Type)
 }
 
 // ---------------------------------------------------------------------------
@@ -1267,6 +1331,10 @@ func (g *gen) listLit(e *sema.ListLit) string {
 		tmp := g.alloca(et)
 		for _, el := range e.Elems {
 			v := g.expr(el)
+			if g.isMem(lt.Elem) {
+				g.emit("call void @veles_list_push(ptr %s, ptr %s)", list, v) // the value is in memory already
+				continue
+			}
 			g.emit("store %s %s, ptr %s", et, v, tmp)
 			g.emit("call void @veles_list_push(ptr %s, ptr %s)", list, tmp)
 		}
@@ -1408,7 +1476,7 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		nt := e.Type().(*types.Nullable)
 		from, to := types.Underlying(e.Args[0].Type()), types.Underlying(nt.Elem)
 		val := g.convertValue(x, from, to)
-		return g.makeNullable(nt, g.fitsConversion(x, val, from, to), val)
+		return g.makeNullableT(nt, g.fitsConversion(x, val, from, to), val)
 	case "int.countOnes", "int.leadingZeros", "int.trailingZeros":
 		x := g.expr(e.Args[0])
 		ty := g.llType(e.Type())
@@ -1606,6 +1674,13 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		g.emit("%s = call %s @llvm.%s.%s(%s %s, %s %s)", v, ty, intr, ty, ty, x, ty, y)
 		return v
 	case "list.len":
+		if at, ok := e.Args[0].Type().(*types.Array); ok {
+			n, _ := at.N()
+			if !isPlace(e.Args[0]) {
+				g.expr(e.Args[0]) // evaluated for its effects
+			}
+			return fmt.Sprint(n)
+		}
 		l := g.expr(e.Args[0])
 		return g.listLen(l)
 	case "rawptr.add", "rawptr.sub":
@@ -1656,26 +1731,24 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		g.emit("call void @veles_list_append_bytes(ptr %s, ptr %s, i64 %s)", l, sp, sl)
 		return "zeroinitializer"
 	case "list.get":
+		if _, ok := e.Args[0].Type().(*types.Array); ok {
+			p := g.arrayElemPtr(e.Args[0], g.expr(e.Args[1]), false, e.Span)
+			return g.loadVal(e.Type(), p)
+		}
 		l := g.expr(e.Args[0])
 		i := g.expr(e.Args[1])
 		p := g.listElemPtr(l, i, g.where(e.Span))
-		v := g.newTmp()
-		g.emit("%s = load %s, ptr %s", v, g.llType(e.Type()), p)
-		return v
+		return g.loadVal(e.Type(), p)
 	case "list.ref", "list.refUnchecked":
 		// as a value: the element itself (`xs.set(i, v)` and `ref`
 		// use it as a place; place() is what takes the address)
 		p := g.place(e)
-		v := g.newTmp()
-		g.emit("%s = load %s, ptr %s", v, g.llType(e.Type()), p)
-		return v
+		return g.loadVal(e.Type(), p)
 	case "deref":
 		// a read through a pointer that is a value, not a place (a copy of
 		// a stored map value)
 		p := g.expr(e.Args[0])
-		v := g.newTmp()
-		g.emit("%s = load %s, ptr %s", v, g.llType(e.Type()), p)
-		return v
+		return g.loadVal(e.Type(), p)
 	case "list.reserve":
 		l := g.expr(e.Args[0])
 		n := g.expr(e.Args[1])
@@ -1685,6 +1758,7 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		l := g.expr(e.Args[0])
 		x := g.expr(e.Args[1])
 		et := g.llType(e.Args[1].Type())
+		xt := e.Args[1].Type()
 		// inline while there is room; the runtime grows the storage. A
 		// MutableList never crosses a task (D35), so no other thread sees it.
 		lenP, capP := g.newTmp(), g.newTmp()
@@ -1703,14 +1777,17 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		g.emit("%s = load i64, ptr %s", es, ep)
 		g.emit("%s = mul i64 %s, %s", off, es, n)
 		g.emit("%s = getelementptr inbounds i8, ptr %s, i64 %s", p, data, off)
-		g.emit("store %s %s, ptr %s", et, x, p)
+		g.storeVal(xt, x, p)
 		g.emit("%s = add i64 %s, 1", n1, n)
 		g.emit("store i64 %s, ptr %s", n1, lenP)
 		g.bumpMods(l)
 		g.emitTerm("br label %%%s", doneL)
 		g.placeLabel(slowL)
-		tmp := g.alloca(et)
-		g.emit("store %s %s, ptr %s", et, x, tmp)
+		tmp := x // a memory-class value is in memory already
+		if !g.isMem(xt) {
+			tmp = g.alloca(et)
+			g.emit("store %s %s, ptr %s", et, x, tmp)
+		}
 		g.emit("call void @veles_list_push(ptr %s, ptr %s)", l, tmp)
 		g.emitTerm("br label %%%s", doneL)
 		g.placeLabel(doneL)
@@ -1719,13 +1796,16 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		l := g.expr(e.Args[0])
 		nt := e.Type().(*types.Nullable)
 		et := g.llType(nt.Elem)
-		tmp := g.alloca(et)
-		g.emit("store %s zeroinitializer, ptr %s", et, tmp)
+		var tmp string
+		if g.isMem(nt.Elem) {
+			tmp = g.zeroMem(nt.Elem)
+		} else {
+			tmp = g.alloca(et)
+			g.emit("store %s zeroinitializer, ptr %s", et, tmp)
+		}
 		ok := g.newTmp()
 		g.emit("%s = call i1 @veles_list_pop(ptr %s, ptr %s)", ok, l, tmp)
-		val := g.newTmp()
-		g.emit("%s = load %s, ptr %s", val, et, tmp)
-		return g.makeNullable(nt, ok, val)
+		return g.makeNullableT(nt, ok, g.loadVal(nt.Elem, tmp))
 	case "list.sortedNative":
 		l := g.expr(e.Args[0])
 		v := g.newTmp()
@@ -1906,7 +1986,7 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		g.emit("%s = call i1 @veles_bytes_decode_utf8_range(ptr %s, ptr %s, i64 %s, i64 %s)", ok, out, l, lo, hi)
 		val := g.newTmp()
 		g.emit("%s = load %s, ptr %s", val, strType, out)
-		return g.makeNullable(e.Type().(*types.Nullable), ok, val)
+		return g.makeNullableT(e.Type().(*types.Nullable), ok, val)
 	case "list.decodeUtf8":
 		l := g.expr(e.Args[0])
 		out := g.alloca(strType)
@@ -1915,7 +1995,7 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		g.emit("%s = call i1 @veles_bytes_decode_utf8(ptr %s, ptr %s)", ok, out, l)
 		val := g.newTmp()
 		g.emit("%s = load %s, ptr %s", val, strType, out)
-		return g.makeNullable(e.Type().(*types.Nullable), ok, val)
+		return g.makeNullableT(e.Type().(*types.Nullable), ok, val)
 	case "string.substring":
 		s := g.expr(e.Args[0])
 		lo := g.expr(e.Args[1])
@@ -1927,7 +2007,7 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		g.emit("%s = call i1 @veles_string_substring(ptr %s, ptr %s, i64 %s, i64 %s, i64 %s)", ok, out, sp, sl, lo, hi)
 		val := g.newTmp()
 		g.emit("%s = load %s, ptr %s", val, strType, out)
-		return g.makeNullable(e.Type().(*types.Nullable), ok, val)
+		return g.makeNullableT(e.Type().(*types.Nullable), ok, val)
 	case "string.toInt":
 		s := g.expr(e.Args[0])
 		sp, sl := g.strPtrLen(s)
@@ -1937,9 +2017,21 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		g.emit("%s = call i1 @veles_string_to_int(ptr %s, i64 %s, ptr %s)", ok, sp, sl, out)
 		val := g.newTmp()
 		g.emit("%s = load i64, ptr %s", val, out)
-		return g.makeNullable(e.Type().(*types.Nullable), ok, val)
+		return g.makeNullableT(e.Type().(*types.Nullable), ok, val)
 	}
 	panic("codegen: unknown builtin " + e.Op)
+}
+
+// makeNullableT is makeNullable for any T?: one in the memory class is
+// built in storage of its own.
+func (g *gen) makeNullableT(nt *types.Nullable, present, val string) string {
+	if isPtrLike(nt.Elem) || !g.isMem(nt) {
+		return g.makeNullable(nt, present, val)
+	}
+	tmp := g.newMem(nt)
+	g.emit("store i1 %s, ptr %s", present, g.fieldPtr(g.llType(nt), tmp, 0))
+	g.storeVal(nt.Elem, val, g.fieldPtr(g.llType(nt), tmp, 1))
+	return tmp
 }
 
 // makeNullable builds a T? from a presence flag and a value.
@@ -2013,8 +2105,8 @@ func (g *gen) callIndirect(e *sema.CallIndirect) string {
 	args := []string{"ptr " + env}
 	vals := make([]string, len(e.Args)) // each argument is evaluated once
 	for i, a := range e.Args {
-		vals[i] = g.expr(a)
-		args = append(args, g.llType(a.Type())+" "+vals[i])
+		vals[i] = g.exprOwned(a)
+		args = append(args, g.vt(a.Type())+" "+vals[i])
 	}
 	if sema.IndirectSuspendsIn(e, g.view()) { // by its type, unless the instance knows it is plain (D116)
 		ct := g.newTmp()
@@ -2030,25 +2122,7 @@ func (g *gen) callIndirect(e *sema.CallIndirect) string {
 		g.startIndirect(ct, ft, ats, avs)
 		return g.awaitTask(ct, g.resultTypeOf(ft))
 	}
-	ret := g.funcRetLL(ft)
-	if ret == "void" {
-		g.emit("call void %s(%s)", code, joinArgs(args))
-		return "zeroinitializer"
-	}
-	v := g.newTmp()
-	g.emit("%s = call %s %s(%s)", v, ret, code, joinArgs(args))
-	return v
-}
-
-// funcRetLL is the LLVM return type of a function type value.
-func (g *gen) funcRetLL(ft *types.Func) string {
-	if ft.Effects.Throws {
-		return g.llType(g.prog.ResultType(ft.Ret, ft.Effects.Error))
-	}
-	if types.IsUnit(ft.Ret) || types.IsNever(ft.Ret) {
-		return "void"
-	}
-	return g.llType(ft.Ret)
+	return g.callRet(g.sigRet(ft), code, args)
 }
 
 // thunkFor returns an adapter giving a named function the closure calling
@@ -2061,13 +2135,17 @@ func (g *gen) thunkFor(fn *sema.Func) string {
 	g.thunks[name] = true
 	g.pending = append(g.pending, func() {
 		var params, args []string
+		if rt := g.fnRet(fn); !fn.Suspends && rt != nil && g.isMem(rt) {
+			params = append(params, g.sretParam(rt)+" %sret") // the result is written through the caller's pointer
+			args = append(args, "ptr %sret")
+		}
 		if fn.Suspends {
 			params = append(params, "ptr %task")
 			args = append(args, "ptr %task")
 		}
 		params = append(params, "ptr %env")
 		for i, p := range fn.Params {
-			llt := g.llType(p.Type)
+			llt := g.vt(p.Type)
 			params = append(params, fmt.Sprintf("%s %%p%d", llt, i))
 			args = append(args, fmt.Sprintf("%s %%p%d", llt, i))
 		}
@@ -2096,7 +2174,7 @@ func (g *gen) box(e *sema.Box) string {
 	t := e.X.Type()
 	v := g.expr(e.X)
 	data := g.gcAlloc(t)
-	g.emit("store %s %s, ptr %s", g.llType(t), v, data)
+	g.storeVal(t, v, data)
 	vt := g.vtable(e)
 	a := g.newTmp()
 	g.emit("%s = insertvalue { ptr, ptr } undef, ptr %s, 0", a, data)
@@ -2140,8 +2218,12 @@ func (g *gen) vtableThunk(vt string, idx int, fn *sema.Func) string {
 		// trait object's data pointer is passed through unchanged
 		params := []string{"ptr %self"}
 		args := []string{"ptr %self"}
+		if rt := g.fnRet(fn); !fn.Suspends && rt != nil && g.isMem(rt) {
+			params = append([]string{g.sretParam(rt) + " %sret"}, params...)
+			args = append([]string{"ptr %sret"}, args...)
+		}
 		for i, p := range fn.Params {
-			llt := g.llType(p.Type)
+			llt := g.vt(p.Type)
 			params = append(params, fmt.Sprintf("%s %%p%d", llt, i))
 			args = append(args, fmt.Sprintf("%s %%p%d", llt, i))
 		}
@@ -2172,17 +2254,9 @@ func (g *gen) callVirtual(e *sema.CallVirtual) string {
 	g.emit("%s = load ptr, ptr %s", fnp, slot)
 	args := []string{"ptr " + data}
 	for _, a := range e.Args {
-		args = append(args, g.llType(a.Type())+" "+g.expr(a))
+		args = append(args, g.vt(a.Type())+" "+g.exprOwned(a))
 	}
-	sig := e.Sig
-	ret := g.funcRetLL(sig)
-	if ret == "void" {
-		g.emit("call void %s(%s)", fnp, joinArgs(args))
-		return "zeroinitializer"
-	}
-	v := g.newTmp()
-	g.emit("%s = call %s %s(%s)", v, ret, fnp, joinArgs(args))
-	return v
+	return g.callRet(g.sigRet(e.Sig), fnp, args)
 }
 
 // llFloatSuffix is the intrinsic name suffix for an LLVM float type.

@@ -76,7 +76,7 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 		}
 		return true
 	}
-	list := f.newTemp(lt)
+	list := f.listTemp(recv, lt)
 	// an enclosing adapter may have pending declarations (a key function
 	// bound by fnArg) and be checking a call this switch does not handle
 	// (`sortedBy` rewritten to `sortedWith`): hand them back on the way out
@@ -389,7 +389,7 @@ func (f *fnCtx) listFilterIs(recv Expr, lt *types.List, typeArgs []types.Type, e
 		f.errorf(span, "'%s' is not a variant of '%s'", typeArgs[0], sealed)
 		return bad()
 	}
-	list := f.newTemp(lt)
+	list := f.listTemp(recv, lt)
 	outT := &types.List{Elem: variant, Mutable: true}
 	out := f.newTemp(outT)
 	stmts := []Stmt{&VarDecl{Var: list, Init: recv}, &VarDecl{Var: out, Init: &ListLit{exprBase{outT}, nil}}}

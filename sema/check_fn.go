@@ -1243,12 +1243,15 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 			v, parts := f.bindLoopVar(s.Var, it.Elem)
 			if s.Var.Name != nil {
 				f.rangeLoopFacts(s, v)
+				f.constRangeFacts(iter, v)
 			}
 			f.loops = append(f.loops, &loopFrame{hir: lp, label: label})
 			body := f.checkBlock(s.Body, nil, false)
 			f.loops = f.loops[:len(f.loops)-1]
 			body.Stmts = append(append([]Stmt{&VarDecl{Var: v, Init: &VarRef{exprBase{it.Elem}, idx}}}, parts...), body.Stmts...)
 			lp.Body = body
+		case *types.Array:
+			return f.arrayLoop(s, iter, it, lp, label)
 		case *types.List:
 			byRef := s.Var.Name != nil && s.Var.Ref
 			if !byRef && hasRefBinding(s.Var) {

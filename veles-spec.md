@@ -4027,6 +4027,67 @@ the lexer's small buffers. Brackets stay literal syntax (D25).
 User, 2026-10-01, recommended of 4. Rejected: `[T; N]` (a second meaning for
 brackets); arrays only inside `extern struct`; leaving it.
 
+*Built 2026-10-03 (B16).* Settled while building:
+
+- **Type arguments take constants.** Where a type argument goes, a number or
+  an expression of constants is a constant argument: `Array<u8, 64>`,
+  `Array<u8, 4 * 16>`, `Array<u32, WORDS>` (a module constant, D113). A lone
+  name is a type name when some type has it and a constant when none does.
+  `<const N: i64>` declares a constant parameter (`i64` only, for now); `N`
+  is a constant of type `i64` in the body of each instance and a type
+  argument wherever a length goes. `Array<u8, N + 1>` is refused, as the
+  design said: a type argument may name `N` but not calculate from it.
+- **One type, three roles of the length.** `Array<T, N>` is a built-in
+  type (`types.Array`) whose length is a `types.Const`, a const type
+  parameter, or — inside a template — still open; identity, instances
+  (`Buf<16>` is a struct instance of its own), inference (`unify` binds `N`
+  from `Array<i64, 3>`; a literal `[1, 2, 3]` argument gives `N = 3`) and
+  substitution treat it like any other type argument. The size is checked
+  against 1 GiB once every struct is laid out.
+- **The memory class** (the user's choice, 2026-10-03). A value of an
+  aggregate type of 128 bytes or more that holds an array — a big `Array`, a
+  struct or tuple with one, a `T?`, `Result` or error union around one — is
+  never an SSA value: a register standing for it holds its address, a copy
+  is a `memmove`, an argument is the address of a copy the caller made, a
+  result is written through an `sret` pointer. Everything smaller keeps its
+  SSA form and its IR byte for byte (every golden is unchanged). A 1 MiB
+  `Array<u8, …>` local compiles in a second; a `Result` carrying one, a
+  closure taking one, a task argument, a channel element, a map value and a
+  trait object's method all work; an extern struct of that size crosses to C
+  by value as C passes it.
+- **Reads.** `a.at(i)` is `T?`, and `T` where the index is a constant in
+  range (an out-of-range constant is an error), where a bounds fact proves it
+  (`loop (i in a.indices())`, `loop (i in 0..<K.len())`, `loop (i < 4)`), and
+  for a constant array at a constant index it is folded at compile time.
+  `first` and `last` are `T` for a non-empty array. `indices()` is `0..<N`.
+- **Read-only `List` methods.** `map`, `filter`, `forEach`, `fold`, `any`,
+  `all` and `find` are the prelude's own for an array (an `extend` of
+  `Array<T, const N: i64>`) and read it where it lies. Any other `List`
+  method runs on a copy of its elements: the compiler's own (`indexOf`,
+  `contains`, `reversed`) over a temporary array, the rest (`sorted`, `join`,
+  `sum`, `zip`, …) over a `List` made from it. A method that lends storage
+  (`withRaw`) is the array's own, on the array itself.
+- **Loops.** `loop (x in a)` walks a copy; `loop (&x in a)` walks the array
+  in place (the variable is heap-promoted, as `&a` does).
+- **Constants.** `const T: Array<u32, 64> = […]` is a read-only table
+  `[64 x i32]` in the binary; a use reads it in place (a big one is never
+  copied just to be indexed), and `T.at(3)` is the element at compile time.
+- **C.** An array field of an `extern struct` is C's `T x[N]`; the by-value
+  C ABI classifies it element by element (up to 16 elements; past that its
+  bytes count as integers, since no struct that big travels in registers).
+  `Array<T: CLayout, N>` has `withRaw`, lending the array's own storage to C
+  for the length of a closure.
+- **Std.** `Default` (an array of the element's default), `Codable` (a list;
+  decoding says `expected N elements, found M` with the path), `Hashable`
+  and `Equatable` structurally, `Sendable` when the element is. std's
+  SHA-256 holds its state, block and message schedule in arrays: the
+  benchmark went from 113–135 ms to 87–91 ms for 16 MiB.
+- **Not offered yet.** `ref(i)` and in-place `sort`/`swap` on an array
+  (`set` and `loop (&x in a)` are), `extend` of `Array` outside std,
+  arithmetic on a constant parameter in a type, a constant parameter of a
+  type other than `i64`, a native (copy-free) version of every read-only
+  list method — all but seven copy once per call.
+
 ### D122 — No `.d.vs` declaration files (v0.64)
 
 A binding is an ordinary package (D67 allows `extern` blocks anywhere): by

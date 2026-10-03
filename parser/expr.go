@@ -49,10 +49,10 @@ func infixBp(k lexer.TokenKind) int {
 }
 
 func (p *Parser) parseExpr() ast.Expr {
-	saved := p.inTry
-	p.inTry = false
+	saved, savedArg := p.inTry, p.inTypeArg
+	p.inTry, p.inTypeArg = false, false
 	x := p.parseBinary(bpNone)
-	p.inTry = saved
+	p.inTry, p.inTypeArg = saved, savedArg
 	return x
 }
 
@@ -79,6 +79,9 @@ func (p *Parser) parseBinary(minBp int) ast.Expr {
 			continue
 		}
 		bp := infixBp(op)
+		if op == lexer.Shr && p.inTypeArg {
+			bp = bpNone
+		}
 		if bp == bpNone || bp <= minBp {
 			return left
 		}

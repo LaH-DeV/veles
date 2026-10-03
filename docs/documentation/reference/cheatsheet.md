@@ -44,6 +44,7 @@ val (a, b) = (1, "one")         // tuple destructuring, nests: val ((x, y), z) =
 | tuple | `(A, B)`, unit is `()` |
 | function | `fun(A, B): R`, with `suspends` / `throws E`; `sendable fun(...)` may cross tasks |
 | collections | `List<T> MutableList<T> Map<K,V> MutableMap<K,V> Set<T> MutableSet<T>` |
+| fixed arrays | `Array<T, N>`: `N` elements inline, a value (D121) |
 | ranges | `Range<T>` from `a..b` (inclusive) or `a..<b` |
 | concurrency | `Channel<T>`, `Task<T>`, `Mutex<T>`, `Atomic<T>` |
 | results | `Result<T, E>`; `T?` is `Option<T>` |
@@ -214,6 +215,11 @@ val pq = PriorityQueue<i64>.natural(); pq.push(x); pq.pop(); pq.peek(); Priority
 m.get(k) ?: d; m.get(k) ?: panic("why"); m.getOrDefault(k, d); m.containsKey(k); m.keys(); m.values(); m.entries(); mm.set(k, v); mm.remove(k)
 mm.ref(k)?.bump(); mm.ref(k)?.n += 1   // a pointer to the stored value; get returns a copy
 s.add(x); s.contains(x); s.remove(x); s.toList()
+var a: Array<u32, 8> = [1, 2, 3, 4, 5, 6, 7, 8]   // N inline elements, no allocation, a value: val b = a copies (D121); N may be a constant: Array<u8, 4 * 16>, Array<u8, WIDTH>
+a.set(i, v); a.at(i); a.at(3); a.len(); loop (x in a); loop (&x in a)   // at is T? — T for a constant index in range, or one the bounds facts prove; set and &x need a var
+Array<i64, 8>.make(0); xs.toArray<8>() /* Array<T, 8>?: null unless the list holds 8 */; a.toList(); a.map(f); a.fold(0, f)   // the read-only List methods run on a copy
+const K: Array<u32, 64> = [...]; K.at(3)       // a read-only table in the binary; a constant index is folded
+fun sum<const N: i64>(a: Array<i64, N>): i64   // a constant parameter: inferred from the argument, or written: zeros<16>(); N is an i64 in the body
 xs.iter().filter(p).map(f).take(n).skip(n).enumerate().zip(ys.iter()).toList()
 it.count(); it.fold(z, f); it.any(p); it.all(p); it.find(p); it.last(); it.forEach(f)
 ```

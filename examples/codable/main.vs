@@ -17,13 +17,15 @@ struct Address {
 }
 
 struct User {
-  @key("user_id") id: i64      // this key, in every format
+  @key("user_id")
+  id: i64                      // this key, in every format
   name:    string              // required: no default, not nullable
   email:   string?             // null or absent → null
   role:    Role = Role.Member  // absent → the default
   tags:    List<string> = []
   address: Address?
-  @skip passwordHash: string = ""  // never on the wire
+  @skip
+  passwordHash: string = ""  // never on the wire
   implement Codable
 }
 

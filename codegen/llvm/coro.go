@@ -199,38 +199,31 @@ func (g *gen) failFastCheck() {
 	}
 }
 
-// coroReturn finishes the task with the (already Result-wrapped) value.
-func (g *gen) coroReturn(llt, v string, isResult bool) {
+// coroReturn finishes the task with the (already Result-wrapped) value v of
+// type t; nil t is no value.
+func (g *gen) coroReturn(t types.Type, v string, isResult bool) {
 	c := g.coro
-	if llt == "void" || llt == "" {
+	if t == nil {
 		g.emit("call void @veles_task_finish(ptr %s, ptr null, i64 0, i64 0)", c.task)
 		g.emitTerm("br label %%%s", c.finalL)
 		return
 	}
-	slot := g.alloca(llt)
-	g.emit("store %s %s, ptr %s", llt, v, slot)
+	slot := v // a memory-class value is already in memory
+	if !g.isMem(t) {
+		slot = g.alloca(g.llType(t))
+		g.emit("store %s %s, ptr %s", g.llType(t), v, slot)
+	}
 	failed := "0"
 	if isResult {
-		tag := g.newTmp()
-		g.emit("%s = extractvalue %s %s, 0", tag, llt, v)
+		tag := g.tagOf(t, v)
 		f := g.newTmp()
 		g.emit("%s = icmp eq i32 %s, 1", f, tag)
 		failed = g.newTmp()
 		g.emit("%s = zext i1 %s to i64", failed, f)
 	}
-	size := g.llSize(llt)
+	size := g.memSize(t)
 	g.emit("call void @veles_task_finish(ptr %s, ptr %s, i64 %d, i64 %s)", c.task, slot, size, failed)
 	g.emitTerm("br label %%%s", c.finalL)
-}
-
-// llSize returns the byte size of the function's logical return value.
-func (g *gen) llSize(llt string) int {
-	if g.fnResult != nil {
-		s, _ := g.layout(g.fnResult)
-		return s
-	}
-	s, _ := g.layout(g.fn.Sig.Ret)
-	return s
 }
 
 // awaitTask blocks until a task finishes and returns its result value.
@@ -265,9 +258,7 @@ func (g *gen) awaitTask(task string, rt types.Type) string {
 	}
 	rp := g.newTmp()
 	g.emit("%s = call ptr @veles_task_result(ptr %s)", rp, task)
-	v := g.newTmp()
-	g.emit("%s = load %s, ptr %s", v, g.llType(rt), rp)
-	return v
+	return g.loadVal(rt, rp)
 }
 
 // callSuspending runs a suspending function as a child task and awaits it.
@@ -304,7 +295,7 @@ func (g *gen) launch(e *sema.Launch) string {
 	var argVals []string
 	for _, a := range e.Call.Args {
 		argTypes = append(argTypes, a.Type())
-		argVals = append(argVals, g.expr(a))
+		argVals = append(argVals, g.exprOwned(a))
 	}
 	g.startTaskAs(ct, e.Call.Fn, argTypes, argVals, true)
 	slot := g.alloca("ptr")
@@ -326,28 +317,22 @@ func (g *gen) rampFor(fn *sema.Func) *sema.Func {
 		params = append(params, "ptr %task")
 		i := 0
 		if fn.Receiver != nil {
-			llt := g.llType(fn.Receiver.Type)
+			llt := g.vt(fn.Receiver.Type)
 			params = append(params, fmt.Sprintf("%s %%p%d", llt, i))
 			args = append(args, fmt.Sprintf("%s %%p%d", llt, i))
 			i++
 		}
 		for _, p := range fn.Params {
-			llt := g.llType(p.Type)
+			llt := g.vt(p.Type)
 			params = append(params, fmt.Sprintf("%s %%p%d", llt, i))
 			args = append(args, fmt.Sprintf("%s %%p%d", llt, i))
 			i++
 		}
 		saved := g.fnResult
 		g.defineCoroHelper(ramp, params, func() {
-			ret := g.retLL(fn)
-			if ret == "void" {
-				g.emit("call void @%s(%s)", fn.Name, joinArgs(args))
-				g.coroReturn("void", "", false)
-				return
-			}
-			v := g.newTmp()
-			g.emit("%s = call %s @%s(%s)", v, ret, fn.Name, joinArgs(args))
-			g.coroReturn(ret, v, fn.Sig.Effects.Throws)
+			rt := g.fnRet(fn)
+			v := g.callRet(rt, "@"+fn.Name, args)
+			g.coroReturn(rt, v, fn.Sig.Effects.Throws)
 		})
 		g.fnResult = saved
 	})
@@ -474,12 +459,10 @@ func (g *gen) scopeBlock(e *sema.ScopeBlock) string {
 		rp := g.newTmp()
 		g.emit("%s = call ptr @veles_task_result(ptr %s)", rp, ft)
 		rs := l.Call.Type().(*types.Sealed)
-		rv := g.newTmp()
-		g.emit("%s = load %s, ptr %s", rv, g.llType(rs), rp)
+		rv := g.loadVal(rs, rp)
 		errVariant := rs.Variants[1]
-		payload := g.extractTagged(g.llType(rs), rv, g.llType(errVariant))
-		ev := g.newTmp()
-		g.emit("%s = extractvalue %s %s, 0", ev, g.llType(errVariant), payload)
+		payload := g.extractTaggedT(rs, rv, errVariant)
+		ev := g.part(errVariant, payload, 0, errVariant.Fields[0].Type)
 		g.throwValue(ev, errVariant.Fields[0].Type)
 	}
 	g.placeLabel(end)
@@ -498,6 +481,10 @@ func (g *gen) gatherResults(e *sema.ScopeBlock) string {
 	}
 	llt := g.llType(tt)
 	acc := "undef"
+	var tupleMem string // the gathered tuple, when it is in the memory class
+	if g.isMem(tt) {
+		tupleMem = g.newMem(tt)
+	}
 	for i, l := range e.Launches {
 		slot := g.launchSlots[l]
 		ct := g.newTmp()
@@ -518,31 +505,38 @@ func (g *gen) gatherResults(e *sema.ScopeBlock) string {
 		// D52: the panic becomes Err(Panic) in the union
 		pt := g.prog.PanicType.(*types.Struct)
 		pv := g.convertError(g.panicValue(ct, pt), pt, want.Variants[1].Fields[0].Type)
-		pe := g.makeTagged(wantLL, 1, g.llType(want.Variants[1]), g.buildStruct(want.Variants[1], []string{pv}))
-		g.emit("store %s %s, ptr %s", wantLL, pe, res)
+		pe := g.makeTaggedT(want, 1, want.Variants[1], g.buildStruct(want.Variants[1], []string{pv}))
+		g.storeVal(want, pe, res)
 		g.emitTerm("br label %%%s", joinL)
 		g.placeLabel(okL)
 		var v string
 		if rs, isR := childT.(*types.Sealed); isR && isResultType(rs) {
-			cv := g.newTmp()
-			g.emit("%s = load %s, ptr %s", cv, g.llType(rs), rp)
+			cv := g.loadVal(rs, rp)
 			v = g.convertResult(cv, rs, want)
 		} else {
 			val := "zeroinitializer"
 			if !types.IsUnit(childT) {
-				val = g.newTmp()
-				g.emit("%s = load %s, ptr %s", val, g.llType(childT), rp)
+				val = g.loadVal(childT, rp)
 			}
-			v = g.makeTagged(wantLL, 0, g.llType(want.Variants[0]), g.buildStruct(want.Variants[0], []string{val}))
+			v = g.makeTaggedT(want, 0, want.Variants[0], g.buildStruct(want.Variants[0], []string{val}))
 		}
-		g.emit("store %s %s, ptr %s", wantLL, v, res)
+		g.storeVal(want, v, res)
 		g.emitTerm("br label %%%s", joinL)
 		g.placeLabel(joinL)
-		v = g.newTmp()
-		g.emit("%s = load %s, ptr %s", v, wantLL, res)
+		v = g.loadVal(want, res)
+		if tupleMem != "" {
+			g.storeVal(want, v, g.fieldPtr(llt, tupleMem, i))
+			continue
+		}
 		n := g.newTmp()
 		g.emit("%s = insertvalue %s %s, %s %s, %d", n, llt, acc, wantLL, v, i)
 		acc = n
+	}
+	if tupleMem != "" {
+		if !isTuple {
+			return g.part(tt, tupleMem, 0, e.Type())
+		}
+		return tupleMem
 	}
 	if !isTuple {
 		v := g.newTmp()
@@ -561,16 +555,13 @@ func (g *gen) race(e *sema.Race) string {
 		case sema.RaceRecv:
 			ch := g.expr(arm.Source)
 			ct := arm.Source.Type().(*types.Channel)
-			slots[i] = g.alloca(g.llType(ct.Elem))
-			g.emit("store %s zeroinitializer, ptr %s", g.llType(ct.Elem), slots[i])
+			slots[i] = g.zeroSlot(ct.Elem)
 			g.emit("call void @veles_race_recv(ptr %s, ptr %s, ptr %s)", r, ch, slots[i])
 		case sema.RaceSend:
 			// the channel and the value, once, as the race starts (D108)
 			ch := g.expr(arm.Source)
-			v := g.expr(arm.Value)
-			et := g.llType(arm.Value.Type())
-			slots[i] = g.alloca(et)
-			g.emit("store %s %s, ptr %s", et, v, slots[i])
+			v := g.exprOwned(arm.Value)
+			slots[i] = g.slotOf(arm.Value.Type(), v)
 			g.emit("call void @veles_race_send(ptr %s, ptr %s, ptr %s)", r, ch, slots[i])
 		case sema.RaceSleep:
 			ms := g.expr(arm.Source)
@@ -624,24 +615,21 @@ func (g *gen) race(e *sema.Race) string {
 				g.emit("%s = call i64 @veles_race_closed(ptr %s)", closed, r)
 				open := g.newTmp()
 				g.emit("%s = icmp eq i64 %s, 0", open, closed)
-				val := g.newTmp()
-				g.emit("%s = load %s, ptr %s", val, g.llType(ct.Elem), slots[i])
-				g.emit("store %s %s, ptr %s", g.llType(nt), g.makeNullable(nt, open, val), st)
+				val := g.loadVal(ct.Elem, slots[i])
+				g.storeVal(nt, g.makeNullableT(nt, open, val), st)
 			case sema.RaceTask:
 				t := g.newTmp()
 				g.emit("%s = load ptr, ptr %s", t, slots[i])
 				rp := g.newTmp()
 				g.emit("%s = call ptr @veles_task_result(ptr %s)", rp, t)
 				if !types.IsUnit(arm.Var.Type) {
-					v := g.newTmp()
-					g.emit("%s = load %s, ptr %s", v, g.llType(arm.Var.Type), rp)
-					g.emit("store %s %s, ptr %s", g.llType(arm.Var.Type), v, st)
+					g.storeVal(arm.Var.Type, g.loadVal(arm.Var.Type, rp), st)
 				}
 			}
 		}
 		v := g.block(arm.Body)
 		if hasValue && !g.term && arm.Body.Value != nil {
-			g.emit("store %s %s, ptr %s", llt, v, res)
+			g.storeVal(e.Type(), v, res)
 		}
 		if !g.term {
 			g.emitTerm("br label %%%s", end)
@@ -651,9 +639,7 @@ func (g *gen) race(e *sema.Race) string {
 	if !hasValue {
 		return "zeroinitializer"
 	}
-	out := g.newTmp()
-	g.emit("%s = load %s, ptr %s", out, llt, res)
-	return out
+	return g.loadVal(e.Type(), res)
 }
 
 // channel and timer builtins
@@ -668,9 +654,8 @@ func (g *gen) taskBuiltin(e *sema.Builtin) (string, bool) {
 	case "chan.send":
 		ct := e.Args[0].Type().(*types.Channel)
 		ch := g.expr(e.Args[0])
-		x := g.expr(e.Args[1])
-		slot := g.alloca(g.llType(ct.Elem))
-		g.emit("store %s %s, ptr %s", g.llType(ct.Elem), x, slot)
+		x := g.exprOwned(e.Args[1])
+		slot := g.slotOf(ct.Elem, x)
 		loop, done, susp := g.newLabel("send"), g.newLabel("send.done"), g.newLabel("send.susp")
 		g.emitTerm("br label %%%s", loop)
 		g.placeLabel(loop)
@@ -688,8 +673,7 @@ func (g *gen) taskBuiltin(e *sema.Builtin) (string, bool) {
 		ct := e.Args[0].Type().(*types.Channel)
 		nt := e.Type().(*types.Nullable)
 		ch := g.expr(e.Args[0])
-		slot := g.alloca(g.llType(ct.Elem))
-		g.emit("store %s zeroinitializer, ptr %s", g.llType(ct.Elem), slot)
+		slot := g.zeroSlot(ct.Elem)
 		loop, done, susp := g.newLabel("recv"), g.newLabel("recv.done"), g.newLabel("recv.susp")
 		g.emitTerm("br label %%%s", loop)
 		g.placeLabel(loop)
@@ -704,15 +688,13 @@ func (g *gen) taskBuiltin(e *sema.Builtin) (string, bool) {
 		g.placeLabel(done)
 		got := g.newTmp()
 		g.emit("%s = icmp eq i64 %s, 1", got, r)
-		val := g.newTmp()
-		g.emit("%s = load %s, ptr %s", val, g.llType(ct.Elem), slot)
-		return g.makeNullable(nt, got, val), true
+		val := g.loadVal(ct.Elem, slot)
+		return g.makeNullableT(nt, got, val), true
 	case "chan.trySend":
 		ct := e.Args[0].Type().(*types.Channel)
 		ch := g.expr(e.Args[0])
-		x := g.expr(e.Args[1])
-		slot := g.alloca(g.llType(ct.Elem))
-		g.emit("store %s %s, ptr %s", g.llType(ct.Elem), x, slot)
+		x := g.exprOwned(e.Args[1])
+		slot := g.slotOf(ct.Elem, x)
 		r := g.newTmp()
 		g.emit("%s = call i64 @veles_chan_try_send(ptr %s, ptr %s)", r, ch, slot)
 		ok := g.newTmp()
@@ -722,15 +704,13 @@ func (g *gen) taskBuiltin(e *sema.Builtin) (string, bool) {
 		ct := e.Args[0].Type().(*types.Channel)
 		nt := e.Type().(*types.Nullable)
 		ch := g.expr(e.Args[0])
-		slot := g.alloca(g.llType(ct.Elem))
-		g.emit("store %s zeroinitializer, ptr %s", g.llType(ct.Elem), slot)
+		slot := g.zeroSlot(ct.Elem)
 		r := g.newTmp()
 		g.emit("%s = call i64 @veles_chan_try_recv(ptr %s, ptr %s)", r, ch, slot)
 		got := g.newTmp()
 		g.emit("%s = icmp ne i64 %s, 0", got, r)
-		val := g.newTmp()
-		g.emit("%s = load %s, ptr %s", val, g.llType(ct.Elem), slot)
-		return g.makeNullable(nt, got, val), true
+		val := g.loadVal(ct.Elem, slot)
+		return g.makeNullableT(nt, got, val), true
 	case "chan.close":
 		ch := g.expr(e.Args[0])
 		g.emit("call void @veles_chan_close(ptr %s)", ch)
@@ -867,39 +847,34 @@ func (g *gen) convertResult(v string, from, to *types.Sealed) string {
 	if from == to {
 		return v
 	}
-	fromLL, toLL := g.llType(from), g.llType(to)
+	toLL := g.llType(to)
 	res := g.alloca(toLL)
-	tag := g.newTmp()
-	g.emit("%s = extractvalue %s %s, 0", tag, fromLL, v)
+	tag := g.tagOf(from, v)
 	isErr := g.newTmp()
 	g.emit("%s = icmp eq i32 %s, 1", isErr, tag)
 	errL, okL, endL := g.newLabel("conv.err"), g.newLabel("conv.ok"), g.newLabel("conv.end")
 	g.emitTerm("br i1 %s, label %%%s, label %%%s", isErr, errL, okL)
 	g.placeLabel(okL)
-	okPayload := g.extractTagged(fromLL, v, g.llType(from.Variants[0]))
+	okPayload := g.extractTaggedT(from, v, from.Variants[0])
 	okVal := "zeroinitializer"
 	if g.llType(from.Variants[0]) != "{}" {
-		okVal = g.newTmp()
-		g.emit("%s = extractvalue %s %s, 0", okVal, g.llType(from.Variants[0]), okPayload)
+		okVal = g.part(from.Variants[0], okPayload, 0, from.Variants[0].Fields[0].Type)
 	}
-	okNew := g.makeTagged(toLL, 0, g.llType(to.Variants[0]), g.buildStruct(to.Variants[0], []string{okVal}))
-	g.emit("store %s %s, ptr %s", toLL, okNew, res)
+	okNew := g.makeTaggedT(to, 0, to.Variants[0], g.buildStruct(to.Variants[0], []string{okVal}))
+	g.storeVal(to, okNew, res)
 	g.emitTerm("br label %%%s", endL)
 	g.placeLabel(errL)
-	errPayload := g.extractTagged(fromLL, v, g.llType(from.Variants[1]))
+	errPayload := g.extractTaggedT(from, v, from.Variants[1])
 	errVal := "zeroinitializer"
 	if g.llType(from.Variants[1]) != "{}" {
-		errVal = g.newTmp()
-		g.emit("%s = extractvalue %s %s, 0", errVal, g.llType(from.Variants[1]), errPayload)
+		errVal = g.part(from.Variants[1], errPayload, 0, from.Variants[1].Fields[0].Type)
 	}
 	conv := g.convertError(errVal, from.Variants[1].Fields[0].Type, to.Variants[1].Fields[0].Type)
-	errNew := g.makeTagged(toLL, 1, g.llType(to.Variants[1]), g.buildStruct(to.Variants[1], []string{conv}))
-	g.emit("store %s %s, ptr %s", toLL, errNew, res)
+	errNew := g.makeTaggedT(to, 1, to.Variants[1], g.buildStruct(to.Variants[1], []string{conv}))
+	g.storeVal(to, errNew, res)
 	g.emitTerm("br label %%%s", endL)
 	g.placeLabel(endL)
-	out := g.newTmp()
-	g.emit("%s = load %s, ptr %s", out, toLL, res)
-	return out
+	return g.loadVal(to, res)
 }
 
 // testRunner emits the `veles test` entry point: every test runs
@@ -1048,19 +1023,16 @@ func (g *gen) testRunner() {
 		}
 		rp := g.newTmp()
 		g.emit("%s = call ptr @veles_task_result(ptr %s)", rp, root)
-		result := g.newTmp()
-		g.emit("%s = load %s, ptr %s", result, g.llType(rs), rp)
-		tag := g.newTmp()
-		g.emit("%s = extractvalue %s %s, 0", tag, g.llType(rs), result)
+		result := g.loadVal(rs, rp)
+		tag := g.tagOf(rs, result)
 		isErr := g.newTmp()
 		g.emit("%s = icmp eq i32 %s, 1", isErr, tag)
 		errL, okL := g.newLabel("test.err"), g.newLabel("test.ok")
 		g.emitTerm("br i1 %s, label %%%s, label %%%s", isErr, errL, okL)
 		g.placeLabel(errL)
 		errVariant := rs.Variants[1]
-		payload := g.extractTagged(g.llType(rs), result, g.llType(errVariant))
-		errVal := g.newTmp()
-		g.emit("%s = extractvalue %s %s, 0", errVal, g.llType(errVariant), payload)
+		payload := g.extractTaggedT(rs, result, errVariant)
+		errVal := g.part(errVariant, payload, 0, errVariant.Fields[0].Type)
 		_, _, thrownRecorded := take()
 		fail(g.concat(g.concat(g.concat(g.stringConst("FAILED: "), g.show(errVariant.Fields[0].Type, errVal)), g.stringConst("\n")), thrownRecorded))
 		g.emitTerm("br label %%%s", doneL)
@@ -1123,6 +1095,10 @@ func (g *gen) entryThunk(fn *sema.Func, paramTypes []types.Type, extraLead []str
 			for i, ll := range lls {
 				p := g.newTmp()
 				g.emit("%s = getelementptr inbounds %s, ptr %%args, i32 0, i32 %d", p, blk, i)
+				if g.isMem(paramTypes[i]) {
+					args = append(args, "ptr "+p) // the argument block's own storage
+					continue
+				}
 				v := g.newTmp()
 				g.emit("%s = load %s, ptr %s", v, ll, p)
 				args = append(args, ll+" "+v)
@@ -1171,7 +1147,7 @@ func (g *gen) startTaskAs(task string, fn *sema.Func, argTypes []types.Type, arg
 		for i, v := range argVals {
 			p := g.newTmp()
 			g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d", p, blk, args, i)
-			g.emit("store %s %s, ptr %s", lls[i], v, p)
+			g.storeVal(argTypes[i], v, p)
 		}
 	}
 	thunk := g.entryThunk(fn, argTypes, nil)
@@ -1202,7 +1178,7 @@ func (g *gen) startIndirect(task string, ft *types.Func, argTypes []types.Type, 
 	for i, v := range argVals {
 		p := g.newTmp()
 		g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d", p, blk, args, i)
-		g.emit("store %s %s, ptr %s", lls[i], v, p)
+		g.storeVal(argTypes[i], v, p)
 	}
 	name := "entry.ft." + mangleType(ft)
 	if !g.thunks[name] {

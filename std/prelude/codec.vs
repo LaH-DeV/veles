@@ -467,6 +467,24 @@ implement<T: Decodable> Decodable for MutableList<T> {
   }
 }
 
+// An array travels as a list; reading one needs exactly N elements (D121).
+implement<T: Encodable, const N: i64> Encodable for Array<T, N> {
+  fun encode(to: Encoder) throws EncodeError {
+    try to.beginList()
+    loop (x in this) try x.encode(to)
+    try to.endList()
+  }
+}
+implement<T: Decodable, const N: i64> Decodable for Array<T, N> {
+  static fun decode(from: Decoder): Array<T, N> throws DecodeError {
+    val items = try List<T>.decode(from)
+    val a = items.toArray<N>()
+    if (a != null) return a
+    from.problem("expected $N elements, found ${items.len()}")
+    throw DecodeError(problems: from.problems())
+  }
+}
+
 implement<V: Encodable> Encodable for Map<string, V> {
   fun encode(to: Encoder) throws EncodeError {
     try to.beginObject()

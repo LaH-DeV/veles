@@ -33,6 +33,7 @@ const (
 	pathLen    = "$len>="
 	pathNonNeg = "$nonneg"
 	pathLenOf  = "$lenof:"
+	pathBelow  = "$below:" // i < k for a constant k (D121: an index into an array of k)
 )
 
 func inKey(idx, list *Var) place { return place{v: idx, path: pathIn + strconv.Itoa(list.ID)} }
@@ -42,7 +43,52 @@ func lenKey(list *Var, n int64) place {
 }
 
 func isBoundsPath(p string) bool {
-	return strings.HasPrefix(p, pathIn) || strings.HasPrefix(p, pathLen) || strings.HasPrefix(p, pathLenOf) || p == pathNonNeg
+	return strings.HasPrefix(p, pathIn) || strings.HasPrefix(p, pathLen) || strings.HasPrefix(p, pathLenOf) || strings.HasPrefix(p, pathBelow) || p == pathNonNeg
+}
+
+func belowKey(idx *Var, k int64) place {
+	return place{v: idx, path: pathBelow + strconv.FormatInt(k, 10)}
+}
+
+// constRangeFacts: `loop (i in lo..<K)` with constant ends — `K256.len()` and
+// `a.indices()` on an array are constants — puts i in lo..<K, so `a.at(i)`
+// on an array of length K is a `T` (D121).
+func (f *fnCtx) constRangeFacts(iter Expr, idx *Var) {
+	rl, ok := iter.(*RangeLit)
+	if !ok || idx == nil || idx.Mutable {
+		return
+	}
+	lo, ok1 := f.c.tryConst(rl.Lo).(*CInt)
+	hi, ok2 := f.c.tryConst(rl.Hi).(*CInt)
+	if !ok1 || !ok2 || !lo.V.IsInt64() || !hi.V.IsInt64() || lo.V.Int64() < 0 {
+		return
+	}
+	k := hi.V.Int64()
+	if rl.Inclusive {
+		k++
+	}
+	f.narrow[nonNegKey(idx)] = types.TUnit
+	f.narrow[belowKey(idx, k)] = types.TUnit
+}
+
+// indexBelow reports whether the facts put the index `arg` in 0..<n for an
+// array of n elements.
+func (f *fnCtx) indexBelow(arg ast.Expr, n int64) bool {
+	idx := f.boundsIndex(arg)
+	if idx == nil {
+		return false
+	}
+	if _, nonNeg := f.narrow[nonNegKey(idx)]; !nonNeg {
+		return false
+	}
+	for key := range f.narrow {
+		if key.v == idx && strings.HasPrefix(key.path, pathBelow) {
+			if k, err := strconv.ParseInt(key.path[len(pathBelow):], 10, 64); err == nil && k <= n {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // boundsList is the local list variable e names, if facts can be kept
@@ -55,8 +101,15 @@ func (f *fnCtx) boundsList(e ast.Expr) (*Var, *types.List) {
 	if v == nil || v.AddrTaken || v.Captured {
 		return nil, nil
 	}
-	lt, ok := f.currentTypeOf(pv(v)).(*types.List)
-	if !ok {
+	var lt *types.List
+	switch t := f.currentTypeOf(pv(v)).(type) {
+	case *types.List:
+		lt = t
+	case *types.Array:
+		// an array never changes length, so its facts are those of an immutable
+		// list's (D121)
+		lt = &types.List{Elem: t.Elem}
+	default:
 		return nil, nil
 	}
 	if v.IsSelf && !lt.Mutable {
@@ -200,6 +253,18 @@ func (f *fnCtx) boundsCondFacts(c *ast.BinaryExpr, whenTrue, whenFalse facts) {
 		whenTrue[nonNegKey(idx)] = types.TUnit
 	case op == lexer.Lt && n <= 0, op == lexer.LtEq && n < 0:
 		whenFalse[nonNegKey(idx)] = types.TUnit
+	}
+	// i < n, i <= n and their negations: an upper bound for an index into an
+	// array of that length (D121)
+	switch op {
+	case lexer.Lt:
+		whenTrue[belowKey(idx, n)] = types.TUnit
+	case lexer.LtEq:
+		whenTrue[belowKey(idx, n+1)] = types.TUnit
+	case lexer.GtEq:
+		whenFalse[belowKey(idx, n)] = types.TUnit
+	case lexer.Gt:
+		whenFalse[belowKey(idx, n+1)] = types.TUnit
 	}
 }
 

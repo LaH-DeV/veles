@@ -251,3 +251,17 @@ prelude — `map` reserves its output once, which the lowering never did. The
 other rows against HEAD in a worktree: within run-to-run noise (`lexer`
 62–78 ms at HEAD, 64–69 ms now). The Go column swung 2× between runs on this
 machine today; compare the Veles column.
+
+## 2026-10-03 21:53 — go1.23.2, windows/amd64 (HEAD 3167e87, plus the working tree)
+
+| benchmark | ops | Veles | Go | Veles / Go |
+|---|---:|---:|---:|---:|
+| sha256 | 16 | 86.39ms | 11.31ms | 7.6× |
+
+`sha256` after std's SHA-256 moved its state, block buffer and message
+schedule from `MutableList`s to `Array<u32, 8>`, `Array<u8, 64>` and a
+`var w: Array<u32, 64>` per block (D121; the round constants are an
+`Array<u32, 64>` table the bounds facts index without a check): 86–91 ms in
+four runs against 113–135 ms before (four runs). Every other benchmark's IR is
+unchanged by the memory class (the goldens did not move), so only this row
+is expected to differ.

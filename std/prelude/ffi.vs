@@ -18,3 +18,13 @@ extend<T: CLayout> List<T> {
     try f(p)
   }
 }
+
+extend<T: CLayout, const N: i64> Array<T, N> {
+  /// Hands `f` a pointer to this array's own elements — no copy — for C to
+  /// read during `f`, or to write when the array is a `var`. The pointer is
+  /// valid only while `f` runs; what `f` does with it is `unsafe`.
+  public fun withRaw<R, E>(f: fun(*raw T): R throws E): R throws E {
+    val p = arrayRawData(this)
+    try f(p)
+  }
+}

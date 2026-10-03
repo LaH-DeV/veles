@@ -26,7 +26,7 @@ type BuiltinDoc struct {
 
 // builtinStatics lists the catalogued operations called on the type rather
 // than on a value, as "family.name".
-var builtinStatics = map[string]bool{"enum.values": true, "enum.fromValue": true, "enum.parse": true}
+var builtinStatics = map[string]bool{"enum.values": true, "enum.fromValue": true, "enum.parse": true, "Array.make": true}
 
 // Static reports whether the operation is called on the type.
 func (d BuiltinDoc) Static() bool { return builtinStatics[d.Recv+"."+d.Name] }
@@ -37,6 +37,7 @@ var builtinFamilies = []struct{ family, header, doc string }{
 	{"string", "struct string", "Immutable UTF-8 text. Concatenate with `+`, build with interpolation `\"...$x...\"`."},
 	{"List", "struct List<T>", "An immutable list. `[a, b]` literals; `xs.at(i)` is a `T?`, or a `T` where the index is known to be in range (D62)."},
 	{"MutableList", "struct MutableList<T>", "A growable list: every `List` method, plus mutation. `mut [a, b]` literals (D25); `.toList()` copies it into a `List` (D63)."},
+	{"Array", "struct Array<T, const N: i64>", "`N` elements stored inline — in a local, a field, another array, a C struct — with no allocation, and a value: assignment and passing copy it (D121). The read-only `List` methods work on it, over a copy."},
 	{"Map", "struct Map<K, V>", "An immutable hash map. `[k: v]` literals; `m.get(k)` is a `V?`."},
 	{"MutableMap", "struct MutableMap<K, V> : Map<K, V>", "A hash map that can be changed in place."},
 	{"Set", "struct Set<T>", "An immutable hash set."},
@@ -80,6 +81,18 @@ var builtinDocs = []BuiltinDoc{
 	{"List", "toList", "(): List<T>", "An immutable copy."},
 	{"List", "toMutable", "(): MutableList<T>", "A mutable copy."},
 	{"List", "decodeUtf8", "(): string?", "On a `List<u8>` only: the bytes as text, or `null` when they are not valid UTF-8 (D18)."},
+	{"Array", "len", "(): i64", "The length `N`, a constant."},
+	{"Array", "isEmpty", "(): bool", "True when `N` is zero."},
+	{"Array", "at", "(i: i64): T?", "The element at `i`, or `null` when `i` is out of range; a negative `i` counts from the end. Where `i` is a constant in range — or the bounds facts put it there — it is a plain `T` (D121)."},
+	{"Array", "atUnchecked", "(i: i64): T", "The element at `i` (`0 <= i < N`) without the bounds check in a release build; only inside `unsafe` (D114). A debug build still checks and panics."},
+	{"Array", "first", "(): T", "The first element (an array of `N > 0` is never empty); `null` for `N == 0`."},
+	{"Array", "last", "(): T", "The last element (an array of `N > 0` is never empty); `null` for `N == 0`."},
+	{"Array", "set", "(i: i64, x: T)", "Replaces the element at `i` in the variable the method is called on, which must be a `var`; panics when `i` is out of range. A negative `i` counts from the end."},
+	{"Array", "setUnchecked", "(i: i64, x: T)", "Replaces the element at `i` (`0 <= i < N`) without the bounds check in a release build; only inside `unsafe` (D114)."},
+	{"Array", "indices", "(): Range<i64>", "The valid indexes, `0..<N`. In `loop (i in a.indices())` the checker knows each `i` is in range, so `a.at(i)` is a `T` (D62)."},
+	{"Array", "toList", "(): List<T>", "An immutable copy as a list."},
+	{"Array", "toMutable", "(): MutableList<T>", "A mutable copy as a list."},
+	{"Array", "make", "(value: T)", "Called on the type: `Array<i64, 8>.make(0)` is eight copies of `value`; `Array.make(0)` where the expected type names the array."},
 	{"MutableList", "push", "(x: T)", "Appends `x`."},
 	{"MutableList", "reserve", "(n: i64)", "Makes room for at least `n` elements in all, so pushing up to `n` does not grow the list again. Never shrinks it, never changes the elements."},
 	{"MutableList", "set", "(i: i64, x: T)", "Replaces the element at `i`; panics when `i` is out of range. A negative `i` counts from the end."},
@@ -273,6 +286,8 @@ func builtinFamily(t types.Type) string {
 			return "MutableSet"
 		}
 		return "Set"
+	case *types.Array:
+		return "Array"
 	case *types.Channel:
 		return "Channel"
 	case *types.Task:
@@ -414,6 +429,8 @@ func receiverSig(sig string, recv types.Type) string {
 	sub := map[string]string{"Self": recv.String()}
 	switch r := recv.(type) {
 	case *types.List:
+		sub["T"] = r.Elem.String()
+	case *types.Array:
 		sub["T"] = r.Elem.String()
 	case *types.Set:
 		sub["T"] = r.Elem.String()

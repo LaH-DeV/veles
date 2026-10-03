@@ -46,8 +46,7 @@ func (g *gen) sizeOf(t types.Type) int {
 // keyArgs evaluates a key and returns (hash, pointer-to-key, eq function).
 func (g *gen) keyArgs(kt types.Type, key string) (string, string, string) {
 	h := g.hash(kt, key)
-	kp := g.alloca(g.llType(kt))
-	g.emit("store %s %s, ptr %s", g.llType(kt), key, kp)
+	kp := g.slotOf(kt, key)
 	return h, kp, "@" + g.eqPtrHelper(kt)
 }
 
@@ -59,8 +58,7 @@ func (g *gen) mapLit(e *sema.MapLit) string {
 		k := g.expr(en[0])
 		v := g.expr(en[1])
 		h, kp, eq := g.keyArgs(mt.Key, k)
-		vp := g.alloca(g.llType(mt.Value))
-		g.emit("store %s %s, ptr %s", g.llType(mt.Value), v, vp)
+		vp := g.slotOf(mt.Value, v)
 		g.emit("call i64 @veles_map_insert(ptr %s, i64 %s, ptr %s, ptr %s, ptr %s)", m, h, kp, vp, eq)
 	}
 	return m
@@ -89,20 +87,21 @@ func (g *gen) mapBuiltin(e *sema.Builtin) (string, bool) {
 		g.emit("%s = icmp sge i64 %s, 0", found, idx)
 		nt := e.Type().(*types.Nullable)
 		res := g.alloca(g.llType(nt))
-		g.emit("store %s zeroinitializer, ptr %s", g.llType(nt), res)
+		if g.isMem(nt) {
+			g.emit("call void @llvm.memset.p0.i64(ptr %s, i8 0, i64 %d, i1 false)", res, g.memSize(nt))
+		} else {
+			g.emit("store %s zeroinitializer, ptr %s", g.llType(nt), res)
+		}
 		hit, end := g.newLabel("map.hit"), g.newLabel("map.end")
 		g.emitTerm("br i1 %s, label %%%s, label %%%s", found, hit, end)
 		g.placeLabel(hit)
 		vp := g.newTmp()
 		g.emit("%s = call ptr @veles_map_val_at(ptr %s, i64 %s)", vp, m, idx)
-		val := g.newTmp()
-		g.emit("%s = load %s, ptr %s", val, g.llType(vt), vp)
-		g.emit("store %s %s, ptr %s", g.llType(nt), g.makeNullable(nt, "true", val), res)
+		val := g.loadVal(vt, vp)
+		g.storeVal(nt, g.makeNullableT(nt, "true", val), res)
 		g.emitTerm("br label %%%s", end)
 		g.placeLabel(end)
-		out := g.newTmp()
-		g.emit("%s = load %s, ptr %s", out, g.llType(nt), res)
-		return out, true
+		return g.loadVal(nt, res), true
 	case "map.ref", "map.refOrPanic":
 		// the value slot as a pointer: null when the key is absent (`map.ref`,
 		// typed `(*V)?`) or a panic (`map.refOrPanic`, typed `*V`). The slot
@@ -156,8 +155,7 @@ func (g *gen) mapBuiltin(e *sema.Builtin) (string, bool) {
 		k := g.expr(e.Args[1])
 		v := g.expr(e.Args[2])
 		h, kp, eq := g.keyArgs(kt, k)
-		vp := g.alloca(g.llType(vt))
-		g.emit("store %s %s, ptr %s", g.llType(vt), v, vp)
+		vp := g.slotOf(vt, v)
 		g.emit("call i64 @veles_map_insert(ptr %s, i64 %s, ptr %s, ptr %s, ptr %s)", m, h, kp, vp, eq)
 		return "zeroinitializer", true
 	case "set.add":
@@ -261,7 +259,7 @@ func (g *gen) hash(t types.Type, v string) string {
 	// collections hash over their elements, matching their `==` (v0.26)
 	name := g.hashHelper(t)
 	out := g.newTmp()
-	g.emit("%s = call i64 @%s(%s %s)", out, name, g.llType(t), v)
+	g.emit("%s = call i64 @%s(%s %s)", out, name, g.vt(t), v)
 	return out
 }
 
@@ -272,7 +270,7 @@ func (g *gen) hashHelper(t types.Type) string {
 	}
 	name := "hash." + mangleType(t)
 	g.hashFns[key] = name
-	llt := g.llType(t)
+	llt := g.vt(t)
 	g.pending = append(g.pending, func() {
 		g.defineHelper(name, "i64", []string{llt + " %v"}, func() {
 			r := g.hashBody(t, "%v")
@@ -318,15 +316,13 @@ func (g *gen) hashBody(t types.Type, v string) string {
 			g.emit("%s = load i64, ptr %s", out, res)
 			return out
 		}
-		tag := g.newTmp()
-		g.emit("%s = extractvalue %s %s, 0", tag, llt, v)
+		tag := g.nullFlag(tt, v)
 		res := g.alloca("i64")
 		g.emit("store i64 0, ptr %s", res)
 		some, end := g.newLabel("hash.some"), g.newLabel("hash.end")
 		g.emitTerm("br i1 %s, label %%%s, label %%%s", tag, some, end)
 		g.placeLabel(some)
-		inner := g.newTmp()
-		g.emit("%s = extractvalue %s %s, 1", inner, llt, v)
+		inner := g.nullVal(tt, v)
 		g.emit("store i64 %s, ptr %s", g.mix("1", g.hash(tt.Elem, inner)), res)
 		g.emitTerm("br label %%%s", end)
 		g.placeLabel(end)
@@ -342,9 +338,11 @@ func (g *gen) hashBody(t types.Type, v string) string {
 		}
 		return g.hashFields(t, llt, v, fs)
 	case *types.Sealed:
-		return g.hashTagged(llt, v, func(i int) types.Type { return tt.Variants[i] }, len(tt.Variants))
+		return g.hashTagged(t, v, func(i int) types.Type { return tt.Variants[i] }, len(tt.Variants))
 	case *types.ErrorUnion:
-		return g.hashTagged(llt, v, func(i int) types.Type { return tt.Members[i] }, len(tt.Members))
+		return g.hashTagged(t, v, func(i int) types.Type { return tt.Members[i] }, len(tt.Members))
+	case *types.Array:
+		return g.hashArray(tt, v)
 	case *types.List:
 		return g.hashList(tt.Elem, v)
 	case *types.Map, *types.Set:
@@ -372,8 +370,7 @@ func (g *gen) hashList(elem types.Type, v string) string {
 	g.placeLabel(bodyL)
 	p := g.newTmp()
 	g.emit("%s = call ptr @veles_list_ref(ptr %s, i64 %s)", p, v, iv)
-	x := g.newTmp()
-	g.emit("%s = load %s, ptr %s", x, g.llType(elem), p)
+	x := g.loadVal(elem, p)
 	cur := g.newTmp()
 	g.emit("%s = load i64, ptr %s", cur, acc)
 	g.emit("store i64 %s, ptr %s", g.mix(cur, g.hash(elem, x)), acc)
@@ -415,14 +412,12 @@ func (g *gen) hashMap(t types.Type, v string) string {
 	g.placeLabel(liveL)
 	kp := g.newTmp()
 	g.emit("%s = call ptr @veles_map_key_at(ptr %s, i64 %s)", kp, v, iv)
-	k := g.newTmp()
-	g.emit("%s = load %s, ptr %s", k, g.llType(kt), kp)
+	k := g.loadVal(kt, kp)
 	h := g.hash(kt, k)
 	if !isSet {
 		vp := g.newTmp()
 		g.emit("%s = call ptr @veles_map_val_at(ptr %s, i64 %s)", vp, v, iv)
-		val := g.newTmp()
-		g.emit("%s = load %s, ptr %s", val, g.llType(vt), vp)
+		val := g.loadVal(vt, vp)
 		h = g.mix(h, g.hash(vt, val))
 	}
 	cur := g.newTmp()
@@ -445,16 +440,14 @@ func (g *gen) hashMap(t types.Type, v string) string {
 func (g *gen) hashFields(t types.Type, llt, v string, fields []types.Type) string {
 	acc := "17"
 	for i, ft := range fields {
-		fv := g.newTmp()
-		g.emit("%s = extractvalue %s %s, %d", fv, llt, v, g.fidx(t, i))
+		fv := g.part(t, v, g.fidx(t, i), ft)
 		acc = g.mix(acc, g.hash(ft, fv))
 	}
 	return acc
 }
 
-func (g *gen) hashTagged(llt, v string, member func(i int) types.Type, n int) string {
-	tag := g.newTmp()
-	g.emit("%s = extractvalue %s %s, 0", tag, llt, v)
+func (g *gen) hashTagged(t types.Type, v string, member func(i int) types.Type, n int) string {
+	tag := g.tagOf(t, v)
 	tag64 := g.newTmp()
 	g.emit("%s = zext i32 %s to i64", tag64, tag)
 	res := g.alloca("i64")
@@ -470,7 +463,7 @@ func (g *gen) hashTagged(llt, v string, member func(i int) types.Type, n int) st
 	for i := 0; i < n; i++ {
 		g.placeLabel(labels[i])
 		mt := member(i)
-		payload := g.extractTagged(llt, v, g.llType(mt))
+		payload := g.extractTaggedT(t, v, mt)
 		g.emit("store i64 %s, ptr %s", g.mix(tag64, g.hash(mt, payload)), res)
 		g.emitTerm("br label %%%s", end)
 	}
@@ -492,10 +485,15 @@ func (g *gen) eqPtrHelper(t types.Type) string {
 	llt := g.llType(t)
 	g.pending = append(g.pending, func() {
 		g.defineHelper(name, "i1", []string{"ptr %a", "ptr %b"}, func() {
-			a := g.newTmp()
-			g.emit("%s = load %s, ptr %%a", a, llt)
-			b := g.newTmp()
-			g.emit("%s = load %s, ptr %%b", b, llt)
+			var a, b string
+			if g.isMem(t) {
+				a, b = "%a", "%b" // already addresses
+			} else {
+				a = g.newTmp()
+				g.emit("%s = load %s, ptr %%a", a, llt)
+				b = g.newTmp()
+				g.emit("%s = load %s, ptr %%b", b, llt)
+			}
 			r := g.equal(t, a, b)
 			g.emitTerm("ret i1 %s", r)
 		})
@@ -541,14 +539,12 @@ func (g *gen) showMap(t types.Type, v string) string {
 	cur = g.concat(cur, sep)
 	kp := g.newTmp()
 	g.emit("%s = call ptr @veles_map_key_at(ptr %s, i64 %s)", kp, v, iv)
-	k := g.newTmp()
-	g.emit("%s = load %s, ptr %s", k, g.llType(kt), kp)
+	k := g.loadVal(kt, kp)
 	cur = g.concat(cur, g.show(kt, k))
 	if !isSet {
 		vp := g.newTmp()
 		g.emit("%s = call ptr @veles_map_val_at(ptr %s, i64 %s)", vp, v, iv)
-		val := g.newTmp()
-		g.emit("%s = load %s, ptr %s", val, g.llType(vt), vp)
+		val := g.loadVal(vt, vp)
 		cur = g.concat(g.concat(cur, g.stringConst(": ")), g.show(vt, val))
 	}
 	g.emit("store %s %s, ptr %s", strType, cur, res)

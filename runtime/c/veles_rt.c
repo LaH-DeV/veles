@@ -909,6 +909,14 @@ void veles_list_index_panic(veles_list *l, int64_t i, const char *loc, int64_t l
     veles_panic_at(msg, n, loc, loc_len);
 }
 
+/* veles_array_index_panic is the out-of-range branch of an inline array's
+ * element access (D121): the list's message, for an array. */
+void veles_array_index_panic(int64_t i, int64_t len, const char *loc, int64_t loc_len) {
+    char msg[80];
+    int n = snprintf(msg, sizeof msg, "index %" PRId64 " out of bounds for array of length %" PRId64, i, len);
+    veles_panic_at(msg, n, loc, loc_len);
+}
+
 /* ---- Secret (D112) -----------------------------------------------------
  * A Secret's bytes are a List<u8> whose storage has the wipe descriptor:
  * the collector zeroes it when it is freed, and close() zeroes it at once.

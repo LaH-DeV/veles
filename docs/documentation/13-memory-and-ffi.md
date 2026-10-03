@@ -503,7 +503,8 @@ extern struct EpollEvent {
 
 extern struct Header {
   kind: u8
-  @align(16) payload: i32       // a field at the next multiple of 16
+  @align(16)
+  payload: i32  // a field at the next multiple of 16
 }
 
 @transparent struct Fd { handle: i32 }       // crosses into C as the i32 itself
@@ -540,6 +541,56 @@ Output:
   what keeps two hot counters on different cache lines.
 - **`@transparent`** on a struct with one field gives a binding its own
   handle types at no cost: C sees the field, in registers and all.
+
+### Arrays in a C struct
+
+An `Array<T, N>` field of an extern struct is C's `T x[N]` (D121): the same
+size, the same offsets, the same stride in an array of the struct. The
+struct crosses by value as C passes it — an eight-byte `Array<u8, 8>` in a
+register, a larger one in memory — and `Array<Array<u8, 3>, 2>` is C's
+two-dimensional `uint8_t rows[2][3]`:
+
+```veles
+use io
+
+extern struct SockAddr {
+  family: u16
+  port: u16
+  addr: u32
+  zero: Array<u8, 8>
+}
+
+extern "C" {
+  fun memset(p: *raw u8, c: i32, n: i64): *raw u8
+}
+
+fun main() {
+  var buf: Array<u8, 6> = [1, 2, 3, 4, 5, 6]
+  // SAFETY: six bytes of storage, written before C returns
+  buf.withRaw(p => unsafe { memset(p, 7, 3) })
+  io.println("$buf ${SockAddr(family: 2, port: 80, addr: 1, zero: Array.make(0)).zero.len()}")
+}
+```
+
+Output:
+```text
+[7, 7, 7, 4, 5, 6] 8
+```
+
+`buf.withRaw(f)` lends C a pointer to the array's own storage for the length
+of the closure, as `List.withRaw` does for a list's: C may read it, and write
+it when the array is a `var`. A struct holding an array may be larger than
+C's registers — there is no limit, and the compiler follows the platform's
+rule for each size.
+
+### Large values live in memory
+
+A value of 128 bytes or more that holds an array is never an SSA value: it
+is copied with `memmove`, handed to a function as the address of a copy, and
+returned through a pointer the caller gives (the memory class, D121). It
+applies in the same way when the value is an argument to a C function, which
+is how a 160-byte extern struct reaches C as C expects it, and it is why a
+megabyte array on the stack costs a `memcpy` per copy and no more.
 
 A C function may block — sleep, wait on a lock, read a file. That is
 fine: while the call runs, a collection does not wait for it, and if it

@@ -89,6 +89,14 @@ type FunType struct {
 	Pos      source.Span
 }
 
+// ConstType is a constant where a type argument goes: the `8` of
+// `Array<u8, 8>`, or `64 * 4` (D121). A bare name stays a NamedType; the
+// checker takes it for a constant when no type has that name.
+type ConstType struct {
+	X   Expr
+	Pos source.Span
+}
+
 // SelfType is the `Self` keyword in a trait or impl.
 type SelfType struct {
 	Pos source.Span
@@ -113,6 +121,7 @@ func (t *PointerType) Span() source.Span    { return t.Pos }
 func (t *TupleType) Span() source.Span      { return t.Pos }
 func (t *FunType) Span() source.Span        { return t.Pos }
 func (t *SelfType) Span() source.Span       { return t.Pos }
+func (t *ConstType) Span() source.Span      { return t.Pos }
 func (t *AssocType) Span() source.Span      { return t.Pos }
 func (t *ErrorUnionType) Span() source.Span { return t.Pos }
 func (t *ResolvedType) Span() source.Span   { return t.Pos }
@@ -123,6 +132,7 @@ func (*PointerType) typeNode()    {}
 func (*TupleType) typeNode()      {}
 func (*FunType) typeNode()        {}
 func (*SelfType) typeNode()       {}
+func (*ConstType) typeNode()      {}
 func (*AssocType) typeNode()      {}
 func (*ErrorUnionType) typeNode() {}
 func (*ResolvedType) typeNode()   {}
@@ -182,6 +192,9 @@ type UseName struct {
 type TypeParam struct {
 	Name   Ident
 	Bounds []Type
+	Const  bool        // `<const N: i64>`: a constant, not a type (D121)
+	At     source.Span // the word `const`, when Const
+	Of     Type        // the constant's type, when Const: `i64`
 }
 
 type Param struct {

@@ -54,6 +54,10 @@ func (l *Layout) Of(t Type) (size, align int) {
 		return l.natural([]Type{TBool, t.Elem})
 	case *Tuple:
 		return l.natural(t.Elems)
+	case *Array:
+		size, align := l.Of(t.Elem)
+		n, _ := t.N()
+		return size * int(n), align
 	case *Range:
 		return l.natural([]Type{t.Elem, t.Elem, TBool})
 	case *Struct:
@@ -93,6 +97,8 @@ func (l *Layout) LLAlign(t Type) int {
 		return a
 	case *Range:
 		return max(1, l.LLAlign(t.Elem))
+	case *Array:
+		return l.LLAlign(t.Elem)
 	case *Enum:
 		return l.LLAlign(t.Base)
 	}

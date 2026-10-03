@@ -127,7 +127,7 @@ arith.ok.4:
 }
 
 @.str.1 = private unnamed_addr constant [17 x i8] c"integer overflow\00"
-@.str.2 = private unnamed_addr constant [14 x i8] c"main.vs:37:25\00"
-@.str.3 = private unnamed_addr constant [14 x i8] c"main.vs:40:14\00"
+@.str.2 = private unnamed_addr constant [14 x i8] c"main.vs:39:18\00"
+@.str.3 = private unnamed_addr constant [14 x i8] c"main.vs:43:14\00"
 @.str.4 = private unnamed_addr constant [2 x i8] c" \00"
-@.str.5 = private unnamed_addr constant [21 x i8] c"main.vs:42:3\00println\00"
+@.str.5 = private unnamed_addr constant [21 x i8] c"main.vs:45:3\00println\00"

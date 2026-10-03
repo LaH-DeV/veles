@@ -99,3 +99,8 @@ implement<A: Default, B: Default, C: Default, D: Default, E: Default, F: Default
 implement<A: Default, B: Default, C: Default, D: Default, E: Default, F: Default, G: Default, H: Default> Default for (A, B, C, D, E, F, G, H) {
   static fun default(): (A, B, C, D, E, F, G, H) = (A.default(), B.default(), C.default(), D.default(), E.default(), F.default(), G.default(), H.default())
 }
+
+// An array of `N` copies of the element's default (D121).
+implement<T: Default, const N: i64> Default for Array<T, N> {
+  static fun default(): Array<T, N> = Array.make(T.default())
+}

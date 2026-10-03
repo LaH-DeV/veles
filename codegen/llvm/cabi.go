@@ -68,6 +68,8 @@ type cValue struct {
 	ty    string // the LLVM type that crosses for cCoerce
 	llt   string // the value's own LLVM type
 	align int
+	mem   bool // the value is in the memory class (mem.go): a register holds its address
+	size  int
 }
 
 type cSig struct {
@@ -127,7 +129,7 @@ func (g *gen) cClassify(abi cABI, t types.Type, ret bool, gpr, sse *int) cValue 
 		return cValue{pass: cDirect, llt: llt}
 	}
 	size, align := g.layout(t)
-	v := cValue{llt: llt, align: align}
+	v := cValue{llt: llt, align: align, mem: g.isMem(t), size: size}
 	switch abi {
 	case abiWin64:
 		switch size {
@@ -202,6 +204,19 @@ func (g *gen) cScalars(t types.Type, base int, out []cScalar) []cScalar {
 			out = g.cScalars(s.Fields[i].Type, base+off, out)
 		}
 		return out
+	}
+	if a, ok := t.(*types.Array); ok {
+		// C's `T x[N]`: N leaves; past a few there is no register class
+		// for them to qualify for, so the bytes count as one integer (D121)
+		es, _ := g.layout(a.Elem)
+		if n := arrayLen(a); n <= 16 {
+			for i := 0; i < int(n); i++ {
+				out = g.cScalars(a.Elem, base+i*es, out)
+			}
+			return out
+		}
+		size, _ := g.layout(t)
+		return append(out, cScalar{off: base, size: size})
 	}
 	size, _ := g.layout(t)
 	return append(out, cScalar{off: base, size: size, float: isFloat(t)})
@@ -299,7 +314,11 @@ func (g *gen) cArg(p cValue, v, ext string) string {
 		return p.ty + ext + " " + c
 	case cIndirect, cByval:
 		slot := g.alloca(p.llt)
-		g.emit("store %s %s, ptr %s", p.llt, v, slot)
+		if p.mem {
+			g.copyMem(v, slot, p.size) // the callee may change its copy
+		} else {
+			g.emit("store %s %s, ptr %s", p.llt, v, slot)
+		}
 		if p.pass == cByval {
 			return fmt.Sprintf("ptr byval(%s) align %d %s", p.llt, p.align, slot)
 		}
@@ -321,6 +340,9 @@ func (g *gen) cCall(sig cSig, callee, retLL, retExt string, args []string) strin
 		g.emit("call void %s(%s)", callee, joinArgs(args))
 		if sret == "" {
 			return "zeroinitializer"
+		}
+		if sig.ret.mem {
+			return sret // the result is in memory already
 		}
 		v := g.newTmp()
 		g.emit("%s = load %s, ptr %s", v, sig.ret.llt, sret)

@@ -367,6 +367,9 @@ func (s *Server) addMembers(add adder, a *analysis, t types.Type, sc *scope) {
 	}
 	family := sema.BuiltinFamily(t)
 	for _, d := range sema.BuiltinMethods(t) {
+		if d.Static() {
+			continue // `Array<T, N>.make(x)` is called on the type
+		}
 		add(d.Name, ciMethod, family+"."+d.Name+d.Sig)
 	}
 	// the names an impl or extend target may spell this type with: a
@@ -378,6 +381,9 @@ func (s *Server) addMembers(add adder, a *analysis, t types.Type, sc *scope) {
 		heads[family] = true
 		if base := strings.TrimPrefix(family, "Mutable"); base != family {
 			heads[base] = true
+		}
+		if family == "Array" {
+			heads["List"] = true // an array has the read-only List methods too (D121)
 		}
 		if b, ok := t.(*types.Basic); ok {
 			heads[b.Name] = true // `i64`, `f64`: the family is "int"/"float"

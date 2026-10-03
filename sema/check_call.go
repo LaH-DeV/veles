@@ -15,7 +15,7 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 	}
 	var typeArgs []types.Type
 	for _, ta := range e.TypeArgs {
-		typeArgs = append(typeArgs, f.resolve(ta))
+		typeArgs = append(typeArgs, f.resolveCallArg(ta))
 	}
 	switch callee := e.Fun.(type) {
 	case *ast.TypeExpr:
@@ -49,6 +49,20 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 				return bad()
 			}
 			return &Builtin{exprBase{&types.Pointer{Elem: lt.Elem, Raw: true}}, "list.rawData", []Expr{xs}, e.Pos}
+		}
+		if callee.Name == "arrayRawData" && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 1 {
+			// std-only (D121): the storage of an array, for `withRaw` to lend C
+			// for the length of a closure — the receiver itself, not a copy
+			place, _ := f.checkLValue(e.Args[0].Value, false)
+			if place == nil {
+				return bad()
+			}
+			at, ok := place.Type().(*types.Array)
+			if !ok {
+				f.errorf(e.Pos, "arrayRawData takes an array")
+				return bad()
+			}
+			return &Builtin{exprBase{&types.Pointer{Elem: at.Elem, Raw: true}}, "array.rawData", []Expr{place}, e.Pos}
 		}
 		if callee.Name == "listTouched" && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 1 {
 			// std-only: an order change made element by element (sort, swap)
@@ -181,6 +195,9 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 						return f.constructStruct(v, e.Args, e.Pos)
 					}
 				}
+			}
+			if n.Name == "Array" && callee.Name.Name == "make" && f.lookup("Array") == nil {
+				return f.arrayMakeCall(n, e, want)
 			}
 			if rt, ok := f.collectionStatic(n, callee, e, want); ok {
 				if rt == nil {
@@ -1047,6 +1064,10 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 		f.c.refBuiltin(callee.Name.Pos, rt, name)
 		return f.listFilterIs(recv, lt, typeArgs, e)
 	}
+	if lt, isList := rt.(*types.List); isList && name == "toArray" {
+		f.c.refBuiltin(callee.Name.Pos, rt, name)
+		return f.listToArray(recv, lt, typeArgs, e)
+	}
 	if bt, ok := rt.(*types.Basic); ok && name == "wrapTo" && types.IsNumeric(bt) {
 		f.c.refBuiltin(callee.Name.Pos, rt, name)
 		return f.wrapTo(recv, rt, typeArgs, e) // D86
@@ -1118,7 +1139,12 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 	// (checkCoherence rejects overlapping ones). A mutable collection also
 	// has its immutable form's methods (D25: MutableList<T> is a List<T>),
 	// looked up after any block naming the mutable type itself.
-	for vi, view := range receiverViews(rt) {
+	views := receiverViews(rt)
+	if at, isArray := rt.(*types.Array); isArray {
+		// the read-only List methods run on a copy of the elements (D121)
+		views = append(views, &types.List{Elem: at.Elem})
+	}
+	for vi, view := range views {
 		for _, ext := range f.c.extends {
 			t, ok := ext.Methods[name]
 			if !ok {
@@ -1140,7 +1166,11 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 					}
 				}
 			}
-			x := f.callMethod(t, m, typeArgs, recv, viaPointer, callee, e, want)
+			callRecv := recv
+			if _, isArray := rt.(*types.Array); isArray && vi == 1 {
+				callRecv = &Builtin{exprBase{view}, "array.toList", []Expr{recv}, e.Pos}
+			}
+			x := f.callMethod(t, m, typeArgs, callRecv, viaPointer, callee, e, want)
 			f.refuseUnitMap(t, x, e.Pos)
 			return x
 		}
@@ -1562,6 +1592,8 @@ func (f *fnCtx) builtinMethod(recv Expr, rt types.Type, name string, e *ast.Call
 				return &Builtin{exprBase{t}, "int." + name, []Expr{recv, f.checkExprTo(e.Args[0].Value, types.TI64)}, e.Pos}
 			}
 		}
+	case *types.Array:
+		return f.arrayMethod(recv, t, name, e)
 	case *types.List:
 		switch name {
 		case "len":
@@ -1746,6 +1778,8 @@ func mentions(t types.Type, p *types.TypeParam) bool {
 		return mentions(t.Elem, p)
 	case *types.List:
 		return mentions(t.Elem, p)
+	case *types.Array:
+		return mentions(t.Elem, p) || t.Len == types.Type(p)
 	case *types.Tuple:
 		for _, e := range t.Elems {
 			if mentions(e, p) {
@@ -2103,6 +2137,8 @@ func cLayout(t types.Type) bool {
 	switch t := t.(type) {
 	case *types.Pointer:
 		return t.Raw
+	case *types.Array:
+		return cLayout(t.Elem) // C's `T x[N]` inside an extern struct (D121)
 	case *types.Struct:
 		// an extern struct or union; a @transparent struct is its field (D120)
 		return t.Extern || t.Transparent && len(t.Fields) == 1 && cLayout(t.Fields[0].Type)

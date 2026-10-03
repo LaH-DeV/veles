@@ -44,7 +44,7 @@ func (g *gen) heldScope(e *sema.ScopeBlock) string {
 		return "zeroinitializer"
 	}
 	st := g.declareVar(h.Var)
-	g.emit("store %s %s, ptr %s", g.llType(h.Var.Type), v, st)
+	g.storeVal(h.Var.Type, v, st)
 	g.cleanups = g.cleanups[:len(g.cleanups)-1]
 	g.popCleanup(restore)
 	g.expr(restore)
@@ -131,12 +131,10 @@ func (g *gen) heldRethrow(h *sema.HeldValue, slot, value string) {
 		g.placeLabel(throw)
 		rp := g.newTmp()
 		g.emit("%s = call ptr @veles_task_result(ptr %s)", rp, failed)
-		rv := g.newTmp()
-		g.emit("%s = load %s, ptr %s", rv, g.llType(rs), rp)
+		rv := g.loadVal(rs, rp)
 		errVariant := rs.Variants[1]
-		payload := g.extractTagged(g.llType(rs), rv, g.llType(errVariant))
-		ev := g.newTmp()
-		g.emit("%s = extractvalue %s %s, 0", ev, g.llType(errVariant), payload)
+		payload := g.extractTaggedT(rs, rv, errVariant)
+		ev := g.part(errVariant, payload, 0, errVariant.Fields[0].Type)
 		g.throwValue(ev, errVariant.Fields[0].Type)
 		g.placeLabel(next)
 	}

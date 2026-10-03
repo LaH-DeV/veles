@@ -56,6 +56,10 @@ type (
 		T     *types.List
 		Elems []ConstVal
 	}
+	CArray struct { // an `Array<T, N>` (D121): inline, a value
+		T     *types.Array
+		Elems []ConstVal
+	}
 	CMap struct { // insertion order (D25)
 		T    *types.Map
 		Keys []ConstVal
@@ -77,6 +81,7 @@ func (v *CSome) Type() types.Type   { return v.T }
 func (v *CTuple) Type() types.Type  { return v.T }
 func (v *CStruct) Type() types.Type { return v.T }
 func (v *CList) Type() types.Type   { return v.T }
+func (v *CArray) Type() types.Type  { return v.T }
 func (v *CMap) Type() types.Type    { return v.T }
 func (v *CSet) Type() types.Type    { return v.T }
 
@@ -187,6 +192,13 @@ func (ev *constEval) expr(e Expr) ConstVal {
 			return t.Elems[e.Index]
 		}
 	case *ListLit:
+		if at, isArray := e.Type().(*types.Array); isArray {
+			out := &CArray{T: at}
+			for _, x := range e.Elems {
+				out.Elems = append(out.Elems, ev.expr(x))
+			}
+			return out
+		}
 		out := &CList{T: e.Type().(*types.List)}
 		for _, x := range e.Elems {
 			out.Elems = append(out.Elems, ev.expr(x))
@@ -603,6 +615,10 @@ func (ev *constEval) cast(e *Cast) ConstVal {
 		if lt, ok := to.(*types.List); ok {
 			return &CList{lt, v.Elems}
 		}
+	case *CArray:
+		if at, ok := to.(*types.Array); ok {
+			return &CArray{at, v.Elems}
+		}
 	case *CMap:
 		if mt, ok := to.(*types.Map); ok {
 			return &CMap{mt, v.Keys, v.Vals}
@@ -626,6 +642,9 @@ func (ev *constEval) builtin(e *Builtin) ConstVal {
 		s := ev.expr(e.Args[0]).(*CString)
 		return &CInt{types.TI64, big.NewInt(int64(len(s.V)))}
 	case "list.len":
+		if a, ok := ev.expr(e.Args[0]).(*CArray); ok {
+			return &CInt{types.TI64, big.NewInt(int64(len(a.Elems)))}
+		}
 		l := ev.expr(e.Args[0]).(*CList)
 		return &CInt{types.TI64, big.NewInt(int64(len(l.Elems)))}
 	case "map.len":
@@ -636,12 +655,18 @@ func (ev *constEval) builtin(e *Builtin) ConstVal {
 			return &CInt{types.TI64, big.NewInt(int64(len(m.Elems)))}
 		}
 	case "list.get":
-		l := ev.expr(e.Args[0]).(*CList)
-		i := ev.expr(e.Args[1]).(*CInt)
-		if i.V.Sign() < 0 || i.V.Cmp(big.NewInt(int64(len(l.Elems)))) >= 0 {
-			ev.errorf(e.Span, "index %s is out of range for a constant list of length %d (D113)", i.V, len(l.Elems))
+		var elems []ConstVal
+		switch l := ev.expr(e.Args[0]).(type) {
+		case *CArray:
+			elems = l.Elems
+		case *CList:
+			elems = l.Elems
 		}
-		return l.Elems[i.V.Int64()]
+		i := ev.expr(e.Args[1]).(*CInt)
+		if i.V.Sign() < 0 || i.V.Cmp(big.NewInt(int64(len(elems)))) >= 0 {
+			ev.errorf(e.Span, "index %s is out of range for a constant list of length %d (D113)", i.V, len(elems))
+		}
+		return elems[i.V.Int64()]
 	case "map.get":
 		m := ev.expr(e.Args[0]).(*CMap)
 		k := ev.expr(e.Args[1])
@@ -744,6 +769,9 @@ func constEqual(a, b ConstVal) bool {
 		return ok && constAllEqual(a.Fields, b.Fields)
 	case *CList:
 		b, ok := b.(*CList)
+		return ok && constAllEqual(a.Elems, b.Elems)
+	case *CArray:
+		b, ok := b.(*CArray)
 		return ok && constAllEqual(a.Elems, b.Elems)
 	case *CSet:
 		b, ok := b.(*CSet)
@@ -935,6 +963,8 @@ func (c *Checker) notConstType(t types.Type, key bool, seen map[types.Type]bool)
 			}
 		}
 		return ""
+	case *types.Array:
+		return c.notConstType(t.Elem, key, seen)
 	case *types.List:
 		if t.Mutable {
 			return "a 'MutableList' can change and a constant cannot; use 'List'"

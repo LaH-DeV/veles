@@ -72,8 +72,16 @@ answered from the shape, tuples get `Comparable`, enums get
       and codegen (`types/layout.go`), padded LLVM types, aligned allocas,
       globals and collector bodies; TestCLayoutAgreesWithC (C fills and reads
       each shape, sizeof/offsetof/stride agree, alignment on stack and heap)
-- [ ] `Array<T, N>` with const generics (D121) — decided 2026-10-01, not
-      built (plan B16)
+- [x] `Array<T, N>` with const generics (D121) — built 2026-10-03: inline
+      arrays, `<const N: i64>` on functions, structs and impls (inferred or
+      written, per-`N` instances), constants as type arguments, read-only
+      const tables, the memory class for values of 128 bytes and more
+      (`memmove` copies, address arguments, `sret` results — a 1 MiB local
+      compiles in a second), `Default`/`Codable`/`withRaw`, C arrays in
+      extern structs (TestArraysAgreeWithC), TestArrays, conformance,
+      golden `arrays`; SHA-256 moved to arrays (113–135 ms → 87–91 ms).
+      Not offered yet: `ref(i)`/`sort` on arrays, arithmetic on `N`, a
+      native version of every read-only list method (all but seven copy once)
 - [x] Ownership at the boundary (D69): C keeps only copies (`ffi.CString`, `ffi.alloc`/`free`), a list is lent for a closure (`withRaw`, `CLayout` elements), a value C hands back travels as an `ffi.handle` (a scanned table index, never a GC address)
 - [x] Panics never cross into C: a panic inside an `extern "C" fun` ends the process with its location (runtime `veles_ffi_enter`/`leave` around the body); errors cannot cross either (an exported fun may not throw)
 - [x] Linking: `[native]` in `veles.toml` — `libs`, `static-libs` (archive resolved by name), `lib-paths`, `pkg-config`, file entries; dependencies' tables link too (2026-09-26, `driver/native.go`, TestNativeLinking)
@@ -1012,6 +1020,16 @@ Every new public std API (http cookies/forms/client, `std/log`,
 
 ## 11. Known limitations to revisit
 
+- Arrays (D121): `ref(i)` and in-place `sort`/`swap` are not offered (`set` and
+  `loop (&x in a)` are); a type argument may not calculate from a constant
+  parameter (`Array<u8, N + 1>`), and a constant parameter is an `i64`; every
+  read-only `List` method except `map`/`filter`/`forEach`/`fold`/`any`/`all`/
+  `find` copies the array into a list per call; a value of 128 bytes or more
+  that holds an array is copied wherever it is passed or assigned (share one
+  with a pointer); a local array is on the stack, so one of hundreds of
+  megabytes may overflow it (the type allows a gigabyte); a pointer array's
+  collector descriptor lists every element's pointer, so `Array<string, N>`
+  with a huge `N` has a large descriptor.
 - A `with` resource may not leave its block (D100 part 3), but the check is
   local: it sees the value returned, assigned, stored in a collection or
   captured, directly or through a `val` alias or a literal around it — not

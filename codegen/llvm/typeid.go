@@ -95,9 +95,7 @@ func (g *gen) typeTest(e *sema.TypeTest) string {
 func (g *gen) downcast(e *sema.Downcast) string {
 	data := g.newTmp()
 	g.emit("%s = extractvalue { ptr, ptr } %s, 0", data, g.expr(e.X))
-	v := g.newTmp()
-	g.emit("%s = load %s, ptr %s", v, g.llType(e.Type()), data)
-	return v
+	return g.loadVal(e.Type(), data)
 }
 
 func (g *gen) traitTest(e *sema.TraitTest) string {

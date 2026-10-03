@@ -707,7 +707,7 @@ type CallIndirect struct {
 // the binary; every use of the same Value is the same storage.
 type ConstTable struct {
 	exprBase
-	Value ConstVal // a *CList, *CMap or *CSet
+	Value ConstVal // a *CList, *CArray, *CMap or *CSet
 	Name  string   // the constant's own name, when the use names one: names the storage
 }
 

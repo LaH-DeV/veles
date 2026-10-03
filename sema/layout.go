@@ -126,6 +126,8 @@ func (f *fnCtx) unionInside(t types.Type, seen map[types.Type]bool) *types.Struc
 		return f.unionInside(t.Elem, seen)
 	case *types.List:
 		return f.unionInside(t.Elem, seen)
+	case *types.Array:
+		return f.unionInside(t.Elem, seen)
 	case *types.Set:
 		return f.unionInside(t.Elem, seen)
 	case *types.Map:

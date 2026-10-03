@@ -138,6 +138,8 @@ func constString(v ConstVal) string {
 		return v.T.Name + "(" + strings.Join(parts, ", ") + ")"
 	case *CList:
 		return "[" + join(v.Elems) + "]"
+	case *CArray:
+		return "[" + join(v.Elems) + "]"
 	case *CSet:
 		return "[" + join(v.Elems) + "]"
 	case *CMap:

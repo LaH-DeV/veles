@@ -36,6 +36,7 @@ type gen struct {
 	plainLambdas  map[*sema.Closure]bool
 	held          []heldFn // coroutine copies of conditional functions, until referenced
 	descs         map[string]string
+	memo          map[string]bool // isMem, by type (mem.go)
 	descNames     map[string]bool
 	descOut       strings.Builder
 	consts        map[sema.ConstVal]string // constant tables (consts.go)
@@ -232,6 +233,7 @@ declare void @veles_list_push(ptr, ptr)
 declare void @veles_list_reserve(ptr, i64)
 declare ptr @veles_list_ref(ptr, i64)
 declare void @veles_list_index_panic(ptr, i64, ptr, i64)
+declare void @veles_array_index_panic(i64, i64, ptr, i64)
 declare void @veles_unchecked_index_panic(i64, i64, i64, ptr, i64)
 declare ptr @veles_secret_bytes(ptr, i64)
 declare void @veles_secret_wipe(ptr)
@@ -242,6 +244,8 @@ declare ptr @veles_list_copy(ptr)
 declare ptr @veles_list_slice(ptr, i64, i64)
 declare void @veles_list_clear(ptr)
 declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)
+declare void @llvm.memmove.p0.p0.i64(ptr, ptr, i64, i1)
+declare void @llvm.memset.p0.i64(ptr, i8, i64, i1)
 declare double @llvm.sqrt.f64(double)
 declare double @llvm.fabs.f64(double)
 declare double @llvm.floor.f64(double)
@@ -520,18 +524,17 @@ func (g *gen) resetFn(fn *sema.Func) {
 	g.launchSlots = map[*sema.Launch]string{}
 }
 
-// retLL returns the LLVM return type of a function.
+// retLL returns the LLVM return type of a function: void when the result is
+// written through an `sret` pointer (the memory class, mem.go).
 func (g *gen) retLL(fn *sema.Func) string {
 	if fn.Suspends {
 		return "ptr" // coroutine handle
 	}
-	if fn.Sig.Effects.Throws {
-		return g.llType(g.resultOf(fn))
-	}
-	if types.IsUnit(fn.Sig.Ret) || types.IsNever(fn.Sig.Ret) {
+	rt := g.fnRet(fn)
+	if rt == nil || g.isMem(rt) {
 		return "void"
 	}
-	return g.llType(fn.Sig.Ret)
+	return g.llType(rt)
 }
 
 func (g *gen) resultOf(fn *sema.Func) types.Type {
@@ -635,9 +638,33 @@ func (g *gen) function(fn *sema.Func) {
 	}
 	var params []string
 	var prologue []string
+	if rt := g.fnRet(fn); !fn.Suspends && rt != nil && g.isMem(rt) {
+		params = append(params, g.sretParam(rt)+" %sret") // the result is written here
+	}
 	bind := func(v *sema.Var, i int) {
-		llt := g.llType(v.Type)
+		llt := g.vt(v.Type)
 		params = append(params, fmt.Sprintf("%s %%p%d", llt, i))
+		if g.isMem(v.Type) {
+			// a memory-class argument is the address of a copy made for this call:
+			// the variable's own storage, unless it is a heap cell or the function
+			// is a coroutine, whose frame keeps its own
+			size := g.memSize(v.Type)
+			move := func(dst string) {
+				prologue = append(prologue, fmt.Sprintf("  call void @llvm.memmove.p0.p0.i64(ptr %s, ptr %%p%d, i64 %d, i1 false)", dst, i, size))
+			}
+			switch {
+			case v.AddrTaken:
+				slot := g.varStorage(v, false)
+				prologue = append(prologue, fmt.Sprintf("  %%cell%d = call ptr @veles_gc_alloc(ptr %s, i64 %d)", i, g.descOf(v.Type), size))
+				prologue = append(prologue, fmt.Sprintf("  store ptr %%cell%d, ptr %s", i, slot))
+				move(fmt.Sprintf("%%cell%d", i))
+			case fn.Suspends:
+				move(g.varStorage(v, true))
+			default:
+				g.storage[v] = fmt.Sprintf("%%p%d", i)
+			}
+			return
+		}
 		if v.AddrTaken {
 			// captured or address-taken parameter: copy into a heap cell
 			size, _ := g.layout(v.Type)
@@ -800,11 +827,15 @@ func (g *gen) stmt(s sema.Stmt) {
 			v := g.expr(s.Init)
 			st := g.declareVar(s.Var)
 			if !types.IsNever(s.Init.Type()) {
-				g.emit("store %s %s, ptr %s", g.llType(s.Var.Type), v, st)
+				g.storeVal(s.Var.Type, v, st)
 			}
 		} else {
 			st := g.declareVar(s.Var)
-			g.emit("store %s zeroinitializer, ptr %s", g.llType(s.Var.Type), st)
+			if g.isMem(s.Var.Type) {
+				g.emit("call void @llvm.memset.p0.i64(ptr %s, i8 0, i64 %d, i1 false)", st, g.memSize(s.Var.Type))
+			} else {
+				g.emit("store %s zeroinitializer, ptr %s", g.llType(s.Var.Type), st)
+			}
 		}
 	case *sema.Assign:
 		v := g.expr(s.Value)
@@ -829,7 +860,7 @@ func (g *gen) stmt(s sema.Stmt) {
 	case *sema.With:
 		v := g.expr(s.Init)
 		st := g.declareVar(s.Var)
-		g.emit("store %s %s, ptr %s", g.llType(s.Var.Type), v, st)
+		g.storeVal(s.Var.Type, v, st)
 		// registered with the task as well, so that a panic inside the
 		// body closes the resource before the task is abandoned (D49)
 		g.pushCleanup(s.Close, "@"+g.closeThunk(s), st)
@@ -862,27 +893,15 @@ func (g *gen) retValue(value sema.Expr) {
 			v = "zeroinitializer"
 		}
 		payload := g.buildStruct(rs.Variants[0], []string{v})
-		r := g.makeTagged(g.llType(rs), 0, g.llType(rs.Variants[0]), payload)
-		if g.coro != nil {
-			g.coroReturn(g.llType(rs), r, true)
-			return
-		}
-		g.emitTerm("ret %s %s", g.llType(rs), r)
+		r := g.makeTaggedT(rs, 0, rs.Variants[0], payload)
+		g.emitRet(rs, r, true)
 		return
 	}
 	if value == nil || types.IsUnit(fn.Sig.Ret) {
-		if g.coro != nil {
-			g.coroReturn("void", "", false)
-			return
-		}
-		g.emitTerm("ret void")
+		g.emitRet(nil, "", false)
 		return
 	}
-	if g.coro != nil {
-		g.coroReturn(g.llType(fn.Sig.Ret), v, false)
-		return
-	}
-	g.emitTerm("ret %s %s", g.llType(fn.Sig.Ret), v)
+	g.emitRet(fn.Sig.Ret, v, false)
 }
 
 func (g *gen) loop(l *sema.Loop) {
@@ -942,7 +961,7 @@ func (g *gen) globalsInit() {
 			continue
 		}
 		v := g.expr(gl.Init)
-		g.emit("store %s %s, ptr @%s", g.llType(gl.Type), v, mangleGlobal(gl))
+		g.storeVal(gl.Type, v, "@"+mangleGlobal(gl))
 	}
 	g.emitTerm("ret void")
 	g.out.WriteString("define void @veles_init_globals() {\nentry:\n")
@@ -967,21 +986,25 @@ func (g *gen) entryPoint() {
 			root := g.runRoot(main)
 			rp := g.newTmp()
 			g.emit("%s = call ptr @veles_task_result(ptr %s)", rp, root)
-			g.emit("%s = load %s, ptr %s", r, g.llType(rs), rp)
+			if g.isMem(rs) {
+				r = rp
+			} else {
+				g.emit("%s = load %s, ptr %s", r, g.llType(rs), rp)
+			}
+		} else if g.isMem(rs) {
+			r = g.callRet(rs, "@"+main.Name, nil)
 		} else {
 			g.emit("%s = call %s @%s()", r, g.llType(rs), main.Name)
 		}
-		tag := g.newTmp()
-		g.emit("%s = extractvalue %s %s, 0", tag, g.llType(rs), r)
+		tag := g.tagOf(rs, r)
 		isErr := g.newTmp()
 		g.emit("%s = icmp eq i32 %s, 1", isErr, tag)
 		errL, okL := g.newLabel("main.err"), g.newLabel("main.ok")
 		g.emitTerm("br i1 %s, label %%%s, label %%%s", isErr, errL, okL)
 		g.placeLabel(errL)
 		errVariant := rs.Variants[1]
-		payload := g.extractTagged(g.llType(rs), r, g.llType(errVariant))
-		errVal := g.newTmp()
-		g.emit("%s = extractvalue %s %s, 0", errVal, g.llType(errVariant), payload)
+		payload := g.extractTaggedT(rs, r, errVariant)
+		errVal := g.part(errVariant, payload, 0, errVariant.Fields[0].Type)
 		errT := errVariant.Fields[0].Type
 		var msg string
 		if rep := g.prog.MainReport; rep != nil {
@@ -1088,7 +1111,7 @@ func (g *gen) closeThunk(s *sema.With) string {
 func (g *gen) recvOperand(fn *sema.Func, t types.Type, v string) string {
 	llt := g.llType(t)
 	if fn.Receiver == nil {
-		return llt + " " + v
+		return g.vt(t) + " " + v
 	}
 	var cell string
 	if fn.SelfEscapes {
@@ -1096,7 +1119,7 @@ func (g *gen) recvOperand(fn *sema.Func, t types.Type, v string) string {
 	} else {
 		cell = g.alloca(llt)
 	}
-	g.emit("store %s %s, ptr %s", llt, v, cell)
+	g.storeVal(t, v, cell)
 	return "ptr " + cell
 }
 
@@ -1125,6 +1148,10 @@ func (g *gen) exportWrapper(fn *sema.Func) {
 			fmt.Fprintf(&body, "  %%c%d = alloca %s\n  store %s %%a%d, ptr %%c%d\n  %%v%d = load %s, ptr %%c%d\n", i, cv.ty, cv.ty, i, i, i, llt, i)
 			args = append(args, fmt.Sprintf("%s %%v%d", llt, i))
 		case cIndirect, cByval:
+			if g.isMem(p.Type) {
+				args = append(args, fmt.Sprintf("ptr %%a%d", i)) // the copy C made is the callee's
+				break
+			}
 			fmt.Fprintf(&body, "  %%v%d = load %s, ptr %%a%d\n", i, llt, i)
 			args = append(args, fmt.Sprintf("%s %%v%d", llt, i))
 		default:
@@ -1140,6 +1167,9 @@ func (g *gen) exportWrapper(fn *sema.Func) {
 	g.out.WriteString(body.String())
 	g.out.WriteString("  %saved = call i64 @veles_ffi_enter()\n")
 	if ret == "void" {
+		if rt := g.fnRet(fn); rt != nil && g.isMem(rt) {
+			args = append([]string{g.sretParam(rt) + " %sret"}, args...) // C's own sret pointer is where it is written
+		}
 		fmt.Fprintf(&g.out, "  call void @%s(%s)\n  call void @veles_ffi_leave(i64 %%saved)\n  ret void\n}\n\n", fn.Name, strings.Join(args, ", "))
 		return
 	}

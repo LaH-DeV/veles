@@ -36,6 +36,9 @@ type Parser struct {
 	// not to the last call in the chain (D98). Any nested expression — an
 	// argument, a parenthesis, a block — clears it.
 	inTry bool
+	// inTypeArg is set while parsing a constant in a type-argument list
+	// (`Array<u8, 4 * 16>`): there a `>>` closes two lists, it is not a shift
+	inTypeArg bool
 
 	// leadDoc is a documentation comment seen on a declaration's attributes,
 	// handed to the declaration that follows them.
@@ -646,11 +649,30 @@ func (p *Parser) parseTypeParams() []ast.TypeParam {
 		p.errorf(lt.Span, "empty type parameter list; drop the '<>'")
 	}
 	for !p.atTypeClose() {
+		var constAt source.Span
+		isConst := p.at(lexer.KwConst)
+		if isConst {
+			constAt = p.next().Span // `<const N: i64>` (D121)
+		}
 		name, ok := p.expectIdent()
 		if !ok {
 			break
 		}
-		tp := ast.TypeParam{Name: name}
+		tp := ast.TypeParam{Name: name, Const: isConst, At: constAt}
+		if isConst {
+			if _, ok := p.expect(lexer.Colon); !ok {
+				break
+			}
+			tp.Of = p.parseType()
+			if nt, ok := tp.Of.(*ast.NamedType); !ok || len(nt.Path) != 1 || nt.Path[0].Name != "i64" || len(nt.Args) != 0 {
+				p.errorf(tp.Of.Span(), "a constant parameter is an 'i64': write 'const %s: i64' (D121)", name.Name)
+			}
+			tps = append(tps, tp)
+			if !p.accept(lexer.Comma) {
+				break
+			}
+			continue
+		}
 		if p.accept(lexer.Colon) {
 			tp.Bounds = append(tp.Bounds, p.parseType())
 			for p.accept(lexer.Plus) {

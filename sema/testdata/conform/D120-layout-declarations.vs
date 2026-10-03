@@ -31,12 +31,15 @@ struct Low { // error: @align(2) is below the natural alignment of 'Low', 8
 }
 
 extern struct Fields {
-  @align(2) a: i32 // error: @align(2) is below the natural alignment of 'i32', 4
-  @align(16) b: i32
+  @align(2)
+  a: i32 // error: @align(2) is below the natural alignment of 'i32', 4
+  @align(16)
+  b: i32
 }
 
 struct NotC {
-  @align(8) a: i32 // error: @align on a field applies in an extern struct
+  @align(8) // error: @align on a field applies in an extern struct
+  a: i32
 }
 
 @align(64)

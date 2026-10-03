@@ -61,3 +61,6 @@
 "variant '%s.%s' does not implement '%s'"  # a variant without the implement is reported at its declaration now (checkSealedVariants), which stops the body checks
 "variants of '%s' disagree on the type of '%s'"  # a sealed trait's method has one signature, which every variant's implement must match
 "variants of sealed trait '%s' must be declared in the same module as the trait (D12)"  # needs two modules; conformance cases are one file each
+"arrayRawData takes an array"  # std-internal intrinsic: only std calls it, and std calls it right
+"the length of '%s' is not known here (D121)"  # bodies are checked per instantiation, so an array's length is a constant by then
+"write the whole type to fill an array: 'Array<i64, 8>.make(0)' (D121)"  # bodies are checked per instantiation, so the array type is whole by then

@@ -1309,3 +1309,46 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   collector gives 8; now `llvm.coro.id(i32 8)` (goldens `tasks`/`overflow`
   differ by that line only; `spawn` 43.9 ms vs 42.4 ms recorded, `channels`
   4.7 ms vs 9.3 ms — noise). Windows and WSL green.
+- **2026-10-03 — B16: D121 (`Array<T, N>`, const generics) done — B16 complete.**
+  *Types and syntax:* `types.Array` (length a `types.Const`, a const type
+  parameter, or open in a template), `<const N: i64>` on functions, structs
+  and impls, constants where a type argument goes (`Array<u8, 4 * 16>`,
+  `Array<u8, WIDTH>`; `>>` still closes two lists), `N` an `i64` constant in
+  each instance, per-`N` instances, inference through `unify`, `N + 1` and
+  non-`i64` parameters refused; formatter, `ast.Dump`, hover (`<const N: i64>`),
+  completion, catalogue, tmLanguage. *Memory class* (the user's choice): a
+  value of 128 bytes or more that holds an array is an address in a register,
+  copied by `memmove`, passed as the address of the caller's copy, returned
+  through `sret` — `codegen/llvm/mem.go` (isMem, storeVal/loadVal, part,
+  makeTaggedT, callRet), threaded through every site a value flows through
+  (locals, fields, literals, nullables, tagged values, `Result`, closures,
+  thunks, vtables, tasks and their argument blocks, channels, maps, trait
+  objects, C by value); everything smaller emits the same IR as before (all
+  goldens unchanged). A 1 MiB local compiles in a second. *Arrays:* literals
+  with the length checked, `at` (T where the index is a constant in range or
+  proven: `loop (i in a.indices())`, `0..<K.len()`, `i < 4`), `set`, `first`,
+  `last`, `indices`, `toList`/`toMutable`, `Array.make`, `xs.toArray<N>()`,
+  `loop (x in a)` over a copy and `loop (&x in a)` in place, `==`/hash/text,
+  const tables (`[N x T]` rodata, read in place, constant index folded),
+  prelude adapters for `map`/`filter`/`forEach`/`fold`/`any`/`all`/`find`,
+  every other read-only `List` method on a copy, `Default`, `Codable` (exactly
+  `N`), `Sendable`, `CLayout` + `withRaw`, C arrays in extern structs. 
+  *Tests:* TestArraysAgreeWithC (sockaddr, mixed, float and 80/160-byte
+  structs by value, 2-D arrays; Windows ABI here, SysV on WSL), TestArrays
+  (12 tests: values, reads, loops, const generics, list methods, hash/text/
+  default, codable, then the memory class through nullables, tuples, branches,
+  lists, maps, errors, closures, trait objects, tasks, channels, a megabyte),
+  conform `D121-*` (4 files), golden `arrays`, parser `TestConstTypeArguments`,
+  format `TestConstGenericsRoundTrip`, lsp `TestArraysInTheEditor`, example
+  `arrays`. Docs: chapters 4 (Arrays), 8 (constants as generic arguments),
+  13 (arrays in a C struct, large values), cheat sheet, stdlib reference.
+  *Std:* SHA-256 on arrays — `sha256` 113–135 ms → 86–91 ms (four runs
+  each; `bench/results.md`). **Also (user note):** field and enum-member
+  annotations now sit on the line above, as on declarations, in the
+  formatter (`@key("x")` / `id: i64`), in docs, examples and tests.
+  **Bugs found on the way:** `receiverViews` would have made an array
+  assignable to a `List` had it listed the list view (kept local to method
+  lookup); `Channel<Array<u8, 200>>(…)` — a constant before `>>` — parsed
+  as a shift (now a type-argument context stops at `>>`); a List method that
+  lends storage (`withRaw`) found through the array→List view would have
+  written to a copy (the array has its own). Windows and WSL green.

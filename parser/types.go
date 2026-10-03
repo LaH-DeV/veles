@@ -120,13 +120,49 @@ func (p *Parser) parseTypeArgs() []ast.Type {
 		p.errorf(lt.Span, "empty type argument list; drop the '<>'")
 	}
 	for !p.atTypeClose() {
-		args = append(args, p.parseType())
+		args = append(args, p.parseTypeArg())
 		if !p.accept(lexer.Comma) {
 			break
 		}
 	}
 	p.expectTypeClose()
 	return args
+}
+
+// parseTypeArg parses one argument of a type-argument list: a type, or a
+// constant (D121) — a number or arithmetic on names, `Array<u8, 64 * 4>`.
+// A lone name is parsed as a type name; the checker takes it for a constant
+// when no type has that name.
+func (p *Parser) parseTypeArg() ast.Type {
+	if !p.constArgAhead() {
+		return p.parseType()
+	}
+	start := p.span()
+	saved := p.inTypeArg
+	p.inTypeArg = true
+	x := p.parseBinary(bpCmp) // stops at '>' and ','
+	p.inTypeArg = saved
+	return &ast.ConstType{X: x, Pos: p.spanFrom(start)}
+}
+
+// constArgAhead reports whether the type argument starting here is a
+// constant expression: it begins with a number, or with a name that an
+// arithmetic operator follows.
+func (p *Parser) constArgAhead() bool {
+	switch p.cur().Kind {
+	case lexer.Int:
+		return true
+	case lexer.Minus:
+		return p.peek(1).Kind == lexer.Int // a negative length: the checker says what is wrong with it
+	case lexer.LParen:
+		return p.peek(1).Kind == lexer.Int // `(1 << 4)`: a tuple type does not begin with a number
+	case lexer.Ident:
+		switch p.peek(1).Kind {
+		case lexer.Plus, lexer.Minus, lexer.Star, lexer.Slash, lexer.Percent, lexer.Shl, lexer.Amp, lexer.Pipe, lexer.Caret:
+			return true
+		}
+	}
+	return false
 }
 
 // atTypeClose reports the end of a type-argument list: `>`, or the first

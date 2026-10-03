@@ -36,7 +36,7 @@ func (f *fnCtx) typeNamed(n *ast.NameExpr, member string) types.Type {
 		return f.resolve(&ast.NamedType{Path: []ast.Ident{{Name: n.Name, Pos: n.Pos}}, Pos: n.Pos})
 	}
 	switch n.Name {
-	case "List", "MutableList", "Map", "MutableMap", "Set", "MutableSet":
+	case "List", "MutableList", "Array", "Map", "MutableMap", "Set", "MutableSet":
 		// `MutableList<bool>.repeat(false, n)`: statics the prelude adds to a
 		// built-in generic type with `extend`; the type arguments are required.
 		if len(n.TypeArgs) == 0 {

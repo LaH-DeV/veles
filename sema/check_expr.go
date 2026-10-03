@@ -513,6 +513,9 @@ func (f *fnCtx) lookup(name string) *Symbol {
 
 func (f *fnCtx) nameExpr(e *ast.NameExpr, want types.Type) Expr {
 	sym := f.lookup(e.Name)
+	if x := f.constParam(e, sym); x != nil {
+		return x
+	}
 	if sym == nil {
 		hint, fix := f.unknownNameHint(e.Pos, e.Name, true)
 		f.c.errorFix(e.Pos, fix, "unknown name '%s'%s", e.Name, hint)
@@ -1353,6 +1356,11 @@ func (f *fnCtx) equality(e *ast.BinaryExpr, op BinOp) Expr {
 		l = f.immutableView(l)
 		if isLiteralExpr(e.R) {
 			r = f.checkOperandFor(e.R, l.Type())
+		} else if _, listR := e.R.(*ast.ListLit); listR && isArrayOrNullableArray(l.Type()) {
+			r = f.immutableView(f.checkExpr(e.R, l.Type())) // `a == [1, 2]`: the literal is an array (D121)
+			if !types.Identical(r.Type(), l.Type()) {
+				r = f.coerce(r, l.Type(), e.R.Span())
+			}
 		} else {
 			// comparing reads both sides and keeps neither: a MutableList is
 			// compared as it is, not converted (D63)
@@ -1450,6 +1458,8 @@ func (f *fnCtx) comparableIn(t types.Type, seen map[types.Type]bool) bool {
 		return true
 	case *types.List:
 		// collections compare element-wise (D25, v0.26)
+		return f.comparableIn(t.Elem, seen)
+	case *types.Array:
 		return f.comparableIn(t.Elem, seen)
 	case *types.Set:
 		return f.comparableIn(t.Elem, seen)
@@ -1576,6 +1586,9 @@ func (f *fnCtx) listLit(e *ast.ListLit, want types.Type) Expr {
 	// with nothing to infer it from.
 	if st, ok := numericHint(want).(*types.Set); ok {
 		return f.setLit(e, st)
+	}
+	if at, ok := numericHint(want).(*types.Array); ok {
+		return f.arrayLit(e, at)
 	}
 	if lt, ok := numericHint(want).(*types.List); ok {
 		// a still-generic expected type (`items: MutableList<T>` during
@@ -1794,7 +1807,7 @@ func (f *fnCtx) tryLinks(x ast.Expr, pos source.Span, unwrapped *bool) Expr {
 	}
 	var typeArgs []types.Type
 	for _, ta := range call.TypeArgs {
-		typeArgs = append(typeArgs, f.resolve(ta))
+		typeArgs = append(typeArgs, f.resolveCallArg(ta))
 	}
 	return f.dispatchMethod(recv, mem, typeArgs, call, nil)
 }

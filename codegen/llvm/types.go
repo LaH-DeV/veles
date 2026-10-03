@@ -18,6 +18,7 @@ import (
 //	T?          ptr when T is a pointer (niche), else { i1, T }
 //	(A, B)      { A, B }
 //	Range<T>    { T, T, i1 }
+//	Array<T, N> [N x T]                                   (inline, D121)
 //	List<T>     ptr (runtime object)
 //	struct      %S.name = { fields }
 //	sealed      %V.name = { i32 tag, [N x i64] payload }  (inline tagged union)
@@ -63,6 +64,8 @@ func (g *gen) llType(t types.Type) string {
 			parts[i] = g.llType(e)
 		}
 		return "{ " + strings.Join(parts, ", ") + " }"
+	case *types.Array:
+		return fmt.Sprintf("[%d x %s]", arrayLen(t), g.llType(t.Elem))
 	case *types.Range:
 		et := g.llType(t.Elem)
 		return "{ " + et + ", " + et + ", i1 }"

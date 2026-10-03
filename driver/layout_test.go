@@ -62,7 +62,8 @@ extern struct EpollEvent {
 
 extern struct Aligned {
   a: u8
-  @align(16) b: i32
+  @align(16)
+  b: i32
   c: u8
 }
 

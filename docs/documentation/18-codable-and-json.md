@@ -106,10 +106,13 @@ follows it. `Problem.pointer()` gives the path as a JSON pointer
 use codec, io, json
 
 struct Account {
-  @key("account_id") id: i64                 // this key, in every format
-  @key(json: "displayName", db: "display_name") name: string
+  @key("account_id")
+  id: i64  // this key, in every format
+  @key(json: "displayName", db: "display_name")
+  name: string
   createdAt: i64
-  @skip secret: string = ""                  // never on the wire
+  @skip
+  secret: string = ""  // never on the wire
   implement Codable
 }
 

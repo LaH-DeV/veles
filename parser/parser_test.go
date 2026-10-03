@@ -761,3 +761,50 @@ fun f() {
 		}
 	}
 }
+
+// D121: a number or an expression of constants goes where a type argument
+// does, and `>>` after one still closes two argument lists; `<const N: i64>`
+// declares a constant parameter.
+func TestConstTypeArguments(t *testing.T) {
+	src := `
+struct Buf<const N: i64> {
+  data: Array<u8, N>
+}
+struct S {
+  a: Array<u8, 64>
+  b: Array<u8, 4 * 16>
+  c: Array<u8, WIDTH>
+  d: Array<u8, WIDTH * 2>
+  e: MutableMap<string, Array<u8, 200>>
+  f: Array<Array<i64, 3>, 2>
+  g: Buf<8>
+  h: Array<u8, (1 << 4)>
+}
+fun zeros<T, const N: i64>(): Array<T, N> = Array.make(0)
+fun main() {
+  val z = zeros<i64, 16>()
+  val q: Array<i64, 4> = Array<i64, 4>.make(1)
+}
+`
+	f, diags := parse(t, src)
+	if diags.HasErrors() {
+		t.Fatalf("%s", diags.Render())
+	}
+	sd := f.Decls[1].(*ast.StructDecl)
+	if sd.Fields[1].Type.(*ast.NamedType).Args[1].(*ast.ConstType) == nil {
+		t.Fatal("4 * 16 is a constant argument")
+	}
+	if nt := sd.Fields[2].Type.(*ast.NamedType); nt.Args[1].(*ast.NamedType).Path[0].Name != "WIDTH" {
+		t.Fatal("a lone name stays a name for the checker to place")
+	}
+	if _, ok := sd.Fields[3].Type.(*ast.NamedType).Args[1].(*ast.ConstType); !ok {
+		t.Fatal("WIDTH * 2 is a constant argument")
+	}
+	bd := f.Decls[0].(*ast.StructDecl)
+	if tp := bd.TypeParams[0]; !tp.Const || tp.Name.Name != "N" {
+		t.Fatalf("const N: %+v", tp)
+	}
+	if _, bad := parse(t, "fun f<const N: f64>() {}"); !bad.HasErrors() {
+		t.Fatal("a constant parameter is an i64")
+	}
+}

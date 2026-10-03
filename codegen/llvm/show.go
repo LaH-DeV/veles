@@ -107,7 +107,7 @@ func (g *gen) show(t types.Type, v string) string {
 	}
 	name := g.showHelper(t)
 	r := g.newTmp()
-	g.emit("%s = call %s @%s(%s %s)", r, strType, name, g.llType(t), v)
+	g.emit("%s = call %s @%s(%s %s)", r, strType, name, g.vt(t), v)
 	return r
 }
 
@@ -118,7 +118,7 @@ func (g *gen) showHelper(t types.Type) string {
 	}
 	name := "show." + mangleType(t)
 	g.showFns[key] = name
-	llt := g.llType(t)
+	llt := g.vt(t)
 	g.pending = append(g.pending, func() {
 		g.defineHelper(name, strType, []string{llt + " %v"}, func() {
 			r := g.showBody(t, "%v")
@@ -139,8 +139,7 @@ func (g *gen) showBody(t types.Type, v string) string {
 		if tt.Raw {
 			return g.stringConst("<raw pointer>")
 		}
-		inner := g.newTmp()
-		g.emit("%s = load %s, ptr %s", inner, g.llType(tt.Elem), v)
+		inner := g.loadVal(tt.Elem, v)
 		return g.concat(g.stringConst("&"), g.show(tt.Elem, inner))
 	case *types.Nullable:
 		res := g.alloca(strType)
@@ -148,8 +147,7 @@ func (g *gen) showBody(t types.Type, v string) string {
 		if isPtrLike(tt.Elem) {
 			g.emit("%s = icmp eq ptr %s, null", isNull, v)
 		} else {
-			tag := g.newTmp()
-			g.emit("%s = extractvalue %s %s, 0", tag, g.llType(tt), v)
+			tag := g.nullFlag(tt, v)
 			g.emit("%s = xor i1 %s, true", isNull, tag)
 		}
 		nullL, someL, endL := g.newLabel("show.null"), g.newLabel("show.some"), g.newLabel("show.end")
@@ -160,8 +158,7 @@ func (g *gen) showBody(t types.Type, v string) string {
 		g.placeLabel(someL)
 		inner := v
 		if !isPtrLike(tt.Elem) {
-			inner = g.newTmp()
-			g.emit("%s = extractvalue %s %s, 1", inner, g.llType(tt), v)
+			inner = g.nullVal(tt, v)
 		}
 		s := g.show(tt.Elem, inner)
 		g.emit("store %s %s, ptr %s", strType, s, res)
@@ -176,11 +173,12 @@ func (g *gen) showBody(t types.Type, v string) string {
 			if i > 0 {
 				acc = g.concat(acc, g.stringConst(", "))
 			}
-			el := g.newTmp()
-			g.emit("%s = extractvalue %s %s, %d", el, g.llType(tt), v, i)
+			el := g.part(tt, v, i, e)
 			acc = g.concat(acc, g.show(e, el))
 		}
 		return g.concat(acc, g.stringConst(")"))
+	case *types.Array:
+		return g.showArray(tt, v)
 	case *types.Range:
 		lo := g.newTmp()
 		g.emit("%s = extractvalue %s %s, 0", lo, g.llType(tt), v)
@@ -217,8 +215,7 @@ func (g *gen) showBody(t types.Type, v string) string {
 		cur = g.concat(cur, sep)
 		p := g.newTmp()
 		g.emit("%s = call ptr @veles_list_ref(ptr %s, i64 %s)", p, v, iv)
-		el := g.newTmp()
-		g.emit("%s = load %s, ptr %s", el, g.llType(tt.Elem), p)
+		el := g.loadVal(tt.Elem, p)
 		cur = g.concat(cur, g.show(tt.Elem, el))
 		g.emit("store %s %s, ptr %s", strType, cur, res)
 		next := g.newTmp()
@@ -245,29 +242,23 @@ func (g *gen) showBody(t types.Type, v string) string {
 				acc = g.concat(acc, g.stringConst(", "))
 			}
 			acc = g.concat(acc, g.stringConst(f.Name+": "))
-			fv := g.newTmp()
-			g.emit("%s = extractvalue %s %s, %d", fv, g.llType(tt), v, g.fidx(tt, i))
+			fv := g.part(tt, v, g.fidx(tt, i), f.Type)
 			acc = g.concat(acc, g.show(f.Type, fv))
 		}
 		return g.concat(acc, g.stringConst(")"))
 	case *types.Sealed:
-		return g.showTagged(g.llType(tt), v, func(i int) (types.Type, string) {
-			return tt.Variants[i], g.llType(tt.Variants[i])
-		}, len(tt.Variants))
+		return g.showTagged(tt, v, func(i int) types.Type { return tt.Variants[i] }, len(tt.Variants))
 	case *types.ErrorUnion:
-		return g.showTagged(g.llType(tt), v, func(i int) (types.Type, string) {
-			return tt.Members[i], g.llType(tt.Members[i])
-		}, len(tt.Members))
+		return g.showTagged(tt, v, func(i int) types.Type { return tt.Members[i] }, len(tt.Members))
 	}
 	return g.stringConst("<" + t.String() + ">")
 }
 
 // showTagged switches on a tag and shows the selected payload.
-func (g *gen) showTagged(llt, v string, member func(i int) (types.Type, string), n int) string {
+func (g *gen) showTagged(t types.Type, v string, member func(i int) types.Type, n int) string {
 	res := g.alloca(strType)
 	g.emit("store %s %s, ptr %s", strType, g.stringConst("?"), res)
-	tag := g.newTmp()
-	g.emit("%s = extractvalue %s %s, 0", tag, llt, v)
+	tag := g.tagOf(t, v)
 	endL := g.newLabel("show.end")
 	var cases []string
 	labels := make([]string, n)
@@ -278,8 +269,8 @@ func (g *gen) showTagged(llt, v string, member func(i int) (types.Type, string),
 	g.emitTerm("switch i32 %s, label %%%s [ %s ]", tag, endL, strings.Join(cases, " "))
 	for i := 0; i < n; i++ {
 		g.placeLabel(labels[i])
-		mt, mll := member(i)
-		payload := g.extractTagged(llt, v, mll)
+		mt := member(i)
+		payload := g.extractTaggedT(t, v, mt)
 		s := g.show(mt, payload)
 		g.emit("store %s %s, ptr %s", strType, s, res)
 		g.emitTerm("br label %%%s", endL)
@@ -319,7 +310,7 @@ func (g *gen) equal(t types.Type, l, r string) string {
 	// collections compare element-wise (D25, v0.26); the helpers below
 	name := g.eqHelper(t)
 	v := g.newTmp()
-	g.emit("%s = call i1 @%s(%s %s, %s %s)", v, name, g.llType(t), l, g.llType(t), r)
+	g.emit("%s = call i1 @%s(%s %s, %s %s)", v, name, g.vt(t), l, g.vt(t), r)
 	return v
 }
 
@@ -330,7 +321,7 @@ func (g *gen) eqHelper(t types.Type) string {
 	}
 	name := "eq." + mangleType(t)
 	g.eqFns[key] = name
-	llt := g.llType(t)
+	llt := g.vt(t)
 	g.pending = append(g.pending, func() {
 		g.defineHelper(name, "i1", []string{llt + " %a", llt + " %b"}, func() {
 			r := g.eqBody(t, "%a", "%b")
@@ -363,10 +354,8 @@ func (g *gen) eqBody(t types.Type, a, b string) string {
 			// a nullable collection: null == null, otherwise element-wise
 			return g.eqNullPtr(tt.Elem, a, b)
 		}
-		ta := g.newTmp()
-		g.emit("%s = extractvalue %s %s, 0", ta, llt, a)
-		tb := g.newTmp()
-		g.emit("%s = extractvalue %s %s, 0", tb, llt, b)
+		ta := g.nullFlag(tt, a)
+		tb := g.nullFlag(tt, b)
 		sameTag := g.newTmp()
 		g.emit("%s = icmp eq i1 %s, %s", sameTag, ta, tb)
 		res := g.alloca("i1")
@@ -376,10 +365,8 @@ func (g *gen) eqBody(t types.Type, a, b string) string {
 		g.emit("%s = and i1 %s, %s", both, sameTag, ta)
 		g.emitTerm("br i1 %s, label %%%s, label %%%s", both, bothL, endL)
 		g.placeLabel(bothL)
-		va := g.newTmp()
-		g.emit("%s = extractvalue %s %s, 1", va, llt, a)
-		vb := g.newTmp()
-		g.emit("%s = extractvalue %s %s, 1", vb, llt, b)
+		va := g.nullVal(tt, a)
+		vb := g.nullVal(tt, b)
 		e := g.equal(tt.Elem, va, vb)
 		g.emit("store i1 %s, ptr %s", e, res)
 		g.emitTerm("br label %%%s", endL)
@@ -398,9 +385,11 @@ func (g *gen) eqBody(t types.Type, a, b string) string {
 		}
 		return g.eqFields(t, llt, a, b, fs)
 	case *types.Sealed:
-		return g.eqTagged(llt, a, b, func(i int) types.Type { return tt.Variants[i] }, len(tt.Variants))
+		return g.eqTagged(t, a, b, func(i int) types.Type { return tt.Variants[i] }, len(tt.Variants))
 	case *types.ErrorUnion:
-		return g.eqTagged(llt, a, b, func(i int) types.Type { return tt.Members[i] }, len(tt.Members))
+		return g.eqTagged(t, a, b, func(i int) types.Type { return tt.Members[i] }, len(tt.Members))
+	case *types.Array:
+		return g.eqArray(tt, a, b)
 	case *types.List:
 		return g.eqList(tt.Elem, a, b)
 	case *types.Map, *types.Set:
@@ -464,15 +453,12 @@ func (g *gen) eqList(elem types.Type, a, b string) string {
 	g.emit("store i1 true, ptr %s", res)
 	g.emitTerm("br i1 %s, label %%%s, label %%%s", more, bodyL, endL)
 	g.placeLabel(bodyL)
-	ell := g.llType(elem)
 	pa := g.newTmp()
 	g.emit("%s = call ptr @veles_list_ref(ptr %s, i64 %s)", pa, a, iv)
 	pb := g.newTmp()
 	g.emit("%s = call ptr @veles_list_ref(ptr %s, i64 %s)", pb, b, iv)
-	xa := g.newTmp()
-	g.emit("%s = load %s, ptr %s", xa, ell, pa)
-	xb := g.newTmp()
-	g.emit("%s = load %s, ptr %s", xb, ell, pb)
+	xa := g.loadVal(elem, pa)
+	xb := g.loadVal(elem, pb)
 	e := g.equal(elem, xa, xb)
 	g.emit("store i1 %s, ptr %s", e, res)
 	g.emitTerm("br i1 %s, label %%%s, label %%%s", e, nextL, endL)
@@ -525,8 +511,7 @@ func (g *gen) eqMap(t types.Type, a, b string) string {
 	g.placeLabel(liveL)
 	kp := g.newTmp()
 	g.emit("%s = call ptr @veles_map_key_at(ptr %s, i64 %s)", kp, a, iv)
-	k := g.newTmp()
-	g.emit("%s = load %s, ptr %s", k, g.llType(kt), kp)
+	k := g.loadVal(kt, kp)
 	h := g.hash(kt, k)
 	idx := g.newTmp()
 	g.emit("%s = call i64 @veles_map_find(ptr %s, i64 %s, ptr %s, ptr @%s)", idx, b, h, kp, g.eqPtrHelper(kt))
@@ -539,15 +524,12 @@ func (g *gen) eqMap(t types.Type, a, b string) string {
 		valL := g.newLabel("eq.val")
 		g.emitTerm("br i1 %s, label %%%s, label %%%s", found, valL, endL)
 		g.placeLabel(valL)
-		vll := g.llType(vt)
 		vpa := g.newTmp()
 		g.emit("%s = call ptr @veles_map_val_at(ptr %s, i64 %s)", vpa, a, iv)
 		vpb := g.newTmp()
 		g.emit("%s = call ptr @veles_map_val_at(ptr %s, i64 %s)", vpb, b, idx)
-		va := g.newTmp()
-		g.emit("%s = load %s, ptr %s", va, vll, vpa)
-		vb := g.newTmp()
-		g.emit("%s = load %s, ptr %s", vb, vll, vpb)
+		va := g.loadVal(vt, vpa)
+		vb := g.loadVal(vt, vpb)
 		e := g.equal(vt, va, vb)
 		g.emit("store i1 %s, ptr %s", e, res)
 		g.emitTerm("br i1 %s, label %%%s, label %%%s", e, nextL, endL)
@@ -566,10 +548,8 @@ func (g *gen) eqMap(t types.Type, a, b string) string {
 func (g *gen) eqFields(t types.Type, llt, a, b string, fields []types.Type) string {
 	acc := "true"
 	for i, ft := range fields {
-		fa := g.newTmp()
-		g.emit("%s = extractvalue %s %s, %d", fa, llt, a, g.fidx(t, i))
-		fb := g.newTmp()
-		g.emit("%s = extractvalue %s %s, %d", fb, llt, b, g.fidx(t, i))
+		fa := g.part(t, a, g.fidx(t, i), ft)
+		fb := g.part(t, b, g.fidx(t, i), ft)
 		e := g.equal(ft, fa, fb)
 		n := g.newTmp()
 		g.emit("%s = and i1 %s, %s", n, acc, e)
@@ -578,11 +558,9 @@ func (g *gen) eqFields(t types.Type, llt, a, b string, fields []types.Type) stri
 	return acc
 }
 
-func (g *gen) eqTagged(llt, a, b string, member func(i int) types.Type, n int) string {
-	ta := g.newTmp()
-	g.emit("%s = extractvalue %s %s, 0", ta, llt, a)
-	tb := g.newTmp()
-	g.emit("%s = extractvalue %s %s, 0", tb, llt, b)
+func (g *gen) eqTagged(t types.Type, a, b string, member func(i int) types.Type, n int) string {
+	ta := g.tagOf(t, a)
+	tb := g.tagOf(t, b)
 	res := g.alloca("i1")
 	g.emit("store i1 false, ptr %s", res)
 	sameTag := g.newTmp()
@@ -600,8 +578,8 @@ func (g *gen) eqTagged(llt, a, b string, member func(i int) types.Type, n int) s
 	for i := 0; i < n; i++ {
 		g.placeLabel(labels[i])
 		mt := member(i)
-		pa := g.extractTagged(llt, a, g.llType(mt))
-		pb := g.extractTagged(llt, b, g.llType(mt))
+		pa := g.extractTaggedT(t, a, mt)
+		pb := g.extractTaggedT(t, b, mt)
 		e := g.equal(mt, pa, pb)
 		g.emit("store i1 %s, ptr %s", e, res)
 		g.emitTerm("br label %%%s", endL)

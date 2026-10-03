@@ -69,7 +69,14 @@ func (p *printer) typeParams(tps []TypeParam) {
 		if i > 0 {
 			p.w(", ")
 		}
+		if tp.Const {
+			p.w("const ")
+		}
 		p.w(tp.Name.Name)
+		if tp.Const {
+			p.w(": ")
+			p.typ(tp.Of)
+		}
 		for j, b := range tp.Bounds {
 			if j == 0 {
 				p.w(": ")
@@ -426,6 +433,8 @@ func (p *printer) typ(t Type) {
 			p.typ(t.Elem)
 		}
 		p.w("?")
+	case *ConstType:
+		p.expr(t.X)
 	case *PointerType:
 		p.w("*")
 		if t.Raw {

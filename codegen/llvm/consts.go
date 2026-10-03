@@ -39,6 +39,9 @@ func (g *gen) constTable(v sema.ConstVal, name string) string {
 		size, _ := g.layout(v.T.Elem)
 		fmt.Fprintf(&g.constOut, "%s = private unnamed_addr constant %s { ptr %s, i64 %d, i64 %d, i64 %d, ptr %s, i64 0 }\n",
 			name, listHeader, data, len(v.Elems), len(v.Elems), size, g.arrayDescOf(v.T.Elem))
+	case *sema.CArray:
+		// the array itself, inline: a use reads it in place or loads it
+		g.constArrayAs(name, base+".", v.T.Elem, v.Elems)
 	case *sema.CMap:
 		g.constMap(name, base, v.T.Key, v.T.Value, v.Keys, v.Vals)
 	case *sema.CSet:
@@ -63,6 +66,11 @@ func (g *gen) constArray(name, at string, elem types.Type, xs []sema.ConstVal) s
 	}
 	fmt.Fprintf(&g.constOut, "%s = private unnamed_addr constant [%d x %s] %s\n", name, len(xs), et, body)
 	return name
+}
+
+// constArrayAs is constArray under a name that is already decided.
+func (g *gen) constArrayAs(name, at string, elem types.Type, xs []sema.ConstVal) {
+	g.constArray(name, at, elem, xs)
 }
 
 // mapHeader is veles_map as veles_rt.c lays it out: keys, vals, meta,
@@ -151,6 +159,17 @@ func (g *gen) constInit(v sema.ConstVal, at string) string {
 			ts[i] = f.Type
 		}
 		return g.constFields(ts, v.Fields, at)
+	case *sema.CArray:
+		// inline in what holds it: `[N x T] [...]` (D121)
+		parts := make([]string, len(v.Elems))
+		et := g.llType(v.T.Elem)
+		for i, x := range v.Elems {
+			parts[i] = et + " " + g.constInit(x, at+"."+strconv.Itoa(i))
+		}
+		if len(parts) == 0 {
+			return "zeroinitializer"
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
 	case *sema.CList, *sema.CMap, *sema.CSet:
 		return g.constTable(v, at)
 	}
@@ -208,6 +227,12 @@ func constHash(t types.Type, v sema.ConstVal) int64 {
 		acc := int64(17)
 		for i, x := range v.Fields {
 			acc = hashMix(acc, constHash(v.T.Fields[i].Type, x))
+		}
+		return acc
+	case *sema.CArray:
+		acc := hashMix(17, int64(len(v.Elems)))
+		for _, x := range v.Elems {
+			acc = hashMix(acc, constHash(v.T.Elem, x))
 		}
 		return acc
 	case *sema.CList:

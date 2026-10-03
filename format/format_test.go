@@ -229,7 +229,7 @@ val c = g()
 			"fun f(a: i64?, b: i64?): i64 {\n  val z = a\n    ?: b\n    ?: 0\n  z\n}\n"},
 		{"empty impls drop their braces, field attributes stay",
 			"struct U {\n  @key(\"user_id\") id: i64\n  @skip p: string = \"\"\n  implement Codable { }\n  implement Comparable\n  implement Display { fun toString(): string = \"u\" }\n}\nimplement Codable for geo.Point {\n}\nimplement Error for U { /* later */ }\n",
-			"struct U {\n  @key(\"user_id\") id: i64\n  @skip p: string = \"\"\n  implement Codable\n  implement Comparable\n  implement Display {\n    fun toString(): string = \"u\"\n  }\n}\nimplement Codable for geo.Point\nimplement Error for U {\n  /* later */\n}\n"},
+			"struct U {\n  @key(\"user_id\")\n  id: i64\n  @skip\n  p: string = \"\"\n  implement Codable\n  implement Comparable\n  implement Display {\n    fun toString(): string = \"u\"\n  }\n}\nimplement Codable for geo.Point\nimplement Error for U {\n  /* later */\n}\n"},
 		{"enum members one per line",
 			"public  enum Color:u8 { Red=1, Green\n  Blue  = 10 // ten\n  Pink }\nenum E { }\n",
 			"public enum Color : u8 {\n  Red = 1\n  Green\n  Blue = 10  // ten\n  Pink\n}\nenum E { }\n"},
@@ -426,8 +426,17 @@ func TestCVariadicRoundTrips(t *testing.T) {
 // field, @transparent print as written.
 func TestCLayoutRoundTrips(t *testing.T) {
 	src := "extern union Data {\n  ptr: *raw ()\n  fd:  i32\n}\n\n@packed\nextern struct Event {\n  events: u32\n  data:   Data\n}\n\n" +
-		"extern struct Spaced {\n  a: u8\n  @align(16) b: i32\n}\n\n@transparent\nstruct Fd {\n  handle: i32\n}\n\n@align(64)\nstruct Counter {\n  var hits: i64\n}\n"
+		"extern struct Spaced {\n  a: u8\n  @align(16)\n  b: i32\n}\n\n@transparent\nstruct Fd {\n  handle: i32\n}\n\n@align(64)\nstruct Counter {\n  var hits: i64\n}\n"
 	if got := checkRoundTrip(t, "layout.vs", src); got != src {
+		t.Errorf("formatted:\n%s\nwant:\n%s", got, src)
+	}
+}
+
+// D121: constant parameters and constant type arguments print as written.
+func TestConstGenericsRoundTrip(t *testing.T) {
+	src := "struct Buf<const N: i64> {\n  data: Array<u8, N>\n}\n\nfun zeros<T, const N: i64>(): Array<T, N> = Array.make(0)\n\n" +
+		"struct S {\n  a: Array<u8, 4 * 16>\n  b: MutableMap<string, Array<u8, 200>>\n  c: Array<Array<i64, 3>, 2>\n  d: Buf<8>\n}\n"
+	if got := checkRoundTrip(t, "constgen.vs", src); got != src {
 		t.Errorf("formatted:\n%s\nwant:\n%s", got, src)
 	}
 }

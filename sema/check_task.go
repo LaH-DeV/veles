@@ -32,6 +32,8 @@ func hasVarFieldsIn(t types.Type, seen map[types.Type]bool) bool {
 	switch t := t.(type) {
 	case *types.Nullable:
 		return hasVarFieldsIn(t.Elem, seen)
+	case *types.Array:
+		return hasVarFieldsIn(t.Elem, seen)
 	case *types.Tuple:
 		for _, e := range t.Elems {
 			if hasVarFieldsIn(e, seen) {
@@ -74,6 +76,8 @@ func sendableIn(t types.Type, seen map[types.Type]bool) bool {
 		return true
 	case *types.Nullable:
 		return sendableIn(t.Elem, seen)
+	case *types.Array:
+		return sendableIn(t.Elem, seen) // an array is a value: its copy crosses (D121)
 	case *types.Tuple:
 		for _, e := range t.Elems {
 			if !sendableIn(e, seen) {

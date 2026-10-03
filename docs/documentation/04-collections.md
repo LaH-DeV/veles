@@ -464,6 +464,102 @@ own: construct with `MutableSet<T>()` or `Set<T>()`, convert a list, or
 write a list literal where a set type is expected — `val s: Set<i64> =
 [1, 2, 2]` has two elements.
 
+## Arrays
+
+A `List<T>` is a heap object that can grow; an `Array<T, N>` is exactly `N`
+elements stored *inline* — in a local, in a struct's field, in another
+array — with no allocation and a length that is part of its type (D121). It
+is what a lookup table, a hash state, a fixed buffer or a C `uint8_t
+name[16]` is:
+
+```veles
+use io
+
+struct Sha {
+  var state: Array<u32, 8> = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+                              0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]
+}
+
+fun main() {
+  var a: Array<i64, 4> = [10, 20, 30, 40]
+  a.set(1, 99)
+  val b = a
+  a.set(0, 7)
+  io.println("$a $b ${a.len()}")
+  val far = 9
+  io.println("${a.at(1)} ${a.at(far)} ${a.fold(0, (s, x) => s + x)}")
+  loop (&x in a) {
+    *x = *x + 1
+  }
+  var sha = Sha()
+  sha.state.set(0, 1)
+  io.println("$a ${sha.state.at(0)} ${Array<i64, 3>.make(5)}")
+}
+```
+
+Output:
+```text
+[7, 99, 30, 40] [10, 99, 30, 40] 4
+99 null 176
+[8, 100, 31, 41] 1 [5, 5, 5]
+```
+
+A `[…]` literal is an array where an array type is expected, and its length
+must be `N`. An array is a **value**, like a struct: `val b = a` and passing
+`a` to a function copy it, and `a.set(i, v)` changes the variable it is
+called on, which must be a `var`. Reading is a list's — `a.at(i)` is a `T?`,
+null when `i` is out of range, and a negative `i` counts from the end — with
+one difference: where the index is a constant in range, `a.at(3)` is a plain
+`T` and compiles to a load, so a table needs no `?:`; a constant out of range
+is an error. The bounds facts of [the earlier section](#when-the-index-is-known-to-be-in-range)
+work too: `loop (i in a.indices())` and `loop (i in 0..<4)` make `a.at(i)` a
+`T`. `loop (x in a)` walks a copy; `loop (&x in a)` walks the array itself
+and lets the body change it. `a.len()` is the constant `N`.
+
+An array never grows or shrinks, so it has none of a `MutableList`'s
+`push` and `pop`; every read-only `List` method does work on it. `map`,
+`filter`, `forEach`, `fold`, `any`, `all` and `find` read the array where it
+lies; the others — `contains`, `sorted`, `join`, `sum`, `zip`, … — work over
+a copy of its elements, and `a.toList()` makes the list itself. The other way is
+`xs.toArray<4>()`, an `Array<T, 4>?`: null unless the list holds exactly four.
+
+Two arrays of one type are `==`, hash and print as lists do. An array is
+`Default` when its element is (`N` copies of it), `Codable` as a list —
+reading one insists on exactly `N` elements — and `Sendable` when its
+element is. A `const` may be an array: a read-only table in the binary,
+read where it lies, and a constant index into it is the element itself at
+compile time.
+
+```veles
+use io
+
+const SQUARES: Array<i64, 5> = [0, 1, 4, 9, 16]
+
+fun main() {
+  var total = 0
+  loop (i in SQUARES.indices()) {
+    total += SQUARES.at(i)
+  }
+  io.println("$total ${SQUARES.at(3)} ${[3, 1, 2].toArray<3>() == [3, 1, 2]}")
+}
+```
+
+Output:
+```text
+30 9 true
+```
+
+### Large arrays live in memory
+
+A value of 128 bytes or more that holds an array — a 4 KiB buffer, a struct
+with one, a `T?` around one, a `Result` carrying one — is never loaded into
+registers. It is copied with `memmove`, passed to a function as the address of
+a copy the caller makes, and returned through a pointer the caller supplies,
+so a megabyte `var page: Array<u8, 1048576>` compiles and copies like the
+`memcpy` it is. Nothing changes in how it is written; what to keep in mind is
+that a copy is a copy: pass a pointer (`&page`) to share one array, as with
+any large struct.
+
 ## Ranges
 
 `1..5` and `1..<5` are values of type `Range<i64>`; they can be looped,
@@ -553,6 +649,7 @@ slot would alias the one value; `make` is the form for those.
 | You need | Use |
 |---|---|
 | a fixed sequence, possibly shared | `List<T>` |
+| exactly `N` elements, inline, copied like a struct (a table, a hash state, a C buffer) | `Array<T, N>` |
 | to accumulate results | `MutableList<T>` then `.toList()` |
 | lookup by key, ordered | `Map<K, V>` / `MutableMap<K, V>` |
 | membership tests, no duplicates | `Set<T>` / `MutableSet<T>` |

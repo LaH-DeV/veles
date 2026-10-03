@@ -128,6 +128,51 @@ called stenciling (D8). The call `s.area()` becomes a direct call to
 `Square.area`; there is no dynamic dispatch and nothing is boxed. This is
 the form to prefer when all elements have the same type.
 
+### Constants as generic arguments: `<const N: i64>`
+
+A generic parameter can stand for a number instead of a type (D121). It is
+declared `const N: i64`, and where the arguments of a type or a call are
+written, a number — or an expression of constants — fills it. What it is
+for is a length: `Array<T, N>` is `N` elements stored inline (chapter 4), and
+a function over arrays of any length says so in its signature:
+
+```veles
+use io
+
+const WIDTH = 4
+
+struct Buf<const N: i64> {
+  data: Array<u8, N>
+
+  fun capacity(): i64 = N
+}
+
+fun sum<const N: i64>(a: Array<i64, N>): i64 = a.fold(0, (s, x) => s + x)
+
+fun zeros<const N: i64>(): Array<i64, N> = Array.make(0)
+
+fun main() {
+  val small: Array<i64, 3> = [1, 2, 3]
+  io.println("${sum(small)} ${sum([5, 6])} ${zeros<5>()}")
+  val buf = Buf<8>(data: Array.make(1))
+  val row: Array<u8, WIDTH * 4> = Array.make(0)
+  io.println("${buf.capacity()} ${row.len()}")
+}
+```
+
+Output:
+```text
+6 11 [0, 0, 0, 0, 0]
+8 16
+```
+
+`N` is worked out from the arguments — `sum(small)` has `N = 3`, and so does
+`sum([1, 2, 3])` — or written, as in `zeros<5>()` and `Buf<8>`. Inside the
+function or struct `N` is an ordinary `i64` constant; each value of `N` is
+compiled on its own, as each `T` is. A type argument may name the parameter
+but not calculate from it: `Array<u8, N + 1>` is refused, and a function that
+needs the longer array takes it as a second parameter, `const M: i64`.
+
 ### Asking about `T`: `T implements Trait`
 
 A bound is a promise every `T` must keep. When a function can do *more*

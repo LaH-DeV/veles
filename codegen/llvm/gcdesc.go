@@ -56,6 +56,18 @@ func (g *gen) pointerOffsets(t types.Type) []int {
 		return g.compositeOffsets(tt.Elems)
 	case *types.Range:
 		return nil
+	case *types.Array:
+		// the element's pointers, once per element (D121)
+		per := g.pointerOffsets(tt.Elem)
+		if len(per) == 0 {
+			return nil
+		}
+		size, _ := g.layout(tt.Elem)
+		var out []int
+		for i := int64(0); i < arrayLen(tt); i++ {
+			out = append(out, shift(per, int(i)*size)...)
+		}
+		return out
 	case *types.Struct:
 		if tt.Union {
 			return nil // C data: numbers and raw pointers, nothing of the collector's (D120)

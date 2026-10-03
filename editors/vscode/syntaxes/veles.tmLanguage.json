@@ -236,7 +236,7 @@
     "types": {
       "patterns": [
         { "name": "support.type.primitive.veles", "match": "\\b(i8|i16|i32|i64|u8|u16|u32|u64|f32|f64|bool|string|char)\\b" },
-        { "name": "support.type.collection.veles", "match": "\\b(List|MutableList|Map|MutableMap|Set|MutableSet|Channel|Range|Option|Result|Task|Iterator|Iterable|Closeable|Mutex|Atomic|Panic|Sendable)\\b" },
+        { "name": "support.type.collection.veles", "match": "\\b(List|MutableList|Array|Map|MutableMap|Set|MutableSet|Channel|Range|Option|Result|Task|Iterator|Iterable|Closeable|Mutex|Atomic|Panic|Sendable)\\b" },
         { "name": "support.function.prelude.veles", "match": "\\b(Some|None|Ok|Err|sleep)\\b" },
         {
           "comment": "Capitalised identifiers are types or variants",

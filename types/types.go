@@ -5,6 +5,7 @@ package types
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"sync/atomic"
 )
@@ -214,6 +215,41 @@ func (l *List) String() string {
 	return "List<" + l.Elem.String() + ">"
 }
 
+// Const is a constant standing where a type argument goes: the 8 of
+// `Array<u8, 8>` (D121). Equal constants are identical, so two arrays of the
+// same length are the same type.
+type Const struct {
+	V int64
+}
+
+func (c *Const) String() string { return strconv.FormatInt(c.V, 10) }
+
+// Array is `Array<T, N>`: N elements of T stored inline in a local, a field,
+// another array or an extern struct, with no heap object (D121). Len is a
+// *Const once the length is known, a const *TypeParam inside a generic
+// declaration, or TInvalid after an error.
+type Array struct {
+	Elem  Type
+	Len   Type
+	Alias string
+}
+
+func (a *Array) String() string {
+	if a.Alias != "" {
+		return a.Alias
+	}
+	return "Array<" + a.Elem.String() + ", " + a.Len.String() + ">"
+}
+
+// N is the number of elements when it is known.
+func (a *Array) N() (int64, bool) {
+	c, ok := a.Len.(*Const)
+	if !ok {
+		return 0, false
+	}
+	return c.V, true
+}
+
 // Effects declared or inferred on a function (D2/D4/D40).
 type Effects struct {
 	Suspends bool
@@ -416,6 +452,7 @@ type TypeParam struct {
 	Bounds []*Trait
 	Index  int
 	Owner  string // for diagnostics
+	Const  bool   // `<const N: i64>`: stands for a constant, not a type (D121)
 	id     int
 }
 
@@ -628,6 +665,12 @@ func Identical(a, b Type) bool {
 	case *List:
 		b, ok := b.(*List)
 		return ok && a.Mutable == b.Mutable && Identical(a.Elem, b.Elem)
+	case *Const:
+		b, ok := b.(*Const)
+		return ok && a.V == b.V
+	case *Array:
+		b, ok := b.(*Array)
+		return ok && Identical(a.Elem, b.Elem) && Identical(a.Len, b.Len)
 	case *Map:
 		b, ok := b.(*Map)
 		return ok && a.Mutable == b.Mutable && Identical(a.Key, b.Key) && Identical(a.Value, b.Value)
@@ -723,6 +766,8 @@ func (h *Hooks) Subst(t Type, m map[*TypeParam]Type) Type {
 		return &Range{Elem: h.Subst(t.Elem, m)}
 	case *List:
 		return &List{Elem: h.Subst(t.Elem, m), Mutable: t.Mutable}
+	case *Array:
+		return &Array{Elem: h.Subst(t.Elem, m), Len: h.Subst(t.Len, m)}
 	case *Map:
 		return &Map{Key: h.Subst(t.Key, m), Value: h.Subst(t.Value, m), Mutable: t.Mutable}
 	case *Set:
@@ -794,6 +839,8 @@ func ContainsTypeParam(t Type) bool {
 		return ContainsTypeParam(t.Elem)
 	case *List:
 		return ContainsTypeParam(t.Elem)
+	case *Array:
+		return ContainsTypeParam(t.Elem) || ContainsTypeParam(t.Len)
 	case *Map:
 		return ContainsTypeParam(t.Key) || ContainsTypeParam(t.Value)
 	case *Set:
@@ -866,6 +913,8 @@ func Key(t Type) string {
 			return "MutableList<" + Key(t.Elem) + ">"
 		}
 		return "List<" + Key(t.Elem) + ">"
+	case *Array:
+		return "Array<" + Key(t.Elem) + "," + Key(t.Len) + ">"
 	case *Map:
 		return "Map" + fmt.Sprint(t.Mutable) + "<" + Key(t.Key) + "," + Key(t.Value) + ">"
 	case *Set:
@@ -1046,6 +1095,10 @@ func Aliased(t Type, name string) Type {
 		c := *t
 		c.Alias = name
 		return &c
+	case *Array:
+		c := *t
+		c.Alias = name
+		return &c
 	case *Map:
 		c := *t
 		c.Alias = name
@@ -1088,6 +1141,8 @@ func AliasOf(t Type) string {
 	case *Range:
 		return t.Alias
 	case *List:
+		return t.Alias
+	case *Array:
 		return t.Alias
 	case *Map:
 		return t.Alias
@@ -1132,6 +1187,8 @@ func Unaliased(t Type, deep bool) Type {
 		return &Range{Elem: Unaliased(t.Elem, true)}
 	case *List:
 		return &List{Elem: Unaliased(t.Elem, true), Mutable: t.Mutable}
+	case *Array:
+		return &Array{Elem: Unaliased(t.Elem, true), Len: t.Len}
 	case *Map:
 		return &Map{Key: Unaliased(t.Key, true), Value: Unaliased(t.Value, true), Mutable: t.Mutable}
 	case *Set:

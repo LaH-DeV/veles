@@ -15,6 +15,7 @@ import (
 
 type Checker struct {
 	namedImports []namedImport // every bound name of a braced import (D85)
+	arrayUses    []arrayUse    // inline arrays to size-check (D121)
 	pkg          *Package
 	diags        *source.Diagnostics
 	// roundDiags collects diagnostics of the current inference round; only
@@ -189,6 +190,7 @@ func checkCollect(pkg *Package, diags *source.Diagnostics, release bool, testMod
 		c.roundDiags = &source.Diagnostics{}
 		c.seen = map[string]bool{}
 		prog = c.runRound()
+		c.checkArraySizes()
 		if !c.changed {
 			break
 		}
@@ -526,7 +528,7 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 		c.layoutAttrs(s, d, attrs)
 		ctx := &declCtx{module: m, file: f, decl: d, tps: map[string]*types.TypeParam{}}
 		for i, tp := range d.TypeParams {
-			p := &types.TypeParam{Name: tp.Name.Name, Index: i, Owner: d.Name.Name}
+			p := newTypeParam(tp, i, d.Name.Name)
 			s.TypeParams = append(s.TypeParams, p)
 			ctx.tps[tp.Name.Name] = p
 		}
@@ -596,7 +598,7 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 			s := &types.Sealed{Name: d.Name.Name, Module: m.prefix(), Pub: d.Pub, Decl: d, Instances: map[string]*types.Sealed{}}
 			ctx := &declCtx{module: m, file: f, decl: d, tps: map[string]*types.TypeParam{}}
 			for i, tp := range d.TypeParams {
-				p := &types.TypeParam{Name: tp.Name.Name, Index: i, Owner: d.Name.Name}
+				p := newTypeParam(tp, i, d.Name.Name)
 				s.TypeParams = append(s.TypeParams, p)
 				ctx.tps[tp.Name.Name] = p
 			}
@@ -635,7 +637,7 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 		}
 		ctx := &declCtx{module: m, file: f, decl: d, tps: map[string]*types.TypeParam{}}
 		for i, tp := range d.TypeParams {
-			p := &types.TypeParam{Name: tp.Name.Name, Index: i, Owner: d.Name.Name}
+			p := newTypeParam(tp, i, d.Name.Name)
 			t.TypeParams = append(t.TypeParams, p)
 			ctx.tps[tp.Name.Name] = p
 		}
@@ -675,7 +677,7 @@ func (c *Checker) newTemplate(m *Module, f *ast.File, d *ast.FunDecl, owner *typ
 		t.Mangled = m.prefix() + "." + owner.Name + "." + d.Name.Name
 	}
 	for i, tp := range d.TypeParams {
-		t.TypeParams = append(t.TypeParams, &types.TypeParam{Name: tp.Name.Name, Index: i, Owner: d.Name.Name})
+		t.TypeParams = append(t.TypeParams, newTypeParam(tp, i, d.Name.Name))
 	}
 	c.templates = append(c.templates, t)
 	return t
@@ -914,7 +916,7 @@ func (c *Checker) aliasBody(sym *Symbol) types.Type {
 		if len(tp.Bounds) > 0 {
 			c.errorf(tp.Name.Pos, "a type alias parameter takes no bounds; state '%s: ...' where the alias is used (D55)", tp.Name.Name)
 		}
-		p := &types.TypeParam{Name: tp.Name.Name, Index: i, Owner: sym.Name}
+		p := newTypeParam(tp, i, sym.Name)
 		a.tps = append(a.tps, p)
 		env.tps[tp.Name.Name] = p
 	}
@@ -1101,6 +1103,10 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 				if len(t.Args) > 0 {
 					c.errorf(t.Pos, "type parameter '%s' cannot take type arguments", name)
 				}
+				if tp.Const {
+					c.errorf(t.Pos, "'%s' is a constant, not a type: it goes where a '<const %s: i64>' argument does (D121)", name, name)
+					return types.TInvalid
+				}
 				return tp
 			}
 			// the built-in generics are not in any scope: a declaration or
@@ -1116,6 +1122,12 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 					return types.TInvalid
 				}
 				return &types.List{Elem: c.resolveType(env, t.Args[0]), Mutable: name == "MutableList"}
+			case "Array":
+				if len(t.Args) != 2 {
+					c.errorf(t.Pos, "Array takes an element type and a length: 'Array<u8, 16>' (D121)")
+					return types.TInvalid
+				}
+				return c.arrayType(c.resolveType(env, t.Args[0]), c.resolveTypeArg(env, t.Args[1], true), t.Pos)
 			case "Range":
 				if len(t.Args) != 1 {
 					c.errorf(t.Pos, "Range takes exactly one type argument")
@@ -1245,8 +1257,15 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 			c.refType(last.Pos, sym.Name, sym.Type, def)
 		}
 		var args []types.Type
-		for _, a := range t.Args {
-			args = append(args, c.resolveType(env, a))
+		var params []*types.TypeParam
+		switch st := sym.Type.(type) {
+		case *types.Struct:
+			params = st.TypeParams
+		case *types.Sealed:
+			params = st.TypeParams
+		}
+		for i, a := range t.Args {
+			args = append(args, c.resolveTypeArg(env, a, i < len(params) && params[i].Const))
 		}
 		switch st := sym.Type.(type) {
 		case *types.Struct:
@@ -1263,6 +1282,9 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 			c.errorf(t.Pos, "'%s' is not generic: write it without '<...>'", sym.Name)
 		}
 		return sym.Type
+	case *ast.ConstType:
+		c.errorf(t.Pos, "expected a type here, found a number; a constant goes where the declaration says '<const N: i64>' (D121)")
+		return types.TInvalid
 	case *ast.NullableType:
 		return &types.Nullable{Elem: c.resolveType(env, t.Elem)}
 	case *ast.PointerType:
@@ -1506,6 +1528,10 @@ func (c *Checker) containsInlineSeen(t types.Type, target *types.Struct, seen ma
 		}
 	case *types.Nullable:
 		return c.containsInlineSeen(t.Elem, target, seen)
+	case *types.Array:
+		if n, _ := t.N(); n > 0 {
+			return c.containsInlineSeen(t.Elem, target, seen)
+		}
 	case *types.Tuple:
 		for _, e := range t.Elems {
 			if c.containsInlineSeen(e, target, seen) {
@@ -1552,7 +1578,7 @@ func (c *Checker) resolveTrait(t *types.Trait) {
 		}
 		var mtps []*types.TypeParam
 		for i, tp := range m.TypeParams {
-			p := &types.TypeParam{Name: tp.Name.Name, Index: i, Owner: m.Name.Name}
+			p := newTypeParam(tp, i, m.Name.Name)
 			mtps = append(mtps, p)
 			menv.tps[tp.Name.Name] = p
 		}
@@ -1795,7 +1821,7 @@ func (c *Checker) newImpl(m *Module, f *ast.File, d *ast.ImplDecl) (*Impl, *decl
 	ctx := &declCtx{module: m, file: f, decl: d, tps: map[string]*types.TypeParam{}}
 	impl := &Impl{Module: m, File: f, Decl: d, Methods: map[string]*FuncTemplate{}}
 	for i, tp := range d.TypeParams {
-		p := &types.TypeParam{Name: tp.Name.Name, Index: i, Owner: "impl"}
+		p := newTypeParam(tp, i, "impl")
 		impl.TypeParams = append(impl.TypeParams, p)
 		ctx.tps[tp.Name.Name] = p
 	}
@@ -1830,7 +1856,7 @@ func (c *Checker) declareExtend(m *Module, f *ast.File, d *ast.ImplDecl) {
 		switch impl.Target.(type) {
 		case *types.Struct, *types.Sealed:
 			c.errorf(d.Target.Span(), "cannot extend '%s': it is declared outside this package; declare a trait and implement it for '%s' instead (D23)", impl.Target, impl.Target)
-		case *types.Basic, *types.List, *types.Map, *types.Set, *types.Range, *types.Channel:
+		case *types.Basic, *types.List, *types.Array, *types.Map, *types.Set, *types.Range, *types.Channel:
 			c.errorf(d.Target.Span(), "cannot extend built-in type '%s' outside the standard library; declare a trait and implement it for '%s' instead (D23)", impl.Target, impl.Target)
 		default:
 			c.errorf(d.Target.Span(), "cannot extend '%s': only named types can be extended", impl.Target)
@@ -1873,7 +1899,7 @@ func (c *Checker) ownsType(m *Module, t types.Type) bool {
 			return m.Std // Result and Option are built in; std extends them
 		}
 		prefix = t.Module
-	case *types.Basic, *types.List, *types.Map, *types.Set, *types.Range, *types.Channel:
+	case *types.Basic, *types.List, *types.Array, *types.Map, *types.Set, *types.Range, *types.Channel:
 		return m.Std
 	default:
 		return false
@@ -2314,6 +2340,12 @@ func unify(pattern, concrete types.Type, m map[*types.TypeParam]types.Type) bool
 	case *types.Nullable:
 		cc, ok := concrete.(*types.Nullable)
 		return ok && unify(p.Elem, cc.Elem, m)
+	case *types.Array:
+		cc, ok := concrete.(*types.Array)
+		return ok && unify(p.Elem, cc.Elem, m) && unify(p.Len, cc.Len, m)
+	case *types.Const:
+		cc, ok := concrete.(*types.Const)
+		return ok && p.V == cc.V
 	case *types.List:
 		cc, ok := concrete.(*types.List)
 		return ok && p.Mutable == cc.Mutable && unify(p.Elem, cc.Elem, m)
@@ -2885,6 +2917,8 @@ func (c *Checker) unhashableIn(t types.Type, seen map[types.Type]bool) string {
 			}
 		}
 		return ""
+	case *types.Array:
+		return c.unhashableIn(t.Elem, seen)
 	case *types.List:
 		if t.Mutable {
 			return "a MutableList can change after it is stored; use an immutable List"

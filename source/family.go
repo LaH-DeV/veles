@@ -77,7 +77,7 @@ var families = []family{
 	fam("nullable", `may be null`, `^'null'`, `'\?\.'`, `non-nullable`, `'\?:'`, `never null`, `\(D5\)`, `\(D95\)`),
 	fam("enums", `\benum\b`, `\(D57\)`),
 	fam("generics", `not generic`, `is generic`, `type arguments?`, `type parameters?`, `^cannot infer type parameters`,
-		`generic function`, `generic traits`, `associated type`, `^bound '`, `^a Secret holds`),
+		`generic function`, `generic traits`, `\(D121\)`, `associated type`, `^bound '`, `^a Secret holds`),
 	fam("inference", `^cannot infer`),
 	fam("operators", `^operator `, `cannot compare`, `cannot be compared`, `^cannot order by`, `^cannot negate`,
 		`only defined for integers`, `^'~'`, `^'%'`, `shift count`, `wrapping operator`, `^cannot cast`),

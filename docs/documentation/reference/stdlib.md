@@ -215,8 +215,8 @@ public trait Default { static fun default(): Self }   // i64.default(), T.defaul
 
 A value to start from, for generic code that has to make one: `0` for every
 number, `false`, `""`, empty `List`/`Map`/`Set` and their mutable forms,
-`null` for `T?`, `Duration.zero`, and a tuple (up to eight elements) of
-`Default` types. A struct derives it with an empty `implement Default`:
+`null` for `T?`, `Duration.zero`, a tuple (up to eight elements) of
+`Default` types, and an `Array<T, N>` of `N` copies of `T`'s default. A struct derives it with an empty `implement Default`:
 each field takes its declared default, or else its type's `default()`; a
 field with neither is an error naming it, and a generic struct's type
 parameters get the `Default` bound they need. A sealed trait, a `Secret` and
@@ -438,6 +438,20 @@ call the mutating ones, since the list is a reference (D25).
 
 Keys must be hashable: scalars, strings, tuples and structs of hashable
 fields.
+
+### `Array<T, N>` (D121)
+
+`N` elements stored inline, a value: `val b = a` copies it. `len()` (the constant `N`),
+`isEmpty()`, `at(i)` (`T?`; a `T` for a constant index in range or one the bounds facts prove),
+`first()`, `last()`, `indices()` (`0..<N`), `set(i, x)` on a `var`, `atUnchecked(i)` and
+`setUnchecked(i, x)` (`unsafe`), `toList()`, `toMutable()`; `loop (x in a)` over a copy and
+`loop (&x in a)` in place. `map`, `filter`, `forEach`, `fold`, `any`, `all` and `find` read the
+array where it lies; every other read-only `List` method runs on a copy. Created from a literal
+where an array type is expected, `Array<T, N>.make(x)` (`N` copies), `xs.toArray<N>()`
+(`Array<T, N>?`, null unless the list holds exactly `N`) or `Array<T, N>.default()`. `==`, hash and
+text are a list's; it is `Codable` (a list of exactly `N`), `Sendable` when `T` is, and
+`withRaw(f)` lends C its storage when `T` is `CLayout`. `N` is a constant argument
+(`Array<u8, 4 * 16>`) or a `<const N: i64>` parameter.
 
 ### `Set<T>` and `MutableSet<T>`
 

@@ -346,15 +346,10 @@ func declStart(d ast.Node) int {
 	return d.Span().Start
 }
 
-// attrs prints a declaration's attributes, one per line above it.
+// attrs prints the attributes of a declaration, field or enum member, one per
+// line above it.
 func (p *printer) attrs(attrs []*ast.Attribute) {
 	p.attrList(attrs, func() { p.nl() })
-}
-
-// fieldAttrs prints a field's attributes on the field's own line:
-// `@key("user_id") id: i64` (D58).
-func (p *printer) fieldAttrs(attrs []*ast.Attribute) {
-	p.attrList(attrs, func() { p.w(" ") })
 }
 
 func (p *printer) attrList(attrs []*ast.Attribute, sep func()) {
@@ -656,7 +651,14 @@ func (p *printer) typeParams(tps []ast.TypeParam) {
 		if i > 0 {
 			p.w(", ")
 		}
+		if tp.Const {
+			p.w("const ")
+		}
 		p.w(tp.Name.Name)
+		if tp.Const {
+			p.w(": ")
+			p.typ(tp.Of)
+		}
 		p.bounds(tp.Bounds)
 	}
 	p.w(">")
@@ -891,7 +893,7 @@ func (p *printer) structDecl(d *ast.StructDecl) {
 	var ms []memberRef
 	for _, f := range d.Fields {
 		f := f
-		ms = append(ms, memberRef{f.Pos.Start, func() { p.field(f) }})
+		ms = append(ms, memberRef{attrStart(f.Attrs, f.Pos.Start), func() { p.field(f) }})
 	}
 	methods := d.Methods
 	if d.ErrorImpl != nil {
@@ -972,7 +974,7 @@ func (p *printer) enumDecl(d *ast.EnumDecl) {
 	p.members(open, d.Pos.End, len(d.Members) == 0, func(i int) bool { return i < len(d.Members) }, func(i int) {
 		m := d.Members[i]
 		p.before(m.Pos.Start)
-		p.fieldAttrs(m.Attrs)
+		p.attrs(m.Attrs)
 		p.w(m.Name.Name)
 		if m.Value != nil {
 			if len(m.Attrs) == 0 {
@@ -1007,7 +1009,7 @@ func (p *printer) staticVal(d *ast.ValDecl) {
 // memberEnd finds the end of the member starting at pos within a struct.
 func memberEnd(d *ast.StructDecl, pos int) int {
 	for _, f := range d.Fields {
-		if f.Pos.Start == pos {
+		if attrStart(f.Attrs, f.Pos.Start) == pos {
 			return f.Pos.End
 		}
 	}
@@ -1037,7 +1039,7 @@ func memberEnd(d *ast.StructDecl, pos int) int {
 }
 
 func (p *printer) field(f *ast.Field) {
-	p.fieldAttrs(f.Attrs)
+	p.attrs(f.Attrs)
 	if f.Pub {
 		p.w("public ")
 	}
@@ -1233,6 +1235,8 @@ func (p *printer) typ(t ast.Type) {
 			p.typ(t.Ret)
 		}
 		p.effects(t.Effects)
+	case *ast.ConstType:
+		p.expr(t.X, 0)
 	case *ast.SelfType:
 		p.w("Self")
 	case *ast.AssocType:
@@ -2262,4 +2266,13 @@ func (p *printer) handler(h *ast.Handler) {
 		return
 	}
 	p.block(h.Body)
+}
+
+// attrStart is where a member begins in the source: its first attribute,
+// which sits on the line above, or else its own start.
+func attrStart(attrs []*ast.Attribute, pos int) int {
+	if len(attrs) > 0 {
+		return attrs[0].Pos.Start
+	}
+	return pos
 }
