@@ -474,6 +474,15 @@ func (f *fnCtx) callTemplateRecv(t *FuncTemplate, ownerSubst map[*types.TypePara
 		}
 	}
 	what := fmt.Sprintf("'%s'", t.Name)
+	var extra []Expr
+	if t.Sig.CVariadic {
+		named, rest, ok := f.splitCVariadic(t.Sig, args)
+		if !ok {
+			f.checkArgsLoosely(args)
+			return bad()
+		}
+		args, extra = named, f.cVariadicArgs(rest)
+	}
 	f.c.refArgLabels(args, t)
 	bound, ok := f.bindArgs(t.Sig.Params, args, what, span)
 	if !ok {
@@ -604,6 +613,7 @@ func (f *fnCtx) callTemplateRecv(t *FuncTemplate, ownerSubst map[*types.TypePara
 		}
 		callArgs = append(callArgs, x)
 	}
+	callArgs = append(callArgs, extra...) // C's variadic arguments, promoted (D123)
 	rt := fn.Sig.Ret
 	if fn.Sig.Effects.Throws {
 		rt = f.c.ResultType(fn.Sig.Ret, fn.Sig.Effects.Error)
@@ -811,6 +821,9 @@ func (f *fnCtx) constructStruct(st *types.Struct, args []ast.Arg, span source.Sp
 	if !ok {
 		f.checkArgsLoosely(args)
 		return bad()
+	}
+	if st.Union {
+		return f.unionLit(st, bound, span)
 	}
 	inside := f.insideType(st)
 	lit := &StructLit{exprBase{st}, st, make([]Expr, len(st.Fields))}
@@ -1325,7 +1338,9 @@ func (f *fnCtx) callMethod(t *FuncTemplate, ownerSubst map[*types.TypeParam]type
 	var recvArg Expr
 	if viaPointer {
 		recvArg = recv.(*Deref).X
-	} else if !isPlaceExpr(recv) || isReferenceType(recv.Type()) {
+	} else if !isPlaceExpr(recv) || isReferenceType(recv.Type()) || inPacked(recv) {
+		// (a field of a @packed struct may be misaligned for its type: the
+		// method gets a copy, as for a temporary — D120)
 		// a temporary: the method runs on a fresh copy (iterator chains rely
 		// on this). A collection is a reference (D25), so a copy of the
 		// handle reaches the same elements, as with the built-in `push`.
@@ -2089,7 +2104,8 @@ func cLayout(t types.Type) bool {
 	case *types.Pointer:
 		return t.Raw
 	case *types.Struct:
-		return t.Extern
+		// an extern struct or union; a @transparent struct is its field (D120)
+		return t.Extern || t.Transparent && len(t.Fields) == 1 && cLayout(t.Fields[0].Type)
 	case *types.Func:
 		return t.C
 	}

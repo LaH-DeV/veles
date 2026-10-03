@@ -246,7 +246,7 @@ func (g *gen) showBody(t types.Type, v string) string {
 			}
 			acc = g.concat(acc, g.stringConst(f.Name+": "))
 			fv := g.newTmp()
-			g.emit("%s = extractvalue %s %s, %d", fv, g.llType(tt), v, i)
+			g.emit("%s = extractvalue %s %s, %d", fv, g.llType(tt), v, g.fidx(tt, i))
 			acc = g.concat(acc, g.show(f.Type, fv))
 		}
 		return g.concat(acc, g.stringConst(")"))
@@ -388,15 +388,15 @@ func (g *gen) eqBody(t types.Type, a, b string) string {
 		g.emit("%s = load i1, ptr %s", v, res)
 		return v
 	case *types.Tuple:
-		return g.eqFields(llt, a, b, tt.Elems)
+		return g.eqFields(t, llt, a, b, tt.Elems)
 	case *types.Range:
-		return g.eqFields(llt, a, b, []types.Type{tt.Elem, tt.Elem, types.TBool})
+		return g.eqFields(t, llt, a, b, []types.Type{tt.Elem, tt.Elem, types.TBool})
 	case *types.Struct:
 		var fs []types.Type
 		for _, f := range tt.Fields {
 			fs = append(fs, f.Type)
 		}
-		return g.eqFields(llt, a, b, fs)
+		return g.eqFields(t, llt, a, b, fs)
 	case *types.Sealed:
 		return g.eqTagged(llt, a, b, func(i int) types.Type { return tt.Variants[i] }, len(tt.Variants))
 	case *types.ErrorUnion:
@@ -563,13 +563,13 @@ func (g *gen) eqMap(t types.Type, a, b string) string {
 	return v
 }
 
-func (g *gen) eqFields(llt, a, b string, fields []types.Type) string {
+func (g *gen) eqFields(t types.Type, llt, a, b string, fields []types.Type) string {
 	acc := "true"
 	for i, ft := range fields {
 		fa := g.newTmp()
-		g.emit("%s = extractvalue %s %s, %d", fa, llt, a, i)
+		g.emit("%s = extractvalue %s %s, %d", fa, llt, a, g.fidx(t, i))
 		fb := g.newTmp()
-		g.emit("%s = extractvalue %s %s, %d", fb, llt, b, i)
+		g.emit("%s = extractvalue %s %s, %d", fb, llt, b, g.fidx(t, i))
 		e := g.equal(ft, fa, fb)
 		n := g.newTmp()
 		g.emit("%s = and i1 %s, %s", n, acc, e)

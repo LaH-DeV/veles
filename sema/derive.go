@@ -61,6 +61,11 @@ func (c *Checker) deriveMissing(d *ast.ImplDecl, impl *Impl, trait *types.Trait)
 	if kind == "" {
 		return
 	}
+	if st, ok := impl.Target.(*types.Struct); ok && st.Union {
+		c.errorf(d.Pos, "cannot derive '%s' for the extern union '%s': which field is live is C's to know, so there is nothing to derive it from (D120)", trait.Name, st.Name)
+		c.deriveFailed[impl] = true
+		return
+	}
 	written := map[string]bool{}
 	for _, md := range d.Methods {
 		written[md.Name.Name] = true

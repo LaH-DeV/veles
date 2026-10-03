@@ -3959,6 +3959,26 @@ User, 2026-10-01, recommended of 3. Rejected: a layout clause
 `extern(packed, align: 16) struct` (a second syntax for what attributes
 express); leaving it.
 
+*Built 2026-10-03 (B16).* Settled while building: `@align(n)` takes a
+literal power of two from 1 to 4096 (a page; the collector's spans are
+aligned to more). An over-aligned struct is aligned where it is stored —
+locals, globals, fields, list storage, boxed and captured values (the
+collector hands out a body that aligned, from a size class the alignment
+divides) — but not when it sits inside a tuple, a nullable or a sealed
+payload, which LLVM lays out by its own rules (a copy there is still
+correct, only not over-aligned). A field of a `@packed` struct is read and
+written through the whole struct, so the compiler never forms a pointer of
+the field's type: `&p.field` is refused, and a method called on such a
+field gets a copy. A `@packed` struct does not cross into C by value yet
+(C's conventions pass misaligned aggregates in memory); `*raw T` does. An
+`extern union` cannot have methods, type parameters, `init` or `implement`
+blocks; its fields are C types. `@transparent` applies to plain structs
+(not extern, sealed or error types). The example above names the field
+`raw`, which is a keyword; it is `handle` in the docs. Found with it: a
+coroutine frame told LLVM it was 16-byte aligned (`llvm.coro.id(i32 0)`)
+while the collector gives 8 — harmless while nothing needed more than 8;
+it now says 8, so LLVM realigns any stricter field itself.
+
 ### D121 — `Array<T, N>`: fixed-size inline arrays, and const generic parameters (v0.64)
 
 ```veles
@@ -4041,6 +4061,16 @@ the easy half.
 
 User, 2026-10-01, recommended of 2 (Q7). Rejected: keeping them excluded (a C
 wrapper file per variadic function).
+
+*Built 2026-10-03 (B16).* Settled while building: a literal among the extra
+arguments is typed as C types it — an integer literal is an `i32` (C's
+`int`), a float literal an `f64` — so `printf("%d", 5)` passes what `%d`
+reads (a Veles literal would default to `i64`); `-5` likewise. The extra
+arguments are positional only (no name, no `xs...` spread). A C-variadic
+declaration taking or returning an `extern struct` by value is refused for
+now (the call's written-out function type would need the struct's lowered
+C ABI form); pass a pointer. Taking such a function's address is not
+offered (imported C functions have none in Veles).
 
 ### D124 — `std/compress` and `http.compress()` (v0.65)
 

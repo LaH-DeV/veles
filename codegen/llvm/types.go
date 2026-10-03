@@ -105,17 +105,87 @@ func (g *gen) structType(s *types.Struct) string {
 		return name
 	}
 	g.typeDecls[name] = "" // reserve (recursion through pointers is fine)
-	parts := make([]string, len(s.Fields))
-	for i, f := range s.Fields {
-		parts[i] = g.llType(f.Type)
-	}
-	body := "{}"
-	if len(parts) > 0 {
-		body = "{ " + strings.Join(parts, ", ") + " }"
-	}
-	g.typeDecls[name] = body
+	g.typeDecls[name] = g.structBody(s)
 	g.typeOrder = append(g.typeOrder, name)
 	return name
+}
+
+// structBody writes a struct's LLVM type from its layout (D120). A packed
+// struct is LLVM's packed struct; a union an integer as aligned as the
+// union and the bytes after it, read and written through memory. Otherwise
+// the fields in order, with `[n x i8]` before a field wherever its offset
+// needs more than LLVM's own placement would give (an `@align(n)` field, a
+// field of an over-aligned struct type) and after the last one when the
+// size needs more. Such a struct records where each field went (fidx), and
+// an over-aligned one its alignment, for allocas and globals (overAlign).
+func (g *gen) structBody(s *types.Struct) string {
+	if len(s.Fields) == 0 {
+		return "{}"
+	}
+	p := g.layouter().StructPlan(s) // also makes fieldMap and overAlign
+	if s.Union {
+		a := min(p.Align, 16)
+		body := fmt.Sprintf("{ i%d", a*8)
+		if p.Size > a {
+			body += fmt.Sprintf(", [%d x i8]", p.Size-a)
+		}
+		return body + " }"
+	}
+	var parts []string
+	idx := make([]int, len(s.Fields))
+	remapped := false
+	at := 0
+	for i, f := range s.Fields {
+		natural := at
+		if !s.Packed {
+			natural = roundUpTo(at, g.llAlign(f.Type))
+		}
+		if p.Offsets[i] > natural {
+			parts = append(parts, fmt.Sprintf("[%d x i8]", p.Offsets[i]-at))
+			remapped = true
+		}
+		idx[i] = len(parts)
+		parts = append(parts, g.llType(f.Type))
+		fs, _ := g.layout(f.Type)
+		at = p.Offsets[i] + fs
+	}
+	llSize := at
+	if !s.Packed {
+		llSize = roundUpTo(at, p.LLAlign)
+	}
+	if llSize != p.Size {
+		parts = append(parts, fmt.Sprintf("[%d x i8]", p.Size-at))
+	}
+	if remapped {
+		g.fieldMap[mangleType(s)] = idx
+	}
+	if p.Align > p.LLAlign {
+		g.overAlign["%S."+mangleType(s)] = p.Align
+	}
+	body := "{ " + strings.Join(parts, ", ") + " }"
+	if s.Packed {
+		body = "<" + body + ">"
+	}
+	return body
+}
+
+// fidx is the LLVM index of field i of a value of type t: i itself, unless
+// the struct's type carries padding before it (structBody).
+func (g *gen) fidx(t types.Type, i int) int {
+	if st, ok := t.(*types.Struct); ok {
+		g.structType(st)
+		if m := g.fieldMap[mangleType(st)]; m != nil {
+			return m[i]
+		}
+	}
+	return i
+}
+
+func roundUpTo(n, a int) int {
+	if a <= 1 {
+		return n
+	}
+	return (n + a - 1) / a * a
 }
 
 func (g *gen) sealedType(s *types.Sealed) string {
@@ -176,71 +246,29 @@ func (g *gen) payloadWords(t types.Type) int {
 	return 1
 }
 
-// layout computes size and alignment following the x86-64 (and AArch64)
-// natural layout rules, which is what LLVM uses for these types.
-func (g *gen) layout(t types.Type) (size, align int) {
-	switch t := t.(type) {
-	case *types.Basic:
-		switch t.Kind {
-		case types.Unit, types.Never, types.Invalid:
-			return 0, 1
-		case types.Bool, types.I8, types.U8:
-			return 1, 1
-		case types.I16, types.U16:
-			return 2, 2
-		case types.I32, types.U32, types.F32:
-			return 4, 4
-		case types.String:
-			return 16, 8
-		default:
-			return 8, 8
+// layouter is the layout state, made on first use.
+func (g *gen) layouter() *types.Layout {
+	if g.lay == nil {
+		g.lay = &types.Layout{
+			Sealed:     func(s *types.Sealed) int { return 8 + 8*g.payloadWords(s) },
+			ErrorUnion: func(u *types.ErrorUnion) int { return 8 + 8*g.unionWords(u) },
 		}
-	case *types.Pointer, *types.List, *types.Map, *types.Set, *types.Channel, *types.Task:
-		return 8, 8
-	case *types.Func:
-		if t.C {
-			return 8, 8
-		}
-		return 16, 8
-	case *types.Trait:
-		return 16, 8
-	case *types.Nullable:
-		if isPtrLike(t.Elem) {
-			return 8, 8
-		}
-		return structLayout([]types.Type{types.TBool, t.Elem}, g)
-	case *types.Tuple:
-		return structLayout(t.Elems, g)
-	case *types.Range:
-		return structLayout([]types.Type{t.Elem, t.Elem, types.TBool}, g)
-	case *types.Struct:
-		var fs []types.Type
-		for _, f := range t.Fields {
-			fs = append(fs, f.Type)
-		}
-		return structLayout(fs, g)
-	case *types.Sealed:
-		return 8 + 8*g.payloadWords(t), 8
-	case *types.ErrorUnion:
-		return 8 + 8*g.unionWords(t), 8
-	case *types.Enum:
-		return g.layout(t.Base)
+		g.fieldMap = map[string][]int{}
+		g.overAlign = map[string]int{}
 	}
-	return 8, 8
+	return g.lay
 }
 
-func structLayout(fields []types.Type, g *gen) (size, align int) {
-	align = 1
-	for _, f := range fields {
-		fs, fa := g.layout(f)
-		if fa > align {
-			align = fa
-		}
-		size = (size + fa - 1) / fa * fa
-		size += fs
-	}
-	size = (size + align - 1) / align * align
-	return size, align
+// layout is a value's size and guaranteed alignment (types.Layout: one
+// computation for the checker and the code generator, D120 included).
+func (g *gen) layout(t types.Type) (size, align int) {
+	return g.layouter().Of(t)
+}
+
+// llAlign is the alignment LLVM gives t's representation: what places a
+// value inside a tuple, a nullable or another unpadded aggregate.
+func (g *gen) llAlign(t types.Type) int {
+	return g.layouter().LLAlign(t)
 }
 
 // mangleType produces an identifier-safe name for a type.

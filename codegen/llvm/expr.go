@@ -83,8 +83,11 @@ func (g *gen) place(e sema.Expr) string {
 		return p
 	case *sema.FieldGet:
 		base := g.place(e.X)
+		if st, ok := e.X.Type().(*types.Struct); ok && st.Union {
+			return base // every field of a union is at its start (D120)
+		}
 		p := g.newTmp()
-		g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d", p, g.llType(e.X.Type()), base, e.Index)
+		g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d", p, g.llType(e.X.Type()), base, g.fidx(e.X.Type(), e.Index))
 		return p
 	case *sema.TupleGet:
 		base := g.place(e.X)
@@ -237,16 +240,14 @@ func (g *gen) expr(e sema.Expr) string {
 		g.emit("%s = load %s, ptr %s", r, strType, out)
 		return r
 	case *sema.FieldGet:
-		if isPlace(e.X) {
+		if isPlace(e.X) && !g.mayBeMisaligned(e) {
 			p := g.place(e)
 			v := g.newTmp()
 			g.emit("%s = load %s, ptr %s", v, g.llType(e.Type()), p)
 			return v
 		}
 		x := g.expr(e.X)
-		v := g.newTmp()
-		g.emit("%s = extractvalue %s %s, %d", v, g.llType(e.X.Type()), x, e.Index)
-		return v
+		return g.fieldOf(e.X.Type(), x, e.Index)
 	case *sema.TupleGet:
 		x := g.expr(e.X)
 		v := g.newTmp()
@@ -255,7 +256,9 @@ func (g *gen) expr(e sema.Expr) string {
 	case *sema.StructLit:
 		vals := make([]string, len(e.Fields))
 		for i, f := range e.Fields {
-			vals[i] = g.expr(f)
+			if f != nil { // a union is built with one field (D120)
+				vals[i] = g.expr(f)
+			}
 		}
 		return g.buildStruct(e.Struct, vals)
 	case *sema.TupleLit:
@@ -453,13 +456,83 @@ func (g *gen) buildStruct(st *types.Struct, vals []string) string {
 	if len(vals) == 0 {
 		return "zeroinitializer"
 	}
+	if st.Union {
+		// built with one field (D120): the others are nil
+		for i, v := range vals {
+			if v != "" {
+				return g.withField(st, "zeroinitializer", i, v)
+			}
+		}
+	}
 	acc := "undef"
 	for i, v := range vals {
 		n := g.newTmp()
-		g.emit("%s = insertvalue %s %s, %s %s, %d", n, llt, acc, g.llType(st.Fields[i].Type), v, i)
+		g.emit("%s = insertvalue %s %s, %s %s, %d", n, llt, acc, g.llType(st.Fields[i].Type), v, g.fidx(st, i))
 		acc = n
 	}
 	return acc
+}
+
+// fieldOf reads field i of a struct value x of type t: extractvalue, or
+// for a union (D120) a load of the field's type from where x is stored.
+func (g *gen) fieldOf(t types.Type, x string, i int) string {
+	st, _ := t.(*types.Struct)
+	v := g.newTmp()
+	if st != nil && st.Union {
+		tmp := g.alloca(g.llType(st))
+		g.emit("store %s %s, ptr %s", g.llType(st), x, tmp)
+		g.emit("%s = load %s, ptr %s", v, g.llType(st.Fields[i].Type), tmp)
+		return v
+	}
+	g.emit("%s = extractvalue %s %s, %d", v, g.llType(t), x, g.fidx(t, i))
+	return v
+}
+
+// withField is struct value x of type t with field i set to v.
+func (g *gen) withField(t types.Type, x string, i int, v string) string {
+	st := t.(*types.Struct)
+	out := g.newTmp()
+	if st.Union {
+		tmp := g.alloca(g.llType(st))
+		g.emit("store %s %s, ptr %s", g.llType(st), x, tmp)
+		g.emit("store %s %s, ptr %s", g.llType(st.Fields[i].Type), v, tmp)
+		g.emit("%s = load %s, ptr %s", out, g.llType(st), tmp)
+		return out
+	}
+	g.emit("%s = insertvalue %s %s, %s %s, %d", out, g.llType(st), x, g.llType(st.Fields[i].Type), v, g.fidx(st, i))
+	return out
+}
+
+// mayBeMisaligned: field e lies inside a @packed struct, at an offset its
+// type's alignment may not divide (D120), so it is never reached through a
+// pointer typed as that field: the packed struct is read or written whole
+// (its LLVM type is aligned 1) and the field taken from or put into it.
+func (g *gen) mayBeMisaligned(e sema.Expr) bool {
+	for {
+		switch x := e.(type) {
+		case *sema.FieldGet:
+			if st, ok := x.X.Type().(*types.Struct); ok && st.Packed {
+				return true
+			}
+			e = x.X
+		case *sema.TupleGet:
+			e = x.X
+		default:
+			return false
+		}
+	}
+}
+
+// assign stores v into target. A field that may be misaligned is written
+// by rebuilding the struct around it and assigning that, up to a place
+// that is aligned.
+func (g *gen) assign(target sema.Expr, v string) {
+	if fg, ok := target.(*sema.FieldGet); ok && g.mayBeMisaligned(fg) {
+		g.assign(fg.X, g.withField(fg.X.Type(), g.expr(fg.X), fg.Index, v))
+		return
+	}
+	p := g.place(target)
+	g.emit("store %s %s, ptr %s", g.llType(target.Type()), v, p)
 }
 
 // makeTagged builds a `{ i32, [N x i64] }` value holding payload under tag.
@@ -508,6 +581,10 @@ func (g *gen) call(e *sema.Call) string {
 		if cl := lambdaArg(a); cl != nil {
 			delete(g.plainLambdas, cl) // emitted: the mark was for this call
 		}
+		if fn.Extern && i >= len(fn.Sig.Params) {
+			args = append(args, g.llType(a.Type())+" "+v) // C's variadic arguments, promoted by the checker (D123)
+			continue
+		}
 		if fn.Extern && types.IsString(a.Type()) {
 			p, l := g.strPtrLen(v)
 			args = append(args, "ptr "+p, "i64 "+l)
@@ -523,7 +600,7 @@ func (g *gen) call(e *sema.Call) string {
 		if fn.Foreign {
 			g.emit("call void @veles_blocking_enter()")
 		}
-		v := g.cCall(sig, "@"+fn.Name, g.llType(fn.Sig.Ret), "", args)
+		v := g.cCall(sig, "@"+fn.Name, g.llType(fn.Sig.Ret), cExt(fn.Sig.Ret), args)
 		if fn.Foreign {
 			g.emit("call void @veles_blocking_leave()")
 		}
@@ -552,8 +629,12 @@ func (g *gen) call(e *sema.Call) string {
 	if fn.Foreign {
 		g.emit("call void @veles_blocking_enter()")
 	}
+	callee := ret + " @" + fn.Name
+	if fn.Sig.CVariadic {
+		callee = g.cVariadicCallee(fn, ret)
+	}
 	if ret == "void" {
-		g.emit("call void @%s(%s)", fn.Name, joinArgs(args))
+		g.emit("call %s(%s)", callee, joinArgs(args))
 		if types.IsNever(fn.Sig.Ret) {
 			g.emitTerm("unreachable")
 			return "zeroinitializer"
@@ -565,7 +646,7 @@ func (g *gen) call(e *sema.Call) string {
 		return "zeroinitializer"
 	}
 	v := g.newTmp()
-	g.emit("%s = call %s @%s(%s)", v, ret, fn.Name, joinArgs(args))
+	g.emit("%s = call %s(%s)", v, callee, joinArgs(args))
 	if fn.Foreign {
 		g.emit("call void @veles_blocking_leave()")
 	}
@@ -872,6 +953,8 @@ func (g *gen) convertValue(x string, from, to types.Type) string {
 	v := g.newTmp()
 	fb, tb := types.BitSize(from), types.BitSize(to)
 	switch {
+	case types.IsBool(from) && types.IsInteger(to): // C's promotion of a bool (D123)
+		g.emit("%s = zext i1 %s to %s", v, x, tl)
 	case types.IsInteger(from) && types.IsInteger(to):
 		switch {
 		case tb < fb:

@@ -100,7 +100,10 @@ type coroState struct {
 func (g *gen) coroPrologue() {
 	c := &coroState{task: "%task", finalL: "coro.final", cleanupL: "coro.cleanup", suspendL: "coro.suspend"}
 	g.coro = c
-	g.emit("%%coro.id = call token @llvm.coro.id(i32 0, ptr null, ptr null, ptr null)")
+	// the frame is a collector object, whose body is 8-aligned: said so,
+	// LLVM realigns a field that needs more (an @align(n) local, D120)
+	// rather than assume the 16 it takes by default
+	g.emit("%%coro.id = call token @llvm.coro.id(i32 8, ptr null, ptr null, ptr null)")
 	g.emit("%%coro.size = call i64 @llvm.coro.size.i64()")
 	g.emit("%%coro.mem = call ptr @veles_alloc_words(i64 %%coro.size)")
 	g.emit("%%coro.hdl = call ptr @llvm.coro.begin(token %%coro.id, ptr %%coro.mem)")
@@ -1158,7 +1161,8 @@ func (g *gen) startTaskAs(task string, fn *sema.Func, argTypes []types.Type, arg
 	if len(lls) > 0 {
 		size := 0
 		for _, t := range argTypes {
-			s, a := g.layout(t)
+			s, _ := g.layout(t)
+			a := g.llAlign(t)
 			size = (size + a - 1) / a * a
 			size += s
 		}
@@ -1188,7 +1192,8 @@ func (g *gen) startIndirect(task string, ft *types.Func, argTypes []types.Type, 
 	blk := "{ " + strings.Join(lls, ", ") + " }"
 	size := 0
 	for _, t := range argTypes {
-		s, a := g.layout(t)
+		s, _ := g.layout(t)
+		a := g.llAlign(t)
 		size = (size + a - 1) / a * a
 		size += s
 	}

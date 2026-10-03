@@ -1,6 +1,9 @@
 package sema
 
 import (
+	"strconv"
+	"strings"
+
 	"github.com/LaH-DeV/veles/ast"
 	"github.com/LaH-DeV/veles/source"
 )
@@ -11,7 +14,8 @@ import (
 // `Codable` impls read (D58); they are still compiler-known.
 
 var knownAttrs = map[string]bool{"test": true, "deprecated": true, "inline": true, "noinline": true, "caller_location": true, "mustUse": true, "specialize": true,
-	"key": true, "skip": true, "required": true, "tag": true}
+	"key": true, "skip": true, "required": true, "tag": true,
+	"packed": true, "align": true, "transparent": true}
 
 // attrsOf validates a declaration's attributes and returns them by name.
 // `what` names the declaration kind: "function", "struct", "variant" (a
@@ -60,6 +64,18 @@ func (c *Checker) attrsOf(attrs []*ast.Attribute, what string) map[string]*ast.A
 			if len(a.Args) != 0 {
 				c.errorf(a.Pos, "@required takes no arguments")
 			}
+		case "packed", "transparent":
+			if len(a.Args) != 0 {
+				c.errorf(a.Pos, "@%s takes no arguments", a.Name.Name)
+			}
+			if what != "struct" {
+				c.errorf(a.Pos, "@%s applies to a struct (D120)", a.Name.Name)
+			}
+		case "align":
+			if what != "struct" && what != "field" {
+				c.errorf(a.Pos, "@align applies to a struct, or to a field of an extern struct (D120)")
+			}
+			alignArg(c, a)
 		case "tag":
 			if what != "sealed" {
 				c.errorf(a.Pos, "@tag applies to a sealed trait: the key that names the variant on the wire (D58)")
@@ -243,7 +259,7 @@ func (f *fnCtx) noteUse(t *FuncTemplate, span source.Span) {
 // checkFieldAttrs validates a struct field's wire attributes (D58): a
 // skipped field needs a default (the decoder could not construct the value
 // otherwise), and `@required` only means something on a nullable field.
-func (c *Checker) checkFieldAttrs(f *ast.Field) {
+func (c *Checker) checkFieldAttrs(f *ast.Field) map[string]*ast.Attribute {
 	attrs := c.attrsOf(f.Attrs, "field")
 	if a, ok := attrs["skip"]; ok && f.Default == nil {
 		c.errorf(a.Pos, "a @skip field needs a default: decoding leaves '%s' out, so it must have a value of its own (D58)", f.Name.Name)
@@ -258,4 +274,25 @@ func (c *Checker) checkFieldAttrs(f *ast.Field) {
 			c.errorf(attrs["key"].Pos, "'%s' is skipped: its @key has no effect", f.Name.Name)
 		}
 	}
+	return attrs
+}
+
+// alignArg is n of `@align(n)` (D120): an integer literal, a power of two
+// from 1 to 4096 (a page: the collector's spans are aligned to more); 0
+// after an error.
+func alignArg(c *Checker, a *ast.Attribute) int {
+	if len(a.Args) != 1 || a.Args[0].Name != nil {
+		c.errorf(a.Pos, "@align takes one argument, the alignment in bytes: @align(64) (D120)")
+		return 0
+	}
+	text := ""
+	if lit, ok := a.Args[0].Value.(*ast.IntLit); ok {
+		text = strings.ReplaceAll(lit.Text, "_", "")
+	}
+	n, err := strconv.ParseInt(text, 0, 64)
+	if err != nil || n < 1 || n > 4096 || n&(n-1) != 0 {
+		c.errorf(a.Args[0].Value.Span(), "@align takes a power of two from 1 to 4096, written as a number: @align(64) (D120)")
+		return 0
+	}
+	return int(n)
 }

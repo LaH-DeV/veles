@@ -1391,6 +1391,12 @@ func funDetail(t *FuncTemplate) string {
 				sb.WriteString(" = ...")
 			}
 		}
+		if t.Sig.CVariadic {
+			if len(t.Sig.Params) > 0 {
+				sb.WriteString(", ")
+			}
+			sb.WriteString("...") // C's variadic arguments (D123)
+		}
 	}
 	sb.WriteString(")")
 	if t.Sig != nil {

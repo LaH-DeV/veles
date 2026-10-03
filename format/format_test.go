@@ -413,3 +413,21 @@ func TestStaticAssertRoundTrips(t *testing.T) {
 		t.Errorf("formatted:\n%s\nwant:\n%s", got, src)
 	}
 }
+
+// C's `...` (D123) ends an extern parameter list, on one line or broken.
+func TestCVariadicRoundTrips(t *testing.T) {
+	src := "extern \"C\" {\n  fun printf(format: *raw u8, ...): i32\n  fun anything(...)\n  fun open(\n    path: *raw u8,\n    flags: i32,\n    ...\n  ): i32\n}\n"
+	if got := checkRoundTrip(t, "variadic.vs", src); got != src {
+		t.Errorf("formatted:\n%s\nwant:\n%s", got, src)
+	}
+}
+
+// C layout (D120): `extern union`, @packed, @align on a struct and on a
+// field, @transparent print as written.
+func TestCLayoutRoundTrips(t *testing.T) {
+	src := "extern union Data {\n  ptr: *raw ()\n  fd:  i32\n}\n\n@packed\nextern struct Event {\n  events: u32\n  data:   Data\n}\n\n" +
+		"extern struct Spaced {\n  a: u8\n  @align(16) b: i32\n}\n\n@transparent\nstruct Fd {\n  handle: i32\n}\n\n@align(64)\nstruct Counter {\n  var hits: i64\n}\n"
+	if got := checkRoundTrip(t, "layout.vs", src); got != src {
+		t.Errorf("formatted:\n%s\nwant:\n%s", got, src)
+	}
+}

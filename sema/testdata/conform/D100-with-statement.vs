@@ -98,6 +98,18 @@ fun inCollection(list: MutableList<Res>) {
   list.push(r) // error: 'r' cannot be stored in a collection or sent on a channel
 }
 
+fun lambdaKept(fns: MutableList<fun(): i64>) {
+  with r = open(1)
+  fns.push(() => r.n) // error: this lambda captures 'r', which is closed when its 'with' block ends, so the lambda cannot be stored in a collection
+}
+
+fun lambdaLent(xs: MutableList<i64>) {
+  with r = open(1)
+  // a method that only calls what it is given, for the call: a hand-off
+  xs.sortWith((a, b) => if (a + r.n < b) Ordering.Less else Ordering.Greater)
+  io.println("${xs.map(x => x + r.n)}")
+}
+
 fun lambdaReturned(): fun(): i64 {
   with r = open(1)
   return () => r.n // error: this lambda captures 'r', which is closed when its 'with' block ends, so the lambda cannot be returned

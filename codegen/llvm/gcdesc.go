@@ -20,17 +20,10 @@ declare i64 @veles_gc_collections()
 declare i64 @veles_gc_live_bytes()
 `
 
-// fieldOffsets returns the byte offset of each field under natural layout.
+// fieldOffsets returns the byte offset of each element of an unpadded
+// aggregate (a tuple, a range, an argument block): where LLVM puts them.
 func (g *gen) fieldOffsets(fields []types.Type) []int {
-	offs := make([]int, len(fields))
-	size := 0
-	for i, f := range fields {
-		fs, fa := g.layout(f)
-		size = (size + fa - 1) / fa * fa
-		offs[i] = size
-		size += fs
-	}
-	return offs
+	return g.layouter().Offsets(fields)
 }
 
 // pointerOffsets lists the candidate pointer words inside a value of type t.
@@ -56,7 +49,7 @@ func (g *gen) pointerOffsets(t types.Type) []int {
 		if isPtrLike(tt.Elem) {
 			return []int{0}
 		}
-		_, ea := g.layout(tt.Elem)
+		ea := g.llAlign(tt.Elem)
 		base := (1 + ea - 1) / ea * ea
 		return shift(g.pointerOffsets(tt.Elem), base)
 	case *types.Tuple:
@@ -64,11 +57,14 @@ func (g *gen) pointerOffsets(t types.Type) []int {
 	case *types.Range:
 		return nil
 	case *types.Struct:
-		var fs []types.Type
-		for _, f := range tt.Fields {
-			fs = append(fs, f.Type)
+		if tt.Union {
+			return nil // C data: numbers and raw pointers, nothing of the collector's (D120)
 		}
-		return g.compositeOffsets(fs)
+		var out []int
+		for i, off := range g.layouter().StructPlan(tt).Offsets {
+			out = append(out, shift(g.pointerOffsets(tt.Fields[i].Type), off)...)
+		}
+		return out
 	case *types.Sealed, *types.ErrorUnion:
 		words := g.payloadWords(t)
 		var offs []int
@@ -123,7 +119,10 @@ func (g *gen) descriptor(t types.Type, kind int) string {
 	}
 	g.descNames[name] = true
 	g.descs[key] = name
-	size, _ := g.layout(t)
+	size, align := g.layout(t)
+	if align > 8 {
+		kind |= align << 8 // the collector hands out bodies this aligned (D120, veles_gc.c)
+	}
 	offs := g.pointerOffsets(t)
 	parts := make([]string, len(offs))
 	for i, o := range offs {

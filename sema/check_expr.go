@@ -497,6 +497,10 @@ func (f *fnCtx) toString(x Expr, span source.Span) Expr {
 		f.errorf(span, "cannot interpolate a value of type '%s': the expression gives no value to print", t)
 		return x
 	}
+	if u := f.unionInside(t, map[types.Type]bool{}); u != nil {
+		f.errorf(span, "cannot interpolate a value of type '%s': it holds the extern union '%s', which has no text — which field is live is C's to know; print the field you know is (D120)", t, u.Name)
+		return x
+	}
 	return &ToString{exprBase{types.TString}, x}
 }
 
@@ -823,6 +827,9 @@ func (f *fnCtx) fieldOf(x Expr, name ast.Ident, span source.Span) Expr {
 			return bad()
 		}
 		f.guardProtectedContents(tt, fld, span)
+		if tt.Union && f.unsafe == 0 {
+			f.errorf(span, "a field of the extern union '%s' is read and written inside 'unsafe': which field holds the value is C's to know, not the compiler's (D120)", tt.Name)
+		}
 		return &FieldGet{exprBase{fld.Type}, x, fld.Index, fld.Name}
 	case *types.Tuple:
 		idx, err := strconv.Atoi(name.Name)
@@ -1108,6 +1115,10 @@ func (f *fnCtx) unaryExpr(e *ast.UnaryExpr, want types.Type) Expr {
 		}
 		lv, root := f.checkLValue(e.X, false)
 		if lv == nil {
+			return bad()
+		}
+		if inPacked(lv) {
+			f.errorf(e.Pos, "'&%s' would point into a @packed struct, where the field may be misaligned for its type; copy it out first, 'val x = %s', and take '&x' (D120)", srcText(e.X), srcText(e.X))
 			return bad()
 		}
 		if root != nil {
@@ -1404,6 +1415,9 @@ func (f *fnCtx) comparableIn(t types.Type, seen map[types.Type]bool) bool {
 			return true
 		}
 		seen[t] = true
+		if t.Union {
+			return false // which field is live is C's to know (D120)
+		}
 		if f.c.implementsPrelude(t, "Equatable") {
 			return true
 		}

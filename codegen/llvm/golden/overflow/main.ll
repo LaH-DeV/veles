@@ -544,7 +544,7 @@ entry:
   %a88 = alloca [3 x %str]
   store %str %p1, ptr %a1
   store { ptr, ptr } %p2, ptr %a2
-  %coro.id = call token @llvm.coro.id(i32 0, ptr null, ptr null, ptr null)
+  %coro.id = call token @llvm.coro.id(i32 8, ptr null, ptr null, ptr null)
   %coro.size = call i64 @llvm.coro.size.i64()
   %coro.mem = call ptr @veles_alloc_words(i64 %coro.size)
   %coro.hdl = call ptr @llvm.coro.begin(token %coro.id, ptr %coro.mem)
@@ -730,7 +730,7 @@ entry:
   %a139 = alloca [4 x %str]
   %a150 = alloca [21 x i8]
   %a154 = alloca %str
-  %coro.id = call token @llvm.coro.id(i32 0, ptr null, ptr null, ptr null)
+  %coro.id = call token @llvm.coro.id(i32 8, ptr null, ptr null, ptr null)
   %coro.size = call i64 @llvm.coro.size.i64()
   %coro.mem = call ptr @veles_alloc_words(i64 %coro.size)
   %coro.hdl = call ptr @llvm.coro.begin(token %coro.id, ptr %coro.mem)
@@ -1227,7 +1227,7 @@ entry:
 define internal ptr @ramp.v_main.call(ptr %task, { ptr, ptr } %p0) presplitcoroutine {
 entry:
   %a2 = alloca i64
-  %coro.id = call token @llvm.coro.id(i32 0, ptr null, ptr null, ptr null)
+  %coro.id = call token @llvm.coro.id(i32 8, ptr null, ptr null, ptr null)
   %coro.size = call i64 @llvm.coro.size.i64()
   %coro.mem = call ptr @veles_alloc_words(i64 %coro.size)
   %coro.hdl = call ptr @llvm.coro.begin(token %coro.id, ptr %coro.mem)

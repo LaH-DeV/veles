@@ -184,9 +184,14 @@ func (f *fnCtx) outlives(target ast.Expr, r *Var) bool {
 }
 
 // checkStoreEscape: an argument of a method that stores what it is given —
-// on a mutable collection, a deque or a channel.
+// on a mutable collection, a deque or a channel. Only the storing methods:
+// `xs.withRaw(p => r.use(p))` or `xs.sortWith(…)` hands the lambda on for
+// the call, which D100 allows.
 func (f *fnCtx) checkStoreEscape(recv types.Type, e *ast.CallExpr) {
 	if len(f.c.resources) == 0 || !storesArguments(recv) {
+		return
+	}
+	if m, ok := e.Fun.(*ast.MemberExpr); !ok || !storingMethods[m.Name.Name] {
 		return
 	}
 	for _, a := range e.Args {
@@ -194,6 +199,13 @@ func (f *fnCtx) checkStoreEscape(recv types.Type, e *ast.CallExpr) {
 			return
 		}
 	}
+}
+
+// storingMethods are the methods of the types storesArguments names that
+// keep an argument: the element, key, value or the function making one.
+var storingMethods = map[string]bool{
+	"push": true, "set": true, "setUnchecked": true, "insert": true, "addAll": true, "fill": true,
+	"add": true, "getOrPut": true, "send": true, "trySend": true, "addFirst": true, "addLast": true,
 }
 
 func storesArguments(t types.Type) bool {

@@ -42,6 +42,17 @@ typedef struct veles_desc {
  * and the sweep zeroes such an object when it frees it — no finalizer, no
  * ordering; the memory holds no copy of the secret once it is garbage. */
 #define DESC_WIPE 2
+/* D120: a type declared `@align(n)` above 8 has n in the kind above bit 8.
+ * Its objects come from a size class that is a multiple of n (spans start
+ * aligned), so the object is n-aligned, and the body starts n bytes in
+ * rather than HEADER: the bytes between the descriptor word and the body
+ * are unused. Lists of such elements get their storage from it too. */
+#define DESC_ALIGN_SHIFT 8
+
+static size_t body_offset(const veles_desc *d) {
+    size_t a = d ? (size_t)(d->kind >> DESC_ALIGN_SHIFT) : 0;
+    return a > 8 ? a : 8;
+}
 
 /* the byte buffer of a Secret (veles_secret_bytes) */
 veles_desc veles_wipe_u8_desc = {1, DESC_ARRAY | DESC_WIPE, 0};
@@ -278,7 +289,7 @@ static void *alloc_in_span(veles_span *s, veles_desc *desc) {
             char *obj = s->start + i * s->objsize;
             memset(obj, 0, s->objsize);
             *(veles_desc **)obj = desc;
-            return obj + HEADER;
+            return obj + body_offset(desc);
         }
     }
     return NULL;
@@ -295,8 +306,15 @@ static void *alloc_slow(veles_desc *desc, size_t need, int cls);
  * global count in chunks, so the collection trigger stays close. */
 void *veles_gc_alloc(veles_desc *desc, int64_t size) {
     if (size < 0) size = 0;
-    size_t need = (size_t)size + HEADER;
+    size_t off = body_offset(desc);
+    size_t need = (size_t)size + off;
     int cls = class_for(need);
+    if (off > HEADER) {
+        /* over-aligned (D120): a class whose size the alignment divides */
+        while (cls >= 0 && class_sizes[cls] % off != 0) {
+            cls = (size_t)cls + 1 < NCLASSES ? cls + 1 : -1;
+        }
+    }
     if (me && cls >= 0 && !veles_stop_requested) {
         veles_span *s = me->tl[cls];
         if (s && me->tl_bytes + need <= tl_chunk) {
@@ -444,11 +462,12 @@ NO_ASAN static void scan_range(const char *lo, const char *hi) {
 
 static void scan_object(char *obj, size_t objsize) {
     veles_desc *d = *(veles_desc **)obj;
-    char *body = obj + HEADER;
     if (!d || d->nptrs == 0) return;
+    size_t off = body_offset(d);
+    char *body = obj + off;
     if (d->kind & DESC_ARRAY) {
         if (d->size <= 0) return;
-        size_t count = (objsize - HEADER) / (size_t)d->size;
+        size_t count = (objsize - off) / (size_t)d->size;
         for (size_t i = 0; i < count; i++) {
             char *el = body + i * d->size;
             for (int64_t k = 0; k < d->nptrs; k++) {
@@ -458,7 +477,7 @@ static void scan_object(char *obj, size_t objsize) {
         return;
     }
     for (int64_t k = 0; k < d->nptrs; k++) {
-        if ((size_t)d->offsets[k] + 8 <= objsize - HEADER) {
+        if ((size_t)d->offsets[k] + 8 <= objsize - off) {
             mark_candidate(*(uintptr_t *)(body + d->offsets[k]));
         }
     }

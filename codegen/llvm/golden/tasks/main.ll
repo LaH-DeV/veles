@@ -4,7 +4,7 @@ entry:
   %a1 = alloca i64
   %a41 = alloca i64
   store i64 %p1, ptr %a1
-  %coro.id = call token @llvm.coro.id(i32 0, ptr null, ptr null, ptr null)
+  %coro.id = call token @llvm.coro.id(i32 8, ptr null, ptr null, ptr null)
   %coro.size = call i64 @llvm.coro.size.i64()
   %coro.mem = call ptr @veles_alloc_words(i64 %coro.size)
   %coro.hdl = call ptr @llvm.coro.begin(token %coro.id, ptr %coro.mem)
@@ -109,7 +109,7 @@ entry:
   %a30 = alloca i64
   %a36 = alloca i1
   store ptr %p1, ptr %a1
-  %coro.id = call token @llvm.coro.id(i32 0, ptr null, ptr null, ptr null)
+  %coro.id = call token @llvm.coro.id(i32 8, ptr null, ptr null, ptr null)
   %coro.size = call i64 @llvm.coro.size.i64()
   %coro.mem = call ptr @veles_alloc_words(i64 %coro.size)
   %coro.hdl = call ptr @llvm.coro.begin(token %coro.id, ptr %coro.mem)
@@ -285,7 +285,7 @@ entry:
   %a379 = alloca { i1, i64 }
   %a449 = alloca [21 x i8]
   %a453 = alloca %str
-  %coro.id = call token @llvm.coro.id(i32 0, ptr null, ptr null, ptr null)
+  %coro.id = call token @llvm.coro.id(i32 8, ptr null, ptr null, ptr null)
   %coro.size = call i64 @llvm.coro.size.i64()
   %coro.mem = call ptr @veles_alloc_words(i64 %coro.size)
   %coro.hdl = call ptr @llvm.coro.begin(token %coro.id, ptr %coro.mem)

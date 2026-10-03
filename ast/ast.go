@@ -217,6 +217,10 @@ type FunDecl struct {
 	Name       Ident
 	TypeParams []TypeParam
 	Params     []Param
+	// CVariadic: `...` ends the parameter list of a function in an
+	// `extern "C"` block — C's variadic arguments (D123). Its span, else zero.
+	CVariadic  bool
+	VariadicAt source.Span
 	Ret        Type // nil means unit
 	Effects    Effects
 	Body       *Block
@@ -247,6 +251,7 @@ type StructDecl struct {
 	Pub        bool
 	Internal   bool      // `internal`: the module level written out (M5); the default
 	Extern     bool      // `extern struct` — C layout
+	Union      bool      // `extern union` — every field at offset 0 (D120)
 	Error      bool      // `error Name { }` — declared with an impl of Error (D4)
 	ErrorImpl  *ImplDecl // the `impl Error for Name` an error declaration desugars to
 	Name       Ident

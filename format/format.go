@@ -604,7 +604,7 @@ func (p *printer) fun(fn *ast.FunDecl) {
 	// (v0.33; the parser still reads `fun <T> encode` and rewrites it)
 	p.w(fn.Name.Name)
 	p.typeParams(fn.TypeParams)
-	p.params(fn.Params, fn.Name.Pos.End, fn)
+	p.params(fn.Params, fn.Name.Pos.End, fn, fn.CVariadic)
 	if fn.Ret != nil {
 		p.w(": ")
 		p.typ(fn.Ret)
@@ -674,9 +674,13 @@ func (p *printer) bounds(bs []ast.Type) {
 }
 
 // params prints a parameter list, one per line when the author broke it.
-func (p *printer) params(params []ast.Param, open int, owner ast.Node) {
+// cVariadic adds C's `...` at the end (D123).
+func (p *printer) params(params []ast.Param, open int, owner ast.Node, cVariadic bool) {
 	p.w("(")
 	if len(params) == 0 {
+		if cVariadic {
+			p.w("...")
+		}
 		p.w(")")
 		return
 	}
@@ -714,6 +718,14 @@ func (p *printer) params(params []ast.Param, open int, owner ast.Node) {
 		if multi {
 			p.w(",")
 			p.after(prm.Pos.End)
+		}
+	}
+	if cVariadic {
+		if multi {
+			p.nl()
+			p.w("...")
+		} else {
+			p.w(", ...")
 		}
 	}
 	if multi {
@@ -863,6 +875,8 @@ func (p *printer) structDecl(d *ast.StructDecl) {
 	switch {
 	case d.Error:
 		p.w("error ")
+	case d.Union:
+		p.w("extern union ")
 	case d.Extern:
 		p.w("extern struct ")
 	default:
@@ -911,7 +925,7 @@ func (p *printer) structDecl(d *ast.StructDecl) {
 		ms = append(ms, memberRef{d.InitPos.Start, func() {
 			p.w("init")
 			if d.InitParams != nil {
-				p.params(d.InitParams, d.InitPos.End, d.Init)
+				p.params(d.InitParams, d.InitPos.End, d.Init, false)
 			}
 			p.w(" ")
 			p.block(d.Init)

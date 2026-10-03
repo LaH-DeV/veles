@@ -484,6 +484,63 @@ Output:
 10000000000 remainder 1
 ```
 
+C headers lay some data out by hand, and four attributes say so (D120):
+
+```veles
+use io
+
+extern union EpollData {        // every field at offset 0; size of the largest
+  ptr: *raw ()
+  var fd: i32
+  var u64: u64
+}
+
+@packed                         // no padding: data starts at byte 4
+extern struct EpollEvent {
+  var events: u32
+  var data: EpollData
+}
+
+extern struct Header {
+  kind: u8
+  @align(16) payload: i32       // a field at the next multiple of 16
+}
+
+@transparent struct Fd { handle: i32 }       // crosses into C as the i32 itself
+
+@align(64) struct Counter { var hits: i64 }  // a cache line of its own
+
+fun main() {
+  var ev = EpollEvent(events: 1, data: EpollData(fd: 3))   // a union starts as one field
+  ev.events = 5
+  // SAFETY: data was built from fd, so fd is the live field
+  val fd = unsafe { ev.data.fd }
+  io.println("${ev.events} $fd ${Header(kind: 1, payload: 2).payload} ${Fd(handle: 4).handle}")
+}
+```
+
+Output:
+```text
+5 3 2 4
+```
+
+- **`extern union`** holds one of its fields at a time, all at offset 0.
+  It is built from exactly one field. Reading or writing a field happens
+  inside `unsafe`, since only C knows which field is live. It has no `==`,
+  no text and nothing derived, and it is not a constant.
+- **`@packed`** on an extern struct or union removes the padding. The
+  compiler reads and writes a misaligned field through the whole struct,
+  so it is never reached through a pointer of its own type: `&ev.events` is
+  refused, and so is passing a packed struct to C by value — pass
+  `*raw EpollEvent`.
+- **`@align(n)`** raises an alignment: on a field of an extern struct
+  (C's `_Alignas`), or on any struct. `n` is a power of two from 1 to 4096,
+  never below the natural alignment. An over-aligned struct is aligned
+  wherever it lives — locals, globals, list storage, the heap — which is
+  what keeps two hot counters on different cache lines.
+- **`@transparent`** on a struct with one field gives a binding its own
+  handle types at no cost: C sees the field, in registers and all.
+
 A C function may block — sleep, wait on a lock, read a file. That is
 fine: while the call runs, a collection does not wait for it, and if it
 lasts longer than about a millisecond while other tasks are waiting to
@@ -586,6 +643,46 @@ it cannot unwind through C's frames. `p.cast<*raw T>()` reinterprets a raw
 pointer (C's `void *`), and `(&x).cast<*raw u8>()` gives C the address of a
 Veles value for the length of a call; both need `unsafe`, as does calling
 through an `extern fun` value. `examples/ffi` puts all of it together.
+
+### Variadic C functions
+
+`...` ends the parameter list of a C function taking variadic arguments —
+`printf`, `snprintf`, and POSIX's `open` and `fcntl` (D123):
+
+```veles
+use ffi, io
+
+extern "C" {
+  fun snprintf(buf: *raw u8, size: u64, format: *raw u8, ...): i32
+}
+
+fun main() throws ffi.NulByte {
+  with format = try ffi.CString.of("%d items, %.1f%% full, %s")
+  with name = try ffi.CString.of("queue")
+  val fill: f32 = 37.5
+  val buf: MutableList<u8> = MutableList.repeat(0, 64)
+  // SAFETY: the format names exactly the three arguments; snprintf writes at most 64 bytes
+  buf.withRaw(p => unsafe { snprintf(p, 64, format.ptr(), 12, fill, name.ptr()) })
+  // SAFETY: snprintf ended the text with a NUL inside the buffer
+  io.println(buf.withRaw(p => unsafe { ffi.readString(p) }))
+}
+```
+
+Output:
+```text
+12 items, 37.5% full, queue
+```
+
+The extra arguments get C's default promotions: `bool`, `i8`, `i16`, `u8`
+and `u16` widen to `i32`, `f32` to `f64`, and a literal is typed as C types
+it — `12` is an `i32` (C's `int`), `2.5` an `f64`. What may be passed is a
+32- or 64-bit integer, an `f64`, a raw pointer or a C function pointer; a
+string, a struct or any Veles value is refused (convert it, or pass a
+pointer). Only a function in an `extern "C"` block can say `...`: a Veles
+function takes `name: T...` instead, and C cannot call a variadic Veles
+function. The format string is C's business — a mismatch between it and the
+arguments is undefined behaviour the compiler cannot see, which is why the
+call is `unsafe`.
 
 ### When C goes wrong: `--sanitize`
 

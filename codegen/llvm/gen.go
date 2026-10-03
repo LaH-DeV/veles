@@ -39,6 +39,9 @@ type gen struct {
 	descNames     map[string]bool
 	descOut       strings.Builder
 	consts        map[sema.ConstVal]string // constant tables (consts.go)
+	lay           *types.Layout            // sizes, alignments, offsets (D120)
+	fieldMap      map[string][]int         // struct field → LLVM index, for padded struct types
+	overAlign     map[string]int           // LLVM struct type → alignment above LLVM's own
 	constOut      strings.Builder
 	eqPtrFns      map[string]string
 	pending       []func() // helper bodies to generate after the current function
@@ -142,7 +145,12 @@ func Generate(prog *sema.Program) string {
 	}
 	sb.WriteString("\n")
 	for _, gl := range prog.Globals {
-		fmt.Fprintf(&sb, "@%s = global %s zeroinitializer\n", mangleGlobal(gl), g.llType(gl.Type))
+		llt := g.llType(gl.Type)
+		if a := g.overAlign[llt]; a > 0 {
+			fmt.Fprintf(&sb, "@%s = global %s zeroinitializer, align %d\n", mangleGlobal(gl), llt, a) // @align(n) (D120)
+			continue
+		}
+		fmt.Fprintf(&sb, "@%s = global %s zeroinitializer\n", mangleGlobal(gl), llt)
 	}
 	sb.WriteString("\n")
 	sb.WriteString(runtimeDecls)
@@ -418,6 +426,10 @@ func (g *gen) placeLabel(name string) {
 func (g *gen) alloca(llt string) string {
 	g.tmp++
 	name := fmt.Sprintf("%%a%d", g.tmp)
+	if a := g.overAlign[llt]; a > 0 {
+		fmt.Fprintf(&g.allocas, "  %s = alloca %s, align %d\n", name, llt, a) // @align(n) (D120)
+		return name
+	}
 	fmt.Fprintf(&g.allocas, "  %s = alloca %s\n", name, llt)
 	return name
 }
@@ -539,16 +551,33 @@ func (g *gen) externDecl(fn *sema.Func) string {
 	}
 	for i, p := range fn.Sig.Params {
 		if isCStruct(p.Type) {
-			params = append(params, sig.params[i].decl(""))
+			params = append(params, sig.params[i].decl(cArgExt(p.Type)))
 			continue
 		}
 		params = append(params, g.externParamTypes(p.Type)...)
+	}
+	if fn.Sig.CVariadic {
+		params = append(params, "...") // D123
 	}
 	ret := "void"
 	if !types.IsUnit(fn.Sig.Ret) {
 		ret = sig.retDecl(g.llType(fn.Sig.Ret), cExt(fn.Sig.Ret))
 	}
 	return fmt.Sprintf("declare %s @%s(%s)\n", ret, fn.Name, strings.Join(params, ", "))
+}
+
+// cVariadicCallee is how a call names a C-variadic function: LLVM needs its
+// type written out, `i32 (ptr, ...) @printf`, to lay the extra arguments
+// out by the platform's variadic convention (D123).
+func (g *gen) cVariadicCallee(fn *sema.Func, ret string) string {
+	var ps []string
+	for _, p := range fn.Sig.Params {
+		for _, t := range g.externParamTypes(p.Type) {
+			ps = append(ps, strings.Fields(t)[0]) // the type, without its extension attribute
+		}
+	}
+	ps = append(ps, "...")
+	return fmt.Sprintf("%s (%s) @%s", ret, strings.Join(ps, ", "), fn.Name)
 }
 
 func paramTypes(ps []types.Param) []types.Type {
@@ -574,6 +603,9 @@ func (g *gen) externParamTypes(t types.Type) []string {
 // the whole register. Without it the bits above an i1 are undefined — a C
 // function taking `bool` would see garbage.
 func cExt(t types.Type) string {
+	if st, ok := t.(*types.Struct); ok && st.Transparent && len(st.Fields) == 1 {
+		return cExt(st.Fields[0].Type) // C sees the field (D120)
+	}
 	b, ok := t.(*types.Basic)
 	if !ok {
 		return ""
@@ -779,8 +811,7 @@ func (g *gen) stmt(s sema.Stmt) {
 		if types.IsNever(s.Value.Type()) {
 			return
 		}
-		p := g.place(s.Target)
-		g.emit("store %s %s, ptr %s", g.llType(s.Target.Type()), v, p)
+		g.assign(s.Target, v)
 	case *sema.ExprStmt:
 		g.expr(s.X)
 	case *sema.Return:

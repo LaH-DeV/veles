@@ -921,6 +921,9 @@ func (c *Checker) notConstType(t types.Type, key bool, seen map[types.Type]bool)
 		if t.Sealed != nil {
 			return "a sealed variant is not a constant value yet"
 		}
+		if t.Union {
+			return "an extern union is C's data, not a constant"
+		}
 		if key {
 			if ops := c.customOps(t); ops != nil && (ops.Hash != nil || ops.Equals != nil) {
 				return "'" + t.Name + "' hashes or compares with its own 'hash'/'equals', which the compiler does not run"

@@ -49,7 +49,7 @@ var families = []family{
 	fam("attributes", `^@`, `@caller_location`, `^'lazy' is reserved`, `a 'lazy' parameter must be`, `@(key|tag|skip|required)`, `attribute`, `is deprecated`, `cannot derive`,
 		`\(D58\)`, `\(D51\)`),
 	fam("unsafe-and-ffi", `unsafe`, `SAFETY`, `extern`, `C ABI`, `into C`, `handed to C`, `C function pointer`,
-		`raw pointer`, `pointer arithmetic`, `\(D50\)`, `\(D69\)`, `^cannot dereference`, `CLayout`,
+		`raw pointer`, `pointer arithmetic`, `\(D50\)`, `\(D69\)`, `\(D120\)`, `\(D123\)`, `^cannot dereference`, `CLayout`,
 		`^unsupported ABI`, `cannot step`),
 	fam("private-to-module", `is private to module`, `is not re-exported`, `re-exports a module of another package`, `is private \(M5\)`,
 		`belongs to module`),

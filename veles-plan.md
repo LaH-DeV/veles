@@ -1265,4 +1265,47 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   any more. Measured: `sha256` 77–85 ms after vs 78–79 ms before (noise —
   the cost is the rounds, not the table). Docs: chapter 2 (constants), the
   cheat sheet, the errors reference (`constants`). Not done here: part 4
-  (`const fun`), so a constant cannot call a function yet.
+  (`const fun`), so a constant cannot call a function yet. Windows and WSL
+  green (full suite on both).
+- **2026-10-03 — B16 started: D123 (variadic C calls) done.** Choice asked
+  for the rest of B16 (user, recommended): `Array<T, N>` and any value over
+  a size threshold get a *memory class* in codegen (memcpy copies, passed
+  by pointer to a caller copy, returned through `sret`), not SSA. D123:
+  `...` ends the parameters of a function in an `extern "C"` block
+  (`FunDecl.CVariadic`, `types.Func.CVariadic`); the extra arguments are
+  promoted as C does (bool/i8/i16/u8/u16 → i32, f32 → f64, literals typed
+  as C types them) and refused unless numbers, raw pointers or C function
+  pointers (`sema/cvariadic.go`); the call names the function with its type
+  written out (`i32 (ptr, ptr, ...) @snprintf`) so LLVM applies the
+  platform's convention. Formatter, `veles parse`, hover. Tests: conform
+  `D123-c-variadic*`, TestCVariadicCalls (snprintf with every promotion,
+  POSIX `open` + `fcntl`, Windows `_open`; debug and release),
+  TestCVariadicRoundTrips; chapter 13 section, cheat sheet. **Bug found on
+  the way:** D100's escape check refused any argument of any `MutableList`
+  / map / set / channel method when a `with` value was captured —
+  `xs.withRaw(p => r.use(p))`, `xs.sortWith(…)` — though only storing
+  methods keep their argument; now it is the storing methods only
+  (`push`, `set`, `insert`, `add`, `getOrPut`, `send`, …), conform cases
+  in `D100-with-statement`.
+- **2026-10-03 — B16: D120 (C layout) done.** One layout calculation for
+  the checker and the code generator (`types/layout.go`: sizes, the
+  alignment a program is guaranteed and the one LLVM gives, struct plans).
+  `@packed` → LLVM packed structs, its fields read and written through the
+  whole struct (`&` refused, methods get copies); `extern union` → an
+  integer of its alignment plus bytes, fields through memory, built from
+  one field, touched in `unsafe`, no `==`/text/derive/const; `@align(n)` →
+  explicit `[k x i8]` padding in LLVM struct types with a field-index map
+  (`fidx`, used by every field access, hash, `==`, print, held-task and GC
+  descriptor site), aligned allocas and globals, and collector descriptors
+  carrying the alignment so `veles_gc_alloc` returns aligned bodies (lists
+  of over-aligned elements included); `@transparent` → classified as its
+  field for every C crossing, extension attributes included. Tests:
+  TestCLayoutAgreesWithC (C fills and reads an epoll-style packed struct
+  with a union, an `_Alignas` field struct and arrays of both, passes one
+  by value and a transparent handle; sizeof/offsetof/strides agree; a
+  `@align(64)` value is 64-aligned on the stack and in a list), conform
+  `D120-layout*`, golden `layout`, TestCLayoutRoundTrips, chapter 13.
+  **Bug found:** coroutine frames told LLVM they were 16-aligned while the
+  collector gives 8; now `llvm.coro.id(i32 8)` (goldens `tasks`/`overflow`
+  differ by that line only; `spawn` 43.9 ms vs 42.4 ms recorded, `channels`
+  4.7 ms vs 9.3 ms — noise). Windows and WSL green.

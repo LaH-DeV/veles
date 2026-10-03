@@ -262,6 +262,8 @@ with sem.acquire()                            // held and closed, never named (D
 with srv = try serving()                      // a value with a Task field: received with `with` or returned; its tasks stop, then it closes (D111)
 implement Closeable for File { fun close() { } }
 extern "C" { fun strlen(s: *raw u8): i64 }
+@packed extern struct Ev { e: u32, d: Data }    // C layout (D120): extern union Data { … } (fields read in unsafe), @align(n), @transparent struct Fd { h: i32 }
+extern "C" { fun printf(f: *raw u8, ...): i32 }  // C variadics: extra args promoted as C does (u8 → i32, f32 → f64); `5` is an i32 (D123)
 // SAFETY: p is a live NUL-terminated buffer  ← why the block is sound (a warning without it)
 val n = unsafe { strlen(p) }                  // C calls and raw pointers need unsafe (D44)
 unsafe { s.byteAtUnchecked(i) }               // also xs.atUnchecked(i), xs.setUnchecked(i, v): checked in debug only (D114)

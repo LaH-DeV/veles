@@ -58,7 +58,7 @@ answered from the shape, tuples get `Comparable`, enums get
 ### 1.2 Foreign function interface
 
 - [x] C ABI FFI design → D67 (2026-09-26): extern blocks in any package, native libraries in the manifest; marshaling of strings/buffers and callbacks → D69
-- [~] `extern "C"` blocks: calling convention and callbacks into Veles done (D69, 2026-09-26: `extern "C" fun` + `&name` : `extern fun(...)`, called through inside `unsafe`); variadic calls decided 2026-10-01 (D123), not built (plan B16)
+- [~] `extern "C"` blocks: calling convention and callbacks into Veles done (D69, 2026-09-26: `extern "C" fun` + `&name` : `extern fun(...)`, called through inside `unsafe`); variadic calls (D123) built 2026-10-03: `...` in an `extern "C"` block, C's promotions, TestCVariadicCalls (`snprintf`; `open`/`fcntl` on POSIX, `_open` on Windows)
 - [x] **Bug (found 2026-10-01): a struct passed or returned by value across
       the C boundary had no C ABI lowering** — `lldiv` (16-byte return)
       segfaulted on Windows, `div` was right by luck. Fixed the same day
@@ -67,9 +67,13 @@ answered from the shape, tuples get `Comparable`, enums get
       exhaustion, debug and release) on Windows and Linux, codegen
       `TestCStructClassification` against clang for Win64, SysV and
       AAPCS64 (ARM64 not run on hardware until A7)
-- [ ] `extern struct` layout: `@packed`, `@align(n)`, `extern union`,
-      `@transparent` (D120), `Array<T, N>` with const generics (D121) —
-      decided 2026-10-01, not built (plan B16)
+- [x] C layout (D120) — built 2026-10-03: `@packed`, `@align(n)` (struct and
+      extern field), `extern union`, `@transparent`; one layout for checker
+      and codegen (`types/layout.go`), padded LLVM types, aligned allocas,
+      globals and collector bodies; TestCLayoutAgreesWithC (C fills and reads
+      each shape, sizeof/offsetof/stride agree, alignment on stack and heap)
+- [ ] `Array<T, N>` with const generics (D121) — decided 2026-10-01, not
+      built (plan B16)
 - [x] Ownership at the boundary (D69): C keeps only copies (`ffi.CString`, `ffi.alloc`/`free`), a list is lent for a closure (`withRaw`, `CLayout` elements), a value C hands back travels as an `ffi.handle` (a scanned table index, never a GC address)
 - [x] Panics never cross into C: a panic inside an `extern "C" fun` ends the process with its location (runtime `veles_ffi_enter`/`leave` around the body); errors cannot cross either (an exported fun may not throw)
 - [x] Linking: `[native]` in `veles.toml` — `libs`, `static-libs` (archive resolved by name), `lib-paths`, `pkg-config`, file entries; dependencies' tables link too (2026-09-26, `driver/native.go`, TestNativeLinking)

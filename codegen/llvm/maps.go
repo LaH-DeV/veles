@@ -206,7 +206,7 @@ func (g *gen) mapBuiltin(e *sema.Builtin) (string, bool) {
 	case "map.entries":
 		kt, vt := keyValTypes(e.Args[0].Type())
 		tt := &types.Tuple{Elems: []types.Type{kt, vt}}
-		_, va := g.layout(vt)
+		va := g.llAlign(vt)
 		ks := g.sizeOf(kt)
 		valOffset := (ks + va - 1) / va * va
 		m := g.expr(e.Args[0])
@@ -334,13 +334,13 @@ func (g *gen) hashBody(t types.Type, v string) string {
 		g.emit("%s = load i64, ptr %s", out, res)
 		return out
 	case *types.Tuple:
-		return g.hashFields(llt, v, tt.Elems)
+		return g.hashFields(t, llt, v, tt.Elems)
 	case *types.Struct:
 		var fs []types.Type
 		for _, f := range tt.Fields {
 			fs = append(fs, f.Type)
 		}
-		return g.hashFields(llt, v, fs)
+		return g.hashFields(t, llt, v, fs)
 	case *types.Sealed:
 		return g.hashTagged(llt, v, func(i int) types.Type { return tt.Variants[i] }, len(tt.Variants))
 	case *types.ErrorUnion:
@@ -442,11 +442,11 @@ func (g *gen) hashMap(t types.Type, v string) string {
 	return out
 }
 
-func (g *gen) hashFields(llt, v string, fields []types.Type) string {
+func (g *gen) hashFields(t types.Type, llt, v string, fields []types.Type) string {
 	acc := "17"
 	for i, ft := range fields {
 		fv := g.newTmp()
-		g.emit("%s = extractvalue %s %s, %d", fv, llt, v, i)
+		g.emit("%s = extractvalue %s %s, %d", fv, llt, v, g.fidx(t, i))
 		acc = g.mix(acc, g.hash(ft, fv))
 	}
 	return acc

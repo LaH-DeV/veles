@@ -392,6 +392,7 @@ func (c *Checker) collect() {
 	for _, s := range c.sealeds {
 		c.resolveSealed(s)
 	}
+	c.checkLayouts()
 	for _, t := range c.traits {
 		c.resolveTrait(t)
 	}
@@ -515,12 +516,14 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 			c.insert(m, &Symbol{Name: fn.Name.Name, Kind: SymFunc, Pub: fn.Pub, Module: m, Span: fn.Name.Pos, Func: t})
 		}
 	case *ast.StructDecl:
+		var attrs map[string]*ast.Attribute
 		if d.Variant != nil {
-			c.attrsOf(d.Attrs, "variant")
+			attrs = c.attrsOf(d.Attrs, "variant")
 		} else {
-			c.attrsOf(d.Attrs, "struct")
+			attrs = c.attrsOf(d.Attrs, "struct")
 		}
-		s := &types.Struct{Name: d.Name.Name, Module: m.prefix(), Pub: d.Pub, Extern: d.Extern, Decl: d, Instances: map[string]*types.Struct{}}
+		s := &types.Struct{Name: d.Name.Name, Module: m.prefix(), Pub: d.Pub, Extern: d.Extern, Union: d.Union, Decl: d, Instances: map[string]*types.Struct{}}
+		c.layoutAttrs(s, d, attrs)
 		ctx := &declCtx{module: m, file: f, decl: d, tps: map[string]*types.TypeParam{}}
 		for i, tp := range d.TypeParams {
 			p := &types.TypeParam{Name: tp.Name.Name, Index: i, Owner: d.Name.Name}
@@ -1398,14 +1401,22 @@ func (c *Checker) resolveStruct(s *types.Struct) {
 			continue
 		}
 		seen[f.Name.Name] = true
-		c.checkFieldAttrs(f)
+		fattrs := c.checkFieldAttrs(f)
 		env.errorPos = d.Error // an error's field may hold a cause: a union (D45)
 		ft := c.resolveType(env, f.Type)
 		env.errorPos = false
 		if u, isUnion := ft.(*types.ErrorUnion); isUnion && !isAliasRef(f.Type) { // an alias checks its own members
 			c.deferErrorCheck(u, f.Type.Span())
 		}
-		s.Fields = append(s.Fields, &types.Field{Name: f.Name.Name, Type: ft, Pub: f.Pub, Private: f.Private, Var: f.Var, Protected: f.Protected, HasDefault: f.Default != nil, Index: i})
+		fld := &types.Field{Name: f.Name.Name, Type: ft, Pub: f.Pub, Private: f.Private, Var: f.Var, Protected: f.Protected, HasDefault: f.Default != nil, Index: i}
+		if a, ok := fattrs["align"]; ok {
+			if d.Extern && !d.Union {
+				fld.Align = alignArg(c, a)
+			} else {
+				c.errorf(a.Pos, "@align on a field applies in an extern struct, whose layout is C's; on a Veles struct, align the struct: @align(n) struct … (D120)")
+			}
+		}
+		s.Fields = append(s.Fields, fld)
 	}
 	if d.Init != nil {
 		// a field without a default that the block assigns is the block's
@@ -1604,6 +1615,21 @@ func (c *Checker) signatureOf(env *typeEnv, d *ast.FunDecl, isTrait bool) *types
 		}
 		sig.Params = append(sig.Params, types.Param{Name: p.Name.Name, Type: pt, HasDefault: p.Default != nil, Variadic: p.Variadic, Lazy: p.Lazy})
 	}
+	if d.CVariadic {
+		// C's `...` (D123): only C can define such a function, so only a
+		// declaration of one in an `extern "C"` block may say it
+		if d.Extern && !d.ExportC {
+			sig.CVariadic = true
+			for _, t := range append(paramTypesOf(sig), sig.Ret) {
+				if st, ok := t.(*types.Struct); ok && st.Extern {
+					c.errorf(d.VariadicAt, "a C function with variadic arguments cannot take or return the struct '%s' by value yet; pass a pointer, '*raw %s' (D123)", st.Name, st.Name)
+					break
+				}
+			}
+		} else {
+			c.errorf(d.VariadicAt, "only a function in an 'extern \"C\"' block takes C's variadic arguments; a Veles function takes 'name: T...' (D123)")
+		}
+	}
 	sig.Effects = c.resolveEffects(env, d.Effects, isTrait || d.Extern)
 	return sig
 }
@@ -1700,6 +1726,8 @@ func (c *Checker) checkExportC(t *FuncTemplate) {
 	for _, p := range t.Sig.Params {
 		if !cLayout(p.Type) {
 			bad(p.Type)
+		} else if st, ok := p.Type.(*types.Struct); ok && st.Packed {
+			c.errorf(pos, "a @packed struct cannot be passed to or from C by value yet: its fields may be misaligned, which the C calling conventions pass in memory; pass a pointer, '*raw %s' (D120)", st.Name)
 		}
 	}
 	if t.Sig.Ret != nil && !types.IsUnit(t.Sig.Ret) && !cLayout(t.Sig.Ret) {
@@ -1736,8 +1764,13 @@ func (c *Checker) checkExternType(t types.Type, span source.Span, std bool) {
 			c.checkExternType(t.Elem, span, std)
 		}
 	case *types.Struct:
-		if !t.Extern {
+		switch {
+		case t.Transparent && len(t.Fields) == 1:
+			c.checkExternType(t.Fields[0].Type, span, std) // C sees the field (D120)
+		case !t.Extern:
 			c.errorf(span, "extern \"C\" functions can only pass 'extern struct' types by value")
+		case t.Packed:
+			c.errorf(span, "a @packed struct cannot be passed to or from C by value yet: its fields may be misaligned, which the C calling conventions pass in memory; pass a pointer, '*raw %s' (D120)", t.Name)
 		}
 	case *types.List:
 		// the runtime's own list layout: `List<u8>` is passed as a pointer to
@@ -2209,7 +2242,7 @@ func (c *Checker) instantiateStruct(tmpl *types.Struct, args []types.Type, span 
 	for i, tp := range tmpl.TypeParams {
 		m[tp] = args[i]
 	}
-	inst := &types.Struct{Name: tmpl.Name, Module: tmpl.Module, Pub: tmpl.Pub, Extern: tmpl.Extern, TypeArgs: args, Template: tmpl, Decl: tmpl.Decl, Tag: tmpl.Tag}
+	inst := &types.Struct{Name: tmpl.Name, Module: tmpl.Module, Pub: tmpl.Pub, Extern: tmpl.Extern, Packed: tmpl.Packed, Align: tmpl.Align, Union: tmpl.Union, Transparent: tmpl.Transparent, TypeArgs: args, Template: tmpl, Decl: tmpl.Decl, Tag: tmpl.Tag}
 	tmpl.Instances[key] = inst
 	for _, f := range tmpl.Fields {
 		nf := *f
@@ -2803,6 +2836,9 @@ func (c *Checker) unhashable(t types.Type) string {
 // reported by the size check) must not recurse forever here.
 func (c *Checker) unhashableIn(t types.Type, seen map[types.Type]bool) string {
 	const structural = "it has no structural equality"
+	if st, ok := t.(*types.Struct); ok && st.Union {
+		return "an extern union has no equality: which field is live is C's to know (D120)"
+	}
 	if isSecretStruct(t) {
 		return "a Secret is never hashed, so its bytes cannot leak through a hash or a key's order (D112)"
 	}

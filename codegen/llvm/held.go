@@ -180,12 +180,12 @@ func (g *gen) heldTaskAt(t types.Type, p string, path []sema.HeldStep, miss stri
 			g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 1", payload, g.llType(st), p)
 			v := st.Variants[step.Variant]
 			fp := g.newTmp()
-			g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d", fp, g.llType(v), payload, step.Field)
+			g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d", fp, g.llType(v), payload, g.fidx(v, step.Field))
 			p, t = fp, v.Fields[step.Field].Type
 		default:
 			st := t.(*types.Struct)
 			fp := g.newTmp()
-			g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d", fp, g.llType(st), p, step.Field)
+			g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d", fp, g.llType(st), p, g.fidx(st, step.Field))
 			p, t = fp, st.Fields[step.Field].Type
 		}
 	}

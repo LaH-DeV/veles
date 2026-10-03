@@ -182,9 +182,12 @@ func (p *printer) decl(d Decl) {
 		p.close()
 	case *StructDecl:
 		p.attrs(d.Attrs)
-		if d.Error {
+		switch {
+		case d.Error:
 			p.open("error ")
-		} else {
+		case d.Union:
+			p.open("union ")
+		default:
 			p.open("struct ")
 		}
 		if d.Pub {
@@ -370,6 +373,9 @@ func (p *printer) fun(d *FunDecl) {
 	p.w(d.Name.Name)
 	p.typeParams(d.TypeParams)
 	p.paramList(d.Params)
+	if d.CVariadic {
+		p.w(" ...")
+	}
 	if d.Ret != nil {
 		p.w(": ")
 		p.typ(d.Ret)

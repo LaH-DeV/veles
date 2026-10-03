@@ -23,6 +23,9 @@ type Parser struct {
 	// are inside parentheses so this is not needed; kept for lambdas.
 	lastErrPos int
 
+	// cVariadic is the `...` that ended the parameter list just parsed (D123)
+	cVariadic source.Span
+
 	// errorFields is set while parsing an `error` body: a field may then
 	// have a union type, the one place outside `throws` where a union
 	// appears (a cause, D45).
@@ -499,6 +502,16 @@ func (p *Parser) parseDeclKind(attrs []*ast.Attribute, pub, marked bool, which s
 			p.next()
 			return p.parseStruct(attrs, pub, true, start)
 		}
+		if p.peek(1).Kind == lexer.Ident && p.peek(1).Text == "union" && p.peek(2).Kind == lexer.Ident {
+			// `extern union U { … }` (D120): `union` is a word only here
+			p.next()
+			d := p.parseStruct(attrs, pub, true, start).(*ast.StructDecl)
+			d.Union = true
+			if d.TypeParams != nil || d.Variant != nil || len(d.Methods) > 0 || d.Init != nil || len(d.Impls) > 0 || len(d.Statics) > 0 {
+				p.errorf(d.Name.Pos, "an 'extern union' is a C layout: fields only — no type parameters, methods, 'init' or 'implement' (D120)")
+			}
+			return d
+		}
 		if p.peek(1).Kind == lexer.String && p.peek(2).Kind == lexer.KwFun {
 			return p.parseExportedFun(attrs, pub, start)
 		}
@@ -660,6 +673,15 @@ func (p *Parser) parseParams() []ast.Param {
 	var params []ast.Param
 	for !p.at(lexer.RParen, lexer.EOF) {
 		start := p.span()
+		if p.at(lexer.Ellipsis) {
+			// C's variadic arguments (D123); the checker says where they are allowed
+			p.cVariadic = p.next().Span
+			if !p.at(lexer.RParen) {
+				p.errorf(p.span(), "'...' ends the parameter list: C's variadic arguments come after every named one (D123)")
+				p.syncParen()
+			}
+			break
+		}
 		// `lazy` is a modifier only in front of a parameter's name (D90)
 		lazy := p.at(lexer.Ident) && p.cur().Text == "lazy" && p.peek(1).Kind == lexer.Ident
 		var lazyPos source.Span
@@ -801,6 +823,9 @@ done:
 		fn.TypeParams = p.parseTypeParams()
 	}
 	fn.Params = p.parseParams()
+	if p.cVariadic.File != nil {
+		fn.CVariadic, fn.VariadicAt, p.cVariadic = true, p.cVariadic, source.Span{}
+	}
 	if p.accept(lexer.Colon) {
 		fn.Ret = p.parseType()
 	}
@@ -905,6 +930,10 @@ func (p *Parser) parseStruct(attrs []*ast.Attribute, pub, extern bool, start sou
 					p.next() // init
 					if p.at(lexer.LParen) {
 						d.InitParams = p.parseParams()
+						if p.cVariadic.File != nil {
+							p.errorf(p.cVariadic, "only a function in an 'extern \"C\"' block takes C's variadic arguments; an 'init' takes 'name: T...' (D123)")
+							p.cVariadic = source.Span{}
+						}
 						for _, prm := range d.InitParams {
 							if prm.Type == nil {
 								p.errorf(prm.Name.Pos, "an 'init' parameter needs a type: '%s: T'", prm.Name.Name)

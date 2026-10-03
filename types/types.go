@@ -240,8 +240,10 @@ type Func struct {
 	Sendable bool
 	// C: `extern fun(...)`, a C function pointer (D69) — one machine word,
 	// no environment, called only inside `unsafe`.
-	C     bool
-	Alias string
+	C bool
+	// CVariadic: a C function taking variadic arguments after Params (D123)
+	CVariadic bool
+	Alias     string
 }
 
 func (f *Func) String() string {
@@ -251,6 +253,9 @@ func (f *Func) String() string {
 	parts := make([]string, len(f.Params))
 	for i, p := range f.Params {
 		parts[i] = p.Type.String()
+	}
+	if f.CVariadic {
+		parts = append(parts, "...")
 	}
 	s := "fun(" + strings.Join(parts, ", ") + ")"
 	if f.Sendable {
@@ -426,6 +431,7 @@ type Field struct {
 	Init       bool // assigned by the struct's `init { }` block: not a constructor parameter (D28 v0.30)
 	HasDefault bool
 	Index      int
+	Align      int // `@align(n)` on a field of an extern struct (D120); 0 when none
 }
 
 // Struct is a user (or builtin) struct. A generic struct declaration is a
@@ -434,18 +440,25 @@ type Field struct {
 // body per instantiation is the bootstrap policy; GC-shape sharing is a
 // later optimisation invisible to semantics per D15).
 type Struct struct {
-	Name       string
-	Module     string
-	Pub        bool
-	Extern     bool
-	TypeParams []*TypeParam
-	TypeArgs   []Type
-	Template   *Struct
-	Fields     []*Field
-	Sealed     *Sealed // the sealed trait this struct is a variant of
-	Tag        int     // variant index within Sealed
-	Instances  map[string]*Struct
-	Methods    map[string]any // *sema.Func; opaque here to avoid a cycle
+	Name   string
+	Module string
+	Pub    bool
+	Extern bool
+	// C layout (D120): Packed — no padding, alignment 1; Align — `@align(n)`,
+	// 0 when none; Union — `extern union`, every field at offset 0;
+	// Transparent — laid out and passed to C as its one field.
+	Packed      bool
+	Align       int
+	Union       bool
+	Transparent bool
+	TypeParams  []*TypeParam
+	TypeArgs    []Type
+	Template    *Struct
+	Fields      []*Field
+	Sealed      *Sealed // the sealed trait this struct is a variant of
+	Tag         int     // variant index within Sealed
+	Instances   map[string]*Struct
+	Methods     map[string]any // *sema.Func; opaque here to avoid a cycle
 	// Decl is the declaring AST node (opaque).
 	Decl any
 }
@@ -637,7 +650,7 @@ func Identical(a, b Type) bool {
 				return false
 			}
 		}
-		if a.Effects.Suspends != b.Effects.Suspends || a.Effects.Throws != b.Effects.Throws || a.Sendable != b.Sendable || a.C != b.C {
+		if a.Effects.Suspends != b.Effects.Suspends || a.Effects.Throws != b.Effects.Throws || a.Sendable != b.Sendable || a.C != b.C || a.CVariadic != b.CVariadic {
 			return false
 		}
 		if a.Effects.Throws && !Identical(a.Effects.Error, b.Effects.Error) {
@@ -719,7 +732,7 @@ func (h *Hooks) Subst(t Type, m map[*TypeParam]Type) Type {
 	case *Task:
 		return &Task{Result: h.Subst(t.Result, m)}
 	case *Func:
-		out := &Func{Ret: h.Subst(t.Ret, m), Effects: t.Effects, Sendable: t.Sendable, C: t.C}
+		out := &Func{Ret: h.Subst(t.Ret, m), Effects: t.Effects, Sendable: t.Sendable, C: t.C, CVariadic: t.CVariadic}
 		out.Effects.Error = h.Subst(t.Effects.Error, m)
 		if out.Effects.Throws && out.Effects.Error != nil && IsNever(out.Effects.Error) {
 			// `throws E` with E bound to nothing: the function cannot fail,
@@ -867,6 +880,9 @@ func Key(t Type) string {
 			ps = append(ps, p.Type)
 		}
 		s := "fun(" + keys(ps) + "):" + Key(t.Ret)
+		if t.CVariadic {
+			s = "..." + s
+		}
 		if t.Sendable {
 			s = "sendable " + s
 		}

@@ -77,9 +77,12 @@ type cSig struct {
 }
 
 // isCStruct reports a value the C ABI must rewrite.
+// isCStruct: a struct C sees as an aggregate — an extern struct or union —
+// or as its one field, a @transparent struct (D120); either crosses through
+// cClassify.
 func isCStruct(t types.Type) bool {
 	s, ok := t.(*types.Struct)
-	return ok && s.Extern
+	return ok && (s.Extern || s.Transparent)
 }
 
 // cSignature classifies a C function's parameters and result.
@@ -101,6 +104,15 @@ func (g *gen) cSignature(params []types.Type, ret types.Type) cSig {
 }
 
 func (g *gen) cClassify(abi cABI, t types.Type, ret bool, gpr, sse *int) cValue {
+	if st, ok := t.(*types.Struct); ok && st.Transparent && len(st.Fields) == 1 {
+		// passed exactly as its field (D120): the field's class, the struct's bytes
+		v := g.cClassify(abi, st.Fields[0].Type, ret, gpr, sse)
+		if v.pass == cDirect {
+			v.pass, v.ty = cCoerce, v.llt
+		}
+		v.llt = g.llType(t)
+		return v
+	}
 	llt := g.llType(t)
 	if !isCStruct(t) {
 		// a scalar spends one register of its class (SysV counting only)
@@ -185,13 +197,9 @@ type cScalar struct {
 }
 
 func (g *gen) cScalars(t types.Type, base int, out []cScalar) []cScalar {
-	if s, ok := t.(*types.Struct); ok && s.Extern {
-		var fts []types.Type
-		for _, f := range s.Fields {
-			fts = append(fts, f.Type)
-		}
-		for i, off := range g.fieldOffsets(fts) {
-			out = g.cScalars(fts[i], base+off, out)
+	if s, ok := t.(*types.Struct); ok && (s.Extern || s.Transparent) {
+		for i, off := range g.layouter().StructPlan(s).Offsets {
+			out = g.cScalars(s.Fields[i].Type, base+off, out)
 		}
 		return out
 	}
@@ -260,7 +268,7 @@ func (s cSig) sretDecl() string {
 func (p cValue) decl(ext string) string {
 	switch p.pass {
 	case cCoerce:
-		return p.ty
+		return p.ty + ext // ext: a @transparent small integer's extension (D120)
 	case cIndirect:
 		return "ptr"
 	case cByval:
@@ -275,7 +283,7 @@ func (s cSig) retDecl(llt, ext string) string {
 	case s.void || s.ret.pass == cIndirect:
 		return "void"
 	case s.ret.pass == cCoerce:
-		return s.ret.ty
+		return ext + s.ret.ty
 	}
 	return ext + llt
 }
@@ -288,7 +296,7 @@ func (g *gen) cArg(p cValue, v, ext string) string {
 		g.emit("store %s %s, ptr %s", p.llt, v, slot)
 		c := g.newTmp()
 		g.emit("%s = load %s, ptr %s", c, p.ty, slot)
-		return p.ty + " " + c
+		return p.ty + ext + " " + c
 	case cIndirect, cByval:
 		slot := g.alloca(p.llt)
 		g.emit("store %s %s, ptr %s", p.llt, v, slot)
