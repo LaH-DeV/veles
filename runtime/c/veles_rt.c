@@ -980,11 +980,29 @@ veles_list *veles_list_copy(veles_list *l) {
 veles_list *veles_list_slice(veles_list *l, int64_t from, int64_t to) {
     if (from < 0) from = 0;
     if (to > l->len) to = l->len;
-    int64_t n = to > from ? to - from : 0;
+    if (from > to) from = to;
+    int64_t n = to - from;
     veles_list *c = veles_list_new(l->desc, n);
     memcpy(c->data, l->data + l->elem * from, (size_t)(l->elem * n));
     c->len = n;
     return c;
+}
+
+/* appends every element of src to dst (MutableList.addAll); src may be dst */
+void veles_list_append_list(veles_list *dst, veles_list *src) {
+    int64_t n = src->len;
+    if (n == 0) return;
+    if (dst->len + n > dst->cap) {
+        int64_t ncap = dst->cap * 2;
+        if (ncap < dst->len + n) ncap = dst->len + n;
+        char *nd = veles_gc_alloc(dst->desc, ncap);
+        memcpy(nd, dst->data, (size_t)(dst->elem * dst->len));
+        dst->data = nd;
+        dst->cap = ncap;
+    }
+    memmove(dst->data + dst->elem * dst->len, src->data, (size_t)(src->elem * n));
+    dst->len += n;
+    dst->mods++;
 }
 
 void veles_list_clear(veles_list *l) {

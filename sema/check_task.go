@@ -131,6 +131,10 @@ func sendableIn(t types.Type, seen map[types.Type]bool) bool {
 		return true
 	case *types.TypeParam, *types.Assoc:
 		return true
+	case *types.Trait:
+		// an object crosses when its trait says every implementor does
+		// (`trait Stream : Closeable + Sendable`); boxValue enforces it
+		return containsTrait(allSupers(t), sendableTraitOf(t))
 	case *types.Func:
 		return t.Sendable // a named function, or a closure over vals of Sendable types
 	}

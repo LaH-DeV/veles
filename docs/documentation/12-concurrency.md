@@ -806,6 +806,11 @@ immutable collections, structs whose fields are Sendable, channels,
 mutate it — and the compiler refuses the `async`. This is the concrete
 reason `List` and `MutableList` are separate types.
 
+A trait can promise it for all its implementors: `trait Stream : Closeable + Sendable`.
+Its objects — an `io.Stream` holding a socket or a file — cross task
+boundaries, every `implement` of it must be Sendable, and the compiler refuses
+to turn a value that is not into one.
+
 ### Functions that cross
 
 A function value is a special case worth its own rule, because a closure

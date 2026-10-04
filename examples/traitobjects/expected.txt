@@ -1,3 +1,7 @@
+got 7
+refused
+got 5
+handled 4
 circle with area 3.0
 a square of side 2.0
 total 7.0

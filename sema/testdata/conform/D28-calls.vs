@@ -57,6 +57,9 @@ fun popImmutable(xs: List<i64>): i64? = xs.pop() // error: cannot pop from an im
 fun clearImmutable(xs: List<i64>) {
   xs.clear() // error: cannot clear an immutable List; use MutableList
 }
+fun addAllImmutable(xs: List<i64>, more: List<i64>) {
+  xs.addAll(more) // error: cannot add to an immutable List; use MutableList (D25)
+}
 fun reserveImmutable(xs: List<i64>) {
   xs.reserve(8) // error: cannot reserve room in an immutable List; use MutableList (D25)
 }

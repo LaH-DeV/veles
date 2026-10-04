@@ -49,7 +49,7 @@ test "a streamed body shorter or longer than its declared length is not passed o
 }
 
 test "a streamed response is chunked, and an empty write is not the end" {
-  with srv = try serving(pieces())
+  with srv = try testServer(pieces())
   val port = srv.port()
   val r = try ask(port, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")
   expect(r.startsWith("HTTP/1.1 200 OK"))
@@ -59,7 +59,7 @@ test "a streamed response is chunked, and an empty write is not the end" {
 }
 
 test "a declared length is sent as content-length and the bytes are not framed" {
-  with srv = try serving(counted(Atomic(value: 0)))
+  with srv = try testServer(counted(Atomic(value: 0)))
   val port = srv.port()
   val r = try ask(port, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")
   expect(r.contains("content-length: 4"))
@@ -68,7 +68,7 @@ test "a declared length is sent as content-length and the bytes are not framed" 
 }
 
 test "an HTTP/1.0 client gets the bytes and the end of the connection" {
-  with srv = try serving(pieces())
+  with srv = try testServer(pieces())
   val port = srv.port()
   val r = try ask(port, "GET / HTTP/1.0\r\n\r\n")
   expect(r.startsWith("HTTP/1.1 200 OK"))
@@ -79,7 +79,7 @@ test "an HTTP/1.0 client gets the bytes and the end of the connection" {
 
 test "HEAD gets the headers of a GET and the producer is not run" {
   val calls: Atomic<i64> = Atomic(value: 0)
-  with srv = try serving(counted(calls))
+  with srv = try testServer(counted(calls))
   val port = srv.port()
   val r = try ask(port, "HEAD / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")
   expect(r.contains("content-length: 4"))
@@ -95,7 +95,7 @@ test "a producer that panics ends the connection without the last chunk" {
     try out.writeText("partial")
     panic("the producer gave up")
   }))
-  with srv = try serving(bad)
+  with srv = try testServer(bad)
   val port = srv.port()
   val r = try ask(port, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")
   expect(r.startsWith("HTTP/1.1 200 OK"))
@@ -110,7 +110,7 @@ test "pieces arrive as they are written, not when the response is done" {
     await sleep(Duration.millis(600))
     try out.writeText("data: two\n\n")
   }))
-  with srv = try serving(slow)
+  with srv = try testServer(slow)
   val port = srv.port()
   with conn = try net.connect("127.0.0.1", port)
   try conn.writeText("GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")
@@ -143,7 +143,7 @@ test "a file goes out in pieces with its length, and a range of it starts anywhe
 
 test "over a socket a served file announces its length" {
   val h = served(files(tree()))
-  with srv = try serving(h)
+  with srv = try testServer(h)
   val port = srv.port()
   val r = try ask(port, "GET /static/big.txt HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")
   expect(r.contains("content-length: 300000"))

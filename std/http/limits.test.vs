@@ -3,27 +3,6 @@
 
 use net
 
-// A server for a test, Go's httptest shape without an unstructured task
-// (D111): `with srv = try serving(h, limits)` — the server runs until the
-// test's block ends, then stops, and then its listener closes.
-struct TestServer {
-  listener: net.Listener
-  server:   Task<()>
-
-  fun port(): i64 = this.listener.port()
-
-  implement Closeable {
-    fun close() {
-      this.listener.close()
-    }
-  }
-}
-
-fun serving(h: Handler, limits: Limits = Limits()): TestServer throws IoError {
-  val listener = try net.listen()
-  TestServer(listener, server: async serve(listener, h, limits: limits, log: false))
-}
-
 fun limitedOk(): Handler = handler(req => Response.text("ok"))
 
 fun limitedGet(close: bool): string =
@@ -35,7 +14,7 @@ fun limitedRead(conn: net.Conn): string throws IoError {
 }
 
 test "at the connection limit a new connection waits until one closes" {
-  with srv = try serving(limitedOk(), Limits(connections: 1))
+  with srv = try testServer(limitedOk(), Limits(connections: 1))
   val port = srv.port()
   with first = try net.connect("127.0.0.1", port)
   try first.writeText(limitedGet(false))
@@ -51,7 +30,7 @@ test "at the connection limit a new connection waits until one closes" {
 }
 
 test "a limit of zero serves every connection at once" {
-  with srv = try serving(limitedOk(), Limits(connections: 0))
+  with srv = try testServer(limitedOk(), Limits(connections: 0))
   val port = srv.port()
   with first = try net.connect("127.0.0.1", port)
   try first.writeText(limitedGet(false))
@@ -62,7 +41,7 @@ test "a limit of zero serves every connection at once" {
 }
 
 test "stopping a full server does not wait for a place" {
-  with srv = try serving(limitedOk(), Limits(connections: 1))
+  with srv = try testServer(limitedOk(), Limits(connections: 1))
   val port = srv.port()
   with first = try net.connect("127.0.0.1", port)
   try first.writeText(limitedGet(false))

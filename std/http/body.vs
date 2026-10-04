@@ -31,7 +31,7 @@ struct BodyState {
 /// `read` hands out what has arrived, a piece at a time, so a body larger
 /// than memory can go to a file or a parser as it comes.
 public struct Body {
-  conn:  net.Conn?
+  conn:  io.Stream?
   state: Mutex<BodyState>
   // the longest silence between two reads
   timeout: Duration
@@ -55,7 +55,7 @@ public struct Body {
   }
 
   // a body on the wire: `length` bytes (framing 1), or chunked (framing 2)
-  static fun wire(conn: net.Conn, framing: i64, length: i64, waiting: bool, limits: Limits): Body =
+  static fun wire(conn: io.Stream, framing: i64, length: i64, waiting: bool, limits: Limits): Body =
     Body(
       conn,
       state: Mutex(value: BodyState(framing, remaining: length, declared: if (framing == 1) length else -1, waiting)),
@@ -155,7 +155,7 @@ public struct Body {
     chunk
   }
 
-  fun pullLength(c: net.Conn, max: i64): List<u8> suspends throws Fail | IoError {
+  fun pullLength(c: io.Stream, max: i64): List<u8> suspends throws Fail | IoError {
     val remaining = this.state.get().remaining
     val chunk = try this.recv(c, if (max < remaining) max else remaining)
     if (chunk.isEmpty()) throw badRequest("body shorter than content-length")
@@ -169,7 +169,7 @@ public struct Body {
 
   // one piece of a chunked body: the chunk header when none is open, then
   // what has arrived of the chunk's data
-  fun pullChunked(c: net.Conn, max: i64): List<u8> suspends throws Fail | IoError {
+  fun pullChunked(c: io.Stream, max: i64): List<u8> suspends throws Fail | IoError {
     var remaining = this.state.get().remaining
     if (remaining == 0) {
       val header = try this.recvLine(c, 1024)
@@ -200,7 +200,7 @@ public struct Body {
   // trailer fields follow the last chunk; they are read and dropped, since
   // nothing a sender puts there may change how the request was framed or
   // decided (RFC 9110 §6.5.1)
-  fun skipTrailers(c: net.Conn) suspends throws Fail | IoError {
+  fun skipTrailers(c: io.Stream) suspends throws Fail | IoError {
     var lines: i64 = 0
     var bytes: i64 = 0
     loop {
@@ -212,7 +212,7 @@ public struct Body {
     }
   }
 
-  fun recv(c: net.Conn, n: i64): List<u8> suspends throws Fail | IoError {
+  fun recv(c: io.Stream, n: i64): List<u8> suspends throws Fail | IoError {
     when (withTimeout(this.timeout, () => try c.read(max: n))) {
       is Ok(bytes) => bytes
       is Err(e)    => when (e) {
@@ -222,7 +222,7 @@ public struct Body {
     }
   }
 
-  fun recvLine(c: net.Conn, max: i64): string suspends throws Fail | IoError {
+  fun recvLine(c: io.Stream, max: i64): string suspends throws Fail | IoError {
     when (withTimeout(this.timeout, () => try c.readLine(max: max))) {
       is Ok(line) => line ?: throw badRequest("body ended inside the framing")
       is Err(e)   => when (e) {

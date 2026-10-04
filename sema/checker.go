@@ -741,7 +741,7 @@ func (c *Checker) declareUseNames(m *Module, f *ast.File, u *ast.UseSpec, dep *M
 			continue
 		}
 		c.refSym(n.Name.Pos, member)
-		c.namedImports = append(c.namedImports, namedImport{u, n, scope, name})
+		c.namedImports = append(c.namedImports, namedImport{u, n, scope, name, f})
 	}
 }
 
@@ -751,6 +751,7 @@ type namedImport struct {
 	name  *ast.UseName
 	scope *Scope
 	bound string
+	file  *ast.File
 }
 
 // finishImportRefs makes the index tell a braced import's names apart from the
@@ -812,8 +813,27 @@ func (c *Checker) lintUnusedNames() {
 		if ni.scope.used[ni.bound] || ni.spec.Pub {
 			continue // a re-exported name is used by whoever imports this module (D89)
 		}
+		if c.hasUncheckedGeneric(ni.file) {
+			continue // a generic body is checked only when instantiated: the use may be in one nobody called
+		}
 		c.warnFix(ni.name.Pos, unusedNameFix(ni.spec, ni.name), "'%s' is imported but never used", ni.bound)
 	}
+}
+
+// hasUncheckedGeneric reports whether a generic function or method of the
+// file was never instantiated, so its body was never looked at and a name it
+// uses has not been looked up.
+func (c *Checker) hasUncheckedGeneric(f *ast.File) bool {
+	for _, t := range c.templates {
+		if t.File != f || t.Extern {
+			continue
+		}
+		generic := len(t.TypeParams) > 0 || (t.Owner != nil && len(t.Owner.TypeParams) > 0) || (t.Impl != nil && len(t.Impl.TypeParams) > 0)
+		if generic && len(t.Instances) == 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // unusedNameFix removes one name from a braced import — with its comma —
@@ -2203,9 +2223,15 @@ func (c *Checker) checkImplSignature(t *FuncTemplate, traitSig *types.Func, trai
 	if t.Sig.Effects.Throws && !traitSig.Effects.Throws {
 		c.errorf(md.Name.Pos, "method '%s' throws but trait '%s' declares it as non-throwing (D40)", md.Name.Name, trait.Name)
 	}
-	if t.Sig.Effects.Throws && traitSig.Effects.Throws && t.Sig.Effects.Error == nil && !impl.ImplicitError {
-		// inherit the declared error; with an implicit `Error` the method's
-		// own error is inferred from its body (D45) and defines the impl's
+	if traitSig.Effects.Throws && !impl.ImplicitError {
+		// An impl method carries the trait's declaration, whatever it wrote
+		// (D40: "or a subset"): the trait's callers — a trait object's slot
+		// above all — read its result as the trait's `Result`, so a method that
+		// cannot fail still returns one (its plain value becomes the `Ok`),
+		// and one that fails with fewer errors returns the wider union. With an
+		// implicit `Error` the method's own error is inferred from its body
+		// (D45) and defines the impl's.
+		t.Sig.Effects.Throws = true
 		t.Sig.Effects.Error = c.hooks.Subst(traitSig.Effects.Error, subst)
 	}
 }
@@ -2499,6 +2525,7 @@ func (c *Checker) runRound() *Program {
 	c.instances = map[string]*Func{}
 	c.funcs = nil
 	c.tupleCmp, c.enumFns, c.trampolines = nil, nil, nil // synthesized per round, like every other function
+	c.tt = traitTests{} // the `is` tables belong to this round's Program, so what they were built from is re-noted by its bodies
 	c.globalState = map[*Global]int8{}
 	c.nextVar, c.nextLoop, c.nextTmp = 0, 0, 0
 	for _, t := range c.templates {

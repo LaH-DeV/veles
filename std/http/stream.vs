@@ -1,18 +1,20 @@
 // Streamed response bodies (D97): the writer a producer is handed, and the
 // boundary it runs behind.
-use log as logs { field }, net
+use compress as gz, io, log as logs { field }
 
 /// Where a streamed response's body goes (see `Response.stream`).
 public struct BodyWriter {
-  conn: net.Conn?
+  conn: io.Stream?
   // framed as chunks, or as the bare bytes of an HTTP/1.0 response
   chunked: bool
   // `http.call` has no socket: the bytes are collected here
   memory: Mutex<MutableList<u8>> = newMemory()
   // bytes still owed when the body has a declared length, else -1
   left: Atomic<i64> = Atomic(value: -1)
+  // set by `http.compress()`: what is written is compressed on its way out
+  gzip: Mutex<gz.GzipEncoder>? = null
 
-  static fun toConn(conn: net.Conn, chunked: bool, length: i64?): BodyWriter = BodyWriter(conn, chunked, left: Atomic(value: length ?: -1))
+  static fun toConn(conn: io.Stream, chunked: bool, length: i64?): BodyWriter = BodyWriter(conn, chunked, left: Atomic(value: length ?: -1))
 
   static fun toMemory(length: i64?): BodyWriter = BodyWriter(conn: null, chunked: false, left: Atomic(value: length ?: -1))
 
@@ -22,9 +24,31 @@ public struct BodyWriter {
     if (n < 0) 0 else n
   }
 
+  // this writer, compressing what is written to it (the length, if any, was
+  // dropped by the caller)
+  fun gzipped(level: i64): BodyWriter =
+    BodyWriter(conn: this.conn, chunked: this.chunked, memory: this.memory, left: this.left, gzip: Mutex(value: gz.GzipEncoder(level)))
+
+  // the end of a compressed body: what the encoder still holds, the checksum
+  fun finishGzip() suspends throws IoError {
+    val g = this.gzip ?: return
+    val tail = g.withLock(e => e.finish())
+    try this.send(tail)
+  }
+
   /// Sends `bytes` now. An empty list sends nothing (an empty chunk would
   /// end the body). Throws `IoError` when the client has gone.
   public fun write(bytes: List<u8>) suspends throws IoError {
+    if (bytes.isEmpty()) return
+    if (val g = this.gzip) {
+      // the lock covers the compression only; the send, which may wait, is outside
+      try this.send(g.withLock(e => e.push(bytes)))
+      return
+    }
+    try this.send(bytes)
+  }
+
+  fun send(bytes: List<u8>) suspends throws IoError {
     if (bytes.isEmpty()) return
     // a body longer than the length announced would run into the next response
     if (this.left.load() >= 0) {

@@ -515,7 +515,7 @@ io.print(s: string)
 io.eprintln(s: string)           // standard error
 io.readLine(): string?           // null at end of input
 io.readAll(): string             // the rest of standard input
-trait io.Stream : Closeable      // net.Conn, fs.File; the effects are declared (D40, D128)
+trait io.Stream : Closeable + Sendable   // net.Conn, fs.File; effects declared (D40, D128); objects cross tasks
   read(max: i64 = 65536): List<u8> suspends throws IoError         // [] at the end
   readExact(n: i64): List<u8> suspends throws IoError              // fewer only at the end
   readLine(max: i64): string? suspends throws IoError | TooLong    // no default for `max`, by design
@@ -651,6 +651,7 @@ http.Status.notFound; http.Status(code: 418); s.code; s.reason(); s.isSuccess() 
 http.Method.get / head / post / put / delete / patch / options / connect / trace; http.Method(name: "PROPFIND"); req.method == http.Method.post
 http.Header.contentType, .location, .allow, .authorization, .cacheControl, ...   // lower-case names, as req.header() and withHeader() store them
 // path matches, method does not → 405 + Allow; HEAD → the GET route, body dropped; OPTIONS → 204 + Allow; 1xx/204/304 never carry a body
+with srv = try http.testServer(handler, limits: http.Limits())   // D130: a real listener on a free loopback port for the `with` block; srv.url, srv.port(); log off
 http.call(handler, http.Method.get, "/notes/7?full=yes", body: "", headers: [:])   // in memory, no socket: same target parsing and panic boundary as serve
 // cookies (D94): one Set-Cookie line each; value percent-encoded; a bad name/path/domain, SameSite.None without secure, a broken __Host-/__Secure- name panic at the call
 http.Cookie(name:, value:, path: "/", domain: null, maxAge: null /* Duration?, null = session */, secure: false, httpOnly: true, sameSite: http.SameSite.Lax)   // enum SameSite { Lax, Strict, None }
@@ -660,8 +661,35 @@ req.cookie(name); req.cookies()                                                 
 try req.form<T>(keys: KeyStyle.AsWritten); try req.query<T>(keys:)    // T: Decodable, flat; 400 "invalid form:"/"invalid query:" + one line per problem; 415 for another content type
 try req.formFields(); req.queryFields(); req.rawQuery                 // http.Fields: pairs; .get(name) first; .all(name); .names(); Fields.parse(text)
 try req.formValue(name); try req.formValues(name)                     // string?; List<string>
+http.compress(minBytes: 1024, level: 6); http.decompressRequests(max: n)   // D124: gzip textual responses ≥ minBytes for Accept-Encoding: gzip (Vary, weak ETag, streams too); opens gzip request bodies up to max (413/400/415)
+// http.files serves name.gz beside name to a client that accepts gzip, unless it asks for a range
 http.FormDecoder.of(fields, keys:)                                    // the codec.Decoder behind them, format name "form"
 ```
+
+## Module `compress`
+
+DEFLATE and gzip in Veles (D124, [chapter 17](../17-http.md)).
+
+```veles
+// fragment
+use compress
+compress.gzip(bytes: List<u8>, level: i64 = 6): List<u8>                       // RFC 1952; level 0 (stored) to 9, else a panic at the caller
+compress.gunzip(bytes: List<u8>, max: i64 = 67108864): List<u8> throws CompressError  // members joined; CRC and length checked
+compress.deflate(bytes, level = 6): List<u8>; compress.inflate(bytes, max = 67108864): List<u8> throws CompressError   // raw RFC 1951
+error CompressError { message, kind: CompressKind }   // enum CompressKind { Corrupt, Truncated, TooLarge } — TooLarge: the output passed max
+var w = compress.GzipWriter(to: stream, level: 6)       // io.Stream out: try w.write(bytes); try w.writeText(s); try w.flush() (sync); try w.finish() (trailer; `to` stays open)
+var r = compress.GzipReader(from: stream, max: 67108864)  // try r.read(max = 65536): List<u8> (empty at the end) throws IoError | CompressError; try r.readAll()
+var e = compress.GzipEncoder(level: 6)                  // no stream: e.push(bytes): List<u8>, e.flush(), e.finish() hand back what is ready
+```
+
+`max` is a ceiling on the **output**, 64 MiB unless said otherwise: input
+that would decompress past it is a `TooLarge`, so a small file cannot become a
+large allocation. Corrupt or cut-short input is a `CompressError`, never a
+panic. The encoder picks per block the smallest of stored, fixed and dynamic
+Huffman coding, matches with hash chains (lazy from level 4), and writes
+incompressible data stored, so the output is at most a few bytes more than the
+input. The decoder resumes where the input ends, which is what lets
+`GzipReader` work on a stream that arrives a few bytes at a time.
 
 ## Module `json`
 

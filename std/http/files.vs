@@ -29,6 +29,10 @@ use fs, path, time
 ///   the index at `/docs` itself.
 /// - A path with a segment starting with `.` (`.env`, `.git/config`) is a
 ///   404 unless `dotfiles: true`.
+/// - Where `name.gz` lies beside `name`, a client that accepts gzip gets the
+///   `.gz` as it is (`content-encoding: gzip`, its own validators, the type
+///   of `name`) unless it asks for a range; both answers say
+///   `vary: accept-encoding`.
 /// - Only GET and HEAD; anything else is a 405.
 ///
 /// A negative `maxAge`, or `immutable` without one, panics at this call.
@@ -97,10 +101,19 @@ struct FileServer {
     }
     if (!fs.isFile(p)) throw notFound("no such file: /$rel")
 
-    val st = try fs.stat(p)
-    val tag: string? = if (this.etag) "W/\"${st.size}-${st.modified.toMicros()}\"" else null
+    // a "name.gz" beside "name" is the same file, compressed beforehand: sent
+    // as it lies to a client that takes gzip, unless it asks for a range (of the
+    // uncompressed bytes) — and its validators are its own
+    val hasGzip = fs.isFile(p + ".gz")
+    val gzipped = hasGzip && acceptsGzip(req.header(Header.acceptEncoding)) && req.header("range") == null
+    val sent = if (gzipped) p + ".gz" else p
+    val st = try fs.stat(sent)
+    val tag: string? = if (this.etag) "W/\"${if (gzipped) "gz-" else ""}${st.size}-${st.modified.toMicros()}\"" else null
     val modified: time.Timestamp? = if (this.lastModified) st.modified else null
-    val headers: MutableMap<string, string> = ["accept-ranges": "bytes", "cache-control": this.cacheControl]
+    val headers: MutableMap<string, string> = ["cache-control": this.cacheControl]
+    if (!gzipped) headers.set("accept-ranges", "bytes")
+    if (hasGzip) headers.set("vary", "accept-encoding")
+    if (gzipped) headers.set(Header.contentEncoding, "gzip")
     if (val t = tag) headers.set("etag", t)
     if (val m = modified) headers.set("last-modified", time.formatHttp(m))
 
@@ -116,7 +129,7 @@ struct FileServer {
       headers.set("content-range", "bytes ${r.from}-${r.to}/$size")
       return this.send(media, headers, p, from: r.from, count: r.to - r.from + 1, status: Status.partialContent)
     }
-    this.send(media, headers, p, from: 0, count: size, status: Status.ok)
+    this.send(media, headers, sent, from: 0, count: size, status: Status.ok)
   }
 
   // The file goes out as it is read, a piece at a time, so a large one is

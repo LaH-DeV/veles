@@ -103,7 +103,53 @@ fun total(shapes: List<Shape>): f64 {
   sum
 }
 
+error Refused { }
+
+// a trait method that may fail: an implementor that never does still fills
+// the slot (D40), and a suspending method is callable through the object
+trait Source {
+  fun next(): i64 suspends throws Refused
+}
+
+struct Steady {
+  implement Source {
+    fun next(): i64 = 7
+  }
+}
+
+struct Picky {
+  limit: i64
+
+  implement Source {
+    fun next(): i64 {
+      await sleep(Duration.millis(1))
+      if (this.limit < 3) throw Refused()
+      this.limit
+    }
+  }
+}
+
+// a function held in a field, called and tried like any other
+struct Handler {
+  run: fun(i64): i64 throws Refused
+}
+
+fun pull(source: Source): string {
+  when (source.next()) {
+    is Ok(n)  => "got $n"
+    is Err(_) => "refused"
+  }
+}
+
 fun main() {
+  println(pull(Steady()))
+  println(pull(Picky(limit: 2)))
+  println(pull(Picky(limit: 5)))
+  val handler = Handler(run: n => if (n > 1) n else throw Refused())
+  when (handler.run(4)) {
+    is Ok(n)  => println("handled $n")
+    is Err(_) => println("refused")
+  }
   val shapes: List<Shape> = [Circle(r: 1.0), Square(side: 2.0)]
   loop (s in shapes) {
     println(s.describe())

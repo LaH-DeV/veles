@@ -1,0 +1,6 @@
+wrote veles-gzipstream-example.log: 902003 bytes
+compressed to 128339 bytes (14%)
+read back 902003 bytes, 20000 lines; same size: true
+original: 2026-10-04T12:33:19 GET /static/app.js 200 887ms
+last piece ends with: 2026-10-04T12:33:19 GET /static/app.js 200 887ms
+exit=0

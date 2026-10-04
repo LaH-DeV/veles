@@ -117,6 +117,12 @@ POST /notes → 201 Created saved buy milk
 Middleware is part of the handler `app.handler()` returns, so it runs
 under `call` too.
 
+When the socket matters — framing, keep-alive, what a real client sees —
+`with srv = try http.testServer(app.handler())` starts the same server on a free
+loopback port for the rest of the block and stops it, then closes its listener,
+when the block ends; `srv.port()` and `srv.url` say where it is. The server's own
+tests use it (`std/http/*.test.vs`).
+
 ## What an error means
 
 A handler's type as the router stores it cannot throw — it is
@@ -359,6 +365,58 @@ function: capture values and handles, not a `var`. `http.call` collects a
 streamed body whole (a stream that never ends never returns from it), and
 `http.files` streams from disk with a declared length, so a range is a seek and
 a large file is never in memory.
+
+## Compression
+
+`http.compress()` gzips the responses a client says it can read:
+
+```veles
+use compress, http, io
+
+fun main() {
+  val app = http.Router()
+  app.wrap(http.compress(minBytes: 100))
+  app.get("/page", req => http.Response.text("the same words again ".repeat(50)))
+  val r = http.call(app.handler(), http.Method.get, "/page", headers: ["accept-encoding": "gzip"])
+  val body = compress.gunzip(r.body) ?? []
+  io.println("${r.headers.get("content-encoding") ?: "none"}: ${r.body.len()} bytes on the wire, ${body.len()} once opened")
+  val plain = http.call(app.handler(), http.Method.get, "/page")
+  io.println("${plain.headers.get("content-encoding") ?: "none"}: ${plain.body.len()} bytes")
+}
+```
+
+Output:
+```text
+gzip: 49 bytes on the wire, 1050 once opened
+none: 1050 bytes
+```
+
+Only a response that is worth it is touched: a textual type (`text/*`,
+JSON, JavaScript, XML, SVG — not an event stream), a body of at least
+`minBytes` (1 KiB by default), a plain answer (not a 204, 206 or 304, no
+`Content-Range`, no `Content-Encoding` of its own, no `Cache-Control:
+no-transform`), and a client whose `Accept-Encoding` names `gzip` or `*`
+with a quality above zero. The response then carries `Content-Encoding:
+gzip` and `Vary: Accept-Encoding` (added to what the handler said), and a
+strong `ETag` becomes weak, since the bytes are not the ones it named. A
+streamed body is compressed as it is written and goes out chunked, its length
+unknown. `level:` is 0–9 as in `compress.gzip`.
+
+`http.files` does the work ahead of time where it can: with
+`app.js.gz` beside `app.js`, a client that accepts gzip gets the `.gz` as
+it lies, with the type of `app.js`, validators of its own, and
+`Vary: Accept-Encoding`; a range request, which speaks of the uncompressed
+bytes, gets the plain file.
+
+A server does not open compressed *request* bodies on its own; a
+handler would see gzip bytes. `app.wrap(http.decompressRequests(max: 8 * 1024 * 1024))`
+opens them, within `max` — a few kilobytes of gzip can claim gigabytes, so a
+larger body is a 413 — and answers 400 for a body that is not gzip and 415
+for another encoding.
+
+Outside a server, `compress.GzipWriter(to: stream)` and
+`compress.GzipReader(from: stream)` compress and decompress as bytes move, in
+constant memory (`examples/gzipstream`): see the reference for `compress`.
 
 ## Uploads: multipart forms
 

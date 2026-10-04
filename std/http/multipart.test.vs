@@ -130,7 +130,7 @@ test "a large upload arrives chunk by chunk and lands on disk whole" {
   val size = 300000
   val body = mpFile("big", "big.txt", "0123456789".repeat(size / 10)) + mpField("after", "done") + mpEnd
   val handlerFor = uploader()
-  with srv = try serving(handlerFor)
+  with srv = try testServer(handlerFor)
   val port = srv.port()
   val head = "POST / HTTP/1.1\r\nHost: t\r\nConnection: close\r\nContent-Type: multipart/form-data; boundary=XyZ\r\nContent-Length: ${body.len()}\r\n\r\n"
   val r = try talk(port, [head, body.substring(0, 100000) ?: "", body.substring(100000, 200000) ?: "", body.substring(200000, body.len()) ?: ""])

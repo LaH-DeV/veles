@@ -28,7 +28,7 @@ test "a body counts in bytes and reads as text in UTF-8" {
 }
 
 test "a body that is not UTF-8 is a 400 as text and fine as bytes" {
-  with srv = try serving(reader())
+  with srv = try testServer(reader())
   val port = srv.port()
   with conn = try net.connect("127.0.0.1", port)
   try conn.write("POST / HTTP/1.1\r\nHost: t\r\nConnection: close\r\nContent-Length: 2\r\n\r\n".bytes().concat([0xFF, 0xFE]))
@@ -101,7 +101,7 @@ fun talk(port: i64, parts: List<string>, finish: bool = true): string throws IoE
 fun head(extra: string): string = "POST / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n$extra\r\n"
 
 test "a chunked body is decoded, whatever the pieces and extensions" {
-  with srv = try serving(reader())
+  with srv = try testServer(reader())
   val port = srv.port()
   val whole = try talk(port, [head("Transfer-Encoding: chunked\r\n"), "5\r\nhello\r\n", "6;ext=1\r\n world\r\n", "0\r\nX-Trailer: 1\r\n\r\n"])
   expect(whole.startsWith("HTTP/1.1 200 OK"))
@@ -114,7 +114,7 @@ test "a chunked body is decoded, whatever the pieces and extensions" {
 }
 
 test "framing that could be read two ways is refused" {
-  with srv = try serving(reader())
+  with srv = try testServer(reader())
   val port = srv.port()
   val both = try talk(port, [head("Transfer-Encoding: chunked\r\nContent-Length: 5\r\n") + "0\r\n\r\n"])
   expect(both.startsWith("HTTP/1.1 400"))
@@ -129,7 +129,7 @@ test "framing that could be read two ways is refused" {
 }
 
 test "a chunk or a length over the ceiling is refused before its data" {
-  with srv = try serving(reader(), Limits(bodyBytes: 10))
+  with srv = try testServer(reader(), Limits(bodyBytes: 10))
   val port = srv.port()
   val chunk = try talk(port, [head("Transfer-Encoding: chunked\r\n") + "B\r\n"])
   expect(chunk.startsWith("HTTP/1.1 413"))
@@ -146,7 +146,7 @@ test "a stream may take more than the server's default ceiling" {
     val body = req.stream(max: 1000)
     Response.text("${try body.readAll().len()}")
   })
-  with srv = try serving(big, Limits(bodyBytes: 10))
+  with srv = try testServer(big, Limits(bodyBytes: 10))
   val port = srv.port()
   val r = try talk(port, [head("Content-Length: 500\r\n") + "y".repeat(500)])
   expect(r.endsWith("500"))
@@ -155,7 +155,7 @@ test "a stream may take more than the server's default ceiling" {
 }
 
 test "Expect: 100-continue is answered when the handler reads, and not before" {
-  with srv = try serving(reader())
+  with srv = try testServer(reader())
   val port = srv.port()
   with conn = try net.connect("127.0.0.1", port)
   try conn.writeText("POST / HTTP/1.1\r\nHost: t\r\nConnection: close\r\nExpect: 100-continue\r\nContent-Length: 5\r\n\r\n")
@@ -177,7 +177,7 @@ test "Expect: 100-continue is answered when the handler reads, and not before" {
 
 test "a handler that answers without reading never invites the body" {
   val refuse = handler(req => Response.text("no", status: Status.unauthorized))
-  with srv = try serving(refuse)
+  with srv = try testServer(refuse)
   val port = srv.port()
   val r = try talk(port, ["POST / HTTP/1.1\r\nHost: t\r\nExpect: 100-continue\r\nContent-Length: 5000000\r\n\r\n"])
   expect(r.startsWith("HTTP/1.1 401"))
@@ -186,7 +186,7 @@ test "a handler that answers without reading never invites the body" {
 }
 
 test "a body the handler left unread is thrown away and the connection goes on" {
-  with srv = try serving(ignorer())
+  with srv = try testServer(ignorer())
   val port = srv.port()
   with conn = try net.connect("127.0.0.1", port)
   try conn.writeText("POST /a HTTP/1.1\r\nHost: t\r\nContent-Length: 10\r\n\r\n0123456789")
@@ -203,7 +203,7 @@ test "a body the handler left unread is thrown away and the connection goes on" 
 }
 
 test "an unread body too long to be worth reading closes the connection" {
-  with srv = try serving(ignorer(), Limits(bodyBytes: 100000000))
+  with srv = try testServer(ignorer(), Limits(bodyBytes: 100000000))
   val port = srv.port()
   val r = try talk(port, ["POST / HTTP/1.1\r\nHost: t\r\nContent-Length: 1000000\r\n\r\n" + "z".repeat(100)])
   expect(r.startsWith("HTTP/1.1 200 OK"))
@@ -211,7 +211,7 @@ test "an unread body too long to be worth reading closes the connection" {
 }
 
 test "a sender that stalls in the body is a 408" {
-  with srv = try serving(reader(), Limits(bodyTimeout: Duration.millis(200)))
+  with srv = try testServer(reader(), Limits(bodyTimeout: Duration.millis(200)))
   val port = srv.port()
   val r = try talk(port, [head("Content-Length: 10\r\n") + "abc", "..."], finish: false)
   expect(r.startsWith("HTTP/1.1 408"))

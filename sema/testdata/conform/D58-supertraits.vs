@@ -17,8 +17,6 @@ trait Loop : Loop { } // error: trait 'Loop' cannot require itself
 
 trait Odd : NotTrait { } // error: supertrait 'NotTrait' is not a trait
 
-trait Shared : Sendable { } // error: Sendable is derived from a type's fields and cannot be required as a supertrait
-
 sealed trait Kind : Named // error: a sealed trait has no supertraits
 
 fun main() {

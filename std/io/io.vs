@@ -39,7 +39,7 @@ public error TooLong {
 ///   }
 /// }
 /// ```
-public trait Stream : Closeable {
+public trait Stream : Closeable + Sendable {
   /// Up to `max` bytes, as soon as any are available; an empty list means
   /// the end of the stream. Fewer than `max` is normal.
   fun read(max: i64 = 65536): List<u8> suspends throws IoError

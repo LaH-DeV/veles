@@ -41,10 +41,6 @@ func (c *Checker) resolveSupers(t *types.Trait) {
 			c.errorf(s.Span(), "trait '%s' cannot require itself", t.Name)
 			continue
 		}
-		if isSendableTrait(tr) {
-			c.errorf(s.Span(), "Sendable is derived from a type's fields and cannot be required as a supertrait; use it as a bound (D35)")
-			continue
-		}
 		if containsTrait(t.Supers, tr) {
 			c.errorf(s.Span(), "supertrait '%s' is listed twice", tr.Name)
 			continue
@@ -202,4 +198,21 @@ func ObjectSigs(t *types.Trait) []*types.Func {
 		out[i] = s.Sig
 	}
 	return out
+}
+
+// sendableTraitOf is the prelude's `Sendable` among t's supers, or nil.
+func sendableTraitOf(t *types.Trait) *types.Trait {
+	for _, s := range allSupers(t) {
+		if isSendableTrait(s) {
+			return s
+		}
+	}
+	return nil
+}
+
+// objectIs reports whether t is a trait object whose trait is, or requires,
+// trait: `with s = <io.Stream>` closes through the Closeable it requires.
+func objectIs(t types.Type, trait *types.Trait) bool {
+	o, ok := t.(*types.Trait)
+	return ok && (o == trait || containsTrait(allSupers(o), trait))
 }

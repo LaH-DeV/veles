@@ -62,7 +62,7 @@ next. A step names what it needs; the reason for the order is in brackets.
 7. ~~**B14**~~ **Done 2026-10-03.** D113 parts 1–3 (constant expressions, tables, `static assert`)
    [B16's `Array<T, N>` needs constant lengths; E7 needs part 1–2].
 8. **B16** D120–D123 C layout, `Array<T, N>`, variadic calls [needs A8, B14].
-9. **C2** `io.Stream` (D128: trait, `net.Conn` and `fs.File` **done 2026-10-04**; `tls.Conn` with E1; `http` still takes `net.Conn`) → 
+9. ~~**C2**~~ **Done 2026-10-04** (`tls.Conn` joins `io.Stream` with E1). `io.Stream` (D128: trait, `net.Conn`, `fs.File`, `http` over it) → 
    `std/compress` + `http.compress()` (D124) → `http.testServer` (D130, needs
    B13) [compress streams over `Stream`].
 10. **C3** `std/config` (D125) [needs B13's `Secret`].
@@ -1376,3 +1376,45 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   done. It now checks the constant it meets (`sema/consteval.go`,
   `TestConstCycleIsAlwaysReported`); seen through `use io` once `io` gained a
   test file, as the conformance harness keeps std test files.
+- **2026-10-04 — C2 part 2: `http` over `io.Stream`.** The server's
+  connection loop, request reading, body framing and `BodyWriter` take an
+  `io.Stream` (the peer's address is passed next to it: a stream has none);
+  the accept loop still produces `net.Conn`. Needed a language decision
+  (user, recommended of 3, spec D35 addendum): a trait may require
+  `Sendable`, so `trait Stream : Closeable + Sendable` objects cross into
+  `withTimeout`/`async` — implementors checked at their `implement`, boxing
+  at the conversion; plus `with s = <object>` accepts an object whose trait
+  requires `Closeable`. Conformance `D35-sendable-supertrait*`; `veles test
+  std/http` 105 passed. `tls.Conn` joins with E1.
+- **2026-10-04 — C2 part 3: `std/compress` (D124) and `http.testServer` (D130) — C2 done.**
+  *Std:* `std/compress` in Veles: a resumable inflater (the bit buffer in locals,
+  48 bits at a time, restart at the last whole symbol), a deflater (hash chains, lazy
+  matching from level 4, per block the cheapest of stored/fixed/dynamic, length-limited
+  Huffman by the two-queue method with Kraft repair, a sliding window so a stream
+  compresses in constant memory), CRC-32 by slicing-by-eight, `gzip`/`gunzip`/`deflate`/`inflate`
+  (`max:` is a ceiling on the output, 64 MiB), `GzipWriter`/`GzipReader` over `io.Stream`,
+  `GzipEncoder` (no stream; what the HTTP body writer holds under a lock).
+  *http:* `http.compress(minBytes:, level:)`, `http.decompressRequests(max:)`, `.gz` siblings in
+  `http.files`, `http.testServer` (the tests' own helper, migrated: 25 call sites).
+  *Measured* (`bench/gzip`, `bench/gunzip`, Go's `compress/gzip`): 1.1× / 1.5× on 2 MiB of word
+  text; on 0.8 MB of Markdown prose 2.3× / ~3× (it began at 2.3× / 4.6× — the CRC went from
+  byte-wise to slicing-by-eight, and `slice`/`addAll` from a push per element to one `memcpy`,
+  8× on bytes); output 0.7–1.7% smaller than Go's. The other benchmarks did not move
+  (json 1.0×, sort 0.8×). `examples/httpd` now compiles 5.6 MB of IR (was 4.4) and links a
+  2.7 MB binary (was 2.45) because every function of an imported module is emitted — the
+  case for dead-function elimination in codegen. *Tests:* `std/compress/compress.test.vs` (15:
+  Go-made vectors, every level, damaged/cut/oversized input, a reader fed one byte at a time,
+  the writer with flushes), `std/http/compress.test.vs` (13: which responses are touched, a
+  stream, over a socket, `.gz` siblings, request bodies and their ceiling),
+  `testserver.test.vs`, examples `gzipstream` and `traitobjects` (extended), conformance
+  D28 (`addAll` on a `List`); every output also decoded by Go's `compress/gzip` (80 + 32 files,
+  scratch program). **Language/compiler bugs found on the way:** an impl method that throws
+  less than its trait declares returned a mis-tagged `Result` through a trait object (a crash
+  — now every impl carries the trait's `throws`, spec D40 addendum); `try` on a call of a
+  function-typed field was an internal compiler error (a nil `*VarRef` in `errPolyCall`); the
+  `is Trait` tables vanished when the checker needed a second round (`c.tt` was not reset with
+  the Program — codegen then referenced an undefined `@it.…`); a const cycle slipped through
+  (see C2 part 2). **Not done:** `inflate` could write into a sized buffer instead of pushing
+  (the safepoint poll in each inner loop and the oversized-shift selects show in the IR);
+  levels 7–9 on large inputs are slow (no zlib-style give-up on a long chain). Windows and WSL
+  green (see below).

@@ -530,7 +530,7 @@ answered from the shape, tuples get `Comparable`, enums get
 - [x] Streaming bodies (D97): lazy request body (`req.bytes/text/stream/multipart`, `Expect: 100-continue`,
       unread bodies drained), `Response.stream` (+ `length:`), `http.files` streams from disk,
       `fs.open` → `File`, `MediaType`. Tests: `std/http/body.test.vs`, `stream.test.vs`, `multipart.test.vs`,
-      `std/fs/fs.test.vs`; docs 15, 17. Open: request-body decompression, a bound on a producer from
+      `std/fs/fs.test.vs`; docs 15, 17. Request-body decompression: `http.decompressRequests` (D124, 2026-10-04). Open: a bound on a producer from
       `http.timeout`, typed multipart forms, an SSE helper, zero-copy `sendfile`, `fs.File` off the event loop
 - [~] Multipart: streamed parts to disk done (D97); typed `req.form<T>()` with a file field open
 - [x] Middleware: `type Middleware = sendable fun(Handler): Handler`; `router.wrap(m)`
@@ -540,7 +540,7 @@ answered from the shape, tuples get `Comparable`, enums get
       `basicAuth`, `bearer` done (D99, 2026-09-30: `std/http/cors.vs`, `auth.vs`, tests `cors.test.vs`,
       `auth.test.vs`; docs 17 "Other origins, and who may call"); recovery needs nothing (a panic
       is already caught at the request boundary, D56) and body-limit is `Limits.bodyBytes`. Still
-      open: compression (needs `std/compress`, §5.10), per-route guards (route groups)
+      open: per-route guards (route groups). Compression: `http.compress()` (D124, 2026-10-04)
 - [x] Graceful shutdown (§4, D68)
 - [x] Max concurrent connections with backpressure at `accept` (D99, 2026-09-30: `Limits.connections`, default 10000, 0 = none; a permit channel taken before `accept`, so a full server stops accepting; `std/http/limits.test.vs`; docs 17)
 - [x] `Expect: 100-continue` (D97: sent on the handler's first body read)
@@ -562,7 +562,7 @@ answered from the shape, tuples get `Comparable`, enums get
       `If-None-Match`/`If-Modified-Since` 304 and `If-Match`/`If-Unmodified-Since` 412 from the stat alone, one
       `Range` (206/416, `If-Range`), `cache-control` (`no-cache`, or `maxAge:`/`immutable:`), `index:` list,
       308 to the slash (`redirect: false` off), dotfiles 404 (`dotfiles: true` on), GET/HEAD only.
-      `std/http/files.test.vs`; docs 15, 17. Streams from disk since D97. Open: precompressed `.gz`/`.br` siblings (with compression), directory listing (not offered)
+      `std/http/files.test.vs`; docs 15, 17. Streams from disk since D97. Precompressed `name.gz` siblings since D124 (2026-10-04; `.br` needs a Brotli codec, not offered). Open: directory listing (not offered)
 - [~] Router: method-not-allowed vs not-found distinction (done: 405 + `Allow`), route groups,
       typed path params (`{id: i64}`)
 - [x] In-process test client: `http.call(handler, method, target, body:, headers:)` (2026-09-26; same target parsing and panic boundary as `serve`; docs 17 "Testing a handler")
@@ -697,10 +697,17 @@ behind a name that says "crypto" (§10, 2026-09-23).
       and the stdlib reference. A compiler builtin can replace it later
 - [ ] `std/config`: typed env parsing, all missing keys reported at once —
       decided 2026-10-01 (D125), not built (plan C3)
-- [ ] `std/compress`: gzip/deflate written in Veles (D99, D124: 64 MiB
-      default ceiling) — not built (plan C2)
-- [ ] `io.Stream` (D128), template literals (D129 part 1), endian bytes and
-      the `fs` additions (D130) — decided 2026-10-01, not built (plan C5–C8)
+- [x] `std/compress` (D124, 2026-10-04): gzip/deflate/inflate written in Veles, 64 MiB default
+      ceiling on the output (`TooLarge`), `GzipWriter`/`GzipReader` over `io.Stream`, `GzipEncoder`,
+      `http.compress()`, `http.decompressRequests()`, `.gz` siblings in `http.files`. Tests:
+      `std/compress/compress.test.vs`, `std/http/compress.test.vs`; Go-made vectors, every level,
+      a decoder fed one byte at a time, the ceiling; benchmarked against Go's `compress/gzip`
+      (`bench/gzip`, `bench/gunzip`: 1.1× and 1.5× on text, up to 2–3× on short-match prose);
+      docs 17 and the reference. Open: `deflate` at levels 7–9 is slow on long inputs
+      (zlib's own limits would help), `inflate` could write straight into a sized buffer
+- [x] `io.Stream` (D128, 2026-10-04): `net.Conn`, `fs.File`; `http` over it; `tls.Conn` joins with E1
+- [ ] template literals (D129 part 1), endian bytes and the `fs` additions (D130) —
+      decided 2026-10-01, not built (plan C5–C8)
 - [~] `std/os`: `hostname`, `pid`, `tempDir` done (2026-09-25); `shutdownSignal`/`raiseSignal` done (D68); `run` without a shell (2026-09-27, §2); `run(..., input:, stderr: os.Stderr)` with `Output.stderr` (D82, 2026-09-28)
 - [~] `std/fs`: `walk` done (2026-09-25: depth-first, name order, links to
       directories not followed, its own stack); streaming reads/writes, atomic
@@ -1017,6 +1024,7 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-10-02 | A static of a generic type without type arguments (found building D112: `Secret.of(v)` did not compile) | **Inferred from the arguments and the expected type, as a constructor's are, for every generic struct and the prelude's collection statics** (user, recommended of 3; spec D137). Rejected: inferring for `Secret.of` alone, respelling D112 as `Secret<string>.of(v)`. |
 | 2026-10-02 | D111's hand-off, found unsafe while building (a finishing task can race the move between scopes; a cancelled caller can orphan staged tasks) | **The running task carries the receiving `with`'s scope while the value is computed; held tasks launch straight into it** (user, recommended of 2; spec D111 note). Rejected: adopting after the return with the races patched. |
 | 2026-10-01 | Closing a `with` value by hand (found building B10: the close hint showed `close()` running twice) | **Refused: `close()` on a `with`-bound value or its alias is an error with a fix that removes it; close earlier with the block form** (user, recommended of 3; spec D136). Rejected: `with` noticing the hand close and skipping its own; leaving it and requiring every `close()` to tolerate a second call. |
+| 2026-10-04 | How a trait says its objects are `Sendable` (found moving `http` onto `io.Stream`: its connection crosses into `withTimeout`/`async`) | **A trait may require `Sendable` as a supertrait** (`trait Stream : Closeable + Sendable`): its objects are Sendable, each implementor must be Sendable (error at its `implement`), and boxing one that is not is an error (user, recommended of 3; spec D35 addendum). Rejected: a `sendable trait` modifier (new syntax for the same meaning); objects never Sendable with http generic over the stream (a type parameter on every http type). |
 
 ## 11. Known limitations to revisit
 

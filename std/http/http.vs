@@ -668,19 +668,19 @@ fun release(permits: Channel<bool>) {
 }
 
 fun serveConnection(conn: net.Conn, handler: Handler, limits: Limits, log: bool, drain: Drain, permits: Channel<bool>?) {
-  connection(conn, handler, limits, log, drain)
+  connection(conn, conn.peer(), handler, limits, log, drain)
   if (permits != null) release(permits)
 }
 
-fun connection(conn: net.Conn, handler: Handler, limits: Limits, log: bool, drain: Drain) {
+fun connection(conn: io.Stream, peer: string, handler: Handler, limits: Limits, log: bool, drain: Drain) {
   with c = conn
   loop {
-    val (req, http10) = when (readRequest(c, limits, drain)) {
+    val (req, http10) = when (readRequest(c, peer, limits, drain)) {
       is Ok(r)  => r ?: break
       is Err(e) => {
         if (e is Fail) {
-          val _ = writeResponse(c, Response.text(e.text, status: e.status), close: true)
-          if (log) logs.warn("bad request", field("peer", "${c.peer()}"), field("status", e.status.code), field("error", e.text))
+          val _ = writeResponse(c, peer, Response.text(e.text, status: e.status), close: true)
+          if (log) logs.warn("bad request", field("peer", peer), field("status", e.status.code), field("error", e.text))
         }
         break
       }
@@ -690,7 +690,7 @@ fun connection(conn: net.Conn, handler: Handler, limits: Limits, log: bool, drai
     // read after the handler: a stop that began while it ran still
     // closes this connection
     val close = !wantsKeepAlive(req, http10) || drain.stopping.load() || resp.headers.get(Header.connection)?.toLower() == "close" || !req.body.reusable(drainCap) || (resp.stream != null && http10 && resp.streamLength == null)
-    val sent = writeResponse(c, resp, close, headOnly: req.method == Method.head, http10: http10)
+    val sent = writeResponse(c, peer, resp, close, headOnly: req.method == Method.head, http10: http10)
     if (log) logs.info("request", field("peer", "${req.peer}"), field("method", "${req.method}"), field("path", req.path), field("status", resp.status.code), field("took", "${sw.elapsed()}"))
     if (sent is Err || close) break
     // what the handler left unread is read and dropped, after the answer
@@ -713,7 +713,7 @@ fun wantsKeepAlive(req: Request, http10: bool): bool = when (req.header("connect
 
 // One line of the head, refusing a ceiling breach with the status the
 // client should see rather than letting the read error escape.
-fun headLine(c: net.Conn, max: i64, limit: Duration, tooLong: Fail): string? suspends throws Fail | IoError | Timeout {
+fun headLine(c: io.Stream, max: i64, limit: Duration, tooLong: Fail): string? suspends throws Fail | IoError | Timeout {
   when (withTimeout(limit, () => try c.readLine(max: max))) {
     is Ok(line) => line
     is Err(e)   => when (e) {
@@ -735,7 +735,7 @@ fun rethrow(e: IoError): Never throws Fail | IoError {
 // connection. It ends in the line; in null when the peer closed or the
 // server began to stop; in a Timeout when the peer stayed silent — the
 // quiet end of a connection, not a bad request — or in a 414.
-fun requestLine(c: net.Conn, limits: Limits, drain: Drain): string? suspends throws Fail | IoError | Timeout {
+fun requestLine(c: io.Stream, limits: Limits, drain: Drain): string? suspends throws Fail | IoError | Timeout {
   if (drain.stopping.load()) return null
   scope {
     val line = async readLineOf(c, limits.requestLineBytes)
@@ -748,7 +748,7 @@ fun requestLine(c: net.Conn, limits: Limits, drain: Drain): string? suspends thr
 }
 
 // the line, with a line past `max` already the 414 it answers
-fun readLineOf(c: net.Conn, max: i64): string? suspends throws Fail | IoError {
+fun readLineOf(c: io.Stream, max: i64): string? suspends throws Fail | IoError {
   when (c.readLine(max: max)) {
     is Ok(line) => line
     is Err(e)   => when (e) {
@@ -768,7 +768,7 @@ fun readLineOf(c: net.Conn, max: i64): string? suspends throws Fail | IoError {
 // before a colon, a folded line, two lengths, a stray CR or NUL — the
 // request is refused rather than read one way, since a proxy in front of
 // the server may have read it the other way.
-fun readRequest(c: net.Conn, limits: Limits, drain: Drain): (Request, bool)? throws Fail | IoError | Timeout {
+fun readRequest(c: io.Stream, peer: string, limits: Limits, drain: Drain): (Request, bool)? throws Fail | IoError | Timeout {
   val first = try requestLine(c, limits, drain) ?: return null
   // from here the whole head is on one clock, so a peer cannot hold the
   // connection open by sending one header every few seconds
@@ -850,7 +850,7 @@ fun readRequest(c: net.Conn, limits: Limits, drain: Drain): (Request, bool)? thr
     Body.none(limits)
   }
   val (rawPath, rawQuery) = target.splitOnce("?") ?: (target, "")
-  val req = Request(method: Method(name: method), path: percentDecode(rawPath, plusIsSpace: false), query: parseQuery(rawQuery), headers: headers.toMap(), body, peer: c.peer(), rawQuery)
+  val req = Request(method: Method(name: method), path: percentDecode(rawPath, plusIsSpace: false), query: parseQuery(rawQuery), headers: headers.toMap(), body, peer, rawQuery)
   (req, http10)
 }
 
@@ -907,7 +907,7 @@ public fun percentDecode(s: string, plusIsSpace: bool): string {
 
 // `headOnly` is the answer to a HEAD request: every header a GET would
 // get, `content-length` included, and no body (RFC 9110 §9.3.2).
-fun writeResponse(c: net.Conn, resp: Response, close: bool, headOnly: bool = false, http10: bool = false) suspends throws IoError {
+fun writeResponse(c: io.Stream, peer: string, resp: Response, close: bool, headOnly: bool = false, http10: bool = false) suspends throws IoError {
   val head = StringBuilder()
   head.append("HTTP/1.1 ${resp.status.code} ${resp.status.reason()}\r\n")
   var hasType = false
@@ -952,7 +952,7 @@ fun writeResponse(c: net.Conn, resp: Response, close: bool, headOnly: bool = fal
     val complete = produce(p, out) && out.missing() == 0
     // the head has gone, so a failure cannot be a 500: the connection ends
     // without the last chunk, and the client sees a body that stops short
-    if (!complete) throw IoError(path: c.peer(), code: 0, detail: "the response body could not be completed", kind: IoKind.Other)
+    if (!complete) throw IoError(path: peer, code: 0, detail: "the response body could not be completed", kind: IoKind.Other)
     if (chunked) try c.write("0\r\n\r\n".bytes())
     return
   }
@@ -973,3 +973,39 @@ fun hasNoBody(status: Status): bool = status.isInformational() || status == Stat
 /// `Last-Modified` and `If-Modified-Since` are two ends of one conversation
 /// and belong in one place.
 public fun httpDate(t: time.Timestamp): string = time.formatHttp(t)
+
+// ---------------------------------------------------------------------------
+// testing
+
+/// A real server for a test, Go's `httptest` shape without a loose task
+/// (D111): a listener on a free loopback port runs `serve` for the block of
+/// the `with` that holds it, and when the block ends the server is stopped
+/// and the listener closed.
+///
+/// ```veles
+/// with srv = try http.testServer(app.handler())
+/// with conn = try net.connect("127.0.0.1", srv.port())
+/// try conn.writeText("GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")
+/// ```
+public struct TestServer {
+  listener: net.Listener
+  server:   Task<()>
+  /// The address to give a client: `http://127.0.0.1:<port>`.
+  public url: string
+
+  /// The port the server listens on.
+  public fun port(): i64 = this.listener.port()
+
+  implement Closeable {
+    fun close() {
+      this.listener.close()
+    }
+  }
+}
+
+/// Starts `handler` on a free port of the loopback interface, quietly (no
+/// request log) and with `limits`; see `TestServer`.
+public fun testServer(handler: Handler, limits: Limits = Limits()): TestServer throws IoError {
+  val listener = try net.listen()
+  TestServer(listener, server: async serve(listener, handler, limits: limits, log: false), url: "http://127.0.0.1:${listener.port()}")
+}

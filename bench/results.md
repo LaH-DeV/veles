@@ -29,6 +29,14 @@ Caveats worth keeping in mind when reading them:
   of Go; on a loaded one the Go side swung 2–3× between runs while Veles
   stayed put, so read a ratio only from a run where `maps` and `trees` are
   near their usual numbers. None is over 3×, so none opens a checklist item.
+- `gzip`, `gunzip` (2026-10-04, D124): std/compress against Go's `compress/gzip` on 2 MiB of
+  word-salad text (level 6; `gunzip` is eight decodes, CRC and length checked). The
+  compressed bytes differ from Go's, so the checksum is of what comes back out. On this
+  data Veles is 1.1× (compress) and 1.5× (decompress) of Go; on the prose of the docs
+  (0.8 MB of Markdown) the first measurement was 2.3× / 4.6×, and after the CRC (slicing by
+  eight) and `List.addAll`/`slice` (one `memcpy`) work 2.3× / ~3×: text with long matches
+  is the friendly case, short ones cost a push each. Ratios: Veles's output is 0.7–1.7%
+  smaller than Go's at level 6 (it compares stored, fixed and dynamic per block).
 - One machine, one run; differences under ~10% are noise.
 
 ## 2026-09-25 23:50 — go1.23.2, windows/amd64 (HEAD 77c6e95, plus the working tree)
@@ -265,3 +273,15 @@ schedule from `MutableList`s to `Array<u32, 8>`, `Array<u8, 64>` and a
 four runs against 113–135 ms before (four runs). Every other benchmark's IR is
 unchanged by the memory class (the goldens did not move), so only this row
 is expected to differ.
+
+## 2026-10-04 12:55 — go1.23.2, windows/amd64 (HEAD 1b733d4, plus the working tree)
+
+| benchmark | ops | Veles | Go | Veles / Go |
+|---|---:|---:|---:|---:|
+| gzip | 2097154 | 140.88ms | 130.28ms | 1.1× |
+
+## 2026-10-04 12:55 — go1.23.2, windows/amd64 (HEAD 1b733d4, plus the working tree)
+
+| benchmark | ops | Veles | Go | Veles / Go |
+|---|---:|---:|---:|---:|
+| gunzip | 16777232 | 81.02ms | 51.2ms | 1.6× |

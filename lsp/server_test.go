@@ -897,7 +897,7 @@ func TestHoverValuesAndModules(t *testing.T) {
 		{9, 21, "struct Status\n  public static val ok: Status = Status(code: 200)"},
 		{14, 42, "struct Status\n  public static val ok: Status = Status(code: 200)"},
 		// a std module: as `use` spells it, its origin, its public functions
-		{0, 5, "module io {  // std\n  public error TooLong\n  public trait Stream : Closeable\n  public fun println(s: string)"},
+		{0, 5, "module io {  // std\n  public error TooLong\n  public trait Stream : Closeable + Sendable\n  public fun println(s: string)"},
 		{14, 3, "Console input and output."},
 	} {
 		if h := hover(tc.line, tc.ch); !strings.Contains(h, tc.want) {

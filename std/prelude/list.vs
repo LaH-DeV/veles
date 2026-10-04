@@ -26,17 +26,6 @@ extend<T> List<T> {
   /// checker knows each `i` is in range, so `xs.at(i)` is a `T` (D62).
   public fun indices(): Range<i64> = 0..<this.len()
 
-  /// The elements in `from..<to`, clamped to the list; empty when `from >= to`.
-  public fun slice(from: i64, to: i64): List<T> {
-    val lo = from.max(0)
-    val hi = to.min(this.len())
-    var out: MutableList<T> = []
-    loop (i in lo..<hi) {
-      out.push(this.at(i) ?: panic("slice: lo..<hi was clamped to the list"))
-    }
-    out.toList()
-  }
-
   /// The index of the first element `pred` accepts, or -1.
   public fun indexOfFirst<E>(pred: fun(T): bool suspends throws E): i64 throws E {
     var i: i64 = 0
@@ -437,13 +426,6 @@ extend<T> MutableList<T> {
     }
     this.pop()
     removed
-  }
-
-  /// Appends every element of `xs`.
-  public fun addAll(xs: List<T>) {
-    loop (x in xs) {
-      this.push(x)
-    }
   }
 
   /// Sorts in place (elements must be Comparable).

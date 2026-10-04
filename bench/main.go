@@ -15,11 +15,13 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -137,6 +139,38 @@ func parse(name string, out []byte) result {
 var goSetup time.Duration
 
 var references = map[string]func() string{
+	"gzip": func() string {
+		begin := time.Now()
+		data := gzipText(2097152)
+		var packed bytes.Buffer
+		start := time.Now()
+		w, _ := gzip.NewWriterLevel(&packed, 6)
+		w.Write(data)
+		w.Close()
+		timed := time.Since(start)
+		r, _ := gzip.NewReader(&packed)
+		back, _ := io.ReadAll(r)
+		// the text and the check on the way back are not the work measured
+		goSetup = time.Since(begin) - timed
+		return checksumBytes(back)
+	},
+	"gunzip": func() string {
+		begin := time.Now()
+		data := gzipText(2097152)
+		var packed bytes.Buffer
+		w, _ := gzip.NewWriterLevel(&packed, 6)
+		w.Write(data)
+		w.Close()
+		start := time.Now()
+		var back []byte
+		for i := 0; i < 8; i++ {
+			r, _ := gzip.NewReader(bytes.NewReader(packed.Bytes()))
+			back, _ = io.ReadAll(r)
+		}
+		timed := time.Since(start)
+		goSetup = time.Since(begin) - timed
+		return checksumBytes(back)
+	},
 	"sha256": func() string {
 		data := make([]byte, 1048576)
 		for i := range data {
@@ -435,4 +469,32 @@ func must(err error) {
 		fmt.Fprintln(os.Stderr, "bench:", err)
 		os.Exit(1)
 	}
+}
+
+var gzipWords = []string{"the", "of", "and", "stream", "request", "value", "error", "handler", "buffer", "index", "result", "compile", "token", "branch", "memory", "thread", "socket", "length", "window", "symbol", "a", "to", "in", "is"}
+
+// gzipText is bench/gzip's input: words picked by a xorshift generator
+func gzipText(size int) []byte {
+	out := make([]byte, 0, size+16)
+	x := uint64(88172645463325252)
+	for len(out) < size {
+		x ^= x << 13
+		x ^= x >> 7
+		x ^= x << 17
+		out = append(out, gzipWords[x%24]...)
+		if x%11 == 0 {
+			out = append(out, 10)
+		} else {
+			out = append(out, 32)
+		}
+	}
+	return out
+}
+
+func checksumBytes(b []byte) string {
+	var sum int64
+	for _, c := range b {
+		sum = (sum*31 + int64(c)) % 1000000007
+	}
+	return strconv.FormatInt(sum, 10)
 }

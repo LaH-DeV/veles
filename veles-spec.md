@@ -680,6 +680,10 @@ Associated-type projections are written with a dot, `Self.Error`, `I.Item` (`::`
 
 *Addendum (2026-10-04, D128) — a trait object's suspending methods.* A method declared `suspends` is callable through a trait object (it was refused): the vtable slot holds the coroutine form of the impl's method — a plain impl's through a ramp, so a file and a socket share one `io.Stream` — and the call runs it as a task and awaits it, as a call of a suspending function value does. A default argument written in the trait (`fun read(max: i64 = 65536)`) applies to calls through an object, read in the trait's module; impls need not repeat it.
 
+*Addendum (2026-10-04, user: recommended of 3) — a trait may require `Sendable`.* `trait Stream : Closeable + Sendable` is allowed (it was an error: "Sendable is derived … use it as a bound"). Objects of such a trait are `Sendable`, so a connection held as an `io.Stream` crosses into `async` and `withTimeout`; every implementor must itself be Sendable (an error at its `implement` naming the cause) and boxing a value that is not — a generic implementor's instance — is an error at the conversion. Rejected: a `sendable trait` modifier; objects never Sendable with `http` generic over its stream.
+
+*Addendum (2026-10-04, D128) — an impl carries the trait's `throws`.* A method that implements a trait method declared `throws E` has that signature whatever it wrote: one that cannot fail still returns the `Result` (its plain value is the `Ok`), and one that throws fewer errors returns the wider union. D40 allowed "a subset" but the table slot of a trait object reads the trait's `Result`, so an impl that wrote no `throws` produced a mis-tagged value (a crash or a "non-exhaustive match" at the caller). Callers of such a method on the concrete type now `try` it like any other.
+
 ### D41 — Collections are concrete types; abstraction goes through traits
 
 `List<T>`, `MutableList<T>`, `Map<K, V>` and `MutableMap<K, V>` are **concrete types**, not traits.
@@ -4158,6 +4162,27 @@ Written in Veles (D99), measured against Go's `compress/flate` with
 
 User, 2026-10-01: default 64 MiB (over the recommended required `max:`).
 Rejected: a required `max:`; no limit.
+
+*Built 2026-10-04 (the decisions it needed, all inside this entry's text or the plan's brief):*
+- `gunzip` joins several members as `gzip -d` does and checks the CRC and the length;
+  `inflate`/`gunzip` apply `max` to the output of the whole call. The decoder resumes at the last
+  whole symbol, so `GzipReader(from:, max:)` works on a stream that arrives in pieces; its
+  `read(max = 65536)` returns at most `max` bytes (empty at the end) and `readAll()` the rest,
+  both `throws IoError | CompressError`. `GzipWriter(to:, level:)` has `write`, `writeText`, `flush`
+  (a sync flush) and `finish` (the trailer; `to` stays open). `GzipEncoder` is the same writer with
+  no stream in it: `push`/`flush`/`finish` return the bytes that are ready, for a caller that may not
+  suspend while it holds them (the HTTP body writer, inside a lock).
+- `http.compress(minBytes: 1024, level: 6)` compresses a response only when `Accept-Encoding` names
+  `gzip` (or `*`) with a quality above 0, its type is `text/*`, JSON, JavaScript, XML, SVG or a
+  `+json`/`+xml` type (not `text/event-stream`), it is at least `minBytes` (a streamed body always
+  qualifies), the status is not 1xx/204/206/304, and it has no `Content-Encoding`, `Content-Range` or
+  `Cache-Control: no-transform`. It adds `Vary: Accept-Encoding` (merged) and makes a strong `ETag`
+  weak. `http.files` serves `name.gz` beside `name` to a client that accepts gzip and sends no `Range`,
+  with its own validators. `http.decompressRequests(max:)` reads the (compressed) body within
+  `Limits.bodyBytes`, decodes it within `max` (413), answers 400 for bad gzip and 415 for another
+  encoding, and drops `Content-Encoding` from the request.
+- The same change made `List.slice` and `MutableList.addAll` built-ins (one `memcpy` each, 8× faster
+  for bytes); behaviour is unchanged.
 
 ### D125 — `std/config`: a struct read from the environment (v0.65)
 

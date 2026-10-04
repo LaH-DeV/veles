@@ -1707,7 +1707,7 @@ func (f *fnCtx) withBindings(s *ast.WithExpr, i int, closeable *types.Trait, wan
 		return f.withHeld(s, i, init, closeable, want, asValue, result)
 	}
 	v := f.withVar(b, init.Type())
-	if closeable == nil || f.findImpl(init.Type(), closeable) == nil {
+	if closeable == nil || (f.findImpl(init.Type(), closeable) == nil && !objectIs(init.Type(), closeable)) {
 		if _, isTask := init.Type().(*types.Task); isTask {
 			f.errorf(b.Value.Span(), "a task is a 'with' resource only where 'with' starts it: 'with %s = async f(...)' (D100); this one belongs to the 'scope' that started it", withLabel(b))
 		} else {

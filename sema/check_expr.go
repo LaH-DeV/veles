@@ -2507,9 +2507,12 @@ func (f *fnCtx) neverInstance() bool {
 func errPolyCall(x Expr) bool {
 	switch c := x.(type) {
 	case *CallIndirect:
-		v, ok := c.Fn.(*VarRef)
+		v, ok := c.Fn.(*VarRef) // a function-typed field or any other expression is not one
+		if !ok {
+			return false
+		}
 		ft, isFn := v.Var.Type.(*types.Func)
-		return ok && v.Var.ErrPoly && isFn && !ft.Effects.Throws
+		return v.Var.ErrPoly && isFn && !ft.Effects.Throws
 	case *Call:
 		if c.Fn.Sig.Effects.Throws || c.Fn.tmpl == nil || c.Fn.tmpl.Sig == nil {
 			return false

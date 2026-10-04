@@ -812,6 +812,13 @@ func (c *Checker) routeSuperMethods(d *ast.ImplDecl, trait *types.Trait) map[*ty
 func (c *Checker) deriveSupers(req superImplReq) {
 	for _, s := range req.trait.Supers {
 		written := req.methods[s]
+		if isSendableTrait(s) {
+			// a marker: nothing to derive, the implementor must be Sendable itself
+			if !sendable(req.impl.Target) {
+				c.errorf(req.decl.Pos, "'%s' requires Sendable through '%s', and '%s' holds shared mutable state or a closure (D35)", req.impl.Target, req.trait.Name, req.impl.Target)
+			}
+			continue
+		}
 		if existing := c.findImplFor(req.impl.Target, s); existing != nil {
 			for _, md := range written {
 				c.errorf(md.Name.Pos, "'%s' belongs to '%s', which '%s' already implements at %s; write it there", md.Name.Name, s.Name, req.impl.Target, existing.Decl.Pos)

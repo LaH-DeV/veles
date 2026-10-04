@@ -1825,6 +1825,11 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		v := g.newTmp()
 		g.emit("%s = call ptr @veles_list_copy(ptr %s)", v, l)
 		return v
+	case "list.addAll":
+		l := g.expr(e.Args[0])
+		src := g.expr(e.Args[1])
+		g.emit("call void @veles_list_append_list(ptr %s, ptr %s)", l, src)
+		return "zeroinitializer"
 	case "list.slice":
 		l := g.expr(e.Args[0])
 		from := g.expr(e.Args[1])

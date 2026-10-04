@@ -1635,6 +1635,24 @@ func (f *fnCtx) builtinMethod(recv Expr, rt types.Type, name string, e *ast.Call
 			}
 			x := f.checkExprTo(e.Args[0].Value, t.Elem)
 			return &Builtin{exprBase{types.TUnit}, "list.push", []Expr{recv, x}, e.Pos}
+		case "slice":
+			if !nargs(2) {
+				return bad()
+			}
+			from := f.checkExprTo(e.Args[0].Value, types.TI64)
+			to := f.checkExprTo(e.Args[1].Value, types.TI64)
+			return &Builtin{exprBase{&types.List{Elem: t.Elem}}, "list.slice", []Expr{recv, from, to}, e.Pos}
+		case "addAll":
+			if !t.Mutable {
+				f.errorf(e.Pos, "cannot add to an immutable List; use MutableList (D25)")
+				f.checkArgsLoosely(e.Args)
+				return bad()
+			}
+			if !nargs(1) {
+				return bad()
+			}
+			xs := f.checkExprTo(e.Args[0].Value, &types.List{Elem: t.Elem})
+			return &Builtin{exprBase{types.TUnit}, "list.addAll", []Expr{recv, xs}, e.Pos}
 		case "reserve":
 			if !t.Mutable {
 				f.errorf(e.Pos, "cannot reserve room in an immutable List; use MutableList (D25)")
@@ -1861,6 +1879,12 @@ func (f *fnCtx) boxValue(x Expr, trait *types.Trait, span source.Span) Expr {
 	if !f.implements(t, trait) {
 		f.errorf(span, "'%s' does not implement '%s'; add 'implement %s { ... }' to its declaration", t, trait.Name, trait.Name)
 		return bad()
+	}
+	for _, s := range allSupers(trait) {
+		if isSendableTrait(s) && !sendable(t) {
+			f.errorf(span, "'%s' cannot be a '%s': the trait requires Sendable, and '%s' holds shared mutable state or a closure (D35)", t, trait.Name, t)
+			return bad()
+		}
 	}
 	methods, ok := f.objectMethods(t, trait, span)
 	if !ok {
