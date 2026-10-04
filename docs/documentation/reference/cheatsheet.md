@@ -318,7 +318,7 @@ http.serve(listener, app.handler())
 
 ## Attributes (D51)
 
-`@deprecated("msg")`, `@mustUse`, `@inline`, `@noinline`; for the wire: `@key`, `@skip`, `@required`, `@tag`.
+`@deprecated("msg")`, `@mustUse`, `@inline`, `@noinline`, `@template` (the function behind `name"…${x}…"`, D129); for the wire: `@key`, `@skip`, `@required`, `@tag`.
 
 ## Tests (D78)
 

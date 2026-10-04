@@ -5,9 +5,9 @@
 
 use net
 
-fun reader(): Handler = handler(req => Response.text("${try req.bytes().len()}:${try req.text()}"))
+test fun reader(): Handler = handler(req => Response.text("${try req.bytes().len()}:${try req.text()}"))
 
-fun ignorer(): Handler = handler(req => Response.text("ignored"))
+test fun ignorer(): Handler = handler(req => Response.text("ignored"))
 
 test "the body is read when asked, and kept for the next reader" {
   val h = handler(req => {
@@ -81,7 +81,7 @@ test "the untyped and typed form readers can share one body" {
 
 // what the server sends for `parts`, written one after the other with a pause
 // between, until it closes the connection
-fun talk(port: i64, parts: List<string>, finish: bool = true): string throws IoError {
+test fun talk(port: i64, parts: List<string>, finish: bool = true): string throws IoError {
   with conn = try net.connect("127.0.0.1", port)
   loop (p in parts) {
     try conn.writeText(p)
@@ -98,7 +98,7 @@ fun talk(port: i64, parts: List<string>, finish: bool = true): string throws IoE
   out
 }
 
-fun head(extra: string): string = "POST / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n$extra\r\n"
+test fun head(extra: string): string = "POST / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n$extra\r\n"
 
 test "a chunked body is decoded, whatever the pieces and extensions" {
   with srv = try testServer(reader())

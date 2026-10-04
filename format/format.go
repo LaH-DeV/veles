@@ -1536,7 +1536,7 @@ func (p *printer) authored(e ast.Expr) bool {
 
 func (p *printer) exprInner(e ast.Expr) {
 	switch e := e.(type) {
-	case *ast.IntLit, *ast.FloatLit, *ast.StringLit, *ast.CharLit:
+	case *ast.IntLit, *ast.FloatLit, *ast.StringLit, *ast.CharLit, *ast.TemplateExpr:
 		p.raw(e.Span())
 	case *ast.BoolLit:
 		if e.Value {

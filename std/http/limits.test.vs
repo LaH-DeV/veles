@@ -3,13 +3,13 @@
 
 use net
 
-fun limitedOk(): Handler = handler(req => Response.text("ok"))
+test fun limitedOk(): Handler = handler(req => Response.text("ok"))
 
-fun limitedGet(close: bool): string =
+test fun limitedGet(close: bool): string =
   "GET / HTTP/1.1\r\nHost: t\r\n" + (if (close) "Connection: close\r\n" else "") + "\r\n"
 
 // what one read returns, as text ("" at the end of the stream)
-fun limitedRead(conn: net.Conn): string throws IoError {
+test fun limitedRead(conn: net.Conn): string throws IoError {
   (try conn.read()).decodeUtf8() ?: "<binary>"
 }
 

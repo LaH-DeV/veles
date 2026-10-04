@@ -29,7 +29,7 @@ func TestConcurrencyHelpers(t *testing.T) {
 const helpersSrc = `error Flaky { }
 
 // fails its first "failures" calls, then returns the number of the call
-fun flakyCall(calls: Atomic<i64>, failures: i64): i64 throws Flaky {
+test fun flakyCall(calls: Atomic<i64>, failures: i64): i64 throws Flaky {
   val n = calls.update(c => c + 1)
   if (n <= failures) throw Flaky()
   n
@@ -48,7 +48,7 @@ test "retry throws the last error after the last call" {
   expect(calls.load() == 2)
 }
 
-fun threeSlowFailures(calls: Atomic<i64>): i64 throws Flaky {
+test fun threeSlowFailures(calls: Atomic<i64>): i64 throws Flaky {
   try retry(3, () => try flakyCall(calls, 9), delay: Duration.millis(40))
 }
 
@@ -61,7 +61,7 @@ test "retry waits the delay between calls, not after the last one" {
   expect(r is Err)
 }
 
-fun retryForever(calls: Atomic<i64>) {
+test fun retryForever(calls: Atomic<i64>) {
   val _ = retry(1000000, () => try flakyCall(calls, 1000000), delay: Duration.seconds(10))
 }
 
@@ -71,7 +71,7 @@ test "a cancelled retry stops at the wait" {
   expect(calls.load() == 1)
 }
 
-fun retryNoCalls(): i64 = retry(0, () => 1)
+test fun retryNoCalls(): i64 = retry(0, () => 1)
 
 test "retry panics for fewer than one call" {
   // retry suspends, and expectPanics takes a function that does not
@@ -80,7 +80,7 @@ test "retry panics for fewer than one call" {
   } is Err)
 }
 
-fun semaphoreWorker(sem: Semaphore, inside: Atomic<i64>, most: Atomic<i64>) {
+test fun semaphoreWorker(sem: Semaphore, inside: Atomic<i64>, most: Atomic<i64>) {
   with sem.acquire()
   val now = inside.update(n => n + 1)
   most.update(m => m.max(now))
@@ -118,7 +118,7 @@ test "a Semaphore panics for fewer than one permit" {
   })
 }
 
-fun feedThree(ch: Channel<i64>) {
+test fun feedThree(ch: Channel<i64>) {
   loop (i in 1..3) {
     ch.send(i)
   }

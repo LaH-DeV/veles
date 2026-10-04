@@ -663,6 +663,16 @@ type StringLit struct {
 	Pos   source.Span
 }
 
+// TemplateExpr is `tag"text ${x}"` (D129): a string literal written right
+// after a function name (or `module.name`), with no space. The function —
+// marked `@template` — receives the literal's text pieces and its values
+// instead of a joined string.
+type TemplateExpr struct {
+	Tag Expr // a NameExpr or a MemberExpr
+	Lit *StringLit
+	Pos source.Span
+}
+
 type StringPart struct {
 	Text string
 	Expr Expr // set for `$x` / `${expr}` parts
@@ -949,6 +959,7 @@ type BadExpr struct {
 func (e *IntLit) Span() source.Span           { return e.Pos }
 func (e *FloatLit) Span() source.Span         { return e.Pos }
 func (e *StringLit) Span() source.Span        { return e.Pos }
+func (e *TemplateExpr) Span() source.Span      { return e.Pos }
 func (e *CharLit) Span() source.Span          { return e.Pos }
 func (e *BoolLit) Span() source.Span          { return e.Pos }
 func (e *NullLit) Span() source.Span          { return e.Pos }
@@ -989,6 +1000,7 @@ func (e *BadExpr) Span() source.Span          { return e.Pos }
 func (*IntLit) exprNode()           {}
 func (*FloatLit) exprNode()         {}
 func (*StringLit) exprNode()        {}
+func (*TemplateExpr) exprNode()      {}
 func (*CharLit) exprNode()          {}
 func (*BoolLit) exprNode()          {}
 func (*NullLit) exprNode()          {}

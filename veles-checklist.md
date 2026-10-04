@@ -722,7 +722,12 @@ behind a name that says "crypto" (§10, 2026-09-23).
       `examples/binfile`; docs chapter 15, stdlib reference. Windows: a lock is one byte far past the
       end (so it stays advisory), an appended file writes at the end by offset, a file open elsewhere cannot
       be replaced by `writeAtomic`. Not offered: byte-range locks, shared (read) locks
-- [ ] template literals (D129 part 1) — decided 2026-10-01, not built (plan C8)
+- [x] template literals (D129 part 1, 2026-10-04): `tag"text ${x}"` calls a `@template fun tag(parts: List<string>, values: List<V>)`;
+      `ast.TemplateExpr`, parser (adjacent only, a space is an error that says so), checker lowering to the call
+      (`sema/template.go`), `@template` validated at the declaration, formatter, `Dump`, VS Code grammar. Tests:
+      parser expression cases + `TestTemplateLiteralNeedsNoSpace`, `TestTemplateLiteralRoundTrips`,
+      conformance D129-template-signature / D129-template-use, `TestTemplateTagQualifiedByModule`; example
+      `examples/templates`; docs chapter 2 and 14, cheat sheet. `std/db` (E2) is the first user
 - [~] `std/os`: `hostname`, `pid`, `tempDir` done (2026-09-25); `shutdownSignal`/`raiseSignal` done (D68); `run` without a shell (2026-09-27, §2); `run(..., input:, stderr: os.Stderr)` with `Output.stderr` (D82, 2026-09-28)
 - [~] `std/fs`: `walk` done (2026-09-25: depth-first, name order, links to
       directories not followed, its own stack); streaming reads/writes, atomic
@@ -1137,3 +1142,35 @@ Every new public std API (http cookies/forms/client, `std/log`,
   `Duration.micros(1)` sleeps for one millisecond rather than a
   microsecond. Sub-millisecond waiting needs a finer timer wheel in
   `veles_task.c`, which is a runtime change, not a library one.
+- **Deferred from C2/C3/C5/C6 and the test-file rule (2026-10-04), to build later:**
+  - `std/compress`: `inflate` could write into a sized buffer (the safepoint poll in each inner loop and
+    the oversized-shift selects show in the IR); levels 7–9 on large noisy inputs are slow (no zlib-style
+    give-up on a long chain); a Brotli codec, so `http.files` could offer `.br` siblings; `bench/results.md`
+    holds two separately recorded gzip/gunzip tables.
+  - `tls.Conn` implements `io.Stream` with E1 (TLS), so `http` serves HTTPS through the same code.
+  - Codegen: dead-function elimination (every module's unused functions still reach the IR).
+  - Unused-import lint: a file with a generic never instantiated skips the warning (its body is not
+    checked); scan the generic's body syntactically instead.
+  - `std/config`: a `Map` or a list of structs has no variable form and panics at the first call — make it a
+    compile-time error; `os.setEnv` (tests give a lookup to the private `loadWith`); `.env` search upward from
+    the working directory; `${VAR}` interpolation in dotenv (decided against for now); a JSON file's keys are
+    the declared field names, `@key(json: …)` is not consulted; a hand-written `decode` has an opaque schema,
+    so such a type is one variable; a generic sealed trait has no derive.
+  - `std/fs`: argon2id password hashing (`crypto.hashPassword`/`verifyPassword`, needs the `[native]`
+    binding of libargon2); byte-range and shared (read) locks; a copy that keeps permissions and times, and
+    an atomic `copy`; on Windows `writeAtomic` cannot replace a file another handle has open (POSIX
+    disposition semantics would); `fs.lines` yields `IoError` for a too-long line (an `io.TooLong` would need
+    a union as a `Result` error type).
+  - Endian bytes: `isize`/`usize` are fixed at 8 bytes (a 32-bit target would change it); no `Array`
+    writers (`pushU32Be` is on `MutableList<u8>` only).
+  - Tests: **exporting test code from a package** so people can write reusable test libraries (the user's
+    "later", D78 amendment). (`TestStdFsUnitTests` failed under a full run because two `fs` tests used the same
+    scratch file name while tests run in parallel; fixed by naming. A scratch helper that makes the name
+    unique per test by construction would keep it from coming back.)
+- **Deferred from C8 template literals (2026-10-04), to build later:** `std/db` and its `sql"…"` (plan E2);
+  std tags such as `html"…"` that escapes and `regex"…"` (the literal is the mechanism, the tags are std
+  work and public API); embedded-language highlighting inside a tag's string (SQL, HTML) in the editor
+  grammar; LSP semantic tokens for the tag (the TextMate grammar colours it, the language server does
+  not); a tag with explicit type arguments (`tag<T>"…"` is not parsed); multi-line and raw literals
+  (Veles has neither yet) tagged; when the Veles lexer/parser is written (`veles-selfhost-frontend-plan.md`) it
+  needs the `TemplateExpr` node and its adjacency rule, and the self-host oracle compares `(template …)` in `Dump`.

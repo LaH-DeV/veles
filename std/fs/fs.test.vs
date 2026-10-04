@@ -3,7 +3,7 @@
 
 use io, os, path, time
 
-fun scratch(name: string): string {
+test fun scratch(name: string): string {
   val dir = path.join(os.tempDir(), "veles-fs-test")
   when (mkdir(dir)) {
     is Err(e) => panic("cannot make the scratch directory: ${e.message()}")
@@ -118,7 +118,7 @@ test "stat reports size, kind and a recent write time" {
 // io.Stream over a file (D128): the same code a connection runs through
 
 // everything a stream holds, read through the trait object
-fun drain(s: io.Stream): List<u8> throws IoError {
+test fun drain(s: io.Stream): List<u8> throws IoError {
   val out: MutableList<u8> = []
   loop {
     val chunk = try s.read(3)
@@ -128,7 +128,7 @@ fun drain(s: io.Stream): List<u8> throws IoError {
   out
 }
 
-fun readLines<S: io.Stream>(s: S, max: i64): List<string> throws IoError | io.TooLong {
+test fun readLines<S: io.Stream>(s: S, max: i64): List<string> throws IoError | io.TooLong {
   val out: MutableList<string> = []
   loop {
     val line = try s.readLine(max)
@@ -206,7 +206,7 @@ test "seek moves where read and write continue" {
   try remove(p)
 }
 
-fun seekBelowZero(p: string) {
+test fun seekBelowZero(p: string) {
   val opened = open(p)
   when (opened) {
     is Ok(f)  => {
@@ -300,7 +300,7 @@ test "copy reproduces a file bigger than one piece, and replaces the target" {
 }
 
 test "lines hands out a file one line at a time" {
-  val p = scratch("lines.txt")
+  val p = scratch("lines-iter.txt")
   try writeFile(p, "one\r\ntwo\n\nlast")
   val got: MutableList<string> = []
   loop (line in try lines(p, max: 64)) {

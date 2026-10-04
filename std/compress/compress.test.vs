@@ -6,7 +6,7 @@
 use io
 
 // text with structure, so every block type has something to do
-fun sample(lines: i64): List<u8> {
+test fun sample(lines: i64): List<u8> {
   val out: MutableList<u8> = []
   loop (i in 0..<lines) {
     out.addAll("line $i: the value is ${i * 7 % 13} and the name is item-${i % 50}\n".bytes())
@@ -15,7 +15,7 @@ fun sample(lines: i64): List<u8> {
 }
 
 // bytes with no structure: xorshift
-fun noise(n: i64): List<u8> {
+test fun noise(n: i64): List<u8> {
   val out: MutableList<u8> = []
   var x: u64 = 88172645463325252
   loop (_ in 0..<n) {

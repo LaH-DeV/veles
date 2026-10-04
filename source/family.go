@@ -46,6 +46,7 @@ var families = []family{
 		`'test`, `test code`, `the test's body`, `expectThrows`, `'require'`, `'assert'`),
 	fam("constants", `\(D113\)`, `^initialization cycle`, `^constant overflow`, `in a constant`, `^the constant`,
 		`matches the constant`, `^static assert`, `'static assert'`),
+	fam("template-literals", `@template`, `template literal`, `is not a template`, `\(D129\)`),
 	fam("attributes", `^@`, `@caller_location`, `^'lazy' is reserved`, `a 'lazy' parameter must be`, `@(key|tag|skip|required)`, `attribute`, `is deprecated`, `cannot derive`,
 		`\(D58\)`, `\(D51\)`),
 	fam("unsafe-and-ffi", `unsafe`, `SAFETY`, `extern`, `C ABI`, `into C`, `handed to C`, `C function pointer`,

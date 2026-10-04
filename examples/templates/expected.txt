@@ -1,0 +1,5 @@
+<h1>Hello, &lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; co</h1><p>42 visits</p>
+<div><h1>Hello, &lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; co</h1><p>42 visits</p><small>a &lt; b</small></div>
+select id from users where name = $1 and age >= $2
+['x'; drop table users; --', 18]
+exit=0

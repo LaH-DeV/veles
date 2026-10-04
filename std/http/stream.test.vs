@@ -4,19 +4,19 @@
 
 use net, time
 
-fun pieces(): Handler = handler(req => Response.stream(MediaType.text, out => {
+test fun pieces(): Handler = handler(req => Response.stream(MediaType.text, out => {
   try out.writeText("abc")
   try out.writeText("")
   try out.write([100, 101])
 }))
 
-fun counted(calls: Atomic<i64>): Handler = handler(req => Response.stream(MediaType.text, out => {
+test fun counted(calls: Atomic<i64>): Handler = handler(req => Response.stream(MediaType.text, out => {
   val _ = calls.update(n => n + 1)
   try out.writeText("body")
 }, length: 4))
 
 // one request over a fresh connection, everything read until the server closes it
-fun ask(port: i64, request: string): string throws IoError {
+test fun ask(port: i64, request: string): string throws IoError {
   with conn = try net.connect("127.0.0.1", port)
   try conn.writeText(request)
   try conn.shutdownWrite()

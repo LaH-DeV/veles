@@ -11,6 +11,7 @@ error, not a silent no-op.
 | `@deprecated("why")` | any declaration | a warning at every use, with the message |
 | `@mustUse` | a function returning a value | an error if a call's result is discarded |
 | `@inline` / `@noinline` | a function | a hint to the optimiser (`--release`) |
+| `@template` | a function `(parts: List<string>, values: List<V>)` | the function a template literal `name"…"` calls ([chapter 2](02-values-and-strings.md)) |
 | `@key("k")` / `@key(json: "k", db: "c")` | a field, an enum member, a sealed variant | its name on the wire, for every format or by format ([chapter 18](18-codable-and-json.md)) |
 | `@skip` / `@skip(json)` | a field with a default | left out of the wire form, everywhere or in one format |
 | `@required` | a nullable field | the key must be present even though the value may be null |
@@ -216,6 +217,11 @@ When a module's tests outgrow its files, move them to a file named
 `*.test.vs` in the same directory (`parser.test.vs` next to `parser.vs`).
 Everything in it is test code: it sees the module's private names, may
 use the vocabulary, and is never loaded by `veles build` or `veles run`.
+It holds tests, `test fun` helpers and the types and values the tests need —
+a plain `fun` there is an error whose fix writes `test fun` (a function the
+program uses belongs in a module file) — and the module's own files cannot
+name any of it: a type or helper declared in a test file is an error when a
+non-test file uses it.
 
 ### Suites
 

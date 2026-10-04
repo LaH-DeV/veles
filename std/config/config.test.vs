@@ -294,7 +294,7 @@ struct OnlyPath {
   implement Decodable
 }
 
-fun scratch(name: string): string {
+test fun scratch(name: string): string {
   val dir = path.join(os.tempDir(), "veles-config-test-$name")
   when (makeDir(dir)) {
     is Err(e) => panic("cannot make ${dir}: ${e.message()}")
@@ -302,6 +302,6 @@ fun scratch(name: string): string {
   }
 }
 
-fun makeDir(dir: string) throws IoError {
+test fun makeDir(dir: string) throws IoError {
   if (!fs.isDir(dir)) try fs.mkdir(dir)
 }

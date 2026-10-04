@@ -1,19 +1,19 @@
 // Tests of http.cors (D99): who is let in, what a preflight is answered, what
 // a listed origin's response carries, and the settings that are refused.
 
-fun corsApp(m: Middleware): Handler {
+test fun corsApp(m: Middleware): Handler {
   val r = Router()
   r.get("/data", req => Response.text("data"))
   r.wrap(m)
   r.handler()
 }
 
-fun corsAllowed(app: Handler, origin: string): bool =
+test fun corsAllowed(app: Handler, origin: string): bool =
   call(app, Method.get, "/data", headers: from(origin)).headers.get("access-control-allow-origin") == origin
 
-fun from(origin: string): Map<string, string> = ["Origin": origin]
+test fun from(origin: string): Map<string, string> = ["Origin": origin]
 
-fun preflight(origin: string, asks: string = ""): Map<string, string> {
+test fun preflight(origin: string, asks: string = ""): Map<string, string> {
   val h: MutableMap<string, string> = ["Origin": origin, "Access-Control-Request-Method": "PUT"]
   if (!asks.isEmpty()) h.set("Access-Control-Request-Headers", asks)
   h.toMap()

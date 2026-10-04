@@ -67,7 +67,7 @@ next. A step names what it needs; the reason for the order is in brackets.
    B13) [compress streams over `Stream`].
 10. ~~**C3**~~ **Done 2026-10-04.** `std/config` (D125) [needs B13's `Secret`].
 11. **C5/C6** `std/fs` additions, endian bytes (D130), helpers (D110 if not in B12).
-12. **C8** template literals (D129 part 1) [before E2].
+12. ~~**C8**~~ **Done 2026-10-04.** template literals (D129 part 1) [before E2].
 13. **C7** the HTTP client over TCP (D127) [needs C2's `Stream`].
 14. **C4** health endpoints (D133), then `std/otel` (D126) [OTLP export needs
     C7 and C2's gzip].
@@ -1456,3 +1456,16 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   `http.testServer` was C2; password hashing (argon2id, needs a native binding) is open;
   byte-range and shared locks are not offered. Next in the Build order: step 12 C8 template
   literals (D129 part 1).
+
+- 2026-10-04 — **Test files (D78 amended) and C8 template literals (D129 part 1).** *Test files* (the
+  user): a top-level `fun` in a `*.test.vs` file is an error with a fix that writes `test fun`; a type,
+  value or helper declared there is an error when a non-test file names it (`declaredInTestFile`); the whole
+  tree migrated (12 test files, one Go test's embedded source); tests `TestTestFile…` in
+  `sema/testfile_rules_test.go`. **The user's "later"** — exporting test code so people can write reusable test
+  libraries — is open (checklist §11). *Standing rule* (the user): everything not done goes into checklist
+  §11 in the same change (CLAUDE.md, memory); the deferred items of C2, C3, C5/C6 were written there.
+  *C8:* `tag"…"` parsed (adjacent string after a name or `module.name`), lowered by the checker to the call
+  `tag(pieces, values)`, `@template` validated, formatter/`Dump`/grammar, example `examples/templates`, docs 2
+  and 14; no design question was open (D129 fixes the form). **Not done:** `std/db`, std tags,
+  semantic tokens, tagged multi-line/raw literals (checklist §11). Next in the Build order: step 13 C7, the
+  HTTP client over TCP (D127), then C4 health endpoints (D133) and `std/otel` (D126).

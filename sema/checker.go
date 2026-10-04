@@ -502,6 +502,9 @@ func (c *Checker) insert(m *Module, sym *Symbol) {
 func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 	switch d := d.(type) {
 	case *ast.FunDecl:
+		if isTestFile(f) && !d.Test && d.Name.Name != "" {
+			c.errorFix(d.Name.Pos, testFunFix(d.Name.Pos), "'%s' is a function in a *.test.vs file: write 'test fun %s' — a test file holds tests and test helpers, and a function the program uses belongs in a module file (D78)", d.Name.Name, d.Name.Name)
+		}
 		t := c.newTemplate(m, f, d, nil, nil)
 		c.insert(m, &Symbol{Name: d.Name.Name, Kind: SymFunc, Pub: d.Pub, Module: m, Span: d.Name.Pos, Func: t})
 	case *ast.StaticAssert:
@@ -660,6 +663,9 @@ func (c *Checker) newTemplate(m *Module, f *ast.File, d *ast.FunDecl, owner *typ
 	t := &FuncTemplate{Name: d.Name.Name, Module: m, File: f, Decl: d, Pub: d.Pub, Owner: owner, Extern: d.Extern}
 	t.Attrs = c.attrsOf(d.Attrs, "function")
 	t.TestCode = d.Test || isTestFile(f)
+	if _, isTemplate := t.Attrs["template"]; isTemplate {
+		c.checkTemplateSignature(d, owner != nil)
+	}
 	if a, isTest := t.Attrs["test"]; isTest {
 		c.oldTestSpelling(a, d)
 		if len(d.Params) > 0 || d.Ret != nil || owner != nil {
@@ -1062,6 +1068,9 @@ func (c *Checker) lookupTypeName(env *typeEnv, path []ast.Ident) (*Symbol, *type
 	sym := scope.Lookup(path[0].Name)
 	if sym == nil {
 		return nil, nil
+	}
+	if declaredInTestFile(sym) && !isTestFile(env.file) {
+		c.errorf(path[0].Pos, "'%s' is declared in a *.test.vs file: only tests can use it, and a build leaves it out (D78)", path[0].Name)
 	}
 	for i := 1; i < len(path); i++ {
 		switch sym.Kind {

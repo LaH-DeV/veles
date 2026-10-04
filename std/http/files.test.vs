@@ -9,9 +9,9 @@ use fs, os, path, time
 // the tree is written once, before any of them starts.
 val fixture: string = build()
 
-fun tree(): string = fixture
+test fun tree(): string = fixture
 
-fun build(): string {
+test fun build(): string {
   val root = path.join(os.tempDir(), "veles-http-files-test")
   when (prepare(root)) {
     is Err(e) => panic("cannot write the test tree: ${e.message()}")
@@ -19,7 +19,7 @@ fun build(): string {
   }
 }
 
-fun prepare(root: string) throws IoError {
+test fun prepare(root: string) throws IoError {
   if (!fs.isDir(root)) try fs.mkdir(root)
   val docs = path.join(root, "docs")
   if (!fs.isDir(docs)) try fs.mkdir(docs)
@@ -34,7 +34,7 @@ fun prepare(root: string) throws IoError {
   try fs.writeFile(path.join(hidden, "x.txt"), "ok")
 }
 
-fun served(server: sendable fun(Request): Response suspends throws Fail | IoError): Handler {
+test fun served(server: sendable fun(Request): Response suspends throws Fail | IoError): Handler {
   val router = Router()
   router.get("/static/*", server)
   router.any("/all/*", server)
@@ -42,11 +42,11 @@ fun served(server: sendable fun(Request): Response suspends throws Fail | IoErro
   router.handler()
 }
 
-fun fetch(h: Handler, target: string, headers: Map<string, string> = [:]): Response = call(h, Method.get, target, headers: headers)
+test fun fetch(h: Handler, target: string, headers: Map<string, string> = [:]): Response = call(h, Method.get, target, headers: headers)
 
-fun text(r: Response): string = r.body.decodeUtf8() ?: "<not text>"
+test fun text(r: Response): string = r.body.decodeUtf8() ?: "<not text>"
 
-fun header(r: Response, name: string): string = r.headers.get(name) ?: "<none>"
+test fun header(r: Response, name: string): string = r.headers.get(name) ?: "<none>"
 
 test "a file comes with its validators and the safe cache header" {
   val h = served(files(tree()))

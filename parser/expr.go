@@ -204,6 +204,16 @@ func (p *Parser) parsePostfix() ast.Expr {
 		case lexer.LParen:
 			args := p.parseArgs()
 			x = &ast.CallExpr{Fun: x, Args: args, Pos: p.spanFrom(start)}
+		case lexer.String:
+			// `tag"text ${x}"` (D129): a string right after a name, no space
+			if !isTemplateTag(x) {
+				return x
+			}
+			t := p.next()
+			if !p.adjacentTo(x, t) {
+				p.errorf(t.Span, "a template literal has nothing between the name and the string: write '%s\"…\"' (D129); a string after a name is otherwise an error", templateTagText(x))
+			}
+			x = &ast.TemplateExpr{Tag: x, Lit: p.stringLit(t).(*ast.StringLit), Pos: p.spanFrom(start)}
 		case lexer.KwCatch:
 			if p.inTry {
 				return x
@@ -247,6 +257,39 @@ func (p *Parser) parsePostfix() ast.Expr {
 			return x
 		}
 	}
+}
+
+// isTemplateTag reports whether x can name a template function: a name, or
+// `module.name`.
+func isTemplateTag(x ast.Expr) bool {
+	switch t := x.(type) {
+	case *ast.NameExpr:
+		return len(t.TypeArgs) == 0
+	case *ast.MemberExpr:
+		if t.Safe || len(t.TypeArgs) > 0 {
+			return false
+		}
+		_, ok := t.X.(*ast.NameExpr)
+		return ok
+	}
+	return false
+}
+
+// adjacentTo reports whether the string starts exactly where the tag ends:
+// `sql"…"`, not `sql "…"`.
+func (p *Parser) adjacentTo(tag ast.Expr, str lexer.Token) bool {
+	return tag.Span().End == str.Span.Start
+}
+
+// templateTagText is the tag as written: `sql` or `db.sql`.
+func templateTagText(x ast.Expr) string {
+	switch t := x.(type) {
+	case *ast.NameExpr:
+		return t.Name
+	case *ast.MemberExpr:
+		return templateTagText(t.X) + "." + t.Name.Name
+	}
+	return "tag"
 }
 
 func isGenericCallee(x ast.Expr) bool {

@@ -653,6 +653,12 @@ func (p *printer) expr(e Expr) {
 			}
 		}
 		p.w(")")
+	case *TemplateExpr:
+		p.w("(template ")
+		p.expr(e.Tag)
+		p.w(" ")
+		p.expr(e.Lit)
+		p.w(")")
 	case *CharLit:
 		p.f("'%s'", e.Value)
 	case *BoolLit:

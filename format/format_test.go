@@ -440,3 +440,13 @@ func TestConstGenericsRoundTrip(t *testing.T) {
 		t.Errorf("formatted:\n%s\nwant:\n%s", got, src)
 	}
 }
+
+// D129: a template literal is printed as written, and formatting it again
+// changes nothing.
+func TestTemplateLiteralRoundTrips(t *testing.T) {
+	src := "use db\n\nfun find(name: string, age: i64) {\n  val q = db.sql\"select * from users where name = ${name} and age > ${age}\"\n  val plain = sql\"select 1\"\n}\n"
+	out := checkRoundTrip(t, "template.vs", src)
+	if !strings.Contains(out, "db.sql\"select * from users where name = ${name} and age > ${age}\"") {
+		t.Errorf("the literal was changed:\n%s", out)
+	}
+}

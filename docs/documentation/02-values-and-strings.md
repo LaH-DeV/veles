@@ -226,6 +226,68 @@ as intended; a non-ASCII character is not a byte literal.
 Escapes in string literals: `\n`, `\t`, `\\`, `\"`, `\$` (a literal
 dollar) and `\u{1F600}` for a code point.
 
+### Template literals
+
+A name written **straight before** a string — no space — hands the string to
+a function marked `@template`, in two lists: the pieces of text, and the
+values you interpolated. The function decides what a value means. Joining
+them into one string is exactly what it need not do, so the result can be a
+type a plain string can never be: markup whose values were escaped, a query
+whose values travel apart from its text (D129).
+
+```veles
+use io { println }
+
+trait Markup {
+  fun markup(): string
+}
+
+implement Markup for string {
+  fun markup(): string = this.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+}
+
+implement Markup for i64 {
+  fun markup(): string = "$this"
+}
+
+struct Html {
+  text: string
+}
+
+// `html"a ${x} b"` calls html(["a ", " b"], [x]): one more piece than values
+@template
+fun html(parts: List<string>, values: List<Markup>): Html {
+  val out = StringBuilder()
+  loop ((i, part) in parts.enumerate()) {
+    out.append(part)
+    val v = values.at(i)
+    if (v != null) out.append(v.markup())
+  }
+  Html(text: out.toString())
+}
+
+fun main() {
+  val comment = "1 < 2 & 3 > 2"
+  val page = html"<p>${comment}</p><p>${7} votes</p>"
+  println(page.text)
+}
+```
+
+Output:
+```text
+<p>1 &lt; 2 &amp; 3 &gt; 2</p><p>7 votes</p>
+```
+
+The rules: the parameters are `(parts: List<string>, values: List<V>)` —
+`V` is usually a trait, so each value's type must implement it (a value that
+does not is an error at its `${…}`); the pieces are what the source
+says, never input, and there is always one more than the values; `tag"…"` is
+the call `tag(pieces, values)` and has the function's result type, which is
+not a `string`. A name that is not `@template` cannot tag a literal, and a
+space (`html "…"`) is an error that says so. A module's function is tagged
+`db.sql"…"`. `examples/templates` writes an `html` and an `sql` tag; a
+database module (`std/db`) uses the same to make injection impossible.
+
 ## Booleans
 
 `bool` is `true` or `false`. `&&` and `||` short-circuit; `!` negates.

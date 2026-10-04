@@ -7,12 +7,12 @@ use compress as gz, fs, net, os, path
 
 val gzipHeaders: Map<string, string> = ["accept-encoding": "gzip, deflate"]
 
-fun article(): string = "The quick brown fox jumps over the lazy dog. ".repeat(100)
+test fun article(): string = "The quick brown fox jumps over the lazy dog. ".repeat(100)
 
-fun page(contentType: string = "text/html; charset=utf-8", body: string = article()): Handler =
+test fun page(contentType: string = "text/html; charset=utf-8", body: string = article()): Handler =
   compress()(handler(req => Response(headers: ["content-type": contentType], body: body.bytes())))
 
-fun unpacked(r: Response): string = (gz.gunzip(r.body) ?? []).decodeUtf8() ?: "<not text>"
+test fun unpacked(r: Response): string = (gz.gunzip(r.body) ?? []).decodeUtf8() ?: "<not text>"
 
 test "a large text response is gzipped for a client that accepts it" {
   val r = call(page(), Method.get, "/", headers: gzipHeaders)
@@ -90,7 +90,7 @@ test "a streamed body is compressed as it is written" {
 }
 
 // every byte the server sends until it closes
-fun askBytes(port: i64, request: List<u8>): List<u8> throws IoError {
+test fun askBytes(port: i64, request: List<u8>): List<u8> throws IoError {
   with conn = try net.connect("127.0.0.1", port)
   try conn.write(request)
   try conn.shutdownWrite()
@@ -104,7 +104,7 @@ fun askBytes(port: i64, request: List<u8>): List<u8> throws IoError {
 }
 
 // where the blank line after the headers ends
-fun headEnd(response: List<u8>): i64 {
+test fun headEnd(response: List<u8>): i64 {
   var at = 0
   loop (at + 3 < response.len() && !(response.at(at) == 13 && response.at(at + 1) == 10 && response.at(at + 2) == 13 && response.at(at + 3) == 10)) {
     at += 1
@@ -112,11 +112,11 @@ fun headEnd(response: List<u8>): i64 {
   at + 4
 }
 
-fun headOf(response: List<u8>): string = response.take(headEnd(response)).decodeUtf8() ?: ""
+test fun headOf(response: List<u8>): string = response.take(headEnd(response)).decodeUtf8() ?: ""
 
-fun bodyOf(response: List<u8>): List<u8> = response.drop(headEnd(response))
+test fun bodyOf(response: List<u8>): List<u8> = response.drop(headEnd(response))
 
-fun unchunk(framed: List<u8>): List<u8> {
+test fun unchunk(framed: List<u8>): List<u8> {
   val out: MutableList<u8> = []
   var at = 0
   loop {
@@ -151,7 +151,7 @@ test "over a socket the compressed stream is chunked and decodes" {
   expect(text.endsWith("row 99, the same words again and again\n"))
 }
 
-fun precompressed(): string {
+test fun precompressed(): string {
   val root = path.join(os.tempDir(), "veles-http-gzip-test")
   when (writeTree(root)) {
     is Err(e) => panic("cannot write the test tree: ${e.message()}")
@@ -159,7 +159,7 @@ fun precompressed(): string {
   }
 }
 
-fun writeTree(root: string) throws IoError {
+test fun writeTree(root: string) throws IoError {
   if (!fs.isDir(root)) try fs.mkdir(root)
   val text = article()
   try fs.writeFile(path.join(root, "page.html"), text)
@@ -169,7 +169,7 @@ fun writeTree(root: string) throws IoError {
 
 val gzipTree: string = precompressed()
 
-fun filesApp(): Handler {
+test fun filesApp(): Handler {
   val router = Router()
   router.get("/*", files(gzipTree))
   router.handler()
@@ -207,12 +207,12 @@ test "the compressed variant has validators of its own" {
   expect(again.status == Status.notModified)
 }
 
-fun echoLength(): Handler = decompressRequests(max: 5000)(handler(req => {
+test fun echoLength(): Handler = decompressRequests(max: 5000)(handler(req => {
   val text = try req.text()
   Response.text("${text.len()} ${req.header("content-encoding") ?: "plain"}")
 }))
 
-fun post(port: i64, headers: string, body: List<u8>): string throws IoError {
+test fun post(port: i64, headers: string, body: List<u8>): string throws IoError {
   val head = "POST / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n${headers}Content-Length: ${body.len()}\r\n\r\n"
   val wire = try askBytes(port, head.bytes().concat(body))
   wire.decodeUtf8() ?: "<binary>"

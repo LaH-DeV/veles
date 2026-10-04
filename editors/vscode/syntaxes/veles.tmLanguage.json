@@ -11,6 +11,7 @@
     { "include": "#keywords" },
     { "include": "#effects" },
     { "include": "#literals" },
+    { "include": "#templateTag" },
     { "include": "#strings" },
     { "include": "#chars" },
     { "include": "#types" },
@@ -198,6 +199,11 @@
         { "name": "constant.numeric.float.veles", "match": "\\b[0-9][0-9_]*[eE][+-]?[0-9]+(f32|f64)?\\b" },
         { "name": "constant.numeric.integer.veles", "match": "\\b[0-9][0-9_]*([iu](8|16|32|64)|f32|f64)?\\b" }
       ]
+    },
+    "templateTag": {
+      "comment": "`sql\"…\"`, `db.sql\"…\"` (D129): the name written right before a string is the template function; the string that follows is a string",
+      "match": "\b[A-Za-z_][A-Za-z0-9_]*(?=\")",
+      "name": "entity.name.function.template.veles"
     },
     "strings": {
       "name": "string.quoted.double.veles",

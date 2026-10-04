@@ -46,6 +46,10 @@ func TestExpressions(t *testing.T) {
 		"xs[0][1]":             "(index (index xs 0) 1)",
 		"Stack<i32>()":         "(call Stack<i32>)",
 		"a < b":                "(< a b)",
+		`sql"a ${x} b"`:        `(template sql (str "a " ${x} " b"))`,
+		`db.sql"x"`:            `(template (. db sql) (str "x"))`,
+		`try db.sql"x ${n}"`:   `(try (template (. db sql) (str "x " ${n})))`,
+		`f(sql"a", 1)`:         `(call f (template sql (str "a")), 1)`,
 		"a < b > c":            "(> (< a b) c)",
 		"f(a < b, c > d)":      "(call f (< a b), (> c d))",
 		"Map<string, i32>()":   "(call Map<string, i32>)",
@@ -806,5 +810,18 @@ fun main() {
 	}
 	if _, bad := parse(t, "fun f<const N: f64>() {}"); !bad.HasErrors() {
 		t.Fatal("a constant parameter is an i64")
+	}
+}
+
+// D129: a string right after a name is a template literal only with nothing
+// between them; with a space it is an error that says so.
+func TestTemplateLiteralNeedsNoSpace(t *testing.T) {
+	_, diags := parse(t, "fun main() {\n  val q = sql \"x\"\n}\n")
+	if !strings.Contains(diags.Render(), "a template literal has nothing between the name and the string: write 'sql\"…\"'") {
+		t.Errorf("a spaced template literal was not explained:\n%s", diags.Render())
+	}
+	_, diags = parse(t, "fun main() {\n  val q = sql\"x ${1 + 2}\"\n}\n")
+	if diags.HasErrors() {
+		t.Errorf("a template literal with an expression failed:\n%s", diags.Render())
 	}
 }

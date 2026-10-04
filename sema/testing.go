@@ -19,6 +19,33 @@ import (
 // test vocabulary (`expect`, `require`, ...) and call test helpers; other
 // code may not.
 
+/// testFunFix writes `test ` in front of the `fun` that declares the name at
+// `name`.
+func testFunFix(name source.Span) *source.Fix {
+	if name.File == nil || name.Start > len(name.File.Content) {
+		return nil
+	}
+	at := strings.LastIndex(name.File.Content[:name.Start], "fun")
+	if at < 0 {
+		return nil
+	}
+	return fixReplace("Write 'test fun'", source.Span{File: name.File, Start: at, End: at}, "test ")
+}
+
+// declaredInTestFile reports whether a module-level name was declared in a
+// `*.test.vs` file: test code, which only test code may name (D78). A
+// module's own files cannot see what its tests declare.
+func declaredInTestFile(sym *Symbol) bool {
+	if sym == nil || sym.Span.File == nil {
+		return false
+	}
+	switch sym.Kind {
+	case SymType, SymFunc, SymGlobal:
+		return strings.HasSuffix(sym.Span.File.Path, ".test.vs")
+	}
+	return false
+}
+
 // isTestFile reports whether a file holds only test code: `name.test.vs`.
 func isTestFile(f *ast.File) bool {
 	return f != nil && f.Source != nil && strings.HasSuffix(f.Source.Path, ".test.vs")

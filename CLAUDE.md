@@ -71,6 +71,10 @@ pinned by a test; docs updated; the checklist ticked and a line in the plan's
 progress log when a tracked item closes. Then report what changed and what
 was not verified.
 
+Whatever is not done, missing or cut short goes into `veles-checklist.md` §11
+(or the plan) in the same change, so it is built later rather than lost
+(user, 2026-10-04).
+
 ## Skills
 
 `veles-develop` (implementing), `veles-code` (writing Veles source),

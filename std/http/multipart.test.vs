@@ -6,7 +6,7 @@ use fs, os, path
 
 val uploads: string = makeUploads()
 
-fun makeUploads(): string {
+test fun makeUploads(): string {
   val dir = path.join(os.tempDir(), "veles-http-multipart-test")
   when (fs.mkdir(dir)) {
     is Err(e) => panic("cannot make the upload directory: ${e.message()}")
@@ -16,16 +16,16 @@ fun makeUploads(): string {
 
 val formType: Map<string, string> = ["Content-Type": "multipart/form-data; boundary=XyZ"]
 
-fun mpField(name: string, content: string): string =
+test fun mpField(name: string, content: string): string =
   "--XyZ\r\nContent-Disposition: form-data; name=\"$name\"\r\n\r\n$content\r\n"
 
-fun mpFile(name: string, filename: string, content: string): string =
+test fun mpFile(name: string, filename: string, content: string): string =
   "--XyZ\r\nContent-Disposition: form-data; name=\"$name\"; filename=\"$filename\"\r\nContent-Type: text/plain\r\n\r\n$content\r\n"
 
 val mpEnd = "--XyZ--\r\n"
 
 // every part, one line each, files saved under a name of ours
-fun uploader(max: i64 = 10000000, partMax: i64 = 1000000, maxParts: i64 = 100): Handler = handler(req => {
+test fun uploader(max: i64 = 10000000, partMax: i64 = 1000000, maxParts: i64 = 100): Handler = handler(req => {
   val form = try req.multipart(max: max, maxParts: maxParts)
   val out = StringBuilder()
   loop {
@@ -40,7 +40,7 @@ fun uploader(max: i64 = 10000000, partMax: i64 = 1000000, maxParts: i64 = 100): 
   Response.text(out.toString())
 })
 
-fun mpSend(h: Handler, body: string, headers: Map<string, string> = formType): Response = call(h, Method.post, "/", body: body, headers: headers)
+test fun mpSend(h: Handler, body: string, headers: Map<string, string> = formType): Response = call(h, Method.post, "/", body: body, headers: headers)
 
 test "fields and a file are read part by part" {
   val body = mpField("title", "Hello") + mpFile("doc", "a.txt", "file body") + mpField("empty", "") + mpEnd

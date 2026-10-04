@@ -841,6 +841,19 @@ takes no parameters and returns nothing`.
 a `test fun` and `*.test.vs` files; outside a test, `assert(cond, "why")`
 states an invariant (D78).
 
+### template-literals
+
+**Template literals and `@template` functions.** `'plain' is not a template`,
+`a template literal has nothing between the name and the string`, `the second
+parameter of a @template is the values`.
+
+`sql"select … ${id}"` calls a function marked `@template` with the text pieces
+and the values (D129, [chapter 2](../02-values-and-strings.md)). The function must
+be `@template` and take `(parts: List<string>, values: List<V>)`; the name must
+be written right against the string (a space is an error), and it is a
+function — or `module.function` — not a value. A value whose type does not fit
+`V` is the usual type error at its `${…}`.
+
 ### manifest
 
 **`veles.toml`.** `veles.toml:3: unknown [format] key "indnt"`.

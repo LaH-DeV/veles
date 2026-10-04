@@ -2033,6 +2033,8 @@ Rejected (user, recommended combination): `test fun name()` as the test
 form; a `testing` module anyone can import (leaks into programs, needs
 `try`, loses the location); a built-in `assert` everywhere.
 
+*Amended 2026-10-04 — test files (user: "in `*.test.vs` files there should not be `fun` functions, only `test fun` functions... and I think the module should not know about any declarations there, BUT later we should be able to export test functions so people can create reusable test libraries").* A top-level `fun` in a `*.test.vs` file is an error with a fix that writes `test fun` (methods in `struct`/`implement` bodies are not top-level and stay as they are), and a type, value or helper declared in a test file is an error when a non-test file names it (by name, by type name, or `module.name`): the module's own files cannot see their tests' declarations; tests still see the module's private names. Open, by the user's own "later": exporting test code from a package so that others can build reusable test libraries (checklist §11).
+
 ### D79 — A diagnostic belongs to a named family; `veles explain <family>` (v0.45)
 
 Every diagnostic the compiler reports belongs to a **family** with a
@@ -4425,6 +4427,8 @@ highlighting may come later). Later uses: `html"…"` that escapes, `regex"…"`
   pool, `try tx.commit()` explicit; leaving the block without a commit (an
   error, a panic, cancellation, or simply forgetting) rolls back.
 - A span per query (D126) with the statement text, never the values.
+
+*Part 1 built 2026-10-04.* `ast.TemplateExpr{Tag, Lit}`; the parser makes one when a string token starts exactly where a name (or `module.name`, not `?.`, no type arguments) ends — with a space it is an error that says to write `sql"…"`. The checker lowers `tag"a ${x} b ${y}"` to the call `tag(["a ", " b ", ""], [x, y])` (pieces always one more than values, escapes processed), so values convert to the element type as list elements do (a trait object boxes each) and every call diagnostic applies; a tag that is not a function, or a function not marked `@template`, is an error at the tag, and `@template` itself is checked at the declaration (a module-level function of `(parts: List<string>, values: List<V>)`; `V` may be generic). The formatter prints the literal as written; `ast.Dump` prints `(template tag (str …))`; the VS Code grammar colours the tag. Hover and go-to-definition work through the call. Example `examples/templates` (`html` that escapes, `sql` that keeps values apart); docs chapter 2 and the attributes table. `std/db` (E2) and the std tags (`html`, `regex`) are not built.
 
 Self-hosting: neutral (the compiler emits IR through `StringBuilder`).
 

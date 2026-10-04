@@ -248,6 +248,8 @@ func (f *fnCtx) checkExprInner(e ast.Expr, want types.Type) Expr {
 		return &BoolConst{exprBase{types.TBool}, e.Value}
 	case *ast.StringLit:
 		return f.stringLit(e)
+	case *ast.TemplateExpr:
+		return f.templateLit(e, want)
 	case *ast.CharLit:
 		// `'"'` is a byte (D18 addendum, v0.24): the u8 of one ASCII character,
 		// for code that walks a string with `byteAt`. Not a character type —
@@ -513,6 +515,9 @@ func (f *fnCtx) lookup(name string) *Symbol {
 
 func (f *fnCtx) nameExpr(e *ast.NameExpr, want types.Type) Expr {
 	sym := f.lookup(e.Name)
+	if declaredInTestFile(sym) && !f.inTest() {
+		f.errorf(e.Pos, "'%s' is declared in a *.test.vs file: only tests can use it, and a build leaves it out (D78)", e.Name)
+	}
 	if x := f.constParam(e, sym); x != nil {
 		return x
 	}
