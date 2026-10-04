@@ -147,6 +147,127 @@ data use the byte forms: `fs.readBytes(path)` gives a `List<u8>`,
 `text.bytes()` / `bytes.decodeUtf8()` convert. `io.readAll()` reads the
 rest of standard input as text.
 
+## Writing without losing data
+
+`fs.writeFile` replaces a file in place: a crash or a full disk in the middle
+leaves half of it. For a file that must always be whole — state, a cache
+index, anything another program reads — use `writeAtomic`: the bytes go to a
+new file beside it, reach the disk, and the new file is renamed over the old
+one, so a reader and a crash see the old contents or the new, never a mixture.
+An existing file keeps its permissions. (On Windows a file that is open
+elsewhere cannot be replaced: close it first.)
+
+```veles
+use fs, io { println }, os, path
+
+fun main() throws IoError {
+  val dir = path.join(os.tempDir(), "veles-doc-atomic")
+  if (!fs.isDir(dir)) try fs.mkdir(dir)
+  val file = path.join(dir, "state.txt")
+  try fs.writeAtomic(file, "version 1".bytes())
+  try fs.writeAtomic(file, "version 2, longer".bytes())
+  println(try fs.readFile(file))
+  try fs.copy(file, file + ".bak")           // a piece at a time: any size
+  println("${try fs.listDir(dir)}")
+  try fs.remove(file + ".bak")
+  try fs.remove(file)
+  try fs.remove(dir)
+}
+```
+
+Output:
+```text
+version 2, longer
+[state.txt, state.txt.bak]
+```
+
+An open `File` has more: `file.seek(offset)` moves where the next `read` or
+`write` goes (a file opened to `Append` always writes at its end),
+`file.sync()` waits until what was written is on the disk, and
+`file.lock()` takes an exclusive lock that other programs asking for it wait
+for — *advisory*, like `flock`: it keeps out the polite, not a program that
+just opens the file. `tryLock()` answers `null` instead of waiting. A lock is
+a `Closeable`, held with `with` and let go at the end of the block (and when
+the file closes).
+
+```veles
+// fragment
+with file = try fs.open("app.lock", fs.FileMode.Append)   // created when missing, never emptied
+with lock = (try file.tryLock()) ?: panic("already running")
+// only one process is here
+```
+
+`fs.lines(path, max: n)` reads a big file one line at a time. It is an
+iterator of `Result`s, because a read can fail halfway: `try line` passes an
+error on, a line longer than `max` bytes is one (so a file with no newlines
+cannot become one huge allocation), and after an error or at the end the file
+is closed. `with lines = try fs.lines(...)` closes it early.
+
+```veles
+use fs, io { println }, os, path
+
+fun longest(file: string): i64 throws IoError {
+  var longest = 0
+  loop (line in try fs.lines(file, max: 4096)) {
+    longest = longest.max((try line).len())
+  }
+  longest
+}
+
+fun main() throws IoError {
+  val file = path.join(os.tempDir(), "veles-doc-lines.txt")
+  try fs.writeFile(file, "short\nthe longest line here\nmid line\n")
+  println("longest line: ${try longest(file)} bytes")
+  try fs.remove(file)
+}
+```
+
+Output:
+```text
+longest line: 21 bytes
+```
+
+## Binary data
+
+A file format or a network header is numbers laid out in bytes, and the
+order matters: *big endian* (`Be`, network order) puts the most significant byte
+first, *little endian* (`Le`) the least. Every integer type converts to its
+bytes and back, in both orders, as an `Array<u8, N>` of its width:
+
+```veles
+use io { println }
+
+fun main() {
+  val port = 8080.wrapU16()
+  println("${port.toBeBytes()} ${port.toLeBytes()} ${u16.fromBeBytes([31, 144])}")
+
+  // a header: a magic number, a version and a length
+  val packet: MutableList<u8> = []
+  packet.pushU32Be(0xCAFEBABE.wrapU32())
+  packet.pushU16Le(2.wrapU16())
+  packet.pushI64Be(-1)
+  println("$packet")
+
+  // read it back at offsets; null when the bytes are not all there
+  println("${packet.readU32Be(0)} ${packet.readU16Le(4)} ${packet.readI64Be(6)} ${packet.readU32Be(12)}")
+}
+```
+
+Output:
+```text
+[31, 144] [144, 31] 8080
+[202, 254, 186, 190, 2, 0, 255, 255, 255, 255, 255, 255, 255, 255]
+3405691582 2 -1 null
+```
+
+The readers (`readU16Be`, `readI32Le`, `readU64Be`, … for 16, 32 and 64
+bits, signed and unsigned) are on `List<u8>` and return `null` for an
+offset that is negative or too close to the end: no panic, because the bytes
+come from outside. The writers (`pushU16Be`, `pushI64Le`, …) are on
+`MutableList<u8>`. `isize` and `usize` are eight bytes, as the targets are
+64-bit. `examples/binfile` writes and reads a small file format with these
+and `writeAtomic`.
+
 ## Paths are text
 
 `path` never touches the disk. It accepts both `/` and `\` and produces

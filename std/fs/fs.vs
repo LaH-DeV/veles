@@ -7,9 +7,14 @@ use io, os, path as paths, time
 extern "C" {
   fun veles_fs_open(path: string, mode: i64, handle: *raw i64): i64
   fun veles_fs_file_read_at(handle: i64, offset: i64, max: i64, out: *raw string): i64
-  fun veles_fs_file_write(handle: i64, bytes: List<u8>): i64
+  fun veles_fs_file_write(handle: i64, bytes: List<u8>, append: bool): i64
   fun veles_fs_file_size(handle: i64, size: *raw i64): i64
   fun veles_fs_file_close(handle: i64): i64
+  fun veles_fs_file_sync(handle: i64): i64
+  fun veles_fs_file_seek(handle: i64, offset: i64): i64
+  fun veles_fs_file_lock(handle: i64, wait: bool): i64
+  fun veles_fs_file_unlock(handle: i64): i64
+  fun veles_fs_write_atomic(path: string, bytes: List<u8>): i64
   fun veles_fs_info(path: string, kind: *raw i64, size: *raw i64, mtime: *raw i64): i64
   fun veles_fs_read_file(path: string, out: *raw string): i64
   fun veles_fs_read_bytes(path: string, out: *raw string): i64
@@ -156,6 +161,7 @@ public enum FileMode {
 public struct File {
   private handle: i64
   private path:   string
+  private append: bool
   private next:   Atomic<i64> = Atomic(value: 0)
   private isOpen: Atomic<bool> = Atomic(value: true)
 
@@ -185,6 +191,65 @@ public struct File {
     data.bytes()
   }
 
+  /// Moves the position to `offset` bytes from the start: the next `read`
+  /// continues there, and so does the next `write` of a file opened with
+  /// `Write` (one opened to `Append` always writes at its end). A negative
+  /// offset panics; one past the end reads nothing, and a write there leaves
+  /// a gap that reads as zeros.
+  public fun seek(offset: i64) throws IoError {
+    if (offset < 0) panic("File.seek: the offset is $offset; it counts from the start of the file")
+    try this.check()
+    // SAFETY: takes the open handle and a number; keeps nothing
+    val code = unsafe {
+      veles_fs_file_seek(this.handle, offset)
+    }
+    if (code != 0) throw os.ioError(code, this.path)
+    this.next.store(offset)
+  }
+
+  /// Waits until what was written is on the disk, not only in the system's
+  /// cache.
+  public fun sync() throws IoError {
+    try this.check()
+    // SAFETY: takes the open handle; keeps nothing
+    val code = unsafe {
+      veles_fs_file_sync(this.handle)
+    }
+    if (code != 0) throw os.ioError(code, this.path)
+  }
+
+  /// An exclusive lock on the whole file, waiting until it is free. Advisory:
+  /// it keeps out other programs that ask for the lock too (`flock`,
+  /// `LockFileEx`), not ones that just open the file. Hold it with `with`; it
+  /// is let go when the block ends, and when the file closes.
+  ///
+  /// ```veles
+  /// with file = try fs.open("app.pid", fs.FileMode.Append)
+  /// with lock = try file.lock()
+  /// // only one process is here at a time
+  /// ```
+  public fun lock(): Lock throws IoError {
+    try this.check()
+    // SAFETY: takes the open handle and a flag; the wait does not touch memory
+    val code = unsafe {
+      veles_fs_file_lock(this.handle, true)
+    }
+    if (code != 0) throw os.ioError(code, this.path)
+    Lock(handle: this.handle, path: this.path)
+  }
+
+  /// `lock()` without waiting: `null` when someone else holds the lock.
+  public fun tryLock(): Lock? throws IoError {
+    try this.check()
+    // SAFETY: takes the open handle and a flag; keeps nothing
+    val code = unsafe {
+      veles_fs_file_lock(this.handle, false)
+    }
+    if (code == -1) return null
+    if (code != 0) throw os.ioError(code, this.path)
+    Lock(handle: this.handle, path: this.path)
+  }
+
   implement io.Stream {
     /// Up to `max` bytes from where the last `read` ended; empty at the end of
     /// the file. Fewer than `max` is normal and does not mean the end.
@@ -200,7 +265,7 @@ public struct File {
       try this.check()
       // SAFETY: reads `bytes` within its length and keeps nothing after the call
       val code = unsafe {
-        veles_fs_file_write(this.handle, bytes)
+        veles_fs_file_write(this.handle, bytes, this.append)
       }
       if (code != 0) throw os.ioError(code, this.path)
     }
@@ -281,6 +346,116 @@ public struct File {
   }
 }
 
+/// A held file lock (`File.lock`). Closing it lets go; it does nothing
+/// after the file itself is closed, which has let go already.
+public struct Lock {
+  private handle: i64
+  private path:   string
+  private held:   Atomic<bool> = Atomic(value: true)
+
+  implement Closeable {
+    fun close() {
+      if (!this.held.swap(false)) return
+      // SAFETY: the swap lets one caller through; an already closed handle just
+      // answers with an error that is ignored
+      val _ = unsafe {
+        veles_fs_file_unlock(this.handle)
+      }
+    }
+  }
+}
+
+/// Replaces the contents of `path` with `bytes` so that no reader and no crash
+/// ever sees half of it: the bytes go to a new file beside it, reach the
+/// disk, and the file is renamed over `path` (on POSIX the directory is
+/// synced as well). An existing file keeps its permissions. When it fails the
+/// old contents are still there and the new file is removed. On Windows a
+/// file that another handle has open cannot be replaced: close it first.
+public fun writeAtomic(path: string, bytes: List<u8>) throws IoError {
+  try checkPath(path)
+  // SAFETY: reads `bytes` within its length and keeps nothing after the call
+  val code = unsafe {
+    veles_fs_write_atomic(path, bytes)
+  }
+  if (code != 0) throw os.ioError(code, path)
+}
+
+//// The lines of a file, one at a time, as `fs.lines` hands them out. Each
+/// item is the line (without its `\n`, and a `\r` before it) or the error that
+/// stopped the reading: a read that failed, a line that is not UTF-8, or a
+/// line longer than `max` bytes (an `IoError` of kind `InvalidData`). After an error, or at the end
+/// of the file, there are no more items and the file is closed. To stop
+/// early, `with` closes it.
+public struct Lines {
+  private file:     File
+  private path:     string
+  private max:      i64
+  private var over: bool = false
+
+  implement Iterator {
+    type Item = Result<string, IoError>
+    fun next(): Result<string, IoError>? {
+      if (this.over) return null
+      val read = this.file.readLine(this.max)
+      when (read) {
+        is Ok(line) => {
+          if (line == null) {
+            this.close()
+            return null
+          }
+          val item: Result<string, IoError> = Ok(line)
+          item
+        }
+        is Err(e)   => {
+          this.close()
+          val failure: IoError = when (e) {
+            is io.TooLong => IoError(path: this.path, code: 0, detail: e.message(), kind: IoKind.InvalidData)
+            is IoError    => e
+          }
+          val item: Result<string, IoError> = Err(failure)
+          item
+        }
+      }
+    }
+  }
+
+  implement Closeable {
+    fun close() {
+      this.over = true
+      this.file.close()
+    }
+  }
+}
+
+/// The lines of `path`, read as they are asked for — memory holds one line,
+/// however big the file is. A line longer than `max` bytes is an error item,
+/// not an allocation. Each item is a `Result`; `try line` passes its error on:
+///
+/// ```veles
+/// loop (line in try fs.lines("access.log", max: 8192)) {
+///   val text = try line
+///   handle(text)
+/// }
+/// ```
+public fun lines(path: string, max: i64): Lines throws IoError {
+  if (max <= 0) panic("fs.lines: max is $max; it is the longest line, in bytes, that is accepted")
+  Lines(file: try open(path), path, max)
+}
+
+/// Copies the file `from` to `to`, replacing it, a piece at a time — memory
+/// stays small however big the file is. Copying a file onto itself does
+/// nothing.
+public fun copy(from: string, to: string) throws IoError {
+  if (from == to) return
+  with source = try open(from)
+  with target = try open(to, FileMode.Write)
+  loop {
+    val chunk = try source.read(65536)
+    if (chunk.isEmpty()) break
+    try target.write(chunk)
+  }
+}
+
 /// Opens `path`. `Read` needs the file to exist; `Write` creates it or
 /// empties it; `Append` creates it or keeps what it holds.
 public fun open(path: string, mode: FileMode = FileMode.Read): File throws IoError {
@@ -297,7 +472,7 @@ public fun open(path: string, mode: FileMode = FileMode.Read): File throws IoErr
     veles_fs_open(path, m, &handle)
   }
   if (code != 0) throw os.ioError(code, path)
-  File(handle, path)
+  File(handle, path, append: mode == FileMode.Append)
 }
 
 // 0 when nothing is there (or the path cannot name anything), 1 a file,

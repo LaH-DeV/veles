@@ -1,0 +1,9 @@
+wrote 53 bytes
+version 1, 3 records
+a second lock is refused while it is held: true
+  ada: 1815
+  grace: -1906
+  linus: 4294967296
+after the update: 2 records, backup 38 bytes
+leftovers in the directory: [scores.bin, scores.bin.bak]
+exit=0

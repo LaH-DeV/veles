@@ -128,7 +128,7 @@ fun drain(s: io.Stream): List<u8> throws IoError {
   out
 }
 
-fun lines<S: io.Stream>(s: S, max: i64): List<string> throws IoError | io.TooLong {
+fun readLines<S: io.Stream>(s: S, max: i64): List<string> throws IoError | io.TooLong {
   val out: MutableList<string> = []
   loop {
     val line = try s.readLine(max)
@@ -146,7 +146,7 @@ test "a file is a stream: reads, lines and exact reads" {
     expect((try drain(s)).decodeUtf8() == "one\r\ntwo\n\nlast")
   }
   with (f = try open(p)) {
-    expect(try lines(f, 16) == ["one", "two", "", "last"])
+    expect(try readLines(f, 16) == ["one", "two", "", "last"])
   }
   with (f = try open(p)) {
     expect((try f.readExact(5)).decodeUtf8() == "one\r\n")
@@ -181,5 +181,165 @@ test "a file's write and shutdownWrite through a stream" {
     try s.writeText("d")
   }
   expect(try readFile(p) == "abcd")
+  try remove(p)
+}
+
+test "seek moves where read and write continue" {
+  val p = scratch("seek.bin")
+  try writeFile(p, "0123456789")
+  with (f = try open(p)) {
+    try f.seek(6)
+    expect((try f.read(2)).decodeUtf8() == "67")
+    try f.seek(1)
+    expect((try f.read(2)).decodeUtf8() == "12")
+    try f.seek(50)
+    expect(try f.read(4).isEmpty())
+  }
+  with (w = try open(p, FileMode.Write)) {
+    try w.write("abcdef".bytes())
+    try w.seek(2)
+    try w.write("XY".bytes())
+    try w.sync()
+  }
+  expect(try readFile(p) == "abXYef")
+  expectPanics(() => seekBelowZero(p))
+  try remove(p)
+}
+
+fun seekBelowZero(p: string) {
+  val opened = open(p)
+  when (opened) {
+    is Ok(f)  => {
+      val _ = f.seek(-1)
+    }
+    is Err(_) => { }
+  }
+}
+
+test "an exclusive lock keeps a second taker out until it is let go" {
+  val p = scratch("lock.pid")
+  try writeFile(p, "")
+  with (a = try open(p, FileMode.Append)) {
+    with (b = try open(p, FileMode.Append)) {
+      with (held = try a.lock()) {
+        expect(try b.tryLock() == null)
+      }
+      // let go with the block: now b can take it, and a cannot
+      with (second = (try b.tryLock()) ?: panic("the lock was free")) {
+        expect(try a.tryLock() == null)
+      }
+      with (third = try a.lock()) {
+        expect(try b.tryLock() == null)
+      }
+    }
+  }
+  try remove(p)
+}
+
+test "closing the file lets its lock go" {
+  val p = scratch("lock2.pid")
+  try writeFile(p, "")
+  with (b = try open(p, FileMode.Append)) {
+    val a = try open(p, FileMode.Append)
+    val held = try a.lock()
+    expect(try b.tryLock() == null)
+    held.close()
+    held.close()
+    with (now = (try b.tryLock()) ?: panic("closing the lock did not let it go")) {
+      expect(try a.tryLock() == null)
+    }
+    // the file's own close lets go as well
+    val again = try a.lock()
+    expect(try b.tryLock() == null)
+    a.close()
+    with (last = (try b.tryLock()) ?: panic("closing the file did not let the lock go")) {
+      again.close()
+    }
+  }
+  try remove(p)
+}
+
+test "writeAtomic replaces the file whole and leaves no temporary file behind" {
+  val dir = scratch("atomic")
+  try mkdir(dir)
+  val p = path.join(dir, "state.bin")
+  try writeAtomic(p, "first".bytes())
+  expect(try readFile(p) == "first")
+  try writeAtomic(p, "second, longer".bytes())
+  expect(try readFile(p) == "second, longer")
+  try writeAtomic(p, [])
+  expect(try readBytes(p).isEmpty())
+  expect((try listDir(dir)) == ["state.bin"])
+  try remove(p)
+  try remove(dir)
+}
+
+test "writeAtomic into a missing directory fails and leaves nothing" {
+  val dir = scratch("nowhere")
+  val p = path.join(dir, "inside", "x")
+  expect(writeAtomic(p, [1]) is Err)
+  expect(!exists(dir))
+}
+
+test "copy reproduces a file bigger than one piece, and replaces the target" {
+  val from = scratch("copy-from.bin")
+  val to = scratch("copy-to.bin")
+  val data: MutableList<u8> = []
+  loop (i in 0..<200000) {
+    data.push((i % 251).wrapU8())
+  }
+  try writeBytes(from, data.toList())
+  try writeFile(to, "old contents that are much shorter than the new")
+  try copy(from, to)
+  expect(try readBytes(to) == data.toList())
+  try copy(from, from)
+  expect(try readBytes(from) == data.toList())
+  expect(copy(scratch("missing.bin"), to) is Err)
+  try remove(from)
+  try remove(to)
+}
+
+test "lines hands out a file one line at a time" {
+  val p = scratch("lines.txt")
+  try writeFile(p, "one\r\ntwo\n\nlast")
+  val got: MutableList<string> = []
+  loop (line in try lines(p, max: 64)) {
+    got.push(try line)
+  }
+  expect(got.toList() == ["one", "two", "", "last"])
+  // the adapters work on it, and an empty file has no lines
+  expect((try lines(p, max: 64)).map(r => r catch (e) {
+    "?"
+  }).toList() == ["one", "two", "", "last"])
+  try writeFile(p, "")
+  expect((try lines(p, max: 64)).toList().isEmpty())
+  try remove(p)
+}
+
+test "a line past max is an error item and ends the lines" {
+  val p = scratch("lines-long.txt")
+  try writeFile(p, "ok\n" + "x".repeat(100) + "\nnever seen\n")
+  val seen: MutableList<string> = []
+  var failure = ""
+  loop (line in try lines(p, max: 10)) {
+    when (line) {
+      is Ok(text) => seen.push(text)
+      is Err(e)   => failure = e.message()
+    }
+  }
+  expect(seen.toList() == ["ok"])
+  expect(failure.contains("longer than 10 bytes"))
+  try remove(p)
+}
+
+test "lines closes the file when asked to stop early, and a missing file throws" {
+  val p = scratch("lines-early.txt")
+  try writeFile(p, "a\nb\nc\n")
+  with (stream = try lines(p, max: 8)) {
+    val first = stream.next()
+    expect(first != null)
+  }
+  expect(lines(scratch("lines-missing.txt"), max: 8) is Err)
+  expectPanics(() => lines(p, max: 0))
   try remove(p)
 }

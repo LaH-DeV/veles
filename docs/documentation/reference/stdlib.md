@@ -387,6 +387,16 @@ Interpolation `"$x ${expr}"` accepts any value. `List<u8>.decodeUtf8()` is
 the way back from `bytes()`: `string?`, null when the bytes are not valid
 UTF-8.
 
+### Endian bytes (D130)
+
+```veles
+// fragment
+x.toBeBytes(): Array<u8, N>; x.toLeBytes()            // every integer type; N = 1, 2, 4, 8 (isize, usize: 8)
+u32.fromBeBytes(a: Array<u8, 4>): u32; u32.fromLeBytes(a)   // likewise on every integer type
+list.readU16Be(offset: i64): u16?                      // List<u8>; U16, U32, U64, I16, I32, I64 × Be, Le; null when the bytes are not all there
+out.pushU32Be(x: u32); out.pushI16Le(x: i16)           // MutableList<u8>; the same twelve
+```
+
 ### `List<T>` and `MutableList<T>`
 
 | Method | Result |
@@ -591,6 +601,12 @@ fs.mkdir(path: string) throws IoError                      // with parents
 fs.remove(path: string) throws IoError                     // a file or an empty directory
 fs.rename(from: string, to: string) throws IoError
 fs.cwd(): string throws IoError
+fs.writeAtomic(path: string, bytes: List<u8>) throws IoError   // D130: temp file beside it, synced, renamed over; permissions kept; Windows: not while another handle has it open
+fs.copy(from: string, to: string) throws IoError               // a piece at a time, replaces `to`; onto itself does nothing
+fs.lines(path: string, max: i64): Lines throws IoError         // Iterator of Result<string, IoError>; a line past max is an error item (InvalidData); closes at the end or after an error; Lines is Closeable; max <= 0 panics
+file.seek(offset: i64) throws IoError                          // next read / write at offset (Append always writes at the end); negative panics
+file.sync() throws IoError                                     // data on the disk (fsync / FlushFileBuffers)
+file.lock(): Lock throws IoError; file.tryLock(): Lock? throws IoError   // exclusive, advisory (flock; one byte past any file on Windows); Lock is Closeable; the file closing lets go
 ```
 
 ## Module `net`

@@ -4451,6 +4451,18 @@ Pre-approved together (user, all four ticked):
   `crypto.verifyPassword(Secret<string>, hash): bool`, through a binding
   (libargon2) declared in std's `[native]`.
 
+**Addendum 2026-10-04 (built; `fs.lines` decided with the user, both recommended).** `fs.lines(path, max:
+i64): Lines throws IoError` — `Lines` is an `Iterator` whose items are `Result<string, IoError>` (a
+line past `max`, a read error and invalid UTF-8 are error items, the last one; the file closes at
+the end or after an error) and is `Closeable` for stopping early; `max` is required and `max <= 0`
+panics. Rejected: a reader with a throwing `next()`, an iterator ending silently with `error()` after
+it, a default `max`. Built as written otherwise: `file.lock()`/`tryLock()` return a `Closeable`
+`Lock`; on Windows the lock is one byte far beyond the file, so it is advisory as `flock` is (a
+byte-range lock there is enforced against reads); `file.seek(offset)` panics below 0 and does not move
+the end of an appended file; `fs.copy` onto itself does nothing; `writeAtomic` keeps the permissions
+of an existing file. `isize`/`usize` are 8 bytes in the endian conversions. Password hashing and
+`testServer`: see D124/D130 status in the plan.
+
 ### D131 — The manifest is `package.vs`, one typed constant (v0.66)
 
 ```veles

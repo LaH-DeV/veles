@@ -33,6 +33,7 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <fcntl.h>
+#include <sys/file.h>
 #include <poll.h>
 #include <signal.h>
 #if defined(__linux__)
@@ -983,7 +984,7 @@ static int64_t win_errno(DWORD e) {
  * (creating). *handle is a descriptor, or a HANDLE on Windows. */
 int64_t veles_fs_open(const char *path, int64_t plen, int64_t mode, int64_t *handle) {
 #if defined(_WIN32)
-    DWORD access = mode == 0 ? GENERIC_READ : (mode == 1 ? GENERIC_WRITE : FILE_APPEND_DATA);
+    DWORD access = mode == 0 ? GENERIC_READ : GENERIC_WRITE; /* append: the write itself goes to the end (veles_fs_file_write); a lock needs write access */
     DWORD disp = mode == 0 ? OPEN_EXISTING : (mode == 1 ? CREATE_ALWAYS : OPEN_ALWAYS);
     HANDLE h = CreateFileW(wstr(path, plen), access, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, disp,
                            FILE_ATTRIBUTE_NORMAL, NULL);
@@ -1046,13 +1047,16 @@ int64_t veles_fs_file_read_at(int64_t handle, int64_t offset, int64_t max, veles
 
 /* veles_fs_file_write writes all of bytes at the descriptor's position (the
  * end, for an appended file). */
-int64_t veles_fs_file_write(int64_t handle, veles_bytes_view *bytes) {
+int64_t veles_fs_file_write(int64_t handle, veles_bytes_view *bytes, bool append) {
     int64_t done = 0;
     while (done < bytes->len) {
 #if defined(_WIN32)
         DWORD n = 0;
         int64_t left = bytes->len - done;
-        if (!WriteFile((HANDLE)(intptr_t)handle, bytes->data + done, (DWORD)(left > 0x40000000 ? 0x40000000 : left), &n, NULL))
+        OVERLAPPED ov;
+        memset(&ov, 0, sizeof ov);
+        if (append) ov.Offset = ov.OffsetHigh = 0xFFFFFFFF; /* the end of the file, atomically */
+        if (!WriteFile((HANDLE)(intptr_t)handle, bytes->data + done, (DWORD)(left > 0x40000000 ? 0x40000000 : left), &n, append ? &ov : NULL))
             return win_errno(GetLastError());
         done += n;
 #else
@@ -1087,6 +1091,151 @@ int64_t veles_fs_file_close(int64_t handle) {
 #else
     return close((int)handle) == 0 ? 0 : errno;
 #endif
+}
+
+/* veles_fs_file_sync: the file's data and metadata reach the disk (fsync,
+ * FlushFileBuffers). */
+int64_t veles_fs_file_sync(int64_t handle) {
+    int64_t err = 0;
+    veles_blocking_enter();
+#if defined(_WIN32)
+    if (!FlushFileBuffers((HANDLE)(intptr_t)handle)) err = win_errno(GetLastError());
+#else
+    while (fsync((int)handle) != 0) {
+        if (errno == EINTR) continue;
+        err = errno;
+        break;
+    }
+#endif
+    veles_blocking_leave();
+    return err;
+}
+
+/* veles_fs_file_seek: the descriptor's position, for the next write (a file
+ * opened to append writes at its end whatever this says). */
+int64_t veles_fs_file_seek(int64_t handle, int64_t offset) {
+#if defined(_WIN32)
+    LARGE_INTEGER li;
+    li.QuadPart = offset;
+    if (!SetFilePointerEx((HANDLE)(intptr_t)handle, li, NULL, FILE_BEGIN)) return win_errno(GetLastError());
+    return 0;
+#else
+    if (lseek((int)handle, (off_t)offset, SEEK_SET) < 0) return errno;
+    return 0;
+#endif
+}
+
+/* veles_fs_file_lock: an exclusive advisory lock on the whole file. Returns 0
+ * when held, -1 when `wait` is false and someone else holds it, or an errno.
+ * Waiting leaves the executor (a lock can take as long as its holder). */
+int64_t veles_fs_file_lock(int64_t handle, bool wait) {
+    int64_t result = 0;
+    if (wait) veles_blocking_enter();
+#if defined(_WIN32)
+    /* Windows enforces a byte-range lock against every read and write of that
+     * range, which would make this one mandatory. The lock is on one byte far
+     * beyond any file, so everyone who asks for it agrees on it and the data
+     * stays readable: advisory, as flock is. */
+    OVERLAPPED ov;
+    memset(&ov, 0, sizeof ov);
+    ov.Offset = 0xFFFFFFFE;
+    ov.OffsetHigh = 0x7FFFFFFF;
+    DWORD flags = LOCKFILE_EXCLUSIVE_LOCK | (wait ? 0 : LOCKFILE_FAIL_IMMEDIATELY);
+    if (!LockFileEx((HANDLE)(intptr_t)handle, flags, 0, 1, 0, &ov)) {
+        DWORD e = GetLastError();
+        result = e == ERROR_LOCK_VIOLATION || e == ERROR_IO_PENDING ? -1 : win_errno(e);
+    }
+#else
+    for (;;) {
+        if (flock((int)handle, LOCK_EX | (wait ? 0 : LOCK_NB)) == 0) break;
+        if (errno == EINTR) continue;
+        result = errno == EWOULDBLOCK ? -1 : errno;
+        break;
+    }
+#endif
+    if (wait) veles_blocking_leave();
+    return result;
+}
+
+int64_t veles_fs_file_unlock(int64_t handle) {
+#if defined(_WIN32)
+    OVERLAPPED ov;
+    memset(&ov, 0, sizeof ov);
+    ov.Offset = 0xFFFFFFFE;
+    ov.OffsetHigh = 0x7FFFFFFF;
+    return UnlockFileEx((HANDLE)(intptr_t)handle, 0, 1, 0, &ov) ? 0 : win_errno(GetLastError());
+#else
+    return flock((int)handle, LOCK_UN) == 0 ? 0 : errno;
+#endif
+}
+
+/* veles_fs_write_atomic: `path` holds either what it held or all of `bytes`,
+ * never half: the bytes go to a new file beside it, reach the disk, and the
+ * file is renamed over `path`; on POSIX the directory is synced too, so the
+ * rename survives a crash. An existing file's permissions are kept. */
+int64_t veles_fs_write_atomic(const char *path, int64_t plen, veles_bytes_view *bytes) {
+    static int64_t counter = 0;
+    int64_t serial = __atomic_add_fetch(&counter, 1, __ATOMIC_RELAXED);
+    char suffix[48];
+#if defined(_WIN32)
+    snprintf(suffix, sizeof suffix, ".tmp-%lu-%lld", (unsigned long)GetCurrentProcessId(), (long long)serial);
+#else
+    snprintf(suffix, sizeof suffix, ".tmp-%ld-%lld", (long)getpid(), (long long)serial);
+#endif
+    int64_t slen = (int64_t)strlen(suffix);
+    char *tmp = veles_alloc(plen + slen + 1);
+    memcpy(tmp, path, (size_t)plen);
+    memcpy(tmp + plen, suffix, (size_t)slen + 1);
+    int64_t tlen = plen + slen;
+    int64_t err = 0;
+    veles_blocking_enter();
+#if defined(_WIN32)
+    HANDLE h = CreateFileW(wstr(tmp, tlen), GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE) {
+        err = win_errno(GetLastError());
+    } else {
+        err = veles_fs_file_write((int64_t)(intptr_t)h, bytes, false);
+        if (!err && !FlushFileBuffers(h)) err = win_errno(GetLastError());
+        if (!CloseHandle(h) && !err) err = win_errno(GetLastError());
+        if (!err && !MoveFileExW(wstr(tmp, tlen), wstr(path, plen), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+            err = win_errno(GetLastError());
+        if (err) DeleteFileW(wstr(tmp, tlen));
+    }
+#else
+    char *target = cstr(path, plen);
+    mode_t mode = 0666;
+    struct stat st;
+    if (stat(target, &st) == 0) mode = st.st_mode & 07777;
+    int fd = open(tmp, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, mode);
+    if (fd < 0) {
+        err = errno;
+    } else {
+        err = veles_fs_file_write(fd, bytes, false);
+        if (!err && fchmod(fd, mode) != 0) err = errno;
+        while (!err && fsync(fd) != 0) {
+            if (errno != EINTR) err = errno;
+        }
+        if (close(fd) != 0 && !err) err = errno;
+        if (!err && rename(tmp, target) != 0) err = errno;
+        if (err) {
+            unlink(tmp);
+        } else {
+            /* the rename is only durable once the directory is */
+            char *dir = cstr(path, plen);
+            char *slash = strrchr(dir, '/');
+            if (slash == dir) slash[1] = 0;
+            else if (slash) *slash = 0;
+            else strcpy(dir, ".");
+            int dfd = open(dir, O_RDONLY | O_CLOEXEC);
+            if (dfd >= 0) {
+                (void)fsync(dfd); /* some file systems refuse; the file itself is safe */
+                close(dfd);
+            }
+        }
+    }
+#endif
+    veles_blocking_leave();
+    return err;
 }
 
 /* veles_read_all reads standard input to its end. */

@@ -714,8 +714,15 @@ behind a name that says "crypto" (§10, 2026-09-23).
       docs 17 and the reference. Open: `deflate` at levels 7–9 is slow on long inputs
       (zlib's own limits would help), `inflate` could write straight into a sized buffer
 - [x] `io.Stream` (D128, 2026-10-04): `net.Conn`, `fs.File`; `http` over it; `tls.Conn` joins with E1
-- [ ] template literals (D129 part 1), endian bytes and the `fs` additions (D130) —
-      decided 2026-10-01, not built (plan C5–C8)
+- [x] endian bytes and the `fs` additions (D130, 2026-10-04): `x.toBeBytes()`/`toLeBytes()`, `T.fromBeBytes`/`fromLeBytes` on
+      every integer type, `readU16Be` … `readI64Le` on `List<u8>` and `pushU16Be` … on `MutableList<u8>`
+      (`std/prelude/endian.vs`, generated once); `fs.writeAtomic`, `fs.copy`, `fs.lines(path, max:)`
+      (Result items, Closeable), `file.seek`, `file.sync`, `file.lock`/`tryLock` (`std/fs`, runtime
+      `veles_os.c`). Tests `std/prelude/endian.test.vs` (9), `std/fs/fs.test.vs`; example
+      `examples/binfile`; docs chapter 15, stdlib reference. Windows: a lock is one byte far past the
+      end (so it stays advisory), an appended file writes at the end by offset, a file open elsewhere cannot
+      be replaced by `writeAtomic`. Not offered: byte-range locks, shared (read) locks
+- [ ] template literals (D129 part 1) — decided 2026-10-01, not built (plan C8)
 - [~] `std/os`: `hostname`, `pid`, `tempDir` done (2026-09-25); `shutdownSignal`/`raiseSignal` done (D68); `run` without a shell (2026-09-27, §2); `run(..., input:, stderr: os.Stderr)` with `Output.stderr` (D82, 2026-09-28)
 - [~] `std/fs`: `walk` done (2026-09-25: depth-first, name order, links to
       directories not followed, its own stack); streaming reads/writes, atomic
@@ -1014,6 +1021,7 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-10-01 | HTTP client | **Both: `http.fetch(url, …)` and `http.get/post/…` + `http.Client`** (user, over the recommended `fetch` only; spec D127). |
 | 2026-10-01 | Streams and TLS | **`io.Stream` implemented by `net.Conn`, `tls.Conn`, `fs.File`; HTTP over any stream; TLS verification on, `dangerouslyAcceptAnyCertificate` the only opt-out** (user, recommended of 2; spec D128). |
 | 2026-10-01 | SQL injection | **Template literals (`@template`, `tag"…"`) and `std/db` taking only `db.Sql` from `sql"…"`** (user, after asking "how tagged literal would look and work, will it be safe for injections?" and the example; recommended of 3; spec D129). Rejected: constant SQL + arguments, plain strings. |
+| 2026-10-04 | `fs.lines` | **An iterator of `Result<string, IoError>` that is also `Closeable`; `max:` required** (user, both recommended; spec D130 addendum). Rejected: a reader with a throwing `next()`, an iterator that ends silently with `error()` afterwards, a default `max`. |
 | 2026-10-01 | Small std additions | **`http.testServer`, endian bytes, `fs.writeAtomic`/locks/`lines`/…, argon2id password hashing** (user, all ticked; spec D130). |
 | 2026-10-01 | Q7: C layout | **Compiler-known `@packed`, `@align(n)` (any struct), `@transparent` (one-field struct), and `extern union` (fields only in `unsafe`)** (user, recommended of 3; spec D120). Rejected: a layout clause, leaving it. |
 | 2026-10-01 | Fixed-size arrays | **`Array<T, N>` everywhere, inline value type, with `<const N: i64>` parameters** (user, recommended of 4; spec D121). Rejected: `[T; N]`, extern-only arrays, leaving it. |

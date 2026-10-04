@@ -1439,3 +1439,20 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   has no variable form (a panic naming the field on the first call, not a compile error); no
   `os.setEnv`, so tests give a lookup to the private `loadWith`; `.env` search upward is not
   offered. Next in the build order: C5/C6 (`std/fs` additions, endian bytes).
+
+- 2026-10-04 — **C5/C6 done: endian bytes and the `std/fs` additions (D130).** `fs.lines` decided
+  with the user first (Result items + `Closeable`, `max:` required). Built: `std/prelude/endian.vs`
+  (generated once by a scratchpad Go program, committed as source): `toBeBytes`/`toLeBytes`/
+  `fromBeBytes`/`fromLeBytes` on all ten integer types over `Array<u8, N>`, twelve readers on
+  `List<u8>` (null when out of range), twelve writers on `MutableList<u8>`; `fs.writeAtomic` (C:
+  temp file, fsync, rename, directory fsync; `MoveFileEx` with write-through on Windows),
+  `fs.copy`, `fs.lines`, `File.seek`/`sync`/`lock`/`tryLock`, `fs.Lock` (runtime `veles_os.c`).
+  Tests: `std/prelude/endian.test.vs` (9), `std/fs/fs.test.vs` (+9), example `examples/binfile`,
+  docs chapter 15 and the reference. **Found on Windows:** `LockFileEx` is mandatory against reads
+  of the locked range (a second handle got "Permission denied" reading the file) — the lock is now
+  one byte at offset 2^63−2, advisory like `flock`; a file opened `FILE_APPEND_DATA` alone cannot be
+  locked — append now opens with write access and writes at the end by overlapped offset; a file
+  open elsewhere cannot be renamed over (documented, the example closes its handles). **Not done:**
+  `http.testServer` was C2; password hashing (argon2id, needs a native binding) is open;
+  byte-range and shared locks are not offered. Next in the Build order: step 12 C8 template
+  literals (D129 part 1).
