@@ -13,7 +13,7 @@
 /// with listener = try net.listen(host: "", port: 8080)
 /// http.serve(listener, app.handler())
 /// ```
-use codec, fs, io, log as logs { field }, net, path, random, time
+use codec, fs, io, log as logs { field }, net, otel, path, random, time
 
 // ---------------------------------------------------------------------------
 // failing a request
@@ -341,6 +341,37 @@ public fun handler<E>(h: sendable fun(Request): Response suspends throws E | Fai
     }
   }
 
+// A span for one request (OpenTelemetry's HTTP semantic conventions), from the
+// caller's `traceparent` when it sent one; nothing before `otel.start`.
+fun serverSpan(req: Request): otel.Span {
+  if (!otel.active()) return otel.span("request")
+  val attrs = [otel.attr("http.request.method", req.method.name), otel.attr("url.path", req.path), otel.attr("url.scheme", "http"), otel.attr("client.address", addressOf(req.peer))]
+  val host = req.header(Header.host)
+  val agent = req.header(Header.userAgent)
+  val more = attrs.concat(if (host == null) [] else [otel.attr("server.address", host)]).concat(if (agent == null) [] else [otel.attr("user_agent.original", agent)])
+  otel.span(req.method.name, attrs: more, kind: otel.SpanKind.Server, parent: otel.SpanContext.parse(req.header("traceparent") ?: ""))
+}
+
+// the peer's address without its port: `127.0.0.1:5000` → `127.0.0.1`
+fun addressOf(peer: string): string {
+  val i = peer.lastIndexOf(":")
+  if (i < 0) peer else (peer.substring(0, i) ?: peer)
+}
+
+// What the answer was; a probe's span is left out, a 5xx marks it failed.
+fun finishServerSpan(span: otel.Span, resp: Response) {
+  if (resp.quiet) {
+    span.discard()
+    return
+  }
+  span.set(otel.attr("http.response.status_code", resp.status.code))
+  if (resp.status.isServerError()) {
+    span.set(otel.attr("error.type", "${resp.status.code}"))
+    span.failWith("${resp.status.code} ${resp.status.reason()}")
+  }
+  span.end()
+}
+
 /// Runs the handler in a task of its own, so a panic inside it answers 500
 /// (and is logged) instead of failing the connection's task (D52).
 fun dispatch(h: Handler, req: Request): Response {
@@ -522,14 +553,18 @@ fun route(routes: List<Route>, req: Request): Response {
   val allowed: MutableList<Method> = []
   loop (r in routes) {
     val params = matchRoute(r.segments, segments) ?: continue
-    val m = r.method ?: return r.handler(req.withParams(params))
-    if (m == req.method) return r.handler(req.withParams(params))
+    val m = r.method
+    if (m == null || m == req.method) {
+      noteRoute(r.segments, req)
+      return r.handler(req.withParams(params))
+    }
     if (!allowed.contains(m)) allowed.push(m)
   }
   if (req.method == Method.head && allowed.contains(Method.get)) {
     loop (r in routes) {
       if (r.method != Method.get) continue
       val params = matchRoute(r.segments, segments) ?: continue
+      noteRoute(r.segments, req)
       return r.handler(req.withParams(params))
     }
   }
@@ -543,6 +578,16 @@ fun route(routes: List<Route>, req: Request): Response {
   if (req.method == Method.options) return Response.empty(Status.noContent).withHeader(Header.allow, allow)
   val status = Status.methodNotAllowed
   Response.text(status.reason(), status: status).withHeader(Header.allow, allow)
+}
+
+// The request's span, once the router knows what it is for: named by the route
+// pattern, which has few values, not by the path, which has one per user (a
+// span name is what a backend groups by).
+fun noteRoute(segments: List<string>, req: Request) {
+  val running = otel.current() ?: return
+  val pattern = "/" + segments.join("/")
+  running.set(otel.attr("http.route", pattern))
+  running.rename("${req.method} $pattern")
 }
 
 // the non-empty segments of a path or pattern: "/users/42/" → [users, 42]
@@ -691,7 +736,9 @@ fun connection(conn: io.Stream, peer: string, handler: Handler, limits: Limits, 
       }
     }
     val sw = time.Stopwatch.start()
+    with span = serverSpan(req)
     val resp = dispatch(handler, req)
+    finishServerSpan(span, resp)
     // read after the handler: a stop that began while it ran still
     // closes this connection
     val close = !wantsKeepAlive(req, http10) || drain.stopping.load() || resp.headers.get(Header.connection)?.toLower() == "close" || !req.body.reusable(drainCap) || (resp.stream != null && http10 && resp.streamLength == null)

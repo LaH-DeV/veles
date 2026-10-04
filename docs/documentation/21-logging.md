@@ -141,4 +141,6 @@ Each call writes its line whole, so lines from different threads or tasks
 never interleave: a reader can split the stream at newlines and parse every
 piece.
 
+Once `otel` is running ([chapter 23](23-observability.md)), every line is also exported as a log record with the id of the trace it was written in, and a line written inside a span carries `trace_id` in its output.
+
 Next: back to the [index](index.md).

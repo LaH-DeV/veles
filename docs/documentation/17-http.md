@@ -1025,6 +1025,8 @@ The pieces:
   reads a request: two different lengths, a folded header or a body cut short
   is an error, never a shortened body.
 
+While `otel` runs (chapter 23), each call is also a client span and carries a `traceparent` header, and each request the server answers is a server span that continues the caller's trace.
+
 Not in the module yet: TLS (and with it `https://` URLs), proxies, a
 decompressing client, WebSockets. Cancelling the `serve` task closes the
 listener and unwinds every connection task.

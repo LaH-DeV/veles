@@ -865,6 +865,29 @@ One line per call on standard error, written whole: text on a terminal,
 one JSON object otherwise. `http.requestId()` binds the request id this
 way. See [chapter 21](../21-logging.md).
 
+Once `otel` runs, each line is also an OTLP log record (fields as attributes, severity, the ids of the current span) and, inside a span, carries `trace_id`.
+
+## Module `otel`
+
+```veles
+// fragment
+use otel
+with tel = try otel.start(service: "notes", exporter: http.otlp(endpoint: "http://localhost:4318", headers: ["authorization": Secret.of(key)]), interval: Duration.seconds(10), resource: [otel.attr("service.version", "1.2")], sampleRatio: 1.0, maxQueue: 2048)   // D126; throws StartError when one is running; before start everything is a no-op
+tel.flush(): bool; tel.shutdown(): bool   // send what is queued now / send it and stop recording — call before the program ends: a `with` cannot suspend, so closing only warns about what was lost
+with span = otel.span("load note", attrs: [otel.attr("note.id", id)], kind: otel.SpanKind.Internal, parent: null)   // current span to the end of the block, tasks started inside see it; kinds Internal | Server | Client | Producer | Consumer
+span.set(attr); span.event(name, attrs); span.ok(); span.fail(error); span.failWith(text); span.rename(name); span.end(); span.discard(); span.context(): SpanContext; span.handle: SpanHandle
+otel.inSpan("name", () => try work(), attrs:, kind:)   // ok on return, failed (and rethrown) on a thrown error
+otel.current(): SpanHandle?; otel.traceparent(): string?; otel.traceId(): string?; otel.active(): bool; otel.dropped(): i64
+otel.SpanContext.parse(text): SpanContext?   // W3C traceparent, strictly; ctx.traceparent(), traceIdHex(), spanIdHex(), sampled
+otel.attr(key, value)   // value: string | bool | i64 | i32 | f64 | List<string>
+val m = otel.meter("notes"); m.counter(name, unit:, description:).add(n, attrs); m.upDownCounter(…).add(n); m.gauge(…).set(x: f64); m.histogram(name, buckets: otel.defaultBuckets).record(x /* f64 | i64 | Duration (seconds) */, attrs)
+trait otel.Exporter : Sendable { fun export(signal: Signal, body: List<u8>) suspends throws ExportError }   // Signal: Traces | Metrics | Logs; otel.signalPath(signal)
+error ExportError { message, retryable: bool = true }; error StartError { message }
+http.otlp(endpoint, headers: Map<string, Secret<string>> = [:], timeout: 10s, gzip: true): otel.Exporter   // OTLP/HTTP protobuf to <endpoint>/v1/{traces,metrics,logs}; http only until E1
+```
+
+Finished spans and log records queue up to `maxQueue` each and are dropped, and counted (`otel.dropped()`, the metric `otel.dropped`), when the collector cannot be reached after four tries; an instrument holds at most 2000 attribute sets. `http.serve` opens a server span per request and `http.fetch` a client span, both continuing the W3C `traceparent`. See [chapter 23](../23-observability.md).
+
 ## Module `random`
 
 ```veles

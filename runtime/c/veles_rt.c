@@ -995,7 +995,7 @@ void veles_list_append_list(veles_list *dst, veles_list *src) {
     if (dst->len + n > dst->cap) {
         int64_t ncap = dst->cap * 2;
         if (ncap < dst->len + n) ncap = dst->len + n;
-        char *nd = veles_gc_alloc(dst->desc, ncap);
+        char *nd = veles_gc_alloc(dst->desc, dst->elem * ncap);
         memcpy(nd, dst->data, (size_t)(dst->elem * dst->len));
         dst->data = nd;
         dst->cap = ncap;

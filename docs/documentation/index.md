@@ -43,6 +43,7 @@ For readers who want to know what the compiler actually does.
 20. [Time](20-time.md) — `Duration` in the prelude; `time`: the wall clock and the monotonic one as different types, the calendar, RFC 3339 and HTTP dates.
 21. [Logging](21-logging.md) — `log`: four levels, named fields, text on a terminal and JSON elsewhere, messages that cost nothing while off, fields for a whole request.
 22. [Configuration](22-configuration.md) — `config`: settings read into a struct from the environment, `.env` and JSON files, every problem at once, secrets never echoed, `describe` for `--help`.
+23. [Observability](23-observability.md) — `otel`: traces, metrics and logs in OpenTelemetry's format; spans that follow tasks and cross services by `traceparent`; OTLP export.
 
 ## Reference
 

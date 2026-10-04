@@ -1036,6 +1036,8 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-10-04 | `fs.lines` | **An iterator of `Result<string, IoError>` that is also `Closeable`; `max:` required** (user, both recommended; spec D130 addendum). Rejected: a reader with a throwing `next()`, an iterator that ends silently with `error()` afterwards, a default `max`. |
 | 2026-10-04 | HTTP client request body | **A `Payload` value (`Payload.text/json/form/bytes`) in one `body:` parameter** (user, recommended of 3; spec D127 addendum). The original `json: T? = null` cannot be inferred. Rejected: `postJson`-style functions, explicit type arguments. |
 | 2026-10-04 | Health: readiness at the stop | **`http.serve(…, health: health)` flips `/readyz` to 503 when the stop begins** (user, recommended of 3; spec D133 addendum). Rejected: a hand-called `health.drain()`, a stop hook returned by `endpoints()`. |
+| 2026-10-05 | otel ↔ http cycle | **An explicit exporter: `otel.start(service:, exporter: http.otlp(endpoint:))`; `std/otel` imports nothing from `http`** (user, over the recommended `http.Observer` hook, after asking for the breakdown of what otel is; spec D126 addendum). Rejected: a hook slot in `http`, a mini HTTP client inside `otel`. |
+| 2026-10-05 | Binding a span | **`TaskLocal.bind` (a public `Closeable`) plus `otel.inSpan`** (user, recommended of 3; spec D126 addendum). Rejected: closure form only, `bind` alone. |
 | 2026-10-01 | Small std additions | **`http.testServer`, endian bytes, `fs.writeAtomic`/locks/`lines`/…, argon2id password hashing** (user, all ticked; spec D130). |
 | 2026-10-01 | Q7: C layout | **Compiler-known `@packed`, `@align(n)` (any struct), `@transparent` (one-field struct), and `extern union` (fields only in `unsafe`)** (user, recommended of 3; spec D120). Rejected: a layout clause, leaving it. |
 | 2026-10-01 | Fixed-size arrays | **`Array<T, N>` everywhere, inline value type, with `<const N: i64>` parameters** (user, recommended of 4; spec D121). Rejected: `[T; N]`, extern-only arrays, leaving it. |
@@ -1201,3 +1203,24 @@ Every new public std API (http cookies/forms/client, `std/log`,
   for the user; no `/startupz`; checks cannot report `degraded` (a pass/fail pair only); no spans exclusion
   yet because `std/otel` (D126) is not built — it must skip `quiet` responses; check results are not cached,
   so a probe every second runs every check every second (a `cacheFor:` option).
+- **Deferred from `std/otel` (2026-10-05), to build later:** runtime metrics (GC pauses and heap need E5's counters;
+  tasks, threads, open connections need runtime accessors) registered automatically as D126 says; a span per
+  database query and `db.system` attributes (with `std/db`, E2); `https` export (E1) and the `https` client span
+  attributes; **`with otel.start(...)` cannot flush at its close because `Closeable.close()` cannot suspend** — a
+  language question for the user: an effect-polymorphic `close`, or a second trait for resources whose close waits
+  (database pools, buffered writers, `otel`, `GzipWriter` would use it too); exponential histograms, exemplars, span
+  links, `tracestate`, baggage and the W3C `baggage` header; limits on attributes per span and events per span
+  (OTel's defaults are 128); delta temporality; `Retry-After` honoured by the exporter; the span of a retried
+  `http.fetch` is one span for all tries (OTel makes one per try); `http.fetch` spans end at the answer's head, not
+  when the body is read; HTTP semantic-convention attributes beyond the common ones (`http.request.body.size`,
+  `network.protocol.version`, `url.scheme` on the client side); a Prometheus pull endpoint (not decided);
+  `Span` is not Sendable (it owns the task-local binding) — a handle is passed instead; id generation is one
+  `crypto.randomBytes` call per id (a per-thread buffer would be faster); sampling is by trace-id ratio plus the
+  parent's decision only (no rate-limited or tail sampling); the otel module's tests share one process-wide
+  pipeline and take turns (a pipeline value instead of a global would let them run at once).
+- **Fixed on the way (2026-10-05): a runtime heap overflow in `veles_list_append_list`** (`addAll`, `concat`): the grown
+  buffer was allocated in elements instead of bytes, so appending to a list of anything wider than a byte past its
+  capacity wrote beyond the buffer and corrupted the next object — seen as a crash in the collector far from the
+  append. `std/prelude/list.test.vs` pins it (it fails on the old runtime). Worth an audit: the other runtime list
+  and map growth paths were read for the same mistake and have it right; a debug build that checks every slot header
+  at each allocation (as the investigation did by hand) would find this class at once — not built.

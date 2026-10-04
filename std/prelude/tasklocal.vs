@@ -70,11 +70,33 @@ public struct TaskLocal<T: Sendable> {
     with binding = LocalBinding.take(this.key, cell)
     return try f()
   }
+
+  /// Binds this to `value` from here to the end of the block that holds
+  /// the result — `with b = requestId.bind(id)` — in this task and every task
+  /// started inside it, exactly as `withValue` does for the length of a
+  /// function. The binding ends with the block, whether it leaves by return,
+  /// throw, panic or cancellation, and gives the previous binding back. Only
+  /// a `with` may hold one, so bindings always end in the order they began.
+  ///
+  /// ```veles
+  /// with span = tracing.bind(current)   // for the rest of the block
+  /// handle(req)
+  /// ```
+  public fun bind(value: T): LocalBinding {
+    var held = value
+    // SAFETY: as in `withValue`: `held` is a heap cell whose address is taken,
+    // and the binding node that refers to it is GC memory reachable from every
+    // task that can see it, so it outlives this call
+    val cell: *raw u8 = unsafe {
+      (&held).cast<*raw u8>()
+    }
+    LocalBinding.take(this.key, cell)
+  }
 }
 
-// One binding in effect: ends — the previous bindings back — when the
-// `with` holding it does.
-struct LocalBinding {
+/// One task-local binding in effect (see `TaskLocal.bind`): it ends, with the
+/// previous bindings back, when the `with` holding it does.
+public struct LocalBinding {
   previous: (*raw u8)?
 
   static fun take(key: i64, cell: *raw u8): LocalBinding {

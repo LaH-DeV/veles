@@ -3,7 +3,7 @@
 // sides agree (header tokens, chunk sizes, percent-encoding); everything a
 // client has to distrust — a status line, a framing it did not ask for, a
 // body of any size — is read here under limits of its own.
-use io, json as js, net, time
+use io, json as js, net, otel, time
 
 // ---------------------------------------------------------------------------
 // errors
@@ -635,6 +635,12 @@ public struct Client {
   /// the pool is next asked for it.
   public idleTimeout: Duration = Duration.seconds(30)
   private pool:       Pool = Pool()
+  // spans and a `traceparent` header while `otel` runs; off for the client that
+  // exports telemetry, whose own requests must not become telemetry
+  private traced: bool = true
+
+  // a client whose requests are not traced (see `http.otlp`)
+  static fun untraced(timeout: Duration): Client = Client(timeout, traced: false)
 
   /// One request. `url` is absolute (`http://…`); `headers` are added to the
   /// client's; `body` goes with a `Content-Length`. A redirect (301, 302,
@@ -644,6 +650,11 @@ public struct Client {
   /// times to try after a failure to connect, a lost connection, a timeout or
   /// a 502/503/504 — only for an idempotent method (GET, HEAD, PUT, DELETE,
   /// OPTIONS, TRACE), waiting 100 ms, 200 ms, 400 ms… between tries.
+  ///
+  /// While `otel` runs, the call is a client span (named for the method, with
+  /// the URL without its query) and the request carries a `traceparent`
+  /// header, so the service called continues the trace; the span ends when
+  /// the answer's head arrives.
   public fun fetch(
     url: string,
     method: Method = Method.get,
@@ -654,6 +665,27 @@ public struct Client {
     retry: i64 = 0,
   ): ClientResponse suspends throws FetchError {
     if (retry < 0) panic("fetch: retry cannot be negative, got $retry")
+    if (!this.traced || !otel.active()) return try this.send(url, method, headers, body, timeout, redirect, retry)
+    with span = clientSpan(url, method)
+    val outgoing = withTraceparent(headers)
+    when (this.send(url, method, outgoing, body, timeout, redirect, retry)) {
+      is Ok(res) => {
+        span.set(otel.attr("http.response.status_code", res.status.code))
+        if (res.status.isServerError() || res.status.isClientError()) span.set(otel.attr("error.type", "${res.status.code}"))
+        if (res.status.isServerError()) span.failWith("${res.status.code} ${res.status.reason()}")
+        span.end()
+        res
+      }
+      is Err(e)  => {
+        span.set(otel.attr("error.type", "${e.kind}"))
+        span.fail(e)
+        throw e
+      }
+    }
+  }
+
+  // the tries of one call, retries and redirects included
+  fun send(url: string, method: Method, headers: Map<string, string>, body: Payload?, timeout: Duration?, redirect: bool, retry: i64): ClientResponse suspends throws FetchError {
     val retries = if (isIdempotent(method)) retry else 0
     var attempt: i64 = 0
     loop {
@@ -755,6 +787,32 @@ public struct Client {
       this.pool.closeAll()
     }
   }
+}
+
+// A client span for a call (OpenTelemetry's HTTP conventions): the query string
+// is left out of url.full, since it is where tokens and personal data go.
+fun clientSpan(url: string, method: Method): otel.Span {
+  val attrs: MutableList<otel.Attr> = [otel.attr("http.request.method", method.name)]
+  when (parseUrl(url)) {
+    is Ok(u)  => {
+      attrs.push(otel.attr("url.full", u.origin() + pathOf(u.target)))
+      attrs.push(otel.attr("server.address", u.host))
+      attrs.push(otel.attr("server.port", u.port))
+    }
+    is Err(_) => { }
+  }
+  otel.span(method.name, attrs: attrs.toList(), kind: otel.SpanKind.Client)
+}
+
+// the headers with the current trace added, unless the caller set its own
+fun withTraceparent(headers: Map<string, string>): Map<string, string> {
+  val header = otel.traceparent() ?: return headers
+  loop ((name, _) in headers.entries()) {
+    if (name.toLower() == "traceparent") return headers
+  }
+  val out = headers.toMutable()
+  out.set("traceparent", header)
+  out.toMap()
 }
 
 fun isIdempotent(m: Method): bool =

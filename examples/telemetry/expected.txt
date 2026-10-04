@@ -1,0 +1,6 @@
+answer: note 7
+the service handled it in the same trace: true
+the trace id is 32 hex digits: true
+exported: true
+trace exports: 1, metric exports: 1, log exports: 1
+exit=0

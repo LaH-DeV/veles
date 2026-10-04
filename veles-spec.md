@@ -4321,6 +4321,15 @@ User, 2026-10-01: "All signals + protobuf" (over the recommended metrics +
 traces with OTLP/JSON and a Prometheus exporter). Rejected: Prometheus-shaped
 metrics as the model; metrics first; counters and gauges only.
 
+*Addendum (2026-10-05) — as built.* Two questions came up in the build, both answered by the user.
+
+1. **The module cycle** (`otel` needs `http` to export; `http` needs `otel` for spans). The user chose **an explicit exporter** (over the recommended hook in `http`, and over a second HTTP client inside `otel`): `std/otel` imports nothing from `http`; `std/http` imports it and offers `http.otlp(endpoint:, headers:, timeout:, gzip:)`, so the start is `otel.start(service: "notes", exporter: http.otlp(endpoint: url))`, not `endpoint:`. `Exporter` is a public trait (`export(signal, body) suspends throws ExportError`), so a test or another transport writes its own. The exporter's own client is untraced (its requests must not become telemetry).
+2. **Making a span current for a `with` block.** The user chose **`TaskLocal.bind(value)` as a public `Closeable` (`LocalBinding`) plus `otel.inSpan(name, f)`** (the recommended "both"): `with span = otel.span(...)` binds and unbinds the current span; `inSpan` records a thrown error as the span's failure, which a `with` cannot see. `bind` is the primitive `withValue` was built on, now usable for any task-local (request ids, user contexts).
+
+What differs from the text above. `otel.start` throws `StartError` when a pipeline is already running (one per process) and panics on a `sampleRatio` outside 0..1, a `maxQueue` below 1, an `interval` under 10 ms. **A `with` cannot flush**: `Closeable.close()` is declared non-suspending (D40) and an export waits on the network, so `Telemetry.shutdown()` is the explicit send-and-stop (as `GzipWriter.finish()` is for compression), and closing the `with` only stops the task and prints one line to standard error when spans or log records were still queued. `Span` is not Sendable (it owns the binding); `span.handle` / `otel.current()` give the Sendable `SpanHandle` for a child task. Log records come from `std/log` itself (`otel.logRecord`), with the fields as typed attributes and `trace_id` added to the text/JSON line inside a span. Metrics are cumulative; an instrument keeps at most 2000 attribute sets, then folds the rest into one `otel.metric.overflow` series. Dropped data is counted (`otel.dropped()`, and as the metric `otel.dropped`). Server spans are named by route pattern (`GET /users/{id}`) and a response marked quiet (a health probe, D133) is discarded; `url.full` of a client span has no query string.
+
+Not built (checklist §11): runtime metrics, a span per database query (`std/db`), TLS for the exporter (E1), exponential histograms, exemplars, span links, `tracestate`/baggage, attribute and event count limits, a Prometheus pull endpoint.
+
 ### D127 — The HTTP client: `fetch` and the Go spellings (v0.65)
 
 ```veles

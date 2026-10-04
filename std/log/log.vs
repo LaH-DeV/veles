@@ -25,7 +25,7 @@
 ///
 /// The level starts as `info`, or as `VELES_LOG` says (`debug`, `info`,
 /// `warn`, `error`, or `off`), and `setLevel` changes it.
-use io { eprintln }, json, os, time
+use io { eprintln }, json, os, otel, time
 
 extern "C" {
   fun veles_stderr_is_terminal(): bool
@@ -146,8 +146,35 @@ fun emit(level: Level, msg: fun(): string, fields: List<Field>) {
   loop (x in fields) all.push(x)
   val text = msg()
   val now = time.now().toString()
+  // inside an `otel.span` the line says which trace it belongs to; with otel
+  // started it is also exported as a log record with the same ids
+  val trace = otel.traceId()
+  if (trace != null) all.push(Field(key: "trace_id", json: quote(trace), text: trace))
   val line = all.toList()
+  if (otel.active()) otel.logRecord(severity(level), level.toString().toUpper(), text, line.map(f => attrOf(f)))
   eprintln(if (terminal) textLine(now, level, text, line) else jsonLine(now, level, text, line))
+}
+
+// OpenTelemetry's severity numbers: 5 debug, 9 info, 13 warn, 17 error
+fun severity(level: Level): i64 = when (level) {
+  Level.Debug => 5
+  Level.Info  => 9
+  Level.Warn  => 13
+  Level.Error => 17
+  Level.Off   => 0
+}
+
+// a field as an attribute of its own type: the JSON it was encoded to says which
+fun attrOf(f: Field): otel.Attr {
+  if (f.json.startsWith("\"")) return otel.attr(f.key, json.decode<string>(f.json) ?? f.text)
+  if (f.json == "true") return otel.attr(f.key, true)
+  if (f.json == "false") return otel.attr(f.key, false)
+  val n = f.json.toInt()
+  if (n != null) return otel.attr(f.key, n)
+  when (json.decode<f64>(f.json)) {
+    is Ok(x)  => otel.attr(f.key, x)
+    is Err(_) => otel.attr(f.key, f.text)
+  }
 }
 
 fun textLine(now: string, level: Level, text: string, fields: List<Field>): string {
