@@ -288,7 +288,10 @@ true
 ```
 
 A method written in the body is kept and the rest is derived, so one
-direction can be by hand. `Comparable` is derived the same way: field by
+direction can be by hand. (Chapter 22's `config` also asks a type for its
+`schema`, the list of its fields; that is derived only along with `decode`,
+because the fields say nothing about what a hand-written `decode` reads — such
+a type is read from one variable, as text.) `Comparable` is derived the same way: field by
 field, in declaration order.
 
 ## Seeing what was derived

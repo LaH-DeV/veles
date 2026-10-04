@@ -42,6 +42,7 @@ For readers who want to know what the compiler actually does.
 19. [Secrets, hashes and tokens](19-secrets-and-crypto.md) — `crypto`, `hex`, `base64` and `jwt`: hashing, MACs, random bytes, UUIDs and signed tokens, and what each of them refuses.
 20. [Time](20-time.md) — `Duration` in the prelude; `time`: the wall clock and the monotonic one as different types, the calendar, RFC 3339 and HTTP dates.
 21. [Logging](21-logging.md) — `log`: four levels, named fields, text on a terminal and JSON elsewhere, messages that cost nothing while off, fields for a whole request.
+22. [Configuration](22-configuration.md) — `config`: settings read into a struct from the environment, `.env` and JSON files, every problem at once, secrets never echoed, `describe` for `--help`.
 
 ## Reference
 

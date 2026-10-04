@@ -695,8 +695,16 @@ behind a name that says "crypto" (§10, 2026-09-23).
       a `bitcast` at -O2). `examples/floatbits` (LLVM-style hex constants,
       round trips, NaN payload, `-0.0`, sign/exponent/fraction), docs chapter 2
       and the stdlib reference. A compiler builtin can replace it later
-- [ ] `std/config`: typed env parsing, all missing keys reported at once —
-      decided 2026-10-01 (D125), not built (plan C3)
+- [x] `std/config` (D125, 2026-10-04): `config.load<T>(files:, prefix:)` reads a derived struct from
+      the environment, dotenv and JSON files beneath it, then field defaults; every problem at once
+      by variable name with its source, a `Secret` never echoed; `config.describe<T>()` lists the
+      variables. Built on `Decodable.schema()`, which the derive writes beside `decode` (enum members,
+      per-format `@key`, defaults as text) and `KeyStyle.UpperSnake`. Tests `std/config/*.test.vs`
+      (29), `sema/derive_print_test.go`, conformance D04; example `examples/config`; docs chapter 22,
+      stdlib reference; `veles new --template server` reads `HOST`/`PORT` through it. A module may now
+      declare its own `Error` (the `error` sugar names the prelude's trait). Not offered: a `Map` or a
+      list of structs from variables (a panic naming the field), `${VAR}` interpolation, a way to set
+      the environment from a program (tests pass a lookup to the private `loadWith`)
 - [x] `std/compress` (D124, 2026-10-04): gzip/deflate/inflate written in Veles, 64 MiB default
       ceiling on the output (`TooLarge`), `GzipWriter`/`GzipReader` over `io.Stream`, `GzipEncoder`,
       `http.compress()`, `http.decompressRequests()`, `.gz` siblings in `http.files`. Tests:
@@ -1001,6 +1009,7 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-10-01 | Where packages come from | **Decentralized: git repositories with `github:`-style shorthands, the major version in the version not the path, tags only (explicit `commit(…)` pins, no pseudo-versions), MVS per (repository, major), mandatory `veles.sum`, optional proxy, no lockfile, a search index later** (user: "decentralized but … go works fine but look awful"; all four refinements; no lockfile recommended; spec D132). Rejected: a central registry, Go's `/v2` paths and pseudo-versions, a lockfile. |
 | 2026-10-01 | `std/compress` ceiling | **A 64 MiB default, `max:` to change it** (user, over the recommended required `max:`; spec D124). Rejected: required `max:`, no limit. |
 | 2026-10-01 | `std/config` | **A struct decoded from the environment, dotenv/JSON files beneath it, every problem at once** (user, recommended of 3; spec D125). Rejected: env only, getters. |
+| 2026-10-04 | `std/config` mechanism | **`Decodable.schema()` written by the derive; an empty variable is a value; dotenv has no interpolation** (user, all recommended; spec D125 addendum). Rejected: environment-scan decoder, opt-in `Configurable`, empty = unset, `${VAR}` expansion. |
 | 2026-10-01 | Observability | **OpenTelemetry: metrics, traces and logs, OTLP over HTTP with protobuf** (user: "OpenTelemetry" over the recommended Prometheus-shaped metrics; then "All signals + protobuf" over metrics + traces with OTLP/JSON; spec D126). Rejected: Prometheus-shaped metrics, counters/gauges only, metrics first. Health endpoints left to confirm. |
 | 2026-10-01 | HTTP client | **Both: `http.fetch(url, …)` and `http.get/post/…` + `http.Client`** (user, over the recommended `fetch` only; spec D127). |
 | 2026-10-01 | Streams and TLS | **`io.Stream` implemented by `net.Conn`, `tls.Conn`, `fs.File`; HTTP over any stream; TLS verification on, `dangerouslyAcceptAnyCertificate` the only opt-out** (user, recommended of 2; spec D128). |

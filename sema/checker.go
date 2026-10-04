@@ -1934,7 +1934,14 @@ func (c *Checker) ownsType(m *Module, t types.Type) bool {
 
 func (c *Checker) declareImpl(m *Module, f *ast.File, d *ast.ImplDecl) {
 	impl, ctx, env := c.newImpl(m, f, d)
-	tt := c.resolveType(env, d.Trait)
+	var tt types.Type
+	if d.ErrorSugar {
+		// `error Error { }` in a module of its own (`config.Error`) must still
+		// implement the prelude's trait, not itself
+		tt = c.preludeType("Error")
+	} else {
+		tt = c.resolveType(env, d.Trait)
+	}
 	var sealedFor *types.Sealed
 	if s, isSealed := tt.(*types.Sealed); isSealed {
 		if s.Trait == nil {

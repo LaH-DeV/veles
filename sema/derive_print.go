@@ -343,6 +343,12 @@ func dexpr(e ast.Expr, ind int) string {
 		return e.Name
 	case *ast.FieldDefaultExpr:
 		return "<default of " + fieldDefaultName(e) + ">"
+	case *ast.ListLit:
+		var items []string
+		for _, x := range e.Elems {
+			items = append(items, dexpr(x, ind))
+		}
+		return "[" + strings.Join(items, ", ") + "]"
 	case *ast.ControlExpr:
 		switch s := e.Stmt.(type) {
 		case *ast.ThrowStmt:

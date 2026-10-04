@@ -319,6 +319,7 @@ type ImplDecl struct {
 	Inline     bool // written inside the target struct's body
 	Braceless  bool // an empty impl written without `{ }` (D58): the body is derived
 	Derived    bool // synthesized by the compiler (D58): a supertrait's, a variant's or an enum's impl; never from the parser
+	ErrorSugar bool // the `impl Error for Name` an `error Name` declaration makes: its trait is the prelude's, whatever the module names its own types
 	TypeParams []TypeParam
 	Trait      Type
 	Target     Type

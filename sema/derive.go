@@ -71,10 +71,13 @@ func (c *Checker) deriveMissing(d *ast.ImplDecl, impl *Impl, trait *types.Trait)
 		written[md.Name.Name] = true
 	}
 	for _, name := range trait.MethodList {
-		if written[name] || c.traitDefault(trait, name) != nil {
+		if written[name] || c.traitDefault(trait, name) != nil && !derivedOverDefault(kind, name) {
 			continue
 		}
 		fd, why := c.deriveMethod(d, impl, trait, kind, name)
+		if fd != nil && derivedOverDefault(kind, name) {
+			fd.Override = true
+		}
 		if fd == nil {
 			if why != "" {
 				c.errorFix(d.Pos, c.skipFix(impl.Target, kind), "cannot derive '%s' for '%s': %s (D58)", trait.Name, impl.Target, why)
@@ -93,12 +96,20 @@ func (c *Checker) deriveMissing(d *ast.ImplDecl, impl *Impl, trait *types.Trait)
 	}
 }
 
+// derivedOverDefault is a method the compiler writes although the trait has a
+// body for it: `Decodable.schema` (D125), whose default only fits a type
+// with a `decode` of its own.
+func derivedOverDefault(kind, name string) bool { return kind == "Decodable" && name == "schema" }
+
 // deriveMethod synthesizes one trait method for the impl's target.
 func (c *Checker) deriveMethod(d *ast.ImplDecl, impl *Impl, trait *types.Trait, kind, name string) (*ast.FunDecl, string) {
 	b := &synth{sp: d.Pos}
 	c.syntheticSpans[d.Pos] = true
 	if kind == "Default" {
 		return c.deriveDefault(b, impl, trait)
+	}
+	if derivedOverDefault(kind, name) {
+		return c.deriveSchema(b, impl)
 	}
 	switch t := impl.Target.(type) {
 	case *types.Struct:
@@ -337,7 +348,13 @@ func variantName(v *types.Struct) string {
 // encoder or decoder `io`: the field's name styled by the format unless a
 // `@key` says otherwise, by format when it does.
 func (c *Checker) keyExpr(b *synth, df derivedField, io ast.Expr) ast.Expr {
-	styled := b.call(b.prelude("styleKey"), b.str(df.name), b.mcall(io, "keys"))
+	return c.keyExprIn(b, df, func() ast.Expr { return b.mcall(io, "format") }, func() ast.Expr { return b.mcall(io, "keys") })
+}
+
+// keyExprIn is keyExpr where the format and the key style come from
+// expressions: a decoder's methods, or `schema`'s parameters.
+func (c *Checker) keyExprIn(b *synth, df derivedField, format, keys func() ast.Expr) ast.Expr {
+	styled := b.call(b.prelude("styleKey"), b.str(df.name), keys())
 	if df.keys == nil {
 		return styled
 	}
@@ -346,25 +363,30 @@ func (c *Checker) keyExpr(b *synth, df derivedField, io ast.Expr) ast.Expr {
 		fallback = b.str(k)
 	}
 	var arms []*ast.WhenArm
-	for _, format := range sortedKeys(df.keys) {
-		if format == "" {
+	for _, name := range sortedKeys(df.keys) {
+		if name == "" {
 			continue
 		}
-		arms = append(arms, &ast.WhenArm{Patterns: []ast.Pattern{&ast.LiteralPat{Value: b.str(format)}}, Body: b.str(df.keys[format]), Pos: b.sp})
+		arms = append(arms, &ast.WhenArm{Patterns: []ast.Pattern{&ast.LiteralPat{Value: b.str(name)}}, Body: b.str(df.keys[name]), Pos: b.sp})
 	}
 	if len(arms) == 0 {
 		return fallback
 	}
 	arms = append(arms, &ast.WhenArm{Else: true, Body: fallback, Pos: b.sp})
-	return &ast.WhenExpr{Subject: b.mcall(io, "format"), Arms: arms, Pos: b.sp}
+	return &ast.WhenExpr{Subject: format(), Arms: arms, Pos: b.sp}
 }
 
 // skippedHere is `io.format() == "a" || io.format() == "b"` for a field
 // skipped in some formats.
 func (c *Checker) skippedHere(b *synth, df derivedField, io ast.Expr) ast.Expr {
+	return c.skippedIn(b, df, func() ast.Expr { return b.mcall(io, "format") })
+}
+
+// skippedIn is skippedHere where the format comes from an expression.
+func (c *Checker) skippedIn(b *synth, df derivedField, formatOf func() ast.Expr) ast.Expr {
 	var cond ast.Expr
 	for _, format := range df.skipIn {
-		test := b.bin(lexer.Eq, b.mcall(io, "format"), b.str(format))
+		test := b.bin(lexer.Eq, formatOf(), b.str(format))
 		if cond == nil {
 			cond = test
 		} else {

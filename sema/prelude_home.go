@@ -15,7 +15,8 @@ var preludeHomes = map[string]string{
 	"Decoder": "codec", "childPath": "codec", "indexPath": "codec", "joinPath": "codec",
 	"finish": "codec", "Value": "codec", "VNull": "codec", "VBool": "codec", "VInt": "codec",
 	"VFloat": "codec", "VString": "codec", "VList": "codec", "VObject": "codec",
-	"ValueDecoder": "codec", "ValueEncoder": "codec",
+	"ValueDecoder": "codec", "ValueEncoder": "codec", "Schema": "codec", "SchemaKind": "codec",
+		"SchemaField": "codec", "defaultText": "codec",
 	// the recursion guard
 	"Depth": "recursion", "maxRecursionDepth": "recursion", "tooDeepMessage": "recursion",
 	// memory C can read as it is

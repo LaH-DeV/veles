@@ -228,7 +228,7 @@ by hand); an enum cannot implement it (D57).
 ```veles
 // fragment
 public trait Encodable { fun encode(to: codec.Encoder) throws EncodeError }
-public trait Decodable { static fun decode(from: codec.Decoder): Self throws DecodeError }
+public trait Decodable { static fun decode(from: codec.Decoder): Self throws DecodeError; static fun schema(format: string, keys: codec.KeyStyle): codec.Schema }   // schema: derived beside a derived decode (D125); the default is one opaque value
 public trait Codable : Encodable + Decodable { }   // `implement Codable` in a struct body derives both; `implement Codable for pkg.T` at top level
 public error EncodeError { message, path }; public error DecodeError { problems: List<codec.Problem> }
 ```
@@ -249,9 +249,12 @@ use codec
 public trait Encoder { format(); enums(); keys(); beginObject(); key(name); endObject(); beginList(); endList(); writeI64/U64/F64/Bool/String/Null(v) }
 public trait Decoder { format(); enums(); keys(); peek(): Kind; beginObject(); nextKey(): string?; endObject(); beginList(); hasNext(); endList(); readI64/U64/F64/Bool/String/Null(); skip(); path(); problem(msg); problemAt(path, msg); problems() }
 public struct Problem { path, message; pointer() }; public struct Problems   // what a decoder records
-public enum EnumStyle { Name, Number }; public enum DurationStyle { Seconds, Iso8601, Text, Nanos, Millis }; public enum KeyStyle { AsWritten, SnakeCase, CamelCase }; public enum Kind { Null, Bool, Int, Float, String, List, Object }
+public enum EnumStyle { Name, Number }; public enum DurationStyle { Seconds, Iso8601, Text, Nanos, Millis }; public enum KeyStyle { AsWritten, SnakeCase, CamelCase, UpperSnake }; public enum Kind { Null, Bool, Int, Float, String, List, Object }
 public sealed trait Value   // VNull, VBool, VInt, VFloat, VString, VList, VObject; get(k), at(i), asString/asI64/asF64/asBool(), isNull()
 ValueEncoder.of(format, enums, keys, durations); ValueDecoder.of(v, format, enums, keys, durations)   // a Value as the sink / the source
+public struct Schema { kind: SchemaKind, what: string, secret: bool, fields: List<SchemaField>; element(): Schema?; asSecret() }   // the shape of a Decodable (D125): what `config` asks for by name
+public struct SchemaField { name, key, schema: Schema, required: bool, nullable: bool, fallback: string? }   // key: as decode matches it for the format and key style
+public enum SchemaKind { Bool, Int, Float, Text, List, Object, Opaque, Unsupported }   // Unsupported: a Map, a sealed family
 ```
 
 A program imports `codec` to walk a document whose shape it does not know
@@ -690,6 +693,29 @@ Huffman coding, matches with hash chains (lazy from level 4), and writes
 incompressible data stored, so the output is at most a few bytes more than the
 input. The decoder resumes where the input ends, which is what lets
 `GzipReader` work on a stream that arrives a few bytes at a time.
+
+## Module `config`
+
+Settings read into a struct (D125, [chapter 22](../22-configuration.md)).
+
+```veles
+// fragment
+use config
+config.load<T: Decodable>(files: List<string> = [], prefix: string = ""): T throws config.Error   // environment, then files last to first, then field defaults
+config.describe<T: Decodable>(prefix: string = ""): List<config.Variable>                          // what T reads: for --help and docs
+error Error { problems: List<codec.Problem> }   // one problem per variable or file, path = the variable (`DB_URL: not set (expected text)`)
+struct Variable { name: string, what: string, required: bool, secret: bool, default: string? }
+// DATABASE_URL for databaseUrl; DB_POOL_SIZE for db.poolSize; @key("X") as written, @key(env: "X") for the environment only
+// files: *.json by field name (typed, nested), anything else dotenv (NAME=value, #, export, '…', "…" with escapes; no interpolation)
+```
+
+Values: numbers, `bool` (`true`/`false` only), `string`, `Secret<T>`, `Duration`
+(`30s`), `Timestamp` (RFC 3339), enums by member name, `List<T>` (comma
+separated), `T?` (`null` when unset); a field with a default needs no
+variable, any other is required. An empty variable is a value. A struct field
+whose variables are all unset takes its default (or `null`). A `Map` field
+(or a list of structs) panics at the first call, naming the field: mark it
+`@skip` with a default. A `Secret`'s value is never in a message.
 
 ## Module `json`
 

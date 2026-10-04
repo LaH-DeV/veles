@@ -1453,7 +1453,7 @@ func (p *Parser) parseErrorDecl(attrs []*ast.Attribute, pub bool, start source.S
 		target.Args = append(target.Args, &ast.NamedType{Path: []ast.Ident{tp.Name}, Pos: tp.Name.Pos})
 	}
 	errorTrait := &ast.NamedType{Path: []ast.Ident{{Name: "Error", Pos: kw}}, Pos: kw}
-	d.ErrorImpl = &ast.ImplDecl{TypeParams: d.TypeParams, Trait: errorTrait, Target: target, Methods: impl, Pos: d.Pos}
+	d.ErrorImpl = &ast.ImplDecl{TypeParams: d.TypeParams, Trait: errorTrait, Target: target, Methods: impl, ErrorSugar: true, Pos: d.Pos}
 	return d
 }
 

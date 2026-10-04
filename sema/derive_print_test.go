@@ -56,6 +56,12 @@ func TestDumpDerivedIsVeles(t *testing.T) {
 		"    else => styleKey(\"author\", to.keys())",
 		"  })",
 		"static fun decode(from: Decoder): Note throws DecodeError {",
+		// D125: the schema follows decode, with the same keys and the same
+		// per-format @key, and the default as text
+		"static fun schema(format: string, keys: KeyStyle): Schema {",
+		"schema: i64.schema(format, keys), required: true, nullable: false, fallback: null)",
+		"  Schema.object(\"Note\", $fields.toList())",
+		"fallback: defaultText(<default of Note.tags>, format, keys))",
 		"    val k = try from.nextKey() ?: break",
 		"      when (i64.decode(from)) {",
 		"        is Ok($ok) => {",
@@ -87,5 +93,22 @@ func TestDumpDerivedInfersBounds(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q:\n%s", want, got)
 		}
+	}
+}
+
+// D125: a schema is derived only beside a derived decode — the fields say
+// nothing about what a hand-written decode reads, so it keeps the trait's
+// default — and an enum's schema is its member names.
+func TestDeriveSchemaFollowsDecode(t *testing.T) {
+	src := "use codec\nuse io\n\nenum Mode {\n  Fast\n  Slow\n}\n\n" +
+		"struct Pair {\n  a: string\n  b: string\n  implement Decodable {\n" +
+		"    static fun decode(from: codec.Decoder): Pair throws DecodeError = Pair(a: try from.readString(), b: \"\")\n  }\n}\n\n" +
+		"fun main() { io.println(\"ok\") }\n"
+	got := explainSource(t, src)
+	if !strings.Contains(got, "Schema.leaf(SchemaKind.Text, \"one of \\\"Fast\\\", \\\"Slow\\\"\")") {
+		t.Errorf("an enum's schema is its member names:\n%s", got)
+	}
+	if strings.Contains(got, "Schema.object(\"Pair\"") {
+		t.Errorf("a hand-written decode got a derived schema:\n%s", got)
 	}
 }

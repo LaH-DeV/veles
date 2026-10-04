@@ -65,7 +65,7 @@ next. A step names what it needs; the reason for the order is in brackets.
 9. ~~**C2**~~ **Done 2026-10-04** (`tls.Conn` joins `io.Stream` with E1). `io.Stream` (D128: trait, `net.Conn`, `fs.File`, `http` over it) → 
    `std/compress` + `http.compress()` (D124) → `http.testServer` (D130, needs
    B13) [compress streams over `Stream`].
-10. **C3** `std/config` (D125) [needs B13's `Secret`].
+10. ~~**C3**~~ **Done 2026-10-04.** `std/config` (D125) [needs B13's `Secret`].
 11. **C5/C6** `std/fs` additions, endian bytes (D130), helpers (D110 if not in B12).
 12. **C8** template literals (D129 part 1) [before E2].
 13. **C7** the HTTP client over TCP (D127) [needs C2's `Stream`].
@@ -135,7 +135,7 @@ Windows and WSL green.)*
    (checklist §5.2). Remaining: **`std/compress` + `http.compress()` (D124)**,
    benchmarked against Go's `compress/flate`; `http.testServer` (D130, after
    B13's D111).
-3. **`std/config`** (D125) — `config.load<T>`, env + dotenv/JSON files, every
+3. **Done 2026-10-04.** **`std/config`** (D125) — `config.load<T>`, env + dotenv/JSON files, every
    problem at once, `config.describe<T>()`; `examples/` service template
    (`veles new --template server`) moved to it.
 4. **Observability** (D126) — `std/otel`: metrics, traces, logs; OTLP/protobuf
@@ -1418,3 +1418,24 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   (the safepoint poll in each inner loop and the oversized-shift selects show in the IR);
   levels 7–9 on large inputs are slow (no zlib-style give-up on a long chain). Windows and WSL
   green (see below).
+
+- 2026-10-04 — **unused-import lint and generics.** `use http { field }` warned "imported but never used" in programs importing `std/http` because `field` is only used inside the generic `screen<E>` in `auth.vs`, whose body is checked only when instantiated. `lintUnusedNames` now skips a file holding a generic that was never instantiated (sema/checker.go `hasUncheckedGeneric`); conformance D85-named-imports-generic. Limit: a truly unused import in such a file stays unreported until the generic is used somewhere.
+
+- 2026-10-04 — **C3 `std/config` (D125) done.** Decided with the user first (all recommended): the
+  derive writes `Decodable.schema(format, keys)` beside a derived `decode`; an empty variable is a
+  value; dotenv has no interpolation. Built: `std/config/{config,dotenv}.vs` — `load<T>(files:,
+  prefix:)` (environment, files last to first, field defaults), `describe<T>(prefix:)`,
+  `config.Error` (one `Problem` per variable, named by the variable with its source, a `Secret`
+  never echoed), dotenv reader (quotes, escapes, multi-line, `export`, ` #` comments, no
+  interpolation), JSON files by field name; the schema types `Schema`/`SchemaField`/`SchemaKind`
+  and `KeyStyle.UpperSnake` in the prelude (homed in `codec`), `sema/derive_schema.go`, and a
+  `schema()` for every built-in decodable, `Duration`, `Timestamp` and `Secret`. Tests:
+  `std/config/config.test.vs` (19), `dotenv.test.vs` (10), the derive printer test, conformance
+  D04; example `examples/config`; docs chapter 22 + stdlib reference + chapter 18 note;
+  `veles new --template server` reads `HOST`/`PORT`/`.env` through `config`. **Compiler bugs found
+  on the way:** a module could not declare a type named `Error` (the `error` sugar resolved the
+  trait by scope and found itself — `ast.ImplDecl.ErrorSugar` now names the prelude's); the
+  derive printer had no case for a list literal. **Not done:** a `Map` or list-of-structs field
+  has no variable form (a panic naming the field on the first call, not a compile error); no
+  `os.setEnv`, so tests give a lookup to the private `loadWith`; `.env` search upward is not
+  offered. Next in the build order: C5/C6 (`std/fs` additions, endian bytes).

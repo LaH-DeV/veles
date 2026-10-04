@@ -1,0 +1,20 @@
+variables (all start with DEMO_):
+  DEMO_PORT          default 8080         an integer
+  DEMO_HOST          default 127.0.0.1    text
+  DEMO_LOG_LEVEL     default Info         one of "Debug", "Info", "Warn", "Error"
+  DEMO_ORIGINS       default (empty)      a list of text, separated by commas
+  DEMO_API_KEY       required             text
+  DEMO_POOL_SIZE     default 10           an integer
+  DEMO_POOL_TIMEOUT  default 5s           a duration like 30s, 5m or 1h30m
+loaded from both files:
+  listening on 0.0.0.0:8443, logging at Debug
+  origins: [https://a.example, https://b.example]
+  pool of 32, timeout 750ms
+  api key: [redacted] (18 bytes)
+loaded from a broken file:
+  DEMO_PORT: expected an integer, found "eighty" (from broken.env)
+  DEMO_POOL_SIZE: expected an integer, found "many" (from broken.env)
+  DEMO_LOG_LEVEL: "Loud" is not a Level (one of "Debug", "Info", "Warn", "Error") (from broken.env)
+  DEMO_POOL_TIMEOUT: not a duration like "1m30.5s": 'soon' (from broken.env)
+  DEMO_API_KEY: not set (expected text)
+exit=0

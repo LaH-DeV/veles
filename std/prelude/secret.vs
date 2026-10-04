@@ -70,4 +70,5 @@ public struct Secret<T> {
 
 implement<T: Decodable> Decodable for Secret<T> {
   static fun decode(from: Decoder): Secret<T> throws DecodeError = Secret.of(try T.decode(from))
+  override static fun schema(format: string, keys: KeyStyle): Schema = T.schema(format, keys).asSecret()
 }

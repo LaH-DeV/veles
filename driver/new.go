@@ -29,7 +29,7 @@ func New(dir, template string) int {
 		next = "  veles run       # Hello, world!\n  veles test      # runs the test in main.vs\n"
 	case "server":
 		main = strings.ReplaceAll(serverTemplate, "NAME", name)
-		next = "  veles run       # serves on http://127.0.0.1:8080/ (HOST, PORT)\n  veles test      # the handlers, in memory\n"
+		next = "  veles run       # serves on http://127.0.0.1:8080/ (HOST, PORT, or a .env file)\n  veles test      # the handlers, in memory\n"
 	default:
 		fmt.Fprintf(os.Stderr, "veles new: there is no template %q; there are: %s\n", template, strings.Join(Templates, ", "))
 		return 2
@@ -82,10 +82,13 @@ const serverTemplate = `// NAME: an HTTP service.
 //   HOST=0.0.0.0 PORT=9000 veles run
 //   veles test                      the handlers, in memory
 //
+// The address comes from the environment, or from a .env file in the
+// directory it runs in (HOST=0.0.0.0, one line per variable).
+//
 // Every request is logged to standard error. Ctrl+C or SIGTERM stops it
 // gracefully: it stops accepting, lets the requests in flight finish, and
 // returns.
-use http, io { println }, json, net, os
+use config, http, io { println }, json, net, os
 
 /// What ` + "`GET /api/hello`" + ` answers.
 struct Greeting {
@@ -111,11 +114,18 @@ fun app(): http.Handler {
   router.handler()
 }
 
+/// What the service reads, from the environment or from a ` + "`.env`" + ` file beside
+/// it: ` + "`HOST`" + ` and ` + "`PORT`" + `. Add a field and its variable follows.
+struct Settings {
+  host: string = "127.0.0.1"
+  port: i64 = 8080
+  implement Decodable
+}
+
 fun main() throws {
-  val host = os.env("HOST") ?: "127.0.0.1"
-  val port = os.env("PORT")?.toInt() ?: 8080
-  with (listener = try net.listen(host, port)) {
-    println("listening on http://$host:${listener.port()}/ — Ctrl+C stops it")
+  val settings = try config.load<Settings>(files: [".env"])
+  with (listener = try net.listen(settings.host, settings.port)) {
+    println("listening on http://${settings.host}:${listener.port()}/ — Ctrl+C stops it")
     http.serve(listener, app(), stop: () => os.shutdownSignal())
     println("stopped")
   }

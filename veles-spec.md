@@ -4222,6 +4222,49 @@ val cfg = try config.load<Config>(files: [".env"])
 
 User, 2026-10-01, recommended of 3. Rejected: environment only; getters.
 
+**Addendum 2026-10-04 (user, all three recommended): how `config` knows the shape of `T`.**
+
+- **`Decodable` gains a defaulted `static fun schema(format: string, keys:
+  KeyStyle): Schema`.** A hand-written `implement Decodable` needs nothing (the default
+  is an `Opaque` leaf: one value, read as text); the derive overrides it **beside a derived
+  `decode`** (a hand-written `decode` can read a shape the fields do not describe) for
+  structs (the fields, their keys as `decode` would see them for that format, whether each
+  is required, nullable, `Secret`, its default rendered as text) and enums (the member
+  names); the built-in types, `List`, `T?`, `Array`, `Secret`, `Duration` and `Timestamp`
+  give their leaf kinds. A `Map` (and a sealed family) is `Unsupported`:
+  `config.load`/`describe` panic at the caller naming the field, as a caller bug (a
+  type-level fact, found on the first run). `Schema`, `SchemaField` and `SchemaKind` live
+  in `codec`.
+- `config.load` asks `T.schema("env", KeyStyle.UpperSnake)`, so a field `databaseUrl` is
+  `DATABASE_URL` and a `@key("LOG_LEVEL")` is taken as written. **New
+  `KeyStyle.UpperSnake`** (the style `SnakeCase` in capitals) is the one addition to
+  the existing enum. A nested struct's variables are the parent's key + `_` + the
+  child's (`@key` on the struct field replaces the parent part); `prefix:` goes in front
+  of all.
+- Each variable is looked up by name in the environment, then in the files; text from
+  the environment and dotenv files is converted by the schema's leaf kind (`Int`, `Float`,
+  `Bool` = `true`/`false` only, `Text`, `List` = comma separated, elements trimmed) into
+  a `codec.Value` tree that the ordinary `ValueDecoder` (format `env`, durations
+  `Text`) decodes — so range checks, enum names, `Duration`, `Timestamp` and `Secret` are
+  the decoders' own. A JSON file supplies typed values by the field's declared name,
+  nested for nested structs.
+- **Problems** are rewritten to variable names: `DB_URL: not set (expected text)`,
+  `PORT: expected an integer, found "abc" (from the environment)` (a file's name where the value
+  came from one); a `Secret`'s value is never echoed. `describe<T>()` lists `Variable { name,
+  what, required, secret, default: string? }` straight from the schema (`what` is the text of
+  the expectation: `an integer`, `one of "Debug", "Info"`). A struct field none of whose
+  variables is set takes its default (or `null`); one that must be given reports each missing
+  variable.
+- **`error Error { }` in a module of its own** (`config.Error`): the `error` sugar now names
+  the prelude's trait directly, so a module may declare a type called `Error` (D4 addendum).
+- **An empty variable is a value** (`PORT=` is `""`: fine for a `string`, a problem for
+  an integer). **Dotenv files have no interpolation**: `${OTHER}` is literal text, so a `$`
+  in a password is never expanded. Dotenv: `KEY=value`, `#` comment lines and ` #` after an
+  unquoted value, `export ` prefix, `'…'` literal, `"…"` with `\n \t \" \\` escapes.
+  Rejected: an environment-scan decoder (no `describe`, ambiguous nesting, a wholly
+  absent nested struct reported as `db: missing`); an opt-in `implement Configurable`;
+  empty meaning unset; `${VAR}` interpolation (can be added later compatibly).
+
 ### D126 — OpenTelemetry: metrics, traces and logs over OTLP/protobuf (v0.65)
 
 ```veles

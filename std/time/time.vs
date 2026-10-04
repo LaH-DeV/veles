@@ -279,6 +279,9 @@ public struct Timestamp {
       from.problem("not an RFC 3339 timestamp: '$text'")
       Timestamp.epoch
     }
+
+    override static fun schema(format: string, keys: codec.KeyStyle): codec.Schema =
+      codec.Schema.leaf(codec.SchemaKind.Text, "an RFC 3339 timestamp like 2026-10-04T12:00:00Z")
   }
 }
 
