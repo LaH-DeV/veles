@@ -68,7 +68,7 @@ next. A step names what it needs; the reason for the order is in brackets.
 10. ~~**C3**~~ **Done 2026-10-04.** `std/config` (D125) [needs B13's `Secret`].
 11. **C5/C6** `std/fs` additions, endian bytes (D130), helpers (D110 if not in B12).
 12. ~~**C8**~~ **Done 2026-10-04.** template literals (D129 part 1) [before E2].
-13. **C7** the HTTP client over TCP (D127) [needs C2's `Stream`].
+13. ~~**C7**~~ **Done 2026-10-04.** the HTTP client over TCP (D127) [needs C2's `Stream`].
 14. **C4** health endpoints (D133), then `std/otel` (D126) [OTLP export needs
     C7 and C2's gzip].
 15. **E1** TLS (D128) → HTTPS for the client and OTLP.
@@ -1469,3 +1469,18 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   and 14; no design question was open (D129 fixes the form). **Not done:** `std/db`, std tags,
   semantic tokens, tagged multi-line/raw literals (checklist §11). Next in the Build order: step 13 C7, the
   HTTP client over TCP (D127), then C4 health endpoints (D133) and `std/otel` (D126).
+
+**Progress 2026-10-04 (C7, the HTTP client, D127).** `std/http/client.vs`: `http.fetch`, `get/head/post/put/patch/delete`,
+`http.Client` (pool of keep-alive connections keyed by `scheme://host:port`, lazy idle expiry, one retry on a stale
+pooled connection for repeatable methods), `Payload`, `ClientResponse` / `ClientBody`, `FetchError` / `FetchKind` /
+`StatusError`. One total deadline covers the request and its body; redirects for GET/HEAD with credentials dropped
+across hosts; bodies bounded where read (`max:`, 64 MiB default); the response head parsed as strictly as the
+server's request (two lengths, folded or malformed headers, a body cut short are errors); `retry:` with 100 ms
+doubling backoff for idempotent methods. **One design question** (asked and answered): `json: T? = null` cannot be
+inferred, so the body is a `Payload` value (D127 addendum). Pinned by `std/http/client.test.vs` (42 tests: a real
+`testServer` for the behaviour, canned bytes on a raw socket for the hostile answers), `examples/httpclient`, docs
+chapter 17 "Calling other servers", reference/stdlib. The example caught a bug the in-module tests could not: the
+`pool` field was not `private`, so no other module could construct a `Client` (D28). Four test helpers in other
+`*.test.vs` files (`head`, `post`, `fetch`) collided with the new public names and were renamed. **Not done**
+(checklist §11): https/TLS (E1) and proxies, transparent gzip, per-phase timeouts, streaming uploads, cookie jar,
+`traceparent` (with `std/otel`). Next in the Build order: C4 health endpoints (D133), then `std/otel` (D126), E1.

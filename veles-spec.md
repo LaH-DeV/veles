@@ -4356,6 +4356,27 @@ User, 2026-10-01: "Both spellings" (over the recommended `fetch` only).
 Rejected: one spelling only; a separate request type with `send(req)` (the
 named parameters already describe a request).
 
+*Addendum (2026-10-04, user: recommended of 3) — the body is a `Payload`.*
+`json: T? = null` cannot be written: a generic parameter whose argument is
+left out has nothing to infer `T` from ("cannot infer type parameter"). The
+request body is one non-generic parameter, `body: Payload? = null`, built by
+statics that carry the content type with the bytes: `Payload.text(s)`,
+`Payload.json(value)` (throws `EncodeError`), `Payload.form([("a", "1")])`
+(repeats kept), `Payload.bytes(data, contentType:)`. So `http.post(url, body:
+try Payload.json(note))` is the spelling of "post a JSON note", and the
+`text:`/`json:`/`form:` parameters of the original text are gone. Rejected:
+separate `postJson`/`putJson` functions (a function per method, nothing for a
+custom method or a form); an explicit type argument at every call
+(`fetch<Note>(…)`, `fetch<()>(url)` for a plain `get`).
+
+*As built (2026-10-04):* `ClientResponse.ok` is a field; `Client` also has
+`idleTimeout` (30 s) and `head`; `retry:` is not on `post`/`patch` (never
+repeated). A body is bounded where it is read: `text/bytes/json(max:)`
+(64 MiB by default), `Content-Length` over `max` refused before the first
+byte. The one `timeout:` is a deadline over the request *and* its body.
+`https://` is `FetchKind.Unsupported` until E1; proxies, transparent
+decompression and per-phase timeouts are in checklist §11.
+
 ### D128 — `io.Stream`, and the TLS API (v0.65)
 
 `trait io.Stream : Closeable` with `read(max: i64 = 65536): List<u8>`

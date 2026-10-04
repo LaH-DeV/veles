@@ -98,46 +98,46 @@ test fun talk(port: i64, parts: List<string>, finish: bool = true): string throw
   out
 }
 
-test fun head(extra: string): string = "POST / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n$extra\r\n"
+test fun requestHead(extra: string): string = "POST / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n$extra\r\n"
 
 test "a chunked body is decoded, whatever the pieces and extensions" {
   with srv = try testServer(reader())
   val port = srv.port()
-  val whole = try talk(port, [head("Transfer-Encoding: chunked\r\n"), "5\r\nhello\r\n", "6;ext=1\r\n world\r\n", "0\r\nX-Trailer: 1\r\n\r\n"])
+  val whole = try talk(port, [requestHead("Transfer-Encoding: chunked\r\n"), "5\r\nhello\r\n", "6;ext=1\r\n world\r\n", "0\r\nX-Trailer: 1\r\n\r\n"])
   expect(whole.startsWith("HTTP/1.1 200 OK"))
   expect(whole.endsWith("11:hello world"))
   // one write, then a chunk split across two
-  val split = try talk(port, [head("Transfer-Encoding: chunked\r\n") + "A\r\n0123", "45678", "9\r\n0\r\n\r\n"])
+  val split = try talk(port, [requestHead("Transfer-Encoding: chunked\r\n") + "A\r\n0123", "45678", "9\r\n0\r\n\r\n"])
   expect(split.endsWith("10:0123456789"))
-  val empty = try talk(port, [head("Transfer-Encoding: chunked\r\n") + "0\r\n\r\n"])
+  val empty = try talk(port, [requestHead("Transfer-Encoding: chunked\r\n") + "0\r\n\r\n"])
   expect(empty.endsWith("0:"))
 }
 
 test "framing that could be read two ways is refused" {
   with srv = try testServer(reader())
   val port = srv.port()
-  val both = try talk(port, [head("Transfer-Encoding: chunked\r\nContent-Length: 5\r\n") + "0\r\n\r\n"])
+  val both = try talk(port, [requestHead("Transfer-Encoding: chunked\r\nContent-Length: 5\r\n") + "0\r\n\r\n"])
   expect(both.startsWith("HTTP/1.1 400"))
-  val gzip = try talk(port, [head("Transfer-Encoding: gzip\r\n")])
+  val gzip = try talk(port, [requestHead("Transfer-Encoding: gzip\r\n")])
   expect(gzip.startsWith("HTTP/1.1 501"))
-  val size = try talk(port, [head("Transfer-Encoding: chunked\r\n") + "zz\r\nabc\r\n0\r\n\r\n"])
+  val size = try talk(port, [requestHead("Transfer-Encoding: chunked\r\n") + "zz\r\nabc\r\n0\r\n\r\n"])
   expect(size.startsWith("HTTP/1.1 400"))
-  val cut = try talk(port, [head("Transfer-Encoding: chunked\r\n") + "5\r\nab"])
+  val cut = try talk(port, [requestHead("Transfer-Encoding: chunked\r\n") + "5\r\nab"])
   expect(cut.startsWith("HTTP/1.1 400"))
-  val unknown = try talk(port, [head("Expect: 200-ok\r\nContent-Length: 0\r\n")])
+  val unknown = try talk(port, [requestHead("Expect: 200-ok\r\nContent-Length: 0\r\n")])
   expect(unknown.startsWith("HTTP/1.1 417"))
 }
 
 test "a chunk or a length over the ceiling is refused before its data" {
   with srv = try testServer(reader(), Limits(bodyBytes: 10))
   val port = srv.port()
-  val chunk = try talk(port, [head("Transfer-Encoding: chunked\r\n") + "B\r\n"])
+  val chunk = try talk(port, [requestHead("Transfer-Encoding: chunked\r\n") + "B\r\n"])
   expect(chunk.startsWith("HTTP/1.1 413"))
   expect(chunk.contains("connection: close"))
-  val length = try talk(port, [head("Content-Length: 11\r\n")])
+  val length = try talk(port, [requestHead("Content-Length: 11\r\n")])
   expect(length.startsWith("HTTP/1.1 413"))
   expect(length.contains("connection: close"))
-  val fine = try talk(port, [head("Content-Length: 10\r\n") + "0123456789"])
+  val fine = try talk(port, [requestHead("Content-Length: 10\r\n") + "0123456789"])
   expect(fine.endsWith("10:0123456789"))
 }
 
@@ -148,9 +148,9 @@ test "a stream may take more than the server's default ceiling" {
   })
   with srv = try testServer(big, Limits(bodyBytes: 10))
   val port = srv.port()
-  val r = try talk(port, [head("Content-Length: 500\r\n") + "y".repeat(500)])
+  val r = try talk(port, [requestHead("Content-Length: 500\r\n") + "y".repeat(500)])
   expect(r.endsWith("500"))
-  val over = try talk(port, [head("Content-Length: 2000\r\n")])
+  val over = try talk(port, [requestHead("Content-Length: 2000\r\n")])
   expect(over.startsWith("HTTP/1.1 413"))
 }
 
@@ -213,6 +213,6 @@ test "an unread body too long to be worth reading closes the connection" {
 test "a sender that stalls in the body is a 408" {
   with srv = try testServer(reader(), Limits(bodyTimeout: Duration.millis(200)))
   val port = srv.port()
-  val r = try talk(port, [head("Content-Length: 10\r\n") + "abc", "..."], finish: false)
+  val r = try talk(port, [requestHead("Content-Length: 10\r\n") + "abc", "..."], finish: false)
   expect(r.startsWith("HTTP/1.1 408"))
 }

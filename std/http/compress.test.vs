@@ -212,7 +212,7 @@ test fun echoLength(): Handler = decompressRequests(max: 5000)(handler(req => {
   Response.text("${text.len()} ${req.header("content-encoding") ?: "plain"}")
 }))
 
-test fun post(port: i64, headers: string, body: List<u8>): string throws IoError {
+test fun postRaw(port: i64, headers: string, body: List<u8>): string throws IoError {
   val head = "POST / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n${headers}Content-Length: ${body.len()}\r\n\r\n"
   val wire = try askBytes(port, head.bytes().concat(body))
   wire.decodeUtf8() ?: "<binary>"
@@ -221,17 +221,17 @@ test fun post(port: i64, headers: string, body: List<u8>): string throws IoError
 test "a gzip request body is opened, within its ceiling" {
   with srv = try testServer(echoLength())
   val port = srv.port()
-  val ok = try post(port, "Content-Encoding: gzip\r\n", gz.gzip("hello hello hello".bytes()))
+  val ok = try postRaw(port, "Content-Encoding: gzip\r\n", gz.gzip("hello hello hello".bytes()))
   expect(ok.startsWith("HTTP/1.1 200"))
   expect(ok.endsWith("17 plain"))
   // an uncompressed request passes as it is
-  expect((try post(port, "", "plain body".bytes())).endsWith("10 plain"))
+  expect((try postRaw(port, "", "plain body".bytes())).endsWith("10 plain"))
   // 100 KB of text in a few hundred bytes of gzip: over the ceiling of 5000
   val bomb = gz.gzip("a".repeat(100000).bytes(), 9)
   expect(bomb.len() < 500)
-  expect((try post(port, "Content-Encoding: gzip\r\n", bomb)).startsWith("HTTP/1.1 413"))
-  expect((try post(port, "Content-Encoding: gzip\r\n", "not gzip at all".bytes())).startsWith("HTTP/1.1 400"))
-  expect((try post(port, "Content-Encoding: br\r\n", "whatever".bytes())).startsWith("HTTP/1.1 415"))
+  expect((try postRaw(port, "Content-Encoding: gzip\r\n", bomb)).startsWith("HTTP/1.1 413"))
+  expect((try postRaw(port, "Content-Encoding: gzip\r\n", "not gzip at all".bytes())).startsWith("HTTP/1.1 400"))
+  expect((try postRaw(port, "Content-Encoding: br\r\n", "whatever".bytes())).startsWith("HTTP/1.1 415"))
 }
 
 test "a level or threshold that makes no sense panics at the caller" {

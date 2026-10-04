@@ -635,7 +635,7 @@ conn.peer(): string                                            // "host:port"
 
 ## Module `http`
 
-An HTTP/1.1 server on `net` ([chapter 17](../17-http.md)).
+An HTTP/1.1 server and client on `net` ([chapter 17](../17-http.md)).
 
 ```veles
 // fragment
@@ -672,6 +672,15 @@ http.Header.contentType, .location, .allow, .authorization, .cacheControl, ...  
 // path matches, method does not → 405 + Allow; HEAD → the GET route, body dropped; OPTIONS → 204 + Allow; 1xx/204/304 never carry a body
 with srv = try http.testServer(handler, limits: http.Limits())   // D130: a real listener on a free loopback port for the `with` block; srv.url, srv.port(); log off
 http.call(handler, http.Method.get, "/notes/7?full=yes", body: "", headers: [:])   // in memory, no socket: same target parsing and panic boundary as serve
+// the client (D127, chapter 17): one request, or a Client with a pool of keep-alive connections
+http.fetch(url, method: http.Method.get, headers: [:], body: null /* Payload? */, timeout: null /* Duration?, default the client's 30s, covers the body too */, redirect: true, retry: 0)   // throws FetchError; url is absolute http://…
+http.get(url, headers:, timeout:, redirect:, retry:); http.head(…); http.put(url, body:, …); http.delete(url, …); http.post(url, body:, headers:, timeout:, redirect:); http.patch(…)   // the shared default client
+with client = http.Client(timeout: Duration.seconds(30), headers: [:], maxRedirects: 10, maxIdlePerHost: 8, idleTimeout: Duration.seconds(30))   // same methods; close() drops idle connections
+http.Payload.text(s); .json(value) /* throws EncodeError */; .form([("a", "1"), ("a", "2")]); .bytes(data, contentType: http.MediaType.octetStream)   // data, contentType
+res.status; res.headers /* lower-case, repeats joined by ", " */; res.setCookies; res.ok /* 2xx */; res.url /* after redirects */; res.header(name); res.length() /* Content-Length */
+try res.text(max: 64 MiB); try res.bytes(max:); try res.json<T>(max:) /* throws FetchError | DecodeError */; res.stream() /* ClientBody: read(max: 65536), length() */; try res.ensureSuccess() /* throws StatusError { url, status } */; res.close()
+// error FetchError { url, detail, kind: FetchKind }; enum FetchKind { InvalidRequest, Unsupported, Connect, Timeout, Closed, Io, Protocol, TooManyRedirects, TooLarge }
+// redirects (301/302/303/307/308): GET/HEAD only, authorization/cookie/proxy-authorization dropped across hosts; retry: idempotent methods only, 100 ms doubling backoff; https → Unsupported until std/tls
 // cookies (D94): one Set-Cookie line each; value percent-encoded; a bad name/path/domain, SameSite.None without secure, a broken __Host-/__Secure- name panic at the call
 http.Cookie(name:, value:, path: "/", domain: null, maxAge: null /* Duration?, null = session */, secure: false, httpOnly: true, sameSite: http.SameSite.Lax)   // enum SameSite { Lax, Strict, None }
 resp.withCookie(c); resp.withoutCookie(name, path: "/", domain: null, secure: false); resp.cookies      // Max-Age=0 to forget

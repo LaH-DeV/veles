@@ -42,7 +42,7 @@ test fun served(server: sendable fun(Request): Response suspends throws Fail | I
   router.handler()
 }
 
-test fun fetch(h: Handler, target: string, headers: Map<string, string> = [:]): Response = call(h, Method.get, target, headers: headers)
+test fun fetchOf(h: Handler, target: string, headers: Map<string, string> = [:]): Response = call(h, Method.get, target, headers: headers)
 
 test fun text(r: Response): string = r.body.decodeUtf8() ?: "<not text>"
 
@@ -50,7 +50,7 @@ test fun header(r: Response, name: string): string = r.headers.get(name) ?: "<no
 
 test "a file comes with its validators and the safe cache header" {
   val h = served(files(tree()))
-  val r = fetch(h, "/static/a.txt")
+  val r = fetchOf(h, "/static/a.txt")
   expect(r.status == Status.ok)
   expect(text(r) == "0123456789")
   expect(header(r, "content-type") == "text/plain; charset=utf-8")
@@ -62,82 +62,82 @@ test "a file comes with its validators and the safe cache header" {
 
 test "If-None-Match and If-Modified-Since answer 304 with the validators and no body" {
   val h = served(files(tree()))
-  val first = fetch(h, "/static/a.txt")
+  val first = fetchOf(h, "/static/a.txt")
   val tag = header(first, "etag")
   val date = header(first, "last-modified")
 
-  val same = fetch(h, "/static/a.txt", ["If-None-Match": tag])
+  val same = fetchOf(h, "/static/a.txt", ["If-None-Match": tag])
   expect(same.status == Status.notModified)
   expect(same.body.isEmpty())
   expect(header(same, "etag") == tag)
   expect(header(same, "cache-control") == "no-cache")
 
   // weak comparison: a list, and the W/ mark ignored
-  expect(fetch(h, "/static/a.txt", ["If-None-Match": "\"x\", $tag"]).status == Status.notModified)
-  expect(fetch(h, "/static/a.txt", ["If-None-Match": tag.replace("W/", "")]).status == Status.notModified)
-  expect(fetch(h, "/static/a.txt", ["If-None-Match": "*"]).status == Status.notModified)
-  expect(fetch(h, "/static/a.txt", ["If-None-Match": "\"other\""]).status == Status.ok)
+  expect(fetchOf(h, "/static/a.txt", ["If-None-Match": "\"x\", $tag"]).status == Status.notModified)
+  expect(fetchOf(h, "/static/a.txt", ["If-None-Match": tag.replace("W/", "")]).status == Status.notModified)
+  expect(fetchOf(h, "/static/a.txt", ["If-None-Match": "*"]).status == Status.notModified)
+  expect(fetchOf(h, "/static/a.txt", ["If-None-Match": "\"other\""]).status == Status.ok)
 
-  expect(fetch(h, "/static/a.txt", ["If-Modified-Since": date]).status == Status.notModified)
-  expect(fetch(h, "/static/a.txt", ["If-Modified-Since": "Thu, 01 Jan 1970 00:00:00 GMT"]).status == Status.ok)
+  expect(fetchOf(h, "/static/a.txt", ["If-Modified-Since": date]).status == Status.notModified)
+  expect(fetchOf(h, "/static/a.txt", ["If-Modified-Since": "Thu, 01 Jan 1970 00:00:00 GMT"]).status == Status.ok)
   // a date that does not parse is ignored, as RFC 9110 says
-  expect(fetch(h, "/static/a.txt", ["If-Modified-Since": "yesterday"]).status == Status.ok)
+  expect(fetchOf(h, "/static/a.txt", ["If-Modified-Since": "yesterday"]).status == Status.ok)
   // If-None-Match wins when both are sent: the tag does not match, so the date is not asked
-  expect(fetch(h, "/static/a.txt", ["If-None-Match": "\"other\"", "If-Modified-Since": date]).status == Status.ok)
+  expect(fetchOf(h, "/static/a.txt", ["If-None-Match": "\"other\"", "If-Modified-Since": date]).status == Status.ok)
 }
 
 test "If-Match and If-Unmodified-Since answer 412" {
   val h = served(files(tree()))
-  val first = fetch(h, "/static/a.txt")
+  val first = fetchOf(h, "/static/a.txt")
   val tag = header(first, "etag")
-  expect(fetch(h, "/static/a.txt", ["If-Match": "*"]).status == Status.ok)
+  expect(fetchOf(h, "/static/a.txt", ["If-Match": "*"]).status == Status.ok)
   // a strong comparison, and this tag is weak
-  expect(fetch(h, "/static/a.txt", ["If-Match": tag]).status == Status.preconditionFailed)
-  expect(fetch(h, "/static/a.txt", ["If-Unmodified-Since": "Thu, 01 Jan 1970 00:00:00 GMT"]).status == Status.preconditionFailed)
-  expect(fetch(h, "/static/a.txt", ["If-Unmodified-Since": header(first, "last-modified")]).status == Status.ok)
+  expect(fetchOf(h, "/static/a.txt", ["If-Match": tag]).status == Status.preconditionFailed)
+  expect(fetchOf(h, "/static/a.txt", ["If-Unmodified-Since": "Thu, 01 Jan 1970 00:00:00 GMT"]).status == Status.preconditionFailed)
+  expect(fetchOf(h, "/static/a.txt", ["If-Unmodified-Since": header(first, "last-modified")]).status == Status.ok)
 }
 
 test "etag: false and lastModified: false leave those headers and their conditions out" {
   val h = served(files(tree(), etag: false, lastModified: false))
-  val r = fetch(h, "/static/a.txt")
+  val r = fetchOf(h, "/static/a.txt")
   expect(r.status == Status.ok)
   expect(!r.headers.containsKey("etag"))
   expect(!r.headers.containsKey("last-modified"))
-  expect(fetch(h, "/static/a.txt", ["If-Modified-Since": "Fri, 01 Jan 2100 00:00:00 GMT"]).status == Status.ok)
-  expect(fetch(h, "/static/a.txt", ["If-None-Match": "\"x\""]).status == Status.ok)
+  expect(fetchOf(h, "/static/a.txt", ["If-Modified-Since": "Fri, 01 Jan 2100 00:00:00 GMT"]).status == Status.ok)
+  expect(fetchOf(h, "/static/a.txt", ["If-None-Match": "\"x\""]).status == Status.ok)
 }
 
 test "one byte range is a 206" {
   val h = served(files(tree()))
-  val r = fetch(h, "/static/a.txt", ["Range": "bytes=2-4"])
+  val r = fetchOf(h, "/static/a.txt", ["Range": "bytes=2-4"])
   expect(r.status == Status.partialContent)
   expect(text(r) == "234")
   expect(header(r, "content-range") == "bytes 2-4/10")
   expect(header(r, "content-type") == "text/plain; charset=utf-8")
 
-  expect(text(fetch(h, "/static/a.txt", ["Range": "bytes=7-"])) == "789")
-  expect(text(fetch(h, "/static/a.txt", ["Range": "bytes=-3"])) == "789")
-  expect(text(fetch(h, "/static/a.txt", ["Range": "bytes=0-0"])) == "0")
+  expect(text(fetchOf(h, "/static/a.txt", ["Range": "bytes=7-"])) == "789")
+  expect(text(fetchOf(h, "/static/a.txt", ["Range": "bytes=-3"])) == "789")
+  expect(text(fetchOf(h, "/static/a.txt", ["Range": "bytes=0-0"])) == "0")
   // past the end is cut to the end; a suffix longer than the file is the file
-  val cut = fetch(h, "/static/a.txt", ["Range": "bytes=8-99"])
+  val cut = fetchOf(h, "/static/a.txt", ["Range": "bytes=8-99"])
   expect(cut.status == Status.partialContent && text(cut) == "89" && header(cut, "content-range") == "bytes 8-9/10")
-  val whole = fetch(h, "/static/a.txt", ["Range": "bytes=-50"])
+  val whole = fetchOf(h, "/static/a.txt", ["Range": "bytes=-50"])
   expect(whole.status == Status.partialContent && text(whole) == "0123456789" && header(whole, "content-range") == "bytes 0-9/10")
 }
 
 test "a range that starts past the end is a 416 naming the size" {
   val h = served(files(tree()))
-  val r = fetch(h, "/static/a.txt", ["Range": "bytes=10-"])
+  val r = fetchOf(h, "/static/a.txt", ["Range": "bytes=10-"])
   expect(r.status == Status.rangeNotSatisfiable)
   expect(header(r, "content-range") == "bytes */10")
   expect(r.body.isEmpty())
-  expect(fetch(h, "/static/a.txt", ["Range": "bytes=-0"]).status == Status.rangeNotSatisfiable)
+  expect(fetchOf(h, "/static/a.txt", ["Range": "bytes=-0"]).status == Status.rangeNotSatisfiable)
 }
 
 test "a Range header that cannot be honoured is ignored" {
   val h = served(files(tree()))
   loop (bad in ["bytes=5-2", "bytes=0-1,4-5", "items=0-1", "bytes=", "bytes=a-b", "bytes=--3", "0-4"]) {
-    val r = fetch(h, "/static/a.txt", ["Range": bad])
+    val r = fetchOf(h, "/static/a.txt", ["Range": bad])
     expect(r.status == Status.ok)
     expect(text(r) == "0123456789")
   }
@@ -145,19 +145,19 @@ test "a Range header that cannot be honoured is ignored" {
 
 test "If-Range keeps the range only for the same date" {
   val h = served(files(tree()))
-  val first = fetch(h, "/static/a.txt")
+  val first = fetchOf(h, "/static/a.txt")
   val date = header(first, "last-modified")
-  expect(fetch(h, "/static/a.txt", ["Range": "bytes=0-1", "If-Range": date]).status == Status.partialContent)
-  expect(fetch(h, "/static/a.txt", ["Range": "bytes=0-1", "If-Range": "Thu, 01 Jan 1970 00:00:00 GMT"]).status == Status.ok)
+  expect(fetchOf(h, "/static/a.txt", ["Range": "bytes=0-1", "If-Range": date]).status == Status.partialContent)
+  expect(fetchOf(h, "/static/a.txt", ["Range": "bytes=0-1", "If-Range": "Thu, 01 Jan 1970 00:00:00 GMT"]).status == Status.ok)
   // an entity tag needs a strong match, and ours is weak
-  expect(fetch(h, "/static/a.txt", ["Range": "bytes=0-1", "If-Range": header(first, "etag")]).status == Status.ok)
+  expect(fetchOf(h, "/static/a.txt", ["Range": "bytes=0-1", "If-Range": header(first, "etag")]).status == Status.ok)
 }
 
 test "maxAge and immutable set Cache-Control" {
   val root = tree()
-  expect(header(fetch(served(files(root, maxAge: Duration.hours(1))), "/static/a.txt"), "cache-control") == "max-age=3600")
-  expect(header(fetch(served(files(root, maxAge: Duration.days(365), immutable: true)), "/static/a.txt"), "cache-control") == "max-age=31536000, immutable")
-  expect(header(fetch(served(files(root, maxAge: Duration.seconds(0))), "/static/a.txt"), "cache-control") == "max-age=0")
+  expect(header(fetchOf(served(files(root, maxAge: Duration.hours(1))), "/static/a.txt"), "cache-control") == "max-age=3600")
+  expect(header(fetchOf(served(files(root, maxAge: Duration.days(365), immutable: true)), "/static/a.txt"), "cache-control") == "max-age=31536000, immutable")
+  expect(header(fetchOf(served(files(root, maxAge: Duration.seconds(0))), "/static/a.txt"), "cache-control") == "max-age=0")
 }
 
 test "a Cache-Control that contradicts itself is refused where it is written" {
@@ -168,29 +168,29 @@ test "a Cache-Control that contradicts itself is refused where it is written" {
 test "a directory: index, redirect to the slash, and the switch for it" {
   val root = tree()
   val h = served(files(root))
-  val slash = fetch(h, "/static/docs/")
+  val slash = fetchOf(h, "/static/docs/")
   expect(slash.status == Status.ok && text(slash) == "<h1>docs</h1>")
   expect(header(slash, "content-type") == "text/html; charset=utf-8")
 
-  val r = fetch(h, "/static/docs")
+  val r = fetchOf(h, "/static/docs")
   expect(r.status == Status.permanentRedirect)
   expect(header(r, "location") == "/static/docs/")
-  expect(header(fetch(h, "/static/docs?v=1&w=%20"), "location") == "/static/docs/?v=1&w=%20")
+  expect(header(fetchOf(h, "/static/docs?v=1&w=%20"), "location") == "/static/docs/?v=1&w=%20")
 
   // no slash, no redirect: the index is served where it was asked
-  val plain = fetch(served(files(root, redirect: false)), "/static/docs")
+  val plain = fetchOf(served(files(root, redirect: false)), "/static/docs")
   expect(plain.status == Status.ok && text(plain) == "<h1>docs</h1>")
 
   // a directory with none of the index files, and a different index list
-  expect(fetch(h, "/static/bare/").status == Status.notFound)
-  expect(fetch(served(files(root, index: ["default.htm", "index.html"])), "/static/docs/").status == Status.ok)
-  expect(fetch(served(files(root, index: ["default.htm"])), "/static/docs/").status == Status.notFound)
+  expect(fetchOf(h, "/static/bare/").status == Status.notFound)
+  expect(fetchOf(served(files(root, index: ["default.htm", "index.html"])), "/static/docs/").status == Status.ok)
+  expect(fetchOf(served(files(root, index: ["default.htm"])), "/static/docs/").status == Status.notFound)
 }
 
 test "the redirect never leaves the site, whatever slashes the request has" {
   val h = served(files(tree()))
   // `//docs` names the host `docs` to a browser
-  val r = fetch(h, "//docs")
+  val r = fetchOf(h, "//docs")
   expect(r.status == Status.permanentRedirect)
   expect(header(r, "location") == "/docs/")
 }
@@ -198,14 +198,14 @@ test "the redirect never leaves the site, whatever slashes the request has" {
 test "a path segment starting with a dot is a 404 unless dotfiles: true" {
   val root = tree()
   val h = served(files(root))
-  expect(fetch(h, "/static/.env").status == Status.notFound)
-  expect(fetch(h, "/static/.well-known/x.txt").status == Status.notFound)
+  expect(fetchOf(h, "/static/.env").status == Status.notFound)
+  expect(fetchOf(h, "/static/.well-known/x.txt").status == Status.notFound)
   val open = served(files(root, dotfiles: true))
-  val env = fetch(open, "/static/.env")
+  val env = fetchOf(open, "/static/.env")
   expect(env.status == Status.ok)
   expect(env.body.len() == 6)
   expect(text(env) == "secret")
-  expect(text(fetch(open, "/static/.well-known/x.txt")) == "ok")
+  expect(text(fetchOf(open, "/static/.well-known/x.txt")) == "ok")
 }
 
 test "only GET and HEAD are served, and a traversal is refused" {
@@ -215,7 +215,7 @@ test "only GET and HEAD are served, and a traversal is refused" {
   expect(header(post, "allow") == "GET, HEAD")
   val head = call(h, Method.head, "/static/a.txt")
   expect(head.status == Status.ok && head.body.isEmpty())
-  expect(fetch(h, "/static/../x").status == Status.forbidden)
+  expect(fetchOf(h, "/static/../x").status == Status.forbidden)
 }
 
 test "fs.stat reports size, kind and a recent write time" {

@@ -1,0 +1,15 @@
+1 note(s); first: water the plants
+created 201 Created: #2 call mum
+note 99: 404 Not Found, ok=false, said: no note 99
+ensureSuccess: /notes/99 answered 404 Not Found
+bad body: 400 Bad Request
+moved: /notes (200 OK)
+not followed: 301 Moved Permanently
+no retry: 503 Service Unavailable
+retry: served on try 3
+slow: Timeout
+gave up in time: true
+page 1
+page 2
+page 3
+exit=0

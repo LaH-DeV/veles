@@ -863,8 +863,103 @@ actually enforced; it has no unbounded form, so a program that reads
 lines from a socket has to say how long a line it will hold
 ([chapter 16](16-networking.md)).
 
-Not in the module yet: TLS, a client, WebSockets, and graceful shutdown on a signal. Cancelling the
-`serve` task closes the listener and unwinds every connection task —
-that is the shutdown, once a signal can request it.
+## Calling other servers
+
+`http.fetch` and its short forms are the client. A client is a value with a
+pool of connections: a program that makes more than one request should keep
+one, and `http.get(url)` and friends use a shared one when it does not.
+
+```veles
+use http, io { println }, json
+
+struct Note {
+  id:    i64
+  title: string
+
+  implement Codable
+}
+
+fun main() throws IoError {
+  val app = http.Router()
+  app.get("/notes/{id}", req => {
+    val id = try req.param("id").toInt() ?! http.badRequest("not a number")
+    if (id != 1) throw http.notFound("no note $id")
+    http.Response.json(try json.encode(Note(id: 1, title: "water the plants")))
+  })
+  app.post("/notes", req => http.Response.text("got ${try req.text()}", status: http.Status.created))
+  with srv = try http.testServer(app.handler())
+  with client = http.Client(timeout: Duration.seconds(5), headers: ["accept": "application/json"])
+  do {
+    val note = try client.get("${srv.url}/notes/1").json<Note>()
+    println("${note.id}: ${note.title}")
+
+    // a 404 is an answer, not an error: look at it, or demand a 2xx
+    with res = try client.get("${srv.url}/notes/2")
+    println("${res.status} ok=${res.ok}")
+    when (res.ensureSuccess()) {
+      is Ok(_)  => println("fine")
+      is Err(e) => println("refused: ${e.status.code}")
+    }
+
+    val made = try client.post("${srv.url}/notes", body: http.Payload.text("water the plants"))
+    println("${made.status}: ${try made.text()}")
+  } catch (e) {
+    println("failed: ${e.message()}")
+  }
+}
+```
+
+Output:
+```text
+1: water the plants
+404 Not Found ok=false
+refused: 404
+201 Created: got water the plants
+```
+
+The pieces:
+
+- **Calls.** `http.fetch(url, method:, headers:, body:, timeout:, redirect:,
+  retry:)`, and `get`, `head`, `post`, `put`, `patch`, `delete` with the method
+  fixed; `http.Client(timeout: 30s, headers: [:], maxRedirects: 10,
+  maxIdlePerHost: 8, idleTimeout: 30s)` has the same methods and is
+  `Closeable` (it closes its idle connections). The URL is absolute, `http://…`;
+  `https://` is refused with its own error until `std/tls` exists.
+- **Bodies.** A body is a `Payload`, which carries its content type:
+  `Payload.text(s)`, `Payload.json(value)`, `Payload.form([("a", "1")])`,
+  `Payload.bytes(data, contentType:)`. A `body:` of `null` sends none.
+- **Answers.** A `ClientResponse` has `status`, `headers` (lower-case names; a
+  repeated header's values joined with `, `), `setCookies`, `ok`, `url` (where
+  it ended after redirects), and reads its body whole — `text(max:)`,
+  `bytes(max:)`, `json<T>(max:)`, each bounded (64 MiB unless you say) — or a
+  piece at a time with `stream()`. A body longer than `max` is an error
+  before its first byte when `Content-Length` says so.
+- **Connections.** A body read to the end gives its connection back to the
+  pool, so the next request to that host skips the handshake; one never read
+  holds it. The compiler warns about a response that is never closed
+  (`with res = …` closes it, as it does a file), and `close()` gives up a
+  half-read body. A connection the server closed while it sat idle is
+  replaced and the request sent again — for `GET`, `HEAD`, `PUT`, `DELETE`,
+  `OPTIONS` and `TRACE`, which may be repeated, and never for a `POST`.
+- **Time.** `timeout` bounds the whole request, the body included, not each
+  step: a server that sends one byte a minute cannot hold the call open.
+- **Redirects.** 301, 302, 303, 307 and 308 are followed for `GET` and `HEAD`
+  and handed back for anything else, up to `maxRedirects`. `authorization` and
+  `cookie` headers are dropped when a redirect leaves the host, so a token
+  meant for one site is never sent to another.
+- **Retries.** `retry: 3` tries again up to three more times after a failed
+  connection, a lost connection, a timeout or a 502, 503 or 504 — for a
+  method that may be repeated — waiting 100 ms, 200 ms, 400 ms… between tries.
+- **Failures.** `FetchError` has a `kind`: `InvalidRequest` (a URL, header or
+  method that could not be sent — a header holding a line break is refused,
+  not sent), `Unsupported`, `Connect`, `Timeout`, `Closed`, `Io`, `Protocol`
+  (an answer that is not HTTP, or is framed in a way a client cannot trust),
+  `TooManyRedirects`, `TooLarge`. The answer is read as strictly as the server
+  reads a request: two different lengths, a folded header or a body cut short
+  is an error, never a shortened body.
+
+Not in the module yet: TLS (and with it `https://` URLs), proxies, a
+decompressing client, WebSockets. Cancelling the `serve` task closes the
+listener and unwinds every connection task.
 
 Next: back to the [index](index.md).

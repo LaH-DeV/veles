@@ -573,11 +573,16 @@ answered from the shape, tuples get `Comparable`, enums get
 
 ### 5.3 `std/http` — client
 
-- [ ] `http.get/post/...` and a `Client` with pooling, timeouts, redirects —
-      decided 2026-10-01 as `http.fetch` + the Go spellings (D127), not built
-      (plan C7)
-- [ ] TLS (5.4)
-- [ ] Retries with backoff and idempotency awareness
+- [x] `http.get/post/...` and a `Client` with pooling, timeouts, redirects —
+      `http.fetch` + the Go spellings (D127), built 2026-10-04 (plan C7):
+      keep-alive pool with lazy expiry, one deadline over the whole request
+      and its body, redirects for GET/HEAD with credentials dropped across
+      hosts, bounded bodies, strict response parsing; the body is a
+      `Payload` (D127 addendum)
+- [ ] TLS (5.4) — the client refuses `https://` with `FetchKind.Unsupported`
+      until E1
+- [x] Retries with backoff and idempotency awareness (`retry:`; idempotent
+      methods only; 502/503/504 and connection failures)
 - [ ] Proxy environment variables
 
 ### 5.4 `std/tls`
@@ -1027,6 +1032,7 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-10-01 | Streams and TLS | **`io.Stream` implemented by `net.Conn`, `tls.Conn`, `fs.File`; HTTP over any stream; TLS verification on, `dangerouslyAcceptAnyCertificate` the only opt-out** (user, recommended of 2; spec D128). |
 | 2026-10-01 | SQL injection | **Template literals (`@template`, `tag"…"`) and `std/db` taking only `db.Sql` from `sql"…"`** (user, after asking "how tagged literal would look and work, will it be safe for injections?" and the example; recommended of 3; spec D129). Rejected: constant SQL + arguments, plain strings. |
 | 2026-10-04 | `fs.lines` | **An iterator of `Result<string, IoError>` that is also `Closeable`; `max:` required** (user, both recommended; spec D130 addendum). Rejected: a reader with a throwing `next()`, an iterator that ends silently with `error()` afterwards, a default `max`. |
+| 2026-10-04 | HTTP client request body | **A `Payload` value (`Payload.text/json/form/bytes`) in one `body:` parameter** (user, recommended of 3; spec D127 addendum). The original `json: T? = null` cannot be inferred. Rejected: `postJson`-style functions, explicit type arguments. |
 | 2026-10-01 | Small std additions | **`http.testServer`, endian bytes, `fs.writeAtomic`/locks/`lines`/…, argon2id password hashing** (user, all ticked; spec D130). |
 | 2026-10-01 | Q7: C layout | **Compiler-known `@packed`, `@align(n)` (any struct), `@transparent` (one-field struct), and `extern union` (fields only in `unsafe`)** (user, recommended of 3; spec D120). Rejected: a layout clause, leaving it. |
 | 2026-10-01 | Fixed-size arrays | **`Array<T, N>` everywhere, inline value type, with `<const N: i64>` parameters** (user, recommended of 4; spec D121). Rejected: `[T; N]`, extern-only arrays, leaving it. |
@@ -1174,3 +1180,14 @@ Every new public std API (http cookies/forms/client, `std/log`,
   not); a tag with explicit type arguments (`tag<T>"…"` is not parsed); multi-line and raw literals
   (Veles has neither yet) tagged; when the Veles lexer/parser is written (`veles-selfhost-frontend-plan.md`) it
   needs the `TemplateExpr` node and its adjacency rule, and the self-host oracle compares `(template …)` in `Dump`.
+- **Deferred from C7 the HTTP client (2026-10-04), to build later:** `https://` and `HTTPS_PROXY` (E1 TLS);
+  `HTTP_PROXY` / `NO_PROXY` and the `proxy:` option of D127 (an absolute-form request to the proxy; `CONNECT`
+  for https); transparent `Accept-Encoding: gzip` + decoding (today a compressed answer's bytes are returned
+  as they came; `std/compress` has the decoder, a streaming `GzipReader` exists); per-phase limits (connect,
+  headers, between body reads) beside the one total `timeout:`; a streaming request body (`Payload` is in
+  memory; an upload from a file needs a chunked writer); `Expect: 100-continue` on large uploads; a response
+  that is never read or closed leaks its socket until exit (a finalizer, or `Closeable` enforcement beyond
+  the D115 warning); a background reaper for idle connections (they are only dropped when the pool is next
+  asked); HTTP/2; cookie jar and `Retry-After`; the client span and `traceparent` header (D126, with
+  `std/otel`); charsets other than UTF-8 in `text()`; a public `http.Url` type (the parser is private); a
+  `redirect` callback; `retry:` on a POST with an idempotency key.

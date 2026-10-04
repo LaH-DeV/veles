@@ -129,16 +129,16 @@ test "pieces arrive as they are written, not when the response is done" {
 
 test "a file goes out in pieces with its length, and a range of it starts anywhere" {
   val h = served(files(tree()))
-  val whole = fetch(h, "/static/big.txt")
+  val whole = fetchOf(h, "/static/big.txt")
   expect(whole.status == Status.ok)
   expect(whole.body.len() == 300000)
   expect(header(whole, "content-length") == "<none>")
   // a range across the boundary of the 64 KiB pieces the file is read in
-  val part = fetch(h, "/static/big.txt", ["Range": "bytes=65530-65545"])
+  val part = fetchOf(h, "/static/big.txt", ["Range": "bytes=65530-65545"])
   expect(part.status == Status.partialContent)
   expect(text(part) == "0123456789012345")
   expect(header(part, "content-range") == "bytes 65530-65545/300000")
-  expect(text(fetch(h, "/static/big.txt", ["Range": "bytes=-5"])) == "56789")
+  expect(text(fetchOf(h, "/static/big.txt", ["Range": "bytes=-5"])) == "56789")
 }
 
 test "over a socket a served file announces its length" {
