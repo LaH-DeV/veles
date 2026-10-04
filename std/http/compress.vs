@@ -93,9 +93,9 @@ fun gzipped(resp: Response, level: i64): Response {
       try inner(packed)
       try packed.finishGzip()
     }
-    return Response(status: resp.status, headers: headers.toMap(), cookies: resp.cookies, stream: producer)
+    return Response(status: resp.status, headers: headers.toMap(), cookies: resp.cookies, stream: producer, quiet: resp.quiet)
   }
-  Response(status: resp.status, headers: headers.toMap(), body: gz.gzip(resp.body, level), cookies: resp.cookies)
+  Response(status: resp.status, headers: headers.toMap(), body: gz.gzip(resp.body, level), cookies: resp.cookies, quiet: resp.quiet)
 }
 
 /// Opens request bodies sent with `Content-Encoding: gzip`, which a server

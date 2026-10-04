@@ -791,6 +791,73 @@ channel (`stop: () => { val _ = await quit.recv() }`), and a program with
 two servers waits once and stops both. `examples/shutdown` runs every
 case, using `os.raiseSignal` in place of a real Ctrl+C.
 
+## Health checks
+
+An orchestrator or a load balancer asks a service two different questions,
+and `http.Health` answers each on its own path. **Live**: can the process
+answer at all? If not, restart it. **Ready**: can it do its work right now?
+If not, send the traffic elsewhere and leave the process alone — a slow
+database must take the instance out of rotation, not get it killed.
+
+```veles
+use http, io { println }
+
+error Down {
+  detail: string
+  fun message(): string = this.detail
+}
+
+fun main() {
+  val health = http.Health()
+  health.check("db", () => { })
+  health.check("cache", () => {
+    throw Down(detail: "redis at 10.0.0.7 refused the connection")
+  }, timeout: Duration.millis(500))
+
+  val app = http.Router()
+  app.get("/hello", req => http.Response.text("hello"))
+  app.wrap(health.endpoints())
+  val handler = app.handler()
+
+  loop (path in ["/healthz", "/readyz", "/hello"]) {
+    val r = http.call(handler, http.Method.get, path)
+    println("$path ${r.status.code} ${r.body.decodeUtf8() ?: "?"}")
+  }
+  health.stopping()
+  println("stopping: ${http.call(handler, http.Method.get, "/readyz").status.code}")
+}
+```
+
+Output:
+```text
+/healthz 200 ok
+/readyz 503 {"status": "unavailable", "checks": {"db": "ok", "cache": "failed"}}
+/hello 200 hello
+stopping: 503
+```
+
+- `check(name, f, timeout: 2s)` adds a readiness check: `f` passes by
+  returning and fails by throwing, by taking longer than its `timeout`, or by
+  panicking — the probe still answers. `f` may suspend, and may throw any
+  error.
+- `/readyz` runs every check **at once**, so it costs the slowest check, not
+  the sum. It answers `200` when all pass and `503` otherwise, with the name
+  of each check and `"ok"` or `"failed"`. *Why* a check failed goes to the log
+  (`health check failed`, with the check's name and error), not into the
+  answer: it can describe infrastructure to whoever is asking.
+- `/healthz` runs no check and answers `200 ok` while the process can answer —
+  which is the point of keeping it apart.
+- `endpoints(live: "/healthz", ready: "/readyz")` answers these paths before
+  the router, so an authentication layer wrapped inside it never sees a probe,
+  and answers `GET` and `HEAD` only. Probes are left out of the request log
+  (`logging()` and `serve`'s own line): a probe every few seconds is noise.
+- `http.serve(listener, handler, health: health, stop: …)` calls
+  `health.stopping()` when the stop begins, so `/readyz` answers `503` (and
+  runs nothing) from that moment; `health.stopping()` is also public for a
+  service that stops by other means.
+
+`veles new --template server` is wired this way.
+
 ## What a request may cost
 
 A listener is open to strangers, and nothing about a request is

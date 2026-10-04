@@ -683,8 +683,10 @@ behind a name that says "crypto" (§10, 2026-09-23).
 
 ### 5.9 Observability
 
-- [ ] `/healthz`, `/readyz` helpers — decided 2026-10-01 as `http.Health`
-      (D133), not built (plan C4)
+- [x] `/healthz`, `/readyz` helpers — `http.Health` (D133), built 2026-10-04:
+      checks run at once under their timeouts, details logged not returned,
+      `serve(health:)` flips readiness at the stop, probes kept out of the
+      request log; the server template uses it
 - [ ] Metrics, traces and logs as OpenTelemetry over OTLP/protobuf, with
       W3C `traceparent` in and out — decided 2026-10-01 (D126), not built
       (plan C4); a Prometheus pull exporter not decided
@@ -1033,6 +1035,7 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-10-01 | SQL injection | **Template literals (`@template`, `tag"…"`) and `std/db` taking only `db.Sql` from `sql"…"`** (user, after asking "how tagged literal would look and work, will it be safe for injections?" and the example; recommended of 3; spec D129). Rejected: constant SQL + arguments, plain strings. |
 | 2026-10-04 | `fs.lines` | **An iterator of `Result<string, IoError>` that is also `Closeable`; `max:` required** (user, both recommended; spec D130 addendum). Rejected: a reader with a throwing `next()`, an iterator that ends silently with `error()` afterwards, a default `max`. |
 | 2026-10-04 | HTTP client request body | **A `Payload` value (`Payload.text/json/form/bytes`) in one `body:` parameter** (user, recommended of 3; spec D127 addendum). The original `json: T? = null` cannot be inferred. Rejected: `postJson`-style functions, explicit type arguments. |
+| 2026-10-04 | Health: readiness at the stop | **`http.serve(…, health: health)` flips `/readyz` to 503 when the stop begins** (user, recommended of 3; spec D133 addendum). Rejected: a hand-called `health.drain()`, a stop hook returned by `endpoints()`. |
 | 2026-10-01 | Small std additions | **`http.testServer`, endian bytes, `fs.writeAtomic`/locks/`lines`/…, argon2id password hashing** (user, all ticked; spec D130). |
 | 2026-10-01 | Q7: C layout | **Compiler-known `@packed`, `@align(n)` (any struct), `@transparent` (one-field struct), and `extern union` (fields only in `unsafe`)** (user, recommended of 3; spec D120). Rejected: a layout clause, leaving it. |
 | 2026-10-01 | Fixed-size arrays | **`Array<T, N>` everywhere, inline value type, with `<const N: i64>` parameters** (user, recommended of 4; spec D121). Rejected: `[T; N]`, extern-only arrays, leaving it. |
@@ -1191,3 +1194,10 @@ Every new public std API (http cookies/forms/client, `std/log`,
   asked); HTTP/2; cookie jar and `Retry-After`; the client span and `traceparent` header (D126, with
   `std/otel`); charsets other than UTF-8 in `text()`; a public `http.Url` type (the parser is private); a
   `redirect` callback; `retry:` on a POST with an idempotency key.
+- **Deferred from C4 health endpoints (2026-10-04), to build later:** the readiness `503` during a stop has
+  almost no window today — `serve` stops reading requests on its connections as soon as the stop begins, so
+  a probe sees a closed or refused connection rather than the 503; a delay between flipping readiness and
+  closing (Kubernetes' `preStop` shape, e.g. `drainDelay:`) would make it observable, and is a design choice
+  for the user; no `/startupz`; checks cannot report `degraded` (a pass/fail pair only); no spans exclusion
+  yet because `std/otel` (D126) is not built — it must skip `quiet` responses; check results are not cached,
+  so a probe every second runs every check every second (a `cacheFor:` option).

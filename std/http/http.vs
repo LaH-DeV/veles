@@ -233,6 +233,8 @@ public struct Response {
   public stream: (sendable fun(BodyWriter) suspends throws IoError)? = null
   /// The length of a streamed body, when known (see `Response.stream`).
   public streamLength: i64? = null
+  // an answer left out of the request log: a health probe (see `Health`)
+  quiet: bool = false
 
   /// A body written as it is produced, for what is too large to hold, is not
   /// ready yet, or never ends: a big download, a live feed, server-sent
@@ -290,7 +292,7 @@ public struct Response {
   public fun withHeader(name: string, value: string): Response {
     val h = this.headers.toMutable()
     h.set(name.toLower(), value)
-    Response(status: this.status, headers: h.toMap(), body: this.body, cookies: this.cookies, stream: this.stream, streamLength: this.streamLength)
+    Response(status: this.status, headers: h.toMap(), body: this.body, cookies: this.cookies, stream: this.stream, streamLength: this.streamLength, quiet: this.quiet)
   }
 
   /// The same response setting `cookie` as well. The value is percent-encoded;
@@ -304,7 +306,7 @@ public struct Response {
   @caller_location
   public fun withCookie(cookie: Cookie): Response {
     checkCookie(cookie)
-    Response(status: this.status, headers: this.headers, body: this.body, cookies: this.cookies.concat([cookie]), stream: this.stream, streamLength: this.streamLength)
+    Response(status: this.status, headers: this.headers, body: this.body, cookies: this.cookies.concat([cookie]), stream: this.stream, streamLength: this.streamLength, quiet: this.quiet)
   }
 
   /// The same response telling the browser to forget a cookie: it must be
@@ -382,7 +384,7 @@ public fun call(handler: Handler, method: Method, target: string, body: string =
     rawQuery,
   )
   val resp = collect(dispatch(handler, req))
-  if (method == Method.head || hasNoBody(resp.status)) Response(status: resp.status, headers: resp.headers, cookies: resp.cookies) else resp
+  if (method == Method.head || hasNoBody(resp.status)) Response(status: resp.status, headers: resp.headers, cookies: resp.cookies, quiet: resp.quiet) else resp
 }
 
 // ---------------------------------------------------------------------------
@@ -469,7 +471,7 @@ public type Middleware = sendable fun(Handler): Handler
 public fun logging(): Middleware = next => req => {
   val sw = time.Stopwatch.start()
   val resp = next(req)
-  logs.info("request", field("peer", "${req.peer}"), field("method", "${req.method}"), field("path", req.path), field("status", resp.status.code), field("took", "${sw.elapsed()}"))
+  if (!resp.quiet) logs.info("request", field("peer", "${req.peer}"), field("method", "${req.method}"), field("path", req.path), field("status", resp.status.code), field("took", "${sw.elapsed()}"))
   resp
 }
 
@@ -591,6 +593,7 @@ public fun serve(
   handler: Handler,
   limits: Limits = Limits(),
   log: bool = true,
+  health: Health? = null,
   stop: (sendable fun() suspends)? = null,
   grace: Duration = Duration.seconds(10),
 ) {
@@ -600,6 +603,8 @@ public fun serve(
     val serving = async acceptAndServe(listener, handler, limits, log, drain)
     stop()
     if (log) logs.info("stopping", field("grace", "$grace"))
+    // readiness first: the load balancer stops sending while the rest drains
+    if (health != null) health.stopping()
     drain.begin()
     race {
       val _ = await serving => { }
@@ -691,7 +696,7 @@ fun connection(conn: io.Stream, peer: string, handler: Handler, limits: Limits, 
     // closes this connection
     val close = !wantsKeepAlive(req, http10) || drain.stopping.load() || resp.headers.get(Header.connection)?.toLower() == "close" || !req.body.reusable(drainCap) || (resp.stream != null && http10 && resp.streamLength == null)
     val sent = writeResponse(c, peer, resp, close, headOnly: req.method == Method.head, http10: http10)
-    if (log) logs.info("request", field("peer", "${req.peer}"), field("method", "${req.method}"), field("path", req.path), field("status", resp.status.code), field("took", "${sw.elapsed()}"))
+    if (log && !resp.quiet) logs.info("request", field("peer", "${req.peer}"), field("method", "${req.method}"), field("path", req.path), field("status", resp.status.code), field("took", "${sw.elapsed()}"))
     if (sent is Err || close) break
     // what the handler left unread is read and dropped, after the answer
     // has gone out, so that the next request starts where it should

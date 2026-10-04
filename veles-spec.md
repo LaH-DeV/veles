@@ -4633,6 +4633,10 @@ take); the user confirmed them 2026-10-01.
 
 User, 2026-10-01: "yes, add health endpoints".
 
+*Addendum (2026-10-04, user: recommended of 3) — how readiness learns of the stop.* `http.serve(…, health: health, stop: …)` takes the `Health` and calls its `stopping()` when the stop begins, before it closes anything; `health.stopping()` is public for a service that stops by other means. Rejected: calling `health.drain()` by hand inside `stop:` (forgetting it, or doing it after a slow step, silently leaves readiness at 200 — the failure D133 exists to prevent); `endpoints()` returning a stop hook.
+
+*As built:* the probes carry no spans or log line because the `Response` is marked `quiet` (a private field kept through `withHeader`, `withCookie`, compression and HEAD handling), which `logging()` and `serve` honour; `/readyz` answers `{"status": "ok"|"unavailable"|"stopping", "checks": {name: "ok"|"failed"}}`, `cache-control: no-store` on both; a check that panics fails; `GET` and `HEAD` only (405 + `Allow` otherwise).
+
 ### D134 — One `try` covers every failing call in its chain (v0.67)
 
 ```veles

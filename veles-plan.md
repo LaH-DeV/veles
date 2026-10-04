@@ -69,7 +69,7 @@ next. A step names what it needs; the reason for the order is in brackets.
 11. **C5/C6** `std/fs` additions, endian bytes (D130), helpers (D110 if not in B12).
 12. ~~**C8**~~ **Done 2026-10-04.** template literals (D129 part 1) [before E2].
 13. ~~**C7**~~ **Done 2026-10-04.** the HTTP client over TCP (D127) [needs C2's `Stream`].
-14. **C4** health endpoints (D133), then `std/otel` (D126) [OTLP export needs
+14. **C4** ~~health endpoints (D133)~~ **done 2026-10-04**, then `std/otel` (D126) [OTLP export needs
     C7 and C2's gzip].
 15. **E1** TLS (D128) → HTTPS for the client and OTLP.
 16. **E2** `std/db` (D129 part 2) + password hashing (D130) [needs C8, B13].
@@ -1484,3 +1484,5 @@ chapter 17 "Calling other servers", reference/stdlib. The example caught a bug t
 `*.test.vs` files (`head`, `post`, `fetch`) collided with the new public names and were renamed. **Not done**
 (checklist §11): https/TLS (E1) and proxies, transparent gzip, per-phase timeouts, streaming uploads, cookie jar,
 `traceparent` (with `std/otel`). Next in the Build order: C4 health endpoints (D133), then `std/otel` (D126), E1.
+
+**Progress 2026-10-04 (C4 health endpoints, D133).** `std/http/health.vs`: `http.Health` (`check<E>(name, f, timeout: 2s)`, `endpoints(live:, ready:)` middleware, `stopping()`), `http.serve(health:)`. `/healthz` runs no check; `/readyz` runs all at once, one task each behind a panic boundary, `200`/`503` with `{"status", "checks"}`, details to the log only. `Response.quiet` (private, carried through every copy) keeps probes out of `logging()` and `serve`'s line. The server template (`veles new --template server`) uses it. **One design question** (asked and answered): `serve(health:)` flips readiness at the stop (D133 addendum). Pinned by `std/http/health.test.vs` (14 tests), the driver template tests, docs chapter 17 "Health checks", reference/stdlib. **Not done** (checklist §11): the readiness 503 window during a stop is nearly empty today (serve stops reading at once; a `preStop`-style delay is the user's choice), result caching, `degraded`, the OTel span exclusion. Next in the Build order: `std/otel` (D126), then E1 TLS.

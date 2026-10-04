@@ -120,5 +120,5 @@ fun collect(resp: Response): Response suspends {
   val producer = resp.stream ?: return resp
   val out = BodyWriter.toMemory(resp.streamLength)
   val done = produce(producer, out) && out.missing() == 0
-  Response(status: if (done) resp.status else Status.internalServerError, headers: resp.headers, body: out.collected(), cookies: resp.cookies)
+  Response(status: if (done) resp.status else Status.internalServerError, headers: resp.headers, body: out.collected(), cookies: resp.cookies, quiet: resp.quiet)
 }

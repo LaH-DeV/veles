@@ -97,14 +97,17 @@ struct Greeting {
 }
 
 /// The routes, as one handler: what ` + "`serve`" + ` runs and what the tests call.
-fun app(): http.Handler {
+/// The health object answers the two probe paths; add its checks where the
+/// service gets something to depend on.
+fun app(health: http.Health): http.Handler {
   val router = http.Router()
   // every answer carries a request id, and no handler runs past 5 seconds
   router.wrap(http.requestId())
   router.wrap(http.timeout(Duration.seconds(5)))
 
-  // for load balancers and orchestrators: up while the process serves
-  router.get("/healthz", req => http.Response.text("ok"))
+  // for load balancers and orchestrators: /healthz while the process serves,
+  // /readyz while it can do its work (and 503 once it is stopping)
+  router.wrap(health.endpoints())
 
   router.get("/api/hello", req => {
     val name = req.query.get("name") ?: "world"
@@ -124,28 +127,36 @@ struct Settings {
 
 fun main() throws {
   val settings = try config.load<Settings>(files: [".env"])
+  val health = http.Health()
   with (listener = try net.listen(settings.host, settings.port)) {
     println("listening on http://${settings.host}:${listener.port()}/ — Ctrl+C stops it")
-    http.serve(listener, app(), stop: () => os.shutdownSignal())
+    http.serve(listener, app(health), health: health, stop: () => os.shutdownSignal())
     println("stopped")
   }
 }
 
 test "healthz says the service is up" {
-  val resp = http.call(app(), http.Method.get, "/healthz")
+  val resp = http.call(app(http.Health()), http.Method.get, "/healthz")
   expect(resp.status == http.Status.ok)
   expect(resp.body.decodeUtf8() == "ok")
 }
 
+test "readyz is ready until the service is stopping" {
+  val health = http.Health()
+  expect(http.call(app(health), http.Method.get, "/readyz").status == http.Status.ok)
+  health.stopping()
+  expect(http.call(app(health), http.Method.get, "/readyz").status == http.Status.serviceUnavailable)
+}
+
 test "hello greets by name" {
-  val resp = http.call(app(), http.Method.get, "/api/hello?name=Veles")
+  val resp = http.call(app(http.Health()), http.Method.get, "/api/hello?name=Veles")
   expect(resp.status == http.Status.ok)
   val greeting = require(json.decode<Greeting>(resp.body.decodeUtf8() ?: ""))
   expect(greeting.message == "Hello, Veles!")
 }
 
 test "an unknown path is a 404" {
-  val resp = http.call(app(), http.Method.get, "/nowhere")
+  val resp = http.call(app(http.Health()), http.Method.get, "/nowhere")
   expect(resp.status == http.Status.notFound)
 }
 `

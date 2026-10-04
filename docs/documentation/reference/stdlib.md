@@ -651,6 +651,9 @@ app.wrap(http.basicAuth("realm", (user, pass) => ok)); app.wrap(http.bearer(toke
 type Middleware = sendable fun(Handler): Handler          // `next => req => ...`; req.withHeader(n, v) hands something to the handlers behind
 http.serve(listener, app.handler(), limits: http.Limits(), log: true)   // forever, one task per connection; cancel its task to stop
 http.serve(listener, h, stop: () => os.shutdownSignal(), grace: Duration.seconds(10))   // graceful: stop accepting, close idle, drain, cancel after grace
+// health (D133, chapter 17): /healthz runs no check; /readyz runs them all at once under their timeouts, 503 + failing names, details logged not returned
+val health = http.Health(); health.check("db", () => try pool.ping(), timeout: Duration.seconds(2)); app.wrap(health.endpoints(live: "/healthz", ready: "/readyz"))
+http.serve(listener, h, health: health, stop: …)   // flips health.stopping() when the stop begins: /readyz is 503 from then; health.stopping() is public too; probe answers are left out of the request log
 http.Limits(requestLineBytes: 8192, headerLineBytes: 8192, headerCount: 100, headerBytes: 65536,
             bodyBytes: 1048576, headerTimeout: Duration.seconds(10), bodyTimeout: Duration.seconds(30), idleTimeout: Duration.seconds(15),
             connections: 10000)   // connections: served at once, 0 = no limit; a full server stops accepting (backlog waits) (D99)
