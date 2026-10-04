@@ -62,7 +62,7 @@ next. A step names what it needs; the reason for the order is in brackets.
 7. ~~**B14**~~ **Done 2026-10-03.** D113 parts 1–3 (constant expressions, tables, `static assert`)
    [B16's `Array<T, N>` needs constant lengths; E7 needs part 1–2].
 8. **B16** D120–D123 C layout, `Array<T, N>`, variadic calls [needs A8, B14].
-9. **C2** `io.Stream` (D128, the trait and its three implementations) → 
+9. **C2** `io.Stream` (D128: trait, `net.Conn` and `fs.File` **done 2026-10-04**; `tls.Conn` with E1; `http` still takes `net.Conn`) → 
    `std/compress` + `http.compress()` (D124) → `http.testServer` (D130, needs
    B13) [compress streams over `Stream`].
 10. **C3** `std/config` (D125) [needs B13's `Secret`].
@@ -1352,3 +1352,27 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   as a shift (now a type-argument context stops at `>>`); a List method that
   lends storage (`withRaw`) found through the array→List view would have
   written to a copy (the array has its own). Windows and WSL green.
+- **2026-10-04 — C2 part 1: `io.Stream` (D128).** *Language:* suspending trait
+  methods work through trait objects (the checker refused them: "suspending
+  trait methods are not supported yet") — a slot declared `suspends` holds the
+  coroutine form of the impl's method (a ramp for a plain impl, so `fs.File`
+  and `net.Conn` fit one trait), `callVirtual` starts it as a task and awaits it
+  (`sema.ObjectSigs`, `vtableThunk`); default arguments declared in the trait now
+  apply to calls through an object (`traitParamDefault`). *Std:* `io.Stream : Closeable`
+  (read, readExact, readLine, write, writeText, shutdownWrite), `io.TooLong`
+  (moved from `net`, every use migrated), implemented by `net.Conn` (its methods
+  moved into the implement) and `fs.File` (new `readExact`/`readLine`/`writeText`/`shutdownWrite`;
+  `readLine` is stateless over `readAt`). *Tests:* `std/fs/fs.test.vs` (a file through the object and a
+  generic bound, lines, ceilings), `std/net/net.test.vs` (a suspending call on a
+  real connection; a std test file may import only what its module already
+  does — `io.test.vs` importing `fs`/`net` made every program using `io` load
+  them, which the golden tests showed as shifted lambda numbers), example `streams`. Docs: stdlib reference, chapter 16, spec D40 addendum.
+  Not yet: `http` over `Stream` (the server and client still name `net.Conn`), the
+  compressors. Windows and WSL green.
+  **Bug found on the way:** a cycle of constants with declared types
+  (`const A: i64 = B + 1` / `const B: i64 = A`) was accepted without a
+  diagnostic when the checker met `A` first — the evaluator treated an
+  unreached constant as "reported at its own check", which found `A` already
+  done. It now checks the constant it meets (`sema/consteval.go`,
+  `TestConstCycleIsAlwaysReported`); seen through `use io` once `io` gained a
+  test file, as the conformance harness keeps std test files.

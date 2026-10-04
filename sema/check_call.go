@@ -1899,6 +1899,21 @@ func (f *fnCtx) objectMethods(t types.Type, trait *types.Trait, span source.Span
 	return methods, true
 }
 
+// traitParamDefault is the default expression of a trait method's i-th
+// parameter, or nil.
+func (c *Checker) traitParamDefault(trait *types.Trait, method string, i int) ast.Expr {
+	ctx := c.traitDecl[trait]
+	if ctx == nil {
+		return nil
+	}
+	for _, m := range ctx.decl.(*ast.TraitDecl).Methods {
+		if m.Name.Name == method && i < len(m.Params) {
+			return m.Params[i].Default
+		}
+	}
+	return nil
+}
+
 // virtualCall checks a method call on a trait object.
 func (f *fnCtx) virtualCall(recv Expr, trait *types.Trait, callee *ast.MemberExpr, e *ast.CallExpr) Expr {
 	name := callee.Name.Name
@@ -1931,17 +1946,26 @@ func (f *fnCtx) virtualCall(recv Expr, trait *types.Trait, callee *ast.MemberExp
 	var args []Expr
 	for i, p := range sig.Params {
 		if bound[i] == nil {
-			f.errorf(e.Pos, "missing argument '%s' in call to '%s'", p.Name, name)
-			return bad()
+			def := f.c.traitParamDefault(slot.Owner, name, i)
+			if def == nil {
+				f.errorf(e.Pos, "missing argument '%s' in call to '%s'", p.Name, name)
+				return bad()
+			}
+			// the default is written in the trait, so it is read in the
+			// trait's module (an object has no impl in sight)
+			ctx := f.c.traitDecl[slot.Owner]
+			env := &typeEnv{module: ctx.module, file: ctx.file, tps: map[string]*types.TypeParam{}}
+			g := f.c.newFnCtx(f.fn, ctx.module, ctx.file, env, nil)
+			g.unsafe = f.unsafe
+			g.throws, g.errType, g.retType = f.throws, f.errType, f.retType
+			args = append(args, g.checkExprTo(def, p.Type))
+			continue
 		}
 		args = append(args, f.checkExprTo(bound[i], p.Type))
 	}
 	rt := sig.Ret
 	if sig.Effects.Throws {
 		rt = f.c.ResultType(sig.Ret, sig.Effects.Error)
-	}
-	if sig.Effects.Suspends {
-		f.errorf(e.Pos, "suspending trait methods are not supported yet")
 	}
 	return &CallVirtual{exprBase{rt}, recv, trait, idx, sig, args}
 }

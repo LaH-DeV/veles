@@ -678,6 +678,8 @@ Associated-type projections are written with a dot, `Self.Error`, `I.Item` (`::`
 
 **What this costs.** This is a partial retreat from D2's no-coloring goal, confined to trait declarations and function types — ordinary function definitions never carry an effect marker, so libraries still don't split into sync and async ecosystems. But a suspending iterator cannot share a trait with a non-suspending one, so Veles will need the `Iterator` / `AsyncIterator` split that Rust has as `Iterator` / `Stream` and Kotlin has as `Iterator` / `Flow`. That is the state of the art, not a Veles-specific failure, but it should be recorded as the price of D17's open impls.
 
+*Addendum (2026-10-04, D128) — a trait object's suspending methods.* A method declared `suspends` is callable through a trait object (it was refused): the vtable slot holds the coroutine form of the impl's method — a plain impl's through a ramp, so a file and a socket share one `io.Stream` — and the call runs it as a task and awaits it, as a call of a suspending function value does. A default argument written in the trait (`fun read(max: i64 = 65536)`) applies to calls through an object, read in the trait's module; impls need not repeat it.
+
 ### D41 — Collections are concrete types; abstraction goes through traits
 
 `List<T>`, `MutableList<T>`, `Map<K, V>` and `MutableMap<K, V>` are **concrete types**, not traits.

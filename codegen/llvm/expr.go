@@ -2201,8 +2201,9 @@ func (g *gen) vtableFor(trait *types.Trait, t types.Type, methods []*sema.Func) 
 	}
 	g.vtables[name] = true
 	entries := []string{"ptr @" + g.typeInfo(t)}
+	sigs := sema.ObjectSigs(trait)
 	for i, fn := range methods {
-		thunk := g.vtableThunk(name, i, fn)
+		thunk := g.vtableThunk(name, i, fn, sigs[i].Effects.Suspends)
 		entries = append(entries, "ptr @"+thunk)
 	}
 	g.pending = append(g.pending, func() {
@@ -2211,8 +2212,30 @@ func (g *gen) vtableFor(trait *types.Trait, t types.Type, methods []*sema.Func) 
 	return name
 }
 
-func (g *gen) vtableThunk(vt string, idx int, fn *sema.Func) string {
+func (g *gen) vtableThunk(vt string, idx int, fn *sema.Func, slotSuspends bool) string {
 	name := fmt.Sprintf("%s.%d", vt, idx)
+	if slotSuspends {
+		// a slot declared 'suspends' is a coroutine whatever its impl is
+		// (D40): the closure convention, (task, self, args...) -> handle
+		if !fn.Suspends {
+			fn = g.rampFor(fn)
+		}
+		g.pending = append(g.pending, func() {
+			params := []string{"ptr %task", "ptr %self"}
+			args := []string{"ptr %task", "ptr %self"}
+			for i, p := range fn.Params {
+				llt := g.vt(p.Type)
+				params = append(params, fmt.Sprintf("%s %%p%d", llt, i))
+				args = append(args, fmt.Sprintf("%s %%p%d", llt, i))
+			}
+			g.defineHelper(name, "ptr", params, func() {
+				r := g.newTmp()
+				g.emit("%s = call ptr @%s(%s)", r, fn.Name, joinArgs(args))
+				g.emitTerm("ret ptr %s", r)
+			})
+		})
+		return name
+	}
 	g.pending = append(g.pending, func() {
 		// every method takes a pointer to its receiver (D22 v0.30): the
 		// trait object's data pointer is passed through unchanged
@@ -2253,8 +2276,25 @@ func (g *gen) callVirtual(e *sema.CallVirtual) string {
 	fnp := g.newTmp()
 	g.emit("%s = load ptr, ptr %s", fnp, slot)
 	args := []string{"ptr " + data}
-	for _, a := range e.Args {
-		args = append(args, g.vt(a.Type())+" "+g.exprOwned(a))
+	vals := make([]string, len(e.Args))
+	for i, a := range e.Args {
+		vals[i] = g.exprOwned(a)
+		args = append(args, g.vt(a.Type())+" "+vals[i])
+	}
+	if e.Sig.Effects.Suspends {
+		// run the slot's coroutine as a task and await it, as a call of a
+		// suspending function value does
+		ct := g.newTmp()
+		g.emit("%s = call ptr @veles_task_new()", ct)
+		ptr := &types.Pointer{Elem: types.TUnit, Raw: true}
+		ats := []types.Type{ptr, ptr}
+		avs := []string{fnp, data}
+		for i, a := range e.Args {
+			ats = append(ats, a.Type())
+			avs = append(avs, vals[i])
+		}
+		g.startIndirect(ct, e.Sig, ats, avs)
+		return g.awaitTask(ct, g.resultTypeOf(e.Sig))
 	}
 	return g.callRet(g.sigRet(e.Sig), fnp, args)
 }

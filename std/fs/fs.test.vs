@@ -1,7 +1,7 @@
 // Tests of std/fs's open files (D97): reading a piece at a time, writing as
 // data arrives, and what a closed or wrongly opened file says.
 
-use os, path, time
+use io, os, path, time
 
 fun scratch(name: string): string {
   val dir = path.join(os.tempDir(), "veles-fs-test")
@@ -112,5 +112,74 @@ test "stat reports size, kind and a recent write time" {
   val now = time.now().toSeconds()
   expect(st.modified.toSeconds() > now - 3600 && st.modified.toSeconds() < now + 3600)
   expect((try stat(path.join(os.tempDir(), "veles-fs-test"))).isDir)
+  try remove(p)
+}
+
+// io.Stream over a file (D128): the same code a connection runs through
+
+// everything a stream holds, read through the trait object
+fun drain(s: io.Stream): List<u8> throws IoError {
+  val out: MutableList<u8> = []
+  loop {
+    val chunk = try s.read(3)
+    if (chunk.isEmpty()) break
+    out.addAll(chunk)
+  }
+  out
+}
+
+fun lines<S: io.Stream>(s: S, max: i64): List<string> throws IoError | io.TooLong {
+  val out: MutableList<string> = []
+  loop {
+    val line = try s.readLine(max)
+    if (line == null) break
+    out.push(line)
+  }
+  out
+}
+
+test "a file is a stream: reads, lines and exact reads" {
+  val p = scratch("lines.txt")
+  try writeFile(p, "one\r\ntwo\n\nlast")
+  with (f = try open(p)) {
+    val s: io.Stream = f
+    expect((try drain(s)).decodeUtf8() == "one\r\ntwo\n\nlast")
+  }
+  with (f = try open(p)) {
+    expect(try lines(f, 16) == ["one", "two", "", "last"])
+  }
+  with (f = try open(p)) {
+    expect((try f.readExact(5)).decodeUtf8() == "one\r\n")
+    expect(try f.readLine(16) == "two")
+    expect((try f.readExact(100)).decodeUtf8() == "\nlast")
+    expect(try f.readLine(16) == null)
+  }
+  try remove(p)
+}
+
+test "a line past the ceiling is TooLong, on a file" {
+  val p = scratch("long.txt")
+  try writeFile(p, "short\n" + "x".repeat(9000) + "\nafter\n")
+  with (f = try open(p)) {
+    expect(try f.readLine(10) == "short")
+    val r = f.readLine(100)
+    when (r) {
+      is Err(e) => expect(e is io.TooLong)
+      is Ok(_)  => expect(false)
+    }
+  }
+  try remove(p)
+}
+
+test "a file's write and shutdownWrite through a stream" {
+  val p = scratch("out.txt")
+  with (f = try open(p, FileMode.Write)) {
+    val s: io.Stream = f
+    try s.writeText("a")
+    try s.write("bc".bytes())
+    try s.shutdownWrite()
+    try s.writeText("d")
+  }
+  expect(try readFile(p) == "abcd")
   try remove(p)
 }

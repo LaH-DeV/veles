@@ -4,7 +4,7 @@
 // under a ceiling it can see. A handler that never asks costs the server no
 // read (and a client that sent `Expect: 100-continue` is never told to go
 // ahead).
-use net
+use io, net
 
 // How a body is framed on the wire, and where a read has got to. It sits in a
 // Mutex so that a Request stays Sendable and every copy of it — a middleware
@@ -226,9 +226,9 @@ public struct Body {
     when (withTimeout(this.timeout, () => try c.readLine(max: max))) {
       is Ok(line) => line ?: throw badRequest("body ended inside the framing")
       is Err(e)   => when (e) {
-        is Timeout     => throw Fail(status: Status.requestTimeout, text: "request body timeout")
-        is net.TooLong => throw badRequest("body framing line too long")
-        is IoError     => try rethrow(e)
+        is Timeout    => throw Fail(status: Status.requestTimeout, text: "request body timeout")
+        is io.TooLong => throw badRequest("body framing line too long")
+        is IoError    => try rethrow(e)
       }
     }
   }

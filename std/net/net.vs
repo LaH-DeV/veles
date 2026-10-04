@@ -16,7 +16,7 @@
 /// confined to one `unsafe` block (D44). The sockets are non-blocking: a
 /// call that would block returns 1, the task parks with `await ioWait(fd,
 /// write)` until the executor's poll sees the socket ready, and retries.
-use os
+use io, os
 
 extern "C" {
   fun veles_net_listen(host: string, port: i64, fd: *raw i64): i64
@@ -35,16 +35,6 @@ extern "C" {
 
 /// The runtime's "would block" answer: wait and retry.
 const wouldBlock: i64 = 1
-
-/// A read that would have exceeded the ceiling its caller gave. The bytes
-/// read so far are dropped and the connection is left where it stood, so
-/// there is nothing sensible to resume from: close it. A server answers
-/// the peer first — 431 for headers, 413 for a body — and then closes.
-public error TooLong {
-  public message: string
-  /// The ceiling that was passed, in bytes.
-  public limit: i64
-}
 
 // A host holding a NUL byte would reach the resolver cut short at it:
 // `evil.example\0.trusted.example` passes an `endsWith` allow-list check
@@ -247,114 +237,116 @@ public struct Conn {
   /// The peer's address, `host:port`.
   public fun peer(): string = this.address
 
-  /// Up to `max` bytes, as soon as any are available; an empty list means
-  /// the peer closed its side.
-  public fun read(max: i64 = 65536): List<u8> suspends throws IoError {
-    val buffered = this.take(max)
-    if (!buffered.isEmpty()) return buffered
-    with held = this.fd.using()
-    loop {
-      var data = ""
-      // SAFETY: stores what arrived in `data`, a local that outlives the call; on a
-      // closed connection the number is -1 and the call fails
-      val code = unsafe {
-        veles_net_recv(held.fd(), max, &data)
-      }
-      if (code == 0) return data.bytes()
-      if (code != wouldBlock) throw os.ioError(code, this.address)
-      await ioWait(held.fd(), false)
-    }
-  }
-
-  /// Exactly `n` bytes, or fewer when the peer closes first. `n` is the
-  /// ceiling as well as the count, so a caller that takes it from the peer
-  /// — a `Content-Length` header, a length prefix — must check it against
-  /// its own limit before calling, or the peer chooses the allocation.
-  public fun readExact(n: i64): List<u8> suspends throws IoError {
-    loop (this.buffered() < n) {
-      val chunk = try this.fetch()
-      if (chunk.isEmpty()) break
-    }
-    this.take(n)
-  }
-
-  /// The next line as text, without its `\n` (and a `\r` before it), or
-  /// `null` when the peer closed with nothing left; a line that is not
-  /// valid UTF-8 is an error.
-  ///
-  /// `max` is how many bytes of one line this caller is willing to hold.
-  /// It has no default on purpose: the peer decides where the newline
-  /// goes, so a line is only as long as the reader allows, and a program
-  /// that never says allows a stranger to fill its memory. A line that
-  /// reaches the ceiling throws `TooLong` and the connection is spent.
-  public fun readLine(max: i64): string? suspends throws IoError | TooLong {
-    var scanned: i64 = 0
-    loop {
-      val nl = this.buffer.withLock(b => findByte(b, 10, from: scanned))
-      if (nl >= 0) {
-        if (nl > max) throw this.tooLong("line", max)
-        val line = this.buffer.withLock(b => {
-          var end = nl
-          if (end > 0 && b.at(end - 1) == 13) end -= 1
-          val line = b.take(end)
-          b.removePrefix(nl + 1)
-          line
-        })
-        return line.decodeUtf8() ?: throw IoError(path: this.address, code: 0, detail: "line is not valid UTF-8", kind: IoKind.InvalidData)
-      }
-      scanned = this.buffered()
-      // no newline in what has arrived: stop before asking for more, or a
-      // peer that never sends one decides how much we allocate
-      if (scanned > max) throw this.tooLong("line", max)
-      val chunk = try this.fetch()
-      if (chunk.isEmpty()) {
-        val rest = this.take(scanned)
-        if (rest.isEmpty()) return null
-        if (rest.len() > max) throw this.tooLong("line", max)
-        return rest.decodeUtf8() ?: throw IoError(path: this.address, code: 0, detail: "line is not valid UTF-8", kind: IoKind.InvalidData)
-      }
-    }
-  }
-
   // the refusal, with the address so a log says which peer it was
-  fun tooLong(what: string, max: i64): TooLong =
-    TooLong(message: "$what from ${this.address} is longer than $max bytes", limit: max)
+  fun tooLong(what: string, max: i64): io.TooLong =
+    io.TooLong(message: "$what from ${this.address} is longer than $max bytes", limit: max)
 
-  /// Sends all of `bytes`; suspends while the peer catches up.
-  public fun write(bytes: List<u8>) suspends throws IoError {
-    var offset: i64 = 0
-    with held = this.fd.using()
-    loop (offset < bytes.len()) {
-      var sent: i64 = 0
-      // SAFETY: reads `bytes` from `offset` within its length and stores the count in
-      // `sent`, a local; on a closed connection the number is -1 and it fails
-      val code = unsafe {
-        veles_net_send(held.fd(), bytes, offset, &sent)
+  implement io.Stream {
+    /// Up to `max` bytes, as soon as any are available; an empty list means
+    /// the peer closed its side.
+    fun read(max: i64 = 65536): List<u8> suspends throws IoError {
+      val buffered = this.take(max)
+      if (!buffered.isEmpty()) return buffered
+      with held = this.fd.using()
+      loop {
+        var data = ""
+        // SAFETY: stores what arrived in `data`, a local that outlives the call; on a
+        // closed connection the number is -1 and the call fails
+        val code = unsafe {
+          veles_net_recv(held.fd(), max, &data)
+        }
+        if (code == 0) return data.bytes()
+        if (code != wouldBlock) throw os.ioError(code, this.address)
+        await ioWait(held.fd(), false)
       }
-      if (code == wouldBlock) {
-        await ioWait(held.fd(), true)
-        continue
+    }
+
+    /// Exactly `n` bytes, or fewer when the peer closes first. `n` is the
+    /// ceiling as well as the count, so a caller that takes it from the peer
+    /// — a `Content-Length` header, a length prefix — must check it against
+    /// its own limit before calling, or the peer chooses the allocation.
+    fun readExact(n: i64): List<u8> suspends throws IoError {
+      loop (this.buffered() < n) {
+        val chunk = try this.fetch()
+        if (chunk.isEmpty()) break
+      }
+      this.take(n)
+    }
+
+    /// The next line as text, without its `\n` (and a `\r` before it), or
+    /// `null` when the peer closed with nothing left; a line that is not
+    /// valid UTF-8 is an error.
+    ///
+    /// `max` is how many bytes of one line this caller is willing to hold.
+    /// It has no default on purpose: the peer decides where the newline
+    /// goes, so a line is only as long as the reader allows, and a program
+    /// that never says allows a stranger to fill its memory. A line that
+    /// reaches the ceiling throws `TooLong` and the connection is spent.
+    fun readLine(max: i64): string? suspends throws IoError | io.TooLong {
+      var scanned: i64 = 0
+      loop {
+        val nl = this.buffer.withLock(b => findByte(b, 10, from: scanned))
+        if (nl >= 0) {
+          if (nl > max) throw this.tooLong("line", max)
+          val line = this.buffer.withLock(b => {
+            var end = nl
+            if (end > 0 && b.at(end - 1) == 13) end -= 1
+            val line = b.take(end)
+            b.removePrefix(nl + 1)
+            line
+          })
+          return line.decodeUtf8() ?: throw IoError(path: this.address, code: 0, detail: "line is not valid UTF-8", kind: IoKind.InvalidData)
+        }
+        scanned = this.buffered()
+        // no newline in what has arrived: stop before asking for more, or a
+        // peer that never sends one decides how much we allocate
+        if (scanned > max) throw this.tooLong("line", max)
+        val chunk = try this.fetch()
+        if (chunk.isEmpty()) {
+          val rest = this.take(scanned)
+          if (rest.isEmpty()) return null
+          if (rest.len() > max) throw this.tooLong("line", max)
+          return rest.decodeUtf8() ?: throw IoError(path: this.address, code: 0, detail: "line is not valid UTF-8", kind: IoKind.InvalidData)
+        }
+      }
+    }
+
+    /// Sends all of `bytes`; suspends while the peer catches up.
+    fun write(bytes: List<u8>) suspends throws IoError {
+      var offset: i64 = 0
+      with held = this.fd.using()
+      loop (offset < bytes.len()) {
+        var sent: i64 = 0
+        // SAFETY: reads `bytes` from `offset` within its length and stores the count in
+        // `sent`, a local; on a closed connection the number is -1 and it fails
+        val code = unsafe {
+          veles_net_send(held.fd(), bytes, offset, &sent)
+        }
+        if (code == wouldBlock) {
+          await ioWait(held.fd(), true)
+          continue
+        }
+        if (code != 0) throw os.ioError(code, this.address)
+        offset += sent
+      }
+    }
+
+    /// Sends `text` as UTF-8.
+    fun writeText(text: string) suspends throws IoError {
+      try this.write(text.bytes())
+    }
+
+    /// Tells the peer that nothing more will be sent (its reads see the end
+    /// of the stream) while this side keeps reading — how a client marks the
+    /// end of a request when the protocol has no other way to say so.
+    fun shutdownWrite() throws IoError {
+      with held = this.fd.using()
+      // SAFETY: on a closed connection the number is -1 and the call fails
+      val code = unsafe {
+        veles_net_shutdown_write(held.fd())
       }
       if (code != 0) throw os.ioError(code, this.address)
-      offset += sent
     }
-  }
-
-  /// Sends `text` as UTF-8.
-  public fun writeText(text: string) suspends throws IoError {
-    try this.write(text.bytes())
-  }
-
-  /// Tells the peer that nothing more will be sent (its reads see the end
-  /// of the stream) while this side keeps reading — how a client marks the
-  /// end of a request when the protocol has no other way to say so.
-  public fun shutdownWrite() throws IoError {
-    with held = this.fd.using()
-    // SAFETY: on a closed connection the number is -1 and the call fails
-    val code = unsafe {
-      veles_net_shutdown_write(held.fd())
-    }
-    if (code != 0) throw os.ioError(code, this.address)
   }
 
   implement Closeable {

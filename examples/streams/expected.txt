@@ -1,0 +1,3 @@
+file: 4 lines, 12 words, longest 28
+socket: 4 lines, 12 words, longest 28
+exit=0

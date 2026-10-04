@@ -515,7 +515,19 @@ io.print(s: string)
 io.eprintln(s: string)           // standard error
 io.readLine(): string?           // null at end of input
 io.readAll(): string             // the rest of standard input
+trait io.Stream : Closeable      // net.Conn, fs.File; the effects are declared (D40, D128)
+  read(max: i64 = 65536): List<u8> suspends throws IoError         // [] at the end
+  readExact(n: i64): List<u8> suspends throws IoError              // fewer only at the end
+  readLine(max: i64): string? suspends throws IoError | TooLong    // no default for `max`, by design
+  write(bytes: List<u8>) suspends throws IoError
+  writeText(text: string) suspends throws IoError
+  shutdownWrite() suspends throws IoError                          // nothing on a file
+error io.TooLong { message, limit }                                // a read hit the ceiling
 ```
+
+`io.Stream` is usable as a type (`fun summarize(s: io.Stream)`, a trait
+object whose suspending calls park the task) and as a bound
+(`fun lines<S: io.Stream>(s: S)`, one copy per type).
 
 Each line goes out whole — tasks printing at once never interleave inside
 one — and as it ends, whether standard output is a terminal or a pipe
@@ -569,6 +581,7 @@ fs.open(path: string, mode: FileMode = FileMode.Read): File throws IoError   // 
 file.read(max: i64 = 65536): List<u8> throws IoError       // from where the last read ended; [] at the end
 file.readAt(offset: i64, max: i64): List<u8> throws IoError  // anywhere; does not move `read`'s place
 file.write(bytes: List<u8>) throws IoError; file.size(): i64 throws IoError
+file.readExact(n), file.readLine(max), file.writeText(text), file.shutdownWrite()   // the rest of io.Stream (D128), which File implements
 fs.listDir(path: string): List<string> throws IoError      // names, sorted
 fs.walk(root: string): List<string> throws IoError         // every file below root, depth-first in name order; links to directories not followed
 fs.mkdir(path: string) throws IoError                      // with parents
@@ -592,8 +605,8 @@ listener.port(): i64                                     // the bound port
 listener.accept(): Conn suspends throws IoError
 conn.read(max: i64 = 65536): List<u8> suspends throws IoError   // what has arrived; [] at end of stream
 conn.readExact(n: i64): List<u8> suspends throws IoError       // n bytes, fewer only at end of stream; n is the ceiling too
-conn.readLine(max: i64): string? suspends throws IoError | TooLong   // without the newline; null at end of stream
-error TooLong { message, limit }                               // a read hit the ceiling; `max` has no default, by design
+conn.readLine(max: i64): string? suspends throws IoError | io.TooLong   // without the newline; null at end of stream
+                                                               // `Conn` implements io.Stream (below it, `io.TooLong` is the ceiling error)
 conn.write(bytes: List<u8>) suspends throws IoError            // all of it
 conn.writeText(text: string) suspends throws IoError
 conn.shutdownWrite() throws IoError                            // half-close: the peer reads end of stream

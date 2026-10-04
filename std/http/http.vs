@@ -13,7 +13,7 @@
 /// with listener = try net.listen(host: "", port: 8080)
 /// http.serve(listener, app.handler())
 /// ```
-use codec, fs, log as logs { field }, net, path, random, time
+use codec, fs, io, log as logs { field }, net, path, random, time
 
 // ---------------------------------------------------------------------------
 // failing a request
@@ -717,9 +717,9 @@ fun headLine(c: net.Conn, max: i64, limit: Duration, tooLong: Fail): string? sus
   when (withTimeout(limit, () => try c.readLine(max: max))) {
     is Ok(line) => line
     is Err(e)   => when (e) {
-      is net.TooLong => throw tooLong
-      is Timeout     => throw e
-      is IoError     => try rethrow(e)
+      is io.TooLong => throw tooLong
+      is Timeout    => throw e
+      is IoError    => try rethrow(e)
     }
   }
 }
@@ -752,8 +752,8 @@ fun readLineOf(c: net.Conn, max: i64): string? suspends throws Fail | IoError {
   when (c.readLine(max: max)) {
     is Ok(line) => line
     is Err(e)   => when (e) {
-      is net.TooLong => throw Fail(status: Status.uriTooLong, text: "URI too long")
-      is IoError     => try rethrow(e)
+      is io.TooLong => throw Fail(status: Status.uriTooLong, text: "URI too long")
+      is IoError    => try rethrow(e)
     }
   }
 }

@@ -286,7 +286,7 @@ answered from the shape, tuples get `Comparable`, enums get
       ceiling 408; nothing reaches a handler, and a body is never assembled to
       discover it was too big
 - [x] Every read from the network is bounded by a caller-given max: `readLine(max:)`
-      has no default and throws `net.TooLong`, so the unbounded call does not compile;
+      has no default and throws `io.TooLong` (moved from `net` with D128), so the unbounded call does not compile;
       `read(max)` and `readExact(n)` were already caller-bounded, and http checks
       `Content-Length` against `bodyBytes` before the read
 - [x] `unsafe` blocks audited: each std use has a comment saying why it is sound.

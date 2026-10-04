@@ -2,7 +2,7 @@
 ///
 /// Implemented on top of runtime/c/veles_os.c; every extern call is confined
 /// to one `unsafe` block (D44).
-use os, path as paths, time
+use io, os, path as paths, time
 
 extern "C" {
   fun veles_fs_open(path: string, mode: i64, handle: *raw i64): i64
@@ -171,15 +171,6 @@ public struct File {
     size
   }
 
-  /// Up to `max` bytes from where the last `read` ended; empty at the end of
-  /// the file. Fewer than `max` is normal and does not mean the end.
-  public fun read(max: i64 = 65536): List<u8> throws IoError {
-    val at = this.next.load()
-    val chunk = try this.readAt(at, max)
-    this.next.store(at + chunk.len())
-    chunk
-  }
-
   /// Up to `max` bytes at `offset`, whatever `read` has done; empty at or past
   /// the end.
   public fun readAt(offset: i64, max: i64): List<u8> throws IoError {
@@ -194,15 +185,85 @@ public struct File {
     data.bytes()
   }
 
-  /// All of `bytes`, at the end of what was written so far.
-  public fun write(bytes: List<u8>) throws IoError {
-    try this.check()
-    // SAFETY: reads `bytes` within its length and keeps nothing after the call
-    val code = unsafe {
-      veles_fs_file_write(this.handle, bytes)
+  implement io.Stream {
+    /// Up to `max` bytes from where the last `read` ended; empty at the end of
+    /// the file. Fewer than `max` is normal and does not mean the end.
+    fun read(max: i64 = 65536): List<u8> throws IoError {
+      val at = this.next.load()
+      val chunk = try this.readAt(at, max)
+      this.next.store(at + chunk.len())
+      chunk
     }
-    if (code != 0) throw os.ioError(code, this.path)
+
+    /// All of `bytes`, at the end of what was written so far.
+    fun write(bytes: List<u8>) throws IoError {
+      try this.check()
+      // SAFETY: reads `bytes` within its length and keeps nothing after the call
+      val code = unsafe {
+        veles_fs_file_write(this.handle, bytes)
+      }
+      if (code != 0) throw os.ioError(code, this.path)
+    }
+
+    /// Exactly `n` bytes, or fewer when the file ends first.
+    fun readExact(n: i64): List<u8> throws IoError {
+      val out: MutableList<u8> = []
+      loop (out.len() < n) {
+        val chunk = try this.read((n - out.len()).min(65536))
+        if (chunk.isEmpty()) break
+        out.addAll(chunk)
+      }
+      out
+    }
+
+    /// The next line from where the last read ended, without its `\n` (and a
+    /// `\r` before it), or `null` at the end of the file; a line that is not
+    /// valid UTF-8 is an error, and one longer than `max` bytes throws `TooLong`.
+    fun readLine(max: i64): string? throws IoError | io.TooLong {
+      val start = this.next.load()
+      var at = start
+      val line: MutableList<u8> = []
+      loop {
+        val chunk = try this.readAt(at, 4096)
+        if (chunk.isEmpty()) {
+          // the end of the file: what is left is the last line
+          if (line.isEmpty()) return null
+          this.next.store(at)
+          break
+        }
+        var cut = -1
+        loop (i in 0..<chunk.len()) {
+          if (chunk.at(i) == 10) {
+            cut = i
+            break
+          }
+        }
+        if (cut < 0) {
+          line.addAll(chunk)
+          at += chunk.len()
+          if (line.len() > max) throw this.tooLong(max)
+          continue
+        }
+        line.addAll(chunk.take(cut))
+        this.next.store(at + cut + 1)
+        break
+      }
+      if (line.len() > max) throw this.tooLong(max)
+      if (!line.isEmpty() && line.at(line.len() - 1) == 13) line.removeAt(line.len() - 1)
+      line.toList().decodeUtf8() ?: throw IoError(path: this.path, code: 0, detail: "line is not valid UTF-8", kind: IoKind.InvalidData)
+    }
+
+    /// `text` as UTF-8, at the end of what was written so far.
+    fun writeText(text: string) throws IoError {
+      try this.write(text.bytes())
+    }
+
+    /// Does nothing: a file has no other side to tell.
+    fun shutdownWrite() throws IoError { }
   }
+
+  fun tooLong(max: i64): io.TooLong =
+    io.TooLong(message: "a line of ${this.path} is longer than $max bytes", limit: max)
 
   fun check() throws IoError {
     if (!this.isOpen.load()) throw IoError(path: this.path, code: 9, detail: "the file is closed", kind: IoKind.InvalidInput)

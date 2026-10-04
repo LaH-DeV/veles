@@ -10,7 +10,7 @@ use http, io { println }, net, os
 
 // What a client sees of one response: the status line, whether the server
 // said it will close, and the body.
-fun response(c: net.Conn): string throws IoError | net.TooLong {
+fun response(c: net.Conn): string throws IoError | io.TooLong {
   val status = try c.readLine(max: 8192) ?: return "(closed without a response)"
   var length: i64 = 0
   var closing = false
@@ -28,14 +28,14 @@ fun response(c: net.Conn): string throws IoError | net.TooLong {
   "$status | $body" + (if (closing) " | connection: close" else "")
 }
 
-fun ask(c: net.Conn, path: string): string throws IoError | net.TooLong {
+fun ask(c: net.Conn, path: string): string throws IoError | io.TooLong {
   try c.writeText("GET $path HTTP/1.1\r\nHost: x\r\n\r\n")
   try response(c)
 }
 
 // Connected, one request answered, then quiet: the kind of connection a
 // browser keeps open. A stopping server closes it at once.
-fun idleClient(port: i64) throws IoError | net.TooLong {
+fun idleClient(port: i64) throws IoError | io.TooLong {
   with c = try net.connect("127.0.0.1", port)
   println("idle:  ${try ask(c, "/fast")}")
   val rest = try c.read()
@@ -44,14 +44,14 @@ fun idleClient(port: i64) throws IoError | net.TooLong {
 
 // Mid-request when the stop comes: the answer still arrives, marked as
 // the connection's last.
-fun busyClient(port: i64) throws IoError | net.TooLong {
+fun busyClient(port: i64) throws IoError | io.TooLong {
   with c = try net.connect("127.0.0.1", port)
   println("busy:  ${try ask(c, "/slow")}")
 }
 
 // A handler that outlives `grace`: it is cancelled, its `with` still
 // closes, and the client gets no response.
-fun stuckClient(port: i64) throws IoError | net.TooLong {
+fun stuckClient(port: i64) throws IoError | io.TooLong {
   with c = try net.connect("127.0.0.1", port)
   println("stuck: ${try ask(c, "/stuck")}")
 }
@@ -95,15 +95,15 @@ fun untilSignal() {
   }
 }
 
-fun start(clients: sendable fun(i64) suspends throws IoError | net.TooLong, port: i64) throws IoError | net.TooLong = try clients(port)
+fun start(clients: sendable fun(i64) suspends throws IoError | io.TooLong, port: i64) throws IoError | io.TooLong = try clients(port)
 
 // Serves until `stop` returns while `clients` run against the server;
 // returns once both are done.
 fun run(
-  clients: sendable fun(i64) suspends throws IoError | net.TooLong,
+  clients: sendable fun(i64) suspends throws IoError | io.TooLong,
   stop: sendable fun() suspends,
   grace: Duration,
-) throws IoError | net.TooLong {
+) throws IoError | io.TooLong {
   with listener = try net.listen()
   val port = listener.port()
   scope {
@@ -113,7 +113,7 @@ fun run(
   println("server: serve returned")
 }
 
-fun main() throws IoError | net.TooLong {
+fun main() throws IoError | io.TooLong {
   // an idle and a busy connection, both finished inside the grace period
   try run(port => {
     scope {

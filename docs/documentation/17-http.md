@@ -12,7 +12,7 @@ built on it; this chapter is the parts.
 ```veles
 use http, io, net
 
-fun request(port: i64, target: string): string throws IoError | net.TooLong {
+fun request(port: i64, target: string): string throws IoError | io.TooLong {
   with conn = try net.connect("127.0.0.1", port)
   try conn.writeText("GET $target HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
   val status = try conn.readLine(max: 8192) ?: ""
@@ -24,7 +24,7 @@ fun request(port: i64, target: string): string throws IoError | net.TooLong {
   "$status | ${body.decodeUtf8() ?: "?"}"
 }
 
-fun main() throws IoError | net.TooLong {
+fun main() throws IoError | io.TooLong {
   val app = http.Router()
   app.get("/", req => http.Response.text("hello ${req.query.get("name") ?: "world"}"))
   app.get("/users/{id}", req => http.Response.json("{\"id\": \"${req.param("id")}\"}"))
@@ -559,7 +559,7 @@ imports a module.)
 ```veles
 use http, io, net
 
-fun request(port: i64, target: string, extra: string): string throws IoError | net.TooLong {
+fun request(port: i64, target: string, extra: string): string throws IoError | io.TooLong {
   with conn = try net.connect("127.0.0.1", port)
   try conn.writeText("GET $target HTTP/1.1\r\nHost: x\r\nConnection: close\r\n" + extra + "\r\n")
   val status = try conn.readLine(max: 8192) ?: ""
@@ -575,7 +575,7 @@ fun request(port: i64, target: string, extra: string): string throws IoError | n
   "$status id=$id by=$by"
 }
 
-fun main() throws IoError | net.TooLong {
+fun main() throws IoError | io.TooLong {
   val app = http.Router()
   app.wrap(http.requestId())                                        // outermost
   app.wrap(http.timeout(Duration.millis(50)))

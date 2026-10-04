@@ -300,6 +300,12 @@ func (ev *constEval) varRef(e *VarRef) ConstVal {
 		if d == nil || d.Kind != ast.BindConst {
 			ev.errorf(source.Span{}, "'%s' is a '%s', computed at run time, not a constant; declare it 'const' if its initializer is one (D113)", g.Display, d.Kind)
 		}
+		if ev.c.globalState[g] == 0 {
+			// not reached yet: check it now, so that a cycle is found whichever
+			// constant of it the checker started with (a cycle of declared-type
+			// constants used to pass unreported when the first was checked first)
+			ev.c.checkGlobal(g)
+		}
 		if g.Const != nil {
 			return g.Const
 		}

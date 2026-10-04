@@ -94,7 +94,7 @@ const maxResponseLine: i64 = 8192
 
 /// One raw exchange over a fresh connection: the status line, then each
 /// Set-Cookie or Location header as sent, then the body.
-fun exchange(port: i64, method: string, target: string, body: string, extra: string = ""): string throws IoError | net.TooLong {
+fun exchange(port: i64, method: string, target: string, body: string, extra: string = ""): string throws IoError | io.TooLong {
   with conn = try net.connect("127.0.0.1", port)
   val head = StringBuilder()
   head.append("$method $target HTTP/1.1\r\nHost: check\r\nConnection: close\r\n")

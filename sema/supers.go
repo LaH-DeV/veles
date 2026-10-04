@@ -191,3 +191,15 @@ func findSlot(slots []objSlot, name string) (objSlot, int) {
 	}
 	return objSlot{}, -1
 }
+
+// ObjectSigs is the declaration of each slot of t's object table, in slot
+// order — what codegen needs to know of a slot besides the impl's function:
+// a slot that suspends is called, and filled, as a coroutine (D40).
+func ObjectSigs(t *types.Trait) []*types.Func {
+	slots, _ := objectSlots(t)
+	out := make([]*types.Func, len(slots))
+	for i, s := range slots {
+		out[i] = s.Sig
+	}
+	return out
+}

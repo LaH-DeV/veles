@@ -165,7 +165,7 @@ const maxResponseLine: i64 = 8192
 
 /// One raw HTTP/1.1 exchange over a fresh connection: the status line, the
 /// content type and the body, as the test output.
-fun exchange(port: i64, method: string, target: string, body: string, extra: string = ""): string throws IoError | net.TooLong {
+fun exchange(port: i64, method: string, target: string, body: string, extra: string = ""): string throws IoError | io.TooLong {
   with conn = try net.connect("127.0.0.1", port)
   val head = StringBuilder()
   head.append("$method $target HTTP/1.1\r\nHost: check\r\nConnection: close\r\nX-Request-Id: check\r\n")
@@ -219,7 +219,7 @@ val headerScript = [
   ("one long header", "X-Long: " + "y".repeat(9000) + "\r\n"),
 ]
 
-fun check(handler: http.Handler) throws IoError | EncodeError | net.TooLong {
+fun check(handler: http.Handler) throws IoError | EncodeError | io.TooLong {
   val script = [
     ("GET", "/api/echo?msg=hello+world", ""),
     ("GET", "/api/notes", ""),
@@ -279,7 +279,7 @@ fun check(handler: http.Handler) throws IoError | EncodeError | net.TooLong {
 
 // ---------------------------------------------------------------------------
 
-fun run(args: List<string>) throws UsageError | IoError | EncodeError | net.TooLong {
+fun run(args: List<string>) throws UsageError | IoError | EncodeError | io.TooLong {
   val opts = try Options.parse(args)
   if (!fs.isDir(opts.dir)) throw UsageError(message: "'${opts.dir}' is not a directory (the files to serve)")
   val handler = app(opts.dir)
