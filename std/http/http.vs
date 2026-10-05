@@ -13,7 +13,7 @@
 /// with listener = try net.listen(host: "", port: 8080)
 /// http.serve(listener, app.handler())
 /// ```
-use codec, fs, io, log as logs { field }, net, otel, path, random, time
+use codec, fs, io, log as logs { field }, net, otel, path, random, time, tls
 
 // ---------------------------------------------------------------------------
 // failing a request
@@ -633,19 +633,30 @@ fun matchRoute(pattern: List<string>, segments: List<string>): Map<string, strin
 /// ```veles
 /// http.serve(listener, app.handler(), stop: () => os.shutdownSignal())
 /// ```
+///
+/// With `tls:` every connection is secured with that certificate (chapter 16)
+/// and the handler sees the decrypted requests; the handshake runs in the
+/// task that serves the connection, so a slow client holds up nobody, and a
+/// `tls.reloading` certificate renews without a restart:
+///
+/// ```veles
+/// with certs = try tls.reloading("server.pem", "server.key", every: Duration.minutes(10))
+/// http.serve(listener, app.handler(), tls: certs.certificate())
+/// ```
 public fun serve(
   listener: net.Listener,
   handler: Handler,
   limits: Limits = Limits(),
   log: bool = true,
   health: Health? = null,
+  tls: tls.Certificate? = null,
   stop: (sendable fun() suspends)? = null,
   grace: Duration = Duration.seconds(10),
 ) {
   val drain = Drain(stopping: Atomic(value: false), wake: Channel<bool>(capacity: 1))
-  if (stop == null) return acceptAndServe(listener, handler, limits, log, drain)
+  if (stop == null) return acceptAndServe(listener, handler, limits, log, drain, tls)
   scope {
-    val serving = async acceptAndServe(listener, handler, limits, log, drain)
+    val serving = async acceptAndServe(listener, handler, limits, log, drain, tls)
     stop()
     if (log) logs.info("stopping", field("grace", "$grace"))
     // readiness first: the load balancer stops sending while the rest drains
@@ -671,7 +682,7 @@ struct Drain {
   }
 }
 
-fun acceptAndServe(listener: net.Listener, handler: Handler, limits: Limits, log: bool, drain: Drain) {
+fun acceptAndServe(listener: net.Listener, handler: Handler, limits: Limits, log: bool, drain: Drain, cert: tls.Certificate?) {
   val accepted = Channel<net.Conn>(capacity: 16)
   // one item per connection being served: `accept` waits while the channel
   // is full, so the limit costs nothing for what it holds back
@@ -684,7 +695,7 @@ fun acceptAndServe(listener: net.Listener, handler: Handler, limits: Limits, log
         val c = accepted.recv()   => c
         val _ = drain.wake.recv() => null
       } ?: break
-      async serveConnection(conn, handler, limits, log, drain, permits)
+      async serveConnection(conn, cert, handler, limits, log, drain, permits)
     }
   }
   // accepted but never served: close them instead of leaving the
@@ -717,8 +728,18 @@ fun release(permits: Channel<bool>) {
   val _ = permits.tryRecv()
 }
 
-fun serveConnection(conn: net.Conn, handler: Handler, limits: Limits, log: bool, drain: Drain, permits: Channel<bool>?) {
-  connection(conn, conn.peer(), handler, limits, log, drain)
+fun serveConnection(conn: net.Conn, cert: tls.Certificate?, handler: Handler, limits: Limits, log: bool, drain: Drain, permits: Channel<bool>?) {
+  val peer = conn.peer()
+  if (cert == null) {
+    connection(conn, peer, handler, limits, log, drain)
+  } else {
+    // a failed handshake closes the connection (the stream is closed by `tls.accept`
+    // when it cannot make the session; here a client that speaks no TLS is the usual cause)
+    when (tls.accept(conn, cert, address: peer)) {
+      is Ok(secured) => connection(secured, peer, handler, limits, log, drain)
+      is Err(e)      => if (log) logs.warn("tls accept failed", field("peer", peer), field("error", e.message()))
+    }
+  }
   if (permits != null) release(permits)
 }
 

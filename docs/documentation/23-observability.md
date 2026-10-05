@@ -177,8 +177,8 @@ tel.shutdown()
 - `resource` describes the program (`service.version`,
   `deployment.environment`); `service.name` and a random
   `service.instance.id` are always set.
-- `https://` endpoints need TLS, which std does not have yet (chapter 17): send
-  to a collector beside the program, or a sidecar, over plain HTTP.
+- `https://` endpoints are verified against the system's trusted roots;
+  `http.otlp(tlsOptions: tls.Options(roots: pem))` trusts a private authority instead.
 
 **Call `shutdown()` before the program ends.** It sends what has gathered
 since the last interval and stops recording. A `with` block cannot do it for

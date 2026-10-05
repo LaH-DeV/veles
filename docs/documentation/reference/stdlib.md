@@ -633,6 +633,32 @@ conn.peer(): string                                            // "host:port"
 // Listener and Conn are Closeable (use `with`) and Sendable (hand a Conn to `async handle(conn)`)
 ```
 
+## Module `tls`
+
+TLS over any `io.Stream` ([chapter 16](../16-networking.md)): SChannel on Windows, OpenSSL elsewhere (D128).
+Failures throw `IoError` whose `detail` starts `tls:`.
+
+```veles
+// fragment
+use tls
+tls.connect(host: string, port: i64, options: tls.Options = tls.Options()): tls.Conn suspends throws IoError
+tls.client(stream: io.Stream, serverName: string, options: tls.Options = tls.Options(), address: string = ""): tls.Conn suspends throws IoError   // the handshake over a stream that is already connected; owns it
+tls.Options(roots: string = "", serverName: string = "", alpn: List<string> = [], dangerouslyAcceptAnyCertificate: bool = false)
+                                                          // roots: PEM text trusted instead of the system's; serverName: for SNI and the check, default the host
+conn.protocol(): string?                                  // the ALPN protocol agreed
+conn.peer(): string
+// Conn implements io.Stream and Closeable; one task may read while another writes
+tls.Certificate.load(certPath: string, keyPath: string, alpn: List<string> = []): tls.Certificate throws IoError
+tls.Certificate.fromPem(chain: string, key: Secret<string>, alpn: List<string> = []): tls.Certificate throws IoError
+cert.replace(chain: string, key: Secret<string>, alpn: List<string> = []) throws IoError   // for connections accepted from now on
+tls.listen(cert: tls.Certificate, host: string = "127.0.0.1", port: i64 = 0): tls.Listener throws IoError
+tls.wrap(listener: net.Listener, cert: tls.Certificate): tls.Listener
+listener.accept(): tls.Conn suspends throws IoError      // the handshake runs on the connection's first read or write
+listener.port(): i64
+tls.reloading(certPath: string, keyPath: string, every: Duration, alpn: List<string> = []): tls.CertificateReloader throws IoError   // holds a task (D111): `with`-bind it
+reloader.certificate(): tls.Certificate
+```
+
 ## Module `http`
 
 An HTTP/1.1 server and client on `net` ([chapter 17](../17-http.md)).
@@ -653,6 +679,7 @@ http.serve(listener, app.handler(), limits: http.Limits(), log: true)   // forev
 http.serve(listener, h, stop: () => os.shutdownSignal(), grace: Duration.seconds(10))   // graceful: stop accepting, close idle, drain, cancel after grace
 // health (D133, chapter 17): /healthz runs no check; /readyz runs them all at once under their timeouts, 503 + failing names, details logged not returned
 val health = http.Health(); health.check("db", () => try pool.ping(), timeout: Duration.seconds(2)); app.wrap(health.endpoints(live: "/healthz", ready: "/readyz"))
+http.serve(listener, h, tls: cert)   // HTTPS: each connection is secured with the tls.Certificate (chapter 16); the handshake runs in the connection's task
 http.serve(listener, h, health: health, stop: …)   // flips health.stopping() when the stop begins: /readyz is 503 from then; health.stopping() is public too; probe answers are left out of the request log
 http.Limits(requestLineBytes: 8192, headerLineBytes: 8192, headerCount: 100, headerBytes: 65536,
             bodyBytes: 1048576, headerTimeout: Duration.seconds(10), bodyTimeout: Duration.seconds(30), idleTimeout: Duration.seconds(15),
@@ -1038,7 +1065,7 @@ h.ptr(): *raw u8;  unsafe ffi.Handle<T>.from(p): T       // the value back, in t
 
 ## Not yet in the bootstrap
 
-TLS, UDP, a format-string module, iterating a directory tree, running a
+UDP, a format-string module, iterating a directory tree, running a
 program with its own stdin or a separate stderr capture. Each is a small
 `extern "C"` binding away (see [chapter 13](../13-memory-and-ffi.md)) or
 plain Veles on top of `fs`; the library grows with the compiler's own needs

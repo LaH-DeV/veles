@@ -180,10 +180,12 @@ func Run(opts Options) int {
 	}
 	if runtime.GOOS != "windows" {
 		args = append(args, "-lm") // tan, atan2, hypot: libm is separate outside the UCRT
+		args = append(args, "-ldl") // OpenSSL is loaded on first use (veles_tlsio.c)
 	} else {
 		args = append(args, "-lshell32") // CommandLineToArgvW: UTF-16 process arguments (veles_os.c)
 		args = append(args, "-lws2_32")  // sockets (veles_net.c, WSAPoll in veles_task.c)
 		args = append(args, "-lbcrypt")  // BCryptGenRandom: the system CSPRNG (veles_os.c)
+		args = append(args, "-lsecur32", "-lcrypt32", "-lncrypt") // SChannel and the system trust store (veles_tlsio.c)
 	}
 	native, err := nativeFlags(clang, pkg.NativeManifests())
 	if err != nil {
@@ -256,6 +258,7 @@ var runtimeSources = []struct{ name, src string }{
 	{"veles_task", rt.TaskSource},
 	{"veles_os", rt.OSSource},
 	{"veles_net", rt.NetSource},
+	{"veles_tlsio", rt.TLSIOSource},
 	{"veles_ffi", rt.FFISource},
 }
 

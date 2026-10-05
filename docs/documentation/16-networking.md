@@ -220,6 +220,71 @@ nothing mutable. `E | Timeout` in the signature is the lambda's own error
 type joined with the timeout; write `throws IoError | Timeout`, or let a
 `when` handle both.
 
+## Encrypted connections
+
+`std/tls` secures a connection. `tls.connect` dials, runs the handshake and
+returns a `tls.Conn`, an `io.Stream` like `net.Conn` — code written for one
+runs over the other:
+
+```veles
+// fragment
+use io, tls
+
+fun main() suspends throws IoError | io.TooLong {
+  with conn = try tls.connect("example.com", 443)
+  try conn.writeText("GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n")
+  io.println(try conn.readLine(max: 8192) ?: "")
+}
+```
+
+The server's certificate is checked against the system's trusted roots and
+against the host name you dialled, every time. There is no switch to turn the
+check off except the option that says what it does,
+`tls.Options(dangerouslyAcceptAnyCertificate: true)`. For a private authority,
+`tls.Options(roots: pemText)` trusts those certificates *instead of* the
+system's. TLS 1.2 is the oldest version spoken; 1.3 is used where the system has it.
+
+A cut connection is not mistaken for a finished one: a peer that closes the
+socket without sending TLS's `close_notify` makes the next read throw, since the
+data may be incomplete. `read` returns `[]` only at the peer's clean end. `close()`
+drops the connection at once; to end it politely call `shutdownWrite()` first.
+
+A server holds a `Certificate` — the chain and the private key from PEM files; the key goes
+into a `Secret` — and accepts connections with it. The handshake runs on the connection's
+first read or write, in the task that serves it, so a client slow to start one does not
+hold up the accept loop:
+
+```veles
+// fragment
+use tls
+
+fun serve(conn: tls.Conn) suspends {
+  with c = conn
+  val _ = c.writeText("hello\n")
+}
+
+fun main() suspends throws IoError {
+  with certs = try tls.reloading("server.pem", "server.key", every: Duration.minutes(10))
+  with listener = try tls.listen(cert: certs.certificate(), port: 8443)
+  scope {
+    loop {
+      async serve(try listener.accept())
+    }
+  }
+}
+```
+
+`tls.reloading` re-reads the two files every `every` and, when they changed, swaps the
+certificate for the connections accepted from then on — the ones open keep theirs. A renewal
+that is half written, or whose key does not match, is refused and the old certificate stays;
+the reason goes to the log. RSA keys and ECDSA keys on P-256, P-384 and P-521 are read, in
+PKCS#8, PKCS#1 or SEC1 form; an encrypted key is not.
+
+Underneath, SChannel does the work on Windows and OpenSSL (`libssl.so.3`, loaded when the
+first connection is made, so a program that never uses TLS needs neither) elsewhere. The engine
+never touches a socket; it is fed the bytes that arrived and hands back the bytes to send, and
+the waiting happens in Veles, where a task can be parked.
+
 ## What happens underneath
 
 Sockets are non-blocking. When a read finds nothing to read, the `Conn`

@@ -4411,6 +4411,22 @@ system roots is on, and the only opt-out says what it is.
 User, 2026-10-01, recommended of 2. Rejected: a separate `tls.Conn` with its
 own HTTP path.
 
+*Addendum (2026-10-05, D128) — `http.serve` takes the certificate.* `http.serve(listener, handler, tls: cert)` (user, recommended of 3; rejected: an `io.Listener` trait that `serve` would take, and leaving `serve` plain): each accepted connection is secured with `tls.accept(conn, cert)` in its own serving task, so the handshake never holds up the accept loop; a `tls.reloading` certificate renews for new connections.
+
+*Addendum (2026-10-05, D128) — how E1 was built.* The engine (`runtime/c/veles_tlsio.c`) never touches a
+socket: it is fed the ciphertext that arrived and hands back the ciphertext to send, so `tls.Conn` wraps
+*any* `io.Stream` and every wait is a Veles suspension. SChannel on Windows; OpenSSL elsewhere, opened with
+`dlopen` on first use (no headers at build time, nothing linked, a program without TLS needs no library).
+Additions to the API above: `tls.client(stream, serverName, options)` (the handshake over a stream that is
+already connected); `Certificate.fromPem(chain, key: Secret<string>)` and `replace`; `alpn` is a parameter of
+the certificate (the server's list is part of its credentials) and an `Options` field of the client. The
+verification is the engine's own on both backends, the same everywhere: chain to the system roots (or to
+`Options.roots`, PEM text trusted *instead of* the system's) and the name, with `dangerouslyAcceptAnyCertificate`
+the only way out; revocation is not checked. A peer that closes the transport without `close_notify` makes the
+next read throw (never a silently short body); `close()` sends no `close_notify` because closing cannot suspend —
+`shutdownWrite()` does. A server connection's handshake runs on its first read or write, in the serving task, so a
+slow client cannot hold up `accept`. **Deviation, forced by D111:** the reloader is `tls.reloading(certPath, keyPath,
+every:)`, a function returning a `CertificateReloader` (a constructor cannot throw the first load's error nor take an\n`async` argument); `reloader.certificate()` is what `listen` takes, and a failed renewal keeps the old certificate.\nKeys: RSA and ECDSA P-256/384/521 in PKCS#8, PKCS#1 or SEC1 PEM; an encrypted key is refused. On Windows SChannel finds a\nserver key through the certificate, so the key is stored under a per-process name in the user's key store and deleted when\nthe certificate is closed; the next process deletes the leftovers of one that crashed.\n
 ### D129 — Template literals, and `std/db` with `sql"…"` (v0.65)
 
 ```veles

@@ -3,7 +3,7 @@
 // sides agree (header tokens, chunk sizes, percent-encoding); everything a
 // client has to distrust — a status line, a framing it did not ask for, a
 // body of any size — is read here under limits of its own.
-use io, json as js, net, otel, time
+use io, json as js, net, otel, time, tls
 
 // ---------------------------------------------------------------------------
 // errors
@@ -12,7 +12,7 @@ use io, json as js, net, otel, time
 public enum FetchKind {
   /// The URL, a header or the method is not one the client will send.
   InvalidRequest
-  /// A scheme or feature this build does not have (`https` until TLS lands).
+  /// A scheme or feature this client does not have (a proxy, a protocol switch).
   Unsupported
   /// No connection could be made.
   Connect
@@ -285,7 +285,7 @@ struct Keep {
   max:  i64
   ttl:  Duration
 
-  fun store(c: net.Conn) {
+  fun store(c: io.Stream) {
     this.pool.put(this.key, c, this.max, this.ttl)
   }
 }
@@ -295,19 +295,19 @@ struct Keep {
 /// hands the connection back for the next request; `close()` (or the end of
 /// a `with`) gives it up half read.
 public struct ClientBody {
-  conn:     net.Conn?
+  conn:     io.Stream?
   state:    Mutex<WireState>
   deadline: time.Deadline
   keep:     Keep?
   url:      string
 
   // no body at all: the connection is free again already
-  static fun none(conn: net.Conn, keep: Keep, reusable: bool, url: string, deadline: time.Deadline): ClientBody {
+  static fun none(conn: io.Stream, keep: Keep, reusable: bool, url: string, deadline: time.Deadline): ClientBody {
     if (reusable) keep.store(conn) else conn.close()
     ClientBody(conn: null, state: Mutex(value: WireState(done: true)), deadline, keep: null, url)
   }
 
-  static fun wire(conn: net.Conn, keep: Keep, framing: i64, length: i64, reusable: bool, url: string, deadline: time.Deadline): ClientBody =
+  static fun wire(conn: io.Stream, keep: Keep, framing: i64, length: i64, reusable: bool, url: string, deadline: time.Deadline): ClientBody =
     ClientBody(
       conn,
       state: Mutex(value: WireState(framing, remaining: length, declared: if (framing == 1) length else -1, reusable)),
@@ -362,7 +362,7 @@ public struct ClientBody {
     out.toList()
   }
 
-  fun pull(c: net.Conn, max: i64): List<u8> suspends throws FetchError | IoError {
+  fun pull(c: io.Stream, max: i64): List<u8> suspends throws FetchError | IoError {
     val st = this.state.get()
     if (st.framing == 1) {
       val chunk = try c.read(max: max.min(st.remaining))
@@ -382,7 +382,7 @@ public struct ClientBody {
 
   // one piece of a chunked body: the chunk header when none is open, then
   // what has arrived of the chunk's data
-  fun pullChunked(c: net.Conn, max: i64): List<u8> suspends throws FetchError | IoError {
+  fun pullChunked(c: io.Stream, max: i64): List<u8> suspends throws FetchError | IoError {
     var remaining = this.state.get().remaining
     if (remaining == 0) {
       val header = try this.line(c, 1024)
@@ -406,7 +406,7 @@ public struct ClientBody {
   }
 
   // trailer fields follow the last chunk; they are read and dropped
-  fun trailers(c: net.Conn) suspends throws FetchError | IoError {
+  fun trailers(c: io.Stream) suspends throws FetchError | IoError {
     var lines: i64 = 0
     loop {
       val line = try this.line(c, 8192)
@@ -416,7 +416,7 @@ public struct ClientBody {
     }
   }
 
-  fun line(c: net.Conn, max: i64): string suspends throws FetchError | IoError {
+  fun line(c: io.Stream, max: i64): string suspends throws FetchError | IoError {
     when (c.readLine(max: max)) {
       is Ok(l)  => l ?: throw protocolError(this.url, "the connection closed inside the body framing")
       is Err(e) => when (e) {
@@ -529,7 +529,7 @@ const defaultBodyMax: i64 = 64 * 1024 * 1024
 // the connection pool
 
 struct Idle {
-  conn:    net.Conn
+  conn:    io.Stream
   expires: time.Deadline
 }
 
@@ -545,10 +545,10 @@ struct Pool {
   idle: Mutex<MutableMap<string, MutableList<Idle>>> = newIdle()
 
   // the most recently used live connection to `key`, or null
-  fun take(key: string): net.Conn? {
-    val expired: MutableList<net.Conn> = []
+  fun take(key: string): io.Stream? {
+    val expired: MutableList<io.Stream> = []
     val found = this.idle.withLock(m => {
-      var out: net.Conn? = null
+      var out: io.Stream? = null
       val list = m.get(key)
       if (list != null) {
         loop {
@@ -570,7 +570,7 @@ struct Pool {
   }
 
   // keeps `c` for `key`, unless `max` are already waiting there
-  fun put(key: string, c: net.Conn, max: i64, ttl: Duration) {
+  fun put(key: string, c: io.Stream, max: i64, ttl: Duration) {
     val kept = this.idle.withLock(m => {
       val entry = Idle(conn: c, expires: time.Deadline.after(ttl))
       val existing = m.get(key)
@@ -593,7 +593,7 @@ struct Pool {
   }
 
   fun closeAll() {
-    val all: MutableList<net.Conn> = []
+    val all: MutableList<io.Stream> = []
     this.idle.withLock(m => {
       loop (list in m.values()) {
         loop (item in list) {
@@ -634,13 +634,16 @@ public struct Client {
   /// How long an idle connection is kept; a longer-idle one is closed when
   /// the pool is next asked for it.
   public idleTimeout: Duration = Duration.seconds(30)
-  private pool:       Pool = Pool()
+  /// How `https` connections are made: the trusted roots, an ALPN list. The
+  /// defaults check every certificate against the system's roots.
+  public tlsOptions: tls.Options = tls.Options()
+  private pool:      Pool = Pool()
   // spans and a `traceparent` header while `otel` runs; off for the client that
   // exports telemetry, whose own requests must not become telemetry
   private traced: bool = true
 
   // a client whose requests are not traced (see `http.otlp`)
-  static fun untraced(timeout: Duration): Client = Client(timeout, traced: false)
+  static fun untraced(timeout: Duration, tlsOptions: tls.Options = tls.Options()): Client = Client(timeout, tlsOptions, traced: false)
 
   /// One request. `url` is absolute (`http://…`); `headers` are added to the
   /// client's; `body` goes with a `Content-Length`. A redirect (301, 302,
@@ -754,9 +757,6 @@ public struct Client {
   // gone stale, again on a new one, for a method that may be repeated — or
   // on a new connection
   fun once(url: Url, method: Method, headers: Map<string, string>, payload: Payload?, deadline: time.Deadline): ClientResponse suspends throws FetchError {
-    if (url.secure) {
-      throw FetchError(url: url.text(), detail: "https is not available yet: std has no TLS", kind: FetchKind.Unsupported)
-    }
     // refused before any connection is made or reused
     val bytes = try requestBytes(url, method, headers, payload)
     val key = url.origin()
@@ -772,7 +772,7 @@ public struct Client {
         }
       }
     }
-    val fresh = try open(url, deadline)
+    val fresh = try open(url, deadline, this.tlsOptions)
     when (exchange(fresh, url, method, bytes, deadline, keep)) {
       is Ok(res) => res
       is Err(e)  => {
@@ -856,8 +856,13 @@ fun withoutCredentials(headers: Map<string, string>): Map<string, string> {
 // ---------------------------------------------------------------------------
 // the wire
 
-fun open(url: Url, deadline: time.Deadline): net.Conn suspends throws FetchError {
-  when (withTimeout(deadline.remaining(), () => try net.connect(url.host, url.port))) {
+fun dial(url: Url, options: tls.Options): io.Stream suspends throws IoError {
+  if (url.secure) return try tls.connect(url.host, url.port, options)
+  try net.connect(url.host, url.port)
+}
+
+fun open(url: Url, deadline: time.Deadline, options: tls.Options): io.Stream suspends throws FetchError {
+  when (withTimeout(deadline.remaining(), () => try dial(url, options))) {
     is Ok(c)  => c
     is Err(e) => when (e) {
       is Timeout => throw FetchError(url: url.text(), detail: "timed out connecting", kind: FetchKind.Timeout)
@@ -906,7 +911,7 @@ fun requestBytes(url: Url, method: Method, headers: Map<string, string>, payload
   head.toString().bytes().concat(body)
 }
 
-fun sendAll(c: net.Conn, bytes: List<u8>, deadline: time.Deadline, url: string) suspends throws FetchError {
+fun sendAll(c: io.Stream, bytes: List<u8>, deadline: time.Deadline, url: string) suspends throws FetchError {
   when (withTimeout(deadline.remaining(), () => try c.write(bytes))) {
     is Ok(_)  => { }
     is Err(e) => when (e) {
@@ -917,7 +922,7 @@ fun sendAll(c: net.Conn, bytes: List<u8>, deadline: time.Deadline, url: string) 
 }
 
 // One line of the head, within the request's time
-fun responseLine(c: net.Conn, url: string, deadline: time.Deadline, max: i64): string? suspends throws FetchError {
+fun responseLine(c: io.Stream, url: string, deadline: time.Deadline, max: i64): string? suspends throws FetchError {
   when (withTimeout(deadline.remaining(), () => try c.readLine(max: max))) {
     is Ok(l)  => l
     is Err(e) => when (e) {
@@ -938,7 +943,7 @@ struct Head {
 // The head of the answer, interim `1xx` ones skipped. Read as strictly as the
 // server reads a request: whatever a proxy might have read another way is
 // refused.
-fun readHead(c: net.Conn, url: string, deadline: time.Deadline): Head suspends throws FetchError {
+fun readHead(c: io.Stream, url: string, deadline: time.Deadline): Head suspends throws FetchError {
   var interim: i64 = 0
   loop {
     val head = try readOneHead(c, url, deadline)
@@ -954,7 +959,7 @@ fun readHead(c: net.Conn, url: string, deadline: time.Deadline): Head suspends t
   }
 }
 
-fun readOneHead(c: net.Conn, url: string, deadline: time.Deadline): Head suspends throws FetchError {
+fun readOneHead(c: io.Stream, url: string, deadline: time.Deadline): Head suspends throws FetchError {
   val first = try responseLine(c, url, deadline, 8192) ?: throw closedWithoutAnswer(url)
   val (version, afterVersion) = first.splitOnce(" ") else throw protocolError(url, "malformed status line")
   if (!version.startsWith("HTTP/1.")) throw protocolError(url, "the answer is not HTTP/1.x")
@@ -1003,7 +1008,7 @@ fun keepsAlive(head: Head): bool {
 
 // Send the request on `c` and read as far as the head of the answer; the
 // body is read later, by whoever holds the response.
-fun exchange(c: net.Conn, url: Url, method: Method, request: List<u8>, deadline: time.Deadline, keep: Keep): ClientResponse suspends throws FetchError {
+fun exchange(c: io.Stream, url: Url, method: Method, request: List<u8>, deadline: time.Deadline, keep: Keep): ClientResponse suspends throws FetchError {
   val text = url.text()
   try sendAll(c, request, deadline, text)
   val head = try readHead(c, text, deadline)

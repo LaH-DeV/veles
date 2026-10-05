@@ -1,7 +1,7 @@
 // The OTLP/HTTP exporter (D126): what `std/otel` sends its protobuf through.
 // It lives here, not in `otel`, because `http` already uses `otel` (a span per
 // request) and a module cannot import one that imports it.
-use compress as gz, otel
+use compress as gz, otel, tls
 
 struct OtlpExporter {
   endpoint: string
@@ -42,19 +42,19 @@ struct OtlpExporter {
 /// other refusal is not.
 ///
 /// `headers` carry what the backend asks for — an API key — as `Secret`s, so
-/// they never appear in a log or a failure message. `https://` endpoints need
-/// TLS, which std does not have yet: until it does, point the exporter at a
-/// collector beside the program (or a sidecar) over plain HTTP.
+/// they never appear in a log or a failure message. An `https://` endpoint is
+/// verified against the system's trusted roots; `tlsOptions` names a private
+/// authority's roots instead.
 ///
 /// ```veles
 /// val exporter = http.otlp(endpoint: "http://localhost:4318", headers: ["authorization": Secret.of(token)])
 /// with tel = try otel.start(service: "notes", exporter: exporter)
 /// ```
-public fun otlp(endpoint: string, headers: Map<string, Secret<string>> = [:], timeout: Duration = Duration.seconds(10), gzip: bool = true): otel.Exporter {
+public fun otlp(endpoint: string, headers: Map<string, Secret<string>> = [:], timeout: Duration = Duration.seconds(10), gzip: bool = true, tlsOptions: tls.Options = tls.Options()): otel.Exporter {
   val trimmed = if (endpoint.endsWith("/")) (endpoint.substring(0, endpoint.len() - 1) ?: endpoint) else endpoint
   val lower: MutableMap<string, Secret<string>> = [:]
   loop ((name, value) in headers.entries()) {
     lower.set(name.toLower(), value)
   }
-  OtlpExporter(endpoint: trimmed, headers: lower.toMap(), gzip, client: Client.untraced(timeout))
+  OtlpExporter(endpoint: trimmed, headers: lower.toMap(), gzip, client: Client.untraced(timeout, tlsOptions))
 }

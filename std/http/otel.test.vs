@@ -101,6 +101,21 @@ struct Capture {
   }
 
   fun named(name: string): List<List<PbField>> = this.spans().filter(s => pbText(s, 5) == name)
+
+  // The pipeline is the process's, and the other tests of this package run
+  // requests while it is on (they take no turn at the gate), so a capture
+  // also holds their spans. The spans of one server are the ones a test is
+  // about: its own server spans carry the Host it was called by, and the
+  // client spans the port they called.
+  fun on(port: i64): List<List<PbField>> = this.spans().filter(s => touches(s, port))
+
+  fun namedOn(name: string, port: i64): List<List<PbField>> = this.on(port).filter(s => pbText(s, 5) == name)
+}
+
+test fun touches(span: List<PbField>, port: i64): bool {
+  val address = pbText(pbAttr(span, "server.address") ?: [], 1)
+  if (address.endsWith(":$port")) return true
+  pbOne(pbAttr(span, "server.port") ?: [], 3).value == port
 }
 
 test fun newCaptured(): Mutex<MutableList<List<u8>>> {
@@ -174,7 +189,7 @@ test "a handler that fails marks its span failed; an unknown path is named by it
   expect(pbOne(pbFields(pbOne(failed, 15).data), 3).value == 2)
   expect(pbText(pbAttr(failed, "error.type") ?: [], 1) == "500")
   // a 404 is the client's mistake, not the server's failure
-  val missing = capture.named("GET").at(0) ?: []
+  val missing = capture.namedOn("GET", srv.port()).at(0) ?: []
   expect(pbAll(missing, 15).isEmpty())
 }
 
@@ -188,7 +203,7 @@ test "health probes are not traced" {
   with ready = try client.get("${srv.url}/readyz")
   with real = try client.get("${srv.url}/users/2")
   expect(tel.flush())
-  expect(capture.spans().len() == 1)
+  expect(capture.on(srv.port()).len() == 1)
 }
 
 // ---- the client ----
@@ -206,7 +221,7 @@ test "a call is a client span, and the service called continues the trace" {
   val seen = try callEcho("${srv.url}/echo?key=hidden")
   expect(tel.flush())
   val sent = otel.SpanContext.parse(seen) ?: fail("the server saw no valid traceparent: $seen")
-  val client = capture.named("GET").filter(s => pbOne(s, 6).value == 3).at(0) ?: []
+  val client = capture.namedOn("GET", srv.port()).filter(s => pbOne(s, 6).value == 3).at(0) ?: []
   val caller = capture.named("caller").at(0) ?: []
   val server = capture.named("GET /echo").at(0) ?: []
   // caller → client call → server span, one trace
@@ -236,7 +251,7 @@ test "a failed call fails its span with the reason" {
   with silent = try canned("")
   expect(failKind(get("${silent.url}/x", timeout: Duration.seconds(2))) == FetchKind.Closed)
   expect(tel.flush())
-  val span = capture.named("GET").at(0) ?: []
+  val span = capture.namedOn("GET", silent.listener.port()).at(0) ?: []
   expect(pbOne(pbFields(pbOne(span, 15).data), 3).value == 2)
   expect(pbText(pbAttr(span, "error.type") ?: [], 1) == "Closed")
 }

@@ -579,18 +579,17 @@ answered from the shape, tuples get `Comparable`, enums get
       and its body, redirects for GET/HEAD with credentials dropped across
       hosts, bounded bodies, strict response parsing; the body is a
       `Payload` (D127 addendum)
-- [ ] TLS (5.4) — the client refuses `https://` with `FetchKind.Unsupported`
-      until E1
+- [x] TLS (5.4) — `https://` URLs (2026-10-05, E1); `http.Client(tlsOptions:)` for a private authority
 - [x] Retries with backoff and idempotency awareness (`retry:`; idempotent
       methods only; 502/503/504 and connection failures)
 - [ ] Proxy environment variables
 
 ### 5.4 `std/tls`
 
-- [ ] Client TLS via a system binding (SChannel on Windows, OpenSSL /
-      rustls-ffi elsewhere) — blocked on 1.2
-- [ ] Server TLS with certificate reload
-- [ ] Certificate verification on by default; opt-out is loud
+- [x] Client TLS via a system binding (SChannel on Windows, OpenSSL elsewhere, loaded at run time) — 2026-10-05, E1
+- [x] Server TLS with certificate reload (`tls.listen`, `Certificate`, `tls.reloading`) — 2026-10-05, E1
+- [x] Certificate verification on by default; opt-out is loud
+- [x] `http.serve(tls: cert)` (2026-10-05; the user chose a `tls:` parameter over an `io.Listener` trait)
 
 ### 5.5 `std/crypto`, `std/hex`, `std/base64`, `std/jwt` → D59
 
@@ -1185,7 +1184,15 @@ Every new public std API (http cookies/forms/client, `std/log`,
   not); a tag with explicit type arguments (`tag<T>"…"` is not parsed); multi-line and raw literals
   (Veles has neither yet) tagged; when the Veles lexer/parser is written (`veles-selfhost-frontend-plan.md`) it
   needs the `TemplateExpr` node and its adjacency rule, and the self-host oracle compares `(template …)` in `Dump`.
-- **Deferred from C7 the HTTP client (2026-10-04), to build later:** `https://` and `HTTPS_PROXY` (E1 TLS);
+- **Deferred from E1 TLS (2026-10-05):** the server span's `url.scheme` is `http` even under `serve(tls:)` (a `Request` does not know it came over TLS); macOS (SecureTransport/Network.framework or the system's OpenSSL —
+  the dlopen list names Homebrew's, untested; A7); client certificates (mutual TLS) and the server asking for
+  them; revocation checking (CRL/OCSP) and OCSP stapling; session resumption tickets kept across connections;
+  SNI-based certificate choice on one listener; custom cipher or version options (TLS 1.2 is the floor, the
+  system picks the rest); a distinct `IoKind` for certificate failures (they are `Other`, `detail` starts `tls:`);
+  `readLine`/`readExact` buffering is now copied in `net.Conn`, `fs.File` and `tls.Conn` (a shared `io` helper
+  would remove it); `Closeable.close()` sends no `close_notify` (cannot suspend); a stored-key leak on Windows only
+  if the process is killed (swept by the next TLS server); the encrypted PEM key; ALPN-driven HTTP/2.
+- **Deferred from C7 the HTTP client (2026-10-04), to build later:** `https://` (done 2026-10-05) and `HTTPS_PROXY`;
   `HTTP_PROXY` / `NO_PROXY` and the `proxy:` option of D127 (an absolute-form request to the proxy; `CONNECT`
   for https); transparent `Accept-Encoding: gzip` + decoding (today a compressed answer's bytes are returned
   as they came; `std/compress` has the decoder, a streaming `GzipReader` exists); per-phase limits (connect,

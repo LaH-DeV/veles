@@ -365,8 +365,8 @@ test "a URL that is not one is refused before anything is sent" {
   }
 }
 
-test "https is not available yet, and says so" {
-  expect(failKind(get("https://example.com/")) == FetchKind.Unsupported)
+test "an https URL that nobody serves is a connect failure, not an unsupported scheme" {
+  expect(failKind(get("https://127.0.0.1:1/")) == FetchKind.Connect)
 }
 
 test "a header that could split the request is refused" {

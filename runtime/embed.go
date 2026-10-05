@@ -31,3 +31,6 @@ var TLSHeader string
 
 //go:embed c/veles_stack.c
 var StackSource string
+
+//go:embed c/veles_tlsio.c
+var TLSIOSource string

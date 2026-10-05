@@ -991,7 +991,9 @@ The pieces:
   fixed; `http.Client(timeout: 30s, headers: [:], maxRedirects: 10,
   maxIdlePerHost: 8, idleTimeout: 30s)` has the same methods and is
   `Closeable` (it closes its idle connections). The URL is absolute, `http://…`;
-  `https://` is refused with its own error until `std/tls` exists.
+  `https://` URLs are verified against the system's trusted roots (chapter 16,
+  "Encrypted connections"); `Client(tlsOptions: tls.Options(roots: pem))` trusts
+  a private authority instead.
 - **Bodies.** A body is a `Payload`, which carries its content type:
   `Payload.text(s)`, `Payload.json(value)`, `Payload.form([("a", "1")])`,
   `Payload.bytes(data, contentType:)`. A `body:` of `null` sends none.
@@ -1027,8 +1029,12 @@ The pieces:
 
 While `otel` runs (chapter 23), each call is also a client span and carries a `traceparent` header, and each request the server answers is a server span that continues the caller's trace.
 
-Not in the module yet: TLS (and with it `https://` URLs), proxies, a
-decompressing client, WebSockets. Cancelling the `serve` task closes the
+**HTTPS.** `http.serve(listener, app.handler(), tls: cert)` secures every connection with a
+`tls.Certificate` (chapter 16): the handler sees ordinary requests, a client that speaks no TLS is
+dropped, and with `tls.reloading(...).certificate()` a renewed certificate is picked up without a
+restart.
+
+Not in the module yet: proxies, a decompressing client, WebSockets. Cancelling the `serve` task closes the
 listener and unwinds every connection task.
 
 Next: back to the [index](index.md).
