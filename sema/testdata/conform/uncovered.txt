@@ -64,3 +64,6 @@
 "arrayRawData takes an array"  # std-internal intrinsic: only std calls it, and std calls it right
 "the length of '%s' is not known here (D121)"  # bodies are checked per instantiation, so an array's length is a constant by then
 "write the whole type to fill an array: 'Array<i64, 8>.make(0)' (D121)"  # bodies are checked per instantiation, so the array type is whole by then
+"%s is not a constant expression (D113)"  # a list element place the evaluator reaches only through a node the checker built for a list
+"'%s' is called by a constant while its own body is still being checked; a constant it reads depends on it (D113)"  # the initialization-cycle check reports such a cycle first
+"'%s' is not available to the compiler (D113)"  # std-internal: only std calls a runtime entry point, and constExterns lists the ones it may

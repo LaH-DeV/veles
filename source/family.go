@@ -45,7 +45,7 @@ var families = []family{
 	fam("tests", `\(D78\)`, `says what it checks`, `^a (test|suite)\b`, `^another test`, `\bsuites?\b`,
 		`'test`, `test code`, `the test's body`, `expectThrows`, `'require'`, `'assert'`),
 	fam("constants", `\(D113\)`, `^initialization cycle`, `^constant overflow`, `in a constant`, `^the constant`,
-		`matches the constant`, `^static assert`, `'static assert'`),
+		`matches the constant`, `^static assert`, `'static assert'`, `^in 'const fun`, `^panic in a constant`),
 	fam("template-literals", `@template`, `template literal`, `is not a template`, `\(D129\)`),
 	fam("attributes", `^@`, `@caller_location`, `^'lazy' is reserved`, `a 'lazy' parameter must be`, `@(key|tag|skip|required)`, `attribute`, `is deprecated`, `cannot derive`,
 		`\(D58\)`, `\(D51\)`),

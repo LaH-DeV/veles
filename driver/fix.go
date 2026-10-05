@@ -103,6 +103,7 @@ func fixUntilDone(opts Options) int {
 			return 1
 		}
 		if !diags.HasErrors() {
+			pkg.ConstSteps = opts.ConstSteps
 			sema.Check(pkg, diags, opts.Release)
 		}
 		n, err := ApplyFixes(diags)

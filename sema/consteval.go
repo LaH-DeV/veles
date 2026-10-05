@@ -1,6 +1,7 @@
 package sema
 
 import (
+	"fmt"
 	"math"
 	"math/big"
 	"strconv"
@@ -69,6 +70,11 @@ type (
 		T     *types.Set
 		Elems []ConstVal
 	}
+	CRange struct { // `lo..<hi` and `lo..hi`: a value of its own, read through its fields
+		T         *types.Range
+		Lo, Hi    ConstVal
+		Inclusive bool
+	}
 )
 
 func (v *CInt) Type() types.Type    { return v.T }
@@ -84,27 +90,67 @@ func (v *CList) Type() types.Type   { return v.T }
 func (v *CArray) Type() types.Type  { return v.T }
 func (v *CMap) Type() types.Type    { return v.T }
 func (v *CSet) Type() types.Type    { return v.T }
+func (v *CRange) Type() types.Type  { return v.T }
 
 // constFailed unwinds the evaluator after its error was reported.
 type constFailed struct{}
 
+// cell is a variable's storage while a constant is evaluated: a pointer into
+// a variable (`&x`, a method's receiver) is its cell.
+type cell struct{ v ConstVal }
+
 type constEval struct {
 	c     *Checker
-	env   map[*Var]ConstVal
+	env   map[*Var]*cell
 	at    source.Span // the initializer: where a node without a span of its own reports
-	quiet bool        // tryConst: not being a constant is no error
+	quiet bool        // tryConst: not being a constant is no error, and no function is called
+	name  string      // the constant being evaluated, for the step-budget message
+
+	steps, budget int64
+	stack         []constFrame // the `const fun`s being run, outermost first
+}
+
+// constFrame is one call in the chain a compile-time failure reports.
+type constFrame struct {
+	fn *Func
+	at source.Span // where it was called
+}
+
+// defaultConstSteps is the step budget of one constant (D113); `--const-steps`
+// changes it.
+const defaultConstSteps = 10_000_000
+
+// constMaxDepth bounds recursion of `const fun`s: past it the constant is an
+// error naming the chain, as a program's own stack overflow would be at run time.
+const constMaxDepth = 4096
+
+func (c *Checker) newConstEval(at source.Span, quiet bool) *constEval {
+	budget := int64(defaultConstSteps)
+	if c.pkg != nil && c.pkg.ConstSteps > 0 {
+		budget = c.pkg.ConstSteps
+	}
+	return &constEval{c: c, env: map[*Var]*cell{}, at: at, quiet: quiet, budget: budget}
 }
 
 // evalConst evaluates a checked constant expression; nil after an error,
 // which it has reported.
 func (c *Checker) evalConst(e Expr, at source.Span) ConstVal {
-	return c.runConst(&constEval{c: c, env: map[*Var]ConstVal{}, at: at}, e)
+	return c.runConst(c.newConstEval(at, false), e)
+}
+
+// evalNamedConst is evalConst for a `const` declaration: the budget message
+// names it.
+func (c *Checker) evalNamedConst(e Expr, at source.Span, name string) ConstVal {
+	ev := c.newConstEval(at, false)
+	ev.name = name
+	return c.runConst(ev, e)
 }
 
 // tryConst is e's value when e is a constant expression, else nil; it
-// reports nothing (an index into a constant table, D113).
+// reports nothing (an index into a constant table, D113). It runs no
+// function: it is asked in the middle of checking other code.
 func (c *Checker) tryConst(e Expr) ConstVal {
-	return c.runConst(&constEval{c: c, env: map[*Var]ConstVal{}, quiet: true}, e)
+	return c.runConst(c.newConstEval(source.Span{}, true), e)
 }
 
 func (c *Checker) runConst(ev *constEval, e Expr) (v ConstVal) {
@@ -123,14 +169,88 @@ func (ev *constEval) errorf(span source.Span, format string, args ...any) {
 	if ev.quiet {
 		panic(constFailed{})
 	}
-	if span.File == nil {
-		span = ev.at
+	if len(ev.stack) == 0 {
+		if span.File == nil {
+			span = ev.at
+		}
+		ev.c.errorf(span, format, args...)
+		panic(constFailed{})
 	}
-	ev.c.errorf(span, format, args...)
+	// inside a `const fun`: the failure is the constant's, at its declaration;
+	// the chain says where it happened and how the evaluator got there
+	if noteDiagnostic != nil {
+		noteDiagnostic(format)
+	}
+	msg := fmt.Sprintf(format, args...)
+	if span.File != nil {
+		msg += "\n  at " + span.String()
+	}
+	// a deep chain (a runaway recursion) keeps its ends
+	const keep = 5
+	for i := len(ev.stack) - 1; i >= 0; i-- {
+		if n := len(ev.stack); n > 2*keep+1 && i < n-keep && i >= keep {
+			if i == n-keep-1 {
+				msg += fmt.Sprintf("\n  … %d more calls …", n-2*keep)
+			}
+			continue
+		}
+		fr := ev.stack[i]
+		msg += "\n  in const fun '" + fr.fn.Display + "'"
+		if fr.at.File != nil {
+			msg += ", called at " + fr.at.String()
+		}
+	}
+	ev.c.errorf(ev.at, "%s", msg)
 	panic(constFailed{})
 }
 
+// tick counts one step of evaluation against the budget (D113).
+func (ev *constEval) tick() {
+	ev.steps++
+	if ev.steps > ev.budget {
+		what := "this constant"
+		if ev.name != "" {
+			what = "the constant '" + ev.name + "'"
+		}
+		ev.errorf(source.Span{}, "evaluating %s took more than %d steps; make it cheaper, or raise the budget with '--const-steps n' (D113)", what, ev.budget)
+	}
+}
+
+func (ev *constEval) bind(v *Var, val ConstVal) { ev.env[v] = &cell{val} }
+
+// val evaluates e where its value is stored — a binding, a field, an element,
+// an argument: a struct, tuple or array is a value, so what is stored is its
+// own copy (collections are handles, D25, and are shared).
+func (ev *constEval) val(e Expr) ConstVal { return copyVal(ev.expr(e)) }
+
+func copyVal(v ConstVal) ConstVal {
+	switch v := v.(type) {
+	case *CStruct:
+		out := &CStruct{T: v.T, Fields: make([]ConstVal, len(v.Fields))}
+		for i, f := range v.Fields {
+			out.Fields[i] = copyVal(f)
+		}
+		return out
+	case *CTuple:
+		out := &CTuple{T: v.T, Elems: make([]ConstVal, len(v.Elems))}
+		for i, f := range v.Elems {
+			out.Elems[i] = copyVal(f)
+		}
+		return out
+	case *CArray:
+		out := &CArray{T: v.T, Elems: make([]ConstVal, len(v.Elems))}
+		for i, f := range v.Elems {
+			out.Elems[i] = copyVal(f)
+		}
+		return out
+	case *CSome:
+		return &CSome{v.T, copyVal(v.V)}
+	}
+	return v
+}
+
 func (ev *constEval) expr(e Expr) ConstVal {
+	ev.tick()
 	switch e := e.(type) {
 	case *IntConst:
 		v := new(big.Int).SetUint64(e.Value)
@@ -174,18 +294,30 @@ func (ev *constEval) expr(e Expr) ConstVal {
 		t := e.Type().(*types.Tuple)
 		out := &CTuple{T: t}
 		for _, x := range e.Elems {
-			out.Elems = append(out.Elems, ev.expr(x))
+			out.Elems = append(out.Elems, ev.val(x))
 		}
 		return out
 	case *StructLit:
 		out := &CStruct{T: e.Struct}
 		for _, x := range e.Fields {
-			out.Fields = append(out.Fields, ev.expr(x))
+			out.Fields = append(out.Fields, ev.val(x))
 		}
 		return out
 	case *FieldGet:
-		if s, ok := ev.expr(e.X).(*CStruct); ok && e.Index < len(s.Fields) {
-			return s.Fields[e.Index]
+		switch s := ev.expr(e.X).(type) {
+		case *CStruct:
+			if e.Index < len(s.Fields) {
+				return s.Fields[e.Index]
+			}
+		case *CRange:
+			switch e.Index {
+			case 0:
+				return s.Lo
+			case 1:
+				return s.Hi
+			case 2:
+				return &CBool{s.Inclusive}
+			}
 		}
 	case *TupleGet:
 		if t, ok := ev.expr(e.X).(*CTuple); ok && e.Index < len(t.Elems) {
@@ -195,23 +327,23 @@ func (ev *constEval) expr(e Expr) ConstVal {
 		if at, isArray := e.Type().(*types.Array); isArray {
 			out := &CArray{T: at}
 			for _, x := range e.Elems {
-				out.Elems = append(out.Elems, ev.expr(x))
+				out.Elems = append(out.Elems, ev.val(x))
 			}
 			return out
 		}
 		out := &CList{T: e.Type().(*types.List)}
 		for _, x := range e.Elems {
-			out.Elems = append(out.Elems, ev.expr(x))
+			out.Elems = append(out.Elems, ev.val(x))
 		}
 		return out
 	case *MapLit:
 		out := &CMap{T: e.Type().(*types.Map)}
 		for _, en := range e.Entries {
-			mapPut(out, ev.expr(en[0]), ev.expr(en[1]))
+			mapPut(out, ev.val(en[0]), ev.val(en[1]))
 		}
 		return out
 	case *SomeWrap:
-		return &CSome{e.Type().(*types.Nullable), ev.expr(e.X)}
+		return &CSome{e.Type().(*types.Nullable), ev.val(e.X)}
 	case *IsNull:
 		_, null := ev.expr(e.X).(*CNull)
 		return &CBool{null}
@@ -238,14 +370,24 @@ func (ev *constEval) expr(e Expr) ConstVal {
 	case *BlockExpr:
 		return ev.block(e.Block)
 	case *Let:
-		ev.env[e.Var] = ev.expr(e.Init)
+		ev.bind(e.Var, ev.val(e.Init))
 		return ev.expr(e.Body)
 	case *Match:
 		return ev.match(e)
 	case *Builtin:
 		return ev.builtin(e)
 	case *Call:
-		ev.errorf(e.Span, "a constant cannot call '%s': only literals, other constants and operators on them are evaluated at compile time (D113); compute it at run time with 'val'", e.Fn.Display)
+		return ev.call(e)
+	case *AddrOf:
+		return ev.place(e.X)
+	case *Deref:
+		if p, ok := ev.expr(e.X).(*CPtr); ok {
+			return p.get()
+		}
+	case *Panic:
+		ev.errorf(source.Span{}, "panic in a constant: %s", e.Message)
+	case *RangeLit:
+		return &CRange{e.Type().(*types.Range), ev.expr(e.Lo), ev.expr(e.Hi), e.Inclusive}
 	}
 	ev.errorf(spanOf(e), "%s is not a constant expression (D113); compute it at run time with 'val'", describeNode(e))
 	return nil
@@ -286,13 +428,13 @@ func describeNode(e Expr) string {
 	case *Try, *Throw, *MakeResult:
 		return "an error"
 	}
-	return "this"
+	return fmt.Sprintf("this (%T)", e)
 }
 
 func (ev *constEval) varRef(e *VarRef) ConstVal {
 	v := e.Var
-	if val, ok := ev.env[v]; ok {
-		return val
+	if c, ok := ev.env[v]; ok {
+		return c.v
 	}
 	if v.IsGlobal && v.Global != nil {
 		g := v.Global
@@ -326,9 +468,15 @@ func (ev *constEval) truth(e Expr) bool {
 	return b.V
 }
 
+// block evaluates a block for its value. A `return`, `break` or `continue`
+// inside it, reached from an expression, unwinds as a ctlSignal to the
+// function or loop it leaves (statements in statement position take the
+// cheaper path through execBlock).
 func (ev *constEval) block(b *Block) ConstVal {
 	for _, s := range b.Stmts {
-		ev.stmt(s)
+		if c := ev.exec(s); c.kind != ctlNone {
+			panic(ctlSignal{c})
+		}
 	}
 	if b.Value == nil {
 		return &CUnit{}
@@ -336,38 +484,206 @@ func (ev *constEval) block(b *Block) ConstVal {
 	return ev.expr(b.Value)
 }
 
-func (ev *constEval) stmt(s Stmt) {
+type ctlKind int
+
+const (
+	ctlNone ctlKind = iota
+	ctlBreak
+	ctlContinue
+	ctlReturn
+)
+
+// ctl is how a statement ended: normally, or by leaving a loop or the function.
+type ctl struct {
+	kind ctlKind
+	loop *Loop
+	val  ConstVal
+}
+
+// ctlSignal carries a ctl through the evaluation of an expression.
+type ctlSignal struct{ c ctl }
+
+// execBlock runs a block's statements; what a block yields as a value is
+// discarded (a statement's blocks are for effect).
+func (ev *constEval) execBlock(b *Block) ctl {
+	for _, s := range b.Stmts {
+		if c := ev.exec(s); c.kind != ctlNone {
+			return c
+		}
+	}
+	if b.Value != nil {
+		ev.expr(b.Value)
+	}
+	return ctl{}
+}
+
+// runBlock is execBlock for a body entered from a loop or a call: a ctlSignal
+// raised by an expression inside it ends it the same way.
+func (ev *constEval) runBlock(b *Block) (c ctl) {
+	defer func() {
+		if r := recover(); r != nil {
+			s, ok := r.(ctlSignal)
+			if !ok {
+				panic(r)
+			}
+			c = s.c
+		}
+	}()
+	return ev.execBlock(b)
+}
+
+func (ev *constEval) exec(s Stmt) ctl {
+	ev.tick()
 	switch s := s.(type) {
 	case *VarDecl:
 		if s.Init == nil {
 			ev.errorf(source.Span{}, "this statement is not a constant expression (D113)")
 		}
-		ev.env[s.Var] = ev.expr(s.Init)
+		ev.bind(s.Var, ev.val(s.Init))
 	case *ExprStmt:
-		ev.expr(s.X)
-	case *Assign:
-		r, ok := s.Target.(*VarRef)
-		if !ok || ev.env[r.Var] == nil {
-			ev.errorf(source.Span{}, "this statement is not a constant expression (D113)")
+		// a conditional in statement position may end the function or a loop
+		switch x := s.X.(type) {
+		case *If:
+			if ev.truth(x.Cond) {
+				return ev.execBlock(x.Then)
+			}
+			if x.Else != nil {
+				return ev.execBlock(x.Else)
+			}
+		case *BlockExpr:
+			return ev.execBlock(x.Block)
+		case *Match:
+			return ev.execMatch(x)
+		default:
+			ev.expr(s.X)
 		}
-		ev.env[r.Var] = ev.expr(s.Value)
+	case *Assign:
+		ev.assign(s)
 	case *Block:
-		ev.block(s)
+		return ev.execBlock(s)
+	case *Return:
+		var v ConstVal = &CUnit{}
+		if s.Value != nil {
+			v = ev.val(s.Value)
+		}
+		return ctl{kind: ctlReturn, val: v}
+	case *Break:
+		return ctl{kind: ctlBreak, loop: s.Loop}
+	case *Continue:
+		return ctl{kind: ctlContinue, loop: s.Loop}
+	case *Loop:
+		return ev.loop(s)
 	default:
 		ev.errorf(source.Span{}, "this statement is not a constant expression (D113)")
 	}
+	return ctl{}
+}
+
+func (ev *constEval) loop(l *Loop) ctl {
+	for {
+		ev.tick()
+		if l.Cond != nil && !ev.truth(l.Cond) {
+			return ctl{}
+		}
+		c := ev.runBlock(l.Body)
+		switch {
+		case c.kind == ctlBreak && c.loop == l:
+			return ctl{}
+		case c.kind == ctlContinue && c.loop == l:
+		case c.kind != ctlNone:
+			return c
+		}
+		for _, p := range l.Post {
+			if c := ev.exec(p); c.kind != ctlNone {
+				return c
+			}
+		}
+	}
+}
+
+func (ev *constEval) assign(s *Assign) {
+	if r, ok := s.Target.(*VarRef); ok {
+		if c := ev.env[r.Var]; c != nil {
+			c.v = ev.val(s.Value)
+			return
+		}
+	}
+	// a field, an element, what a pointer points at: the value first, then the place
+	v := ev.val(s.Value)
+	ev.place(s.Target).set(v)
+}
+
+// place evaluates an lvalue to a pointer to its storage: a variable, a field
+// of a place, an element of a list, what a pointer points at. A value that is
+// not a place (a temporary) is a pointer to a cell of its own.
+func (ev *constEval) place(e Expr) *CPtr {
+	switch e := e.(type) {
+	case *VarRef:
+		if c := ev.env[e.Var]; c != nil {
+			return &CPtr{T: &types.Pointer{Elem: e.Type()}, get: func() ConstVal { return c.v }, set: func(v ConstVal) { c.v = v }}
+		}
+		ev.varRef(e) // a global: reports why it is no place
+	case *FieldGet:
+		base := ev.place(e.X)
+		if s, ok := base.get().(*CStruct); ok && e.Index < len(s.Fields) {
+			return &CPtr{T: &types.Pointer{Elem: e.Type()}, get: func() ConstVal { return s.Fields[e.Index] }, set: func(v ConstVal) { s.Fields[e.Index] = v }}
+		}
+	case *TupleGet:
+		base := ev.place(e.X)
+		if t, ok := base.get().(*CTuple); ok && e.Index < len(t.Elems) {
+			return &CPtr{T: &types.Pointer{Elem: e.Type()}, get: func() ConstVal { return t.Elems[e.Index] }, set: func(v ConstVal) { t.Elems[e.Index] = v }}
+		}
+	case *Deref:
+		if p, ok := ev.expr(e.X).(*CPtr); ok {
+			return p
+		}
+	case *Unwrap:
+		base := ev.place(e.X)
+		if s, ok := base.get().(*CSome); ok {
+			return &CPtr{T: &types.Pointer{Elem: e.Type()}, get: func() ConstVal { return s.V }, set: func(v ConstVal) { s.V = v }}
+		}
+	case *Builtin:
+		if e.Op == "list.ref" || e.Op == "list.refUnchecked" {
+			return ev.elemPlace(e)
+		}
+	}
+	// not a place: the value in a cell of its own
+	c := &cell{ev.expr(e)}
+	return &CPtr{T: &types.Pointer{Elem: e.Type()}, get: func() ConstVal { return c.v }, set: func(v ConstVal) { c.v = v }}
+}
+
+// elemPlace is a list element as a place (`list.ref`: bounds-checked, a
+// negative index already counted from the end by the lowering).
+func (ev *constEval) elemPlace(e *Builtin) *CPtr {
+	var elems *[]ConstVal
+	switch l := ev.expr(e.Args[0]).(type) {
+	case *CList:
+		elems = &l.Elems
+	case *CArray:
+		elems = &l.Elems
+	default:
+		ev.errorf(e.Span, "%s is not a constant expression (D113)", describeNode(e))
+	}
+	i := ev.expr(e.Args[1]).(*CInt)
+	if i.V.Sign() < 0 || i.V.Cmp(big.NewInt(int64(len(*elems)))) >= 0 {
+		ev.errorf(e.Span, "index %s is out of range for a list of length %d (D113)", i.V, len(*elems))
+	}
+	k := i.V.Int64()
+	return &CPtr{T: &types.Pointer{Elem: e.Type()}, get: func() ConstVal { return (*elems)[k] }, set: func(v ConstVal) { (*elems)[k] = v }}
 }
 
 func (ev *constEval) match(m *Match) ConstVal {
 	if m.Subject != nil {
-		ev.env[m.Subject] = ev.expr(m.Init)
+		ev.bind(m.Subject, ev.val(m.Init))
 	}
 	for _, arm := range m.Arms {
 		if arm.Test != nil && !ev.truth(arm.Test) {
 			continue
 		}
 		for _, b := range arm.Binds {
-			ev.stmt(b)
+			if c := ev.exec(b); c.kind != ctlNone {
+				panic(ctlSignal{c})
+			}
 		}
 		if arm.Guard != nil && !ev.truth(arm.Guard) {
 			continue
@@ -378,6 +694,31 @@ func (ev *constEval) match(m *Match) ConstVal {
 		ev.errorf(m.Span, "no arm of the 'when' matches the constant")
 	}
 	return &CUnit{}
+}
+
+// execMatch is match for a `when` in statement position.
+func (ev *constEval) execMatch(m *Match) ctl {
+	if m.Subject != nil {
+		ev.bind(m.Subject, ev.val(m.Init))
+	}
+	for _, arm := range m.Arms {
+		if arm.Test != nil && !ev.truth(arm.Test) {
+			continue
+		}
+		for _, b := range arm.Binds {
+			if c := ev.exec(b); c.kind != ctlNone {
+				return c
+			}
+		}
+		if arm.Guard != nil && !ev.truth(arm.Guard) {
+			continue
+		}
+		return ev.execBlock(arm.Body)
+	}
+	if m.Exhaustive {
+		ev.errorf(m.Span, "no arm of the 'when' matches the constant")
+	}
+	return ctl{}
 }
 
 // ---------------------------------------------------------------------------
@@ -721,6 +1062,12 @@ func (ev *constEval) builtin(e *Builtin) ConstVal {
 			return &CNull{nt}
 		}
 	}
+	if v, ok := ev.builtinMore(e); ok {
+		return v
+	}
+	if v, ok := ev.builtinNum(e); ok {
+		return v
+	}
 	ev.errorf(e.Span, "%s is not a constant expression (D113); compute it at run time with 'val'", describeNode(e))
 	return nil
 }
@@ -833,21 +1180,89 @@ func constCompare(a, b ConstVal) (int, bool) {
 	return 0, false
 }
 
-// text is a constant as string interpolation prints it.
+// text is a constant as string interpolation prints it: the code
+// generator's `show`, value by value.
 func (ev *constEval) text(v ConstVal, t types.Type) string {
+	if en, ok := t.(*types.Enum); ok {
+		if x, isInt := v.(*CInt); isInt {
+			last := ""
+			for _, m := range en.Members {
+				last = m.Name
+				mv := new(big.Int).SetUint64(m.Value)
+				if m.Neg {
+					mv.Neg(mv)
+				}
+				if mv.Cmp(x.V) == 0 {
+					return m.Name
+				}
+			}
+			return last // as the synthesized toString: the last name when none matches
+		}
+	}
+	join := func(open, close string, n int, part func(i int) string) string {
+		var sb strings.Builder
+		sb.WriteString(open)
+		for i := 0; i < n; i++ {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			sb.WriteString(part(i))
+		}
+		sb.WriteString(close)
+		return sb.String()
+	}
 	switch v := v.(type) {
 	case *CString:
 		return v.V
 	case *CBool:
 		return strconv.FormatBool(v.V)
 	case *CInt:
-		if !types.IsEnum(t) {
-			return v.V.String()
-		}
+		return v.V.String()
 	case *CFloat:
 		return formatFloat(v.V, types.BitSize(v.T) == 32)
+	case *CUnit:
+		return "()"
+	case *CNull:
+		return "null"
+	case *CSome:
+		return ev.text(v.V, v.T.Elem)
+	case *CTuple:
+		return join("(", ")", len(v.Elems), func(i int) string { return ev.text(v.Elems[i], v.T.Elems[i]) })
+	case *CList:
+		return join("[", "]", len(v.Elems), func(i int) string { return ev.text(v.Elems[i], v.T.Elem) })
+	case *CArray:
+		return join("[", "]", len(v.Elems), func(i int) string { return ev.text(v.Elems[i], v.T.Elem) })
+	case *CSet:
+		return join("{", "}", len(v.Elems), func(i int) string { return ev.text(v.Elems[i], v.T.Elem) })
+	case *CMap:
+		return join("{", "}", len(v.Keys), func(i int) string {
+			return ev.text(v.Keys[i], v.T.Key) + ": " + ev.text(v.Vals[i], v.T.Value)
+		})
+	case *CRange:
+		sep := "..<"
+		if v.Inclusive {
+			sep = ".."
+		}
+		return ev.text(v.Lo, v.T.Elem) + sep + ev.text(v.Hi, v.T.Elem)
+	case *CStruct:
+		if v.T.Sealed == nil && !v.T.Union {
+			if ops := ev.c.customOps(v.T); ops != nil && ops.ToString != nil {
+				if !ops.ToString.Const {
+					ev.errorf(source.Span{}, "interpolating a '%s' runs its own 'toString', which is not a 'const fun' (D113)", v.T.Name)
+				}
+				self := &cell{copyVal(v)}
+				ptr := &CPtr{T: &types.Pointer{Elem: v.T}, get: func() ConstVal { return self.v }, set: func(x ConstVal) { self.v = x }}
+				return ev.invoke(ops.ToString, []ConstVal{ptr}, source.Span{}).(*CString).V
+			}
+			if len(v.T.Fields) == 0 {
+				return v.T.Name
+			}
+			return v.T.Name + join("(", ")", len(v.Fields), func(i int) string {
+				return v.T.Fields[i].Name + ": " + ev.text(v.Fields[i], v.T.Fields[i].Type)
+			})
+		}
 	}
-	ev.errorf(source.Span{}, "interpolating a '%s' is not a constant expression (D113); interpolate numbers, 'bool's and strings, or compute it at run time with 'val'", t)
+	ev.errorf(source.Span{}, "interpolating a '%s' is not a constant expression (D113); compute it at run time with 'val'", t)
 	return ""
 }
 
@@ -918,12 +1333,12 @@ func constExpr(v ConstVal) Expr {
 
 // constValue evaluates a `const`'s initializer once its type is known to be
 // one a constant can have; nil after an error.
-func (c *Checker) constValue(init Expr, t types.Type, span source.Span) ConstVal {
+func (c *Checker) constValue(init Expr, t types.Type, span source.Span, name string) ConstVal {
 	if why := c.notConstType(t, false, map[types.Type]bool{}); why != "" {
 		c.errorf(span, "a constant cannot have type '%s': %s (D113); use 'val' for a value computed at run time", t, why)
 		return nil
 	}
-	return c.evalConst(init, span)
+	return c.evalNamedConst(init, span, name)
 }
 
 // notConstType says why a value of t cannot be a constant, or "". A key

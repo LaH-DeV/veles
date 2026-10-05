@@ -897,6 +897,9 @@ func funDecl(t *FuncTemplate) string {
 		if d.Static {
 			sb.WriteString("static ")
 		}
+		if d.Const {
+			sb.WriteString("const ") // the compiler may run it (D113)
+		}
 	}
 	sig := funDetail(t)
 	for _, prefix := range ownerPrefixes(t) {

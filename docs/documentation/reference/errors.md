@@ -399,8 +399,18 @@ constants, operators, interpolation, `len()`, `toT()`/`wrapT()`, `if` and
 read-only `List`, `Map` and `Set` — laid out once in the binary, never built
 at start-up. What would fail at run time fails the build instead, in every
 profile: an overflow (write `+%` to wrap on purpose), a division by zero, a
-shift past the width, `TABLE.at(i)` out of range. A function call, a `val`,
-anything mutable or made at run time is refused: compute it with `val`.
+shift past the width, `TABLE.at(i)` out of range. A call of a function that is
+not a `const fun`, a `val`, anything mutable or made at run time is refused:
+compute it with `val`.
+
+**`const fun`** is a function the compiler runs for a constant (D113). What it
+may contain is checked where it is declared: `in 'const fun f': it calls 'g',
+which is not a 'const fun'`, `it reads the module-level 'counter'`, `a lambda
+is not supported in a 'const fun' yet`, `a 'const fun' cannot throw yet`, `a
+'const fun' cannot use 'unsafe'`. What fails while one runs fails the build at
+the constant, with the message and the chain of calls: `panic in a constant:
+reached zero`, `evaluating the constant 'C' took more than 10000000 steps`
+(`--const-steps n` raises the budget), `'f' recursed more than 4096 calls deep`.
 
 `static assert(cond, "why")` checks a constant condition at compile time, at
 module level or in a body; in a generic body it is checked per instance,

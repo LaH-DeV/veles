@@ -9,18 +9,18 @@ extern "C" {
   fun veles_parse_f64(s: string): f64
 }
 
-fun isAsciiSpace(b: u8): bool = b == 32 || b == 9 || b == 10 || b == 13 || b == 12 || b == 11
+const fun isAsciiSpace(b: u8): bool = b == 32 || b == 9 || b == 10 || b == 13 || b == 12 || b == 11
 
 extend string {
   /// Byte index of the first occurrence of `part` at or after `from`, or -1.
-  public fun indexOf(part: string, from: i64 = 0): i64 = unsafe {
+  public const fun indexOf(part: string, from: i64 = 0): i64 = unsafe {
     // SAFETY: a read-only search inside both strings' lengths; `from` is clamped
     // by the runtime
     veles_string_find(this, part, from)
   }
 
   /// Byte index of the last occurrence of `part`, or -1.
-  public fun lastIndexOf(part: string): i64 {
+  public const fun lastIndexOf(part: string): i64 {
     var last: i64 = -1
     var at = this.indexOf(part)
     loop (at >= 0) {
@@ -31,7 +31,7 @@ extend string {
   }
 
   /// The text without leading ASCII whitespace.
-  public fun trimStart(): string {
+  public const fun trimStart(): string {
     var i: i64 = 0
     loop (i < this.len() && isAsciiSpace(this.byteAt(i))) {
       i += 1
@@ -40,7 +40,7 @@ extend string {
   }
 
   /// The text without trailing ASCII whitespace.
-  public fun trimEnd(): string {
+  public const fun trimEnd(): string {
     var j = this.len()
     loop (j > 0 && isAsciiSpace(this.byteAt(j - 1))) {
       j -= 1
@@ -49,11 +49,11 @@ extend string {
   }
 
   /// The text without leading or trailing ASCII whitespace.
-  public fun trim(): string = this.trimStart().trimEnd()
+  public const fun trim(): string = this.trimStart().trimEnd()
 
   /// The pieces between occurrences of `sep`. An empty `sep` yields the
   /// code points; a `sep` that never occurs yields the whole text.
-  public fun split(sep: string): List<string> {
+  public const fun split(sep: string): List<string> {
     if (sep.isEmpty()) return this.chars()
     stringSplit(this, sep)
   }
@@ -61,7 +61,7 @@ extend string {
   /// The text before and after the first `sep`, or `null` when `sep` does
   /// not occur: `"key=a=b".splitOnce("=")` is `("key", "a=b")`. An empty
   /// `sep` splits before the first character: `("", text)`.
-  public fun splitOnce(sep: string): (string, string)? {
+  public const fun splitOnce(sep: string): (string, string)? {
     val at = this.indexOf(sep)
     if (at < 0) return null
     val before = this.substring(0, at) ?: panic("splitOnce: indexOf found sep inside the text")
@@ -71,7 +71,7 @@ extend string {
 
   /// The lines of the text, split on `\n`; a trailing `\r` on each line and
   /// a final empty line are dropped.
-  public fun lines(): List<string> {
+  public const fun lines(): List<string> {
     var out: MutableList<string> = []
     loop (line in this.split("\n")) {
       if (line.endsWith("\r")) {
@@ -85,7 +85,7 @@ extend string {
   }
 
   /// The text with every occurrence of `old` replaced by `new`.
-  public fun replace(old: string, new: string): string {
+  public const fun replace(old: string, new: string): string {
     if (old.isEmpty()) return this
     val parts = this.split(old)
     if (parts.len() == 1) return this
@@ -93,7 +93,7 @@ extend string {
   }
 
   /// The text repeated `n` times (empty for `n <= 0`).
-  public fun repeat(n: i64): string {
+  public const fun repeat(n: i64): string {
     var out: MutableList<u8> = []
     loop (_ in 0..<n) {
       listAppendText(out, this)
@@ -102,7 +102,7 @@ extend string {
   }
 
   /// Copy with ASCII letters upper-cased.
-  public fun toUpper(): string {
+  public const fun toUpper(): string {
     var out: MutableList<u8> = []
     loop (b in this.bytes()) {
       out.push(if (b >= 97 && b <= 122) b - 32 else b)
@@ -111,7 +111,7 @@ extend string {
   }
 
   /// Copy with ASCII letters lower-cased.
-  public fun toLower(): string {
+  public const fun toLower(): string {
     var out: MutableList<u8> = []
     loop (b in this.bytes()) {
       out.push(if (b >= 65 && b <= 90) b + 32 else b)
@@ -120,7 +120,7 @@ extend string {
   }
 
   /// Copy with the first ASCII letter upper-cased, the rest unchanged.
-  public fun capitalize(): string {
+  public const fun capitalize(): string {
     if (this.isEmpty()) return this
     val first = this.byteAt(0)
     if (first < 97 || first > 122) return this
@@ -131,7 +131,7 @@ extend string {
   }
 
   /// The text preceded by `pad` until it is at least `width` bytes long.
-  public fun padStart(width: i64, pad: string = " "): string {
+  public const fun padStart(width: i64, pad: string = " "): string {
     if (pad.isEmpty() || this.len() >= width) return this
     var s = this
     loop (s.len() < width) {
@@ -141,7 +141,7 @@ extend string {
   }
 
   /// The text followed by `pad` until it is at least `width` bytes long.
-  public fun padEnd(width: i64, pad: string = " "): string {
+  public const fun padEnd(width: i64, pad: string = " "): string {
     if (pad.isEmpty() || this.len() >= width) return this
     var s = this
     loop (s.len() < width) {
@@ -191,4 +191,4 @@ extend string {
   }
 }
 
-fun isDigit(b: u8): bool = b >= 48 && b <= 57
+const fun isDigit(b: u8): bool = b >= 48 && b <= 57

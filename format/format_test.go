@@ -450,3 +450,12 @@ func TestTemplateLiteralRoundTrips(t *testing.T) {
 		t.Errorf("the literal was changed:\n%s", out)
 	}
 }
+
+// D113: `const fun` prints as written, beside the other modifiers.
+func TestConstFunRoundTrips(t *testing.T) {
+	src := "const KB: i64 = 1024\n\nconst fun square(n: i64): i64 = n * n\n\npublic const fun cube(n: i64): i64 = n * n * n\n\n" +
+		"struct Counter {\n  var n: i64\n\n  const fun bump(by: i64) {\n    this.n += by\n  }\n\n  public static const fun zero(): Counter = Counter(n: 0)\n}\n"
+	if got := checkRoundTrip(t, "constfun.vs", src); got != src {
+		t.Errorf("formatted:\n%s\nwant:\n%s", got, src)
+	}
+}

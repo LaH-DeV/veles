@@ -3667,8 +3667,8 @@ Rejected: expressions only; expressions and tables without functions;
 `comptime fun` (a second word beside `const`); no marker (Zig-style inference
 — an edit inside a function breaks constants in other packages).
 
-*Built 2026-10-03 (B14 parts 1, 2 and 4 of this entry — `const fun`, part 3
-above, is still open).* Implementation choices (user, recommended of each):
+*Built 2026-10-03 (B14 parts 1, 2 and 4 of this entry; `const fun`, part 3
+above, followed on 2026-10-05, see below).* Implementation choices (user, recommended of each):
 a constant `Map`/`Set` is laid out whole by the compiler — entries,
 metadata and hash index, hashed by a Go copy of the runtime's structural
 hash (a differential test checks every key is found at run time) — so a
@@ -3695,6 +3695,48 @@ Found with it: module-level values were initialized in source order, so
 compiler's stack. Now they are initialized in dependency order — reads
 through called functions and lambdas count — and a cycle is an error,
 family `constants` (as Go does).
+
+*Part 3, `const fun`, built 2026-10-05 (B14 part 4).* `const` is a modifier of
+`fun`, spelled in the author's order beside the others (`public const fun`,
+`static const fun`); on a free function, a method, a static function, an
+`extend` or inline `implement` method; `const` followed by anything else still
+declares a constant. A call in a constant's initializer runs the callee's
+checked HIR — the same tree the code generator compiles — in the evaluator of
+parts 1–2 (`sema/consteval.go`, `constfun.go`, `constnum.go`): a variable is a
+cell, so `&x`, a method's receiver and a list element's place are pointers; a
+struct, tuple or array is copied where it is stored and a collection is a
+handle (D25); `return`, `break` and `continue` unwind as the code generator's
+do; step budget 10 000 000 per constant (`--const-steps n`, `Package.ConstSteps`)
+and 4096 nested calls, each an error naming the constant, with the call chain
+(a long chain keeps its five outermost and innermost calls). **Declaration-time
+rules** (`validateConstFun`, run on every `const fun` after each round, and on
+first use): it calls only `const fun`s (and the `init` block of a struct it
+builds, held to the same rules), runs no `unsafe` (std is exempt for the runtime
+entry points `constExterns` names — today `veles_string_find`, run in Go with the
+runtime's result), reads no module-level `val`/`var`, starts no task, uses no
+`with`, takes or calls no function value, does not `throw`, and uses only the
+built-in operations of `constBuiltins`. A failure while it runs — `panic`,
+overflow in any profile, an index out of range, a division by zero, a negative
+or too large `pow` — is a compile error at the constant that called it.
+**Results equal run time** (the differential test `driver/constfun_test.go` runs
+each function both ways, debug and release): integers are exact and checked,
+`f32` is rounded after every operation, `"${x}"` prints structs, tuples, lists,
+maps, sets, ranges, nullables and enums as the code generator's `show` does (a
+`Display` impl runs when it is a `const fun`). The float functions evaluated are
+the ones IEEE 754 fixes — `sqrt`, `abs`, `floor`, `ceil`, `round`, `trunc`,
+`min`, `max`, `mod`, `clamp`, `sign`, `copySign` and the tests; **`sin`, `cos`,
+`tan`, `exp`, `log`, `pow`, `atan2` and `hypot` are not evaluated**, because two C
+libraries differ in the last bit and the compiler cannot know which one the
+program links — an addition to the text above, which promised the std
+implementations; computing them at run time is the way. std marks `const fun`:
+every `StringBuilder` method, the string functions written in Veles (`trim`,
+`split`, `replace`, `indexOf`, `toUpper`, `padStart`…) and the functions the
+compiler synthesizes for an enum (`values`, `parse`, `toString`, `compareTo`,
+`fromValue`). A plain constant now also interpolates what a `const fun` can
+(structs, lists, enums…), which part 1 refused. Not built (checklist §11):
+`throws` in a `const fun`, function values and trait objects, derived
+`equals`/`hash`/`toString` on user types, most of the prelude's collection
+helpers, and `const fun` in the other std modules.
 
 ### D114 — No global switch for bounds checks; an unchecked access in `unsafe` (v0.62)
 

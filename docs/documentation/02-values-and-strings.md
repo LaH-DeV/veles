@@ -417,8 +417,75 @@ What would fail at run time fails the build instead, in every profile:
 `const BIG: i64 = 9223372036854775807 + 1` is a compile error (write `+%` to
 wrap on purpose), and so are a division by zero and `PRIMES.at(9)`. With a
 constant index, `PRIMES.at(2)` is an `i64`, not an `i64?`: the compiler has
-read it. A constant cannot call a function or read a `val` — compute such a
-value with `val`. Module-level `val`s are computed before `main`, in the
-order they need each other.
+read it. A constant cannot read a `val`, and the only functions it can call are
+the ones declared `const fun` (next) — compute anything else with `val`.
+Module-level `val`s are computed before `main`, in the order they need each
+other.
+
+### Functions the compiler runs
+
+A constant may call a function declared `const fun`. The compiler runs it
+while it compiles, and the result is laid out in the binary like any other
+constant table: nothing is computed when the program starts. A `const fun` is
+still an ordinary function — call it at run time and it computes the same
+thing.
+
+```veles
+use io
+
+const fun crc32Table(): List<u32> {
+  val table: MutableList<u32> = []
+  loop (n in 0..<256) {
+    var c = n.wrapU32()
+    loop (_ in 0..<8) {
+      c = if (c & 1 == 1) 0xEDB88320 ^ (c >> 1) else c >> 1
+    }
+    table.push(c)
+  }
+  table.toList()
+}
+
+const CRC: List<u32> = crc32Table()
+
+fun main() {
+  io.println("${CRC.len()} entries; the last is ${CRC.at(255)}")
+}
+```
+
+Output:
+```text
+256 entries; the last is 755167117
+```
+
+A `const fun` may use its parameters, locals and loops, `if` and `when`,
+recursion, structs, tuples and arrays as values, a `MutableList`, `MutableMap`
+or `StringBuilder` it builds and returns as a `List`, `Map` or `string`, its own
+methods, other `const fun`s and the standard library's: the string functions
+(`trim`, `split`, `replace`, `indexOf`, `toUpper`, `padStart`…),
+`StringBuilder`, the integer operations (`abs`, `pow`, `rotateLeft`,
+`wrappingAdd`, `countOnes`…), `sqrt`, rounding, `min` and `max`, and an enum's
+`values()`, `parse` and `toString`. A `const fun` can be generic, and a method
+can be one (`const fun bumped(): Version`).
+
+It may not do input or output, suspend or start a task, use `unsafe`, read a
+module-level `val` or `var`, take or call a function value (a lambda), or
+`throw`. Each is an error naming the rule, and the rules are checked where the
+function is declared — not where a constant uses it — so a change inside a
+`const fun` cannot quietly break a constant in another file.
+
+When it fails, the build fails at the constant that called it, with the message
+and the chain of calls: a `panic`, an overflow, an index out of range, a
+division by zero. A function that never ends is stopped too: evaluating one
+constant has a budget of 10 million steps (`veles build --const-steps 50000000`
+raises it) and 4096 nested calls, and running past either is an error naming
+the constant.
+
+The results are what the program would compute. Integers are checked as
+everywhere (a constant never wraps unless you write `+%` or `wrapU32()`), an
+`f32` is rounded after every operation, and `"${x}"` prints as it does at run
+time. The one family left out is `sin`, `cos`, `exp`, `log`, `pow` and the other
+functions of the C library: they differ between platforms in the last bit, and a
+constant must not depend on which library the program is linked with — compute
+those at run time.
 
 Next: [Functions and control flow](03-functions-and-control-flow.md).

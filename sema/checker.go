@@ -69,6 +69,8 @@ type Checker struct {
 	// error-position types seen before the impls were collected, checked
 	// at the end of collection; collected marks that point
 	pendingErrorChecks []pendingErrorCheck
+	constFunOK         map[*Func]bool // D113: whether a `const fun` passed its declaration-time rules
+	constChecking      map[*Func]bool // a `const fun` body being checked on the evaluator's behalf
 	pendingBoundChecks []func()
 	pathReported       bool                  // lookupTypeName reported why a qualified type path failed
 	stdFiles           map[*source.File]bool // stdSpan
@@ -2596,6 +2598,7 @@ func (c *Checker) runRound() *Program {
 	}
 	c.drainQueue()
 	c.finishInstances()
+	c.checkConstFuns()
 	c.prog.TestMode = c.testMode
 	c.prog.PanicType = c.panicType()
 	for _, t := range c.tests {
@@ -2753,6 +2756,7 @@ func (c *Checker) instantiate(t *FuncTemplate, ownerSubst map[*types.TypeParam]t
 	}
 	fn.tmpl = t
 	fn.subst = m
+	fn.Const = t.Decl != nil && t.Decl.Const
 	t.Instances[key] = fn
 	c.instances[fn.Name] = fn
 	c.funcs = append(c.funcs, fn)
@@ -3053,6 +3057,7 @@ func (c *Checker) drainQueue() {
 			continue
 		}
 		c.timeBody(fn, func() { c.checkBody(fn) })
+		fn.checked = true
 	}
 }
 

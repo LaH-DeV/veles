@@ -377,6 +377,9 @@ func (f *fnCtx) checkExprInner(e ast.Expr, want types.Type) Expr {
 		return f.castExpr(e)
 	case *ast.UnsafeExpr:
 		f.lintUnsafeBlock(e)
+		if f.fn != nil {
+			f.fn.UsesUnsafe = true // a `const fun` may not (D113)
+		}
 		f.unsafe++
 		b := f.checkBlock(e.Body, want, true)
 		f.unsafe--

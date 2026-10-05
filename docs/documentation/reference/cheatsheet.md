@@ -13,6 +13,8 @@ use io { println, eprintln as warn }  // bare names on top of io.: println("x");
 const limit = 10                // module-level constant, computed at compile time (D113)
 const PAGE = limit * 4096       // constants, operators, "${...}", len(), if/when, structs
 const NAMES: List<string> = ["a", "b"]  // List/Map/Set tables: read-only in the binary; NAMES.at(0) is a string
+const fun table(): List<u32> { ... }    // the compiler may run it (D113); an ordinary function at run time too
+const TABLE: List<u32> = table()        // computed while compiling, read-only in the binary
 static assert(PAGE > 0, "why")  // checked at compile time; module level or in a body
 val banner = "hi"               // module-level value
 var counter = 0                 // module-level variable

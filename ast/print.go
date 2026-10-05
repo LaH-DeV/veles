@@ -377,6 +377,9 @@ func (p *printer) fun(d *FunDecl) {
 	if d.Unsafe {
 		p.w("unsafe ")
 	}
+	if d.Const {
+		p.w("const ")
+	}
 	p.w(d.Name.Name)
 	p.typeParams(d.TypeParams)
 	p.paramList(d.Params)

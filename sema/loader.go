@@ -26,6 +26,9 @@ type Package struct {
 	// NeedMain is set by the driver for build/run: a package is a program
 	// only if its root module declares `fun main()`.
 	NeedMain bool
+	// ConstSteps is the step budget of one constant's evaluation (D113,
+	// `--const-steps`); 0 is the default.
+	ConstSteps int64
 	// Script is the absolute path of a script (`.vss`): a one-file package
 	// whose root module is that file alone. Sibling files are never read, no
 	// manifest applies, and only standard modules can be imported.

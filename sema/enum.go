@@ -332,6 +332,7 @@ func (c *Checker) enumFunc(e *types.Enum, op string) *Func {
 		panic("enumFunc: unknown operation " + op)
 	}
 	fn.checked = true
+	fn.Const = true // plain HIR over constants and comparisons: the compiler may run it (D113)
 	c.funcs = append(c.funcs, fn)
 	c.enumFns[key] = fn
 	return fn

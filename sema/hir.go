@@ -80,6 +80,10 @@ type Func struct {
 	// called from as a hidden last parameter, and a panic written in its body
 	// reports that site.
 	CallerLoc bool
+	// Const: declared `const fun` (D113): the compiler may run it while
+	// evaluating a constant. UsesUnsafe: its body has an `unsafe` block.
+	Const      bool
+	UsesUnsafe bool
 	// Closure functions take an environment pointer first; CapVars are the
 	// inner variables standing for captured outer ones (index = env slot).
 	IsClosure bool

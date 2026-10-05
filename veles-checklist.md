@@ -223,10 +223,12 @@ answered from the shape, tuples get `Comparable`, enums get
       `List<T>` extend) compiles until something uses it. Checking bodies
       against their bounds at definition — which the self-hosted compiler
       will want too
-- [ ] Compile-time evaluation: constant expressions, constant tables,
+- [x] Compile-time evaluation: constant expressions, constant tables,
       `const fun`, `static assert` (D113, decided 2026-10-01) — plan B14.
       Parts 1–3 built 2026-10-03 (`sema/consteval.go`, `codegen/llvm/consts.go`,
-      `static assert`); open: part 4, `const fun`
+      `static assert`); part 4, `const fun`, built 2026-10-05 (`sema/constfun.go`,
+      `constnum.go`; the differential test `driver/constfun_test.go`; chapter 2,
+      `examples/constfun`) — what is left is under §11 "Deferred from `const fun`"
 - [x] Module-level values are initialized in dependency order (through the
       functions their initializers call); a cycle is an error — built
       2026-10-03. Before, `val a = f()` with `f` reading a later `val` saw
@@ -1111,12 +1113,40 @@ Every new public std API (http cookies/forms/client, `std/log`,
   so a mistake in a branch no instance takes is not reported until one
   does. `static assert(T implements X, "…")` states the requirement per
   instance (B14).
-- Constants (D113, before `const fun`): a constant cannot call a function,
-  std's included; a constant `Map`/`Set` whose key type has its own
+- Constants (D113): a constant can call only a `const fun`; a constant
+  `Map`/`Set` whose key type has its own
   `hash`/`equals` is refused (the compiler lays the table out with the
   structural hash); a sealed variant is not a constant value; a table's
   element is a `when` pattern only through a named `const`
   (`const FIRST = T.at(0)`), patterns being names and literals.
+- **Deferred from `const fun` (2026-10-05), to build later:** `throws` and
+  `try`/`catch` inside a `const fun` (a thrown error would be a compile error
+  at the constant; today the function is refused); function values — a lambda,
+  a closure, a trait object, so `map`/`filter`/`sortedBy` and every std function
+  that takes a callback are not `const fun`s; the functions the compiler derives
+  for a user type (`equals`, `hash`, `toString`, `compareTo`, the codec) are not
+  `const fun`s, so `==` on a struct with a user `equals` and a key with its own
+  `hash` in a constant `Map` are refused, though structural `==` and
+  interpolation work; only `StringBuilder`, the string functions written in
+  Veles and an enum's synthesized functions are marked — the prelude's `List`,
+  `Map`, `Range` and iterator helpers written in Veles (`take`, `drop`, `concat`,
+  `sum`, `min`, `max`, `reversed`, `zip`, `enumerate`…), `Duration`, the number
+  formatting (`toString(radix)`, `toFixed`), `toF64()` (it calls `strtod`) and the
+  other std modules (`hex`, `base64`, `utf8`…) are not yet; the float functions
+  of the C library (`sin`, `cos`, `tan`, `exp`, `log`, `log2`, `log10`, `pow`,
+  `atan2`, `hypot`) are not evaluated because two libraries differ in the last
+  bit — a correctly rounded software implementation in the evaluator (or a
+  decision to let them differ) would lift it; generic `const fun` bodies are
+  validated per instance, as every generic body is (§11 above); a `const fun`
+  body that reads a constant calling the same function reports the
+  initialization cycle, not a `const fun` cycle; evaluation speed is about
+  6 million steps a second (a tree walk over the HIR with a map per call frame),
+  enough for tables of thousands of entries — a compiled evaluator or slots
+  instead of maps would matter for a self-hosted lexer's Unicode tables;
+  `tryConst`, which reads a constant index or a range bound while a body is
+  being checked, runs no function (so `TABLE.at(f())` is not read at compile
+  time); a long failure chain keeps its five outermost and innermost calls
+  only.
 - An initialization cycle is found through direct calls and lambdas; a
   call through a trait object or a function value read from elsewhere is
   not followed.

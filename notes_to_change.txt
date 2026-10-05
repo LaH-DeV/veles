@@ -52,3 +52,44 @@ P11. CANDIDATE HELPERS for later (not started; pick when a program needs them):
    → 2026-10-01: `retry`, `Semaphore` (`with sem.acquire()`), the channel drains and `ticker`
      decided (spec D110, plan B12). Still open here: `awaitAll`, `filterConcurrent`,
      `firstConcurrent`, channel-to-channel stages.
+
+=== 2026-10-05 (review of `const fun`, D113 part 3; requested by the user, written by us) ===
+
+C1. Do better in the compiler (order = what matters most to users):
+    a. Function values in a `const fun` (lambdas, closures, trait objects): today `map`, `filter`,
+       `sortedBy`, `fold` and every callback-taking std function are unusable. The self-hosted
+       lexer's tables would want them.
+    b. `throws` / `try` / `catch` inside a `const fun` (spec allows it: a thrown error is a
+       compile error at the constant).
+    c. Std coverage is silent: a user learns a std function is not `const` from the error.
+       Mark systematically (List/Map/Range/iterator helpers, Duration, hex/base64/utf8) and add a
+       test that lists the const std functions so coverage cannot regress unnoticed.
+    d. Derived `equals`/`hash`/`toString`/`compareTo` should be `const` (lifts "custom hash/equals
+       keys refused" for constant maps).
+    e. libm floats (`sin`, `exp`, `log`, `pow`…) are not evaluated: build a correctly rounded
+       software version, or decide that results may differ. Needs the user (veles-decide).
+    f. Speed: ~6 M steps/s (map per call frame); slots instead of maps for Unicode-table sized work.
+       Generic `const fun` bodies are validated per instance only (an unused generic can hide an
+       invalid body).
+    g. Diagnostics: HIR nodes carry no spans, so declaration-time errors (global read, lambda) point
+       at the function name; "calls `$init`" and derived-function messages read poorly.
+    h. Tooling: show the computed value of a constant on hover (not only some cases); a
+       `--const-stats` report of steps per constant; `tryConst` runs no function, so `TABLE.at(f())`
+       is not read at compile time.
+    i. Review each std function marked `const` by script (StringBuilder, string methods, number
+       compareTo/toString) for semantics beyond what the differential test covers.
+
+C2. Document further (make it easy to grasp):
+    a. A "what can I call in a `const fun`?" table (allowed / refused / const std functions).
+    b. A short mental model: the compiler runs the function in an interpreter over the same HIR;
+       results equal run time except libm — explains why things are refused.
+    c. A worked failure with the real output: a panic with its call chain, the step-budget error.
+    d. "When to use it": `const fun` vs plain `const` vs a start-up `val` (build time, binary size).
+    e. How std authors mark helpers `const`, why a `const fun` cannot call a non-const one, why
+       `unsafe` is std-only.
+    f. Self-hosting: a Veles-written compiler must carry the same evaluator (D113); say so in the
+       contributor docs.
+    g. Contributor checklist for adding a built-in the evaluator runs: `constBuiltins` entry,
+       evaluator case (`constfun.go`/`constnum.go`), a case in `driver/constfun_test.go`, a docs line.
+   → Items 1.a–1.d, 1.f–1.h and part of 1.e are also in veles-checklist.md §11 "Deferred from
+     `const fun`"; this block is the review list, to be worked through.

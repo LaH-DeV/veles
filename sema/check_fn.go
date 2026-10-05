@@ -434,7 +434,7 @@ func (c *Checker) checkGlobal(g *Global) {
 		declared = init.Type()
 	}
 	if d.Kind == ast.BindConst && !types.IsInvalid(init.Type()) {
-		g.Const = c.constValue(init, declared, d.Value.Span())
+		g.Const = c.constValue(init, declared, d.Value.Span(), g.Display)
 	}
 	if types.IsNever(declared) || types.IsUnit(declared) {
 		c.errorf(d.Name.Pos, "a global cannot have type '%s': its initializer gives no value to keep", declared)

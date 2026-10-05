@@ -266,19 +266,20 @@ codec.KeyStyle.SnakeCase)`), or to write a format of its own.
 ```veles
 // fragment
 public struct StringBuilder {                 // StringBuilder() starts an empty one
-  public fun append(s: string)
-  public fun appendLine(s: string = "")
-  public fun appendByte(b: u8)          // one UTF-8 byte, for code walking a string with byteAt
-  public fun reserve(n: i64)           // room for n bytes in all: appending up to n never grows it (D105)
-  public fun len(): i64
-  public fun isEmpty(): bool
-  public fun clear()
-  public fun toString(): string
+  public const fun append(s: string)
+  public const fun appendLine(s: string = "")
+  public const fun appendByte(b: u8)          // one UTF-8 byte, for code walking a string with byteAt
+  public const fun reserve(n: i64)           // room for n bytes in all: appending up to n never grows it (D105)
+  public const fun len(): i64
+  public const fun isEmpty(): bool
+  public const fun clear()
+  public const fun toString(): string
 }
 ```
 
 Builds text in linear time where repeated `+` would copy the whole string
-each time.
+each time. Every method is a `const fun`: a constant's function may build text
+with one (D113).
 
 ### Deque and PriorityQueue
 
@@ -382,6 +383,16 @@ opens them. Both kinds are called the same way.
 | `padStart(width, pad: " ")`, `padEnd(width, pad: " ")` | `string` |
 | `toInt()`, `toF64()` | `i64?`, `f64?` |
 | `+`, `==`, `<` … | concatenation and comparison |
+
+The string functions that are written in Veles — `trim`, `trimStart`,
+`trimEnd`, `split`, `splitOnce`, `lines`, `replace`, `repeat`, `toUpper`,
+`toLower`, `capitalize`, `padStart`, `padEnd`, `indexOf`, `lastIndexOf` — are
+`const fun`s, as are the built-in ones (`len`, `byteAt`, `substring`, `chars`,
+`bytes`, `startsWith`, `toInt`…) and the integer and exact float operations of
+[Numbers](#numbers) (`abs`, `min`, `max`, `pow`, `mod`, `rotateLeft`,
+`wrappingAdd`, `sqrt`, `floor`…): a constant's function may use them (D113).
+`sin`, `cos`, `exp`, `log`, `pow` on floats and the other C library functions
+are not: the compiler does not guess which library the program links.
 
 Interpolation `"$x ${expr}"` accepts any value. `List<u8>.decodeUtf8()` is
 the way back from `bytes()`: `string?`, null when the bytes are not valid

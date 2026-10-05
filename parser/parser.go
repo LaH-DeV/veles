@@ -494,7 +494,15 @@ func (p *Parser) parseDeclKind(attrs []*ast.Attribute, pub, marked bool, which s
 			p.errorf(start, "'implement' cannot be %s; visibility follows the trait and type", which)
 		}
 		return p.parseImpl(attrs, false)
-	case lexer.KwVal, lexer.KwVar, lexer.KwConst:
+	case lexer.KwConst:
+		if p.peek(1).Kind == lexer.KwFun {
+			fn := p.parseFun(attrs, funContextFree) // `const fun` (D113)
+			fn.Pub = pub
+			fn.Pos = start.To(fn.Pos)
+			return fn
+		}
+		return p.parseValDecl(attrs, pub, start)
+	case lexer.KwVal, lexer.KwVar:
 		return p.parseValDecl(attrs, pub, start)
 	case lexer.KwType:
 		return p.parseTypeAlias(attrs, pub, start)
@@ -820,6 +828,8 @@ func (p *Parser) parseFun(attrs []*ast.Attribute, ctx funContext) *ast.FunDecl {
 			}
 		case lexer.KwUnsafe:
 			fn.Unsafe = true
+		case lexer.KwConst:
+			fn.Const = true
 		default:
 			goto done
 		}
@@ -978,7 +988,7 @@ func (p *Parser) parseStruct(attrs []*ast.Attribute, pub, extern bool, start sou
 				} else {
 					d.Methods = append(d.Methods, p.parseFun(mattrs, funContextMethod))
 				}
-			case lexer.KwFun, lexer.KwMut, lexer.KwOverride, lexer.KwUnsafe:
+			case lexer.KwFun, lexer.KwMut, lexer.KwOverride, lexer.KwUnsafe, lexer.KwConst:
 				d.Methods = append(d.Methods, p.parseFun(mattrs, funContextMethod))
 			case lexer.KwImpl:
 				if hasVis {
@@ -1212,7 +1222,7 @@ func (p *Parser) parseImplBody(d *ast.ImplDecl, extend bool) {
 					b.Type = p.parseType()
 				}
 				d.AssocTypes = append(d.AssocTypes, b)
-			case lexer.KwFun, lexer.KwMut, lexer.KwOverride, lexer.KwUnsafe, lexer.KwPub, lexer.KwPrivate, lexer.KwInternal, lexer.KwStatic:
+			case lexer.KwFun, lexer.KwMut, lexer.KwOverride, lexer.KwUnsafe, lexer.KwConst, lexer.KwPub, lexer.KwPrivate, lexer.KwInternal, lexer.KwStatic:
 				d.Methods = append(d.Methods, p.parseFun(mattrs, funContextMethod))
 			default:
 				if extend {

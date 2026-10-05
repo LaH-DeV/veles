@@ -494,7 +494,7 @@ func TestExtendMethods(t *testing.T) {
 	// a prelude extend method hovers like any function, with its doc and
 	// the receiver type as owner
 	res, _ := c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": 4, "character": 16}})
-	if !strings.Contains(string(res), `extend string\n  public fun trim(): string`) || !strings.Contains(string(res), "without leading or trailing") {
+	if !strings.Contains(string(res), `extend string\n  public const fun trim(): string`) || !strings.Contains(string(res), "without leading or trailing") {
 		t.Errorf("hover on an extend method: %s", res)
 	}
 	// its definition is the prelude source

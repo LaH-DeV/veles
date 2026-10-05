@@ -45,6 +45,9 @@ type Options struct {
 	// Timings prints the time each phase took, and the modules that cost
 	// the most to parse and check, on standard error.
 	Timings bool
+	// ConstSteps is the step budget of one compile-time evaluation (D113,
+	// `--const-steps`); 0 is the default, 10 million.
+	ConstSteps int64
 }
 
 // DefaultTestTimeout bounds each test when `--timeout` is not given: long
@@ -91,6 +94,7 @@ func Run(opts Options) int {
 	clk.lap("load", clk.frontEndNote())
 	// only build/run need a program; check accepts a library or a module
 	pkg.NeedMain = opts.Mode == "build" || opts.Mode == "run"
+	pkg.ConstSteps = opts.ConstSteps
 	var prog *sema.Program
 	if opts.Mode == "test" {
 		prog = sema.CheckTests(pkg, diags, opts.Release)

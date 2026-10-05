@@ -30,7 +30,7 @@ import (
 )
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: veles <build|run|test|check|parse|tokens> <path> [-o output] [--emit-llvm] [--keep] [--release] [--sanitize] [--timings] [--fix] [--filter text] [--timeout 10m] [--jobs n] [-- args...] | veles explain <family> | veles explain <path> --derive [Type] | veles fmt <paths...> [--check] [--stdout] | veles new <dir> [--template app|server] | veles doc [dir] [-o out] | veles lsp")
+	fmt.Fprintln(os.Stderr, "usage: veles <build|run|test|check|parse|tokens> <path> [-o output] [--emit-llvm] [--keep] [--release] [--sanitize] [--timings] [--const-steps n] [--fix] [--filter text] [--timeout 10m] [--jobs n] [-- args...] | veles explain <family> | veles explain <path> --derive [Type] | veles fmt <paths...> [--check] [--stdout] | veles new <dir> [--template app|server] | veles doc [dir] [-o out] | veles lsp")
 	os.Exit(2)
 }
 
@@ -207,6 +207,18 @@ func command() int {
 				opts.Sanitize = true
 			case "--timings":
 				opts.Timings = true
+			case "--const-steps":
+				if i+1 >= len(args) {
+					fmt.Fprintln(os.Stderr, "--const-steps needs a value")
+					usage()
+				}
+				n, err := strconv.ParseInt(args[i+1], 10, 64)
+				if err != nil || n < 1 {
+					fmt.Fprintf(os.Stderr, "--const-steps takes how many steps the compiler may spend on one constant, 1 or more, not %q\n", args[i+1])
+					usage()
+				}
+				opts.ConstSteps = n
+				i++
 			case "--fix":
 				opts.Fix = true
 			case "--":

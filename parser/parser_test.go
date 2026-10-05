@@ -825,3 +825,29 @@ func TestTemplateLiteralNeedsNoSpace(t *testing.T) {
 		t.Errorf("a template literal with an expression failed:\n%s", diags.Render())
 	}
 }
+
+// `const fun` (D113): a free function, a method, a static function and an
+// extend method may be marked; `const` alone still declares a constant.
+func TestConstFun(t *testing.T) {
+	src := `
+const KB: i64 = 1024
+const fun square(n: i64): i64 = n * n
+public const fun cube(n: i64): i64 = n * n * n
+struct Counter {
+  var n: i64
+  const fun bump(by: i64) { this.n += by }
+  public static const fun zero(): Counter = Counter(n: 0)
+}
+extend Counter { const fun twice(): i64 = this.n * 2 }
+`
+	f, diags := parse(t, src)
+	if diags.HasErrors() {
+		t.Fatalf("parse errors:\n%s", diags.Render())
+	}
+	dump := ast.Dump(f)
+	for _, want := range []string{"(fun const square", "(fun public const cube", "(fun const bump", "(fun public static const zero", "(fun const twice"} {
+		if !strings.Contains(dump, want) {
+			t.Errorf("dump lacks %q:\n%s", want, dump)
+		}
+	}
+}
