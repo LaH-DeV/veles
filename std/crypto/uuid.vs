@@ -2,7 +2,7 @@
 // bytes, and v7, a millisecond timestamp followed by random bits — the
 // same uniqueness, but sorted by creation time, which is what a database
 // index wants.
-use time
+use codec, time
 
 /// A 128-bit identifier. `toString()` is the canonical lower-case form
 /// `0190d3e1-7c00-7000-8000-9a5b1c2d3e4f`; `parse` reads that, or the same
@@ -137,6 +137,26 @@ public struct Uuid {
       }
       out.toString()
     }
+  }
+
+  implement Encodable {
+    fun encode(to: codec.Encoder) throws EncodeError {
+      try to.writeString(this.toString())
+    }
+  }
+
+  implement Decodable {
+    /// The text form, `8-4-4-4-12` hex digits; anything else is a problem at the field.
+    static fun decode(from: codec.Decoder): Uuid throws DecodeError {
+      val text = try from.readString()
+      val id = Uuid.parse(text)
+      if (id != null) return id
+      from.problem("not a UUID: '$text'")
+      Uuid.zero()
+    }
+
+    override static fun schema(format: string, keys: codec.KeyStyle): codec.Schema =
+      codec.Schema.leaf(codec.SchemaKind.Text, "a UUID like 123e4567-e89b-12d3-a456-426614174000")
   }
 
   implement Comparable {

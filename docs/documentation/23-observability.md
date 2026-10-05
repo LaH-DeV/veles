@@ -187,8 +187,8 @@ telemetry still queued, closing the `with` prints one line to standard error
 saying how much was lost.
 
 `examples/telemetry` runs a service and a client in one program with all of
-this on, and shows the trace crossing the call. Not in the module yet: runtime
-metrics (garbage collection, tasks, threads), a span per database query
-(`std/db`), and `https` export.
+this on, and shows the trace crossing the call. Each database statement
+([chapter 24](24-databases.md)) is a client span too. Not in the module yet: runtime
+metrics (garbage collection, tasks, threads).
 
 Next: back to the [index](index.md).

@@ -614,7 +614,9 @@ behind a name that says "crypto" (§10, 2026-09-23).
       caller, `exp` required by default, `crit` rejected, a key shorter than
       the digest refused, and `Reason` so `Expired` can be told from the rest;
       checked against the RFC 7515 A.1 token
-- [ ] Password hashing (argon2id) via binding
+- [x] Password hashing: `crypto.hashPassword` / `verifyPassword`, Argon2id in PHC form, OWASP parameters, ~60 ms at -O2 (2026-10-05, E2) —
+      written in Veles instead of the libargon2 binding (no native library to install); checked against the three
+      vectors of RFC 9106 and a hash made by argon2-cffi
 - [ ] RS256/ES256 — needs bignum or a binding (blocked on 1.2)
 - [ ] A `Hasher` that is not a SHA: BLAKE3 or SHA-3 when something asks
 - [x] Zeroing: std's HMAC/JWT keys are `Secret<List<u8>>` (D112, 2026-10-02);
@@ -671,13 +673,14 @@ behind a name that says "crypto" (§10, 2026-09-23).
 
 ### 5.8 `std/db`
 
-- [ ] PostgreSQL: libpq binding first, pure wire protocol later (needs
-      SCRAM-SHA-256 from 5.5)
-- [ ] Connection pool with health checks
-- [ ] Parameterized queries only; no string concatenation path
-- [ ] Transactions as a `with` resource
-- [ ] Row → struct mapping through the derive (1.1)
-- [ ] Statement and connection timeouts
+- [x] PostgreSQL over the wire protocol, written in Veles (2026-10-05, E2): the extended query protocol, SCRAM-SHA-256,
+      TLS through `std/tls`; no libpq. Tested against PostgreSQL 16 on Windows and Linux (`driver/db_test.go`)
+- [x] Connection pool with health checks (a task checks idle connections; idle ones expire)
+- [x] Parameterized queries only; no string concatenation path (`sql"…"`, `Sql` has no constructor from a `string` but `dangerouslyRaw`)
+- [x] Transactions as a `with` resource (a block that ends without `commit` abandons the transaction, see §11)
+- [x] Row → struct mapping through the derive (`@key(db:)`, snake_case columns, NULL, arrays, bytea, timestamps, uuid)
+- [x] Statement and connection timeouts
+- [x] A span per statement (D126), with the text and never the values
 - [ ] Migrations helper (later)
 
 ### 5.9 Observability
@@ -889,7 +892,7 @@ behind a name that says "crypto" (§10, 2026-09-23).
       `Timestamp`. Only the last section reads the host clock, and only for
       what holds of every reading of one
 - [ ] `examples/apiclient`: calls a JSON API over TLS
-- [ ] `examples/pgnotes`: the notes API on PostgreSQL
+- [ ] `examples/pgnotes`: the notes API on PostgreSQL (needs a server: an example whose expected output the suite can compare must start one; see §11)
 
 ---
 
@@ -1166,8 +1169,7 @@ Every new public std API (http cookies/forms/client, `std/log`,
     the working directory; `${VAR}` interpolation in dotenv (decided against for now); a JSON file's keys are
     the declared field names, `@key(json: …)` is not consulted; a hand-written `decode` has an opaque schema,
     so such a type is one variable; a generic sealed trait has no derive.
-  - `std/fs`: argon2id password hashing (`crypto.hashPassword`/`verifyPassword`, needs the `[native]`
-    binding of libargon2); byte-range and shared (read) locks; a copy that keeps permissions and times, and
+  - `std/fs`: byte-range and shared (read) locks; a copy that keeps permissions and times, and
     an atomic `copy`; on Windows `writeAtomic` cannot replace a file another handle has open (POSIX
     disposition semantics would); `fs.lines` yields `IoError` for a too-long line (an `io.TooLong` would need
     a union as a `Result` error type).
@@ -1184,6 +1186,24 @@ Every new public std API (http cookies/forms/client, `std/log`,
   not); a tag with explicit type arguments (`tag<T>"…"` is not parsed); multi-line and raw literals
   (Veles has neither yet) tagged; when the Veles lexer/parser is written (`veles-selfhost-frontend-plan.md`) it
   needs the `TemplateExpr` node and its adjacency rule, and the self-host oracle compares `(template …)` in `Dump`.
+- **Deferred from E2 `std/db` (2026-10-05), to build later:** other databases (MySQL, SQLite) and the pooling of
+  prepared statements — every statement is parsed afresh (an unnamed statement), a named-statement cache per
+  connection would save the parse and is the first performance step (`veles-bench` it against a tight query loop);
+  streaming a large result row by row (a result is read whole into memory; a `maxRows` ceiling and a cursor
+  API are the way); `COPY`, `LISTEN`/`NOTIFY`, cancel requests (a statement past its time is cancelled by
+  dropping the connection); a retry helper for `isRetryable()` transactions; reading `interval`, `numeric` with a
+  fraction, `json`/`jsonb` and multi-dimensional arrays into typed fields (they read as text); `Duration`
+  decoding (the decoder's duration style is seconds, the server's text is `HH:MM:SS`); SASLprep of passwords with
+  non-ASCII characters (the password is used as written, which only differs for characters that normalise);
+  unix-socket and `PGPASSFILE`/`PG*` environment connections; `target_session_attrs` and several hosts;
+  **`Tx.close()` cannot send `ROLLBACK`** (closing cannot suspend — the same language question as `otel.start`'s
+  flush): an abandoned transaction drops its connection, which costs a reconnect; `Pool.close()` likewise only closes
+  idle connections; `examples/pgnotes` and a `veles new --template` with a database need a server in the example
+  harness; `driver/db_test.go` skips when no PostgreSQL binaries are given (`VELES_PG_BIN`), so a machine without them
+  runs only the tests that need no server; on Windows PostgreSQL sometimes resets the connection after refusing a login,
+  which then shows as `ErrorKind.Connection` rather than `Auth` (the reset discards the unread error); `needsRehash`
+  for stored password hashes whose parameters fell behind; `Uuid` is now `Codable` (text form) — a std addition made for
+  `std/db`.
 - **Deferred from E1 TLS (2026-10-05):** the server span's `url.scheme` is `http` even under `serve(tls:)` (a `Request` does not know it came over TLS); macOS (SecureTransport/Network.framework or the system's OpenSSL —
   the dlopen list names Homebrew's, untested; A7); client certificates (mutual TLS) and the server asking for
   them; revocation checking (CRL/OCSP) and OCSP stapling; session resumption tickets kept across connections;

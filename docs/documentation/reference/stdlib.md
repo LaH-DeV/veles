@@ -659,6 +659,32 @@ tls.reloading(certPath: string, keyPath: string, every: Duration, alpn: List<str
 reloader.certificate(): tls.Certificate
 ```
 
+## Module `db`
+
+PostgreSQL, written in Veles over `std/net`, `std/tls` and `std/crypto` ([chapter 24](../24-databases.md)).
+
+```veles
+// fragment
+use db
+sql"select id from users where name = ${name}"        // a Sql: the text keeps $1, $2; values travel apart
+db.ident(name: string): Sql?                              // a quoted table or column name, null unless letters, digits, _ and dots
+Sql.dangerouslyRaw(text: string): Sql                     // migrations and DDL: the text is the query
+sql.text(): string  sql.valueCount(): i64                 // the text with placeholders; how many values
+trait db.Param { fun toArg(): db.Arg }                    // implemented for the numbers, bool, string, List<u8>, Timestamp, Duration, Uuid, T?, Secret, Sql
+db.open(url: Secret<string>, size: i64 = 10, timeout: Duration = 30s, connectTimeout: Duration = 10s, application: string = "veles", checkEvery: Duration = 30s, idleTimeout: Duration = 5m): db.Pool suspends throws db.DbError   // holds a task: `with`-bind it
+pool.query<T: Decodable>(statement: Sql, timeout: Duration? = null): List<T> suspends throws db.DbError | DecodeError
+pool.queryOne<T: Decodable>(statement: Sql, timeout: Duration? = null): T? suspends throws db.DbError | DecodeError
+pool.exec(statement: Sql, timeout: Duration? = null): i64 suspends throws db.DbError   // rows affected
+pool.ping() suspends throws db.DbError
+pool.begin(timeout: Duration? = null): db.Tx suspends throws db.DbError   // `with tx = try pool.begin()`
+tx.query / tx.queryOne / tx.exec                          // as on the pool
+tx.commit() suspends throws db.DbError                    // not committed when the block ends: abandoned, the database rolls back
+tx.rollback() suspends throws db.DbError                  // the connection returns to the pool
+// DbError: kind (Connection, Closed, Timeout, Auth, Server, Protocol, Config), text, code (SQLSTATE), detail, hint, severity
+//   isUniqueViolation() isForeignKeyViolation() isConstraintViolation() isRetryable() isCancelled()
+// Pool and Tx are Closeable
+```
+
 ## Module `http`
 
 An HTTP/1.1 server and client on `net` ([chapter 17](../17-http.md)).
@@ -951,13 +977,15 @@ crypto.randomBytes(n: i64): List<u8>         // the OS CSPRNG; panics if it refu
 crypto.randomU64(): u64
 crypto.uuidV4(): Uuid                        // 122 random bits
 crypto.uuidV7(): Uuid                        // time-ordered, strictly increasing
+crypto.hashPassword(password: Secret<string>): string        // Argon2id, PHC string, 19 MiB / 2 passes / 1 lane, random salt
+crypto.verifyPassword(password: Secret<string>, hash: string): bool   // constant time; false for anything that is not an Argon2id hash or asks for too much
 ```
 
 `Digest`: `bytes()`, `len()`, `toHex()`, `toBase64Url()`, `prefix(n)`,
 `Digest.of(bytes)`; `==` is constant time, `"$d"` is lower-case hex.
 
 `Uuid`: `version()`, `timestamp()` (v7 only), `bytes()`, `isZero()`,
-`Uuid.parse(text): Uuid?`, `Uuid.of(bytes)`, `Uuid.zero()`; `Comparable`,
+`Codable` (its text form), `Uuid.parse(text): Uuid?`, `Uuid.of(bytes)`, `Uuid.zero()`; `Comparable`,
 so a list of v7 ids sorts into creation order.
 
 `Hasher` is the trait behind the four digests: `start`, `algorithm`,

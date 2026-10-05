@@ -271,6 +271,26 @@ use. That last case is a *non-canonical* encoding: without the check, two
 different texts decode to the same signature, and a replay filter keyed on
 the text never notices.
 
+## Password hashing
+
+A stored password is never the password and never a plain hash of it: `sha256` is made to be fast, which is the wrong property when the attacker has the database and a GPU. `crypto.hashPassword` is Argon2id, which is made to be slow and to need memory, with the parameters OWASP recommends for a login (19 MiB, two passes, about 60 ms):
+
+```veles
+// fragment
+use crypto
+
+val stored = crypto.hashPassword(Secret.of(form.password))
+// $argon2id$v=19$m=19456,t=2,p=1$<salt>$<hash>  — the whole string is what you store
+
+if (!crypto.verifyPassword(Secret.of(attempt), stored)) {
+  // wrong password
+}
+```
+
+The string carries its own salt (random, fresh for each call) and its own parameters, so raising the cost later does not invalidate the hashes already stored. `verifyPassword` compares in constant time and is `false`, never a panic, for a string that is not an Argon2id hash or that asks for more than a login should cost (over 1 GiB, 64 passes, 64 lanes). It reads hashes made elsewhere in the same format — `argon2-cffi`, `libargon2`, the `argon2` command line.
+
+The implementation is Veles' own, checked against all three test vectors of RFC 9106 (Argon2d, i and id) and against a hash made by another library.
+
 ## JSON Web Tokens
 
 `jwt` signs and verifies HMAC tokens. The interesting half is what it
