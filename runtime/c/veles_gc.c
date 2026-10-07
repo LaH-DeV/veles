@@ -704,6 +704,25 @@ void veles_lock_enter(veles_lock *l) {
     }
 }
 
+/* veles_lock_enter for a lock the collector never takes (the executor's
+ * runtime lock): a waiter keeps the lock it gets and waits out a collection
+ * holding it, as it leaves the safe region — every thread waiting for it is
+ * in a safe region too, so the collection is not held up. Giving the lock
+ * back to try again, as veles_lock_enter must (the collector takes the heap
+ * lock), hands a contended lock over twice per entry: under many threads
+ * that convoy was most of the executor's time (bench/httphello,
+ * 2026-10-07). */
+void veles_lock_enter_kept(veles_lock *l) {
+    if (veles_stop_requested) veles_gc_park();
+    if (veles_lock_try(l)) {
+        if (!veles_stop_requested || !me || me->safe > 0) return;
+        veles_lock_release(l);
+    }
+    veles_enter_safe();
+    veles_lock_acquire(l);
+    veles_leave_safe();
+}
+
 static void heap_acquire(void) {
     veles_lock_enter(heap_lock);
 }

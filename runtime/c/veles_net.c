@@ -105,7 +105,12 @@ static void set_nonblocking(sock_t s) {
 #endif
 }
 
+void veles_poll_forget(int64_t fd);
+
+/* every close goes through here: the reactor drops the descriptor first, so
+ * a socket that reuses the number never inherits its poll request */
 static void close_sock(sock_t s) {
+    veles_poll_forget((int64_t)s);
 #if defined(_WIN32)
     closesocket(s);
 #else
@@ -236,10 +241,18 @@ int64_t veles_net_connect_result(int64_t fd) {
 }
 
 /* 0 with the bytes in out (none = the peer closed), 1 would block */
+/* Up to RECV_STACK bytes are received on the C stack and copied into a
+ * block of exactly the size that arrived: allocating `max` bytes up front
+ * made every call — the would-block ones too — 64 KiB of garbage, which
+ * was most of the cost of a small HTTP request (bench/httphello). A larger
+ * `max` receives straight into its own block. */
+#define RECV_STACK 65536
+
 int64_t veles_net_recv(int64_t fd, int64_t max, veles_string *out) {
     if (max < 1) max = 1;
     if (max > 1 << 20) max = 1 << 20;
-    char *buf = veles_alloc(max + 1);
+    char local[RECV_STACK];
+    char *buf = max <= RECV_STACK ? local : veles_alloc(max + 1);
 #if defined(_WIN32)
     int n = recv((sock_t)fd, buf, (int)max, 0);
 #else
@@ -248,6 +261,10 @@ int64_t veles_net_recv(int64_t fd, int64_t max, veles_string *out) {
     if (n < 0) {
         int64_t code = last_error();
         return would_block(code) ? 1 : code;
+    }
+    if (buf == local) {
+        buf = veles_alloc(n + 1);
+        memcpy(buf, local, (size_t)n);
     }
     buf[n] = 0;
     out->data = buf;

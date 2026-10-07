@@ -18,6 +18,11 @@ var OSSource string
 //go:embed c/veles_net.c
 var NetSource string
 
+// PollSource is the reactor the executor waits on sockets with (plan E3).
+//
+//go:embed c/veles_poll.c
+var PollSource string
+
 //go:embed c/veles_ffi.c
 var FFISource string
 

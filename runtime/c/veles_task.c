@@ -23,11 +23,9 @@
 #include <setjmp.h>
 
 #if defined(_WIN32)
-#include <winsock2.h> /* before windows.h: WSAPoll drives socket waits */
 #include <windows.h>
 #else
 #include <unistd.h>
-#include <poll.h>
 #endif
 
 #include "veles_tls.h"
@@ -53,7 +51,7 @@ void veles_cond_broadcast(veles_cond *c);
 int64_t veles_thread_spawn(void (*fn)(void *), void *arg);
 int64_t veles_thread_spawn_small(void (*fn)(void *), void *arg);
 int64_t veles_cpu_count(void);
-void veles_lock_enter(veles_lock *l);
+void veles_lock_enter_kept(veles_lock *l);
 void veles_lock_acquire(veles_lock *l);
 void veles_enter_safe(void);
 void veles_leave_safe(void);
@@ -101,7 +99,7 @@ typedef struct veles_task {
     int64_t listed;               /* on its scope's children list */
     int64_t wake_at;        /* timer, ms since start; 0 = none */
     int64_t yielded;        /* sleep(0) put the task at the back of the run queue once */
-    struct veles_task *timer_next;
+    int64_t timer_slot;     /* its place in the timer heap + 1; 0 = none */
     veles_race *race;
     int64_t panicked;
     const char *panic_msg;
@@ -116,7 +114,8 @@ typedef struct veles_task {
     int64_t io_write;       /* waiting to write rather than read */
     int64_t io_waiting;
     int64_t io_ready;
-    struct veles_task *io_next;
+    struct veles_task *io_next;   /* the other tasks parked on io_fd the same way */
+    struct veles_task *io_prev;
     int64_t cancel_requested; /* unwinds at its next suspension point (D20/D43) */
     struct veles_task *awaiting; /* the task this one is blocked in await on */
     struct veles_cleanup *cleanups; /* active `with` closes and scope joins, innermost first */
@@ -179,7 +178,8 @@ struct veles_race {
     int64_t narms;
 };
 
-static veles_task *timers;
+static veles_task **theap;  /* the timer heap (timers, below) */
+static int64_t theap_len, theap_cap;
 
 /* a `time.ticker` (D110; see fire_tickers) */
 typedef struct veles_ticker {
@@ -189,7 +189,14 @@ typedef struct veles_ticker {
 } veles_ticker;
 
 static veles_ticker *tickers;
-static veles_task *io_waiters;
+/* the tasks parked on sockets, by descriptor (socket waits, below) */
+typedef struct io_entry {
+    int64_t key;            /* the descriptor + 1; 0 = an empty slot */
+    veles_task *readers, *writers;
+} io_entry;
+static io_entry *io_table;  /* on the GC heap, word-scanned: it keeps the parked tasks alive */
+static int64_t io_cap, io_used;
+static int64_t io_count;    /* tasks parked on a socket (runtime lock; read without it as a hint) */
 #define current (veles_tls_get()->task)
 static int64_t start_ms;
 static veles_task *gq_head, *gq_tail; /* the shared queue (run queues, below) */
@@ -211,10 +218,24 @@ static veles_cond *spare_cv;    /* a run queue was handed off (blocking calls), 
 #define rt_depth (veles_tls_get()->rt_depth)
 static veles_task *root_task;   /* the task veles_run drives; NULL between runs */
 static int64_t active_workers;  /* workers inside a task (atomic) */
+
+/* the reactor (veles_poll.c) */
+typedef struct veles_poll_event {
+    int64_t fd;
+    int32_t read;
+    int32_t write;
+} veles_poll_event;
+void veles_poll_init(void);
+int64_t veles_poll_arm(int64_t fd, int64_t read, int64_t write);
+int64_t veles_poll_wait(int64_t timeout_ms, veles_poll_event *out, int64_t max);
+void veles_poll_wake(void);
 static int64_t idle_workers;    /* waiting on work_cv; changed under the runtime lock */
 static int64_t waking;          /* a worker was signalled and has not come back yet */
 static void rt_enter(void);
 static void rt_exit(void);
+
+static int64_t poller_busy;     /* a worker is waiting in the reactor (runtime lock) */
+static int64_t poller_blocked;  /* ... and may be blocked there: work must interrupt it (atomic) */
 
 /* A task was queued: wake one idle worker, unless one is already on its
  * way. Waking a worker per queued task would have them all fight over
@@ -224,8 +245,22 @@ static void rt_exit(void);
  * a sleeper holds it from counting itself idle, through a last look at
  * the queues, into the wait: a signal sent under the lock to a positive
  * count reaches a waiting worker. */
+static int64_t spinning; /* workers looking for work before they sleep (atomic; Go's nmspinning) */
+
 static void wake_worker(void) {
-    if (__atomic_load_n(&idle_workers, __ATOMIC_SEQ_CST) == 0 || __atomic_load_n(&waking, __ATOMIC_RELAXED)) return;
+    /* the caller's queueing is ordered before the flags are read, as a
+     * spinner that gives up, and the poller, order theirs before they look
+     * at the queues again (spin_for_task, poll_io) */
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);
+    /* a worker is already looking: it finds the task, and wakes the next
+     * if more are waiting */
+    if (__atomic_load_n(&waking, __ATOMIC_RELAXED) || __atomic_load_n(&spinning, __ATOMIC_SEQ_CST)) return;
+    if (__atomic_load_n(&idle_workers, __ATOMIC_SEQ_CST) == 0) {
+        /* the one idle thread may be the one waiting for sockets (Go's
+         * netpollBreak): one system call, however many wakes */
+        if (__atomic_load_n(&poller_blocked, __ATOMIC_SEQ_CST)) veles_poll_wake();
+        return;
+    }
     rt_enter();
     if (idle_workers > 0 && !waking) {
         waking = 1;
@@ -233,11 +268,10 @@ static void wake_worker(void) {
     }
     rt_exit();
 }
-static int64_t poller_busy;     /* a worker is blocked in poll() */
 static int64_t workers_started;
 
 static void rt_enter(void) {
-    veles_lock_enter(rt_lock);
+    veles_lock_enter_kept(rt_lock);
     rt_depth++;
 }
 
@@ -256,9 +290,9 @@ static void register_roots(void) {
     roots_registered = true;
     veles_gc_root(&gq_head, NULL);
     veles_gc_root(&gq_tail, NULL);
-    veles_gc_root(&timers, NULL);
+    veles_gc_root(&theap, NULL);
     veles_gc_root(&tickers, NULL);
-    veles_gc_root(&io_waiters, NULL);
+    veles_gc_root(&io_table, NULL);
     veles_gc_root(&root_task, NULL);
 }
 
@@ -268,6 +302,7 @@ void veles_task_init(void) {
     rt_lock = veles_lock_new();
     work_cv = veles_cond_new();
     spare_cv = veles_cond_new();
+    veles_poll_init();
     register_roots();
 }
 
@@ -669,7 +704,9 @@ static veles_worker *take_free_worker(void) {
 /* whether a queue stuck behind a blocking call keeps work waiting */
 static int work_waiting(void) {
     if (__atomic_load_n(&idle_workers, __ATOMIC_SEQ_CST) > 0) return 0; /* an idle worker takes it */
-    return anything_queued() || timers_due() || __atomic_load_n(&io_waiters, __ATOMIC_RELAXED) != NULL;
+    /* parked sockets need a thread only while none waits in the reactor */
+    return anything_queued() || timers_due() ||
+           (__atomic_load_n(&io_count, __ATOMIC_RELAXED) > 0 && !__atomic_load_n(&poller_busy, __ATOMIC_RELAXED));
 }
 
 static void hand_off(veles_worker *w) {
@@ -1516,39 +1553,92 @@ static void chan_close_after_locked(veles_chan *c, int64_t n, wakes *k) {
 
 static bool race_claim(veles_race *r, int64_t arm);
 
-/* ---- timers ------------------------------------------------------------------ */
+/* ---- timers ------------------------------------------------------------------
+ * The tasks with a deadline (sleep, a race's timeout arm) are a binary
+ * min-heap by wake_at: arming and disarming are O(log n), the nearest is
+ * the root. Each task knows its slot (timer_slot, index + 1; 0 = none). A
+ * server holds a timer per connection, and the list this replaced was
+ * scanned whole by every worker's every pass (bench/httphello). The heap
+ * array is on the GC heap and rooted: it keeps the sleeping tasks alive. */
+
+static void heap_put(int64_t i, veles_task *t) {
+    theap[i] = t;
+    t->timer_slot = i + 1;
+}
+
+static void heap_up(int64_t i) {
+    veles_task *t = theap[i];
+    while (i > 0) {
+        int64_t p = (i - 1) / 2;
+        if (theap[p]->wake_at <= t->wake_at) break;
+        heap_put(i, theap[p]);
+        i = p;
+    }
+    heap_put(i, t);
+}
+
+static void heap_down(int64_t i) {
+    veles_task *t = theap[i];
+    for (;;) {
+        int64_t c = 2 * i + 1;
+        if (c >= theap_len) break;
+        if (c + 1 < theap_len && theap[c + 1]->wake_at < theap[c]->wake_at) c++;
+        if (theap[c]->wake_at >= t->wake_at) break;
+        heap_put(i, theap[c]);
+        i = c;
+    }
+    heap_put(i, t);
+}
+
+/* takes t out of the heap; its wake_at stays (sleep reads it) */
+static void heap_remove(veles_task *t) {
+    int64_t i = t->timer_slot - 1;
+    if (i < 0) return;
+    t->timer_slot = 0;
+    veles_task *last = theap[--theap_len];
+    theap[theap_len] = NULL;
+    if (last == t) return;
+    heap_put(i, last);
+    heap_up(i);
+    heap_down(last->timer_slot - 1);
+}
 
 static void remove_timer(veles_task *t) {
-    veles_task **pp = &timers;
-    while (*pp) {
-        if (*pp == t) {
-            *pp = t->timer_next;
-            t->timer_next = NULL;
-            continue;
-        }
-        pp = &(*pp)->timer_next;
-    }
+    heap_remove(t);
     t->wake_at = 0;
 }
 
+/* arms t's timer for the absolute time at (ms since start) */
+static void timer_at(veles_task *t, int64_t at) {
+    heap_remove(t);
+    if (theap_len == theap_cap) {
+        int64_t cap = theap_cap ? theap_cap * 2 : 64;
+        veles_task **grown = veles_alloc_words(cap * (int64_t)sizeof *grown);
+        if (theap_len) memcpy(grown, theap, (size_t)theap_len * sizeof *grown);
+        theap = grown;
+        theap_cap = cap;
+    }
+    t->wake_at = at;
+    theap[theap_len] = t;
+    heap_up(theap_len++);
+    note_timer(at);
+}
+
 static void add_timer(veles_task *t, int64_t ms) {
-    t->wake_at = now_ms() + ms;
-    t->timer_next = timers;
-    timers = t;
-    note_timer(t->wake_at);
+    timer_at(t, now_ms() + ms);
 }
 
 /* sleep: true once the deadline passed; first call arms it and blocks.
  * A task can be woken before its deadline for another reason - a scope
  * child finishing wakes the scope's owner - and it then comes back here:
- * it must block again, still on the timer list. Returning 0 while leaving
+ * it must block again, its timer still armed. Returning 0 while leaving
  * the task T_RUNNABLE lost it: fire_timers' wake() only wakes a blocked
  * task, so the sleeper was never resumed and the executor reported a
  * deadlock (a producer finishing while main slept on a timer). */
 static int64_t veles_task_sleep_impl(veles_task *self, int64_t ms) {
     if (self->wake_at != 0) {
         if (now_ms() >= self->wake_at) {
-            self->wake_at = 0;
+            remove_timer(self);
             return 1;
         }
         self->state = T_BLOCKED;
@@ -1622,27 +1712,21 @@ static void fire_tickers(int64_t now) {
 static void fire_timers(void) {
     int64_t now = now_ms();
     fire_tickers(now);
-    veles_task **pp = &timers;
-    while (*pp) {
-        veles_task *t = *pp;
-        if (t->wake_at != 0 && now >= t->wake_at) {
-            *pp = t->timer_next;
-            t->timer_next = NULL;
-            if (t->race) {
-                /* the timer arm claims the race, unless another arm has */
-                veles_race *race = t->race;
-                t->wake_at = 0;
-                for (int64_t i = 0; i < race->narms; i++) {
-                    if (race->arms[i].deadline && race->arms[i].deadline <= now) {
-                        if (race_claim(race, i)) wake(t);
-                        break;
-                    }
+    while (theap_len > 0 && theap[0]->wake_at <= now) {
+        veles_task *t = theap[0];
+        heap_remove(t);
+        if (t->race) {
+            /* the timer arm claims the race, unless another arm has */
+            veles_race *race = t->race;
+            t->wake_at = 0;
+            for (int64_t i = 0; i < race->narms; i++) {
+                if (race->arms[i].deadline && race->arms[i].deadline <= now) {
+                    if (race_claim(race, i)) wake(t);
+                    break;
                 }
-            } else {
-                wake(t);
             }
         } else {
-            pp = &t->timer_next;
+            wake(t);
         }
     }
 }
@@ -1650,18 +1734,113 @@ static void fire_timers(void) {
 /* ---- socket waits (std/net) ------------------------------------------------ */
 
 /* Sockets are non-blocking; when a call would block, the task parks here
- * until the executor's poll reports the descriptor ready (readable,
- * writable, or in error - the retried call then reports what happened). */
+ * until the reactor (veles_poll.c) reports the descriptor ready (readable,
+ * writable, or in error - the retried call then reports what happened).
+ * The parked tasks are kept by descriptor in io_table, readers and writers
+ * apart, and the descriptor is armed for the union of what they wait for;
+ * all of it changes under the runtime lock. */
 
-static void remove_io_waiter(veles_task *t) {
-    veles_task **pp = &io_waiters;
-    while (*pp) {
-        if (*pp == t) {
-            *pp = t->io_next;
-            t->io_next = NULL;
-            continue;
+static uint64_t io_hash(int64_t key) {
+    return ((uint64_t)key * 0x9E3779B97F4A7C15ull) >> 17;
+}
+
+static io_entry *io_find(int64_t fd) {
+    if (!io_cap) return NULL;
+    int64_t key = fd + 1;
+    for (int64_t i = (int64_t)(io_hash(key) & (uint64_t)(io_cap - 1));; i = (i + 1) & (io_cap - 1)) {
+        if (io_table[i].key == key) return &io_table[i];
+        if (!io_table[i].key) return NULL;
+    }
+}
+
+static io_entry *io_insert_key(io_entry *table, int64_t cap, int64_t key) {
+    int64_t i = (int64_t)(io_hash(key) & (uint64_t)(cap - 1));
+    while (table[i].key && table[i].key != key) i = (i + 1) & (cap - 1);
+    table[i].key = key;
+    return &table[i];
+}
+
+static io_entry *io_find_or_add(int64_t fd) {
+    io_entry *e = io_find(fd);
+    if (e) return e;
+    if ((io_used + 1) * 2 > io_cap) {
+        int64_t cap = io_cap ? io_cap * 2 : 64;
+        io_entry *grown = veles_alloc_words(cap * (int64_t)sizeof *grown);
+        for (int64_t i = 0; i < io_cap; i++) {
+            if (!io_table[i].key) continue;
+            io_entry *n = io_insert_key(grown, cap, io_table[i].key);
+            n->readers = io_table[i].readers;
+            n->writers = io_table[i].writers;
         }
-        pp = &(*pp)->io_next;
+        io_table = grown;
+        io_cap = cap;
+    }
+    io_used++;
+    return io_insert_key(io_table, io_cap, fd + 1);
+}
+
+/* an entry with no task left leaves the table: the rest of its probe run
+ * moves up, so a lookup never stops at a hole */
+static void io_drop(io_entry *e) {
+    int64_t i = e - io_table;
+    io_table[i] = (io_entry){0};
+    io_used--;
+    for (int64_t j = (i + 1) & (io_cap - 1); io_table[j].key; j = (j + 1) & (io_cap - 1)) {
+        io_entry moved = io_table[j];
+        io_table[j] = (io_entry){0};
+        io_entry *n = io_insert_key(io_table, io_cap, moved.key);
+        n->readers = moved.readers;
+        n->writers = moved.writers;
+    }
+}
+
+static void io_unlink(io_entry *e, veles_task *t) {
+    veles_task **head = t->io_write ? &e->writers : &e->readers;
+    if (t->io_prev) t->io_prev->io_next = t->io_next; else *head = t->io_next;
+    if (t->io_next) t->io_next->io_prev = t->io_prev;
+    t->io_next = t->io_prev = NULL;
+    io_count--;
+}
+
+/* arms e's descriptor for the tasks still on it; one the reactor refuses
+ * is woken as ready (its retried call says what is wrong) */
+static void io_wake_list(veles_task *t);
+
+static void io_rearm(io_entry *e) {
+    if (!e->readers && !e->writers) {
+        io_drop(e);
+        return;
+    }
+    if (veles_poll_arm(e->key - 1, e->readers != NULL, e->writers != NULL) == 0) return;
+    veles_task *r = e->readers, *w = e->writers;
+    io_drop(e);
+    io_wake_list(r);
+    io_wake_list(w);
+}
+
+/* wakes every task of a list that has left the table */
+static void io_wake_list(veles_task *t) {
+    while (t) {
+        veles_task *next = t->io_next;
+        t->io_next = t->io_prev = NULL;
+        io_count--;
+        t->io_ready = 1; /* io_waiting stays set, so the retry sees ready */
+        wake(t);
+        t = next;
+    }
+}
+
+/* the task stops waiting for its socket (cancelled, or leaving a scope) */
+static void remove_io_waiter(veles_task *t) {
+    if (t->io_waiting && !t->io_ready) {
+        io_entry *e = io_find(t->io_fd);
+        if (e) {
+            io_unlink(e, t);
+            /* the descriptor may stay armed for this task: a later report
+             * finds nobody, or wakes the others once too often - harmless,
+             * every wait is a retry loop */
+            if (!e->readers && !e->writers) io_drop(e);
+        }
     }
     t->io_waiting = 0;
     t->io_ready = 0;
@@ -1669,9 +1848,10 @@ static void remove_io_waiter(veles_task *t) {
 
 static int is_closing(int64_t fd);
 
-/* wait for fd: true once the poll saw it ready; the first call parks the
- * task, a wake for any other reason parks it again. A closed socket's -1,
- * or a descriptor being closed, is "ready" at once: the retry fails. */
+/* wait for fd: true once the reactor saw it ready; the first call parks
+ * the task, a wake for any other reason parks it again. A closed socket's
+ * -1, a descriptor being closed, or one the reactor cannot watch is
+ * "ready" at once: the retry fails or blocks (a regular file). */
 static int64_t veles_task_wait_io_impl(veles_task *self, int64_t fd, int64_t write) {
     if (self->io_waiting) {
         if (self->io_ready) {
@@ -1683,84 +1863,79 @@ static int64_t veles_task_wait_io_impl(veles_task *self, int64_t fd, int64_t wri
         return 0;
     }
     if (fd < 0 || is_closing(fd)) return 1;
+    io_entry *e = io_find_or_add(fd);
+    veles_task **head = write ? &e->writers : &e->readers;
+    int was_armed = (write ? e->writers : e->readers) != NULL;
     self->io_fd = fd;
     self->io_write = write;
+    self->io_prev = NULL;
+    self->io_next = *head;
+    if (*head) (*head)->io_prev = self;
+    *head = self;
+    io_count++;
+    /* a second task the same way changes nothing the reactor knows */
+    if (!was_armed && veles_poll_arm(fd, e->readers != NULL, e->writers != NULL) != 0) {
+        io_unlink(e, self);
+        if (!e->readers && !e->writers) io_drop(e);
+        return 1;
+    }
     self->io_waiting = 1;
     self->io_ready = 0;
-    self->io_next = io_waiters;
-    io_waiters = self;
     self->state = T_BLOCKED;
     return 0;
 }
 
-static int64_t io_waiter_count(void) {
-    int64_t n = 0;
-    for (veles_task *t = io_waiters; t; t = t->io_next) n++;
-    return n;
+/* wakes the tasks of each descriptor the reactor reported, and arms it
+ * again for the ones waiting the other way (runtime lock held) */
+static void io_dispatch(veles_poll_event *ev, int64_t n) {
+    for (int64_t i = 0; i < n; i++) {
+        io_entry *e = io_find(ev[i].fd);
+        if (!e) continue; /* everyone stopped waiting meanwhile */
+        veles_task *r = NULL, *w = NULL;
+        if (ev[i].read) {
+            r = e->readers;
+            e->readers = NULL;
+        }
+        if (ev[i].write) {
+            w = e->writers;
+            e->writers = NULL;
+        }
+        io_rearm(e);
+        io_wake_list(r);
+        io_wake_list(w);
+    }
 }
 
-/* poll every parked descriptor, waiting at most timeout_ms (-1: forever),
- * and wake the tasks whose descriptors are ready. Called with the runtime
- * lock held once; the wait itself happens without it, in a safe region, so
- * other workers keep running tasks and the collector may run. */
+#define POLL_BATCH 128
+
+/* Waits up to timeout_ms (-1: until interrupted) for socket events and
+ * wakes their tasks. Called with the runtime lock held; a wait that may
+ * block releases it and enters a safe region, so other workers run tasks
+ * and the collector may run, and is interrupted by veles_poll_wake when
+ * work arrives that no idle worker can take (wake_worker), or the root
+ * finishes. One thread at a time; a quick look (0) by a busy worker does
+ * not release the lock. */
 static void poll_io(int64_t timeout_ms) {
-    int64_t n = io_waiter_count();
-    if (n == 0 || poller_busy) return;
-#if defined(_WIN32)
-    WSAPOLLFD *fds = malloc(sizeof(WSAPOLLFD) * (size_t)n);
-#else
-    struct pollfd *fds = malloc(sizeof(struct pollfd) * (size_t)n);
-#endif
-    veles_task **tasks = malloc(sizeof(veles_task *) * (size_t)n);
-    int64_t i = 0;
-    for (veles_task *t = io_waiters; t; t = t->io_next, i++) {
-        tasks[i] = t;
-#if defined(_WIN32)
-        fds[i].fd = (SOCKET)t->io_fd;
-#else
-        fds[i].fd = (int)t->io_fd;
-#endif
-        fds[i].events = t->io_write ? POLLOUT : POLLIN;
-        fds[i].revents = 0;
-    }
-    if (timeout_ms > 0x7fffffff) timeout_ms = 0x7fffffff;
-    int r;
+    if (io_count == 0 || poller_busy) return;
+    veles_poll_event ev[POLL_BATCH];
+    int64_t n;
     if (timeout_ms == 0) {
-#if defined(_WIN32)
-        r = WSAPoll(fds, (ULONG)n, 0);
-#else
-        r = poll(fds, (nfds_t)n, 0);
-#endif
+        n = veles_poll_wait(0, ev, POLL_BATCH);
     } else {
         poller_busy = 1;
         int64_t depth = rt_depth;
         rt_unwind_to(0);
+        __atomic_store_n(&poller_blocked, 1, __ATOMIC_SEQ_CST);
+        /* work queued before the flag was seen: do not sleep through it */
+        if (anything_queued()) timeout_ms = 0;
         veles_enter_safe();
-#if defined(_WIN32)
-        r = WSAPoll(fds, (ULONG)n, (INT)timeout_ms);
-#else
-        r = poll(fds, (nfds_t)n, (int)timeout_ms);
-#endif
+        n = veles_poll_wait(timeout_ms, ev, POLL_BATCH);
         veles_leave_safe();
+        __atomic_store_n(&poller_blocked, 0, __ATOMIC_SEQ_CST);
         while (rt_depth < depth) rt_enter();
         poller_busy = 0;
     }
-    if (r > 0) {
-        for (i = 0; i < n; i++) {
-            if (fds[i].revents == 0) continue;
-            veles_task *t = tasks[i];
-            /* while the lock was released the task may have been cancelled
-             * or have moved on; only a task still waiting on this socket
-             * is woken */
-            if (!t->io_waiting || t->io_ready || t->io_fd != (int64_t)fds[i].fd) continue;
-            remove_io_waiter(t);
-            t->io_waiting = 1; /* stays "waiting" so the retry sees ready */
-            t->io_ready = 1;
-            wake(t);
-        }
-    }
-    free(fds);
-    free(tasks);
+    io_dispatch(ev, n);
 }
 
 /* ---- race (D38) ------------------------------------------------------------
@@ -1968,11 +2143,7 @@ static int64_t veles_race_wait_impl(veles_task *self, veles_race *r) {
         return won;
     }
     if (earliest) {
-        remove_timer(self);
-        self->wake_at = earliest;
-        self->timer_next = timers;
-        timers = self;
-        note_timer(earliest);
+        timer_at(self, earliest);
     }
     /* blocked — also when an arm registered above was claimed meanwhile:
      * its claimer wakes this task once it has filled the arm */
@@ -2350,9 +2521,7 @@ static void resume(veles_task *t) {
 
 static int64_t nearest_timer(void) {
     int64_t nearest = 0;
-    for (veles_task *x = timers; x; x = x->timer_next) {
-        if (x->wake_at && (!nearest || x->wake_at < nearest)) nearest = x->wake_at;
-    }
+    if (theap_len > 0) nearest = theap[0]->wake_at;
     for (veles_ticker *t = tickers; t; t = t->next) {
         if (!nearest || t->next_at < nearest) nearest = t->next_at;
     }
@@ -2434,6 +2603,37 @@ static int timers_due(void) {
     return due && now_ms() >= due;
 }
 
+/* A worker out of work looks again for a little while (tens of
+ * microseconds) before it goes to sleep, as Go's spinning threads do: a
+ * server's tasks park and wake many thousand times a second, and putting a
+ * thread to sleep on a condition variable and waking it costs more than
+ * the task it was woken for — with every core a worker, more threads made
+ * bench/httphello slower (2026-10-07). At most half the busy workers spin,
+ * wake_worker wakes no sleeper while one does, and a spinner that finds a
+ * task and was the last wakes the next if more are waiting. It stops early
+ * for what only the outer loop does: timers due, sockets no thread waits
+ * for, the root finished. */
+#define SPIN_ROUNDS 24
+
+static veles_task *spin_for_task(veles_worker *w) {
+    int64_t n = __atomic_load_n(&nworkers, __ATOMIC_ACQUIRE);
+    if (n < 2) return NULL;
+    int64_t busy = n - __atomic_load_n(&idle_workers, __ATOMIC_RELAXED);
+    if (2 * __atomic_load_n(&spinning, __ATOMIC_SEQ_CST) >= busy) return NULL;
+    __atomic_add_fetch(&spinning, 1, __ATOMIC_SEQ_CST);
+    veles_task *t = NULL;
+    for (int round = 0; round < SPIN_ROUNDS && !t; round++) {
+        for (int i = 0; i < 50; i++) cpu_pause();
+        if (timers_due()) break;
+        if (__atomic_load_n(&io_count, __ATOMIC_RELAXED) && !__atomic_load_n(&poller_busy, __ATOMIC_RELAXED)) break;
+        if (root_task && (root_task->state == T_DONE || root_task->state == T_CANCELLED)) break;
+        t = find_task(w);
+    }
+    int64_t left = __atomic_sub_fetch(&spinning, 1, __ATOMIC_SEQ_CST);
+    if (t && left == 0 && anything_queued()) wake_worker();
+    return t;
+}
+
 /* One thread's loop, entered and left with the runtime lock held once. The
  * lock is for the housekeeping — timers, sockets, going to sleep; tasks
  * are taken and run without it. It runs until the root has finished; stay
@@ -2461,7 +2661,9 @@ static void work(int stay) {
         }
         fire_timers();
         __atomic_store_n(&timer_due, nearest_timer(), __ATOMIC_RELAXED);
-        if (io_waiters && anything_queued()) poll_io(0); /* runnable tasks must not starve the sockets */
+        /* runnable tasks must not starve the sockets: a quick look, unless a
+         * thread is waiting in the reactor already */
+        if (io_count && !poller_busy && anything_queued()) poll_io(0);
         int64_t ran = 0;
         /* active from the first look at the queues to the last task run:
          * a worker holding a task it took is not idle, and no sleeper may
@@ -2470,13 +2672,15 @@ static void work(int stay) {
         rt_exit();
         for (;;) {
             veles_task *t = find_task(w);
+            if (!t) t = spin_for_task(w);
             if (!t) break;
             if (anything_queued()) wake_worker(); /* more waiting: a hand for them */
             run_task(t);
             ran++;
             if (tls->worker != w) break; /* handed off while t blocked */
             if (root_task && (root_task->state == T_DONE || root_task->state == T_CANCELLED)) break;
-            if (timers_due() || (io_waiters && ran % 64 == 0)) break;
+            if (timers_due()) break;
+            if (ran % 64 == 0 && __atomic_load_n(&io_count, __ATOMIC_RELAXED) && !__atomic_load_n(&poller_busy, __ATOMIC_RELAXED)) break;
         }
         __atomic_sub_fetch(&active_workers, 1, __ATOMIC_SEQ_CST);
         rt_enter();
@@ -2484,6 +2688,7 @@ static void work(int stay) {
             if (root_finished()) {
                 veles_cond_broadcast(work_cv);
                 veles_cond_broadcast(spare_cv);
+                if (poller_busy) veles_poll_wake();
             }
             continue;
         }
@@ -2491,11 +2696,12 @@ static void work(int stay) {
         int64_t nearest = nearest_timer();
         int64_t wait = nearest ? nearest - now_ms() : -1;
         if (nearest && wait < 0) wait = 0;
-        if (io_waiters && !poller_busy) {
-            /* another worker may register a socket or wake a task while
-             * this one sits in poll(): keep the wait short while any run */
-            if (__atomic_load_n(&active_workers, __ATOMIC_SEQ_CST) > 0 && (wait < 0 || wait > 10)) wait = 10;
-            poll_io(wait < 0 ? 1000 : (wait == 0 ? 1 : wait));
+        if (io_count && !poller_busy) {
+            /* this thread waits in the reactor until a socket is ready, the
+             * nearest timer, or new work interrupts it (wake_worker). The
+             * second is a backstop: a lost interrupt would cost a second,
+             * not a hang */
+            poll_io(wait < 0 || wait > 1000 ? 1000 : wait);
             continue;
         }
         if (wait == 0) continue;
@@ -2508,7 +2714,7 @@ static void work(int stay) {
             idle_workers--;
             continue; /* finished while this worker looked: nothing is stuck */
         }
-        if (!nearest && !io_waiters && !poller_busy && __atomic_load_n(&active_workers, __ATOMIC_SEQ_CST) == 0 && !any_runnext()) {
+        if (!nearest && !io_count && !poller_busy && __atomic_load_n(&active_workers, __ATOMIC_SEQ_CST) == 0 && !any_runnext()) {
             veles_panic("deadlock: every task is blocked", 31);
         }
         if (wait < 0 || wait > 50) wait = 50; /* recheck: a timer set elsewhere, a deadlock */
@@ -2866,16 +3072,12 @@ void veles_io_closing(int64_t fd) {
         }
         closing_fds[closing_len++] = fd;
     }
-    veles_task *t = io_waiters;
-    while (t) {
-        veles_task *next = t->io_next;
-        if (t->io_fd == fd && t->io_waiting && !t->io_ready) {
-            remove_io_waiter(t);
-            t->io_waiting = 1; /* stays "waiting" so the retry sees ready */
-            t->io_ready = 1;
-            wake(t);
-        }
-        t = next;
+    io_entry *e = io_find(fd);
+    if (e) {
+        veles_task *r = e->readers, *w = e->writers;
+        io_drop(e);
+        io_wake_list(r);
+        io_wake_list(w);
     }
     rt_exit();
 }

@@ -22,6 +22,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -349,6 +351,42 @@ var references = map[string]func() string{
 			sum += v
 		}
 		return strconv.FormatInt(sum, 10)
+	},
+	"httphello": func() string {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		must(err)
+		srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			io.WriteString(w, "hello, world")
+		})}
+		go srv.Serve(ln)
+		defer srv.Close()
+		url := "http://" + ln.Addr().String() + "/"
+		sums := make([]int64, 64)
+		var wg sync.WaitGroup
+		for c := 0; c < 64; c++ {
+			wg.Add(1)
+			go func(c int) {
+				defer wg.Done()
+				tr := &http.Transport{MaxIdleConnsPerHost: 1}
+				defer tr.CloseIdleConnections()
+				client := &http.Client{Transport: tr}
+				for i := 0; i < 250; i++ {
+					res, err := client.Get(url)
+					must(err)
+					body, err := io.ReadAll(res.Body)
+					must(err)
+					res.Body.Close()
+					sums[c] += int64(len(body))
+				}
+			}(c)
+		}
+		wg.Wait()
+		var total int64
+		for _, s := range sums {
+			total += s
+		}
+		return strconv.FormatInt(total, 10)
 	},
 	"pipes": func() string {
 		sums := make([]int64, 8)
