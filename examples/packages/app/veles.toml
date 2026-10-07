@@ -4,3 +4,10 @@ version = "0.1.0"
 
 [dependencies]
 mathlib = "../mathlib"   # a path dependency; long form: { path = "../mathlib" }
+
+# A package from a registry, pinned to an exact version. Its files are copied
+# into vendor/ (`veles vendor`), so this example builds with no network and no
+# module cache; veles.sum holds the hash that vendor/ is checked against. In a
+# real project there would also be a [registry] table with the registry's
+# address and public key (chapter 11).
+greeter = { registry = "veles/greeter", version = "1.0.0" }

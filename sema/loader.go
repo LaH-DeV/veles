@@ -1,6 +1,8 @@
 package sema
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -34,7 +36,8 @@ type Package struct {
 	// manifest applies, and only standard modules can be imported.
 	Script    string
 	Deps      map[string]*Package
-	KeyPrefix string // "" for the entry package, "dep/<name>/" for dependencies
+	KeyPrefix string    // "" for the entry package, "dep/<name>/" for dependencies
+	table     *depTable // every dependency package of the program, one instance per identity
 	diags     *source.Diagnostics
 	// overlay maps OverlayKey(path) to unsaved editor contents (LSP).
 	overlay map[string]string
@@ -204,6 +207,18 @@ func (p *Package) Resolve(path []string, span source.Span, from *Module) *Module
 		if depPath, ok := p.Manifest.Deps[path[0]]; ok {
 			return p.resolveDep(path[0], depPath, path[1:], span)
 		}
+		for _, d := range p.Manifest.Requires {
+			if d.Name == path[0] {
+				if dir, ok := p.table.remoteDir(p.Manifest, d.Name); ok {
+					return p.resolveDep(d.Name, dir, path[1:], span)
+				}
+				if p.table.remoteFailed {
+					return nil
+				}
+				p.diags.Errorf(span, "dependency '%s' comes from %s '%s', which was not fetched (run `veles fetch`)", d.Name, d.Kind(), d.Source())
+				return nil
+			}
+		}
 	}
 	key := p.KeyPrefix + strings.Join(path, "/")
 	if m, ok := p.Modules[key]; ok {
@@ -297,7 +312,7 @@ func loadPackage(entry string, diags *source.Diagnostics, overlay map[string]str
 			return nil, err
 		}
 		dir := filepath.Dir(abs)
-		p := &Package{Root: dir, Script: abs, GivenDir: dir, Modules: map[string]*Module{}, Deps: map[string]*Package{}, diags: diags, overlay: overlay, timings: timings}
+		p := &Package{Root: dir, Script: abs, GivenDir: dir, Modules: map[string]*Module{}, Deps: map[string]*Package{}, table: newDepTable(), diags: diags, overlay: overlay, timings: timings}
 		given, ok := p.loadScript(abs)
 		if !ok {
 			return p, nil
@@ -315,12 +330,28 @@ func loadPackage(entry string, diags *source.Diagnostics, overlay map[string]str
 	if err != nil {
 		return nil, err
 	}
-	p := &Package{Root: root, Modules: map[string]*Module{}, Deps: map[string]*Package{}, diags: diags, overlay: overlay, timings: timings}
+	p := &Package{Root: root, Modules: map[string]*Module{}, Deps: map[string]*Package{}, table: newDepTable(), diags: diags, overlay: overlay, timings: timings}
 	man, err := readManifest(root)
 	if err != nil {
 		return nil, err
 	}
 	p.Manifest = man
+	p.table.byID[identityOfDir(root)] = p // a dependency that leads back here is a cycle, not a second copy
+	p.checkRequireNames()
+	if man != nil && ResolveRemote != nil {
+		remote, err := ResolveRemote(root, man)
+		if err != nil {
+			// not fatal to the load: the editor still gets the rest of the
+			// package's diagnostics, and a build stops on this error
+			diags.Errorf(source.Span{}, "%s", err.Error())
+			p.table.remoteFailed = true
+		} else {
+			p.table.remote = remote
+			for _, w := range remote.Warnings {
+				diags.Warnf(source.Span{}, "%s", w)
+			}
+		}
+	}
 	// The package's root module is the program (its `main`); the module the
 	// tool was pointed at is loaded too, so a module deep in the tree can be
 	// checked or edited even when nothing imports it yet.
@@ -406,16 +437,34 @@ func (p *Package) resolveDep(name, depPath string, rest []string, span source.Sp
 			root = filepath.Join(p.Manifest.Dir, root)
 		}
 		root, _ = filepath.Abs(root)
-		man, err := readManifest(root)
-		if err != nil {
-			p.diags.Errorf(span, "dependency '%s': %v", name, err)
-			return nil
+		// One instance per identity (D138): the same directory reached under
+		// two names, or by two importers, is one package with one set of
+		// modules and symbols. The importer's name for it is only a local
+		// alias.
+		id := identityOfDir(root)
+		if dep, ok = p.table.byID[id]; ok {
+			if dep.KeyPrefix == "" {
+				p.diags.Errorf(span, "dependency '%s' is this package itself (%s): a package cannot depend on itself, directly or through its dependencies", name, root)
+				return nil
+			}
+		} else {
+			man, err := readManifest(root)
+			if err != nil {
+				p.diags.Errorf(span, "dependency '%s': %v", name, err)
+				return nil
+			}
+			if man == nil {
+				p.diags.Errorf(span, "dependency '%s' at %s has no veles.toml (M1)", name, root)
+				return nil
+			}
+			if man.Name == "" {
+				p.diags.Errorf(span, "dependency '%s' at %s is a workspace root without a [package] name; depend on one of its members", name, root)
+				return nil
+			}
+			dep = &Package{Root: root, Modules: p.Modules, Manifest: man, Deps: map[string]*Package{}, KeyPrefix: p.table.prefixFor(man.Name, id), table: p.table, diags: p.diags, overlay: p.overlay, timings: p.timings}
+			p.table.byID[id] = dep
+			dep.checkRequireNames()
 		}
-		if man == nil {
-			p.diags.Errorf(span, "dependency '%s' at %s has no veles.toml (M1)", name, root)
-			return nil
-		}
-		dep = &Package{Root: root, Modules: p.Modules, Manifest: man, Deps: map[string]*Package{}, KeyPrefix: "dep/" + name + "/", diags: p.diags, overlay: p.overlay, timings: p.timings}
 		p.Deps[name] = dep
 	}
 	// the module the path names: the dependency's root module, then one
@@ -442,6 +491,82 @@ func (p *Package) resolveDep(name, depPath string, rest []string, span source.Sp
 		cur = p.depModule(dep, name, strings.Join(target, "/"), span)
 	}
 	return cur
+}
+
+// depTable is every dependency package of one program, shared by the entry
+// package and all of them: byID holds one instance per identity (D138), and
+// prefixes remembers which identity owns each module-key prefix.
+type depTable struct {
+	byID     map[string]*Package
+	prefixes map[string]string
+	remote   *Remote // the resolved registry and git dependencies; nil when there are none
+	// remoteFailed: resolving them failed (already reported), so an import of
+	// one is not reported again
+	remoteFailed bool
+}
+
+func newDepTable() *depTable {
+	return &depTable{byID: map[string]*Package{}, prefixes: map[string]string{}}
+}
+
+// identityOfDir is a path dependency's identity: its directory, resolved
+// so a symlink or a different spelling of the path is the same package.
+// (A registry or git dependency's identity will be its source and major,
+// stage d.)
+func identityOfDir(dir string) string {
+	if real, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = real
+	}
+	return "path:" + OverlayKey(dir)
+}
+
+// prefixFor picks the module-key prefix of a package: "dep/<its own name>/",
+// the name from its manifest rather than whatever an importer calls it, so
+// symbols do not depend on who imported it first. Two different packages that
+// share a name (two checkouts of one library) are told apart by a short
+// hash of the identity.
+func (t *depTable) prefixFor(name, id string) string {
+	prefix := "dep/" + name + "/"
+	if owner, taken := t.prefixes[prefix]; taken && owner != id {
+		sum := sha256.Sum256([]byte(id))
+		prefix = "dep/" + name + "-" + hex.EncodeToString(sum[:3]) + "/"
+	}
+	t.prefixes[prefix] = id
+	return prefix
+}
+
+// checkRequireNames refuses a dependency whose local name is also a
+// standard module or a directory of the package itself: `use io` would
+// mean two things (D138). Run once per package, where its manifest is read.
+func (p *Package) checkRequireNames() {
+	if p.Manifest == nil {
+		return
+	}
+	std := map[string]bool{}
+	for _, n := range p.stdModuleNames() {
+		std[n] = true
+	}
+	for _, d := range append(append([]Dependency{}, p.Manifest.Requires...), p.Manifest.DevRequires...) {
+		switch {
+		case std[d.Name]:
+			p.diags.Errorf(source.Span{}, "dependency '%s' (veles.toml:%d) has the name of a standard module, so `use %s` would mean two things; give it another name in [dependencies]", d.Name, d.Line, d.Name)
+		case hasVelesSources(filepath.Join(p.Root, d.Name)):
+			p.diags.Errorf(source.Span{}, "dependency '%s' (veles.toml:%d) has the name of a module of this package (the directory %s); give it another name in [dependencies]", d.Name, d.Line, d.Name)
+		}
+	}
+}
+
+func hasVelesSources(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".vs") {
+			return true
+		}
+	}
+	return false
 }
 
 // depModule loads a module of a dependency package by its path in that

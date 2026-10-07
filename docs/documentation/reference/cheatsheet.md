@@ -344,6 +344,9 @@ assert(n > 0, "why it must hold")            // anywhere: an invariant; panics w
 ```text
 veles new <dir>        veles run [dir]        veles build [dir] -o app [--release]
 veles doc [dir] [-o out]   (the public API as Markdown)
+veles fetch [dir]      (download git/registry dependencies, record veles.sum)
+veles add <spec>[@ver]  veles update <name>|--all  veles remove <name>  veles deps [--why n]  veles vendor  veles audit [--detail]
+veles publish [dir]  veles yank <owner/name>@<ver> [--reason t] [--undo]  veles attest keygen|sign|verify|import
 veles check <dir>      veles test <dir> [--filter text] [--timeout 10m]
 veles parse <file>     veles lsp     (editor server)
 veles fmt <paths>      [--check | --stdout]   format in place; [format] in veles.toml: indent = 2 | "tab", max_blank_lines = 1

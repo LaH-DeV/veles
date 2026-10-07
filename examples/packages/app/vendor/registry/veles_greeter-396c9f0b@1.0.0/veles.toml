@@ -1,0 +1,4 @@
+[package]
+name = "greeter"
+version = "1.0.0"
+registry = "veles/greeter"

@@ -845,9 +845,14 @@ behind a name that says "crypto" (§10, 2026-09-23).
 - [x] `veles doc`: rendered API docs from `///` — Markdown per reachable
       module (root + what it re-exports, D89), declarations as hover shows them from
       outside, member docs; `-o dir` for files (2026-09-27)
-- [ ] Packages: `package.vs` (D131), decentralized fetching with MVS per
-      (repository, major), `veles.sum`, `veles add/update/remove/deps/vendor`
-      (D132) — decided 2026-10-01, not built (plan E7)
+- [x] Packages (D138, D139; plan E7, built 2026-10-05..07): `veles.toml` with path, git and registry
+      dependencies, one instance per (source, major), minimal version selection,
+      `veles.sum` (byte-exact hashes, verified on every use), module cache and `vendor/`,
+      `veles add/update/remove/deps/vendor/fetch/audit/publish/yank/attest`, workspaces,
+      capabilities computed from source with a `[policy]`, the registry protocol with
+      tiers, yanks and signed reviews, a reference server
+- [ ] `package.vs` (D131): the manifest as a typed constant — decided, unbuilt; `package`
+      is a reserved word, so D131's `const package = …` does not parse (see §11)
 - [x] ~~Lockfile~~ — none, by decision (D132): MVS + `veles.sum` give
       reproducible builds
 - [x] `veles new <dir>`: a package that runs and tests first try (manifest,
@@ -919,8 +924,7 @@ list as it was is in `archive/progress-log-2026-09.md` and git history).
 
 (Q15 named imports was decided 2026-09-29: D85; Q16 `as` conversions the same day: D86; Q19 the same; Q4 D87, Q8 D88, Q3 D89 — decided 2026-09-29, being built in that order.)
 
-**Open: none** (2026-10-01; the health endpoints were confirmed the same
-day, D133).
+**Open: none** (2026-10-05; Q21, packages, was decided the same day: D138).
 
 (Q12, Q13, Q17 and Q20 were decided 2026-09-30: D101–D106. Q1 was decided 2026-10-01: D108; Q2, Q9, Q10, Q11 the same day: D111–D114; Q5, Q6 the same day: D117, D118; Q7 the same day: D120–D123; Q14 the same day: D131, D132.)
 
@@ -1062,6 +1066,16 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-10-02 | D111's hand-off, found unsafe while building (a finishing task can race the move between scopes; a cancelled caller can orphan staged tasks) | **The running task carries the receiving `with`'s scope while the value is computed; held tasks launch straight into it** (user, recommended of 2; spec D111 note). Rejected: adopting after the return with the races patched. |
 | 2026-10-01 | Closing a `with` value by hand (found building B10: the close hint showed `close()` running twice) | **Refused: `close()` on a `with`-bound value or its alias is an error with a fix that removes it; close earlier with the block form** (user, recommended of 3; spec D136). Rejected: `with` noticing the hand close and skipping its own; leaving it and requiring every `close()` to tolerate a second call. |
 | 2026-10-04 | How a trait says its objects are `Sendable` (found moving `http` onto `io.Stream`: its connection crosses into `withTimeout`/`async`) | **A trait may require `Sendable` as a supertrait** (`trait Stream : Closeable + Sendable`): its objects are Sendable, each implementor must be Sendable (error at its `implement`), and boxing one that is not is an error (user, recommended of 3; spec D35 addendum). Rejected: a `sendable trait` modifier (new syntax for the same meaning); objects never Sendable with http generic over the stream (a type parameter on every http type). |
+| 2026-10-05 | E7 planning: what a "major" is below 1.0 | **Cargo's rule: the major is the first non-zero component (`1.4.2` → 1, `0.3.1` → 0.3, `0.0.2` → 0.0.2)** (user, recommended of 3). Rejected: Go's v0-is-v1, refusing 0.x. The registry's listed tier takes 1.0.0 or later; 0.x lives in the unreviewed tier (D138). |
+| 2026-10-05 | E7 planning: how packages are fetched | **git and a proxy, with a built-in HTTPS client (no `git` needed for the proxy path)** (user, free-text over the options). The proxy and the registry are the same service (D138). |
+| 2026-10-05 | E7 planning: monorepos | **Must be supported and easy/comfortable** (user); **`[workspace]` builds only, publishing members later** (user, over the recommended per-package versions with prefixed tags; spec D138). |
+| 2026-10-05 | Q21: manifest format | **`veles.toml` now, schema ready for `package.vs`** (user, recommended of 3; D138). Rejected: TOML only; `package.vs` now. |
+| 2026-10-05 | Q21: where packages come from | **Registry + git hybrid** (`owner/name` registry as index, immutable mirror and proxy; git URLs the unofficial path) (user, recommended of 3; D138). Rejected: decentralized only; registry only. |
+| 2026-10-05 | Q21: review and safety | **Automated gates + capability policy + opt-in signed reviews; tiers unreviewed / listed (>= 1.0.0)** (user, recommended of 3; D138). Rejected: mandatory manual approval; checksums only. |
+| 2026-10-07 | E7 stage g: how a package gets into the registry | **Both: the service pulls from git, and `veles publish` uploads** (user, over the recommended pull-from-git only; D139). Rejected: upload only. |
+| 2026-10-07 | E7 stage g: tier and yank | **`unlisted` as a policy capability; yanked versions refused for new resolutions, a warning for a build whose `veles.sum` holds them** (user, recommended of 3; D139). Rejected: a separate `tier` key; tier shown only. |
+| 2026-10-07 | E7 stage g: reviews | **Portable ed25519-signed statements, trust by key in `[policy] trust`, `require = { reviewed = N }`; served by the registry or committed under `attestations/`** (user, recommended of 3; D139). Rejected: registry-hosted only; cargo-vet-style imports by URL. |
+| 2026-10-07 | E7 stage g: registry integrity | **Signed `.info` with a key pinned in `[registry] key`** (user, recommended of 3; D139). Rejected: trust on first use alone; a Merkle transparency log now. |
 
 ## 11. Known limitations to revisit
 
@@ -1119,6 +1133,50 @@ Every new public std API (http cookies/forms/client, `std/log`,
   structural hash); a sealed variant is not a constant value; a table's
   element is a `when` pattern only through a named `const`
   (`const FIRST = T.at(0)`), patterns being names and literals.
+- **Deferred from E7 planning (2026-10-05, D138), to build later:** publishing the members of a workspace (per-package versions
+  with prefixed tags `pkg/a/v1.2.0`, optional lockstep; path dependencies turned into version dependencies on publish); a local
+  override while developing (Go's `replace`) — decide with publishing; the hosted registry service (the protocol and a reference
+  server come first); `package.vs` (D131) and its `package` keyword clash; a transparency log for the registry (D139 chose a signed `.info`); replay protection of a signed `.info`; ed25519 in `std/crypto` for a Veles-written client.
+- **Deferred from E7 stage (g), the registry (2026-10-07, D139), to build later:** the hosted registry service itself, with
+  registration of `owner/name` → repository, the service-side pull from git, the real listing gates (builds on Windows and
+  Linux, tests, API diff) and owner identity — the `registry` package is an in-memory reference only (no persistence, no
+  `veles registry serve` command, one lock); a transparency log, replay protection of a signed `.info` (an old one with a
+  valid signature can be served again), registry key rotation without editing every manifest, more than one registry
+  at once (`[registry]` is one address; a dependency cannot choose); `veles publish` from a git tag's exact bytes (it
+  zips the directory, so a package with hidden files hashes differently from its git tag); no `veles unpublish`
+  (versions are immutable by design); yank state of a cached registry package is refreshed only for a new resolution,
+  `fetch` and `audit`, not on every build; reviews: no revocation of a statement, no expiry, no claim vocabulary beyond the
+  word (`reviewed` is the only one policy knows), no `attest` for path packages, `import` of a URL has no pinned
+  host, keys are plain files with no passphrase; ed25519 is not yet in `std/crypto` (a Veles-written client needs it);
+  `veles audit` does not list which statements it ignored (untrusted key, other bytes).
+- **Deferred from E7 stage (f), capabilities (2026-10-07), to build later:** `veles deps` does not show capabilities (only `audit` and `add` do); the capability table is by module purpose and is a judgement (`log` reaches `os` and `otel` inside and counts as none; `config` counts as fs and os) — revisit when std grows, and when a std module can be audited by what it calls; a package that spawns a process only through a C library shows as `native`/`extern`, not `os`; no capability for `random`, `time` or `crypto`; no licence field check (`license` is read, nothing uses it); the analysis is by `use` and syntax, so a dependency cannot be caught reaching a capability it never imports (it can only reach through packages the report also lists); policy is per project, with no user-wide default (`~/.veles/policy.toml`); no machine-readable `audit --json` for CI.
+- **Deferred from E7 stage (e), the commands (2026-10-07), to build later:** `veles add` does not check the new name against std
+  modules and the package's directories (the loader reports it at the next build); `update` has no `--major`, no dry run
+  (`--check`) and does not look at yanked versions; `add` accepts one spec at a time; `vendor` copies every version the
+  resolution mentions (a smaller vendor would need the graph stored); `veles deps` prints no capabilities or licences yet
+  (stage f); `remove`/`update` do not prune `veles.sum` in a workspace; the manifest editor does not touch
+  `[dependencies.name]` tables (it says so); `veles fetch`/`deps`/`vendor` take one package, not a whole workspace at once.
+- **Deferred from E7 stage (d), fetching (2026-10-05), to build later:** `[dev-dependencies]` are not resolved;
+  the proxy protocol is the archive endpoint only — no version list, no checksum log, no yank (stage g), and
+  `VELES_PROXY` is the only registry (no default URL until the service exists); a git repository is fetched whole-tag
+  (`--depth 1`), a package inside a repository subdirectory is not supported (publishing workspace members); no
+  authentication beyond what git does (SSH keys and credential helpers work, prompts are off); fetches run one after
+  another, not in parallel; a resolution walks every version mentioned and downloads each (Go's graph pruning would skip
+  some); the cache is never cleaned (`veles cache clean`); a workspace resolves each member on its own, not the
+  whole workspace at once, so two members may select different versions of one package; the library warning fires for any
+  fetched package, not only one with no `main`; a repository that is also reachable as another URL (https vs ssh) is
+  two packages; no mirror/proxy fallback for git sources; the module cache is not safe against two builds fetching at
+  once beyond the rename (a lost race is accepted).
+- **Deferred from E7 stage (c), workspaces (2026-10-05), to build later:** `veles doc` at a workspace root documents the root
+  as one package, not each member (`fmt` and the language server likewise treat a member as its own package, with no view of
+  the whole root); `veles new --template workspace`; `veles test` at the root does not merge the members' reports into one
+  count; members run one after another (no `--jobs` over members, no dependency order).
+- **Deferred from E7 stage (a), the manifest (2026-10-05), to build later:** `veles = "…"` (minimum compiler) is read and
+  checked but not enforced — the compiler has no version constant yet (add one with the release process, then refuse an older
+  compiler with the manifest's line); `[workspace] members` takes directories only, not patterns such as `libs/*`;
+  `[dev-dependencies]` are read but nothing loads them yet (`veles test` and `*.test.vs` in stage b/c); the policy table
+  (capabilities, tiers: stage f) is not in the schema yet; `[dependencies]` accept an exact version only — no ranges, by D132's MVS;
+  a package `version` that is not `major.minor.patch` (the old fixtures used any string) is now an error.
 - **Deferred from `const fun` (2026-10-05), to build later:** `throws` and
   `try`/`catch` inside a `const fun` (a thrown error would be a compile error
   at the constant; today the function is refused); function values — a lambda,

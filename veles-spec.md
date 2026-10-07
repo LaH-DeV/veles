@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.69** — decisions D1–D137. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.71** — decisions D1–D139. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -17,6 +17,8 @@ Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-p
 | D134–D135 | (consistency pass) one `try` over a chain; `is T` downcast on a trait object |
 | D136 | `close()` by hand on a `with` value is refused |
 | D137 | a static of a generic type infers its type arguments |
+| D138 | packages revisited: TOML manifest now, registry beside git, safety tiers (amends D131/D132) |
+| D139 | the registry protocol, tiers, yanks and signed reviews (completes D138) |
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -4837,6 +4839,112 @@ called on a generic struct needed its type arguments written
 
 Rejected: inferring for `Secret.of` alone (a rule for one type); changing
 D112's spelling to `Secret<string>.of(v)`.
+
+### D138 — Packages revisited: a TOML manifest now, a registry beside git, safety by tiers (v0.70)
+
+Amends D131 and D132 (neither is struck: their identity, MVS, `veles.sum` and no-lockfile rules stand). Planning E7 on
+2026-10-05 found the two under-specified (below) and the user redirected: "go back to the TOML for NOW. I would like something
+'free to use whatever unofficial' like 'go' with a central registry like 'npm' / 'crates' / 'pip' combined, but safety as the most
+important part (maybe with 'manual' reviewing acceptance there)… the safety and devex are very important." Decided with the user
+(recommended of 3 each, except where noted):
+
+- **Manifest: `veles.toml` now.** It is extended, not replaced: dependencies as tables (a registry version, `git` with a version or
+  `commit`, `path`), per-target tables for `[native]`, `[workspace]`, `[format]`. The schema is the one D131 sketched, so `package.vs`
+  can later be a second surface for the same fields; D131 stays decided and unbuilt. Found: `package` is a reserved word, so
+  D131's `const package = …` does not parse — rename or make it contextual before `package.vs` is built. (Probed: D131's examples,
+  with `const fun` constructors checking version strings, evaluate under D113.)
+- **Sources: a registry and git, both from the first release.** Registry packages are named `owner/name` (the owner is a verified
+  identity, which stops most name squatting without reviewing names); any git URL is the unofficial path, as in Go. The registry is an
+  index plus an *immutable, content-addressed mirror* (a version is never deleted, only yanked), so a deleted repository cannot break
+  a build, and it is also the proxy. The client speaks a documented HTTP protocol from the start and fetches through a built-in HTTPS
+  client (no `git` needed on that path); git is the other path (user: "git and proxy with built-in https"). The registry service is
+  built after the client works end to end against git and a local proxy.
+- **Identity** stays (source, major) as D132 says: one loaded instance per identity, a local name per importer; only a package's own
+  direct requires are nameable; a local name that equals a std or local module is an error. The loader, which keys dependency
+  modules by local name today (`dep/<name>/`), changes to identity-keyed modules and identity-based symbol mangling.
+- **A major follows Cargo's rule** (user): the first non-zero component — `1.4.2` is 1, `0.3.1` is 0.3, `0.0.2` is 0.0.2.
+- **Safety by layers.** (1) Nothing runs at build time: there are no build scripts, and the only code the compiler runs is the
+  D113 evaluator, which has no I/O. (2) Tamper-evidence: `veles.sum` hashes the exact bytes of the tagged tree, sorted by path, never the
+  working files (CRLF conversion must not change it), plus a registry checksum log. (3) **Capabilities are computed from source**, not
+  declared: every `unsafe`, `extern`, `[native]` library and std module imported (`net`, `fs`, `os`, `ffi`, …) of a package and its
+  dependencies; `veles add` shows them and a project policy can refuse some ("no package that uses the network except these").
+  (4) **Tiers**: *unreviewed* — any version, any git URL, a warning with the capability report; *listed* — 1.0.0 or later, automated
+  gates passed (builds on Windows and Linux, its tests pass, an API-diff against the previous version for D17/D26/D28's breaking
+  classes). A project policy can demand "listed only". This is where the user's "versions below 1 not accepted, like Go, but then
+  reviewed and approved" lands: 0.x lives in the unreviewed tier. (5) **Reviews are opt-in, signed attestations** per version by
+  reviewers; a project can require one. No mandatory human approval of publishing (it does not scale; approving a whole supply
+  chain by hand is not doable).
+- **Monorepos must be easy** (user): `[workspace] members = [...]` in the root manifest, members depend on each other by `path`,
+  `veles build|test|check` work from the root over every member. **Publishing members is not in the first release** (user, over the
+  recommended per-package versions with prefixed tags `pkg/a/v1.2.0`, which is the design to build next; recorded in §11).
+
+Gaps in D131/D132 this closes or records: no rule for what `veles.sum` hashes (now: the tagged bytes); no rule for 0.x; the loader's
+keying disagreed with the identity rule; no way to depend on a package in a repository subdirectory (workspaces; publishing is later);
+no local override while developing (recorded: Go's `replace`, to be decided with publishing); `veles` minimum-compiler version field
+(default: add it to the manifest). Defaults taken without asking: a tag pin and a commit pin of one (repository, major) is an error
+naming both; dependencies' `[native]` tables merge into the link line, per target.
+
+Rejected: a central registry only (not "free to use"); decentralized only with a checksum log (no names, tiers or reviews);
+mandatory manual approval to be listed; checksums and immutability only; `package.vs` first; TOML forever.
+
+*Addendum (2026-10-07, built in E7 stages a–e; defaults taken while building, none asked) — what the tools do where D138 was silent:*
+
+- **Manifest spelling.** A registry dependency is `{ registry = "owner/name", version = "…" }`; a git one `{ git = "url", version | commit }`; a bare string is a path (and `"1.4.2"` bare is an error showing the table). A dependency is pinned by one exact version, never a range. A package `version` must be `major.minor.patch[-pre]`. Unknown tables and keys are errors.
+- **Identity in the loader.** One instance per resolved directory; the module prefix is `dep/<the package's own manifest name>/`, with a short hash added when two different packages share a name.
+- **Selection.** Every version a manifest mentions is fetched to read its requirements (Go's graph, not pruned); the highest per (source, major) is built. A commit pin is its own identity; a tag and a commit pin of one (source, major — the commit's manifest `version` says which) or two commits of one source are errors. A fetched package may not have path dependencies. A fetched package that pins a commit makes a warning.
+- **Bytes.** A git checkout turns every conversion off (`info/attributes`), drops `.git`, and refuses symbolic links; the `h1:` hash is SHA-256 over each file's slash path and its content hash, sorted. A registry archive is a zip with the files at its root, unpacked with path, link, duplicate and size refusals.
+- **Cache and sum.** `~/.veles/pkg` (`VELES_HOME`); every use re-hashes the entry against the hash written at fetch time and against `veles.sum`. `veles.sum` sits beside the workspace root's manifest in a workspace, else beside the package's. A failed check caches nothing.
+- **Commands.** `add` takes the newest stable tag when none is given; `update` stays inside the major and only mentions a newer one; `remove` and `update` prune the sum's unused lines (not in a workspace); `vendor` copies every mentioned version, and `vendor/` then replaces the cache entirely; `fmt` skips `vendor/`. The language server is offline. In a workspace, `build` writes programs to `bin/<name>` under the root.
+- **Capabilities and policy (stage f).** Seven capabilities, computed from a package's own source: `unsafe`, `extern`, `native`, `net`, `fs`, `os`, `ffi`. A std module gives a capability only when that is its purpose (`net`/`tls`/`http`/`db`/`otel` → net, `fs` → fs, `config` → fs and os, `os`, `ffi`), never by what it imports inside. `[policy] deny = [...]` and `allow = { cap = [package…] }` (a package is its source or its own name) are enforced by every resolution on registry and git packages, not on path dependencies; a workspace member without a policy follows the root's. `veles add` prints the new package's capabilities (with its dependencies'), `veles audit [--detail]` lists them all and exits 1 on a denied use. This is the "unreviewed tier" layer of D138's safety design; listed-tier gates and signed attestations (stage g) are not built.
+
+### D139 — The registry protocol, tiers, yanks and signed reviews (v0.71)
+
+Completes D138's safety layers 4 and 5. Decided with the user on 2026-10-07 (recommended of 3/3/3/3, except publishing, where the user chose **both** over the recommended pull-from-git only):
+
+- **Publishing: both.** (a) The registry service pulls from git: the owner registers `owner/name` → repository once (service side, outside this protocol); pushing the tag `v1.4.2` publishes, and the service mirrors the tag's bytes. (b) `veles publish` uploads a zip with a token (`PUT`, below) for packages without git or in private repositories. Either way the version is immutable once listed.
+- **Read protocol** (all under a base URL, `[registry] url` or `VELES_PROXY`; names are `owner/name`, lowercase letters, digits, `-`, `_`):
+
+  ```
+  GET <base>/<owner>/<name>/@v/list           the versions, one per line
+  GET <base>/<owner>/<name>/@v/<v>.info       version metadata, JSON, signed (below)
+  GET <base>/<owner>/<name>/@v/<v>.zip        the package's files at the archive's root
+  GET <base>/<owner>/<name>/@v/<v>.attest     signed reviews of this version, one per line
+  ```
+
+  Write calls carry `Authorization: Bearer <token>` (`VELES_TOKEN`, or `~/.veles/token`); a token belongs to an owner and may write only below that owner:
+
+  ```
+  PUT    <base>/<owner>/<name>/@v/<v>.zip     publish: 201; 409 when the version exists; 403 for another owner's name
+  POST   <base>/<owner>/<name>/@v/<v>.attest  add one signed statement (any signer: the consumer chooses whom to trust)
+  PUT    <base>/<owner>/<name>/@v/<v>.yank    body = the reason; DELETE reverses it
+  ```
+
+- **Integrity (C2).** `.info` is `{"version","time","hash","tier","yanked","yankReason","key","sig"}`. The signature is ed25519 over the text `veles-info-v1 <owner/name> <version> <hash> <tier> <0|1 yanked> <time>`; `key` and `sig` are `ed25519:<base64>` and base64. A project pins the registry's key (`[registry] key = "ed25519:…"` beside `url`); a signature that does not verify against it, or an archive that does not hash to `info.hash`, or an `info.hash` that differs from `veles.sum`, is a hard error. Without a pinned key `.info` is still checked against the archive and `veles.sum` (trust on first use) and `veles audit` says the key is not pinned. The key rotates by editing the manifest. Not provided: replay protection of an old signed `.info` (the time is signed, not enforced), and a transparency log (Merkle tree and signed tree heads; the next step if the registry is ever run for the public).
+- **Tiers (T1).** `tier` is `listed` or `unreviewed`. *Listed* is for the registry's automated gates (version 1.0.0 or later; builds on Windows and Linux; its tests pass; an API diff against the previous version) — run by the service, not by the compiler. A git package, a commit pin and a registry version without the tier are `unreviewed`. In a policy, `unlisted` is a capability like those of D138: `deny = ["unlisted"]` refuses every registry or git package that is not listed, `allow = { unlisted = ["acme/x"] }` exempts one; path dependencies are never policed.
+- **Yanks (Cargo's rule).** A yanked version stays downloadable. A resolution that has no `veles.sum` line for it (`add`, `update`, a fresh clone with no sum) refuses it and prints the reason; a build whose `veles.sum` already holds it warns and continues. `update`'s newest release skips yanked versions.
+- **Reviews (S2).** A statement is one line, `attest v1 <git|registry> <source> <version|commit:full> <h1 hash> <claim> <time> <ed25519:key> <sig>`, signed over `veles-attest-v1 <git|registry> <source> <ref> <hash> <claim> <time>`. The claim is a word (`reviewed` is the one policy asks for). A statement is about exact bytes: it counts only if the hash is the package's hash. It verifies on its own, wherever it is kept: served at `.attest`, committed under `attestations/` (the workspace root's, else the package's), or imported with `veles attest import <file|url>`. A project says whom it trusts and what it needs:
+
+  ```toml
+  [policy]
+  trust = { alice = "ed25519:…", acme = "ed25519:…" }
+  require = { reviewed = 1 }                  # distinct trusted keys that attested "reviewed"
+  allow = { reviewed = ["acme/httputil"] }    # exempt packages, as for any capability
+  ```
+
+  `veles attest keygen <name>` writes `~/.veles/keys/<name>.key` and prints the public key; `sign <package> [--claim reviewed] [--key name] [--push]` signs the exact hash of the version in the build; `verify` checks every statement the project holds; `import` adds statements after checking them. The `reviewed` requirement covers registry and git packages.
+- **Manifest.** `[registry] url, key`; `[package] registry = "owner/name"` (where `veles publish` publishes); `[policy] trust, require`. `veles publish [dir]` checks the package, requires `[package] version` and `registry`, zips the directory (no `.git`, `vendor/`, `bin/`, `veles.sum`, hidden directories) and PUTs it; `veles yank <owner/name>@<version> [--reason …] [--undo]`.
+- **A reference server** (`registry` package) implements the protocol in memory for tests and private use; the hosted service, the real gates and registration by repository are separate work.
+- Self-hosting: Go's standard library does the signatures now. A Veles-written client needs `ed25519` in `std/crypto` (recorded in the checklist); everything else — SHA-256, JSON, HTTPS, zip — exists or is planned.
+
+Rejected: upload-only or pull-only publishing (the user wants both); a separate `tier` policy key and tier shown only; registry-hosted-only reviews, and cargo-vet-style imports by URL (no tamper evidence beyond the host); trust on first use alone, and a Merkle log now.
+
+*Addendum (2026-10-07, a review of the package system for holes; no semantics asked of the user, all of it refusals and keys):*
+
+- **Git addresses are validated** (`fetch/urls.go`): no leading `-` (an option), no whitespace, no transport helpers (`ext::…`), and git runs with `GIT_ALLOW_PROTOCOL=file:http:https:ssh:git`. A *fetched* package's manifest — written by a stranger — may use only `https`, `ssh`, `git` or `user@host:path` addresses, never a local path or `file://`/`http://`; `VELES_ALLOW_LOCAL_GIT` lifts that for a private mirror on disk and for tests. `ls-remote` gets `--`.
+- **Archives**: any `:` or `\` in a name (NTFS streams, drive letters), empty or `.` parts, any `.git` part, and names that differ only in case are refused, as are links and `..`.
+- **The module cache is keyed by the registry's address** as well as `owner/name` (a private and a public `acme/lib` never share an entry: dependency confusion), and the tier and yank state kept with a cached package are believed by a project that pins a registry key only if they were verified with that key (`signed` in the marker); otherwise they are asked again, or, offline, the package counts as unreviewed.
+- **Capabilities cannot be hidden**: every directory below the root counts (the loader reads any directory with sources as a module, so one named `vendor`, or holding a `veles.toml`, was a hiding place), and a directory with no sources does not shadow std (`fs/` holding a README hid `use fs`).
+- **Tokens** are sent only over `https://` or to localhost. **`veles publish`** archives what git would (tracked and not-ignored files) in a repository. Statements must have every field and no whitespace. `[native] pkg-config` names may not start with `-`. Keys are created with `O_EXCL`. The reference server validates names and reads a request body before taking its lock. A dependency directory is read with `ReadManifestIn`, which never falls back to an enclosing package. A failed resolution is one diagnostic and the rest of the package still loads (the editor keeps working).
 
 ---
 

@@ -48,7 +48,7 @@ func Format(opts FormatOptions) int {
 				}
 				return nil
 			}
-			if d.IsDir() && path != p && (strings.HasPrefix(d.Name(), ".") || d.Name() == "node_modules") {
+			if d.IsDir() && path != p && (strings.HasPrefix(d.Name(), ".") || d.Name() == "node_modules" || d.Name() == "vendor") {
 				return fs.SkipDir
 			}
 			if !d.IsDir() && (strings.HasSuffix(d.Name(), ".vs") || sema.IsScript(d.Name())) {

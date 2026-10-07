@@ -80,6 +80,10 @@ The other commands you will use:
 |---|---|
 | `veles new <dir>` | create a package: manifest, `main.vs` with a test, `.gitignore`; `--template server` makes an HTTP service (health check, logging, graceful stop, tests of its handlers) |
 | `veles doc [dir]` | the package's public API as Markdown (`-o dir` for one file per module) |
+| `veles fetch [dir]` | download the git and registry dependencies into the module cache and record them in `veles.sum` (a build does this too; for CI, and for the editor, which never downloads) |
+| `veles add <spec>[@version]`, `update <name>` or `update --all`, `remove <name>`, `deps [--why name]`, `vendor` | manage dependencies: edit `veles.toml` in place, show the build as a tree, copy it into `vendor/` (chapter 11) |
+| `veles audit [dir] [--detail]` | what each dependency can do (`unsafe`, `extern`, `native`, `net`, `fs`, `os`, `ffi`), computed from its source, and whether the `[policy]` in `veles.toml` allows it; exit 1 if not (chapter 11) |
+| `veles publish [dir]`, `veles yank <owner/name>@<version>`, `veles attest keygen|sign|verify|import` | publish a package to a registry, withdraw a version, and sign / check / import reviews of dependencies (chapter 11) |
 | `veles build <dir> -o app` | produce an executable (named after the package without `-o`) |
 | `veles check <dir>` | type-check without compiling; `--fix` applies lint corrections |
 | `veles explain <family>` | what a kind of error means and how to fix it (the `see:` line) |

@@ -74,3 +74,23 @@ func TestFormatReportsWalkErrors(t *testing.T) {
 		t.Errorf("an unreadable directory: exit %d, want 1", code)
 	}
 }
+
+// `veles fmt` leaves vendor/ alone: reformatting a vendored package would
+// change the bytes veles.sum vouches for.
+func TestFormatSkipsVendor(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "vendor", "git", "x"), 0o755)
+	src := "fun main() {\nx()\n}\n"
+	vendored := filepath.Join(dir, "vendor", "git", "x", "lib.vs")
+	os.WriteFile(vendored, []byte(src), 0o644)
+	os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644)
+	if code := Format(FormatOptions{Paths: []string{dir}}); code != 0 {
+		t.Fatalf("format: exit %d", code)
+	}
+	if data, _ := os.ReadFile(vendored); string(data) != src {
+		t.Errorf("vendor/ was formatted: %q", data)
+	}
+	if data, _ := os.ReadFile(filepath.Join(dir, "main.vs")); string(data) == src {
+		t.Error("main.vs was not formatted")
+	}
+}

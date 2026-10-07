@@ -21,6 +21,7 @@ import (
 
 	"github.com/LaH-DeV/veles/ast"
 	"github.com/LaH-DeV/veles/driver"
+	"github.com/LaH-DeV/veles/fetch"
 	"github.com/LaH-DeV/veles/format"
 	"github.com/LaH-DeV/veles/parser"
 	"github.com/LaH-DeV/veles/sema"
@@ -29,6 +30,9 @@ import (
 
 // Serve runs the server until the client sends `exit` or the input closes.
 func Serve(in io.Reader, out io.Writer) error {
+	// an editor must not wait on the network: dependencies come from the
+	// module cache, and `veles fetch` fills it
+	fetch.Offline = true
 	s := &Server{
 		in:      bufio.NewReader(in),
 		out:     out,

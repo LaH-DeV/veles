@@ -41,7 +41,7 @@ func New(dir, template string) int {
 	files := map[string]string{
 		"veles.toml": "[package]\nname = \"" + name + "\"\nversion = \"0.1.0\"\n",
 		"main.vs":    main,
-		".gitignore": "/" + name + "\n/" + name + ".exe\n*.ll\n",
+		".gitignore": "/" + name + "\n/" + name + ".exe\n*.ll\nbin/\n*.key\n.env\n.veles/\n",
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		fmt.Fprintln(os.Stderr, "veles new:", err)

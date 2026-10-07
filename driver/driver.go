@@ -48,6 +48,11 @@ type Options struct {
 	// ConstSteps is the step budget of one compile-time evaluation (D113,
 	// `--const-steps`); 0 is the default, 10 million.
 	ConstSteps int64
+
+	// inWorkspace is set when a workspace run hands a member to Run: the member
+	// is built as a package (not fanned out again), and a library member has
+	// nothing to build rather than being an error.
+	inWorkspace bool
 }
 
 // DefaultTestTimeout bounds each test when `--timeout` is not given: long
@@ -77,6 +82,16 @@ func filterTests(prog *sema.Program, filter string) bool {
 
 // Run executes the pipeline and returns a process exit code.
 func Run(opts Options) int {
+	if !opts.inWorkspace {
+		root, man, err := workspaceAt(opts.Path)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "veles:", err)
+			return 1
+		}
+		if man != nil {
+			return runWorkspace(opts, root, man)
+		}
+	}
 	if opts.Mode == "check" && opts.Fix {
 		return fixUntilDone(opts)
 	}
@@ -93,7 +108,7 @@ func Run(opts Options) int {
 	}
 	clk.lap("load", clk.frontEndNote())
 	// only build/run need a program; check accepts a library or a module
-	pkg.NeedMain = opts.Mode == "build" || opts.Mode == "run"
+	pkg.NeedMain = (opts.Mode == "build" || opts.Mode == "run") && !opts.inWorkspace
 	pkg.ConstSteps = opts.ConstSteps
 	var prog *sema.Program
 	if opts.Mode == "test" {
@@ -106,6 +121,10 @@ func Run(opts Options) int {
 		return 1
 	}
 	clk.lap("check", "types, effects, lowering")
+	if opts.inWorkspace && opts.Mode == "build" && prog.Main == nil {
+		fmt.Fprintln(os.Stderr, "veles: library: nothing to build (it has no main)")
+		return 0
+	}
 	if opts.Mode == "check" {
 		clk.report(os.Stderr)
 		return 0

@@ -45,11 +45,13 @@ For readers who want to know what the compiler actually does.
 22. [Configuration](22-configuration.md) — `config`: settings read into a struct from the environment, `.env` and JSON files, every problem at once, secrets never echoed, `describe` for `--help`.
 23. [Observability](23-observability.md) — `otel`: traces, metrics and logs in OpenTelemetry's format; spans that follow tasks and cross services by `traceparent`; OTLP export.
 24. [Databases](24-databases.md) — `db`: PostgreSQL with `sql"…"` templates whose values never touch the text, rows read into structs, a connection pool, transactions, verified TLS.
+25. [How packages and the registry work](25-packages-and-the-registry.md) — where a dependency comes from, what a build checks, `veles.sum`, the module cache and `vendor/`, the registry (tiers, signed metadata, yanks, reviews), the trust model and what is not protected, publishing, and what each refusal means.
 
 ## Reference
 
 - [Cheat sheet](reference/cheatsheet.md) — the whole syntax on one page.
 - [Standard library](reference/stdlib.md) — what the bootstrap prelude and `io` provide today.
+- [The registry protocol](reference/registry-protocol.md) — what a package registry serves and accepts: versions, signed metadata, archives, reviews.
 - [Error messages](reference/errors.md) — every family of error the compiler reports, what it means and how to fix it (`veles explain <family>`).
 - The language design itself is in [`veles-spec.md`](../../veles-spec.md); tutorials cite its decisions as `D<n>`.
 

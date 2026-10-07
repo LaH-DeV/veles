@@ -1,6 +1,6 @@
 // Command veles is the bootstrap compiler for the Veles language.
 //
-//	veles build <file.vs | dir>   compile a package to a native executable
+//	veles build <file.vs | dir>   compile a package to a native executable (a workspace root: every member)
 //	veles run   <file.vs | dir>   compile and run
 //	veles test  <file.vs | dir>   run the tests, test "..." { } (--filter text, --timeout 10m, --jobs n)
 //	veles check <file.vs | dir>   type-check only (--fix applies lint corrections)
@@ -11,6 +11,8 @@
 //	veles explain <file.vs | dir> --derive [Type]  print the implements the compiler wrote
 //	veles new   <dir>             create a package that runs and tests (--template server: an HTTP service)
 //	veles doc   [dir] [-o out]    the package's public API as Markdown
+//	veles fetch [dir]             download the registry and git dependencies and record them in veles.sum
+//	veles add|update|remove|deps|vendor   manage dependencies: edit veles.toml, the build tree, vendor/
 //	veles lsp                     language server over stdio
 package main
 
@@ -30,7 +32,7 @@ import (
 )
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: veles <build|run|test|check|parse|tokens> <path> [-o output] [--emit-llvm] [--keep] [--release] [--sanitize] [--timings] [--const-steps n] [--fix] [--filter text] [--timeout 10m] [--jobs n] [-- args...] | veles explain <family> | veles explain <path> --derive [Type] | veles fmt <paths...> [--check] [--stdout] | veles new <dir> [--template app|server] | veles doc [dir] [-o out] | veles lsp")
+	fmt.Fprintln(os.Stderr, "usage: veles <build|run|test|check|parse|tokens> <path> [-o output] [--emit-llvm] [--keep] [--release] [--sanitize] [--timings] [--const-steps n] [--fix] [--filter text] [--timeout 10m] [--jobs n] [-- args...] | veles explain <family> | veles explain <path> --derive [Type] | veles fmt <paths...> [--check] [--stdout] | veles new <dir> [--template app|server] | veles doc [dir] [-o out] | veles fetch [dir] | veles add <spec>[@version] [--as name] [--dev] | veles update <name>... [--all] | veles remove <name>... | veles deps [dir] [--why name] | veles vendor [dir] | veles audit [dir] [--detail] | veles publish [dir] | veles yank <owner/name>@<version> [--reason text] [--undo] | veles attest keygen|sign|verify|import | veles lsp")
 	os.Exit(2)
 }
 
@@ -46,7 +48,7 @@ func command() int {
 	}
 	cmd := os.Args[1]
 	switch cmd {
-	case "lsp", "build", "run", "check", "test", "doc":
+	case "lsp", "build", "run", "check", "test", "doc", "fetch", "deps", "vendor", "audit", "publish":
 		// the package in the current directory when no path is given
 	default:
 		if len(os.Args) < 3 {
@@ -149,6 +151,79 @@ func command() int {
 			return 2
 		}
 		return driver.New(args[0], template)
+	case "fetch":
+		if path == "" {
+			path = "."
+		}
+		return driver.Fetch(path)
+	case "add", "update", "remove", "deps", "vendor", "audit", "publish", "yank", "attest":
+		// veles add <spec> | update <name>... | remove <name>... | deps | vendor
+		// | audit | publish | yank <name>@<version> | attest <keygen|sign|verify|import>
+		var opts driver.PkgOptions
+		args := os.Args[2:]
+		for i := 0; i < len(args); i++ {
+			switch a := args[i]; a {
+			case "--as", "--dir", "--why", "--reason", "--claim", "--key":
+				if i+1 >= len(args) {
+					fmt.Fprintf(os.Stderr, "%s needs a value\n", a)
+					usage()
+				}
+				switch a {
+				case "--as":
+					opts.As = args[i+1]
+				case "--dir":
+					opts.Dir = args[i+1]
+				case "--reason":
+					opts.Reason = args[i+1]
+				case "--claim":
+					opts.Claim = args[i+1]
+				case "--key":
+					opts.Key = args[i+1]
+				default:
+					opts.Why = args[i+1]
+				}
+				i++
+			case "--undo":
+				opts.Undo = true
+			case "--push":
+				opts.Push = true
+			case "--dev":
+				opts.Dev = true
+			case "--all":
+				opts.All = true
+			case "--detail":
+				opts.Detail = true
+			default:
+				if strings.HasPrefix(a, "-") {
+					fmt.Fprintf(os.Stderr, "unknown flag %q\n", a)
+					usage()
+				}
+				opts.Args = append(opts.Args, a)
+			}
+		}
+		// deps and vendor take the package directory as a bare word, like check
+		if (cmd == "deps" || cmd == "vendor" || cmd == "audit" || cmd == "publish") && len(opts.Args) == 1 && opts.Dir == "" {
+			opts.Dir, opts.Args = opts.Args[0], nil
+		}
+		switch cmd {
+		case "publish":
+			return driver.Publish(opts)
+		case "yank":
+			return driver.Yank(opts)
+		case "attest":
+			return driver.Attest(opts)
+		case "add":
+			return driver.Add(opts)
+		case "update":
+			return driver.Update(opts)
+		case "remove":
+			return driver.Remove(opts)
+		case "deps":
+			return driver.Deps(opts)
+		case "audit":
+			return driver.Audit(opts)
+		}
+		return driver.Vendor(opts)
 	case "lsp":
 		if err := lsp.Serve(os.Stdin, os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, "veles lsp:", err)

@@ -13,3 +13,23 @@ veles.exe
 node_modules
 **/.vitepress/cache
 **/.vitepress/dist
+
+# --- the package system (D138, D139) -------------------------------------------
+# a VELES_HOME that is a relative path, or an unset HOME in CI, puts the module
+# cache (downloaded packages, temporary checkouts) next to the project
+.veles/
+# `veles build` at a workspace root writes each program to bin/<name>
+bin/
+# secrets: reviewer signing keys (`veles attest keygen`) and environment files (the registry token lives in
+# ~/.veles/token or $VELES_TOKEN, outside any project).
+# Statements (attestations/*.attest), veles.sum and vendor/ are meant to be committed.
+*.key
+.env
+.env.*
+!.env.example
+
+# --- editors and operating systems ----------------------------------------------
+.DS_Store
+Thumbs.db
+*.swp
+*~

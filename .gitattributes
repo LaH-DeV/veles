@@ -4,3 +4,6 @@ examples/*/fixtures/** -text
 examples/**/*.txt -text
 # shell scripts run inside WSL/Linux: a CRLF would break them
 *.sh text eol=lf
+# a vendored package and veles.sum are hashed byte for byte: no line-ending conversion
+examples/**/vendor/** -text
+examples/**/veles.sum -text
