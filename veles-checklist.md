@@ -441,7 +441,10 @@ answered from the shape, tuples get `Comparable`, enums get
       doubling storage (2026-09-27); `reserve` decided 2026-09-30 (D105,
       plan B11)
 - [ ] `List<u8>` ↔ socket: writev/readv, no intermediate copies
-- [ ] I/O: `poll` → `epoll`/`kqueue`/IOCP when connection counts justify it
+- [x] I/O: `poll` → a reactor (plan E3, 2026-10-08): epoll on Linux, AFD poll
+      requests on an I/O completion port on Windows, `poll()` elsewhere
+      (`runtime/c/veles_poll.c`); kqueue for macOS comes with A7 (§11).
+      `bench/httphello`: 20.6× Go → ~1.2× at 8 threads (Windows)
 - [ ] Task handoff on Linux: `spawn` is 3.9× Go on Linux against 1.1× on
       Windows, `parallel` 1.2× against 0.7× (bench/results.md, 2026-09-28) —
       profile the wake-up path (futex condvars under the runtime lock)
@@ -476,8 +479,10 @@ answered from the shape, tuples get `Comparable`, enums get
 - [x] `bench/`: seven workloads (sha256, maps, sort, json, strings, GC-heavy
       trees, channels), each next to a Go program doing the same work, the
       checksums compared, and the result read as a multiple of Go —
-      `go run ./bench` (2026-09-25). Still to add: an HTTP hello (needs a load
-      generator), and parsing a large file once the self-hosted parser exists
+      `go run ./bench` (2026-09-25). `httphello` added 2026-10-07 (64 keep-alive
+      clients × 250 requests against an in-process server, the Go reference the
+      same with `net/http`). Still to add: parsing a large file once the
+      self-hosted parser exists
 - [x] Numbers recorded in-repo: `go run ./bench -record` appends to
       `bench/results.md`; the first run is there
 - [x] The allocator was quadratic between collections (every slot of every
@@ -912,6 +917,22 @@ with the Veles parser parsing itself. Four decisions to make before it starts
 (a rune API, `unicode.IsPrint`, the recursion limit, `Span`'s representation)
 are listed in §4 of that file.
 
+- [x] P0 `source` — `selfhost/source/`, gate P0 over the corpus (2026-10-08)
+- [x] P1 the lexer — `selfhost/lexer/`, gate G1 (tokens, docs, comments,
+      diagnostics) over the corpus and hand-written broken files (2026-10-08)
+- [x] P2/P3 the AST and its printer — `selfhost/ast/`, Go's `%q` checked on
+      every corpus line (2026-10-08)
+- [x] P4/P5 the parser — `selfhost/parser/`, gates G2 (the tree) and G3 (every
+      diagnostic) over the corpus and broken files for each recovery path; the
+      Veles front end parses its own sources and agrees (G4) (2026-10-08)
+- [x] The self-hosted front end reads the current language only: removed
+      spellings are syntax errors there, files using one are outside the gates
+      and `TestRemovedSpellings` covers them; the port rewritten as idiomatic
+      Veles (self-host plan §11) (2026-10-08)
+- [ ] P6 `Layout` (comments and parenthesised spans, for the formatter) and a
+      dump that prints every span (`ast.Dump` prints none, so G2 does not check
+      spans), files that are not valid UTF-8 in the corpus (§11)
+
 ---
 
 ## 9. Decisions pending
@@ -1177,6 +1198,19 @@ Every new public std API (http cookies/forms/client, `std/log`,
   `[dev-dependencies]` are read but nothing loads them yet (`veles test` and `*.test.vs` in stage b/c); the policy table
   (capabilities, tiers: stage f) is not in the schema yet; `[dependencies]` accept an exact version only — no ranges, by D132's MVS;
   a package `version` that is not `major.minor.patch` (the old fixtures used any string) is now an error.
+- **Deferred from E3, the reactor (2026-10-08), to build later:** kqueue for macOS (A7; until then
+  macOS uses the `poll()` backend, which rebuilds its descriptor array per wait and is interrupted by
+  every arm — tested on Linux by `driver/TestReactorPollFallback`); `writev`/`readv` and receiving into a
+  list without the copy (`List<u8>` ↔ socket, §3.1); the runtime lock is still taken by `race_wait`
+  (24 times per HTTP request — every `withTimeout`), `scope_cancel`, socket waits and the timer heap:
+  `bench/httphello` at 32 threads (this machine's default) is about twice its 8-thread time, and making
+  `race_wait` lock-free needs a design for cancellation, which today detaches a running race under that
+  lock (a node left on a channel would swallow a later send); idle workers still sleep on one condition
+  variable under the runtime lock (Go parks each thread on its own note), with the spinning added here in
+  front of it; the Windows backend watches sockets only (an `ioWait` on another handle is "ready" at
+  once and its call retried); `sleep` and race timeouts take whole milliseconds, rounded up, so a
+  `Duration` of 50 µs sleeps a millisecond (the deadline itself is kept in nanoseconds); timers are one
+  heap under the runtime lock (Go keeps one per P).
 - **Deferred from `const fun` (2026-10-05), to build later:** `throws` and
   `try`/`catch` inside a `const fun` (a thrown error would be a compile error
   at the constant; today the function is refused); trait objects (a call through

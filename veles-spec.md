@@ -124,6 +124,8 @@ Distinct syntax for boxed trait objects was considered and rejected in favour of
 
 `&x` on a local is legal; escape analysis promotes it to the heap when it outlives the frame. Pointers into struct fields are permitted.
 
+*Addendum (2026-10-08) — the address of a temporary is typed by what it points to.* `&e` on a value that is not a place (a call, a construction, a literal) boxes a copy of it, and `e` is checked against the type the pointer is expected to point to: in `leaf: *Leaf = &Leaf(value: 1)` the variant stays a `Leaf` (D12 addendum: a construction where its variant is expected is that variant), in `p: *i32 = &5` the literal is an `i32`, and a `(*T)?` expects a `T` the same way. Before, the operand was checked with no expectation, so both were type errors; no program that compiled changes meaning.
+
 ---
 
 ## 3. Modules and packages — settled
@@ -234,6 +236,8 @@ struct Rect   : Shape { w: f64, h: f64 }
 - **All variant fields must be named.** No positional `Circle(f64)`. This was originally forced by the absence of destructuring; D13 has since added it, but named fields are retained on their own merits and destructuring binds by field name.
 
 *Addendum (v0.32).* "No `enum` sugar" means no second spelling of a sum type. A closed set of plain *values* is a different thing and has its own keyword since D57 (`enum Phase { Red, Amber, Green }`): every member is a number, `when` over it is exhaustive by member, and it carries no data — the moment a member needs a field, it is a sealed trait.
+
+*Addendum (2026-10-08) — a variant is a type of its own.* A construction `Circle(radius: 1.0)` is the sealed trait, `Shape`, unless the variant itself is the type expected there: `val c: Circle = Circle(radius: 1.0)`, a `Circle` parameter or return, a `Circle?`, a `*Circle` (D10 addendum). Such a value is the `Circle`: its fields are read and assigned without a `when`, and it becomes a `Shape` wherever a `Shape` is expected. `var s = Circle(radius: 1.0)` with no annotation stays a `Shape`, so it may later hold a `Rect`, as before. Found writing the self-hosted parser, where `val c: Circle = Circle(…)` was a type mismatch ("expected 'Circle', found 'Shape'"); no program that compiled changes meaning.
 
 ### D13 — Pattern matching: `when`, as an expression
 

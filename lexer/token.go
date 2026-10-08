@@ -202,6 +202,9 @@ var kindNames = map[TokenKind]string{
 	Plus: "+", Minus: "-", Star: "*", Slash: "/", Percent: "%", WrapPlus: "+%",
 	WrapMinus: "-%", WrapStar: "*%", Eq: "==", NotEq: "!=", Lt: "<", LtEq: "<=", Gt: ">",
 	GtEq: ">=", AndAnd: "&&", OrOr: "||", Bang: "!", Caret: "^", Tilde: "~", Shl: "<<", Shr: ">>",
+	// two spellings: without this, String ranged over the keyword map and
+	// said 'this' or 'self' at random
+	KwSelf: "'this'",
 }
 
 func (k TokenKind) String() string {

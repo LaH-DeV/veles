@@ -1977,9 +1977,15 @@ func (p *printer) whenArm(arm *ast.WhenArm) {
 	case arm.Cond != nil:
 		p.expr(arm.Cond, 0)
 	default:
+		// a long list of patterns the author broke after a comma stays broken
 		for i, pat := range arm.Patterns {
 			if i > 0 {
-				p.w(", ")
+				p.w(",")
+				if p.hasNewline(arm.Patterns[i-1].Span().End, pat.Span().Start) {
+					p.breakCont()
+				} else {
+					p.w(" ")
+				}
 			}
 			p.pattern(pat)
 		}

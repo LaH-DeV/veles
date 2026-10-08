@@ -45,7 +45,11 @@ something compiles, write it to the scratchpad and run
   not `foo`/`bar` demonstrations.
 - Nothing may depend on task scheduling order; synchronise explicitly.
 - Run `veles fmt` on what you write; the formatter keeps your line breaks
-  in lists and chains, so break them where a reader would.
+  in lists, chains and a `when` arm's patterns, so break them where a
+  reader would.
+- Prefer `if (val x = e)` (D95) over `val x = e` plus `if (x != null)`; a
+  result nobody needs is not bound (`val _ =` is noise); box a temporary
+  with `&value`.
 
 ## Designing std APIs
 

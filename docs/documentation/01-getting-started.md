@@ -126,8 +126,8 @@ change, `--stdout` prints one file), and the extension formats on save
 when VS Code's `editor.formatOnSave` is on. The style is fixed like
 prettier's — spacing, indentation and alignment are the formatter's job,
 and a `{ }` block always breaks onto its own lines — but the line breaks
-you choose inside argument lists, literals and method chains, and blank
-lines between statements, are kept.
+you choose inside argument lists, literals, method chains and the
+patterns of a `when` arm, and blank lines between statements, are kept.
 
 ## When something goes wrong
 

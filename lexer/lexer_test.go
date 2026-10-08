@@ -42,3 +42,14 @@ func TestUnexpectedCharacter(t *testing.T) {
 		})
 	}
 }
+
+// A kind with two spellings names the current one, every time: String once
+// ranged over the keyword map, so a message about `this` said 'this' or
+// 'self' at random.
+func TestKindStringIsDeterministic(t *testing.T) {
+	for i := 0; i < 200; i++ {
+		if got := KwSelf.String(); got != "'this'" {
+			t.Fatalf("KwSelf.String() = %s", got)
+		}
+	}
+}

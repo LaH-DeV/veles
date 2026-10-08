@@ -358,6 +358,14 @@ func (lx *Lexer) escape() string {
 		}
 		return string(r)
 	}
+	// the whole character after the backslash: taking one byte of `\é`
+	// named it 'Ã' and left the scan inside the character
+	if c >= utf8.RuneSelf {
+		r, size := utf8.DecodeRuneInString(lx.src[lx.pos-1:])
+		lx.pos += size - 1
+		lx.errorf(start, lx.pos, "unknown escape sequence '\\%c'", r)
+		return ""
+	}
 	lx.errorf(start, lx.pos, "unknown escape sequence '\\%c'", c)
 	return ""
 }

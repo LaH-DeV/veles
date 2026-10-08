@@ -8,6 +8,8 @@ veles.exe
 **/testdata/*
 # the conformance cases (plan A4) are sources, not generated data
 !sema/testdata/conform/
+# the list of std functions marked `const fun` (std/const_test.go) is a golden
+!std/testdata/const-functions.txt
 
 
 node_modules

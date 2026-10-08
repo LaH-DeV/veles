@@ -72,7 +72,15 @@ fun main() throws DecodeError {
 		}
 		var stderr strings.Builder
 		cmd := exec.Command(exe)
-		cmd.Env = append(os.Environ(), "VELES_GC_THRESHOLD=4096")
+		// without VELES_GC_POISON, which a stress run may set: it fills a swept
+		// object with 0xCD after the wipe, and the probe reads the bytes
+		var env []string
+		for _, kv := range os.Environ() {
+			if !strings.HasPrefix(kv, "VELES_GC_POISON=") {
+				env = append(env, kv)
+			}
+		}
+		cmd.Env = append(env, "VELES_GC_THRESHOLD=4096")
 		cmd.Stderr = &stderr
 		out, err := cmd.Output()
 		if err == nil {

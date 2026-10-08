@@ -356,8 +356,6 @@ func (p *Parser) parseWith() *ast.WithExpr {
 // begins with a brace.
 func (p *Parser) atHandler() bool { return p.at(lexer.LBrace) }
 
-// parseHandler is `{ stmts }` or `{ e => stmts }`: the failure branch of a
-// let-else and of `r ?? { ... }`, with a Result's error bound to `e`.
 // parseDoCatch reads `do { body } catch (e) { handler }` (D98), with the
 // cursor on `do`. The `catch` may start the next line, as an `else` may.
 func (p *Parser) parseDoCatch() ast.Expr {
@@ -429,6 +427,9 @@ func (p *Parser) parseCatchHandler() *ast.Handler {
 	return h
 }
 
+// parseHandler is `{ stmts }`: the failure branch of a let-else and of
+// `r ?? { ... }`. The removed `{ e => stmts }`, which bound a Result's error,
+// is reported with the `catch (e)` that replaced it (D98) and still parsed.
 func (p *Parser) parseHandler() *ast.Handler {
 	start := p.span()
 	h := &ast.Handler{}

@@ -50,6 +50,7 @@ compiler/clang/flag combination and cached under the user cache directory
 | `lsp/` | language server: diagnostics with quick fixes, hover, definition, type definition, implementations, folding, references, rename (re-checked before it applies), highlights, inlay hints, signature help, symbols, completion, formatting over the compiler front end |
 | `editors/vscode/` | VS Code extension: TextMate grammar and client for `veles lsp` |
 | `docs/` | tutorials and reference; `go test ./docs/` runs every code block |
+| `selfhost/` | the front end rewritten in Veles (veles-selfhost-frontend-plan.md), phase by phase; `go test ./selfhost` builds it and checks its output against the Go front end's, byte for byte, on every Veles file in the repository |
 | `examples/` | 32 programs with expected output; `go test ./...` compiles and runs them (a `commands.txt` scripts a command-line tool, `-update` rewrites `expected.txt`; a `name.vss` script is a test when `name.expected.txt` exists, fed `name.stdin.txt` when present) |
 
 `go test ./...` is the regression suite. The parser, formatter and checker also

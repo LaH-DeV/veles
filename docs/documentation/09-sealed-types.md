@@ -49,6 +49,41 @@ exhaustive and names the missing variant. Add a fourth variant next year
 and every `when` over `Shape` that forgot it stops compiling — that is
 the point of sealing.
 
+A variant is also a type of its own. `Circle(r: 1.0)` is a `Shape` — so
+`var s = Circle(r: 1.0)` may later hold a `Rect` — but where a `Circle` is
+expected, the value stays a `Circle`, and its fields are read and assigned
+without a `when`:
+
+```veles
+use io
+
+sealed trait Shape
+struct Circle : Shape {
+  var r: f64
+}
+struct Rect : Shape {
+  w: f64
+  h: f64
+}
+
+fun scaled(c: Circle, by: f64): Circle {
+  var out: Circle = c
+  out.r = out.r * by
+  out
+}
+
+fun main() {
+  val c: Circle = Circle(r: 1.5)
+  val shapes: List<Shape> = [scaled(c, 2.0), Rect(w: 1.0, h: 2.0)]
+  io.println("${c.r} ${shapes.len()}")
+}
+```
+
+Output:
+```text
+1.5 2
+```
+
 ## Guards and `else`
 
 ```veles

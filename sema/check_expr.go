@@ -1118,7 +1118,7 @@ func (f *fnCtx) unaryExpr(e *ast.UnaryExpr, want types.Type) Expr {
 				f.checkExpr(e.X, nil)
 				return bad()
 			}
-			x := f.checkExpr(e.X, nil)
+			x := f.checkExpr(e.X, pointee(want))
 			if types.IsInvalid(x.Type()) {
 				return bad()
 			}
@@ -1153,6 +1153,20 @@ func (f *fnCtx) unaryExpr(e *ast.UnaryExpr, want types.Type) Expr {
 	}
 	f.errorf(e.Pos, "unsupported unary operator")
 	return bad()
+}
+
+// pointee is what a GC pointer wanted as `want` points to, nil when want is
+// none: the type a boxed temporary is checked against, so that in
+// `x: *Circle = &Circle(r: 1.0)` the variant stays a Circle and in
+// `p: *i32 = &5` the literal is an i32.
+func pointee(want types.Type) types.Type {
+	if n, ok := want.(*types.Nullable); ok {
+		want = n.Elem
+	}
+	if p, ok := want.(*types.Pointer); ok && !p.Raw {
+		return p.Elem
+	}
+	return nil
 }
 
 func isLiteralExpr(e ast.Expr) bool {

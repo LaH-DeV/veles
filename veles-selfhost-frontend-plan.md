@@ -94,6 +94,24 @@ The corpus must include bad input. A front end that agrees on valid files
 and diverges on invalid ones is worse than useless, because the divergence
 shows up as a confusing error message on the day a user makes a typo.
 
+### The current language only (user, 2026-10-08)
+
+The Go front end also reads the spellings Veles has removed — `self`,
+`impl`, `fun <T> f`, `mut fun`, `use m.{ }`, `T::Item`, the `{ e => }`
+handlers — and reports each with a fix, so that `veles check --fix`
+migrates an old program. The self-hosted front end does not: there `self`
+is an identifier and the others are ordinary syntax errors. A corpus file
+in which the Go parser reports a removed spelling (the list is
+`removedSpellings` in `selfhost_test.go`) is therefore outside G1–G3;
+`TestRemovedSpellings` checks instead that the Veles parser reports an error
+in it, and that `edge/p-removed` makes the Go parser report every entry of
+the list, so the list cannot fall behind. Four files are out today: two
+conformance cases written in the old spellings, one fuzz finding and
+`p-removed`.
+
+Newcomers' mistakes are not removed spellings and stay in both: `for`,
+`->`, `=` in a condition, `do … while`, `fun (x) { }`.
+
 ### The three comparisons
 
 | Gate | Veles side prints | Go side prints | Why this one |
@@ -151,6 +169,20 @@ pins the one function everything else's spans depend on.
 **Gate P0:** offsets agree, including on CRLF files and on the offset one
 past the end.
 
+*Done 2026-10-08.* `selfhost/source/source.vs` (`File.of`, `position`,
+`line`, `lineCount`, `Span` with `to` and `"$span"`, `Severity`,
+`Diagnostic`, `Diagnostics` with `errorAt`/`warnAt`/`render`),
+`selfhost/main.vs` (`--positions`, `--lines`, `--render`) and the harness
+`selfhost/selfhost_test.go`: every `.vs`/`.vss` in the repository (331
+files with the edge files: empty, CRLF, lone `\r`, multibyte characters at
+line ends, ten thousand lines) agrees with Go's `source` on every offset,
+every line and a rendered diagnostic every 37 bytes. The line table is
+searched with the prelude's `partitionPoint`. Two things P1 must settle:
+the files that are not valid UTF-8 are left out of the corpus today
+(`fs.readFile` refuses them; the lexer will read bytes), and `render` does
+not yet print the `see: veles explain` lines (the families come with the
+messages).
+
 ### P1 — tokens (≈900 lines)
 
 `selfhost/lexer/`: `TokenKind` as an `enum` (D57 — ~107 members, and
@@ -164,6 +196,29 @@ strings without interpolation → comments and docs → automatic semicolons →
 interpolation → character literals.
 
 **Gate P1 = G1** over the whole corpus, including the fuzz findings.
+
+*Done 2026-10-08.* `selfhost/lexer/` — `token.vs` (`Kind` in the Go
+order, `KEYWORDS` and the kind names as constant tables, `Token`,
+`StringPart`, `Comment`), `lexer.vs` (the scanner, automatic semicolons,
+interpolation, documentation comments, the module doc), `ident.vs` (UAX #31
+and how a diagnostic names a character) and `tables.vs`, the identifier and
+"invisible" character classes generated from the Go lexer's own decisions by
+`selfhost/tables_test.go` (which fails when they go stale) — about 900 lines
+of Veles plus the table. `selfhost --tokens` prints every token (kind number
+and name, span, inserted or not, text, doc, string parts), every comment,
+the module doc and every diagnostic; G1 agrees on all 357 corpus files,
+including hand-written broken ones (unterminated strings, comments and
+interpolations, bad escapes, numeric suffixes, invisible and bidirectional
+characters, a BOM, every doc-comment shape, chain continuations, unbalanced
+brackets). The one fuzz finding today is not valid UTF-8 and is left out,
+with every such file, until the lexer reads bytes (`fs.readFile` refuses
+them). Three Go front-end bugs found by porting, each fixed in both
+lexers: `TokenKind.String()` ranged over the keyword map, so a message
+about `this` said `'this'` or `'self'` at random; `"\é"` reported
+`unknown escape sequence '\Ã'` and then a bogus "invalid UTF-8" (the escape
+took one byte of the character); and the caret under a diagnostic counted
+bytes, so after any non-ASCII character or a tab it stood to the right of
+the span and was too wide.
 
 ### P2 — the AST (≈1500 lines, no logic)
 
@@ -558,3 +613,33 @@ right (an interpreter over a sealed HIR is the shape `bench/ast` measures),
 and its results are part of the byte-identical gate — a constant table the
 Go compiler lays out must come out the same from the Veles one, so
 `driver/constfun_test.go`'s differential cases move to the harness with it.
+
+## 11. The port is Veles, not Go in Veles (user, 2026-10-08)
+
+The first port followed the Go code line by line and read like it: `(Token,
+bool)` results and `val (_, ok) = …` at every call, `val _ = …` in front of
+each call whose result went unused, a `box<T>` helper for every pointer, a
+type annotation to steer each construction, two forty-line functions that
+patched `doc` and `internal` into every declaration kind afterwards, and the
+removed spellings carried over. The rule since the review: the
+behaviour is Go's, byte for byte, and the code is written as Veles is
+written —
+
+- a check that may fail returns `bool` (`expect`) or `T?` (`expectIdent`),
+  read with `?:`, `else` and `if (val x = …)` (D95); a result that does not
+  matter is not bound;
+- a node is boxed with `&value` (the expected pointee type now reaches the
+  operand, D10, so `&ast.ImplDecl(…)` stays an `ImplDecl`); a variable that
+  is rewrapped in a loop (`left = Binary(left: &left, …)` would point at
+  itself) goes through a function whose parameter is a fresh binding — the
+  Pratt loop's `parseInfix`, `parsePostfixOp`, `typePostfix`;
+- what is written before a declaration (`DeclHead`: attributes, doc,
+  visibility, start) is parsed once and handed to the declaration's parser,
+  which builds the node whole;
+- names are words and follow the current language: `Kind.KwThis`,
+  `KwSelfType`, `KwImplement`, `KwPublic`, `ast.ThisExpr`, `left`/`right`;
+- `veles fmt` is applied;
+- the Veles sources do not mention Go (user, 2026-10-08): a comment says
+  what the code does, not which Go function it copies (`quote`, not
+  `goQuote` after `strconv.Quote`); only the harness, which is Go and
+  compares against Go, names the bootstrap compiler.

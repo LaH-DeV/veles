@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 // File is one `.vs` source file loaded into memory.
@@ -162,6 +163,30 @@ func (d *Diagnostics) ErrorCount() int {
 	return n
 }
 
+// caret is the line under a source line that marks `width` bytes from byte
+// `at`: it lines up by characters, not bytes — a space for each character
+// before the span and a tab for a tab, so it sits under the span however a
+// terminal draws `é` or a tab — and is one `^` per character of the span
+// on this line, at least one. (It once counted bytes, and stood to the right
+// of, and wider than, anything after a non-ASCII character.)
+func caret(text string, at, width int) string {
+	if at > len(text) {
+		at = len(text)
+	}
+	var sb strings.Builder
+	for _, r := range text[:at] {
+		if r == '\t' {
+			sb.WriteByte('\t')
+		} else {
+			sb.WriteByte(' ')
+		}
+	}
+	end := min(at+max(width, 0), len(text))
+	n := utf8.RuneCountInString(text[at:end])
+	sb.WriteString(strings.Repeat("^", max(n, 1)))
+	return sb.String()
+}
+
 // Render formats every diagnostic with a source excerpt and caret.
 func (d *Diagnostics) Render() string {
 	var sb strings.Builder
@@ -172,14 +197,7 @@ func (d *Diagnostics) Render() string {
 			line, col := it.Span.File.Position(it.Span.Start)
 			text := it.Span.File.Line(line)
 			sb.WriteString("  " + text + "\n")
-			width := it.Span.End - it.Span.Start
-			if width < 1 || strings.ContainsAny(text[min(col-1, len(text)):], "\n") {
-				width = 1
-			}
-			if col-1+width > len(text) {
-				width = max(1, len(text)-(col-1))
-			}
-			sb.WriteString("  " + strings.Repeat(" ", col-1) + strings.Repeat("^", width) + "\n")
+			sb.WriteString("  " + caret(text, col-1, it.Span.End-it.Span.Start) + "\n")
 		}
 	}
 	// where to read more (D79): once per family, in the order they came up

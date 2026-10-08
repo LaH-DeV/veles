@@ -1,0 +1,164 @@
+base64/base64.vs: const fun input(bytes: List<u8>, i: i64): i64
+base64/base64.vs: const fun write(bytes: List<u8>, alphabet: string, pad: bool): string
+base64/base64.vs: public const fun encode(bytes: List<u8>): string
+base64/base64.vs: public const fun encodeUrl(bytes: List<u8>): string
+base64/base64.vs: public const fun encodedLen(n: i64, pad: bool = true): i64
+hex/hex.vs: const fun digit(nibble: u8, upper: bool): u8
+hex/hex.vs: const fun write(bytes: List<u8>, upper: bool): string
+hex/hex.vs: public const fun encode(bytes: List<u8>): string
+hex/hex.vs: public const fun encodeUpper(bytes: List<u8>): string
+prelude/adapters.vs: public const fun all<E>(pred: fun(T): bool suspends throws E): bool throws E
+prelude/adapters.vs: public const fun any<E>(pred: fun(T): bool suspends throws E): bool throws E
+prelude/adapters.vs: public const fun filter<E>(pred: fun(K, V): bool suspends throws E): Map<K, V> throws E
+prelude/adapters.vs: public const fun filter<E>(pred: fun(T): bool suspends throws E): List<T> throws E
+prelude/adapters.vs: public const fun find<E>(pred: fun(T): bool suspends throws E): T? throws E
+prelude/adapters.vs: public const fun fold<A, E>(initial: A, f: fun(A, T): A suspends throws E): A throws E
+prelude/adapters.vs: public const fun forEach<E>(f: fun(K, V): () suspends throws E) throws E
+prelude/adapters.vs: public const fun forEach<E>(f: fun(T): () suspends throws E) throws E
+prelude/adapters.vs: public const fun getOrPut<E>(key: K, make: fun(): V suspends throws E): V throws E
+prelude/adapters.vs: public const fun map<U, E>(f: fun(T): U suspends throws E): List<U> throws E
+prelude/adapters.vs: public const fun mapValues<U, E>(f: fun(V): U suspends throws E): Map<K, U> throws E
+prelude/builder.vs: public const fun append(s: string)
+prelude/builder.vs: public const fun appendByte(b: u8)
+prelude/builder.vs: public const fun appendLine(s: string = "")
+prelude/builder.vs: public const fun clear()
+prelude/builder.vs: public const fun isEmpty(): bool
+prelude/builder.vs: public const fun len(): i64
+prelude/builder.vs: public const fun reserve(n: i64)
+prelude/builder.vs: public const fun toString(): string
+prelude/duration.vs: const fun compareTo(other: Duration): Ordering
+prelude/duration.vs: const fun decimal(whole: i64, frac: i64, digits: i64): string
+prelude/duration.vs: const fun dividedBy(other: i64): Duration
+prelude/duration.vs: const fun isAsciiDigit(b: u8): bool
+prelude/duration.vs: const fun minus(other: Duration): Duration
+prelude/duration.vs: const fun negate(): Duration
+prelude/duration.vs: const fun parseDuration(s: string): Duration?
+prelude/duration.vs: const fun plus(other: Duration): Duration
+prelude/duration.vs: const fun times(other: i64): Duration
+prelude/duration.vs: const fun toString(): string
+prelude/duration.vs: const fun unitNanos(u: string): i64
+prelude/duration.vs: public const fun abs(): Duration
+prelude/duration.vs: public const fun asMillis(): f64
+prelude/duration.vs: public const fun asSeconds(): f64
+prelude/duration.vs: public const fun isNegative(): bool
+prelude/duration.vs: public const fun isZero(): bool
+prelude/duration.vs: public const fun max(other: Duration): Duration
+prelude/duration.vs: public const fun min(other: Duration): Duration
+prelude/duration.vs: public const fun over(other: Duration): i64
+prelude/duration.vs: public const fun toDays(): i64
+prelude/duration.vs: public const fun toHours(): i64
+prelude/duration.vs: public const fun toMicros(): i64
+prelude/duration.vs: public const fun toMillis(): i64
+prelude/duration.vs: public const fun toMinutes(): i64
+prelude/duration.vs: public const fun toNanos(): i64
+prelude/duration.vs: public const fun toSeconds(): i64
+prelude/duration.vs: public static const fun days(n: i64): Duration
+prelude/duration.vs: public static const fun hours(n: i64): Duration
+prelude/duration.vs: public static const fun micros(n: i64): Duration
+prelude/duration.vs: public static const fun millis(n: i64): Duration
+prelude/duration.vs: public static const fun minutes(n: i64): Duration
+prelude/duration.vs: public static const fun nanos(n: i64): Duration
+prelude/duration.vs: public static const fun ofSeconds(v: f64): Duration
+prelude/duration.vs: public static const fun seconds(n: i64): Duration
+prelude/duration.vs: static const fun parse(s: string): Duration?
+prelude/list.vs: const fun next(): T?
+prelude/list.vs: public const fun atOrDefault(i: i64, d: T): T
+prelude/list.vs: public const fun binarySearch(x: T): i64
+prelude/list.vs: public const fun binarySearchBy<K: Comparable>(key: fun(T): K, target: K): i64
+prelude/list.vs: public const fun binarySearchWith(compare: fun(T): Ordering): i64
+prelude/list.vs: public const fun chunked(n: i64): List<List<T>>
+prelude/list.vs: public const fun concat(other: List<T>): List<T>
+prelude/list.vs: public const fun contains(x: T): bool
+prelude/list.vs: public const fun count<E>(pred: fun(T): bool suspends throws E): i64 throws E
+prelude/list.vs: public const fun distinct(): List<T>
+prelude/list.vs: public const fun distinctBy<K>(key: fun(T): K): List<T>
+prelude/list.vs: public const fun drop(n: i64): List<T>
+prelude/list.vs: public const fun enumerate(): List<(i64, T)>
+prelude/list.vs: public const fun fill(x: T)
+prelude/list.vs: public const fun flatMap<U, E>(f: fun(T): List<U> suspends throws E): List<U> throws E
+prelude/list.vs: public const fun indexOfFirst<E>(pred: fun(T): bool suspends throws E): i64 throws E
+prelude/list.vs: public const fun indices(): Range<i64>
+prelude/list.vs: public const fun insert(i: i64, x: T)
+prelude/list.vs: public const fun isEmpty(): bool
+prelude/list.vs: public const fun lastIndex(): i64
+prelude/list.vs: public const fun len(): i64
+prelude/list.vs: public const fun lowerBound(x: T): i64
+prelude/list.vs: public const fun mapNotNull<U, E>(f: fun(T): U? suspends throws E): List<U> throws E
+prelude/list.vs: public const fun max(): T?
+prelude/list.vs: public const fun maxBy<K: Comparable>(key: fun(T): K): T?
+prelude/list.vs: public const fun maxWith(compare: fun(T, T): Ordering): T?
+prelude/list.vs: public const fun min(): T?
+prelude/list.vs: public const fun minBy<K: Comparable>(key: fun(T): K): T?
+prelude/list.vs: public const fun minWith(compare: fun(T, T): Ordering): T?
+prelude/list.vs: public const fun partition<E>(p: fun(T): bool suspends throws E): (List<T>, List<T>) throws E
+prelude/list.vs: public const fun partitionPoint(pred: fun(T): bool): i64
+prelude/list.vs: public const fun removeAt(i: i64): T
+prelude/list.vs: public const fun reversed(): RangeStepIter<T>
+prelude/list.vs: public const fun reversed(): RangeStepIter<T>
+prelude/list.vs: public const fun sort()
+prelude/list.vs: public const fun sortWith(compare: fun(T, T): Ordering)
+prelude/list.vs: public const fun sortedByDescending<K: Comparable>(key: fun(T): K): List<T>
+prelude/list.vs: public const fun sortedDescending(): List<T>
+prelude/list.vs: public const fun sortedWith(compare: fun(T, T): Ordering): List<T>
+prelude/list.vs: public const fun step(step: T): RangeStepIter<T>
+prelude/list.vs: public const fun step(step: T): RangeStepIter<T>
+prelude/list.vs: public const fun sum(): f64
+prelude/list.vs: public const fun sum(): i64
+prelude/list.vs: public const fun swap(i: i64, j: i64)
+prelude/list.vs: public const fun take(n: i64): List<T>
+prelude/list.vs: public const fun toMutableSet(): MutableSet<T>
+prelude/list.vs: public const fun toSet(): Set<T>
+prelude/list.vs: public const fun upperBound(x: T): i64
+prelude/list.vs: public const fun windowed(n: i64): List<List<T>>
+prelude/list.vs: public const fun zip<U>(other: List<U>): List<(T, U)>
+prelude/list.vs: public static const fun make(n: i64, init: fun(i64): T): MutableList<T>
+prelude/list.vs: public static const fun repeat(x: T, count: i64): MutableList<T>
+prelude/number.vs: const fun checkRadix(radix: i64)
+prelude/number.vs: const fun unsignedToRadix(v: u64, radix: i64): string
+prelude/number.vs: public const fun toString(radix: i64 = 10): string
+prelude/number.vs: public const fun toString(radix: i64 = 10): string
+prelude/string.vs: const fun isAsciiSpace(b: u8): bool
+prelude/string.vs: const fun isDigit(b: u8): bool
+prelude/string.vs: public const fun capitalize(): string
+prelude/string.vs: public const fun indexOf(part: string, from: i64 = 0): i64
+prelude/string.vs: public const fun lastIndexOf(part: string): i64
+prelude/string.vs: public const fun lines(): List<string>
+prelude/string.vs: public const fun padEnd(width: i64, pad: string = " "): string
+prelude/string.vs: public const fun padStart(width: i64, pad: string = " "): string
+prelude/string.vs: public const fun repeat(n: i64): string
+prelude/string.vs: public const fun replace(old: string, new: string): string
+prelude/string.vs: public const fun split(sep: string): List<string>
+prelude/string.vs: public const fun splitOnce(sep: string): (string, string)?
+prelude/string.vs: public const fun toLower(): string
+prelude/string.vs: public const fun toUpper(): string
+prelude/string.vs: public const fun trim(): string
+prelude/string.vs: public const fun trimEnd(): string
+prelude/string.vs: public const fun trimStart(): string
+prelude/traits.vs: const fun compareTo(other: f32): Ordering
+prelude/traits.vs: const fun compareTo(other: f64): Ordering
+prelude/traits.vs: const fun compareTo(other: i16): Ordering
+prelude/traits.vs: const fun compareTo(other: i32): Ordering
+prelude/traits.vs: const fun compareTo(other: i64): Ordering
+prelude/traits.vs: const fun compareTo(other: i8): Ordering
+prelude/traits.vs: const fun compareTo(other: isize): Ordering
+prelude/traits.vs: const fun compareTo(other: string): Ordering
+prelude/traits.vs: const fun compareTo(other: u16): Ordering
+prelude/traits.vs: const fun compareTo(other: u32): Ordering
+prelude/traits.vs: const fun compareTo(other: u64): Ordering
+prelude/traits.vs: const fun compareTo(other: u8): Ordering
+prelude/traits.vs: const fun compareTo(other: usize): Ordering
+utf8/utf8.vs: const fun step(b0: u8, b1: u8, b2: u8, b3: u8, rest: i64): Rune?
+utf8/utf8.vs: public const fun char(code: i64): string
+utf8/utf8.vs: public const fun combineSurrogates(high: i64, low: i64): i64?
+utf8/utf8.vs: public const fun count(bytes: List<u8>): i64
+utf8/utf8.vs: public const fun decode(s: string, at: i64): Rune?
+utf8/utf8.vs: public const fun decodeBytes(bytes: List<u8>, at: i64): Rune?
+utf8/utf8.vs: public const fun decodeLast(s: string, before: i64): Rune?
+utf8/utf8.vs: public const fun encode(code: i64): List<u8>
+utf8/utf8.vs: public const fun encodeTo(out: MutableList<u8>, code: i64): i64
+utf8/utf8.vs: public const fun isContinuation(b: u8): bool
+utf8/utf8.vs: public const fun isScalar(code: i64): bool
+utf8/utf8.vs: public const fun isStart(b: u8): bool
+utf8/utf8.vs: public const fun isSurrogate(code: i64): bool
+utf8/utf8.vs: public const fun isValid(bytes: List<u8>): bool
+utf8/utf8.vs: public const fun size(code: i64): i64?

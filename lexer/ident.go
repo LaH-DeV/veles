@@ -114,7 +114,7 @@ func describeRune(r rune) string {
 		return fmt.Sprintf("U+%04X, a no-break space; use an ordinary space", r)
 	case r == 0xFEFF:
 		return "U+FEFF, a byte-order mark, which may only begin a file"
-	case unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Zs, r) || unicode.Is(unicode.Zl, r) || unicode.Is(unicode.Zp, r):
+	case IsInvisible(r):
 		return fmt.Sprintf("U+%04X, an invisible character", r)
 	case showAsItself(r):
 		return fmt.Sprintf("'%c' (U+%04X)", r, r)
@@ -135,4 +135,16 @@ func (lx *Lexer) checkComment(start, end int) {
 		}
 		i += size
 	}
+}
+
+// IsIDStart and IsIDContinue are the identifier rules above, for the
+// generator of the self-hosted lexer's tables (selfhost/lexer/tables.vs),
+// which must classify every character as this lexer does.
+func IsIDStart(r rune) bool    { return isIDStart(r) }
+func IsIDContinue(r rune) bool { return isIDContinue(r) }
+
+// IsInvisible is describeRune's "an invisible character" class, for the same
+// generator: format characters and the separators.
+func IsInvisible(r rune) bool {
+	return unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Zs, r) || unicode.Is(unicode.Zl, r) || unicode.Is(unicode.Zp, r)
 }

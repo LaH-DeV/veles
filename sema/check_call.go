@@ -21,7 +21,7 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 	case *ast.TypeExpr:
 		// a resolved struct as the constructor: synthesized code only (D58)
 		if st, ok := f.resolve(callee.Type).(*types.Struct); ok {
-			return f.constructStruct(st, e.Args, e.Pos)
+			return f.constructStruct(st, e.Args, e.Pos, want)
 		}
 		f.errorf(callee.Pos, "'%s' is not a struct", f.resolve(callee.Type))
 		f.checkArgsLoosely(e.Args)
@@ -192,7 +192,7 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 						if len(typeArgs) > 0 {
 							v = f.c.instantiateStruct(v, typeArgs, e.Pos)
 						}
-						return f.constructStruct(v, e.Args, e.Pos)
+						return f.constructStruct(v, e.Args, e.Pos, want)
 					}
 				}
 			}
@@ -321,7 +321,7 @@ func (f *fnCtx) callSymbol(sym *Symbol, name string, typeArgs []types.Type, e *a
 			} else if len(typeArgs) > 0 {
 				f.errorf(e.Pos, "'%s' is not generic: write it without '<...>'", t.Name)
 			}
-			return f.constructStruct(st, e.Args, e.Pos)
+			return f.constructStruct(st, e.Args, e.Pos, want)
 		case *types.Sealed:
 			f.errorf(e.Pos, "'%s' is a sealed trait; construct one of its variants, e.g. '%s.%s(...)'", t.Name, t.Name, firstVariantName(t))
 		case *types.Basic:
@@ -789,7 +789,7 @@ func (f *fnCtx) pinsAll(st *types.Struct, m map[*types.TypeParam]types.Type) boo
 }
 
 // constructStruct implements the implicit constructor (D28).
-func (f *fnCtx) constructStruct(st *types.Struct, args []ast.Arg, span source.Span) Expr {
+func (f *fnCtx) constructStruct(st *types.Struct, args []ast.Arg, span source.Span, want types.Type) Expr {
 	f.c.resolveStruct(templateOf(st))
 	if len(st.TypeParams) > 0 && st.TypeArgs == nil {
 		f.errorf(span, "'%s' is generic; supply type arguments", st.Name)
@@ -895,10 +895,26 @@ func (f *fnCtx) constructStruct(st *types.Struct, args []ast.Arg, span source.Sp
 		body := &Block{Stmts: []Stmt{&ExprStmt{X: call}}, Value: ref(built), Type: st}
 		result = &Let{exprBase{st}, built, lit, &BlockExpr{exprBase{st}, body}}
 	}
-	if st.Sealed != nil {
+	if st.Sealed != nil && !variantWanted(want, st) {
 		result = &MakeVariant{exprBase{st.Sealed}, st.Sealed, st, result}
 	}
 	return result
+}
+
+// variantWanted reports a construction whose expected type is the variant
+// itself (or a nullable of it): `val c: Circle = Circle(...)`, a parameter
+// or a return of type `Circle`. The value stays the variant, which a later
+// use converts to the sealed trait where that is wanted (convertAt); with
+// no such expectation a construction is the trait, as before, so
+// `var s = Circle(...); s = Rect(...)` keeps meaning what it meant. (A
+// variant type could be named but never constructed: `val c: Circle =
+// Circle(...)` was a type mismatch.)
+func variantWanted(want types.Type, st *types.Struct) bool {
+	if n, ok := want.(*types.Nullable); ok {
+		want = n.Elem
+	}
+	w, ok := want.(*types.Struct)
+	return ok && types.Identical(w, st)
 }
 
 // punFields applies D28's construction rule to the arguments: every field
