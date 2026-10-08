@@ -18,7 +18,7 @@ fun consume(ch: Channel<i64>): i64 {
 }
 
 fun main() {
-  val sw = time.Stopwatch.start()
+  val stopwatch = time.Stopwatch.start()
   var total: i64 = 0
   scope {
     val sums: MutableList<Task<i64>> = []
@@ -28,7 +28,7 @@ fun main() {
       async produce(ch)
       sums.push(async consume(ch))
     }
-    loop (t in sums) total += await t
+    total = sums.fold(0, (acc, task) => acc + await task)
   }
-  println("BENCH pipes 1600000 ${sw.elapsed().toNanos()} $total")
+  println("BENCH pipes 1600000 ${stopwatch.elapsed().toNanos()} $total")
 }

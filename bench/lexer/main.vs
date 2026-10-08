@@ -70,13 +70,13 @@ fun main() {
   }
   val src = sb.toString()
 
-  val sw = time.Stopwatch.start()
+  val stopwatch = time.Stopwatch.start()
   var check: i64 = 0
   var tokens: i64 = 0
   loop (_ in 0..<3) {
     val toks = tokenise(src)
     tokens += toks.len()
-    loop (t in toks) check += (t.end - t.start) * (t.kind.value + 1)
+    loop (token in toks) check += (token.end - token.start) * (token.kind.value + 1)
   }
-  println("BENCH lexer $tokens ${sw.elapsed().toNanos()} $check")
+  println("BENCH lexer $tokens ${stopwatch.elapsed().toNanos()} $check")
 }

@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.73** — decisions D1–D141. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.74** — decisions D1–D142. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -21,6 +21,7 @@ Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-p
 | D139 | the registry protocol, tiers, yanks and signed reviews (completes D138) |
 | D140 | an expression body is `=> expr` |
 | D141 | a task handle stays in its scope; in a fail-fast block `await` gives the value |
+| D142 | visibility: unmarked is the package, `internal` the module, `public` other packages (amends M5, D89) |
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -160,13 +161,13 @@ This is not a style rule. Both of Veles' inferred effects (D2 suspension, D4 err
 
 ### M5 — `public` grants package-wide visibility
 
-Default visibility is module-private. `public` makes a declaration visible to the rest of the package. ~~Nothing escapes the package except through the manifest's `exports` field.~~ *(D89, v0.48)* Nothing escapes the package except what its root module re-exports with `public use`; the manifest has no `exports` field.
+~~Default visibility is module-private. `public` makes a declaration visible to the rest of the package.~~ ~~Nothing escapes the package except through the manifest's `exports` field.~~ *(D89, v0.48)* ~~Nothing escapes the package except what its root module re-exports with `public use`; the manifest has no `exports` field.~~ *(D142, v0.74: the default is the package, `internal` is the module, and `public` exports to other packages at the declaration's module path; `public use` remains as a facade. The levels below are read through D142.)*
 
 Consequence: library authors get a deliberately curated public surface, consumers cannot reach into internals, and Veles never needs Go's magic `internal/` directories.
 
-*Amended (v0.29) — spelling and a third level.* The keyword is `public`, not `pub`: it now sits next to `private`, and the pair every Java, C#, Kotlin, Swift and TypeScript reader knows is `public`/`private`; the three extra characters on each exported declaration were weighed against that and lost. `export` was rejected for it — exporting is what the *package* does, in the manifest, module by module, and a keyword by that name on a struct field would claim a boundary the field does not cross. (Whether the package boundary itself should one day be spelled in source with `export` rather than in the manifest is an open question the user has reserved; nothing here prejudges it.) The levels are therefore: **`private`** — visible only inside the type's own declarations: its methods, its `implement` and `extend` blocks in the same module, and its `static val` initializers (Swift's rule for extensions in the same file); **nothing** — the module, as before, which keeps small programs light; **`public`** — the package. `private` exists for fields and methods only; a module-level declaration is already module-private. A private field cannot be read, assigned or bound in a pattern from outside. In a constructor call the rule turns on the default (v0.30): a private field *with* a default is the type's own state and outsiders leave it to the default; one *without* a default is the initial state only the constructor call can supply, so it is given from anywhere the type is visible and is private from then on — Kotlin's `class Parser(private val toks: ...)`, without the syntax. Swift's rule (a private stored property makes the memberwise initializer private) was the v0.29 behaviour and was dropped: it forced a `static fun` on every type that merely wanted to hide what it was given. That is the whole encapsulation story, with no getters and no `friend`. Motivated by a one-file program whose request handlers reached into a store's counter: modules were the only boundary, and a directory per invariant is too heavy.
+*Amended (v0.29) — spelling and a third level.* The keyword is `public`, not `pub`: it now sits next to `private`, and the pair every Java, C#, Kotlin, Swift and TypeScript reader knows is `public`/`private`; the three extra characters on each exported declaration were weighed against that and lost. `export` was rejected for it — exporting is what the *package* does, in the manifest, module by module, and a keyword by that name on a struct field would claim a boundary the field does not cross. (Whether the package boundary itself should one day be spelled in source with `export` rather than in the manifest is an open question the user has reserved; nothing here prejudges it.) The levels are therefore: **`private`** — visible only inside the type's own declarations: its methods, its `implement` and `extend` blocks in the same module, and its `static val` initializers (Swift's rule for extensions in the same file); ~~**nothing** — the module, as before, which keeps small programs light; **`public`** — the package.~~ *(D142: **`internal`** — the module; **nothing** — the package; **`public`** — other packages.)* `private` exists for fields and methods only; ~~a module-level declaration is already module-private~~ *(D142: on a module-level declaration it is an error whose fix writes `internal`)*. A private field cannot be read, assigned or bound in a pattern from outside. In a constructor call the rule turns on the default (v0.30): a private field *with* a default is the type's own state and outsiders leave it to the default; one *without* a default is the initial state only the constructor call can supply, so it is given from anywhere the type is visible and is private from then on — Kotlin's `class Parser(private val toks: ...)`, without the syntax. Swift's rule (a private stored property makes the memberwise initializer private) was the v0.29 behaviour and was dropped: it forced a `static fun` on every type that merely wanted to hide what it was given. That is the whole encapsulation story, with no getters and no `friend`. Motivated by a one-file program whose request handlers reached into a store's counter: modules were the only boundary, and a directory per invariant is too heavy.
 
-*Addendum (v0.30) — the unwritten level has a name: `internal`.* "Nothing written means the module" was judged not self-explanatory, so the level is called *internal* (Kotlin's and Swift's word for it; `protected` was considered for this level and given instead to write-protection of fields, D22 addendum, where its "the owner only" sense fits) and may be written: `internal fun helper()`, `internal x: i64`, `internal struct Note`, on the same positions as `public`. It changes nothing and is never required; the formatter keeps it where the author wrote it; `public internal` is a contradiction and an error. The example package's `internal` module was renamed `support`, since the word is a keyword now.
+*Addendum (v0.30) — the unwritten level has a name: `internal`.* "Nothing written means the module" was judged not self-explanatory, so the level is called *internal* (Kotlin's and Swift's word for it; `protected` was considered for this level and given instead to write-protection of fields, D22 addendum, where its "the owner only" sense fits) and may be written: `internal fun helper()`, `internal x: i64`, `internal struct Note`, on the same positions as `public`. ~~It changes nothing and is never required; the formatter keeps it where the author wrote it;~~ *(D142: it is now the only way to say "this module", and is required for it.)* `public internal` is a contradiction and an error. The example package's `internal` module was renamed `support`, since the word is a keyword now.
 
 ### M6 — Import paths are logical
 
@@ -2310,8 +2311,9 @@ public use shapes { area, Circle as Round }   // flattened: use mathlib → math
 ```
 
 `public use` in any module adds the named module, or the named items, to that
-module's public surface; the root module's public surface is the package's,
-and the manifest's `exports` list goes away (the bootstrap has no users to
+module's public surface; ~~the root module's public surface is the package's,~~
+*(D142, v0.74: every module's `public` declarations are reachable from other
+packages at their own path; `public use` is the optional facade)* and the manifest's `exports` list goes away (the bootstrap has no users to
 keep compatible; a manifest that still has one gets an error naming the fix).
 Forms mirror `use` (D85): `public use m` re-exports the module under its
 name, `public use m { a, T as U }` flattens those items into this module
@@ -2319,9 +2321,11 @@ name, `public use m { a, T as U }` flattens those items into this module
 modules and items may be re-exported; re-exporting a dependency is an error
 for now (revisit with M7). `public use` is a `use` edge for import-cycle
 detection; a flattened name collides with a declaration of the module as a
-duplicate does. The dependency graph still comes from manifests; the loader
+duplicate does. The dependency graph still comes from manifests; ~~the loader
 reads a dependency's root module to learn its surface, and the error for a
-module that is not re-exported names the `public use` to add. Hover and
+module that is not re-exported names the `public use` to add.~~ *(D142: the
+loader reads the modules a dependent imports; an item that is not `public`
+gets an error naming the word to add.)* Hover and
 go-to-definition follow a re-export to the original.
 
 Rejected (user, recommended of 3): keeping manifest `exports`, whole modules
@@ -5075,6 +5079,117 @@ every such await for the early-exit case only); leaving the run-time panic.
 Rejected for Q-B: delivering an awaited child's `Err` to the `await` and not
 failing the scope (Swift's task groups — then whether a failure stops its
 siblings depends on whether a handle exists); leaving `Result` in the type.
+
+### D142 — Visibility: unmarked is the package, `public` leaves it (v0.74)
+
+```veles
+// selfhost/lexer/token.vs — before: `public` on the struct and on all six fields
+struct Token {
+  var kind: Kind
+  text:     string             // the source text
+  span:     Span
+  parts:    List<StringPart> = []
+  autoSemi: bool = false
+  doc:      string = ""
+}
+
+internal fun isIdentStart(b: u8): bool => ...   // this module only
+```
+
+The user, of the struct above written with seven `public`s: "let's think how
+could we do less `public` painting but have the default internal/private
+things". Counted at the time: 575 `public`s in `selfhost/`, 407 of them on
+fields; 1169 in `std/`. Under M5 `public` meant "the other modules of my
+package" — the real boundary was the root's `public use` — so the keyword
+was everywhere and guarded little.
+
+**The levels** (one rule for top-level declarations, fields and methods):
+
+| Written | Visible to |
+|---|---|
+| `private` | the type's own declarations (M5 v0.29, unchanged) |
+| `internal` | the module |
+| *nothing* | the package |
+| `public` | other packages |
+
+**Export by path.** A `public` declaration in any module is reachable from
+a package that depends on this one at its module path: dependency `http =
+{ registry = "acme/http", … }`, then `use http.server` and `server.Handler`
+(the owner stays in the manifest, D138). D89's "the root is the only way
+out" goes; `public use` stays as the facade a library writes for a flat or
+stable API (`use http` → `http.Request`). The directory layout of `public`
+modules is therefore API: moving one is a breaking change unless a facade
+hides it.
+
+**A facade may export unmarked items** (Q22, user, over the recommended
+"only `public`"). `public use lexer { Token }` in a library's root exports
+`Token` even when `Token` is unmarked: a library may write no `public` at
+all and curate its whole API in the root. Such an item is reachable from
+other packages only under the facade's name, not at `lexer.Token`. An
+`internal` or `private` item cannot be re-exported (error, naming the
+level). `public use m` of a whole module exports that module's unmarked and
+`public` declarations under the facade.
+
+**A `public` signature names only types other packages can see** (Q23,
+user, recommended of 3). `public fun parse(): Token` with `Token` neither
+`public` nor re-exported is an error ("'parse' is public but its result
+type 'Token' is not visible outside the package"), with fixes that make
+`Token` `public` or drop `public` from `parse`. It covers parameter and
+result types, `throws` types, trait bounds, field types of a `public` field,
+a `public` type alias's target and a `public` trait's method signatures; a
+type re-exported by a facade counts as visible. Rejected: a warning;
+allowing it (callers get a value whose type they cannot write).
+
+**A member of an exported type is unmarked → package-only.** It is not
+readable, assignable or bindable in a pattern from another package. The
+implicit constructor follows M5's v0.30 rule for private fields: from another
+package a field it cannot see is *supplied* if it has no default ("if it is
+needed for creation, it should be needed for creation", user) and *left to
+its default* otherwise. So adding a field without a default to a `public`
+type breaks other packages' construction calls; adding one with a default
+does not. Methods likewise: an unmarked method of a `public` type is the
+package's.
+
+**Edge cases.**
+- `private` on a top-level declaration is an error with the fix `internal`.
+  A file-scoped `private` (Kotlin's top-level rule) was considered and kept
+  for later: refusing it now leaves the word free (checklist §11).
+- `public` in a program — a package whose root module declares `fun main()`
+  (§2), which nothing can depend on — is a **compiler warning** ("nothing
+  can import a program; 'public' has no effect"), and `veles check --fix`
+  removes the word. A library with a `main` elsewhere is a library.
+- `public internal` and `internal private` are contradictions, errors.
+- `protected var` (D22) composes as before: `public protected var n` is read
+  in other packages, assigned by the type.
+- Sealed variants stay in the trait's module (D12): unmarked is now the
+  package, which is exactly the reach that rule was written against.
+- Tests (`test "…"`) in the package see every unmarked declaration, as any
+  module of the package does.
+- The formatter keeps `internal`, `public` and `private` as written; it never
+  adds or removes one.
+
+**Migration** (the whole tree in one change — std, examples, benches,
+selfhost, docs; nothing is removed from the syntax, the words change
+meaning, so no old reading is kept): today's unmarked declaration becomes
+`internal`; today's `public` becomes unmarked, or stays `public` when other
+packages reach it by path or it is a member (field, method, static) of a type
+they reach — through a facade or by path; std's modules, imported by path
+from every program, keep `public` on their surface. Since a facade may export
+unmarked items (Q22), the roots' `public use` lines stay as they are. A program in the scratchpad does it from the checker's view
+of the tree, not by text.
+
+**Both levels / self-hosting.** High level: an application or a compiler
+writes no visibility words at all except where it hides something. Low
+level: `internal` and `private` give module and type encapsulation where an
+invariant needs it. Self-hosting: removes most of `selfhost/`'s `public`s;
+the compiler is one package of many modules, the shape this default serves.
+
+Rejected (user, 2026-10-08, the user's own proposal over the recommended
+"members default to their type's visibility"): members inheriting the
+type's level (keeps `public` meaning the package, and a field added to a
+public type is exposed unless marked); a `data struct` modifier (a second
+kind of struct for a visibility rule); a C++-style `public { }` block;
+leaving M5 as it was.
 
 ---
 

@@ -8,9 +8,8 @@ fun work(seed: i64): i64 {
   val words: MutableMap<string, i64> = [:]
   loop (round in 0..<200) {
     val xs: MutableList<i64> = []
-    loop (i in 0..<200) {
-      xs.push((seed * 31 + i * 7 + round) % 1000)
-    }
+    xs.reserve(200)
+    loop (i in 0..<200) xs.push((seed * 31 + i * 7 + round) % 1000)
     val sorted = xs.sorted()
     total += sorted.at(100) ?: 0
     val key = "k${(seed + round) % 17}"
@@ -24,16 +23,12 @@ fun worker(seed: i64, out: Channel<i64>) {
 }
 
 fun main() {
-  val sw = time.Stopwatch.start()
+  val stopwatch = time.Stopwatch.start()
   val out = Channel<i64>(capacity: 64)
   var sum: i64 = 0
   scope {
-    loop (s in 0..<64) {
-      async worker(s, out)
-    }
-    loop (_ in 0..<64) {
-      sum += (await out.recv()) ?: 0
-    }
+    loop (s in 0..<64) async worker(s, out)
+    loop (_ in 0..<64) sum += (await out.recv()) ?: 0
   }
-  println("BENCH parallel 64 ${sw.elapsed().toNanos()} $sum")
+  println("BENCH parallel 64 ${stopwatch.elapsed().toNanos()} $sum")
 }

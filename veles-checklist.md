@@ -953,7 +953,7 @@ list as it was is in `archive/progress-log-2026-09.md` and git history).
 
 (Q15 named imports was decided 2026-09-29: D85; Q16 `as` conversions the same day: D86; Q19 the same; Q4 D87, Q8 D88, Q3 D89 — decided 2026-09-29, being built in that order.)
 
-**Open: none** (2026-10-05; Q21, packages, was decided the same day: D138).
+**Open: none** (2026-10-08; Q22 and Q23, raised while recording D142, were decided the same day into D142; Q21, packages, 2026-10-05: D138).
 
 (Q12, Q13, Q17 and Q20 were decided 2026-09-30: D101–D106. Q1 was decided 2026-10-01: D108; Q2, Q9, Q10, Q11 the same day: D111–D114; Q5, Q6 the same day: D117, D118; Q7 the same day: D120–D123; Q14 the same day: D131, D132.)
 
@@ -1107,9 +1107,18 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-10-07 | E7 stage g: registry integrity | **Signed `.info` with a key pinned in `[registry] key`** (user, recommended of 3; D139). Rejected: trust on first use alone; a Merkle transparency log now. |
 | 2026-10-08 | Expression bodies | **`fun f(): T => expr`** (D140): `=` only binds, `=>` only yields; `= expr` is a removed spelling with a fix (user, recommended of 3, prompted by the `implicit_return` levels). Rejected: keep `= expr` (§4); decide later. |
 | 2026-10-08 | Task handles (user: "can we await tasks outside of the scope? … what for is the scope really? what about unawaited tasks?") | **A handle stays in the `scope`/`gather` that started it — returned, stored in anything declared before the block, or captured by a lambda stored there is an error — and in a fail-fast block `await` on a throwing child gives the value (`Task<R>`, no `try`); `gather` and D111 fields keep `Task<Result<R, E>>`** (user, recommended of 3 for each; D141). Rejected: an `await` after the scope that throws `Cancelled`; Swift-style delivery of an awaited child's error to the `await`; leaving either as it was (a run-time panic; an `Err` arm that never ran). |
+| 2026-10-08 | Visibility levels (user: "let's think how could we do less `public` painting but have the default internal/private things") | **`private` the type, `internal` the module, unmarked the package, `public` other packages, exported at its module path; `public use` stays as a facade; a member another package cannot see is supplied to the implicit constructor when it has no default and defaulted otherwise ("if it is needed for creation, it should be needed for creation"); top-level `private` an error (fix `internal`); `public` in a program a compiler warning with `--fix`** (user's own proposal, over the recommended "members default to their type's level"; D142, amends M5 and D89; build: plan B17). Rejected: members inheriting their type's level; a `data struct` modifier; a `public { }` block; leaving M5. Opened Q22, Q23. |
+| 2026-10-08 | Q22: facade re-export of unmarked items | **Allowed: `public use` in a root may export an unmarked item, reachable outside only under the facade's name; `internal`/`private` refused** (user, over the recommended "only `public` items"; D142). Rejected: only `public` items re-exportable. |
+| 2026-10-08 | Q23: a `public` signature naming an unexported type | **Error with fixes (make the type `public`, or drop `public`); a type exported by a facade counts as visible** (user, recommended of 3; D142). Rejected: a warning; allowing it. |
 
 ## 11. Known limitations to revisit
 
+- Visibility (D142, decided 2026-10-08, not built: plan B17). Kept for later:
+  a file-scoped `private` on top-level declarations (Kotlin's rule) — refused
+  as an error today so the word stays free; take it up if large modules ask
+  for per-file helpers. A semver check at `veles publish` that names a field
+  without a default added to a `public` type (it breaks other packages'
+  construction calls) — not built.
 - Arrays (D121): `ref(i)` and in-place `sort`/`swap` are not offered (`set` and
   `loop (&x in a)` are); a type argument may not calculate from a constant
   parameter (`Array<u8, N + 1>`), and a constant parameter is an `i64`; every

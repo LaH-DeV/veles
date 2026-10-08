@@ -7,6 +7,7 @@ fun main() {
   var check: i64 = 0
   loop (_ in 0..<5) {
     val sb = StringBuilder()
+    // not reserving the capacity here, to test the StringBuilder growth logic
     loop (i in 0..<200000) sb.append("item-$i,")
     val parts = sb.toString().split(",")
     val part = parts.at(123456) ?: panic("strings: the text has 200000 parts")

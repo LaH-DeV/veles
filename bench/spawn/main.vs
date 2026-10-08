@@ -3,27 +3,25 @@
 use io { println }
 use time
 
-fun square(i: i64): i64 {
-  var acc: i64 = 0
-  loop (k in 0..<50) acc += (i + k) % 7
-  acc
-}
+fun square(i: i64): i64 =>
+  (0..<50).iter().fold(0, (acc, k) => acc + (i + k) % 7)
 
-fun batch(from: i64): i64 {
+fun batch(from: i64, to: i64): i64 {
   var sum: i64 = 0
   scope {
     val tasks: MutableList<Task<i64>> = []
-    loop (i in from..<from + 1000) {
+    tasks.reserve(to - from)
+    loop (i in from..<to) {
       tasks.push(async square(i))
     }
-    loop (t in tasks) sum += await t
+    sum = tasks.fold(0, (acc, task) => acc + await task)
   }
   sum
 }
 
 fun main() {
-  val sw = time.Stopwatch.start()
+  val stopwatch = time.Stopwatch.start()
   var sum: i64 = 0
-  loop (b in 0..<100) sum += batch(b * 1000)
-  println("BENCH spawn 100000 ${sw.elapsed().toNanos()} $sum")
+  loop (b in 0..<100) sum += batch(b * 1000, (b + 1) * 1000)
+  println("BENCH spawn 100000 ${stopwatch.elapsed().toNanos()} $sum")
 }
