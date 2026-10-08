@@ -232,8 +232,8 @@ it.count(); it.fold(z, f); it.any(p); it.all(p); it.find(p); it.last(); it.forEa
 ```veles
 // fragment
 scope {                          // every task started inside finishes here
-  val t = async work(1)          // Task<i64>
-  val v = await t
+  val t = async work(1)          // Task<i64>, even when work throws: its error fails the scope (D141)
+  val v = await t                // no `try`; a handle never leaves its scope — await inside, keep the value
 }
 val (a, b) = gather { async f(); async g() }   // (Result<A, E|Panic>, Result<B, ...>); one task: its Result — when (gather { async f() }) { ... } (D103)
 val winner = race { val m = ch.recv() => ...; sleep(Duration.millis(100)) => "timeout"; val v = t => ... }

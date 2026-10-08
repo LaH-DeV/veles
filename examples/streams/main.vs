@@ -52,7 +52,7 @@ fun main() throws IoError | io.TooLong {
     val server = async serve(listener, text)
     with conn = try net.connect("127.0.0.1", listener.port())
     report("socket", try summarize(conn))
-    try await server
+    await server
   }
   try fs.remove(file)
 }

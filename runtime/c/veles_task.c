@@ -91,6 +91,8 @@ typedef struct veles_task {
     struct veles_task *waiter; /* task blocked in await on this one */
     void *result;           /* heap cell holding the return value */
     int64_t failed;         /* result is Err */
+    int64_t unwrap;         /* a fail-fast child (D141): await gives the Ok payload */
+    int64_t value_off;      /* where that payload sits in the result */
     veles_scope *scope;
     int64_t index;          /* the launch site within its scope (a loop launches from one site many times) */
     struct veles_task *next;      /* the shared run queue's link */
@@ -147,6 +149,7 @@ struct veles_scope {
     int64_t live;          /* children not finished (atomic) */
     int64_t fail_fast;
     veles_task *failed;
+    int64_t over;          /* the owner has joined every child: the scope has ended */
 };
 
 typedef struct veles_chan {
@@ -992,6 +995,7 @@ static void veles_task_started_impl(veles_task *t, void *hdl) {
 }
 
 static void scope_child_finished(veles_task *t);
+static void scope_child_failed(veles_task *t);
 static void remove_timer(veles_task *t);
 
 /* called by the coroutine body before its final suspend */
@@ -1000,6 +1004,9 @@ static void veles_task_finish_impl(veles_task *t, const void *result, int64_t si
     t->result = veles_alloc_words(size > 0 ? size : 8);
     if (size > 0 && result) memcpy(t->result, result, (size_t)size);
     t->failed = failed;
+    /* the scope fails before the result is published, so a task woken by
+     * it sees the failure at its next check (D141) */
+    scope_child_failed(t);
     /* released: an await that sees T_DONE without the lock sees the result */
     __atomic_store_n(&t->state, T_DONE, __ATOMIC_SEQ_CST);
     t->hdl = NULL;
@@ -1016,11 +1023,33 @@ static void veles_task_finish_cancelled_impl(veles_task *t) {
     scope_child_finished(t);
 }
 
+/* `await` on a fail-fast child that failed (D141): its error is its
+ * scope's, so there is no value to give. The awaiting code is in that
+ * scope — a handle does not leave it — and is about to be abandoned (the
+ * body, at the check after this suspension point) or cancelled (a sibling,
+ * or a call the body is inside): yield until that happens. A handle a
+ * callee kept past the end of its scope is the one way to get here after
+ * it; that is a panic, as awaiting a cancelled task is. */
+static int64_t await_failed(veles_task *self, veles_task *target) {
+    self->awaiting = NULL;
+    if (target->scope && __atomic_load_n(&target->scope->over, __ATOMIC_ACQUIRE))
+        veles_panic("awaited task failed; its error left with its scope", 50);
+    rt_enter();
+    enqueue(self);
+    rt_exit();
+    return 0;
+}
+
+static int64_t done_and_failed(veles_task *t) {
+    return t->unwrap && t->failed && !t->panicked;
+}
+
 /* await: true when the target is done, otherwise blocks the caller */
 static int64_t veles_task_await_impl(veles_task *self, veles_task *target) {
     for (;;) {
         int64_t st = __atomic_load_n(&target->state, __ATOMIC_SEQ_CST);
         if (st == T_DONE) {
+            if (done_and_failed(target)) return await_failed(self, target);
             self->awaiting = NULL;
             return 1;
         }
@@ -1045,6 +1074,19 @@ static int64_t veles_task_await_impl(veles_task *self, veles_task *target) {
 
 void *veles_task_result(veles_task *t) {
     return t->result;
+}
+
+/* what `await` gives: the result, or for a fail-fast child (D141) the Ok
+ * payload inside it */
+void *veles_task_value(veles_task *t) {
+    return (char *)t->result + (t->unwrap ? t->value_off : 0);
+}
+
+/* a launch in a fail-fast block of a function that throws (D141): the
+ * payload of its Result sits at off */
+void veles_task_set_unwrap(veles_task *t, int64_t off) {
+    t->unwrap = 1;
+    t->value_off = off;
 }
 
 int64_t veles_task_failed(veles_task *t) {
@@ -1171,18 +1213,25 @@ static int64_t scope_leave(veles_task *t) {
     return left;
 }
 
+/* a failed child fails its fail-fast scope: its siblings are cancelled.
+ * Called before the child publishes T_DONE (runtime lock held), and again,
+ * harmlessly, as it leaves. */
+static void scope_child_failed(veles_task *t) {
+    veles_scope *s = t->scope;
+    if (!s || !t->failed || !s->fail_fast || s->failed) return;
+    __atomic_store_n(&s->failed, t, __ATOMIC_RELEASE);
+    cancel_children(s, t);
+    /* the owner may be blocked in the scope body (a recv that will now
+     * never complete): wake it so its next suspension point sees the
+     * failure and abandons the body */
+    wake(s->owner);
+}
+
 static void scope_child_finished(veles_task *t) {
     veles_scope *s = t->scope;
     if (!s) return;
     int64_t left = scope_leave(t);
-    if (t->failed && s->fail_fast && !s->failed) {
-        __atomic_store_n(&s->failed, t, __ATOMIC_RELEASE);
-        cancel_children(s, t);
-        /* the owner may be blocked in the scope body (a recv that will now
-         * never complete): wake it so its next suspension point sees the
-         * failure and abandons the body */
-        wake(s->owner);
-    }
+    scope_child_failed(t);
     if (left <= 0) wake(s->owner);
 }
 
@@ -1202,9 +1251,35 @@ static void veles_scope_cancel_impl(veles_scope *s) {
     cancel_children(s, NULL);
 }
 
+/* a child failed, and the body is abandoned at a suspension point (D34):
+ * the children still running are cancelled, and so is the suspending call
+ * the body was inside, if any — a call runs as a task of its own, and
+ * would otherwise run on after the scope had rethrown, its `with` blocks
+ * still open (D3). The call joins the scope, so the join waits for it to
+ * unwind as it waits for the children. */
+static void veles_scope_abandon_impl(veles_scope *s, veles_task *owner) {
+    cancel_children(s, NULL);
+    veles_task *callee = owner->awaiting;
+    owner->awaiting = NULL;
+    if (!callee || callee->scope) return;
+    int64_t st = __atomic_load_n(&callee->state, __ATOMIC_SEQ_CST);
+    if (st == T_DONE || st == T_CANCELLED) return;
+    /* the call's finish would wake the owner as its waiter: the scope's
+     * last child does that now */
+    veles_task *me = owner;
+    __atomic_compare_exchange_n(&callee->waiter, &me, NULL, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+    callee->scope = s;
+    callee->index = -1;
+    join_scope(callee);
+    cancel_task(callee);
+}
+
 /* wait for every child: true when done, otherwise blocks the owner */
 static int64_t veles_scope_wait_impl(veles_task *owner, veles_scope *s) {
-    if (__atomic_load_n(&s->live, __ATOMIC_SEQ_CST) <= 0) return 1;
+    if (__atomic_load_n(&s->live, __ATOMIC_SEQ_CST) <= 0) {
+        __atomic_store_n(&s->over, 1, __ATOMIC_RELEASE);
+        return 1;
+    }
     __atomic_store_n(&owner->state, T_BLOCKED, __ATOMIC_SEQ_CST);
     return 0;
 }
@@ -2143,7 +2218,9 @@ static int64_t veles_race_wait_impl(veles_task *self, veles_race *r) {
             a->waiter = self;
             /* an awaited task that finishes without the lock publishes
              * T_DONE and then reads its waiter (the await explains it) */
-            if (__atomic_load_n(&a->state, __ATOMIC_SEQ_CST) == T_DONE && race_claim(r, i)) won = i;
+            /* a fail-fast child that failed is never ready: its error is
+             * the scope's, which abandons this race (D141) */
+            if (__atomic_load_n(&a->state, __ATOMIC_SEQ_CST) == T_DONE && !done_and_failed(a) && race_claim(r, i)) won = i;
         }
         if (won < 0 && __atomic_load_n(&r->winner, __ATOMIC_SEQ_CST) >= 0) break; /* claimed on an arm already registered */
     }
@@ -2439,6 +2516,7 @@ int64_t veles_task_panic(const char *msg, int64_t len, const char *loc, int64_t 
     t->panicked = 1;
     t->failed = 1;
     t->result = result;
+    scope_child_failed(t); /* before the result is published (D141) */
     __atomic_store_n(&t->state, T_DONE, __ATOMIC_SEQ_CST);
     t->hdl = NULL;
     wake(__atomic_exchange_n(&t->waiter, NULL, __ATOMIC_SEQ_CST));
@@ -2900,7 +2978,7 @@ void veles_task_finish_cancelled(veles_task *t) {
  * there), and awaiting is read by a cancellation only once self is parked,
  * which comes after it is stored */
 int64_t veles_task_await(veles_task *self, veles_task *target) {
-    if (__atomic_load_n(&target->state, __ATOMIC_ACQUIRE) == T_DONE) {
+    if (__atomic_load_n(&target->state, __ATOMIC_ACQUIRE) == T_DONE && !done_and_failed(target)) {
         self->awaiting = NULL;
         return 1;
     }
@@ -2923,6 +3001,12 @@ void veles_task_leave_waits(veles_task *t) {
 void veles_scope_cancel(veles_scope *s) {
     rt_enter();
     veles_scope_cancel_impl(s);
+    rt_exit();
+}
+
+void veles_scope_abandon(veles_scope *s, veles_task *owner) {
+    rt_enter();
+    veles_scope_abandon_impl(s, owner);
     rt_exit();
 }
 

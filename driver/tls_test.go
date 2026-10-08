@@ -157,7 +157,7 @@ fun echoed(port: i64): string suspends throws IoError {
     try conn.write(data)
   }
   try conn.shutdownWrite()
-  try await reader
+  await reader
 }
 
 // two requests through one client: the second reuses the pooled TLS connection

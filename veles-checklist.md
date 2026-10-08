@@ -1106,6 +1106,7 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-10-07 | E7 stage g: reviews | **Portable ed25519-signed statements, trust by key in `[policy] trust`, `require = { reviewed = N }`; served by the registry or committed under `attestations/`** (user, recommended of 3; D139). Rejected: registry-hosted only; cargo-vet-style imports by URL. |
 | 2026-10-07 | E7 stage g: registry integrity | **Signed `.info` with a key pinned in `[registry] key`** (user, recommended of 3; D139). Rejected: trust on first use alone; a Merkle transparency log now. |
 | 2026-10-08 | Expression bodies | **`fun f(): T => expr`** (D140): `=` only binds, `=>` only yields; `= expr` is a removed spelling with a fix (user, recommended of 3, prompted by the `implicit_return` levels). Rejected: keep `= expr` (§4); decide later. |
+| 2026-10-08 | Task handles (user: "can we await tasks outside of the scope? … what for is the scope really? what about unawaited tasks?") | **A handle stays in the `scope`/`gather` that started it — returned, stored in anything declared before the block, or captured by a lambda stored there is an error — and in a fail-fast block `await` on a throwing child gives the value (`Task<R>`, no `try`); `gather` and D111 fields keep `Task<Result<R, E>>`** (user, recommended of 3 for each; D141). Rejected: an `await` after the scope that throws `Cancelled`; Swift-style delivery of an awaited child's error to the `await`; leaving either as it was (a run-time panic; an `Err` arm that never ran). |
 
 ## 11. Known limitations to revisit
 
@@ -1124,6 +1125,28 @@ Every new public std API (http cookies/forms/client, `std/log`,
   captured, directly or through a `val` alias or a literal around it — not
   what a function it is lent to does with it (by the decision), nor a value
   derived from it by a call (`conn.reader()`).
+- A task handle may not leave its scope (D141) by the same local check: a
+  function the handle is passed to may keep it (in a global, say). Awaiting
+  it after its scope then panics at run time ("awaited task was cancelled",
+  or "awaited task failed; its error left with its scope" when the scope
+  failed). An `await` on a failed child inside its scope yields until the
+  scope's failure abandons or cancels the awaiter — a short spin on the run
+  queue, not a parked wait.
+- Run-time concurrency gotchas, documented in
+  `docs/documentation/reference/concurrency.md` (2026-10-08), that the
+  compiler could catch — each a decision (`veles-decide`) before building:
+  `withTimeout` (or a `race` against a task) given a function the compiler
+  knows never suspends cannot be stopped, and reports `Timeout` only after
+  the function finished (D116 tells which lambdas suspend: an error or a
+  warning is possible); `await t` after `t.cancel()` in the same block
+  panics unless the task had finished (a local check could refuse it);
+  `send` on a closed channel panics (not statically knowable in general).
+  A partial deadlock (some tasks stuck while a timer or socket wait exists
+  elsewhere) is not detected; only a whole-program one is.
+- A child launched with `async` that *returns* a `Result` without `throws`
+  is not a failing child in a `scope` (D141, pinned by
+  `driver/taskhandle_test.go`); how `gather` and a D111 field treat one was
+  not reviewed in that change.
 - A test's output is captured through `io` only: what C code writes itself
   (`printf` through FFI) goes straight to the terminal.
 - `expectPanics(body)` runs `body` in a task of its own, so `body` must be

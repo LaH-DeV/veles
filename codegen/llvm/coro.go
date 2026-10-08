@@ -27,6 +27,8 @@ declare i64 @veles_task_cancelled(ptr)
 declare void @veles_task_finish_cancelled(ptr)
 declare i64 @veles_task_await(ptr, ptr)
 declare ptr @veles_task_result(ptr)
+declare ptr @veles_task_value(ptr)
+declare void @veles_task_set_unwrap(ptr, i64)
 declare i64 @veles_task_failed(ptr)
 declare ptr @veles_scope_begin(ptr, i64)
 declare ptr @veles_task_launch(ptr, i64)
@@ -46,6 +48,7 @@ declare i64 @veles_task_sleep(ptr, i64)
 declare i64 @veles_task_wait_io(ptr, i64, i64)
 declare void @veles_task_cancel(ptr)
 declare void @veles_scope_cancel(ptr)
+declare void @veles_scope_abandon(ptr, ptr)
 declare ptr @veles_receiving_bind(ptr)
 declare void @veles_receiving_restore(ptr)
 declare ptr @veles_receiving()
@@ -189,10 +192,12 @@ func (g *gen) failFastCheck() {
 		g.emit("call void @veles_task_leave_waits(ptr %s)", c.task)
 		// the body is abandoned: what the innermost scope still runs is
 		// cancelled before its join (a `with` task, D100, would otherwise
-		// be waited for; a scope whose own child failed has cancelled them)
+		// be waited for; a scope whose own child failed has cancelled them),
+		// and so is the suspending call the body is inside, which the join
+		// then waits for (D3)
 		isc := g.newTmp()
 		g.emit("%s = load ptr, ptr %s", isc, inner.slot)
-		g.emit("call void @veles_scope_cancel(ptr %s)", isc)
+		g.emit("call void @veles_scope_abandon(ptr %s, ptr %s)", isc, c.task)
 		g.runCleanups(inner.cleanups)
 		g.emitTerm("br label %%%s", inner.wait)
 		g.placeLabel(go_on)
@@ -257,7 +262,7 @@ func (g *gen) awaitTask(task string, rt types.Type) string {
 		return "zeroinitializer"
 	}
 	rp := g.newTmp()
-	g.emit("%s = call ptr @veles_task_result(ptr %s)", rp, task)
+	g.emit("%s = call ptr @veles_task_value(ptr %s)", rp, task)
 	return g.loadVal(rt, rp)
 }
 
@@ -291,6 +296,10 @@ func (g *gen) launch(e *sema.Launch) string {
 	}
 	ct := g.newTmp()
 	g.emit("%s = call ptr @veles_task_launch(ptr %s, i64 %d)", ct, scope, e.Index)
+	if e.Unwrap {
+		// D141: `await` gives the Ok payload, which follows the tag word
+		g.emit("call void @veles_task_set_unwrap(ptr %s, i64 8)", ct)
+	}
 	var argTypes []types.Type
 	var argVals []string
 	for _, a := range e.Call.Args {
@@ -434,7 +443,7 @@ func (g *gen) scopeBlock(e *sema.ScopeBlock) string {
 	g.placeLabel(errorsL)
 	var throwing []*sema.Launch
 	for _, l := range e.Launches {
-		if isResultType(l.Call.Type()) {
+		if l.Fails {
 			throwing = append(throwing, l)
 		}
 	}
@@ -621,7 +630,7 @@ func (g *gen) race(e *sema.Race) string {
 				t := g.newTmp()
 				g.emit("%s = load ptr, ptr %s", t, slots[i])
 				rp := g.newTmp()
-				g.emit("%s = call ptr @veles_task_result(ptr %s)", rp, t)
+				g.emit("%s = call ptr @veles_task_value(ptr %s)", rp, t)
 				if !types.IsUnit(arm.Var.Type) {
 					g.storeVal(arm.Var.Type, g.loadVal(arm.Var.Type, rp), st)
 				}

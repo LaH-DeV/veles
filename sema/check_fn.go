@@ -79,15 +79,16 @@ type fnCtx struct {
 	pending     []Stmt            // statements hoisted by adapter lowering
 	boundPlace  map[ast.Expr]Expr // receiver of a `?.` assignment, already lowered to its place (check_safe.go)
 	scopes      []*ScopeBlock
-	held        []*HeldLock             // the `with … = m.lock()` regions around the code being checked (D107)
-	lockOK      *ast.CallExpr           // the `with` value being checked, where `m.lock()` is allowed
-	lockSeen    bool                    // lockOK turned out to be `m.lock()`
+	taskMarks   []*Var        // per open scope/gather: what its tasks count as, for D141's escape rule (resources.go)
+	held        []*HeldLock   // the `with … = m.lock()` regions around the code being checked (D107)
+	lockOK      *ast.CallExpr // the `with` value being checked, where `m.lock()` is allowed
+	lockSeen    bool          // lockOK turned out to be `m.lock()`
 	// D111: the calls that may produce a task-holding value (a `with` value,
 	// a returned value, a field of one), and the `async` field arguments of
 	// task-holding constructors, with how the value is received
-	heldOK    map[*ast.CallExpr]heldBy
-	heldAsync map[*ast.CallExpr]heldBy
-	stmtWiths   map[*ast.WithExpr]bool  // block forms made from the statement form by withRest
+	heldOK      map[*ast.CallExpr]heldBy
+	heldAsync   map[*ast.CallExpr]heldBy
+	stmtWiths   map[*ast.WithExpr]bool // block forms made from the statement form by withRest
 	awaitNext   bool
 	inRaceArm   bool
 	inferThrows bool
@@ -459,7 +460,6 @@ func isSynchronized(t types.Type) bool {
 	st, ok := t.(*types.Struct)
 	return ok && st.Module == "std.prelude" && (st.Name == "Mutex" || st.Name == "Atomic")
 }
-
 
 // ---------------------------------------------------------------------------
 // blocks and statements

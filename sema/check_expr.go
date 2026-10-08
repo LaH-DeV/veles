@@ -1875,7 +1875,9 @@ func (f *fnCtx) tryOn(x Expr, pos source.Span) Expr {
 			// value is already the payload
 			return x
 		}
-		if !types.IsInvalid(x.Type()) {
+		if _, awaited := x.(*AwaitTask); awaited && !types.IsInvalid(x.Type()) {
+			f.c.errorFix(e.Pos, fixDropKeyword("Remove 'try'", "try", e.Pos), "'await' gives the task's value, a '%s': a task's error fails the block that started it, never the 'await' — remove the 'try' (D141)", x.Type())
+		} else if !types.IsInvalid(x.Type()) {
 			// the fix is what `--fix` needs after a callee lost a needless
 			// `throws` (lint_throws.go): the `try` has nothing left to do
 			f.c.errorFix(e.Pos, fixDropKeyword("Remove 'try'", "try", e.Pos), "'try' needs a Result (a call to a 'throws' function), found '%s'", x.Type())

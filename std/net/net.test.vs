@@ -26,6 +26,6 @@ test "a connection is a stream: a suspending call through the object" {
     expect(try s.readLine(64) == "echo ping")
     try s.shutdownWrite()
     expect(try s.readLine(64) == null)
-    try await server
+    await server
   }
 }

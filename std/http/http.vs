@@ -822,7 +822,7 @@ fun requestLine(c: io.Stream, limits: Limits, drain: Drain): string? suspends th
   scope {
     val line = async readLineOf(c, limits.requestLineBytes)
     race {
-      val r = await line        => return try r
+      val r = await line        => return r
       sleep(limits.idleTimeout) => throw Timeout(limit: limits.idleTimeout)
       val _ = drain.wake.recv() => return null
     }

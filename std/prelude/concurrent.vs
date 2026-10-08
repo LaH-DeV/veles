@@ -84,7 +84,8 @@ public fun withTimeout<R: Sendable, E>(limit: Duration, f: sendable fun(): R sus
   scope {
     val t = async f()
     race {
-      val r = await t => return try r
+      // an error of `f` is the scope's: it fails the scope, never this arm (D141)
+      val r = await t => return r
       // leaving the scope by a throw cancels `t` and waits for it to unwind
       sleep(limit)    => throw Timeout(limit)
     }

@@ -769,6 +769,11 @@ type Launch struct {
 	// the `with` that receives the value.
 	Scope *ScopeBlock
 	Index int
+	// Fails: the function throws, so the task can fail its scope (one
+	// that returns a Result without `throws` hands its Err over as a value).
+	// Unwrap: a fail-fast launch of it, whose handle is the Ok type — `await`
+	// gives the payload, the error being the scope's (D141).
+	Fails, Unwrap bool
 }
 
 // AwaitTask waits for a task handle and yields its result.

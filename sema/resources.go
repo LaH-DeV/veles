@@ -56,10 +56,20 @@ func (f *fnCtx) heldResource(e ast.Expr) (*Var, bool) {
 			}
 		}
 	case *ast.CallExpr:
+		if e.Async {
+			// a task of the scope or gather around it (D141)
+			if n := len(f.taskMarks); n > 0 {
+				return f.taskMarks[n-1], false
+			}
+			return nil, false
+		}
 		// a struct built around it: `Session(conn: c)`
 		if n, ok := e.Fun.(*ast.NameExpr); ok {
 			if sym := f.scope.Lookup(n.Name); sym != nil && sym.Kind == SymType {
 				for _, a := range e.Args {
+					if c, isCall := a.Value.(*ast.CallExpr); isCall && c.Async {
+						continue // a task the value holds goes where the value goes (D111)
+					}
 					if r, l := f.heldResource(a.Value); r != nil {
 						return r, l
 					}
@@ -107,6 +117,18 @@ func (f *fnCtx) refuseEscape(e ast.Expr, doing string) bool {
 	r, viaLambda := f.heldResource(e)
 	if r == nil {
 		return false
+	}
+	if kind := f.c.taskBlocks[r]; kind != "" {
+		const why = "a task belongs to the '%s' that started it, which has finished or cancelled it when the block ends; await it inside the block and keep its value (D141)"
+		switch n, isName := e.(*ast.NameExpr); {
+		case isName:
+			f.errorf(e.Span(), "'%s' cannot %s: "+why, n.Name, doing, kind)
+		case viaLambda:
+			f.errorf(e.Span(), "this lambda captures a task, so it cannot %s: "+why, doing, kind)
+		default:
+			f.errorf(e.Span(), "this task cannot %s: "+why, doing, kind)
+		}
+		return true
 	}
 	if n, ok := e.(*ast.NameExpr); ok && n.Name != r.Name {
 		f.errorf(e.Span(), "'%s' cannot %s: it holds '%s', which %s when its 'with' block ends (D100)", n.Name, doing, r.Name, f.closedWord(r))
@@ -191,14 +213,45 @@ func (f *fnCtx) checkStoreEscape(recv types.Type, e *ast.CallExpr) {
 	if len(f.c.resources) == 0 || !storesArguments(recv) {
 		return
 	}
-	if m, ok := e.Fun.(*ast.MemberExpr); !ok || !storingMethods[m.Name.Name] {
+	m, ok := e.Fun.(*ast.MemberExpr)
+	if !ok || !storingMethods[m.Name.Name] {
 		return
 	}
 	for _, a := range e.Args {
+		r, _ := f.heldResource(a.Value)
+		if r == nil {
+			continue
+		}
+		if f.c.taskBlocks[r] != "" {
+			// a collection of the block's own may hold its tasks (D141)
+			if f.outlives(m.X, r) && f.refuseEscape(a.Value, "be stored in '"+srcText(m.X)+"', which outlives the block") {
+				return
+			}
+			continue
+		}
 		if f.refuseEscape(a.Value, "be stored in a collection or sent on a channel") {
 			return
 		}
 	}
+}
+
+// openTaskBlock starts the marker of a scope or gather (D141): it counts as
+// declared where the block opens, so whatever was declared before outlives
+// the block's tasks (outlives), and each `async` in the block is its alias.
+func (f *fnCtx) openTaskBlock(kind string) {
+	f.c.nextVar++
+	m := &Var{Name: kind, Type: &types.Task{Result: types.TUnit}, ID: f.c.nextVar}
+	f.vars[m] = true
+	if f.c.taskBlocks == nil {
+		f.c.taskBlocks = map[*Var]string{}
+	}
+	f.c.taskBlocks[m] = kind
+	f.markResource(m, m)
+	f.taskMarks = append(f.taskMarks, m)
+}
+
+func (f *fnCtx) closeTaskBlock() {
+	f.taskMarks = f.taskMarks[:len(f.taskMarks)-1]
 }
 
 // storingMethods are the methods of the types storesArguments names that

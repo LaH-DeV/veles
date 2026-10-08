@@ -52,6 +52,7 @@ For readers who want to know what the compiler actually does.
 - [Cheat sheet](reference/cheatsheet.md) — the whole syntax on one page.
 - [Standard library](reference/stdlib.md) — what the bootstrap prelude and `io` provide today.
 - [The registry protocol](reference/registry-protocol.md) — what a package registry serves and accepts: versions, signed metadata, archives, reviews.
+- [Concurrency: what happens, exactly](reference/concurrency.md) — every rule of the runtime in one place: when tasks start, what `await` waits for, where a task can be interrupted, failures, cancellation, timeouts, deadlock, locks, scheduling, costs, and the mistakes the compiler cannot stop.
 - [Error messages](reference/errors.md) — every family of error the compiler reports, what it means and how to fix it (`veles explain <family>`).
 - The language design itself is in [`veles-spec.md`](../../veles-spec.md); tutorials cite its decisions as `D<n>`.
 

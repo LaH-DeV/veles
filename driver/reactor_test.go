@@ -82,12 +82,12 @@ fun main() throws IoError | io.TooLong {
   var streamed: i64 = 0
   scope {
     async acceptAll(l, 302)
-    val clients: MutableList<Task<Result<i64, IoError | io.TooLong>>> = []
+    val clients: MutableList<Task<i64>> = []
     loop (id in 0..<300) clients.push(async pingPong(port, id))
-    val streams: MutableList<Task<Result<i64, IoError | io.TooLong>>> = []
+    val streams: MutableList<Task<i64>> = []
     loop (_ in 0..<2) streams.push(async duplex(port))
-    loop (t in clients) pings += try await t
-    loop (t in streams) streamed += try await t
+    loop (t in clients) pings += await t
+    loop (t in streams) streamed += await t
   }
   l.close()
   io.println("pings $pings streamed $streamed")
@@ -183,24 +183,24 @@ fun sleeper(ms: i64): i64 {
 }
 
 fun main() {
-  val kept: MutableList<Task<i64>> = []
-  val doomed: MutableList<Task<i64>> = []
   var early: i64 = 0
   var late: i64 = 0
   var woke: i64 = 0
   scope {
+    val kept: MutableList<Task<i64>> = []
+    val doomed: MutableList<Task<i64>> = []
     loop (i in 0..<3000) {
       val t = async sleeper((i * 7919) % 400 + 1)
       if (i % 3 == 0) doomed.push(t) else kept.push(t)
     }
     await sleep(Duration.millis(5))
     loop (t in doomed) t.cancel()
-  }
-  loop (t in kept) {
-    val lateBy = await t
-    woke += 1
-    if (lateBy < 0) early += 1
-    if (lateBy > 2000) late += 1
+    loop (t in kept) {
+      val lateBy = await t
+      woke += 1
+      if (lateBy < 0) early += 1
+      if (lateBy > 2000) late += 1
+    }
   }
   io.println("woke $woke early $early late $late")
 }

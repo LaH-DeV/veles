@@ -675,6 +675,35 @@ inside `scope { }` when the block should wait for it (a pool of workers),
 or as `with t = async f()` when it runs in the background until the block
 ends, which cancels it then (D100) — a server in a test, a ticker.
 
+#### `this task cannot be stored in 'tasks', which outlives the block: a task belongs to the 'scope' that started it`
+
+When control passes a `scope`'s `}`, each of its tasks has finished — or,
+if the scope was left early, has been cancelled (D141). A handle kept in
+something declared before the scope (an outer `var` or list, a field), or
+returned, would outlive the task it names. Declare the list inside the
+scope, await there, and keep the *values*:
+
+```veles
+// fragment
+var total: i64 = 0
+scope {
+  val tasks: MutableList<Task<i64>> = []
+  loop (u in urls) tasks.push(async fetchSize(u))
+  loop (t in tasks) total += await t
+}
+```
+
+Tasks you never await are fine: the scope waits for them anyway.
+
+#### `a task of this 'scope' is 'Task<i64>', not 'Task<Result<i64, Boom>>'` / `'await' gives the task's value`
+
+In a `scope`, and for `with t = async f()`, a child's error fails the
+block (D34) — it never reaches an `await`. So the handle of a throwing
+`f` holds `f`'s value, and `await t` needs no `try` (D141; the quick fix
+removes it). To handle a child's error yourself, use `gather` (its
+handles and results keep the `Result`), or launch a function that
+*returns* a `Result` instead of throwing.
+
 #### `'TestServer' holds a running task, so it must be received with 'with' where it is made`
 
 A struct with a `Task` field — or a field that holds one — keeps a task

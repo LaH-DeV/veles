@@ -10,14 +10,14 @@ fun square(i: i64): i64 {
 }
 
 fun batch(from: i64): i64 {
-  val tasks: MutableList<Task<i64>> = []
+  var sum: i64 = 0
   scope {
+    val tasks: MutableList<Task<i64>> = []
     loop (i in from..<from + 1000) {
       tasks.push(async square(i))
     }
+    loop (t in tasks) sum += await t
   }
-  var sum: i64 = 0
-  loop (t in tasks) sum += await t
   sum
 }
 

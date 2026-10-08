@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.72** — decisions D1–D140. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.73** — decisions D1–D141. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -19,6 +19,8 @@ Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-p
 | D137 | a static of a generic type infers its type arguments |
 | D138 | packages revisited: TOML manifest now, registry beside git, safety tiers (amends D131/D132) |
 | D139 | the registry protocol, tiers, yanks and signed reviews (completes D138) |
+| D140 | an expression body is `=> expr` |
+| D141 | a task handle stays in its scope; in a fail-fast block `await` gives the value |
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -643,7 +645,7 @@ race {
 
 `race` is itself the suspension point, so arms carry no `await`. *(v0.61, D108: an arm may also be `ch.send(v)`.)*
 
-*Addendum (v0.29).* Exactly one arm runs, so a smart cast made inside an arm (an assignment to a `var`) survives the race only when every arm makes it — the `if`/`else` join rule (D5). A race whose arms all return or throw is `Never`-typed, which is what lets `withTimeout` be written as `race { val r = await t => return try r; sleep(ms) => throw Timeout() }` inside a scope whose early exit cancels `t`.
+*Addendum (v0.29).* Exactly one arm runs, so a smart cast made inside an arm (an assignment to a `var`) survives the race only when every arm makes it — the `if`/`else` join rule (D5). A race whose arms all return or throw is `Never`-typed, which is what lets `withTimeout` be written as `race { val r = await t => return try r; sleep(ms) => throw Timeout() }` inside a scope whose early exit cancels `t`. *(v0.73, D141: `return r` — the awaited value of a scope's task is its payload.)*
 
 *Addendum (2026-10-02, written down while building D108; not a change).* **Which arm wins.** When the race starts, the arms are tried in written order and the first one ready wins, so an always-ready arm shadows the ones after it. If none is ready the race waits, and the first arm to become ready wins. The rule is deterministic and biased towards earlier arms; it is not fair in Go's sense (Go picks among ready cases at random). Changing it would be a decision.
 
@@ -3095,6 +3097,9 @@ of the block:
   the normal exit before the join.
 
 `scope { }` stays for tasks that are to be *waited for* (a worker pool).
+*(v0.73, D141: the handles of a `scope`'s or `gather`'s tasks are held to
+part 3 below as a with-task is, and `await` on a with-task or scope task of
+a throwing function gives its value.)*
 
 **3. A resource must not outlive its block** (new, both forms). It is an error
 (a new family `resources` in `source/family.go` and `reference/errors.md`,
@@ -3535,7 +3540,8 @@ fixture is an ordinary function returning an ordinary value.
 - **Its tasks belong to that block.** They are fail-fast background children
   of the `with`'s block exactly as in D100 part 2: a task that panics, or ends
   with an `Err` (an async call of a throwing function is `Task<Result<R, E>>`,
-  so `E` is in the field type), cancels the rest of the block and the error
+  so `E` is in the field type — *v0.73, D141: still so for a field, while a
+  handle in a `scope` is `Task<R>`*), cancels the rest of the block and the error
   propagates from it (joining the enclosing function's inferred `throws`); at
   the end of the block every held task is cancelled and joined, in reverse
   field order, **before** the value's own `close()` (so the listener closes
@@ -4973,6 +4979,102 @@ val double = (x: i64) => x * 2              // the lambda reads the same
 **Why.** The user, adding the `"lambda"` level of `[lint] implicit_return` (the value may be implicit "when '=>' was used"): "Maybe we should also make expr bodies be written like `=> expr` so fat arrow would be understandable". With it every body that yields its value without `return` is written after an arrow, so the lint's levels follow from the syntax. C# and Dart write expression-bodied members the same way.
 
 User, 2026-10-08, recommended of 3. Rejected: keep `= expr` (§4, Kotlin's and Scala's spelling; `=` meant both "binds" and "yields"); decide later. This supersedes the §4 line "`=`, not `=>`, for expression bodies" and the matching sentence of D32.
+
+### D141 — A task handle stays in its scope, and awaiting it gives the value (v0.73)
+
+```veles
+fun main() throws IoError | http.FetchError {
+  with srv = try testServer(handler(_ => Response.text("hello, world")))
+  val url = srv.url + "/"
+  var total: i64 = 0
+  scope {
+    val tasks: MutableList<Task<i64>> = []          // was Task<Result<i64, http.FetchError>>
+    loop (_ in 0..<64) tasks.push(async client(url))
+    loop (t in tasks) total += await t              // was `try await t`, after the scope
+  }
+  println("$total")
+}
+```
+
+The user asked, of the program above as it was written (the handles pushed
+into a list declared before the `scope` and awaited after it): "can we await
+tasks outside of the scope? okay, so what for is the scope really? what about
+unawaited tasks?" Probing gave two holes:
+
+- A handle could leave its scope (stored in an outer `var` or collection,
+  returned). After a normal end the `await` read a finished task; after an
+  early exit (`break`, `return`, a failed `try`) the task had been cancelled
+  and the `await` **panicked at run time** ("awaited task was cancelled").
+  A function returning `Task<T>` compiled and no caller could use it.
+- In a fail-fast block the handle of a throwing child was typed
+  `Task<Result<T, E>>`, but the block takes the child's error first: an
+  `is Err` arm on `await t` never ran, and `try await t` was a `try` that
+  could not fail.
+
+**What a scope is for** (unchanged, stated here because the question was
+asked): when control passes a `scope`'s `}`, every task started in it has
+finished, or has been cancelled and has run its cleanups (D3, D34, D43); a
+child that fails cancels its siblings and the error leaves the scope (D35
+v0.28). That is what lets children borrow the parent's immutable values with
+no copy (D35). **An unawaited task is fine**: the scope joins it, and its
+failure fails the scope. `await` is how the body *uses* a child's value
+before the end, never what keeps the child alive.
+
+**Rule 1 — a handle does not leave the block that started it.** The handle
+of `async f()` in a `scope` or `gather` is held to D100 part 3, as a
+`with`-bound task is: it may not be returned, be the value of the block,
+be assigned to anything declared before the block (an outer `var`, a field,
+a global, a parameter), be stored in a collection or sent on a channel that
+was declared before the block, nor be captured by a lambda that does any of
+those. Inside the block all of them are allowed — a `MutableList<Task<T>>`
+declared in the scope is the worker-pool shape. Passing a handle as an
+argument is allowed (D100's rule; a callee that keeps it is not caught).
+Error, family `tasks`: "'t' cannot be stored in 'keep', which outlives the
+block: a task belongs to the 'scope' that started it, which has finished or
+cancelled it when the block ends; await it inside the block and keep its
+value (D141)".
+
+**Rule 2 — in a fail-fast block, `await` gives the value.** `async f()` where
+`f` throws `E` is `Task<R>` in a `scope` body and as a `with t = async f()`
+(D100): the error is the block's — it is already in the function's inferred
+`throws` — so `await t` is `R` and needs no `try`. In `gather` the handle
+stays `Task<Result<R, E>>`, because collecting every outcome is what `gather`
+is for (D36). A field of a task-holding value (D111) also keeps
+`Task<Result<R, E>>`: the field's declared type is how `E` reaches the block
+that receives the value, which has no launch to read it from. A task whose
+child failed is never awaited with a value: the awaiting code is in the
+failing block, and is abandoned (the body) or cancelled (a sibling, a call in
+progress) at that `await`.
+
+**Handling a child's error locally** is done where the error is a value: in
+`gather`; or inside the child (launch a function that catches and returns a
+fallback); or by launching a function that *returns* a
+`Result<R, E>` without `throws` — its `Err` is a value, not a failure, and
+`await` gives the `Result`.
+
+**Edge cases.** A race arm `val r = await t => …` binds `R` (`withTimeout`'s
+arm is `val r = await t => return r`). The v0.29 addendum on a type
+parameter in an error union ("a `try` on an awaited `Task<Result<R, E>>` is
+the identity when `E` is `Never`") no longer arises in a scope. A handle's type written by hand follows the rule:
+`MutableList<Task<i64>>` for a throwing child in a scope.
+
+**Runtime facts this relies on** (built with it): a failing child marks its
+scope failed and cancels its siblings *before* it publishes its result, so
+whoever wakes on it sees the failure; a scope body abandoned by a failed
+child also cancels and waits for the suspending call it was inside (before,
+that call ran on after the scope had rethrown — an orphan, against D3).
+
+**Both levels / self-hosting.** High level: no `try` that cannot fail, no
+handle that can be awaited after its scope. Low level: a handle is still a
+value inside its block, passed to functions and raced. Self-hosting: neutral
+(the compiler's tasks are a worker pool, the shape above).
+
+User, 2026-10-08, recommended of 3 for each (Q-A, Q-B). Rejected for Q-A:
+allowing it with `await` after the scope throwing `Cancelled` (an error on
+every such await for the early-exit case only); leaving the run-time panic.
+Rejected for Q-B: delivering an awaited child's `Err` to the `await` and not
+failing the scope (Swift's task groups — then whether a failure stops its
+siblings depends on whether a handle exists); leaving `Result` in the type.
 
 ---
 

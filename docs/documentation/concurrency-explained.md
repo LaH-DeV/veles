@@ -373,4 +373,6 @@ failure on to the code around the scope. See "Fail fast" in
   the rest.
 
 Next: [chapter 12, Concurrency](12-concurrency.md) — the full reference,
-with `gather`, `race`, channels, cancellation and timeouts.
+with `gather`, `race`, channels, cancellation and timeouts — and
+[Concurrency: what happens, exactly](reference/concurrency.md), every rule
+and every gotcha in one place.

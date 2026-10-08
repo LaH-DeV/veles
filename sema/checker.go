@@ -30,6 +30,9 @@ type Checker struct {
 	// resources: each `with` binding and each local that aliases one, to the
 	// binding (D100 part 3, resources.go)
 	resources map[*Var]*Var
+	// taskBlocks: the marker of each scope and gather, which every handle
+	// its `async` gives counts as an alias of (D141), to "scope"/"gather"
+	taskBlocks map[*Var]string
 	// lockVars: the `n` of each `with n = m.lock()`, a pointer into the
 	// Mutex that is unlocked, not closed, when the block ends (D107)
 	lockVars map[*Var]bool
@@ -83,25 +86,25 @@ type Checker struct {
 	collected          bool
 	collectRefs        int // index refs recorded by collect(); rounds reset only past this
 	tests              []*FuncTemplate
-	staticAsserts      []moduleAssert // module-level `static assert`s (D113)
+	staticAsserts      []moduleAssert                     // module-level `static assert`s (D113)
 	testNames          map[*Module]map[string]source.Span // each module's qualified test and suite names, for duplicates (D78)
 	suites             int                                // suites declared, for unique helper symbols
 	suiteHelpers       map[string]string                  // a suite helper's name -> its suite, for "unknown function" (D78)
 	optionTmpl         *types.Sealed
 
 	// per-round state
-	queue          []*Func
-	instances      map[string]*Func
-	funcs          []*Func
-	globalState    map[*Global]int8 // globalChecking / globalChecked, this round
-	changed        bool
-	nextVar        int
-	tupleCmp       map[string]*Func // synthesized tuple comparisons by type key (tuple_order.go)
-	trampolines    map[string]*Func // what `async f(...)` starts for a function value, by its type (D103)
-	enumFns        map[string]*Func // synthesized enum functions by type key and name (enum.go)
-	nextLoop       int
-	nextTmp        int
-	nextLambda     int
+	queue       []*Func
+	instances   map[string]*Func
+	funcs       []*Func
+	globalState map[*Global]int8 // globalChecking / globalChecked, this round
+	changed     bool
+	nextVar     int
+	tupleCmp    map[string]*Func // synthesized tuple comparisons by type key (tuple_order.go)
+	trampolines map[string]*Func // what `async f(...)` starts for a function value, by its type (D103)
+	enumFns     map[string]*Func // synthesized enum functions by type key and name (enum.go)
+	nextLoop    int
+	nextTmp     int
+	nextLambda  int
 }
 
 type declCtx struct {
@@ -2544,7 +2547,7 @@ func (c *Checker) runRound() *Program {
 	c.instances = map[string]*Func{}
 	c.funcs = nil
 	c.tupleCmp, c.enumFns, c.trampolines = nil, nil, nil // synthesized per round, like every other function
-	c.tt = traitTests{} // the `is` tables belong to this round's Program, so what they were built from is re-noted by its bodies
+	c.tt = traitTests{}                                  // the `is` tables belong to this round's Program, so what they were built from is re-noted by its bodies
 	c.globalState = map[*Global]int8{}
 	c.nextVar, c.nextLoop, c.nextTmp = 0, 0, 0
 	for _, t := range c.templates {

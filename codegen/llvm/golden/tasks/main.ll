@@ -357,7 +357,7 @@ scope.ok.15:
 scope.abort.14:
   call void @veles_task_leave_waits(ptr %task)
   %t34 = load ptr, ptr %a5
-  call void @veles_scope_cancel(ptr %t34)
+  call void @veles_scope_abandon(ptr %t34, ptr %task)
   br label %scope.wait.1
 cont.16:
   br label %await.4
@@ -369,7 +369,7 @@ await.repanic.17:
   call void @veles_task_repanic(ptr %t19)
   unreachable
 await.fine.18:
-  %t37 = call ptr @veles_task_result(ptr %t19)
+  %t37 = call ptr @veles_task_value(ptr %t19)
   %t38 = load i64, ptr %t37
   %t40 = call i64 @veles_i64_format(ptr %a39, i64 %t38)
   %t41 = insertvalue %str undef, ptr %a39, 0
@@ -420,7 +420,7 @@ scope.ok.30:
 scope.abort.29:
   call void @veles_task_leave_waits(ptr %task)
   %t58 = load ptr, ptr %a5
-  call void @veles_scope_cancel(ptr %t58)
+  call void @veles_scope_abandon(ptr %t58, ptr %task)
   br label %scope.wait.1
 cont.31:
   br label %await.19
@@ -432,7 +432,7 @@ await.repanic.32:
   call void @veles_task_repanic(ptr %t43)
   unreachable
 await.fine.33:
-  %t61 = call ptr @veles_task_result(ptr %t43)
+  %t61 = call ptr @veles_task_value(ptr %t43)
   %t62 = load i64, ptr %t61
   %t64 = call i64 @veles_i64_format(ptr %a63, i64 %t62)
   %t65 = insertvalue %str undef, ptr %a63, 0
@@ -569,7 +569,7 @@ scope.ok.63:
 scope.abort.62:
   call void @veles_task_leave_waits(ptr %task)
   %t120 = load ptr, ptr %a98
-  call void @veles_scope_cancel(ptr %t120)
+  call void @veles_scope_abandon(ptr %t120, ptr %task)
   br label %scope.wait.45
 cont.64:
   br label %recv.52
@@ -885,7 +885,7 @@ scope.ok.116:
 scope.abort.115:
   call void @veles_task_leave_waits(ptr %task)
   %t294 = load ptr, ptr %a247
-  call void @veles_scope_cancel(ptr %t294)
+  call void @veles_scope_abandon(ptr %t294, ptr %task)
   br label %scope.wait.92
 cont.117:
   br label %sleep.105
@@ -932,7 +932,7 @@ scope.ok.129:
 scope.abort.128:
   call void @veles_task_leave_waits(ptr %task)
   %t310 = load ptr, ptr %a247
-  call void @veles_scope_cancel(ptr %t310)
+  call void @veles_scope_abandon(ptr %t310, ptr %task)
   br label %scope.wait.92
 cont.130:
   br label %recv.118
@@ -1168,7 +1168,7 @@ scope.ok.178:
 scope.abort.177:
   call void @veles_task_leave_waits(ptr %task)
   %t430 = load ptr, ptr %a362
-  call void @veles_scope_cancel(ptr %t430)
+  call void @veles_scope_abandon(ptr %t430, ptr %task)
   br label %scope.wait.149
 cont.179:
   br label %sleep.167

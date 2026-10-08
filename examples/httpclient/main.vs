@@ -80,9 +80,9 @@ fun threePages(client: http.Client, base: string) suspends throws http.FetchErro
     val first = async pageText(client, "$base/page/1")
     val second = async pageText(client, "$base/page/2")
     val third = async pageText(client, "$base/page/3")
-    println(try await first)
-    println(try await second)
-    println(try await third)
+    println(await first)
+    println(await second)
+    println(await third)
   }
 }
 

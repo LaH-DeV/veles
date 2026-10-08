@@ -412,6 +412,9 @@ func (f *fnCtx) launch(e *ast.CallExpr, want types.Type) Expr {
 			f.errorf(span, "argument of type '%s' is not Sendable and cannot cross a task boundary; pass immutable data (a List, not a MutableList: '.toList()') or share state behind a 'Mutex' (D35)", t)
 		}
 	}
+	// the function throws, so its task can fail; one returning a Result
+	// without `throws` hands an Err over as a value
+	fails := call.Fn.Sig.Effects.Throws && isResultType(call.Type())
 	if hv := f.c.heldValue(call.Type()); hv != nil {
 		f.errorf(e.Pos, "'async' would start a task whose result, a '%s', holds a task of its own that no block could receive; call it and receive the value with 'with' (D111)", hv)
 		return bad()
@@ -426,10 +429,22 @@ func (f *fnCtx) launch(e *ast.CallExpr, want types.Type) Expr {
 				}
 			}
 		}
-		return &Launch{exprBase{&types.Task{Result: call.Type()}}, call, nil, -1}
+		// a field's declared type carries the error to the receiving block (D111)
+		return &Launch{exprBase: exprBase{&types.Task{Result: call.Type()}}, Call: call, Index: -1, Fails: fails}
 	}
 	sc := f.scopes[len(f.scopes)-1]
-	l := &Launch{exprBase{&types.Task{Result: call.Type()}}, call, sc, len(sc.Launches)}
+	handle := call.Type()
+	unwrap := fails && !sc.Gather
+	if unwrap {
+		// D141: in a fail-fast block the child's error is the block's, so
+		// awaiting the handle gives the value
+		handle = call.Type().(*types.Sealed).TypeArgs[0]
+		if wt, ok := want.(*types.Task); ok && types.Identical(wt.Result, call.Type()) {
+			f.errorf(e.Pos, "a task of this 'scope' is 'Task<%s>', not 'Task<%s>': its error fails the scope, so awaiting it gives the value — write 'Task<%s>' and drop the 'try' on 'await' (D141)", handle, call.Type(), handle)
+			return bad()
+		}
+	}
+	l := &Launch{exprBase: exprBase{&types.Task{Result: handle}}, Call: call, Scope: sc, Index: len(sc.Launches), Fails: fails, Unwrap: unwrap}
 	sc.Launches = append(sc.Launches, l)
 	if sc.Gather {
 		// D52: a panic surfaces as a Result error at the gather boundary
@@ -446,7 +461,7 @@ func (f *fnCtx) launch(e *ast.CallExpr, want types.Type) Expr {
 			members = append(members, p)
 		}
 		sc.Elems = append(sc.Elems, f.c.ResultType(okT, types.MakeErrorUnion(members...)))
-	} else if isResultType(call.Type()) {
+	} else if fails {
 		// fail-fast: the scope rethrows the child's error
 		et := call.Type().(*types.Sealed).TypeArgs[1]
 		if !types.IsNever(et) && f.catching != nil {
@@ -483,7 +498,9 @@ func (f *fnCtx) scopeStmt(s *ast.ScopeStmt) []Stmt {
 	sb := &ScopeBlock{Span: s.Pos}
 	sb.T = types.TUnit
 	f.scopes = append(f.scopes, sb)
+	f.openTaskBlock("scope")
 	sb.Body = f.checkBlock(s.Body, nil, false)
+	f.closeTaskBlock()
 	f.scopes = f.scopes[:len(f.scopes)-1]
 	sb.ErrTo = f.currentErrType()
 	if f.errType == nil && f.throws {
@@ -501,7 +518,9 @@ func (f *fnCtx) gatherExpr(e *ast.GatherExpr) Expr {
 	}
 	sb := &ScopeBlock{Gather: true, Span: e.Pos}
 	f.scopes = append(f.scopes, sb)
+	f.openTaskBlock("gather")
 	sb.Body = f.checkBlock(e.Body, nil, false)
+	f.closeTaskBlock()
 	f.scopes = f.scopes[:len(f.scopes)-1]
 	switch len(sb.Elems) {
 	case 0:

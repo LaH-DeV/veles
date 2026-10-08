@@ -1,7 +1,10 @@
 # 12. Concurrency
 
 New to threads, coroutines and tasks? [Concurrency, explained from
-scratch](concurrency-explained.md) builds the picture first.
+scratch](concurrency-explained.md) builds the picture first. Every rule
+of the runtime — what happens on each failure, cancellation, timeout or
+deadlock, and the mistakes the compiler cannot catch — is collected in
+[Concurrency: what happens, exactly](reference/concurrency.md).
 
 Veles concurrency rests on two decisions. First, there is no `async`
 keyword on function declarations: whether a function *suspends* (may
@@ -109,6 +112,58 @@ The program ends with `error: main failed with Boom(n: 2)` on standard
 error. Cancellation is checked at every suspension point, so `slow()`
 stops at its next `await sleep`. A task that never suspends cannot be
 cancelled — and does not need to be, since it also cannot block anyone.
+
+## Handles belong to their scope
+
+What `scope` gives you is a promise about its `}`: once control passes it,
+every task started inside has finished — or, if the scope was left early,
+has been cancelled and has run its cleanups. So:
+
+- **A task you never await is fine.** The scope waits for it, and its
+  failure fails the scope. `await` is how the body *uses* a task's value
+  before the end, never what keeps the task alive.
+- **A handle stays inside its scope** (D141). Storing it in something
+  declared before the scope, or returning it, is a compile error: after an
+  early exit its task would be gone. Await inside the scope, keep the value.
+- **`await` gives the value, even when the function throws.** A child's
+  error fails the scope before any `await` can see it, so the handle of a
+  `throws Boom` function is `Task<i64>` and `await t` needs no `try`.
+
+```veles
+use io
+
+error Boom { n: i64 }
+
+fun size(n: i64): i64 throws Boom {
+  await sleep(Duration.millis(5 - n))
+  if (n < 0) throw Boom(n)
+  n * 100
+}
+
+fun total(ns: List<i64>): i64 throws Boom {
+  var sum: i64 = 0
+  scope {
+    val tasks: MutableList<Task<i64>> = []   // declared inside: the handles cannot outlive the scope
+    loop (n in ns) tasks.push(async size(n))
+    loop (t in tasks) sum += await t         // the value; a Boom fails the scope instead
+  }
+  sum
+}
+
+fun main() {
+  io.println("total ${total([1, 2, 3]) catch (e) { -1 }}")
+  io.println("total ${total([1, -2, 3]) catch (e) { e.n }}")
+}
+```
+
+Output:
+```text
+total 600
+total -2
+```
+
+To handle each child's error yourself, use `gather` (below): its results
+keep the `Result`.
 
 ## Background tasks: `with t = async f()`
 
@@ -535,8 +590,10 @@ A ticker — a channel that receives the time every period — is
 
 ## First one wins: `race`
 
-`race` waits for whichever arm is ready first and cancels the rest.
-Arms can receive from channels, sleep (a timeout), or await tasks (D38):
+`race` waits for whichever arm is ready first and stops waiting on the
+rest — a task awaited by a losing arm is not cancelled; it runs on, and
+its scope waits for it. Arms can receive from channels, sleep (a timeout),
+or await tasks (D38):
 
 ```veles
 use io
