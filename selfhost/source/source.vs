@@ -29,7 +29,7 @@ public struct File {
   }
 
   /// How many lines the file has: one more than it has `\n`s.
-  public fun lineCount(): i64 = this.lineStarts.len()
+  public fun lineCount(): i64 => this.lineStarts.len()
 
   /// The text of line `n` (1-based) without its line break and any `\r`s
   /// before it; empty for a line that does not exist.
@@ -51,9 +51,9 @@ public struct Span {
   public end:   i64
 
   /// The span of nothing the source holds: a node that was not written.
-  public static fun none(): Span = Span(file: null, start: 0, end: 0)
+  public static fun none(): Span => Span(file: null, start: 0, end: 0)
 
-  public fun isValid(): bool = this.file != null
+  public fun isValid(): bool => this.file != null
 
   /// From this span's start to the end of `other`.
   public fun to(other: Span): Span {
@@ -109,9 +109,9 @@ public struct Diagnostics {
     this.items.push(Diagnostic(severity: Severity.Warning, span, message))
   }
 
-  public fun hasErrors(): bool = this.items.any(d => d.severity == Severity.Error)
+  public fun hasErrors(): bool => this.items.any(d => d.severity == Severity.Error)
 
-  public fun errorCount(): i64 = this.items.count(d => d.severity == Severity.Error)
+  public fun errorCount(): i64 => this.items.count(d => d.severity == Severity.Error)
 
   /// Every diagnostic with the line it points at and a caret under the
   /// span: the text `veles check` prints, without the `veles explain`

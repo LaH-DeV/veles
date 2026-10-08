@@ -3,7 +3,8 @@
 // a program computed, so the text of a query is always written in the
 // source and the values travel apart from it, as parameters. Nothing here
 // can put a value into the text.
-use crypto, time
+use crypto
+use time
 
 /// One value bound to a `$n` of a query, in the form it travels: the type the
 /// server is told (`oid`, 0 to let the server infer it from the place the
@@ -50,7 +51,7 @@ public struct Sql {
   /// A query of text only, for what is not data: a migration read from a
   /// file, DDL assembled by a tool. The name says what it risks — whatever
   /// is in `text` is the query. Never pass anything a user typed.
-  public static fun dangerouslyRaw(text: string): Sql = Sql(parts: [text], args: [])
+  public static fun dangerouslyRaw(text: string): Sql => Sql(parts: [text], args: [])
 
   /// The text the server receives, with `$1`, `$2`, … where the values go.
   public fun text(): string {
@@ -63,15 +64,15 @@ public struct Sql {
   }
 
   /// How many values the query carries.
-  public fun valueCount(): i64 = this.args.len()
+  public fun valueCount(): i64 => this.args.len()
 
   implement Param {
-    fun toArg(): Arg = Arg(fragment: this)
+    fun toArg(): Arg => Arg(fragment: this)
   }
 
   implement Display {
     /// The text with its placeholders; the values are not shown.
-    fun toString(): string = this.text()
+    fun toString(): string => this.text()
   }
 }
 
@@ -137,83 +138,83 @@ public fun ident(name: string): Sql? {
 // ---- how the standard types travel ----
 
 // a number goes as text with the type the server should read it as
-fun number(oid: i64, text: string): Arg = Arg(oid, text)
+fun number(oid: i64, text: string): Arg => Arg(oid, text)
 
 implement Param for i8 {
-  fun toArg(): Arg = number(21, "$this")
+  fun toArg(): Arg => number(21, "$this")
 }
 
 implement Param for i16 {
-  fun toArg(): Arg = number(21, "$this")
+  fun toArg(): Arg => number(21, "$this")
 }
 
 implement Param for i32 {
-  fun toArg(): Arg = number(23, "$this")
+  fun toArg(): Arg => number(23, "$this")
 }
 
 implement Param for i64 {
-  fun toArg(): Arg = number(20, "$this")
+  fun toArg(): Arg => number(20, "$this")
 }
 
 implement Param for u8 {
-  fun toArg(): Arg = number(21, "$this")
+  fun toArg(): Arg => number(21, "$this")
 }
 
 implement Param for u16 {
-  fun toArg(): Arg = number(23, "$this")
+  fun toArg(): Arg => number(23, "$this")
 }
 
 implement Param for u32 {
-  fun toArg(): Arg = number(20, "$this")
+  fun toArg(): Arg => number(20, "$this")
 }
 
 implement Param for u64 {
   // past i64's range: numeric holds all of u64
-  fun toArg(): Arg = number(1700, "$this")
+  fun toArg(): Arg => number(1700, "$this")
 }
 
 implement Param for f32 {
-  fun toArg(): Arg = number(700, "$this")
+  fun toArg(): Arg => number(700, "$this")
 }
 
 implement Param for f64 {
-  fun toArg(): Arg = number(701, "$this")
+  fun toArg(): Arg => number(701, "$this")
 }
 
 implement Param for bool {
-  fun toArg(): Arg = Arg(oid: 16, text: if (this) "t" else "f")
+  fun toArg(): Arg => Arg(oid: 16, text: if (this) "t" else "f")
 }
 
 implement Param for string {
   // no type: the server reads the text as the type of the place it is used
-  fun toArg(): Arg = Arg(text: this)
+  fun toArg(): Arg => Arg(text: this)
 }
 
 implement Param for List<u8> {
-  fun toArg(): Arg = Arg(oid: 17, bytes: this)
+  fun toArg(): Arg => Arg(oid: 17, bytes: this)
 }
 
 implement Param for time.Timestamp {
-  fun toArg(): Arg = Arg(oid: 1184, text: time.formatRfc3339(this))
+  fun toArg(): Arg => Arg(oid: 1184, text: time.formatRfc3339(this))
 }
 
 implement Param for Duration {
-  fun toArg(): Arg = Arg(oid: 1186, text: "${this.toMicros()} microseconds")
+  fun toArg(): Arg => Arg(oid: 1186, text: "${this.toMicros()} microseconds")
 }
 
 implement Param for crypto.Uuid {
-  fun toArg(): Arg = Arg(oid: 2950, text: "$this")
+  fun toArg(): Arg => Arg(oid: 2950, text: "$this")
 }
 
 implement Param for Secret<string> {
-  fun toArg(): Arg = Arg(text: this.expose(), secret: true)
+  fun toArg(): Arg => Arg(text: this.expose(), secret: true)
 }
 
 implement Param for Secret<List<u8>> {
-  fun toArg(): Arg = Arg(oid: 17, bytes: this.expose(), secret: true)
+  fun toArg(): Arg => Arg(oid: 17, bytes: this.expose(), secret: true)
 }
 
 implement<T: Param> Param for T? {
   // a NULL has no type of its own: the server infers it from where it is used
-  fun toArg(): Arg = if (this == null) Arg() else this.toArg()
+  fun toArg(): Arg => if (this == null) Arg() else this.toArg()
 }

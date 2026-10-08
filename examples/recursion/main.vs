@@ -9,14 +9,15 @@
 // an ordinary error, reported where it happened, in the sentence every
 // other limit in the library uses.
 
-use io { println }, recursion
+use io { println }
+use recursion
 
 /// The grammar refused the input because it nested too far.
 error TooDeep {
   public limit: i64
   /// The byte offset the parser had reached.
   public at: i64
-  fun message(): string = "at byte ${this.at}: ${recursion.tooDeepMessage(this.limit)}"
+  fun message(): string => "at byte ${this.at}: ${recursion.tooDeepMessage(this.limit)}"
 }
 
 /// `expr := term ('+' term)*` and `term := digits | '(' expr ')'`, which is
@@ -56,17 +57,17 @@ struct Calc {
     n
   }
 
-  fun peek(): u8 = if (this.pos < this.src.len()) this.src.byteAt(this.pos) else 0
+  fun peek(): u8 => if (this.pos < this.src.len()) this.src.byteAt(this.pos) else 0
 
   /// How deep this parse actually went — the number a benchmark reports and
   /// the one that says whether a limit is anywhere near being reached.
-  fun deepest(): i64 = this.depth.deepest()
+  fun deepest(): i64 => this.depth.deepest()
 
   /// Whether the walk unwound cleanly: every `enter` had its `leave`.
-  fun balanced(): bool = this.depth.depth() == 0
+  fun balanced(): bool => this.depth.depth() == 0
 }
 
-fun isDigit(b: u8): bool = b >= '0' && b <= '9'
+fun isDigit(b: u8): bool => b >= '0' && b <= '9'
 
 fun run(text: string, shown: string) {
   var calc = Calc(src: text)

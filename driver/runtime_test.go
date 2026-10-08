@@ -210,7 +210,7 @@ fun blip(n: i64): i64 {
   n
 }
 
-fun listen(ch: Channel<i64>): i64 = await ch.recv() ?: -1
+fun listen(ch: Channel<i64>): i64 => await ch.recv() ?: -1
 
 fun nap(): i64 {
   await sleep(Duration.millis(20))
@@ -307,7 +307,7 @@ fun leaf(): i64 {
   requestId.get()
 }
 
-fun handle(id: i64): i64 = requestId.withValue(id, () => {
+fun handle(id: i64): i64 => requestId.withValue(id, () => {
   var sum = 0
   scope {
     val a = async leaf()
@@ -360,7 +360,7 @@ func TestIoErrorKinds(t *testing.T) {
 	dir := t.TempDir()
 	src := `use fs, io, net
 
-fun kindOf<T>(r: Result<T, IoError>): IoKind = when (r) {
+fun kindOf<T>(r: Result<T, IoError>): IoKind => when (r) {
   is Ok(_) => IoKind.Other
   is Err(e) => e.kind
 }
@@ -451,7 +451,7 @@ func TestSocketCloseDuringRead(t *testing.T) {
 	src := `use io, net
 
 // what a read on c ended with
-fun readOutcome(c: net.Conn): string = when (val r = c.read()) {
+fun readOutcome(c: net.Conn): string => when (val r = c.read()) {
   is Ok(bytes) => if (bytes.isEmpty()) "end" else "data ${bytes.decodeUtf8() ?: "?"}"
   is Err       => "error"
 }
@@ -747,7 +747,7 @@ fun step(x: i64): i64 {
   return check(x)
 }
 
-fun outer(x: i64): i64 = step(x) + 1
+fun outer(x: i64): i64 => step(x) + 1
 
 fun main() {
   io.println("${outer(1)}")
@@ -776,7 +776,7 @@ fun main() {
 	want := "panic: too big: 5\n" +
 		"  at main.vs:4:14 in check\n" +
 		"  called from main.vs:10:10 in step\n" +
-		"  called from main.vs:13:26 in outer\n"
+		"  called from main.vs:13:27 in outer\n"
 	if got := panicOf(false); got != want {
 		t.Errorf("debug build:\n%s\nwant:\n%s", got, want)
 	}

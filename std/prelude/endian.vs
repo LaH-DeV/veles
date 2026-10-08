@@ -66,142 +66,142 @@ fun pushBytesOf(list: MutableList<u8>, v: u64, n: i64, big: bool) {
 
 extend i8 {
   /// The 1 byte(s) of the number, most significant first (big endian, network order).
-  public fun toBeBytes(): Array<u8, 1> = beBytesOf<1>(this.wrapU64())
+  public fun toBeBytes(): Array<u8, 1> => beBytesOf<1>(this.wrapU64())
 
   /// The 1 byte(s) of the number, least significant first (little endian).
-  public fun toLeBytes(): Array<u8, 1> = leBytesOf<1>(this.wrapU64())
+  public fun toLeBytes(): Array<u8, 1> => leBytesOf<1>(this.wrapU64())
 
   /// The number whose big endian bytes these are.
-  public static fun fromBeBytes(bytes: Array<u8, 1>): i8 = beValueOf<1>(bytes).wrapI8()
+  public static fun fromBeBytes(bytes: Array<u8, 1>): i8 => beValueOf<1>(bytes).wrapI8()
 
   /// The number whose little endian bytes these are.
-  public static fun fromLeBytes(bytes: Array<u8, 1>): i8 = leValueOf<1>(bytes).wrapI8()
+  public static fun fromLeBytes(bytes: Array<u8, 1>): i8 => leValueOf<1>(bytes).wrapI8()
 }
 
 extend u8 {
   /// The 1 byte(s) of the number, most significant first (big endian, network order).
-  public fun toBeBytes(): Array<u8, 1> = beBytesOf<1>(this.wrapU64())
+  public fun toBeBytes(): Array<u8, 1> => beBytesOf<1>(this.wrapU64())
 
   /// The 1 byte(s) of the number, least significant first (little endian).
-  public fun toLeBytes(): Array<u8, 1> = leBytesOf<1>(this.wrapU64())
+  public fun toLeBytes(): Array<u8, 1> => leBytesOf<1>(this.wrapU64())
 
   /// The number whose big endian bytes these are.
-  public static fun fromBeBytes(bytes: Array<u8, 1>): u8 = beValueOf<1>(bytes).wrapU8()
+  public static fun fromBeBytes(bytes: Array<u8, 1>): u8 => beValueOf<1>(bytes).wrapU8()
 
   /// The number whose little endian bytes these are.
-  public static fun fromLeBytes(bytes: Array<u8, 1>): u8 = leValueOf<1>(bytes).wrapU8()
+  public static fun fromLeBytes(bytes: Array<u8, 1>): u8 => leValueOf<1>(bytes).wrapU8()
 }
 
 extend i16 {
   /// The 2 byte(s) of the number, most significant first (big endian, network order).
-  public fun toBeBytes(): Array<u8, 2> = beBytesOf<2>(this.wrapU64())
+  public fun toBeBytes(): Array<u8, 2> => beBytesOf<2>(this.wrapU64())
 
   /// The 2 byte(s) of the number, least significant first (little endian).
-  public fun toLeBytes(): Array<u8, 2> = leBytesOf<2>(this.wrapU64())
+  public fun toLeBytes(): Array<u8, 2> => leBytesOf<2>(this.wrapU64())
 
   /// The number whose big endian bytes these are.
-  public static fun fromBeBytes(bytes: Array<u8, 2>): i16 = beValueOf<2>(bytes).wrapI16()
+  public static fun fromBeBytes(bytes: Array<u8, 2>): i16 => beValueOf<2>(bytes).wrapI16()
 
   /// The number whose little endian bytes these are.
-  public static fun fromLeBytes(bytes: Array<u8, 2>): i16 = leValueOf<2>(bytes).wrapI16()
+  public static fun fromLeBytes(bytes: Array<u8, 2>): i16 => leValueOf<2>(bytes).wrapI16()
 }
 
 extend u16 {
   /// The 2 byte(s) of the number, most significant first (big endian, network order).
-  public fun toBeBytes(): Array<u8, 2> = beBytesOf<2>(this.wrapU64())
+  public fun toBeBytes(): Array<u8, 2> => beBytesOf<2>(this.wrapU64())
 
   /// The 2 byte(s) of the number, least significant first (little endian).
-  public fun toLeBytes(): Array<u8, 2> = leBytesOf<2>(this.wrapU64())
+  public fun toLeBytes(): Array<u8, 2> => leBytesOf<2>(this.wrapU64())
 
   /// The number whose big endian bytes these are.
-  public static fun fromBeBytes(bytes: Array<u8, 2>): u16 = beValueOf<2>(bytes).wrapU16()
+  public static fun fromBeBytes(bytes: Array<u8, 2>): u16 => beValueOf<2>(bytes).wrapU16()
 
   /// The number whose little endian bytes these are.
-  public static fun fromLeBytes(bytes: Array<u8, 2>): u16 = leValueOf<2>(bytes).wrapU16()
+  public static fun fromLeBytes(bytes: Array<u8, 2>): u16 => leValueOf<2>(bytes).wrapU16()
 }
 
 extend i32 {
   /// The 4 byte(s) of the number, most significant first (big endian, network order).
-  public fun toBeBytes(): Array<u8, 4> = beBytesOf<4>(this.wrapU64())
+  public fun toBeBytes(): Array<u8, 4> => beBytesOf<4>(this.wrapU64())
 
   /// The 4 byte(s) of the number, least significant first (little endian).
-  public fun toLeBytes(): Array<u8, 4> = leBytesOf<4>(this.wrapU64())
+  public fun toLeBytes(): Array<u8, 4> => leBytesOf<4>(this.wrapU64())
 
   /// The number whose big endian bytes these are.
-  public static fun fromBeBytes(bytes: Array<u8, 4>): i32 = beValueOf<4>(bytes).wrapI32()
+  public static fun fromBeBytes(bytes: Array<u8, 4>): i32 => beValueOf<4>(bytes).wrapI32()
 
   /// The number whose little endian bytes these are.
-  public static fun fromLeBytes(bytes: Array<u8, 4>): i32 = leValueOf<4>(bytes).wrapI32()
+  public static fun fromLeBytes(bytes: Array<u8, 4>): i32 => leValueOf<4>(bytes).wrapI32()
 }
 
 extend u32 {
   /// The 4 byte(s) of the number, most significant first (big endian, network order).
-  public fun toBeBytes(): Array<u8, 4> = beBytesOf<4>(this.wrapU64())
+  public fun toBeBytes(): Array<u8, 4> => beBytesOf<4>(this.wrapU64())
 
   /// The 4 byte(s) of the number, least significant first (little endian).
-  public fun toLeBytes(): Array<u8, 4> = leBytesOf<4>(this.wrapU64())
+  public fun toLeBytes(): Array<u8, 4> => leBytesOf<4>(this.wrapU64())
 
   /// The number whose big endian bytes these are.
-  public static fun fromBeBytes(bytes: Array<u8, 4>): u32 = beValueOf<4>(bytes).wrapU32()
+  public static fun fromBeBytes(bytes: Array<u8, 4>): u32 => beValueOf<4>(bytes).wrapU32()
 
   /// The number whose little endian bytes these are.
-  public static fun fromLeBytes(bytes: Array<u8, 4>): u32 = leValueOf<4>(bytes).wrapU32()
+  public static fun fromLeBytes(bytes: Array<u8, 4>): u32 => leValueOf<4>(bytes).wrapU32()
 }
 
 extend i64 {
   /// The 8 byte(s) of the number, most significant first (big endian, network order).
-  public fun toBeBytes(): Array<u8, 8> = beBytesOf<8>(this.wrapU64())
+  public fun toBeBytes(): Array<u8, 8> => beBytesOf<8>(this.wrapU64())
 
   /// The 8 byte(s) of the number, least significant first (little endian).
-  public fun toLeBytes(): Array<u8, 8> = leBytesOf<8>(this.wrapU64())
+  public fun toLeBytes(): Array<u8, 8> => leBytesOf<8>(this.wrapU64())
 
   /// The number whose big endian bytes these are.
-  public static fun fromBeBytes(bytes: Array<u8, 8>): i64 = beValueOf<8>(bytes).wrapI64()
+  public static fun fromBeBytes(bytes: Array<u8, 8>): i64 => beValueOf<8>(bytes).wrapI64()
 
   /// The number whose little endian bytes these are.
-  public static fun fromLeBytes(bytes: Array<u8, 8>): i64 = leValueOf<8>(bytes).wrapI64()
+  public static fun fromLeBytes(bytes: Array<u8, 8>): i64 => leValueOf<8>(bytes).wrapI64()
 }
 
 extend u64 {
   /// The 8 byte(s) of the number, most significant first (big endian, network order).
-  public fun toBeBytes(): Array<u8, 8> = beBytesOf<8>(this.wrapU64())
+  public fun toBeBytes(): Array<u8, 8> => beBytesOf<8>(this.wrapU64())
 
   /// The 8 byte(s) of the number, least significant first (little endian).
-  public fun toLeBytes(): Array<u8, 8> = leBytesOf<8>(this.wrapU64())
+  public fun toLeBytes(): Array<u8, 8> => leBytesOf<8>(this.wrapU64())
 
   /// The number whose big endian bytes these are.
-  public static fun fromBeBytes(bytes: Array<u8, 8>): u64 = beValueOf<8>(bytes).wrapU64()
+  public static fun fromBeBytes(bytes: Array<u8, 8>): u64 => beValueOf<8>(bytes).wrapU64()
 
   /// The number whose little endian bytes these are.
-  public static fun fromLeBytes(bytes: Array<u8, 8>): u64 = leValueOf<8>(bytes).wrapU64()
+  public static fun fromLeBytes(bytes: Array<u8, 8>): u64 => leValueOf<8>(bytes).wrapU64()
 }
 
 extend isize {
   /// The 8 byte(s) of the number, most significant first (big endian, network order).
-  public fun toBeBytes(): Array<u8, 8> = beBytesOf<8>(this.wrapU64())
+  public fun toBeBytes(): Array<u8, 8> => beBytesOf<8>(this.wrapU64())
 
   /// The 8 byte(s) of the number, least significant first (little endian).
-  public fun toLeBytes(): Array<u8, 8> = leBytesOf<8>(this.wrapU64())
+  public fun toLeBytes(): Array<u8, 8> => leBytesOf<8>(this.wrapU64())
 
   /// The number whose big endian bytes these are.
-  public static fun fromBeBytes(bytes: Array<u8, 8>): isize = beValueOf<8>(bytes).wrapIsize()
+  public static fun fromBeBytes(bytes: Array<u8, 8>): isize => beValueOf<8>(bytes).wrapIsize()
 
   /// The number whose little endian bytes these are.
-  public static fun fromLeBytes(bytes: Array<u8, 8>): isize = leValueOf<8>(bytes).wrapIsize()
+  public static fun fromLeBytes(bytes: Array<u8, 8>): isize => leValueOf<8>(bytes).wrapIsize()
 }
 
 extend usize {
   /// The 8 byte(s) of the number, most significant first (big endian, network order).
-  public fun toBeBytes(): Array<u8, 8> = beBytesOf<8>(this.wrapU64())
+  public fun toBeBytes(): Array<u8, 8> => beBytesOf<8>(this.wrapU64())
 
   /// The 8 byte(s) of the number, least significant first (little endian).
-  public fun toLeBytes(): Array<u8, 8> = leBytesOf<8>(this.wrapU64())
+  public fun toLeBytes(): Array<u8, 8> => leBytesOf<8>(this.wrapU64())
 
   /// The number whose big endian bytes these are.
-  public static fun fromBeBytes(bytes: Array<u8, 8>): usize = beValueOf<8>(bytes).wrapUsize()
+  public static fun fromBeBytes(bytes: Array<u8, 8>): usize => beValueOf<8>(bytes).wrapUsize()
 
   /// The number whose little endian bytes these are.
-  public static fun fromLeBytes(bytes: Array<u8, 8>): usize = leValueOf<8>(bytes).wrapUsize()
+  public static fun fromLeBytes(bytes: Array<u8, 8>): usize => leValueOf<8>(bytes).wrapUsize()
 }
 
 extend List<u8> {

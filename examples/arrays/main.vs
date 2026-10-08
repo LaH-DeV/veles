@@ -2,7 +2,8 @@
 // object, a value that copies like a struct — with its length part of its
 // type. Constants can stand where a type argument goes, and a function can be
 // generic over a length.
-use crypto, io { println }
+use crypto
+use io { println }
 
 // A read-only table in the binary; a constant index is the value itself.
 const SQUARES: Array<i64, 6> = [0, 1, 4, 9, 16, 25]
@@ -13,13 +14,13 @@ const ROWS = 3
 struct Board<const N: i64> {
   var cells: Array<u8, N>
 
-  fun size(): i64 = N
+  fun size(): i64 => N
 }
 
 // One function over every length: N is worked out from the argument.
-fun total<const N: i64>(a: Array<i64, N>): i64 = a.fold(0, (sum, x) => sum + x)
+fun total<const N: i64>(a: Array<i64, N>): i64 => a.fold(0, (sum, x) => sum + x)
 
-fun zeros<const N: i64>(): Array<i64, N> = Array.make(0)
+fun zeros<const N: i64>(): Array<i64, N> => Array.make(0)
 
 // A table of 4 KiB lives in memory: copied, passed and returned as a block.
 fun checksum(page: Array<u8, 4096>): i64 {
@@ -30,7 +31,7 @@ fun checksum(page: Array<u8, 4096>): i64 {
   s
 }
 
-fun filled(v: u8): Array<u8, 4096> = Array.make(v)
+fun filled(v: u8): Array<u8, 4096> => Array.make(v)
 
 fun main() {
   var a: Array<i64, 4> = [10, 20, 30, 40]

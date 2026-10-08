@@ -8,7 +8,11 @@ with types, defaults and every problem reported together (D125).
 ## One struct, one call
 
 ```veles
-use config, fs, io { println }, os, path
+use config
+use fs
+use io { println }
+use os
+use path
 
 struct Settings {
   port:        i64 = 8080
@@ -125,7 +129,11 @@ all of them, names each by the variable a person sets, says where the value came
 from, and puts the lot in one `config.Error`.
 
 ```veles
-use config, fs, io { println }, os, path
+use config
+use fs
+use io { println }
+use os
+use path
 
 struct Settings {
   port:        i64 = 8080
@@ -169,7 +177,8 @@ default, and whether it is required or secret — for a `--help`, a README, or
 a startup log line (`prefix:` as in `load`).
 
 ```veles
-use config, io { println }
+use config
+use io { println }
 
 enum Level {
   Debug

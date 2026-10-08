@@ -118,7 +118,7 @@ one step, so no read can be out of range (D62):
 ```veles
 use io
 
-fun describe(args: List<string>): string = when (args) {
+fun describe(args: List<string>): string => when (args) {
   []                  => "no arguments"
   ["help"]            => "help"
   [cmd]               => "just $cmd"
@@ -598,7 +598,7 @@ struct Job {
   cost: i64
 
   implement Comparable {
-    fun compareTo(other: Job): Ordering = this.cost.compareTo(other.cost)
+    fun compareTo(other: Job): Ordering => this.cost.compareTo(other.cost)
   }
 }
 

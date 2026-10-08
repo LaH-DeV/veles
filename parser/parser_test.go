@@ -137,7 +137,7 @@ fun ok2() {
   val y = 2
 }
 struct S { a: i32 b: i32 }
-fun ok3() = 1
+fun ok3() => 1
 `
 	f, diags := parse(t, src)
 	if !diags.HasErrors() {
@@ -186,7 +186,7 @@ func TestSpecRejections(t *testing.T) {
 func TestDocComments(t *testing.T) {
 	f, diags := parse(t, `/// Adds two numbers.
 /// Second line.
-fun add(a: i64, b: i64): i64 = a + b
+fun add(a: i64, b: i64): i64 => a + b
 
 /**
  * A point.
@@ -198,7 +198,7 @@ struct Point {
   y: i64
   /// distance to origin
   @inline
-  fun norm(): i64 = this.x
+  fun norm(): i64 => this.x
 }
 
 /// orphaned by a blank line
@@ -216,7 +216,7 @@ error Errs = Point
 	}
 	add := f.Decls[0].(*ast.FunDecl)
 	if add.Doc != "Adds two numbers.\nSecond line." {
-		t.Errorf("fun doc = %q", add.Doc)
+		t.Errorf("fun doc => %q", add.Doc)
 	}
 	pt := f.Decls[1].(*ast.StructDecl)
 	if pt.Doc != "A point." {
@@ -240,7 +240,7 @@ error Errs = Point
 }
 
 func TestModuleDoc(t *testing.T) {
-	f, _ := parse(t, "/// The geometry module.\n/// Points and shapes.\n\n/// Doubles n.\nfun twice(n: i64): i64 = n * 2\n")
+	f, _ := parse(t, "/// The geometry module.\n/// Points and shapes.\n\n/// Doubles n.\nfun twice(n: i64): i64 => n * 2\n")
 	if f.Doc != "The geometry module.\nPoints and shapes." {
 		t.Errorf("module doc = %q", f.Doc)
 	}
@@ -248,7 +248,7 @@ func TestModuleDoc(t *testing.T) {
 		t.Errorf("fun doc after a module doc = %q", d)
 	}
 	// no blank line: the comment documents the declaration, not the module
-	f, _ = parse(t, "/// Doubles n.\nfun twice(n: i64): i64 = n * 2\n")
+	f, _ = parse(t, "/// Doubles n.\nfun twice(n: i64): i64 => n * 2\n")
 	if f.Doc != "" || f.Decls[0].(*ast.FunDecl).Doc != "Doubles n." {
 		t.Errorf("doc without a blank line: module=%q fun=%q", f.Doc, f.Decls[0].(*ast.FunDecl).Doc)
 	}
@@ -259,13 +259,13 @@ func TestModuleDoc(t *testing.T) {
 // in a name; a lambda inside brackets in the head still parses.
 func TestArmHeadsAreNotLambdas(t *testing.T) {
 	src := `
-fun f(v: i64, limit: i64, xs: List<i64>): string = when (v) {
+fun f(v: i64, limit: i64, xs: List<i64>): string => when (v) {
   is i64 if v > limit => "big"
   in 0..9 if xs.any(x => x == v) => "listed"
   Nothing => "none"
   else => "small"
 }
-fun g(n: i64, limit: i64): string = when {
+fun g(n: i64, limit: i64): string => when {
   n > limit => "over"
   else => "under"
 }
@@ -298,11 +298,11 @@ func TestInlineImpl(t *testing.T) {
 struct Box<T: Show> {
   item: T
   implement Display {
-    fun toString(): string = "box"
+    fun toString(): string => "box"
   }
   implement Iterator {
     type Item = T
-    fun next(): T? = null
+    fun next(): T? => null
   }
 }
 `
@@ -326,8 +326,8 @@ struct Box<T: Show> {
 		t.Errorf("target should be Box<T>:\n%s", got)
 	}
 	for src, want := range map[string]string{
-		"struct P { x: i64\n implement<T> Display { fun toString(): string = \"\" } }":    "uses the struct's type parameters",
-		"struct P { x: i64\n implement Display for P { fun toString(): string = \"\" } }": "drop 'for'",
+		"struct P { x: i64\n implement<T> Display { fun toString(): string => \"\" } }":    "uses the struct's type parameters",
+		"struct P { x: i64\n implement Display for P { fun toString(): string => \"\" } }": "drop 'for'",
 	} {
 		_, diags := parse(t, src)
 		found := false
@@ -355,8 +355,8 @@ struct User {
   name: string
 }
 implement Codable for geo.Point
-implement Display for User { fun toString(): string = "u" }
-extend User { fun hello(): string = "hi" }
+implement Display for User { fun toString(): string => "u" }
+extend User { fun hello(): string => "hi" }
 `
 	f, diags := parse(t, src)
 	if diags.HasErrors() {
@@ -392,11 +392,11 @@ extend User { fun hello(): string = "hi" }
 func TestStaticFun(t *testing.T) {
 	src := `
 struct S<T> {
-  static fun of(x: T): S<T> = S<T>()
-  public static fun z(): i64 = 0
+  static fun of(x: T): S<T> => S<T>()
+  public static fun z(): i64 => 0
 }
 trait P { static fun parse(s: string): Self? }
-extend S<i64> { static fun one(): S<i64> = S<i64>.of(1) }
+extend S<i64> { static fun one(): S<i64> => S<i64>.of(1) }
 fun main() {
   val a = S<i64>.of(1)
   val b = a < c
@@ -422,7 +422,7 @@ struct G {
   n:   i64
   adj: MutableList<MutableList<i64>>
 
-  static fun mk(n: i64): G = G(n: n, adj: [])
+  static fun mk(n: i64): G => G(n: n, adj: [])
 }
 fun f() {
   var t: MutableList<MutableList<i64>>
@@ -495,7 +495,7 @@ fun f(x: i64): bool {
 // `loop (c)` (Kotlin's layout); the line break does not end the statement.
 func TestBodyOnNextLine(t *testing.T) {
 	src := `
-fun sign(x: i64): string =
+fun sign(x: i64): string =>
   if (x > 0)
     "positive"
   else if (x < 0)
@@ -526,7 +526,7 @@ fun f() {
 // `pair.0.1` is two tuple indexes: after a member dot a number is an index,
 // never a float literal.
 func TestNestedTupleIndex(t *testing.T) {
-	f, diags := parse(t, "fun f(p: ((i64, i64), i64)): i64 = p.0.1 + p.1\nfun g(): f64 = 0.1 + 1.5e3")
+	f, diags := parse(t, "fun f(p: ((i64, i64), i64)): i64 => p.0.1 + p.1\nfun g(): f64 => 0.1 + 1.5e3")
 	if diags.HasErrors() {
 		t.Fatalf("unexpected errors:\n%s", diags.Render())
 	}
@@ -538,7 +538,7 @@ func TestNestedTupleIndex(t *testing.T) {
 // `enum Name : Base { A = 1, B }` (D57): members separated like fields,
 // each with an optional constant; a doc comment on the enum and on a member.
 func TestEnumDecl(t *testing.T) {
-	src := "/// Phases.\npublic enum Phase : u8 {\n  /// Stop.\n  Red = 1\n  Amber, Green = -3\n}\nenum Plain { A }\nfun f(p: Phase): bool = p == Phase.Red\n"
+	src := "/// Phases.\npublic enum Phase : u8 {\n  /// Stop.\n  Red = 1\n  Amber, Green = -3\n}\nenum Plain { A }\nfun f(p: Phase): bool => p == Phase.Red\n"
 	f, diags := parse(t, src)
 	if diags.HasErrors() {
 		t.Fatalf("parse errors:\n%s", diags.Render())
@@ -563,7 +563,7 @@ func TestEnumDecl(t *testing.T) {
 // parameters follow its name. The old forms still parse, with an error
 // that names the new one, so a file is fixed in one pass.
 func TestV033Spellings(t *testing.T) {
-	src := "struct P { x: i64\n  impl Display { fun toString(): string = \"p\" } }\nimpl Show for P { }\nfun <T: Display> show(x: T): string = \"$x\"\nfun ok<T>(x: T): T = x\n"
+	src := "struct P { x: i64\n  impl Display { fun toString(): string => \"p\" } }\nimpl Show for P { }\nfun <T: Display> show(x: T): string => \"$x\"\nfun ok<T>(x: T): T => x\n"
 	f, diags := parse(t, src)
 	var msgs []string
 	for _, d := range diags.Items {
@@ -591,7 +591,7 @@ func TestV033Spellings(t *testing.T) {
 // receiver — in code and inside an interpolation — with an error whose fix
 // writes `this` over exactly the four bytes.
 func TestV040ThisSpelling(t *testing.T) {
-	src := "struct P { x: i64\n  fun a(): i64 = self.x\n  fun b(): string = \"${self.x} $self\"\n  fun c(): i64 = this.x\n}\n"
+	src := "struct P { x: i64\n  fun a(): i64 => self.x\n  fun b(): string => \"${self.x} $self\"\n  fun c(): i64 => this.x\n}\n"
 	f, diags := parse(t, src)
 	var fixes int
 	for _, d := range diags.Items {
@@ -639,7 +639,7 @@ func TestInitParams(t *testing.T) {
 // Kotlin's `->` in a `when` or `race` arm is one error with a fix per
 // arrow, and the arms after it parse normally.
 func TestThinArrowInArms(t *testing.T) {
-	src := "fun f(x: i64): string = when (x) {\n  1 -> \"one\"\n  2 => \"two\"\n  else -> \"many\"\n}\n"
+	src := "fun f(x: i64): string => when (x) {\n  1 -> \"one\"\n  2 => \"two\"\n  else -> \"many\"\n}\n"
 	_, diags := parse(t, src)
 	if len(diags.Items) != 2 {
 		t.Fatalf("want one error per '->':\n%s", diags.Render())
@@ -784,7 +784,7 @@ struct S {
   g: Buf<8>
   h: Array<u8, (1 << 4)>
 }
-fun zeros<T, const N: i64>(): Array<T, N> = Array.make(0)
+fun zeros<T, const N: i64>(): Array<T, N> => Array.make(0)
 fun main() {
   val z = zeros<i64, 16>()
   val q: Array<i64, 4> = Array<i64, 4>.make(1)
@@ -831,14 +831,14 @@ func TestTemplateLiteralNeedsNoSpace(t *testing.T) {
 func TestConstFun(t *testing.T) {
 	src := `
 const KB: i64 = 1024
-const fun square(n: i64): i64 = n * n
-public const fun cube(n: i64): i64 = n * n * n
+const fun square(n: i64): i64 => n * n
+public const fun cube(n: i64): i64 => n * n * n
 struct Counter {
   var n: i64
   const fun bump(by: i64) { this.n += by }
-  public static const fun zero(): Counter = Counter(n: 0)
+  public static const fun zero(): Counter => Counter(n: 0)
 }
-extend Counter { const fun twice(): i64 = this.n * 2 }
+extend Counter { const fun twice(): i64 => this.n * 2 }
 `
 	f, diags := parse(t, src)
 	if diags.HasErrors() {
@@ -849,5 +849,38 @@ extend Counter { const fun twice(): i64 = this.n * 2 }
 		if !strings.Contains(dump, want) {
 			t.Errorf("dump lacks %q:\n%s", want, dump)
 		}
+	}
+}
+
+// D140 (v0.72): an expression body is written `=> expr`. The removed
+// `= expr` still parses as the body, with an error whose fix writes `=>`
+// over the `=`; `=> { … }` is an error whose fix removes the arrow, and the
+// block is read as the body.
+func TestD140ArrowBodies(t *testing.T) {
+	src := "fun a(): i64 => 1\nfun b(): i64 = 2\nfun c(): i64 => { 3 }\nfun d(x: i64 = 4): i64 => x\n"
+	f, diags := parse(t, src)
+	bodies := map[string]string{}
+	for _, d := range f.Decls {
+		fn := d.(*ast.FunDecl)
+		switch {
+		case fn.ExprBody != nil:
+			bodies[fn.Name.Name] = "expr"
+		case fn.Body != nil:
+			bodies[fn.Name.Name] = "block"
+		}
+	}
+	if bodies["a"] != "expr" || bodies["b"] != "expr" || bodies["c"] != "block" || bodies["d"] != "expr" {
+		t.Errorf("bodies: %v", bodies)
+	}
+	if len(diags.Items) != 2 {
+		t.Fatalf("want two diagnostics, got: %s", diags.Render())
+	}
+	removed, braced := diags.Items[0], diags.Items[1]
+	if !strings.Contains(removed.Message, "an expression body is written '=> expr' (D140)") || removed.Fix == nil ||
+		removed.Fix.Edits[0].NewText != "=>" || src[removed.Fix.Edits[0].Span.Start:removed.Fix.Edits[0].Span.End] != "=" {
+		t.Errorf("the removed '=': %s %+v", removed.Message, removed.Fix)
+	}
+	if e := braced.Fix.Edits[0]; !strings.Contains(braced.Message, "a body in braces has no '=>'") || e.NewText != "" || src[e.Span.Start:e.Span.End] != "=> " {
+		t.Errorf("'=> {': %s %+v", braced.Message, braced.Fix)
 	}
 }

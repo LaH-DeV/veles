@@ -1,6 +1,7 @@
 // Tasks: 64 allocation-heavy jobs (lists, sorting, a map each) run at
 // once — how the work spreads over cores with one shared heap (D66).
-use io { println }, time
+use io { println }
+use time
 
 fun work(seed: i64): i64 {
   var total: i64 = 0

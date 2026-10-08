@@ -120,7 +120,7 @@ elvis.end.5:
 @.str.1 = private unnamed_addr constant [4 x i8] c"one\00"
 @.str.2 = private unnamed_addr constant [4 x i8] c"two\00"
 @.str.3 = private unnamed_addr constant [17 x i8] c"integer overflow\00"
-@.str.4 = private unnamed_addr constant [14 x i8] c"main.vs:13:19\00"
+@.str.4 = private unnamed_addr constant [14 x i8] c"main.vs:13:20\00"
 @.str.5 = private unnamed_addr constant [19 x i8] c"main.vs:16:17\00size\00"
 @.str.6 = private unnamed_addr constant [2 x i8] c" \00"
 @.str.7 = private unnamed_addr constant [13 x i8] c"size 1048576\00"

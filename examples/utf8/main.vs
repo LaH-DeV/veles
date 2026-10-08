@@ -5,9 +5,11 @@
 // Table 3-7 of the Unicode standard; a decoder that accepts any of the
 // rejected rows is one an attacker can smuggle a character past.
 
-use hex, io { println }, utf8
+use hex
+use io { println }
+use utf8
 
-fun u(code: i64): string = "U+${code.toString(radix: 16).toUpper().padStart(4, "0")}"
+fun u(code: i64): string => "U+${code.toString(radix: 16).toUpper().padStart(4, "0")}"
 
 /// One row: the bytes, then what `decodeBytes` made of them.
 fun row(label: string, bytes: List<u8>) {

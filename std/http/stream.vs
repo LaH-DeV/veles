@@ -1,6 +1,8 @@
 // Streamed response bodies (D97): the writer a producer is handed, and the
 // boundary it runs behind.
-use compress as gz, io, log as logs { field }
+use compress as gz
+use io
+use log as logs { field }
 
 /// Where a streamed response's body goes (see `Response.stream`).
 public struct BodyWriter {
@@ -14,9 +16,9 @@ public struct BodyWriter {
   // set by `http.compress()`: what is written is compressed on its way out
   gzip: Mutex<gz.GzipEncoder>? = null
 
-  static fun toConn(conn: io.Stream, chunked: bool, length: i64?): BodyWriter = BodyWriter(conn, chunked, left: Atomic(value: length ?: -1))
+  static fun toConn(conn: io.Stream, chunked: bool, length: i64?): BodyWriter => BodyWriter(conn, chunked, left: Atomic(value: length ?: -1))
 
-  static fun toMemory(length: i64?): BodyWriter = BodyWriter(conn: null, chunked: false, left: Atomic(value: length ?: -1))
+  static fun toMemory(length: i64?): BodyWriter => BodyWriter(conn: null, chunked: false, left: Atomic(value: length ?: -1))
 
   // bytes the declared length still asks for; 0 when there is none
   fun missing(): i64 {
@@ -26,7 +28,7 @@ public struct BodyWriter {
 
   // this writer, compressing what is written to it (the length, if any, was
   // dropped by the caller)
-  fun gzipped(level: i64): BodyWriter =
+  fun gzipped(level: i64): BodyWriter =>
     BodyWriter(conn: this.conn, chunked: this.chunked, memory: this.memory, left: this.left, gzip: Mutex(value: gz.GzipEncoder(level)))
 
   // the end of a compressed body: what the encoder still holds, the checksum
@@ -73,7 +75,7 @@ public struct BodyWriter {
     try this.write(text.bytes())
   }
 
-  fun collected(): List<u8> = this.memory.withLock(m => m.toList())
+  fun collected(): List<u8> => this.memory.withLock(m => m.toList())
 }
 
 fun newMemory(): Mutex<MutableList<u8>> {
@@ -109,7 +111,7 @@ fun produce(producer: sendable fun(BodyWriter) suspends throws IoError, out: Bod
   }
 }
 
-fun runProducer(producer: sendable fun(BodyWriter) suspends throws IoError, out: BodyWriter): bool suspends =
+fun runProducer(producer: sendable fun(BodyWriter) suspends throws IoError, out: BodyWriter): bool suspends =>
   when (producer(out)) {
     is Ok(_)  => true
     is Err(_) => false

@@ -1,10 +1,11 @@
 // Tests of the health endpoints (D133).
 
-use net, time
+use net
+use time
 
 error Down {
   detail: string
-  fun message(): string = this.detail
+  fun message(): string => this.detail
 }
 
 // the application behind the probes: one route, so passing through is visible

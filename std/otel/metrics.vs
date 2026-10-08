@@ -9,15 +9,15 @@ public trait Measure {
 }
 
 implement Measure for f64 {
-  fun measure(): f64 = this
+  fun measure(): f64 => this
 }
 
 implement Measure for i64 {
-  fun measure(): f64 = this.toF64()
+  fun measure(): f64 => this.toF64()
 }
 
 implement Measure for Duration {
-  fun measure(): f64 = this.toNanos().toF64() / 1000000000.0
+  fun measure(): f64 => this.toNanos().toF64() / 1000000000.0
 }
 
 // an instrument's data: one aggregate per attribute set
@@ -61,7 +61,7 @@ struct Core {
     })
   }
 
-  fun zeroBuckets(): List<i64> =
+  fun zeroBuckets(): List<i64> =>
     if (this.kind == MetricKind.Histogram) zeros(this.bounds.len() + 1) else []
 
   // a snapshot for the exporter; null when nothing was recorded
@@ -117,7 +117,7 @@ fun instrument(meter: string, name: string, description: string, unit: string, k
   })
 }
 
-fun kindName(k: MetricKind): string = when (k) {
+fun kindName(k: MetricKind): string => when (k) {
   MetricKind.Counter       => "counter"
   MetricKind.UpDownCounter => "up-down counter"
   MetricKind.Gauge         => "gauge"
@@ -153,15 +153,15 @@ public struct Meter {
 
   /// A counter of whole numbers that only goes up: requests served, bytes
   /// sent. Panics when the name is already another kind of instrument.
-  public fun counter(name: string, unit: string = "", description: string = ""): Counter =
+  public fun counter(name: string, unit: string = "", description: string = ""): Counter =>
     Counter(core: instrument(this.name, name, description, unit, MetricKind.Counter, true, []))
 
   /// A count that goes up and down: connections open, jobs queued.
-  public fun upDownCounter(name: string, unit: string = "", description: string = ""): UpDownCounter =
+  public fun upDownCounter(name: string, unit: string = "", description: string = ""): UpDownCounter =>
     UpDownCounter(core: instrument(this.name, name, description, unit, MetricKind.UpDownCounter, true, []))
 
   /// A value read at a moment: the last one set is what is exported.
-  public fun gauge(name: string, unit: string = "", description: string = ""): Gauge =
+  public fun gauge(name: string, unit: string = "", description: string = ""): Gauge =>
     Gauge(core: instrument(this.name, name, description, unit, MetricKind.Gauge, false, []))
 
   /// A distribution: how many values fell in each bucket, with their sum,
@@ -177,7 +177,7 @@ public struct Meter {
 }
 
 /// The source of instruments for `name`.
-public fun meter(name: string): Meter = Meter(name)
+public fun meter(name: string): Meter => Meter(name)
 
 /// A count that only goes up.
 public struct Counter {

@@ -28,7 +28,8 @@
 ///
 /// Every digest type is a `Hasher`: feed it with `update` as many times as
 /// you like, then `finish()` once. `sha256(data)` is the one-shot form.
-use base64, hex
+use base64
+use hex
 
 // ---------------------------------------------------------------------------
 // digests
@@ -45,35 +46,35 @@ public struct Digest {
   /// Bytes from elsewhere — a signature out of a header, a hash out of a
   /// database — as a `Digest`, so that comparing them uses `==` and is
   /// constant time.
-  public static fun of(bytes: List<u8>): Digest = Digest(data: bytes)
+  public static fun of(bytes: List<u8>): Digest => Digest(data: bytes)
 
   /// The raw bytes. For *sending* the digest; comparing two `bytes()`
   /// results with `==` is not constant time, compare the digests instead.
-  public fun bytes(): List<u8> = this.data
+  public fun bytes(): List<u8> => this.data
 
   /// Length in bytes (32 for SHA-256, 64 for SHA-512, 20 for SHA-1).
-  public fun len(): i64 = this.data.len()
+  public fun len(): i64 => this.data.len()
 
   /// Lower-case hexadecimal, the usual way to write a digest down.
-  public fun toHex(): string = hex.encode(this.data)
+  public fun toHex(): string => hex.encode(this.data)
 
   /// URL-safe base64 with no padding: a JWT signature, an `ETag`, a
   /// cookie value.
-  public fun toBase64Url(): string = base64.encodeUrl(this.data)
+  public fun toBase64Url(): string => base64.encodeUrl(this.data)
 
   /// The first `n` bytes, as a digest: a shorter tag (an `ETag`, a cache
   /// key). Truncation is the accepted way to shorten a digest; taking
   /// bytes out of the middle is not.
-  public fun prefix(n: i64): Digest = Digest(data: this.data.take(n))
+  public fun prefix(n: i64): Digest => Digest(data: this.data.take(n))
 
   implement Display {
-    fun toString(): string = hex.encode(this.data)
+    fun toString(): string => hex.encode(this.data)
   }
 
   implement Equatable {
     /// Constant time in the contents: every byte is read whatever the
     /// first difference is.
-    fun equals(other: Digest): bool = equalBytes(this.data, other.data)
+    fun equals(other: Digest): bool => equalBytes(this.data, other.data)
   }
 
   implement Hashable {
@@ -128,20 +129,20 @@ public fun digest<H: Hasher>(data: List<u8>): Digest {
 }
 
 /// SHA-256 of `data` — the default choice when something needs hashing.
-public fun sha256(data: List<u8>): Digest = digest<Sha256>(data)
+public fun sha256(data: List<u8>): Digest => digest<Sha256>(data)
 
 /// SHA-512 of `data`. Faster than SHA-256 on 64-bit machines, and twice
 /// as long.
-public fun sha512(data: List<u8>): Digest = digest<Sha512>(data)
+public fun sha512(data: List<u8>): Digest => digest<Sha512>(data)
 
 /// SHA-384 of `data` — SHA-512 cut to 48 bytes, with its own starting
 /// state. Asked for by `ES384`/`HS384` and by some government profiles.
-public fun sha384(data: List<u8>): Digest = digest<Sha384>(data)
+public fun sha384(data: List<u8>): Digest => digest<Sha384>(data)
 
 /// SHA-1 of `data`. **Broken for signatures** — collisions are practical
 /// since 2017. It is here for the protocols that specify it anyway (the
 /// WebSocket handshake, Git object names); never pick it for anything new.
-public fun sha1Legacy(data: List<u8>): Digest = digest<Sha1>(data)
+public fun sha1Legacy(data: List<u8>): Digest => digest<Sha1>(data)
 
 // ---------------------------------------------------------------------------
 // comparison
@@ -168,20 +169,20 @@ public fun equalBytes(a: List<u8>, b: List<u8>): bool {
 // bit helpers, shared by the digest implementations
 
 /// `x` rotated right by `n` bits (`n` in 1..31).
-fun rotr32(x: u32, n: i64): u32 = (x >> n) | (x << (32 - n))
+fun rotr32(x: u32, n: i64): u32 => (x >> n) | (x << (32 - n))
 
 /// `x` rotated left by `n` bits (`n` in 1..31).
-fun rotl32(x: u32, n: i64): u32 = (x << n) | (x >> (32 - n))
+fun rotl32(x: u32, n: i64): u32 => (x << n) | (x >> (32 - n))
 
 /// `x` rotated right by `n` bits (`n` in 1..63).
-fun rotr64(x: u64, n: i64): u64 = (x >> n) | (x << (64 - n))
+fun rotr64(x: u64, n: i64): u64 => (x >> n) | (x << (64 - n))
 
 /// Byte `i` of a block. The digests read a word only where the block holds
 /// all of its bytes: whole 64- or 128-byte blocks, at offsets inside them.
-fun blockByte(data: List<u8>, i: i64): u8 = data.at(i) ?: panic("crypto: a word is read only where the block holds all of its bytes")
+fun blockByte(data: List<u8>, i: i64): u8 => data.at(i) ?: panic("crypto: a word is read only where the block holds all of its bytes")
 
 /// The big-endian 32-bit word at `at`.
-fun beU32(data: List<u8>, at: i64): u32 =
+fun beU32(data: List<u8>, at: i64): u32 =>
   (((blockByte(data, at)).toU32()) << 24) |
   (((blockByte(data, at + 1)).toU32()) << 16) |
   (((blockByte(data, at + 2)).toU32()) << 8) |

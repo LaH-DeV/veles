@@ -12,7 +12,7 @@ struct Square : Shape {
   side: f64
 }
 
-fun describe(args: List<string>): string = when (args) {
+fun describe(args: List<string>): string => when (args) {
   []                  => "no arguments"
   ["help"]            => "help"
   [cmd]               => "just $cmd"
@@ -36,13 +36,13 @@ fun split3(token: string): string {
   "h=$header p=$payload s=$sig"
 }
 
-fun maybe(xs: List<i64>?): string = when (xs) {
+fun maybe(xs: List<i64>?): string => when (xs) {
   null    => "null"
   []      => "empty"
   [x, ..] => "starts with $x"
 }
 
-fun area(shapes: List<Shape>): f64 = when (shapes) {
+fun area(shapes: List<Shape>): f64 => when (shapes) {
   [Circle(radius)]   => radius * radius * 3.0
   [Square(side), ..] => side * side
   else               => 0.0

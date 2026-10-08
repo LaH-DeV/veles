@@ -1,7 +1,9 @@
 // Types. A postfix `?` binds tighter than a
 // prefix `*` (D5): `*T?` points to a nullable T, `(*T)?` is a nullable
 // pointer.
-use ast, lexer { Kind }, source { Span }
+use ast
+use lexer { Kind }
+use source { Span }
 
 extend Parser {
   fun parseType(): ast.Type {
@@ -87,7 +89,7 @@ extend Parser {
     base
   }
 
-  fun nullable(elem: ast.Type, start: Span): ast.Type = ast.NullableType(elem: &elem, pos: this.spanFrom(start))
+  fun nullable(elem: ast.Type, start: Span): ast.Type => ast.NullableType(elem: &elem, pos: this.spanFrom(start))
 
   // `<T, U>` where a type goes, the cursor on the `<`
   fun parseTypeArgs(): List<ast.Type> {
@@ -135,7 +137,7 @@ extend Parser {
 
   // a constant argument: it begins with a number, or a name an arithmetic
   // operator follows
-  fun constArgAhead(): bool = when (this.cur().kind) {
+  fun constArgAhead(): bool => when (this.cur().kind) {
     Kind.Int    => true
     Kind.Minus  => this.peek(1).kind == Kind.Int   // a negative length: the checker says what is wrong
     Kind.LParen => this.peek(1).kind == Kind.Int  // `(1 << 4)`: no tuple type begins with a number
@@ -147,7 +149,7 @@ extend Parser {
   }
 
   // `>`, or the first half of a `>>` closing two lists (`List<List<i64>>`)
-  fun atTypeClose(): bool = this.atAny(Kind.Gt, Kind.Shr, Kind.EOF)
+  fun atTypeClose(): bool => this.atAny(Kind.Gt, Kind.Shr, Kind.EOF)
 
   // a `>`; a `>>` is split, one `>` left for the enclosing list
   fun expectTypeClose() {
@@ -195,4 +197,4 @@ extend Parser {
 }
 
 // a type that did not parse
-fun errorType(at: Span): ast.Type = ast.NamedType(path: [ast.Ident(name: "<error>", pos: at)], pos: at)
+fun errorType(at: Span): ast.Type => ast.NamedType(path: [ast.Ident(name: "<error>", pos: at)], pos: at)

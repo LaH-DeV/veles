@@ -126,14 +126,14 @@ use io
 error NotFound { key: string }
 error Invalid { reason: string }
 
-fun lookup(key: string): string throws NotFound =
+fun lookup(key: string): string throws NotFound =>
   if (key == "name") "veles" else throw NotFound(key)
 
-fun validate(v: string): string throws Invalid =
+fun validate(v: string): string throws Invalid =>
   if (v.len() > 3) v else throw Invalid(reason: "too short")
 
 // inferred: throws NotFound | Invalid
-fun settingFor(key: string): string throws = try validate(try lookup(key))
+fun settingFor(key: string): string throws => try validate(try lookup(key))
 
 fun main() {
   loop (k in ["name", "age"]) {
@@ -177,7 +177,7 @@ declaration is a struct plus an implement of the prelude trait `Error`:
 ```veles
 // fragment
 public trait Error {
-  fun message(): string = "$this"     // default: the value as `show` renders it
+  fun message(): string => "$this"     // default: the value as `show` renders it
 }
 ```
 
@@ -192,16 +192,16 @@ use io
 error NotFound { key: string }
 error Invalid {
   reason: string
-  fun message(): string = "invalid: ${this.reason}"
+  fun message(): string => "invalid: ${this.reason}"
 }
 
-fun lookup(key: string): string throws NotFound =
+fun lookup(key: string): string throws NotFound =>
   if (key == "name") "veles" else throw NotFound(key)
 
-fun validate(v: string): string throws Invalid =
+fun validate(v: string): string throws Invalid =>
   if (v.len() > 3) v else throw Invalid(reason: "too short")
 
-fun settingFor(key: string): string throws = try validate(try lookup(key))
+fun settingFor(key: string): string throws => try validate(try lookup(key))
 
 fun main() {
   loop (k in ["name", "age"]) {
@@ -237,7 +237,7 @@ A long `throws A | B | C` repeats itself across a module. Name it:
 use io
 
 error NotFound { key: string }
-error Invalid { reason: string; fun message(): string = "invalid: ${this.reason}" }
+error Invalid { reason: string; fun message(): string => "invalid: ${this.reason}" }
 error Timeout
 
 error LookupErrors = NotFound | Invalid | Timeout
@@ -246,10 +246,10 @@ error LookupErrors = NotFound | Invalid | Timeout
 error ConfigError {
   file: string
   cause: LookupErrors
-  fun message(): string = "${this.file}: ${this.cause.message()}"
+  fun message(): string => "${this.file}: ${this.cause.message()}"
 }
 
-fun setting(key: string): string throws LookupErrors =
+fun setting(key: string): string throws LookupErrors =>
   when (key) {
     "name" => "veles"
     "slow" => throw Timeout()
@@ -299,7 +299,7 @@ use io
 
 error Oops { code: i64 }
 
-fun risky(n: i64): i64 throws Oops = if (n > 0) n * 10 else throw Oops(code: n)
+fun risky(n: i64): i64 throws Oops => if (n > 0) n * 10 else throw Oops(code: n)
 
 fun main() {
   val results = [risky(1), risky(0), risky(2)]      // List<Result<i64, Oops>>
@@ -343,11 +343,11 @@ tools, both leaving `try` as the one place where propagation happens:
 ```veles
 use io
 
-error NotFound { id: string; fun message(): string = "no user ${this.id}" }
+error NotFound { id: string; fun message(): string => "no user ${this.id}" }
 error BadRequest { detail: string }
 error ParseError { at: i64 }
 
-fun parseAge(s: string): i64 throws ParseError =
+fun parseAge(s: string): i64 throws ParseError =>
   s.toInt() ?: throw ParseError(at: 0)
 
 fun age(users: Map<string, string>, id: string): i64 throws NotFound | BadRequest {
@@ -425,7 +425,7 @@ use io
 
 error Invalid { line: string }
 
-fun number(line: string): i64 throws Invalid = line.trim().toInt() ?: throw Invalid(line)
+fun number(line: string): i64 throws Invalid => line.trim().toInt() ?: throw Invalid(line)
 
 fun total(lines: List<string>): i64 {
   var sum = 0
@@ -483,7 +483,7 @@ use io
 error Invalid { line: string }
 error Negative { value: i64 }
 
-fun number(line: string): i64 throws Invalid = line.trim().toInt() ?: throw Invalid(line)
+fun number(line: string): i64 throws Invalid => line.trim().toInt() ?: throw Invalid(line)
 
 fun positive(n: i64): i64 throws Negative {
   if (n < 0) throw Negative(value: n)

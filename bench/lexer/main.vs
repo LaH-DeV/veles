@@ -1,7 +1,8 @@
 // Compiler-shaped: tokenise a large source text byte by byte (identifiers,
 // a keyword table, numbers, strings, comments, punctuation) into a list of
 // token structs. The text is built before the clock starts.
-use io { println }, time
+use io { println }
+use time
 
 enum Kind {
   Ident
@@ -23,8 +24,8 @@ val keywords: Map<string, i64> = [
   "loop": 7, "when": 8, "struct": 9, "enum": 10, "use": 11, "throws": 12,
 ]
 
-fun isIdentStart(b: u8): bool = (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || b == '_' || b >= 128
-fun isDigit(b: u8): bool = b >= '0' && b <= '9'
+fun isIdentStart(b: u8): bool => (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || b == '_' || b >= 128
+fun isDigit(b: u8): bool => b >= '0' && b <= '9'
 
 fun tokenise(src: string): MutableList<Token> {
   val out: MutableList<Token> = []

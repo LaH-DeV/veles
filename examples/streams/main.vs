@@ -3,7 +3,11 @@
 // file's text, so the call through the trait object really suspends while the
 // bytes are on their way.
 
-use fs, io { println }, net, os, path
+use fs
+use io { println }
+use net
+use os
+use path
 
 struct Stats {
   var lines:   i64

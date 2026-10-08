@@ -25,12 +25,12 @@ struct Target {
   application: string
 
   // what a log may say about the target: no user, no password
-  fun shown(): string = "${this.host}:${this.port}/${this.database}"
+  fun shown(): string => "${this.host}:${this.port}/${this.database}"
 }
 
-fun configError(text: string): DbError = DbError(kind: ErrorKind.Config, text)
+fun configError(text: string): DbError => DbError(kind: ErrorKind.Config, text)
 
-fun isLoopback(host: string): bool = host == "localhost" || host == "127.0.0.1" || host == "::1" || host.startsWith("127.")
+fun isLoopback(host: string): bool => host == "localhost" || host == "127.0.0.1" || host == "::1" || host.startsWith("127.")
 
 // %XX escapes and '+' are not special in the userinfo and path, only %XX is
 fun unescape(text: string): string? {

@@ -1,4 +1,5 @@
-use io { println, readLine }, random
+use io { println, readLine }
+use random
 
 fun main() {
   println("Guess the number!")

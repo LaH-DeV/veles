@@ -60,9 +60,9 @@ func depPrefixes(p *Package) []string {
 // set of modules and symbols.
 func TestDiamondIsOneInstance(t *testing.T) {
 	tr := newTree(t)
-	tr.pkg("util", "[package]\nname = \"util\"\n", "public fun one(): i64 = 1\n")
-	tr.pkg("a", "[package]\nname = \"a\"\n[dependencies]\nutil = \"../util\"\n", "use util\npublic fun fromA(): i64 = util.one() + 1\n")
-	tr.pkg("b", "[package]\nname = \"b\"\n[dependencies]\nhelper = \"../util\"\n", "use helper\npublic fun fromB(): i64 = helper.one() + 2\n")
+	tr.pkg("util", "[package]\nname = \"util\"\n", "public fun one(): i64 => 1\n")
+	tr.pkg("a", "[package]\nname = \"a\"\n[dependencies]\nutil = \"../util\"\n", "use util\npublic fun fromA(): i64 => util.one() + 1\n")
+	tr.pkg("b", "[package]\nname = \"b\"\n[dependencies]\nhelper = \"../util\"\n", "use helper\npublic fun fromB(): i64 => helper.one() + 2\n")
 	tr.pkg("app", "[package]\nname = \"app\"\n[dependencies]\na = \"../a\"\nb = \"../b\"\nutil2 = \"../util\"\n",
 		"use io\nuse a\nuse b\nuse util2\nfun main() { io.println(\"${a.fromA() + b.fromB() + util2.one()}\") }\n")
 	pkg, out := tr.load("app")
@@ -79,8 +79,8 @@ func TestDiamondIsOneInstance(t *testing.T) {
 // symbols cannot collide.
 func TestSamePackageNameTwice(t *testing.T) {
 	tr := newTree(t)
-	tr.pkg("pg1", "[package]\nname = \"pg\"\nversion = \"1.4.0\"\n", "public fun version(): i64 = 1\n")
-	tr.pkg("pg2", "[package]\nname = \"pg\"\nversion = \"2.0.0\"\n", "public fun version(): i64 = 2\n")
+	tr.pkg("pg1", "[package]\nname = \"pg\"\nversion = \"1.4.0\"\n", "public fun version(): i64 => 1\n")
+	tr.pkg("pg2", "[package]\nname = \"pg\"\nversion = \"2.0.0\"\n", "public fun version(): i64 => 2\n")
 	tr.pkg("app", "[package]\nname = \"app\"\n[dependencies]\npg1 = \"../pg1\"\npg2 = \"../pg2\"\n",
 		"use io\nuse pg1\nuse pg2\nfun main() { io.println(\"${pg1.version()}${pg2.version()}\") }\n")
 	pkg, out := tr.load("app")
@@ -97,8 +97,8 @@ func TestSamePackageNameTwice(t *testing.T) {
 // depends on.
 func TestOnlyDirectRequiresAreNameable(t *testing.T) {
 	tr := newTree(t)
-	tr.pkg("util", "[package]\nname = \"util\"\n", "public fun one(): i64 = 1\n")
-	tr.pkg("a", "[package]\nname = \"a\"\n[dependencies]\nutil = \"../util\"\n", "use util\npublic use util\npublic fun x(): i64 = util.one()\n")
+	tr.pkg("util", "[package]\nname = \"util\"\n", "public fun one(): i64 => 1\n")
+	tr.pkg("a", "[package]\nname = \"a\"\n[dependencies]\nutil = \"../util\"\n", "use util\npublic use util\npublic fun x(): i64 => util.one()\n")
 	tr.pkg("app", "[package]\nname = \"app\"\n[dependencies]\na = \"../a\"\n", "use io\nuse util\nfun main() { io.println(\"${util.one()}\") }\n")
 	_, out := tr.load("app")
 	if !strings.Contains(out, "unknown module 'util'") {
@@ -108,10 +108,10 @@ func TestOnlyDirectRequiresAreNameable(t *testing.T) {
 
 func TestDependencyNameClashes(t *testing.T) {
 	tr := newTree(t)
-	tr.pkg("lib", "[package]\nname = \"lib\"\n", "public fun f(): i64 = 1\n")
+	tr.pkg("lib", "[package]\nname = \"lib\"\n", "public fun f(): i64 => 1\n")
 	tr.pkg("app", "[package]\nname = \"app\"\n[dependencies]\nio = \"../lib\"\ngeometry = { path = \"../lib\" }\n",
 		"use io\nfun main() { io.println(\"x\") }\n")
-	tr.write("app/geometry/lib.vs", "public fun g(): i64 = 1\n")
+	tr.write("app/geometry/lib.vs", "public fun g(): i64 => 1\n")
 	_, out := tr.load("app")
 	for _, want := range []string{
 		"dependency 'io' (veles.toml:4) has the name of a standard module",
@@ -125,8 +125,8 @@ func TestDependencyNameClashes(t *testing.T) {
 
 func TestPackageCannotDependOnItself(t *testing.T) {
 	tr := newTree(t)
-	tr.pkg("a", "[package]\nname = \"a\"\n[dependencies]\nb = \"../b\"\n", "use b\npublic fun x(): i64 = b.y()\n")
-	tr.pkg("b", "[package]\nname = \"b\"\n[dependencies]\na = \"../a\"\n", "use a\npublic fun y(): i64 = 1\n")
+	tr.pkg("a", "[package]\nname = \"a\"\n[dependencies]\nb = \"../b\"\n", "use b\npublic fun x(): i64 => b.y()\n")
+	tr.pkg("b", "[package]\nname = \"b\"\n[dependencies]\na = \"../a\"\n", "use a\npublic fun y(): i64 => 1\n")
 	tr.write("a/main.vs", "use io\nfun main() { io.println(\"${x()}\") }\n")
 	_, out := tr.load("a")
 	if !strings.Contains(out, "is this package itself") {

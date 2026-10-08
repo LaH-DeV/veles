@@ -1,7 +1,9 @@
 // The OTLP/HTTP exporter (D126): what `std/otel` sends its protobuf through.
 // It lives here, not in `otel`, because `http` already uses `otel` (a span per
 // request) and a module cannot import one that imports it.
-use compress as gz, otel, tls
+use compress as gz
+use otel
+use tls
 
 struct OtlpExporter {
   endpoint: string

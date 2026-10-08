@@ -60,7 +60,7 @@ func New(dir, template string) int {
 const appTemplate = `use io { println }
 
 /// What the program says to ` + "`name`" + `.
-fun greeting(name: string): string = "Hello, $name!"
+fun greeting(name: string): string => "Hello, $name!"
 
 fun main() {
   println(greeting("world"))

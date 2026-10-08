@@ -3,7 +3,8 @@
 // those children first, waiting for them to unwind — each closing what
 // it holds, innermost first — and only then unwinding itself. Nothing
 // outlives the block that launched it, and nothing it opened stays open.
-use io { println }, time
+use io { println }
+use time
 
 struct Held {
   name: string

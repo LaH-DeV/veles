@@ -2,7 +2,8 @@
 // bytes, and v7, a millisecond timestamp followed by random bits — the
 // same uniqueness, but sorted by creation time, which is what a database
 // index wants.
-use codec, time
+use codec
+use time
 
 /// A 128-bit identifier. `toString()` is the canonical lower-case form
 /// `0190d3e1-7c00-7000-8000-9a5b1c2d3e4f`; `parse` reads that, or the same
@@ -62,7 +63,7 @@ public struct Uuid {
 
   /// The all-zero UUID, `00000000-0000-0000-0000-000000000000`: the RFC's
   /// "nil" value, for a column that must hold a UUID and means "none".
-  public static fun zero(): Uuid = Uuid(data: MutableList<u8>.repeat(0, 16).toList())
+  public static fun zero(): Uuid => Uuid(data: MutableList<u8>.repeat(0, 16).toList())
 
   /// Sixteen bytes as a UUID, whatever they say about their version — for
   /// reading an id out of a binary column. Panics unless there are exactly
@@ -100,13 +101,13 @@ public struct Uuid {
 
   /// Byte `i` of the id. Every constructor makes sixteen bytes, and the
   /// readers ask for `i` in `0..<16`.
-  fun byte(i: i64): u8 = this.data.at(i) ?: panic("Uuid: the data is always sixteen bytes")
+  fun byte(i: i64): u8 => this.data.at(i) ?: panic("Uuid: the data is always sixteen bytes")
 
   /// The sixteen bytes, big-endian as the RFC lays them out.
-  public fun bytes(): List<u8> = this.data
+  public fun bytes(): List<u8> => this.data
 
   /// The version digit: 4 for `v4()`, 7 for `v7()`, 0 for `zero()`.
-  public fun version(): i64 = ((this.byte(6) >> 4) & 0x0f).toI64()
+  public fun version(): i64 => ((this.byte(6) >> 4) & 0x0f).toI64()
 
   /// The milliseconds a version 7 id was made at, or `null` for any other
   /// version.
@@ -122,7 +123,7 @@ public struct Uuid {
   }
 
   /// True for the all-zero UUID.
-  public fun isZero(): bool = this.data.all(b => b == 0)
+  public fun isZero(): bool => this.data.all(b => b == 0)
 
   implement Display {
     fun toString(): string {
@@ -155,7 +156,7 @@ public struct Uuid {
       Uuid.zero()
     }
 
-    override static fun schema(format: string, keys: codec.KeyStyle): codec.Schema =
+    override static fun schema(format: string, keys: codec.KeyStyle): codec.Schema =>
       codec.Schema.leaf(codec.SchemaKind.Text, "a UUID like 123e4567-e89b-12d3-a456-426614174000")
   }
 
@@ -176,11 +177,11 @@ public struct Uuid {
 }
 
 /// A random UUID (version 4). `crypto.Uuid.v4()` said shorter.
-public fun uuidV4(): Uuid = Uuid.v4()
+public fun uuidV4(): Uuid => Uuid.v4()
 
 /// A time-ordered UUID (version 7) — the one to reach for when the id ends
 /// up in a database. `crypto.Uuid.v7()` said shorter.
-public fun uuidV7(): Uuid = Uuid.v7()
+public fun uuidV7(): Uuid => Uuid.v7()
 
 // The v7 clock. Two ids from the same millisecond are told apart by the
 // counter, and a millisecond that runs out of counter borrows the next
@@ -215,9 +216,9 @@ struct V7Clock {
 val v7Clock = Mutex(value: V7Clock(millis: -1, counter: 0))
 
 // the timestamp and counter of the next v7 id, taken together
-fun nextTick(): (i64, i64) = v7Clock.withLock(c => c.tick())
+fun nextTick(): (i64, i64) => v7Clock.withLock(c => c.tick())
 
-fun hexDigit(nibble: u8): u8 = if (nibble < 10) 48 +% nibble else 87 +% nibble
+fun hexDigit(nibble: u8): u8 => if (nibble < 10) 48 +% nibble else 87 +% nibble
 
 fun nibble(b: u8): u8? {
   if (b >= 48 && b <= 57) return b -% 48

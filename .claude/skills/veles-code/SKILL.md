@@ -18,6 +18,9 @@ something compiles, write it to the scratchpad and run
 - Generic functions: `fun name<T: Bound>(…)`. Visibility: `public`,
   `private`, nothing (module). Fields: bare = never assigned, `var` =
   assignable.
+- A one-expression body is `fun area(): f64 => w * h` (D140); `=` only
+  binds (`val`, `var`, defaults). A lambda returned from such a body is
+  parenthesized: `=> (x => x + n)`.
 - No `!!`, no `…OrPanic`. Prove the access instead: list patterns
   (`val [a, b] = xs else return …`, `when (xs) { [x, ..rest] => … }`),
   index loops the checker understands, or `xs.at(i) ?: panic("why this

@@ -1,5 +1,6 @@
 // Sorting 300k pseudo-random integers (xorshift), three times.
-use io { println }, time
+use io { println }
+use time
 
 fun main() {
   var x: u64 = 88172645463325252

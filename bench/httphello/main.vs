@@ -2,8 +2,9 @@
 // each making 250 keep-alive requests against it, all in one process —
 // what the executor's socket wait (poll today, plan E3) costs per request.
 // The checksum is the number of body bytes read.
-use io { println }, time
 use http { Client, Response, handler, testServer }
+use io { println }
+use time
 
 fun client(url: string): i64 suspends throws http.FetchError {
   with c = Client(maxIdlePerHost: 1)

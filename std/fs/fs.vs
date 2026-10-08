@@ -2,7 +2,10 @@
 ///
 /// Implemented on top of runtime/c/veles_os.c; every extern call is confined
 /// to one `unsafe` block (D44).
-use io, os, path as paths, time
+use io
+use os
+use path as paths
+use time
 
 extern "C" {
   fun veles_fs_open(path: string, mode: i64, handle: *raw i64): i64
@@ -97,13 +100,13 @@ public fun appendFile(path: string, text: string) throws IoError {
 }
 
 /// True when a file or directory exists at `path`.
-public fun exists(path: string): bool = statKind(path) != 0
+public fun exists(path: string): bool => statKind(path) != 0
 
 /// True when `path` is a directory.
-public fun isDir(path: string): bool = statKind(path) == 2
+public fun isDir(path: string): bool => statKind(path) == 2
 
 /// True when `path` is a regular file.
-public fun isFile(path: string): bool = statKind(path) == 1
+public fun isFile(path: string): bool => statKind(path) == 1
 
 /// What the file system says about a path, following symbolic links.
 public struct Stat {
@@ -115,7 +118,7 @@ public struct Stat {
   public isDir:    bool
 
   /// Anything that is not a directory.
-  public fun isFile(): bool = !this.isDir
+  public fun isFile(): bool => !this.isDir
 }
 
 /// Size, last-write time and kind of the entry at `path`; a missing one is
@@ -327,7 +330,7 @@ public struct File {
     fun shutdownWrite() throws IoError { }
   }
 
-  fun tooLong(max: i64): io.TooLong =
+  fun tooLong(max: i64): io.TooLong =>
     io.TooLong(message: "a line of ${this.path} is longer than $max bytes", limit: max)
 
   fun check() throws IoError {

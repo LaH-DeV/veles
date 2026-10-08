@@ -144,7 +144,7 @@ struct Pipe {
     Pipe(incoming: Mutex(value: inbound), outgoing: Mutex(value: outbound), step)
   }
 
-  fun written(): List<u8> = this.outgoing.withLock(out => out.toList())
+  fun written(): List<u8> => this.outgoing.withLock(out => out.toList())
 
   implement io.Stream {
     fun read(max: i64 = 65536): List<u8> {
@@ -157,8 +157,8 @@ struct Pipe {
         chunk
       })
     }
-    fun readExact(n: i64): List<u8> = try this.read(n)
-    fun readLine(max: i64): string? = null
+    fun readExact(n: i64): List<u8> => try this.read(n)
+    fun readLine(max: i64): string? => null
     fun write(bytes: List<u8>) {
       this.outgoing.withLock(out => out.addAll(bytes))
     }

@@ -4,7 +4,10 @@
 // treat a 404 as an answer and not a crash, follow a redirect, survive a
 // service that is busy for a moment, give up on one that is too slow, and ask
 // for several pages at once.
-use http, io { println }, json, time
+use http
+use io { println }
+use json
+use time
 
 struct Note {
   id:    i64
@@ -69,7 +72,7 @@ fun service(): http.Handler {
   app.handler()
 }
 
-fun pageText(client: http.Client, url: string): string suspends throws http.FetchError =
+fun pageText(client: http.Client, url: string): string suspends throws http.FetchError =>
   try client.get(url).text()
 
 fun threePages(client: http.Client, base: string) suspends throws http.FetchError {

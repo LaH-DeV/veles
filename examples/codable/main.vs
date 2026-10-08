@@ -3,7 +3,9 @@
 // same derived code would drive a database row or the environment, since
 // the traits are format-agnostic. Every problem in a document comes back
 // at once, with its path.
-use codec, io { println }, json
+use codec
+use io { println }
+use json
 
 enum Role {
   Admin
@@ -55,7 +57,7 @@ struct Money {
   amount:   i64
   currency: string
   implement Codable {
-    fun encode(to: codec.Encoder) throws EncodeError = try to.writeString("${this.amount} ${this.currency}")
+    fun encode(to: codec.Encoder) throws EncodeError => try to.writeString("${this.amount} ${this.currency}")
   }
 }
 

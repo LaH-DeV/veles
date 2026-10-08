@@ -3,7 +3,7 @@
 use io
 
 sealed trait Expr {
-  fun eval(): i64 = when (this) {
+  fun eval(): i64 => when (this) {
     is Num(v) => v
     is Add(l, r) => l.eval() + r.eval()
     is Neg(e) => -e.eval()
@@ -15,9 +15,9 @@ struct Neg : Expr { e: *Expr }
 
 error TooBig { n: i64 }
 
-fun check(n: i64): i64 throws TooBig = if (n > 100) throw TooBig(n) else n
+fun check(n: i64): i64 throws TooBig => if (n > 100) throw TooBig(n) else n
 
-fun half(n: i64): i64? = if (n % 2 == 0) n / 2 else null
+fun half(n: i64): i64? => if (n % 2 == 0) n / 2 else null
 
 fun main() {
   val one: Expr = Num(v: 1)

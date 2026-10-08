@@ -146,7 +146,7 @@ func depDir(res *Result, root, name string) string {
 func TestGitTagIsFetchedHashedAndCached(t *testing.T) {
 	home(t)
 	lib := newRepo(t)
-	lib.release("1.2.0", pkgFiles("lib", "1.2.0", "", "public fun one(): i64 = 1\n"))
+	lib.release("1.2.0", pkgFiles("lib", "1.2.0", "", "public fun one(): i64 => 1\n"))
 	dir, man := project(t, "lib = "+gitDep(lib, "1.2.0"))
 
 	res := resolveOK(t, dir, man)
@@ -183,11 +183,11 @@ func TestGitTagIsFetchedHashedAndCached(t *testing.T) {
 func TestMinimalVersionSelectionPerMajor(t *testing.T) {
 	home(t)
 	util := newRepo(t)
-	util.release("1.0.0", pkgFiles("util", "1.0.0", "", "public fun v(): i64 = 100\n"))
-	util.release("1.3.0", pkgFiles("util", "1.3.0", "", "public fun v(): i64 = 130\n"))
-	util.release("2.0.0", pkgFiles("util", "2.0.0", "", "public fun v(): i64 = 200\n"))
+	util.release("1.0.0", pkgFiles("util", "1.0.0", "", "public fun v(): i64 => 100\n"))
+	util.release("1.3.0", pkgFiles("util", "1.3.0", "", "public fun v(): i64 => 130\n"))
+	util.release("2.0.0", pkgFiles("util", "2.0.0", "", "public fun v(): i64 => 200\n"))
 	mid := newRepo(t)
-	mid.release("1.0.0", pkgFiles("mid", "1.0.0", "util = "+gitDep(util, "1.3.0"), "use util\npublic fun m(): i64 = util.v()\n"))
+	mid.release("1.0.0", pkgFiles("mid", "1.0.0", "util = "+gitDep(util, "1.3.0"), "use util\npublic fun m(): i64 => util.v()\n"))
 	dir, man := project(t, "util = "+gitDep(util, "1.0.0")+"\nmid = "+gitDep(mid, "1.0.0")+"\nutil2 = "+gitDep(util, "2.0.0"))
 
 	res := resolveOK(t, dir, man)
@@ -220,12 +220,12 @@ func TestMinimalVersionSelectionPerMajor(t *testing.T) {
 func TestChecksumMismatchIsAHardError(t *testing.T) {
 	h := home(t)
 	lib := newRepo(t)
-	lib.release("1.0.0", pkgFiles("lib", "1.0.0", "", "public fun one(): i64 = 1\n"))
+	lib.release("1.0.0", pkgFiles("lib", "1.0.0", "", "public fun one(): i64 => 1\n"))
 	dir, man := project(t, "lib = "+gitDep(lib, "1.0.0"))
 	resolveOK(t, dir, man)
 
 	// the tag is moved to other contents, and the cache is empty again
-	lib.release("1.0.0", pkgFiles("lib", "1.0.0", "", "public fun one(): i64 = 666\n"))
+	lib.release("1.0.0", pkgFiles("lib", "1.0.0", "", "public fun one(): i64 => 666\n"))
 	os.RemoveAll(filepath.Join(h, "pkg"))
 	_, err := Resolve(dir, man)
 	if err == nil || !strings.Contains(err.Error(), "checksum mismatch for git "+lib.url()+" 1.0.0") || !strings.Contains(err.Error(), "veles.sum records h1:") {
@@ -240,16 +240,16 @@ func TestChecksumMismatchIsAHardError(t *testing.T) {
 func TestTamperedCacheIsAHardError(t *testing.T) {
 	home(t)
 	lib := newRepo(t)
-	lib.release("1.0.0", pkgFiles("lib", "1.0.0", "", "public fun one(): i64 = 1\n"))
+	lib.release("1.0.0", pkgFiles("lib", "1.0.0", "", "public fun one(): i64 => 1\n"))
 	dir, man := project(t, "lib = "+gitDep(lib, "1.0.0"))
 	res := resolveOK(t, dir, man)
-	os.WriteFile(filepath.Join(depDir(res, dir, "lib"), "lib.vs"), []byte("public fun one(): i64 = 2\n"), 0o644)
+	os.WriteFile(filepath.Join(depDir(res, dir, "lib"), "lib.vs"), []byte("public fun one(): i64 => 2\n"), 0o644)
 	_, err := Resolve(dir, man)
 	if err == nil || !strings.Contains(err.Error(), "was modified after it was fetched") {
 		t.Fatalf("got %v", err)
 	}
 	// a damaged sum line is caught as well: the cache is right, veles.sum is not
-	os.WriteFile(filepath.Join(depDir(res, dir, "lib"), "lib.vs"), []byte("public fun one(): i64 = 1\n"), 0o644)
+	os.WriteFile(filepath.Join(depDir(res, dir, "lib"), "lib.vs"), []byte("public fun one(): i64 => 1\n"), 0o644)
 	sum := readSum(t, dir)
 	os.WriteFile(filepath.Join(dir, "veles.sum"), []byte(strings.Replace(sum, "h1:", "h1:0", 1)), 0o644)
 	if _, err := Resolve(dir, man); err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
@@ -262,7 +262,7 @@ func TestTamperedCacheIsAHardError(t *testing.T) {
 func TestCheckoutIsByteExact(t *testing.T) {
 	home(t)
 	lib := newRepo(t)
-	files := pkgFiles("lib", "1.0.0", "", "public fun one(): i64 = 1\n")
+	files := pkgFiles("lib", "1.0.0", "", "public fun one(): i64 => 1\n")
 	files[".gitattributes"] = "* text eol=crlf\n"
 	lib.release("1.0.0", files)
 	dir, man := project(t, "lib = "+gitDep(lib, "1.0.0"))
@@ -276,8 +276,8 @@ func TestCheckoutIsByteExact(t *testing.T) {
 func TestCommitPins(t *testing.T) {
 	home(t)
 	lib := newRepo(t)
-	lib.release("1.0.0", pkgFiles("lib", "1.0.0", "", "public fun one(): i64 = 1\n"))
-	c2 := lib.release("", pkgFiles("lib", "1.1.0", "", "public fun one(): i64 = 11\n"))
+	lib.release("1.0.0", pkgFiles("lib", "1.0.0", "", "public fun one(): i64 => 1\n"))
+	c2 := lib.release("", pkgFiles("lib", "1.1.0", "", "public fun one(): i64 => 11\n"))
 	dir, man := project(t, fmt.Sprintf("lib = { git = %q, commit = %q }", lib.url(), c2[:8]))
 	resolveOK(t, dir, man)
 	if sum := readSum(t, dir); !strings.Contains(sum, "commit:"+c2+" h1:") {
@@ -303,9 +303,9 @@ func TestCommitPins(t *testing.T) {
 func TestLibraryCommitPinWarns(t *testing.T) {
 	home(t)
 	base := newRepo(t)
-	c := base.release("1.0.0", pkgFiles("base", "1.0.0", "", "public fun b(): i64 = 1\n"))
+	c := base.release("1.0.0", pkgFiles("base", "1.0.0", "", "public fun b(): i64 => 1\n"))
 	lib := newRepo(t)
-	lib.release("1.0.0", pkgFiles("lib", "1.0.0", fmt.Sprintf("base = { git = %q, commit = %q }", base.url(), c[:8]), "use base\npublic fun l(): i64 = base.b()\n"))
+	lib.release("1.0.0", pkgFiles("lib", "1.0.0", fmt.Sprintf("base = { git = %q, commit = %q }", base.url(), c[:8]), "use base\npublic fun l(): i64 => base.b()\n"))
 	dir, man := project(t, "lib = "+gitDep(lib, "1.0.0"))
 	res := resolveOK(t, dir, man)
 	if len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "package 'lib'") || !strings.Contains(res.Warnings[0], "at commit "+c[:8]) {
@@ -316,7 +316,7 @@ func TestLibraryCommitPinWarns(t *testing.T) {
 func TestFetchedPackageCannotDependOnADirectory(t *testing.T) {
 	home(t)
 	lib := newRepo(t)
-	lib.release("1.0.0", pkgFiles("lib", "1.0.0", `other = "../other"`, "public fun l(): i64 = 1\n"))
+	lib.release("1.0.0", pkgFiles("lib", "1.0.0", `other = "../other"`, "public fun l(): i64 => 1\n"))
 	dir, man := project(t, "lib = "+gitDep(lib, "1.0.0"))
 	if _, err := Resolve(dir, man); err == nil || !strings.Contains(err.Error(), "cannot depend on a directory") {
 		t.Fatalf("got %v", err)
@@ -326,7 +326,7 @@ func TestFetchedPackageCannotDependOnADirectory(t *testing.T) {
 func TestMissingTagAndOffline(t *testing.T) {
 	h := home(t)
 	lib := newRepo(t)
-	lib.release("1.0.0", pkgFiles("lib", "1.0.0", "", "public fun one(): i64 = 1\n"))
+	lib.release("1.0.0", pkgFiles("lib", "1.0.0", "", "public fun one(): i64 => 1\n"))
 	dir, man := project(t, "lib = "+gitDep(lib, "9.9.9"))
 	if _, err := Resolve(dir, man); err == nil || !strings.Contains(err.Error(), "has no tag v9.9.9 or 9.9.9") || !strings.Contains(err.Error(), "veles.toml:4: dependency 'lib'") {
 		t.Errorf("missing tag: got %v", err)
@@ -364,7 +364,7 @@ func TestNoRemoteDependencyTouchesNothing(t *testing.T) {
 func TestWorkspaceSharesOneSum(t *testing.T) {
 	home(t)
 	lib := newRepo(t)
-	lib.release("1.0.0", pkgFiles("lib", "1.0.0", "", "public fun one(): i64 = 1\n"))
+	lib.release("1.0.0", pkgFiles("lib", "1.0.0", "", "public fun one(): i64 => 1\n"))
 	ws := t.TempDir()
 	writeFiles(t, ws, map[string]string{
 		"veles.toml":        "[workspace]\nmembers = [\"apps/a\"]\n",
@@ -404,7 +404,7 @@ func zipOf(t *testing.T, files map[string]string) []byte {
 
 func TestRegistryPackageThroughAProxy(t *testing.T) {
 	home(t)
-	archive := zipOf(t, pkgFiles("httputil", "1.4.2", "", "public fun get(): i64 = 1\n"))
+	archive := zipOf(t, pkgFiles("httputil", "1.4.2", "", "public fun get(): i64 => 1\n"))
 	hits := 0
 	unpacked := t.TempDir()
 	zp := filepath.Join(unpacked, "a.zip")
@@ -444,7 +444,7 @@ func TestRegistryPackageThroughAProxy(t *testing.T) {
 	// repository serving one release agree
 	h1, _ := TreeHash(depDir(res, dir, "httputil"))
 	lib := newRepo(t)
-	lib.release("1.4.2", pkgFiles("httputil", "1.4.2", "", "public fun get(): i64 = 1\n"))
+	lib.release("1.4.2", pkgFiles("httputil", "1.4.2", "", "public fun get(): i64 => 1\n"))
 	dir2, man2 := project(t, "x = "+gitDep(lib, "1.4.2"))
 	res2 := resolveOK(t, dir2, man2)
 	if h2, _ := TreeHash(depDir(res2, dir2, "x")); h1 != h2 {

@@ -98,7 +98,7 @@ fun parsePort(text: string): i64 throws RangeError {
   n
 }
 
-fun half(n: i64): i64? = if (n % 2 == 0) n / 2 else null
+fun half(n: i64): i64? => if (n % 2 == 0) n / 2 else null
 
 test "passes" {
   expect(parsePort("80") ?? 0 == 80)
@@ -175,7 +175,7 @@ func TestTestSuites(t *testing.T) {
 		t.Skip("clang not available:", err)
 	}
 	files := map[string]string{
-		"main.vs": `fun parseInt(text: string): i64? = text.toInt()
+		"main.vs": `fun parseInt(text: string): i64? => text.toInt()
 
 suite "parser" {
   test fun expectParses(text: string, want: i64) {
@@ -408,7 +408,7 @@ func TestTestHelperPanicCallSites(t *testing.T) {
   n
 }
 
-test fun twice(n: i64): i64 = positive(n) * 2
+test fun twice(n: i64): i64 => positive(n) * 2
 
 test "panics in a helper" {
   expect(twice(-1) == -2)
@@ -417,7 +417,7 @@ test "panics in a helper" {
 	out, code := runTests(t, src, Options{})
 	want := "test panics in a helper ... FAILED: panic: not positive: -1\n" +
 		"  at main.vs:2:15 in positive\n" +
-		"  called from main.vs:6:31 in twice\n" +
+		"  called from main.vs:6:32 in twice\n" +
 		"  called from main.vs:9:10 in panics in a helper\n" +
 		"\n0 passed, 1 failed: panics in a helper\n"
 	if out != want || code != 1 {

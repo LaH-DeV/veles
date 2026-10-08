@@ -58,12 +58,12 @@ public struct Rng {
   }
 
   /// A number in `0.0..<1.0`.
-  public fun float(): f64 = ((this.nextU64() >> 11).toF64()) / 9007199254740992.0
+  public fun float(): f64 => ((this.nextU64() >> 11).toF64()) / 9007199254740992.0
 
-  public fun boolean(): bool = (this.nextU64() & 1) == 1
+  public fun boolean(): bool => (this.nextU64() & 1) == 1
 
   /// One element of `xs`, or `null` when it is empty.
-  public fun pick<T>(xs: List<T>): T? = if (xs.isEmpty()) null else xs.at(this.range(0, xs.len()))
+  public fun pick<T>(xs: List<T>): T? => if (xs.isEmpty()) null else xs.at(this.range(0, xs.len()))
 
   /// Reorders `xs` in place (Fisher–Yates).
   public fun shuffle<T>(xs: MutableList<T>) {
@@ -76,7 +76,7 @@ public struct Rng {
   }
 }
 
-fun rotl(x: u64, k: i64): u64 = (x << k) | (x >> (64 - k))
+fun rotl(x: u64, k: i64): u64 => (x << k) | (x >> (64 - k))
 
 // The module's generator, shared by every task — on whichever thread each
 // runs (D66) — so each call takes its lock. A task drawing many numbers
@@ -89,18 +89,18 @@ public fun seed(n: i64) {
 }
 
 /// A number in `lo..<hi` from the shared generator.
-public fun range(lo: i64, hi: i64): i64 = shared.withLock(r => r.range(lo, hi))
+public fun range(lo: i64, hi: i64): i64 => shared.withLock(r => r.range(lo, hi))
 
 /// The next 64 random bits from the shared generator.
-public fun nextU64(): u64 = shared.withLock(r => r.nextU64())
+public fun nextU64(): u64 => shared.withLock(r => r.nextU64())
 
 /// A number in `0.0..<1.0` from the shared generator.
-public fun float(): f64 = shared.withLock(r => r.float())
+public fun float(): f64 => shared.withLock(r => r.float())
 
-public fun boolean(): bool = shared.withLock(r => r.boolean())
+public fun boolean(): bool => shared.withLock(r => r.boolean())
 
 /// One element of `xs`, or `null` when it is empty.
-public fun pick<T>(xs: List<T>): T? = shared.withLock(r => r.pick(xs))
+public fun pick<T>(xs: List<T>): T? => shared.withLock(r => r.pick(xs))
 
 /// Reorders `xs` in place.
 public fun shuffle<T>(xs: MutableList<T>) {

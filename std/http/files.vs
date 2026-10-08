@@ -3,7 +3,9 @@
 // conditional requests that use them, one byte range, `Cache-Control`, and
 // what a directory means. The decisions are taken from `fs.stat` alone, so a
 // request that ends in a 304 or a 412 never reads the file.
-use fs, path, time
+use fs
+use path
+use time
 
 /// A handler serving files under `dir` for a route ending in `*`:
 /// `app.get("/static/*", http.files("./public"))`. It throws like a handler
@@ -155,7 +157,7 @@ struct FileServer {
 }
 
 // the producer of a file's bytes `from`.. for `count` of them
-fun sendFile(p: string, from: i64, count: i64): sendable fun(BodyWriter) suspends throws IoError = out => {
+fun sendFile(p: string, from: i64, count: i64): sendable fun(BodyWriter) suspends throws IoError => (out => {
   with f = try fs.open(p)
   var at = from
   var left = count
@@ -167,7 +169,7 @@ fun sendFile(p: string, from: i64, count: i64): sendable fun(BodyWriter) suspend
     at += chunk.len()
     left -= chunk.len()
   }
-}
+})
 
 // RFC 9110 §13.2.2, in its order: the status a request that must not reach
 // the body gets — 304 or 412 — or null. `If-Match` compares strongly and
@@ -193,7 +195,7 @@ fun etagListHas(list: string, tag: string): bool {
   list.split(",").any(t => opaque(t.trim()) == want)
 }
 
-fun opaque(tag: string): string = if (tag.startsWith("W/")) tag.substring(2, tag.len()) ?: tag else tag
+fun opaque(tag: string): string => if (tag.startsWith("W/")) tag.substring(2, tag.len()) ?: tag else tag
 
 // A range of bytes: `from..to` inclusive; not `satisfiable` when it starts
 // beyond the end

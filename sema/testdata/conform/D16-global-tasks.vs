@@ -2,7 +2,7 @@
 // open a scope of tasks, even inside a block of its value.
 use io
 
-fun two(): i64 = 2
+fun two(): i64 => 2
 
 val scoped: i64 = if (true) {
   scope { // error: 'scope' cannot appear in a global initializer; compute the value in 'main' and pass it down

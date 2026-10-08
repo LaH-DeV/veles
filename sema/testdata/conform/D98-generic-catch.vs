@@ -19,7 +19,7 @@ fun attempts<R, E>(times: i64, f: fun(): R throws E): R throws E {
 
 error Nope { }
 
-fun failing(): i64 throws Nope = throw Nope()
+fun failing(): i64 throws Nope => throw Nope()
 
 fun main() {
   io.println("${attempts(3, () => 7)}")

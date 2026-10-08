@@ -56,13 +56,13 @@ const OPERATORS: List<(string, Kind)> = [
   ("%", Kind.Percent), ("<", Kind.Lt), (">", Kind.Gt), ("!", Kind.Bang), ("^", Kind.Caret), ("~", Kind.Tilde),
 ]
 
-fun isDigit(b: u8): bool = b >= '0' && b <= '9'
+fun isDigit(b: u8): bool => b >= '0' && b <= '9'
 
-fun isHexDigit(b: u8): bool = isDigit(b) || (b >= 'a' && b <= 'f') || (b >= 'A' && b <= 'F')
+fun isHexDigit(b: u8): bool => isDigit(b) || (b >= 'a' && b <= 'f') || (b >= 'A' && b <= 'F')
 
-fun isBinDigit(b: u8): bool = b == '0' || b == '1'
+fun isBinDigit(b: u8): bool => b == '0' || b == '1'
 
-fun isOctDigit(b: u8): bool = b >= '0' && b <= '7'
+fun isOctDigit(b: u8): bool => b >= '0' && b <= '7'
 
 // only the whitespace a gap between tokens can hold: whatever else stands
 // there is a token or a comment
@@ -105,10 +105,10 @@ fun trimStartOf(text: string, chars: string): string {
   text.substring(start, text.len()) ?: text
 }
 
-fun dropPrefix(text: string, prefix: string): string =
+fun dropPrefix(text: string, prefix: string): string =>
   if (text.startsWith(prefix)) text.substring(prefix.len(), text.len()) ?: text else text
 
-fun dropSuffix(text: string, suffix: string): string =
+fun dropSuffix(text: string, suffix: string): string =>
   if (text.endsWith(suffix)) text.substring(0, text.len() - suffix.len()) ?: text else text
 
 struct Lexer {
@@ -121,7 +121,7 @@ struct Lexer {
   docs:     MutableList<DocComment> = []
   comments: MutableList<Comment> = []
 
-  fun span(start: i64, end: i64): Span = Span(file: this.file, start, end)
+  fun span(start: i64, end: i64): Span => Span(file: this.file, start, end)
 
   fun errorAt(start: i64, end: i64, message: string) {
     this.diags.errorAt(this.span(start, end), message)
@@ -154,7 +154,7 @@ struct Lexer {
     (rune.code, rune.size)
   }
 
-  fun peekByte(offset: i64): u8 = if (this.pos + offset < this.src.len()) this.src.byteAt(this.pos + offset) else 0
+  fun peekByte(offset: i64): u8 => if (this.pos + offset < this.src.len()) this.src.byteAt(this.pos + offset) else 0
 
   // whether src holds `text` at i
   fun holdsAt(i: i64, text: string): bool {
@@ -187,7 +187,7 @@ struct Lexer {
     open == '{' && this.endsStatement()
   }
 
-  fun endsStatement(): bool = when (this.lastKind()) {
+  fun endsStatement(): bool => when (this.lastKind()) {
     Kind.Ident, Kind.Int, Kind.Float, Kind.String, Kind.Char, Kind.KwTrue, Kind.KwFalse, Kind.KwNull,
       Kind.KwThis, Kind.KwSelfType, Kind.KwBreak, Kind.KwContinue, Kind.KwReturn, Kind.KwThrows,
       Kind.KwSuspends, Kind.RParen, Kind.RBracket, Kind.RBrace, Kind.Question, Kind.Gt, Kind.Under,

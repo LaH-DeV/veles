@@ -2,7 +2,8 @@
 // library: strings copied into C's memory, a list lent without a copy, a
 // Veles comparator handed to `qsort`, and a Veles value travelling through
 // C as `void *userdata`.
-use ffi, io { println }
+use ffi
+use io { println }
 
 extern "C" {
   fun strlen(s: *raw u8): u64

@@ -11,8 +11,8 @@ trait Waits {
   fun wait() suspends
 }
 
-fun misspelled(l: Labelled): string = l.lable() // error: trait 'Labelled' has no method 'lable'; did you mean 'label'?
-fun short(l: Labelled): string = l.pad() // error: missing argument 'n' in call to 'pad'
+fun misspelled(l: Labelled): string => l.lable() // error: trait 'Labelled' has no method 'lable'; did you mean 'label'?
+fun short(l: Labelled): string => l.pad() // error: missing argument 'n' in call to 'pad'
 fun waits(w: Waits) suspends {
   w.wait()
 }

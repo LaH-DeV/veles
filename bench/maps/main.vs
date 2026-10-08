@@ -1,5 +1,6 @@
 // A hash map: 200k inserts then 200k lookups, five rounds.
-use io { println }, time
+use io { println }
+use time
 
 fun main() {
   val sw = time.Stopwatch.start()

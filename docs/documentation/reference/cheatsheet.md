@@ -6,7 +6,8 @@ Everything on one page. `D<n>` refers to a decision in `veles-spec.md`.
 
 ```veles
 // fragment
-use fs, io, os                  // import modules; call as io.println (fmt sorts: std first, then the rest)
+use fs                          // import a module; call as fs.readFile (fmt writes one `use` per line, std first)
+use io, os                      // several at once: one line, comma-separated ([format] imports = "merged" keeps it)
 use geometry as geo             // rename a module: geo.Point
 use io { println, eprintln as warn }  // bare names on top of io.: println("x"); rename with `as`
 
@@ -95,10 +96,10 @@ return v; break; continue; throw e; panic("msg")   // panic and os.exit are Neve
 
 ```veles
 // fragment
-fun add(a: i64, b: i64): i64 = a + b                // expression body
+fun add(a: i64, b: i64): i64 => a + b                // expression body
 fun greet(name: string, punct: string = "!") { }    // default; call greet("x", punct: "?")
-fun sum(xs: i64...): i64 = xs.fold(0, (a, b) => a + b)  // variadic: sum(1, 2), sum(list...)
-fun show<T: Show>(x: T): string = x.show()         // generic with bound
+fun sum(xs: i64...): i64 => xs.fold(0, (a, b) => a + b)  // variadic: sum(1, 2), sum(list...)
+fun show<T: Show>(x: T): string => x.show()         // generic with bound
 fun fetch(url: string): string suspends throws E    // effects (inferred for free functions)
 fun each(xs: List<i64>, f: fun(i64): () suspends)  // a `suspends` parameter: the call suspends only if what is passed does (D116)
 val f = x => x * 2                                  // lambda; (a, b) => ..., (x: i64) => ..., _ => ... ignores its argument
@@ -119,9 +120,9 @@ struct Point {
   sum: i64                      // no default + assigned in init = init's, not the caller's (a default is a constant: no `this` in it)
   init { this.sum = this.x + this.y }  // runs after every construction; must assign sum on every path; not callable (D28)
   public protected var hits: i64 = 0  // protected var: read wherever visible, assigned only by Point's own code
-  fun len(): i64 = this.x + this.y
+  fun len(): i64 => this.x + this.y
   fun move(dx: i64) { this.x += dx }   // no marker: a method may assign the var fields
-  static fun origin(): Point = Point(x: 0)  // no this; Point.origin()
+  static fun origin(): Point => Point(x: 0)  // no this; Point.origin()
   static val unit = Point(x: 1)             // a constant in the type's namespace: Point.unit (public to export; never var)
   private count: i64 = 0                    // private: only Point's own methods/implement/extend blocks; no marker (or `internal`) = the module; public = the package
 }
@@ -135,22 +136,22 @@ val z = T.default()             // Default (D119): 0, false, "", empty, null; a 
 
 trait Shape {
   fun area(): f64
-  fun describe(): string = "area ${this.area()}"   // default
+  fun describe(): string => "area ${this.area()}"   // default
 }
-struct Sq { s: f64; implement Shape { fun area(): f64 = this.s * this.s; override fun describe(): string = "sq" } }   // your own type: implement in the body
-implement Shape for i64 { fun area(): f64 = 0.0 }   // a foreign type: top-level implement (for your own type it is a lint with a quick fix)
+struct Sq { s: f64; implement Shape { fun area(): f64 => this.s * this.s; override fun describe(): string => "sq" } }   // your own type: implement in the body
+implement Shape for i64 { fun area(): f64 => 0.0 }   // a foreign type: top-level implement (for your own type it is a lint with a quick fix)
 val s: Shape = Sq(s: 2.0)       // trait object (D9)
 if (s is Sq) s.s                // its concrete type, narrowed — the boxed value itself, writes reach it (D135)
 if (w is Flusher) w.flush()     // does its type implement another trait: viewed as that trait's object (D117)
 if (T implements Show) x.show() // generic code, compile time: each instance compiles only the branch it takes (D117)
 
 extend Point {                  // more inherent methods, outside the body (D23)
-  fun norm(): i64 = this.x.abs() + this.y.abs()
+  fun norm(): i64 => this.x.abs() + this.y.abs()
 }
 extend<T: Shape> Box<T> { ... } // only for types you declare; bounds allowed
 
 sealed trait Expr {             // fixed set of variants (D12)
-  fun eval(): i64 = when (this) { is Num(v) => v; is Neg(e) => -e.eval() }
+  fun eval(): i64 => when (this) { is Num(v) => v; is Neg(e) => -e.eval() }
 }
 struct Num : Expr { v: i64 }
 struct Neg : Expr { e: *Expr }
@@ -163,8 +164,8 @@ when (ph) { Phase.Red => ...; Phase.Amber => ...; Phase.Green => ... }   // exha
 trait Iterator { type Item; fun next(): Item? }   // associated type
 implement Iterator for Countdown { type Item = i64; fun next(): i64? { ... } }
 
-implement Comparable for Point { fun compareTo(other: Point): Ordering = this.x.compareTo(other.x) }  // <, sorted, min; Ordering = enum { Less = -1, Equal, Greater }
-implement Display for Point { fun toString(): string = "(${this.x})" }              // "$p"
+implement Comparable for Point { fun compareTo(other: Point): Ordering => this.x.compareTo(other.x) }  // <, sorted, min; Ordering = enum { Less = -1, Equal, Greater }
+implement Display for Point { fun toString(): string => "(${this.x})" }              // "$p"
 // also Equatable (==) and Hashable (map keys); structural by default
 ```
 
@@ -173,12 +174,12 @@ implement Display for Point { fun toString(): string = "(${this.x})" }          
 ```veles
 // fragment
 error NotFound { key: string }                          // a struct that is an Error; only errors can be thrown
-error Invalid { why: string; fun message(): string = this.why }
+error Invalid { why: string; fun message(): string => this.why }
 error Failed { message: string }                        // a `message` field is the message
 error GetErrors = NotFound | Invalid | Failed             // a named error set (D45)
 error Wrapped { cause: GetErrors }                      // an error's field may hold a set
-fun get(k: string): string throws NotFound = if (k == "a") "A" else throw NotFound(key: k)
-fun getAll(): string throws = try get("a") + try get("b")   // error type inferred: NotFound
+fun get(k: string): string throws NotFound => if (k == "a") "A" else throw NotFound(key: k)
+fun getAll(): string throws => try get("a") + try get("b")   // error type inferred: NotFound
 when (val r = get("z")) { is Ok => r; is Err => r.key }    // caller sees Result; r is the payload per arm
 val r: Result<i64, NotFound> = Ok(1); r.getOrNull(); r.getOrDefault(0); r.errorOrNull(); results.oks(); results.errors()
 val user = try users.get(id) ?! NotFound(key: id)        // `x ?! e`: absence (T?) or failure (Result) becomes failure with e; try propagates
@@ -349,6 +350,6 @@ veles add <spec>[@ver]  veles update <name>|--all  veles remove <name>  veles de
 veles publish [dir]  veles yank <owner/name>@<ver> [--reason t] [--undo]  veles attest keygen|sign|verify|import
 veles check <dir>      veles test <dir> [--filter text] [--timeout 10m]
 veles parse <file>     veles lsp     (editor server)
-veles fmt <paths>      [--check | --stdout]   format in place; [format] in veles.toml: indent = 2 | "tab", max_blank_lines = 1
+veles fmt <paths>      [--check | --stdout]   format in place; [format] in veles.toml: indent = 2 | "tab", max_blank_lines = 1, imports = "lines" | "merged"
 VELES_CLANG=<path>     VELES_GC_TRACE=1     VELES_GC_THRESHOLD=<bytes>
 ```

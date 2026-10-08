@@ -20,7 +20,8 @@ otherwise is how `base64.encode(password)` gets written.
 `crypto.sha256(bytes)` answers with a `Digest`:
 
 ```veles
-use crypto, io
+use crypto
+use io
 
 fun main() {
   val d = crypto.sha256("abc".bytes())
@@ -55,7 +56,8 @@ it — which is how a file or an upload is hashed without being held in
 memory:
 
 ```veles
-use crypto, io
+use crypto
+use io
 
 fun main() {
   var h = crypto.Sha256.start()
@@ -84,7 +86,8 @@ line, a JSON body or a crash report. `Secret<T>` — in the prelude, for `T`
 = `string` or `List<u8>` — holds one so that it cannot (D112):
 
 ```veles
-use io, json
+use io
+use json
 
 struct Config {
   port: i64 = 8080
@@ -133,7 +136,9 @@ A hash says "these are the bytes". It does not say "the holder of the
 secret wrote them" — anyone can hash anything. That is what HMAC is for:
 
 ```veles
-use crypto, hex, io
+use crypto
+use hex
+use io
 
 fun main() throws hex.Invalid {
   with secret = Secret.of("shhh".bytes())
@@ -203,7 +208,8 @@ boundary.
 ## UUIDs
 
 ```veles
-use crypto, io
+use crypto
+use io
 
 fun main() {
   val a = crypto.uuidV7()
@@ -232,7 +238,9 @@ without dashes, and refuses everything else — no braces, no `urn:uuid:`.
 ## hex and base64
 
 ```veles
-use base64, hex, io
+use base64
+use hex
+use io
 
 fun main() {
   io.println(hex.encode("abc".bytes()))
@@ -297,7 +305,10 @@ The implementation is Veles' own, checked against all three test vectors of RFC 
 refuses.
 
 ```veles
-use codec, crypto, io, jwt
+use codec
+use crypto
+use io
+use jwt
 
 fun main() throws EncodeError {
   with key = Secret.of(crypto.randomBytes(32))

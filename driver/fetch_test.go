@@ -61,12 +61,12 @@ func TestGitDependenciesBuildAndRun(t *testing.T) {
 		}
 		return s
 	}
-	gitRelease(t, util, "1.0.0", map[string]string{"veles.toml": pkg("util", "1.0.0", ""), "lib.vs": "public fun version(): i64 = 100\n"})
-	gitRelease(t, util, "1.3.0", map[string]string{"veles.toml": pkg("util", "1.3.0", ""), "lib.vs": "public fun version(): i64 = 130\n"})
-	gitRelease(t, util, "2.0.0", map[string]string{"veles.toml": pkg("util", "2.0.0", ""), "lib.vs": "public fun version(): i64 = 200\n"})
+	gitRelease(t, util, "1.0.0", map[string]string{"veles.toml": pkg("util", "1.0.0", ""), "lib.vs": "public fun version(): i64 => 100\n"})
+	gitRelease(t, util, "1.3.0", map[string]string{"veles.toml": pkg("util", "1.3.0", ""), "lib.vs": "public fun version(): i64 => 130\n"})
+	gitRelease(t, util, "2.0.0", map[string]string{"veles.toml": pkg("util", "2.0.0", ""), "lib.vs": "public fun version(): i64 => 200\n"})
 	gitRelease(t, mid, "1.0.0", map[string]string{
 		"veles.toml": pkg("mid", "1.0.0", fmt.Sprintf("util = { git = %q, version = \"1.3.0\" }", url(util))),
-		"lib.vs":     "use util\n\npublic fun fromMid(): i64 = util.version()\n",
+		"lib.vs":     "use util\n\npublic fun fromMid(): i64 => util.version()\n",
 	})
 
 	app := filepath.Join(root, "app")

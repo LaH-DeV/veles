@@ -102,7 +102,7 @@ func TestDumpDerivedInfersBounds(t *testing.T) {
 func TestDeriveSchemaFollowsDecode(t *testing.T) {
 	src := "use codec\nuse io\n\nenum Mode {\n  Fast\n  Slow\n}\n\n" +
 		"struct Pair {\n  a: string\n  b: string\n  implement Decodable {\n" +
-		"    static fun decode(from: codec.Decoder): Pair throws DecodeError = Pair(a: try from.readString(), b: \"\")\n  }\n}\n\n" +
+		"    static fun decode(from: codec.Decoder): Pair throws DecodeError => Pair(a: try from.readString(), b: \"\")\n  }\n}\n\n" +
 		"fun main() { io.println(\"ok\") }\n"
 	got := explainSource(t, src)
 	if !strings.Contains(got, "Schema.leaf(SchemaKind.Text, \"one of \\\"Fast\\\", \\\"Slow\\\"\")") {

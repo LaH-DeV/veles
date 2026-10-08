@@ -1,8 +1,8 @@
 use io { println }
 
-fun apply(f: fun(i64): i64, x: i64): i64 = f(x)
+fun apply(f: fun(i64): i64, x: i64): i64 => f(x)
 
-fun twice<T, U>(x: T, f: fun(T): U): U = f(x)
+fun twice<T, U>(x: T, f: fun(T): U): U => f(x)
 
 fun counter(): fun(): i64 {
   var n = 0
@@ -12,7 +12,7 @@ fun counter(): fun(): i64 {
   }
 }
 
-fun double(x: i64): i64 = x * 2
+fun double(x: i64): i64 => x * 2
 
 struct Acc {
   var total: i64 = 0

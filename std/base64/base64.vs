@@ -38,17 +38,17 @@ public error Invalid {
 }
 
 /// The bytes in standard base64, padded to a multiple of four characters.
-public const fun encode(bytes: List<u8>): string = write(bytes, STANDARD, pad: true)
+public const fun encode(bytes: List<u8>): string => write(bytes, STANDARD, pad: true)
 
 /// The bytes in URL-safe base64 (RFC 4648 §5) with no padding: safe in a
 /// path segment, a query parameter, a cookie value or a JWT.
-public const fun encodeUrl(bytes: List<u8>): string = write(bytes, URL_SAFE, pad: false)
+public const fun encodeUrl(bytes: List<u8>): string => write(bytes, URL_SAFE, pad: false)
 
 /// The bytes the standard base64 text spells; padding is optional.
-public fun decode(text: string): List<u8> throws Invalid = try read(text, url: false)
+public fun decode(text: string): List<u8> throws Invalid => try read(text, url: false)
 
 /// The bytes the URL-safe base64 text spells; padding is optional.
-public fun decodeUrl(text: string): List<u8> throws Invalid = try read(text, url: true)
+public fun decodeUrl(text: string): List<u8> throws Invalid => try read(text, url: true)
 
 /// How many characters `encode` produces for `n` bytes (`encodeUrl` drops
 /// the padding): useful for a size ceiling before you encode.
@@ -67,7 +67,7 @@ public const fun encodedLen(n: i64, pad: bool = true): i64 {
 
 /// Byte `i` of the input, widened. `write` reads below `n` only: the loop
 /// runs while `i + 3 <= n`, and the tail reads just the `left` bytes after it.
-const fun input(bytes: List<u8>, i: i64): i64 = (bytes.at(i) ?: panic("base64.encode: every read is below the input length")).toI64()
+const fun input(bytes: List<u8>, i: i64): i64 => (bytes.at(i) ?: panic("base64.encode: every read is below the input length")).toI64()
 
 const fun write(bytes: List<u8>, alphabet: string, pad: bool): string {
   val out: MutableList<u8> = []

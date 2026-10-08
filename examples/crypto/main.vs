@@ -3,9 +3,14 @@
 // and the two encodings that carry them. Every digest printed here is a
 // published test vector: FIPS 180-4 for the hashes, RFC 4231 and RFC 2202
 // for the MACs, RFC 4648 for base64, RFC 7515 for the token.
-use base64, codec, crypto, hex, io { println }, jwt
+use base64
+use codec
+use crypto
+use hex
+use io { println }
+use jwt
 
-fun bytes(b: u8, n: i64): List<u8> = MutableList<u8>.repeat(b, n).toList()
+fun bytes(b: u8, n: i64): List<u8> => MutableList<u8>.repeat(b, n).toList()
 
 /// FIPS 180-4, the three documented messages for each hash.
 fun digests() {

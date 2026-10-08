@@ -1,7 +1,8 @@
 // std/random: a seeded generator gives the same sequence every run, which
 // is what this example relies on; without `seed` it starts from the clock.
 // Also bitwise operators, which the generator is built from.
-use io { println }, random
+use io { println }
+use random
 
 fun main() {
   random.seed(2026)

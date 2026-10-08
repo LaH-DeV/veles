@@ -14,7 +14,8 @@ and a client task under one `scope`. Nothing about the code changes when
 the client is another machine.
 
 ```veles
-use io, net
+use io
+use net
 
 fun serve(listener: net.Listener) throws IoError | io.TooLong {
   with conn = try listener.accept()
@@ -106,7 +107,8 @@ The handler owns the connection from then on; the accept loop is back to
 `accept()` immediately, so a slow client never delays the next one:
 
 ```veles
-use io, net
+use io
+use net
 
 fun handle(conn: net.Conn, store: Mutex<MutableMap<string, string>>) throws IoError | io.TooLong {
   with c = conn
@@ -184,7 +186,8 @@ which would hold a `readLine` open forever.
 read was inside one — has run, and `Timeout` is thrown:
 
 ```veles
-use io, net
+use io
+use net
 
 fun greetOrDrop(conn: net.Conn): string throws IoError | io.TooLong | Timeout {
   with c = conn
@@ -228,7 +231,8 @@ runs over the other:
 
 ```veles
 // fragment
-use io, tls
+use io
+use tls
 
 fun main() suspends throws IoError | io.TooLong {
   with conn = try tls.connect("example.com", 443)

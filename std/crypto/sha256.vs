@@ -29,11 +29,11 @@ public struct Sha256 {
   private var result: Digest? = null
 
   implement Hasher {
-    static fun start(): Sha256 = Sha256()
+    static fun start(): Sha256 => Sha256()
 
-    static fun algorithm(): string = "SHA-256"
-    static fun blockSize(): i64 = 64
-    static fun digestSize(): i64 = 32
+    static fun algorithm(): string => "SHA-256"
+    static fun blockSize(): i64 => 64
+    static fun digestSize(): i64 => 32
 
     fun update(data: List<u8>) {
       if (this.result != null) panic("crypto.Sha256: update after finish")
@@ -162,7 +162,7 @@ public struct Sha256 {
 
 /// The big-endian word at `at` in a block held in an array. Called only
 /// where the block holds all four bytes: offsets 0, 4, … 60.
-fun wordOf(block: Array<u8, 64>, at: i64): u32 =
+fun wordOf(block: Array<u8, 64>, at: i64): u32 =>
   ((block.at(at) ?: panic("sha256: a word is read inside the block")).toU32() << 24) |
   ((block.at(at + 1) ?: panic("sha256: a word is read inside the block")).toU32() << 16) |
   ((block.at(at + 2) ?: panic("sha256: a word is read inside the block")).toU32() << 8) |

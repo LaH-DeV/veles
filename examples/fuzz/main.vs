@@ -9,7 +9,16 @@
 //
 // A failure prints the target, the iteration and the input, and the exit
 // code is 1.
-use base64, codec, hex, http, io { println }, json, net, os, random, utf8
+use base64
+use codec
+use hex
+use http
+use io { println }
+use json
+use net
+use os
+use random
+use utf8
 
 struct Stats {
   var runs:     i64 = 0
@@ -62,7 +71,7 @@ struct Fuzzer {
   }
 }
 
-fun show(s: string): string = if (s.len() <= 80) "\"$s\"" else "\"${s.substring(0, 80) ?: s}...\" (${s.len()} bytes)"
+fun show(s: string): string => if (s.len() <= 80) "\"$s\"" else "\"${s.substring(0, 80) ?: s}...\" (${s.len()} bytes)"
 
 // ---------------------------------------------------------------------------
 // targets
@@ -219,7 +228,7 @@ val fuzzLimits = http.Limits(requestLineBytes: 200, headerLineBytes: 100, header
 
 /// What the parser produced, sent back: the method and decoded path in a
 /// header (a path can decode to anything, `\r\n` included) and the body.
-fun echo(req: http.Request): http.Response suspends throws http.Fail | IoError =
+fun echo(req: http.Request): http.Response suspends throws http.Fail | IoError =>
   http.Response.bytes(try req.bytes(), "application/octet-stream").withHeader("x-echo", "${req.method} ${req.path}")
 
 /// `data` as a chunked body: pieces of random size, some with a chunk

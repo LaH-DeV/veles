@@ -2,7 +2,10 @@
 // the fields get, the order the sources are read in, files of both kinds, and
 // that every problem is reported at once without a secret in any message.
 
-use fs, os, path, time
+use fs
+use os
+use path
+use time
 
 enum Level {
   Debug
@@ -59,7 +62,7 @@ struct WithMap {
   implement Decodable
 }
 
-test fun env(pairs: Map<string, string>): fun(string): string? = name => pairs.get(name)
+test fun env(pairs: Map<string, string>): fun(string): string? => (name => pairs.get(name))
 
 // the two variables nothing can default, and `extra` on top
 test fun minimal(extra: Map<string, string> = [:]): Map<string, string> {
@@ -70,7 +73,7 @@ test fun minimal(extra: Map<string, string> = [:]): Map<string, string> {
   vars.toMap()
 }
 
-test fun read<T: Decodable>(vars: Map<string, string>, files: List<string> = [], prefix: string = ""): T throws Error =
+test fun read<T: Decodable>(vars: Map<string, string>, files: List<string> = [], prefix: string = ""): T throws Error =>
   try loadWith<T>(env(vars), files, prefix)
 
 test fun failures<T: Decodable>(vars: Map<string, string>, files: List<string> = [], prefix: string = ""): List<string> {

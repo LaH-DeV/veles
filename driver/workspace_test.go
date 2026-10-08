@@ -24,11 +24,11 @@ func workspaceTree(t *testing.T, rootManifest string) string {
 	}
 	write("veles.toml", rootManifest)
 	write("libs/mathlib/veles.toml", "[package]\nname = \"mathlib\"\n")
-	write("libs/mathlib/lib.vs", "public fun twice(n: i64): i64 = n * 2\n\ntest \"twice\" {\n  expect(twice(2) == 4)\n}\n")
+	write("libs/mathlib/lib.vs", "public fun twice(n: i64): i64 => n * 2\n\ntest \"twice\" {\n  expect(twice(2) == 4)\n}\n")
 	write("app/veles.toml", "[package]\nname = \"app\"\n[dependencies]\nmathlib = \"../libs/mathlib\"\n")
 	write("app/main.vs", "use io\nuse mathlib\n\nfun main() {\n  io.println(\"${mathlib.twice(21)}\")\n}\n")
 	write("tools/veles.toml", "[package]\nname = \"tools\"\n")
-	write("tools/lib.vs", "public fun one(): i64 = 1\n\ntest \"one\" {\n  expect(one() == 1)\n}\n")
+	write("tools/lib.vs", "public fun one(): i64 => 1\n\ntest \"one\" {\n  expect(one() == 1)\n}\n")
 	return dir
 }
 
@@ -89,8 +89,8 @@ func TestWorkspaceRunsEveryMember(t *testing.T) {
 // summary names it.
 func TestWorkspaceReportsEveryFailure(t *testing.T) {
 	dir := workspaceTree(t, wsManifest)
-	os.WriteFile(filepath.Join(dir, "tools", "lib.vs"), []byte("public fun one(): i64 = \"one\"\n"), 0o644)
-	os.WriteFile(filepath.Join(dir, "libs", "mathlib", "lib.vs"), []byte("public fun twice(n: i64): i64 = n * true\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "tools", "lib.vs"), []byte("public fun one(): i64 => \"one\"\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "libs", "mathlib", "lib.vs"), []byte("public fun twice(n: i64): i64 => n * true\n"), 0o644)
 	code, out := runCapturing(t, Options{Path: dir, Mode: "check"})
 	if code != 1 {
 		t.Fatalf("exit %d:\n%s", code, out)

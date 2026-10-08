@@ -6,14 +6,14 @@ use io
 struct Res {
   n: i64
   implement Closeable { fun close() { io.println("closed ${this.n}") } }
-  fun get(): i64 = this.n
+  fun get(): i64 => this.n
 }
 
 struct Holder {
   res: Res
 }
 
-fun make(n: i64): Res = Res(n)
+fun make(n: i64): Res => Res(n)
 fun consume(r: Res) { r.close() }
 
 fun leaks(): i64 {

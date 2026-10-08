@@ -397,7 +397,8 @@ no cache at all.
 | `[registry]` | `url`, `key` | the registry's address and its pinned public key |
 | `[policy]` | `deny`, `allow`, `trust`, `require` | what dependencies may do and need |
 | `[native]` | `libs`, `static-libs`, `lib-paths`, `pkg-config` | C libraries to link |
-| `[format]` | `indent`, `max_blank_lines` | `veles fmt` settings |
+| `[format]` | `indent`, `max_blank_lines`, `imports` | `veles fmt` settings |
+| `[lint]` | `implicit_return` | lints of the package's own code |
 
 Unknown tables and keys are errors, with the list of valid ones.
 

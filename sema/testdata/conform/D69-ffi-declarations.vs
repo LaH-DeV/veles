@@ -19,7 +19,7 @@ extern "C" {
 
 fun register(cb: extern fun(i64): i64 suspends) { } // error: a C function pointer cannot suspend or throw
 
-extern "C" fun twice(x: i64): i64 = x * 2
+extern "C" fun twice(x: i64): i64 => x * 2
 
 fun main() {
   io.println("${twice(2)}")

@@ -21,11 +21,11 @@ struct End : Token { }
 error SyntaxError {
   message: string
   col:     i64
-  fun message(): string = "${this.message} (column ${this.col + 1})"
+  fun message(): string => "${this.message} (column ${this.col + 1})"
 }
 
-fun isDigit(b: u8): bool = b >= '0' && b <= '9'
-fun isAlpha(b: u8): bool = (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || b == '_'
+fun isDigit(b: u8): bool => b >= '0' && b <= '9'
+fun isAlpha(b: u8): bool => (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || b == '_'
 
 type Position = i64
 
@@ -91,7 +91,7 @@ struct Assign : Expr {
 }
 
 /// Binding power of an infix operator; 0 when `t` is not one.
-fun infixPower(t: Token): (i64, i64) = when (t) {
+fun infixPower(t: Token): (i64, i64) => when (t) {
   is Op(text) => when (text) {
     "+", "-"      => (10, 11)
     "*", "/", "%" => (20, 21)
@@ -106,9 +106,9 @@ struct Parser {
   private var pos:    Position = 0
 
   // the token list ends with an end token, and the parser never moves past it
-  private fun here(): (Token, Position) = this.tokens.at(this.pos) ?: panic("calc: the parser stops at the end token")
-  private fun peek(): Token = this.here().0
-  private fun col(): Position = this.here().1
+  private fun here(): (Token, Position) => this.tokens.at(this.pos) ?: panic("calc: the parser stops at the end token")
+  private fun peek(): Token => this.here().0
+  private fun col(): Position => this.here().1
 
   private fun next(): Token {
     val t = this.peek()
@@ -212,7 +212,7 @@ error EvalError {
 struct Env {
   private vars: MutableMap<string, f64> = [:]
 
-  fun eval(e: Expr): f64 throws EvalError = when (e) {
+  fun eval(e: Expr): f64 throws EvalError => when (e) {
     is Literal(value)          => value
     is Variable(name)          => this.vars.get(name) ?: throw EvalError(message: "unknown variable '$name'")
     is Unary(operand)          => -(try this.eval(*operand))
@@ -262,10 +262,10 @@ struct Env {
     }
   }
 
-  fun peek(): Map<string, f64> = this.vars.toMap()
+  fun peek(): Map<string, f64> => this.vars.toMap()
 }
 
-fun show(e: Expr): string = when (e) {
+fun show(e: Expr): string => when (e) {
   is Literal(value)          => if (value == value.trunc()) "${value.toI64()}" else "$value"
   is Variable(name)          => name
   is Unary(op, operand)      => "($op${show(*operand)})"
@@ -274,7 +274,7 @@ fun show(e: Expr): string = when (e) {
   is Assign(name, value)     => "$name = ${show(*value)}"
 }
 
-fun render(x: f64): string = if (x == x.trunc() && x.abs() < 1.0e15) "${x.toI64()}" else x.toFixed(4)
+fun render(x: f64): string => if (x == x.trunc() && x.abs() < 1.0e15) "${x.toI64()}" else x.toFixed(4)
 
 fun main() {
   val script = [

@@ -10,7 +10,8 @@ would drive any other format, because the traits do not know about JSON.
 ## One line
 
 ```veles
-use io, json
+use io
+use json
 
 enum Role { Admin, Member }
 
@@ -63,7 +64,8 @@ where a reader sees it.
 ## Absent, null and default
 
 ```veles
-use io, json
+use io
+use json
 
 struct Settings {
   host:    string            // required: absent or null is a problem
@@ -103,7 +105,9 @@ follows it. `Problem.pointer()` gives the path as a JSON pointer
 ## Keys, skips and styles
 
 ```veles
-use codec, io, json
+use codec
+use io
+use json
 
 struct Account {
   @key("account_id")
@@ -145,7 +149,8 @@ Output:
 ## Sealed traits and generics
 
 ```veles
-use io, json
+use io
+use json
 
 @tag("kind") sealed trait Shape
 @key("circle") struct Circle : Shape { r: f64 }
@@ -189,7 +194,9 @@ unknown variant "blob" of Shape (one of "circle", "Rect")
 ## Enums by name or by number
 
 ```veles
-use codec, io, json
+use codec
+use io
+use json
 
 enum Status { Active, Suspended }
 
@@ -220,7 +227,9 @@ use. When the other side expects something else, say so once, in the
 options:
 
 ```veles
-use codec, io, json
+use codec
+use io
+use json
 
 struct Job {
   name:    string
@@ -257,13 +266,15 @@ length of time, since months differ — with a message that says so.
 ## Writing part by hand
 
 ```veles
-use codec, io, json
+use codec
+use io
+use json
 
 struct Money {
   amount:   i64
   currency: string
   implement Codable {
-    fun encode(to: codec.Encoder) throws EncodeError = try to.writeString("${this.amount} ${this.currency}")
+    fun encode(to: codec.Encoder) throws EncodeError => try to.writeString("${this.amount} ${this.currency}")
   }
 }
 
@@ -333,7 +344,8 @@ Note.tags>` for the value a missing key falls back to.
 ## An untyped document
 
 ```veles
-use io, json
+use io
+use json
 
 fun main() throws EncodeError | DecodeError {
   val v = try json.parse("{\"a\": [1, 2.5, \"x\"], \"b\": {\"c\": true}}")

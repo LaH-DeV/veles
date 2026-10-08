@@ -66,7 +66,8 @@ A name written on every other line does not need its prefix. List it in
 braces after the module (D85):
 
 ```veles
-use io { println, eprintln as warn, readLine }, http { Request, Response }
+use http { Request, Response }
+use io { eprintln as warn, println, readLine }
 
 fun main() {
   println("hello")           // bare
@@ -102,9 +103,12 @@ Import paths are logical, resolved by the compiler against the package
 (M6): never a file path, never a URL. Nested directories use dots:
 `use net.http`.
 
-The order of imports means nothing, so `veles fmt` decides it: consecutive
-`use` lines are merged into one sorted list per origin — standard library
-modules on one line, everything else on the next — as in the example above.
+The order of imports means nothing, so `veles fmt` decides it: a run of
+`use` lines is sorted — standard library modules first, then everything
+else — with one `use` per module. `use fs, io, os` is the same three
+imports written on one line, and a package that prefers that form sets
+`imports = "merged"` in `[format]` (below): the formatter then writes one
+comma-separated `use` per origin.
 
 Imports must form a DAG. If `a` uses `b` and `b` uses `a`, the compiler
 reports the cycle (M4) — merge them or move the shared part into a third
@@ -124,10 +128,10 @@ public struct Point {
   public y: f64
 }
 
-public fun distance(a: Point, b: Point): f64 = root((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y))
-public fun origin(): Point = Point(x: 0.0, y: 0.0)
+public fun distance(a: Point, b: Point): f64 => root((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y))
+public fun origin(): Point => Point(x: 0.0, y: 0.0)
 
-fun root(x: f64): f64 = ...   // private helper
+fun root(x: f64): f64 => ...   // private helper
 ```
 
 A struct whose fields are module-private cannot be constructed outside
@@ -164,6 +168,10 @@ utils = "../utils"            # a path dependency
 [format]
 indent = 2                    # spaces per level, or "tab"; the default is 2
 max_blank_lines = 1           # consecutive blank lines kept by `veles fmt`
+imports = "lines"             # one `use` per module; "merged" writes `use fs, io, os`
+
+[lint]
+implicit_return = "lambda"    # "full" (default) | "lambda" | "expr": where a body may end in its value
 
 [native]
 static-libs = ["z"]           # C libraries the package's extern blocks need (chapter 13)
@@ -171,6 +179,16 @@ static-libs = ["z"]           # C libraries the package's extern blocks need (ch
 
 - What other packages may import is written in source, not here: see
   [What a package shows](#what-a-package-shows) below (D89).
+- `[lint]` turns on checks a team may want and the language does not
+  require. Each is an error in this package's own code, with a fix that
+  `veles check --fix` applies; dependencies and the standard library follow
+  their own manifests. `implicit_return` says where a body's last
+  expression may be its value without `return`: `"full"` (the default)
+  anywhere; `"lambda"` in every lambda and in `fun f() => expr`, while a
+  function's or method's `{ }` body ends in `return value`; `"expr"` only in
+  a body without braces (`fun f() => expr`, `x => expr`), so every `{ }` body
+  says `return`. The blocks of an `if` or a `when` arm are never affected:
+  their value is the branch's, not the function's.
 - A dependency is imported by its manifest name: `use utils`,
   `use utils.text`. A dependency is a path (`name = "path"` or
   `name = { path = "..." }`), a git repository or a registry package; see
@@ -519,7 +537,7 @@ file of the root directory) re-exports with `public use` (D89):
 public use geometry                    // `use mathlib.geometry` works
 public use support { root as sqrt }    // `mathlib.sqrt(x)`; `support` stays hidden
 
-public fun twice(x: i64): i64 = x * 2
+public fun twice(x: i64): i64 => x * 2
 ```
 
 - `public use geometry` re-exports the module under its name; `as` gives it
@@ -577,7 +595,7 @@ on, and `require(x)` unwraps a `T?` or a `Result` or ends the test:
 ```veles
 use io
 
-fun add(a: i64, b: i64) = a + b
+fun add(a: i64, b: i64) => a + b
 
 test "adds small numbers" {
   expect(add(2, 2) == 4)

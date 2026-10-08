@@ -273,7 +273,7 @@ needs `X: Error`.
 
 #### `only 'message' can be overridden in an error`
 
-Inside `error Name { }`, `fun message(): string = ...` replaces the
+Inside `error Name { }`, `fun message(): string => ...` replaces the
 default text with no `override` needed; any other method is an ordinary
 method and cannot be marked `override`.
 
@@ -646,6 +646,11 @@ A function with a result type ends in a value on every path — the last
 expression of its body, or a `return`. Code after `return`, `break`,
 `throw` or `panic` never runs.
 
+A package that sets `[lint] implicit_return = "lambda"` or `"expr"`
+(chapter 11) asks for the `return` to be written in some `{ }` bodies:
+`this package returns a '{ }' body's value with 'return'` points at the
+last expression of such a body, and its fix writes `return` in front of it.
+
 ### unused
 
 **Something written and never used.** Warnings: `'x' is never used`,
@@ -791,7 +796,7 @@ after the `with`, or drop the `with`.
 
 The statement form closes its resource where the enclosing block ends, so
 it needs a braced block with statements after it: not at module level,
-not as an expression body (`fun f() = …`), an operand, a `when` arm or a
+not as an expression body (`fun f() => …`), an operand, a `when` arm or a
 braceless `if`/`loop` body. Write the block form `with (x = e) { ... }`
 there, or add braces. One binding per statement: `with a = …` and
 `with b = …` on two lines (they close in reverse order).

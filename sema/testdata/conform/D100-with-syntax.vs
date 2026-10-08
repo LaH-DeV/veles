@@ -12,7 +12,7 @@ struct Res {
 
 with r = Res(n: 1) // error: a module has no end; open it inside a function
 
-fun exprBody(): i64 = with r = Res(n: 1) // error: 'with x = e' is a statement
+fun exprBody(): i64 => with r = Res(n: 1) // error: 'with x = e' is a statement
 
 fun braceless(flag: bool) {
   if (flag) with r = Res(n: 1) // error: a body without braces has nothing after it

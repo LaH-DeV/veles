@@ -2,7 +2,7 @@
 // the binding needs, and a fix writes it when a later use decides it.
 use io
 
-fun total(xs: List<f64>): f64 = xs.sum()
+fun total(xs: List<f64>): f64 => xs.sum()
 
 fun pushed() {
   var xs = [] // error: write it: 'var xs: MutableList<i64> = []'

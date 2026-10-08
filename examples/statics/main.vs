@@ -7,7 +7,7 @@ struct Point {
   x: i64
   y: i64
 
-  static fun origin(): Point = Point(x: 0, y: 0)
+  static fun origin(): Point => Point(x: 0, y: 0)
 
   /// "x,y" → Point; the prelude's `i64.parse` is a static function too.
   static fun fromText(s: string): Point? {
@@ -18,10 +18,10 @@ struct Point {
     Point(x, y)
   }
 
-  fun shifted(dx: i64): Point = Point(x: this.x + dx, y: this.y)
+  fun shifted(dx: i64): Point => Point(x: this.x + dx, y: this.y)
 
   implement Parsable {
-    static fun parse(s: string): Point? = Point.fromText(s)
+    static fun parse(s: string): Point? => Point.fromText(s)
   }
 }
 
@@ -36,7 +36,7 @@ struct Stack<T> {
 }
 
 /// Parses every element; `T.parse` dispatches on the type parameter.
-fun parseAll<T: Parsable>(xs: List<string>): List<T?> = xs.map(x => T.parse(x))
+fun parseAll<T: Parsable>(xs: List<string>): List<T?> => xs.map(x => T.parse(x))
 
 fun main() {
   println("${Point.origin()} ${Point.origin().shifted(3)} ${Point.fromText("1, 2")} ${Point.fromText("1")}")

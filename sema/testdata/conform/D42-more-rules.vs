@@ -30,8 +30,8 @@ val raced = race { // error: 'race' cannot appear in a global initializer
   sleep(Duration.millis(1)) => 1
 }
 
-fun noStatic(): i64 = Temp.nope // error: 'Temp' has no static 'nope'
-fun noVariant(): Shape = Shape.Square(1) // error: 'Shape' has no variant 'Square'
+fun noStatic(): i64 => Temp.nope // error: 'Temp' has no static 'nope'
+fun noVariant(): Shape => Shape.Square(1) // error: 'Shape' has no variant 'Square'
 fun wrapped() {
   val _ = Wrap(item: 1) // error: 'Wrap' is generic; write the type arguments, e.g. 'Wrap<T>(...)'
 }
@@ -83,8 +83,8 @@ fun letElse(x: i64?) {
   val (a, b) = x else { return } // error: cannot destructure a value of type 'i64' into 2 names
   io.println("$a $b")
 }
-fun notShow(): string = describe(Temp(c: 1)) // error: type 'Temp' does not implement trait 'Show', so it cannot be used as a 'Show' value
-fun describe(s: Show): string = s.show()
+fun notShow(): string => describe(Temp(c: 1)) // error: type 'Temp' does not implement trait 'Show', so it cannot be used as a 'Show' value
+fun describe(s: Show): string => s.show()
 
 fun main() {
   io.println("more rules")

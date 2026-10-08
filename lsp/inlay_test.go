@@ -22,7 +22,7 @@ fun parse(text: string): i64 throws {
   n
 }
 
-fun double(n: i64) = n * 2
+fun double(n: i64) => n * 2
 
 fun wait() {
   await sleep(Duration.zero)
@@ -80,7 +80,7 @@ func TestInlayHints(t *testing.T) {
 	for _, want := range []string{
 		"fun parse(text: string): i64 throws« Bad» {", // the error set of a bare throws
 		"val n« : i64» = text.toInt()",                // an untyped binding
-		"fun double(n: i64)«: i64» = n * 2",           // an expression body's return type
+		"fun double(n: i64)«: i64» => n * 2",           // an expression body's return type
 		"fun wait() «suspends »{",                     // inferred suspension
 		"fun main() «suspends »throws« Bad» {",        // both, in the order they are written
 		"val count« : i64» = try parse",

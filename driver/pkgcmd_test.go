@@ -48,7 +48,7 @@ func TestDependencyCommands(t *testing.T) {
 	pkg := func(version string) map[string]string {
 		return map[string]string{
 			"veles.toml": fmt.Sprintf("[package]\nname = \"util\"\nversion = %q\n", version),
-			"lib.vs":     "public fun v(): i64 = 1\n// " + version + "\n",
+			"lib.vs":     "public fun v(): i64 => 1\n// " + version + "\n",
 		}
 	}
 	gitRelease(t, util, "1.0.0", pkg("1.0.0"))
@@ -211,7 +211,7 @@ func TestCapabilitiesAuditAndPolicy(t *testing.T) {
 	quiet := filepath.Join(root, "remote", "quiet")
 	gitRelease(t, quiet, "1.0.0", map[string]string{
 		"veles.toml": "[package]\nname = \"quiet\"\nversion = \"1.0.0\"\n",
-		"lib.vs":     "public fun f(): i64 = 1\n",
+		"lib.vs":     "public fun f(): i64 => 1\n",
 	})
 	app := filepath.Join(root, "app")
 	os.MkdirAll(app, 0o755)

@@ -25,7 +25,11 @@
 ///
 /// The level starts as `info`, or as `VELES_LOG` says (`debug`, `info`,
 /// `warn`, `error`, or `off`), and `setLevel` changes it.
-use io { eprintln }, json, os, otel, time
+use io { eprintln }
+use json
+use os
+use otel
+use time
 
 extern "C" {
   fun veles_stderr_is_terminal(): bool
@@ -70,7 +74,7 @@ fun readable(encoded: string): string {
   plain
 }
 
-fun levelFromName(name: string): Level? = when (name.toLower()) {
+fun levelFromName(name: string): Level? => when (name.toLower()) {
   "debug" => Level.Debug
   "info"  => Level.Info
   "warn"  => Level.Warn
@@ -106,7 +110,7 @@ public fun setLevel(level: Level) {
 }
 
 /// Whether a message of `level` would be logged now.
-public fun enabled(level: Level): bool = level != Level.Off && level.value >= threshold.load()
+public fun enabled(level: Level): bool => level != Level.Off && level.value >= threshold.load()
 
 /// Logs a message that is only for finding out what a program is doing.
 public fun debug(lazy msg: fun(): string, fields: Field...) {
@@ -156,7 +160,7 @@ fun emit(level: Level, msg: fun(): string, fields: List<Field>) {
 }
 
 // OpenTelemetry's severity numbers: 5 debug, 9 info, 13 warn, 17 error
-fun severity(level: Level): i64 = when (level) {
+fun severity(level: Level): i64 => when (level) {
   Level.Debug => 5
   Level.Info  => 9
   Level.Warn  => 13
@@ -211,4 +215,4 @@ fun jsonLine(now: string, level: Level, text: string, fields: List<Field>): stri
   out.toString()
 }
 
-fun quote(s: string): string = json.encode(s) ?? "\"\""
+fun quote(s: string): string => json.encode(s) ?? "\"\""

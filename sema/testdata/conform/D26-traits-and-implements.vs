@@ -37,7 +37,7 @@ sealed trait Shape {
 struct Square : Shape {
   side: i64
   implement Shape {
-    fun area(): i64 = this.side * this.side
+    fun area(): i64 => this.side * this.side
   }
 }
 
@@ -58,22 +58,22 @@ struct P {
 implement Marker for P { } // error: sealed trait 'Marker' declares no methods to implement
 implement i64 for P { } // error: 'i64' is not a trait
 implement Shape for P { // error: 'P' is not a variant of sealed trait 'Shape'
-  fun area(): i64 = 0
+  fun area(): i64 => 0
 }
 
 implement Show for P { // warning: can be written inside the body of 'P'
   type Nope = i64 // error: trait 'Show' has no associated type 'Nope'
-  fun show(x: i64, y: i64): string = "" // error: method 'show' takes 2 parameters but trait 'Show' declares 1
+  fun show(x: i64, y: i64): string => "" // error: method 'show' takes 2 parameters but trait 'Show' declares 1
 }
 
 implement Counted for P { // error: must bind associated type 'Item' // warning: can be written inside the body of 'P'
-  fun count(): i64 = 1
+  fun count(): i64 => 1
 }
 
 struct Q {
   n: i64
   implement Show {
-    fun show(x: string): string = x // error: parameter 'x' has type 'string' but trait 'Show' declares 'i64'
+    fun show(x: string): string => x // error: parameter 'x' has type 'string' but trait 'Show' declares 'i64'
   }
 }
 
@@ -82,7 +82,7 @@ error Oops { }
 struct R {
   n: i64
   implement Show {
-    fun show(x: i64): string throws Oops = "" // error: method 'show' throws but trait 'Show' declares it as non-throwing
+    fun show(x: i64): string throws Oops => "" // error: method 'show' throws but trait 'Show' declares it as non-throwing
   }
 }
 
@@ -93,7 +93,7 @@ trait Mapper {
 struct M {
   n: i64
   implement Mapper {
-    fun apply(x: i64): i64 = x // error: method 'apply' must declare the same type parameters as in trait 'Mapper'
+    fun apply(x: i64): i64 => x // error: method 'apply' must declare the same type parameters as in trait 'Mapper'
   }
 }
 
@@ -101,11 +101,11 @@ struct Both {
   n: i64
   implement Counted {
     type Item = i64
-    fun count(): i64 = 1
+    fun count(): i64 => 1
   }
   implement Named {
     type Item = string
-    fun name(): string = "both"
+    fun name(): string => "both"
   }
 }
 

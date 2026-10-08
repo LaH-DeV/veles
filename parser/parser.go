@@ -892,12 +892,33 @@ done:
 	switch {
 	case p.at(lexer.LBrace):
 		fn.Body = p.parseBlock()
+	case p.at(lexer.FatArrow):
+		arrow := p.next()
+		if p.at(lexer.LBrace) {
+			// a braced body has no arrow: `fun f() { … }` (D140)
+			p.diags.Items = append(p.diags.Items, source.Diagnostic{
+				Severity: source.Error,
+				Span:     arrow.Span,
+				Message:  "a body in braces has no '=>': write 'fun " + fn.Name.Name + "(…) { … }' (D140)",
+				Fix:      &source.Fix{Title: "Remove '=>'", Edits: []source.TextEdit{{Span: source.Span{File: arrow.Span.File, Start: arrow.Span.Start, End: p.span().Start}, NewText: ""}}},
+			})
+			fn.Body = p.parseBlock()
+			break
+		}
+		fn.ExprBody = p.parseExpr()
 	case p.at(lexer.Assign):
-		p.next()
+		// `fun f() = expr`: the spelling before v0.72 (D140), read as `=>`
+		eq := p.next()
+		p.diags.Items = append(p.diags.Items, source.Diagnostic{
+			Severity: source.Error,
+			Span:     eq.Span,
+			Message:  "an expression body is written '=> expr' (D140)",
+			Fix:      &source.Fix{Title: "Replace '=' with '=>'", Edits: []source.TextEdit{{Span: eq.Span, NewText: "=>"}}},
+		})
 		fn.ExprBody = p.parseExpr()
 	default:
 		if ctx == funContextFree || ctx == funContextMethod {
-			p.errorf(p.span(), "function '%s' needs a body: '{ ... }' or '= expr'", fn.Name.Name)
+			p.errorf(p.span(), "function '%s' needs a body: '{ ... }' or '=> expr'", fn.Name.Name)
 		}
 	}
 	if ctx == funContextExtern && (fn.Body != nil || fn.ExprBody != nil) {

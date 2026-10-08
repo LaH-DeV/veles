@@ -120,12 +120,12 @@ fun launchInLoop() throws Boom {
   }
 }
 
-fun raceTwo(a: Channel<string>, b: Channel<string>): string = race {
+fun raceTwo(a: Channel<string>, b: Channel<string>): string => race {
   val msg = a.recv() => "a: ${msg ?: "closed"}"
   val msg = b.recv() => "b: ${msg ?: "closed"}"
 }
 
-fun raceOne(ch: Channel<string>): string = race {
+fun raceOne(ch: Channel<string>): string => race {
   val msg = ch.recv()        => "shared: ${msg ?: "closed"}"
   sleep(Duration.seconds(5)) => "timeout"
 }

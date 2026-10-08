@@ -22,13 +22,13 @@ trait Maker {
 struct Circle {
   radius: f64
   implement Shape {
-    fun area(): f64 = 3.0 * this.radius * this.radius
+    fun area(): f64 => 3.0 * this.radius * this.radius
   }
   implement Named {
-    fun name(): string = "circle"
+    fun name(): string => "circle"
   }
   implement Sized {
-    fun size(): i64 = 1
+    fun size(): i64 => 1
   }
 }
 

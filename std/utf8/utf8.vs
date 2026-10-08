@@ -69,11 +69,11 @@ public struct Rune {
 
 /// True when `code` is a Unicode scalar value: 0 to U+10FFFF, and not half
 /// of a surrogate pair. These are exactly the values that can be encoded.
-public const fun isScalar(code: i64): bool = code >= 0 && code <= maxCode && !isSurrogate(code)
+public const fun isScalar(code: i64): bool => code >= 0 && code <= maxCode && !isSurrogate(code)
 
 /// True in U+D800..U+DFFF — the halves UTF-16 uses to spell a code point
 /// above U+FFFF. They are not characters and never appear in UTF-8.
-public const fun isSurrogate(code: i64): bool = code >= 0xD800 && code <= 0xDFFF
+public const fun isSurrogate(code: i64): bool => code >= 0xD800 && code <= 0xDFFF
 
 /// How many bytes `code` encodes to, or null when it is not a scalar value.
 public const fun size(code: i64): i64? {
@@ -102,12 +102,12 @@ public const fun combineSurrogates(high: i64, low: i64): i64? {
 
 /// True for a byte in 0x80..0xBF: the second, third or fourth byte of a
 /// sequence, never the first.
-public const fun isContinuation(b: u8): bool = (b & 0xC0) == 0x80
+public const fun isContinuation(b: u8): bool => (b & 0xC0) == 0x80
 
 /// True when `b` may begin a code point — that is, when it is not a
 /// continuation byte. Walking back to a character boundary is
 /// `loop (!utf8.isStart(s.byteAt(i))) i -= 1`.
-public const fun isStart(b: u8): bool = !isContinuation(b)
+public const fun isStart(b: u8): bool => !isContinuation(b)
 
 // ---------------------------------------------------------------------------
 // decoding
@@ -261,7 +261,7 @@ public const fun encode(code: i64): List<u8> {
 
 /// `code` as a one-character string — U+FFFD when it is not a scalar value,
 /// on the same reasoning as `encodeTo`.
-public const fun char(code: i64): string =
+public const fun char(code: i64): string =>
   encode(code).decodeUtf8() ?: panic("utf8.char: an encoded scalar value is valid UTF-8")
 
 // ---------------------------------------------------------------------------

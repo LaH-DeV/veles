@@ -8,16 +8,16 @@ struct Point { x: i64 }
 
 struct Label {
   text: string
-  implement Display { fun toString(): string = "<" + this.text + ">" }
+  implement Display { fun toString(): string => "<" + this.text + ">" }
 }
 
 struct Money {
   cents: i64
-  implement Equatable { fun equals(other: Money): bool = this.cents == other.cents }
-  implement Hashable { fun hash(): i64 = this.cents }
+  implement Equatable { fun equals(other: Money): bool => this.cents == other.cents }
+  implement Hashable { fun hash(): i64 => this.cents }
 }
 
-fun three(): i64 = 3
+fun three(): i64 => 3
 val runtime: i64 = 3
 
 const KB: i64 = 1024

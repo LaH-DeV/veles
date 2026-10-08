@@ -2,7 +2,8 @@
 // opened when they are needed and kept for the next call. A statement takes
 // a connection for as long as it runs and gives it back; a transaction
 // keeps one from `begin` to its end.
-use otel, time
+use otel
+use time
 
 /// Where the pool's shared state lives: handles that every copy of the `Pool`
 /// (and the task that looks after it) sees alike.

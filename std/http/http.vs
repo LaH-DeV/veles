@@ -13,7 +13,16 @@
 /// with listener = try net.listen(host: "", port: 8080)
 /// http.serve(listener, app.handler())
 /// ```
-use codec, fs, io, log as logs { field }, net, otel, path, random, time, tls
+use codec
+use fs
+use io
+use log as logs { field }
+use net
+use otel
+use path
+use random
+use time
+use tls
 
 // ---------------------------------------------------------------------------
 // failing a request
@@ -22,12 +31,12 @@ use codec, fs, io, log as logs { field }, net, otel, path, random, time, tls
 public error Fail {
   public status: Status
   public text:   string
-  fun message(): string = "${this.status.code} ${this.text}"
+  fun message(): string => "${this.status.code} ${this.text}"
 }
 
-public fun notFound(text: string = "not found"): Fail = Fail(status: Status.notFound, text)
-public fun badRequest(text: string = "bad request"): Fail = Fail(status: Status.badRequest, text)
-public fun forbidden(text: string = "forbidden"): Fail = Fail(status: Status.forbidden, text)
+public fun notFound(text: string = "not found"): Fail => Fail(status: Status.notFound, text)
+public fun badRequest(text: string = "bad request"): Fail => Fail(status: Status.badRequest, text)
+public fun forbidden(text: string = "forbidden"): Fail => Fail(status: Status.forbidden, text)
 
 // ---------------------------------------------------------------------------
 // what a request may cost
@@ -95,10 +104,10 @@ public struct Request {
   public rawQuery: string = ""
 
   /// A header by name, case-insensitively.
-  public fun header(name: string): string? = this.headers.get(name.toLower())
+  public fun header(name: string): string? => this.headers.get(name.toLower())
 
   /// A route parameter (`{id}` in the pattern); empty when the route has none.
-  public fun param(name: string): string = this.params.get(name) ?: ""
+  public fun param(name: string): string => this.params.get(name) ?: ""
 
   /// The whole body, read now: at most `max` bytes (`Limits.bodyBytes` when
   /// not said), and a longer one is a 413 — before its first byte when its
@@ -119,7 +128,7 @@ public struct Request {
   }
 
   /// The body as text; a body that is not UTF-8 is a 400. Reads like `bytes`.
-  public fun text(max: i64? = null): string suspends throws Fail | IoError =
+  public fun text(max: i64? = null): string suspends throws Fail | IoError =>
     try (try this.bytes(max)).decodeUtf8() ?! badRequest("body is not valid UTF-8")
 
   /// The body as it arrives, a piece at a time, for one too large to hold or
@@ -136,7 +145,7 @@ public struct Request {
   ///   try f.write(chunk)
   /// }
   /// ```
-  public fun stream(max: i64): Body = this.body.withLimit(max)
+  public fun stream(max: i64): Body => this.body.withLimit(max)
 
   /// The parts of a `multipart/form-data` body, read one at a time as the
   /// upload arrives; `max` is the ceiling for the whole body, as in `stream`,
@@ -153,7 +162,7 @@ public struct Request {
   }
 
   /// The same request with route parameters filled in.
-  fun withParams(params: Map<string, string>): Request =
+  fun withParams(params: Map<string, string>): Request =>
     Request(method: this.method, path: this.path, query: this.query, headers: this.headers, body: this.body, peer: this.peer, params, rawQuery: this.rawQuery)
 
   /// The same request with a header set (names are lower-cased). This is
@@ -167,14 +176,14 @@ public struct Request {
 
   /// Every cookie the browser sent, by name. A value is percent-decoded (see
   /// `Cookie`), and when a name is sent twice the first counts.
-  public fun cookies(): Map<string, string> = parseCookies(this.header(Header.cookie) ?: "")
+  public fun cookies(): Map<string, string> => parseCookies(this.header(Header.cookie) ?: "")
 
   /// One cookie by name, or null.
-  public fun cookie(name: string): string? = this.cookies().get(name)
+  public fun cookie(name: string): string? => this.cookies().get(name)
 
   /// The query string's fields, repeats kept (`req.query` keeps the last of
   /// each name).
-  public fun queryFields(): Fields = Fields.parse(this.rawQuery)
+  public fun queryFields(): Fields => Fields.parse(this.rawQuery)
 
   /// The query string read into a `T`, as `form<T>()` reads a body: a value
   /// that does not fit, or a missing required field, is a 400 naming the fields.
@@ -183,7 +192,7 @@ public struct Request {
   /// struct Search { q: string, page: i64 = 1, tags: List<string> = [] }
   /// val s = try req.query<Search>()   // /find?q=veles&tags=a&tags=b
   /// ```
-  public fun query<T: Decodable>(keys: codec.KeyStyle = codec.KeyStyle.AsWritten): T throws Fail =
+  public fun query<T: Decodable>(keys: codec.KeyStyle = codec.KeyStyle.AsWritten): T throws Fail =>
     when (decodeFields<T>(this.queryFields(), keys)) {
       is Ok(v)  => v
       is Err(e) => throw badRequest("invalid query:\n" + e.message())
@@ -200,10 +209,10 @@ public struct Request {
   }
 
   /// The first value of a form field, or null.
-  public fun formValue(name: string): string? suspends throws Fail | IoError = try this.formFields().get(name)
+  public fun formValue(name: string): string? suspends throws Fail | IoError => try this.formFields().get(name)
 
   /// Every value of a form field (a checkbox group, a multiple select).
-  public fun formValues(name: string): List<string> suspends throws Fail | IoError = try this.formFields().all(name)
+  public fun formValues(name: string): List<string> suspends throws Fail | IoError => try this.formFields().all(name)
 
   /// The form read into a `T`: numbers and booleans are parsed from the
   /// text, a `List` field takes every value of its name, an optional field
@@ -214,7 +223,7 @@ public struct Request {
   /// struct Signup { name: string, age: i64, newsletter: bool = false }
   /// val s = try req.form<Signup>()
   /// ```
-  public fun form<T: Decodable>(keys: codec.KeyStyle = codec.KeyStyle.AsWritten): T suspends throws Fail | IoError =
+  public fun form<T: Decodable>(keys: codec.KeyStyle = codec.KeyStyle.AsWritten): T suspends throws Fail | IoError =>
     when (decodeFields<T>(try this.formFields(), keys)) {
       is Ok(v)  => v
       is Err(e) => throw badRequest("invalid form:\n" + e.message())
@@ -262,30 +271,30 @@ public struct Response {
   ///   }
   /// })
   /// ```
-  public static fun stream<T: AsMediaType>(contentType: T, producer: sendable fun(BodyWriter) suspends throws IoError, length: i64? = null, status: Status = Status.ok): Response =
+  public static fun stream<T: AsMediaType>(contentType: T, producer: sendable fun(BodyWriter) suspends throws IoError, length: i64? = null, status: Status = Status.ok): Response =>
     Response(status, headers: ["content-type": contentType.mediaType().name], stream: producer, streamLength: length)
 
   /// Plain text.
-  public static fun text(body: string, status: Status = Status.ok): Response =
+  public static fun text(body: string, status: Status = Status.ok): Response =>
     Response(status, headers: ["content-type": "text/plain; charset=utf-8"], body: body.bytes())
 
   /// HTML.
-  public static fun html(body: string, status: Status = Status.ok): Response =
+  public static fun html(body: string, status: Status = Status.ok): Response =>
     Response(status, headers: ["content-type": "text/html; charset=utf-8"], body: body.bytes())
 
   /// JSON text the caller already produced.
-  public static fun json(body: string, status: Status = Status.ok): Response =
+  public static fun json(body: string, status: Status = Status.ok): Response =>
     Response(status, headers: ["content-type": "application/json"], body: body.bytes())
 
   /// Raw bytes with a content type.
-  public static fun bytes<T: AsMediaType>(body: List<u8>, contentType: T, status: Status = Status.ok): Response =
+  public static fun bytes<T: AsMediaType>(body: List<u8>, contentType: T, status: Status = Status.ok): Response =>
     Response(status, headers: ["content-type": contentType.mediaType().name], body)
 
   /// A status and nothing else (`Status.noContent`, `Status.notFound`, ...).
-  public static fun empty(status: Status): Response = Response(status)
+  public static fun empty(status: Status): Response => Response(status)
 
   /// A redirect to `location`.
-  public static fun redirect(location: string, status: Status = Status.found): Response =
+  public static fun redirect(location: string, status: Status = Status.found): Response =>
     Response(status, headers: [Header.location: location])
 
   /// The same response with a header set (names are lower-cased).
@@ -313,7 +322,7 @@ public struct Response {
   /// named with the `path` and `domain` it was set with (`secure` for a
   /// `__Host-` or `__Secure-` name).
   @caller_location
-  public fun withoutCookie(name: string, path: string = "/", domain: string? = null, secure: bool = false): Response =
+  public fun withoutCookie(name: string, path: string = "/", domain: string? = null, secure: bool = false): Response =>
     this.withCookie(Cookie(name, value: "", path, domain, maxAge: Duration.seconds(0), secure, httpOnly: false, sameSite: null))
 }
 
@@ -328,8 +337,8 @@ public type Handler = sendable fun(Request): Response suspends
 /// other error answers 500 and is logged. This is what the router applies
 /// to every handler it is given, so `try` is free inside a handler and an
 /// error nobody mapped is never silent.
-public fun handler<E>(h: sendable fun(Request): Response suspends throws E | Fail): Handler =
-  req => when (h(req)) {
+public fun handler<E>(h: sendable fun(Request): Response suspends throws E | Fail): Handler =>
+  (req => when (h(req)) {
     is Ok(resp) => resp
     is Err(e)   => when (e) {
       is Fail => Response.text(e.text, status: e.status)
@@ -339,7 +348,7 @@ public fun handler<E>(h: sendable fun(Request): Response suspends throws E | Fai
         Response.text(body: status.reason(), status: status)
       }
     }
-  }
+  })
 
 // A span for one request (OpenTelemetry's HTTP semantic conventions), from the
 // caller's `traceparent` when it sent one; nothing before `otel.start`.
@@ -499,22 +508,22 @@ public type Middleware = sendable fun(Handler): Handler
 /// unit is in the line — plus the request id when `requestId()` wraps this
 /// one from the outside. `serve` logs the same line itself, so pass
 /// `log: false` when you wrap this one.
-public fun logging(): Middleware = next => req => {
+public fun logging(): Middleware => (next => req => {
   val sw = time.Stopwatch.start()
   val resp = next(req)
   if (!resp.quiet) logs.info("request", field("peer", "${req.peer}"), field("method", "${req.method}"), field("path", req.path), field("status", resp.status.code), field("took", "${sw.elapsed()}"))
   resp
-}
+})
 
 /// Gives every request an id — the client's `X-Request-Id` if it sent one,
 /// a fresh one otherwise — and puts it on the request for the handlers
 /// behind it and on the response for the client. It is also bound as the
 /// log field `id` (`log.withFields`) for the whole request, so every line a
 /// handler logs — and `logging()`'s, wrapped inside — carries it.
-public fun requestId(): Middleware = next => req => {
+public fun requestId(): Middleware => (next => req => {
   val id = req.header(Header.requestId) ?: newRequestId()
   logs.withFields([field("id", id)], () => next(req.withHeader(Header.requestId, id))).withHeader(Header.requestId, id)
-}
+})
 
 // 16 hex digits: enough to tell a day's requests apart in a log, and not
 // a claim to be unguessable — this is for tracing, not for security.
@@ -533,7 +542,7 @@ fun newRequestId(): string {
 /// Answers 503 when the handler behind it takes longer than `ms`. The
 /// handler runs in a task of its own and is cancelled on the way out, so
 /// whatever it held in a `with` is closed.
-public fun timeout(limit: Duration): Middleware = next => req => {
+public fun timeout(limit: Duration): Middleware => (next => req => {
   when (withTimeout(limit, () => next(req))) {
     is Ok(resp) => resp
     is Err      => {
@@ -541,7 +550,7 @@ public fun timeout(limit: Duration): Middleware = next => req => {
       Response.text(status.reason(), status: status)
     }
   }
-}
+})
 
 // First match wins. When the path matches but the method does not, the
 // answer names the methods that would have worked (RFC 9110 §15.5.6: a
@@ -591,7 +600,7 @@ fun noteRoute(segments: List<string>, req: Request) {
 }
 
 // the non-empty segments of a path or pattern: "/users/42/" → [users, 42]
-fun segmentsOf(p: string): List<string> = p.split("/").filter(s => !s.isEmpty())
+fun segmentsOf(p: string): List<string> => p.split("/").filter(s => !s.isEmpty())
 
 // the captures when the pattern matches the path, or null
 fun matchRoute(pattern: List<string>, segments: List<string>): Map<string, string>? {
@@ -775,7 +784,7 @@ fun connection(conn: io.Stream, peer: string, handler: Handler, limits: Limits, 
 // HTTP/1.1 keeps a connection unless told otherwise; HTTP/1.0 closes it
 // unless told otherwise (RFC 9112 §9.3), and a 1.0 client that reads to
 // the end of the connection would otherwise wait out the idle timeout.
-fun wantsKeepAlive(req: Request, http10: bool): bool = when (req.header("connection")?.toLower()) {
+fun wantsKeepAlive(req: Request, http10: bool): bool => when (req.header("connection")?.toLower()) {
   "close"      => false
   "keep-alive" => true
   else         => !http10
@@ -928,12 +937,12 @@ fun readRequest(c: io.Stream, peer: string, limits: Limits, drain: Drain): (Requ
 }
 
 // The characters a method or a header name may hold (RFC 9110 §5.6.2).
-fun isToken(s: string): bool =
+fun isToken(s: string): bool =>
   !s.isEmpty() && s.bytes().all(b => (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || tokenMarks.contains(b))
 
 val tokenMarks: List<u8> = "!#$%&'*+-.^_`|~".bytes()
 
-fun isDigits(s: string): bool = !s.isEmpty() && s.bytes().all(b => b >= '0' && b <= '9')
+fun isDigits(s: string): bool => !s.isEmpty() && s.bytes().all(b => b >= '0' && b <= '9')
 
 fun parseQuery(text: string): Map<string, string> {
   val out: MutableMap<string, string> = [:]
@@ -1037,7 +1046,7 @@ const framing = ["content-length", "transfer-encoding", "connection"]
 // 1xx, 204 and 304 never carry a body, and a 1xx or 204 may not even say
 // `content-length` (RFC 9110 §6.4.1, §8.6); a 304's length would be the
 // 200's, which a handler returning `empty(304)` does not know.
-fun hasNoBody(status: Status): bool = status.isInformational() || status == Status.noContent || status == Status.notModified
+fun hasNoBody(status: Status): bool => status.isInformational() || status == Status.noContent || status == Status.notModified
 
 /// A time in the format HTTP dates use: `Sun, 06 Nov 1994 08:49:37 GMT`.
 ///
@@ -1045,7 +1054,7 @@ fun hasNoBody(status: Status): bool = status.isInformational() || status == Stat
 /// obsolete forms a recipient must also accept (`time.parseHttp`) —
 /// `Last-Modified` and `If-Modified-Since` are two ends of one conversation
 /// and belong in one place.
-public fun httpDate(t: time.Timestamp): string = time.formatHttp(t)
+public fun httpDate(t: time.Timestamp): string => time.formatHttp(t)
 
 // ---------------------------------------------------------------------------
 // testing
@@ -1067,7 +1076,7 @@ public struct TestServer {
   public url: string
 
   /// The port the server listens on.
-  public fun port(): i64 = this.listener.port()
+  public fun port(): i64 => this.listener.port()
 
   implement Closeable {
     fun close() {

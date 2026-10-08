@@ -24,10 +24,10 @@ public struct Deque<T> {
   private state: *DequeState<T> = &DequeState<T>()
 
   /// Number of elements.
-  public fun len(): i64 = this.state.size
+  public fun len(): i64 => this.state.size
 
   /// True when there are no elements.
-  public fun isEmpty(): bool = this.state.size == 0
+  public fun isEmpty(): bool => this.state.size == 0
 
   /// Appends `x` at the back.
   public fun addLast(x: T) {
@@ -69,10 +69,10 @@ public struct Deque<T> {
   }
 
   /// The front element, or `null` when empty.
-  public fun first(): T? = this.at(0)
+  public fun first(): T? => this.at(0)
 
   /// The back element, or `null` when empty.
-  public fun last(): T? = this.at(-1)
+  public fun last(): T? => this.at(-1)
 
   /// The element `i` places from the front, or `null` when `i` is out of
   /// range; a negative `i` counts from the back, so `at(-1)` is the last.
@@ -134,11 +134,11 @@ public struct Deque<T> {
 
   implement Iterable {
     type Iter = ListIter<T>
-    fun iterator(): ListIter<T> = ListIter(list: this.toList())
+    fun iterator(): ListIter<T> => ListIter(list: this.toList())
   }
 
   implement Display {
-    fun toString(): string = "[${this.toList().join(", ")}]"
+    fun toString(): string => "[${this.toList().join(", ")}]"
   }
 }
 
@@ -168,13 +168,13 @@ public struct PriorityQueue<T> {
   }
 
   /// Number of elements.
-  public fun len(): i64 = this.state.items.len()
+  public fun len(): i64 => this.state.items.len()
 
   /// True when there are no elements.
-  public fun isEmpty(): bool = this.state.items.len() == 0
+  public fun isEmpty(): bool => this.state.items.len() == 0
 
   /// The element that `pop` would return, or `null` when empty.
-  public fun peek(): T? = this.state.items.first()
+  public fun peek(): T? => this.state.items.first()
 
   /// Adds `x`.
   public fun push(x: T) {
@@ -203,11 +203,11 @@ public struct PriorityQueue<T> {
 
   /// The elements in heap order — the first is the smallest, the rest are
   /// not sorted.
-  public fun toList(): List<T> = this.state.items.toList()
+  public fun toList(): List<T> => this.state.items.toList()
 
   /// The element at heap position `i`; the sifts only ask for positions
   /// below the heap's size.
-  fun item(i: i64): T = this.state.items.at(i) ?: panic("heap: a sift reads only positions below the size")
+  fun item(i: i64): T => this.state.items.at(i) ?: panic("heap: a sift reads only positions below the size")
 
   fun siftUp(from: i64) {
     val s = this.state
@@ -237,12 +237,12 @@ public struct PriorityQueue<T> {
   }
 
   implement Display {
-    fun toString(): string = "[${this.state.items.join(", ")}]"
+    fun toString(): string => "[${this.state.items.join(", ")}]"
   }
 }
 
 extend<T: Comparable> PriorityQueue<T> {
   /// An empty queue over the elements' natural order: `pop()` yields the
   /// smallest first.
-  public static fun natural(): PriorityQueue<T> = PriorityQueue<T>(compare: (a, b) => a.compareTo(b))
+  public static fun natural(): PriorityQueue<T> => PriorityQueue<T>(compare: (a, b) => a.compareTo(b))
 }

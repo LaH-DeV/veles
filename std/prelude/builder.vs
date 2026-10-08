@@ -29,10 +29,10 @@ public struct StringBuilder {
   }
 
   /// Length in bytes so far.
-  public const fun len(): i64 = this.bytes.len()
+  public const fun len(): i64 => this.bytes.len()
 
   /// True when nothing has been appended.
-  public const fun isEmpty(): bool = this.bytes.len() == 0
+  public const fun isEmpty(): bool => this.bytes.len() == 0
 
   /// Empties the builder.
   public const fun clear() {
@@ -40,5 +40,5 @@ public struct StringBuilder {
   }
 
   /// The accumulated text.
-  public const fun toString(): string = this.bytes.decodeUtf8() ?: panic("StringBuilder: invalid UTF-8")
+  public const fun toString(): string => this.bytes.decodeUtf8() ?: panic("StringBuilder: invalid UTF-8")
 }

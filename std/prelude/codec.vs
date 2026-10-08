@@ -28,7 +28,7 @@ public struct Problem {
     out.toString()
   }
 
-  public fun toString(): string = if (this.path.isEmpty()) this.message else "${this.path}: ${this.message}"
+  public fun toString(): string => if (this.path.isEmpty()) this.message else "${this.path}: ${this.message}"
 }
 
 // What a panic on an empty frame stack says: derived bodies call `key`,
@@ -90,7 +90,7 @@ fun splitPath(path: string): List<string> {
 public error EncodeError {
   public message: string
   public path:    string = ""
-  fun message(): string = if (this.path.isEmpty()) this.message else "${this.path}: ${this.message}"
+  fun message(): string => if (this.path.isEmpty()) this.message else "${this.path}: ${this.message}"
 }
 
 /// Decoding failed. Every problem found is listed — a wrong type here, a
@@ -98,7 +98,7 @@ public error EncodeError {
 /// a malformed document is one problem, since nothing follows it.
 public error DecodeError {
   public problems: List<Problem>
-  fun message(): string = this.problems.map(p => p.toString()).join("\n")
+  fun message(): string => this.problems.map(p => p.toString()).join("\n")
 }
 
 // ---------------------------------------------------------------------------
@@ -146,7 +146,7 @@ public enum KeyStyle {
 }
 
 /// `name` spelled in `style`: `passwordHash` → `password_hash` → `passwordHash`.
-public fun styleKey(name: string, style: KeyStyle): string = when (style) {
+public fun styleKey(name: string, style: KeyStyle): string => when (style) {
   KeyStyle.AsWritten  => name
   KeyStyle.UpperSnake => styleKey(name, KeyStyle.SnakeCase).toUpper()
   KeyStyle.SnakeCase  => {
@@ -204,12 +204,12 @@ public trait Encoder {
   /// selects on and what a library format chooses for itself.
   fun format(): string
   /// How durations are written; `Seconds` unless the format says otherwise.
-  fun durations(): DurationStyle = DurationStyle.Seconds
+  fun durations(): DurationStyle => DurationStyle.Seconds
   /// How enums are written; `Name` unless the format says otherwise.
-  fun enums(): EnumStyle = EnumStyle.Name
+  fun enums(): EnumStyle => EnumStyle.Name
   /// How field names are spelled as keys; derived code applies it to a
   /// field's own name, never to a `@key` the author wrote.
-  fun keys(): KeyStyle = KeyStyle.AsWritten
+  fun keys(): KeyStyle => KeyStyle.AsWritten
   fun beginObject() throws EncodeError
   fun key(name: string) throws EncodeError
   fun endObject() throws EncodeError
@@ -231,9 +231,9 @@ public trait Encoder {
 /// code, when a value cannot be built at all (a required field missing).
 public trait Decoder {
   fun format(): string
-  fun durations(): DurationStyle = DurationStyle.Seconds
-  fun enums(): EnumStyle = EnumStyle.Name
-  fun keys(): KeyStyle = KeyStyle.AsWritten
+  fun durations(): DurationStyle => DurationStyle.Seconds
+  fun enums(): EnumStyle => EnumStyle.Name
+  fun keys(): KeyStyle => KeyStyle.AsWritten
   /// What comes next, without consuming it.
   fun peek(): Kind throws DecodeError
   fun beginObject() throws DecodeError
@@ -257,7 +257,7 @@ public trait Decoder {
   /// Records a problem at `path`.
   fun problemAt(path: string, message: string)
   /// Records a problem at the current path.
-  fun problem(message: string) = this.problemAt(this.path(), message)
+  fun problem(message: string) => this.problemAt(this.path(), message)
   /// Every problem recorded so far.
   fun problems(): List<Problem>
 }
@@ -279,7 +279,7 @@ public trait Decodable {
   /// of them are required, and their defaults. `implement Decodable` derives
   /// it; written by hand, a type that does not override it is one `Opaque`
   /// value, read as it is.
-  static fun schema(format: string, keys: KeyStyle): Schema = Schema.opaque()
+  static fun schema(format: string, keys: KeyStyle): Schema => Schema.opaque()
 }
 
 /// Both directions: the one line a DTO writes.
@@ -296,11 +296,11 @@ public fun childPath(base: string, key: string): string {
 }
 
 /// The path of element `i` under `base`.
-public fun indexPath(base: string, i: i64): string = "$base[$i]"
+public fun indexPath(base: string, i: i64): string => "$base[$i]"
 
 /// A path found under `base`: `joinPath("user", "address[2]")` is
 /// `user.address[2]`.
-public fun joinPath(base: string, rel: string): string = when {
+public fun joinPath(base: string, rel: string): string => when {
   rel.isEmpty()       => base
   base.isEmpty()      => rel
   rel.startsWith("[") => base + rel
@@ -314,14 +314,14 @@ public struct Problems {
   public cap:    i64 = 100
 
   /// A list that keeps at most `cap` problems.
-  public static fun capped(cap: i64): Problems = Problems(cap)
+  public static fun capped(cap: i64): Problems => Problems(cap)
 
   public fun record(path: string, message: string) {
     if (this.items.len() < this.cap) this.items.push(Problem(path, message))
   }
 
-  public fun isEmpty(): bool = this.items.isEmpty()
-  public fun list(): List<Problem> = this.items.toList()
+  public fun isEmpty(): bool => this.items.isEmpty()
+  public fun list(): List<Problem> => this.items.toList()
 }
 
 /// The decoded value, or the problems found: what `json.decode` and every
@@ -381,27 +381,27 @@ public struct Schema {
   private inner: List<Schema> = []
 
   /// One value of `kind`.
-  public static fun leaf(kind: SchemaKind, what: string): Schema = Schema(kind, what)
+  public static fun leaf(kind: SchemaKind, what: string): Schema => Schema(kind, what)
 
   /// A type read as it is: the schema of a hand-written `decode`.
-  public static fun opaque(): Schema = Schema(kind: SchemaKind.Opaque, what: "a value")
+  public static fun opaque(): Schema => Schema(kind: SchemaKind.Opaque, what: "a value")
 
   /// A type no flat source can give; `why` names it (`a Map`).
-  public static fun unsupported(why: string): Schema = Schema(kind: SchemaKind.Unsupported, what: why)
+  public static fun unsupported(why: string): Schema => Schema(kind: SchemaKind.Unsupported, what: why)
 
   /// Several of `of`.
-  public static fun list(of: Schema): Schema =
+  public static fun list(of: Schema): Schema =>
     Schema(kind: SchemaKind.List, what: "a list of ${of.what}, separated by commas", inner: [of])
 
   /// A struct: `what` is its name.
-  public static fun object(what: string, fields: List<SchemaField>): Schema =
+  public static fun object(what: string, fields: List<SchemaField>): Schema =>
     Schema(kind: SchemaKind.Object, what, fields)
 
   /// The element of a `List`.
-  public fun element(): Schema? = this.inner.at(0)
+  public fun element(): Schema? => this.inner.at(0)
 
   /// The same schema, marked as a secret.
-  public fun asSecret(): Schema = Schema(kind: this.kind, what: this.what, secret: true, fields: this.fields, inner: this.inner)
+  public fun asSecret(): Schema => Schema(kind: this.kind, what: this.what, secret: true, fields: this.fields, inner: this.inner)
 }
 
 /// A field's default as the text a source holds it as, for `describe`: what
@@ -414,7 +414,7 @@ public fun defaultText<T: Encodable>(value: T, format: string, keys: KeyStyle): 
   valueText(encoder.value())
 }
 
-fun valueText(v: Value): string? = when (v) {
+fun valueText(v: Value): string? => when (v) {
   is VString => v.value
   is VInt    => "${v.value}"
   is VFloat  => "${v.value}"
@@ -427,105 +427,105 @@ fun valueText(v: Value): string? = when (v) {
 // the built-in types
 
 implement Encodable for i8 {
-  fun encode(to: Encoder) throws EncodeError = try to.writeI64(this.toI64())
+  fun encode(to: Encoder) throws EncodeError => try to.writeI64(this.toI64())
 }
 implement Encodable for i16 {
-  fun encode(to: Encoder) throws EncodeError = try to.writeI64(this.toI64())
+  fun encode(to: Encoder) throws EncodeError => try to.writeI64(this.toI64())
 }
 implement Encodable for i32 {
-  fun encode(to: Encoder) throws EncodeError = try to.writeI64(this.toI64())
+  fun encode(to: Encoder) throws EncodeError => try to.writeI64(this.toI64())
 }
 implement Encodable for i64 {
-  fun encode(to: Encoder) throws EncodeError = try to.writeI64(this)
+  fun encode(to: Encoder) throws EncodeError => try to.writeI64(this)
 }
 implement Encodable for isize {
-  fun encode(to: Encoder) throws EncodeError = try to.writeI64(this.toI64())
+  fun encode(to: Encoder) throws EncodeError => try to.writeI64(this.toI64())
 }
 implement Encodable for u8 {
-  fun encode(to: Encoder) throws EncodeError = try to.writeU64(this.toU64())
+  fun encode(to: Encoder) throws EncodeError => try to.writeU64(this.toU64())
 }
 implement Encodable for u16 {
-  fun encode(to: Encoder) throws EncodeError = try to.writeU64(this.toU64())
+  fun encode(to: Encoder) throws EncodeError => try to.writeU64(this.toU64())
 }
 implement Encodable for u32 {
-  fun encode(to: Encoder) throws EncodeError = try to.writeU64(this.toU64())
+  fun encode(to: Encoder) throws EncodeError => try to.writeU64(this.toU64())
 }
 implement Encodable for u64 {
-  fun encode(to: Encoder) throws EncodeError = try to.writeU64(this)
+  fun encode(to: Encoder) throws EncodeError => try to.writeU64(this)
 }
 implement Encodable for usize {
-  fun encode(to: Encoder) throws EncodeError = try to.writeU64(this.toU64())
+  fun encode(to: Encoder) throws EncodeError => try to.writeU64(this.toU64())
 }
 implement Encodable for f32 {
-  fun encode(to: Encoder) throws EncodeError = try to.writeF64(this.toF64())
+  fun encode(to: Encoder) throws EncodeError => try to.writeF64(this.toF64())
 }
 implement Encodable for f64 {
-  fun encode(to: Encoder) throws EncodeError = try to.writeF64(this)
+  fun encode(to: Encoder) throws EncodeError => try to.writeF64(this)
 }
 implement Encodable for bool {
-  fun encode(to: Encoder) throws EncodeError = try to.writeBool(this)
+  fun encode(to: Encoder) throws EncodeError => try to.writeBool(this)
 }
 implement Encodable for string {
-  fun encode(to: Encoder) throws EncodeError = try to.writeString(this)
+  fun encode(to: Encoder) throws EncodeError => try to.writeString(this)
 }
 
-fun intSchema(what: string): Schema = Schema.leaf(SchemaKind.Int, what)
+fun intSchema(what: string): Schema => Schema.leaf(SchemaKind.Int, what)
 
 implement Decodable for i8 {
-  static fun decode(from: Decoder): i8 throws DecodeError = try narrowI64(from, -128, 127).wrapI8()
-  override static fun schema(format: string, keys: KeyStyle): Schema = intSchema("an integer from -128 to 127")
+  static fun decode(from: Decoder): i8 throws DecodeError => try narrowI64(from, -128, 127).wrapI8()
+  override static fun schema(format: string, keys: KeyStyle): Schema => intSchema("an integer from -128 to 127")
 }
 implement Decodable for i16 {
-  static fun decode(from: Decoder): i16 throws DecodeError = try narrowI64(from, -32768, 32767).wrapI16()
-  override static fun schema(format: string, keys: KeyStyle): Schema = intSchema("an integer from -32768 to 32767")
+  static fun decode(from: Decoder): i16 throws DecodeError => try narrowI64(from, -32768, 32767).wrapI16()
+  override static fun schema(format: string, keys: KeyStyle): Schema => intSchema("an integer from -32768 to 32767")
 }
 implement Decodable for i32 {
-  static fun decode(from: Decoder): i32 throws DecodeError = try narrowI64(from, -2147483648, 2147483647).wrapI32()
-  override static fun schema(format: string, keys: KeyStyle): Schema = intSchema("an integer from -2147483648 to 2147483647")
+  static fun decode(from: Decoder): i32 throws DecodeError => try narrowI64(from, -2147483648, 2147483647).wrapI32()
+  override static fun schema(format: string, keys: KeyStyle): Schema => intSchema("an integer from -2147483648 to 2147483647")
 }
 implement Decodable for i64 {
-  static fun decode(from: Decoder): i64 throws DecodeError = try from.readI64()
-  override static fun schema(format: string, keys: KeyStyle): Schema = intSchema("an integer")
+  static fun decode(from: Decoder): i64 throws DecodeError => try from.readI64()
+  override static fun schema(format: string, keys: KeyStyle): Schema => intSchema("an integer")
 }
 implement Decodable for isize {
-  static fun decode(from: Decoder): isize throws DecodeError = try from.readI64().toIsize()
-  override static fun schema(format: string, keys: KeyStyle): Schema = intSchema("an integer")
+  static fun decode(from: Decoder): isize throws DecodeError => try from.readI64().toIsize()
+  override static fun schema(format: string, keys: KeyStyle): Schema => intSchema("an integer")
 }
 implement Decodable for u8 {
-  static fun decode(from: Decoder): u8 throws DecodeError = try narrowU64(from, 255).wrapU8()
-  override static fun schema(format: string, keys: KeyStyle): Schema = intSchema("an integer from 0 to 255")
+  static fun decode(from: Decoder): u8 throws DecodeError => try narrowU64(from, 255).wrapU8()
+  override static fun schema(format: string, keys: KeyStyle): Schema => intSchema("an integer from 0 to 255")
 }
 implement Decodable for u16 {
-  static fun decode(from: Decoder): u16 throws DecodeError = try narrowU64(from, 65535).wrapU16()
-  override static fun schema(format: string, keys: KeyStyle): Schema = intSchema("an integer from 0 to 65535")
+  static fun decode(from: Decoder): u16 throws DecodeError => try narrowU64(from, 65535).wrapU16()
+  override static fun schema(format: string, keys: KeyStyle): Schema => intSchema("an integer from 0 to 65535")
 }
 implement Decodable for u32 {
-  static fun decode(from: Decoder): u32 throws DecodeError = try narrowU64(from, 4294967295).wrapU32()
-  override static fun schema(format: string, keys: KeyStyle): Schema = intSchema("an integer from 0 to 4294967295")
+  static fun decode(from: Decoder): u32 throws DecodeError => try narrowU64(from, 4294967295).wrapU32()
+  override static fun schema(format: string, keys: KeyStyle): Schema => intSchema("an integer from 0 to 4294967295")
 }
 implement Decodable for u64 {
-  static fun decode(from: Decoder): u64 throws DecodeError = try from.readU64()
-  override static fun schema(format: string, keys: KeyStyle): Schema = intSchema("a non-negative integer")
+  static fun decode(from: Decoder): u64 throws DecodeError => try from.readU64()
+  override static fun schema(format: string, keys: KeyStyle): Schema => intSchema("a non-negative integer")
 }
 implement Decodable for usize {
-  static fun decode(from: Decoder): usize throws DecodeError = try from.readU64().toUsize()
-  override static fun schema(format: string, keys: KeyStyle): Schema = intSchema("a non-negative integer")
+  static fun decode(from: Decoder): usize throws DecodeError => try from.readU64().toUsize()
+  override static fun schema(format: string, keys: KeyStyle): Schema => intSchema("a non-negative integer")
 }
 implement Decodable for f32 {
-  static fun decode(from: Decoder): f32 throws DecodeError = try from.readF64().toF32()
-  override static fun schema(format: string, keys: KeyStyle): Schema = Schema.leaf(SchemaKind.Float, "a number")
+  static fun decode(from: Decoder): f32 throws DecodeError => try from.readF64().toF32()
+  override static fun schema(format: string, keys: KeyStyle): Schema => Schema.leaf(SchemaKind.Float, "a number")
 }
 implement Decodable for f64 {
-  static fun decode(from: Decoder): f64 throws DecodeError = try from.readF64()
-  override static fun schema(format: string, keys: KeyStyle): Schema = Schema.leaf(SchemaKind.Float, "a number")
+  static fun decode(from: Decoder): f64 throws DecodeError => try from.readF64()
+  override static fun schema(format: string, keys: KeyStyle): Schema => Schema.leaf(SchemaKind.Float, "a number")
 }
 implement Decodable for bool {
-  static fun decode(from: Decoder): bool throws DecodeError = try from.readBool()
-  override static fun schema(format: string, keys: KeyStyle): Schema = Schema.leaf(SchemaKind.Bool, "true or false")
+  static fun decode(from: Decoder): bool throws DecodeError => try from.readBool()
+  override static fun schema(format: string, keys: KeyStyle): Schema => Schema.leaf(SchemaKind.Bool, "true or false")
 }
 implement Decodable for string {
-  static fun decode(from: Decoder): string throws DecodeError = try from.readString()
-  override static fun schema(format: string, keys: KeyStyle): Schema = Schema.leaf(SchemaKind.Text, "text")
+  static fun decode(from: Decoder): string throws DecodeError => try from.readString()
+  override static fun schema(format: string, keys: KeyStyle): Schema => Schema.leaf(SchemaKind.Text, "text")
 }
 
 /// An integer that must fit a narrower type: out of range is a problem.
@@ -560,7 +560,7 @@ implement<T: Decodable> Decodable for T? {
     }
     try T.decode(from)
   }
-  override static fun schema(format: string, keys: KeyStyle): Schema = T.schema(format, keys)
+  override static fun schema(format: string, keys: KeyStyle): Schema => T.schema(format, keys)
 }
 
 implement<T: Encodable> Encodable for List<T> {
@@ -571,11 +571,11 @@ implement<T: Encodable> Encodable for List<T> {
   }
 }
 implement<T: Encodable> Encodable for MutableList<T> {
-  fun encode(to: Encoder) throws EncodeError = try this.toList().encode(to)
+  fun encode(to: Encoder) throws EncodeError => try this.toList().encode(to)
 }
 implement<T: Decodable> Decodable for List<T> {
-  static fun decode(from: Decoder): List<T> throws DecodeError = try MutableList<T>.decode(from).toList()
-  override static fun schema(format: string, keys: KeyStyle): Schema = Schema.list(T.schema(format, keys))
+  static fun decode(from: Decoder): List<T> throws DecodeError => try MutableList<T>.decode(from).toList()
+  override static fun schema(format: string, keys: KeyStyle): Schema => Schema.list(T.schema(format, keys))
 }
 implement<T: Decodable> Decodable for MutableList<T> {
   static fun decode(from: Decoder): MutableList<T> throws DecodeError {
@@ -585,7 +585,7 @@ implement<T: Decodable> Decodable for MutableList<T> {
     try from.endList()
     out
   }
-  override static fun schema(format: string, keys: KeyStyle): Schema = Schema.list(T.schema(format, keys))
+  override static fun schema(format: string, keys: KeyStyle): Schema => Schema.list(T.schema(format, keys))
 }
 
 // An array travels as a list; reading one needs exactly N elements (D121).
@@ -604,7 +604,7 @@ implement<T: Decodable, const N: i64> Decodable for Array<T, N> {
     from.problem("expected $N elements, found ${items.len()}")
     throw DecodeError(problems: from.problems())
   }
-  override static fun schema(format: string, keys: KeyStyle): Schema = Schema.list(T.schema(format, keys))
+  override static fun schema(format: string, keys: KeyStyle): Schema => Schema.list(T.schema(format, keys))
 }
 
 implement<V: Encodable> Encodable for Map<string, V> {
@@ -618,11 +618,11 @@ implement<V: Encodable> Encodable for Map<string, V> {
   }
 }
 implement<V: Encodable> Encodable for MutableMap<string, V> {
-  fun encode(to: Encoder) throws EncodeError = try this.toMap().encode(to)
+  fun encode(to: Encoder) throws EncodeError => try this.toMap().encode(to)
 }
 implement<V: Decodable> Decodable for Map<string, V> {
-  static fun decode(from: Decoder): Map<string, V> throws DecodeError = try MutableMap<string, V>.decode(from).toMap()
-  override static fun schema(format: string, keys: KeyStyle): Schema = Schema.unsupported("a Map")
+  static fun decode(from: Decoder): Map<string, V> throws DecodeError => try MutableMap<string, V>.decode(from).toMap()
+  override static fun schema(format: string, keys: KeyStyle): Schema => Schema.unsupported("a Map")
 }
 implement<V: Decodable> Decodable for MutableMap<string, V> {
   static fun decode(from: Decoder): MutableMap<string, V> throws DecodeError {
@@ -635,7 +635,7 @@ implement<V: Decodable> Decodable for MutableMap<string, V> {
     try from.endObject()
     out
   }
-  override static fun schema(format: string, keys: KeyStyle): Schema = Schema.unsupported("a Map")
+  override static fun schema(format: string, keys: KeyStyle): Schema => Schema.unsupported("a Map")
 }
 
 // ---------------------------------------------------------------------------
@@ -668,44 +668,44 @@ public struct VObject : Value {
 
 extend Value {
   /// The member `key` of an object, or `null`.
-  public fun get(key: string): Value? = when (this) {
+  public fun get(key: string): Value? => when (this) {
     is VObject => this.fields.get(key)
     else       => null
   }
 
   /// Element `i` of a list, or `null`.
-  public fun at(i: i64): Value? = when (this) {
+  public fun at(i: i64): Value? => when (this) {
     is VList => this.items.at(i)
     else     => null
   }
 
-  public fun asString(): string? = when (this) {
+  public fun asString(): string? => when (this) {
     is VString => this.value
     else       => null
   }
 
-  public fun asI64(): i64? = when (this) {
+  public fun asI64(): i64? => when (this) {
     is VInt   => this.value
     is VFloat => if (this.value == this.value.trunc()) this.value.toI64() else null
     else      => null
   }
 
-  public fun asF64(): f64? = when (this) {
+  public fun asF64(): f64? => when (this) {
     is VInt   => this.value.toF64()
     is VFloat => this.value
     else      => null
   }
 
-  public fun asBool(): bool? = when (this) {
+  public fun asBool(): bool? => when (this) {
     is VBool => this.value
     else     => null
   }
 
-  public fun isNull(): bool = this is VNull
+  public fun isNull(): bool => this is VNull
 }
 
 implement Encodable for Value {
-  fun encode(to: Encoder) throws EncodeError = when (this) {
+  fun encode(to: Encoder) throws EncodeError => when (this) {
     is VNull   => try to.writeNull()
     is VBool   => try to.writeBool(this.value)
     is VInt    => try to.writeI64(this.value)
@@ -717,7 +717,7 @@ implement Encodable for Value {
 }
 
 implement Decodable for Value {
-  static fun decode(from: Decoder): Value throws DecodeError = when (try from.peek()) {
+  static fun decode(from: Decoder): Value throws DecodeError => when (try from.peek()) {
     Kind.Null   => {
       try from.readNull()
       VNull()
@@ -729,7 +729,7 @@ implement Decodable for Value {
     Kind.List   => VList(items: try List<Value>.decode(from))
     Kind.Object => VObject(fields: try Map<string, Value>.decode(from))
   }
-  override static fun schema(format: string, keys: KeyStyle): Schema = Schema.unsupported("a free-form Value")
+  override static fun schema(format: string, keys: KeyStyle): Schema => Schema.unsupported("a free-form Value")
 }
 
 // ---------------------------------------------------------------------------
@@ -760,7 +760,7 @@ public struct ValueDecoder {
   private durationStyle: DurationStyle = DurationStyle.Seconds
   private maxDepth:      i64 = maxRecursionDepth
 
-  public static fun of(v: Value, format: string = "json", enums: EnumStyle = EnumStyle.Name, keys: KeyStyle = KeyStyle.AsWritten, durations: DurationStyle = DurationStyle.Seconds, maxDepth: i64 = maxRecursionDepth): ValueDecoder =
+  public static fun of(v: Value, format: string = "json", enums: EnumStyle = EnumStyle.Name, keys: KeyStyle = KeyStyle.AsWritten, durations: DurationStyle = DurationStyle.Seconds, maxDepth: i64 = maxRecursionDepth): ValueDecoder =>
     ValueDecoder(root: v, name: format, style: enums, keyStyle: keys, durationStyle: durations, maxDepth)
 
   /// The value about to be read.
@@ -799,12 +799,12 @@ public struct ValueDecoder {
   }
 
   implement Decoder {
-    fun format(): string = this.name
-    override fun enums(): EnumStyle = this.style
-    override fun durations(): DurationStyle = this.durationStyle
-    override fun keys(): KeyStyle = this.keyStyle
+    fun format(): string => this.name
+    override fun enums(): EnumStyle => this.style
+    override fun durations(): DurationStyle => this.durationStyle
+    override fun keys(): KeyStyle => this.keyStyle
 
-    fun peek(): Kind throws DecodeError = when (this.current()) {
+    fun peek(): Kind throws DecodeError => when (this.current()) {
       is VNull   => Kind.Null
       is VBool   => Kind.Bool
       is VInt    => Kind.Int
@@ -924,17 +924,17 @@ public struct ValueDecoder {
       this.advance()
     }
 
-    fun skip() throws DecodeError = this.advance()
+    fun skip() throws DecodeError => this.advance()
 
-    fun path(): string = this.here()
+    fun path(): string => this.here()
 
-    fun problemAt(path: string, message: string) = this.recorded.record(path, message)
+    fun problemAt(path: string, message: string) => this.recorded.record(path, message)
 
-    fun problems(): List<Problem> = this.recorded.list()
+    fun problems(): List<Problem> => this.recorded.list()
   }
 }
 
-fun kindName(v: Value): string = when (v) {
+fun kindName(v: Value): string => when (v) {
   is VNull   => "null"
   is VBool   => "a boolean"
   is VInt    => "a number"
@@ -974,11 +974,11 @@ public struct ValueEncoder {
   private durationStyle: DurationStyle = DurationStyle.Seconds
   private maxDepth:      i64 = maxRecursionDepth
 
-  public static fun of(format: string = "json", enums: EnumStyle = EnumStyle.Name, keys: KeyStyle = KeyStyle.AsWritten, durations: DurationStyle = DurationStyle.Seconds, maxDepth: i64 = maxRecursionDepth): ValueEncoder =
+  public static fun of(format: string = "json", enums: EnumStyle = EnumStyle.Name, keys: KeyStyle = KeyStyle.AsWritten, durations: DurationStyle = DurationStyle.Seconds, maxDepth: i64 = maxRecursionDepth): ValueEncoder =>
     ValueEncoder(state: &ValueEncoderState(), name: format, style: enums, keyStyle: keys, durationStyle: durations, maxDepth)
 
   /// The value built, once one whole value has been written.
-  public fun value(): Value = this.state.result ?: VNull()
+  public fun value(): Value => this.state.result ?: VNull()
 
   /// The same bound the text encoders keep (§2): a value nested deeper than
   /// this is refused rather than walked, whichever direction it is going.
@@ -997,10 +997,10 @@ public struct ValueEncoder {
   }
 
   implement Encoder {
-    fun format(): string = this.name
-    override fun enums(): EnumStyle = this.style
-    override fun durations(): DurationStyle = this.durationStyle
-    override fun keys(): KeyStyle = this.keyStyle
+    fun format(): string => this.name
+    override fun enums(): EnumStyle => this.style
+    override fun durations(): DurationStyle => this.durationStyle
+    override fun keys(): KeyStyle => this.keyStyle
 
     fun beginObject() throws EncodeError {
       try this.checkDepth()
@@ -1033,11 +1033,11 @@ public struct ValueEncoder {
       this.put(VList(items: top.values.toList()))
     }
 
-    fun writeI64(v: i64) throws EncodeError = this.put(VInt(value: v))
-    fun writeU64(v: u64) throws EncodeError = this.put(VInt(value: v.wrapI64()))
-    fun writeF64(v: f64) throws EncodeError = this.put(VFloat(value: v))
-    fun writeBool(v: bool) throws EncodeError = this.put(VBool(value: v))
-    fun writeString(v: string) throws EncodeError = this.put(VString(value: v))
-    fun writeNull() throws EncodeError = this.put(VNull())
+    fun writeI64(v: i64) throws EncodeError => this.put(VInt(value: v))
+    fun writeU64(v: u64) throws EncodeError => this.put(VInt(value: v.wrapI64()))
+    fun writeF64(v: f64) throws EncodeError => this.put(VFloat(value: v))
+    fun writeBool(v: bool) throws EncodeError => this.put(VBool(value: v))
+    fun writeString(v: string) throws EncodeError => this.put(VString(value: v))
+    fun writeNull() throws EncodeError => this.put(VNull())
   }
 }

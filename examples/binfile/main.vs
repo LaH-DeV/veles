@@ -8,7 +8,10 @@
 //   offset 6   4 bytes  number of records, big endian
 //   then per record: 2 bytes name length, the name (UTF-8), 8 bytes score (signed)
 
-use fs, io { println }, os, path
+use fs
+use io { println }
+use os
+use path
 
 struct Score {
   name:  string

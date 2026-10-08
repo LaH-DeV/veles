@@ -6,7 +6,7 @@ struct Countdown {
 
   implement Iterable {
     type Iter = CountdownIter
-    fun iterator(): CountdownIter = CountdownIter(current: this.from)
+    fun iterator(): CountdownIter => CountdownIter(current: this.from)
   }
 }
 struct CountdownIter {

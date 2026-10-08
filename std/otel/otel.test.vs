@@ -34,7 +34,7 @@ struct Recorder {
     }
   }
 
-  fun bodies(signal: Signal): List<List<u8>> =
+  fun bodies(signal: Signal): List<List<u8>> =>
     this.seen.withLock(q => q.filter(s => s.signal == signal).map(s => s.body))
 }
 
@@ -63,7 +63,7 @@ test fun metricsOf(rec: Recorder): List<List<Fld>> {
   out.toList()
 }
 
-test fun metricNamed(rec: Recorder, name: string): List<Fld>? =
+test fun metricNamed(rec: Recorder, name: string): List<Fld>? =>
   metricsOf(rec).filter(m => text(m, 1) == name).last()
 
 test fun logsOf(rec: Recorder): List<List<Fld>> {
@@ -83,7 +83,7 @@ test fun spanNamed(rec: Recorder, name: string): List<Fld> {
   found.at(0) ?: []
 }
 
-test fun bytesOf(fs: List<Fld>, num: i64): List<u8> = (all(fs, num).at(0) ?: Fld(num: 0, wire: 0, value: 0, data: [])).data
+test fun bytesOf(fs: List<Fld>, num: i64): List<u8> => (all(fs, num).at(0) ?: Fld(num: 0, wire: 0, value: 0, data: [])).data
 
 // the registry is the process's: a test that made thousands of series drops them
 // so that the tests after it do not carry them in every export
@@ -93,7 +93,7 @@ test fun forgetInstruments() {
   })
 }
 
-test fun quiet(): Duration = Duration.seconds(3600)
+test fun quiet(): Duration => Duration.seconds(3600)
 
 // ---- before start ----
 

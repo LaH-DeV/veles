@@ -63,7 +63,7 @@ struct Member {
   next: i64
 }
 
-fun truncated(what: string): CompressError =
+fun truncated(what: string): CompressError =>
   CompressError(message: "gzip data ends inside $what", kind: CompressKind.Truncated)
 
 fun byteAt(bytes: List<u8>, i: i64, what: string): i64 throws CompressError {
@@ -156,7 +156,7 @@ fun buildCrcTable(): List<i64> {
 val crcTable: List<i64> = buildCrcTable()
 
 /// The CRC-32 of `bytes`, as gzip stores it.
-fun crc32(bytes: List<u8>): i64 = crc32Update(0, bytes)
+fun crc32(bytes: List<u8>): i64 => crc32Update(0, bytes)
 
 // continues a CRC over more bytes; `crc` is the value so far (0 to begin)
 fun crc32Update(crc: i64, bytes: List<u8>): i64 {
@@ -209,7 +209,7 @@ public fun gzip(bytes: List<u8>, level: i64 = 6): List<u8> {
 }
 
 // magic, deflate, no flags, no time, the speed hint, "unknown OS"
-fun gzipHeader(level: i64): List<u8> =
+fun gzipHeader(level: i64): List<u8> =>
   [0x1f, 0x8b, 8, 0, 0, 0, 0, 0, if (level == 9) 2 else if (level == 1) 4 else 0, 255]
 
 fun gzipTrailer(crc: i64, size: i64): List<u8> {

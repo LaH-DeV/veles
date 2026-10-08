@@ -34,7 +34,22 @@ type Options struct {
 	// MaxBlankLines caps consecutive blank lines kept from the source; 1
 	// by default.
 	MaxBlankLines int
+	// Imports is how a run of plain imports is laid out: one `use` per
+	// module (ImportsPerLine, the default) or one comma-separated `use` per
+	// origin (ImportsMerged). Both are valid Veles; the setting only picks
+	// the one `veles fmt` writes.
+	Imports ImportStyle
 }
+
+// ImportStyle is the `[format] imports` setting.
+type ImportStyle int
+
+const (
+	// ImportsPerLine writes each import on a line of its own: `use io`, `use os`.
+	ImportsPerLine ImportStyle = iota
+	// ImportsMerged writes one list per origin: `use io, os`.
+	ImportsMerged
+)
 
 // Default is the style used when a package sets nothing.
 var Default = Options{Indent: "  ", MaxBlankLines: 1}
@@ -447,9 +462,10 @@ func (p *printer) decl(d ast.Decl) {
 }
 
 // useRun prints a run of consecutive `use` declarations as the canonical
-// import block: every import in one sorted list per origin — the standard
-// library first, then everything else — one `use` statement each, on one
-// line. Blank lines inside the run and the author's order are dropped;
+// import block: every import sorted, the standard library first, then
+// everything else — one `use` per import, or, with ImportsMerged, one
+// comma-separated `use` per origin. Blank lines inside the run and the
+// author's order are dropped;
 // what an import is called never depends on where it is written. A run
 // with a comment among its lines is left as written (each declaration
 // printed on its own, unsorted) so no comment is separated from its line,
@@ -473,11 +489,16 @@ func (p *printer) useRun(decls []ast.Decl) bool {
 	p.before(start)
 	for i := 0; i < len(specs); {
 		std := isStdImport(specs[i])
-		p.w("use ")
 		j := i
 		for ; j < len(specs) && isStdImport(specs[j]) == std; j++ {
-			if j > i {
+			switch {
+			case j == i:
+				p.w("use ")
+			case p.opts.Imports == ImportsMerged:
 				p.w(", ")
+			default:
+				p.nl()
+				p.w("use ")
 			}
 			p.useSpec(specs[j])
 		}
@@ -610,18 +631,28 @@ func (p *printer) fun(fn *ast.FunDecl) {
 		p.w(" ")
 		p.block(fn.Body)
 	case fn.ExprBody != nil:
-		p.w(" =")
-		if p.hasNewline(exprBodyEq(p, fn), fn.ExprBody.Span().Start) {
+		p.w(" =>")
+		if p.hasNewline(exprBodyArrow(p, fn), fn.ExprBody.Span().Start) {
 			p.breakCont()
 		} else {
 			p.w(" ")
+		}
+		if l, ok := fn.ExprBody.(*ast.LambdaExpr); ok && !strings.HasSuffix(strings.TrimRight(p.src[:l.Pos.Start], " \t\r\n"), "(") {
+			// D140, as D106 for an arm: `fun adder(n: i64): fun(i64): i64 =>
+			// (x => x + n)` — the lambda a body returns is parenthesized, so
+			// the two arrows are not read as one chain
+			p.w("(")
+			p.expr(l, 0)
+			p.w(")")
+			return
 		}
 		p.expr(fn.ExprBody, 0)
 	}
 }
 
-// exprBodyEq finds the `=` that introduces an expression body.
-func exprBodyEq(p *printer, fn *ast.FunDecl) int {
+// exprBodyArrow finds the `=>` (or the removed `=`) that introduces an
+// expression body.
+func exprBodyArrow(p *printer, fn *ast.FunDecl) int {
 	i := fn.ExprBody.Span().Start
 	for i > fn.Name.Pos.End && p.src[i] != '=' {
 		i--

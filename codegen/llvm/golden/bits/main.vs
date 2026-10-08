@@ -2,13 +2,13 @@
 // bitreverse, copysign); a swap of one byte is no instruction at all
 use io
 
-fun rotl(x: u32, n: i64): u32 = x.rotateLeft(n)
-fun rotr(x: i16, n: i64): i16 = x.rotateRight(n)
-fun swap(x: u64): u64 = x.swapBytes()
-fun swap8(x: u8): u8 = x.swapBytes()
-fun rev(x: i64): i64 = x.reverseBits()
-fun sign(x: f64, y: f64): f64 = x.copySign(y)
-fun negative(x: f32): bool = x.isSignNegative()
+fun rotl(x: u32, n: i64): u32 => x.rotateLeft(n)
+fun rotr(x: i16, n: i64): i16 => x.rotateRight(n)
+fun swap(x: u64): u64 => x.swapBytes()
+fun swap8(x: u8): u8 => x.swapBytes()
+fun rev(x: i64): i64 => x.reverseBits()
+fun sign(x: f64, y: f64): f64 => x.copySign(y)
+fun negative(x: f32): bool => x.isSignNegative()
 
 fun main() {
   val a: u32 = 0x80000001

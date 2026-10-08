@@ -1,5 +1,6 @@
 // Rows into structs, with no server: a result as the text the server sends.
-use crypto, time
+use crypto
+use time
 
 struct User {
   id:        i64
@@ -26,7 +27,7 @@ test fun cols(names: List<string>, oids: List<i64>): List<Column> {
   out.toList()
 }
 
-test fun one(columns: List<Column>, row: List<string?>): Rows = Rows(columns, rows: [row], tag: "SELECT 1")
+test fun one(columns: List<Column>, row: List<string?>): Rows => Rows(columns, rows: [row], tag: "SELECT 1")
 
 test "a row fills a struct: snake_case columns, text parsed by the field's type" {
   val columns = cols(["id", "full_name", "active", "score", "nickname", "created_at", "tags"], [20, 25, 16, 701, 25, 1184, 1009])

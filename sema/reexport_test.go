@@ -25,11 +25,11 @@ func TestPublicUse(t *testing.T) {
 	}
 	write("lib/veles.toml", "[package]\nname = \"mathlib\"\nversion = \"0.1.0\"\n")
 	write("lib/lib.vs", "public use geometry\npublic use shapes { area, Circle as Round }\npublic use util as tools\n")
-	write("lib/geometry/lib.vs", "public use deep\npublic fun twice(n: i64): i64 = n * 2\n")
-	write("lib/deep/lib.vs", "public fun depth(): i64 = 3\n")
-	write("lib/shapes/lib.vs", "public struct Circle {\n  public r: f64\n}\npublic fun area(c: Circle): f64 = c.r * c.r * 3.0\n")
-	write("lib/util/lib.vs", "public fun one(): i64 = 1\n")
-	write("lib/hidden/lib.vs", "public fun secret(): i64 = 7\n")
+	write("lib/geometry/lib.vs", "public use deep\npublic fun twice(n: i64): i64 => n * 2\n")
+	write("lib/deep/lib.vs", "public fun depth(): i64 => 3\n")
+	write("lib/shapes/lib.vs", "public struct Circle {\n  public r: f64\n}\npublic fun area(c: Circle): f64 => c.r * c.r * 3.0\n")
+	write("lib/util/lib.vs", "public fun one(): i64 => 1\n")
+	write("lib/hidden/lib.vs", "public fun secret(): i64 => 7\n")
 	write("app/veles.toml", "[package]\nname = \"app\"\nversion = \"0.1.0\"\n\n[dependencies]\nmathlib = \"../lib\"\n")
 
 	check := func(dir string) string {
@@ -110,19 +110,19 @@ func TestPublicUse(t *testing.T) {
 
 	// a re-exported name may not collide with a declaration of the module
 	write("clash/veles.toml", "[package]\nname = \"clash\"\nversion = \"0.1.0\"\n")
-	write("clash/lib.vs", "public use geometry { twice }\npublic fun twice(n: i64): i64 = n\n")
-	write("clash/geometry/lib.vs", "public fun twice(n: i64): i64 = n * 2\n")
+	write("clash/lib.vs", "public use geometry { twice }\npublic fun twice(n: i64): i64 => n\n")
+	write("clash/geometry/lib.vs", "public fun twice(n: i64): i64 => n * 2\n")
 	if out := check("clash"); !strings.Contains(out, "'twice' is already declared in this module") || !strings.Contains(out, "re-export it under another name, 'public use geometry { twice as … }'") {
 		t.Errorf("colliding item:\n%s", out)
 	}
-	write("clash/lib.vs", "public use geometry\npublic fun geometry(): i64 = 1\n")
+	write("clash/lib.vs", "public use geometry\npublic fun geometry(): i64 => 1\n")
 	if out := check("clash"); !strings.Contains(out, "'geometry' is already declared in this module") || !strings.Contains(out, "re-export the module under another name, 'public use geometry as …'") {
 		t.Errorf("colliding module:\n%s", out)
 	}
 
 	// the manifest's `exports` is gone, and the error says what replaces it
 	write("old/veles.toml", "[package]\nname = \"old\"\nversion = \"0.1.0\"\nexports = [\"geometry\"]\n")
-	write("old/lib.vs", "public fun f(): i64 = 1\n")
+	write("old/lib.vs", "public fun f(): i64 => 1\n")
 	if out := check("old"); !strings.Contains(out, "'exports' was removed (D89)") || !strings.Contains(out, "public use geometry") {
 		t.Errorf("manifest exports:\n%s", out)
 	}

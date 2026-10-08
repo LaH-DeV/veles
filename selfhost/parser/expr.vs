@@ -1,6 +1,8 @@
 // Expressions: Pratt-style binary operators,
 // prefix and postfix forms, primaries.
-use ast, lexer { Kind, Token, tokenizeRange }, source { Diagnostics, Span }
+use ast
+use lexer { Kind, Token, tokenizeRange }
+use source { Diagnostics, Span }
 
 // binding powers, weakest first
 const BP_NONE: i64 = 0
@@ -15,7 +17,7 @@ const BP_ADD: i64 = 8    // + - +% -% | ^
 const BP_MUL: i64 = 9    // * / % *% & << >>
 const BP_CAST: i64 = 10  // as
 
-fun infixBp(k: Kind): i64 = when (k) {
+fun infixBp(k: Kind): i64 => when (k) {
   Kind.OrOr => BP_OR
   Kind.AndAnd => BP_AND
   Kind.Eq, Kind.NotEq => BP_EQ
@@ -30,21 +32,21 @@ fun infixBp(k: Kind): i64 = when (k) {
 }
 
 // a name, or `module.name`: what a template literal's tag may be
-fun isTemplateTag(x: ast.Expr): bool = when (x) {
+fun isTemplateTag(x: ast.Expr): bool => when (x) {
   is ast.NameExpr   => x.typeArgs.isEmpty()
   is ast.MemberExpr => !x.safe && x.typeArgs.isEmpty() && *x.x is ast.NameExpr
   else              => false
 }
 
 // the tag as written: `sql` or `db.sql`
-fun templateTagText(x: ast.Expr): string = when (x) {
+fun templateTagText(x: ast.Expr): string => when (x) {
   is ast.NameExpr   => x.name
   is ast.MemberExpr => templateTagText(*x.x) + "." + x.name.name
   else              => "tag"
 }
 
 // a lambda parameter's name: the identifier, or `_`
-fun paramName(t: Token): ast.Ident = ast.Ident(name: if (t.kind == Kind.Under) "_" else t.text, pos: t.span)
+fun paramName(t: Token): ast.Ident => ast.Ident(name: if (t.kind == Kind.Under) "_" else t.text, pos: t.span)
 
 extend Parser {
   fun parseExpr(): ast.Expr {

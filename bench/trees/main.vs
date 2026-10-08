@@ -1,6 +1,7 @@
 // The GC under pressure: build and walk complete binary trees
 // (the benchmarks-game shape), depth 4 to 16.
-use io { println }, time
+use io { println }
+use time
 
 struct Node {
   left:  (*Node)?

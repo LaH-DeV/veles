@@ -19,7 +19,7 @@ fun sum<const N: i64>(a: Array<i64, N>): i64 {
   s
 }
 
-fun filled(v: u8): Array<u8, 256> = Array.make(v)
+fun filled(v: u8): Array<u8, 256> => Array.make(v)
 
 fun weight(p: Page): i64 {
   var s = 0

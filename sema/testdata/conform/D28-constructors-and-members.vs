@@ -4,8 +4,8 @@ use io
 
 struct Plain {
   x: i64
-  fun twice(): i64 = this.x * 2
-  fun bare(): i64 = twice() // error: unknown function 'twice'; a member is reached through the receiver: 'this.twice'
+  fun twice(): i64 => this.x * 2
+  fun bare(): i64 => twice() // error: unknown function 'twice'; a member is reached through the receiver: 'this.twice'
   fun asValue(): i64 {
     val f = twice // error: unknown name 'twice'; a member is reached through the receiver: 'this.twice'
     1

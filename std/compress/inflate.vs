@@ -38,7 +38,7 @@ const ALL_DONE: i64 = 3
 // the window DEFLATE may reach back into
 const WINDOW: i64 = 32768
 
-fun corrupt(why: string): CompressError =
+fun corrupt(why: string): CompressError =>
   CompressError(message: "compressed data is corrupt: $why", kind: CompressKind.Corrupt)
 
 // Fills `table` (2^maxLen entries) from `n` code lengths starting at `from`;
@@ -152,10 +152,10 @@ struct Inflater {
   }
 
   /// Total bytes produced so far.
-  fun total(): i64 = this.dropped + this.out.len()
+  fun total(): i64 => this.dropped + this.out.len()
 
   /// Output produced and not yet taken.
-  fun pending(): i64 = this.out.len() - this.delivered
+  fun pending(): i64 => this.out.len() - this.delivered
 
   /// The output not yet taken, at most `n` bytes; the last 32 KiB taken stay as
   /// the window a later match may reach into.
@@ -173,10 +173,10 @@ struct Inflater {
   }
 
   /// All the output not yet taken.
-  fun take(): List<u8> = this.takeUpTo(this.pending())
+  fun take(): List<u8> => this.takeUpTo(this.pending())
 
   /// Everything produced, for a stream decoded in one go: nothing was taken.
-  fun all(): List<u8> = this.out.toList()
+  fun all(): List<u8> => this.out.toList()
 
   private fun need(n: i64): bool {
     loop (this.count < n) {

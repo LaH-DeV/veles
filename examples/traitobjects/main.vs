@@ -3,24 +3,24 @@ use io { println }
 trait Shape {
   fun area(): f64
   fun name(): string
-  fun describe(): string = "${this.name()} with area ${this.area()}"
+  fun describe(): string => "${this.name()} with area ${this.area()}"
 }
 
 struct Circle {
   r: f64
 
   implement Shape {
-    fun area(): f64 = 3.0 * this.r * this.r
-    fun name(): string = "circle"
+    fun area(): f64 => 3.0 * this.r * this.r
+    fun name(): string => "circle"
   }
 }
 struct Square {
   side: f64
 
   implement Shape {
-    fun area(): f64 = this.side * this.side
-    fun name(): string = "square"
-    override fun describe(): string = "a square of side ${this.side}"
+    fun area(): f64 => this.side * this.side
+    fun name(): string => "square"
+    override fun describe(): string => "a square of side ${this.side}"
   }
 }
 
@@ -113,7 +113,7 @@ trait Source {
 
 struct Steady {
   implement Source {
-    fun next(): i64 = 7
+    fun next(): i64 => 7
   }
 }
 

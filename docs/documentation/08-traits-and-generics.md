@@ -13,15 +13,15 @@ use io
 trait Shape {
   fun area(): f64
   fun name(): string
-  fun describe(): string = "${this.name()} with area ${this.area()}"   // default body
+  fun describe(): string => "${this.name()} with area ${this.area()}"   // default body
 }
 
 struct Circle {
   r: f64
 
   implement Shape {
-    fun area(): f64 = 3.0 * this.r * this.r
-    fun name(): string = "circle"
+    fun area(): f64 => 3.0 * this.r * this.r
+    fun name(): string => "circle"
   }
 }
 
@@ -29,9 +29,9 @@ struct Square {
   side: f64
 
   implement Shape {
-    fun area(): f64 = this.side * this.side
-    fun name(): string = "square"
-    override fun describe(): string = "a square of side ${this.side}"
+    fun area(): f64 => this.side * this.side
+    fun name(): string => "square"
+    override fun describe(): string => "a square of side ${this.side}"
   }
 }
 
@@ -61,7 +61,7 @@ a square of side 2.0
 - An implement must write every method the trait declares without a
   body; one that leaves some out is an error per method, and the
   editor's **Add the missing methods** writes them for you as stubs
-  (`fun name(): string = panic("'name' is not written yet")`) to fill in.
+  (`fun name(): string => panic("'name' is not written yet")`) to fill in.
 - A type may implement any number of traits, and you may implement
   *your* trait for a type you did not write — `implement Shape for i64` is
   legal. What is not legal is two impls of the same trait for the same
@@ -101,8 +101,8 @@ function you may call exactly the methods `Shape` promises:
 use io
 
 trait Shape { fun area(): f64 }
-struct Circle { r: f64; implement Shape { fun area(): f64 = 3.0 * this.r * this.r } }
-struct Square { side: f64; implement Shape { fun area(): f64 = this.side * this.side } }
+struct Circle { r: f64; implement Shape { fun area(): f64 => 3.0 * this.r * this.r } }
+struct Square { side: f64; implement Shape { fun area(): f64 => this.side * this.side } }
 
 fun largest<T: Shape>(shapes: List<T>): T? {
   var best: T? = null
@@ -144,12 +144,12 @@ const WIDTH = 4
 struct Buf<const N: i64> {
   data: Array<u8, N>
 
-  fun capacity(): i64 = N
+  fun capacity(): i64 => N
 }
 
-fun sum<const N: i64>(a: Array<i64, N>): i64 = a.fold(0, (s, x) => s + x)
+fun sum<const N: i64>(a: Array<i64, N>): i64 => a.fold(0, (s, x) => s + x)
 
-fun zeros<const N: i64>(): Array<i64, N> = Array.make(0)
+fun zeros<const N: i64>(): Array<i64, N> => Array.make(0)
 
 fun main() {
   val small: Array<i64, 3> = [1, 2, 3]
@@ -184,7 +184,7 @@ use io
 trait Show { fun show(): string }
 struct Cat {
   name: string
-  implement Show { fun show(): string = "cat ${this.name}" }
+  implement Show { fun show(): string => "cat ${this.name}" }
 }
 struct Rock { }
 
@@ -230,15 +230,15 @@ trait Shape {
 struct Circle {
   r: f64
   implement Shape {
-    fun area(): f64 = 3.0 * this.r * this.r
-    fun name(): string = "circle"
+    fun area(): f64 => 3.0 * this.r * this.r
+    fun name(): string => "circle"
   }
 }
 struct Square {
   side: f64
   implement Shape {
-    fun area(): f64 = this.side * this.side
-    fun name(): string = "square"
+    fun area(): f64 => this.side * this.side
+    fun name(): string => "square"
   }
 }
 
@@ -277,15 +277,15 @@ use io
 
 trait Named {
   fun name(): string
-  fun shout(): string = "${this.name()}!"
+  fun shout(): string => "${this.name()}!"
 }
 trait Shape : Named {
   fun area(): f64
 }
 struct Square {
   side: f64
-  implement Named { fun name(): string = "square" }
-  implement Shape { fun area(): f64 = this.side * this.side }
+  implement Named { fun name(): string => "square" }
+  implement Shape { fun area(): f64 => this.side * this.side }
 }
 
 fun main() {
@@ -396,15 +396,15 @@ use io
 
 trait Show { fun show(): string }
 
-implement Show for i64 { fun show(): string = "#$this" }
-implement Show for string { fun show(): string = "'$this'" }
+implement Show for i64 { fun show(): string => "#$this" }
+implement Show for string { fun show(): string => "'$this'" }
 
 struct Box<T: Show> {
   item: T
-  fun label(): string = "[${this.item.show()}]"
+  fun label(): string => "[${this.item.show()}]"
 }
 
-fun showAll<T: Show>(xs: List<T>): string = xs.map(x => x.show()).join(" ")
+fun showAll<T: Show>(xs: List<T>): string => xs.map(x => x.show()).join(" ")
 
 fun main() {
   io.println("${Box(item: 7).label()} ${Box(item: "hi").label()}")
@@ -432,8 +432,8 @@ use io
 struct Pair<A, B> {
   first: A
   second: B
-  public static fun of(a: A, b: B): Pair<A, B> = Pair(first: a, second: b)
-  public static fun empty(): Pair<A, B>? = null
+  public static fun of(a: A, b: B): Pair<A, B> => Pair(first: a, second: b)
+  public static fun empty(): Pair<A, B>? => null
 }
 
 fun main() {
@@ -470,7 +470,7 @@ struct Celsius {
   }
 }
 
-fun parseAll<T: Parsable>(xs: List<string>): List<T?> = xs.map(x => T.parse(x))
+fun parseAll<T: Parsable>(xs: List<string>): List<T?> => xs.map(x => T.parse(x))
 
 fun main() {
   val temps: List<Celsius?> = parseAll(["21.5C", "cold"])
@@ -562,13 +562,13 @@ struct Version {
   minor: i64
 
   implement Comparable {
-    fun compareTo(other: Version): Ordering =
+    fun compareTo(other: Version): Ordering =>
       if (this.major != other.major) this.major.compareTo(other.major)
       else this.minor.compareTo(other.minor)
   }
 
   implement Display {
-    fun toString(): string = "v${this.major}.${this.minor}"
+    fun toString(): string => "v${this.major}.${this.minor}"
   }
 }
 
@@ -576,15 +576,15 @@ struct Name {
   text: string
 
   implement Equatable {
-    fun equals(other: Name): bool = this.text.toLower() == other.text.toLower()
+    fun equals(other: Name): bool => this.text.toLower() == other.text.toLower()
   }
 
   implement Hashable {
-    fun hash(): i64 = this.text.toLower().len()
+    fun hash(): i64 => this.text.toLower().len()
   }
 }
 
-fun largest<T: Comparable>(a: T, b: T): T = if (a.compareTo(b) >= 0) a else b
+fun largest<T: Comparable>(a: T, b: T): T => if (a.compareTo(b) >= 0) a else b
 
 fun main() {
   val a = Version(major: 1, minor: 10)
@@ -630,13 +630,13 @@ struct Money {
   cents: i64
 
   implement Addable {
-    fun plus(other: Money): Money = Money(cents: this.cents + other.cents)
+    fun plus(other: Money): Money => Money(cents: this.cents + other.cents)
   }
   implement Multipliable {
-    fun times(other: i64): Money = Money(cents: this.cents * other)
+    fun times(other: i64): Money => Money(cents: this.cents * other)
   }
   implement Display {
-    fun toString(): string = "€${this.cents / 100}.${"${this.cents % 100}".padStart(2, "0")}"
+    fun toString(): string => "€${this.cents / 100}.${"${this.cents % 100}".padStart(2, "0")}"
   }
 }
 
@@ -823,7 +823,7 @@ struct Memory {
   data: Map<string, string>
 
   implement Fetcher {
-    fun fetch(url: string): string throws Missing = this.data.get(url) ?: throw Missing(name: url)
+    fun fetch(url: string): string throws Missing => this.data.get(url) ?: throw Missing(name: url)
   }
 }
 

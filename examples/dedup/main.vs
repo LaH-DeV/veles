@@ -6,7 +6,10 @@
 // duplicated and how much space it costs.
 //
 //   dedup <dir> [--workers N] [--min-size BYTES] [--verbose]
-use fs, io { println }, os, path
+use fs
+use io { println }
+use os
+use path
 
 error UsageError {
   message: string
@@ -87,7 +90,7 @@ struct Options {
   }
 }
 
-fun plural(n: i64, word: string): string = "$n $word${if (n == 1) "" else "s"}"
+fun plural(n: i64, word: string): string => "$n $word${if (n == 1) "" else "s"}"
 
 fun run(args: List<string>) throws UsageError | IoError {
   val opts = try Options.parse(args)

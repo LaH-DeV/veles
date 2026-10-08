@@ -11,7 +11,7 @@ compile error instead.
 ```veles
 use io
 
-fun findUser(id: i64): string? = when (id) {
+fun findUser(id: i64): string? => when (id) {
   1 => "ann"
   2 => "bob"
   else => null
@@ -137,7 +137,7 @@ struct Cookie {
   domain: string? = null
 }
 
-fun header(name: string): string? = if (name == "n") "42" else null
+fun header(name: string): string? => if (name == "n") "42" else null
 
 fun line(c: Cookie): string {
   val out = StringBuilder()

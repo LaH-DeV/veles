@@ -10,7 +10,7 @@ const PRIMES: List<i64> = [2, 3, 5]
 const NESTED: List<List<u8>> = [[1], []]
 const WORDS: Map<string, i64> = ["one": 1, "two": 2]
 
-fun size(): i64 = MB + PRIMES.at(1)
+fun size(): i64 => MB + PRIMES.at(1)
 
 fun main() {
   io.println("${size()} ${LABEL} ${PRIMES.len()} ${PRIMES} ${NESTED} ${WORDS.get("two") ?: 0}")

@@ -43,15 +43,15 @@ public struct Sha512 {
   private var result: Digest? = null
 
   implement Hasher {
-    static fun start(): Sha512 = Sha512(
+    static fun start(): Sha512 => Sha512(
       state: IV512.toMutable(),
       buffer: [],
       scratch: MutableList<u64>.repeat(0, 80),
     )
 
-    static fun algorithm(): string = "SHA-512"
-    static fun blockSize(): i64 = 128
-    static fun digestSize(): i64 = 64
+    static fun algorithm(): string => "SHA-512"
+    static fun blockSize(): i64 => 128
+    static fun digestSize(): i64 => 64
 
     fun update(data: List<u8>) {
       if (this.result != null) panic("crypto.Sha512: update after finish")
@@ -169,15 +169,15 @@ public struct Sha384 {
   private var result: Digest? = null
 
   implement Hasher {
-    static fun start(): Sha384 = Sha384(
+    static fun start(): Sha384 => Sha384(
       state: IV384.toMutable(),
       buffer: [],
       scratch: MutableList<u64>.repeat(0, 80),
     )
 
-    static fun algorithm(): string = "SHA-384"
-    static fun blockSize(): i64 = 128
-    static fun digestSize(): i64 = 48
+    static fun algorithm(): string => "SHA-384"
+    static fun blockSize(): i64 => 128
+    static fun digestSize(): i64 => 48
 
     fun update(data: List<u8>) {
       if (this.result != null) panic("crypto.Sha384: update after finish")
@@ -224,4 +224,4 @@ public struct Sha384 {
 
 /// Word `i` of the message schedule. The rounds read only 0..<80, and
 /// `w` has 80 words, so this cannot fail.
-fun schedule512(w: MutableList<u64>, i: i64): u64 = w.at(i) ?: panic("sha512: the rounds read the 80-word schedule inside 0..<80")
+fun schedule512(w: MutableList<u64>, i: i64): u64 => w.at(i) ?: panic("sha512: the rounds read the 80-word schedule inside 0..<80")

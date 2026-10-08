@@ -62,8 +62,8 @@ func TestConstFunctions(t *testing.T) {
 	}
 }
 
-// signature is a declaration line up to its body: the first ` = ` or ` {`
-// outside parentheses and brackets (a default argument has one inside).
+// signature is a declaration line up to its body: the first ` => ` or ` {`
+// outside parentheses and brackets (a default argument has an ` = ` inside).
 func signature(l string) string {
 	depth := 0
 	for i := 0; i < len(l); i++ {
@@ -73,12 +73,12 @@ func signature(l string) string {
 		case ')', ']', '>':
 			depth--
 		case ' ':
-			if depth == 0 && (strings.HasPrefix(l[i:], " = ") || strings.HasPrefix(l[i:], " {")) {
+			if depth == 0 && (strings.HasPrefix(l[i:], " => ") || strings.HasPrefix(l[i:], " {")) {
 				return l[:i]
 			}
 		}
 	}
-	return strings.TrimSuffix(strings.TrimSpace(l), " =")
+	return strings.TrimSuffix(strings.TrimSpace(l), " =>")
 }
 
 // lineDiff lists the lines only in want (-) and only in got (+).

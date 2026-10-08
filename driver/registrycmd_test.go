@@ -39,12 +39,12 @@ func TestRegistryCommands(t *testing.T) {
 
 	// publish: a package that does not check is not uploaded
 	write("lib/veles.toml", "[package]\nname = \"lib\"\nversion = \"1.0.0\"\nregistry = \"acme/lib\"\n")
-	write("lib/lib.vs", "public fun f(): i64 = \"not a number\"\n")
+	write("lib/lib.vs", "public fun f(): i64 => \"not a number\"\n")
 	lib := filepath.Join(root, "lib")
 	if code, _, errs := capture(t, func() int { return Publish(PkgOptions{Dir: lib}) }); code != 1 || !strings.Contains(errs, "does not check, so it was not published") {
 		t.Errorf("publish a broken package: exit %d\n%s", code, errs)
 	}
-	write("lib/lib.vs", "public fun f(): i64 = 1\n")
+	write("lib/lib.vs", "public fun f(): i64 => 1\n")
 	code, out, errs := capture(t, func() int { return Publish(PkgOptions{Dir: lib}) })
 	if code != 0 || !strings.Contains(out, "published acme/lib 1.0.0") {
 		t.Fatalf("publish: exit %d\n%s\n%s", code, out, errs)
@@ -157,7 +157,7 @@ func TestYankFromAnywhere(t *testing.T) {
 	defer hs.Close()
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "veles.toml"), []byte("[package]\nname = \"lib\"\nversion = \"1.0.0\"\nregistry = \"acme/lib\"\n"), 0o644)
-	os.WriteFile(filepath.Join(dir, "lib.vs"), []byte("public fun f(): i64 = 1\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "lib.vs"), []byte("public fun f(): i64 => 1\n"), 0o644)
 	man, _ := sema.ReadManifestIn(dir)
 	if _, _, err := fetch.Publish(dir, man, hs.URL, "tok"); err != nil {
 		t.Fatal(err)

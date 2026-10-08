@@ -7,12 +7,12 @@ public trait Iterator {
   type Item
   fun next(): Item?
 
-  fun map<U>(f: fun(Item): U): MapIter<Self, U> = MapIter(inner: this, f)
-  fun filter(f: fun(Item): bool): FilterIter<Self> = FilterIter(inner: this, f)
-  fun take(n: i64): TakeIter<Self> = TakeIter(inner: this, remaining: n)
-  fun skip(n: i64): SkipIter<Self> = SkipIter(inner: this, remaining: n)
-  fun enumerate(): EnumerateIter<Self> = EnumerateIter(inner: this, index: 0)
-  fun zip<J: Iterator>(other: J): ZipIter<Self, J> = ZipIter(a: this, b: other)
+  fun map<U>(f: fun(Item): U): MapIter<Self, U> => MapIter(inner: this, f)
+  fun filter(f: fun(Item): bool): FilterIter<Self> => FilterIter(inner: this, f)
+  fun take(n: i64): TakeIter<Self> => TakeIter(inner: this, remaining: n)
+  fun skip(n: i64): SkipIter<Self> => SkipIter(inner: this, remaining: n)
+  fun enumerate(): EnumerateIter<Self> => EnumerateIter(inner: this, index: 0)
+  fun zip<J: Iterator>(other: J): ZipIter<Self, J> => ZipIter(a: this, b: other)
 
   fun toList(): List<Item> {
     var out: MutableList<Item> = []
@@ -24,7 +24,7 @@ public trait Iterator {
     out.toList()
   }
 
-  fun toSet(): Set<Item> = this.toList().toSet()
+  fun toSet(): Set<Item> => this.toList().toSet()
 
   fun count(): i64 {
     var n: i64 = 0
@@ -92,7 +92,7 @@ public trait Iterable {
   type Iter: Iterator
   fun iterator(): Iter
   // `xs.iter()` reads better at the head of a pipeline; same thing.
-  fun iter(): Iter = this.iterator()
+  fun iter(): Iter => this.iterator()
 }
 
 // ---------------------------------------------------------------------------
@@ -209,12 +209,12 @@ public struct ListIter<T> {
 
 implement<T> Iterable for List<T> {
   type Iter = ListIter<T>
-  fun iterator(): ListIter<T> = ListIter(list: this)
+  fun iterator(): ListIter<T> => ListIter(list: this)
 }
 
 implement<T> Iterable for MutableList<T> {
   type Iter = ListIter<T>
-  fun iterator(): ListIter<T> = ListIter(list: this.toList())
+  fun iterator(): ListIter<T> => ListIter(list: this.toList())
 }
 
 public struct RangeIter<T> {
@@ -244,5 +244,5 @@ public struct RangeIter<T> {
 
 implement<T> Iterable for Range<T> {
   type Iter = RangeIter<T>
-  fun iterator(): RangeIter<T> = RangeIter(current: this.lo, hi: this.hi, inclusive: this.inclusive)
+  fun iterator(): RangeIter<T> => RangeIter(current: this.lo, hi: this.hi, inclusive: this.inclusive)
 }

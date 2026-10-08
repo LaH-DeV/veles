@@ -981,7 +981,7 @@ entry:
 }
 
 @.str.1 = private unnamed_addr constant [17 x i8] c"division by zero\00"
-@.str.2 = private unnamed_addr constant [14 x i8] c"main.vs:12:33\00"
+@.str.2 = private unnamed_addr constant [14 x i8] c"main.vs:12:34\00"
 @.str.3 = private unnamed_addr constant [26 x i8] c"(250..255).iter() yields \00"
 @.str.4 = private unnamed_addr constant [21 x i8] c"(-128..127).len() = \00"
 @.str.5 = private unnamed_addr constant [22 x i8] c", (0..<-128).len() = \00"

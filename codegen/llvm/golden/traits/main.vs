@@ -4,29 +4,29 @@ use io
 
 trait Shape {
   fun area(): f64
-  fun describe(): string = "area ${this.area()}"
+  fun describe(): string => "area ${this.area()}"
 }
 
 struct Square {
   side: f64
-  implement Shape { fun area(): f64 = this.side * this.side }
+  implement Shape { fun area(): f64 => this.side * this.side }
 }
 
 struct Circle {
   r: f64
   implement Shape {
-    fun area(): f64 = 3.0 * this.r * this.r
-    override fun describe(): string = "circle"
+    fun area(): f64 => 3.0 * this.r * this.r
+    override fun describe(): string => "circle"
   }
 }
 
 struct Point {
   x: i64
   y: i64
-  implement Display { fun toString(): string = "(${this.x}, ${this.y})" }
+  implement Display { fun toString(): string => "(${this.x}, ${this.y})" }
 }
 
-fun largest<T: Comparable>(xs: List<T>): T? = xs.max()
+fun largest<T: Comparable>(xs: List<T>): T? => xs.max()
 
 fun main() {
   val shapes: List<Shape> = [Square(side: 2.0), Circle(r: 1.0)]

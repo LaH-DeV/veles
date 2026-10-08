@@ -18,7 +18,7 @@ fun doubled(c: Circle): Circle {
   bigger
 }
 
-fun area(s: Shape): f64 = when (s) {
+fun area(s: Shape): f64 => when (s) {
   is Circle => s.radius * s.radius * 3.0
   is Rect   => s.w * s.w
 }

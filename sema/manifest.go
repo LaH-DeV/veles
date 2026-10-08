@@ -53,6 +53,8 @@ type Manifest struct {
 	// the default, a run of spaces, or a tab; MaxBlankLines is 0 for the
 	// default.
 	Format ManifestFormat
+	// Lint is the `[lint]` table: the opt-in lints of the package's code.
+	Lint ManifestLint
 	// Native is the `[native]` table (D67): the C libraries the package's
 	// `extern` blocks need at link time.
 	Native ManifestNative
@@ -144,7 +146,7 @@ func readManifest(dir string) (*Manifest, error) {
 // manifestSections are the tables a manifest has; each table checks its own
 // keys, so a typo is an error rather than a setting that silently does
 // nothing.
-var manifestSections = []string{"package", "dependencies", "dev-dependencies", "workspace", "format", "native", "policy", "registry"}
+var manifestSections = []string{"package", "dependencies", "dev-dependencies", "workspace", "format", "lint", "native", "policy", "registry"}
 
 func parseManifest(path, dir, text string) (*Manifest, error) {
 	root, err := parseTOML(text)
@@ -171,6 +173,8 @@ func parseManifest(path, dir, text string) (*Manifest, error) {
 			m.Workspace, err = r.workspace(v.tab)
 		case "format":
 			err = r.format(m, v.tab)
+		case "lint":
+			err = r.lint(m, v.tab)
 		case "native":
 			err = r.native(m, v.tab)
 		case "policy":
@@ -481,8 +485,33 @@ func (r *manifestReader) format(m *Manifest, t *tomlTable) error {
 				return r.fail(v, "[format] max_blank_lines must be a positive number")
 			}
 			m.Format.MaxBlankLines = int(limit)
+		case "imports":
+			if v.kind != tomlStr || (v.str != "lines" && v.str != "merged") {
+				return r.fail(v, "[format] imports is \"lines\" (one 'use' per module, the default) or \"merged\" (one 'use a, b' per origin)")
+			}
+			m.Format.MergeImports = v.str == "merged"
 		default:
-			return r.fail(v, "unknown [format] key %q (indent, max_blank_lines)", key)
+			return r.fail(v, "unknown [format] key %q (indent, max_blank_lines, imports)", key)
+		}
+	}
+	return nil
+}
+
+// lintKeys are the settings of a `[lint]` table.
+var lintKeys = []string{"implicit_return"}
+
+func (r *manifestReader) lint(m *Manifest, t *tomlTable) error {
+	for _, key := range t.keys() {
+		v := t.vals[key]
+		switch key {
+		case "implicit_return":
+			level, ok := implicitReturnLevels[v.str]
+			if v.kind != tomlStr || !ok {
+				return r.fail(v, "[lint] implicit_return is \"full\" (a body's last expression is its value anywhere, the default), \"lambda\" (in a lambda and an '=> expr' body) or \"expr\" (only in a body without braces)")
+			}
+			m.Lint.ImplicitReturn = level
+		default:
+			return r.fail(v, "unknown [lint] key %q (%s)", key, strings.Join(lintKeys, ", "))
 		}
 	}
 	return nil
@@ -530,7 +559,37 @@ func (r *manifestReader) native(m *Manifest, t *tomlTable) error {
 type ManifestFormat struct {
 	Indent        string
 	MaxBlankLines int
+	// MergeImports is `imports = "merged"`: `use a, b` rather than a line each.
+	MergeImports bool
 }
+
+// ManifestLint is the `[lint]` table: the lints a package opts into. Each is
+// an error in that package's own code, with a fix; dependencies and the
+// standard library are checked by their own manifests.
+type ManifestLint struct {
+	// ImplicitReturn is where a body's last expression may be its value
+	// without `return`.
+	ImplicitReturn ImplicitReturn
+}
+
+// ImplicitReturn is the `[lint] implicit_return` setting, from the most
+// permissive to the strictest.
+type ImplicitReturn int
+
+const (
+	// ImplicitFull, "full" (the default): anywhere — a function's, a
+	// method's or a lambda's `{ }` body ends in its value.
+	ImplicitFull ImplicitReturn = iota
+	// ImplicitLambda, "lambda": in what is written with an arrow — every
+	// lambda, braced or not, and `fun f() => expr` — but a function's or
+	// method's `{ }` body says `return`.
+	ImplicitLambda
+	// ImplicitExpr, "expr": only in a body without braces (`fun f() =
+	// expr`, `x => expr`); every `{ }` body says `return`.
+	ImplicitExpr
+)
+
+var implicitReturnLevels = map[string]ImplicitReturn{"full": ImplicitFull, "lambda": ImplicitLambda, "expr": ImplicitExpr}
 
 // ReadManifest reads the `veles.toml` of the package containing path, or
 // returns nil when there is none.

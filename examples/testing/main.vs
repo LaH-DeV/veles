@@ -8,7 +8,7 @@ error RangeError {
   value: i64
 }
 
-fun add(a: i64, b: i64) = a + b
+fun add(a: i64, b: i64) => a + b
 
 fun parsePort(text: string): i64 throws RangeError {
   val n = text.toInt() ?: 0
@@ -16,7 +16,7 @@ fun parsePort(text: string): i64 throws RangeError {
   n
 }
 
-fun half(n: i64): i64? = if (n % 2 == 0) n / 2 else null
+fun half(n: i64): i64? => if (n % 2 == 0) n / 2 else null
 
 /// A helper only tests can call: it may use the vocabulary itself.
 test fun expectSorted(xs: List<i64>) {
@@ -74,10 +74,10 @@ test "panics are expected" {
 }
 
 @deprecated("use add")
-fun plus(a: i64, b: i64) = add(a, b)
+fun plus(a: i64, b: i64) => add(a, b)
 
 @mustUse
-fun important(): i64 = 7
+fun important(): i64 => 7
 
 fun main() {
   val total = plus(1, 2)

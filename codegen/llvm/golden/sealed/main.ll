@@ -494,9 +494,9 @@ when.end.1:
 }
 
 @.str.1 = private unnamed_addr constant [17 x i8] c"division by zero\00"
-@.str.2 = private unnamed_addr constant [14 x i8] c"main.vs:20:30\00"
+@.str.2 = private unnamed_addr constant [14 x i8] c"main.vs:20:31\00"
 @.str.3 = private unnamed_addr constant [17 x i8] c"integer overflow\00"
-@.str.4 = private unnamed_addr constant [14 x i8] c"main.vs:20:42\00"
+@.str.4 = private unnamed_addr constant [14 x i8] c"main.vs:20:43\00"
 @.str.5 = private unnamed_addr constant [19 x i8] c"main.vs:27:17\00eval\00"
 @.str.6 = private unnamed_addr constant [21 x i8] c"main.vs:27:3\00println\00"
 @.str.7 = private unnamed_addr constant [19 x i8] c"main.vs:28:11\00half\00"
@@ -521,4 +521,4 @@ when.end.1:
 @.str.26 = private unnamed_addr constant [13 x i8] c"main.vs:8:21\00"
 @.str.27 = private unnamed_addr constant [18 x i8] c"main.vs:9:19\00eval\00"
 @.str.28 = private unnamed_addr constant [13 x i8] c"main.vs:9:18\00"
-@.str.29 = private unnamed_addr constant [13 x i8] c"main.vs:6:21\00"
+@.str.29 = private unnamed_addr constant [13 x i8] c"main.vs:6:22\00"

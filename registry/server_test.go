@@ -99,11 +99,11 @@ func (e *env) app(version, extra string) (string, *sema.Manifest) {
 
 func TestPublishFetchAndTier(t *testing.T) {
 	e := newEnv(t)
-	e.publish("acme/httputil", "1.0.0", "public fun get(): i64 = 1\n")
-	e.publish("acme/httputil", "0.9.0", "public fun get(): i64 = 0\n")
+	e.publish("acme/httputil", "1.0.0", "public fun get(): i64 => 1\n")
+	e.publish("acme/httputil", "0.9.0", "public fun get(): i64 => 0\n")
 
 	// versions are immutable, and a token writes only below its owner
-	dir, man := pkgDir(t, "httputil", "acme/httputil", "1.0.0", "public fun get(): i64 = 2\n")
+	dir, man := pkgDir(t, "httputil", "acme/httputil", "1.0.0", "public fun get(): i64 => 2\n")
 	if _, _, err := fetch.Publish(dir, man, e.http.URL, "tok-acme"); err == nil || !strings.Contains(err.Error(), "(409)") || !strings.Contains(err.Error(), "immutable") {
 		t.Errorf("republish: %v", err)
 	}
@@ -151,7 +151,7 @@ func dirOf(t *testing.T, e *env, version string) (string, *sema.Manifest) {
 // the archive does not match, stops the fetch before anything is cached.
 func TestRegistryIntegrity(t *testing.T) {
 	e := newEnv(t)
-	e.publish("acme/httputil", "1.0.0", "public fun get(): i64 = 1\n")
+	e.publish("acme/httputil", "1.0.0", "public fun get(): i64 => 1\n")
 
 	// not the pinned key
 	_, other, _ := ed25519.GenerateKey(rand.Reader)
@@ -169,7 +169,7 @@ func TestRegistryIntegrity(t *testing.T) {
 	// the right key, but the archive is not what the metadata says
 	liar := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, ".zip") {
-			w.Write(zipBytes(t, map[string]string{"veles.toml": "[package]\nname = \"httputil\"\n", "lib.vs": "public fun get(): i64 = 666\n"}))
+			w.Write(zipBytes(t, map[string]string{"veles.toml": "[package]\nname = \"httputil\"\n", "lib.vs": "public fun get(): i64 => 666\n"}))
 			return
 		}
 		e.srv.ServeHTTP(w, r)
@@ -216,8 +216,8 @@ func zipBytes(t *testing.T, files map[string]string) []byte {
 // skip it; a project whose veles.sum already holds it carries on, warned.
 func TestYank(t *testing.T) {
 	e := newEnv(t)
-	e.publish("acme/httputil", "1.0.0", "public fun get(): i64 = 1\n")
-	e.publish("acme/httputil", "1.1.0", "public fun get(): i64 = 2\n")
+	e.publish("acme/httputil", "1.0.0", "public fun get(): i64 => 1\n")
+	e.publish("acme/httputil", "1.1.0", "public fun get(): i64 => 2\n")
 
 	// a project builds against 1.1.0 and records it
 	known, knownMan := e.app("1.1.0", "")
@@ -266,7 +266,7 @@ func TestYank(t *testing.T) {
 // exact bytes; held in the project or served by the registry.
 func TestReviews(t *testing.T) {
 	e := newEnv(t)
-	e.publish("acme/httputil", "1.0.0", "public fun get(): i64 = 1\n")
+	e.publish("acme/httputil", "1.0.0", "public fun get(): i64 => 1\n")
 	_, aliceKey, _ := ed25519.GenerateKey(rand.Reader)
 	_, malloryKey, _ := ed25519.GenerateKey(rand.Reader)
 	alice := fetch.EncodePublic(aliceKey.Public().(ed25519.PublicKey))
@@ -419,8 +419,8 @@ func TestCacheIsPerRegistry(t *testing.T) {
 	b := newEnv(t) // a second server; newEnv sets the same variables, VELES_HOME is shared below
 	home := t.TempDir()
 	t.Setenv("VELES_HOME", home)
-	a.publish("acme/httputil", "1.0.0", "public fun get(): i64 = 1\n")
-	b.publish("acme/httputil", "1.0.0", "public fun get(): i64 = 2\n")
+	a.publish("acme/httputil", "1.0.0", "public fun get(): i64 => 1\n")
+	b.publish("acme/httputil", "1.0.0", "public fun get(): i64 => 2\n")
 	read := func(e *env) string {
 		dir, man := e.app("1.0.0", "")
 		res, err := fetch.Resolve(dir, man)
@@ -433,10 +433,10 @@ func TestCacheIsPerRegistry(t *testing.T) {
 		}
 		return string(data)
 	}
-	if got := read(a); !strings.Contains(got, "= 1") {
+	if got := read(a); !strings.Contains(got, "=> 1") {
 		t.Errorf("registry a served %q", got)
 	}
-	if got := read(b); !strings.Contains(got, "= 2") {
+	if got := read(b); !strings.Contains(got, "=> 2") {
 		t.Errorf("registry b was served registry a's package from the cache: %q", got)
 	}
 }
@@ -446,7 +446,7 @@ func TestCacheIsPerRegistry(t *testing.T) {
 // the package counts as unreviewed (offline).
 func TestCachedTierNeedsTheSignature(t *testing.T) {
 	e := newEnv(t)
-	e.publish("acme/httputil", "1.0.0", "public fun get(): i64 = 1\n")
+	e.publish("acme/httputil", "1.0.0", "public fun get(): i64 => 1\n")
 	policy := "[policy]\ndeny = [\"unlisted\"]\n"
 
 	// a project with no pinned key fetches it: the cache remembers "listed", unsigned

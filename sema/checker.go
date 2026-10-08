@@ -2128,7 +2128,7 @@ func (c *Checker) checkSealedVariants() {
 			// scaffolding, as for an implement missing methods
 			block := "implement " + s.Name + " {"
 			for _, name := range required {
-				block += "\n  " + traitMethodText(s.Trait, name) + " = panic(\"'" + name + "' is not written yet\")"
+				block += "\n  " + traitMethodText(s.Trait, name) + " => panic(\"'" + name + "' is not written yet\")"
 			}
 			fix := fixAddMembers(fmt.Sprintf("Implement '%s' in '%s'", s.Name, v.Name), sd.Pos, []string{block + "\n}"})
 			if fix != nil {
@@ -2148,7 +2148,7 @@ func (c *Checker) checkImplComplete(d *ast.ImplDecl, impl *Impl, trait *types.Tr
 		if _, ok := impl.Methods[name]; !ok && c.traitDefault(trait, name) == nil {
 			missing = append(missing, name)
 			if sig := traitMethodText(trait, name); sig != "" {
-				stubs = append(stubs, sig+" = panic(\"'"+name+"' is not written yet\")")
+				stubs = append(stubs, sig+" => panic(\"'"+name+"' is not written yet\")")
 			}
 		}
 	}

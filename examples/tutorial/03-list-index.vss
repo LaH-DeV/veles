@@ -1,4 +1,5 @@
-use io { eprintln, println, readLine }, os
+use io { eprintln, println, readLine }
+use os
 
 fun main() {
   var list = [1, 2, 3, 4, 5]

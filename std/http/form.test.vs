@@ -41,7 +41,7 @@ struct Nested {
   implement Decodable
 }
 
-test fun profile(text: string): Profile throws DecodeError = try decodeFields<Profile>(Fields.parse(text), codec.KeyStyle.AsWritten)
+test fun profile(text: string): Profile throws DecodeError => try decodeFields<Profile>(Fields.parse(text), codec.KeyStyle.AsWritten)
 
 test "fields keep their order and repeats" {
   val f = Fields.parse("a=1&b=x%20y&a=3&flag&&c=+")

@@ -90,10 +90,10 @@ public struct Mutex<T> {
   /// block's end — or any way out of it — unlocks it. Usable only as a
   /// `with` value; nothing inside the block may suspend, and locking the
   /// same `Mutex` again before it ends panics (D107).
-  public fun lock(): Locked<T> = Locked(held: Held.take(this.word), value: this.cell)
+  public fun lock(): Locked<T> => Locked(held: Held.take(this.word), value: this.cell)
 
   /// A copy of the value, read under the lock.
-  public fun get(): T = this.withLock(p => *p)
+  public fun get(): T => this.withLock(p => *p)
 
   /// Replaces the value under the lock.
   public fun set(value: T) {

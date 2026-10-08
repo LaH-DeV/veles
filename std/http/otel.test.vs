@@ -3,13 +3,14 @@
 // call, probes left out, and the OTLP exporter over a real HTTP collector.
 // The pipeline is the process's, so the tests that start it take turns.
 
-use compress as gz, otel
+use compress as gz
+use otel
 
 val otelGate = Semaphore(permits: 1)
 
 // ---- a protobuf reader, for looking inside what was exported ----
 
-test fun hexString(bytes: List<u8>): string = bytes.map(b => (if (b < 16) "0" else "") + b.toI64().toString(radix: 16)).join("")
+test fun hexString(bytes: List<u8>): string => bytes.map(b => (if (b < 16) "0" else "") + b.toI64().toString(radix: 16)).join("")
 
 struct PbField {
   num:   i64
@@ -57,11 +58,11 @@ test fun pbFields(bytes: List<u8>): List<PbField> {
   out.toList()
 }
 
-test fun pbAll(fs: List<PbField>, num: i64): List<PbField> = fs.filter(f => f.num == num)
+test fun pbAll(fs: List<PbField>, num: i64): List<PbField> => fs.filter(f => f.num == num)
 
-test fun pbOne(fs: List<PbField>, num: i64): PbField = pbAll(fs, num).at(0) ?: PbField(num: 0, wire: 0, value: 0, data: [])
+test fun pbOne(fs: List<PbField>, num: i64): PbField => pbAll(fs, num).at(0) ?: PbField(num: 0, wire: 0, value: 0, data: [])
 
-test fun pbText(fs: List<PbField>, num: i64): string = pbOne(fs, num).data.decodeUtf8() ?: "<binary>"
+test fun pbText(fs: List<PbField>, num: i64): string => pbOne(fs, num).data.decodeUtf8() ?: "<binary>"
 
 // the attribute `key` of a span's field 9, as its AnyValue fields; null when absent
 test fun pbAttr(span: List<PbField>, key: string): List<PbField>? {
@@ -100,16 +101,16 @@ struct Capture {
     out.toList()
   }
 
-  fun named(name: string): List<List<PbField>> = this.spans().filter(s => pbText(s, 5) == name)
+  fun named(name: string): List<List<PbField>> => this.spans().filter(s => pbText(s, 5) == name)
 
   // The pipeline is the process's, and the other tests of this package run
   // requests while it is on (they take no turn at the gate), so a capture
   // also holds their spans. The spans of one server are the ones a test is
   // about: its own server spans carry the Host it was called by, and the
   // client spans the port they called.
-  fun on(port: i64): List<List<PbField>> = this.spans().filter(s => touches(s, port))
+  fun on(port: i64): List<List<PbField>> => this.spans().filter(s => touches(s, port))
 
-  fun namedOn(name: string, port: i64): List<List<PbField>> = this.on(port).filter(s => pbText(s, 5) == name)
+  fun namedOn(name: string, port: i64): List<List<PbField>> => this.on(port).filter(s => pbText(s, 5) == name)
 }
 
 test fun touches(span: List<PbField>, port: i64): bool {
@@ -277,7 +278,7 @@ test fun newPosts(): Mutex<MutableList<(string, string, string, string, List<u8>
   Mutex(value: empty)
 }
 
-test fun collecting(c: Collector): Handler = handler(req => {
+test fun collecting(c: Collector): Handler => handler(req => {
   val body = try req.bytes()
   c.posts.withLock(q => {
     q.push((req.path, req.header("content-type") ?: "", req.header("content-encoding") ?: "", req.header("authorization") ?: "", body))

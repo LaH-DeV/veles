@@ -1,7 +1,9 @@
 // gzip at level 6 over 2 MiB of word-salad text (std/compress, plain Veles).
 // The checksum is of what gunzip gives back, checked outside the clock: the
 // compressed bytes differ from Go's, the data must not.
-use compress, io { println }, time
+use compress
+use io { println }
+use time
 
 val words: List<string> = ["the", "of", "and", "stream", "request", "value", "error", "handler", "buffer", "index", "result", "compile", "token", "branch", "memory", "thread", "socket", "length", "window", "symbol", "a", "to", "in", "is"]
 

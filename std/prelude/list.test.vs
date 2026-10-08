@@ -14,7 +14,7 @@ struct Cell {
   v: i64
 }
 
-test fun wide(n: i64): Wide = Wide(name: "item-$n", count: n, more: n * 3)
+test fun wide(n: i64): Wide => Wide(name: "item-$n", count: n, more: n * 3)
 
 test "addAll grows a list of structs to hold every element, and neighbours are untouched" {
   val cells: MutableList<Cell> = []

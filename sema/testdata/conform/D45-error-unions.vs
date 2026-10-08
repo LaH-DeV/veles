@@ -3,11 +3,11 @@
 use io
 
 error Low {
-  fun code(): i64 = 1
+  fun code(): i64 => 1
 }
 
 error High {
-  fun code(): string = "h"
+  fun code(): string => "h"
 }
 
 fun fails(n: i64): i64 throws Low | High {

@@ -1,7 +1,8 @@
 // Tasks: 8 independent producer/consumer pairs, 200k values each over a
 // channel of their own — whether channels that share nothing also share
 // no lock (D66: each channel has its own).
-use io { println }, time
+use io { println }
+use time
 
 fun produce(ch: Channel<i64>) {
   loop (i in 0..<200000) ch.send(i)

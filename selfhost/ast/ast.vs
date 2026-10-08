@@ -9,7 +9,8 @@
 // Only what the parser makes is here; what the checker adds to a tree
 // belongs to the checker. A field whose natural name is a keyword is
 // spelled around it: `typ`, `isPrivate`, `isStatic`, `isAsync`, `orElse`…
-use lexer { Kind }, source { File, Span }
+use lexer { Kind }
+use source { File, Span }
 
 public struct Ident {
   public var name: string = ""
@@ -271,7 +272,7 @@ public enum BindKind {
   Const
 }
 
-public fun bindWord(k: BindKind): string = when (k) {
+public fun bindWord(k: BindKind): string => when (k) {
   BindKind.Val   => "val"
   BindKind.Var   => "var"
   BindKind.Const => "const"
@@ -835,7 +836,7 @@ public struct RestPat : Pattern {
 // ---------------------------------------------------------------------------
 // where a node is: one exhaustive `when` per family
 
-public fun typeSpan(t: Type): Span = when (t) {
+public fun typeSpan(t: Type): Span => when (t) {
   is NamedType      => t.pos
   is NullableType   => t.pos
   is PointerType    => t.pos
@@ -847,7 +848,7 @@ public fun typeSpan(t: Type): Span = when (t) {
   is ErrorUnionType => t.pos
 }
 
-public fun declSpan(d: Decl): Span = when (d) {
+public fun declSpan(d: Decl): Span => when (d) {
   is UseDecl          => d.pos
   is FunDeclNode      => d.decl.pos
   is StructDecl       => d.pos
@@ -864,7 +865,7 @@ public fun declSpan(d: Decl): Span = when (d) {
   is BadDecl          => d.pos
 }
 
-public fun stmtSpan(s: Stmt): Span = when (s) {
+public fun stmtSpan(s: Stmt): Span => when (s) {
   is BlockStmt        => s.block.pos
   is ValStmt          => s.pos
   is ExprStmt         => exprSpan(*s.x)
@@ -881,7 +882,7 @@ public fun stmtSpan(s: Stmt): Span = when (s) {
   is BadStmt          => s.pos
 }
 
-public fun exprSpan(e: Expr): Span = when (e) {
+public fun exprSpan(e: Expr): Span => when (e) {
   is IntLit         => e.pos
   is FloatLit       => e.pos
   is StringLit      => e.pos
@@ -922,7 +923,7 @@ public fun exprSpan(e: Expr): Span = when (e) {
   is BadExpr        => e.pos
 }
 
-public fun patternSpan(p: Pattern): Span = when (p) {
+public fun patternSpan(p: Pattern): Span => when (p) {
   is WildcardPat => p.pos
   is BindPat     => p.name.pos
   is LiteralPat  => exprSpan(*p.value)

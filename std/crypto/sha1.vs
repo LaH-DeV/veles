@@ -16,15 +16,15 @@ public struct Sha1 {
   private var result: Digest? = null
 
   implement Hasher {
-    static fun start(): Sha1 = Sha1(
+    static fun start(): Sha1 => Sha1(
       state: IV1.toMutable(),
       buffer: [],
       scratch: MutableList<u32>.repeat(0, 80),
     )
 
-    static fun algorithm(): string = "SHA-1"
-    static fun blockSize(): i64 = 64
-    static fun digestSize(): i64 = 20
+    static fun algorithm(): string => "SHA-1"
+    static fun blockSize(): i64 => 64
+    static fun digestSize(): i64 => 20
 
     fun update(data: List<u8>) {
       if (this.result != null) panic("crypto.Sha1: update after finish")
@@ -121,4 +121,4 @@ fun compress1(state: MutableList<u32>, block: List<u8>, at: i64, w: MutableList<
 
 /// Word `i` of the message schedule. The rounds read only 0..<80, and
 /// `w` has 80 words, so this cannot fail.
-fun schedule1(w: MutableList<u32>, i: i64): u32 = w.at(i) ?: panic("sha1: the rounds read the 80-word schedule inside 0..<80")
+fun schedule1(w: MutableList<u32>, i: i64): u32 => w.at(i) ?: panic("sha1: the rounds read the 80-word schedule inside 0..<80")

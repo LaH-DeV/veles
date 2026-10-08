@@ -1,7 +1,10 @@
 // Tests of std/fs's open files (D97): reading a piece at a time, writing as
 // data arrives, and what a closed or wrongly opened file says.
 
-use io, os, path, time
+use io
+use os
+use path
+use time
 
 test fun scratch(name: string): string {
   val dir = path.join(os.tempDir(), "veles-fs-test")

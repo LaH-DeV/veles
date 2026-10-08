@@ -41,67 +41,67 @@ public trait Display {
 }
 
 implement Comparable for i8 {
-  const fun compareTo(other: i8): Ordering =
+  const fun compareTo(other: i8): Ordering =>
     if (this < other) Ordering.Less else if (this > other) Ordering.Greater else Ordering.Equal
 }
 
 implement Comparable for i16 {
-  const fun compareTo(other: i16): Ordering =
+  const fun compareTo(other: i16): Ordering =>
     if (this < other) Ordering.Less else if (this > other) Ordering.Greater else Ordering.Equal
 }
 
 implement Comparable for i32 {
-  const fun compareTo(other: i32): Ordering =
+  const fun compareTo(other: i32): Ordering =>
     if (this < other) Ordering.Less else if (this > other) Ordering.Greater else Ordering.Equal
 }
 
 implement Comparable for i64 {
-  const fun compareTo(other: i64): Ordering =
+  const fun compareTo(other: i64): Ordering =>
     if (this < other) Ordering.Less else if (this > other) Ordering.Greater else Ordering.Equal
 }
 
 implement Comparable for isize {
-  const fun compareTo(other: isize): Ordering =
+  const fun compareTo(other: isize): Ordering =>
     if (this < other) Ordering.Less else if (this > other) Ordering.Greater else Ordering.Equal
 }
 
 implement Comparable for u8 {
-  const fun compareTo(other: u8): Ordering =
+  const fun compareTo(other: u8): Ordering =>
     if (this < other) Ordering.Less else if (this > other) Ordering.Greater else Ordering.Equal
 }
 
 implement Comparable for u16 {
-  const fun compareTo(other: u16): Ordering =
+  const fun compareTo(other: u16): Ordering =>
     if (this < other) Ordering.Less else if (this > other) Ordering.Greater else Ordering.Equal
 }
 
 implement Comparable for u32 {
-  const fun compareTo(other: u32): Ordering =
+  const fun compareTo(other: u32): Ordering =>
     if (this < other) Ordering.Less else if (this > other) Ordering.Greater else Ordering.Equal
 }
 
 implement Comparable for u64 {
-  const fun compareTo(other: u64): Ordering =
+  const fun compareTo(other: u64): Ordering =>
     if (this < other) Ordering.Less else if (this > other) Ordering.Greater else Ordering.Equal
 }
 
 implement Comparable for usize {
-  const fun compareTo(other: usize): Ordering =
+  const fun compareTo(other: usize): Ordering =>
     if (this < other) Ordering.Less else if (this > other) Ordering.Greater else Ordering.Equal
 }
 
 implement Comparable for f32 {
-  const fun compareTo(other: f32): Ordering =
+  const fun compareTo(other: f32): Ordering =>
     if (this < other) Ordering.Less else if (this > other) Ordering.Greater else Ordering.Equal
 }
 
 implement Comparable for f64 {
-  const fun compareTo(other: f64): Ordering =
+  const fun compareTo(other: f64): Ordering =>
     if (this < other) Ordering.Less else if (this > other) Ordering.Greater else Ordering.Equal
 }
 
 implement Comparable for string {
-  const fun compareTo(other: string): Ordering =
+  const fun compareTo(other: string): Ordering =>
     if (this < other) Ordering.Less else if (this > other) Ordering.Greater else Ordering.Equal
 }
 
@@ -113,15 +113,15 @@ public trait Parsable {
 }
 
 implement Parsable for i64 {
-  static fun parse(s: string): i64? = s.toInt()
+  static fun parse(s: string): i64? => s.toInt()
 }
 
 implement Parsable for f64 {
-  static fun parse(s: string): f64? = s.toF64()
+  static fun parse(s: string): f64? => s.toF64()
 }
 
 implement Parsable for bool {
-  static fun parse(s: string): bool? = when (s) {
+  static fun parse(s: string): bool? => when (s) {
     "true"  => true
     "false" => false
     else    => null
@@ -129,7 +129,7 @@ implement Parsable for bool {
 }
 
 implement Parsable for string {
-  static fun parse(s: string): string? = s
+  static fun parse(s: string): string? => s
 }
 
 /// `a + b` on a type that is not a number (D71): the operator calls `plus`.

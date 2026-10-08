@@ -3,7 +3,7 @@ use io
 
 @inline
 @inline // error: duplicate attribute '@inline'
-fun twice(x: i64): i64 = x * 2
+fun twice(x: i64): i64 => x * 2
 
 @deprecated // error: @deprecated takes one argument: the reason
 fun old1() { }

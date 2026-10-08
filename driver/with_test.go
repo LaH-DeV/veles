@@ -34,7 +34,7 @@ fun open(name: string): Res {
 
 error Oops { }
 
-fun fails(): i64 throws Oops = throw Oops()
+fun fails(): i64 throws Oops => throw Oops()
 
 fun end(): i64 {
   with a = open("a")

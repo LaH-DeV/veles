@@ -9,8 +9,13 @@
 //   selfhost --tokens FILE      every token, comment and diagnostic of the scan (P1, gate G1)
 //   selfhost --quote FILE       every line quoted as the tree printer quotes a string (P3)
 //   selfhost --parse FILE       the tree as `veles parse` prints it, then every diagnostic (P5, gates G2, G3)
-use fs, io, os
-use ast { dump, quote }, lexer { kindText, tokenize }, parser { parseFile }, source { Diagnostics, File, Span }
+use fs
+use io
+use os
+use ast { dump, quote }
+use lexer { kindText, tokenize }
+use parser { parseFile }
+use source { Diagnostics, File, Span }
 
 fun usage(): Never {
   io.eprintln("usage: selfhost --positions|--lines|--render|--tokens|--quote|--parse FILE")

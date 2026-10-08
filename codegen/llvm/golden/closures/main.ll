@@ -237,7 +237,7 @@ arith.ok.2:
 }
 
 @.str.1 = private unnamed_addr constant [17 x i8] c"integer overflow\00"
-@.str.2 = private unnamed_addr constant [13 x i8] c"main.vs:4:41\00"
+@.str.2 = private unnamed_addr constant [13 x i8] c"main.vs:4:42\00"
 @.str.3 = private unnamed_addr constant [20 x i8] c"main.vs:13:14\00adder\00"
 @.str.4 = private unnamed_addr constant [18 x i8] c"main.vs:14:17\00map\00"
 @.str.5 = private unnamed_addr constant [19 x i8] c"main.vs:15:15\00fold\00"

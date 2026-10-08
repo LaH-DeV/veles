@@ -6,7 +6,10 @@
 // `os.raiseSignal` plays the part of Ctrl+C or `kill`, so the run is
 // deterministic; a real program writes the same `stop:` and is stopped
 // from outside.
-use http, io { println }, net, os
+use http
+use io { println }
+use net
+use os
 
 // What a client sees of one response: the status line, whether the server
 // said it will close, and the body.
@@ -95,7 +98,7 @@ fun untilSignal() {
   }
 }
 
-fun start(clients: sendable fun(i64) suspends throws IoError | io.TooLong, port: i64) throws IoError | io.TooLong = try clients(port)
+fun start(clients: sendable fun(i64) suspends throws IoError | io.TooLong, port: i64) throws IoError | io.TooLong => try clients(port)
 
 // Serves until `stop` returns while `clients` run against the server;
 // returns once both are done.

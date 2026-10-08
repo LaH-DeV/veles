@@ -66,8 +66,8 @@ type corpusFile struct {
 
 // removedSpellings are in the Go parser's reports of the spellings Veles has
 // removed: `use m.{ }`, `mut fun`, `fun <T> f`, `impl`, the receiver `self`,
-// `T::Item` and the `{ e => }` handlers. The Go parser reads them so that
-// `veles check --fix` migrates an old program; the self-hosted parser reads
+// `T::Item`, the `{ e => }` handlers and `fun f() = expr` (D140). The Go
+// parser reads them so that `veles check --fix` migrates an old program; the self-hosted parser reads
 // the current language only (user, 2026-10-08). A file that uses one is
 // outside gates G1–G3, and TestRemovedSpellings checks that the Veles side
 // rejects it instead.
@@ -80,6 +80,7 @@ var removedSpellings = []string{
 	"'::' is not Veles",
 	"the error is named in a head",
 	"a handler that sees the error is",
+	"an expression body is written '=> expr'",
 }
 
 // usesRemovedSpelling reports whether the Go parser finds a removed spelling
@@ -180,19 +181,19 @@ func corpus(t *testing.T) []corpusFile {
 		// what the parser must recover from the same way: one per path
 		"p-decls": "use\nuse a { }\nuse a { * }\nuse a.b as\npublic internal fun f() {}\nprivate val x = 1\n" +
 			"extend X for Y {}\nerror E = A | B\nenum E<T> { A, B = 2, 3 }\n" +
-			"test fun helper() = 1\nsuite \"\" { val x = 1 }\ntest \"${x}\" { }\ntest \"t\" ()\nstatic assert(x)\n" +
+			"test fun helper() => 1\nsuite \"\" { val x = 1 }\ntest \"${x}\" { }\ntest \"t\" ()\nstatic assert(x)\n" +
 			"extern \"Go\" { fun f() }\nextern union U<T> { a: i32 }\nwith x = f()\n@attr static assert(true, \"y\")\n" +
 			"public suite \"s\" { }\nstruct S { x: , init(a) { } public init { } init { } static var y = 1 private static val z = 2 }\n" +
 			"trait T { val x: i64 }\nimplement T for { }\nextern \"C\" fun g() \nfun h(...) {}\nfun k(a: i64... = []) {}\n",
 		"p-signatures": "fun f(a: i64, lazy b: fun(): i64, c: *raw u8, d: (*i64)?, e: extern fun(i32): i32, f: sendable fun() suspends throws E, g: Self.Item, i: List<List<i64>>, j: Array<u8, 4 * 16>, k: Result<i64, A | b.B>, l: (), m: (i64,), n: T??) {}\n" +
 			"fun g(): i64 throws A, B, C {}\nfun h() throws suspends {}\nfun i<const N: i64, const M: u8, T: A + B>() {}\noverride static fun k() {}\n" +
-			"fun l(x: i64 = 1, ...) {}\nfun m() = \nfun n()\nfun o() { } fun p() { }\n",
-		"p-removed": "use a.{ b }\nimpl Foo for Bar {}\nfun <T> f<U>() {}\nstruct S { mut fun j() {} }\nfun g(h: T::Item) {}\n" +
+			"fun l(x: i64 = 1, ...) {}\nfun m() => \nfun n()\nfun o() { } fun p() { }\nfun q() => { 1 }\n",
+		"p-removed": "use a.{ b }\nfun z(): i64 = 1\nimpl Foo for Bar {}\nfun <T> f<U>() {}\nstruct S { mut fun j() {} }\nfun g(h: T::Item) {}\n" +
 			"fun k() {\n  self.x\n}\nfun m() {\n  x ?? { e => 1 }\n}\nfun n() {\n  x catch { e => 1 }\n}\n",
 		"p-statements": "fun f() {\n  val = 3\n  var x: i64\n  val y\n  val [a, b] = xs\n  val (a, [b]) = p else { return }\n  val Some(v) = o else return\n" +
 			"  val (q, r) = t\n  val (s) = u\n  loop :outer (x in y) { break outer; continue outer }\n  for (x in y) { }\n  loop (x = 1) { }\n" +
 			"  with a = f(), b = g()\n  with (a = f(), _ = g(), h()) { }\n  if (x) with y = z\n  scope { }\n  struct S {}\n  error E {}\n  extend X {}\n" +
-			"  return )\n  throw\n  x += 1; x -= 2; x *= 3; x /= 4; x %= 5\n  ) stray\n  a -> b\n  fun inner() = 1\n}\n",
+			"  return )\n  throw\n  x += 1; x -= 2; x *= 3; x /= 4; x %= 5\n  ) stray\n  a -> b\n  fun inner() => 1\n}\n",
 		"p-expressions": "fun f() {\n  x.0.1\n  0.0 .0\n  f<T>(x) < y\n  a >> b < c\n  a < b > c\n  x ?? { 1 }\n  this.x\n" +
 			"  async x\n  async f()\n  try a.b() catch (e) { }\n  try x ?! y\n  do { } while\n  do { }\n  catch { }\n  x catch { 1 }\n" +
 			"  f(a: 1, b...)\n  f(,)\n  (a, b) => a\n  (a: i64, (b, c)): i64 => { a }\n  _ => 1\n  x => y += 1\n  mut [1]\n  mut x\n  [:]\n  [1: 2, 3: 4,]\n  [1, 2,]\n" +

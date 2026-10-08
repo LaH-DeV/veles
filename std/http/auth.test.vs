@@ -13,7 +13,7 @@ test fun authApp(m: Middleware): Handler {
   r.handler()
 }
 
-test fun basic(user: string, pass: string): Map<string, string> =
+test fun basic(user: string, pass: string): Map<string, string> =>
   ["Authorization": "Basic " + base64.encode("$user:$pass".bytes())]
 
 test fun forged(user: string, pass: string, remote: string): Map<string, string> {
@@ -22,9 +22,9 @@ test fun forged(user: string, pass: string, remote: string): Map<string, string>
   h.toMap()
 }
 
-test fun authText(r: Response): string = r.body.decodeUtf8() ?: "<binary>"
+test fun authText(r: Response): string => r.body.decodeUtf8() ?: "<binary>"
 
-test fun rootOnly(): Middleware = basicAuth("admin", (user, pass) => user == "root" && pass == "s3cret")
+test fun rootOnly(): Middleware => basicAuth("admin", (user, pass) => user == "root" && pass == "s3cret")
 
 test "a guard lets a request through on null and answers with a Response" {
   val app = authApp(guard(req => if (req.path == "/who") null else Response.text("no", status: Status.forbidden)))

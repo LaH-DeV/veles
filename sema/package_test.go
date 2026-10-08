@@ -22,8 +22,8 @@ func TestPackageIsTheProgram(t *testing.T) {
 	}
 	write("veles.toml", "[package]\nname = \"app\"\nversion = \"0.1.0\"\n")
 	write("main.vs", "use io\nuse geometry\nfun main() { io.println(\"${geometry.twice(2)}\") }\n")
-	write("geometry/lib.vs", "public fun twice(n: i64): i64 = n * 2\n")
-	write("unused/lib.vs", "public fun broken(): i64 = \"not a number\"\n")
+	write("geometry/lib.vs", "public fun twice(n: i64): i64 => n * 2\n")
+	write("unused/lib.vs", "public fun broken(): i64 => \"not a number\"\n")
 
 	load := func(path string, needMain bool) (*Package, *source.Diagnostics) {
 		diags := &source.Diagnostics{}
@@ -79,8 +79,8 @@ func TestScriptIsItsOwnPackage(t *testing.T) {
 	write("one.vss", "use io\nfun main() { io.println(\"one\") }\n")
 	write("two.vss", "use io, os\nfun main() { io.println(\"two ${os.args().len()}\") }\n")
 	write("local.vss", "use io, geometry\nfun main() { io.println(\"${geometry.twice(2)}\") }\n")
-	write("nomain.vss", "fun helper(): i64 = 1\n")
-	write("geometry/lib.vs", "public fun twice(n: i64): i64 = n * 2\n")
+	write("nomain.vss", "fun helper(): i64 => 1\n")
+	write("geometry/lib.vs", "public fun twice(n: i64): i64 => n * 2\n")
 
 	load := func(path string, needMain bool) (*Package, *source.Diagnostics) {
 		diags := &source.Diagnostics{}
@@ -140,7 +140,7 @@ func TestPrivateAcrossModulesSaysHow(t *testing.T) {
 		}
 	}
 	write("veles.toml", "[package]\nname = \"app\"\nversion = \"0.1.0\"\n")
-	write("geo/lib.vs", "public struct Box {\n  public shown: i64 = 0\n  kept: i64 = 1\n  fun inner(): i64 = 1\n  static fun make(): Box = Box()\n  static val zero: i64 = 0\n}\npublic fun box(): Box = Box()\nfun helper(): i64 = 1\n")
+	write("geo/lib.vs", "public struct Box {\n  public shown: i64 = 0\n  kept: i64 = 1\n  fun inner(): i64 => 1\n  static fun make(): Box => Box()\n  static val zero: i64 = 0\n}\npublic fun box(): Box => Box()\nfun helper(): i64 => 1\n")
 	write("main.vs", "use geo\nfun main() {\n  val b = geo.box()\n  val _ = b.kept\n  val _ = b.inner()\n  val _ = geo.Box.make()\n  val _ = geo.Box.zero\n  val _ = geo.helper()\n}\n")
 	diags := &source.Diagnostics{}
 	pkg, err := LoadPackage(root, diags)
@@ -201,7 +201,7 @@ func TestPrivateFieldsAndTheConstructorAcrossModules(t *testing.T) {
 		}
 	}
 	write("veles.toml", "[package]\nname = \"app\"\nversion = \"0.1.0\"\n")
-	write("geo/lib.vs", "public struct Acc {\n  public name: string\n  private items: MutableList<i64> = []\n  private seed: i64\n  public fun count(): i64 = this.items.len() + this.seed\n}\npublic struct Tied {\n  public name: string\n  hidden: i64 = 3\n}\n")
+	write("geo/lib.vs", "public struct Acc {\n  public name: string\n  private items: MutableList<i64> = []\n  private seed: i64\n  public fun count(): i64 => this.items.len() + this.seed\n}\npublic struct Tied {\n  public name: string\n  hidden: i64 = 3\n}\n")
 	check := func(main string) string {
 		write("main.vs", main)
 		diags := &source.Diagnostics{}
@@ -249,7 +249,7 @@ func TestNamedImports(t *testing.T) {
 		return diags.Render()
 	}
 	write("veles.toml", "[package]\nname = \"app\"\nversion = \"0.1.0\"\n")
-	write("geo/lib.vs", "public struct Point {\n  public x: i64\n  public y: i64\n}\npublic enum Kind { Flat, Round }\npublic fun norm(p: Point): i64 = p.x + p.y\npublic test fun probe(): i64 = 1\nfun secret(): i64 = 1\n")
+	write("geo/lib.vs", "public struct Point {\n  public x: i64\n  public y: i64\n}\npublic enum Kind { Flat, Round }\npublic fun norm(p: Point): i64 => p.x + p.y\npublic test fun probe(): i64 => 1\nfun secret(): i64 => 1\n")
 
 	ok := check("use geo { Point, Kind, norm as length }\n\nfun main() {\n  val p = Point(x: 1, y: 2)\n  val k: geo.Kind = Kind.Flat\n  val n: i64 = length(p) + geo.norm(p)\n  val shadow = 1\n  val length = shadow\n}\n")
 	if strings.Contains(ok, "error") {

@@ -2,7 +2,9 @@
 // structs (D94). A scripted client talks to the server over a real socket
 // in the same process and prints what crosses the wire — status line,
 // every Set-Cookie line, the body — which is how the test suite runs it.
-use http, io { println }, net
+use http
+use io { println }
+use net
 
 /// What the login form posts. A missing field or a value that does not fit
 /// is a 400 naming the field; `remember` is a checkbox, so absent is false.
@@ -34,7 +36,7 @@ struct Sessions {
     id
   }
 
-  fun user(id: string): string? = this.users.get(id)
+  fun user(id: string): string? => this.users.get(id)
 
   fun end(id: string) {
     this.users.remove(id)

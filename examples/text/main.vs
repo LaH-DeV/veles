@@ -4,7 +4,7 @@
 // usually goes wrong.
 use io { println }
 
-fun show(xs: List<string>): string = "${xs.len()}:" + xs.map(x => "[$x]").join("")
+fun show(xs: List<string>): string => "${xs.len()}:" + xs.map(x => "[$x]").join("")
 
 fun main() {
   // split: empty text, separators at both ends and next to each other, a

@@ -41,7 +41,7 @@ fun isPrint(r: i64): bool {
   first <= r
 }
 
-fun hex(n: i64, width: i64): string = n.toString(radix: 16).padStart(width, "0")
+fun hex(n: i64, width: i64): string => n.toString(radix: 16).padStart(width, "0")
 
 /// `text` in double quotes, as the tree shows a string: with
 /// `"` and `\` escaped, the C escapes for the control characters that have

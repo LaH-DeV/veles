@@ -791,6 +791,14 @@ behind a name that says "crypto" (§10, 2026-09-23).
       parameter list the author had wrapped: fixed, with two cases in
       `format/format_test.go`. That it took reading a formatted file to
       notice is the argument for the CI check
+- [x] D140: expression bodies are `fun f() => expr`; `= expr` errors with a
+      fix; the tree, the docs and the Veles inside Go tests migrated (2026-10-08)
+- [x] Imports one per line by default, `[format] imports = "merged"` for the
+      comma list; the tree and the docs' programs reformatted (2026-10-08)
+- [x] `[lint]` in the manifest: lints of a package's own code;
+      `implicit_return = "full" | "lambda" | "expr"` (where a `{ }` body may
+      end in its value; otherwise an error with a fix that writes `return`)
+      (2026-10-08)
 - [~] `veles test`: `--filter` (no match is an error), per-test `--timeout`
       (default 10m; a watchdog thread reports the test and ends the run),
       a summary line naming the failures — done 2026-09-27. Tests are
@@ -1097,6 +1105,7 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-10-07 | E7 stage g: tier and yank | **`unlisted` as a policy capability; yanked versions refused for new resolutions, a warning for a build whose `veles.sum` holds them** (user, recommended of 3; D139). Rejected: a separate `tier` key; tier shown only. |
 | 2026-10-07 | E7 stage g: reviews | **Portable ed25519-signed statements, trust by key in `[policy] trust`, `require = { reviewed = N }`; served by the registry or committed under `attestations/`** (user, recommended of 3; D139). Rejected: registry-hosted only; cargo-vet-style imports by URL. |
 | 2026-10-07 | E7 stage g: registry integrity | **Signed `.info` with a key pinned in `[registry] key`** (user, recommended of 3; D139). Rejected: trust on first use alone; a Merkle transparency log now. |
+| 2026-10-08 | Expression bodies | **`fun f(): T => expr`** (D140): `=` only binds, `=>` only yields; `= expr` is a removed spelling with a fix (user, recommended of 3, prompted by the `implicit_return` levels). Rejected: keep `= expr` (§4); decide later. |
 
 ## 11. Known limitations to revisit
 

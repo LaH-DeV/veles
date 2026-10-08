@@ -41,7 +41,7 @@ func TestDidYouMean(t *testing.T) {
 func TestTypoSuggestions(t *testing.T) {
 	cases := []struct{ src, msg, fix string }{
 		{`fun main() { val counter = 1; io.println("${countr}") }`, "unknown name 'countr'; did you mean 'counter'?", "counter"},
-		{`fun total(): i64 = 1
+		{`fun total(): i64 => 1
 fun main() { io.println("${totl()}") }`, "unknown function 'totl'; did you mean 'total'?", "total"},
 		{`fun main() { io.printn("x") }`, "module 'io' has no declaration 'printn'; did you mean 'io.println'?", "println"},
 		{`fun main() { io.println("${[1].lenght()}") }`, "no method 'lenght' on type 'List<i64>'; did you mean 'len'?", "len"},
@@ -49,7 +49,7 @@ fun main() { io.println("${totl()}") }`, "unknown function 'totl'; did you mean 
 		{`fun main() { io.println("x".toUpperCase()) }`, "did you mean 'toUpper'?", "toUpper"},
 		{`fun main() { val m = [1: 2]; io.println("${m.has(1)}") }`, "did you mean 'containsKey'?", "containsKey"},
 		{`struct P { x: i64
-  fun length(): i64 = this.x }
+  fun length(): i64 => this.x }
 fun main() { io.println("${P(x: 1).lenght()}") }`, "no method 'lenght' on type 'P'; did you mean 'length'?", "length"},
 		{`struct P { total: i64 }
 fun main() { io.println("${P(total: 1).totl}") }`, "has no field 'totl'; did you mean 'total'?", "total"},
@@ -84,7 +84,7 @@ fun main() { io.println("${P(x: 1).x()}") }`, "'x' is a field, not a method: dro
 func TestTypoSuggestionsRespectPrivacy(t *testing.T) {
 	diags := checkSource(t, prelude+`struct P {
   x: i64
-  private fun secret(): i64 = this.x
+  private fun secret(): i64 => this.x
 }
 fun main() { io.println("${P(x: 1).secrt()}") }`)
 	for _, d := range diags.Items {

@@ -3,7 +3,12 @@
 // sides agree (header tokens, chunk sizes, percent-encoding); everything a
 // client has to distrust — a status line, a framing it did not ask for, a
 // body of any size — is read here under limits of its own.
-use io, json as js, net, otel, time, tls
+use io
+use json as js
+use net
+use otel
+use time
+use tls
 
 // ---------------------------------------------------------------------------
 // errors
@@ -37,29 +42,29 @@ public error FetchError {
   public url:    string
   public detail: string
   public kind:   FetchKind
-  fun message(): string = "${this.detail}: ${this.url}"
+  fun message(): string => "${this.detail}: ${this.url}"
 }
 
 /// A non-2xx answer that the caller declared an error with `ensureSuccess()`.
 public error StatusError {
   public url:    string
   public status: Status
-  fun message(): string = "${this.url} answered ${this.status}"
+  fun message(): string => "${this.url} answered ${this.status}"
 }
 
-fun invalid(url: string, detail: string): FetchError =
+fun invalid(url: string, detail: string): FetchError =>
   FetchError(url: shown(url), detail, kind: FetchKind.InvalidRequest)
 
-fun protocolError(url: string, detail: string): FetchError =
+fun protocolError(url: string, detail: string): FetchError =>
   FetchError(url, detail, kind: FetchKind.Protocol)
 
-fun timedOut(url: string): FetchError =
+fun timedOut(url: string): FetchError =>
   FetchError(url, detail: "the request timed out", kind: FetchKind.Timeout)
 
-fun ioFailure(url: string, e: IoError): FetchError =
+fun ioFailure(url: string, e: IoError): FetchError =>
   FetchError(url, detail: "the connection failed (${e.detail})", kind: FetchKind.Io)
 
-fun closedWithoutAnswer(url: string): FetchError =
+fun closedWithoutAnswer(url: string): FetchError =>
   FetchError(url, detail: "the server closed the connection without answering", kind: FetchKind.Closed)
 
 // text that came from a caller or the wire, safe to put in a message or a log
@@ -80,9 +85,9 @@ struct Url {
   // path and query, always starting with `/`, non-ASCII bytes percent-encoded
   target: string
 
-  fun scheme(): string = if (this.secure) "https" else "http"
+  fun scheme(): string => if (this.secure) "https" else "http"
 
-  fun defaultPort(): i64 = if (this.secure) 443 else 80
+  fun defaultPort(): i64 => if (this.secure) 443 else 80
 
   // what `Host` says: the port left out when it is the scheme's own
   fun authority(): string {
@@ -90,9 +95,9 @@ struct Url {
     if (this.port == this.defaultPort()) name else "$name:${this.port}"
   }
 
-  fun origin(): string = "${this.scheme()}://${this.authority()}"
+  fun origin(): string => "${this.scheme()}://${this.authority()}"
 
-  fun text(): string = this.origin() + this.target
+  fun text(): string => this.origin() + this.target
 }
 
 fun parseUrl(text: string): Url throws FetchError {
@@ -243,15 +248,15 @@ public struct Payload {
   public contentType: string?
 
   /// Raw bytes with their type (`application/octet-stream` when not said).
-  public static fun bytes(data: List<u8>, contentType: MediaType = MediaType.octetStream): Payload =
+  public static fun bytes(data: List<u8>, contentType: MediaType = MediaType.octetStream): Payload =>
     Payload(data, contentType: contentType.name)
 
   /// UTF-8 text (`text/plain` when not said).
-  public static fun text(text: string, contentType: MediaType = MediaType.text): Payload =
+  public static fun text(text: string, contentType: MediaType = MediaType.text): Payload =>
     Payload(data: text.bytes(), contentType: contentType.name)
 
   /// `value` as JSON (`application/json`).
-  public static fun json<T: Encodable>(value: T): Payload throws EncodeError =
+  public static fun json<T: Encodable>(value: T): Payload throws EncodeError =>
     Payload(data: (try js.encode(value)).bytes(), contentType: MediaType.json.name)
 
   /// `name=value` pairs as a urlencoded form, repeats kept.
@@ -307,7 +312,7 @@ public struct ClientBody {
     ClientBody(conn: null, state: Mutex(value: WireState(done: true)), deadline, keep: null, url)
   }
 
-  static fun wire(conn: io.Stream, keep: Keep, framing: i64, length: i64, reusable: bool, url: string, deadline: time.Deadline): ClientBody =
+  static fun wire(conn: io.Stream, keep: Keep, framing: i64, length: i64, reusable: bool, url: string, deadline: time.Deadline): ClientBody =>
     ClientBody(
       conn,
       state: Mutex(value: WireState(framing, remaining: length, declared: if (framing == 1) length else -1, reusable)),
@@ -477,11 +482,11 @@ public struct ClientResponse {
   body:      ClientBody
 
   /// A header by name, case-insensitively.
-  public fun header(name: string): string? = this.headers.get(name.toLower())
+  public fun header(name: string): string? => this.headers.get(name.toLower())
 
   /// How many bytes the body has, when the answer said (its `Content-Length`);
   /// null for a chunked body or one that runs to the close.
-  public fun length(): i64? = this.body.length()
+  public fun length(): i64? => this.body.length()
 
   /// This response, or a `StatusError` when the status is not 2xx — the body
   /// of an error answer is dropped.
@@ -493,18 +498,18 @@ public struct ClientResponse {
 
   /// The whole body; more than `max` bytes (64 MiB when not said) is a
   /// `TooLarge` error — before the first byte when `Content-Length` says so.
-  public fun bytes(max: i64 = defaultBodyMax): List<u8> suspends throws FetchError = try this.body.collect(max)
+  public fun bytes(max: i64 = defaultBodyMax): List<u8> suspends throws FetchError => try this.body.collect(max)
 
   /// The whole body as UTF-8 text.
-  public fun text(max: i64 = defaultBodyMax): string suspends throws FetchError =
+  public fun text(max: i64 = defaultBodyMax): string suspends throws FetchError =>
     try (try this.bytes(max)).decodeUtf8() ?! protocolError(this.url, "the body is not valid UTF-8")
 
   /// The whole body read as JSON into a `T`.
-  public fun json<T: Decodable>(max: i64 = defaultBodyMax): T suspends throws FetchError | DecodeError =
+  public fun json<T: Decodable>(max: i64 = defaultBodyMax): T suspends throws FetchError | DecodeError =>
     try js.decode<T>(try this.text(max))
 
   /// The body a piece at a time, for one too large to hold.
-  public fun stream(): ClientBody = this.body
+  public fun stream(): ClientBody => this.body
 
   // a body that is read and dropped so that the connection can be reused;
   // too long to be worth it and it is closed
@@ -643,7 +648,7 @@ public struct Client {
   private traced: bool = true
 
   // a client whose requests are not traced (see `http.otlp`)
-  static fun untraced(timeout: Duration, tlsOptions: tls.Options = tls.Options()): Client = Client(timeout, tlsOptions, traced: false)
+  static fun untraced(timeout: Duration, tlsOptions: tls.Options = tls.Options()): Client => Client(timeout, tlsOptions, traced: false)
 
   /// One request. `url` is absolute (`http://…`); `headers` are added to the
   /// client's; `body` goes with a `Content-Length`. A redirect (301, 302,
@@ -708,27 +713,27 @@ public struct Client {
   }
 
   /// `fetch` with the method `GET`.
-  public fun get(url: string, headers: Map<string, string> = [:], timeout: Duration? = null, redirect: bool = true, retry: i64 = 0): ClientResponse suspends throws FetchError =
+  public fun get(url: string, headers: Map<string, string> = [:], timeout: Duration? = null, redirect: bool = true, retry: i64 = 0): ClientResponse suspends throws FetchError =>
     try this.fetch(url, method: Method.get, headers: headers, timeout: timeout, redirect: redirect, retry: retry)
 
   /// `fetch` with the method `HEAD`: the headers a `GET` would get, no body.
-  public fun head(url: string, headers: Map<string, string> = [:], timeout: Duration? = null, redirect: bool = true, retry: i64 = 0): ClientResponse suspends throws FetchError =
+  public fun head(url: string, headers: Map<string, string> = [:], timeout: Duration? = null, redirect: bool = true, retry: i64 = 0): ClientResponse suspends throws FetchError =>
     try this.fetch(url, method: Method.head, headers: headers, timeout: timeout, redirect: redirect, retry: retry)
 
   /// `fetch` with the method `POST`.
-  public fun post(url: string, body: Payload? = null, headers: Map<string, string> = [:], timeout: Duration? = null, redirect: bool = true): ClientResponse suspends throws FetchError =
+  public fun post(url: string, body: Payload? = null, headers: Map<string, string> = [:], timeout: Duration? = null, redirect: bool = true): ClientResponse suspends throws FetchError =>
     try this.fetch(url, method: Method.post, headers: headers, body: body, timeout: timeout, redirect: redirect)
 
   /// `fetch` with the method `PUT`.
-  public fun put(url: string, body: Payload? = null, headers: Map<string, string> = [:], timeout: Duration? = null, redirect: bool = true, retry: i64 = 0): ClientResponse suspends throws FetchError =
+  public fun put(url: string, body: Payload? = null, headers: Map<string, string> = [:], timeout: Duration? = null, redirect: bool = true, retry: i64 = 0): ClientResponse suspends throws FetchError =>
     try this.fetch(url, method: Method.put, headers: headers, body: body, timeout: timeout, redirect: redirect, retry: retry)
 
   /// `fetch` with the method `PATCH`.
-  public fun patch(url: string, body: Payload? = null, headers: Map<string, string> = [:], timeout: Duration? = null, redirect: bool = true): ClientResponse suspends throws FetchError =
+  public fun patch(url: string, body: Payload? = null, headers: Map<string, string> = [:], timeout: Duration? = null, redirect: bool = true): ClientResponse suspends throws FetchError =>
     try this.fetch(url, method: Method.patch, headers: headers, body: body, timeout: timeout, redirect: redirect)
 
   /// `fetch` with the method `DELETE`.
-  public fun delete(url: string, headers: Map<string, string> = [:], timeout: Duration? = null, redirect: bool = true, retry: i64 = 0): ClientResponse suspends throws FetchError =
+  public fun delete(url: string, headers: Map<string, string> = [:], timeout: Duration? = null, redirect: bool = true, retry: i64 = 0): ClientResponse suspends throws FetchError =>
     try this.fetch(url, method: Method.delete, headers: headers, timeout: timeout, redirect: redirect, retry: retry)
 
   // one try of a request: connect or reuse, send, read the head, follow redirects
@@ -815,15 +820,15 @@ fun withTraceparent(headers: Map<string, string>): Map<string, string> {
   out.toMap()
 }
 
-fun isIdempotent(m: Method): bool =
+fun isIdempotent(m: Method): bool =>
   m == Method.get || m == Method.head || m == Method.put || m == Method.delete || m == Method.options || m == Method.trace
 
-fun followsRedirect(m: Method, s: Status): bool =
+fun followsRedirect(m: Method, s: Status): bool =>
   (m == Method.get || m == Method.head) && (s.code == 301 || s.code == 302 || s.code == 303 || s.code == 307 || s.code == 308)
 
-fun retryableStatus(s: Status): bool = s.code == 502 || s.code == 503 || s.code == 504
+fun retryableStatus(s: Status): bool => s.code == 502 || s.code == 503 || s.code == 504
 
-fun retryable(e: FetchError): bool =
+fun retryable(e: FetchError): bool =>
   e.kind == FetchKind.Connect || e.kind == FetchKind.Closed || e.kind == FetchKind.Io || e.kind == FetchKind.Timeout
 
 // 100 ms, 200 ms, 400 ms … up to five seconds
@@ -1059,7 +1064,7 @@ public fun fetch(
   timeout: Duration? = null,
   redirect: bool = true,
   retry: i64 = 0,
-): ClientResponse suspends throws FetchError =
+): ClientResponse suspends throws FetchError =>
   try defaultClient.fetch(url, method, headers, body, timeout, redirect, retry)
 
 /// `GET` on the shared client.
@@ -1067,25 +1072,25 @@ public fun fetch(
 /// ```veles
 /// val page = try http.get("http://example.com").text()
 /// ```
-public fun get(url: string, headers: Map<string, string> = [:], timeout: Duration? = null, redirect: bool = true, retry: i64 = 0): ClientResponse suspends throws FetchError =
+public fun get(url: string, headers: Map<string, string> = [:], timeout: Duration? = null, redirect: bool = true, retry: i64 = 0): ClientResponse suspends throws FetchError =>
   try defaultClient.get(url, headers, timeout, redirect, retry)
 
 /// `HEAD` on the shared client.
-public fun head(url: string, headers: Map<string, string> = [:], timeout: Duration? = null, redirect: bool = true, retry: i64 = 0): ClientResponse suspends throws FetchError =
+public fun head(url: string, headers: Map<string, string> = [:], timeout: Duration? = null, redirect: bool = true, retry: i64 = 0): ClientResponse suspends throws FetchError =>
   try defaultClient.head(url, headers, timeout, redirect, retry)
 
 /// `POST` on the shared client.
-public fun post(url: string, body: Payload? = null, headers: Map<string, string> = [:], timeout: Duration? = null, redirect: bool = true): ClientResponse suspends throws FetchError =
+public fun post(url: string, body: Payload? = null, headers: Map<string, string> = [:], timeout: Duration? = null, redirect: bool = true): ClientResponse suspends throws FetchError =>
   try defaultClient.post(url, body, headers, timeout, redirect)
 
 /// `PUT` on the shared client.
-public fun put(url: string, body: Payload? = null, headers: Map<string, string> = [:], timeout: Duration? = null, redirect: bool = true, retry: i64 = 0): ClientResponse suspends throws FetchError =
+public fun put(url: string, body: Payload? = null, headers: Map<string, string> = [:], timeout: Duration? = null, redirect: bool = true, retry: i64 = 0): ClientResponse suspends throws FetchError =>
   try defaultClient.put(url, body, headers, timeout, redirect, retry)
 
 /// `PATCH` on the shared client.
-public fun patch(url: string, body: Payload? = null, headers: Map<string, string> = [:], timeout: Duration? = null, redirect: bool = true): ClientResponse suspends throws FetchError =
+public fun patch(url: string, body: Payload? = null, headers: Map<string, string> = [:], timeout: Duration? = null, redirect: bool = true): ClientResponse suspends throws FetchError =>
   try defaultClient.patch(url, body, headers, timeout, redirect)
 
 /// `DELETE` on the shared client.
-public fun delete(url: string, headers: Map<string, string> = [:], timeout: Duration? = null, redirect: bool = true, retry: i64 = 0): ClientResponse suspends throws FetchError =
+public fun delete(url: string, headers: Map<string, string> = [:], timeout: Duration? = null, redirect: bool = true, retry: i64 = 0): ClientResponse suspends throws FetchError =>
   try defaultClient.delete(url, headers, timeout, redirect, retry)

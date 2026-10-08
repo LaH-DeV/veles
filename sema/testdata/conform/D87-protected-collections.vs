@@ -31,7 +31,7 @@ fun looks(b: Bag): i64 {
   n + first + sum
 }
 
-fun copies(b: Bag): List<i64> = b.items.toList()
+fun copies(b: Bag): List<i64> => b.items.toList()
 
 fun pushes(b: Bag) {
   b.items.push(1) // error: cannot call 'push' on 'Bag.items': the field is 'protected var'
@@ -58,7 +58,7 @@ fun binds(b: Bag) {
   taken.push(1)
 }
 
-fun returns(b: Bag): MutableList<i64> = b.items // error: cannot take 'Bag.items' out of 'Bag': the field is 'protected var'
+fun returns(b: Bag): MutableList<i64> => b.items // error: cannot take 'Bag.items' out of 'Bag': the field is 'protected var'
 
 fun passes(b: Bag) {
   consume(b.items) // error: cannot take 'Bag.items' out of 'Bag': the field is 'protected var'

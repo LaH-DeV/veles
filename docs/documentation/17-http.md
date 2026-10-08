@@ -10,7 +10,9 @@ built on it; this chapter is the parts.
 ## Routes and handlers
 
 ```veles
-use http, io, net
+use http
+use io
+use net
 
 fun request(port: i64, target: string): string throws IoError | io.TooLong {
   with conn = try net.connect("127.0.0.1", port)
@@ -83,7 +85,8 @@ percent-decoded, header names in any case — runs the handler behind the
 same panic boundary, and returns what the client would receive:
 
 ```veles
-use http, io
+use http
+use io
 
 fun main() {
   val app = http.Router()
@@ -176,7 +179,11 @@ registration — the handler would not be a sendable function
 does what a browser or a cache expects of a file it may keep (D96):
 
 ```veles
-use fs, http, io, os, path
+use fs
+use http
+use io
+use os
+use path
 
 fun main() throws IoError {
   val root = path.join(os.tempDir(), "veles-doc-static")
@@ -260,7 +267,8 @@ A request's body is not read with its head. The handler asks for it, and it
 is read then, off the wire, under a ceiling the handler can see (D97):
 
 ```veles
-use http, io
+use http
+use io
 
 fun main() {
   val app = http.Router()
@@ -329,7 +337,8 @@ hello
 it, for what is too large to hold, is not ready yet, or never ends:
 
 ```veles
-use http, io
+use http
+use io
 
 fun main() {
   val app = http.Router()
@@ -371,7 +380,9 @@ a large file is never in memory.
 `http.compress()` gzips the responses a client says it can read:
 
 ```veles
-use compress, http, io
+use compress
+use http
+use io
 
 fun main() {
   val app = http.Router()
@@ -425,7 +436,11 @@ part by part off the body, so an upload goes to disk as it arrives and only
 the part being read is ever held:
 
 ```veles
-use fs, http, io, os, path
+use fs
+use http
+use io
+use os
+use path
 
 fun main() throws IoError {
   val dir = path.join(os.tempDir(), "veles-doc-upload")
@@ -485,7 +500,8 @@ them; `resp.withCookie(cookie)` sets one, and a response may set as many as
 it likes, each as its own `Set-Cookie` line:
 
 ```veles
-use http, io
+use http
+use io
 
 fun main() {
   val app = http.Router()
@@ -548,7 +564,8 @@ the same with the query string. The struct writes `implement Decodable`
 (chapter 18) and nothing else:
 
 ```veles
-use http, io
+use http
+use io
 
 struct Signup {
   name:       string
@@ -615,7 +632,9 @@ request first and the response last.
 imports a module.)
 
 ```veles
-use http, io, net
+use http
+use io
+use net
 
 fun request(port: i64, target: string, extra: string): string throws IoError | io.TooLong {
   with conn = try net.connect("127.0.0.1", port)
@@ -800,11 +819,12 @@ If not, send the traffic elsewhere and leave the process alone — a slow
 database must take the instance out of rotation, not get it killed.
 
 ```veles
-use http, io { println }
+use http
+use io { println }
 
 error Down {
   detail: string
-  fun message(): string = this.detail
+  fun message(): string => this.detail
 }
 
 fun main() {
@@ -937,7 +957,9 @@ pool of connections: a program that makes more than one request should keep
 one, and `http.get(url)` and friends use a shared one when it does not.
 
 ```veles
-use http, io { println }, json
+use http
+use io { println }
+use json
 
 struct Note {
   id:    i64

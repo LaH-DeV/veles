@@ -90,12 +90,12 @@ extend f64 {
   }
 
   /// The nearest representable number below this one: `-((-x).nextUp())`.
-  public fun nextDown(): f64 = -((-this).nextUp())
+  public fun nextDown(): f64 => -((-this).nextUp())
 }
 
 extend f32 {
   /// The number with exactly `digits` decimals, rounded.
-  public fun toFixed(digits: i64): string = (this.toF64()).toFixed(digits)
+  public fun toFixed(digits: i64): string => (this.toF64()).toFixed(digits)
 
   /// The IEEE 754 binary32 bit pattern of the number, as an integer: sign,
   /// 8 exponent bits, 23 of fraction. Nothing is rounded or canonicalised.
@@ -130,5 +130,5 @@ extend f32 {
   }
 
   /// The nearest representable number below this one: `-((-x).nextUp())`.
-  public fun nextDown(): f32 = -((-this).nextUp())
+  public fun nextDown(): f32 => -((-this).nextUp())
 }

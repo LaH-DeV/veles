@@ -30,11 +30,11 @@ fun redeclared() {
   val a = 2 // error: 'a' is already declared in this scope // warning: 'a' is never used
   io.println("$a")
 }
-fun bodyHasValue() = 1 + 2
+fun bodyHasValue() => 1 + 2
 fun unitBody() {
   io.println("x")
 }
-fun declaredNothing(): () = 5 // error: function 'declaredNothing' returns nothing but its body has type 'i64'; add a return type
+fun declaredNothing(): () => 5 // error: function 'declaredNothing' returns nothing but its body has type 'i64'; add a return type
 fun missingReturn(): i64 { // error: missing return: function 'missingReturn' must return a value of type 'i64'
   io.println("no value")
 }

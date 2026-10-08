@@ -1,7 +1,8 @@
 // The eager list adapters over 200k pseudo-random integers (xorshift),
 // twenty times: map, filter, fold, any, all, find. Measures what moving
 // them from compiler lowering into the prelude costs (plan B8).
-use io { println }, time
+use io { println }
+use time
 
 fun main() {
   var x: u64 = 88172645463325252

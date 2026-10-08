@@ -170,7 +170,7 @@ fun web(port: i64, options: tls.Options): string suspends {
   "${first.status.code} $a / ${second.status.code} $b"
 }
 
-fun echo(port: i64): string suspends = echoed(port) catch (e) { "error ${e.message()}" }
+fun echo(port: i64): string suspends => echoed(port) catch (e) { "error ${e.message()}" }
 
 fun main() suspends {
   io.println("good: ${hello(@GOOD@, tls.Options(roots: ca))}")

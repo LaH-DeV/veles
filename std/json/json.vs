@@ -19,7 +19,9 @@
 /// val tree = try json.parse(text)          // a codec.Value, untyped
 /// ```
 
-use codec, recursion, utf8
+use codec
+use recursion
+use utf8
 
 /// The policies of one encoder or decoder.
 public struct Options {
@@ -56,7 +58,7 @@ public fun encode<T: Encodable>(value: T, options: Options = Options()): string 
 }
 
 /// `value` as JSON text over several lines.
-public fun pretty<T: Encodable>(value: T, options: Options = Options()): string throws EncodeError =
+public fun pretty<T: Encodable>(value: T, options: Options = Options()): string throws EncodeError =>
   try encode(value, Options(keys: options.keys, enums: options.enums, durations: options.durations, omitNulls: options.omitNulls, pretty: true, indent: options.indent, maxDepth: options.maxDepth, maxProblems: options.maxProblems))
 
 /// A `T` read from JSON text. Every problem in the document is reported
@@ -69,7 +71,7 @@ public fun decode<T: Decodable>(text: string, options: Options = Options()): T t
 }
 
 /// The document as a `codec.Value` tree, untyped.
-public fun parse(text: string, options: Options = Options()): codec.Value throws DecodeError = try decode<codec.Value>(text, options)
+public fun parse(text: string, options: Options = Options()): codec.Value throws DecodeError => try decode<codec.Value>(text, options)
 
 /// `value` as a `codec.Value` tree — what it would encode to, before it is text.
 public fun toValue<T: Encodable>(value: T, options: Options = Options()): codec.Value throws EncodeError {
@@ -105,7 +107,7 @@ public struct JsonEncoder {
   private pending: MutableList<string> = []  // the key waiting for its value, if any
 
   /// The text written so far.
-  public fun text(): string = this.out.toString()
+  public fun text(): string => this.out.toString()
 
   /// Before a value: the separator, the newline and indent when pretty,
   /// and the key that was waiting.
@@ -144,10 +146,10 @@ public struct JsonEncoder {
   }
 
   implement codec.Encoder {
-    fun format(): string = "json"
-    override fun enums(): codec.EnumStyle = this.options.enums
-    override fun durations(): codec.DurationStyle = this.options.durations
-    override fun keys(): codec.KeyStyle = this.options.keys
+    fun format(): string => "json"
+    override fun enums(): codec.EnumStyle => this.options.enums
+    override fun durations(): codec.DurationStyle => this.options.durations
+    override fun keys(): codec.KeyStyle => this.options.keys
 
     fun beginObject() throws EncodeError {
       try this.checkDepth()
@@ -160,7 +162,7 @@ public struct JsonEncoder {
       this.pending.push(name)
     }
 
-    fun endObject() throws EncodeError = this.close("}")
+    fun endObject() throws EncodeError => this.close("}")
 
     fun beginList() throws EncodeError {
       try this.checkDepth()
@@ -169,7 +171,7 @@ public struct JsonEncoder {
       this.stack.push(Open(isList: true))
     }
 
-    fun endList() throws EncodeError = this.close("]")
+    fun endList() throws EncodeError => this.close("]")
 
     fun writeI64(v: i64) throws EncodeError {
       this.beforeValue()
@@ -281,7 +283,7 @@ public struct JsonDecoder {
   private recorded: codec.Problems
   private options:  Options
 
-  public static fun of(text: string, options: Options = Options()): JsonDecoder =
+  public static fun of(text: string, options: Options = Options()): JsonDecoder =>
     JsonDecoder(src: text.bytes(), recorded: codec.Problems.capped(options.maxProblems), options)
 
   /// After the value: nothing but whitespace may follow.
@@ -290,15 +292,15 @@ public struct JsonDecoder {
     if (this.pos() < this.src.len()) throw this.malformed("text after the value")
   }
 
-  private fun pos(): i64 = this.cursor.at
+  private fun pos(): i64 => this.cursor.at
   private fun setPos(p: i64) {
     this.cursor.at = p
   }
 
-  private fun malformed(what: string): DecodeError =
+  private fun malformed(what: string): DecodeError =>
     DecodeError(problems: this.recorded.list().concat([codec.Problem(path: "", message: "malformed JSON at byte ${this.pos()}: $what")]))
 
-  private fun peekByte(): u8? = this.src.at(this.pos())
+  private fun peekByte(): u8? => this.src.at(this.pos())
 
   private fun skipSpace() {
     loop {
@@ -309,7 +311,7 @@ public struct JsonDecoder {
   }
 
   /// Describes the next value for a problem message.
-  private fun found(): string throws DecodeError = when (try this.peek()) {
+  private fun found(): string throws DecodeError => when (try this.peek()) {
     codec.Kind.Null   => "null"
     codec.Kind.Bool   => "a boolean"
     codec.Kind.Int    => "a number"
@@ -479,10 +481,10 @@ public struct JsonDecoder {
   }
 
   implement codec.Decoder {
-    fun format(): string = "json"
-    override fun enums(): codec.EnumStyle = this.options.enums
-    override fun durations(): codec.DurationStyle = this.options.durations
-    override fun keys(): codec.KeyStyle = this.options.keys
+    fun format(): string => "json"
+    override fun enums(): codec.EnumStyle => this.options.enums
+    override fun durations(): codec.DurationStyle => this.options.durations
+    override fun keys(): codec.KeyStyle => this.options.keys
 
     fun peek(): codec.Kind throws DecodeError {
       this.skipSpace()
@@ -498,7 +500,7 @@ public struct JsonDecoder {
       }
     }
 
-    fun beginObject() throws DecodeError = try this.open(false, '{', "an object")
+    fun beginObject() throws DecodeError => try this.open(false, '{', "an object")
 
     fun nextKey(): string? throws DecodeError {
       if (!(try this.more('}'))) return null
@@ -513,9 +515,9 @@ public struct JsonDecoder {
       k
     }
 
-    fun endObject() throws DecodeError = try this.closeContainer('}')
+    fun endObject() throws DecodeError => try this.closeContainer('}')
 
-    fun beginList() throws DecodeError = try this.open(true, '[', "a list")
+    fun beginList() throws DecodeError => try this.open(true, '[', "a list")
 
     fun hasNext(): bool throws DecodeError {
       val has = try this.more(']')
@@ -526,7 +528,7 @@ public struct JsonDecoder {
       has
     }
 
-    fun endList() throws DecodeError = try this.closeContainer(']')
+    fun endList() throws DecodeError => try this.closeContainer(']')
 
     fun readI64(): i64 throws DecodeError {
       if (try this.peek() != codec.Kind.Int) {
@@ -656,8 +658,8 @@ public struct JsonDecoder {
       out
     }
 
-    fun problemAt(path: string, message: string) = this.recorded.record(path, message)
+    fun problemAt(path: string, message: string) => this.recorded.record(path, message)
 
-    fun problems(): List<codec.Problem> = this.recorded.list()
+    fun problems(): List<codec.Problem> => this.recorded.list()
   }
 }

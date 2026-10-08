@@ -24,7 +24,7 @@ struct Res {
   }
 }
 
-fun make(n: i64): Res = Res(n)
+fun make(n: i64): Res => Res(n)
 
 fun main() {
   val r = make(1)

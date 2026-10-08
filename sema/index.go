@@ -158,7 +158,7 @@ func (c *Checker) indexImpls() {
 
 // Inferred is the unwritten part of a function's signature.
 type Inferred struct {
-	Ret      string // the return type of `fun f() = expr`; "" when written
+	Ret      string // the return type of `fun f() => expr`; "" when written
 	Suspends bool   // suspends, and `suspends` is not written (D2)
 	// SuspendsIf: it suspends only when what these parameters are given
 	// does (D116)
@@ -907,7 +907,7 @@ func funDecl(t *FuncTemplate) string {
 	}
 	sb.WriteString(sig)
 	if traitMethod && d != nil && (d.Body != nil || d.ExprBody != nil) {
-		sb.WriteString(" = ...")
+		sb.WriteString(" => ...")
 	}
 	return sb.String()
 }
@@ -1016,7 +1016,7 @@ func (c *Checker) traitBody(tr *types.Trait) string {
 		}
 		sb.WriteString("fun " + name + typeParamList(c.traitMethodTPs[tr.Name+"."+name]) + funSigString(tr.Methods[name]))
 		if c.traitDefault(tr, name) != nil {
-			sb.WriteString(" = ...")
+			sb.WriteString(" => ...")
 		}
 		sb.WriteString("\n")
 	}

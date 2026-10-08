@@ -29,7 +29,8 @@
 /// `std/http` carries a trace across services by itself: `http.serve` opens a
 /// span per request from an incoming `traceparent` header, and `http.fetch`
 /// opens one per call and sends the header on.
-use io { eprintln }, time
+use io { eprintln }
+use time
 
 /// Which of the three signals an export carries.
 public enum Signal {
@@ -39,7 +40,7 @@ public enum Signal {
 }
 
 /// The path an OTLP/HTTP collector serves `signal` on.
-public fun signalPath(signal: Signal): string = when (signal) {
+public fun signalPath(signal: Signal): string => when (signal) {
   Signal.Traces  => "/v1/traces"
   Signal.Metrics => "/v1/metrics"
   Signal.Logs    => "/v1/logs"
@@ -122,7 +123,7 @@ public struct Telemetry {
   /// Sends everything that has gathered now, without waiting for the
   /// interval; the spans and logs that could not be sent are dropped and
   /// counted. Returns whether every part went through.
-  public fun flush(): bool suspends = flushAll(this.exporter, this.resource)
+  public fun flush(): bool suspends => flushAll(this.exporter, this.resource)
 
   /// Sends what is left, stops recording, and lets the next `start` happen.
   /// Call it once, at the end of the program or of a graceful stop; the

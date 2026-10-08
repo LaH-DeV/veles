@@ -9,7 +9,7 @@ extern "C" {
   fun takesPair(p: Pair, ...): i32 // error: a C function with variadic arguments cannot take or return the struct 'Pair' by value yet
 }
 
-fun notC(format: string, ...): i32 = 0 // error: only a function in an 'extern "C"' block takes C's variadic arguments
+fun notC(format: string, ...): i32 => 0 // error: only a function in an 'extern "C"' block takes C's variadic arguments
 
 extern "C" fun callback(n: i32, ...): i32 { // error: only a function in an 'extern "C"' block takes C's variadic arguments
   return n

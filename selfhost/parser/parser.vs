@@ -9,7 +9,9 @@
 //
 // The other files of this module extend `Parser`: decl.vs, types.vs,
 // stmt.vs, expr.vs and pattern.vs.
-use ast, lexer { Kind, Token, kindText, tokenize }, source { Diagnostics, File, Span }
+use ast
+use lexer { Kind, Token, kindText, tokenize }
+use source { Diagnostics, File, Span }
 
 /// Parses one file; problems go into `diags`.
 public fun parseFile(file: File, diags: *Diagnostics): ast.SourceFile {
@@ -37,10 +39,10 @@ struct DeclHead {
   start:      Span
 
   // whether a visibility word was written, for a declaration that takes none
-  fun marked(): bool = this.pub || this.isInternal
+  fun marked(): bool => this.pub || this.isInternal
 
   // the word written, as a message quotes it
-  fun visibility(): string = if (this.isInternal) "'internal'" else "'public'"
+  fun visibility(): string => if (this.isInternal) "'internal'" else "'public'"
 }
 
 struct Parser {
@@ -67,19 +69,19 @@ struct Parser {
 
   // ---- tokens
 
-  fun cur(): Token = this.toks.at(this.pos) ?: panic("parser: the cursor is always on a token")
+  fun cur(): Token => this.toks.at(this.pos) ?: panic("parser: the cursor is always on a token")
 
   fun peek(n: i64): Token {
     val at = (this.pos + n).min(this.toks.len() - 1)
     this.toks.at(at) ?: panic("parser: a token list ends with EOF")
   }
 
-  fun at(kind: Kind): bool = this.cur().kind == kind
+  fun at(kind: Kind): bool => this.cur().kind == kind
 
-  fun atAny(kinds: Kind...): bool = kinds.contains(this.cur().kind)
+  fun atAny(kinds: Kind...): bool => kinds.contains(this.cur().kind)
 
   // the word `text` at the cursor: a contextual keyword such as `extend`
-  fun atWord(text: string): bool = this.at(Kind.Ident) && this.cur().text == text
+  fun atWord(text: string): bool => this.at(Kind.Ident) && this.cur().text == text
 
   // the token at the cursor, which the cursor then leaves; EOF stays
   fun next(): Token {
@@ -95,12 +97,12 @@ struct Parser {
     true
   }
 
-  fun span(): Span = this.cur().span
+  fun span(): Span => this.cur().span
 
-  fun prevSpan(): Span = (this.toks.at(this.pos - 1) ?: this.cur()).span
+  fun prevSpan(): Span => (this.toks.at(this.pos - 1) ?: this.cur()).span
 
   // from start to the end of the previous token
-  fun spanFrom(start: Span): Span = start.to(this.prevSpan())
+  fun spanFrom(start: Span): Span => start.to(this.prevSpan())
 
   fun errorAt(span: Span, message: string) {
     if (span.start == this.lastErrPos) return
@@ -130,7 +132,7 @@ struct Parser {
   }
 
   // an identifier, or `_` in its place when it is missing (reported)
-  fun ident(): ast.Ident = this.expectIdent() ?: ast.Ident(name: "_", pos: this.span())
+  fun ident(): ast.Ident => this.expectIdent() ?: ast.Ident(name: "_", pos: this.span())
 
   fun skipSemis() {
     loop (this.at(Kind.Semi)) this.next()
@@ -223,7 +225,7 @@ struct Parser {
     ast.SourceFile(source: this.file, decls: decls.toList())
   }
 
-  fun startsDecl(): bool =
+  fun startsDecl(): bool =>
     this.atErrorDecl() || this.atExtendDecl() || this.atAny(
       Kind.KwFun, Kind.KwStruct, Kind.KwTrait,
       Kind.KwImplement, Kind.KwSealed, Kind.KwPublic, Kind.KwPrivate, Kind.KwInternal, Kind.KwUse, Kind.KwExtern,
@@ -602,10 +604,17 @@ struct Parser {
     fn.effects = this.commaInThrows(this.parseEffects())
     if (this.at(Kind.LBrace)) {
       fn.body = this.parseBlock()
-    } else if (this.accept(Kind.Assign)) {
-      fn.exprBody = &this.parseExpr()
+    } else if (this.at(Kind.FatArrow)) {
+      val arrow = this.next()
+      if (this.at(Kind.LBrace)) {
+        // a body in braces has no arrow (D140); the block is read as the body
+        this.diags.errorAt(arrow.span, "a body in braces has no '=>': write 'fun ${fn.name.name}(…) { … }' (D140)")
+        fn.body = this.parseBlock()
+      } else {
+        fn.exprBody = &this.parseExpr()
+      }
     } else if (ctx == FunContext.Free || ctx == FunContext.Method) {
-      this.errorAt(this.span(), "function '${fn.name.name}' needs a body: '{ ... }' or '= expr'")
+      this.errorAt(this.span(), "function '${fn.name.name}' needs a body: '{ ... }' or '=> expr'")
     }
     if (ctx == FunContext.Extern && (fn.body != null || fn.exprBody != null)) {
       this.errorAt(fn.name.pos, "extern function '${fn.name.name}' cannot have a body")
@@ -626,7 +635,7 @@ struct Parser {
   }
 
   // `static assert(` starts a compile-time assertion (D113)
-  fun atStaticAssert(): bool =
+  fun atStaticAssert(): bool =>
     this.at(Kind.KwStatic) && this.peek(1).kind == Kind.Ident && this.peek(1).text == "assert" && this.peek(2).kind == Kind.LParen
 
   fun parseStaticAssert(): ast.StaticAssert {
@@ -658,7 +667,7 @@ struct Parser {
   }
 
   // `error Name`: `error` is a word only at declaration position, with a name after it
-  fun atErrorDecl(): bool = this.atWord("error") && this.peek(1).kind == Kind.Ident
+  fun atErrorDecl(): bool => this.atWord("error") && this.peek(1).kind == Kind.Ident
 
   // `->` written for `=>`: reported even where another error stands
   fun thinArrow(span: Span, message: string) {
@@ -667,10 +676,10 @@ struct Parser {
 }
 
 // a dotted path, for messages
-fun pathString(path: List<ast.Ident>): string = path.map(seg => seg.name).join(".")
+fun pathString(path: List<ast.Ident>): string => path.map(seg => seg.name).join(".")
 
 // a one-segment name with no type arguments: `string`, `i64`
-fun isPlainName(t: ast.Type, name: string): bool = when (t) {
+fun isPlainName(t: ast.Type, name: string): bool => when (t) {
   is ast.NamedType => t.args.isEmpty() && t.path.len() == 1 && t.path.all(seg => seg.name == name)
   else             => false
 }

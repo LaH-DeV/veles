@@ -23,7 +23,7 @@ fun idle() {
 
 fun hold(r: Res) { }
 
-fun make(): Worker = Worker(job: async idle())
+fun make(): Worker => Worker(job: async idle())
 
 fun pair(): Pair {
   return Pair(left: make(), right: Worker(job: async idle()))

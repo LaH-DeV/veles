@@ -11,7 +11,7 @@ fun main() {
   println("The value of z is: $z")
 }
 
-fun plusOne(x: i32): i32 = x + 1
+fun plusOne(x: i32): i32 => x + 1
 
 fun timesTwo(x: i32): i32 {
   x * 2

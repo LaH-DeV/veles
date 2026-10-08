@@ -7,8 +7,8 @@ error Bust { }
 
 enum Color { Red, Green }
 
-fun fact(n: i64) = if (n == 0) 1 else n * fact(n - 1) // error: cannot infer the return type of recursive function 'fact'
-fun enumCall(): Color? = Color.nope() // error: enum 'Color' has no function 'nope'
+fun fact(n: i64) => if (n == 0) 1 else n * fact(n - 1) // error: cannot infer the return type of recursive function 'fact'
+fun enumCall(): Color? => Color.nope() // error: enum 'Color' has no function 'nope'
 
 test "words" {
   expect(1 == 1, 2 == 2) // error: 'expect' takes one argument: fun expect(condition: bool)

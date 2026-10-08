@@ -8,10 +8,10 @@ test fun corsApp(m: Middleware): Handler {
   r.handler()
 }
 
-test fun corsAllowed(app: Handler, origin: string): bool =
+test fun corsAllowed(app: Handler, origin: string): bool =>
   call(app, Method.get, "/data", headers: from(origin)).headers.get("access-control-allow-origin") == origin
 
-test fun from(origin: string): Map<string, string> = ["Origin": origin]
+test fun from(origin: string): Map<string, string> => ["Origin": origin]
 
 test fun preflight(origin: string, asks: string = ""): Map<string, string> {
   val h: MutableMap<string, string> = ["Origin": origin, "Access-Control-Request-Method": "PUT"]

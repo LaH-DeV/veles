@@ -21,7 +21,11 @@
 /// socket — it is given the bytes that arrived and hands back the bytes to
 /// send — so every call there is short and the waiting happens here, where
 /// a task can be parked.
-use fs, io, log as logs { field }, net, os
+use fs
+use io
+use log as logs { field }
+use net
+use os
 
 extern "C" {
   fun veles_tls_client(host: string, roots: string, alpn: string, insecure: i64, handle: *raw i64, err: *raw string): i64
@@ -64,7 +68,7 @@ public struct Options {
 
 // a TLS failure as the IoError every stream call throws; `detail` is the
 // engine's reason (a certificate that does not match, an alert, ...)
-fun failure(address: string, detail: string): IoError =
+fun failure(address: string, detail: string): IoError =>
   IoError(path: address, code: 0, detail: "tls: $detail", kind: IoKind.Other)
 
 /// Dials `host:port`, runs the handshake and returns the secured connection;
@@ -167,7 +171,7 @@ public struct Conn {
   }
 
   /// The peer's address, `host:port`.
-  public fun peer(): string = this.address
+  public fun peer(): string => this.address
 
   fun reason(): IoError {
     var text = ""
@@ -256,7 +260,7 @@ public struct Conn {
     }
   }
 
-  fun tooLong(what: string, max: i64): io.TooLong =
+  fun tooLong(what: string, max: i64): io.TooLong =>
     io.TooLong(message: "$what from ${this.address} is longer than $max bytes", limit: max)
 
   implement io.Stream {
@@ -362,14 +366,14 @@ public struct Conn {
   }
 
   // takes up to n buffered bytes
-  fun take(n: i64): List<u8> = this.buffer.withLock(b => {
+  fun take(n: i64): List<u8> => this.buffer.withLock(b => {
     val got = n.min(b.len())
     val out = b.take(got)
     b.dropFront(got)
     out
   })
 
-  fun buffered(): i64 = this.buffer.withLock(b => b.len())
+  fun buffered(): i64 => this.buffer.withLock(b => b.len())
 }
 
 // ---------------------------------------------------------------------------
@@ -423,7 +427,7 @@ public struct Certificate {
   }
 
   // the engine's handle of the credentials now in force; 0 once closed
-  fun current(): i64 = this.creds.number.load()
+  fun current(): i64 => this.creds.number.load()
 
   implement Closeable {
     /// Releases the key. A listener that still uses this certificate
@@ -465,7 +469,7 @@ public struct Listener {
 
   /// The port the listener is bound to — the system's choice when `listen`
   /// was asked for port 0.
-  public fun port(): i64 = this.inner.port()
+  public fun port(): i64 => this.inner.port()
 
   /// The next connection; suspends until a client arrives.
   public fun accept(): Conn suspends throws IoError {
@@ -488,12 +492,12 @@ public fun listen(cert: Certificate, host: string = "127.0.0.1", port: i64 = 0):
 }
 
 /// Secures the connections of a listener that already exists.
-public fun wrap(listener: net.Listener, cert: Certificate): Listener = Listener(inner: listener, cert)
+public fun wrap(listener: net.Listener, cert: Certificate): Listener => Listener(inner: listener, cert)
 
 /// Secures a connection that was accepted elsewhere — what `http.serve(tls:)`
 /// does with each one. The handshake runs on its first read or write; the
 /// `Conn` owns `stream`, and a failure here closes it.
-public fun accept(stream: io.Stream, cert: Certificate, address: string = ""): Conn throws IoError = try serverConn(stream, cert, address)
+public fun accept(stream: io.Stream, cert: Certificate, address: string = ""): Conn throws IoError => try serverConn(stream, cert, address)
 
 // a session for a connection the listener accepted; its handshake is still to run
 fun serverConn(stream: io.Stream, cert: Certificate, address: string = ""): Conn throws IoError {
@@ -532,7 +536,7 @@ public struct CertificateReloader {
   task: Task<()>
 
   /// The certificate this reloader keeps current; give it to `listen`.
-  public fun certificate(): Certificate = this.cert
+  public fun certificate(): Certificate => this.cert
 
   implement Closeable {
     fun close() {

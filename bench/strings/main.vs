@@ -1,5 +1,6 @@
 // Text: build a 200k-item string with a StringBuilder, then split it.
-use io { println }, time
+use io { println }
+use time
 
 fun main() {
   val sw = time.Stopwatch.start()

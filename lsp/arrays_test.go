@@ -10,7 +10,7 @@ import (
 
 const arraysSrc = `use io
 
-fun sum<const N: i64>(a: Array<i64, N>): i64 = a.fold(0, (s, x) => s + x)
+fun sum<const N: i64>(a: Array<i64, N>): i64 => a.fold(0, (s, x) => s + x)
 
 fun main() {
   var a: Array<i64, 3> = [1, 2, 3]

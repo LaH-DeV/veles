@@ -144,7 +144,7 @@ type FuncTemplate struct {
 	// across rounds until it reaches a fixpoint (D45).
 	InferError types.Type
 	InferDone  bool
-	// InferRet marks `fun f(...) = expr` with no declared return type; the
+	// InferRet marks `fun f(...) => expr` with no declared return type; the
 	// type is inferred from the body when the function is instantiated.
 	InferRet bool
 	// ValueUsed marks a function turned into a value (`run(plain)`); its

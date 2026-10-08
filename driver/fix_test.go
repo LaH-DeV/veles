@@ -24,7 +24,7 @@ trait Show {
 }
 
 implement Show for A {
-  fun show(): string = "a"
+  fun show(): string => "a"
 }
 
 fun main() {
@@ -49,7 +49,7 @@ fun main() {
 sealed trait S
 struct A : S {
   implement Show {
-    fun show(): string = "a"
+    fun show(): string => "a"
   }
 }
 struct B : S { }
@@ -131,7 +131,7 @@ fun main() {
 func TestCheckFixParseErrors(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")
-	src := "use io\n\nstruct C {\n  var n: i64 = 0\n  fun bump() {\n    self.n += 1\n  }\n  fun show(): string = \"${self.n} $self\"\n}\n\nfun main() {\n  val c = C()\n  c.bump()\n  io.println(c.show())\n}\n"
+	src := "use io\n\nstruct C {\n  var n: i64 = 0\n  fun bump() {\n    self.n += 1\n  }\n  fun show(): string => \"${self.n} $self\"\n}\n\nfun main() {\n  val c = C()\n  c.bump()\n  io.println(c.show())\n}\n"
 	os.WriteFile(path, []byte(src), 0o644)
 	if code := Run(Options{Path: dir, Mode: "check", Fix: true}); code != 0 {
 		data, _ := os.ReadFile(path)
@@ -149,7 +149,7 @@ func TestCheckFixParseErrors(t *testing.T) {
 func TestCheckFixQualifiesModuleNames(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")
-	src := "/// A module doc.\n\n/// Counts things.\nfun count(v: Value, w: Value): i64 = 1\n\nfun main() {\n  val d = Depth(limit: 3)\n  io.println(\"${count(VNull(), VNull())} ${d.limit}\")\n}\n"
+	src := "/// A module doc.\n\n/// Counts things.\nfun count(v: Value, w: Value): i64 => 1\n\nfun main() {\n  val d = Depth(limit: 3)\n  io.println(\"${count(VNull(), VNull())} ${d.limit}\")\n}\n"
 	os.WriteFile(path, []byte(src), 0o644)
 	if code := Run(Options{Path: dir, Mode: "check", Fix: true}); code == 0 {
 		// `io` is not a module name the fix may guess: the run ends with it
@@ -157,7 +157,7 @@ func TestCheckFixQualifiesModuleNames(t *testing.T) {
 		t.Fatalf("expected the unknown 'io' to remain")
 	}
 	data, _ := os.ReadFile(path)
-	want := "/// A module doc.\n\nuse codec, recursion\n\n/// Counts things.\nfun count(v: codec.Value, w: codec.Value): i64 = 1\n\nfun main() {\n  val d = recursion.Depth(limit: 3)\n  io.println(\"${count(codec.VNull(), codec.VNull())} ${d.limit}\")\n}\n"
+	want := "/// A module doc.\n\nuse codec\nuse recursion\n\n/// Counts things.\nfun count(v: codec.Value, w: codec.Value): i64 => 1\n\nfun main() {\n  val d = recursion.Depth(limit: 3)\n  io.println(\"${count(codec.VNull(), codec.VNull())} ${d.limit}\")\n}\n"
 	if string(data) != want {
 		t.Errorf("after --fix:\n%s\n--- want ---\n%s", data, want)
 	}
@@ -193,7 +193,7 @@ func TestCheckFixDerivesMissingImplements(t *testing.T) {
 		t.Fatalf("check --fix did not settle it, exit %d:\n%s", code, data)
 	}
 	data, _ := os.ReadFile(path)
-	want := "use io, json\n\nstruct Point {\n  x: i64\n  y: i64\n  implement Encodable\n}\n\nstruct Tag {\n  name: string\n  implement Comparable\n  implement Encodable\n}\n\nfun main() {\n  io.println(json.encode(Point(x: 1, y: 2)) ?? \"\")\n  val tags = [Tag(name: \"b\"), Tag(name: \"a\")].sorted()\n  io.println(json.encode(tags) ?? \"\")\n}\n"
+	want := "use io\nuse json\n\nstruct Point {\n  x: i64\n  y: i64\n  implement Encodable\n}\n\nstruct Tag {\n  name: string\n  implement Comparable\n  implement Encodable\n}\n\nfun main() {\n  io.println(json.encode(Point(x: 1, y: 2)) ?? \"\")\n  val tags = [Tag(name: \"b\"), Tag(name: \"a\")].sorted()\n  io.println(json.encode(tags) ?? \"\")\n}\n"
 	if string(data) != want {
 		t.Errorf("after --fix:\n%s\n--- want ---\n%s", data, want)
 	}

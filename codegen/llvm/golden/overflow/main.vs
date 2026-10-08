@@ -5,19 +5,19 @@
 // ends at the type's maximum.
 use io
 
-fun add(a: i8, b: i8): i8 = a + b
-fun sub(a: u8, b: u8): u8 = a - b
-fun mul(a: i64, b: i64): i64 = a * b
-fun neg(a: i32): i32 = -a
-fun quot(a: i64, b: i64): i64 = a / b
-fun absolute(a: i16): i16 = a.abs()
+fun add(a: i8, b: i8): i8 => a + b
+fun sub(a: u8, b: u8): u8 => a - b
+fun mul(a: i64, b: i64): i64 => a * b
+fun neg(a: i32): i32 => -a
+fun quot(a: i64, b: i64): i64 => a / b
+fun absolute(a: i16): i16 => a.abs()
 fun bump(a: i8): i8 {
   var x = a
   x += 1
   x
 }
-fun wrapped(a: i8, b: i8): i8 = a +% b
-fun narrow(x: i64): u8 = x.wrapU8()
+fun wrapped(a: i8, b: i8): i8 => a +% b
+fun narrow(x: i64): u8 => x.wrapU8()
 
 fun sumUpTo(hi: u8): i64 {
   var n = 0
@@ -36,7 +36,7 @@ fun edges(lo: i8, hi: i8, top: u8) {
   io.println("reversed then step = ${(lo..hi).reversed().step(100).toList()}, step then reversed = ${(lo..hi).step(100).reversed().toList()}")
 }
 
-fun call(f: sendable fun(): i64): i64 = f()
+fun call(f: sendable fun(): i64): i64 => f()
 
 fun attempt(what: string, f: sendable fun(): i64) {
   val outcome = gather {

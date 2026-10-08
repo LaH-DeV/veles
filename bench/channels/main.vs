@@ -1,5 +1,6 @@
 // Tasks: 200k values through a channel between two tasks.
-use io { println }, time
+use io { println }
+use time
 
 fun produce(ch: Channel<i64>) {
   loop (i in 0..<200000) ch.send(i)

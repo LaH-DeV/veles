@@ -2,9 +2,9 @@
 // what is taken literally, and that a bad line is a problem the rest of the
 // file survives.
 
-test fun vars(text: string): Map<string, string> = parseDotenv(text).vars
+test fun vars(text: string): Map<string, string> => parseDotenv(text).vars
 
-test fun problems(text: string): List<string> = parseDotenv(text).problems
+test fun problems(text: string): List<string> => parseDotenv(text).problems
 
 test "names, values, comments and blank lines" {
   val got = vars("# settings\n\nPORT=8080\n  NAME = my app  \nexport MODE=fast\nEMPTY=\n")

@@ -36,10 +36,10 @@ both have such a type, and both can be passed, stored and returned:
 ```veles
 use io
 
-fun apply(f: fun(i64): i64, x: i64): i64 = f(x)
-fun double(x: i64): i64 = x * 2
+fun apply(f: fun(i64): i64, x: i64): i64 => f(x)
+fun double(x: i64): i64 => x * 2
 
-fun compose(f: fun(i64): i64, g: fun(i64): i64): fun(i64): i64 = x => g(f(x))
+fun compose(f: fun(i64): i64, g: fun(i64): i64): fun(i64): i64 => x => g(f(x))
 
 fun main() {
   io.println("${apply(double, 21)} ${apply(x => x + 1, 1)}")
@@ -158,7 +158,7 @@ takes a callback and may fail *because the callback does* is written
 
 ```veles
 // fragment
-fun apply<T, R, E>(x: T, f: fun(T): R throws E): R throws E = try f(x)
+fun apply<T, R, E>(x: T, f: fun(T): R throws E): R throws E => try f(x)
 ```
 
 `E` is inferred at each call from the lambda: `apply(2, n => n * 2)` is an
@@ -182,7 +182,7 @@ error NotANumber {
   text: string
 }
 
-fun parseAll(words: List<string>): List<i64> throws NotANumber =
+fun parseAll(words: List<string>): List<i64> throws NotANumber =>
   try words.map(w => w.toInt() ?: throw NotANumber(text: w))
 
 fun main() {
@@ -254,7 +254,7 @@ struct Countdown {
 
   implement Iterable {
     type Iter = CountdownIter
-    fun iterator(): CountdownIter = CountdownIter(current: this.from)
+    fun iterator(): CountdownIter => CountdownIter(current: this.from)
   }
 }
 

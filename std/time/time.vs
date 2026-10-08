@@ -41,12 +41,12 @@ extern "C" {
 }
 
 /// What time it is, now.
-public fun now(): Timestamp = Timestamp.now()
+public fun now(): Timestamp => Timestamp.now()
 
 /// A raw monotonic reading in nanoseconds. The value means nothing; only
 /// differences do. `Stopwatch` and `Deadline` are what this is for, and
 /// what almost every caller should use instead.
-public fun monotonicNanos(): i64 = unsafe {
+public fun monotonicNanos(): i64 => unsafe {
   // SAFETY: a clock query with no arguments
   veles_time_monotonic_ns()
 }
@@ -61,7 +61,7 @@ const offsetUnknown: i64 = 100000
 const referenceYear: i64 = 2019
 const leapReferenceYear: i64 = 2020
 
-fun hostOffsetMinutes(secs: i64): i64 = unsafe {
+fun hostOffsetMinutes(secs: i64): i64 => unsafe {
   // SAFETY: takes a number and returns one; localtime_r keeps nothing
   veles_time_local_offset_minutes(secs)
 }
@@ -83,7 +83,7 @@ fun floorDiv(a: i64, b: i64): i64 {
 /// because that product overflows for an `a` near the end of the i64 range
 /// — which is exactly where a `Timestamp` built from raw microseconds can
 /// sit. `a % b` is already smaller than `b`, so nothing here can.
-fun floorMod(a: i64, b: i64): i64 = ((a % b) + b) % b
+fun floorMod(a: i64, b: i64): i64 => ((a % b) + b) % b
 
 // ---- the civil calendar ---------------------------------------------------
 
@@ -145,11 +145,11 @@ fun instantOf(d: DateTime): Timestamp? {
 }
 
 /// True for a proleptic Gregorian leap year.
-public fun isLeapYear(year: i64): bool =
+public fun isLeapYear(year: i64): bool =>
   year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
 
 /// How many days the month has, 1..12; 0 for a month outside that range.
-public fun daysInMonth(year: i64, month: i64): i64 = when (month) {
+public fun daysInMonth(year: i64, month: i64): i64 => when (month) {
   1    => 31
   2    => if (isLeapYear(year)) 29 else 28
   3    => 31
@@ -184,50 +184,50 @@ public struct Timestamp {
 
   /// What time it is, from the host's wall clock. It can go backwards
   /// between two calls; measure with `Stopwatch`, not with two of these.
-  public static fun now(): Timestamp = Timestamp(us: unsafe {
+  public static fun now(): Timestamp => Timestamp(us: unsafe {
     // SAFETY: a clock query with no arguments
     veles_time_now_us()
   })
 
-  public static fun ofMicros(us: i64): Timestamp = Timestamp(us)
-  public static fun ofMillis(ms: i64): Timestamp = Timestamp(us: ms * 1000)
-  public static fun ofSeconds(s: i64): Timestamp = Timestamp(us: s * 1000000)
+  public static fun ofMicros(us: i64): Timestamp => Timestamp(us)
+  public static fun ofMillis(ms: i64): Timestamp => Timestamp(us: ms * 1000)
+  public static fun ofSeconds(s: i64): Timestamp => Timestamp(us: s * 1000000)
 
   /// Rounded **down**, not toward zero: these name the second, millisecond
   /// or microsecond that contains the instant, which is what a calendar
   /// conversion and a `Last-Modified` header both need, and which keeps
   /// working before 1970.
-  public fun toMicros(): i64 = this.us
-  public fun toMillis(): i64 = floorDiv(this.us, 1000)
-  public fun toSeconds(): i64 = floorDiv(this.us, 1000000)
+  public fun toMicros(): i64 => this.us
+  public fun toMillis(): i64 => floorDiv(this.us, 1000)
+  public fun toSeconds(): i64 => floorDiv(this.us, 1000000)
 
   /// The microsecond within the second, always 0..999999.
-  public fun subsecondMicros(): i64 = floorMod(this.us, 1000000)
+  public fun subsecondMicros(): i64 => floorMod(this.us, 1000000)
 
   // `t + d` and `t - d` (D71). The difference of two instants is a
   // `Duration` and has its own names, `since` and `until`, because the
   // operator can only mean one thing per type.
   implement Addable {
-    fun plus(other: Duration): Timestamp = Timestamp(us: this.us + other.toMicros())
+    fun plus(other: Duration): Timestamp => Timestamp(us: this.us + other.toMicros())
   }
   implement Subtractable {
-    fun minus(other: Duration): Timestamp = Timestamp(us: this.us - other.toMicros())
+    fun minus(other: Duration): Timestamp => Timestamp(us: this.us - other.toMicros())
   }
 
   /// How long after `earlier` this instant is; negative when it is before.
-  public fun since(earlier: Timestamp): Duration =
+  public fun since(earlier: Timestamp): Duration =>
     Duration.micros(this.us - earlier.us)
 
   /// How long until `later`; negative when it has passed.
-  public fun until(later: Timestamp): Duration =
+  public fun until(later: Timestamp): Duration =>
     Duration.micros(later.us - this.us)
 
   /// The calendar fields in UTC.
-  public fun utc(): DateTime = this.at(Offset.utc)
+  public fun utc(): DateTime => this.at(Offset.utc)
 
   /// The calendar fields in the host's time zone, at its offset for *this*
   /// instant — so a summer timestamp reads in summer time.
-  public fun local(): DateTime = this.at(Offset.local(at: this))
+  public fun local(): DateTime => this.at(Offset.local(at: this))
 
   /// The calendar fields at a fixed offset from UTC.
   public fun at(offset: Offset): DateTime {
@@ -250,19 +250,19 @@ public struct Timestamp {
   }
 
   implement Comparable {
-    fun compareTo(other: Timestamp): Ordering = this.us.compareTo(other.us)
+    fun compareTo(other: Timestamp): Ordering => this.us.compareTo(other.us)
   }
 
   implement Display {
     /// RFC 3339 in UTC: `2026-09-24T09:15:02.481Z`. The fraction is written
     /// only when there is one, to three digits when the microseconds are a
     /// whole millisecond and to six otherwise.
-    fun toString(): string = this.utc().toString()
+    fun toString(): string => this.utc().toString()
   }
 
   implement Parsable {
     /// RFC 3339; see `time.parseRfc3339` for exactly what is accepted.
-    static fun parse(s: string): Timestamp? = parseRfc3339(s)
+    static fun parse(s: string): Timestamp? => parseRfc3339(s)
   }
 
   implement Encodable {
@@ -280,7 +280,7 @@ public struct Timestamp {
       Timestamp.epoch
     }
 
-    override static fun schema(format: string, keys: codec.KeyStyle): codec.Schema =
+    override static fun schema(format: string, keys: codec.KeyStyle): codec.Schema =>
       codec.Schema.leaf(codec.SchemaKind.Text, "an RFC 3339 timestamp like 2026-10-04T12:00:00Z")
   }
 }
@@ -301,7 +301,7 @@ public struct Offset {
   public static val utc: Offset = Offset(mins: 0)
 
   /// `null` beyond ±18:00, the widest range the tz database allows.
-  public static fun ofMinutes(m: i64): Offset? =
+  public static fun ofMinutes(m: i64): Offset? =>
     if (m < -1080 || m > 1080) null else Offset(mins: m)
 
   /// `Offset.of(2)` is `+02:00`, `Offset.of(-5, 30)` is `-05:30`: the sign
@@ -341,13 +341,13 @@ public struct Offset {
   }
 
   /// Minutes east of UTC; negative west of it.
-  public fun totalMinutes(): i64 = this.mins
+  public fun totalMinutes(): i64 => this.mins
 
   /// The same offset as a length of time.
-  public fun duration(): Duration = Duration.minutes(this.mins)
+  public fun duration(): Duration => Duration.minutes(this.mins)
 
   implement Comparable {
-    fun compareTo(other: Offset): Ordering = this.mins.compareTo(other.mins)
+    fun compareTo(other: Offset): Ordering => this.mins.compareTo(other.mins)
   }
 
   implement Display {
@@ -362,7 +362,7 @@ public struct Offset {
 
   implement Parsable {
     /// `Z`, `z`, `+02:00`, `-05:30` — the RFC 3339 spellings and no others.
-    static fun parse(s: string): Offset? = parseOffset(s)
+    static fun parse(s: string): Offset? => parseOffset(s)
   }
 }
 
@@ -416,33 +416,33 @@ public struct DateTime {
   /// writing `year: 999999999`, but the answer then does not exist. Every
   /// parser here checks before it builds, so text from outside reaches a
   /// `null`, never this.
-  public fun timestamp(): Timestamp = instantOf(this)
+  public fun timestamp(): Timestamp => instantOf(this)
     ?: panic("${this.year}-${this.month}-${this.day} is outside the range a Timestamp holds")
 
   /// The same instant with every field brought back into range.
-  public fun normalized(): DateTime = this.timestamp().at(this.offset)
+  public fun normalized(): DateTime => this.timestamp().at(this.offset)
 
   /// The day of the week (D77); `.value` is its ISO number, 1 for Monday.
-  public fun weekday(): Weekday =
+  public fun weekday(): Weekday =>
     Weekday.fromValue(floorMod(daysFromCivil(this.year, this.month, this.day) + 3, 7) + 1) ?: Weekday.Monday
 
   /// 1 for the first of January.
-  public fun yearDay(): i64 =
+  public fun yearDay(): i64 =>
     daysFromCivil(this.year, this.month, this.day) - daysFromCivil(this.year, 1, 1) + 1
 
   /// The same wall-clock instant told at another offset.
-  public fun at(offset: Offset): DateTime = this.timestamp().at(offset)
+  public fun at(offset: Offset): DateTime => this.timestamp().at(offset)
 
   /// `2026-09-24`
-  public fun date(): string = "${year4(this.year)}-${pad(this.month, 2)}-${pad(this.day, 2)}"
+  public fun date(): string => "${year4(this.year)}-${pad(this.month, 2)}-${pad(this.day, 2)}"
 
   /// `09:15:02`, without the fraction.
-  public fun time(): string = "${pad(this.hour, 2)}:${pad(this.minute, 2)}:${pad(this.second, 2)}"
+  public fun time(): string => "${pad(this.hour, 2)}:${pad(this.minute, 2)}:${pad(this.second, 2)}"
 
   implement Comparable {
     /// By the instant, so two `DateTime`s at different offsets order by
     /// when they happened, not by how they read.
-    fun compareTo(other: DateTime): Ordering =
+    fun compareTo(other: DateTime): Ordering =>
       this.timestamp().compareTo(other.timestamp())
   }
 
@@ -450,11 +450,11 @@ public struct DateTime {
     /// RFC 3339: `2026-09-24T11:15:02.481+02:00`. The fraction appears only
     /// when it is not zero — three digits for a whole millisecond, six
     /// otherwise — and a zero offset is written `Z`.
-    fun toString(): string = "${this.date()}T${this.time()}${fraction(this.micros)}${this.offset}"
+    fun toString(): string => "${this.date()}T${this.time()}${fraction(this.micros)}${this.offset}"
   }
 
   implement Parsable {
-    static fun parse(s: string): DateTime? = parseRfc3339Fields(s)
+    static fun parse(s: string): DateTime? => parseRfc3339Fields(s)
   }
 }
 
@@ -466,7 +466,7 @@ fun fraction(micros: i64): string {
   ".${pad(micros, 6)}"
 }
 
-fun pad(n: i64, width: i64): string = n.toString().padStart(width, "0")
+fun pad(n: i64, width: i64): string => n.toString().padStart(width, "0")
 
 /// Four digits for a year RFC 3339 can spell, and ISO 8601's expanded form
 /// (`+271821`, `-000001`) for one it cannot — so that `parse(t.toString())`
@@ -484,7 +484,7 @@ fun year4(y: i64): string {
 
 // ---- RFC 3339 -------------------------------------------------------------
 
-fun isDigit(b: u8): bool = b >= '0' && b <= '9'
+fun isDigit(b: u8): bool => b >= '0' && b <= '9'
 
 /// The number spelled by `count` digits at `i`, or `null` when they are not
 /// all digits or run past the end.
@@ -499,7 +499,7 @@ fun digitsAt(s: string, i: i64, count: i64): i64? {
   n
 }
 
-fun twoDigits(s: string, i: i64): i64? = digitsAt(s, i, 2)
+fun twoDigits(s: string, i: i64): i64? => digitsAt(s, i, 2)
 
 /// An RFC 3339 timestamp as its calendar fields, or `null`.
 ///
@@ -590,11 +590,11 @@ public fun parseRfc3339Fields(s: string): DateTime? {
 /// An RFC 3339 timestamp as an instant, or `null`. See
 /// `parseRfc3339Fields` for what is accepted; this discards the offset the
 /// text was written at, which is what a `Timestamp` is.
-public fun parseRfc3339(s: string): Timestamp? =
+public fun parseRfc3339(s: string): Timestamp? =>
   (parseRfc3339Fields(s) ?: return null).timestamp()
 
 /// `2026-09-24T09:15:02.481Z` — RFC 3339 in UTC.
-public fun formatRfc3339(t: Timestamp): string = t.utc().toString()
+public fun formatRfc3339(t: Timestamp): string => t.utc().toString()
 
 // ---- HTTP-date ------------------------------------------------------------
 
@@ -654,7 +654,7 @@ fun fieldsOf(s: string): List<string> {
   out.toList()
 }
 
-fun isHttpSpace(b: u8): bool = b == ' ' || b == '\t'
+fun isHttpSpace(b: u8): bool => b == ' ' || b == '\t'
 
 fun monthIndex(name: string): i64 {
   loop (i in 0..<monthNames.len()) {
@@ -788,10 +788,10 @@ public struct Stopwatch {
   private var startedAt: i64
 
   /// A stopwatch running from now.
-  public static fun start(): Stopwatch = Stopwatch(startedAt: monotonicNanos())
+  public static fun start(): Stopwatch => Stopwatch(startedAt: monotonicNanos())
 
   /// How long it has been running.
-  public fun elapsed(): Duration = Duration.nanos(monotonicNanos() - this.startedAt)
+  public fun elapsed(): Duration => Duration.nanos(monotonicNanos() - this.startedAt)
 
   /// Starts over.
   public fun reset() {
@@ -818,7 +818,7 @@ public struct Deadline {
   private atNanos: i64
 
   /// A deadline `d` from now.
-  public static fun after(d: Duration): Deadline =
+  public static fun after(d: Duration): Deadline =>
     Deadline(atNanos: monotonicNanos() + d.toNanos())
 
   /// How long is left, never negative: `Duration.zero` once it has passed.
@@ -828,17 +828,17 @@ public struct Deadline {
   }
 
   /// Whether the time is up.
-  public fun expired(): bool = monotonicNanos() >= this.atNanos
+  public fun expired(): bool => monotonicNanos() >= this.atNanos
 
   /// The same deadline, `d` later.
-  public fun extend(d: Duration): Deadline = Deadline(atNanos: this.atNanos + d.toNanos())
+  public fun extend(d: Duration): Deadline => Deadline(atNanos: this.atNanos + d.toNanos())
 
   /// Whichever of the two comes first — a request deadline against a
   /// configured one.
-  public fun earlier(other: Deadline): Deadline =
+  public fun earlier(other: Deadline): Deadline =>
     if (this.atNanos <= other.atNanos) this else other
 
   implement Comparable {
-    fun compareTo(other: Deadline): Ordering = this.atNanos.compareTo(other.atNanos)
+    fun compareTo(other: Deadline): Ordering => this.atNanos.compareTo(other.atNanos)
   }
 }

@@ -20,7 +20,8 @@ holds one — it ends with the block, however the block ends — and the span yo
 start while another is running becomes its child:
 
 ```veles
-use io { println }, otel
+use io { println }
+use otel
 
 struct Tally {
   spans: Atomic<i64> = Atomic(value: 0)

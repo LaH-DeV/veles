@@ -12,18 +12,18 @@ func TestAddMissingMethodsFix(t *testing.T) {
 	for _, tc := range []struct{ name, src, want string }{
 		{
 			"inline, one there already",
-			"trait Shape {\n  fun area(): f64\n  fun name(): string\n  fun scale(by: f64): Shape\n}\nstruct Sq {\n  side: f64\n  implement Shape {\n    fun area(): f64 = this.side * this.side\n  }\n}\nfun main() { }\n",
-			"trait Shape {\n  fun area(): f64\n  fun name(): string\n  fun scale(by: f64): Shape\n}\nstruct Sq {\n  side: f64\n  implement Shape {\n    fun area(): f64 = this.side * this.side\n    fun name(): string = panic(\"'name' is not written yet\")\n    fun scale(by: f64): Shape = panic(\"'scale' is not written yet\")\n  }\n}\nfun main() { }\n",
+			"trait Shape {\n  fun area(): f64\n  fun name(): string\n  fun scale(by: f64): Shape\n}\nstruct Sq {\n  side: f64\n  implement Shape {\n    fun area(): f64 => this.side * this.side\n  }\n}\nfun main() { }\n",
+			"trait Shape {\n  fun area(): f64\n  fun name(): string\n  fun scale(by: f64): Shape\n}\nstruct Sq {\n  side: f64\n  implement Shape {\n    fun area(): f64 => this.side * this.side\n    fun name(): string => panic(\"'name' is not written yet\")\n    fun scale(by: f64): Shape => panic(\"'scale' is not written yet\")\n  }\n}\nfun main() { }\n",
 		},
 		{
 			"top level, empty on one line",
 			"trait Named {\n  fun name(): string\n}\nstruct Empty {\n  n: i64\n}\nimplement Named for Empty { }\nfun main() { }\n",
-			"trait Named {\n  fun name(): string\n}\nstruct Empty {\n  n: i64\n}\nimplement Named for Empty {\n  fun name(): string = panic(\"'name' is not written yet\")\n}\nfun main() { }\n",
+			"trait Named {\n  fun name(): string\n}\nstruct Empty {\n  n: i64\n}\nimplement Named for Empty {\n  fun name(): string => panic(\"'name' is not written yet\")\n}\nfun main() { }\n",
 		},
 		{
 			"a sealed variant with no implement",
 			"sealed trait Shape {\n  fun area(): i64\n  fun name(): string\n}\nstruct Sq : Shape {\n  side: i64\n}\nfun main() { }\n",
-			"sealed trait Shape {\n  fun area(): i64\n  fun name(): string\n}\nstruct Sq : Shape {\n  side: i64\n  implement Shape {\n    fun area(): i64 = panic(\"'area' is not written yet\")\n    fun name(): string = panic(\"'name' is not written yet\")\n  }\n}\nfun main() { }\n",
+			"sealed trait Shape {\n  fun area(): i64\n  fun name(): string\n}\nstruct Sq : Shape {\n  side: i64\n  implement Shape {\n    fun area(): i64 => panic(\"'area' is not written yet\")\n    fun name(): string => panic(\"'name' is not written yet\")\n  }\n}\nfun main() { }\n",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

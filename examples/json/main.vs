@@ -24,7 +24,7 @@ struct JObj : Json {
 error ParseError {
   message: string
   pos:     i64
-  fun message(): string = "${this.message} at offset ${this.pos}"
+  fun message(): string => "${this.message} at offset ${this.pos}"
 }
 
 // the bytes the parser looks at: a byte literal is the u8 of one ASCII character
@@ -50,7 +50,7 @@ struct Parser {
   src:     string
   var pos: i64 = 0
 
-  static fun of(text: string): Parser = Parser(src: text)
+  static fun of(text: string): Parser => Parser(src: text)
 
   /// Parses the whole text: one value, surrounded by whitespace only.
   fun parseDocument(): Json throws ParseError {
@@ -60,9 +60,9 @@ struct Parser {
     v
   }
 
-  fun fail(message: string): ParseError = ParseError(message, pos: this.pos)
+  fun fail(message: string): ParseError => ParseError(message, pos: this.pos)
 
-  fun peek(): u8? = if (this.pos < this.src.len()) this.src.byteAt(this.pos) else null
+  fun peek(): u8? => if (this.pos < this.src.len()) this.src.byteAt(this.pos) else null
 
   fun skipSpace() {
     loop {
@@ -262,9 +262,9 @@ fun quote(s: string): string {
   sb.toString()
 }
 
-fun number(x: f64): string = if (x == x.trunc() && x.abs() < 1.0e15) "${x.toI64()}" else "$x"
+fun number(x: f64): string => if (x == x.trunc() && x.abs() < 1.0e15) "${x.toI64()}" else "$x"
 
-fun compact(v: Json): string = when (v) {
+fun compact(v: Json): string => when (v) {
   is JNull        => "null"
   is JBool(value) => "$value"
   is JNum(value)  => number(value)
@@ -290,23 +290,23 @@ fun pretty(v: Json, indent: i64 = 0): string {
 
 extend Json {
   /// The field `name` of an object, or null.
-  public fun field(name: string): Json? = when (this) {
+  public fun field(name: string): Json? => when (this) {
     is JObj(fields) => fields.get(name)
     else            => null
   }
 
   /// The element `i` of an array, or null.
-  public fun item(i: i64): Json? = when (this) {
+  public fun item(i: i64): Json? => when (this) {
     is JArr(items) => items.at(i)
     else           => null
   }
 
-  public fun asString(): string? = when (this) {
+  public fun asString(): string? => when (this) {
     is JStr(value) => value
     else           => null
   }
 
-  public fun asNumber(): f64? = when (this) {
+  public fun asNumber(): f64? => when (this) {
     is JNum(value) => value
     else           => null
   }
@@ -325,7 +325,7 @@ extend Json {
   }
 }
 
-fun depth(v: Json): i64 = when (v) {
+fun depth(v: Json): i64 => when (v) {
   is JArr(items)  => 1 + (items.map(x => depth(x)).max() ?: 0)
   is JObj(fields) => 1 + (fields.values().map(x => depth(x)).max() ?: 0)
   else            => 0

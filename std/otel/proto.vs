@@ -105,7 +105,7 @@ struct Pb {
     this.message(field, run.done())
   }
 
-  fun done(): List<u8> = this.out.toList()
+  fun done(): List<u8> => this.out.toList()
 }
 
 // ---------------------------------------------------------------------------

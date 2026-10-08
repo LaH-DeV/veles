@@ -335,6 +335,6 @@ entry:
 @.str.11 = private unnamed_addr constant [2 x i8] c"(\00"
 @.str.12 = private unnamed_addr constant [3 x i8] c", \00"
 @.str.13 = private unnamed_addr constant [2 x i8] c")\00"
-@.str.14 = private unnamed_addr constant [18 x i8] c"main.vs:7:36\00area\00"
+@.str.14 = private unnamed_addr constant [18 x i8] c"main.vs:7:37\00area\00"
 @.str.15 = private unnamed_addr constant [6 x i8] c"area \00"
-@.str.16 = private unnamed_addr constant [18 x i8] c"main.vs:29:47\00max\00"
+@.str.16 = private unnamed_addr constant [18 x i8] c"main.vs:29:48\00max\00"

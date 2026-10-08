@@ -183,10 +183,10 @@ struct Handle {
   implement Closeable {
     fun close() { io.println("close ${this.name}") }
   }
-  fun contents(): string = "<${this.name}>"
+  fun contents(): string => "<${this.name}>"
 }
 
-fun read(name: string): string = with (h = Handle(name)) { h.contents() }
+fun read(name: string): string => with (h = Handle(name)) { h.contents() }
 
 fun main() {
   val both = with (a = Handle(name: "a"), b = Handle(name: "b")) {
@@ -276,7 +276,7 @@ fun deep(i: i64): i64 {
   [10, 20].at(i) ?: panic("deep: index $i is out of range")  // the panic continues in the caller
 }
 
-fun risky(i: i64): i64 = with (a = Res(name: "a"), b = Res(name: "b")) {
+fun risky(i: i64): i64 => with (a = Res(name: "a"), b = Res(name: "b")) {
   deep(i)
 }
 
@@ -326,7 +326,8 @@ two pointers of one type, and `<` `<=` `>` `>=` order addresses. Nothing
 is checked — that is what `unsafe` means here:
 
 ```veles
-use ffi, io
+use ffi
+use io
 
 fun main() {
   val n = 5
@@ -430,7 +431,7 @@ extern "C" {
 }
 
 // x times 2 to the power `exp`, exact
-fun scaled(x: f64, exp: i32): f64 = unsafe {
+fun scaled(x: f64, exp: i32): f64 => unsafe {
   // SAFETY: ldexp takes two numbers and returns one
   ldexp(x, exp)
 }
@@ -652,7 +653,8 @@ A Veles function C can call is declared `extern "C" fun` with a body.
 `&name` is its address, of type `extern fun(...)` — a C function pointer:
 
 ```veles
-use ffi, io
+use ffi
+use io
 
 extern "C" {
   fun qsort(base: *raw u8, count: u64, size: u64, compare: extern fun(*raw u8, *raw u8): i32)
@@ -701,7 +703,8 @@ through an `extern fun` value. `examples/ffi` puts all of it together.
 `printf`, `snprintf`, and POSIX's `open` and `fcntl` (D123):
 
 ```veles
-use ffi, io
+use ffi
+use io
 
 extern "C" {
   fun snprintf(buf: *raw u8, size: u64, format: *raw u8, ...): i32

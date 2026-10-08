@@ -1,14 +1,14 @@
 // Branches, loops with labels, ranges, and `when` over values.
 use io
 
-fun classify(n: i64): string = when {
+fun classify(n: i64): string => when {
   n < 0 => "negative"
   n == 0 => "zero"
   n < 10 => "small"
   else => "large"
 }
 
-fun digits(n: i64): string = when (n) {
+fun digits(n: i64): string => when (n) {
   1 => "one"
   2, 3 => "few"
   else => "many"

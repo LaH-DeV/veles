@@ -10,7 +10,12 @@
 // test suite runs this program.
 //
 //   httpd [<dir>] [--host H] [--port N] [--check]
-use fs, http, io { println }, json, net, os
+use fs
+use http
+use io { println }
+use json
+use net
+use os
 
 error UsageError {
   message: string
@@ -73,9 +78,9 @@ struct Notes {
   private var next: i64 = 1
   private items:    MutableList<Note> = []
 
-  fun all(): List<Note> = this.items.toList()
+  fun all(): List<Note> => this.items.toList()
 
-  fun find(id: i64): Note? = this.items.find(x => x.id == id)
+  fun find(id: i64): Note? => this.items.find(x => x.id == id)
 
   /// Stores a new note with the next id.
   fun add(text: string): Note {
@@ -209,7 +214,7 @@ val limits = http.Limits(bodyBytes: 4096, headerCount: 32)
 
 // A request that is refused for its size is thousands of characters long;
 // the transcript wants the answer, not the characters.
-fun brief(s: string): string =
+fun brief(s: string): string =>
   if (s.len() <= 48) s else (s.substring(0, 24) ?: s) + "...(${s.len()} bytes)"
 
 // Header ceilings, as raw header lines: more headers than `headerCount`,

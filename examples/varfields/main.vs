@@ -13,11 +13,11 @@ struct Counter {
   }
   /// A closure over `this` keeps pointing at the same counter, so the
   /// counter is moved to the heap for it (the receiver pass, D10).
-  fun ticker(): fun(): i64 = () => {
+  fun ticker(): fun(): i64 => (() => {
     this.n += 1
     this.n
-  }
-  fun handle(): *Counter = &this
+  })
+  fun handle(): *Counter => &this
 }
 
 sealed trait Shape {
@@ -30,7 +30,7 @@ struct Circle : Shape {
     fun grow(by: f64) {
       this.r += by
     }
-    fun area(): f64 = 3.0 * this.r * this.r
+    fun area(): f64 => 3.0 * this.r * this.r
   }
 }
 struct Square : Shape {
@@ -39,7 +39,7 @@ struct Square : Shape {
     fun grow(by: f64) {
       this.side += by
     }
-    fun area(): f64 = this.side * this.side
+    fun area(): f64 => this.side * this.side
   }
 }
 
@@ -50,7 +50,7 @@ struct Cache {
   }
   /// `this.last` is narrowed after the test and stays narrowed across a
   /// call that cannot assign it; `remember` can, so the fact is dropped.
-  fun peek(): string = if (this.last != null) "${this.last.label}=${this.last.n}" else "-"
+  fun peek(): string => if (this.last != null) "${this.last.label}=${this.last.n}" else "-"
 }
 
 fun make(): fun(): i64 {

@@ -170,9 +170,9 @@ const NAMES: Map<Kind, string> = kindNames()
 
 /// How a kind is spelled in a message: the symbol (`(`, `=>`), the quoted
 /// keyword (`'fun'`), or a word for a class of tokens (`identifier`).
-public fun kindText(k: Kind): string = NAMES.get(k) ?: "token(${k.value})"
+public fun kindText(k: Kind): string => NAMES.get(k) ?: "token(${k.value})"
 
-public fun isKeyword(k: Kind): bool = k > Kind.KeywordStart && k < Kind.KeywordEnd
+public fun isKeyword(k: Kind): bool => k > Kind.KeywordStart && k < Kind.KeywordEnd
 
 /// One piece of a string literal: a run of text with its escapes decoded,
 /// or the source of an interpolated expression and where it is.

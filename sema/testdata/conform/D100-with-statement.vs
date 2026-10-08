@@ -27,7 +27,7 @@ struct Cache {
   }
 }
 
-fun open(n: i64): Res = Res(n)
+fun open(n: i64): Res => Res(n)
 
 fun work(n: i64): i64 suspends {
   await sleep(Duration.millis(n))
@@ -42,9 +42,9 @@ fun fine(): i64 {
   a.n + b.n
 }
 
-fun useIt(r: Res): i64 = r.n
+fun useIt(r: Res): i64 => r.n
 
-fun call(f: fun(): i64): i64 = f()
+fun call(f: fun(): i64): i64 => f()
 
 fun lastStatement() {
   io.println("x")
@@ -66,7 +66,7 @@ fun blockValue(): Res {
   r // error: 'r' cannot be the value of its block
 }
 
-fun blockFormValue(): Res = with (r = open(1)) { r } // error: 'r' cannot be the value of its block
+fun blockFormValue(): Res => with (r = open(1)) { r } // error: 'r' cannot be the value of its block
 
 fun aliased(): Res {
   with r = open(1)

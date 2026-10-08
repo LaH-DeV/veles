@@ -87,7 +87,7 @@ struct Version {
     next
   }
 
-  const fun text(): string = "v${this.major}.${this.minor}"
+  const fun text(): string => "v${this.major}.${this.minor}"
 }
 
 const NEXT: Version = Version(major: 1, minor: 9).bumped().bumped()

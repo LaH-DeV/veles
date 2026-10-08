@@ -9,7 +9,8 @@
 // exercised at the end, by the only assertions that hold for every reading
 // of it.
 
-use io { println }, time
+use io { println }
+use time
 
 fun show(label: string, value: string) {
   println("  ${label.padEnd(34)} $value")

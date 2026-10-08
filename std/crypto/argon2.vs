@@ -16,7 +16,7 @@ enum Argon2Type {
   Id
 }
 
-fun argon2TypeCode(t: Argon2Type): i64 = when (t) {
+fun argon2TypeCode(t: Argon2Type): i64 => when (t) {
   Argon2Type.D  => 0
   Argon2Type.I  => 1
   Argon2Type.Id => 2
@@ -45,7 +45,7 @@ fun buildCols(): List<i64> {
 }
 
 // BlaMka: a + b + 2 * lo(a) * lo(b), where lo is the low 32 bits
-fun blamka(a: u64, b: u64): u64 = a +% b +% (((a & 0xffffffff) * (b & 0xffffffff)) << 1)
+fun blamka(a: u64, b: u64): u64 => a +% b +% (((a & 0xffffffff) * (b & 0xffffffff)) << 1)
 
 // the quarter round on four words of z, named by their indexes
 fun argonGB(z: MutableList<u64>, ia: i64, ib: i64, ic: i64, id: i64) {

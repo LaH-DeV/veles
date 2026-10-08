@@ -43,7 +43,7 @@ public enum IoKind {
 }
 
 public trait Error {
-  fun message(): string = "$this"
+  fun message(): string => "$this"
 }
 
 /// A failed operating-system call (files, processes, environment, network):
@@ -62,5 +62,5 @@ public error IoError {
   public code:   i64
   public detail: string
   public kind:   IoKind = IoKind.Other
-  fun message(): string = if (this.path.isEmpty()) this.detail else "${this.detail}: ${this.path}"
+  fun message(): string => if (this.path.isEmpty()) this.detail else "${this.detail}: ${this.path}"
 }

@@ -3,7 +3,7 @@
 
 val level = TaskLocal(fallback: 0)
 
-test fun readLevel(): i64 = level.get()
+test fun readLevel(): i64 => level.get()
 
 test fun readInChild(): i64 {
   var seen: i64 = -1

@@ -19,9 +19,9 @@ func TestDoc(t *testing.T) {
 		os.WriteFile(p, []byte(src), 0o644)
 	}
 	write("veles.toml", "[package]\nname = \"shapes\"\nversion = \"0.1.0\"\n")
-	write("lib.vs", "/// Shapes.\n\n/// A circle.\npublic struct Circle {\n  /// Edge to centre.\n  public radius: f64\n  private cache: i64 = 0\n}\n\nfun helper(): i64 = 1\n\npublic use geo\n")
-	write("geo/geo.vs", "/// Twice `x`.\npublic fun twice(x: i64): i64 = x * 2\n")
-	write("internal/x.vs", "public fun hidden(): i64 = 1\n")
+	write("lib.vs", "/// Shapes.\n\n/// A circle.\npublic struct Circle {\n  /// Edge to centre.\n  public radius: f64\n  private cache: i64 = 0\n}\n\nfun helper(): i64 => 1\n\npublic use geo\n")
+	write("geo/geo.vs", "/// Twice `x`.\npublic fun twice(x: i64): i64 => x * 2\n")
+	write("internal/x.vs", "public fun hidden(): i64 => 1\n")
 	out := filepath.Join(root, "api")
 	if code := Doc(root, out); code != 0 {
 		t.Fatalf("doc: exit %d", code)

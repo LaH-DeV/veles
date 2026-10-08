@@ -9,11 +9,11 @@ extern "C" {
   fun veles_parse_f64(s: string): f64
 }
 
-const fun isAsciiSpace(b: u8): bool = b == 32 || b == 9 || b == 10 || b == 13 || b == 12 || b == 11
+const fun isAsciiSpace(b: u8): bool => b == 32 || b == 9 || b == 10 || b == 13 || b == 12 || b == 11
 
 extend string {
   /// Byte index of the first occurrence of `part` at or after `from`, or -1.
-  public const fun indexOf(part: string, from: i64 = 0): i64 = unsafe {
+  public const fun indexOf(part: string, from: i64 = 0): i64 => unsafe {
     // SAFETY: a read-only search inside both strings' lengths; `from` is clamped
     // by the runtime
     veles_string_find(this, part, from)
@@ -49,7 +49,7 @@ extend string {
   }
 
   /// The text without leading or trailing ASCII whitespace.
-  public const fun trim(): string = this.trimStart().trimEnd()
+  public const fun trim(): string => this.trimStart().trimEnd()
 
   /// The pieces between occurrences of `sep`. An empty `sep` yields the
   /// code points; a `sep` that never occurs yields the whole text.
@@ -191,4 +191,4 @@ extend string {
   }
 }
 
-const fun isDigit(b: u8): bool = b >= 48 && b <= 57
+const fun isDigit(b: u8): bool => b >= 48 && b <= 57

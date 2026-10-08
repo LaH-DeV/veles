@@ -70,7 +70,8 @@ The inside is an `i64` of nanoseconds, so the range is ±292 years.
 ## Timestamp
 
 ```veles
-use io, time
+use io
+use time
 
 fun main() {
   val t = time.Timestamp.ofMicros(1790000000481123)
@@ -106,7 +107,9 @@ same text, so a `Timestamp` field in a derived struct is a string on the
 wire and never a number of microseconds:
 
 ```veles
-use io, json, time
+use io
+use json
+use time
 
 struct Note {
   public id: i64
@@ -139,7 +142,7 @@ number (Monday is 1) — so a `when` over it names every day or says `else`:
 
 ```veles
 // fragment
-fun isWeekend(d: time.DateTime): bool = when (d.weekday()) {
+fun isWeekend(d: time.DateTime): bool => when (d.weekday()) {
   time.Weekday.Saturday, time.Weekday.Sunday => true
   else => false
 }
@@ -162,7 +165,8 @@ or `day: 40`, and `timestamp()` carries them the way a person means them,
 which is what makes date arithmetic writable without a second API:
 
 ```veles
-use io, time
+use io
+use time
 
 fun main() {
   val d = time.DateTime(year: 2026, month: 1, day: 31)
@@ -218,7 +222,8 @@ would mean a conforming producer's timestamp failing to parse.
 client's `If-Modified-Since`:
 
 ```veles
-use io, time
+use io
+use time
 
 fun main() {
   loop (text in ["Sun, 06 Nov 1994 08:49:37 GMT",
@@ -246,7 +251,8 @@ the same function under the server's own name.
 ## Measuring, and deadlines
 
 ```veles
-use io, time
+use io
+use time
 
 fun main() {
   val sw = time.Stopwatch.start()
@@ -326,7 +332,8 @@ closes the channel (a tick already in it can still be received, as from
 any closed channel). In a `race` it is one arm among others:
 
 ```veles
-use io, time
+use io
+use time
 
 fun main() {
   with clock = time.ticker(Duration.millis(5))

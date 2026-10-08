@@ -303,7 +303,7 @@ func (c *Checker) checkBody(fn *Func) {
 		f.pushScope()
 		var body *Block
 		if f.retType == nil {
-			// `fun f(...) = expr` with no declared type: infer it (§4).
+			// `fun f(...) => expr` with no declared type: infer it (§4).
 			x := f.checkExpr(t.Decl.ExprBody, nil)
 			rt := x.Type()
 			if types.IsNever(rt) {
@@ -335,6 +335,7 @@ func (c *Checker) checkBody(fn *Func) {
 		fn.Body = body
 	} else if t.Decl.Body != nil {
 		body := f.checkBlock(t.Decl.Body, f.retType, !types.IsUnit(f.retType))
+		f.lintImplicitReturn(t.Decl.Body, body.Value, false)
 		if body.Value != nil {
 			body.Stmts = append(body.Stmts, &Return{Value: body.Value})
 			body.Value = nil

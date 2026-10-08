@@ -78,7 +78,7 @@ func FuzzParse(f *testing.F) {
 		f.Add(src)
 	}
 	f.Add("fun f() { (b & 1)")
-	f.Add("struct R {\n  fun g(): bool = (b & 1)\n")
+	f.Add("struct R {\n  fun g(): bool => (b & 1)\n")
 	f.Fuzz(func(t *testing.T, src string) {
 		withDeadline(t, 5*time.Second, "parse", func() {
 			diags := &source.Diagnostics{}

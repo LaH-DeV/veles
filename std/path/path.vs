@@ -53,7 +53,7 @@ public fun isAbsolute(p: string): bool {
   p.len() >= 3 && p.byteAt(1) == 58 && isSep(p.byteAt(2))  // drive letter, ':'
 }
 
-fun isSep(b: u8): bool = b == 47 || b == 92
+fun isSep(b: u8): bool => b == 47 || b == 92
 
 fun lastSep(p: string): i64 {
   var i = p.len() - 1

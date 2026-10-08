@@ -1,7 +1,9 @@
 // The pool and its transactions against a real PostgreSQL (see conn.test.vs: these
 // pass without doing anything when VELES_TEST_PG_URL is not set). Each test makes
 // its own table, named by a random suffix, so tests may run side by side.
-use crypto, io, time
+use crypto
+use io
+use time
 
 struct Account {
   id:       i64
@@ -18,7 +20,7 @@ struct Count {
 }
 
 // a table name no other test uses
-test fun tableName(): string = "veles_t_" + crypto.randomBytes(6).map(b => (if (b < 16) "0" else "") + b.toI64().toString(radix: 16)).join("")
+test fun tableName(): string => "veles_t_" + crypto.randomBytes(6).map(b => (if (b < 16) "0" else "") + b.toI64().toString(radix: 16)).join("")
 
 test fun createAccounts(pool: Pool, table: Sql) suspends throws DbError {
   val _ = try pool.exec(sql"create table ${table} (id bigserial primary key, owner text not null unique, balance bigint not null default 0, note text, opened_at timestamptz not null default now())")

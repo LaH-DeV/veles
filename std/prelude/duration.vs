@@ -42,13 +42,13 @@ public struct Duration {
   /// `isZero` reports.
   public static val zero: Duration = Duration(ns: 0)
 
-  public static const fun nanos(n: i64): Duration = Duration(ns: n)
-  public static const fun micros(n: i64): Duration = Duration(ns: n * 1000)
-  public static const fun millis(n: i64): Duration = Duration(ns: n * 1000000)
-  public static const fun seconds(n: i64): Duration = Duration(ns: n * 1000000000)
-  public static const fun minutes(n: i64): Duration = Duration(ns: n * 60000000000)
-  public static const fun hours(n: i64): Duration = Duration(ns: n * 3600000000000)
-  public static const fun days(n: i64): Duration = Duration(ns: n * 86400000000000)
+  public static const fun nanos(n: i64): Duration => Duration(ns: n)
+  public static const fun micros(n: i64): Duration => Duration(ns: n * 1000)
+  public static const fun millis(n: i64): Duration => Duration(ns: n * 1000000)
+  public static const fun seconds(n: i64): Duration => Duration(ns: n * 1000000000)
+  public static const fun minutes(n: i64): Duration => Duration(ns: n * 60000000000)
+  public static const fun hours(n: i64): Duration => Duration(ns: n * 3600000000000)
+  public static const fun days(n: i64): Duration => Duration(ns: n * 86400000000000)
 
   /// A fractional number of seconds — `Duration.ofSeconds(0.25)`. The
   /// product is rounded to the nearest nanosecond; `seconds` is the exact
@@ -60,72 +60,72 @@ public struct Duration {
   }
 
   /// The whole nanoseconds. Every other accessor is derived from this one.
-  public const fun toNanos(): i64 = this.ns
+  public const fun toNanos(): i64 => this.ns
 
   /// Truncated toward zero, so `Duration.nanos(-1500).toMicros()` is -1.
-  public const fun toMicros(): i64 = this.ns / 1000
-  public const fun toMillis(): i64 = this.ns / 1000000
-  public const fun toSeconds(): i64 = this.ns / 1000000000
-  public const fun toMinutes(): i64 = this.ns / 60000000000
-  public const fun toHours(): i64 = this.ns / 3600000000000
-  public const fun toDays(): i64 = this.ns / 86400000000000
+  public const fun toMicros(): i64 => this.ns / 1000
+  public const fun toMillis(): i64 => this.ns / 1000000
+  public const fun toSeconds(): i64 => this.ns / 1000000000
+  public const fun toMinutes(): i64 => this.ns / 60000000000
+  public const fun toHours(): i64 => this.ns / 3600000000000
+  public const fun toDays(): i64 => this.ns / 86400000000000
 
   /// Seconds with the fraction kept — for a rate, a ratio or a report.
   /// `toSeconds()` is the truncating one.
-  public const fun asSeconds(): f64 = (this.ns.toF64()) / 1000000000.0
+  public const fun asSeconds(): f64 => (this.ns.toF64()) / 1000000000.0
 
   /// Milliseconds with the fraction kept.
-  public const fun asMillis(): f64 = (this.ns.toF64()) / 1000000.0
+  public const fun asMillis(): f64 => (this.ns.toF64()) / 1000000.0
 
   // The operators (D71): `a + b`, `a - b`, `d * 3`, `d / 2`, `-d`. Each
   // overflows as the i64 underneath does — a panic, never a wrap.
   implement Addable {
-    const fun plus(other: Duration): Duration = Duration(ns: this.ns + other.ns)
+    const fun plus(other: Duration): Duration => Duration(ns: this.ns + other.ns)
   }
   implement Subtractable {
-    const fun minus(other: Duration): Duration = Duration(ns: this.ns - other.ns)
+    const fun minus(other: Duration): Duration => Duration(ns: this.ns - other.ns)
   }
   implement Multipliable {
-    const fun times(other: i64): Duration = Duration(ns: this.ns * other)
+    const fun times(other: i64): Duration => Duration(ns: this.ns * other)
   }
   implement Divisible {
     /// Truncated toward zero, as integer division is; `d / 0` panics for
     /// the same reason `1 / 0` does.
-    const fun dividedBy(other: i64): Duration = Duration(ns: this.ns / other)
+    const fun dividedBy(other: i64): Duration => Duration(ns: this.ns / other)
   }
   implement Negatable {
-    const fun negate(): Duration = Duration(ns: 0 - this.ns)
+    const fun negate(): Duration => Duration(ns: 0 - this.ns)
   }
 
   /// How many times `other` fits in this one, truncated. `Duration.zero`
   /// divides nothing and panics.
-  public const fun over(other: Duration): i64 = this.ns / other.ns
+  public const fun over(other: Duration): i64 => this.ns / other.ns
 
   /// The length without its sign. The single most negative `Duration` has no
   /// positive counterpart, so it saturates at the largest one rather than
   /// overflowing — the same answer Go gives.
-  public const fun abs(): Duration =
+  public const fun abs(): Duration =>
     if (this.ns >= 0) this
     else if (this.ns + 1 == 0 - nanosMax) Duration(ns: nanosMax)
     else Duration(ns: 0 - this.ns)
 
-  public const fun isZero(): bool = this.ns == 0
-  public const fun isNegative(): bool = this.ns < 0
+  public const fun isZero(): bool => this.ns == 0
+  public const fun isNegative(): bool => this.ns < 0
 
   /// The shorter of the two — what a caller writes when a deadline and a
   /// configured limit both apply.
-  public const fun min(other: Duration): Duration = if (this.ns <= other.ns) this else other
+  public const fun min(other: Duration): Duration => if (this.ns <= other.ns) this else other
 
   /// The longer of the two.
-  public const fun max(other: Duration): Duration = if (this.ns >= other.ns) this else other
+  public const fun max(other: Duration): Duration => if (this.ns >= other.ns) this else other
 
   implement Comparable {
-    const fun compareTo(other: Duration): Ordering = this.ns.compareTo(other.ns)
+    const fun compareTo(other: Duration): Ordering => this.ns.compareTo(other.ns)
   }
 
   implement Default {
     /// `Duration.zero` (D119).
-    static fun default(): Duration = Duration.zero
+    static fun default(): Duration => Duration.zero
   }
 
   implement Display {
@@ -177,7 +177,7 @@ public struct Duration {
     /// of those, a fraction finer than a nanosecond, or a total that does
     /// not fit. A bare `0` is the one number allowed without a unit, because
     /// zero has no unit.
-    static const fun parse(s: string): Duration? = parseDuration(s)
+    static const fun parse(s: string): Duration? => parseDuration(s)
   }
 
   /// On the wire in the format's `DurationStyle` — `"90.5s"` unless it
@@ -244,7 +244,7 @@ public struct Duration {
       }
     }
 
-    override static fun schema(format: string, keys: KeyStyle): Schema =
+    override static fun schema(format: string, keys: KeyStyle): Schema =>
       Schema.leaf(SchemaKind.Text, "a duration like 30s, 5m or 1h30m")
   }
 }
@@ -363,7 +363,7 @@ const fun decimal(whole: i64, frac: i64, digits: i64): string {
 }
 
 /// Nanoseconds in one of the units `Duration.parse` accepts, or -1.
-const fun unitNanos(u: string): i64 = when (u) {
+const fun unitNanos(u: string): i64 => when (u) {
   "ns" => 1
   "us" => 1000
   "µs" => 1000
@@ -375,7 +375,7 @@ const fun unitNanos(u: string): i64 = when (u) {
   else => -1
 }
 
-const fun isAsciiDigit(b: u8): bool = b >= '0' && b <= '9'
+const fun isAsciiDigit(b: u8): bool => b >= '0' && b <= '9'
 
 /// The body of `Duration.parse`; see its documentation for the grammar.
 const fun parseDuration(s: string): Duration? {

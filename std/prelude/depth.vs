@@ -29,7 +29,7 @@ public const maxRecursionDepth: i64 = 1000
 /// reached — `nesting deeper than 64` — so the wording is one sentence and
 /// not five. The caller wraps it in whatever its own errors carry: a byte
 /// offset, a field path, a source span.
-public fun tooDeepMessage(limit: i64): string = "nesting deeper than $limit"
+public fun tooDeepMessage(limit: i64): string => "nesting deeper than $limit"
 
 /// How deep a recursive walk has gone, and how deep it may go.
 ///
@@ -78,11 +78,11 @@ public struct Depth {
   }
 
   /// How many levels are open.
-  public fun depth(): i64 = this.level
+  public fun depth(): i64 => this.level
 
   /// The deepest this walk ever went — what a benchmark reports and a test
   /// asserts on. Never reset by `leave`; `reset` clears it.
-  public fun deepest(): i64 = this.peak
+  public fun deepest(): i64 => this.peak
 
   /// Back to nothing open, ready to walk again.
   public fun reset() {
@@ -91,5 +91,5 @@ public struct Depth {
   }
 
   /// What to say when `enter` refuses: `tooDeepMessage(this.limit)`.
-  public fun message(): string = tooDeepMessage(this.limit)
+  public fun message(): string => tooDeepMessage(this.limit)
 }

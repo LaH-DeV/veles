@@ -3,4 +3,4 @@ public struct Point {
   public y: f64
 }
 
-public fun origin(): Point = Point(x: 0.0, y: 0.0)
+public fun origin(): Point => Point(x: 0.0, y: 0.0)

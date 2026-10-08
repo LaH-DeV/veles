@@ -1,5 +1,7 @@
 // Patterns (D13).
-use ast, lexer { Kind }, source { Span }
+use ast
+use lexer { Kind }
+use source { Span }
 
 extend Parser {
   // one `when` pattern. With binding false a bare name is a value to compare
@@ -94,7 +96,7 @@ extend Parser {
   }
 
   // after `is`: a type and an optional destructuring list
-  fun parseTypePatternRest(start: Span): ast.TypePat = this.parseTypePatternFields(this.parseType(), start)
+  fun parseTypePatternRest(start: Span): ast.TypePat => this.parseTypePatternFields(this.parseType(), start)
 
   fun parseTypePatternFields(t: ast.Type, start: Span): ast.TypePat {
     var tp: ast.TypePat = ast.TypePat(typ: &t)

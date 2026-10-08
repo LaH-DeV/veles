@@ -41,9 +41,9 @@ extern "C" {
   fun getpid(): i32
 }
 
-public fun a(p: *raw u8): u8 = unsafe { p.read() }
+public fun a(p: *raw u8): u8 => unsafe { p.read() }
 
-public unsafe fun b(p: *raw u8): u8 = p.read()
+public unsafe fun b(p: *raw u8): u8 => p.read()
 `,
 	})
 	got := strings.Join(c.Names(), " ")

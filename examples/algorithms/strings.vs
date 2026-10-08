@@ -3,7 +3,7 @@
 // work.
 
 /// Reverses by code points, so multi-byte characters stay intact.
-public fun reverse(s: string): string = s.chars().reversed().join("")
+public fun reverse(s: string): string => s.chars().reversed().join("")
 
 /// Two pointers closing in from both ends, ignoring case and spaces.
 public fun isPalindrome(s: string): bool {
@@ -21,7 +21,7 @@ public fun isPalindrome(s: string): bool {
 }
 
 /// Two words are anagrams when their sorted characters agree.
-public fun isAnagram(a: string, b: string): bool =
+public fun isAnagram(a: string, b: string): bool =>
   a.toLower().chars().sorted() == b.toLower().chars().sorted()
 
 /// Word frequencies, insertion-ordered (D25: maps keep insertion order).

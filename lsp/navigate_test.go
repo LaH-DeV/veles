@@ -23,19 +23,19 @@ struct Sq {
   side: i64
 
   implement Shape {
-    fun area(): i64 = this.side * this.side
+    fun area(): i64 => this.side * this.side
   }
 }
 
 struct Rect { w: i64, h: i64 }
 
 implement Shape for Rect {
-  fun area(): i64 = this.w * this.h
+  fun area(): i64 => this.w * this.h
 }
 
 // two lines
 // of comment
-fun make(): Sq? = Sq(side: 2)
+fun make(): Sq? => Sq(side: 2)
 
 fun main() {
   val sq = make()
@@ -165,7 +165,7 @@ func TestFoldingRanges(t *testing.T) {
 // Tests (D78): the vocabulary hovers like any built-in, and a test is in
 // the outline under its sentence.
 func TestTestsInTheEditor(t *testing.T) {
-	src := "fun half(n: i64): i64? = if (n % 2 == 0) n / 2 else null\n\ntest \"halves even numbers\" {\n  expect(require(half(4)) == 2)\n}\n\nsuite \"odd numbers\" {\n  test \"have no half\" {\n    expect(half(3) == null)\n  }\n}\n\nfun main() { }\n"
+	src := "fun half(n: i64): i64? => if (n % 2 == 0) n / 2 else null\n\ntest \"halves even numbers\" {\n  expect(require(half(4)) == 2)\n}\n\nsuite \"odd numbers\" {\n  test \"have no half\" {\n    expect(half(3) == null)\n  }\n}\n\nfun main() { }\n"
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")
 	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {

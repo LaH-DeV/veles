@@ -42,7 +42,11 @@
 /// bignum arithmetic or a native binding, and encryption (JWE) is a
 /// different specification. `HS256` covers a server that issues its own
 /// tokens.
-use base64, codec, crypto, json, time
+use base64
+use codec
+use crypto
+use json
+use time
 
 /// The HMAC algorithms of RFC 7518. The name on the wire is the member
 /// name: `"HS256"`.
@@ -110,17 +114,17 @@ public struct Claims {
   public extra: Map<string, codec.Value> = [:]
 
   /// A private claim by name: `claims.claim("role")?.asString()`.
-  public fun claim(name: string): codec.Value? = this.extra.get(name)
+  public fun claim(name: string): codec.Value? => this.extra.get(name)
 
   /// A private claim that should be text, or `null` when it is missing or
   /// is something else.
-  public fun text(name: string): string? = this.extra.get(name)?.asString()
+  public fun text(name: string): string? => this.extra.get(name)?.asString()
 
   /// A private claim that should be a whole number.
-  public fun number(name: string): i64? = this.extra.get(name)?.asI64()
+  public fun number(name: string): i64? => this.extra.get(name)?.asI64()
 
   /// A private claim that should be a boolean.
-  public fun flag(name: string): bool? = this.extra.get(name)?.asBool()
+  public fun flag(name: string): bool? => this.extra.get(name)?.asBool()
 }
 
 /// What `verify` insists on. The defaults are the strict ones: HS256, an
@@ -145,7 +149,7 @@ public struct Options {
 
 /// The current time in Unix **seconds**, the unit `exp`, `nbf` and `iat`
 /// are written in.
-public fun now(): i64 = time.now().toSeconds()
+public fun now(): i64 => time.now().toSeconds()
 
 // ---------------------------------------------------------------------------
 // signing
@@ -329,7 +333,7 @@ fun readClaims(payload: codec.Value): Claims throws Invalid {
   Claims(issuer, subject, audience: who, expiresAt, notBefore, issuedAt, id, extra: extra.toMap())
 }
 
-fun text(v: codec.Value, name: string): string throws Invalid =
+fun text(v: codec.Value, name: string): string throws Invalid =>
   v.asString() ?: throw Invalid(message: "jwt: '$name' is not a string", reason: Reason.MissingClaim)
 
 /// A NumericDate: seconds since the epoch, which the specification allows
@@ -403,7 +407,7 @@ fun checkParties(claims: Claims, options: Options) throws Invalid {
 // ---------------------------------------------------------------------------
 // keys and MACs
 
-fun mac(algorithm: Algorithm, key: Secret<List<u8>>, signing: string): crypto.Digest = when (algorithm) {
+fun mac(algorithm: Algorithm, key: Secret<List<u8>>, signing: string): crypto.Digest => when (algorithm) {
   Algorithm.HS256 => crypto.hmacSha256(key, signing.bytes())
   Algorithm.HS384 => crypto.hmacSha384(key, signing.bytes())
   Algorithm.HS512 => crypto.hmacSha512(key, signing.bytes())
@@ -419,7 +423,7 @@ fun checkKey(key: Secret<List<u8>>, algorithm: Algorithm, who: string) {
   }
 }
 
-fun keyBytes(algorithm: Algorithm): i64 = when (algorithm) {
+fun keyBytes(algorithm: Algorithm): i64 => when (algorithm) {
   Algorithm.HS256 => 32
   Algorithm.HS384 => 48
   Algorithm.HS512 => 64

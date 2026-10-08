@@ -60,7 +60,7 @@ extern "C" {
   fun call_twice(x: i64): i64
 }
 
-extern "C" fun tripled(x: i64): i64 = x * 3
+extern "C" fun tripled(x: i64): i64 => x * 3
 
 fun main() {
   io.println("${unsafe { twice(plus_one(20)) }} ${unsafe { call_twice(2) }}")

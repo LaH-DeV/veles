@@ -16,7 +16,7 @@ struct Circle : Shape { r: f64 }
 struct Rect : Shape { w: f64, h: f64 }
 struct Point : Shape { }
 
-fun area(s: Shape): f64 = when (s) {
+fun area(s: Shape): f64 => when (s) {
   is Circle(r) => 3.0 * r * r
   is Rect(w, h) => w * h
   is Point => 0.0
@@ -94,7 +94,7 @@ struct Click : Event { x: i64, y: i64 }
 struct Key : Event { code: i64 }
 struct Quit : Event { }
 
-fun handle(e: Event): string = when (e) {
+fun handle(e: Event): string => when (e) {
   is Click(x, y) if x < 0 || y < 0 => "click off-screen"
   is Click(x, y) => "click at $x,$y"
   is Key(code) if code == 27 => "escape"
@@ -124,12 +124,12 @@ tag, with no vtable:
 use io
 
 sealed trait Expr {
-  fun eval(): i64 = when (this) {
+  fun eval(): i64 => when (this) {
     is Num(v) => v
     is Add(l, r) => l.eval() + r.eval()
     is Mul(l, r) => l.eval() * r.eval()
   }
-  fun show(): string = when (this) {
+  fun show(): string => when (this) {
     is Num(v) => "$v"
     is Add(l, r) => "(${l.show()} + ${r.show()})"
     is Mul(l, r) => "${l.show()} * ${r.show()}"
@@ -162,14 +162,14 @@ use io
 
 sealed trait Shape {
   fun area(): f64
-  fun describe(): string = "shape with area ${this.area()}"
+  fun describe(): string => "shape with area ${this.area()}"
 }
 struct Circle : Shape {
   r: f64
 
   implement Shape {
-    fun area(): f64 = 3.0 * this.r * this.r
-    override fun describe(): string = "circle r=${this.r}"
+    fun area(): f64 => 3.0 * this.r * this.r
+    override fun describe(): string => "circle r=${this.r}"
   }
 }
 struct Rect : Shape {
@@ -177,7 +177,7 @@ struct Rect : Shape {
   h: f64
 
   implement Shape {
-    fun area(): f64 = this.w * this.h
+    fun area(): f64 => this.w * this.h
   }
 }
 
@@ -221,7 +221,7 @@ enum Level : u8 {
   High = 10
 }
 
-fun next(p: Phase): Phase = when (p) {
+fun next(p: Phase): Phase => when (p) {
   Phase.Red   => Phase.Green
   Phase.Green => Phase.Amber
   Phase.Amber => Phase.Red
@@ -296,12 +296,12 @@ sealed trait Tree
 struct Leaf : Tree { n: i64 }
 struct Branch : Tree { left: *Tree, right: *Tree }
 
-fun sum(t: Tree): i64 = when (t) {
+fun sum(t: Tree): i64 => when (t) {
   is Leaf(n) => n
   is Branch(left, right) => sum(*left) + sum(*right)
 }
 
-fun classify(p: (i64, i64)): string = when (p) {
+fun classify(p: (i64, i64)): string => when (p) {
   (0, 0) => "origin"
   (0, _) => "on y axis"
   (_, 0) => "on x axis"

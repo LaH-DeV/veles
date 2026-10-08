@@ -7,7 +7,11 @@
 // The exporter here only counts what it is given, so the program runs without
 // a collector. To send it to a real one, replace it with
 // `http.otlp(endpoint: "http://localhost:4318")`.
-use http, io { println }, log, otel, time
+use http
+use io { println }
+use log
+use otel
+use time
 
 // What an exporter receives is Protocol Buffers; this one keeps a tally.
 struct Tally {

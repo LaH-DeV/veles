@@ -8,7 +8,7 @@ public struct Graph {
   n:   i64
   adj: MutableList<MutableList<i64>>
 
-  static fun withNodes(n: i64): Graph =
+  static fun withNodes(n: i64): Graph =>
     Graph(n, adj: MutableList<MutableList<i64>>.make(n, _ => []))
 
   fun addEdge(a: i64, b: i64) {
@@ -22,7 +22,7 @@ public struct Graph {
     this.addEdge(b, a)
   }
 
-  fun neighbours(v: i64): List<i64> = slot(this.adj, v).toList()
+  fun neighbours(v: i64): List<i64> => slot(this.adj, v).toList()
 
   /// Breadth-first order from `start`.
   fun bfs(start: i64): List<i64> {
@@ -113,12 +113,12 @@ public struct Graph {
     count
   }
 
-  fun flags(): MutableList<bool> = MutableList<bool>.repeat(false, this.n)
+  fun flags(): MutableList<bool> => MutableList<bool>.repeat(false, this.n)
 }
 
 /// Entry `v` of a table with one slot per node. Every node an edge names is
 /// in `0..<n` — `addEdge` checks it — so this cannot fail.
-fun slot<T>(table: MutableList<T>, v: i64): T = table.at(v) ?: panic("graph: every node is in 0..<n")
+fun slot<T>(table: MutableList<T>, v: i64): T => table.at(v) ?: panic("graph: every node is in 0..<n")
 
 /// A pending step for Dijkstra, ordered by distance so the priority queue
 /// yields the closest node first.
@@ -127,7 +127,7 @@ struct Hop {
   node: i64
 
   implement Comparable {
-    fun compareTo(other: Hop): Ordering = this.dist.compareTo(other.dist)
+    fun compareTo(other: Hop): Ordering => this.dist.compareTo(other.dist)
   }
 }
 

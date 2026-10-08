@@ -2,14 +2,17 @@
 // ranges, Cache-Control, directories, dotfiles. Each one serves a small tree
 // written under the temp directory and asks it through `call`.
 
-use fs, os, path, time
+use fs
+use os
+use path
+use time
 
 // a.txt is ten bytes, so the ranges below can be read off the digits
 // The tests run in parallel and a rewrite truncates the file for a moment, so
 // the tree is written once, before any of them starts.
 val fixture: string = build()
 
-test fun tree(): string = fixture
+test fun tree(): string => fixture
 
 test fun build(): string {
   val root = path.join(os.tempDir(), "veles-http-files-test")
@@ -42,11 +45,11 @@ test fun served(server: sendable fun(Request): Response suspends throws Fail | I
   router.handler()
 }
 
-test fun fetchOf(h: Handler, target: string, headers: Map<string, string> = [:]): Response = call(h, Method.get, target, headers: headers)
+test fun fetchOf(h: Handler, target: string, headers: Map<string, string> = [:]): Response => call(h, Method.get, target, headers: headers)
 
-test fun text(r: Response): string = r.body.decodeUtf8() ?: "<not text>"
+test fun text(r: Response): string => r.body.decodeUtf8() ?: "<not text>"
 
-test fun header(r: Response, name: string): string = r.headers.get(name) ?: "<none>"
+test fun header(r: Response, name: string): string => r.headers.get(name) ?: "<none>"
 
 test "a file comes with its validators and the safe cache header" {
   val h = served(files(tree()))

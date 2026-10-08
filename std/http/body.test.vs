@@ -5,9 +5,9 @@
 
 use net
 
-test fun reader(): Handler = handler(req => Response.text("${try req.bytes().len()}:${try req.text()}"))
+test fun reader(): Handler => handler(req => Response.text("${try req.bytes().len()}:${try req.text()}"))
 
-test fun ignorer(): Handler = handler(req => Response.text("ignored"))
+test fun ignorer(): Handler => handler(req => Response.text("ignored"))
 
 test "the body is read when asked, and kept for the next reader" {
   val h = handler(req => {
@@ -98,7 +98,7 @@ test fun talk(port: i64, parts: List<string>, finish: bool = true): string throw
   out
 }
 
-test fun requestHead(extra: string): string = "POST / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n$extra\r\n"
+test fun requestHead(extra: string): string => "POST / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n$extra\r\n"
 
 test "a chunked body is decoded, whatever the pieces and extensions" {
   with srv = try testServer(reader())

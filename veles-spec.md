@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.71** — decisions D1–D139. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.72** — decisions D1–D140. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -172,6 +172,8 @@ Resolved by the package manager against the manifest. No filesystem-relative str
 
 *Addendum (v0.28) — modules only, one statement, many imports.* *(names since D85: `use m { f }` adds bare names; the rest below stands.)* A `use` imports modules and nothing smaller: members are always qualified (`geometry.Point`, `io.println()`), and `use geometry as geo` renames the module when the prefix is long. The braced name-import form (`use geometry.{ Point as P, norm }`) is gone — Go's reasoning: a qualified name says at the use site where a thing comes from, two modules may both declare a `Point` with no renaming, and there is one way to write a call. A parameter or local named like a module shadows it (`fun mkdir(path: string)` cannot call `path.dir`); the answer is an alias at the import, not a name-import escape hatch. Type aliases (`type P = geo.Point`) are the remaining way to shorten a type name and are not in the language yet; add them if the prefix on types proves to hurt. `use` takes a comma-separated list: `use fs, io, os`, `use geometry as geo, shapes`; a comma at the end of a line continues the list. Import order and grouping carry no meaning, so the formatter owns them: consecutive `use` lines become one sorted list per origin — the standard library first, then everything else — one `use` statement each. Go groups its imports the same way (goimports), by convention rather than syntax: a separate spelling for standard-library imports would turn every move of a module between the library and a package into a source edit, and the compiler already knows which is which.
 
+*Addendum (2026-10-08) — one import per line by default (user).* The formatter writes a run of plain imports one `use` per module, sorted as before (standard library first, then the rest): `use fs` / `use io` / `use os`. The comma list stays valid Veles and means the same imports; a package that prefers it sets `[format] imports = "merged"` in its manifest, and the formatter then writes one comma-separated `use` per origin as above. A `public use` (D89) is still printed as written. The repository's sources and the documentation's programs were reformatted. Alongside it, the manifest gains a `[lint]` table of lints of the package's own code: `implicit_return` says where a body's last expression may be its value without `return` — `"full"` (the default) anywhere; `"lambda"` in every lambda and in `fun f() = expr`, a function's or method's `{ }` body ending in `return value`; `"expr"` only in a body without braces. A body that breaks the setting is an error with a fix that writes `return`; the blocks of `if`/`when` are never affected (user, 2026-10-08, replacing a same-day on/off `explicit_return`).
+
 ---
 
 ## 4. Syntax — provisional
@@ -207,7 +209,7 @@ public fun someFunc() {
 - **Explicit integer widths.** Go's platform-dependent `int` is a portability hazard and would bite hard on wasm32. `int` may exist as an alias at most.
 
 - **`val` / `var`**, not `const`, for runtime-immutable bindings. `const` is reserved for compile-time constants.
-- **`=`**, not `=>`, for expression bodies, keeping the arrow free for lambdas.
+- ~~**`=`**, not `=>`, for expression bodies, keeping the arrow free for lambdas.~~ *(v0.72, D140: an expression body is `=> expr`.)*
 - **`throws` follows the return type**: `fun f(): T throws` and `fun f(): T throws IoError`.
 
 ### Still provisional
@@ -534,7 +536,7 @@ val typed   = nums.map((x: i32) => x * 2)
 
 Parentheses are optional for a single untyped parameter and required otherwise. There is **no `it` shorthand** — every lambda names its parameters. The discard `_` is a parameter name (v0.25): `make(n, _ => [])` and `(_, x) => x` take an argument they do not use, as `loop (_ in xs)` does.
 
-No trailing-lambda sugar. `=` was chosen over `=>` for expression bodies (§4) specifically to keep `=>` free for this.
+No trailing-lambda sugar. ~~`=` was chosen over `=>` for expression bodies (§4) specifically to keep `=>` free for this.~~ *(v0.72, D140: expression bodies are `=> expr` too; the arrow means "yields" everywhere.)*
 
 ### D33 — `=>` is the only arrow
 
@@ -4951,6 +4953,26 @@ Rejected: upload-only or pull-only publishing (the user wants both); a separate 
 - **The module cache is keyed by the registry's address** as well as `owner/name` (a private and a public `acme/lib` never share an entry: dependency confusion), and the tier and yank state kept with a cached package are believed by a project that pins a registry key only if they were verified with that key (`signed` in the marker); otherwise they are asked again, or, offline, the package counts as unreviewed.
 - **Capabilities cannot be hidden**: every directory below the root counts (the loader reads any directory with sources as a module, so one named `vendor`, or holding a `veles.toml`, was a hiding place), and a directory with no sources does not shadow std (`fs/` holding a README hid `use fs`).
 - **Tokens** are sent only over `https://` or to localhost. **`veles publish`** archives what git would (tracked and not-ignored files) in a repository. Statements must have every field and no whitespace. `[native] pkg-config` names may not start with `-`. Keys are created with `O_EXCL`. The reference server validates names and reads a request body before taking its lock. A dependency directory is read with `ReadManifestIn`, which never falls back to an enclosing package. A failed resolution is one diagnostic and the rest of the package still loads (the editor keeps working).
+
+### D140 — An expression body is written `=> expr` (v0.72)
+
+```veles
+fun double(x: i64): i64 => x * 2
+fun area(s: Shape): f64 => when (s) {
+  is Circle => 3.14159 * s.r * s.r
+  is Rect   => s.w * s.h
+}
+fun adder(n: i64): fun(i64): i64 => (x => x + n)
+val double = (x: i64) => x * 2              // the lambda reads the same
+```
+
+**Rule.** A function, method or `test fun` whose body is one expression writes it after `=>`. `=` now only binds a name to a value — `val`, `var`, an assignment, a parameter's default, a `type` alias, a field's default — and `=>` only says "yields": a lambda's body, a `when` or `race` arm's value, a function's body. A braced body has no arrow: `fun f() { … }`; `fun f() => { … }` is an error with a fix to `fun f() { … }`, as `= { … }` already was.
+
+**Migration.** `fun f() = expr` keeps parsing, as an error with a fix that writes `=>` (removed syntax, CLAUDE.md); the repository, its examples and the documentation are migrated in the same change. A lambda returned from an expression body is parenthesized by the formatter, `=> (x => x + n)`, as an arm's lambda is (D106).
+
+**Why.** The user, adding the `"lambda"` level of `[lint] implicit_return` (the value may be implicit "when '=>' was used"): "Maybe we should also make expr bodies be written like `=> expr` so fat arrow would be understandable". With it every body that yields its value without `return` is written after an arrow, so the lint's levels follow from the syntax. C# and Dart write expression-bodied members the same way.
+
+User, 2026-10-08, recommended of 3. Rejected: keep `= expr` (§4, Kotlin's and Scala's spelling; `=` meant both "binds" and "yields"); decide later. This supersedes the §4 line "`=`, not `=>`, for expression bodies" and the matching sentence of D32.
 
 ---
 

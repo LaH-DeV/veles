@@ -75,7 +75,7 @@ public struct Bst {
     out.toList()
   }
 
-  fun height(): i64 = heightOf(this.root)
+  fun height(): i64 => heightOf(this.root)
 
   /// The leftmost node holds the smallest value.
   fun min(): i64? {
@@ -104,7 +104,7 @@ fun walk(node: (*TreeNode)?, out: MutableList<i64>) {
   walk(node.right, out)
 }
 
-fun heightOf(node: (*TreeNode)?): i64 =
+fun heightOf(node: (*TreeNode)?): i64 =>
   if (node == null) 0 else 1 + heightOf(node.left).max(heightOf(node.right))
 
 /// Binary min-heap in a list: the parent of `i` is `(i - 1) / 2`, its
@@ -115,7 +115,7 @@ public struct MinHeap {
 
   /// The element at heap position `i`; the sifts read only positions below
   /// the size.
-  fun item(i: i64): i64 = this.items.at(i) ?: panic("MinHeap: a sift reads only positions below the size")
+  fun item(i: i64): i64 => this.items.at(i) ?: panic("MinHeap: a sift reads only positions below the size")
 
   /// Appends, then sifts the new element up while it beats its parent.
   fun push(x: i64) {
@@ -150,8 +150,8 @@ public struct MinHeap {
     top
   }
 
-  fun peek(): i64? = this.items.first()
-  fun len(): i64 = this.items.len()
+  fun peek(): i64? => this.items.first()
+  fun len(): i64 => this.items.len()
 }
 
 /// Heap sort, as a demonstration of the heap: O(n log n).

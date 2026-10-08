@@ -28,13 +28,16 @@
 /// (comma separated) come from variables; a `T?` is `null` when the variable is
 /// not set. A `Map` has no variable form and is refused with a panic at the
 /// first call, naming the field.
-use codec, fs, json, os
+use codec
+use fs
+use json
+use os
 
 /// The settings could not be read: one `Problem` per variable (or file) that
 /// is wrong, named as the person who sets it knows it.
 public error Error {
   public problems: List<codec.Problem>
-  fun message(): string = this.problems.map(p => p.toString()).join("\n")
+  fun message(): string => this.problems.map(p => p.toString()).join("\n")
 }
 
 /// One variable a settings struct reads.
@@ -63,7 +66,7 @@ public struct Variable {
 ///
 /// An empty variable is a value: `PORT=` is `""`, fine for a `string` and a
 /// problem for a number.
-public fun load<T: Decodable>(files: List<string> = [], prefix: string = ""): T throws Error =
+public fun load<T: Decodable>(files: List<string> = [], prefix: string = ""): T throws Error =>
   try loadWith<T>(name => os.env(name), files, prefix)
 
 /// The variables `T` reads, in field order — for `--help` and documentation.

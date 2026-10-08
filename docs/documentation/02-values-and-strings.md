@@ -243,11 +243,11 @@ trait Markup {
 }
 
 implement Markup for string {
-  fun markup(): string = this.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+  fun markup(): string => this.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 }
 
 implement Markup for i64 {
-  fun markup(): string = "$this"
+  fun markup(): string => "$this"
 }
 
 struct Html {
@@ -317,7 +317,7 @@ A tuple groups a few values without naming a type: `(1, "one")` has type
 ```veles
 use io
 
-fun divmod(a: i64, b: i64): (i64, i64) = (a / b, a % b)
+fun divmod(a: i64, b: i64): (i64, i64) => (a / b, a % b)
 
 fun main() {
   val pair = divmod(17, 5)

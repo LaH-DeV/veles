@@ -2,7 +2,7 @@
 use io
 
 @caller_location(1) // error: @caller_location takes no arguments
-fun withArgument(n: i64): i64 = n
+fun withArgument(n: i64): i64 => n
 
 @caller_location // error: @caller_location applies to functions
 struct Other {

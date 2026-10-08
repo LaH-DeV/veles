@@ -59,7 +59,7 @@ func TestPackagesEndToEnd(t *testing.T) {
 	pub := filepath.Join(root, "published")
 	os.MkdirAll(pub, 0o755)
 	write("published/veles.toml", "[package]\nname = \"clock\"\nversion = \"1.2.0\"\nregistry = \"acme/clock\"\n")
-	write("published/lib.vs", "public fun tick(): i64 = 12\n")
+	write("published/lib.vs", "public fun tick(): i64 => 12\n")
 	pm, _ := sema.ReadManifest(pub)
 	if _, _, err := fetch.Publish(pub, pm, hs.URL, "tok"); err != nil {
 		t.Fatal(err)
@@ -68,21 +68,21 @@ func TestPackagesEndToEnd(t *testing.T) {
 	// git: util 1.0.0 and 1.3.0 and 2.0.0; mid needs util 1.3.0; a library at an untagged commit
 	util := filepath.Join(root, "remote", "util")
 	url := func(d string) string { return fileURL(d) }
-	gitRelease(t, util, "1.0.0", map[string]string{"veles.toml": manifest("util", "1.0.0", ""), "lib.vs": "public fun v(): i64 = 100\n"})
-	gitRelease(t, util, "1.3.0", map[string]string{"veles.toml": manifest("util", "1.3.0", ""), "lib.vs": "public fun v(): i64 = 130\n"})
-	gitRelease(t, util, "2.0.0", map[string]string{"veles.toml": manifest("util", "2.0.0", ""), "lib.vs": "public fun v(): i64 = 200\n"})
+	gitRelease(t, util, "1.0.0", map[string]string{"veles.toml": manifest("util", "1.0.0", ""), "lib.vs": "public fun v(): i64 => 100\n"})
+	gitRelease(t, util, "1.3.0", map[string]string{"veles.toml": manifest("util", "1.3.0", ""), "lib.vs": "public fun v(): i64 => 130\n"})
+	gitRelease(t, util, "2.0.0", map[string]string{"veles.toml": manifest("util", "2.0.0", ""), "lib.vs": "public fun v(): i64 => 200\n"})
 	mid := filepath.Join(root, "remote", "mid")
 	gitRelease(t, mid, "1.0.0", map[string]string{
 		"veles.toml": manifest("mid", "1.0.0", fmt.Sprintf("util = { git = %q, version = \"1.3.0\" }", url(util))),
-		"lib.vs":     "use util\n\npublic fun m(): i64 = util.v()\n",
+		"lib.vs":     "use util\n\npublic fun m(): i64 => util.v()\n",
 	})
 	edge := filepath.Join(root, "remote", "edge")
-	gitRelease(t, edge, "0.1.0", map[string]string{"veles.toml": manifest("edge", "0.1.0", ""), "lib.vs": "public fun e(): i64 = 1\n"})
+	gitRelease(t, edge, "0.1.0", map[string]string{"veles.toml": manifest("edge", "0.1.0", ""), "lib.vs": "public fun e(): i64 => 1\n"})
 	commit := gitHead(t, edge)
 
 	// a path dependency, and the app that uses everything
 	write("local/veles.toml", manifest("local", "0.1.0", ""))
-	write("local/lib.vs", "public fun l(): i64 = 7\n")
+	write("local/lib.vs", "public fun l(): i64 => 7\n")
 	write("app/veles.toml", manifest("app", "0.1.0", strings.Join([]string{
 		`local = "../local"`,
 		fmt.Sprintf("util = { git = %q, version = \"1.0.0\" }", url(util)),
@@ -138,7 +138,7 @@ func TestMovedTagStopsTheBuild(t *testing.T) {
 	t.Setenv("VELES_ALLOW_LOCAL_GIT", "1") // the tests' repositories are local
 	root := t.TempDir()
 	lib := filepath.Join(root, "remote", "lib")
-	gitRelease(t, lib, "1.0.0", map[string]string{"veles.toml": "[package]\nname = \"lib\"\nversion = \"1.0.0\"\n", "lib.vs": "public fun v(): i64 = 1\n"})
+	gitRelease(t, lib, "1.0.0", map[string]string{"veles.toml": "[package]\nname = \"lib\"\nversion = \"1.0.0\"\n", "lib.vs": "public fun v(): i64 => 1\n"})
 	app := filepath.Join(root, "app")
 	os.MkdirAll(app, 0o755)
 	os.WriteFile(filepath.Join(app, "veles.toml"), []byte(fmt.Sprintf("[package]\nname = \"app\"\n[dependencies]\nlib = { git = %q, version = \"1.0.0\" }\n", fileURL(lib))), 0o644)
@@ -148,7 +148,7 @@ func TestMovedTagStopsTheBuild(t *testing.T) {
 	}
 
 	// someone force-moves the tag to different code; a clean machine has no cache
-	os.WriteFile(filepath.Join(lib, "lib.vs"), []byte("public fun v(): i64 = 666\n"), 0o644)
+	os.WriteFile(filepath.Join(lib, "lib.vs"), []byte("public fun v(): i64 => 666\n"), 0o644)
 	gitRelease(t, lib, "1.0.0", nil)
 	os.RemoveAll(filepath.Join(home, "pkg"))
 	code, _, errs := capture(t, func() int { return Run(Options{Path: app, Mode: "build", Output: filepath.Join(root, "x.exe")}) })

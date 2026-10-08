@@ -5,7 +5,8 @@
 // sends every value as text, so reading is parsing: a number that is not
 // one, or a column of the wrong kind, is a problem at that column and the row
 // is not built.
-use codec, time
+use codec
+use time
 
 // the OIDs of the types the decoder knows by name
 const oidBool: i64 = 16
@@ -40,7 +41,7 @@ struct RowDecoder {
   state:    *RowState
   recorded: codec.Problems = codec.Problems()
 
-  static fun of(columns: List<Column>, row: List<string?>): RowDecoder =
+  static fun of(columns: List<Column>, row: List<string?>): RowDecoder =>
     RowDecoder(columns, row, state: &RowState())
 
   // the text of the column being read, or of the first one for a scalar target
@@ -77,8 +78,8 @@ struct RowDecoder {
   }
 
   implement codec.Decoder {
-    fun format(): string = "db"
-    override fun keys(): codec.KeyStyle = codec.KeyStyle.SnakeCase
+    fun format(): string => "db"
+    override fun keys(): codec.KeyStyle => codec.KeyStyle.SnakeCase
 
     fun peek(): codec.Kind throws DecodeError {
       val s = this.state
@@ -233,11 +234,11 @@ struct RowDecoder {
       val _ = this.take()
     }
 
-    fun path(): string = this.here()
+    fun path(): string => this.here()
 
-    fun problemAt(path: string, message: string) = this.recorded.record(path, message)
+    fun problemAt(path: string, message: string) => this.recorded.record(path, message)
 
-    fun problems(): List<codec.Problem> = this.recorded.list()
+    fun problems(): List<codec.Problem> => this.recorded.list()
   }
 }
 

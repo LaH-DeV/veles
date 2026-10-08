@@ -114,7 +114,7 @@ func TestCStructsByValue(t *testing.T) {
 			}
 		}
 		v.WriteString("}\n\n")
-		fmt.Fprintf(&v, "extern \"C\" fun v_%s(x: %s): %s = %s\n\n", n, n, n, cabiBuild(s, "x.", " + 10"))
+		fmt.Fprintf(&v, "extern \"C\" fun v_%s(x: %s): %s => %s\n\n", n, n, n, cabiBuild(s, "x.", " + 10"))
 	}
 	// the registers used up before the struct (SysV: five of six integer,
 	// seven of eight vector registers left one short of a two-register struct)

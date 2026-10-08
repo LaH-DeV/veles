@@ -21,17 +21,17 @@ struct Sq {
   side: i64
 
   implement Shape {
-    fun area(): i64 = this.side * this.side
+    fun area(): i64 => this.side * this.side
   }
 }
 
 struct Point { x: i64, y: i64 }
 
-fun measure<T: Shape>(s: T): i64 = s.area()
+fun measure<T: Shape>(s: T): i64 => s.area()
 
-fun boxed(s: Shape): i64 = s.area()
+fun boxed(s: Shape): i64 => s.area()
 
-fun scale(value: i64, factor: i64): i64 = value * factor
+fun scale(value: i64, factor: i64): i64 => value * factor
 
 fun main() {
   val x = 3
@@ -195,9 +195,9 @@ func TestRename(t *testing.T) {
 		{name: "variable through a pun", needle: "x = 3", nth: 0, newName: "row",
 			want: []string{"val row = 3", "Point(x: row, y: 4)", "$row $y"}},
 		{name: "parameter and its label", needle: "factor", nth: 0, newName: "k",
-			want: []string{"fun scale(value: i64, k: i64): i64 = value * k", "k: a)"}},
+			want: []string{"fun scale(value: i64, k: i64): i64 => value * k", "k: a)"}},
 		{name: "trait method and implementations", needle: "area", nth: 2, newName: "size",
-			want: []string{"  fun size(): i64\n", "fun size(): i64 = this.side", "= s.size()\n\nfun boxed", "boxed(s: Shape): i64 = s.size()", "sq.size()"}},
+			want: []string{"  fun size(): i64\n", "fun size(): i64 => this.side", "=> s.size()\n\nfun boxed", "boxed(s: Shape): i64 => s.size()", "sq.size()"}},
 		{name: "a name another use would resolve to", needle: "y = 10", nth: 0, newName: "x", wantFail: "would"},
 		{name: "a local that captures a call", needle: "sq =", nth: 0, newName: "measure", wantFail: "would"},
 		{name: "a keyword", needle: "sq =", nth: 0, newName: "fun", wantFail: "not an identifier"},
@@ -290,7 +290,7 @@ fun main() {
 func TestRenameAcrossModules(t *testing.T) {
 	dir := t.TempDir()
 	main := "use io\nuse util\n\nfun main() {\n  io.println(\"${util.twice(2)}\")\n}\n"
-	util := "public fun twice(n: i64): i64 = n * 2\n"
+	util := "public fun twice(n: i64): i64 => n * 2\n"
 	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(main), 0o644); err != nil {
 		t.Fatal(err)
 	}

@@ -8,7 +8,7 @@ public fun gcd(a: i64, b: i64): i64 {
   x
 }
 
-public fun lcm(a: i64, b: i64): i64 = if (a == 0 || b == 0) 0 else (a / gcd(a, b) * b).abs()
+public fun lcm(a: i64, b: i64): i64 => if (a == 0 || b == 0) 0 else (a / gcd(a, b) * b).abs()
 
 /// Trial division by the odd numbers up to sqrt(n).
 public fun isPrime(n: i64): bool {
@@ -77,7 +77,7 @@ public fun powMod(base: i64, exp: i64, mod: i64): i64 {
   result
 }
 
-public fun factorial(n: i64): i64 = if (n <= 1) 1 else n * factorial(n - 1)
+public fun factorial(n: i64): i64 => if (n <= 1) 1 else n * factorial(n - 1)
 
 /// Decimal digits of a non-negative number, most significant first.
 public fun digits(n: i64): List<i64> {

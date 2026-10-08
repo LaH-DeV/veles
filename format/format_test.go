@@ -146,14 +146,14 @@ func TestStyle(t *testing.T) {
 			"fun f(a:i64,b:i64):i64{val x=(a+b)*2\nreturn x}\n",
 			"fun f(a: i64, b: i64): i64 {\n  val x = (a + b) * 2\n  return x\n}\n"},
 		{"author parentheses kept, duplicates dropped",
-			"fun f(a: i64): i64 = ((a)) + (a * 2) - (a + 1) * (-(a))\n",
-			"fun f(a: i64): i64 = (a) + (a * 2) - (a + 1) * (-(a))\n"},
+			"fun f(a: i64): i64 => ((a)) + (a * 2) - (a + 1) * (-(a))\n",
+			"fun f(a: i64): i64 => (a) + (a * 2) - (a + 1) * (-(a))\n"},
 		{"required parentheses added",
-			"fun f(a: i64): i64 = (a + 1) * 2 - (try g()).len()\nfun h(a: i64?): i64 = a ?: throw E()\n",
-			"fun f(a: i64): i64 = (a + 1) * 2 - (try g()).len()\nfun h(a: i64?): i64 = a ?: throw E()\n"},
+			"fun f(a: i64): i64 => (a + 1) * 2 - (try g()).len()\nfun h(a: i64?): i64 => a ?: throw E()\n",
+			"fun f(a: i64): i64 => (a + 1) * 2 - (try g()).len()\nfun h(a: i64?): i64 => a ?: throw E()\n"},
 		{"or-fail binds under try",
-			"fun f(): i64 throws E = try g() ?! E()\nfun h(): i64 throws E = (try g()) ?! E()\nfun k(): i64 throws E = try (g() ?! E())\nfun m(): i64 = with (r = open()) { r.n }\n",
-			"fun f(): i64 throws E = try g() ?! E()\nfun h(): i64 throws E = (try g()) ?! E()\nfun k(): i64 throws E = try (g() ?! E())\nfun m(): i64 = with (r = open()) {\n  r.n\n}\n"},
+			"fun f(): i64 throws E => try g() ?! E()\nfun h(): i64 throws E => (try g()) ?! E()\nfun k(): i64 throws E => try (g() ?! E())\nfun m(): i64 => with (r = open()) { r.n }\n",
+			"fun f(): i64 throws E => try g() ?! E()\nfun h(): i64 throws E => (try g()) ?! E()\nfun k(): i64 throws E => try (g() ?! E())\nfun m(): i64 => with (r = open()) {\n  r.n\n}\n"},
 		{"let-else and ??",
 			`fun f() {
 val a=g()??0
@@ -201,11 +201,11 @@ val c = g()
 }
 `},
 		{"nested unary keeps parens",
-			"fun f(a: i64): i64 = -(-a) + !(!b)\n",
-			"fun f(a: i64): i64 = -(-a) + !(!b)\n"},
+			"fun f(a: i64): i64 => -(-a) + !(!b)\n",
+			"fun f(a: i64): i64 => -(-a) + !(!b)\n"},
 		{"postfix on operators",
-			"fun f(x: f64): f64 = (-x).abs() + (x as f64).floor() + (try g()).len()\n",
-			"fun f(x: f64): f64 = (-x).abs() + (x as f64).floor() + (try g()).len()\n"},
+			"fun f(x: f64): f64 => (-x).abs() + (x as f64).floor() + (try g()).len()\n",
+			"fun f(x: f64): f64 => (-x).abs() + (x as f64).floor() + (try g()).len()\n"},
 		{"comments keep their place",
 			"// top\nuse io // trailing\n\n/* block */\nfun main() {\n  // inside\n  io.println(\"x\") // after\n  // before close\n}\n",
 			"// top\nuse io  // trailing\n\n/* block */\nfun main() {\n  // inside\n  io.println(\"x\")  // after\n  // before close\n}\n"},
@@ -216,62 +216,65 @@ val c = g()
 			"struct P { x: i64, y: i64 }\nstruct E { }\nfun f(p: P) { loop (i in 0..<3) { g(i) } }\nfun g() { }\n",
 			"struct P {\n  x: i64\n  y: i64\n}\nstruct E { }\nfun f(p: P) {\n  loop (i in 0..<3) {\n    g(i)\n  }\n}\nfun g() { }\n"},
 		{"broken lists get trailing commas",
-			"val xs = [\n  1,\n  2]\nfun f() = g(\n  a,\n  b: 2\n)\n",
-			"val xs = [\n  1,\n  2,\n]\nfun f() = g(\n  a,\n  b: 2,\n)\n"},
+			"val xs = [\n  1,\n  2]\nfun f() => g(\n  a,\n  b: 2\n)\n",
+			"val xs = [\n  1,\n  2,\n]\nfun f() => g(\n  a,\n  b: 2,\n)\n"},
 		{"a broken list keeps the author's grouping: a grid stays a grid",
 			"val k: List<u32> = [\n  1, 2, 3,\n  4, 5, 6]\nval one = [\n  1,\n  2]\n",
 			"val k: List<u32> = [\n  1, 2, 3,\n  4, 5, 6,\n]\nval one = [\n  1,\n  2,\n]\n"},
 		{"method chains keep their breaks",
-			"fun f(xs: List<i64>): i64 = xs\n    .map(x => x + 1)\n  .len()\n",
-			"fun f(xs: List<i64>): i64 = xs\n  .map(x => x + 1)\n  .len()\n"},
+			"fun f(xs: List<i64>): i64 => xs\n    .map(x => x + 1)\n  .len()\n",
+			"fun f(xs: List<i64>): i64 => xs\n  .map(x => x + 1)\n  .len()\n"},
 		{"elvis continuation",
 			"fun f(a: i64?, b: i64?): i64 {\n  val z = a\n      ?: b\n      ?: 0\n  z\n}\n",
 			"fun f(a: i64?, b: i64?): i64 {\n  val z = a\n    ?: b\n    ?: 0\n  z\n}\n"},
 		{"empty impls drop their braces, field attributes stay",
-			"struct U {\n  @key(\"user_id\") id: i64\n  @skip p: string = \"\"\n  implement Codable { }\n  implement Comparable\n  implement Display { fun toString(): string = \"u\" }\n}\nimplement Codable for geo.Point {\n}\nimplement Error for U { /* later */ }\n",
-			"struct U {\n  @key(\"user_id\")\n  id: i64\n  @skip\n  p: string = \"\"\n  implement Codable\n  implement Comparable\n  implement Display {\n    fun toString(): string = \"u\"\n  }\n}\nimplement Codable for geo.Point\nimplement Error for U {\n  /* later */\n}\n"},
+			"struct U {\n  @key(\"user_id\") id: i64\n  @skip p: string = \"\"\n  implement Codable { }\n  implement Comparable\n  implement Display { fun toString(): string => \"u\" }\n}\nimplement Codable for geo.Point {\n}\nimplement Error for U { /* later */ }\n",
+			"struct U {\n  @key(\"user_id\")\n  id: i64\n  @skip\n  p: string = \"\"\n  implement Codable\n  implement Comparable\n  implement Display {\n    fun toString(): string => \"u\"\n  }\n}\nimplement Codable for geo.Point\nimplement Error for U {\n  /* later */\n}\n"},
 		{"enum members one per line",
 			"public  enum Color:u8 { Red=1, Green\n  Blue  = 10 // ten\n  Pink }\nenum E { }\n",
 			"public enum Color : u8 {\n  Red = 1\n  Green\n  Blue = 10  // ten\n  Pink\n}\nenum E { }\n"},
 		{"if else if",
-			"fun f(x: i64): string = if (x < 0) \"neg\" else if (x == 0) \"zero\" else \"pos\"\nfun g(x: i64) {\n  if (x > 0) {\n    a()\n  }\n  else {\n    b()\n  }\n}\n",
-			"fun f(x: i64): string = if (x < 0) \"neg\" else if (x == 0) \"zero\" else \"pos\"\nfun g(x: i64) {\n  if (x > 0) {\n    a()\n  } else {\n    b()\n  }\n}\n"},
+			"fun f(x: i64): string => if (x < 0) \"neg\" else if (x == 0) \"zero\" else \"pos\"\nfun g(x: i64) {\n  if (x > 0) {\n    a()\n  }\n  else {\n    b()\n  }\n}\n",
+			"fun f(x: i64): string => if (x < 0) \"neg\" else if (x == 0) \"zero\" else \"pos\"\nfun g(x: i64) {\n  if (x > 0) {\n    a()\n  } else {\n    b()\n  }\n}\n"},
 		{"when arms",
-			"fun f(v: i64): string = when (v) {\n1 => \"one\"\n  2, 3   =>   \"few\"\n  in 4..9 => \"some\"\n  else => \"many\"\n}\n",
-			"fun f(v: i64): string = when (v) {\n  1       => \"one\"\n  2, 3    => \"few\"\n  in 4..9 => \"some\"\n  else    => \"many\"\n}\n"},
+			"fun f(v: i64): string => when (v) {\n1 => \"one\"\n  2, 3   =>   \"few\"\n  in 4..9 => \"some\"\n  else => \"many\"\n}\n",
+			"fun f(v: i64): string => when (v) {\n  1       => \"one\"\n  2, 3    => \"few\"\n  in 4..9 => \"some\"\n  else    => \"many\"\n}\n"},
 		{"columns: comments and fields align, wide spreads do not",
-			"struct Node {\n  value: T // v\n  left: *Tree<T> // l\n\n  right: *Tree<T>\n}\nval a = 1 // one\nval bbbb = 2 // two\nfun f(v: i64): string = when (v) {\n  1 => \"one\"\n  in 4..9 if v > 5 && v < 8 && v != 7 => \"some\"\n}\n",
-			"struct Node {\n  value: T         // v\n  left:  *Tree<T>  // l\n\n  right: *Tree<T>\n}\nval a = 1     // one\nval bbbb = 2  // two\nfun f(v: i64): string = when (v) {\n  1 => \"one\"\n  in 4..9 if v > 5 && v < 8 && v != 7 => \"some\"\n}\n"},
+			"struct Node {\n  value: T // v\n  left: *Tree<T> // l\n\n  right: *Tree<T>\n}\nval a = 1 // one\nval bbbb = 2 // two\nfun f(v: i64): string => when (v) {\n  1 => \"one\"\n  in 4..9 if v > 5 && v < 8 && v != 7 => \"some\"\n}\n",
+			"struct Node {\n  value: T         // v\n  left:  *Tree<T>  // l\n\n  right: *Tree<T>\n}\nval a = 1     // one\nval bbbb = 2  // two\nfun f(v: i64): string => when (v) {\n  1 => \"one\"\n  in 4..9 if v > 5 && v < 8 && v != 7 => \"some\"\n}\n"},
 		{"operator breaks stay on the author's side",
-			"fun f(): i64 = a %\n  b + (c\n  ) - d\nfun g(): i64 = (a\n  % b)\n",
-			"fun f(): i64 = a %\n  b + (c) - d\nfun g(): i64 = (a\n  % b)\n"},
+			"fun f(): i64 => a %\n  b + (c\n  ) - d\nfun g(): i64 => (a\n  % b)\n",
+			"fun f(): i64 => a %\n  b + (c) - d\nfun g(): i64 => (a\n  % b)\n"},
 		{"comments at chain breaks and in empty bodies",
 			"fun f() {\n  x % [0]  // c1\n    .len()  // c2\n  when { // c3\n  }\n}\n",
 			"fun f() {\n  x % [0]   // c1\n    .len()  // c2\n  when {\n    // c3\n  }\n}\n"},
 		{"one-element tuple broken",
-			"fun f() = (\n  0,\n)\n",
-			"fun f() = (\n  0,\n)\n"},
+			"fun f() => (\n  0,\n)\n",
+			"fun f() => (\n  0,\n)\n"},
 		{"static, variadic, spread and when-val",
-			"struct P { x: i64\n static fun of(xs: i64...): P = P(x: xs.len()) }\nfun f(s: string) = when (val r = P.of(1, [2]...)) { else => r }\n",
-			"struct P {\n  x: i64\n  static fun of(xs: i64...): P = P(x: xs.len())\n}\nfun f(s: string) = when (val r = P.of(1, [2]...)) {\n  else => r\n}\n"},
+			"struct P { x: i64\n static fun of(xs: i64...): P => P(x: xs.len()) }\nfun f(s: string) => when (val r = P.of(1, [2]...)) { else => r }\n",
+			"struct P {\n  x: i64\n  static fun of(xs: i64...): P => P(x: xs.len())\n}\nfun f(s: string) => when (val r = P.of(1, [2]...)) {\n  else => r\n}\n"},
 		{"inline impls stay in the body",
-			"struct P<T> { x: T\n  @inline implement Show { fun show(): string = \"p\" }\n  implement Iterator { type Item = T\n fun next(): T? = null } }\nimplement Other for P<i64> { fun o() { } }\n",
-			"struct P<T> {\n  x: T\n  @inline\n  implement Show {\n    fun show(): string = \"p\"\n  }\n  implement Iterator {\n    type Item = T\n    fun next(): T? = null\n  }\n}\nimplement Other for P<i64> {\n  fun o() { }\n}\n"},
+			"struct P<T> { x: T\n  @inline implement Show { fun show(): string => \"p\" }\n  implement Iterator { type Item = T\n fun next(): T? => null } }\nimplement Other for P<i64> { fun o() { } }\n",
+			"struct P<T> {\n  x: T\n  @inline\n  implement Show {\n    fun show(): string => \"p\"\n  }\n  implement Iterator {\n    type Item = T\n    fun next(): T? => null\n  }\n}\nimplement Other for P<i64> {\n  fun o() { }\n}\n"},
 		{"patterns",
-			"fun f(s: Shape): f64 = when (s) { is Circle(r) => r; is Rect(w, h: hh) if w > hh => w; Point => 0.0; null => 1.0 }\n",
-			"fun f(s: Shape): f64 = when (s) {\n  is Circle(r)                => r\n  is Rect(w, h: hh) if w > hh => w\n  Point                       => 0.0\n  null                        => 1.0\n}\n"},
+			"fun f(s: Shape): f64 => when (s) { is Circle(r) => r; is Rect(w, h: hh) if w > hh => w; Point => 0.0; null => 1.0 }\n",
+			"fun f(s: Shape): f64 => when (s) {\n  is Circle(r)                => r\n  is Rect(w, h: hh) if w > hh => w\n  Point                       => 0.0\n  null                        => 1.0\n}\n"},
+		{"an expression body: '=>', and a returned lambda parenthesized (D140)",
+			"fun adder(n: i64): fun(i64): i64 => x => x + n\nfun kept(n: i64): fun(i64): i64 => (x => x * n)\n",
+			"fun adder(n: i64): fun(i64): i64 => (x => x + n)\nfun kept(n: i64): fun(i64): i64 => (x => x * n)\n"},
 		{"an arm's patterns broken after a comma stay broken",
-			"fun f(k: Kind): bool = when (k) {\n  Kind.A, Kind.B,\n        Kind.C => true\n  Kind.D, Kind.E => false\n}\n",
-			"fun f(k: Kind): bool = when (k) {\n  Kind.A, Kind.B,\n    Kind.C => true\n  Kind.D, Kind.E => false\n}\n"},
+			"fun f(k: Kind): bool => when (k) {\n  Kind.A, Kind.B,\n        Kind.C => true\n  Kind.D, Kind.E => false\n}\n",
+			"fun f(k: Kind): bool => when (k) {\n  Kind.A, Kind.B,\n    Kind.C => true\n  Kind.D, Kind.E => false\n}\n"},
 		{"lambdas",
 			"val f = (a: i64, b: i64): i64 => a + b\nval g = x => x * 2\nval h = (x) => x\nfun k(xs: List<i64>) { xs.forEach(x => total += x); xs.map(x => { x }) }\n",
 			"val f = (a: i64, b: i64): i64 => a + b\nval g = x => x * 2\nval h = (x) => x\nfun k(xs: List<i64>) {\n  xs.forEach(x => total += x)\n  xs.map(x => {\n    x\n  })\n}\n"},
 		{"error declarations",
-			"public error NotFound { key: string\n  fun message(): string = \"no $key\" }\nerror Failed { message: string }\nerror Set = NotFound | Failed\n",
-			"public error NotFound {\n  key: string\n  fun message(): string = \"no $key\"\n}\nerror Failed {\n  message: string\n}\nerror Set = NotFound | Failed\n"},
+			"public error NotFound { key: string\n  fun message(): string => \"no $key\" }\nerror Failed { message: string }\nerror Set = NotFound | Failed\n",
+			"public error NotFound {\n  key: string\n  fun message(): string => \"no $key\"\n}\nerror Failed {\n  message: string\n}\nerror Set = NotFound | Failed\n"},
 		{"modifiers and generics keep author order",
-			"public fun show<T: Show>(x: T): string = x.show()\nstruct S {\n  public fun bump() { }\n  override fun d(): string = \"\"\n}\n",
-			"public fun show<T: Show>(x: T): string = x.show()\nstruct S {\n  public fun bump() { }\n  override fun d(): string = \"\"\n}\n"},
+			"public fun show<T: Show>(x: T): string => x.show()\nstruct S {\n  public fun bump() { }\n  override fun d(): string => \"\"\n}\n",
+			"public fun show<T: Show>(x: T): string => x.show()\nstruct S {\n  public fun bump() { }\n  override fun d(): string => \"\"\n}\n"},
 		{"var fields align with the bare ones",
 			"struct C {\n  var n: i64 = 0\n  step: i64 = 1\n  private var hits:   i64 = 0\n  public var label: string = \"\"\n}\n",
 			"struct C {\n  var n:            i64 = 0\n  step:             i64 = 1\n  private var hits: i64 = 0\n  public var label: string = \"\"\n}\n"},
@@ -279,17 +282,17 @@ val c = g()
 			"internal struct C {\n  val id: i64\n  internal protected var n: i64 = 0\n  public protected var m: i64 = 0\n  internal fun f() { }\n}\ninternal val k = 1\ninternal fun g() { }\n",
 			"internal struct C {\n  val id:                   i64\n  internal protected var n: i64 = 0\n  public protected var m:   i64 = 0\n  internal fun f() { }\n}\ninternal val k = 1\ninternal fun g() { }\n"},
 		{"init block keeps its place among the members",
-			"struct P {\n  a: i64\n  b: string\n  init {\n    this.b = \"$a\"\n  }\n  fun f(): i64 = this.a\n}\n",
-			"struct P {\n  a: i64\n  b: string\n  init {\n    this.b = \"$a\"\n  }\n\n  fun f(): i64 = this.a\n}\n"},
+			"struct P {\n  a: i64\n  b: string\n  init {\n    this.b = \"$a\"\n  }\n  fun f(): i64 => this.a\n}\n",
+			"struct P {\n  a: i64\n  b: string\n  init {\n    this.b = \"$a\"\n  }\n\n  fun f(): i64 => this.a\n}\n"},
 		{"init parameters print like a function's (D73)",
 			"struct M<T> {\n  private cell: *T\n  init( value : T, n: i64 = 1 ) {\n    this.cell = &value\n  }\n}\n",
 			"struct M<T> {\n  private cell: *T\n  init(value: T, n: i64 = 1) {\n    this.cell = &value\n  }\n}\n"},
 		{"arm body broken after the arrow leaves no trailing space",
-			"fun f(v: i64): string = when (v) {\n  1 =>  \n    \"one\"\n  else => \"more\"\n}\n",
-			"fun f(v: i64): string = when (v) {\n  1 =>\n    \"one\"\n  else => \"more\"\n}\n"},
+			"fun f(v: i64): string => when (v) {\n  1 =>  \n    \"one\"\n  else => \"more\"\n}\n",
+			"fun f(v: i64): string => when (v) {\n  1 =>\n    \"one\"\n  else => \"more\"\n}\n"},
 		{"arrows align across a block arm; a nested when is its own run",
-			"fun f(c: u8): i64 = when (c) {\n  '(' => 1\n  ')' => {\n    when (c) {\n      1 => 10\n      222 => 20\n    }\n  }\n  // between arms\n  '+' => 3\n  else => 0\n}\n",
-			"fun f(c: u8): i64 = when (c) {\n  '('  => 1\n  ')'  => {\n    when (c) {\n      1   => 10\n      222 => 20\n    }\n  }\n  // between arms\n  '+'  => 3\n  else => 0\n}\n"},
+			"fun f(c: u8): i64 => when (c) {\n  '(' => 1\n  ')' => {\n    when (c) {\n      1 => 10\n      222 => 20\n    }\n  }\n  // between arms\n  '+' => 3\n  else => 0\n}\n",
+			"fun f(c: u8): i64 => when (c) {\n  '('  => 1\n  ')'  => {\n    when (c) {\n      1   => 10\n      222 => 20\n    }\n  }\n  // between arms\n  '+'  => 3\n  else => 0\n}\n"},
 		{"types",
 			"fun f(a: (*T)?, b: *T?, c: fun(i64, string): bool suspends throws E, d: (A, B), e: I.Item, g: *raw u8): Map<string, List<i64>> throws A | B { }\n",
 			"fun f(a: (*T)?, b: *T?, c: fun(i64, string): bool suspends throws E, d: (A, B), e: I.Item, g: *raw u8): Map<string, List<i64>> throws A | B { }\n"},
@@ -310,26 +313,26 @@ val c = g()
 			"public type Key = (i64, u64)\ntype StrMap<V> = Map<string, V>\n"},
 		{"use forms",
 			"use io\nuse geometry   as   geo\nuse a.b as c\n",
-			"use io\nuse a.b as c, geometry as geo\n"},
+			"use io\nuse a.b as c\nuse geometry as geo\n"},
 		{"use with names: sorted, one line, trailing comma dropped",
 			"use io{println as p,readLine,\n  eprintln,}, fs{ readFile }\n",
-			"use fs { readFile }, io { eprintln, println as p, readLine }\n"},
-		{"use block: merged, sorted, std first, blank lines dropped",
+			"use fs { readFile }\nuse io { eprintln, println as p, readLine }\n"},
+		{"use block: one per line, sorted, std first, blank lines dropped",
 			"use time\nuse shapes\nuse os,\n  io\n\nuse fs\n\nfun main() { }\n",
-			"use fs, io, os, time\nuse shapes\n\nfun main() { }\n"},
+			"use fs\nuse io\nuse os\nuse time\nuse shapes\n\nfun main() { }\n"},
 		{"use block: a commented line stays as written, the rest is grouped",
 			"use os  // needed\nuse io\nuse fs\n",
-			"use os  // needed\nuse fs, io\n"},
+			"use os  // needed\nuse fs\nuse io\n"},
 		{"use block: comments above and below are not inside it",
 			"// header\nuse os\nuse io\n// about main\nfun main() { }\n",
-			"// header\nuse io, os\n// about main\nfun main() { }\n"},
+			"// header\nuse io\nuse os\n// about main\nfun main() { }\n"},
 		{"concurrency",
 			"fun main() {\n  scope {\n    val t = async work(1)\n    val (a, b) = gather { async f(); async g() }\n    val w = race { val m = ch.recv() => m; sleep(100) => \"t\" }\n    with (f = open(\"a\")) { process(f) }\n  }\n}\n",
 			"fun main() {\n  scope {\n    val t = async work(1)\n    val (a, b) = gather {\n      async f()\n      async g()\n    }\n    val w = race {\n      val m = ch.recv() => m\n      sleep(100)        => \"t\"\n    }\n    with (f = open(\"a\")) {\n      process(f)\n    }\n  }\n}\n"},
 		// D106: a lambda that is an arm's value gets parentheses
 		{"lambda arm",
-			"fun pick(double: bool): fun(i64): i64 = when {\n  double => x => x * 2\n  else   => (x => x)\n}\n",
-			"fun pick(double: bool): fun(i64): i64 = when {\n  double => (x => x * 2)\n  else   => (x => x)\n}\n"},
+			"fun pick(double: bool): fun(i64): i64 => when {\n  double => x => x * 2\n  else   => (x => x)\n}\n",
+			"fun pick(double: bool): fun(i64): i64 => when {\n  double => (x => x * 2)\n  else   => (x => x)\n}\n"},
 		// D100: printed as written — never converted to or from the block form
 		{"with statement",
 			"fun main() {\n  with  f = open(\"a\")\n  with t =   async work(1)\n  with (g = open(\"b\")) { take(g) }\n  take(f)\n}\n",
@@ -378,9 +381,32 @@ func TestOptions(t *testing.T) {
 // keeps its `public`.
 func TestPublicUseIsNotMerged(t *testing.T) {
 	src := "use os,io\npublic use geometry\nuse time\npublic   use shapes { area,   Circle as Round }, util as tools\nuse io\n"
-	want := "use io, os\npublic use geometry\nuse time\npublic use shapes { area, Circle as Round }, util as tools\nuse io\n"
+	want := "use io\nuse os\npublic use geometry\nuse time\npublic use shapes { area, Circle as Round }, util as tools\nuse io\n"
 	if got := checkRoundTrip(t, "public_use.vs", src); got != want {
 		t.Errorf("formatted:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// `[format] imports`: one `use` per import by default, sorted with the
+// standard library first; "merged" writes one comma-separated `use` per
+// origin. Either form is read the same, and each style is stable.
+func TestImportStyles(t *testing.T) {
+	src := "use source { Span, File }, lexer\nuse utf8\n\nuse io, mylib.text as text\n\nfun main() { }\n"
+	for _, c := range []struct {
+		style ImportStyle
+		want  string
+	}{
+		{ImportsPerLine, "use io\nuse utf8\nuse lexer\nuse mylib.text as text\nuse source { File, Span }\n\nfun main() { }\n"},
+		{ImportsMerged, "use io, utf8\nuse lexer, mylib.text as text, source { File, Span }\n\nfun main() { }\n"},
+	} {
+		got, diags := Source(source.NewFile("t.vs", src), Options{Imports: c.style})
+		if diags.HasErrors() || got != c.want {
+			t.Errorf("style %d:\n--- got ---\n%s--- want ---\n%s%s", c.style, got, c.want, diags.Render())
+			continue
+		}
+		if again, _ := Source(source.NewFile("t.vs", got), Options{Imports: c.style}); again != got {
+			t.Errorf("style %d is not stable:\n%s", c.style, again)
+		}
 	}
 }
 
@@ -437,7 +463,7 @@ func TestCLayoutRoundTrips(t *testing.T) {
 
 // D121: constant parameters and constant type arguments print as written.
 func TestConstGenericsRoundTrip(t *testing.T) {
-	src := "struct Buf<const N: i64> {\n  data: Array<u8, N>\n}\n\nfun zeros<T, const N: i64>(): Array<T, N> = Array.make(0)\n\n" +
+	src := "struct Buf<const N: i64> {\n  data: Array<u8, N>\n}\n\nfun zeros<T, const N: i64>(): Array<T, N> => Array.make(0)\n\n" +
 		"struct S {\n  a: Array<u8, 4 * 16>\n  b: MutableMap<string, Array<u8, 200>>\n  c: Array<Array<i64, 3>, 2>\n  d: Buf<8>\n}\n"
 	if got := checkRoundTrip(t, "constgen.vs", src); got != src {
 		t.Errorf("formatted:\n%s\nwant:\n%s", got, src)
@@ -456,8 +482,8 @@ func TestTemplateLiteralRoundTrips(t *testing.T) {
 
 // D113: `const fun` prints as written, beside the other modifiers.
 func TestConstFunRoundTrips(t *testing.T) {
-	src := "const KB: i64 = 1024\n\nconst fun square(n: i64): i64 = n * n\n\npublic const fun cube(n: i64): i64 = n * n * n\n\n" +
-		"struct Counter {\n  var n: i64\n\n  const fun bump(by: i64) {\n    this.n += by\n  }\n\n  public static const fun zero(): Counter = Counter(n: 0)\n}\n"
+	src := "const KB: i64 = 1024\n\nconst fun square(n: i64): i64 => n * n\n\npublic const fun cube(n: i64): i64 => n * n * n\n\n" +
+		"struct Counter {\n  var n: i64\n\n  const fun bump(by: i64) {\n    this.n += by\n  }\n\n  public static const fun zero(): Counter => Counter(n: 0)\n}\n"
 	if got := checkRoundTrip(t, "constfun.vs", src); got != src {
 		t.Errorf("formatted:\n%s\nwant:\n%s", got, src)
 	}

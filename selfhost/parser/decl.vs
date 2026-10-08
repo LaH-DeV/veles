@@ -1,5 +1,7 @@
 // Declarations.
-use ast, lexer { Kind, Token }, source { Span }
+use ast
+use lexer { Kind, Token }
+use source { Span }
 
 extend Parser {
   fun parseStruct(head: DeclHead, isExtern: bool): ast.StructDecl {
@@ -520,7 +522,7 @@ fun selfType(name: ast.Ident, typeParams: List<ast.TypeParam>): ast.Type {
 
 // `override fun message(): string = this.message`, for an error whose
 // `message: string` field is at pos
-fun messageFromField(pos: Span): ast.FunDecl = ast.FunDecl(
+fun messageFromField(pos: Span): ast.FunDecl => ast.FunDecl(
   isOverride: true,
   name: ast.Ident(name: "message", pos),
   ret: &ast.NamedType(path: [ast.Ident(name: "string", pos)], pos),
@@ -529,7 +531,7 @@ fun messageFromField(pos: Span): ast.FunDecl = ast.FunDecl(
 )
 
 // what a `val`, `var` or `const` keyword declares
-fun bindKind(keyword: Kind): ast.BindKind = when (keyword) {
+fun bindKind(keyword: Kind): ast.BindKind => when (keyword) {
   Kind.KwVar   => ast.BindKind.Var
   Kind.KwConst => ast.BindKind.Const
   else         => ast.BindKind.Val

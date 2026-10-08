@@ -1,7 +1,8 @@
 // Compiler-shaped: build a large tree of a sealed family (one heap node per
 // variant, children behind pointers), then walk it with `when` twice — once
 // to evaluate and once to count. The walk is the shape of every compiler pass.
-use io { println }, time
+use io { println }
+use time
 
 sealed trait Expr
 struct Num : Expr {
@@ -39,7 +40,7 @@ fun build(depth: i64, seed: i64): Expr {
   }
 }
 
-fun eval(e: Expr): i64 = when (e) {
+fun eval(e: Expr): i64 => when (e) {
   is Num(value)          => value
   is Neg(operand)        => 0 - eval(*operand)
   is Add(left, right)    => (eval(*left) + eval(*right)) % 1000003
@@ -47,7 +48,7 @@ fun eval(e: Expr): i64 = when (e) {
   is Cond(test, yes, no) => if (eval(*test) % 2 == 0) eval(*yes) else eval(*no)
 }
 
-fun count(e: Expr): i64 = when (e) {
+fun count(e: Expr): i64 => when (e) {
   is Num(_)              => 1
   is Neg(operand)        => 1 + count(*operand)
   is Add(left, right)    => 1 + count(*left) + count(*right)

@@ -240,7 +240,7 @@ type FunDecl struct {
 	Ret        Type // nil means unit
 	Effects    Effects
 	Body       *Block
-	ExprBody   Expr // `fun f() = expr`
+	ExprBody   Expr // `fun f() => expr`
 	Pos        source.Span
 }
 

@@ -9,13 +9,13 @@ fun inTable(table: List<(i64, i64)>, r: i64): bool {
   first <= r
 }
 
-fun asciiIdStart(b: u8): bool = b == '_' || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
+fun asciiIdStart(b: u8): bool => b == '_' || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
 
-fun asciiIdContinue(b: u8): bool = asciiIdStart(b) || (b >= '0' && b <= '9')
+fun asciiIdContinue(b: u8): bool => asciiIdStart(b) || (b >= '0' && b <= '9')
 
-public fun isIDStart(r: i64): bool = if (r < 0x80) asciiIdStart(r.wrapU8()) else inTable(ID_START, r)
+public fun isIDStart(r: i64): bool => if (r < 0x80) asciiIdStart(r.wrapU8()) else inTable(ID_START, r)
 
-public fun isIDContinue(r: i64): bool = if (r < 0x80) asciiIdContinue(r.wrapU8()) else inTable(ID_CONTINUE, r)
+public fun isIDContinue(r: i64): bool => if (r < 0x80) asciiIdContinue(r.wrapU8()) else inTable(ID_CONTINUE, r)
 
 /// The byte length of the identifier-start character at `src[i]`, or 0.
 public fun identStartLen(src: string, i: i64): i64 {
@@ -47,16 +47,16 @@ public fun identEnd(src: string, i: i64): i64 {
 
 /// The characters that reorder how text is displayed: the embeddings and
 /// overrides, the isolates, the three marks — Trojan source.
-public fun isBidiControl(r: i64): bool =
+public fun isBidiControl(r: i64): bool =>
   (r >= 0x202A && r <= 0x202E) || (r >= 0x2066 && r <= 0x2069) || r == 0x200E || r == 0x200F || r == 0x061C
 
 /// `U+XXXX`: four hex digits at least, upper case.
-public fun codePoint(r: i64): string = "U+${hexUpper(r).padStart(4, "0")}"
+public fun codePoint(r: i64): string => "U+${hexUpper(r).padStart(4, "0")}"
 
-public fun hexUpper(n: i64): string = n.toString(radix: 16).toUpper()
+public fun hexUpper(n: i64): string => n.toString(radix: 16).toUpper()
 
 /// A character as itself in a message: printable ASCII and everything above.
-public fun showAsItself(r: i64): bool = r >= 0x20 && r != 0x7F
+public fun showAsItself(r: i64): bool => r >= 0x20 && r != 0x7F
 
 /// An unexpected character, spelled so that an invisible one is named.
 public fun describeRune(r: i64): string {

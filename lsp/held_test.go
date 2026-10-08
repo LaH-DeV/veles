@@ -25,7 +25,7 @@ fun serve() {
   }
 }
 
-fun serving(name: string): Server = Server(name, serving: async serve())
+fun serving(name: string): Server => Server(name, serving: async serve())
 
 fun main() {
   with srv = serving("api")

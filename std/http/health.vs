@@ -1,6 +1,7 @@
 // Health endpoints (D133): the two probes an orchestrator or a load balancer
 // asks of a service, as middleware.
-use json as js, log as logs { field }
+use json as js
+use log as logs { field }
 
 // one named check; `run` answers null when it passed and why it did not
 // otherwise, and neither throws nor panics
@@ -134,7 +135,7 @@ fun probe(c: Check): string? suspends {
   }
 }
 
-fun probeAnswer(status: Status, body: string, kind: MediaType): Response =
+fun probeAnswer(status: Status, body: string, kind: MediaType): Response =>
   Response(status, headers: ["content-type": kind.name, Header.cacheControl: "no-store"], body: body.bytes(), quiet: true)
 
-fun jsonString(text: string): string = js.encode(text) ?? "\"?\""
+fun jsonString(text: string): string => js.encode(text) ?? "\"?\""

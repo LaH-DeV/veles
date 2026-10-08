@@ -6,7 +6,11 @@
 //
 // The file lives at $TODO_FILE, or todo.txt in the current directory. Tasks
 // are numbered by line; `todo help` lists the commands.
-use fs, io { print, println }, os, path, time
+use fs
+use io { print, println }
+use os
+use path
+use time
 
 error UsageError {
   message: string
@@ -62,9 +66,9 @@ struct Task {
     sb.toString()
   }
 
-  fun words(): List<string> = this.text.split(" ")
-  fun projects(): List<string> = this.words().filter(w => w.startsWith("+") && w.len() > 1)
-  fun contexts(): List<string> = this.words().filter(w => w.startsWith("@") && w.len() > 1)
+  fun words(): List<string> => this.text.split(" ")
+  fun projects(): List<string> => this.words().filter(w => w.startsWith("+") && w.len() > 1)
+  fun contexts(): List<string> => this.words().filter(w => w.startsWith("@") && w.len() > 1)
 
   /// The value of a `key:value` tag, or null.
   fun tag(key: string): string? {
@@ -80,7 +84,7 @@ struct Task {
 
   /// Every term must match: `+proj` and `@ctx` match a tag, `-word` excludes,
   /// anything else is a case-insensitive substring of the line.
-  fun matches(terms: List<string>): bool = terms.all(term => when {
+  fun matches(terms: List<string>): bool => terms.all(term => when {
     term.startsWith("-") && term.len() > 1 => !this.matches([term.substring(1, term.len()) ?: ""])
     term.startsWith("+") => this.projects().contains(term)
     term.startsWith("@") => this.contexts().contains(term)
@@ -88,7 +92,7 @@ struct Task {
   })
 }
 
-fun isDigit(b: u8): bool = b >= '0' && b <= '9'
+fun isDigit(b: u8): bool => b >= '0' && b <= '9'
 
 /// `YYYY-MM-DD`, by shape only.
 fun isDate(w: string?): bool {
@@ -104,13 +108,13 @@ fun isDate(w: string?): bool {
 }
 
 /// `(A)` to `(Z)`.
-fun isPriority(w: string): bool = w.len() == 3 && w.byteAt(0) == '(' && w.byteAt(2) == ')' && w.byteAt(1) >= 'A' && w.byteAt(1) <= 'Z'
+fun isPriority(w: string): bool => w.len() == 3 && w.byteAt(0) == '(' && w.byteAt(2) == ')' && w.byteAt(1) >= 'A' && w.byteAt(1) <= 'Z'
 
 // ---------------------------------------------------------------------------
 // dates: only whole days matter here
 
 /// Today as an ISO date; $TODO_TODAY overrides the clock for scripts and tests.
-fun today(): string = os.env("TODO_TODAY") ?: time.now().local().date()
+fun today(): string => os.env("TODO_TODAY") ?: time.now().local().date()
 
 /// Days since 1970-01-01 for an ISO date (Howard Hinnant's days_from_civil).
 fun dayNumber(date: string): i64 {
@@ -164,7 +168,7 @@ struct TodoFile {
 
   /// Task `n`, counting from 1. Every `n` comes from `number`, which accepts
   /// only `1..len`.
-  fun task(n: i64): *Task = this.tasks.ref(n - 1) ?: panic("todo: number() accepts only 1..len")
+  fun task(n: i64): *Task => this.tasks.ref(n - 1) ?: panic("todo: number() accepts only 1..len")
 
   /// The numbered tasks, open ones first by priority, then by due date, then by number.
   fun listed(terms: List<string>, all: bool): List<(i64, Task)> {
@@ -184,7 +188,7 @@ struct TodoFile {
   }
 }
 
-fun sortKey(priority: string): string = if (priority.isEmpty()) "ZZ" else priority
+fun sortKey(priority: string): string => if (priority.isEmpty()) "ZZ" else priority
 
 fun printRows(rows: List<(i64, Task)>, total: i64, width: i64) {
   val now = today()

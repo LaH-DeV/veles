@@ -111,5 +111,5 @@ fun blake2b(data: List<u8>, outLen: i64, key: List<u8> = []): List<u8> {
 
 extend MutableList<u64> {
   // the word at `i`, for code that indexes inside what it allocated
-  fun wordAt(i: i64): u64 = this.at(i) ?: panic("crypto: a word index outside its block")
+  fun wordAt(i: i64): u64 => this.at(i) ?: panic("crypto: a word index outside its block")
 }

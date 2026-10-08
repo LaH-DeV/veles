@@ -2,7 +2,8 @@
 // well-behaved server does, and against canned bytes on a raw socket for what
 // a server must not do.
 
-use io, net
+use io
+use net
 
 struct Note {
   title: string
@@ -12,7 +13,7 @@ struct Note {
 }
 
 // the kind of a request that failed, null for one that did not
-test fun failKind(r: Result<ClientResponse, FetchError>): FetchKind? = when (r) {
+test fun failKind(r: Result<ClientResponse, FetchError>): FetchKind? => when (r) {
   is Ok(_)  => null
   is Err(e) => e.kind
 }
@@ -59,7 +60,7 @@ test fun cannedAnswer(conn: net.Conn, reply: string) {
   val _ = c.writeText(reply)
 }
 
-test fun echo(): Handler = handler(req => Response.text("${req.method} ${req.path}"))
+test fun echo(): Handler => handler(req => Response.text("${req.method} ${req.path}"))
 
 // ---- the basics ----
 
@@ -217,7 +218,7 @@ test "a refused connection is a Connect error" {
 
 // ---- redirects ----
 
-test fun redirector(): Handler = handler(req => when (req.path) {
+test fun redirector(): Handler => handler(req => when (req.path) {
   "/start"  => Response.redirect("/middle")
   "/middle" => Response.redirect("end", status: Status.movedPermanently)
   "/end"    => Response.text("arrived")

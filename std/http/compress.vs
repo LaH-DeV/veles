@@ -53,7 +53,7 @@ fun acceptsGzip(header: string?): bool {
 }
 
 // the media type's essence: `text/html; charset=utf-8` is `text/html`
-fun essenceOf(contentType: string): string = (contentType.split(";").at(0) ?: "").trim().toLower()
+fun essenceOf(contentType: string): string => (contentType.split(";").at(0) ?: "").trim().toLower()
 
 fun isTextual(contentType: string): bool {
   val essence = essenceOf(contentType)

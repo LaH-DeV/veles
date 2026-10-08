@@ -2,7 +2,8 @@
 // the password crossing the wire. The client proves it knows the password,
 // and checks that the server does too. The password is used as written —
 // SASLprep (normalisation of non-ASCII) is not applied (checklist §11).
-use base64, crypto
+use base64
+use crypto
 
 /// The client's side of a SCRAM exchange. `first()` is the message that opens it,
 /// `answer(...)` turns the server's challenge into the proof and the signature to
@@ -13,10 +14,10 @@ struct Scram {
   nonce:    string
   password: Secret<string>
 
-  fun bare(): string = "n=${this.user},r=${this.nonce}"
+  fun bare(): string => "n=${this.user},r=${this.nonce}"
 
   // "n,," says: no channel binding (the TLS layer, when there is one, is not bound to)
-  fun first(): string = "n,," + this.bare()
+  fun first(): string => "n,," + this.bare()
 
   // The server's first message `r=<nonce>,s=<salt>,i=<count>` → the final message with the proof.
   // Null when the challenge is not one: a nonce that does not extend ours, a salt that is not

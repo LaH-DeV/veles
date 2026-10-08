@@ -95,7 +95,7 @@ public struct FormDecoder {
   private recorded: codec.Problems = codec.Problems()
   private keyStyle: codec.KeyStyle = codec.KeyStyle.AsWritten
 
-  public static fun of(fields: Fields, keys: codec.KeyStyle = codec.KeyStyle.AsWritten): FormDecoder =
+  public static fun of(fields: Fields, keys: codec.KeyStyle = codec.KeyStyle.AsWritten): FormDecoder =>
     FormDecoder(fields, names: fields.names(), state: &FormState(), keyStyle: keys)
 
   // Where the decoder is: the member being read, or, between members and
@@ -127,8 +127,8 @@ public struct FormDecoder {
   }
 
   implement codec.Decoder {
-    fun format(): string = "form"
-    override fun keys(): codec.KeyStyle = this.keyStyle
+    fun format(): string => "form"
+    override fun keys(): codec.KeyStyle => this.keyStyle
 
     fun peek(): codec.Kind throws DecodeError {
       val s = this.state
@@ -199,7 +199,7 @@ public struct FormDecoder {
       s.pending = false
     }
 
-    fun readString(): string throws DecodeError = this.take() ?: ""
+    fun readString(): string throws DecodeError => this.take() ?: ""
 
     fun readI64(): i64 throws DecodeError {
       val at = this.here()
@@ -256,10 +256,10 @@ public struct FormDecoder {
       if (s.inList) s.listAt += 1 else s.pending = false
     }
 
-    fun path(): string = this.here()
+    fun path(): string => this.here()
 
-    fun problemAt(path: string, message: string) = this.recorded.record(path, message)
+    fun problemAt(path: string, message: string) => this.recorded.record(path, message)
 
-    fun problems(): List<codec.Problem> = this.recorded.list()
+    fun problems(): List<codec.Problem> => this.recorded.list()
   }
 }

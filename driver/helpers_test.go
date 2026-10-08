@@ -71,7 +71,7 @@ test "a cancelled retry stops at the wait" {
   expect(calls.load() == 1)
 }
 
-test fun retryNoCalls(): i64 = retry(0, () => 1)
+test fun retryNoCalls(): i64 => retry(0, () => 1)
 
 test "retry panics for fewer than one call" {
   // retry suspends, and expectPanics takes a function that does not

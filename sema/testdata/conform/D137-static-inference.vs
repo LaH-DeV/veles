@@ -6,9 +6,9 @@ use io
 
 struct Box<T> {
   value: T
-  public static fun of(v: T): Box<T> = Box(value: v)
-  public static fun none(): Box<T>? = null
-  public static fun build(f: fun(): T): Box<T> = Box(value: f())
+  public static fun of(v: T): Box<T> => Box(value: v)
+  public static fun none(): Box<T>? => null
+  public static fun build(f: fun(): T): Box<T> => Box(value: f())
 }
 
 fun main() {

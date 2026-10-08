@@ -3,16 +3,20 @@
 // compressed as it goes, a `.gz` served from beside the file, and request
 // bodies opened by `http.decompressRequests()` within their ceiling.
 
-use compress as gz, fs, net, os, path
+use compress as gz
+use fs
+use net
+use os
+use path
 
 val gzipHeaders: Map<string, string> = ["accept-encoding": "gzip, deflate"]
 
-test fun article(): string = "The quick brown fox jumps over the lazy dog. ".repeat(100)
+test fun article(): string => "The quick brown fox jumps over the lazy dog. ".repeat(100)
 
-test fun page(contentType: string = "text/html; charset=utf-8", body: string = article()): Handler =
+test fun page(contentType: string = "text/html; charset=utf-8", body: string = article()): Handler =>
   compress()(handler(req => Response(headers: ["content-type": contentType], body: body.bytes())))
 
-test fun unpacked(r: Response): string = (gz.gunzip(r.body) ?? []).decodeUtf8() ?: "<not text>"
+test fun unpacked(r: Response): string => (gz.gunzip(r.body) ?? []).decodeUtf8() ?: "<not text>"
 
 test "a large text response is gzipped for a client that accepts it" {
   val r = call(page(), Method.get, "/", headers: gzipHeaders)
@@ -112,9 +116,9 @@ test fun headEnd(response: List<u8>): i64 {
   at + 4
 }
 
-test fun headOf(response: List<u8>): string = response.take(headEnd(response)).decodeUtf8() ?: ""
+test fun headOf(response: List<u8>): string => response.take(headEnd(response)).decodeUtf8() ?: ""
 
-test fun bodyOf(response: List<u8>): List<u8> = response.drop(headEnd(response))
+test fun bodyOf(response: List<u8>): List<u8> => response.drop(headEnd(response))
 
 test fun unchunk(framed: List<u8>): List<u8> {
   val out: MutableList<u8> = []
@@ -207,7 +211,7 @@ test "the compressed variant has validators of its own" {
   expect(again.status == Status.notModified)
 }
 
-test fun echoLength(): Handler = decompressRequests(max: 5000)(handler(req => {
+test fun echoLength(): Handler => decompressRequests(max: 5000)(handler(req => {
   val text = try req.text()
   Response.text("${text.len()} ${req.header("content-encoding") ?: "plain"}")
 }))

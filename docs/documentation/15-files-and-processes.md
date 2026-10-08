@@ -11,7 +11,10 @@ Every `fs` call that can fail throws `IoError`, so the rules of
 [chapter 7](07-errors.md) apply: `try` to propagate, `when` to handle.
 
 ```veles
-use fs, io, os, path
+use fs
+use io
+use os
+use path
 
 fun main() throws IoError {
   val dir = path.join(os.tempDir(), "veles-tutorial-15")
@@ -62,7 +65,10 @@ empties it, `Append` creates it or keeps what it has. A `File` is `Closeable`,
 so `with` closes it:
 
 ```veles
-use fs, io, os, path
+use fs
+use io
+use os
+use path
 
 fun main() throws IoError {
   val p = path.join(os.tempDir(), "veles-tutorial-15-open.bin")
@@ -118,7 +124,8 @@ anything is opened: the system would read it only up to the NUL, a
 different file from the one your code checked.
 
 ```veles
-use fs, io
+use fs
+use io
 
 fun main() {
   when (val r = fs.readFile("no/such/file.txt")) {
@@ -158,7 +165,10 @@ An existing file keeps its permissions. (On Windows a file that is open
 elsewhere cannot be replaced: close it first.)
 
 ```veles
-use fs, io { println }, os, path
+use fs
+use io { println }
+use os
+use path
 
 fun main() throws IoError {
   val dir = path.join(os.tempDir(), "veles-doc-atomic")
@@ -204,7 +214,10 @@ cannot become one huge allocation), and after an error or at the end the file
 is closed. `with lines = try fs.lines(...)` closes it early.
 
 ```veles
-use fs, io { println }, os, path
+use fs
+use io { println }
+use os
+use path
 
 fun longest(file: string): i64 throws IoError {
   var longest = 0
@@ -274,7 +287,8 @@ and `writeAtomic`.
 `/`, which every platform's file API accepts.
 
 ```veles
-use io, path
+use io
+use path
 
 fun main() {
   val p = path.join("src", "compiler", "lexer.vs")
@@ -297,7 +311,8 @@ answers whether `p`, cleaned, is `root` or something inside it — the
 check to make before opening a file whose name came from outside:
 
 ```veles
-use io, path
+use io
+use path
 
 fun main() {
   io.println(path.clean("site/./css/../img//logo.png"))

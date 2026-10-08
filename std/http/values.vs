@@ -63,7 +63,7 @@ public struct Status {
 
   /// The standard reason phrase (RFC 9110 §15), or `""` for a code it
   /// does not name.
-  public fun reason(): string = when (this.code) {
+  public fun reason(): string => when (this.code) {
     100  => "Continue"
     101  => "Switching Protocols"
     200  => "OK"
@@ -116,15 +116,15 @@ public struct Status {
   }
 
   /// 1xx: the request goes on.
-  public fun isInformational(): bool = this.code < 200
+  public fun isInformational(): bool => this.code < 200
   /// 2xx.
-  public fun isSuccess(): bool = this.code >= 200 && this.code < 300
+  public fun isSuccess(): bool => this.code >= 200 && this.code < 300
   /// 3xx.
-  public fun isRedirect(): bool = this.code >= 300 && this.code < 400
+  public fun isRedirect(): bool => this.code >= 300 && this.code < 400
   /// 4xx: the client's mistake.
-  public fun isClientError(): bool = this.code >= 400 && this.code < 500
+  public fun isClientError(): bool => this.code >= 400 && this.code < 500
   /// 5xx: the server's.
-  public fun isServerError(): bool = this.code >= 500
+  public fun isServerError(): bool => this.code >= 500
 
   implement Display {
     fun toString(): string {
@@ -151,7 +151,7 @@ public struct Method {
   public static val patch = Method(name: "PATCH")
 
   implement Display {
-    fun toString(): string = this.name
+    fun toString(): string => this.name
   }
 }
 
@@ -255,13 +255,13 @@ public struct MediaType {
 
   /// The type and subtype alone, lower-cased, without parameters:
   /// `text/html; charset=utf-8` → `text/html`. What to compare.
-  public fun essence(): string = (this.name.split(";").at(0) ?: "").trim().toLower()
+  public fun essence(): string => (this.name.split(";").at(0) ?: "").trim().toLower()
 
   implement Display {
-    fun toString(): string = this.name
+    fun toString(): string => this.name
   }
   implement AsMediaType {
-    fun mediaType(): MediaType = this
+    fun mediaType(): MediaType => this
   }
 }
 
@@ -272,5 +272,5 @@ public trait AsMediaType {
 }
 
 implement AsMediaType for string {
-  fun mediaType(): MediaType = MediaType(name: this)
+  fun mediaType(): MediaType => MediaType(name: this)
 }

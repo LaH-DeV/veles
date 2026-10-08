@@ -4,7 +4,7 @@ use io
 
 error Boom { }
 
-fun work(n: i64): i64 throws Boom = if (n < 0) throw Boom() else n
+fun work(n: i64): i64 throws Boom => if (n < 0) throw Boom() else n
 
 fun one(): bool {
   val r = gather { async work(1) }

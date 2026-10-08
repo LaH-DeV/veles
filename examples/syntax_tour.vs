@@ -1,13 +1,14 @@
 // A tour of the Veles surface syntax, taken from veles-spec.md.
 use io { println }
-use math.geometry as geo, otherModule
+use math.geometry as geo
+use otherModule
 
 fun main() throws {
   val sum = add(5, 7)
   printSum(sum)
 }
 
-fun add(a: i32, b: i32) = a + b
+fun add(a: i32, b: i32) => a + b
 
 fun printSum(sum: i32) {
   println("The sum is $sum and ${sum * 2}")
@@ -25,19 +26,19 @@ struct Rect : Shape {
 }
 
 // D13 — when with patterns, guards, destructuring
-fun area(shape: Shape): f64 = when (shape) {
+fun area(shape: Shape): f64 => when (shape) {
   is Shape.Circle(radius) if radius > 10.0 => PI * radius * radius
   is Shape.Circle(radius)                  => PI * radius * radius
   is Shape.Rect(w, h)                      => w * h
 }
 
-fun classify(n: i32): string = when {
+fun classify(n: i32): string => when {
   n < 0  => "negative"
   n == 0 => "zero"
   else   => "positive"
 }
 
-fun describe(n: i32?): string = when (n) {
+fun describe(n: i32?): string => when (n) {
   null     => "nothing"
   1, 2     => "small"
   in 3..10 => "medium"
@@ -48,7 +49,7 @@ fun describe(n: i32?): string = when (n) {
 struct Counter {
   n: i32 = 0
 
-  fun get(): i32 = this.n
+  fun get(): i32 => this.n
   fun bump() {
     this.n += 1
   }
@@ -56,9 +57,9 @@ struct Counter {
   // D23 (v0.23) — a trait impl inside the body of your own type; a static
   // function has no `this` and is called on the type: Counter.zero()
   implement Display {
-    fun toString(): string = "Counter(${this.n})"
+    fun toString(): string => "Counter(${this.n})"
   }
-  static fun zero(): Counter = Counter()
+  static fun zero(): Counter => Counter()
 }
 
 // D27/D42 — traits with associated types and default bodies
@@ -90,13 +91,13 @@ val handler: fun(Request): Response suspends throws HttpError = handle
 // D23 — impl blocks
 implement<T> Display for Stack<T> {
   type Output = string
-  fun show(): string = "stack"
-  override fun hint(): i32 = 1
+  fun show(): string => "stack"
+  override fun hint(): i32 => 1
 }
 
 // D23 addendum — extend blocks: inherent methods for a type you declare
 extend<T: Display> Stack<T> {
-  public fun render(): string = this.items.map(x => x.show()).join(" ")
+  public fun render(): string => this.items.map(x => x.show()).join(" ")
   fun drain() {
     this.items.clear()
   }
@@ -199,10 +200,10 @@ test "a user query returns rows" {
 // D51 — attributes
 
 @deprecated("use parseConfig instead")
-fun oldLoad(path: string): Config throws = loadConfig(path)
+fun oldLoad(path: string): Config throws => loadConfig(path)
 
 // D21 — wrapping arithmetic; D44 unsafe fun
-unsafe fun wrap(a: i32, b: i32): i32 = a +% b
+unsafe fun wrap(a: i32, b: i32): i32 => a +% b
 
 fun typeTests(x: Shape, y: Any) {
   if (x is Shape.Circle && !(y !is string)) { }

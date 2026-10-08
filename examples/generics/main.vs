@@ -6,27 +6,27 @@ struct Stack<T> {
   fun push(x: T) {
     this.items.push(x)
   }
-  fun pop(): T? = this.items.pop()
-  fun len(): i64 = this.items.len()
+  fun pop(): T? => this.items.pop()
+  fun len(): i64 => this.items.len()
 }
 
 trait Show {
   fun show(): string
-  fun shout(): string = this.show() + "!"
+  fun shout(): string => this.show() + "!"
 }
 
 struct Cat {
   name: string
 
   implement Show {
-    fun show(): string = "cat ${this.name}"
+    fun show(): string => "cat ${this.name}"
   }
 }
 implement Show for i64 {
-  fun show(): string = "int $this"
+  fun show(): string => "int $this"
 }
 
-fun describe<T: Show>(x: T): string = x.shout()
+fun describe<T: Show>(x: T): string => x.shout()
 
 fun first<T>(xs: List<T>, fallback: T): T {
   if (xs.len() == 0) return fallback

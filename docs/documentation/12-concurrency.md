@@ -424,7 +424,7 @@ fun fetch(n: i64): i64 {
   n * n
 }
 
-fun check(n: i64): i64 throws Rejected = if (n == 4) throw Rejected(n) else n
+fun check(n: i64): i64 throws Rejected => if (n == 4) throw Rejected(n) else n
 
 fun main() {
   val ids = [1, 2, 3, 4, 5]
@@ -831,7 +831,7 @@ either. The reverse is refused with the capture named:
 
 ```veles
 // fragment
-fun run(f: sendable fun(i64): i64, x: i64): i64 = f(x)
+fun run(f: sendable fun(i64): i64, x: i64): i64 => f(x)
 val k = 10
 var total = 0
 run(n => n * k, 1)          // ok: k is a val of a Sendable type

@@ -4,9 +4,9 @@
 use io
 
 // where compressed bytes go, and where they come from
-fun sinkOf(to: io.Stream): sendable fun(List<u8>) suspends throws IoError = bytes => try to.write(bytes)
+fun sinkOf(to: io.Stream): sendable fun(List<u8>) suspends throws IoError => (bytes => try to.write(bytes))
 
-fun sourceOf(from: io.Stream): sendable fun(): List<u8> suspends throws IoError = () => try from.read()
+fun sourceOf(from: io.Stream): sendable fun(): List<u8> suspends throws IoError => (() => try from.read())
 
 /// Compresses what is written to it, as gzip, onto another stream:
 ///

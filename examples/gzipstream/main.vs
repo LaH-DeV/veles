@@ -3,7 +3,11 @@
 // file, and a GzipReader then reads the result back to count its lines and
 // check it against the original.
 
-use compress, fs, io { println }, os, path
+use compress
+use fs
+use io { println }
+use os
+use path
 
 // a day of an imaginary service's log, one line per request
 fun logLine(i: i64): string {

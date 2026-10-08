@@ -15,7 +15,7 @@ struct Effort {
   lazy:      bool
 }
 
-fun effortOf(level: i64): Effort = when (level) {
+fun effortOf(level: i64): Effort => when (level) {
   1    => Effort(chain: 4, nice: 8, lazyAbove: 4, good: 4, lazy: false)
   2    => Effort(chain: 8, nice: 16, lazyAbove: 5, good: 4, lazy: false)
   3    => Effort(chain: 32, nice: 32, lazyAbove: 6, good: 4, lazy: false)

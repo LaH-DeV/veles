@@ -13,7 +13,7 @@ struct Counter {
     this.n += 1
   }
 
-  fun show(): string = "n=${this.n}"
+  fun show(): string => "n=${this.n}"
 }
 
 val picks = Atomic(value: 0)

@@ -5,7 +5,7 @@
 use io
 
 /// A 16-bit length field: the payload must fit, or the frame is refused.
-fun lengthField(payload: i64): u16? = payload.toU16()
+fun lengthField(payload: i64): u16? => payload.toU16()
 
 /// A one-byte checksum: the sum of the bytes, wrapped on purpose.
 fun checksum(bytes: List<u8>): u8 {
@@ -18,7 +18,7 @@ fun checksum(bytes: List<u8>): u8 {
 
 /// Generic code names its target as a type argument: the low `bits` of
 /// `n` as whatever integer type the caller asks for.
-fun lowBits<T>(n: i64): T = n.wrapTo<T>()
+fun lowBits<T>(n: i64): T => n.wrapTo<T>()
 
 fun show(label: string, v: string) {
   io.println("$label = $v")

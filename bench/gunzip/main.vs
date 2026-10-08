@@ -1,7 +1,9 @@
 // gunzip of 2 MiB of word-salad text (std/compress, plain Veles): checks the
 // CRC and the length too, as the Go reference does. The compressed bytes are
 // each side's own, made before the clock starts.
-use compress, io { println }, time
+use compress
+use io { println }
+use time
 
 val words: List<string> = ["the", "of", "and", "stream", "request", "value", "error", "handler", "buffer", "index", "result", "compile", "token", "branch", "memory", "thread", "socket", "length", "window", "symbol", "a", "to", "in", "is"]
 

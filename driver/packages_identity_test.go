@@ -26,15 +26,15 @@ func TestPackageIdentityRuns(t *testing.T) {
 		}
 	}
 	write("util/veles.toml", "[package]\nname = \"util\"\n")
-	write("util/lib.vs", "val counter = Atomic(value: 0)\n\npublic fun bump(): i64 = counter.update((n) => n + 1)\n")
+	write("util/lib.vs", "val counter = Atomic(value: 0)\n\npublic fun bump(): i64 => counter.update((n) => n + 1)\n")
 	write("a/veles.toml", "[package]\nname = \"a\"\n[dependencies]\nutil = \"../util\"\n")
-	write("a/lib.vs", "use util\n\npublic fun fromA(): i64 = util.bump()\n")
+	write("a/lib.vs", "use util\n\npublic fun fromA(): i64 => util.bump()\n")
 	write("b/veles.toml", "[package]\nname = \"b\"\n[dependencies]\nhelper = \"../util\"\n")
-	write("b/lib.vs", "use helper\n\npublic fun fromB(): i64 = helper.bump()\n")
+	write("b/lib.vs", "use helper\n\npublic fun fromB(): i64 => helper.bump()\n")
 	write("pg1/veles.toml", "[package]\nname = \"pg\"\nversion = \"1.4.0\"\n")
-	write("pg1/lib.vs", "public fun version(): i64 = 1\n")
+	write("pg1/lib.vs", "public fun version(): i64 => 1\n")
 	write("pg2/veles.toml", "[package]\nname = \"pg\"\nversion = \"2.0.0\"\n")
-	write("pg2/lib.vs", "public fun version(): i64 = 2\n")
+	write("pg2/lib.vs", "public fun version(): i64 => 2\n")
 	write("app/veles.toml", "[package]\nname = \"app\"\n[dependencies]\na = \"../a\"\nb = \"../b\"\nutil3 = \"../util\"\npg1 = \"../pg1\"\npg2 = \"../pg2\"\n")
 	write("app/main.vs", "use io\nuse a\nuse b\nuse util3\nuse pg1\nuse pg2\n\nfun main() {\n  io.println(\"${a.fromA()} ${b.fromB()} ${util3.bump()} ${pg1.version()} ${pg2.version()}\")\n}\n")
 

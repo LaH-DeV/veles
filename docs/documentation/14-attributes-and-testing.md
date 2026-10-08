@@ -21,15 +21,15 @@ error, not a silent no-op.
 use io
 
 @deprecated("use greet")
-fun hello(name: string): string = "hello $name"
+fun hello(name: string): string => "hello $name"
 
-fun greet(name: string): string = "hi $name"
+fun greet(name: string): string => "hi $name"
 
 @mustUse
-fun important(): i64 = 7
+fun important(): i64 => 7
 
 @inline
-fun tiny(x: i64): i64 = x + 1
+fun tiny(x: i64): i64 => x + 1
 
 fun main() {
   io.println("${greet("ann")} ${important()} ${tiny(1)}")
@@ -75,7 +75,7 @@ fun parsePort(text: string): i64 throws RangeError {
   n
 }
 
-fun wordCount(text: string): i64 = text.split(" ").filter(w => !w.isEmpty()).len()
+fun wordCount(text: string): i64 => text.split(" ").filter(w => !w.isEmpty()).len()
 
 test "counts words" {
   expect(wordCount("one two three") == 3)

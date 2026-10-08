@@ -21,7 +21,7 @@ const testSrc = `use io
 
 struct Point { x: i32, y: i32 }
 
-fun add(a: i32, b: i32): i32 = a + b
+fun add(a: i32, b: i32): i32 => a + b
 
 fun main() {
   val p = Point(x: 1, y: 2)
@@ -339,7 +339,7 @@ func TestInferredThrowsAndReceiverCompletion(t *testing.T) {
 }
 
 func TestErrorSetHover(t *testing.T) {
-	src := "use io\n\nerror A { n: i64 }\nerror B\nerror Both = A | B\n\nfun f(): i64 throws Both = 1\n\nfun main() { io.println(\"${f()}\") }\n"
+	src := "use io\n\nerror A { n: i64 }\nerror B\nerror Both = A | B\n\nfun f(): i64 throws Both => 1\n\nfun main() { io.println(\"${f()}\") }\n"
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")
 	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
@@ -377,7 +377,7 @@ func TestErrorSetHover(t *testing.T) {
 }
 
 func TestHoverDocsAndShapes(t *testing.T) {
-	src := "use io\n\n/// A parse failure.\nerror ParseError {\n  /// the offending text\n  text: string\n}\nerror RangeError { value: i64 }\nerror PortErrors = ParseError | RangeError\n\n/** Context around a cause. */\nerror ConfigError { key: string, cause: PortErrors }\n\n/// Parses a port.\nfun parsePort(text: string): i64 throws PortErrors = text.toInt() ?: throw ParseError(text: text)\n\nfun main() {\n  val c = ConfigError(key: \"k\", cause: RangeError(value: 1))\n  io.println(c.key)\n  val r = parsePort(\"80\")\n  if (r is Ok) io.println(\"$r\")\n}\n"
+	src := "use io\n\n/// A parse failure.\nerror ParseError {\n  /// the offending text\n  text: string\n}\nerror RangeError { value: i64 }\nerror PortErrors = ParseError | RangeError\n\n/** Context around a cause. */\nerror ConfigError { key: string, cause: PortErrors }\n\n/// Parses a port.\nfun parsePort(text: string): i64 throws PortErrors => text.toInt() ?: throw ParseError(text: text)\n\nfun main() {\n  val c = ConfigError(key: \"k\", cause: RangeError(value: 1))\n  io.println(c.key)\n  val r = parsePort(\"80\")\n  if (r is Ok) io.println(\"$r\")\n}\n"
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")
 	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
@@ -415,7 +415,7 @@ func TestModuleDocHover(t *testing.T) {
 	root := t.TempDir()
 	os.MkdirAll(filepath.Join(root, "geometry"), 0o755)
 	os.WriteFile(filepath.Join(root, "veles.toml"), []byte("[package]\nname = \"app\"\nversion = \"0.1.0\"\n"), 0o644)
-	os.WriteFile(filepath.Join(root, "geometry", "lib.vs"), []byte("/// Points and shapes on a plane.\n\npublic fun twice(n: i64): i64 = n * 2\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "geometry", "lib.vs"), []byte("/// Points and shapes on a plane.\n\npublic fun twice(n: i64): i64 => n * 2\n"), 0o644)
 	src := "use io\nuse geometry\n\nerror E { n: i64 }\nerror F { m: i64 }\nerror Both = E | F\nerror Wrap { cause: Both }\n\nfun main() {\n  val w = Wrap(cause: E(n: 1))\n  when (w.cause) {\n    is E => io.println(\"${w.cause.n} ${geometry.twice(2)}\")\n    is F => io.println(\"f\")\n  }\n}\n"
 	path := filepath.Join(root, "main.vs")
 	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
@@ -479,7 +479,7 @@ func TestBuiltinHoverAndDefinition(t *testing.T) {
 
 func TestExtendMethods(t *testing.T) {
 	// line 3: val s = " hi "; 4: io.println(s.trim())
-	src := "use io\n\nfun main() {\n  val s = \" hi \"\n  io.println(s.trim())\n}\n\nstruct P { x: i64 }\n\nextend P {\n  /// Twice x.\n  fun double(): i64 = this.x * 2\n}\n"
+	src := "use io\n\nfun main() {\n  val s = \" hi \"\n  io.println(s.trim())\n}\n\nstruct P { x: i64 }\n\nextend P {\n  /// Twice x.\n  fun double(): i64 => this.x * 2\n}\n"
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")
 	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
@@ -543,7 +543,7 @@ func TestStdSourceTreeDiagnostics(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	src := "extend string {\n  public fun shout(): string = this + \"!\"\n}\nfun wrong(): i64 = \"x\"\n"
+	src := "extend string {\n  public fun shout(): string => this + \"!\"\n}\nfun wrong(): i64 => \"x\"\n"
 	path := filepath.Join(dir, "zz_extra.vs")
 	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
 		t.Fatal(err)
@@ -609,7 +609,7 @@ func TestFormatting(t *testing.T) {
 // quick fix from textDocument/codeAction: here, moving a top-level impl
 // into the struct's body (D23).
 func TestCodeActionInlineImpl(t *testing.T) {
-	src := "trait Show {\n  fun show(): string\n}\n\nstruct P {\n  x: i64\n}\n\nimplement Show for P {\n  fun show(): string = \"p\"\n}\n\nfun main() { }\n"
+	src := "trait Show {\n  fun show(): string\n}\n\nstruct P {\n  x: i64\n}\n\nimplement Show for P {\n  fun show(): string => \"p\"\n}\n\nfun main() { }\n"
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")
 	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
@@ -675,7 +675,7 @@ func TestCodeActionInlineImpl(t *testing.T) {
 	for _, o := range offs {
 		text = text[:o.start] + o.text + text[o.end:]
 	}
-	want := "trait Show {\n  fun show(): string\n}\n\nstruct P {\n  x: i64\n\n  implement Show {\n    fun show(): string = \"p\"\n  }\n}\n\nfun main() { }\n"
+	want := "trait Show {\n  fun show(): string\n}\n\nstruct P {\n  x: i64\n\n  implement Show {\n    fun show(): string => \"p\"\n  }\n}\n\nfun main() { }\n"
 	if text != want {
 		t.Errorf("after the fix:\n%s\n--- want ---\n%s", text, want)
 	}
@@ -776,7 +776,7 @@ func TestTypeAliasHover(t *testing.T) {
 // `internal` on every line only made the hover harder to read. A field's
 // hover names the struct and shows the field's line.
 func TestHoverSpellsOutModifiers(t *testing.T) {
-	src := "use io\n\npublic struct Notes {\n  private var next: i64 = 1\n  items: bool = false\n  public protected var count: i64 = 0\n  static val empty = Notes()\n  public fun add(text: string) {\n    this.next += text.len()\n    this.count += 1\n  }\n  private fun bump() { }\n  public static fun of(n: i64): Notes = Notes(count: n)\n}\n\nfun main() {\n  val n = Notes()\n  n.add(\"x\")\n  io.println(\"${n.count} ${n.items}\")\n}\n"
+	src := "use io\n\npublic struct Notes {\n  private var next: i64 = 1\n  items: bool = false\n  public protected var count: i64 = 0\n  static val empty = Notes()\n  public fun add(text: string) {\n    this.next += text.len()\n    this.count += 1\n  }\n  private fun bump() { }\n  public static fun of(n: i64): Notes => Notes(count: n)\n}\n\nfun main() {\n  val n = Notes()\n  n.add(\"x\")\n  io.println(\"${n.count} ${n.items}\")\n}\n"
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")
 	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
@@ -805,7 +805,7 @@ func TestHoverSpellsOutModifiers(t *testing.T) {
 // on its own line, the visibility written, `static`, `override`, a trait's
 // associated types and which methods have default bodies.
 func TestHoverMethodsAndTraits(t *testing.T) {
-	src := "use io\n\n/// Something with an area.\npublic trait Shape {\n  type Unit\n  fun area(): f64\n  fun describe(): string = \"area ${this.area()}\"\n  static fun unit(): string\n}\n\nstruct Square {\n  side: f64\n  fun grow(by: f64): Square = Square(side: this.side + by)\n  private fun check() { }\n  public static fun of(side: f64): Square = Square(side)\n}\n\nimplement Shape for Square {\n  type Unit = string\n  fun area(): f64 = this.side * this.side\n  override fun describe(): string = \"square\"\n  static fun unit(): string = \"m\"\n}\n\nimplement Display for Square {\n  fun toString(): string = \"sq\"\n}\n\nextend Square {\n  public fun doubled(): Square = this.grow(this.side)\n}\n\nsealed trait Tree {\n  fun size(): i64\n}\nstruct Leaf : Tree { implement Tree { fun size(): i64 = 1 } }\nstruct Node : Tree {\n  kids: List<Tree>\n  implement Tree { fun size(): i64 = this.kids.len() }\n}\n\nfun helper(): i64 = 1\n\nfun main() {\n  val s = Square(side: 2.0)\n  val a = s.area()\n  val d = s.describe()\n  val g = s.grow(1.0).doubled()\n  val o = Square.of(1.0)\n  val h = helper()\n  io.println(\"$a $d $g $o $h ${Leaf().size()}\")\n}\n"
+	src := "use io\n\n/// Something with an area.\npublic trait Shape {\n  type Unit\n  fun area(): f64\n  fun describe(): string => \"area ${this.area()}\"\n  static fun unit(): string\n}\n\nstruct Square {\n  side: f64\n  fun grow(by: f64): Square => Square(side: this.side + by)\n  private fun check() { }\n  public static fun of(side: f64): Square => Square(side)\n}\n\nimplement Shape for Square {\n  type Unit = string\n  fun area(): f64 => this.side * this.side\n  override fun describe(): string => \"square\"\n  static fun unit(): string => \"m\"\n}\n\nimplement Display for Square {\n  fun toString(): string => \"sq\"\n}\n\nextend Square {\n  public fun doubled(): Square => this.grow(this.side)\n}\n\nsealed trait Tree {\n  fun size(): i64\n}\nstruct Leaf : Tree { implement Tree { fun size(): i64 => 1 } }\nstruct Node : Tree {\n  kids: List<Tree>\n  implement Tree { fun size(): i64 => this.kids.len() }\n}\n\nfun helper(): i64 => 1\n\nfun main() {\n  val s = Square(side: 2.0)\n  val a = s.area()\n  val d = s.describe()\n  val g = s.grow(1.0).doubled()\n  val o = Square.of(1.0)\n  val h = helper()\n  io.println(\"$a $d $g $o $h ${Leaf().size()}\")\n}\n"
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")
 	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
@@ -833,7 +833,7 @@ func TestHoverMethodsAndTraits(t *testing.T) {
 		want     string
 	}{
 		// the trait at its declaration: head, associated type, default body marker, static
-		{3, 14, "public trait Shape {\n  type Unit\n  fun area(): f64\n  fun describe(): string = ...\n  static fun unit(): string\n}"},
+		{3, 14, "public trait Shape {\n  type Unit\n  fun area(): f64\n  fun describe(): string => ...\n  static fun unit(): string\n}"},
 		{3, 14, "Something with an area."},
 		// an inherent method at a use, under its struct
 		{47, 13, "struct Square\n  fun grow(by: f64): Square"},
@@ -847,7 +847,7 @@ func TestHoverMethodsAndTraits(t *testing.T) {
 		{49, 11, "fun helper(): i64"},
 		{13, 15, "struct Square\n  private fun check()"},
 		// a trait's default method at its declaration
-		{6, 7, "public trait Shape\n  fun describe(): string = ..."},
+		{6, 7, "public trait Shape\n  fun describe(): string => ..."},
 		// a sealed trait at its declaration: methods, then variants
 		{32, 14, "sealed trait Tree {\n  fun size(): i64\n  Leaf\n  Node { kids: List<Tree> }\n}"},
 	} {
@@ -912,7 +912,7 @@ func TestHoverValuesAndModules(t *testing.T) {
 func TestCompletionVisibility(t *testing.T) {
 	// one dangling `.` per buffer: `//A` (inside next) or `//B` (in main)
 	// is replaced with the receiver under test
-	base := "use io\n\nstruct Parser {\n  private toks: List<string>\n  private var pos: i64 = 0\n  public val tag: string = \"p\"\n  static val zero = 0\n  public static fun of(n: i64): Parser = Parser(toks: [])\n  fun next(): string? {\n    val t = this.toks.at(this.pos)\n    //A\n    t\n  }\n  private fun bump() { this.pos += 1 }\n  public fun done(): bool = this.pos >= this.toks.len()\n}\n\nextend Parser {\n  fun rewind() { this.pos = 0 }\n}\n\nfun main() {\n  val p = Parser(toks: [\"a\"])\n  //B\n  io.println(\"${p.done()} ${p.tag}\")\n}\n"
+	base := "use io\n\nstruct Parser {\n  private toks: List<string>\n  private var pos: i64 = 0\n  public val tag: string = \"p\"\n  static val zero = 0\n  public static fun of(n: i64): Parser => Parser(toks: [])\n  fun next(): string? {\n    val t = this.toks.at(this.pos)\n    //A\n    t\n  }\n  private fun bump() { this.pos += 1 }\n  public fun done(): bool => this.pos >= this.toks.len()\n}\n\nextend Parser {\n  fun rewind() { this.pos = 0 }\n}\n\nfun main() {\n  val p = Parser(toks: [\"a\"])\n  //B\n  io.println(\"${p.done()} ${p.tag}\")\n}\n"
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")
 	if err := os.WriteFile(path, []byte(base), 0o644); err != nil {
@@ -1015,7 +1015,7 @@ func TestHoverLocals(t *testing.T) {
 
 // `init` is shown in the struct's hover and never offered by completion.
 func TestInitBlockInTooling(t *testing.T) {
-	src := "use io\n\nstruct P {\n  a: i64\n  b: string\n  init {\n    this.b = \"$a\"\n  }\n  fun f(): i64 = this.a\n}\n\nfun main() {\n  val p = P(a: 1)\n  //X\n  io.println(\"${p.b} ${p.f()}\")\n}\n"
+	src := "use io\n\nstruct P {\n  a: i64\n  b: string\n  init {\n    this.b = \"$a\"\n  }\n  fun f(): i64 => this.a\n}\n\nfun main() {\n  val p = P(a: 1)\n  //X\n  io.println(\"${p.b} ${p.f()}\")\n}\n"
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")
 	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
@@ -1052,7 +1052,7 @@ func TestHoverViewpoint(t *testing.T) {
 	root := t.TempDir()
 	os.WriteFile(filepath.Join(root, "veles.toml"), []byte("[package]\nname = \"app\"\nversion = \"0.1.0\"\n"), 0o644)
 	os.MkdirAll(filepath.Join(root, "store"), 0o755)
-	store := "public struct Notes {\n  private var next: i64 = 1\n  items: List<string> = []\n  public val tag: string = \"n\"\n  fun size(): i64 = this.items.len()\n  public fun add(text: string): i64 {\n    this.next += 1\n    this.next\n  }\n  private fun bump() { }\n}\n\nfun inModule(): i64 {\n  val n = Notes()\n  n.size()\n}\n"
+	store := "public struct Notes {\n  private var next: i64 = 1\n  items: List<string> = []\n  public val tag: string = \"n\"\n  fun size(): i64 => this.items.len()\n  public fun add(text: string): i64 {\n    this.next += 1\n    this.next\n  }\n  private fun bump() { }\n}\n\nfun inModule(): i64 {\n  val n = Notes()\n  n.size()\n}\n"
 	os.WriteFile(filepath.Join(root, "store", "store.vs"), []byte(store), 0o644)
 	main := "use io, store\n\nfun main() {\n  val n = store.Notes()\n  io.println(\"${n.add(\"x\")} ${n.tag}\")\n}\n"
 	os.WriteFile(filepath.Join(root, "main.vs"), []byte(main), 0o644)
@@ -1464,7 +1464,7 @@ func TestRenamedImportHoverAndRename(t *testing.T) {
 // its declaration and at every call — the effect is part of what a caller
 // must know, and the inlay hint alone is easy to miss.
 func TestHoverShowsInferredSuspends(t *testing.T) {
-	src := "struct Pacer {\n  gap: Duration\n\n  fun pause() {\n    await sleep(this.gap)\n  }\n}\n\nfun wait() {\n  await sleep(Duration.millis(1))\n}\n\nfun outer() { wait() }\n\nfun pure(): i64 = 1\n\nfun main() {\n  outer()\n  Pacer(gap: Duration.millis(1)).pause()\n  val _ = pure()\n}\n"
+	src := "struct Pacer {\n  gap: Duration\n\n  fun pause() {\n    await sleep(this.gap)\n  }\n}\n\nfun wait() {\n  await sleep(Duration.millis(1))\n}\n\nfun outer() { wait() }\n\nfun pure(): i64 => 1\n\nfun main() {\n  outer()\n  Pacer(gap: Duration.millis(1)).pause()\n  val _ = pure()\n}\n"
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")
 	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
@@ -1518,8 +1518,8 @@ func TestDefinitionFollowsReexport(t *testing.T) {
 	}
 	write("lib/veles.toml", "[package]\nname = \"mathlib\"\nversion = \"0.1.0\"\n")
 	write("lib/lib.vs", "public use shapes { area as surface }\npublic use geometry\n")
-	write("lib/shapes/lib.vs", "/// The area of a unit.\npublic fun area(n: i64): i64 = n * n\n")
-	write("lib/geometry/lib.vs", "public fun twice(n: i64): i64 = n * 2\n")
+	write("lib/shapes/lib.vs", "/// The area of a unit.\npublic fun area(n: i64): i64 => n * n\n")
+	write("lib/geometry/lib.vs", "public fun twice(n: i64): i64 => n * 2\n")
 	write("app/veles.toml", "[package]\nname = \"app\"\nversion = \"0.1.0\"\n\n[dependencies]\nmathlib = \"../lib\"\n")
 	src := "use io { println }\nuse mathlib, mathlib.geometry\n\nfun main() {\n  println(\"${mathlib.surface(3)} ${geometry.twice(2)}\")\n}\n"
 	path := write("app/main.vs", src)
@@ -1606,7 +1606,7 @@ func TestHoverOnLazyWord(t *testing.T) {
 // The name a `catch (e)` binds (D98) is an ordinary local: hover shows the
 // error union where it is used and definition goes to the binding.
 func TestHoverOnCatchBinding(t *testing.T) {
-	src := "use io { println }\n\nerror Bad { message: string }\n\nfun parse(s: string): i64 throws Bad = try s.toInt() ?! Bad(message: \"no\")\n\nfun main() {\n  do {\n    println(\"${try parse(\"1\")}\")\n  } catch (problem) {\n    println(problem.message())\n  }\n}\n"
+	src := "use io { println }\n\nerror Bad { message: string }\n\nfun parse(s: string): i64 throws Bad => try s.toInt() ?! Bad(message: \"no\")\n\nfun main() {\n  do {\n    println(\"${try parse(\"1\")}\")\n  } catch (problem) {\n    println(problem.message())\n  }\n}\n"
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")
 	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
@@ -1638,7 +1638,7 @@ func TestHoverOnCatchBinding(t *testing.T) {
 // non-null value's type where it is used, definition goes to the binding,
 // and the name is gone in the else branch.
 func TestHoverOnIfValBinding(t *testing.T) {
-	src := "use io { println }\n\nfun find(name: string): string? = null\n\nfun main() {\n  if (val found = find(\"a\") && found.len() > 1) println(found)\n  else println(\"none\")\n}\n"
+	src := "use io { println }\n\nfun find(name: string): string? => null\n\nfun main() {\n  if (val found = find(\"a\") && found.len() > 1) println(found)\n  else println(\"none\")\n}\n"
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")
 	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {

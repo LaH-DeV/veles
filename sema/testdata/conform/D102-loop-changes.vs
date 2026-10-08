@@ -36,7 +36,7 @@ fun lists(xs: MutableList<i64>) {
   loop (x in xs.toList()) xs.push(x) // nor does a copy
 }
 
-fun call(f: fun()) = f()
+fun call(f: fun()) => f()
 
 fun maps(m: MutableMap<string, i64>, s: MutableSet<i64>) {
   loop ((k, n) in m) m.set(k, n + 1) // the visited key: a replacement

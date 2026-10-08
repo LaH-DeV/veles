@@ -4,7 +4,8 @@
 
 ```veles
 // fragment
-use db, io
+use db
+use io
 
 struct User {
   id: i64
@@ -52,7 +53,7 @@ struct UserId {
 }
 
 implement db.Param for UserId {
-  fun toArg(): db.Arg = this.value.toArg()
+  fun toArg(): db.Arg => this.value.toArg()
 }
 ```
 

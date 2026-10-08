@@ -7,7 +7,7 @@ struct Version {
   major: i64
 
   implement Comparable {
-    fun compareTo(other: Version): Ordering = this.major.compareTo(other.major)
+    fun compareTo(other: Version): Ordering => this.major.compareTo(other.major)
   }
 }
 

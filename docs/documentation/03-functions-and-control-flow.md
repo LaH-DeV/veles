@@ -9,7 +9,7 @@ fun square(x: i64): i64 {
   return x * x
 }
 
-fun cube(x: i64): i64 = x * x * x      // expression body
+fun cube(x: i64): i64 => x * x * x      // expression body
 
 fun greet(name: string, punctuation: string = "!") {
   io.println("Hello, $name$punctuation")
@@ -36,8 +36,9 @@ Hello, Cy.
 - A parameter can have a **default**. Arguments can be passed by
   **name** (`punctuation: "?"`), in any order, which is the idiomatic way
   to call a function with several parameters of the same type (D28).
-- `fun f(...) = expr` is a one-expression function. When its return type
-  is obvious you may omit it: `fun twice(x: i64) = x * 2`.
+- `fun f(...) => expr` is a one-expression function: the arrow says "yields",
+  as in a lambda and a `when` arm (D140). When its return type
+  is obvious you may omit it: `fun twice(x: i64) => x * 2`.
 - The last parameter can be **variadic**: `fun sum(xs: i64...): i64` takes
   `sum()`, `sum(1)` or `sum(1, 2, 3)`, and inside `xs` is a `List<i64>`.
   A list you already have is passed whole with `sum(numbers...)`.
@@ -201,13 +202,13 @@ needs an `else` (or must be exhaustive, which sealed types make possible
 ```veles
 use io
 
-fun sign(n: i64): string = when {
+fun sign(n: i64): string => when {
   n < 0 => "negative"
   n == 0 => "zero"
   else => "positive"
 }
 
-fun weekday(d: i64): string = when (d) {
+fun weekday(d: i64): string => when (d) {
   1 => "Mon"
   2 => "Tue"
   3, 4, 5 => "midweek"
@@ -237,10 +238,10 @@ forward declarations.
 ```veles
 use io
 
-fun isEven(n: i64): bool = if (n == 0) true else isOdd(n - 1)
-fun isOdd(n: i64): bool = if (n == 0) false else isEven(n - 1)
+fun isEven(n: i64): bool => if (n == 0) true else isOdd(n - 1)
+fun isOdd(n: i64): bool => if (n == 0) false else isEven(n - 1)
 
-fun fib(n: i64): i64 = if (n < 2) n else fib(n - 1) + fib(n - 2)
+fun fib(n: i64): i64 => if (n < 2) n else fib(n - 1) + fib(n - 2)
 
 fun main() {
   io.println("${isEven(10)} ${isOdd(7)} ${fib(30)}")
@@ -265,7 +266,7 @@ cost:
 ```veles
 use io
 
-fun first<T>(xs: List<T>, fallback: T): T = xs.at(0) ?: fallback
+fun first<T>(xs: List<T>, fallback: T): T => xs.at(0) ?: fallback
 
 fun main() {
   io.println("${first([3, 4], 0)} ${first([], "none")}")

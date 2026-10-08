@@ -1,6 +1,7 @@
 // Traces: spans, the current span, and the W3C trace context that carries a
 // trace from one service to the next.
-use crypto, time
+use crypto
+use time
 
 // ---------------------------------------------------------------------------
 // the switch and the settings
@@ -26,7 +27,7 @@ fun newQueue<T>(): Mutex<MutableList<T>> {
   Mutex(value: empty)
 }
 
-fun unixNanos(): i64 = time.now().toMicros() * 1000
+fun unixNanos(): i64 => time.now().toMicros() * 1000
 
 // ---------------------------------------------------------------------------
 // identifiers and the trace context
@@ -84,13 +85,13 @@ public struct SpanContext {
   public sampled: bool
 
   /// The trace id as 32 hex digits.
-  public fun traceIdHex(): string = hexOf(this.traceId)
+  public fun traceIdHex(): string => hexOf(this.traceId)
 
   /// The span id as 16 hex digits.
-  public fun spanIdHex(): string = hexOf(this.spanId)
+  public fun spanIdHex(): string => hexOf(this.spanId)
 
   /// The W3C `traceparent` header value: `00-<trace id>-<span id>-<flags>`.
-  public fun traceparent(): string =
+  public fun traceparent(): string =>
     "00-${this.traceIdHex()}-${this.spanIdHex()}-${if (this.sampled) "01" else "00"}"
 
   /// Reads a `traceparent` header. Anything that is not exactly the W3C form —
@@ -153,7 +154,7 @@ public struct SpanHandle {
 
   /// Whether this span records anything. A sampled-out span does not, but
   /// still carries the trace along.
-  public fun recording(): bool = this.data != null
+  public fun recording(): bool => this.data != null
 
   /// Adds an attribute (`otel.attr("note.id", id)`); setting a name again
   /// adds another value, the last one wins at the collector.
@@ -276,10 +277,10 @@ public struct Span {
   binding:       LocalBinding?
 
   /// Where this span sits in its trace.
-  public fun context(): SpanContext = this.handle.context
+  public fun context(): SpanContext => this.handle.context
 
   /// See `SpanHandle.recording`.
-  public fun recording(): bool = this.handle.recording()
+  public fun recording(): bool => this.handle.recording()
 
   /// See `SpanHandle.set`.
   public fun set(a: Attr) {
@@ -366,15 +367,15 @@ public fun span(name: string, attrs: List<Attr> = [], kind: SpanKind = SpanKind.
 
 /// How many spans and log records have been dropped since `start`, because
 /// a queue was full or the collector could not be reached.
-public fun dropped(): i64 = lost.load()
+public fun dropped(): i64 => lost.load()
 
 /// Whether a pipeline is running (`start` was called and `shutdown` was not):
 /// what a caller asks before it builds something only a pipeline would use.
-public fun active(): bool = enabled.load()
+public fun active(): bool => enabled.load()
 
 /// The span running in this task (or the task that started it), as a handle
 /// that can be passed on; `null` outside any span.
-public fun current(): SpanHandle? = currentSpan.get()
+public fun current(): SpanHandle? => currentSpan.get()
 
 /// The `traceparent` value that continues the current trace, for a request
 /// this task is about to send; `null` outside any span or before `start`.

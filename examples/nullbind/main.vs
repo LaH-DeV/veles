@@ -10,7 +10,7 @@ struct Cookie {
   domain: string? = null
 }
 
-fun header(name: string): string? = if (name == "n") "42" else null
+fun header(name: string): string? => if (name == "n") "42" else null
 
 fun trace(text: string, result: bool): bool {
   println("  tested $text")

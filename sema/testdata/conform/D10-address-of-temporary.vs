@@ -18,7 +18,7 @@ struct Holder {
   var spare: (*Leaf)? = null
 }
 
-fun sum(n: Node): i64 = when (n) {
+fun sum(n: Node): i64 => when (n) {
   is Leaf => n.value
   is Pair => sum(*n.left) + sum(*n.right)
 }

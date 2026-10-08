@@ -38,7 +38,7 @@ var families = []family{
 	// compiler-internal checks a program cannot reach, and the std intrinsics
 	fam("internal", `^unsupported (expression|statement|pattern|operator|unary operator|type syntax)$`,
 		`^list(RawData|DecodeUtf8Range|AppendText) takes`, `^%s takes a pointer$`, `^cannot read `),
-	fam("removed-syntax", `was removed`, `no longer exists`, `is spelled`, `there is no 'for'`,
+	fam("removed-syntax", `was removed`, `no longer exists`, `is spelled`, `is written '=> expr'`, `has no '=>'`, `there is no 'for'`,
 		`is written 'loop`, `are written as lambdas`, `type parameters follow the function name`,
 		`are not imported one by one`, `brackets are for collection literals only`, `^'=' assigns`,
 		`reads better as`, `can be written '`),
@@ -68,7 +68,7 @@ var families = []family{
 		`^Task takes`, `^'cancel'`, `shared by every task`, `cannot cross`, `\(D35\)`),
 	fam("resources", `Closeable`, `'with`, `when its 'with' block ends`, `closed as soon as it is opened`,
 		`^close\(\) of`, `\(D43\)`, `\(D100\)`),
-	fam("control-flow", `unreachable code`, `^'return' outside`, `^missing return`, `returns nothing`,
+	fam("control-flow", `unreachable code`, `implicit_return`, `^'return' outside`, `^missing return`, `returns nothing`,
 		`^'if' used as a value`, `never produces a value`, `outside of a loop`, `no enclosing loop`,
 		`this loop`, `^cannot iterate over`, `^'next\(\)' must return`),
 	fam("results-and-errors", `\btry\b`, `throw`, `unused Result`, `'\?\?'`, `'\?!'`, `error set`,

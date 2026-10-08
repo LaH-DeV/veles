@@ -1,9 +1,9 @@
 // Lambdas capturing by reference, returned closures, and higher-order calls.
 use io
 
-fun adder(k: i64): fun(i64): i64 = x => x + k
+fun adder(k: i64): fun(i64): i64 => x => x + k
 
-fun apply(f: fun(i64): i64, x: i64): i64 = f(x)
+fun apply(f: fun(i64): i64, x: i64): i64 => f(x)
 
 fun main() {
   var count = 0

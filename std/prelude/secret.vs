@@ -30,7 +30,7 @@ public struct Secret<T> {
 
   /// A `Secret` holding a private copy of `value` (a `string` or a
   /// `List<u8>`).
-  public static fun of(value: T): Secret<T> = Secret(bytes: secretOf(value))
+  public static fun of(value: T): Secret<T> => Secret(bytes: secretOf(value))
 
   /// A fresh copy of the value. Panics once the secret is closed.
   @caller_location
@@ -40,10 +40,10 @@ public struct Secret<T> {
   }
 
   /// The length in bytes, which is not secret.
-  public fun len(): i64 = this.bytes.len()
+  public fun len(): i64 => this.bytes.len()
 
   implement Display {
-    fun toString(): string = "[redacted]"
+    fun toString(): string => "[redacted]"
   }
 
   implement Equatable {
@@ -69,6 +69,6 @@ public struct Secret<T> {
 }
 
 implement<T: Decodable> Decodable for Secret<T> {
-  static fun decode(from: Decoder): Secret<T> throws DecodeError = Secret.of(try T.decode(from))
-  override static fun schema(format: string, keys: KeyStyle): Schema = T.schema(format, keys).asSecret()
+  static fun decode(from: Decoder): Secret<T> throws DecodeError => Secret.of(try T.decode(from))
+  override static fun schema(format: string, keys: KeyStyle): Schema => T.schema(format, keys).asSecret()
 }

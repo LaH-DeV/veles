@@ -32,7 +32,7 @@ fun mapWithTwo(xs: List<i64>) {
 fun mapToUnit(xs: List<i64>) {
   val _ = xs.map(x => io.println("$x")) // error: 'map' needs a function that returns a value
 }
-fun containsFunctions(fs: List<fun(): i64>, f: fun(): i64): bool = fs.contains(f) // error: elements of type 'fun(): i64' cannot be compared
+fun containsFunctions(fs: List<fun(): i64>, f: fun(): i64): bool => fs.contains(f) // error: elements of type 'fun(): i64' cannot be compared
 fun declaredParam(xs: List<i64>) {
   val _ = xs.map((x: string) => x) // error: parameter 'x' is declared 'string' but 'i64' is expected here
   val f: fun(i64): i64 = (x: string) => 1 // error: parameter 'x' is declared 'string' but 'i64' is expected here

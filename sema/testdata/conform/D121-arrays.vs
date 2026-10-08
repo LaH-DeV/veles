@@ -3,9 +3,9 @@ struct Buf<const N: i64> {
   data: Array<u8, N>
 }
 
-fun sum<const N: i64>(a: Array<i64, N>): i64 = a.fold(0, (s, x) => s + x)
+fun sum<const N: i64>(a: Array<i64, N>): i64 => a.fold(0, (s, x) => s + x)
 
-fun zeros<const N: i64>(): Array<i64, N> = Array.make(0)
+fun zeros<const N: i64>(): Array<i64, N> => Array.make(0)
 
 fun firstOf<T, const N: i64>(a: Array<T, N>) {
 }

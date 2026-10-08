@@ -1,7 +1,8 @@
 // Compiler-shaped: emit text the way a code generator does — many short
 // lines of textual IR appended to one StringBuilder, with interpolated
 // numbers and names — then read the result back once.
-use io { println }, time
+use io { println }
+use time
 
 fun emitFunction(sb: StringBuilder, index: i64) {
   sb.appendLine("define i64 @f$index(i64 %a, i64 %b) {")

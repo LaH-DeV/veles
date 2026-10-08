@@ -2,7 +2,7 @@
 // of the condition and the then-branch — and only there.
 use io
 
-fun find(name: string): string? = if (name == "n") "42" else null
+fun find(name: string): string? => if (name == "n") "42" else null
 
 fun binds() {
   // the name is the non-null value in the rest of the chain and the branch

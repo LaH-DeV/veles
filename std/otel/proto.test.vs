@@ -60,7 +60,7 @@ test fun fields(bytes: List<u8>): List<Fld> {
 }
 
 // the fields numbered `num`
-test fun all(fs: List<Fld>, num: i64): List<Fld> = fs.filter(f => f.num == num)
+test fun all(fs: List<Fld>, num: i64): List<Fld> => fs.filter(f => f.num == num)
 
 // the one field numbered `num`, as a message
 test fun child(fs: List<Fld>, num: i64): List<Fld> {
@@ -74,11 +74,11 @@ test fun text(fs: List<Fld>, num: i64): string {
   (found.at(0) ?: Fld(num: 0, wire: 0, value: 0, data: [])).data.decodeUtf8() ?: "<binary>"
 }
 
-test fun number(fs: List<Fld>, num: i64): i64 = (all(fs, num).at(0) ?: Fld(num: 0, wire: 0, value: 0, data: [])).value
+test fun number(fs: List<Fld>, num: i64): i64 => (all(fs, num).at(0) ?: Fld(num: 0, wire: 0, value: 0, data: [])).value
 
 // ---- the encoder ----
 
-test fun sixteen(): List<u8> = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+test fun sixteen(): List<u8> => [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
 
 test fun one(meter: string, name: string): MetricData {
   val point = PointData(attrs: [], intValue: 1, realValue: 0.0, count: 0, buckets: [], min: 0.0, max: 0.0)

@@ -15,7 +15,7 @@ struct NoClose {
   n: i64
 }
 
-fun open(n: i64): Res = Res(n)
+fun open(n: i64): Res => Res(n)
 
 fun held() {
   with open(1)

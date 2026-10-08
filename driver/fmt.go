@@ -147,5 +147,9 @@ func StyleFor(path string) (format.Options, error) {
 	if err != nil || man == nil {
 		return format.Default, err
 	}
-	return format.Options{Indent: man.Format.Indent, MaxBlankLines: man.Format.MaxBlankLines}, nil
+	opts := format.Options{Indent: man.Format.Indent, MaxBlankLines: man.Format.MaxBlankLines}
+	if man.Format.MergeImports {
+		opts.Imports = format.ImportsMerged
+	}
+	return opts, nil
 }

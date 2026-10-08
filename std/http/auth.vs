@@ -1,7 +1,8 @@
 // Guarding a router (D99): one hook that can answer a request instead of the
 // handlers behind it, and the two HTTP schemes almost every API uses.
 
-use base64, log as logs { field }
+use base64
+use log as logs { field }
 
 /// A check in front of everything the router answers. `check` sees the
 /// request first: `null` lets it through to the handlers, a `Response`
@@ -17,7 +18,7 @@ use base64, log as logs { field }
 /// A guard wraps the whole router, its 404s included; a check that only
 /// concerns some routes tests the path itself (route groups will make that
 /// a wrapper on the group).
-public fun guard<E>(check: sendable fun(Request): Response? suspends throws E | Fail): Middleware =
+public fun guard<E>(check: sendable fun(Request): Response? suspends throws E | Fail): Middleware =>
   screen(req => Screen(req, answer: try check(req)))
 
 /// HTTP Basic authentication: every request needs `Authorization: Basic
@@ -81,7 +82,7 @@ struct Screen {
   answer: Response?
 }
 
-fun screen<E>(check: sendable fun(Request): Screen suspends throws E | Fail): Middleware = next => req => when (check(req)) {
+fun screen<E>(check: sendable fun(Request): Screen suspends throws E | Fail): Middleware => (next => req => when (check(req)) {
   is Ok(s)  => s.answer ?: next(s.req)
   is Err(e) => when (e) {
     is Fail => Response.text(e.text, status: e.status)
@@ -91,9 +92,9 @@ fun screen<E>(check: sendable fun(Request): Screen suspends throws E | Fail): Mi
       Response.text(body: status.reason(), status: status)
     }
   }
-}
+})
 
-fun refuse(challenge: string): Response =
+fun refuse(challenge: string): Response =>
   Response.text("unauthorized", status: Status.unauthorized).withHeader(Header.wwwAuthenticate, challenge)
 
 @caller_location

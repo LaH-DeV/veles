@@ -1,7 +1,8 @@
 // Compiler-shaped: intern identifiers. A million names drawn from a pool of
 // 50k distinct ones go through a string-keyed map that hands out dense ids
 // and keeps the names in a list, the way a symbol table does.
-use io { println }, time
+use io { println }
+use time
 
 struct Interner {
   ids:   MutableMap<string, i64> = [:]

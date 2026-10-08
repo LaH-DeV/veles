@@ -38,7 +38,7 @@ public trait Iterator {
 public trait Iterable {
   type Iter: Iterator
   fun iterator(): Iter
-  fun iter(): Iter = this.iterator()
+  fun iter(): Iter => this.iterator()
 }
 ```
 
@@ -150,7 +150,7 @@ is that parser, in forty lines.
 
 ```veles
 // fragment
-public trait Error { fun message(): string = "$this" }   // what `error Name { }` implements
+public trait Error { fun message(): string => "$this" }   // what `error Name { }` implements
 ```
 
 `error Name { fields; fun message() ... }` declares a struct with this

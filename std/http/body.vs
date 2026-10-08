@@ -4,7 +4,8 @@
 // under a ceiling it can see. A handler that never asks costs the server no
 // read (and a client that sent `Expect: 100-continue` is never told to go
 // ahead).
-use io, net
+use io
+use net
 
 // How a body is framed on the wire, and where a read has got to. It sits in a
 // Mutex so that a Request stays Sendable and every copy of it — a middleware
@@ -40,7 +41,7 @@ public struct Body {
   // the ceiling of this handle: reading past it is a 413
   limit: i64
 
-  static fun none(limits: Limits): Body = Body.hold([], limits)
+  static fun none(limits: Limits): Body => Body.hold([], limits)
 
   // a body already in memory (`http.call`, a test)
   static fun hold(bytes: List<u8>, limits: Limits): Body {
@@ -55,7 +56,7 @@ public struct Body {
   }
 
   // a body on the wire: `length` bytes (framing 1), or chunked (framing 2)
-  static fun wire(conn: io.Stream, framing: i64, length: i64, waiting: bool, limits: Limits): Body =
+  static fun wire(conn: io.Stream, framing: i64, length: i64, waiting: bool, limits: Limits): Body =>
     Body(
       conn,
       state: Mutex(value: BodyState(framing, remaining: length, declared: if (framing == 1) length else -1, waiting)),
@@ -64,7 +65,7 @@ public struct Body {
       limit: limits.bodyBytes,
     )
 
-  fun withLimit(max: i64): Body =
+  fun withLimit(max: i64): Body =>
     Body(conn: this.conn, state: this.state, timeout: this.timeout, defaultMax: this.defaultMax, limit: max)
 
   /// How many bytes the body has, when the request said: its
@@ -129,7 +130,7 @@ public struct Body {
   }
 
   // what `Request.bytes` collected, kept for the next call that wants it
-  fun cached(): List<u8>? = this.state.get().cached
+  fun cached(): List<u8>? => this.state.get().cached
 
   fun remember(bytes: List<u8>) {
     this.state.withLock(s => {
@@ -261,7 +262,7 @@ public struct Body {
   }
 }
 
-fun tooLarge(): Fail = Fail(status: Status.contentTooLarge, text: "payload too large")
+fun tooLarge(): Fail => Fail(status: Status.contentTooLarge, text: "payload too large")
 
 // The size on a chunk header line: hexadecimal, then any `;extension`, which
 // is ignored. Sixteen digits would not fit an i64 and no body is that large.

@@ -87,7 +87,7 @@ public struct Multipart {
     Part(name, headers, filename: params.get("filename"), contentType: headers.get("content-type"), form: this)
   }
 
-  fun peek(n: i64): List<u8> = this.buffer.get().take(n)
+  fun peek(n: i64): List<u8> => this.buffer.get().take(n)
 
   fun skip(n: i64) {
     this.buffer.withLock(b => {
@@ -95,7 +95,7 @@ public struct Multipart {
     })
   }
 
-  fun held(): i64 = this.buffer.get().len()
+  fun held(): i64 => this.buffer.get().len()
 
   // bytes of the current part, up to `max`, never running into the boundary
   // that ends it; empty once it has
@@ -212,7 +212,7 @@ public struct Part {
   form:           Multipart
 
   /// Up to `max` bytes of the part, as they arrive; empty at its end.
-  public fun read(max: i64 = 65536): List<u8> suspends throws Fail | IoError = try this.form.readPart(max)
+  public fun read(max: i64 = 65536): List<u8> suspends throws Fail | IoError => try this.form.readPart(max)
 
   /// The rest of the part, at most `max` bytes: a longer one is a 413.
   public fun bytes(max: i64): List<u8> suspends throws Fail | IoError {
@@ -228,7 +228,7 @@ public struct Part {
 
   /// The rest of the part as text, at most `max` bytes; text that is not
   /// UTF-8 is a 400.
-  public fun text(max: i64): string suspends throws Fail | IoError =
+  public fun text(max: i64): string suspends throws Fail | IoError =>
     try (try this.bytes(max)).decodeUtf8() ?! badRequest("the part '${this.name}' is not valid UTF-8")
 
   /// Writes the rest of the part to `path`, replacing what is there, and

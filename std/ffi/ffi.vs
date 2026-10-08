@@ -33,7 +33,7 @@ extern "C" {
 public error NulByte {
   /// The byte offset of the first NUL.
   public at: i64
-  fun message(): string = "a C string cannot hold a NUL byte (one is at byte ${this.at})"
+  fun message(): string => "a C string cannot hold a NUL byte (one is at byte ${this.at})"
 }
 
 struct CState {
@@ -62,7 +62,7 @@ public struct CString {
   }
 
   /// The `char *` to pass. Reading it after `close` is a bug, and panics.
-  public fun ptr(): *raw u8 = this.state.ptr ?: panic("a CString was used after close")
+  public fun ptr(): *raw u8 => this.state.ptr ?: panic("a CString was used after close")
 
   implement Closeable {
     fun close() {
@@ -99,7 +99,7 @@ public unsafe fun readBytes(p: *raw u8, n: i64): List<u8> {
 
 /// `n` zeroed bytes of memory the collector does not manage — for a C API
 /// that keeps a buffer past the call. Give it back with `free`.
-public fun alloc(n: i64): *raw u8 = unsafe {
+public fun alloc(n: i64): *raw u8 => unsafe {
   // SAFETY: returns zeroed malloc'd memory; nothing Veles owns is touched
   veles_ffi_alloc(n)
 }
@@ -129,7 +129,7 @@ public struct Handle<T> {
   private state: *CState
 
   /// The `void *` to give C.
-  public fun ptr(): *raw u8 = this.state.ptr ?: panic("a Handle was used after close")
+  public fun ptr(): *raw u8 => this.state.ptr ?: panic("a Handle was used after close")
 
   /// The value behind a pointer a `Handle<T>` gave C. It trusts that the
   /// pointer came from a `Handle` of this `T`; one that was closed panics.

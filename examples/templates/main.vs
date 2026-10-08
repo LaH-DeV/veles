@@ -13,11 +13,11 @@ trait Markup {
 }
 
 implement Markup for string {
-  fun markup(): string = this.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
+  fun markup(): string => this.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
 }
 
 implement Markup for i64 {
-  fun markup(): string = "$this"
+  fun markup(): string => "$this"
 }
 
 /// Text that is safe to put in a page. The only way to make one is `html"…"`
@@ -27,12 +27,12 @@ struct Html {
   private text: string
 
   implement Display {
-    fun toString(): string = this.text
+    fun toString(): string => this.text
   }
 
   implement Markup {
     // already markup: spliced as it is, not escaped twice
-    fun markup(): string = this.text
+    fun markup(): string => this.text
   }
 }
 
@@ -54,19 +54,19 @@ trait Param {
 }
 
 implement Param for string {
-  fun describe(): string = "'$this'"
+  fun describe(): string => "'$this'"
 }
 
 implement Param for i64 {
-  fun describe(): string = "$this"
+  fun describe(): string => "$this"
 }
 
 struct Query {
   private text:   string
   private params: List<string>
 
-  fun text(): string = this.text
-  fun params(): List<string> = this.params
+  fun text(): string => this.text
+  fun params(): List<string> => this.params
 }
 
 @template

@@ -1,5 +1,7 @@
 // SHA-256 over 1 MiB, 16 times: the hash is plain Veles (std/crypto).
-use crypto, io { println }, time
+use crypto
+use io { println }
+use time
 
 fun main() {
   var data: MutableList<u8> = []

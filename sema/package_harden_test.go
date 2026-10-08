@@ -42,7 +42,7 @@ func TestFailedResolutionIsReportedOnce(t *testing.T) {
 	}
 	root := t.TempDir()
 	os.WriteFile(filepath.Join(root, "veles.toml"), []byte("[package]\nname = \"app\"\n[dependencies]\nhttputil = { registry = \"acme/httputil\", version = \"1.4.2\" }\n"), 0o644)
-	os.WriteFile(filepath.Join(root, "main.vs"), []byte("use io\nuse httputil\nfun main() { io.println(\"x\") }\nfun broken(): i64 = \"not a number\"\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "main.vs"), []byte("use io\nuse httputil\nfun main() { io.println(\"x\") }\nfun broken(): i64 => \"not a number\"\n"), 0o644)
 	diags := &source.Diagnostics{}
 	pkg, err := LoadPackage(root, diags)
 	if err != nil {

@@ -6,13 +6,13 @@
 
 extend<T> List<T> {
   /// The element at `i`, or `d` when `i` is out of range; `this.at(i) ?: d`.
-  public const fun atOrDefault(i: i64, d: T): T = this.at(i) ?: d
+  public const fun atOrDefault(i: i64, d: T): T => this.at(i) ?: d
 
   /// The first `n` elements (all of them when `n` exceeds the length).
-  public const fun take(n: i64): List<T> = this.slice(0, n)
+  public const fun take(n: i64): List<T> => this.slice(0, n)
 
   /// The elements after the first `n`.
-  public const fun drop(n: i64): List<T> = this.slice(n, this.len())
+  public const fun drop(n: i64): List<T> => this.slice(n, this.len())
 
   /// A new list of these elements followed by `other`'s.
   public const fun concat(other: List<T>): List<T> {
@@ -24,7 +24,7 @@ extend<T> List<T> {
 
   /// The valid indexes, `0..<len()`. In `loop (i in xs.indices())` the
   /// checker knows each `i` is in range, so `xs.at(i)` is a `T` (D62).
-  public const fun indices(): Range<i64> = 0..<this.len()
+  public const fun indices(): Range<i64> => 0..<this.len()
 
   /// The index of the first element `pred` accepts, or -1.
   public const fun indexOfFirst<E>(pred: fun(T): bool suspends throws E): i64 throws E {
@@ -119,10 +119,10 @@ extend<T> List<T> {
 // Comparison strategies (D48): the natural order comes from Comparable;
 extend<T> List<T> {
   /// The index of the last element, -1 when empty: `if (i < xs.lastIndex()) i += 1`.
-  public const fun lastIndex(): i64 = this.len() - 1
+  public const fun lastIndex(): i64 => this.len() - 1
 
   /// The distinct elements as an immutable set: `xs.map(t => t.0).toSet()`.
-  public const fun toSet(): Set<T> = this.toMutableSet().toSet()
+  public const fun toSet(): Set<T> => this.toMutableSet().toSet()
 
   /// The distinct elements as a mutable set.
   public const fun toMutableSet(): MutableSet<T> {
@@ -172,7 +172,7 @@ extend<T> List<T> {
   }
 
   /// A copy sorted from largest to smallest key.
-  public const fun sortedByDescending<K: Comparable>(key: fun(T): K): List<T> =
+  public const fun sortedByDescending<K: Comparable>(key: fun(T): K): List<T> =>
     this.sortedWith((a, b) => key(b).compareTo(key(a)))
 
   /// The element with the smallest key, or `null` when empty; the first
@@ -251,7 +251,7 @@ extend<T> MutableList<T> {
 // site, so a list of anything else reports the error there.
 extend<T: Comparable> List<T> {
   /// A copy sorted from largest to smallest.
-  public const fun sortedDescending(): List<T> = this.sorted().reversed()
+  public const fun sortedDescending(): List<T> => this.sorted().reversed()
 
   /// The smallest element, or `null` when empty.
   public const fun min(): T? {
@@ -321,7 +321,7 @@ extend<T> List<T> {
 
   /// The index of the first element whose key equals `target`, or -1:
   /// `people.binarySearchBy(p => p.name, "ann")` on a list sorted by name.
-  public const fun binarySearchBy<K: Comparable>(key: fun(T): K, target: K): i64 =
+  public const fun binarySearchBy<K: Comparable>(key: fun(T): K, target: K): i64 =>
     this.binarySearchWith(x => key(x).compareTo(target))
 }
 
@@ -337,12 +337,12 @@ extend<T: Comparable> List<T> {
   /// The first index whose element is not less than `x` — where `x` belongs
   /// if it is inserted, keeping the order and going before any equals.
   /// `[10, 20, 20, 30].lowerBound(20)` is 1.
-  public const fun lowerBound(x: T): i64 = this.partitionPoint(e => e < x)
+  public const fun lowerBound(x: T): i64 => this.partitionPoint(e => e < x)
 
   /// The first index whose element is greater than `x` — where `x` belongs
   /// if it goes after any equals. `[10, 20, 20, 30].upperBound(20)` is 3, so
   /// `upperBound(x) - lowerBound(x)` is how many times `x` occurs.
-  public const fun upperBound(x: T): i64 = this.partitionPoint(e => e <= x)
+  public const fun upperBound(x: T): i64 => this.partitionPoint(e => e <= x)
 }
 
 extend List<i64> {
@@ -507,7 +507,7 @@ extend<T> Range<T> {
   }
 
   /// True when the range holds no value: `5..<5`, `5..4` (D106).
-  public const fun isEmpty(): bool = if (this.inclusive) this.hi < this.lo else this.hi <= this.lo
+  public const fun isEmpty(): bool => if (this.inclusive) this.hi < this.lo else this.hi <= this.lo
 
   /// True when `x` lies inside the range.
   public const fun contains(x: T): bool {
@@ -556,26 +556,26 @@ extend<T> List<T> {
 
 extend<T, E> Result<T, E> {
   /// The value, or null when this is an error (Kotlin's `getOrNull`).
-  public fun getOrNull(): T? = when (this) {
+  public fun getOrNull(): T? => when (this) {
     is Ok(value) => value
     is Err       => null
   }
 
   /// The error, or null when this is a value.
-  public fun errorOrNull(): E? = when (this) {
+  public fun errorOrNull(): E? => when (this) {
     is Err(error) => error
     is Ok         => null
   }
 
   /// The value, or `fallback` when this is an error.
-  public fun getOrDefault(fallback: T): T = this.getOrNull() ?: fallback
+  public fun getOrDefault(fallback: T): T => this.getOrNull() ?: fallback
 
   /// The same outcome with the error replaced by `f(error)` — how an error
   /// from one layer becomes one of another while keeping what it said:
   /// `try parse(text).mapError(e => BadRequest(detail: e.message()))`.
   /// When the new error does not depend on the old one, `?!` is shorter:
   /// `try parse(text) ?! BadRequest(detail: "not a user")`.
-  public fun mapError<E2: Error>(f: fun(E): E2): Result<T, E2> = when (this) {
+  public fun mapError<E2: Error>(f: fun(E): E2): Result<T, E2> => when (this) {
     is Ok(value)  => Ok(value)
     is Err(error) => Err(f(error))
   }
@@ -583,13 +583,13 @@ extend<T, E> Result<T, E> {
 
 extend<T, E> List<Result<T, E>> {
   /// The values of the successful results, in order.
-  public fun oks(): List<T> = this.mapNotNull(r => r.getOrNull())
+  public fun oks(): List<T> => this.mapNotNull(r => r.getOrNull())
 
   /// The errors of the failed results, in order.
-  public fun errors(): List<E> = this.mapNotNull(r => r.errorOrNull())
+  public fun errors(): List<E> => this.mapNotNull(r => r.errorOrNull())
 }
 
 extend<T> List<T?> {
   /// The elements that are present, in order (Kotlin's `filterNotNull`).
-  public fun filterNotNull(): List<T> = this.mapNotNull(x => x)
+  public fun filterNotNull(): List<T> => this.mapNotNull(x => x)
 }

@@ -97,20 +97,20 @@ fun main() { }`, "unknown type"},
 sealed trait S
 struct A : S { }
 struct B : S { }
-fun f(s: S): i32 = when (s) { is A => 1 }
+fun f(s: S): i32 => when (s) { is A => 1 }
 fun main() { }`, "not exhaustive"},
 		{"D13 guard does not count", prelude + `
 sealed trait S
 struct A : S { n: i32 }
-fun f(s: S): i32 = when (s) { is A(n) if n > 0 => 1 }
+fun f(s: S): i32 => when (s) { is A(n) if n > 0 => 1 }
 fun main() { }`, "not exhaustive"},
 		{"D5 nullable member access", prelude + `
 struct U { name: string }
-fun f(u: U?): string = u.name
+fun f(u: U?): string => u.name
 fun main() { }`, "may be null"},
 		{"D4 unhandled Result", prelude + `
 error E { }
-fun f(): i32 throws E = 1
+fun f(): i32 throws E => 1
 fun main() { f() }`, "unused Result"},
 		{"D4 throw needs throws", prelude + `
 error E { }
@@ -132,13 +132,13 @@ struct P { x: i64 }
 fun main() { val p = P(x: 1, y: 2) }`, "no field named 'y'"},
 		{"D4 try needs throws", prelude + `
 error E { }
-fun f(): i32 throws E = 1
+fun f(): i32 throws E => 1
 fun main() { val x = try f() }`, "not declared 'throws'"},
 		{"D45 error not in declared union", prelude + `
 error E1 { }
 error E2 { }
-fun f(): i32 throws E1 = 1
-fun g(): i32 throws E2 = try f()
+fun f(): i32 throws E1 => 1
+fun g(): i32 throws E2 => try f()
 fun main() { }`, "not in the declared 'throws"},
 		{"D31 infinite size", prelude + `
 sealed trait T
@@ -148,23 +148,23 @@ fun main() { }`, "infinite size"},
 		{"D17 coherence", prelude + `
 trait Show { fun show(): string }
 struct A { }
-implement Show for A { fun show(): string = "a" }
-implement Show for A { fun show(): string = "b" }
+implement Show for A { fun show(): string => "a" }
+implement Show for A { fun show(): string => "b" }
 fun main() { }`, "conflicting impl"},
 		{"D28 impl parameter names", prelude + `
 trait T { fun f(x: i32): i32 }
 struct A { }
-implement T for A { fun f(y: i32): i32 = y }
+implement T for A { fun f(y: i32): i32 => y }
 fun main() { }`, "parameter must be named"},
 		{"D53 override required", prelude + `
-trait T { fun f(): i32 = 1 }
+trait T { fun f(): i32 => 1 }
 struct A { }
-implement T for A { fun f(): i32 = 2 }
+implement T for A { fun f(): i32 => 2 }
 fun main() { }`, "must be marked 'override'"},
 		{"D53 override without default", prelude + `
 trait T { fun f(): i32 }
 struct A { }
-implement T for A { override fun f(): i32 = 2 }
+implement T for A { override fun f(): i32 => 2 }
 fun main() { }`, "only allowed when trait"},
 		{"D44 extern needs unsafe", prelude + `
 extern "C" { fun puts(s: *raw u8): i32 }
@@ -179,8 +179,8 @@ fun main() { io.veles_print("x") }`, "private to module"},
 trait A { fun f(): i32 }
 trait B { fun f(): i32 }
 struct S { }
-implement A for S { fun f(): i32 = 1 }
-implement B for S { fun f(): i32 = 2 }
+implement A for S { fun f(): i32 => 1 }
+implement B for S { fun f(): i32 => 2 }
 fun main() { val s = S(); s.f() }`, "ambiguous method"},
 		{"D25 push into List", prelude + `
 fun main() { val xs = [1, 2]; xs.push(3) }`, "immutable List"},
@@ -189,12 +189,12 @@ fun main() { val xs = [] }`, "cannot infer the element type"},
 		{"D30 elvis needs nullable", prelude + `
 fun main() { val x = 1 ?: 2 }`, "needs a nullable left operand"},
 		{"D40 function type effects declared", prelude + `
-fun g(): i32 throws = 1
+fun g(): i32 throws => 1
 fun main() { val h: fun(): i32 throws = g; io.println("${h()}") }`, "error type must be declared"},
 		{"D28 generic inference", prelude + `
 struct Box<T> { value: T }
 fun main() { val b = Box(value: 1); val s: string = b.value }`, "type mismatch"},
-		{"main signature", prelude + `fun main(): i32 = 1`, "'main' must take no parameters"},
+		{"main signature", prelude + `fun main(): i32 => 1`, "'main' must take no parameters"},
 		{"unreachable", prelude + `fun main() { return; io.println("x") }`, "unreachable code"},
 	}
 	for _, c := range cases {
@@ -211,31 +211,31 @@ fun main() { }`,
 fun f(s: string?): i64 { val v = s ?: return -1; v.len() }
 fun main() { }`,
 		"inferred expression body": prelude + `
-fun add(a: i32, b: i32) = a + b
+fun add(a: i32, b: i32) => a + b
 fun main() { val x: i32 = add(1, 2) }`,
 		"inferred error union": prelude + `
 error E1 { }
 error E2 { }
-fun f(): i32 throws E1 = 1
-fun g(): i32 throws E2 = 2
+fun f(): i32 throws E1 => 1
+fun g(): i32 throws E2 => 2
 fun h(): i32 throws { try f() + try g() }
-fun k(): i32 throws E1 | E2 = try h()
+fun k(): i32 throws E1 | E2 => try h()
 fun main() { }`,
 		"nested nullable exhaustive": prelude + `
-fun f(x: i32??): i32 = when (x) {
+fun f(x: i32??): i32 => when (x) {
   null => 0
   Some(null) => 1
   Some(Some(v)) => v
 }
 fun main() { }`,
 		"trait default and generic bound": prelude + `
-trait Show { fun show(): string; fun twice(): string = this.show() + this.show() }
+trait Show { fun show(): string; fun twice(): string => this.show() + this.show() }
 struct A { }
-implement Show for A { fun show(): string = "a" }
-fun p<T: Show>(x: T): string = x.twice()
+implement Show for A { fun show(): string => "a" }
+fun p<T: Show>(x: T): string => x.twice()
 fun main() { io.println(p(A())) }`,
 		"struct methods on generic": prelude + `
-struct Stack<T> { items: MutableList<T> = []; fun push(x: T) { this.items.push(x) }; fun len(): i64 = this.items.len() }
+struct Stack<T> { items: MutableList<T> = []; fun push(x: T) { this.items.push(x) }; fun len(): i64 => this.items.len() }
 fun main() { val s = Stack<i32>(); s.push(1); io.println("${s.len()}") }`,
 		"mutation through pointer on val": prelude + `
 struct C { var n: i32 }
@@ -245,7 +245,7 @@ struct C { var n: i32 = 0; fun bump() { this.n += 1 } }
 fun main() { val c = C(); c.n = 2; c.bump(); io.println("${c.n}") }`,
 		"Result value matched": prelude + `
 error E { code: i32 }
-fun f(): i32 throws E = Err(E(code: 1))
+fun f(): i32 throws E => Err(E(code: 1))
 fun main() {
   val r = f()
   val v = when (r) { is Ok(value) => value; is Err(error) => error.code }
@@ -254,12 +254,12 @@ fun main() {
 sealed trait T
 struct A : T { n: i32 }
 struct B : T { }
-fun f(p: *T): i32 = when (p) { is A(n) => n; is B => 0 }
+fun f(p: *T): i32 => when (p) { is A(n) => n; is B => 0 }
 fun main() { }`,
 		"throw as sugar for Err": prelude + `
 error E { n: i32 }
 fun f(x: i32): i32 throws { if (x < 0) throw E(n: x); x }
-fun g(x: i32?): i32 throws E = x ?: throw E(n: 0)
+fun g(x: i32?): i32 throws E => x ?: throw E(n: 0)
 fun main() { when (f(1)) { is Ok(v) => { }; is Err(e) => { } } }`,
 		"labeled loops": prelude + `
 fun main() { loop :outer (i in 0..3) { loop (j in 0..3) { if (j == 1) continue outer; if (i == 2) break outer } } }`,
@@ -399,7 +399,7 @@ func TestResultSmartCast(t *testing.T) {
 	// `is Ok` / `is Err` read through to the payload, like `!= null` on T?
 	expectClean(t, prelude+`
 error E { code: i32 }
-fun may(n: i32): i32 throws E = if (n > 0) n else throw E(code: n)
+fun may(n: i32): i32 throws E => if (n > 0) n else throw E(code: n)
 fun main() {
   val r = may(1)
   if (r is Ok) {
@@ -425,7 +425,7 @@ fun main() {
 	// outside the test the subject is still the Result
 	expectError(t, prelude+`
 error E { code: i32 }
-fun may(n: i32): i32 throws E = if (n > 0) n else throw E(code: n)
+fun may(n: i32): i32 throws E => if (n > 0) n else throw E(code: n)
 fun main() {
   val r = may(1)
   if (r is Ok) io.println("ok")
@@ -438,7 +438,7 @@ func TestTwoVariantSealedElseNarrows(t *testing.T) {
 sealed trait Shape
 struct Circle : Shape { r: f64 }
 struct Rect : Shape { w: f64, h: f64 }
-fun area(s: Shape): f64 = if (s is Circle) s.r * s.r * 3.0 else s.w * s.h
+fun area(s: Shape): f64 => if (s is Circle) s.r * s.r * 3.0 else s.w * s.h
 fun main() { io.println("${area(Circle(r: 1.0))}") }`)
 }
 
@@ -447,13 +447,13 @@ func TestErrorTrait(t *testing.T) {
 	// explicit override, and dispatch on a union without a `when`
 	expectClean(t, prelude+`
 error ParseError { text: string }
-error RangeError { value: i64; fun message(): string = "out of range: ${this.value}" }
+error RangeError { value: i64; fun message(): string => "out of range: ${this.value}" }
 fun parse(s: string): i64 throws ParseError | RangeError {
   val n = s.toInt() ?: throw ParseError(text: s)
   if (n > 10) throw RangeError(value: n)
   n
 }
-fun load(s: string): i64 throws = try parse(s)
+fun load(s: string): i64 throws => try parse(s)
 fun main() {
   val r = load("x")
   when (r) {
@@ -469,17 +469,17 @@ fun main() {
   io.println(p.message())
 }`)
 	expectError(t, prelude+`
-fun f(): i64 throws string = 1
+fun f(): i64 throws string => 1
 fun main() { }`, "cannot be an error")
 	expectError(t, prelude+`
 fun f(): i64 throws { throw 5 }
 fun main() { }`, "cannot be an error")
 	expectError(t, prelude+`
-fun f<X>(x: X): i64 throws X = throw x
+fun f<X>(x: X): i64 throws X => throw x
 fun main() { val r = f("s"); if (r is Err) io.println("err") }`, "cannot be an error")
 	expectClean(t, prelude+`
 error E { }
-fun f<X: Error>(x: X): i64 throws X = throw x
+fun f<X: Error>(x: X): i64 throws X => throw x
 fun main() { val r = f(E()); if (r is Err) io.println(r.message()) }`)
 }
 
@@ -489,14 +489,14 @@ func TestErrorDeclarations(t *testing.T) {
 	expectClean(t, prelude+`
 error Plain
 error Tagged { message: string }
-error Parse { text: string; fun message(): string = "parse: ${this.text}" }
-error Bounds { value: i64; fun bound(): i64 = 65535 }
+error Parse { text: string; fun message(): string => "parse: ${this.text}" }
+error Bounds { value: i64; fun bound(): i64 => 65535 }
 error PortErrors = Parse | Bounds | Tagged | Plain
 error More = PortErrors | Panic
 error Wrapped {
   key: string
   cause: PortErrors
-  fun message(): string = "${this.key}: ${this.cause.message()}"
+  fun message(): string => "${this.key}: ${this.cause.message()}"
 }
 fun parse(s: string): i64 throws PortErrors {
   if (s == "t") throw Tagged(message: "tagged")
@@ -508,7 +508,7 @@ fun wrap(s: string): i64 throws Wrapped {
   if (r is Err) throw Wrapped(key: "k", cause: r)
   r
 }
-fun both(s: string): i64 throws More = try parse(s)
+fun both(s: string): i64 throws More => try parse(s)
 fun main() {
   val r = parse("x")
   when (r) {
@@ -541,7 +541,7 @@ fun main() { val x: Errs = A() }`, "names an error set"},
 error S1 = A | S2
 error S2 = S1
 fun main() { }`, "refers to itself"},
-		{`error A { n: i64; override fun helper(): i64 = 1 }
+		{`error A { n: i64; override fun helper(): i64 => 1 }
 fun main() { }`, "only 'message' can be overridden"},
 		{`error A { message: i64 }
 fun main() { val a = A(message: 1); io.println(a.message()) }`, "A(message: 1)"}, // not a string field: default rendering, no error; see below
@@ -566,10 +566,10 @@ struct Address { city: string }
 struct User {
   var name: string
   address: Address?
-  fun city(): string = if (this.address != null) this.address.city else "?"
+  fun city(): string => if (this.address != null) this.address.city else "?"
 }
 struct Box { user: User }
-fun load(): i64 throws ConfigError = throw ConfigError(key: "k", cause: RangeError(value: 7))
+fun load(): i64 throws ConfigError => throw ConfigError(key: "k", cause: RangeError(value: 7))
 fun main() {
   val c = load()
   if (c is Err) {
@@ -606,8 +606,8 @@ fun main() {
 		src := prelude + `
 struct Address { city: string }
 struct User { name: string, var address: Address?; fun clear() { this.address = null }
-  fun city(): string = if (this.address != null) this.address.city else "?"
-  fun reset(): string = if (this.address != null) { this.clear(); this.address.city } else "?" }
+  fun city(): string => if (this.address != null) this.address.city else "?"
+  fun reset(): string => if (this.address != null) { this.clear(); this.address.city } else "?" }
 fun other(u: *User) { u.address = null }
 fun main() {
   var u = User(name: "a", address: Address(city: "x"))` + c.src + `
@@ -669,13 +669,13 @@ func TestExtendBlocks(t *testing.T) {
 struct Point { var x: i64, y: i64 }
 struct Box<T> { value: T }
 trait Show { fun show(): string }
-implement Show for Point { fun show(): string = "p" }
+implement Show for Point { fun show(): string => "p" }
 extend Point {
-  public fun sum(): i64 = this.x + this.y
+  public fun sum(): i64 => this.x + this.y
   fun bump() { this.x += 1 }
 }
-extend<T: Show> Box<T> { fun label(): string = this.value.show() }
-extend<T> Box<T> { fun get(): T = this.value }
+extend<T: Show> Box<T> { fun label(): string => this.value.show() }
+extend<T> Box<T> { fun get(): T => this.value }
 fun main() {
   var p = Point(x: 1, y: 2)
   p.bump()
@@ -694,31 +694,31 @@ fun main() {
   io.println("$v")
 }`)
 	cases := []struct{ name, src, want string }{
-		{"builtin outside std", `extend string { fun shout(): string = this }`, "outside the standard library"},
-		{"foreign struct", `extend Panic { fun why(): string = "" }`, "declared outside this package"},
+		{"builtin outside std", `extend string { fun shout(): string => this }`, "outside the standard library"},
+		{"foreign struct", `extend Panic { fun why(): string => "" }`, "declared outside this package"},
 		{"pointer target", `struct P { x: i64 }
 extend *P { fun z() {} }`, "only named types can be extended"},
 		{"type param target", `extend<T> T { fun z() {} }`, "only named types can be extended"},
 		{"struct body collision", `struct P { x: i64
-  fun sum(): i64 = this.x }
-extend P { fun sum(): i64 = 1 }`, "already declared in the body"},
+  fun sum(): i64 => this.x }
+extend P { fun sum(): i64 => 1 }`, "already declared in the body"},
 		{"duplicate in block", `struct P { x: i64 }
-extend P { fun a(): i64 = 1
-  fun a(): i64 = 2 }`, "duplicate method 'a'"},
+extend P { fun a(): i64 => 1
+  fun a(): i64 => 2 }`, "duplicate method 'a'"},
 		{"overlapping blocks", `struct P { x: i64 }
-extend P { fun a(): i64 = 1 }
-extend P { fun a(): i64 = 2 }`, "already provided for 'P'"},
+extend P { fun a(): i64 => 1 }
+extend P { fun a(): i64 => 2 }`, "already provided for 'P'"},
 		{"override", `struct P { x: i64 }
-extend P { override fun a(): i64 = 1 }`, "only meaningful inside an implement block"},
+extend P { override fun a(): i64 => 1 }`, "only meaningful inside an implement block"},
 		{"for keyword", `struct P { x: i64 }
 extend Show for P { }`, "names the type being extended"},
 		{"bound not met", `struct P { x: i64 }
 trait Show { fun show(): string }
 struct Box<T> { value: T }
-extend<T: Show> Box<T> { fun label(): string = this.value.show() }
+extend<T: Show> Box<T> { fun label(): string => this.value.show() }
 fun main() { val b = Box(value: P(x: 1)); b.label() }`, "requires 'P' to implement 'Show'"},
 		{"private across modules is still M5", `struct P { x: i64 }
-extend P { fun a(): i64 = 1 }
+extend P { fun a(): i64 => 1 }
 fun main() { val p = P(x: 1); p.a() }`, ""},
 	}
 	for _, c := range cases {
@@ -750,7 +750,7 @@ func TestStdSourceTreeIsStd(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	extra := "extend string {\n  public fun shout(): string = this + \"!\"\n}\nfun wrong(): i64 = \"x\"\n"
+	extra := "extend string {\n  public fun shout(): string => this + \"!\"\n}\nfun wrong(): i64 => \"x\"\n"
 	if err := os.WriteFile(filepath.Join(dir, "zz_extra.vs"), []byte(extra), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -822,23 +822,23 @@ func TestOperatorTraits(t *testing.T) {
 	expectClean(t, prelude+`
 struct Version { major: i64, minor: i64 }
 implement Comparable for Version {
-  fun compareTo(other: Version): Ordering = if (this.major != other.major) this.major.compareTo(other.major) else this.minor.compareTo(other.minor)
+  fun compareTo(other: Version): Ordering => if (this.major != other.major) this.major.compareTo(other.major) else this.minor.compareTo(other.minor)
 }
-implement Display for Version { fun toString(): string = "v${this.major}.${this.minor}" }
+implement Display for Version { fun toString(): string => "v${this.major}.${this.minor}" }
 struct Name { text: string }
-implement Equatable for Name { fun equals(other: Name): bool = this.text.toLower() == other.text.toLower() }
-implement Hashable for Name { fun hash(): i64 = this.text.toLower().len() }
+implement Equatable for Name { fun equals(other: Name): bool => this.text.toLower() == other.text.toLower() }
+implement Hashable for Name { fun hash(): i64 => this.text.toLower().len() }
 struct Pair<T> { a: T, b: T }
-implement<T: Display> Display for Pair<T> { fun toString(): string = "<${this.a}, ${this.b}>" }
+implement<T: Display> Display for Pair<T> { fun toString(): string => "<${this.a}, ${this.b}>" }
 sealed trait Shape
 struct Circle : Shape { r: f64 }
 struct Square : Shape { side: f64 }
-implement Comparable for Shape { fun compareTo(other: Shape): Ordering = area(this).compareTo(area(other)) }
-fun area(s: Shape): f64 = when (s) {
+implement Comparable for Shape { fun compareTo(other: Shape): Ordering => area(this).compareTo(area(other)) }
+fun area(s: Shape): f64 => when (s) {
   is Circle => 3.14 * s.r * s.r
   is Square => s.side * s.side
 }
-fun maxOf<T: Comparable>(a: T, b: T): T = if (a.compareTo(b) >= 0) a else b
+fun maxOf<T: Comparable>(a: T, b: T): T => if (a.compareTo(b) >= 0) a else b
 fun main() {
   val a = Version(major: 1, minor: 10)
   val b = Version(major: 1, minor: 9)
@@ -857,15 +857,15 @@ fun main() { io.println("${[P(x: 1)].min()}") }`, "'min' on 'List<P>' requires '
 		{"sorted needs Comparable", `struct P { x: i64 }
 fun main() { io.println("${[P(x: 1)].sorted()}") }`, "implement 'Comparable'"},
 		{"Equatable key needs Hashable", `struct K { s: string }
-implement Equatable for K { fun equals(other: K): bool = true }
+implement Equatable for K { fun equals(other: K): bool => true }
 fun main() { val m = [K(s: "a"): 1]; io.println("${m.len()}") }`, "implements Equatable but not Hashable"},
 		{"Hashable alone is fine", `struct K { s: string }
-implement Hashable for K { fun hash(): i64 = 1 }
+implement Hashable for K { fun hash(): i64 => 1 }
 fun main() { val m = [K(s: "a"): 1]; io.println("${m.len()}") }`, ""},
 		{"compareTo must match the trait", `struct P { x: i64 }
-implement Comparable for P { fun compareTo(other: P): bool = true }`, "Comparable"},
+implement Comparable for P { fun compareTo(other: P): bool => true }`, "Comparable"},
 		{"function fields cannot compare, Equatable makes them", `struct H { f: fun(i64): i64 }
-implement Equatable for H { fun equals(other: H): bool = true }
+implement Equatable for H { fun equals(other: H): bool => true }
 fun main() { val h = H(f: x => x); io.println("${h == h}") }`, ""},
 	}
 	for _, c := range cases {
@@ -885,7 +885,7 @@ func TestLiteralMutabilityInference(t *testing.T) {
 	expectClean(t, prelude+`
 fun fill(xs: MutableList<i64>) { xs.push(4) }
 struct Bag { items: MutableList<string> = [], tags: MutableMap<string, i64> = [:] }
-fun make(): MutableList<i64> = [1, 2]
+fun make(): MutableList<i64> => [1, 2]
 fun main() {
   val a: MutableList<i64> = [1, 2, 3]
   a.push(9)
@@ -928,7 +928,7 @@ func TestStaticFunctions(t *testing.T) {
 struct Point {
   x: i64
   y: i64
-  static fun origin(): Point = Point(x: 0, y: 0)
+  static fun origin(): Point => Point(x: 0, y: 0)
   static fun fromText(s: string): Point? {
     val [xt, yt] = s.split(",") else return null
     val x = i64.parse(xt) ?: return null
@@ -936,11 +936,11 @@ struct Point {
     Point(x: x, y: y)
   }
   implement Parsable {
-    static fun parse(s: string): Point? = Point.fromText(s)
+    static fun parse(s: string): Point? => Point.fromText(s)
   }
 }
 extend Point {
-  static fun unit(): Point = Point(x: 1, y: 1)
+  static fun unit(): Point => Point(x: 1, y: 1)
 }
 struct Stack<T> {
   items: MutableList<T> = []
@@ -950,7 +950,7 @@ struct Stack<T> {
     s
   }
 }
-fun parseAll<T: Parsable>(xs: List<string>): List<T?> = xs.map(x => T.parse(x))
+fun parseAll<T: Parsable>(xs: List<string>): List<T?> => xs.map(x => T.parse(x))
 fun main() {
   val p: Point? = Point.parse("3,4")
   val ns: List<i64?> = parseAll(["1", "x"])
@@ -959,29 +959,29 @@ fun main() {
 	cases := []struct{ name, src, want string }{
 		{"top level", `static fun f() { }`, "a top-level function needs no marker"},
 		{"this in static", `struct P { x: i64
-  static fun make(): P = P(x: this.x) }`, "'this' is not available in a static function"},
+  static fun make(): P => P(x: this.x) }`, "'this' is not available in a static function"},
 		{"static called on a value", `struct P { x: i64
-  static fun make(): P = P(x: 1) }
+  static fun make(): P => P(x: 1) }
 fun main() { val p = P(x: 1); p.make() }`, "call it on the type: 'P.make(...)'"},
 		{"method called on the type", `struct P { x: i64
-  fun m(): i64 = 1 }
+  fun m(): i64 => 1 }
 fun main() { P.m() }`, "call it on a value, not on the type"},
 		{"unknown static", `struct P { x: i64 }
 fun main() { P.nothing() }`, "no static function 'nothing' on type 'P'"},
 		{"impl must say static", `trait F { static fun make(): Self }
 struct P { x: i64 }
-implement F for P { fun make(): P = P(x: 1) }`, "declare it 'static fun'"},
+implement F for P { fun make(): P => P(x: 1) }`, "declare it 'static fun'"},
 		{"impl must not say static", `trait F { fun m(): i64 }
 struct P { x: i64 }
-implement F for P { static fun m(): i64 = 1 }`, "cannot be 'static'"},
-		{"sealed trait", `sealed trait S { static fun z(): i64 = 1 }
+implement F for P { static fun m(): i64 => 1 }`, "cannot be 'static'"},
+		{"sealed trait", `sealed trait S { static fun z(): i64 => 1 }
 struct A : S { }`, "a sealed trait cannot declare a static function"},
 		{"not object safe", `trait F { static fun make(): Self }
 struct P { x: i64 }
-implement F for P { static fun make(): P = P(x: 1) }
+implement F for P { static fun make(): P => P(x: 1) }
 fun main() { val f: F = P(x: 1); io.println("$f") }`, "function 'make' is static"},
 		{"generic needs type args", `struct S<T> { x: T
-  static fun z(): i64 = 0 }
+  static fun z(): i64 => 0 }
 fun main() { io.println("${S.z()}") }`, "write the type arguments"},
 	}
 	for _, c := range cases {
@@ -1008,25 +1008,25 @@ func TestInlinableImplLint(t *testing.T) {
 	}
 	if ok, fix := hasLint(`trait Show { fun show(): string }
 struct P { x: i64 }
-implement Show for P { fun show(): string = "p" }`); !ok || fix == nil || len(fix.Edits) != 2 || fix.Title != "Move into the body of 'P'" {
+implement Show for P { fun show(): string => "p" }`); !ok || fix == nil || len(fix.Edits) != 2 || fix.Title != "Move into the body of 'P'" {
 		t.Errorf("expected the lint with a two-edit fix, got %v %+v", ok, fix)
 	}
 	if ok, _ := hasLint(`trait Show { fun show(): string }
 struct Box<T> { x: T }
-implement<T> Show for Box<T> { fun show(): string = "box" }`); !ok {
+implement<T> Show for Box<T> { fun show(): string => "box" }`); !ok {
 		t.Errorf("a generic impl with the struct's own parameters is inlinable")
 	}
 	for name, src := range map[string]string{
 		"extra bound": `trait Show { fun show(): string }
 struct Box<T> { x: T }
-implement<T: Show> Show for Box<T> { fun show(): string = this.x.show() }`,
+implement<T: Show> Show for Box<T> { fun show(): string => this.x.show() }`,
 		"foreign type": `trait Show { fun show(): string }
-implement Show for i64 { fun show(): string = "n" }`,
+implement Show for i64 { fun show(): string => "n" }`,
 		"already inline": `trait Show { fun show(): string }
-struct P { x: i64; implement Show { fun show(): string = "p" } }`,
+struct P { x: i64; implement Show { fun show(): string => "p" } }`,
 		"specific instance": `trait Show { fun show(): string }
 struct Box<T> { x: T }
-implement Show for Box<i64> { fun show(): string = "box" }`,
+implement Show for Box<i64> { fun show(): string => "box" }`,
 		"error declaration": `error E { code: i64 }`,
 	} {
 		if ok, _ := hasLint(src); ok {
@@ -1040,8 +1040,8 @@ implement Show for Box<i64> { fun show(): string = "box" }`,
 func TestResultProperties(t *testing.T) {
 	expectClean(t, prelude+`
 error Bad { text: string }
-fun parse(s: string): i64 throws Bad = s.toInt() ?: throw Bad(text: s)
-fun describe(s: string): string = when (val r = parse(s)) {
+fun parse(s: string): i64 throws Bad => s.toInt() ?: throw Bad(text: s)
+fun describe(s: string): string => when (val r = parse(s)) {
   is Ok  => "ok ${r * 2}"
   is Err => "err ${r.text}"
 }
@@ -1065,7 +1065,7 @@ fun main() { val p = P(x: 1); io.println("${p.ok}") }`, "has no field 'ok'")
 // into a List; `xs...` passes a list whole.
 func TestVariadics(t *testing.T) {
 	expectClean(t, prelude+`
-fun join(sep: string, parts: string...): string = parts.join(sep)
+fun join(sep: string, parts: string...): string => parts.join(sep)
 fun sum(xs: i64...): i64 {
   var t: i64 = 0
   loop (x in xs) { t += x }
@@ -1073,8 +1073,8 @@ fun sum(xs: i64...): i64 {
 }
 trait Fmt { fun fmt(args: string...): string }
 struct P { x: i64
-  implement Fmt { fun fmt(args: string...): string = "${this.x} ${args.len()}" }
-  static fun of(xs: i64...): P = P(x: xs.len())
+  implement Fmt { fun fmt(args: string...): string => "${this.x} ${args.len()}" }
+  static fun of(xs: i64...): P => P(x: xs.len())
 }
 fun main() {
   val parts = ["x", "y"]
@@ -1092,7 +1092,7 @@ fun main() { f([1]..., 2) }`, "must be the only argument"},
 fun main() { f(1, "two") }`, "expected 'i64', found 'string'"},
 		{"impl must match", `trait Fmt { fun fmt(args: string...): string }
 struct P { x: i64 }
-implement Fmt for P { fun fmt(args: List<string>): string = "" }`, "must be variadic exactly as in trait"},
+implement Fmt for P { fun fmt(args: List<string>): string => "" }`, "must be variadic exactly as in trait"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -1152,8 +1152,8 @@ fun main() throws IoError {
 	// D63: a mutable collection becomes its immutable form by a copy, or by a
 	// move at the last use of a fresh local
 	expectClean(t, prelude+`
-fun total(xs: List<i64>): i64 = xs.fold(0, (a, b) => a + b)
-fun first<T>(xs: List<T>): T? = xs.first()
+fun total(xs: List<i64>): i64 => xs.fold(0, (a, b) => a + b)
+fun first<T>(xs: List<T>): T? => xs.first()
 fun main() {
   val xs = mut [1, 2]
   val m: MutableMap<string, i64> = [:]
@@ -1229,18 +1229,18 @@ sealed trait S
 struct A : S { }
 struct B : S { }
 struct C : S { }
-fun f(s: S): i64 = when (s) {
+fun f(s: S): i64 => when (s) {
   is A => 1
   is B => 2
   else => 3
 }
-fun g(s: S): i64 = when (s) {
+fun g(s: S): i64 => when (s) {
   is A => 1
   is B => 2
   is C => 3
   else => 4
 }
-fun h(s: S): i64? = when (s) {
+fun h(s: S): i64? => when (s) {
   is A => 1
   else => null
 }
@@ -1280,8 +1280,8 @@ func TestSafeCallThroughRef(t *testing.T) {
 	expectClean(t, prelude+`
 struct C { var n: i64 = 0
   fun bump() { this.n += 1 }
-  fun show(): string = "${this.n}" }
-fun make(f: fun(i64): i64): List<C> = [C(n: f(1))]
+  fun show(): string => "${this.n}" }
+fun make(f: fun(i64): i64): List<C> => [C(n: f(1))]
 fun main() {
   val cs: MutableList<C> = [C()]
   cs.ref(0)?.bump()
@@ -1297,7 +1297,7 @@ fun main() {
 	for _, c := range []struct{ src, want string }{
 		{`fun main() { val cs: MutableList<C> = [C()]; cs.at(0)?.bump() }`, "reach the element itself with 'cs.ref(0)'"},
 		{`fun main() { val cs: MutableList<C> = [C()]; cs.first()?.bump() }`, "changes a temporary copy"},
-		{"fun make(): C = C()\nfun main() { make().bump() }", "changes a temporary copy of 'C' that is then discarded"},
+		{"fun make(): C => C()\nfun main() { make().bump() }", "changes a temporary copy of 'C' that is then discarded"},
 		{`fun main() { val cs = [C()]; cs.ref(0)?.bump() }`, "'ref' needs a MutableList"},
 		{`fun main() { val cs: MutableList<C> = [C()]; val p = &cs.at(0); p.n = 1 }`, "address of a copy of the element"},
 	} {
@@ -1355,7 +1355,7 @@ fun main() {
 		{`fun main() { val xs: MutableList<C> = [C()]; xs.at(0)?.n = 1 }`, "reach the element itself with 'xs.ref(0)'"},
 		{`fun main() { val ns: MutableList<i64> = [1]; loop (&n in ns) n += 1 }`, "write '*n' to change the value it points to"},
 		{`fun main() { val ns: MutableList<i64> = [1]; ns.at(0) += 1 }`, `assign through '*(ns.ref(0) ?: panic(`},
-		{`fun make(): C? = C()
+		{`fun make(): C? => C()
 fun main() { make()?.n = 1 }`, "into a temporary value of type 'C' has no effect"},
 		{`fun main() { val p: C? = C(); p?.n = 1 }`, "it is a 'val'"},
 		{`fun main() { var p: C = C(); p?.n = 1 }`, "'?.' on a non-nullable value"},
@@ -1381,12 +1381,12 @@ struct Http { implement Fetcher {
   } } }
 struct Memory { data: Map<string, string>
   implement Fetcher {
-    fun fetch(url: string): string throws Missing = this.data.get(url) ?: throw Missing(name: url) } }
-struct Always { implement Fetcher { fun fetch(url: string): string throws = url } }
+    fun fetch(url: string): string throws Missing => this.data.get(url) ?: throw Missing(name: url) } }
+struct Always { implement Fetcher { fun fetch(url: string): string throws => url } }
 struct Pinned { implement Fetcher {
   type Error = HttpError
-  fun fetch(url: string): string throws = url } }
-fun load<F: Fetcher>(f: F, url: string): string throws F.Error = try f.fetch(url)
+  fun fetch(url: string): string throws => url } }
+fun load<F: Fetcher>(f: F, url: string): string throws F.Error => try f.fetch(url)
 fun main() {
   val h: Result<string, HttpError> = load(Http(), "x")
   val m: Result<string, Missing> = load(Memory(data: [:]), "k")
@@ -1397,18 +1397,18 @@ fun main() {
 	expectClean(t, src)
 	expectError(t, prelude+`
 trait Fetcher { fun fetch(url: string): string throws }
-struct A { implement Fetcher { fun fetch(url: string): string throws = url } }
+struct A { implement Fetcher { fun fetch(url: string): string throws => url } }
 fun main() { val f: Fetcher = A(); io.println("${f.fetch("x")}") }`, "bare 'throws'")
 	expectError(t, prelude+`
 trait Iter2 { type Item
   fun next(): Item? }
-fun f<I: Iter2>(i: I): I::Item? = i.next()`, "'::' is not Veles")
+fun f<I: Iter2>(i: I): I::Item? => i.next()`, "'::' is not Veles")
 	expectClean(t, prelude+`
 trait Iter2 { type Item
   fun next(): Item? }
-fun f<I: Iter2>(i: I): I.Item? = i.next()
+fun f<I: Iter2>(i: I): I.Item? => i.next()
 struct Ones { implement Iter2 { type Item = i64
-  fun next(): Self.Item? = 1 } }
+  fun next(): Self.Item? => 1 } }
 fun main() { io.println("${f(Ones())}") }`)
 }
 
@@ -1456,8 +1456,8 @@ fun main() {
 func TestThrowingAdaptersAndByteLiterals(t *testing.T) {
 	expectClean(t, prelude+`
 error Bad { n: i64 }
-fun check(x: i64): i64 throws Bad = if (x < 0) throw Bad(n: x) else x * 10
-fun all(xs: List<i64>): List<i64> throws Bad = try xs.map(x => try check(x))
+fun check(x: i64): i64 throws Bad => if (x < 0) throw Bad(n: x) else x * 10
+fun all(xs: List<i64>): List<i64> throws Bad => try xs.map(x => try check(x))
 fun main() {
   val r: Result<List<i64>, Bad> = [1, -2].map(x => try check(x))
   val k: Result<List<i64>, Bad> = [1, 2].filter(x => try check(x) > 15)
@@ -1472,7 +1472,7 @@ fun main() {
 }`)
 	expectError(t, prelude+`
 error Bad { n: i64 }
-fun key(x: i64): i64 throws Bad = x
+fun key(x: i64): i64 throws Bad => x
 fun main() { io.println("${[2, 1].sortedBy(x => try key(x))}") }`, "cannot be passed here")
 	expectError(t, prelude+`fun main() { val b = 'é'; io.println("$b") }`, "one ASCII character")
 }
@@ -1482,7 +1482,7 @@ fun main() { io.println("${[2, 1].sortedBy(x => try key(x))}") }`, "cannot be pa
 func TestTupleAssignment(t *testing.T) {
 	expectClean(t, prelude+`
 struct P { var x: i64; var y: i64 }
-fun pair(): (i64, i64) = (1, 2)
+fun pair(): (i64, i64) => (1, 2)
 fun main() {
   var a = 1
   var b = 2
@@ -1545,7 +1545,7 @@ func TestPreludeCollections(t *testing.T) {
 struct Job {
   cost: i64
   implement Comparable {
-    fun compareTo(other: Job): Ordering = this.cost.compareTo(other.cost)
+    fun compareTo(other: Job): Ordering => this.cost.compareTo(other.cost)
   }
 }
 fun drain(q: Deque<i64>): i64 {
@@ -1672,7 +1672,7 @@ func TestFieldWriteThroughCallResult(t *testing.T) {
 	expectClean(t, prelude+`
 struct Acc { var n: i64 = 0 }
 struct H { p: *Acc }
-fun ptrOf(h: H): *Acc = h.p
+fun ptrOf(h: H): *Acc => h.p
 fun main() {
   val h = H(p: &Acc())
   ptrOf(h).n = 5
@@ -1681,7 +1681,7 @@ fun main() {
 }`)
 	expectError(t, prelude+`
 struct Acc { var n: i64 = 0 }
-fun make(): Acc = Acc()
+fun make(): Acc => Acc()
 fun main() { make().n = 1 }`, "field of a temporary value")
 }
 
@@ -1716,7 +1716,7 @@ fun main() {
 // flattens the levels: null at either level is null (D30).
 func TestSafeAccessOnNestedNullable(t *testing.T) {
 	expectClean(t, prelude+`
-struct W { inner: i64?; fun show(): string = "w" }
+struct W { inner: i64?; fun show(): string => "w" }
 fun main() {
   val ws: List<W?> = [null, W(inner: 3)]
   val m: Map<string, W?> = ["a": null]
@@ -1774,7 +1774,7 @@ func TestUserTypeShadowsBuiltinGeneric(t *testing.T) {
 	expectClean(t, prelude+`
 struct Task { text: string }
 struct List { n: i64 }
-fun first(xs: MutableList<Task>): Task? = xs.first()
+fun first(xs: MutableList<Task>): Task? => xs.first()
 fun main() {
   val xs: MutableList<Task> = [Task(text: "a")]
   val l = List(n: 1)
@@ -1789,14 +1789,14 @@ fun main() { val t: Task<i64> = 1 }`, "expected 'Task<i64>', found 'i64'")
 func TestTryCoversChainHint(t *testing.T) {
 	expectClean(t, prelude+`
 error E { message: string }
-fun f(s: string): string throws E = if (s.isEmpty()) throw E(message: "empty") else s
+fun f(s: string): string throws E => if (s.isEmpty()) throw E(message: "empty") else s
 fun main() throws E {
   val n = try f("a b").split(" ").len()
   io.println("$n")
 }`)
 	expectError(t, prelude+`
 error E { message: string }
-fun f(s: string): string throws E = if (s.isEmpty()) throw E(message: "empty") else s
+fun f(s: string): string throws E => if (s.isEmpty()) throw E(message: "empty") else s
 fun main() throws E {
   val r = f("a b")
   val n = try r.split(" ")
@@ -1849,9 +1849,9 @@ fun main() { val file = "a"; io.println("${H(file: file)}") }`)
 // it, plain function parameters accept it.
 func TestSendableFunctions(t *testing.T) {
 	expectClean(t, prelude+`
-fun run(f: sendable fun(i64): i64, x: i64): i64 = f(x)
-fun plain(f: fun(i64): i64, x: i64): i64 = f(x)
-fun twice(n: i64): i64 = n * 2
+fun run(f: sendable fun(i64): i64, x: i64): i64 => f(x)
+fun plain(f: fun(i64): i64, x: i64): i64 => f(x)
+fun twice(n: i64): i64 => n * 2
 fun main() {
   val k = 3
   val g = (n: i64) => n + k
@@ -1863,13 +1863,13 @@ fun main() {
   }
 }`)
 	expectError(t, prelude+`
-fun run(f: sendable fun(i64): i64, x: i64): i64 = f(x)
+fun run(f: sendable fun(i64): i64, x: i64): i64 => f(x)
 fun main() { var m = 1; io.println("${run(n => n * m, 1)}") }`, "captures 'm', a 'var'")
 	expectError(t, prelude+`
-fun run(f: sendable fun(i64): i64, x: i64): i64 = f(x)
+fun run(f: sendable fun(i64): i64, x: i64): i64 => f(x)
 fun main() { val xs: MutableList<i64> = []; io.println("${run(n => { xs.push(n); n }, 1)}") }`, "captures 'xs', of type 'MutableList<i64>'")
 	expectError(t, prelude+`
-fun run(f: sendable fun(i64): i64, x: i64): i64 = f(x)
+fun run(f: sendable fun(i64): i64, x: i64): i64 => f(x)
 fun main() { val h: fun(i64): i64 = n => n; io.println("${run(h, 1)}") }`, "expected 'sendable fun(i64): i64', found 'fun(i64): i64'")
 }
 
@@ -1878,7 +1878,7 @@ fun main() { val h: fun(i64): i64 = n => n; io.println("${run(h, 1)}") }`, "expe
 func TestErrorPolymorphicHigherOrder(t *testing.T) {
 	expectClean(t, prelude+`
 error Bad { n: i64 }
-fun apply<T, R, E>(x: T, f: fun(T): R throws E): R throws E = try f(x)
+fun apply<T, R, E>(x: T, f: fun(T): R throws E): R throws E => try f(x)
 fun main() {
   val plain = apply(3, (n: i64) => n + 1)
   when (val r = apply(7, (n: i64) => if (n > 5) throw Bad(n) else n)) {
@@ -1896,7 +1896,7 @@ fun main() {
 	// caller sees the Result like any other fallible call
 	expectError(t, prelude+`
 error Bad { n: i64 }
-fun apply<T, R, E>(x: T, f: fun(T): R throws E): R throws E = try f(x)
+fun apply<T, R, E>(x: T, f: fun(T): R throws E): R throws E => try f(x)
 fun main() { val v: i64 = apply(1, (n: i64) => if (n > 0) throw Bad(n) else n); io.println("$v") }`, "type mismatch")
 }
 
@@ -1908,9 +1908,9 @@ type Index = i64
 type Key = (Index, u64)
 type StrMap<V> = Map<string, V>
 type Handler = fun(string): string
-struct P { x: i64; static fun origin(): P = P(x: 0) }
+struct P { x: i64; static fun origin(): P => P(x: 0) }
 public type Pt = P
-fun apply(h: Handler, s: string): string = h(s)
+fun apply(h: Handler, s: string): string => h(s)
 fun main() {
   val k: Key = (1, 2)
   val n: Index = 3
@@ -1953,7 +1953,7 @@ fun main() {
   io.println("after")
 }`, "unreachable code")
 	expectClean(t, prelude+`use os
-fun bail(): Never = os.exit(2)
+fun bail(): Never => os.exit(2)
 fun main() {
   val xs: List<i64> = [1]
   val n: i64 = xs.first() ?: bail()
@@ -1968,7 +1968,7 @@ fun main() { bad() }`, "expected 'Never', found '()'")
 func TestResultHelpers(t *testing.T) {
 	expectClean(t, prelude+`
 error Odd { n: i64 }
-fun check(n: i64): i64 throws Odd = if (n % 2 == 1) throw Odd(n) else n
+fun check(n: i64): i64 throws Odd => if (n % 2 == 1) throw Odd(n) else n
 fun main() {
   val rs = [1, 2, 3].map(n => check(n))
   val oks: List<i64> = rs.oks()
@@ -1983,7 +1983,7 @@ fun main() {
 func TestTupleOrdering(t *testing.T) {
 	expectClean(t, prelude+`
 struct E { size: i64; name: string }
-fun smallest<T: Comparable>(xs: List<T>): T? = xs.min()
+fun smallest<T: Comparable>(xs: List<T>): T? => xs.min()
 fun main() {
   val xs = [(2, "b"), (1, "z"), (2, "a")]
   val es = [E(size: 5, name: "b"), E(size: 9, name: "a")]
@@ -2049,7 +2049,7 @@ fun main() {
   io.println("done")
 }`)
 	expectError(t, prelude+`
-fun slow(): i64 = 1
+fun slow(): i64 => 1
 fun main() {
   scope {
     val t = async slow()
@@ -2136,9 +2136,9 @@ fun guarded<R, E>(flag: bool, f: fun(): R throws E): R throws E | Timeout {
   if (flag) throw Timeout()
   try f()
 }
-fun failing(): i64 throws Late = throw Late()
-fun onlyTimeout(): i64 throws Timeout = try guarded(false, () => 5)
-fun both(): i64 throws Late | Timeout = try guarded(false, () => try failing())
+fun failing(): i64 throws Late => throw Late()
+fun onlyTimeout(): i64 throws Timeout => try guarded(false, () => 5)
+fun both(): i64 throws Late | Timeout => try guarded(false, () => try failing())
 fun main() { io.println("${onlyTimeout()} ${both()}") }`)
 	expectError(t, prelude+`
 error Timeout { }
@@ -2147,8 +2147,8 @@ fun guarded<R, E>(flag: bool, f: fun(): R throws E): R throws E | Timeout {
   if (flag) throw Timeout()
   try f()
 }
-fun failing(): i64 throws Late = throw Late()
-fun narrow(): i64 throws Timeout = try guarded(false, () => try failing())
+fun failing(): i64 throws Late => throw Late()
+fun narrow(): i64 throws Timeout => try guarded(false, () => try failing())
 fun main() { io.println("${narrow()}") }`, "not in the declared 'throws Timeout'")
 }
 
@@ -2163,8 +2163,8 @@ fun failing(): string? throws Late {
   await sleep(Duration.millis(1))
   throw Late()
 }
-fun a(): i64 throws Timeout = try withTimeout(Duration.millis(100), () => slow())
-fun b(): string? throws Late | Timeout = try withTimeout(Duration.millis(100), () => try failing())
+fun a(): i64 throws Timeout => try withTimeout(Duration.millis(100), () => slow())
+fun b(): string? throws Late | Timeout => try withTimeout(Duration.millis(100), () => try failing())
 fun main() { io.println("${a()} ${b()}") }`)
 	expectError(t, prelude+`
 fun main() {
@@ -2178,11 +2178,11 @@ func TestOrFailOperator(t *testing.T) {
 error NotFound { id: string }
 error Bad { text: string }
 error ParseError { at: i64 }
-fun parse(s: string): i64 throws ParseError = if (s == "1") 1 else throw ParseError(at: 0)
-fun lookup(users: Map<string, string>, id: string): string throws NotFound = try users.get(id) ?! NotFound(id)
-fun number(s: string): i64 throws Bad = try parse(s) ?! Bad(text: "bad request: $s")
-fun kept(s: string): Result<i64, Bad> = parse(s) ?! Bad(text: "as a value")
-fun wrapped(s: string): i64 throws Bad = try parse(s).mapError(e => Bad(text: "at ${e.at}"))
+fun parse(s: string): i64 throws ParseError => if (s == "1") 1 else throw ParseError(at: 0)
+fun lookup(users: Map<string, string>, id: string): string throws NotFound => try users.get(id) ?! NotFound(id)
+fun number(s: string): i64 throws Bad => try parse(s) ?! Bad(text: "bad request: $s")
+fun kept(s: string): Result<i64, Bad> => parse(s) ?! Bad(text: "as a value")
+fun wrapped(s: string): i64 throws Bad => try parse(s).mapError(e => Bad(text: "at ${e.at}"))
 fun main() { io.println("${lookup(["a": "b"], "a")} ${number("1")} ${kept("x")} ${wrapped("1")}") }`)
 	expectError(t, prelude+`
 error Bad { text: string }
@@ -2194,8 +2194,8 @@ fun main() { val n: i64? = 3; io.println("${n ?! NotAnError(n: 1)}") }`, "is not
 	expectError(t, prelude+`
 error Bad { text: string }
 error ParseError { at: i64 }
-fun parse(s: string): i64 throws ParseError = throw ParseError(at: 0)
-fun number(s: string): i64 throws ParseError = try parse(s) ?! Bad(text: "no")
+fun parse(s: string): i64 throws ParseError => throw ParseError(at: 0)
+fun number(s: string): i64 throws ParseError => try parse(s) ?! Bad(text: "no")
 fun main() { io.println("${number("1")}") }`, "error type 'Bad' is not in the declared")
 }
 
@@ -2210,7 +2210,7 @@ fun readIt(): i64 {
     r.n + 1
   }
 }
-fun twice(): i64 = with (a = Res(n: 1), b = Res(n: 2)) { a.n + b.n }
+fun twice(): i64 => with (a = Res(n: 1), b = Res(n: 2)) { a.n + b.n }
 fun diverges(): i64 {
   with (r = Res(n: 1)) {
     return r.n
@@ -2241,7 +2241,7 @@ func TestErrorUnionWithTypeParamInHandlers(t *testing.T) {
 error Fail { status: i64; text: string }
 error Boom { n: i64 }
 type Handler = sendable fun(string): string suspends
-fun handler<E>(h: sendable fun(string): string suspends throws E | Fail): Handler =
+fun handler<E>(h: sendable fun(string): string suspends throws E | Fail): Handler =>
   p => when (h(p)) {
     is Ok(v) => v
     is Err(e) => when (e) {
@@ -2262,21 +2262,21 @@ func TestTryChain(t *testing.T) {
 	// D134: one `try` covers every failing link of its chain
 	expectClean(t, prelude+`
 error Bad { }
-fun text(): string throws Bad = "  hi  "
-fun a(): string throws Bad = try text().trim()
+fun text(): string throws Bad => "  hi  "
+fun a(): string throws Bad => try text().trim()
 fun main() { io.println("${a()}") }`)
 	// a written inner `try` still compiles, and is said to be redundant
 	expectWarning(t, prelude+`
 error Bad { }
-fun text(): string throws Bad = "  hi  "
-fun a(): string throws Bad = try (try text()).trim()
+fun text(): string throws Bad => "  hi  "
+fun a(): string throws Bad => try (try text()).trim()
 fun main() { io.println("${a()}") }`, "the inner 'try' is redundant")
 	// a Result method still applies to the Result, silently
 	expectClean(t, prelude+`
 error Bad { }
 error Worse { }
-fun text(): string throws Bad = "hi"
-fun d(): string throws Worse = try text().mapError(e => Worse())
+fun text(): string throws Bad => "hi"
+fun d(): string throws Worse => try text().mapError(e => Worse())
 fun main() { io.println("${d()}") }`)
 }
 
@@ -2287,7 +2287,7 @@ struct Status {
   public static val ok = Status(code: 200)
   static val failed: Status = Status(code: 500)
   static val known = [Status.ok, Status.failed]
-  static fun of(code: i64): Status = Status.known.find(s => s.code == code) ?: Status(code)
+  static fun of(code: i64): Status => Status.known.find(s => s.code == code) ?: Status(code)
 }
 fun main() { io.println("${Status.ok.code} ${Status.of(500).code} ${Status.known.len()}") }`)
 	expectError(t, prelude+`
@@ -2301,7 +2301,7 @@ struct Box<T> {
 fun main() { io.println("${Box<i64>(v: 1).v}") }`, "a generic struct cannot have a 'static val'")
 	expectError(t, prelude+`
 struct S {
-  static fun ok(): i64 = 1
+  static fun ok(): i64 => 1
   static val ok = 2
 }
 fun main() { io.println("${S.ok}") }`, "already a static function")
@@ -2326,10 +2326,10 @@ struct Notes {
     n
   }
   private fun bump() { this.next += 1 }
-  fun all(): List<Note> = this.items.toList()
+  fun all(): List<Note> => this.items.toList()
 }
 extend Notes {
-  fun count(): i64 = this.items.len()
+  fun count(): i64 => this.items.len()
 }
 `
 	expectClean(t, prelude+notes+`
@@ -2367,7 +2367,7 @@ fun main() {
   }
 }`, "cannot be matched here")
 	expectError(t, prelude+`
-private fun helper(): i64 = 1
+private fun helper(): i64 => 1
 fun main() { io.println("${helper()}") }`, "'private' belongs to a member of a struct")
 }
 
@@ -2383,9 +2383,9 @@ struct Counter {
   label: string
   var n: i64 = 0
   fun bump() { this.n += 1 }
-  fun show(): string = "${this.label}=${this.n}"
-  fun ticker(): fun(): i64 = () => { this.n += 1; this.n }
-  fun handle(): *Counter = &this
+  fun show(): string => "${this.label}=${this.n}"
+  fun ticker(): fun(): i64 => () => { this.n += 1; this.n }
+  fun handle(): *Counter => &this
 }
 `
 	expectClean(t, prelude+counter+`
@@ -2422,7 +2422,7 @@ fun main() { g.n = 1 }`, "a global 'val' is a constant"},
 val g = Counter(label: "g")
 fun main() { g.bump() }`, "changes its receiver and a global 'val' is a constant"},
 		{"a change to a temporary copy is lost", counter + `
-fun make(): Counter = Counter(label: "m")
+fun make(): Counter => Counter(label: "m")
 fun main() { make().bump() }`, "'bump' changes a temporary copy of 'Counter' that is then discarded"},
 		{"an element read is a copy", counter + `
 fun main() { val cs: MutableList<Counter> = [Counter(label: "e")]; cs.at(0)?.bump() }`, "reach the element itself with 'cs.ref(0)'"},
@@ -2435,7 +2435,7 @@ fun main() { }`, "'mut fun' no longer exists"},
 	// a value-returning method on a copy is fine; a method that changes
 	// nothing is fine on any temporary
 	expectClean(t, prelude+counter+`
-fun make(): Counter = Counter(label: "m")
+fun make(): Counter => Counter(label: "m")
 fun main() { io.println(make().show()); val cs = [Counter(label: "e")]; io.println(cs.at(0)?.show() ?: "none") }`)
 	// the inner field of an immutable outer field is still assignable
 	// when it is `var`: `var` says whether this slot can be assigned
@@ -2458,21 +2458,21 @@ struct User {
   address: Address?
   var nick: string? = null
   fun log() { }
-  fun city(): string = if (this.address != null) { this.log(); this.address.city } else "?"
-  fun nickLen(): i64 = if (this.nick != null) this.nick.len() else 0
+  fun city(): string => if (this.address != null) { this.log(); this.address.city } else "?"
+  fun nickLen(): i64 => if (this.nick != null) this.nick.len() else 0
 }
 fun main() { io.println(User(address: Address(city: "x")).city()) }`)
 	expectError(t, prelude+`
 struct User {
   var nick: string? = null
   fun clear() { this.nick = null }
-  fun nickLen(): i64 = if (this.nick != null) { this.clear(); this.nick.len() } else 0
+  fun nickLen(): i64 => if (this.nick != null) { this.clear(); this.nick.len() } else 0
 }
 fun main() { }`, "may be null")
 	expectError(t, prelude+`
 struct User {
   var nick: string? = null
-  fun nickLen(): i64 = if (this.nick != null) { this.nick = null; this.nick.len() } else 0
+  fun nickLen(): i64 => if (this.nick != null) { this.nick = null; this.nick.len() } else 0
 }
 fun main() { }`, "may be null")
 }
@@ -2483,18 +2483,18 @@ fun main() { }`, "may be null")
 func TestSendableCaptureVarFields(t *testing.T) {
 	expectError(t, prelude+`
 struct Counter { var n: i64 = 0 }
-fun run(f: sendable fun(): i64): i64 = f()
+fun run(f: sendable fun(): i64): i64 => f()
 fun main() { val c = Counter(); io.println("${run(() => c.n)}") }`, "which has 'var' fields another task could see change")
 	expectError(t, prelude+`
 struct Counter { var n: i64 = 0
-  fun start(): i64 = run(() => this.n) }
-fun run(f: sendable fun(): i64): i64 = f()
+  fun start(): i64 => run(() => this.n) }
+fun run(f: sendable fun(): i64): i64 => f()
 fun main() { io.println("${Counter().start()}") }`, "captures 'this'")
 	expectClean(t, prelude+`
 struct Config { name: string; items: List<i64> = [] }
 struct Server { config: Config
-  fun start(): i64 = run(() => this.config.items.len()) }
-fun run(f: sendable fun(): i64): i64 = f()
+  fun start(): i64 => run(() => this.config.items.len()) }
+fun run(f: sendable fun(): i64): i64 => f()
 fun main() { io.println("${Server(config: Config(name: "s")).start()}") }`)
 }
 
@@ -2517,7 +2517,7 @@ extend Notes {
   fun reset() { this.count = 0 }
 }
 internal val limit = 10
-internal fun helper(): i64 = limit
+internal fun helper(): i64 => limit
 `
 	expectClean(t, prelude+notes+`
 fun main() { val n = Notes(); n.add(); n.reset(); io.println("${n.count} ${helper()} ${Notes(count: 5).count}") }`)
@@ -2535,12 +2535,12 @@ fun main() { }`, "a field is 'val' (the default), 'var' or 'protected var'")
 struct P { protected x: i64 = 0 }
 fun main() { }`, "'protected' qualifies 'var'")
 	expectError(t, prelude+`
-public internal fun f(): i64 = 1
+public internal fun f(): i64 => 1
 fun main() { }`, "'public' and 'internal' contradict each other")
 	// a protected var field makes the type changeable for a sendable capture
 	expectError(t, prelude+`
 struct C { protected var n: i64 = 0 }
-fun run(f: sendable fun(): i64): i64 = f()
+fun run(f: sendable fun(): i64): i64 => f()
 fun main() { val c = C(); io.println("${run(() => c.n)}") }`, "which has 'var' fields")
 }
 
@@ -2551,10 +2551,10 @@ func TestDefaultsDoNotReadSelf(t *testing.T) {
 struct P { a: i64; b: i64 = this.a + 1 }
 fun main() { P(a: 1) }`, "a field default cannot read 'this'")
 	expectError(t, prelude+`
-struct P { a: i64; b: i64 = this.twice(); fun twice(): i64 = this.a * 2 }
+struct P { a: i64; b: i64 = this.twice(); fun twice(): i64 => this.a * 2 }
 fun main() { P(a: 1) }`, "Derive 'b' in the 'init' block instead")
 	expectClean(t, prelude+`
-struct P { a: i64; b: i64; init { this.b = this.twice() }; fun twice(): i64 = this.a * 2 }
+struct P { a: i64; b: i64; init { this.b = this.twice() }; fun twice(): i64 => this.a * 2 }
 fun main() { io.println("${P(a: 1).b}") }`)
 }
 
@@ -2578,15 +2578,15 @@ struct Parser {
     this.pos = this.span()               // a method that reads only bound fields
     io.println(this.describe())          // everything assigned: any method
   }
-  private fun span(): i64 = this.positions.len()
-  fun describe(): string = "${this.label} ${this.tokenSet.len()} ${this.pos}"
+  private fun span(): i64 => this.positions.len()
+  fun describe(): string => "${this.label} ${this.tokenSet.len()} ${this.pos}"
 }
 sealed trait Shape { fun area(): f64 }
 struct Sq : Shape {
   side: f64
   area2: f64
   init { this.area2 = this.side * this.side }
-  implement Shape { fun area(): f64 = this.area2 }
+  implement Shape { fun area(): f64 => this.area2 }
 }
 fun main() {
   val p = Parser(toks: [("a", 1), ("b", 2)])
@@ -2602,7 +2602,7 @@ fun main() { P(a: 1) }`, "'init' does not assign 'b' on every path"},
 fun main() { io.println(P(a: 1).b) }`, ""},
 		{"this as a whole", `struct P { a: i64; b: string; init { io.println("$this"); this.b = "x" } }
 fun main() { P(a: 1) }`, "'this' is used before 'init' has assigned 'b'"},
-		{"a method that reads an unassigned field", `struct P { a: i64; b: string; init { val n = this.tally(); this.b = "$n" }; fun tally(): i64 = this.b.len() }
+		{"a method that reads an unassigned field", `struct P { a: i64; b: string; init { val n = this.tally(); this.b = "$n" }; fun tally(): i64 => this.b.len() }
 fun main() { P(a: 1) }`, "'init' calls 'tally' before assigning 'b', which the method reads"},
 		{"the caller cannot give an init field", `struct P { a: i64; b: string; init { this.b = "x" } }
 fun main() { P(a: 1, b: "y") }`, "field 'b' is assigned by the 'init' block of 'P'"},
@@ -2629,8 +2629,8 @@ fun main() { io.println("${P(init: 1).init}") }`, ""},
 func TestNotIsLint(t *testing.T) {
 	src := prelude + `
 sealed trait T { fun f(): i64 }
-struct A : T { implement T { fun f(): i64 = 1 } }
-struct B : T { implement T { fun f(): i64 = 2 } }
+struct A : T { implement T { fun f(): i64 => 1 } }
+struct B : T { implement T { fun f(): i64 => 2 } }
 fun main() {
   val x: T = A()
   if (!(x is B)) io.println("a")
@@ -2668,12 +2668,12 @@ public enum Phase : u8 {
 }
 enum Level { Low = -1, Mid, High }
 struct Signal { phase: Phase, at: i64 }
-fun next(p: Phase): Phase = when (p) {
+fun next(p: Phase): Phase => when (p) {
   Phase.Red   => Phase.Green
   Phase.Amber => Phase.Red
   Phase.Green => Phase.Amber
 }
-fun pick<T: Comparable>(a: T, b: T): T = if (a.compareTo(b) == Ordering.Less) a else b
+fun pick<T: Comparable>(a: T, b: T): T => if (a.compareTo(b) == Ordering.Less) a else b
 fun main() {
   val p = Phase.Amber
   io.println("$p ${p.value} ${p.toString()} ${next(p)} ${Phase.values()} ${Phase.fromValue(10)} ${Phase.parse("Red")}")
@@ -2707,10 +2707,10 @@ fun main() { }`, "an integer literal"},
 		{"not generic", `enum E<T> { A }
 fun main() { }`, "an enum is not generic"},
 		{"no impls", `enum E { A }
-implement Display for E { fun toString(): string = "a" }
+implement Display for E { fun toString(): string => "a" }
 fun main() { }`, "cannot implement 'Display' for enum 'E'"},
 		{"no extend", `enum E { A }
-extend E { fun f(): i64 = 1 }
+extend E { fun f(): i64 => 1 }
 fun main() { }`, "cannot extend enum 'E'"},
 		{"an integer is not an enum", `enum E { A }
 fun main() { val e: E = 0; io.println("$e") }`, "an enum is not its number"},
@@ -2742,7 +2742,7 @@ fun main() { val e = E.A; when (e) {
   else => io.println("b")
 } }`, "an enum is not its number"},
 		{"compareTo returns Ordering", `struct P { x: i64 }
-implement Comparable for P { fun compareTo(other: P): i64 = 0 }
+implement Comparable for P { fun compareTo(other: P): i64 => 0 }
 fun main() { }`, "returns 'i64' but trait 'Comparable' declares 'Ordering'"},
 		{"a comparator returns Ordering", `fun main() { io.println("${[2, 1].sortedWith((a, b) => a - b)}") }`, "expected 'Ordering', found 'i64'"},
 	}
@@ -2821,16 +2821,16 @@ fun main() { val e = codec.ValueEncoder.of(); val _ = U(id: 1, name: null).encod
 sealed trait S { }
 implement Codable for S
 struct A : S { n: i64 }
-fun styleKey(x: i64): i64 = x
-fun childPath(): string = "c"
-fun joinPath(a: i64): i64 = a
-fun panic(n: bool): bool = n
+fun styleKey(x: i64): i64 => x
+fun childPath(): string => "c"
+fun joinPath(a: i64): i64 => a
+fun panic(n: bool): bool => n
 fun main() { val e = codec.ValueEncoder.of(); val _ = U(id: 1, tags: []).encode(e); io.println("${U.decode(codec.ValueDecoder.of(e.value())) is Ok} ${S.decode(codec.ValueDecoder.of(codec.VNull())) is Err} ${styleKey(1)}${childPath()}${joinPath(2)}${panic(true)}") }`, ""},
 		{"struct Codable, top level, foreign-style", `struct U { id: i64 }
 implement Codable for U
 fun main() { io.println("${U.decode(codec.ValueDecoder.of(codec.VNull())) is Err}") }`, ""},
 		{"partial override keeps the written method", `struct M { n: i64
-  implement Codable { fun encode(to: codec.Encoder) throws EncodeError = try to.writeString("m") } }
+  implement Codable { fun encode(to: codec.Encoder) throws EncodeError => try to.writeString("m") } }
 fun main() { val e = codec.ValueEncoder.of(); val _ = M(n: 1).encode(e); io.println("${e.value()}") }`, ""},
 		{"generic struct infers the bound", `struct Page<T> { items: List<T>
   implement Codable }
@@ -2855,7 +2855,7 @@ fun main() { val e = codec.ValueEncoder.of(); val v: S = A(x: 1); val _ = v.enco
 		{"sealed keeps a hand-written variant impl", `sealed trait S
 struct A : S { x: i64 }
 struct B : S { y: string }
-implement Encodable for A { fun encode(to: codec.Encoder) throws EncodeError = try to.writeString("a") }
+implement Encodable for A { fun encode(to: codec.Encoder) throws EncodeError => try to.writeString("a") }
 implement Encodable for S
 fun main() { val e = codec.ValueEncoder.of(); val v: S = A(x: 1); val _ = v.encode(e); io.println("${e.value()}") }`, ""},
 		{"Comparable by field order", `struct V { a: i64; b: string
@@ -2868,11 +2868,11 @@ fun main() { val e = codec.ValueEncoder.of(); val _ = E.B.encode(e); io.println(
 		{"enums still refuse a written impl", `enum E { A, B }
 implement Codable for E`, "cannot implement 'Codable' for enum"},
 		{"a method of a super written in the Codable body", `struct U { id: i64
-  implement Codable { static fun decode(from: codec.Decoder): U throws DecodeError = U(id: 0) } }
+  implement Codable { static fun decode(from: codec.Decoder): U throws DecodeError => U(id: 0) } }
 fun main() { io.println("${U.decode(codec.ValueDecoder.of(codec.VNull())) is Ok}") }`, ""},
 		{"a super the type already implements", `struct U { id: i64
-  implement Encodable { fun encode(to: codec.Encoder) throws EncodeError = try to.writeI64(1) }
-  implement Codable { fun encode(to: codec.Encoder) throws EncodeError = try to.writeI64(2) } }`, "already implements"},
+  implement Encodable { fun encode(to: codec.Encoder) throws EncodeError => try to.writeI64(1) }
+  implement Codable { fun encode(to: codec.Encoder) throws EncodeError => try to.writeI64(2) } }`, "already implements"},
 		{"Codable bound gives both methods", `struct U { id: i64
   implement Codable }
 fun roundTrip<T: Codable>(x: T): T throws DecodeError {
@@ -2884,37 +2884,37 @@ fun main() { io.println("${roundTrip(U(id: 3))}") }`, ""},
 		{"a combination trait is satisfied by its parts", `struct U { id: i64
   implement Encodable
   implement Decodable }
-fun f<T: Codable>(x: T): T = x
+fun f<T: Codable>(x: T): T => x
 fun main() { io.println("${f(U(id: 3))}") }`, ""},
 		{"a trait object answers to its supertraits' methods", `trait Named { fun name(): string }
 trait Shape : Named { fun area(): f64 }
 struct Sq { side: f64
-  implement Named { fun name(): string = "square" }
-  implement Shape { fun area(): f64 = this.side * this.side } }
-fun show(s: Shape): string = "${s.name()}=${s.area()}"
+  implement Named { fun name(): string => "square" }
+  implement Shape { fun area(): f64 => this.side * this.side } }
+fun show(s: Shape): string => "${s.name()}=${s.area()}"
 fun main() { io.println(show(Sq(side: 2.0))) }`, ""},
 		{"a supertrait's default body is in the object's table", `trait Named { fun name(): string
-  fun shout(): string = "${this.name()}!" }
+  fun shout(): string => "${this.name()}!" }
 trait Shape : Named { fun area(): f64 }
 struct Sq { side: f64
-  implement Named { fun name(): string = "square" }
-  implement Shape { fun area(): f64 = this.side * this.side } }
+  implement Named { fun name(): string => "square" }
+  implement Shape { fun area(): f64 => this.side * this.side } }
 fun main() { val s: Shape = Sq(side: 2.0)
   io.println(s.shout()) }`, ""},
 		{"a combination trait is a trait object built from its parts", `trait A { fun id(): i64 }
 trait B { fun label(): string }
 trait C : A + B { }
 struct U {
-  implement A { fun id(): i64 = 7 }
-  implement B { fun label(): string = "u" } }
+  implement A { fun id(): i64 => 7 }
+  implement B { fun label(): string => "u" } }
 fun main() { val c: C = U()
   io.println("${c.label()}${c.id()}") }`, ""},
 		{"two supertraits declaring one name is not an object", `trait A { fun id(): i64 }
 trait B { fun id(): i64 }
 trait C : A + B { }
 struct U {
-  implement A { fun id(): i64 = 1 }
-  implement B { fun id(): i64 = 2 } }
+  implement A { fun id(): i64 => 1 }
+  implement B { fun id(): i64 => 2 } }
 fun main() { val c: C = U()
   io.println("${c.id()}") }`, "both declare 'id'"},
 		{"a static method in a supertrait keeps the trait off the objects", `struct U { id: i64
@@ -2966,15 +2966,15 @@ func TestNeedlessThrowsLint(t *testing.T) {
 	src := prelude + `
 error Bad { n: i64 }
 trait Source { fun read(): i64 throws Bad }
-struct Fixed { implement Source { fun read(): i64 throws Bad = 1 } }
-fun plain(x: i64): i64 throws Bad = x + 1
+struct Fixed { implement Source { fun read(): i64 throws Bad => 1 } }
+fun plain(x: i64): i64 throws Bad => x + 1
 fun bare(x: i64): i64 throws { return x }
-fun real(x: i64): i64 throws Bad = if (x > 5) throw Bad(n: x) else x
-fun forwards(): i64 throws Bad = try real(1)
-public fun reserved(): i64 throws Bad = 0
-fun asValue(x: i64): i64 throws Bad = x
-fun run(f: fun(i64): i64 throws Bad): i64 throws Bad = try f(1)
-fun generic<E>(f: fun(): i64 throws E): i64 throws E = try f()
+fun real(x: i64): i64 throws Bad => if (x > 5) throw Bad(n: x) else x
+fun forwards(): i64 throws Bad => try real(1)
+public fun reserved(): i64 throws Bad => 0
+fun asValue(x: i64): i64 throws Bad => x
+fun run(f: fun(i64): i64 throws Bad): i64 throws Bad => try f(1)
+fun generic<E>(f: fun(): i64 throws E): i64 throws E => try f()
 fun main() {
   val s: Source = Fixed()
   io.println("${plain(1).getOrDefault(0)} ${bare(2).getOrDefault(0)} ${forwards().getOrDefault(0)}")
@@ -2996,7 +2996,7 @@ fun main() {
 	}
 
 	diags = checkSource(t, prelude+`
-fun one(): i64 = 1
+fun one(): i64 => 1
 fun main() { io.println("${try one()}") }`)
 	for _, d := range diags.Items {
 		if strings.Contains(d.Message, "'try' needs a Result") {
@@ -3077,15 +3077,15 @@ func TestDisplaySelfRecursion(t *testing.T) {
 	diags := checkSource(t, prelude+`
 struct P {
   x: i64
-  implement Display { fun toString(): string = "P$this" }
+  implement Display { fun toString(): string => "P$this" }
 }
 struct Frac {
   n: i64
-  implement Display { fun toString(): string = if (this.n < 0) "-${Frac(n: -this.n)}" else "${this.n}" }
+  implement Display { fun toString(): string => if (this.n < 0) "-${Frac(n: -this.n)}" else "${this.n}" }
 }
 struct Box<T> {
   v: T
-  implement Display { fun toString(): string = "box ${this.v}" }
+  implement Display { fun toString(): string => "box ${this.v}" }
 }
 fun main() { io.println("${P(x: 1)} ${Frac(n: -3)} ${Box(v: 1)}") }`)
 	n := 0
@@ -3113,12 +3113,12 @@ trait Shape {
 	missing := checkSource(t, prelude+shape+`
 struct Sq {
   s: f64
-  implement Shape { fun area(): f64 = this.s }
+  implement Shape { fun area(): f64 => this.s }
 }
 fun main() { }`).Render()
 	unimplemented := checkSource(t, prelude+shape+`
 struct Tri { b: f64 }
-fun show<T: Shape>(x: T): string = x.name(short: true)
+fun show<T: Shape>(x: T): string => x.name(short: true)
 fun main() {
   io.println(show(Tri(b: 1.0)))
   val s: Shape = Tri(b: 2.0)
@@ -3143,7 +3143,7 @@ func TestNullBranchInference(t *testing.T) {
 sealed trait Shape
 struct Circle : Shape { r: f64 }
 struct Sq : Shape { s: f64 }
-fun radius(s: Shape) = when (s) {
+fun radius(s: Shape) => when (s) {
   is Circle(r) => r
   is Sq => null
 }
@@ -3173,7 +3173,7 @@ fun main() {
 	}
 	// the same rule for `race` arms (found writing http's accept loop)
 	expectClean(t, prelude+`
-fun first(ch: Channel<string>, quit: Channel<bool>): string? = race {
+fun first(ch: Channel<string>, quit: Channel<bool>): string? => race {
   val s = ch.recv() => s
   val _ = quit.recv() => null
 }
@@ -3211,7 +3211,7 @@ fun lostAssign(c: Counter) { c.n = 5 }
 fun visible(b: Box) { b.items.push(1) }
 fun returned(c: Counter): Counter { c.n += 1; return c }
 fun stored(c: Counter, into: MutableList<Counter>) { c.bump(); into.push(c) }
-fun reads(c: Counter): i64 = c.n * 2
+fun reads(c: Counter): i64 => c.n * 2
 fun pointer(b: *Box) { b.c.bump() }
 fun main() {
   var b = Box()
@@ -3243,7 +3243,7 @@ error Bad { why: string }
 sealed trait Shape
 struct Circle : Shape { r: f64 }
 struct Rect : Shape { w: f64 }
-fun parse(s: string): i64 throws Bad = s.toInt() ?: throw Bad(why: s)
+fun parse(s: string): i64 throws Bad => s.toInt() ?: throw Bad(why: s)
 fun radius(s: Shape): f64 {
   val Circle(r) = s else return -1.0
   r
@@ -3268,7 +3268,7 @@ fun main() {
 }`)
 	diags := checkSource(t, prelude+`
 error Bad { why: string }
-fun parse(s: string): i64 throws Bad = s.toInt() ?: throw Bad(why: s)
+fun parse(s: string): i64 throws Bad => s.toInt() ?: throw Bad(why: s)
 fun main() {
   val a = parse("1") ?: 0
   val b = "2".toInt() ?? 0
@@ -3303,7 +3303,7 @@ fun main() {
 // D62: list patterns in `when` and let-else.
 func TestListPatterns(t *testing.T) {
 	expectClean(t, prelude+`
-fun describe(args: List<string>): string = when (args) {
+fun describe(args: List<string>): string => when (args) {
   []            => "none"
   ["help"]      => "help"
   [cmd]         => cmd
@@ -3321,15 +3321,15 @@ fun pair(p: (i64, List<i64>)): i64 {
 fun main() { io.println("${describe(["a"])} ${ends([1, 2])}") }`)
 
 	for _, c := range []struct{ src, want string }{
-		{`fun f(xs: List<i64>): i64 = when (xs) {
+		{`fun f(xs: List<i64>): i64 => when (xs) {
   [] => 0
   [a, _] => a
 }`, "missing '[_]', '[_, _, _, ..]'"},
-		{`fun f(xs: List<i64>): i64 = when (xs) {
+		{`fun f(xs: List<i64>): i64 => when (xs) {
   [1, ..] => 1
   [_, ..] => 2
 }`, "missing '[]'"},
-		{`fun f(xs: List<i64>): i64 = when (xs) {
+		{`fun f(xs: List<i64>): i64 => when (xs) {
   [a, .., b, ..] => a
   else => 0
 }`, "at most one '..'"},
@@ -3364,7 +3364,7 @@ fun guard(xs: List<i64>, i: i64): i64 {
   if (i < 0 || i >= xs.len()) return 0
   xs.at(i)
 }
-fun both(xs: List<i64>, i: i64): i64 = if (i >= 0 && i < xs.len()) xs.at(i) else 0
+fun both(xs: List<i64>, i: i64): i64 => if (i >= 0 && i < xs.len()) xs.at(i) else 0
 fun foo() {}
 fun immutable(xs: List<i64>): i64 {
   if (xs.isEmpty()) return 0
@@ -3397,7 +3397,7 @@ fun f(xs: MutableList<i64>) {
   if (xs.len() > 0) { val g = () => { val v: i64 = xs.at(0) } }
 }`,
 		// the call on the right of && ran after the length check
-		`fun g(xs: MutableList<i64>): bool = true
+		`fun g(xs: MutableList<i64>): bool => true
 fun f(xs: MutableList<i64>) {
   if (xs.len() > 0 && g(xs)) { val v: i64 = xs.at(0) }
 }`,
@@ -3408,7 +3408,7 @@ fun f(xs: MutableList<i64>) {
 
 	// a fallback after a proven read is a warning with a fix, not an error
 	diags := checkSource(t, prelude+`
-fun f(xs: List<i64>): i64 = if (xs.len() > 0) xs.at(0) ?: 7 else 0
+fun f(xs: List<i64>): i64 => if (xs.len() > 0) xs.at(0) ?: 7 else 0
 fun main() { io.println("${f([1])}") }`)
 	found := false
 	for _, d := range diags.Items {
@@ -3436,7 +3436,7 @@ fun early(n: i64): List<i64> {
   out.push(n)
   out
 }
-fun sum(xs: List<i64>): i64 = xs.fold(0, (a, b) => a + b)
+fun sum(xs: List<i64>): i64 => xs.fold(0, (a, b) => a + b)
 fun last(): i64 {
   val tmp: MutableList<i64> = [1, 2]
   tmp.push(3)
@@ -3445,7 +3445,7 @@ fun last(): i64 {
 fun main() { io.println("${build(2)} ${early(1)} ${last()}") }`)
 
 	for _, c := range []struct{ name, src string }{
-		{"parameter", `fun f(xs: MutableList<i64>): List<i64> = xs`},
+		{"parameter", `fun f(xs: MutableList<i64>): List<i64> => xs`},
 		{"alias", `fun f(): List<i64> {
   val a: MutableList<i64> = []
   val b = a
@@ -3484,8 +3484,8 @@ fun f() {
 // checked read with a panic whose reason the author fills in.
 func TestOrPanicRemoved(t *testing.T) {
 	for _, c := range []struct{ src, want string }{
-		{`fun f(xs: List<i64>): i64 = xs.atOrPanic(0)`, `(xs.at(0) ?: panic("TODO: say why this cannot fail"))`},
-		{`fun f(m: Map<string, i64>): i64 = m.getOrPanic("a")`, `(m.get("a") ?: panic("TODO: say why this cannot fail"))`},
+		{`fun f(xs: List<i64>): i64 => xs.atOrPanic(0)`, `(xs.at(0) ?: panic("TODO: say why this cannot fail"))`},
+		{`fun f(m: Map<string, i64>): i64 => m.getOrPanic("a")`, `(m.get("a") ?: panic("TODO: say why this cannot fail"))`},
 		{`fun f(xs: MutableList<i64>) { *xs.refOrPanic(0) += 1 }`, `(xs.ref(0) ?: panic("TODO: say why this cannot fail"))`},
 	} {
 		diags := checkSource(t, prelude+c.src+"\nfun main() {}")
@@ -3541,12 +3541,12 @@ fun main() {
 func TestArithmeticOperatorTraits(t *testing.T) {
 	money := prelude + `
 struct Money { cents: i64
-  implement Addable { fun plus(other: Money): Money = Money(cents: this.cents + other.cents) }
-  implement Multipliable { fun times(other: i64): Money = Money(cents: this.cents * other) }
-  implement Negatable { fun negate(): Money = Money(cents: 0 - this.cents) } }
+  implement Addable { fun plus(other: Money): Money => Money(cents: this.cents + other.cents) }
+  implement Multipliable { fun times(other: i64): Money => Money(cents: this.cents * other) }
+  implement Negatable { fun negate(): Money => Money(cents: 0 - this.cents) } }
 `
 	expectClean(t, money+`
-fun sum<T: Addable>(a: T, b: T): T = a + b
+fun sum<T: Addable>(a: T, b: T): T => a + b
 fun main() {
   var m = Money(cents: 1) + Money(cents: 2)
   m += Money(cents: 3)
@@ -3568,7 +3568,7 @@ fun main() { val p = -P(x: 1) }`, "implement 'Negatable'")
 func TestFFIBoundary(t *testing.T) {
 	expectClean(t, prelude+`
 extern "C" { fun qsort(base: *raw u8, n: u64, size: u64, cmp: extern fun(*raw u8, *raw u8): i32) }
-extern "C" fun cmp(a: *raw u8, b: *raw u8): i32 = 0
+extern "C" fun cmp(a: *raw u8, b: *raw u8): i32 => 0
 fun main() {
   val xs: MutableList<i64> = [2, 1]
   xs.withRaw(p => unsafe { qsort(p.cast<*raw u8>(), 2, 8, &cmp) })
@@ -3577,12 +3577,12 @@ fun main() {
   io.println("${unsafe { f((&x).cast<*raw u8>(), (&x).cast<*raw u8>()) }}")
 }`)
 	for _, c := range []struct{ name, src, want string }{
-		{"generic export", `extern "C" fun f<T>(x: T): i32 = 0
+		{"generic export", `extern "C" fun f<T>(x: T): i32 => 0
 fun main() { }`, "cannot be generic"},
-		{"string crosses", `extern "C" fun f(s: string): i32 = 0
+		{"string crosses", `extern "C" fun f(s: string): i32 => 0
 fun main() { }`, "'string' cannot cross into C"},
 		{"throws", `error E { }
-extern "C" fun f(x: i32): i32 throws E = throw E()
+extern "C" fun f(x: i32): i32 throws E => throw E()
 fun main() { }`, "cannot throw"},
 		{"suspends", `extern "C" fun f(x: i32): i32 {
   await sleep(Duration.millis(1))
@@ -3591,7 +3591,7 @@ fun main() { }`, "cannot throw"},
 fun main() { }`, "cannot suspend"},
 		{"no body", `extern "C" fun f(x: i32): i32
 fun main() { }`, "needs a body"},
-		{"C pointer outside unsafe", `extern "C" fun f(x: i32): i32 = x
+		{"C pointer outside unsafe", `extern "C" fun f(x: i32): i32 => x
 fun main() { val g = &f; val y = g(1) }`, "requires an 'unsafe' block"},
 		{"raw cast outside unsafe", `fun main(p: *raw u8) { }
 fun g(p: *raw u8) { val q = p.cast<*raw i64>() }`, "casting a raw pointer requires an 'unsafe' block"},
@@ -3602,7 +3602,7 @@ struct S { x: i64 }
 implement ffi.CLayout for S
 fun main() { }`, "cannot be implemented by hand"},
 		{"withRaw on strings", `fun main() { val xs = ["a"]; xs.withRaw(p => 0) }`, "requires 'string' to implement 'CLayout'"},
-		{"a plain export is clean", `extern "C" fun f(x: i32): i32 = x
+		{"a plain export is clean", `extern "C" fun f(x: i32): i32 => x
 fun main() { }`, ""},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -3636,7 +3636,7 @@ fun main() { }`, "does not implement trait 'Sendable'")
 func TestSameNamedTypesAreQualified(t *testing.T) {
 	src := "use hex\nuse base64\n\nfun both(s: string): i64 throws {\n  val a = try hex.decode(s)\n  val b = try base64.decode(s)\n  a.len() + b.len()\n}\n\nfun main() {\n  val m: i64 = both(\"x\")\n}\n"
 	expectError(t, src, "found 'Result<i64, base64.Invalid | hex.Invalid>'")
-	src = "use hex\nuse base64\n\nfun other(): hex.Invalid = base64.Invalid(message: \"x\", position: 0)\n\nfun main() {}\n"
+	src = "use hex\nuse base64\n\nfun other(): hex.Invalid => base64.Invalid(message: \"x\", position: 0)\n\nfun main() {}\n"
 	expectError(t, src, "expected 'hex.Invalid', found 'base64.Invalid'")
 }
 
@@ -3658,7 +3658,7 @@ func TestInitParameters(t *testing.T) {
   init(value: T, scale: i64 = 1) {
     this.cell = &value
   }
-  fun get(): T = *this.cell
+  fun get(): T => *this.cell
 }
 `
 	expectClean(t, boxed+`fun main() {
@@ -3675,7 +3675,7 @@ fun main() { }`, "'init' parameter 'name' has the name of a field the constructo
 	expectClean(t, prelude+`struct Temp {
   private celsius: f64
   init(celsius: f64) { this.celsius = celsius }
-  fun f(): f64 = this.celsius
+  fun f(): f64 => this.celsius
 }
 fun main() { io.println("${Temp(celsius: 1.0).f()}") }`)
 	expectError(t, prelude+`struct T2 {
@@ -3708,7 +3708,7 @@ func TestStructTypeArgBounds(t *testing.T) {
 	expectError(t, decl+"fun f(b: Box<P>) { }\nfun main() { }", "type 'P' does not implement trait 'Comparable' required by parameter 'T' of 'Box'")
 	expectError(t, decl+"fun main() { val _ = Box<P>(v: P(a: 1)) }", "type 'P' does not implement trait 'Comparable' required by parameter 'T' of 'Box'")
 	expectError(t, decl+"fun main() { val _ = Box(v: P(a: 1)) }", "type 'P' does not implement trait 'Comparable' required by parameter 'T' of 'Box'")
-	expectClean(t, decl+"fun wrap<T: Comparable>(x: T): Box<T> = Box(v: x)\nfun main() { io.println(\"${wrap(1).v} ${Box(v: \"s\").v}\") }")
+	expectClean(t, decl+"fun wrap<T: Comparable>(x: T): Box<T> => Box(v: x)\nfun main() { io.println(\"${wrap(1).v} ${Box(v: \"s\").v}\") }")
 }
 
 // D74: statuses and methods are values; a literal where one is wanted is
@@ -3830,7 +3830,7 @@ func TestSkipFixForAnUncodableField(t *testing.T) {
 // Tests are `test "sentence" { }` with a vocabulary only test code may use
 // (D78); the old `@test fun` is an error whose fix writes the new form.
 func TestTestDeclarations(t *testing.T) {
-	expectClean(t, "use io\nfun half(n: i64): i64? = if (n % 2 == 0) n / 2 else null\n"+
+	expectClean(t, "use io\nfun half(n: i64): i64? => if (n % 2 == 0) n / 2 else null\n"+
 		"test fun expectEven(n: i64) {\n  expect(n % 2 == 0)\n}\n"+
 		"test \"halves\" {\n  expectEven(4)\n  val h = require(half(4))\n  expect(h == 2)\n  val xs = [1, 2].map(x => {\n    expect(x > 0)\n    x\n  })\n  expect(xs.len() == 2)\n}\n"+
 		"fun main() {\n  assert(1 < 2, \"order\")\n  io.println(\"ok\")\n}\n")
@@ -3840,8 +3840,8 @@ func TestTestDeclarations(t *testing.T) {
 	expectError(t, "test fun helper() { }\nfun main() {\n  helper()\n}\n", "'helper' is test code")
 	expectError(t, "test \"a\" { }\ntest \"a\" { }\nfun main() { }\n", "another test or suite here is named \"a\"")
 	expectError(t, "test \"a\" {\n  expect(require(1))\n}\nfun main() { }\n", "'require' unwraps a nullable or a Result")
-	expectError(t, "fun f(): i64 = 1\ntest \"a\" {\n  expectThrows(() => f())\n}\nfun main() { }\n", "nothing in this function can throw")
-	expectError(t, "error A { }\nerror B { }\nfun f(): i64 throws A = throw A()\ntest \"a\" {\n  expectThrows<B>(() => f())\n}\nfun main() { }\n", "this function throws 'A', never 'B'")
+	expectError(t, "fun f(): i64 => 1\ntest \"a\" {\n  expectThrows(() => f())\n}\nfun main() { }\n", "nothing in this function can throw")
+	expectError(t, "error A { }\nerror B { }\nfun f(): i64 throws A => throw A()\ntest \"a\" {\n  expectThrows<B>(() => f())\n}\nfun main() { }\n", "this function throws 'A', never 'B'")
 
 	// the old form: one error with a fix to the new one, the name as words
 	src := "@test\nfun parsesURLQuickly() throws E {\n  try f()\n}\nerror E { }\nfun f() throws E { }\nfun main() { }\n"

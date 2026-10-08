@@ -186,25 +186,25 @@ const fun firstBig(xs: List<i64>): i64 {
 const BIG1: i64 = firstBig([1, 3, 20, 30])
 const BIG2: i64 = firstBig([1, 2])
 
-const fun describe(n: i64): string = when (n) {
+const fun describe(n: i64): string => when (n) {
   0 => "zero"
   1, 2 => "small"
   else => if (n < 0) "negative" else "large"
 }
-const fun describeAll(): List<string> = [describe(0), describe(2), describe(-4), describe(99)]
+const fun describeAll(): List<string> => [describe(0), describe(2), describe(-4), describe(99)]
 const DESC: List<string> = describeAll()
 
-const fun colorName(c: Color): string = when (c) {
+const fun colorName(c: Color): string => when (c) {
   Color.Red => "r"
   Color.Green => "g"
   Color.Blue => "b"
 }
 const COLORS: string = colorName(Color.Green) + colorName(Color.Blue)
 
-const fun ack(m: i64, n: i64): i64 = if (m == 0) n + 1 else if (n == 0) ack(m - 1, 1) else ack(m - 1, ack(m, n - 1))
+const fun ack(m: i64, n: i64): i64 => if (m == 0) n + 1 else if (n == 0) ack(m - 1, 1) else ack(m - 1, ack(m, n - 1))
 const ACK: i64 = ack(2, 3)
 
-const fun gcd(a: i64, b: i64): i64 = if (b == 0) a else gcd(b, a % b)
+const fun gcd(a: i64, b: i64): i64 => if (b == 0) a else gcd(b, a % b)
 const GCD: i64 = gcd(1071, 462)
 
 const fun builder(n: i64): string {
@@ -234,7 +234,7 @@ const fun arrays(): List<i64> {
 const ARRAYS: List<i64> = arrays()
 
 
-const fun firstOr<T>(xs: List<T>, d: T): T = xs.at(0) ?: d
+const fun firstOr<T>(xs: List<T>, d: T): T => xs.at(0) ?: d
 const G1: i64 = firstOr([7, 8], 0)
 const G2: string = firstOr([], "none")
 
@@ -250,9 +250,9 @@ struct Outer {
     this.inner.x += by
   }
 
-  const fun summary(): string = "${this.tag}:${this.inner.x}"
+  const fun summary(): string => "${this.tag}:${this.inner.x}"
 
-  static const fun make(tag: string, x: i64): Outer = Outer(inner: Inner(x), tag)
+  static const fun make(tag: string, x: i64): Outer => Outer(inner: Inner(x), tag)
 }
 
 const fun nested(): List<string> {
@@ -280,7 +280,7 @@ const fun sorting(): List<string> {
 }
 const SORTED: List<string> = sorting()
 
-const fun withDefault(a: i64, b: i64 = 10): i64 = a * b
+const fun withDefault(a: i64, b: i64 = 10): i64 => a * b
 const DEF: List<i64> = [withDefault(2), withDefault(2, 3)]
 
 const fun mapLoop(): List<string> {
@@ -330,8 +330,8 @@ const fun floatOps(): List<string> {
 }
 const FLOATOPS: List<string> = floatOps()
 
-const fun maxOf<T: Comparable>(a: T, b: T): T = if (a.compareTo(b) == Ordering.Less) b else a
-const fun radix(): List<string> = [255.toString(radix: 16), (-255).toString(radix: 2), 0.toString(), 12345.toString()]
+const fun maxOf<T: Comparable>(a: T, b: T): T => if (a.compareTo(b) == Ordering.Less) b else a
+const fun radix(): List<string> => [255.toString(radix: 16), (-255).toString(radix: 2), 0.toString(), 12345.toString()]
 const MAXES: List<string> = ["${maxOf(3, 9)}", maxOf("pear", "apple"), "${maxOf(2.5, -1.0)}"]
 const RADIX: List<string> = radix()
 
@@ -443,9 +443,9 @@ const fun mapAll<T, U>(xs: List<T>, f: fun(T): U): List<U> {
   out.toList()
 }
 
-const fun twice(x: i64): i64 = x * 2
+const fun twice(x: i64): i64 => x * 2
 
-const fun compose(f: fun(i64): i64, g: fun(i64): i64): fun(i64): i64 = x => g(f(x))
+const fun compose(f: fun(i64): i64, g: fun(i64): i64): fun(i64): i64 => x => g(f(x))
 
 const fun closures(): string {
   var counter: i64 = 0

@@ -6,7 +6,7 @@ trait Param {
 }
 
 implement Param for i64 {
-  fun show(): string = "int"
+  fun show(): string => "int"
 }
 
 struct Query {
@@ -14,9 +14,9 @@ struct Query {
 }
 
 @template
-fun sql(parts: List<string>, values: List<Param>): Query = Query(text: parts.join("?"))
+fun sql(parts: List<string>, values: List<Param>): Query => Query(text: parts.join("?"))
 
-fun plain(parts: List<string>, values: List<Param>): Query = Query(text: "")
+fun plain(parts: List<string>, values: List<Param>): Query => Query(text: "")
 
 fun main() {
   val flag = true

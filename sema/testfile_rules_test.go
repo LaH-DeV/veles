@@ -48,7 +48,7 @@ func errorsOf(d *source.Diagnostics) string {
 func TestTestFileFunctionsAreTestFuns(t *testing.T) {
 	diags := checkFiles(t, map[string]string{
 		"main.vs":      "fun main() { }\n",
-		"main.test.vs": "fun helper(): i64 = 1\n\ntest fun fine(): i64 = 2\n\ntest \"uses both\" {\n  expect(helper() + fine() == 3)\n}\n",
+		"main.test.vs": "fun helper(): i64 => 1\n\ntest fun fine(): i64 => 2\n\ntest \"uses both\" {\n  expect(helper() + fine() == 3)\n}\n",
 	})
 	got := errorsOf(diags)
 	if !strings.Contains(got, "'helper' is a function in a *.test.vs file: write 'test fun helper'") {
@@ -71,8 +71,8 @@ func TestTestFileFunctionsAreTestFuns(t *testing.T) {
 func TestTestFileDeclarationsAreInvisibleToTheModule(t *testing.T) {
 	const tests = "struct Fixture {\n  n: i64\n}\n\nval limit: i64 = 3\n\ntest \"a test sees them\" {\n  expect(Fixture(n: limit).n == 3)\n}\n"
 	for name, main := range map[string]string{
-		"'Fixture'": "fun make(): Fixture = Fixture(n: 1)\n\nfun main() { }\n",
-		"'limit'":   "fun count(): i64 = limit\n\nfun main() { }\n",
+		"'Fixture'": "fun make(): Fixture => Fixture(n: 1)\n\nfun main() { }\n",
+		"'limit'":   "fun count(): i64 => limit\n\nfun main() { }\n",
 	} {
 		got := errorsOf(checkFiles(t, map[string]string{"main.vs": main, "main.test.vs": tests}))
 		if !strings.Contains(got, name+" is declared in a *.test.vs file") {
@@ -84,7 +84,7 @@ func TestTestFileDeclarationsAreInvisibleToTheModule(t *testing.T) {
 func TestTestFileHelpersStayForTests(t *testing.T) {
 	diags := checkFiles(t, map[string]string{
 		"main.vs":      "fun main() { }\n",
-		"main.test.vs": "test fun double(n: i64): i64 = n * 2\n\ntest \"doubles\" {\n  expect(double(2) == 4)\n}\n",
+		"main.test.vs": "test fun double(n: i64): i64 => n * 2\n\ntest \"doubles\" {\n  expect(double(2) == 4)\n}\n",
 	})
 	if got := errorsOf(diags); got != "" {
 		t.Errorf("a test using its own helper failed:\n%s", got)
@@ -93,7 +93,7 @@ func TestTestFileHelpersStayForTests(t *testing.T) {
 
 // D129: a tag may be `module.name`, and only a public function of that module.
 func TestTemplateTagQualifiedByModule(t *testing.T) {
-	const lib = "public struct Query {\n  public text: string\n}\n\n@template\npublic fun sql(parts: List<string>, values: List<i64>): Query = Query(text: parts.join(\"?\"))\n\n@template\nfun hidden(parts: List<string>, values: List<i64>): Query = Query(text: \"\")\n\npublic fun plain(parts: List<string>, values: List<i64>): Query = Query(text: \"\")\n"
+	const lib = "public struct Query {\n  public text: string\n}\n\n@template\npublic fun sql(parts: List<string>, values: List<i64>): Query => Query(text: parts.join(\"?\"))\n\n@template\nfun hidden(parts: List<string>, values: List<i64>): Query => Query(text: \"\")\n\npublic fun plain(parts: List<string>, values: List<i64>): Query => Query(text: \"\")\n"
 	ok := checkFiles(t, map[string]string{
 		"main.vs":   "use tags\n\nfun main() {\n  val q = tags.sql\"a ${1} b\"\n}\n",
 		"tags/t.vs": lib,

@@ -62,7 +62,7 @@ public fun env(name: string): string? {
 }
 
 /// This process's id, as the operating system numbers it.
-public fun pid(): i64 = unsafe {
+public fun pid(): i64 => unsafe {
   // SAFETY: a query with no arguments
   veles_os_pid()
 }
@@ -157,7 +157,7 @@ public struct Output {
   /// Its standard error, when `run` captured it apart (the default);
   /// empty with `Stderr.Inherit` or `Stderr.Merge`.
   public stderr: string = ""
-  public fun ok(): bool = this.code == 0
+  public fun ok(): bool => this.code == 0
 }
 
 /// What `run` does with the program's standard error (D82).
@@ -214,7 +214,7 @@ public fun run(program: string, args: List<string> = [], input: string = "", std
   Output(code, stdout: out, stderr: errText)
 }
 
-fun invalidArgument(why: string, program: string): IoError =
+fun invalidArgument(why: string, program: string): IoError =>
   IoError(path: program, code: 22, detail: why, kind: IoKind.InvalidInput)
 
 /// Builds an `IoError` for a platform error number: its description and

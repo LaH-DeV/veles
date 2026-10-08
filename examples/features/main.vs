@@ -13,7 +13,7 @@ fun primes(limit: i64): List<i64> {
   found.toList()
 }
 
-fun sign(n: i64): string = when {
+fun sign(n: i64): string => when {
   n < 0  => "negative"
   n == 0 => "zero"
   else   => "positive"
@@ -22,25 +22,25 @@ fun sign(n: i64): string = when {
 // Generic struct with methods, generic function with a trait bound (D6/D8)
 trait Area {
   fun area(): f64
-  fun describe(): string = "area ${this.area()}"
+  fun describe(): string => "area ${this.area()}"
 }
 
 struct Square {
   side: f64
 
   implement Area {
-    fun area(): f64 = this.side * this.side
-    override fun describe(): string = "square ${this.side}: " + "area ${this.area()}"
+    fun area(): f64 => this.side * this.side
+    override fun describe(): string => "square ${this.side}: " + "area ${this.area()}"
   }
 }
 
 struct Pair<A, B> {
   first:  A
   second: B
-  fun swap(): Pair<B, A> = Pair(first: this.second, second: this.first)
+  fun swap(): Pair<B, A> => Pair(first: this.second, second: this.first)
 }
 
-fun total<T: Area>(xs: List<T>): f64 =
+fun total<T: Area>(xs: List<T>): f64 =>
   xs.fold(0.0, (acc, shape) => acc + shape.area())
 
 // Wrapping arithmetic (D21), casts, tuples (D37)
@@ -66,13 +66,13 @@ struct Mul : Expr {
   right: *Expr
 }
 
-fun eval(e: Expr): i64 = when (e) {
+fun eval(e: Expr): i64 => when (e) {
   is Num(value)       => value
   is Add(left, right) => eval(*left) + eval(*right)
   is Mul(left, right) => eval(*left) * eval(*right)
 }
 
-fun show(e: *Expr): string = when (e) {
+fun show(e: *Expr): string => when (e) {
   is Expr.Num => "${e.value}"
   is Expr.Add => "(${show(e.left)} + ${show(e.right)})"
   is Expr.Mul => "${show(e.left)} * ${show(e.right)}"

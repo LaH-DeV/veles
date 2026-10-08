@@ -201,6 +201,7 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 	var body *Block
 	if be, ok := e.Body.(*ast.BlockExpr); ok {
 		body = l.checkBlock(be.Block, l.retType, true)
+		l.lintImplicitReturn(be.Block, body.Value, true)
 		if body.Value != nil {
 			if l.retType == nil {
 				l.retType = body.Value.Type()

@@ -16,7 +16,8 @@
 /// confined to one `unsafe` block (D44). The sockets are non-blocking: a
 /// call that would block returns 1, the task parks with `await ioWait(fd,
 /// write)` until the executor's poll sees the socket ready, and retries.
-use io, os
+use io
+use os
 
 extern "C" {
   fun veles_net_listen(host: string, port: i64, fd: *raw i64): i64
@@ -118,7 +119,7 @@ struct Socket {
     SocketUse(socket: this)
   }
 
-  fun closing(): bool = this.state.load() % 2 == 1
+  fun closing(): bool => this.state.load() % 2 == 1
 
   fun letGo() {
     if (this.state.update(s => s - 2) == 1) this.release()
@@ -152,7 +153,7 @@ struct SocketUse {
   // the descriptor to call with now: -1 once the socket is closing, which
   // every system call refuses — so a retry after `close` woke the
   // operation fails instead of waiting again
-  fun fd(): i64 = if (this.socket.closing()) -1 else this.socket.number
+  fun fd(): i64 => if (this.socket.closing()) -1 else this.socket.number
 
   implement Closeable {
     fun close() {
@@ -235,10 +236,10 @@ public struct Conn {
   buffer:  Mutex<MutableList<u8>> = newBuffer()
 
   /// The peer's address, `host:port`.
-  public fun peer(): string = this.address
+  public fun peer(): string => this.address
 
   // the refusal, with the address so a log says which peer it was
-  fun tooLong(what: string, max: i64): io.TooLong =
+  fun tooLong(what: string, max: i64): io.TooLong =>
     io.TooLong(message: "$what from ${this.address} is longer than $max bytes", limit: max)
 
   implement io.Stream {
@@ -376,10 +377,10 @@ public struct Conn {
   }
 
   // how many bytes are buffered
-  fun buffered(): i64 = this.buffer.withLock(b => b.len())
+  fun buffered(): i64 => this.buffer.withLock(b => b.len())
 
   // takes up to n buffered bytes
-  fun take(n: i64): List<u8> = this.buffer.withLock(b => {
+  fun take(n: i64): List<u8> => this.buffer.withLock(b => {
     val got = n.min(b.len())
     val out = b.take(got)
     b.removePrefix(got)

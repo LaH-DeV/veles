@@ -14,7 +14,7 @@ import (
 
 // Inlay hints show what the compiler inferred and the source leaves out:
 // the type of a binding written without one (`val n = parse(s)` → `: i64`),
-// a function's return type from its `= expr` body, `suspends` on a function
+// a function's return type from its `=> expr` body, `suspends` on a function
 // that suspends without saying so (D2), and the error set of a bare `throws`
 // (D45). A binding whose type is spelled on its right — `val p = Point(...)`
 // — gets none: the hint would repeat the line.

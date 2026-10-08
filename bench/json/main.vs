@@ -1,5 +1,7 @@
 // JSON: encode 2000 records and decode them back, 20 times (std/json).
-use io { println }, json, time
+use io { println }
+use json
+use time
 
 struct Record {
   id:    i64

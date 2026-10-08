@@ -69,7 +69,7 @@ extend<T: Sendable> List<T> {
 public error Timeout {
   /// The limit that was reached — not how long the call actually took.
   public limit: Duration
-  fun message(): string = "timed out after ${this.limit}"
+  fun message(): string => "timed out after ${this.limit}"
 }
 
 /// Runs `f` with a time limit: its result, or a `Timeout` error when
@@ -151,7 +151,7 @@ public struct Semaphore {
 
   /// How many permits are free at this moment — by the time the caller
   /// looks, another task may have taken one.
-  public fun available(): i64 = this.free.len()
+  public fun available(): i64 => this.free.len()
 }
 
 /// One of a `Semaphore`'s permits; closing it gives it back. A second

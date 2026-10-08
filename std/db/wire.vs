@@ -71,7 +71,7 @@ struct Cursor {
   data:            List<u8>
   private var pos: i64 = 0
 
-  fun remaining(): i64 = this.data.len() - this.pos
+  fun remaining(): i64 => this.data.len() - this.pos
 
   fun byte(): u8 throws DbError {
     val b = this.data.at(this.pos) ?: throw truncated()
@@ -111,17 +111,17 @@ struct Cursor {
     text
   }
 
-  fun rest(): List<u8> = this.data.slice(this.pos, this.data.len())
+  fun rest(): List<u8> => this.data.slice(this.pos, this.data.len())
 }
 
-fun truncated(): DbError = DbError(kind: ErrorKind.Protocol, text: "the server sent a message that ends too early")
+fun truncated(): DbError => DbError(kind: ErrorKind.Protocol, text: "the server sent a message that ends too early")
 
 /// A message read from the server.
 struct Message {
   kind: u8
   body: List<u8>
 
-  fun cursor(): Cursor = Cursor(data: this.body)
+  fun cursor(): Cursor => Cursor(data: this.body)
 }
 
 /// The next message of `stream`. A connection that ends in the middle of

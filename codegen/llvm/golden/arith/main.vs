@@ -2,14 +2,14 @@
 // operators, and every kind of numeric cast.
 use io
 
-fun ints(a: i64, b: i64): i64 = a + b - a * b / (b + 1) % 7
-fun wrapping(a: i64, b: i64): i64 = (a +% b) -% (a *% b)
-fun narrow(a: i32, b: i32): i32 = a * b - a / b
-fun unsigned(a: u32, b: u32): u32 = a / b + a % b
-fun bits(a: u64, b: u64): u64 = (a & b) | (a ^ b) << 3 >> 1
-fun negate(a: i64): i64 = ~a
-fun floats(a: f64, b: f64): f64 = a * b + a / b
-fun single(a: f32, b: f32): f32 = a * b
+fun ints(a: i64, b: i64): i64 => a + b - a * b / (b + 1) % 7
+fun wrapping(a: i64, b: i64): i64 => (a +% b) -% (a *% b)
+fun narrow(a: i32, b: i32): i32 => a * b - a / b
+fun unsigned(a: u32, b: u32): u32 => a / b + a % b
+fun bits(a: u64, b: u64): u64 => (a & b) | (a ^ b) << 3 >> 1
+fun negate(a: i64): i64 => ~a
+fun floats(a: f64, b: f64): f64 => a * b + a / b
+fun single(a: f32, b: f32): f32 => a * b
 
 fun casts(x: i64, f: f64) {
   val a = x.wrapU8()

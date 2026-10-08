@@ -37,7 +37,7 @@ struct Sha {
 struct Buf<const N: i64> {
   var data: Array<u8, N>
 
-  fun capacity(): i64 = N
+  fun capacity(): i64 => N
 }
 
 struct Packet {
@@ -55,11 +55,11 @@ struct Defaults {
   implement Default
 }
 
-fun sum<const N: i64>(a: Array<i64, N>): i64 = a.fold(0, (s, x) => s + x)
+fun sum<const N: i64>(a: Array<i64, N>): i64 => a.fold(0, (s, x) => s + x)
 
-fun zeros<const N: i64>(): Array<i64, N> = Array.make(0)
+fun zeros<const N: i64>(): Array<i64, N> => Array.make(0)
 
-fun lengthOf<T, const N: i64>(a: Array<T, N>): i64 = N
+fun lengthOf<T, const N: i64>(a: Array<T, N>): i64 => N
 
 fun total(a: Array<i64, 4>): i64 {
   var s = 0
@@ -185,7 +185,7 @@ error TooBig {
   message: string
 }
 
-fun make(v: u8): Array<u8, 200> = Array.make(v)
+fun make(v: u8): Array<u8, 200> => Array.make(v)
 
 fun checked(v: u8): Array<u8, 200> throws TooBig {
   if (v > 100) throw TooBig(message: "too big")
@@ -214,11 +214,11 @@ struct Heavy {
   w: Array<u8, 200>
 
   implement Shape {
-    fun weigh(extra: Array<u8, 200>): i64 = weight(this.w) + weight(extra)
+    fun weigh(extra: Array<u8, 200>): i64 => weight(this.w) + weight(extra)
   }
 }
 
-fun twice(a: Array<u8, 200>, f: fun(Array<u8, 200>): Array<u8, 200>): Array<u8, 200> = f(f(a))
+fun twice(a: Array<u8, 200>, f: fun(Array<u8, 200>): Array<u8, 200>): Array<u8, 200> => f(f(a))
 
 fun feed(ch: Channel<Array<u8, 200>>, a: Array<u8, 200>) suspends {
   ch.send(a)

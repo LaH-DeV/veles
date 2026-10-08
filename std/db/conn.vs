@@ -7,7 +7,13 @@
 // abnormally — a timeout, a cancelled task, a broken socket — leaves the
 // protocol mid-conversation, so the connection is marked broken and never
 // used again (the pool drops it).
-use base64, crypto, fs, io, net, time, tls
+use base64
+use crypto
+use fs
+use io
+use net
+use time
+use tls
 
 /// A column of a result.
 struct Column {
@@ -31,7 +37,7 @@ struct Rows {
 }
 
 // a failure of the transport as a DbError
-fun transport(e: IoError): DbError =
+fun transport(e: IoError): DbError =>
   DbError(kind: ErrorKind.Connection, text: e.message())
 
 // An operation in progress on a connection. Closed without `done()` — an
@@ -73,14 +79,14 @@ struct Conn {
     }
   }
 
-  fun isUsable(): bool = !this.broken.load()
+  fun isUsable(): bool => !this.broken.load()
 
   fun close() {
     this.broken.store(true)
     this.stream.close()
   }
 
-  fun busy(): Busy = Busy(broken: this.broken)
+  fun busy(): Busy => Busy(broken: this.broken)
 
   /// Runs one statement. `timeout` bounds the whole exchange; past it the
   /// connection is dropped, so a statement that is still running on the

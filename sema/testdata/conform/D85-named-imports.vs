@@ -3,7 +3,7 @@
 use io { println, eprintln as warn }, os { Output }
 use fs { readFile } // warning: 'readFile' is imported but never used
 
-fun show(o: Output): string = o.stdout
+fun show(o: Output): string => o.stdout
 
 fun id<T>(x: T): T {
   warn("generic")

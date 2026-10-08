@@ -80,7 +80,7 @@ fun noisy() {
   io.println("noisy started")
 }
 
-fun built(): Tracked throws Broken = Tracked(job: async noisy(), n: try fails())
+fun built(): Tracked throws Broken => Tracked(job: async noisy(), n: try fails())
 
 fun building(): string throws Broken {
   with t = try built()
@@ -100,7 +100,7 @@ fun failingVariant(): string throws Broken {
   "not reached ${slot is Free}"
 }
 
-fun busy(): Slot = Busy(job: async breaks())
+fun busy(): Slot => Busy(job: async breaks())
 
 fun failingNullable(): string throws Broken {
   with m = Maybe(job: async breaks())

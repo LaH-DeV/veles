@@ -5,7 +5,11 @@
 // Run it with DEMO_PORT=9999 set and the port below changes: the environment
 // wins over both files. The expected output assumes no DEMO_ variables.
 
-use config, fs, io { println }, os, path
+use config
+use fs
+use io { println }
+use os
+use path
 
 enum Level {
   Debug

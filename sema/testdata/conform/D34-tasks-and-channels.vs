@@ -5,7 +5,7 @@ struct Handle {
   items: MutableList<i64>
 }
 
-fun work(): i64 = 1
+fun work(): i64 => 1
 
 val sleeper = await sleep(Duration.millis(1)) // error: 'sleep' suspends; a global initializer cannot suspend // error: a global cannot have type '()'
 

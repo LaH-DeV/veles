@@ -2,7 +2,7 @@
 
 /// A rows×cols table of `value`; `make` builds a fresh row per
 /// slot where `repeat` would share one row between all of them.
-fun grid(rows: i64, cols: i64, value: i64): MutableList<MutableList<i64>> =
+fun grid(rows: i64, cols: i64, value: i64): MutableList<MutableList<i64>> =>
   MutableList<MutableList<i64>>.make(rows, _ => MutableList<i64>.repeat(value, cols))
 
 fun cell(dp: MutableList<MutableList<i64>>, row: i64, col: i64): i64 {

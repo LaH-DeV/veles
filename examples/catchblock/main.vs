@@ -11,7 +11,7 @@ error Worse {
   code: i64
 }
 
-fun parse(s: string): i64 throws Bad = try s.toInt() ?! Bad(message: "not a number: $s")
+fun parse(s: string): i64 throws Bad => try s.toInt() ?! Bad(message: "not a number: $s")
 
 fun check(n: i64): i64 throws Worse {
   if (n < 0) throw Worse(code: n)
@@ -74,7 +74,7 @@ fun total(lines: List<string>): i64 {
 }
 
 // a `throw` in the block goes to the handler, like a failed `try`
-fun viaThrow(n: i64): string = do {
+fun viaThrow(n: i64): string => do {
   if (n == 0) throw Bad(message: "zero")
   "ok $n"
 } catch (e) {

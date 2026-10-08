@@ -1,5 +1,7 @@
 // Statements and blocks.
-use ast, lexer { Kind }, source { Span }
+use ast
+use lexer { Kind }
+use source { Span }
 
 extend Parser {
   // `{ statements }`
@@ -140,7 +142,7 @@ extend Parser {
   }
 
   // `=` or a compound assignment such as `+=`
-  fun atAssignOp(): bool = this.atAny(Kind.Assign, Kind.PlusEq, Kind.MinusEq, Kind.StarEq, Kind.SlashEq, Kind.PercentEq)
+  fun atAssignOp(): bool => this.atAny(Kind.Assign, Kind.PlusEq, Kind.MinusEq, Kind.StarEq, Kind.SlashEq, Kind.PercentEq)
 
   fun parseValStmt(start: Span): ast.Stmt {
     var s: ast.ValStmt = ast.ValStmt(kind: bindKind(this.next().kind))
@@ -219,7 +221,7 @@ extend Parser {
   }
 
   // `with name = e` or `with e` (D100, D109), as against `with (`
-  fun atWithStmt(): bool = this.at(Kind.KwWith) && this.peek(1).kind != Kind.LParen
+  fun atWithStmt(): bool => this.at(Kind.KwWith) && this.peek(1).kind != Kind.LParen
 
   // `name = e`, or `e` held without a name (D109)
   fun parseWithItem(): ast.WithBinding {
@@ -292,7 +294,7 @@ extend Parser {
   }
 
   // a `catch` here or at the start of the next line
-  fun atCatch(): bool = this.at(Kind.KwCatch) || this.at(Kind.Semi) && this.cur().autoSemi && this.peek(1).kind == Kind.KwCatch
+  fun atCatch(): bool => this.at(Kind.KwCatch) || this.at(Kind.Semi) && this.cur().autoSemi && this.peek(1).kind == Kind.KwCatch
 
   // `catch (e) { handler }` after an expression (D98)
   fun parseCatchPostfix(x: ast.Expr, start: Span): ast.Expr {

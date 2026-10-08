@@ -15,7 +15,7 @@ const sigSrc = `use io
 struct Point { x: i64, y: i64 = 0 }
 
 /// Multiplies.
-fun scale(value: i64, factor: i64 = 2): i64 = value * factor
+fun scale(value: i64, factor: i64 = 2): i64 => value * factor
 
 fun main() {
   val p = Point(x: 1)

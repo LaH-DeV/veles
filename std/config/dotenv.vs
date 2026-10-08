@@ -23,9 +23,9 @@ struct Scanner {
   var pos:  i64 = 0
   var line: i64 = 1
 
-  fun atEnd(): bool = this.pos >= this.text.len()
+  fun atEnd(): bool => this.pos >= this.text.len()
 
-  fun peek(): u8 = if (this.atEnd()) 0 else this.text.byteAt(this.pos)
+  fun peek(): u8 => if (this.atEnd()) 0 else this.text.byteAt(this.pos)
 
   fun skipBlank() {
     loop (this.peek() == SPACE || this.peek() == TAB) {
@@ -44,7 +44,7 @@ struct Scanner {
     }
   }
 
-  fun slice(from: i64, to: i64): string = this.text.substring(from, to) ?: ""
+  fun slice(from: i64, to: i64): string => this.text.substring(from, to) ?: ""
 
   // the text up to a quote on the same or a later line, `null` when there is none;
   // a double-quoted value reads `\n`, `\t`, `\r`, `\"` and `\\`

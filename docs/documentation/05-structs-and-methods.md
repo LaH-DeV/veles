@@ -9,8 +9,8 @@ struct Point {
   x: i64
   y: i64
 
-  fun manhattan(): i64 = if (this.x < 0) -this.x else this.x + (if (this.y < 0) -this.y else this.y)
-  fun moved(dx: i64, dy: i64): Point = Point(x: this.x + dx, y: this.y + dy)
+  fun manhattan(): i64 => if (this.x < 0) -this.x else this.x + (if (this.y < 0) -this.y else this.y)
+  fun moved(dx: i64, dy: i64): Point => Point(x: this.x + dx, y: this.y + dy)
 }
 
 fun main() {
@@ -93,8 +93,8 @@ struct Parser {
     this.tokenSet = this.toks.map(t => t.0).toSet()
   }
 
-  fun describe(): string = "${this.count} tokens, ${this.tokenSet.len()} distinct"
-  fun has(t: string): bool = this.tokenSet.contains(t)
+  fun describe(): string => "${this.count} tokens, ${this.tokenSet.len()} distinct"
+  fun has(t: string): bool => this.tokenSet.contains(t)
 }
 
 fun main() {
@@ -149,8 +149,8 @@ struct Tally {
     this.total = words.len() * weight
   }
 
-  fun of(w: string): i64 = this.counts.get(w) ?: 0
-  fun total(): i64 = this.total
+  fun of(w: string): i64 => this.counts.get(w) ?: 0
+  fun total(): i64 => this.total
 }
 
 fun main() {
@@ -395,7 +395,7 @@ struct Point {
   x: i64
   y: i64
 
-  static fun origin(): Point = Point(x: 0, y: 0)
+  static fun origin(): Point => Point(x: 0, y: 0)
 
   static fun fromText(s: string): Point? {
     val [xText, yText] = s.split(",") else return null
@@ -404,7 +404,7 @@ struct Point {
     Point(x, y)
   }
 
-  fun shifted(dx: i64): Point = Point(x: this.x + dx, y: this.y)
+  fun shifted(dx: i64): Point => Point(x: this.x + dx, y: this.y)
 }
 
 fun main() {
@@ -441,8 +441,8 @@ struct Status {
   static val notFound = Status(code: 404, reason: "Not Found")
   static val known    = [Status.ok, Status.notFound]
 
-  static fun of(code: i64): Status = Status.known.find(s => s.code == code) ?: Status(code)
-  fun isError(): bool = this.code >= 400
+  static fun of(code: i64): Status => Status.known.find(s => s.code == code) ?: Status(code)
+  fun isError(): bool => this.code >= 400
 }
 
 fun main() {
@@ -546,8 +546,8 @@ struct Notes {
     this.next += 1
     n
   }
-  fun all(): List<Note> = this.items.toList()
-  fun find(id: i64): Note? = this.items.find(n => n.id == id)
+  fun all(): List<Note> => this.items.toList()
+  fun find(id: i64): Note? => this.items.find(n => n.id == id)
 }
 
 fun main() {
@@ -613,7 +613,7 @@ use io
 struct Pair<A, B> {
   first: A
   second: B
-  fun swap(): Pair<B, A> = Pair(first: this.second, second: this.first)
+  fun swap(): Pair<B, A> => Pair(first: this.second, second: this.first)
 }
 
 fun main() {
@@ -649,7 +649,7 @@ type Groups = MutableMap<Key, MutableList<string>>
 type Handler = fun(string): string
 type StrMap<V> = Map<string, V>
 
-fun apply(h: Handler, s: string): string = h(s)
+fun apply(h: Handler, s: string): string => h(s)
 
 fun main() {
   val groups: Groups = [:]
@@ -713,11 +713,11 @@ struct Pair<A, B> {
 }
 
 extend<A, B> Pair<A, B> {
-  fun swap(): Pair<B, A> = Pair(first: this.second, second: this.first)
+  fun swap(): Pair<B, A> => Pair(first: this.second, second: this.first)
 }
 
 extend Pair<i64, i64> {
-  fun sum(): i64 = this.first + this.second
+  fun sum(): i64 => this.first + this.second
 }
 
 fun main() {

@@ -44,18 +44,18 @@ public error DbError {
   }
 
   /// A unique or primary key constraint refused the row (23505).
-  public fun isUniqueViolation(): bool = this.code == "23505"
+  public fun isUniqueViolation(): bool => this.code == "23505"
 
   /// A foreign key refused it (23503).
-  public fun isForeignKeyViolation(): bool = this.code == "23503"
+  public fun isForeignKeyViolation(): bool => this.code == "23503"
 
   /// Any constraint: not null, check, unique, foreign key, exclusion (class 23).
-  public fun isConstraintViolation(): bool = this.code.startsWith("23")
+  public fun isConstraintViolation(): bool => this.code.startsWith("23")
 
   /// A deadlock (40P01) or a serialization failure (40001): the transaction
   /// rolled back and may be tried again from the start.
-  public fun isRetryable(): bool = this.code == "40001" || this.code == "40P01"
+  public fun isRetryable(): bool => this.code == "40001" || this.code == "40P01"
 
   /// The statement ran past its `statement_timeout` or was cancelled (57014).
-  public fun isCancelled(): bool = this.code == "57014"
+  public fun isCancelled(): bool => this.code == "57014"
 }

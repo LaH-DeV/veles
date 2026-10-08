@@ -10,13 +10,13 @@ struct Version {
   minor: i64
 
   implement Comparable {
-    fun compareTo(other: Version): Ordering =
+    fun compareTo(other: Version): Ordering =>
       if (this.major != other.major) this.major.compareTo(other.major)
       else this.minor.compareTo(other.minor)
   }
 
   implement Display {
-    fun toString(): string = "v${this.major}.${this.minor}"
+    fun toString(): string => "v${this.major}.${this.minor}"
   }
 }
 
@@ -26,11 +26,11 @@ public struct Name {
   text: string
 
   implement Hashable {
-    fun hash(): i64 = this.text.toLower().len()
+    fun hash(): i64 => this.text.toLower().len()
   }
 
   implement Equatable {
-    fun equals(other: Name): bool = this.text.toLower() == other.text.toLower()
+    fun equals(other: Name): bool => this.text.toLower() == other.text.toLower()
   }
 }
 
@@ -40,7 +40,7 @@ struct Pair<T> {
 }
 
 implement<T: Display> Display for Pair<T> {
-  fun toString(): string = "<${this.a} | ${this.b}>"
+  fun toString(): string => "<${this.a} | ${this.b}>"
 }
 
 sealed trait Shape
@@ -51,17 +51,17 @@ struct Square : Shape {
   side: f64
 }
 
-fun area(s: Shape): f64 = when (s) {
+fun area(s: Shape): f64 => when (s) {
   is Circle => 3.0 * s.r * s.r
   is Square => s.side * s.side
 }
 
 implement Comparable for Shape {
-  fun compareTo(other: Shape): Ordering = area(this).compareTo(area(other))
+  fun compareTo(other: Shape): Ordering => area(this).compareTo(area(other))
 }
 
 implement Display for Shape {
-  fun toString(): string = when (this) {
+  fun toString(): string => when (this) {
     is Circle => "circle(${this.r})"
     is Square => "square(${this.side})"
   }
