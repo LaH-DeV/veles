@@ -543,3 +543,18 @@ findings become checklist items (§2 and §5.10). Not probed, because it has no
 bearing until the rewrite starts: the compile time of a 30 000-line Veles
 program by the Veles compiler itself, and the peak memory of a whole-program
 HIR under the collector; both are E4 measurements.
+
+## 10. The compile-time evaluator is part of the port (2026-10-08)
+
+`const fun` (D113 part 3) makes the compiler run Veles code while it
+compiles: `sema/consteval.go`, `constfun.go` and `constnum.go` interpret the
+checked HIR — about 2 300 lines of Go. A Veles-written `sema` must carry the
+same evaluator, with the same results: exact integers that fail where the
+program would, `f32` rounded after every operation, `"${x}"` printed as the
+run time prints it, the same step budget and call-depth limit, and the same
+whitelist of built-ins (`constBuiltins`) and std functions marked `const`.
+Two consequences for the rewrite: the evaluator is a port cost in its own
+right (an interpreter over a sealed HIR is the shape `bench/ast` measures),
+and its results are part of the byte-identical gate — a constant table the
+Go compiler lays out must come out the same from the Veles one, so
+`driver/constfun_test.go`'s differential cases move to the harness with it.

@@ -23,12 +23,12 @@ public error Invalid {
 }
 
 /// The bytes as lower-case hex: `encode([0, 255])` is `"00ff"`.
-public fun encode(bytes: List<u8>): string = write(bytes, upper: false)
+public const fun encode(bytes: List<u8>): string = write(bytes, upper: false)
 
 /// The bytes as upper-case hex: `encodeUpper([0, 255])` is `"00FF"`.
-public fun encodeUpper(bytes: List<u8>): string = write(bytes, upper: true)
+public const fun encodeUpper(bytes: List<u8>): string = write(bytes, upper: true)
 
-fun write(bytes: List<u8>, upper: bool): string {
+const fun write(bytes: List<u8>, upper: bool): string {
   val out: MutableList<u8> = []
   loop (b in bytes) {
     out.push(digit(b >> 4, upper))
@@ -38,7 +38,7 @@ fun write(bytes: List<u8>, upper: bool): string {
 }
 
 /// One nibble as its digit byte. 48 is `'0'`, 87 + 10 is `'a'`, 55 + 10 is `'A'`.
-fun digit(nibble: u8, upper: bool): u8 =
+const fun digit(nibble: u8, upper: bool): u8 =
   if (nibble < 10) 48 +% nibble else (if (upper) 55 else 87) +% nibble
 
 /// The bytes the text spells. Upper and lower case may be mixed; nothing

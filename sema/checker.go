@@ -69,8 +69,9 @@ type Checker struct {
 	// error-position types seen before the impls were collected, checked
 	// at the end of collection; collected marks that point
 	pendingErrorChecks []pendingErrorCheck
-	constFunOK         map[*Func]bool // D113: whether a `const fun` passed its declaration-time rules
-	constChecking      map[*Func]bool // a `const fun` body being checked on the evaluator's behalf
+	constFunOK         map[*Func]bool   // D113: whether a `const fun` passed its declaration-time rules
+	constFunWhy        map[*Func]string // D113: why an instance of a generic `const fun` cannot run, said when a constant calls it
+	constChecking      map[*Func]bool   // a `const fun` body being checked on the evaluator's behalf
 	pendingBoundChecks []func()
 	pathReported       bool                  // lookupTypeName reported why a qualified type path failed
 	stdFiles           map[*source.File]bool // stdSpan
@@ -3233,4 +3234,15 @@ func boundNamed(tp *types.TypeParam, name string) *types.Trait {
 		}
 	}
 	return nil
+}
+
+// roundErrors counts the errors reported in this inference round.
+func (c *Checker) roundErrors() int {
+	n := 0
+	for _, d := range c.roundDiags.Items {
+		if d.Severity == source.Error {
+			n++
+		}
+	}
+	return n
 }

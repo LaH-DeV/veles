@@ -24,8 +24,8 @@
  * lock was what they did (bench/httphello: 20× Go, more threads slower).
  *
  * Thread safety: every function may be called from any thread; each
- * backend guards its own state. veles_poll_wait may run on several threads
- * at once (the executor lets one block and others take a quick look).
+ * backend guards its own state. The executor waits from one thread at a
+ * time (poller_busy), and arms and forgets while that wait is in progress.
  */
 /* glibc declares its extensions (pthread_getattr_np, ...) only when asked. */
 #if defined(__linux__) && !defined(_GNU_SOURCE)
@@ -86,6 +86,12 @@ static int64_t wake_pending;
 
 #ifndef SIO_BASE_HANDLE
 #define SIO_BASE_HANDLE 0x48000022
+#endif
+#ifndef SIO_BSP_HANDLE_SELECT
+#define SIO_BSP_HANDLE_SELECT 0x4800001C
+#endif
+#ifndef SIO_BSP_HANDLE_POLL
+#define SIO_BSP_HANDLE_POLL 0x4800001D
 #endif
 #ifndef STATUS_CANCELLED
 #define STATUS_CANCELLED ((NTSTATUS)0xC0000120)
@@ -241,9 +247,16 @@ int64_t veles_poll_arm(int64_t fd, int64_t read, int64_t write) {
     EnterCriticalSection(&poll_lock);
     sock_state *st = table_find((SOCKET)fd);
     if (!st) {
-        HANDLE base;
+        /* the base socket under any layered provider; the two others are
+         * what such a provider may answer instead (wepoll's order) */
+        static const DWORD ioctls[] = {SIO_BASE_HANDLE, SIO_BSP_HANDLE_POLL, SIO_BSP_HANDLE_SELECT};
+        HANDLE base = NULL;
         DWORD bytes;
-        if (WSAIoctl((SOCKET)fd, SIO_BASE_HANDLE, NULL, 0, &base, sizeof base, &bytes, NULL, NULL) != 0) {
+        for (int i = 0; i < 3 && !base; i++) {
+            HANDLE h;
+            if (WSAIoctl((SOCKET)fd, ioctls[i], NULL, 0, &h, sizeof h, &bytes, NULL, NULL) == 0 && h != (HANDLE)INVALID_SOCKET) base = h;
+        }
+        if (!base) {
             LeaveCriticalSection(&poll_lock);
             return 1; /* not a socket: the caller treats it as ready */
         }

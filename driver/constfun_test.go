@@ -19,13 +19,15 @@ func TestConstFunMatchesRunTime(t *testing.T) {
 	}
 	for _, release := range []bool{false, true} {
 		out, code := runTestFiles(t, map[string]string{"fns.vs": constFunSrc, "cf.test.vs": constFunTests}, Options{Release: release})
-		if code != 0 || !strings.Contains(out, "20 passed") {
+		if code != 0 || !strings.Contains(out, "25 passed") {
 			t.Fatalf("release=%v: exit %d, output:\n%s", release, code, out)
 		}
 	}
 }
 
-const constFunSrc = `struct P {
+const constFunSrc = `use hex, base64, utf8
+
+struct P {
   var x: i64
   var y: i64
 }
@@ -332,9 +334,153 @@ const fun maxOf<T: Comparable>(a: T, b: T): T = if (a.compareTo(b) == Ordering.L
 const fun radix(): List<string> = [255.toString(radix: 16), (-255).toString(radix: 2), 0.toString(), 12345.toString()]
 const MAXES: List<string> = ["${maxOf(3, 9)}", maxOf("pear", "apple"), "${maxOf(2.5, -1.0)}"]
 const RADIX: List<string> = radix()
+
+const fun stdLists(): string {
+  val xs: List<i64> = [5, 3, 9, 3, 1]
+  val words: List<string> = ["b", "a", "b"]
+  val b = StringBuilder()
+  b.append("${xs.atOrDefault(9, -1)} ${xs.take(2)} ${xs.drop(3)} ${xs.concat([7])} ${xs.indices()}")
+  b.append(" ${words.enumerate()} ${xs.zip(words)} ${xs.distinct()} ${words.distinct()}")
+  b.append(" ${xs.chunked(2)} ${xs.windowed(3)} ${xs.lastIndex()} ${xs.toSet()} ${words.toMutableSet()}")
+  b.append(" ${xs.sortedDescending()} ${xs.min() ?: 0} ${words.max() ?: "-"} ${xs.sum()} ${[1.5, 2.25].sum()}")
+  val m = MutableList<i64>.repeat(0, 4)
+  m.fill(2)
+  m.swap(0, 3)
+  m.insert(1, 8)
+  val r = m.removeAt(0)
+  val s: MutableList<i64> = [4, 1, 3]
+  s.sort()
+  b.append(" $m $r $s")
+  b.append(" ${(1..10).len()} ${(3..<3).isEmpty()} ${(1..10).contains(10)} ${(1..<10).contains(10)}")
+  var acc: i64 = 0
+  loop (i in (0..10).step(3)) acc = acc * 10 + i
+  loop (i in (0..10).reversed()) acc += i
+  loop (i in (0..10).step(3).reversed()) acc += i * 100
+  loop (i in (0..10).reversed().step(4)) acc += i * 1000
+  b.append(" $acc")
+  b.toString()
+}
+const STD_LISTS: string = stdLists()
+
+const fun durations(): string {
+  val a = Duration.minutes(2) + Duration.seconds(30)
+  val b = Duration.millis(250) * 3
+  val c = -(Duration.hours(1) / 4)
+  val d = Duration.ofSeconds(0.25)
+  val sb = StringBuilder()
+  sb.append("$a $b $c $d ${Duration.nanos(7)} ${Duration.micros(1500)} ${Duration.days(1) + Duration.hours(1)}")
+  sb.append(" ${a.toSeconds()} ${a.toMillis()} ${a.asSeconds()} ${b.asMillis()} ${a.over(b)} ${c.abs()} ${c.isNegative()}")
+  sb.append(" ${a.min(b)} ${a.max(b)} ${a.compareTo(b)} ${Duration.nanos(0).isZero()} ${Duration.micros(1).toMicros()}")
+  loop (s in ["90s", "1h30m", "1.5s", "-2m30s", "0", "", "5", "1.0000000001s", "3x", "250ms", "1d", "µs"]) {
+    val p = Duration.parse(s)
+    sb.append(" [$s=${p?.toString() ?: "null"}]")
+  }
+  sb.toString()
+}
+const DURATIONS: string = durations()
+
+const fun codecs(): string {
+  val bytes = "héllo, wörld €𝄞".bytes()
+  val sb = StringBuilder()
+  sb.append("${hex.encode(bytes)} ${hex.encodeUpper([0, 15, 255])} ${base64.encode(bytes)} ${base64.encodeUrl([251, 255, 0])}")
+  sb.append(" ${base64.encodedLen(10)} ${base64.encodedLen(10, pad: false)}")
+  sb.append(" ${utf8.isScalar(0x10FFFF)} ${utf8.isSurrogate(0xD801)} ${utf8.size(0x1D11E) ?: -1} ${utf8.combineSurrogates(0xD834, 0xDD1E) ?: -1}")
+  sb.append(" ${utf8.isContinuation(0x80)} ${utf8.isStart(0xC3)} ${utf8.isValid(bytes)} ${utf8.isValid([0xC3])} ${utf8.count(bytes)}")
+  val r = utf8.decode("é€", 0)
+  val last = utf8.decodeLast("é€", 5)
+  val rb = utf8.decodeBytes(bytes, 1)
+  sb.append(" ${r?.code ?: -1}/${r?.size ?: -1} ${last?.code ?: -1} ${rb?.code ?: -1} ${utf8.encode(0x20AC)} ${utf8.char(0x1D11E)}")
+  val out: MutableList<u8> = []
+  val n = utf8.encodeTo(out, 0xE9)
+  sb.append(" $n $out")
+  sb.toString()
+}
+const CODECS: string = codecs()
+
+struct Kw {
+  word: string
+  id: i64
+}
+
+const fun higher(): string {
+  val xs: List<i64> = [5, 3, 9, 3, 1, 8]
+  val words: List<string> = ["pear", "fig", "apple", "kiwi"]
+  val sb = StringBuilder()
+  sb.append("${xs.map(x => x * 10)} ${xs.filter(x => x > 3)} ${xs.fold(0, (a, x) => a + x)}")
+  sb.append(" ${xs.any(x => x > 8)} ${xs.all(x => x > 0)} ${xs.find(x => x % 2 == 0) ?: -1}")
+  var seen: i64 = 0
+  xs.forEach(x => {
+    seen += x
+  })
+  sb.append(" $seen ${xs.indexOfFirst(x => x == 9)} ${xs.count(x => x == 3)} ${xs.flatMap(x => [x, x])}")
+  sb.append(" ${words.sortedBy(w => w.len())} ${words.sortedByDescending(w => w)} ${words.sortedWith((a, b) => b.compareTo(a))}")
+  sb.append(" ${words.minBy(w => w.len()) ?: "-"} ${words.maxBy(w => w.len()) ?: "-"} ${xs.minWith((a, b) => b.compareTo(a)) ?: 0} ${xs.maxWith((a, b) => b.compareTo(a)) ?: 0}")
+  sb.append(" ${words.distinctBy(w => w.len())} ${xs.mapNotNull(x => if (x > 4) x else null)} ${xs.partition(x => x < 5)}")
+  val sorted = xs.sorted()
+  sb.append(" ${sorted.partitionPoint(x => x < 5)} ${sorted.binarySearch(8)} ${sorted.lowerBound(3)} ${sorted.upperBound(3)}")
+  val kws = [Kw(word: "fun", id: 1), Kw(word: "loop", id: 2), Kw(word: "val", id: 3)]
+  sb.append(" ${kws.binarySearchBy(k => k.word, "loop")} ${kws.binarySearchWith(k => k.id.compareTo(3))}")
+  val m: MutableList<i64> = [4, 2, 7]
+  m.sortWith((a, b) => b.compareTo(a))
+  sb.append(" $m ${MutableList<i64>.make(4, i => i * i)}")
+  val table: Map<string, i64> = ["a": 1, "b": 2, "c": 3]
+  sb.append(" ${table.mapValues(v => v * 100)} ${table.filter((k, v) => v != 2)}")
+  var total: i64 = 0
+  table.forEach((k, v) => {
+    total += v
+  })
+  val cache: MutableMap<string, i64> = [:]
+  val got = cache.getOrPut("x", () => 42)
+  val again = cache.getOrPut("x", () => 7)
+  sb.append(" $total $got $again")
+  sb.toString()
+}
+const HIGHER: string = higher()
+
+const fun mapAll<T, U>(xs: List<T>, f: fun(T): U): List<U> {
+  val out: MutableList<U> = []
+  loop (x in xs) out.push(f(x))
+  out.toList()
+}
+
+const fun twice(x: i64): i64 = x * 2
+
+const fun compose(f: fun(i64): i64, g: fun(i64): i64): fun(i64): i64 = x => g(f(x))
+
+const fun closures(): string {
+  var counter: i64 = 0
+  val bump = (by: i64) => {
+    counter += by
+    counter
+  }
+  bump(3)
+  bump(4)
+  val base = 10
+  val add = (x: i64) => x + base
+  val both = compose(twice, add)
+  val squares = mapAll([1, 2, 3], x => x * x)
+  val labels = mapAll(squares, n => "#$n")
+  "$counter ${add(1)} ${both(5)} $squares $labels ${mapAll([4, 5], twice)}"
+}
+const CLOSURES: string = closures()
 `
 
 const constFunTests = `// const fun results are what the same function computes at run time (D113).
+test "lambdas: captured cells, returned closures, generic higher-order functions" {
+  expect(CLOSURES == closures())
+}
+test "std: helpers that take a function" {
+  expect(HIGHER == higher())
+}
+test "std: list, range and set helpers" {
+  expect(STD_LISTS == stdLists())
+}
+test "std: Duration" {
+  expect(DURATIONS == durations())
+}
+test "std: hex, base64, utf8" {
+  expect(CODECS == codecs())
+}
 test "integer arithmetic" {
   expect(INTS == ints())
 }

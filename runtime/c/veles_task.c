@@ -97,7 +97,7 @@ typedef struct veles_task {
     struct veles_task *sibling;   /* scope children list, both ways: a finished */
     struct veles_task *sibling_prev; /* child unlinks itself in O(1) */
     int64_t listed;               /* on its scope's children list */
-    int64_t wake_at;        /* timer, ms since start; 0 = none */
+    int64_t wake_at;        /* timer, monotonic ns; 0 = none */
     int64_t yielded;        /* sleep(0) put the task at the back of the run queue once */
     int64_t timer_slot;     /* its place in the timer heap + 1; 0 = none */
     veles_race *race;
@@ -198,7 +198,6 @@ static io_entry *io_table;  /* on the GC heap, word-scanned: it keeps the parked
 static int64_t io_cap, io_used;
 static int64_t io_count;    /* tasks parked on a socket (runtime lock; read without it as a hint) */
 #define current (veles_tls_get()->task)
-static int64_t start_ms;
 static veles_task *gq_head, *gq_tail; /* the shared queue (run queues, below) */
 static bool roots_registered;
 
@@ -306,14 +305,23 @@ void veles_task_init(void) {
     register_roots();
 }
 
-static int64_t now_ms(void) {
-#if defined(_WIN32)
-    return (int64_t)GetTickCount64();
-#else
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
-#endif
+/* The executor's clock: the monotonic nanoseconds Stopwatch reads too, so
+ * a deadline (a sleep, a race's timeout, a ticker) is never before the time
+ * asked for. It was GetTickCount64 on Windows — 15.6 ms steps — truncated
+ * to milliseconds: `sleep(10 ms)` returned after anything from 0 to 10 ms
+ * (2026-10-07, driver TestTimerHeapUnderThreads). */
+int64_t veles_time_monotonic_ns(void);
+#define NS_PER_MS 1000000
+
+static int64_t now_ns(void) {
+    return veles_time_monotonic_ns();
+}
+
+/* how long a wait for deadline at is, in whole milliseconds rounded up (a
+ * condition variable or the reactor waits that long): 0 once it passed */
+static int64_t ms_until(int64_t at) {
+    int64_t d = at - now_ns();
+    return d <= 0 ? 0 : (d + NS_PER_MS - 1) / NS_PER_MS;
 }
 
 /* ---- run queues (D66 stage 2) ------------------------------------------------
@@ -993,10 +1001,9 @@ static void veles_task_finish_impl(veles_task *t, const void *result, int64_t si
     if (size > 0 && result) memcpy(t->result, result, (size_t)size);
     t->failed = failed;
     /* released: an await that sees T_DONE without the lock sees the result */
-    __atomic_store_n(&t->state, T_DONE, __ATOMIC_RELEASE);
+    __atomic_store_n(&t->state, T_DONE, __ATOMIC_SEQ_CST);
     t->hdl = NULL;
-    wake(t->waiter);
-    t->waiter = NULL;
+    wake(__atomic_exchange_n(&t->waiter, NULL, __ATOMIC_SEQ_CST));
     scope_child_finished(t);
 }
 
@@ -1004,34 +1011,36 @@ static void veles_task_finish_impl(veles_task *t, const void *result, int64_t si
 static void veles_task_finish_cancelled_impl(veles_task *t) {
     t->hdl = NULL;
     if (t->state == T_CANCELLED) return;
-    t->state = T_CANCELLED;
-    wake(t->waiter);
-    t->waiter = NULL;
+    __atomic_store_n(&t->state, T_CANCELLED, __ATOMIC_SEQ_CST);
+    wake(__atomic_exchange_n(&t->waiter, NULL, __ATOMIC_SEQ_CST));
     scope_child_finished(t);
 }
 
 /* await: true when the target is done, otherwise blocks the caller */
 static int64_t veles_task_await_impl(veles_task *self, veles_task *target) {
-    if (target->state == T_DONE) {
-        self->awaiting = NULL;
-        return 1;
+    for (;;) {
+        int64_t st = __atomic_load_n(&target->state, __ATOMIC_SEQ_CST);
+        if (st == T_DONE) {
+            self->awaiting = NULL;
+            return 1;
+        }
+        if (st == T_CANCELLED) {
+            self->awaiting = NULL;
+            veles_panic("awaited task was cancelled", 26);
+        }
+        /* registered first, then the state read again: a task finishing
+         * publishes its state and then takes its waiter, so one of the two
+         * always sees the other */
+        __atomic_store_n(&target->waiter, self, __ATOMIC_SEQ_CST);
+        if (__atomic_load_n(&target->state, __ATOMIC_SEQ_CST) >= T_DONE) {
+            veles_task *me = self;
+            __atomic_compare_exchange_n(&target->waiter, &me, NULL, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+            continue;
+        }
+        self->awaiting = target;
+        __atomic_store_n(&self->state, T_BLOCKED, __ATOMIC_SEQ_CST);
+        return 0;
     }
-    if (target->state == T_CANCELLED) {
-        self->awaiting = NULL;
-        veles_panic("awaited task was cancelled", 26);
-    }
-    /* registered first, then the state read again: a task finishing
-     * without the lock publishes T_DONE and then reads its waiter, so one
-     * of the two always sees the other */
-    __atomic_store_n(&target->waiter, self, __ATOMIC_SEQ_CST);
-    if (__atomic_load_n(&target->state, __ATOMIC_SEQ_CST) == T_DONE) {
-        target->waiter = NULL;
-        self->awaiting = NULL;
-        return 1;
-    }
-    self->awaiting = target;
-    self->state = T_BLOCKED;
-    return 0;
 }
 
 void *veles_task_result(veles_task *t) {
@@ -1167,7 +1176,7 @@ static void scope_child_finished(veles_task *t) {
     if (!s) return;
     int64_t left = scope_leave(t);
     if (t->failed && s->fail_fast && !s->failed) {
-        s->failed = t;
+        __atomic_store_n(&s->failed, t, __ATOMIC_RELEASE);
         cancel_children(s, t);
         /* the owner may be blocked in the scope body (a recv that will now
          * never complete): wake it so its next suspension point sees the
@@ -1196,16 +1205,17 @@ static void veles_scope_cancel_impl(veles_scope *s) {
 /* wait for every child: true when done, otherwise blocks the owner */
 static int64_t veles_scope_wait_impl(veles_task *owner, veles_scope *s) {
     if (__atomic_load_n(&s->live, __ATOMIC_SEQ_CST) <= 0) return 1;
-    owner->state = T_BLOCKED;
+    __atomic_store_n(&owner->state, T_BLOCKED, __ATOMIC_SEQ_CST);
     return 0;
 }
 
 static veles_task *veles_scope_failed_impl(veles_scope *s) {
-    return s->failed;
+    return __atomic_load_n(&s->failed, __ATOMIC_ACQUIRE);
 }
 
 static int64_t veles_scope_failed_index_impl(veles_scope *s) {
-    return s->failed ? s->failed->index : -1;
+    veles_task *f = __atomic_load_n(&s->failed, __ATOMIC_ACQUIRE);
+    return f ? f->index : -1;
 }
 
 /* ---- channels (D16) --------------------------------------------------------
@@ -1625,7 +1635,7 @@ static void timer_at(veles_task *t, int64_t at) {
 }
 
 static void add_timer(veles_task *t, int64_t ms) {
-    timer_at(t, now_ms() + ms);
+    timer_at(t, now_ns() + ms * NS_PER_MS);
 }
 
 /* sleep: true once the deadline passed; first call arms it and blocks.
@@ -1637,7 +1647,7 @@ static void add_timer(veles_task *t, int64_t ms) {
  * deadlock (a producer finishing while main slept on a timer). */
 static int64_t veles_task_sleep_impl(veles_task *self, int64_t ms) {
     if (self->wake_at != 0) {
-        if (now_ms() >= self->wake_at) {
+        if (now_ns() >= self->wake_at) {
             remove_timer(self);
             return 1;
         }
@@ -1673,9 +1683,9 @@ int64_t veles_time_now_us(void);
 veles_ticker *veles_ticker_start(veles_chan *c, int64_t period_ms) {
     veles_ticker *t = veles_alloc_words(sizeof *t);
     t->ch = c;
-    t->period = period_ms < 1 ? 1 : period_ms;
+    t->period = (period_ms < 1 ? 1 : period_ms) * NS_PER_MS;
     rt_enter();
-    t->next_at = now_ms() + t->period;
+    t->next_at = now_ns() + t->period;
     t->next = tickers;
     tickers = t;
     note_timer(t->next_at);
@@ -1710,7 +1720,7 @@ static void fire_tickers(int64_t now) {
 }
 
 static void fire_timers(void) {
-    int64_t now = now_ms();
+    int64_t now = now_ns();
     fire_tickers(now);
     while (theap_len > 0 && theap[0]->wake_at <= now) {
         veles_task *t = theap[0];
@@ -1971,7 +1981,7 @@ void veles_race_send(veles_race *r, veles_chan *c, void *in) {
 
 void veles_race_sleep(veles_race *r, int64_t ms) {
     int64_t i = r->narms++;
-    r->arms[i].deadline = now_ms() + ms;
+    r->arms[i].deadline = now_ns() + ms * NS_PER_MS;
     if (ms <= 0) r->arms[i].deadline = 1;
 }
 
@@ -2117,7 +2127,7 @@ static int64_t veles_race_wait_impl(veles_task *self, veles_race *r) {
     }
     self->race = r;
     /* ready now, or registered everywhere */
-    int64_t now = now_ms();
+    int64_t now = now_ns();
     int64_t earliest = 0;
     for (int64_t i = 0; i < r->narms && won < 0; i++) {
         if (r->arms[i].ch) {
@@ -2429,10 +2439,9 @@ int64_t veles_task_panic(const char *msg, int64_t len, const char *loc, int64_t 
     t->panicked = 1;
     t->failed = 1;
     t->result = result;
-    __atomic_store_n(&t->state, T_DONE, __ATOMIC_RELEASE);
+    __atomic_store_n(&t->state, T_DONE, __ATOMIC_SEQ_CST);
     t->hdl = NULL;
-    wake(t->waiter);
-    t->waiter = NULL;
+    wake(__atomic_exchange_n(&t->waiter, NULL, __ATOMIC_SEQ_CST));
     scope_child_finished(t);
     rt_exit();
     if (t->test_task) test_task_done(t);
@@ -2539,9 +2548,8 @@ static void scope_child_finished(veles_task *t);
 static void finish_unstarted(veles_task *t) {
     t->entry = NULL;
     t->entry_args = NULL;
-    t->state = T_CANCELLED;
-    wake(t->waiter);
-    t->waiter = NULL;
+    __atomic_store_n(&t->state, T_CANCELLED, __ATOMIC_SEQ_CST);
+    wake(__atomic_exchange_n(&t->waiter, NULL, __ATOMIC_SEQ_CST));
     scope_child_finished(t);
 }
 
@@ -2600,7 +2608,7 @@ static void note_timer(int64_t at) {
 
 static int timers_due(void) {
     int64_t due = __atomic_load_n(&timer_due, __ATOMIC_RELAXED);
-    return due && now_ms() >= due;
+    return due && now_ns() >= due;
 }
 
 /* A worker out of work looks again for a little while (tens of
@@ -2694,8 +2702,7 @@ static void work(int stay) {
         }
         /* nothing runnable: wait for a task, the nearest timer or a socket */
         int64_t nearest = nearest_timer();
-        int64_t wait = nearest ? nearest - now_ms() : -1;
-        if (nearest && wait < 0) wait = 0;
+        int64_t wait = nearest ? ms_until(nearest) : -1;
         if (io_count && !poller_busy) {
             /* this thread waits in the reactor until a socket is ready, the
              * nearest timer, or new work interrupts it (wake_worker). The
@@ -2750,9 +2757,6 @@ static int64_t worker_count(void) {
 void veles_run(veles_task *root) {
     veles_task_init();
     rt_enter();
-    /* once: the test runner calls this once per test while the others run
-     * on (D80), and their timers count from this */
-    if (start_ms == 0) start_ms = now_ms();
     int64_t st = __atomic_load_n(&root->state, __ATOMIC_SEQ_CST);
     if (st == T_DONE || st == T_CANCELLED) { /* a test that finished while an earlier one was awaited */
         rt_exit();
@@ -2845,10 +2849,15 @@ void veles_task_started(veles_task *t, void *hdl) {
     veles_task_started_impl(t, hdl);
 }
 
-/* A task returning. The common case — a result, not an error — takes the
- * runtime lock only to wake someone: a task awaiting this one, or the
- * scope's owner when this was its last child. An error may fail the
- * scope and cancel siblings, which is done under the lock. */
+/* A task returning. The common case — a result, not an error — takes no
+ * lock: the result is published with T_DONE, then the waiter is read (an
+ * await publishes itself as the waiter, then reads the state: one of the
+ * two sees the other), and waking is safe without the runtime lock, as the
+ * channels' is. A wake the other side also saw for itself is a spurious
+ * one, which every wait tolerates. The scope's owner is woken when this was
+ * its last child. An error may fail the scope and cancel siblings, which
+ * is done under the lock. (The lock here, in await and in the scope wait
+ * was most of the executor's contention: bench/httphello, 2026-10-07.) */
 void veles_task_finish(veles_task *t, const void *result, int64_t size, int64_t failed) {
     if (failed || __atomic_load_n(&t->state, __ATOMIC_SEQ_CST) == T_CANCELLED) {
         rt_enter();
@@ -2863,17 +2872,10 @@ void veles_task_finish(veles_task *t, const void *result, int64_t size, int64_t 
     t->failed = 0;
     __atomic_store_n(&t->state, T_DONE, __ATOMIC_SEQ_CST);
     t->hdl = NULL;
-    int wake_waiter = __atomic_load_n(&t->waiter, __ATOMIC_SEQ_CST) != NULL;
+    veles_task *waiter = __atomic_exchange_n(&t->waiter, NULL, __ATOMIC_SEQ_CST);
     int64_t left = t->scope ? scope_leave(t) : 1;
-    if (wake_waiter || left <= 0) {
-        rt_enter();
-        if (t->waiter) {
-            wake(t->waiter);
-            t->waiter = NULL;
-        }
-        if (left <= 0) wake(t->scope->owner);
-        rt_exit();
-    }
+    if (waiter) wake(waiter);
+    if (left <= 0) wake(t->scope->owner);
     if (t->test_task) test_task_done(t);
 }
 
@@ -2894,17 +2896,15 @@ void veles_task_finish_cancelled(veles_task *t) {
     rt_exit();
 }
 
+/* no lock: the waiter handshake with veles_task_finish needs none (see
+ * there), and awaiting is read by a cancellation only once self is parked,
+ * which comes after it is stored */
 int64_t veles_task_await(veles_task *self, veles_task *target) {
-    /* a task already done needs no lock: its result was published with
-     * the state (awaiting is only read while self is parked) */
     if (__atomic_load_n(&target->state, __ATOMIC_ACQUIRE) == T_DONE) {
         self->awaiting = NULL;
         return 1;
     }
-    rt_enter();
-    int64_t result_ = veles_task_await_impl(self, target);
-    rt_exit();
-    return result_;
+    return veles_task_await_impl(self, target);
 }
 
 
@@ -2926,25 +2926,21 @@ void veles_scope_cancel(veles_scope *s) {
     rt_exit();
 }
 
+/* no lock: the live count is atomic, and the last child decrements it
+ * before it wakes the owner, which reads it before it parks — the await
+ * handshake again */
 int64_t veles_scope_wait(veles_task *owner, veles_scope *s) {
-    rt_enter();
-    int64_t result_ = veles_scope_wait_impl(owner, s);
-    rt_exit();
-    return result_;
+    return veles_scope_wait_impl(owner, s);
 }
 
+/* no lock: failed is set once, under the lock, and read as a published
+ * pointer */
 veles_task *veles_scope_failed(veles_scope *s) {
-    rt_enter();
-    veles_task * result_ = veles_scope_failed_impl(s);
-    rt_exit();
-    return result_;
+    return veles_scope_failed_impl(s);
 }
 
 int64_t veles_scope_failed_index(veles_scope *s) {
-    rt_enter();
-    int64_t result_ = veles_scope_failed_index_impl(s);
-    rt_exit();
-    return result_;
+    return veles_scope_failed_index_impl(s);
 }
 
 /* The channel operations take the channel's own lock, never the runtime

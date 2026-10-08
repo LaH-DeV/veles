@@ -251,6 +251,12 @@ func copyVal(v ConstVal) ConstVal {
 
 func (ev *constEval) expr(e Expr) ConstVal {
 	ev.tick()
+	if types.IsInvalid(e.Type()) {
+		// the checker's placeholder for code that did not check: its error
+		// is reported already, and the constant fails with it, silently
+		// (it once said "this (*sema.UnitConst) is not a constant")
+		panic(constFailed{})
+	}
 	switch e := e.(type) {
 	case *IntConst:
 		v := new(big.Int).SetUint64(e.Value)
@@ -378,6 +384,12 @@ func (ev *constEval) expr(e Expr) ConstVal {
 		return ev.builtin(e)
 	case *Call:
 		return ev.call(e)
+	case *Closure:
+		return ev.closure(e)
+	case *FuncRef:
+		return &CFunc{T: e.Type(), Fn: e.Fn}
+	case *CallIndirect:
+		return ev.callIndirect(e)
 	case *AddrOf:
 		return ev.place(e.X)
 	case *Deref:
@@ -428,7 +440,8 @@ func describeNode(e Expr) string {
 	case *Try, *Throw, *MakeResult:
 		return "an error"
 	}
-	return fmt.Sprintf("this (%T)", e)
+	// never a Go type name in a message to the user
+	return "this expression"
 }
 
 func (ev *constEval) varRef(e *VarRef) ConstVal {
@@ -973,6 +986,12 @@ func (ev *constEval) cast(e *Cast) ConstVal {
 	case *CSet:
 		if st, ok := to.(*types.Set); ok {
 			return &CSet{st, v.Elems}
+		}
+	case *CFunc:
+		// a function value retyped: a named function or a lambda passed where
+		// a wider type is expected (sendable, effects that only widen)
+		if _, ok := to.(*types.Func); ok {
+			return &CFunc{T: to, Fn: v.Fn, Lambda: v.Lambda, Captured: v.Captured}
 		}
 	default:
 		if types.Identical(x.Type(), to) {

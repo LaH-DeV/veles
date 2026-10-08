@@ -48,6 +48,23 @@ Grep for a sibling feature that already exists (e.g. how `static val` or
 - Pin the behaviour first where you can: a failing `sema_test.go` case, a
   golden, or an example — then make it pass (`veles-test`).
 
+### A built-in or std function the compiler can run (`const fun`, D113)
+
+A new built-in is not usable in a constant until the evaluator runs it:
+
+1. an entry in `constBuiltins` (`sema/constfun.go`) — only for operations on
+   values the evaluator holds (no I/O, tasks, raw memory, atomics);
+2. its case in the evaluator (`sema/constfun.go`, numbers in `constnum.go`),
+   giving exactly the run-time result, failures included;
+3. a case in `driver/constfun_test.go`, which runs each function at compile
+   time and at run time, debug and release, and compares;
+4. a line in docs chapter 2's "What it may call" table.
+
+A std function written in Veles becomes callable from constants by being
+declared `const fun` — only when its body qualifies (the declaration check
+says so) and it is meant to keep qualifying; `unsafe` inside one is allowed
+in std only, for the runtime entry points `constExterns` names.
+
 ## 4. Finish
 
 1. `go build ./... && go vet ./... && staticcheck ./...` clean

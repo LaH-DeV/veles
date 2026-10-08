@@ -79,17 +79,26 @@ C1. Do better in the compiler (order = what matters most to users):
     i. Review each std function marked `const` by script (StringBuilder, string methods, number
        compareTo/toString) for semantics beyond what the differential test covers.
 
-C2. Document further (make it easy to grasp):
-    a. A "what can I call in a `const fun`?" table (allowed / refused / const std functions).
-    b. A short mental model: the compiler runs the function in an interpreter over the same HIR;
-       results equal run time except libm — explains why things are refused.
-    c. A worked failure with the real output: a panic with its call chain, the step-budget error.
-    d. "When to use it": `const fun` vs plain `const` vs a start-up `val` (build time, binary size).
-    e. How std authors mark helpers `const`, why a `const fun` cannot call a non-const one, why
-       `unsafe` is std-only.
-    f. Self-hosting: a Veles-written compiler must carry the same evaluator (D113); say so in the
-       contributor docs.
-    g. Contributor checklist for adding a built-in the evaluator runs: `constBuiltins` entry,
-       evaluator case (`constfun.go`/`constnum.go`), a case in `driver/constfun_test.go`, a docs line.
    → Items 1.a–1.d, 1.f–1.h and part of 1.e are also in veles-checklist.md §11 "Deferred from
      `const fun`"; this block is the review list, to be worked through.
+   → 2026-10-08: C2 (document further) done and removed from this file: docs chapter 2 has how the
+     evaluator works, a "what it may call" table (each row checked by a probe), a worked failure with
+     the real output, and `const fun` vs `const` vs `val`; the self-host plan §10 says the evaluator is
+     part of the port; the veles-develop skill has the contributor checklist. On the way (C1.g): a
+     `const fun` whose body did not check no longer adds a cascade at the constant (one said
+     "this (*sema.UnitConst) is not a constant expression").
+   → 2026-10-08: C1.c done for what the evaluator can run today: the function-free `List`/`MutableList`
+     helpers, `Range` (with `step`/`reversed` and their loops), `Duration` (constructors, operators,
+     accessors, `toString`, `parse`), the `hex`/`base64` encoders and all of `std/utf8` are `const fun`
+     (each checked at compile time against run time in driver/constfun_test.go), and
+     `std/testdata/const-functions.txt` lists every std `const fun` (`go test ./std` fails on a change,
+     `-update` accepts it). Still not const, each blocked: the `Result` helpers (sealed variants are
+     not evaluated), the decoders (C1.b, throws), anything taking a function (C1.a), `Duration.zero`
+     (a `static val`).
+   → 2026-10-08: C1.a done but for trait objects: a `const fun` may make, take and call lambdas (captures
+     share their cells, as at run time), pass a `const fun` as a value, and std's helpers that take a
+     function are `const fun` (`map`, `filter`, `fold`, `sortedBy`, `binarySearch`, `Map.mapValues`…);
+     a lambda is held to the rules with the function it is written in. On the way: an instance of a
+     generic `const fun` is no longer refused at std's declaration when only its type argument stops
+     it (`xs.max()` on a type whose `compareTo` is ordinary errored at run-time use) — the reason is
+     given if a constant runs it.

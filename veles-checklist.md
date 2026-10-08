@@ -1179,18 +1179,19 @@ Every new public std API (http cookies/forms/client, `std/log`,
   a package `version` that is not `major.minor.patch` (the old fixtures used any string) is now an error.
 - **Deferred from `const fun` (2026-10-05), to build later:** `throws` and
   `try`/`catch` inside a `const fun` (a thrown error would be a compile error
-  at the constant; today the function is refused); function values — a lambda,
-  a closure, a trait object, so `map`/`filter`/`sortedBy` and every std function
-  that takes a callback are not `const fun`s; the functions the compiler derives
+  at the constant; today the function is refused); trait objects (a call through
+  one is refused; lambdas, closures over `var`s and named `const fun`s as values
+  work since 2026-10-08, with `map`/`filter`/`fold`/`sortedBy`… marked); the functions the compiler derives
   for a user type (`equals`, `hash`, `toString`, `compareTo`, the codec) are not
   `const fun`s, so `==` on a struct with a user `equals` and a key with its own
   `hash` in a constant `Map` are refused, though structural `==` and
-  interpolation work; only `StringBuilder`, the string functions written in
-  Veles and an enum's synthesized functions are marked — the prelude's `List`,
-  `Map`, `Range` and iterator helpers written in Veles (`take`, `drop`, `concat`,
-  `sum`, `min`, `max`, `reversed`, `zip`, `enumerate`…), `Duration`, the number
-  formatting (`toString(radix)`, `toFixed`), `toF64()` (it calls `strtod`) and the
-  other std modules (`hex`, `base64`, `utf8`…) are not yet; the float functions
+  interpolation work; marked since 2026-10-08 (and listed in
+  `std/testdata/const-functions.txt`): the function-free `List`/`MutableList` and
+  `Range` helpers, `Duration`, the `hex`/`base64` encoders and `std/utf8` — still
+  not: the lazy iterators (`iter()`, their adapters), the `Result` helpers
+  (`Ok`/`Err` and other sealed variants are not evaluated as values), the decoders
+  (they throw), `Duration.zero` (a `static val`), the number formatting
+  (`toFixed`), `toF64()` (it calls `strtod`) and the other std modules; the float functions
   of the C library (`sin`, `cos`, `tan`, `exp`, `log`, `log2`, `log10`, `pow`,
   `atan2`, `hypot`) are not evaluated because two libraries differ in the last
   bit — a correctly rounded software implementation in the evaluator (or a

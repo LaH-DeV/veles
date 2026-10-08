@@ -121,6 +121,18 @@ void veles_lock_acquire(veles_lock *l) {
 #if defined(_WIN32)
     EnterCriticalSection(&l->cs);
 #else
+    /* a few tries before sleeping in the kernel, as the Windows critical
+     * section's spin count does: glibc's mutex sleeps at once, and the
+     * runtime lock's sections are short (with many threads the futex
+     * round trips were most of the executor's time, bench/httphello) */
+    for (int i = 0; i < 64; i++) {
+        if (pthread_mutex_trylock(&l->m) == 0) return;
+#if defined(__x86_64__) || defined(__i386__)
+        __builtin_ia32_pause();
+#elif defined(__aarch64__)
+        __asm__ __volatile__("yield");
+#endif
+    }
     pthread_mutex_lock(&l->m);
 #endif
 }

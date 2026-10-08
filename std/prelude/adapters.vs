@@ -9,7 +9,7 @@
 extend<T> List<T> {
   /// What `f` returns for each element, in order: `[1, 2].map(x => x * 10)`
   /// is `[10, 20]`. Eager; `xs.iter().map(f)` is the lazy form (D46).
-  public fun map<U, E>(f: fun(T): U suspends throws E): List<U> throws E {
+  public const fun map<U, E>(f: fun(T): U suspends throws E): List<U> throws E {
     val out: MutableList<U> = []
     out.reserve(this.len())
     loop (x in this) {
@@ -19,7 +19,7 @@ extend<T> List<T> {
   }
 
   /// The elements `pred` accepts, in order.
-  public fun filter<E>(pred: fun(T): bool suspends throws E): List<T> throws E {
+  public const fun filter<E>(pred: fun(T): bool suspends throws E): List<T> throws E {
     val out: MutableList<T> = []
     loop (x in this) {
       if (try pred(x)) out.push(x)
@@ -28,7 +28,7 @@ extend<T> List<T> {
   }
 
   /// Runs `f` on each element, in order.
-  public fun forEach<E>(f: fun(T): () suspends throws E) throws E {
+  public const fun forEach<E>(f: fun(T): () suspends throws E) throws E {
     loop (x in this) {
       try f(x)
     }
@@ -37,7 +37,7 @@ extend<T> List<T> {
   /// `f` applied to an accumulator and each element in turn, from the left,
   /// starting at `initial`: `f(f(f(initial, x0), x1), x2)`;
   /// `[1, 2, 3].fold(0, (sum, x) => sum + x)` is 6.
-  public fun fold<A, E>(initial: A, f: fun(A, T): A suspends throws E): A throws E {
+  public const fun fold<A, E>(initial: A, f: fun(A, T): A suspends throws E): A throws E {
     var acc = initial
     loop (x in this) {
       acc = try f(acc, x)
@@ -47,7 +47,7 @@ extend<T> List<T> {
 
   /// Whether `pred` accepts some element; it stops at the first. `false`
   /// for an empty list.
-  public fun any<E>(pred: fun(T): bool suspends throws E): bool throws E {
+  public const fun any<E>(pred: fun(T): bool suspends throws E): bool throws E {
     loop (x in this) {
       if (try pred(x)) return true
     }
@@ -56,7 +56,7 @@ extend<T> List<T> {
 
   /// Whether `pred` accepts every element; it stops at the first it does
   /// not. `true` for an empty list.
-  public fun all<E>(pred: fun(T): bool suspends throws E): bool throws E {
+  public const fun all<E>(pred: fun(T): bool suspends throws E): bool throws E {
     loop (x in this) {
       if (!(try pred(x))) return false
     }
@@ -64,7 +64,7 @@ extend<T> List<T> {
   }
 
   /// The first element `pred` accepts, or `null`.
-  public fun find<E>(pred: fun(T): bool suspends throws E): T? throws E {
+  public const fun find<E>(pred: fun(T): bool suspends throws E): T? throws E {
     loop (x in this) {
       if (try pred(x)) return x
     }
@@ -75,14 +75,14 @@ extend<T> List<T> {
 extend<K, V> Map<K, V> {
   /// Runs `f` on each key and value. The entries are read when the call
   /// starts, so `f` may change the map.
-  public fun forEach<E>(f: fun(K, V): () suspends throws E) throws E {
+  public const fun forEach<E>(f: fun(K, V): () suspends throws E) throws E {
     loop ((k, v) in this.entries()) {
       try f(k, v)
     }
   }
 
   /// The same keys, each with what `f` returns for its value.
-  public fun mapValues<U, E>(f: fun(V): U suspends throws E): Map<K, U> throws E {
+  public const fun mapValues<U, E>(f: fun(V): U suspends throws E): Map<K, U> throws E {
     val out: MutableMap<K, U> = [:]
     out.reserve(this.len())
     loop ((k, v) in this.entries()) {
@@ -92,7 +92,7 @@ extend<K, V> Map<K, V> {
   }
 
   /// The entries `pred` accepts.
-  public fun filter<E>(pred: fun(K, V): bool suspends throws E): Map<K, V> throws E {
+  public const fun filter<E>(pred: fun(K, V): bool suspends throws E): Map<K, V> throws E {
     val out: MutableMap<K, V> = [:]
     loop ((k, v) in this.entries()) {
       if (try pred(k, v)) out.set(k, v)
@@ -104,7 +104,7 @@ extend<K, V> Map<K, V> {
 extend<K, V> MutableMap<K, V> {
   /// The value under `key`; when there is none, what `make` returns, stored
   /// under `key` first.
-  public fun getOrPut<E>(key: K, make: fun(): V suspends throws E): V throws E {
+  public const fun getOrPut<E>(key: K, make: fun(): V suspends throws E): V throws E {
     if (val found = this.get(key)) return found
     val made = try make()
     this.set(key, made)

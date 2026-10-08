@@ -2,6 +2,7 @@ package sema
 
 import (
 	"github.com/LaH-DeV/veles/ast"
+	"github.com/LaH-DeV/veles/lexer"
 	"github.com/LaH-DeV/veles/source"
 	"github.com/LaH-DeV/veles/types"
 )
@@ -33,6 +34,10 @@ func (c *Checker) resolveTypeArg(env *typeEnv, a ast.Type, isConst bool) types.T
 	switch a := a.(type) {
 	case *ast.ConstType:
 		return c.constArg(env, a.X, a.Pos)
+	case *ast.ErrorUnionType:
+		if x, ok := unionAsConst(a); ok {
+			return c.constArg(env, x, a.Pos)
+		}
 	case *ast.NamedType:
 		if len(a.Args) == 0 {
 			if len(a.Path) == 1 {
@@ -49,6 +54,41 @@ func (c *Checker) resolveTypeArg(env *typeEnv, a ast.Type, isConst bool) types.T
 	}
 	c.errorf(a.Span(), "expected a constant here: a number, the name of a constant, or an expression of constants (D121)")
 	return types.TInvalid
+}
+
+// unionAsConst reads names joined by '|' in a type argument — parsed as an
+// error union (parser.unionArgAhead) — as the constant expression `N | M`,
+// for a parameter that is a constant.
+func unionAsConst(u *ast.ErrorUnionType) (ast.Expr, bool) {
+	var x ast.Expr
+	for _, m := range u.Members {
+		nt, ok := m.(*ast.NamedType)
+		if !ok || len(nt.Args) > 0 {
+			return nil, false
+		}
+		if x == nil {
+			x = pathExpr(nt.Path)
+		} else {
+			x = &ast.BinaryExpr{Op: lexer.Pipe, L: x, R: pathExpr(nt.Path), Pos: u.Pos}
+		}
+	}
+	return x, x != nil
+}
+
+// isConstName reports a lone name that is a constant parameter, or a
+// global where no type has the name.
+func (f *fnCtx) isConstName(path []ast.Ident) bool {
+	if len(path) != 1 {
+		return false
+	}
+	if tp, ok := f.env.tps[path[0].Name]; ok {
+		return tp.Const
+	}
+	if sym, _ := f.c.lookupTypeName(f.env, path); sym != nil {
+		return false
+	}
+	g := f.lookup(path[0].Name)
+	return g != nil && g.Kind == SymGlobal
 }
 
 // pathExpr is the expression a (possibly qualified) name stands for.
@@ -129,6 +169,11 @@ func (f *fnCtx) resolveCallArg(ta ast.Type) types.Type {
 	switch a := ta.(type) {
 	case *ast.ConstType:
 		return f.c.hooks.Subst(f.c.constArg(f.env, a.X, a.Pos), f.subst)
+	case *ast.ErrorUnionType:
+		// `f<N | M>()`: constants, when the first name is one
+		if x, ok := unionAsConst(a); ok && f.isConstName(a.Members[0].(*ast.NamedType).Path) {
+			return f.c.hooks.Subst(f.c.constArg(f.env, x, a.Pos), f.subst)
+		}
 	case *ast.NamedType:
 		if len(a.Args) == 0 && len(a.Path) == 1 {
 			name := a.Path[0].Name

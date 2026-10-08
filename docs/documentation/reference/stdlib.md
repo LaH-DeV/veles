@@ -446,6 +446,19 @@ out.pushU32Be(x: u32); out.pushI16Le(x: i16)           // MutableList<u8>; the s
 A `MutableList<T>` has every `List<T>` method; a `val` binding is enough to
 call the mutating ones, since the list is a reference (D25).
 
+The prelude helpers that take no function — `atOrDefault`, `take`, `drop`,
+`concat`, `indices`, `enumerate`, `zip`, `distinct`, `chunked`, `windowed`,
+`lastIndex`, `toSet`, `toMutableSet`, `sortedDescending`, `min`, `max`, `sum`,
+and `MutableList`'s `repeat`, `fill`, `swap`, `insert`, `removeAt`, `sort` — are
+`const fun`s: a constant's function may use them (D113). So are the ones that
+take a function (`map`, `filter`, `fold`, `forEach`, `any`, `all`, `find`,
+`count`, `indexOfFirst`, `flatMap`, `mapNotNull`, `partition`, `sortedBy`,
+`sortedByDescending`, `sortedWith`, `sortWith`, `minBy`, `maxBy`, `minWith`,
+`maxWith`, `distinctBy`, `partitionPoint`, `binarySearch`, `binarySearchBy`,
+`binarySearchWith`, `lowerBound`, `upperBound`, `make`) and a `Map`'s
+`mapValues`, `filter`, `forEach` and `getOrPut`, when the function given is
+one the compiler can run.
+
 ### `Map<K, V>` and `MutableMap<K, V>`
 
 | Method | Result |
@@ -489,7 +502,8 @@ text are a list's; it is `Codable` (a list of exactly `N`), `Sendable` when `T` 
 
 Fields `lo`, `hi`, `inclusive`; iterable. `len()`, `isEmpty()` (D106), `contains(x)`, `step(n)` and
 `reversed()` (the last two are iterators that combine either way:
-`(1..10).step(3).toList()`, `(0..10).reversed().step(3)` is 10, 7, 4, 1).
+`(1..10).step(3).toList()`, `(0..10).reversed().step(3)` is 10, 7, 4, 1). All of
+them, and looping over a range or a step, work in a `const fun` (D113).
 
 ### Numbers
 
@@ -897,6 +911,9 @@ d.isZero() / isNegative(): bool;  d.min(o) / d.max(o): Duration
 Duration.parse(s): Duration?          // reads back exactly what "$d" writes; 1h30m, 250ms, 1.5s, -2m30s
 ```
 
+Everything above but `Duration.zero` (a `static val`) is a `const fun`, so a
+constant may be a `Duration`: `const TIMEOUT = Duration.seconds(30)` (D113).
+
 ## Prelude type `Secret<T>` (D112)
 
 ```veles
@@ -1013,6 +1030,8 @@ hex.decode(text: string): List<u8> throws hex.Invalid   // either case, nothing 
 ```
 
 `hex.Invalid { message, position }` — `position` is the byte offset at fault.
+`encode` and `encodeUpper` are `const fun`s (D113); `decode` throws, which a
+`const fun` cannot yet.
 
 ## Module `base64`
 
@@ -1028,7 +1047,9 @@ base64.encodedLen(n: i64, pad: bool = true): i64
 
 Both decoders take padded or unpadded input and refuse everything else —
 the other alphabet, whitespace, an `=` in the middle, a non-canonical last
-character. `base64.Invalid { message, position }`.
+character. `base64.Invalid { message, position }`. The encoders and
+`encodedLen` are `const fun`s (D113); the decoders throw, which a `const fun`
+cannot yet.
 
 ## Module `utf8`
 
@@ -1057,7 +1078,8 @@ Strings are indexed in bytes (D18) and are valid UTF-8 by construction, so
 character. Bytes carry no such promise, and `decodeBytes` is strict about
 them in the sense Table 3-7 of the Unicode standard means: shortest form
 only, no surrogates, nothing above U+10FFFF. Encoding a value that is not a
-code point writes U+FFFD rather than failing. See `examples/utf8`.
+code point writes U+FFFD rather than failing. See `examples/utf8`. Every
+function here is a `const fun` (D113).
 
 ## Module `jwt`
 

@@ -1,6 +1,7 @@
 package sema
 
 import (
+	"fmt"
 	"math/big"
 	"sort"
 	"strconv"
@@ -27,6 +28,49 @@ type CPtr struct {
 }
 
 func (v *CPtr) Type() types.Type { return v.T }
+
+// CFunc is a function value while a constant is evaluated: a `const fun`
+// named as a value (`xs.map(double)`), or a lambda with the cells of what it
+// captured — shared, not copied, as a closure shares its captures (D35). Like
+// a pointer it is never part of a result (notConstType refuses function types).
+type CFunc struct {
+	T        types.Type
+	Fn       *Func
+	Lambda   bool
+	Captured []*cell // the cell of each capture, in the order of Fn.CapVars
+}
+
+func (v *CFunc) Type() types.Type { return v.T }
+
+// closure makes a lambda's function value: its captures are the cells of the
+// variables they name, as they are now.
+func (ev *constEval) closure(e *Closure) ConstVal {
+	cells := make([]*cell, len(e.Captures))
+	for i, v := range e.Captures {
+		c, ok := ev.env[v]
+		if !ok {
+			ev.errorf(source.Span{}, "'%s' is not a constant (D113)", v.Name)
+		}
+		cells[i] = c
+	}
+	return &CFunc{T: e.Type(), Fn: e.Fn, Lambda: true, Captured: cells}
+}
+
+// callIndirect calls a function value.
+func (ev *constEval) callIndirect(e *CallIndirect) ConstVal {
+	f, ok := ev.expr(e.Fn).(*CFunc)
+	if !ok {
+		ev.errorf(source.Span{}, "this function value is not one the compiler can call (D113)")
+	}
+	args := make([]ConstVal, len(e.Args))
+	for i, a := range e.Args {
+		args[i] = ev.val(a)
+	}
+	if !f.Lambda && !runsInCompiler(f.Fn) {
+		ev.errorf(source.Span{}, "a constant cannot call '%s': it is not a 'const fun'; mark it 'const fun' if the compiler can run it, or compute the value at run time with 'val' (D113)", f.Fn.Display)
+	}
+	return ev.invokeWith(f.Fn, args, source.Span{}, f)
+}
 
 // constBuiltins are the built-in operations the evaluator runs: collection
 // and string operations over values it holds. What is left out reaches the
@@ -86,6 +130,20 @@ func (c *Checker) validateConstFun(fn *Func) bool {
 	ok := true
 	bad := func(span source.Span, format string, args ...any) {
 		ok = false
+		if len(fn.subst) > 0 {
+			// an instance of a generic function: what it may do depends on
+			// its type arguments — `T.compareTo` of a user type, a lambda
+			// that throws — so it is not refused here, where `xs.max()` or
+			// `xs.count(x => try f(x))` at run time would be; a constant
+			// that runs it is told why (invoke)
+			if c.constFunWhy == nil {
+				c.constFunWhy = map[*Func]string{}
+			}
+			if _, seen := c.constFunWhy[fn]; !seen {
+				c.constFunWhy[fn] = fmt.Sprintf(format, args...)
+			}
+			return
+		}
 		if span.File == nil {
 			span = fn.Span
 		}
@@ -101,8 +159,9 @@ func (c *Checker) validateConstFun(fn *Func) bool {
 	if fn.tmpl != nil && fn.tmpl.Extern {
 		bad(fn.Span, "an extern function is foreign code, not a 'const fun'")
 	}
-	fnValue := false // a function value is reported once per function
-	walkBlock(fn.Body, func(n any) {
+	trait := false // a trait object is reported once per function
+	var visit func(n any)
+	visit = func(n any) {
 		switch n := n.(type) {
 		case *Call:
 			if n.Fn.Extern && constExterns[n.Fn.Name] {
@@ -111,10 +170,19 @@ func (c *Checker) validateConstFun(fn *Func) bool {
 			if !runsInCompiler(n.Fn) {
 				bad(n.Span, "it calls '%s', which is not a 'const fun'; mark that function 'const fun' too if the compiler can run it (D113)", n.Fn.Display)
 			}
-		case *CallIndirect, *CallVirtual, *Closure, *Box:
-			if !fnValue {
-				fnValue = true
-				bad(spanOf(n.(Expr)), "%s is not supported in a 'const fun' yet: a function value or a trait object cannot be run by the compiler (D113)", describeNode(n.(Expr)))
+		case *Closure:
+			// a lambda runs with the function it is written in: the same rules
+			if n.Fn.Body != nil {
+				walkBlock(n.Fn.Body, visit)
+			}
+		case *FuncRef:
+			if !runsInCompiler(n.Fn) && !(n.Fn.Extern && constExterns[n.Fn.Name]) {
+				bad(source.Span{}, "it uses '%s' as a value, which is not a 'const fun'; mark that function 'const fun' too if the compiler can run it (D113)", n.Fn.Display)
+			}
+		case *CallVirtual, *Box:
+			if !trait {
+				trait = true
+				bad(spanOf(n.(Expr)), "a trait object is not supported in a 'const fun' yet: the compiler cannot run a call through one (D113)")
 			}
 		case *Launch, *AwaitTask, *ScopeBlock, *Race:
 			bad(source.Span{}, "a task cannot run in the compiler: a 'const fun' does not suspend or use 'async' (D113)")
@@ -131,7 +199,8 @@ func (c *Checker) validateConstFun(fn *Func) bool {
 				bad(n.Span, "'%s' is not available to the compiler: a 'const fun' does no I/O, no tasks, no raw memory and no atomics (D113)", n.Op)
 			}
 		}
-	})
+	}
+	walkBlock(fn.Body, visit)
 	c.constFunOK[fn] = ok
 	return ok
 }
@@ -176,18 +245,42 @@ func (ev *constEval) call(e *Call) ConstVal {
 // invoke runs a `const fun` on argument values (a method's receiver first, as
 // a pointer).
 func (ev *constEval) invoke(fn *Func, args []ConstVal, at source.Span) ConstVal {
-	ev.c.ensureConstBody(fn)
+	return ev.invokeWith(fn, args, at, nil)
+}
+
+// invokeWith runs fn; a lambda (f set) starts with its captured cells and
+// was checked against the rules with the `const fun` it is written in.
+func (ev *constEval) invokeWith(fn *Func, args []ConstVal, at source.Span, f *CFunc) ConstVal {
+	lambda := f != nil && f.Lambda
+	if !lambda {
+		ev.c.ensureConstBody(fn)
+	}
 	if fn.Body == nil || ev.c.constChecking[fn] {
 		ev.errorf(at, "'%s' is called by a constant while its own body is still being checked; a constant it reads depends on it (D113)", fn.Display)
 	}
-	if !ev.c.validateConstFun(fn) {
+	if !lambda && !ev.c.validateConstFun(fn) {
+		if why, ok := ev.c.constFunWhy[fn]; ok {
+			ev.errorf(at, "'%s' cannot run in the compiler with these type arguments: %s", fn.Display, why)
+		}
 		panic(constFailed{}) // reported at its declaration
+	}
+	if fn.bodyErrors {
+		// what it would compute is unknown: its errors are reported in it,
+		// and the constant fails with them rather than with a cascade
+		panic(constFailed{})
 	}
 	if len(ev.stack) >= constMaxDepth {
 		ev.errorf(at, "'%s' recursed more than %d calls deep while the compiler ran it (D113)", fn.Display, constMaxDepth)
 	}
 	saved := ev.env
 	ev.env = map[*Var]*cell{}
+	if lambda {
+		for i, v := range fn.CapVars {
+			if i < len(f.Captured) {
+				ev.env[v] = f.Captured[i]
+			}
+		}
+	}
 	if fn.Receiver != nil && len(args) > 0 {
 		ev.bind(fn.Receiver, args[0])
 		args = args[1:]

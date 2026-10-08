@@ -255,15 +255,23 @@ func codegenFlags(release bool) []string {
 // an unoptimised runtime makes every channel operation and allocation
 // several times slower.
 func runtimeFlags(release, sanitize bool) []string {
-	if sanitize {
+	var flags []string
+	switch {
+	case sanitize:
 		// -O1 keeps the reports' stacks readable at a bearable speed
-		return append([]string{"-O1", "-g"}, sanitizeFlags...)
+		flags = append([]string{"-O1", "-g"}, sanitizeFlags...)
+	case release:
+		flags = []string{"-O2"}
+	default:
+		flags = []string{"-O2", "-g"}
 	}
-	if release {
-		return []string{"-O2"}
-	}
-	return []string{"-O2", "-g"}
+	return append(flags, runtimeTestFlags...)
 }
+
+// runtimeTestFlags are added to the runtime's flags by tests that build a
+// variant of it (the portable poll() reactor on Linux: -DVELES_POLL_FALLBACK).
+// The flags are part of the object cache's key.
+var runtimeTestFlags []string
 
 // sanitizeFlags instrument the C runtime and link the sanitizer runtimes
 // (`--sanitize`). Undefined behaviour stops the program like a memory

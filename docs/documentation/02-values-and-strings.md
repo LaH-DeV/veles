@@ -464,14 +464,21 @@ methods, other `const fun`s and the standard library's: the string functions
 (`trim`, `split`, `replace`, `indexOf`, `toUpper`, `padStart`…),
 `StringBuilder`, the integer operations (`abs`, `pow`, `rotateLeft`,
 `wrappingAdd`, `countOnes`…), `sqrt`, rounding, `min` and `max`, and an enum's
-`values()`, `parse` and `toString`. A `const fun` can be generic, and a method
-can be one (`const fun bumped(): Version`).
+`values()`, `parse` and `toString`. A `const fun` can be generic, a method
+can be one (`const fun bumped(): Version`), and it may take, make and call
+lambdas — `xs.map(x => x * 2)`, `words.sortedBy(w => w.len())`, a lambda that
+changes a `var` it captured — so long as each lambda keeps the same rules.
 
 It may not do input or output, suspend or start a task, use `unsafe`, read a
-module-level `val` or `var`, take or call a function value (a lambda), or
+module-level `val` or `var`, call through a trait object, or
 `throw`. Each is an error naming the rule, and the rules are checked where the
 function is declared — not where a constant uses it — so a change inside a
-`const fun` cannot quietly break a constant in another file.
+`const fun` cannot quietly break a constant in another file. The one rule a
+generic `const fun` cannot settle at its declaration is whether its type
+argument's own methods qualify: `xs.max()` calls `T`'s `compareTo`, which is a
+`const fun` for numbers and strings but may be an ordinary one for your type.
+Such a call works at run time as always; a constant that needs it is refused,
+at the constant, naming the method to mark.
 
 When it fails, the build fails at the constant that called it, with the message
 and the chain of calls: a `panic`, an overflow, an index out of range, a
@@ -487,5 +494,86 @@ time. The one family left out is `sin`, `cos`, `exp`, `log`, `pow` and the other
 functions of the C library: they differ between platforms in the last bit, and a
 constant must not depend on which library the program is linked with — compute
 those at run time.
+
+#### How it works
+
+The compiler checks a `const fun` like any other function, and then runs the
+checked function in an interpreter of its own — the same code, not a second
+language. That is why the results equal the program's, and why the rules are
+what they are: the interpreter holds values, not memory, so it cannot follow
+a raw pointer (`unsafe`), call C, read a file, wait for a task, or read a
+`val` that the program computes only when it starts.
+
+#### What it may call
+
+| A `const fun` may call | It may not call |
+|---|---|
+| other `const fun`s, generic or not, and `const fun` methods | an ordinary `fun` — mark it `const` if it qualifies |
+| a struct's constructor and its `init` block; lambdas, and `const fun`s passed as values | a call through a trait object (`val s: Shape = …; s.area()`) |
+| std's helpers that take a function: `map`, `filter`, `fold`, `forEach`, `any`, `all`, `find`, `count`, `flatMap`, `mapNotNull`, `partition`, `sortedBy`, `sortedWith`, `minBy`, `maxBy`, `distinctBy`, `binarySearch`…, `MutableList.make`; a `Map`'s `mapValues`, `filter`, `forEach`, `getOrPut` | a lambda that does any of the things on this side |
+| `MutableList`, `MutableMap`, `MutableSet`: `push`, `pop`, `set`, `get`, `at`, `remove`, `clear`, `addAll`, `slice`, `reserve`, `toList`… | anything that suspends: `sleep`, channels, `async`, `await` |
+| `string`: `len`, `substring`, `split`, `startsWith`, `contains`, `toInt`, `bytes`, and std's `const fun` string helpers (`trim`, `replace`, `indexOf`, `padStart`, `toUpper`, `repeat`, `lines`…) | `io`, `fs`, `os`, `net`, `time`, `random` |
+| `StringBuilder`, interpolation, `toString`, `compareTo` | `unsafe`, `extern` functions |
+| integer and float arithmetic, conversions (`toI64()`, `wrapU8()`…), `abs`, `min`, `max`, `sqrt`, rounding | `sin`, `cos`, `exp`, `log`, `pow` on floats |
+| an enum's `values()`, `parse`, `toString`; `panic` | `throw` (a failure in the compiler is a `panic`) |
+| `List` helpers that take no function: `take`, `drop`, `concat`, `distinct`, `chunked`, `windowed`, `enumerate`, `zip`, `min`, `max`, `sum`, `sortedDescending`, `toSet`; `MutableList`'s `insert`, `removeAt`, `swap`, `fill`, `sort`, `repeat` | a `Result` (`Ok`, `Err`) or another sealed variant as a value |
+| ranges: `len`, `contains`, `step`, `reversed`, and looping over them | the decoders that throw: `hex.decode`, `base64.decode` |
+| `Duration`: its constructors, operators, accessors, `toString` and `parse`; `hex.encode`, `base64.encode`, `base64.encodeUrl`; `std/utf8` | |
+
+If you call something on the right, the error names the rule at the function's
+declaration, so you find out when you write the `const fun`, not when someone
+uses it.
+
+#### When it fails
+
+A `panic` while a constant is computed stops the build. The error is at the
+constant, and lists the calls that led to the panic, innermost first:
+
+```veles
+// fragment
+const fun digit(c: string): i64 {
+  val n = "0123456789".indexOf(c)
+  if (n < 0) panic("'$c' is not a digit")
+  n
+}
+
+const fun parsePort(text: string): i64 {
+  var port: i64 = 0
+  loop (c in text.split("")) port = port * 10 + digit(c)
+  port
+}
+
+const PORT: i64 = parsePort("80a0")
+```
+
+```text
+app\main.vs:13:19: error: panic in a constant: 'a' is not a digit
+  at app\main.vs:3:14
+  in const fun 'digit', called at app\main.vs:9:49
+  in const fun 'parsePort', called at app\main.vs:13:19
+  const PORT: i64 = parsePort("80a0")
+                    ^^^^^^^^^^^^^^^^^
+```
+
+A loop that never ends is caught by the step budget instead:
+`error: evaluating the constant 'STUCK' took more than 10000000 steps; make it
+cheaper, or raise the budget with '--const-steps n'`.
+
+#### `const fun`, `const` or `val`?
+
+- A plain `const` when the value is a literal or a little arithmetic on other
+  constants: `const PAGE = KB * 4`.
+- A `const fun` when building the value needs a loop or a helper — a lookup
+  table, a parsed version string, a precomputed list. It costs build time (each
+  constant has its step budget) and binary size (the table is stored in the
+  executable), and nothing at start-up.
+- A module-level `val` when the value needs something only the running
+  program has (the environment, a file, the clock), or a function the compiler
+  cannot run. It is computed once, before `main`.
+
+The standard library marks its helpers `const fun` where they qualify, so a
+program can use them in constants; a function that is not marked cannot be
+called from one, even if its body would qualify, because the mark is the
+promise that it keeps qualifying.
 
 Next: [Functions and control flow](03-functions-and-control-flow.md).

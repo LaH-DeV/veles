@@ -134,6 +134,9 @@ func (p *Parser) parseTypeArgs() []ast.Type {
 // A lone name is parsed as a type name; the checker takes it for a constant
 // when no type has that name.
 func (p *Parser) parseTypeArg() ast.Type {
+	if p.unionArgAhead() {
+		return p.parseErrorType()
+	}
 	if !p.constArgAhead() {
 		return p.parseType()
 	}
@@ -143,6 +146,34 @@ func (p *Parser) parseTypeArg() ast.Type {
 	x := p.parseBinary(bpCmp) // stops at '>' and ','
 	p.inTypeArg = saved
 	return &ast.ConstType{X: x, Pos: p.spanFrom(start)}
+}
+
+// unionArgAhead reports a type argument that is names joined by '|' —
+// `Result<i64, IoError | io.TooLong>` — up to the end of the argument: an
+// error union (D45). It would otherwise read as a constant expression
+// (`N | M`, D121), so no program could spell the type the checker shows; a
+// constant parameter reads the union back as that expression
+// (sema/constgeneric.go).
+func (p *Parser) unionArgAhead() bool {
+	i, pipes := 0, 0
+	for {
+		if p.peek(i).Kind != lexer.Ident {
+			return false
+		}
+		i++
+		for p.peek(i).Kind == lexer.Dot && p.peek(i+1).Kind == lexer.Ident {
+			i += 2
+		}
+		switch p.peek(i).Kind {
+		case lexer.Pipe:
+			pipes++
+			i++
+		case lexer.Comma, lexer.Gt, lexer.Shr:
+			return pipes > 0
+		default:
+			return false
+		}
+	}
 }
 
 // constArgAhead reports whether the type argument starting here is a

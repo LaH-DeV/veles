@@ -42,7 +42,7 @@ compiler/clang/flag combination and cached under the user cache directory
 | `types/` | semantic types |
 | `sema/` | modules and manifests (M1–M6), name resolution, type checking, effect inference (D2/D4/D45), lowering to a typed HIR |
 | `codegen/llvm/` | textual LLVM IR emission (I1/I2); coroutines via `llvm.coro.*`; GC type descriptors; vtables |
-| `runtime/c/` | `veles_rt.c` (strings, lists, maps), `veles_gc.c` (collector), `veles_task.c` (executor), `veles_os.c` (files, bytes, processes, environment, clocks) |
+| `runtime/c/` | `veles_rt.c` (strings, lists, maps), `veles_gc.c` (collector), `veles_task.c` (executor), `veles_poll.c` (the socket reactor: epoll, AFD/IOCP, `poll()`), `veles_os.c` (files, bytes, processes, environment, clocks) |
 | `std/` | standard library in Veles, embedded in the compiler: `prelude` (D24: `Iterator`/`Iterable` and adapters, `extend` blocks for `string`, `List`, `Range`, the operator traits `Comparable`/`Equatable`/`Hashable`/`Display`, `Closeable`, `Mutex`/`Atomic`, `Panic`, `IoError`, `StringBuilder`), `io`, `os` (args, env, exit, run), `fs` (text and bytes), `path`, `time`, `random` |
 | `format/` | the formatter (`veles fmt`, and `textDocument/formatting` in the LSP): prettier-style — blocks always break, columns align, comments and the author's list/chain line breaks are kept |
 | `fetch/` | the package system's network side (D138, D139): resolves registry and git dependencies by minimal version selection, the module cache and `veles.sum`, vendoring, capabilities computed from source and the `[policy]` that refuses them, signed reviews, publishing; the only code that runs git or touches the network (the compiler core reads directories through `sema.ResolveRemote`) |
@@ -93,9 +93,10 @@ minimal version selection are not implemented.
 
 ## Known gaps and deviations
 
-- Timers and socket waits share one runtime lock (channels and the run
-  queues have locks of their own); sockets are polled with `poll`, not
-  epoll/kqueue/IOCP.
+- Timers (a heap), socket waits and races share one runtime lock; channels,
+  the run queues, `await` and a scope's join take none. Sockets wait in a
+  reactor: epoll on Linux, AFD poll requests on an I/O completion port on
+  Windows, `poll()` elsewhere — macOS gets kqueue with plan A7.
 - Panics unwind via `setjmp`/`longjmp` to the executor rather than D49's
   DWARF tables; the task's active `with` cleanups run on the way.
 - Exhaustiveness is a variant-set check; nested refutable sub-patterns are

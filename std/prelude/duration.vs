@@ -42,85 +42,85 @@ public struct Duration {
   /// `isZero` reports.
   public static val zero: Duration = Duration(ns: 0)
 
-  public static fun nanos(n: i64): Duration = Duration(ns: n)
-  public static fun micros(n: i64): Duration = Duration(ns: n * 1000)
-  public static fun millis(n: i64): Duration = Duration(ns: n * 1000000)
-  public static fun seconds(n: i64): Duration = Duration(ns: n * 1000000000)
-  public static fun minutes(n: i64): Duration = Duration(ns: n * 60000000000)
-  public static fun hours(n: i64): Duration = Duration(ns: n * 3600000000000)
-  public static fun days(n: i64): Duration = Duration(ns: n * 86400000000000)
+  public static const fun nanos(n: i64): Duration = Duration(ns: n)
+  public static const fun micros(n: i64): Duration = Duration(ns: n * 1000)
+  public static const fun millis(n: i64): Duration = Duration(ns: n * 1000000)
+  public static const fun seconds(n: i64): Duration = Duration(ns: n * 1000000000)
+  public static const fun minutes(n: i64): Duration = Duration(ns: n * 60000000000)
+  public static const fun hours(n: i64): Duration = Duration(ns: n * 3600000000000)
+  public static const fun days(n: i64): Duration = Duration(ns: n * 86400000000000)
 
   /// A fractional number of seconds — `Duration.ofSeconds(0.25)`. The
   /// product is rounded to the nearest nanosecond; `seconds` is the exact
   /// one, and what a literal count of seconds should use.
-  public static fun ofSeconds(v: f64): Duration {
+  public static const fun ofSeconds(v: f64): Duration {
     val scaled = v * 1000000000.0
     val rounded: f64 = if (scaled < 0.0) scaled - 0.5 else scaled + 0.5
     Duration(ns: rounded.toI64() ?: panic("Duration.ofSeconds: $v seconds do not fit in nanoseconds"))
   }
 
   /// The whole nanoseconds. Every other accessor is derived from this one.
-  public fun toNanos(): i64 = this.ns
+  public const fun toNanos(): i64 = this.ns
 
   /// Truncated toward zero, so `Duration.nanos(-1500).toMicros()` is -1.
-  public fun toMicros(): i64 = this.ns / 1000
-  public fun toMillis(): i64 = this.ns / 1000000
-  public fun toSeconds(): i64 = this.ns / 1000000000
-  public fun toMinutes(): i64 = this.ns / 60000000000
-  public fun toHours(): i64 = this.ns / 3600000000000
-  public fun toDays(): i64 = this.ns / 86400000000000
+  public const fun toMicros(): i64 = this.ns / 1000
+  public const fun toMillis(): i64 = this.ns / 1000000
+  public const fun toSeconds(): i64 = this.ns / 1000000000
+  public const fun toMinutes(): i64 = this.ns / 60000000000
+  public const fun toHours(): i64 = this.ns / 3600000000000
+  public const fun toDays(): i64 = this.ns / 86400000000000
 
   /// Seconds with the fraction kept — for a rate, a ratio or a report.
   /// `toSeconds()` is the truncating one.
-  public fun asSeconds(): f64 = (this.ns.toF64()) / 1000000000.0
+  public const fun asSeconds(): f64 = (this.ns.toF64()) / 1000000000.0
 
   /// Milliseconds with the fraction kept.
-  public fun asMillis(): f64 = (this.ns.toF64()) / 1000000.0
+  public const fun asMillis(): f64 = (this.ns.toF64()) / 1000000.0
 
   // The operators (D71): `a + b`, `a - b`, `d * 3`, `d / 2`, `-d`. Each
   // overflows as the i64 underneath does — a panic, never a wrap.
   implement Addable {
-    fun plus(other: Duration): Duration = Duration(ns: this.ns + other.ns)
+    const fun plus(other: Duration): Duration = Duration(ns: this.ns + other.ns)
   }
   implement Subtractable {
-    fun minus(other: Duration): Duration = Duration(ns: this.ns - other.ns)
+    const fun minus(other: Duration): Duration = Duration(ns: this.ns - other.ns)
   }
   implement Multipliable {
-    fun times(other: i64): Duration = Duration(ns: this.ns * other)
+    const fun times(other: i64): Duration = Duration(ns: this.ns * other)
   }
   implement Divisible {
     /// Truncated toward zero, as integer division is; `d / 0` panics for
     /// the same reason `1 / 0` does.
-    fun dividedBy(other: i64): Duration = Duration(ns: this.ns / other)
+    const fun dividedBy(other: i64): Duration = Duration(ns: this.ns / other)
   }
   implement Negatable {
-    fun negate(): Duration = Duration(ns: 0 - this.ns)
+    const fun negate(): Duration = Duration(ns: 0 - this.ns)
   }
 
   /// How many times `other` fits in this one, truncated. `Duration.zero`
   /// divides nothing and panics.
-  public fun over(other: Duration): i64 = this.ns / other.ns
+  public const fun over(other: Duration): i64 = this.ns / other.ns
 
   /// The length without its sign. The single most negative `Duration` has no
   /// positive counterpart, so it saturates at the largest one rather than
   /// overflowing — the same answer Go gives.
-  public fun abs(): Duration =
+  public const fun abs(): Duration =
     if (this.ns >= 0) this
     else if (this.ns + 1 == 0 - nanosMax) Duration(ns: nanosMax)
     else Duration(ns: 0 - this.ns)
 
-  public fun isZero(): bool = this.ns == 0
-  public fun isNegative(): bool = this.ns < 0
+  public const fun isZero(): bool = this.ns == 0
+  public const fun isNegative(): bool = this.ns < 0
 
   /// The shorter of the two — what a caller writes when a deadline and a
   /// configured limit both apply.
-  public fun min(other: Duration): Duration = if (this.ns <= other.ns) this else other
+  public const fun min(other: Duration): Duration = if (this.ns <= other.ns) this else other
 
   /// The longer of the two.
-  public fun max(other: Duration): Duration = if (this.ns >= other.ns) this else other
+  public const fun max(other: Duration): Duration = if (this.ns >= other.ns) this else other
 
   implement Comparable {
-    fun compareTo(other: Duration): Ordering = this.ns.compareTo(other.ns)
+    const fun compareTo(other: Duration): Ordering = this.ns.compareTo(other.ns)
   }
 
   implement Default {
@@ -137,7 +137,7 @@ public struct Duration {
     /// Every form this prints is one `Duration.parse` reads back to the same
     /// value: the fraction is never rounded, because nanoseconds divide each
     /// unit exactly.
-    fun toString(): string {
+    const fun toString(): string {
       if (this.ns == 0) return "0s"
       val sign = if (this.ns < 0) "-" else ""
       val n = this.abs().toNanos()
@@ -177,7 +177,7 @@ public struct Duration {
     /// of those, a fraction finer than a nanosecond, or a total that does
     /// not fit. A bare `0` is the one number allowed without a unit, because
     /// zero has no unit.
-    static fun parse(s: string): Duration? = parseDuration(s)
+    static const fun parse(s: string): Duration? = parseDuration(s)
   }
 
   /// On the wire in the format's `DurationStyle` — `"90.5s"` unless it
@@ -353,7 +353,7 @@ fun parseIsoText(s: string): Duration? {
 
 /// `whole.frac` with `digits` decimal places and trailing zeros removed; the
 /// point goes too when the fraction is zero.
-fun decimal(whole: i64, frac: i64, digits: i64): string {
+const fun decimal(whole: i64, frac: i64, digits: i64): string {
   if (frac == 0) return whole.toString()
   var f = frac.toString().padStart(digits, "0")
   loop (f.endsWith("0")) {
@@ -363,7 +363,7 @@ fun decimal(whole: i64, frac: i64, digits: i64): string {
 }
 
 /// Nanoseconds in one of the units `Duration.parse` accepts, or -1.
-fun unitNanos(u: string): i64 = when (u) {
+const fun unitNanos(u: string): i64 = when (u) {
   "ns" => 1
   "us" => 1000
   "µs" => 1000
@@ -375,10 +375,10 @@ fun unitNanos(u: string): i64 = when (u) {
   else => -1
 }
 
-fun isAsciiDigit(b: u8): bool = b >= '0' && b <= '9'
+const fun isAsciiDigit(b: u8): bool = b >= '0' && b <= '9'
 
 /// The body of `Duration.parse`; see its documentation for the grammar.
-fun parseDuration(s: string): Duration? {
+const fun parseDuration(s: string): Duration? {
   if (s.isEmpty()) return null
   var i: i64 = 0
   var neg = false
@@ -387,7 +387,7 @@ fun parseDuration(s: string): Duration? {
     i = 1
   }
   if (i >= s.len()) return null
-  if (s.substring(i, s.len()) == "0") return Duration.zero
+  if (s.substring(i, s.len()) == "0") return Duration(ns: 0)
   var total: i64 = 0
   var parts: i64 = 0
   loop (i < s.len()) {

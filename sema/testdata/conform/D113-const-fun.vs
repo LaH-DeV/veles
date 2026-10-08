@@ -17,9 +17,21 @@ const fun printsStuff(n: i64): i64 {
   io.println("hi") // error: it calls 'println', which is not a 'const fun'
   n
 }
-const fun usesLambda(n: i64): i64 { // error: a lambda is not supported in a 'const fun' yet
-  val f = (x: i64) => x + 1
+const fun usesLambda(n: i64): i64 {
+  val f = (x: i64) => plain(x) // error: it calls 'plain', which is not a 'const fun'
   f(n)
+}
+trait Named {
+  fun name(): string
+}
+struct Dog {
+  implement Named {
+    fun name(): string = "dog"
+  }
+}
+const fun usesTraitObject(): string { // error: a trait object is not supported in a 'const fun' yet
+  val n: Named = Dog()
+  n.name()
 }
 const fun throwsOne(n: i64): i64 throws { // error: a 'const fun' cannot throw yet
   n
@@ -93,8 +105,18 @@ const N: i64 = powNegative() // error: a negative exponent in a constant: 2.pow(
 const O: i64 = powHuge() // error: constant overflow: 2.pow(100) does not fit 'i64'
 const P: i64 = powBig() // error: constant overflow: 10.pow(30) is 1000000000000000000000000000000
 const R: string = showsPointer() // error: interpolating a '*i64' is not a constant expression
-const S: i64 = ((x: i64) => x + 1)(1) // error: a call is not a constant expression
-const Q: List<i64> = [1, 2].map(x => x + 1) // error: a constant cannot call 'map': it is not a 'const fun'
+const S: i64 = ((x: i64) => x + 1)(1)
+const S2: i64 = ((x: i64) => plain(x))(1) // error: a constant cannot call 'plain'
+const fun variantOk(): i64 {
+  val r: Result<i64, Panic> = Ok(4)
+  when (r) {
+    is Ok(v) => v
+    is Err   => 0
+  }
+}
+const V: i64 = variantOk() // error: a sealed variant is not a constant expression
+const Q: List<i64> = [1, 2].map(x => x + 1)
+const Q2: List<i64> = [1, 2].map(x => plain(x)) // error: a constant cannot call 'plain'
 
 fun main() {
   io.println("${OK}")

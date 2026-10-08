@@ -69,14 +69,14 @@ public struct Rune {
 
 /// True when `code` is a Unicode scalar value: 0 to U+10FFFF, and not half
 /// of a surrogate pair. These are exactly the values that can be encoded.
-public fun isScalar(code: i64): bool = code >= 0 && code <= maxCode && !isSurrogate(code)
+public const fun isScalar(code: i64): bool = code >= 0 && code <= maxCode && !isSurrogate(code)
 
 /// True in U+D800..U+DFFF — the halves UTF-16 uses to spell a code point
 /// above U+FFFF. They are not characters and never appear in UTF-8.
-public fun isSurrogate(code: i64): bool = code >= 0xD800 && code <= 0xDFFF
+public const fun isSurrogate(code: i64): bool = code >= 0xD800 && code <= 0xDFFF
 
 /// How many bytes `code` encodes to, or null when it is not a scalar value.
-public fun size(code: i64): i64? {
+public const fun size(code: i64): i64? {
   if (!isScalar(code)) return null
   if (code < 0x80) return 1
   if (code < 0x800) return 2
@@ -91,7 +91,7 @@ public fun size(code: i64): i64? {
 /// mostly borrowed UTF-16's escape — a pair of four-digit hex escapes, in
 /// JSON, JavaScript and Java alike — so a decoder for one of those needs
 /// this on the way in. `std/json` is the caller in this repository.
-public fun combineSurrogates(high: i64, low: i64): i64? {
+public const fun combineSurrogates(high: i64, low: i64): i64? {
   if (high < 0xD800 || high > 0xDBFF) return null
   if (low < 0xDC00 || low > 0xDFFF) return null
   0x10000 + ((high - 0xD800) << 10) + (low - 0xDC00)
@@ -102,19 +102,19 @@ public fun combineSurrogates(high: i64, low: i64): i64? {
 
 /// True for a byte in 0x80..0xBF: the second, third or fourth byte of a
 /// sequence, never the first.
-public fun isContinuation(b: u8): bool = (b & 0xC0) == 0x80
+public const fun isContinuation(b: u8): bool = (b & 0xC0) == 0x80
 
 /// True when `b` may begin a code point — that is, when it is not a
 /// continuation byte. Walking back to a character boundary is
 /// `loop (!utf8.isStart(s.byteAt(i))) i -= 1`.
-public fun isStart(b: u8): bool = !isContinuation(b)
+public const fun isStart(b: u8): bool = !isContinuation(b)
 
 // ---------------------------------------------------------------------------
 // decoding
 
 /// The code point at byte offset `at`, or null when `at` is outside the
 /// string or lands in the middle of a character.
-public fun decode(s: string, at: i64): Rune? {
+public const fun decode(s: string, at: i64): Rune? {
   val n = s.len()
   if (at < 0 || at >= n) return null
   val rest = n - at
@@ -130,7 +130,7 @@ public fun decode(s: string, at: i64): Rune? {
 /// The code point that ends just before byte offset `before` — the step
 /// backwards that `decode` is forwards — or null when there is none or the
 /// bytes there are not one.
-public fun decodeLast(s: string, before: i64): Rune? {
+public const fun decodeLast(s: string, before: i64): Rune? {
   val end = before.min(s.len())
   if (end <= 0) return null
   // a code point is at most four bytes, so its first byte is within three
@@ -151,7 +151,7 @@ public fun decodeLast(s: string, before: i64): Rune? {
 ///
 /// This is the one to reach for on bytes that came from outside — a file, a
 /// socket, an FFI buffer — since, unlike a `string`, they carry no promise.
-public fun decodeBytes(bytes: List<u8>, at: i64): Rune? {
+public const fun decodeBytes(bytes: List<u8>, at: i64): Rune? {
   val n = bytes.len()
   if (at < 0 || at >= n) return null
   step(
@@ -174,7 +174,7 @@ public fun decodeBytes(bytes: List<u8>, at: i64): Rune? {
 /// point would fit in two bytes), `ED` only by `80..9F` (above that is a
 /// surrogate), `F0` only by `90..BF`, and `F4` only by `80..8F` (above that
 /// is past U+10FFFF).
-fun step(b0: u8, b1: u8, b2: u8, b3: u8, rest: i64): Rune? {
+const fun step(b0: u8, b1: u8, b2: u8, b3: u8, rest: i64): Rune? {
   if (b0 < 0x80) return Rune(code: b0.toI64(), size: 1)
   // 0x80..0xC1 is a stray continuation byte or an overlong two-byte lead
   if (b0 < 0xC2 || b0 > 0xF4) return null
@@ -223,7 +223,7 @@ fun step(b0: u8, b1: u8, b2: u8, b3: u8, rest: i64): Rune? {
 /// stops dead on one bad code point is a denial of service, and one that
 /// emits invalid UTF-8 is worse than either. Check with `isScalar` where
 /// the difference matters.
-public fun encodeTo(out: MutableList<u8>, code: i64): i64 {
+public const fun encodeTo(out: MutableList<u8>, code: i64): i64 {
   val cp = if (isScalar(code)) code else replacement
   when {
     cp < 0x80    => {
@@ -253,7 +253,7 @@ public fun encodeTo(out: MutableList<u8>, code: i64): i64 {
 
 /// The UTF-8 bytes of `code`, as their own list. `encodeTo` is the one to
 /// use in a loop; this one is for a single character.
-public fun encode(code: i64): List<u8> {
+public const fun encode(code: i64): List<u8> {
   val out: MutableList<u8> = []
   encodeTo(out, code)
   out.toList()
@@ -261,7 +261,7 @@ public fun encode(code: i64): List<u8> {
 
 /// `code` as a one-character string — U+FFFD when it is not a scalar value,
 /// on the same reasoning as `encodeTo`.
-public fun char(code: i64): string =
+public const fun char(code: i64): string =
   encode(code).decodeUtf8() ?: panic("utf8.char: an encoded scalar value is valid UTF-8")
 
 // ---------------------------------------------------------------------------
@@ -269,7 +269,7 @@ public fun char(code: i64): string =
 
 /// True when every byte of `bytes` is part of a well-formed sequence — the
 /// same question `decodeUtf8` answers, without building the string.
-public fun isValid(bytes: List<u8>): bool {
+public const fun isValid(bytes: List<u8>): bool {
   var i: i64 = 0
   val n = bytes.len()
   loop (i < n) {
@@ -283,7 +283,7 @@ public fun isValid(bytes: List<u8>): bool {
 /// of a well-formed sequence as one — so the count matches the number of
 /// characters a decoder that substitutes U+FFFD would produce, and never
 /// depends on the buffer being valid.
-public fun count(bytes: List<u8>): i64 {
+public const fun count(bytes: List<u8>): i64 {
   var i: i64 = 0
   var n: i64 = 0
   loop (i < bytes.len()) {

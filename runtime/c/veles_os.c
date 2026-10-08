@@ -1279,10 +1279,19 @@ int64_t veles_time_now_us(void) {
 /* nanoseconds on a monotonic clock, for measuring */
 int64_t veles_time_monotonic_ns(void) {
 #if defined(_WIN32)
-    LARGE_INTEGER f, c;
-    QueryPerformanceFrequency(&f);
+    /* the executor reads this for every timer check: the frequency is
+     * fixed at boot, and whole seconds and the remainder are scaled apart,
+     * exactly, in integers */
+    static int64_t freq;
+    if (!freq) {
+        LARGE_INTEGER f;
+        QueryPerformanceFrequency(&f);
+        __atomic_store_n(&freq, (int64_t)f.QuadPart, __ATOMIC_RELAXED);
+    }
+    LARGE_INTEGER c;
     QueryPerformanceCounter(&c);
-    return (int64_t)((double)c.QuadPart * 1e9 / (double)f.QuadPart);
+    int64_t f = __atomic_load_n(&freq, __ATOMIC_RELAXED);
+    return c.QuadPart / f * 1000000000LL + c.QuadPart % f * 1000000000LL / f;
 #else
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);

@@ -100,6 +100,7 @@ type Func struct {
 	inferredErrors []types.Type
 	inferring      bool
 	checked        bool
+	bodyErrors     bool // checking the body reported an error: the evaluator does not run it
 	suspends       bool // directly contains a suspension point
 	raised         bool // an error reached recordError: something in the body can throw
 

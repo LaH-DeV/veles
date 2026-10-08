@@ -790,6 +790,31 @@ func (p *Parser) parseEffects() ast.Effects {
 	return eff
 }
 
+// commaInThrows catches `throws A, B` in a declaration, where nothing may
+// follow the effects but the body: error types are joined with '|' (D45).
+// Each comma gets a fix, and the types after it join the union, so the rest
+// of the declaration parses as written. (Before, the comma was "function
+// needs a body".) A function type is left alone: there a comma ends the
+// parameter.
+func (p *Parser) commaInThrows(eff *ast.Effects) {
+	if eff.Error == nil {
+		return
+	}
+	for p.at(lexer.Comma) && p.peek(1).Kind == lexer.Ident {
+		comma := p.next()
+		p.errorf(comma.Span, "error types are joined with '|', not ','")
+		p.diags.Items[len(p.diags.Items)-1].Fix = &source.Fix{Title: "Replace ',' with ' |'", Edits: []source.TextEdit{{Span: comma.Span, NewText: " |"}}}
+		u, ok := eff.Error.(*ast.ErrorUnionType)
+		if !ok {
+			u = &ast.ErrorUnionType{Members: []ast.Type{eff.Error}, Pos: eff.Error.Span()}
+			eff.Error = u
+		}
+		next := p.parseType()
+		u.Members = append(u.Members, next)
+		u.Pos = u.Pos.To(next.Span())
+	}
+}
+
 func (p *Parser) parseFun(attrs []*ast.Attribute, ctx funContext) *ast.FunDecl {
 	start := p.span()
 	fn := &ast.FunDecl{Attrs: attrs, Doc: p.takeDoc()}
@@ -862,6 +887,7 @@ done:
 		fn.Ret = p.parseType()
 	}
 	fn.Effects = p.parseEffects()
+	p.commaInThrows(&fn.Effects)
 
 	switch {
 	case p.at(lexer.LBrace):

@@ -200,6 +200,8 @@ func (f *fnCtx) reportUnused() {
 
 func (c *Checker) checkBody(fn *Func) {
 	source.SetWhere("checking", fn.Display, fn.Span)
+	errorsBefore := c.roundErrors()
+	defer func() { fn.bodyErrors = c.roundErrors() > errorsBefore }()
 	t := fn.tmpl
 	env := &typeEnv{module: t.Module, file: t.File, tps: map[string]*types.TypeParam{}}
 	for _, tp := range t.TypeParams {
