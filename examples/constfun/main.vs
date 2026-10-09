@@ -31,11 +31,7 @@ fun crc32(text: string): u32 {
 // a lookup table from a list of names: the position is the value
 const fun positions(names: List<string>): Map<string, i64> {
   val out: MutableMap<string, i64> = [:]
-  var i = 0
-  loop (name in names) {
-    out.set(name, i)
-    i += 1
-  }
+  loop ((i, name) in names.enumerate()) out.set(name, i)
   out.toMap()
 }
 
@@ -43,10 +39,7 @@ const MONTHS: Map<string, i64> = positions(["jan", "feb", "mar", "apr", "may", "
 
 // the primes below n, by the sieve of Eratosthenes
 const fun primesBelow(n: i64): List<i64> {
-  val composite: MutableList<bool> = []
-  loop (_ in 0..<n) {
-    composite.push(false)
-  }
+  val composite = MutableList<bool>.repeat(false, n)
   val primes: MutableList<i64> = []
   loop (i in 2..<n) {
     if (composite.at(i) ?: true) continue

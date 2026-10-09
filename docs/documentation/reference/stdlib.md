@@ -441,6 +441,8 @@ out.pushU32Be(x: u32); out.pushI16Le(x: i16)           // MutableList<u8>; the s
 | `insert(i, x)`, `removeAt(i): T`, `addAll(xs)`, `sort()` | `MutableList` only; `sort` is in place |
 | `swap(i, j)`, `sortWith(compare)` | `MutableList` only; in place |
 | `fill(x)` | `MutableList` only; overwrites every element, length unchanged |
+| `incrementAt(i)` | `MutableList<i64>` only; increments one element in place, panics out of range; negative indexes count from the end |
+| `updateAt(i, transform): T` | `MutableList<T>` only; transforms and replaces one element, returning the new value. The synchronous callback runs once and must not mutate the same list; panics out of range, negative indexes count from the end |
 | `MutableList<T>.repeat(x, count)`, `MutableList<T>.make(n, i => ...)` | statics (the `<T>` may be left out when the arguments or the expected type give it, D137): `count` copies of `x`, or `init(i)` called once per slot. `repeat` and `fill` need `T: Sendable` (D35): a mutable collection or pointer would be one value aliased by every slot, which is what `make` is for |
 
 A `MutableList<T>` has every `List<T>` method; a `val` binding is enough to
@@ -455,7 +457,7 @@ take a function (`map`, `filter`, `fold`, `forEach`, `any`, `all`, `find`,
 `count`, `indexOfFirst`, `flatMap`, `mapNotNull`, `partition`, `sortedBy`,
 `sortedByDescending`, `sortedWith`, `sortWith`, `minBy`, `maxBy`, `minWith`,
 `maxWith`, `distinctBy`, `partitionPoint`, `binarySearch`, `binarySearchBy`,
-`binarySearchWith`, `lowerBound`, `upperBound`, `make`) and a `Map`'s
+`binarySearchWith`, `lowerBound`, `upperBound`, `make`, `updateAt`) and a `Map`'s
 `mapValues`, `filter`, `forEach` and `getOrPut`, when the function given is
 one the compiler can run.
 

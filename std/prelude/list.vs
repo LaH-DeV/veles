@@ -345,6 +345,15 @@ extend<T: Comparable> List<T> {
   public const fun upperBound(x: T): i64 => this.partitionPoint(e => e <= x)
 }
 
+extend MutableList<i64> {
+  /// Increments the element at `i`; a negative index counts from the end.
+  @caller_location
+  public const fun incrementAt(i: i64) {
+    val value = this.at(i) ?: panic("incrementAt: index $i out of bounds for list of length ${this.len()}")
+    this.set(i, value + 1)
+  }
+}
+
 extend List<i64> {
   /// The sum of the elements (0 for an empty list).
   public const fun sum(): i64 {
@@ -382,6 +391,18 @@ extend<T: Sendable> MutableList<T> {
   /// Overwrites every element with `x`; the length does not change.
   public const fun fill(x: T) {
     loop (i in 0..<this.len()) this.set(i, x)
+  }
+}
+
+extend<T> MutableList<T> {
+  /// Replaces the element at `i` with `transform` of its current value,
+  /// returning the replacement. Do not change this list from `transform`.
+  @caller_location
+  public const fun updateAt(i: i64, transform: fun(T): T): T {
+    val value = this.at(i) ?: panic("updateAt: index $i out of bounds for list of length ${this.len()}")
+    val updated = transform(value)
+    this.set(i, updated)
+    updated
   }
 }
 

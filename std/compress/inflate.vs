@@ -50,7 +50,7 @@ fun buildTable(lengths: MutableList<i64>, from: i64, n: i64, table: MutableList<
   var maxLen = 0
   loop (i in 0..<n) {
     val len = lengths.at(from + i) ?: 0
-    counts.set(len, (counts.at(len) ?: 0) + 1)
+    counts.incrementAt(len)
     if (len > maxLen) maxLen = len
   }
   var left = 1

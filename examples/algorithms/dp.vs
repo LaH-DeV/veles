@@ -20,15 +20,13 @@ public fun lcsLength(a: string, b: string): i64 {
   val n = a.len()
   val m = b.len()
   val dp = grid(n + 1, m + 1, 0)
-  loop (i in 1..n) {
-    loop (j in 1..m) {
-      val v = if (a.byteAt(i - 1) == b.byteAt(j - 1)) {
-        cell(dp, i - 1, j - 1) + 1
-      } else {
-        cell(dp, i - 1, j).max(cell(dp, i, j - 1))
-      }
-      setCell(dp, i, j, v)
+  loop (i in 1..n) loop (j in 1..m) {
+    val v = if (a.byteAt(i - 1) == b.byteAt(j - 1)) {
+      cell(dp, i - 1, j - 1) + 1
+    } else {
+      cell(dp, i - 1, j).max(cell(dp, i, j - 1))
     }
+    setCell(dp, i, j, v)
   }
   cell(dp, n, m)
 }
@@ -70,14 +68,12 @@ public fun knapsack(weights: List<i64>, values: List<i64>, capacity: i64): i64 {
 public fun coinChange(coins: List<i64>, amount: i64): i64? {
   val fewest = MutableList<i64?>.repeat(null, amount + 1)
   fewest.set(0, 0)
-  loop (target in 1..amount) {
-    loop (coin in coins) {
-      if (coin > target) continue
-      val slot = fewest.at(target - coin) ?: panic("coinChange: 0 <= target - coin < target")
-      val rest = slot ?: continue
-      val known = fewest.at(target) ?: panic("coinChange: target <= amount")
-      if (known == null || rest + 1 < known) fewest.set(target, rest + 1)
-    }
+  loop (target in 1..amount) loop (coin in coins) {
+    if (coin > target) continue
+    val slot = fewest.at(target - coin) ?: panic("coinChange: 0 <= target - coin < target")
+    val rest = slot ?: continue
+    val known = fewest.at(target) ?: panic("coinChange: target <= amount")
+    if (known == null || rest + 1 < known) fewest.set(target, rest + 1)
   }
   fewest.at(amount) ?: panic("coinChange: the table has amount + 1 slots")
 }
@@ -85,14 +81,12 @@ public fun coinChange(coins: List<i64>, amount: i64): i64? {
 /// Longest strictly increasing subsequence, O(n²).
 public fun longestIncreasing(xs: List<i64>): i64 {
   val best = MutableList<i64>.repeat(1, xs.len())
-  loop (i in 1..<xs.len()) {
-    loop (j in 0..<i) {
-      val earlier = xs.at(j) ?: panic("longestIncreasing: j < i < len")
-      if (earlier < xs.at(i)) {
-        val here = best.at(i) ?: panic("longestIncreasing: best has one slot per element")
-        val before = best.at(j) ?: panic("longestIncreasing: best has one slot per element")
-        best.set(i, here.max(before + 1))
-      }
+  loop (i in 1..<xs.len()) loop (j in 0..<i) {
+    val earlier = xs.at(j) ?: panic("longestIncreasing: j < i < len")
+    if (earlier < xs.at(i)) {
+      val here = best.at(i) ?: panic("longestIncreasing: best has one slot per element")
+      val before = best.at(j) ?: panic("longestIncreasing: best has one slot per element")
+      best.set(i, here.max(before + 1))
     }
   }
   best.max() ?: 0

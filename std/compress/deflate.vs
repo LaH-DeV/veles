@@ -148,7 +148,7 @@ fun huffmanLengths(freqs: MutableList<i64>, n: i64, maxBits: i64): MutableList<i
   val counts: MutableList<i64> = MutableList.repeat(0, maxBits + 1)
   loop (i in 0..<m) {
     val d = (depth.at(i) ?: 1).min(maxBits)
-    counts.set(d, (counts.at(d) ?: 0) + 1)
+    counts.incrementAt(d)
   }
   // folding made the code over-full; lengthen shorter codes until it is not
   var kraft = 0
@@ -186,7 +186,7 @@ fun canonicalCodes(lens: MutableList<i64>, n: i64): MutableList<i64> {
   val counts: MutableList<i64> = MutableList.repeat(0, 17)
   loop (sym in 0..<n) {
     val len = lens.at(sym) ?: 0
-    counts.set(len, (counts.at(len) ?: 0) + 1)
+    counts.incrementAt(len)
   }
   counts.set(0, 0)
   val next: MutableList<i64> = MutableList.repeat(0, 17)
@@ -500,14 +500,14 @@ struct Deflater {
     var extraBits = 0
     loop (token in this.tokens) {
       if (token < 256) {
-        litFreq.set(token, (litFreq.at(token) ?: 0) + 1)
+        litFreq.incrementAt(token)
       } else {
         val len = token >> 16
         val dist = token & 65535
         val ls = lengthSymbols.at(len) ?: 257
         val ds = distSymbol(dist)
-        litFreq.set(ls, (litFreq.at(ls) ?: 0) + 1)
-        distFreq.set(ds, (distFreq.at(ds) ?: 0) + 1)
+        litFreq.incrementAt(ls)
+        distFreq.incrementAt(ds)
         extraBits += (LENGTH_EXTRA.at(ls - 257) ?: 0) + (DIST_EXTRA.at(ds) ?: 0)
       }
     }
@@ -590,7 +590,7 @@ struct Deflater {
     val clenFreq: MutableList<i64> = MutableList.repeat(0, 19)
     loop (c in coded) {
       val sym = c & 255
-      clenFreq.set(sym, (clenFreq.at(sym) ?: 0) + 1)
+      clenFreq.incrementAt(sym)
     }
     val clenLens = huffmanLengths(clenFreq, 19, 7)
     var hclen = 19

@@ -693,7 +693,7 @@ func (g *gen) call(e *sema.Call) string {
 			ats = append(ats, a.Type())
 			avs = append(avs, strings.TrimPrefix(args[i], g.vt(a.Type())+" "))
 		}
-		v := g.callSuspending(fn, ats, avs, g.resultTypeOf(fn.Sig), pushed)
+		v := g.callSuspending(fn, ats, avs, g.resultTypeOf(fn.Sig))
 		g.chainPop(pushed)
 		return v
 	}
@@ -2114,18 +2114,8 @@ func (g *gen) callIndirect(e *sema.CallIndirect) string {
 		args = append(args, g.vt(a.Type())+" "+vals[i])
 	}
 	if sema.IndirectSuspendsIn(e, g.view()) { // by its type, unless the instance knows it is plain (D116)
-		ct := g.newTmp()
-		g.emit("%s = call ptr @veles_task_new()", ct)
-		var ats []types.Type
-		var avs []string
-		ats = append(ats, &types.Pointer{Elem: types.TUnit, Raw: true}, &types.Pointer{Elem: types.TUnit, Raw: true})
-		avs = append(avs, code, env)
-		for i, a := range e.Args {
-			ats = append(ats, a.Type())
-			avs = append(avs, vals[i])
-		}
-		g.startIndirect(ct, ft, ats, avs)
-		return g.awaitTask(ct, g.resultTypeOf(ft))
+		// the function value's coroutine runs in this task (review F3)
+		return g.callFrame(code, args, g.resultTypeOf(ft))
 	}
 	return g.callRet(g.sigRet(ft), code, args)
 }
@@ -2145,8 +2135,8 @@ func (g *gen) thunkFor(fn *sema.Func) string {
 			args = append(args, "ptr %sret")
 		}
 		if fn.Suspends {
-			params = append(params, "ptr %task")
-			args = append(args, "ptr %task")
+			params = append(params, "ptr %task", "ptr %link")
+			args = append(args, "ptr %task", "ptr %link")
 		}
 		params = append(params, "ptr %env")
 		for i, p := range fn.Params {
@@ -2221,14 +2211,18 @@ func (g *gen) vtableThunk(vt string, idx int, fn *sema.Func, slotSuspends bool) 
 	name := fmt.Sprintf("%s.%d", vt, idx)
 	if slotSuspends {
 		// a slot declared 'suspends' is a coroutine whatever its impl is
-		// (D40): the closure convention, (task, self, args...) -> handle
+		// (D40): the closure convention, (task, link, self, args...) -> handle.
+		// The parameters are the method's own: a ramp made for a method
+		// that does not suspend has none listed (it once dropped them, and
+		// worked only while they stayed in their registers)
+		impl := fn
 		if !fn.Suspends {
 			fn = g.rampFor(fn)
 		}
 		g.pending = append(g.pending, func() {
-			params := []string{"ptr %task", "ptr %self"}
-			args := []string{"ptr %task", "ptr %self"}
-			for i, p := range fn.Params {
+			params := []string{"ptr %task", "ptr %link", "ptr %self"}
+			args := []string{"ptr %task", "ptr %link", "ptr %self"}
+			for i, p := range impl.Params {
 				llt := g.vt(p.Type)
 				params = append(params, fmt.Sprintf("%s %%p%d", llt, i))
 				args = append(args, fmt.Sprintf("%s %%p%d", llt, i))
@@ -2287,19 +2281,8 @@ func (g *gen) callVirtual(e *sema.CallVirtual) string {
 		args = append(args, g.vt(a.Type())+" "+vals[i])
 	}
 	if e.Sig.Effects.Suspends {
-		// run the slot's coroutine as a task and await it, as a call of a
-		// suspending function value does
-		ct := g.newTmp()
-		g.emit("%s = call ptr @veles_task_new()", ct)
-		ptr := &types.Pointer{Elem: types.TUnit, Raw: true}
-		ats := []types.Type{ptr, ptr}
-		avs := []string{fnp, data}
-		for i, a := range e.Args {
-			ats = append(ats, a.Type())
-			avs = append(avs, vals[i])
-		}
-		g.startIndirect(ct, e.Sig, ats, avs)
-		return g.awaitTask(ct, g.resultTypeOf(e.Sig))
+		// the slot's coroutine runs in this task, as any suspending call
+		return g.callFrame(fnp, args, g.resultTypeOf(e.Sig))
 	}
 	return g.callRet(g.sigRet(e.Sig), fnp, args)
 }

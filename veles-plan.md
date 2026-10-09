@@ -213,6 +213,64 @@ on course for it, a little at a time, alongside A–C.
 8. **Compiler speed and code quality**: per-module IR caching,
    devirtualisation, escape analysis, panic-freedom analysis (§3.2).
 
+## F — Concurrency: little memory and CPU, and control of OS threads
+
+From the concurrency review (`veles-concurrency-review.md`, 2026-10-09; user:
+"very little memory and cpu when programming asynchronously … precisely
+manage the native OS threads"). In order; each step green on Windows and
+WSL, measured with `veles-bench` before and after, and run under the
+thread stress (`VELES_THREADS=1/2/4/8`, `VELES_GC_THRESHOLD`, `--sanitize`
+on Linux).
+
+1. ~~**F1 B1**~~ **Done 2026-10-09.** O(1) channel waiter lists; spinlocks yield.
+2. ~~**F2**~~ **Done 2026-10-09, short of its target** (task 448 → 248 bytes, in the 256 class; a parked
+   task 657 → 400 bytes, not ≤ 250 — the rest is its frame and the argument block, which F3 and an
+   arena for `async` frames take further; `bench/idle` not added yet). **F2 the task object (B4).** Flags packed, panic data in a side object,
+   the debug call chain in debug builds only, one union for the wait kinds,
+   small results inline. Acceptance: `bench/idle` added (peak working set per
+   parked task) and ≤ 250 bytes per parked task (560–670 today); `spawn`,
+   `channels`, `pipes`, `httphello` no slower.
+3. ~~**F3**~~ **Done 2026-10-09** (4.4 ns per call that does not wait; `coro.elide` not needed).
+   **F3 suspending calls in one task (B2).** A suspending call creates the
+   callee's frame and resumes it inline; a callee that finishes without
+   suspending costs no task, no scheduler, no `setjmp`; one that suspends
+   suspends the chain, and the task resumes the innermost frame. Frames come
+   from a per-task arena; `coro.elide` where a frame cannot escape.
+   Cancellation still unwinds innermost first (D35 v0.29); panic traces and
+   the debug call chain (D81) unchanged. Acceptance: `bench/suscall` (the
+   review's probe) ≤ 5 ns per call that does not wait (70 ns today);
+   `httphello` measured; the codegen golden `tasks` updated.
+4. **F4 D145** back-edge cancellation and yielding, `yieldNow()`,
+   `checkCancelled()`. Acceptance: `withTimeout(200 ms)` around a plain
+   loop returns within ~210 ms; the review's ticker probe on one thread
+   ticks on time when the spinning task is a suspending function; no check
+   in a lock region or `close()` (tests); `sha256`/`sort`/`json` benches
+   within noise.
+5. **F5 D144 atomics.** The operations, `MemoryOrder`, the compile errors for
+   invalid orders, lock-free pointers; hover/completion entries; chapter 12
+   and the low-level chapter. Acceptance: a lock-free stack test under 8
+   threads; counter bench `add` vs `update`.
+6. **F6 D146 sync types** (`RwLock`, `Event`, `Lazy`, `Broadcast`/`Watch`), each
+   with `race` support where it suspends. Acceptance: std tests, stress
+   tests under threads, docs chapter 12 and reference/stdlib.
+7. **F7 D147 suspending `close()`**, then std: TLS `close_notify`, `Tx`
+   `ROLLBACK` at close, `otel.start` flush at close; the three §11
+   deviations removed. Acceptance: sema tests for the refusals (lock region,
+   trait object), the two-instance generic case, driver tests against the
+   real peers (Go TLS, PostgreSQL, the OTLP capture).
+8. **F8 D143 executors and threads** — the largest: the runtime's queues,
+   timers, reactor and GC stop per executor; `[runtime]` in the manifest;
+   `Executor`, `Executor.thread`, `scope(on:)`, `run`, `blocking`, `Thread`;
+   priority/affinity on Windows, Linux (macOS with A7). Acceptance: a task
+   on `Executor.thread` observes one OS thread id across 1 000 suspensions;
+   CPU work on a pool does not move `httphello`'s latency on the default
+   pool; `ThreadError` for a refused affinity; docs.
+9. **F9 the runtime lock (B5) and timers (B6).** Per-worker timer heaps,
+   nanosecond deadlines, a lock-free race claim, one parking slot per
+   worker; the Linux wake-up path (a launched child waits up to ~7 ms to start at 8
+   threads on WSL, ≤ 0.3 ms on Windows; the review's `startlat` probe). Acceptance:
+   `httphello` at 32 threads no slower than at 8; child start worst case ≤ 0.5 ms on Linux.
+
 ---
 
 ## Progress log
@@ -1541,3 +1599,13 @@ chapter 17 "Calling other servers", reference/stdlib. The example caught a bug t
 **Progress 2026-10-08 (docs: concurrency, exactly; user: "people using this language have to know every little and big detail about what veles is doing in any circumstances").** New `docs/documentation/reference/concurrency.md`: the model, `async` (no start-order guarantee, arguments fixed at launch, the receiver copied), `await` (awaiting in order still runs everything concurrently; twice and from a sibling), the table of what is and is not a suspension point, scope ends, failures (first failure wins, body abandoned at its next wait, the body's own error, panics, `gather` cancels nothing), cancellation (never-started tasks never start; a task that never waits runs to its end), `withTimeout` on code that never waits, `race` losers keep running, channels (FIFO both ways, close, send-on-closed panic), whole-program deadlock detection, locks, scheduling (per-thread queues, runnext, stealing, yields, the blocking monitor), output, program end and exit codes, costs (each suspending call is a task today), and a table of the mistakes caught and not caught. Every claim was probed against the compiler first; the 10 programs run in `go test ./docs` (stable on 1, 2 and 8 threads). Chapter 12's "`race` … cancels the rest" corrected (a losing task arm is not cancelled). Candidates for compile-time refusal recorded in checklist §11.
 
 **Decided 2026-10-08 (D142, visibility).** Unmarked is the package, `internal` the module, `public` other packages (exported at its module path, `public use` as a facade), `private` the type; construction across packages follows M5's private-field rule. Recorded in the spec (M5 and D89 struck through where superseded), checklist §10 and §11; Q22 (a facade may export unmarked items) and Q23 (a `public` signature naming an unexported type is an error) decided the same day into D142. To build as B17; nothing built yet.
+
+**Progress 2026-10-09 (concurrency review; F1 B1 fixed; D143–D147 decided).** The user asked for a review of all concurrency for "very little memory and cpu" and "precisely manage the native OS threads": `veles-concurrency-review.md` (measured on 32 cores; Go baseline alongside). **Bug fixed (F1):** parking on a channel was O(n²) — `push_waiter` walked to the tail and `remove_waiter` scanned, under a `spin_lock` that never yielded — so 100k parked receivers kept all 32 cores at 100 % (62.8 s of CPU in 2 s); now doubly linked waiter lists with a tail (O(1), a node knows the list it is on) and a spinlock that yields its time slice after 128 spins: 47 ms of CPU in 2 s. Pinned by `driver/TestManyWaitersOnOneChannel` (50k receivers + 50k racing ones that time out out of the middle of the list, then 50k sends; 1/8 threads): times out (20 s) at HEAD, 1.7 s after. `bench/spawn` unchanged. **Decided** (user, the recommended option each): D143 executors and threads, D144 atomics, D145 loop back-edges cancel and suspending loops yield, D146 `RwLock`/`Event`/`Lazy`/`Broadcast`/`Watch`, D147 a `close()` may suspend; track F orders the building. Not yet verified on WSL at the time of this entry (see below if added). Next: F2.
+
+**Progress 2026-10-09 (F2, the task object; a race crash).** `veles_task` 448 → 248 bytes (the GC's 256-byte class instead of 512): the panic record (message, location, trace) is a side object made when a task panics, the debug call chain and its parent link one made by a debug build's first call, the flags `int32_t` (the ones changed by compare-and-swap) or bytes. Peak memory per parked task 657 → 400 bytes (1M tasks: 626 → 381 MB). **Bug found and fixed:** a `race` held a fixed array of 16 arms and nothing limited the count — a 20-arm race segfaulted; a race is now allocated for its arms (`veles_race_new(task, n)`), which also makes the two-arm race of every `withTimeout` 1 704 → ~250 bytes (`TestRaceWithManyArms`, debug and release). Benchmarks against HEAD, three rounds each: `spawn` 54 → 47 ms, `pipes` 15–19 → 7–12 ms, `httphello` 1.10–1.24 → 0.99–1.11 s, `channels`/`parallel` within noise. **Found on Linux (not caused here):** `TestDocs/concurrency/6` fails at HEAD on WSL: the example threw 5 ms after `async child()` and expected the child's `with` to have opened; on Linux a just-launched child takes up to ~7 ms to start at 8 threads (mean 20–60 µs; Windows worst 0.3 ms). The example now waits for the child to say its resource is open (the doc explains why); the start latency is recorded under F9. Windows suite green; WSL suite green, and the channel and race tests clean under `-sanitize` there.
+**Progress 2026-10-09 (D148, indexed list increments).** Added `MutableList<i64>.incrementAt(i)` as a `const fun` that increments in place, returns unit, counts negative indexes from the end and panics at the caller on invalid indexes. Migrated counting sort and the eight exact `+1` frequency updates in DEFLATE/INFLATE; counting sort keeps its domain-specific error. Tests cover normal and negative indexes, invalid indexes, and compile-time/runtime parity. Windows verification: `go test ./std`, the targeted const-fun driver, algorithms example, collections docs, and Veles tests for `std/prelude` and `std/compress`.
+**Verification 2026-10-09 (D148).** `go build ./...`, `go vet ./...`, and the uncached serial Windows suite (`go test -count=1 -p 1 ./...`) passed; `internal/wsl-test.sh` passed on WSL. The first parallel Windows run hit an HTTP idle-connection flake and a sema prefix-test timeout under concurrent Windows/WSL load; the serial rerun passed.
+**Progress 2026-10-09 (D149, `MutableList.updateAt`).** Added the generic in-place transform `updateAt(i, transform): T`: synchronous/non-throwing callback called once, stores and returns its replacement, same bounds behavior as `at`/`set`, and a documented warning not to mutate the receiver from the callback. Kept `incrementAt` for the counter case. Regression tests cover a side-effect counter proving one call, `i64` and `string` elements, negative/out-of-range indexes, and const-vs-runtime behavior. Updated collection/reference/const-function docs.
+**Verification 2026-10-09 (D149).** Windows `go build ./...`, `go vet ./...`, and uncached serial `go test -count=1 -p 1 ./...` passed. WSL targeted const-fun, `std/prelude`, and `std/compress` tests passed. The full WSL script did not finish: the driver process hit its 10-minute timeout during `TestStdHttpUnitTests` in the HTTP limits group; this change's targeted WSL tests are green, but the full WSL suite remains unverified.
+
+**Progress 2026-10-09 (F3: a suspending call runs in its caller's task).** Before, every call of a suspending function was a task of its own — a task object, an argument block, a frame, a result cell and a `setjmp` — about 70 ns even when nothing waited. Now a call passes the callee a *link* in the caller's frame (the caller's handle, the callee's depth, a done flag, the result): a callee that finishes without waiting writes its result and returns, and the caller goes on; one that waits parks the task in its own frame (`veles_frame_park`) and, when it ends, hands the task back to its caller (`popped`; the executor's `resume` runs the caller next). A task's own frame has the root link and still finishes the task. Frames of calls come from a per-task bump arena (dropped when the task parks in its own frame, so an idle task carries none); the common paths of allocating, freeing and returning are inline IR (`veles.frame.*`, field offsets asserted in `veles_task.c`). Cancellation unwinds frame by frame, innermost first; a failed child abandoning a scope body inside calls marks the task's `abandon_depth`, and every deeper frame sees a cancellation, leaves its waits and unwinds back to the body (so the body's own `with` now closes after the calls' — before, it closed first). A panic unwinds the whole task. The task lost `awaiting` (the old callee-task chain) and kept 248 bytes (`result` shares storage with `entry_args`). **Measured** against HEAD, three rounds: `bench/suscall` (new: 10M three-deep calls that never wait) 2.45–2.61 s → 128–148 ms (~70 → ~4.4 ns a call); `httphello` 1.11–1.30 → 0.93–0.98 s; `spawn` 55–73 → 41–51 ms; `channels`, `pipes`, `parallel`, `json` unchanged or better. **Bug found and fixed on the way:** a method-table slot declared `suspends` over a method that does not suspend forwarded no arguments to its ramp (it took them from the ramp, which lists none) and worked only because they stayed in their registers; the extra link argument broke it (`std/fs`'s stream test ran out of memory). Pinned by `TestSuspendingCallsInOneTask` (abandonment three calls deep, timeout three calls deep, values, big values and errors across suspensions, 20 000-deep recursion, a panic two calls deep; debug and release, 1/2/8 threads, GC pressure), golden IR updated; docs reference/concurrency "What it costs", chapter 13; spec D35 addendum. Windows and WSL suites green, examples at 1/2/8 threads on WSL, sanitizer clean on the concurrency tests. Next: F4 (D145).

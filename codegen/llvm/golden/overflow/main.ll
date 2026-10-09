@@ -521,7 +521,7 @@ entry:
   ret i64 %t5
 }
 
-define ptr @v_main.attempt(ptr %task, %str %p1, { ptr, ptr } %p2) presplitcoroutine {
+define ptr @v_main.attempt(ptr %task, ptr %link, %str %p1, { ptr, ptr } %p2) presplitcoroutine {
 entry:
   %a1 = alloca %str
   %a2 = alloca { ptr, ptr }
@@ -546,9 +546,11 @@ entry:
   store { ptr, ptr } %p2, ptr %a2
   %coro.id = call token @llvm.coro.id(i32 8, ptr null, ptr null, ptr null)
   %coro.size = call i64 @llvm.coro.size.i64()
-  %coro.mem = call ptr @veles_alloc_words(i64 %coro.size)
+  %coro.mem = call ptr @veles.frame.alloc(ptr %task, ptr %link, i64 %coro.size)
   %coro.hdl = call ptr @llvm.coro.begin(token %coro.id, ptr %coro.mem)
-  %t3 = call ptr @veles_scope_begin(ptr %task, i64 0)
+  %coro.depthp = getelementptr inbounds { ptr, i64, i64 }, ptr %link, i32 0, i32 1
+  %coro.depth = load i64, ptr %coro.depthp
+  %t3 = call ptr @veles_scope_begin(ptr %task, i64 0, i64 %coro.depth)
   store ptr %t3, ptr %a4
   call void @veles_cleanup_push(ptr %a5, ptr @scope.cancel.thunk, ptr %a4)
   %t6 = load ptr, ptr %a4
@@ -566,10 +568,11 @@ scope.wait.1:
   %t14 = icmp ne i64 %t13, 0
   br i1 %t14, label %scope.done.2, label %scope.susp.3
 scope.susp.3:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t15 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t15, label %coro.suspend [ i8 0, label %resume.4 i8 1, label %coro.cleanup ]
 resume.4:
-  %t16 = call i64 @veles_task_cancelled(ptr %task)
+  %t16 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
   %t17 = icmp ne i64 %t16, 0
   br i1 %t17, label %cancelled.5, label %cont.6
 cancelled.5:
@@ -582,12 +585,13 @@ abandon.wait.7:
   %t20 = icmp ne i64 %t19, 0
   br i1 %t20, label %abandon.done.8, label %abandon.susp.9
 abandon.susp.9:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t21 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t21, label %coro.suspend [ i8 0, label %resume.10 i8 1, label %coro.cleanup ]
 resume.10:
   br label %abandon.wait.7
 abandon.done.8:
-  call void @veles_task_finish_cancelled(ptr %task)
+  call void @veles_frame_unwound(ptr %task, ptr %link)
   br label %coro.final
 cont.6:
   br label %scope.wait.1
@@ -705,7 +709,7 @@ when.arm.19:
   call void @veles_panic_at(ptr %t95, i64 %t96, ptr %t97, i64 %t98)
   unreachable
 when.end.14:
-  call void @veles_task_finish(ptr %task, ptr null, i64 0, i64 0)
+  call void @veles_frame_return(ptr %task, ptr %link, ptr null, i64 0, i64 0, ptr null)
   br label %coro.final
 coro.final:
   %coro.fs = call i8 @llvm.coro.suspend(token none, i1 true)
@@ -720,8 +724,15 @@ coro.suspend:
   ret ptr %coro.hdl
 }
 
-define ptr @v_main.main(ptr %task) presplitcoroutine {
+define ptr @v_main.main(ptr %task, ptr %link) presplitcoroutine {
 entry:
+  %a5 = alloca { ptr, i64, i64 }
+  %a20 = alloca { ptr, i64, i64 }
+  %a35 = alloca { ptr, i64, i64 }
+  %a50 = alloca { ptr, i64, i64 }
+  %a65 = alloca { ptr, i64, i64 }
+  %a80 = alloca { ptr, i64, i64 }
+  %a95 = alloca { ptr, i64, i64 }
   %a110 = alloca [21 x i8]
   %a114 = alloca %str
   %a126 = alloca [21 x i8]
@@ -732,280 +743,240 @@ entry:
   %a154 = alloca %str
   %coro.id = call token @llvm.coro.id(i32 8, ptr null, ptr null, ptr null)
   %coro.size = call i64 @llvm.coro.size.i64()
-  %coro.mem = call ptr @veles_alloc_words(i64 %coro.size)
+  %coro.mem = call ptr @veles.frame.alloc(ptr %task, ptr %link, i64 %coro.size)
   %coro.hdl = call ptr @llvm.coro.begin(token %coro.id, ptr %coro.mem)
+  %coro.depthp = getelementptr inbounds { ptr, i64, i64 }, ptr %link, i32 0, i32 1
+  %coro.depth = load i64, ptr %coro.depthp
   %t1 = insertvalue { ptr, ptr } undef, ptr @v_main.main.lambda1, 0
   %t2 = insertvalue { ptr, ptr } %t1, ptr null, 1
   %t3 = extractvalue %str { ptr @.str.43, i64 20 }, 0
   %t4 = extractvalue %str { ptr @.str.43, i64 20 }, 1
   call void @veles_call_push(ptr %t3)
-  %t5 = call ptr @veles_task_new()
-  call void @veles_call_link(ptr %t5)
-  %t6 = call ptr @veles_alloc_words(i64 40)
-  %t7 = getelementptr inbounds { %str, { ptr, ptr } }, ptr %t6, i32 0, i32 0
-  store %str { ptr @.str.44, i64 12 }, ptr %t7
-  %t8 = getelementptr inbounds { %str, { ptr, ptr } }, ptr %t6, i32 0, i32 1
-  store { ptr, ptr } %t2, ptr %t8
-  call void @veles_task_start(ptr %t5, ptr @entry.v_main.attempt, ptr %t6)
-  br label %await.1
-await.1:
-  %t9 = call i64 @veles_task_await(ptr %task, ptr %t5)
-  %t10 = icmp ne i64 %t9, 0
-  br i1 %t10, label %await.got.2, label %await.susp.3
-await.susp.3:
-  %t11 = call i8 @llvm.coro.suspend(token none, i1 false)
-  switch i8 %t11, label %coro.suspend [ i8 0, label %resume.4 i8 1, label %coro.cleanup ]
+  %t6 = getelementptr inbounds { ptr, i64, i64 }, ptr %a5, i32 0, i32 0
+  store ptr %coro.hdl, ptr %t6
+  %t7 = add i64 %coro.depth, 1
+  %t8 = getelementptr inbounds { ptr, i64, i64 }, ptr %a5, i32 0, i32 1
+  store i64 %t7, ptr %t8
+  %t9 = getelementptr inbounds { ptr, i64, i64 }, ptr %a5, i32 0, i32 2
+  store i64 0, ptr %t9
+  %t10 = call ptr @v_main.attempt(ptr %task, ptr %a5, %str { ptr @.str.44, i64 12 }, { ptr, ptr } %t2)
+  br label %call.check.1
+call.check.1:
+  %t11 = load i64, ptr %t9
+  %t12 = icmp ne i64 %t11, 0
+  br i1 %t12, label %call.done.2, label %call.wait.3
+call.wait.3:
+  %t13 = call i8 @llvm.coro.suspend(token none, i1 false)
+  switch i8 %t13, label %coro.suspend [ i8 0, label %resume.4 i8 1, label %coro.cleanup ]
 resume.4:
-  %t12 = call i64 @veles_task_cancelled(ptr %task)
-  %t13 = icmp ne i64 %t12, 0
-  br i1 %t13, label %cancelled.5, label %cont.6
+  %t14 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
+  %t15 = icmp ne i64 %t14, 0
+  br i1 %t15, label %cancelled.5, label %cont.6
 cancelled.5:
-  call void @veles_task_finish_cancelled(ptr %task)
+  call void @veles_frame_unwound(ptr %task, ptr %link)
   br label %coro.final
 cont.6:
-  br label %await.1
-await.got.2:
-  %t14 = call i64 @veles_task_panicked(ptr %t5)
-  %t15 = icmp ne i64 %t14, 0
-  br i1 %t15, label %await.repanic.7, label %await.fine.8
-await.repanic.7:
-  call void @veles_task_repanic(ptr %t5)
-  unreachable
-await.fine.8:
+  br label %call.check.1
+call.done.2:
+  call void @veles.frame.free(ptr %task, ptr %t10)
   call void @veles_call_pop()
   %t16 = insertvalue { ptr, ptr } undef, ptr @v_main.main.lambda2, 0
   %t17 = insertvalue { ptr, ptr } %t16, ptr null, 1
   %t18 = extractvalue %str { ptr @.str.45, i64 20 }, 0
   %t19 = extractvalue %str { ptr @.str.45, i64 20 }, 1
   call void @veles_call_push(ptr %t18)
-  %t20 = call ptr @veles_task_new()
-  call void @veles_call_link(ptr %t20)
-  %t21 = call ptr @veles_alloc_words(i64 40)
-  %t22 = getelementptr inbounds { %str, { ptr, ptr } }, ptr %t21, i32 0, i32 0
-  store %str { ptr @.str.46, i64 10 }, ptr %t22
-  %t23 = getelementptr inbounds { %str, { ptr, ptr } }, ptr %t21, i32 0, i32 1
-  store { ptr, ptr } %t17, ptr %t23
-  call void @veles_task_start(ptr %t20, ptr @entry.v_main.attempt, ptr %t21)
-  br label %await.9
-await.9:
-  %t24 = call i64 @veles_task_await(ptr %task, ptr %t20)
-  %t25 = icmp ne i64 %t24, 0
-  br i1 %t25, label %await.got.10, label %await.susp.11
-await.susp.11:
-  %t26 = call i8 @llvm.coro.suspend(token none, i1 false)
-  switch i8 %t26, label %coro.suspend [ i8 0, label %resume.12 i8 1, label %coro.cleanup ]
-resume.12:
-  %t27 = call i64 @veles_task_cancelled(ptr %task)
-  %t28 = icmp ne i64 %t27, 0
-  br i1 %t28, label %cancelled.13, label %cont.14
-cancelled.13:
-  call void @veles_task_finish_cancelled(ptr %task)
-  br label %coro.final
-cont.14:
-  br label %await.9
-await.got.10:
-  %t29 = call i64 @veles_task_panicked(ptr %t20)
+  %t21 = getelementptr inbounds { ptr, i64, i64 }, ptr %a20, i32 0, i32 0
+  store ptr %coro.hdl, ptr %t21
+  %t22 = add i64 %coro.depth, 1
+  %t23 = getelementptr inbounds { ptr, i64, i64 }, ptr %a20, i32 0, i32 1
+  store i64 %t22, ptr %t23
+  %t24 = getelementptr inbounds { ptr, i64, i64 }, ptr %a20, i32 0, i32 2
+  store i64 0, ptr %t24
+  %t25 = call ptr @v_main.attempt(ptr %task, ptr %a20, %str { ptr @.str.46, i64 10 }, { ptr, ptr } %t17)
+  br label %call.check.7
+call.check.7:
+  %t26 = load i64, ptr %t24
+  %t27 = icmp ne i64 %t26, 0
+  br i1 %t27, label %call.done.8, label %call.wait.9
+call.wait.9:
+  %t28 = call i8 @llvm.coro.suspend(token none, i1 false)
+  switch i8 %t28, label %coro.suspend [ i8 0, label %resume.10 i8 1, label %coro.cleanup ]
+resume.10:
+  %t29 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
   %t30 = icmp ne i64 %t29, 0
-  br i1 %t30, label %await.repanic.15, label %await.fine.16
-await.repanic.15:
-  call void @veles_task_repanic(ptr %t20)
-  unreachable
-await.fine.16:
+  br i1 %t30, label %cancelled.11, label %cont.12
+cancelled.11:
+  call void @veles_frame_unwound(ptr %task, ptr %link)
+  br label %coro.final
+cont.12:
+  br label %call.check.7
+call.done.8:
+  call void @veles.frame.free(ptr %task, ptr %t25)
   call void @veles_call_pop()
   %t31 = insertvalue { ptr, ptr } undef, ptr @v_main.main.lambda3, 0
   %t32 = insertvalue { ptr, ptr } %t31, ptr null, 1
   %t33 = extractvalue %str { ptr @.str.47, i64 20 }, 0
   %t34 = extractvalue %str { ptr @.str.47, i64 20 }, 1
   call void @veles_call_push(ptr %t33)
-  %t35 = call ptr @veles_task_new()
-  call void @veles_call_link(ptr %t35)
-  %t36 = call ptr @veles_alloc_words(i64 40)
-  %t37 = getelementptr inbounds { %str, { ptr, ptr } }, ptr %t36, i32 0, i32 0
-  store %str { ptr @.str.48, i64 8 }, ptr %t37
-  %t38 = getelementptr inbounds { %str, { ptr, ptr } }, ptr %t36, i32 0, i32 1
-  store { ptr, ptr } %t32, ptr %t38
-  call void @veles_task_start(ptr %t35, ptr @entry.v_main.attempt, ptr %t36)
-  br label %await.17
-await.17:
-  %t39 = call i64 @veles_task_await(ptr %task, ptr %t35)
-  %t40 = icmp ne i64 %t39, 0
-  br i1 %t40, label %await.got.18, label %await.susp.19
-await.susp.19:
-  %t41 = call i8 @llvm.coro.suspend(token none, i1 false)
-  switch i8 %t41, label %coro.suspend [ i8 0, label %resume.20 i8 1, label %coro.cleanup ]
-resume.20:
-  %t42 = call i64 @veles_task_cancelled(ptr %task)
-  %t43 = icmp ne i64 %t42, 0
-  br i1 %t43, label %cancelled.21, label %cont.22
-cancelled.21:
-  call void @veles_task_finish_cancelled(ptr %task)
-  br label %coro.final
-cont.22:
-  br label %await.17
-await.got.18:
-  %t44 = call i64 @veles_task_panicked(ptr %t35)
+  %t36 = getelementptr inbounds { ptr, i64, i64 }, ptr %a35, i32 0, i32 0
+  store ptr %coro.hdl, ptr %t36
+  %t37 = add i64 %coro.depth, 1
+  %t38 = getelementptr inbounds { ptr, i64, i64 }, ptr %a35, i32 0, i32 1
+  store i64 %t37, ptr %t38
+  %t39 = getelementptr inbounds { ptr, i64, i64 }, ptr %a35, i32 0, i32 2
+  store i64 0, ptr %t39
+  %t40 = call ptr @v_main.attempt(ptr %task, ptr %a35, %str { ptr @.str.48, i64 8 }, { ptr, ptr } %t32)
+  br label %call.check.13
+call.check.13:
+  %t41 = load i64, ptr %t39
+  %t42 = icmp ne i64 %t41, 0
+  br i1 %t42, label %call.done.14, label %call.wait.15
+call.wait.15:
+  %t43 = call i8 @llvm.coro.suspend(token none, i1 false)
+  switch i8 %t43, label %coro.suspend [ i8 0, label %resume.16 i8 1, label %coro.cleanup ]
+resume.16:
+  %t44 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
   %t45 = icmp ne i64 %t44, 0
-  br i1 %t45, label %await.repanic.23, label %await.fine.24
-await.repanic.23:
-  call void @veles_task_repanic(ptr %t35)
-  unreachable
-await.fine.24:
+  br i1 %t45, label %cancelled.17, label %cont.18
+cancelled.17:
+  call void @veles_frame_unwound(ptr %task, ptr %link)
+  br label %coro.final
+cont.18:
+  br label %call.check.13
+call.done.14:
+  call void @veles.frame.free(ptr %task, ptr %t40)
   call void @veles_call_pop()
   %t46 = insertvalue { ptr, ptr } undef, ptr @v_main.main.lambda4, 0
   %t47 = insertvalue { ptr, ptr } %t46, ptr null, 1
   %t48 = extractvalue %str { ptr @.str.49, i64 20 }, 0
   %t49 = extractvalue %str { ptr @.str.49, i64 20 }, 1
   call void @veles_call_push(ptr %t48)
-  %t50 = call ptr @veles_task_new()
-  call void @veles_call_link(ptr %t50)
-  %t51 = call ptr @veles_alloc_words(i64 40)
-  %t52 = getelementptr inbounds { %str, { ptr, ptr } }, ptr %t51, i32 0, i32 0
-  store %str { ptr @.str.50, i64 10 }, ptr %t52
-  %t53 = getelementptr inbounds { %str, { ptr, ptr } }, ptr %t51, i32 0, i32 1
-  store { ptr, ptr } %t47, ptr %t53
-  call void @veles_task_start(ptr %t50, ptr @entry.v_main.attempt, ptr %t51)
-  br label %await.25
-await.25:
-  %t54 = call i64 @veles_task_await(ptr %task, ptr %t50)
-  %t55 = icmp ne i64 %t54, 0
-  br i1 %t55, label %await.got.26, label %await.susp.27
-await.susp.27:
-  %t56 = call i8 @llvm.coro.suspend(token none, i1 false)
-  switch i8 %t56, label %coro.suspend [ i8 0, label %resume.28 i8 1, label %coro.cleanup ]
-resume.28:
-  %t57 = call i64 @veles_task_cancelled(ptr %task)
-  %t58 = icmp ne i64 %t57, 0
-  br i1 %t58, label %cancelled.29, label %cont.30
-cancelled.29:
-  call void @veles_task_finish_cancelled(ptr %task)
-  br label %coro.final
-cont.30:
-  br label %await.25
-await.got.26:
-  %t59 = call i64 @veles_task_panicked(ptr %t50)
+  %t51 = getelementptr inbounds { ptr, i64, i64 }, ptr %a50, i32 0, i32 0
+  store ptr %coro.hdl, ptr %t51
+  %t52 = add i64 %coro.depth, 1
+  %t53 = getelementptr inbounds { ptr, i64, i64 }, ptr %a50, i32 0, i32 1
+  store i64 %t52, ptr %t53
+  %t54 = getelementptr inbounds { ptr, i64, i64 }, ptr %a50, i32 0, i32 2
+  store i64 0, ptr %t54
+  %t55 = call ptr @v_main.attempt(ptr %task, ptr %a50, %str { ptr @.str.50, i64 10 }, { ptr, ptr } %t47)
+  br label %call.check.19
+call.check.19:
+  %t56 = load i64, ptr %t54
+  %t57 = icmp ne i64 %t56, 0
+  br i1 %t57, label %call.done.20, label %call.wait.21
+call.wait.21:
+  %t58 = call i8 @llvm.coro.suspend(token none, i1 false)
+  switch i8 %t58, label %coro.suspend [ i8 0, label %resume.22 i8 1, label %coro.cleanup ]
+resume.22:
+  %t59 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
   %t60 = icmp ne i64 %t59, 0
-  br i1 %t60, label %await.repanic.31, label %await.fine.32
-await.repanic.31:
-  call void @veles_task_repanic(ptr %t50)
-  unreachable
-await.fine.32:
+  br i1 %t60, label %cancelled.23, label %cont.24
+cancelled.23:
+  call void @veles_frame_unwound(ptr %task, ptr %link)
+  br label %coro.final
+cont.24:
+  br label %call.check.19
+call.done.20:
+  call void @veles.frame.free(ptr %task, ptr %t55)
   call void @veles_call_pop()
   %t61 = insertvalue { ptr, ptr } undef, ptr @v_main.main.lambda5, 0
   %t62 = insertvalue { ptr, ptr } %t61, ptr null, 1
   %t63 = extractvalue %str { ptr @.str.51, i64 20 }, 0
   %t64 = extractvalue %str { ptr @.str.51, i64 20 }, 1
   call void @veles_call_push(ptr %t63)
-  %t65 = call ptr @veles_task_new()
-  call void @veles_call_link(ptr %t65)
-  %t66 = call ptr @veles_alloc_words(i64 40)
-  %t67 = getelementptr inbounds { %str, { ptr, ptr } }, ptr %t66, i32 0, i32 0
-  store %str { ptr @.str.52, i64 8 }, ptr %t67
-  %t68 = getelementptr inbounds { %str, { ptr, ptr } }, ptr %t66, i32 0, i32 1
-  store { ptr, ptr } %t62, ptr %t68
-  call void @veles_task_start(ptr %t65, ptr @entry.v_main.attempt, ptr %t66)
-  br label %await.33
-await.33:
-  %t69 = call i64 @veles_task_await(ptr %task, ptr %t65)
-  %t70 = icmp ne i64 %t69, 0
-  br i1 %t70, label %await.got.34, label %await.susp.35
-await.susp.35:
-  %t71 = call i8 @llvm.coro.suspend(token none, i1 false)
-  switch i8 %t71, label %coro.suspend [ i8 0, label %resume.36 i8 1, label %coro.cleanup ]
-resume.36:
-  %t72 = call i64 @veles_task_cancelled(ptr %task)
-  %t73 = icmp ne i64 %t72, 0
-  br i1 %t73, label %cancelled.37, label %cont.38
-cancelled.37:
-  call void @veles_task_finish_cancelled(ptr %task)
-  br label %coro.final
-cont.38:
-  br label %await.33
-await.got.34:
-  %t74 = call i64 @veles_task_panicked(ptr %t65)
+  %t66 = getelementptr inbounds { ptr, i64, i64 }, ptr %a65, i32 0, i32 0
+  store ptr %coro.hdl, ptr %t66
+  %t67 = add i64 %coro.depth, 1
+  %t68 = getelementptr inbounds { ptr, i64, i64 }, ptr %a65, i32 0, i32 1
+  store i64 %t67, ptr %t68
+  %t69 = getelementptr inbounds { ptr, i64, i64 }, ptr %a65, i32 0, i32 2
+  store i64 0, ptr %t69
+  %t70 = call ptr @v_main.attempt(ptr %task, ptr %a65, %str { ptr @.str.52, i64 8 }, { ptr, ptr } %t62)
+  br label %call.check.25
+call.check.25:
+  %t71 = load i64, ptr %t69
+  %t72 = icmp ne i64 %t71, 0
+  br i1 %t72, label %call.done.26, label %call.wait.27
+call.wait.27:
+  %t73 = call i8 @llvm.coro.suspend(token none, i1 false)
+  switch i8 %t73, label %coro.suspend [ i8 0, label %resume.28 i8 1, label %coro.cleanup ]
+resume.28:
+  %t74 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
   %t75 = icmp ne i64 %t74, 0
-  br i1 %t75, label %await.repanic.39, label %await.fine.40
-await.repanic.39:
-  call void @veles_task_repanic(ptr %t65)
-  unreachable
-await.fine.40:
+  br i1 %t75, label %cancelled.29, label %cont.30
+cancelled.29:
+  call void @veles_frame_unwound(ptr %task, ptr %link)
+  br label %coro.final
+cont.30:
+  br label %call.check.25
+call.done.26:
+  call void @veles.frame.free(ptr %task, ptr %t70)
   call void @veles_call_pop()
   %t76 = insertvalue { ptr, ptr } undef, ptr @v_main.main.lambda6, 0
   %t77 = insertvalue { ptr, ptr } %t76, ptr null, 1
   %t78 = extractvalue %str { ptr @.str.53, i64 20 }, 0
   %t79 = extractvalue %str { ptr @.str.53, i64 20 }, 1
   call void @veles_call_push(ptr %t78)
-  %t80 = call ptr @veles_task_new()
-  call void @veles_call_link(ptr %t80)
-  %t81 = call ptr @veles_alloc_words(i64 40)
-  %t82 = getelementptr inbounds { %str, { ptr, ptr } }, ptr %t81, i32 0, i32 0
-  store %str { ptr @.str.54, i64 15 }, ptr %t82
-  %t83 = getelementptr inbounds { %str, { ptr, ptr } }, ptr %t81, i32 0, i32 1
-  store { ptr, ptr } %t77, ptr %t83
-  call void @veles_task_start(ptr %t80, ptr @entry.v_main.attempt, ptr %t81)
-  br label %await.41
-await.41:
-  %t84 = call i64 @veles_task_await(ptr %task, ptr %t80)
-  %t85 = icmp ne i64 %t84, 0
-  br i1 %t85, label %await.got.42, label %await.susp.43
-await.susp.43:
-  %t86 = call i8 @llvm.coro.suspend(token none, i1 false)
-  switch i8 %t86, label %coro.suspend [ i8 0, label %resume.44 i8 1, label %coro.cleanup ]
-resume.44:
-  %t87 = call i64 @veles_task_cancelled(ptr %task)
-  %t88 = icmp ne i64 %t87, 0
-  br i1 %t88, label %cancelled.45, label %cont.46
-cancelled.45:
-  call void @veles_task_finish_cancelled(ptr %task)
-  br label %coro.final
-cont.46:
-  br label %await.41
-await.got.42:
-  %t89 = call i64 @veles_task_panicked(ptr %t80)
+  %t81 = getelementptr inbounds { ptr, i64, i64 }, ptr %a80, i32 0, i32 0
+  store ptr %coro.hdl, ptr %t81
+  %t82 = add i64 %coro.depth, 1
+  %t83 = getelementptr inbounds { ptr, i64, i64 }, ptr %a80, i32 0, i32 1
+  store i64 %t82, ptr %t83
+  %t84 = getelementptr inbounds { ptr, i64, i64 }, ptr %a80, i32 0, i32 2
+  store i64 0, ptr %t84
+  %t85 = call ptr @v_main.attempt(ptr %task, ptr %a80, %str { ptr @.str.54, i64 15 }, { ptr, ptr } %t77)
+  br label %call.check.31
+call.check.31:
+  %t86 = load i64, ptr %t84
+  %t87 = icmp ne i64 %t86, 0
+  br i1 %t87, label %call.done.32, label %call.wait.33
+call.wait.33:
+  %t88 = call i8 @llvm.coro.suspend(token none, i1 false)
+  switch i8 %t88, label %coro.suspend [ i8 0, label %resume.34 i8 1, label %coro.cleanup ]
+resume.34:
+  %t89 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
   %t90 = icmp ne i64 %t89, 0
-  br i1 %t90, label %await.repanic.47, label %await.fine.48
-await.repanic.47:
-  call void @veles_task_repanic(ptr %t80)
-  unreachable
-await.fine.48:
+  br i1 %t90, label %cancelled.35, label %cont.36
+cancelled.35:
+  call void @veles_frame_unwound(ptr %task, ptr %link)
+  br label %coro.final
+cont.36:
+  br label %call.check.31
+call.done.32:
+  call void @veles.frame.free(ptr %task, ptr %t85)
   call void @veles_call_pop()
   %t91 = insertvalue { ptr, ptr } undef, ptr @v_main.main.lambda7, 0
   %t92 = insertvalue { ptr, ptr } %t91, ptr null, 1
   %t93 = extractvalue %str { ptr @.str.55, i64 20 }, 0
   %t94 = extractvalue %str { ptr @.str.55, i64 20 }, 1
   call void @veles_call_push(ptr %t93)
-  %t95 = call ptr @veles_task_new()
-  call void @veles_call_link(ptr %t95)
-  %t96 = call ptr @veles_alloc_words(i64 40)
-  %t97 = getelementptr inbounds { %str, { ptr, ptr } }, ptr %t96, i32 0, i32 0
-  store %str { ptr @.str.56, i64 18 }, ptr %t97
-  %t98 = getelementptr inbounds { %str, { ptr, ptr } }, ptr %t96, i32 0, i32 1
-  store { ptr, ptr } %t92, ptr %t98
-  call void @veles_task_start(ptr %t95, ptr @entry.v_main.attempt, ptr %t96)
-  br label %await.49
-await.49:
-  %t99 = call i64 @veles_task_await(ptr %task, ptr %t95)
-  %t100 = icmp ne i64 %t99, 0
-  br i1 %t100, label %await.got.50, label %await.susp.51
-await.susp.51:
-  %t101 = call i8 @llvm.coro.suspend(token none, i1 false)
-  switch i8 %t101, label %coro.suspend [ i8 0, label %resume.52 i8 1, label %coro.cleanup ]
-resume.52:
-  %t102 = call i64 @veles_task_cancelled(ptr %task)
-  %t103 = icmp ne i64 %t102, 0
-  br i1 %t103, label %cancelled.53, label %cont.54
-cancelled.53:
-  call void @veles_task_finish_cancelled(ptr %task)
-  br label %coro.final
-cont.54:
-  br label %await.49
-await.got.50:
-  %t104 = call i64 @veles_task_panicked(ptr %t95)
+  %t96 = getelementptr inbounds { ptr, i64, i64 }, ptr %a95, i32 0, i32 0
+  store ptr %coro.hdl, ptr %t96
+  %t97 = add i64 %coro.depth, 1
+  %t98 = getelementptr inbounds { ptr, i64, i64 }, ptr %a95, i32 0, i32 1
+  store i64 %t97, ptr %t98
+  %t99 = getelementptr inbounds { ptr, i64, i64 }, ptr %a95, i32 0, i32 2
+  store i64 0, ptr %t99
+  %t100 = call ptr @v_main.attempt(ptr %task, ptr %a95, %str { ptr @.str.56, i64 18 }, { ptr, ptr } %t92)
+  br label %call.check.37
+call.check.37:
+  %t101 = load i64, ptr %t99
+  %t102 = icmp ne i64 %t101, 0
+  br i1 %t102, label %call.done.38, label %call.wait.39
+call.wait.39:
+  %t103 = call i8 @llvm.coro.suspend(token none, i1 false)
+  switch i8 %t103, label %coro.suspend [ i8 0, label %resume.40 i8 1, label %coro.cleanup ]
+resume.40:
+  %t104 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
   %t105 = icmp ne i64 %t104, 0
-  br i1 %t105, label %await.repanic.55, label %await.fine.56
-await.repanic.55:
-  call void @veles_task_repanic(ptr %t95)
-  unreachable
-await.fine.56:
+  br i1 %t105, label %cancelled.41, label %cont.42
+cancelled.41:
+  call void @veles_frame_unwound(ptr %task, ptr %link)
+  br label %coro.final
+cont.42:
+  br label %call.check.37
+call.done.38:
+  call void @veles.frame.free(ptr %task, ptr %t100)
   call void @veles_call_pop()
   %t106 = extractvalue %str { ptr @.str.57, i64 21 }, 0
   %t107 = extractvalue %str { ptr @.str.57, i64 21 }, 1
@@ -1084,7 +1055,7 @@ await.fine.56:
   call void @veles_call_push(ptr %t162)
   call void @v_main.edges(i8 -128, i8 127, i8 255)
   call void @veles_call_pop()
-  call void @veles_task_finish(ptr %task, ptr null, i64 0, i64 0)
+  call void @veles_frame_return(ptr %task, ptr %link, ptr null, i64 0, i64 0, ptr null)
   br label %coro.final
 coro.final:
   %coro.fs = call i8 @llvm.coro.suspend(token none, i1 true)
@@ -1224,16 +1195,27 @@ entry:
   ret i64 %t5
 }
 
-define internal ptr @ramp.v_main.call(ptr %task, { ptr, ptr } %p0) presplitcoroutine {
+define internal ptr @ramp.v_main.call(ptr %task, ptr %link, { ptr, ptr } %p0) presplitcoroutine {
 entry:
   %a2 = alloca i64
   %coro.id = call token @llvm.coro.id(i32 8, ptr null, ptr null, ptr null)
   %coro.size = call i64 @llvm.coro.size.i64()
-  %coro.mem = call ptr @veles_alloc_words(i64 %coro.size)
+  %coro.mem = call ptr @veles.frame.alloc(ptr %task, ptr %link, i64 %coro.size)
   %coro.hdl = call ptr @llvm.coro.begin(token %coro.id, ptr %coro.mem)
+  %coro.depthp = getelementptr inbounds { ptr, i64, i64 }, ptr %link, i32 0, i32 1
+  %coro.depth = load i64, ptr %coro.depthp
   %t1 = call i64 @v_main.call({ ptr, ptr } %p0)
   store i64 %t1, ptr %a2
-  call void @veles_task_finish(ptr %task, ptr %a2, i64 8, i64 0)
+  %t3 = load ptr, ptr %link
+  %t4 = icmp eq ptr %t3, null
+  br i1 %t4, label %ret.task.1, label %ret.call.2
+ret.task.1:
+  call void @veles_frame_return(ptr %task, ptr %link, ptr %a2, i64 8, i64 0, ptr null)
+  br label %coro.final
+ret.call.2:
+  %t5 = getelementptr inbounds { ptr, i64, i64, i64 }, ptr %link, i32 0, i32 3
+  store i64 %t1, ptr %t5
+  call void @veles.frame.back(ptr %task, ptr %link)
   br label %coro.final
 coro.final:
   %coro.fs = call i8 @llvm.coro.suspend(token none, i1 true)
@@ -1255,31 +1237,17 @@ entry:
   %t3 = extractvalue %str { ptr @.str.79, i64 5 }, 0
   %t4 = extractvalue %str { ptr @.str.79, i64 5 }, 1
   call void @veles_call_base(ptr %task, ptr %t3)
-  %t5 = call ptr @ramp.v_main.call(ptr %task, { ptr, ptr } %t2)
+  %t5 = call ptr @ramp.v_main.call(ptr %task, ptr @veles.root.link, { ptr, ptr } %t2)
   call void @veles_task_started(ptr %task, ptr %t5)
-  ret void
-}
-
-define internal void @entry.v_main.attempt(ptr %task, ptr %args) {
-entry:
-  %t1 = getelementptr inbounds { %str, { ptr, ptr } }, ptr %args, i32 0, i32 0
-  %t2 = load %str, ptr %t1
-  %t3 = getelementptr inbounds { %str, { ptr, ptr } }, ptr %args, i32 0, i32 1
-  %t4 = load { ptr, ptr }, ptr %t3
-  %t5 = extractvalue %str { ptr @.str.80, i64 8 }, 0
-  %t6 = extractvalue %str { ptr @.str.80, i64 8 }, 1
-  call void @veles_call_base(ptr %task, ptr %t5)
-  %t7 = call ptr @v_main.attempt(ptr %task, %str %t2, { ptr, ptr } %t4)
-  call void @veles_task_started(ptr %task, ptr %t7)
   ret void
 }
 
 define internal void @entry.v_main.main(ptr %task, ptr %args) {
 entry:
-  %t1 = extractvalue %str { ptr @.str.81, i64 5 }, 0
-  %t2 = extractvalue %str { ptr @.str.81, i64 5 }, 1
+  %t1 = extractvalue %str { ptr @.str.80, i64 5 }, 0
+  %t2 = extractvalue %str { ptr @.str.80, i64 5 }, 1
   call void @veles_call_base(ptr %task, ptr %t1)
-  %t3 = call ptr @v_main.main(ptr %task)
+  %t3 = call ptr @v_main.main(ptr %task, ptr @veles.root.link)
   call void @veles_task_started(ptr %task, ptr %t3)
   ret void
 }
@@ -1363,5 +1331,4 @@ entry:
 @.str.77 = private unnamed_addr constant [23 x i8] c"main.vs:57:37\00absolute\00"
 @.str.78 = private unnamed_addr constant [19 x i8] c"main.vs:58:39\00bump\00"
 @.str.79 = private unnamed_addr constant [6 x i8] c"\00call\00"
-@.str.80 = private unnamed_addr constant [9 x i8] c"\00attempt\00"
-@.str.81 = private unnamed_addr constant [6 x i8] c"\00main\00"
+@.str.80 = private unnamed_addr constant [6 x i8] c"\00main\00"

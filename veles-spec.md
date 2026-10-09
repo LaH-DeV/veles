@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.74** — decisions D1–D142. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.77** — decisions D1–D149. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -591,6 +591,8 @@ Tasks may run on multiple cores. Data-race freedom is a **compile-time guarantee
 **Shared mutable state is `Mutex<T>`, not actors — for now.** Two of the three classic lock hazards are already dead here: forgetting to lock doesn't compile under isolation, and **the compiler statically rejects `await` inside a lock scope**, because stackless coroutines make every suspension point known at compile time. That last one is the nastiest coroutine-plus-lock bug — suspend holding a lock, the releasing task can't run, the executor deadlocks — and Go and Rust cannot cleanly prevent it.
 
 Actors are deferred rather than rejected. Unlike `Sendable`, an actor is a new *kind* of type, so adding one later breaks nothing. The trigger to revisit: repeatedly wrapping the same struct in a mutex where every method is lock-work-unlock is an actor asking to exist. Note that under D2 actors would be more ergonomic in Veles than in Swift, where every cross-actor call needs a visible `await`. The cost is a third type kind plus a re-entrancy policy — Swift's actors are re-entrant across suspension points, so state can change mid-method, which is a documented and regularly-cursed footgun.
+
+*Addendum (2026-10-09, concurrency review F3) — a suspending call is no longer a task; no change of meaning.* The v0.29 bullet describes the bootstrap's first implementation, where each call of a suspending function ran as a task of its own. Now the callee's frame runs in the caller's task: a call that finishes without waiting is a call (about 4 ns more than a plain one, `bench/suscall`; it was ~70 ns, with a task, a frame, an argument block and a result cell each time), and a call that waits parks the task in its own frame and hands the task back to its caller when it ends. Frames of calls come from a per-task arena, freed as calls return. Cancellation still unwinds innermost first; a failed child abandoning a scope body that is inside calls unwinds those calls first (each frame deeper than the body's sees a cancellation), so the body's own `with` closes after them — before, it closed first, while the call it was inside was still being cancelled. A panic anywhere in the chain unwinds the whole task, as D20 said.
 
 ### D36 — `scope` and `gather` are separate constructs
 
@@ -5190,6 +5192,285 @@ type's level (keeps `public` meaning the package, and a field added to a
 public type is exposed unless marked); a `data struct` modifier (a second
 kind of struct for a visibility rule); a C++-style `public { }` block;
 leaving M5 as it was.
+
+### D143 — Executors and threads: placing work on native OS threads (v0.75)
+
+```veles
+// veles.toml:  [runtime] threads = "auto"        # or a number; VELES_THREADS overrides
+with cpu = Executor(threads: 4, name: "cpu")     // a pool of its own: stopped and joined at the end of the block
+with gl = Executor.thread(name: "gl")            // exactly one OS thread
+scope(on: cpu) {
+  loop (f in files) async compress(f)            // every child runs on cpu's threads
+}
+val tex = gl.run(() => glUpload(img))            // runs on gl's thread; the caller suspends until it returns
+val data = blocking(() => legacyC.readAll(path)) // a known-blocking call on the bounded blocking pool
+with audio = Thread.start(name: "audio", priority: Priority.High, cpus: [3]) {
+  audioLoop()                                    // plain code on a thread of its own; joined when the block ends
+}
+```
+
+The concurrency review (2026-10-09, `veles-concurrency-review.md`) found
+that the only control over threads was `VELES_THREADS`: a task resumes on
+any worker after any wait, so a library that must be called from one thread
+(a GL context, COM, a GUI's main thread), work that must not take the cores
+a server's latency depends on, and a high-priority pinned thread could not
+be written. The user asked for "the possibility to precisely manage the
+native OS threads".
+
+- **The default pool** is sized by `[runtime] threads` in the program's
+  `veles.toml` (`"auto"` = one per core, the default), and `VELES_THREADS`
+  still overrides it. A dependency's `[runtime]` is ignored: the program
+  decides.
+- **`Executor(threads: n, name: s)`** is a pool of worker threads of its own,
+  scheduled as D66 describes. `Executor.thread(name: s)` is one OS thread
+  running an event loop. Both are `Closeable` and `Sendable`; closing one
+  waits for the tasks placed on it (they are children of scopes, which have
+  already joined them by then — the close only stops the threads).
+- **Placement is by scope.** `scope(on: e) { … }` and `gather(on: e) { … }`
+  start every child launched in the body on `e`, and **a task stays on its
+  executor across every suspension**. With no `on:` a child runs on the
+  executor of the task that launched it (the default pool for `main`).
+  Every rule of `scope`/`gather` (D34, D36, D141) holds unchanged.
+- **`e.run(f)`** runs `f: sendable fun(): R suspends throws E` as a task on
+  `e` and suspends the caller until it returns (`R throws E`); it is the
+  one-call form of `scope(on: e) { async f() }`.
+- **`blocking(f)`** runs `f: sendable fun(): R throws E` on a thread of the
+  blocking pool (bounded; a call over the bound waits for a thread) and
+  suspends the caller. The automatic hand-off of a thread blocked in a call
+  (D66 addendum) stays; `blocking` is for a call known to block, which then
+  skips the detection. `f` does not suspend.
+- **`Thread.start(name:, priority:, cpus:, stackSize:) { body }`** starts an
+  OS thread running `body` (plain code: it does not suspend, but may create
+  and run an executor of its own). It is used as the value of a `with` and
+  joined when the block ends; a panic in the body is re-raised there.
+  `Priority` is `Low`, `Normal`, `High`, `Realtime`; `cpus` is the set of
+  logical CPUs it may run on.
+- **Refused, never ignored.** A priority or affinity the OS refuses (no
+  privilege, an unknown CPU, a platform without the call) throws
+  `ThreadError` from `Executor(...)`, `Executor.thread` or `Thread.start`.
+- Values crossing to another executor follow `Sendable` (D35, D54) exactly
+  as between workers of one pool.
+
+*Left open by the user's choice of this option:* whether tasks on an
+`Executor.thread` may share non-Sendable state without locks (Swift's
+`@MainActor`), decided after this is built.
+
+Both levels: the high level is unchanged (no `on:`, the default pool);
+the low level gets pools, single threads, priority and affinity.
+Self-hosting: the compiler's passes can run on a pool sized for CPU work
+while its file reads use `blocking`.
+
+User, 2026-10-09, recommended of 4. Rejected: a minimal set
+(`[runtime] threads`, `blocking`, `Executor.thread` only — no isolation of
+CPU work, no priority or affinity); raw threads only (Rust's `std::thread`;
+no placement of tasks); leaving `VELES_THREADS` as the only control.
+
+### D144 — Atomics: read-modify-write operations and memory orders (v0.75)
+
+```veles
+val hits = Atomic(value: 0)
+hits.add(1)                                       // one instruction; returns the new value
+if (state.compareAndSet(Phase.Idle, Phase.Running)) { … }
+val seen = head.compareExchange(expected, next)   // the value it found (== expected when it stored)
+val before = flags.fetchOr(DIRTY)                 // fetchAnd / fetchOr / fetchXor return the old value
+val n = count.load(order: MemoryOrder.Acquire)    // default: MemoryOrder.SeqCst
+```
+
+`Atomic<T>` had `load`, `store`, `swap` and `update(f)`, all sequentially
+consistent; a counter was a compare-and-swap loop through a lambda, and
+nothing lock-free could be built (no compare-and-set).
+
+- **On every `Atomic<T>`:** `compareAndSet(expected, new): bool` and
+  `compareExchange(expected, new): T` (comparison by `==` for the lock-word
+  types, by bits for a float as `update` already does).
+- **On integer `Atomic`s:** `add(n)` and `sub(n)` return the new value
+  (Go's `Add`); `fetchAnd`, `fetchOr`, `fetchXor` return the old one (they
+  are used to test the bits a call changed). Overflow wraps, as an atomic
+  add does on every machine (D21's `+%`), in every build.
+- **Memory orders.** Every operation takes an optional `order:
+  MemoryOrder` — `Relaxed`, `Acquire`, `Release`, `AcqRel`, `SeqCst`
+  (the default). An order invalid for the operation (`Release` or `AcqRel`
+  on a load, `Acquire` or `AcqRel` on a store) is a compile error naming the
+  valid ones. `compareAndSet`/`compareExchange` take `order:` for success
+  and `failure:` for the failed load (no stronger than `order`). The name
+  is not `Ordering`, which is the comparison enum (D48).
+- **Lock-free references.** An `Atomic` of a pointer or a nullable pointer
+  takes no lock (one machine word), as integers, floats and `bool` do.
+- The lock-word types (anything wider) accept `order:` and behave as
+  `SeqCst` — they are a lock.
+
+Both levels: code that never writes `order:` is what it was; the docs teach
+`SeqCst` and show the orders in the low-level chapter only.
+
+User, 2026-10-09, recommended of 3. Rejected: the operations with
+sequential consistency only (Go's choice — no low-level control); leaving
+`load`/`store`/`swap`/`update`.
+
+### D145 — Loops are cancellation points; suspending loops yield (v0.75)
+
+```veles
+val r = withTimeout(Duration.millis(200), () => checksum(bigFile))  // a plain loop: Timeout after ~200 ms
+loop (row in rows) {
+  checkCancelled()                // optional now: an explicit point inside a long loop body
+  process(row)
+}
+```
+
+Measured by the review: `withTimeout(200 ms)` around a computation returned
+after 1 278 ms, and on one thread a task ticking every 100 ms first ran
+after 1.3 s. A cancellation was delivered only at a suspension point, and a
+task that never suspended never gave its thread up.
+
+- **Cancellation at back-edges.** At the back-edge of every loop (where the
+  collector's safepoint poll already is), in any function, a pending
+  cancellation of the running task unwinds it — the unwinding a panic uses
+  (D20, D49 addendum): every `with` the task is inside closes, innermost
+  first, and the task counts as cancelled, exactly as at a suspension point.
+- **Not where cleanup is shielded:** inside a lock region (`withLock`'s
+  function, `with x = m.lock()`, D107) and inside a `close()` (D47) the
+  check is not made; the request is seen at the next point outside.
+- **Suspending loops yield.** In a suspending function a back-edge is also
+  a yield point once the task has run for about 10 ms since it last
+  suspended (the run queue's other tasks get the thread; Go's and Tokio's
+  preemption). A plain function cannot yield (it has no frame to resume),
+  so a long plain computation is fair only by the pool's other threads —
+  which is what `blocking` and `scope(on:)` (D143) are for.
+- **`yieldNow()`** gives the thread up once (what `await sleep(Duration.zero)`
+  was used for, which keeps working); **`checkCancelled()`** is the
+  cancellation check at any point, plain functions included. Both prelude.
+- The check is a load and a branch folded into the safepoint poll's.
+
+Both levels: `withTimeout` and scope cancellation now simply work; the
+low-level escape from back-edge cancellation is a lock region (or a
+`close()`), where the code is shielded anyway.
+
+User, 2026-10-09, recommended of 4. Rejected: explicit points only (Kotlin's
+`ensureActive`/`yield` — the footgun stays); handing a long-running task's
+queue to a spare thread (fixes latency only, and breaks D66's "at most
+`VELES_THREADS` threads run Veles code"); leaving it.
+
+### D146 — `RwLock`, `Event`, `Lazy`, `Broadcast` and `Watch` (v0.75)
+
+```veles
+val config = RwLock(value: loadConfig())
+with c = config.read()                       // many readers at once; c: *Config
+with w = config.write()                      // one writer, no readers
+val ready = Event()
+ready.set()                                  // every waiter, now and later, goes on
+await ready.wait()
+val table = Lazy(init: () => buildTable())   // built once, on first get(), by whichever task gets there first
+val t = table.get()
+val news = Broadcast<Article>(capacity: 64)
+val sub = news.subscribe()                   // every subscriber receives every value sent after it subscribed
+val settings = Watch(value: initial)
+await settings.changed()                     // wait until the value changes; settings.get() reads the latest
+```
+
+All prelude, all `Sendable` for a `Sendable` `T`.
+
+- **`RwLock<T>`**: `read()`/`write()` are used only as the value of a
+  `with` and bind a `*T`, as `Mutex.lock()` does (D107): the held region
+  refuses suspension; locking it again from the holding task panics (a read
+  inside a write, a write inside a read included); `withRead(f)`/
+  `withWrite(f)` are the one-expression forms. Writers are not starved: a
+  waiting writer stops new readers from entering.
+- **`Event`**: `set()`, `reset()`, `isSet()`, and `wait()` (always
+  suspends, so `await`; cancellable). A set event releases every waiter and
+  lets every later `wait` through until `reset()`.
+- **`Lazy<T>`**: `Lazy(init: f)` with `f: sendable fun(): T`; `get(): T`
+  runs `f` once — concurrent first callers wait for the one running it —
+  and a panic in `f` is re-raised in every `get`. Usable as a module-level
+  `val` (it is synchronized, like `Mutex`/`Atomic`, D66).
+- **`Broadcast<T>(capacity: n)`**: `send(v)` never waits; `subscribe()`
+  returns a `Subscription<T>` (`Closeable`) whose `recv(): T?` gives every
+  value sent after it subscribed, `null` once the broadcast is closed and
+  drained. A subscriber more than `capacity` values behind skips to the
+  oldest kept value and its next `recv` throws `Lagged(missed: n)` once, so
+  falling behind is never silent. `close()` ends it.
+- **`Watch<T>(value: v)`**: `set(v)`, `get(): T`, and `changed()` (always
+  suspends) waits until a `set` after the caller's last `get`/`changed`.
+- All take part in `race` as their always-suspending operations do
+  (`ready.wait()`, `sub.recv()`, `settings.changed()`).
+
+User, 2026-10-09, all four (of four offered). Not offered: `Barrier`/`Latch`
+(`scope` joins).
+
+### D147 — A `close()` may suspend; suspension follows the type (v0.75)
+
+```veles
+implement Closeable for Tx {
+  fun close() suspends {
+    if (!this.done) try? this.conn.send(rollback)
+  }
+}
+with tx = try pool.begin()   // this `with` is a suspension point; a File's is not
+```
+
+D47 described a `close()` that suspends and is shielded from cancellation,
+but `Closeable.close()` was declared non-suspending (D40), so std worked
+around it three times: TLS sends no `close_notify`, a `Tx` left open drops
+its connection instead of sending `ROLLBACK`, and `with otel.start()` cannot
+flush.
+
+- **An `implement Closeable` may declare `close()` `suspends`.** Suspension
+  then follows the type, as D116 made it follow the argument: a `with` on
+  such a value (both forms, D100) is a suspension point at its end, so the
+  function holding it suspends; a `with` on any other `Closeable` is
+  unchanged.
+- **Shielded** (D47): no cancellation is delivered inside the close, and
+  the D47 hazard stands — a close that hangs hangs its scope; a close that
+  talks to a peer bounds itself (a timeout of its own).
+- **Generic code:** a function with `T: Closeable` that closes a `T` is
+  compiled as a plain instance and a suspending one, chosen by the type
+  argument (D116's stenciling bit).
+- **Refused:** a `with` of such a value in a lock region (D107) or anywhere
+  else suspension is refused; boxing such a type as the `Closeable` trait
+  object (a method table holds one instance, D116) — error naming the type
+  and its suspending `close`.
+- std then sends TLS `close_notify`, `ROLLBACK` at a `Tx`'s close and
+  flushes at `otel.start`'s close (the explicit `shutdown()`/`rollback()`
+  stay).
+
+User, 2026-10-09, recommended of 3. Rejected: a second trait
+(`SuspendingCloseable`, C#'s `IAsyncDisposable` — two names for closing);
+leaving explicit `shutdown()`/`rollback()`/`finish()` calls as the only way.
+
+### D148 — Increment an indexed `MutableList<i64>` value (v0.76)
+
+```veles
+counts.incrementAt(i)
+```
+
+`MutableList<i64>.incrementAt(i)` adds one to the element at `i` in place
+and returns `()`. It is a `const fun`, so constant evaluation and run time
+have the same behavior. It uses the same index rules as `at` and `set`: a
+negative index counts from the end; an out-of-range index panics at the
+caller's location. Integer overflow follows ordinary checked `i64` addition.
+Use it for counters stored in a pre-sized list; `ref` remains available for
+updates by other amounts or through a pointer.
+
+User, 2026-10-09: out-of-range access panics and the method returns unit
+(recommended of two). Rejected: return `bool` and leave the caller to decide
+what to do for an invalid index.
+
+### D149 — Transform one element of a mutable list (v0.77)
+
+```veles
+val updated = values.updateAt(i, value => transform(value))
+```
+
+`MutableList<T>.updateAt(i, transform): T` calls the synchronous,
+non-throwing `fun(T): T` once with the selected element, stores the returned
+value at that index, and returns it. It has the `at`/`set` index rules:
+negative indexes count from the end; an out-of-range index panics at the
+caller's location. The callback must compute a replacement, not mutate this
+same list; such a mutation could be overwritten by the update. `ref` and
+`set` remain the lower-level choices for other mutation patterns. It is a
+`const fun`, with compile-time behavior matching run time.
+
+User, 2026-10-09, recommended of 3. Rejected: `mapAt` (which conflicts with
+`map`'s collection-producing meaning), returning unit (the caller may need
+the replacement), and no helper (repeating the read-transform-write sequence).
 
 ---
 

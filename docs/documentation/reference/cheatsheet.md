@@ -212,7 +212,7 @@ xs.minBy(key); xs.maxBy(key); xs.minWith(cmp); xs.maxWith(cmp); xs.distinctBy(ke
 sorted.binarySearch(x); sorted.binarySearchBy(key, target); sorted.binarySearchWith(e => e.compareTo(x))  // first match or -1; the list must already be in order
 sorted.lowerBound(x); sorted.upperBound(x); sorted.partitionPoint(e => e < x)   // insertion points; upperBound - lowerBound is how many times x occurs
 ml.push(x); ml.pop(); ml.set(i, x); ml.insert(i, x); ml.removeAt(i); ml.addAll(ys); ml.sort(); ml.clear(); ml.toList(); xs.toMutable()
-ml.swap(i, j); ml.fill(x); MutableList.repeat(false, n) /* MutableList<bool>: a generic static infers its type, D137 */; MutableList<MutableList<i64>>.make(n, _ => [])
+ml.swap(i, j); ml.fill(x); ml.incrementAt(i) /* MutableList<i64> */; ml.updateAt(i, f) /* MutableList<T>; transforms and returns the new value */; MutableList.repeat(false, n) /* MutableList<bool>: a generic static infers its type, D137 */; MutableList<MutableList<i64>>.make(n, _ => [])
 val q = Deque<i64>(); q.addLast(x); q.addFirst(x); q.removeFirst(); q.removeLast(); q.first(); q.last(); q.at(-1); q.len()
 val pq = PriorityQueue<i64>.natural(); pq.push(x); pq.pop(); pq.peek(); PriorityQueue<i64>(compare: (a, b) => b.compareTo(a))
 m.get(k) ?: d; m.get(k) ?: panic("why"); m.getOrDefault(k, d); m.containsKey(k); m.keys(); m.values(); m.entries(); mm.set(k, v); mm.remove(k)

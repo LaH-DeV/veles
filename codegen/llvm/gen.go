@@ -679,7 +679,8 @@ func (g *gen) function(fn *sema.Func) {
 		prologue = append(prologue, fmt.Sprintf("  store %s %%p%d, ptr %s", llt, i, st))
 	}
 	if fn.Suspends {
-		params = append(params, "ptr %task")
+		// the task, and the link to the caller's frame (review F3)
+		params = append(params, "ptr %task", "ptr %link")
 	}
 	if fn.IsClosure {
 		params = append(params, "ptr %env")

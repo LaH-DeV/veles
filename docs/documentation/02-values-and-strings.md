@@ -510,7 +510,7 @@ a raw pointer (`unsafe`), call C, read a file, wait for a task, or read a
 |---|---|
 | other `const fun`s, generic or not, and `const fun` methods | an ordinary `fun` — mark it `const` if it qualifies |
 | a struct's constructor and its `init` block; lambdas, and `const fun`s passed as values | a call through a trait object (`val s: Shape = …; s.area()`) |
-| std's helpers that take a function: `map`, `filter`, `fold`, `forEach`, `any`, `all`, `find`, `count`, `flatMap`, `mapNotNull`, `partition`, `sortedBy`, `sortedWith`, `minBy`, `maxBy`, `distinctBy`, `binarySearch`…, `MutableList.make`; a `Map`'s `mapValues`, `filter`, `forEach`, `getOrPut` | a lambda that does any of the things on this side |
+| std's helpers that take a function: `map`, `filter`, `fold`, `forEach`, `any`, `all`, `find`, `count`, `flatMap`, `mapNotNull`, `partition`, `sortedBy`, `sortedWith`, `minBy`, `maxBy`, `distinctBy`, `binarySearch`…, `MutableList.make`, `MutableList.updateAt`; a `Map`'s `mapValues`, `filter`, `forEach`, `getOrPut` | a lambda that does any of the things on this side |
 | `MutableList`, `MutableMap`, `MutableSet`: `push`, `pop`, `set`, `get`, `at`, `remove`, `clear`, `addAll`, `slice`, `reserve`, `toList`… | anything that suspends: `sleep`, channels, `async`, `await` |
 | `string`: `len`, `substring`, `split`, `startsWith`, `contains`, `toInt`, `bytes`, and std's `const fun` string helpers (`trim`, `replace`, `indexOf`, `padStart`, `toUpper`, `repeat`, `lines`…) | `io`, `fs`, `os`, `net`, `time`, `random` |
 | `StringBuilder`, interpolation, `toString`, `compareTo` | `unsafe`, `extern` functions |

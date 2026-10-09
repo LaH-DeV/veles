@@ -303,16 +303,18 @@ struct Res {
   }
 }
 
-fun child() {
+fun child(opened: Channel<bool>) {
   with r = Res(name: "child's resource")
+  opened.send(true)
   await sleep(Duration.seconds(1))
   io.println("never printed")
 }
 
 fun run(): i64 throws Boom {
+  val opened = Channel<bool>(capacity: 1)
   scope {
-    async child()
-    await sleep(Duration.millis(5))
+    async child(opened)
+    val _ = await opened.recv()   // the child holds its resource now
     throw Boom(n: 9)
   }
 }
@@ -327,6 +329,10 @@ Output:
 closed child's resource
 run threw Boom 9
 ```
+
+A child that has not started yet when its scope is left never starts, so
+it has nothing to close; that is why the body above waits for the child to
+say its resource is open, rather than sleeping and hoping it has started.
 
 **A panic** in a task is handled the same way — siblings cancelled and
 cleaned up — and then continues as a panic in the task that owns the
@@ -579,10 +585,11 @@ the exit code is 101.
   bytes — its frame, holding only the variables still needed — not a
   stack.
 - A function that suspends is compiled into a state machine whose frame
-  is on the heap; a function that does not suspend is a plain function.
-  Today, **each call of a suspending function runs as a task of its own**
-  underneath, which costs more than a plain call: in a hot loop, keep the
-  waiting out of small helpers where you can.
+  lives in its task's frame arena; a function that does not suspend is a
+  plain function. A call of a suspending function runs in the caller's
+  task: one that finishes without waiting costs a few nanoseconds more
+  than a plain call (`bench/suscall`), and one that waits parks the task
+  in its own frame and returns to the caller when it is done.
 - `await` on a finished task, a channel operation that does not have to
   wait, and an uncontended `Mutex` take no lock of the runtime.
 

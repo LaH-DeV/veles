@@ -23,14 +23,22 @@ declare i1 @llvm.coro.end(ptr, i1, token)
 declare ptr @veles_task_new()
 declare void @veles_task_started(ptr, ptr)
 declare void @veles_task_finish(ptr, ptr, i64, i64)
-declare i64 @veles_task_cancelled(ptr)
+declare i64 @veles_task_cancelled(ptr, i64)
+declare void @veles_frame_park(ptr, ptr, i64)
+declare void @veles_frame_return(ptr, ptr, ptr, i64, i64, ptr)
+declare void @veles_frame_unwound(ptr, ptr)
+declare void @veles_frame_back(ptr, ptr)
+declare ptr @veles_frame_alloc(ptr, ptr, i64)
+declare void @veles_frame_free(ptr, ptr)
+; the link of a task's own frame: no caller (review F3)
+@veles.root.link = internal constant { ptr, i64, i64 } zeroinitializer
 declare void @veles_task_finish_cancelled(ptr)
 declare i64 @veles_task_await(ptr, ptr)
 declare ptr @veles_task_result(ptr)
 declare ptr @veles_task_value(ptr)
 declare void @veles_task_set_unwrap(ptr, i64)
 declare i64 @veles_task_failed(ptr)
-declare ptr @veles_scope_begin(ptr, i64)
+declare ptr @veles_scope_begin(ptr, i64, i64)
 declare ptr @veles_task_launch(ptr, i64)
 declare i64 @veles_scope_wait(ptr, ptr)
 declare ptr @veles_scope_failed(ptr)
@@ -69,7 +77,7 @@ entry:
   call void @veles_scope_cancel(ptr %sc)
   ret void
 }
-declare ptr @veles_race_new(ptr)
+declare ptr @veles_race_new(ptr, i64)
 declare void @veles_race_recv(ptr, ptr, ptr)
 declare void @veles_race_send(ptr, ptr, ptr)
 declare void @veles_race_sent(ptr)
@@ -85,15 +93,93 @@ declare ptr @veles_task_panic_report(ptr, i64, ptr)
 declare void @veles_call_push(ptr)
 declare void @veles_call_pop()
 declare void @veles_call_base(ptr, ptr)
-declare void @veles_call_link(ptr)
 declare void @veles_task_repanic(ptr)
 declare void @veles_task_start(ptr, ptr, ptr)
 declare void @veles_task_spawn(ptr, ptr, ptr)
+
+; The common paths of veles_frame_alloc, veles_frame_free and
+; veles_frame_back, taken inline (review F3). The offsets are the
+; runtime's (veles_task: hdl 0, arena 24, depth 224, popped 246;
+; frame_arena: top 8, cap 16, data 24), which veles_task.c asserts.
+define internal ptr @veles.frame.alloc(ptr %t, ptr %l, i64 %size) alwaysinline {
+entry:
+  %par = load ptr, ptr %l
+  %isroot = icmp eq ptr %par, null
+  br i1 %isroot, label %slow, label %call
+call:
+  %ap = getelementptr inbounds i8, ptr %t, i64 24
+  %a = load ptr, ptr %ap
+  %noa = icmp eq ptr %a, null
+  br i1 %noa, label %slow, label %have
+have:
+  %sz15 = add i64 %size, 15
+  %sz = and i64 %sz15, -16
+  %topp = getelementptr inbounds i8, ptr %a, i64 8
+  %top = load i64, ptr %topp
+  %capp = getelementptr inbounds i8, ptr %a, i64 16
+  %cap = load i64, ptr %capp
+  %end = add i64 %top, %sz
+  %fits = icmp ule i64 %end, %cap
+  br i1 %fits, label %fast, label %slow
+fast:
+  store i64 %end, ptr %topp
+  %data = getelementptr inbounds i8, ptr %a, i64 24
+  %p = getelementptr inbounds i8, ptr %data, i64 %top
+  ret ptr %p
+slow:
+  %r = call ptr @veles_frame_alloc(ptr %t, ptr %l, i64 %size)
+  ret ptr %r
+}
+
+define internal void @veles.frame.free(ptr %t, ptr %h) alwaysinline {
+entry:
+  %ap = getelementptr inbounds i8, ptr %t, i64 24
+  %a = load ptr, ptr %ap
+  %noa = icmp eq ptr %a, null
+  br i1 %noa, label %done, label %have
+have:
+  %data = getelementptr inbounds i8, ptr %a, i64 24
+  %capp = getelementptr inbounds i8, ptr %a, i64 16
+  %cap = load i64, ptr %capp
+  %hi = ptrtoint ptr %h to i64
+  %di = ptrtoint ptr %data to i64
+  %off = sub i64 %hi, %di
+  %in = icmp ult i64 %off, %cap
+  br i1 %in, label %fast, label %slow
+fast:
+  %topp = getelementptr inbounds i8, ptr %a, i64 8
+  store i64 %off, ptr %topp
+  ret void
+slow:
+  call void @veles_frame_free(ptr %t, ptr %h)
+  ret void
+done:
+  ret void
+}
+
+define internal void @veles.frame.back(ptr %t, ptr %l) alwaysinline {
+entry:
+  %donep = getelementptr inbounds { ptr, i64, i64 }, ptr %l, i32 0, i32 2
+  store i64 1, ptr %donep
+  %par = load ptr, ptr %l
+  store ptr %par, ptr %t
+  %dp = getelementptr inbounds { ptr, i64, i64 }, ptr %l, i32 0, i32 1
+  %d = load i64, ptr %dp
+  %d1 = sub i64 %d, 1
+  %d32 = trunc i64 %d1 to i32
+  %tdp = getelementptr inbounds i8, ptr %t, i64 224
+  store i32 %d32, ptr %tdp
+  %pp = getelementptr inbounds i8, ptr %t, i64 246
+  store i8 1, ptr %pp
+  ret void
+}
 `
 
 type coroState struct {
 	id, hdl  string
 	task     string
+	link     string // the frame's link: where it returns to (review F3)
+	depth    string // how deep in calls the frame is: 0 for a task's own
 	finalL   string
 	cleanupL string
 	suspendL string
@@ -101,15 +187,19 @@ type coroState struct {
 
 // coroPrologue emits the coroutine setup at the start of a ramp.
 func (g *gen) coroPrologue() {
-	c := &coroState{task: "%task", finalL: "coro.final", cleanupL: "coro.cleanup", suspendL: "coro.suspend"}
+	c := &coroState{task: "%task", link: "%link", depth: "%coro.depth", finalL: "coro.final", cleanupL: "coro.cleanup", suspendL: "coro.suspend"}
 	g.coro = c
 	// the frame is a collector object, whose body is 8-aligned: said so,
 	// LLVM realigns a field that needs more (an @align(n) local, D120)
 	// rather than assume the 16 it takes by default
 	g.emit("%%coro.id = call token @llvm.coro.id(i32 8, ptr null, ptr null, ptr null)")
 	g.emit("%%coro.size = call i64 @llvm.coro.size.i64()")
-	g.emit("%%coro.mem = call ptr @veles_alloc_words(i64 %%coro.size)")
+	// a call's frame comes from the task's arena, a task's own from the
+	// collector (veles_frame_alloc)
+	g.emit("%%coro.mem = call ptr @veles.frame.alloc(ptr %%task, ptr %%link, i64 %%coro.size)")
 	g.emit("%%coro.hdl = call ptr @llvm.coro.begin(token %%coro.id, ptr %%coro.mem)")
+	g.emit("%%coro.depthp = getelementptr inbounds { ptr, i64, i64 }, ptr %%link, i32 0, i32 1")
+	g.emit("%%coro.depth = load i64, ptr %%coro.depthp")
 	c.id, c.hdl = "%coro.id", "%coro.hdl"
 }
 
@@ -139,9 +229,19 @@ type bodyScope struct {
 
 // suspendPoint yields to the executor and, on resume, honours cancellation.
 func (g *gen) suspendPoint() {
+	g.suspendAt(true)
+}
+
+// suspendAt is a suspension point; park says the task resumes in this
+// frame. A frame waiting for a call it made does not park: the call's
+// frame, deeper, parked the task, and returns to this one (review F3).
+func (g *gen) suspendAt(park bool) {
 	c := g.coro
 	if c == nil {
 		panic("codegen: suspension point in a non-suspending function")
+	}
+	if park {
+		g.emit("call void @veles_frame_park(ptr %s, ptr %s, i64 %s)", c.task, c.hdl, c.depth)
 	}
 	s := g.newTmp()
 	g.emit("%s = call i8 @llvm.coro.suspend(token none, i1 false)", s)
@@ -154,14 +254,14 @@ func (g *gen) suspendPoint() {
 		return
 	}
 	cc := g.newTmp()
-	g.emit("%s = call i64 @veles_task_cancelled(ptr %s)", cc, c.task)
+	g.emit("%s = call i64 @veles_task_cancelled(ptr %s, i64 %s)", cc, c.task, c.depth)
 	cb := g.newTmp()
 	g.emit("%s = icmp ne i64 %s, 0", cb, cc)
 	cancel, cont := g.newLabel("cancelled"), g.newLabel("cont")
 	g.emitTerm("br i1 %s, label %%%s, label %%%s", cb, cancel, cont)
 	g.placeLabel(cancel)
 	g.runCleanups(0)
-	g.emit("call void @veles_task_finish_cancelled(ptr %s)", c.task)
+	g.emit("call void @veles_frame_unwound(ptr %s, ptr %s)", c.task, c.link)
 	g.emitTerm("br label %%%s", c.finalL)
 	g.placeLabel(cont)
 	g.failFastCheck()
@@ -204,12 +304,14 @@ func (g *gen) failFastCheck() {
 	}
 }
 
-// coroReturn finishes the task with the (already Result-wrapped) value v of
-// type t; nil t is no value.
+// coroReturn returns the (already Result-wrapped) value v of type t from
+// the frame: it finishes the task when the frame is the task's own, and
+// is written into the caller's link otherwise (review F3); nil t is no
+// value.
 func (g *gen) coroReturn(t types.Type, v string, isResult bool) {
 	c := g.coro
 	if t == nil {
-		g.emit("call void @veles_task_finish(ptr %s, ptr null, i64 0, i64 0)", c.task)
+		g.emit("call void @veles_frame_return(ptr %s, ptr %s, ptr null, i64 0, i64 0, ptr null)", c.task, c.link)
 		g.emitTerm("br label %%%s", c.finalL)
 		return
 	}
@@ -227,8 +329,39 @@ func (g *gen) coroReturn(t types.Type, v string, isResult bool) {
 		g.emit("%s = zext i1 %s to i64", failed, f)
 	}
 	size := g.memSize(t)
-	g.emit("call void @veles_task_finish(ptr %s, ptr %s, i64 %d, i64 %s)", c.task, slot, size, failed)
+	lt := g.linkType(t)
+	if size == 0 || lt == "{ ptr, i64, i64 }" {
+		g.emit("call void @veles_frame_return(ptr %s, ptr %s, ptr %s, i64 %d, i64 %s, ptr null)", c.task, c.link, slot, size, failed)
+		g.emitTerm("br label %%%s", c.finalL)
+		return
+	}
+	// a call's frame (its link has a parent) writes the result straight
+	// into the link; a task's own hands it to the runtime to keep
+	pp := g.newTmp()
+	g.emit("%s = load ptr, ptr %s", pp, c.link)
+	root := g.newTmp()
+	g.emit("%s = icmp eq ptr %s, null", root, pp)
+	rootL, callL := g.newLabel("ret.task"), g.newLabel("ret.call")
+	g.emitTerm("br i1 %s, label %%%s, label %%%s", root, rootL, callL)
+	g.placeLabel(rootL)
+	g.emit("call void @veles_frame_return(ptr %s, ptr %s, ptr %s, i64 %d, i64 %s, ptr null)", c.task, c.link, slot, size, failed)
 	g.emitTerm("br label %%%s", c.finalL)
+	g.placeLabel(callL)
+	out := g.newTmp()
+	g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 3", out, lt, c.link)
+	g.storeVal(t, v, out)
+	g.emit("call void @veles.frame.back(ptr %s, ptr %s)", c.task, c.link)
+	g.emitTerm("br label %%%s", c.finalL)
+}
+
+// linkType is the LLVM type of the link a call of a suspending function
+// returning rt passes (review F3): the caller's frame, the callee's
+// depth, the done flag, then the result.
+func (g *gen) linkType(rt types.Type) string {
+	if rt == nil || types.IsUnit(rt) || types.IsNever(rt) {
+		return "{ ptr, i64, i64 }"
+	}
+	return "{ ptr, i64, i64, " + g.llType(rt) + " }"
 }
 
 // awaitTask blocks until a task finishes and returns its result value.
@@ -246,8 +379,8 @@ func (g *gen) awaitTask(task string, rt types.Type) string {
 	g.emitTerm("br label %%%s", wait)
 	g.placeLabel(got)
 	// a panic in the awaited task continues in this one (D20: it unwinds
-	// to the enclosing task scope; a suspending call is a task of its own,
-	// and `await handle` on a panicked child rethrows as well)
+	// to the enclosing task scope, and `await handle` on a panicked child
+	// rethrows)
 	pan := g.newTmp()
 	g.emit("%s = call i64 @veles_task_panicked(ptr %s)", pan, task)
 	pb := g.newTmp()
@@ -266,16 +399,61 @@ func (g *gen) awaitTask(task string, rt types.Type) string {
 	return g.loadVal(rt, rp)
 }
 
-// callSuspending runs a suspending function as a child task and awaits it.
-func (g *gen) callSuspending(fn *sema.Func, argTypes []types.Type, argVals []string, rt types.Type, chained bool) string {
-	ct := g.newTmp()
-	g.emit("%s = call ptr @veles_task_new()", ct)
-	if chained {
-		// the call's frame is on this task's chain: the callee's task continues it
-		g.emit("call void @veles_call_link(ptr %s)", ct)
+// callSuspending calls a suspending function in this task (review F3).
+func (g *gen) callSuspending(fn *sema.Func, argTypes []types.Type, argVals []string, rt types.Type) string {
+	var args []string
+	for i, t := range argTypes {
+		args = append(args, g.vt(t)+" "+argVals[i])
 	}
-	g.startTask(ct, fn, argTypes, argVals)
-	return g.awaitTask(ct, rt)
+	return g.callFrame("@"+fn.Name, args, rt)
+}
+
+// callFrame calls the coroutine code (a function, a function value's code
+// or a method table slot) with args after the task and a link, and gives
+// its result of type rt (review F3). The callee's frame runs in this
+// task: if it finishes without waiting, its result is in the link when the
+// call returns, and nothing else happens — no task, no queue. If it waits,
+// it has parked the task on its own frame, and this frame suspends without
+// parking; the callee hands the task back when it finishes (or unwinds), so
+// when this frame resumes the call is done, and the checks of any
+// suspension point follow: a cancellation, a failed child of a scope.
+func (g *gen) callFrame(code string, args []string, rt types.Type) string {
+	c := g.coro
+	lt := g.linkType(rt)
+	lk := g.alloca(lt)
+	p := g.newTmp()
+	g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 0", p, lt, lk)
+	g.emit("store ptr %s, ptr %s", c.hdl, p)
+	d := g.newTmp()
+	g.emit("%s = add i64 %s, 1", d, c.depth)
+	p = g.newTmp()
+	g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 1", p, lt, lk)
+	g.emit("store i64 %s, ptr %s", d, p)
+	done := g.newTmp()
+	g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 2", done, lt, lk)
+	g.emit("store i64 0, ptr %s", done)
+	h := g.newTmp()
+	g.emit("%s = call ptr %s(%s)", h, code, joinArgs(append([]string{"ptr " + c.task, "ptr " + lk}, args...)))
+	check, got, wait := g.newLabel("call.check"), g.newLabel("call.done"), g.newLabel("call.wait")
+	g.emitTerm("br label %%%s", check)
+	g.placeLabel(check)
+	dv := g.newTmp()
+	g.emit("%s = load i64, ptr %s", dv, done)
+	db := g.newTmp()
+	g.emit("%s = icmp ne i64 %s, 0", db, dv)
+	g.emitTerm("br i1 %s, label %%%s, label %%%s", db, got, wait)
+	g.placeLabel(wait)
+	g.suspendAt(false)
+	g.emitTerm("br label %%%s", check)
+	g.placeLabel(got)
+	// the callee's frame is over; what it gave back is in the link
+	g.emit("call void @veles.frame.free(ptr %s, ptr %s)", c.task, h)
+	if lt == "{ ptr, i64, i64 }" {
+		return "zeroinitializer"
+	}
+	rp := g.newTmp()
+	g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 3", rp, lt, lk)
+	return g.loadVal(rt, rp)
 }
 
 // resultTypeOf is the logical result type of a function (Result when it throws).
@@ -323,7 +501,7 @@ func (g *gen) rampFor(fn *sema.Func) *sema.Func {
 	g.ramps[fn] = ramp
 	g.pending = append(g.pending, func() {
 		var params, args []string
-		params = append(params, "ptr %task")
+		params = append(params, "ptr %task", "ptr %link")
 		i := 0
 		if fn.Receiver != nil {
 			llt := g.vt(fn.Receiver.Type)
@@ -371,7 +549,7 @@ func (g *gen) scopeBlock(e *sema.ScopeBlock) string {
 		failFast = "0"
 	}
 	sc := g.newTmp()
-	g.emit("%s = call ptr @veles_scope_begin(ptr %s, i64 %s)", sc, g.coro.task, failFast)
+	g.emit("%s = call ptr @veles_scope_begin(ptr %s, i64 %s, i64 %s)", sc, g.coro.task, failFast, g.coro.depth)
 	slot := g.alloca("ptr")
 	g.emit("store ptr %s, ptr %s", sc, slot)
 	g.scopeSlots[e] = slot
@@ -557,7 +735,7 @@ func (g *gen) gatherResults(e *sema.ScopeBlock) string {
 
 func (g *gen) race(e *sema.Race) string {
 	r := g.newTmp()
-	g.emit("%s = call ptr @veles_race_new(ptr %s)", r, g.coro.task)
+	g.emit("%s = call ptr @veles_race_new(ptr %s, i64 %d)", r, g.coro.task, len(e.Arms))
 	slots := make([]string, len(e.Arms))
 	for i, arm := range e.Arms {
 		switch arm.Kind {
@@ -1099,7 +1277,7 @@ func (g *gen) entryThunk(fn *sema.Func, paramTypes []types.Type, extraLead []str
 				lls = append(lls, g.llType(pt))
 			}
 			blk := "{ " + strings.Join(lls, ", ") + " }"
-			args := []string{"ptr %task"}
+			args := []string{"ptr %task", "ptr @veles.root.link"}
 			args = append(args, extraLead...)
 			for i, ll := range lls {
 				p := g.newTmp()
@@ -1167,53 +1345,3 @@ func (g *gen) startTaskAs(task string, fn *sema.Func, argTypes []types.Type, arg
 	g.emit("call void @veles_task_start(ptr %s, ptr @%s, ptr %s)", task, thunk, args)
 }
 
-// startIndirect starts a suspending function value as a task: the args
-// block holds the code pointer, the environment and the arguments.
-func (g *gen) startIndirect(task string, ft *types.Func, argTypes []types.Type, argVals []string) {
-	var lls []string
-	for _, t := range argTypes {
-		lls = append(lls, g.llType(t))
-	}
-	blk := "{ " + strings.Join(lls, ", ") + " }"
-	size := 0
-	for _, t := range argTypes {
-		s, _ := g.layout(t)
-		a := g.llAlign(t)
-		size = (size + a - 1) / a * a
-		size += s
-	}
-	args := g.newTmp()
-	g.emit("%s = call ptr @veles_alloc_words(i64 %d)", args, (size+7)/8*8+8)
-	for i, v := range argVals {
-		p := g.newTmp()
-		g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d", p, blk, args, i)
-		g.storeVal(argTypes[i], v, p)
-	}
-	name := "entry.ft." + mangleType(ft)
-	if !g.thunks[name] {
-		g.thunks[name] = true
-		g.pending = append(g.pending, func() {
-			g.defineHelper(name, "void", []string{"ptr %task", "ptr %args"}, func() {
-				var callArgs []string
-				callArgs = append(callArgs, "ptr %task")
-				var code string
-				for i, ll := range lls {
-					p := g.newTmp()
-					g.emit("%s = getelementptr inbounds %s, ptr %%args, i32 0, i32 %d", p, blk, i)
-					v := g.newTmp()
-					g.emit("%s = load %s, ptr %s", v, ll, p)
-					if i == 0 {
-						code = v
-						continue
-					}
-					callArgs = append(callArgs, ll+" "+v)
-				}
-				h := g.newTmp()
-				g.emit("%s = call ptr %s(%s)", h, code, joinArgs(callArgs))
-				g.emit("call void @veles_task_started(ptr %%task, ptr %s)", h)
-				g.emitTerm("ret void")
-			})
-		})
-	}
-	g.emit("call void @veles_task_start(ptr %s, ptr @%s, ptr %s)", task, name, args)
-}

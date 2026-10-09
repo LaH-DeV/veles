@@ -414,6 +414,13 @@ var references = map[string]func() string{
 		}
 		return strconv.FormatInt(total, 10)
 	},
+	"suscall": func() string {
+		var sum int64
+		for i := int64(0); i < 10000000; i++ {
+			sum += suscallTop(i)
+		}
+		return strconv.FormatInt(sum, 10)
+	},
 	"spawn": func() string {
 		square := func(i int64) int64 {
 			var acc int64
@@ -536,3 +543,15 @@ func checksumBytes(b []byte) string {
 	}
 	return strconv.FormatInt(sum, 10)
 }
+
+// the suscall reference: three ordinary functions, as Go writes them
+func suscallLeaf(i int64) int64 {
+	if i < 0 {
+		time.Sleep(time.Millisecond)
+	}
+	return i % 7
+}
+
+func suscallMiddle(i int64) int64 { return suscallLeaf(i) + 1 }
+
+func suscallTop(i int64) int64 { return suscallMiddle(i) + 1 }

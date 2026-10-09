@@ -640,9 +640,31 @@ list of a known size up front, `MutableList.repeat(false, n)` gives
 `n` copies of a value (a `MutableList<bool>`: the type comes from the
 value, D137) and `MutableList<MutableList<i64>>.make(n, _ => [])`
 calls the function once per slot. `xs.fill(x)` overwrites every element of
-an existing list. `repeat` and `fill` refuse an element type with shared
+an existing list. On `MutableList<i64>`, `counts.incrementAt(i)` increments
+one element in place; negative indexes count from the end and an invalid
+index panics. `repeat` and `fill` refuse an element type with shared
 mutable state — a mutable collection, a pointer, a closure — because every
 slot would alias the one value; `make` is the form for those.
+
+For a generic in-place transformation, use `updateAt`: it passes the current
+element to a synchronous function, stores the returned value, and returns
+that value itself. The callback runs once and should compute the replacement,
+not mutate the same list:
+
+```veles
+use io
+
+fun main() {
+  val values: MutableList<i64> = [3, 5]
+  val updated = values.updateAt(-1, value => value * 2)
+  io.println("$updated $values")
+}
+```
+
+Output:
+```text
+10 [3, 10]
+```
 
 ## Choosing between them
 

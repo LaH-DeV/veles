@@ -2,6 +2,7 @@ package driver
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -181,6 +182,277 @@ fun main() {
 		out, err := run.CombinedOutput()
 		if err != nil || strings.TrimSpace(string(out)) != want {
 			t.Fatalf("threads %s: got %q, want %q (%v)", threads, out, want, err)
+		}
+	}
+}
+
+// Suspending calls run in their caller's task (concurrency review F3,
+// 2026-10-09): a call that does not wait costs no task, and one that waits
+// parks the task on its own frame and returns to its caller when it ends.
+// What a call did when it was a task of its own must still hold: a failed
+// child abandons a body three calls deep, closing innermost first (and the
+// body's own resource last — it used to close first); a timeout cancels
+// three calls deep; values, big values and errors come back across
+// suspensions; 20 000-deep recursion suspends at the bottom; a panic two
+// calls deep after a suspension unwinds both and is a value at gather.
+func TestSuspendingCallsInOneTask(t *testing.T) {
+	if _, err := findClang(); err != nil {
+		t.Skip("clang not available:", err)
+	}
+	dir := t.TempDir()
+	src := `use io
+
+error Boom { n: i64 }
+
+struct Res {
+  name: string
+  implement Closeable {
+    fun close() { io.println("  closed ${this.name}") }
+  }
+}
+
+struct Big {
+  a: i64
+  b: i64
+  c: i64
+  d: i64
+  e: i64
+  f: string
+}
+
+fun inner(ch: Channel<i64>): i64 {
+  with r = Res(name: "inner")
+  val v = await ch.recv() ?: return -1
+  v
+}
+
+fun middle(ch: Channel<i64>): i64 {
+  with r = Res(name: "middle")
+  inner(ch) + 1
+}
+
+fun outer(ch: Channel<i64>): i64 {
+  with r = Res(name: "outer")
+  middle(ch) + 1
+}
+
+fun failSoon(): i64 throws Boom {
+  await sleep(Duration.millis(20))
+  throw Boom(n: 7)
+}
+
+fun abandoned(): i64 throws Boom {
+  val ch = Channel<i64>()
+  var got: i64 = 0
+  scope {
+    async failSoon()
+    with r = Res(name: "body")
+    got = outer(ch)
+  }
+  got
+}
+
+fun makeBig(n: i64): Big {
+  await sleep(Duration.millis(1))
+  Big(a: n, b: n + 1, c: n + 2, d: n + 3, e: n + 4, f: "big $n")
+}
+
+fun failLate(n: i64): i64 throws Boom {
+  await sleep(Duration.millis(1))
+  if (n > 2) throw Boom(n)
+  n
+}
+
+fun relay(n: i64): i64 throws Boom => (try failLate(n)) * 10
+
+fun down(n: i64): i64 {
+  if (n == 0) {
+    await sleep(Duration.millis(1))
+    return 0
+  }
+  down(n - 1) + 1
+}
+
+fun panicky(ch: Channel<i64>): i64 {
+  with r = Res(name: "panicky")
+  val v = await ch.recv() ?: 0
+  if (v == 42) panic("deep panic")
+  v
+}
+
+fun relayPanic(ch: Channel<i64>): i64 {
+  with r = Res(name: "relayPanic")
+  panicky(ch)
+}
+
+fun feed(ch: Channel<i64>, v: i64) {
+  await sleep(Duration.millis(5))
+  ch.send(v)
+}
+
+fun main() {
+  io.println("1:")
+  io.println("  -> ${abandoned() catch (e) { e.n }}")
+  io.println("2:")
+  val ch = Channel<i64>()
+  val r = withTimeout(Duration.millis(20), () => outer(ch))
+  io.println("  -> timed out: ${r is Err}")
+  io.println("3:")
+  val ch2 = Channel<i64>(capacity: 1)
+  ch2.send(40)
+  io.println("  -> outer = ${outer(ch2)}")
+  val b = makeBig(5)
+  io.println("  -> big = ${b.a} ${b.e} ${b.f}")
+  io.println("  -> relay(2) = ${relay(2) catch (e) { -e.n }}, relay(3) = ${relay(3) catch (e) { -e.n }}")
+  io.println("  -> down(20000) = ${down(20000)}")
+  io.println("4:")
+  val ch3 = Channel<i64>()
+  val g = gather {
+    async relayPanic(ch3)
+    async feed(ch3, 42)
+  }
+  val (p, _) = g
+  io.println("  -> panicked: ${p is Err}")
+}
+`
+	want := `1:
+  closed inner
+  closed middle
+  closed outer
+  closed body
+  -> 7
+2:
+  closed inner
+  closed middle
+  closed outer
+  -> timed out: true
+3:
+  closed inner
+  closed middle
+  closed outer
+  -> outer = 42
+  -> big = 5 9 big 5
+  -> relay(2) = 20, relay(3) = -3
+  -> down(20000) = 20000
+4:
+  closed panicky
+  closed relayPanic
+  -> panicked: true`
+	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, release := range []bool{false, true} {
+		exe := filepath.Join(dir, fmt.Sprintf("calls%v.exe", release))
+		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release, Sanitize: *sanitize}); code != 0 {
+			t.Fatalf("build failed with exit %d", code)
+		}
+		for _, threads := range []string{"1", "2", "8"} {
+			run := exec.Command(exe)
+			run.Env = append(os.Environ(), "VELES_THREADS="+threads, "VELES_GC_THRESHOLD=4096")
+			out, err := run.CombinedOutput()
+			got := strings.ReplaceAll(strings.TrimSpace(string(out)), "\r\n", "\n")
+			if err != nil || got != want {
+				t.Fatalf("release=%v threads %s: got\n%s\nwant\n%s\n(%v)", release, threads, got, want, err)
+			}
+		}
+	}
+}
+
+// Many tasks parked on one channel (concurrency review B1, 2026-10-09):
+// 50k plain receivers and 50k racing ones that time out, so nodes leave
+// from the middle of the list, then 50k sends. Appending once walked the
+// whole list and unlinking scanned it, under a lock waiters spun on
+// without yielding: parking 100k receivers kept every core busy for
+// seconds. Now both are O(1), and the run is bounded in time.
+func TestManyWaitersOnOneChannel(t *testing.T) {
+	if _, err := findClang(); err != nil {
+		t.Skip("clang not available:", err)
+	}
+	dir := t.TempDir()
+	src := `use io
+
+fun waiter(ch: Channel<i64>, sum: Atomic<i64>) {
+  val v = await ch.recv() ?: return
+  val _ = sum.update(s => s + v)
+}
+
+fun impatient(ch: Channel<i64>, k: i64, missed: Atomic<i64>) {
+  race {
+    val v = ch.recv() => panic("an impatient receiver got $v")
+    sleep(Duration.millis(1 + k % 50)) => { val _ = missed.update(m => m + 1) }
+  }
+}
+
+fun main() {
+  val n: i64 = 50000
+  val ch = Channel<i64>()
+  val sum = Atomic(value: 0)
+  val missed = Atomic(value: 0)
+  scope {
+    loop (i in 0..<n) {
+      async waiter(ch, sum)
+      async impatient(ch, i, missed)
+    }
+    loop {
+      if (missed.load() == n) break
+      await sleep(Duration.millis(1))
+    }
+    loop (i in 1..n) ch.send(i)
+  }
+  io.println("${sum.load()} ${missed.load()}")
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(dir, "waiters.exe")
+	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: true, Sanitize: *sanitize}); code != 0 {
+		t.Fatalf("build failed with exit %d", code)
+	}
+	want := "1250025000 50000"
+	for _, threads := range []string{"1", "8"} {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		run := exec.CommandContext(ctx, exe)
+		run.Env = append(os.Environ(), "VELES_THREADS="+threads)
+		start := time.Now()
+		out, err := run.CombinedOutput()
+		cancel()
+		if err != nil || strings.TrimSpace(string(out)) != want {
+			t.Fatalf("threads %s: got %q, want %q (%v, after %v)", threads, out, want, err, time.Since(start))
+		}
+	}
+}
+
+// A race with more arms than the runtime once held (concurrency review,
+// 2026-10-09): a race kept a fixed array of 16 arms and the compiler set
+// no limit, so a 17th arm wrote past it — a crash. A race is now sized to
+// its arms.
+func TestRaceWithManyArms(t *testing.T) {
+	if _, err := findClang(); err != nil {
+		t.Skip("clang not available:", err)
+	}
+	dir := t.TempDir()
+	var b strings.Builder
+	b.WriteString("use io\n\nfun main() {\n")
+	for i := 0; i < 20; i++ {
+		fmt.Fprintf(&b, "  val c%d = Channel<i64>(capacity: 1)\n", i)
+	}
+	b.WriteString("  c19.send(19)\n  race {\n")
+	for i := 0; i < 20; i++ {
+		fmt.Fprintf(&b, "    val v%d = c%d.recv() => io.println(\"arm %d got ${v%d}\")\n", i, i, i, i)
+	}
+	b.WriteString("    sleep(Duration.seconds(5)) => io.println(\"timed out\")\n  }\n}\n")
+	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(b.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, release := range []bool{false, true} {
+		exe := filepath.Join(dir, fmt.Sprintf("race%v.exe", release))
+		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release, Sanitize: *sanitize}); code != 0 {
+			t.Fatalf("build failed with exit %d", code)
+		}
+		out, err := exec.Command(exe).CombinedOutput()
+		if err != nil || strings.TrimSpace(string(out)) != "arm 19 got 19" {
+			t.Fatalf("release=%v: got %q (%v), want %q", release, out, err, "arm 19 got 19")
 		}
 	}
 }

@@ -6,14 +6,14 @@ use source { Span }
 extend Parser {
   fun parseStruct(head: DeclHead, isExtern: bool): ast.StructDecl {
     this.next()  // struct
-    var d: ast.StructDecl = ast.StructDecl(attrs: head.attrs, doc: head.doc, pub: head.pub, isInternal: head.isInternal, isExtern)
-    d.name = this.ident()
-    d.typeParams = this.parseTypeParams()
-    if (this.accept(Kind.Colon)) d.variant = &this.parseType()
+    var declaration: ast.StructDecl = ast.StructDecl(attrs: head.attrs, doc: head.doc, pub: head.pub, isInternal: head.isInternal, isExtern)
+    declaration.name = this.ident()
+    declaration.typeParams = this.parseTypeParams()
+    if (this.accept(Kind.Colon)) declaration.variant = &this.parseType()
     if (!this.accept(Kind.LBrace)) {
       this.expectHeaderEnd("'{' after struct name")
-      d.pos = this.spanFrom(head.start)
-      return d
+      declaration.pos = this.spanFrom(head.start)
+      return declaration
     }
     this.skipSemis()
     val fields: MutableList<ast.Field> = []
@@ -33,7 +33,7 @@ extend Parser {
         Kind.Ident, Kind.KwVar, Kind.KwVal, Kind.KwProtected => {
           // `init { }`, `init(value: T) { }`; a field named init is `init: T`
           if (member.text == "init" && (afterMember == Kind.LBrace || afterMember == Kind.LParen)) {
-            d = this.parseInit(d, hasVis)
+            declaration = this.parseInit(declaration, hasVis)
           } else {
             fields.push(this.parseField(memberAttrs, vis))
           }
@@ -53,7 +53,7 @@ extend Parser {
             this.errorAt(this.span(), "an inline 'implement' has no visibility of its own; it follows the trait and type")
             this.next()
           }
-          impls.push(this.parseInlineImpl(memberAttrs, d.name, d.typeParams))
+          impls.push(this.parseInlineImpl(memberAttrs, declaration.name, declaration.typeParams))
         }
         else => {
           this.errorAt(member.span, "expected a field or method, found ${member.describe()}")
@@ -64,28 +64,28 @@ extend Parser {
       this.parseMemberSeparator()
     }
     this.expect(Kind.RBrace)
-    d.fields = fields.toList()
-    d.methods = methods.toList()
-    d.statics = statics.toList()
-    d.impls = impls.toList()
-    d.pos = this.spanFrom(head.start)
-    d
+    declaration.fields = fields.toList()
+    declaration.methods = methods.toList()
+    declaration.statics = statics.toList()
+    declaration.impls = impls.toList()
+    declaration.pos = this.spanFrom(head.start)
+    declaration
   }
 
   // the `init` block of a struct, the cursor on its visibility word (an
   // error) or on `init`
   fun parseInit(parsed: ast.StructDecl, hasVis: bool): ast.StructDecl {
-    var d = parsed
+    var declaration = parsed
     if (hasVis) {
       this.errorAt(this.span(), "'init' has no visibility: it is not callable, it runs at every construction (D28)")
       this.next()
     }
-    if (d.init != null) this.errorAt(this.span(), "a struct has one 'init' block")
-    d.initPos = this.span()
+    if (declaration.init != null) this.errorAt(this.span(), "a struct has one 'init' block")
+    declaration.initPos = this.span()
     this.next()  // init
     if (this.at(Kind.LParen)) {
       val params = this.parseParams()
-      d.initParams = if (params.isEmpty()) null else params  // `init()` takes none
+      declaration.initParams = if (params.isEmpty()) null else params  // `init()` takes none
       if (this.cVariadic.isValid()) {
         this.errorAt(this.cVariadic, "only a function in an 'extern \"C\"' block takes C's variadic arguments; an 'init' takes 'name: T...' (D123)")
         this.cVariadic = Span.none()
@@ -94,8 +94,8 @@ extend Parser {
         if (param.typ == null) this.errorAt(param.name.pos, "an 'init' parameter needs a type: '${param.name.name}: T'")
       }
     }
-    d.init = this.parseBlock()
-    d
+    declaration.init = this.parseBlock()
+    declaration
   }
 
   // `static val name[: T] = expr` in a struct body: read as `Type.name`

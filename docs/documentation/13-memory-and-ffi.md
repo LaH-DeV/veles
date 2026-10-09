@@ -272,7 +272,7 @@ struct Res {
 }
 
 fun deep(i: i64): i64 {
-  await sleep(Duration.zero)          // a suspending call: a task of its own underneath
+  await sleep(Duration.zero)          // a suspension point: the panic below unwinds through it
   [10, 20].at(i) ?: panic("deep: index $i is out of range")  // the panic continues in the caller
 }
 

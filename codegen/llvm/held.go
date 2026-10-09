@@ -20,7 +20,7 @@ import (
 func (g *gen) heldScope(e *sema.ScopeBlock) string {
 	h := e.Held
 	sc := g.newTmp()
-	g.emit("%s = call ptr @veles_scope_begin(ptr %s, i64 1)", sc, g.coro.task)
+	g.emit("%s = call ptr @veles_scope_begin(ptr %s, i64 1, i64 %s)", sc, g.coro.task, g.coro.depth)
 	slot := g.alloca("ptr")
 	g.emit("store ptr %s, ptr %s", sc, slot)
 	g.scopeSlots[e] = slot

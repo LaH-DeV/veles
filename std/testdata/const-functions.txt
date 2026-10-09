@@ -76,6 +76,7 @@ prelude/list.vs: public const fun drop(n: i64): List<T>
 prelude/list.vs: public const fun enumerate(): List<(i64, T)>
 prelude/list.vs: public const fun fill(x: T)
 prelude/list.vs: public const fun flatMap<U, E>(f: fun(T): List<U> suspends throws E): List<U> throws E
+prelude/list.vs: public const fun incrementAt(i: i64)
 prelude/list.vs: public const fun indexOfFirst<E>(pred: fun(T): bool suspends throws E): i64 throws E
 prelude/list.vs: public const fun indices(): Range<i64>
 prelude/list.vs: public const fun insert(i: i64, x: T)
@@ -108,6 +109,7 @@ prelude/list.vs: public const fun swap(i: i64, j: i64)
 prelude/list.vs: public const fun take(n: i64): List<T>
 prelude/list.vs: public const fun toMutableSet(): MutableSet<T>
 prelude/list.vs: public const fun toSet(): Set<T>
+prelude/list.vs: public const fun updateAt(i: i64, transform: fun(T): T): T
 prelude/list.vs: public const fun upperBound(x: T): i64
 prelude/list.vs: public const fun windowed(n: i64): List<List<T>>
 prelude/list.vs: public const fun zip<U>(other: List<U>): List<(T, U)>

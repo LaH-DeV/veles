@@ -109,8 +109,8 @@ fun quickSortRange(xs: MutableList<i64>, lo: i64, hi: i64) {
 public fun countingSort(xs: List<i64>, maxValue: i64): List<i64> {
   val counts = MutableList<i64>.repeat(0, maxValue + 1)
   loop (x in xs) {
-    val slot = counts.ref(x) ?: panic("countingSort: $x is outside 0..$maxValue")
-    *slot += 1
+    if (x < 0 || x > maxValue) panic("countingSort: $x is outside 0..$maxValue")
+    counts.incrementAt(x)
   }
   val out: MutableList<i64> = []
   var v: i64 = 0

@@ -19,7 +19,7 @@ func TestConstFunMatchesRunTime(t *testing.T) {
 	}
 	for _, release := range []bool{false, true} {
 		out, code := runTestFiles(t, map[string]string{"fns.vs": constFunSrc, "cf.test.vs": constFunTests}, Options{Release: release})
-		if code != 0 || !strings.Contains(out, "25 passed") {
+		if code != 0 || !strings.Contains(out, "27 passed") {
 			t.Fatalf("release=%v: exit %d, output:\n%s", release, code, out)
 		}
 	}
@@ -125,6 +125,20 @@ const fun lists(): List<i64> {
   out.toList()
 }
 const LISTS: List<i64> = lists()
+
+const fun incremented(): i64 {
+  val counts: MutableList<i64> = [3]
+  counts.incrementAt(0)
+  counts.at(0) ?: -1
+}
+const INCREMENTED: i64 = incremented()
+
+const fun updatedAt(): string {
+  val values: MutableList<i64> = [3, 5]
+  val updated = values.updateAt(-1, value => value * 2)
+  "$updated $values"
+}
+const UPDATED_AT: string = updatedAt()
 
 const fun maps(): List<string> {
   val m: MutableMap<string, i64> = [:]
@@ -495,6 +509,14 @@ test "text" {
 }
 test "lists" {
   expect(LISTS == lists())
+}
+test "MutableList.incrementAt is const" {
+  expect(INCREMENTED == 4)
+  expect(INCREMENTED == incremented())
+}
+test "MutableList.updateAt is const and returns the stored value" {
+  expect(UPDATED_AT == "10 [3, 10]")
+  expect(UPDATED_AT == updatedAt())
 }
 test "maps and sets" {
   expect(MAPS == maps())

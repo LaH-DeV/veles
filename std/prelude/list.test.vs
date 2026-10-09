@@ -54,3 +54,29 @@ test "addAll of eight-byte elements past the capacity" {
   expect(out.len() == 20000)
   expect(out.sum() == 110000)
 }
+
+test "incrementAt updates an element and checks its index" {
+  val counts: MutableList<i64> = [0, 2, 0]
+  counts.incrementAt(1)
+  counts.incrementAt(-1)
+  expect(counts.toList() == [0, 3, 1])
+  expectPanics(() => MutableList<i64>.repeat(0, 0).incrementAt(0))
+  expectPanics(() => MutableList<i64>.repeat(0, 0).incrementAt(-1))
+}
+
+test "updateAt transforms once, stores and returns the new value" {
+  val values: MutableList<i64> = [3, 5]
+  var calls = 0
+  val updated = values.updateAt(-1, value => {
+    calls += 1
+    value * 2
+  })
+  expect(updated == 10)
+  expect(calls == 1)
+  expect(values.toList() == [3, 10])
+
+  val words: MutableList<string> = ["veles"]
+  expect(words.updateAt(0, word => word.toUpper()) == "VELES")
+  expect(words.toList() == ["VELES"])
+  expectPanics(() => MutableList<i64>.repeat(0, 0).updateAt(0, value => value + 1))
+}

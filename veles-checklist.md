@@ -165,6 +165,20 @@ answered from the shape, tuples get `Comparable`, enums get
       threads, `channels` 7.2 → 4.6 ms (TestChannelHandoffUnderThreads,
       TestRaceOverChannelsUnderThreads — the latter caught a race re-listing
       its nodes after a wake for another reason, cutting other waiters off)
+- [x] Many tasks parked on one channel (concurrency review B1, 2026-10-09):
+      appending a waiter walked the list and unlinking scanned it, under a
+      spinlock that never yielded — 100k parked receivers kept all 32 cores at
+      100 % for seconds (62.8 s of CPU in 2 s). Waiter lists are O(1) doubly
+      linked with a tail; the spinlock yields its time slice after 128 spins.
+      Same program: 47 ms of CPU in 2 s (TestManyWaitersOnOneChannel, 1/8
+      threads; 20 s timeout before, 1.7 s after)
+- [x] A suspending call runs in its caller's task (concurrency review B2/F3, 2026-10-09): the
+      callee's frame comes from a per-task arena and is resumed inline; a call that does not wait
+      is ~4.4 ns (was ~70 ns: a task, a frame, an argument block, a result cell and a `setjmp`
+      each); one that waits parks the task in its own frame and hands it back when it ends.
+      `bench/suscall`; TestSuspendingCallsInOneTask (debug/release, 1/2/8 threads, GC pressure).
+      Found on the way: a `suspends` method-table slot over a plain method forwarded no arguments
+      (worked only while they stayed in their registers)
 - [x] Deadlock detection: "deadlock: every task is blocked" when no task
       can run and no timer, socket or blocking call can wake one
 - [x] Blocking-call detection → superseded: a blocking call hands its
@@ -953,7 +967,7 @@ list as it was is in `archive/progress-log-2026-09.md` and git history).
 
 (Q15 named imports was decided 2026-09-29: D85; Q16 `as` conversions the same day: D86; Q19 the same; Q4 D87, Q8 D88, Q3 D89 — decided 2026-09-29, being built in that order.)
 
-**Open: none** (2026-10-08; Q22 and Q23, raised while recording D142, were decided the same day into D142; Q21, packages, 2026-10-05: D138).
+**Open: none** (2026-10-09; Q24–Q28, raised by the concurrency review, were decided the same day: D143–D147; Q22 and Q23 on 2026-10-08 into D142; Q21, packages, 2026-10-05: D138).
 
 (Q12, Q13, Q17 and Q20 were decided 2026-09-30: D101–D106. Q1 was decided 2026-10-01: D108; Q2, Q9, Q10, Q11 the same day: D111–D114; Q5, Q6 the same day: D117, D118; Q7 the same day: D120–D123; Q14 the same day: D131, D132.)
 
@@ -1110,8 +1124,24 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-10-08 | Visibility levels (user: "let's think how could we do less `public` painting but have the default internal/private things") | **`private` the type, `internal` the module, unmarked the package, `public` other packages, exported at its module path; `public use` stays as a facade; a member another package cannot see is supplied to the implicit constructor when it has no default and defaulted otherwise ("if it is needed for creation, it should be needed for creation"); top-level `private` an error (fix `internal`); `public` in a program a compiler warning with `--fix`** (user's own proposal, over the recommended "members default to their type's level"; D142, amends M5 and D89; build: plan B17). Rejected: members inheriting their type's level; a `data struct` modifier; a `public { }` block; leaving M5. Opened Q22, Q23. |
 | 2026-10-08 | Q22: facade re-export of unmarked items | **Allowed: `public use` in a root may export an unmarked item, reachable outside only under the facade's name; `internal`/`private` refused** (user, over the recommended "only `public` items"; D142). Rejected: only `public` items re-exportable. |
 | 2026-10-08 | Q23: a `public` signature naming an unexported type | **Error with fixes (make the type `public`, or drop `public`); a type exported by a facade counts as visible** (user, recommended of 3; D142). Rejected: a warning; allowing it. |
+| 2026-10-09 | Q24: OS-thread control (concurrency review; user: "possibility to precisely manage the native OS threads") | **Executors as values and structured threads**: `[runtime] threads` in the manifest, `Executor(threads:, name:)`, `Executor.thread(name:)`, `scope(on:)`/`gather(on:)` placement (a task stays on its executor), `e.run(f)`, `blocking(f)` on a bounded pool, `Thread.start(name:, priority:, cpus:, stackSize:)` joined by its `with`; a refused priority/affinity throws `ThreadError` (user, recommended of 4; D143). Open after building: non-Sendable state on a single-thread executor. Rejected: a minimal set; raw threads only; `VELES_THREADS` only. |
+| 2026-10-09 | Q25: atomics | **`compareAndSet`, `compareExchange`, integer `add`/`sub` (new value), `fetchAnd/Or/Xor` (old value), an optional `order: MemoryOrder` (default `SeqCst`; invalid for the operation = compile error), lock-free atomic pointers** (user, recommended of 3; D144). Rejected: SeqCst only (Go); leaving it. |
+| 2026-10-09 | Q26: loops that never suspend | **A pending cancellation unwinds at any loop back-edge (not in a lock region or `close()`); suspending functions also yield there after ~10 ms; `yieldNow()`, `checkCancelled()`** (user, recommended of 4; D145). Rejected: explicit points only; oversubscribing threads; leaving it. |
+| 2026-10-09 | Q27: synchronisation types | **`RwLock<T>`, `Event`, `Lazy<T>`, `Broadcast<T>` + `Watch<T>`** (user, all four offered; D146). Not offered: `Barrier`/`Latch`. |
+| 2026-10-09 | Q28: a `close()` that suspends | **An `implement Closeable` may declare `close()` `suspends`; a `with` on that type is a shielded suspension point; generic code gets two instances (D116); such a type cannot be a `Closeable` trait object** (user, recommended of 3; D147). Rejected: a second trait; explicit `shutdown()`/`rollback()` only. |
+| 2026-10-09 | `MutableList<i64>` indexed increment | **`incrementAt(i)` increments in place, returns unit and panics out of range** (user, recommended of 2; D148). Rejected: return `bool` and leave invalid-index handling to the caller. |
+| 2026-10-09 | Transform one mutable-list element | **`MutableList<T>.updateAt(i, transform): T` calls a synchronous, non-throwing transform once, stores and returns the replacement; negative indexes count from the end and out-of-range panics** (user, recommended of 3; D149). Rejected: `mapAt`, unit return, or no helper. |
 
 ## 11. Known limitations to revisit
+
+- **Found by the concurrency review (2026-10-09, `veles-concurrency-review.md`), not fixed yet**
+  (B1 and B2 are fixed; B3 is decided as D145 and planned as F4): (B4, medium) `veles_task` is ~430 bytes (15 flag
+  words, panic and debug data, one field set per wait kind); ~560–670 bytes per parked task, target
+  ≤ 250 — F2 (2026-10-09) took the task to 248 bytes and a parked task to 400. Missing benchmark:
+  `bench/idle` (peak memory per parked task). On Linux a just-launched child takes up to
+  ~7 ms to start at 8 threads (Windows ≤ 0.3 ms): the wake-up path (plan F9). Many tasks
+  parking on one channel at 32 threads still spend ~1.5 s of CPU per 100k parks on its lock (bounded
+  now; a per-channel waiter queue without the lock would remove it). Plan track F has the order.
 
 - Visibility (D142, decided 2026-10-08, not built: plan B17). Kept for later:
   a file-scoped `private` on top-level declarations (Kotlin's rule) — refused

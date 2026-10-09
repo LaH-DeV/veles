@@ -1,13 +1,15 @@
 %S.main.Resource = type { %str }
-define ptr @v_main.slow(ptr %task, i64 %p1) presplitcoroutine {
+define ptr @v_main.slow(ptr %task, ptr %link, i64 %p1) presplitcoroutine {
 entry:
   %a1 = alloca i64
   %a41 = alloca i64
   store i64 %p1, ptr %a1
   %coro.id = call token @llvm.coro.id(i32 8, ptr null, ptr null, ptr null)
   %coro.size = call i64 @llvm.coro.size.i64()
-  %coro.mem = call ptr @veles_alloc_words(i64 %coro.size)
+  %coro.mem = call ptr @veles.frame.alloc(ptr %task, ptr %link, i64 %coro.size)
   %coro.hdl = call ptr @llvm.coro.begin(token %coro.id, ptr %coro.mem)
+  %coro.depthp = getelementptr inbounds { ptr, i64, i64 }, ptr %link, i32 0, i32 1
+  %coro.depth = load i64, ptr %coro.depthp
   %t2 = extractvalue %str { ptr @.str.1, i64 20 }, 0
   %t3 = extractvalue %str { ptr @.str.1, i64 20 }, 1
   call void @veles_call_push(ptr %t2)
@@ -55,14 +57,15 @@ sleep.7:
   %t28 = icmp ne i64 %t27, 0
   br i1 %t28, label %sleep.done.8, label %sleep.susp.9
 sleep.susp.9:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t29 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t29, label %coro.suspend [ i8 0, label %resume.10 i8 1, label %coro.cleanup ]
 resume.10:
-  %t30 = call i64 @veles_task_cancelled(ptr %task)
+  %t30 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
   %t31 = icmp ne i64 %t30, 0
   br i1 %t31, label %cancelled.11, label %cont.12
 cancelled.11:
-  call void @veles_task_finish_cancelled(ptr %task)
+  call void @veles_frame_unwound(ptr %task, ptr %link)
   br label %coro.final
 cont.12:
   br label %sleep.7
@@ -81,7 +84,16 @@ overflow.13:
   unreachable
 arith.ok.14:
   store i64 %t35, ptr %a41
-  call void @veles_task_finish(ptr %task, ptr %a41, i64 8, i64 0)
+  %t42 = load ptr, ptr %link
+  %t43 = icmp eq ptr %t42, null
+  br i1 %t43, label %ret.task.15, label %ret.call.16
+ret.task.15:
+  call void @veles_frame_return(ptr %task, ptr %link, ptr %a41, i64 8, i64 0, ptr null)
+  br label %coro.final
+ret.call.16:
+  %t44 = getelementptr inbounds { ptr, i64, i64, i64 }, ptr %link, i32 0, i32 3
+  store i64 %t35, ptr %t44
+  call void @veles.frame.back(ptr %task, ptr %link)
   br label %coro.final
 coro.final:
   %coro.fs = call i8 @llvm.coro.suspend(token none, i1 true)
@@ -96,7 +108,7 @@ coro.suspend:
   ret ptr %coro.hdl
 }
 
-define ptr @v_main.produce(ptr %task, ptr %p1) presplitcoroutine {
+define ptr @v_main.produce(ptr %task, ptr %link, ptr %p1) presplitcoroutine {
 entry:
   %a1 = alloca ptr
   %a5 = alloca { i64, i64, i1 }
@@ -111,8 +123,10 @@ entry:
   store ptr %p1, ptr %a1
   %coro.id = call token @llvm.coro.id(i32 8, ptr null, ptr null, ptr null)
   %coro.size = call i64 @llvm.coro.size.i64()
-  %coro.mem = call ptr @veles_alloc_words(i64 %coro.size)
+  %coro.mem = call ptr @veles.frame.alloc(ptr %task, ptr %link, i64 %coro.size)
   %coro.hdl = call ptr @llvm.coro.begin(token %coro.id, ptr %coro.mem)
+  %coro.depthp = getelementptr inbounds { ptr, i64, i64 }, ptr %link, i32 0, i32 1
+  %coro.depth = load i64, ptr %coro.depthp
   %t2 = insertvalue { i64, i64, i1 } undef, i64 1, 0
   %t3 = insertvalue { i64, i64, i1 } %t2, i64 3, 1
   %t4 = insertvalue { i64, i64, i1 } %t3, i1 true, 2
@@ -166,14 +180,15 @@ send.11:
   %t32 = icmp ne i64 %t31, 0
   br i1 %t32, label %send.done.12, label %send.susp.13
 send.susp.13:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t33 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t33, label %coro.suspend [ i8 0, label %resume.14 i8 1, label %coro.cleanup ]
 resume.14:
-  %t34 = call i64 @veles_task_cancelled(ptr %task)
+  %t34 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
   %t35 = icmp ne i64 %t34, 0
   br i1 %t35, label %cancelled.15, label %cont.16
 cancelled.15:
-  call void @veles_task_finish_cancelled(ptr %task)
+  call void @veles_frame_unwound(ptr %task, ptr %link)
   br label %coro.final
 cont.16:
   br label %send.11
@@ -213,7 +228,7 @@ safepoint.on.23:
 loop.end.3:
   %t47 = load ptr, ptr %a1
   call void @veles_chan_close(ptr %t47)
-  call void @veles_task_finish(ptr %task, ptr null, i64 0, i64 0)
+  call void @veles_frame_return(ptr %task, ptr %link, ptr null, i64 0, i64 0, ptr null)
   br label %coro.final
 coro.final:
   %coro.fs = call i8 @llvm.coro.suspend(token none, i1 true)
@@ -228,7 +243,7 @@ coro.suspend:
   ret ptr %coro.hdl
 }
 
-define ptr @v_main.main(ptr %task) presplitcoroutine {
+define ptr @v_main.main(ptr %task, ptr %link) presplitcoroutine {
 entry:
   %a2 = alloca %S.main.Resource
   %a3 = alloca { ptr, ptr, ptr }
@@ -287,12 +302,14 @@ entry:
   %a453 = alloca %str
   %coro.id = call token @llvm.coro.id(i32 8, ptr null, ptr null, ptr null)
   %coro.size = call i64 @llvm.coro.size.i64()
-  %coro.mem = call ptr @veles_alloc_words(i64 %coro.size)
+  %coro.mem = call ptr @veles.frame.alloc(ptr %task, ptr %link, i64 %coro.size)
   %coro.hdl = call ptr @llvm.coro.begin(token %coro.id, ptr %coro.mem)
+  %coro.depthp = getelementptr inbounds { ptr, i64, i64 }, ptr %link, i32 0, i32 1
+  %coro.depth = load i64, ptr %coro.depthp
   %t1 = insertvalue %S.main.Resource undef, %str { ptr @.str.6, i64 2 }, 0
   store %S.main.Resource %t1, ptr %a2
   call void @veles_cleanup_push(ptr %a3, ptr @with.close.1, ptr %a2)
-  %t4 = call ptr @veles_scope_begin(ptr %task, i64 1)
+  %t4 = call ptr @veles_scope_begin(ptr %task, i64 1, i64 %coro.depth)
   store ptr %t4, ptr %a5
   call void @veles_cleanup_push(ptr %a6, ptr @scope.cancel.thunk, ptr %a5)
   %t7 = load ptr, ptr %a5
@@ -318,10 +335,11 @@ await.4:
   %t21 = icmp ne i64 %t20, 0
   br i1 %t21, label %await.got.5, label %await.susp.6
 await.susp.6:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t22 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t22, label %coro.suspend [ i8 0, label %resume.7 i8 1, label %coro.cleanup ]
 resume.7:
-  %t23 = call i64 @veles_task_cancelled(ptr %task)
+  %t23 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
   %t24 = icmp ne i64 %t23, 0
   br i1 %t24, label %cancelled.8, label %cont.9
 cancelled.8:
@@ -334,6 +352,7 @@ abandon.wait.10:
   %t27 = icmp ne i64 %t26, 0
   br i1 %t27, label %abandon.done.11, label %abandon.susp.12
 abandon.susp.12:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t28 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t28, label %coro.suspend [ i8 0, label %resume.13 i8 1, label %coro.cleanup ]
 resume.13:
@@ -345,7 +364,7 @@ abandon.done.11:
   call void @veles_call_push(ptr %t29)
   call void @v_main.Closeable.Resource.close(ptr %a2)
   call void @veles_call_pop()
-  call void @veles_task_finish_cancelled(ptr %task)
+  call void @veles_frame_unwound(ptr %task, ptr %link)
   br label %coro.final
 cont.9:
   %t31 = load ptr, ptr %a5
@@ -381,10 +400,11 @@ await.19:
   %t45 = icmp ne i64 %t44, 0
   br i1 %t45, label %await.got.20, label %await.susp.21
 await.susp.21:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t46 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t46, label %coro.suspend [ i8 0, label %resume.22 i8 1, label %coro.cleanup ]
 resume.22:
-  %t47 = call i64 @veles_task_cancelled(ptr %task)
+  %t47 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
   %t48 = icmp ne i64 %t47, 0
   br i1 %t48, label %cancelled.23, label %cont.24
 cancelled.23:
@@ -397,6 +417,7 @@ abandon.wait.25:
   %t51 = icmp ne i64 %t50, 0
   br i1 %t51, label %abandon.done.26, label %abandon.susp.27
 abandon.susp.27:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t52 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t52, label %coro.suspend [ i8 0, label %resume.28 i8 1, label %coro.cleanup ]
 resume.28:
@@ -408,7 +429,7 @@ abandon.done.26:
   call void @veles_call_push(ptr %t53)
   call void @v_main.Closeable.Resource.close(ptr %a2)
   call void @veles_call_pop()
-  call void @veles_task_finish_cancelled(ptr %task)
+  call void @veles_frame_unwound(ptr %task, ptr %link)
   br label %coro.final
 cont.24:
   %t55 = load ptr, ptr %a5
@@ -457,10 +478,11 @@ scope.wait.1:
   %t77 = icmp ne i64 %t76, 0
   br i1 %t77, label %scope.done.2, label %scope.susp.3
 scope.susp.3:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t78 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t78, label %coro.suspend [ i8 0, label %resume.34 i8 1, label %coro.cleanup ]
 resume.34:
-  %t79 = call i64 @veles_task_cancelled(ptr %task)
+  %t79 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
   %t80 = icmp ne i64 %t79, 0
   br i1 %t80, label %cancelled.35, label %cont.36
 cancelled.35:
@@ -473,6 +495,7 @@ abandon.wait.37:
   %t83 = icmp ne i64 %t82, 0
   br i1 %t83, label %abandon.done.38, label %abandon.susp.39
 abandon.susp.39:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t84 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t84, label %coro.suspend [ i8 0, label %resume.40 i8 1, label %coro.cleanup ]
 resume.40:
@@ -484,7 +507,7 @@ abandon.done.38:
   call void @veles_call_push(ptr %t85)
   call void @v_main.Closeable.Resource.close(ptr %a2)
   call void @veles_call_pop()
-  call void @veles_task_finish_cancelled(ptr %task)
+  call void @veles_frame_unwound(ptr %task, ptr %link)
   br label %coro.final
 cont.36:
   br label %scope.wait.1
@@ -513,7 +536,7 @@ scope.after.42:
   %t94 = call ptr @veles_chan_new(ptr @adesc.i64, i64 1)
   store ptr %t94, ptr %a95
   store i64 0, ptr %a96
-  %t97 = call ptr @veles_scope_begin(ptr %task, i64 1)
+  %t97 = call ptr @veles_scope_begin(ptr %task, i64 1, i64 %coro.depth)
   store ptr %t97, ptr %a98
   call void @veles_cleanup_push(ptr %a99, ptr @scope.cancel.thunk, ptr %a98)
   %t100 = load ptr, ptr %a98
@@ -536,10 +559,11 @@ recv.52:
   %t109 = icmp ne i64 %t108, 0
   br i1 %t109, label %recv.done.53, label %recv.susp.54
 recv.susp.54:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t110 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t110, label %coro.suspend [ i8 0, label %resume.55 i8 1, label %coro.cleanup ]
 resume.55:
-  %t111 = call i64 @veles_task_cancelled(ptr %task)
+  %t111 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
   %t112 = icmp ne i64 %t111, 0
   br i1 %t112, label %cancelled.56, label %cont.57
 cancelled.56:
@@ -552,12 +576,13 @@ abandon.wait.58:
   %t115 = icmp ne i64 %t114, 0
   br i1 %t115, label %abandon.done.59, label %abandon.susp.60
 abandon.susp.60:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t116 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t116, label %coro.suspend [ i8 0, label %resume.61 i8 1, label %coro.cleanup ]
 resume.61:
   br label %abandon.wait.58
 abandon.done.59:
-  call void @veles_task_finish_cancelled(ptr %task)
+  call void @veles_frame_unwound(ptr %task, ptr %link)
   br label %coro.final
 cont.57:
   %t117 = load ptr, ptr %a98
@@ -623,10 +648,11 @@ scope.wait.45:
   %t145 = icmp ne i64 %t144, 0
   br i1 %t145, label %scope.done.46, label %scope.susp.47
 scope.susp.47:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t146 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t146, label %coro.suspend [ i8 0, label %resume.72 i8 1, label %coro.cleanup ]
 resume.72:
-  %t147 = call i64 @veles_task_cancelled(ptr %task)
+  %t147 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
   %t148 = icmp ne i64 %t147, 0
   br i1 %t148, label %cancelled.73, label %cont.74
 cancelled.73:
@@ -639,12 +665,13 @@ abandon.wait.75:
   %t151 = icmp ne i64 %t150, 0
   br i1 %t151, label %abandon.done.76, label %abandon.susp.77
 abandon.susp.77:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t152 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t152, label %coro.suspend [ i8 0, label %resume.78 i8 1, label %coro.cleanup ]
 resume.78:
   br label %abandon.wait.75
 abandon.done.76:
-  call void @veles_task_finish_cancelled(ptr %task)
+  call void @veles_frame_unwound(ptr %task, ptr %link)
   br label %coro.final
 cont.74:
   br label %scope.wait.45
@@ -788,7 +815,7 @@ elvis.end.91:
   %t243 = call ptr @veles_chan_new(ptr @adesc.i64, i64 1)
   store ptr %t243, ptr %a244
   store i64 0, ptr %a245
-  %t246 = call ptr @veles_scope_begin(ptr %task, i64 1)
+  %t246 = call ptr @veles_scope_begin(ptr %task, i64 1, i64 %coro.depth)
   store ptr %t246, ptr %a247
   call void @veles_cleanup_push(ptr %a248, ptr @scope.cancel.thunk, ptr %a247)
   %t249 = load ptr, ptr %a247
@@ -852,10 +879,11 @@ sleep.105:
   %t283 = icmp ne i64 %t282, 0
   br i1 %t283, label %sleep.done.106, label %sleep.susp.107
 sleep.susp.107:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t284 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t284, label %coro.suspend [ i8 0, label %resume.108 i8 1, label %coro.cleanup ]
 resume.108:
-  %t285 = call i64 @veles_task_cancelled(ptr %task)
+  %t285 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
   %t286 = icmp ne i64 %t285, 0
   br i1 %t286, label %cancelled.109, label %cont.110
 cancelled.109:
@@ -868,12 +896,13 @@ abandon.wait.111:
   %t289 = icmp ne i64 %t288, 0
   br i1 %t289, label %abandon.done.112, label %abandon.susp.113
 abandon.susp.113:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t290 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t290, label %coro.suspend [ i8 0, label %resume.114 i8 1, label %coro.cleanup ]
 resume.114:
   br label %abandon.wait.111
 abandon.done.112:
-  call void @veles_task_finish_cancelled(ptr %task)
+  call void @veles_frame_unwound(ptr %task, ptr %link)
   br label %coro.final
 cont.110:
   %t291 = load ptr, ptr %a247
@@ -899,10 +928,11 @@ recv.118:
   %t299 = icmp ne i64 %t298, 0
   br i1 %t299, label %recv.done.119, label %recv.susp.120
 recv.susp.120:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t300 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t300, label %coro.suspend [ i8 0, label %resume.121 i8 1, label %coro.cleanup ]
 resume.121:
-  %t301 = call i64 @veles_task_cancelled(ptr %task)
+  %t301 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
   %t302 = icmp ne i64 %t301, 0
   br i1 %t302, label %cancelled.122, label %cont.123
 cancelled.122:
@@ -915,12 +945,13 @@ abandon.wait.124:
   %t305 = icmp ne i64 %t304, 0
   br i1 %t305, label %abandon.done.125, label %abandon.susp.126
 abandon.susp.126:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t306 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t306, label %coro.suspend [ i8 0, label %resume.127 i8 1, label %coro.cleanup ]
 resume.127:
   br label %abandon.wait.124
 abandon.done.125:
-  call void @veles_task_finish_cancelled(ptr %task)
+  call void @veles_frame_unwound(ptr %task, ptr %link)
   br label %coro.final
 cont.123:
   %t307 = load ptr, ptr %a247
@@ -984,10 +1015,11 @@ scope.wait.92:
   %t332 = icmp ne i64 %t331, 0
   br i1 %t332, label %scope.done.93, label %scope.susp.94
 scope.susp.94:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t333 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t333, label %coro.suspend [ i8 0, label %resume.138 i8 1, label %coro.cleanup ]
 resume.138:
-  %t334 = call i64 @veles_task_cancelled(ptr %task)
+  %t334 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
   %t335 = icmp ne i64 %t334, 0
   br i1 %t335, label %cancelled.139, label %cont.140
 cancelled.139:
@@ -1000,12 +1032,13 @@ abandon.wait.141:
   %t338 = icmp ne i64 %t337, 0
   br i1 %t338, label %abandon.done.142, label %abandon.susp.143
 abandon.susp.143:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t339 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t339, label %coro.suspend [ i8 0, label %resume.144 i8 1, label %coro.cleanup ]
 resume.144:
   br label %abandon.wait.141
 abandon.done.142:
-  call void @veles_task_finish_cancelled(ptr %task)
+  call void @veles_frame_unwound(ptr %task, ptr %link)
   br label %coro.final
 cont.140:
   br label %scope.wait.92
@@ -1043,7 +1076,7 @@ scope.after.146:
   %t358 = call ptr @veles_chan_new(ptr @adesc.i64, i64 1)
   store ptr %t358, ptr %a359
   store i64 0, ptr %a360
-  %t361 = call ptr @veles_scope_begin(ptr %task, i64 1)
+  %t361 = call ptr @veles_scope_begin(ptr %task, i64 1, i64 %coro.depth)
   store ptr %t361, ptr %a362
   call void @veles_cleanup_push(ptr %a363, ptr @scope.cancel.thunk, ptr %a362)
   %t364 = load ptr, ptr %a362
@@ -1135,10 +1168,11 @@ sleep.167:
   %t419 = icmp ne i64 %t418, 0
   br i1 %t419, label %sleep.done.168, label %sleep.susp.169
 sleep.susp.169:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t420 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t420, label %coro.suspend [ i8 0, label %resume.170 i8 1, label %coro.cleanup ]
 resume.170:
-  %t421 = call i64 @veles_task_cancelled(ptr %task)
+  %t421 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
   %t422 = icmp ne i64 %t421, 0
   br i1 %t422, label %cancelled.171, label %cont.172
 cancelled.171:
@@ -1151,12 +1185,13 @@ abandon.wait.173:
   %t425 = icmp ne i64 %t424, 0
   br i1 %t425, label %abandon.done.174, label %abandon.susp.175
 abandon.susp.175:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t426 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t426, label %coro.suspend [ i8 0, label %resume.176 i8 1, label %coro.cleanup ]
 resume.176:
   br label %abandon.wait.173
 abandon.done.174:
-  call void @veles_task_finish_cancelled(ptr %task)
+  call void @veles_frame_unwound(ptr %task, ptr %link)
   br label %coro.final
 cont.172:
   %t427 = load ptr, ptr %a362
@@ -1193,10 +1228,11 @@ scope.wait.149:
   %t435 = icmp ne i64 %t434, 0
   br i1 %t435, label %scope.done.150, label %scope.susp.151
 scope.susp.151:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t436 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t436, label %coro.suspend [ i8 0, label %resume.182 i8 1, label %coro.cleanup ]
 resume.182:
-  %t437 = call i64 @veles_task_cancelled(ptr %task)
+  %t437 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
   %t438 = icmp ne i64 %t437, 0
   br i1 %t438, label %cancelled.183, label %cont.184
 cancelled.183:
@@ -1209,12 +1245,13 @@ abandon.wait.185:
   %t441 = icmp ne i64 %t440, 0
   br i1 %t441, label %abandon.done.186, label %abandon.susp.187
 abandon.susp.187:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t442 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t442, label %coro.suspend [ i8 0, label %resume.188 i8 1, label %coro.cleanup ]
 resume.188:
   br label %abandon.wait.185
 abandon.done.186:
-  call void @veles_task_finish_cancelled(ptr %task)
+  call void @veles_frame_unwound(ptr %task, ptr %link)
   br label %coro.final
 cont.184:
   br label %scope.wait.149
@@ -1249,7 +1286,7 @@ scope.after.190:
   call void @veles_call_push(ptr %t459)
   call void @v_std.io.println(%str %t458)
   call void @veles_call_pop()
-  call void @veles_task_finish(ptr %task, ptr null, i64 0, i64 0)
+  call void @veles_frame_return(ptr %task, ptr %link, ptr null, i64 0, i64 0, ptr null)
   br label %coro.final
 coro.final:
   %coro.fs = call i8 @llvm.coro.suspend(token none, i1 true)
@@ -1293,7 +1330,7 @@ entry:
   %t3 = extractvalue %str { ptr @.str.29, i64 5 }, 0
   %t4 = extractvalue %str { ptr @.str.29, i64 5 }, 1
   call void @veles_call_base(ptr %task, ptr %t3)
-  %t5 = call ptr @v_main.slow(ptr %task, i64 %t2)
+  %t5 = call ptr @v_main.slow(ptr %task, ptr @veles.root.link, i64 %t2)
   call void @veles_task_started(ptr %task, ptr %t5)
   ret void
 }
@@ -1305,7 +1342,7 @@ entry:
   %t3 = extractvalue %str { ptr @.str.30, i64 8 }, 0
   %t4 = extractvalue %str { ptr @.str.30, i64 8 }, 1
   call void @veles_call_base(ptr %task, ptr %t3)
-  %t5 = call ptr @v_main.produce(ptr %task, ptr %t2)
+  %t5 = call ptr @v_main.produce(ptr %task, ptr @veles.root.link, ptr %t2)
   call void @veles_task_started(ptr %task, ptr %t5)
   ret void
 }
@@ -1315,7 +1352,7 @@ entry:
   %t1 = extractvalue %str { ptr @.str.31, i64 5 }, 0
   %t2 = extractvalue %str { ptr @.str.31, i64 5 }, 1
   call void @veles_call_base(ptr %task, ptr %t1)
-  %t3 = call ptr @v_main.main(ptr %task)
+  %t3 = call ptr @v_main.main(ptr %task, ptr @veles.root.link)
   call void @veles_task_started(ptr %task, ptr %t3)
   ret void
 }
