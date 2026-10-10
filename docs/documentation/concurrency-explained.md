@@ -253,9 +253,11 @@ VELES_THREADS=4 veles run .     # four threads
 ```
 
 Behind the scenes there are also a couple of helpers: a small monitor
-thread that watches for threads stuck in blocking calls, and spare
-threads it hands work to. At any moment, at most `VELES_THREADS` threads
-run the tasks of the default pool.
+thread that watches for threads stuck in blocking calls (and fires
+timers nobody else came back for), spare threads it hands work to, and
+the collector's helpers, which only work while a collection has every
+other thread stopped. At any moment, at most `VELES_THREADS` threads run
+the tasks of the default pool.
 
 When some work needs threads of its own, you make them: an `Executor`
 is a set of threads tasks can be placed on — a pool for heavy

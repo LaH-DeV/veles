@@ -1257,7 +1257,8 @@ mixed 718330
   so up front.
 - **Timers and sockets** are served by the default pool for every
   executor: a task on a pool can sleep, race and read a socket like any
-  other.
+  other — also while every default thread is busy in a long loop (the
+  monitor steps in).
 
 ## How it compiles
 

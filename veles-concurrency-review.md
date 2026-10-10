@@ -10,7 +10,11 @@
 > D147 (F7: Tx rollback and otel flush at close; TLS close_notify at close as Go does);
 > control of OS threads done as D143 (F8: `Executor.pool`/`Executor.thread`, `scope(on:)`,
 > `run`, `blocking`, `Thread`, names, priority and CPUs; CPU work on a pool keeps the default
-> pool's request latency near idle);
+> pool's request latency near idle); B5/B6 and the Linux start latency done as F9 (child start
+> ≤ 136 µs on Linux; nanosecond timers; race waits, sleeps and scope cancellation off the
+> runtime lock; `httphello` 32 threads 0.95 → 0.57 s, still slower than 8 as Go's own is);
+> F10 (2026-10-10) then took the allocation, the collector and the last runtime-lock uses out of
+> a server's path: `httphello` as fast at 32 threads as at 8, a parked task 345 bytes (`bench/idle`);
 > the open decisions were decided the same day as D143–D147 (Q24–Q28, all the
 > recommended options). The order of the remaining work is track F in `veles-plan.md`.
 > Found on the way: on Linux a child task can take up to ~7 ms to start at 8 threads

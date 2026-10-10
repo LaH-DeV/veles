@@ -31,7 +31,8 @@ func (g *gen) defineHelperEx(name, retLL string, params []string, attrs string, 
 		coro     *coroState
 		cleanups []sema.Expr
 		envSlot  string
-	}{g.fn, g.body.String(), g.allocas.String(), g.tmp, g.label, g.term, g.storage, g.loops, g.fnResult, g.coro, g.cleanups, g.envSlot}
+		mark     bool
+	}{g.fn, g.body.String(), g.allocas.String(), g.tmp, g.label, g.term, g.storage, g.loops, g.fnResult, g.coro, g.cleanups, g.envSlot, g.markLifetimes}
 	g.resetFn(&sema.Func{Name: name, Sig: &types.Func{Ret: types.TUnit}})
 	body()
 	if attrs != "" {
@@ -48,6 +49,7 @@ func (g *gen) defineHelperEx(name, retLL string, params []string, attrs string, 
 	g.allocas.WriteString(saved.allocas)
 	g.tmp, g.label, g.term, g.storage, g.loops, g.fnResult = saved.tmp, saved.label, saved.term, saved.storage, saved.loops, saved.result
 	g.coro, g.cleanups, g.envSlot = saved.coro, saved.cleanups, saved.envSlot
+	g.markLifetimes = saved.mark
 }
 
 // concat appends b to a (both %str values).

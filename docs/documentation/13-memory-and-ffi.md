@@ -6,7 +6,10 @@ Veles is garbage collected (D1). You allocate by writing `&x`, building a
 list or map, capturing a variable in a closure, or starting a task; you
 never free. The bootstrap collector is a non-moving mark-sweep: the
 compiler emits a layout descriptor for every type so the heap is scanned
-precisely, and the native stack is scanned conservatively.
+precisely, and the native stack is scanned conservatively. It stops every
+thread while it works; once more than a megabyte stays live, helper
+threads — one per core, up to eight — mark and sweep alongside it, so a
+pause gets shorter as the machine gets bigger.
 
 What this buys you is the absence of a whole category of decisions.
 There are no lifetimes, no ownership annotations and no reference
@@ -50,7 +53,9 @@ Output:
 
 Run it with `VELES_GC_TRACE=1` in the environment to see the collections
 happen. `VELES_GC_THRESHOLD=<bytes>` lowers the trigger, which is how
-the collector's own tests stress it.
+the collector's own tests stress it, and `VELES_GC_MARKERS=<n>` sets how
+many threads mark and sweep (1: the collecting thread alone; with it set,
+the helpers take part in every collection, however small the heap).
 
 ## Values versus pointers
 

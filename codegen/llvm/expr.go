@@ -544,7 +544,7 @@ func (g *gen) fieldOf(t types.Type, x string, i int) string {
 	}
 	v := g.newTmp()
 	if st != nil && st.Union {
-		tmp := g.alloca(g.llType(st))
+		tmp := g.scratch(g.llType(st))
 		g.emit("store %s %s, ptr %s", g.llType(st), x, tmp)
 		g.emit("%s = load %s, ptr %s", v, g.llType(st.Fields[i].Type), tmp)
 		return v
@@ -563,7 +563,7 @@ func (g *gen) withField(t types.Type, x string, i int, v string) string {
 	}
 	out := g.newTmp()
 	if st.Union {
-		tmp := g.alloca(g.llType(st))
+		tmp := g.scratch(g.llType(st))
 		g.emit("store %s %s, ptr %s", g.llType(st), x, tmp)
 		g.emit("store %s %s, ptr %s", g.llType(st.Fields[i].Type), v, tmp)
 		g.emit("%s = load %s, ptr %s", out, g.llType(st), tmp)
@@ -607,7 +607,7 @@ func (g *gen) assign(target sema.Expr, v string) {
 
 // makeTagged builds a `{ i32, [N x i64] }` value holding payload under tag.
 func (g *gen) makeTagged(taggedLL string, tag int, payloadLL string, payload string) string {
-	tmp := g.alloca(taggedLL)
+	tmp := g.scratch(taggedLL)
 	g.emit("store %s zeroinitializer, ptr %s", taggedLL, tmp)
 	tagP := g.newTmp()
 	g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 0", tagP, taggedLL, tmp)
@@ -627,7 +627,7 @@ func (g *gen) extractTagged(taggedLL string, value string, payloadLL string) str
 	if payloadLL == "{}" {
 		return "zeroinitializer"
 	}
-	tmp := g.alloca(taggedLL)
+	tmp := g.scratch(taggedLL)
 	g.emit("store %s %s, ptr %s", taggedLL, value, tmp)
 	payP := g.newTmp()
 	g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 1", payP, taggedLL, tmp)
@@ -1078,9 +1078,8 @@ func (g *gen) convertValue(x string, from, to types.Type) string {
 func (g *gen) ifExpr(e *sema.If) string {
 	hasValue := !types.IsUnit(e.Type()) && !types.IsNever(e.Type())
 	var res string
-	llt := g.llType(e.Type())
 	if hasValue {
-		res = g.alloca(llt)
+		res = g.resultSlot(e.Type())
 	}
 	c := g.expr(e.Cond)
 	thenL, endL := g.newLabel("if.then"), g.newLabel("if.end")
@@ -1120,10 +1119,9 @@ func (g *gen) ifExpr(e *sema.If) string {
 
 func (g *gen) match(m *sema.Match) string {
 	hasValue := !types.IsUnit(m.Type()) && !types.IsNever(m.Type())
-	llt := g.llType(m.Type())
 	var res string
 	if hasValue {
-		res = g.alloca(llt)
+		res = g.resultSlot(m.Type())
 	}
 	if m.Subject != nil {
 		v := g.expr(m.Init)
@@ -1181,8 +1179,7 @@ func (g *gen) match(m *sema.Match) string {
 func (g *gen) elvis(e *sema.Elvis) string {
 	nt := e.L.Type().(*types.Nullable)
 	l := g.expr(e.L)
-	llt := g.llType(e.Type())
-	res := g.alloca(llt)
+	res := g.resultSlot(e.Type())
 	isNull := g.newTmp()
 	if isPtrLike(nt.Elem) {
 		g.emit("%s = icmp eq ptr %s, null", isNull, l)
@@ -1239,8 +1236,14 @@ func (g *gen) errorConvert(e *sema.ErrorConvert) string {
 		g.emit("%s = select i1 %s, i32 %d, i32 %s", sel, is, j, newTag)
 		newTag = sel
 	}
-	src := g.spill(fromU, x)
-	dst := g.alloca(toLL)
+	// both slots are scratch unless in the memory class: the source's is
+	// x itself then, and the result's is the value handed on
+	src := x
+	if !g.isMem(fromU) {
+		src = g.scratch(fromLL)
+		g.emit("store %s %s, ptr %s", fromLL, x, src)
+	}
+	dst := g.resultSlot(toU)
 	if g.isMem(toU) {
 		g.emit("call void @llvm.memset.p0.i64(ptr %s, i8 0, i64 %d, i1 false)", dst, g.memSize(toU))
 	} else {

@@ -285,10 +285,11 @@ func (f *fnCtx) sleepCall(e *ast.CallExpr) Expr {
 	awaited := f.awaitNext
 	f.awaitNext = false
 	dur, _ := f.c.preludeType("Duration").(*types.Struct)
-	var ms Expr
+	var ns Expr
 	if dur == nil {
-		// no prelude (a bare-file test): fall back to the old milliseconds
-		ms = f.checkExprTo(e.Args[0].Value, types.TI64)
+		// no prelude (a bare-file test): a number of milliseconds
+		ms := f.checkExprTo(e.Args[0].Value, types.TI64)
+		ns = &Binary{exprBase{types.TI64}, OpMul, ms, &IntConst{exprBase{types.TI64}, 1000000, false}, e.Pos}
 	} else {
 		arg := f.checkExpr(e.Args[0].Value, dur)
 		switch {
@@ -301,26 +302,15 @@ func (f *fnCtx) sleepCall(e *ast.CallExpr) Expr {
 			f.errorf(e.Pos, "'sleep' takes a 'Duration', found '%s'", arg.Type())
 			return bad()
 		}
-		ms = durationMillis(dur, arg, e.Pos)
+		// the runtime's timers count nanoseconds (F9): the deadline is the
+		// Duration itself; zero or a negative one yields
+		ns = &FieldGet{exprBase{types.TI64}, arg, fieldIndex(dur, "ns"), "ns"}
 	}
-	b := f.suspending(&Builtin{exprBase{types.TUnit}, "task.sleep", []Expr{ms}, e.Pos}, e.Pos, "sleep")
+	b := f.suspending(&Builtin{exprBase{types.TUnit}, "task.sleep", []Expr{ns}, e.Pos}, e.Pos, "sleep")
 	if !awaited && !f.inRaceArm {
 		f.errorf(e.Pos, "'sleep()' always suspends and must be awaited: 'await sleep(d)' (D16)")
 	}
 	return b
-}
-
-// durationMillis is `(d.ns + 999999) / 1000000`: the whole milliseconds a
-// Duration covers, rounded up, so a sleep is never shorter than it was asked
-// for. `d` is read once, so an argument with side effects is evaluated once.
-// Zero gives 0 and a negative duration a negative count, both of which
-// `veles_task_sleep` reads as "yield". The one value this does not hold for
-// is a duration within a millisecond of the largest one representable, where
-// the `+ 999999` overflows — 292 years, checked in a debug build (D21).
-func durationMillis(dur *types.Struct, d Expr, span source.Span) Expr {
-	ns := &FieldGet{exprBase{types.TI64}, d, fieldIndex(dur, "ns"), "ns"}
-	up := &Binary{exprBase{types.TI64}, OpAdd, ns, &IntConst{exprBase{types.TI64}, 999999, false}, span}
-	return &Binary{exprBase{types.TI64}, OpDiv, up, &IntConst{exprBase{types.TI64}, 1000000, false}, span}
 }
 
 // fieldIndex is the position of a field by name, so lowering that reaches

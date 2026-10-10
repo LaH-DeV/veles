@@ -317,9 +317,10 @@ failed: timed out after 20ms
 ```
 
 `sleep(20)` is a compile error that names the fix. The executor's timers
-are in milliseconds, so a duration is rounded *up* to one — a sleep is
-never shorter than it was asked for, and `sleep(Duration.zero)` still
-yields.
+keep the duration in nanoseconds: a sleep is never shorter than it was
+asked for, and ends as soon after as the system wakes a waiting thread —
+tens of microseconds on Linux, about half a millisecond on Windows.
+`sleep(Duration.zero)` still yields.
 
 ### Ticking
 
@@ -362,8 +363,8 @@ Output:
 ticks before the end: 0
 ```
 
-`every` must be positive (a panic otherwise), and is rounded up to a
-millisecond, as `sleep` is.
+`every` must be positive (a panic otherwise), and is kept in
+nanoseconds, as `sleep`'s duration is.
 
 `http.Limits` says its three clocks the same way
 (`Limits(headerTimeout: Duration.seconds(10))`), and `Timeout` carries the

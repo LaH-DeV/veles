@@ -46,6 +46,8 @@
 #include <unistd.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
+#include <sys/syscall.h>
+#include <time.h>
 #else
 #include <unistd.h>
 #include <fcntl.h>
@@ -125,7 +127,6 @@ typedef NTSTATUS(NTAPI *nt_cancel_fn)(HANDLE, PIO_STATUS_BLOCK, PIO_STATUS_BLOCK
 static nt_ioctl_fn nt_ioctl;
 static nt_cancel_fn nt_cancel;
 static HANDLE iocp, afd;
-static CRITICAL_SECTION poll_lock;
 
 /* One socket's poll request. The kernel writes into iosb and info until
  * the request completes, so the record lives (in malloc memory) until its
@@ -142,60 +143,77 @@ typedef struct sock_state {
 } sock_state;
 
 /* sockets → records: open addressing, linear probing, no deletions in
- * place (a removal re-inserts the rest of its run) */
-static sock_state **table;
-static size_t table_cap, table_len;
+ * place (a removal re-inserts the rest of its run). The table is split in
+ * shards by the socket's hash, each under a critical section of its own:
+ * every socket wait arms its socket here, and one lock for all of them was
+ * found taken by every other arm at 32 threads (2026-10-10). A record's
+ * fields are its shard's, the completion included. */
+typedef struct poll_shard {
+    CRITICAL_SECTION lock;
+    sock_state **table;
+    size_t cap, len;
+} poll_shard;
 
-static size_t slot_of(SOCKET s) {
-    uint64_t h = (uint64_t)s * 0x9E3779B97F4A7C15ull;
-    return (size_t)(h >> 32) & (table_cap - 1);
+#define POLL_SHARDS 32
+static poll_shard shards[POLL_SHARDS];
+
+static uint64_t sock_hash(SOCKET s) {
+    return (uint64_t)s * 0x9E3779B97F4A7C15ull;
 }
 
-static sock_state *table_find(SOCKET s) {
-    if (!table_cap) return NULL;
-    for (size_t i = slot_of(s);; i = (i + 1) & (table_cap - 1)) {
-        if (!table[i]) return NULL;
-        if (table[i]->sock == s) return table[i];
+static poll_shard *shard_of(SOCKET s) {
+    return &shards[(sock_hash(s) >> 59) & (POLL_SHARDS - 1)];
+}
+
+static size_t slot_of(poll_shard *sh, SOCKET s) {
+    return (size_t)(sock_hash(s) >> 32) & (sh->cap - 1);
+}
+
+static sock_state *table_find(poll_shard *sh, SOCKET s) {
+    if (!sh->cap) return NULL;
+    for (size_t i = slot_of(sh, s);; i = (i + 1) & (sh->cap - 1)) {
+        if (!sh->table[i]) return NULL;
+        if (sh->table[i]->sock == s) return sh->table[i];
     }
 }
 
-static void table_put(sock_state *st);
+static void table_put(poll_shard *sh, sock_state *st);
 
-static void table_grow(void) {
-    sock_state **old = table;
-    size_t old_cap = table_cap;
-    table_cap = table_cap ? table_cap * 2 : 64;
-    table = calloc(table_cap, sizeof *table);
-    if (!table) poll_fatal("out of memory");
-    table_len = 0;
+static void table_grow(poll_shard *sh) {
+    sock_state **old = sh->table;
+    size_t old_cap = sh->cap;
+    sh->cap = sh->cap ? sh->cap * 2 : 16;
+    sh->table = calloc(sh->cap, sizeof *sh->table);
+    if (!sh->table) poll_fatal("out of memory");
+    sh->len = 0;
     for (size_t i = 0; i < old_cap; i++) {
-        if (old[i]) table_put(old[i]);
+        if (old[i]) table_put(sh, old[i]);
     }
     free(old);
 }
 
-static void table_put(sock_state *st) {
-    if ((table_len + 1) * 2 > table_cap) table_grow();
-    size_t i = slot_of(st->sock);
-    while (table[i]) i = (i + 1) & (table_cap - 1);
-    table[i] = st;
-    table_len++;
+static void table_put(poll_shard *sh, sock_state *st) {
+    if ((sh->len + 1) * 2 > sh->cap) table_grow(sh);
+    size_t i = slot_of(sh, st->sock);
+    while (sh->table[i]) i = (i + 1) & (sh->cap - 1);
+    sh->table[i] = st;
+    sh->len++;
 }
 
-static void table_remove(SOCKET s) {
-    if (!table_cap) return;
-    size_t i = slot_of(s);
-    for (;; i = (i + 1) & (table_cap - 1)) {
-        if (!table[i]) return;
-        if (table[i]->sock == s) break;
+static void table_remove(poll_shard *sh, SOCKET s) {
+    if (!sh->cap) return;
+    size_t i = slot_of(sh, s);
+    for (;; i = (i + 1) & (sh->cap - 1)) {
+        if (!sh->table[i]) return;
+        if (sh->table[i]->sock == s) break;
     }
-    table[i] = NULL;
-    table_len--;
-    for (size_t j = (i + 1) & (table_cap - 1); table[j]; j = (j + 1) & (table_cap - 1)) {
-        sock_state *st = table[j];
-        table[j] = NULL;
-        table_len--;
-        table_put(st);
+    sh->table[i] = NULL;
+    sh->len--;
+    for (size_t j = (i + 1) & (sh->cap - 1); sh->table[j]; j = (j + 1) & (sh->cap - 1)) {
+        sock_state *st = sh->table[j];
+        sh->table[j] = NULL;
+        sh->len--;
+        table_put(sh, st);
     }
 }
 
@@ -206,7 +224,7 @@ void veles_poll_init(void) {
     nt_ioctl = ntdll ? (nt_ioctl_fn)(void *)GetProcAddress(ntdll, "NtDeviceIoControlFile") : NULL;
     nt_cancel = ntdll ? (nt_cancel_fn)(void *)GetProcAddress(ntdll, "NtCancelIoFileEx") : NULL;
     if (!nt_create || !nt_ioctl || !nt_cancel) poll_fatal("ntdll has no NtCreateFile/NtDeviceIoControlFile/NtCancelIoFileEx");
-    InitializeCriticalSectionAndSpinCount(&poll_lock, 1000);
+    for (int i = 0; i < POLL_SHARDS; i++) InitializeCriticalSectionAndSpinCount(&shards[i].lock, 1000);
     HANDLE port = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
     if (!port) poll_fatal("CreateIoCompletionPort");
     static WCHAR name[] = L"\\Device\\Afd\\Veles";
@@ -244,8 +262,9 @@ static int submit(sock_state *st) {
 
 int64_t veles_poll_arm(int64_t fd, int64_t read, int64_t write) {
     ULONG wanted = (read ? 1u : 0u) | (write ? 2u : 0u);
-    EnterCriticalSection(&poll_lock);
-    sock_state *st = table_find((SOCKET)fd);
+    poll_shard *sh = shard_of((SOCKET)fd);
+    EnterCriticalSection(&sh->lock);
+    sock_state *st = table_find(sh, (SOCKET)fd);
     if (!st) {
         /* the base socket under any layered provider; the two others are
          * what such a provider may answer instead (wepoll's order) */
@@ -257,14 +276,14 @@ int64_t veles_poll_arm(int64_t fd, int64_t read, int64_t write) {
             if (WSAIoctl((SOCKET)fd, ioctls[i], NULL, 0, &h, sizeof h, &bytes, NULL, NULL) == 0 && h != (HANDLE)INVALID_SOCKET) base = h;
         }
         if (!base) {
-            LeaveCriticalSection(&poll_lock);
+            LeaveCriticalSection(&sh->lock);
             return 1; /* not a socket: the caller treats it as ready */
         }
         st = calloc(1, sizeof *st);
         if (!st) poll_fatal("out of memory");
         st->sock = (SOCKET)fd;
         st->base = base;
-        table_put(st);
+        table_put(sh, st);
     }
     st->wanted = wanted;
     int failed = 0;
@@ -279,16 +298,17 @@ int64_t veles_poll_arm(int64_t fd, int64_t read, int64_t write) {
     } else if (wanted) {
         failed = submit(st);
     }
-    LeaveCriticalSection(&poll_lock);
+    LeaveCriticalSection(&sh->lock);
     return failed;
 }
 
 void veles_poll_forget(int64_t fd) {
     if (!iocp) return;
-    EnterCriticalSection(&poll_lock);
-    sock_state *st = table_find((SOCKET)fd);
+    poll_shard *sh = shard_of((SOCKET)fd);
+    EnterCriticalSection(&sh->lock);
+    sock_state *st = table_find(sh, (SOCKET)fd);
     if (st) {
-        table_remove((SOCKET)fd);
+        table_remove(sh, (SOCKET)fd);
         if (st->pending) {
             /* its completion frees it; the close completes it anyway */
             IO_STATUS_BLOCK cancel;
@@ -298,7 +318,7 @@ void veles_poll_forget(int64_t fd) {
             free(st);
         }
     }
-    LeaveCriticalSection(&poll_lock);
+    LeaveCriticalSection(&sh->lock);
 }
 
 void veles_poll_wake(void) {
@@ -306,23 +326,26 @@ void veles_poll_wake(void) {
     PostQueuedCompletionStatus(iocp, 0, 0, NULL);
 }
 
-int64_t veles_poll_wait(int64_t timeout_ms, veles_poll_event *out, int64_t max) {
+int64_t veles_poll_wait(int64_t timeout_ns, veles_poll_event *out, int64_t max) {
     OVERLAPPED_ENTRY entries[128];
     ULONG got = 0;
     if (max > 128) max = 128;
+    int64_t timeout_ms = timeout_ns < 0 ? -1 : (timeout_ns + 999999) / 1000000; /* whole milliseconds, rounded up */
     DWORD ms = timeout_ms < 0 ? INFINITE : (timeout_ms > 0x7ffffffe ? 0x7ffffffe : (DWORD)timeout_ms);
     if (!GetQueuedCompletionStatusEx(iocp, entries, (ULONG)max, &got, ms, FALSE)) return 0;
     int64_t n = 0;
-    EnterCriticalSection(&poll_lock);
     for (ULONG i = 0; i < got; i++) {
         if (!entries[i].lpOverlapped) {
             __atomic_store_n(&wake_pending, 0, __ATOMIC_SEQ_CST);
             continue;
         }
         sock_state *st = (sock_state *)entries[i].lpOverlapped;
+        poll_shard *sh = shard_of(st->sock);
+        EnterCriticalSection(&sh->lock);
         st->pending = 0;
         st->cancelling = 0;
         if (st->forgotten) {
+            LeaveCriticalSection(&sh->lock);
             free(st);
             continue;
         }
@@ -333,6 +356,7 @@ int64_t veles_poll_wait(int64_t timeout_ms, veles_poll_event *out, int64_t max) 
                 out[n++] = (veles_poll_event){(int64_t)st->sock, 1, 1};
                 st->wanted = 0;
             }
+            LeaveCriticalSection(&sh->lock);
             continue;
         }
         ULONG ev = 0;
@@ -343,8 +367,9 @@ int64_t veles_poll_wait(int64_t timeout_ms, veles_poll_event *out, int64_t max) 
         }
         if (ev & AFD_POLL_LOCAL_CLOSE) {
             /* closed without being forgotten: the record goes */
-            table_remove(st->sock);
+            table_remove(sh, st->sock);
             out[n++] = (veles_poll_event){(int64_t)st->sock, 1, 1};
+            LeaveCriticalSection(&sh->lock);
             free(st);
             continue;
         }
@@ -354,12 +379,13 @@ int64_t veles_poll_wait(int64_t timeout_ms, veles_poll_event *out, int64_t max) 
                 out[n++] = (veles_poll_event){(int64_t)st->sock, 1, 1};
                 st->wanted = 0;
             }
+            LeaveCriticalSection(&sh->lock);
             continue;
         }
         st->wanted = 0; /* one-shot: the executor arms it again */
         out[n++] = (veles_poll_event){(int64_t)st->sock, r, w};
+        LeaveCriticalSection(&sh->lock);
     }
-    LeaveCriticalSection(&poll_lock);
     return n;
 }
 
@@ -407,11 +433,34 @@ void veles_poll_wake(void) {
     (void)r;
 }
 
-int64_t veles_poll_wait(int64_t timeout_ms, veles_poll_event *out, int64_t max) {
+/* epoll_pwait2 (Linux 5.11) takes the timeout in nanoseconds; an older
+ * kernel answers ENOSYS once, and the wait falls back to epoll_wait's
+ * milliseconds, rounded up (F9) */
+static int no_pwait2;
+
+static int epoll_wait_ns(struct epoll_event *evs, int max, int64_t timeout_ns) {
+#if defined(SYS_epoll_pwait2)
+    if (!__atomic_load_n(&no_pwait2, __ATOMIC_RELAXED)) {
+        struct timespec ts, *tp = NULL;
+        if (timeout_ns >= 0) {
+            ts.tv_sec = timeout_ns / 1000000000;
+            ts.tv_nsec = timeout_ns % 1000000000;
+            tp = &ts;
+        }
+        long got = syscall(SYS_epoll_pwait2, epfd, evs, max, tp, NULL, 0);
+        if (got >= 0 || errno != ENOSYS) return (int)got;
+        __atomic_store_n(&no_pwait2, 1, __ATOMIC_RELAXED);
+    }
+#endif
+    int64_t ms = timeout_ns < 0 ? -1 : (timeout_ns + 999999) / 1000000;
+    if (ms > 0x7fffffff) ms = 0x7fffffff;
+    return epoll_wait(epfd, evs, max, (int)ms);
+}
+
+int64_t veles_poll_wait(int64_t timeout_ns, veles_poll_event *out, int64_t max) {
     struct epoll_event evs[128];
     if (max > 128) max = 128;
-    if (timeout_ms > 0x7fffffff) timeout_ms = 0x7fffffff;
-    int got = epoll_wait(epfd, evs, (int)max, timeout_ms < 0 ? -1 : (int)timeout_ms);
+    int got = epoll_wait_ns(evs, (int)max, timeout_ns);
     int64_t n = 0;
     for (int i = 0; i < got; i++) {
         if (evs[i].data.u64 == WAKE_TAG) {
@@ -498,7 +547,8 @@ void veles_poll_forget(int64_t fd) {
     pthread_mutex_unlock(&poll_mutex);
 }
 
-int64_t veles_poll_wait(int64_t timeout_ms, veles_poll_event *out, int64_t max) {
+int64_t veles_poll_wait(int64_t timeout_ns, veles_poll_event *out, int64_t max) {
+    int64_t timeout_ms = timeout_ns < 0 ? -1 : (timeout_ns + 999999) / 1000000; /* whole milliseconds, rounded up */
     pthread_mutex_lock(&poll_mutex);
     size_t n = nitems;
     struct pollfd *fds = malloc((n + 1) * sizeof *fds);

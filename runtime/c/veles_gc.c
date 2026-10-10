@@ -81,8 +81,19 @@ typedef struct veles_span {
     int cls;
 } veles_span;
 
-static const size_t class_sizes[] = {16, 32, 48, 64, 96, 128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 4096, 8192, 16384, 32768};
+/* No class is more than a quarter bigger than the one below it from 64
+ * bytes on, so an object wastes at most a fifth of its slot: with half
+ * steps (128 then 192 then 256) a parked task's frame and many a list's
+ * storage gave a third away (bench/idle, 2026-10-10). */
+static const size_t class_sizes[] = {16, 32, 48, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384, 448, 512, 640, 768,
+                                     896, 1024, 1280, 1536, 1792, 2048, 2560, 3072, 4096, 5120, 6144, 8192, 10240, 12288,
+                                     16384, 20480, 24576, 32768};
 #define NCLASSES (sizeof class_sizes / sizeof class_sizes[0])
+
+/* the class of each size up to SMALL_MAX bytes, by 16-byte step: found in
+ * one look instead of a walk along the classes */
+#define SMALL_MAX 1024
+static uint8_t small_class[SMALL_MAX / 16 + 1];
 
 static veles_span *classes[NCLASSES];
 /* the first span of each class that may have a free slot: the spans before
@@ -131,6 +142,7 @@ void veles_lock_release(veles_lock *l);
 veles_cond *veles_cond_new(void);
 void veles_cond_wait(veles_cond *c, veles_lock *l, int64_t timeout_ms);
 void veles_cond_broadcast(veles_cond *c);
+void veles_cond_signal(veles_cond *c);
 
 #include "veles_tls.h"
 
@@ -237,8 +249,13 @@ static void pages_insert(uintptr_t page, veles_span *s) {
     pages_used++;
 }
 
+/* the lowest and highest address any span has had: most words a
+ * conservative scan reads are not pointers, and most of those fall
+ * outside, which saves the table a look (heap_lock, or the world stopped) */
+static uintptr_t heap_lo = UINTPTR_MAX, heap_hi;
+
 static veles_span *span_of(const void *p) {
-    if (!pages_cap) return NULL;
+    if ((uintptr_t)p < heap_lo || (uintptr_t)p >= heap_hi) return NULL;
     uintptr_t page = (uintptr_t)p >> SPAN_SHIFT;
     size_t h = page_hash(page) & (pages_cap - 1);
     while (pages[h]) {
@@ -256,6 +273,8 @@ static veles_span *new_span(int cls, size_t objsize, size_t bytes) {
     if (!s) oom();
     s->start = sys_alloc_aligned(bytes);
     if (!s->start) oom();
+    if ((uintptr_t)s->start < heap_lo) heap_lo = (uintptr_t)s->start;
+    if ((uintptr_t)s->start + bytes > heap_hi) heap_hi = (uintptr_t)s->start + bytes;
     s->bytes = bytes;
     s->objsize = objsize;
     s->nobjs = bytes / objsize;
@@ -274,8 +293,17 @@ static veles_span *new_span(int cls, size_t objsize, size_t bytes) {
     return s;
 }
 
+static void small_classes_init(void) {
+    size_t c = 0;
+    for (size_t i = 0; i <= SMALL_MAX / 16; i++) {
+        while (class_sizes[c] < i * 16) c++;
+        small_class[i] = (uint8_t)c;
+    }
+}
+
 static int class_for(size_t bytes) {
-    for (size_t i = 0; i < NCLASSES; i++) {
+    if (bytes <= SMALL_MAX) return small_class[(bytes + 15) / 16];
+    for (size_t i = small_class[SMALL_MAX / 16]; i < NCLASSES; i++) {
         if (bytes <= class_sizes[i]) return (int)i;
     }
     return -1;
@@ -415,30 +443,62 @@ void veles_gc_root(void *addr, veles_desc *desc) {
     veles_lock_release(heap_lock);
 }
 
-/* ---- marking -------------------------------------------------------------- */
+/* ---- marking --------------------------------------------------------------
+ * The world is stopped while the collector marks, and the threads that ran
+ * tasks wait for it. Once the heap is big enough to be worth it, helper
+ * threads mark alongside the collecting thread (markers, below), each
+ * draining a stack of its own. The helpers sleep until there is work to
+ * share: a marker holding more than it needs while helpers sleep hands a
+ * batch to the shared list and wakes one — a helper spinning for work slowed
+ * the collecting thread down more than it helped. An object is claimed by
+ * the marker whose atomic exchange sets its mark byte, and only that one
+ * scans it. Marking is over when no marker is working and nothing is
+ * shared. (Marking took a third of bench/httphello at 8 threads,
+ * 2026-10-10; its graph is narrow, so there it stays on one thread.) */
 
-static char **work;
-static size_t nwork, cap_work;
+typedef struct mark_stack {
+    char **items;
+    size_t n, cap;
+} mark_stack;
 
-static void push_work(char *obj) {
-    if (nwork == cap_work) {
-        cap_work = cap_work ? cap_work * 2 : 4096;
-        work = realloc(work, cap_work * sizeof *work);
-        if (!work) oom();
+#define MARK_BATCH 256
+
+typedef struct mark_batch {
+    struct mark_batch *next;
+    size_t n;
+    char *items[MARK_BATCH];
+} mark_batch;
+
+static veles_lock *help_lock;      /* the shared list and the markers' state */
+static veles_cond *help_cv;        /* helpers: work was shared, or a phase began */
+static veles_cond *help_done_cv;   /* the collecting thread: work for it, or the phase is over */
+static mark_batch *shared_batches; /* help_lock */
+static int64_t shared_count;       /* batches on the list (help_lock; read without it as a hint) */
+static int64_t marking;            /* markers working (help_lock; read without it as a hint) */
+static int64_t markers_now = 1;    /* markers this collection has: the collecting thread and its helpers */
+static int mark_open;              /* the mark phase is on (help_lock) */
+static int collector_waiting;      /* help_lock */
+
+static void push_work(mark_stack *ms, char *obj) {
+    if (ms->n == ms->cap) {
+        ms->cap = ms->cap ? ms->cap * 2 : 4096;
+        ms->items = realloc(ms->items, ms->cap * sizeof *ms->items);
+        if (!ms->items) oom();
     }
-    work[nwork++] = obj;
+    ms->items[ms->n++] = obj;
 }
 
-/* mark_candidate resolves an arbitrary word to a heap object and marks it */
-static void mark_candidate(uintptr_t word) {
+/* resolves an arbitrary word to a heap object and, if this marker is the
+ * first to mark it, queues it for scanning */
+static void mark_candidate(mark_stack *ms, uintptr_t word) {
     if (word < 4096) return;
     veles_span *s = span_of((void *)word);
     if (!s) return;
     size_t off = (size_t)(word - (uintptr_t)s->start);
     size_t idx = off / s->objsize;
-    if (idx >= s->nobjs || !s->used[idx] || s->marks[idx]) return;
-    s->marks[idx] = 1;
-    push_work(s->start + idx * s->objsize);
+    if (idx >= s->nobjs || !s->used[idx]) return;
+    if (__atomic_load_n(&s->marks[idx], __ATOMIC_RELAXED) || __atomic_exchange_n(&s->marks[idx], 1, __ATOMIC_RELAXED)) return;
+    push_work(ms, s->start + idx * s->objsize);
 }
 
 /* Under `veles build --sanitize` (AddressSanitizer): the collector reads
@@ -462,14 +522,14 @@ const char *__asan_default_options(void) { return "detect_stack_use_after_return
 #define NO_ASAN
 #endif
 
-NO_ASAN static void scan_range(const char *lo, const char *hi) {
+NO_ASAN static void scan_range(mark_stack *ms, const char *lo, const char *hi) {
     lo = (const char *)(((uintptr_t)lo + 7) & ~(uintptr_t)7);
     for (const char *p = lo; p + 8 <= hi; p += 8) {
-        mark_candidate(*(const uintptr_t *)p);
+        mark_candidate(ms, *(const uintptr_t *)p);
     }
 }
 
-static void scan_object(char *obj, size_t objsize) {
+static void scan_object(mark_stack *ms, char *obj, size_t objsize) {
     veles_desc *d = *(veles_desc **)obj;
     if (!d || d->nptrs == 0) return;
     size_t off = body_offset(d);
@@ -480,23 +540,92 @@ static void scan_object(char *obj, size_t objsize) {
         for (size_t i = 0; i < count; i++) {
             char *el = body + i * d->size;
             for (int64_t k = 0; k < d->nptrs; k++) {
-                mark_candidate(*(uintptr_t *)(el + d->offsets[k]));
+                mark_candidate(ms, *(uintptr_t *)(el + d->offsets[k]));
             }
         }
         return;
     }
     for (int64_t k = 0; k < d->nptrs; k++) {
         if ((size_t)d->offsets[k] + 8 <= objsize - off) {
-            mark_candidate(*(uintptr_t *)(body + d->offsets[k]));
+            mark_candidate(ms, *(uintptr_t *)(body + d->offsets[k]));
         }
     }
 }
 
-static void drain(void) {
-    while (nwork > 0) {
-        char *obj = work[--nwork];
+/* hands a batch of this marker's work to a sleeping helper: half its stack,
+ * up to MARK_BATCH, from the bottom — the objects found first, under which
+ * the most is left to find (a tree's stack holds a few subtrees at a time,
+ * the biggest at the bottom) */
+static void share_batch(mark_stack *ms) {
+    mark_batch *b = malloc(sizeof *b);
+    if (!b) return; /* this marker keeps the work */
+    size_t k = ms->n / 2 < MARK_BATCH ? ms->n / 2 : MARK_BATCH;
+    memcpy(b->items, ms->items, k * sizeof *b->items);
+    memmove(ms->items, ms->items + k, (ms->n - k) * sizeof *ms->items);
+    ms->n -= k;
+    b->n = k;
+    veles_lock_acquire(help_lock);
+    b->next = shared_batches;
+    shared_batches = b;
+    shared_count++;
+    veles_cond_signal(help_cv);
+    if (collector_waiting) veles_cond_signal(help_done_cv);
+    veles_lock_release(help_lock);
+}
+
+/* a shared batch into this marker's stack (help_lock held); 0 when none */
+static int take_batch(mark_stack *ms) {
+    mark_batch *b = shared_batches;
+    if (!b) return 0;
+    shared_batches = b->next;
+    shared_count--;
+    for (size_t i = 0; i < b->n; i++) push_work(ms, b->items[i]);
+    free(b);
+    return 1;
+}
+
+/* scans everything on ms and what that reaches, sharing a batch while
+ * markers sleep with nothing shared for them */
+#define SHARE_FROM 8
+
+static void mark_stack_drain(mark_stack *ms) {
+    while (ms->n > 0) {
+        if (ms->n >= SHARE_FROM && markers_now > 1 &&
+            __atomic_load_n(&marking, __ATOMIC_RELAXED) + __atomic_load_n(&shared_count, __ATOMIC_RELAXED) < markers_now)
+            share_batch(ms);
+        char *obj = ms->items[--ms->n];
         veles_span *s = span_of(obj);
-        scan_object(obj, s->objsize);
+        scan_object(ms, obj, s->objsize);
+    }
+}
+
+/* the collecting thread's mark phase, from the roots it found: done when no
+ * marker works and nothing is shared */
+static void mark_all(mark_stack *ms) {
+    if (markers_now == 1) {
+        mark_stack_drain(ms);
+        return;
+    }
+    veles_lock_acquire(help_lock);
+    marking = 1;
+    mark_open = 1;
+    veles_lock_release(help_lock);
+    for (;;) {
+        mark_stack_drain(ms);
+        veles_lock_acquire(help_lock);
+        marking--;
+        while (!shared_batches && marking > 0) {
+            collector_waiting = 1;
+            veles_cond_wait(help_done_cv, help_lock, -1);
+            collector_waiting = 0;
+        }
+        if (!take_batch(ms)) {
+            mark_open = 0;
+            veles_lock_release(help_lock);
+            return;
+        }
+        marking++;
+        veles_lock_release(help_lock);
     }
 }
 
@@ -505,20 +634,20 @@ void veles_capture_regs(void);
 /* the collecting thread's own roots: its registers and stack as they are
  * here, recorded the way a safe thread's are (veles_capture_regs); this
  * frame is live while it scans */
-static void scan_stack(void) {
+static void scan_stack(mark_stack *ms) {
 #if defined(VELES_CAPTURE_ASM)
     veles_tls *b = veles_tls_get();
     veles_capture_regs();
-    scan_range((const char *)b->capture, (const char *)(b->capture + VELES_CAPTURE_WORDS));
+    scan_range(ms, (const char *)b->capture, (const char *)(b->capture + VELES_CAPTURE_WORDS));
     char *sp = (char *)(uintptr_t)b->capture[VELES_CAPTURE_SP];
 #else
     jmp_buf regs;
     setjmp(regs); /* spill callee-saved registers onto the stack */
     char *sp = (char *)&regs;
-    scan_range((const char *)regs, (const char *)regs + sizeof regs);
+    scan_range(ms, (const char *)regs, (const char *)regs + sizeof regs);
 #endif
     char *base = me ? me->stack_base : stack_base;
-    if (base && sp < base) scan_range(sp, base);
+    if (base && sp < base) scan_range(ms, sp, base);
 }
 
 static char *find_stack_base(void) {
@@ -812,12 +941,12 @@ static void start_the_world(void) {
     veles_lock_release(world_lock);
 }
 
-static void scan_threads(void) {
+static void scan_threads(mark_stack *ms) {
     for (veles_thread *t = threads; t; t = t->next) {
-        scan_range((const char *)t->tls, (const char *)(t->tls + 1));
+        scan_range(ms, (const char *)t->tls, (const char *)(t->tls + 1));
         if (t == me) continue;
-        scan_range((const char *)&t->regs, (const char *)&t->regs + sizeof t->regs);
-        if (t->stack_top && t->stack_base && t->stack_top < t->stack_base) scan_range(t->stack_top, t->stack_base);
+        scan_range(ms, (const char *)&t->regs, (const char *)&t->regs + sizeof t->regs);
+        if (t->stack_top && t->stack_base && t->stack_top < t->stack_base) scan_range(ms, t->stack_top, t->stack_base);
     }
 }
 
@@ -833,6 +962,7 @@ static void collect_now(void) {
 }
 
 void veles_gc_init(void) {
+    small_classes_init(); /* before the first allocation, which needs heap_lock made here too */
     world_lock = veles_lock_new();
     world_cv = veles_cond_new();
     heap_lock = veles_lock_new();
@@ -851,12 +981,14 @@ void veles_gc_init(void) {
 /* VELES_GC_POISON=1 fills every swept object with 0xCD: a use after a
  * wrong free then crashes at the use instead of reading a new object */
 static int gc_poison = -1;
-static void sweep(void) {
-    if (gc_poison < 0) gc_poison = getenv("VELES_GC_POISON") != NULL;
-    live_bytes = 0;
-    memset(cursor, 0, sizeof cursor); /* every span may have room again */
-    size_t w = 0;
-    for (size_t i = 0; i < nspans; i++) {
+
+/* sweeps spans [from, to) of all_spans — the parts are independent, so the
+ * markers sweep a part each: frees every unmarked object and clears the
+ * marks; an empty large-object span gives its memory back and is left with
+ * no start, for sweep_finish to drop. Returns the bytes still live. */
+static size_t sweep_range(size_t from, size_t to) {
+    size_t live_total = 0;
+    for (size_t i = from; i < to; i++) {
         veles_span *s = all_spans[i];
         size_t live = 0;
         for (size_t k = 0; k < s->nobjs; k++) {
@@ -873,12 +1005,25 @@ static void sweep(void) {
         }
         s->free_hint = 0;
         s->nused = live;
-        live_bytes += live * s->objsize;
+        live_total += live * s->objsize;
         if (live == 0 && s->cls < 0) {
             /* release large-object spans */
             sys_free_aligned(s->start, s->bytes);
             free(s->marks);
             free(s->used);
+            s->start = NULL;
+        }
+    }
+    return live_total;
+}
+
+/* after every part is swept: the released spans leave the list */
+static void sweep_finish(void) {
+    memset(cursor, 0, sizeof cursor); /* every span may have room again */
+    size_t w = 0;
+    for (size_t i = 0; i < nspans; i++) {
+        veles_span *s = all_spans[i];
+        if (!s->start) {
             free(s);
             continue;
         }
@@ -896,6 +1041,123 @@ static void sweep(void) {
             }
         }
     }
+}
+
+/* ---- markers ---------------------------------------------------------------
+ * Helper threads that mark and sweep with the collecting thread while the
+ * world is stopped. They run no Veles code and are not among the threads a
+ * collection stops. They start with the first collection after which more
+ * than HELP_FROM bytes were live, one per core up to MAX_MARKERS markers in
+ * all, the collecting thread one of them; VELES_GC_MARKERS sets the count
+ * (1: the collecting thread alone), and with it set every collection
+ * shares, however small the heap. The sweep is cut into chunks of spans
+ * that the markers claim one at a time. */
+#define MAX_MARKERS 8
+#define HELP_FROM ((size_t)1 << 20)
+#define SWEEP_CHUNK 16
+
+int64_t veles_cpu_count(void);
+int64_t veles_thread_spawn_small(void (*fn)(void *), void *arg);
+
+static int markers_max = -1;   /* markers a collection may use */
+static int markers_forced;     /* VELES_GC_MARKERS was set */
+static int helpers_started;
+static int64_t sweep_round;    /* one more per sweep the helpers take part in (help_lock) */
+static int64_t sweep_busy;     /* helpers not done with it (help_lock) */
+static int64_t sweep_next;     /* the next chunk to claim (atomic) */
+static int64_t sweep_chunks;
+static size_t sweep_live;      /* bytes found live (atomic) */
+
+static void sweep_claimed(void) {
+    size_t live = 0;
+    for (;;) {
+        int64_t c = __atomic_fetch_add(&sweep_next, 1, __ATOMIC_SEQ_CST);
+        if (c >= sweep_chunks) break;
+        size_t from = (size_t)c * SWEEP_CHUNK;
+        size_t to = from + SWEEP_CHUNK < nspans ? from + SWEEP_CHUNK : nspans;
+        live += sweep_range(from, to);
+    }
+    __atomic_add_fetch(&sweep_live, live, __ATOMIC_SEQ_CST);
+}
+
+static void helper_main(void *arg) {
+    (void)arg;
+    mark_stack ms = {0};
+    int64_t swept = 0;
+    veles_lock_acquire(help_lock);
+    for (;;) {
+        if (mark_open && take_batch(&ms)) {
+            marking++;
+            for (;;) {
+                veles_lock_release(help_lock);
+                mark_stack_drain(&ms);
+                veles_lock_acquire(help_lock);
+                if (!take_batch(&ms)) break;
+            }
+            marking--;
+            if (marking == 0 && collector_waiting) veles_cond_signal(help_done_cv);
+            continue;
+        }
+        if (swept != sweep_round) {
+            swept = sweep_round;
+            veles_lock_release(help_lock);
+            sweep_claimed();
+            veles_lock_acquire(help_lock);
+            if (--sweep_busy == 0 && collector_waiting) veles_cond_signal(help_done_cv);
+            continue;
+        }
+        veles_cond_wait(help_cv, help_lock, -1);
+    }
+}
+
+/* how many markers this collection has, helpers started as needed */
+static int markers_for(void) {
+    if (markers_max < 0) {
+        const char *env = getenv("VELES_GC_MARKERS");
+        int64_t n = env ? strtoll(env, NULL, 10) : veles_cpu_count();
+        markers_forced = env != NULL;
+        if (n < 1) n = 1;
+        if (n > MAX_MARKERS) n = MAX_MARKERS;
+        markers_max = (int)n;
+    }
+    if (markers_max == 1 || (!markers_forced && live_bytes < HELP_FROM)) return 1;
+    if (!help_lock) {
+        help_lock = veles_lock_new();
+        help_cv = veles_cond_new();
+        help_done_cv = veles_cond_new();
+    }
+    while (helpers_started < markers_max - 1) {
+        if (veles_thread_spawn_small(helper_main, NULL) != 0) break;
+        helpers_started++;
+    }
+    return 1 + helpers_started;
+}
+
+/* sweeps every span, with the helpers when there are any and more than a
+ * chunk to share; live_bytes is what is left */
+static void sweep_all(void) {
+    sweep_next = 0;
+    sweep_live = 0;
+    sweep_chunks = (int64_t)((nspans + SWEEP_CHUNK - 1) / SWEEP_CHUNK);
+    int share = markers_now > 1 && sweep_chunks > 1;
+    if (share) {
+        veles_lock_acquire(help_lock);
+        sweep_busy = helpers_started;
+        sweep_round++;
+        veles_cond_broadcast(help_cv);
+        veles_lock_release(help_lock);
+    }
+    sweep_claimed();
+    if (share) {
+        veles_lock_acquire(help_lock);
+        while (sweep_busy > 0) {
+            collector_waiting = 1;
+            veles_cond_wait(help_done_cv, help_lock, -1);
+            collector_waiting = 0;
+        }
+        veles_lock_release(help_lock);
+    }
+    live_bytes = sweep_live;
 }
 
 /* ---- D112 test hook -------------------------------------------------------
@@ -947,27 +1209,33 @@ void veles_gc_collect(void) {
     start_the_world();
 }
 
+static mark_stack collector_marks; /* the collecting thread's, kept between collections */
+
 static void collect_locked(void) {
     gc_count++;
+    if (gc_poison < 0) gc_poison = getenv("VELES_GC_POISON") != NULL;
     for (veles_thread *t = threads; t; t = t->next) {
         allocated_since_gc += t->tl_bytes;
         t->tl_bytes = 0;
     }
+    mark_stack *ms = &collector_marks;
     for (size_t i = 0; i < nroots; i++) {
         veles_desc *d = roots[i].desc;
         char *addr = roots[i].addr;
         if (!d) {
-            mark_candidate(*(uintptr_t *)addr);
+            mark_candidate(ms, *(uintptr_t *)addr);
             continue;
         }
         for (int64_t k = 0; k < d->nptrs; k++) {
-            mark_candidate(*(uintptr_t *)(addr + d->offsets[k]));
+            mark_candidate(ms, *(uintptr_t *)(addr + d->offsets[k]));
         }
     }
-    scan_stack();
-    scan_threads();
-    drain();
-    sweep();
+    scan_stack(ms);
+    scan_threads(ms);
+    markers_now = markers_for();
+    mark_all(ms);
+    sweep_all();
+    sweep_finish();
     /* every thread is stopped: the spans are nobody's until claimed again */
     for (veles_thread *t = threads; t; t = t->next) memset(t->tl, 0, sizeof t->tl);
     for (size_t i = 0; i < nspans; i++) all_spans[i]->owner = NULL;

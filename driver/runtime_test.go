@@ -68,6 +68,114 @@ fun main() {
 	}
 }
 
+// The collector marks and sweeps with helper threads (2026-10-10):
+// markers share work through a list, claim objects by an atomic exchange
+// on the mark byte, and sweep chunks of spans each. A long-lived table every
+// task keeps reading, a tree each task keeps, short-lived trees, lists and
+// maps built by many tasks at once, and a collection every few hundred
+// kilobytes; a swept object is poisoned, so an object one marker missed
+// crashes its next use. With VELES_GC_MARKERS set, helpers share every
+// collection, however small.
+func TestParallelCollector(t *testing.T) {
+	if _, err := findClang(); err != nil {
+		t.Skip("clang not available:", err)
+	}
+	dir := t.TempDir()
+	src := `use io
+
+struct Node {
+  left:  (*Node)?
+  right: (*Node)?
+  value: i64
+}
+
+fun build(depth: i64, value: i64): *Node {
+  if (depth == 0) return &Node(left: null, right: null, value)
+  &Node(left: build(depth - 1, value * 2), right: build(depth - 1, value * 2 + 1), value)
+}
+
+fun total(node: *Node): i64 {
+  var sum = node.value
+  if (val l = node.left) sum += total(l)
+  if (val r = node.right) sum += total(r)
+  sum
+}
+
+// every row of the shared table, read again by each task's every round
+fun sumRows(rows: List<List<i64>>): i64 {
+  var sum: i64 = 0
+  loop (row in rows) {
+    loop (x in row) sum += x
+  }
+  sum
+}
+
+fun churn(seed: i64, kept: List<List<i64>>): i64 {
+  val mine = build(12, 1)
+  var check: i64 = 0
+  loop (round in 0..<30) {
+    val tree = build(8, seed + round)
+    val names: MutableList<string> = []
+    val counts: MutableMap<string, i64> = [:]
+    loop (i in 0..<200) {
+      val name = "n${(seed * 31 + i) % 97}"
+      names.push(name)
+      counts.set(name, (counts.get(name) ?: 0) + 1)
+    }
+    check += total(tree) % 1000003 + names.len() + counts.len() + sumRows(kept) % 7 + total(mine) % 11
+  }
+  check
+}
+
+fun main() {
+  val rows: MutableList<List<i64>> = []
+  loop (r in 0..<2000) {
+    val row: MutableList<i64> = []
+    loop (c in 0..<64) row.push(r * 64 + c)
+    rows.push(row.toList())
+  }
+  val kept = rows.toList()
+  var sum: i64 = 0
+  scope {
+    val tasks: MutableList<Task<i64>> = []
+    loop (s in 0..<16) tasks.push(async churn(s, kept))
+    loop (t in tasks) sum += await t
+  }
+  io.println("${sum} ${sumRows(kept)}")
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var want string
+	for _, release := range []bool{false, true} {
+		exe := filepath.Join(dir, fmt.Sprintf("gc%v.exe", release))
+		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release, Sanitize: *sanitize}); code != 0 {
+			t.Fatalf("build failed with exit %d", code)
+		}
+		for _, markers := range []string{"1", "2", "8"} {
+			for _, threads := range []string{"2", "8"} {
+				run := exec.Command(exe)
+				run.Env = append(os.Environ(), "VELES_THREADS="+threads, "VELES_GC_MARKERS="+markers, "VELES_GC_POISON=1", "VELES_GC_THRESHOLD=300000")
+				out, err := run.CombinedOutput()
+				got := strings.TrimSpace(string(out))
+				if err != nil {
+					t.Fatalf("release=%v markers %s threads %s: %v\n%s", release, markers, threads, err, got)
+				}
+				if want == "" {
+					want = got
+				}
+				if got != want {
+					t.Fatalf("release=%v markers %s threads %s: got %q, want %q", release, markers, threads, got, want)
+				}
+			}
+		}
+	}
+	if !strings.HasSuffix(want, " 8191936000") {
+		t.Fatalf("the shared table's sum: %q", want)
+	}
+}
+
 // An Atomic of a number or a bool takes no lock (D66): its operations are
 // single instructions, and `update` retries a compare-and-swap. Eight
 // threads race on each kind so a lost update shows up in the totals.
@@ -981,6 +1089,43 @@ fun boom() {
   panic("in the thread")
 }
 
+fun sleeper(woke: Atomic<i64>) {
+  val sw = time.Stopwatch.start()
+  await sleep(Duration.millis(20))
+  woke.store(sw.elapsed().toMillis())
+}
+
+fun talk(port: i64): string throws IoError | io.TooLong {
+  with c = try net.connect("127.0.0.1", port)
+  try c.writeText("ping\n")
+  try c.readLine(max: 100) ?: ""
+}
+
+// a timer and a socket, on the pool, while no default thread is free
+fun trio(l: net.Listener, woke: Atomic<i64>, done: Atomic<i64>): string throws IoError | io.TooLong {
+  var reply = ""
+  scope {
+    async sleeper(woke)
+    val server = async serve(l)
+    reply = try talk(l.port())
+    val _ = await server
+  }
+  done.store(1)
+  reply
+}
+
+fun spinFor(ms: i64) {
+  val sw = time.Stopwatch.start()
+  loop (sw.elapsed().toMillis() < ms) {}
+}
+
+// a loop that cannot give its thread up
+fun busy(done: Atomic<i64>, sw: time.Stopwatch) {
+  loop (done.load() < 0 && sw.elapsed().toMillis() < 5000) {
+    val _ = spin(100000)
+  }
+}
+
 fun main() throws ThreadError | IoError | io.TooLong | Odd {
   io.println("1. a pool's tasks, and their children, run on its threads:")
   with cpu = try Executor.pool(threads: 3, name: "cpu")
@@ -1061,6 +1206,31 @@ fun main() throws ThreadError | IoError | io.TooLong | Odd {
     is Ok => io.println("  -> ran?")
     is Err(p) => io.println("  -> ${p.message()}")
   }
+
+  io.println("11. a pool's timer and socket while every default thread runs a plain loop:")
+  val woke = Atomic(value: -1)
+  val done = Atomic(value: -1)
+  val sw = time.Stopwatch.start()
+  val l2 = try net.listen()
+  scope {
+    loop (_ in 1..<Executor.defaultThreads()) async busy(done, sw)
+    scope(on: cpu) {
+      val t = async trio(l2, woke, done)
+      busy(done, sw)
+      val reply = await t
+      io.println("  -> slept about 20 ms: ${woke.load() >= 19 && woke.load() < 1000}, answered: $reply, within 2 s: ${sw.elapsed().toMillis() < 2000}")
+    }
+  }
+
+  io.println("12. a task waiting for a Thread is not deadlocked:")
+  val fed = Channel<i64>(capacity: 1)
+  scope {
+    with feeder = try Thread.start(name: "feeder", f: () => {
+      spinFor(200)
+      val _ = fed.trySend(42)
+    })
+    io.println("  -> got ${await fed.recv() ?: -1}")
+  }
 }
 
 fun joinBoom() throws ThreadError {
@@ -1092,7 +1262,11 @@ fun joinBoom() throws ThreadError {
   -> true
   -> true
 10. a closed executor runs nothing:
-  -> the executor was closed: nothing more runs on it`
+  -> the executor was closed: nothing more runs on it
+11. a pool's timer and socket while every default thread runs a plain loop:
+  -> slept about 20 ms: true, answered: echo ping, within 2 s: true
+12. a task waiting for a Thread is not deadlocked:
+  -> got 42`
 	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -1241,6 +1415,15 @@ fun bodyLoop(): i64 throws Boom {
   }
   x
 }
+// a call cancelled at a back edge before it ever waited: its caller
+// unwinds too, and never reads the result the call did not give
+fun callsSpin(): i64 {
+  with r = Res(name: "callsSpin")
+  val n = spinSuspending(4000000000)
+  io.println("  the caller went on with ${n}")
+  n
+}
+
 fun fair() {
   io.println("2. a suspending loop gives its thread up:")
   val sw = time.Stopwatch.start()
@@ -1291,6 +1474,10 @@ fun main() {
   val sw8 = time.Stopwatch.start()
   val e8 = bodyLoop() catch (e) { -e.n }
   io.println("  -> ${e8}, within 400 ms: ${sw8.elapsed().toMillis() < 400}")
+
+  io.println("9. a call cancelled before it waited unwinds its caller:")
+  val r9 = withTimeout(Duration.millis(50), () => callsSpin())
+  io.println("  -> timed out ${r9 is Err}")
 }
 `
 	want := `1. a plain loop is cancelled at its back edge:
@@ -1313,7 +1500,10 @@ fun main() {
   closed child
   -> panicked: true
 8. a loop in a scope body is abandoned when a child fails:
-  -> -7, within 400 ms: true`
+  -> -7, within 400 ms: true
+9. a call cancelled before it waited unwinds its caller:
+  closed callsSpin
+  -> timed out true`
 	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -2230,6 +2420,99 @@ func TestRuntimeThreadsManifest(t *testing.T) {
 		out, err := run.CombinedOutput()
 		if got := strings.TrimSpace(string(out)); err != nil || got != want {
 			t.Errorf("VELES_THREADS=%q: got %q (%v), want %s", env, got, err, want)
+		}
+	}
+}
+
+// F9: a child launched while its parent computes starts on another thread
+// at once — also before main first waits, which used to run before any
+// worker existed — and timers keep sub-millisecond deadlines: a sleep of
+// 200 µs or a race timeout of 300 µs is not a millisecond tick or a
+// Windows timer slice (it was 14–16 ms there).
+func TestChildStartAndFineTimers(t *testing.T) {
+	if _, err := findClang(); err != nil {
+		t.Skip("clang not available:", err)
+	}
+	dir := t.TempDir()
+	src := `use io
+use time
+
+fun child(started: Atomic<i64>) {
+  started.store(time.monotonicNanos())
+}
+
+// a plain loop: the parent never gives its thread up
+fun spinUntil(started: Atomic<i64>, limit: i64): bool {
+  val sw = time.Stopwatch.start()
+  loop (started.load() == 0) {
+    if (sw.elapsed().toNanos() > limit) return false
+  }
+  true
+}
+
+fun median(xs: MutableList<i64>): i64 {
+  val s = xs.toList().sorted()
+  s.at(s.len() / 2) ?: 0
+}
+
+fun main() {
+  // before main has waited even once
+  val first = Atomic(value: 0)
+  scope {
+    async child(first)
+    io.println("first child started while main computed: ${spinUntil(first, 2000000000)}")
+  }
+  val waits: MutableList<i64> = []
+  loop (_ in 0..<50) {
+    val started = Atomic(value: 0)
+    scope {
+      val t0 = time.monotonicNanos()
+      async child(started)
+      if (spinUntil(started, 2000000000)) waits.push(started.load() - t0)
+    }
+  }
+  io.println("every child started: ${waits.len() == 50}, median under 5 ms: ${median(waits) < 5000000}")
+  val sleeps: MutableList<i64> = []
+  loop (_ in 0..<40) {
+    val sw = time.Stopwatch.start()
+    await sleep(Duration.micros(200))
+    sleeps.push(sw.elapsed().toNanos())
+  }
+  io.println("sleep(200 us): never early ${sleeps.toList().all(n => n >= 200000)}, median under 8 ms ${median(sleeps) < 8000000}")
+  val never = Channel<i64>()
+  val races: MutableList<i64> = []
+  loop (_ in 0..<40) {
+    val sw = time.Stopwatch.start()
+    race {
+      val v = never.recv() => io.println("got $v?")
+      sleep(Duration.micros(300)) => races.push(sw.elapsed().toNanos())
+    }
+  }
+  io.println("race timeout of 300 us: never early ${races.toList().all(n => n >= 300000)}, median under 8 ms ${median(races) < 8000000}")
+}
+`
+	want := `first child started while main computed: true
+every child started: true, median under 5 ms: true
+sleep(200 us): never early true, median under 8 ms true
+race timeout of 300 us: never early true, median under 8 ms true`
+	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, release := range []bool{false, true} {
+		exe := filepath.Join(dir, fmt.Sprintf("fine%v.exe", release))
+		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release}); code != 0 {
+			t.Fatalf("build failed with exit %d", code)
+		}
+		for _, threads := range []string{"2", "8"} {
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			run := exec.CommandContext(ctx, exe)
+			run.Env = append(os.Environ(), "VELES_THREADS="+threads)
+			out, err := run.CombinedOutput()
+			cancel()
+			got := strings.ReplaceAll(strings.TrimSpace(string(out)), "\r\n", "\n")
+			if err != nil || got != want {
+				t.Fatalf("release=%v threads %s: got\n%s\nwant\n%s\n(%v)", release, threads, got, want, err)
+			}
 		}
 	}
 }

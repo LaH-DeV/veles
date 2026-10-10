@@ -154,6 +154,9 @@ public struct Conn {
   // one task at a time turns bytes into records and sends them, or the
   // records could reach the peer out of order
   sendLock: Semaphore = Semaphore(permits: 1)
+  // records a reader found queued while another task held sendLock: the
+  // holder sends them before it lets go (see flushIfPending)
+  sendWanted: Atomic<bool> = Atomic(value: false)
   // a server's connection runs its handshake on first use, in the task that
   // serves it (see Listener); `gate` makes the tasks that arrive together wait for it
   pending: Atomic<bool> = Atomic(value: false)
@@ -184,10 +187,8 @@ public struct Conn {
     failure(this.address, text)
   }
 
-  // sends the records the engine has queued; always called after a step
-  // that may have produced some
-  fun flush() suspends throws IoError {
-    with permit = this.sendLock.acquire()
+  // sends every record the engine has queued; the caller holds sendLock
+  fun sendQueued() suspends throws IoError {
     var out = ""
     // SAFETY: stores the queued bytes in `out`, a local that outlives the call
     unsafe {
@@ -196,12 +197,49 @@ public struct Conn {
     if (!out.isEmpty()) try this.inner.write(out.bytes())
   }
 
+  // the holder of sendLock, after its own records: what readers left
+  // while it sent
+  fun sendWantedHeld() suspends throws IoError {
+    loop (this.sendWanted.swap(false)) {
+      try this.sendQueued()
+    }
+  }
+
+  // after sendLock is given back: records a reader left just before go
+  // out, unless another task holds the lock now — it sends them
+  fun helpSend() suspends throws IoError {
+    loop (this.sendWanted.load()) {
+      val permit = this.sendLock.tryAcquire() ?: return
+      with (p = permit) {
+        try this.sendWantedHeld()
+      }
+    }
+  }
+
+  // sends the records the engine has queued, waiting for sendLock; always
+  // called after a step that may have produced some (the handshake,
+  // shutdownWrite)
+  fun flush() suspends throws IoError {
+    with (permit = this.sendLock.acquire()) {
+      try this.sendQueued()
+      try this.sendWantedHeld()
+    }
+    try this.helpSend()
+  }
+
+  // a read produced records to send (or saw a writer's not yet taken). It
+  // never waits for sendLock: a writer stalled on a full socket holds it
+  // while the peer, echoing as it reads, waits for this side to read — the
+  // reader waiting behind the writer stalled both ends (found under load,
+  // 2026-10-10). The holder sends them instead.
   fun flushIfPending() suspends throws IoError {
     // SAFETY: a query on the handle; a freed one answers 0
     val pending = unsafe {
       veles_tls_pending(this.session.number)
     }
-    if (pending != 0) try this.flush()
+    if (pending == 0) return
+    this.sendWanted.store(true)
+    try this.helpSend()
   }
 
   // the bytes that arrived from the peer go to the engine
@@ -325,18 +363,16 @@ public struct Conn {
     /// Encrypts and sends all of `bytes`; suspends while the peer catches up.
     fun write(bytes: List<u8>) suspends throws IoError {
       try this.ensureHandshake()
-      with permit = this.sendLock.acquire()
-      // SAFETY: reads `bytes` within its length and keeps nothing
-      val code = unsafe {
-        veles_tls_write(this.session.number, bytes, 0)
+      with (permit = this.sendLock.acquire()) {
+        // SAFETY: reads `bytes` within its length and keeps nothing
+        val code = unsafe {
+          veles_tls_write(this.session.number, bytes, 0)
+        }
+        if (code != done) throw this.reason()
+        try this.sendQueued()
+        try this.sendWantedHeld()
       }
-      if (code != done) throw this.reason()
-      var out = ""
-      // SAFETY: stores the records in `out`, a local that outlives the call
-      unsafe {
-        veles_tls_take(this.session.number, &out)
-      }
-      if (!out.isEmpty()) try this.inner.write(out.bytes())
+      try this.helpSend()
     }
 
     /// Sends `text` as UTF-8.

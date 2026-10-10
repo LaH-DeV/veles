@@ -212,6 +212,34 @@ answered from the shape, tuples get `Comparable`, enums get
       TestManifestRuntime; format TestScopeOnRoundTrips; driver TestExecutors (debug/release, 1/2/8
       threads, GC pressure), TestRuntimeThreadsManifest; selfhost parses `scope(on:)`; docs chapters
       11 and 12, concurrency-explained, reference/concurrency, stdlib, cheatsheet, errors
+- [x] Scheduler latency and the runtime lock (plan F9, 2026-10-10): the root task is queued, not run
+      before the workers exist; an idle worker takes a running worker's runnext on its second look; race
+      waits, sleeps and a scope's cancellation take no runtime lock (timers under a spinlock of their own,
+      `cancel_task` takes apart only a parked task's waits); deadlines in nanoseconds end to end, waits at
+      the system's resolution (monotonic condition variables, `epoll_pwait2`, Windows' 1 ms timer
+      period). Child start worst 16–136 µs (was never while a parent computed before main's first
+      wait, ~7 ms on Linux otherwise); `sleep(200 µs)` ~0.3 ms on Linux, 0.2–2 ms on Windows (was
+      14–16 ms there); `httphello` 8 threads 0.42 → 0.33 s, 32 threads 0.95 → 0.57 s (Windows). driver
+      TestChildStartAndFineTimers (fails at HEAD); docs chapter 20, reference/concurrency, stdlib
+- [x] Memory, the collector and the last locks (plan F10, 2026-10-10): §3.1's two entries; the monitor
+      fires timers and looks at sockets the default pool did not come back for (a pool's `sleep` no
+      longer waits for a default thread's plain loop to end), and registers with the collector. Found
+      and fixed: a suspending call cancelled at a loop's back edge before it ever waited returned to
+      its caller, which went on and read the result the call never wrote — a frame that unwinds now
+      says so in its link, and the caller unwinds too. driver TestParallelCollector (1/2/8 markers,
+      poisoned sweeps), TestExecutors case 11 (fails without the monitor's part),
+      TestLoopsAreCancellationPoints case 9 (the caller went on before); `bench/idle`; docs chapter 13,
+      12, concurrency-explained, reference/concurrency, cheatsheet, README
+- [x] Idle threads park each on its own (plan F11, 2026-10-10): a futex on Linux, an event and a
+      high-resolution waitable timer on Windows; an executor lists its idle threads and a wake takes
+      one off by name, without the runtime lock; one idle thread of the default pool keeps time
+      until the nearest timer (or the thread in the reactor does). `sleep(200 µs)` on Windows
+      0.2–2 ms → ~0.55 ms; Windows CPU lists in any one processor group (CPUs past 63). Found on the
+      way: a task waiting on a channel a `Thread`'s body fills was reported as "deadlock: every task
+      is blocked" (a running `Thread` now counts as active); waking every idle thread while they
+      listed themselves again never ended (a test run's next root never started, Linux at 32
+      threads) — the list is now taken whole. driver TestExecutors case 12 (panics at HEAD),
+      TestTestRunner (the hang); docs chapter 20, reference/concurrency, stdlib
 - [x] Deadlock detection: "deadlock: every task is blocked" when no task
       can run and no timer, socket or blocking call can wake one
 - [x] Blocking-call detection → superseded: a blocking call hands its
@@ -484,9 +512,24 @@ answered from the shape, tuples get `Comparable`, enums get
 - [x] Threads (see 1.3) — the single largest throughput multiplier (D66 stage 1)
 - [ ] GC: pause-time metric exported; heap ceiling; allocation-rate counter
 - [ ] GC: generational or incremental marking once a server-shaped heap is
-      measured (mark-sweep stop-the-world today)
+      measured (mark-sweep stop-the-world today; the pause shared by up to
+      eight marking and sweeping threads since 2026-10-10 — §11)
 - [ ] Escape analysis: short-lived request objects on the stack
-- [ ] Coroutine frames: size report per function; pool frames of hot shapes
+- [~] Coroutine frames: size report per function; pool frames of hot shapes.
+      2026-10-10 (plan F10): a temporary built and taken apart in place gets
+      a lifetime marker, so the coroutine split keeps it on the stack — frames
+      of `std/http` from 0.8–5.6 KB to under 256 bytes mostly; the chunks frames
+      come from go back to the thread when a task ends or parks in its own
+      frame (they were two thirds of `httphello`'s allocation). No size report
+      yet
+- [x] Allocation and locks under many threads (plan F10, 2026-10-10): the
+      collector's size classes at most a quarter apart from 64 bytes on, found
+      in one look; marking and sweeping shared with helper threads; socket
+      waits, timers and the default pool's housekeeping off the runtime lock
+      (shards with a spinlock each); the Windows reactor's table in shards.
+      `bench/httphello` 310 → 160–180 ms at 8 threads and 650 → 180–230 ms at
+      32 on Windows (Go 150 / 400 ms), Linux 0.45 → 0.28 s and 0.63 → 0.36 s;
+      CPU at 32 threads 7–10 s → 2–2.5 s (Go 1.6–3.2 s)
 - [ ] `string` representation: check that slicing and `substring` do not copy
 - [~] `StringBuilder` growth policy and a `reserve`: append is one copy into
       doubling storage (2026-09-27); `reserve` decided 2026-09-30 (D105,
@@ -498,7 +541,9 @@ answered from the shape, tuples get `Comparable`, enums get
       `bench/httphello`: 20.6× Go → ~1.2× at 8 threads (Windows)
 - [ ] Task handoff on Linux: `spawn` is 3.9× Go on Linux against 1.1× on
       Windows, `parallel` 1.2× against 0.7× (bench/results.md, 2026-09-28) —
-      profile the wake-up path (futex condvars under the runtime lock)
+      profile the wake-up path (futex condvars under the runtime lock).
+      After F9 (2026-10-10, WSL): `spawn` 2.2× (Windows 1.2×), `parallel` 0.7×,
+      `pipes` 0.2×, `channels` 0.7×; what is left is `spawn`'s per-task cost there
 
 ### 3.2 Compiler
 
@@ -536,6 +581,11 @@ answered from the shape, tuples get `Comparable`, enums get
       self-hosted parser exists
 - [x] Numbers recorded in-repo: `go run ./bench -record` appends to
       `bench/results.md`; the first run is there
+- [x] Memory per operation (2026-10-10): a benchmark may print
+      `MEMORY <name> <bytes>` and its Go reference set `goMemory`; the runner
+      prints them in a table of their own. `bench/idle` parks 100k tasks on one
+      channel and reports the live bytes per parked task (345; Go 8.7 KB per
+      goroutine) and the time to park and wake them
 - [x] The allocator was quadratic between collections (every slot of every
       full span scanned per allocation): `json` took 376 s, now 0.31 s. Fixed in
       `veles_gc.c` (O(1) full-span skip, a per-class cursor); `examples/gc`
@@ -1184,14 +1234,16 @@ Every new public std API (http cookies/forms/client, `std/log`,
 
 ## 11. Known limitations to revisit
 
-- **Executors (D143, built 2026-10-10), not done yet:** on Windows a thread can only be kept
-  to CPUs 0–63 (other processor groups throw `ThreadError`; `SetThreadGroupAffinity` would lift it);
+- **Executors (D143, built 2026-10-10), not done yet:** on Windows a thread is kept to CPUs of one
+  processor group (a list across groups throws `ThreadError`: CPU sets reach across, but only as a
+  preference; groups since 2026-10-10, F11);
   macOS (plan A7) names threads but refuses any priority or CPU list; a blocking call on a pool's
   thread does not hand its queue to a spare thread as the default pool's does (a pool keeps the
   threads it was made with); a `Thread`'s plain function cannot run tasks on an executor (`run` and
   `scope(on:)` suspend; D143 said it "may create and run an executor of its own" — a blocking form
-  of `run` would need a decision); timers and sockets are served by the default pool only, so a
-  default pool whose every thread is in a long plain loop delays a pool task's `sleep` too;
+  of `run` would need a decision); timers and sockets are served by the default pool (when its
+  every thread runs a long plain loop the monitor fires a timer within ~1 ms and looks at the
+  sockets every 10 ms, 2026-10-10 — not at the reactor's own latency);
   `async cpu.run(f)` is refused (a method's receiver is a pointer, not Sendable — wrap the call in
   a function taking the `Executor`); with CPU work on a pool the default pool's request latency
   keeps its median but its tail grows — p99 +20–40 % on Windows, +35–100 % on Linux (WSL), the
@@ -1200,13 +1252,34 @@ Every new public std API (http cookies/forms/client, `std/log`,
   lock is the other suspect).
 
 - **Found by the concurrency review (2026-10-09, `veles-concurrency-review.md`), not fixed yet**
-  (B1 and B2 are fixed; B3 is decided as D145 and planned as F4): (B4, medium) `veles_task` is ~430 bytes (15 flag
-  words, panic and debug data, one field set per wait kind); ~560–670 bytes per parked task, target
-  ≤ 250 — F2 (2026-10-09) took the task to 248 bytes and a parked task to 400. Missing benchmark:
-  `bench/idle` (peak memory per parked task). On Linux a just-launched child takes up to
-  ~7 ms to start at 8 threads (Windows ≤ 0.3 ms): the wake-up path (plan F9). Many tasks
-  parking on one channel at 32 threads still spend ~1.5 s of CPU per 100k parks on its lock (bounded
-  now; a per-channel waiter queue without the lock would remove it). Plan track F has the order.
+  (B1, B2, B3, B5, B6 and the child start latency are fixed — F1–F10): (B4) `bench/idle` (2026-10-10)
+  measures 345 bytes per parked task (Go: 8.7 KB per goroutine); the review's target of 250 is not
+  met — the task object takes a 256-byte slot (248 bytes) and the smallest frame 80. Reaching it
+  needs the task under ~150 bytes (a plain channel wait and a socket wait in one union, the channel
+  node without its task and arm, panic and debug data behind one pointer, `entry` sharing a word
+  with `race`) and the root frame inside the task's own slot; the codegen knows the task's layout
+  (`coro.go` frameHelpers). A task parked inside calls keeps their frames: ~4 KB for a ten-deep
+  chain in `std/http`, part of it the tails of 2 KB arena chunks a frame did not fit in.
+  Many tasks parking on one channel at once: 100k parked and woken cost 0.08 s of CPU on one
+  thread and 1.5 s on 32 (the channel's lock found taken one time in three, the shared run queue)
+  — wall 0.08–0.13 s against Go's 0.37 s; a waiter queue without the lock would remove most of it.
+  `driver/TestStdHttpUnitTests` failed once in a full WSL run on 2026-10-10 (and timed out once on
+  2026-10-09, before F9); it passed in every full run since and 4/4 alone under load, and the
+  failing test's output was not kept — run it in a loop under load on Linux and keep the report.
+
+- **`withTimeout` is a task per call (2026-10-10):** a scope, a race, a task and its frame — about
+  0.45 µs and 700 bytes — though the caller only waits; `std/http` wraps every line it reads in one
+  (nine a request in `bench/httphello`: ~4 % of its CPU, a quarter of what it allocates). Two ways
+  out: deadlines on socket operations, as Go's (a `std/net` API, so a decision first), or running
+  `f` in the caller's task with a deadline that unwinds its frames (Kotlin's) — decision-free, but
+  a plain loop inside `f` can only be stopped by unwinding to `withTimeout`'s frame, which is
+  resumable only if the executor, not the frame, started the call (so the frame waiting is
+  parked), and the scopes inside `f` must drain before `withTimeout` throws.
+
+- **The collector (2026-10-10):** it stops every thread; up to eight helper threads mark and sweep
+  in that pause (one per core, once more than 1 MB stays live), so a pause shrinks with the
+  machine but still grows with the live heap — marking alongside the program, or sweeping lazily
+  as spans are claimed, would take it out of the pause (Go does both).
 
 - Visibility (D142, decided 2026-10-08, not built: plan B17). Kept for later:
   a file-scoped `private` on top-level declarations (Kotlin's rule) — refused
@@ -1337,16 +1410,17 @@ Every new public std API (http cookies/forms/client, `std/log`,
 - **Deferred from E3, the reactor (2026-10-08), to build later:** kqueue for macOS (A7; until then
   macOS uses the `poll()` backend, which rebuilds its descriptor array per wait and is interrupted by
   every arm — tested on Linux by `driver/TestReactorPollFallback`); `writev`/`readv` and receiving into a
-  list without the copy (`List<u8>` ↔ socket, §3.1); the runtime lock is still taken by `race_wait`
-  (24 times per HTTP request — every `withTimeout`), `scope_cancel`, socket waits and the timer heap:
-  `bench/httphello` at 32 threads (this machine's default) is about twice its 8-thread time, and making
-  `race_wait` lock-free needs a design for cancellation, which today detaches a running race under that
-  lock (a node left on a channel would swallow a later send); idle workers still sleep on one condition
-  variable under the runtime lock (Go parks each thread on its own note), with the spinning added here in
-  front of it; the Windows backend watches sockets only (an `ioWait` on another handle is "ready" at
-  once and its call retried); `sleep` and race timeouts take whole milliseconds, rounded up, so a
-  `Duration` of 50 µs sleeps a millisecond (the deadline itself is kept in nanoseconds); timers are one
-  heap under the runtime lock (Go keeps one per P).
+  list without the copy (`List<u8>` ↔ socket, §3.1); the Windows backend watches sockets only (an
+  `ioWait` on another handle is "ready" at once and its call retried); on Windows the thread waiting
+  in the reactor keeps the timers to the millisecond (`GetQueuedCompletionStatusEx` takes ms; Go
+  associates a high-resolution timer with the completion port) — a parked timekeeper waits on a
+  high-resolution waitable timer, ~0.5 ms (F11, 2026-10-10; Linux to tens of µs); timers are 64
+  heaps chosen by the task's address, not one per worker as Go's are (a worker that arms and fires
+  its own would keep them in its cache). (Idle threads park each on its own since F11 — a futex, an
+  event — and are woken by name without the runtime lock.) (Socket waits, the timers and
+  the default pool's housekeeping between batches take no runtime lock since F10, 2026-10-10:
+  `bench/httphello` at 32 threads now takes as long as at 8 — 178–192 ms on Windows, 0.28 →
+  0.34–0.39 s on Linux, where Go's reference goes 0.20 → 0.62 s.)
 - **Deferred from `const fun` (2026-10-05), to build later:** `throws` and
   `try`/`catch` inside a `const fun` (a thrown error would be a compile error
   at the constant; today the function is refused); trait objects (a call through
@@ -1410,10 +1484,6 @@ Every new public std API (http cookies/forms/client, `std/log`,
   nanosecond short, because `abs()` saturates there rather than overflowing.
   It is the one `Duration` whose text does not read back, and it cannot be
   written as a literal.
-- `sleep` rounds a `Duration` **up** to the executor's millisecond, so
-  `Duration.micros(1)` sleeps for one millisecond rather than a
-  microsecond. Sub-millisecond waiting needs a finer timer wheel in
-  `veles_task.c`, which is a runtime change, not a library one.
 - **Deferred from C2/C3/C5/C6 and the test-file rule (2026-10-04), to build later:**
   - `std/compress`: `inflate` could write into a sized buffer (the safepoint poll in each inner loop and
     the oversized-shift selects show in the IR); levels 7–9 on large noisy inputs are slow (no zlib-style

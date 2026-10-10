@@ -177,30 +177,178 @@ veles_cond *veles_cond_new(void) {
     veles_cond *c = must(calloc(1, sizeof *c));
 #if defined(_WIN32)
     InitializeConditionVariable(&c->cv);
-#else
+#elif defined(__APPLE__)
     pthread_cond_init(&c->cv, NULL);
+#else
+    /* timed waits count on the monotonic clock: setting the wall clock
+     * neither ends one early nor stretches it */
+    pthread_condattr_t attr;
+    pthread_condattr_init(&attr);
+    pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
+    pthread_cond_init(&c->cv, &attr);
+    pthread_condattr_destroy(&attr);
 #endif
     return c;
 }
 
-/* waits until signalled or timeout_ms passes (negative: no limit) */
-void veles_cond_wait(veles_cond *c, veles_lock *l, int64_t timeout_ms) {
+/* waits until signalled or timeout_ns passes (negative: no limit), to the
+ * platform's resolution: a few tens of microseconds on Linux; on Windows
+ * whole milliseconds, rounded up, at the timer period veles_timer_period
+ * asked for (F9) */
+void veles_cond_wait_ns(veles_cond *c, veles_lock *l, int64_t timeout_ns) {
 #if defined(_WIN32)
-    SleepConditionVariableCS(&c->cv, &l->cs, timeout_ms < 0 ? INFINITE : (DWORD)timeout_ms);
+    DWORD ms = INFINITE;
+    if (timeout_ns >= 0) {
+        int64_t m = (timeout_ns + 999999) / 1000000;
+        ms = m > 0x7ffffffe ? 0x7ffffffe : (DWORD)m;
+    }
+    SleepConditionVariableCS(&c->cv, &l->cs, ms);
 #else
-    if (timeout_ms < 0) {
+    if (timeout_ns < 0) {
         pthread_cond_wait(&c->cv, &l->m);
         return;
     }
     struct timespec ts;
+#if defined(__APPLE__)
     clock_gettime(CLOCK_REALTIME, &ts);
-    ts.tv_sec += timeout_ms / 1000;
-    ts.tv_nsec += (timeout_ms % 1000) * 1000000;
+#else
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+#endif
+    ts.tv_sec += timeout_ns / 1000000000;
+    ts.tv_nsec += timeout_ns % 1000000000;
     if (ts.tv_nsec >= 1000000000) {
         ts.tv_sec++;
         ts.tv_nsec -= 1000000000;
     }
     pthread_cond_timedwait(&c->cv, &l->m, &ts);
+#endif
+}
+
+/* waits until signalled or timeout_ms passes (negative: no limit) */
+void veles_cond_wait(veles_cond *c, veles_lock *l, int64_t timeout_ms) {
+    veles_cond_wait_ns(c, l, timeout_ms < 0 ? -1 : timeout_ms * 1000000);
+}
+
+/* ---- parking a thread (the executor's idle threads) -------------------------
+ * Each idle thread waits on a park of its own and is woken by name: a wake
+ * reaches the one thread chosen, takes no lock, and a wake that comes first
+ * makes the next wait return at once. A wait may also return early, so
+ * the caller always looks again. Timed waits are as fine as the platform
+ * allows: a futex's on Linux; on Windows a high-resolution waitable timer
+ * (Windows 10 1803 and later, about half a millisecond), else the 1 ms
+ * timer period; a condition variable elsewhere. (One condition variable per
+ * executor, under the runtime lock, woke whichever waiter the system picked
+ * and kept every timeout to whole milliseconds on Windows.) */
+#if defined(__linux__)
+#include <linux/futex.h>
+#endif
+
+typedef struct veles_park {
+#if defined(_WIN32)
+    HANDLE event; /* auto-reset */
+    HANDLE timer; /* high-resolution; NULL where the system has none */
+#elif defined(__linux__)
+    int32_t word; /* 1: a wake is pending */
+#else
+    pthread_mutex_t m;
+    pthread_cond_t c;
+    int pending;
+#endif
+} veles_park;
+
+#if defined(_WIN32) && !defined(CREATE_WAITABLE_TIMER_HIGH_RESOLUTION)
+#define CREATE_WAITABLE_TIMER_HIGH_RESOLUTION 0x00000002
+#endif
+
+veles_park *veles_park_new(void) {
+    veles_park *p = must(calloc(1, sizeof *p));
+#if defined(_WIN32)
+    p->event = CreateEventW(NULL, FALSE, FALSE, NULL);
+    if (!p->event) must(NULL);
+    p->timer = CreateWaitableTimerExW(NULL, NULL, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+#elif defined(__linux__)
+    (void)0;
+#else
+    pthread_mutex_init(&p->m, NULL);
+    pthread_cond_init(&p->c, NULL);
+#endif
+    return p;
+}
+
+/* waits until woken or timeout_ns passes (negative: no limit) */
+void veles_park_wait(veles_park *p, int64_t timeout_ns) {
+#if defined(_WIN32)
+    if (timeout_ns < 0) {
+        WaitForSingleObject(p->event, INFINITE);
+        return;
+    }
+    if (p->timer) {
+        LARGE_INTEGER due;
+        due.QuadPart = -(timeout_ns / 100 > 0 ? timeout_ns / 100 : 1); /* relative, in 100 ns */
+        if (SetWaitableTimer(p->timer, &due, 0, NULL, NULL, FALSE)) {
+            HANDLE both[2] = {p->event, p->timer};
+            WaitForMultipleObjects(2, both, FALSE, INFINITE);
+            return;
+        }
+    }
+    int64_t ms = (timeout_ns + 999999) / 1000000;
+    WaitForSingleObject(p->event, ms > 0x7ffffffe ? 0x7ffffffe : (DWORD)ms);
+#elif defined(__linux__)
+    if (__atomic_exchange_n(&p->word, 0, __ATOMIC_ACQUIRE)) return;
+    struct timespec ts, *tp = NULL;
+    if (timeout_ns >= 0) {
+        ts.tv_sec = timeout_ns / 1000000000;
+        ts.tv_nsec = timeout_ns % 1000000000;
+        tp = &ts;
+    }
+    syscall(SYS_futex, &p->word, FUTEX_WAIT_PRIVATE, 0, tp, NULL, 0);
+    __atomic_store_n(&p->word, 0, __ATOMIC_RELEASE);
+#else
+    pthread_mutex_lock(&p->m);
+    if (!p->pending) {
+        if (timeout_ns < 0) {
+            pthread_cond_wait(&p->c, &p->m);
+        } else {
+            struct timespec ts;
+            clock_gettime(CLOCK_REALTIME, &ts);
+            ts.tv_sec += timeout_ns / 1000000000;
+            ts.tv_nsec += timeout_ns % 1000000000;
+            if (ts.tv_nsec >= 1000000000) {
+                ts.tv_sec++;
+                ts.tv_nsec -= 1000000000;
+            }
+            pthread_cond_timedwait(&p->c, &p->m, &ts);
+        }
+    }
+    p->pending = 0;
+    pthread_mutex_unlock(&p->m);
+#endif
+}
+
+void veles_park_wake(veles_park *p) {
+#if defined(_WIN32)
+    SetEvent(p->event);
+#elif defined(__linux__)
+    if (__atomic_exchange_n(&p->word, 1, __ATOMIC_RELEASE) == 0) syscall(SYS_futex, &p->word, FUTEX_WAKE_PRIVATE, 1, NULL, NULL, 0);
+#else
+    pthread_mutex_lock(&p->m);
+    p->pending = 1;
+    pthread_cond_signal(&p->c);
+    pthread_mutex_unlock(&p->m);
+#endif
+}
+
+/* Windows wakes a waiting thread on its timer tick, 15.6 ms unless a
+ * process asks for less; the executor's timers want milliseconds, so the
+ * runtime asks for 1 ms once (per process since Windows 10 2004). winmm is
+ * loaded for it, not linked. Elsewhere waits are precise already. */
+void veles_timer_period(void) {
+#if defined(_WIN32)
+    HMODULE winmm = LoadLibraryW(L"winmm.dll");
+    if (!winmm) return;
+    typedef UINT (WINAPI *begin_fn)(UINT);
+    begin_fn begin = (begin_fn)(void *)GetProcAddress(winmm, "timeBeginPeriod");
+    if (begin) begin(1);
 #endif
 }
 
@@ -328,7 +476,8 @@ static const char *priority_names[] = {"Low", "Normal", "High", "Realtime"};
 /* CPUs the machine has, online or not: the numbers an affinity may name */
 static int64_t cpus_configured(void) {
 #if defined(_WIN32)
-    return veles_cpu_count();
+    DWORD n = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS); /* every processor group's */
+    return n > 0 ? (int64_t)n : veles_cpu_count();
 #else
     long n = sysconf(_SC_NPROCESSORS_CONF);
     return n > 0 ? (int64_t)n : veles_cpu_count();
@@ -337,6 +486,23 @@ static int64_t cpus_configured(void) {
 
 #if defined(_WIN32)
 typedef HRESULT (WINAPI *set_description_fn)(HANDLE, PCWSTR);
+
+/* a CPU's processor group and its number there: the CPUs are numbered from
+ * 0 through every group in turn (Windows keeps at most 64 to a group) */
+static int cpu_group_of(int32_t cpu, WORD *group, BYTE *number) {
+    WORD groups = GetActiveProcessorGroupCount();
+    int32_t base = 0;
+    for (WORD g = 0; g < groups; g++) {
+        int32_t n = (int32_t)GetActiveProcessorCount(g);
+        if (cpu < base + n) {
+            *group = g;
+            *number = (BYTE)(cpu - base);
+            return 1;
+        }
+        base += n;
+    }
+    return 0;
+}
 #endif
 
 int64_t veles_thread_configure(const char *name, int64_t priority, const int32_t *cpus, int64_t ncpus, char *err, int64_t cap) {
@@ -366,15 +532,26 @@ int64_t veles_thread_configure(const char *name, int64_t priority, const int32_t
         }
     }
     if (ncpus > 0) {
-        DWORD_PTR mask = 0;
+        /* a thread runs in one processor group: the CPUs listed must share
+         * it (Windows 11's CPU sets reach across groups, but only as a
+         * preference the scheduler may set aside) */
+        GROUP_AFFINITY ga;
+        memset(&ga, 0, sizeof ga);
         for (int64_t i = 0; i < ncpus; i++) {
-            if (cpus[i] >= (int32_t)(8 * sizeof mask)) {
-                snprintf(err, (size_t)cap, "CPU %d is in another processor group: only CPUs 0 to %d can be chosen on Windows yet", cpus[i], (int)(8 * sizeof mask) - 1);
+            WORD group;
+            BYTE number;
+            if (!cpu_group_of(cpus[i], &group, &number)) {
+                snprintf(err, (size_t)cap, "there is no CPU %d: this machine has %lld (0 to %lld)", cpus[i], (long long)have, (long long)have - 1);
                 return -1;
             }
-            mask |= (DWORD_PTR)1 << cpus[i];
+            if (i > 0 && group != ga.Group) {
+                snprintf(err, (size_t)cap, "CPUs %d and %d are in different processor groups (%u and %u): a thread on Windows runs in one", cpus[0], cpus[i], (unsigned)ga.Group, (unsigned)group);
+                return -1;
+            }
+            ga.Group = group;
+            ga.Mask |= (KAFFINITY)1 << number;
         }
-        if (!SetThreadAffinityMask(GetCurrentThread(), mask)) {
+        if (!SetThreadGroupAffinity(GetCurrentThread(), &ga, NULL)) {
             snprintf(err, (size_t)cap, "the system refused the CPUs asked for (error %lu)", (unsigned long)GetLastError());
             return -1;
         }

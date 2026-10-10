@@ -333,7 +333,7 @@ func (g *gen) coroReturn(t types.Type, v string, isResult bool) {
 	}
 	slot := v // a memory-class value is already in memory
 	if !g.isMem(t) {
-		slot = g.alloca(g.llType(t))
+		slot = g.scratch(g.llType(t)) // veles_frame_return copies it before the frame ends
 		g.emit("store %s %s, ptr %s", g.llType(t), v, slot)
 	}
 	failed := "0"
@@ -464,6 +464,31 @@ func (g *gen) callFrame(code string, args []string, rt types.Type) string {
 	g.placeLabel(got)
 	// the callee's frame is over; what it gave back is in the link
 	g.emit("call void @veles.frame.free(ptr %s, ptr %s)", c.task, h)
+	if g.inCleanup == 0 {
+		// it unwound instead (done is 2) — cancelled, or abandoned by a
+		// failed child, at a loop's back edge with no suspension between:
+		// the link holds no result, and this frame follows it as after a
+		// suspension point that saw the same (D145)
+		ub := g.newTmp()
+		g.emit("%s = icmp eq i64 %s, 2", ub, dv)
+		unwound, ok := g.newLabel("call.unwound"), g.newLabel("call.ok")
+		g.emitTerm("br i1 %s, label %%%s, label %%%s, !prof !{!\"branch_weights\", i32 1, i32 100000}", ub, unwound, ok)
+		g.placeLabel(unwound)
+		cc := g.newTmp()
+		g.emit("%s = call i64 @veles_task_cancelled(ptr %s, i64 %s)", cc, c.task, c.depth)
+		cb := g.newTmp()
+		g.emit("%s = icmp ne i64 %s, 0", cb, cc)
+		cancel, look := g.newLabel("call.cancelled"), g.newLabel("call.look")
+		g.emitTerm("br i1 %s, label %%%s, label %%%s", cb, cancel, look)
+		g.placeLabel(look)
+		g.failFastCheck()
+		g.emitTerm("br label %%%s", cancel)
+		g.placeLabel(cancel)
+		g.runCleanups(0)
+		g.emit("call void @veles_frame_unwound(ptr %s, ptr %s)", c.task, c.link)
+		g.emitTerm("br label %%%s", c.finalL)
+		g.placeLabel(ok)
+	}
 	if lt == "{ ptr, i64, i64 }" {
 		return "zeroinitializer"
 	}
@@ -550,7 +575,9 @@ func (g *gen) defineCoroHelper(fn *sema.Func, params []string, body func()) {
 			g.fnResult = g.prog.ResultType(fn.Sig.Ret, fn.Sig.Effects.Error)
 		}
 		g.coroPrologue()
+		g.markLifetimes = true
 		body()
+		g.markLifetimes = false
 		g.coroEpilogue()
 		g.coro = nil
 	})
@@ -774,8 +801,8 @@ func (g *gen) race(e *sema.Race) string {
 			slots[i] = g.slotOf(arm.Value.Type(), v)
 			g.emit("call void @veles_race_send(ptr %s, ptr %s, ptr %s)", r, ch, slots[i])
 		case sema.RaceSleep:
-			ms := g.expr(arm.Source)
-			g.emit("call void @veles_race_sleep(ptr %s, i64 %s)", r, ms)
+			ns := g.expr(arm.Source)
+			g.emit("call void @veles_race_sleep(ptr %s, i64 %s)", r, ns)
 		case sema.RaceTask:
 			t := g.expr(arm.Source)
 			slots[i] = g.alloca("ptr")
@@ -798,9 +825,8 @@ func (g *gen) race(e *sema.Race) string {
 	g.placeLabel(dispatch)
 	hasValue := !types.IsUnit(e.Type()) && !types.IsNever(e.Type())
 	var res string
-	llt := g.llType(e.Type())
 	if hasValue {
-		res = g.alloca(llt)
+		res = g.resultSlot(e.Type())
 	}
 	end := g.newLabel("race.end")
 	labels := make([]string, len(e.Arms))
@@ -964,12 +990,12 @@ func (g *gen) taskBuiltin(e *sema.Builtin) (string, bool) {
 		g.emit("%s = call i64 @veles_chan_len(ptr %s)", v, ch)
 		return v, true
 	case "task.sleep":
-		ms := g.expr(e.Args[0])
+		ns := g.expr(e.Args[0]) // the deadline in nanoseconds (F9)
 		loop, done, susp := g.newLabel("sleep"), g.newLabel("sleep.done"), g.newLabel("sleep.susp")
 		g.emitTerm("br label %%%s", loop)
 		g.placeLabel(loop)
 		r := g.newTmp()
-		g.emit("%s = call i64 @veles_task_sleep(ptr %s, i64 %s)", r, g.coro.task, ms)
+		g.emit("%s = call i64 @veles_task_sleep(ptr %s, i64 %s)", r, g.coro.task, ns)
 		rb := g.newTmp()
 		g.emit("%s = icmp ne i64 %s, 0", rb, r)
 		g.emitTerm("br i1 %s, label %%%s, label %%%s", rb, done, susp)

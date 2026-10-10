@@ -10,6 +10,9 @@
 // workload and prints `BENCH <name> <ops> <nanoseconds> <checksum>`. The Go
 // reference computes the same checksum, and a mismatch fails the run: the
 // two sides must provably do the same work before their times are compared.
+// A benchmark may also print `MEMORY <name> <bytes>` — bytes per operation
+// (bench/idle: per parked task) — and its reference sets goMemory to the
+// same measure; those get a table of their own.
 package main
 
 import (
@@ -32,6 +35,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -41,6 +45,8 @@ type result struct {
 	veles    time.Duration
 	goTime   time.Duration
 	checksum string
+	memory   int64 // bytes per operation the Veles side reported; 0 = none
+	goMemory int64
 }
 
 func main() {
@@ -77,9 +83,11 @@ func main() {
 		must(err)
 		r := parse(name, out)
 		goSetup = 0
+		goMemory = 0
 		start := time.Now()
 		sum := ref()
 		r.goTime = time.Since(start) - goSetup
+		r.goMemory = goMemory
 		if sum != r.checksum {
 			fmt.Fprintf(os.Stderr, "bench: %s: Veles computed %s, Go %s — not the same work\n", name, r.checksum, sum)
 			failed = true
@@ -108,6 +116,17 @@ func render(rs []result) string {
 		ratio := float64(r.veles) / float64(r.goTime)
 		fmt.Fprintf(&b, "| %s | %d | %s | %s | %.1f× |\n", r.name, r.ops, round(r.veles), round(r.goTime), ratio)
 	}
+	head := false
+	for _, r := range rs {
+		if r.memory == 0 || r.goMemory == 0 {
+			continue
+		}
+		if !head {
+			b.WriteString("\n| benchmark | Veles bytes/op | Go bytes/op | Veles / Go |\n|---|---:|---:|---:|\n")
+			head = true
+		}
+		fmt.Fprintf(&b, "| %s | %d | %d | %.2f× |\n", r.name, r.memory, r.goMemory, float64(r.memory)/float64(r.goMemory))
+	}
 	return b.String()
 }
 
@@ -120,13 +139,22 @@ func round(d time.Duration) time.Duration {
 
 func parse(name string, out []byte) result {
 	sc := bufio.NewScanner(bytes.NewReader(out))
+	var r result
+	found := false
 	for sc.Scan() {
 		f := strings.Fields(sc.Text())
 		if len(f) == 5 && f[0] == "BENCH" && f[1] == name {
 			ops, _ := strconv.ParseInt(f[2], 10, 64)
 			ns, _ := strconv.ParseInt(f[3], 10, 64)
-			return result{name: name, ops: ops, veles: time.Duration(ns), checksum: f[4]}
+			r = result{name: name, ops: ops, veles: time.Duration(ns), checksum: f[4], memory: r.memory}
+			found = true
 		}
+		if len(f) == 3 && f[0] == "MEMORY" && f[1] == name {
+			r.memory, _ = strconv.ParseInt(f[2], 10, 64)
+		}
+	}
+	if found {
+		return r
 	}
 	fmt.Fprintf(os.Stderr, "bench: %s printed no BENCH line:\n%s", name, out)
 	os.Exit(1)
@@ -139,6 +167,10 @@ func parse(name string, out []byte) result {
 // goSetup is the time a reference spent on work the Veles side does before
 // its clock starts (building the input text); the runner subtracts it.
 var goSetup time.Duration
+
+// goMemory is what a reference measured that reports memory: bytes per
+// operation, as its Veles side prints them on its MEMORY line.
+var goMemory int64
 
 var references = map[string]func() string{
 	"gzip": func() string {
@@ -418,6 +450,38 @@ var references = map[string]func() string{
 		var sum int64
 		for i := int64(0); i < 10000000; i++ {
 			sum += suscallTop(i)
+		}
+		return strconv.FormatInt(sum, 10)
+	},
+	"idle": func() string {
+		// 100k goroutines parked on one channel: the heap and the stacks
+		// they add, per goroutine, after a collection
+		const n = 100000
+		var ms runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&ms)
+		before := ms.HeapInuse + ms.StackInuse
+		ch := make(chan int64)
+		results := make(chan int64, n)
+		var parked atomic.Int64
+		for i := 0; i < n; i++ {
+			go func() {
+				parked.Add(1)
+				results <- <-ch
+			}()
+		}
+		for parked.Load() < n {
+			runtime.Gosched()
+		}
+		runtime.GC()
+		runtime.ReadMemStats(&ms)
+		goMemory = int64(ms.HeapInuse+ms.StackInuse-before) / n
+		var sum int64
+		for i := int64(0); i < n; i++ {
+			ch <- i
+		}
+		for i := 0; i < n; i++ {
+			sum += <-results
 		}
 		return strconv.FormatInt(sum, 10)
 	},

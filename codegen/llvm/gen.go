@@ -16,6 +16,10 @@ import (
 type gen struct {
 	prog *sema.Program
 
+	// in a coroutine's body: a temporary's life starts where it is made
+	// (alloca), so the frame keeps only what lives across a suspension
+	markLifetimes bool
+
 	typeDecls map[string]string
 	typeOrder []string
 	strs      map[string]string
@@ -257,6 +261,8 @@ declare void @veles_list_clear(ptr)
 declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)
 declare void @llvm.memmove.p0.p0.i64(ptr, ptr, i64, i1)
 declare void @llvm.memset.p0.i64(ptr, i8, i64, i1)
+declare void @llvm.lifetime.start.p0(i64 immarg, ptr nocapture)
+declare void @llvm.lifetime.end.p0(i64 immarg, ptr nocapture)
 declare double @llvm.sqrt.f64(double)
 declare double @llvm.fabs.f64(double)
 declare double @llvm.floor.f64(double)
@@ -438,6 +444,37 @@ func (g *gen) placeLabel(name string) {
 	g.term = false
 }
 
+// scratch is storage for a value built or taken apart in place — stored
+// and loaded, its parts reached by getelementptr — whose address goes
+// nowhere else: no call keeps it. In a coroutine's body its life starts
+// here (llvm.lifetime.start), and the coroutine split then keeps it on the
+// stack unless a suspension point lies between here and a use. Without the
+// marker every such slot counted as live from the function's entry, so
+// each one written after a suspension point took a place in the frame of
+// its own: 5.6 KB of frame for std/http's readRequest, kept by every task
+// parked in a read (2026-10-10). A slot whose address a call keeps — a
+// race's send arm, a buffer a string comes to point into — must not be
+// marked: the split looks only at the uses it sees, and would put the slot
+// on a stack that the next suspension discards.
+func (g *gen) scratch(llt string) string {
+	name := g.alloca(llt)
+	if g.markLifetimes {
+		g.emit("call void @llvm.lifetime.start.p0(i64 -1, ptr %s)", name)
+	}
+	return name
+}
+
+// resultSlot is where the branches of an if, a when or a race leave the
+// value the merge loads: scratch, unless the value is in the memory class,
+// whose register is the slot's address (mem.go) and goes on from there.
+func (g *gen) resultSlot(t types.Type) string {
+	if g.isMem(t) {
+		return g.alloca(g.llType(t))
+	}
+	return g.scratch(g.llType(t))
+}
+
+// alloca is storage live for the whole function.
 func (g *gen) alloca(llt string) string {
 	g.tmp++
 	name := fmt.Sprintf("%%a%d", g.tmp)
@@ -536,6 +573,7 @@ func (g *gen) resetFn(fn *sema.Func) {
 	}
 	g.inCleanup = 0
 	g.launchSlots = map[*sema.Launch]string{}
+	g.markLifetimes = false
 }
 
 // retLL returns the LLVM return type of a function: void when the result is
@@ -711,6 +749,7 @@ func (g *gen) function(fn *sema.Func) {
 	}
 	if fn.Suspends {
 		g.coroPrologue()
+		g.markLifetimes = true
 	}
 	if fn.Body != nil {
 		g.block(fn.Body)
@@ -726,6 +765,7 @@ func (g *gen) function(fn *sema.Func) {
 		}
 	}
 	attrs := ""
+	g.markLifetimes = false
 	if fn.Suspends {
 		g.coroEpilogue()
 		attrs = " presplitcoroutine"

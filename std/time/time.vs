@@ -36,7 +36,7 @@ extern "C" {
   fun veles_time_now_us(): i64
   fun veles_time_monotonic_ns(): i64
   fun veles_time_local_offset_minutes(secs: i64): i64
-  fun veles_ticker_start(ticks: Channel<Timestamp>, periodMs: i64): *raw u8
+  fun veles_ticker_start(ticks: Channel<Timestamp>, periodNs: i64): *raw u8
   fun veles_ticker_stop(ticker: *raw u8)
 }
 
@@ -746,12 +746,10 @@ fun fullYear(yy: i64): i64 {
 @caller_location
 public fun ticker(every: Duration): Ticker {
   if (every.toNanos() <= 0) panic("time.ticker: every must be positive, got $every")
-  // the runtime's timers count milliseconds: round up, as sleep does
-  val ms = (every.toNanos() + 999999) / 1000000
   val ticks = Channel<Timestamp>(capacity: 1)
   val handle = unsafe {
     // SAFETY: the runtime keeps the channel reachable until the ticker stops
-    veles_ticker_start(ticks, ms)
+    veles_ticker_start(ticks, every.toNanos())
   }
   Ticker(ticks, handle)
 }

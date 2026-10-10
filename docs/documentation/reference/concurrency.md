@@ -190,8 +190,7 @@ that is cancelled while it computes stops at the end of the iteration it
 is in, in any function, and unwinds as it would at a suspension point —
 its `with` blocks close, innermost first. Code that is not in a loop runs
 on to the next suspension point or loop end. Here the task is cancelled
-once before it started and once while it counts; the first never runs,
-the second stops long before the end:
+while it counts, and stops long before the end:
 
 ```veles
 use io
@@ -201,24 +200,19 @@ fun count(done: Atomic<i64>) {
 }
 
 fun main() {
-  val early = Atomic(value: 0)
-  scope {
-    val t = async count(early)
-    t.cancel()   // before it got a thread: it never starts
-  }
   val late = Atomic(value: 0)
   scope {
     val t = async count(late)
     await sleep(Duration.millis(1))
     t.cancel()   // running: it stops at the end of an iteration
   }
-  io.println("${early.load()}, then stopped early: ${late.load() < 2000000000}")
+  io.println("stopped early: ${late.load() < 2000000000}")
 }
 ```
 
 Output:
 ```text
-0, then stopped early: true
+stopped early: true
 ```
 
 **Not inside a lock region or a `close()`**: there the check is not made,
@@ -235,8 +229,12 @@ pool run everything else. Under `VELES_THREADS=1`, or when every thread
 computes, call `yieldNow()` in such a loop now and then (which makes its
 function suspend).
 
-`sleep(d)` sleeps **at least** `d`, rounded up to a whole millisecond
-(D60); a zero or negative duration only yields.
+`sleep(d)` sleeps **at least** `d` (D60), and a race's `sleep(d)` arm
+wins no earlier: deadlines are kept in nanoseconds, and one idle thread
+waits for the nearest one at the system's resolution — tens of
+microseconds on Linux (a futex), about half a millisecond on Windows (a
+high-resolution waitable timer; a millisecond on Windows before 10 1803).
+A zero or negative duration only yields.
 
 ## The end of a scope
 
@@ -397,7 +395,10 @@ body is left early, when the block of its `with t = async …` ends, or
 when `t.cancel()` is called (D20, D34, D100). Cancellation is a
 **request**:
 
-- A task cancelled before it got a thread **never starts**.
+- A task cancelled before it got a thread **never starts**. A launched
+  task is taken by an idle thread within microseconds, even while its
+  launcher goes on running, so whether a `cancel()` right after `async`
+  finds it unstarted is a matter of timing.
 - A running task continues to its next suspension point, and **unwinds**
   there: each `with` it is inside closes, innermost first; a suspending
   call it is inside is unwound from the innermost call outwards.
@@ -583,8 +584,12 @@ Give such waits a limit (`race` with a `sleep` arm, `withTimeout`).
 - Each thread has its own queue. A task woken by the running one — a
   message it was waiting for, a child that finished, a new task — runs
   next on the same thread; an idle thread takes half of a busy thread's
-  queue. A yield (`sleep(Duration.zero)`) goes to the back of a shared
-  queue, behind everything already waiting.
+  queue. If the thread goes on running instead — a parent that launched a
+  child and keeps computing — an idle thread takes that next task too, a
+  few microseconds later: a child starts at once even when its parent
+  never waits (also before `main` first waits). A yield
+  (`sleep(Duration.zero)`) goes to the back of a shared queue, behind
+  everything already waiting.
 - A task may resume on a different thread after each wait. Task-local
   values (`TaskLocal`, D72) follow the task, not the thread; a task keeps
   the values bound where it was started.
@@ -609,9 +614,12 @@ Give such waits a limit (`race` with a `sleep` arm, `withTimeout`).
 - A task stays on its executor across every suspension. A child runs
   where its scope says (`on:`), or else where the task that launched it
   runs; `main` and the tasks it starts run on the default pool.
-- Only the default pool's threads fire timers and wait on sockets; a task
-  on another executor that sleeps or reads a socket is woken by them and
-  queued back on its own executor.
+- The default pool's threads fire timers and wait on sockets; a task on
+  another executor that sleeps or reads a socket is woken by them and
+  queued back on its own executor. When every one of them is in a loop
+  that cannot give its thread up, the monitor fires a timer a millisecond
+  late at most and looks at the sockets every 10 ms, so the other
+  executors' tasks are not held up.
 - A pool's threads are never handed off around a blocking call (they are
   the threads it was made with); the call only lets the collector run.
 - Closing an `Executor` stops its threads (its tasks have been joined by
@@ -623,7 +631,8 @@ Give such waits a limit (`race` with a `sleep` arm, `withTimeout`).
   made the thread), `High` or `Realtime`; `cpus:` lists logical CPUs from
   0 (empty: any). A refusal throws `ThreadError` and leaves no thread
   running: an unknown CPU; on Linux a raised priority without
-  `CAP_SYS_NICE`; on Windows a CPU past 63 (another processor group).
+  `CAP_SYS_NICE`; on Windows CPUs of two processor groups (a group holds
+  up to 64; the CPUs are numbered through every group in turn).
 
 ## Output
 
