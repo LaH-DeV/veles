@@ -369,8 +369,9 @@ extend Parser {
       Kind.KwWith => return this.parseWith()
       Kind.KwGather => {
         this.next()
+        val on = this.parseOn("gather")
         val body = this.parseBlock()
-        return ast.GatherExpr(body, pos: this.spanFrom(start))
+        return ast.GatherExpr(on, body, pos: this.spanFrom(start))
       }
       Kind.KwUnsafe => {
         this.next()

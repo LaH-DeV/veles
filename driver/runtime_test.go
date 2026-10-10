@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -880,6 +881,223 @@ fun later() {
 	}
 	for _, release := range []bool{false, true} {
 		exe := filepath.Join(dir, fmt.Sprintf("close%v.exe", release))
+		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release, Sanitize: *sanitize}); code != 0 {
+			t.Fatalf("build failed with exit %d", code)
+		}
+		for _, threads := range []string{"1", "2", "8"} {
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			run := exec.CommandContext(ctx, exe)
+			run.Env = append(os.Environ(), "VELES_THREADS="+threads, "VELES_GC_THRESHOLD=4096")
+			out, err := run.CombinedOutput()
+			cancel()
+			got := strings.ReplaceAll(strings.TrimSpace(string(out)), "\r\n", "\n")
+			if err != nil || got != want {
+				t.Fatalf("release=%v threads %s: got\n%s\nwant\n%s\n(%v)", release, threads, got, want, err)
+			}
+		}
+	}
+}
+
+// Executors and threads (D143): tasks placed on a pool run on its threads
+// and on no other, a task on Executor.thread sees one OS thread across 1 000
+// suspensions, `run` and `blocking` return and throw, timers and sockets
+// still serve a pool's tasks (the default pool runs them), a Thread is
+// joined by its `with` and re-raises a panic there, and what the OS refuses
+// is a ThreadError.
+func TestExecutors(t *testing.T) {
+	if _, err := findClang(); err != nil {
+		t.Skip("clang not available:", err)
+	}
+	dir := t.TempDir()
+	tid := "fun GetCurrentThreadId(): u32\n}\n\n// SAFETY: asks the OS which thread runs\nfun tid(): i64 => unsafe { GetCurrentThreadId().toI64() }"
+	if runtime.GOOS != "windows" {
+		tid = "fun pthread_self(): u64\n}\n\n// SAFETY: asks the OS which thread runs\nfun tid(): i64 => unsafe { pthread_self().wrapI64() }"
+	}
+	src := `// D143: executors and threads.
+use io
+use net
+use time
+
+extern "C" {
+  ` + tid + `
+
+error Odd {
+  n: i64
+  fun message(): string => "odd ${this.n}"
+}
+
+fun note(seen: Mutex<MutableMap<i64, bool>>, depth: i64) {
+  seen.withLock(s => s.set(tid(), true))
+  if (depth > 0) {
+    // a child launched by a task on the pool runs on the pool too
+    scope {
+      async note(seen, depth - 1)
+      async note(seen, depth - 1)
+    }
+  }
+}
+
+fun hop(rounds: i64): bool {
+  val first = tid()
+  var same = true
+  loop (_ in 0..<rounds) {
+    await sleep(Duration.zero)
+    if (tid() != first) same = false
+  }
+  same
+}
+
+fun half(n: i64): i64 throws Odd {
+  if (n % 2 != 0) throw Odd(n)
+  n / 2
+}
+
+fun napping(): i64 {
+  val sw = time.Stopwatch.start()
+  await sleep(Duration.millis(20))
+  sw.elapsed().toMillis()
+}
+
+fun serve(l: net.Listener): string throws IoError | io.TooLong {
+  with c = try l.accept()
+  val line = try c.readLine(max: 100) ?: ""
+  try c.writeText("echo $line\n")
+  line
+}
+
+fun spin(n: i64): i64 {
+  var x: i64 = 1
+  loop (i in 0..<n) x = (x * 31 + i) % 1000003
+  x
+}
+
+fun halfOn(e: Executor, n: i64): i64 throws Odd => try e.run(() => try half(n))
+
+fun serveOn(e: Executor, l: net.Listener): string throws IoError | io.TooLong => try e.run(() => try serve(l))
+
+fun oneOn(e: Executor): i64 => e.run(() => 1)
+
+fun boom() {
+  panic("in the thread")
+}
+
+fun main() throws ThreadError | IoError | io.TooLong | Odd {
+  io.println("1. a pool's tasks, and their children, run on its threads:")
+  with cpu = try Executor.pool(threads: 3, name: "cpu")
+  val threads: MutableMap<i64, bool> = [:]
+  val seen = Mutex(value: threads)
+  scope(on: cpu) {
+    loop (_ in 0..<8) async note(seen, 2)
+  }
+  val n = seen.withLock(s => s.len())
+  io.println("  -> threads used: at most 3 ${n >= 1 && n <= 3}")
+
+  io.println("2. Executor.thread: one OS thread across 1000 suspensions:")
+  with gl = try Executor.thread(name: "gl")
+  io.println("  -> ${gl.run(() => hop(1000))}")
+
+  io.println("3. run returns, and throws:")
+  io.println("  -> ${try cpu.run(() => try half(84))}")
+  when (gather { async halfOn(cpu, 7) }) {
+    is Ok(v) => io.println("  -> no error? $v")
+    is Err(e) => io.println("  -> ${e.message()}")
+  }
+
+  io.println("4. gather(on:):")
+  val (a, b) = gather(on: cpu) {
+    async half(10)
+    async half(3)
+  }
+  io.println("  -> ${a} ${b is Err}")
+
+  io.println("5. blocking:")
+  io.println("  -> ${try blocking(() => try half(12))}")
+
+  io.println("6. a timer on a pool's task (the default pool fires it):")
+  val ms = cpu.run(() => napping())
+  io.println("  -> slept about 20 ms: ${ms >= 19 && ms < 1000}")
+
+  io.println("7. a socket on a pool's task (the default pool waits on it):")
+  val l = try net.listen()
+  val port = l.port()
+  scope {
+    val server = async serveOn(cpu, l)
+    with c = try net.connect("127.0.0.1", port)
+    try c.writeText("hello\n")
+    val back = try c.readLine(max: 100) ?: ""
+    io.println("  -> $back, served ${await server}")
+  }
+
+  io.println("8. a Thread is joined at the end of its with, and its panic raised there:")
+  val ran = Atomic(value: 0)
+  scope {
+    with t = try Thread.start(name: "worker", f: () => {
+      val _ = spin(20000000)
+      ran.store(1)
+    })
+    io.println("  started")
+  }
+  io.println("  -> ran before the join returned: ${ran.load() == 1}")
+  when (gather { async joinBoom() }) {
+    is Ok => io.println("  -> no panic?")
+    is Err(p) => io.println("  -> panicked: ${p.message()}")
+  }
+
+  io.println("9. the OS refuses:")
+  when (Executor.pool(threads: 2, name: "pinned", cpus: [100000])) {
+    is Ok => io.println("  -> pinned to CPU 100000?")
+    is Err(e) => io.println("  -> ${e.message().startsWith("there is no CPU 100000")}")
+  }
+  when (Thread.start(name: "pinned", cpus: [100000], f: () => boom())) {
+    is Ok => io.println("  -> pinned to CPU 100000?")
+    is Err(e) => io.println("  -> ${e.message().startsWith("there is no CPU 100000")}")
+  }
+
+  io.println("10. a closed executor runs nothing:")
+  val gone = try Executor.pool(threads: 1, name: "gone")
+  gone.close()
+  gone.close()
+  when (gather { async oneOn(gone) }) {
+    is Ok => io.println("  -> ran?")
+    is Err(p) => io.println("  -> ${p.message()}")
+  }
+}
+
+fun joinBoom() throws ThreadError {
+  with t = try Thread.start(name: "boom", f: () => boom())
+  io.println("  started")
+}
+`
+	want := `1. a pool's tasks, and their children, run on its threads:
+  -> threads used: at most 3 true
+2. Executor.thread: one OS thread across 1000 suspensions:
+  -> true
+3. run returns, and throws:
+  -> 42
+  -> odd 7
+4. gather(on:):
+  -> Ok(value: 5) true
+5. blocking:
+  -> 6
+6. a timer on a pool's task (the default pool fires it):
+  -> slept about 20 ms: true
+7. a socket on a pool's task (the default pool waits on it):
+  -> echo hello, served hello
+8. a Thread is joined at the end of its with, and its panic raised there:
+  started
+  -> ran before the join returned: true
+  started
+  -> panicked: in the thread
+9. the OS refuses:
+  -> true
+  -> true
+10. a closed executor runs nothing:
+  -> the executor was closed: nothing more runs on it`
+	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, release := range []bool{false, true} {
+		exe := filepath.Join(dir, fmt.Sprintf("exec%v.exe", release))
 		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release, Sanitize: *sanitize}); code != 0 {
 			t.Fatalf("build failed with exit %d", code)
 		}
@@ -1974,6 +2192,44 @@ fun main() {
 		out, errText, code := run(exe, []string{"VELES_STACK=lots"}, "10", "main")
 		if code != 0 || !strings.HasPrefix(out, "depth 10: ") || !strings.Contains(errText, "VELES_STACK=lots is not a number of megabytes from 1 to 4096; using 256") {
 			t.Errorf("%s: VELES_STACK=lots: exit %d, stdout %q, stderr %q", profile, code, out, errText)
+		}
+	}
+}
+
+// `[runtime] threads` in the program's veles.toml sizes the default pool;
+// VELES_THREADS still overrides it (D143).
+func TestRuntimeThreadsManifest(t *testing.T) {
+	if _, err := findClang(); err != nil {
+		t.Skip("clang not available:", err)
+	}
+	dir := t.TempDir()
+	files := map[string]string{
+		"veles.toml": "[package]\nname = \"pool\"\n\n[runtime]\nthreads = 3\n",
+		"main.vs":    "use io\n\nfun main() {\n  io.println(\"${Executor.defaultThreads()}\")\n}\n",
+	}
+	for name, text := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exe := filepath.Join(dir, "pool.exe")
+	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe}); code != 0 {
+		t.Fatalf("build failed with exit %d", code)
+	}
+	for env, want := range map[string]string{"": "3", "5": "5"} {
+		run := exec.Command(exe)
+		run.Env = os.Environ()
+		for i, kv := range run.Env {
+			if strings.HasPrefix(kv, "VELES_THREADS=") {
+				run.Env[i] = "VELES_THREADS_UNSET=1"
+			}
+		}
+		if env != "" {
+			run.Env = append(run.Env, "VELES_THREADS="+env)
+		}
+		out, err := run.CombinedOutput()
+		if got := strings.TrimSpace(string(out)); err != nil || got != want {
+			t.Errorf("VELES_THREADS=%q: got %q (%v), want %s", env, got, err, want)
 		}
 	}
 }

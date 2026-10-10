@@ -751,6 +751,35 @@ void veles_thread_attach(void) {
     veles_lock_release(world_lock);
 }
 
+/* the calling thread is about to end (a closed executor's, D143): its
+ * spans go back to the heap and the collector forgets it. It waits out a
+ * collection in progress, safe, so as not to leave the list while the
+ * collector reads it; holding world_lock, no other can start. */
+void veles_thread_detach(void) {
+    veles_thread *t = me;
+    if (!t) return;
+    heap_acquire();
+    allocated_since_gc += t->tl_bytes;
+    t->tl_bytes = 0;
+    for (size_t c = 0; c < NCLASSES; c++) {
+        if (t->tl[c]) t->tl[c]->owner = NULL;
+        t->tl[c] = NULL;
+    }
+    veles_lock_release(heap_lock);
+    veles_enter_safe();
+    veles_lock_acquire(world_lock);
+    while (veles_stop_requested) veles_cond_wait(world_cv, world_lock, -1);
+    for (veles_thread **pp = &threads; *pp; pp = &(*pp)->next) {
+        if (*pp == t) {
+            *pp = t->next;
+            break;
+        }
+    }
+    veles_lock_release(world_lock);
+    veles_tls_get()->thread = NULL;
+    free(t);
+}
+
 /* every thread but this one is in a safe region or parked */
 static int others_safe(void) {
     for (veles_thread *t = threads; t; t = t->next) {

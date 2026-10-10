@@ -39,6 +39,7 @@ declare ptr @veles_task_value(ptr)
 declare void @veles_task_set_unwrap(ptr, i64)
 declare i64 @veles_task_failed(ptr)
 declare ptr @veles_scope_begin(ptr, i64, i64)
+declare void @veles_scope_on(ptr, ptr)
 declare ptr @veles_task_launch(ptr, i64)
 declare i64 @veles_scope_wait(ptr, ptr)
 declare ptr @veles_scope_failed(ptr)
@@ -100,6 +101,7 @@ declare void @veles_race_await(ptr, ptr)
 declare i64 @veles_race_wait(ptr, ptr)
 declare i64 @veles_race_closed(ptr)
 declare void @veles_run(ptr)
+declare void @veles_runtime_threads(i64)
 declare i64 @veles_task_panicked(ptr)
 declare ptr @veles_task_panic_msg(ptr, ptr)
 declare ptr @veles_task_panic_loc(ptr, ptr)
@@ -562,8 +564,15 @@ func (g *gen) scopeBlock(e *sema.ScopeBlock) string {
 	if e.Gather {
 		failFast = "0"
 	}
+	var on string
+	if e.On != nil {
+		on = g.expr(e.On) // before the scope opens (D143)
+	}
 	sc := g.newTmp()
 	g.emit("%s = call ptr @veles_scope_begin(ptr %s, i64 %s, i64 %s)", sc, g.coro.task, failFast, g.coro.depth)
+	if on != "" {
+		g.emit("call void @veles_scope_on(ptr %s, ptr %s)", sc, on)
+	}
 	slot := g.alloca("ptr")
 	g.emit("store ptr %s, ptr %s", sc, slot)
 	g.scopeSlots[e] = slot
@@ -1357,4 +1366,12 @@ func (g *gen) startTaskAs(task string, fn *sema.Func, argTypes []types.Type, arg
 		return
 	}
 	g.emit("call void @veles_task_start(ptr %s, ptr @%s, ptr %s)", task, thunk, args)
+}
+
+// runtimeConfig hands the program's `[runtime]` settings (D143) to the
+// runtime before the first task runs; nothing when they are the defaults.
+func (g *gen) runtimeConfig() {
+	if g.prog.Threads > 0 {
+		g.emit("call void @veles_runtime_threads(i64 %d)", g.prog.Threads)
+	}
 }

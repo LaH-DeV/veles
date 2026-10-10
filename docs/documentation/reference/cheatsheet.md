@@ -254,6 +254,8 @@ a.load(order: MemoryOrder.Acquire); a.store(1, order: MemoryOrder.Release)   // 
 val sem = Semaphore(permits: 8); with sem.acquire(); sem.tryAcquire(); sem.available()   // (D110)
 with c = config.read(); with w = config.write(); config.withRead(c => c.n)   // RwLock(value: v), D146
 val ready = Event(); ready.set(); await ready.wait(); val t = Lazy(init: () => build()); t.get()
+with cpu = try Executor.pool(threads: 4, name: "cpu"); scope(on: cpu) { async work() }; cpu.run(() => f())   // D143
+with gl = try Executor.thread(name: "gl"); val x = try blocking(() => try readAll(p)); with t = try Thread.start(name: "a", f: () => loop())
 val news = Broadcast<T>(capacity: 64); with sub = news.subscribe(); try await sub.recv(); val w = Watch(value: v); await w.changed()
 try retry(3, () => try fetch(), delay: Duration.millis(200))   // again after an error; the last error after the last call
 ch.toList(); ch.forEach(v => ...)   // until closed and drained

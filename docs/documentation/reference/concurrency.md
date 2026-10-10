@@ -575,10 +575,11 @@ Give such waits a limit (`race` with a `sleep` arm, `withTimeout`).
 
 ## Threads and scheduling
 
-- `VELES_THREADS=n` sets the number of threads that run Veles code; the
-  default is the number of cores. `VELES_THREADS=1` runs every task on one
-  thread — useful when debugging, and the way to see whether a program
-  relies on parallelism for progress.
+- `[runtime] threads = n` in the program's `veles.toml` sets the number of
+  threads of the default pool (a dependency's `[runtime]` is not read), and
+  `VELES_THREADS=n` overrides it; the default is the number of cores.
+  `VELES_THREADS=1` runs every task on one thread — useful when debugging,
+  and the way to see whether a program relies on parallelism for progress.
 - Each thread has its own queue. A task woken by the running one — a
   message it was waiting for, a child that finished, a new task — runs
   next on the same thread; an idle thread takes half of a busy thread's
@@ -590,7 +591,39 @@ Give such waits a limit (`race` with a `sleep` arm, `withTimeout`).
 - A call that blocks its thread — foreign C code, reading the terminal,
   waiting for a child process, a contended `Mutex` — is noticed by a
   monitor thread within about a millisecond, and the thread's queued
-  tasks move to a spare thread until the call returns.
+  tasks move to a spare thread until the call returns. `blocking(f)` runs
+  such a call on the blocking pool from the start: threads made as calls
+  need them, at most 128 (a call beyond waits), each ending after 10
+  seconds idle.
+
+### Executors (D143)
+
+| Spelling | Means |
+|---|---|
+| `try Executor.pool(threads: n, name: s, priority:, cpus:)` | n threads of its own, named `s-0`, `s-1`, … |
+| `try Executor.thread(name: s, priority:, cpus:)` | one thread: every task placed on it runs on that OS thread |
+| `scope(on: e) { … }`, `gather(on: e) { … }` | every child launched in the block runs on `e` |
+| `e.run(f)` | runs `f` as a task on `e` and waits: `R throws E` |
+| `try Thread.start(name: s, priority:, cpus:, stackSize:, f: f)` | plain `f` on an OS thread outside every executor |
+
+- A task stays on its executor across every suspension. A child runs
+  where its scope says (`on:`), or else where the task that launched it
+  runs; `main` and the tasks it starts run on the default pool.
+- Only the default pool's threads fire timers and wait on sockets; a task
+  on another executor that sleeps or reads a socket is woken by them and
+  queued back on its own executor.
+- A pool's threads are never handed off around a blocking call (they are
+  the threads it was made with); the call only lets the collector run.
+- Closing an `Executor` stops its threads (its tasks have been joined by
+  their scopes by then); placing a task on a closed one panics (`the
+  executor was closed: nothing more runs on it`), and closing one from its
+  own task panics. Closing a `Thread` blocks until `f` returns and
+  re-raises a panic of `f`.
+- `priority:` is `Priority.Low`, `Normal` (the default: left as the OS
+  made the thread), `High` or `Realtime`; `cpus:` lists logical CPUs from
+  0 (empty: any). A refusal throws `ThreadError` and leaves no thread
+  running: an unknown CPU; on Linux a raised priority without
+  `CAP_SYS_NICE`; on Windows a CPU past 63 (another processor group).
 
 ## Output
 

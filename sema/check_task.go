@@ -77,7 +77,7 @@ func syncWrapper(t *types.Struct) (bool, []types.Type) {
 		return false, nil
 	}
 	switch t.Name {
-	case "Mutex", "Atomic":
+	case "Mutex", "Atomic", "Executor":
 		return true, nil
 	case "RwLock", "Event", "Lazy", "Broadcast", "Subscription", "Watch":
 		return true, t.TypeArgs
@@ -521,6 +521,7 @@ func (f *fnCtx) scopeStmt(s *ast.ScopeStmt) []Stmt {
 	}
 	sb := &ScopeBlock{Span: s.Pos}
 	sb.T = types.TUnit
+	sb.On = f.executorOf(s.On, "scope")
 	f.scopes = append(f.scopes, sb)
 	f.openTaskBlock("scope")
 	sb.Body = f.checkBlock(s.Body, nil, false)
@@ -541,6 +542,7 @@ func (f *fnCtx) gatherExpr(e *ast.GatherExpr) Expr {
 		return bad()
 	}
 	sb := &ScopeBlock{Gather: true, Span: e.Pos}
+	sb.On = f.executorOf(e.On, "gather")
 	f.scopes = append(f.scopes, sb)
 	f.openTaskBlock("gather")
 	sb.Body = f.checkBlock(e.Body, nil, false)
@@ -815,4 +817,33 @@ func (c *Checker) launchTrampoline(ft *types.Func) *Func {
 	c.funcs = append(c.funcs, fn)
 	c.trampolines[key] = fn
 	return fn
+}
+
+// executorOf checks the executor of `scope(on: e)` / `gather(on: e)`
+// (D143) and lowers it to the Executor's runtime handle; nil when there is
+// none.
+func (f *fnCtx) executorOf(on ast.Expr, what string) Expr {
+	if on == nil {
+		return nil
+	}
+	ex, _ := f.c.preludeType("Executor").(*types.Struct)
+	var want types.Type
+	if ex != nil {
+		want = ex
+	}
+	x := f.checkExpr(on, want)
+	if types.IsInvalid(x.Type()) {
+		return nil
+	}
+	st, ok := x.Type().(*types.Struct)
+	if !ok || ex == nil || !types.Identical(st, ex) {
+		f.errorf(on.Span(), "'%s(on: …)' takes an Executor, not '%s': make one with 'Executor.pool(threads: n, name: …)' or 'Executor.thread(name: …)' (D143)", what, x.Type())
+		return nil
+	}
+	for i, fld := range st.Fields {
+		if fld.Name == "handle" {
+			return &FieldGet{exprBase{fld.Type}, x, i, fld.Name}
+		}
+	}
+	return nil
 }

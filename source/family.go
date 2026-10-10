@@ -65,7 +65,7 @@ var families = []family{
 		`is declared '%s' but`, `^a throwing function cannot be passed`, `^'%s' needs a set of`),
 	fam("tasks", `holds a running task`, `\basync\b`, `\bawait\b`, `suspend`, `Sendable`, `task boundary`, `^'scope'`, `'gather'`,
 		`'race'`, `race arm`, `'recv\(\)'`, `^'sleep'`, `'sleep\(\)'`, `ioWait`, `^Channel`, `the channel`,
-		`^Task takes`, `^'cancel'`, `shared by every task`, `cannot cross`, `\(D35\)`, `\(D144\)`),
+		`^Task takes`, `^'cancel'`, `shared by every task`, `cannot cross`, `\(D35\)`, `\(D143\)`, `\(D144\)`),
 	fam("resources", `Closeable`, `'with`, `when its 'with' block ends`, `closed as soon as it is opened`,
 		`^close\(\) of`, `\(D43\)`, `\(D100\)`),
 	fam("control-flow", `unreachable code`, `implicit_return`, `^'return' outside`, `^missing return`, `returns nothing`,

@@ -421,8 +421,9 @@ func (p *Parser) parsePrimary() ast.Expr {
 		return p.parseWith()
 	case lexer.KwGather:
 		p.next()
+		on := p.parseOn("gather")
 		body := p.parseBlock()
-		return &ast.GatherExpr{Body: body, Pos: p.spanFrom(start)}
+		return &ast.GatherExpr{On: on, Body: body, Pos: p.spanFrom(start)}
 	case lexer.KwUnsafe:
 		p.next()
 		body := p.parseBlock()

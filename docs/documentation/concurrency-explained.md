@@ -243,8 +243,9 @@ kind of function it is in, so a long computation can always be stopped.
 ## How many threads?
 
 By default, one per CPU core: on an 8-core laptop, eight tasks really
-run at the same instant. You can change that with an environment
-variable, which is handy when debugging:
+run at the same instant. A program sets its own number in `veles.toml`
+(`[runtime] threads = 4`), and an environment variable overrides both,
+which is handy when debugging:
 
 ```text
 VELES_THREADS=1 veles run .     # everything on one thread, like JavaScript
@@ -254,7 +255,15 @@ VELES_THREADS=4 veles run .     # four threads
 Behind the scenes there are also a couple of helpers: a small monitor
 thread that watches for threads stuck in blocking calls, and spare
 threads it hands work to. At any moment, at most `VELES_THREADS` threads
-run your Veles code.
+run the tasks of the default pool.
+
+When some work needs threads of its own, you make them: an `Executor`
+is a set of threads tasks can be placed on — a pool for heavy
+computation, so it never takes the threads that answer requests, or a
+single thread for a library that must always be called from the same
+one. `scope(on: pool) { … }` starts every task of the block there, and
+those tasks stay there. Chapter 12 shows them, with `blocking` for a
+call that blocks and `Thread` for plain code on a thread of its own.
 
 ## Sharing: the one real danger
 

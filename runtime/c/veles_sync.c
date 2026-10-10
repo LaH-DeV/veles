@@ -22,6 +22,11 @@
 #include <errno.h>
 #include <time.h>
 #include <unistd.h>
+#include <sched.h>
+#include <sys/resource.h>
+#if defined(__linux__)
+#include <sys/syscall.h>
+#endif
 #endif
 
 #include "veles_tls.h"
@@ -75,6 +80,21 @@ veles_tls *veles_tls_first(void) {
     veles_tls_block = t;
 #endif
     return t;
+}
+
+/* the block of a thread that is ending (thread_main, below), unless the
+ * collector still scans it: a thread that never detached */
+static void tls_release(void) {
+#if defined(_WIN32) && defined(__x86_64__)
+    veles_tls *t = (veles_tls *)__readgsqword(0x1480 + veles_tls_slot * 8);
+    if (!t || t->thread) return;
+    TlsSetValue(veles_tls_slot, NULL);
+#else
+    veles_tls *t = veles_tls_block;
+    if (!t || t->thread) return;
+    veles_tls_block = NULL;
+#endif
+    free(t);
 }
 
 typedef struct veles_lock {
@@ -216,6 +236,7 @@ static DWORD WINAPI thread_main(LPVOID p) {
     veles_stack_thread_init();
     s.fn(s.arg);
     veles_stack_thread_done();
+    tls_release();
     return 0;
 }
 #else
@@ -225,6 +246,7 @@ static void *thread_main(void *p) {
     veles_stack_thread_init();
     s.fn(s.arg);
     veles_stack_thread_done();
+    tls_release();
     return NULL;
 }
 #endif
@@ -273,6 +295,12 @@ int64_t veles_thread_spawn(void (*fn)(void *), void *arg) {
     return spawn_sized(fn, arg, veles_stack_size());
 }
 
+/* a thread that runs Veles code on a stack of `size` bytes (0: the big
+ * stack a worker has) — `Thread.start(stackSize:)`, D143 */
+int64_t veles_thread_spawn_sized(void (*fn)(void *), void *arg, int64_t size) {
+    return spawn_sized(fn, arg, size > 0 ? (size_t)size : veles_stack_size());
+}
+
 /* a helper thread that runs only runtime code and needs no deep stack */
 int64_t veles_thread_spawn_small(void (*fn)(void *), void *arg) {
     return spawn_sized(fn, arg, 0);
@@ -286,6 +314,127 @@ int64_t veles_cpu_count(void) {
 #else
     long n = sysconf(_SC_NPROCESSORS_ONLN);
     return n > 0 ? (int64_t)n : 1;
+#endif
+}
+
+/* ---- thread settings (D143) --------------------------------------------------
+ * A thread of an executor, or one `Thread.start` makes, sets its own name
+ * (seen in debuggers and profilers), priority and CPUs as it starts. What
+ * the OS refuses is reported, never ignored: 0, or -1 with the reason in
+ * err. Priorities: 0 Low, 1 Normal (left as the thread was made), 2 High,
+ * 3 Realtime. */
+static const char *priority_names[] = {"Low", "Normal", "High", "Realtime"};
+
+/* CPUs the machine has, online or not: the numbers an affinity may name */
+static int64_t cpus_configured(void) {
+#if defined(_WIN32)
+    return veles_cpu_count();
+#else
+    long n = sysconf(_SC_NPROCESSORS_CONF);
+    return n > 0 ? (int64_t)n : veles_cpu_count();
+#endif
+}
+
+#if defined(_WIN32)
+typedef HRESULT (WINAPI *set_description_fn)(HANDLE, PCWSTR);
+#endif
+
+int64_t veles_thread_configure(const char *name, int64_t priority, const int32_t *cpus, int64_t ncpus, char *err, int64_t cap) {
+    if (priority < 0 || priority > 3) priority = 1;
+    int64_t have = cpus_configured();
+    for (int64_t i = 0; i < ncpus; i++) {
+        if (cpus[i] >= have) {
+            snprintf(err, (size_t)cap, "there is no CPU %d: this machine has %lld (0 to %lld)", cpus[i], (long long)have, (long long)have - 1);
+            return -1;
+        }
+    }
+#if defined(_WIN32)
+    if (name && *name) {
+        /* Windows 10 1607 and later; looked up, so older systems run unnamed */
+        set_description_fn set = (set_description_fn)(void *)GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "SetThreadDescription");
+        if (set) {
+            wchar_t wide[64];
+            int n = MultiByteToWideChar(CP_UTF8, 0, name, -1, wide, 64);
+            if (n > 0) set(GetCurrentThread(), wide);
+        }
+    }
+    if (priority != 1) {
+        static const int levels[] = {THREAD_PRIORITY_BELOW_NORMAL, THREAD_PRIORITY_NORMAL, THREAD_PRIORITY_HIGHEST, THREAD_PRIORITY_TIME_CRITICAL};
+        if (!SetThreadPriority(GetCurrentThread(), levels[priority])) {
+            snprintf(err, (size_t)cap, "the system refused priority %s (error %lu)", priority_names[priority], (unsigned long)GetLastError());
+            return -1;
+        }
+    }
+    if (ncpus > 0) {
+        DWORD_PTR mask = 0;
+        for (int64_t i = 0; i < ncpus; i++) {
+            if (cpus[i] >= (int32_t)(8 * sizeof mask)) {
+                snprintf(err, (size_t)cap, "CPU %d is in another processor group: only CPUs 0 to %d can be chosen on Windows yet", cpus[i], (int)(8 * sizeof mask) - 1);
+                return -1;
+            }
+            mask |= (DWORD_PTR)1 << cpus[i];
+        }
+        if (!SetThreadAffinityMask(GetCurrentThread(), mask)) {
+            snprintf(err, (size_t)cap, "the system refused the CPUs asked for (error %lu)", (unsigned long)GetLastError());
+            return -1;
+        }
+    }
+    return 0;
+#else
+#if defined(__linux__)
+    if (name && *name) {
+        char short_name[16]; /* the kernel keeps 15 bytes */
+        snprintf(short_name, sizeof short_name, "%s", name);
+        pthread_setname_np(pthread_self(), short_name);
+    }
+    if (priority == 0 || priority == 2) {
+        /* a thread's nice value: Linux sets it per thread */
+        if (setpriority(PRIO_PROCESS, (id_t)syscall(SYS_gettid), priority == 0 ? 10 : -10) != 0) {
+            snprintf(err, (size_t)cap, "the system refused priority %s: %s%s", priority_names[priority], strerror(errno),
+                     errno == EACCES || errno == EPERM ? " (raising a thread's priority needs CAP_SYS_NICE)" : "");
+            return -1;
+        }
+    } else if (priority == 3) {
+        struct sched_param sp = {0};
+        sp.sched_priority = sched_get_priority_min(SCHED_FIFO) + 1;
+        int rc = pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp);
+        if (rc != 0) {
+            snprintf(err, (size_t)cap, "the system refused priority Realtime: %s%s", strerror(rc),
+                     rc == EPERM ? " (real-time scheduling needs CAP_SYS_NICE or an RLIMIT_RTPRIO)" : "");
+            return -1;
+        }
+    }
+    if (ncpus > 0) {
+        cpu_set_t set;
+        CPU_ZERO(&set);
+        for (int64_t i = 0; i < ncpus; i++) {
+            if (cpus[i] >= CPU_SETSIZE) {
+                snprintf(err, (size_t)cap, "CPU %d is past the %d an affinity can name", cpus[i], CPU_SETSIZE);
+                return -1;
+            }
+            CPU_SET(cpus[i], &set);
+        }
+        if (sched_setaffinity(0, sizeof set, &set) != 0) {
+            snprintf(err, (size_t)cap, "the system refused the CPUs asked for: %s", strerror(errno));
+            return -1;
+        }
+    }
+    return 0;
+#else
+    /* macOS (plan A7): a name only */
+#if defined(__APPLE__)
+    if (name && *name) pthread_setname_np(name);
+#endif
+    if (priority != 1) {
+        snprintf(err, (size_t)cap, "priority %s cannot be set on this system yet", priority_names[priority]);
+        return -1;
+    }
+    if (ncpus > 0) {
+        snprintf(err, (size_t)cap, "this system cannot keep a thread to chosen CPUs");
+        return -1;
+    }
+    return 0;
+#endif
 #endif
 }
 

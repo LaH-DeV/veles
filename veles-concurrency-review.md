@@ -8,6 +8,9 @@
 > orders, lock-free pointers); the missing synchronisation types done as D146 (F6: `RwLock`,
 > `Event`, `Lazy`, `Broadcast`, `Watch`, their waits usable in `race`); a `close()` that suspends done as
 > D147 (F7: Tx rollback and otel flush at close; TLS close_notify at close as Go does);
+> control of OS threads done as D143 (F8: `Executor.pool`/`Executor.thread`, `scope(on:)`,
+> `run`, `blocking`, `Thread`, names, priority and CPUs; CPU work on a pool keeps the default
+> pool's request latency near idle);
 > the open decisions were decided the same day as D143–D147 (Q24–Q28, all the
 > recommended options). The order of the remaining work is track F in `veles-plan.md`.
 > Found on the way: on Linux a child task can take up to ~7 ms to start at 8 threads

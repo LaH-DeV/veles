@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.77** — decisions D1–D149. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.78** — decisions D1–D149. Open design questions: Q29 (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -5197,17 +5197,19 @@ leaving M5 as it was.
 
 ```veles
 // veles.toml:  [runtime] threads = "auto"        # or a number; VELES_THREADS overrides
-with cpu = Executor(threads: 4, name: "cpu")     // a pool of its own: stopped and joined at the end of the block
-with gl = Executor.thread(name: "gl")            // exactly one OS thread
+with cpu = try Executor.pool(threads: 4, name: "cpu")  // a pool of its own: stopped and joined at the end of the block
+with gl = try Executor.thread(name: "gl")        // exactly one OS thread
 scope(on: cpu) {
   loop (f in files) async compress(f)            // every child runs on cpu's threads
 }
 val tex = gl.run(() => glUpload(img))            // runs on gl's thread; the caller suspends until it returns
 val data = blocking(() => legacyC.readAll(path)) // a known-blocking call on the bounded blocking pool
-with audio = Thread.start(name: "audio", priority: Priority.High, cpus: [3]) {
-  audioLoop()                                    // plain code on a thread of its own; joined when the block ends
-}
+with audio = try Thread.start(name: "audio", priority: Priority.High, cpus: [3], f: () => audioLoop())
+                                                 // plain code on a thread of its own; joined when the block ends
 ```
+
+*(The example as amended 2026-10-10, below; it was `Executor(threads: 4, name: "cpu")`
+and `Thread.start(…) { audioLoop() }`.)*
 
 The concurrency review (2026-10-09, `veles-concurrency-review.md`) found
 that the only control over threads was `VELES_THREADS`: a task resumes on
@@ -5221,7 +5223,8 @@ native OS threads".
   `veles.toml` (`"auto"` = one per core, the default), and `VELES_THREADS`
   still overrides it. A dependency's `[runtime]` is ignored: the program
   decides.
-- **`Executor(threads: n, name: s)`** is a pool of worker threads of its own,
+- ~~**`Executor(threads: n, name: s)`**~~ **`Executor.pool(threads: n, name: s)`**
+  *(amended 2026-10-10)* is a pool of worker threads of its own,
   scheduled as D66 describes. `Executor.thread(name: s)` is one OS thread
   running an event loop. Both are `Closeable` and `Sendable`; closing one
   waits for the tasks placed on it (they are children of scopes, which have
@@ -5239,7 +5242,8 @@ native OS threads".
   suspends the caller. The automatic hand-off of a thread blocked in a call
   (D66 addendum) stays; `blocking` is for a call known to block, which then
   skips the detection. `f` does not suspend.
-- **`Thread.start(name:, priority:, cpus:, stackSize:) { body }`** starts an
+- **`Thread.start(name:, priority:, cpus:, stackSize:)` ~~`{ body }`~~ `f:`**
+  *(amended 2026-10-10)* starts an
   OS thread running `body` (plain code: it does not suspend, but may create
   and run an executor of its own). It is used as the value of a `with` and
   joined when the block ends; a panic in the body is re-raised there.
@@ -5264,6 +5268,85 @@ User, 2026-10-09, recommended of 4. Rejected: a minimal set
 (`[runtime] threads`, `blocking`, `Executor.thread` only — no isolation of
 CPU work, no priority or affinity); raw threads only (Rust's `std::thread`;
 no placement of tasks); leaving `VELES_THREADS` as the only control.
+
+*Amended 2026-10-10 (user, while building it).* Three points the entry
+left open or that clashed with earlier rules:
+- **Construction is by static functions that throw**:
+  `try Executor.pool(threads:, name:, priority: Priority.Normal, cpus: [])`
+  and `try Executor.thread(name:, priority:, cpus:)`, both `throws ThreadError`.
+  D73 says an `init` cannot throw, and a refused priority or CPU must be an
+  error (this entry); D73's own exception — a construction the constructor
+  cannot state keeps a `static fun` — covers it, and both forms read alike.
+  Recommended of 3. Rejected: an `init` that may throw (a language change
+  for every type, for one); `Executor(...)` that panics plus a throwing
+  `Executor.pinned(...)` (two spellings, and a panic where an error was
+  promised).
+- **`Thread.start`'s function is the argument `f:`**: Veles has no trailing
+  lambdas, and in a `with` the braces would be its block:
+  `Thread.start(name: "audio", f: () => audioLoop())`. Offered: `run:`
+  (recommended), `body:`, `f:`; the user chose `f:`.
+- **Closing a `Thread` blocks the closing OS thread** until the function
+  returns (Rust's `join`; a blocking call, so the default pool hands its
+  queue on, D66). It works in plain code — a `Thread`'s own function may
+  start and join threads — and a `Thread` stays a `Closeable` object.
+  Recommended of 2. Rejected: a close that suspends (D147), which a plain
+  function could not reach.
+
+The user also rewrote `Executor.run`'s body as `return await async f()`
+(it was `val t = async f()` and `return await t`), which already compiles.
+
+*Built (2026-10-10, concurrency review F8).* The runtime keeps one record
+per executor — its shared queue, its threads' run queues, their idle,
+waking and spinning counts — and a task runs on the executor of the scope
+it was launched in (the scope's `exec`: `on:`, or the owner's), so every
+wake queues it back there; no field was added to a task. Details settled
+while building, the conservative way:
+- **Timers and sockets stay one set, served by the default pool.** A
+  pool's threads only run their tasks; one that arms a timer earlier than
+  the nearest, or parks on a socket while no default thread waits in the
+  reactor, wakes a default thread to look. Measured (an `httphello`-style
+  server on an 8-thread default pool, 16 clients, Windows): p50 230–265 µs
+  idle; 450–466 µs with 6 spinning loops on the default pool; 279–289 µs
+  with the same loops on a 6-thread `Executor.pool` (p99 1.1 ms idle,
+  1.3–1.6 ms with the pool busy). On Linux (WSL) the median stays at
+  165–253 µs with the pool busy and the p99 grows to 1.6–2.5 ms (checklist
+  §11).
+- **No hand-off outside the default pool.** A blocking call on a pool's
+  thread lets the collector run but does not move the queue to a spare
+  thread: a pool's threads are the ones it was made with, and
+  `Executor.thread`'s tasks must stay on one.
+- **The blocking pool** is made at start (a prelude global) with no
+  threads; a call that finds every thread busy starts one, at most 128,
+  and a thread idle for 10 s ends (Tokio's keep-alive, a quarter of its
+  bound). `f` runs there as a task.
+- **Threads are named** for the OS (`cpu-0`, `cpu-1`, …; `gl`) and set their
+  own priority and CPUs as they start; each reports before the next
+  starts, so a refusal leaves none running. Windows: `Low`/`High`/`Realtime`
+  are BELOW_NORMAL/HIGHEST/TIME_CRITICAL, and CPUs past 63 (another
+  processor group) are refused. Linux: `Low`/`High` are nice +10/−10 for
+  the thread, `Realtime` is SCHED_FIFO; raising needs CAP_SYS_NICE. macOS
+  (plan A7): a name only, other settings refused.
+- **A `Thread`'s function runs as a task outside every executor**, so a
+  panic unwinds its cleanups and is kept for the join, and it sees the
+  task-local values of the code that started it (D72).
+- `Executor` is `Sendable`; closing one twice does nothing; placing a task
+  on a closed one panics; closing one from its own task panics (it would
+  wait for itself). `Executor.defaultThreads()` reports the default pool's
+  size.
+- **`[runtime] threads`** is read from the program's manifest only and
+  handed to the runtime before anything runs; `VELES_THREADS` still
+  overrides it.
+- The collector still stops every thread that runs Veles code; nothing
+  per executor was needed. A thread of a closed executor leaves the
+  collector's list as it ends.
+
+Pinned by driver `TestExecutors` (debug/release, 1/2/8 threads, GC
+pressure: a pool's tasks and their children use at most its threads, one
+OS thread across 1 000 suspensions on `Executor.thread`,
+`run`/`blocking`/`gather(on:)`, a timer and a socket on a pool's task, a
+`Thread`'s join and panic, refused CPUs, a closed executor),
+`TestRuntimeThreadsManifest`; sema `TestExecutorPlacement`,
+`TestManifestRuntime`; format `TestScopeOnRoundTrips`.
 
 ### D144 — Atomics: read-modify-write operations and memory orders (v0.75)
 

@@ -473,8 +473,9 @@ public struct WithStmt : Stmt {
   public var pos:     Span = Span.none()
 }
 
-/// `scope { }` (D34).
+/// `scope { }` (D34); `scope(on: e) { }` (D143).
 public struct ScopeStmt : Stmt {
+  public var on:   (*Expr)? = null
   public var body: Block = Block()
   public var pos:  Span = Span.none()
 }
@@ -736,8 +737,9 @@ public struct CastExpr : Expr {
   public var pos: Span = Span.none()
 }
 
-/// `gather { … }` (D36).
+/// `gather { … }` (D36); `gather(on: e) { … }` (D143).
 public struct GatherExpr : Expr {
+  public var on:   (*Expr)? = null
   public var body: Block = Block()
   public var pos:  Span = Span.none()
 }

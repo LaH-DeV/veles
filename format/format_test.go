@@ -488,3 +488,11 @@ func TestConstFunRoundTrips(t *testing.T) {
 		t.Errorf("formatted:\n%s\nwant:\n%s", got, src)
 	}
 }
+
+// `scope(on: e)` and `gather(on: e)` (D143) print as written.
+func TestScopeOnRoundTrips(t *testing.T) {
+	src := "fun f(cpu: Executor) {\n  scope(on: cpu) {\n    async g()\n  }\n  val r = gather(on: cpu) {\n    async g()\n  }\n  scope {\n    async g()\n  }\n}\n\nfun g() { }\n"
+	if got := checkRoundTrip(t, "on.vs", src); got != src {
+		t.Errorf("formatted:\n%s\nwant:\n%s", got, src)
+	}
+}

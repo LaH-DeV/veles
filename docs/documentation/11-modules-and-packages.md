@@ -175,6 +175,9 @@ implicit_return = "lambda"    # "full" (default) | "lambda" | "expr": where a bo
 
 [native]
 static-libs = ["z"]           # C libraries the package's extern blocks need (chapter 13)
+
+[runtime]
+threads = "auto"              # the default pool's threads: "auto" (one per core) or 1 to 256
 ```
 
 - What other packages may import is written in source, not here: see
@@ -189,6 +192,10 @@ static-libs = ["z"]           # C libraries the package's extern blocks need (ch
   a body without braces (`fun f() => expr`, `x => expr`), so every `{ }` body
   says `return`. The blocks of an `if` or a `when` arm are never affected:
   their value is the branch's, not the function's.
+- `[runtime]` is how the program runs, and only the program's own
+  manifest is read: a dependency's `[runtime]` is ignored. `threads` sizes
+  the pool every task runs on unless placed elsewhere (chapter 12, D143);
+  `VELES_THREADS` in the environment overrides it.
 - A dependency is imported by its manifest name: `use utils`,
   `use utils.text`. A dependency is a path (`name = "path"` or
   `name = { path = "..." }`), a git repository or a registry package; see

@@ -112,8 +112,9 @@ extend Parser {
       }
       Kind.KwScope => {
         this.next()
+        val on = this.parseOn("scope")
         val body = this.parseBlock()
-        return ast.ScopeStmt(body, pos: this.spanFrom(start))
+        return ast.ScopeStmt(on, body, pos: this.spanFrom(start))
       }
       Kind.KwFun => return ast.FunStmt(decl: &this.parseFun([], FunContext.Free))
       Kind.KwPublic, Kind.KwStruct, Kind.KwTrait, Kind.KwImplement, Kind.KwUse, Kind.KwSealed => {
@@ -222,6 +223,22 @@ extend Parser {
 
   // `with name = e` or `with e` (D100, D109), as against `with (`
   fun atWithStmt(): bool => this.at(Kind.KwWith) && this.peek(1).kind != Kind.LParen
+
+  // the `(on: executor)` of `scope(on: e)` and `gather(on: e)` (D143); null
+  // when the block follows directly
+  fun parseOn(what: string): (*ast.Expr)? {
+    if (!this.at(Kind.LParen)) return null
+    this.next()
+    if (!this.at(Kind.Ident) || this.cur().text != "on" || this.peek(1).kind != Kind.Colon) {
+      this.errorAt(this.span(), "'$what(…)' takes one argument, the executor its tasks run on: '$what(on: pool) { … }' (D143)")
+    } else {
+      this.next()
+      this.next()
+    }
+    val on = &this.parseExpr()
+    this.expect(Kind.RParen)
+    on
+  }
 
   // `name = e`, or `e` held without a name (D109)
   fun parseWithItem(): ast.WithBinding {

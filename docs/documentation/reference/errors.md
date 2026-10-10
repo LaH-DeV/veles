@@ -739,6 +739,13 @@ wait, once to take what it waited for when the arm wins — so the receiver
 must be a variable or a field, not a call's result: `val e = events()`
 before the `race`, then `e.wait() => …` (D146).
 
+#### `'scope(on: …)' takes an Executor, not 'i64'` / `'scope(…)' takes one argument, the executor its tasks run on`
+
+`scope` and `gather` take one argument, `on:`, the executor their
+children run on (D143): `scope(on: cpu) { … }`. Make one with
+`try Executor.pool(threads: n, name: "cpu")` or
+`try Executor.thread(name: "gl")`, and hold it in a `with`.
+
 #### `MemoryOrder.Release is not an order for a load; use Relaxed, Acquire or SeqCst`
 
 An `Atomic` operation's `order:` must be one the operation can take

@@ -62,9 +62,12 @@ scope finished
 
 Tasks run in parallel, on one thread per core (D66): the executor
 spreads them over a pool of worker threads that share one heap, and a
-task that suspends may resume on another thread. `VELES_THREADS=n` in the
-environment sets the pool's size — `VELES_THREADS=1` runs everything
-on one thread, which is handy when debugging. What the compiler checks
+task that suspends may resume on another thread. `[runtime] threads = n`
+in the program's `veles.toml` sets the pool's size, and `VELES_THREADS=n`
+in the environment overrides it — `VELES_THREADS=1` runs everything on
+one thread, which is handy when debugging. Work that needs threads of its
+own — CPU-heavy jobs, a library tied to one thread — goes on an
+executor (see "Choosing the threads", below). What the compiler checks
 in this chapter — only Sendable values cross into a task, shared state
 sits in a `Mutex` or an `Atomic` — is what makes that safe: two tasks
 never change the same memory at once without a lock between them.
@@ -1169,6 +1172,92 @@ last seen: 2
 The follower may wake once for both changes or once for each — a
 `Watch` promises the latest value, not every value; a `Broadcast` is the
 one that delivers each.
+
+## Choosing the threads: executors
+
+Every task runs on the default pool unless told otherwise: one thread per
+core, or the number `[runtime] threads` gives in the program's
+`veles.toml` (`VELES_THREADS` in the environment overrides both). Most
+programs never need more. Four tools place work elsewhere (D143):
+
+| Tool | For |
+|---|---|
+| `try Executor.pool(threads: n, name: s)` | CPU-heavy work that must not take the threads a server answers on |
+| `try Executor.thread(name: s)` | a library that must always be called from the same OS thread (a GL context, COM, a GUI loop) |
+| `blocking(f)` | one call known to block its thread, such as a synchronous C read |
+| `try Thread.start(name: s, f: f)` | plain code on an OS thread of its own: an audio loop, a pinned worker |
+
+`scope(on: e) { … }` and `gather(on: e) { … }` start every child of the
+block on `e`; everything else about the scope is as before. A task
+**stays on its executor across every suspension**, and a child it
+launches runs there too, unless its own scope says `on:`. `e.run(f)` is
+the one-call form: it runs `f` on `e` and waits for the result.
+
+```veles
+use io
+
+fun checksum(n: i64): i64 {
+  var x: i64 = 1
+  loop (i in 0..<n) x = (x * 31 + i) % 1000003
+  x
+}
+
+fun render(frame: i64): string => "frame $frame drawn"
+
+fun main() throws ThreadError {
+  with cpu = try Executor.pool(threads: 2, name: "cpu")
+  val (a, b) = gather(on: cpu) {
+    async checksum(1000)
+    async checksum(2000)
+  }
+  io.println("${a} ${b}")
+
+  with ui = try Executor.thread(name: "ui")
+  io.println(ui.run(() => render(1)))
+
+  io.println("${blocking(() => checksum(10))}")
+
+  val mixed = Atomic(value: 0)
+  with (audio = try Thread.start(name: "audio", priority: Priority.Normal, f: () => mixed.store(checksum(500)))) {
+    io.println("mixing on its own thread")
+  }
+  io.println("mixed ${mixed.load()}")
+}
+```
+
+Output:
+```text
+Ok(value: 737307) Ok(value: 418372)
+frame 1 drawn
+467877
+mixing on its own thread
+mixed 718330
+```
+
+- **Closing.** An `Executor` and a `Thread` are `Closeable`, so they are
+  held by a `with`. Closing an executor stops its threads; the tasks
+  placed on it have already finished, because the scopes that placed
+  them joined them. Closing a `Thread` waits for its function to return
+  — the closing thread blocks, as `join` does in Rust — and a panic in
+  the function is raised again there.
+- **Priority and CPUs.** `Executor.pool`, `Executor.thread` and
+  `Thread.start` take `priority:` (`Priority.Low`, `Normal`, `High`,
+  `Realtime`) and `cpus:` (the logical CPUs the threads may run on,
+  numbered from 0). What the OS refuses is a `ThreadError`, never a
+  setting quietly dropped: an unknown CPU, or on Linux a raised priority
+  without `CAP_SYS_NICE`. Threads carry their names (`cpu-0`, `cpu-1`,
+  …) into debuggers and profilers.
+- **What crosses.** An `Executor` is `Sendable`. What a task on it
+  receives follows the same rules as between any two tasks.
+- **`blocking`** runs `f` on a pool that starts threads as calls need
+  them, up to 128 (a call beyond that waits for one), and ends a thread
+  idle for 10 seconds. `f` does not suspend. A blocking call made
+  without it is still noticed after about a millisecond, and the
+  default pool's other tasks moved to another thread; `blocking` says
+  so up front.
+- **Timers and sockets** are served by the default pool for every
+  executor: a task on a pool can sleep, race and read a socket like any
+  other.
 
 ## How it compiles
 

@@ -1030,6 +1030,7 @@ func (g *gen) entryPoint() {
 	main := g.prog.Main
 	g.resetFn(&sema.Func{Name: "main", Sig: &types.Func{Ret: types.TUnit}})
 	g.emit("call void @veles_rt_init(i32 %%argc, ptr %%argv)")
+	g.runtimeConfig()
 	g.emit("call void @veles_init_globals()")
 	if g.prog.TestMode {
 		g.testRunner()

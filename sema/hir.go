@@ -38,6 +38,9 @@ type Program struct {
 	// TestJobs is how many tests run at once (D80): 0 is one per worker
 	// thread, 1 runs them one at a time.
 	TestJobs int64
+	// Threads is the program's `[runtime] threads` (D143): the default
+	// pool's size, 0 for one per core.
+	Threads int64
 	// ResultType instantiates the prelude Result<T, E> for the backend.
 	ResultType func(ok, err types.Type) types.Type
 	// Custom maps types.Key of a struct or sealed type to the prelude-trait
@@ -800,6 +803,10 @@ type ScopeBlock struct {
 	// tasks launch into it; x is bound and Body runs; the tasks are then
 	// cancelled and joined, and only then is Close (x.close(), or nil) run.
 	Held *HeldValue
+	// On is the executor of `scope(on: e)` / `gather(on: e)` (D143): the
+	// runtime handle of the Executor, evaluated before the scope opens; nil
+	// when the children run where the owner does
+	On   Expr
 	Span source.Span
 }
 

@@ -416,6 +416,12 @@ unreachable.
 | `async f(...)`: `Task<T>` | (`T` is `f`'s value even when `f` throws — its error fails the scope; in `gather` the handle is `Task<Result<T, E>>`; a handle stays in its block, D141) start a task in the enclosing `scope` — or, as `with t = async f(...)`, in the background until the block ends, which cancels then joins it (D100); `await task`; `task.cancel()` asks it to stop at its next suspension point (its `with` cleanups run, the scope still waits for it) |
 | `withTimeout(limit: Duration, f): R throws E \| Timeout` | run the sendable `f` in a task of its own and throw `Timeout` (which carries the `limit` it reached) if it passes first — `f` is cancelled and has unwound by then; `f`'s own errors are rethrown |
 | `yieldNow()` | give the thread up once: every other task that can run gets a turn first (a suspension point; D145) |
+| `try Executor.pool(threads: n, name: s, priority: Priority.Normal, cpus: [])`: `Executor throws ThreadError` | a pool of threads of its own (D143), `Closeable` and `Sendable`: `scope(on: e) { … }` / `gather(on: e) { … }` start the block's children on it; `e.run(f): R throws E` runs `f` there and waits; closing stops the threads; `Executor.defaultThreads(): i64` is the default pool's size |
+| `try Executor.thread(name: s, priority:, cpus:)` | one thread: every task placed on it runs on that same OS thread |
+| `blocking(f): R throws E` | run the plain `f` — a call known to block — on the blocking pool (threads as calls need them, at most 128) and wait |
+| `try Thread.start(name: s, priority:, cpus:, stackSize: 0, f: f)`: `Thread throws ThreadError` | the plain `f` on an OS thread of its own; `Closeable`: closing blocks until `f` returns and re-raises its panic |
+| `Priority` | `Low`, `Normal`, `High`, `Realtime`: what an executor's or a `Thread`'s threads start with |
+| `ThreadError` | the OS refused a thread, its priority or its CPUs: `reason: string` |
 | `checkCancelled()` | unwind the task here if it has been cancelled, else nothing — a cancellation point in code that does not wait; not inside a lock region or a `close()` (D145) |
 | `TaskLocal(fallback: T)`: `TaskLocal<T: Sendable>` | a value that follows a task (D72): `tl.withValue(v, f): R throws E` binds `v` while `f` runs — there and in every task started inside, which keep it — and ends the binding with `f`, however `f` ends; `tl.get(): T` is the innermost binding, or `fallback` |
 

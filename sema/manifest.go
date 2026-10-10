@@ -67,6 +67,16 @@ type Manifest struct {
 	// RegistryName is `[package] registry = "owner/name"`: where `veles
 	// publish` publishes this package.
 	RegistryName string
+	// Runtime is the `[runtime]` table (D143): how the program runs. Only
+	// the program's own manifest counts; a dependency's is not read.
+	Runtime ManifestRuntime
+}
+
+// ManifestRuntime is the `[runtime]` table (D143).
+type ManifestRuntime struct {
+	// Threads is how many threads the default pool has: 0 for "auto" (one
+	// per core, the default); VELES_THREADS overrides it.
+	Threads int64
 }
 
 // Dependency is one entry of `[dependencies]`. Exactly one of Path,
@@ -146,7 +156,7 @@ func readManifest(dir string) (*Manifest, error) {
 // manifestSections are the tables a manifest has; each table checks its own
 // keys, so a typo is an error rather than a setting that silently does
 // nothing.
-var manifestSections = []string{"package", "dependencies", "dev-dependencies", "workspace", "format", "lint", "native", "policy", "registry"}
+var manifestSections = []string{"package", "dependencies", "dev-dependencies", "workspace", "format", "lint", "native", "policy", "registry", "runtime"}
 
 func parseManifest(path, dir, text string) (*Manifest, error) {
 	root, err := parseTOML(text)
@@ -181,6 +191,8 @@ func parseManifest(path, dir, text string) (*Manifest, error) {
 			err = r.policy(m, v.tab)
 		case "registry":
 			err = r.registry(m, v.tab)
+		case "runtime":
+			err = r.runtime(m, v.tab)
 		default:
 			err = r.fail(v, "unknown table [%s] (%s)", name, strings.Join(manifestSections, ", "))
 		}
@@ -451,6 +463,27 @@ func (r *manifestReader) workspace(t *tomlTable) (*ManifestWorkspace, error) {
 		return nil, r.fail(&tomlVal{line: t.line}, "[workspace] needs members = [\"dir\", ...]")
 	}
 	return w, nil
+}
+
+// runtime reads `[runtime]` (D143): threads = "auto" or a count.
+func (r *manifestReader) runtime(m *Manifest, t *tomlTable) error {
+	for _, key := range t.keys() {
+		v := t.vals[key]
+		switch key {
+		case "threads":
+			switch {
+			case v.kind == tomlStr && v.str == "auto":
+				m.Runtime.Threads = 0
+			case v.kind == tomlInt && v.num >= 1 && v.num <= 256:
+				m.Runtime.Threads = v.num
+			default:
+				return r.fail(v, "[runtime] threads is \"auto\" (one per core, the default) or a number from 1 to 256, e.g. threads = 4")
+			}
+		default:
+			return r.fail(v, "unknown [runtime] key %q (threads)", key)
+		}
+	}
+	return nil
 }
 
 func (r *manifestReader) format(m *Manifest, t *tomlTable) error {

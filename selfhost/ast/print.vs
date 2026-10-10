@@ -105,6 +105,14 @@ struct Printer {
     this.indent += 1
   }
 
+  // the executor of a `scope(on: e)` or `gather(on: e)` (D143)
+  fun on(e: (*Expr)?) {
+    val x = e ?: return
+    this.write(" (on ")
+    this.expr(*x)
+    this.write(")")
+  }
+
   fun close() {
     this.indent -= 1
     this.write(")")
@@ -586,6 +594,7 @@ struct Printer {
       }
       is ScopeStmt        => {
         this.open("scope")
+        this.on(s.on)
         this.nl()
         this.block(s.body)
         this.close()
@@ -794,6 +803,7 @@ struct Printer {
       }
       is GatherExpr     => {
         this.open("gather")
+        this.on(e.on)
         this.nl()
         this.block(e.body)
         this.close()

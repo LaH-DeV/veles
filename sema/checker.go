@@ -2541,6 +2541,9 @@ func (c *Checker) runRound() *Program {
 	c.prog = &Program{Release: c.release}
 	if c.pkg != nil {
 		c.prog.Root = c.pkg.Root
+		if c.pkg.Manifest != nil {
+			c.prog.Threads = c.pkg.Manifest.Runtime.Threads
+		}
 	}
 	c.prog.ResultType = func(ok, err types.Type) types.Type { return c.ResultType(ok, err) }
 	c.queue = nil

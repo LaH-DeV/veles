@@ -599,6 +599,7 @@ type WithStmt struct {
 
 // ScopeStmt is a structured-concurrency `scope { }` (D34).
 type ScopeStmt struct {
+	On   Expr // `scope(on: e)` (D143); nil when not given
 	Body *Block
 	Pos  source.Span
 }
@@ -933,6 +934,7 @@ type CastExpr struct {
 
 // GatherExpr is `gather { async a(); async b() }` (D36).
 type GatherExpr struct {
+	On   Expr // `gather(on: e)` (D143); nil when not given
 	Body *Block
 	Pos  source.Span
 }

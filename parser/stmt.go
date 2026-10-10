@@ -193,8 +193,9 @@ func (p *Parser) parseStmt() ast.Stmt {
 
 	case lexer.KwScope:
 		p.next()
+		on := p.parseOn("scope")
 		body := p.parseBlock()
-		return &ast.ScopeStmt{Body: body, Pos: p.spanFrom(start)}
+		return &ast.ScopeStmt{On: on, Body: body, Pos: p.spanFrom(start)}
 
 	case lexer.KwFun:
 		fn := p.parseFun(nil, funContextFree)
@@ -472,4 +473,22 @@ func (p *Parser) tupleHoldsPattern() bool {
 			return false
 		}
 	}
+}
+
+// parseOn reads the `(on: executor)` of `scope(on: e)` and `gather(on: e)`
+// (D143); nil when the block follows directly.
+func (p *Parser) parseOn(what string) ast.Expr {
+	if !p.at(lexer.LParen) {
+		return nil
+	}
+	p.next()
+	if !p.at(lexer.Ident) || p.cur().Text != "on" || p.peek(1).Kind != lexer.Colon {
+		p.errorf(p.span(), "'%s(…)' takes one argument, the executor its tasks run on: '%s(on: pool) { … }' (D143)", what, what)
+	} else {
+		p.next()
+		p.next()
+	}
+	on := p.parseExpr()
+	p.expect(lexer.RParen)
+	return on
 }

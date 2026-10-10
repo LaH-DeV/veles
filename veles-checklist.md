@@ -204,6 +204,14 @@ answered from the shape, tuples get `Comparable`, enums get
       (`net.Conn.tryWrite`). sema TestSuspendingClose; driver TestSuspendingClose (debug/release,
       1/2/8 threads, GC pressure), TestTLSClient (the alert reaches a Go server), the db suite against
       PostgreSQL (the connection is kept); std/otel test; docs chapters 13, 16, 23, 24, references
+- [x] Executors and threads (D143, plan F8, 2026-10-10): `[runtime] threads` in the program's
+      manifest; `Executor.pool`/`Executor.thread` (static functions that throw `ThreadError`),
+      `scope(on:)`/`gather(on:)` (a task stays on its executor), `e.run(f)`, `blocking(f)` (a growing pool
+      of at most 128 threads), `Thread.start(…, f:)` joined by its `with` (blocking; a panic is raised
+      there); thread names, priority and CPUs on Windows and Linux. sema TestExecutorPlacement,
+      TestManifestRuntime; format TestScopeOnRoundTrips; driver TestExecutors (debug/release, 1/2/8
+      threads, GC pressure), TestRuntimeThreadsManifest; selfhost parses `scope(on:)`; docs chapters
+      11 and 12, concurrency-explained, reference/concurrency, stdlib, cheatsheet, errors
 - [x] Deadlock detection: "deadlock: every task is blocked" when no task
       can run and no timer, socket or blocking call can wake one
 - [x] Blocking-call detection → superseded: a blocking call hands its
@@ -996,7 +1004,17 @@ list as it was is in `archive/progress-log-2026-09.md` and git history).
 
 (Q15 named imports was decided 2026-09-29: D85; Q16 `as` conversions the same day: D86; Q19 the same; Q4 D87, Q8 D88, Q3 D89 — decided 2026-09-29, being built in that order.)
 
-**Open: none** (2026-10-09; Q24–Q28, raised by the concurrency review, were decided the same day: D143–D147; Q22 and Q23 on 2026-10-08 into D142; Q21, packages, 2026-10-05: D138).
+**Open:**
+
+- **Q29 — non-Sendable state on an `Executor.thread`** (D143 left it to be
+  decided once executors were built; they are, 2026-10-10). Every task
+  placed on one executor of one thread runs on the same OS thread, so such
+  tasks could share a `MutableList` without a lock, as Swift's
+  `@MainActor` code does — if the compiler can tell that a value never
+  leaves that executor. Today they must share through a `Mutex` like any
+  tasks.
+
+(2026-10-09: Q24–Q28, raised by the concurrency review, were decided the same day: D143–D147; Q22 and Q23 on 2026-10-08 into D142; Q21, packages, 2026-10-05: D138.)
 
 (Q12, Q13, Q17 and Q20 were decided 2026-09-30: D101–D106. Q1 was decided 2026-10-01: D108; Q2, Q9, Q10, Q11 the same day: D111–D114; Q5, Q6 the same day: D117, D118; Q7 the same day: D120–D123; Q14 the same day: D131, D132.)
 
@@ -1158,10 +1176,28 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-10-09 | Q26: loops that never suspend | **A pending cancellation unwinds at any loop back-edge (not in a lock region or `close()`); suspending functions also yield there after ~10 ms; `yieldNow()`, `checkCancelled()`** (user, recommended of 4; D145). Rejected: explicit points only; oversubscribing threads; leaving it. |
 | 2026-10-09 | Q27: synchronisation types | **`RwLock<T>`, `Event`, `Lazy<T>`, `Broadcast<T>` + `Watch<T>`** (user, all four offered; D146). Not offered: `Barrier`/`Latch`. |
 | 2026-10-09 | Q28: a `close()` that suspends | **An `implement Closeable` may declare `close()` `suspends`; a `with` on that type is a shielded suspension point; generic code gets two instances (D116); such a type cannot be a `Closeable` trait object** (user, recommended of 3; D147). Rejected: a second trait; explicit `shutdown()`/`rollback()` only. |
+| 2026-10-10 | D143: making an `Executor` that the OS may refuse (D73: an `init` cannot throw) | **Static functions that throw: `try Executor.pool(threads:, name:, priority:, cpus:)`, `try Executor.thread(name:, …)`** (user, recommended of 3; D143 addendum). Rejected: an `init` that may throw; `Executor(...)` that panics plus a throwing `Executor.pinned`. |
+| 2026-10-10 | D143: `Thread.start`'s function (no trailing lambdas) | **The argument `f:`** — `Thread.start(name: "audio", f: () => audioLoop())` (user, over the recommended `run:`; `body:` also offered). |
+| 2026-10-10 | D143: joining a `Thread` | **Its close blocks the closing OS thread (a blocking call, D66), as Rust's `join`** (user, recommended of 2). Rejected: a close that suspends (D147) — a `Thread`'s plain function could not join one. |
 | 2026-10-09 | `MutableList<i64>` indexed increment | **`incrementAt(i)` increments in place, returns unit and panics out of range** (user, recommended of 2; D148). Rejected: return `bool` and leave invalid-index handling to the caller. |
 | 2026-10-09 | Transform one mutable-list element | **`MutableList<T>.updateAt(i, transform): T` calls a synchronous, non-throwing transform once, stores and returns the replacement; negative indexes count from the end and out-of-range panics** (user, recommended of 3; D149). Rejected: `mapAt`, unit return, or no helper. |
 
 ## 11. Known limitations to revisit
+
+- **Executors (D143, built 2026-10-10), not done yet:** on Windows a thread can only be kept
+  to CPUs 0–63 (other processor groups throw `ThreadError`; `SetThreadGroupAffinity` would lift it);
+  macOS (plan A7) names threads but refuses any priority or CPU list; a blocking call on a pool's
+  thread does not hand its queue to a spare thread as the default pool's does (a pool keeps the
+  threads it was made with); a `Thread`'s plain function cannot run tasks on an executor (`run` and
+  `scope(on:)` suspend; D143 said it "may create and run an executor of its own" — a blocking form
+  of `run` would need a decision); timers and sockets are served by the default pool only, so a
+  default pool whose every thread is in a long plain loop delays a pool task's `sleep` too;
+  `async cpu.run(f)` is refused (a method's receiver is a pointer, not Sendable — wrap the call in
+  a function taking the `Executor`); with CPU work on a pool the default pool's request latency
+  keeps its median but its tail grows — p99 +20–40 % on Windows, +35–100 % on Linux (WSL), the
+  worst request 5–6 ms against ~1.4 ms idle (not explained: SMT siblings and turbo clocks shared with
+  the spinning threads are the likely cause; the monitor's look at the pools under the runtime
+  lock is the other suspect).
 
 - **Found by the concurrency review (2026-10-09, `veles-concurrency-review.md`), not fixed yet**
   (B1 and B2 are fixed; B3 is decided as D145 and planned as F4): (B4, medium) `veles_task` is ~430 bytes (15 flag

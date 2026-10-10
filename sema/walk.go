@@ -44,6 +44,7 @@ func walkStmt(s Stmt, visit func(node any)) {
 		walkExpr(s.Close, visit)
 		walkBlock(s.Body, visit)
 	case *ScopeBlock:
+		walkExpr(s.On, visit)
 		walkBlock(s.Body, visit)
 	}
 }
@@ -168,6 +169,7 @@ func walkExpr(e Expr, visit func(node any)) {
 	case *AwaitTask:
 		walkExpr(e.X, visit)
 	case *ScopeBlock:
+		walkExpr(e.On, visit)
 		walkBlock(e.Body, visit)
 	case *Race:
 		for _, arm := range e.Arms {

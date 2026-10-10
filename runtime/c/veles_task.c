@@ -187,6 +187,7 @@ typedef struct veles_cleanup {
 
 struct veles_scope {
     veles_task *owner;
+    struct veles_exec *exec; /* where its children run: `scope(on: e)`, or the owner's executor (D143) */
     veles_task *children;  /* linked and unlinked under lock */
     int32_t lock;          /* a spinlock: the owner joins children without the runtime lock */
     int32_t depth;         /* the depth of the owner's frame that runs the body */
@@ -248,7 +249,6 @@ static io_entry *io_table;  /* on the GC heap, word-scanned: it keeps the parked
 static int64_t io_cap, io_used;
 static int64_t io_count;    /* tasks parked on a socket (runtime lock; read without it as a hint) */
 #define current (veles_tls_get()->task)
-static veles_task *gq_head, *gq_tail; /* the shared queue (run queues, below) */
 static bool roots_registered;
 
 /* ---- the runtime lock (D66) -----------------------------------------------
@@ -262,11 +262,57 @@ static bool roots_registered;
  * safepoint: a thread that must wait for it lets a collection run. Veles
  * code runs without it. */
 static veles_lock *rt_lock;
-static veles_cond *work_cv;     /* a task became runnable, or the root finished */
 static veles_cond *spare_cv;    /* a run queue was handed off (blocking calls), or the root finished */
 #define rt_depth (veles_tls_get()->rt_depth)
 static veles_task *root_task;   /* the task veles_run drives; NULL between runs */
-static int64_t active_workers;  /* workers inside a task (atomic) */
+static int64_t active_workers;  /* workers inside a task, of every executor (atomic) */
+
+/* ---- executors (D143) --------------------------------------------------------
+ * An executor is a set of worker threads with run queues of their own: the
+ * default pool, which veles_run drives, a pool made by `Executor(...)`, one
+ * thread (`Executor.thread`), and the blocking pool `blocking(f)` uses. A
+ * task runs only on its executor's threads — the executor of the scope it
+ * was launched in (`scope(on: e)`, or else the launching task's) — so every
+ * wake puts it back in that executor's queues. Timers and sockets stay one
+ * set for the program, served by the default pool's threads: a pool's
+ * threads only run tasks, and one that arms a timer or waits on a socket
+ * has the default pool take a look (kick_housekeeper). */
+typedef struct veles_worker veles_worker;
+#define MAX_WORKERS 256
+
+enum { X_DEFAULT, X_POOL, X_THREAD, X_BLOCKING };
+
+typedef struct veles_exec {
+    int32_t gq_lock;           /* the shared queue: a woken task from elsewhere, a yield, an overflow */
+    int32_t kind;              /* X_* */
+    int64_t gq_len;
+    veles_task *gq_head, *gq_tail;
+    veles_cond *work_cv;       /* a task became runnable here, or the executor stops */
+    int64_t idle_workers;      /* waiting on work_cv; changed under the runtime lock */
+    int64_t waking;            /* a worker was signalled and has not come back yet */
+    int64_t spinning;          /* workers looking for work before they sleep (atomic; Go's nmspinning) */
+    int64_t nworkers;          /* run queues (atomic): grows to target, for the default pool as threads join */
+    int64_t target;            /* how many threads it has; the blocking pool's most */
+    int64_t threads;           /* threads still in its loop (runtime lock) */
+    int64_t stopping;          /* closed: its threads leave once out of work */
+    veles_cond *stopped_cv;    /* the last thread left */
+    int32_t priority;          /* what its threads are started with (veles_thread_configure) */
+    int32_t ncpus;
+    int32_t *cpus;
+    char name[32];
+    struct veles_exec *next;   /* every live executor, for the monitor */
+    veles_worker *workers[];   /* target of them; each one reachable through here */
+} veles_exec;
+
+static veles_exec *default_exec; /* the default pool; GC root */
+static veles_exec *execs;        /* the others still open (runtime lock); GC root */
+static veles_exec *blocking_exec;
+
+/* the executor a task runs on: its scope's, or the default pool's for a
+ * task outside any scope (the root, a test) */
+static inline veles_exec *exec_of(veles_task *t) {
+    return t->scope && t->scope->exec ? t->scope->exec : default_exec;
+}
 
 /* the reactor (veles_poll.c) */
 typedef struct veles_poll_event {
@@ -278,43 +324,58 @@ void veles_poll_init(void);
 int64_t veles_poll_arm(int64_t fd, int64_t read, int64_t write);
 int64_t veles_poll_wait(int64_t timeout_ms, veles_poll_event *out, int64_t max);
 void veles_poll_wake(void);
-static int64_t idle_workers;    /* waiting on work_cv; changed under the runtime lock */
-static int64_t waking;          /* a worker was signalled and has not come back yet */
 static void rt_enter(void);
 static void rt_exit(void);
 
 static int64_t poller_busy;     /* a worker is waiting in the reactor (runtime lock) */
 static int64_t poller_blocked;  /* ... and may be blocked there: work must interrupt it (atomic) */
 
-/* A task was queued: wake one idle worker, unless one is already on its
- * way. Waking a worker per queued task would have them all fight over
- * the queues; instead the woken worker, once it has a task, wakes the next
- * if more are waiting — the number of awake workers follows the work (Go's
- * spinning threads). idle_workers only changes under the runtime lock, and
- * a sleeper holds it from counting itself idle, through a last look at
- * the queues, into the wait: a signal sent under the lock to a positive
- * count reaches a waiting worker. */
-static int64_t spinning; /* workers looking for work before they sleep (atomic; Go's nmspinning) */
+static void grow_blocking(veles_exec *e);
 
-static void wake_worker(void) {
+/* A task was queued on e: wake one of its idle workers, unless one is
+ * already on its way. Waking a worker per queued task would have them all
+ * fight over the queues; instead the woken worker, once it has a task,
+ * wakes the next if more are waiting — the number of awake workers follows
+ * the work (Go's spinning threads). idle_workers only changes under the
+ * runtime lock, and a sleeper holds it from counting itself idle, through
+ * a last look at the queues, into the wait: a signal sent under the lock
+ * to a positive count reaches a waiting worker. */
+static void wake_worker(veles_exec *e) {
     /* the caller's queueing is ordered before the flags are read, as a
      * spinner that gives up, and the poller, order theirs before they look
      * at the queues again (spin_for_task, poll_io) */
     __atomic_thread_fence(__ATOMIC_SEQ_CST);
     /* a worker is already looking: it finds the task, and wakes the next
      * if more are waiting */
-    if (__atomic_load_n(&waking, __ATOMIC_RELAXED) || __atomic_load_n(&spinning, __ATOMIC_SEQ_CST)) return;
-    if (__atomic_load_n(&idle_workers, __ATOMIC_SEQ_CST) == 0) {
+    if (__atomic_load_n(&e->waking, __ATOMIC_RELAXED) || __atomic_load_n(&e->spinning, __ATOMIC_SEQ_CST)) return;
+    if (__atomic_load_n(&e->idle_workers, __ATOMIC_SEQ_CST) == 0) {
         /* the one idle thread may be the one waiting for sockets (Go's
          * netpollBreak): one system call, however many wakes */
-        if (__atomic_load_n(&poller_blocked, __ATOMIC_SEQ_CST)) veles_poll_wake();
+        if (e == default_exec && __atomic_load_n(&poller_blocked, __ATOMIC_SEQ_CST)) veles_poll_wake();
+        /* every blocking thread busy: one more, up to the bound */
+        if (e->kind == X_BLOCKING) grow_blocking(e);
         return;
     }
     rt_enter();
-    if (idle_workers > 0 && !waking) {
-        waking = 1;
-        veles_cond_signal(work_cv);
+    if (e->idle_workers > 0 && !e->waking) {
+        e->waking = 1;
+        veles_cond_signal(e->work_cv);
     }
+    rt_exit();
+}
+
+/* a thread of another executor armed a timer or waits on a socket, which
+ * the default pool serves: one of its idle threads takes a look (the
+ * nearest deadline may now be sooner than the one it sleeps until) */
+static void kick_housekeeper(void) {
+    veles_exec *e = default_exec;
+    if (__atomic_load_n(&poller_blocked, __ATOMIC_SEQ_CST)) {
+        veles_poll_wake();
+        return;
+    }
+    if (__atomic_load_n(&e->idle_workers, __ATOMIC_SEQ_CST) == 0) return; /* busy threads look between tasks */
+    rt_enter();
+    if (e->idle_workers > 0) veles_cond_signal(e->work_cv);
     rt_exit();
 }
 static int64_t workers_started;
@@ -334,11 +395,23 @@ static void rt_unwind_to(int64_t depth) {
     while (rt_depth > depth) rt_exit();
 }
 
+/* an executor with room for slots run queues (word-scanned: its queue and
+ * workers keep their tasks alive) */
+static veles_exec *exec_alloc(int32_t kind, int64_t slots) {
+    veles_exec *e = veles_alloc_words((int64_t)(sizeof *e + (size_t)slots * sizeof e->workers[0]));
+    e->kind = kind;
+    e->target = slots;
+    e->work_cv = veles_cond_new();
+    e->stopped_cv = veles_cond_new();
+    return e;
+}
+
 static void register_roots(void) {
     if (roots_registered) return;
     roots_registered = true;
-    veles_gc_root(&gq_head, NULL);
-    veles_gc_root(&gq_tail, NULL);
+    veles_gc_root(&default_exec, NULL);
+    veles_gc_root(&execs, NULL);
+    veles_gc_root(&blocking_exec, NULL);
     veles_gc_root(&theap, NULL);
     veles_gc_root(&tickers, NULL);
     veles_gc_root(&io_table, NULL);
@@ -349,10 +422,11 @@ static void register_roots(void) {
 void veles_task_init(void) {
     if (rt_lock) return;
     rt_lock = veles_lock_new();
-    work_cv = veles_cond_new();
     spare_cv = veles_cond_new();
     veles_poll_init();
     register_roots();
+    default_exec = exec_alloc(X_DEFAULT, MAX_WORKERS);
+    memcpy(default_exec->name, "veles", 6);
 }
 
 /* The executor's clock: the monotonic nanoseconds Stopwatch reads too, so
@@ -392,13 +466,13 @@ static int64_t ms_until(int64_t at) {
 enum { S_IDLE, S_QUEUED, S_RUNNING, S_WOKEN };
 
 #define RING 256
-#define MAX_WORKERS 256
 #define RUNNEXT_TURNS 32 /* runnext turns in a row before the queues get one */
 
 /* a run queue's owner (blocking calls, below) */
 enum { B_RUNNING, B_BLOCKED, B_HANDED_OFF };
 
-typedef struct veles_worker {
+struct veles_worker {
+    veles_exec *exec;        /* the executor whose tasks it runs */
     int32_t lock;
     int64_t bstate;          /* B_*: whether its thread is inside a blocking call */
     int64_t bseq;            /* blocking calls entered, so the monitor tells a long one from many */
@@ -413,12 +487,13 @@ typedef struct veles_worker {
     int32_t seen_looks;      /* the monitor's: looks in a row that saw the same task running */
     int32_t preempt;         /* the task running here has run long while others wait: its next back edge in a suspending function yields */
     veles_task *ring[RING];
-} veles_worker;
+};
 
-static veles_worker *workers[MAX_WORKERS]; /* each one a GC root */
-static int64_t nworkers;
-static int32_t gq_lock;
-static int64_t gq_len;
+/* the calling thread runs the default pool's tasks, or no executor's */
+static inline int on_default_pool(void) {
+    veles_worker *w = veles_tls_get()->worker;
+    return !w || w->exec == default_exec;
+}
 
 static inline void cpu_pause(void) {
 #if defined(__x86_64__) || defined(__i386__)
@@ -454,30 +529,30 @@ static void spin_unlock(int32_t *l) {
     __atomic_store_n(l, 0, __ATOMIC_RELEASE);
 }
 
-static void push_global_chain(veles_task *first, veles_task *last, int64_t n) {
+static void push_global_chain(veles_exec *e, veles_task *first, veles_task *last, int64_t n) {
     last->next = NULL;
-    spin_lock(&gq_lock);
-    if (gq_tail) gq_tail->next = first; else gq_head = first;
-    gq_tail = last;
-    __atomic_add_fetch(&gq_len, n, __ATOMIC_SEQ_CST);
-    spin_unlock(&gq_lock);
+    spin_lock(&e->gq_lock);
+    if (e->gq_tail) e->gq_tail->next = first; else e->gq_head = first;
+    e->gq_tail = last;
+    __atomic_add_fetch(&e->gq_len, n, __ATOMIC_SEQ_CST);
+    spin_unlock(&e->gq_lock);
 }
 
-static void push_global(veles_task *t) {
-    push_global_chain(t, t, 1);
+static void push_global(veles_exec *e, veles_task *t) {
+    push_global_chain(e, t, t, 1);
 }
 
-static veles_task *pop_global(void) {
-    if (!__atomic_load_n(&gq_len, __ATOMIC_SEQ_CST)) return NULL;
-    spin_lock(&gq_lock);
-    veles_task *t = gq_head;
+static veles_task *pop_global(veles_exec *e) {
+    if (!__atomic_load_n(&e->gq_len, __ATOMIC_SEQ_CST)) return NULL;
+    spin_lock(&e->gq_lock);
+    veles_task *t = e->gq_head;
     if (t) {
-        gq_head = t->next;
-        if (!gq_head) gq_tail = NULL;
+        e->gq_head = t->next;
+        if (!e->gq_head) e->gq_tail = NULL;
         t->next = NULL;
-        __atomic_sub_fetch(&gq_len, 1, __ATOMIC_SEQ_CST);
+        __atomic_sub_fetch(&e->gq_len, 1, __ATOMIC_SEQ_CST);
     }
-    spin_unlock(&gq_lock);
+    spin_unlock(&e->gq_lock);
     return t;
 }
 
@@ -506,7 +581,7 @@ static void push_local(veles_worker *w, veles_task *t) {
     }
     spin_unlock(&w->lock);
     last->next = t;
-    push_global_chain(first, t, RING / 2 + 1);
+    push_global_chain(w->exec, first, t, RING / 2 + 1);
 }
 
 static veles_task *pop_local(veles_worker *w) {
@@ -525,11 +600,12 @@ static veles_task *pop_local(veles_worker *w) {
 /* takes half of another worker's ring: one task to run, the rest into
  * w's ring, which is empty when w steals */
 static veles_task *steal(veles_worker *w) {
-    int64_t n = __atomic_load_n(&nworkers, __ATOMIC_ACQUIRE);
+    veles_exec *e = w->exec;
+    int64_t n = __atomic_load_n(&e->nworkers, __ATOMIC_ACQUIRE);
     if (n < 2) return NULL;
     w->seed = w->seed * 1103515245u + 12345u;
     for (int64_t i = 0; i < n; i++) {
-        veles_worker *v = workers[(w->seed + (uint32_t)i) % (uint32_t)n];
+        veles_worker *v = e->workers[(w->seed + (uint32_t)i) % (uint32_t)n];
         if (!v || v == w || ring_empty(v)) continue;
         veles_task *got[RING / 2];
         uint32_t k = 0;
@@ -555,24 +631,26 @@ static veles_task *steal(veles_worker *w) {
     return NULL;
 }
 
-static void wake_worker(void);
+static void wake_worker(veles_exec *e);
 static void note_timer(int64_t at);
 static void finish_unstarted(veles_task *t);
 
-/* puts a task that has just become S_QUEUED where a worker will find it.
- * Woken by the task running on this worker — a send to a waiting
- * receiver, a child finishing for its owner, a spawn — it runs here next,
- * while what the two share is still in this core's cache (Go's runnext);
- * the task it displaces goes to the ring. A yield goes to the back of the
- * shared queue, behind everything already waiting. */
+/* puts a task that has just become S_QUEUED where a worker of its executor
+ * will find it. Woken by the task running on this worker — a send to a
+ * waiting receiver, a child finishing for its owner, a spawn — it runs here
+ * next, while what the two share is still in this core's cache (Go's
+ * runnext); the task it displaces goes to the ring. A yield goes to the
+ * back of the shared queue, behind everything already waiting; so does a
+ * task of another executor (D143). */
 static void place(veles_task *t) {
     veles_tls *tls = veles_tls_get();
     veles_worker *w = tls->worker;
+    veles_exec *e = exec_of(t);
     /* inside a callback from C the queue may be changing hands (blocking
      * calls, below): the shared queue */
-    if (!w || t->yielded || tls->callback_depth > 0) {
-        push_global(t);
-        wake_worker();
+    if (!w || w->exec != e || t->yielded || tls->callback_depth > 0) {
+        push_global(e, t);
+        wake_worker(e);
         return;
     }
     if (tls->in_resume && tls->task && tls->task != t) {
@@ -581,7 +659,7 @@ static void place(veles_task *t) {
         t = old;
     }
     push_local(w, t);
-    wake_worker();
+    wake_worker(e);
 }
 
 /* makes a task runnable: queues it, or, while a worker is inside it, has
@@ -613,8 +691,8 @@ static void flush_runnext(void) {
     if (!w || !w->runnext) return;
     veles_task *t = __atomic_exchange_n(&w->runnext, NULL, __ATOMIC_SEQ_CST);
     if (!t) return;
-    push_global(t);
-    wake_worker();
+    push_global(w->exec, t);
+    wake_worker(w->exec);
 }
 
 /* the next task for worker w, or NULL: now and then the shared queue
@@ -623,7 +701,8 @@ static void flush_runnext(void) {
  * worker's ring */
 static veles_task *find_task(veles_worker *w) {
     veles_task *t;
-    if (++w->ticks % 61 == 0 && (t = pop_global())) return t;
+    veles_exec *e = w->exec;
+    if (++w->ticks % 61 == 0 && (t = pop_global(e))) return t;
     /* runnext changes by exchange: the monitor may take it (D145) */
     if (w->runnext && w->runnext_streak < RUNNEXT_TURNS && (t = __atomic_exchange_n(&w->runnext, NULL, __ATOMIC_SEQ_CST))) {
         w->runnext_streak++;
@@ -631,20 +710,20 @@ static veles_task *find_task(veles_worker *w) {
     }
     w->runnext_streak = 0;
     if ((t = pop_local(w))) return t;
-    if ((t = pop_global())) return t;
+    if ((t = pop_global(e))) return t;
     if ((t = steal(w))) return t;
     if (w->runnext) t = __atomic_exchange_n(&w->runnext, NULL, __ATOMIC_SEQ_CST);
     return t;
 }
 
-/* any task another worker could take: the shared queue or a ring. A
+/* any task another worker of e could take: the shared queue or a ring. A
  * runnext slot does not count — only its worker runs it, and a worker
  * with one is active — or idle workers would spin instead of sleeping. */
-static int anything_queued(void) {
-    if (__atomic_load_n(&gq_len, __ATOMIC_SEQ_CST)) return 1;
-    int64_t n = __atomic_load_n(&nworkers, __ATOMIC_ACQUIRE);
+static int anything_queued(veles_exec *e) {
+    if (__atomic_load_n(&e->gq_len, __ATOMIC_SEQ_CST)) return 1;
+    int64_t n = __atomic_load_n(&e->nworkers, __ATOMIC_ACQUIRE);
     for (int64_t i = 0; i < n; i++) {
-        veles_worker *w = workers[i];
+        veles_worker *w = e->workers[i];
         if (w && !ring_empty(w)) return 1;
     }
     return 0;
@@ -654,13 +733,24 @@ static int anything_queued(void) {
  * (only its own worker runs it), but it is work: a worker that left its
  * loop for the timers, holding one, is waiting for the lock a sleeper
  * holds while it decides whether the program is deadlocked. */
-static int any_runnext(void) {
-    int64_t n = __atomic_load_n(&nworkers, __ATOMIC_ACQUIRE);
+static int any_runnext(veles_exec *e) {
+    int64_t n = __atomic_load_n(&e->nworkers, __ATOMIC_ACQUIRE);
     for (int64_t i = 0; i < n; i++) {
-        veles_worker *w = workers[i];
+        veles_worker *w = e->workers[i];
         if (w && __atomic_load_n(&w->runnext, __ATOMIC_ACQUIRE)) return 1;
     }
     return 0;
+}
+
+/* work queued on any executor (runtime lock held: the list of executors
+ * is its) — what an idle default thread must see before it calls the
+ * program deadlocked */
+static int work_anywhere(void) {
+    if (anything_queued(default_exec) || any_runnext(default_exec)) return 1;
+    for (veles_exec *e = execs; e; e = e->next)
+        if (anything_queued(e) || any_runnext(e)) return 1;
+    veles_exec *b = blocking_exec;
+    return b && (anything_queued(b) || any_runnext(b));
 }
 
 static void wake(veles_task *t) {
@@ -730,15 +820,18 @@ void veles_enter_safe_c(void);
 #define enter_safe_here veles_enter_safe
 #endif
 
-/* The outermost blocking call of a thread with a run queue marks it: the
- * task that would run next goes to the shared queue first, since the queue
- * may change hands before the call returns. Inside a callback from C the
- * outer call's mark stands (and place() queues nothing here). */
+/* The outermost blocking call of a thread with a run queue of the default
+ * pool marks it: the task that would run next goes to the shared queue
+ * first, since the queue may change hands before the call returns. Inside a
+ * callback from C the outer call's mark stands (and place() queues nothing
+ * here). Another executor's queue is never handed off — its threads are
+ * the ones it was made with, and `Executor.thread`'s tasks run on one
+ * thread (D143) — so its thread is only safe for the collector meanwhile. */
 static void block_worker(void) {
     veles_tls *tls = veles_tls_get();
     if (tls->blocking++ > 0 || tls->callback_depth > 0) return;
     veles_worker *w = tls->worker;
-    if (!w) return;
+    if (!w || w->exec != default_exec) return;
     flush_runnext();
     __atomic_store_n(&w->bseq, w->bseq + 1, __ATOMIC_RELAXED);
     __atomic_store_n(&w->bstate, B_BLOCKED, __ATOMIC_SEQ_CST);
@@ -751,7 +844,7 @@ static void unblock_worker(void) {
     veles_tls *tls = veles_tls_get();
     if (--tls->blocking > 0 || tls->callback_depth > 0) return;
     veles_worker *w = tls->worker;
-    if (!w) return;
+    if (!w || w->exec != default_exec) return;
     int64_t s = B_BLOCKED;
     if (!__atomic_compare_exchange_n(&w->bstate, &s, B_RUNNING, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) {
         tls->worker = NULL;
@@ -795,9 +888,10 @@ static veles_worker *take_free_worker(void) {
 
 /* whether a queue stuck behind a blocking call keeps work waiting */
 static int work_waiting(void) {
-    if (__atomic_load_n(&idle_workers, __ATOMIC_SEQ_CST) > 0) return 0; /* an idle worker takes it */
+    veles_exec *e = default_exec;
+    if (__atomic_load_n(&e->idle_workers, __ATOMIC_SEQ_CST) > 0) return 0; /* an idle worker takes it */
     /* parked sockets need a thread only while none waits in the reactor */
-    return anything_queued() || timers_due() ||
+    return anything_queued(e) || timers_due() ||
            (__atomic_load_n(&io_count, __ATOMIC_RELAXED) > 0 && !__atomic_load_n(&poller_busy, __ATOMIC_RELAXED));
 }
 
@@ -813,9 +907,10 @@ static void hand_off(veles_worker *w) {
 }
 
 static int any_blocked(void) {
-    int64_t n = __atomic_load_n(&nworkers, __ATOMIC_ACQUIRE);
+    veles_exec *e = default_exec;
+    int64_t n = __atomic_load_n(&e->nworkers, __ATOMIC_ACQUIRE);
     for (int64_t i = 0; i < n; i++) {
-        veles_worker *w = workers[i];
+        veles_worker *w = e->workers[i];
         if (w && __atomic_load_n(&w->bstate, __ATOMIC_SEQ_CST) == B_BLOCKED) return 1;
     }
     return 0;
@@ -836,6 +931,42 @@ static void wake_monitor(void) {
     veles_lock_release(monitor_lock);
 }
 
+/* the monitor's look at the run queues of e for a task that runs long
+ * (D145); 1 when one of them runs a task */
+static int look_at_runs(veles_exec *e) {
+    int busy = 0;
+    int64_t nw = __atomic_load_n(&e->nworkers, __ATOMIC_ACQUIRE);
+    for (int64_t i = 0; i < nw; i++) {
+        veles_worker *w = e->workers[i];
+        if (!w) continue;
+        uint32_t seq = __atomic_load_n(&w->run_seq, __ATOMIC_RELAXED);
+        if (!(seq & 1) || seq != w->seen_run) {
+            w->seen_run = seq;
+            w->seen_looks = 0;
+            busy |= (int)(seq & 1);
+            continue;
+        }
+        busy = 1;
+        ++w->seen_looks;
+        /* the same task, running since the last look (at least 5 ms):
+         * the task it woke to run next here — a child it launched, say —
+         * goes where an idle worker takes it, instead of waiting for a
+         * loop to end */
+        veles_task *rn = __atomic_load_n(&w->runnext, __ATOMIC_ACQUIRE) ? __atomic_exchange_n(&w->runnext, NULL, __ATOMIC_SEQ_CST) : NULL;
+        if (rn) {
+            push_global(e, rn);
+            wake_worker(e);
+        }
+        /* since two looks ago, about 10 ms: if others wait for the
+         * thread, its next back edge in a suspending function gives it
+         * up */
+        if (w->seen_looks >= 2 && (anything_queued(e) || (e == default_exec && timers_due())) &&
+            __atomic_exchange_n(&w->preempt, 1, __ATOMIC_SEQ_CST) == 0)
+            __atomic_add_fetch(&veles_attention, 1, __ATOMIC_SEQ_CST);
+    }
+    return busy;
+}
+
 static void monitor_main(void *arg) {
     (void)arg;
     int64_t quiet = 0; /* looks in a row that found no thread blocked and none running */
@@ -854,39 +985,18 @@ static void monitor_main(void *arg) {
         }
         veles_lock_release(monitor_lock);
         int any = 0;
-        int busy = 0;
-        int64_t nw = __atomic_load_n(&nworkers, __ATOMIC_ACQUIRE);
-        for (int64_t i = 0; i < nw; i++) {
-            veles_worker *w = workers[i];
-            if (!w) continue;
-            uint32_t seq = __atomic_load_n(&w->run_seq, __ATOMIC_RELAXED);
-            if (!(seq & 1) || seq != w->seen_run) {
-                w->seen_run = seq;
-                w->seen_looks = 0;
-                busy |= (int)(seq & 1);
-                continue;
-            }
-            busy = 1;
-            ++w->seen_looks;
-            /* the same task, running since the last look (at least 5 ms):
-             * the task it woke to run next here — a child it launched, say —
-             * goes where an idle worker takes it, instead of waiting for a
-             * loop to end */
-            veles_task *rn = __atomic_load_n(&w->runnext, __ATOMIC_ACQUIRE) ? __atomic_exchange_n(&w->runnext, NULL, __ATOMIC_SEQ_CST) : NULL;
-            if (rn) {
-                push_global(rn);
-                wake_worker();
-            }
-            /* since two looks ago, about 10 ms: if others wait for the
-             * thread, its next back edge in a suspending function gives it
-             * up */
-            if (w->seen_looks >= 2 && (anything_queued() || timers_due()) &&
-                __atomic_exchange_n(&w->preempt, 1, __ATOMIC_SEQ_CST) == 0)
-                __atomic_add_fetch(&veles_attention, 1, __ATOMIC_SEQ_CST);
+        int busy = look_at_runs(default_exec);
+        /* the other executors come and go: their list is the runtime
+         * lock's, and a closed one may be collected once off it */
+        if (__atomic_load_n(&execs, __ATOMIC_ACQUIRE)) {
+            rt_enter();
+            for (veles_exec *e = execs; e; e = e->next) busy |= look_at_runs(e);
+            rt_exit();
         }
-        int64_t n = __atomic_load_n(&nworkers, __ATOMIC_ACQUIRE);
+        veles_exec *d = default_exec;
+        int64_t n = __atomic_load_n(&d->nworkers, __ATOMIC_ACQUIRE);
         for (int64_t i = 0; i < n; i++) {
-            veles_worker *w = workers[i];
+            veles_worker *w = d->workers[i];
             if (!w || __atomic_load_n(&w->bstate, __ATOMIC_SEQ_CST) != B_BLOCKED) continue;
             any = 1;
             int64_t seq = __atomic_load_n(&w->bseq, __ATOMIC_RELAXED);
@@ -1217,6 +1327,7 @@ int64_t veles_task_failed(veles_task *t) {
 veles_scope *veles_scope_begin(veles_task *owner, int64_t fail_fast, int64_t depth) {
     veles_scope *s = veles_alloc_words(sizeof *s);
     s->owner = owner;
+    s->exec = owner ? exec_of(owner) : default_exec; /* children run where the owner does (D143) */
     s->fail_fast = fail_fast;
     s->depth = (int32_t)depth;
     return s;
@@ -1851,6 +1962,9 @@ static void timer_at(veles_task *t, int64_t at) {
     theap[theap_len] = t;
     heap_up(theap_len++);
     note_timer(at);
+    /* the default pool fires timers: one of its threads asleep until a
+     * later deadline looks again (D143) */
+    if (theap[0] == t && !on_default_pool()) kick_housekeeper();
 }
 
 static void add_timer(veles_task *t, int64_t ms) {
@@ -2111,6 +2225,9 @@ static int64_t veles_task_wait_io_impl(veles_task *self, int64_t fd, int64_t wri
     self->io_waiting = 1;
     self->io_ready = 0;
     self->state = T_BLOCKED;
+    /* the default pool waits in the reactor: with none of its threads
+     * there, one goes (D143) */
+    if (!poller_busy && !on_default_pool()) kick_housekeeper();
     return 0;
 }
 
@@ -2156,7 +2273,7 @@ static void poll_io(int64_t timeout_ms) {
         rt_unwind_to(0);
         __atomic_store_n(&poller_blocked, 1, __ATOMIC_SEQ_CST);
         /* work queued before the flag was seen: do not sleep through it */
-        if (anything_queued()) timeout_ms = 0;
+        if (anything_queued(default_exec)) timeout_ms = 0;
         veles_enter_safe();
         n = veles_poll_wait(timeout_ms, ev, POLL_BATCH);
         veles_leave_safe();
@@ -2992,22 +3109,28 @@ static void finish_unstarted(veles_task *t) {
     scope_child_finished(t);
 }
 
-static int64_t worker_target; /* VELES_THREADS: how many run queues there are */
+/* a run queue of e at slot i (runtime lock held) */
+static veles_worker *new_worker(veles_exec *e, int64_t i) {
+    veles_worker *w = veles_alloc_words(sizeof *w);
+    w->exec = e;
+    w->seed = (uint32_t)i * 2654435761u + 1;
+    e->workers[i] = w;
+    if (i + 1 > e->nworkers) __atomic_store_n(&e->nworkers, i + 1, __ATOMIC_RELEASE);
+    return w;
+}
 
-/* the calling thread's run queue (runtime lock held): the one it has, one
- * handed off by the monitor, or a new one while there are fewer than
- * VELES_THREADS — else NULL, and the thread waits as a spare */
+/* the calling thread's run queue of the default pool (runtime lock held):
+ * the one it has, one handed off by the monitor, or a new one while there
+ * are fewer than VELES_THREADS — else NULL, and the thread waits as a
+ * spare */
 static veles_worker *join_workers(void) {
     veles_tls *tls = veles_tls_get();
     if (tls->worker) return tls->worker;
     veles_worker *free = take_free_worker();
     if (free) return free;
-    if (nworkers >= worker_target) return NULL;
-    veles_worker *w = veles_alloc_words(sizeof *w);
-    w->seed = (uint32_t)nworkers * 2654435761u + 1;
-    workers[nworkers] = w;
-    veles_gc_root(&workers[nworkers], NULL);
-    __atomic_store_n(&nworkers, nworkers + 1, __ATOMIC_RELEASE);
+    veles_exec *e = default_exec;
+    if (e->nworkers >= e->target) return NULL;
+    veles_worker *w = new_worker(e, e->nworkers);
     tls->worker = w;
     return w;
 }
@@ -3057,44 +3180,64 @@ static int timers_due(void) {
  * the task it was woken for — with every core a worker, more threads made
  * bench/httphello slower (2026-10-07). At most half the busy workers spin,
  * wake_worker wakes no sleeper while one does, and a spinner that finds a
- * task and was the last wakes the next if more are waiting. It stops early
- * for what only the outer loop does: timers due, sockets no thread waits
- * for, the root finished. */
+ * task and was the last wakes the next if more are waiting. A default
+ * thread stops early for what only its outer loop does: timers due,
+ * sockets no thread waits for, the root finished. */
 #define SPIN_ROUNDS 24
 
 static veles_task *spin_for_task(veles_worker *w) {
-    int64_t n = __atomic_load_n(&nworkers, __ATOMIC_ACQUIRE);
+    veles_exec *e = w->exec;
+    int64_t n = __atomic_load_n(&e->nworkers, __ATOMIC_ACQUIRE);
     if (n < 2) return NULL;
-    int64_t busy = n - __atomic_load_n(&idle_workers, __ATOMIC_RELAXED);
-    if (2 * __atomic_load_n(&spinning, __ATOMIC_SEQ_CST) >= busy) return NULL;
-    __atomic_add_fetch(&spinning, 1, __ATOMIC_SEQ_CST);
+    int64_t busy = n - __atomic_load_n(&e->idle_workers, __ATOMIC_RELAXED);
+    if (2 * __atomic_load_n(&e->spinning, __ATOMIC_SEQ_CST) >= busy) return NULL;
+    __atomic_add_fetch(&e->spinning, 1, __ATOMIC_SEQ_CST);
+    int housekeeping = e == default_exec;
     veles_task *t = NULL;
     for (int round = 0; round < SPIN_ROUNDS && !t; round++) {
         for (int i = 0; i < 50; i++) cpu_pause();
-        if (timers_due()) break;
-        if (__atomic_load_n(&io_count, __ATOMIC_RELAXED) && !__atomic_load_n(&poller_busy, __ATOMIC_RELAXED)) break;
-        if (root_task && (root_task->state == T_DONE || root_task->state == T_CANCELLED)) break;
+        if (housekeeping) {
+            if (timers_due()) break;
+            if (__atomic_load_n(&io_count, __ATOMIC_RELAXED) && !__atomic_load_n(&poller_busy, __ATOMIC_RELAXED)) break;
+            if (root_task && (root_task->state == T_DONE || root_task->state == T_CANCELLED)) break;
+        } else if (__atomic_load_n(&e->stopping, __ATOMIC_RELAXED)) {
+            break;
+        }
         t = find_task(w);
     }
-    int64_t left = __atomic_sub_fetch(&spinning, 1, __ATOMIC_SEQ_CST);
-    if (t && left == 0 && anything_queued()) wake_worker();
+    int64_t left = __atomic_sub_fetch(&e->spinning, 1, __ATOMIC_SEQ_CST);
+    if (t && left == 0 && anything_queued(e)) wake_worker(e);
     return t;
 }
 
-/* One thread's loop, entered and left with the runtime lock held once. The
- * lock is for the housekeeping — timers, sockets, going to sleep; tasks
- * are taken and run without it. It runs until the root has finished; stay
- * (a pool thread) keeps it waiting for the next root instead of returning.
- * A thread without a run queue — there are VELES_THREADS, and its own was
- * handed off during a blocking call — waits for one. */
+/* runs the task t a worker took, marking the run for the monitor (D145) */
+static void run_counted(veles_worker *w, veles_task *t) {
+    /* the monitor tells a task that runs long by run_seq staying the same
+     * odd number; a request to yield was for the task before this one */
+    if (__atomic_load_n(&monitor_asleep, __ATOMIC_RELAXED)) wake_monitor();
+    __atomic_store_n(&w->run_seq, w->run_seq + 1, __ATOMIC_RELAXED);
+    if (__atomic_exchange_n(&w->preempt, 0, __ATOMIC_SEQ_CST))
+        __atomic_sub_fetch(&veles_attention, 1, __ATOMIC_SEQ_CST);
+    run_task(t);
+    __atomic_store_n(&w->run_seq, w->run_seq + 1, __ATOMIC_RELAXED);
+}
+
+/* One thread's loop in the default pool, entered and left with the
+ * runtime lock held once. The lock is for the housekeeping — timers,
+ * sockets, going to sleep; tasks are taken and run without it. It runs
+ * until the root has finished; stay (a pool thread) keeps it waiting for
+ * the next root instead of returning. A thread without a run queue — there
+ * are VELES_THREADS, and its own was handed off during a blocking call —
+ * waits for one. */
 static void work(int stay) {
     veles_tls *tls = veles_tls_get();
+    veles_exec *e = default_exec;
     for (;;) {
         veles_worker *w = join_workers();
         if (root_finished()) {
             if (!stay) return;
             veles_enter_safe();
-            veles_cond_wait(w ? work_cv : spare_cv, rt_lock, -1);
+            veles_cond_wait(w ? e->work_cv : spare_cv, rt_lock, -1);
             veles_leave_safe();
             continue;
         }
@@ -3110,7 +3253,7 @@ static void work(int stay) {
         __atomic_store_n(&timer_due, nearest_timer(), __ATOMIC_RELAXED);
         /* runnable tasks must not starve the sockets: a quick look, unless a
          * thread is waiting in the reactor already */
-        if (io_count && !poller_busy && anything_queued()) poll_io(0);
+        if (io_count && !poller_busy && anything_queued(e)) poll_io(0);
         int64_t ran = 0;
         /* active from the first look at the queues to the last task run:
          * a worker holding a task it took is not idle, and no sleeper may
@@ -3121,16 +3264,8 @@ static void work(int stay) {
             veles_task *t = find_task(w);
             if (!t) t = spin_for_task(w);
             if (!t) break;
-            if (anything_queued()) wake_worker(); /* more waiting: a hand for them */
-            /* the monitor tells a task that runs long by run_seq staying the
-             * same odd number (D145); a request to yield was for the task
-             * before this one */
-            if (__atomic_load_n(&monitor_asleep, __ATOMIC_RELAXED)) wake_monitor();
-            __atomic_store_n(&w->run_seq, w->run_seq + 1, __ATOMIC_RELAXED);
-            if (__atomic_exchange_n(&w->preempt, 0, __ATOMIC_SEQ_CST))
-                __atomic_sub_fetch(&veles_attention, 1, __ATOMIC_SEQ_CST);
-            run_task(t);
-            __atomic_store_n(&w->run_seq, w->run_seq + 1, __ATOMIC_RELAXED);
+            if (anything_queued(e)) wake_worker(e); /* more waiting: a hand for them */
+            run_counted(w, t);
             ran++;
             if (tls->worker != w) break; /* handed off while t blocked */
             if (root_task && (root_task->state == T_DONE || root_task->state == T_CANCELLED)) break;
@@ -3141,7 +3276,7 @@ static void work(int stay) {
         rt_enter();
         if (ran) {
             if (root_finished()) {
-                veles_cond_broadcast(work_cv);
+                veles_cond_broadcast(e->work_cv);
                 veles_cond_broadcast(spare_cv);
                 if (poller_busy) veles_poll_wake();
             }
@@ -3159,24 +3294,26 @@ static void work(int stay) {
             continue;
         }
         if (wait == 0) continue;
-        idle_workers++;
-        if (anything_queued()) {
-            idle_workers--;
+        e->idle_workers++;
+        if (anything_queued(e)) {
+            e->idle_workers--;
             continue;
         }
         if (root_finished()) {
-            idle_workers--;
+            e->idle_workers--;
             continue; /* finished while this worker looked: nothing is stuck */
         }
-        if (!nearest && !io_count && !poller_busy && __atomic_load_n(&active_workers, __ATOMIC_SEQ_CST) == 0 && !any_runnext()) {
+        /* every executor's threads count: a task waiting for one placed on
+         * a pool is not stuck while that one runs or is queued (D143) */
+        if (!nearest && !io_count && !poller_busy && __atomic_load_n(&active_workers, __ATOMIC_SEQ_CST) == 0 && !work_anywhere()) {
             veles_panic("deadlock: every task is blocked", 31);
         }
         if (wait < 0 || wait > 50) wait = 50; /* recheck: a timer set elsewhere, a deadlock */
         veles_enter_safe();
-        veles_cond_wait(work_cv, rt_lock, wait);
+        veles_cond_wait(e->work_cv, rt_lock, wait);
         veles_leave_safe();
-        idle_workers--;
-        waking = 0;
+        e->idle_workers--;
+        e->waking = 0;
     }
 }
 
@@ -3189,12 +3326,149 @@ static void worker_main(void *arg) {
     rt_exit();
 }
 
-/* how many threads run tasks: VELES_THREADS, or one per core */
+/* ---- the threads of the other executors (D143) -------------------------------
+ * A thread of a pool, of `Executor.thread` or of the blocking pool runs
+ * only its executor's tasks: no timers and no sockets (the default pool
+ * serves those), and no hand-off of its queue around a blocking call. It
+ * sleeps when out of work and leaves when the executor is closed; a thread
+ * of the blocking pool also leaves after BLOCKING_KEEP_MS idle, and a new
+ * one starts when a call finds every one busy, up to the pool's bound. */
+#define BLOCKING_KEEP_MS 10000
+#define BLOCKING_MAX 128
+
+int64_t veles_thread_configure(const char *name, int64_t priority, const int32_t *cpus, int64_t ncpus, char *err, int64_t cap);
+void veles_thread_detach(void);
+
+typedef struct exec_start {
+    veles_exec *e;
+    int64_t slot;
+    int64_t status;     /* 0 starting, 1 running, -1 refused (err says why) */
+    int64_t detached;   /* nobody waits for the status: the thread frees this */
+    char err[160];
+} exec_start;
+
+/* the loop of a thread of e (runtime lock held on entry and on return):
+ * returns when the executor stops, or a blocking thread has idled long */
+static void exec_loop(veles_worker *w) {
+    veles_exec *e = w->exec;
+    for (;;) {
+        __atomic_add_fetch(&active_workers, 1, __ATOMIC_SEQ_CST);
+        rt_exit();
+        for (;;) {
+            veles_task *t = find_task(w);
+            if (!t) t = spin_for_task(w);
+            if (!t) break;
+            if (anything_queued(e)) wake_worker(e); /* more waiting: a hand for them */
+            run_counted(w, t);
+        }
+        __atomic_sub_fetch(&active_workers, 1, __ATOMIC_SEQ_CST);
+        rt_enter();
+        e->idle_workers++;
+        if (anything_queued(e) || w->runnext) {
+            e->idle_workers--;
+            continue;
+        }
+        if (e->stopping) {
+            e->idle_workers--;
+            return;
+        }
+        int64_t since = now_ns();
+        veles_enter_safe();
+        veles_cond_wait(e->work_cv, rt_lock, e->kind == X_BLOCKING ? BLOCKING_KEEP_MS : -1);
+        veles_leave_safe();
+        e->idle_workers--;
+        e->waking = 0;
+        if (e->kind == X_BLOCKING && !anything_queued(e) && now_ns() - since >= (int64_t)BLOCKING_KEEP_MS * NS_PER_MS)
+            return;
+    }
+}
+
+static void exec_main(void *arg) {
+    exec_start *s = arg;
+    veles_exec *e = s->e;
+    veles_thread_attach();
+    char name[48];
+    if (e->kind == X_THREAD) snprintf(name, sizeof name, "%s", e->name);
+    else snprintf(name, sizeof name, "%s-%d", e->name, (int)s->slot);
+    char err[160];
+    int64_t rc = veles_thread_configure(name, e->priority, e->cpus, e->ncpus, err, sizeof err);
+    rt_enter();
+    if (rc != 0) {
+        e->threads--;
+        memcpy(s->err, err, sizeof err);
+        __atomic_store_n(&s->status, -1, __ATOMIC_SEQ_CST);
+        veles_cond_broadcast(e->stopped_cv);
+        rt_exit();
+        veles_thread_detach();
+        return;
+    }
+    veles_worker *w = e->workers[s->slot];
+    if (!w) w = new_worker(e, s->slot);
+    w->bstate = 1; /* the slot is taken (bstate is otherwise unused here: no hand-off) */
+    veles_tls_get()->worker = w;
+    int64_t detached = s->detached;
+    __atomic_store_n(&s->status, 1, __ATOMIC_SEQ_CST);
+    veles_cond_broadcast(e->stopped_cv);
+    if (detached) free(s);
+    exec_loop(w);
+    w->bstate = 0;
+    veles_tls_get()->worker = NULL;
+    e->threads--;
+    veles_cond_broadcast(e->stopped_cv);
+    rt_exit();
+    veles_thread_detach();
+}
+
+/* one more thread for the blocking pool, every one being busy: up to its
+ * bound, one at a time — the one starting wakes the next if more calls
+ * wait */
+static void grow_blocking(veles_exec *e) {
+    rt_enter();
+    if (e->stopping || e->waking || e->idle_workers > 0 || e->threads >= e->target) {
+        rt_exit();
+        return;
+    }
+    int64_t slot = -1;
+    for (int64_t i = 0; i < e->target; i++) {
+        if (!e->workers[i] || !e->workers[i]->bstate) {
+            slot = i;
+            break;
+        }
+    }
+    exec_start *s = slot < 0 ? NULL : calloc(1, sizeof *s);
+    if (!s) {
+        rt_exit();
+        return;
+    }
+    s->e = e;
+    s->slot = slot;
+    s->detached = 1;
+    if (!e->workers[slot]) new_worker(e, slot);
+    e->workers[slot]->bstate = 1;
+    e->threads++;
+    e->waking = 1; /* cleared once it sleeps: no second thread meanwhile */
+    if (veles_thread_spawn(exec_main, s) != 0) {
+        e->threads--;
+        e->workers[slot]->bstate = 0;
+        e->waking = 0;
+        free(s);
+    }
+    rt_exit();
+}
+
+/* how many threads run tasks: VELES_THREADS, the program's `[runtime]
+ * threads` (veles.toml, set before the first run, D143), or one per core */
+static int64_t threads_configured;
+
+void veles_runtime_threads(int64_t n) {
+    threads_configured = n;
+}
+
 static int64_t worker_count(void) {
     const char *env = getenv("VELES_THREADS");
-    int64_t n = env ? strtoll(env, NULL, 10) : veles_cpu_count();
+    int64_t n = env ? strtoll(env, NULL, 10) : threads_configured > 0 ? threads_configured : veles_cpu_count();
     if (n < 1) n = 1;
-    if (n > 256) n = 256;
+    if (n > MAX_WORKERS) n = MAX_WORKERS;
     return n;
 }
 
@@ -3212,16 +3486,340 @@ void veles_run(veles_task *root) {
     root_task = root;
     if (!workers_started) {
         workers_started = 1;
-        worker_target = worker_count();
-        for (int64_t i = 1; i < worker_target; i++) veles_thread_spawn(worker_main, NULL);
+        default_exec->target = worker_count();
+        for (int64_t i = 1; i < default_exec->target; i++) veles_thread_spawn(worker_main, NULL);
         monitor_lock = veles_lock_new();
         monitor_cv = veles_cond_new();
         veles_thread_spawn_small(monitor_main, NULL);
     }
-    veles_cond_broadcast(work_cv);
+    veles_cond_broadcast(default_exec->work_cv);
     work(0);
     root_task = NULL;
     rt_exit();
+}
+
+/* ---- Executor (D143) ------------------------------------------------------- */
+
+/* how many threads the default pool has */
+int64_t veles_exec_default_threads(void) {
+    veles_task_init();
+    return workers_started ? default_exec->target : worker_count();
+}
+
+static void exec_link(veles_exec *e) {
+    e->next = execs;
+    __atomic_store_n(&execs, e, __ATOMIC_RELEASE);
+}
+
+static void exec_unlink(veles_exec *e) {
+    for (veles_exec **pp = &execs; *pp; pp = &(*pp)->next) {
+        if (*pp == e) {
+            *pp = e->next;
+            break;
+        }
+    }
+    e->next = NULL;
+}
+
+/* waits, the runtime lock held, until e's threads have left */
+static void exec_join(veles_exec *e) {
+    e->stopping = 1;
+    veles_cond_broadcast(e->work_cv);
+    while (e->threads > 0) {
+        veles_enter_safe();
+        veles_cond_wait(e->stopped_cv, rt_lock, -1);
+        veles_leave_safe();
+    }
+}
+
+/* An executor of `threads` threads (`Executor(...)`; single: the one of
+ * `Executor.thread`), named for the OS (name-0, name-1, … in a pool), each
+ * started with priority (0 Low, 1 Normal, 2 High, 3 Realtime) and the CPUs
+ * listed (none: any). NULL when a thread could not be started or the OS
+ * refused its priority or CPUs: err then says why, and no thread is left
+ * running. */
+static veles_exec *exec_create(int64_t threads, int64_t single, const char *name, int64_t name_len,
+                           int64_t priority, const int64_t *cpus, int64_t ncpus, char *err, int64_t cap) {
+    veles_task_init();
+    if (single || threads < 1) threads = 1;
+    if (threads > MAX_WORKERS) threads = MAX_WORKERS;
+    veles_exec *e = exec_alloc(single ? X_THREAD : X_POOL, threads);
+    e->target = threads;
+    if (name_len > (int64_t)sizeof e->name - 1) name_len = (int64_t)sizeof e->name - 1;
+    if (name_len > 0) memcpy(e->name, name, (size_t)name_len);
+    e->priority = (int32_t)priority;
+    if (ncpus > 0) {
+        e->cpus = veles_alloc((int64_t)ncpus * (int64_t)sizeof(int32_t));
+        for (int64_t i = 0; i < ncpus; i++) {
+            if (cpus[i] < 0 || cpus[i] > INT32_MAX) {
+                snprintf(err, (size_t)cap, "there is no CPU %lld: CPUs are numbered from 0", (long long)cpus[i]);
+                return NULL;
+            }
+            e->cpus[i] = (int32_t)cpus[i];
+        }
+        e->ncpus = (int32_t)ncpus;
+    }
+    exec_start *starts = calloc((size_t)threads, sizeof *starts);
+    if (!starts) {
+        snprintf(err, (size_t)cap, "out of memory");
+        return NULL;
+    }
+    rt_enter();
+    int failed = 0;
+    for (int64_t i = 0; i < threads && !failed; i++) {
+        starts[i].e = e;
+        starts[i].slot = i;
+        e->threads++;
+        if (veles_thread_spawn(exec_main, &starts[i]) != 0) {
+            e->threads--;
+            snprintf(err, (size_t)cap, "the system could not start thread %lld of %lld", (long long)i + 1, (long long)threads);
+            failed = 1;
+            break;
+        }
+        /* each thread reports whether the OS took its settings before the
+         * next starts: a refusal leaves no thread behind */
+        while (__atomic_load_n(&starts[i].status, __ATOMIC_SEQ_CST) == 0) {
+            veles_enter_safe();
+            veles_cond_wait(e->stopped_cv, rt_lock, -1);
+            veles_leave_safe();
+        }
+        if (starts[i].status < 0) {
+            snprintf(err, (size_t)cap, "%s", starts[i].err);
+            failed = 1;
+        }
+    }
+    if (failed) {
+        exec_join(e);
+        rt_exit();
+        free(starts);
+        return NULL;
+    }
+    exec_link(e);
+    rt_exit();
+    free(starts);
+    return e;
+}
+
+typedef struct {
+    const char *data;
+    int64_t len;
+} exec_text;
+
+static void set_error(exec_text *out, const char *msg) {
+    int64_t n = (int64_t)strlen(msg);
+    char *buf = veles_alloc(n + 1);
+    memcpy(buf, msg, (size_t)n + 1);
+    out->data = buf;
+    out->len = n;
+}
+
+/* `Executor.pool(...)` and `Executor.thread(...)`: the executor, or NULL
+ * with the reason in *err (a ThreadError) */
+veles_exec *veles_exec_new(int64_t threads, int64_t single, const char *name, int64_t name_len,
+                           int64_t priority, const int64_t *cpus, int64_t ncpus, exec_text *err) {
+    char why[200] = {0};
+    veles_exec *e = exec_create(threads, single, name, name_len, priority, cpus, ncpus, why, sizeof why);
+    if (!e) set_error(err, why);
+    return e;
+}
+
+/* ---- Thread (D143) -----------------------------------------------------------
+ * `Thread.start(...)` runs a plain function on an OS thread of its own. The
+ * thread runs it as a task outside any executor — current, so a panic in
+ * it unwinds as one does, running its cleanups, and is kept for the join —
+ * and the `with` holding the Thread joins it when its block ends, blocking
+ * the joining thread (a blocking call: the default pool hands its queue
+ * on). The record is reachable from os_threads until it is joined, which
+ * keeps the function alive while only C holds it. */
+typedef struct os_thread {
+    veles_task *task;           /* where a panic in the body is kept; its locals are the starter's (D72) */
+    void *body;                 /* the function's closure pair: { code, env } — a `fun()` is called as code(env) */
+    int64_t status;             /* 0 starting, 1 running, -1 refused, 2 finished */
+    int64_t joined;
+    int32_t priority;
+    int32_t ncpus;
+    int32_t *cpus;
+    char name[32];
+    char err[200];
+    struct os_thread *next;     /* os_threads: not joined yet */
+} os_thread;
+
+static os_thread *os_threads; /* GC root (the runtime lock's) */
+static veles_cond *os_thread_cv;
+
+int64_t veles_thread_spawn_sized(void (*fn)(void *), void *arg, int64_t size);
+void veles_task_repanic(veles_task *t);
+
+static void os_thread_main(void *arg) {
+    os_thread *r = arg;
+    veles_thread_attach();
+    char err[200];
+    int64_t rc = veles_thread_configure(r->name, r->priority, r->cpus, r->ncpus, err, sizeof err);
+    rt_enter();
+    if (rc != 0) {
+        memcpy(r->err, err, sizeof err);
+        __atomic_store_n(&r->status, -1, __ATOMIC_SEQ_CST);
+        veles_cond_broadcast(os_thread_cv);
+        rt_exit();
+        veles_thread_detach();
+        return;
+    }
+    __atomic_store_n(&r->status, 1, __ATOMIC_SEQ_CST);
+    veles_cond_broadcast(os_thread_cv);
+    rt_exit();
+    veles_task *t = r->task;
+    void **pair = r->body;
+    void (*code)(void *) = (void (*)(void *))pair[0];
+    void *env = pair[1];
+    current = t;
+    in_resume = 1;
+    if (setjmp(panic_return) == 0) {
+        code(env);
+    } else {
+        rt_unwind_to(0);
+        veles_tls_get()->shield = 0;
+    }
+    in_resume = 0;
+    current = NULL;
+    rt_enter();
+    __atomic_store_n(&r->status, 2, __ATOMIC_SEQ_CST);
+    veles_cond_broadcast(os_thread_cv);
+    rt_exit();
+    veles_thread_detach();
+}
+
+/* starts the thread, or returns NULL with why in *err: the system could
+ * not start one, or refused its priority or CPUs */
+os_thread *veles_thread_start(const char *name, int64_t name_len, int64_t priority, const int64_t *cpus, int64_t ncpus,
+                              int64_t stack_size, void *body, exec_text *err) {
+    veles_task_init();
+    os_thread *r = veles_alloc_words(sizeof *r);
+    r->task = veles_task_new();
+    r->body = body;
+    r->priority = (int32_t)priority;
+    if (name_len > (int64_t)sizeof r->name - 1) name_len = (int64_t)sizeof r->name - 1;
+    if (name_len > 0) memcpy(r->name, name, (size_t)name_len);
+    if (ncpus > 0) {
+        r->cpus = veles_alloc(ncpus * (int64_t)sizeof(int32_t));
+        for (int64_t i = 0; i < ncpus; i++) {
+            if (cpus[i] < 0 || cpus[i] > INT32_MAX) {
+                char why[96];
+                snprintf(why, sizeof why, "there is no CPU %lld: CPUs are numbered from 0", (long long)cpus[i]);
+                set_error(err, why);
+                return NULL;
+            }
+            r->cpus[i] = (int32_t)cpus[i];
+        }
+        r->ncpus = (int32_t)ncpus;
+    }
+    rt_enter();
+    if (!os_thread_cv) {
+        os_thread_cv = veles_cond_new();
+        veles_gc_root(&os_threads, NULL);
+    }
+    r->next = os_threads;
+    os_threads = r;
+    int failed = veles_thread_spawn_sized(os_thread_main, r, stack_size) != 0;
+    if (failed) {
+        snprintf(r->err, sizeof r->err, "the system could not start a thread%s", stack_size > 0 ? " with that stack size" : "");
+    } else {
+        while (__atomic_load_n(&r->status, __ATOMIC_SEQ_CST) == 0) {
+            veles_enter_safe();
+            veles_cond_wait(os_thread_cv, rt_lock, -1);
+            veles_leave_safe();
+        }
+        failed = r->status < 0;
+    }
+    if (failed) {
+        for (os_thread **pp = &os_threads; *pp; pp = &(*pp)->next) {
+            if (*pp == r) {
+                *pp = r->next;
+                break;
+            }
+        }
+    }
+    rt_exit();
+    if (failed) {
+        set_error(err, r->err);
+        return NULL;
+    }
+    return r;
+}
+
+/* the `with` holding the Thread ends: waits for the thread to finish — a
+ * blocking call — and re-raises a panic of its body here. Joining again
+ * (a copy) does nothing. */
+void veles_thread_join(os_thread *r) {
+    veles_blocking_enter();
+    rt_enter();
+    while (__atomic_load_n(&r->status, __ATOMIC_SEQ_CST) != 2)
+        veles_cond_wait(os_thread_cv, rt_lock, -1);
+    int first = !r->joined;
+    r->joined = 1;
+    for (os_thread **pp = &os_threads; *pp; pp = &(*pp)->next) {
+        if (*pp == r) {
+            *pp = r->next;
+            break;
+        }
+    }
+    rt_exit();
+    veles_blocking_leave();
+    veles_task *t = r->task;
+    if (first && t->panic && !t->panic->cancelled && t->panic->msg) veles_task_repanic(t);
+}
+
+/* `close()` of an Executor: its tasks have all been joined by the scopes
+ * that placed them (D143); its threads leave, and the call returns once
+ * they have. Closing it again — through a copy — does nothing. */
+void veles_exec_close(veles_exec *e) {
+    veles_worker *w = veles_tls_get()->worker;
+    if (w && w->exec == e) veles_panic("an executor cannot be closed by one of its own tasks", 52);
+    rt_enter();
+    if (!e->stopping) {
+        exec_join(e);
+        exec_unlink(e);
+    }
+    rt_exit();
+}
+
+int64_t veles_exec_closed(veles_exec *e) {
+    return __atomic_load_n(&e->stopping, __ATOMIC_ACQUIRE) != 0;
+}
+
+/* the executor the running task is on; the default pool outside a task */
+veles_exec *veles_exec_current(void) {
+    veles_task_init();
+    veles_task *t = current;
+    return t ? exec_of(t) : default_exec;
+}
+
+/* `scope(on: e)`, `gather(on: e)`: the children launched in the scope s
+ * run on e. A closed executor runs nothing: the placement panics. */
+void veles_scope_on(veles_scope *s, veles_exec *e) {
+    if (__atomic_load_n(&e->stopping, __ATOMIC_ACQUIRE)) veles_panic("the executor was closed: nothing more runs on it", 48);
+    s->exec = e;
+}
+
+/* the blocking pool (`blocking(f)`), made when the program starts (a
+ * prelude global); its threads start as calls need them. It is not on the
+ * list of executors: the monitor has nothing to look at in it — its
+ * calls are plain code, which cannot yield — and leaving the list empty
+ * keeps the monitor off the runtime lock in a program with no executor
+ * of its own. */
+veles_exec *veles_exec_blocking(void) {
+    veles_task_init();
+    veles_exec *e = __atomic_load_n(&blocking_exec, __ATOMIC_ACQUIRE);
+    if (e) return e;
+    rt_enter();
+    if (!blocking_exec) {
+        e = exec_alloc(X_BLOCKING, BLOCKING_MAX);
+        e->target = BLOCKING_MAX;
+        e->priority = 1;
+        memcpy(e->name, "blocking", 9);
+        __atomic_store_n(&blocking_exec, e, __ATOMIC_RELEASE);
+    }
+    rt_exit();
+    return blocking_exec;
 }
 
 int64_t veles_race_closed(veles_race *r) {

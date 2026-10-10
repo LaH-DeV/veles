@@ -1409,7 +1409,8 @@ func (p *printer) stmt(s ast.Stmt) {
 		p.w(" ")
 		p.block(s.Body)
 	case *ast.ScopeStmt:
-		p.w("scope ")
+		p.w("scope")
+		p.on(s.On)
 		p.block(s.Body)
 	case *ast.WithStmt:
 		// as written: the formatter never converts between the statement
@@ -1773,7 +1774,8 @@ func (p *printer) exprInner(e ast.Expr) {
 		}
 		p.block(e.Handler.Body)
 	case *ast.GatherExpr:
-		p.w("gather ")
+		p.w("gather")
+		p.on(e.On)
 		p.block(e.Body)
 	case *ast.UnsafeExpr:
 		p.w("unsafe ")
@@ -2312,4 +2314,16 @@ func attrStart(attrs []*ast.Attribute, pos int) int {
 		return attrs[0].Pos.Start
 	}
 	return pos
+}
+
+// on writes `(on: e) ` after `scope`/`gather` (D143), or the space before
+// the block.
+func (p *printer) on(e ast.Expr) {
+	if e == nil {
+		p.w(" ")
+		return
+	}
+	p.w("(on: ")
+	p.expr(e, 0)
+	p.w(") ")
 }
