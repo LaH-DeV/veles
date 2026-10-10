@@ -20,11 +20,11 @@ struct Recorder {
 
   implement Exporter {
     fun export(signal: Signal, body: List<u8>) suspends throws ExportError {
-      val _ = this.calls.update(n => n + 1)
+      this.calls.add(1)
       val left = this.failures.load()
       if (left != 0) {
         if (left > 0) {
-          val _ = this.failures.update(n => n - 1)
+          this.failures.sub(1)
         }
         throw ExportError(message: "collector down", retryable: this.retryable)
       }
@@ -506,6 +506,20 @@ test "one pipeline at a time; shutdown flushes and ends it" {
   expect(spansOf(rec).len() == 2)
   // after shutdown the instruments are no-ops again
   expect(!span("late").recording())
+}
+
+test fun recordAndLeave(rec: Recorder) throws StartError {
+  with tel = try start(service: "t", exporter: rec, interval: quiet())
+  expect(nested().len() == 4)
+}
+
+test "the end of the with sends what is still queued, waiting for the exporter" {
+  with permit = gate.acquire()
+  val rec = Recorder()
+  try recordAndLeave(rec)
+  // the close flushed (D147), and the next start may run
+  expect(spansOf(rec).len() == 2)
+  expect(!running.load())
 }
 
 test "start refuses settings that cannot work" {

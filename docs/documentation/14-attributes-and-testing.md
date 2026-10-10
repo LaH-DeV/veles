@@ -179,8 +179,8 @@ Three flags shape a run:
   them in order, one after another.
 - `--timeout 30s` bounds each test (default `10m`, `0` for no bound).
   A test still running at its deadline is reported —
-  `FAILED: timed out after 30s` — and ends the run, since a task busy in a
-  loop cannot be stopped from outside; the report says how many other
+  `FAILED: timed out after 30s` — and ends the run (whatever the test was
+  doing is not trusted to unwind cleanly); the report says how many other
   tests had not finished.
 
 ### Helpers and test files

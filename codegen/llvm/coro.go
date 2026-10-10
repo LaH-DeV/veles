@@ -77,6 +77,20 @@ entry:
   call void @veles_scope_cancel(ptr %sc)
   ret void
 }
+
+; a cleanup's env copied to the heap, for a close() that suspends to run it
+; later (D147): a slot of one word, or a heap cell already
+define internal ptr @cleanup.move.word(ptr %env) {
+entry:
+  %v = load ptr, ptr %env
+  %m = call ptr @veles_alloc_words(i64 16)
+  store ptr %v, ptr %m
+  ret ptr %m
+}
+define internal ptr @cleanup.move.same(ptr %env) {
+entry:
+  ret ptr %env
+}
 declare ptr @veles_race_new(ptr, i64)
 declare void @veles_race_recv(ptr, ptr, ptr)
 declare void @veles_race_send(ptr, ptr, ptr)
@@ -559,7 +573,7 @@ func (g *gen) scopeBlock(e *sema.ScopeBlock) string {
 	// only the cleanups inside the body and joins through `wait` itself
 	abandon := &sema.Builtin{Op: "scope.abandon"}
 	g.abandonSlots[abandon] = slot
-	g.pushCleanup(abandon, "@scope.cancel.thunk", slot)
+	g.pushCleanup(abandon, "@scope.cancel.thunk", slot, "@cleanup.move.word")
 	if !e.Gather {
 		g.bodyScopes = append(g.bodyScopes, bodyScope{slot: slot, wait: wait, cleanups: len(g.cleanups)})
 	}
@@ -1344,4 +1358,3 @@ func (g *gen) startTaskAs(task string, fn *sema.Func, argTypes []types.Type, arg
 	}
 	g.emit("call void @veles_task_start(ptr %s, ptr @%s, ptr %s)", task, thunk, args)
 }
-

@@ -337,7 +337,16 @@ static int try_take(int64_t *w, int64_t me) {
     return __atomic_compare_exchange_n(w, &free_word, me, 0, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED);
 }
 
+/* a held Mutex shields its holder: a loop's back edge takes no
+ * cancellation and no yield inside a lock region (D145) */
+static void mutex_lock(int64_t *w);
+
 void veles_mutex_lock(int64_t *w) {
+    mutex_lock(w);
+    veles_tls_get()->shield++;
+}
+
+static void mutex_lock(int64_t *w) {
     int64_t me = tag();
     if (try_take(w, me)) return;
     if ((__atomic_load_n(w, __ATOMIC_RELAXED) & ~(int64_t)1) == me) {
@@ -365,6 +374,8 @@ void veles_mutex_lock(int64_t *w) {
 }
 
 void veles_mutex_unlock(int64_t *w) {
+    veles_tls *tls = veles_tls_get();
+    if (tls->shield > 0) tls->shield--;
     int64_t old = __atomic_exchange_n(w, 0, __ATOMIC_RELEASE);
     if (old & 1) {
         size_t s = ((uintptr_t)w >> 4) % STRIPES;
@@ -372,6 +383,137 @@ void veles_mutex_unlock(int64_t *w) {
         veles_cond_broadcast(stripe_conds[s]);
         veles_lock_release(stripe_locks[s]);
     }
+}
+
+/* ---- RwLock<T> (D146) -------------------------------------------------------
+ * Two words in the Veles heap: the state — bit 0 a writer holds it, bit 1
+ * a thread may be parked, and the readers counted from bit 2 — and the
+ * number of writers waiting. A reader enters only while no writer holds
+ * or waits, so a stream of readers cannot starve a writer. Waiting is as a
+ * Mutex's: a short spin, then a park on the stripe's condition variable in
+ * a safe region. A held RwLock shields its holder, as a Mutex does (D145).
+ * The thread remembers the RwLocks it holds: taking one again — a read
+ * inside a read or a write, a write inside either — panics rather than
+ * hanging (nothing inside a lock region suspends, so the holder is this
+ * thread). */
+
+#define RW_WRITER 1
+#define RW_PARKED 2
+#define RW_READER 4
+
+static void rw_check_free(veles_tls *tls, int64_t *rw) {
+    int64_t n = tls->rw_held_n < 8 ? tls->rw_held_n : 8;
+    for (int64_t i = 0; i < n; i++) {
+        if (tls->rw_held[i] == rw) {
+            veles_panic("an RwLock was locked again while this task holds it", 51);
+        }
+    }
+}
+
+static void rw_note(veles_tls *tls, int64_t *rw) {
+    if (tls->rw_held_n < 8) tls->rw_held[tls->rw_held_n] = rw;
+    tls->rw_held_n++;
+    tls->shield++;
+}
+
+static void rw_forget(veles_tls *tls, int64_t *rw) {
+    if (tls->shield > 0) tls->shield--;
+    if (tls->rw_held_n == 0) return;
+    int64_t n = tls->rw_held_n < 8 ? tls->rw_held_n : 8;
+    for (int64_t i = n - 1; i >= 0; i--) {
+        if (tls->rw_held[i] == rw) {
+            for (int64_t j = i; j + 1 < n; j++) tls->rw_held[j] = tls->rw_held[j + 1];
+            break;
+        }
+    }
+    tls->rw_held_n--;
+}
+
+/* may a reader enter, seeing state s? */
+static int rw_readable(int64_t *rw, int64_t s) {
+    return !(s & RW_WRITER) && __atomic_load_n(&rw[1], __ATOMIC_RELAXED) == 0;
+}
+
+/* parks until try_enter succeeds: under the stripe's lock, set the parked
+ * bit before sleeping, so a release that changes the state after the
+ * check finds it and wakes the stripe */
+static void rw_park(int64_t *rw, int (*try_enter)(int64_t *rw, int64_t s)) {
+    size_t st = ((uintptr_t)rw >> 4) % STRIPES;
+    veles_blocking_enter();
+    veles_lock_acquire(stripe_locks[st]);
+    for (;;) {
+        int64_t s = __atomic_load_n(&rw[0], __ATOMIC_RELAXED);
+        if (try_enter(rw, s)) break;
+        if (!(s & RW_PARKED) && !__atomic_compare_exchange_n(&rw[0], &s, s | RW_PARKED, 0, __ATOMIC_RELAXED, __ATOMIC_RELAXED)) continue;
+        veles_cond_wait(stripe_conds[st], stripe_locks[st], -1);
+    }
+    veles_lock_release(stripe_locks[st]);
+    veles_blocking_leave();
+}
+
+static void rw_wake(int64_t *rw) {
+    size_t st = ((uintptr_t)rw >> 4) % STRIPES;
+    veles_lock_acquire(stripe_locks[st]);
+    veles_cond_broadcast(stripe_conds[st]);
+    veles_lock_release(stripe_locks[st]);
+}
+
+static int rw_try_read(int64_t *rw, int64_t s) {
+    return rw_readable(rw, s) && __atomic_compare_exchange_n(&rw[0], &s, s + RW_READER, 0, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED);
+}
+
+/* a writer enters when nobody holds it; the parked bit stays, for the
+ * others still asleep */
+static int rw_try_write(int64_t *rw, int64_t s) {
+    return (s & ~(int64_t)RW_PARKED) == 0 && __atomic_compare_exchange_n(&rw[0], &s, s | RW_WRITER, 0, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED);
+}
+
+void veles_rw_read_lock(int64_t *rw) {
+    veles_tls *tls = veles_tls_get();
+    rw_check_free(tls, rw);
+    for (int i = 0; i < 64; i++) {
+        if (rw_try_read(rw, __atomic_load_n(&rw[0], __ATOMIC_RELAXED))) {
+            rw_note(tls, rw);
+            return;
+        }
+        cpu_relax();
+    }
+    rw_park(rw, rw_try_read);
+    rw_note(tls, rw);
+}
+
+void veles_rw_read_unlock(int64_t *rw) {
+    rw_forget(veles_tls_get(), rw);
+    int64_t s = __atomic_sub_fetch(&rw[0], RW_READER, __ATOMIC_RELEASE);
+    /* the last reader out wakes a waiting writer (and the readers parked
+     * behind it, who look again) */
+    if (s == RW_PARKED && __atomic_compare_exchange_n(&rw[0], &s, 0, 0, __ATOMIC_RELAXED, __ATOMIC_RELAXED)) rw_wake(rw);
+}
+
+void veles_rw_write_lock(int64_t *rw) {
+    veles_tls *tls = veles_tls_get();
+    rw_check_free(tls, rw);
+    int64_t s = 0;
+    if (__atomic_compare_exchange_n(&rw[0], &s, RW_WRITER, 0, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
+        rw_note(tls, rw);
+        return;
+    }
+    /* waiting: no new reader enters from now on */
+    __atomic_add_fetch(&rw[1], 1, __ATOMIC_SEQ_CST);
+    int entered = 0;
+    for (int i = 0; i < 64 && !entered; i++) {
+        cpu_relax();
+        entered = rw_try_write(rw, __atomic_load_n(&rw[0], __ATOMIC_RELAXED));
+    }
+    if (!entered) rw_park(rw, rw_try_write);
+    __atomic_sub_fetch(&rw[1], 1, __ATOMIC_SEQ_CST);
+    rw_note(tls, rw);
+}
+
+void veles_rw_write_unlock(int64_t *rw) {
+    rw_forget(veles_tls_get(), rw);
+    int64_t old = __atomic_exchange_n(&rw[0], 0, __ATOMIC_RELEASE);
+    if (old & RW_PARKED) rw_wake(rw);
 }
 
 /* ---- `veles test`: one record per running test (D78, D80) -----------------

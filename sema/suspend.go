@@ -308,7 +308,12 @@ func (c *Checker) checkDeclaredSuspension(prog *Program) {
 		}
 		if fn.Suspends {
 			if t.Impl != nil && t.Impl.Trait != nil {
-				if sig := t.Impl.Trait.Methods[t.Name]; sig != nil && !sig.Effects.Suspends {
+				if isSuspendingClose(t) {
+					// D147: a close may suspend; suspension follows the type
+					if !t.Decl.Effects.Suspends {
+						c.errorf(fn.Span, "this 'close()' suspends, so it says so: 'fun close() suspends' — every 'with' on the type then waits for it (D147)")
+					}
+				} else if sig := t.Impl.Trait.Methods[t.Name]; sig != nil && !sig.Effects.Suspends {
 					c.errorf(fn.Span, "method '%s' suspends but trait '%s' declares it non-suspending; declare 'suspends' on the trait method (D40)", t.Name, t.Impl.Trait.Name)
 				}
 			}
@@ -497,4 +502,14 @@ func (w susp) any(es []Expr) bool {
 		}
 	}
 	return false
+}
+
+// isSuspendingClose: t is `close` in an `implement Closeable`, which may
+// suspend when it says so (D147).
+func isSuspendingClose(t *FuncTemplate) bool {
+	if t.Name != "close" || t.Impl == nil || t.Impl.Trait == nil {
+		return false
+	}
+	tr := t.Impl.Trait
+	return tr.Name == "Closeable" && tr.Module == "std.prelude"
 }

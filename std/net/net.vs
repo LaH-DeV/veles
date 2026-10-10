@@ -115,14 +115,14 @@ struct Socket {
   // an operation's hold, given back when the `with` ends — by a return, a
   // throw or the task's cancellation alike
   fun using(): SocketUse {
-    this.state.update(s => s + 2)
+    this.state.add(2)
     SocketUse(socket: this)
   }
 
   fun closing(): bool => this.state.load() % 2 == 1
 
   fun letGo() {
-    if (this.state.update(s => s - 2) == 1) this.release()
+    if (this.state.sub(2) == 1) this.release()
   }
 
   fun close() {
@@ -237,6 +237,21 @@ public struct Conn {
 
   /// The peer's address, `host:port`.
   public fun peer(): string => this.address
+
+  /// Sends as much of `bytes` as the socket takes now, without waiting; the
+  /// number of bytes sent (0 when it would have to wait, or the connection
+  /// is closed or broken). For a last word that must not block, as a TLS
+  /// close_notify is.
+  public fun tryWrite(bytes: List<u8>): i64 {
+    with held = this.fd.using()
+    var sent: i64 = 0
+    // SAFETY: reads `bytes` within its length and stores the count in `sent`, a
+    // local; on a closed connection the number is -1 and it fails
+    val code = unsafe {
+      veles_net_send(held.fd(), bytes, 0, &sent)
+    }
+    if (code != 0) 0 else sent
+  }
 
   // the refusal, with the address so a log says which peer it was
   fun tooLong(what: string, max: i64): io.TooLong =>

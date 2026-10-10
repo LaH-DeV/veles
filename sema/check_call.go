@@ -1366,6 +1366,10 @@ func (f *fnCtx) callMethod(t *FuncTemplate, ownerSubst map[*types.TypeParam]type
 	}
 	f.c.resolveSignature(t)
 	f.c.refFunc(callee.Name.Pos, t)
+	f.checkMemoryOrders(t, e)
+	if arm := f.awaitedCall(t, ownerSubst, recv, viaPointer, callee, e); arm != nil {
+		return arm // a race arm's source (D146)
+	}
 	// inherent methods (struct body or extend block) follow M5; trait impl
 	// methods follow the trait's visibility
 	inherent := t.Owner != nil || (t.Impl != nil && t.Impl.Trait == nil)
@@ -1900,6 +1904,19 @@ func (f *fnCtx) boxValue(x Expr, trait *types.Trait, span source.Span) Expr {
 		if isSendableTrait(s) && !sendable(t) {
 			f.errorf(span, "'%s' cannot be a '%s': the trait requires Sendable, and '%s' holds shared mutable state or a closure (D35)", t, trait.Name, t)
 			return bad()
+		}
+	}
+	for _, s := range append([]*types.Trait{trait}, allSupers(trait)...) {
+		if s.Name != "Closeable" || s.Module != "std.prelude" {
+			continue
+		}
+		if impl := f.findImpl(t, s); impl != nil {
+			if m, ok := impl.Methods["close"]; ok && m.Decl.Effects.Suspends {
+				// a method table holds one instance of each method, and a
+				// Closeable's close is plain there (D116, D147)
+				f.errorf(span, "'%s' cannot be a '%s' object: its 'close()' suspends, and a 'with' on a trait object closes without waiting; keep the concrete type, or a type parameter 'T: Closeable' (D147)", t, trait.Name)
+				return bad()
+			}
 		}
 	}
 	methods, ok := f.objectMethods(t, trait, span)

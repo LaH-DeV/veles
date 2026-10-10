@@ -179,10 +179,39 @@ answered from the shape, tuples get `Comparable`, enums get
       `bench/suscall`; TestSuspendingCallsInOneTask (debug/release, 1/2/8 threads, GC pressure).
       Found on the way: a `suspends` method-table slot over a plain method forwarded no arguments
       (worked only while they stayed in their registers)
+- [x] Loops are cancellation points; suspending loops yield (D145, plan F4, 2026-10-09): a back edge
+      polls one cache-line-aligned word; a cancellation unwinds there (a plain function from where it
+      is, the task then waiting as T_ENDING for the children of the scopes it left — a panic too
+      now); a scope body notices a failed child; a suspending loop that ran ~10 ms while work waits
+      yields; lock regions and `with` closes are shielded; `yieldNow()`, `checkCancelled()`; the
+      monitor moves a long-running task's runnext to the shared queue. TestLoopsAreCancellationPoints
+      (debug/release, 1/2/4/8 threads, GC pressure); docs reference/concurrency, chapters 12, 14, 16,
+      concurrency-explained, stdlib
+- [x] Atomics (D144, plan F5, 2026-10-09): `compareAndSet`, `compareExchange`, integer `add`/`sub`/
+      `fetchAnd`/`fetchOr`/`fetchXor`, `order: MemoryOrder` on every operation (an invalid order
+      written as a case is a compile error), lock-free `Atomic` of a pointer, nullable pointer or
+      enum. sema TestAtomicMemoryOrders; driver TestAtomicOperations (a lock-free stack, debug/release,
+      1/2/8 threads, GC pressure); docs chapters 12 and 13, reference/concurrency, stdlib, cheatsheet
+- [x] Synchronisation types (D146, plan F6, 2026-10-09): `RwLock<T>` (writer-preferring, re-lock
+      panics, `with c = l.read()` / `l.write()` under the D107 rules), `Event`, `Lazy<T>`,
+      `Broadcast<T>` + `Subscription<T>` (`Lagged`), `Watch<T>`; their waits are awaited and are
+      `race` arms. sema TestSyncTypes; driver TestSyncTypes (debug/release, 1/2/8 threads, GC
+      pressure); docs chapter 12, reference/concurrency, stdlib, cheatsheet, errors
+- [x] A `close()` may suspend (D147, plan F7, 2026-10-10): `fun close() suspends`; a `with` on it waits
+      on every way out, shielded; a panic's unwinding hands the close and the rest of the cleanups to
+      a closer task; lock regions, non-suspending lambdas and Closeable objects refuse it. std: `Tx`
+      rolls back at close, `otel.start` flushes, TLS sends close_notify at close as Go does
+      (`net.Conn.tryWrite`). sema TestSuspendingClose; driver TestSuspendingClose (debug/release,
+      1/2/8 threads, GC pressure), TestTLSClient (the alert reaches a Go server), the db suite against
+      PostgreSQL (the connection is kept); std/otel test; docs chapters 13, 16, 23, 24, references
 - [x] Deadlock detection: "deadlock: every task is blocked" when no task
       can run and no timer, socket or blocking call can wake one
 - [x] Blocking-call detection → superseded: a blocking call hands its
       run queue to a spare thread (below), so it no longer stalls other tasks
+- [ ] Under `VELES_THREADS=1` a computation in a function that does not suspend still keeps the
+      only thread (D145: it cannot yield), so a `withTimeout` around it fires only when it ends — the
+      timer's task has no thread. A plain function cannot be resumed; making it fair needs it
+      compiled suspending (or a second thread). Recorded 2026-10-09 (F4)
 - [ ] A side effect inside `Atomic.update`'s lambda (found 2026-10-02 in
       chapter 12's Semaphore sample: a counter bumped in the lambda counted
       every retry under contention) is only warned about in the docs. Refusing
@@ -1390,9 +1419,7 @@ Every new public std API (http cookies/forms/client, `std/log`,
   decoding (the decoder's duration style is seconds, the server's text is `HH:MM:SS`); SASLprep of passwords with
   non-ASCII characters (the password is used as written, which only differs for characters that normalise);
   unix-socket and `PGPASSFILE`/`PG*` environment connections; `target_session_attrs` and several hosts;
-  **`Tx.close()` cannot send `ROLLBACK`** (closing cannot suspend — the same language question as `otel.start`'s
-  flush): an abandoned transaction drops its connection, which costs a reconnect; `Pool.close()` likewise only closes
-  idle connections; `examples/pgnotes` and a `veles new --template` with a database need a server in the example
+  `Pool.close()` only closes idle connections (a `Tx` left open now sends `ROLLBACK` at its close, D147, 2026-10-10); `examples/pgnotes` and a `veles new --template` with a database need a server in the example
   harness; `driver/db_test.go` skips when no PostgreSQL binaries are given (`VELES_PG_BIN`), so a machine without them
   runs only the tests that need no server; on Windows PostgreSQL sometimes resets the connection after refusing a login,
   which then shows as `ErrorKind.Connection` rather than `Auth` (the reset discards the unread error); `needsRehash`
@@ -1404,7 +1431,8 @@ Every new public std API (http cookies/forms/client, `std/log`,
   SNI-based certificate choice on one listener; custom cipher or version options (TLS 1.2 is the floor, the
   system picks the rest); a distinct `IoKind` for certificate failures (they are `Other`, `detail` starts `tls:`);
   `readLine`/`readExact` buffering is now copied in `net.Conn`, `fs.File` and `tls.Conn` (a shared `io` helper
-  would remove it); `Closeable.close()` sends no `close_notify` (cannot suspend); a stored-key leak on Windows only
+  would remove it); `close()` sends `close_notify` without waiting only over a `net.Conn` (D147 addendum: over
+  another `io.Stream` it is not sent; `shutdownWrite()` sends it and waits); a stored-key leak on Windows only
   if the process is killed (swept by the next TLS server); the encrypted PEM key; ALPN-driven HTTP/2.
 - **Deferred from C7 the HTTP client (2026-10-04), to build later:** `https://` (done 2026-10-05) and `HTTPS_PROXY`;
   `HTTP_PROXY` / `NO_PROXY` and the `proxy:` option of D127 (an absolute-form request to the proxy; `CONNECT`
@@ -1427,9 +1455,8 @@ Every new public std API (http cookies/forms/client, `std/log`,
 - **Deferred from `std/otel` (2026-10-05), to build later:** runtime metrics (GC pauses and heap need E5's counters;
   tasks, threads, open connections need runtime accessors) registered automatically as D126 says; a span per
   database query and `db.system` attributes (with `std/db`, E2); `https` export (E1) and the `https` client span
-  attributes; **`with otel.start(...)` cannot flush at its close because `Closeable.close()` cannot suspend** — a
-  language question for the user: an effect-polymorphic `close`, or a second trait for resources whose close waits
-  (database pools, buffered writers, `otel`, `GzipWriter` would use it too); exponential histograms, exemplars, span
+  attributes (`with otel.start(...)` flushes at its close since D147, 2026-10-10; `GzipWriter` and `Pool` could
+  use a suspending close too); exponential histograms, exemplars, span
   links, `tracestate`, baggage and the W3C `baggage` header; limits on attributes per span and events per span
   (OTel's defaults are 128); delta temporality; `Retry-After` honoured by the exporter; the span of a retried
   `http.fetch` is one span for all tries (OTel makes one per try); `http.fetch` spans end at the answer's head, not

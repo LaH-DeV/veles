@@ -18,7 +18,7 @@ struct Counter {
 
 val picks = Atomic(value: 0)
 fun pick(): i64 {
-  val _ = picks.update(n => n + 1)
+  picks.add(1)
   0
 }
 

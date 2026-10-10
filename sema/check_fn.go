@@ -81,6 +81,8 @@ type fnCtx struct {
 	scopes      []*ScopeBlock
 	taskMarks   []*Var        // per open scope/gather: what its tasks count as, for D141's escape rule (resources.go)
 	held        []*HeldLock   // the `with … = m.lock()` regions around the code being checked (D107)
+	raceCall    *ast.CallExpr // the race arm's source call being checked, which an awaited prelude method lowers (D146)
+	raceTake    Expr          // that lowering's take: the arm's value once its signal is ready
 	lockOK      *ast.CallExpr // the `with` value being checked, where `m.lock()` is allowed
 	lockSeen    bool          // lockOK turned out to be `m.lock()`
 	// D111: the calls that may produce a task-holding value (a `with` value,
@@ -455,10 +457,14 @@ func (c *Checker) checkGlobal(g *Global) {
 	g.Init = init
 }
 
-// isSynchronized: a Mutex or an Atomic, whose operations take their lock
+// isSynchronized: a Mutex, an Atomic or a D146 type, whose operations take their lock
 func isSynchronized(t types.Type) bool {
 	st, ok := t.(*types.Struct)
-	return ok && st.Module == "std.prelude" && (st.Name == "Mutex" || st.Name == "Atomic")
+	if !ok {
+		return false
+	}
+	sync, _ := syncWrapper(st)
+	return sync
 }
 
 // ---------------------------------------------------------------------------

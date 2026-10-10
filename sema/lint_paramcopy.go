@@ -31,7 +31,13 @@ func (c *Checker) lintParamCopies(prog *Program) {
 			continue
 		}
 		for _, p := range fn.Params {
-			if _, ok := types.Underlying(p.Type).(*types.Struct); !ok || !p.Span.IsValid() {
+			st, ok := types.Underlying(p.Type).(*types.Struct)
+			if !ok || !p.Span.IsValid() {
+				continue
+			}
+			if sync, _ := syncWrapper(st); sync {
+				// a Watch's copy keeps what its holder has seen, on purpose
+				// (D146); the shared state behind every wrapper is the caller's
 				continue
 			}
 			if fn.Sig != nil && types.Identical(fn.Sig.Ret, p.Type) {

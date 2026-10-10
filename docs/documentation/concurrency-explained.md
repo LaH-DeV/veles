@@ -216,26 +216,29 @@ object on the heap. Two consequences, both good:
 The price is that pausing only happens at an `await`. Which leads to
 the next point.
 
-### A task gives up its thread only at `await`
+### When a task gives up its thread
 
-Veles tasks are **cooperative**: a task runs until it reaches an
-`await` (or finishes). Nobody interrupts it in the middle of a loop.
-With one thread per core this rarely matters — a long computation keeps
-one core busy while the others run everything else. It matters when
-you run with a single thread (`VELES_THREADS=1`), or when many tasks
-compute for a long time at once. A long loop can offer its thread from
-time to time:
+A task gives its thread up when it reaches an `await` (or finishes) — and
+a loop in a function that can suspend also gives it up by itself, at the
+end of an iteration, once it has run for about 10 ms while other tasks
+wait. A function that never suspends is a plain function with no frame
+to come back to, so its loop keeps the thread until it is done. With one
+thread per core this rarely matters — a long computation keeps one core
+busy while the others run everything else. It matters with a single
+thread (`VELES_THREADS=1`), or when many tasks compute for a long time at
+once. Such a loop can offer its thread now and then:
 
 ```veles
 // fragment
 loop (i in 0..<10000000) {
   total += work(i)
-  if (i % 100000 == 0) await sleep(Duration.zero)   // let the others have a turn
+  if (i % 100000 == 0) yieldNow()   // let the others have a turn
 }
 ```
 
-`sleep(Duration.zero)` does not wait at all; it just goes to the back of
-the line.
+`yieldNow()` does not wait at all; it just goes to the back of the line.
+And a cancellation stops a loop at the end of an iteration, whichever
+kind of function it is in, so a long computation can always be stopped.
 
 ## How many threads?
 
@@ -291,7 +294,7 @@ use io
 
 fun countWords(text: string, total: Atomic<i64>, longest: Mutex<string>) {
   loop (word in text.split(" ")) {
-    val _ = total.update(n => n + 1)
+    total.add(1)
     longest.withLock(best => {
       if (word.len() > best.len()) *best = word
     })

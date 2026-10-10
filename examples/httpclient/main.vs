@@ -53,7 +53,7 @@ fun service(): http.Handler {
   app.get("/all-notes", req => http.Response.redirect("/notes", status: http.Status.movedPermanently))
 
   app.get("/busy", req => {
-    val n = busy.update(c => c + 1)
+    val n = busy.add(1)
     if (n <= 2) throw http.Fail(status: http.Status.serviceUnavailable, text: "try again")
     http.Response.text("served on try $n")
   })

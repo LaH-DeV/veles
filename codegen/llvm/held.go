@@ -29,14 +29,14 @@ func (g *gen) heldScope(e *sema.ScopeBlock) string {
 	// 1. compute the value with the scope receiving its tasks
 	computing := &sema.Builtin{Op: "scope.abandon"}
 	g.abandonSlots[computing] = slot
-	g.pushCleanup(computing, "@scope.cancel.thunk", slot)
+	g.pushCleanup(computing, "@scope.cancel.thunk", slot, "@cleanup.move.word")
 	head := g.newTmp()
 	g.emit("%s = call ptr @veles_receiving_bind(ptr %s)", head, sc)
 	headSlot := g.alloca("ptr")
 	g.emit("store ptr %s, ptr %s", head, headSlot)
 	restore := &sema.Builtin{Op: "receiving.restore"}
 	g.receivingSlots[restore] = headSlot
-	g.pushCleanup(restore, "@receiving.restore.thunk", headSlot)
+	g.pushCleanup(restore, "@receiving.restore.thunk", headSlot, "@cleanup.move.word")
 	v := g.expr(h.Init)
 	if g.term {
 		// the value never arrives (it always throws or panics)
@@ -54,11 +54,13 @@ func (g *gen) heldScope(e *sema.ScopeBlock) string {
 	// 2. x is bound: its close is outside the scope's own cleanup, so every
 	// way out joins the tasks first
 	if h.Close != nil {
-		g.pushCleanup(h.Close, "@"+g.closeThunk(&sema.With{Var: h.Var, Close: h.Close}), st)
+		w := &sema.With{Var: h.Var, Close: h.Close}
+		g.pushCleanup(h.Close, "@"+g.closeThunk(w), st, g.closeMove(w))
+		g.withCloses[h.Close] = true
 	}
 	abandon := &sema.Builtin{Op: "scope.abandon"}
 	g.abandonSlots[abandon] = slot
-	g.pushCleanup(abandon, "@scope.cancel.thunk", slot)
+	g.pushCleanup(abandon, "@scope.cancel.thunk", slot, "@cleanup.move.word")
 	g.bodyScopes = append(g.bodyScopes, bodyScope{slot: slot, wait: wait, cleanups: len(g.cleanups)})
 	g.failFastCheck()
 
@@ -90,7 +92,7 @@ func (g *gen) heldScope(e *sema.ScopeBlock) string {
 	if h.Close != nil {
 		g.cleanups = g.cleanups[:len(g.cleanups)-1]
 		g.popCleanup(h.Close)
-		g.expr(h.Close)
+		g.runClose(h.Close)
 	}
 	return "zeroinitializer"
 }

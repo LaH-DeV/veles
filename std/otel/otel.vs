@@ -96,7 +96,7 @@ public fun logRecord(severity: i64, severityText: string, body: string, attrs: L
     }
   })
   if (!kept) {
-    val _ = lost.update(n => n + 1)
+    lost.add(1)
   }
 }
 
@@ -111,9 +111,9 @@ val running = Atomic(value: false)
 val failing = Atomic(value: false)
 
 /// A running pipeline: the background task that exports, and what it needs to
-/// finish the job. Received with `with`; the end of the block stops the task.
-/// **Call `shutdown()` before the program ends** — the data of the last
-/// interval is sent there: a `with` cannot wait on the network when it closes.
+/// finish the job. Received with `with`: the end of the block stops the task
+/// and sends what is still queued, waiting for the exporter (D147).
+/// `shutdown()` does the same earlier, and says whether it went through.
 public struct Telemetry {
   exporter:   Exporter
   resource:   List<Attr>
@@ -135,11 +135,11 @@ public struct Telemetry {
   }
 
   implement Closeable {
-    fun close() {
-      // a `with` cannot suspend, so what is still queued cannot be sent here
-      val pending = spanQueue.withLock(q => q.len()) + logQueue.withLock(q => q.len())
-      if (enabled.load() && pending > 0) {
-        eprintln("otel: $pending span(s) and log record(s) were never exported; call shutdown() before the program ends")
+    fun close() suspends {
+      // the last interval's data, unless shutdown() sent it already; the
+      // exporter's own timeouts bound the wait
+      if (enabled.load()) {
+        val _ = flushAll(this.exporter, this.resource)
       }
       enabled.store(false)
       running.store(false)

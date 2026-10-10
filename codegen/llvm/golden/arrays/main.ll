@@ -73,11 +73,11 @@ loop.post.2:
   %t25 = load i64, ptr %a4
   %t26 = add i64 %t25, 1
   store i64 %t26, ptr %a4
-  %t27 = load volatile i32, ptr @veles_stop_requested, align 4
+  %t27 = load volatile i32, ptr @veles_attention_line, align 64
   %t28 = icmp ne i32 %t27, 0
   br i1 %t28, label %safepoint.9, label %safepoint.on.10, !prof !{!"branch_weights", i32 1, i32 100000}
 safepoint.9:
-  call void @veles_gc_park()
+  call void @veles_backedge_plain()
   br label %safepoint.on.10
 safepoint.on.10:
   br label %loop.cond.1
@@ -480,11 +480,11 @@ if.else.21:
   store i64 %t58, ptr %a9
   br label %if.end.20
 if.end.20:
-  %t59 = load volatile i32, ptr @veles_stop_requested, align 4
+  %t59 = load volatile i32, ptr @veles_attention_line, align 64
   %t60 = icmp ne i32 %t59, 0
   br i1 %t60, label %safepoint.22, label %safepoint.on.23, !prof !{!"branch_weights", i32 1, i32 100000}
 safepoint.22:
-  call void @veles_gc_park()
+  call void @veles_backedge_plain()
   br label %safepoint.on.23
 safepoint.on.23:
   br label %loop.cond.1

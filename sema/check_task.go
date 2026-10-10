@@ -45,7 +45,7 @@ func hasVarFieldsIn(t types.Type, seen map[types.Type]bool) bool {
 			return false
 		}
 		seen[t] = true
-		if t.Module == "std.prelude" && (t.Name == "Mutex" || t.Name == "Atomic") {
+		if ok, _ := syncWrapper(t); ok {
 			return false
 		}
 		for _, f := range t.Fields {
@@ -65,6 +65,24 @@ func hasVarFieldsIn(t types.Type, seen map[types.Type]bool) bool {
 		}
 	}
 	return false
+}
+
+// syncWrapper reports whether t is a prelude type whose operations
+// synchronize what it holds (D35, D66, D146), and what must be Sendable for
+// it to be: nothing for a Mutex or an Atomic, Sendable whatever they hold;
+// the type arguments for RwLock, Event, Lazy, Broadcast, Subscription and
+// Watch, whose values reach every task that holds a copy.
+func syncWrapper(t *types.Struct) (bool, []types.Type) {
+	if t.Module != "std.prelude" {
+		return false, nil
+	}
+	switch t.Name {
+	case "Mutex", "Atomic":
+		return true, nil
+	case "RwLock", "Event", "Lazy", "Broadcast", "Subscription", "Watch":
+		return true, t.TypeArgs
+	}
+	return false, nil
 }
 
 // sendableIn is sendable with the structs and sealed types already on the
@@ -98,8 +116,14 @@ func sendableIn(t types.Type, seen map[types.Type]bool) bool {
 			return true
 		}
 		seen[t] = true
-		if t.Module == "std.prelude" && (t.Name == "Mutex" || t.Name == "Atomic") {
-			return true // explicitly synchronized wrappers (D35)
+		if ok, held := syncWrapper(t); ok {
+			// explicitly synchronized wrappers (D35, D146)
+			for _, h := range held {
+				if !sendableIn(h, seen) {
+					return false
+				}
+			}
+			return true
 		}
 		for _, f := range t.Fields {
 			if !sendableIn(f.Type, seen) {
@@ -555,9 +579,46 @@ func (f *fnCtx) raceExpr(e *ast.RaceExpr, want types.Type) Expr {
 		f.restoreNarrow(saved)
 		f.pushScope()
 		f.inRaceArm = true
-		src := f.checkExpr(arm.Source, nil)
+		// `ready.wait()`, `try sub.recv()`: an awaited prelude method, lowered
+		// to a wait on its signal and a take when it wins (awaited.go)
+		srcAST, tryAt := arm.Source, (*ast.TryExpr)(nil)
+		if te, ok := srcAST.(*ast.TryExpr); ok {
+			if ce, ok := te.X.(*ast.CallExpr); ok && !ce.Async {
+				srcAST, tryAt = ce, te
+			}
+		}
+		f.raceCall, f.raceTake = nil, nil
+		if ce, ok := srcAST.(*ast.CallExpr); ok {
+			f.raceCall = ce
+		}
+		src := f.checkExpr(srcAST, nil)
+		take := f.raceTake
+		f.raceCall, f.raceTake = nil, nil
+		if tryAt != nil {
+			if take != nil {
+				take = f.tryOn(take, tryAt.Pos)
+			} else {
+				src = f.tryOn(src, tryAt.Pos)
+			}
+		}
 		f.inRaceArm = false
 		ha := &RaceArm{}
+		var prefix Stmt // a lowered arm's take, run first when the arm wins
+		if take != nil && !types.IsInvalid(src.Type()) {
+			ha.Kind, ha.Source = RaceRecv, src
+			ha.Var = f.newTemp(&types.Nullable{Elem: types.TBool})
+			if arm.Binding != nil && arm.Binding.Name != nil {
+				v := f.newVar(arm.Binding.Name.Name, take.Type(), false, arm.Binding.Name.Pos)
+				f.declareChecked(arm.Binding.Name.Name, v, arm.Binding.Name.Pos)
+				prefix = &VarDecl{Var: v, Init: take}
+			} else {
+				if arm.Binding != nil {
+					f.errorf(arm.Binding.Pos, "race arms bind a single name")
+				}
+				prefix = &ExprStmt{X: take}
+			}
+			src = nil
+		}
 		switch s := src.(type) {
 		case *Builtin:
 			switch s.Op {
@@ -573,12 +634,14 @@ func (f *fnCtx) raceExpr(e *ast.RaceExpr, want types.Type) Expr {
 		}
 		if ha.Source == nil {
 			if !types.IsInvalid(src.Type()) {
-				f.errorf(arm.Source.Span(), "a race arm waits on 'ch.recv()', 'ch.send(v)', 'sleep(d)' or 'await task', not '%s'", src.Type())
+				f.errorf(arm.Source.Span(), "a race arm waits on 'ch.recv()', 'ch.send(v)', 'sleep(d)', 'await task', or an Event's 'wait()', a Watch's 'changed()' or a Subscription's 'recv()' (D146), not '%s'", src.Type())
 			}
 			f.popScope()
 			continue
 		}
-		if arm.Binding != nil && ha.Kind == RaceSend {
+		if prefix != nil {
+			// bound above, to the take
+		} else if arm.Binding != nil && ha.Kind == RaceSend {
 			f.errorf(arm.Binding.Pos, "a send arm binds nothing: when it wins, the value is in the channel; write 'ch.send(v) => …' (D108)")
 			if arm.Binding.Name != nil { // declared, so its uses say nothing more
 				f.declareLocal(arm.Binding.Name.Name, f.newVar(arm.Binding.Name.Name, types.TInvalid, false, arm.Binding.Name.Pos), arm.Binding.Name.Pos)
@@ -623,6 +686,9 @@ func (f *fnCtx) raceExpr(e *ast.RaceExpr, want types.Type) Expr {
 				bt = types.TNever // the arm returns or throws
 			}
 			body = &Block{Stmts: []Stmt{&ExprStmt{X: x}}, Type: bt}
+		}
+		if prefix != nil {
+			body.Stmts = append([]Stmt{prefix}, body.Stmts...)
 		}
 		ha.Body = body
 		r.Arms = append(r.Arms, ha)

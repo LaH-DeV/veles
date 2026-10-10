@@ -251,7 +251,10 @@ system's. TLS 1.2 is the oldest version spoken; 1.3 is used where the system has
 A cut connection is not mistaken for a finished one: a peer that closes the
 socket without sending TLS's `close_notify` makes the next read throw, since the
 data may be incomplete. `read` returns `[]` only at the peer's clean end. `close()`
-drops the connection at once; to end it politely call `shutdownWrite()` first.
+sends `close_notify` itself, as Go's `Close` does — one short record, written
+without waiting (a socket's buffer takes it unless the peer stopped reading) — and
+then closes; `shutdownWrite()` sends it and waits, and keeps the reading side open.
+`net.Conn.tryWrite(bytes)` is that kind of write: what the socket takes now.
 
 A server holds a `Certificate` — the chain and the private key from PEM files; the key goes
 into a `Secret` — and accepts connections with it. The handshake runs on the connection's
@@ -302,8 +305,10 @@ the difference that the waiting is explicit in the types: `accept`,
 them becomes one.
 
 The cost of that model is the one it has everywhere: a task that computes
-for a long time without suspending stalls every other connection. Break
-long work with `await sleep(Duration.zero)`, or keep it out of the serving tasks.
+for a long time in a function that does not suspend keeps its thread from
+the other connections. A loop in a suspending function gives the thread up
+by itself after about 10 ms (D145); elsewhere call `yieldNow()` in long
+work, or keep it out of the serving tasks.
 
 Next: [An HTTP server](17-http.md), which is this module used in anger, or
 back to [Concurrency](12-concurrency.md) for what `scope`, `gather` and

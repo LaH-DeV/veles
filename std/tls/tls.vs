@@ -158,6 +158,8 @@ public struct Conn {
   // serves it (see Listener); `gate` makes the tasks that arrive together wait for it
   pending: Atomic<bool> = Atomic(value: false)
   gate:    Semaphore = Semaphore(permits: 1)
+  // close_notify went out (shutdownWrite, or the close)
+  notified: Atomic<bool> = Atomic(value: false)
 
   /// The application protocol the two sides agreed on (ALPN), or `null`
   /// when none was offered or chosen.
@@ -346,6 +348,7 @@ public struct Conn {
     /// reads end cleanly, and this side keeps reading.
     fun shutdownWrite() suspends throws IoError {
       try this.ensureHandshake()
+      this.notified.store(true)
       // SAFETY: queues the alert on the handle; a freed one does nothing
       unsafe {
         veles_tls_close_notify(this.session.number)
@@ -356,10 +359,32 @@ public struct Conn {
   }
 
   implement Closeable {
-    /// Ends the connection at once: the session is dropped and the stream
-    /// underneath closed. It sends no close_notify, because closing cannot
-    /// wait for the peer — call `shutdownWrite()` first for a clean end.
+    /// Ends the connection: sends close_notify, as Go's `Close` does, then
+    /// drops the session and closes the stream underneath. The alert is one
+    /// short record written with a single try that never waits — a socket's
+    /// buffer takes it unless the peer stopped reading, and then it is
+    /// dropped; over a stream that is not a `net.Conn`, or while another
+    /// task is writing, it is not sent. `shutdownWrite()` sends it and waits.
     fun close() {
+      if (!this.pending.load() && !this.notified.swap(true)) {
+        val socket = this.inner
+        if (socket is net.Conn) {
+          val permit = this.sendLock.tryAcquire()
+          if (permit != null) {
+            with p = permit
+            var out = ""
+            // SAFETY: queues the alert on the handle and takes the records into
+            // `out`, a local that outlives the call
+            unsafe {
+              veles_tls_close_notify(this.session.number)
+              veles_tls_take(this.session.number, &out)
+            }
+            if (!out.isEmpty()) {
+              val _ = socket.tryWrite(out.bytes())
+            }
+          }
+        }
+      }
       this.session.free()
       this.inner.close()
     }

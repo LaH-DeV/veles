@@ -171,7 +171,8 @@ would be gone. Await inside, keep the value.
 ## Where a task can be interrupted
 
 A task is interrupted — by the scheduler, by a cancellation, by a failed
-sibling — only at a point where it **actually waits**:
+sibling — at a point where it **actually waits**, and at the end of each
+loop iteration (D145, below):
 
 | Waits (a suspension point) | Does not wait |
 |---|---|
@@ -181,48 +182,58 @@ sibling — only at a point where it **actually waits**:
 | `ch.send(v)` on a full (or rendezvous) channel | `println` (it writes and returns; see Output) |
 | a socket or TLS read or write that has to wait | `Mutex.withLock`, `with m.lock()` (a thread lock — below) |
 | `race`, the end of a `scope`, `gather` | `Atomic` operations |
+| `await e.wait()`, `await w.changed()`, `try await sub.recv()` with nothing to take (D146) | `e.set()`, `w.set(v)`, `news.send(v)`; `with l.read()` (a thread lock) |
+| the end of a `with` whose `close()` is declared `suspends` (D147: a transaction, telemetry) | the end of any other `with` |
 
-Code between two suspension points runs to the next one without
-interruption. That is why a cancelled task that never waits is not
-stopped — it runs to its end. Here the task is cancelled once before it
-started and once while sending into a channel with room; the first never
-runs, the second sends everything, because a send with room is not a wait:
+**The end of a loop iteration is a cancellation point** (D145): a task
+that is cancelled while it computes stops at the end of the iteration it
+is in, in any function, and unwinds as it would at a suspension point —
+its `with` blocks close, innermost first. Code that is not in a loop runs
+on to the next suspension point or loop end. Here the task is cancelled
+once before it started and once while it counts; the first never runs,
+the second stops long before the end:
 
 ```veles
 use io
 
-fun fill(ch: Channel<i64>, sent: Atomic<i64>) {
-  loop (i in 0..<100000) {
-    ch.send(i)
-    sent.store(i + 1)
-  }
+fun count(done: Atomic<i64>) {
+  loop (i in 0..<2000000000) done.store(i + 1)
 }
 
 fun main() {
   val early = Atomic(value: 0)
   scope {
-    val t = async fill(Channel<i64>(capacity: 100000), early)
+    val t = async count(early)
     t.cancel()   // before it got a thread: it never starts
   }
   val late = Atomic(value: 0)
   scope {
-    val t = async fill(Channel<i64>(capacity: 100000), late)
+    val t = async count(late)
     await sleep(Duration.millis(1))
-    t.cancel()   // running and never waiting: it runs to the end
+    t.cancel()   // running: it stops at the end of an iteration
   }
-  io.println("${early.load()} then ${late.load()}")
+  io.println("${early.load()}, then stopped early: ${late.load() < 2000000000}")
 }
 ```
 
 Output:
 ```text
-0 then 100000
+0, then stopped early: true
 ```
 
-To make long work stoppable — and fair to other tasks on a busy machine
-or under `VELES_THREADS=1` — put `await sleep(Duration.zero)` in it now
-and then: it does not wait, it goes to the back of the queue, and it is
-where a cancellation is seen.
+**Not inside a lock region or a `close()`**: there the check is not made,
+and a cancellation is seen at the next point outside (D145, D47) — a value
+behind a `Mutex` is never left half-changed, a resource never half-closed.
+`checkCancelled()` is the same check at a point of your choosing.
+
+**A long loop gives its thread up.** A loop in a suspending function that
+has run for about 10 ms while other tasks wait for its thread gives the
+thread up at the end of an iteration, as `yieldNow()` does. A function that
+does not suspend cannot give its thread up (it has no frame to come back
+to); its loop keeps the thread until it ends, and the other threads of the
+pool run everything else. Under `VELES_THREADS=1`, or when every thread
+computes, call `yieldNow()` in such a loop now and then (which makes its
+function suspend).
 
 `sleep(d)` sleeps **at least** `d`, rounded up to a whole millisecond
 (D60); a zero or negative duration only yields.
@@ -284,9 +295,10 @@ Output:
 the scope threw Boom 2
 ```
 
-Code in the body that does not wait is not interrupted: a long
-computation in the body finishes first, and the failure is seen at the
-body's next suspension point or at the scope's end.
+The body notices at its next suspension point, at the end of a loop
+iteration in the body, or at the scope's end (D145). A computation inside
+a function the body calls that does not suspend runs to its end first: only
+a cancellation of the whole task stops it, and a failed child is not one.
 
 **The body's own error.** If the body throws, its tasks are cancelled and
 waited for, and then the body's error leaves the scope:
@@ -405,12 +417,14 @@ timing, cancel only tasks whose result you no longer want.
 `withTimeout(limit, f)` runs `f` in a task and races it against a timer.
 When the time is up it **cancels the task and waits for it to unwind**,
 then throws `Timeout` — so whatever `f` opened is closed by the time you
-see the error. The same rule as above applies: a function that never
-waits cannot be stopped. It runs to its end, its result is dropped, and
-then `Timeout` is thrown — later than the limit:
+see the error. A computation is stopped at the end of a loop iteration
+(D145), so the limit holds for code that never waits too — as long as
+another thread is free to notice the time (under `VELES_THREADS=1` a
+function that does not suspend keeps the only thread until it ends):
 
 ```veles
 use io
+use time
 
 fun count(n: i64): i64 {
   var x: i64 = 0
@@ -419,16 +433,17 @@ fun count(n: i64): i64 {
 }
 
 fun main() {
-  when (val r = withTimeout(Duration.millis(1), () => count(100000000))) {
+  val clock = time.Stopwatch.start()
+  when (val r = withTimeout(Duration.millis(1), () => count(4000000000))) {
     is Ok => io.println("finished in time")
-    is Err => io.println("${r.message()}, but only once the count had finished")
+    is Err => io.println("${r.message()}; stopped within a second: ${clock.elapsed().toMillis() < 1000}")
   }
 }
 ```
 
 Output:
 ```text
-timed out after 1ms, but only once the count had finished
+timed out after 1ms; stopped within a second: true
 ```
 
 ## `race`
@@ -539,9 +554,24 @@ Give such waits a limit (`race` with a `sleep` arm, `withTimeout`).
   was locked again while this task holds it`) rather than hanging.
   Holding two different ones is allowed; the order is yours.
 - A lock is released when its function or block ends, also by a panic.
-- An `Atomic` of a number or `bool` takes no lock. `update(f)` may call
-  `f` more than once (when another task changed the value in between),
-  so `f` must only compute the new value.
+- An `Atomic` of a number, `bool`, enum or pointer (nullable or not)
+  takes no lock. `update(f)` may call `f` more than once (when another
+  task changed the value in between), so `f` must only compute the new
+  value; `add(n)` and `compareAndSet(expected, new)` need no function.
+- Every `Atomic` operation is `SeqCst` unless given `order:`
+  (`Relaxed`, `Acquire`, `Release`, `AcqRel`); an order the operation
+  cannot take, written as a `MemoryOrder` case, is a compile error (D144,
+  [chapter 13](../13-memory-and-ffi.md#atomics-and-memory-orders)).
+- An `RwLock` is the same kind of thread lock, held by many readers or one
+  writer (`with c = l.read()`, `with w = l.write()`, `withRead`,
+  `withWrite`); the same rules apply, a waiting writer keeps new readers
+  out, and taking it again in its own region panics (`an RwLock was
+  locked again while this task holds it`) (D146). `Lazy.get()` takes a
+  lock only until the value is built; its `init` runs under it.
+- `Event.wait()`, `Watch.changed()` and `Subscription.recv()` are
+  suspension points like `ch.recv()`: awaited, cancellable, and usable as
+  `race` arms (D146). `Event.set()`, `Watch.set(v)` and `Broadcast.send(v)`
+  never wait.
 
 ## Threads and scheduling
 
@@ -603,7 +633,7 @@ the exit code is 101.
 | Waiting while holding a lock | compile error (D35, D107) |
 | `try` on an `await` in a scope | compile error with a fix (D141) |
 | Ignoring a task's failure | impossible: it fails the scope |
-| A long loop that never waits | not stopped by cancellation or `withTimeout`; add `await sleep(Duration.zero)` |
+| A long loop that never waits | stopped by a cancellation at the end of an iteration (D145); in a function that does not suspend it keeps its thread — `yieldNow()` gives it up |
 | `await` on a task you cancelled | panic (`awaited task was cancelled`) unless it had finished |
 | `send` on a closed channel | panic (`send on a closed channel`) |
 | Locking a `Mutex` you already hold | panic, not a hang |
@@ -611,5 +641,5 @@ the exit code is 101.
 | Some tasks waiting for each other while others run | waits forever; put a limit on the wait |
 | Relying on which task prints or runs first | no order is guaranteed; collect, then print |
 | Expecting `async obj.method()` to change `obj` | the task works on a copy |
-| A `withTimeout` around code that never waits | the limit is noticed only when the code finishes |
+| A `withTimeout` around code that never waits | the limit holds while another thread is free; under `VELES_THREADS=1` a function that does not suspend runs to its end first |
 | A race arm's task losing | it keeps running; the scope waits for it |

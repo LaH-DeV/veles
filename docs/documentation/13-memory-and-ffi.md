@@ -304,6 +304,172 @@ A `close()` that itself panics during that unwinding does not stop it:
 the remaining resources still close and the first panic is the one
 reported.
 
+### A close that waits
+
+Some resources end with a conversation: a transaction sends `ROLLBACK`
+and waits for the answer, a telemetry pipeline sends what it still holds.
+Their `close()` says so with `suspends` (D147):
+
+```veles
+use io
+
+struct Session {
+  name: string
+  implement Closeable {
+    fun close() suspends {
+      await sleep(Duration.millis(5))     // say goodbye to the peer
+      io.println("closed ${this.name}")
+    }
+  }
+}
+
+struct Log {
+  implement Closeable {
+    fun close() {
+      io.println("closed the log")
+    }
+  }
+}
+
+fun work(): i64 {
+  with log = Log()
+  with s = Session(name: "session")
+  io.println("working")
+  42
+}
+
+fun main() {
+  io.println("got ${work()}")
+}
+```
+
+Output:
+```text
+working
+closed session
+closed the log
+got 42
+```
+
+Suspension follows the type: a `with` on such a value waits at its end,
+so the function holding it suspends, as a call of a suspending function
+would make it; a `with` on any other resource is unchanged. Every way out
+of the block waits for it — the end, `return`, `throw`, a cancellation,
+and a panic, whose close still runs before the resources outside it, so
+everything closes innermost first. The close is *shielded*: a
+cancellation that arrives while it waits lets it finish and is seen
+afterwards. That cuts both ways: a close that hangs keeps its block from
+ending, so a close that talks to a peer bounds its own wait (the
+transaction's uses its timeout).
+
+Generic code follows the type argument: `fun closeAll<T: Closeable>(x: T)`
+waits in the instance for a `Session` and not in the one for a `Log`.
+Three places refuse such a value, because nothing there may wait: a lock
+region (D107), a lambda that cannot suspend, and a `Closeable` trait
+object — a method table holds one plain `close` — so keep the concrete
+type or a type parameter. A `close()` that waits without saying
+`suspends` is an error that asks for it.
+
+## Atomics and memory orders
+
+An `Atomic` of a number, a `bool`, an enum or a pointer — nullable or not
+— is one machine word changed by one processor instruction, with no lock
+([chapter 12](12-concurrency.md) lists its operations). That is enough to
+build lock-free structures. A stack whose `push` and `pop` are each one
+compare-and-set, retried when another task got in between, needs only an
+`Atomic` of its top node; the collector keeps a popped node alive while any
+task still holds it, so a node's address is never reused under a task that
+is about to compare against it:
+
+```veles
+use io
+
+struct Node {
+  value: i64
+  next:  (*Node)?
+}
+
+struct Stack {
+  head: Atomic<(*Node)?> = Atomic(value: null)
+
+  fun push(value: i64) {
+    var seen = this.head.load(order: MemoryOrder.Relaxed)
+    loop {
+      val node = &Node(value, next: seen)
+      // publishes the node: what was written to it is visible to the
+      // task that acquires it in pop
+      val found = this.head.compareExchange(seen, node, order: MemoryOrder.Release, failure: MemoryOrder.Relaxed)
+      if (found == seen) return
+      seen = found                     // another push got in: try again on top of it
+    }
+  }
+
+  fun pop(): i64? {
+    loop {
+      val top = this.head.load(order: MemoryOrder.Acquire) ?: return null
+      if (this.head.compareAndSet(top, top.next, order: MemoryOrder.Acquire)) return top.value
+    }
+  }
+}
+
+fun fill(s: Stack, from: i64) {
+  loop (i in from..<from + 1000) s.push(i)
+}
+
+fun main() {
+  val s = Stack()
+  scope {
+    loop (k in 0..<4) async fill(s, k * 1000)
+  }
+  var sum: i64 = 0
+  var count: i64 = 0
+  loop {
+    val v = s.pop() ?: break
+    sum += v
+    count += 1
+  }
+  io.println("$count values, sum $sum")
+}
+```
+
+Output:
+```text
+4000 values, sum 7998000
+```
+
+Every operation takes an optional `order:`, a `MemoryOrder`. Without one
+it is `SeqCst`: all tasks see all atomic operations in a single order,
+which is the order a program reads them in. The weaker orders let the
+processor and the compiler move other memory accesses past the atomic
+one, which is cheaper on some machines (ARM most of all) and correct only
+when paired as below:
+
+| Order | Means | Takes it |
+|---|---|---|
+| `Relaxed` | the operation is atomic and nothing more: a statistics counter read at the end | every operation |
+| `Release` | what this task wrote before the store is visible to a task that loads the value with `Acquire` | a store; a read-modify-write |
+| `Acquire` | the other half: after this load, what the releasing task wrote is visible | a load; a read-modify-write |
+| `AcqRel` | both, on an operation that reads and writes | a read-modify-write |
+| `SeqCst` | `AcqRel`, plus the single order every task agrees on | every operation |
+
+An order an operation cannot take is a compile error: a load does not
+release, a store does not acquire.
+
+```veles
+// fragment
+val ready = Atomic(value: false)
+val n = ready.load(order: MemoryOrder.Release)
+// error: MemoryOrder.Release is not an order for a load; use Relaxed, Acquire or SeqCst (D144)
+```
+
+`compareAndSet` and `compareExchange` take a second order, `failure:`, for
+the load a failed attempt makes: `Relaxed`, `Acquire` or `SeqCst`, no
+stronger than `order:`. Left out, it is the strongest load `order:` allows
+(`Acquire` for `AcqRel`, `Relaxed` for `Release`). An order chosen while
+the program runs (a variable rather than a `MemoryOrder.` case) is not
+checked; one the operation cannot take then acts as `SeqCst`. An `Atomic`
+guarded by a lock word accepts `order:` and is always `SeqCst`.
+
 ## `unsafe`
 
 Some things the type system cannot vouch for: calling C, dereferencing a

@@ -217,17 +217,41 @@ if.else.21:
   store i64 %t44, ptr %a8
   br label %if.end.20
 if.end.20:
-  %t45 = load volatile i32, ptr @veles_stop_requested, align 4
+  %t45 = load volatile i32, ptr @veles_attention_line, align 64
   %t46 = icmp ne i32 %t45, 0
   br i1 %t46, label %safepoint.22, label %safepoint.on.23, !prof !{!"branch_weights", i32 1, i32 100000}
 safepoint.22:
-  call void @veles_gc_park()
+  %t47 = call i64 @veles_backedge(ptr %task, i64 %coro.depth)
+  switch i64 %t47, label %safepoint.on.23 [ i64 0, label %backedge.look.26 i64 1, label %backedge.yield.24 i64 2, label %backedge.cancel.25 ]
+backedge.look.26:
   br label %safepoint.on.23
+backedge.yield.24:
+  br label %yield.27
+yield.27:
+  %t48 = call i64 @veles_task_sleep(ptr %task, i64 0)
+  %t49 = icmp ne i64 %t48, 0
+  br i1 %t49, label %safepoint.on.23, label %yield.susp.28
+yield.susp.28:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
+  %t50 = call i8 @llvm.coro.suspend(token none, i1 false)
+  switch i8 %t50, label %coro.suspend [ i8 0, label %resume.29 i8 1, label %coro.cleanup ]
+resume.29:
+  %t51 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
+  %t52 = icmp ne i64 %t51, 0
+  br i1 %t52, label %cancelled.30, label %cont.31
+cancelled.30:
+  call void @veles_frame_unwound(ptr %task, ptr %link)
+  br label %coro.final
+cont.31:
+  br label %yield.27
+backedge.cancel.25:
+  call void @veles_frame_unwound(ptr %task, ptr %link)
+  br label %coro.final
 safepoint.on.23:
   br label %loop.cond.1
 loop.end.3:
-  %t47 = load ptr, ptr %a1
-  call void @veles_chan_close(ptr %t47)
+  %t53 = load ptr, ptr %a1
+  call void @veles_chan_close(ptr %t53)
   call void @veles_frame_return(ptr %task, ptr %link, ptr null, i64 0, i64 0, ptr null)
   br label %coro.final
 coro.final:
@@ -246,9 +270,9 @@ coro.suspend:
 define ptr @v_main.main(ptr %task, ptr %link) presplitcoroutine {
 entry:
   %a2 = alloca %S.main.Resource
-  %a3 = alloca { ptr, ptr, ptr }
+  %a3 = alloca { ptr, ptr, ptr, ptr }
   %a5 = alloca ptr
-  %a6 = alloca { ptr, ptr, ptr }
+  %a6 = alloca { ptr, ptr, ptr, ptr }
   %a11 = alloca ptr
   %a12 = alloca ptr
   %a17 = alloca ptr
@@ -260,46 +284,46 @@ entry:
   %a95 = alloca ptr
   %a96 = alloca i64
   %a98 = alloca ptr
-  %a99 = alloca { ptr, ptr, ptr }
+  %a99 = alloca { ptr, ptr, ptr, ptr }
   %a105 = alloca ptr
   %a107 = alloca i64
   %a125 = alloca i64
   %a130 = alloca i64
-  %a159 = alloca [21 x i8]
-  %a163 = alloca %str
-  %a172 = alloca ptr
-  %a174 = alloca %str
-  %a177 = alloca %str
-  %a180 = alloca %str
-  %a183 = alloca %str
-  %a186 = alloca %str
-  %a189 = alloca %str
-  %a192 = alloca %str
-  %a198 = alloca %str
-  %a204 = alloca %str
-  %a210 = alloca %str
-  %a216 = alloca %str
-  %a222 = alloca %str
-  %a227 = alloca %str
-  %a228 = alloca [11 x %str]
-  %a244 = alloca ptr
-  %a245 = alloca i64
-  %a247 = alloca ptr
-  %a248 = alloca { ptr, ptr, ptr }
-  %a254 = alloca ptr
-  %a297 = alloca i64
-  %a315 = alloca i64
-  %a346 = alloca [21 x i8]
-  %a350 = alloca %str
-  %a359 = alloca ptr
-  %a360 = alloca i64
-  %a362 = alloca ptr
-  %a363 = alloca { ptr, ptr, ptr }
-  %a369 = alloca ptr
-  %a373 = alloca i64
-  %a379 = alloca { i1, i64 }
-  %a449 = alloca [21 x i8]
-  %a453 = alloca %str
+  %a181 = alloca [21 x i8]
+  %a185 = alloca %str
+  %a194 = alloca ptr
+  %a196 = alloca %str
+  %a199 = alloca %str
+  %a202 = alloca %str
+  %a205 = alloca %str
+  %a208 = alloca %str
+  %a211 = alloca %str
+  %a214 = alloca %str
+  %a220 = alloca %str
+  %a226 = alloca %str
+  %a232 = alloca %str
+  %a238 = alloca %str
+  %a244 = alloca %str
+  %a249 = alloca %str
+  %a250 = alloca [11 x %str]
+  %a266 = alloca ptr
+  %a267 = alloca i64
+  %a269 = alloca ptr
+  %a270 = alloca { ptr, ptr, ptr, ptr }
+  %a276 = alloca ptr
+  %a319 = alloca i64
+  %a337 = alloca i64
+  %a390 = alloca [21 x i8]
+  %a394 = alloca %str
+  %a403 = alloca ptr
+  %a404 = alloca i64
+  %a406 = alloca ptr
+  %a407 = alloca { ptr, ptr, ptr, ptr }
+  %a413 = alloca ptr
+  %a417 = alloca i64
+  %a423 = alloca { i1, i64 }
+  %a515 = alloca [21 x i8]
+  %a519 = alloca %str
   %coro.id = call token @llvm.coro.id(i32 8, ptr null, ptr null, ptr null)
   %coro.size = call i64 @llvm.coro.size.i64()
   %coro.mem = call ptr @veles.frame.alloc(ptr %task, ptr %link, i64 %coro.size)
@@ -308,10 +332,10 @@ entry:
   %coro.depth = load i64, ptr %coro.depthp
   %t1 = insertvalue %S.main.Resource undef, %str { ptr @.str.6, i64 2 }, 0
   store %S.main.Resource %t1, ptr %a2
-  call void @veles_cleanup_push(ptr %a3, ptr @with.close.1, ptr %a2)
+  call void @veles_cleanup_push(ptr %a3, ptr @with.close.1, ptr %a2, ptr @with.move.2)
   %t4 = call ptr @veles_scope_begin(ptr %task, i64 1, i64 %coro.depth)
   store ptr %t4, ptr %a5
-  call void @veles_cleanup_push(ptr %a6, ptr @scope.cancel.thunk, ptr %a5)
+  call void @veles_cleanup_push(ptr %a6, ptr @scope.cancel.thunk, ptr %a5, ptr @cleanup.move.word)
   %t7 = load ptr, ptr %a5
   %t8 = call ptr @veles_task_launch(ptr %t7, i64 0)
   %t9 = call ptr @veles_alloc_words(i64 16)
@@ -359,11 +383,13 @@ resume.13:
   br label %abandon.wait.10
 abandon.done.11:
   call void @veles_cleanup_pop(ptr %a3)
+  call void @veles_shield_enter()
   %t29 = extractvalue %str { ptr @.str.7, i64 18 }, 0
   %t30 = extractvalue %str { ptr @.str.7, i64 18 }, 1
   call void @veles_call_push(ptr %t29)
   call void @v_main.Closeable.Resource.close(ptr %a2)
   call void @veles_call_pop()
+  call void @veles_shield_leave()
   call void @veles_frame_unwound(ptr %task, ptr %link)
   br label %coro.final
 cont.9:
@@ -424,11 +450,13 @@ resume.28:
   br label %abandon.wait.25
 abandon.done.26:
   call void @veles_cleanup_pop(ptr %a3)
+  call void @veles_shield_enter()
   %t53 = extractvalue %str { ptr @.str.7, i64 18 }, 0
   %t54 = extractvalue %str { ptr @.str.7, i64 18 }, 1
   call void @veles_call_push(ptr %t53)
   call void @v_main.Closeable.Resource.close(ptr %a2)
   call void @veles_call_pop()
+  call void @veles_shield_leave()
   call void @veles_frame_unwound(ptr %task, ptr %link)
   br label %coro.final
 cont.24:
@@ -502,11 +530,13 @@ resume.40:
   br label %abandon.wait.37
 abandon.done.38:
   call void @veles_cleanup_pop(ptr %a3)
+  call void @veles_shield_enter()
   %t85 = extractvalue %str { ptr @.str.7, i64 18 }, 0
   %t86 = extractvalue %str { ptr @.str.7, i64 18 }, 1
   call void @veles_call_push(ptr %t85)
   call void @v_main.Closeable.Resource.close(ptr %a2)
   call void @veles_call_pop()
+  call void @veles_shield_leave()
   call void @veles_frame_unwound(ptr %task, ptr %link)
   br label %coro.final
 cont.36:
@@ -528,17 +558,19 @@ scope.errors.44:
   br label %scope.after.42
 scope.after.42:
   call void @veles_cleanup_pop(ptr %a3)
+  call void @veles_shield_enter()
   %t92 = extractvalue %str { ptr @.str.7, i64 18 }, 0
   %t93 = extractvalue %str { ptr @.str.7, i64 18 }, 1
   call void @veles_call_push(ptr %t92)
   call void @v_main.Closeable.Resource.close(ptr %a2)
   call void @veles_call_pop()
+  call void @veles_shield_leave()
   %t94 = call ptr @veles_chan_new(ptr @adesc.i64, i64 1)
   store ptr %t94, ptr %a95
   store i64 0, ptr %a96
   %t97 = call ptr @veles_scope_begin(ptr %task, i64 1, i64 %coro.depth)
   store ptr %t97, ptr %a98
-  call void @veles_cleanup_push(ptr %a99, ptr @scope.cancel.thunk, ptr %a98)
+  call void @veles_cleanup_push(ptr %a99, ptr @scope.cancel.thunk, ptr %a98, ptr @cleanup.move.word)
   %t100 = load ptr, ptr %a98
   %t101 = call ptr @veles_task_launch(ptr %t100, i64 0)
   %t102 = load ptr, ptr %a95
@@ -632,659 +664,893 @@ arith.ok.69:
   store i64 %t135, ptr %a96
   br label %loop.post.49
 loop.post.49:
-  %t141 = load volatile i32, ptr @veles_stop_requested, align 4
+  %t141 = load volatile i32, ptr @veles_attention_line, align 64
   %t142 = icmp ne i32 %t141, 0
   br i1 %t142, label %safepoint.70, label %safepoint.on.71, !prof !{!"branch_weights", i32 1, i32 100000}
 safepoint.70:
-  call void @veles_gc_park()
+  %t143 = call i64 @veles_backedge(ptr %task, i64 %coro.depth)
+  switch i64 %t143, label %safepoint.on.71 [ i64 0, label %backedge.look.74 i64 1, label %backedge.yield.72 i64 2, label %backedge.cancel.73 ]
+backedge.look.74:
+  %t144 = load ptr, ptr %a98
+  %t145 = call ptr @veles_scope_failed(ptr %t144)
+  %t146 = icmp ne ptr %t145, null
+  br i1 %t146, label %scope.abort.75, label %scope.ok.76
+scope.ok.76:
+  br label %cont.77
+scope.abort.75:
+  call void @veles_task_leave_waits(ptr %task)
+  %t147 = load ptr, ptr %a98
+  call void @veles_scope_abandon(ptr %t147, ptr %task)
+  br label %scope.wait.45
+cont.77:
   br label %safepoint.on.71
+backedge.yield.72:
+  br label %yield.78
+yield.78:
+  %t148 = call i64 @veles_task_sleep(ptr %task, i64 0)
+  %t149 = icmp ne i64 %t148, 0
+  br i1 %t149, label %safepoint.on.71, label %yield.susp.79
+yield.susp.79:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
+  %t150 = call i8 @llvm.coro.suspend(token none, i1 false)
+  switch i8 %t150, label %coro.suspend [ i8 0, label %resume.80 i8 1, label %coro.cleanup ]
+resume.80:
+  %t151 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
+  %t152 = icmp ne i64 %t151, 0
+  br i1 %t152, label %cancelled.81, label %cont.82
+cancelled.81:
+  call void @veles_cleanup_pop(ptr %a99)
+  %t153 = load ptr, ptr %a98
+  call void @veles_scope_cancel(ptr %t153)
+  br label %abandon.wait.83
+abandon.wait.83:
+  %t154 = call i64 @veles_scope_wait(ptr %task, ptr %t153)
+  %t155 = icmp ne i64 %t154, 0
+  br i1 %t155, label %abandon.done.84, label %abandon.susp.85
+abandon.susp.85:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
+  %t156 = call i8 @llvm.coro.suspend(token none, i1 false)
+  switch i8 %t156, label %coro.suspend [ i8 0, label %resume.86 i8 1, label %coro.cleanup ]
+resume.86:
+  br label %abandon.wait.83
+abandon.done.84:
+  call void @veles_frame_unwound(ptr %task, ptr %link)
+  br label %coro.final
+cont.82:
+  %t157 = load ptr, ptr %a98
+  %t158 = call ptr @veles_scope_failed(ptr %t157)
+  %t159 = icmp ne ptr %t158, null
+  br i1 %t159, label %scope.abort.87, label %scope.ok.88
+scope.ok.88:
+  br label %cont.89
+scope.abort.87:
+  call void @veles_task_leave_waits(ptr %task)
+  %t160 = load ptr, ptr %a98
+  call void @veles_scope_abandon(ptr %t160, ptr %task)
+  br label %scope.wait.45
+cont.89:
+  br label %yield.78
+backedge.cancel.73:
+  call void @veles_cleanup_pop(ptr %a99)
+  %t161 = load ptr, ptr %a98
+  call void @veles_scope_cancel(ptr %t161)
+  br label %abandon.wait.90
+abandon.wait.90:
+  %t162 = call i64 @veles_scope_wait(ptr %task, ptr %t161)
+  %t163 = icmp ne i64 %t162, 0
+  br i1 %t163, label %abandon.done.91, label %abandon.susp.92
+abandon.susp.92:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
+  %t164 = call i8 @llvm.coro.suspend(token none, i1 false)
+  switch i8 %t164, label %coro.suspend [ i8 0, label %resume.93 i8 1, label %coro.cleanup ]
+resume.93:
+  br label %abandon.wait.90
+abandon.done.91:
+  call void @veles_frame_unwound(ptr %task, ptr %link)
+  br label %coro.final
 safepoint.on.71:
   br label %loop.cond.48
 loop.end.50:
   br label %scope.wait.45
 scope.wait.45:
-  %t143 = load ptr, ptr %a98
-  %t144 = call i64 @veles_scope_wait(ptr %task, ptr %t143)
-  %t145 = icmp ne i64 %t144, 0
-  br i1 %t145, label %scope.done.46, label %scope.susp.47
+  %t165 = load ptr, ptr %a98
+  %t166 = call i64 @veles_scope_wait(ptr %task, ptr %t165)
+  %t167 = icmp ne i64 %t166, 0
+  br i1 %t167, label %scope.done.46, label %scope.susp.47
 scope.susp.47:
   call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
-  %t146 = call i8 @llvm.coro.suspend(token none, i1 false)
-  switch i8 %t146, label %coro.suspend [ i8 0, label %resume.72 i8 1, label %coro.cleanup ]
-resume.72:
-  %t147 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
-  %t148 = icmp ne i64 %t147, 0
-  br i1 %t148, label %cancelled.73, label %cont.74
-cancelled.73:
+  %t168 = call i8 @llvm.coro.suspend(token none, i1 false)
+  switch i8 %t168, label %coro.suspend [ i8 0, label %resume.94 i8 1, label %coro.cleanup ]
+resume.94:
+  %t169 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
+  %t170 = icmp ne i64 %t169, 0
+  br i1 %t170, label %cancelled.95, label %cont.96
+cancelled.95:
   call void @veles_cleanup_pop(ptr %a99)
-  %t149 = load ptr, ptr %a98
-  call void @veles_scope_cancel(ptr %t149)
-  br label %abandon.wait.75
-abandon.wait.75:
-  %t150 = call i64 @veles_scope_wait(ptr %task, ptr %t149)
-  %t151 = icmp ne i64 %t150, 0
-  br i1 %t151, label %abandon.done.76, label %abandon.susp.77
-abandon.susp.77:
+  %t171 = load ptr, ptr %a98
+  call void @veles_scope_cancel(ptr %t171)
+  br label %abandon.wait.97
+abandon.wait.97:
+  %t172 = call i64 @veles_scope_wait(ptr %task, ptr %t171)
+  %t173 = icmp ne i64 %t172, 0
+  br i1 %t173, label %abandon.done.98, label %abandon.susp.99
+abandon.susp.99:
   call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
-  %t152 = call i8 @llvm.coro.suspend(token none, i1 false)
-  switch i8 %t152, label %coro.suspend [ i8 0, label %resume.78 i8 1, label %coro.cleanup ]
-resume.78:
-  br label %abandon.wait.75
-abandon.done.76:
+  %t174 = call i8 @llvm.coro.suspend(token none, i1 false)
+  switch i8 %t174, label %coro.suspend [ i8 0, label %resume.100 i8 1, label %coro.cleanup ]
+resume.100:
+  br label %abandon.wait.97
+abandon.done.98:
   call void @veles_frame_unwound(ptr %task, ptr %link)
   br label %coro.final
-cont.74:
+cont.96:
   br label %scope.wait.45
 scope.done.46:
   call void @veles_cleanup_pop(ptr %a99)
-  %t153 = load ptr, ptr %a98
-  %t154 = call ptr @veles_scope_failed(ptr %t153)
-  %t155 = icmp ne ptr %t154, null
-  br i1 %t155, label %scope.check.79, label %scope.after.80
-scope.check.79:
-  %t156 = call i64 @veles_task_panicked(ptr %t154)
-  %t157 = icmp ne i64 %t156, 0
-  br i1 %t157, label %scope.repanic.81, label %scope.errors.82
-scope.repanic.81:
-  call void @veles_task_repanic(ptr %t154)
+  %t175 = load ptr, ptr %a98
+  %t176 = call ptr @veles_scope_failed(ptr %t175)
+  %t177 = icmp ne ptr %t176, null
+  br i1 %t177, label %scope.check.101, label %scope.after.102
+scope.check.101:
+  %t178 = call i64 @veles_task_panicked(ptr %t176)
+  %t179 = icmp ne i64 %t178, 0
+  br i1 %t179, label %scope.repanic.103, label %scope.errors.104
+scope.repanic.103:
+  call void @veles_task_repanic(ptr %t176)
   unreachable
-scope.errors.82:
-  br label %scope.after.80
-scope.after.80:
-  %t158 = load i64, ptr %a96
-  %t160 = call i64 @veles_i64_format(ptr %a159, i64 %t158)
-  %t161 = insertvalue %str undef, ptr %a159, 0
-  %t162 = insertvalue %str %t161, i64 %t160, 1
-  %t164 = extractvalue %str { ptr @.str.11, i64 4 }, 0
-  %t165 = extractvalue %str { ptr @.str.11, i64 4 }, 1
-  %t166 = extractvalue %str %t162, 0
-  %t167 = extractvalue %str %t162, 1
-  call void @veles_string_concat(ptr %a163, ptr %t164, i64 %t165, ptr %t166, i64 %t167)
-  %t168 = load %str, ptr %a163
-  %t169 = extractvalue %str { ptr @.str.12, i64 20 }, 0
-  %t170 = extractvalue %str { ptr @.str.12, i64 20 }, 1
-  call void @veles_call_push(ptr %t169)
-  call void @v_std.io.println(%str %t168)
+scope.errors.104:
+  br label %scope.after.102
+scope.after.102:
+  %t180 = load i64, ptr %a96
+  %t182 = call i64 @veles_i64_format(ptr %a181, i64 %t180)
+  %t183 = insertvalue %str undef, ptr %a181, 0
+  %t184 = insertvalue %str %t183, i64 %t182, 1
+  %t186 = extractvalue %str { ptr @.str.11, i64 4 }, 0
+  %t187 = extractvalue %str { ptr @.str.11, i64 4 }, 1
+  %t188 = extractvalue %str %t184, 0
+  %t189 = extractvalue %str %t184, 1
+  call void @veles_string_concat(ptr %a185, ptr %t186, i64 %t187, ptr %t188, i64 %t189)
+  %t190 = load %str, ptr %a185
+  %t191 = extractvalue %str { ptr @.str.12, i64 20 }, 0
+  %t192 = extractvalue %str { ptr @.str.12, i64 20 }, 1
+  call void @veles_call_push(ptr %t191)
+  call void @v_std.io.println(%str %t190)
   call void @veles_call_pop()
-  %t171 = call ptr @veles_chan_new(ptr @adesc.string, i64 2)
-  store ptr %t171, ptr %a172
-  %t173 = load ptr, ptr %a172
-  store %str { ptr @.str.13, i64 1 }, ptr %a174
-  %t175 = call i64 @veles_chan_try_send(ptr %t173, ptr %a174)
-  %t176 = icmp ne i64 %t175, 0
-  call void @veles_bool_to_string(ptr %a177, i1 zeroext %t176)
-  %t178 = load %str, ptr %a177
-  %t179 = load ptr, ptr %a172
-  store %str { ptr @.str.14, i64 1 }, ptr %a180
-  %t181 = call i64 @veles_chan_try_send(ptr %t179, ptr %a180)
-  %t182 = icmp ne i64 %t181, 0
-  call void @veles_bool_to_string(ptr %a183, i1 zeroext %t182)
-  %t184 = load %str, ptr %a183
-  %t185 = load ptr, ptr %a172
-  store %str { ptr @.str.15, i64 1 }, ptr %a186
-  %t187 = call i64 @veles_chan_try_send(ptr %t185, ptr %a186)
-  %t188 = icmp ne i64 %t187, 0
-  call void @veles_bool_to_string(ptr %a189, i1 zeroext %t188)
-  %t190 = load %str, ptr %a189
-  %t191 = load ptr, ptr %a172
-  store %str zeroinitializer, ptr %a192
-  %t193 = call i64 @veles_chan_try_recv(ptr %t191, ptr %a192)
-  %t194 = icmp ne i64 %t193, 0
-  %t195 = load %str, ptr %a192
-  %t196 = insertvalue { i1, %str } undef, i1 %t194, 0
-  %t197 = insertvalue { i1, %str } %t196, %str %t195, 1
-  %t200 = extractvalue { i1, %str } %t197, 0
-  %t199 = xor i1 %t200, true
-  br i1 %t199, label %elvis.default.83, label %elvis.some.84
-elvis.some.84:
-  %t201 = extractvalue { i1, %str } %t197, 1
-  store %str %t201, ptr %a198
-  br label %elvis.end.85
-elvis.default.83:
-  store %str { ptr @.str.16, i64 1 }, ptr %a198
-  br label %elvis.end.85
-elvis.end.85:
-  %t202 = load %str, ptr %a198
-  %t203 = load ptr, ptr %a172
-  store %str zeroinitializer, ptr %a204
-  %t205 = call i64 @veles_chan_try_recv(ptr %t203, ptr %a204)
-  %t206 = icmp ne i64 %t205, 0
-  %t207 = load %str, ptr %a204
-  %t208 = insertvalue { i1, %str } undef, i1 %t206, 0
-  %t209 = insertvalue { i1, %str } %t208, %str %t207, 1
-  %t212 = extractvalue { i1, %str } %t209, 0
-  %t211 = xor i1 %t212, true
-  br i1 %t211, label %elvis.default.86, label %elvis.some.87
-elvis.some.87:
-  %t213 = extractvalue { i1, %str } %t209, 1
-  store %str %t213, ptr %a210
-  br label %elvis.end.88
-elvis.default.86:
-  store %str { ptr @.str.16, i64 1 }, ptr %a210
-  br label %elvis.end.88
-elvis.end.88:
-  %t214 = load %str, ptr %a210
-  %t215 = load ptr, ptr %a172
-  store %str zeroinitializer, ptr %a216
-  %t217 = call i64 @veles_chan_try_recv(ptr %t215, ptr %a216)
-  %t218 = icmp ne i64 %t217, 0
-  %t219 = load %str, ptr %a216
-  %t220 = insertvalue { i1, %str } undef, i1 %t218, 0
-  %t221 = insertvalue { i1, %str } %t220, %str %t219, 1
-  %t224 = extractvalue { i1, %str } %t221, 0
-  %t223 = xor i1 %t224, true
-  br i1 %t223, label %elvis.default.89, label %elvis.some.90
-elvis.some.90:
-  %t225 = extractvalue { i1, %str } %t221, 1
-  store %str %t225, ptr %a222
-  br label %elvis.end.91
-elvis.default.89:
-  store %str { ptr @.str.16, i64 1 }, ptr %a222
-  br label %elvis.end.91
-elvis.end.91:
-  %t226 = load %str, ptr %a222
-  %t229 = getelementptr [11 x %str], ptr %a228, i64 0, i64 0
-  store %str %t178, ptr %t229
-  %t230 = getelementptr [11 x %str], ptr %a228, i64 0, i64 1
-  store %str { ptr @.str.8, i64 1 }, ptr %t230
-  %t231 = getelementptr [11 x %str], ptr %a228, i64 0, i64 2
-  store %str %t184, ptr %t231
-  %t232 = getelementptr [11 x %str], ptr %a228, i64 0, i64 3
-  store %str { ptr @.str.8, i64 1 }, ptr %t232
-  %t233 = getelementptr [11 x %str], ptr %a228, i64 0, i64 4
-  store %str %t190, ptr %t233
-  %t234 = getelementptr [11 x %str], ptr %a228, i64 0, i64 5
-  store %str { ptr @.str.8, i64 1 }, ptr %t234
-  %t235 = getelementptr [11 x %str], ptr %a228, i64 0, i64 6
-  store %str %t202, ptr %t235
-  %t236 = getelementptr [11 x %str], ptr %a228, i64 0, i64 7
-  store %str { ptr @.str.8, i64 1 }, ptr %t236
-  %t237 = getelementptr [11 x %str], ptr %a228, i64 0, i64 8
-  store %str %t214, ptr %t237
-  %t238 = getelementptr [11 x %str], ptr %a228, i64 0, i64 9
-  store %str { ptr @.str.8, i64 1 }, ptr %t238
-  %t239 = getelementptr [11 x %str], ptr %a228, i64 0, i64 10
-  store %str %t226, ptr %t239
-  call void @veles_string_concat_n(ptr %a227, ptr %a228, i64 11)
-  %t240 = load %str, ptr %a227
-  %t241 = extractvalue %str { ptr @.str.17, i64 20 }, 0
-  %t242 = extractvalue %str { ptr @.str.17, i64 20 }, 1
-  call void @veles_call_push(ptr %t241)
-  call void @v_std.io.println(%str %t240)
+  %t193 = call ptr @veles_chan_new(ptr @adesc.string, i64 2)
+  store ptr %t193, ptr %a194
+  %t195 = load ptr, ptr %a194
+  store %str { ptr @.str.13, i64 1 }, ptr %a196
+  %t197 = call i64 @veles_chan_try_send(ptr %t195, ptr %a196)
+  %t198 = icmp ne i64 %t197, 0
+  call void @veles_bool_to_string(ptr %a199, i1 zeroext %t198)
+  %t200 = load %str, ptr %a199
+  %t201 = load ptr, ptr %a194
+  store %str { ptr @.str.14, i64 1 }, ptr %a202
+  %t203 = call i64 @veles_chan_try_send(ptr %t201, ptr %a202)
+  %t204 = icmp ne i64 %t203, 0
+  call void @veles_bool_to_string(ptr %a205, i1 zeroext %t204)
+  %t206 = load %str, ptr %a205
+  %t207 = load ptr, ptr %a194
+  store %str { ptr @.str.15, i64 1 }, ptr %a208
+  %t209 = call i64 @veles_chan_try_send(ptr %t207, ptr %a208)
+  %t210 = icmp ne i64 %t209, 0
+  call void @veles_bool_to_string(ptr %a211, i1 zeroext %t210)
+  %t212 = load %str, ptr %a211
+  %t213 = load ptr, ptr %a194
+  store %str zeroinitializer, ptr %a214
+  %t215 = call i64 @veles_chan_try_recv(ptr %t213, ptr %a214)
+  %t216 = icmp ne i64 %t215, 0
+  %t217 = load %str, ptr %a214
+  %t218 = insertvalue { i1, %str } undef, i1 %t216, 0
+  %t219 = insertvalue { i1, %str } %t218, %str %t217, 1
+  %t222 = extractvalue { i1, %str } %t219, 0
+  %t221 = xor i1 %t222, true
+  br i1 %t221, label %elvis.default.105, label %elvis.some.106
+elvis.some.106:
+  %t223 = extractvalue { i1, %str } %t219, 1
+  store %str %t223, ptr %a220
+  br label %elvis.end.107
+elvis.default.105:
+  store %str { ptr @.str.16, i64 1 }, ptr %a220
+  br label %elvis.end.107
+elvis.end.107:
+  %t224 = load %str, ptr %a220
+  %t225 = load ptr, ptr %a194
+  store %str zeroinitializer, ptr %a226
+  %t227 = call i64 @veles_chan_try_recv(ptr %t225, ptr %a226)
+  %t228 = icmp ne i64 %t227, 0
+  %t229 = load %str, ptr %a226
+  %t230 = insertvalue { i1, %str } undef, i1 %t228, 0
+  %t231 = insertvalue { i1, %str } %t230, %str %t229, 1
+  %t234 = extractvalue { i1, %str } %t231, 0
+  %t233 = xor i1 %t234, true
+  br i1 %t233, label %elvis.default.108, label %elvis.some.109
+elvis.some.109:
+  %t235 = extractvalue { i1, %str } %t231, 1
+  store %str %t235, ptr %a232
+  br label %elvis.end.110
+elvis.default.108:
+  store %str { ptr @.str.16, i64 1 }, ptr %a232
+  br label %elvis.end.110
+elvis.end.110:
+  %t236 = load %str, ptr %a232
+  %t237 = load ptr, ptr %a194
+  store %str zeroinitializer, ptr %a238
+  %t239 = call i64 @veles_chan_try_recv(ptr %t237, ptr %a238)
+  %t240 = icmp ne i64 %t239, 0
+  %t241 = load %str, ptr %a238
+  %t242 = insertvalue { i1, %str } undef, i1 %t240, 0
+  %t243 = insertvalue { i1, %str } %t242, %str %t241, 1
+  %t246 = extractvalue { i1, %str } %t243, 0
+  %t245 = xor i1 %t246, true
+  br i1 %t245, label %elvis.default.111, label %elvis.some.112
+elvis.some.112:
+  %t247 = extractvalue { i1, %str } %t243, 1
+  store %str %t247, ptr %a244
+  br label %elvis.end.113
+elvis.default.111:
+  store %str { ptr @.str.16, i64 1 }, ptr %a244
+  br label %elvis.end.113
+elvis.end.113:
+  %t248 = load %str, ptr %a244
+  %t251 = getelementptr [11 x %str], ptr %a250, i64 0, i64 0
+  store %str %t200, ptr %t251
+  %t252 = getelementptr [11 x %str], ptr %a250, i64 0, i64 1
+  store %str { ptr @.str.8, i64 1 }, ptr %t252
+  %t253 = getelementptr [11 x %str], ptr %a250, i64 0, i64 2
+  store %str %t206, ptr %t253
+  %t254 = getelementptr [11 x %str], ptr %a250, i64 0, i64 3
+  store %str { ptr @.str.8, i64 1 }, ptr %t254
+  %t255 = getelementptr [11 x %str], ptr %a250, i64 0, i64 4
+  store %str %t212, ptr %t255
+  %t256 = getelementptr [11 x %str], ptr %a250, i64 0, i64 5
+  store %str { ptr @.str.8, i64 1 }, ptr %t256
+  %t257 = getelementptr [11 x %str], ptr %a250, i64 0, i64 6
+  store %str %t224, ptr %t257
+  %t258 = getelementptr [11 x %str], ptr %a250, i64 0, i64 7
+  store %str { ptr @.str.8, i64 1 }, ptr %t258
+  %t259 = getelementptr [11 x %str], ptr %a250, i64 0, i64 8
+  store %str %t236, ptr %t259
+  %t260 = getelementptr [11 x %str], ptr %a250, i64 0, i64 9
+  store %str { ptr @.str.8, i64 1 }, ptr %t260
+  %t261 = getelementptr [11 x %str], ptr %a250, i64 0, i64 10
+  store %str %t248, ptr %t261
+  call void @veles_string_concat_n(ptr %a249, ptr %a250, i64 11)
+  %t262 = load %str, ptr %a249
+  %t263 = extractvalue %str { ptr @.str.17, i64 20 }, 0
+  %t264 = extractvalue %str { ptr @.str.17, i64 20 }, 1
+  call void @veles_call_push(ptr %t263)
+  call void @v_std.io.println(%str %t262)
   call void @veles_call_pop()
-  %t243 = call ptr @veles_chan_new(ptr @adesc.i64, i64 1)
-  store ptr %t243, ptr %a244
-  store i64 0, ptr %a245
-  %t246 = call ptr @veles_scope_begin(ptr %task, i64 1, i64 %coro.depth)
-  store ptr %t246, ptr %a247
-  call void @veles_cleanup_push(ptr %a248, ptr @scope.cancel.thunk, ptr %a247)
-  %t249 = load ptr, ptr %a247
-  %t250 = call ptr @veles_task_launch(ptr %t249, i64 0)
-  %t251 = load ptr, ptr %a244
-  %t252 = call ptr @veles_alloc_words(i64 16)
-  %t253 = getelementptr inbounds { ptr }, ptr %t252, i32 0, i32 0
-  store ptr %t251, ptr %t253
-  call void @veles_task_spawn(ptr %t250, ptr @entry.v_main.produce, ptr %t252)
-  store ptr %t250, ptr %a254
-  br label %loop.cond.95
-loop.cond.95:
-  %t255 = load i64, ptr %a245
-  %t256 = icmp slt i64 %t255, 6
-  br i1 %t256, label %loop.body.98, label %loop.end.97
-loop.body.98:
-  %t257 = extractvalue %str { ptr @.str.18, i64 20 }, 0
-  %t258 = extractvalue %str { ptr @.str.18, i64 20 }, 1
-  call void @veles_call_push(ptr %t257)
-  %t259 = call %S.std.prelude.Duration @v_std.prelude.Duration.millis(i64 1)
+  %t265 = call ptr @veles_chan_new(ptr @adesc.i64, i64 1)
+  store ptr %t265, ptr %a266
+  store i64 0, ptr %a267
+  %t268 = call ptr @veles_scope_begin(ptr %task, i64 1, i64 %coro.depth)
+  store ptr %t268, ptr %a269
+  call void @veles_cleanup_push(ptr %a270, ptr @scope.cancel.thunk, ptr %a269, ptr @cleanup.move.word)
+  %t271 = load ptr, ptr %a269
+  %t272 = call ptr @veles_task_launch(ptr %t271, i64 0)
+  %t273 = load ptr, ptr %a266
+  %t274 = call ptr @veles_alloc_words(i64 16)
+  %t275 = getelementptr inbounds { ptr }, ptr %t274, i32 0, i32 0
+  store ptr %t273, ptr %t275
+  call void @veles_task_spawn(ptr %t272, ptr @entry.v_main.produce, ptr %t274)
+  store ptr %t272, ptr %a276
+  br label %loop.cond.117
+loop.cond.117:
+  %t277 = load i64, ptr %a267
+  %t278 = icmp slt i64 %t277, 6
+  br i1 %t278, label %loop.body.120, label %loop.end.119
+loop.body.120:
+  %t279 = extractvalue %str { ptr @.str.18, i64 20 }, 0
+  %t280 = extractvalue %str { ptr @.str.18, i64 20 }, 1
+  call void @veles_call_push(ptr %t279)
+  %t281 = call %S.std.prelude.Duration @v_std.prelude.Duration.millis(i64 1)
   call void @veles_call_pop()
-  %t260 = extractvalue %S.std.prelude.Duration %t259, 0
-  %t262 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %t260, i64 999999)
-  %t263 = extractvalue { i64, i1 } %t262, 0
-  %t264 = extractvalue { i64, i1 } %t262, 1
-  br i1 %t264, label %overflow.99, label %arith.ok.100
-overflow.99:
-  %t265 = extractvalue %str { ptr @.str.2, i64 16 }, 0
-  %t266 = extractvalue %str { ptr @.str.2, i64 16 }, 1
-  %t267 = extractvalue %str { ptr @.str.19, i64 13 }, 0
-  %t268 = extractvalue %str { ptr @.str.19, i64 13 }, 1
-  call void @veles_panic_at(ptr %t265, i64 %t266, ptr %t267, i64 %t268)
+  %t282 = extractvalue %S.std.prelude.Duration %t281, 0
+  %t284 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %t282, i64 999999)
+  %t285 = extractvalue { i64, i1 } %t284, 0
+  %t286 = extractvalue { i64, i1 } %t284, 1
+  br i1 %t286, label %overflow.121, label %arith.ok.122
+overflow.121:
+  %t287 = extractvalue %str { ptr @.str.2, i64 16 }, 0
+  %t288 = extractvalue %str { ptr @.str.2, i64 16 }, 1
+  %t289 = extractvalue %str { ptr @.str.19, i64 13 }, 0
+  %t290 = extractvalue %str { ptr @.str.19, i64 13 }, 1
+  call void @veles_panic_at(ptr %t287, i64 %t288, ptr %t289, i64 %t290)
   unreachable
-arith.ok.100:
-  %t270 = icmp eq i64 1000000, 0
-  br i1 %t270, label %divzero.101, label %div.ok.102
-divzero.101:
-  %t271 = extractvalue %str { ptr @.str.4, i64 16 }, 0
-  %t272 = extractvalue %str { ptr @.str.4, i64 16 }, 1
-  %t273 = extractvalue %str { ptr @.str.19, i64 13 }, 0
-  %t274 = extractvalue %str { ptr @.str.19, i64 13 }, 1
-  call void @veles_panic_at(ptr %t271, i64 %t272, ptr %t273, i64 %t274)
+arith.ok.122:
+  %t292 = icmp eq i64 1000000, 0
+  br i1 %t292, label %divzero.123, label %div.ok.124
+divzero.123:
+  %t293 = extractvalue %str { ptr @.str.4, i64 16 }, 0
+  %t294 = extractvalue %str { ptr @.str.4, i64 16 }, 1
+  %t295 = extractvalue %str { ptr @.str.19, i64 13 }, 0
+  %t296 = extractvalue %str { ptr @.str.19, i64 13 }, 1
+  call void @veles_panic_at(ptr %t293, i64 %t294, ptr %t295, i64 %t296)
   unreachable
-div.ok.102:
-  %t275 = icmp eq i64 %t263, -9223372036854775808
-  %t276 = icmp eq i64 1000000, -1
-  %t277 = and i1 %t275, %t276
-  br i1 %t277, label %divof.103, label %div.ok.104
-divof.103:
-  %t278 = extractvalue %str { ptr @.str.2, i64 16 }, 0
-  %t279 = extractvalue %str { ptr @.str.2, i64 16 }, 1
-  %t280 = extractvalue %str { ptr @.str.19, i64 13 }, 0
-  %t281 = extractvalue %str { ptr @.str.19, i64 13 }, 1
-  call void @veles_panic_at(ptr %t278, i64 %t279, ptr %t280, i64 %t281)
+div.ok.124:
+  %t297 = icmp eq i64 %t285, -9223372036854775808
+  %t298 = icmp eq i64 1000000, -1
+  %t299 = and i1 %t297, %t298
+  br i1 %t299, label %divof.125, label %div.ok.126
+divof.125:
+  %t300 = extractvalue %str { ptr @.str.2, i64 16 }, 0
+  %t301 = extractvalue %str { ptr @.str.2, i64 16 }, 1
+  %t302 = extractvalue %str { ptr @.str.19, i64 13 }, 0
+  %t303 = extractvalue %str { ptr @.str.19, i64 13 }, 1
+  call void @veles_panic_at(ptr %t300, i64 %t301, ptr %t302, i64 %t303)
   unreachable
-div.ok.104:
-  %t269 = sdiv i64 %t263, 1000000
-  br label %sleep.105
-sleep.105:
-  %t282 = call i64 @veles_task_sleep(ptr %task, i64 %t269)
-  %t283 = icmp ne i64 %t282, 0
-  br i1 %t283, label %sleep.done.106, label %sleep.susp.107
-sleep.susp.107:
-  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
-  %t284 = call i8 @llvm.coro.suspend(token none, i1 false)
-  switch i8 %t284, label %coro.suspend [ i8 0, label %resume.108 i8 1, label %coro.cleanup ]
-resume.108:
-  %t285 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
-  %t286 = icmp ne i64 %t285, 0
-  br i1 %t286, label %cancelled.109, label %cont.110
-cancelled.109:
-  call void @veles_cleanup_pop(ptr %a248)
-  %t287 = load ptr, ptr %a247
-  call void @veles_scope_cancel(ptr %t287)
-  br label %abandon.wait.111
-abandon.wait.111:
-  %t288 = call i64 @veles_scope_wait(ptr %task, ptr %t287)
-  %t289 = icmp ne i64 %t288, 0
-  br i1 %t289, label %abandon.done.112, label %abandon.susp.113
-abandon.susp.113:
-  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
-  %t290 = call i8 @llvm.coro.suspend(token none, i1 false)
-  switch i8 %t290, label %coro.suspend [ i8 0, label %resume.114 i8 1, label %coro.cleanup ]
-resume.114:
-  br label %abandon.wait.111
-abandon.done.112:
-  call void @veles_frame_unwound(ptr %task, ptr %link)
-  br label %coro.final
-cont.110:
-  %t291 = load ptr, ptr %a247
-  %t292 = call ptr @veles_scope_failed(ptr %t291)
-  %t293 = icmp ne ptr %t292, null
-  br i1 %t293, label %scope.abort.115, label %scope.ok.116
-scope.ok.116:
-  br label %cont.117
-scope.abort.115:
-  call void @veles_task_leave_waits(ptr %task)
-  %t294 = load ptr, ptr %a247
-  call void @veles_scope_abandon(ptr %t294, ptr %task)
-  br label %scope.wait.92
-cont.117:
-  br label %sleep.105
-sleep.done.106:
-  %t295 = load i64, ptr %a245
-  %t296 = load ptr, ptr %a244
-  store i64 zeroinitializer, ptr %a297
-  br label %recv.118
-recv.118:
-  %t298 = call i64 @veles_chan_recv(ptr %task, ptr %t296, ptr %a297)
-  %t299 = icmp ne i64 %t298, 0
-  br i1 %t299, label %recv.done.119, label %recv.susp.120
-recv.susp.120:
-  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
-  %t300 = call i8 @llvm.coro.suspend(token none, i1 false)
-  switch i8 %t300, label %coro.suspend [ i8 0, label %resume.121 i8 1, label %coro.cleanup ]
-resume.121:
-  %t301 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
-  %t302 = icmp ne i64 %t301, 0
-  br i1 %t302, label %cancelled.122, label %cont.123
-cancelled.122:
-  call void @veles_cleanup_pop(ptr %a248)
-  %t303 = load ptr, ptr %a247
-  call void @veles_scope_cancel(ptr %t303)
-  br label %abandon.wait.124
-abandon.wait.124:
-  %t304 = call i64 @veles_scope_wait(ptr %task, ptr %t303)
+div.ok.126:
+  %t291 = sdiv i64 %t285, 1000000
+  br label %sleep.127
+sleep.127:
+  %t304 = call i64 @veles_task_sleep(ptr %task, i64 %t291)
   %t305 = icmp ne i64 %t304, 0
-  br i1 %t305, label %abandon.done.125, label %abandon.susp.126
-abandon.susp.126:
+  br i1 %t305, label %sleep.done.128, label %sleep.susp.129
+sleep.susp.129:
   call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t306 = call i8 @llvm.coro.suspend(token none, i1 false)
-  switch i8 %t306, label %coro.suspend [ i8 0, label %resume.127 i8 1, label %coro.cleanup ]
-resume.127:
-  br label %abandon.wait.124
-abandon.done.125:
+  switch i8 %t306, label %coro.suspend [ i8 0, label %resume.130 i8 1, label %coro.cleanup ]
+resume.130:
+  %t307 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
+  %t308 = icmp ne i64 %t307, 0
+  br i1 %t308, label %cancelled.131, label %cont.132
+cancelled.131:
+  call void @veles_cleanup_pop(ptr %a270)
+  %t309 = load ptr, ptr %a269
+  call void @veles_scope_cancel(ptr %t309)
+  br label %abandon.wait.133
+abandon.wait.133:
+  %t310 = call i64 @veles_scope_wait(ptr %task, ptr %t309)
+  %t311 = icmp ne i64 %t310, 0
+  br i1 %t311, label %abandon.done.134, label %abandon.susp.135
+abandon.susp.135:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
+  %t312 = call i8 @llvm.coro.suspend(token none, i1 false)
+  switch i8 %t312, label %coro.suspend [ i8 0, label %resume.136 i8 1, label %coro.cleanup ]
+resume.136:
+  br label %abandon.wait.133
+abandon.done.134:
   call void @veles_frame_unwound(ptr %task, ptr %link)
   br label %coro.final
-cont.123:
-  %t307 = load ptr, ptr %a247
-  %t308 = call ptr @veles_scope_failed(ptr %t307)
-  %t309 = icmp ne ptr %t308, null
-  br i1 %t309, label %scope.abort.128, label %scope.ok.129
-scope.ok.129:
-  br label %cont.130
-scope.abort.128:
+cont.132:
+  %t313 = load ptr, ptr %a269
+  %t314 = call ptr @veles_scope_failed(ptr %t313)
+  %t315 = icmp ne ptr %t314, null
+  br i1 %t315, label %scope.abort.137, label %scope.ok.138
+scope.ok.138:
+  br label %cont.139
+scope.abort.137:
   call void @veles_task_leave_waits(ptr %task)
-  %t310 = load ptr, ptr %a247
-  call void @veles_scope_abandon(ptr %t310, ptr %task)
-  br label %scope.wait.92
-cont.130:
-  br label %recv.118
-recv.done.119:
-  %t311 = icmp eq i64 %t298, 1
-  %t312 = load i64, ptr %a297
-  %t313 = insertvalue { i1, i64 } undef, i1 %t311, 0
-  %t314 = insertvalue { i1, i64 } %t313, i64 %t312, 1
-  %t317 = extractvalue { i1, i64 } %t314, 0
-  %t316 = xor i1 %t317, true
-  br i1 %t316, label %elvis.default.131, label %elvis.some.132
-elvis.some.132:
-  %t318 = extractvalue { i1, i64 } %t314, 1
-  store i64 %t318, ptr %a315
-  br label %elvis.end.133
-elvis.default.131:
-  store i64 0, ptr %a315
-  br label %elvis.end.133
-elvis.end.133:
-  %t319 = load i64, ptr %a315
-  %t321 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %t295, i64 %t319)
-  %t322 = extractvalue { i64, i1 } %t321, 0
-  %t323 = extractvalue { i64, i1 } %t321, 1
-  br i1 %t323, label %overflow.134, label %arith.ok.135
-overflow.134:
-  %t324 = extractvalue %str { ptr @.str.2, i64 16 }, 0
-  %t325 = extractvalue %str { ptr @.str.2, i64 16 }, 1
-  %t326 = extractvalue %str { ptr @.str.20, i64 12 }, 0
-  %t327 = extractvalue %str { ptr @.str.20, i64 12 }, 1
-  call void @veles_panic_at(ptr %t324, i64 %t325, ptr %t326, i64 %t327)
-  unreachable
-arith.ok.135:
-  store i64 %t322, ptr %a245
-  br label %loop.post.96
-loop.post.96:
-  %t328 = load volatile i32, ptr @veles_stop_requested, align 4
-  %t329 = icmp ne i32 %t328, 0
-  br i1 %t329, label %safepoint.136, label %safepoint.on.137, !prof !{!"branch_weights", i32 1, i32 100000}
-safepoint.136:
-  call void @veles_gc_park()
-  br label %safepoint.on.137
-safepoint.on.137:
-  br label %loop.cond.95
-loop.end.97:
-  br label %scope.wait.92
-scope.wait.92:
-  %t330 = load ptr, ptr %a247
-  %t331 = call i64 @veles_scope_wait(ptr %task, ptr %t330)
-  %t332 = icmp ne i64 %t331, 0
-  br i1 %t332, label %scope.done.93, label %scope.susp.94
-scope.susp.94:
+  %t316 = load ptr, ptr %a269
+  call void @veles_scope_abandon(ptr %t316, ptr %task)
+  br label %scope.wait.114
+cont.139:
+  br label %sleep.127
+sleep.done.128:
+  %t317 = load i64, ptr %a267
+  %t318 = load ptr, ptr %a266
+  store i64 zeroinitializer, ptr %a319
+  br label %recv.140
+recv.140:
+  %t320 = call i64 @veles_chan_recv(ptr %task, ptr %t318, ptr %a319)
+  %t321 = icmp ne i64 %t320, 0
+  br i1 %t321, label %recv.done.141, label %recv.susp.142
+recv.susp.142:
   call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
-  %t333 = call i8 @llvm.coro.suspend(token none, i1 false)
-  switch i8 %t333, label %coro.suspend [ i8 0, label %resume.138 i8 1, label %coro.cleanup ]
-resume.138:
-  %t334 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
-  %t335 = icmp ne i64 %t334, 0
-  br i1 %t335, label %cancelled.139, label %cont.140
-cancelled.139:
-  call void @veles_cleanup_pop(ptr %a248)
-  %t336 = load ptr, ptr %a247
-  call void @veles_scope_cancel(ptr %t336)
-  br label %abandon.wait.141
-abandon.wait.141:
-  %t337 = call i64 @veles_scope_wait(ptr %task, ptr %t336)
-  %t338 = icmp ne i64 %t337, 0
-  br i1 %t338, label %abandon.done.142, label %abandon.susp.143
-abandon.susp.143:
+  %t322 = call i8 @llvm.coro.suspend(token none, i1 false)
+  switch i8 %t322, label %coro.suspend [ i8 0, label %resume.143 i8 1, label %coro.cleanup ]
+resume.143:
+  %t323 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
+  %t324 = icmp ne i64 %t323, 0
+  br i1 %t324, label %cancelled.144, label %cont.145
+cancelled.144:
+  call void @veles_cleanup_pop(ptr %a270)
+  %t325 = load ptr, ptr %a269
+  call void @veles_scope_cancel(ptr %t325)
+  br label %abandon.wait.146
+abandon.wait.146:
+  %t326 = call i64 @veles_scope_wait(ptr %task, ptr %t325)
+  %t327 = icmp ne i64 %t326, 0
+  br i1 %t327, label %abandon.done.147, label %abandon.susp.148
+abandon.susp.148:
   call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
-  %t339 = call i8 @llvm.coro.suspend(token none, i1 false)
-  switch i8 %t339, label %coro.suspend [ i8 0, label %resume.144 i8 1, label %coro.cleanup ]
-resume.144:
-  br label %abandon.wait.141
-abandon.done.142:
+  %t328 = call i8 @llvm.coro.suspend(token none, i1 false)
+  switch i8 %t328, label %coro.suspend [ i8 0, label %resume.149 i8 1, label %coro.cleanup ]
+resume.149:
+  br label %abandon.wait.146
+abandon.done.147:
   call void @veles_frame_unwound(ptr %task, ptr %link)
   br label %coro.final
-cont.140:
-  br label %scope.wait.92
-scope.done.93:
-  call void @veles_cleanup_pop(ptr %a248)
-  %t340 = load ptr, ptr %a247
-  %t341 = call ptr @veles_scope_failed(ptr %t340)
-  %t342 = icmp ne ptr %t341, null
-  br i1 %t342, label %scope.check.145, label %scope.after.146
-scope.check.145:
-  %t343 = call i64 @veles_task_panicked(ptr %t341)
-  %t344 = icmp ne i64 %t343, 0
-  br i1 %t344, label %scope.repanic.147, label %scope.errors.148
-scope.repanic.147:
-  call void @veles_task_repanic(ptr %t341)
-  unreachable
-scope.errors.148:
-  br label %scope.after.146
-scope.after.146:
-  %t345 = load i64, ptr %a245
-  %t347 = call i64 @veles_i64_format(ptr %a346, i64 %t345)
-  %t348 = insertvalue %str undef, ptr %a346, 0
-  %t349 = insertvalue %str %t348, i64 %t347, 1
-  %t351 = extractvalue %str { ptr @.str.21, i64 6 }, 0
-  %t352 = extractvalue %str { ptr @.str.21, i64 6 }, 1
-  %t353 = extractvalue %str %t349, 0
-  %t354 = extractvalue %str %t349, 1
-  call void @veles_string_concat(ptr %a350, ptr %t351, i64 %t352, ptr %t353, i64 %t354)
-  %t355 = load %str, ptr %a350
-  %t356 = extractvalue %str { ptr @.str.22, i64 20 }, 0
-  %t357 = extractvalue %str { ptr @.str.22, i64 20 }, 1
-  call void @veles_call_push(ptr %t356)
-  call void @v_std.io.println(%str %t355)
-  call void @veles_call_pop()
-  %t358 = call ptr @veles_chan_new(ptr @adesc.i64, i64 1)
-  store ptr %t358, ptr %a359
-  store i64 0, ptr %a360
-  %t361 = call ptr @veles_scope_begin(ptr %task, i64 1, i64 %coro.depth)
-  store ptr %t361, ptr %a362
-  call void @veles_cleanup_push(ptr %a363, ptr @scope.cancel.thunk, ptr %a362)
-  %t364 = load ptr, ptr %a362
-  %t365 = call ptr @veles_task_launch(ptr %t364, i64 0)
-  %t366 = load ptr, ptr %a359
-  %t367 = call ptr @veles_alloc_words(i64 16)
-  %t368 = getelementptr inbounds { ptr }, ptr %t367, i32 0, i32 0
-  store ptr %t366, ptr %t368
-  call void @veles_task_spawn(ptr %t365, ptr @entry.v_main.produce, ptr %t367)
-  store ptr %t365, ptr %a369
-  br label %loop.cond.152
-loop.cond.152:
-  %t370 = load i64, ptr %a360
-  %t371 = icmp slt i64 %t370, 6
-  br i1 %t371, label %loop.body.155, label %loop.end.154
-loop.body.155:
-  %t372 = load ptr, ptr %a359
-  store i64 zeroinitializer, ptr %a373
-  %t374 = call i64 @veles_chan_try_recv(ptr %t372, ptr %a373)
-  %t375 = icmp ne i64 %t374, 0
-  %t376 = load i64, ptr %a373
-  %t377 = insertvalue { i1, i64 } undef, i1 %t375, 0
-  %t378 = insertvalue { i1, i64 } %t377, i64 %t376, 1
-  store { i1, i64 } %t378, ptr %a379
-  %t380 = load { i1, i64 }, ptr %a379
-  %t382 = extractvalue { i1, i64 } %t380, 0
-  %t381 = xor i1 %t382, true
-  %t383 = xor i1 %t381, true
-  br i1 %t383, label %if.then.156, label %if.else.158
-if.then.156:
-  %t384 = load i64, ptr %a360
-  %t385 = load { i1, i64 }, ptr %a379
-  %t386 = extractvalue { i1, i64 } %t385, 1
-  %t388 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %t384, i64 %t386)
-  %t389 = extractvalue { i64, i1 } %t388, 0
-  %t390 = extractvalue { i64, i1 } %t388, 1
-  br i1 %t390, label %overflow.159, label %arith.ok.160
-overflow.159:
-  %t391 = extractvalue %str { ptr @.str.2, i64 16 }, 0
-  %t392 = extractvalue %str { ptr @.str.2, i64 16 }, 1
-  %t393 = extractvalue %str { ptr @.str.23, i64 13 }, 0
-  %t394 = extractvalue %str { ptr @.str.23, i64 13 }, 1
-  call void @veles_panic_at(ptr %t391, i64 %t392, ptr %t393, i64 %t394)
-  unreachable
-arith.ok.160:
-  store i64 %t389, ptr %a360
-  br label %if.end.157
-if.else.158:
-  %t395 = getelementptr inbounds %S.std.prelude.Duration, ptr @g_std_prelude_Duration_zero, i32 0, i32 0
-  %t396 = load i64, ptr %t395
-  %t398 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %t396, i64 999999)
-  %t399 = extractvalue { i64, i1 } %t398, 0
-  %t400 = extractvalue { i64, i1 } %t398, 1
-  br i1 %t400, label %overflow.161, label %arith.ok.162
-overflow.161:
-  %t401 = extractvalue %str { ptr @.str.2, i64 16 }, 0
-  %t402 = extractvalue %str { ptr @.str.2, i64 16 }, 1
-  %t403 = extractvalue %str { ptr @.str.24, i64 13 }, 0
-  %t404 = extractvalue %str { ptr @.str.24, i64 13 }, 1
-  call void @veles_panic_at(ptr %t401, i64 %t402, ptr %t403, i64 %t404)
-  unreachable
-arith.ok.162:
-  %t406 = icmp eq i64 1000000, 0
-  br i1 %t406, label %divzero.163, label %div.ok.164
-divzero.163:
-  %t407 = extractvalue %str { ptr @.str.4, i64 16 }, 0
-  %t408 = extractvalue %str { ptr @.str.4, i64 16 }, 1
-  %t409 = extractvalue %str { ptr @.str.24, i64 13 }, 0
-  %t410 = extractvalue %str { ptr @.str.24, i64 13 }, 1
-  call void @veles_panic_at(ptr %t407, i64 %t408, ptr %t409, i64 %t410)
-  unreachable
-div.ok.164:
-  %t411 = icmp eq i64 %t399, -9223372036854775808
-  %t412 = icmp eq i64 1000000, -1
-  %t413 = and i1 %t411, %t412
-  br i1 %t413, label %divof.165, label %div.ok.166
-divof.165:
-  %t414 = extractvalue %str { ptr @.str.2, i64 16 }, 0
-  %t415 = extractvalue %str { ptr @.str.2, i64 16 }, 1
-  %t416 = extractvalue %str { ptr @.str.24, i64 13 }, 0
-  %t417 = extractvalue %str { ptr @.str.24, i64 13 }, 1
-  call void @veles_panic_at(ptr %t414, i64 %t415, ptr %t416, i64 %t417)
-  unreachable
-div.ok.166:
-  %t405 = sdiv i64 %t399, 1000000
-  br label %sleep.167
-sleep.167:
-  %t418 = call i64 @veles_task_sleep(ptr %task, i64 %t405)
-  %t419 = icmp ne i64 %t418, 0
-  br i1 %t419, label %sleep.done.168, label %sleep.susp.169
-sleep.susp.169:
-  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
-  %t420 = call i8 @llvm.coro.suspend(token none, i1 false)
-  switch i8 %t420, label %coro.suspend [ i8 0, label %resume.170 i8 1, label %coro.cleanup ]
-resume.170:
-  %t421 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
-  %t422 = icmp ne i64 %t421, 0
-  br i1 %t422, label %cancelled.171, label %cont.172
-cancelled.171:
-  call void @veles_cleanup_pop(ptr %a363)
-  %t423 = load ptr, ptr %a362
-  call void @veles_scope_cancel(ptr %t423)
-  br label %abandon.wait.173
-abandon.wait.173:
-  %t424 = call i64 @veles_scope_wait(ptr %task, ptr %t423)
-  %t425 = icmp ne i64 %t424, 0
-  br i1 %t425, label %abandon.done.174, label %abandon.susp.175
-abandon.susp.175:
-  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
-  %t426 = call i8 @llvm.coro.suspend(token none, i1 false)
-  switch i8 %t426, label %coro.suspend [ i8 0, label %resume.176 i8 1, label %coro.cleanup ]
-resume.176:
-  br label %abandon.wait.173
-abandon.done.174:
-  call void @veles_frame_unwound(ptr %task, ptr %link)
-  br label %coro.final
-cont.172:
-  %t427 = load ptr, ptr %a362
-  %t428 = call ptr @veles_scope_failed(ptr %t427)
-  %t429 = icmp ne ptr %t428, null
-  br i1 %t429, label %scope.abort.177, label %scope.ok.178
-scope.ok.178:
-  br label %cont.179
-scope.abort.177:
+cont.145:
+  %t329 = load ptr, ptr %a269
+  %t330 = call ptr @veles_scope_failed(ptr %t329)
+  %t331 = icmp ne ptr %t330, null
+  br i1 %t331, label %scope.abort.150, label %scope.ok.151
+scope.ok.151:
+  br label %cont.152
+scope.abort.150:
   call void @veles_task_leave_waits(ptr %task)
-  %t430 = load ptr, ptr %a362
-  call void @veles_scope_abandon(ptr %t430, ptr %task)
-  br label %scope.wait.149
-cont.179:
-  br label %sleep.167
-sleep.done.168:
-  br label %if.end.157
-if.end.157:
-  br label %loop.post.153
-loop.post.153:
-  %t431 = load volatile i32, ptr @veles_stop_requested, align 4
-  %t432 = icmp ne i32 %t431, 0
-  br i1 %t432, label %safepoint.180, label %safepoint.on.181, !prof !{!"branch_weights", i32 1, i32 100000}
-safepoint.180:
-  call void @veles_gc_park()
-  br label %safepoint.on.181
-safepoint.on.181:
-  br label %loop.cond.152
-loop.end.154:
-  br label %scope.wait.149
-scope.wait.149:
-  %t433 = load ptr, ptr %a362
-  %t434 = call i64 @veles_scope_wait(ptr %task, ptr %t433)
-  %t435 = icmp ne i64 %t434, 0
-  br i1 %t435, label %scope.done.150, label %scope.susp.151
-scope.susp.151:
+  %t332 = load ptr, ptr %a269
+  call void @veles_scope_abandon(ptr %t332, ptr %task)
+  br label %scope.wait.114
+cont.152:
+  br label %recv.140
+recv.done.141:
+  %t333 = icmp eq i64 %t320, 1
+  %t334 = load i64, ptr %a319
+  %t335 = insertvalue { i1, i64 } undef, i1 %t333, 0
+  %t336 = insertvalue { i1, i64 } %t335, i64 %t334, 1
+  %t339 = extractvalue { i1, i64 } %t336, 0
+  %t338 = xor i1 %t339, true
+  br i1 %t338, label %elvis.default.153, label %elvis.some.154
+elvis.some.154:
+  %t340 = extractvalue { i1, i64 } %t336, 1
+  store i64 %t340, ptr %a337
+  br label %elvis.end.155
+elvis.default.153:
+  store i64 0, ptr %a337
+  br label %elvis.end.155
+elvis.end.155:
+  %t341 = load i64, ptr %a337
+  %t343 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %t317, i64 %t341)
+  %t344 = extractvalue { i64, i1 } %t343, 0
+  %t345 = extractvalue { i64, i1 } %t343, 1
+  br i1 %t345, label %overflow.156, label %arith.ok.157
+overflow.156:
+  %t346 = extractvalue %str { ptr @.str.2, i64 16 }, 0
+  %t347 = extractvalue %str { ptr @.str.2, i64 16 }, 1
+  %t348 = extractvalue %str { ptr @.str.20, i64 12 }, 0
+  %t349 = extractvalue %str { ptr @.str.20, i64 12 }, 1
+  call void @veles_panic_at(ptr %t346, i64 %t347, ptr %t348, i64 %t349)
+  unreachable
+arith.ok.157:
+  store i64 %t344, ptr %a267
+  br label %loop.post.118
+loop.post.118:
+  %t350 = load volatile i32, ptr @veles_attention_line, align 64
+  %t351 = icmp ne i32 %t350, 0
+  br i1 %t351, label %safepoint.158, label %safepoint.on.159, !prof !{!"branch_weights", i32 1, i32 100000}
+safepoint.158:
+  %t352 = call i64 @veles_backedge(ptr %task, i64 %coro.depth)
+  switch i64 %t352, label %safepoint.on.159 [ i64 0, label %backedge.look.162 i64 1, label %backedge.yield.160 i64 2, label %backedge.cancel.161 ]
+backedge.look.162:
+  %t353 = load ptr, ptr %a269
+  %t354 = call ptr @veles_scope_failed(ptr %t353)
+  %t355 = icmp ne ptr %t354, null
+  br i1 %t355, label %scope.abort.163, label %scope.ok.164
+scope.ok.164:
+  br label %cont.165
+scope.abort.163:
+  call void @veles_task_leave_waits(ptr %task)
+  %t356 = load ptr, ptr %a269
+  call void @veles_scope_abandon(ptr %t356, ptr %task)
+  br label %scope.wait.114
+cont.165:
+  br label %safepoint.on.159
+backedge.yield.160:
+  br label %yield.166
+yield.166:
+  %t357 = call i64 @veles_task_sleep(ptr %task, i64 0)
+  %t358 = icmp ne i64 %t357, 0
+  br i1 %t358, label %safepoint.on.159, label %yield.susp.167
+yield.susp.167:
   call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
-  %t436 = call i8 @llvm.coro.suspend(token none, i1 false)
-  switch i8 %t436, label %coro.suspend [ i8 0, label %resume.182 i8 1, label %coro.cleanup ]
+  %t359 = call i8 @llvm.coro.suspend(token none, i1 false)
+  switch i8 %t359, label %coro.suspend [ i8 0, label %resume.168 i8 1, label %coro.cleanup ]
+resume.168:
+  %t360 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
+  %t361 = icmp ne i64 %t360, 0
+  br i1 %t361, label %cancelled.169, label %cont.170
+cancelled.169:
+  call void @veles_cleanup_pop(ptr %a270)
+  %t362 = load ptr, ptr %a269
+  call void @veles_scope_cancel(ptr %t362)
+  br label %abandon.wait.171
+abandon.wait.171:
+  %t363 = call i64 @veles_scope_wait(ptr %task, ptr %t362)
+  %t364 = icmp ne i64 %t363, 0
+  br i1 %t364, label %abandon.done.172, label %abandon.susp.173
+abandon.susp.173:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
+  %t365 = call i8 @llvm.coro.suspend(token none, i1 false)
+  switch i8 %t365, label %coro.suspend [ i8 0, label %resume.174 i8 1, label %coro.cleanup ]
+resume.174:
+  br label %abandon.wait.171
+abandon.done.172:
+  call void @veles_frame_unwound(ptr %task, ptr %link)
+  br label %coro.final
+cont.170:
+  %t366 = load ptr, ptr %a269
+  %t367 = call ptr @veles_scope_failed(ptr %t366)
+  %t368 = icmp ne ptr %t367, null
+  br i1 %t368, label %scope.abort.175, label %scope.ok.176
+scope.ok.176:
+  br label %cont.177
+scope.abort.175:
+  call void @veles_task_leave_waits(ptr %task)
+  %t369 = load ptr, ptr %a269
+  call void @veles_scope_abandon(ptr %t369, ptr %task)
+  br label %scope.wait.114
+cont.177:
+  br label %yield.166
+backedge.cancel.161:
+  call void @veles_cleanup_pop(ptr %a270)
+  %t370 = load ptr, ptr %a269
+  call void @veles_scope_cancel(ptr %t370)
+  br label %abandon.wait.178
+abandon.wait.178:
+  %t371 = call i64 @veles_scope_wait(ptr %task, ptr %t370)
+  %t372 = icmp ne i64 %t371, 0
+  br i1 %t372, label %abandon.done.179, label %abandon.susp.180
+abandon.susp.180:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
+  %t373 = call i8 @llvm.coro.suspend(token none, i1 false)
+  switch i8 %t373, label %coro.suspend [ i8 0, label %resume.181 i8 1, label %coro.cleanup ]
+resume.181:
+  br label %abandon.wait.178
+abandon.done.179:
+  call void @veles_frame_unwound(ptr %task, ptr %link)
+  br label %coro.final
+safepoint.on.159:
+  br label %loop.cond.117
+loop.end.119:
+  br label %scope.wait.114
+scope.wait.114:
+  %t374 = load ptr, ptr %a269
+  %t375 = call i64 @veles_scope_wait(ptr %task, ptr %t374)
+  %t376 = icmp ne i64 %t375, 0
+  br i1 %t376, label %scope.done.115, label %scope.susp.116
+scope.susp.116:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
+  %t377 = call i8 @llvm.coro.suspend(token none, i1 false)
+  switch i8 %t377, label %coro.suspend [ i8 0, label %resume.182 i8 1, label %coro.cleanup ]
 resume.182:
-  %t437 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
-  %t438 = icmp ne i64 %t437, 0
-  br i1 %t438, label %cancelled.183, label %cont.184
+  %t378 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
+  %t379 = icmp ne i64 %t378, 0
+  br i1 %t379, label %cancelled.183, label %cont.184
 cancelled.183:
-  call void @veles_cleanup_pop(ptr %a363)
-  %t439 = load ptr, ptr %a362
-  call void @veles_scope_cancel(ptr %t439)
+  call void @veles_cleanup_pop(ptr %a270)
+  %t380 = load ptr, ptr %a269
+  call void @veles_scope_cancel(ptr %t380)
   br label %abandon.wait.185
 abandon.wait.185:
-  %t440 = call i64 @veles_scope_wait(ptr %task, ptr %t439)
-  %t441 = icmp ne i64 %t440, 0
-  br i1 %t441, label %abandon.done.186, label %abandon.susp.187
+  %t381 = call i64 @veles_scope_wait(ptr %task, ptr %t380)
+  %t382 = icmp ne i64 %t381, 0
+  br i1 %t382, label %abandon.done.186, label %abandon.susp.187
 abandon.susp.187:
   call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
-  %t442 = call i8 @llvm.coro.suspend(token none, i1 false)
-  switch i8 %t442, label %coro.suspend [ i8 0, label %resume.188 i8 1, label %coro.cleanup ]
+  %t383 = call i8 @llvm.coro.suspend(token none, i1 false)
+  switch i8 %t383, label %coro.suspend [ i8 0, label %resume.188 i8 1, label %coro.cleanup ]
 resume.188:
   br label %abandon.wait.185
 abandon.done.186:
   call void @veles_frame_unwound(ptr %task, ptr %link)
   br label %coro.final
 cont.184:
-  br label %scope.wait.149
-scope.done.150:
-  call void @veles_cleanup_pop(ptr %a363)
-  %t443 = load ptr, ptr %a362
-  %t444 = call ptr @veles_scope_failed(ptr %t443)
-  %t445 = icmp ne ptr %t444, null
-  br i1 %t445, label %scope.check.189, label %scope.after.190
+  br label %scope.wait.114
+scope.done.115:
+  call void @veles_cleanup_pop(ptr %a270)
+  %t384 = load ptr, ptr %a269
+  %t385 = call ptr @veles_scope_failed(ptr %t384)
+  %t386 = icmp ne ptr %t385, null
+  br i1 %t386, label %scope.check.189, label %scope.after.190
 scope.check.189:
-  %t446 = call i64 @veles_task_panicked(ptr %t444)
-  %t447 = icmp ne i64 %t446, 0
-  br i1 %t447, label %scope.repanic.191, label %scope.errors.192
+  %t387 = call i64 @veles_task_panicked(ptr %t385)
+  %t388 = icmp ne i64 %t387, 0
+  br i1 %t388, label %scope.repanic.191, label %scope.errors.192
 scope.repanic.191:
-  call void @veles_task_repanic(ptr %t444)
+  call void @veles_task_repanic(ptr %t385)
   unreachable
 scope.errors.192:
   br label %scope.after.190
 scope.after.190:
-  %t448 = load i64, ptr %a360
-  %t450 = call i64 @veles_i64_format(ptr %a449, i64 %t448)
-  %t451 = insertvalue %str undef, ptr %a449, 0
-  %t452 = insertvalue %str %t451, i64 %t450, 1
-  %t454 = extractvalue %str { ptr @.str.25, i64 7 }, 0
-  %t455 = extractvalue %str { ptr @.str.25, i64 7 }, 1
-  %t456 = extractvalue %str %t452, 0
-  %t457 = extractvalue %str %t452, 1
-  call void @veles_string_concat(ptr %a453, ptr %t454, i64 %t455, ptr %t456, i64 %t457)
-  %t458 = load %str, ptr %a453
-  %t459 = extractvalue %str { ptr @.str.26, i64 20 }, 0
-  %t460 = extractvalue %str { ptr @.str.26, i64 20 }, 1
-  call void @veles_call_push(ptr %t459)
-  call void @v_std.io.println(%str %t458)
+  %t389 = load i64, ptr %a267
+  %t391 = call i64 @veles_i64_format(ptr %a390, i64 %t389)
+  %t392 = insertvalue %str undef, ptr %a390, 0
+  %t393 = insertvalue %str %t392, i64 %t391, 1
+  %t395 = extractvalue %str { ptr @.str.21, i64 6 }, 0
+  %t396 = extractvalue %str { ptr @.str.21, i64 6 }, 1
+  %t397 = extractvalue %str %t393, 0
+  %t398 = extractvalue %str %t393, 1
+  call void @veles_string_concat(ptr %a394, ptr %t395, i64 %t396, ptr %t397, i64 %t398)
+  %t399 = load %str, ptr %a394
+  %t400 = extractvalue %str { ptr @.str.22, i64 20 }, 0
+  %t401 = extractvalue %str { ptr @.str.22, i64 20 }, 1
+  call void @veles_call_push(ptr %t400)
+  call void @v_std.io.println(%str %t399)
+  call void @veles_call_pop()
+  %t402 = call ptr @veles_chan_new(ptr @adesc.i64, i64 1)
+  store ptr %t402, ptr %a403
+  store i64 0, ptr %a404
+  %t405 = call ptr @veles_scope_begin(ptr %task, i64 1, i64 %coro.depth)
+  store ptr %t405, ptr %a406
+  call void @veles_cleanup_push(ptr %a407, ptr @scope.cancel.thunk, ptr %a406, ptr @cleanup.move.word)
+  %t408 = load ptr, ptr %a406
+  %t409 = call ptr @veles_task_launch(ptr %t408, i64 0)
+  %t410 = load ptr, ptr %a403
+  %t411 = call ptr @veles_alloc_words(i64 16)
+  %t412 = getelementptr inbounds { ptr }, ptr %t411, i32 0, i32 0
+  store ptr %t410, ptr %t412
+  call void @veles_task_spawn(ptr %t409, ptr @entry.v_main.produce, ptr %t411)
+  store ptr %t409, ptr %a413
+  br label %loop.cond.196
+loop.cond.196:
+  %t414 = load i64, ptr %a404
+  %t415 = icmp slt i64 %t414, 6
+  br i1 %t415, label %loop.body.199, label %loop.end.198
+loop.body.199:
+  %t416 = load ptr, ptr %a403
+  store i64 zeroinitializer, ptr %a417
+  %t418 = call i64 @veles_chan_try_recv(ptr %t416, ptr %a417)
+  %t419 = icmp ne i64 %t418, 0
+  %t420 = load i64, ptr %a417
+  %t421 = insertvalue { i1, i64 } undef, i1 %t419, 0
+  %t422 = insertvalue { i1, i64 } %t421, i64 %t420, 1
+  store { i1, i64 } %t422, ptr %a423
+  %t424 = load { i1, i64 }, ptr %a423
+  %t426 = extractvalue { i1, i64 } %t424, 0
+  %t425 = xor i1 %t426, true
+  %t427 = xor i1 %t425, true
+  br i1 %t427, label %if.then.200, label %if.else.202
+if.then.200:
+  %t428 = load i64, ptr %a404
+  %t429 = load { i1, i64 }, ptr %a423
+  %t430 = extractvalue { i1, i64 } %t429, 1
+  %t432 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %t428, i64 %t430)
+  %t433 = extractvalue { i64, i1 } %t432, 0
+  %t434 = extractvalue { i64, i1 } %t432, 1
+  br i1 %t434, label %overflow.203, label %arith.ok.204
+overflow.203:
+  %t435 = extractvalue %str { ptr @.str.2, i64 16 }, 0
+  %t436 = extractvalue %str { ptr @.str.2, i64 16 }, 1
+  %t437 = extractvalue %str { ptr @.str.23, i64 13 }, 0
+  %t438 = extractvalue %str { ptr @.str.23, i64 13 }, 1
+  call void @veles_panic_at(ptr %t435, i64 %t436, ptr %t437, i64 %t438)
+  unreachable
+arith.ok.204:
+  store i64 %t433, ptr %a404
+  br label %if.end.201
+if.else.202:
+  %t439 = getelementptr inbounds %S.std.prelude.Duration, ptr @g_std_prelude_Duration_zero, i32 0, i32 0
+  %t440 = load i64, ptr %t439
+  %t442 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %t440, i64 999999)
+  %t443 = extractvalue { i64, i1 } %t442, 0
+  %t444 = extractvalue { i64, i1 } %t442, 1
+  br i1 %t444, label %overflow.205, label %arith.ok.206
+overflow.205:
+  %t445 = extractvalue %str { ptr @.str.2, i64 16 }, 0
+  %t446 = extractvalue %str { ptr @.str.2, i64 16 }, 1
+  %t447 = extractvalue %str { ptr @.str.24, i64 13 }, 0
+  %t448 = extractvalue %str { ptr @.str.24, i64 13 }, 1
+  call void @veles_panic_at(ptr %t445, i64 %t446, ptr %t447, i64 %t448)
+  unreachable
+arith.ok.206:
+  %t450 = icmp eq i64 1000000, 0
+  br i1 %t450, label %divzero.207, label %div.ok.208
+divzero.207:
+  %t451 = extractvalue %str { ptr @.str.4, i64 16 }, 0
+  %t452 = extractvalue %str { ptr @.str.4, i64 16 }, 1
+  %t453 = extractvalue %str { ptr @.str.24, i64 13 }, 0
+  %t454 = extractvalue %str { ptr @.str.24, i64 13 }, 1
+  call void @veles_panic_at(ptr %t451, i64 %t452, ptr %t453, i64 %t454)
+  unreachable
+div.ok.208:
+  %t455 = icmp eq i64 %t443, -9223372036854775808
+  %t456 = icmp eq i64 1000000, -1
+  %t457 = and i1 %t455, %t456
+  br i1 %t457, label %divof.209, label %div.ok.210
+divof.209:
+  %t458 = extractvalue %str { ptr @.str.2, i64 16 }, 0
+  %t459 = extractvalue %str { ptr @.str.2, i64 16 }, 1
+  %t460 = extractvalue %str { ptr @.str.24, i64 13 }, 0
+  %t461 = extractvalue %str { ptr @.str.24, i64 13 }, 1
+  call void @veles_panic_at(ptr %t458, i64 %t459, ptr %t460, i64 %t461)
+  unreachable
+div.ok.210:
+  %t449 = sdiv i64 %t443, 1000000
+  br label %sleep.211
+sleep.211:
+  %t462 = call i64 @veles_task_sleep(ptr %task, i64 %t449)
+  %t463 = icmp ne i64 %t462, 0
+  br i1 %t463, label %sleep.done.212, label %sleep.susp.213
+sleep.susp.213:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
+  %t464 = call i8 @llvm.coro.suspend(token none, i1 false)
+  switch i8 %t464, label %coro.suspend [ i8 0, label %resume.214 i8 1, label %coro.cleanup ]
+resume.214:
+  %t465 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
+  %t466 = icmp ne i64 %t465, 0
+  br i1 %t466, label %cancelled.215, label %cont.216
+cancelled.215:
+  call void @veles_cleanup_pop(ptr %a407)
+  %t467 = load ptr, ptr %a406
+  call void @veles_scope_cancel(ptr %t467)
+  br label %abandon.wait.217
+abandon.wait.217:
+  %t468 = call i64 @veles_scope_wait(ptr %task, ptr %t467)
+  %t469 = icmp ne i64 %t468, 0
+  br i1 %t469, label %abandon.done.218, label %abandon.susp.219
+abandon.susp.219:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
+  %t470 = call i8 @llvm.coro.suspend(token none, i1 false)
+  switch i8 %t470, label %coro.suspend [ i8 0, label %resume.220 i8 1, label %coro.cleanup ]
+resume.220:
+  br label %abandon.wait.217
+abandon.done.218:
+  call void @veles_frame_unwound(ptr %task, ptr %link)
+  br label %coro.final
+cont.216:
+  %t471 = load ptr, ptr %a406
+  %t472 = call ptr @veles_scope_failed(ptr %t471)
+  %t473 = icmp ne ptr %t472, null
+  br i1 %t473, label %scope.abort.221, label %scope.ok.222
+scope.ok.222:
+  br label %cont.223
+scope.abort.221:
+  call void @veles_task_leave_waits(ptr %task)
+  %t474 = load ptr, ptr %a406
+  call void @veles_scope_abandon(ptr %t474, ptr %task)
+  br label %scope.wait.193
+cont.223:
+  br label %sleep.211
+sleep.done.212:
+  br label %if.end.201
+if.end.201:
+  br label %loop.post.197
+loop.post.197:
+  %t475 = load volatile i32, ptr @veles_attention_line, align 64
+  %t476 = icmp ne i32 %t475, 0
+  br i1 %t476, label %safepoint.224, label %safepoint.on.225, !prof !{!"branch_weights", i32 1, i32 100000}
+safepoint.224:
+  %t477 = call i64 @veles_backedge(ptr %task, i64 %coro.depth)
+  switch i64 %t477, label %safepoint.on.225 [ i64 0, label %backedge.look.228 i64 1, label %backedge.yield.226 i64 2, label %backedge.cancel.227 ]
+backedge.look.228:
+  %t478 = load ptr, ptr %a406
+  %t479 = call ptr @veles_scope_failed(ptr %t478)
+  %t480 = icmp ne ptr %t479, null
+  br i1 %t480, label %scope.abort.229, label %scope.ok.230
+scope.ok.230:
+  br label %cont.231
+scope.abort.229:
+  call void @veles_task_leave_waits(ptr %task)
+  %t481 = load ptr, ptr %a406
+  call void @veles_scope_abandon(ptr %t481, ptr %task)
+  br label %scope.wait.193
+cont.231:
+  br label %safepoint.on.225
+backedge.yield.226:
+  br label %yield.232
+yield.232:
+  %t482 = call i64 @veles_task_sleep(ptr %task, i64 0)
+  %t483 = icmp ne i64 %t482, 0
+  br i1 %t483, label %safepoint.on.225, label %yield.susp.233
+yield.susp.233:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
+  %t484 = call i8 @llvm.coro.suspend(token none, i1 false)
+  switch i8 %t484, label %coro.suspend [ i8 0, label %resume.234 i8 1, label %coro.cleanup ]
+resume.234:
+  %t485 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
+  %t486 = icmp ne i64 %t485, 0
+  br i1 %t486, label %cancelled.235, label %cont.236
+cancelled.235:
+  call void @veles_cleanup_pop(ptr %a407)
+  %t487 = load ptr, ptr %a406
+  call void @veles_scope_cancel(ptr %t487)
+  br label %abandon.wait.237
+abandon.wait.237:
+  %t488 = call i64 @veles_scope_wait(ptr %task, ptr %t487)
+  %t489 = icmp ne i64 %t488, 0
+  br i1 %t489, label %abandon.done.238, label %abandon.susp.239
+abandon.susp.239:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
+  %t490 = call i8 @llvm.coro.suspend(token none, i1 false)
+  switch i8 %t490, label %coro.suspend [ i8 0, label %resume.240 i8 1, label %coro.cleanup ]
+resume.240:
+  br label %abandon.wait.237
+abandon.done.238:
+  call void @veles_frame_unwound(ptr %task, ptr %link)
+  br label %coro.final
+cont.236:
+  %t491 = load ptr, ptr %a406
+  %t492 = call ptr @veles_scope_failed(ptr %t491)
+  %t493 = icmp ne ptr %t492, null
+  br i1 %t493, label %scope.abort.241, label %scope.ok.242
+scope.ok.242:
+  br label %cont.243
+scope.abort.241:
+  call void @veles_task_leave_waits(ptr %task)
+  %t494 = load ptr, ptr %a406
+  call void @veles_scope_abandon(ptr %t494, ptr %task)
+  br label %scope.wait.193
+cont.243:
+  br label %yield.232
+backedge.cancel.227:
+  call void @veles_cleanup_pop(ptr %a407)
+  %t495 = load ptr, ptr %a406
+  call void @veles_scope_cancel(ptr %t495)
+  br label %abandon.wait.244
+abandon.wait.244:
+  %t496 = call i64 @veles_scope_wait(ptr %task, ptr %t495)
+  %t497 = icmp ne i64 %t496, 0
+  br i1 %t497, label %abandon.done.245, label %abandon.susp.246
+abandon.susp.246:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
+  %t498 = call i8 @llvm.coro.suspend(token none, i1 false)
+  switch i8 %t498, label %coro.suspend [ i8 0, label %resume.247 i8 1, label %coro.cleanup ]
+resume.247:
+  br label %abandon.wait.244
+abandon.done.245:
+  call void @veles_frame_unwound(ptr %task, ptr %link)
+  br label %coro.final
+safepoint.on.225:
+  br label %loop.cond.196
+loop.end.198:
+  br label %scope.wait.193
+scope.wait.193:
+  %t499 = load ptr, ptr %a406
+  %t500 = call i64 @veles_scope_wait(ptr %task, ptr %t499)
+  %t501 = icmp ne i64 %t500, 0
+  br i1 %t501, label %scope.done.194, label %scope.susp.195
+scope.susp.195:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
+  %t502 = call i8 @llvm.coro.suspend(token none, i1 false)
+  switch i8 %t502, label %coro.suspend [ i8 0, label %resume.248 i8 1, label %coro.cleanup ]
+resume.248:
+  %t503 = call i64 @veles_task_cancelled(ptr %task, i64 %coro.depth)
+  %t504 = icmp ne i64 %t503, 0
+  br i1 %t504, label %cancelled.249, label %cont.250
+cancelled.249:
+  call void @veles_cleanup_pop(ptr %a407)
+  %t505 = load ptr, ptr %a406
+  call void @veles_scope_cancel(ptr %t505)
+  br label %abandon.wait.251
+abandon.wait.251:
+  %t506 = call i64 @veles_scope_wait(ptr %task, ptr %t505)
+  %t507 = icmp ne i64 %t506, 0
+  br i1 %t507, label %abandon.done.252, label %abandon.susp.253
+abandon.susp.253:
+  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
+  %t508 = call i8 @llvm.coro.suspend(token none, i1 false)
+  switch i8 %t508, label %coro.suspend [ i8 0, label %resume.254 i8 1, label %coro.cleanup ]
+resume.254:
+  br label %abandon.wait.251
+abandon.done.252:
+  call void @veles_frame_unwound(ptr %task, ptr %link)
+  br label %coro.final
+cont.250:
+  br label %scope.wait.193
+scope.done.194:
+  call void @veles_cleanup_pop(ptr %a407)
+  %t509 = load ptr, ptr %a406
+  %t510 = call ptr @veles_scope_failed(ptr %t509)
+  %t511 = icmp ne ptr %t510, null
+  br i1 %t511, label %scope.check.255, label %scope.after.256
+scope.check.255:
+  %t512 = call i64 @veles_task_panicked(ptr %t510)
+  %t513 = icmp ne i64 %t512, 0
+  br i1 %t513, label %scope.repanic.257, label %scope.errors.258
+scope.repanic.257:
+  call void @veles_task_repanic(ptr %t510)
+  unreachable
+scope.errors.258:
+  br label %scope.after.256
+scope.after.256:
+  %t514 = load i64, ptr %a404
+  %t516 = call i64 @veles_i64_format(ptr %a515, i64 %t514)
+  %t517 = insertvalue %str undef, ptr %a515, 0
+  %t518 = insertvalue %str %t517, i64 %t516, 1
+  %t520 = extractvalue %str { ptr @.str.25, i64 7 }, 0
+  %t521 = extractvalue %str { ptr @.str.25, i64 7 }, 1
+  %t522 = extractvalue %str %t518, 0
+  %t523 = extractvalue %str %t518, 1
+  call void @veles_string_concat(ptr %a519, ptr %t520, i64 %t521, ptr %t522, i64 %t523)
+  %t524 = load %str, ptr %a519
+  %t525 = extractvalue %str { ptr @.str.26, i64 20 }, 0
+  %t526 = extractvalue %str { ptr @.str.26, i64 20 }, 1
+  call void @veles_call_push(ptr %t525)
+  call void @v_std.io.println(%str %t524)
   call void @veles_call_pop()
   call void @veles_frame_return(ptr %task, ptr %link, ptr null, i64 0, i64 0, ptr null)
   br label %coro.final

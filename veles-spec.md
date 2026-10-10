@@ -5306,6 +5306,31 @@ User, 2026-10-09, recommended of 3. Rejected: the operations with
 sequential consistency only (Go's choice — no low-level control); leaving
 `load`/`store`/`swap`/`update`.
 
+*Built (2026-10-09, concurrency review F5).* `MemoryOrder` is a prelude
+enum; `compareAndSet(expected, new, order:, failure:)`,
+`compareExchange(…)`, and `order:` on `load`/`store`/`swap`/`update` are on
+every `Atomic`; `add`/`sub`/`fetchAnd`/`fetchOr`/`fetchXor` are in an
+`extend Atomic<T>` block per integer type, so on any other `Atomic` they
+are "no method", with a hint naming the integer `Atomic`s. Details the
+decision left open, settled the conservative way:
+- **`failure:` left out** is the strongest load `order:` allows
+  (`AcqRel` → `Acquire`, `Release` → `Relaxed`, others unchanged), as C++
+  derives it.
+- **An order known only at run time** (a variable, not a `MemoryOrder.`
+  case) is not checked; one the operation cannot take acts as `SeqCst`
+  (never weaker than asked). The order is passed down to the instruction
+  as a value and lowered to a switch with one block per distinct LLVM
+  ordering, which folds to the one instruction when the call is inlined
+  with a constant (release builds: `hits.add(1)` is one `lock incq`).
+- **An enum is lock-free too**: it is its integer (D57), so an
+  `Atomic<Phase>` takes no lock, as integers do; `add` and the bit
+  operations stay integer-only.
+- `add`/`sub` are `atomicrmw add/sub` plus the wrapping step, in every
+  build.
+
+Measured: 8 tasks × 2 M increments of one counter on 8 threads, `add`
+130–153 ms against 266–376 ms for `update(n => n + 1)`.
+
 ### D145 — Loops are cancellation points; suspending loops yield (v0.75)
 
 ```veles
@@ -5348,6 +5373,33 @@ User, 2026-10-09, recommended of 4. Rejected: explicit points only (Kotlin's
 `ensureActive`/`yield` — the footgun stays); handing a long-running task's
 queue to a spare thread (fixes latency only, and breaks D66's "at most
 `VELES_THREADS` threads run Veles code"); leaving it.
+
+*Built 2026-10-09 (plan F4).* A back edge polls one word, `veles_attention`
+(it replaces the collector's flag there and is raised by it too), so the
+untaken path is the same load and branch as before. A cancellation of a
+*running* task, a failed child's abandonment of its body, and a request to
+yield raise it; the slow path asks the runtime. In a suspending function the
+frame then takes its ordinary cancellation path (scopes joined, closes
+innermost first), yields through the `sleep(0)` path, or — in a scope body —
+runs the same fail-fast check as after a suspension point (a body loop is
+abandoned when a child fails; a body's abandonment was otherwise seen only at
+suspension points). In a plain function a cancellation unwinds the task from
+where it is, as a panic does: every registered cleanup runs, innermost first,
+and **the task ends only when the children of the scopes it left have
+finished** (it waits as `T_ENDING`, with no frame; D3) — which a panic now
+does too (it used to end at once and leave them running). Abandonment does
+not reach a plain function: only a cancellation of the whole task does.
+Shielding is a per-thread count: a `Mutex` held (`withLock`, `with m.lock()`,
+the lock-word atomics) and a `with`'s close. The 10 ms is the executor's
+monitor seeing the same task running at two looks 5 ms apart while work
+waits; at its first look it also moves the task the running one woke to run
+next (a child it launched) to the shared queue, where an idle worker takes
+it — before, such a child waited for the loop to end. `yieldNow()` and
+`checkCancelled()` are prelude functions (`checkCancelled` in a suspending
+function also takes the unwinding path, with the same wait for children).
+Under `VELES_THREADS=1` a plain computation still keeps the only thread, so
+a `withTimeout` around it fires only when it ends (the timer's task needs a
+thread). Pinned by `driver/TestLoopsAreCancellationPoints`.
 
 ### D146 — `RwLock`, `Event`, `Lazy`, `Broadcast` and `Watch` (v0.75)
 
@@ -5395,6 +5447,32 @@ All prelude, all `Sendable` for a `Sendable` `T`.
 User, 2026-10-09, all four (of four offered). Not offered: `Barrier`/`Latch`
 (`scope` joins).
 
+*Built (2026-10-09, concurrency review F6).* `RwLock` is a two-word lock
+in the runtime (`veles_rw_*`: writer bit, parked bit, readers; a count of
+waiting writers that keeps new readers out), parked like a `Mutex`; the
+thread remembers the RwLocks it holds, which is how a re-lock panics.
+`Event`, `Watch` and `Broadcast` keep their state behind a `Mutex` and wake
+waiters by closing a signal channel (and replacing it); each waiting
+method `m` has two non-public halves, `mSignal()` and `mTake()`, and a
+race arm `x.m()` waits on the signal like a channel arm and runs the take
+when it wins, so a losing arm takes nothing. `Lazy` runs `init` under
+its lock and records a panic through a `close()` that reads the
+unwinding panic's message (`veles_panic_current`). Details the decision
+left open, settled as below:
+- **A `Watch`'s "last seen" is per copy** (a field of the value): a task
+  given its own copy — a parameter — follows the changes it has not seen;
+  the lint for changing a copied parameter is silent for these types.
+- **A race arm's receiver must be a variable or a field** (`make().wait()`
+  is refused with a fix): the arm reads it twice, to wait and to take.
+- **`Broadcast.send` after `close()` panics**, as a send on a closed
+  channel does; closing again does nothing. Closing a `Subscription` makes
+  its `recv` return `null`.
+- **Added beside the decided API, for parity:** `RwLock.get()`/`set(v)`
+  (`Mutex` has them) and `Lazy.isReady()`.
+- A re-lock panics on the second take (`an RwLock was locked again while
+  this task holds it`); the thread tracks up to 8 held RwLocks, more
+  are not checked (they still work).
+
 ### D147 — A `close()` may suspend; suspension follows the type (v0.75)
 
 ```veles
@@ -5434,6 +5512,39 @@ flush.
 User, 2026-10-09, recommended of 3. Rejected: a second trait
 (`SuspendingCloseable`, C#'s `IAsyncDisposable` — two names for closing);
 leaving explicit `shutdown()`/`rollback()`/`finish()` calls as the only way.
+
+*Built (2026-10-10, concurrency review F7).* The `suspends` on `close()`
+is required: a close that suspends without it is an error asking for it,
+so the cost is stated where the type is. Suspension inference sees the
+`with`'s close call and needs nothing else; generic instances follow from
+one body per instance. The close is shielded by the *task* (a count in
+the task, since it may resume on another thread): a cancellation then
+neither wakes the parked task nor abandons a scope body; it is seen at
+the first suspension point after the close. A panic (or a cancellation in
+code that cannot suspend, D145) unwinds without a frame, so a close that
+suspends met on the way runs as a task of its own on a copy of the
+resource; that task takes the cleanups still to run — copied to the heap
+by a `move` function each cleanup record now carries, since the frames
+and stack they point into are being left — and runs them after the close,
+so the order stays innermost first; the unwinding task waits for it as
+for a draining scope. A `with` costs nothing more on the paths that do
+not unwind. Refused as decided: the lock region (D107), a lambda that
+cannot suspend, and a `Closeable` object — including any trait that has
+`Closeable` among its supers.
+
+std: a `Tx` left open sends `ROLLBACK` at its close within the
+transaction's timeout and keeps the connection (dropped only if the
+rollback fails); `with otel.start(…)` sends what is still queued at its
+close. **TLS deviates from the decision's last bullet:** `io.Stream`
+includes `Closeable` and TLS connections are used as `io.Stream` objects
+(`db`, `http`), which this decision refuses for a close that suspends. So
+`tls.Conn.close()` stays plain and sends `close_notify` as Go's `Close`
+does, without suspending: one record written with a single
+non-blocking try (`net.Conn.tryWrite`, new), which a socket buffer takes
+unless the peer stopped reading; it is skipped over a stream that is not
+a `net.Conn` or while another task is writing. `shutdownWrite()` still
+sends it and waits (rustls' explicit `send_close_notify`). User,
+2026-10-10: "do it like go/rust do it".
 
 ### D148 — Increment an indexed `MutableList<i64>` value (v0.76)
 

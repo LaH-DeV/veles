@@ -56,9 +56,12 @@ public trait Closeable { fun close() }     // for `with r = ...` and `with (r = 
 ### Synchronisation (D35, D66)
 
 Tasks run on several threads, so a `Mutex` is a real lock; an `Atomic`
-of a number or a `bool` takes none — each operation is one processor
-instruction, and `update` retries a compare-and-swap, so its function
-may run more than once under contention (keep it free of side effects).
+of a number, a `bool`, an enum or a pointer (nullable or not) takes none
+— each operation is one processor instruction, and `update` retries a
+compare-and-swap, so its function may run more than once under
+contention (keep it free of side effects). Every operation takes an
+optional `order:` (D144): `SeqCst` when left out; an order the operation
+cannot take, written as a case, is a compile error.
 An `Atomic` of any other type is guarded by a lock. `withLock`'s
 function cannot suspend; locking a `Mutex` again inside its own
 `withLock` panics; the lock is released when the function panics. For
@@ -80,16 +83,75 @@ public struct Mutex<T> {
 
 public struct Atomic<T> {
   init(value: T)                         // Atomic(value: 0)
-  public fun load(): T
-  public fun store(value: T)
-  public fun swap(value: T): T           // the value it replaced
-  public fun update(f: fun(T): T): T     // f of the value, stored as one step; the new value
+  public fun load(order: MemoryOrder = SeqCst): T                  // Relaxed, Acquire or SeqCst
+  public fun store(value: T, order: MemoryOrder = SeqCst)          // Relaxed, Release or SeqCst
+  public fun swap(value: T, order: MemoryOrder = SeqCst): T        // the value it replaced
+  public fun compareAndSet(expected: T, new: T, order: MemoryOrder = SeqCst, failure: MemoryOrder? = null): bool
+  public fun compareExchange(expected: T, new: T, order: MemoryOrder = SeqCst, failure: MemoryOrder? = null): T  // the value it found
+  public fun update(f: fun(T): T, order: MemoryOrder = SeqCst): T  // f of the value, stored as one step; the new value
 }
+
+// on Atomic<i8> … Atomic<usize> (D144)
+public fun add(n: T, order: MemoryOrder = SeqCst): T        // the new value; wraps on overflow
+public fun sub(n: T, order: MemoryOrder = SeqCst): T
+public fun fetchAnd(mask: T, order: MemoryOrder = SeqCst): T  // the old value
+public fun fetchOr(mask: T, order: MemoryOrder = SeqCst): T
+public fun fetchXor(mask: T, order: MemoryOrder = SeqCst): T
+
+public enum MemoryOrder { Relaxed, Acquire, Release, AcqRel, SeqCst }
 
 public trait Sendable { }   // derived from the type's shape; a bound, never implemented by hand
 ```
 
-Both are `Sendable` regardless of `T`. `Sendable` itself is the marker for
+Both are `Sendable` regardless of `T`.
+
+```veles
+// fragment
+public struct RwLock<T> {                // D146: many readers or one writer; a waiting writer keeps new readers out
+  init(value: T)
+  public fun read(): RwLocked<T>         // only as `with c = l.read()`: c is a *T; nothing in the region may suspend
+  public fun write(): RwLocked<T>        // only as `with w = l.write()`
+  public fun withRead<R>(f: fun(*T): R): R
+  public fun withWrite<R>(f: fun(*T): R): R
+  public fun get(): T                    // under a read lock
+  public fun set(value: T)               // under the write lock
+}                                        // taking it again inside its own region panics
+
+public struct Event {                    // D146: Event()
+  public fun set()                       // releases every waiter; later waits go through until reset
+  public fun reset()
+  public fun isSet(): bool
+  public fun wait()                      // awaited: `await e.wait()`; cancellable; a race arm
+}
+
+public struct Lazy<T> {                  // D146: usable as a module-level val
+  init(init: sendable fun(): T)          // runs once, under the Lazy's lock, on the first get
+  public fun get(): T                    // a panic in init is every get's panic
+  public fun isReady(): bool
+}
+
+public struct Broadcast<T> {             // D146: every subscriber gets every value
+  init(capacity: i64)                    // the last `capacity` values are kept; < 1 panics
+  public fun send(value: T)              // never waits; panics after close
+  public fun subscribe(): Subscription<T>  // receives what is sent from now on
+  public fun close()                     // subscribers drain, then receive null
+}
+
+public struct Subscription<T> {          // Closeable: `with sub = news.subscribe()`
+  public fun recv(): T? throws Lagged    // awaited; null once closed and drained; a race arm (`try sub.recv() => …`)
+}
+
+public error Lagged { public missed: i64 }  // the subscriber fell more than `capacity` behind, once
+
+public struct Watch<T> {                 // D146: the latest value; each copy remembers what it has seen
+  init(value: T)
+  public fun set(value: T)
+  public fun get(): T
+  public fun changed()                   // awaited: until a set after this copy's last get/changed; a race arm
+}
+```
+
+These are `Sendable` when `T` is. `Sendable` itself is the marker for
 values with no shared mutable state — numbers, strings, immutable
 collections, structs of such fields; never a mutable collection, a pointer
 or a closure. It is what may cross a task boundary, and what a function may
@@ -353,6 +415,8 @@ unreachable.
 | `await sleep(d: Duration)` | suspend for at least `d`; rounded up to the executor’s millisecond, so `Duration.zero` yields |
 | `async f(...)`: `Task<T>` | (`T` is `f`'s value even when `f` throws — its error fails the scope; in `gather` the handle is `Task<Result<T, E>>`; a handle stays in its block, D141) start a task in the enclosing `scope` — or, as `with t = async f(...)`, in the background until the block ends, which cancels then joins it (D100); `await task`; `task.cancel()` asks it to stop at its next suspension point (its `with` cleanups run, the scope still waits for it) |
 | `withTimeout(limit: Duration, f): R throws E \| Timeout` | run the sendable `f` in a task of its own and throw `Timeout` (which carries the `limit` it reached) if it passes first — `f` is cancelled and has unwound by then; `f`'s own errors are rethrown |
+| `yieldNow()` | give the thread up once: every other task that can run gets a turn first (a suspension point; D145) |
+| `checkCancelled()` | unwind the task here if it has been cancelled, else nothing — a cancellation point in code that does not wait; not inside a lock region or a `close()` (D145) |
 | `TaskLocal(fallback: T)`: `TaskLocal<T: Sendable>` | a value that follows a task (D72): `tl.withValue(v, f): R throws E` binds `v` while `f` runs — there and in every task started inside, which keep it — and ends the binding with `f`, however `f` ends; `tl.get(): T` is the innermost binding, or `fallback` |
 
 ## Built-in methods
@@ -657,6 +721,7 @@ conn.write(bytes: List<u8>) suspends throws IoError            // all of it
 conn.writeText(text: string) suspends throws IoError
 conn.shutdownWrite() throws IoError                            // half-close: the peer reads end of stream
 conn.peer(): string                                            // "host:port"
+conn.tryWrite(bytes: List<u8>): i64                            // what the socket takes now, never waiting; 0 when it would wait or is closed
 // Listener and Conn are Closeable (use `with`) and Sendable (hand a Conn to `async handle(conn)`)
 ```
 
@@ -675,6 +740,7 @@ tls.Options(roots: string = "", serverName: string = "", alpn: List<string> = []
 conn.protocol(): string?                                  // the ALPN protocol agreed
 conn.peer(): string
 // Conn implements io.Stream and Closeable; one task may read while another writes
+// close() sends close_notify without waiting, as Go's Close does (over a net.Conn); shutdownWrite() sends it and waits
 tls.Certificate.load(certPath: string, keyPath: string, alpn: List<string> = []): tls.Certificate throws IoError
 tls.Certificate.fromPem(chain: string, key: Secret<string>, alpn: List<string> = []): tls.Certificate throws IoError
 cert.replace(chain: string, key: Secret<string>, alpn: List<string> = []) throws IoError   // for connections accepted from now on
@@ -705,7 +771,7 @@ pool.exec(statement: Sql, timeout: Duration? = null): i64 suspends throws db.DbE
 pool.ping() suspends throws db.DbError
 pool.begin(timeout: Duration? = null): db.Tx suspends throws db.DbError   // `with tx = try pool.begin()`
 tx.query / tx.queryOne / tx.exec                          // as on the pool
-tx.commit() suspends throws db.DbError                    // not committed when the block ends: abandoned, the database rolls back
+tx.commit() suspends throws db.DbError                    // not committed when the block ends: its close sends ROLLBACK and waits (D147)
 tx.rollback() suspends throws db.DbError                  // the connection returns to the pool
 // DbError: kind (Connection, Closed, Timeout, Auth, Server, Protocol, Config), text, code (SQLSTATE), detail, hint, severity
 //   isUniqueViolation() isForeignKeyViolation() isConstraintViolation() isRetryable() isCancelled()
@@ -956,7 +1022,7 @@ Once `otel` runs, each line is also an OTLP log record (fields as attributes, se
 // fragment
 use otel
 with tel = try otel.start(service: "notes", exporter: http.otlp(endpoint: "http://localhost:4318", headers: ["authorization": Secret.of(key)]), interval: Duration.seconds(10), resource: [otel.attr("service.version", "1.2")], sampleRatio: 1.0, maxQueue: 2048)   // D126; throws StartError when one is running; before start everything is a no-op
-tel.flush(): bool; tel.shutdown(): bool   // send what is queued now / send it and stop recording — call before the program ends: a `with` cannot suspend, so closing only warns about what was lost
+tel.flush(): bool; tel.shutdown(): bool   // send what is queued now / send it and stop recording; the end of the `with` sends it too, waiting for the exporter (D147)
 with span = otel.span("load note", attrs: [otel.attr("note.id", id)], kind: otel.SpanKind.Internal, parent: null)   // current span to the end of the block, tasks started inside see it; kinds Internal | Server | Client | Producer | Consumer
 span.set(attr); span.event(name, attrs); span.ok(); span.fail(error); span.failWith(text); span.rename(name); span.end(); span.discard(); span.context(): SpanContext; span.handle: SpanHandle
 otel.inSpan("name", () => try work(), attrs:, kind:)   // ok on return, failed (and rethrown) on a thrown error

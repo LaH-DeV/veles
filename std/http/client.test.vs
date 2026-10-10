@@ -321,7 +321,7 @@ test "a chunked body over the ceiling is refused as it comes" {
 test "retry: a repeatable request is tried again after a 503" {
   val calls: Atomic<i64> = Atomic(value: 0)
   with srv = try testServer(handler(req => {
-    val n = calls.update(c => c + 1)
+    val n = calls.add(1)
     if (n < 3) Response.text("busy", status: Status.serviceUnavailable) else Response.text("ok $n")
   }))
   expect(try get(srv.url).status == Status.serviceUnavailable)
@@ -335,7 +335,7 @@ test "retry: a repeatable request is tried again after a 503" {
 test "retry: a POST is never repeated" {
   val calls: Atomic<i64> = Atomic(value: 0)
   with srv = try testServer(handler(req => {
-    val _ = calls.update(c => c + 1)
+    calls.add(1)
     Response.text("busy", status: Status.serviceUnavailable)
   }))
   with res = try post(srv.url, body: Payload.text("x"))

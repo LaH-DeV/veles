@@ -101,7 +101,7 @@ func tlsServer(t *testing.T, cfg *tls.Config, behave func(raw net.Conn, c *tls.C
 			go func() {
 				defer raw.Close()
 				c := tls.Server(raw, cfg)
-				raw.SetDeadline(time.Now().Add(30 * time.Second))
+				raw.SetDeadline(time.Now().Add(2 * time.Minute)) // generous: a loaded machine runs the 1 MB echo slowly
 				if err := c.Handshake(); err != nil {
 					return
 				}
@@ -123,6 +123,18 @@ fun dial(port: i64, options: tls.Options, host: string): string suspends throws 
   val line = try conn.readLine(100) ?: "(end)"
   val after = try conn.read()
   "$line, then ${after.len()} bytes, alpn ${conn.protocol()}"
+}
+
+// closes as soon as the answer is in, before the server ends its side: only
+// the close can tell the server the connection ended cleanly
+fun answerOnly(port: i64, options: tls.Options): string suspends {
+  quick(port, options) catch (e) { "error ${e.message()}" }
+}
+
+fun quick(port: i64, options: tls.Options): string suspends throws IoError | io.TooLong {
+  with conn = try tls.connect("127.0.0.1", port, options)
+  try conn.writeText("hi\n")
+  try conn.readLine(100) ?: "(end)"
 }
 
 fun hello(port: i64, options: tls.Options, host: string = "127.0.0.1"): string suspends {
@@ -206,6 +218,21 @@ func TestTLSClient(t *testing.T) {
 		io.Copy(c, c)
 		c.Close()
 	})
+	// the client's close sends close_notify (D147 follow-up, as Go's Close
+	// does). Go's reader ends cleanly at a record boundary either way, so
+	// this server answers and then reads the socket itself: the client sends
+	// nothing more, so whatever arrives before the end is the alert record
+	ended := make(chan string, 1)
+	notifyPort := tlsServer(t, &tls.Config{Certificates: []tls.Certificate{good}}, func(raw net.Conn, c *tls.Conn) {
+		bufio.NewReader(c).ReadString('\n')
+		io.WriteString(c, "hello over tls\n")
+		rest, _ := io.ReadAll(raw)
+		if len(rest) > 0 {
+			ended <- "close_notify"
+		} else {
+			ended <- "the socket was closed with no alert"
+		}
+	})
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { fmt.Fprintf(w, "path %s", r.URL.Path) })
@@ -241,7 +268,8 @@ func TestTLSClient(t *testing.T) {
   io.println("refused: ${hello(1, trusting)}")
   io.println("https: ${web(%[9]d, trusting)}")
   io.println("https untrusted: ${web(%[9]d, tls.Options())}")
-`, goodPort, otherPort, roguePort, tls12Port, oldPort, alpnPort, truncPort, echoPort, webPort), 1)
+  io.println("notify: ${answerOnly(%[10]d, trusting)}")
+`, goodPort, otherPort, roguePort, tls12Port, oldPort, alpnPort, truncPort, echoPort, webPort, notifyPort), 1)
 
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
@@ -273,11 +301,21 @@ func TestTLSClient(t *testing.T) {
 		"refused":           "error",
 		"https":             "200 path /hello / 200 path /again",
 		"https untrusted":   "error",
+		"notify":            "hello over tls",
 	}
 	for name, prefix := range want {
 		if g, ok := got[name]; !ok || !strings.HasPrefix(g, prefix) {
 			t.Errorf("%s: got %q, want it to start with %q", name, g, prefix)
 		}
+	}
+
+	select {
+	case how := <-ended:
+		if how != "close_notify" {
+			t.Errorf("the client's close ended the connection with %q, want a close_notify first", how)
+		}
+	case <-time.After(10 * time.Second):
+		t.Errorf("the server never saw the client's connection end")
 	}
 	if n := webConns.count.Load(); n != 2 { // the pooled connection of the first client, then the untrusted attempt's
 		t.Errorf("the https server accepted %d connections, want 2 (one pooled and reused)", n)

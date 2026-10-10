@@ -23,16 +23,17 @@ import (
 
 // HeldLock is the region of a `with … = m.lock()`, for the messages.
 type HeldLock struct {
-	Mutex string // `notes`, as written
-	Name  string // `n`; "" for `with notes.lock()` (D109)
-	Stmt  bool   // the statement form: the region is the rest of the block
+	Mutex  string // `notes`, as written
+	Method string // `lock`, or an RwLock's `read`/`write` (D146)
+	Name   string // `n`; "" for `with notes.lock()` (D109)
+	Stmt   bool   // the statement form: the region is the rest of the block
 }
 
 // message is the error for a suspension inside the region; what suspends
 // is named by the caller ("'await'", "'fetch'").
 func (h *HeldLock) message(what string) string {
 	if h.Stmt {
-		item := h.Mutex + ".lock()"
+		item := h.Mutex + "." + h.Method + "()"
 		if h.Name != "" {
 			item = h.Name + " = " + item
 		}
@@ -41,11 +42,25 @@ func (h *HeldLock) message(what string) string {
 	return what + " suspends, and the lock on '" + h.Mutex + "' is held until the end of its 'with' block; do the waiting after that block (D107)"
 }
 
-// isMutexLock: `m.lock()` on a prelude Mutex.
+// isMutexLock: `m.lock()` on a prelude Mutex, or `l.read()` / `l.write()`
+// on a prelude RwLock (D146): a call that takes a lock for a `with`.
 func isMutexLock(rt types.Type, name string) bool {
 	st, ok := rt.(*types.Struct)
-	return ok && name == "lock" && st.Module == "std.prelude" && st.Name == "Mutex"
+	if !ok || st.Module != "std.prelude" {
+		return false
+	}
+	switch st.Name {
+	case "Mutex":
+		return name == "lock"
+	case "RwLock":
+		return name == "read" || name == "write"
+	}
+	return false
 }
+
+// lockForms is the one-expression form of each lock-taking method, for the
+// message that refuses it outside a `with`.
+var lockForms = map[string]string{"lock": "withLock", "read": "withRead", "write": "withWrite"}
 
 // lockUse is a `m.lock()` call: allowed only as the value of a `with`
 // item, which withBindings marks in f.lockOK before checking it.
@@ -59,7 +74,8 @@ func (f *fnCtx) lockUse(callee *ast.MemberExpr, e *ast.CallExpr) {
 	if at, ok := valBefore(e.Pos); ok {
 		fix = fixReplace("Hold it with 'with'", at, "with")
 	}
-	f.c.errorFix(e.Pos, fix, "'lock()' holds the lock to the end of a 'with' block, so it is usable only as a 'with' value: 'with n = %s.lock()'; for one expression, '%s.withLock(n => …)' (D107)", m, m)
+	method := callee.Name.Name
+	f.c.errorFix(e.Pos, fix, "'%s()' holds the lock to the end of a 'with' block, so it is usable only as a 'with' value: 'with n = %s.%s()'; for one expression, '%s.%s(n => …)' (D107)", method, m, method, m, lockForms[method])
 }
 
 var valHead = regexp.MustCompile(`(?:^|\n)[ \t]*(val|var)[ \t]+[A-Za-z_][A-Za-z0-9_]*[ \t]*=[ \t]*$`)
@@ -92,7 +108,7 @@ func (f *fnCtx) withLocked(s *ast.WithExpr, i int, call *ast.CallExpr, init Expr
 	pair := f.withVar(ast.WithBinding{Value: b.Value}, lt)
 	at := pair.Span
 	closeCall := f.checkExpr(&ast.CallExpr{Fun: &ast.MemberExpr{X: nameOf(pair, at), Name: ast.Ident{Name: "close", Pos: at}, Pos: at}, Pos: at}, types.TUnit)
-	h := &HeldLock{Mutex: srcText(call.Fun.(*ast.MemberExpr).X), Name: b.Name.Name, Stmt: f.stmtWiths[s]}
+	h := &HeldLock{Mutex: srcText(call.Fun.(*ast.MemberExpr).X), Method: call.Fun.(*ast.MemberExpr).Name.Name, Name: b.Name.Name, Stmt: f.stmtWiths[s]}
 	if h.Name == "_" {
 		h.Name = ""
 	}
@@ -129,7 +145,7 @@ func (f *fnCtx) refLock(s *ast.WithExpr, i int, h *HeldLock, t types.Type) {
 	kw := source.Span{File: s.Pos.File, Start: s.Pos.Start, End: s.Pos.Start + len("with")}
 	line, _ := s.Pos.File.Position(s.Body.Pos.End - 1)
 	doc := "The lock on `" + h.Mutex + "` is held to the end of this block, line " + itoa(line) + ", and released on every way out of it before then; nothing in between may suspend (D107)."
-	detail := "with " + h.Mutex + ".lock()"
+	detail := "with " + h.Mutex + "." + h.Method + "()"
 	if h.Name != "" {
 		detail = "with " + h.Name + typeSuffix(t)
 	}

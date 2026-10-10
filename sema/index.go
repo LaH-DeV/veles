@@ -1488,9 +1488,15 @@ func (c *Checker) unknownHit(m *Module, name string) string {
 			break
 		}
 		if _, loaded := c.pkg.Modules["std/"+std]; !loaded {
-			if mod, ok := c.pkg.loadStd(std); ok {
-				consider(mod)
+			mod, ok := c.pkg.peeked[std]
+			if !ok {
+				mod, _ = c.pkg.loadStd(std)
+				if c.pkg.peeked == nil {
+					c.pkg.peeked = map[string]*Module{}
+				}
+				c.pkg.peeked[std] = mod
 			}
+			consider(mod)
 		}
 	}
 	if len(hits) == 0 {

@@ -126,10 +126,12 @@ test fun transfer(pool: Pool, table: Sql) suspends throws DbError | DecodeError 
   try tx.commit()
 }
 
-test fun abandon(pool: Pool, table: Sql) suspends throws DbError | DecodeError {
+// the server process of the transaction's connection
+test fun abandon(pool: Pool, table: Sql): i64 suspends throws DbError | DecodeError {
   with tx = try pool.begin()
   val _ = try tx.exec(sql"update ${table} set balance = 0")
   expect(try tx.query<i64>(sql"select sum(balance)::bigint from ${table}") == [0])
+  try tx.queryOne<i64>(sql"select pg_backend_pid()::bigint") ?: -1
 }
 
 test fun rollbackByName(pool: Pool, table: Sql) suspends throws DbError {
@@ -159,9 +161,11 @@ test "a transaction commits, rolls back, and abandons what it did not commit" {
   val _ = try pool.exec(sql"insert into ${table} (owner, balance) values (${"a"}, ${100}), (${"b"}, ${0})")
   try transfer(pool, table)
   expect(try pool.query<i64>(sql"select balance from ${table} order by owner") == [70, 30])
-  // left without a commit: the database rolls it back
-  try abandon(pool, table)
+  // left without a commit: its close rolls it back and the connection is
+  // kept for the next statement (D147), not dropped
+  val server = try abandon(pool, table)
   expect(try pool.query<i64>(sql"select balance from ${table} order by owner") == [70, 30])
+  expect(try pool.queryOne<i64>(sql"select pg_backend_pid()::bigint") == server)
   // rolled back by name; the connection returns to the pool
   try rollbackByName(pool, table)
   expect(try pool.query<i64>(sql"select count(*)::bigint from ${table}") == [2])

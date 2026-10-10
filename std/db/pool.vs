@@ -205,10 +205,9 @@ public struct Tx {
     val _ = try this.lease.conn.run(Sql.dangerouslyRaw("commit"), this.timeout)
   }
 
-  /// Undoes the transaction's changes and gives the connection back to the pool
-  /// for reuse. Leaving the block without `commit()` does the same by dropping
-  /// the connection — closing cannot wait for the database — which costs the
-  /// pool a reconnect; call `rollback()` where that matters.
+  /// Undoes the transaction's changes. Leaving the block without `commit()`
+  /// does the same: the close sends `ROLLBACK` and waits for it (D147), and
+  /// the connection goes back to the pool; call `rollback()` to see its error.
   public fun rollback() suspends throws DbError {
     if (this.finished.swap(true)) return
     val _ = try this.lease.conn.run(Sql.dangerouslyRaw("rollback"), this.timeout)
@@ -219,10 +218,14 @@ public struct Tx {
   }
 
   implement Closeable {
-    fun close() {
-      // a transaction that was neither committed nor rolled back is still open on the
-      // connection: it is dropped, and the server rolls the transaction back
-      if (!this.finished.load()) this.lease.conn.close()
+    fun close() suspends {
+      // a transaction neither committed nor rolled back is rolled back here, within
+      // the transaction's timeout; if that fails the connection is dropped, and the
+      // server rolls the transaction back as it notices
+      if (!this.finished.swap(true)) {
+        val undone = this.lease.conn.run(Sql.dangerouslyRaw("rollback"), this.timeout)
+        if (undone is Err) this.lease.conn.close()
+      }
       this.lease.close()
     }
   }

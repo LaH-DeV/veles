@@ -544,14 +544,14 @@ fun produce(ch: Channel<i64>) {
 
 fun query(db: Semaphore, inside: Atomic<i64>, most: Atomic<i64>) {
   with db.acquire()                  // at most two at a time
-  val now = inside.update(n => n + 1)
+  val now = inside.add(1)
   most.update(m => m.max(now))       // update may rerun its lambda: no side effects in it
   await sleep(Duration.millis(1))
-  inside.update(n => n - 1)
+  inside.sub(1)
 }
 
 fun flaky(calls: Atomic<i64>): string throws Busy {
-  if (calls.update(n => n + 1) < 3) throw Busy()
+  if (calls.add(1) < 3) throw Busy()
   "answered on call ${calls.load()}"
 }
 
@@ -736,13 +736,13 @@ between them; each task's own `with` blocks still close innermost
 first, and all of them before the scope's `return` completes.
 
 Cleanup itself is never cancelled (D47): a `close()` that runs during
-unwinding completes even if the task is cancelled again meanwhile. Note
-what cancellation is *not*: it is not a signal that interrupts running
-code. A loop that computes without ever suspending will not notice it
-until it reaches one. To make a long computation stoppable, give it a
-suspension point now and then: `await sleep(Duration.zero)` does not
-wait, offers the thread to other tasks, and is where a cancellation is
-seen.
+unwinding completes even if the task is cancelled again meanwhile.
+Cancellation is seen at a suspension point and at the **end of every loop
+iteration** (D145), so a long computation stops too: the loop ends its
+iteration and the task unwinds from there, closing its `with` blocks. It
+is not seen inside a lock region (`withLock`, `with m.lock()`) or a
+`close()`, which always run to their end. `checkCancelled()` adds a check
+anywhere else.
 
 ### Time limits: `withTimeout`
 
@@ -957,15 +957,28 @@ keeps the effects its trait declares.
 
 For state that genuinely must be shared and mutated, wrap it. A
 `Mutex<T>` runs a function on the value with its lock held; an `Atomic<T>`
-reads, replaces or `update`s the whole value in one step. The tasks
-below run on different threads at once, so both really exclude each
-other: a `Mutex` is a lock, cheap when nobody else holds it (one atomic
-instruction to take, one to give back), and an `Atomic` of a number or a
-`bool` takes no lock at all — its operations are single processor
-instructions, and `update` retries a compare-and-swap until no other
-task got in between. Its function may therefore run more than once, so
-it should only compute the new value. An `Atomic` of any other type is
-guarded by a lock:
+changes the whole value in one step. The tasks below run on different
+threads at once, so both really exclude each other: a `Mutex` is a lock,
+cheap when nobody else holds it (one atomic instruction to take, one to
+give back), and an `Atomic` of a number, a `bool`, an enum or a pointer
+takes no lock at all — its operations are single processor instructions.
+What an `Atomic` offers:
+
+| | |
+|---|---|
+| `load()`, `store(v)`, `swap(v)` | read, replace, replace and return the old value |
+| `add(n)`, `sub(n)` | an integer's counter step; returns the new value, wraps on overflow |
+| `fetchAnd(m)`, `fetchOr(m)`, `fetchXor(m)` | change an integer's bits; return the old value |
+| `compareAndSet(expected, new)` | store `new` only if the value is still `expected`; says whether it did |
+| `compareExchange(expected, new)` | the same, returning the value it found |
+| `update(f)` | replace the value with `f(value)`, retrying until no other task got in between |
+
+`update`'s function may run more than once, so it should only compute the
+new value. Every operation is sequentially consistent — all tasks see the
+atomic operations happen in one order — unless it is given a weaker
+`order:`, which is for lock-free code
+([chapter 13](13-memory-and-ffi.md#atomics-and-memory-orders)). An
+`Atomic` of any other type is guarded by a lock:
 
 ```veles
 use io
@@ -975,7 +988,7 @@ struct Counter { var hits: i64 }
 fun bump(m: Mutex<Counter>, total: Atomic<i64>, times: i64) {
   loop (_ in 0..<times) {
     m.withLock(c => c.hits += 1)
-    val _ = total.update(n => n + 1)
+    total.add(1)
   }
 }
 
@@ -1060,9 +1073,102 @@ Module state that changes is a `val` holding a lock:
 ```veles
 // fragment
 var served = 0              // error: module-level 'var served' is shared by every task …
-val served = Atomic(value: 0)      // ok: served.update(n => n + 1)
+val served = Atomic(value: 0)      // ok: served.add(1)
 val cache = Mutex(value: MutableMap<string, string>())
+val table = Lazy(init: () => buildTable())   // ok: built on first use
 ```
+
+## More shared state: `RwLock`, `Event`, `Lazy`, `Broadcast`, `Watch`
+
+Five more types cover the other shapes shared state takes (D146). Each is
+`Sendable` when what it holds is, and copies of one are the same lock,
+event or feed.
+
+| Type | For | Operations |
+|---|---|---|
+| `RwLock<T>` | read often, changed rarely: many readers at once, one writer | `with c = l.read()`, `with w = l.write()`, `withRead(f)`, `withWrite(f)`, `get()`, `set(v)` |
+| `Event` | "it happened": tasks wait until one sets it | `set()`, `reset()`, `isSet()`, `await e.wait()` |
+| `Lazy<T>` | a value built once, on first use, by whoever asks first | `Lazy(init: f)`, `get()`, `isReady()` |
+| `Broadcast<T>` | every receiver gets every value | `send(v)`, `subscribe()`, `close()`; `try await sub.recv()` |
+| `Watch<T>` | the latest value of something that changes | `set(v)`, `get()`, `await w.changed()` |
+
+`RwLock`'s `read()` and `write()` follow `Mutex.lock()`'s rules: usable
+only as a `with` value, nothing in the region may suspend, and taking the
+same `RwLock` again inside it panics. A writer that waits keeps new
+readers out, so it is never starved. `Lazy`'s `init` runs under its lock:
+tasks that ask meanwhile wait, and a panic in it is the panic of every
+`get` from then on.
+
+The waiting operations — `wait()`, `changed()`, `recv()` — always suspend,
+so they are awaited, like a channel's `recv`; a cancelled task stops
+waiting, and each can be a `race` arm. A `Broadcast` keeps its last
+`capacity` values; a subscriber that falls further behind loses the
+oldest and is told, once, by `Lagged`. Each copy of a `Watch` remembers
+the version it last read, so a task given its own copy waits only for
+changes it has not seen:
+
+```veles
+use io
+
+struct Config { var level: i64 }
+
+fun worker(config: RwLock<Config>, ready: Event, news: Subscription<string>, out: Channel<string>) {
+  await ready.wait()
+  val level = config.withRead(c => c.level)   // a read region cannot wait: read, then leave it
+  loop {
+    val item = (try await news.recv()) catch (e) { "lost ${e.missed}" } ?: break
+    out.send("$item at level $level")
+  }
+}
+
+fun follow(level: Watch<i64>, seen: Channel<i64>) {
+  loop {
+    await level.changed()
+    seen.send(level.get())
+    if (level.get() >= 2) return
+  }
+}
+
+fun main() {
+  val config = RwLock(value: Config(level: 1))
+  val ready = Event()
+  val news = Broadcast<string>(capacity: 8)
+  val out = Channel<string>(capacity: 8)
+  with sub = news.subscribe()
+  scope {
+    async worker(config, ready, sub, out)
+    with (w = config.write()) {
+      w.level = 2
+    }
+    news.send("a")
+    news.send("b")
+    news.close()
+    ready.set()
+  }
+  out.close()
+  io.println("${out.toList()}")
+
+  val level = Watch(value: 0)
+  val seen = Channel<i64>(capacity: 4)
+  scope {
+    async follow(level, seen)
+    level.set(1)
+    level.set(2)
+  }
+  seen.close()
+  io.println("last seen: ${seen.toList().at(-1)}")
+}
+```
+
+Output:
+```text
+[a at level 2, b at level 2]
+last seen: 2
+```
+
+The follower may wake once for both changes or once for each — a
+`Watch` promises the latest value, not every value; a `Broadcast` is the
+one that delivers each.
 
 ## How it compiles
 
@@ -1074,10 +1180,11 @@ which is the inference pass. Trait methods declare `suspends` explicitly
 (D40) so that callers through the trait know which calling convention to
 use.
 
-A task gives up its thread only at a suspension point: the executor is
-cooperative, so a long computation keeps its thread (the other threads
-go on) until it reaches an `await` — `await sleep(Duration.zero)` offers
-the thread without waiting. A call that blocks the thread itself — a C
+A task gives up its thread at a suspension point, and a loop in a
+suspending function also gives it up by itself once it has run for about
+10 ms while other tasks wait (D145). A function that does not suspend
+keeps its thread until it returns (the other threads go on); `yieldNow()`
+in its loop gives the thread up, and makes the function suspend. A call that blocks the thread itself — a C
 function, a read from the terminal, waiting for a child process — is
 noticed by a monitor within about a millisecond, and the thread's queue
 of tasks goes to a spare thread until the call returns (D66).

@@ -29,7 +29,7 @@ struct Tally {
   implement otel.Exporter {
     fun export(signal: otel.Signal, body: List<u8>) suspends throws otel.ExportError {
       if (signal == otel.Signal.Traces) {
-        val _ = this.spans.update(n => n + 1)
+        this.spans.add(1)
       }
     }
   }
@@ -158,8 +158,7 @@ that speaks OTLP over HTTP (port 4318):
 // fragment
 val exporter = http.otlp(endpoint: "http://localhost:4318", headers: ["authorization": Secret.of(token)])
 with tel = try otel.start(service: "notes", exporter: exporter, resource: [otel.attr("deployment.environment", "prod")])
-// ... run ...
-tel.shutdown()
+// ... run ... — the end of the block sends what is still queued
 ```
 
 - The bodies are Protocol Buffers, gzipped, posted to `/v1/traces`,
@@ -181,11 +180,10 @@ tel.shutdown()
 - `https://` endpoints are verified against the system's trusted roots;
   `http.otlp(tlsOptions: tls.Options(roots: pem))` trusts a private authority instead.
 
-**Call `shutdown()` before the program ends.** It sends what has gathered
-since the last interval and stops recording. A `with` block cannot do it for
-you, because closing cannot wait on the network; so if a program ends with
-telemetry still queued, closing the `with` prints one line to standard error
-saying how much was lost.
+**The end of the `with` sends what is still queued.** Its close waits for
+the exporter (a `close()` may suspend, D147), so the last interval's spans,
+metrics and logs are not lost when the program ends. `shutdown()` does the
+same earlier and returns whether everything went through.
 
 `examples/telemetry` runs a service and a client in one program with all of
 this on, and shows the trace crossing the call. Each database statement

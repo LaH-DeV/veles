@@ -19,7 +19,7 @@ test "liveness answers 200 ok and runs no check" {
   val health = Health()
   val ran: Atomic<i64> = Atomic(value: 0)
   health.check("db", () => {
-    val _ = ran.update(n => n + 1)
+    ran.add(1)
     throw Down(detail: "down")
   })
   val r = call(app(health), Method.get, "/healthz")
@@ -114,7 +114,7 @@ test "once stopping, readiness is 503 and runs nothing; liveness stays 200" {
   val health = Health()
   val ran: Atomic<i64> = Atomic(value: 0)
   health.check("db", () => {
-    val _ = ran.update(n => n + 1)
+    ran.add(1)
   })
   val handler = app(health)
   expect(call(handler, Method.get, "/readyz").status == Status.ok)

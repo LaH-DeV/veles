@@ -383,8 +383,14 @@ func (f *fnCtx) noMethodHint(rt types.Type, name string) (string, string) {
 	if hit := didYouMean(name, methods); hit != "" {
 		return "; did you mean '" + hit + "'?", hit
 	}
+	if st, ok := rt.(*types.Struct); ok && st.Name == "Atomic" && st.Module == "std.prelude" && containsString(atomicIntegerOps, name) {
+		return "; '" + name + "' is on an Atomic of an integer — use compareAndSet or update for other values (D144)", ""
+	}
 	return "", ""
 }
+
+// The Atomic methods only an integer has (D144).
+var atomicIntegerOps = []string{"add", "sub", "fetchAnd", "fetchOr", "fetchXor"}
 
 // noFieldHint completes "has no field 'name'": the method of that name
 // when there is one (`xs.len` for `xs.len()`), else the closest field.

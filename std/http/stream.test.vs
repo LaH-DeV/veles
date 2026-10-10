@@ -12,7 +12,7 @@ test fun pieces(): Handler => handler(req => Response.stream(MediaType.text, out
 }))
 
 test fun counted(calls: Atomic<i64>): Handler => handler(req => Response.stream(MediaType.text, out => {
-  val _ = calls.update(n => n + 1)
+  calls.add(1)
   try out.writeText("body")
 }, length: 4))
 

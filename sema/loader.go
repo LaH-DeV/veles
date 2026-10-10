@@ -43,6 +43,10 @@ type Package struct {
 	overlay map[string]string
 	// timings records per-module time for `--timings`; nil otherwise
 	timings *Timings
+	// peeked holds the standard modules parsed only to suggest where an
+	// unknown name lives (unknownHit), so each is parsed once, not once per
+	// unknown name
+	peeked map[string]*Module
 }
 
 // readSource reads a source file, preferring an editor overlay.

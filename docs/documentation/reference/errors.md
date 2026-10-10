@@ -725,6 +725,30 @@ and receive what it returns with `with`.
 Tasks may only share immutable data (D35). Pass a `List` (`.toList()`),
 send items over a `Channel`, or guard shared state with `Mutex(value: ...)`.
 
+#### `'wait()' always suspends and must be awaited: 'await ready.wait()'`
+
+`Event.wait()`, `Watch.changed()` and `Subscription.recv()` are waits, as
+a channel's `recv()` is, so they are written with `await` (D16, D146):
+the `await` marks where the task may stop. In a `race` arm they are
+written bare, like `ch.recv()`: `ready.wait() => …`.
+
+#### `a race arm on 'wait()' needs its receiver in a variable`
+
+A race arm on one of those waits looks at its receiver twice — once to
+wait, once to take what it waited for when the arm wins — so the receiver
+must be a variable or a field, not a call's result: `val e = events()`
+before the `race`, then `e.wait() => …` (D146).
+
+#### `MemoryOrder.Release is not an order for a load; use Relaxed, Acquire or SeqCst`
+
+An `Atomic` operation's `order:` must be one the operation can take
+(D144): a load cannot release (nothing it writes to publish), a store
+cannot acquire (nothing it reads). A failed `compareAndSet` or
+`compareExchange` is a load, so its `failure:` is `Relaxed`, `Acquire` or
+`SeqCst`, and no stronger than `order:`. Leave `order:` out for `SeqCst`,
+which is always right; the weaker orders are explained in
+[chapter 13](../13-memory-and-ffi.md#atomics-and-memory-orders).
+
 #### `'await' applies to channels, timers and task handles` / `'recv()' always suspends and must be awaited`
 
 Suspension is inferred (D2/D16). Call ordinary functions normally, even
@@ -763,6 +787,16 @@ block is its body — and on every way out before then: `return`,
 `break`/`continue`, a failed `try`, `throw`, a panic, cancellation
 (D43/D100). `with (conn = open(…)) { … }` is the same with a block of its
 own, for closing before the enclosing block ends.
+
+#### `this 'close()' suspends, so it says so: 'fun close() suspends'` / `'Conn' cannot be a 'Closeable' object: its 'close()' suspends`
+
+A `close()` may wait — send a goodbye, a `ROLLBACK`, the last telemetry —
+when it is declared `fun close() suspends` (D147); then every `with` on the
+type waits at its end. The declaration is required so that the cost is
+visible where the type is defined. Such a type cannot be boxed as a
+`Closeable` (or a trait that includes it): a method table holds one plain
+`close`. Keep the concrete type, or take a type parameter `T: Closeable`,
+whose instances follow the type.
 
 #### `'Res' is not Closeable; 'with' resources must implement Closeable`
 

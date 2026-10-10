@@ -249,8 +249,12 @@ val v = try withTimeout(Duration.seconds(1), () => try fetch())   // R throws E 
 // leaving a scope body early (return / throw / cancellation) cancels and joins its children
 val m = Mutex(value: state); m.withLock(s => s.n += 1); m.get(); m.set(v)
 with s = m.lock()                // s: *State, locked to the end of the block; nothing in it may suspend (D107)
-val a = Atomic(value: 0); a.load(); a.store(1); a.swap(2); a.update(n => n + 1)
+val a = Atomic(value: 0); a.load(); a.store(1); a.swap(2); a.add(1); a.compareAndSet(3, 4); a.update(n => n * 2)
+a.load(order: MemoryOrder.Acquire); a.store(1, order: MemoryOrder.Release)   // optional order, default SeqCst; invalid for the operation = compile error (D144)
 val sem = Semaphore(permits: 8); with sem.acquire(); sem.tryAcquire(); sem.available()   // (D110)
+with c = config.read(); with w = config.write(); config.withRead(c => c.n)   // RwLock(value: v), D146
+val ready = Event(); ready.set(); await ready.wait(); val t = Lazy(init: () => build()); t.get()
+val news = Broadcast<T>(capacity: 64); with sub = news.subscribe(); try await sub.recv(); val w = Watch(value: v); await w.changed()
 try retry(3, () => try fetch(), delay: Duration.millis(200))   // again after an error; the last error after the last call
 ch.toList(); ch.forEach(v => ...)   // until closed and drained
 with clock = time.ticker(Duration.seconds(1)); await clock.ticks.recv()   // a slow reader misses ticks

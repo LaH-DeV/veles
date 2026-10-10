@@ -258,7 +258,7 @@ fun queueSpan(s: SpanData) {
     }
   })
   if (!kept) {
-    val _ = lost.update(n => n + 1)
+    lost.add(1)
   }
 }
 

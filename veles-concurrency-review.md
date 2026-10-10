@@ -2,7 +2,12 @@
 
 > **Status (kept current):** B1 fixed (F1); B4 largely done (F2: task 448 → 248 bytes,
 > 657 → 400 bytes per parked task) and a 17+-arm `race` crash found and fixed with it;
-> B2 done (F3: a suspending call that does not wait 70 → 4.4 ns; `httphello` ~15 % faster);
+> B3 done as D145 (F4: loops are cancellation points; suspending loops yield; a panic now waits
+> for the children of the scopes it leaves). B2 done (F3: a suspending call that does not wait 70 → 4.4 ns; `httphello` ~15 % faster).
+> Part 3's atomics gap done as D144 (F5: compare-and-set, integer add and bit operations, memory
+> orders, lock-free pointers); the missing synchronisation types done as D146 (F6: `RwLock`,
+> `Event`, `Lazy`, `Broadcast`, `Watch`, their waits usable in `race`); a `close()` that suspends done as
+> D147 (F7: Tx rollback and otel flush at close; TLS close_notify at close as Go does);
 > the open decisions were decided the same day as D143–D147 (Q24–Q28, all the
 > recommended options). The order of the remaining work is track F in `veles-plan.md`.
 > Found on the way: on Linux a child task can take up to ~7 ms to start at 8 threads

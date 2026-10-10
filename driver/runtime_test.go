@@ -358,6 +358,777 @@ fun main() {
 	}
 }
 
+// Atomics across threads (D144, concurrency review F5, 2026-10-09): a
+// Treiber stack on an Atomic of a nullable pointer (compareExchange and
+// compareAndSet with explicit orders), relaxed adds, fetchOr/fetchXor on
+// bit flags, a release/acquire hand-off, and wrapping adds.
+func TestAtomicOperations(t *testing.T) {
+	if _, err := findClang(); err != nil {
+		t.Skip("clang not available:", err)
+	}
+	dir := t.TempDir()
+	src := `// D144: atomics across threads — a lock-free stack on a nullable pointer,
+// counters with relaxed adds, bit flags, and a release/acquire hand-off.
+use io
+
+struct Node {
+  value: i64
+  next:  (*Node)?
+}
+
+// a Treiber stack: push and pop are one compareExchange each, retried
+struct Stack {
+  head: Atomic<(*Node)?> = Atomic(value: null)
+
+  fun push(value: i64) {
+    var seen = this.head.load(order: MemoryOrder.Relaxed)
+    loop {
+      val node = &Node(value, next: seen)
+      val found = this.head.compareExchange(seen, node, order: MemoryOrder.Release, failure: MemoryOrder.Relaxed)
+      if (found == seen) return
+      seen = found
+    }
+  }
+
+  fun pop(): i64? {
+    loop {
+      val top = this.head.load(order: MemoryOrder.Acquire) ?: return null
+      if (this.head.compareAndSet(top, top.next, order: MemoryOrder.Acquire)) return top.value
+    }
+  }
+}
+
+fun producer(s: Stack, from: i64, n: i64) {
+  loop (i in from..<from + n) s.push(i)
+}
+
+fun consumer(s: Stack, sum: Atomic<i64>, count: Atomic<i64>, want: i64) {
+  loop {
+    if (count.load() >= want) return
+    val v = s.pop()
+    if (v != null) {
+      val _ = sum.add(v, order: MemoryOrder.Relaxed)
+      val _ = count.add(1)
+    } else {
+      yieldNow()
+    }
+  }
+}
+
+fun flagger(flags: Atomic<u64>, bit: u64, seen: Atomic<i64>) {
+  val mask: u64 = 1 << bit
+  val before = flags.fetchOr(mask)
+  if (before & mask == 0) {
+    val _ = seen.add(1)
+  }
+}
+
+fun publish(data: Atomic<i64>, ready: Atomic<bool>) {
+  data.store(42, order: MemoryOrder.Relaxed)
+  ready.store(true, order: MemoryOrder.Release)
+}
+
+fun observe(data: Atomic<i64>, ready: Atomic<bool>): i64 {
+  loop {
+    if (ready.load(order: MemoryOrder.Acquire)) return data.load(order: MemoryOrder.Relaxed)
+    yieldNow()
+  }
+}
+
+fun main() {
+  val s = Stack()
+  val sum = Atomic(value: 0)
+  val count = Atomic(value: 0)
+  val tasks: i64 = 8
+  val each: i64 = 20000
+  scope {
+    loop (k in 0..<tasks) {
+      async producer(s, k * each, each)
+      async consumer(s, sum, count, tasks * each)
+    }
+  }
+  val n = tasks * each
+  io.println("popped ${count.load()} of $n, sum right: ${sum.load() == n * (n - 1) / 2}, empty: ${s.pop() == null}")
+
+  val flags = Atomic<u64>(value: 0)
+  val seen = Atomic(value: 0)
+  scope {
+    loop (k in 0..<64) {
+      val bit: u64 = k.wrapU64()
+      async flagger(flags, bit, seen)
+      async flagger(flags, bit, seen)
+    }
+  }
+  io.println("each of 64 bits set once: ${seen.load() == 64}, all set: ${flags.load() == 0xFFFFFFFFFFFFFFFF}")
+  io.println("xor back to zero: ${flags.fetchXor(0xFFFFFFFFFFFFFFFF) == 0xFFFFFFFFFFFFFFFF && flags.load() == 0}")
+
+  val data = Atomic(value: 0)
+  val ready = Atomic(value: false)
+  var got: i64 = 0
+  scope {
+    val o = async observe(data, ready)
+    async publish(data, ready)
+    got = await o
+  }
+  io.println("release/acquire hand-off: $got")
+
+  val wrap = Atomic<i32>(value: 2147483647)
+  io.println("i32 add wraps: ${wrap.add(1)}, sub wraps back: ${wrap.sub(1)}")
+}
+`
+	want := `popped 160000 of 160000, sum right: true, empty: true
+each of 64 bits set once: true, all set: true
+xor back to zero: true
+release/acquire hand-off: 42
+i32 add wraps: -2147483648, sub wraps back: 2147483647`
+	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, release := range []bool{false, true} {
+		exe := filepath.Join(dir, fmt.Sprintf("atomics%v.exe", release))
+		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release, Sanitize: *sanitize}); code != 0 {
+			t.Fatalf("build failed with exit %d", code)
+		}
+		for _, threads := range []string{"1", "2", "8"} {
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			run := exec.CommandContext(ctx, exe)
+			run.Env = append(os.Environ(), "VELES_THREADS="+threads, "VELES_GC_THRESHOLD=4096")
+			out, err := run.CombinedOutput()
+			cancel()
+			got := strings.ReplaceAll(strings.TrimSpace(string(out)), "\r\n", "\n")
+			if err != nil || got != want {
+				t.Fatalf("release=%v threads %s: got\n%s\nwant\n%s\n(%v)", release, threads, got, want, err)
+			}
+		}
+	}
+}
+
+// The synchronisation types (D146, concurrency review F6, 2026-10-09):
+// RwLock readers and writers never see half a write, and taking one again
+// in its own region panics; Event releases every waiter and stays set until
+// reset, and its wait is a race arm and cancellable; Watch wakes a follower
+// once per change it has not seen; Broadcast gives every subscriber every
+// value and tells one that fell behind (Lagged); Lazy builds once and
+// re-raises its init's panic in every get.
+func TestSyncTypes(t *testing.T) {
+	if _, err := findClang(); err != nil {
+		t.Skip("clang not available:", err)
+	}
+	dir := t.TempDir()
+	src := `// D146: RwLock, Event, Lazy, Broadcast and Watch across threads.
+use io
+use os
+
+struct Pair {
+  var a: i64
+  var b: i64 // always equal to a: a reader that saw them differ saw half a write
+}
+
+fun reader(p: RwLock<Pair>, n: i64, torn: Atomic<i64>) {
+  loop (_ in 0..<n) {
+    with c = p.read()
+    if (c.a != c.b) torn.add(1)
+  }
+}
+
+fun writer(p: RwLock<Pair>, n: i64) {
+  loop (_ in 0..<n) {
+    with w = p.write()
+    w.a += 1
+    w.b += 1
+  }
+}
+
+fun waiter(e: Event, done: Atomic<i64>) {
+  await e.wait()
+  done.add(1)
+}
+
+fun follower(w: Watch<i64>, seen: Channel<i64>, step: Channel<bool>) {
+  loop {
+    await w.changed()
+    val v = w.get()
+    seen.send(v)
+    step.send(true)
+    if (v >= 3) return
+  }
+}
+
+fun listener(sub: Subscription<string>, out: Channel<string>) {
+  loop {
+    val v = (try await sub.recv()) catch (e) { "lagged ${e.missed}" } ?: break
+    out.send(v)
+  }
+  out.send("end")
+}
+
+val built = Atomic(value: 0)
+val table = Lazy(init: () => {
+  built.add(1)
+  [1, 2, 3]
+})
+
+fun lazyReader(n: Atomic<i64>) {
+  n.add(table.get().len())
+}
+
+val broken = Lazy<i64>(init: () => panic("no table today"))
+
+fun breaks(): i64 => broken.get()
+
+fun relock(how: string) {
+  val l = RwLock(value: 1)
+  when (how) {
+    "read-read" => {
+      with x = l.read()
+      with y = l.read()
+      io.println("${*x + *y}")
+    }
+    "write-read" => l.withWrite(p => {
+      io.println("${l.get()} ${*p}")
+    })
+    else => {
+      with x = l.read()
+      l.set(2)
+    }
+  }
+}
+
+fun main() throws Lagged {
+  if (os.args().len() > 0) {
+    relock(os.args().at(0) ?: "")
+    return
+  }
+  // RwLock: writers never interleave with readers or each other
+  val p = RwLock(value: Pair(a: 0, b: 0))
+  val torn = Atomic(value: 0)
+  scope {
+    loop (_ in 0..<6) async reader(p, 5000, torn)
+    loop (_ in 0..<2) async writer(p, 5000)
+  }
+  io.println("rwlock: a ${p.get().a}, torn reads ${torn.load()}, withRead ${p.withRead(c => c.a + c.b)}")
+
+  // Event
+  val e = Event()
+  val done = Atomic(value: 0)
+  scope {
+    loop (_ in 0..<5) async waiter(e, done)
+    await sleep(Duration.millis(5))
+    io.println("event: before set ${done.load()}, set ${e.isSet()}")
+    e.set()
+  }
+  await e.wait()
+  io.println("event: after set ${done.load()}, set ${e.isSet()}")
+  e.reset()
+  val r1 = race {
+    e.wait() => "set"
+    sleep(Duration.millis(10)) => "not set"
+  }
+  val r2 = withTimeout(Duration.millis(10), () => {
+    await e.wait()
+    1
+  })
+  io.println("event: after reset $r1, a wait cancelled by a timeout: ${r2 is Err}")
+
+  // Watch
+  val w = Watch(value: 0)
+  val seen = Channel<i64>(capacity: 10)
+  val step = Channel<bool>(capacity: 1)
+  scope {
+    async follower(w, seen, step)
+    loop (i in 1..3) {
+      w.set(i)
+      val _ = await step.recv()
+    }
+  }
+  seen.close()
+  io.println("watch: ${seen.toList()}")
+  val w2 = Watch(value: "a")
+  w2.set("b")
+  val r3 = race {
+    w2.changed() => "changed to ${w2.get()}"
+    sleep(Duration.millis(10)) => "no change"
+  }
+  val r4 = race {
+    w2.changed() => "changed again"
+    sleep(Duration.millis(10)) => "no change since the get"
+  }
+  io.println("watch: $r3; $r4")
+
+  // Broadcast: each subscriber gets every value; one too far behind is told
+  val news = Broadcast<string>(capacity: 2)
+  val out1 = Channel<string>(capacity: 20)
+  val out2 = Channel<string>(capacity: 20)
+  with s1 = news.subscribe()
+  news.send("a")
+  news.send("b")
+  with s2 = news.subscribe()
+  news.send("c")
+  news.send("d")
+  news.close()
+  scope {
+    async listener(s1, out1)
+    async listener(s2, out2)
+  }
+  out1.close()
+  out2.close()
+  io.println("broadcast: first ${out1.toList()}, second ${out2.toList()}")
+  val n2 = Broadcast<i64>(capacity: 4)
+  with s3 = n2.subscribe()
+  val r5 = race {
+    val v = try s3.recv() => "got $v"
+    sleep(Duration.millis(10)) => "nothing yet"
+  }
+  n2.send(7)
+  val r6 = race {
+    val v = try s3.recv() => "got $v"
+    sleep(Duration.millis(10)) => "nothing yet"
+  }
+  io.println("broadcast: $r5, then $r6")
+
+  // Lazy: built once by whichever task asks first; a panic in init is every get's
+  val n = Atomic(value: 0)
+  scope {
+    loop (_ in 0..<8) async lazyReader(n)
+  }
+  io.println("lazy: built ${built.load()} time, read ${n.load()}, ready ${table.isReady()}")
+  loop (_ in 0..<2) {
+    when (gather { async breaks() }) {
+      is Ok(v) => io.println("lazy: $v")
+      is Err(x) => io.println("lazy: panicked: ${x.message()}")
+    }
+  }
+}
+`
+	want := `rwlock: a 10000, torn reads 0, withRead 20000
+event: before set 0, set false
+event: after set 5, set true
+event: after reset not set, a wait cancelled by a timeout: true
+watch: [1, 2, 3]
+watch: changed to b; no change since the get
+broadcast: first [lagged 2, c, d, end], second [c, d, end]
+broadcast: nothing yet, then got 7
+lazy: built 1 time, read 24, ready true
+lazy: panicked: no table today
+lazy: panicked: no table today`
+	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, release := range []bool{false, true} {
+		exe := filepath.Join(dir, fmt.Sprintf("sync%v.exe", release))
+		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release, Sanitize: *sanitize}); code != 0 {
+			t.Fatalf("build failed with exit %d", code)
+		}
+		for _, threads := range []string{"1", "2", "8"} {
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			run := exec.CommandContext(ctx, exe)
+			run.Env = append(os.Environ(), "VELES_THREADS="+threads, "VELES_GC_THRESHOLD=4096")
+			out, err := run.CombinedOutput()
+			cancel()
+			got := strings.ReplaceAll(strings.TrimSpace(string(out)), "\r\n", "\n")
+			if err != nil || got != want {
+				t.Fatalf("release=%v threads %s: got\n%s\nwant\n%s\n(%v)", release, threads, got, want, err)
+			}
+		}
+		for _, how := range []string{"read-read", "write-read", "read-write"} {
+			out, err := exec.Command(exe, how).CombinedOutput()
+			if err == nil || !strings.Contains(string(out), "panic: an RwLock was locked again while this task holds it") {
+				t.Fatalf("release=%v %s: want the re-lock panic, got %q (%v)", release, how, out, err)
+			}
+		}
+	}
+}
+
+// A close() that suspends (D147, concurrency review F7, 2026-10-10): a
+// `with` on the type waits for it on every way out — the normal end, a
+// panic (the close runs as a task of its own that takes the cleanups still
+// to run, so they close innermost first even across two such closes), a
+// cancellation while parked and one in a plain loop (D145) — and the close
+// is shielded: a cancellation that arrives while it waits lets it finish.
+// A generic `with` follows its type argument.
+func TestSuspendingClose(t *testing.T) {
+	if _, err := findClang(); err != nil {
+		t.Skip("clang not available:", err)
+	}
+	dir := t.TempDir()
+	src := `// D147: a close() may suspend.
+use io
+use time
+
+struct Conn {
+  name: string
+  implement Closeable {
+    fun close() suspends {
+      await sleep(Duration.millis(20))
+      io.println("  closed ${this.name} (after a wait)")
+    }
+  }
+}
+
+struct File {
+  name: string
+  implement Closeable {
+    fun close() {
+      io.println("  closed ${this.name}")
+    }
+  }
+}
+
+fun normal(): i64 {
+  with f = File(name: "outer file")
+  with c = Conn(name: "conn")
+  with g = File(name: "inner file")
+  42
+}
+
+fun panics() {
+  with f = File(name: "outer file")
+  with c = Conn(name: "conn 1")
+  with d = Conn(name: "conn 2")
+  with g = File(name: "inner file")
+  panic("boom")
+}
+
+fun parked() {
+  with f = File(name: "outer file")
+  with c = Conn(name: "conn")
+  await sleep(Duration.seconds(10))
+}
+
+fun spin(n: i64): i64 {
+  var x: i64 = 1
+  loop (i in 0..<n) x = (x * 31 + i) % 1000003
+  x
+}
+
+fun computing(): i64 {
+  with f = File(name: "outer file")
+  with c = Conn(name: "conn")
+  spin(200000000)
+}
+
+fun closeAll<T: Closeable>(x: T) {
+  with y = x
+  io.println("  holding")
+}
+
+fun main() {
+  io.println("1. normal exit, innermost first:")
+  io.println("  -> ${normal()}")
+
+  io.println("2. a panic: the waiting closes still run, in order:")
+  when (gather { async panics() }) {
+    is Ok => io.println("  -> no panic?")
+    is Err(p) => io.println("  -> panicked: ${p.message()}")
+  }
+
+  io.println("3. cancelled while parked: the close waits, shielded:")
+  val r3 = withTimeout(Duration.millis(10), () => parked())
+  io.println("  -> timed out ${r3 is Err}")
+
+  io.println("4. cancelled in a plain loop (D145):")
+  val r4 = withTimeout(Duration.millis(30), () => computing())
+  io.println("  -> timed out ${r4 is Err}")
+
+  io.println("5. generic: the instance follows the type:")
+  closeAll(Conn(name: "generic conn"))
+  closeAll(File(name: "generic file"))
+  later()
+}
+
+fun quick(): i64 {
+  with c = Conn(name: "conn closing when the timeout fires")
+  1
+}
+
+fun later() {
+  io.println("6. cancelled while the close waits: it finishes first:")
+  val sw = time.Stopwatch.start()
+  val r6 = withTimeout(Duration.millis(5), () => quick())
+  io.println("  -> result ${r6 is Ok}, the close took its 20 ms: ${sw.elapsed().toMillis() >= 19}")
+}
+`
+	want := `1. normal exit, innermost first:
+  closed inner file
+  closed conn (after a wait)
+  closed outer file
+  -> 42
+2. a panic: the waiting closes still run, in order:
+  closed inner file
+  closed conn 2 (after a wait)
+  closed conn 1 (after a wait)
+  closed outer file
+  -> panicked: boom
+3. cancelled while parked: the close waits, shielded:
+  closed conn (after a wait)
+  closed outer file
+  -> timed out true
+4. cancelled in a plain loop (D145):
+  closed conn (after a wait)
+  closed outer file
+  -> timed out true
+5. generic: the instance follows the type:
+  holding
+  closed generic conn (after a wait)
+  holding
+  closed generic file
+6. cancelled while the close waits: it finishes first:
+  closed conn closing when the timeout fires (after a wait)
+  -> result false, the close took its 20 ms: true`
+	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, release := range []bool{false, true} {
+		exe := filepath.Join(dir, fmt.Sprintf("close%v.exe", release))
+		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release, Sanitize: *sanitize}); code != 0 {
+			t.Fatalf("build failed with exit %d", code)
+		}
+		for _, threads := range []string{"1", "2", "8"} {
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			run := exec.CommandContext(ctx, exe)
+			run.Env = append(os.Environ(), "VELES_THREADS="+threads, "VELES_GC_THRESHOLD=4096")
+			out, err := run.CombinedOutput()
+			cancel()
+			got := strings.ReplaceAll(strings.TrimSpace(string(out)), "\r\n", "\n")
+			if err != nil || got != want {
+				t.Fatalf("release=%v threads %s: got\n%s\nwant\n%s\n(%v)", release, threads, got, want, err)
+			}
+		}
+	}
+}
+
+// Loops are cancellation points, and suspending loops yield (D145,
+// concurrency review F4, 2026-10-09). A plain loop is cancelled at its
+// back edge (withTimeout returned only when it finished before); a
+// suspending loop gives the only thread up to a ticker; a lock region and
+// a close() run to their end; checkCancelled unwinds; and a task unwound
+// without its frame — by that cancellation, or by a panic — ends only
+// once its scope's children have unwound (D3: the panic once left them
+// running past it).
+func TestLoopsAreCancellationPoints(t *testing.T) {
+	if _, err := findClang(); err != nil {
+		t.Skip("clang not available:", err)
+	}
+	dir := t.TempDir()
+	src := `// D145: loops are cancellation points; suspending loops yield.
+use io
+use os
+use time
+
+struct Res {
+  name: string
+  implement Closeable {
+    fun close() { io.println("  closed ${this.name}") }
+  }
+}
+
+// a long computation that never waits
+fun spin(n: i64): i64 {
+  var x: i64 = 1
+  loop (i in 0..<n) x = (x * 31 + i) % 1000003
+  x
+}
+
+fun spinWith(n: i64): i64 {
+  with r = Res(name: "spinWith")
+  spin(n)
+}
+
+// the same, as a suspending function (it could wait, and never does)
+fun spinSuspending(n: i64): i64 {
+  if (n < 0) await sleep(Duration.millis(1))
+  var x: i64 = 1
+  loop (i in 0..<n) x = (x * 31 + i) % 1000003
+  x
+}
+
+fun ticker(sw: time.Stopwatch, first: Atomic<i64>) {
+  await sleep(Duration.millis(50))
+  val _ = first.swap(sw.elapsed().toMillis())
+}
+
+// a lock region and a close() are shielded
+struct Slow {
+  implement Closeable {
+    fun close() {
+      val n = spin(30000000)
+      io.println("  slow close finished (${n != 12345678})")
+    }
+  }
+}
+
+fun holdLock(m: Mutex<i64>): i64 {
+  m.withLock(p => {
+    val _ = spin(30000000)
+    *p = 1
+    *p
+  })
+}
+
+fun closeSlowly(): i64 {
+  with s = Slow()
+  spin(4000000000)
+}
+
+// a cancellation in plain code while a scope's child still unwinds
+fun child(opened: Channel<bool>) {
+  with r = Res(name: "child")
+  opened.send(true)
+  await sleep(Duration.seconds(10))
+}
+
+fun parentPlain(): i64 {
+  val opened = Channel<bool>(capacity: 1)
+  scope {
+    async child(opened)
+    val _ = await opened.recv()
+    spin(4000000000)
+  }
+  0
+}
+
+fun parentPanics() {
+  val opened = Channel<bool>(capacity: 1)
+  scope {
+    async child(opened)
+    val _ = await opened.recv()
+    panic("parent panics")
+  }
+}
+
+fun checking(): i64 {
+  with r = Res(name: "checking")
+  var n: i64 = 0
+  loop {
+    n += 1
+    if (n % 1000 == 0) checkCancelled()
+    if (n < 0) break
+  }
+  n
+}
+
+error Boom { n: i64 }
+
+fun failSoon() throws Boom {
+  await sleep(Duration.millis(20))
+  throw Boom(n: 7)
+}
+
+// a loop in a scope body notices a failed child at its back edge
+fun bodyLoop(): i64 throws Boom {
+  var x: i64 = 0
+  scope {
+    async failSoon()
+    loop (i in 0..<4000000000) x = (x * 31 + i) % 1000003
+  }
+  x
+}
+fun fair() {
+  io.println("2. a suspending loop gives its thread up:")
+  val sw = time.Stopwatch.start()
+  val first = Atomic(value: 0)
+  scope {
+    async ticker(sw, first)
+    async spinSuspending(300000000)
+  }
+  io.println("  -> the ticker ran within 150 ms: ${first.load() < 150}")
+}
+
+fun main() {
+  if (os.args().at(0) == "fair") {
+    fair()
+    return
+  }
+  val n: i64 = 4000000000
+
+  io.println("1. a plain loop is cancelled at its back edge:")
+  val sw = time.Stopwatch.start()
+  val r1 = withTimeout(Duration.millis(100), () => spinWith(n))
+  io.println("  -> timed out ${r1 is Err}, within 400 ms: ${sw.elapsed().toMillis() < 400}")
+
+  fair()
+
+  io.println("3. a lock region is shielded:")
+  val m = Mutex(value: 0)
+  val r3 = withTimeout(Duration.millis(5), () => holdLock(m))
+  io.println("  -> timed out ${r3 is Err}, the region finished: ${m.get() > 0}")
+
+  io.println("4. a close() is shielded:")
+  val r4 = withTimeout(Duration.millis(100), () => closeSlowly())
+  io.println("  -> timed out ${r4 is Err}")
+
+  io.println("5. the end waits for a scope's children:")
+  val r5 = withTimeout(Duration.millis(100), () => parentPlain())
+  io.println("  -> timed out ${r5 is Err}")
+
+  io.println("6. checkCancelled:")
+  val r6 = withTimeout(Duration.millis(50), () => checking())
+  io.println("  -> timed out ${r6 is Err}")
+
+  io.println("7. a panic's end waits for a scope's children:")
+  val g = gather { async parentPanics() }
+  io.println("  -> panicked: ${g is Err}")
+
+  io.println("8. a loop in a scope body is abandoned when a child fails:")
+  val sw8 = time.Stopwatch.start()
+  val e8 = bodyLoop() catch (e) { -e.n }
+  io.println("  -> ${e8}, within 400 ms: ${sw8.elapsed().toMillis() < 400}")
+}
+`
+	want := `1. a plain loop is cancelled at its back edge:
+  closed spinWith
+  -> timed out true, within 400 ms: true
+2. a suspending loop gives its thread up:
+  -> the ticker ran within 150 ms: true
+3. a lock region is shielded:
+  -> timed out true, the region finished: true
+4. a close() is shielded:
+  slow close finished (true)
+  -> timed out true
+5. the end waits for a scope's children:
+  closed child
+  -> timed out true
+6. checkCancelled:
+  closed checking
+  -> timed out true
+7. a panic's end waits for a scope's children:
+  closed child
+  -> panicked: true
+8. a loop in a scope body is abandoned when a child fails:
+  -> -7, within 400 ms: true`
+	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, release := range []bool{false, true} {
+		exe := filepath.Join(dir, fmt.Sprintf("loops%v.exe", release))
+		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release, Sanitize: *sanitize}); code != 0 {
+			t.Fatalf("build failed with exit %d", code)
+		}
+		// a plain loop needs a second thread for the timeout to run on (D145)
+		for _, threads := range []string{"2", "4", "8"} {
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			run := exec.CommandContext(ctx, exe)
+			run.Env = append(os.Environ(), "VELES_THREADS="+threads, "VELES_GC_THRESHOLD=4096")
+			out, err := run.CombinedOutput()
+			cancel()
+			got := strings.ReplaceAll(strings.TrimSpace(string(out)), "\r\n", "\n")
+			if err != nil || got != want {
+				t.Fatalf("release=%v threads %s: got\n%s\nwant\n%s\n(%v)", release, threads, got, want, err)
+			}
+		}
+		// one thread: only a suspending loop can give it up
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		run := exec.CommandContext(ctx, exe, "fair")
+		run.Env = append(os.Environ(), "VELES_THREADS=1")
+		out, err := run.CombinedOutput()
+		cancel()
+		got := strings.TrimSpace(strings.ReplaceAll(string(out), "\r\n", "\n"))
+		if err != nil || !strings.HasSuffix(got, "the ticker ran within 150 ms: true") {
+			t.Fatalf("release=%v, one thread: got %q (%v)", release, got, err)
+		}
+	}
+}
+
 // Many tasks parked on one channel (concurrency review B1, 2026-10-09):
 // 50k plain receivers and 50k racing ones that time out, so nodes leave
 // from the middle of the list, then 50k sends. Appending once walked the

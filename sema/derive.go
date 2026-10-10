@@ -2,6 +2,7 @@ package sema
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/LaH-DeV/veles/ast"
 	"github.com/LaH-DeV/veles/lexer"
@@ -287,9 +288,13 @@ func (c *Checker) notCodable(t types.Type) string {
 		return c.notCodable(t.Elem)
 	case *types.Struct:
 		switch t.Name {
-		case "Mutex", "Atomic":
+		case "Mutex", "Atomic", "RwLock", "Event", "Lazy", "Broadcast", "Subscription", "Watch":
 			if t.Module == "std.prelude" {
-				return "is a " + t.Name + ", which is not a value"
+				art := "a "
+				if strings.ContainsRune("AEIOU", rune(t.Name[0])) {
+					art = "an "
+				}
+				return "is " + art + t.Name + ", which is not a value"
 			}
 		}
 	}

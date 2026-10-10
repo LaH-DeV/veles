@@ -157,6 +157,15 @@ static size_t tl_chunk = 64u << 10; /* a thread's allocation between trigger che
 
 /* read by the loop back-edge polls the compiler emits */
 volatile int32_t veles_stop_requested;
+/* what a loop's back edge polls (D66, D145): nonzero while something wants
+ * a running loop's attention — a collection waiting for this thread
+ * (above), or, counted by veles_task.c, a cancellation or a failed child's
+ * abandonment of a task that is running, or a task that has run long
+ * while others wait. One load and an untaken branch otherwise. It has a
+ * cache line of its own: every loop of every thread reads it, and a
+ * variable written often beside it would make each of those reads a miss.
+ * The code reads the first word (veles_attention, veles_tls.h). */
+__attribute__((aligned(64))) volatile int32_t veles_attention_line[16];
 
 static void *sys_alloc_aligned(size_t bytes) {
 #if defined(_WIN32)
@@ -760,6 +769,7 @@ static int stop_the_world(void) {
         return 0;
     }
     __atomic_store_n(&veles_stop_requested, 1, __ATOMIC_SEQ_CST);
+    __atomic_add_fetch(&veles_attention, 1, __ATOMIC_SEQ_CST);
     while (!others_safe()) veles_cond_wait(world_cv, world_lock, -1);
     veles_lock_release(world_lock);
     return 1;
@@ -768,6 +778,7 @@ static int stop_the_world(void) {
 static void start_the_world(void) {
     veles_lock_acquire(world_lock);
     __atomic_store_n(&veles_stop_requested, 0, __ATOMIC_SEQ_CST);
+    __atomic_sub_fetch(&veles_attention, 1, __ATOMIC_SEQ_CST);
     veles_cond_broadcast(world_cv);
     veles_lock_release(world_lock);
 }

@@ -114,7 +114,7 @@ try tx.exec(sql"update accounts set balance = balance + ${n} where id = ${to}")
 try tx.commit()
 ```
 
-A transaction keeps one connection from `begin` to its end. It ends with `commit()` or `rollback()`. **Leaving the block any other way — an error, a panic, a cancelled task, or forgetting `commit` — abandons the transaction, and the database rolls back what it did:** the connection is dropped, because closing a `with` cannot wait for the network to send a `ROLLBACK`. That costs the pool a reconnect; call `tx.rollback()` where that matters. After a failed statement the transaction can only be rolled back (PostgreSQL says so itself).
+A transaction keeps one connection from `begin` to its end. It ends with `commit()` or `rollback()`. **Leaving the block any other way — an error, a panic, a cancelled task, or forgetting `commit` — rolls the transaction back:** the `with`'s close sends `ROLLBACK` and waits for it (a `close()` may suspend, D147), within the transaction's timeout, and the connection goes back to the pool; if the rollback fails, the connection is dropped and the database rolls back on its own. Call `tx.rollback()` to see its error. After a failed statement the transaction can only be rolled back (PostgreSQL says so itself).
 
 ## Time
 

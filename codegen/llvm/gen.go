@@ -75,6 +75,7 @@ type gen struct {
 	// cleanupRecs are the frame slots holding each active cleanup's entry
 	// in the task's cleanup list: pushing a `with` allocates nothing
 	cleanupRecs map[sema.Expr]string
+	withCloses  map[sema.Expr]bool    // the cleanups that are a `with`'s close (runClose)
 	closeThunks map[*sema.With]string // panic-path close functions, per `with`
 	thunkSeq    int
 	// inCleanup is set while cleanups are emitted: a suspension point in a
@@ -192,7 +193,7 @@ declare void @veles_panic_at(ptr, i64, ptr, i64)
 declare void @veles_test_fail(ptr, i64, ptr, i64, i64)
 declare i64 @veles_test_enter(ptr, i64)
 declare void @veles_test_leave(i64)
-declare void @veles_cleanup_push(ptr, ptr, ptr)
+declare void @veles_cleanup_push(ptr, ptr, ptr, ptr)
 declare void @veles_cleanup_pop(ptr)
 declare i64 @veles_ffi_enter()
 declare void @veles_ffi_leave(i64)
@@ -200,6 +201,15 @@ declare void @veles_blocking_enter()
 declare void @veles_blocking_leave()
 declare void @veles_gc_park()
 @veles_stop_requested = external global i32
+@veles_attention_line = external global [16 x i32]
+declare i64 @veles_backedge(ptr, i64)
+declare void @veles_backedge_plain()
+declare void @veles_safepoint()
+declare void @veles_shield_enter()
+declare void @veles_shield_leave()
+declare void @veles_task_shield_enter(ptr)
+declare void @veles_task_shield_leave(ptr)
+declare void @veles_cleanup_continue(ptr)
 declare void @veles_report_error(ptr, i64)
 declare void @veles_string_concat(ptr, ptr, i64, ptr, i64)
 declare i1 @veles_string_eq(ptr, i64, ptr, i64)
@@ -521,6 +531,9 @@ func (g *gen) resetFn(fn *sema.Func) {
 	g.abandonSlots = map[*sema.Builtin]string{}
 	g.receivingSlots = map[*sema.Builtin]string{}
 	g.cleanupRecs = map[sema.Expr]string{}
+	if g.withCloses == nil {
+		g.withCloses = map[sema.Expr]bool{}
+	}
 	g.inCleanup = 0
 	g.launchSlots = map[*sema.Launch]string{}
 }
@@ -865,12 +878,13 @@ func (g *gen) stmt(s sema.Stmt) {
 		g.storeVal(s.Var.Type, v, st)
 		// registered with the task as well, so that a panic inside the
 		// body closes the resource before the task is abandoned (D49)
-		g.pushCleanup(s.Close, "@"+g.closeThunk(s), st)
+		g.pushCleanup(s.Close, "@"+g.closeThunk(s), st, g.closeMove(s))
+		g.withCloses[s.Close] = true
 		g.block(s.Body)
 		g.cleanups = g.cleanups[:len(g.cleanups)-1]
 		if !g.term {
 			g.popCleanup(s.Close)
-			g.expr(s.Close)
+			g.runClose(s.Close)
 		}
 	default:
 		panic(fmt.Sprintf("codegen: unsupported statement %T", s))
@@ -932,19 +946,59 @@ func (g *gen) loop(l *sema.Loop) {
 	g.placeLabel(labels.end)
 }
 
-// safepointPoll is a loop's back edge (D66): one load and a branch that is
-// never taken unless a collection is waiting for this thread, so a loop
-// that allocates nothing cannot hold the other threads stopped.
+// safepointPoll is a loop's back edge (D66, D145): one load and a branch
+// that is never taken unless something wants the loop's attention — a
+// collection waiting for this thread, so a loop that allocates nothing
+// cannot hold the other threads stopped; a cancellation of the running
+// task, which unwinds it here; a task that has run long while others
+// wait, which in a suspending function gives its thread up here.
 func (g *gen) safepointPoll() {
 	flag := g.newTmp()
-	g.emit("%s = load volatile i32, ptr @veles_stop_requested, align 4", flag)
+	g.emit("%s = load volatile i32, ptr @veles_attention_line, align 64", flag)
 	stop := g.newTmp()
 	g.emit("%s = icmp ne i32 %s, 0", stop, flag)
 	park, on := g.newLabel("safepoint"), g.newLabel("safepoint.on")
 	g.emitTerm("br i1 %s, label %%%s, label %%%s, !prof !{!\"branch_weights\", i32 1, i32 100000}", stop, park, on)
 	g.placeLabel(park)
-	g.emit("call void @veles_gc_park()")
-	g.emitTerm("br label %%%s", on)
+	switch {
+	case g.coro == nil:
+		// a plain function can only unwind: the runtime does it from here
+		g.emit("call void @veles_backedge_plain()")
+		g.emitTerm("br label %%%s", on)
+	case g.inCleanup > 0:
+		// cleanup is not cancellable (D47): only a collection is waited for
+		g.emit("call void @veles_safepoint()")
+		g.emitTerm("br label %%%s", on)
+	default:
+		c := g.coro
+		r := g.newTmp()
+		g.emit("%s = call i64 @veles_backedge(ptr %s, i64 %s)", r, c.task, c.depth)
+		yield, cancel, look := g.newLabel("backedge.yield"), g.newLabel("backedge.cancel"), g.newLabel("backedge.look")
+		g.emitTerm("switch i64 %s, label %%%s [ i64 0, label %%%s i64 1, label %%%s i64 2, label %%%s ]", r, on, look, yield, cancel)
+		// a scope body notices a failed child here as after a suspension
+		// point (D35, D145): it is abandoned
+		g.placeLabel(look)
+		g.failFastCheck()
+		g.emitTerm("br label %%%s", on)
+		// the yield is `sleep(Duration.zero)`: to the back of the run queue
+		g.placeLabel(yield)
+		loop, done := g.newLabel("yield"), g.newLabel("yield.susp")
+		g.emitTerm("br label %%%s", loop)
+		g.placeLabel(loop)
+		y := g.newTmp()
+		g.emit("%s = call i64 @veles_task_sleep(ptr %s, i64 0)", y, c.task)
+		yb := g.newTmp()
+		g.emit("%s = icmp ne i64 %s, 0", yb, y)
+		g.emitTerm("br i1 %s, label %%%s, label %%%s", yb, on, done)
+		g.placeLabel(done)
+		g.suspendPoint()
+		g.emitTerm("br label %%%s", loop)
+		// a cancellation: the frame unwinds as at a suspension point
+		g.placeLabel(cancel)
+		g.runCleanups(0)
+		g.emit("call void @veles_frame_unwound(ptr %s, ptr %s)", c.task, c.link)
+		g.emitTerm("br label %%%s", c.finalL)
+	}
 	g.placeLabel(on)
 }
 
@@ -1051,10 +1105,10 @@ func (g *gen) flushPending() {
 // a panic calls to run it — and makes it the innermost of g.cleanups. The
 // list entry lives in the function's frame (the coroutine frame, for a
 // suspending function), so entering a `with` costs no allocation.
-func (g *gen) pushCleanup(c sema.Expr, fn, env string) {
-	rec := g.alloca("{ ptr, ptr, ptr }")
+func (g *gen) pushCleanup(c sema.Expr, fn, env, move string) {
+	rec := g.alloca("{ ptr, ptr, ptr, ptr }")
 	g.cleanupRecs[c] = rec
-	g.emit("call void @veles_cleanup_push(ptr %s, ptr %s, ptr %s)", rec, fn, env)
+	g.emit("call void @veles_cleanup_push(ptr %s, ptr %s, ptr %s, ptr %s)", rec, fn, env, move)
 	g.cleanups = append(g.cleanups, c)
 }
 
@@ -1072,10 +1126,64 @@ func (g *gen) runCleanups(depth int) {
 	for i := len(saved) - 1; i >= depth; i-- {
 		g.cleanups = saved[:i]
 		g.popCleanup(saved[i]) // this path runs it itself
-		g.expr(saved[i])
+		if g.withCloses[saved[i]] {
+			g.runClose(saved[i])
+		} else {
+			g.expr(saved[i])
+		}
 	}
 	g.inCleanup--
 	g.cleanups = saved
+}
+
+// runClose runs a `with`'s close shielded (D47, D145): a loop in it takes
+// no cancellation at its back edge. A scope's join, the other kind of
+// cleanup, suspends, and is shielded by not checking (inCleanup) instead.
+func (g *gen) runClose(e sema.Expr) {
+	if suspendingClose(e) != nil && g.coro != nil {
+		// a close() that suspends (D147) may resume on another thread: the
+		// shield is the task's
+		g.emit("call void @veles_task_shield_enter(ptr %%task)")
+		g.expr(e)
+		g.emit("call void @veles_task_shield_leave(ptr %%task)")
+		return
+	}
+	g.emit("call void @veles_shield_enter()")
+	g.expr(e)
+	g.emit("call void @veles_shield_leave()")
+}
+
+// suspendingClose is the call of a close() that suspends (D147) that a
+// `with`'s close expression is, or nil.
+func suspendingClose(e sema.Expr) *sema.Call {
+	if c, ok := e.(*sema.Call); ok && c.Fn != nil && c.Fn.Suspends && len(c.Args) == 1 {
+		return c
+	}
+	return nil
+}
+
+// closeMove defines (once per `with`) the function that copies the
+// resource a close thunk reads to the heap, for a close that runs after
+// the frame it lives in is gone (a close() that suspends took it on, D147):
+// a variable already in a heap cell is that cell.
+func (g *gen) closeMove(s *sema.With) string {
+	v := s.Var
+	if v.AddrTaken && !v.IsGlobal && !v.Captured {
+		return "@cleanup.move.same"
+	}
+	g.thunkSeq++
+	name := fmt.Sprintf("with.move.%d", g.thunkSeq)
+	t := v.Type
+	g.pending = append(g.pending, func() {
+		g.defineHelperEx(name, "ptr", []string{"ptr %env"}, "", func() {
+			size, _ := g.layout(t)
+			cell := g.newTmp()
+			g.emit("%s = call ptr @veles_alloc_words(i64 %d)", cell, (size+7)/8*8+8)
+			g.storeVal(t, g.loadVal(t, "%env"), cell)
+			g.emitTerm("ret ptr %s", cell)
+		})
+	})
+	return "@" + name
 }
 
 // closeThunk defines (once per `with`) the function a panic calls to close
@@ -1098,6 +1206,23 @@ func (g *gen) closeThunk(s *sema.With) string {
 				g.storage[v] = slot
 			} else {
 				g.storage[v] = "%env"
+			}
+			if call := suspendingClose(s.Close); call != nil {
+				// the task unwinds without its frame (a panic): the close
+				// runs as a task of its own, on a copy of the resource, and
+				// takes the cleanups still to run (D147)
+				recv := g.expr(call.Args[0])
+				rt := call.Args[0].Type().(*types.Pointer).Elem
+				size, _ := g.layout(rt)
+				cell := g.newTmp()
+				g.emit("%s = call ptr @veles_alloc_words(i64 %d)", cell, (size+7)/8*8+8)
+				g.storeVal(rt, g.loadVal(rt, recv), cell)
+				closer := g.newTmp()
+				g.emit("%s = call ptr @veles_task_new()", closer)
+				g.emit("call void @veles_cleanup_continue(ptr %s)", closer)
+				g.startTaskAs(closer, call.Fn, []types.Type{call.Args[0].Type()}, []string{cell}, true)
+				g.emitTerm("ret void")
+				return
 			}
 			g.expr(s.Close)
 			g.emitTerm("ret void")

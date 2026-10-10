@@ -285,11 +285,11 @@ if.else.17:
   store i8 %t49, ptr %a10
   br label %if.end.16
 if.end.16:
-  %t50 = load volatile i32, ptr @veles_stop_requested, align 4
+  %t50 = load volatile i32, ptr @veles_attention_line, align 64
   %t51 = icmp ne i32 %t50, 0
   br i1 %t51, label %safepoint.18, label %safepoint.on.19, !prof !{!"branch_weights", i32 1, i32 100000}
 safepoint.18:
-  call void @veles_gc_park()
+  call void @veles_backedge_plain()
   br label %safepoint.on.19
 safepoint.on.19:
   br label %loop.cond.1
@@ -526,7 +526,7 @@ entry:
   %a1 = alloca %str
   %a2 = alloca { ptr, ptr }
   %a4 = alloca ptr
-  %a5 = alloca { ptr, ptr, ptr }
+  %a5 = alloca { ptr, ptr, ptr, ptr }
   %a11 = alloca ptr
   %a24 = alloca %V._prelude_.Result_i64_std.prelude.Panic_
   %a27 = alloca i64
@@ -552,7 +552,7 @@ entry:
   %coro.depth = load i64, ptr %coro.depthp
   %t3 = call ptr @veles_scope_begin(ptr %task, i64 0, i64 %coro.depth)
   store ptr %t3, ptr %a4
-  call void @veles_cleanup_push(ptr %a5, ptr @scope.cancel.thunk, ptr %a4)
+  call void @veles_cleanup_push(ptr %a5, ptr @scope.cancel.thunk, ptr %a4, ptr @cleanup.move.word)
   %t6 = load ptr, ptr %a4
   %t7 = call ptr @veles_task_launch(ptr %t6, i64 0)
   %t8 = load { ptr, ptr }, ptr %a2

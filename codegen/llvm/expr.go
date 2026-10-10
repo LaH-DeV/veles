@@ -1927,7 +1927,8 @@ func (g *gen) builtin(e *sema.Builtin) string {
 	case "test.leave":
 		g.emit("call void @veles_test_leave(i64 %s)", g.expr(e.Args[0]))
 		return "zeroinitializer"
-	case "atomicLockFree", "atomicLoad", "atomicStore", "atomicSwap", "atomicCompareAndSwap":
+	case "atomicLockFree", "atomicLoad", "atomicStore", "atomicSwap", "atomicCompareAndSwap", "atomicCompareExchange",
+		"atomicAdd", "atomicSub", "atomicAnd", "atomicOr", "atomicXor":
 		return g.atomic(e)
 	case "string.byteAt":
 		s := g.expr(e.Args[0])
