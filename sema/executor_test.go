@@ -34,7 +34,7 @@ fun main() throws ThreadError {
 }`, "'gather(on: …)' takes an Executor, not 'i64'")
 	expectError(t, prelude+`fun main(cpu: Executor) {
   scope(cpu) { }
-}`, "'scope(…)' takes one argument, the executor its tasks run on: 'scope(on: pool) { … }' (D143)")
+}`, "'scope(…)' takes 'on:', the executor its tasks run on (D143), and 'workers:', how many of them run at once (D156)")
 	// a generic method launched with async: its receiver crosses as a copy,
 	// as a plain method's does (its instance is checked later, 2026-10-11)
 	expectClean(t, prelude+`fun double(n: i64): i64 => n * 2

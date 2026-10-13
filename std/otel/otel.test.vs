@@ -204,6 +204,7 @@ test fun childTask(): List<List<u8>> {
   var traceSeen: List<u8> = []
   scope {
     val t = async whoIsCurrent()
+    expect(parent.context().spanId.len() == 8)  // the parent goes on while the child runs
     val got = await t
     seen = got.at(0) ?: []
     traceSeen = got.at(1) ?: []

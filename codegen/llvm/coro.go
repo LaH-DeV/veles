@@ -41,6 +41,8 @@ declare void @veles_task_set_unwrap(ptr, i64)
 declare i64 @veles_task_failed(ptr)
 declare ptr @veles_scope_begin(ptr, i64, i64)
 declare void @veles_scope_on(ptr, ptr)
+declare void @veles_scope_workers(ptr, i64)
+declare i64 @veles_scope_slot(ptr, ptr)
 declare ptr @veles_task_launch(ptr, i64)
 declare i64 @veles_scope_wait(ptr, ptr)
 declare ptr @veles_scope_failed(ptr)
@@ -643,6 +645,24 @@ func (g *gen) launch(e *sema.Launch) string {
 		// held by a value (D111): the scope of the `with` receiving it
 		g.emit("%s = call ptr @veles_receiving()", scope)
 	} else {
+		if e.Scope.Workers != nil {
+			// D156: with `workers` children running, the launch waits for
+			// one to finish (a suspension point, so a cancellation lands)
+			try, go_, susp := g.newLabel("slot.try"), g.newLabel("slot.go"), g.newLabel("slot.susp")
+			g.emitTerm("br label %%%s", try)
+			g.placeLabel(try)
+			sv := g.newTmp()
+			g.emit("%s = load ptr, ptr %s", sv, g.scopeSlots[e.Scope])
+			r := g.newTmp()
+			g.emit("%s = call i64 @veles_scope_slot(ptr %s, ptr %s)", r, g.coro.task, sv)
+			rb := g.newTmp()
+			g.emit("%s = icmp ne i64 %s, 0", rb, r)
+			g.emitTerm("br i1 %s, label %%%s, label %%%s", rb, go_, susp)
+			g.placeLabel(susp)
+			g.suspendPoint()
+			g.emitTerm("br label %%%s", try)
+			g.placeLabel(go_)
+		}
 		g.emit("%s = load ptr, ptr %s", scope, g.scopeSlots[e.Scope])
 	}
 	ct := g.newTmp()
@@ -732,14 +752,20 @@ func (g *gen) scopeBlock(e *sema.ScopeBlock) string {
 	if e.Gather {
 		failFast = "0"
 	}
-	var on string
+	var on, workers string
 	if e.On != nil {
 		on = g.expr(e.On) // before the scope opens (D143)
+	}
+	if e.Workers != nil {
+		workers = g.expr(e.Workers) // so is the limit (D156)
 	}
 	sc := g.newTmp()
 	g.emit("%s = call ptr @veles_scope_begin(ptr %s, i64 %s, i64 %s)", sc, g.coro.task, failFast, g.coro.depth)
 	if on != "" {
 		g.emit("call void @veles_scope_on(ptr %s, ptr %s)", sc, on)
+	}
+	if workers != "" {
+		g.emit("call void @veles_scope_workers(ptr %s, i64 %s)", sc, workers)
 	}
 	slot := g.alloca("ptr")
 	g.emit("store ptr %s, ptr %s", sc, slot)

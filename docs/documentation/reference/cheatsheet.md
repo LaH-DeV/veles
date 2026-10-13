@@ -231,10 +231,15 @@ it.count(); it.fold(z, f); it.any(p); it.all(p); it.find(p); it.last(); it.forEa
 
 ```veles
 // fragment
+load(path)                       // a suspending call is a plain call: it waits by itself (D2)
+val t = async work(1)            // runs alongside the rest of the block, which must await it on every path (D156)
+val (a, b) = awaitAll(async f(), async g())   // both at once, their values; the first failure cancels the other
 scope {                          // every task started inside finishes here
   val t = async work(1)          // Task<i64>, even when work throws: its error fails the scope (D141)
   val v = await t                // no `try`; a handle never leaves its scope — await inside, keep the value
 }
+val total = scope(workers: 8) { … ; awaitAll(tasks).sum() }   // a value; at most 8 children at once; with `on:` too
+loop (r in xs.iter().mapConcurrent(f, workers: 4)) { … }      // lazy, in order; the loop owns the calls (D156)
 val (a, b) = gather { async f(); async g() }   // (Result<A, E|Panic>, Result<B, ...>); one task: its Result — when (gather { async f() }) { ... } (D103)
 val winner = race { val m = ch.recv() => ...; sleep(Duration.millis(100)) => "timeout"; val v = t => ... }
 race { queue.send(line) => { }; sleep(d) => dropped += 1 }   // a send arm: sent only if it wins (D108); arms tried in order, first ready wins

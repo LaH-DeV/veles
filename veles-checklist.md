@@ -265,11 +265,15 @@ answered from the shape, tuples get `Comparable`, enums get
       Panic>`; a non-throwing function with a failing child (a `scope`, a D111 field) is an error
       with the fix, not a compiler crash. driver TestTaskHandles, conformance D141/D111; docs
       chapter 12, reference/concurrency, reference/errors
-- [ ] Concurrency with less ceremony (D156, plan F19; decided 2026-10-13, not built): a
-      `val h = async f()` in any block, awaited on every normal path; the warning for an
-      immediate await; `awaitAll(…)` / `awaitAll(tasks)`; `scope`/`gather(workers: n)`; lazy
-      `iter.mapConcurrent` and loops owning a task-holding iterable; `scope` as a value; a placed
-      scope that starts nothing is an error
+- [x] Concurrency with less ceremony (D156, plan F19, built 2026-10-13): a `val h = async f()`
+      in any block, awaited on every normal path (cancelled and joined on a failure); the warning
+      for an immediate await; `awaitAll(…)` / `awaitAll(tasks)`; `scope`/`gather(workers: n)`
+      (runtime `veles_scope_slot`); lazy `iter.mapConcurrent` (`ConcurrentMap`, an
+      `AsyncIterator` — D42's trait, built with it) and loops owning a task-holding iterable;
+      `scope` as a value; a placed scope that starts nothing is an error. Conformance
+      D156-awaited-handles/await-all/workers/scope-value/lazy-map, driver TestLessCeremony
+      (debug/release, 1–8 threads), examples/verify, examples/tasks; docs chapter 12,
+      reference/concurrency, errors, stdlib, cheatsheet. Left in §11
 - [x] Deadlock detection: "deadlock: every task is blocked" when no task
       can run and no timer, socket or blocking call can wake one
 - [x] A hang that is not a whole-program deadlock explains itself: `VELES_WATCHDOG=<s>` prints every
@@ -1280,9 +1284,16 @@ Every new public std API (http cookies/forms/client, `std/log`,
 ## 11. Known limitations to revisit
 
 - **D156, left out of the decision (2026-10-13):** `awaitAll(…)` as a `race` arm; an unordered
-  lazy `mapConcurrent` (results as each finishes); the deadlock warning for `workers:` sees only
-  a loop of launches over a range larger than a constant limit followed by a send on a channel
-  passed to the launched function — other shapes rely on the runtime's deadlock report.
+  lazy `mapConcurrent` (results as each finishes).
+- **D156, not built yet (F19, 2026-10-13):** the compile-time deadlock warning for `workers:` (a
+  loop of launches over more than a constant limit, then a send the launched function waits
+  for) — the runtime's deadlock report is all there is; quick fixes for the immediate-await
+  warning (two edits: drop the `val`, put the call where the `await` was) and for a placed scope
+  that starts nothing (`e.run(() => …)`); the adapters (`map`, `filter`, …) on `AsyncIterator`
+  (D42/D46 promise them); a non-Sendable element type given to the lazy `mapConcurrent` is
+  reported inside the prelude, not at the call; the lazy form keeps up to `workers` results
+  waiting in a channel besides the calls under way (memory `2 × workers`); LSP tests for the
+  hovers of a `val` task and of `awaitAll`.
 
 - **Executors (D143, built 2026-10-10), not done yet:** on Windows a thread is kept to CPUs of one
   processor group (a list across groups throws `ThreadError`: CPU sets reach across, but only as a

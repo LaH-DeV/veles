@@ -390,6 +390,8 @@ func (f *fnCtx) checkExprInner(e ast.Expr, want types.Type) Expr {
 		return f.awaitExpr(e)
 	case *ast.GatherExpr:
 		return f.gatherExpr(e)
+	case *ast.ScopeExpr:
+		return f.scopeExpr(e.On, e.Workers, e.Body, e.Pos, want, true)
 	case *ast.RaceExpr:
 		return f.raceExpr(e, want)
 	case *ast.ControlExpr:
@@ -530,6 +532,7 @@ func (f *fnCtx) nameExpr(e *ast.NameExpr, want types.Type) Expr {
 		return bad()
 	}
 	if sym.Kind == SymLocal {
+		f.awaitedUse(sym.Var, e)
 		v := f.localVar(sym.Var)
 		markUsed(v)
 		x := f.narrowedRef(v)

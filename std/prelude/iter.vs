@@ -14,6 +14,27 @@ public trait Iterator {
   fun enumerate(): EnumerateIter<Self> => EnumerateIter(inner: this, index: 0)
   fun zip<J: Iterator>(other: J): ZipIter<Self, J> => ZipIter(a: this, b: other)
 
+  /// Calls `f` on the elements with up to `workers` calls under way, and
+  /// gives the results in the elements' order as they are asked for (D156):
+  /// lazy where `List.mapConcurrent` is eager, so a loop over it handles
+  /// one result while the next ones are computed. The elements are taken
+  /// from this iterator in the task that iterates; `f` runs in tasks the
+  /// value holds, so a `loop` over it — or a `with` — owns them: when it
+  /// ends, early or not, the calls still under way are cancelled and joined.
+  /// The first error `f` throws fails the block that owns them.
+  ///
+  /// ```veles
+  /// loop (page in urls.iter().mapConcurrent(u => try fetch(u), workers: 8)) {
+  ///   save(page)
+  /// }
+  /// ```
+  fun mapConcurrent<R, E>(f: sendable fun(Item): R suspends throws E, workers: i64 = 4): ConcurrentMap<Self, R, E> {
+    if (workers < 1) panic("mapConcurrent: workers must be at least 1, got $workers")
+    val jobs = Channel<Item>(capacity: workers)
+    val results = Channel<R>(capacity: workers)
+    ConcurrentMap(source: this, workers, jobs, results, runner: async runConcurrentMap(f, jobs, results))
+  }
+
   fun toList(): List<Item> {
     var out: MutableList<Item> = []
     loop {
@@ -95,8 +116,86 @@ public trait Iterable {
   fun iter(): Iter => this.iterator()
 }
 
+/// An iterator whose `next` may wait (D42): `loop (x in it)` drives it as
+/// it drives an Iterator, and the function the loop is in suspends.
+public trait AsyncIterator {
+  type Item
+  fun next(): Item? suspends
+}
+
 // ---------------------------------------------------------------------------
 // adapters
+
+/// What `iter.mapConcurrent(f, workers:)` gives (D156). It holds the task
+/// running the calls, so it is received by a `loop` or a `with`.
+public struct ConcurrentMap<I: Iterator, R, E> {
+  source:  I
+  workers: i64
+  jobs:    Channel<I.Item>
+  results: Channel<R>
+  runner:  Task<Result<(), E>>
+  /// elements handed over whose results have not been taken yet
+  var sent: i64 = 0
+  /// the source has elements left
+  var open: bool = true
+
+  implement AsyncIterator {
+    type Item = R
+    fun next(): R? suspends {
+      // keep `workers` calls under way: the elements are taken here, in
+      // the task that iterates, so the source need not cross a task
+      loop (this.open && this.sent < this.workers) {
+        val v = this.source.next()
+        if (v == null) {
+          this.jobs.close()
+          this.open = false
+        } else {
+          this.jobs.send(v)
+          this.sent += 1
+        }
+      }
+      if (this.sent == 0) return null
+      this.sent -= 1
+      await this.results.recv()
+    }
+  }
+}
+
+/// The task behind a `ConcurrentMap`: a task of `f` per element handed
+/// over on `jobs`, started as it arrives, and their results sent on
+/// `results` in the order the elements came.
+fun runConcurrentMap<T, R, E>(f: sendable fun(T): R suspends throws E, jobs: Channel<T>, results: Channel<R>) throws E {
+  scope {
+    // oldest first; the iterating task keeps at most `workers` under way,
+    // so taking the first off is cheap
+    val running: MutableList<Task<R>> = []
+    var open = true
+    loop (open || !running.isEmpty()) {
+      if (running.isEmpty()) {
+        val job = await jobs.recv() ?: break
+        running.push(async f(job))
+        continue
+      }
+      val first = running.at(0) ?: break
+      if (open) {
+        // the oldest call's value, or a new element to start meanwhile
+        race {
+          val v = await first   => {
+            val _ = running.removeAt(0)
+            results.send(v)
+          }
+          val job = jobs.recv() => {
+            if (job == null) open = false else running.push(async f(job))
+          }
+        }
+      } else {
+        val _ = running.removeAt(0)
+        results.send(await first)
+      }
+    }
+  }
+  results.close()
+}
 
 public struct MapIter<I: Iterator, U> {
   inner: I

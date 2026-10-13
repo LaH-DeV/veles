@@ -129,7 +129,7 @@ fun taskReturned(): Task<i64> {
 
 fun bareAsync() {
   with t = async work(1)
-  val u = async work(2) // error: 'async' must be lexically inside a 'scope' or 'gather' block, or be the value of a 'with'
+  val u = async work(2) // error: 'u' is not awaited on every path to the end of its block
 }
 
 fun taskNotStartedHere() {
@@ -168,6 +168,7 @@ fun inScope() {
     with t = async work(1)
     // an `async` in the body belongs to the enclosing scope
     val u = async work(2)
+    io.println("started")
     io.println("${await u}")
   }
 }

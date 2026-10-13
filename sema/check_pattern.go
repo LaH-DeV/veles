@@ -52,6 +52,7 @@ func (f *fnCtx) whenExpr(e *ast.WhenExpr, want types.Type) Expr {
 	var nullArms []*NullConst // `=> null` arms, typed from the others at the end
 	var valueArms []*MatchArm
 	saved := f.saveNarrow()
+	var joined facts
 	for _, arm := range e.Arms {
 		f.pushScope()
 		f.restoreNarrow(saved)
@@ -149,12 +150,31 @@ func (f *fnCtx) whenExpr(e *ast.WhenExpr, want types.Type) Expr {
 		}
 		m.Arms = append(m.Arms, ha)
 		f.popScope()
+		// exactly one arm runs: what every arm that goes on establishes
+		// holds afterwards (D5's join, as for `if` and `race`); an arm that
+		// always leaves adds nothing
+		var state facts
+		if !types.IsNever(body.Type) {
+			state = f.saveNarrow()
+		}
+		if len(m.Arms) == 1 {
+			joined = state
+		} else {
+			joined = mergeFacts(joined, state)
+		}
 	}
-	f.restoreNarrow(saved)
 
 	// exhaustiveness
 	exhaustive := hasElse || f.isExhaustive(cov, subjType, e.Subject == nil)
 	m.Exhaustive = exhaustive
+	switch {
+	case !exhaustive || len(m.Arms) == 0:
+		f.restoreNarrow(mergeFacts(joined, saved)) // no arm may run
+	case joined == nil:
+		f.restoreNarrow(facts{}) // every arm leaves
+	default:
+		f.restoreNarrow(joined)
+	}
 	if !exhaustive {
 		if asValue || inferValue || f.requiresExhaustive(subjType) {
 			f.errorf(e.Pos, "'when' is not exhaustive: %s (D13; add the missing arms or 'else')", f.missingArms(cov, subjType))
@@ -268,6 +288,19 @@ func (f *fnCtx) whenExpr(e *ast.WhenExpr, want types.Type) Expr {
 				ha.Body.Value = nil
 				ha.Body.Type = types.TUnit
 			}
+			if !types.IsNever(ha.Body.Type) {
+				allNever = false
+			}
+		}
+		if allNever {
+			m.T = types.TNever
+		}
+	}
+	if asValue && exhaustive && len(m.Arms) > 0 {
+		// every arm leaves (`0 => return a; else => return b`): so does the
+		// `when`, as in statement position
+		allNever := true
+		for _, ha := range m.Arms {
 			if !types.IsNever(ha.Body.Type) {
 				allNever = false
 			}

@@ -106,11 +106,18 @@ struct Printer {
   }
 
   // the executor of a `scope(on: e)` or `gather(on: e)` (D143)
-  fun on(e: (*Expr)?) {
-    val x = e ?: return
-    this.write(" (on ")
-    this.expr(*x)
-    this.write(")")
+  // the `on:` and `workers:` of a scope or gather (D143, D156)
+  fun on(e: (*Expr)?, workers: (*Expr)?) {
+    if (val x = e) {
+      this.write(" (on ")
+      this.expr(*x)
+      this.write(")")
+    }
+    if (val n = workers) {
+      this.write(" (workers ")
+      this.expr(*n)
+      this.write(")")
+    }
   }
 
   fun close() {
@@ -614,7 +621,7 @@ struct Printer {
       }
       is ScopeStmt        => {
         this.open("scope")
-        this.on(s.on)
+        this.on(s.on, s.workers)
         this.nl()
         this.block(s.body)
         this.close()
@@ -823,7 +830,14 @@ struct Printer {
       }
       is GatherExpr     => {
         this.open("gather")
-        this.on(e.on)
+        this.on(e.on, e.workers)
+        this.nl()
+        this.block(e.body)
+        this.close()
+      }
+      is ScopeExpr      => {
+        this.open("scope-value")
+        this.on(e.on, e.workers)
         this.nl()
         this.block(e.body)
         this.close()

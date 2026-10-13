@@ -1457,7 +1457,7 @@ func (p *printer) stmt(s ast.Stmt) {
 		p.block(s.Body)
 	case *ast.ScopeStmt:
 		p.w("scope")
-		p.on(s.On)
+		p.on(s.On, s.Workers)
 		p.block(s.Body)
 	case *ast.WithStmt:
 		// as written: the formatter never converts between the statement
@@ -1822,7 +1822,11 @@ func (p *printer) exprInner(e ast.Expr) {
 		p.block(e.Handler.Body)
 	case *ast.GatherExpr:
 		p.w("gather")
-		p.on(e.On)
+		p.on(e.On, e.Workers)
+		p.block(e.Body)
+	case *ast.ScopeExpr:
+		p.w("scope")
+		p.on(e.On, e.Workers)
 		p.block(e.Body)
 	case *ast.UnsafeExpr:
 		p.w("unsafe ")
@@ -2363,14 +2367,24 @@ func attrStart(attrs []*ast.Attribute, pos int) int {
 	return pos
 }
 
-// on writes `(on: e) ` after `scope`/`gather` (D143), or the space before
-// the block.
-func (p *printer) on(e ast.Expr) {
-	if e == nil {
+// on writes `(on: e, workers: n) ` after `scope`/`gather` (D143, D156),
+// or the space before the block.
+func (p *printer) on(e, workers ast.Expr) {
+	if e == nil && workers == nil {
 		p.w(" ")
 		return
 	}
-	p.w("(on: ")
-	p.expr(e, 0)
+	p.w("(")
+	if e != nil {
+		p.w("on: ")
+		p.expr(e, 0)
+	}
+	if workers != nil {
+		if e != nil {
+			p.w(", ")
+		}
+		p.w("workers: ")
+		p.expr(workers, 0)
+	}
 	p.w(") ")
 }

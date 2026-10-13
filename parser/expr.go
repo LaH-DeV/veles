@@ -421,9 +421,9 @@ func (p *Parser) parsePrimary() ast.Expr {
 		return p.parseWith()
 	case lexer.KwGather:
 		p.next()
-		on := p.parseOn("gather")
+		on, workers := p.parseOn("gather")
 		body := p.parseBlock()
-		return &ast.GatherExpr{On: on, Body: body, Pos: p.spanFrom(start)}
+		return &ast.GatherExpr{On: on, Workers: workers, Body: body, Pos: p.spanFrom(start)}
 	case lexer.KwUnsafe:
 		p.next()
 		body := p.parseBlock()
@@ -438,10 +438,11 @@ func (p *Parser) parsePrimary() ast.Expr {
 		h := p.parseCatchHandler()
 		return &ast.CatchExpr{Body: &ast.Block{Pos: t.Span}, Handler: h, Pos: p.spanFrom(start)}
 	case lexer.KwScope:
-		p.errorf(t.Span, "'scope' is a statement, not an expression; use 'gather' to collect results (D36)")
+		// a scope used as a value (D156)
 		p.next()
-		p.parseBlock()
-		return &ast.BadExpr{Pos: p.spanFrom(start)}
+		on, workers := p.parseOn("scope")
+		body := p.parseBlock()
+		return &ast.ScopeExpr{On: on, Workers: workers, Body: body, Pos: p.spanFrom(start)}
 	case lexer.KwFun:
 		p.errorf(t.Span, "anonymous functions are written as lambdas: '(x) => ...' (D32)")
 		return &ast.BadExpr{Pos: t.Span}

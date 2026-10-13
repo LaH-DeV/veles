@@ -150,6 +150,9 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 		if callee.Name == "panic" && f.lookup(callee.Name) == nil {
 			return f.panicCall(e)
 		}
+		if callee.Name == "awaitAll" && f.lookup(callee.Name) == nil {
+			return f.awaitAllCall(e)
+		}
 		if (testWords[callee.Name] || callee.Name == "assert") && f.lookup(callee.Name) == nil {
 			return f.testCall(callee.Name, typeArgs, e, want)
 		}

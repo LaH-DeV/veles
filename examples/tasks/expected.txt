@@ -1,5 +1,11 @@
 results [1, 2, 3, 4]
 squares 9 16
+awaited 36 49 64
+8 jobs, at most 2 at once
+lazy 1
+lazy 4
+lazy 9
+lazy 16
 gather Ok(value: 10) Err(error: Boom(n: 2)) Ok(value: 25)
 race message hello
 race timeout

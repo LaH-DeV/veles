@@ -74,9 +74,42 @@ is refused, a `List` is shared. To give a task state it changes and you
 read back, pass a `Mutex` or an `Atomic`, or have it return a value.
 
 **Where `async` may be written**: directly inside a `scope { }` or
-`gather { }` body, as the value of a `with` (`with t = async f()`, D100),
-or as a field of a value that holds a task (D111). Anywhere else it is a
-compile error — there is no way to start a task that belongs to nothing.
+`gather { }` body, as the whole value of a `val` (`val t = async f()`,
+D156) or a `with` (`with t = async f()`, D100), as an argument of
+`awaitAll`, or as a field of a value that holds a task (D111). Anywhere
+else it is a compile error — there is no way to start a task that belongs
+to nothing.
+
+**A `val` task outside a scope** (D156) is a fail-fast child of the rest
+of its block. Every normal way out of the block — its end, `return`, a
+`break` or `continue` that leaves it — must have awaited it (`await t`,
+`awaitAll(…, t, …)`, or a `race` arm `await t`); the compiler checks it as
+it checks that a `val` is assigned. A failed `try`, a `throw`, a panic or
+a cancellation instead cancels the task and waits for it to stop, as the
+cleanup on the way out. The handle has no other use: it is not passed,
+stored, captured or cancelled. The block's other `with`s and with-tasks
+form one stack with it: the last started is dealt with first.
+
+**`awaitAll(a, b, …)`** waits for every task and gives the tuple of their
+values in argument order; `awaitAll(tasks)` gives the list of a list's.
+`async` calls written as its arguments run in a fail-fast scope of the
+`awaitAll`'s own: the first of them to fail cancels and joins the others,
+and its error leaves from the `awaitAll`. A handle passed to it fails its
+own block, as before.
+
+**`scope(workers: n)`** (and `gather(workers: n)`) keeps at most `n` of
+the scope's own children running. A launch with `n` running suspends the
+body — a cancellation point — until a child finishes, then starts; a
+waiting body takes no memory per element. `n` is evaluated once before the
+scope starts; `n < 1` panics there. A `with` task or a nested scope in the
+body is a child of its own block and is not counted.
+
+**A loop over a value that holds tasks** (`loop (x in
+xs.iter().mapConcurrent(f))`) receives it as a `with` would: when the loop
+ends, however it ends, its tasks are cancelled and joined, then the value
+is closed if it is `Closeable`. The lazy `mapConcurrent` keeps `workers`
+calls under way, takes the elements in the looping task, and gives the
+results in the elements' order.
 
 **A function value** runs the same way if its type is `sendable fun(…)`
 (D103); a plain `fun(…)` is refused, since its captures could be shared.

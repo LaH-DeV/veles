@@ -618,9 +618,10 @@ type WithStmt struct {
 
 // ScopeStmt is a structured-concurrency `scope { }` (D34).
 type ScopeStmt struct {
-	On   Expr // `scope(on: e)` (D143); nil when not given
-	Body *Block
-	Pos  source.Span
+	On      Expr // `scope(on: e)` (D143); nil when not given
+	Workers Expr // `scope(workers: n)` (D156); nil when not given
+	Body    *Block
+	Pos     source.Span
 }
 
 // FunStmt is a local function declaration.
@@ -953,9 +954,20 @@ type CastExpr struct {
 
 // GatherExpr is `gather { async a(); async b() }` (D36).
 type GatherExpr struct {
-	On   Expr // `gather(on: e)` (D143); nil when not given
-	Body *Block
-	Pos  source.Span
+	On      Expr // `gather(on: e)` (D143); nil when not given
+	Workers Expr // `gather(workers: n)` (D156); nil when not given
+	Body    *Block
+	Pos     source.Span
+}
+
+// ScopeExpr is a `scope { }` used as a value (D156): its body's last
+// expression, once every child has finished. In statement position a
+// scope is a ScopeStmt.
+type ScopeExpr struct {
+	On      Expr
+	Workers Expr
+	Body    *Block
+	Pos     source.Span
 }
 
 // RaceExpr is `race { val x = ch.recv() => body ... }` (D38).
@@ -1017,6 +1029,7 @@ func (e *IsExpr) Span() source.Span           { return e.Pos }
 func (e *CastExpr) Span() source.Span         { return e.Pos }
 func (e *ImplementsExpr) Span() source.Span   { return e.Pos }
 func (e *GatherExpr) Span() source.Span       { return e.Pos }
+func (e *ScopeExpr) Span() source.Span        { return e.Pos }
 func (e *RaceExpr) Span() source.Span         { return e.Pos }
 func (e *UnsafeExpr) Span() source.Span       { return e.Pos }
 func (e *BadExpr) Span() source.Span          { return e.Pos }
@@ -1058,6 +1071,7 @@ func (*IsExpr) exprNode()           {}
 func (*CastExpr) exprNode()         {}
 func (*ImplementsExpr) exprNode()   {}
 func (*GatherExpr) exprNode()       {}
+func (*ScopeExpr) exprNode()        {}
 func (*RaceExpr) exprNode()         {}
 func (*UnsafeExpr) exprNode()       {}
 func (*BadExpr) exprNode()          {}

@@ -348,8 +348,18 @@ func (f *fnCtx) ioWaitCall(e *ast.CallExpr) Expr {
 }
 
 func (f *fnCtx) awaitExpr(e *ast.AwaitExpr) Expr {
+	if call, ok := e.X.(*ast.CallExpr); ok && !call.Async {
+		if n, isName := call.Fun.(*ast.NameExpr); isName && n.Name == "awaitAll" && f.lookup("awaitAll") == nil {
+			drop := source.Span{File: e.Pos.File, Start: e.Pos.Start, End: e.X.Span().Start}
+			f.c.errorFix(e.Pos, fixReplace("Remove 'await'", drop, ""), "'awaitAll' waits; remove 'await' — 'awaitAll(…)' is itself the point where this task waits (D156)")
+			return f.checkExpr(e.X, nil)
+		}
+	}
 	f.awaitNext = true
+	saved := f.awaitOperand
+	f.awaitOperand = e.X
 	x := f.checkExpr(e.X, nil)
+	f.awaitOperand = saved
 	consumed := !f.awaitNext
 	f.awaitNext = false
 	if consumed {
@@ -426,7 +436,7 @@ func (f *fnCtx) launchCall(e *ast.CallExpr, want types.Type) Expr {
 	// (a value that is not received is the one error: heldInside)
 	how, held := f.heldLaunchAllowed(e)
 	if len(f.scopes) == 0 && !held {
-		f.errorf(e.Pos, "'async' must be lexically inside a 'scope' or 'gather' block, or be the value of a 'with' — 'with t = async f()' runs f until the block ends: tasks cannot outlive their block (D3/D34/D100)")
+		f.errorf(e.Pos, "'async' must be lexically inside a 'scope' or 'gather' block, or be the whole value of a 'val' or 'with' — 'val t = async f()' runs f alongside the rest of the block, which awaits it; 'with t = async f()' runs it until the block ends: tasks cannot outlive their block (D3/D34/D100/D156)")
 		f.checkArgsLoosely(e.Args)
 		return bad()
 	}
@@ -557,25 +567,115 @@ func (f *fnCtx) launchCall(e *ast.CallExpr, want types.Type) Expr {
 }
 
 func (f *fnCtx) scopeStmt(s *ast.ScopeStmt) []Stmt {
-	if f.isGlobal {
-		f.errorf(s.Pos, "'scope' cannot appear in a global initializer; compute the value in 'main' and pass it down")
+	x := f.scopeExpr(s.On, s.Workers, s.Body, s.Pos, nil, false)
+	if x == nil {
 		return nil
 	}
-	sb := &ScopeBlock{Span: s.Pos}
+	return []Stmt{x.(Stmt)}
+}
+
+// scopeExpr checks a `scope`, as a statement or (asValue) as a value
+// (D156): the body's last expression, held in a temporary declared before
+// the scope opens and read once every child has finished.
+func (f *fnCtx) scopeExpr(on, workers ast.Expr, body *ast.Block, pos source.Span, want types.Type, asValue bool) Expr {
+	if f.isGlobal {
+		f.errorf(pos, "'scope' cannot appear in a global initializer; compute the value in 'main' and pass it down")
+		if asValue {
+			return bad()
+		}
+		return nil
+	}
+	sb := &ScopeBlock{Span: pos}
 	sb.T = types.TUnit
-	sb.On = f.executorOf(s.On, "scope")
+	sb.On = f.executorOf(on, "scope")
+	sb.Workers = f.workersOf(workers)
 	f.scopes = append(f.scopes, sb)
 	f.openTaskBlock("scope")
-	sb.Body = f.checkBlock(s.Body, nil, false)
+	var result *Var
+	var valueT types.Type
+	if asValue {
+		b := f.checkBlock(body, want, true)
+		switch {
+		case types.IsNever(b.Type):
+			valueT = types.TNever
+		case b.Value == nil:
+			f.errorf(pos, "a 'scope' used as a value ends in an expression: its value is the last one in its body, once every task it started has finished (D156)")
+			valueT = types.TInvalid
+		default:
+			if es, ok := body.Stmts[len(body.Stmts)-1].(*ast.ExprStmt); ok {
+				f.refuseEscape(es.X, "be the value of its block")
+			}
+			valueT = b.Type
+			result = f.newTemp(b.Type)
+			b.Stmts = append(b.Stmts, &Assign{Target: &VarRef{exprBase{b.Type}, result}, Value: b.Value})
+			b.Value = nil
+			b.Type = types.TUnit
+		}
+		sb.Body = b
+	} else {
+		sb.Body = f.checkBlock(body, nil, false)
+	}
 	f.closeTaskBlock()
 	f.scopes = f.scopes[:len(f.scopes)-1]
+	f.placedStartsTasks(sb, on, workers, pos, "scope")
 	sb.ErrTo = f.currentErrType()
 	if f.errType == nil && f.throws {
 		// inferred: filled in at codegen time from the function signature
 		sb.ErrTo = nil
 	}
-	f.suspending(sb, s.Pos, "scope")
-	return []Stmt{sb}
+	f.suspending(sb, pos, "scope")
+	if !asValue {
+		return sb
+	}
+	switch {
+	case types.IsInvalid(valueT):
+		return bad()
+	case result == nil:
+		// a body that always returns or throws
+		sb.T = types.TNever
+		return sb
+	}
+	return &BlockExpr{exprBase{valueT}, &Block{Stmts: []Stmt{&VarDecl{Var: result}, sb}, Value: ref(result), Type: valueT}}
+}
+
+// workersOf checks the `workers:` of a scope or gather (D156): an i64,
+// evaluated before the scope opens; a constant below 1 is refused here, any
+// other panics at run time.
+func (f *fnCtx) workersOf(workers ast.Expr) Expr {
+	if workers == nil {
+		return nil
+	}
+	n := f.checkExprTo(workers, types.TI64)
+	if types.IsInvalid(n.Type()) {
+		return nil
+	}
+	if c, ok := f.c.tryConst(n).(*CInt); ok {
+		if c.V.Sign() <= 0 {
+			f.errorf(workers.Span(), "'workers' must be at least 1: it is how many of the tasks run at once, here %s (D156)", c.V)
+		}
+		return n
+	}
+	// `n < 1` panics where the scope is written, as mapConcurrent does
+	at := workers.Span()
+	tmp := f.newTemp(types.TI64)
+	low := &Binary{exprBase{types.TBool}, OpLt, ref(tmp), &IntConst{exprBase{types.TI64}, 1, false}, at}
+	stop := &Block{Stmts: []Stmt{&ExprStmt{X: &Builtin{exprBase{types.TNever}, "panic", []Expr{&StringConst{exprBase{types.TString}, "workers must be at least 1"}}, at}}}, Type: types.TNever}
+	return &Let{exprBase{types.TI64}, tmp, n, &BlockExpr{exprBase{types.TI64}, &Block{Stmts: []Stmt{&ExprStmt{X: &If{exprBase{types.TUnit}, low, stop, nil}}}, Value: ref(tmp), Type: types.TI64}}}
+}
+
+// placedStartsTasks refuses a placed or limited scope that starts no task
+// of its own (D156 part 6): its body runs in the calling task, so `on:`
+// would place nothing — the program meant `e.run(…)` — and `workers:`
+// would limit nothing.
+func (f *fnCtx) placedStartsTasks(sb *ScopeBlock, on, workers ast.Expr, pos source.Span, what string) {
+	if len(sb.Launches) > 0 || (on == nil && workers == nil) || (on != nil && sb.On == nil) {
+		return // (an invalid `on:` was reported)
+	}
+	if on != nil {
+		f.errorf(pos, "this body runs in the calling task: '%s(on: %s)' places only the tasks it starts, and it starts none; run the code there with '%s.run(() => …)' (D143, D156)", what, srcText(on), srcText(on))
+		return
+	}
+	f.errorf(pos, "'%s(workers: …)' limits how many of its tasks run at once, and this body starts none; remove 'workers:' (D156)", what)
 }
 
 func (f *fnCtx) gatherExpr(e *ast.GatherExpr) Expr {
@@ -585,11 +685,13 @@ func (f *fnCtx) gatherExpr(e *ast.GatherExpr) Expr {
 	}
 	sb := &ScopeBlock{Gather: true, Span: e.Pos}
 	sb.On = f.executorOf(e.On, "gather")
+	sb.Workers = f.workersOf(e.Workers)
 	f.scopes = append(f.scopes, sb)
 	f.openTaskBlock("gather")
 	sb.Body = f.checkBlock(e.Body, nil, false)
 	f.closeTaskBlock()
 	f.scopes = f.scopes[:len(f.scopes)-1]
+	f.placedStartsTasks(sb, e.On, e.Workers, e.Pos, "gather")
 	switch len(sb.Elems) {
 	case 0:
 		sb.T = types.TUnit

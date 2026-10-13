@@ -12,8 +12,13 @@ pause waiting for something) is **inferred** from its body, the same way
 its error type is (D2). The editor shows what was inferred: hovering a
 function, at its declaration or at any call, reads `fun wait() suspends`,
 and an inlay hint marks the declaration. Second, tasks are always **structured**: a task
-is started inside a `scope`, and the scope does not finish until every
-task in it has (D3). Nothing leaks, nothing is fire-and-forget.
+belongs to the block that starts it — a `scope`, or the block of a
+`val`/`with` that holds its handle — and that block does not finish until
+the task has (D3). Nothing leaks, nothing is fire-and-forget.
+
+Because a suspending function is called like any other, calling one and
+waiting for its result needs no keyword at all: `io.println(load(path))`.
+`async` means only one thing — *run this alongside what follows*.
 
 ## Starting tasks
 
@@ -71,6 +76,114 @@ executor (see "Choosing the threads", below). What the compiler checks
 in this chapter — only Sendable values cross into a task, shared state
 sits in a `Mutex` or an `Atomic` — is what makes that safe: two tasks
 never change the same memory at once without a lock between them.
+
+## One task alongside: `val t = async f()`
+
+For one or two tasks you need no `scope` (D156). A handle bound with
+`val` runs alongside the rest of its block, and the compiler makes sure
+the block awaits it:
+
+```veles
+use io
+
+fun fetchRate(currency: string): i64 {
+  await sleep(Duration.millis(20))   // a slow lookup
+  if (currency == "EUR") 108 else 100
+}
+
+fun price(amount: i64, currency: string): i64 {
+  val rate = async fetchRate(currency)   // starts now
+  val fee = amount / 50                  // meanwhile
+  amount * (await rate) / 100 + fee
+}
+
+fun main() {
+  io.println("${price(500, "EUR")}")
+}
+```
+
+Output:
+```text
+550
+```
+
+- **Every normal way out of the block awaits it** — falling off its end,
+  `return`, and a `break` or `continue` that leaves it. A path that does
+  not is a compile error; the check is the one that makes a `val` assigned
+  on every path.
+- **A failure on the way out stops it.** If a `try` fails, a `throw` or a
+  panic leaves the block, or the task is cancelled, the handle's task is
+  cancelled and joined before the error goes on, so nothing it opened is
+  still open.
+- **It is fail-fast**, like a scope's child: if the task throws, the rest
+  of the block is cancelled at its next suspension point and the error
+  leaves the block, joining the function's `throws`.
+- **It is only awaited.** Passing the handle to a function, storing it,
+  capturing it in a lambda or cancelling it is an error: the compiler could
+  no longer see that it is awaited. A task you may stop is a `with` task
+  (below); one you hand around belongs in a `scope`.
+
+```veles
+// fragment
+fun quote(c: bool): i64 {
+  val rate = async fetchRate("EUR")
+  if (c) return 0        // error: 'rate' is not awaited on this path
+  await rate
+}
+```
+
+The compiler also warns when nothing runs alongside a task — `val t =
+async f()` followed straight by `await t` is `f()` with extra steps:
+"'f' runs with nothing alongside it; call 'f()' directly". (In a
+`scope(on: e)` it does not warn: there the task is what moves `f` onto
+`e`.)
+
+## Several values: `awaitAll`
+
+`awaitAll` waits for several tasks and gives their values as a tuple, in
+argument order (D156). An argument is a handle or an `async` call written
+in place:
+
+```veles
+use io
+
+error NotFound { id: i64 }
+
+fun user(id: i64): string throws NotFound {
+  await sleep(Duration.millis(10))
+  if (id < 0) throw NotFound(id)
+  "user$id"
+}
+
+fun orders(id: i64): i64 {
+  await sleep(Duration.millis(5))
+  id * 3
+}
+
+fun summary(id: i64): string throws NotFound {
+  val (name, count) = awaitAll(async user(id), async orders(id))
+  "$name has $count orders"
+}
+
+fun main() {
+  io.println(summary(7) catch (e) { "no such user" })
+  io.println(summary(-1) catch (e) { "no such user ${e.id}" })
+}
+```
+
+Output:
+```text
+user7 has 21 orders
+no such user -1
+```
+
+- The calls run at once; `awaitAll` returns when every one has finished.
+- The first failure **cancels the others** and leaves from `awaitAll` —
+  unlike JavaScript's `Promise.all`, which leaves them running.
+- `awaitAll(tasks)` over a `List` or `MutableList` of handles gives a
+  `List` of their values, in order.
+- There is no `await` in front: `awaitAll` is itself the point where the
+  task waits, as `race` is.
 
 ## Fail fast
 
@@ -220,9 +333,13 @@ ticked meanwhile: true
   dealt with before `t`.
 - `with (t = async f()) { ... }` stops the task at that `}` instead.
 - `async` is allowed in exactly these places: inside `scope` or `gather`,
-  as the whole value of a `with`, and as a field of a value that holds a
-  task (below). Inside a `scope`, a `with`-task is cancelled at the end of
-  its own block, before the scope waits for its other children.
+  as the whole value of a `val` (awaited, above) or a `with`, as an
+  argument of `awaitAll`, and as a field of a value that holds a task
+  (below). Inside a `scope`, a `with`-task is cancelled at the end of its
+  own block, before the scope waits for its other children.
+- `val` or `with`? A `val` task is one the block needs: every path awaits
+  it. A `with` task is one the block may leave behind: it is stopped when
+  the block ends.
 
 ### A value that holds a task
 
@@ -528,6 +645,90 @@ error cancels the work still queued — the rule the eager adapters follow
 `std/prelude/concurrent.vs`, which is the channel machine above with
 names on it; write the machine yourself when the shape is different — a
 stream you do not want to collect first, a pipeline, per-worker state.
+
+### One result at a time: the lazy `mapConcurrent`
+
+`list.mapConcurrent` collects every result before it returns. On an
+iterator, `mapConcurrent` is lazy (D46's split): it keeps up to `workers`
+calls under way and gives the results **in order, as the loop asks for
+them**, so the loop handles one while the next ones are computed (D156):
+
+```veles
+use io
+
+fun download(part: i64): string {
+  await sleep(Duration.millis(10 * (4 - part)))   // later parts are quicker
+  "part $part"
+}
+
+fun main() {
+  val parts = [1, 2, 3]
+  loop (data in parts.iter().mapConcurrent(p => download(p), workers: 2)) {
+    io.println("saved $data")
+  }
+}
+```
+
+Output:
+```text
+saved part 1
+saved part 2
+saved part 3
+```
+
+- The elements are taken from the iterator in the task that loops, so
+  the iterator need not cross a task; each element must be Sendable.
+- The value holds the tasks running the calls (D111), and **the loop owns
+  them**: when it ends — exhausted, `break`, `return`, a failure — the calls
+  still under way are cancelled and joined. Anywhere else it is received
+  with `with`, as any value holding a task is.
+- The first error `f` throws fails the block that owns the loop.
+- Its type is an `AsyncIterator`: an iterator whose `next()` may wait
+  (D42). Any type implementing that trait is looped over the same way, and
+  the loop's function suspends.
+
+## A pool of your own: `scope(workers: n)`, and a scope's value
+
+`scope(workers: n)` runs at most `n` of its children at once: when `n`
+are running, the next `async` waits for one of them to finish, so a
+scope can be handed a million elements without holding a million tasks
+(D156). It combines with `on:` — an executor's threads limit how much
+runs on the CPU, `workers` how many tasks are under way. And a `scope`
+may be used as a value: its body's last expression, once every task it
+started has finished.
+
+```veles
+use io
+
+fun lines(name: string): i64 {
+  await sleep(Duration.millis(2))
+  name.len() * 10
+}
+
+fun main() {
+  val files = ["a.txt", "notes.md", "main.vs", "readme"]
+  val total = scope(workers: 2) {
+    val tasks: MutableList<Task<i64>> = []
+    loop (f in files) tasks.push(async lines(f))
+    awaitAll(tasks).sum()
+  }
+  io.println("$total lines")
+}
+```
+
+Output:
+```text
+260 lines
+```
+
+- `workers` is evaluated once, before the scope starts; below 1 it
+  panics (a constant below 1 is a compile error).
+- It counts the scope's own children; a `with` task or a nested `scope`
+  in the body is a child of its own block.
+- `gather(workers: n)` limits a gather the same way.
+- A `scope(on: e)` or `scope(workers: n)` whose body starts no task is
+  an error: the body itself runs in the calling task, so `on:` would move
+  nothing — to run code on an executor, write `e.run(() => …)`.
 
 ## Draining, limiting, retrying
 

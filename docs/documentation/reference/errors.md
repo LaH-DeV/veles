@@ -681,12 +681,65 @@ The `val`/`var`, loop, destructuring or pattern binding is never read
 `'async' must be lexically inside a 'scope' or 'gather' block, or be the
 value of a 'with'`.
 
-#### `'async' must be lexically inside a 'scope' or 'gather' block, or be the value of a 'with'`
+#### `'async' must be lexically inside a 'scope' or 'gather' block, or be the whole value of a 'val' or 'with'`
 
-A task cannot outlive the block that started it (D3/D34). Start it
-inside `scope { }` when the block should wait for it (a pool of workers),
-or as `with t = async f()` when it runs in the background until the block
-ends, which cancels it then (D100) — a server in a test, a ticker.
+A task cannot outlive the block that started it (D3/D34). Start it as
+`val t = async f()` when the block needs its value (it must then await
+it, D156), inside `scope { }` when the block should wait for many (a pool
+of workers), or as `with t = async f()` when it runs in the background
+until the block ends, which cancels it then (D100) — a server in a test,
+a ticker.
+
+#### `'t' is not awaited on this path` / `'t' is not awaited on every path to the end of its block`
+
+A task bound with `val` runs alongside the rest of its block, and every
+normal way out of the block — its end, a `return`, a `break` or `continue`
+that leaves it — must have awaited it (D156): otherwise its value would be
+lost and nobody would know whether it failed. Await it on that path, or,
+when leaving it behind is what you mean, start it with `with t = async
+f()`: a `with` task is cancelled when its block ends. A failed `try`, a
+`throw` or a panic needs no await — the task is cancelled and joined on
+the way out.
+
+#### `'t' must be awaited by this block, so it cannot be passed on, stored, captured or cancelled`
+
+A `val` task is checked to be awaited on every path, which only works
+while every use of it is an `await` in its own block (D156). Pass the
+*value* (`show(await t)`), start a task you want to cancel with `with`,
+and keep handles you hand around in a `scope`.
+
+#### `a task is bound with 'val' (it must then be awaited) or 'with' (it is cancelled when the block ends), not 'var'`
+
+A handle names one task; it is never reassigned (D156).
+
+#### `'f' runs with nothing alongside it; call 'f(…)' directly` (warning)
+
+The first thing after `val t = async f()` is `await t`, so the block
+waits at once and nothing runs at the same time: the task only costs a
+task (D156). Call `f()` — a suspending function needs no keyword (D2).
+Start the task earlier, or start two, when you want them to overlap.
+
+#### `'work(1)' finishes before 'awaitAll' starts, so these run one after the other`
+
+`awaitAll` waits for tasks (D156). A plain call among its arguments runs
+to its end before `awaitAll` is even called; write `async work(1)` (the
+quick fix) so the calls run at once. `'awaitAll' waits; remove 'await'`
+says the opposite: `awaitAll` is itself where the task waits, so no
+`await` goes before it.
+
+#### `'workers' must be at least 1` / `this body runs in the calling task` / `'scope(workers: …)' … starts none`
+
+`scope(workers: n)` runs at most `n` of the scope's children at once
+(D156), so `n` is at least 1. A `scope(on: e)` or `scope(workers: n)`
+whose body starts no task is refused: the body itself always runs in the
+calling task, so `on:` would move nothing and `workers:` would limit
+nothing. To run code on an executor, write `e.run(() => …)`.
+
+#### `a 'scope' used as a value ends in an expression`
+
+A `scope` used as a value gives its body's last expression once every
+task it started has finished (D156); a body that ends in a loop or an
+assignment has none to give.
 
 #### `this task cannot be stored in 'tasks', which outlives the block: a task belongs to the 'scope' that started it`
 
@@ -752,11 +805,12 @@ wait, once to take what it waited for when the arm wins — so the receiver
 must be a variable or a field, not a call's result: `val e = events()`
 before the `race`, then `e.wait() => …` (D146).
 
-#### `'scope(on: …)' takes an Executor, not 'i64'` / `'scope(…)' takes one argument, the executor its tasks run on`
+#### `'scope(on: …)' takes an Executor, not 'i64'` / `'scope(…)' takes 'on:', the executor its tasks run on (D143), and 'workers:'`
 
-`scope` and `gather` take one argument, `on:`, the executor their
-children run on (D143): `scope(on: cpu) { … }`. Make one with
-`try Executor.pool(threads: n, name: "cpu")` or
+`scope` and `gather` take two named arguments, each at most once: `on:`,
+the executor their children run on (D143), and `workers:`, how many of
+them run at once (D156): `scope(on: cpu, workers: 4) { … }`. Make an
+executor with `try Executor.pool(threads: n, name: "cpu")` or
 `try Executor.thread(name: "gl")`, and hold it in a `with`.
 
 #### `MemoryOrder.Release is not an order for a load; use Relaxed, Acquire or SeqCst`

@@ -1,0 +1,32 @@
+$ verify fixtures/site fixtures/SHA256SUMS
+index.html: OK
+style.css: OK
+docs/start.md: OK
+docs/changes.md: FAILED
+img/logo.png: OK
+docs/old.md: missing
+notes.tmp: not in the manifest
+4 files verified, 2 failed, 1 not listed (4 workers)
+exit=1
+$ verify fixtures/site fixtures/SHA256SUMS --workers 1
+index.html: OK
+style.css: OK
+docs/start.md: OK
+docs/changes.md: FAILED
+img/logo.png: OK
+docs/old.md: missing
+notes.tmp: not in the manifest
+4 files verified, 2 failed, 1 not listed (1 worker)
+exit=1
+$ verify fixtures/site fixtures/broken.sums
+verify: fixtures/broken.sums:2: expected '<sha256>  <file>'
+exit=2
+$ verify fixtures/site fixtures/nowhere.sums
+verify: 'fixtures/nowhere.sums' is not a file
+exit=2
+$ verify fixtures/site
+verify: usage: verify <dir> <manifest> [--workers N]
+exit=2
+$ verify fixtures/site fixtures/SHA256SUMS --workers 0
+verify: --workers must be at least 1
+exit=2

@@ -58,6 +58,34 @@ fun main() throws {
     println("squares ${await a} ${await b}")
   }
 
+  // D156: one handle needs no scope, but every path must await it;
+  // awaitAll waits for several and gives their values
+  val c = async square(6)
+  val (d, e) = awaitAll(async square(7), async square(8))
+  println("awaited ${await c} $d $e")
+
+  // D156: a scope is a value, and workers: bounds how many children run
+  // at once
+  val running: Atomic<i64> = Atomic(value: 0)
+  val seen = Channel<i64>(capacity: 16)
+  val launched = scope(workers: 2) {
+    loop (i in 0..<8) async limitedJob(running, seen)
+    8
+  }
+  seen.close()
+  var peak: i64 = 0
+  loop {
+    val n = await seen.recv() ?: break
+    peak = peak.max(n)
+  }
+  println("$launched jobs, at most $peak at once")
+
+  // D156: a lazy mapConcurrent keeps two calls under way and gives the
+  // results in order; the loop owns its tasks
+  loop (s in [1, 2, 3, 4].iter().mapConcurrent(x => square(x), workers: 2)) {
+    println("lazy $s")
+  }
+
   // D36: gather collects every outcome as a tuple of Results
   val (r1, r2, r3) = gather {
     async mayFail(1)
@@ -128,6 +156,13 @@ fun raceTwo(a: Channel<string>, b: Channel<string>): string => race {
 fun raceOne(ch: Channel<string>): string => race {
   val msg = ch.recv()        => "shared: ${msg ?: "closed"}"
   sleep(Duration.seconds(5)) => "timeout"
+}
+
+/// One job of a limited scope: reports how many jobs run with it.
+fun limitedJob(running: Atomic<i64>, seen: Channel<i64>) {
+  seen.send(running.add(1))
+  await sleep(Duration.millis(2))
+  running.sub(1)
 }
 
 fun producer(ch: Channel<string>) {

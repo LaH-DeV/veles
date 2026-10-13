@@ -280,6 +280,8 @@ struct veles_scope {
     int64_t fail_fast;
     veles_task *failed;
     int64_t over;          /* the owner has joined every child: the scope has ended */
+    int64_t limit;         /* `workers: n` (D156): at most n children live; 0 for no limit */
+    int64_t slot_wait;     /* the owner is parked until a child leaves (atomic) */
 };
 
 typedef struct veles_chan {
@@ -1905,6 +1907,10 @@ static void scope_child_finished(veles_task *t) {
     }
     int64_t left = scope_leave(t);
     scope_child_failed(t);
+    /* a slot is free: an owner waiting to launch goes on (D156); live fell
+     * before slot_wait is read, the owner sets it before reading live, so
+     * one of the two sees the other */
+    if (s->limit && __atomic_exchange_n(&s->slot_wait, 0, __ATOMIC_SEQ_CST)) wake(s->owner);
     if (left <= 0) scope_empty(s);
     if (!s->owner) block_on_done(t); /* placed by veles_task_place_on */
 }
@@ -4633,6 +4639,30 @@ veles_exec *veles_exec_current(void) {
 void veles_scope_on(veles_scope *s, veles_exec *e) {
     if (__atomic_load_n(&e->stopping, __ATOMIC_ACQUIRE)) veles_panic("the executor was closed: nothing more runs on it", 48);
     s->exec = e;
+}
+
+/* `scope(workers: n)`, `gather(workers: n)` (D156); n >= 1, checked where
+ * the scope is written */
+void veles_scope_workers(veles_scope *s, int64_t n) {
+    s->limit = n;
+}
+
+/* before a launch in a limited scope: true when fewer than `limit`
+ * children are live, so the launch may go ahead; otherwise the owner
+ * blocks (the caller suspends and asks again when woken). Only the owner
+ * launches into its scope, so the count cannot grow between the answer
+ * and the spawn. A child leaving clears slot_wait and wakes the owner; if
+ * one cleared it while the owner looked again, its wake is on the way and
+ * the owner waits for it rather than leave it to land on a later wait. */
+int64_t veles_scope_slot(veles_task *owner, veles_scope *s) {
+    if (__atomic_load_n(&s->live, __ATOMIC_SEQ_CST) < s->limit) return 1;
+    __atomic_store_n(&owner->state, T_BLOCKED, __ATOMIC_SEQ_CST);
+    __atomic_store_n(&s->slot_wait, 1, __ATOMIC_SEQ_CST);
+    if (__atomic_load_n(&s->live, __ATOMIC_SEQ_CST) < s->limit && __atomic_exchange_n(&s->slot_wait, 0, __ATOMIC_SEQ_CST)) {
+        __atomic_store_n(&owner->state, T_RUNNABLE, __ATOMIC_SEQ_CST);
+        return 1;
+    }
+    return 0;
 }
 
 /* the blocking pool (`blocking(f)`), made when the program starts (a

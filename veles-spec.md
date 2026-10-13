@@ -6097,7 +6097,9 @@ children whether awaited or not, D141).
   or a `race` arm `val x = await h => …` (on the paths through that arm
   only). A path that does not is an error, family `tasks`: "'h' (started at
   line 2) is not awaited on this path; await it, or start it with 'with' to
-  have it cancelled when the block ends (D156)", with the `with` fix.
+  have it cancelled when the block ends (D156)"~~, with the `with` fix~~
+  *(built without a fix: replacing `val` by `with` changes what the task
+  does, so it is the author's choice)*.
   Checked like definite assignment: a binding before a loop awaited only in
   the loop's body is not awaited (the loop may run no times).
 - *Abnormal exits* — a failed `try`, `throw`, a panic, a cancellation from
@@ -6151,9 +6153,14 @@ parameters (`gather` takes `on:` already, D143). `n: i64` is evaluated once
 before the body; `n < 1` panics (a constant one is a compile error), as
 `mapConcurrent` does.
 
-- Every task started in the body counts — `async` statements, handles,
+- ~~Every task started in the body counts — `async` statements, handles,
   with-tasks, the tasks of a value received with `with` (D111). A nested
-  `scope`'s children count towards that scope.
+  `scope`'s children count towards that scope.~~ *(Built 2026-10-13: the
+  scope's own children count — its `async` statements and handles. A
+  with-task, a `val` task or a held value in the body is a child of its
+  own block, as a nested scope's children are of that scope; that is
+  where the runtime puts them, and counting them would make the limit
+  depend on how the body is written.)*
 - At the limit, the next launch **suspends the body** (a cancellation point)
   until a child finishes, then starts; waiting launches go first come, first
   served. Memory stays bounded for any input size.
@@ -6222,6 +6229,37 @@ block, Swift `async let` style (any `}` or `return` may wait invisibly)":
 here a normal path cannot pass the end of the block or a `return` without
 an `await` written, so the only unwritten waits are on error and
 cancellation exits, where `with` already closes and joins.
+
+*Built 2026-10-13 (plan F19), with what building it settled — no change
+of meaning:*
+
+- The errors read "'h' is not awaited on this path (it was started at
+  line N)" at a `return`/`break`/`continue`, and "'h' is not awaited on
+  every path to the end of its block" at the binding.
+- **`when` joins its arms' flow facts**, as `if` and `race` already did
+  (D5): what every arm that goes on establishes holds after it, and a
+  `when` used as a value whose every arm leaves is `Never`, as in
+  statement position. Before, a `when` dropped everything its arms
+  established, so an `await` in each arm did not count.
+- **`Task<Result<R, E>>` with `E` bound to `Never` is `Task<R>`**, as a
+  `throws E` instance with `E = Never` is a function that cannot fail
+  (types.Subst). A generic field `runner: Task<Result<(), E>>` (D111) then
+  matches the launch of a function that does not throw.
+- **A call that gives a bare `Task` or `Task?` is not refused by D111**:
+  no function returns a handle (D141), so such a call — `tasks.at(0)` on
+  the list a scope keeps its handles in — hands back a task started
+  already. It was refused before, which made a list of handles usable
+  only by `loop (t in tasks)`.
+- **`AsyncIterator`** (D42) is built: `trait AsyncIterator { type Item;
+  fun next(): Item? suspends }` in the prelude, driven by `loop (x in it)`
+  exactly as an `Iterator` is. `ConcurrentMap<I, R, E>`, what
+  `it.mapConcurrent` gives, implements it: the looping task takes elements
+  from the source and hands them to a runner task (the field the value
+  holds), which starts a task per element and sends the results back in
+  order. The adapters are not on `AsyncIterator` yet (checklist §11).
+- The part 1b warning also covers a `val h = async f()` in a `scope`
+  body (the user's own example), and is not given in a `scope(on: e)`
+  body. It has no fix yet: the fix is two edits (checklist §11).
 
 Rejected: leaving it as it was (a `scope` for every launch); the warning
 alone; `all(…)` as the name (the predicate `xs.all(p)`, and D16 marks every

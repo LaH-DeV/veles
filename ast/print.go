@@ -624,7 +624,7 @@ func (p *printer) stmt(s Stmt) {
 		p.close()
 	case *ScopeStmt:
 		p.open("scope")
-		p.on(s.On)
+		p.on(s.On, s.Workers)
 		p.child(func() { p.block(s.Body) })
 		p.close()
 	case *WithStmt:
@@ -952,7 +952,12 @@ func (p *printer) expr(e Expr) {
 		p.w(")")
 	case *GatherExpr:
 		p.open("gather")
-		p.on(e.On)
+		p.on(e.On, e.Workers)
+		p.child(func() { p.block(e.Body) })
+		p.close()
+	case *ScopeExpr:
+		p.open("scope-value")
+		p.on(e.On, e.Workers)
 		p.child(func() { p.block(e.Body) })
 		p.close()
 	case *RaceExpr:
@@ -1073,12 +1078,17 @@ func (p *printer) paramList(params []Param) {
 	p.w(")")
 }
 
-// on prints the executor of a `scope(on: e)` or `gather(on: e)` (D143).
-func (p *printer) on(e Expr) {
-	if e == nil {
-		return
+// on prints the executor of a `scope(on: e)` or `gather(on: e)` (D143)
+// and its `workers:` limit (D156).
+func (p *printer) on(e, workers Expr) {
+	if e != nil {
+		p.w(" (on ")
+		p.expr(e)
+		p.w(")")
 	}
-	p.w(" (on ")
-	p.expr(e)
-	p.w(")")
+	if workers != nil {
+		p.w(" (workers ")
+		p.expr(workers)
+		p.w(")")
+	}
 }

@@ -1,0 +1,7 @@
+# fixtures/ is copied into the working directory before the script runs
+verify fixtures/site fixtures/SHA256SUMS
+verify fixtures/site fixtures/SHA256SUMS --workers 1
+verify fixtures/site fixtures/broken.sums
+verify fixtures/site fixtures/nowhere.sums
+verify fixtures/site
+verify fixtures/site fixtures/SHA256SUMS --workers 0

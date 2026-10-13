@@ -486,11 +486,12 @@ public struct WithStmt : Stmt {
   public var pos:     Span = Span.none()
 }
 
-/// `scope { }` (D34); `scope(on: e) { }` (D143).
+/// `scope { }` (D34); `scope(on: e, workers: n) { }` (D143, D156).
 public struct ScopeStmt : Stmt {
-  public var on:   (*Expr)? = null
-  public var body: Block = Block()
-  public var pos:  Span = Span.none()
+  public var on:      (*Expr)? = null
+  public var workers: (*Expr)? = null
+  public var body:    Block = Block()
+  public var pos:     Span = Span.none()
 }
 
 /// A local function.
@@ -750,11 +751,21 @@ public struct CastExpr : Expr {
   public var pos: Span = Span.none()
 }
 
-/// `gather { … }` (D36); `gather(on: e) { … }` (D143).
+/// `gather { … }` (D36); `gather(on: e, workers: n) { … }` (D143, D156).
 public struct GatherExpr : Expr {
-  public var on:   (*Expr)? = null
-  public var body: Block = Block()
-  public var pos:  Span = Span.none()
+  public var on:      (*Expr)? = null
+  public var workers: (*Expr)? = null
+  public var body:    Block = Block()
+  public var pos:     Span = Span.none()
+}
+
+/// A `scope { … }` used as a value: its body's last expression (D156). In
+/// statement position a scope is a ScopeStmt.
+public struct ScopeExpr : Expr {
+  public var on:      (*Expr)? = null
+  public var workers: (*Expr)? = null
+  public var body:    Block = Block()
+  public var pos:     Span = Span.none()
 }
 
 /// `race { val x = ch.recv() => body … }` (D38).
@@ -932,6 +943,7 @@ public fun exprSpan(e: Expr): Span => when (e) {
   is ImplementsExpr => e.pos
   is CastExpr       => e.pos
   is GatherExpr     => e.pos
+  is ScopeExpr      => e.pos
   is RaceExpr       => e.pos
   is UnsafeExpr     => e.pos
   is WithExpr       => e.pos

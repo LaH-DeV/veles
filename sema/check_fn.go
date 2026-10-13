@@ -99,7 +99,13 @@ type fnCtx struct {
 	heldOK      map[*ast.CallExpr]heldBy
 	heldAsync   map[*ast.CallExpr]heldBy
 	stmtWiths   map[*ast.WithExpr]bool // block forms made from the statement form by withRest
-	awaitNext   bool
+	// D156: the block forms made from `val h = async f()` by valTaskRest,
+	// the handles of those being checked (innermost last), and the
+	// expression an `await` or `awaitAll` is waiting for
+	awaitWiths   map[*ast.WithExpr]*ast.ValStmt
+	awaited      []*awaitedHandle
+	awaitOperand ast.Expr
+	awaitNext    bool
 	inRaceArm   bool
 	inferThrows bool
 	inferredRet types.Type
@@ -509,6 +515,19 @@ func (f *fnCtx) checkBlock(b *ast.Block, expected types.Type, wantValue bool) *B
 			// checked (and lowered) exactly as if it had been written so
 			s, last, absorbed = f.withRest(ws, b, i), true, true
 		}
+		if vs, ok := s.(*ast.ValStmt); ok {
+			if f.awaitedVal(vs) {
+				// D156: the rest of the block runs alongside the task, which
+				// it must await — the with-task path, with that check
+				s, last, absorbed = f.valTaskRest(vs, b, i), true, true
+			} else if call, isCall := vs.Value.(*ast.CallExpr); isCall && call.Async && vs.Binding.Name != nil {
+				f.lintImmediateAwait(vs.Binding.Name.Name, call, b.Stmts[i+1:])
+			}
+		}
+		if ss, ok := s.(*ast.ScopeStmt); ok && last && wantValue && expected != nil && !types.IsUnit(expected) {
+			// a scope ending a block that has a value is that value (D156)
+			s = &ast.ExprStmt{X: &ast.ScopeExpr{On: ss.On, Workers: ss.Workers, Body: ss.Body, Pos: ss.Pos}}
+		}
 		if last && wantValue {
 			if es, ok := s.(*ast.ExprStmt); ok {
 				var x Expr
@@ -572,7 +591,9 @@ func (f *fnCtx) checkStmt(s ast.Stmt) (stmts []Stmt, term bool) {
 	case *ast.AssignStmt:
 		return f.checkAssign(s), false
 	case *ast.ReturnStmt:
-		return f.checkReturn(s), true
+		stmts := f.checkReturn(s)
+		f.leaveAwaited(s.Pos, -1) // D156: after the value, which may await
+		return stmts, true
 	case *ast.ThrowStmt:
 		return f.checkThrow(s), true
 	case *ast.BreakStmt:
@@ -581,6 +602,7 @@ func (f *fnCtx) checkStmt(s ast.Stmt) (stmts []Stmt, term bool) {
 			return nil, true
 		}
 		lp.hasBreak = true
+		f.leaveAwaited(s.Pos, f.loopIndex(lp))
 		return []Stmt{&Break{Loop: lp}}, true
 	case *ast.ContinueStmt:
 		lp := f.findLoop(s.Label, s.Pos, "continue")
@@ -588,6 +610,7 @@ func (f *fnCtx) checkStmt(s ast.Stmt) (stmts []Stmt, term bool) {
 			return nil, true
 		}
 		lp.hasContinue = true
+		f.leaveAwaited(s.Pos, f.loopIndex(lp))
 		return []Stmt{&Continue{Loop: lp}}, true
 	case *ast.LoopStmt:
 		stmts := f.checkLoop(s)
@@ -1232,8 +1255,12 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 		if !hasRefBinding(s.Var) {
 			f.lookOnly(s.Iter) // D87: a value loop only looks
 		}
+		f.allowHeld(s.Iter, heldWith) // D156: the loop receives a value holding tasks
 		iter := f.checkExpr(s.Iter, nil)
 		f.takeLooked()
+		if _, bare := iter.Type().(*types.Task); !bare && heldCall(s.Iter) != nil && f.c.taskHolding(iter.Type()) {
+			return f.loopHeld(s, iter)
+		}
 		if f.loopIters == nil {
 			f.loopIters = map[*ast.LoopStmt]types.Type{}
 		}
@@ -1582,6 +1609,13 @@ func (c *Checker) traitNamed(name string) *types.Trait {
 	return nil
 }
 
+// isAsyncIterator: t implements the prelude's AsyncIterator, whose `next`
+// suspends (D42).
+func (f *fnCtx) isAsyncIterator(t types.Type) bool {
+	ai := f.c.traitNamed("AsyncIterator")
+	return ai != nil && f.findImpl(t, ai) != nil
+}
+
 // iteratorLoop lowers `loop (x in c)` through Iterable / Iterator (D42):
 //
 //	var it = c.iterator()      // or c itself when it is already an Iterator
@@ -1607,6 +1641,11 @@ func (f *fnCtx) iteratorLoop(s *ast.LoopStmt, iter Expr, lp *Loop, label string)
 		itVar, d = f.hidden("it", itExpr, true)
 		pre = append(pre, d)
 	case f.findImpl(t, iterator) != nil:
+		var d Stmt
+		itVar, d = f.hidden("it", iter, true)
+		pre = append(pre, d)
+	case f.isAsyncIterator(t):
+		// its `next` suspends, so the loop does: the same lowering (D42)
 		var d Stmt
 		itVar, d = f.hidden("it", iter, true)
 		pre = append(pre, d)
@@ -1645,6 +1684,9 @@ func (f *fnCtx) iteratorLoop(s *ast.LoopStmt, iter Expr, lp *Loop, label string)
 // and is computed before the close (D43 v0.29).
 func (f *fnCtx) withRest(ws *ast.WithStmt, b *ast.Block, i int) ast.Stmt {
 	rest := b.Stmts[i+1:]
+	if call, ok := ws.Binding.Value.(*ast.CallExpr); ok && call.Async && ws.Binding.Name.Name != "" {
+		f.lintImmediateAwait(ws.Binding.Name.Name, call, rest)
+	}
 	if len(rest) == 0 {
 		if name := ws.Binding.Name.Name; name != "" {
 			f.warnf(ws.Pos, "'%s' is closed as soon as it is opened: nothing follows 'with %s = …' in its block, and the block's end closes it (D100)", name, name)
@@ -1792,9 +1834,19 @@ func (f *fnCtx) withTask(s *ast.WithExpr, i int, closeable *types.Trait, want ty
 		return nil, types.TInvalid
 	}
 	v := f.withVar(b, init.Type())
-	f.markResource(v, v)
-	f.refWith(s, i, v, "cancelled, then joined (unless it has finished),")
+	vs := f.awaitWiths[s]
+	if vs != nil {
+		// `val h = async f()` (D156): awaited on every normal path
+		f.beginAwaited(v, b.Name.Pos)
+		f.refAwaited(vs, v, s)
+	} else {
+		f.markResource(v, v)
+		f.refWith(s, i, v, "cancelled, then joined (unless it has finished),")
+	}
 	inner, bodyT := f.withBindings(s, i+1, closeable, want, asValue, result)
+	if vs != nil {
+		f.endAwaited(v, bodyT)
+	}
 	sb.Body = &Block{Stmts: append([]Stmt{&VarDecl{Var: v, Init: init}}, inner...), Type: types.TUnit}
 	if types.IsNever(bodyT) {
 		sb.Body.Type = types.TNever

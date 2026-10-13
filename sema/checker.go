@@ -39,6 +39,9 @@ type Checker struct {
 	// cancelAt: where each task handle was last cancelled; the fact that it
 	// was (on every path) is in the narrowing state (D154, check_task.go)
 	cancelAt map[*Var]source.Span
+	// awaitedVars: the handles of `val h = async f()` that their block must
+	// await (D156, mustawait.go)
+	awaitedVars map[*Var]*awaitedHandle
 	// tt: the run-time `is` tables (D117, traittest.go)
 	tt traitTests
 

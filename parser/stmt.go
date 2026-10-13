@@ -193,9 +193,9 @@ func (p *Parser) parseStmt() ast.Stmt {
 
 	case lexer.KwScope:
 		p.next()
-		on := p.parseOn("scope")
+		on, workers := p.parseOn("scope")
 		body := p.parseBlock()
-		return &ast.ScopeStmt{On: on, Body: body, Pos: p.spanFrom(start)}
+		return &ast.ScopeStmt{On: on, Workers: workers, Body: body, Pos: p.spanFrom(start)}
 
 	case lexer.KwFun:
 		fn := p.parseFun(nil, funContextFree)
@@ -477,18 +477,38 @@ func (p *Parser) tupleHoldsPattern() bool {
 
 // parseOn reads the `(on: executor)` of `scope(on: e)` and `gather(on: e)`
 // (D143); nil when the block follows directly.
-func (p *Parser) parseOn(what string) ast.Expr {
+func (p *Parser) parseOn(what string) (on, workers ast.Expr) {
 	if !p.at(lexer.LParen) {
-		return nil
+		return nil, nil
 	}
 	p.next()
-	if !p.at(lexer.Ident) || p.cur().Text != "on" || p.peek(1).Kind != lexer.Colon {
-		p.errorf(p.span(), "'%s(…)' takes one argument, the executor its tasks run on: '%s(on: pool) { … }' (D143)", what, what)
-	} else {
-		p.next()
+	for {
+		name := ""
+		if p.at(lexer.Ident) && p.peek(1).Kind == lexer.Colon {
+			name = p.cur().Text
+		}
+		switch {
+		case name == "on" && on == nil, name == "workers" && workers == nil:
+			p.next()
+			p.next()
+		default:
+			p.errorf(p.span(), "'%s(…)' takes 'on:', the executor its tasks run on (D143), and 'workers:', how many of them run at once (D156): '%s(on: pool, workers: 4) { … }', each at most once", what, what)
+			if name != "" {
+				p.next()
+				p.next()
+			}
+		}
+		x := p.parseExpr()
+		if name == "workers" && workers == nil {
+			workers = x
+		} else if on == nil {
+			on = x
+		}
+		if !p.at(lexer.Comma) {
+			break
+		}
 		p.next()
 	}
-	on := p.parseExpr()
 	p.expect(lexer.RParen)
-	return on
+	return on, workers
 }

@@ -775,7 +775,15 @@ func (h *Hooks) Subst(t Type, m map[*TypeParam]Type) Type {
 	case *Channel:
 		return &Channel{Elem: h.Subst(t.Elem, m)}
 	case *Task:
-		return &Task{Result: h.Subst(t.Result, m)}
+		r := h.Subst(t.Result, m)
+		if s, ok := r.(*Sealed); ok && r != t.Result && s.Template != nil && s.Template.Name == "Result" &&
+			s.Template.Module == "<prelude>" && len(s.TypeArgs) == 2 && IsNever(s.TypeArgs[1]) {
+			// `Task<Result<R, E>>` — a task of a function that throws E (D111)
+			// — with E bound to nothing: the function cannot fail, as for
+			// `throws E` below, so the task is a `Task<R>` (D156)
+			r = s.TypeArgs[0]
+		}
+		return &Task{Result: r}
 	case *Func:
 		out := &Func{Ret: h.Subst(t.Ret, m), Effects: t.Effects, Sendable: t.Sendable, C: t.C, CVariadic: t.CVariadic}
 		out.Effects.Error = h.Subst(t.Effects.Error, m)

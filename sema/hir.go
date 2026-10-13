@@ -822,8 +822,12 @@ type ScopeBlock struct {
 	// On is the executor of `scope(on: e)` / `gather(on: e)` (D143): the
 	// runtime handle of the Executor, evaluated before the scope opens; nil
 	// when the children run where the owner does
-	On   Expr
-	Span source.Span
+	On Expr
+	// Workers is the i64 of `scope(workers: n)` (D156), evaluated before the
+	// scope opens: a launch with n children running waits for one to
+	// finish. nil when there is no limit.
+	Workers Expr
+	Span    source.Span
 }
 
 func (*ScopeBlock) hirStmt() {}

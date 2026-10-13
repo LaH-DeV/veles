@@ -23,6 +23,9 @@ public trait Iterator {
   fun skip(n: i64): SkipIter<Self>
   fun enumerate(): EnumerateIter<Self>        // yields (i64, Item)
   fun zip<J: Iterator>(other: J): ZipIter<Self, J>   // yields (Item, J.Item)
+  // up to `workers` calls of f under way, results in order as asked for;
+  // holds tasks: a loop over it (or a `with`) owns them (D156)
+  fun mapConcurrent<R, E>(f: sendable fun(Item): R suspends throws E, workers: i64 = 4): ConcurrentMap<Self, R, E>
 
   // terminal operations: pull until done
   fun toList(): List<Item>
@@ -40,11 +43,19 @@ public trait Iterable {
   fun iterator(): Iter
   fun iter(): Iter => this.iterator()
 }
+
+public trait AsyncIterator {             // an iterator whose next() may wait (D42)
+  type Item
+  fun next(): Item? suspends
+}
 ```
 
 `List<T>`, `MutableList<T>` and `Range<T>` implement `Iterable`;
-`loop (x in c)` accepts any `Iterable` or `Iterator`. Maps iterate as
-`(K, V)` tuples and sets as elements directly.
+`loop (x in c)` accepts any `Iterable`, `Iterator` or `AsyncIterator` (the
+loop's function then suspends). Maps iterate as `(K, V)` tuples and sets
+as elements directly. `ConcurrentMap` (what `mapConcurrent` on an iterator
+gives) is an `AsyncIterator`; the adapters (`map`, `filter`, …) are not on
+`AsyncIterator` yet.
 
 ### Resources
 
@@ -411,7 +422,8 @@ unreachable.
 | `ch.toList(): List<T>`, `ch.forEach(f)` | receive until `ch` is closed and drained; an error from `f` stops `forEach` and is thrown (D110) |
 | `Semaphore(permits: n)` | at most `n` holders (D110): `acquire(): Permit` waits for one (cancellable), `tryAcquire(): Permit?` does not, `available(): i64`; a `Permit` is `Closeable` — `with sem.acquire()` — and a second close does nothing; `n < 1` panics |
 | `retry(times, f, delay: Duration.zero): R throws E` | call `f` until it returns, waiting `delay` after each thrown error, `times` calls in all, then throw the last error; a panic is not retried, cancellation stops it at the wait; `times < 1` panics (D110) |
-| `xs.mapConcurrent(f, workers: 4)`, `xs.forEachConcurrent(f, workers: 4)` | `List<T: Sendable>`: the worker pool — at most `workers` calls of `f` in flight, results in order; `f` is a `sendable fun` that may suspend and throw (then the call throws) |
+| `xs.mapConcurrent(f, workers: 4)`, `xs.forEachConcurrent(f, workers: 4)` | `List<T: Sendable>`: the worker pool — at most `workers` calls of `f` in flight, results in order; `f` is a `sendable fun` that may suspend and throw (then the call throws). On an iterator, `it.mapConcurrent(f, workers:)` is the lazy form (D156) |
+| `awaitAll(a, b, …)`, `awaitAll(tasks)` | built in (D156): waits for every task; a tuple of their values in argument order, or a `List` of a list's; inline `async f()` arguments fail fast together |
 | `await sleep(d: Duration)` | suspend for at least `d`, to the system's resolution (tens of µs on Linux, about 0.5 ms on Windows); `Duration.zero` yields |
 | `async f(...)`: `Task<T>` | (`T` is `f`'s value even when `f` throws — its error fails the scope; in `gather` the handle is `Task<Result<T, E>>`; a handle stays in its block, D141) start a task in the enclosing `scope` — or, as `with t = async f(...)`, in the background until the block ends, which cancels then joins it (D100); `await task`; `task.cancel()` asks it to stop at its next suspension point (its `with` cleanups run, the scope still waits for it) |
 | `withTimeout(limit: Duration, f): R throws E \| Timeout` | call `f` in this task and throw `Timeout` (which carries the `limit` it reached) if it passes first — `f` has unwound by then, its scopes joined and its `with`s closed; `f`'s own errors are rethrown, and `f` need not be sendable (D151) |

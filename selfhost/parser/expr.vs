@@ -369,9 +369,9 @@ extend Parser {
       Kind.KwWith => return this.parseWith()
       Kind.KwGather => {
         this.next()
-        val on = this.parseOn("gather")
+        val (on, workers) = this.parseOn("gather")
         val body = this.parseBlock()
-        return ast.GatherExpr(on, body, pos: this.spanFrom(start))
+        return ast.GatherExpr(on, workers, body, pos: this.spanFrom(start))
       }
       Kind.KwUnsafe => {
         this.next()
@@ -387,10 +387,11 @@ extend Parser {
         return ast.CatchExpr(body: ast.Block(pos: t.span), handler, pos: this.spanFrom(start))
       }
       Kind.KwScope => {
-        this.errorAt(t.span, "'scope' is a statement, not an expression; use 'gather' to collect results (D36)")
+        // a scope used as a value (D156)
         this.next()
-        this.parseBlock()
-        return ast.BadExpr(pos: this.spanFrom(start))
+        val (on, workers) = this.parseOn("scope")
+        val body = this.parseBlock()
+        return ast.ScopeExpr(on, workers, body, pos: this.spanFrom(start))
       }
       Kind.KwFun => {
         this.errorAt(t.span, "anonymous functions are written as lambdas: '(x) => ...' (D32)")

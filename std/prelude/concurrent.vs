@@ -67,6 +67,26 @@ extend<T: Sendable> List<T> {
   }
 }
 
+/// `awaitAll(tasks)` (D156): every task's value, in the list's order.
+fun awaitEach<T>(tasks: List<Task<T>>): List<T> {
+  val out: MutableList<T> = []
+  out.reserve(tasks.len())
+  loop (t in tasks) {
+    out.push(await t)
+  }
+  out
+}
+
+/// `awaitAll(tasks)` over the `MutableList` a scope collected them in.
+fun awaitEachMut<T>(tasks: MutableList<Task<T>>): List<T> {
+  val out: MutableList<T> = []
+  out.reserve(tasks.len())
+  loop (t in tasks) {
+    out.push(await t)
+  }
+  out
+}
+
 extern "C" {
   fun veles_check_cancelled()
 }

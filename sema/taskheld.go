@@ -177,6 +177,18 @@ func (f *fnCtx) preHeld(e *ast.CallExpr) {
 	}
 }
 
+// bareTask: a `Task` or `Task?` itself. No function returns a handle
+// (D141), so a call giving one hands back a task started already — taken
+// from the list a scope keeps its handles in (`tasks.at(0)`) — and makes
+// nothing to receive.
+func bareTask(t types.Type) bool {
+	if n, ok := t.(*types.Nullable); ok {
+		t = n.Elem
+	}
+	_, ok := t.(*types.Task)
+	return ok
+}
+
 // postHeld runs after a call is checked: a task-holding value made where
 // it is not received is refused, with the fix that receives it.
 func (f *fnCtx) postHeld(e *ast.CallExpr, x Expr) Expr {
@@ -184,7 +196,7 @@ func (f *fnCtx) postHeld(e *ast.CallExpr, x Expr) Expr {
 		return x
 	}
 	held := f.c.heldValue(x.Type())
-	if held == nil || f.constructsTaskFree(e) {
+	if held == nil || f.constructsTaskFree(e) || bareTask(held) {
 		return x
 	}
 	how := f.heldOK[e]
@@ -317,6 +329,23 @@ func (c *Checker) heldTasks(t types.Type) []HeldTask {
 	}
 	walk(t, nil, map[any]bool{})
 	return out
+}
+
+// loopHeld is a loop over a value that holds tasks, made by a call in its
+// head (D156): the loop receives the value as a `with` would — the loop is
+// that with's body — so the tasks are cancelled and joined when the loop
+// ends, exhausted or left early, and the value is then closed if it is
+// Closeable. init is the head's value, already checked.
+func (f *fnCtx) loopHeld(s *ast.LoopStmt, init Expr) []Stmt {
+	f.c.nextTmp++
+	name := "$loop" + itoa(f.c.nextTmp)
+	at := s.Iter.Span()
+	inner := *s
+	inner.Iter = &ast.NameExpr{Name: name, Pos: at}
+	// no position of its own: the hover of `with` is not the loop's
+	w := &ast.WithExpr{Bindings: []ast.WithBinding{{Name: ast.Ident{Name: name, Pos: at}, Value: s.Iter}}, Body: &ast.Block{Stmts: []ast.Stmt{&inner}, Pos: s.Pos}}
+	stmts, _ := f.withHeld(w, 0, init, f.c.traitNamed("Closeable"), types.TUnit, false, nil)
+	return stmts
 }
 
 // withHeld is item i of s when its value holds tasks (D111): a held scope
