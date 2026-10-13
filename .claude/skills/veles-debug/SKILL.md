@@ -39,7 +39,8 @@ An internal compiler error prints the phase and position and exits 3;
 | `VELES_GC_THRESHOLD=bytes` | collect early and often — shakes out missing roots |
 | `VELES_GC_POISON=1` | fill swept objects with 0xCD — a use-after-sweep crashes deterministically |
 | `VELES_GC_OFF=1` | if the bug disappears, it is GC-related (roots, descriptors, write ordering) |
-| `VELES_GC_TRACE=1` | report each collection |
+| `VELES_GC_TRACE=1` | report each collection: its pauses (stop, mark, sweep) and, when it marks while the program runs, how long and how many written pages it rescanned |
+| `VELES_GC_CONCURRENT=0` / `=all` | marking in one pause / taking every page as written: if a bug follows one setting, it is in the concurrent marking (F18: write tracking, hot spans, the rescan) |
 
 ## 4. Known shapes of past bugs
 

@@ -273,6 +273,13 @@ answered from the shape, tuples get `Comparable`, enums get
       not told to look at its loops; a put-off cancellation whose next wait parked unseen). driver
       TestWokenTaskStillLooks, TestPutOffCancelEndsTheNextWait; docs reference/concurrency,
       cheatsheet, the veles-debug skill
+- [x] The collector out of the pause (plan F18, 2026-10-13): lazy sweeping everywhere; spans carved
+      from 64 MiB arenas; on Windows mostly concurrent marking with write watch — a collection stops
+      the threads twice, under a millisecond each (bench/gcpause, 134 MB live: 19 ms before; the
+      loop's longest stall ~1 ms, Go's 9–35 ms), the run 765 ms against 798 before. driver
+      TestConcurrentMarkingKeepsWhatIsLive (a build that skipped the rescan of written pages failed
+      it), the examples and the driver suite under `VELES_GC_CONCURRENT=1`/`all`, poisoning and the
+      sanitizer; docs chapter 13, cheatsheet, README. Linux still marks in the pause (§11)
 - [x] Blocking-call detection → superseded: a blocking call hands its
       run queue to a spare thread (below), so it no longer stalls other tasks
 - [ ] Under `VELES_THREADS=1` a computation in a function that does not suspend still keeps the
@@ -1313,10 +1320,25 @@ Every new public std API (http cookies/forms/client, `std/log`,
   for `f` — inlining `withTimeout` at its call site would take it out too. Deadlines on socket operations (Go's) are not
   offered (rejected in D151 unless a profile asks).
 
-- **The collector (2026-10-10):** it stops every thread; up to eight helper threads mark and sweep
-  in that pause (one per core, once more than 1 MB stays live), so a pause shrinks with the
-  machine but still grows with the live heap — marking alongside the program, or sweeping lazily
-  as spans are claimed, would take it out of the pause (Go does both).
+- **The collector (F18, built 2026-10-13), not done yet:** the sweep is out of the pause everywhere,
+  and on Windows the marking too (bench/gcpause: the loop's longest stall ~1 ms against Go's
+  9–35 ms, 1.1–1.2× Go's time). Left:
+  (1) **Linux marks in the pause** (and macOS): soft-dirty bits reset for the whole process, so an
+  allocating program faults at every page it fills (35 % slower, measured with write watch reset
+  everywhere); they are used only when asked (`VELES_GC_CONCURRENT=1`, after a start-up
+  self-test) and are not tested here (WSL2's kernel has none). The way to concurrent marking there:
+  spans of pointer-free objects apart from the rest (Go's noscan spans) — the kernel writes into
+  byte buffers only — and `mprotect` on the quiet spans of the rest, a fault handler recording the
+  page written (it must chain with the stack-overflow handler, D92).
+  (2) **Live data reachable only from a stack while marking runs** is traced in the last pause: a
+  program building a large structure right then pays for it (gcpause's build phase: 4–6 ms).
+  (3) **The first collection** of a program marks in one pause (the live size is not known yet:
+  3–4 ms for 8 MB).
+  (4) **A thread allocating past half again the goal while the helpers mark waits** for them
+  (gcpause's build phase: twice, 6 ms each) — it could mark instead (Go's assists).
+  (5) Pages read as written at the last pause include the hot spans' (an allocator's), skipped
+  span by span when nothing in them is marked; a program whose fresh objects mostly live would
+  rescan them all there — rounds that reset only those pages run while the program does.
 
 - **Declared executors (D150, built 2026-10-11), kept for later:** they run until the program ends
   rather than being closed after `main` (nothing of theirs is left running then: their tasks were

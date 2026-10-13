@@ -21,6 +21,10 @@
 #include <string.h>
 #include <stdbool.h>
 #include <setjmp.h>
+#if !defined(_WIN32)
+#include <sched.h>
+#include <sys/mman.h>
+#endif
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -78,7 +82,14 @@ typedef struct veles_span {
     size_t nused;      /* slots in use, so a full span is skipped without a scan */
     struct veles_span *next; /* in size class list */
     void *owner;       /* the thread allocating from it, or NULL (D66) */
+    struct veles_arena *arena; /* where it was carved from, and its first piece there */
+    size_t piece;
     int cls;
+    int32_t sweeping;  /* a thread sweeps it now (atomic: claimed by exchange) */
+    int64_t swept;     /* the collection whose sweep it has had (atomic): below sweep_epoch, its free slots are not known */
+    int64_t rescanned; /* a large object's: the rescan of written pages that took it last (F18 c) */
+    int32_t hot;       /* an allocator took it since the last collection's end: its pages are not reset (F18 c) */
+    uint8_t marked_any; /* something in it is marked (atomic): a rescan of a page skips a span with nothing (F18 c) */
 } veles_span;
 
 /* No class is more than a quarter bigger than the one below it from 64
@@ -102,15 +113,60 @@ static veles_span *cursor[NCLASSES];
 static veles_span **all_spans;
 static size_t nspans, cap_spans;
 
-/* page table: open-addressing hash from page number to span */
-static veles_span **pages;
-static size_t pages_cap;
-static size_t pages_used;
+/* Arenas (plan F18 b): the spans are carved from 64 MiB regions reserved
+ * at 64 MiB boundaries (a larger object gets a region of its own, as many
+ * boundaries long). On Windows a region is reserved for write watch, so a
+ * collection can ask which of its pages were written. An address finds its
+ * arena through a two-level table indexed by its high bits, and its span
+ * through the arena's slots, one per 64 KiB; neither table is ever moved or
+ * freed, so a marker may read them while an allocator adds to them (each
+ * entry is published once it is ready). */
+#define ARENA_SHIFT 26
+#define ARENA_SIZE ((size_t)1 << ARENA_SHIFT)
+#define ARENA_L2_BITS 11
+#define ARENA_L1_BITS 11 /* 26 + 11 + 11 = 48 bits of address */
+
+typedef struct veles_arena {
+    char *base;
+    size_t bytes;           /* ARENA_SIZE, or a multiple for an object larger than that */
+    size_t nslots;          /* 64 KiB pieces */
+    veles_span **slots;     /* the span covering each piece (atomic) */
+    uint8_t *taken;         /* a piece belongs to a span, live or released (heap_lock) */
+    size_t free_hint;       /* every piece below it is taken */
+    struct veles_arena *next;
+} veles_arena;
+
+static veles_arena **arena_l1[(size_t)1 << ARENA_L1_BITS];
+static veles_arena *arenas;  /* every arena (heap_lock) */
 
 static size_t allocated_since_gc;
 static size_t live_bytes;
+
+/* Lazy sweeping (plan F18 a): a collection marks with the world stopped
+ * and leaves the sweep for afterwards. Its spans are listed (sweep_list);
+ * a span is swept when an allocator claims it, an allocation that takes
+ * the slow path sweeps a few more, the helper threads sweep the rest in the
+ * background, and the next collection finishes whatever is left before it
+ * marks. A span knows it is swept by its `swept` reaching sweep_epoch. */
+static int64_t sweep_epoch;
+static veles_span **sweep_list;   /* the spans of the last collection, to sweep */
+static int64_t sweep_list_n;
+static int64_t sweep_list_next;   /* the next one to take (atomic) */
+static int64_t sweep_pending;     /* listed and not yet swept (atomic) */
+
+/* Mostly concurrent marking (F18 c): a collection marks while the program
+ * runs, between two short pauses; gc_phase says one is under way. */
+enum { GC_IDLE, GC_STARTING, GC_MARKING };
+static int32_t gc_phase;          /* atomic */
 static size_t gc_threshold = 8u << 20;
 static size_t gc_min_threshold = 8u << 20;
+/* when a collection starts: the threshold — the goal — for one that marks
+ * in a pause; earlier for a concurrent one, by what the last one allocated
+ * while it marked, so it ends near the goal instead of past it (Go's
+ * pacer; allocating past the goal takes fresh memory, while the garbage
+ * waits for the marking to end) */
+static size_t gc_trigger = 8u << 20;
+static size_t mark_alloc_last;    /* allocated while the last concurrent collection marked */
 static char *stack_base;
 static bool gc_enabled = true;
 static int64_t gc_count;
@@ -179,117 +235,195 @@ volatile int32_t veles_stop_requested;
  * The code reads the first word (veles_attention, veles_tls.h). */
 __attribute__((aligned(64))) volatile int32_t veles_attention_line[16];
 
-static void *sys_alloc_aligned(size_t bytes) {
-#if defined(_WIN32)
-    /* VirtualAlloc returns 64 KiB aligned regions */
-    void *p = VirtualAlloc(NULL, bytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-    if (p && ((uintptr_t)p & (SPAN_SIZE - 1))) {
-        VirtualFree(p, 0, MEM_RELEASE);
-        p = VirtualAlloc(NULL, bytes + SPAN_SIZE, MEM_RESERVE, PAGE_READWRITE);
-        uintptr_t aligned = ((uintptr_t)p + SPAN_SIZE - 1) & ~(uintptr_t)(SPAN_SIZE - 1);
-        VirtualFree(p, 0, MEM_RELEASE);
-        p = VirtualAlloc((void *)aligned, bytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-    }
-    return p;
-#else
-    void *p = NULL;
-    if (posix_memalign(&p, SPAN_SIZE, bytes) != 0) return NULL;
-    memset(p, 0, bytes);
-    return p;
-#endif
-}
-
-static void sys_free_aligned(void *p, size_t bytes) {
-#if defined(_WIN32)
-    (void)bytes;
-    VirtualFree(p, 0, MEM_RELEASE);
-#else
-    (void)bytes;
-    free(p);
-#endif
-}
-
 static void oom(void) {
     fputs("panic: out of memory\n", stderr);
     exit(101);
 }
 
-/* ---- page table --------------------------------------------------------- */
+/* ---- arenas --------------------------------------------------------------- */
 
-static size_t page_hash(uintptr_t page) {
-    return (size_t)((page * 0x9E3779B97F4A7C15ULL) >> 20);
-}
-
-static void pages_grow(void) {
-    size_t old_cap = pages_cap;
-    veles_span **old = pages;
-    pages_cap = pages_cap ? pages_cap * 2 : 1024;
-    pages = calloc(pages_cap, sizeof *pages);
-    if (!pages) oom();
-    pages_used = 0;
-    for (size_t i = 0; i < old_cap; i++) {
-        veles_span *s = old[i];
-        if (!s) continue;
-        for (size_t off = 0; off < s->bytes; off += SPAN_SIZE) {
-            uintptr_t page = ((uintptr_t)s->start + off) >> SPAN_SHIFT;
-            /* each page may appear once per span page */
-            size_t h = page_hash(page) & (pages_cap - 1);
-            while (pages[h] && pages[h] != s) h = (h + 1) & (pages_cap - 1);
-            if (pages[h] != s) { pages[h] = s; pages_used++; }
-        }
-    }
-    free(old);
-}
-
-static void pages_insert(uintptr_t page, veles_span *s) {
-    if ((pages_used + 1) * 2 > pages_cap) pages_grow();
-    size_t h = page_hash(page) & (pages_cap - 1);
-    while (pages[h]) h = (h + 1) & (pages_cap - 1);
-    pages[h] = s;
-    pages_used++;
-}
-
-/* the lowest and highest address any span has had: most words a
- * conservative scan reads are not pointers, and most of those fall
- * outside, which saves the table a look (heap_lock, or the world stopped) */
-static uintptr_t heap_lo = UINTPTR_MAX, heap_hi;
-
-static veles_span *span_of(const void *p) {
-    if ((uintptr_t)p < heap_lo || (uintptr_t)p >= heap_hi) return NULL;
-    uintptr_t page = (uintptr_t)p >> SPAN_SHIFT;
-    size_t h = page_hash(page) & (pages_cap - 1);
-    while (pages[h]) {
-        veles_span *s = pages[h];
-        if ((const char *)p >= s->start && (const char *)p < s->start + s->bytes) return s;
-        h = (h + 1) & (pages_cap - 1);
+/* reserves bytes of address space at an ARENA_SIZE boundary, nothing
+ * committed (Windows: watched for writes, F18) */
+static char *os_reserve(size_t bytes) {
+#if defined(_WIN32)
+    for (int tries = 0; tries < 16; tries++) {
+        /* a larger reservation shows where an aligned one fits; another
+         * thread may take that place before the second call, so retry */
+        char *p = VirtualAlloc(NULL, bytes + ARENA_SIZE, MEM_RESERVE, PAGE_NOACCESS);
+        if (!p) return NULL;
+        uintptr_t a = ((uintptr_t)p + ARENA_SIZE - 1) & ~(uintptr_t)(ARENA_SIZE - 1);
+        VirtualFree(p, 0, MEM_RELEASE);
+        char *q = VirtualAlloc((void *)a, bytes, MEM_RESERVE | MEM_WRITE_WATCH, PAGE_READWRITE);
+        if (q) return q;
     }
     return NULL;
+#else
+    char *p = mmap(NULL, bytes + ARENA_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+    if (p == MAP_FAILED) return NULL;
+    uintptr_t a = ((uintptr_t)p + ARENA_SIZE - 1) & ~(uintptr_t)(ARENA_SIZE - 1);
+    size_t head = a - (uintptr_t)p, tail = ARENA_SIZE - head;
+    if (head) munmap(p, head);
+    if (tail) munmap((char *)a + bytes, tail);
+    return (char *)a;
+#endif
+}
+
+/* makes [p, p + n) usable; it reads as zeros */
+static int os_commit(char *p, size_t n) {
+#if defined(_WIN32)
+    return VirtualAlloc(p, n, MEM_COMMIT, PAGE_READWRITE) != NULL;
+#else
+    (void)p;
+    (void)n;
+    return 1; /* mapped readable and writable; the kernel gives a page at its first touch */
+#endif
+}
+
+/* gives the memory of [p, p + n) back; the range stays reserved */
+static void os_decommit(char *p, size_t n) {
+#if defined(_WIN32)
+    VirtualFree(p, n, MEM_DECOMMIT);
+#else
+    madvise(p, n, MADV_DONTNEED);
+#endif
+}
+
+/* the lowest and highest address any arena has: most words a conservative
+ * scan reads are not pointers, and most of those fall outside, which saves
+ * the tables a look */
+static uintptr_t heap_lo = UINTPTR_MAX, heap_hi;
+
+/* Under `--sanitize` LeakSanitizer looks for pointers in the memory it
+ * knows: the C heap, stacks, globals — not a mapping of ours. The
+ * collected objects hold the C heap's blocks too (an executor's condition
+ * variable), so each arena is one of its roots. */
+#if defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define ARENA_LSAN 1
+#endif
+#endif
+#if defined(__SANITIZE_ADDRESS__)
+#define ARENA_LSAN 1
+#endif
+#if defined(ARENA_LSAN)
+void __lsan_register_root_region(const void *p, size_t size);
+#endif
+
+/* a new arena of bytes (a multiple of ARENA_SIZE), entered in the table at
+ * each of its boundaries (heap_lock) */
+static veles_arena *arena_new(size_t bytes) {
+    char *base = os_reserve(bytes);
+    if (!base) return NULL;
+#if defined(ARENA_LSAN)
+    __lsan_register_root_region(base, bytes);
+#endif
+    veles_arena *ar = calloc(1, sizeof *ar);
+    if (!ar) oom();
+    ar->base = base;
+    ar->bytes = bytes;
+    ar->nslots = bytes >> SPAN_SHIFT;
+    ar->slots = calloc(ar->nslots, sizeof *ar->slots);
+    ar->taken = calloc(ar->nslots, 1);
+    if (!ar->slots || !ar->taken) oom();
+    for (size_t off = 0; off < bytes; off += ARENA_SIZE) {
+        uintptr_t a = (uintptr_t)base + off;
+        size_t i1 = (a >> (ARENA_SHIFT + ARENA_L2_BITS)) & (((size_t)1 << ARENA_L1_BITS) - 1);
+        veles_arena **l2 = __atomic_load_n(&arena_l1[i1], __ATOMIC_ACQUIRE);
+        if (!l2) {
+            l2 = calloc((size_t)1 << ARENA_L2_BITS, sizeof *l2);
+            if (!l2) oom();
+            __atomic_store_n(&arena_l1[i1], l2, __ATOMIC_RELEASE);
+        }
+        __atomic_store_n(&l2[(a >> ARENA_SHIFT) & (((size_t)1 << ARENA_L2_BITS) - 1)], ar, __ATOMIC_RELEASE);
+    }
+    if ((uintptr_t)base < heap_lo) __atomic_store_n(&heap_lo, (uintptr_t)base, __ATOMIC_RELEASE);
+    if ((uintptr_t)base + bytes > heap_hi) __atomic_store_n(&heap_hi, (uintptr_t)base + bytes, __ATOMIC_RELEASE);
+    ar->next = arenas;
+    arenas = ar;
+    return ar;
+}
+
+/* k free pieces in a row of an arena, taken (heap_lock): the first run that
+ * fits, else in a new arena */
+static int arena_take(size_t k, veles_arena **out, size_t *at) {
+    for (veles_arena *ar = arenas; ar; ar = ar->next) {
+        size_t run = 0;
+        for (size_t i = ar->free_hint; i < ar->nslots; i++) {
+            if (ar->taken[i]) {
+                run = 0;
+                continue;
+            }
+            if (++run == k) {
+                size_t first = i + 1 - k;
+                memset(ar->taken + first, 1, k);
+                if (first == ar->free_hint) {
+                    while (ar->free_hint < ar->nslots && ar->taken[ar->free_hint]) ar->free_hint++;
+                }
+                *out = ar;
+                *at = first;
+                return 1;
+            }
+        }
+    }
+    size_t bytes = ((k << SPAN_SHIFT) + ARENA_SIZE - 1) & ~(ARENA_SIZE - 1);
+    veles_arena *ar = arena_new(bytes);
+    if (!ar) return 0;
+    memset(ar->taken, 1, k);
+    ar->free_hint = k;
+    *out = ar;
+    *at = 0;
+    return 1;
+}
+
+/* the span holding p, or NULL; a marker may call it while an allocator
+ * adds arenas and spans (the entries are published ready, and nothing it
+ * reads is freed while the program runs) */
+static veles_span *span_of(const void *p) {
+    uintptr_t a = (uintptr_t)p;
+    if (a < __atomic_load_n(&heap_lo, __ATOMIC_RELAXED) || a >= __atomic_load_n(&heap_hi, __ATOMIC_RELAXED)) return NULL;
+    veles_arena **l2 = __atomic_load_n(&arena_l1[(a >> (ARENA_SHIFT + ARENA_L2_BITS)) & (((size_t)1 << ARENA_L1_BITS) - 1)], __ATOMIC_ACQUIRE);
+    if (!l2) return NULL;
+    veles_arena *ar = __atomic_load_n(&l2[(a >> ARENA_SHIFT) & (((size_t)1 << ARENA_L2_BITS) - 1)], __ATOMIC_ACQUIRE);
+    if (!ar || a < (uintptr_t)ar->base) return NULL;
+    size_t i = (a - (uintptr_t)ar->base) >> SPAN_SHIFT;
+    if (i >= ar->nslots) return NULL;
+    veles_span *s = __atomic_load_n(&ar->slots[i], __ATOMIC_ACQUIRE);
+    /* a released span keeps its slots until the next collection, start NULL */
+    if (!s || !s->start || a < (uintptr_t)s->start || a >= (uintptr_t)s->start + s->bytes) return NULL;
+    return s;
 }
 
 /* ---- spans ---------------------------------------------------------------- */
 
+/* a span of bytes (a multiple of SPAN_SIZE) for objects of objsize, from an
+ * arena (heap_lock); its memory reads as zeros */
 static veles_span *new_span(int cls, size_t objsize, size_t bytes) {
+    veles_arena *ar;
+    size_t at;
+    if (!arena_take(bytes >> SPAN_SHIFT, &ar, &at)) oom();
+    char *start = ar->base + (at << SPAN_SHIFT);
+    if (!os_commit(start, bytes)) oom();
     veles_span *s = calloc(1, sizeof *s);
     if (!s) oom();
-    s->start = sys_alloc_aligned(bytes);
-    if (!s->start) oom();
-    if ((uintptr_t)s->start < heap_lo) heap_lo = (uintptr_t)s->start;
-    if ((uintptr_t)s->start + bytes > heap_hi) heap_hi = (uintptr_t)s->start + bytes;
+    s->start = start;
     s->bytes = bytes;
     s->objsize = objsize;
     s->nobjs = bytes / objsize;
     s->marks = calloc(s->nobjs, 1);
     s->used = calloc(s->nobjs, 1);
+    if (!s->marks || !s->used) oom();
     s->cls = cls;
+    s->arena = ar;
+    s->piece = at;
+    s->swept = sweep_epoch; /* nothing in it to sweep */
+    s->hot = 1;             /* made for an allocator */
     if (nspans == cap_spans) {
         cap_spans = cap_spans ? cap_spans * 2 : 64;
         all_spans = realloc(all_spans, cap_spans * sizeof *all_spans);
         if (!all_spans) oom();
     }
     all_spans[nspans++] = s;
-    for (size_t off = 0; off < bytes; off += SPAN_SIZE) {
-        pages_insert(((uintptr_t)s->start + off) >> SPAN_SHIFT, s);
-    }
+    for (size_t i = 0; i < bytes >> SPAN_SHIFT; i++) __atomic_store_n(&ar->slots[at + i], s, __ATOMIC_RELEASE);
     return s;
 }
 
@@ -320,12 +454,18 @@ static void *alloc_in_span(veles_span *s, veles_desc *desc) {
     if (s->nused == s->nobjs) return NULL;
     for (size_t i = s->free_hint; i < s->nobjs; i++) {
         if (!s->used[i]) {
-            s->used[i] = 1;
             s->nused++;
             s->free_hint = i + 1;
             char *obj = s->start + i * s->objsize;
             memset(obj, 0, s->objsize);
             *(veles_desc **)obj = desc;
+            /* Published last, so a marker that finds the slot used finds it
+             * whole (the helpers may mark while the program runs, F18 c).
+             * A new object is not marked: if it is live at the last pause,
+             * that pause reaches it from the roots or from a page written
+             * since — and garbage made while the helpers marked is free
+             * at the next sweep instead of a cycle later. */
+            __atomic_store_n(&s->used[i], 1, __ATOMIC_RELEASE);
             return obj + body_offset(desc);
         }
     }
@@ -335,6 +475,10 @@ static void *alloc_in_span(veles_span *s, veles_desc *desc) {
 static void heap_acquire(void);
 static void collect_now(void);
 static void *alloc_slow(veles_desc *desc, size_t need, int cls);
+static int sweep_one(veles_span *s);
+static void sweep_some(int64_t n);
+static void sweep_kick(void);
+static void wait_cycle(void);
 
 /* Each thread allocates from spans it owns, one per size class, without a
  * lock (D66): nobody else takes a slot from an owned span, and a
@@ -366,30 +510,64 @@ void *veles_gc_alloc(veles_desc *desc, int64_t size) {
 }
 
 /* a span of the class with room that no thread owns, or a new one */
+/* The cursor moves past the spans that are full or another thread's (one
+ * is given back only once it is full), and stops at one a helper is
+ * sweeping right now, which may have room after: a claim never walks the
+ * same full spans again until a collection frees slots in them. (New spans
+ * went to the head of the list, after which a claim walked every full span
+ * behind them — while a concurrent collection marked, that was every span
+ * of the class, at every claim.) */
+static veles_span *classes_tail[NCLASSES];
+
 static veles_span *claim_span(int cls) {
+    veles_span *first_busy = NULL;
     for (veles_span *s = cursor[cls] ? cursor[cls] : classes[cls]; s; s = s->next) {
-        if (!s->owner && s->nused < s->nobjs) {
-            cursor[cls] = s;
+        if (s->owner) continue;
+        /* swept first: until then its free slots are not known (F18 a) */
+        if (!sweep_one(s)) {
+            if (!first_busy) first_busy = s;
+            continue;
+        }
+        if (s->nused < s->nobjs) {
+            cursor[cls] = first_busy ? first_busy : s;
+            s->hot = 1; /* an allocator writes it from now on (F18 c) */
             return s;
         }
     }
     veles_span *s = new_span(cls, class_sizes[cls], SPAN_SIZE);
-    s->next = classes[cls];
-    classes[cls] = s;
-    cursor[cls] = s;
+    if (classes_tail[cls]) classes_tail[cls]->next = s;
+    else classes[cls] = s;
+    classes_tail[cls] = s;
+    cursor[cls] = first_busy ? first_busy : s;
     return s;
 }
 
+/* spans an allocation on the slow path sweeps on its way (Go's
+ * proportional sweep): without helpers the sweep is done by the time the
+ * next collection comes, and with them it is shared */
+#define SWEEP_ASSIST 2
+
 static void *alloc_slow(veles_desc *desc, size_t need, int cls) {
+    if (__atomic_load_n(&sweep_pending, __ATOMIC_RELAXED) > 0) sweep_some(SWEEP_ASSIST);
     heap_acquire();
     if (me) {
         allocated_since_gc += me->tl_bytes;
         me->tl_bytes = 0;
     }
-    if (gc_enabled && allocated_since_gc > gc_threshold) {
-        veles_lock_release(heap_lock);
-        collect_now();
-        heap_acquire();
+    if (gc_enabled && allocated_since_gc > gc_trigger) {
+        if (__atomic_load_n(&gc_phase, __ATOMIC_ACQUIRE) != GC_IDLE) {
+            /* a cycle marks already: past half again the goal, this
+             * thread waits for it rather than grow the heap without bound */
+            if (allocated_since_gc > gc_threshold + gc_threshold / 2) {
+                veles_lock_release(heap_lock);
+                wait_cycle();
+                heap_acquire();
+            }
+        } else {
+            veles_lock_release(heap_lock);
+            collect_now();
+            heap_acquire();
+        }
     }
     allocated_since_gc += need;
     void *p;
@@ -459,6 +637,7 @@ void veles_gc_root(void *addr, veles_desc *desc) {
 typedef struct mark_stack {
     char **items;
     size_t n, cap;
+    size_t marked; /* bytes of the objects this marker marked: what is live */
 } mark_stack;
 
 #define MARK_BATCH 256
@@ -496,8 +675,12 @@ static void mark_candidate(mark_stack *ms, uintptr_t word) {
     if (!s) return;
     size_t off = (size_t)(word - (uintptr_t)s->start);
     size_t idx = off / s->objsize;
-    if (idx >= s->nobjs || !s->used[idx]) return;
+    /* acquire: a slot an allocator publishes while the helpers mark is
+     * whole once it reads as used (alloc_in_span) */
+    if (idx >= s->nobjs || !__atomic_load_n(&s->used[idx], __ATOMIC_ACQUIRE)) return;
     if (__atomic_load_n(&s->marks[idx], __ATOMIC_RELAXED) || __atomic_exchange_n(&s->marks[idx], 1, __ATOMIC_RELAXED)) return;
+    ms->marked += s->objsize;
+    if (!__atomic_load_n(&s->marked_any, __ATOMIC_RELAXED)) __atomic_store_n(&s->marked_any, 1, __ATOMIC_RELAXED);
     push_work(ms, s->start + idx * s->objsize);
 }
 
@@ -982,15 +1165,41 @@ static void scan_threads(mark_stack *ms) {
     }
 }
 
-static void collect_locked(void);
+static void collect_locked(int full);
 
+int64_t veles_time_monotonic_ns(void);
+static void pause_done(int64_t began, int64_t stopped);
+static int concurrent_ok(void);
+static void cycle_begin(void);
+static void cycle_signal(void);
+static void cycle_prepare(void);
+static void cycle_init(void);
+
+/* a collection this thread's allocation set off: concurrent when it can be
+ * (F18 c) — this pause only begins it — else marked and left to sweep */
 static void collect_now(void) {
     if (me && me->safe > 0) return; /* a safe thread must not touch the heap */
+    if (concurrent_ok()) {
+        /* the coordinator starts the cycle — finishes the last sweep,
+         * resets the page tracking, stops the world for the roots — while
+         * this thread goes on allocating (it waits only past half again
+         * the goal) */
+        int32_t idle = GC_IDLE;
+        if (__atomic_compare_exchange_n(&gc_phase, &idle, GC_STARTING, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) cycle_signal();
+        return;
+    }
+    int64_t began = veles_time_monotonic_ns();
     if (!stop_the_world()) return;
+    int64_t stopped = veles_time_monotonic_ns();
     veles_lock_acquire(heap_lock);
-    if (allocated_since_gc > gc_threshold) collect_locked();
+    int ran = allocated_since_gc > gc_trigger && __atomic_load_n(&gc_phase, __ATOMIC_ACQUIRE) == GC_IDLE;
+    if (ran) collect_locked(0);
     veles_lock_release(heap_lock);
     start_the_world();
+    if (ran) {
+        pause_done(began, stopped);
+        sweep_kick(); /* the helpers sweep while the program runs */
+    }
 }
 
 void veles_gc_init(void) {
@@ -998,10 +1207,11 @@ void veles_gc_init(void) {
     world_lock = veles_lock_new();
     world_cv = veles_cond_new();
     heap_lock = veles_lock_new();
+    cycle_init();
     veles_thread_attach();
     stack_base = find_stack_base();
     const char *env = getenv("VELES_GC_THRESHOLD");
-    if (env) gc_min_threshold = gc_threshold = (size_t)strtoull(env, NULL, 10);
+    if (env) gc_min_threshold = gc_threshold = gc_trigger = (size_t)strtoull(env, NULL, 10);
     tl_chunk = gc_min_threshold / 8;
     if (tl_chunk < 256) tl_chunk = 256;
     if (tl_chunk > (256u << 10)) tl_chunk = 256u << 10;
@@ -1014,65 +1224,135 @@ void veles_gc_init(void) {
  * wrong free then crashes at the use instead of reading a new object */
 static int gc_poison = -1;
 
-/* sweeps spans [from, to) of all_spans — the parts are independent, so the
- * markers sweep a part each: frees every unmarked object and clears the
- * marks; an empty large-object span gives its memory back and is left with
- * no start, for sweep_finish to drop. Returns the bytes still live. */
-static size_t sweep_range(size_t from, size_t to) {
-    size_t live_total = 0;
-    for (size_t i = from; i < to; i++) {
-        veles_span *s = all_spans[i];
-        size_t live = 0;
-        for (size_t k = 0; k < s->nobjs; k++) {
-            if (s->used[k] && !s->marks[k]) {
-                s->used[k] = 0;
-                char *obj = s->start + k * s->objsize;
-                veles_desc *d = *(veles_desc **)obj;
-                if (d && (d->kind & DESC_WIPE)) veles_wipe(obj + HEADER, s->objsize - HEADER);
-                if (gc_poison) memset(obj, 0xCD, s->objsize);
-            } else if (s->used[k]) {
-                live++;
-            }
-            s->marks[k] = 0;
+/* sweeps the span s: frees every unmarked object and clears the marks; an
+ * empty large-object span gives its memory back at once and is left with
+ * no start, for sweep_compact to drop from the list */
+static void sweep_span(veles_span *s) {
+    size_t live = 0;
+    for (size_t k = 0; k < s->nobjs; k++) {
+        if (s->used[k] && !s->marks[k]) {
+            s->used[k] = 0;
+            char *obj = s->start + k * s->objsize;
+            veles_desc *d = *(veles_desc **)obj;
+            if (d && (d->kind & DESC_WIPE)) veles_wipe(obj + HEADER, s->objsize - HEADER);
+            if (gc_poison) memset(obj, 0xCD, s->objsize);
+        } else if (s->used[k]) {
+            live++;
         }
-        s->free_hint = 0;
-        s->nused = live;
-        live_total += live * s->objsize;
-        if (live == 0 && s->cls < 0) {
-            /* release large-object spans */
-            sys_free_aligned(s->start, s->bytes);
-            free(s->marks);
-            free(s->used);
-            s->start = NULL;
-        }
+        s->marks[k] = 0;
     }
-    return live_total;
+    s->free_hint = 0;
+    s->marked_any = 0;
+    s->nused = live;
+    if (live == 0 && s->cls < 0) {
+        /* a large object's span gives its memory back now; its place in
+         * the arena is freed at the next collection (sweep_compact) */
+        char *start = s->start;
+        __atomic_store_n(&s->start, NULL, __ATOMIC_RELEASE);
+        os_decommit(start, s->bytes);
+        free(s->marks);
+        free(s->used);
+        s->marks = s->used = NULL;
+    }
 }
 
-/* after every part is swept: the released spans leave the list */
-static void sweep_finish(void) {
+/* sweeps s unless it is swept: 1 once it is, 0 while another thread
+ * sweeps it (an allocator claiming it, a helper) */
+static int sweep_one(veles_span *s) {
+    if (__atomic_load_n(&s->swept, __ATOMIC_ACQUIRE) == sweep_epoch) return 1;
+    if (__atomic_exchange_n(&s->sweeping, 1, __ATOMIC_ACQ_REL)) return 0;
+    if (__atomic_load_n(&s->swept, __ATOMIC_ACQUIRE) != sweep_epoch) {
+        sweep_span(s);
+        __atomic_store_n(&s->swept, sweep_epoch, __ATOMIC_RELEASE);
+        __atomic_sub_fetch(&sweep_pending, 1, __ATOMIC_SEQ_CST);
+    }
+    __atomic_store_n(&s->sweeping, 0, __ATOMIC_RELEASE);
+    return 1;
+}
+
+/* threads inside sweep_some (atomic): a collection waits for them to
+ * leave before it marks, so none sweeps a span by the new marks */
+static int64_t sweepers;
+
+/* sweeps up to n listed spans (n < 0: every one left) */
+static void sweep_some(int64_t n) {
+    __atomic_add_fetch(&sweepers, 1, __ATOMIC_SEQ_CST);
+    while (n != 0) {
+        /* an index is taken only below the length published with the
+         * list, so none is lost while the list is replaced (sweep_begin) */
+        int64_t len = __atomic_load_n(&sweep_list_n, __ATOMIC_ACQUIRE);
+        int64_t i = __atomic_load_n(&sweep_list_next, __ATOMIC_ACQUIRE);
+        if (i >= len) break;
+        if (!__atomic_compare_exchange_n(&sweep_list_next, &i, i + 1, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) continue;
+        sweep_one(sweep_list[i]); /* one being swept elsewhere is that thread's */
+        if (n > 0) n--;
+    }
+    __atomic_sub_fetch(&sweepers, 1, __ATOMIC_SEQ_CST);
+}
+
+/* the collection's spans become the ones to sweep (world stopped): marks
+ * are final, and every span is unswept until it is claimed or a sweeper
+ * reaches it. The list is closed while it is replaced — a helper may be
+ * on its way into sweep_some — and its length published last. */
+static void sweep_begin(void) {
+    static int64_t cap;
+    __atomic_store_n(&sweep_list_n, 0, __ATOMIC_SEQ_CST);
+    while (__atomic_load_n(&sweepers, __ATOMIC_SEQ_CST) > 0) {
+#if defined(_WIN32)
+        SwitchToThread();
+#else
+        sched_yield();
+#endif
+    }
+    if (cap < (int64_t)nspans) {
+        cap = (int64_t)nspans * 2;
+        free(sweep_list);
+        sweep_list = malloc((size_t)cap * sizeof *sweep_list);
+        if (!sweep_list) oom();
+    }
+    memcpy(sweep_list, all_spans, nspans * sizeof *sweep_list);
+    __atomic_store_n(&sweep_list_next, 0, __ATOMIC_SEQ_CST);
+    __atomic_store_n(&sweep_pending, (int64_t)nspans, __ATOMIC_SEQ_CST);
+    __atomic_add_fetch(&sweep_epoch, 1, __ATOMIC_SEQ_CST);
     memset(cursor, 0, sizeof cursor); /* every span may have room again */
+    __atomic_store_n(&sweep_list_n, (int64_t)nspans, __ATOMIC_RELEASE);
+}
+
+
+/* every listed span swept (world stopped, heap_lock held): what is left,
+ * then a wait for the helpers still sweeping one; the released spans
+ * leave the list */
+static void sweep_end(void) {
+    sweep_some(-1);
+    __atomic_store_n(&sweep_list_next, sweep_list_n, __ATOMIC_SEQ_CST); /* closed */
+    while (__atomic_load_n(&sweepers, __ATOMIC_SEQ_CST) > 0 || __atomic_load_n(&sweep_pending, __ATOMIC_SEQ_CST) > 0) {
+#if defined(_WIN32)
+        SwitchToThread();
+#else
+        sched_yield();
+#endif
+    }
+}
+
+/* the released spans leave the list and the page table (world stopped) */
+static void sweep_compact(void) {
     size_t w = 0;
     for (size_t i = 0; i < nspans; i++) {
         veles_span *s = all_spans[i];
-        if (!s->start) {
-            free(s);
+        if (s->start) {
+            all_spans[w++] = s;
             continue;
         }
-        all_spans[w++] = s;
+        /* its memory went back when it was swept; now its pieces of the
+         * arena are free for a new span */
+        veles_arena *ar = s->arena;
+        size_t k = s->bytes >> SPAN_SHIFT;
+        for (size_t j = 0; j < k; j++) __atomic_store_n(&ar->slots[s->piece + j], NULL, __ATOMIC_RELEASE);
+        memset(ar->taken + s->piece, 0, k);
+        if (s->piece < ar->free_hint) ar->free_hint = s->piece;
+        free(s);
     }
-    if (w != nspans) {
-        nspans = w;
-        /* rebuild the page table without the released spans */
-        memset(pages, 0, pages_cap * sizeof *pages);
-        pages_used = 0;
-        for (size_t i = 0; i < nspans; i++) {
-            veles_span *sp = all_spans[i];
-            for (size_t off = 0; off < sp->bytes; off += SPAN_SIZE) {
-                pages_insert(((uintptr_t)sp->start + off) >> SPAN_SHIFT, sp);
-            }
-        }
-    }
+    nspans = w;
 }
 
 /* ---- markers ---------------------------------------------------------------
@@ -1082,34 +1362,28 @@ static void sweep_finish(void) {
  * than HELP_FROM bytes were live, one per core up to MAX_MARKERS markers in
  * all, the collecting thread one of them; VELES_GC_MARKERS sets the count
  * (1: the collecting thread alone), and with it set every collection
- * shares, however small the heap. The sweep is cut into chunks of spans
- * that the markers claim one at a time. */
+ * shares, however small the heap. After a collection they sweep in the
+ * background, taking spans from the list one at a time (sweep_some). */
 #define MAX_MARKERS 8
 #define HELP_FROM ((size_t)1 << 20)
-#define SWEEP_CHUNK 16
 
 int64_t veles_cpu_count(void);
 int64_t veles_thread_spawn_small(void (*fn)(void *), void *arg);
+int64_t veles_thread_spawn(void (*fn)(void *), void *arg);
 
 static int markers_max = -1;   /* markers a collection may use */
 static int markers_forced;     /* VELES_GC_MARKERS was set */
 static int helpers_started;
-static int64_t sweep_round;    /* one more per sweep the helpers take part in (help_lock) */
-static int64_t sweep_busy;     /* helpers not done with it (help_lock) */
-static int64_t sweep_next;     /* the next chunk to claim (atomic) */
-static int64_t sweep_chunks;
-static size_t sweep_live;      /* bytes found live (atomic) */
+static int64_t sweep_round;    /* one more per sweep the helpers are asked to join (help_lock) */
+static size_t helpers_marked;  /* the bytes the helpers marked this collection (help_lock) */
 
-static void sweep_claimed(void) {
-    size_t live = 0;
-    for (;;) {
-        int64_t c = __atomic_fetch_add(&sweep_next, 1, __ATOMIC_SEQ_CST);
-        if (c >= sweep_chunks) break;
-        size_t from = (size_t)c * SWEEP_CHUNK;
-        size_t to = from + SWEEP_CHUNK < nspans ? from + SWEEP_CHUNK : nspans;
-        live += sweep_range(from, to);
-    }
-    __atomic_add_fetch(&sweep_live, live, __ATOMIC_SEQ_CST);
+/* the helpers sweep what is listed, while the program runs */
+static void sweep_kick(void) {
+    if (!helpers_started) return;
+    veles_lock_acquire(help_lock);
+    sweep_round++;
+    veles_cond_broadcast(help_cv);
+    veles_lock_release(help_lock);
 }
 
 static void helper_main(void *arg) {
@@ -1126,6 +1400,8 @@ static void helper_main(void *arg) {
                 veles_lock_acquire(help_lock);
                 if (!take_batch(&ms)) break;
             }
+            helpers_marked += ms.marked;
+            ms.marked = 0;
             marking--;
             if (marking == 0 && collector_waiting) veles_cond_signal(help_done_cv);
             continue;
@@ -1133,9 +1409,8 @@ static void helper_main(void *arg) {
         if (swept != sweep_round) {
             swept = sweep_round;
             veles_lock_release(help_lock);
-            sweep_claimed();
+            sweep_some(-1);
             veles_lock_acquire(help_lock);
-            if (--sweep_busy == 0 && collector_waiting) veles_cond_signal(help_done_cv);
             continue;
         }
         veles_cond_wait(help_cv, help_lock, -1);
@@ -1163,33 +1438,6 @@ static int markers_for(void) {
         helpers_started++;
     }
     return 1 + helpers_started;
-}
-
-/* sweeps every span, with the helpers when there are any and more than a
- * chunk to share; live_bytes is what is left */
-static void sweep_all(void) {
-    sweep_next = 0;
-    sweep_live = 0;
-    sweep_chunks = (int64_t)((nspans + SWEEP_CHUNK - 1) / SWEEP_CHUNK);
-    int share = markers_now > 1 && sweep_chunks > 1;
-    if (share) {
-        veles_lock_acquire(help_lock);
-        sweep_busy = helpers_started;
-        sweep_round++;
-        veles_cond_broadcast(help_cv);
-        veles_lock_release(help_lock);
-    }
-    sweep_claimed();
-    if (share) {
-        veles_lock_acquire(help_lock);
-        while (sweep_busy > 0) {
-            collector_waiting = 1;
-            veles_cond_wait(help_done_cv, help_lock, -1);
-            collector_waiting = 0;
-        }
-        veles_lock_release(help_lock);
-    }
-    live_bytes = sweep_live;
 }
 
 /* ---- D112 test hook -------------------------------------------------------
@@ -1234,23 +1482,69 @@ int64_t veles_gc_test_wipe(void) {
 
 /* an explicit collection (tests, the gc example) */
 void veles_gc_collect(void) {
-    if (!stop_the_world()) return;
-    veles_lock_acquire(heap_lock);
-    collect_locked();
-    veles_lock_release(heap_lock);
-    start_the_world();
+    for (;;) {
+        /* a concurrent cycle runs to its end first: this one is full */
+        if (__atomic_load_n(&gc_phase, __ATOMIC_ACQUIRE) != GC_IDLE) wait_cycle();
+        int64_t began = veles_time_monotonic_ns();
+        if (!stop_the_world()) continue; /* another thread's ran meanwhile: this one still runs */
+        int64_t stopped = veles_time_monotonic_ns();
+        veles_lock_acquire(heap_lock);
+        if (__atomic_load_n(&gc_phase, __ATOMIC_ACQUIRE) != GC_IDLE) {
+            veles_lock_release(heap_lock);
+            start_the_world();
+            continue;
+        }
+        collect_locked(1);
+        veles_lock_release(heap_lock);
+        start_the_world();
+        pause_done(began, stopped);
+        return;
+    }
 }
 
 static mark_stack collector_marks; /* the collecting thread's, kept between collections */
 
-static void collect_locked(void) {
-    gc_count++;
-    if (gc_poison < 0) gc_poison = getenv("VELES_GC_POISON") != NULL;
-    for (veles_thread *t = threads; t; t = t->next) {
-        allocated_since_gc += t->tl_bytes;
-        t->tl_bytes = 0;
-    }
-    mark_stack *ms = &collector_marks;
+/* what the pauses cost: the longest and all of them (from the request to
+ * stop to the world started again), and the parts of the last one, for
+ * VELES_GC_TRACE and bench/gcpause */
+static int64_t pause_max_ns, pause_total_ns, mark_ns, sweep_ns;
+static int gc_trace = -1;
+
+static void pause_done(int64_t began, int64_t stopped) {
+    int64_t total = veles_time_monotonic_ns() - began;
+    pause_total_ns += total;
+    if (total > pause_max_ns) pause_max_ns = total;
+    if (gc_trace)
+        fprintf(stderr, "[gc #%lld] live %zu bytes, %zu spans; pause %.3f ms: stop %.3f, mark %.3f, sweep %.3f\n", (long long)gc_count, live_bytes,
+                nspans, total / 1e6, (stopped - began) / 1e6, mark_ns / 1e6, sweep_ns / 1e6);
+}
+
+int64_t veles_gc_pause_max_ns(void) {
+    return pause_max_ns;
+}
+
+int64_t veles_gc_pause_total_ns(void) {
+    return pause_total_ns;
+}
+
+/* from now on: a benchmark measures the pauses of its steady state */
+void veles_gc_pause_reset(void) {
+    pause_max_ns = 0;
+    pause_total_ns = 0;
+}
+
+/* the next collection's goal — twice what is live — and its trigger */
+static void set_goal(void) {
+    size_t next = live_bytes * 2;
+    if (next < gc_min_threshold) next = gc_min_threshold;
+    gc_threshold = next;
+    size_t early = mark_alloc_last + mark_alloc_last / 5;
+    if (early > next / 2) early = next / 2;
+    gc_trigger = next - early;
+}
+
+/* the registered globals */
+static void mark_roots(mark_stack *ms) {
     for (size_t i = 0; i < nroots; i++) {
         veles_desc *d = roots[i].desc;
         char *addr = roots[i].addr;
@@ -1262,21 +1556,551 @@ static void collect_locked(void) {
             mark_candidate(ms, *(uintptr_t *)(addr + d->offsets[k]));
         }
     }
+}
+
+/* a collection, the world stopped and heap_lock held. The last one's sweep
+ * is finished first — a span's marks are about to mean this one — then
+ * the marking; the sweep is left to the allocators and the helpers while
+ * the program runs (F18 a), unless full: veles_gc_collect sweeps every
+ * span before it returns, so what it frees is free (tests, bench/idle,
+ * D112's wipe). */
+static void collect_locked(int full) {
+    gc_count++;
+    if (gc_poison < 0) gc_poison = getenv("VELES_GC_POISON") != NULL;
+    for (veles_thread *t = threads; t; t = t->next) {
+        allocated_since_gc += t->tl_bytes;
+        t->tl_bytes = 0;
+    }
+    int64_t ts = veles_time_monotonic_ns();
+    sweep_kick();
+    sweep_end();
+    sweep_compact();
+    mark_stack *ms = &collector_marks;
+    ms->marked = 0;
+    if (help_lock) {
+        veles_lock_acquire(help_lock);
+        helpers_marked = 0;
+        veles_lock_release(help_lock);
+    }
+    int64_t t0 = veles_time_monotonic_ns();
+    mark_roots(ms);
     scan_stack(ms);
     scan_threads(ms);
     markers_now = markers_for();
     mark_all(ms);
-    sweep_all();
-    sweep_finish();
+    live_bytes = ms->marked;
+    if (help_lock) {
+        veles_lock_acquire(help_lock);
+        live_bytes += helpers_marked;
+        veles_lock_release(help_lock);
+    }
+    int64_t t1 = veles_time_monotonic_ns();
+    sweep_begin();
+    if (full) {
+        sweep_kick();
+        sweep_end();
+        sweep_compact();
+    }
+    mark_ns = t1 - t0;
+    sweep_ns = (t0 - ts) + (veles_time_monotonic_ns() - t1);
     /* every thread is stopped: the spans are nobody's until claimed again */
     for (veles_thread *t = threads; t; t = t->next) memset(t->tl, 0, sizeof t->tl);
-    for (size_t i = 0; i < nspans; i++) all_spans[i]->owner = NULL;
+    for (size_t i = 0; i < nspans; i++) all_spans[i]->owner = NULL, all_spans[i]->hot = 0;
     allocated_since_gc = 0;
-    size_t next = live_bytes * 2;
-    if (next < gc_min_threshold) next = gc_min_threshold;
-    gc_threshold = next;
-    if (getenv("VELES_GC_TRACE")) {
-        fprintf(stderr, "[gc #%lld] live %zu bytes, %zu spans\n", (long long)gc_count, live_bytes, nspans);
+    set_goal();
+    if (gc_trace < 0) gc_trace = getenv("VELES_GC_TRACE") != NULL;
+}
+
+/* ---- mostly concurrent marking (F18 c) ---------------------------------------
+ * Boehm's mostly-parallel collection, with the OS telling which pages were
+ * written. The thread that starts a collection finishes the last sweep and
+ * resets the page tracking; a short pause then takes the roots (globals,
+ * every thread's stack and registers), and the world runs again while a
+ * coordinator thread and the helpers mark from them. Nothing the program
+ * does adds marking work — what it writes is on a written page, what it
+ * allocates is unmarked until something marked is found to reach it — so
+ * "no work left" stays so. Rounds while the program runs rescan the marked
+ * objects on pages written meanwhile (Windows). A last short pause rescans
+ * the pages written since, the globals and every stack again, and finishes
+ * marking: an object live then is reached from the roots by a path whose
+ * first unmarked object follows a marked one that was either scanned after
+ * its last write or written since — on a page read as written, rescanned.
+ * Coroutine frames, the runtime's own C writes and LLVM's spills are all
+ * just writes to pages: nothing in the generated code changes.
+ *
+ * What makes it cheap: a reset page faults at its next write, and an
+ * allocator writes every page it fills. So only pages that hold marked
+ * objects are reset — a span an allocator took since the last collection
+ * (hot) is never, and keeps reading as written; a rescan skips a span with
+ * nothing marked (marked_any), which is what an allocator's garbage is.
+ * Resetting every page cost scratchpad gcpause (134 MB live, small lists
+ * made and dropped) a third of its speed; reset this way it runs faster
+ * than with the pauses (690 ms against 805), its pauses 0.6 ms (19 before).
+ *
+ * The written pages: Windows' write watch on the arenas (MEM_WRITE_WATCH).
+ * Linux's soft-dirty bits only when asked (=1) and a self-test at the first
+ * collection shows they work (stock kernels have them; WSL2's does not):
+ * they reset for the whole process at once. Elsewhere, and on Linux by
+ * default, a collection marks in one pause as before.
+ * VELES_GC_CONCURRENT=0 keeps that everywhere; =1 marks concurrently however
+ * small the heap; =all takes every page as written — slow, for testing the
+ * protocol where the OS cannot tell. */
+enum { DIRTY_NONE, DIRTY_WATCH, DIRTY_SOFT, DIRTY_ALL };
+static int dirty_kind = -1;
+static int concurrent_forced;
+static size_t dirty_page = 4096;
+#define CONCURRENT_FROM ((size_t)4 << 20) /* live bytes below which one pause is cheaper than two */
+#define PRECLEAN_ROUNDS 4
+#define PRECLEAN_ENOUGH 256 /* pages with something marked: few enough to leave to the last pause */
+
+#if defined(__linux__)
+#include <fcntl.h>
+#include <unistd.h>
+static int pagemap_fd = -1;
+
+static int clear_refs(void) {
+    int fd = open("/proc/self/clear_refs", O_WRONLY);
+    if (fd < 0) return 0;
+    int ok = write(fd, "4", 1) == 1;
+    close(fd);
+    return ok;
+}
+
+static int soft_dirty(const char *p) {
+    uint64_t e = 0;
+    if (pread(pagemap_fd, &e, sizeof e, (off_t)(((uintptr_t)p / dirty_page) * sizeof e)) != (ssize_t)sizeof e) return 1;
+    return (e >> 55) & 1;
+}
+
+/* whether this kernel keeps soft-dirty bits: a page written after the
+ * reset reads dirty, one not written reads clean */
+static int soft_dirty_works(void) {
+    pagemap_fd = open("/proc/self/pagemap", O_RDONLY);
+    if (pagemap_fd < 0) return 0;
+    long ps = sysconf(_SC_PAGESIZE);
+    if (ps > 0) dirty_page = (size_t)ps;
+    char *p = mmap(NULL, 2 * dirty_page, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (p == MAP_FAILED) return 0;
+    volatile char *v = p;
+    v[0] = 1;
+    v[dirty_page] = 1;
+    int ok = clear_refs();
+    v[0] = 2;
+    ok = ok && soft_dirty(p) && !soft_dirty(p + dirty_page);
+    munmap(p, 2 * dirty_page);
+    return ok;
+}
+#endif
+
+static void dirty_init(void) {
+    const char *env = getenv("VELES_GC_CONCURRENT");
+    concurrent_forced = env && strcmp(env, "1") == 0;
+    if (env && strcmp(env, "0") == 0) {
+        dirty_kind = DIRTY_NONE;
+    } else if (env && strcmp(env, "all") == 0) {
+        dirty_kind = DIRTY_ALL;
+        concurrent_forced = 1;
+    } else {
+#if defined(_WIN32)
+        dirty_kind = DIRTY_WATCH;
+#elif defined(__linux__)
+        /* soft-dirty bits are reset for the whole process at once: every
+         * page the program writes after it — an allocator writes every page
+         * it fills — takes a fault, so a program that allocates much would
+         * run a third slower (as with write watch reset everywhere,
+         * measured on Windows 2026-10-13). Asked for (=1) only: it suits a
+         * large heap the program reads more than it makes. */
+        dirty_kind = concurrent_forced && soft_dirty_works() ? DIRTY_SOFT : DIRTY_NONE;
+#else
+        dirty_kind = DIRTY_NONE;
+#endif
+    }
+}
+
+/* from now on every write to the arenas is seen */
+static void dirty_reset(void) {
+#if defined(_WIN32)
+    if (dirty_kind == DIRTY_WATCH) {
+        for (veles_arena *ar = arenas; ar; ar = ar->next) ResetWriteWatch(ar->base, ar->bytes);
+    }
+#elif defined(__linux__)
+    if (dirty_kind == DIRTY_SOFT && !clear_refs()) dirty_kind = DIRTY_ALL; /* lost the bits: take every page */
+#endif
+}
+
+/* the marked objects that may lie on page p, scanned again: in an array
+ * only the elements on it, anything else whole (a large one once a
+ * rescan, rescanned) */
+static int64_t rescan_round;
+
+static void rescan_page(mark_stack *ms, char *p) {
+    veles_span *s = span_of(p);
+    /* nothing marked in it: nothing to rescan — most pages an allocator
+     * fills between two collections hold garbage only */
+    if (!s || !__atomic_load_n(&s->marked_any, __ATOMIC_RELAXED)) return;
+    char *end = p + dirty_page;
+    size_t lo = p > s->start ? (size_t)(p - s->start) / s->objsize : 0;
+    size_t hi = (size_t)(end - 1 - s->start) / s->objsize;
+    if (hi >= s->nobjs) hi = s->nobjs - 1;
+    for (size_t i = lo; i <= hi; i++) {
+        if (!__atomic_load_n(&s->used[i], __ATOMIC_ACQUIRE) || !__atomic_load_n(&s->marks[i], __ATOMIC_RELAXED)) continue;
+        char *obj = s->start + i * s->objsize;
+        veles_desc *d = *(veles_desc **)obj;
+        if (!d || d->nptrs == 0) continue;
+        if (d->kind & DESC_ARRAY) {
+            if (d->size <= 0) continue;
+            char *body = obj + body_offset(d);
+            size_t count = (s->objsize - body_offset(d)) / (size_t)d->size;
+            size_t first = p > body ? (size_t)(p - body) / (size_t)d->size : 0;
+            size_t last = end > body ? ((size_t)(end - body) + (size_t)d->size - 1) / (size_t)d->size : 0;
+            if (last > count) last = count;
+            for (size_t e = first; e < last; e++) {
+                char *el = body + e * (size_t)d->size;
+                for (int64_t k = 0; k < d->nptrs; k++) mark_candidate(ms, *(uintptr_t *)(el + d->offsets[k]));
+            }
+            continue;
+        }
+        if (s->cls < 0) {
+            if (__atomic_exchange_n(&s->rescanned, rescan_round, __ATOMIC_RELAXED) == rescan_round) continue;
+        }
+        scan_object(ms, obj, s->objsize);
+    }
+}
+
+/* every marked object with pointers in the arenas (DIRTY_ALL) */
+static void rescan_everything(mark_stack *ms) {
+    for (veles_arena *ar = __atomic_load_n(&arenas, __ATOMIC_ACQUIRE); ar; ar = ar->next) {
+        for (size_t i = 0; i < ar->nslots; i++) {
+            veles_span *s = __atomic_load_n(&ar->slots[i], __ATOMIC_ACQUIRE);
+            if (!s || !s->start || s->start != ar->base + (i << SPAN_SHIFT)) continue; /* a span once, at its first piece */
+            for (size_t k = 0; k < s->nobjs; k++) {
+                if (__atomic_load_n(&s->used[k], __ATOMIC_ACQUIRE) && __atomic_load_n(&s->marks[k], __ATOMIC_RELAXED))
+                    scan_object(ms, s->start + k * s->objsize, s->objsize);
+            }
+        }
+    }
+}
+
+/* the marked objects on pages written since the last reset, scanned again;
+ * reset: the pages are clean again (Windows reads and resets at once).
+ * Returns how many pages were written. */
+static int64_t dirty_rescan(mark_stack *ms, int reset) {
+    rescan_round++;
+    int64_t pages = 0;
+    if (dirty_kind == DIRTY_ALL) {
+        rescan_everything(ms);
+        return 1 << 30;
+    }
+#if defined(_WIN32)
+    static void **buf;
+    static size_t cap;
+    for (veles_arena *ar = __atomic_load_n(&arenas, __ATOMIC_ACQUIRE); ar; ar = ar->next) {
+        size_t need = ar->bytes / 4096;
+        if (cap < need) {
+            free(buf);
+            buf = malloc(need * sizeof *buf);
+            if (!buf) oom();
+            cap = need;
+        }
+        ULONG_PTR count = need;
+        DWORD gran = 0;
+        if (GetWriteWatch(reset ? WRITE_WATCH_FLAG_RESET : 0, ar->base, ar->bytes, buf, &count, &gran) != 0) {
+            /* the OS would not say: every page of it */
+            for (size_t off = 0; off < ar->bytes; off += dirty_page) rescan_page(ms, ar->base + off);
+            pages += (int64_t)(ar->bytes / dirty_page);
+            continue;
+        }
+        if (gran) dirty_page = gran;
+        for (ULONG_PTR i = 0; i < count; i++) rescan_page(ms, buf[i]);
+        pages += (int64_t)count;
+    }
+#elif defined(__linux__)
+    (void)reset; /* soft-dirty bits are reset with the next collection's */
+    static uint64_t entries[4096];
+    for (veles_arena *ar = __atomic_load_n(&arenas, __ATOMIC_ACQUIRE); ar; ar = ar->next) {
+        size_t n = ar->bytes / dirty_page;
+        for (size_t at = 0; at < n; at += 4096) {
+            size_t k = n - at < 4096 ? n - at : 4096;
+            off_t off = (off_t)(((uintptr_t)ar->base / dirty_page + at) * sizeof(uint64_t));
+            ssize_t got = pread(pagemap_fd, entries, k * sizeof(uint64_t), off);
+            for (size_t j = 0; j < k; j++) {
+                if (got < (ssize_t)((j + 1) * sizeof(uint64_t)) || ((entries[j] >> 55) & 1)) {
+                    rescan_page(ms, ar->base + (at + j) * dirty_page);
+                    pages++;
+                }
+            }
+        }
+    }
+#else
+    (void)ms;
+    (void)reset;
+#endif
+    return pages;
+}
+
+/* A round while the program runs (Windows): the written pages read, not
+ * reset; of them, the ones in spans holding something marked are reset —
+ * first, so a write that comes while they are rescanned is seen — and
+ * rescanned. What a page holds that is marked is then known as of the
+ * reset, and the last pause rescans only the pages written since. Pages
+ * whose span holds nothing marked — an allocator's garbage — are neither
+ * reset nor rescanned: resetting a page costs the program a fault at its
+ * next write, and an allocator writes every page it fills (resetting every
+ * written page each round made scratchpad gcpause 35 % slower,
+ * 2026-10-13). Returns the pages rescanned. */
+static int64_t preclean_round(mark_stack *ms) {
+    int64_t pages = 0;
+#if defined(_WIN32)
+    static void **buf;
+    static size_t cap;
+    rescan_round++;
+    for (veles_arena *ar = __atomic_load_n(&arenas, __ATOMIC_ACQUIRE); ar; ar = ar->next) {
+        size_t need = ar->bytes / 4096;
+        if (cap < need) {
+            free(buf);
+            buf = malloc(need * sizeof *buf);
+            if (!buf) oom();
+            cap = need;
+        }
+        ULONG_PTR count = need;
+        DWORD gran = 0;
+        if (GetWriteWatch(0, ar->base, ar->bytes, buf, &count, &gran) != 0) continue; /* the last pause takes them all */
+        if (gran) dirty_page = gran;
+        /* the pages to take: in spans with something marked; reset in runs */
+        size_t keep = 0;
+        for (ULONG_PTR i = 0; i < count; i++) {
+            veles_span *s = span_of(buf[i]);
+            if (s && __atomic_load_n(&s->marked_any, __ATOMIC_RELAXED)) buf[keep++] = buf[i];
+        }
+        for (size_t i = 0; i < keep;) {
+            size_t j = i + 1;
+            while (j < keep && (char *)buf[j] == (char *)buf[j - 1] + dirty_page) j++;
+            ResetWriteWatch(buf[i], (j - i) * dirty_page);
+            i = j;
+        }
+        for (size_t i = 0; i < keep; i++) rescan_page(ms, buf[i]);
+        pages += (int64_t)keep;
+    }
+#else
+    (void)ms;
+#endif
+    return pages;
+}
+
+/* the cycle's coordinator, the program's threads waiting on it, and what
+ * the cycle needs to know at its end */
+static veles_lock *cycle_lock;
+static veles_cond *cycle_cv;
+static int cycle_pending;      /* cycle_lock: a cycle's marking is to run */
+static size_t cycle_alloc_start;
+static int coordinator_started;
+static void coordinator_main(void *arg);
+
+/* made with the collector, before any thread runs */
+static void cycle_init(void) {
+    cycle_lock = veles_lock_new();
+    cycle_cv = veles_cond_new();
+}
+
+/* whether this collection marks concurrently */
+static int concurrent_ok(void) {
+    if (dirty_kind < 0) dirty_init();
+    if (dirty_kind == DIRTY_NONE) return 0;
+    if (!concurrent_forced && (live_bytes < CONCURRENT_FROM || veles_cpu_count() < 2)) return 0;
+    if (!coordinator_started) {
+        /* a stack of the usual size: the sanitizer's instrumentation needs
+         * more than a small one gives */
+        if (veles_thread_spawn(coordinator_main, NULL) != 0) return 0;
+        coordinator_started = 1;
+    }
+    return 1;
+}
+
+/* the first pause of a concurrent collection (world stopped, heap_lock
+ * held): what is left of the last sweep finished, and the roots taken (the
+ * tracking was reset before it, cycle_prepare) */
+static void cycle_begin(void) {
+    gc_count++;
+    if (gc_poison < 0) gc_poison = getenv("VELES_GC_POISON") != NULL;
+    if (gc_trace < 0) gc_trace = getenv("VELES_GC_TRACE") != NULL;
+    for (veles_thread *t = threads; t; t = t->next) {
+        allocated_since_gc += t->tl_bytes;
+        t->tl_bytes = 0;
+    }
+    int64_t ts = veles_time_monotonic_ns();
+    sweep_kick();
+    sweep_end();
+    sweep_compact();
+    mark_stack *ms = &collector_marks;
+    ms->marked = 0;
+    if (help_lock) {
+        veles_lock_acquire(help_lock);
+        helpers_marked = 0;
+        veles_lock_release(help_lock);
+    }
+    int64_t t0 = veles_time_monotonic_ns();
+    mark_roots(ms);
+    /* the coordinator runs this: it holds no roots of its own, and every
+     * thread of the program is stopped, its stack and registers recorded */
+    scan_threads(ms);
+    cycle_alloc_start = allocated_since_gc;
+    __atomic_store_n(&gc_phase, GC_MARKING, __ATOMIC_SEQ_CST);
+    sweep_ns = t0 - ts;
+    mark_ns = veles_time_monotonic_ns() - t0;
+}
+
+/* Windows: the tracking reset only on spans that hold objects (heap_lock).
+ * A page reset is write-protected until its next write, which takes a
+ * fault — a few microseconds — and a program allocating while the helpers
+ * mark fills free pages by the thousand: reset, each of them cost a fault
+ * (+40 % on scratchpad gcpause, 2026-10-13). A span with nothing in it
+ * keeps reading as written, so what is born there is rescanned by the
+ * rounds while the program runs, whose reset of the pages written comes
+ * after the allocator has moved on. (An unswept span's count is the one
+ * before its sweep: high, so reset.) */
+static void dirty_reset_used(void) {
+#if defined(_WIN32)
+    for (veles_arena *ar = arenas; ar; ar = ar->next) {
+        size_t run = 0;
+        for (size_t i = 0; i <= ar->nslots; i++) {
+            veles_span *s = i < ar->nslots ? ar->slots[i] : NULL;
+            int used = s && s->start && s->nused > 0 && !s->hot;
+            if (used) {
+                run++;
+                continue;
+            }
+            if (run) ResetWriteWatch(ar->base + ((i - run) << SPAN_SHIFT), run << SPAN_SHIFT);
+            run = 0;
+        }
+    }
+#endif
+}
+
+/* before a concurrent cycle's first pause, by the coordinator while the
+ * program runs: the last sweep finished (the helpers sweep too), then the
+ * tracking reset — a write after it is seen, whenever it comes */
+static void cycle_prepare(void) {
+    sweep_kick();
+    sweep_some(-1);
+    veles_lock_acquire(heap_lock);
+    if (dirty_kind == DIRTY_WATCH) dirty_reset_used();
+    else dirty_reset();
+    veles_lock_release(heap_lock);
+}
+
+/* the coordinator's turn to run the marking just begun */
+static void cycle_signal(void) {
+    veles_lock_acquire(cycle_lock);
+    cycle_pending = 1;
+    veles_cond_broadcast(cycle_cv);
+    veles_lock_release(cycle_lock);
+}
+
+/* a thread that allocated far past the trigger while the cycle marks waits
+ * for its end, in a safe region (the last pause needs it stopped) */
+static int64_t waited_ns, waits; /* what wait_cycle cost the program (VELES_GC_TRACE) */
+
+static void wait_cycle(void) {
+    int64_t t = veles_time_monotonic_ns();
+    veles_enter_safe();
+    veles_lock_acquire(cycle_lock);
+    while (__atomic_load_n(&gc_phase, __ATOMIC_ACQUIRE) != GC_IDLE) veles_cond_wait(cycle_cv, cycle_lock, -1);
+    veles_lock_release(cycle_lock);
+    veles_leave_safe();
+    __atomic_add_fetch(&waited_ns, veles_time_monotonic_ns() - t, __ATOMIC_RELAXED);
+    __atomic_add_fetch(&waits, 1, __ATOMIC_RELAXED);
+}
+
+/* stops every thread from the coordinator, which is not one of them: a
+ * collection already stopping them is waited out */
+static void stop_world_outside(void) {
+    veles_lock_acquire(world_lock);
+    while (veles_stop_requested) veles_cond_wait(world_cv, world_lock, 10);
+    __atomic_store_n(&veles_stop_requested, 1, __ATOMIC_SEQ_CST);
+    __atomic_add_fetch(&veles_attention, 1, __ATOMIC_SEQ_CST);
+    while (!others_safe()) veles_cond_wait(world_cv, world_lock, 10);
+    veles_lock_release(world_lock);
+}
+
+static void coordinator_main(void *arg) {
+    (void)arg;
+    mark_stack *ms = &collector_marks;
+    for (;;) {
+        veles_lock_acquire(cycle_lock);
+        while (!cycle_pending) veles_cond_wait(cycle_cv, cycle_lock, -1);
+        cycle_pending = 0;
+        veles_lock_release(cycle_lock);
+
+        /* the first pause: the last sweep finished and the tracking reset
+         * before it, so it only takes the roots */
+        cycle_prepare();
+        int64_t b0 = veles_time_monotonic_ns();
+        stop_world_outside();
+        int64_t s0 = veles_time_monotonic_ns();
+        veles_lock_acquire(heap_lock);
+        cycle_begin();
+        veles_lock_release(heap_lock);
+        start_the_world();
+        pause_done(b0, s0);
+
+        /* marking while the program runs */
+        int64_t c0 = veles_time_monotonic_ns();
+        markers_now = markers_for();
+        mark_all(ms);
+        int rounds = 0;
+        int64_t round_pages = 0;
+        if (dirty_kind == DIRTY_WATCH) {
+            while (rounds < PRECLEAN_ROUNDS) {
+                rounds++;
+                round_pages = preclean_round(ms);
+                mark_all(ms);
+                if (round_pages < PRECLEAN_ENOUGH) break;
+            }
+        }
+        int64_t c1 = veles_time_monotonic_ns();
+
+        /* the last pause */
+        int64_t began = veles_time_monotonic_ns();
+        stop_world_outside();
+        int64_t stopped = veles_time_monotonic_ns();
+        veles_lock_acquire(heap_lock);
+        for (veles_thread *t = threads; t; t = t->next) {
+            allocated_since_gc += t->tl_bytes;
+            t->tl_bytes = 0;
+        }
+        int64_t t0 = veles_time_monotonic_ns();
+        int64_t written = dirty_rescan(ms, 0); /* read, not reset: the next cycle resets what it needs */
+        mark_roots(ms);
+        scan_threads(ms);
+        mark_all(ms);
+        size_t live = ms->marked;
+        if (help_lock) {
+            veles_lock_acquire(help_lock);
+            live += helpers_marked;
+            veles_lock_release(help_lock);
+        }
+        /* live is what the markers traced */
+        live_bytes = live;
+        mark_alloc_last = allocated_since_gc - cycle_alloc_start;
+        int64_t t1 = veles_time_monotonic_ns();
+        sweep_begin();
+        for (veles_thread *t = threads; t; t = t->next) memset(t->tl, 0, sizeof t->tl);
+        for (size_t i = 0; i < nspans; i++) all_spans[i]->owner = NULL, all_spans[i]->hot = 0;
+        allocated_since_gc = 0;
+        set_goal();
+        mark_ns = t1 - t0;
+        sweep_ns = veles_time_monotonic_ns() - t1;
+        veles_lock_acquire(cycle_lock);
+        __atomic_store_n(&gc_phase, GC_IDLE, __ATOMIC_SEQ_CST);
+        veles_cond_broadcast(cycle_cv);
+        veles_lock_release(cycle_lock);
+        veles_lock_release(heap_lock);
+        start_the_world();
+        if (gc_trace)
+            fprintf(stderr, "[gc #%lld] marked while running for %.3f ms, %d rounds (the last took %lld pages); %lld pages read as written at the end; allocators waited %lld times, %.3f ms in all\n",
+                    (long long)gc_count, (c1 - c0) / 1e6, rounds, (long long)round_pages, (long long)written, (long long)waits, waited_ns / 1e6);
+        pause_done(began, stopped);
+        sweep_kick();
     }
 }
 

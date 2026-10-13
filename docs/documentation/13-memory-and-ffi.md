@@ -6,10 +6,20 @@ Veles is garbage collected (D1). You allocate by writing `&x`, building a
 list or map, capturing a variable in a closure, or starting a task; you
 never free. The bootstrap collector is a non-moving mark-sweep: the
 compiler emits a layout descriptor for every type so the heap is scanned
-precisely, and the native stack is scanned conservatively. It stops every
-thread while it works; once more than a megabyte stays live, helper
-threads — one per core, up to eight — mark and sweep alongside it, so a
-pause gets shorter as the machine gets bigger.
+precisely, and the native stack is scanned conservatively. Once more than
+a megabyte stays live, helper threads — one per core, up to eight — mark
+alongside it. The sweep never stops the program: a block of memory is
+swept when an allocation needs it, and the helpers sweep the rest while
+the program runs.
+
+On Windows, once more than four megabytes stay live, the marking runs
+while the program does too: a collection stops the threads twice, briefly
+— to take the roots, and at the end to rescan what the program wrote
+meanwhile, which the operating system reports page by page. With 134 MB
+live and a program allocating as fast as it can, each stop is under a
+millisecond (it was 19 ms). Elsewhere — and on Linux for now, where the
+system cannot report written pages cheaply enough — the marking stops the
+threads for as long as it takes.
 
 What this buys you is the absence of a whole category of decisions.
 There are no lifetimes, no ownership annotations and no reference
@@ -56,6 +66,10 @@ happen. `VELES_GC_THRESHOLD=<bytes>` lowers the trigger, which is how
 the collector's own tests stress it, and `VELES_GC_MARKERS=<n>` sets how
 many threads mark and sweep (1: the collecting thread alone; with it set,
 the helpers take part in every collection, however small the heap).
+`VELES_GC_CONCURRENT=0` keeps the marking in one pause everywhere; `=1`
+marks while the program runs however small the heap (on Linux it asks for
+the kernel's soft-dirty bits, when they work); `=all` takes every page as
+written, which is slow and only for testing the collector.
 
 ## Values versus pointers
 

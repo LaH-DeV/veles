@@ -176,6 +176,96 @@ fun main() {
 	}
 }
 
+// Mostly concurrent marking (plan F18 c): the collector marks while the
+// program runs, and learns what the program wrote from the pages the OS
+// saw written. Eight tasks rewire chains of nodes round after round — a
+// new node points at the one it replaces, whose slot is overwritten — so a
+// pointer moves out of an old object into a new one while the helpers
+// mark: a write the collector missed frees a live node, poisoned, and the
+// next walk reads garbage (a build that skipped the rescan of written
+// pages failed so, 2026-10-13). Every collection marks concurrently (=1,
+// write watch on Windows) or takes every page as written (=all, every
+// platform); the sums must equal those of collections in one pause (=0).
+func TestConcurrentMarkingKeepsWhatIsLive(t *testing.T) {
+	if _, err := findClang(); err != nil {
+		t.Skip("clang not available:", err)
+	}
+	dir := t.TempDir()
+	src := `use io
+
+struct Node {
+  value: i64
+  next: (*Node)?
+}
+
+fun walk(start: *Node, depth: i64): i64 {
+  var sum: i64 = 0
+  var at: (*Node)? = start
+  var k: i64 = 0
+  loop (k < depth) {
+    val n = at ?: break
+    sum = (sum * 31 + n.value) % 1000000007
+    at = n.next
+    k += 1
+  }
+  sum
+}
+
+fun churn(seed: i64, rounds: i64): i64 {
+  val n: i64 = 2000
+  val slots: MutableList<*Node> = []
+  loop (i in 0..<n) slots.push(&Node(value: seed + i, next: null))
+  var check: i64 = 0
+  loop (r in 0..<rounds) {
+    loop (i in 0..<n) {
+      val old = slots.at(i) ?: break
+      val neighbour = slots.at((i * 7 + r) % n) ?: break
+      slots.set(i, &Node(value: (old.value * 13 + r) % 100003, next: if (r % 3 == 0) neighbour else old))
+      val junk: MutableList<i64> = [i, r, seed]
+      check = (check + junk.len()) % 1000000007
+    }
+    if (r % 10 == 9) {
+      loop (i in 0..<n) check = (check + walk(slots.at(i) ?: break, 6)) % 1000000007
+    }
+  }
+  check
+}
+
+fun main() {
+  var total: i64 = 0
+  scope {
+    val ts: MutableList<Task<i64>> = []
+    loop (t in 0..<8) ts.push(async churn(t * 1000, 120))
+    loop (t in ts) total = (total + await t) % 1000000007
+  }
+  io.println("$total")
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	modes := []string{"0", "all"}
+	if runtime.GOOS == "windows" {
+		modes = append(modes, "1")
+	}
+	for _, release := range []bool{false, true} {
+		exe := filepath.Join(dir, fmt.Sprintf("cmark%v.exe", release))
+		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release, Sanitize: *sanitize}); code != 0 {
+			t.Fatalf("build failed with exit %d", code)
+		}
+		for _, mode := range modes {
+			for _, threads := range []string{"2", "8"} {
+				run := exec.Command(exe)
+				run.Env = append(os.Environ(), "VELES_THREADS="+threads, "VELES_GC_CONCURRENT="+mode, "VELES_GC_POISON=1", "VELES_GC_THRESHOLD=65536")
+				out, err := run.CombinedOutput()
+				if got := strings.TrimSpace(string(out)); err != nil || got != "569834006" {
+					t.Fatalf("release=%v concurrent=%s threads %s: %v\n%s", release, mode, threads, err, got)
+				}
+			}
+		}
+	}
+}
+
 // An Atomic of a number or a bool takes no lock (D66): its operations are
 // single instructions, and `update` retries a compare-and-swap. Eight
 // threads race on each kind so a lost update shows up in the totals.

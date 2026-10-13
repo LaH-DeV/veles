@@ -343,3 +343,37 @@ is expected to differ.
 | benchmark | Veles bytes/op | Go bytes/op | Veles / Go |
 |---|---:|---:|---:|
 | idle | 249 | 8723 | 0.03× |
+
+## 2026-10-13 19:01 — go1.23.2, windows/amd64 (HEAD ea45784, plus the working tree)
+
+| benchmark | ops | Veles | Go | Veles / Go |
+|---|---:|---:|---:|---:|
+| adapters | 24000000 | 61.52ms | 72ms | 0.9× |
+| ast | 861841 | 46.46ms | 91.41ms | 0.5× |
+| channels | 200000 | 6.08ms | 11.3ms | 0.5× |
+| emit | 1000000 | 92.45ms | 110.07ms | 0.8× |
+| gcpause | 20000000 | 752.93ms | 627.02ms | 1.2× |
+| gunzip | 16777232 | 112.24ms | 101ms | 1.1× |
+| gzip | 2097154 | 155.78ms | 227.32ms | 0.7× |
+| httphello | 16000 | 246.61ms | 440.66ms | 0.6× |
+| idle | 100000 | 93.7ms | 544.67ms | 0.2× |
+| intern | 1000000 | 47.18ms | 62.89ms | 0.8× |
+| json | 40000 | 52.12ms | 75.59ms | 0.7× |
+| lexer | 2100000 | 100.02ms | 119.97ms | 0.8× |
+| maps | 2000000 | 82.88ms | 131.69ms | 0.6× |
+| parallel | 64 | 6.56ms | 26.6ms | 0.2× |
+| pipes | 1600000 | 29.9ms | 75.44ms | 0.4× |
+| sha256 | 16 | 74.34ms | 8.98ms | 8.3× |
+| sort | 900000 | 44.92ms | 89.91ms | 0.5× |
+| spawn | 100000 | 37.43ms | 34.78ms | 1.1× |
+| strings | 1000000 | 71.18ms | 85.34ms | 0.8× |
+| suscall | 10000000 | 134.75ms | 17.88ms | 7.5× |
+| trees | 14592688 | 180.16ms | 523.47ms | 0.3× |
+
+| benchmark | Veles bytes/op | Go bytes/op | Veles / Go |
+|---|---:|---:|---:|
+| idle | 249 | 8725 | 0.03× |
+
+| benchmark | Veles longest pause | Go longest pause |
+|---|---:|---:|
+| gcpause | 1.01ms | 4.06ms |

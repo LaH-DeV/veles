@@ -12,7 +12,9 @@
 // two sides must provably do the same work before their times are compared.
 // A benchmark may also print `MEMORY <name> <bytes>` — bytes per operation
 // (bench/idle: per parked task) — and its reference sets goMemory to the
-// same measure; those get a table of their own.
+// same measure; those get a table of their own. So does `PAUSE <name> <ns>`,
+// the longest collection pause of the timed part (bench/gcpause), against
+// goPause.
 package main
 
 import (
@@ -47,6 +49,8 @@ type result struct {
 	checksum string
 	memory   int64 // bytes per operation the Veles side reported; 0 = none
 	goMemory int64
+	pause    int64 // the longest collection pause the Veles side reported, ns; 0 = none
+	goPause  int64
 }
 
 func main() {
@@ -84,10 +88,12 @@ func main() {
 		r := parse(name, out)
 		goSetup = 0
 		goMemory = 0
+		goPause = 0
 		start := time.Now()
 		sum := ref()
 		r.goTime = time.Since(start) - goSetup
 		r.goMemory = goMemory
+		r.goPause = goPause
 		if sum != r.checksum {
 			fmt.Fprintf(os.Stderr, "bench: %s: Veles computed %s, Go %s — not the same work\n", name, r.checksum, sum)
 			failed = true
@@ -127,6 +133,17 @@ func render(rs []result) string {
 		}
 		fmt.Fprintf(&b, "| %s | %d | %d | %.2f× |\n", r.name, r.memory, r.goMemory, float64(r.memory)/float64(r.goMemory))
 	}
+	head = false
+	for _, r := range rs {
+		if r.pause == 0 || r.goPause == 0 {
+			continue
+		}
+		if !head {
+			b.WriteString("\n| benchmark | Veles longest pause | Go longest pause |\n|---|---:|---:|\n")
+			head = true
+		}
+		fmt.Fprintf(&b, "| %s | %s | %s |\n", r.name, round(time.Duration(r.pause)), round(time.Duration(r.goPause)))
+	}
 	return b.String()
 }
 
@@ -146,11 +163,14 @@ func parse(name string, out []byte) result {
 		if len(f) == 5 && f[0] == "BENCH" && f[1] == name {
 			ops, _ := strconv.ParseInt(f[2], 10, 64)
 			ns, _ := strconv.ParseInt(f[3], 10, 64)
-			r = result{name: name, ops: ops, veles: time.Duration(ns), checksum: f[4], memory: r.memory}
+			r = result{name: name, ops: ops, veles: time.Duration(ns), checksum: f[4], memory: r.memory, pause: r.pause}
 			found = true
 		}
 		if len(f) == 3 && f[0] == "MEMORY" && f[1] == name {
 			r.memory, _ = strconv.ParseInt(f[2], 10, 64)
+		}
+		if len(f) == 3 && f[0] == "PAUSE" && f[1] == name {
+			r.pause, _ = strconv.ParseInt(f[2], 10, 64)
 		}
 	}
 	if found {
@@ -171,6 +191,14 @@ var goSetup time.Duration
 // goMemory is what a reference measured that reports memory: bytes per
 // operation, as its Veles side prints them on its MEMORY line.
 var goMemory int64
+
+// goPause is what a reference measured that reports pauses: the longest
+// collection pause of its timed part, as its Veles side prints it on its
+// PAUSE line.
+var goPause int64
+
+// keeps bench/gcpause's slices on the heap, as the Veles lists are
+var gcpauseSink []int64
 
 var references = map[string]func() string{
 	"gzip": func() string {
@@ -369,6 +397,61 @@ var references = map[string]func() string{
 			}
 		}
 		return strconv.FormatInt(check, 10)
+	},
+	"gcpause": func() string {
+		// the same tree, kept live; then small slices made and dropped
+		// (gcpauseSink makes each escape to the heap, as the Veles list
+		// does); the longest pause is the longest of the collections the
+		// churn ran
+		type node struct {
+			left, right *node
+			value       int64
+		}
+		var build func(d, v int64) *node
+		build = func(d, v int64) *node {
+			if d == 0 {
+				return &node{value: v}
+			}
+			return &node{build(d-1, v*2), build(d-1, v*2+1), v}
+		}
+		var total func(n *node) int64
+		total = func(n *node) int64 {
+			s := n.value
+			if n.left != nil {
+				s += total(n.left)
+			}
+			if n.right != nil {
+				s += total(n.right)
+			}
+			return s
+		}
+		begin := time.Now()
+		live := build(21, 1)
+		runtime.GC()
+		// the longest the loop went without a step, looked at every 4096
+		// steps, as the Veles side does (Go's own pause histogram puts
+		// every pause under 64 ns on Windows: its clock is too coarse)
+		churnStart := time.Now()
+		var churn int64
+		var last time.Duration
+		for i := int64(0); i < 20000000; i++ {
+			if i%4096 == 0 {
+				now := time.Since(churnStart)
+				if gap := int64(now - last); gap > goPause {
+					goPause = gap
+				}
+				last = now
+			}
+			xs := []int64{i, i + 1, i + 2}
+			gcpauseSink = xs
+			churn += int64(len(xs))
+		}
+		churnTime := time.Since(churnStart)
+		sum := total(live) + churn
+		// the build, the walk and the reading of the counters are not the
+		// work measured
+		goSetup = time.Since(begin) - churnTime
+		return strconv.FormatInt(sum, 10)
 	},
 	"channels": func() string {
 		ch := make(chan int64, 64)

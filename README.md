@@ -30,8 +30,10 @@ checked debug build. `run` and `test` build into a temporary directory; only
 `build` leaves an executable behind. The C runtime is compiled once per
 compiler/clang/flag combination and cached under the user cache directory
 (`%LOCALAPPDATA%\veles\rt` on Windows). `VELES_GC_TRACE=1` reports collections;
-`VELES_GC_THRESHOLD=<bytes>` lowers the collection trigger for testing, and
-`VELES_GC_MARKERS=<n>` sets how many threads mark and sweep.
+`VELES_GC_THRESHOLD=<bytes>` lowers the collection trigger for testing,
+`VELES_GC_MARKERS=<n>` sets how many threads mark and sweep, and
+`VELES_GC_CONCURRENT=0|1|all` chooses whether marking runs alongside the
+program (docs chapter 13).
 
 ## Layout
 

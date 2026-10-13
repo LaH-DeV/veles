@@ -6078,6 +6078,7 @@ Self-hosting sets stdlib priority order: the first thing Veles must be able to w
 - Size-segregated spans with per-span metadata, so any address resolves to its base object
 - Non-generational (generational collection is substantially harder without moving; Go does not have one)
 - Fragmentation is a permanent operational concern, not a solvable one
+- *(2026-10-13, plan F18)* No store barrier in the generated code: coroutine frames are heap objects LLVM writes its spills into, and the runtime's C writes pointers in hundreds of places, so a barrier would be both unsound and invasive. Marking runs alongside the program by asking the OS which pages were written meanwhile (Windows' write watch; Boehm's mostly-concurrent collection) and rescanning them in a short last pause. Where the OS cannot say cheaply, marking stays in the pause.
 
 **Two inferred effects require materialized module interfaces.** Suspension (D2) and error type (D4) are both inferred, and both leak into a module's public interface without appearing in its source. The fix for both: infer within a module, then write the results into a generated interface file — the model used by Rust's crate metadata and Swift's `.swiftinterface`. Downstream compilation reads materialized facts and never re-infers.
 
