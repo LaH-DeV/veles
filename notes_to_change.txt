@@ -52,6 +52,8 @@ P11. CANDIDATE HELPERS for later (not started; pick when a program needs them):
    → 2026-10-01: `retry`, `Semaphore` (`with sem.acquire()`), the channel drains and `ticker`
      decided (spec D110, plan B12). Still open here: `awaitAll`, `filterConcurrent`,
      `firstConcurrent`, channel-to-channel stages.
+   → 2026-10-13: `awaitAll` decided (spec D156, plan F19), with a lazy `iter.mapConcurrent`.
+     Still open here: `filterConcurrent`, `firstConcurrent`, channel-to-channel stages.
 
 === 2026-10-05 (review of `const fun`, D113 part 3; requested by the user, written by us) ===
 

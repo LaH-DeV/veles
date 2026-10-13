@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.80** — decisions D1–D155. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.81** — decisions D1–D156. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -24,6 +24,8 @@ Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-p
 | D142 | visibility: unmarked is the package, `internal` the module, `public` other packages (amends M5, D89) |
 | D143–D149 | executors and threads, atomics, loops as cancellation points, `RwLock`/`Event`/`Lazy`/`Broadcast`/`Watch`, a suspending `close()`, `incrementAt`, `updateAt` |
 | D150–D154 | declared executors and their state, `withTimeout` in the caller's task, `runBlocking`, a pool's hand-off, `await` after `cancel()` |
+| D155 | a `Result` a `gather` child returns is its value |
+| D156 | awaited `val` handles without `scope`, `awaitAll`, `scope(workers:)`, a lazy `mapConcurrent`, `scope` as a value |
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -609,7 +611,7 @@ val results = gather {
 }   // List<Result<Page, FetchError>>
 ```
 
-Two constructs rather than one construct with a policy flag, because the two have different *types* — fail-fast produces nothing, collect-all must yield results — and a flag that changes a construct's type is hard to infer and harder to read.
+Two constructs rather than one construct with a policy flag, because the two have different *types* — fail-fast produces nothing *(v0.81, D156: a `scope` may be used as a value, its body's last expression)*, collect-all must yield results — and a flag that changes a construct's type is hard to infer and harder to read.
 
 `gather` is **heterogeneous and tuple-typed**: children may return different types, and the result is a tuple of `Result`s in launch order. *(v0.60, D103: with exactly one launch the result is that task's `Result` itself.)*
 
@@ -3098,7 +3100,9 @@ of the block:
 - `async` is therefore allowed in exactly two places: lexically inside
   `scope`/`gather`, and as the whole value of a `with` binding. *(v0.62,
   D111: and as a field of a task-holding value that is returned or
-  `with`-bound.)* The error for
+  `with`-bound.)* *(v0.81, D156: and as the whole value of a `val`, which
+  must then be awaited on every normal path, and as an argument of
+  `awaitAll`.)* The error for
   `async` elsewhere names both. The value must be the `async` call itself — a
   `Task` obtained another way is not a with-resource (`Task` does not implement
   `Closeable`).
@@ -6036,6 +6040,198 @@ failure); refusing such a child in `gather`. Pinned by driver
 `TestTaskHandles` (debug and release, 1–8 threads) and the D141 and D111
 conformance files.
 
+### D156 — Concurrency with less ceremony: awaited handles, `awaitAll`, `scope(workers:)`, a lazy `mapConcurrent`, `scope` as a value (v0.81)
+
+```veles
+fun profilePage(id: UserId): Html throws DbError | http.FetchError {
+  val user = async db.user(id)                       // no scope: must be awaited
+  val feed = async http.fetchJson<Feed>(feedUrl(id))
+  render(await user, await feed)
+}
+
+val (u, f) = awaitAll(async db.user(id), async http.fetchJson<Feed>(feedUrl(id)))
+
+val total = scope(on: cpu, workers: 8) {             // a value; at most 8 children at once
+  val tasks: MutableList<Task<i64>> = []
+  loop (f in files) tasks.push(async countLines(f))
+  awaitAll(tasks).sum()
+}
+
+loop (data in chunks.iter().mapConcurrent(c => download(c), workers: 2)) {
+  process(data)                                      // chunks i+1, i+2 download meanwhile
+}
+```
+
+The user, 2026-10-13, of `scope { val handle = async call(); println(await
+handle) }`: "it is kind of too much syntax for just run async … In Veles I
+wanted to avoid 'async function coloring/marking' and scope + async + await
+is the solution but maybe 'scope' isn't required? Maybe we could just
+require to await the async handle by the compiler?" Then, of a
+`Promise.all`-like form: "the 'all' could be a built-in function call that
+takes variadic handles, similar to Promise.all in js... that would be more
+understandable" (named `awaitAll`: `all` is already the predicate
+`xs.all(p)`, and D16 marks every wait on a handle — the name is the mark);
+"scope should also take a parameter `workers` no?"; of hand-written
+pipelining: "maybe we would need a higher level as well"; and `scope` as an
+expression "was a good idea I think". All six parts below are the
+recommended options (user, 2026-10-13).
+
+Not changed: a direct call of a suspending function needs no keyword (D2),
+so `println(call())` is how a program calls and waits; `async` means only
+"runs alongside what follows".
+
+**1. A handle the compiler makes you await.** `val h = async f(args)` — the
+whole initializer of a `val` — is allowed in any braced block, not only in
+`scope`/`gather` bodies (inside those nothing changes: the scope joins its
+children whether awaited or not, D141).
+
+- *It is a fail-fast child of the rest of the block*, like a with-task
+  (D100 part 2): if it throws or panics, the rest of the block is cancelled
+  at its next suspension point and the error leaves the block; its error
+  types join the enclosing function's inferred `throws`. `h` is `Task<R>`
+  and `await h` is `R`, no `try` (D141 rule 2).
+- *Must await.* Every **normal** path from the binding to the end of the
+  block — falling off its end, `return`, a `break` or `continue` that leaves
+  it, the end of a loop iteration when the binding is in the loop body —
+  must pass a consuming use of `h`: `await h`, `awaitAll(…, h, …)` (part 2),
+  or a `race` arm `val x = await h => …` (on the paths through that arm
+  only). A path that does not is an error, family `tasks`: "'h' (started at
+  line 2) is not awaited on this path; await it, or start it with 'with' to
+  have it cancelled when the block ends (D156)", with the `with` fix.
+  Checked like definite assignment: a binding before a loop awaited only in
+  the loop's body is not awaited (the loop may run no times).
+- *Abnormal exits* — a failed `try`, `throw`, a panic, a cancellation from
+  further out, a sibling's failure — cancel `h` and join it, as shielded
+  cleanup (D47), in the block's one stack of `with`s and with-tasks (D100
+  part 1: the last registered first). These are the only exits that wait
+  for `h` without an `await` written, and they already run cleanups.
+- *A second `await h`* gives the value again, as for any handle.
+- *No other use.* `h` may not be passed as an argument, stored, captured by a
+  lambda, returned, put in a collection, or cancelled (`h.cancel()`): each is
+  an error naming `with` (a task one may stop) or `scope` (a task one hands
+  around). `var h = async …` and a destructured binding are refused.
+- *Hover* on `h`: "must be awaited before the block ends; awaited at line
+  N". *Formatter*: nothing new.
+- *Lowering*: the with-task path (a scope whose body is the rest of the
+  block and whose child is `h`); the end-of-block cancel is never needed on
+  a normal path, since `h` has finished there.
+
+**1b. The warning for an immediate await.** `await h` as the first thing
+evaluated after `val h = async f(a)` or `with h = async f(a)`, with nothing
+started or run in between, is a warning: "'f' runs with nothing alongside
+it; call 'f(a)' directly" with that fix (`awaitAll` of one handle: "use
+'await h'"). Not in a `scope(on:)` body, where the `async` moves `f` to the
+executor (`e.run(f)` is the one-call form there and is suggested instead).
+
+**2. `awaitAll`.** A compiler built-in (catalogue: hover, completion, docs),
+a suspension point and a cancellation point:
+
+- `awaitAll(t1, t2, …, tn)` with n ≥ 2 waits for every task and gives the
+  tuple of their awaited values, in argument order — `(User, Feed)`. Each
+  argument is a handle (part 1, a with-task, a handle in a `scope`/`gather`
+  body) or an inline `async f()`; an inline launch belongs to the
+  `awaitAll` itself (a scope of its own), so the first failure among them
+  cancels the others, joins them, and leaves from `awaitAll`. A named
+  handle's failure fails its own block, as before. In a `gather` body the
+  handles are `Task<Result<R, E>>` and `awaitAll` gives the `Result`s.
+- `awaitAll(tasks)` with `tasks: List<Task<T>>` or `MutableList<Task<T>>`
+  gives `List<T>` in the list's order (in the block that started them,
+  D141).
+- An argument that is not a task is an error: "'db.user(id)' finishes
+  before 'awaitAll' starts, so these run one after the other; start it with
+  'async db.user(id)'" with that fix. One argument: the part 1b warning.
+  `await awaitAll(…)` is an error ("'awaitAll' waits; remove 'await'").
+- Not a `race` arm (yet: checklist §11). Unlike JavaScript's
+  `Promise.all`, a failure cancels the rest instead of leaving it running.
+- `awaitAll` is a reserved prelude name, as `panic` is.
+
+**3. `scope(workers: n)`.** At most `n` children of the scope run at once.
+`scope(workers: n)`, `scope(on: e, workers: n)` and `gather` with the same
+parameters (`gather` takes `on:` already, D143). `n: i64` is evaluated once
+before the body; `n < 1` panics (a constant one is a compile error), as
+`mapConcurrent` does.
+
+- Every task started in the body counts — `async` statements, handles,
+  with-tasks, the tasks of a value received with `with` (D111). A nested
+  `scope`'s children count towards that scope.
+- At the limit, the next launch **suspends the body** (a cancellation point)
+  until a child finishes, then starts; waiting launches go first come, first
+  served. Memory stays bounded for any input size.
+- `on:` and `workers:` are independent: an executor's threads limit
+  parallelism on the CPU, `workers` limits how many children are under way
+  (connections, memory, load on a server).
+- A body that launches more than a constant `workers` and only then feeds
+  them (a send on a channel passed to the launched function) deadlocks; the
+  checker warns where it can see that shape, and the runtime's deadlock
+  report names the scope's limit.
+
+**4. A lazy `mapConcurrent`, and loops that own their tasks.** D46's split,
+applied: `list.mapConcurrent(f, workers:)` stays eager, and
+`iter.mapConcurrent(f: sendable fun(T): R suspends throws E, workers: i64 = 4)`
+on any `Iterator` is lazy. It keeps up to `workers` calls of `f` under way,
+pulls the next element as a slot frees, and yields the results in the
+source's order. The source is pulled in the consuming task, so the iterator
+itself need not be Sendable (its items must be, `T: Sendable`). The value is
+an iterator holding tasks — task-holding (D111) — and its calls are
+fail-fast children of the block that receives it: the first failure cancels
+the rest and leaves from there, `E` joining that function's `throws`.
+
+A **task-holding value that is a loop's iterable is received by the loop**:
+`loop (x in e)` with `e` task-holding needs no `with`. Its tasks are
+cancelled and joined when the loop ends — exhausted, `break`, `return`, a
+failed `try`, a failure — and then, if it is `Closeable`, it is closed. A
+task-holding value anywhere else still needs `with` (D111). The eager form
+is unchanged; an unordered lazy variant (as each finishes) is not part of
+this decision.
+
+**5. `scope` is an expression.** `scope { … }` and `scope(on:, workers:)
+{ … }` may be used as a value: the value is the body's last expression,
+computed and then held while the children are joined — every child has
+finished when the value is available (D43's rule for a block with a value).
+A body used as a value that does not end in an expression is an error. The
+statement form is unchanged, and a body that always returns or throws is
+still `Never`. Hover on a `scope` used as a value: "the value of its body's
+last expression — `gather` gives its children's outcomes instead". The
+error "'scope' is a statement, not an expression" goes. The value cannot
+be a task handle (D141).
+
+**6. A placed scope must start something.** `scope(on: e)`, `gather(on: e)`
+or either with `workers:` whose body starts no task (no `async`, with-task,
+or received task-holding value) is an error, family `tasks`: "this body runs
+in the calling task: 'on: cpu' places only the tasks it starts, and it
+starts none; use 'cpu.run(() => …)'", with that fix (for `workers:` alone:
+"remove 'workers:'"). It compiled before and ran on the caller's thread.
+
+**What it reads like.** Call it: `f()`. Several values, fail-fast:
+`awaitAll(async f(), async g())`. One alongside, used later: `val a = async
+f()` … `await a`. One alongside, perhaps stopped: `with a = async f()`.
+Many: `xs.mapConcurrent(f, workers: n)`, lazily `xs.iter().mapConcurrent(…)`.
+A pool of one's own: `scope(on: e, workers: n) { … }`, a value. Every
+outcome: `gather`. First ready: `race`.
+
+**Both levels.** The high level loses `scope` for the common shapes; the
+low level keeps everything it had (`scope`, `gather`, `race`, channels,
+`Semaphore`, with-tasks), and `workers:` is the bound written once. No new
+runtime structure: a must-await handle is a with-task that is never
+cancelled on a normal path, `awaitAll` is a join, `workers:` a counting
+wait at launch. **Self-hosting:** the compiler's own parallelism (modules
+checked in parallel) is `mapConcurrent`; neutral otherwise.
+
+**What is new against D100's rejection** of "implicit scopes in every
+block, Swift `async let` style (any `}` or `return` may wait invisibly)":
+here a normal path cannot pass the end of the block or a `return` without
+an `await` written, so the only unwritten waits are on error and
+cancellation exits, where `with` already closes and joins.
+
+Rejected: leaving it as it was (a `scope` for every launch); the warning
+alone; `all(…)` as the name (the predicate `xs.all(p)`, and D16 marks every
+wait on a handle); a `val` handle that may be passed on (the await could no
+longer be seen); launches over `workers` queued instead of waiting
+(unbounded memory); `workers:` only without `on:` (they limit different
+things); the lazy form only through `with` (the loop is already the block
+that owns it); `scope` staying a statement; the no-launch `scope(on:)`
+staying legal.
+
 ---
 
 ## 4b. Settled minor decisions
@@ -6052,7 +6248,7 @@ conformance files.
 - **`veles.sum`** — mandatory. Supply-chain integrity is not opt-in.
 - ~~**Variadic C functions** — excluded. The varargs calling convention differs per platform and is the nastiest corner of the C ABI; bind a fixed-arity wrapper instead.~~ *(v0.64: superseded by D123 — calling is allowed, defining is not.)*
 - ~~**`testing`** — stdlib, with a `test` build mode. Go's version of this is a genuine strength.~~ Superseded by D78 (`test "…" { }`, a test-only vocabulary, no importable `testing` module).
-- **Discarded `async` handles** — no different from bound ones. `scope` joins either way, so there is nothing to warn about. *(v0.59: a task bound by `with` (D100) is the exception — it is cancelled, not waited for, when its block ends.)*
+- **Discarded `async` handles** — no different from bound ones. `scope` joins either way, so there is nothing to warn about. *(v0.59: a task bound by `with` (D100) is the exception — it is cancelled, not waited for, when its block ends.)* *(v0.81: and a `val h = async f()` outside a scope must be awaited on every normal path, D156.)*
 
 ---
 

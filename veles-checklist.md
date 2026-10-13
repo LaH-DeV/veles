@@ -265,6 +265,11 @@ answered from the shape, tuples get `Comparable`, enums get
       Panic>`; a non-throwing function with a failing child (a `scope`, a D111 field) is an error
       with the fix, not a compiler crash. driver TestTaskHandles, conformance D141/D111; docs
       chapter 12, reference/concurrency, reference/errors
+- [ ] Concurrency with less ceremony (D156, plan F19; decided 2026-10-13, not built): a
+      `val h = async f()` in any block, awaited on every normal path; the warning for an
+      immediate await; `awaitAll(…)` / `awaitAll(tasks)`; `scope`/`gather(workers: n)`; lazy
+      `iter.mapConcurrent` and loops owning a task-holding iterable; `scope` as a value; a placed
+      scope that starts nothing is an error
 - [x] Deadlock detection: "deadlock: every task is blocked" when no task
       can run and no timer, socket or blocking call can wake one
 - [x] A hang that is not a whole-program deadlock explains itself: `VELES_WATCHDOG=<s>` prints every
@@ -1270,8 +1275,14 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-10-11 | `await t` after `t.cancel()` | **A compile error when the cancel dominates the await** (D154; user, recommended of 3). Rejected: a warning; the run-time panic only. |
 | 2026-10-11 | Q30: a `gather` child that returns a `Result` without `throws` | **Its `Result` is the child's value: `Result<Result<T, E>, Panic>`**, as in a `scope` and a D111 field (D155; user, recommended of 3). Rejected: flattening it into the gather's error (as built until then); refusing such a child in `gather`. |
 | 2026-10-11 | Q31: an executor's function as a value outside its code | **Stays an error with the lambda as the fix** (D150 addendum; user, recommended of 2). Rejected: a function value that hops to the executor by itself. |
+| 2026-10-13 | Less ceremony around `async` (user, of `scope { val handle = async call(); println(await handle) }`: "it is kind of too much syntax for just run async … maybe 'scope' isn't required? Maybe we could just require to await the async handle by the compiler?") | **Six parts, D156** (user, recommended of 4 for each of four questions; `awaitAll` over `all` by the user's choice, before the batch): (1) `val h = async f()` in any block, a fail-fast child that must be awaited (`await`, `awaitAll`, a `race` arm) on every normal path — abnormal exits cancel and join it; no passing, storing or cancelling it — with (1b) a warning for an `await` right after the `async`; (2) `awaitAll(t1, …, tn)` → tuple of values and `awaitAll(tasks)` → `List<T>`, a built-in, fail-fast, inline `async` arguments owned by it (settles `awaitAll` from notes P11); (3) `scope`/`gather(workers: n)`, combinable with `on:`, a launch over the limit suspends the body; (4) lazy ordered `iter.mapConcurrent(f, workers:)`, and a task-holding loop iterable is owned by the loop; (5) `scope` as an expression; (6) `scope(on:)`/`workers:` whose body starts no task is an error with the `e.run` fix. Rejected: leaving it as it was; the warning only; `all`; a handle that may be passed on; queued launches; `workers:` only without `on:`; the lazy form only through `with`; `scope` staying a statement; the no-launch placed scope staying legal. |
 
 ## 11. Known limitations to revisit
+
+- **D156, left out of the decision (2026-10-13):** `awaitAll(…)` as a `race` arm; an unordered
+  lazy `mapConcurrent` (results as each finishes); the deadlock warning for `workers:` sees only
+  a loop of launches over a range larger than a constant limit followed by a send on a channel
+  passed to the launched function — other shapes rely on the runtime's deadlock report.
 
 - **Executors (D143, built 2026-10-10), not done yet:** on Windows a thread is kept to CPUs of one
   processor group (a list across groups throws `ThreadError`: CPU sets reach across, but only as a
