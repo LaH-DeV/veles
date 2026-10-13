@@ -693,6 +693,10 @@ func (g *gen) call(e *sema.Call) string {
 			ats = append(ats, a.Type())
 			avs = append(avs, strings.TrimPrefix(args[i], g.vt(a.Type())+" "))
 		}
+		if fn.CallerLoc {
+			ats = append(ats, types.TString)
+			avs = append(avs, g.callerLocArg(e.Span))
+		}
 		v := g.callSuspending(fn, ats, avs, g.resultTypeOf(fn.Sig))
 		g.chainPop(pushed)
 		return v
@@ -1843,6 +1847,28 @@ func (g *gen) builtin(e *sema.Builtin) string {
 	case "list.touch":
 		// an order change made through `set` (sort, swap): D102 counts it
 		g.bumpMods(g.expr(e.Args[0]))
+		return "zeroinitializer"
+	case "task.blockOn":
+		// D152 (std's runBlocking): the closure runs as a task placed on
+		// the executor while this OS thread waits for it; its panic is
+		// raised again here
+		clo := g.exprOwned(e.Args[0])
+		tramp := e.Args[1].(*sema.FuncRef).Fn
+		on := g.expr(e.Args[2])
+		task := g.newTmp()
+		g.emit("%s = call ptr @veles_task_new()", task)
+		g.emit("call void @veles_task_place_on(ptr %s, ptr %s)", task, on)
+		g.startTaskHow(task, tramp, []types.Type{e.Args[0].Type()}, []string{clo}, "veles_block_on")
+		pan := g.newTmp()
+		g.emit("%s = call i64 @veles_task_panicked(ptr %s)", pan, task)
+		pb := g.newTmp()
+		g.emit("%s = icmp ne i64 %s, 0", pb, pan)
+		dieL, okL := g.newLabel("block.panic"), g.newLabel("block.ok")
+		g.emitTerm("br i1 %s, label %%%s, label %%%s", pb, dieL, okL)
+		g.placeLabel(dieL)
+		g.emit("call void @veles_task_repanic(ptr %s)", task)
+		g.emitTerm("unreachable")
+		g.placeLabel(okL)
 		return "zeroinitializer"
 	case "list.checkMods", "map.checkMods":
 		// D102: the collection changed since the loop began — through a

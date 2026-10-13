@@ -539,8 +539,10 @@ func (f *fnCtx) nameExpr(e *ast.NameExpr, want types.Type) Expr {
 	f.c.refSym(e.Pos, sym)
 	switch sym.Kind {
 	case SymGlobal:
+		f.checkStateUse(sym.Global, e.Pos)
 		return f.globalValue(sym.Global)
 	case SymFunc:
+		f.checkExecFunc(sym.Func, e.Pos)
 		return f.funcValue(sym.Func, e.Pos)
 	case SymType:
 		if st, ok := sym.Type.(*types.Struct); ok && len(st.Fields) == 0 && st.Sealed != nil {
@@ -644,6 +646,11 @@ func narrowReaches(from, to types.Type) bool {
 }
 
 func (f *fnCtx) memberExpr(e *ast.MemberExpr, want types.Type) Expr {
+	if info := f.execRef(e.X); info != nil && !e.Safe {
+		if x := f.execMember(info, e); x != nil {
+			return x // an executor's state or function (D150)
+		}
+	}
 	if _, isSelf := e.X.(*ast.SelfExpr); isSelf && !e.Safe {
 		// in an `init` block: a field the block owns is unreadable until
 		// the block has assigned it on every path to here

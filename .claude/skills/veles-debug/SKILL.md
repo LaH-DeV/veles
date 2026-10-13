@@ -67,6 +67,14 @@ Run under a timeout. With threads, attach `gdb -p <pid>` and
 "deadlock: every task is blocked"; if it fires wrongly, check which queues
 and runnext slots it looked at.
 
+A hang that will not reproduce: set `VELES_WATCHDOG=45` (seconds) and run
+the tests in a loop under load — every program a test starts inherits it,
+and one still running after 45 s prints every live task (state, what it
+waits on, its scope, a debug build's calls) and every queue, then exits
+124. Keep the whole output of each failing run. A task the dump shows
+running a plain loop past a deadline or a cancellation means the loop was
+never told to look (`veles_attention`, `runs_now`).
+
 ## 6. Close the loop
 
 Write the regression test (`veles-test`), confirm it fails without the fix,

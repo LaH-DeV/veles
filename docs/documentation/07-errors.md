@@ -597,7 +597,8 @@ several share one.
   prints the location with a note that a debug build shows the rest.
 
   A panic that says you called something wrongly — `xs.swap(0, 7)` on a
-  three-element list, `list.chunked(0)`, `255.toString(radix: 1)` — points at
+  three-element list, `list.chunked(0)`, `255.toString(radix: 1)`,
+  `retry(0, f)` — points at
   **your** call, not at the line inside the standard library that noticed
   (D88). Those functions are marked `@caller_location`, which hands them
   the site they were called from; both build profiles report it:

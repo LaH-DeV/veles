@@ -303,9 +303,6 @@ func (c *Checker) checkDeclaredSuspension(prog *Program) {
 			continue
 		}
 		t := fn.tmpl
-		if fn.Suspends && fn.CallerLoc {
-			c.errorf(fn.Span, "a function marked '@caller_location' cannot suspend (D88)")
-		}
 		if fn.Suspends {
 			if t.Impl != nil && t.Impl.Trait != nil {
 				if isSuspendingClose(t) {
@@ -337,6 +334,27 @@ func (c *Checker) checkDeclaredSuspension(prog *Program) {
 			c.errorf(g.Span, "a global initializer cannot suspend; compute the value in 'main' and pass it down")
 		}
 	}
+	// D152: runBlocking blocks its OS thread, which a task must not do — a
+	// function that suspends waits with run (lambdas are functions of their
+	// own here, so only the calls made in this body count)
+	for _, fn := range prog.Funcs {
+		if !fn.Suspends || fn.Body == nil {
+			continue
+		}
+		walkBlock(fn.Body, func(node any) {
+			call, ok := node.(*Call)
+			if !ok || !isRunBlocking(call.Fn) || !call.Span.IsValid() {
+				return
+			}
+			c.errorf(call.Span, "'runBlocking' blocks its thread until the task is done, and this function suspends — it runs as a task, so it waits without blocking: call 'run' instead (D152)")
+		})
+	}
+}
+
+// isRunBlocking: fn is the prelude's Executor.runBlocking (an instance)
+func isRunBlocking(fn *Func) bool {
+	t := fn.tmpl
+	return t != nil && t.Name == "runBlocking" && t.Owner != nil && t.Owner.Name == "Executor" && t.Module != nil && t.Module.Std
 }
 
 // exprSuspends is the coroutine instance's view.
@@ -399,7 +417,7 @@ func (w susp) expr(e Expr) bool {
 		return w.expr(e.Obj) || w.any(e.Args)
 	case *Builtin:
 		switch e.Op {
-		case "chan.send", "chan.recv", "task.sleep":
+		case "chan.send", "chan.recv", "task.sleep", "task.ioWait", "task.runWithin":
 			return true
 		}
 		return w.any(e.Args)

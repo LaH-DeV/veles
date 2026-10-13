@@ -269,6 +269,44 @@ extend Parser {
     d
   }
 
+  // `executor name(args) { members }` (D150): the arguments are a call's;
+  // the body holds `val`/`var` state and functions
+  fun parseExecutorDecl(head: DeclHead): ast.ExecutorDecl {
+    this.next()  // executor
+    var d: ast.ExecutorDecl = ast.ExecutorDecl(doc: head.doc, pub: head.pub, isInternal: head.isInternal)
+    d.name = this.ident()
+    if (this.at(Kind.LParen)) d.args = this.parseArgs()
+    if (this.at(Kind.LBrace)) {
+      this.next()
+      d.hasBody = true
+      this.skipSemis()
+      val state: MutableList<ast.ValDecl> = []
+      val funs: MutableList<ast.FunDecl> = []
+      loop (!this.atAny(Kind.RBrace, Kind.EOF)) {
+        val m = this.parseDecl()
+        when (m) {
+          is ast.ValDecl => {
+            if (m.kind == ast.BindKind.Const) this.errorAt(m.pos, "a constant belongs at module level, where every executor may read it; an executor holds 'val' and 'var' state (D150)")
+            state.push(m)
+          }
+          is ast.FunDeclNode => {
+            val fn = m.decl
+            if (fn.isStatic || fn.isTest || fn.isExtern || fn.exportC) this.errorAt(fn.name.pos, "a function of an executor is a plain 'fun': it runs on the executor (D150)")
+            funs.push(fn)
+          }
+          is ast.BadDecl => { }
+          else => this.errorAt(ast.declSpan(m), "an executor holds 'val'/'var' state and functions only (D150)")
+        }
+        this.parseMemberSeparator()
+      }
+      this.expect(Kind.RBrace)
+      d.state = state.toList()
+      d.funs = funs.toList()
+    }
+    d.pos = this.spanFrom(head.start)
+    d
+  }
+
   fun parseValDecl(head: DeclHead): ast.ValDecl {
     var d: ast.ValDecl = ast.ValDecl(attrs: head.attrs, doc: head.doc, pub: head.pub, isInternal: head.isInternal)
     d.kind = bindKind(this.next().kind)

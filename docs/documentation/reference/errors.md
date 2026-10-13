@@ -338,6 +338,19 @@ A `scope` passes a failing child's error to the function that contains it,
 not to a handler around it. Put the `scope` in a function of its own and
 `try` that function inside the `do`. (D98)
 
+#### `this child can fail with '…', which fails the 'scope' … but the function is not declared 'throws'`
+
+A child whose function `throws` fails its `scope` when it throws, and the
+scope leaves with that error: the function containing it must be able to.
+Declare it `throws`, or use `gather`, whose tuple keeps each child's
+outcome as a value. (D4, D141)
+
+#### `a task this value holds can fail with '…' … but the function is not declared 'throws'`
+
+A value holding a task whose field is `Task<Result<T, E>>` hands the
+task's error to the block that receives it with `with` (D111), and from
+there to the function: declare it `throws`.
+
 ### val-else
 
 **`val ... else`: binding a value that may not be there.**
@@ -914,8 +927,8 @@ on the wire, `@skip` leaves it out, `@tag` names a sealed variant.
 `@caller_location` makes a function's misuse panics point at its caller
 (D88). Only std uses it so far; write the check in your own function
 with a `panic` that names the argument, and the chain in a debug build
-shows the caller. It cannot mark a trait implementation, an extern
-function, or a function that suspends.
+shows the caller. It cannot mark a trait implementation or an extern
+function.
 
 ### tests
 

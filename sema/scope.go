@@ -121,6 +121,8 @@ func (m *Module) prefix() string {
 // FuncTemplate is a function declaration before instantiation. Non-generic
 // functions have exactly one instance.
 type FuncTemplate struct {
+	// Exec: a function of an `executor` declaration, which runs on it (D150)
+	Exec       *execInfo
 	Name       string
 	Mangled    string
 	Module     *Module

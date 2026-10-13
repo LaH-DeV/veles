@@ -340,6 +340,27 @@ func (p *printer) decl(d Decl) {
 			p.expr(d.Value)
 		}
 		p.w(")")
+	case *ExecutorDecl:
+		p.open("executor ")
+		if d.Pub {
+			p.w("public ")
+		}
+		p.w(d.Name.Name)
+		if len(d.Args) > 0 {
+			p.w(" (")
+			p.args(d.Args)
+			p.w(")")
+		}
+		if d.HasBody {
+			p.w(" {}")
+		}
+		for _, s := range d.State {
+			p.child(func() { p.decl(s) })
+		}
+		for _, fn := range d.Funs {
+			p.child(func() { p.fun(fn) })
+		}
+		p.close()
 	case *ExternBlock:
 		p.open(fmt.Sprintf("extern %q", d.ABI))
 		for _, fn := range d.Funs {

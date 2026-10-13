@@ -217,9 +217,9 @@ Output:
 dropped: timed out after 50ms
 ```
 
-The function passed to `withTimeout` runs in a task of its own, so it must
-be sendable: it may capture `val`s of Sendable types — `c` here — and
-nothing mutable. `E | Timeout` in the signature is the lambda's own error
+The function passed to `withTimeout` runs in the calling task (D151), so
+it may use anything the caller can — `c` here, a buffer it fills — and the
+timeout costs no task. `E | Timeout` in the signature is the lambda's own error
 type joined with the timeout; write `throws IoError | Timeout`, or let a
 `when` handle both.
 

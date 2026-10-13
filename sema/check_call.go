@@ -39,6 +39,43 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 		if callee.Name == "ioWait" && f.module.Std && f.lookup(callee.Name) == nil {
 			return f.ioWaitCall(e)
 		}
+		if callee.Name == "blockOn" && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 2 {
+			// std-only (D152, runBlocking): runs a sendable closure as a task
+			// placed on the executor `on` (its handle) and blocks this OS
+			// thread until it ends
+			on := f.checkExprTo(e.Args[0].Value, &types.Pointer{Elem: types.TU8, Raw: true})
+			want := &types.Func{Ret: types.TUnit, Effects: types.Effects{Suspends: true}, Sendable: true}
+			fv := f.checkExpr(e.Args[1].Value, want)
+			ft, ok := fv.Type().(*types.Func)
+			if !ok || !ft.Sendable || len(ft.Params) != 0 || !types.IsUnit(ft.Ret) || ft.Effects.Throws {
+				f.errorf(e.Pos, "blockOn takes an executor's handle and a 'sendable fun()' that returns nothing and throws nothing")
+				return bad()
+			}
+			return &Builtin{exprBase{types.TUnit}, "task.blockOn", []Expr{fv, &FuncRef{exprBase{ft}, f.c.launchTrampoline(ft)}, on}, e.Pos}
+		}
+		if callee.Name == "runWithin" && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 2 {
+			// std-only (D151, withTimeout): calls f in this task under a
+			// deadline ns from now; what f gave back — its Result — or null
+			// when the deadline came first (f's frames unwound for it)
+			ns := f.checkExprTo(e.Args[0].Value, types.TI64)
+			fv := f.checkExpr(e.Args[1].Value, nil)
+			ft, ok := fv.Type().(*types.Func)
+			if !ok || len(ft.Params) != 0 || ft.C {
+				f.errorf(e.Pos, "runWithin takes a 'fun(): R suspends throws E'")
+				return bad()
+			}
+			rs := f.c.ResultType(ft.Ret, ft.Effects.Error)
+			args := []Expr{ns, fv}
+			if !ft.Effects.Throws {
+				// (an instance with E never) f gives back its value: it is
+				// made an Ok here, the value standing in for the hole
+				hole := &Builtin{exprBase{ft.Ret}, "task.withinValue", nil, e.Pos}
+				v := rs.Variants[0]
+				args = append(args, &MakeVariant{exprBase{rs}, rs, v, &StructLit{exprBase{v}, v, []Expr{hole}}})
+			}
+			rt := &types.Nullable{Elem: rs}
+			return f.suspending(&Builtin{exprBase{rt}, "task.runWithin", args, e.Pos}, e.Pos, "runWithin")
+		}
 		if callee.Name == "listRawData" && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 1 {
 			// std-only (D69): the storage of a list, for `withRaw` to lend C
 			// for the length of a closure — never a pointer user code holds
@@ -134,6 +171,9 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 			return bad()
 		}
 		f.c.refSym(callee.Pos, sym)
+		if sym.Kind == SymFunc {
+			f.checkExecFunc(sym.Func, callee.Pos)
+		}
 		if sym.Kind == SymFunc && sym.Func.TestCode && !f.inTest() {
 			f.errorf(callee.Pos, "'%s' is test code (a 'test fun', or declared in a *.test.vs file); only tests can call it, and a build leaves it out (D78)", callee.Name)
 		}
@@ -150,6 +190,11 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 		}
 		return f.callSymbol(sym, callee.Name, typeArgs, e, want)
 	case *ast.MemberExpr:
+		if info := f.execRef(callee.X); info != nil {
+			if x, ok := f.execCall(info, callee, typeArgs, e, want); ok {
+				return x
+			}
+		}
 		if n, ok := callee.X.(*ast.NameExpr); ok {
 			if sym := f.lookup(n.Name); sym != nil {
 				switch sym.Kind {
@@ -1126,6 +1171,7 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 				f.checkArgsLoosely(e.Args)
 				return bad()
 			}
+			f.noteCancelled(callee.X, e.Pos)
 			return &Builtin{exprBase{types.TUnit}, "task.cancel", []Expr{recv}, e.Pos}
 		}
 	case *types.Map:

@@ -34,6 +34,7 @@ extend<T: Sendable> List<T> {
   /// must be sendable: it may capture only vals of Sendable types (D35). A
   /// throwing `f` makes the whole call throw — the first error cancels the
   /// remaining work, as for the eager adapters (D46).
+  @caller_location
   public fun mapConcurrent<R: Sendable, E>(f: sendable fun(T): R suspends throws E, workers: i64 = 4): List<R> throws E {
     if (workers < 1) panic("mapConcurrent: workers must be at least 1, got $workers")
     val n = this.len()
@@ -57,6 +58,7 @@ extend<T: Sendable> List<T> {
 
   /// `mapConcurrent` for its effects: runs `f` on every element, at most
   /// `workers` at a time, and returns when all have finished.
+  @caller_location
   public fun forEachConcurrent<E>(f: sendable fun(T) suspends throws E, workers: i64 = 4) throws E {
     val _ = try this.mapConcurrent(x => {
       try f(x)
@@ -115,23 +117,20 @@ public error Timeout {
 }
 
 /// Runs `f` with a time limit: its result, or a `Timeout` error when
-/// `limit` passes first. The task running `f` is then cancelled and
-/// unwinds — its `with` cleanups run — before `withTimeout` throws; an
-/// error `f` throws in time is rethrown, so the call throws `E | Timeout`.
+/// `limit` passes first. `f` runs in the calling task, as an ordinary call
+/// (D151): when the time is up it is stopped where it waits, or at the end
+/// of a loop iteration — also in code that never waits — and unwinds as a
+/// cancellation does, its scopes joined and its `with` cleanups run, before
+/// `withTimeout` throws. An error `f` throws in time is rethrown, so the
+/// call throws `E | Timeout`; a cancellation of the task stays one.
 ///
 /// ```veles
 /// val line = try withTimeout(Duration.seconds(5), () => try conn.readLine(max: 8192))
 /// ```
-public fun withTimeout<R: Sendable, E>(limit: Duration, f: sendable fun(): R suspends throws E): R throws E | Timeout {
-  scope {
-    val t = async f()
-    race {
-      // an error of `f` is the scope's: it fails the scope, never this arm (D141)
-      val r = await t => return r
-      // leaving the scope by a throw cancels `t` and waits for it to unwind
-      sleep(limit)    => throw Timeout(limit)
-    }
-  }
+public fun withTimeout<R, E>(limit: Duration, f: fun(): R suspends throws E): R throws E | Timeout {
+  // f's Result, or null when the limit came first
+  val r = runWithin(limit.toNanos(), f) ?: throw Timeout(limit)
+  try r
 }
 
 /// Calls `f` until it returns, and returns what it returns. After a thrown
@@ -142,6 +141,7 @@ public fun withTimeout<R: Sendable, E>(limit: Duration, f: sendable fun(): R sus
 /// ```veles
 /// val body = try retry(3, () => try http.get(url), delay: Duration.millis(200))
 /// ```
+@caller_location
 public fun retry<R, E>(times: i64, f: fun(): R suspends throws E, delay: Duration = Duration.zero): R throws E {
   if (times < 1) panic("retry: times must be at least 1, got $times")
   var left = times

@@ -164,6 +164,23 @@ func (c *Checker) docEntry(m *Module, d ast.Decl, v viewpoint) string {
 			return ""
 		}
 		title, doc, code = d.Kind.String()+" "+d.Name.Name, d.Doc, c.globalDecl(d.Name.Name, sym.Global)
+	case *ast.ExecutorDecl:
+		// its public functions, which a call from outside runs on it (D150)
+		sym := m.Scope.LookupLocal(d.Name.Name)
+		if sym == nil || sym.Global == nil || c.execOfGlobal[sym.Global] == nil {
+			return ""
+		}
+		var lines []string
+		for _, fn := range d.Funs {
+			if msym := c.execOfGlobal[sym.Global].byName[fn.Name.Name]; fn.Pub && msym != nil && msym.Func != nil {
+				lines = append(lines, "  "+funDecl(msym.Func))
+			}
+		}
+		code = "public executor " + d.Name.Name
+		if len(lines) > 0 {
+			code += " {\n" + strings.Join(lines, "\n") + "\n}"
+		}
+		title, doc = "executor "+d.Name.Name, d.Doc
 	case *ast.ErrorAliasDecl:
 		title, doc, code = "error "+d.Name.Name, d.Doc, "public error "+d.Name.Name+" = "+ast.TypeString(d.Members)
 	case *ast.TypeAliasDecl:

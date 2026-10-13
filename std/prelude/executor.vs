@@ -9,6 +9,7 @@ extern "C" {
   fun veles_exec_new(threads: i64, single: bool, name: string, priority: i64, cpus: *raw i64, ncpus: i64, err: *raw string): *raw u8
   fun veles_exec_close(e: *raw u8)
   fun veles_exec_blocking(): *raw u8
+  fun veles_exec_default(): *raw u8
   fun veles_exec_default_threads(): i64
   fun veles_thread_start(name: string, priority: i64, cpus: *raw i64, ncpus: i64, stackSize: i64, body: *raw u8, err: *raw string): *raw u8
   fun veles_thread_join(t: *raw u8)
@@ -94,6 +95,34 @@ public struct Executor {
     }
   }
 
+  /// The default pool, where `main` and the tasks it starts run (D152).
+  public static val default: Executor = Executor(handle: unsafe {
+    // SAFETY: the runtime's own pool, made before any code runs; it is never closed
+    veles_exec_default()
+  })
+
+  /// Runs `f` as a task on this executor and blocks the calling OS thread
+  /// until it returns: its result, or the error it throws (D152). It is how
+  /// plain code waits for tasks — a `Thread`'s function, a call on the
+  /// blocking pool, a C library's thread calling back:
+  ///
+  /// ```veles
+  /// fun audioLoop(events: Channel<i64>) {           // a Thread's function
+  ///   loop (i in 0..<3) Executor.default.runBlocking(() => events.send(i))
+  /// }
+  /// ```
+  ///
+  /// A task waits with `run` instead: in a function that suspends this is
+  /// a compile error, and on a thread of an executor — the default pool, a
+  /// pool, an `Executor.thread` — it panics, since it would hold a thread
+  /// the tasks need, or wait for itself. A panic in `f` is raised again here.
+  public fun runBlocking<R: Sendable, E>(f: sendable fun(): R suspends throws E): R throws E {
+    val out: Mutex<Result<R, E>?> = Mutex(value: null)
+    blockOn(this.handle, () => out.set(outcome(f)))
+    val r = out.get() ?: panic("runBlocking: the task ended without a result")
+    try r
+  }
+
   /// How many threads the default pool has: `VELES_THREADS`, `[runtime]
   /// threads`, or one per core.
   public static fun defaultThreads(): i64 => unsafe {
@@ -110,6 +139,34 @@ public struct Executor {
         veles_exec_close(this.handle)
       }
     }
+  }
+}
+
+// the start of an `executor` declaration (D150), with the module's
+// globals: a refusal ends the program, there being no caller to throw to
+fun startExecutor(name: string, single: bool, threads: i64 = 1, priority: Priority = Priority.Normal, cpus: List<i64> = []): Executor {
+  if (!single && threads < 1) panic("executor $name: threads must be at least 1, got $threads")
+  when (Executor.make(if (single) 1 else threads, single, name, priority, cpus)) {
+    is Ok(e)    => return e
+    is Err(err) => panic("executor $name: ${err.message()}")
+  }
+}
+
+// a function of a declared executor called from outside its code (D150):
+// it runs on the executor, and the caller waits — a free function, so
+// `async gl.f(x)` launches it as any call
+fun hop<R: Sendable, E>(on: Executor, f: sendable fun(): R suspends throws E): R throws E {
+  scope(on: on) {
+    return await async f()
+  }
+}
+
+// runBlocking's task, placed on its executor: f, its error kept as a value
+fun outcome<R: Sendable, E>(f: sendable fun(): R suspends throws E): Result<R, E> {
+  do {
+    return Ok(try f())
+  } catch (e) {
+    return Err(e)
   }
 }
 

@@ -25,6 +25,7 @@ declare void @veles_task_started(ptr, ptr)
 declare void @veles_task_finish(ptr, ptr, i64, i64)
 declare i64 @veles_task_cancelled(ptr, i64)
 declare void @veles_frame_park(ptr, ptr, i64)
+declare void @veles_frame_park_held(ptr, ptr, i64)
 declare void @veles_frame_return(ptr, ptr, ptr, i64, i64, ptr)
 declare void @veles_frame_unwound(ptr, ptr)
 declare void @veles_frame_back(ptr, ptr)
@@ -112,10 +113,17 @@ declare void @veles_call_base(ptr, ptr)
 declare void @veles_task_repanic(ptr)
 declare void @veles_task_start(ptr, ptr, ptr)
 declare void @veles_task_spawn(ptr, ptr, ptr)
+declare void @veles_block_on(ptr, ptr, ptr)
+declare void @veles_task_place_on(ptr, ptr)
+declare void @veles_deadline_begin(ptr, ptr, i64, i64)
+declare ptr @veles_deadline_call(ptr, ptr, ptr, ptr, ptr)
+declare i64 @veles_deadline_end(ptr)
+declare void @veles_deadline_cleanup(ptr)
+declare ptr @veles_deadline_cleanup_move(ptr)
 
 ; The common paths of veles_frame_alloc, veles_frame_free and
 ; veles_frame_back, taken inline (review F3). The offsets are the
-; runtime's (veles_task: hdl 0, arena 24, depth 224, popped 246;
+; runtime's (veles_task: hdl 0, arena 24, depth 136, popped 150;
 ; frame_arena: top 8, cap 16, data 24), which veles_task.c asserts.
 define internal ptr @veles.frame.alloc(ptr %t, ptr %l, i64 %size) alwaysinline {
 entry:
@@ -183,9 +191,9 @@ entry:
   %d = load i64, ptr %dp
   %d1 = sub i64 %d, 1
   %d32 = trunc i64 %d1 to i32
-  %tdp = getelementptr inbounds i8, ptr %t, i64 224
+  %tdp = getelementptr inbounds i8, ptr %t, i64 136
   store i32 %d32, ptr %tdp
-  %pp = getelementptr inbounds i8, ptr %t, i64 246
+  %pp = getelementptr inbounds i8, ptr %t, i64 150
   store i8 1, ptr %pp
   ret void
 }
@@ -257,7 +265,13 @@ func (g *gen) suspendAt(park bool) {
 		panic("codegen: suspension point in a non-suspending function")
 	}
 	if park {
-		g.emit("call void @veles_frame_park(ptr %s, ptr %s, i64 %s)", c.task, c.hdl, c.depth)
+		// a cleanup's wait looks at no request when it resumes (D47), so
+		// its park must not queue the task again for one
+		fn := "veles_frame_park"
+		if g.inCleanup > 0 {
+			fn = "veles_frame_park_held"
+		}
+		g.emit("call void @%s(ptr %s, ptr %s, i64 %s)", fn, c.task, c.hdl, c.depth)
 	}
 	s := g.newTmp()
 	g.emit("%s = call i8 @llvm.coro.suspend(token none, i1 false)", s)
@@ -497,6 +511,124 @@ func (g *gen) callFrame(code string, args []string, rt types.Type) string {
 	return g.loadVal(rt, rp)
 }
 
+// runWithin is std's withTimeout (D151): f runs in this task as a suspending
+// call, under a deadline whose record lives in this frame (512 bytes,
+// aligned 16: the runtime asserts it fits). The call is callFrame's, made
+// through veles_deadline_call, which a plain loop under f jumps back into.
+// The value is f's Result, straight from the link — or null when the call
+// unwound (done 2) for the deadline (not for a cancellation of the task,
+// which passes through as one), or when the deadline passed while f ran on.
+func (g *gen) runWithin(e *sema.Builtin) string {
+	c := g.coro
+	nt := e.Type().(*types.Nullable)
+	ns := g.expr(e.Args[0])
+	fv := g.expr(e.Args[1])
+	out := g.zeroSlot(nt) // null until f's result is in time
+	d := g.alloca("[32 x i128]")
+	// the deadline ends on every way out of this frame (a cleanup entry,
+	// run by an unwinding that passes through, a panic included)
+	end := &sema.Builtin{Op: "deadline.end"}
+	g.deadlineSlots[end] = d
+	g.pushCleanup(end, "@veles_deadline_cleanup", d, "@veles_deadline_cleanup_move")
+	g.emit("call void @veles_deadline_begin(ptr %s, ptr %s, i64 %s, i64 %s)", c.task, d, ns, c.depth)
+	code, env := g.newTmp(), g.newTmp()
+	g.emit("%s = extractvalue { ptr, ptr } %s, 0", code, fv)
+	g.emit("%s = extractvalue { ptr, ptr } %s, 1", env, fv)
+	// the link holds what f returns: its Result, or (throwing nothing) its value
+	ret := nt.Elem
+	if len(e.Args) == 3 {
+		ret = e.Args[1].Type().(*types.Func).Ret
+	}
+	lt := g.linkType(ret)
+	lk := g.alloca(lt)
+	p := g.newTmp()
+	g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 0", p, lt, lk)
+	g.emit("store ptr %s, ptr %s", c.hdl, p)
+	dp := g.newTmp()
+	g.emit("%s = add i64 %s, 1", dp, c.depth)
+	p = g.newTmp()
+	g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 1", p, lt, lk)
+	g.emit("store i64 %s, ptr %s", dp, p)
+	done := g.newTmp()
+	g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 2", done, lt, lk)
+	g.emit("store i64 0, ptr %s", done)
+	h := g.newTmp()
+	g.emit("%s = call ptr @veles_deadline_call(ptr %s, ptr %s, ptr %s, ptr %s, ptr %s)", h, d, code, c.task, lk, env)
+	check, got, wait := g.newLabel("within.check"), g.newLabel("within.done"), g.newLabel("within.wait")
+	g.emitTerm("br label %%%s", check)
+	g.placeLabel(check)
+	dv := g.newTmp()
+	g.emit("%s = load i64, ptr %s", dv, done)
+	db := g.newTmp()
+	g.emit("%s = icmp ne i64 %s, 0", db, dv)
+	g.emitTerm("br i1 %s, label %%%s, label %%%s", db, got, wait)
+	g.placeLabel(wait)
+	g.suspendAt(false)
+	g.emitTerm("br label %%%s", check)
+	g.placeLabel(got)
+	// f's frame is over (after a plain loop's jump the runtime has given
+	// the arena back already, and h is null)
+	g.emit("call void @veles.frame.free(ptr %s, ptr %s)", c.task, h)
+	ub := g.newTmp()
+	g.emit("%s = icmp eq i64 %s, 2", ub, dv)
+	unwound, ok, join := g.newLabel("within.unwound"), g.newLabel("within.ok"), g.newLabel("within.join")
+	g.emitTerm("br i1 %s, label %%%s, label %%%s", ub, unwound, ok)
+	g.placeLabel(unwound)
+	cc := g.newTmp()
+	g.emit("%s = call i64 @veles_task_cancelled(ptr %s, i64 %s)", cc, c.task, c.depth)
+	cb := g.newTmp()
+	g.emit("%s = icmp ne i64 %s, 0", cb, cc)
+	cancel, look := g.newLabel("within.cancelled"), g.newLabel("within.look")
+	g.emitTerm("br i1 %s, label %%%s, label %%%s", cb, cancel, look)
+	// the task is cancelled (or an outer deadline cuts deeper than here):
+	// the deadline ends with the other cleanups, and this frame unwinds
+	g.placeLabel(cancel)
+	g.runCleanups(0)
+	g.emit("call void @veles_frame_unwound(ptr %s, ptr %s)", c.task, c.link)
+	g.emitTerm("br label %%%s", c.finalL)
+	// from here on the deadline is no cleanup of this frame's
+	g.cleanups = g.cleanups[:len(g.cleanups)-1]
+	g.placeLabel(look)
+	g.popCleanup(end)
+	fired := g.newTmp()
+	g.emit("%s = call i64 @veles_deadline_end(ptr %s)", fired, d)
+	fb := g.newTmp()
+	g.emit("%s = icmp ne i64 %s, 0", fb, fired)
+	other := g.newLabel("within.other")
+	g.emitTerm("br i1 %s, label %%%s, label %%%s", fb, join, other)
+	// unwound for another reason: a scope f is in failed (as callFrame)
+	g.placeLabel(other)
+	g.failFastCheck()
+	g.runCleanups(0)
+	g.emit("call void @veles_frame_unwound(ptr %s, ptr %s)", c.task, c.link)
+	g.emitTerm("br label %%%s", c.finalL)
+	g.placeLabel(ok)
+	g.popCleanup(end)
+	late := g.newTmp()
+	g.emit("%s = call i64 @veles_deadline_end(ptr %s)", late, d)
+	// the deadline passed while f ran on without a point that looks (a
+	// lock region, D145): the limit still came first
+	lb := g.newTmp()
+	g.emit("%s = icmp ne i64 %s, 0", lb, late)
+	keep := g.newLabel("within.keep")
+	g.emitTerm("br i1 %s, label %%%s, label %%%s", lb, join, keep)
+	g.placeLabel(keep)
+	v := "zeroinitializer"
+	if lt != "{ ptr, i64, i64 }" {
+		rp := g.newTmp()
+		g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 3", rp, lt, lk)
+		v = g.loadVal(ret, rp)
+	}
+	if len(e.Args) == 3 {
+		g.withinValue = v
+		v = g.expr(e.Args[2]) // Ok(v)
+	}
+	g.storeVal(nt, g.makeNullableT(nt, "true", v), out)
+	g.emitTerm("br label %%%s", join)
+	g.placeLabel(join)
+	return g.loadVal(nt, out)
+}
+
 // resultTypeOf is the logical result type of a function (Result when it throws).
 func (g *gen) resultTypeOf(sig *types.Func) types.Type {
 	if sig.Effects.Throws {
@@ -524,6 +656,11 @@ func (g *gen) launch(e *sema.Launch) string {
 	for _, a := range e.Call.Args {
 		argTypes = append(argTypes, a.Type())
 		argVals = append(argVals, g.exprOwned(a))
+	}
+	if e.Call.Fn.CallerLoc {
+		// D88: the launch is the site
+		argTypes = append(argTypes, types.TString)
+		argVals = append(argVals, g.callerLocArg(e.Call.Span))
 	}
 	g.startTaskAs(ct, e.Call.Fn, argTypes, argVals, true)
 	slot := g.alloca("ptr")
@@ -555,6 +692,10 @@ func (g *gen) rampFor(fn *sema.Func) *sema.Func {
 			params = append(params, fmt.Sprintf("%s %%p%d", llt, i))
 			args = append(args, fmt.Sprintf("%s %%p%d", llt, i))
 			i++
+		}
+		if fn.CallerLoc {
+			params = append(params, strType+" %callerloc")
+			args = append(args, strType+" %callerloc")
 		}
 		saved := g.fnResult
 		g.defineCoroHelper(ramp, params, func() {
@@ -747,7 +888,9 @@ func (g *gen) gatherResults(e *sema.ScopeBlock) string {
 		g.emitTerm("br label %%%s", joinL)
 		g.placeLabel(okL)
 		var v string
-		if rs, isR := childT.(*types.Sealed); isR && isResultType(rs) {
+		// a child that throws gives its Result, converted; any other — one
+		// returning a Result as its value too (D155) — gives Ok(value)
+		if rs, isR := childT.(*types.Sealed); isR && l.Fails {
 			cv := g.loadVal(rs, rp)
 			v = g.convertResult(cv, rs, want)
 		} else {
@@ -960,6 +1103,10 @@ func (g *gen) taskBuiltin(e *sema.Builtin) (string, bool) {
 		g.emit("%s = load ptr, ptr %s", head, g.receivingSlots[e])
 		g.emit("call void @veles_receiving_restore(ptr %s)", head)
 		return "zeroinitializer", true
+	case "deadline.end":
+		// a withTimeout's frame is left early: its deadline ends (D151)
+		g.emit("call i64 @veles_deadline_end(ptr %s)", g.deadlineSlots[e])
+		return "zeroinitializer", true
 	case "scope.abandon":
 		// the body is being left early: cancel the children and join them
 		slot := g.abandonSlots[e]
@@ -1004,6 +1151,10 @@ func (g *gen) taskBuiltin(e *sema.Builtin) (string, bool) {
 		g.emitTerm("br label %%%s", loop)
 		g.placeLabel(done)
 		return "zeroinitializer", true
+	case "task.runWithin":
+		return g.runWithin(e), true
+	case "task.withinValue":
+		return g.withinValue, true
 	case "task.ioWait":
 		// std/net: park until the executor's poll reports the socket ready;
 		// the same retry loop as sleep
@@ -1361,6 +1512,17 @@ func (g *gen) startTask(task string, fn *sema.Func, argTypes []types.Type, argVa
 // of running its ramp here (an `async` launch, D66): any worker may start
 // it, which is what lets the children of a scope run in parallel.
 func (g *gen) startTaskAs(task string, fn *sema.Func, argTypes []types.Type, argVals []string, spawn bool) {
+	how := "veles_task_start"
+	if spawn {
+		how = "veles_task_spawn"
+	}
+	g.startTaskHow(task, fn, argTypes, argVals, how)
+}
+
+// startTaskHow packs args and hands fn's entry thunk to the runtime
+// function named: veles_task_start runs its ramp here, veles_task_spawn
+// queues it, veles_block_on queues it and blocks the thread until it ends.
+func (g *gen) startTaskHow(task string, fn *sema.Func, argTypes []types.Type, argVals []string, how string) {
 	if !fn.Suspends {
 		fn = g.rampFor(fn)
 	}
@@ -1387,11 +1549,7 @@ func (g *gen) startTaskAs(task string, fn *sema.Func, argTypes []types.Type, arg
 		}
 	}
 	thunk := g.entryThunk(fn, argTypes, nil)
-	if spawn {
-		g.emit("call void @veles_task_spawn(ptr %s, ptr @%s, ptr %s)", task, thunk, args)
-		return
-	}
-	g.emit("call void @veles_task_start(ptr %s, ptr @%s, ptr %s)", task, thunk, args)
+	g.emit("call void @%s(ptr %s, ptr @%s, ptr %s)", how, task, thunk, args)
 }
 
 // runtimeConfig hands the program's `[runtime]` settings (D143) to the

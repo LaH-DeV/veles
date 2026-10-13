@@ -344,7 +344,7 @@ abandon.wait.10:
   %t27 = icmp ne i64 %t26, 0
   br i1 %t27, label %abandon.done.11, label %abandon.susp.12
 abandon.susp.12:
-  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
+  call void @veles_frame_park_held(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t28 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t28, label %coro.suspend [ i8 0, label %resume.13 i8 1, label %coro.cleanup ]
 resume.13:
@@ -411,7 +411,7 @@ abandon.wait.25:
   %t51 = icmp ne i64 %t50, 0
   br i1 %t51, label %abandon.done.26, label %abandon.susp.27
 abandon.susp.27:
-  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
+  call void @veles_frame_park_held(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t52 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t52, label %coro.suspend [ i8 0, label %resume.28 i8 1, label %coro.cleanup ]
 resume.28:
@@ -491,7 +491,7 @@ abandon.wait.37:
   %t83 = icmp ne i64 %t82, 0
   br i1 %t83, label %abandon.done.38, label %abandon.susp.39
 abandon.susp.39:
-  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
+  call void @veles_frame_park_held(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t84 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t84, label %coro.suspend [ i8 0, label %resume.40 i8 1, label %coro.cleanup ]
 resume.40:
@@ -576,7 +576,7 @@ abandon.wait.58:
   %t115 = icmp ne i64 %t114, 0
   br i1 %t115, label %abandon.done.59, label %abandon.susp.60
 abandon.susp.60:
-  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
+  call void @veles_frame_park_held(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t116 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t116, label %coro.suspend [ i8 0, label %resume.61 i8 1, label %coro.cleanup ]
 resume.61:
@@ -677,7 +677,7 @@ abandon.wait.83:
   %t155 = icmp ne i64 %t154, 0
   br i1 %t155, label %abandon.done.84, label %abandon.susp.85
 abandon.susp.85:
-  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
+  call void @veles_frame_park_held(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t156 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t156, label %coro.suspend [ i8 0, label %resume.86 i8 1, label %coro.cleanup ]
 resume.86:
@@ -709,7 +709,7 @@ abandon.wait.90:
   %t163 = icmp ne i64 %t162, 0
   br i1 %t163, label %abandon.done.91, label %abandon.susp.92
 abandon.susp.92:
-  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
+  call void @veles_frame_park_held(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t164 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t164, label %coro.suspend [ i8 0, label %resume.93 i8 1, label %coro.cleanup ]
 resume.93:
@@ -744,7 +744,7 @@ abandon.wait.97:
   %t173 = icmp ne i64 %t172, 0
   br i1 %t173, label %abandon.done.98, label %abandon.susp.99
 abandon.susp.99:
-  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
+  call void @veles_frame_park_held(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t174 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t174, label %coro.suspend [ i8 0, label %resume.100 i8 1, label %coro.cleanup ]
 resume.100:
@@ -943,7 +943,7 @@ abandon.wait.127:
   %t290 = icmp ne i64 %t289, 0
   br i1 %t290, label %abandon.done.128, label %abandon.susp.129
 abandon.susp.129:
-  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
+  call void @veles_frame_park_held(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t291 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t291, label %coro.suspend [ i8 0, label %resume.130 i8 1, label %coro.cleanup ]
 resume.130:
@@ -992,7 +992,7 @@ abandon.wait.140:
   %t306 = icmp ne i64 %t305, 0
   br i1 %t306, label %abandon.done.141, label %abandon.susp.142
 abandon.susp.142:
-  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
+  call void @veles_frame_park_held(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t307 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t307, label %coro.suspend [ i8 0, label %resume.143 i8 1, label %coro.cleanup ]
 resume.143:
@@ -1091,7 +1091,7 @@ abandon.wait.165:
   %t343 = icmp ne i64 %t342, 0
   br i1 %t343, label %abandon.done.166, label %abandon.susp.167
 abandon.susp.167:
-  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
+  call void @veles_frame_park_held(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t344 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t344, label %coro.suspend [ i8 0, label %resume.168 i8 1, label %coro.cleanup ]
 resume.168:
@@ -1123,7 +1123,7 @@ abandon.wait.172:
   %t351 = icmp ne i64 %t350, 0
   br i1 %t351, label %abandon.done.173, label %abandon.susp.174
 abandon.susp.174:
-  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
+  call void @veles_frame_park_held(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t352 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t352, label %coro.suspend [ i8 0, label %resume.175 i8 1, label %coro.cleanup ]
 resume.175:
@@ -1158,7 +1158,7 @@ abandon.wait.179:
   %t361 = icmp ne i64 %t360, 0
   br i1 %t361, label %abandon.done.180, label %abandon.susp.181
 abandon.susp.181:
-  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
+  call void @veles_frame_park_held(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t362 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t362, label %coro.suspend [ i8 0, label %resume.182 i8 1, label %coro.cleanup ]
 resume.182:
@@ -1276,7 +1276,7 @@ abandon.wait.205:
   %t427 = icmp ne i64 %t426, 0
   br i1 %t427, label %abandon.done.206, label %abandon.susp.207
 abandon.susp.207:
-  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
+  call void @veles_frame_park_held(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t428 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t428, label %coro.suspend [ i8 0, label %resume.208 i8 1, label %coro.cleanup ]
 resume.208:
@@ -1347,7 +1347,7 @@ abandon.wait.225:
   %t447 = icmp ne i64 %t446, 0
   br i1 %t447, label %abandon.done.226, label %abandon.susp.227
 abandon.susp.227:
-  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
+  call void @veles_frame_park_held(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t448 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t448, label %coro.suspend [ i8 0, label %resume.228 i8 1, label %coro.cleanup ]
 resume.228:
@@ -1379,7 +1379,7 @@ abandon.wait.232:
   %t455 = icmp ne i64 %t454, 0
   br i1 %t455, label %abandon.done.233, label %abandon.susp.234
 abandon.susp.234:
-  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
+  call void @veles_frame_park_held(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t456 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t456, label %coro.suspend [ i8 0, label %resume.235 i8 1, label %coro.cleanup ]
 resume.235:
@@ -1414,7 +1414,7 @@ abandon.wait.239:
   %t465 = icmp ne i64 %t464, 0
   br i1 %t465, label %abandon.done.240, label %abandon.susp.241
 abandon.susp.241:
-  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
+  call void @veles_frame_park_held(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t466 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t466, label %coro.suspend [ i8 0, label %resume.242 i8 1, label %coro.cleanup ]
 resume.242:

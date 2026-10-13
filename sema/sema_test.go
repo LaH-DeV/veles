@@ -2166,11 +2166,12 @@ fun failing(): string? throws Late {
 fun a(): i64 throws Timeout => try withTimeout(Duration.millis(100), () => slow())
 fun b(): string? throws Late | Timeout => try withTimeout(Duration.millis(100), () => try failing())
 fun main() { io.println("${a()} ${b()}") }`)
-	expectError(t, prelude+`
+	// D151: f runs in the calling task, so it may change the caller's state
+	expectClean(t, prelude+`
 fun main() {
   var n = 0
   io.println("${withTimeout(Duration.millis(10), () => { n += 1; n })}")
-}`, "cannot cross a task boundary")
+}`)
 }
 
 func TestOrFailOperator(t *testing.T) {

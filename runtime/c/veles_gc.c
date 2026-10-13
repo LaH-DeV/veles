@@ -941,6 +941,38 @@ static void start_the_world(void) {
     veles_lock_release(world_lock);
 }
 
+/* The hang watchdog's (veles_task.c), from a thread the collector does not
+ * know: stops every thread, waiting at most ms for them to reach a safe
+ * point — a hung program's are parked, but one spinning in a plain loop
+ * never comes — and says whether they did. When they did not, the request
+ * is withdrawn and the caller reads the heap as it is. */
+int veles_gc_try_stop_world(int64_t ms) {
+    int64_t waited = 0;
+    veles_lock_acquire(world_lock);
+    while (veles_stop_requested && waited < ms) { /* a collection: let it finish */
+        veles_cond_wait(world_cv, world_lock, 10);
+        waited += 10;
+    }
+    if (veles_stop_requested) {
+        veles_lock_release(world_lock);
+        return 0;
+    }
+    __atomic_store_n(&veles_stop_requested, 1, __ATOMIC_SEQ_CST);
+    __atomic_add_fetch(&veles_attention, 1, __ATOMIC_SEQ_CST);
+    while (!others_safe() && waited < ms) {
+        veles_cond_wait(world_cv, world_lock, 10);
+        waited += 10;
+    }
+    int stopped = others_safe();
+    veles_lock_release(world_lock);
+    if (!stopped) start_the_world();
+    return stopped;
+}
+
+void veles_gc_start_world(void) {
+    start_the_world();
+}
+
 static void scan_threads(mark_stack *ms) {
     for (veles_thread *t = threads; t; t = t->next) {
         scan_range(ms, (const char *)t->tls, (const char *)(t->tls + 1));

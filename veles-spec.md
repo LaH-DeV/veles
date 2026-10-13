@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.78** — decisions D1–D149. Open design questions: Q29 (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.80** — decisions D1–D155. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -22,6 +22,8 @@ Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-p
 | D140 | an expression body is `=> expr` |
 | D141 | a task handle stays in its scope; in a fail-fast block `await` gives the value |
 | D142 | visibility: unmarked is the package, `internal` the module, `public` other packages (amends M5, D89) |
+| D143–D149 | executors and threads, atomics, loops as cancellation points, `RwLock`/`Event`/`Lazy`/`Broadcast`/`Watch`, a suspending `close()`, `incrementAt`, `updateAt` |
+| D150–D154 | declared executors and their state, `withTimeout` in the caller's task, `runBlocking`, a pool's hand-off, `await` after `cancel()` |
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -2304,6 +2306,13 @@ Rejected (user, recommended of 3): leaving it (debug's `called from` only),
 automatic caller reporting for every std panic (needs the frame chain in
 release).
 
+*Addendum 2026-10-11.* A function that suspends may be marked too (the
+first build refused it): its site is one more argument of the call in
+the task, and of a launch, which is the site of a function started with
+`async` — a plain marked one through its ramp, which had left it out.
+`retry`, `mapConcurrent` and `forEachConcurrent` are marked. Pinned by
+driver `TestCallerLocationInSuspendingCalls`.
+
 ### D89 — Package surface in source: `public use` (v0.48)
 
 ```veles
@@ -3491,7 +3500,8 @@ Not approved yet, asked when a program needs them: `filterConcurrent`,
 User, 2026-10-01: all four ticked.
 
 *Built 2026-10-02.* `retry` is not `@caller_location`: it suspends, and D88
-forbids that, so its `times < 1` panic reports the std line (checklist §11).
+forbids that, so its `times < 1` panic reports the std line (checklist §11;
+marked since 2026-10-11, when D88 took suspending functions).
 `Semaphore` is a channel of permits; `Permit` closes once through an
 `Atomic<bool>`. `ch.forEach`/`ch.toList` are a prelude `extend<T> Channel<T>`
 (channel methods the compiler does not know now fall through to extend
@@ -5257,7 +5267,8 @@ native OS threads".
 
 *Left open by the user's choice of this option:* whether tasks on an
 `Executor.thread` may share non-Sendable state without locks (Swift's
-`@MainActor`), decided after this is built.
+`@MainActor`), decided after this is built. *(Decided 2026-10-11: D150,
+declared executors with state of their own.)*
 
 Both levels: the high level is unchanged (no `on:`, the default pool);
 the low level gets pools, single threads, priority and affinity.
@@ -5311,10 +5322,12 @@ while building, the conservative way:
   1.3–1.6 ms with the pool busy). On Linux (WSL) the median stays at
   165–253 µs with the pool busy and the p99 grows to 1.6–2.5 ms (checklist
   §11).
-- **No hand-off outside the default pool.** A blocking call on a pool's
+- ~~**No hand-off outside the default pool.** A blocking call on a pool's
   thread lets the collector run but does not move the queue to a spare
   thread: a pool's threads are the ones it was made with, and
-  `Executor.thread`'s tasks must stay on one.
+  `Executor.thread`'s tasks must stay on one.~~ *(Superseded 2026-10-11 by
+  D153: a pool hands off as the default pool does; a one-thread executor
+  still never does.)*
 - **The blocking pool** is made at start (a prelude global) with no
   threads; a call that finds every thread busy starts one, at most 128,
   and a thread idle for 10 s ends (Tokio's keep-alive, a quarter of its
@@ -5483,6 +5496,30 @@ function also takes the unwinding path, with the same wait for children).
 Under `VELES_THREADS=1` a plain computation still keeps the only thread, so
 a `withTimeout` around it fires only when it ends (the timer's task needs a
 thread). Pinned by `driver/TestLoopsAreCancellationPoints`.
+
+*Fixed 2026-10-11.* A task woken while it runs (`S_WOKEN`: a child of its
+scope ended, say) was not told to look: a cancellation, a fired
+`withTimeout` deadline (D151) and a failed child marked the loops of a
+running task only when its state read `S_RUNNING`, so a plain loop in a
+woken task ran to its own end — about 30 s in the reproducer, where the
+limit was 100 ms. Every such request now treats `S_WOKEN` as running.
+Found chasing a flaky `TestLoopsAreCancellationPoints` (a run once took 48
+s); pinned by `driver/TestWokenTaskStillLooks`.
+
+*Fixed 2026-10-11, the same day.* A request delivered while a task was
+queued or running is seen at its next suspension point, and two cases put
+it off past the one it reached first: a send or receive the other side had
+completed returns before the request is looked at (`chan_done`), and a
+`close()` that suspends finishes first (D147). The check runs when a
+suspension point resumes — so when the next wait parked the task, nothing
+woke it for a request already delivered, and the scope above waited
+forever (std/http's accept loop, cancelled by a server's stop just after a
+connection gave its place back). A frame that parks with a request
+pending — a cancellation, an abandoning failed child, a fired deadline —
+now queues its task again at once (`veles_frame_park`); a cleanup's
+wait (D47), which looks at no request, parks as before. Caught by the
+hang watchdog (`VELES_WATCHDOG`, built for the hunt); pinned by
+`driver/TestPutOffCancelEndsTheNextWait`.
 
 ### D146 — `RwLock`, `Event`, `Lazy`, `Broadcast` and `Watch` (v0.75)
 
@@ -5665,6 +5702,339 @@ same list; such a mutation could be overwritten by the update. `ref` and
 User, 2026-10-09, recommended of 3. Rejected: `mapAt` (which conflicts with
 `map`'s collection-producing meaning), returning unit (the caller may need
 the replacement), and no helper (repeating the read-transform-write sequence).
+
+### D150 — Declared executors; a thread's own state (v0.79)
+
+```veles
+/// The GL thread: started before main, joined after it.
+executor gl(priority: Priority.High) {
+  var context = glCreateContext()                 // initialised on gl's own thread
+  var textures: MutableMap<i64, Texture> = [:]    // not Sendable, and needs no lock
+
+  public fun texture(id: i64): Texture {
+    textures.get(id) ?: upload(id)                // a call between gl's functions: direct
+  }
+
+  public fun preload(ids: List<i64>) {
+    val cache: MutableList<Mesh> = []
+    scope {
+      loop (id in ids) async load(cache, id)      // children stay on gl: no Sendable check
+    }
+  }
+}
+
+executor cpu(threads: 4)                          // a named pool
+
+fun main() {
+  val t = gl.texture(5)        // from outside: runs on gl, the caller suspends until it returns
+  scope(on: cpu) { … }
+}
+```
+
+Q29, left open by D143. Every task on an `Executor.thread` runs on one OS
+thread, yet tasks there could share a `MutableList` only through a `Mutex`:
+`Executor` is one type for a pool and a thread, so the compiler could not
+tell. The state a GL context, a GUI or a C library bound to its thread keeps
+lives as long as the program and is used by many callers, which a lock
+around every access, or an owner task fed by messages, makes tedious and
+slow. The user: "the annotation attributes for threading gives me an ick,
+but 'higher level' feels nice" — so the executor is a declaration, and
+where code is written decides where it runs.
+
+- **`executor name(…)`** at module level declares a global executor. The
+  arguments are those of `Executor.pool`/`Executor.thread` without `name:`
+  (the declaration's name is the threads' name): `threads: n` makes a pool,
+  its absence one thread; `priority:` and `cpus:` as D143. They are ordinary
+  expressions evaluated before `main`, which may neither suspend nor throw.
+  `executor` is a contextual keyword (`executor` followed by a name at
+  module level), so an identifier `executor` stays legal.
+- **The body** `{ … }` is optional. A one-thread executor's body may hold
+  `var`/`val` state of any type and functions; a pool's body holds
+  functions only (several threads run them, so state would need a lock as
+  anywhere — a `val` of a `Sendable` type at module level does that).
+  Members follow D142's visibility (`public fun texture`), the executor's
+  own visibility is its declaration's (`public executor gl`).
+- **Lifetime.** Declared executors start before `main`, after the module
+  globals are initialised, in declaration order; a one-thread executor's
+  state is initialised **on its own thread**, in source order (a GL context
+  must be created there). A refused priority or CPU panics before `main`
+  with the `ThreadError` — there is no caller to throw to. They stop after
+  `main` returns (every task placed on them was a child of a scope that has
+  joined by then; D143). A declared executor cannot be closed by code
+  (`gl.close()` is an error).
+- **Gl's code** is the bodies of its functions and the lambdas in them that
+  are not `sendable` (a `sendable` lambda may run on any thread). It runs on
+  gl and is the only code that may name gl's state. Inside it:
+  - a call to another of gl's functions is an ordinary call;
+  - a child launched in a `scope`/`gather` without `on:` (or `on: gl`)
+    runs on gl, so — for a one-thread executor — its arguments and captures
+    need not be `Sendable`; a pool's children follow D35 as everywhere;
+  - `gl.run(f)` (from gl's code) runs `f` as gl's code;
+  - values that leave for another executor (`scope(on: cpu)`, `cpu.run`,
+    `blocking`, a channel) follow `Sendable` (D35, D54) unchanged.
+- **A call from outside**, `gl.texture(5)`, runs the function on gl: the
+  caller suspends until it returns (the hop is `gl.run`'s), the arguments
+  and the result must be `Sendable`, and its errors are the function's. The
+  `gl.` prefix is what shows the thread change at the call site; hover says
+  "runs on gl". A plain function cannot make the call (it would have to
+  block its thread): the error names `gl.runBlocking(() => gl.texture(5))`
+  (D152). `async gl.texture(5)` places the child on gl. Gl's state is not
+  reachable from outside (`gl.textures` is an error that says to add a
+  function to gl).
+- **`gl` as a value** is an `Executor` (`scope(on: gl)`, `gl.run(f)`,
+  `gl.runBlocking(f)`, passing it to a function); executors made at run
+  time with `with` (D143) keep their rules — only a declaration has state.
+- Taking one of gl's functions as a value outside gl (`val f = gl.texture`)
+  is an error in this version; write the lambda (`(id) => gl.texture(id)`),
+  which suspends as the call does. A trait implementation cannot be a
+  member of an executor (later, if a case asks for it).
+
+This also gives Veles its first mutable global state: a module-level `var`
+stays an error (D66: every task on every thread could reach it), an
+executor's `var` is allowed because one thread runs everything that names it.
+
+*Built 2026-10-11 (plan F17).* An executor is a module global initialised
+with the module's globals (in their dependency order, not after them) by
+the prelude's `startExecutor`; a one-thread executor's state is then made
+by a plain function run on its own thread, before `main` and before any
+test. A call from outside is checked as `hop(gl, () => gl.f($args))` — the
+arguments evaluated first, into hidden locals of the caller, the lambda
+being gl's code — so `async gl.f(x)` launches it as any call, its
+arguments evaluated in the launching task before the launch, as for any
+`async` call (a call among them was refused at first, until 2026-10-11).
+Settled the conservative way: a declared
+executor runs until the program ends (the process ends its threads; its
+tasks were children of scopes that have joined by then) rather than being
+closed after `main`; a function of an executor takes variadic
+parameters (since 2026-10-11; refused at first); one not `public` is its module's (M5), reached from another
+module only if public, as `render.gl.frame()`. Pinned by driver
+`TestExecutorDeclarations` (state on gl's thread, a hop from main, direct
+calls inside, children sharing a `MutableList`, a pool, an error thrown on
+gl, a refused CPU ending the program before `main`; 1/2/8 threads, debug
+and release), sema `TestExecutorDeclarationRules`, `TestExecutorAcrossModules`,
+format `TestExecutorDeclRoundTrips`, lsp `TestExecutorFunctionHover`, and the
+self-hosted front end's parity corpus.
+
+Both levels: the high level is a declaration and plain calls; the low
+level is unchanged (`Executor.thread`, `Mutex`, atomics). Self-hosting: the
+compiler does not need it; a compiler server with an editor-facing thread
+could keep its caches this way.
+
+*Addendum 2026-10-11 (Q31).* An executor's function named as a value
+outside its code (`val load = gl.texture`) stays an error with the fix,
+the lambda `(id: i64) => gl.texture(id)` (a value of type
+`fun(i64): string suspends`): the hop to gl's thread is written where it
+happens. User, recommended of 2. Rejected: `gl.texture` as a function
+value that hops by itself (a name used as a value would quietly mean
+"run on another thread").
+
+User, 2026-10-11, recommended of 3 in a second round. The first round
+offered `scope(local)` (children pinned to the body's thread; recommended
+then), Swift-style isolation by annotation, a run-time checked
+`Confined<T>`, or leaving it. The user asked why a `scope` was needed in
+`run` at all and whether isolation was not better: it is — a scope covers
+only a task's children, isolation also the state many callers share for
+the life of the program. The user disliked `@` attributes for threading
+and preferred `executor gl` to `@thread val gl = …`; the block form needs
+no annotation. Rejected: `@on(gl)` annotations; `scope(local)` (children
+only); `actor` types (per-instance serial queues: a new kind of type, every
+method call a hop); `Confined<T>` (an error at run time); leaving it.
+
+### D151 — `withTimeout` runs its function in the caller's task (v0.79)
+
+```veles
+val line = withTimeout(limit, () => try conn.readLine(max: 8192))   // no task, no Sendable
+val lines: MutableList<string> = ["a", "b"]
+withTimeout(Duration.millis(100), () => next(lines))                // was refused: not Sendable
+```
+
+`withTimeout` started a task, a scope and a race per call — about 0.45 µs
+and 700 bytes, nine times a request in `std/http` (~4 % of `httphello`'s
+CPU, a quarter of its allocation) — and because `f` ran in another task it
+had to be `sendable`, which is why `net.Conn` kept its read buffer in a
+`Mutex`. Under `VELES_THREADS=1` a plain loop ignored the limit (a 1 ms
+limit fired after 16 s: the timer's task never got the only thread).
+
+- **The signature loosens:** `withTimeout<R, E>(limit: Duration, f: fun():
+  R suspends throws E): R throws E | Timeout` — no `sendable`, no
+  `R: Sendable`. Every program that compiled still compiles.
+- `f` runs **in the calling task**, as an ordinary call. A timer armed for
+  `limit` requests a cancellation that reaches only as far as
+  `withTimeout`'s own frame: `f`'s frames unwind as a cancellation unwinds
+  them (D145, D47) — the scopes inside `f` are cancelled and joined, every
+  `with` closes innermost first — and then `withTimeout` throws `Timeout`.
+  A suspension inside `f` is woken for it; a loop is stopped at its back
+  edge, in a plain function too, and on any number of threads (the
+  runtime's monitor raises the flag when no thread is free to).
+- **Edge cases.** Nested limits each stop at their own frame; the outer
+  limit's expiry passes through an inner `withTimeout` as a cancellation,
+  never as the inner's `Timeout`. A cancellation of the whole task during
+  `f` stays a cancellation. Lock regions and `close()` stay shielded (the
+  request is seen at the next point outside). A `blocking(g)` inside `f`
+  cannot be cut short — `withTimeout` throws when it returns, as before.
+  `f` returning before the timer fires disarms it; the timer firing after
+  `f` returned does nothing.
+- The run-time gotcha "`withTimeout` around a function that never
+  suspends" disappears, so it needs no compile-time refusal.
+
+*Built 2026-10-11 (plan F16).* The deadline is a record in `withTimeout`'s
+own frame with a timer of its own in the timer heaps, so a call allocates
+no task (76 ns a call, was ~450; `f`'s Result is written by the call
+straight into `withTimeout`'s frame, so the caller's closure is the one
+allocation left). When it fires, every frame deeper than `withTimeout`'s
+takes its cancellation path — a parked task is woken for it as a cancelled
+one is; one that runs is told to look at its next back edge. A plain loop
+under `f` runs `f`'s cleanups where it is and jumps back: into
+`withTimeout`'s call of `f` while that call is on the thread's stack (`f`
+has not waited since), else into the executor, which goes on in
+`withTimeout`'s frame; scopes those cleanups cancelled are joined first.
+A limit that passes while `f` cannot look (a lock region) ends in
+`Timeout` once `f` returns: the limit came first. `net.Conn` keeps its
+read buffer behind a `Mutex`: it must be `Sendable` anyway, for an accept
+loop hands each connection to a task. Pinned by driver
+`TestWithTimeoutInCallersTask`.
+
+Kotlin's `withTimeout` works the same way. Both levels: one spelling for
+every limit; `race` with a `sleep` arm stays the low-level form, and
+deadlines on sockets (Go's `SetReadDeadline`) can be added if a profile ever
+asks. User, 2026-10-11, recommended of 4. Rejected: deadlines on `net.Conn`
+(a second way to say "time limit", sockets only, every stream layer passing
+it on); both; leaving a task per call.
+
+### D152 — `runBlocking`: plain code waits for a task (v0.79)
+
+```veles
+fun audioLoop(events: Channel<i64>) {           // a Thread's plain function
+  loop (i in 0..<3) {
+    Executor.default.runBlocking(() => events.send(i))
+  }
+}
+with audio = try Thread.start(name: "audio", f: () => audioLoop(events))
+```
+
+A `Thread`'s function is plain code (D143), so it could hand data to tasks
+only through `trySend`, atomics and `Event.set()`, and could not wait for
+a task's answer at all; neither could a thread a C library calls back on.
+
+- **`e.runBlocking(f: sendable fun(): R suspends throws E): R throws E`**
+  (`R: Sendable`) runs `f` as a task on `e` and blocks the calling OS thread
+  until it returns. It is a plain function.
+- Calling it in a function that suspends is a **compile error** naming
+  `e.run(f)`. Calling it on a thread of an executor — the default pool, a
+  pool, a one-thread executor, from plain code reached from a task — **panics**
+  at the call, every time ("runBlocking on an executor's thread would block
+  it; use run"): it would take a worker away, or wait for itself. Allowed
+  on a `Thread`'s function, a thread of the blocking pool (so
+  `blocking(() => cLib.process(callback))` can call back into tasks) and
+  any thread the runtime did not start.
+- **`Executor.default`** is the default pool as a value.
+
+Tokio's `Handle::block_on` (which panics inside a runtime) and Kotlin's
+`runBlocking` (allowed anywhere, a known deadlock source). User, 2026-10-11,
+recommended of 3. Rejected: letting a `Thread`'s function suspend (a
+`Thread` would become an `Executor.thread` under another name, and real-time
+code would lose "no scheduler in the way"); leaving it.
+
+*Built 2026-10-11 (plan F15).* `runBlocking` starts a task running `f`,
+placed on `e` in a scope with no owner (at first a task of the default
+pool that hopped to `e` with `e.run`: one task more), and parks
+the calling thread until that task ends (its end looks up the waiting
+thread; a panic in it is raised again in the caller). The compile error is
+the suspension pass's, for a call in any function that suspends; the panic
+is the runtime's, for a thread that runs an executor's queue. Pinned by
+driver `TestExecutors` cases 13 and 14 and sema
+`TestRunBlockingOnlyInPlainCode`.
+
+### D153 — A pool's blocked thread hands its queue on (v0.79)
+
+A thread of an `Executor.pool` (or a pool declared with `executor`, D150)
+blocked in a call — foreign code, a contended `Mutex` — hands its queued
+tasks to a spare thread after about a millisecond, as the default pool's
+threads do (D66 addendum): `threads: n` means n threads running Veles code,
+not n threads in all. The spare thread is named after the pool and takes its
+priority and CPUs; it ends once the blocked call returns and it has nothing
+left to run. A one-thread executor never hands off: its tasks must stay on
+one thread, so a blocking call there blocks them (that is what `blocking`
+is for). D143's built note "no hand-off outside the default pool" is
+superseded. User, 2026-10-11, recommended of 3. Rejected: an opt-in
+`handOff: true`; leaving a pool exactly its threads.
+
+*Built 2026-10-11 (plan F14).* The monitor looks at the pools' threads as
+at the default pool's: a thread one look found inside the same call, with
+tasks queued and no thread of the pool idle, loses its queue to a waiting
+spare of the pool or a new one. A spare without a queue for 10 s ends.
+**Found while building it:** `Executor.pool` passed a `bool` to the
+runtime's `int64_t` parameter, whose upper bits the Windows calling
+convention leaves undefined — every pool was made with one thread there;
+the parameter is a C `bool` now, and a test runs two plain functions that
+meet only on two threads at once. Pinned by driver
+`TestPoolBlockingCallHandsOff`.
+
+### D154 — `await` on a task cancelled above is an error (v0.79)
+
+```veles
+scope {
+  val t = async fetch(21)
+  t.cancel()
+  io.println("${await t}")    // error: 't' was cancelled at line 3; awaiting it panics unless it had already finished
+}
+```
+
+`await t` after `t.cancel()` panics ("awaited task was cancelled") unless
+the timing let `t` finish first. When the `cancel()` comes before the
+`await` on every path through the block (the call dominates it), the
+compiler refuses the `await` — a `race` arm's `await t` included — and the
+fix is to drop the `await` (the scope still waits for the task to unwind).
+A cancel on only some paths keeps the run-time panic. The same local,
+flow-based check as D141. User, 2026-10-11, recommended of 3. Rejected: a
+warning; leaving only the run-time panic.
+
+*Built 2026-10-11 (plan F13).* The cancel is a flow fact kept with the
+smart casts, so it holds after a join only when every path made it.
+**Found while building it:** a fact the body of a loop set outlived the
+loop — after `loop (a in xs) { x = a }` the checker took `x: i64?` for an
+`i64` though `xs` was empty (`x + 1` compiled and printed 1); what holds
+after a loop is now what held on entry and still holds at the end of the
+body. Pinned by sema `TestAwaitAfterCancel` and `TestLoopFactsDoNotLeak`.
+
+### D155 — In `gather`, a `Result` a child returns is its value (v0.80)
+
+```veles
+fun check(n: i64): Result<i64, Boom> { … }   // its error is a value, not thrown
+
+val (a, b) = gather {
+  async check(1)
+  async check(-2)
+}
+// b: Result<Result<i64, Boom>, Panic> — Ok(Err(Boom)): check said no;
+// Err(Panic): check crashed
+```
+
+A child's outcome in `gather` (D52) is `Ok(value)` when its function
+finished and `Err(e)` when it threw `e` or panicked. A function that
+*returns* a `Result` without `throws` finished either way, so that
+`Result` is its value. Before, the checker flattened it into the gather's
+error (`Result<i64, Boom | Panic>`), so a returned `Err` could not be told
+from a panic — while in a `scope` (D141) and a D111 field the same child's
+`Err` was the value `await` gave. One rule now: a child fails only by
+throwing or panicking. A function value launched in a gather follows its
+type's `throws` the same way. Rust's `JoinHandle` nests the same way
+(`Result<Result<T, E>, JoinError>`).
+
+*Found while building it:* a function not declared `throws` with a failing
+child in a `scope`, or receiving with `with` a value whose task field is
+`Task<Result<T, E>>` (D111), crashed the compiler (the scope's rethrow had
+nowhere to go). Both are now errors naming the fix — declare the function
+`throws`, or use `gather` — as `try` in such a function is (D4).
+
+Both levels: unchanged — `gather` stays the high-level "every outcome as a
+value", `scope` the fail-fast one. Self-hosting: no effect.
+
+User, 2026-10-11, recommended of 3. Rejected: leaving it flattened (one
+level of matching, but `gather` the one place a returned `Err` counts as a
+failure); refusing such a child in `gather`. Pinned by driver
+`TestTaskHandles` (debug and release, 1–8 threads) and the D141 and D111
+conformance files.
 
 ---
 

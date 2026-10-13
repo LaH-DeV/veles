@@ -16,7 +16,8 @@ import (
 // inside, so nothing it runs prints after the scope rethrew (D3; it ran on
 // before). A race arm on a failed child never wins; a helper that awaits a
 // failed handle is cancelled with the body; a child that returns a Result
-// without `throws` hands its Err over as a value. Debug and release, on 1,
+// without `throws` hands its Err over as a value — in a gather too (D155),
+// and from a task a value holds (D111). Debug and release, on 1,
 // 2, 4 and 8 threads.
 func TestTaskHandles(t *testing.T) {
 	if _, err := findClang(); err != nil {
@@ -108,8 +109,53 @@ fun values(): string {
   }
 }
 
+fun bang(n: i64): Result<i64, Boom> {
+  await sleep(Duration.millis(1))
+  if (n > 100) panic("too big")
+  if (n < 0) return Err(Boom(n))
+  Ok(n)
+}
+
+fun show(r: Result<i64, Boom>): string {
+  when (r) {
+    is Ok => return "ok $r"
+    is Err => return "Err ${r.message()}"
+  }
+}
+
+// D155: in a gather, a Result the child returns is its value; a panic is
+// the gather's Err
+fun gathered(): string {
+  val (a, b, c) = gather {
+    async bang(1)
+    async bang(-7)
+    async bang(101)
+  }
+  var out = ""
+  loop (x in [a, b, c]) {
+    when (x) {
+      is Ok => out = out + "[${show(x)}]"
+      is Err => out = out + "[panicked]"
+    }
+  }
+  out
+}
+
+struct Held {
+  t: Task<Result<i64, Boom>>
+}
+
+// D111: a held task's returned Err is a value too (its field type still
+// says it may fail, so the receiving function throws)
+fun held(): string throws Boom {
+  with h = Held(t: async bang(-8))
+  show(await h.t)
+}
+
 fun main() {
   val log = Channel<string>(capacity: 16)
+  io.println(gathered())
+  io.println(held() catch (e) { "threw" })
   io.println("pool ${pool() catch (e) { -1 }}")
   io.println("failing: ${failing() catch (e) { -e.n }}")
   io.println("orphan: ${orphan(log) catch (e) { -e.n }}")
@@ -120,7 +166,9 @@ fun main() {
   io.println("log: ${log.tryRecv() ?: "empty"}")
 }
 `
-	want := "pool 100\n" +
+	want := "[ok 1][Err Boom(n: -7)][panicked]\n" +
+		"Err Boom(n: -8)\n" +
+		"pool 100\n" +
 		"failing: 2\n" +
 		"orphan: 3\n" +
 		"viaHelper: 4\n" +

@@ -256,6 +256,8 @@ with c = config.read(); with w = config.write(); config.withRead(c => c.n)   // 
 val ready = Event(); ready.set(); await ready.wait(); val t = Lazy(init: () => build()); t.get()
 with cpu = try Executor.pool(threads: 4, name: "cpu"); scope(on: cpu) { async work() }; cpu.run(() => f())   // D143
 with gl = try Executor.thread(name: "gl"); val x = try blocking(() => try readAll(p)); with t = try Thread.start(name: "a", f: () => loop())
+executor gl { var n: i64 = 0; public fun hit(): i64 { n += 1; n } }; gl.hit()   // its state named by its code only; from outside the call runs on gl (D150)
+Executor.default.runBlocking(() => ch.send(v))   // plain code (a Thread's) waits for a task; a compile error where code suspends (D152)
 val news = Broadcast<T>(capacity: 64); with sub = news.subscribe(); try await sub.recv(); val w = Watch(value: v); await w.changed()
 try retry(3, () => try fetch(), delay: Duration.millis(200))   // again after an error; the last error after the last call
 ch.toList(); ch.forEach(v => ...)   // until closed and drained
@@ -357,5 +359,5 @@ veles publish [dir]  veles yank <owner/name>@<ver> [--reason t] [--undo]  veles 
 veles check <dir>      veles test <dir> [--filter text] [--timeout 10m]
 veles parse <file>     veles lsp     (editor server)
 veles fmt <paths>      [--check | --stdout]   format in place; [format] in veles.toml: indent = 2 | "tab", max_blank_lines = 1, imports = "lines" | "merged"
-VELES_CLANG=<path>     VELES_GC_TRACE=1     VELES_GC_THRESHOLD=<bytes>     VELES_GC_MARKERS=<n>     VELES_THREADS=<n>
+VELES_CLANG=<path>     VELES_GC_TRACE=1     VELES_GC_THRESHOLD=<bytes>     VELES_GC_MARKERS=<n>     VELES_THREADS=<n>     VELES_WATCHDOG=<s> (dump every task if still running)
 ```

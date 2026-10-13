@@ -926,6 +926,9 @@ func ownerPrefixes(t *FuncTemplate) []string {
 	if t.Trait != nil {
 		out = append(out, t.Trait.Name)
 	}
+	if t.Exec != nil {
+		out = append(out, t.Exec.decl.Name.Name)
+	}
 	return out
 }
 
@@ -942,6 +945,13 @@ func funWhere(t *FuncTemplate) string {
 		return "extend " + t.Impl.Target.String()
 	case t.Trait != nil:
 		return traitHead(t.Trait)
+	case t.Exec != nil:
+		// where it runs: from anywhere else, a call goes there (D150)
+		name := t.Exec.decl.Name.Name
+		if t.Exec.single {
+			return "executor " + name + " — runs on " + name + "'s thread"
+		}
+		return "executor " + name + " — runs on " + name + "'s threads"
 	}
 	return ""
 }
@@ -1376,6 +1386,8 @@ func funDetail(t *FuncTemplate) string {
 		sb.WriteString(t.Impl.Target.String() + ".")
 	} else if t.Trait != nil {
 		sb.WriteString(t.Trait.Name + ".")
+	} else if t.Exec != nil {
+		sb.WriteString(t.Exec.decl.Name.Name + ".")
 	}
 	sb.WriteString(t.Name)
 	sb.WriteString(typeParamList(t.TypeParams))
@@ -1588,6 +1600,8 @@ func declName(d ast.Decl) string {
 		return d.Name.Name
 	case *ast.EnumDecl:
 		return d.Name.Name
+	case *ast.ExecutorDecl:
+		return d.Name.Name
 	}
 	return ""
 }
@@ -1603,6 +1617,8 @@ func declIsPub(d ast.Decl) bool {
 	case *ast.ValDecl:
 		return d.Pub
 	case *ast.EnumDecl:
+		return d.Pub
+	case *ast.ExecutorDecl:
 		return d.Pub
 	}
 	return false

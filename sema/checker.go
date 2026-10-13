@@ -36,6 +36,9 @@ type Checker struct {
 	// lockVars: the `n` of each `with n = m.lock()`, a pointer into the
 	// Mutex that is unlocked, not closed, when the block ends (D107)
 	lockVars map[*Var]bool
+	// cancelAt: where each task handle was last cancelled; the fact that it
+	// was (on every path) is in the narrowing state (D154, check_task.go)
+	cancelAt map[*Var]source.Span
 	// tt: the run-time `is` tables (D117, traittest.go)
 	tt traitTests
 
@@ -46,19 +49,24 @@ type Checker struct {
 	testMode bool
 
 	// declaration tables
-	structs        []*types.Struct // templates
-	sealeds        []*types.Sealed
-	enums          []*types.Enum
-	enumDecl       map[*types.Enum]*declCtx
-	ordering       *types.Enum // the prelude's Ordering, once looked up (enum.go)
-	traits         []*types.Trait
-	templates      []*FuncTemplate
-	impls          map[*types.Trait][]*Impl
-	extends        []*Impl                                    // `extend Type { }` blocks (Trait == nil)
-	methods        map[*types.Struct]map[string]*FuncTemplate // inherent, by template
-	staticVals     map[*types.Struct]map[string]*Symbol       // `static val` members, as globals in the type's namespace
-	staticOwner    map[*Global]*types.Struct                  // the struct a `static val` global belongs to
-	globals        map[*Global]*ast.ValDecl
+	structs     []*types.Struct // templates
+	sealeds     []*types.Sealed
+	enums       []*types.Enum
+	enumDecl    map[*types.Enum]*declCtx
+	ordering    *types.Enum // the prelude's Ordering, once looked up (enum.go)
+	traits      []*types.Trait
+	templates   []*FuncTemplate
+	impls       map[*types.Trait][]*Impl
+	extends     []*Impl                                    // `extend Type { }` blocks (Trait == nil)
+	methods     map[*types.Struct]map[string]*FuncTemplate // inherent, by template
+	staticVals  map[*types.Struct]map[string]*Symbol       // `static val` members, as globals in the type's namespace
+	staticOwner map[*Global]*types.Struct                  // the struct a `static val` global belongs to
+	globals     map[*Global]*ast.ValDecl
+	// executors (D150): their declarations, the global holding each, and
+	// the state each owns
+	execs          []*execInfo
+	execOfGlobal   map[*Global]*execInfo
+	stateOwner     map[*Global]*execInfo
 	globalMod      map[*Global]*Module
 	globalFile     map[*Global]*ast.File
 	structDecl     map[*types.Struct]*declCtx
@@ -159,6 +167,8 @@ func checkCollect(pkg *Package, diags *source.Diagnostics, release bool, testMod
 		initDecl:       map[*types.Struct]*ast.FunDecl{},
 		staticOwner:    map[*Global]*types.Struct{},
 		globals:        map[*Global]*ast.ValDecl{},
+		execOfGlobal:   map[*Global]*execInfo{},
+		stateOwner:     map[*Global]*execInfo{},
 		globalMod:      map[*Global]*Module{},
 		globalFile:     map[*Global]*ast.File{},
 		structDecl:     map[*types.Struct]*declCtx{},
@@ -660,6 +670,8 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 		c.globalMod[g] = m
 		c.globalFile[g] = f
 		c.insert(m, &Symbol{Name: d.Name.Name, Kind: SymGlobal, Pub: d.Pub, Module: m, Span: d.Name.Pos, Global: g})
+	case *ast.ExecutorDecl:
+		c.declareExecutor(m, f, d)
 	case *ast.ImplDecl, *ast.UseDecl, *ast.BadDecl:
 		// handled elsewhere
 	}
@@ -2580,6 +2592,7 @@ func (c *Checker) runRound() *Program {
 			c.prog.Globals = append(c.prog.Globals, g)
 		}
 	}
+	c.executorsHIR()
 	for _, a := range c.staticAsserts {
 		c.checkModuleAssert(a)
 	}

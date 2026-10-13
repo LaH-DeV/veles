@@ -356,6 +356,8 @@ func withDoc(d ast.Decl, doc string) ast.Decl {
 		d.Doc = doc
 	case *ast.EnumDecl:
 		d.Doc = doc
+	case *ast.ExecutorDecl:
+		d.Doc = doc
 	case *ast.TestDecl:
 		if d.Doc == "" {
 			d.Doc = doc
@@ -422,6 +424,8 @@ func setInternal(d ast.Decl) {
 		d.Internal = true
 	case *ast.EnumDecl:
 		d.Internal = true
+	case *ast.ExecutorDecl:
+		d.Internal = true
 	}
 }
 
@@ -460,6 +464,12 @@ func (p *Parser) parseDeclKind(attrs []*ast.Attribute, pub, marked bool, which s
 	case lexer.Ident:
 		if p.atErrorDecl() {
 			return p.parseErrorDecl(attrs, pub, start)
+		}
+		if p.atExecutorDecl() {
+			if len(attrs) > 0 {
+				p.errorf(attrs[0].Pos, "an executor takes no attributes; its settings are its arguments (D150)")
+			}
+			return p.parseExecutorDecl(pub, start)
 		}
 		if p.cur().Text == "suite" && p.peek(1).Kind == lexer.String {
 			if marked {
@@ -1452,6 +1462,60 @@ func (p *Parser) parseSuite(attrs []*ast.Attribute, start source.Span) ast.Decl 
 }
 
 // atErrorDecl reports whether the cursor is at an `error Name` declaration.
+// `executor` is a contextual keyword (D150): a declaration only at module
+// level, followed by a name and then its arguments, its body or the end
+// of the line; an identifier `executor` stays legal everywhere else.
+func (p *Parser) atExecutorDecl() bool {
+	if !p.at(lexer.Ident) || p.cur().Text != "executor" || p.peek(1).Kind != lexer.Ident {
+		return false
+	}
+	switch p.peek(2).Kind {
+	case lexer.LParen, lexer.LBrace, lexer.Semi, lexer.EOF:
+		return true
+	}
+	return false
+}
+
+// parseExecutorDecl parses `executor name(args) { members }` (D150): the
+// arguments are a call's; the body holds `val`/`var` state and functions.
+func (p *Parser) parseExecutorDecl(pub bool, start source.Span) ast.Decl {
+	p.next() // executor
+	d := &ast.ExecutorDecl{Pub: pub}
+	d.Name, _ = p.expectIdent()
+	if p.at(lexer.LParen) {
+		argStart := p.span()
+		d.Args = p.parseArgs()
+		d.ArgsPos = p.spanFrom(argStart)
+	}
+	if p.at(lexer.LBrace) {
+		p.next()
+		d.HasBody = true
+		p.skipSemis()
+		for !p.at(lexer.RBrace, lexer.EOF) {
+			m := p.parseDecl()
+			switch m := m.(type) {
+			case *ast.ValDecl:
+				if m.Kind == ast.BindConst {
+					p.errorf(m.Pos, "a constant belongs at module level, where every executor may read it; an executor holds 'val' and 'var' state (D150)")
+				}
+				d.State = append(d.State, m)
+			case *ast.FunDecl:
+				if m.Static || m.Test || m.Extern || m.ExportC {
+					p.errorf(m.Name.Pos, "a function of an executor is a plain 'fun': it runs on the executor (D150)")
+				}
+				d.Funs = append(d.Funs, m)
+			case *ast.BadDecl:
+			default:
+				p.errorf(m.Span(), "an executor holds 'val'/'var' state and functions only (D150)")
+			}
+			p.parseMemberSeparator()
+		}
+		p.expect(lexer.RBrace)
+	}
+	d.Pos = p.spanFrom(start)
+	return d
+}
+
 // `error` is a contextual keyword: it is an ordinary identifier everywhere
 // else (`is Err(error) => ...`), and a declaration only at declaration
 // position when a name follows.

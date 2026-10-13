@@ -142,7 +142,7 @@ var builtinDocs = []BuiltinDoc{
 	{"Channel", "closeAfter", "(n: i64)", "Closes the channel by itself once `n` more values have been sent — how several producers end a channel without coordinating. A further send panics, as on any closed channel."},
 	{"Channel", "len", "(): i64", "Number of buffered values."},
 
-	{"Task", "cancel", "()", "Asks the task to stop: it unwinds at its next suspension point, running its `with` cleanups (D43), and its scope still waits for it. Awaiting a cancelled task panics; `withTimeout` is the usual way to use this."},
+	{"Task", "cancel", "()", "Asks the task to stop: it unwinds at its next suspension point or loop end (D145), running its `with` cleanups (D43), and its scope still waits for it. Awaiting a cancelled task panics — refused at compile time after a cancel on every path (D154); `withTimeout` is the usual way to use this."},
 
 	{"Range", "iter", "(): Iterator<T>", "An iterator from `lo` to `hi`."},
 

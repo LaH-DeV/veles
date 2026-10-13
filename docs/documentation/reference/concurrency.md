@@ -159,7 +159,12 @@ Output:
 **What `await` gives** (D141): in a `scope`, and for `with t = async f()`,
 the task's value — `Task<i64>` for a function that `throws`, and no `try`
 on the `await`, because the error never reaches it: it fails the scope
-instead (below). In `gather` the handle is `Task<Result<T, E>>`. A task
+instead (below). In `gather` the handle is `Task<Result<T, E>>`, and a
+function that *returns* a `Result` without `throws` gives that `Result`
+as its value there too: `Result<Result<T, E>, Panic>` in the gather's
+tuple (D155). A function with a failing child in a `scope`, or receiving
+a value whose task can fail (D111), is declared `throws`: the error
+leaves through it. A task
 that failed is never awaited with a value: the code awaiting it is part
 of the failing scope, and is abandoned or cancelled at that `await`.
 
@@ -411,17 +416,21 @@ when `t.cancel()` is called (D20, D34, D100). Cancellation is a
 **Do not await a task you cancelled.** `await t` after `t.cancel()`
 panics with `awaited task was cancelled` — unless the task had already
 finished, when it gives the value. Since which one happens depends on
-timing, cancel only tasks whose result you no longer want.
+timing, cancel only tasks whose result you no longer want. Where the
+`cancel()` comes before the `await` on every path through the block, the
+compiler refuses the `await` and names the line of the cancel (D154); the
+scope still waits for the task to stop, so dropping the `await` loses
+nothing. A cancel on only some paths is left to the run-time panic.
 
 ## Time limits
 
-`withTimeout(limit, f)` runs `f` in a task and races it against a timer.
-When the time is up it **cancels the task and waits for it to unwind**,
-then throws `Timeout` — so whatever `f` opened is closed by the time you
-see the error. A computation is stopped at the end of a loop iteration
-(D145), so the limit holds for code that never waits too — as long as
-another thread is free to notice the time (under `VELES_THREADS=1` a
-function that does not suspend keeps the only thread until it ends):
+`withTimeout(limit, f)` calls `f` in the calling task, under a deadline
+(D151). When the time is up, **`f` unwinds as a cancellation does** — at
+the wait it is in, or at the end of a loop iteration (D145), in a function
+that never waits too, on any number of threads — its scopes join their
+tasks, its `with`s close, and then `withTimeout` throws `Timeout`; so
+whatever `f` opened is closed by the time you see the error. `f` need not
+be sendable and starts no task (about 0.1 µs a call):
 
 ```veles
 use io
@@ -541,6 +550,27 @@ tasks are stuck while another still runs, sleeps on a timer or waits on a
 socket (a server's accept loop, a ticker), the stuck ones wait forever.
 Give such waits a limit (`race` with a `sleep` arm, `withTimeout`).
 
+To find out what a hung program waits on, run it with
+`VELES_WATCHDOG=<seconds>`: still running after that long, it prints every
+live task — running, queued or parked, on which channel, socket, timer,
+race or child, in which scope, and in a debug build the calls it is in —
+and every executor's threads and queues, then exits with code 124:
+
+```text
+watchdog: still running after 30 s (VELES_WATCHDOG); the world is stopped
+...
+2 live tasks:
+  task 0x…: blocked, idle, depth 0, frame yes, waits: recv on channel 0x… (len 0/0, closed 0, receivers waiting, senders none)
+    child of scope 0x… (owner 0x…, 1 live, fail-fast)
+    in stuck
+  task 0x… (root): blocked, idle, depth 0, frame yes, waits: a timer in 9 ms
+    in main
+```
+
+Here one task waits on a channel no one sends to while `main` sleeps in a
+loop. Without the variable nothing is kept; with it, each task's start
+and end updates a table, so it is a tool for a hunt, not for production.
+
 ## Locks and atomics
 
 - A `Mutex` is a real lock taken by the thread: while one task holds it,
@@ -609,6 +639,10 @@ Give such waits a limit (`race` with a `sleep` arm, `withTimeout`).
 | `try Executor.thread(name: s, priority:, cpus:)` | one thread: every task placed on it runs on that OS thread |
 | `scope(on: e) { … }`, `gather(on: e) { … }` | every child launched in the block runs on `e` |
 | `e.run(f)` | runs `f` as a task on `e` and waits: `R throws E` |
+| `e.runBlocking(f)` | the same from plain code: blocks the OS thread until `f` returns (D152) |
+| `executor gl(priority:, cpus:) { state; functions }` | a declared one-thread executor: its state is named by its code alone, `gl.f(x)` from outside runs `f` there (D150) |
+| `executor cpu(threads: n, …) { functions }` | a declared pool: functions, no state |
+| `Executor.default` | the default pool, where `main` runs |
 | `try Thread.start(name: s, priority:, cpus:, stackSize:, f: f)` | plain `f` on an OS thread outside every executor |
 
 - A task stays on its executor across every suspension. A child runs
@@ -620,13 +654,26 @@ Give such waits a limit (`race` with a `sleep` arm, `withTimeout`).
   that cannot give its thread up, the monitor fires a timer a millisecond
   late at most and looks at the sockets every 10 ms, so the other
   executors' tasks are not held up.
-- A pool's threads are never handed off around a blocking call (they are
-  the threads it was made with); the call only lets the collector run.
+- A pool's thread blocked in a call hands its queued tasks on as the
+  default pool's does (D153): after about a millisecond they move to a
+  spare thread named `s-spare`, with the pool's priority and CPUs, so
+  `threads: n` is n threads running tasks, not n threads in all; a spare
+  without work ends after 10 seconds. An `Executor.thread` never hands
+  off — its tasks stay on its one thread — so a call that blocks there
+  holds them up (`blocking(f)` is the way out).
 - Closing an `Executor` stops its threads (its tasks have been joined by
   their scopes by then); placing a task on a closed one panics (`the
   executor was closed: nothing more runs on it`), and closing one from its
-  own task panics. Closing a `Thread` blocks until `f` returns and
-  re-raises a panic of `f`.
+  own task panics, as does closing `Executor.default`. Closing a `Thread`
+  blocks until `f` returns and re-raises a panic of `f`.
+- `runBlocking` is for plain code that is not on an executor's thread: a
+  `Thread`'s function, a call on the blocking pool (`blocking(f)`), a
+  thread a C library calls back on. In a function that suspends it is a
+  compile error; on a thread of the default pool, a pool or an
+  `Executor.thread` — plain code a task calls included — it panics
+  (`runBlocking on a thread of an executor would block a thread its
+  tasks need, or wait for itself; a task waits with run`). A panic in
+  `f` is raised again in the caller.
 - `priority:` is `Priority.Low`, `Normal` (the default: left as the OS
   made the thread), `High` or `Realtime`; `cpus:` lists logical CPUs from
   0 (empty: any). A refusal throws `ThreadError` and leaves no thread
@@ -683,5 +730,4 @@ the exit code is 101.
 | Some tasks waiting for each other while others run | waits forever; put a limit on the wait |
 | Relying on which task prints or runs first | no order is guaranteed; collect, then print |
 | Expecting `async obj.method()` to change `obj` | the task works on a copy |
-| A `withTimeout` around code that never waits | the limit holds while another thread is free; under `VELES_THREADS=1` a function that does not suspend runs to its end first |
 | A race arm's task losing | it keeps running; the scope waits for it |

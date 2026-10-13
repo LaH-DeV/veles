@@ -298,6 +298,11 @@ struct Parser {
       Kind.KwStruct => return this.parseStruct(head, false)
       Kind.Ident => {
         if (this.atErrorDecl()) return this.parseErrorDecl(head)
+        if (this.atExecutorDecl()) {
+          val [first, ..] = head.attrs else return this.parseExecutorDecl(head)
+          this.errorAt(first.pos, "an executor takes no attributes; its settings are its arguments (D150)")
+          return this.parseExecutorDecl(head)
+        }
         val next = this.peek(1).kind
         if (this.atWord("suite") && next == Kind.String) {
           if (head.marked()) this.errorAt(head.start, "a suite cannot be ${head.visibility()}; it only groups tests")
@@ -668,6 +673,16 @@ struct Parser {
 
   // `error Name`: `error` is a word only at declaration position, with a name after it
   fun atErrorDecl(): bool => this.atWord("error") && this.peek(1).kind == Kind.Ident
+
+  // `executor` is a word only at module level, before a name and then its
+  // arguments, its body or the end of the line (D150)
+  fun atExecutorDecl(): bool {
+    if (!this.atWord("executor") || this.peek(1).kind != Kind.Ident) return false
+    when (this.peek(2).kind) {
+      Kind.LParen, Kind.LBrace, Kind.Semi, Kind.EOF => return true
+      else => return false
+    }
+  }
 
   // `->` written for `=>`: reported even where another error stands
   fun thinArrow(span: Span, message: string) {

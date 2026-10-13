@@ -496,3 +496,13 @@ func TestScopeOnRoundTrips(t *testing.T) {
 		t.Errorf("formatted:\n%s\nwant:\n%s", got, src)
 	}
 }
+
+// D150: an executor declaration keeps its arguments, its state and its
+// functions in source order, comments with them; one without a body
+// stays a line.
+func TestExecutorDeclRoundTrips(t *testing.T) {
+	src := "/// The GL thread.\npublic executor gl(priority: Priority.High) {\n  // made on gl's own thread\n  var context: i64 = 0\n  val names: MutableMap<i64, string> = [:]\n\n  public fun texture(id: i64): string => names.get(id) ?: \"none\"\n\n  fun reset() {\n    context = 0\n  }\n}\n\nexecutor cpu(threads: 4)\n\nexecutor plain { }\n"
+	if got := checkRoundTrip(t, "exec.vs", src); got != src {
+		t.Errorf("formatted:\n%s\nwant:\n%s", got, src)
+	}
+}

@@ -14,6 +14,13 @@ import (
 
 // fnCtx is the per-function checking state.
 type fnCtx struct {
+	// exec: this is the code of an executor (D150) — one of its functions,
+	// a state initializer, or a lambda in them that does not leave it
+	exec *execInfo
+	// runOnLambda: the lambda handed straight to `run` of the declared
+	// executor runOnExec, which runs as its code
+	runOnLambda ast.Expr
+	runOnExec   *execInfo
 	// D87: the member expression checked next may be a protected collection
 	// looked at, and the one the last such check saw
 	lookAt      source.Span
@@ -62,6 +69,7 @@ type fnCtx struct {
 	errType     types.Type // declared error union, or nil when inferred
 	unsafe      int
 	launching   *ast.CallExpr  // the call `async` is launching: it must stay a plain Call
+	launchPre   []Stmt         // what the launch evaluates before its call (an executor hop's arguments)
 	selfVar     *Var           // `this`: a pointer to the receiver's place (D22 v0.30)
 	initOwned   map[string]int // checking an `init { }` block: the fields it must assign, by index (D28)
 	selfAsRecv  bool           // the next `this` is a method receiver, not a value (init blocks)
@@ -242,6 +250,10 @@ func (c *Checker) checkBody(fn *Func) {
 	}
 	env.self = owner
 	f := c.newFnCtx(fn, t.Module, t.File, env, fn.subst)
+	if t.Exec != nil {
+		f.exec = t.Exec
+		f.scope = NewScope(t.Exec.scope)
+	}
 	if t.SuiteScope != nil {
 		f.scope = NewScope(t.SuiteScope) // the suite's helpers are in reach
 	}
@@ -423,6 +435,10 @@ func (c *Checker) checkGlobal(g *Global) {
 	f := c.newFnCtx(nil, m, file, env, nil)
 	f.isGlobal = true
 	f.staticOwner = c.staticOwner[g] // a `static val` initializer is inside its type
+	if info := c.stateOwner[g]; info != nil {
+		f.exec = info // its executor's state: initialised on its thread (D150)
+		f.scope = NewScope(info.scope)
+	}
 	var declared types.Type
 	if d.Type != nil {
 		declared = f.resolve(d.Type)
@@ -445,7 +461,7 @@ func (c *Checker) checkGlobal(g *Global) {
 	if types.IsNever(declared) || types.IsUnit(declared) {
 		c.errorf(d.Name.Pos, "a global cannot have type '%s': its initializer gives no value to keep", declared)
 	}
-	if d.Kind == ast.BindVar && !isSynchronized(declared) {
+	if d.Kind == ast.BindVar && !isSynchronized(declared) && c.stateOwner[g] == nil {
 		// D66: every task sees the same globals, from whichever thread runs it
 		example := "val " + d.Name.Name + " = Mutex(value: ...)"
 		if _, ok := declared.(*types.Basic); ok {
@@ -958,6 +974,7 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 			return &VarRef{exprBase{v.Type}, v}, v
 		case SymGlobal:
 			g := sym.Global
+			f.checkStateUse(g, e.Pos)
 			if mutate && !g.Mutable {
 				f.errorf(e.Pos, "cannot assign to '%s': it is a module-level 'val'; state every task shares is a 'var' behind a lock (D66)", e.Name)
 			}
@@ -1197,6 +1214,12 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 	if astMayShrink(s.Body) || s.Cond != nil && astMayShrink(s.Cond) {
 		f.killMutableBounds()
 	}
+	// What the body establishes does not hold after the loop: the body may
+	// run no times (`loop (a in xs) { x = a }` leaves `x` as it was), and a
+	// `break` may leave before it; what held on entry still does (the
+	// variables the body assigns were dropped above).
+	entry := f.saveNarrow()
+	defer func() { f.restoreNarrow(mergeFacts(entry, f.saveNarrow())) }()
 	if s.Cond != nil {
 		f.lintLoopTrue(s)
 	}

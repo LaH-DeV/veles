@@ -428,6 +428,8 @@ func (p *printer) decl(d ast.Decl) {
 			p.w(" = ")
 			p.initExpr(d.Value)
 		}
+	case *ast.ExecutorDecl:
+		p.executorDecl(d)
 	case *ast.ExternBlock:
 		p.w("extern \"" + d.ABI + "\" ")
 		p.members(p.openBrace(d.Pos.Start, d.Pos.End), d.Pos.End, len(d.Funs) == 0, func(i int) bool { return i < len(d.Funs) }, func(i int) {
@@ -978,6 +980,51 @@ func (p *printer) structDecl(d *ast.StructDecl) {
 		p.before(ms[i].pos)
 		ms[i].print()
 		p.after(memberEnd(d, ms[i].pos))
+	})
+}
+
+// executorDecl prints `executor name(args) { state and functions }` (D150),
+// the members in source order.
+func (p *printer) executorDecl(d *ast.ExecutorDecl) {
+	if d.Pub {
+		p.w("public ")
+	} else if d.Internal {
+		p.w("internal ")
+	}
+	p.w("executor " + d.Name.Name)
+	hdr := d.Name.Pos.End
+	if d.Args != nil {
+		p.w("(")
+		p.args(d.Args, d.ArgsPos)
+		p.w(")")
+		hdr = d.ArgsPos.End
+	}
+	if !d.HasBody {
+		return
+	}
+	type member struct {
+		start, end int
+		print      func()
+	}
+	var ms []member
+	for _, s := range d.State {
+		s := s
+		ms = append(ms, member{declStart(s), s.Pos.End, func() { p.decl(s) }})
+	}
+	for _, fn := range d.Funs {
+		fn := fn
+		ms = append(ms, member{declStart(fn), fn.Pos.End, func() { p.fun(fn) }})
+	}
+	sort.SliceStable(ms, func(i, j int) bool { return ms[i].start < ms[j].start })
+	open := p.openBrace(hdr, d.Pos.End)
+	if open < 0 {
+		return
+	}
+	p.w(" ")
+	p.members(open, d.Pos.End, len(ms) == 0, func(i int) bool { return i < len(ms) }, func(i int) {
+		p.before(ms[i].start)
+		ms[i].print()
+		p.after(ms[i].end)
 	})
 }
 

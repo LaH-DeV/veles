@@ -90,3 +90,35 @@ func TestDerivedImplementHoverGenerics(t *testing.T) {
 		t.Errorf("Comparable derive:\n%s", got)
 	}
 }
+
+// D150: a function of a declared executor hovers with where it runs, at a
+// call from outside it as at its declaration.
+func TestExecutorFunctionHover(t *testing.T) {
+	src := "use io\n\nexecutor gl {\n  var made: i64 = 0\n  public fun count(): i64 => made\n}\n\nfun main() {\n  io.println(\"${gl.count()}\")\n}\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := pathToURI(path)
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{})
+	c.notify("initialized", map[string]any{})
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": src}})
+	for _, at := range []struct{ line, char int }{{8, 20}, {4, 14}} {
+		res, _ := c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": at.line, "character": at.char}})
+		var h struct {
+			Contents struct {
+				Value string `json:"value"`
+			} `json:"contents"`
+		}
+		json.Unmarshal(res, &h)
+		got := h.Contents.Value
+		for _, want := range []string{"executor gl — runs on gl's thread", "fun count(): i64"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("hover at %d:%d is missing %q:\n%s", at.line, at.char, want, got)
+			}
+		}
+	}
+}

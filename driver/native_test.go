@@ -184,8 +184,98 @@ fun main() {
 	}
 }
 
+// A pool's thread blocked in a call hands its queue on too (D153): with
+// both threads of a two-thread pool inside a C call, the pool's next task
+// runs at once, on a spare named after the pool; a one-thread executor
+// keeps its tasks behind the call (its tasks stay on one thread). The
+// spares leave when the pool closes.
+func TestPoolBlockingCallHandsOff(t *testing.T) {
+	exe := buildBlocking(t, `use io, time
+
+extern "C" {
+  fun block_ms(ms: i64)
+  fun thread_is_spare(): i64
+}
+
+fun blocker(started: Atomic<i64>, ms: i64): i64 {
+  started.add(1)
+  unsafe { block_ms(ms) }
+  1
+}
+
+fun churn(): i64 {
+  var total = 0
+  loop (i in 0..<100000) {
+    val xs = [i, i + 1, i + 2]
+    total += xs.len()
+  }
+  total + unsafe { thread_is_spare() }
+}
+
+fun ticker(): i64 {
+  var ticks = 0
+  loop (_ in 0..<5) {
+    await sleep(Duration.millis(20))
+    ticks += 1
+  }
+  ticks
+}
+
+// a plain function waits for the other: only two threads at once meet
+fun meet(arrived: Atomic<i64>): bool {
+  arrived.add(1)
+  val sw = time.Stopwatch.start()
+  loop (arrived.load() < 2) {
+    if (sw.elapsed() > Duration.millis(2000)) return false
+  }
+  true
+}
+
+fun main() throws ThreadError {
+  with cpu = try Executor.pool(threads: 2, name: "cpu")
+  val arrived = Atomic(value: 0)
+  scope(on: cpu) {
+    val a = async meet(arrived)
+    val b = async meet(arrived)
+    io.println("two threads: ${await a && await b}")
+  }
+  val started = Atomic(value: 0)
+  val sw = time.Stopwatch.start()
+  scope(on: cpu) {
+    val blocked = [async blocker(started, 600), async blocker(started, 600)]
+    loop (started.load() < 2) await sleep(Duration.millis(1))
+    val n = await async churn()
+    val ticks = await async ticker()
+    val early = sw.elapsed() < Duration.millis(500)
+    var done = 0
+    loop (b in blocked) done += await b
+    io.println("pool: churn $n, ticks $ticks while both threads blocked: $early; $done calls")
+  }
+  with gl = try Executor.thread(name: "gl")
+  val one = Atomic(value: 0)
+  val sw2 = time.Stopwatch.start()
+  scope(on: gl) {
+    async blocker(one, 300)
+    loop (one.load() < 1) await sleep(Duration.millis(1))
+    val ticks = await async ticker()
+    io.println("thread: ticks $ticks after the call: ${sw2.elapsed() >= Duration.millis(290)}")
+  }
+}
+`)
+	want := "two threads: true\npool: churn 300001, ticks 5 while both threads blocked: true; 2 calls\nthread: ticks 5 after the call: true"
+	for _, threads := range []string{"1", "4"} {
+		run := exec.Command(exe)
+		run.Env = append(os.Environ(), "VELES_THREADS="+threads, "VELES_GC_THRESHOLD=200000")
+		out, err := run.CombinedOutput()
+		if got := strings.ReplaceAll(strings.TrimSpace(string(out)), "\r\n", "\n"); err != nil || got != want {
+			t.Fatalf("threads %s: got %q, %v", threads, out, err)
+		}
+	}
+}
+
 // buildBlocking builds a package whose main.vs may call block_ms(ms), a C
-// function that sleeps its thread.
+// function that sleeps its thread, and thread_is_spare(), 1 on a thread
+// whose name ends in "-spare".
 func buildBlocking(t *testing.T, main string) string {
 	t.Helper()
 	clang, err := findClang()
@@ -202,13 +292,34 @@ func buildBlocking(t *testing.T, main string) string {
 			t.Fatal(err)
 		}
 	}
-	write("c/block.c", `#include <stdint.h>
+	write("c/block.c", `#ifndef _WIN32
+#define _GNU_SOURCE
+#endif
+#include <stdint.h>
+#include <string.h>
 #ifdef _WIN32
 #include <windows.h>
 void block_ms(int64_t ms) { Sleep((DWORD)ms); }
+typedef HRESULT (WINAPI *get_description)(HANDLE, PWSTR *);
+int64_t thread_is_spare(void) {
+    get_description get = (get_description)(void *)GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "GetThreadDescription");
+    PWSTR name = NULL;
+    if (!get || FAILED(get(GetCurrentThread(), &name)) || !name) return 0;
+    size_t n = wcslen(name);
+    int64_t spare = n >= 6 && wcscmp(name + n - 6, L"-spare") == 0;
+    LocalFree(name);
+    return spare;
+}
 #else
+#include <pthread.h>
 #include <unistd.h>
 void block_ms(int64_t ms) { usleep((useconds_t)(ms * 1000)); }
+int64_t thread_is_spare(void) {
+    char name[16] = {0};
+    if (pthread_getname_np(pthread_self(), name, sizeof name) != 0) return 0;
+    size_t n = strlen(name);
+    return n >= 6 && strcmp(name + n - 6, "-spare") == 0;
+}
 #endif
 `)
 	cmd := exec.Command(clang, "-c", "c/block.c", "-o", "c/block.o")

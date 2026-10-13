@@ -340,6 +340,13 @@ With a single task, `gather` gives that task's `Result` itself rather than
 a one-element tuple: `when (gather { async risky() }) { ... }` is how a
 program runs code and finds out whether it panicked (D103).
 
+A task's error is the `Err` only when its function `throws`. A function
+that *returns* a `Result` finished either way, so its `Result` is the
+task's value: `async check(n)` with `check(n: i64): Result<i64, Boom>`
+gives a `Result<Result<i64, Boom>, Panic>`, where `Ok(Err(…))` is "check
+said no" and `Err(Panic(…))` is "check crashed" (D155) — as in a `scope`,
+where awaiting it gives the `Result`.
+
 ## Channels
 
 A `Channel<T>` moves values between tasks. `send` suspends when the
@@ -749,10 +756,11 @@ anywhere else.
 
 ### Time limits: `withTimeout`
 
-The prelude's `withTimeout(ms, f)` runs `f` in a task of its own and
-gives up after `ms` milliseconds by throwing `Timeout`; `f`'s own errors
-are rethrown, so the call throws `E | Timeout`. `f` must be sendable,
-like anything handed to a task:
+The prelude's `withTimeout(limit, f)` calls `f` and gives up once `limit`
+has passed by throwing `Timeout`; `f`'s own errors are rethrown, so the
+call throws `E | Timeout`. `f` runs in the calling task, as an ordinary
+call (D151): it may use anything the caller can, a `MutableList` included,
+and starts no task:
 
 ```veles
 use io
@@ -785,10 +793,15 @@ failed: timed out after 20ms
 got 7
 ```
 
-On timeout the task running `f` is cancelled and `withTimeout` waits for
-it to unwind before throwing — the rule above — so whatever `f` had open
-is closed by the time you see the `Timeout`. It is `scope` + `async` +
-`race` written once; go-to-definition shows the seven lines.
+When the time is up, `f` is stopped where it waits, or at the end of a
+loop iteration — also in a function that never waits, on any number of
+threads — and unwinds as a cancelled task does: the scopes inside it
+cancel and join their tasks, its `with`s close, innermost first, and only
+then does `withTimeout` throw. So whatever `f` had open is closed by the
+time you see the `Timeout`. Limits nest, each stopping its own `f`; a
+cancellation of the whole task passes through as one. A limit that passes
+while `f` is inside a lock region (where nothing is interrupted) still
+ends in `Timeout`, once `f` is done.
 
 ## Values that follow a task: `TaskLocal`
 
@@ -1249,16 +1262,107 @@ mixed 718330
   …) into debuggers and profilers.
 - **What crosses.** An `Executor` is `Sendable`. What a task on it
   receives follows the same rules as between any two tasks.
+- **Plain code waiting for tasks.** `e.runBlocking(f)` runs `f` as a task
+  on `e` and blocks the calling OS thread until it returns (D152) — how a
+  `Thread`'s function, a `blocking` call or a C library's thread hands
+  work to tasks and waits for the answer:
+  `Executor.default.runBlocking(() => events.send(i))` (`Executor.default`
+  is the default pool). A task waits with `run` instead: in a function
+  that suspends, `runBlocking` is a compile error, and on a thread of an
+  executor it panics, since it would hold a thread the tasks need, or wait
+  for itself.
 - **`blocking`** runs `f` on a pool that starts threads as calls need
   them, up to 128 (a call beyond that waits for one), and ends a thread
   idle for 10 seconds. `f` does not suspend. A blocking call made
   without it is still noticed after about a millisecond, and the
-  default pool's other tasks moved to another thread; `blocking` says
-  so up front.
+  thread's other tasks moved to a spare thread — in the default pool and
+  in a pool alike (a pool's spare has its name, priority and CPUs), but
+  never on an `Executor.thread`, whose tasks stay on its one thread;
+  `blocking` says so up front.
 - **Timers and sockets** are served by the default pool for every
   executor: a task on a pool can sleep, race and read a socket like any
   other — also while every default thread is busy in a long loop (the
   monitor steps in).
+
+### An executor's own state: `executor`
+
+A GL context, a GUI or a C library bound to its thread keeps state for
+the life of the program, used by many callers. Declared at module level,
+an **executor** holds that state and the functions that use it (D150):
+
+```veles
+use io
+
+executor gl {
+  var uploads: i64 = 0                            // made on gl's own thread
+  val textures: MutableMap<string, i64> = [:]     // not Sendable, and needs no lock
+
+  public fun texture(name: string): i64 {
+    textures.get(name) ?: upload(name)            // a call between gl's functions: direct
+  }
+
+  fun upload(name: string): i64 {
+    uploads += 1
+    textures.set(name, uploads)
+    uploads
+  }
+
+  public fun preload(names: List<string>): i64 {
+    val done: MutableList<string> = []
+    scope {
+      loop (n in names) async mark(done, n)       // children stay on gl: no Sendable check
+    }
+    done.len()
+  }
+
+  public fun count(): i64 => uploads
+}
+
+fun mark(done: MutableList<string>, name: string) {
+  await sleep(Duration.millis(1))
+  done.push(name)
+}
+
+executor cpu(threads: 2)                          // a named pool
+
+fun main() {
+  io.println("${gl.texture("grass")} ${gl.texture("stone")} ${gl.texture("grass")}")
+  io.println("preloaded ${gl.preload(["a", "b", "c"])}, ${gl.count()} uploads")
+  scope(on: cpu) {
+    async io.println("on cpu")
+  }
+}
+```
+
+Output:
+```text
+1 2 1
+preloaded 3, 2 uploads
+on cpu
+```
+
+- **Its code** is its functions, the initializers of its state, and the
+  lambdas in them that cannot leave it (a `sendable` one may run on any
+  thread, so it is not). Only its code names its state; a module-level
+  `var` stays an error (D66), an executor's is not, since one thread runs
+  everything that names it.
+- **From its code** a call to another of its functions is an ordinary
+  call, and a child launched in a `scope` without `on:` stays on it, so
+  what it is given need not be `Sendable`.
+- **From anywhere else** `gl.texture("grass")` runs the function on gl
+  and suspends the caller until it returns: the arguments are evaluated
+  first, in the caller, and must be `Sendable`, as must the result; the
+  function's errors are the caller's to handle. A plain function cannot
+  make the call (it would have to block its thread: `gl.runBlocking`).
+- `executor name(threads: n, priority:, cpus:)` takes `Executor.pool`'s
+  arguments, `name:` being the declaration's: with `threads:` it is a
+  pool, which holds functions but no state. Executors start with the
+  module's globals; a one-thread executor's state is made on its own
+  thread, before `main`; a priority or CPU the OS refuses ends the
+  program there, there being no caller to throw to. A declared executor
+  runs as long as the program and is not closed by code.
+- `gl` is an `Executor` value too: `scope(on: gl)`, `gl.run(f)` — a lambda
+  handed straight to its `run` is its code.
 
 ## How it compiles
 

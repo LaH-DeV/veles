@@ -585,7 +585,7 @@ abandon.wait.7:
   %t20 = icmp ne i64 %t19, 0
   br i1 %t20, label %abandon.done.8, label %abandon.susp.9
 abandon.susp.9:
-  call void @veles_frame_park(ptr %task, ptr %coro.hdl, i64 %coro.depth)
+  call void @veles_frame_park_held(ptr %task, ptr %coro.hdl, i64 %coro.depth)
   %t21 = call i8 @llvm.coro.suspend(token none, i1 false)
   switch i8 %t21, label %coro.suspend [ i8 0, label %resume.10 i8 1, label %coro.cleanup ]
 resume.10:

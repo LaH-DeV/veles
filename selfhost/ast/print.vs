@@ -290,6 +290,26 @@ struct Printer {
         }
         this.close()
       }
+      is ExecutorDecl     => {
+        this.open("executor ")
+        if (d.pub) this.write("public ")
+        this.write(d.name.name)
+        if (!d.args.isEmpty()) {
+          this.write(" (")
+          this.args(d.args)
+          this.write(")")
+        }
+        if (d.hasBody) this.write(" {}")
+        loop (s in d.state) {
+          this.nl()
+          this.decl(s)
+        }
+        loop (fn in d.funs) {
+          this.nl()
+          this.funDecl(fn)
+        }
+        this.close()
+      }
       is BadDecl          => this.write("(bad-decl)")
     }
   }

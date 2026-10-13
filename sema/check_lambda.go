@@ -99,6 +99,15 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 	l.scope = NewScope(f.scope)
 	l.unsafe = f.unsafe
 	l.isLambda = true
+	// an executor's code goes on in a lambda that cannot leave it; one
+	// that may run on any thread is not its code — except the one handed
+	// straight to the executor's own `run` (D150)
+	if f.exec != nil && (expected == nil || !expected.Sendable) {
+		l.exec = f.exec
+	}
+	if f.runOnLambda == ast.Expr(e) {
+		l.exec = f.runOnExec
+	}
 
 	// parameters
 	var params []*Var

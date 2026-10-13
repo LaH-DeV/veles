@@ -298,6 +298,19 @@ public struct ExternBlock : Decl {
   public var pos:  Span = Span.none()
 }
 
+/// `executor name(args) { state and functions }` (D150).
+public struct ExecutorDecl : Decl {
+  public var doc:        string = ""
+  public var pub:        bool = false
+  public var isInternal: bool = false
+  public var name:       Ident = Ident()
+  public var args:       List<Arg> = []
+  public var state:      List<ValDecl> = []
+  public var funs:       List<FunDecl> = []
+  public var hasBody:    bool = false
+  public var pos:        Span = Span.none()
+}
+
 /// `error Name = A | B | C` (D45).
 public struct ErrorAliasDecl : Decl {
   public var attrs:      List<Attribute> = []
@@ -858,6 +871,7 @@ public fun declSpan(d: Decl): Span => when (d) {
   is ImplDecl         => d.pos
   is ValDecl          => d.pos
   is ExternBlock      => d.pos
+  is ExecutorDecl     => d.pos
   is ErrorAliasDecl   => d.pos
   is TypeAliasDecl    => d.pos
   is EnumDecl         => d.pos

@@ -20,6 +20,8 @@ type Program struct {
 	Structs []*types.Struct
 	Sealeds []*types.Sealed
 	Main    *Func
+	// Executors are the `executor` declarations (D150), in source order
+	Executors []*Executor
 	// MainReport renders an error escaping `main() throws` via Error.message()
 	// (D4); nil when main does not throw.
 	MainReport *Func
@@ -162,9 +164,23 @@ type Global struct {
 	Mutable bool
 	Init    Expr
 	Span    source.Span
+	// Exec: state of a one-thread executor (D150), initialised on its
+	// thread by the executor's Init, not with the other globals
+	Exec *Executor
 	// Const is a `const`'s value (D113): every use is it written in, so a
 	// constant is not a run-time global at all.
 	Const ConstVal
+}
+
+// Executor is an `executor` declaration (D150): the global holding it,
+// started with the module's globals, and the plain function that
+// initialises its state on its own thread (nil without state).
+type Executor struct {
+	Name   string
+	Value  *Global
+	Single bool
+	State  []*Global
+	Init   *Func
 }
 
 // ---------------------------------------------------------------------------

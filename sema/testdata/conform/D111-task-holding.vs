@@ -76,3 +76,10 @@ fun insideDo(): string throws Broken {
     "caught"
   }
 }
+
+// the field type says the task can fail, and the receiving block leaves
+// that error as the function's: it throws
+fun quiet(): string {
+  with f = Fragile(job: async breaks()) // error: a task this value holds can fail with 'Broken' (its field is 'Task<Result<string, Broken>>'), which the receiving block leaves as the function's error, but the function is not declared 'throws'
+  "done"
+}

@@ -356,6 +356,7 @@ func (f *fnCtx) awaitExpr(e *ast.AwaitExpr) Expr {
 		return x
 	}
 	if tt, ok := x.Type().(*types.Task); ok {
+		f.checkNotCancelled(e)
 		return f.suspending(&AwaitTask{exprBase{tt.Result}, x}, e.Pos, "await")
 	}
 	if types.IsInvalid(x.Type()) {
@@ -372,8 +373,54 @@ func (f *fnCtx) awaitExpr(e *ast.AwaitExpr) Expr {
 	return bad()
 }
 
+// cancelledFact is the flow fact "this handle's task was cancelled": kept
+// in the narrowing state, so it holds after a `t.cancel()` only where the
+// call was made on every path (joins and loops drop it, D154).
+func cancelledFact(v *Var) place { return place{v: v, path: "$cancelled"} }
+
+// noteCancelled records `t.cancel()` on a local handle.
+func (f *fnCtx) noteCancelled(recv ast.Expr, at source.Span) {
+	p, ok := f.placeOf(recv)
+	if !ok || p.path != "" {
+		return
+	}
+	f.narrow[cancelledFact(p.v)] = types.TUnit
+	if f.c.cancelAt == nil {
+		f.c.cancelAt = map[*Var]source.Span{}
+	}
+	f.c.cancelAt[p.v] = at
+}
+
+// checkNotCancelled refuses `await t` where `t.cancel()` was called on
+// every path before it (D154): the await panics unless the task happened
+// to finish first.
+func (f *fnCtx) checkNotCancelled(e *ast.AwaitExpr) {
+	p, ok := f.placeOf(e.X)
+	if !ok || p.path != "" {
+		return
+	}
+	if _, cancelled := f.narrow[cancelledFact(p.v)]; !cancelled {
+		return
+	}
+	line, _ := f.c.cancelAt[p.v].File.Position(f.c.cancelAt[p.v].Start)
+	f.errorf(e.Pos, "'%s' was cancelled at line %d: awaiting it panics unless the task had already finished; drop the 'await' (its scope still waits for the task to stop), or do not cancel a task whose value you need (D154)", p.v.Name, line)
+}
+
 // launch checks `async call(...)`.
 func (f *fnCtx) launch(e *ast.CallExpr, want types.Type) Expr {
+	savedPre := f.launchPre
+	f.launchPre = nil
+	x := f.launchCall(e, want)
+	pre := f.launchPre
+	f.launchPre = savedPre
+	if len(pre) == 0 || types.IsInvalid(x.Type()) {
+		return x
+	}
+	// `async gl.f(call())`: the arguments, evaluated here first (D150)
+	return &BlockExpr{exprBase{x.Type()}, &Block{Stmts: pre, Value: x, Type: x.Type()}}
+}
+
+func (f *fnCtx) launchCall(e *ast.CallExpr, want types.Type) Expr {
 	// D111: a field argument of a task-holding constructor starts a task
 	// the value holds, which the block receiving the value owns
 	// (a value that is not received is the one error: heldInside)
@@ -408,7 +455,9 @@ func (f *fnCtx) launch(e *ast.CallExpr, want types.Type) Expr {
 	}
 	for i, a := range call.Args {
 		t := a.Type()
-		if i == 0 && call.Fn.Receiver != nil {
+		// (a generic method's instance gets its Receiver when its body is
+		// checked, which may come later: the call knows it is a method's)
+		if i == 0 && (call.Fn.Receiver != nil || call.Recv != RecvNone) {
 			// the receiver crosses as a copy — a snapshot, like the captures
 			// of a sendable closure — never as a pointer into this task
 			p := t.(*types.Pointer)
@@ -418,7 +467,7 @@ func (f *fnCtx) launch(e *ast.CallExpr, want types.Type) Expr {
 			call.Args[0] = &AddrOf{exprBase{p}, copy}
 			call.Recv = RecvNone
 		}
-		if !sendable(t) {
+		if !sendable(t) && !f.childStaysOnThread() {
 			span := e.Pos
 			if j := i - len(call.Args) + len(e.Args); j >= 0 && j < len(e.Args) {
 				span = e.Args[j].Value.Span()
@@ -462,8 +511,9 @@ func (f *fnCtx) launch(e *ast.CallExpr, want types.Type) Expr {
 	sc.Launches = append(sc.Launches, l)
 	if sc.Gather {
 		// D52: a panic surfaces as a Result error at the gather boundary
+		// a Result the child returns without `throws` is its value (D155)
 		okT, errT := call.Type(), types.Type(nil)
-		if rs, isR := call.Type().(*types.Sealed); isR && isResultType(rs) {
+		if rs, isR := call.Type().(*types.Sealed); isR && fails {
 			okT, errT = rs.TypeArgs[0], rs.TypeArgs[1]
 			if types.IsNever(errT) {
 				errT = nil
@@ -483,6 +533,8 @@ func (f *fnCtx) launch(e *ast.CallExpr, want types.Type) Expr {
 			// the handler of the `do` block around it
 			f.errorf(e.Pos, "a child that can fail cannot be launched in a 'scope' inside a 'do' block: the scope passes its error to the function, not to the 'catch'; put the scope in its own function and 'try' that (D98)")
 			f.catching.poisoned = true
+		} else if !types.IsNever(et) && !f.throws && !f.isGlobal {
+			f.errorf(e.Pos, "this child can fail with '%s', which fails the 'scope' and leaves it as the function's error, but the function is not declared 'throws'; add 'throws', or collect the outcome as a value with 'gather' (D4/D141)", et)
 		} else if !types.IsNever(et) {
 			for _, m := range types.UnionMembers(et) {
 				f.recordError(m, e.Pos)

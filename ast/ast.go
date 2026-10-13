@@ -362,6 +362,23 @@ type ValDecl struct {
 	Pos      source.Span
 }
 
+// ExecutorDecl is `executor name(args) { state and functions }` (D150): a
+// global executor — one thread, or a pool with `threads:` — whose body
+// holds the state only its own code names (`val`/`var`, one-thread only)
+// and the functions that run on it.
+type ExecutorDecl struct {
+	Doc      string
+	Pub      bool
+	Internal bool
+	Name     Ident
+	Args     []Arg // as in `Executor.thread(...)`/`Executor.pool(...)`, without `name:`
+	ArgsPos  source.Span
+	State    []*ValDecl
+	Funs     []*FunDecl
+	HasBody  bool
+	Pos      source.Span
+}
+
 // ExternBlock is `extern "C" { fun ...; }`.
 type ExternBlock struct {
 	ABI  string
@@ -464,6 +481,7 @@ func (d *TraitDecl) Span() source.Span      { return d.Pos }
 func (d *ImplDecl) Span() source.Span       { return d.Pos }
 func (d *ValDecl) Span() source.Span        { return d.Pos }
 func (d *ExternBlock) Span() source.Span    { return d.Pos }
+func (d *ExecutorDecl) Span() source.Span   { return d.Pos }
 func (d *BadDecl) Span() source.Span        { return d.Pos }
 func (d *ErrorAliasDecl) Span() source.Span { return d.Pos }
 func (d *TypeAliasDecl) Span() source.Span  { return d.Pos }
@@ -481,6 +499,7 @@ func (*TraitDecl) declNode()      {}
 func (*ImplDecl) declNode()       {}
 func (*ValDecl) declNode()        {}
 func (*ExternBlock) declNode()    {}
+func (*ExecutorDecl) declNode()   {}
 func (*BadDecl) declNode()        {}
 func (*TestDecl) declNode()       {}
 func (*SuiteDecl) declNode()      {}

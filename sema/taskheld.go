@@ -228,6 +228,8 @@ func hasHeldLaunch(x Expr) bool {
 	switch x := x.(type) {
 	case *Launch:
 		return x.Scope == nil
+	case *BlockExpr:
+		return hasHeldLaunch(x.Block.Value) // a launch with its arguments first
 	case *StructLit:
 		for _, fx := range x.Fields {
 			if hasHeldLaunch(fx) {
@@ -247,6 +249,11 @@ func (f *fnCtx) splitHeld(x Expr, pre, launches *[]Stmt) Expr {
 				fields[i] = f.splitHeld(fx, pre, launches)
 			}
 			return &StructLit{x.exprBase, x.Struct, fields}
+		}
+	case *BlockExpr:
+		if hasHeldLaunch(x) {
+			*pre = append(*pre, x.Block.Stmts...)
+			return f.splitHeld(x.Block.Value, pre, launches)
 		}
 	case *Launch:
 		if x.Scope == nil {
@@ -354,6 +361,10 @@ func (f *fnCtx) withHeld(s *ast.WithExpr, i int, init Expr, closeable *types.Tra
 			// function, past the `catch`
 			f.errorf(b.Value.Span(), "a value holding a task that can fail cannot be received inside a 'do' block: its block passes the task's error to the function, not to the 'catch'; receive it in a function of its own and 'try' that (D98/D111)")
 			f.catching.poisoned = true
+			break
+		}
+		if !f.throws && !f.isGlobal {
+			f.errorf(b.Value.Span(), "a task this value holds can fail with '%s' (its field is 'Task<%s>'), which the receiving block leaves as the function's error, but the function is not declared 'throws'; add 'throws' (D4/D111)", et, ht.Result)
 			break
 		}
 		for _, m := range types.UnionMembers(et) {

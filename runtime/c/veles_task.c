@@ -64,6 +64,8 @@ void veles_lock_acquire(veles_lock *l);
 void veles_enter_safe(void);
 void veles_leave_safe(void);
 void veles_thread_attach(void);
+int veles_gc_try_stop_world(int64_t ms);
+void veles_gc_start_world(void);
 
 /* T_ENDING: unwound by a panic, or by a cancellation seen in code that
  * does not suspend (D145), whose scopes still have children unwinding: it
@@ -81,11 +83,9 @@ typedef struct veles_race veles_race;
  * value slot in its frame — what it sends, or where it receives — so the
  * other side copies straight across (channels, below). */
 typedef struct veles_waiter {
-    struct veles_task *task;
     struct veles_waiter *next, *prev;
     struct waiter_list *in; /* the list it is on; NULL when on none */
-    veles_race *race; /* the race the node belongs to; NULL for a plain wait */
-    int64_t arm;      /* the race arm */
+    veles_race *race; /* the race the node belongs to; NULL for a plain wait, whose node is inside its task */
     void *data;       /* a plain waiter's value slot */
 } veles_waiter;
 
@@ -114,6 +114,7 @@ typedef struct task_panic {
     panic_trace trace;      /* the call chain and the test helpers' call sites at the panic */
     int64_t drain;          /* while unwinding without a frame: scopes whose children are still unwinding, + 1 */
     int64_t cancelled;      /* that unwinding is a cancellation (D145), not a panic: msg is NULL */
+    struct veles_deadline *deadline; /* a cancellation that stops at this withTimeout's frame (D151) */
 } task_panic;
 
 /* the call chain of a debug build (D81), allocated by its first call: a
@@ -123,59 +124,135 @@ typedef struct task_debug {
     struct veles_task *chain_parent;  /* the task whose suspending call this one runs */
 } task_debug;
 
-/* Every parked task is one of these, so it is kept small (review B4): the
- * rare parts hang off pointers, and the flags are narrow. A flag read or
- * written with __atomic_* is int32_t; the others are bytes, each written
- * only by the thread that runs the task or under the runtime lock. */
+/* A timer: a task's own (sleep, a race's timeout arm) or a deadline's
+ * (withTimeout, D151), kept in the timer heaps by `at` (timers, below). */
+enum { TN_TASK, TN_DEADLINE };
+typedef struct timer_node {
+    int64_t at;     /* monotonic ns; 0 = none */
+    int32_t slot;   /* its place in its shard's heap + 1; 0 = in none */
+    int32_t kind;   /* TN_*: what owner is */
+    void *owner;
+} timer_node;
+
+/* What most tasks never need, allocated the first time one does (rare_of):
+ * a panic, a debug build's call chain, a timer (review B4: the parked task
+ * stays small) */
+typedef struct task_rare {
+    task_panic *panic;      /* set when it panics, or unwinds where it cannot suspend */
+    task_debug *debug;      /* a debug build's call chain */
+    timer_node timer;       /* its sleep or race timeout; at 0 = none */
+    struct veles_deadline *deadline; /* the innermost withTimeout it is inside (D151) */
+    struct veles_cleanup *inherited; /* a closer not started yet: the cleanups it takes on (D147) */
+    int32_t cut;            /* a withTimeout's deadline fired: frames at this depth and deeper unwind (its frame's depth + 1; 0 none, D151) */
+    uint8_t test_task;      /* a test the runner queued (D80): its end starts the next */
+} task_rare;
+
+/* what a parked task waits on, besides a race or a timer (wait_kind) */
+enum { W_NONE, W_RECV, W_SEND, W_IO_READ, W_IO_WRITE,
+       W_UNSTARTED /* spawned, not yet started: entry and entry_args hold its ramp and arguments */ };
+
+/* the bits of a task's `bits`, each changed by an atomic or/and: several
+ * threads write them (a cancel, the reactor, the task's own) */
+enum {
+    TB_FAILED = 1,     /* result is Err */
+    TB_LISTED = 2,     /* on its scope's children list */
+    TB_YIELDED = 4,    /* sleep(0) put the task at the back of the run queue once */
+    TB_PANICKED = 8,
+    TB_UNWINDING = 16, /* a panic is running the cleanups */
+    TB_IO_READY = 32,  /* the reactor saw its socket ready */
+    TB_UNWRAP = 64,    /* a fail-fast child (D141): await gives the Ok payload, after the tag word */
+    TB_ATTN = 128,     /* counted in veles_attention while it runs (D145) */
+};
+
+/* Every parked task is one of these, so it is kept small (review B4, F12):
+ * 152 bytes, the 160-byte class with the collector's header. Words are
+ * shared by what is never needed at the same time — before the task
+ * starts, while it runs, after it ends — and by the waits a parked task is
+ * in one of; the rest hangs off `rare`. A byte read or written with
+ * __atomic_* is only ever accessed so; the others are written only by the
+ * thread that runs the task or under the runtime lock. */
 typedef struct veles_task {
     void *hdl;              /* coroutine frame; NULL after completion */
     struct veles_task *waiter; /* task blocked in await on this one */
     union {
-        void *entry_args;   /* spawned, not yet started: its arguments (cleared as it starts) */
+        void (*entry)(struct veles_task *, void *); /* spawned, not yet started: its ramp (cleared as it starts) */
+        veles_race *race;   /* running: the race it waits in */
         void *result;       /* finished: heap cell holding the return value */
     };
     struct frame_arena *arena; /* where its calls' frames live (review F3) */
+    union {
+        void *entry_args;   /* spawned, not yet started: its arguments (cleared as it starts) */
+        struct veles_cleanup *cleanups; /* running: active `with` closes and scope joins, innermost first */
+    };
     veles_scope *scope;
     struct veles_task *next;      /* the shared run queue's link */
     struct veles_task *sibling;   /* scope children list, both ways: a finished */
     struct veles_task *sibling_prev; /* child unlinks itself in O(1) */
-    int64_t wake_at;        /* timer, monotonic ns; 0 = none */
-    veles_race *race;
-    task_panic *panic;      /* set when it panics */
-    task_debug *debug;      /* a debug build's call chain */
-    int64_t io_fd;          /* socket the task waits on (std/net); io_waiting set */
-    struct veles_task *io_next;   /* the other tasks parked on io_fd the same way */
-    struct veles_task *io_prev;
-    struct veles_cleanup *cleanups; /* active `with` closes and scope joins, innermost first */
-    void (*entry)(struct veles_task *, void *); /* spawned, not yet started: its ramp */
-    struct veles_chan *chan_wait; /* the channel whose waiter list holds chan_node */
-    veles_waiter chan_node;       /* its entry there, for a plain send or recv */
     struct veles_local *locals;   /* task-local bindings, innermost first (D72) */
+    task_rare *rare;
+    union {
+        veles_waiter chan;        /* W_RECV, W_SEND: its entry in a channel's waiters, for a plain send or recv */
+        struct {
+            int64_t fd;           /* W_IO_*: the socket it waits on (std/net) */
+            struct veles_task *next, *prev; /* the other tasks parked on fd the same way */
+        } io;
+    } wait;
     int32_t state;
     int32_t sched;                /* S_IDLE, S_QUEUED, S_RUNNING or S_WOKEN (D66) */
-    int16_t index;                /* the launch site within its scope (a loop launches from one site many times) */
-    uint8_t shield;               /* inside a close() that may suspend: no cancellation is delivered, and a parked task is not woken for one (D47, D147) */
-    uint8_t spare;
-    int32_t timer_slot;           /* its place in the timer heap + 1; 0 = none */
     int32_t depth;                /* the frame hdl is: 0 the task's own, n a call n deep (review F3) */
     int32_t abandon_depth;        /* frames deeper than this unwind: a failed child abandons the scope body at it */
-    uint8_t failed;               /* result is Err */
+    int16_t index;                /* the launch site within its scope (a loop launches from one site many times) */
+    uint8_t wait_kind;            /* W_*: what wait holds */
+    uint8_t shield;               /* inside a close() that may suspend: no cancellation is delivered, and a parked task is not woken for one (D47, D147) */
     uint8_t cancel_requested;     /* unwinds at its next suspension point (D20/D43) */
     uint8_t chan_done;            /* the other side completed its blocked send or recv */
-    uint8_t value_off;            /* where the Ok payload sits in the result (unwrap): after the tag word */
-    uint8_t unwrap;               /* a fail-fast child (D141): await gives the Ok payload */
-    uint8_t listed;               /* on its scope's children list */
-    uint8_t yielded;              /* sleep(0) put the task at the back of the run queue once */
-    uint8_t panicked;
-    uint8_t test_task;            /* a test the runner queued (D80): its end starts the next */
-    uint8_t io_write;             /* waiting to write rather than read */
-    uint8_t io_waiting;
-    uint8_t io_ready;
-    uint8_t unwinding;            /* a panic is running the cleanups */
-    uint8_t chan_wait_send;
     uint8_t popped;               /* the frame resumed last returned to its caller, which resumes next */
-    uint8_t attn;                 /* counted in veles_attention while it runs (D145) */
+    uint8_t bits;                 /* TB_* */
 } veles_task;
+
+#define container_of(p, type, member) ((type *)(void *)((char *)(p) - offsetof(type, member)))
+
+static inline int task_bit(veles_task *t, uint8_t b) {
+    return (__atomic_load_n(&t->bits, __ATOMIC_ACQUIRE) & b) != 0;
+}
+static inline void task_set(veles_task *t, uint8_t b) {
+    __atomic_fetch_or(&t->bits, b, __ATOMIC_SEQ_CST);
+}
+static inline void task_clear(veles_task *t, uint8_t b) {
+    __atomic_fetch_and(&t->bits, (uint8_t)~b, __ATOMIC_SEQ_CST);
+}
+/* sets or clears b, and says whether it was set */
+static inline int task_swap(veles_task *t, uint8_t b, int on) {
+    uint8_t old = on ? __atomic_fetch_or(&t->bits, b, __ATOMIC_SEQ_CST) : __atomic_fetch_and(&t->bits, (uint8_t)~b, __ATOMIC_SEQ_CST);
+    return (old & b) != 0;
+}
+
+/* t's rare part, made on first use. Never under a spinlock: it allocates.
+ * The task's own thread makes it, or a thread setting it up before it
+ * runs (a test the runner queues); the exchange keeps the first. */
+static task_rare *rare_of(veles_task *t) {
+    task_rare *r = __atomic_load_n(&t->rare, __ATOMIC_ACQUIRE);
+    if (r) return r;
+    r = veles_alloc_words(sizeof *r);
+    r->timer.kind = TN_TASK;
+    r->timer.owner = t;
+    task_rare *none = NULL;
+    if (!__atomic_compare_exchange_n(&t->rare, &none, r, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) return none;
+    return r;
+}
+
+static inline task_panic *panic_of(veles_task *t) {
+    task_rare *r = __atomic_load_n(&t->rare, __ATOMIC_ACQUIRE);
+    return r ? r->panic : NULL;
+}
+
+static inline int is_test_task(veles_task *t) {
+    task_rare *r = __atomic_load_n(&t->rare, __ATOMIC_ACQUIRE);
+    return r && r->test_task;
+}
+
+static void deadline_fire(void *d);
+static void deadline_taken(void *d);
 
 /* One active cleanup (D43/D49): the close of a `with` binding or the
  * cancellation of a scope's children. Code pushes on entry and pops on
@@ -235,10 +312,21 @@ struct veles_race {
     } arms[];
 };
 
+/* the task of a channel waiter: a race's, or the one the node is in */
+static inline veles_task *waiter_task(veles_waiter *w) {
+    return w->race ? w->race->task : container_of(w, veles_task, wait.chan);
+}
+
+/* the arm of a race's waiter */
+static inline int64_t waiter_arm(veles_waiter *w) {
+    veles_race *r = w->race;
+    return (int64_t)(((char *)w - (char *)&r->arms[0].node) / (ptrdiff_t)sizeof r->arms[0]);
+}
+
 /* one shard of the timers (timers, below); one per cache line */
 typedef struct timer_shard {
     int32_t lock;
-    veles_task **heap;      /* on the GC heap: it keeps the sleeping tasks alive (a root) */
+    timer_node **heap;      /* on the GC heap: it keeps the sleeping tasks and the deadlines alive (a root) */
     int64_t len, cap;
     int64_t first;          /* the earliest deadline, 0 = none (lock; read without it) */
 } __attribute__((aligned(64))) timer_shard;
@@ -326,6 +414,13 @@ typedef struct veles_exec {
     int32_t priority;          /* what its threads are started with (veles_thread_configure) */
     int32_t ncpus;
     int32_t *cpus;
+    /* a pool's run queues handed off around blocking calls (D153), waiting
+     * for a thread, and its threads without one, waiting for one (runtime
+     * lock); the default pool's are free_workers and spare_cv */
+    veles_worker **free;
+    int64_t nfree;
+    int64_t spares_waiting;
+    veles_cond *spare_cv;
     char name[32];
     struct veles_exec *next;   /* every live executor, for the monitor */
     veles_worker *workers[];   /* target of them; each one reachable through here */
@@ -361,6 +456,13 @@ static int64_t poll_until;      /* the deadline it waits until, monotonic ns (at
 static void grow_blocking(veles_exec *e);
 static void spin_lock(int32_t *l);
 static void spin_unlock(int32_t *l);
+
+/* the hang watchdog's set of live tasks (below): NULL unless VELES_WATCHDOG
+ * is set, so a task's start and end cost one predictable branch */
+static veles_task **diag_set;
+static void diag_add(veles_task *t);
+static void diag_remove(veles_task *t);
+static void watchdog_start(void);
 
 /* ---- idle threads (F11) ---------------------------------------------------------
  * A thread out of work parks on a park of its own (veles_sync.c) and is
@@ -611,6 +713,7 @@ void veles_task_init(void) {
     register_roots();
     default_exec = exec_alloc(X_DEFAULT, MAX_WORKERS);
     memcpy(default_exec->name, "veles", 6);
+    watchdog_start();
 }
 
 /* The executor's clock: the monotonic nanoseconds Stopwatch reads too, so
@@ -659,6 +762,7 @@ enum { B_RUNNING, B_BLOCKED, B_HANDED_OFF };
 struct veles_worker {
     veles_exec *exec;        /* the executor whose tasks it runs */
     int32_t lock;
+    int32_t taken;           /* another executor's: a thread runs this queue (exec_main) */
     int64_t bstate;          /* B_*: whether its thread is inside a blocking call */
     int64_t bseq;            /* blocking calls entered, so the monitor tells a long one from many */
     int64_t seen;            /* the monitor's: bseq when it last saw the thread blocked */
@@ -666,6 +770,7 @@ struct veles_worker {
     uint32_t seed;           /* where stealing starts looking */
     int64_t ticks;           /* tasks taken, for the shared queue's turn */
     veles_task *runnext;     /* woken by the task running here: runs next here */
+    veles_task *running;     /* the task running here, or NULL (for the hang watchdog's dump) */
     int64_t runnext_streak;
     uint32_t run_seq;        /* odd while a task runs here, one more each start and end (D145) */
     uint32_t seen_run;       /* the monitor's: run_seq at its last look */
@@ -860,7 +965,7 @@ static void place(veles_task *t) {
     veles_exec *e = exec_of(t);
     /* inside a callback from C the queue may be changing hands (blocking
      * calls, below): the shared queue */
-    if (!w || w->exec != e || t->yielded || tls->callback_depth > 0) {
+    if (!w || w->exec != e || task_bit(t, TB_YIELDED) || tls->callback_depth > 0) {
         push_global(e, t);
         wake_worker(e);
         return;
@@ -982,12 +1087,21 @@ static void wake(veles_task *t) {
  * suspension point looks anyway, and the count goes */
 
 static void attention_on(veles_task *t) {
-    if (__atomic_exchange_n(&t->attn, 1, __ATOMIC_SEQ_CST) == 0)
+    if (!task_swap(t, TB_ATTN, 1))
         __atomic_add_fetch(&veles_attention, 1, __ATOMIC_SEQ_CST);
 }
 
+/* sched, read by a claim that failed, says t runs: S_RUNNING, or S_WOKEN —
+ * woken again while it runs, to be queued once it parks — which runs just
+ * the same, so a loop in it must be told to look. (Only S_RUNNING was,
+ * and a plain loop in a task some wake had reached ran on past a fired
+ * deadline, a cancellation or a failed child, to its own end.) */
+static inline int runs_now(int32_t sched) {
+    return sched == S_RUNNING || sched == S_WOKEN;
+}
+
 static void attention_off(veles_task *t) {
-    if (__atomic_exchange_n(&t->attn, 0, __ATOMIC_SEQ_CST) == 1)
+    if (task_swap(t, TB_ATTN, 0))
         __atomic_sub_fetch(&veles_attention, 1, __ATOMIC_SEQ_CST);
 }
 
@@ -1036,20 +1150,31 @@ void veles_enter_safe_c(void);
 #define enter_safe_here veles_enter_safe
 #endif
 
-/* The outermost blocking call of a thread with a run queue of the default
- * pool marks it: the task that would run next goes to the shared queue
+/* threads of the pools (not the default one) inside a blocking call: the
+ * monitor stays awake while there are any (atomic) */
+static int64_t pool_blocked;
+
+/* whether a queue of w's executor changes hands while its thread blocks:
+ * the default pool's and a pool's (D153); never `Executor.thread`'s,
+ * whose tasks run on one thread (D143), nor the blocking pool's, which is
+ * there to block */
+static inline int hands_off(veles_worker *w) {
+    return w->exec == default_exec || w->exec->kind == X_POOL;
+}
+
+/* The outermost blocking call of a thread with a run queue that can change
+ * hands marks it: the task that would run next goes to the shared queue
  * first, since the queue may change hands before the call returns. Inside a
  * callback from C the outer call's mark stands (and place() queues nothing
- * here). Another executor's queue is never handed off — its threads are
- * the ones it was made with, and `Executor.thread`'s tasks run on one
- * thread (D143) — so its thread is only safe for the collector meanwhile. */
+ * here). Any other thread is only safe for the collector meanwhile. */
 static void block_worker(void) {
     veles_tls *tls = veles_tls_get();
     if (tls->blocking++ > 0 || tls->callback_depth > 0) return;
     veles_worker *w = tls->worker;
-    if (!w || w->exec != default_exec) return;
+    if (!w || !hands_off(w)) return;
     flush_runnext();
     __atomic_store_n(&w->bseq, w->bseq + 1, __ATOMIC_RELAXED);
+    if (w->exec != default_exec) __atomic_add_fetch(&pool_blocked, 1, __ATOMIC_SEQ_CST);
     __atomic_store_n(&w->bstate, B_BLOCKED, __ATOMIC_SEQ_CST);
     if (__atomic_load_n(&monitor_asleep, __ATOMIC_SEQ_CST)) wake_monitor();
 }
@@ -1060,7 +1185,8 @@ static void unblock_worker(void) {
     veles_tls *tls = veles_tls_get();
     if (--tls->blocking > 0 || tls->callback_depth > 0) return;
     veles_worker *w = tls->worker;
-    if (!w || w->exec != default_exec) return;
+    if (!w || !hands_off(w)) return;
+    if (w->exec != default_exec) __atomic_sub_fetch(&pool_blocked, 1, __ATOMIC_SEQ_CST);
     int64_t s = B_BLOCKED;
     if (!__atomic_compare_exchange_n(&w->bstate, &s, B_RUNNING, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) {
         tls->worker = NULL;
@@ -1122,7 +1248,44 @@ static void hand_off(veles_worker *w) {
     if (spawn) veles_thread_spawn(worker_main, NULL);
 }
 
+/* A pool's queue handed off (runtime lock held): to a thread of the pool
+ * waiting without a queue, or to a new one started with the pool's name,
+ * priority and CPUs (D153). The pool then has a thread more than it was
+ * made with until one of them, without a queue, idles long. */
+static void pool_spare_main(void *arg);
+static void pool_hand_off(veles_exec *e, veles_worker *w) {
+    e->free[e->nfree++] = w;
+    if (e->spares_waiting > 0) {
+        veles_cond_signal(e->spare_cv);
+        return;
+    }
+    e->threads++;
+    if (veles_thread_spawn(pool_spare_main, e) != 0) e->threads--; /* waits for its owner */
+}
+
+/* the monitor's look at a pool's threads blocked in a call (runtime lock
+ * held): 1 when one is */
+static int look_at_blocked(veles_exec *e) {
+    int any = 0;
+    int64_t n = __atomic_load_n(&e->nworkers, __ATOMIC_ACQUIRE);
+    for (int64_t i = 0; i < n; i++) {
+        veles_worker *w = e->workers[i];
+        if (!w || __atomic_load_n(&w->bstate, __ATOMIC_SEQ_CST) != B_BLOCKED) continue;
+        any = 1;
+        int64_t seq = __atomic_load_n(&w->bseq, __ATOMIC_RELAXED);
+        if (seq != w->seen) {
+            w->seen = seq; /* a call that began since the last look */
+            continue;
+        }
+        if (__atomic_load_n(&e->idle_workers, __ATOMIC_SEQ_CST) > 0 || !anything_queued(e)) continue;
+        int64_t s = B_BLOCKED;
+        if (__atomic_compare_exchange_n(&w->bstate, &s, B_HANDED_OFF, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) pool_hand_off(e, w);
+    }
+    return any;
+}
+
 static int any_blocked(void) {
+    if (__atomic_load_n(&pool_blocked, __ATOMIC_SEQ_CST) > 0) return 1;
     veles_exec *e = default_exec;
     int64_t n = __atomic_load_n(&e->nworkers, __ATOMIC_ACQUIRE);
     for (int64_t i = 0; i < n; i++) {
@@ -1233,7 +1396,10 @@ static void monitor_main(void *arg) {
          * lock's, and a closed one may be collected once off it */
         if (__atomic_load_n(&execs, __ATOMIC_ACQUIRE)) {
             rt_enter();
-            for (veles_exec *e = execs; e; e = e->next) busy |= look_at_runs(e);
+            for (veles_exec *e = execs; e; e = e->next) {
+                busy |= look_at_runs(e);
+                if (e->kind == X_POOL && !e->stopping) any |= look_at_blocked(e);
+            }
             rt_exit();
         }
         veles_exec *d = default_exec;
@@ -1267,6 +1433,7 @@ veles_task *veles_task_new(void) {
      * task-local values bound where it started (D72) */
     veles_tls *tls = veles_tls_get();
     t->locals = tls->task ? tls->task->locals : tls->locals;
+    if (diag_set) diag_add(t);
     return t;
 }
 
@@ -1417,7 +1584,7 @@ static void test_start(veles_task *t, void (*entry)(veles_task *, void *), void 
 }
 
 void veles_test_queue(veles_task *t, void (*entry)(veles_task *, void *), void *args) {
-    t->test_task = 1;
+    rare_of(t)->test_task = 1;
     veles_lock_acquire(test_q_lock);
     if (test_running < test_jobs) {
         test_running++;
@@ -1468,6 +1635,7 @@ static void veles_task_started_impl(veles_task *t, void *hdl) {
 }
 
 static void scope_child_finished(veles_task *t);
+static void block_on_done(veles_task *t);
 static void scope_empty(veles_scope *s);
 static void end_drained(veles_task *t);
 static void scope_child_failed(veles_task *t);
@@ -1478,7 +1646,7 @@ static void veles_task_finish_impl(veles_task *t, const void *result, int64_t si
     if (t->state == T_CANCELLED) return;
     t->result = veles_alloc_words(size > 0 ? size : 8);
     if (size > 0 && result) memcpy(t->result, result, (size_t)size);
-    t->failed = failed;
+    if (failed) task_set(t, TB_FAILED);
     /* the scope fails before the result is published, so a task woken by
      * it sees the failure at its next check (D141) */
     scope_child_failed(t);
@@ -1515,7 +1683,7 @@ static int64_t await_failed(veles_task *self, veles_task *target) {
 }
 
 static int64_t done_and_failed(veles_task *t) {
-    return t->unwrap && t->failed && !t->panicked;
+    return (__atomic_load_n(&t->bits, __ATOMIC_ACQUIRE) & (TB_UNWRAP | TB_FAILED | TB_PANICKED)) == (TB_UNWRAP | TB_FAILED);
 }
 
 /* await: true when the target is done, otherwise blocks the caller */
@@ -1551,18 +1719,18 @@ void *veles_task_result(veles_task *t) {
 /* what `await` gives: the result, or for a fail-fast child (D141) the Ok
  * payload inside it */
 void *veles_task_value(veles_task *t) {
-    return (char *)t->result + (t->unwrap ? t->value_off : 0);
+    return (char *)t->result + (task_bit(t, TB_UNWRAP) ? 8 : 0);
 }
 
 /* a launch in a fail-fast block of a function that throws (D141): the
- * payload of its Result sits at off */
+ * payload of its Result sits at off, which is after the tag word (8) */
 void veles_task_set_unwrap(veles_task *t, int64_t off) {
-    t->unwrap = 1;
-    t->value_off = off;
+    (void)off;
+    task_set(t, TB_UNWRAP);
 }
 
 int64_t veles_task_failed(veles_task *t) {
-    return t->failed;
+    return task_bit(t, TB_FAILED);
 }
 
 /* ---- scopes (D34/D36) ------------------------------------------------------ */
@@ -1593,13 +1761,13 @@ static void spin_unlock(int32_t *l);
 /* links a launched task into its scope's children */
 static void join_scope(veles_task *t) {
     veles_scope *s = t->scope;
-    if (!s || t->listed) return;
+    if (!s || task_bit(t, TB_LISTED)) return;
     __atomic_add_fetch(&s->live, 1, __ATOMIC_SEQ_CST);
     spin_lock(&s->lock);
     t->sibling = s->children;
     if (s->children) s->children->sibling_prev = t;
     s->children = t;
-    t->listed = 1;
+    task_set(t, TB_LISTED);
     spin_unlock(&s->lock);
 }
 
@@ -1611,8 +1779,12 @@ static void leave_channel_waits(veles_task *t);
  * then reports itself finished. A task with no frame — it never
  * suspended, or already returned — is finished on the spot. */
 static void cancel_task(veles_task *t) {
-    if (t->state >= T_DONE || t->cancel_requested) return;
+    int32_t st = __atomic_load_n(&t->state, __ATOMIC_ACQUIRE);
+    if (st == T_DONE || st == T_CANCELLED || t->cancel_requested) return;
     t->cancel_requested = 1;
+    /* unwinding without its frame: the request is seen where it lands (a
+     * withTimeout's frame, D151) or does not matter (it is ending) */
+    if (st == T_ENDING) return;
     /* inside a close() that suspends (D147): it goes on waiting for what
      * it waits for, and sees the request at the first point after it */
     if (__atomic_load_n(&t->shield, __ATOMIC_ACQUIRE)) return;
@@ -1625,7 +1797,7 @@ static void cancel_task(veles_task *t) {
      * not started is finished unstarted by the worker that takes it */
     int32_t sched = S_IDLE;
     if (!__atomic_compare_exchange_n(&t->sched, &sched, S_QUEUED, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) {
-        if (sched == S_RUNNING) {
+        if (runs_now(sched)) {
             attention_on(t);
             enqueue(t);
         }
@@ -1683,11 +1855,11 @@ static int64_t scope_leave(veles_task *t) {
      * launches a task per connection for as long as it runs, and the list
      * would otherwise keep every one of them (and its frame) alive */
     spin_lock(&s->lock);
-    if (t->listed) {
+    if (task_bit(t, TB_LISTED)) {
         if (t->sibling_prev) t->sibling_prev->sibling = t->sibling; else s->children = t->sibling;
         if (t->sibling) t->sibling->sibling_prev = t->sibling_prev;
         t->sibling = t->sibling_prev = NULL;
-        t->listed = 0;
+        task_clear(t, TB_LISTED);
     }
     spin_unlock(&s->lock);
     return left;
@@ -1698,7 +1870,7 @@ static int64_t scope_leave(veles_task *t) {
  * harmlessly, as it leaves. */
 static void scope_child_failed(veles_task *t) {
     veles_scope *s = t->scope;
-    if (!s || !t->failed || !s->fail_fast || s->failed) return;
+    if (!s || !task_bit(t, TB_FAILED) || !s->fail_fast || s->failed) return;
     __atomic_store_n(&s->failed, t, __ATOMIC_RELEASE);
     cancel_children(s, t);
     /* the body may be inside suspending calls: their frames unwind first,
@@ -1706,7 +1878,7 @@ static void scope_child_failed(veles_task *t) {
      * held, as for any change of the owner's waits) */
     if (s->depth < __atomic_load_n(&s->owner->abandon_depth, __ATOMIC_ACQUIRE))
         __atomic_store_n(&s->owner->abandon_depth, s->depth, __ATOMIC_RELEASE);
-    if (__atomic_load_n(&s->owner->sched, __ATOMIC_SEQ_CST) == S_RUNNING) attention_on(s->owner);
+    if (runs_now(__atomic_load_n(&s->owner->sched, __ATOMIC_SEQ_CST))) attention_on(s->owner);
     /* the owner may be blocked in the scope body (a recv that will now
      * never complete): wake it so its next suspension point sees the
      * failure and abandons the body — unless it waits inside a close()
@@ -1725,11 +1897,16 @@ static void scope_empty(veles_scope *s) {
 }
 
 static void scope_child_finished(veles_task *t) {
+    if (diag_set) diag_remove(t);
     veles_scope *s = t->scope;
-    if (!s) return;
+    if (!s) {
+        block_on_done(t); /* a task runBlocking waits for (D152) */
+        return;
+    }
     int64_t left = scope_leave(t);
     scope_child_failed(t);
     if (left <= 0) scope_empty(s);
+    if (!s->owner) block_on_done(t); /* placed by veles_task_place_on */
 }
 
 /* a task abandoning a scope body forgets whatever it was waiting on. It
@@ -1750,11 +1927,12 @@ static void veles_task_leave_waits_impl(veles_task *t) {
 static void veles_scope_cancel_impl(veles_scope *s) {
     cancel_children(s, NULL);
     veles_task *o = s->owner;
-    if (o->unwinding && o->panic) {
+    task_panic *op = panic_of(o);
+    if (task_bit(o, TB_UNWINDING) && op) {
         __atomic_store_n(&s->draining, 1, __ATOMIC_SEQ_CST);
-        __atomic_add_fetch(&o->panic->drain, 1, __ATOMIC_SEQ_CST);
+        __atomic_add_fetch(&op->drain, 1, __ATOMIC_SEQ_CST);
         if (__atomic_load_n(&s->live, __ATOMIC_SEQ_CST) <= 0 && __atomic_exchange_n(&s->draining, 0, __ATOMIC_SEQ_CST))
-            __atomic_sub_fetch(&o->panic->drain, 1, __ATOMIC_SEQ_CST);
+            __atomic_sub_fetch(&op->drain, 1, __ATOMIC_SEQ_CST);
     }
 }
 
@@ -1853,15 +2031,12 @@ static void unlink_waiter(waiter_list *list, veles_waiter *w) {
     if (w->prev) w->prev->next = w->next; else list->head = w->next;
     if (w->next) w->next->prev = w->prev; else list->tail = w->prev;
     w->next = w->prev = NULL;
-    w->in = NULL;
+    __atomic_store_n(&w->in, NULL, __ATOMIC_RELEASE);
 }
 
 static veles_waiter *pop_waiter(waiter_list *list) {
     veles_waiter *w = list->head;
-    if (w) {
-        unlink_waiter(list, w);
-        if (!w->race) w->task->chan_wait = NULL;
-    }
+    if (w) unlink_waiter(list, w);
     return w;
 }
 
@@ -1879,8 +2054,8 @@ static bool being_cancelled(veles_task *t) {
 static veles_waiter *pop_live_sender(veles_chan *c) {
     veles_waiter *w;
     while ((w = pop_waiter(&c->send_waiters))) {
-        if (being_cancelled(w->task)) continue;
-        if (w->race && !race_claim(w->race, w->arm)) continue; /* won elsewhere: not sent */
+        if (being_cancelled(waiter_task(w))) continue;
+        if (w->race && !race_claim(w->race, waiter_arm(w))) continue; /* won elsewhere: not sent */
         return w;
     }
     return NULL;
@@ -1900,7 +2075,7 @@ static void push_waiter(waiter_list *list, veles_waiter *w) {
     w->prev = list->tail;
     if (list->tail) list->tail->next = w; else list->head = w;
     list->tail = w;
-    w->in = list;
+    __atomic_store_n(&w->in, list, __ATOMIC_RELEASE);
 }
 
 /* takes w off list if it is there (a race's arm that never registered,
@@ -1957,28 +2132,38 @@ static void race_ready(veles_race *r, wakes *k) {
  * the back, not added twice */
 static void chan_block(veles_task *self, veles_chan *c, int64_t send, void *data) {
     waiter_list *list = send ? &c->send_waiters : &c->recv_waiters;
-    veles_waiter *w = &self->chan_node;
-    if (self->chan_wait == c) remove_waiter(self->chan_wait_send ? &c->send_waiters : &c->recv_waiters, w);
-    w->task = self;
+    veles_waiter *w = &self->wait.chan;
+    uint8_t kind = __atomic_load_n(&self->wait_kind, __ATOMIC_ACQUIRE);
+    if (kind != W_RECV && kind != W_SEND) {
+        /* the union held another wait, over and done with: a fresh node */
+        w->next = w->prev = NULL;
+        w->in = NULL;
+    }
     w->race = NULL;
-    w->arm = 0;
     w->data = data;
-    push_waiter(list, w);
-    self->chan_wait = c;
-    self->chan_wait_send = send;
+    push_waiter(list, w); /* off the list it is still on, if any (woken for another reason) */
+    __atomic_store_n(&self->wait_kind, send ? W_SEND : W_RECV, __ATOMIC_RELEASE);
     self->state = T_BLOCKED;
+}
+
+/* the channel t's plain send or recv waits on, or NULL: read without the
+ * channel's lock, so the caller locks it and looks again. The node's list
+ * is inside the channel, which way round wait_kind says. */
+static veles_chan *chan_waited(veles_task *t) {
+    uint8_t kind = __atomic_load_n(&t->wait_kind, __ATOMIC_ACQUIRE);
+    if (kind != W_RECV && kind != W_SEND) return NULL;
+    waiter_list *in = __atomic_load_n(&t->wait.chan.in, __ATOMIC_ACQUIRE);
+    if (!in) return NULL;
+    return kind == W_RECV ? container_of(in, veles_chan, recv_waiters) : container_of(in, veles_chan, send_waiters);
 }
 
 /* unlinks t's plain wait, on whichever channel it is (no channel lock
  * held; the channel's own is taken) */
 static void leave_chan_wait(veles_task *t) {
-    veles_chan *c = t->chan_wait;
+    veles_chan *c = chan_waited(t);
     if (!c) return;
     spin_lock(&c->lock);
-    if (t->chan_wait == c) {
-        remove_waiter(t->chan_wait_send ? &c->send_waiters : &c->recv_waiters, &t->chan_node);
-        t->chan_wait = NULL;
-    }
+    if (chan_waited(t) == c) remove_waiter(t->wait.chan.in, &t->wait.chan);
     spin_unlock(&c->lock);
 }
 
@@ -1998,12 +2183,12 @@ static void chan_pop(veles_chan *c, void *out) {
 static bool chan_hand_off(veles_chan *c, const void *item, wakes *k) {
     while (c->recv_waiters.head) {
         veles_waiter *w = pop_waiter(&c->recv_waiters);
-        veles_task *r = w->task;
+        veles_task *r = waiter_task(w);
         if (__atomic_load_n(&r->state, __ATOMIC_ACQUIRE) == T_CANCELLED ||
             __atomic_load_n(&r->cancel_requested, __ATOMIC_ACQUIRE)) continue;
         if (w->race) {
-            if (!race_claim(w->race, w->arm)) continue; /* already won elsewhere */
-            memcpy(w->race->arms[w->arm].out, item, (size_t)c->elem);
+            if (!race_claim(w->race, waiter_arm(w))) continue; /* already won elsewhere */
+            memcpy(w->race->arms[waiter_arm(w)].out, item, (size_t)c->elem);
             race_ready(w->race, k);
             return true;
         }
@@ -2026,7 +2211,7 @@ static void chan_sent(veles_chan *c, wakes *k) {
  * is complete */
 static void sender_done(veles_waiter *s, wakes *k) {
     if (s->race) race_ready(s->race, k);
-    else chan_complete(s->task, k);
+    else chan_complete(waiter_task(s), k);
 }
 
 /* a value from c into out, without blocking: from the buffer, whose freed
@@ -2092,13 +2277,13 @@ static void chan_close_locked(veles_chan *c, wakes *k) {
         veles_race *r = w->race;
         if (r) {
             /* a closed channel completes the race arm with "closed" */
-            if (race_claim(r, w->arm)) {
+            if (race_claim(r, waiter_arm(w))) {
                 r->closed = 1;
                 race_ready(r, k);
             }
             continue;
         }
-        wakes_add(k, w->task);
+        wakes_add(k, waiter_task(w));
     }
     /* a sender blocked on a full channel is woken too: its retry finds the
      * channel closed and panics, as any send on a closed channel does; a
@@ -2106,13 +2291,13 @@ static void chan_close_locked(veles_chan *c, wakes *k) {
     while ((w = pop_waiter(&c->send_waiters))) {
         veles_race *r = w->race;
         if (r) {
-            if (race_claim(r, w->arm)) {
+            if (race_claim(r, waiter_arm(w))) {
                 r->closed = 1;
                 race_ready(r, k);
             }
             continue;
         }
-        wakes_add(k, w->task);
+        wakes_add(k, waiter_task(w));
     }
 }
 
@@ -2153,103 +2338,118 @@ static bool race_claim(veles_race *r, int64_t arm);
  * its shard's heap (timer_slot, index + 1; 0 = none). The heaps are on the
  * GC heap and rooted: they keep the sleeping tasks alive.
  *
- * A shard's heap, and a task's wake_at and timer_slot, change under the
+ * A shard's heap, and a timer node's at and slot, change under the
  * shard's lock; nothing that allocates or takes another lock runs under it
  * — a collection must not wait for a thread spinning on it — so a heap
  * grows outside, and fire_timers wakes what it took out once the lock is
  * given back. */
-static timer_shard *timer_shard_of(veles_task *t) {
-    uint64_t h = ((uint64_t)(uintptr_t)t >> 4) * 0x9E3779B97F4A7C15ull;
+static timer_shard *timer_shard_of(timer_node *n) {
+    uint64_t h = ((uint64_t)(uintptr_t)n >> 4) * 0x9E3779B97F4A7C15ull;
     return &timer_shards[h >> 58];
 }
 
-static void heap_put(veles_task **heap, int64_t i, veles_task *t) {
-    heap[i] = t;
-    t->timer_slot = (int32_t)(i + 1);
+static void heap_put(timer_node **heap, int64_t i, timer_node *n) {
+    heap[i] = n;
+    n->slot = (int32_t)(i + 1);
 }
 
 static void heap_up(timer_shard *sh, int64_t i) {
-    veles_task **heap = sh->heap;
-    veles_task *t = heap[i];
+    timer_node **heap = sh->heap;
+    timer_node *n = heap[i];
     while (i > 0) {
         int64_t p = (i - 1) / 2;
-        if (heap[p]->wake_at <= t->wake_at) break;
+        if (heap[p]->at <= n->at) break;
         heap_put(heap, i, heap[p]);
         i = p;
     }
-    heap_put(heap, i, t);
+    heap_put(heap, i, n);
 }
 
 static void heap_down(timer_shard *sh, int64_t i) {
-    veles_task **heap = sh->heap;
-    veles_task *t = heap[i];
+    timer_node **heap = sh->heap;
+    timer_node *n = heap[i];
     for (;;) {
         int64_t c = 2 * i + 1;
         if (c >= sh->len) break;
-        if (c + 1 < sh->len && heap[c + 1]->wake_at < heap[c]->wake_at) c++;
-        if (heap[c]->wake_at >= t->wake_at) break;
+        if (c + 1 < sh->len && heap[c + 1]->at < heap[c]->at) c++;
+        if (heap[c]->at >= n->at) break;
         heap_put(heap, i, heap[c]);
         i = c;
     }
-    heap_put(heap, i, t);
+    heap_put(heap, i, n);
 }
 
 /* the shard's earliest deadline, for those who read it without the lock */
 static void shard_first(timer_shard *sh) {
-    __atomic_store_n(&sh->first, sh->len > 0 ? sh->heap[0]->wake_at : 0, __ATOMIC_RELEASE);
+    __atomic_store_n(&sh->first, sh->len > 0 ? sh->heap[0]->at : 0, __ATOMIC_RELEASE);
 }
 
-/* takes t out of its shard's heap (its lock held); its wake_at stays
- * (sleep reads it) */
-static void heap_remove(timer_shard *sh, veles_task *t) {
-    int64_t i = t->timer_slot - 1;
+/* takes n out of its shard's heap (its lock held); its at stays (sleep
+ * reads it) */
+static void heap_remove(timer_shard *sh, timer_node *n) {
+    int64_t i = n->slot - 1;
     if (i < 0) return;
-    t->timer_slot = 0;
-    veles_task *last = sh->heap[--sh->len];
+    n->slot = 0;
+    timer_node *last = sh->heap[--sh->len];
     sh->heap[sh->len] = NULL;
-    if (last != t) {
+    if (last != n) {
         heap_put(sh->heap, i, last);
         heap_up(sh, i);
-        heap_down(sh, last->timer_slot - 1);
+        heap_down(sh, last->slot - 1);
     }
 }
 
-static void remove_timer(veles_task *t) {
-    if (!t->timer_slot && !t->wake_at) return; /* no timer: no lock */
-    timer_shard *sh = timer_shard_of(t);
+/* disarms n */
+static void node_remove(timer_node *n) {
+    if (!n->slot && !__atomic_load_n(&n->at, __ATOMIC_ACQUIRE)) return; /* no timer: no lock */
+    timer_shard *sh = timer_shard_of(n);
     spin_lock(&sh->lock);
-    heap_remove(sh, t);
-    t->wake_at = 0;
+    heap_remove(sh, n);
+    __atomic_store_n(&n->at, 0, __ATOMIC_RELEASE);
     shard_first(sh);
     spin_unlock(&sh->lock);
 }
 
-/* arms t's timer for the absolute time at (monotonic nanoseconds) */
-static void timer_at(veles_task *t, int64_t at) {
-    timer_shard *sh = timer_shard_of(t);
+/* arms n for the absolute time at (monotonic nanoseconds) */
+static void node_at(timer_node *n, int64_t at) {
+    timer_shard *sh = timer_shard_of(n);
     spin_lock(&sh->lock);
-    heap_remove(sh, t);
+    heap_remove(sh, n);
     while (sh->len == sh->cap) {
         /* the bigger array is allocated without the lock (see above) */
         int64_t cap = sh->cap ? sh->cap * 2 : 16;
         spin_unlock(&sh->lock);
-        veles_task **grown = veles_alloc_words(cap * (int64_t)sizeof *grown);
+        timer_node **grown = veles_alloc_words(cap * (int64_t)sizeof *grown);
         spin_lock(&sh->lock);
         if (sh->cap >= cap) continue; /* another thread grew it meanwhile */
         if (sh->len) memcpy(grown, sh->heap, (size_t)sh->len * sizeof *grown);
         sh->heap = grown;
         sh->cap = cap;
     }
-    t->wake_at = at;
-    sh->heap[sh->len] = t;
+    __atomic_store_n(&n->at, at, __ATOMIC_RELEASE);
+    sh->heap[sh->len] = n;
     heap_up(sh, sh->len++);
-    int first = sh->heap[0] == t;
+    int first = sh->heap[0] == n;
     shard_first(sh);
     spin_unlock(&sh->lock);
     note_timer(at);
     /* the default pool fires timers: a thread of it waiting until a later
      * deadline looks again */
     if (first) timer_armed(at);
+}
+
+/* a task's own timer: its deadline, 0 for none */
+static inline int64_t wake_at_of(veles_task *t) {
+    return t->rare ? __atomic_load_n(&t->rare->timer.at, __ATOMIC_ACQUIRE) : 0;
+}
+
+static void remove_timer(veles_task *t) {
+    if (t->rare) node_remove(&t->rare->timer);
+}
+
+/* arms t's timer for the absolute time at (monotonic nanoseconds) */
+static void timer_at(veles_task *t, int64_t at) {
+    node_at(&rare_of(t)->timer, at);
 }
 
 static void add_timer(veles_task *t, int64_t ns) {
@@ -2264,8 +2464,9 @@ static void add_timer(veles_task *t, int64_t ns) {
  * task, so the sleeper was never resumed and the executor reported a
  * deadlock (a producer finishing while main slept on a timer). */
 static int64_t veles_task_sleep_impl(veles_task *self, int64_t ns) {
-    if (__atomic_load_n(&self->wake_at, __ATOMIC_ACQUIRE) != 0) {
-        if (now_ns() >= self->wake_at) {
+    int64_t at = wake_at_of(self);
+    if (at != 0) {
+        if (now_ns() >= at) {
             remove_timer(self);
             return 1;
         }
@@ -2276,11 +2477,8 @@ static int64_t veles_task_sleep_impl(veles_task *self, int64_t ns) {
         /* a yield: to the back of the run queue once, so every other
          * runnable task gets a turn before this one continues - the
          * polling loop around a tryRecv depends on it */
-        if (self->yielded) {
-            self->yielded = 0;
-            return 1;
-        }
-        self->yielded = 1;
+        if (task_swap(self, TB_YIELDED, 0)) return 1;
+        task_set(self, TB_YIELDED);
         enqueue(self);
         return 0;
     }
@@ -2381,21 +2579,39 @@ static int64_t nearest_tick(void) {
  * then fails, or wakes it once too often, which every wait tolerates. */
 static void fire_shard(timer_shard *sh, int64_t now) {
     for (;;) {
-        veles_task *due[FIRE_BATCH];
+        timer_node *due[FIRE_BATCH];
+        veles_race *races[FIRE_BATCH];
         int n = 0;
         spin_lock(&sh->lock);
-        while (n < FIRE_BATCH && sh->len > 0 && sh->heap[0]->wake_at <= now) {
-            veles_task *t = sh->heap[0];
-            heap_remove(sh, t);
-            if (__atomic_load_n(&t->race, __ATOMIC_ACQUIRE)) t->wake_at = 0;
-            due[n++] = t;
+        while (n < FIRE_BATCH && sh->len > 0 && sh->heap[0]->at <= now) {
+            timer_node *tn = sh->heap[0];
+            heap_remove(sh, tn);
+            races[n] = NULL;
+            if (tn->kind == TN_TASK) {
+                /* read while the node is still in the heap: the task has
+                 * not left its race (race_detach disarms the timer first,
+                 * under this lock), so the word is its race and not yet
+                 * the result it shares the word with */
+                veles_task *t = tn->owner;
+                races[n] = __atomic_load_n(&t->race, __ATOMIC_ACQUIRE);
+                /* a race's deadline is over once fired; a sleep's stays,
+                 * for the sleeper to see that it passed */
+                if (races[n]) __atomic_store_n(&tn->at, 0, __ATOMIC_RELEASE);
+            } else {
+                deadline_taken(tn->owner);
+            }
+            due[n++] = tn;
         }
         int more = n == FIRE_BATCH;
         shard_first(sh);
         spin_unlock(&sh->lock);
         for (int j = 0; j < n; j++) {
-            veles_task *t = due[j];
-            veles_race *race = __atomic_load_n(&t->race, __ATOMIC_ACQUIRE);
+            if (due[j]->kind == TN_DEADLINE) {
+                deadline_fire(due[j]->owner);
+                continue;
+            }
+            veles_task *t = due[j]->owner;
+            veles_race *race = races[j];
             if (!race) {
                 wake(t);
                 continue;
@@ -2509,10 +2725,10 @@ static void io_drop(io_shard *sh, io_entry *e) {
 }
 
 static void io_unlink(io_entry *e, veles_task *t) {
-    veles_task **head = t->io_write ? &e->writers : &e->readers;
-    if (t->io_prev) t->io_prev->io_next = t->io_next; else *head = t->io_next;
-    if (t->io_next) t->io_next->io_prev = t->io_prev;
-    t->io_next = t->io_prev = NULL;
+    veles_task **head = t->wait_kind == W_IO_WRITE ? &e->writers : &e->readers;
+    if (t->wait.io.prev) t->wait.io.prev->wait.io.next = t->wait.io.next; else *head = t->wait.io.next;
+    if (t->wait.io.next) t->wait.io.next->wait.io.prev = t->wait.io.prev;
+    t->wait.io.next = t->wait.io.prev = NULL;
     __atomic_sub_fetch(&io_count, 1, __ATOMIC_RELAXED);
 }
 
@@ -2520,10 +2736,10 @@ static void io_unlink(io_entry *e, veles_task *t) {
  * (shard lock held; they are woken from k once it is given back) */
 static void io_ready_list(veles_task *t, wakes *k) {
     while (t) {
-        veles_task *next = t->io_next;
-        t->io_next = t->io_prev = NULL;
+        veles_task *next = t->wait.io.next;
+        t->wait.io.next = t->wait.io.prev = NULL;
         __atomic_sub_fetch(&io_count, 1, __ATOMIC_RELAXED);
-        __atomic_store_n(&t->io_ready, 1, __ATOMIC_SEQ_CST); /* io_waiting stays set, so the retry sees ready */
+        task_set(t, TB_IO_READY); /* wait_kind stays, so the retry sees ready */
         wakes_add(k, t);
         t = next;
     }
@@ -2543,13 +2759,19 @@ static void io_rearm(io_shard *sh, io_entry *e, wakes *k) {
     io_ready_list(w, k);
 }
 
+/* the task is parked on a socket (or was, and has not run since) */
+static inline int io_waiting(veles_task *t) {
+    uint8_t k = __atomic_load_n(&t->wait_kind, __ATOMIC_ACQUIRE);
+    return k == W_IO_READ || k == W_IO_WRITE;
+}
+
 /* the task stops waiting for its socket (cancelled, or leaving a scope) */
 static void remove_io_waiter(veles_task *t) {
-    if (!__atomic_load_n(&t->io_waiting, __ATOMIC_ACQUIRE)) return;
-    io_shard *sh = io_shard_of(t->io_fd);
+    if (!io_waiting(t)) return;
+    io_shard *sh = io_shard_of(t->wait.io.fd);
     spin_lock(&sh->lock);
-    if (!__atomic_load_n(&t->io_ready, __ATOMIC_ACQUIRE)) {
-        io_entry *e = io_find(sh, t->io_fd);
+    if (!task_bit(t, TB_IO_READY)) {
+        io_entry *e = io_find(sh, t->wait.io.fd);
         if (e) {
             io_unlink(e, t);
             /* the descriptor may stay armed for this task: a later report
@@ -2558,8 +2780,8 @@ static void remove_io_waiter(veles_task *t) {
             if (!e->readers && !e->writers) io_drop(sh, e);
         }
     }
-    __atomic_store_n(&t->io_waiting, 0, __ATOMIC_RELEASE);
-    __atomic_store_n(&t->io_ready, 0, __ATOMIC_RELEASE);
+    __atomic_store_n(&t->wait_kind, W_NONE, __ATOMIC_RELEASE);
+    task_clear(t, TB_IO_READY);
     spin_unlock(&sh->lock);
 }
 
@@ -2575,10 +2797,10 @@ static int is_closing(io_shard *sh, int64_t fd) {
  * -1, a descriptor being closed, or one the reactor cannot watch is
  * "ready" at once: the retry fails or blocks (a regular file). */
 static int64_t veles_task_wait_io_impl(veles_task *self, int64_t fd, int64_t write) {
-    if (__atomic_load_n(&self->io_waiting, __ATOMIC_ACQUIRE)) {
-        if (__atomic_load_n(&self->io_ready, __ATOMIC_ACQUIRE)) {
-            __atomic_store_n(&self->io_waiting, 0, __ATOMIC_RELEASE);
-            __atomic_store_n(&self->io_ready, 0, __ATOMIC_RELEASE);
+    if (io_waiting(self)) {
+        if (task_bit(self, TB_IO_READY)) {
+            __atomic_store_n(&self->wait_kind, W_NONE, __ATOMIC_RELEASE);
+            task_clear(self, TB_IO_READY);
             return 1;
         }
         /* woken for another reason: the reactor's wake, if it comes
@@ -2587,6 +2809,9 @@ static int64_t veles_task_wait_io_impl(veles_task *self, int64_t fd, int64_t wri
         return 0;
     }
     if (fd < 0) return 1;
+    /* the union may still hold a plain channel wait the task was woken
+     * from for another reason: off that list before it is overwritten */
+    if (chan_waited(self)) leave_chan_wait(self);
     io_shard *sh = io_shard_of(fd);
     io_lock_room(sh);
     if (is_closing(sh, fd)) {
@@ -2596,20 +2821,19 @@ static int64_t veles_task_wait_io_impl(veles_task *self, int64_t fd, int64_t wri
     io_entry *e = io_find_or_add(sh, fd);
     veles_task **head = write ? &e->writers : &e->readers;
     int was_armed = *head != NULL;
-    self->io_fd = fd;
-    self->io_write = write;
-    __atomic_store_n(&self->io_ready, 0, __ATOMIC_RELAXED);
-    __atomic_store_n(&self->io_waiting, 1, __ATOMIC_RELEASE);
-    self->io_prev = NULL;
-    self->io_next = *head;
-    if (*head) (*head)->io_prev = self;
+    self->wait.io.fd = fd;
+    task_clear(self, TB_IO_READY);
+    __atomic_store_n(&self->wait_kind, write ? W_IO_WRITE : W_IO_READ, __ATOMIC_RELEASE);
+    self->wait.io.prev = NULL;
+    self->wait.io.next = *head;
+    if (*head) (*head)->wait.io.prev = self;
     *head = self;
     __atomic_add_fetch(&io_count, 1, __ATOMIC_RELAXED);
     /* a second task the same way changes nothing the reactor knows */
     if (!was_armed && veles_poll_arm(fd, e->readers != NULL, e->writers != NULL) != 0) {
         io_unlink(e, self);
         if (!e->readers && !e->writers) io_drop(sh, e);
-        __atomic_store_n(&self->io_waiting, 0, __ATOMIC_RELEASE);
+        __atomic_store_n(&self->wait_kind, W_NONE, __ATOMIC_RELEASE);
         spin_unlock(&sh->lock);
         return 1;
     }
@@ -2769,17 +2993,16 @@ static bool race_try_recv(veles_race *r, int64_t i, wakes *k) {
         return true;
     }
     for (veles_waiter *s = c->send_waiters.head; s; s = s->next) {
-        if (being_cancelled(s->task) || s->race == r) continue;
+        if (being_cancelled(waiter_task(s)) || s->race == r) continue;
         if (!s->race) {
             if (!race_claim(r, i)) return false;
             remove_waiter(&c->send_waiters, s);
-            s->task->chan_wait = NULL;
             memcpy(out, s->data, (size_t)c->elem);
-            chan_complete(s->task, k);
+            chan_complete(waiter_task(s), k);
             chan_sent(c, k);
             return true;
         }
-        int got = race_pair(r, i, s->race, s->arm);
+        int got = race_pair(r, i, s->race, waiter_arm(s));
         if (got == PAIR_SELF_LOST) return false;
         if (got == PAIR_WON) {
             remove_waiter(&c->send_waiters, s);
@@ -2808,21 +3031,20 @@ static bool race_try_send(veles_race *r, int64_t i, wakes *k) {
         return true;
     }
     for (veles_waiter *w = c->recv_waiters.head; w; w = w->next) {
-        if (being_cancelled(w->task) || w->race == r) continue;
+        if (being_cancelled(waiter_task(w)) || w->race == r) continue;
         if (!w->race) {
             if (!race_claim(r, i)) return false;
             remove_waiter(&c->recv_waiters, w);
-            w->task->chan_wait = NULL;
             memcpy(w->data, in, (size_t)c->elem);
-            chan_complete(w->task, k);
+            chan_complete(waiter_task(w), k);
             chan_sent(c, k);
             return true;
         }
-        int got = race_pair(r, i, w->race, w->arm);
+        int got = race_pair(r, i, w->race, waiter_arm(w));
         if (got == PAIR_SELF_LOST) return false;
         if (got == PAIR_WON) {
             remove_waiter(&c->recv_waiters, w);
-            memcpy(w->race->arms[w->arm].out, in, (size_t)c->elem);
+            memcpy(w->race->arms[waiter_arm(w)].out, in, (size_t)c->elem);
             race_ready(w->race, k);
             chan_sent(c, k);
             return true;
@@ -2845,9 +3067,7 @@ static bool race_try_chan(veles_race *r, int64_t i, int register_node, wakes *k)
     bool won = r->arms[i].send ? race_try_send(r, i, k) : race_try_recv(r, i, k);
     if (!won && register_node) {
         veles_waiter *w = &r->arms[i].node;
-        w->task = r->task;
         w->race = r;
-        w->arm = i;
         w->data = r->arms[i].send ? r->arms[i].in : NULL;
         push_waiter(r->arms[i].send ? &c->send_waiters : &c->recv_waiters, w);
     }
@@ -2950,8 +3170,10 @@ static int chain_recorded; /* a debug build ran: there is a chain to show */
 /* t's debug record, made on first use when create (the task is the only
  * one to touch it: its own thread, or the creator before it starts) */
 static task_debug *task_debug_of(veles_task *t, int create) {
-    if (!t->debug && create) t->debug = veles_alloc_words(sizeof(task_debug));
-    return t->debug;
+    if (!create) return t->rare ? t->rare->debug : NULL;
+    task_rare *r = rare_of(t);
+    if (!r->debug) r->debug = veles_alloc_words(sizeof(task_debug));
+    return r->debug;
 }
 
 /* the chain of t, or of this thread outside any task; NULL for a task
@@ -3001,7 +3223,8 @@ void veles_call_pop(void) {
 /* a task's or the program's first frame: the function it runs, with no site */
 void veles_call_base(veles_task *t, const char *rec) {
     if (!chain_recorded) chain_recorded = 1;
-    if (t && t->debug && t->debug->chain_parent) return; /* a suspending call: the caller's frame names it */
+    task_debug *td = t ? task_debug_of(t, 0) : NULL;
+    if (td && td->chain_parent) return; /* a suspending call: the caller's frame names it */
     veles_shadow *s = shadow_of(t, 1);
     s->depth = 0;
     shadow_push(s, t != NULL, rec);
@@ -3034,7 +3257,8 @@ static void trace_capture(panic_trace *tr, veles_task *t, int collected) {
             }
             fr[n++] = s->at[i];
         }
-        owner = owner && owner->debug ? owner->debug->chain_parent : NULL;
+        task_debug *od = owner ? task_debug_of(owner, 0) : NULL;
+        owner = od ? od->chain_parent : NULL;
         if (!owner) break;
         s = shadow_of(owner, 0);
     }
@@ -3156,12 +3380,11 @@ static const char *trace_report(const panic_trace *tr, const char *loc, int64_t 
  * with its panic */
 static void end_unwound(veles_task *t) {
     t->hdl = NULL;
-    if (t->panic->cancelled) {
+    if (t->rare->panic->cancelled) {
         veles_task_finish_cancelled_impl(t);
         return;
     }
-    t->panicked = 1;
-    t->failed = 1;
+    task_set(t, TB_PANICKED | TB_FAILED);
     scope_child_failed(t); /* before the result is published (D141) */
     __atomic_store_n(&t->state, T_DONE, __ATOMIC_SEQ_CST);
     wake(__atomic_exchange_n(&t->waiter, NULL, __ATOMIC_SEQ_CST));
@@ -3170,12 +3393,18 @@ static void end_unwound(veles_task *t) {
 
 /* one of the things an unwound task waits for — its own cleanups, then
  * each draining scope — is over; the last ends it */
+static void deadline_drained(veles_task *t, struct veles_deadline *d);
 static void end_drained(veles_task *t) {
-    if (__atomic_sub_fetch(&t->panic->drain, 1, __ATOMIC_SEQ_CST) != 0) return;
+    task_panic *pn = t->rare->panic;
+    if (__atomic_sub_fetch(&pn->drain, 1, __ATOMIC_SEQ_CST) != 0) return;
+    if (pn->deadline) {
+        deadline_drained(t, pn->deadline);
+        return;
+    }
     rt_enter();
     end_unwound(t);
     rt_exit();
-    if (t->test_task) test_task_done(t);
+    if (is_test_task(t)) test_task_done(t);
 }
 
 /* runs t's cleanups, innermost first; it ends now, or once its draining
@@ -3196,11 +3425,11 @@ static void unwind_cleanups(veles_task *t) {
 /* a cancellation seen in code that cannot suspend (D145) */
 static void unwind_cancelled(veles_task *t) {
     rt_unwind_to(0);
-    t->unwinding = 1;
+    task_set(t, TB_UNWINDING);
     task_panic *pn = veles_alloc_words(sizeof *pn);
     pn->drain = 1;
     pn->cancelled = 1;
-    t->panic = pn;
+    rare_of(t)->panic = pn;
     unwind_cleanups(t);
     longjmp(panic_return, 1);
 }
@@ -3213,17 +3442,18 @@ int64_t veles_task_panic(const char *msg, int64_t len, const char *loc, int64_t 
     rt_unwind_to(0);
     /* the first panic is the one reported; a panic in a cleanup run for a
      * cancellation makes the task end with that panic */
-    if (!t->unwinding || (t->panic && t->panic->cancelled)) {
-        t->unwinding = 1;
+    if (!task_bit(t, TB_UNWINDING) || (panic_of(t) && panic_of(t)->cancelled)) {
+        task_set(t, TB_UNWINDING);
         char *copy = veles_alloc(len + 1);
         memcpy(copy, msg, (size_t)len);
-        task_panic *pn = t->panic;
+        task_panic *pn = panic_of(t);
         if (!pn) {
             pn = veles_alloc_words(sizeof *pn);
             pn->drain = 1;
-            t->panic = pn;
+            rare_of(t)->panic = pn;
         }
         pn->cancelled = 0;
+        pn->deadline = NULL;
         t->result = veles_alloc_words(8);
         pn->msg = copy;
         pn->len = len;
@@ -3237,9 +3467,9 @@ int64_t veles_task_panic(const char *msg, int64_t len, const char *loc, int64_t 
         veles_task *from = tls->carry;
         tls->carry = NULL;
         if (from) {
-            pn->trace.in = from->panic->trace.in;
-            pn->trace.chain = from->panic->trace.chain;
-            pn->trace.chain_len = from->panic->trace.chain_len;
+            pn->trace.in = panic_of(from)->trace.in;
+            pn->trace.chain = panic_of(from)->trace.chain;
+            pn->trace.chain_len = panic_of(from)->trace.chain_len;
         } else {
             trace_capture(&pn->trace, t, 1);
         }
@@ -3280,7 +3510,7 @@ int64_t veles_task_cancelled(veles_task *t, int64_t depth);
 int64_t veles_backedge(veles_task *t, int64_t depth) {
     if (veles_stop_requested) veles_gc_park();
     veles_tls *tls = veles_tls_get();
-    if (tls->shield > 0 || tls->callback_depth > 0 || t->unwinding || t->shield) return 3;
+    if (tls->shield > 0 || tls->callback_depth > 0 || task_bit(t, TB_UNWINDING) || t->shield) return 3;
     if (veles_task_cancelled(t, depth)) return 2;
     veles_worker *w = tls->worker;
     if (w && __atomic_exchange_n(&w->preempt, 0, __ATOMIC_SEQ_CST)) {
@@ -3290,13 +3520,15 @@ int64_t veles_backedge(veles_task *t, int64_t depth) {
     return 0;
 }
 
+static void deadline_unwind_plain(veles_task *t);
+
 /* the cancellation check of code that cannot suspend: a loop's back edge
  * in a plain function, and `checkCancelled()` (D145) */
 static void check_cancelled_here(void) {
     veles_tls *tls = veles_tls_get();
     if (!in_resume || !current || tls->shield > 0 || tls->callback_depth > 0) return;
     veles_task *t = current;
-    if (t->unwinding || t->shield) return;
+    if (task_bit(t, TB_UNWINDING) || t->shield) return;
     /* a plain function cannot give its thread up: a request to is dropped,
      * and the monitor asks again if it still runs */
     veles_worker *w = tls->worker;
@@ -3305,6 +3537,8 @@ static void check_cancelled_here(void) {
     if (__atomic_load_n(&t->cancel_requested, __ATOMIC_ACQUIRE) ||
         __atomic_load_n(&t->state, __ATOMIC_ACQUIRE) == T_CANCELLED)
         unwind_cancelled(t);
+    task_rare *r = t->rare;
+    if (r && __atomic_load_n(&r->cut, __ATOMIC_ACQUIRE)) deadline_unwind_plain(t);
 }
 
 void veles_backedge_plain(void) {
@@ -3353,12 +3587,12 @@ void veles_cleanup_continue(veles_task *closer) {
     veles_scope *s = veles_scope_begin(root, 0, 0);
     s->closing = 1;
     s->draining = 1;
-    __atomic_add_fetch(&root->panic->drain, 1, __ATOMIC_SEQ_CST);
+    __atomic_add_fetch(&panic_of(root)->drain, 1, __ATOMIC_SEQ_CST);
     closer->scope = s;
     closer->locals = t->locals; /* a test's record, the task-locals of the code that opened it */
     /* the entries and what they close are in frames and on a stack this
      * unwinding is about to leave: the closer gets copies in the heap */
-    veles_cleanup **tail = &closer->cleanups;
+    veles_cleanup **tail = &rare_of(closer)->inherited;
     for (veles_cleanup *c = t->cleanups; c; c = c->next) {
         veles_cleanup *m = veles_alloc_words(sizeof *m);
         m->fn = c->fn;
@@ -3381,7 +3615,7 @@ static void run_inherited_cleanups(veles_task *t) {
 }
 
 int64_t veles_task_panicked(veles_task *t) {
-    return t->panicked;
+    return task_bit(t, TB_PANICKED);
 }
 
 /* The message of the panic the running task is unwinding by, for a close()
@@ -3394,30 +3628,30 @@ typedef struct {
 
 int64_t veles_panic_current(panic_text *out) {
     if (!in_resume || !current) return 0;
-    task_panic *pn = current->panic;
-    if (!current->unwinding || !pn || pn->cancelled || !pn->msg) return 0;
+    task_panic *pn = panic_of(current);
+    if (!task_bit(current, TB_UNWINDING) || !pn || pn->cancelled || !pn->msg) return 0;
     out->data = pn->msg;
     out->len = pn->len;
     return 1;
 }
 
 const char *veles_task_panic_msg(veles_task *t, int64_t *len) {
-    *len = t->panic ? t->panic->len : 0;
-    return t->panic ? t->panic->msg : "";
+    *len = panic_of(t) ? panic_of(t)->len : 0;
+    return panic_of(t) ? panic_of(t)->msg : "";
 }
 
 const char *veles_task_panic_loc(veles_task *t, int64_t *len) {
-    *len = t->panic ? t->panic->loc_len : 0;
-    return t->panic && t->panic->loc ? t->panic->loc : "";
+    *len = panic_of(t) ? panic_of(t)->loc_len : 0;
+    return panic_of(t) && panic_of(t)->loc ? panic_of(t)->loc : "";
 }
 
 /* the lines under a panicked task's message (see trace_report) */
 const char *veles_task_panic_report(veles_task *t, int64_t indent, int64_t *len) {
-    if (!t->panic) {
+    if (!panic_of(t)) {
         *len = 0;
         return "";
     }
-    return trace_report(&t->panic->trace, t->panic->loc, t->panic->loc_len, indent, 1, len);
+    return trace_report(&panic_of(t)->trace, panic_of(t)->loc, panic_of(t)->loc_len, indent, 1, len);
 }
 
 /* the same for a panic that ends the process, written to standard error:
@@ -3453,9 +3687,9 @@ void veles_panic_print_report(const char *loc, int64_t loc_len, int64_t indent) 
     panic_trace tr = {0};
     int carried = tls->carry != NULL;
     if (carried) {
-        tr.in = tls->carry->panic->trace.in;
-        tr.chain = tls->carry->panic->trace.chain;
-        tr.chain_len = tls->carry->panic->trace.chain_len;
+        tr.in = panic_of(tls->carry)->trace.in;
+        tr.chain = panic_of(tls->carry)->trace.chain;
+        tr.chain_len = panic_of(tls->carry)->trace.chain_len;
         tls->carry = NULL;
     } else {
         trace_capture(&tr, current, 0);
@@ -3476,15 +3710,24 @@ static void resume(veles_task *t) {
     if (!t->hdl) return;
     current = t;
     in_resume = 1;
-    if (setjmp(panic_return) == 0) {
-        do {
-            void *hdl = t->hdl;
-            t->popped = 0;
-            void (*fn)(void *) = *(void (**)(void *))hdl;
-            fn(hdl);
-        } while (t->popped && t->hdl);
-    } else {
+    for (;;) {
+        if (setjmp(panic_return) == 0) {
+            do {
+                void *hdl = t->hdl;
+                t->popped = 0;
+                void (*fn)(void *) = *(void (**)(void *))hdl;
+                fn(hdl);
+            } while (t->popped && t->hdl);
+            break;
+        }
         rt_unwind_to(0);
+        /* a plain loop under a withTimeout whose deadline fired jumped
+         * here (D151): its frame goes on, unless f's scopes are still
+         * draining (the task waits T_ENDING, and their last child wakes it) */
+        veles_tls *tls = veles_tls_get();
+        if (!tls->deadline_jump) break;
+        tls->deadline_jump = 0;
+        if (__atomic_load_n(&t->state, __ATOMIC_ACQUIRE) == T_ENDING) break;
     }
     in_resume = 0;
     current = NULL;
@@ -3521,6 +3764,7 @@ static void scope_child_finished(veles_task *t);
 static void finish_unstarted(veles_task *t) {
     t->entry = NULL;
     t->entry_args = NULL;
+    __atomic_store_n(&t->wait_kind, W_NONE, __ATOMIC_RELEASE);
     __atomic_store_n(&t->state, T_CANCELLED, __ATOMIC_SEQ_CST);
     wake(__atomic_exchange_n(&t->waiter, NULL, __ATOMIC_SEQ_CST));
     scope_child_finished(t);
@@ -3560,8 +3804,11 @@ static void run_task(veles_task *t) {
         after_run(t);
         return;
     }
-    void (*entry)(veles_task *, void *) = t->entry;
-    void *args = t->entry_args;
+    /* entry and entry_args share their words with what a started task
+     * keeps there (its race, its cleanups) */
+    int unstarted = __atomic_load_n(&t->wait_kind, __ATOMIC_ACQUIRE) == W_UNSTARTED;
+    void (*entry)(veles_task *, void *) = unstarted ? t->entry : NULL;
+    void *args = unstarted ? t->entry_args : NULL;
     if (entry && __atomic_load_n(&t->cancel_requested, __ATOMIC_SEQ_CST)) {
         rt_enter();
         finish_unstarted(t);
@@ -3569,8 +3816,17 @@ static void run_task(veles_task *t) {
         after_run(t);
         return;
     }
-    t->entry = NULL;
-    t->entry_args = NULL;
+    if (unstarted) {
+        t->entry = NULL;
+        t->entry_args = NULL;
+        __atomic_store_n(&t->wait_kind, W_NONE, __ATOMIC_RELEASE);
+        /* a closer (D147) starts with the cleanups it took on: its own go
+         * on top, and it runs these once its close is over */
+        if (t->rare && t->rare->inherited) {
+            t->cleanups = t->rare->inherited;
+            t->rare->inherited = NULL;
+        }
+    }
     t->state = T_RUNNABLE;
     if (entry) run_entry(t, entry, args); else resume(t);
     after_run(t);
@@ -3637,9 +3893,11 @@ static void run_counted(veles_worker *w, veles_task *t) {
      * odd number; a request to yield was for the task before this one */
     if (__atomic_load_n(&monitor_asleep, __ATOMIC_RELAXED)) wake_monitor();
     __atomic_store_n(&w->run_seq, w->run_seq + 1, __ATOMIC_RELAXED);
+    __atomic_store_n(&w->running, t, __ATOMIC_RELAXED);
     if (__atomic_exchange_n(&w->preempt, 0, __ATOMIC_SEQ_CST))
         __atomic_sub_fetch(&veles_attention, 1, __ATOMIC_SEQ_CST);
     run_task(t);
+    __atomic_store_n(&w->running, NULL, __ATOMIC_RELAXED);
     __atomic_store_n(&w->run_seq, w->run_seq + 1, __ATOMIC_RELAXED);
 }
 
@@ -3823,7 +4081,8 @@ static void worker_main(void *arg) {
 /* ---- the threads of the other executors (D143) -------------------------------
  * A thread of a pool, of `Executor.thread` or of the blocking pool runs
  * only its executor's tasks: no timers and no sockets (the default pool
- * serves those), and no hand-off of its queue around a blocking call. It
+ * serves those); only a pool's queue is handed off around a blocking call
+ * (D153: pool_hand_off, pool_spare). It
  * sleeps when out of work and leaves when the executor is closed; a thread
  * of the blocking pool also leaves after BLOCKING_KEEP_MS idle, and a new
  * one starts when a call finds every one busy, up to the pool's bound. */
@@ -3856,6 +4115,10 @@ static void exec_loop(veles_worker *w, int fresh) {
             if (!t) break;
             if (anything_queued(e)) wake_worker(e); /* more waiting: a hand for them */
             run_counted(w, t);
+            if (veles_tls_get()->worker != w) { /* handed off while t blocked (D153) */
+                __atomic_sub_fetch(&active_workers, 1, __ATOMIC_SEQ_CST);
+                return;
+            }
         }
         __atomic_sub_fetch(&active_workers, 1, __ATOMIC_SEQ_CST);
         idle_node *me = my_idle();
@@ -3874,6 +4137,9 @@ static void exec_loop(veles_worker *w, int fresh) {
             return;
     }
 }
+
+static void exec_leave(veles_exec *e);
+static void pool_spare(veles_exec *e);
 
 static void exec_main(void *arg) {
     exec_start *s = arg;
@@ -3896,7 +4162,7 @@ static void exec_main(void *arg) {
     }
     veles_worker *w = e->workers[s->slot];
     if (!w) w = new_worker(e, s->slot);
-    w->bstate = 1; /* the slot is taken (bstate is otherwise unused here: no hand-off) */
+    w->taken = 1;
     veles_tls_get()->worker = w;
     int64_t detached = s->detached;
     __atomic_store_n(&s->status, 1, __ATOMIC_SEQ_CST);
@@ -3904,14 +4170,69 @@ static void exec_main(void *arg) {
     if (detached) free(s);
     rt_exit();
     exec_loop(w, (int)detached);
+    if (!veles_tls_get()->worker) pool_spare(e); /* its queue was handed off */
+    exec_leave(e);
+}
+
+/* a thread of e leaves its loop (it holds the queue it ran, if any) */
+static void exec_leave(veles_exec *e) {
     rt_enter();
-    w->bstate = 0;
+    veles_worker *w = veles_tls_get()->worker;
+    if (w) w->taken = 0;
     veles_tls_get()->worker = NULL;
     e->threads--;
     veles_cond_broadcast(e->stopped_cv);
     rt_exit();
     idle_node_release();
     veles_thread_detach();
+}
+
+/* A pool's thread without a run queue — its own was handed off while it
+ * blocked, or it was started for one handed off (D153) — runs whichever
+ * queue the monitor hands off next. It leaves when the pool closes, or
+ * after POOL_SPARE_KEEP_MS without one: the pool is back to the threads
+ * it was made with. */
+#define POOL_SPARE_KEEP_MS 10000
+static void pool_spare(veles_exec *e) {
+    veles_tls *tls = veles_tls_get();
+    for (;;) {
+        rt_enter();
+        int64_t since = now_ns();
+        while (e->nfree == 0 && !e->stopping && now_ns() - since < (int64_t)POOL_SPARE_KEEP_MS * NS_PER_MS) {
+            e->spares_waiting++;
+            veles_enter_safe();
+            veles_cond_wait(e->spare_cv, rt_lock, 100);
+            veles_leave_safe();
+            e->spares_waiting--;
+        }
+        veles_worker *w = NULL;
+        if (e->nfree > 0 && !e->stopping) {
+            w = e->free[--e->nfree];
+            e->free[e->nfree] = NULL;
+            w->runnext_streak = 0;
+            __atomic_store_n(&w->bstate, B_RUNNING, __ATOMIC_SEQ_CST);
+            tls->worker = w;
+        }
+        rt_exit();
+        if (!w) return;
+        exec_loop(w, 0);
+        if (tls->worker) return; /* the pool stopped */
+    }
+}
+
+/* a thread started for a pool's queue handed off (pool_hand_off): set up
+ * like the pool's own, it takes the queue and stays a spare */
+static void pool_spare_main(void *arg) {
+    veles_exec *e = arg;
+    veles_thread_attach();
+    char name[48], err[160];
+    snprintf(name, sizeof name, "%s-spare", e->name);
+    /* the OS took these settings when the pool started; should it refuse
+     * them now, the queue runs on a thread without them rather than not at
+     * all */
+    (void)veles_thread_configure(name, e->priority, e->cpus, e->ncpus, err, sizeof err);
+    pool_spare(e);
+    exec_leave(e);
 }
 
 /* one more thread for the blocking pool, every one being busy: up to its
@@ -3927,7 +4248,7 @@ static void grow_blocking(veles_exec *e) {
     }
     int64_t slot = -1;
     for (int64_t i = 0; i < e->target; i++) {
-        if (!e->workers[i] || !e->workers[i]->bstate) {
+        if (!e->workers[i] || !e->workers[i]->taken) {
             slot = i;
             break;
         }
@@ -3942,12 +4263,12 @@ static void grow_blocking(veles_exec *e) {
     s->slot = slot;
     s->detached = 1;
     if (!e->workers[slot]) new_worker(e, slot);
-    e->workers[slot]->bstate = 1;
+    e->workers[slot]->taken = 1;
     e->threads++;
     /* waking stays set until the thread is in its loop: no second one meanwhile */
     if (veles_thread_spawn(exec_main, s) != 0) {
         e->threads--;
-        e->workers[slot]->bstate = 0;
+        e->workers[slot]->taken = 0;
         __atomic_store_n(&e->waking, 0, __ATOMIC_SEQ_CST);
         free(s);
     }
@@ -4025,6 +4346,7 @@ static void exec_unlink(veles_exec *e) {
 static void exec_join(veles_exec *e) {
     __atomic_store_n(&e->stopping, 1, __ATOMIC_SEQ_CST);
     wake_all(e);
+    if (e->spare_cv) veles_cond_broadcast(e->spare_cv);
     while (e->threads > 0) {
         veles_enter_safe();
         veles_cond_wait(e->stopped_cv, rt_lock, -1);
@@ -4045,6 +4367,10 @@ static veles_exec *exec_create(int64_t threads, int64_t single, const char *name
     if (threads > MAX_WORKERS) threads = MAX_WORKERS;
     veles_exec *e = exec_alloc(single ? X_THREAD : X_POOL, threads);
     e->target = threads;
+    if (!single) {
+        e->spare_cv = veles_cond_new();
+        e->free = veles_alloc(threads * (int64_t)sizeof e->free[0]);
+    }
     if (name_len > (int64_t)sizeof e->name - 1) name_len = (int64_t)sizeof e->name - 1;
     if (name_len > 0) memcpy(e->name, name, (size_t)name_len);
     e->priority = (int32_t)priority;
@@ -4115,7 +4441,7 @@ static void set_error(exec_text *out, const char *msg) {
 
 /* `Executor.pool(...)` and `Executor.thread(...)`: the executor, or NULL
  * with the reason in *err (a ThreadError) */
-veles_exec *veles_exec_new(int64_t threads, int64_t single, const char *name, int64_t name_len,
+veles_exec *veles_exec_new(int64_t threads, bool single, const char *name, int64_t name_len,
                            int64_t priority, const int64_t *cpus, int64_t ncpus, exec_text *err) {
     char why[200] = {0};
     veles_exec *e = exec_create(threads, single, name, name_len, priority, cpus, ncpus, why, sizeof why);
@@ -4189,6 +4515,7 @@ static void os_thread_main(void *arg) {
     __atomic_store_n(&r->status, 2, __ATOMIC_SEQ_CST);
     veles_cond_broadcast(os_thread_cv);
     rt_exit();
+    if (veles_tls_get()->idle) idle_node_release(); /* its park, if runBlocking used one */
     veles_thread_detach();
 }
 
@@ -4269,7 +4596,7 @@ void veles_thread_join(os_thread *r) {
     rt_exit();
     veles_blocking_leave();
     veles_task *t = r->task;
-    if (first && t->panic && !t->panic->cancelled && t->panic->msg) veles_task_repanic(t);
+    if (first && panic_of(t) && !panic_of(t)->cancelled && panic_of(t)->msg) veles_task_repanic(t);
 }
 
 /* `close()` of an Executor: its tasks have all been joined by the scopes
@@ -4277,6 +4604,10 @@ void veles_thread_join(os_thread *r) {
  * they have. Closing it again — through a copy — does nothing. */
 void veles_exec_close(veles_exec *e) {
     veles_worker *w = veles_tls_get()->worker;
+    if (e == default_exec) {
+        static const char why[] = "the default pool cannot be closed: main runs on it";
+        veles_panic(why, (int64_t)sizeof why - 1);
+    }
     if (w && w->exec == e) veles_panic("an executor cannot be closed by one of its own tasks", 52);
     rt_enter();
     if (!e->stopping) {
@@ -4333,7 +4664,7 @@ int64_t veles_race_closed(veles_race *r) {
 /* re-raise a child's panic in the current context (scope re-raises, D52) */
 void veles_task_repanic(veles_task *t) {
     veles_tls_get()->carry = t;
-    veles_panic_at(t->panic->msg, t->panic->len, t->panic->loc, t->panic->loc_len);
+    veles_panic_at(panic_of(t)->msg, panic_of(t)->len, panic_of(t)->loc, panic_of(t)->loc_len);
 }
 
 /* veles_task_start runs a coroutine ramp through an entry thunk inside the
@@ -4372,6 +4703,7 @@ void veles_task_start(veles_task *t, void (*entry)(veles_task *, void *), void *
     veles_task_init();
     t->entry = entry;
     t->entry_args = args;
+    __atomic_store_n(&t->wait_kind, W_UNSTARTED, __ATOMIC_RELEASE);
     t->state = T_RUNNABLE;
     __atomic_store_n(&t->sched, S_QUEUED, __ATOMIC_SEQ_CST);
     push_global(default_exec, t);
@@ -4390,10 +4722,284 @@ void veles_task_spawn(veles_task *t, void (*entry)(veles_task *, void *), void *
      * takes it finishes it unstarted (run_task). */
     t->entry = entry;
     t->entry_args = args;
+    __atomic_store_n(&t->wait_kind, W_UNSTARTED, __ATOMIC_RELEASE);
     t->state = T_RUNNABLE;
     __atomic_store_n(&t->sched, S_QUEUED, __ATOMIC_SEQ_CST);
     join_scope(t);
     place(t);
+}
+
+/* ---- runBlocking (D152) ----------------------------------------------------
+ * Plain code — a Thread's function, a call on the blocking pool, a C
+ * library's thread calling back — runs a task placed on the executor
+ * (veles_task_place_on) and blocks its OS thread on its own park until the
+ * task ends: the task's scope has no owner, so its end
+ * (scope_child_finished) looks it up here. */
+typedef struct block_wait {
+    veles_task *task;
+    veles_park *park;
+    int64_t done;
+    struct block_wait *next;
+} block_wait;
+
+static block_wait *block_waits;   /* under block_lock */
+static int32_t block_lock;
+static int64_t block_waiting;     /* how many (atomic): a scope-less task's end looks only then */
+
+/* t, a task without a scope, has ended: the thread waiting for it, if any,
+ * goes on */
+static void block_on_done(veles_task *t) {
+    if (!__atomic_load_n(&block_waiting, __ATOMIC_SEQ_CST)) return;
+    spin_lock(&block_lock);
+    for (block_wait *b = block_waits; b; b = b->next) {
+        if (b->task != t) continue;
+        __atomic_store_n(&b->done, 1, __ATOMIC_SEQ_CST);
+        veles_park_wake(b->park);
+        break;
+    }
+    spin_unlock(&block_lock);
+}
+
+void veles_block_on(veles_task *t, void (*entry)(veles_task *, void *), void *args) {
+    veles_tls *tls = veles_tls_get();
+    veles_worker *w = tls->worker;
+    if (w && w->exec->kind != X_BLOCKING) {
+        static const char why[] = "runBlocking on a thread of an executor would block a thread its tasks need, or wait for itself; a task waits with run";
+        veles_panic(why, (int64_t)sizeof why - 1);
+    }
+    block_wait b = {.task = t, .park = my_idle()->park};
+    spin_lock(&block_lock);
+    b.next = block_waits;
+    block_waits = &b;
+    spin_unlock(&block_lock);
+    __atomic_add_fetch(&block_waiting, 1, __ATOMIC_SEQ_CST);
+    veles_task_spawn(t, entry, args);
+    while (!__atomic_load_n(&b.done, __ATOMIC_SEQ_CST)) {
+        veles_enter_safe();
+        veles_park_wait(b.park, -1);
+        veles_leave_safe();
+    }
+    spin_lock(&block_lock);
+    for (block_wait **pp = &block_waits; *pp; pp = &(*pp)->next) {
+        if (*pp == &b) {
+            *pp = b.next;
+            break;
+        }
+    }
+    spin_unlock(&block_lock);
+    __atomic_sub_fetch(&block_waiting, 1, __ATOMIC_SEQ_CST);
+}
+
+/* the task runBlocking starts runs on e: in a scope of its own with no
+ * owner, which no one joins (its end is block_on_done's). Also how a
+ * declared executor's state is made on its thread (D150). */
+void veles_task_place_on(veles_task *t, veles_exec *e) {
+    veles_task_init();
+    veles_scope *s = veles_scope_begin(NULL, 0, 0);
+    s->exec = e;
+    t->scope = s;
+}
+
+/* the default pool as a value (`Executor.default`, D152) */
+veles_exec *veles_exec_default(void) {
+    veles_task_init();
+    return default_exec;
+}
+
+/* ---- the hang watchdog (VELES_WATCHDOG) -------------------------------------
+ * VELES_WATCHDOG=n: a program still running after n seconds prints every
+ * live task — its state, what it waits on, its scope, the innermost call of
+ * a debug build's chain — and every executor's threads and queues to
+ * stderr, then exits with 124. It is how a hang that will not reproduce is
+ * explained from one occurrence (the test loops leave it on). The live
+ * tasks are a set kept only then: open addressing over a collected array
+ * (rooted, so a task in it stays readable), a spinlock that never
+ * allocates, deleted slots reused, and a rebuild into a second array when
+ * deleted ones crowd it. The dump stops the world first when it can. */
+#define DIAG_BITS 21
+#define DIAG_CAP ((int64_t)1 << DIAG_BITS)
+#define DIAG_GONE ((veles_task *)(uintptr_t)1)
+static veles_task **diag_spare;  /* the rebuild's target, swapped with diag_set */
+static int32_t diag_lock;
+static int64_t diag_live, diag_used; /* tasks in it; slots not empty (tasks and deleted) */
+static int64_t diag_dropped;          /* tasks not tracked: the set was full */
+
+static int64_t diag_slot(veles_task *t) {
+    uint64_t h = (uint64_t)(uintptr_t)t * 0x9E3779B97F4A7C15ull;
+    return (int64_t)(h >> (64 - DIAG_BITS));
+}
+
+static void diag_rebuild(void) {
+    memset(diag_spare, 0, (size_t)DIAG_CAP * sizeof *diag_spare);
+    for (int64_t i = 0; i < DIAG_CAP; i++) {
+        veles_task *t = diag_set[i];
+        if (!t || t == DIAG_GONE) continue;
+        int64_t j = diag_slot(t);
+        while (diag_spare[j]) j = (j + 1) & (DIAG_CAP - 1);
+        diag_spare[j] = t;
+    }
+    veles_task **old = diag_set;
+    __atomic_store_n(&diag_set, diag_spare, __ATOMIC_RELEASE);
+    diag_spare = old;
+    diag_used = diag_live;
+}
+
+static void diag_add(veles_task *t) {
+    spin_lock(&diag_lock);
+    if (diag_used >= DIAG_CAP / 4 * 3) diag_rebuild();
+    if (diag_live >= DIAG_CAP / 4 * 3) {
+        diag_dropped++;
+        spin_unlock(&diag_lock);
+        return;
+    }
+    int64_t i = diag_slot(t);
+    while (diag_set[i] && diag_set[i] != DIAG_GONE) i = (i + 1) & (DIAG_CAP - 1);
+    if (!diag_set[i]) diag_used++;
+    diag_set[i] = t;
+    diag_live++;
+    spin_unlock(&diag_lock);
+}
+
+static void diag_remove(veles_task *t) {
+    spin_lock(&diag_lock);
+    for (int64_t i = diag_slot(t); diag_set[i]; i = (i + 1) & (DIAG_CAP - 1)) {
+        if (diag_set[i] == t) {
+            diag_set[i] = DIAG_GONE;
+            diag_live--;
+            break;
+        }
+    }
+    spin_unlock(&diag_lock);
+}
+
+static const char *diag_state(int32_t st) {
+    static const char *names[] = {"runnable", "blocked", "done", "cancelled", "ending"};
+    return st >= 0 && st <= T_ENDING ? names[st] : "?";
+}
+
+static const char *diag_sched(int32_t s) {
+    static const char *names[] = {"idle", "queued", "running", "woken"};
+    return s >= 0 && s <= S_WOKEN ? names[s] : "?";
+}
+
+/* what t waits on, in words */
+static void diag_waits(veles_task *t, char *out, size_t n) {
+    uint8_t kind = __atomic_load_n(&t->wait_kind, __ATOMIC_ACQUIRE);
+    task_rare *r = __atomic_load_n(&t->rare, __ATOMIC_ACQUIRE);
+    int64_t at = r ? r->timer.at : 0;
+    char timer[48] = "";
+    if (at) snprintf(timer, sizeof timer, ", a timer in %lld ms", (long long)((at - now_ns()) / NS_PER_MS));
+    switch (kind) {
+    case W_RECV:
+    case W_SEND: {
+        veles_chan *c = chan_waited(t);
+        if (c)
+            snprintf(out, n, "%s on channel %p (len %lld/%lld, closed %lld, receivers %s, senders %s)%s", kind == W_RECV ? "recv" : "send",
+                     (void *)c, (long long)c->len, (long long)c->cap, (long long)c->closed, c->recv_waiters.head ? "waiting" : "none",
+                     c->send_waiters.head ? "waiting" : "none", timer);
+        else
+            snprintf(out, n, "%s, on no channel's list (woken or taken)%s", kind == W_RECV ? "recv" : "send", timer);
+        return;
+    }
+    case W_IO_READ:
+    case W_IO_WRITE:
+        snprintf(out, n, "socket %lld for %s%s", (long long)t->wait.io.fd, kind == W_IO_READ ? "reading" : "writing", timer);
+        return;
+    case W_UNSTARTED:
+        snprintf(out, n, "not started yet");
+        return;
+    }
+    int32_t st = __atomic_load_n(&t->state, __ATOMIC_ACQUIRE);
+    if (st == T_BLOCKED && t->race) snprintf(out, n, "a race %p (winner %lld, ready %lld)%s", (void *)t->race, (long long)t->race->winner, (long long)t->race->ready, timer);
+    else snprintf(out, n, "%s", at ? timer + 2 : "-");
+}
+
+static void diag_task(veles_task *t, FILE *f) {
+    char waits[256];
+    diag_waits(t, waits, sizeof waits);
+    task_rare *r = __atomic_load_n(&t->rare, __ATOMIC_ACQUIRE);
+    fprintf(f, "  task %p%s: %s, %s, depth %d, frame %s, waits: %s\n", (void *)t, t == root_task ? " (root)" : "",
+            diag_state(__atomic_load_n(&t->state, __ATOMIC_ACQUIRE)), diag_sched(__atomic_load_n(&t->sched, __ATOMIC_ACQUIRE)), t->depth,
+            t->hdl ? "yes" : "none", waits);
+    veles_scope *s = t->scope;
+    if (s)
+        fprintf(f, "    child of scope %p (owner %p, %lld live, %s%s%s)\n", (void *)s, (void *)s->owner, (long long)s->live,
+                s->fail_fast ? "fail-fast" : "gather", s->failed ? ", failed" : "", s->draining ? ", draining" : "");
+    if (t->waiter) fprintf(f, "    awaited by %p\n", (void *)t->waiter);
+    if (t->cancel_requested || t->shield || t->chan_done || t->bits || t->abandon_depth != INT32_MAX)
+        fprintf(f, "    cancel_requested %d, shield %d, chan_done %d, bits 0x%x, abandon_depth %d\n", t->cancel_requested, t->shield, t->chan_done,
+                t->bits, t->abandon_depth == INT32_MAX ? -1 : t->abandon_depth);
+    if (r && (r->cut || r->deadline || r->panic)) fprintf(f, "    cut %d, deadline %p, panic %p\n", r->cut, (void *)r->deadline, (void *)r->panic);
+    if (r && r->debug && r->debug->shadow.depth > 0) {
+        /* a debug build's calls in progress, innermost first: each record
+         * is "site\0callee" */
+        veles_shadow *sh = &r->debug->shadow;
+        int64_t d = sh->depth < sh->cap ? sh->depth : sh->cap;
+        for (int64_t i = d - 1; i >= 0 && i >= d - 8 && sh->at; i--) {
+            const char *rec = sh->at[i];
+            if (rec) fprintf(f, "    in %s%s%s\n", rec + strlen(rec) + 1, *rec ? ", called at " : "", rec);
+        }
+    }
+}
+
+static void diag_exec(veles_exec *e, FILE *f) {
+    static const char *kinds[] = {"default", "pool", "thread", "blocking"};
+    fprintf(f, "executor '%s' (%s): %lld queues, %lld threads, %lld idle, waking %lld, spinning %lld, shared queue %lld%s\n", e->name,
+            kinds[e->kind], (long long)e->nworkers, (long long)e->threads, (long long)e->idle_workers, (long long)e->waking, (long long)e->spinning,
+            (long long)e->gq_len, e->stopping ? ", stopping" : "");
+    for (int64_t i = 0; i < e->nworkers; i++) {
+        veles_worker *w = e->workers[i];
+        /* only the queues with something to say */
+        if (!w || (w->tail == w->head && !w->runnext && !w->running && w->bstate == B_RUNNING && !w->preempt)) continue;
+        static const char *bs[] = {"", ", its thread blocked in a call", ", handed off"};
+        fprintf(f, "  queue %lld: %u queued, runnext %p, running %p%s%s\n", (long long)i, w->tail - w->head, (void *)w->runnext, (void *)w->running,
+                w->bstate >= 0 && w->bstate <= B_HANDED_OFF ? bs[w->bstate] : ", ?", w->preempt ? ", asked to yield" : "");
+    }
+}
+
+static void watchdog_main(void *arg) {
+    int64_t secs = (int64_t)(intptr_t)arg;
+    veles_park *p = veles_park_new();
+    int64_t until = now_ns() + secs * 1000 * NS_PER_MS;
+    while (now_ns() < until) veles_park_wait(p, until - now_ns());
+    int stopped = veles_gc_try_stop_world(2000);
+    FILE *f = stderr;
+    fprintf(f, "\nwatchdog: still running after %lld s (VELES_WATCHDOG); the world is %s\n", (long long)secs,
+            stopped ? "stopped" : "NOT stopped: a thread did not reach a safe point in 2 s — it runs code that never looks; what follows may be torn");
+    fprintf(f, "root %p, sockets waited on %lld, poller blocked %lld, pool threads blocked %lld, runBlocking waits %lld, monitor asleep %lld, "
+               "next timer in %lld ms, attention %lld\n",
+            (void *)root_task, (long long)io_count, (long long)poller_blocked, (long long)pool_blocked, (long long)block_waiting, (long long)monitor_asleep,
+            timer_due ? (long long)((timer_due - now_ns()) / NS_PER_MS) : -1LL, (long long)veles_attention);
+    int64_t timers = 0;
+    for (int i = 0; i < TIMER_SHARDS; i++) timers += timer_shards[i].len;
+    fprintf(f, "timers %lld\n", (long long)timers);
+    diag_exec(default_exec, f);
+    for (veles_exec *e = execs; e; e = e->next) diag_exec(e, f);
+    if (blocking_exec) diag_exec(blocking_exec, f);
+    fprintf(f, "%lld live tasks%s:\n", (long long)diag_live, diag_dropped ? " (some not tracked: the set was full)" : "");
+    for (int64_t i = 0; i < DIAG_CAP; i++) {
+        veles_task *t = diag_set[i];
+        if (t && t != DIAG_GONE) diag_task(t, f);
+    }
+    fprintf(f, "watchdog: end of dump\n");
+    fflush(f);
+    _exit(124);
+}
+
+static void watchdog_start(void) {
+    const char *env = getenv("VELES_WATCHDOG");
+    if (!env) return;
+    int64_t secs = strtoll(env, NULL, 10);
+    if (secs <= 0) return;
+    /* rooted before they are made: making the second may collect */
+    veles_gc_root(&diag_set, NULL);
+    veles_gc_root(&diag_spare, NULL);
+    veles_task **set = veles_alloc_words(DIAG_CAP * (int64_t)sizeof *set);
+    diag_spare = set; /* reachable while the other is made */
+    veles_task **spare = veles_alloc_words(DIAG_CAP * (int64_t)sizeof *spare);
+    diag_spare = spare;
+    __atomic_store_n(&diag_set, set, __ATOMIC_RELEASE);
+    veles_thread_spawn_small(watchdog_main, (void *)(intptr_t)secs);
 }
 
 /* ---- the entry points the compiled code calls ------------------------------
@@ -4426,20 +5032,21 @@ void veles_task_finish(veles_task *t, const void *result, int64_t size, int64_t 
         rt_enter();
         veles_task_finish_impl(t, result, size, failed);
         rt_exit();
-        if (t->test_task) test_task_done(t);
+        if (is_test_task(t)) test_task_done(t);
         return;
     }
     void *cell = veles_alloc_words(size > 0 ? size : 8);
     if (size > 0 && result) memcpy(cell, result, (size_t)size);
     t->result = cell;
-    t->failed = 0;
     __atomic_store_n(&t->state, T_DONE, __ATOMIC_SEQ_CST);
     t->hdl = NULL;
     veles_task *waiter = __atomic_exchange_n(&t->waiter, NULL, __ATOMIC_SEQ_CST);
+    if (diag_set) diag_remove(t);
     int64_t left = t->scope ? scope_leave(t) : 1;
     if (waiter) wake(waiter);
     if (left <= 0) scope_empty(t->scope);
-    if (t->test_task) test_task_done(t);
+    if (!t->scope || !t->scope->owner) block_on_done(t);
+    if (is_test_task(t)) test_task_done(t);
 }
 
 void veles_task_finish_cancelled(veles_task *t);
@@ -4461,12 +5068,21 @@ int64_t veles_task_cancelled(veles_task *t, int64_t depth) {
         /* cancelled while it ran or was queued: what it registered since
          * is left here, before it unwinds (cancel_task leaves a parked
          * task's waits itself) */
-        if (t->race || t->chan_wait || t->timer_slot || t->io_waiting) veles_task_leave_waits(t);
+        if (t->race || __atomic_load_n(&t->wait_kind, __ATOMIC_ACQUIRE) != W_NONE || wake_at_of(t)) veles_task_leave_waits(t);
         return 1;
     }
     if (depth > __atomic_load_n(&t->abandon_depth, __ATOMIC_ACQUIRE)) {
         veles_task_leave_waits(t);
         return 1;
+    }
+    /* deeper than a withTimeout whose deadline fired (D151) */
+    task_rare *r = t->rare;
+    if (r) {
+        int32_t cut = __atomic_load_n(&r->cut, __ATOMIC_ACQUIRE);
+        if (cut && depth >= cut) {
+            veles_task_leave_waits(t);
+            return 1;
+        }
     }
     return 0;
 }
@@ -4548,9 +5164,10 @@ static frame_arena *arena_take(void) {
  * frameHelpers), reading and writing these fields: they stay put */
 _Static_assert(offsetof(veles_task, hdl) == 0, "codegen/llvm/coro.go frameHelpers");
 _Static_assert(offsetof(veles_task, arena) == 24, "codegen/llvm/coro.go frameHelpers");
-_Static_assert(offsetof(veles_task, depth) == 224 && sizeof(((veles_task *)0)->depth) == 4, "codegen/llvm/coro.go frameHelpers");
-_Static_assert(offsetof(veles_task, popped) == 246, "codegen/llvm/coro.go frameHelpers");
-_Static_assert(sizeof(veles_task) == 248, "review B4: a parked task stays small");
+_Static_assert(offsetof(veles_task, depth) == 136 && sizeof(((veles_task *)0)->depth) == 4, "codegen/llvm/coro.go frameHelpers");
+_Static_assert(offsetof(veles_task, popped) == 150, "codegen/llvm/coro.go frameHelpers");
+_Static_assert(sizeof(veles_task) == 152, "review B4: a parked task stays small (the 160-byte class with the header)");
+_Static_assert(sizeof(veles_waiter) == 40, "the wait union");
 _Static_assert(offsetof(frame_arena, top) == 8 && offsetof(frame_arena, cap) == 16 && offsetof(frame_arena, data) == 24, "codegen/llvm/coro.go frameHelpers");
 
 /* storage for the frame of a call (link has a parent) or of a task (none) */
@@ -4589,7 +5206,46 @@ void veles_frame_free(veles_task *t, void *hdl) {
 /* the frame at depth suspends: the task resumes there. A task parked in
  * its own frame has no call in progress, so it keeps no arena — an idle
  * task stays small — and its chunk goes back to this thread. */
+/* a request the frame at depth would act on when it resumes — a
+ * cancellation, a failed child abandoning the body, a fired deadline —
+ * that it has not acted on yet (veles_task_cancelled, without leaving the
+ * waits) */
+static int request_pending(veles_task *t, int64_t depth) {
+    if (__atomic_load_n(&t->shield, __ATOMIC_ACQUIRE)) return 0;
+    if (__atomic_load_n(&t->cancel_requested, __ATOMIC_ACQUIRE) || __atomic_load_n(&t->state, __ATOMIC_ACQUIRE) == T_CANCELLED) return 1;
+    if (depth > __atomic_load_n(&t->abandon_depth, __ATOMIC_ACQUIRE)) return 1;
+    task_rare *r = t->rare;
+    if (r) {
+        int32_t cut = __atomic_load_n(&r->cut, __ATOMIC_ACQUIRE);
+        if (cut && depth >= cut) return 1;
+    }
+    return 0;
+}
+
+/* The frame parks the task on itself, its wait registered. A request
+ * delivered while the task was queued or running is seen after a
+ * suspension point — and it may have been put off: a send or receive the
+ * other side completed returns first (chan_done), a close() that suspends
+ * finishes first (shield). If the next wait parks the task, nothing would
+ * wake it for a request already delivered (a cancelled task parked in
+ * accept forever, its scope waiting for it: found by VELES_WATCHDOG,
+ * 2026-10-11). So a frame that parks with a request pending is queued again
+ * at once: it resumes, sees the request, and leaves its wait. */
 void veles_frame_park(veles_task *t, void *hdl, int64_t depth) {
+    t->hdl = hdl;
+    t->depth = (int32_t)depth;
+    t->popped = 0;
+    if (depth == 0) arena_done(t);
+    if (request_pending(t, depth)) {
+        rt_enter();
+        enqueue(t);
+        rt_exit();
+    }
+}
+
+/* the park of a cleanup's wait (an abandoned scope's join, D47): it is not
+ * cancellable, and looks at no request when it resumes */
+void veles_frame_park_held(veles_task *t, void *hdl, int64_t depth) {
     t->hdl = hdl;
     t->depth = (int32_t)depth;
     t->popped = 0;
@@ -4635,6 +5291,232 @@ void veles_frame_unwound(veles_task *t, frame_link *l) {
     l->done = 2;
 }
 
+/* ---- withTimeout (D151) ------------------------------------------------------
+ * `withTimeout(limit, f)` runs f in the calling task, as a suspending call
+ * of withTimeout's frame. A deadline — kept in that frame, so a call
+ * allocates nothing — has a timer of its own in the timer heaps. When it
+ * fires, the frames deeper than withTimeout's unwind as a cancellation
+ * unwinds them (veles_task_cancelled sees `cut`): every suspension point
+ * and every loop's back edge in them takes its cancellation path, their
+ * scopes cancel and join their children, their `with`s close; withTimeout's
+ * frame then finds its call unwound and its deadline fired, and throws
+ * Timeout. A parked task is woken for it, as a cancelled one is.
+ *
+ * Code that cannot suspend — a loop's back edge in a plain function — has
+ * no frame to unwind through: it runs f's cleanups from where it is,
+ * innermost first, and jumps back to withTimeout's frame. While that frame
+ * is calling f on this thread's stack (f has not suspended since), the
+ * jump lands in veles_deadline_call; otherwise in the executor (resume),
+ * which goes on in withTimeout's frame. Scopes the cleanups cancelled that
+ * still have children unwinding are waited for first (the task is
+ * T_ENDING meanwhile, as a task unwound without its frame is), so whatever
+ * f opened is closed when withTimeout throws. Nested deadlines each stop
+ * at their own frame; the outer one's passes through the inner frame as a
+ * cancellation. */
+typedef struct veles_deadline {
+    timer_node timer;           /* TN_DEADLINE: owner is the deadline */
+    veles_task *task;
+    struct veles_deadline *outer; /* the enclosing withTimeout of the task (rare->deadline is the innermost) */
+    frame_link *link;           /* the link the call of f returns through, in withTimeout's frame */
+    veles_cleanup *mark;        /* withTimeout's own cleanup entry: f's are above it */
+    frame_arena *arena;         /* the task's arena, and its top, as f was called */
+    int64_t top;
+    int32_t depth;              /* withTimeout's frame's depth */
+    int32_t fired;              /* the timer went off (atomic) */
+    int32_t firing;             /* the timer was taken out of its heap and is being delivered (atomic) */
+    int32_t ended;              /* withTimeout is past its call of f (atomic) */
+    int32_t on_stack;           /* the call of f is on this thread's stack: jb is good */
+    jmp_buf jb;
+} veles_deadline;
+
+/* the codegen keeps a deadline in withTimeout's frame: room and alignment */
+_Static_assert(sizeof(veles_deadline) <= 512 && _Alignof(veles_deadline) <= 16, "codegen/llvm/coro.go deadlineSize");
+
+/* fire_shard took d's timer out of its heap (the shard's lock held): it
+ * delivers it next, and deadline_end waits for that */
+static void deadline_taken(void *p) {
+    __atomic_store_n(&((veles_deadline *)p)->firing, 1, __ATOMIC_SEQ_CST);
+}
+
+/* the outermost fired deadline still running cuts the task's frames
+ * (runtime lock held) */
+static void recompute_cut(task_rare *r) {
+    int32_t cut = 0;
+    for (veles_deadline *e = r->deadline; e; e = e->outer)
+        if (__atomic_load_n(&e->fired, __ATOMIC_ACQUIRE) && (cut == 0 || e->depth + 1 < cut)) cut = e->depth + 1;
+    __atomic_store_n(&r->cut, cut, __ATOMIC_RELEASE);
+}
+
+/* the timer of d went off: the frames deeper than withTimeout's unwind.
+ * A task running is told to look at its next back edge; a parked one is
+ * claimed and woken, its waits taken apart, as cancel_task does — unless
+ * it is inside a close() that suspends (it looks after it), or unwinding
+ * already (it looks again where it lands) */
+static void deadline_fire(void *p) {
+    veles_deadline *d = p;
+    veles_task *t = d->task;
+    rt_enter();
+    if (!__atomic_load_n(&d->ended, __ATOMIC_ACQUIRE)) {
+        __atomic_store_n(&d->fired, 1, __ATOMIC_SEQ_CST);
+        task_rare *r = t->rare;
+        int32_t cut = __atomic_load_n(&r->cut, __ATOMIC_ACQUIRE);
+        if (!cut || d->depth + 1 < cut) __atomic_store_n(&r->cut, d->depth + 1, __ATOMIC_RELEASE);
+        int32_t st = __atomic_load_n(&t->state, __ATOMIC_ACQUIRE);
+        if (st < T_DONE && !__atomic_load_n(&t->shield, __ATOMIC_ACQUIRE) && !task_bit(t, TB_UNWINDING)) {
+            int32_t sched = S_IDLE;
+            if (__atomic_compare_exchange_n(&t->sched, &sched, S_QUEUED, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) {
+                remove_timer(t);
+                remove_io_waiter(t);
+                leave_channel_waits(t);
+                int32_t blocked = T_BLOCKED;
+                __atomic_compare_exchange_n(&t->state, &blocked, T_RUNNABLE, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+                place(t);
+            } else if (runs_now(sched)) {
+                attention_on(t);
+                enqueue(t);
+            }
+        }
+    }
+    rt_exit();
+    __atomic_store_n(&d->firing, 0, __ATOMIC_RELEASE);
+}
+
+/* withTimeout's frame starts a deadline ns from now, around a call of f
+ * it makes next at depth + 1; its own cleanup entry (deadline_cleanup) is
+ * the task's innermost */
+void veles_deadline_begin(veles_task *t, veles_deadline *d, int64_t ns, int64_t depth) {
+    memset(d, 0, sizeof *d);
+    d->task = t;
+    d->depth = (int32_t)depth;
+    d->timer.kind = TN_DEADLINE;
+    d->timer.owner = d;
+    d->mark = t->cleanups;
+    task_rare *r = rare_of(t);
+    d->outer = r->deadline;
+    r->deadline = d;
+    node_at(&d->timer, now_ns() + (ns > 0 ? ns : 0));
+}
+
+/* the call of f: code(task, link, env) is its coroutine's ramp. A jump from
+ * a plain loop under f lands back here while the call is on this stack
+ * (deadline_unwind_plain): f's frames are gone, and the arena is as it was */
+void *veles_deadline_call(veles_deadline *d, void *(*code)(veles_task *, frame_link *, void *), veles_task *t, frame_link *link, void *env) {
+    d->link = link;
+    d->arena = t->arena;
+    d->top = t->arena ? t->arena->top : 0;
+    if (setjmp(d->jb) != 0) {
+        d->on_stack = 0;
+        return NULL;
+    }
+    d->on_stack = 1;
+    void *h = code(t, link, env);
+    d->on_stack = 0;
+    return h;
+}
+
+/* withTimeout is past its call of f: the deadline is over. 1 when it
+ * fired — f's frames unwound for it, and withTimeout throws Timeout —
+ * though a deadline that fired after f returned is simply over too. Any
+ * later call does nothing (a cleanup may run it again). */
+int64_t veles_deadline_end(veles_deadline *d) {
+    if (__atomic_load_n(&d->ended, __ATOMIC_ACQUIRE)) return __atomic_load_n(&d->fired, __ATOMIC_ACQUIRE);
+    __atomic_store_n(&d->ended, 1, __ATOMIC_SEQ_CST);
+    node_remove(&d->timer);
+    /* taken out of the heap by fire_shard (under the lock node_remove
+     * took): it is being delivered, and d lives in a frame about to go */
+    while (__atomic_load_n(&d->firing, __ATOMIC_ACQUIRE)) cpu_pause();
+    task_rare *r = d->task->rare;
+    for (veles_deadline **pp = &r->deadline; *pp; pp = &(*pp)->outer) {
+        if (*pp == d) {
+            *pp = d->outer;
+            break;
+        }
+    }
+    int64_t fired = __atomic_load_n(&d->fired, __ATOMIC_ACQUIRE);
+    if (fired || __atomic_load_n(&r->cut, __ATOMIC_ACQUIRE)) {
+        rt_enter();
+        recompute_cut(r);
+        rt_exit();
+    }
+    return fired;
+}
+
+/* the cleanup entry of withTimeout's frame: a panic, or an unwinding that
+ * passes through, ends the deadline on its way */
+void veles_deadline_cleanup(void *env) {
+    if (env) veles_deadline_end(env);
+}
+
+/* handing the cleanups to a closer (D147) moves them off the frames being
+ * left, the deadline's frame among them: it ends now instead */
+void *veles_deadline_cleanup_move(void *env) {
+    veles_deadline_cleanup(env);
+    return NULL;
+}
+
+/* withTimeout's frame goes on: its call of f unwound (done 2), and the
+ * task is no longer unwinding */
+static void deadline_land(veles_task *t, veles_deadline *d) {
+    d->link->done = 2;
+    task_clear(t, TB_UNWINDING);
+    t->rare->panic = NULL;
+}
+
+/* the last child of the scopes f's cleanups cancelled has finished: the
+ * task, waiting T_ENDING in withTimeout's frame, goes on there */
+static void deadline_drained(veles_task *t, veles_deadline *d) {
+    rt_enter();
+    deadline_land(t, d);
+    __atomic_store_n(&t->state, T_BLOCKED, __ATOMIC_SEQ_CST);
+    rt_exit();
+    wake(t);
+}
+
+/* A plain function's back edge found a deadline fired (check_cancelled_here):
+ * f's cleanups run from here, innermost first, and the thread jumps back to
+ * withTimeout's frame — into its call of f, or to the executor. */
+static void deadline_unwind_plain(veles_task *t) {
+    task_rare *r = t->rare;
+    int32_t cut = __atomic_load_n(&r->cut, __ATOMIC_ACQUIRE);
+    veles_deadline *d = NULL;
+    for (veles_deadline *e = r->deadline; e; e = e->outer)
+        if (e->depth + 1 == cut) d = e;
+    if (!d) return;
+    rt_unwind_to(0);
+    task_set(t, TB_UNWINDING);
+    task_panic *pn = veles_alloc_words(sizeof *pn);
+    pn->drain = 1;
+    pn->cancelled = 1;
+    pn->deadline = d;
+    r->panic = pn;
+    while (t->cleanups && t->cleanups != d->mark) {
+        veles_cleanup *c = t->cleanups;
+        t->cleanups = c->next;
+        c->fn(c->env);
+    }
+    /* withTimeout's frame is where the task goes on */
+    t->hdl = d->link->parent;
+    t->depth = d->depth;
+    t->popped = 0;
+    int on_stack = d->on_stack;
+    if (on_stack) {
+        /* f's frames, which no frame of its will free now */
+        arena_unwind_to(t, d->arena);
+        if (d->arena) d->arena->top = d->top;
+    }
+    rt_enter();
+    __atomic_store_n(&t->state, T_ENDING, __ATOMIC_SEQ_CST);
+    rt_exit();
+    if (__atomic_sub_fetch(&pn->drain, 1, __ATOMIC_SEQ_CST) == 0) {
+        deadline_land(t, d);
+        __atomic_store_n(&t->state, T_RUNNABLE, __ATOMIC_SEQ_CST);
+    }
+    /* else the scopes still draining end it (deadline_drained) */
+    if (on_stack) longjmp(d->jb, 1);
+    veles_tls_get()->deadline_jump = 1;
+    longjmp(panic_return, 1);
+}
+
 void veles_task_finish_cancelled(veles_task *t) {
     arena_done(t);
     rt_enter();
@@ -4668,7 +5550,7 @@ void veles_scope_cancel(veles_scope *s) {
     /* nothing left to cancel — the common way a scope is left early, a
      * withTimeout returning its value — takes no lock: only the owner,
      * which is here, launches into the scope, and live only falls (F9) */
-    if (__atomic_load_n(&s->live, __ATOMIC_SEQ_CST) <= 0 && !s->owner->unwinding) return;
+    if (__atomic_load_n(&s->live, __ATOMIC_SEQ_CST) <= 0 && !task_bit(s->owner, TB_UNWINDING)) return;
     rt_enter();
     veles_scope_cancel_impl(s);
     rt_exit();
@@ -4713,7 +5595,8 @@ void veles_race_sent(veles_race *r) {
 
 int64_t veles_chan_send(veles_task *self, veles_chan *c, const void *item) {
     wakes k = {0};
-    if (self->chan_wait && self->chan_wait != c) leave_chan_wait(self);
+    veles_chan *was = chan_waited(self);
+    if (was && was != c) leave_chan_wait(self);
     spin_lock(&c->lock);
     int64_t result_ = chan_send_locked(self, c, item, &k);
     spin_unlock(&c->lock);
@@ -4724,7 +5607,8 @@ int64_t veles_chan_send(veles_task *self, veles_chan *c, const void *item) {
 
 int64_t veles_chan_recv(veles_task *self, veles_chan *c, void *out) {
     wakes k = {0};
-    if (self->chan_wait && self->chan_wait != c) leave_chan_wait(self);
+    veles_chan *was = chan_waited(self);
+    if (was && was != c) leave_chan_wait(self);
     spin_lock(&c->lock);
     int64_t result_ = chan_recv_locked(self, c, out, &k);
     spin_unlock(&c->lock);

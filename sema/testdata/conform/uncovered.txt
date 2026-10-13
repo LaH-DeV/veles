@@ -31,9 +31,10 @@
 "'next()' must return 'Item?', found '%s'"  # an Iterator implementation is checked against the trait first
 "a 'lazy' parameter must be a plain 'fun(): T' — no arguments, effects, default or '...' (D90)"  # std-only, after the reserved check: user code is refused first, and std writes only well-formed ones
 "a 'test fun' is a top-level helper, not a method"  # the parser refuses `test fun` in a type body; guards ASTs built another way
-"a function marked '@caller_location' cannot suspend (D88)"  # std-only, after the reserved check: user code never reaches the suspension pass with the attribute
 "a type is not a value"  # the parser refuses the form first
 "arrayRawData takes an array"  # std-internal intrinsic: only std calls it, and std calls it right
+"blockOn takes an executor's handle and a 'sendable fun()' that returns nothing and throws nothing"  # std-internal intrinsic: only std calls it, and std calls it right
+"runWithin takes a 'fun(): R suspends throws E'"  # std-internal intrinsic: only std calls it, and std calls it right
 "cannot assign through '?.': there may be nothing to assign to; check for null first, 'if (x != null) x.f = v'"  # defensive: check_safe.go binds every '?.' write (plain, compound, nested, '&') before an assignment target is checked
 "cannot infer the type arguments of '%s' from this call; write them, e.g. '%s<T>.%s(...)', or annotate the binding"  # every static the prelude adds to a built-in collection takes an argument of the element type, so the type is inferred or that argument reports its own error first (D137)
 "close() of '%s' throws; throwing cleanup is not supported yet"  # Closeable.close is declared non-throwing, so an implementation cannot throw

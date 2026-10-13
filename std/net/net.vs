@@ -210,8 +210,8 @@ fun findByte(xs: *MutableList<u8>, b: u8, from: i64): i64 {
 }
 
 // The read-ahead buffer of a connection. It sits in a Mutex so that a
-// Conn is Sendable — `withTimeout(ms, () => try conn.readLine())` hands
-// the connection to another task — and every access to it is a short,
+// Conn is Sendable — an accept loop hands each connection to a task of its
+// own (`async serve(conn)`) — and every access to it is a short,
 // non-suspending critical section; the socket reads happen outside.
 fun newBuffer(): Mutex<MutableList<u8>> {
   val empty: MutableList<u8> = []

@@ -73,6 +73,11 @@ type gen struct {
 	// slot: leaving a scope body early (return, throw, cancellation) cancels
 	// the children and joins them, so nothing outlives the block (D34).
 	abandonSlots map[*sema.Builtin]string
+	// deadlineSlots: the record of each withTimeout's deadline in this frame (D151)
+	deadlineSlots map[*sema.Builtin]string
+	// withinValue: the value of a withTimeout's f that throws nothing, while
+	// its Ok is made (task.withinValue)
+	withinValue string
 	// receivingSlots map the "receiving.restore" cleanup entries (D111) to
 	// the slot holding the bindings to put back
 	receivingSlots map[*sema.Builtin]string
@@ -566,6 +571,7 @@ func (g *gen) resetFn(fn *sema.Func) {
 	g.coro = nil
 	g.scopeSlots = map[*sema.ScopeBlock]string{}
 	g.abandonSlots = map[*sema.Builtin]string{}
+	g.deadlineSlots = map[*sema.Builtin]string{}
 	g.receivingSlots = map[*sema.Builtin]string{}
 	g.cleanupRecs = map[sema.Expr]string{}
 	if g.withCloses == nil {
@@ -1053,11 +1059,37 @@ func (g *gen) globalsInit() {
 		}
 	}
 	for _, gl := range g.prog.Globals {
-		if gl.Init == nil {
+		if gl.Init == nil || gl.Exec != nil {
 			continue
 		}
 		v := g.expr(gl.Init)
 		g.storeVal(gl.Type, v, "@"+mangleGlobal(gl))
+	}
+	// a declared executor's state is made on its own thread (D150), the
+	// executors themselves having started with the globals above: this
+	// thread, no executor's, waits for each in turn
+	for _, x := range g.prog.Executors {
+		if x.Init == nil {
+			continue
+		}
+		ev := g.newTmp()
+		g.emit("%s = load %s, ptr @%s", ev, g.llType(x.Value.Type), mangleGlobal(x.Value))
+		h := g.newTmp()
+		g.emit("%s = extractvalue %s %s, 0", h, g.llType(x.Value.Type), ev)
+		task := g.newTmp()
+		g.emit("%s = call ptr @veles_task_new()", task)
+		g.emit("call void @veles_task_place_on(ptr %s, ptr %s)", task, h)
+		g.startTaskHow(task, x.Init, nil, nil, "veles_block_on")
+		pan := g.newTmp()
+		g.emit("%s = call i64 @veles_task_panicked(ptr %s)", pan, task)
+		pb := g.newTmp()
+		g.emit("%s = icmp ne i64 %s, 0", pb, pan)
+		dieL, okL := g.newLabel("exec.init.panic"), g.newLabel("exec.init.ok")
+		g.emitTerm("br i1 %s, label %%%s, label %%%s", pb, dieL, okL)
+		g.placeLabel(dieL)
+		g.emit("call void @veles_task_repanic(ptr %s)", task)
+		g.emitTerm("unreachable")
+		g.placeLabel(okL)
 	}
 	g.emitTerm("ret void")
 	g.out.WriteString("define void @veles_init_globals() {\nentry:\n")

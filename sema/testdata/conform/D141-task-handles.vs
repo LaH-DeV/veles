@@ -51,7 +51,7 @@ fun kept(): i64 throws Boom {
   if (last == null) 0 else 1
 }
 
-fun returned(): Task<i64> {
+fun returned(): Task<i64> throws Boom {
   scope {
     return async work(1) // error: this task cannot be returned: a task belongs to the 'scope'
   }
@@ -78,6 +78,26 @@ fun inGather(): i64 {
   if (a is Ok && b.ok) a else 0
 }
 
+// a failing child fails the scope, whose error is the function's: it throws
+fun quiet(): i64 {
+  scope {
+    async work(1) // error: this child can fail with 'Boom', which fails the 'scope' and leaves it as the function's error, but the function is not declared 'throws'
+  }
+  0
+}
+
+// D155: a Result a child returns is its value in a gather too
+fun returnedErr(): bool {
+  val (a, b) = gather {
+    async outcome(1)
+    async outcome(-1)
+  }
+  when (b) {
+    is Ok => return a.ok && b is Err
+    is Err => return false
+  }
+}
+
 fun main() throws Boom {
-  io.println("${try pool()} ${inGather()}")
+  io.println("${try pool()} ${inGather()} ${quiet()} ${returnedErr()}")
 }

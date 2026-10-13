@@ -240,13 +240,44 @@ answered from the shape, tuples get `Comparable`, enums get
       listed themselves again never ended (a test run's next root never started, Linux at 32
       threads) — the list is now taken whole. driver TestExecutors case 12 (panics at HEAD),
       TestTestRunner (the hang); docs chapter 20, reference/concurrency, stdlib
+- [x] The task diet (plan F12, 2026-10-11, review B4): 249 bytes per parked task (was 345, Go 8.7 KB):
+      the task is 152 bytes — the 160-byte class — its waits in one union, its words shared by what
+      is used before it starts, while it runs and after it ends, a panic, a debug chain and a timer
+      behind one pointer, the flags in bits; timers are nodes of their own in the heaps. bench/idle
+- [x] `await t` after `t.cancel()` on every path is a compile error (D154, plan F13); a smart cast
+      a loop body made no longer outlives the loop (found on the way). sema TestAwaitAfterCancel,
+      TestLoopFactsDoNotLeak
+- [x] A pool's thread blocked in a call hands its queue to a spare named after the pool (D153, plan
+      F14); `Executor.pool` had been one thread on Windows (a `bool` read as `int64_t`). driver
+      TestPoolBlockingCallHandsOff
+- [x] `e.runBlocking(f)` and `Executor.default` (D152, plan F15): plain code waits for a task; a
+      compile error in a function that suspends, a panic on an executor's thread. driver
+      TestExecutors 13–14, sema TestRunBlockingOnlyInPlainCode
+- [x] `withTimeout` runs `f` in the calling task (D151, plan F16): no task per call (76 ns, was
+      ~450), `f` need not be sendable, a plain loop is stopped on any number of threads, `f`'s scopes
+      join and its `with`s close before `Timeout`. driver TestWithTimeoutInCallersTask
+- [x] Declared executors with state of their own (D150, plan F17): `executor gl { var …; fun … }`,
+      state named by its code only and made on its thread, `gl.f(x)` from outside runs there,
+      children in its code share non-Sendable values, `executor cpu(threads: n)`. driver
+      TestExecutorDeclarations, sema TestExecutorDeclarationRules/AcrossModules, format, lsp hover,
+      the self-hosted parser; docs chapter 12, reference/concurrency, cheatsheet
+- [x] A `gather` child that returns a `Result` gives it as its value (D155): `Result<Result<T, E>,
+      Panic>`; a non-throwing function with a failing child (a `scope`, a D111 field) is an error
+      with the fix, not a compiler crash. driver TestTaskHandles, conformance D141/D111; docs
+      chapter 12, reference/concurrency, reference/errors
 - [x] Deadlock detection: "deadlock: every task is blocked" when no task
       can run and no timer, socket or blocking call can wake one
+- [x] A hang that is not a whole-program deadlock explains itself: `VELES_WATCHDOG=<s>` prints every
+      live task (state, what it waits on, its scope, a debug build's calls) and every queue, then
+      exits 124. It found the second of two scheduler bugs fixed 2026-10-11 (a woken running task
+      not told to look at its loops; a put-off cancellation whose next wait parked unseen). driver
+      TestWokenTaskStillLooks, TestPutOffCancelEndsTheNextWait; docs reference/concurrency,
+      cheatsheet, the veles-debug skill
 - [x] Blocking-call detection → superseded: a blocking call hands its
       run queue to a spare thread (below), so it no longer stalls other tasks
 - [ ] Under `VELES_THREADS=1` a computation in a function that does not suspend still keeps the
-      only thread (D145: it cannot yield), so a `withTimeout` around it fires only when it ends — the
-      timer's task has no thread. A plain function cannot be resumed; making it fair needs it
+      only thread (D145: it cannot yield): the other tasks wait for it to end (a `withTimeout` around
+      it now stops it, D151, 2026-10-11). A plain function cannot be resumed; making it fair needs it
       compiled suspending (or a second thread). Recorded 2026-10-09 (F4)
 - [ ] A side effect inside `Atomic.update`'s lambda (found 2026-10-02 in
       chapter 12's Semaphore sample: a counter bumped in the lambda counted
@@ -1054,15 +1085,9 @@ list as it was is in `archive/progress-log-2026-09.md` and git history).
 
 (Q15 named imports was decided 2026-09-29: D85; Q16 `as` conversions the same day: D86; Q19 the same; Q4 D87, Q8 D88, Q3 D89 — decided 2026-09-29, being built in that order.)
 
-**Open:**
+**Open:** none.
 
-- **Q29 — non-Sendable state on an `Executor.thread`** (D143 left it to be
-  decided once executors were built; they are, 2026-10-10). Every task
-  placed on one executor of one thread runs on the same OS thread, so such
-  tasks could share a `MutableList` without a lock, as Swift's
-  `@MainActor` code does — if the compiler can tell that a value never
-  leaves that executor. Today they must share through a `Mutex` like any
-  tasks.
+(2026-10-11: Q29 was decided with four questions the F10/F11 work raised: D150–D154.)
 
 (2026-10-09: Q24–Q28, raised by the concurrency review, were decided the same day: D143–D147; Q22 and Q23 on 2026-10-08 into D142; Q21, packages, 2026-10-05: D138.)
 
@@ -1231,55 +1256,72 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-10-10 | D143: joining a `Thread` | **Its close blocks the closing OS thread (a blocking call, D66), as Rust's `join`** (user, recommended of 2). Rejected: a close that suspends (D147) — a `Thread`'s plain function could not join one. |
 | 2026-10-09 | `MutableList<i64>` indexed increment | **`incrementAt(i)` increments in place, returns unit and panics out of range** (user, recommended of 2; D148). Rejected: return `bool` and leave invalid-index handling to the caller. |
 | 2026-10-09 | Transform one mutable-list element | **`MutableList<T>.updateAt(i, transform): T` calls a synchronous, non-throwing transform once, stores and returns the replacement; negative indexes count from the end and out-of-range panics** (user, recommended of 3; D149). Rejected: `mapAt`, unit return, or no helper. |
+| 2026-10-11 | Q29: non-Sendable state on one thread | **Declared executors: `executor gl(…) { state and functions }`** — gl's state may be of any type and only gl's code names it; children launched in gl's code stay on gl and capture freely; `gl.texture(5)` from outside runs on gl and suspends the caller; `executor cpu(threads: 4)` names a pool (D150). User, recommended of 3 in a second round: the first round recommended `scope(local)`; the user asked why a scope was needed and whether isolation was not better (it covers state shared for the program's life, not only children), disliked `@` attributes for threading ("gives me an ick, but 'higher level' feels nice") and preferred `executor gl` to `@thread val gl`. Rejected: `@on(gl)` annotations, `scope(local)`, `actor` types, a run-time checked `Confined<T>`, leaving it. |
+| 2026-10-11 | A cheap time limit | **`withTimeout` runs `f` in the caller's task**; the deadline unwinds only `f`'s frames; `f` and `R` no longer need `Sendable`; plain loops stop on one thread too (D151; user, recommended of 4). Rejected: Go-style deadlines on `net.Conn`, both, a task per call. |
+| 2026-10-11 | Plain code waiting for a task | **`e.runBlocking(f)`** blocks the OS thread; a compile error in a suspending function, a panic on an executor's thread; `Executor.default` (D152; user, recommended of 3). Rejected: a `Thread` function that may suspend; leaving it. |
+| 2026-10-11 | A pool's thread blocked in a call | **Hands its queue to a spare thread, as the default pool's** (named, prioritised and pinned like the pool); a one-thread executor never does (D153; user, recommended of 3). Rejected: opt-in `handOff: true`; leaving it. |
+| 2026-10-11 | `await t` after `t.cancel()` | **A compile error when the cancel dominates the await** (D154; user, recommended of 3). Rejected: a warning; the run-time panic only. |
+| 2026-10-11 | Q30: a `gather` child that returns a `Result` without `throws` | **Its `Result` is the child's value: `Result<Result<T, E>, Panic>`**, as in a `scope` and a D111 field (D155; user, recommended of 3). Rejected: flattening it into the gather's error (as built until then); refusing such a child in `gather`. |
+| 2026-10-11 | Q31: an executor's function as a value outside its code | **Stays an error with the lambda as the fix** (D150 addendum; user, recommended of 2). Rejected: a function value that hops to the executor by itself. |
 
 ## 11. Known limitations to revisit
 
 - **Executors (D143, built 2026-10-10), not done yet:** on Windows a thread is kept to CPUs of one
   processor group (a list across groups throws `ThreadError`: CPU sets reach across, but only as a
   preference; groups since 2026-10-10, F11);
-  macOS (plan A7) names threads but refuses any priority or CPU list; a blocking call on a pool's
-  thread does not hand its queue to a spare thread as the default pool's does (a pool keeps the
-  threads it was made with); a `Thread`'s plain function cannot run tasks on an executor (`run` and
-  `scope(on:)` suspend; D143 said it "may create and run an executor of its own" — a blocking form
-  of `run` would need a decision); timers and sockets are served by the default pool (when its
+  macOS (plan A7) names threads but refuses any priority or CPU list; timers and
+  sockets are served by the default pool (when its
   every thread runs a long plain loop the monitor fires a timer within ~1 ms and looks at the
   sockets every 10 ms, 2026-10-10 — not at the reactor's own latency);
-  `async cpu.run(f)` is refused (a method's receiver is a pointer, not Sendable — wrap the call in
-  a function taking the `Executor`); with CPU work on a pool the default pool's request latency
+  with CPU work on a pool the default pool's request latency
   keeps its median but its tail grows — p99 +20–40 % on Windows, +35–100 % on Linux (WSL), the
   worst request 5–6 ms against ~1.4 ms idle (not explained: SMT siblings and turbo clocks shared with
   the spinning threads are the likely cause; the monitor's look at the pools under the runtime
-  lock is the other suspect).
+  lock was the other suspect, but it holds the lock for one pass over the pools' threads every
+  5 ms — microseconds, not the milliseconds of the tail, 2026-10-11).
 
 - **Found by the concurrency review (2026-10-09, `veles-concurrency-review.md`), not fixed yet**
-  (B1, B2, B3, B5, B6 and the child start latency are fixed — F1–F10): (B4) `bench/idle` (2026-10-10)
-  measures 345 bytes per parked task (Go: 8.7 KB per goroutine); the review's target of 250 is not
-  met — the task object takes a 256-byte slot (248 bytes) and the smallest frame 80. Reaching it
-  needs the task under ~150 bytes (a plain channel wait and a socket wait in one union, the channel
-  node without its task and arm, panic and debug data behind one pointer, `entry` sharing a word
-  with `race`) and the root frame inside the task's own slot; the codegen knows the task's layout
-  (`coro.go` frameHelpers). A task parked inside calls keeps their frames: ~4 KB for a ten-deep
+  (B1–B6 and the child start latency are fixed — F1–F12): (B4) `bench/idle` measures 249 bytes per
+  parked task since F12 (2026-10-11; 345 before; Go 8.7 KB per goroutine), the review's 250 met by
+  one byte: the task 160 (its slot), the smallest frame 80, the benchmark's own handle 8. Lower
+  needs the root frame inside the task's allocation (a header and a size class's slack) or a
+  smaller frame; a debug build also gives every task that calls a rare part (its call chain). A
+  task parked inside calls keeps their frames: ~4 KB for a ten-deep
   chain in `std/http`, part of it the tails of 2 KB arena chunks a frame did not fit in.
   Many tasks parking on one channel at once: 100k parked and woken cost 0.08 s of CPU on one
   thread and 1.5 s on 32 (the channel's lock found taken one time in three, the shared run queue)
   — wall 0.08–0.13 s against Go's 0.37 s; a waiter queue without the lock would remove most of it.
+  (2026-10-11, Windows, `bench/idle`: 62–67 ms on 1 or 4 threads, 99–116 ms on 32. Ruled out: a
+  woken receiver taking the channel's lock only to see its receive done — a lock-free retry
+  changed nothing, and was taken out; the wakes, which already skip while a thread spins or
+  another wake is on its way, as Go's do. What is left needs a profiler on Linux.) The root
+  frame inside the task's allocation would save one header and a size class's slack, at most 8
+  bytes a parked task, under a target already met: not pursued unless a profile asks.
   `driver/TestStdHttpUnitTests` failed once in a full WSL run on 2026-10-10 (and timed out once on
-  2026-10-09, before F9); it passed in every full run since and 4/4 alone under load, and the
-  failing test's output was not kept — run it in a loop under load on Linux and keep the report.
+  2026-10-09, before F9); it passed in every full run since, 4/4 alone under load, and 60/60 on
+  2026-10-11 (`veles test std/http` in a loop on Linux beside `go test ./sema` in a loop, the
+  failing output kept — none failed). The two hangs seen on Windows on 2026-10-11 were two
+  scheduler bugs, both fixed (D145's notes): a task woken while it ran was not told to look at its
+  loops (`TestLoopsAreCancellationPoints` once took 48 s), and a cancellation put off past a
+  completed channel operation let the next wait park unseen (std/http's accept loop, caught by
+  `VELES_WATCHDOG` in a soak: the 10-minute timeout). A hang that comes back is hunted the same
+  way: the driver test binary in a loop under load with `VELES_WATCHDOG=45` (the `veles-debug`
+  skill). If `TestStdHttpUnitTests` fails again, its loop is in the plan's progress log of that day.
 
-- **`withTimeout` is a task per call (2026-10-10):** a scope, a race, a task and its frame — about
-  0.45 µs and 700 bytes — though the caller only waits; `std/http` wraps every line it reads in one
-  (nine a request in `bench/httphello`: ~4 % of its CPU, a quarter of what it allocates). Two ways
-  out: deadlines on socket operations, as Go's (a `std/net` API, so a decision first), or running
-  `f` in the caller's task with a deadline that unwinds its frames (Kotlin's) — decision-free, but
-  a plain loop inside `f` can only be stopped by unwinding to `withTimeout`'s frame, which is
-  resumable only if the executor, not the frame, started the call (so the frame waiting is
-  parked), and the scopes inside `f` must drain before `withTimeout` throws.
+- **`withTimeout` (D151, built 2026-10-11):** no task per call any more (76 ns, was ~450; `f`'s
+  `Result` lands in `withTimeout`'s frame); what a call still allocates is the caller's closure
+  for `f` — inlining `withTimeout` at its call site would take it out too. Deadlines on socket operations (Go's) are not
+  offered (rejected in D151 unless a profile asks).
 
 - **The collector (2026-10-10):** it stops every thread; up to eight helper threads mark and sweep
   in that pause (one per core, once more than 1 MB stays live), so a pause shrinks with the
   machine but still grows with the live heap — marking alongside the program, or sweeping lazily
   as spans are claimed, would take it out of the pause (Go does both).
+
+- **Declared executors (D150, built 2026-10-11), kept for later:** they run until the program ends
+  rather than being closed after `main` (nothing of theirs is left running then: their tasks were
+  children of scopes); a trait implementation cannot be one of its members. (An executor's
+  function taken as a value outside its code stays an error by decision: Q31, 2026-10-11.)
 
 - Visibility (D142, decided 2026-10-08, not built: plan B17). Kept for later:
   a file-scoped `private` on top-level declarations (Kotlin's rule) — refused
@@ -1312,18 +1354,21 @@ Every new public std API (http cookies/forms/client, `std/log`,
 - Run-time concurrency gotchas, documented in
   `docs/documentation/reference/concurrency.md` (2026-10-08), that the
   compiler could catch — each a decision (`veles-decide`) before building:
-  `withTimeout` (or a `race` against a task) given a function the compiler
-  knows never suspends cannot be stopped, and reports `Timeout` only after
-  the function finished (D116 tells which lambdas suspend: an error or a
-  warning is possible); `await t` after `t.cancel()` in the same block
-  panics unless the task had finished (a local check could refuse it);
+  a `race` against a task that never suspends cannot stop it under
+  `VELES_THREADS=1`, and reports the timeout only after it finished
+  (`withTimeout` no longer has this: D151 stops `f` in its own task); `await t`
+  after `t.cancel()` panics unless the task had finished — refused at
+  compile time where the cancel comes first on every path (D154,
+  2026-10-11), left to the panic where it is on some paths only;
   `send` on a closed channel panics (not statically knowable in general).
   A partial deadlock (some tasks stuck while a timer or socket wait exists
   elsewhere) is not detected; only a whole-program one is.
 - A child launched with `async` that *returns* a `Result` without `throws`
-  is not a failing child in a `scope` (D141, pinned by
-  `driver/taskhandle_test.go`); how `gather` and a D111 field treat one was
-  not reviewed in that change.
+  is not a failing child — in a `scope` (D141), in a `gather` (D155,
+  2026-10-11; flattened into the gather's error before) and in a D111
+  field, all pinned by `driver/taskhandle_test.go`. A D111 field's type
+  cannot tell such a task from one that throws, so a field
+  `Task<Result<T, E>>` still makes the receiving function `throws E`.
 - A test's output is captured through `io` only: what C code writes itself
   (`printf` through FFI) goes straight to the terminal.
 - `expectPanics(body)` runs `body` in a task of its own, so `body` must be
@@ -1331,9 +1376,10 @@ Every new public std API (http cookies/forms/client, `std/log`,
 - A panic std raises for a caller's misuse points at the caller only for the
   functions marked `@caller_location` (D88: `swap`, `insert`, `removeAt`,
   `chunked`, `windowed`, `step`, `toString(radix:)`, `randomBytes`, `Uuid.of`,
-  `random.range`); other std panics (`Hmac.update` after finish, the JWT key
-  length check, `mapConcurrent` and `retry(0, …)` — which suspend) still
-  report the std line. `Semaphore(permits:)` and `time.ticker` are marked.
+  `random.range`, and since 2026-10-11 the suspending `retry`,
+  `mapConcurrent`, `forEachConcurrent`); other std panics (`Hmac.update`
+  after finish, the JWT key length check) still report the std line.
+  `Semaphore(permits:)` and `time.ticker` are marked.
 - `T?.decode(from)` written by hand parses as a safe call on `T`; use a
   generic (`fun decodeIt<T: Decodable>(...)`) or a field. Derived code uses a
   resolved-type receiver and is unaffected.
@@ -1344,9 +1390,10 @@ Every new public std API (http cookies/forms/client, `std/log`,
 - A `Secret`'s bytes are wiped (D112), but what `expose()` returns, the
   text a `Secret` was made from, and HMAC's pads are ordinary memory.
 - A function value that returns a value holding a task (D111), passed
-  through a generic std function (`withTimeout(d, () => serving())`), is
-  refused — but the error points into the std function's body, where the
-  value is kept in a variable, not at the call that passed it.
+  through a generic function, is refused at the call that passed it
+  (`withTimeout(d, () => serving())` since 2026-10-11, its body keeping no
+  variable any more); a generic function of the program's own that keeps
+  the value in a variable is also reported there, in its body.
 - Conditional suspension (D116) covers first-order `suspends` parameters
   only: one whose own parameters are suspending functions (a callback that
   takes a callback) makes its function suspend whenever called. So does a
