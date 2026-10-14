@@ -18,7 +18,7 @@ const fun table(): List<u32> { ... }    // the compiler may run it (D113); an or
 const TABLE: List<u32> = table()        // computed while compiling, read-only in the binary
 static assert(PAGE > 0, "why")  // checked at compile time; module level or in a body
 val banner = "hi"               // module-level value
-var counter = 0                 // module-level variable
+val counter = Atomic(value: 0)  // module-level state is behind Atomic/Mutex: a module-level `var` is an error (D66)
 
 fun main() { }                  // entry point
 ```
@@ -39,7 +39,7 @@ val (a, b) = (1, "one")         // tuple destructuring, nests: val ((x, y), z) =
 
 | Kind | Types |
 |---|---|
-| integers | `i8 i16 i64 i64 u8 u16 u32 u64` |
+| integers | `i8 i16 i32 i64 u8 u16 u32 u64` |
 | floats | `f32 f64` |
 | other scalars | `bool string` |
 | nullable | `T?` (`(*T)?` for a nullable pointer) |

@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.81** — decisions D1–D156. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.82** — decisions D1–D167. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -26,6 +26,7 @@ Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-p
 | D150–D154 | declared executors and their state, `withTimeout` in the caller's task, `runBlocking`, a pool's hand-off, `await` after `cancel()` |
 | D155 | a `Result` a `gather` child returns is its value |
 | D156 | awaited `val` handles without `scope`, `awaitAll`, `scope(workers:)`, a lazy `mapConcurrent`, `scope` as a value |
+| D157–D167 | (2026-10-14 review) a `Result`/task cannot be interpolated; bare names reach the receiver's members; `std/bluetooth` LE central; per-target files and `build.target`; `std/sys/<os>` and the platform modules; `veles bindgen`; one-parameter constructors positional; `copy`; the index-of family answers `i64?`; labelled tuples; `std/cli` |
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -78,7 +79,7 @@ Consequence: `throws` and explicit `Result` interconvert freely; libraries canno
 
 **A `Result` must be consumed.** A `throws` call as a bare statement, or bound to a name that is never read, is an error — regardless of whether the caller is itself `throws`, since only `try` propagates. `val _ = f()` is the explicit discard. (Non-`Result` bindings that are never read are a warning.)
 
-**Errors are declared, and every error implements `Error`.** The prelude declares `trait Error { fun message(): string = "$this" }`. An error type is declared with a contextual keyword: `error ParseError { text: string; fun message(): string = ... }` is sugar for `struct ParseError { text: string }` plus `implement Error for ParseError { override fun message() ... }`. Inside an `error` body `message` needs no `override` (there is exactly one trait in play; writing it is allowed), and no other method may carry one — they are inherent. A field `message: string` with no `message()` written is used as the message, so `error Failed { message: string }` is thrown as `Failed(message: "...")`; `Panic` is exactly that. **Only errors can be in error position** (a `throws` clause, a `throw` operand, the `E` of a `Result`): throwing a plain struct is an error naming the fix (`error Dog { ... }`), non-structs are rejected, and a generic `throws X` needs the bound `X: Error`. `implement Error for T {}` on an existing struct is the escape hatch for types one does not own. Because every member of an error union implements `Error`, **the union exposes `Error`'s methods directly**: `e.message()` on a `ParseError | RangeError` compiles to a tag switch, no `when` required. An error escaping `main() throws` is reported through `message()`. This is Go's one-method `error` interface with structured payloads kept as fields, and the declaration form makes "is an error" a property of the type rather than of its uses. `error` is a keyword only at declaration position (`error Name`); elsewhere it is an ordinary identifier, so `is Err(error) => ...` is unaffected. Rejected: treating every struct as an implicit `Error` (it made `throw Dog()` legal); `struct X : Error` (in D12 that syntax means variant membership); and making `message` a mandatory field (it cannot be computed from the other fields, which is the common case).
+**Errors are declared, and every error implements `Error`.** The prelude declares `trait Error { fun message(): string => "$this" }`. An error type is declared with a contextual keyword: `error ParseError { text: string; fun message(): string => ... }` is sugar for `struct ParseError { text: string }` plus `implement Error for ParseError { override fun message() ... }`. Inside an `error` body `message` needs no `override` (there is exactly one trait in play; writing it is allowed), and no other method may carry one — they are inherent. A field `message: string` with no `message()` written is used as the message, so `error Failed { message: string }` is thrown as `Failed(message: "...")`; `Panic` is exactly that. **Only errors can be in error position** (a `throws` clause, a `throw` operand, the `E` of a `Result`): throwing a plain struct is an error naming the fix (`error Dog { ... }`), non-structs are rejected, and a generic `throws X` needs the bound `X: Error`. `implement Error for T {}` on an existing struct is the escape hatch for types one does not own. Because every member of an error union implements `Error`, **the union exposes `Error`'s methods directly**: `e.message()` on a `ParseError | RangeError` compiles to a tag switch, no `when` required. An error escaping `main() throws` is reported through `message()`. This is Go's one-method `error` interface with structured payloads kept as fields, and the declaration form makes "is an error" a property of the type rather than of its uses. `error` is a keyword only at declaration position (`error Name`); elsewhere it is an ordinary identifier, so `is Err(error) => ...` is unaffected. Rejected: treating every struct as an implicit `Error` (it made `throw Dog()` legal); `struct X : Error` (in D12 that syntax means variant membership); and making `message` a mandatory field (it cannot be computed from the other fields, which is the common case).
 
 **`is Ok` / `is Err` smart-cast to the payload.** After `if (r is Ok)` the subject `r` *is* the `T`; in the `else` branch (or after `!is Ok`) it is the `E`. `r.ok` and `r.err` are the same tests spelled as properties (v0.23): `if (r.ok)` narrows exactly like `if (r is Ok)`, and the teaching form. In a `when`, `is Ok` / `is Err` arms narrow the subject the same way, and `when (val r = expr)` names an expression subject for the arms. This is D5's `T?` → `T` rule applied to `Result` (and `Option`'s `Some`): the wrapper variants are handled, never held as values. A general two-variant sealed type gets the complementary narrowing in the failed branch too, but only `Result`/`Option` read through to a payload.
 
@@ -179,7 +180,7 @@ Resolved by the package manager against the manifest. No filesystem-relative str
 
 *Addendum (v0.28) — modules only, one statement, many imports.* *(names since D85: `use m { f }` adds bare names; the rest below stands.)* A `use` imports modules and nothing smaller: members are always qualified (`geometry.Point`, `io.println()`), and `use geometry as geo` renames the module when the prefix is long. The braced name-import form (`use geometry.{ Point as P, norm }`) is gone — Go's reasoning: a qualified name says at the use site where a thing comes from, two modules may both declare a `Point` with no renaming, and there is one way to write a call. A parameter or local named like a module shadows it (`fun mkdir(path: string)` cannot call `path.dir`); the answer is an alias at the import, not a name-import escape hatch. Type aliases (`type P = geo.Point`) are the remaining way to shorten a type name and are not in the language yet; add them if the prefix on types proves to hurt. `use` takes a comma-separated list: `use fs, io, os`, `use geometry as geo, shapes`; a comma at the end of a line continues the list. Import order and grouping carry no meaning, so the formatter owns them: consecutive `use` lines become one sorted list per origin — the standard library first, then everything else — one `use` statement each. Go groups its imports the same way (goimports), by convention rather than syntax: a separate spelling for standard-library imports would turn every move of a module between the library and a package into a source edit, and the compiler already knows which is which.
 
-*Addendum (2026-10-08) — one import per line by default (user).* The formatter writes a run of plain imports one `use` per module, sorted as before (standard library first, then the rest): `use fs` / `use io` / `use os`. The comma list stays valid Veles and means the same imports; a package that prefers it sets `[format] imports = "merged"` in its manifest, and the formatter then writes one comma-separated `use` per origin as above. A `public use` (D89) is still printed as written. The repository's sources and the documentation's programs were reformatted. Alongside it, the manifest gains a `[lint]` table of lints of the package's own code: `implicit_return` says where a body's last expression may be its value without `return` — `"full"` (the default) anywhere; `"lambda"` in every lambda and in `fun f() = expr`, a function's or method's `{ }` body ending in `return value`; `"expr"` only in a body without braces. A body that breaks the setting is an error with a fix that writes `return`; the blocks of `if`/`when` are never affected (user, 2026-10-08, replacing a same-day on/off `explicit_return`).
+*Addendum (2026-10-08) — one import per line by default (user).* The formatter writes a run of plain imports one `use` per module, sorted as before (standard library first, then the rest): `use fs` / `use io` / `use os`. The comma list stays valid Veles and means the same imports; a package that prefers it sets `[format] imports = "merged"` in its manifest, and the formatter then writes one comma-separated `use` per origin as above. A `public use` (D89) is still printed as written. The repository's sources and the documentation's programs were reformatted. Alongside it, the manifest gains a `[lint]` table of lints of the package's own code: `implicit_return` says where a body's last expression may be its value without `return` — `"full"` (the default) anywhere; `"lambda"` in every lambda and in `fun f() => expr`, a function's or method's `{ }` body ending in `return value`; `"expr"` only in a body without braces. A body that breaks the setting is an error with a fix that writes `return`; the blocks of `if`/`when` are never affected (user, 2026-10-08, replacing a same-day on/off `explicit_return`).
 
 ---
 
@@ -195,7 +196,7 @@ fun main() throws {
   printSum(sum)
 }
 
-fun add(a: i32, b: i32) = a + b
+fun add(a: i32, b: i32) => a + b
 
 fun printSum(sum: i32) {
   io.println("The sum is $sum")
@@ -370,7 +371,7 @@ struct Counter {
   label: string          // bare: set by the constructor call, never assigned again
   var n:  i32 = 0        // var: assignable
 
-  fun get(): i32 = this.n
+  fun get(): i32 => this.n
   fun bump() { this.n += 1 }     // no marker: a method may assign the receiver's var fields
 }
 ```
@@ -419,10 +420,10 @@ Consequence: inherent methods cannot be added to a type you do not own. Extensio
 
 ```vs
 extend<T> Stack<T> {
-  fun depth(): i64 = this.items.len()
+  fun depth(): i64 => this.items.len()
 }
 extend<T: Show> Stack<T> {          // bounded: only for showable elements
-  fun render(): string = ...
+  fun render(): string => ...
 }
 ```
 
@@ -486,7 +487,7 @@ val s = Stack<i32>()
 
 Every struct gets an implicit constructor from its fields. Fields with declared defaults may be omitted.
 
-*Addendum (v0.28) — construction is by name only, with puns.* A constructor argument is always `field: value`; the one shorthand is a bare identifier that names both a field and a variable in scope, `Hashed(file, size: n)` for `file: file` (Rust's field-init shorthand, JS's `{ file }`), and `file: file` written out is a warning with a fix. Any other bare argument — `Point(3, -4)` — is an error with the fix that names the fields, so a reordered or renamed field can never silently change what a call means. Named arguments to *functions* keep D28's positional-then-named rule; the pun exists only where positional arguments do not.
+*Addendum (v0.28) — construction is by name only, with puns.* A constructor argument is always `field: value`; the one shorthand is a bare identifier that names both a field and a variable in scope, `Hashed(file, size: n)` for `file: file` (Rust's field-init shorthand, JS's `{ file }`), and `file: file` written out is a warning with a fix. Any other bare argument — `Point(3, -4)` — is an error with the fix that names the fields, so a reordered or renamed field can never silently change what a call means. Named arguments to *functions* keep D28's positional-then-named rule; the pun exists only where positional arguments do not. *(v0.82: a constructor with one parameter also takes it positionally — D163.)*
 
 *Amended (v0.23) — variadic parameters.* The last parameter of a function may be `name: T...`; the call supplies any number of trailing positional arguments (`join("/", "a", "b")`, `sum()`), collected into a `List<T>`, or one list spread with `join("/", parts...)`. Inside the function the parameter is a plain `List<T>`. A variadic parameter has no default, an `extern` function cannot declare one, and an implement declares it exactly as its trait does.
 
@@ -628,7 +629,7 @@ Required by D36's heterogeneous `gather`. Tuples destructure positionally in bot
 
 *Parsing note:* `(a, b)` as a tuple literal and `(a, b) => ...` as a lambda parameter list need lookahead to distinguish. TypeScript has the same situation and handles it.
 
-**Tuple parameters auto-adapt.** A two-parameter lambda is accepted where a one-parameter lambda over a tuple is expected, so `entries().sortedByDescending((k, v) => v)` works without doubled parentheses. This is Scala's tupling conversion. Cost: a special case in the checker, and it can mask genuine arity errors, since a two-argument lambda passed where one argument is expected now silently succeeds.
+*(v0.82: tuple elements may be labelled — D166.)* **Tuple parameters auto-adapt.** A two-parameter lambda is accepted where a one-parameter lambda over a tuple is expected, so `entries().sortedByDescending((k, v) => v)` works without doubled parentheses. This is Scala's tupling conversion. Cost: a special case in the checker, and it can mask genuine arity errors, since a two-argument lambda passed where one argument is expected now silently succeeds.
 
 *Addendum (v0.28) — patterns everywhere a tuple is bound.* Destructuring nests to any depth in `val`/`var`, in loop heads and in lambda parameters: `groups.map(((size, hash), files) => ...)`, `sortedWith((((sa, _), _), ((sb, _), _)) => sa - sb)`. A lambda parameter written as a tuple pattern binds the whole element to a hidden variable and destructures it as the body's first statements; it composes with the tupling conversion above.
 
@@ -1579,7 +1580,7 @@ and C# (Rust, Swift and Python say `self`; the user chose Kotlin's word):
 struct Counter {
   var n: i64 = 0
   fun bump() { this.n += 1 }
-  implement Display { fun toString(): string = "Counter(${this.n})" }
+  implement Display { fun toString(): string => "Counter(${this.n})" }
 }
 ```
 
@@ -1833,7 +1834,7 @@ business, as it is today for the methods. Comparison stays `Comparable`
 // fragment
 val requestId = taskLocal("-")                       // T: Sendable
 requestId.withValue(req.id, () => process(req))      // bound for f and every task started inside
-fun log(msg: string) = io.println("[${requestId.get()}] $msg")
+fun log(msg: string) => io.println("[${requestId.get()}] $msg")
 ```
 
 A request id, a trace context or a logger follows the work without being
@@ -2266,7 +2267,7 @@ Naming (user, recommended of 3): `toU8()` checked + `wrapU8()`, over
 ```veles
 struct Bag {
   public protected var items: MutableList<i64> = []
-  public fun count(): i64 = this.items.len()   // the type's own code: unrestricted
+  public fun count(): i64 => this.items.len()   // the type's own code: unrestricted
 }
 
 fun main() {
@@ -3067,7 +3068,7 @@ value, the value is computed first and the resources close before it is used
   loop body (it closes at the end of every iteration), `if`/`else`/`when`-arm
   block, `do` block, `scope`/`gather` body. Refused, each with an error naming
   the block form: at module level; as an expression-bodied function
-  (`fun f() = …`); as a braceless `if`/`loop`/arm body (nothing would follow
+  (`fun f() => …`); as a braceless `if`/`loop`/arm body (nothing would follow
   it); as the operand of an expression.
 - *Order.* Statement-form `with`s, block-form `with`s and the with-tasks of
   part 2 in one block form one stack: the last registered is closed first.
@@ -3284,7 +3285,7 @@ its type 'sendable fun(…)'", with the fix on the declaration when it is in the
 same file. The direct-call error that stays ("'async' launches a call") names
 what to write. Works everywhere `async` does, including `with t = async f()`
 (D100). Migration: the prelude's trampolines (`withTimeout`,
-`mapConcurrent`/`forEachConcurrent`, any `fun call(f) = f()`) launch the value
+`mapConcurrent`/`forEachConcurrent`, any `fun call(f) => f()`) launch the value
 directly (Q17b).
 
 User, 2026-09-30, recommended of 3 and 3. Rejected: leaving the 1-tuple; an
@@ -3523,7 +3524,7 @@ a `throw` of a `Never` value there is unreachable, instead of "nothing in this
 struct TestServer {
   listener: net.Listener
   server: Task<()>
-  fun port(): i64 = this.listener.port()
+  fun port(): i64 => this.listener.port()
   implement Closeable { fun close() { this.listener.close() } }
 }
 
@@ -3977,7 +3978,7 @@ struct Stats {
   names: List<string>
   implement Default
 }
-fun fill<T: Default>(n: i64): List<T> = MutableList.repeat(T.default(), n).toList()
+fun fill<T: Default>(n: i64): List<T> => MutableList.repeat(T.default(), n).toList()
 ```
 
 A prelude trait `Default { static fun default(): Self }`, implemented for every
@@ -4078,7 +4079,7 @@ struct Sha256 {
   var state: Array<u32, 8> = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
                               0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]
 }
-fun sum<const N: i64>(a: Array<i64, N>): i64 = a.fold(0, (s, x) => s + x)
+fun sum<const N: i64>(a: Array<i64, N>): i64 => a.fold(0, (s, x) => s + x)
 ```
 
 A prelude value type: `N` elements of `T` stored inline — in a local, a field,
@@ -4634,7 +4635,11 @@ have similar thing… most of the language features shouldn't be possible (but
   (`Os.Windows`, `Os.Linux`, `Os.MacOS`), `target.arch` (`Arch.X64`,
   `Arch.Arm64`), `target.release` — describes the target, so a cross-compile
   sees the target. (Spelled `build.os` while being asked; renamed in the
-  consistency pass, since the module's names are in scope unqualified.) **No environment variables**
+  consistency pass, since the module's names are in scope unqualified.)
+  *(2026-10-14: in program code the target is `build.target` from an imported
+  `build` module, D160 — not a free `target` name. `package.vs` is decided but
+  held back (user); when it is built, whether its unqualified `target` stays
+  is asked again.)* **No environment variables**
   (user, recommended): a checkout builds the same in every shell, which
   reproducibility, `veles.sum` and caching rely on.
 - **`Package`**: `name` (required in a package), `description`, `license`,
@@ -4846,8 +4851,8 @@ advice — a footgun the compiler can refuse).
 ```veles
 struct Box<T> {
   value: T
-  public static fun of(v: T): Box<T> = Box(value: v)
-  public static fun none(): Box<T>? = null
+  public static fun of(v: T): Box<T> => Box(value: v)
+  public static fun none(): Box<T>? => null
 }
 val b = Box.of("x")                          // Box<string>
 val n: Box<i64>? = Box.none()                // from the expected type
@@ -6270,6 +6275,450 @@ things); the lazy form only through `with` (the loop is already the block
 that owns it); `scope` staying a statement; the no-launch `scope(on:)`
 staying legal.
 
+### D157 — A `Result` or a task handle cannot be interpolated (v0.82)
+
+Q32, found by the 2026-10-14 review (`veles-direction-2026-10-14.md` §4): a
+failing call inside `"${…}"` compiled, and its error became text.
+
+```veles
+fun parse(s: string): i64 throws ParseError => …
+println("got ${parse(s)}")          // error: a Result is interpolated, so its error would be lost
+println("got ${try parse(s)}")      // fix 1: propagate it
+println("got ${parse(s) ?? 0}")     // fix 2: a fallback value
+println("got ${r.toString()}")      // printing a Result on purpose is written out
+```
+
+- **The rule.** An interpolated expression (`"$x"`, `"${e}"`, a template
+  literal's value, D129) whose type is `Result<T, E>` — including the
+  `Result` a call of a throwing function gives without `try` — or `Task<T>`
+  is an error of the family `results-and-errors`, the message naming the call
+  and both fixes (`try`, `??`); `veles check --fix` and the LSP apply the
+  first when the enclosing function may throw, else offer both. Before this,
+  the text read `Ok(value: …)` / `Err(error: …)`.
+- **Not affected:** `r.toString()` written out, `"${r.ok}"`, and the
+  `expect` capture of a test (it prints both sides on purpose).
+- **Generic code.** A type parameter `T` instantiated as a `Result` is not
+  refused inside the generic body (the rule reads declared types); the call
+  site that passes a `Result` where `Display` text is built is the place to
+  look — a known limit, recorded in checklist §11.
+
+Rejected (user, recommended of 3): a warning (an error that is lost is the
+thing D4 makes impossible elsewhere: an unused `Result` is already an error);
+leaving it and documenting it (a footgun is refused at compile time).
+
+### D158 — A bare name in a method reaches the receiver's members (v0.82)
+
+Q33 (user, recommended of 3). The parser written in Veles spelled `this.`
+2 235 times in 5 900 lines; std 2 495 times.
+
+```veles
+struct Parser {
+  toks:    List<Token>
+  var pos: i64 = 0
+
+  fun cur(): Token => toks.at(pos) ?: panic("parser: the cursor is always on a token")
+  fun next(): Token {
+    val t = cur()
+    if (pos < toks.len() - 1) pos += 1
+    t
+  }
+  init(toks: List<Token>) { this.toks = toks }   // the parameter shadows the field
+}
+```
+
+- **Lookup order** in a method, `init`, `implement`/`extend` body or a
+  trait's default body: locals and parameters (innermost first), then the
+  members of `this` — fields, methods, and in a trait default the trait's
+  methods — then the module and its imports, then the prelude. A member
+  found this way means exactly `this.name`: same visibility (`private`
+  members of the type are reachable, as through `this`), same `var` rule
+  (D22), same narrowing (D5: `if (cause != null) cause.message()` narrows the
+  field path `this.cause`), same receiver passes.
+- **Shadowing.** A local or parameter hides a member; `this.name` reaches the
+  member. A warning (family `this`) when one body both declares a local
+  that hides a member *and* reads that member bare elsewhere — the one case
+  where a reader cannot tell which is meant. A module-level declaration
+  with the same name as a member is reached by its module path or an import
+  rename; the member wins inside the type (a warning at the declaration of
+  the member, naming both).
+- **Static functions** have no `this`: a bare name there does not reach
+  instance members, and the error says the function is `static`. Static
+  members (`static val`, `static fun`) of the type are reachable bare in
+  every function of the type.
+- **Lambdas** inside a method see members as they see `this`: a capture of
+  `this` (D35's Sendable rule for `sendable` lambdas, D37 by reference).
+- **`executor` declarations (D150)** keep their own rule: their state is
+  already named bare.
+- **Tooling.** `this.` stays valid and `veles fmt` keeps what was written;
+  hover on a bare member says "field of `this`" / "method of `this`"; rename
+  and find-references cover both spellings. (Whether a lint should prefer one
+  spelling, and whether std and `selfhost/` are migrated to bare names, is
+  left to the user when it is built — checklist §11.)
+- **Self-hosting.** The self-hosted parser's G-gates are unaffected: the
+  grammar does not change (a bare name was always an identifier); only the
+  checker resolves it differently.
+
+Rejected: bare names for reads only (writes would still need `this.`, and
+the parser's state is mostly written); leaving `this.` mandatory (Rust,
+Python and TypeScript do; Kotlin, Swift, Java, C# and C++ do not, and the
+count above is the cost).
+
+### D159 — `std/bluetooth`: Bluetooth LE central, high level first (v0.82)
+
+Q42 (user, recommended of 3; user, 2026-10-14: "low-level apis like
+bluetooth etc with high-level dev-ex approach added to the language").
+
+```veles
+use bluetooth { Uuid }
+
+const HEART_RATE = Uuid.short(0x180D)
+const MEASUREMENT = Uuid.short(0x2A37)
+
+fun main() throws bluetooth.Error | Timeout {
+  val adapter = try bluetooth.adapter()
+  val found = try withTimeout(Duration.seconds(10), () => {
+    with scan = try adapter.scan(services: [HEART_RATE])
+    await scan.next()
+  })
+  with link = try found.device.connect()
+  val rate = try link.characteristic(HEART_RATE, MEASUREMENT)
+  with readings = try rate.subscribe()
+  loop (value in readings) {
+    if (val n = bpm(value)) println("$n bpm")
+  }
+}
+```
+
+- **Surface (first version, central role; the shape is decided, the names
+  are confirmed when plan P7 is built):** `bluetooth.adapter()` (the
+  default radio) and `adapters()`; `Adapter.scan(services: List<Uuid> = [],
+  duplicates: bool = false): Scan` — a `Closeable` whose `next()` suspends
+  for an `Advertisement` (`device`, `name: string?`, `rssi: i64`, `services`,
+  `manufacturerData: Map<u16, List<u8>>`, `serviceData`) and which is an
+  iterable for `loop`; scanning stops when it closes. `Device.connect(): Link`
+  (`Closeable`: disconnects); `Link.services()`, `Link.characteristic(service,
+  id)`, `Link.mtu()`, `Link.disconnected(): Event`; `Characteristic.read():
+  List<u8>`, `write(bytes, response: bool = true)`, `subscribe():
+  Subscription<List<u8>>` (notifications or indications, whichever the
+  characteristic offers; closing it unsubscribes). Every call that waits
+  suspends, is cancellable and honours `withTimeout`; reads are bounded by
+  the MTU.
+- **Errors:** `bluetooth.Error { kind: BluetoothKind, detail: string }` with
+  `Unavailable` (no radio), `PoweredOff`, `Denied` (the message names the fix:
+  the Linux group or the Windows privacy setting), `NotFound`, `Disconnected`,
+  `GattError(code)`, `Busy`, `Unsupported`.
+- **`Uuid`** is `crypto.Uuid` (already used by `std/db`), re-exported by
+  `bluetooth`, gaining `Uuid.short(u16)` (the Bluetooth base UUID) and being
+  usable in constants.
+- **Testing without a radio:** `bluetooth.Simulated()` implements the same
+  `bluetooth.Adapter` trait — devices, services and characteristics declared
+  in the test, scripted notifications, disconnects and errors — so programs
+  are tested in CI and in WSL (which has no Bluetooth). Real-hardware tests of
+  std run on Windows behind `VELES_HW_TESTS=1`.
+- **Capability:** `bluetooth` joins the package capabilities (D138 f): shown
+  by `veles audit`, refusable by `[policy]`.
+- **The low level:** `link.raw()` and `adapter.raw()` give the platform
+  object (`sys.windows` WinRT interface / BlueZ D-Bus object path) for what
+  the portable surface does not cover.
+- **Platforms:** Windows 10 1803+ through WinRT
+  (`Windows.Devices.Bluetooth*`), Linux through BlueZ over D-Bus; macOS
+  (CoreBluetooth) with A7. Written in Veles over the per-target code of Q39
+  and the COM / D-Bus layers of plan P5.
+- **Later, each its own decision:** the peripheral role (advertising, a GATT
+  server), pairing and bonding, classic Bluetooth (RFCOMM as an `io.Stream`),
+  a binary derive for characteristic values.
+
+Rejected: thin per-platform objects behind a small portable layer (a
+different program per OS); leaving Bluetooth to packages (std would gain the
+means but not the API the user asked for).
+
+### D160 — Per-target code: file suffixes and `build.target` (v0.82)
+
+Q39 (user, 2026-10-14). The shape as recommended; the spelling the user's:
+not a free `target` name ("'target' as a free form roaming 'keyword' is not
+good"), and of `package.target.os` (their first idea) and `build.target.os`
+(a std module), "'build' is better".
+
+```veles
+// std/serial/serial.vs          the portable surface, every target
+// std/serial/serial_windows.vs  fun openPort(…) over CreateFileW / SetCommState
+// std/serial/serial_linux.vs    fun openPort(…) over open / termios
+use build { Os }
+
+val separator = if (build.target.os == Os.Windows) "\\" else "/"
+```
+
+- **Files.** A `.vs` file whose name ends `_windows`, `_linux` or `_macos`
+  (before `.vs`; `*.test.vs` keeps its rule: `x_linux.test.vs`) belongs to its
+  module only when building for that OS. Nothing else in a file name is
+  special (no architecture suffixes: an architecture difference is a
+  constant branch).
+- **`build`** is a std module: `build.target` is a constant (D113) of type
+  `build.Target { os: Os, arch: Arch, release: bool }` describing the
+  **target** (a cross-compile sees the target, never the host); `build.Os`
+  (`Windows`, `Linux`, `MacOS`) and `build.Arch` (`X64`, `Arm64`) are enums.
+  It is imported like any module (`use build`, or `use build { target, Os }`
+  — D85 named imports); nothing is in scope without the import.
+- **Constant branches.** An `if`/`when` whose condition is a constant (this
+  one included) is checked whole and compiles only the taken branch (D117's
+  dead-branch rule, D113 constants); `static assert(build.target.os !=
+  Os.MacOS, "…")` works.
+- **Everything is checked on every platform.** `veles check` (and the LSP)
+  checks a module with suffixed files once per OS whose file set differs, so
+  a mistake in `serial_linux.vs` is reported on Windows; `veles build`
+  compiles the target's files only. Each OS's set must provide what the
+  portable files use (a function missing on one OS is an error naming the
+  OS and the file it was expected in).
+- **Packages.** The manifest's `[native]` per-target tables (D138) are
+  unchanged; D131's `package.vs` (decided, held back) would read the same
+  `build` module.
+
+Rejected: `@target(…)` on declarations (one file per OS reads better and
+checks better); keeping every OS difference in the C runtime (the platform
+APIs of D161 are to be written in Veles); a free `target` name and
+`package.target` (the user).
+
+### D161 — Platform APIs: `std/sys/<os>` in Veles, portable modules on top (v0.82)
+
+Q40, Q41 (user, 2026-10-14, recommended; all four module groups chosen).
+
+- **The layer.** `std/sys/windows` (Win32; COM and WinRT calls; wide-string
+  text, D18) and `std/sys/linux` (system calls, `ioctl`, netlink, a D-Bus
+  client) — `std/sys/macos` with A7 — written in Veles over `extern "C"`,
+  `unsafe` inside and safe at the surface: handles are `Closeable` values,
+  failures throw `sys.OsError { code, call }`. The C runtime keeps only what
+  must be C (the scheduler, the collector, the reactor, what Veles cannot yet
+  express).
+- **Portable modules on top**, one API on every OS, each the shortest safe
+  spelling: an open device is a `with` value, bytes are an `io.Stream`,
+  events a `Subscription` (suspending `recv`, `race`-able, closed by `with`),
+  every wait cancellable and under `withTimeout`, blocking OS calls on
+  `blocking`, errors typed with a `kind` (`Unavailable`, `Denied` naming its
+  fix, `NotFound`, `Disconnected`, `Busy`, `Unsupported`), reads from outside
+  bounded; `raw()` reaches the `sys` handle (the low level, without an
+  `unsafe` cast); a simulated or loopback backend so tests run in CI and
+  WSL; a package capability per device family (`serial`, `hid`, `usb`,
+  `bluetooth`; D138 f).
+- **The modules, in this order** (plan track P): `net` additions (UDP,
+  multicast, Unix-domain sockets, `lookup`); `std/term` (raw mode, size,
+  keys, colour honouring `NO_COLOR`), `fs.watch`, `fs.map`; `std/serial`,
+  `std/hid`; `std/bluetooth` (D159) once the COM/D-Bus layers exist;
+  `std/usb` last. Each module's public names are asked when its step comes
+  (as track C's were); this entry fixes the layer and the rules.
+
+Rejected: OS calls in the C runtime only (the low level stays out of reach
+of Veles code, and away from self-hosting); bindings only as packages.
+
+### D162 — `veles bindgen`: C headers to `extern` declarations (v0.82)
+
+Q43 (user, recommended of 2).
+
+`veles bindgen <header.h> [--filter prefix…] [-I dir…] [-D name…] [-o file]`
+runs the configured clang with `-Xclang -ast-dump=json` and writes a `.vs`
+file: `extern "C"` functions (variadics as D123), `extern struct`/`extern
+union` with D120's layout attributes where the C layout needs them,
+`Array<T, N>` for C arrays, `#define` integer constants and enums as
+`const`s, function-pointer types as `extern fun(…)`. A pointer becomes
+`*raw T`; nothing is made safe automatically — the safe surface is written
+by hand on top (D161). The output is checked: a generated C probe compares
+`sizeof`/`offsetof` of every struct with the Veles layout, as
+`TestCLayoutAgreesWithC` does. Windows metadata (`.winmd`) for WinRT is a
+second input, later.
+
+Rejected: hand-written bindings only (hundreds of declarations per OS
+module in D161).
+
+### D163 — A one-parameter constructor takes its argument positionally (v0.82)
+
+Q34 (user, recommended of 3). D28 (v0.28) made construction by name so a
+reordered field could not change a call; a constructor with **one**
+parameter has no order to change. The tree spelled `throw X(message: …)`
+78 times.
+
+```veles
+error UsageError { message: string }
+throw UsageError("unknown option '$arg'")     // was UsageError(message: "…")
+val notes = Mutex(Notes())                    // Mutex's init has one parameter
+val n = Num(3)                                // a sealed variant with one field
+```
+
+- **When.** The implicit constructor of a struct, error or sealed variant
+  whose constructor call takes exactly one argument — one field that a call
+  may supply, or an `init(…)` with one parameter (D73) — accepts it
+  positionally. Fields with defaults count as parameters (`struct A { x: i64;
+  y: i64 = 0 }` has two, so stays by name).
+- **Kept:** the named form (`UsageError(message: …)`), puns (D28), generic
+  inference from the argument (`Mutex(Notes())` is `Mutex<Notes>`), the
+  formatter keeping what was written.
+- **When a parameter is added** the positional calls become errors of the
+  family `constructors` with a fix that writes the first name — the safety
+  D28 bought is kept.
+- Not for `enum`s (no constructors) or `extern struct`s (C layouts are
+  constructed by name, always).
+
+Rejected: the first field positional in every type (a reorder silently
+changes a call — what D28 removed); leaving it.
+
+### D164 — `copy`: a value with some fields changed (v0.82)
+
+Q36 (user, recommended of 3). A bare field is never assigned (D22), so a
+changed value is a new one; today every field is written again.
+
+```veles
+val moved = point.copy(x: 5)                       // every other field as it was
+val renamed = decl.copy(name: ident, span: span)   // compiler-shaped code: rebuild one node
+```
+
+- **Generated** for every struct, error and sealed variant (generic ones
+  included): `copy` takes each field the caller could name in a construction
+  as an optional named argument, defaulting to this value's; the result is
+  built like a construction — `init` runs (D73 v0.30), so derived fields are
+  recomputed — and fields `init` assigns cannot be named.
+- **Visibility** as construction (M5, D142): a field the call site cannot see
+  cannot be named, and keeps its value.
+- **By name only**, even for one field (D163 does not apply: `copy(5)`
+  would not say what changes).
+- **Refused** where a copy would duplicate what must be unique: a
+  task-holding type (D111) and a `Closeable` resource bound by `with` (D100) —
+  an error naming the reason. `extern struct`s get it (they are values).
+- **A hand-written `copy`** replaces the generated one (D58's rule for
+  derived methods); a field named `copy` means no generated method, with a
+  warning at the field.
+- `const fun` (D113): `copy` is evaluable at compile time when the type's
+  `init` is.
+
+Rejected: spread syntax `Point(..p, x: 5)` (new syntax inside construction,
+and the spread reads as "all fields" while visibility hides some); leaving it.
+
+### D165 — The index-of family answers `i64?` (v0.82)
+
+Q37 (user, recommended of 3).
+
+```veles
+val at = items.indexOfFirst(x => x.id == id) ?: return false
+items.removeAt(at)
+```
+
+- **Changed:** `List.indexOf`, `List.indexOfFirst`, `string.indexOf`,
+  `string.lastIndexOf`, `binarySearch`, `binarySearchBy`,
+  `binarySearchWith` return `i64?` — null when absent, never `-1`.
+- **Unchanged:** `lowerBound`, `upperBound`, `partitionPoint` (always a
+  position).
+- **A fact (D62):** an index these return non-null is in range for the list
+  it searched while that list is not changed, so `xs.at(i)` after
+  `val i = xs.indexOf(v) ?: return` is a `T`.
+- **Migration:** old code stops compiling (`i >= 0` compares a nullable) —
+  a `removed-syntax`-style error for `… >= 0`, `… < 0`, `… == -1`, `… != -1`
+  on a call of the family, with a fix (`!= null`, `== null`, or `contains`);
+  the tree is migrated in the same change.
+
+Rejected: `…OrNull` variants beside the `-1` ones (two ways to say one
+thing, and the `-1` one stays the trap); leaving it (Kotlin's and JS's
+convention, but a `-1` used as an index is a bug no checker sees).
+
+### D166 — Labelled tuples (v0.82)
+
+Q35 (user, recommended of 3, after asking to see "all of the use cases and
+pros and cons" — `veles-direction-2026-10-14.md` §4 Q35). Amends D37.
+
+```veles
+fun divide(a: i64, b: i64): (quotient: i64, remainder: i64) => (a / b, a % b)
+
+val r = divide(7, 2)
+println("${r.quotient} rest ${r.remainder}")
+val (q, rest) = divide(7, 2)                          // positional, as before
+val busiest = counts.entries().sortedBy(e => -e.value).first()
+```
+
+- **Types and literals.** A tuple type may label every element or none:
+  `(key: K, value: V)`; a literal likewise (`(key: k, value: v)`) or
+  unlabelled where the expected type gives the labels. Mixed labelling is a
+  syntax error.
+- **Reading.** `t.key` and `t.0` both read an element.
+- **Conversion.** Unlabelled converts to labelled and back, freely.
+  Between two **different** label lists it is an error (family
+  `type-mismatch`) naming both — `(x: 1, y: 2)` where `(y: i64, x: i64)` is
+  expected would otherwise swap meanings — with a fix that drops the labels
+  of the value when the reader means it.
+- **Identity.** Labels do not change layout, `==`, hashing, ordering,
+  `Sendable`, or the generic instance (`List<(key: K, value: V)>` shares
+  code with `List<(K, V)>`); hover, errors and the formatter show them.
+- **Destructuring** stays positional (`val (k, v) = e`, `(k, v) =>`,
+  `loop ((k, v) in m)`); there is no by-label pattern.
+- **Text:** `"$t"` prints `(key: apple, value: 3)`; unlabelled tuples print
+  as before.
+- **Wire:** tuples, labelled or not, stay non-`Codable` (a wire shape is a
+  struct with its `@key`s).
+- **std:** `Map.entries()` gives `(key: K, value: V)`, `enumerate()`
+  `(index: i64, value: T)`, `splitOnce` `(before: string, after: string)?`;
+  `zip`, `gather`/`awaitAll` stay unlabelled. Existing `.0`/`.1` keep
+  compiling; nothing is forced to migrate.
+- **Guideline (docs):** a labelled tuple for a short-lived grouping — a
+  function's several results, an entry; a struct for anything with
+  behaviour, invariants, documentation per field or a wire form.
+
+Rejected: a struct per use (`MapEntry`, `Indexed` — one nominal type per
+multi-value return, and tuple destructuring of entries would need another
+rule); leaving `.0`/`.1`; anonymous records `{ key: K, value: V }` (a new kind
+of type, much larger than the problem).
+
+### D167 — `std/cli`: command-line arguments by derive (v0.82)
+
+Q38 (user, recommended of 3). Three examples parse arguments by hand today,
+and a compiler driver written in Veles has ~40 flags.
+
+```veles
+/// Find duplicate files under a directory.
+struct Options {
+  /// The directory to scan.
+  @positional
+  dir:     string
+  /// How many files to hash at once.
+  workers: i64 = 4
+  /// Smallest file to consider, in bytes.
+  minSize: i64 = 1
+  @short("v")
+  verbose: bool = false
+  implement cli.Args
+}
+
+fun main() {
+  val opts = cli.parse<Options>(os.args())   // --help prints and exits 0; a usage error prints and exits 2
+  …
+}
+```
+
+- **The derive** (D58's mechanism, beside `config`'s `Decodable.schema()`,
+  D125): a field is a flag named in kebab case (`minSize` → `--min-size`);
+  `bool` flags take no value (`--verbose`, `--no-verbose` when the default is
+  `true`); numbers, `string`, `Duration`, enums (choices listed in help),
+  `T?` (optional), `List<T>` (repeatable) and any `Parsable` type are
+  accepted; a field without a default is required. Attributes on their own
+  line: `@positional` (in field order; a `List<T>` takes the rest),
+  `@short("v")`, `@name("…")`, `@env("NAME")` (a fallback from the
+  environment), `@hidden`.
+- **Help** from the doc comments: the struct's for the command, each field's
+  for its flag, defaults shown; `--help`/`-h` always; `--version` when the
+  package declares a version.
+- **Subcommands** are a sealed trait whose variants each `implement
+  cli.Args` (`veles build …`, `veles test …`): the variant's name in kebab
+  case is the word.
+- **Two levels.** `cli.parse<T>(args)` handles `--help` and usage errors
+  itself (prints, exits 0 / 2); `cli.tryParse<T>(args): T throws cli.Error`
+  returns them for programs and tests that decide themselves (`cli.Error`
+  carries `kind` — `Help`, `Usage`, `Version` — and the text). Typos get a
+  suggestion (the B1 machinery: "unknown flag '--wokers'; did you mean
+  '--workers'?"); every problem is reported at once, as `config` does.
+- **Conventions:** `--flag value` and `--flag=value`, `--` ends flags,
+  grouped short flags (`-vq`), arguments after flags allowed.
+
+The exact attribute and function names are confirmed when it is built
+(plan C9); this entry fixes the shape.
+
+Rejected: a builder API (untyped values read by name, and a second
+description of what the struct already says); leaving it to packages (every
+tool, the compiler's driver included, needs it).
+
 ---
 
 ## 4b. Settled minor decisions
@@ -6280,7 +6729,7 @@ staying legal.
 - **`panic(message)`** — a built-in that never returns (D20); a `T?` fallback like `xs.at(i) ?: panic("...")` types as `T`.
 - **`Set`** — follows D25's immutable/mutable split and is insertion-ordered, matching `Map`.
 - **`gc.retain` handles** — `Closeable`, acquired through `with` (D43).
-- **`implement`, not `implement`** *(v0.33)* — the keyword is the word: `implement Display for Point { }`, `implement Codable` in a struct body. `implement` was the Rust abbreviation; the parser still reads it and reports the spelling with the fix. The AST node keeps its name.
+- **`implement`, not `impl`** *(v0.33)* — the keyword is the word: `implement Display for Point { }`, `implement Codable` in a struct body. `impl` was the Rust abbreviation; the parser still reads it and reports the spelling with the fix. The AST node keeps its name.
 - **A function's type parameters follow its name** *(v0.33)* — `fun encode<T: Encodable>(value: T)`, as on a struct (`struct Page<T>`) and at the call (`decode<User>(text)`); Swift, TypeScript, Go and Rust agree. Kotlin's `fun <T> encode(...)` was accepted alongside it since v0.1 and is now an error with the fix: one spelling.
 - **Module interface files** — build cache, regenerated. Packages distribute as source under the decentralized registry model (manifest §7), so there is nothing to ship them in. *(v0.59: not built — the bootstrap checks a package whole; see §5 and plan E8.)*
 - **`veles.sum`** — mandatory. Supply-chain integrity is not opt-in.

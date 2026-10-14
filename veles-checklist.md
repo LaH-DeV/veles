@@ -558,9 +558,10 @@ answered from the shape, tuples get `Comparable`, enums get
 
 - [x] Threads (see 1.3) — the single largest throughput multiplier (D66 stage 1)
 - [ ] GC: pause-time metric exported; heap ceiling; allocation-rate counter
-- [ ] GC: generational or incremental marking once a server-shaped heap is
-      measured (mark-sweep stop-the-world today; the pause shared by up to
-      eight marking and sweeping threads since 2026-10-10 — §11)
+- [~] GC: generational or incremental marking once a server-shaped heap is
+      measured — F18 (2026-10-13): lazy sweeping everywhere, mostly-concurrent
+      marking on Windows (write watch; `bench/gcpause` pauses under 1 ms); Linux
+      still marks in the pause (soft-dirty bits, §11); not generational
 - [ ] Escape analysis: short-lived request objects on the stack
 - [~] Coroutine frames: size report per function; pool frames of hot shapes.
       2026-10-10 (plan F10): a temporary built and taken apart in place gets
@@ -577,7 +578,8 @@ answered from the shape, tuples get `Comparable`, enums get
       `bench/httphello` 310 → 160–180 ms at 8 threads and 650 → 180–230 ms at
       32 on Windows (Go 150 / 400 ms), Linux 0.45 → 0.28 s and 0.63 → 0.36 s;
       CPU at 32 threads 7–10 s → 2–2.5 s (Go 1.6–3.2 s)
-- [ ] `string` representation: check that slicing and `substring` do not copy
+- [x] `string` representation: check that slicing and `substring` do not copy —
+      checked for the self-host plan (§4): `veles_string_substring` aliases the bytes
 - [~] `StringBuilder` growth policy and a `reserve`: append is one copy into
       doubling storage (2026-09-27); `reserve` decided 2026-09-30 (D105,
       plan B11)
@@ -844,9 +846,9 @@ behind a name that says "crypto" (§10, 2026-09-23).
       checks run at once under their timeouts, details logged not returned,
       `serve(health:)` flips readiness at the stop, probes kept out of the
       request log; the server template uses it
-- [ ] Metrics, traces and logs as OpenTelemetry over OTLP/protobuf, with
-      W3C `traceparent` in and out — decided 2026-10-01 (D126), not built
-      (plan C4); a Prometheus pull exporter not decided
+- [x] Metrics, traces and logs as OpenTelemetry over OTLP/protobuf, with
+      W3C `traceparent` in and out — D126, built 2026-10-05 (`std/otel`; plan C4);
+      a Prometheus pull exporter not decided
 - [ ] Runtime metrics: GC pauses, heap, tasks, open connections
 
 ### 5.10 Misc
@@ -893,9 +895,11 @@ behind a name that says "crypto" (§10, 2026-09-23).
       conformance D129-template-signature / D129-template-use, `TestTemplateTagQualifiedByModule`; example
       `examples/templates`; docs chapter 2 and 14, cheat sheet. `std/db` (E2) is the first user
 - [~] `std/os`: `hostname`, `pid`, `tempDir` done (2026-09-25); `shutdownSignal`/`raiseSignal` done (D68); `run` without a shell (2026-09-27, §2); `run(..., input:, stderr: os.Stderr)` with `Output.stderr` (D82, 2026-09-28)
-- [~] `std/fs`: `walk` done (2026-09-25: depth-first, name order, links to
-      directories not followed, its own stack); streaming reads/writes, atomic
-      rename, file locks open
+- [x] `std/fs`: `walk` done (2026-09-25: depth-first, name order, links to
+      directories not followed, its own stack); streaming through `fs.File`/`io.Stream`
+      (D128), `writeAtomic`, `lock`/`tryLock`, `seek`, `sync`, `lines`, `copy` (D130,
+      2026-10-04, see the entry above). Not offered: byte-range and shared locks,
+      file watching (track P, Q41)
 - [x] `std/utf8`: one code point at a time — `decode`/`decodeLast` over a
       `string`, `decodeBytes` over a buffer that carries no promise,
       `encodeTo`/`encode`/`char` back, `combineSurrogates` for the formats
@@ -1069,9 +1073,9 @@ behind a name that says "crypto" (§10, 2026-09-23).
 The lexer and parser rewritten in Veles, planned in
 `veles-selfhost-frontend-plan.md`: six phases, each gated on byte-identical
 output against the Go front end over the repository's own `.vs` files, ending
-with the Veles parser parsing itself. Four decisions to make before it starts
-(a rune API, `unicode.IsPrint`, the recursion limit, `Span`'s representation)
-are listed in §4 of that file.
+with the Veles parser parsing itself. The four decisions it needed first were
+settled 2026-09-23 (§4 of that file). What follows the front end is plan track S,
+S6–S12 (2026-10-14).
 
 - [x] P0 `source` — `selfhost/source/`, gate P0 over the corpus (2026-10-08)
 - [x] P1 the lexer — `selfhost/lexer/`, gate G1 (tokens, docs, comments,
@@ -1102,6 +1106,10 @@ list as it was is in `archive/progress-log-2026-09.md` and git history).
 (Q15 named imports was decided 2026-09-29: D85; Q16 `as` conversions the same day: D86; Q19 the same; Q4 D87, Q8 D88, Q3 D89 — decided 2026-09-29, being built in that order.)
 
 **Open:** none.
+
+(2026-10-14: Q32–Q43, prepared in `veles-direction-2026-10-14.md`, were decided the same day:
+Q32 D157, Q33 D158, Q42 D159, Q39 D160, Q40 + Q41 D161, Q43 D162, Q34 D163, Q36 D164,
+Q37 D165, Q35 D166 (after the full write-up the user asked for), Q38 D167.)
 
 (2026-10-11: Q29 was decided with four questions the F10/F11 work raised: D150–D154.)
 
@@ -1280,9 +1288,41 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-10-11 | Q30: a `gather` child that returns a `Result` without `throws` | **Its `Result` is the child's value: `Result<Result<T, E>, Panic>`**, as in a `scope` and a D111 field (D155; user, recommended of 3). Rejected: flattening it into the gather's error (as built until then); refusing such a child in `gather`. |
 | 2026-10-11 | Q31: an executor's function as a value outside its code | **Stays an error with the lambda as the fix** (D150 addendum; user, recommended of 2). Rejected: a function value that hops to the executor by itself. |
 | 2026-10-13 | Less ceremony around `async` (user, of `scope { val handle = async call(); println(await handle) }`: "it is kind of too much syntax for just run async … maybe 'scope' isn't required? Maybe we could just require to await the async handle by the compiler?") | **Six parts, D156** (user, recommended of 4 for each of four questions; `awaitAll` over `all` by the user's choice, before the batch): (1) `val h = async f()` in any block, a fail-fast child that must be awaited (`await`, `awaitAll`, a `race` arm) on every normal path — abnormal exits cancel and join it; no passing, storing or cancelling it — with (1b) a warning for an `await` right after the `async`; (2) `awaitAll(t1, …, tn)` → tuple of values and `awaitAll(tasks)` → `List<T>`, a built-in, fail-fast, inline `async` arguments owned by it (settles `awaitAll` from notes P11); (3) `scope`/`gather(workers: n)`, combinable with `on:`, a launch over the limit suspends the body; (4) lazy ordered `iter.mapConcurrent(f, workers:)`, and a task-holding loop iterable is owned by the loop; (5) `scope` as an expression; (6) `scope(on:)`/`workers:` whose body starts no task is an error with the `e.run` fix. Rejected: leaving it as it was; the warning only; `all`; a handle that may be passed on; queued launches; `workers:` only without `on:`; the lazy form only through `with`; `scope` staying a statement; the no-launch placed scope staying legal. |
+| 2026-10-14 | Q32: interpolating a `Result` (found by the direction review: `"${f()}"` printed `Err(error: …)`) | **An error with the fixes `try` / `??`; a `Task` too** (user, recommended of 3; D157). Rejected: a warning; leaving it documented. |
+| 2026-10-14 | Q33: members without `this.` (2 235 `this.` in the parser port) | **A bare name reaches the receiver's members after locals and parameters; `this.` stays valid** (user, recommended of 3; D158). Rejected: bare reads only; `this.` mandatory. |
+| 2026-10-14 | Q42: Bluetooth in std (user: "low-level apis like bluetooth etc with high-level dev-ex approach") | **LE central, high level first: scan as a `with` value, `with link = device.connect()`, `subscribe()` a `Subscription`; a simulated backend; a `bluetooth` capability; WinRT / BlueZ over D-Bus** (user, recommended of 3; D159). Rejected: thin per-platform objects; leaving it to packages. |
+| 2026-10-14 | Q39: per-target code | **`_windows`/`_linux`/`_macos` file suffixes plus constant branches on `build.target` from an imported std `build` module; every OS's files checked on every platform** (user: the recommended shape, but "'target' as a free form roaming 'keyword' is not good"; offered `package.target.os` (their idea), `build.target.os`, `Target.os`: "'build' is better than my idea"; D160). Rejected: `@target(…)`; OS code only in C; a free `target`; `package.target`. Also from the user: `package.vs` (D131) "was decided but withhold for now". |
+| 2026-10-14 | Q40, Q41: platform APIs | **`std/sys/<os>` in Veles (Win32/COM/WinRT, syscalls/ioctl/D-Bus), portable modules on top with one set of rules (with-values, `io.Stream`, `Subscription`, typed `kind`, `raw()`, simulated backends, capabilities); all four groups: `net` UDP/multicast/Unix/lookup → `term`, `fs.watch`, `fs.map` → `serial`, `hid` → `usb`** (user, recommended; D161). Rejected: OS calls in the C runtime only; bindings only as packages. Each module's names asked when built. |
+| 2026-10-14 | Q34: positional construction (78 `throw X(message: …)`) | **A constructor with exactly one parameter takes it positionally; adding a parameter makes those calls errors with a fix** (user, recommended of 3; D163, amends D28). Rejected: the first field always positional; leaving it. |
+| 2026-10-14 | Q36: a copy with changes | **Generated `copy(field: v, …)` on every struct/error/variant, by name only, visibility as construction, `init` runs; refused for task-holding and `with`-bound values** (user, recommended of 3; D164). Rejected: spread syntax; leaving it. |
+| 2026-10-14 | Q37: `-1` from the index-of family | **`i64?`** for `indexOf`, `indexOfFirst`, `string.indexOf`/`lastIndexOf`, `binarySearch*`; positions (`lowerBound`…) unchanged; a D62 fact for the result; the tree migrated (user, recommended of 3; D165). Rejected: `…OrNull` variants; leaving it. |
+| 2026-10-14 | Q35: labelled tuples (user first: "not sure how would it look like in all of the use cases and pros and cons" — written out in the review §4) | **`(key: K, value: V)`: labels for reading, unlabelled ↔ labelled converts, different labels do not; positional destructuring; layout/`==`/generics unchanged; not `Codable`; `entries()`/`enumerate()`/`splitOnce` labelled** (user, recommended of 3; D166). Rejected: a struct per use; leaving `.0`/`.1`; anonymous records. |
+| 2026-10-14 | Q38: argument parsing | **`std/cli` by derive: `implement cli.Args`, `cli.parse<T>` (help/usage handled, exit 0/2) and `cli.tryParse<T>`, help from doc comments, subcommands as a sealed trait** (user, recommended of 3; D167; names confirmed when built). Rejected: a builder API; leaving it to packages. |
+| 2026-10-14 | Q43: a binding generator | **`veles bindgen <header>` over clang's JSON AST, layouts checked by a C probe; `.winmd` later** (user, recommended of 2; D162). Rejected: hand-written only. |
 
 ## 11. Known limitations to revisit
 
+- **Decided 2026-10-14, not built yet:** D157 (interpolating a `Result`/task is an error; a
+  generic body interpolating a `T` later instantiated as a `Result` is not refused — the rule
+  reads declared types), D158 (bare names reach the receiver's members; left to the user when
+  built: a lint preferring one spelling, and whether std/`selfhost/` migrate to bare names),
+  D159 (`std/bluetooth`; needs plan P1 and P5 first; the names of its surface are confirmed
+  when P7 is built; peripheral role, pairing, classic RFCOMM and a binary derive are later
+  decisions), D160 (per-target files, `build.target`; plan P1), D161 (`std/sys/<os>`, the
+  platform modules; plan P2–P9, each module's names asked when built), D162 (`veles
+  bindgen`; plan P10; `.winmd` input later), D163 (one-parameter constructors positional;
+  plan B21), D164 (`copy`; plan B21), D165 (index-of family `i64?`; plan B21), D166
+  (labelled tuples; plan B22), D167 (`std/cli`; plan C9; its attribute and function names
+  confirmed when built).
+- **Found by the direction review (2026-10-14, `veles-direction-2026-10-14.md`), open:**
+  `implement Codable` on a struct with a tuple field fails with "no method 'encode' on type
+  '(string, i64)'" pointed at the `implement` line — it should name the field and say tuples
+  are not `Codable` (decision-free diagnostic fix); no debug info — a debugger cannot step Veles source (plan S8); no per-target
+  code in Veles, every OS difference is in `runtime/c` (D160); `std/net` has no UDP,
+  multicast, Unix-domain sockets or lookup API, and there is no file watching, memory-mapped
+  file, terminal control, serial, HID, USB or Bluetooth module (D161, plan track P); the
+  self-hosted parser is 2.4× slower than Go's on std (plan S7); `veles fmt` spreads a
+  one-call `unsafe { f() }` over three lines (73 sites in std; plan B18).
 - **D156, left out of the decision (2026-10-13):** `awaitAll(…)` as a `race` arm; an unordered
   lazy `mapConcurrent` (results as each finishes).
 - **D156, not built yet (F19, 2026-10-13):** the compile-time deadlock warning for `workers:` (a
@@ -1599,7 +1639,7 @@ Every new public std API (http cookies/forms/client, `std/log`,
     "later", D78 amendment). (`TestStdFsUnitTests` failed under a full run because two `fs` tests used the same
     scratch file name while tests run in parallel; fixed by naming. A scratch helper that makes the name
     unique per test by construction would keep it from coming back.)
-- **Deferred from C8 template literals (2026-10-04), to build later:** `std/db` and its `sql"…"` (plan E2);
+- **Deferred from C8 template literals (2026-10-04), to build later:** ~~`std/db` and its `sql"…"` (plan E2)~~ (built 2026-10-05);
   std tags such as `html"…"` that escapes and `regex"…"` (the literal is the mechanism, the tags are std
   work and public API); embedded-language highlighting inside a tag's string (SQL, HTML) in the editor
   grammar; LSP semantic tokens for the tag (the TextMate grammar colours it, the language server does

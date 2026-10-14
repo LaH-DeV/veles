@@ -91,8 +91,8 @@ struct Notes {
   }
 
   /// Removes the note with that id; false when there is none. (`items` is a
-  /// MutableList — a handle — so this needs no `mut`: only `this`'s own
-  /// fields are guarded by it, D22/D25.)
+  /// MutableList — a handle — so it changes through its methods while the
+  /// field itself stays bare, D22/D25.)
   fun remove(id: i64): bool {
     val at = this.items.indexOfFirst(x => x.id == id)
     if (at >= 0) this.items.removeAt(at)

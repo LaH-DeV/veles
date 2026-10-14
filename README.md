@@ -1,11 +1,15 @@
 # The Veles programming language
 
 Bootstrap compiler for Veles, written in Go, implementing `veles-spec.md`
-(v0.42) through build-plan Stages 1–5: the whole surface syntax, the type
-system with inferred effects, a non-moving collector, a multi-threaded
-executor for stackless coroutines (one worker per core, D66), path-based
-packages, C interop, and a test runner.
-The remaining step of the plan — self-hosting — is future work.
+(v0.81, D1–D156): the whole surface syntax, the type system with inferred
+effects, compile-time evaluation (`const fun`), a non-moving collector with
+concurrent marking on Windows, a multi-threaded executor for stackless
+coroutines with declared executors and OS-thread control, packages (path,
+git and a registry, with `veles.sum` and capability policies), C interop
+with the C ABI for structs by value, and a test runner.
+Self-hosting has begun: the lexer and parser are rewritten in Veles
+(`selfhost/`) and agree with the Go front end byte for byte; the order of
+what follows is track S of `veles-plan.md`.
 
 ```bash
 go build -o veles.exe .
@@ -19,7 +23,7 @@ go build -o veles.exe .
 ./veles.exe lsp                              # language server over stdio (see editors/vscode)
 ```
 
-New to the language? Start with [docs/documentation/index.md](docs/documentation/index.md): fifteen
+New to the language? Start with [docs/documentation/index.md](docs/documentation/index.md): twenty-five
 tutorial chapters for three levels of reader plus a cheat sheet, a
 standard-library reference and a guide to error messages. Every program in
 them is compiled and run by `go test ./docs/`.
@@ -46,7 +50,7 @@ program (docs chapter 13).
 | `sema/` | modules and manifests (M1–M6), name resolution, type checking, effect inference (D2/D4/D45), lowering to a typed HIR |
 | `codegen/llvm/` | textual LLVM IR emission (I1/I2); coroutines via `llvm.coro.*`; GC type descriptors; vtables |
 | `runtime/c/` | `veles_rt.c` (strings, lists, maps), `veles_gc.c` (collector), `veles_task.c` (executor), `veles_poll.c` (the socket reactor: epoll, AFD/IOCP, `poll()`), `veles_os.c` (files, bytes, processes, environment, clocks) |
-| `std/` | standard library in Veles, embedded in the compiler: `prelude` (D24: `Iterator`/`Iterable` and adapters, `extend` blocks for `string`, `List`, `Range`, the operator traits `Comparable`/`Equatable`/`Hashable`/`Display`, `Closeable`, `Mutex`/`Atomic`, `Panic`, `IoError`, `StringBuilder`), `io`, `os` (args, env, exit, run), `fs` (text and bytes), `path`, `time`, `random` |
+| `std/` | standard library in Veles, embedded in the compiler: `prelude` (D24: `Iterator`/`Iterable` and adapters, `extend` blocks for `string`, `List`, `Range`, the operator traits `Comparable`/`Equatable`/`Hashable`/`Display`, `Closeable`, `Mutex`/`Atomic`/`RwLock`, executors, `Panic`, `IoError`, `StringBuilder`, `Secret`, `Duration`), `io`, `os`, `fs`, `path`, `time`, `random`, `net`, `tls`, `http` (server and client), `json`, `codec`, `config`, `log`, `otel`, `db` (PostgreSQL), `compress`, `crypto`, `hex`, `base64`, `jwt`, `utf8`, `ffi`, `recursion` |
 | `format/` | the formatter (`veles fmt`, and `textDocument/formatting` in the LSP): prettier-style — blocks always break, columns align, comments and the author's list/chain line breaks are kept |
 | `fetch/` | the package system's network side (D138, D139): resolves registry and git dependencies by minimal version selection, the module cache and `veles.sum`, vendoring, capabilities computed from source and the `[policy]` that refuses them, signed reviews, publishing; the only code that runs git or touches the network (the compiler core reads directories through `sema.ResolveRemote`) |
 | `registry/` | a reference implementation of the registry protocol, in memory, for tests and small private registries |
@@ -54,7 +58,7 @@ program (docs chapter 13).
 | `editors/vscode/` | VS Code extension: TextMate grammar and client for `veles lsp` |
 | `docs/` | tutorials and reference; `go test ./docs/` runs every code block |
 | `selfhost/` | the front end rewritten in Veles (veles-selfhost-frontend-plan.md), phase by phase; `go test ./selfhost` builds it and checks its output against the Go front end's, byte for byte, on every Veles file in the repository |
-| `examples/` | 32 programs with expected output; `go test ./...` compiles and runs them (a `commands.txt` scripts a command-line tool, `-update` rewrites `expected.txt`; a `name.vss` script is a test when `name.expected.txt` exists, fed `name.stdin.txt` when present) |
+| `examples/` | 63 programs with expected output; `go test ./...` compiles and runs them (a `commands.txt` scripts a command-line tool, `-update` rewrites `expected.txt`; a `name.vss` script is a test when `name.expected.txt` exists, fed `name.stdin.txt` when present) |
 
 `go test ./...` is the regression suite. The parser, formatter and checker also
 have native fuzz targets — `go test -fuzz=FuzzParse ./parser`, `-fuzz=FuzzFormat
@@ -92,21 +96,23 @@ comparator/key lambdas. D51 `@deprecated`, `@mustUse`, `@inline`,
 
 **Modules and packages.** M1 `veles.toml` identity, M2/M3 directory
 modules, M4 cycle detection, M5 `public` plus the root module's `public use` re-exports (D89), M6 logical
-paths; path dependencies (`name = "../dir"` or `name = { path = "../dir" }`). M7's registry and
-minimal version selection are not implemented.
+paths; dependencies by path, git (tags or a commit) and a registry, minimal version selection per
+major, workspaces, `veles.sum`, vendoring, capabilities and a `[policy]` (D138, D139; chapter 25).
+D142's visibility levels (`internal`, package-wide unmarked) are decided and not built yet (plan B17).
 
 ## Known gaps and deviations
 
-- Timers (a heap), socket waits and races share one runtime lock; channels,
-  the run queues, `await` and a scope's join take none. Sockets wait in a
-  reactor: epoll on Linux, AFD poll requests on an I/O completion port on
-  Windows, `poll()` elsewhere — macOS gets kqueue with plan A7.
+- macOS is not supported yet (plan A7): no kqueue, the aarch64 C ABI is only
+  cross-compiled. Sockets wait in a reactor: epoll on Linux, AFD poll
+  requests on an I/O completion port on Windows.
+- The collector marks concurrently on Windows only; on Linux marking is in
+  the pause (checklist §11).
+- No debug info yet: a debugger cannot step Veles source (plan S8).
 - Panics unwind via `setjmp`/`longjmp` to the executor rather than D49's
   DWARF tables; the task's active `with` cleanups run on the way.
 - Exhaustiveness is a variant-set check; nested refutable sub-patterns are
   only tracked for nullables.
 - Trait objects require object-safe traits (no associated types, generic
   methods, `Self` in signatures, or suspending methods).
-- `extern struct` is accepted but by-value C ABI passing is not implemented.
 - Inside `unsafe`, `*T` converts implicitly to `*raw T` (needed to bind the
   runtime from Veles).
