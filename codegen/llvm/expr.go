@@ -467,6 +467,8 @@ func (g *gen) expr(e sema.Expr) string {
 		return g.scopeBlock(e)
 	case *sema.Race:
 		return g.race(e)
+	case *sema.RaceFirst:
+		return g.raceFirst(e)
 	case *sema.CallIndirect:
 		return g.callIndirect(e)
 	case *sema.FuncRef:

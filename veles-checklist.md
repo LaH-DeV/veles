@@ -153,6 +153,14 @@ answered from the shape, tuples get `Comparable`, enums get
       TestLockGuard, TestConcurrencyHelpers, std/time/ticker.test.vs,
       conformance D107-lock-guard, D107-lock-call, D109-with-unnamed, LSP
       TestLockInTheEditor; chapters 12, 13, 20
+- [x] Racing computations (D168, 2026-10-16; reshaped by D169 the same day): `race { }` a
+      block like `gather` whose tasks race — the first to finish wins, a failure included, the
+      others cancelled and joined (`sema/race.go`, runtime `veles_race_list` over a run-time
+      list of handles); `select { }` the construct with arms, `val x = src =>`, `async`
+      arms owned and cancelled; `async { }` a started sendable lambda (`return` gives its
+      value); the D168 spellings (`as`, bare arms, `awaitFirst`, a `race` with arms) error
+      with a fix. Conformance D169-race-select-async, driver TestRaceTaskArms (1/2/4/8
+      threads), self-host parity over the new syntax, chapter 12.
 - [x] Which `race` arm wins when several are ready at once (2026-10-02):
       the first ready in written order when the race starts, else the first
       to become ready — deterministic, biased to earlier arms, not Go's
@@ -1105,7 +1113,14 @@ list as it was is in `archive/progress-log-2026-09.md` and git history).
 
 (Q15 named imports was decided 2026-09-29: D85; Q16 `as` conversions the same day: D86; Q19 the same; Q4 D87, Q8 D88, Q3 D89 — decided 2026-09-29, being built in that order.)
 
-**Open:** none.
+**Open:**
+
+- Q45: when an operation that explicitly accepts a cancellation token is
+  cancelled, should it throw a typed `Cancelled` error, return a distinct
+  cancellation outcome, or use another contract? The user wants cancellation
+  tokens only on APIs that support cancellation, targeting that operation
+  rather than making arbitrary functions cancellable; `Task.cancel()` remains
+  task-level. The operation's completion contract is left open (2026-10-16).
 
 (2026-10-14: Q32–Q43, prepared in `veles-direction-2026-10-14.md`, were decided the same day:
 Q32 D157, Q33 D158, Q42 D159, Q39 D160, Q40 + Q41 D161, Q43 D162, Q34 D163, Q36 D164,
@@ -1299,6 +1314,8 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-10-14 | Q35: labelled tuples (user first: "not sure how would it look like in all of the use cases and pros and cons" — written out in the review §4) | **`(key: K, value: V)`: labels for reading, unlabelled ↔ labelled converts, different labels do not; positional destructuring; layout/`==`/generics unchanged; not `Codable`; `entries()`/`enumerate()`/`splitOnce` labelled** (user, recommended of 3; D166). Rejected: a struct per use; leaving `.0`/`.1`; anonymous records. |
 | 2026-10-14 | Q38: argument parsing | **`std/cli` by derive: `implement cli.Args`, `cli.parse<T>` (help/usage handled, exit 0/2) and `cli.tryParse<T>`, help from doc comments, subcommands as a sealed trait** (user, recommended of 3; D167; names confirmed when built). Rejected: a builder API; leaving it to packages. |
 | 2026-10-14 | Q43: a binding generator | **`veles bindgen <header>` over clang's JSON AST, layouts checked by a C probe; `.winmd` later** (user, recommended of 2; D162). Rejected: hand-written only. |
+| 2026-10-15 | Q44: racing computations (the user, on the idioms review's `fastest()`: "this piece of code looks awful and we should change it in the language"; two rounds) | **`async f()` as a `race` arm, owned by the race (losers cancelled and joined); `awaitFirst(async a(), async b())` for plain values; an arm without `=> body` gives its value; the first to finish wins, error included; no `await` in arms; a value named `src as name => body`** (user, recommended in each; D168). Rejected: `awaitFirst` only; leaving manual cancels; first-success semantics (a separately named form later — "`race try` or something better named"); keeping `await` or both; `val name = src =>`; `src => name =>`; a Kotlin-`select` redesign. |
+| 2026-10-16 | Q45: `race` and `select`, async blocks (the user, after D168 was built: "naming 'as' in race arms was a mistake"; `race` without arms "like gather", a `select` that "has arms always", and `async { }` blocks) | **`race { }` a block whose `async` tasks race (first to finish wins, errors included; losers cancelled and joined); `select { }` the construct with arms, each `src => body`, named `val x = src =>`, `async` arms owned; `async { }` a started sendable lambda, `return` gives its value; `awaitFirst`, `as` and bare arms removed** (user, recommended in each of 4; D169). Rejected: arms in `race`; keeping `awaitFirst`; `src => x =>`; a waits-only `select`; refusing `return` in an async block; `async () => { }` (the user: "would create it but not call it"). |
 
 ## 11. Known limitations to revisit
 
@@ -1323,6 +1340,24 @@ Every new public std API (http cookies/forms/client, `std/log`,
   file, terminal control, serial, HID, USB or Bluetooth module (D161, plan track P); the
   self-hosted parser is 2.4× slower than Go's on std (plan S7); `veles fmt` spreads a
   one-call `unsafe { f() }` over three lines (73 sites in std; plan B18).
+- **D168/D169 (decided 2026-10-15/16, built 2026-10-16, plan B23/B24); left out:** a
+  first-*success* race (errors ignored unless every contestant fails — the user: "`race try`
+  or something better named"); `race(on: e)` / `race(workers: n)`; `awaitAll(…)` as a
+  `select` arm (from D156). Built without: placing a `select`'s or `race`'s tasks on the
+  executor of an enclosing `scope(on: e)` (they run where the construct runs); a `race`
+  body with a lambda statement at its top level (`val f = x => x`) is read as the removed
+  arm form (the parser tells the forms apart by a top-level `=>`); the D35 capture error
+  inside `async { }` says "this lambda"; an `async { }` that captures nothing it needs is
+  not linted.
+- **Found by the idioms pass (2026-10-14, `veles-idioms-and-apis.md` §2.1), open, decision-free:**
+  F1 `val Point(x, y) = p` on a plain struct (not a sealed variant) demands `else` though it
+  cannot fail; F2 `T: Equatable` / `T: Hashable` bounds refuse `i64`, `string` and structs
+  while `T: Comparable` accepts them and `==`/map keys need no bound — at least the error
+  should say no bound is needed (making the bounds hold is idea I6, a decision); F3
+  `manager: *User? = null` suggests the type `'*User??'` — it should name `(*User)?`; F4
+  `list.count()` with no predicate reports "cannot infer type parameter 'E'" instead of
+  pointing at `len()`. The ideas I1–I14 and A1–A83 in that file are undecided; a picked one
+  goes through `veles-decide`.
 - **D156, left out of the decision (2026-10-13):** `awaitAll(…)` as a `race` arm; an unordered
   lazy `mapConcurrent` (results as each finishes).
 - **D156, not built yet (F19, 2026-10-13):** the compile-time deadlock warning for `workers:` (a

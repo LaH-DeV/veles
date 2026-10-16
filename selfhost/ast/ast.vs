@@ -596,7 +596,10 @@ public struct CallExpr : Expr {
   public var args:     List<Arg> = []
   public var isAsync:  bool = false
   public var grouped:  bool = false
-  public var pos:      Span = Span.none()
+  // written `async { body }` (D169): the callee is a lambda of no
+  // parameters whose body is that block
+  public var block: bool = false
+  public var pos:   Span = Span.none()
 }
 
 public struct UnaryExpr : Expr {
@@ -768,16 +771,25 @@ public struct ScopeExpr : Expr {
   public var pos:     Span = Span.none()
 }
 
-/// `race { val x = ch.recv() => body … }` (D38).
+/// `race { body }` (D169): the tasks the body starts race. `arms` instead of
+/// `body` for the removed `race` with arms, now `select`.
 public struct RaceExpr : Expr {
+  public var body: Block? = null
+  public var arms: List<RaceArm> = []
+  public var pos:  Span = Span.none()
+}
+
+/// `select { val x = ch.recv() => body … }` (D169; the arms of D38/D108/D168).
+public struct SelectExpr : Expr {
   public var arms: List<RaceArm> = []
   public var pos:  Span = Span.none()
 }
 
 public struct RaceArm {
-  public var binding: Binding? = null
+  public var binding: Binding? = null  // `val x = …`
   public var source:  *Expr
-  public var body:    *Expr
+  public var name:    Ident? = null    // `src as name =>` (D168, removed by D169)
+  public var body:    (*Expr)? = null  // null for a bare arm (D168, removed by D169)
   public var pos:     Span = Span.none()
 }
 
@@ -945,6 +957,7 @@ public fun exprSpan(e: Expr): Span => when (e) {
   is GatherExpr     => e.pos
   is ScopeExpr      => e.pos
   is RaceExpr       => e.pos
+  is SelectExpr     => e.pos
   is UnsafeExpr     => e.pos
   is WithExpr       => e.pos
   is ControlExpr    => stmtSpan(*e.stmt)

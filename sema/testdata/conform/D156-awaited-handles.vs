@@ -96,16 +96,16 @@ fun innerBreak(xs: List<i64>): i64 throws Boom {
 
 fun raced(): i64 throws Boom {
   val t = async work(1)
-  race {
-    val v = await t => v
+  select {
+    val v = t => v
     sleep(Duration.millis(100)) => throw Boom(n: 0)
   }
 }
 
 fun racedCached(): i64 throws Boom {
   val t = async work(1) // error: 't' is not awaited on every path to the end of its block
-  race {
-    val v = await t => v
+  select {
+    val v = t => v
     sleep(Duration.millis(100)) => 0
   }
 }

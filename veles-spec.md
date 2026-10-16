@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.82** — decisions D1–D167. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.84** — decisions D1–D169. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -27,6 +27,8 @@ Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-p
 | D155 | a `Result` a `gather` child returns is its value |
 | D156 | awaited `val` handles without `scope`, `awaitAll`, `scope(workers:)`, a lazy `mapConcurrent`, `scope` as a value |
 | D157–D167 | (2026-10-14 review) a `Result`/task cannot be interpolated; bare names reach the receiver's members; `std/bluetooth` LE central; per-target files and `build.target`; `std/sys/<os>` and the platform modules; `veles bindgen`; one-parameter constructors positional; `copy`; the index-of family answers `i64?`; labelled tuples; `std/cli` |
+| D168 | racing computations: `async` arms owned by the construct, no `await` in arms (partly superseded by D169) |
+| D169 | `race { }` a block like `gather`, `select { }` with arms, `async { }` blocks |
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -651,7 +653,7 @@ race {
 }
 ```
 
-`race` is itself the suspension point, so arms carry no `await`. *(v0.61, D108: an arm may also be `ch.send(v)`.)*
+`race` is itself the suspension point, so arms carry no `await`. *(v0.61, D108: an arm may also be `ch.send(v)`.)* *(v0.83, D168: an arm may be `async f()`, owned by the race — losers cancelled and joined; an arm without `=> body` gives its value; a value is named `src as name =>`, not `val name = src =>`; handle arms lose their `await`.)*
 
 *Addendum (v0.29).* Exactly one arm runs, so a smart cast made inside an arm (an assignment to a `var`) survives the race only when every arm makes it — the `if`/`else` join rule (D5). A race whose arms all return or throw is `Never`-typed, which is what lets `withTimeout` be written as `race { val r = await t => return try r; sleep(ms) => throw Timeout() }` inside a scope whose early exit cancels `t`. *(v0.73, D141: `return r` — the awaited value of a scope's task is its payload.)*
 
@@ -6718,6 +6720,280 @@ The exact attribute and function names are confirmed when it is built
 Rejected: a builder API (untyped values read by name, and a second
 description of what the struct already says); leaving it to packages (every
 tool, the compiler's driver included, needs it).
+
+### D168 — Racing computations: `async` arms, `awaitFirst`, `src as name =>` (v0.83)
+
+Q44 (user, 2026-10-15, two rounds). Found in the idioms review
+(`veles-idioms-and-apis.md`): "the first of two mirrors wins" took a
+`scope`, two handles, an `await` in each arm — and was wrong, because a
+handle a losing arm awaited is not cancelled, so the scope waited for the
+slow mirror (probe: 300 ms instead of 10). The correct version cancelled
+each loser by hand in every arm. The user: "this piece of code looks awful
+and we should change it in the language".
+
+```veles
+// before                                         // D168
+fun fastest(): string => scope {                  fun fastest(): string =>
+  val eu = async mirror("eu", slow)                 awaitFirst(async mirror("eu", slow), async mirror("us", quick))
+  val us = async mirror("us", quick)
+  race {
+    val name = await eu => { us.cancel(); name }
+    val name = await us => { eu.cancel(); name }
+  }
+}
+
+fun requestLine(c: io.Stream, limits: Limits, drain: Drain): string? =>   // std/http, D168
+  race {
+    async readLineOf(c, limits.requestLineBytes)
+    sleep(limits.idleTimeout) => throw Timeout(limit: limits.idleTimeout)
+    drain.wake.recv()         => null
+  }
+
+race {                                            // a body that uses the value
+  inbox.recv() as msg => handle(msg)
+  ctrl.recv() as cmd  => apply(cmd)
+  sleep(tick)         => flush()
+}
+```
+
+Two shapes, one per job (the user: "the branching in block might be
+confusing by itself"): **`awaitFirst(…)`** when only the first value is
+wanted — a call, nothing in it looks like a branch; **`race { }`** when the
+arms do different things, every line an alternative as in `when`.
+
+**1. `async` arms.** A `race` arm may be `async f(…)` (a call, or a function
+value as D103 allows). Rules:
+
+- *Start.* When the race starts, its `async` arms' tasks are launched in
+  written order, and then the other arms' operands are evaluated once, in
+  written order (D108's rule). *(Built so, 2026-10-15: the launches come
+  first; an operand with a side effect sees the tasks already started.)* A race with an `async` arm is allowed wherever a `race` is —
+  no enclosing `scope` is needed, because the race is the scope of its own
+  `async` arms (the place list of D156 gains "a `race` arm").
+- *Winning.* Any arm may win (a receive, a sleep, a send, a handle, an
+  `async` arm). An `async` arm is ready when its task has finished.
+- *Losers.* When an arm wins, every `async` arm task of that race still
+  running is **cancelled and joined** (shielded, as D47's cleanups), and
+  then the winning arm's body runs (or its value is the race's value). The
+  losers' `with` cleanups have run by then; an error a loser throws while
+  unwinding is dropped (it lost); a panic in a loser is a panic.
+- *Errors: the first to finish wins, error included* (user: "first to
+  finish"). An `async` arm whose task throws is finished; if it is the first,
+  the losers are cancelled and joined and the race throws that error — the
+  fail-fast rule of `scope`. The race's error type joins every `async` arm's
+  errors into the enclosing function's inferred `throws`. The arm's value
+  (bare or named with `as`) is the task's success value, no `Result`, no
+  `try` — as `await h` is (D141 rule 2).
+- *Handles are not `async` arms.* A handle started outside the race (`val
+  h = async …`, a with-task, a handle in a `scope` body) belongs to the block
+  that started it: a losing handle arm is **not** cancelled and is still
+  awaited by its own rules (the lazy `mapConcurrent` in the prelude relies on
+  this: the oldest call loses a race to a new job and is awaited later). The
+  rule in one line: a task belongs to the place its `async` is written.
+- *Which arm wins* when several are ready: D38's rule (written order).
+- *Suspension and Sendable*: an `async` arm's function and arguments follow
+  D35 as any `async` does; a task a loser runs in a blocking C call delays
+  the race until it reaches a cancellation point (D145) — hover on an
+  `async` arm says "started by this race; cancelled if another arm wins".
+
+**2. Bare arms: the arm's value is the race's value.** An arm with no
+`=> body` gives the value it waited for (user: "if the race returns the
+value, we do not need to name it in the arm"). Allowed for the arms that
+have a value: `async f()`, a handle, `ch.recv()` (`T?`), a `Subscription`'s
+`recv()`. A bare `sleep(d)`, `ch.send(v)`, `Event.wait()` or
+`Watch.changed()` is an error — it has no value, so the race could not say
+which arm won: "a 'sleep' arm needs '=> …' to say what happens when it
+wins". The race's type is the join of the arms' values and bodies, as for
+`when`; a `Never` body (`throw`, `return`) joins with anything.
+
+**3. `src as name => body`.** An arm that names its value writes the name
+after the source: `inbox.recv() as msg => …`, `h as v => …`, `async f() as
+v => …`. Every arm line then starts with what it waits for (user, of
+`val name = … => name`: "the 'val' starting the line does not tell right
+away that we return from there"). `as name` binds for the body only; `_` is
+not needed (write no `as`). A send, sleep, wait or changed arm has no value
+to name — `as` there is an error. `as` in an arm is the only `as` in
+expression position; it does not convert (that `as` was removed).
+
+**4. No `await` in arms** (user, recommended of 3). D38 always said "race is
+itself the suspension point, so arms carry no `await`"; handle arms were the
+exception (`val r = await h => …`). Now a handle arm is `h => …`, `h as r =>
+…` or a bare `h`, as a receive arm is `ch.recv()`. `await` in an arm is an
+error naming the form without it.
+
+**5. `awaitFirst(…)`.** A compiler built-in beside `awaitAll` (D156 part 2;
+hover, completion, docs; a reserved prelude name):
+
+- `awaitFirst(async f(…), async g(…), …)` with n ≥ 2 runs them and gives the
+  value of the first to finish; the others are cancelled and joined first.
+  It is exactly `race { async f(…); async g(…) }` — same start order, same
+  rule for errors (the first to finish wins, error included), same type rule
+  (the join of the values).
+- Every argument is an inline `async` call: a handle is an error ("a task
+  'awaitFirst' did not start is not cancelled when it loses; start it here
+  with 'async …', or write a 'race' arm"), and so is an argument that is not
+  a task (the `awaitAll` error, naming `async`). One argument: "'awaitFirst'
+  of one task is the call itself; call 'f(…)'" with that fix. `await
+  awaitFirst(…)` is an error, as for `awaitAll`.
+- Not over a list (`awaitFirst(tasks)`): checklist §11, with "first over a
+  list of inputs" (`firstConcurrent`, notes P11).
+
+**6. Removed spellings** (D-rule: they keep parsing, with an error that
+names the new form and a fix, and the whole tree migrates in the same
+change):
+
+| Old | Error and fix |
+|---|---|
+| `val x = src => body` | "an arm names its value after the source: 'src as x => body' (D168)" |
+| `val r = await h => body` | "write 'h as r => body': a race arm does not take 'await' (D168)" |
+| `val _ = src => body` | "write 'src => body': an arm need not name a value it does not use (D168)" |
+
+**Edge cases.** A race in a `scope(on: e)` body does **not** launch its
+`async` arms on `e`: they run where the race runs (built so; placing them is
+checklist §11). A race inside `withTimeout`'s function is
+cancelled as a whole — its `async` arms with it. A `gather` body's race arm
+`async f()` is still the race's (not a `gather` child; its error is the
+race's). Nested races: each owns its own arms. The formatter aligns the `=>`
+column within a race as before (`src as name` counts as the head); a bare
+arm takes no column. The self-hosted parser (G-gates) reads the new arms.
+
+**Later, not decided:** a first-*success* form (the user: "if we need first
+success, we would need to start `race try` or something better named") —
+errors ignored unless every arm fails; checklist §11.
+
+Rejected: `awaitFirst` only (it cannot mix a computation with a timeout or a
+channel arm); leaving it (each arm cancels the others by hand — easy to
+forget, and the probe showed it forgotten); first-success semantics for
+`race` (it hides failures; a separately named form later); keeping `await`
+in handle arms, or allowing both spellings; `val name = src => body` (reads
+as a statement, not as a branch); `src => name => body` (two arrows); a
+redesign after Kotlin's `select { a.onAwait { … } }` (more ceremony); a
+cancelled losing *handle* (the lazy `mapConcurrent` needs the loser to run
+on).
+
+*Superseded in part by D169 (2026-10-16), a day after it was built:* the
+construct with arms is now `select`; `race { }` is a block like `gather`;
+~~bare arms~~, ~~`src as name =>`~~ and ~~`awaitFirst`~~ are gone (the user:
+"naming 'as' in race arms was a mistake"). What stands: `async` arms owned
+and cancelled by the construct, the first to finish wins with errors
+included, no `await` in arms, a task belongs to the place its `async` is
+written.
+
+### D169 — `race` as a block, `select` with arms, `async { }` blocks (v0.84)
+
+The user, 2026-10-16, after D168 was built: "naming 'as' in race arms was a
+mistake… I think we should have 'race' without arms, just calls like
+gather that races and losers are canceled and another `select` that has
+arms always. And I need async blocks … (returns handle and awaited returns
+the value)." Then four questions, each answered as recommended. (An `async
+() => { }` lambda form was considered and dropped by the user: "making
+lambda like this would create it but not call it".)
+
+```veles
+// race: a block like gather; every task started in it races; the first to
+// finish gives the value; the others are cancelled and joined
+val page = race {
+  async fetch(primary)
+  async {                                  // a hedged request: the backup 50 ms later
+    await sleep(Duration.millis(50))
+    fetch(backup)
+  }
+}
+val fastest = race {
+  loop (m in mirrors) async fetch(m)       // the first of a list
+}
+
+// select: arms, each `source => body`
+fun requestLine(c: io.Stream, limits: Limits, drain: Drain): string? => select {
+  val line = async readLineOf(c, limits.requestLineBytes) => line
+  sleep(limits.idleTimeout) => throw Timeout(limit: limits.idleTimeout)
+  drain.wake.recv()         => null
+}
+
+// an async block: a task from a block; awaited, the block's value
+val total = async {
+  val rows = try load(path)
+  rows.sumOf(r => r.amount)
+}
+```
+
+**1. `race { body }`.** The body is statements, as a `gather` body is. Every
+`async` written in it — directly, in a loop, in an `if` — that starts a task
+of the race (not one inside a nested `scope`, `gather`, `race` or a `with t
+= async`) is a contestant. When the body has run, the race waits for the
+first contestant to finish:
+
+- *Success*: its value is the race's value; the other contestants are
+  cancelled and joined (their `with` cleanups run) before the race gives it.
+- *Failure*: the first to finish with an error makes the race throw it,
+  after cancelling and joining the rest (D168's rule, `scope`'s fail-fast).
+  The error joins the enclosing function's inferred `throws`; as for `scope`,
+  it leaves the function — `race { … } catch` is not a thing, a function
+  around the race is.
+- *Types*: every contestant gives the same type `T` (a different one is an
+  error naming both); the race is `T`.
+- *None*: a body that starts no task is a compile error when no `async` is
+  written in it; one that starts none at run time (a loop over an empty
+  list) panics at the race: "race started no task".
+- *One*: a body with exactly one `async` and no loop is a warning — "a race
+  of one task is the call itself".
+- *Order*: contestants start in the order the body starts them; when
+  several have finished before the race looks, the first started wins.
+- *Timeouts*: `race { async fetch(u); async { await sleep(d); throw
+  Timeout(limit: d) } }`, or `withTimeout` as before.
+- `race(on: e)` / `race(workers: n)` are not part of this decision.
+
+**2. `select { arms }`.** The construct of D38/D108/D168 under the name Go
+gave it; `select` is a contextual keyword — only `select {` at the start of
+an expression is the construct, so `db.select(…)` or a function named
+`select` stay legal (as `implements`, D117). Every arm is `source => body`;
+there are no bare arms. A source is a receive, a send (D108), a `sleep`, a
+handle (no `await`, D168), an Event's `wait()`, a Watch's `changed()`, a
+Subscription's `recv()`, or a computation — `async f()` or `async { }` —
+owned by the select: cancelled and joined if another arm wins, its error the
+select's if it fails first. An arm names its value with **`val name =
+source => body`** (D38's form; the user, recommended of 2). Everything
+D38/D108 said of the race's arms — which arm wins, operands evaluated once
+— now says it of `select`'s.
+
+**3. `async { body }`.** A task from a block. It is checked as a `sendable`
+lambda of no parameters and started at once — the function and the start in
+one — so:
+
+- it stands where `async f()` may: a `scope`/`gather`/`race` body, `val t =
+  async { … }` (awaited before the block ends, D156), `with t = async { … }`
+  (D100), a `select` arm;
+- captures follow D35: `val`s of Sendable types without `var` fields; a
+  captured `var` is an error with the fix (copy it into a `val`, or share
+  it in an `Atomic`/`Mutex`);
+- its value is its last expression; **`return v` ends the block with `v`**,
+  as in a lambda (the user, recommended of 2) — it can never leave the
+  enclosing function, which may have moved on; `break`/`continue` to a loop
+  outside are errors;
+- `try`/`throw` inside fail the task, as a throwing `async f()` does: its
+  error fails the scope, or is the race's/select's, or is what `await` of a
+  `val` handle carries (D141).
+
+**4. Removed** (D-rule: each keeps parsing as an error naming the new form
+with a fix; the tree migrates in the same change):
+
+| Old | New |
+|---|---|
+| `race { src => body … }` (arms) | `select { src => body … }` |
+| `src as name => body` (D168) | `val name = src => body` |
+| a bare arm `src` (D168) | `val v = src => v` |
+| `awaitFirst(async a(), async b())` (D168) | `race { async a(); async b() }` |
+
+**Both levels.** `race` and `async { }` are the high level: what to run,
+nothing about how it is waited for. `select` stays the low-level wait over
+any mix of sources, and `t.cancel()` / handles remain for code that steers
+tasks itself.
+
+Rejected: keeping arms in `race` (the user); keeping `awaitFirst` beside
+`race { }` (two spellings); `src => name => body` (two arrows); a `select`
+of waits only (a computation against a shutdown channel would need `with t
+= async …` first); `return` refused in `async { }`; `async () => { }` (a
+lambda that is created but not called, the user's own objection).
 
 ---
 

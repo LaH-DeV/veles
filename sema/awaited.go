@@ -57,7 +57,7 @@ func (f *fnCtx) awaitedCall(t *FuncTemplate, ownerSubst map[*types.TypeParam]typ
 	case isPlaceExpr(recv) && !isReferenceType(recv.Type()):
 		recvArg = &AddrOf{exprBase{&types.Pointer{Elem: recv.Type()}}, recv}
 	default:
-		f.errorf(callee.X.Span(), "a race arm on '%s()' needs its receiver in a variable: 'val x = …' before the race (D146)", t.Name)
+		f.errorf(callee.X.Span(), "a select arm on '%s()' needs its receiver in a variable: 'val x = …' before the select (D146)", t.Name)
 		return bad()
 	}
 	f.raceTake = f.callTemplateRecv(take, ownerSubst, nil, recvArg, nil, e.Pos, nil)

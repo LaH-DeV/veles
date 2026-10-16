@@ -327,8 +327,11 @@ val c = g()
 			"// header\nuse os\nuse io\n// about main\nfun main() { }\n",
 			"// header\nuse io\nuse os\n// about main\nfun main() { }\n"},
 		{"concurrency",
-			"fun main() {\n  scope {\n    val t = async work(1)\n    val (a, b) = gather { async f(); async g() }\n    val w = race { val m = ch.recv() => m; sleep(100) => \"t\" }\n    with (f = open(\"a\")) { process(f) }\n  }\n}\n",
-			"fun main() {\n  scope {\n    val t = async work(1)\n    val (a, b) = gather {\n      async f()\n      async g()\n    }\n    val w = race {\n      val m = ch.recv() => m\n      sleep(100)        => \"t\"\n    }\n    with (f = open(\"a\")) {\n      process(f)\n    }\n  }\n}\n"},
+			"fun main() {\n  scope {\n    val t = async work(1)\n    val (a, b) = gather { async f(); async g() }\n    val w = select { val m = ch.recv() => m; sleep(100) => \"t\" }\n    with (f = open(\"a\")) { process(f) }\n  }\n}\n",
+			"fun main() {\n  scope {\n    val t = async work(1)\n    val (a, b) = gather {\n      async f()\n      async g()\n    }\n    val w = select {\n      val m = ch.recv() => m\n      sleep(100)        => \"t\"\n    }\n    with (f = open(\"a\")) {\n      process(f)\n    }\n  }\n}\n"},
+		{"concurrency, D169 select, race and async blocks",
+			"fun main() {\n  val w = select { val m = ch.recv() => m; val p = async fetch(u) => p; sleep(d) => null }\n  val f = race { async a(); async { await sleep(d); b() } }\n  val t = async { work() }\n}\n",
+			"fun main() {\n  val w = select {\n    val m = ch.recv()      => m\n    val p = async fetch(u) => p\n    sleep(d)               => null\n  }\n  val f = race {\n    async a()\n    async {\n      await sleep(d)\n      b()\n    }\n  }\n  val t = async {\n    work()\n  }\n}\n"},
 		// D106: a lambda that is an arm's value gets parentheses
 		{"lambda arm",
 			"fun pick(double: bool): fun(i64): i64 => when {\n  double => x => x * 2\n  else   => (x => x)\n}\n",

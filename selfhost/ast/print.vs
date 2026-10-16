@@ -105,6 +105,26 @@ struct Printer {
     this.indent += 1
   }
 
+  // the arms of a `select` (or of the removed `race` with arms, D169)
+  fun arms(arms: List<RaceArm>) {
+    loop (arm in arms) {
+      this.nl()
+      this.write("(")
+      if (val binding = arm.binding) {
+        this.write("val ")
+        this.binding(binding)
+        this.write(" = ")
+      }
+      this.expr(*arm.source)
+      if (val name = arm.name) this.write(" as ${name.name}")
+      if (val body = arm.body) {
+        this.write(" => ")
+        this.expr(*body)
+      }
+      this.write(")")
+    }
+  }
+
   // the executor of a `scope(on: e)` or `gather(on: e)` (D143)
   // the `on:` and `workers:` of a scope or gather (D143, D156)
   fun on(e: (*Expr)?, workers: (*Expr)?) {
@@ -692,6 +712,20 @@ struct Printer {
         this.write(")")
       }
       is CallExpr       => {
+        if (e.block) {
+          // `async { … }` (D169): the callee is a lambda whose body is the block
+          val lambda = *e.callee
+          if (lambda is LambdaExpr) {
+            val body = *lambda.body
+            if (body is BlockExpr) {
+              this.open("async-block")
+              this.nl()
+              this.block(body.block)
+              this.close()
+              return
+            }
+          }
+        }
         this.write(if (e.isAsync) "(async-call " else "(call ")
         this.expr(*e.callee)
         this.typeArgs(e.typeArgs)
@@ -844,19 +878,16 @@ struct Printer {
       }
       is RaceExpr       => {
         this.open("race")
-        loop (arm in e.arms) {
+        if (val body = e.body) {
           this.nl()
-          this.write("(")
-          if (val binding = arm.binding) {
-            this.write("val ")
-            this.binding(binding)
-            this.write(" = ")
-          }
-          this.expr(*arm.source)
-          this.write(" => ")
-          this.expr(*arm.body)
-          this.write(")")
+          this.block(body)
         }
+        this.arms(e.arms)
+        this.close()
+      }
+      is SelectExpr     => {
+        this.open("select")
+        this.arms(e.arms)
         this.close()
       }
       is UnsafeExpr     => {

@@ -66,6 +66,9 @@ struct Parser {
   // in the head of a `when` or `race` arm: the `=>` is the arm's, so
   // `x > limit => …` is not a lambda; brackets reset it
   var noLambda: i64 = 0
+  // in a `race` arm's source: `as` names the arm's value (`ch.recv() as
+  // msg =>`, D168), not the removed conversion; outside brackets only
+  var raceHead: bool = false
 
   // ---- tokens
 

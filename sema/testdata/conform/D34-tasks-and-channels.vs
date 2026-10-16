@@ -42,8 +42,8 @@ fun asyncValue(f: fun(): i64) {
   }
 }
 fun raceOnNumber() {
-  val _ = race {
-    work() => 1 // error: a race arm waits on 'ch.recv()', 'ch.send(v)', 'sleep(d)', 'await task', or an Event's 'wait()', a Watch's 'changed()' or a Subscription's 'recv()' (D146), not 'i64'
+  val _ = select {
+    work() => 1 // error: a select arm waits on 'ch.recv()', 'ch.send(v)', 'sleep(d)', a task ('async f()' or a handle), or an Event's 'wait()', a Watch's 'changed()' or a Subscription's 'recv()' (D146, D168), not 'i64'
   }
 }
 

@@ -183,7 +183,7 @@ no such user -1
 - `awaitAll(tasks)` over a `List` or `MutableList` of handles gives a
   `List` of their values, in order.
 - There is no `await` in front: `awaitAll` is itself the point where the
-  task waits, as `race` is.
+  task waits, as `select` is.
 
 ## Fail fast
 
@@ -801,10 +801,71 @@ A ticker — a channel that receives the time every period — is
 
 ## First one wins: `race`
 
-`race` waits for whichever arm is ready first and stops waiting on the
-rest — a task awaited by a losing arm is not cancelled; it runs on, and
-its scope waits for it. Arms can receive from channels, sleep (a timeout),
-or await tasks (D38):
+`race { }` is written like `gather`: its body starts tasks, and they race.
+The first to finish gives the race its value; the others are cancelled,
+and waited for until their cleanups have run, before the race returns
+(D169). Use it for two mirrors of one file, a cache and the database
+behind it, a request and its hedged copy:
+
+```veles
+use io
+
+fun mirror(name: string, delay: Duration): string {
+  await sleep(delay)
+  name
+}
+
+fun main() {
+  val name = race {
+    async mirror("eu", Duration.millis(30))
+    async mirror("us", Duration.millis(5))
+  }
+  io.println("fastest: $name")
+
+  // a hedged request: the backup starts only if the primary is slow
+  val page = race {
+    async mirror("primary", Duration.millis(200))
+    async {
+      await sleep(Duration.millis(20))
+      mirror("backup", Duration.millis(5))
+    }
+  }
+  io.println("served by $page")
+
+  // the first of a list
+  val first = race {
+    loop (n in ["a", "b", "c"]) async mirror(n, Duration.millis(if (n == "b") 1 else 40))
+  }
+  io.println("first of three: $first")
+}
+```
+
+Output:
+```text
+fastest: us
+served by backup
+first of three: b
+```
+
+- Every task the body starts is a contestant — `async f()` or
+  `async { … }`, in a loop or an `if` — except one inside a nested
+  `scope`, `gather`, `race` or `with`. They give one type, which is the
+  race's.
+- The first to finish wins **even if it failed**: then the race throws
+  its error, after cancelling the rest, as a `scope` does. The error
+  leaves the function, so a race that can fail goes in a function you
+  `try` or `catch`.
+- A timeout is one more contestant — `async { await sleep(d); throw
+  Timeout(limit: d) }` — or `withTimeout` around the race.
+- A body that starts no task is a compile error, or a panic when a loop
+  started none; a race of one task is a warning (call it directly).
+
+## Waiting on several things: `select`
+
+`select` waits on several sources at once — channels, timers, tasks,
+events — and runs the **arm** of the first that is ready (D38, D169). Each
+arm is `source => body`; `val name = source => body` names what the
+source gave. No arm takes `await`: the select is where the task waits.
 
 ```veles
 use io
@@ -814,27 +875,46 @@ fun producer(ch: Channel<string>) {
   ch.send("hello")
 }
 
+fun lookup(key: string): string {
+  await sleep(Duration.millis(50))
+  "value of $key"
+}
+
 fun main() {
   val ch = Channel<string>(capacity: 1)
   scope {
     async producer(ch)
-    val first = race {
-      val msg = ch.recv() => "got ${msg ?: "closed"}"
+    val first = select {
+      val msg = ch.recv()        => "got ${msg ?: "closed"}"
       sleep(Duration.seconds(1)) => "timeout"
     }
-    val second = race {
-      val msg = ch.recv() => "got ${msg ?: "closed"}"
+    val second = select {
+      val msg = ch.recv()       => "got ${msg ?: "closed"}"
       sleep(Duration.millis(2)) => "timeout"
     }
     io.println("$first / $second")
   }
+  val answer = select {
+    val v = async lookup("k")  => v
+    sleep(Duration.millis(10)) => "too slow"
+  }
+  io.println(answer)
 }
 ```
 
 Output:
 ```text
 got hello / timeout
+too slow
 ```
+
+**Whose task.** A task an arm starts (`async lookup("k")`) belongs to the
+select: when another arm wins it is cancelled, and the select waits for it
+to stop before the winning arm's body runs; if it fails first, the select
+throws its error. A task started elsewhere (`val t = async f()` before the
+select, a handle in a `scope` body) belongs to the block that started it:
+an arm `val v = t => …` waits for it, but if it loses it is not cancelled
+and runs on. A task belongs to the place its `async` is written.
 
 An arm can also **send**: `ch.send(v) => …` is ready when the channel can
 take `v` — room in its buffer, or a receiver waiting (D108). When it wins,
@@ -845,7 +925,7 @@ is the bounded send with a deadline, without a task to do the sending:
 use io
 
 fun offer(queue: Channel<string>, line: string): bool {
-  race {
+  select {
     queue.send(line)           => true    // there was room: sent
     sleep(Duration.millis(20)) => false   // still full: not sent
   }
@@ -864,16 +944,53 @@ true false
 first then nothing
 ```
 
-The channel and the value are evaluated once, in arm order, when the race
-starts, not again while it waits. A send arm binds nothing. A send arm on
-a channel that is closed when it would be chosen panics, as `send` does.
+The channel and the value are evaluated once, in arm order, when the
+select starts, not again while it waits. A send, sleep, `wait()` or
+`changed()` arm has no value to name. A send arm on a channel that is
+closed when it would be chosen panics, as `send` does.
 
-**Which arm wins.** When the race starts, the arms are tried in the order
-they are written, and the first one ready wins — so an arm that is always
-ready (a `sleep(Duration.zero)`, a channel with a value waiting) shadows
-the arms after it. If none is ready, the race waits, and the first arm to
-become ready wins. The rule is deterministic and favours earlier arms; it
-is not fair in Go's sense (Go picks among ready cases at random).
+**Which arm wins.** When the select starts, the arms are tried in the
+order they are written, and the first one ready wins — so an arm that is
+always ready (a `sleep(Duration.zero)`, a channel with a value waiting)
+shadows the arms after it. If none is ready, the select waits, and the
+first arm to become ready wins. The rule is deterministic and favours
+earlier arms; it is not fair in Go's sense (Go picks among ready cases at
+random).
+
+## A task from a block: `async { }`
+
+`async { … }` starts the block as a task, like `async f()` for a function
+written in place (D169). It stands wherever `async f()` may — in a `scope`
+or `race` body, as `val t = async { … }` that the block awaits, as
+`with t = async { … }`, as a `select` arm — and awaiting it gives the
+block's value. `return v` ends the block with `v`; it cannot leave the
+enclosing function, which may have moved on.
+
+```veles
+use io
+
+fun main() {
+  val total = async {
+    var sum = 0
+    loop (i in 1..100) sum += i
+    if (sum < 0) return -1
+    sum
+  }
+  io.println("adding in the background")
+  io.println("total ${await total}")
+}
+```
+
+Output:
+```text
+adding in the background
+total 5050
+```
+
+The block crosses into another task, so what it uses from outside follows
+the rule of every task (D35): `val`s of Sendable types. A `var` it would
+change is refused — share it through an `Atomic` or a `Mutex`, or return
+the result and assign it after `await`.
 
 ## Cancellation
 
@@ -1318,7 +1435,7 @@ tasks that ask meanwhile wait, and a panic in it is the panic of every
 
 The waiting operations — `wait()`, `changed()`, `recv()` — always suspend,
 so they are awaited, like a channel's `recv`; a cancelled task stops
-waiting, and each can be a `race` arm. A `Broadcast` keeps its last
+waiting, and each can be a `select` arm. A `Broadcast` keeps its last
 `capacity` values; a subscriber that falls further behind loses the
 oldest and is told, once, by `Lagged`. Each copy of a `Watch` remembers
 the version it last read, so a task given its own copy waits only for
@@ -1481,7 +1598,7 @@ mixed 718330
   never on an `Executor.thread`, whose tasks stay on its one thread;
   `blocking` says so up front.
 - **Timers and sockets** are served by the default pool for every
-  executor: a task on a pool can sleep, race and read a socket like any
+  executor: a task on a pool can sleep, select and read a socket like any
   other — also while every default thread is busy in a long loop (the
   monitor steps in).
 

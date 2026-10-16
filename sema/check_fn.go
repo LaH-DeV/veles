@@ -21,6 +21,9 @@ type fnCtx struct {
 	// executor runOnExec, which runs as its code
 	runOnLambda ast.Expr
 	runOnExec   *execInfo
+	// asyncBlock: the lambda of an `async { }` being started (D169), a
+	// sendable function that may suspend whatever the context expects
+	asyncBlock ast.Expr
 	// D87: the member expression checked next may be a protected collection
 	// looked at, and the one the last such check saw
 	lookAt      source.Span
@@ -91,6 +94,8 @@ type fnCtx struct {
 	held        []*HeldLock   // the `with … = m.lock()` regions around the code being checked (D107)
 	raceCall    *ast.CallExpr // the race arm's source call being checked, which an awaited prelude method lowers (D146)
 	raceTake    Expr          // that lowering's take: the arm's value once its signal is ready
+	raceAwait   *ast.AwaitExpr // the `await` a handle arm is checked as (D168): its errors speak of the arm
+	races       []*raceCtx     // the `race { }` bodies being checked, innermost last (D169, race.go)
 	lockOK      *ast.CallExpr // the `with` value being checked, where `m.lock()` is allowed
 	lockSeen    bool          // lockOK turned out to be `m.lock()`
 	// D111: the calls that may produce a task-holding value (a `with` value,

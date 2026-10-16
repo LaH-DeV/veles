@@ -311,7 +311,7 @@ fun main() throws {
     val (a, b) = gather { async tick(2); async tick(3) }
     val x = try a
     val y = try b
-    val w = race { val m = ch.recv() => if (m == null) 1 else 2; sleep(Duration.millis(10)) => 2 }
+    val w = select { val m = ch.recv() => if (m == null) 1 else 2; sleep(Duration.millis(10)) => 2 }
     io.println("$v $x $y $w")
   }
 }`)
@@ -2078,8 +2078,8 @@ fun main() {
   var out: i64? = null
   scope {
     val t = async slow()
-    race {
-      val r = await t => out = r
+    select {
+      val r = t => out = r
       sleep(Duration.millis(1)) => io.println("late")
     }
   }
@@ -2095,8 +2095,8 @@ fun slow(): i64 {
 fun pick(): i64 {
   scope {
     val t = async slow()
-    race {
-      val r = await t => return r
+    select {
+      val r = t => return r
       sleep(Duration.millis(1)) => return -1
     }
   }
@@ -3174,17 +3174,17 @@ fun main() {
 	}
 	// the same rule for `race` arms (found writing http's accept loop)
 	expectClean(t, prelude+`
-fun first(ch: Channel<string>, quit: Channel<bool>): string? => race {
+fun first(ch: Channel<string>, quit: Channel<bool>): string? => select {
   val s = ch.recv() => s
-  val _ = quit.recv() => null
+  quit.recv() => null
 }
 fun main() {
   val ch = Channel<string>(capacity: 1)
   val quit = Channel<bool>(capacity: 1)
   quit.close()
   val r = first(ch, quit)
-  val n = race {
-    val _ = quit.recv() => null
+  val n = select {
+    quit.recv() => null
     sleep(Duration.millis(1)) => 5
   }
   val m: i64? = n
@@ -3193,11 +3193,11 @@ fun main() {
 	expectError(t, prelude+`
 fun main() {
   val quit = Channel<bool>(capacity: 1)
-  val x = race {
-    val _ = quit.recv() => null
+  val x = select {
+    quit.recv() => null
     sleep(Duration.millis(1)) => null
   }
-}`, "cannot infer the type of 'null' in this 'race'")
+}`, "cannot infer the type of 'null' in this 'select'")
 }
 
 // Changing a by-value struct parameter warns at the parameter (R20

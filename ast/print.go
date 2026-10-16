@@ -726,6 +726,12 @@ func (p *printer) expr(e Expr) {
 		p.expr(e.Index)
 		p.w(")")
 	case *CallExpr:
+		if e.Block {
+			p.open("async-block") // `async { … }` (D169)
+			p.child(func() { p.block(e.Fun.(*LambdaExpr).Body.(*BlockExpr).Block) })
+			p.close()
+			return
+		}
 		if e.Async {
 			p.w("(async-call ")
 		} else {
@@ -962,20 +968,14 @@ func (p *printer) expr(e Expr) {
 		p.close()
 	case *RaceExpr:
 		p.open("race")
-		for _, arm := range e.Arms {
-			p.child(func() {
-				p.w("(")
-				if arm.Binding != nil {
-					p.w("val ")
-					p.binding(*arm.Binding)
-					p.w(" = ")
-				}
-				p.expr(arm.Source)
-				p.w(" => ")
-				p.expr(arm.Body)
-				p.w(")")
-			})
+		if e.Body != nil {
+			p.child(func() { p.block(e.Body) })
 		}
+		p.arms(e.Arms)
+		p.close()
+	case *SelectExpr:
+		p.open("select")
+		p.arms(e.Arms)
 		p.close()
 	case *UnsafeExpr:
 		p.open("unsafe")
@@ -1076,6 +1076,29 @@ func (p *printer) paramList(params []Param) {
 		}
 	}
 	p.w(")")
+}
+
+// arms prints the arms of a `select` (or of the removed `race` with arms).
+func (p *printer) arms(arms []*RaceArm) {
+	for _, arm := range arms {
+		p.child(func() {
+			p.w("(")
+			if arm.Binding != nil {
+				p.w("val ")
+				p.binding(*arm.Binding)
+				p.w(" = ")
+			}
+			p.expr(arm.Source)
+			if arm.As != nil {
+				p.w(" as " + arm.As.Name)
+			}
+			if arm.Body != nil {
+				p.w(" => ")
+				p.expr(arm.Body)
+			}
+			p.w(")")
+		})
+	}
 }
 
 // on prints the executor of a `scope(on: e)` or `gather(on: e)` (D143)

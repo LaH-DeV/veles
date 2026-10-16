@@ -179,8 +179,8 @@ fun runConcurrentMap<T, R, E>(f: sendable fun(T): R suspends throws E, jobs: Cha
       val first = running.at(0) ?: break
       if (open) {
         // the oldest call's value, or a new element to start meanwhile
-        race {
-          val v = await first   => {
+        select {
+          val v = first         => {
             val _ = running.removeAt(0)
             results.send(v)
           }

@@ -1,6 +1,8 @@
 package sema
 
 import (
+	"strings"
+
 	"github.com/LaH-DeV/veles/ast"
 	"github.com/LaH-DeV/veles/source"
 	"github.com/LaH-DeV/veles/types"
@@ -349,9 +351,9 @@ func (f *fnCtx) ioWaitCall(e *ast.CallExpr) Expr {
 
 func (f *fnCtx) awaitExpr(e *ast.AwaitExpr) Expr {
 	if call, ok := e.X.(*ast.CallExpr); ok && !call.Async {
-		if n, isName := call.Fun.(*ast.NameExpr); isName && n.Name == "awaitAll" && f.lookup("awaitAll") == nil {
+		if n, isName := call.Fun.(*ast.NameExpr); isName && (n.Name == "awaitAll" || n.Name == "awaitFirst") && f.lookup(n.Name) == nil {
 			drop := source.Span{File: e.Pos.File, Start: e.Pos.Start, End: e.X.Span().Start}
-			f.c.errorFix(e.Pos, fixReplace("Remove 'await'", drop, ""), "'awaitAll' waits; remove 'await' — 'awaitAll(…)' is itself the point where this task waits (D156)")
+			f.c.errorFix(e.Pos, fixReplace("Remove 'await'", drop, ""), "'%s' waits; remove 'await' — '%s(…)' is itself the point where this task waits (D156, D168)", n.Name, n.Name)
 			return f.checkExpr(e.X, nil)
 		}
 	}
@@ -370,6 +372,10 @@ func (f *fnCtx) awaitExpr(e *ast.AwaitExpr) Expr {
 		return f.suspending(&AwaitTask{exprBase{tt.Result}, x}, e.Pos, "await")
 	}
 	if types.IsInvalid(x.Type()) {
+		return bad()
+	}
+	if e == f.raceAwait {
+		f.errorf(e.Pos, "a select arm waits on 'ch.recv()', 'ch.send(v)', 'sleep(d)', a task ('async f()' or a handle), or an Event's 'wait()', a Watch's 'changed()' or a Subscription's 'recv()' (D146, D168), not '%s'", x.Type())
 		return bad()
 	}
 	if call, ok := e.X.(*ast.CallExpr); ok && !call.Async {
@@ -424,10 +430,10 @@ func (f *fnCtx) launch(e *ast.CallExpr, want types.Type) Expr {
 	pre := f.launchPre
 	f.launchPre = savedPre
 	if len(pre) == 0 || types.IsInvalid(x.Type()) {
-		return x
+		return f.raceContestant(x, e.Pos)
 	}
 	// `async gl.f(call())`: the arguments, evaluated here first (D150)
-	return &BlockExpr{exprBase{x.Type()}, &Block{Stmts: pre, Value: x, Type: x.Type()}}
+	return f.raceContestant(&BlockExpr{exprBase{x.Type()}, &Block{Stmts: pre, Value: x, Type: x.Type()}}, e.Pos)
 }
 
 func (f *fnCtx) launchCall(e *ast.CallExpr, want types.Type) Expr {
@@ -443,10 +449,13 @@ func (f *fnCtx) launchCall(e *ast.CallExpr, want types.Type) Expr {
 	inner := *e
 	inner.Async = false
 	f.allowHeld(&inner, heldInside) // a held result is refused below, once
-	saved := f.launching
+	saved, savedBlock := f.launching, f.asyncBlock
 	f.launching = &inner
+	if e.Block {
+		f.asyncBlock = e.Fun
+	}
 	x := f.checkExpr(&inner, nil)
-	f.launching = saved
+	f.launching, f.asyncBlock = saved, savedBlock
 	if ci, isValue := x.(*CallIndirect); isValue {
 		// D103: a function value runs in a task like a named function
 		ft := ci.Fn.Type().(*types.Func)
@@ -706,9 +715,9 @@ func (f *fnCtx) gatherExpr(e *ast.GatherExpr) Expr {
 	return sb
 }
 
-func (f *fnCtx) raceExpr(e *ast.RaceExpr, want types.Type) Expr {
+func (f *fnCtx) selectExpr(arms []*ast.RaceArm, pos source.Span, want types.Type) Expr {
 	if f.isGlobal {
-		f.errorf(e.Pos, "'race' cannot appear in a global initializer; compute the value in 'main' and pass it down")
+		f.errorf(pos, "'select' cannot appear in a global initializer; compute the value in 'main' and pass it down")
 		return bad()
 	}
 	r := &Race{}
@@ -721,9 +730,22 @@ func (f *fnCtx) raceExpr(e *ast.RaceExpr, want types.Type) Expr {
 	saved := f.saveNarrow()
 	var joined facts
 	first := true
-	for _, arm := range e.Arms {
+	// the race's own tasks (D168): `async f()` arms launch into a scope of
+	// the race, cancelled and joined when an arm has won
+	var group *ScopeBlock
+	var launches []Stmt
+	prefixes := map[*RaceArm]Stmt{}
+	for _, arm := range arms {
 		f.restoreNarrow(saved)
 		f.pushScope()
+		name, named := f.raceArmName(arm)
+		if arm.Body == nil {
+			// a bare arm (D168), removed by D169: every arm says what happens
+			// when it wins
+			text := srcText(arm.Source)
+			f.c.errorFix(arm.Pos, fixReplace("Write 'val v = … => v'", arm.Pos, "val v = "+text+" => v"),
+				"a select arm says what happens when it wins: 'val v = %s => v'; a task whose value is wanted races in 'race { }' (D169)", text)
+		}
 		f.inRaceArm = true
 		// `ready.wait()`, `try sub.recv()`: an awaited prelude method, lowered
 		// to a wait on its signal and a take when it wins (awaited.go)
@@ -733,11 +755,48 @@ func (f *fnCtx) raceExpr(e *ast.RaceExpr, want types.Type) Expr {
 				srcAST, tryAt = ce, te
 			}
 		}
+		if aw, ok := srcAST.(*ast.AwaitExpr); ok {
+			// the arm is itself the wait (D38); D168 removed the exception
+			drop := source.Span{File: aw.Pos.File, Start: aw.Pos.Start, End: aw.X.Span().Start}
+			f.c.errorFix(drop, fixReplace("Remove 'await'", drop, ""), "a select arm does not take 'await': the select is where the task waits; write '%s' (D168)", srcText(aw.X))
+			srcAST = aw.X
+		}
+		launched := false
+		switch s := srcAST.(type) {
+		case *ast.CallExpr:
+			launched = s.Async
+		case *ast.TryExpr:
+		default:
+			// a handle: waited for as `await h` is, which also counts as the
+			// await D156 requires of a `val h = async …`
+			aw := &ast.AwaitExpr{X: s, Pos: s.Span()}
+			f.raceAwait, srcAST = aw, aw
+		}
 		f.raceCall, f.raceTake = nil, nil
 		if ce, ok := srcAST.(*ast.CallExpr); ok {
 			f.raceCall = ce
 		}
-		src := f.checkExpr(srcAST, nil)
+		var src Expr
+		if launched {
+			if group == nil {
+				group = &ScopeBlock{Span: pos, Cancel: true}
+				group.T = types.TUnit
+			}
+			f.scopes = append(f.scopes, group)
+			f.openTaskBlock("select")
+			task := f.checkExpr(srcAST, nil)
+			f.closeTaskBlock()
+			f.scopes = f.scopes[:len(f.scopes)-1]
+			src = task
+			if tt, ok := task.Type().(*types.Task); ok {
+				handle := f.newTemp(tt)
+				launches = append(launches, &VarDecl{Var: handle, Init: task})
+				src = &AwaitTask{exprBase{tt.Result}, ref(handle)}
+				f.refRaceLaunch(srcAST.(*ast.CallExpr))
+			}
+		} else {
+			src = f.checkExpr(srcAST, nil)
+		}
 		take := f.raceTake
 		f.raceCall, f.raceTake = nil, nil
 		if tryAt != nil {
@@ -750,17 +809,22 @@ func (f *fnCtx) raceExpr(e *ast.RaceExpr, want types.Type) Expr {
 		f.inRaceArm = false
 		ha := &RaceArm{}
 		var prefix Stmt // a lowered arm's take, run first when the arm wins
+		var value *Var  // what the arm waited for: its name, or a bare arm's value
 		if take != nil && !types.IsInvalid(src.Type()) {
 			ha.Kind, ha.Source = RaceRecv, src
 			ha.Var = f.newTemp(&types.Nullable{Elem: types.TBool})
-			if arm.Binding != nil && arm.Binding.Name != nil {
-				v := f.newVar(arm.Binding.Name.Name, take.Type(), false, arm.Binding.Name.Pos)
-				f.declareChecked(arm.Binding.Name.Name, v, arm.Binding.Name.Pos)
-				prefix = &VarDecl{Var: v, Init: take}
-			} else {
-				if arm.Binding != nil {
-					f.errorf(arm.Binding.Pos, "race arms bind a single name")
-				}
+			switch {
+			case types.IsUnit(take.Type()) && (named || arm.Body == nil):
+				f.raceArmNoValue(arm, named, "a 'wait()' or 'changed()'")
+				prefix = &ExprStmt{X: take}
+			case name != nil:
+				value = f.newVar(name.Name, take.Type(), false, name.Pos)
+				f.declareChecked(name.Name, value, name.Pos)
+				prefix = &VarDecl{Var: value, Init: take}
+			case arm.Body == nil:
+				value = f.newTemp(take.Type())
+				prefix = &VarDecl{Var: value, Init: take}
+			default:
 				prefix = &ExprStmt{X: take}
 			}
 			src = nil
@@ -780,41 +844,60 @@ func (f *fnCtx) raceExpr(e *ast.RaceExpr, want types.Type) Expr {
 		}
 		if ha.Source == nil {
 			if !types.IsInvalid(src.Type()) {
-				f.errorf(arm.Source.Span(), "a race arm waits on 'ch.recv()', 'ch.send(v)', 'sleep(d)', 'await task', or an Event's 'wait()', a Watch's 'changed()' or a Subscription's 'recv()' (D146), not '%s'", src.Type())
+				f.errorf(arm.Source.Span(), "a select arm waits on 'ch.recv()', 'ch.send(v)', 'sleep(d)', a task ('async f()' or a handle), or an Event's 'wait()', a Watch's 'changed()' or a Subscription's 'recv()' (D146, D168), not '%s'", src.Type())
 			}
 			f.popScope()
 			continue
 		}
-		if prefix != nil {
+		switch {
+		case prefix != nil:
 			// bound above, to the take
-		} else if arm.Binding != nil && ha.Kind == RaceSend {
-			f.errorf(arm.Binding.Pos, "a send arm binds nothing: when it wins, the value is in the channel; write 'ch.send(v) => …' (D108)")
-			if arm.Binding.Name != nil { // declared, so its uses say nothing more
-				f.declareLocal(arm.Binding.Name.Name, f.newVar(arm.Binding.Name.Name, types.TInvalid, false, arm.Binding.Name.Pos), arm.Binding.Name.Pos)
+		case ha.Kind == RaceSend || ha.Kind == RaceSleep:
+			what := "a send arm (when it wins, the value is in the channel, D108)"
+			if ha.Kind == RaceSleep {
+				what = "a 'sleep' arm"
 			}
-		} else if arm.Binding != nil {
-			if arm.Binding.Name == nil {
-				f.errorf(arm.Binding.Pos, "race arms bind a single name")
-			} else {
-				vt := src.Type()
-				ha.Var = f.newVar(arm.Binding.Name.Name, vt, false, arm.Binding.Name.Pos)
-				f.declareChecked(arm.Binding.Name.Name, ha.Var, arm.Binding.Name.Pos)
+			if named || arm.Body == nil {
+				f.raceArmNoValue(arm, named, what)
 			}
-		} else if ha.Kind != RaceSleep && ha.Kind != RaceSend {
+			if name != nil { // declared, so its uses say nothing more
+				f.declareLocal(name.Name, f.newVar(name.Name, types.TInvalid, false, name.Pos), name.Pos)
+			}
+		case name != nil:
+			ha.Var = f.newVar(name.Name, src.Type(), false, name.Pos)
+			f.declareChecked(name.Name, ha.Var, name.Pos)
+			value = ha.Var
+		default:
 			ha.Var = f.newTemp(src.Type())
+			value = ha.Var
+		}
+		// the arm's body: written, or (a bare arm, D168) the value it waited for
+		bodyExpr := func(want types.Type) Expr {
+			if arm.Body != nil {
+				return f.checkExpr(arm.Body, want)
+			}
+			if value == nil {
+				return bad()
+			}
+			return ref(value)
 		}
 		var body *Block
 		if asValue {
-			body = f.valueBlock(f.checkExprTo(arm.Body, want))
+			x := bodyExpr(want)
+			at := arm.Source.Span()
+			if arm.Body != nil {
+				at = arm.Body.Span()
+			}
+			body = f.valueBlock(f.coerce(x, want, at))
 		} else if want == nil {
 			if _, isNull := arm.Body.(*ast.NullLit); isNull {
 				// typed from the other arms at the end, as in `when` and
-				// `if`: `val c = ch.recv() => c` beside `... => null`
+				// `if`: `ch.recv() as c => c` beside `... => null`
 				nc := &NullConst{exprBase{&types.Nullable{Elem: types.TNever}}}
 				nullArms = append(nullArms, nc)
 				body = &Block{Value: nc, Type: nc.T}
 			} else {
-				x := f.checkExpr(arm.Body, nil)
+				x := bodyExpr(nil)
 				body = f.valueBlock(x)
 				if body.Value != nil && !types.IsNever(body.Type) {
 					switch {
@@ -826,7 +909,7 @@ func (f *fnCtx) raceExpr(e *ast.RaceExpr, want types.Type) Expr {
 				}
 			}
 		} else {
-			x := f.checkExpr(arm.Body, types.TUnit)
+			x := bodyExpr(types.TUnit)
 			var bt types.Type = types.TUnit
 			if types.IsNever(x.Type()) {
 				bt = types.TNever // the arm returns or throws
@@ -834,6 +917,7 @@ func (f *fnCtx) raceExpr(e *ast.RaceExpr, want types.Type) Expr {
 			body = &Block{Stmts: []Stmt{&ExprStmt{X: x}}, Type: bt}
 		}
 		if prefix != nil {
+			prefixes[ha] = prefix // with `async` arms it stays in the race (selectGroup)
 			body.Stmts = append([]Stmt{prefix}, body.Stmts...)
 		}
 		ha.Body = body
@@ -850,8 +934,8 @@ func (f *fnCtx) raceExpr(e *ast.RaceExpr, want types.Type) Expr {
 		}
 	}
 	if len(r.Arms) == 0 {
-		if len(e.Arms) == 0 { // otherwise every arm was refused, and said why
-			f.errorf(e.Pos, "'race' needs at least one arm")
+		if len(arms) == 0 { // otherwise every arm was refused, and said why
+			f.errorf(pos, "'select' needs at least one arm")
 		}
 		f.restoreNarrow(saved)
 		return bad()
@@ -873,7 +957,7 @@ func (f *fnCtx) raceExpr(e *ast.RaceExpr, want types.Type) Expr {
 	case asValue:
 		r.T = want
 	case want == nil && len(nullArms) > 0 && nullableOf(resultType) == nil:
-		f.errorf(e.Pos, "cannot infer the type of 'null' in this 'race'; annotate the binding, e.g. 'val x: T? = race { ... }'")
+		f.errorf(pos, "cannot infer the type of 'null' in this 'select'; annotate the binding, e.g. 'val x: T? = select { ... }'")
 		r.T = types.TInvalid
 	case want == nil && resultType != nil:
 		if len(nullArms) > 0 {
@@ -889,7 +973,7 @@ func (f *fnCtx) raceExpr(e *ast.RaceExpr, want types.Type) Expr {
 		}
 		for _, a := range r.Arms {
 			if a.Body.Value != nil && !types.IsNever(a.Body.Type) && !types.Identical(a.Body.Type, resultType) {
-				a.Body.Value = f.coerce(a.Body.Value, resultType, e.Pos)
+				a.Body.Value = f.coerce(a.Body.Value, resultType, pos)
 				a.Body.Type = resultType
 			}
 		}
@@ -904,8 +988,107 @@ func (f *fnCtx) raceExpr(e *ast.RaceExpr, want types.Type) Expr {
 			}
 		}
 	}
-	f.suspending(r, e.Pos, "race")
+	f.suspending(r, pos, "select")
+	if group != nil {
+		return f.selectGroup(r, group, launches, prefixes)
+	}
 	return r
+}
+
+// selectGroup lowers a race with `async` arms (D168). The arms' tasks are
+// children of a cancelling scope whose body is the race; the race only
+// records which arm won (an arm's take, when it has one, stays in it). When
+// the scope ends its other children are cancelled and joined, and only
+// then does the winning arm's body run:
+//
+//	var won = 0
+//	scope(cancel) { val t1 = async f(); …; race { t1 as v1 => won = 0; … } }
+//	if (won == 0) body0 else if (won == 1) body1 … else bodyN
+func (f *fnCtx) selectGroup(r *Race, group *ScopeBlock, launches []Stmt, prefixes map[*RaceArm]Stmt) Expr {
+	won := f.newTemp(types.TI64)
+	bodies := make([]*Block, len(r.Arms))
+	for i, a := range r.Arms {
+		bodies[i] = a.Body
+		if p := prefixes[a]; p != nil {
+			bodies[i] = &Block{Stmts: a.Body.Stmts[1:], Value: a.Body.Value, Type: a.Body.Type}
+		}
+		mark := &Block{Stmts: []Stmt{&Assign{Target: ref(won), Value: &IntConst{exprBase{types.TI64}, uint64(i), false}}}, Type: types.TUnit}
+		if p := prefixes[a]; p != nil {
+			mark.Stmts = append([]Stmt{p}, mark.Stmts...)
+		}
+		a.Body = mark
+	}
+	t := r.T
+	r.T = types.TUnit
+	group.Body = &Block{Stmts: append(launches, &ExprStmt{X: r}), Type: types.TUnit}
+	group.ErrTo = f.currentErrType()
+	if f.errType == nil && f.throws {
+		group.ErrTo = nil // inferred: filled in at codegen time, as for `scope`
+	}
+	f.suspending(group, group.Span, "select")
+	// the dispatch, from the last arm back
+	var dispatch Expr = &BlockExpr{exprBase{bodies[len(bodies)-1].Type}, bodies[len(bodies)-1]}
+	for i := len(bodies) - 2; i >= 0; i-- {
+		cond := &Binary{exprBase{types.TBool}, OpEq, ref(won), &IntConst{exprBase{types.TI64}, uint64(i), false}, group.Span}
+		dispatch = &If{exprBase{t}, cond, bodies[i], &Block{Value: dispatch, Type: dispatch.Type()}}
+	}
+	out := &Block{Stmts: []Stmt{&VarDecl{Var: won, Init: &IntConst{exprBase{types.TI64}, 0, false}}, group}, Type: t}
+	if types.IsUnit(t) {
+		out.Stmts = append(out.Stmts, &ExprStmt{X: dispatch})
+	} else {
+		out.Value = dispatch
+	}
+	return &BlockExpr{exprBase{t}, out}
+}
+
+// raceArmName is the name an arm gives its value: `src as name` (D168), or
+// the removed `val name = src`, reported with the fix and read as the
+// former. named reports that a name was written; name is nil for `_`.
+func (f *fnCtx) raceArmName(arm *ast.RaceArm) (name *ast.Ident, named bool) {
+	if arm.As != nil {
+		// `src as x` (D168), removed by D169: the name goes before the source
+		whole := source.Span{File: arm.Pos.File, Start: arm.Pos.Start, End: arm.As.Pos.End}
+		text := srcText(arm.Source)
+		f.c.errorFix(whole, fixReplace("Write 'val "+arm.As.Name+" ='", whole, "val "+arm.As.Name+" = "+text),
+			"a select arm names its value 'val %s = %s => …' (D169)", arm.As.Name, text)
+		return arm.As, true
+	}
+	b := arm.Binding
+	if b == nil {
+		return nil, false
+	}
+	head := source.Span{File: arm.Pos.File, Start: arm.Pos.Start, End: arm.Source.Span().Start}
+	switch {
+	case b.Name == nil:
+		f.errorf(b.Pos, "a select arm names one value: 'val name = src => …' (D169)")
+		return nil, true
+	case b.Name.Name == "_":
+		f.c.errorFix(head, fixReplace("Remove 'val _ ='", head, ""), "write '%s => …': an arm need not name a value it does not use (D168)", srcText(arm.Source))
+		return nil, false
+	}
+	return b.Name, true
+}
+
+// raceArmNoValue refuses a name on an arm that waits for nothing it could
+// give: a sleep, a send, an Event's wait, a Watch's changed.
+func (f *fnCtx) raceArmNoValue(arm *ast.RaceArm, named bool, what string) {
+	switch {
+	case !named || arm.Body == nil || arm.As != nil:
+		// nothing named, a bare arm or an `as` (D168), each reported as one
+	case arm.Binding != nil:
+		head := source.Span{File: arm.Pos.File, Start: arm.Pos.Start, End: arm.Source.Span().Start}
+		f.c.errorFix(head, fixReplace("Remove the name", head, ""), "%s has no value to name; remove '%s' (D169)", what, strings.TrimSpace(srcTextSpan(head, "")))
+	}
+}
+
+// refRaceLaunch records the hover of an `async` arm's keyword.
+func (f *fnCtx) refRaceLaunch(call *ast.CallExpr) {
+	if f.c.index == nil || !call.Pos.IsValid() {
+		return
+	}
+	kw := source.Span{File: call.Pos.File, Start: call.Pos.Start, End: call.Pos.Start + len("async")}
+	f.c.index.Refs = append(f.c.index.Refs, Ref{Span: kw, Kind: "keyword", Name: "async", Detail: "async " + srcText(call.Fun),
+		Doc: "Started by this race when it starts; cancelled, and waited for, if another arm wins (D168)."})
 }
 
 // panicType is the prelude's Panic struct.

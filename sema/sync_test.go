@@ -29,7 +29,7 @@ fun main() throws Lagged {
   news.send("x")
   val first = try await sub.recv()
   val w = Watch(value: 1)
-  val r = race {
+  val r = select {
     e.wait() => "event"
     w.changed() => "watch ${w.get()}"
     val v = try sub.recv() => "news $v"
@@ -50,11 +50,11 @@ fun main() throws Lagged {
 }`, "'changed()' always suspends and must be awaited")
 	expectError(t, prelude+`fun make(): Event => Event()
 fun main() {
-  race {
+  select {
     make().wait() => io.println("set")
     sleep(Duration.millis(1)) => io.println("no")
   }
-}`, "a race arm on 'wait()' needs its receiver in a variable")
+}`, "a select arm on 'wait()' needs its receiver in a variable")
 	expectError(t, prelude+`fun main() {
   val l = RwLock(value: 1)
   val x = l.read()

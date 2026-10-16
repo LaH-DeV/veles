@@ -1660,6 +1660,11 @@ func (p *printer) exprInner(e ast.Expr) {
 		p.expr(e.Index, 0)
 		p.w("]")
 	case *ast.CallExpr:
+		if e.Block {
+			p.w("async ") // `async { … }` (D169)
+			p.block(e.Fun.(*ast.LambdaExpr).Body.(*ast.BlockExpr).Block)
+			return
+		}
 		if e.Async {
 			p.w("async ")
 		}
@@ -1832,7 +1837,14 @@ func (p *printer) exprInner(e ast.Expr) {
 		p.w("unsafe ")
 		p.block(e.Body)
 	case *ast.RaceExpr:
-		p.raceExpr(e)
+		if e.Body != nil {
+			p.w("race ")
+			p.block(e.Body)
+		} else {
+			p.armsExpr("race", e.Arms, e.Pos)
+		}
+	case *ast.SelectExpr:
+		p.armsExpr("select", e.Arms, e.Pos)
 	case *ast.ControlExpr:
 		p.stmt(e.Stmt)
 	case *ast.BadExpr:
@@ -2104,10 +2116,12 @@ func (p *printer) armBody(body ast.Expr) {
 	p.expr(body, 0)
 }
 
-func (p *printer) raceExpr(e *ast.RaceExpr) {
-	p.w("race ")
-	p.members(p.openBrace(e.Pos.Start, e.Pos.End), e.Pos.End, len(e.Arms) == 0, func(i int) bool { return i < len(e.Arms) }, func(i int) {
-		arm := e.Arms[i]
+// armsExpr prints `select { … }` (or the removed `race` with arms, which
+// the checker turns into a `select` with its fix).
+func (p *printer) armsExpr(keyword string, arms []*ast.RaceArm, pos source.Span) {
+	p.w(keyword + " ")
+	p.members(p.openBrace(pos.Start, pos.End), pos.End, len(arms) == 0, func(i int) bool { return i < len(arms) }, func(i int) {
+		arm := arms[i]
 		p.before(arm.Pos.Start)
 		if arm.Binding != nil {
 			p.w("val ")
@@ -2115,8 +2129,13 @@ func (p *printer) raceExpr(e *ast.RaceExpr) {
 			p.w(" = ")
 		}
 		p.expr(arm.Source, 0)
-		p.mark(alignArrow)
-		p.armBody(arm.Body)
+		if arm.As != nil {
+			p.w(" as " + arm.As.Name)
+		}
+		if arm.Body != nil { // a bare arm (removed, D169) takes no column
+			p.mark(alignArrow)
+			p.armBody(arm.Body)
+		}
 		p.after(arm.Pos.End)
 	})
 }

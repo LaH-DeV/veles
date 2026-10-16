@@ -876,3 +876,11 @@ type Race struct {
 	exprBase
 	Arms []*RaceArm
 }
+
+// RaceFirst waits for the first of a run-time list of tasks to finish and
+// is its index in the list (the `race { }` block, D169). Tasks is a
+// MutableList<Task<T>> with at least one handle.
+type RaceFirst struct {
+	exprBase
+	Tasks Expr
+}

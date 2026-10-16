@@ -989,6 +989,19 @@ veles_list *veles_list_slice(veles_list *l, int64_t from, int64_t to) {
 }
 
 /* appends every element of src to dst (MutableList.addAll); src may be dst */
+/* `race { }` (D169): a race whose sources are the tasks of a list, one per
+ * element in list order, so the winner's index is its place in the list
+ * (veles_task.c owns the race; a handle is a task pointer) */
+void *veles_race_new(void *t, int64_t narms);
+void veles_race_await(void *r, void *t);
+
+void *veles_race_list(void *t, veles_list *tasks) {
+    void *r = veles_race_new(t, tasks->len);
+    void **handles = (void **)tasks->data;
+    for (int64_t i = 0; i < tasks->len; i++) veles_race_await(r, handles[i]);
+    return r;
+}
+
 void veles_list_append_list(veles_list *dst, veles_list *src) {
     int64_t n = src->len;
     if (n == 0) return;

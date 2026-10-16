@@ -795,15 +795,15 @@ send items over a `Channel`, or guard shared state with `Mutex(value: ...)`.
 
 `Event.wait()`, `Watch.changed()` and `Subscription.recv()` are waits, as
 a channel's `recv()` is, so they are written with `await` (D16, D146):
-the `await` marks where the task may stop. In a `race` arm they are
+the `await` marks where the task may stop. In a `select` arm they are
 written bare, like `ch.recv()`: `ready.wait() => …`.
 
-#### `a race arm on 'wait()' needs its receiver in a variable`
+#### `a select arm on 'wait()' needs its receiver in a variable`
 
-A race arm on one of those waits looks at its receiver twice — once to
+A select arm on one of those waits looks at its receiver twice — once to
 wait, once to take what it waited for when the arm wins — so the receiver
 must be a variable or a field, not a call's result: `val e = events()`
-before the `race`, then `e.wait() => …` (D146).
+before the `select`, then `e.wait() => …` (D146).
 
 #### `'scope(on: …)' takes an Executor, not 'i64'` / `'scope(…)' takes 'on:', the executor its tasks run on (D143), and 'workers:'`
 
@@ -845,10 +845,36 @@ before the lock or after it: give the lock a block of its own,
 functions that suspend are refused the same way (`'fetch' suspends, …`),
 and so is a call of a suspending function value (`this call suspends`).
 
-#### `a send arm binds nothing`
+#### `… has no value to name`
 
-`ch.send(v) => …` in a `race` has no value to bind (D108): when the arm
-wins, `v` is in the channel. Drop the `val x =`.
+A send, `sleep`, `wait()` or `changed()` arm waits for nothing it could
+give (D108, D169): when a send arm wins, `v` is in the channel. Drop the
+`val x =`.
+
+#### `a 'race' with arms is a 'select' now` / `a select arm names its value 'val x = …'` / `a select arm says what happens when it wins` / `a select arm does not take 'await'`
+
+The spellings D169 replaced. A `race` with arms is a `select`: `race {
+val m = ch.recv() => … }` is `select { val m = ch.recv() => … }`, and
+`race { }` now runs tasks and gives the first to finish. An arm names its
+value before the source — `ch.recv() as msg => …` (D168) is
+`val msg = ch.recv() => …` — and every arm has a `=> body`: a bare arm
+`ch.recv()` is `val v = ch.recv() => v`. An arm waits by itself, so
+`val r = await t => …` is `val r = t => …`. Each error carries the fix;
+`veles check --fix` rewrites a whole program.
+
+#### `'awaitFirst' is now a 'race'` / `this 'race' starts no task` / `the tasks of a 'race' give one type`
+
+`awaitFirst(async a(), async b())` (D168) is written `race { async a();
+async b() }` (D169); the fix writes it. A `race` races the tasks its body
+starts, so its body starts at least one (`async f()` or `async { … }`),
+and they all give the same type — the race's value is one of theirs.
+
+#### `this lambda cannot cross a task boundary: it captures 'n', a 'var'` (in `async { }`)
+
+An `async { }` block runs in another task, so it may use only `val`s of
+Sendable types from outside (D35). Share changing state through an
+`Atomic` or a `Mutex`, or have the block return the result and assign it
+after `await`.
 
 ### resources
 

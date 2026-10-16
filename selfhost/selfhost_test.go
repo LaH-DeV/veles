@@ -199,7 +199,7 @@ func corpus(t *testing.T) []corpusFile {
 			"  f(a: 1, b...)\n  f(,)\n  (a, b) => a\n  (a: i64, (b, c)): i64 => { a }\n  _ => 1\n  x => y += 1\n  mut [1]\n  mut x\n  [:]\n  [1: 2, 3: 4,]\n  [1, 2,]\n" +
 			"  if (x = 1) a else b\n  if (y = f() && z) { }\n  when (val r = x) { is Ok(v) => v\n is Err => 0 }\n  when (r = x) { else => 1 }\n" +
 			"  when { a > b => 1 a => 2 }\n  when (x) { 1, 2 -> 3\n in 1..5 => 4\n -1 => 5\n Name => 6\n a.B(x, y: z) => 7\n is T() => 8\n [a, ..rest] => 9\n [.., _] => 10\n (a, b) if a > b => 11 }\n" +
-			"  race { val v = ch.recv() => v\n sleep(d) -> 0\n x }\n  gather { }\n  unsafe { }\n  scope\n  fun\n  x is T(a) && y !is U\n  T implements Display\n  x as T\n" +
+			"  race { val v = ch.recv() => v\n sleep(d) -> 0\n x }\n  race { ch.recv() as v => v\n async f() as w => w\n async g()\n f(x as T) as y => y\n t as }\n  awaitFirst(async a(), async b())\n  race { async a()\n async { b() }\n loop (x in xs) async c(x) }\n  race { }\n  select { val v = ch.recv() => v\n val w = async f() => w\n sleep(d) => 0 }\n  select\n  select { }\n  x.select { 1 }\n  val t = async { await sleep(d)\n 1 }\n  async { }\n  gather { }\n  unsafe { }\n  scope\n  fun\n  x is T(a) && y !is U\n  T implements Display\n  x as T\n" +
 			"  sql\"a ${b}\"\n  sql \"a\"\n  db.sql\"x\"\n  \"${a b}\"\n  \"${}\"\n  1..<2\n  a ?: return\n  !(return)\n  f(x ?: return, y)\n  ~a\n  *p\n  &x\n  -1\n}\n",
 	}
 	// the fuzzers' findings that are text (a Veles string is always UTF-8)

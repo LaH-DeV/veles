@@ -72,6 +72,11 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 	if ft, ok := numericHint(want).(*types.Func); ok {
 		expected = ft
 	}
+	if f.asyncBlock == ast.Expr(e) {
+		// `async { }` (D169): the block is a task's body — it may suspend,
+		// its value and error are inferred
+		expected = &types.Func{Sendable: true, Effects: types.Effects{Suspends: true}}
+	}
 	// D37: a lambda with N parameters adapts to an expected single tuple
 	// parameter of arity N.
 	tupleAdapt := false

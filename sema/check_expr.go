@@ -393,7 +393,9 @@ func (f *fnCtx) checkExprInner(e ast.Expr, want types.Type) Expr {
 	case *ast.ScopeExpr:
 		return f.scopeExpr(e.On, e.Workers, e.Body, e.Pos, want, true)
 	case *ast.RaceExpr:
-		return f.raceExpr(e, want)
+		return f.raceDispatch(e, want)
+	case *ast.SelectExpr:
+		return f.selectExpr(e.Arms, e.Pos, want)
 	case *ast.ControlExpr:
 		stmts, _ := f.checkStmt(e.Stmt)
 		return &BlockExpr{exprBase{types.TNever}, &Block{Stmts: stmts, Type: types.TNever}}

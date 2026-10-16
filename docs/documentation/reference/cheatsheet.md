@@ -241,8 +241,11 @@ scope {                          // every task started inside finishes here
 val total = scope(workers: 8) { … ; awaitAll(tasks).sum() }   // a value; at most 8 children at once; with `on:` too
 loop (r in xs.iter().mapConcurrent(f, workers: 4)) { … }      // lazy, in order; the loop owns the calls (D156)
 val (a, b) = gather { async f(); async g() }   // (Result<A, E|Panic>, Result<B, ...>); one task: its Result — when (gather { async f() }) { ... } (D103)
-val winner = race { val m = ch.recv() => ...; sleep(Duration.millis(100)) => "timeout"; val v = t => ... }
-race { queue.send(line) => { }; sleep(d) => dropped += 1 }   // a send arm: sent only if it wins (D108); arms tried in order, first ready wins
+val name = race { async mirror("eu"); async mirror("us") }   // the tasks race; the first to finish wins (its error too), the others are cancelled and joined (D169)
+val page = race { async fetch(primary); async { await sleep(d); fetch(backup) } }   // a hedged request; race { loop (m in mirrors) async fetch(m) } is the first of a list
+val winner = select { val m = ch.recv() => ...; sleep(Duration.millis(100)) => "timeout"; val v = t => ...; val p = async fetch(u) => p }   // arms; no await in arms; an async arm is the select's, cancelled if it loses (D169)
+select { queue.send(line) => { }; sleep(d) => dropped += 1 }   // a send arm: sent only if it wins (D108); arms tried in order, first ready wins
+val t = async { val a = load(x); a.sum() }   // a task from a block: await t gives its value; `return v` ends it with v; captures follow D35 (D169)
 val ch = Channel<i64>(capacity: 8); ch.send(1); await ch.recv(); ch.close(); ch.closeAfter(n)  // closes itself after n sends
 ch.trySend(1); ch.tryRecv()      // never wait: false when full, null when nothing is buffered
 xs.mapConcurrent(f, workers: 4); xs.forEachConcurrent(f, workers: 4)   // the worker pool, results in order; f may suspend/throw

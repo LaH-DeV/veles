@@ -3,21 +3,21 @@
 use io
 
 fun offer(queue: Channel<string>, line: string): bool {
-  race {
+  select {
     queue.send(line)           => true
     sleep(Duration.millis(50)) => false
   }
 }
 
 fun bound(queue: Channel<string>) {
-  race {
-    val r = queue.send("x")   => io.println("$r") // error: a send arm binds nothing
+  select {
+    val r = queue.send("x")   => io.println("$r") // error: a send arm (when it wins, the value is in the channel, D108) has no value to name; remove 'val r ='
     sleep(Duration.millis(1)) => { }
   }
 }
 
 fun mixed(out: Channel<i64>, inbox: Channel<i64>): i64 {
-  race {
+  select {
     out.send(1)          => 0
     val v = inbox.recv() => v ?: -1
   }

@@ -819,7 +819,7 @@ fun main() throws Lagged {
   await e.wait()
   io.println("event: after set ${done.load()}, set ${e.isSet()}")
   e.reset()
-  val r1 = race {
+  val r1 = select {
     e.wait() => "set"
     sleep(Duration.millis(10)) => "not set"
   }
@@ -844,11 +844,11 @@ fun main() throws Lagged {
   io.println("watch: ${seen.toList()}")
   val w2 = Watch(value: "a")
   w2.set("b")
-  val r3 = race {
+  val r3 = select {
     w2.changed() => "changed to ${w2.get()}"
     sleep(Duration.millis(10)) => "no change"
   }
-  val r4 = race {
+  val r4 = select {
     w2.changed() => "changed again"
     sleep(Duration.millis(10)) => "no change since the get"
   }
@@ -874,12 +874,12 @@ fun main() throws Lagged {
   io.println("broadcast: first ${out1.toList()}, second ${out2.toList()}")
   val n2 = Broadcast<i64>(capacity: 4)
   with s3 = n2.subscribe()
-  val r5 = race {
+  val r5 = select {
     val v = try s3.recv() => "got $v"
     sleep(Duration.millis(10)) => "nothing yet"
   }
   n2.send(7)
-  val r6 = race {
+  val r6 = select {
     val v = try s3.recv() => "got $v"
     sleep(Duration.millis(10)) => "nothing yet"
   }
@@ -2263,7 +2263,7 @@ fun waiter(ch: Channel<i64>, sum: Atomic<i64>) {
 }
 
 fun impatient(ch: Channel<i64>, k: i64, missed: Atomic<i64>) {
-  race {
+  select {
     val v = ch.recv() => panic("an impatient receiver got $v")
     sleep(Duration.millis(1 + k % 50)) => { val _ = missed.update(m => m + 1) }
   }
@@ -2323,7 +2323,7 @@ func TestRaceWithManyArms(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		fmt.Fprintf(&b, "  val c%d = Channel<i64>(capacity: 1)\n", i)
 	}
-	b.WriteString("  c19.send(19)\n  race {\n")
+	b.WriteString("  c19.send(19)\n  select {\n")
 	for i := 0; i < 20; i++ {
 		fmt.Fprintf(&b, "    val v%d = c%d.recv() => io.println(\"arm %d got ${v%d}\")\n", i, i, i, i)
 	}
@@ -2385,7 +2385,7 @@ fun wokenMidRace(): i64 {
     val l = async listen(quiet)
     scope {
       val _ = async nap()
-      race {
+      select {
         val v = quiet.recv() => heard = -100
         sleep(Duration.millis(100)) => {}
       }
@@ -2412,7 +2412,7 @@ fun main() {
     scope {
       loop (got < 8000) {
         val _ = async blip(got)
-        race {
+        select {
           val x = a.recv() => {
             sum += x ?: 0
             got += 1
@@ -3251,7 +3251,7 @@ fun main() {
   val races: MutableList<i64> = []
   loop (_ in 0..<40) {
     val sw = time.Stopwatch.start()
-    race {
+    select {
       val v = never.recv() => io.println("got $v?")
       sleep(Duration.micros(300)) => races.push(sw.elapsed().toNanos())
     }

@@ -330,7 +330,7 @@ task does the sending — the runtime's timers do — and `ticks` holds one
 tick, so a reader that falls behind misses ticks rather than finding a
 queue of stale ones. Hold it with `with`: closing it stops the ticks and
 closes the channel (a tick already in it can still be received, as from
-any closed channel). In a `race` it is one arm among others:
+any closed channel). In a `select` it is one arm among others:
 
 ```veles
 use io
@@ -344,9 +344,9 @@ fun main() {
   lines.close()
   var ticks = 0
   loop {
-    val done = race {
-      val line = lines.recv()     => line == null
-      clock.ticks.recv()          => {
+    val done = select {
+      val line = lines.recv() => line == null
+      clock.ticks.recv()      => {
         ticks += 1
         false
       }

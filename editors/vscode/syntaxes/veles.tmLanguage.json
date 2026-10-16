@@ -175,6 +175,7 @@
         { "name": "keyword.control.loop.veles", "match": "\\b(loop|break|continue|in)\\b" },
         { "name": "keyword.control.flow.veles", "match": "\\b(return|throw|try|do|catch|with)\\b" },
         { "name": "keyword.control.concurrency.veles", "match": "\\b(async|await|scope|gather|race)\\b" },
+        { "comment": "select { } (contextual: only directly before a brace, D169)", "name": "keyword.control.concurrency.veles", "match": "(?<![.\\w])select\\b(?=\\s*\\{)" },
         { "name": "storage.modifier.veles", "match": "\\b(public|private|internal|protected|override|unsafe|extern|mut|static|sealed|sendable)\\b" },
         { "name": "storage.modifier.veles", "match": "\\b(lazy)\\b(?=\\s+[A-Za-z_][A-Za-z0-9_]*\\s*:)" },
         { "name": "storage.type.veles", "match": "\\b(fun|struct|trait|implement|enum|val|var|const|type)\\b" },

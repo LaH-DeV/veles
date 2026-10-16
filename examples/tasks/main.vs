@@ -94,23 +94,23 @@ fun main() throws {
   }
   println("gather $r1 $r2 $r3")
 
-  // D38: race — first ready arm wins
+  // D38/D169: select — the first ready arm wins
   val ch = Channel<string>(capacity: 1)
   scope {
     async producer(ch)
-    val winner = race {
+    val winner = select {
       val msg = ch.recv()        => "message ${msg ?: "closed"}"
       sleep(Duration.seconds(1)) => "timeout"
     }
     println("race $winner")
-    val second = race {
+    val second = select {
       val msg = ch.recv()       => "message ${msg ?: "closed"}"
       sleep(Duration.millis(5)) => "timeout"
     }
     println("race $second")
   }
 
-  // two races waiting on one channel: the first also waits on another,
+  // two selects waiting on one channel: the first also waits on another,
   // wins there, and the second still hears the shared channel close
   val first = Channel<string>(capacity: 1)
   val shared = Channel<string>(capacity: 1)
@@ -148,12 +148,12 @@ fun launchInLoop() throws Boom {
   }
 }
 
-fun raceTwo(a: Channel<string>, b: Channel<string>): string => race {
+fun raceTwo(a: Channel<string>, b: Channel<string>): string => select {
   val msg = a.recv() => "a: ${msg ?: "closed"}"
   val msg = b.recv() => "b: ${msg ?: "closed"}"
 }
 
-fun raceOne(ch: Channel<string>): string => race {
+fun raceOne(ch: Channel<string>): string => select {
   val msg = ch.recv()        => "shared: ${msg ?: "closed"}"
   sleep(Duration.seconds(5)) => "timeout"
 }

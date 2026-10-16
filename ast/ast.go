@@ -787,7 +787,10 @@ type CallExpr struct {
 	Args     []Arg
 	Async    bool
 	Grouped  bool // written in parentheses: ends a `?.` chain (D70)
-	Pos      source.Span
+	// Block: written `async { body }` (D169) — Fun is a lambda of no
+	// parameters whose body is that block, Async is set, there are no Args
+	Block bool
+	Pos   source.Span
 }
 
 type UnaryExpr struct {
@@ -971,7 +974,17 @@ type ScopeExpr struct {
 }
 
 // RaceExpr is `race { val x = ch.recv() => body ... }` (D38).
+// RaceExpr is `race { body }` (D169): the tasks the body starts race, the
+// first to finish gives the value. Arms is set instead of Body for the
+// removed `race` with arms, now `select`, kept so the checker names the fix.
 type RaceExpr struct {
+	Body *Block
+	Arms []*RaceArm
+	Pos  source.Span
+}
+
+// SelectExpr is `select { src => body … }` (D169; the arms of D38/D108/D168).
+type SelectExpr struct {
 	Arms []*RaceArm
 	Pos  source.Span
 }
@@ -979,7 +992,8 @@ type RaceExpr struct {
 type RaceArm struct {
 	Binding *Binding // `val job = ...` or nil
 	Source  Expr
-	Body    Expr
+	As      *Ident // `src as name =>` (D168, removed by D169: an error naming `val`) or nil
+	Body    Expr   // nil for a bare arm (D168, removed by D169)
 	Pos     source.Span
 }
 
@@ -995,7 +1009,7 @@ type BadExpr struct {
 func (e *IntLit) Span() source.Span           { return e.Pos }
 func (e *FloatLit) Span() source.Span         { return e.Pos }
 func (e *StringLit) Span() source.Span        { return e.Pos }
-func (e *TemplateExpr) Span() source.Span      { return e.Pos }
+func (e *TemplateExpr) Span() source.Span     { return e.Pos }
 func (e *CharLit) Span() source.Span          { return e.Pos }
 func (e *BoolLit) Span() source.Span          { return e.Pos }
 func (e *NullLit) Span() source.Span          { return e.Pos }
@@ -1031,13 +1045,14 @@ func (e *ImplementsExpr) Span() source.Span   { return e.Pos }
 func (e *GatherExpr) Span() source.Span       { return e.Pos }
 func (e *ScopeExpr) Span() source.Span        { return e.Pos }
 func (e *RaceExpr) Span() source.Span         { return e.Pos }
+func (e *SelectExpr) Span() source.Span       { return e.Pos }
 func (e *UnsafeExpr) Span() source.Span       { return e.Pos }
 func (e *BadExpr) Span() source.Span          { return e.Pos }
 
 func (*IntLit) exprNode()           {}
 func (*FloatLit) exprNode()         {}
 func (*StringLit) exprNode()        {}
-func (*TemplateExpr) exprNode()      {}
+func (*TemplateExpr) exprNode()     {}
 func (*CharLit) exprNode()          {}
 func (*BoolLit) exprNode()          {}
 func (*NullLit) exprNode()          {}
@@ -1073,6 +1088,7 @@ func (*ImplementsExpr) exprNode()   {}
 func (*GatherExpr) exprNode()       {}
 func (*ScopeExpr) exprNode()        {}
 func (*RaceExpr) exprNode()         {}
+func (*SelectExpr) exprNode()       {}
 func (*UnsafeExpr) exprNode()       {}
 func (*BadExpr) exprNode()          {}
 

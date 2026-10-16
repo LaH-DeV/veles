@@ -82,6 +82,9 @@ func (p *Parser) parseBinary(minBp int) ast.Expr {
 		if op == lexer.Shr && p.inTypeArg {
 			bp = bpNone
 		}
+		if op == lexer.KwAs && p.raceHead && p.noLambda > 0 {
+			bp = bpNone // `src as name` in a race arm (D168)
+		}
 		if bp == bpNone || bp <= minBp {
 			return left
 		}
@@ -167,6 +170,14 @@ func (p *Parser) parseUnary() ast.Expr {
 		return &ast.AwaitExpr{X: x, Pos: p.spanFrom(start)}
 	case lexer.KwAsync:
 		p.next()
+		if p.at(lexer.LBrace) {
+			// `async { … }`: a task from a block (D169), the call of a lambda
+			// of no parameters, so it is checked as one and placed as any
+			// `async f()` is
+			body := p.parseBlock()
+			fun := &ast.LambdaExpr{Body: &ast.BlockExpr{Block: body}, Pos: body.Pos}
+			return &ast.CallExpr{Fun: fun, Async: true, Block: true, Pos: p.spanFrom(start)}
+		}
 		x := p.parseUnary()
 		call, ok := x.(*ast.CallExpr)
 		if !ok {
@@ -379,6 +390,9 @@ func (p *Parser) parsePrimary() ast.Expr {
 	case lexer.Ident:
 		if p.peek(1).Kind == lexer.FatArrow && p.noLambda == 0 {
 			return p.parseLambda()
+		}
+		if t.Text == "select" && p.peek(1).Kind == lexer.LBrace {
+			return p.parseSelect() // a word only before a brace (D169)
 		}
 		p.next()
 		return &ast.NameExpr{Name: t.Text, Pos: t.Span}
@@ -770,9 +784,63 @@ func (p *Parser) parseRace() ast.Expr {
 	start := p.span()
 	p.next() // race
 	r := &ast.RaceExpr{}
-	if _, ok := p.expect(lexer.LBrace); !ok {
+	if !p.at(lexer.LBrace) {
+		p.expect(lexer.LBrace)
 		r.Pos = p.spanFrom(start)
 		return r
+	}
+	if p.bodyHasArms() {
+		// the `race` with arms D169 renamed `select`: parsed as arms so the
+		// checker can name the fix
+		r.Arms = p.parseArms("race")
+	} else {
+		r.Body = p.parseBlock()
+	}
+	r.Pos = p.spanFrom(start)
+	return r
+}
+
+// parseSelect parses `select { src => body … }` (D169); `select` is a word
+// only here, before a brace.
+func (p *Parser) parseSelect() ast.Expr {
+	start := p.span()
+	p.next() // select
+	arms := p.parseArms("select")
+	return &ast.SelectExpr{Arms: arms, Pos: p.spanFrom(start)}
+}
+
+// bodyHasArms reports whether the braced body at the cursor holds a `=>`
+// outside any bracket: arms (`select`'s, or the removed `race` with arms)
+// rather than statements.
+func (p *Parser) bodyHasArms() bool {
+	depth := 0
+	for i := 0; p.pos+i < len(p.toks); i++ {
+		switch p.peek(i).Kind {
+		case lexer.LParen, lexer.LBracket, lexer.LBrace:
+			depth++
+		case lexer.RParen, lexer.RBracket, lexer.RBrace:
+			depth--
+			if depth == 0 {
+				return false
+			}
+		case lexer.FatArrow, lexer.KwAs:
+			if depth == 1 {
+				return true
+			}
+		case lexer.EOF:
+			return false
+		}
+	}
+	return false
+}
+
+// parseArms parses the braced arms of a `select` (or of the removed `race`
+// with arms): `val x = src => body`, and the D168 spellings D169 removed —
+// `src as x => body` and a bare `src` — kept for the checker to name.
+func (p *Parser) parseArms(what string) []*ast.RaceArm {
+	var arms []*ast.RaceArm
+	if _, ok := p.expect(lexer.LBrace); !ok {
+		return nil
 	}
 	for {
 		p.skipSemis()
@@ -786,22 +854,31 @@ func (p *Parser) parseRace() ast.Expr {
 			arm.Binding = &b
 			p.expect(lexer.Assign)
 		}
+		savedHead := p.raceHead
+		p.raceHead = true
 		arm.Source = p.parseArmHead()
-		if !p.expectArmArrow() {
-			p.syncStmt()
-			continue
+		p.raceHead = savedHead
+		if p.accept(lexer.KwAs) {
+			if name, ok := p.expectIdent(); ok {
+				arm.As = &name
+			}
 		}
-		arm.Body = p.parseArmBody()
-		arm.Pos = p.spanFrom(as)
-		r.Arms = append(r.Arms, arm)
 		if !p.at(lexer.Semi, lexer.RBrace, lexer.EOF) {
-			p.errorf(p.span(), "expected newline between 'race' arms, found %s", p.cur().Describe())
+			if !p.expectArmArrow() {
+				p.syncStmt()
+				continue
+			}
+			arm.Body = p.parseArmBody()
+		}
+		arm.Pos = p.spanFrom(as)
+		arms = append(arms, arm)
+		if !p.at(lexer.Semi, lexer.RBrace, lexer.EOF) {
+			p.errorf(p.span(), "expected newline between '%s' arms, found %s", what, p.cur().Describe())
 			p.syncStmt()
 		}
 	}
 	p.expect(lexer.RBrace)
-	r.Pos = p.spanFrom(start)
-	return r
+	return arms
 }
 
 // expectArmArrow expects the `=>` between an arm's head and its body. The

@@ -737,7 +737,7 @@ fun fullYear(yy: i64): i64 {
 /// ```veles
 /// with clock = time.ticker(Duration.seconds(1))
 /// loop {
-///   race {
+///   select {
 ///     val at = clock.ticks.recv() => report(at)
 ///     val line = input.recv()     => handle(line ?: break)
 ///   }

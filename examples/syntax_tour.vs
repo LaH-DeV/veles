@@ -149,7 +149,7 @@ fun collections(nums: List<i32>, counts: Map<string, i32>, word: string, a: A?) 
   })
 }
 
-// D34/D36/D38 — concurrency
+// D34/D36/D38/D169 — concurrency
 fun concurrent() throws {
   scope {
     async worker(1, jobs, results)
@@ -159,7 +159,14 @@ fun concurrent() throws {
     async fetch(a)
     async fetch(b)
   }
-  race {
+  val fastest = race {
+    async fetch(a)
+    async {
+      await sleep(delay)
+      fetch(b)
+    }
+  }
+  select {
     val job = jobs.recv() => process(job)
     val cmd = ctrl.recv() => handle(cmd)
     timer(1.second)       => giveUp()

@@ -33,7 +33,7 @@ Skim Track 1 (the syntax is close to Kotlin's), then:
 
 For readers who want to know what the compiler actually does.
 
-12. [Concurrency](12-concurrency.md) — inferred suspension, `async`/`await`, `scope`, `gather`, `race`, channels, cancellation, `withTimeout`, task-local values.
+12. [Concurrency](12-concurrency.md) — inferred suspension, `async`/`await`, `scope`, `gather`, `race`, `select`, `async { }`, channels, cancellation, `withTimeout`, task-local values.
 13. [Memory, `with`, `unsafe` and C](13-memory-and-ffi.md) — the collector, value vs pointer, cleanup, raw pointers, `extern "C"`.
 14. [Attributes and tests](14-attributes-and-testing.md) — `@deprecated`, `@mustUse`, `@inline`; `test "..." { }`, `expect`, `require`, `check`.
 16. [Networking](16-networking.md) — TCP with `net`: one task per connection, `readLine`/`write`, timeouts.

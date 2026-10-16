@@ -96,6 +96,7 @@ entry:
   ret ptr %env
 }
 declare ptr @veles_race_new(ptr, i64)
+declare ptr @veles_race_list(ptr, ptr)
 declare void @veles_race_recv(ptr, ptr, ptr)
 declare void @veles_race_send(ptr, ptr, ptr)
 declare void @veles_race_sent(ptr)
@@ -950,6 +951,28 @@ func (g *gen) gatherResults(e *sema.ScopeBlock) string {
 		return v
 	}
 	return acc
+}
+
+// raceFirst waits for the first task of a list to finish (D169) and gives
+// its index: one race whose sources are the list's tasks, built by the
+// runtime since their number is known only now.
+func (g *gen) raceFirst(e *sema.RaceFirst) string {
+	tasks := g.expr(e.Tasks)
+	r := g.newTmp()
+	g.emit("%s = call ptr @veles_race_list(ptr %s, ptr %s)", r, g.coro.task, tasks)
+	wait, susp, done := g.newLabel("race.wait"), g.newLabel("race.susp"), g.newLabel("race.done")
+	g.emitTerm("br label %%%s", wait)
+	g.placeLabel(wait)
+	w := g.newTmp()
+	g.emit("%s = call i64 @veles_race_wait(ptr %s, ptr %s)", w, g.coro.task, r)
+	ready := g.newTmp()
+	g.emit("%s = icmp sge i64 %s, 0", ready, w)
+	g.emitTerm("br i1 %s, label %%%s, label %%%s", ready, done, susp)
+	g.placeLabel(susp)
+	g.suspendPoint()
+	g.emitTerm("br label %%%s", wait)
+	g.placeLabel(done)
+	return w
 }
 
 func (g *gen) race(e *sema.Race) string {

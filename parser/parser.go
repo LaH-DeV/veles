@@ -50,6 +50,11 @@ type Parser struct {
 	// Brackets reset it, so a lambda argument inside the head still works.
 	noLambda int
 
+	// raceHead is set while parsing a `race` arm's source, where `as` names
+	// the arm's value (`ch.recv() as msg =>`, D168) instead of starting the
+	// removed `as` conversion. Like noLambda it holds outside brackets only.
+	raceHead bool
+
 	// parens records every parenthesised expression as the span of the
 	// expression inside the parentheses; the tree itself has no node for
 	// them, and the formatter keeps the ones the author wrote.

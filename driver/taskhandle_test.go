@@ -86,8 +86,8 @@ fun viaHelper(log: Channel<string>): i64 throws Boom {
 fun racing(): string throws Boom {
   scope {
     val bad = async work(-5, 1)
-    race {
-      val v = await bad              => return "won with $v"
+    select {
+      val v = bad              => return "won with $v"
       sleep(Duration.millis(200))   => return "timed out"
     }
   }

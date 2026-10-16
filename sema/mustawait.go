@@ -155,6 +155,10 @@ func (f *fnCtx) lintImmediateAwait(name string, call *ast.CallExpr, rest []ast.S
 	if !ok || n.Name != name {
 		return
 	}
+	if call.Block {
+		f.warnf(aw.Pos, "this 'async { }' runs with nothing alongside it; write its statements here directly: a task is for running something while this block does something else (D156, D169)")
+		return
+	}
 	plain := *call
 	plain.Async = false
 	text := srcText(&plain)

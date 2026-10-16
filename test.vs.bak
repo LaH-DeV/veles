@@ -1,0 +1,41 @@
+fun fastest(): string => race {
+  async mirror("eu", Duration.millis(30)) => "EU"
+  async mirror("us", Duration.millis(10)) => "US"
+}
+
+fun fastest(): string => race {
+  async mirror("eu", Duration.millis(30))
+  async mirror("us", Duration.millis(10))
+  async sleep(Duration.millis(50))
+  async {
+    sleep(Duration.millis(20))
+    return "Done"
+  }
+}
+
+
+fun inScope(): i64 => scope {
+  val a = async work(1)
+  println("Doing some work in the scope...")
+  val b = async work(2)
+  println("Doing some work in the scope...")
+  val (x, y) = awaitAll(a, b)
+  return x + y
+}
+
+fun inScope(): i64 => scope {
+  val a = async work(1)
+  println("Doing some work in the scope...")
+  val b = async work(2)
+  println("Doing some work in the scope...")
+  return awaitAll(a, b).sum()
+}
+
+fun withGather(): i64 {
+  val (r1, r2, r3) = gather {
+    async mayFail(1)
+    async mayFail(2)
+    async square(5)
+  }
+  return (r1 ?? 0) + (r2 ?? 0) + (r3 ?? 0)
+}

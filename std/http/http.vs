@@ -671,9 +671,9 @@ public fun serve(
     // readiness first: the load balancer stops sending while the rest drains
     if (health != null) health.stopping()
     drain.begin()
-    race {
-      val _ = await serving => { }
-      sleep(grace)          => serving.cancel()
+    select {
+      serving      => { }
+      sleep(grace) => serving.cancel()
     }
   }
 }
@@ -700,9 +700,9 @@ fun acceptAndServe(listener: net.Listener, handler: Handler, limits: Limits, log
     // accepts until the loop below stops taking connections
     with acceptor = async acceptLoop(listener, accepted, permits)
     loop {
-      val conn = race {
-        val c = accepted.recv()   => c
-        val _ = drain.wake.recv() => null
+      val conn = select {
+        val c = accepted.recv() => c
+        drain.wake.recv()       => null
       } ?: break
       async serveConnection(conn, cert, handler, limits, log, drain, permits)
     }
@@ -819,13 +819,10 @@ fun rethrow(e: IoError): Never throws Fail | IoError {
 // quiet end of a connection, not a bad request — or in a 414.
 fun requestLine(c: io.Stream, limits: Limits, drain: Drain): string? suspends throws Fail | IoError | Timeout {
   if (drain.stopping.load()) return null
-  scope {
-    val line = async readLineOf(c, limits.requestLineBytes)
-    race {
-      val r = await line        => return r
-      sleep(limits.idleTimeout) => throw Timeout(limit: limits.idleTimeout)
-      val _ = drain.wake.recv() => return null
-    }
+  select {
+    val line = async readLineOf(c, limits.requestLineBytes) => line
+    sleep(limits.idleTimeout) => throw Timeout(limit: limits.idleTimeout)
+    drain.wake.recv() => null
   }
 }
 

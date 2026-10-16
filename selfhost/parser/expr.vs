@@ -73,7 +73,11 @@ extend Parser {
         left = this.parseImplements(left, start)
         continue
       }
-      val bp = if (op == Kind.Shr && this.inTypeArg) BP_NONE else infixBp(op)
+      val bp = when {
+        op == Kind.Shr && this.inTypeArg => BP_NONE
+        op == Kind.KwAs && this.raceHead && this.noLambda > 0 => BP_NONE  // `src as name` (D168)
+        else => infixBp(op)
+      }
       if (bp == BP_NONE || bp <= minBp) return left
       left = this.parseInfix(left, op, bp, notIs, start)
     }
@@ -161,6 +165,13 @@ extend Parser {
       }
       Kind.KwAsync => {
         this.next()
+        if (this.at(Kind.LBrace)) {
+          // `async { … }`: a task from a block (D169), the call of a lambda of
+          // no parameters, so it is checked as one and placed as any `async f()`
+          val body = this.parseBlock()
+          val callee: ast.Expr = ast.LambdaExpr(body: &ast.BlockExpr(block: body), pos: body.pos)
+          return ast.CallExpr(callee: &callee, isAsync: true, block: true, pos: this.spanFrom(start))
+        }
         val x = this.parseUnary()
         when (x) {
           is ast.CallExpr => {
@@ -328,6 +339,8 @@ extend Parser {
       }
       Kind.Ident => {
         if (this.peek(1).kind == Kind.FatArrow && this.noLambda == 0) return this.parseLambda()
+        // a word only before a brace (D169)
+        if (t.text == "select" && this.peek(1).kind == Kind.LBrace) return this.parseSelect()
         this.next()
         return ast.NameExpr(name: t.text, pos: t.span)
       }
@@ -681,7 +694,51 @@ extend Parser {
   fun parseRace(): ast.Expr {
     val start = this.span()
     this.next()  // race
-    if (!this.expect(Kind.LBrace)) return ast.RaceExpr(pos: this.spanFrom(start))
+    if (!this.at(Kind.LBrace)) {
+      this.expect(Kind.LBrace)
+      return ast.RaceExpr(pos: this.spanFrom(start))
+    }
+    // the `race` with arms D169 renamed `select`: parsed as arms so the
+    // checker can name the fix
+    if (this.bodyHasArms()) return ast.RaceExpr(arms: this.parseArms("race"), pos: this.spanFrom(start))
+    val body = this.parseBlock()
+    ast.RaceExpr(body, pos: this.spanFrom(start))
+  }
+
+  // `select { src => body … }` (D169); `select` is a word only here, before a brace
+  fun parseSelect(): ast.Expr {
+    val start = this.span()
+    this.next()  // select
+    val arms = this.parseArms("select")
+    ast.SelectExpr(arms, pos: this.spanFrom(start))
+  }
+
+  // whether the braced body at the cursor holds a `=>` (or an `as`) outside
+  // any bracket: arms rather than statements
+  fun bodyHasArms(): bool {
+    var depth = 0
+    var i = 0
+    loop (this.pos + i < this.toks.len()) {
+      when (this.peek(i).kind) {
+        Kind.LParen, Kind.LBracket, Kind.LBrace => depth += 1
+        Kind.RParen, Kind.RBracket, Kind.RBrace => {
+          depth -= 1
+          if (depth == 0) return false
+        }
+        Kind.FatArrow, Kind.KwAs => if (depth == 1) return true
+        Kind.EOF => return false
+        else => { }
+      }
+      i += 1
+    }
+    false
+  }
+
+  // the braced arms of a `select` (or of the removed `race` with arms):
+  // `val x = src => body`, and the D168 spellings D169 removed — `src as x
+  // => body` and a bare `src` — kept for the checker to name
+  fun parseArms(what: string): List<ast.RaceArm> {
+    if (!this.expect(Kind.LBrace)) return []
     val arms: MutableList<ast.RaceArm> = []
     loop {
       this.skipSemis()
@@ -692,20 +749,29 @@ extend Parser {
         binding = this.parseBinding()
         this.expect(Kind.Assign)
       }
+      val savedHead = this.raceHead
+      this.raceHead = true
       val source = this.parseArmHead()
-      if (!this.expectArmArrow()) {
-        this.syncStmt()
-        continue
-      }
-      val body = this.parseArmBody()
-      arms.push(ast.RaceArm(binding, source: &source, body: &body, pos: this.spanFrom(armStart)))
+      this.raceHead = savedHead
+      var name: ast.Ident? = null
+      if (this.accept(Kind.KwAs)) name = this.expectIdent()
+      var body: (*ast.Expr)? = null
       if (!this.atAny(Kind.Semi, Kind.RBrace, Kind.EOF)) {
-        this.errorAt(this.span(), "expected newline between 'race' arms, found ${this.cur().describe()}")
+        if (!this.expectArmArrow()) {
+          this.syncStmt()
+          continue
+        }
+        val parsed = this.parseArmBody()
+        body = &parsed
+      }
+      arms.push(ast.RaceArm(binding, source: &source, name, body, pos: this.spanFrom(armStart)))
+      if (!this.atAny(Kind.Semi, Kind.RBrace, Kind.EOF)) {
+        this.errorAt(this.span(), "expected newline between '$what' arms, found ${this.cur().describe()}")
         this.syncStmt()
       }
     }
     this.expect(Kind.RBrace)
-    ast.RaceExpr(arms: arms.toList(), pos: this.spanFrom(start))
+    arms.toList()
   }
 
   // the `=>` between an arm's head and its body; Kotlin's `->` is reported

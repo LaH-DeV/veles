@@ -22,8 +22,8 @@ func TestAwaitAfterCancel(t *testing.T) {
   scope {
     val t = async fetch(21)
     t.cancel()
-    race {
-      val v = await t => io.println("$v")
+    select {
+      val v = t => io.println("$v")
       sleep(Duration.millis(1)) => io.println("late")
     }
   }

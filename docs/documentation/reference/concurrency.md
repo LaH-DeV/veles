@@ -83,7 +83,7 @@ to nothing.
 **A `val` task outside a scope** (D156) is a fail-fast child of the rest
 of its block. Every normal way out of the block — its end, `return`, a
 `break` or `continue` that leaves it — must have awaited it (`await t`,
-`awaitAll(…, t, …)`, or a `race` arm `await t`); the compiler checks it as
+`awaitAll(…, t, …)`, or a `select` arm `t => …`); the compiler checks it as
 it checks that a `val` is assigned. A failed `try`, a `throw`, a panic or
 a cancellation instead cancels the task and waits for it to stop, as the
 cleanup on the way out. The handle has no other use: it is not passed,
@@ -219,7 +219,7 @@ loop iteration (D145, below):
 | `await ch.recv()` on an empty channel | `ch.send(v)` with room in the buffer, `trySend`, `tryRecv` |
 | `ch.send(v)` on a full (or rendezvous) channel | `println` (it writes and returns; see Output) |
 | a socket or TLS read or write that has to wait | `Mutex.withLock`, `with m.lock()` (a thread lock — below) |
-| `race`, the end of a `scope`, `gather` | `Atomic` operations |
+| `race`, `select`, the end of a `scope`, `gather` | `Atomic` operations |
 | `await e.wait()`, `await w.changed()`, `try await sub.recv()` with nothing to take (D146) | `e.set()`, `w.set(v)`, `news.send(v)`; `with l.read()` (a thread lock) |
 | the end of a `with` whose `close()` is declared `suspends` (D147: a transaction, telemetry) | the end of any other `with` |
 
@@ -267,7 +267,7 @@ pool run everything else. Under `VELES_THREADS=1`, or when every thread
 computes, call `yieldNow()` in such a loop now and then (which makes its
 function suspend).
 
-`sleep(d)` sleeps **at least** `d` (D60), and a race's `sleep(d)` arm
+`sleep(d)` sleeps **at least** `d` (D60), and a select's `sleep(d)` arm
 wins no earlier: deadlines are kept in nanoseconds, and one idle thread
 waits for the nearest one at the system's resolution — tens of
 microseconds on Linux (a futex), about half a millisecond on Windows (a
@@ -491,13 +491,37 @@ timed out after 1ms; stopped within a second: true
 
 ## `race`
 
+- `race { body }` (D169): every task the body starts — `async f()`,
+  `async { … }`, in a loop or a branch, not inside a nested `scope`,
+  `gather`, `race` or `with` — races. They give one type, the race's.
+- The first task to finish wins, a failure included. Its value is the
+  race's; the others are **cancelled**, and the race waits for them to
+  stop (their `with` cleanups run) before it gives the value. A failure
+  that finishes first is thrown, after the same cancellation — it leaves
+  the function, as a `scope`'s does.
+- A body with no `async` is a compile error; one whose loop started no
+  task panics ("race: its body started no task"); a race of one task is a
+  warning.
+- Order: the tasks start in the order the body starts them; when several
+  have finished before the race looks, the first started wins.
+
+## `select`
+
+- `select { arms }` (D38, D169): each arm is `source => body`, or `val
+  name = source => body` to name what the source gave. A source is a
+  receive, a send (D108), a `sleep`, a task handle, an Event's `wait()`, a
+  Watch's `changed()`, a Subscription's `recv()`, or `async f()` /
+  `async { … }`. No arm takes `await`.
 - The arms are tried in the order written; the first one **ready** wins.
   An arm that is always ready shadows the ones after it. If none is ready
-  the race waits, and the first to become ready wins (D38).
-- The losing arms simply stop waiting. A losing `recv` arm took nothing
-  from its channel; a losing `send` arm sent nothing (D108); a task
-  awaited by a losing arm is **not cancelled** — it keeps running, and its
-  scope waits for it:
+  the select waits, and the first to become ready wins.
+- The losing arms stop waiting. A losing `recv` arm took nothing from its
+  channel; a losing `send` arm sent nothing (D108). A task the select
+  started (an `async` arm) is **cancelled**, and the select waits for it
+  to stop before the winning arm's body runs; if such a task fails first,
+  the select throws its error (D168). A task started before the select (a
+  handle) is **not cancelled** — it belongs to its own block, keeps
+  running, and its scope waits for it:
 
 ```veles
 use io
@@ -511,8 +535,8 @@ fun slow(): string {
 fun main() {
   scope {
     val t = async slow()
-    val r = race {
-      val v = await t           => v
+    val r = select {
+      val v = t                 => v
       sleep(Duration.millis(1)) => "the timer"
     }
     io.println("won: $r")
@@ -530,6 +554,16 @@ scope done
 
 - An arm awaiting a task that failed never wins; the failure is its
   scope's.
+
+## `async { }`
+
+- `async { body }` (D169) starts the block as a task: a sendable function
+  of no parameters, called at once. It stands where `async f()` may
+  (`scope`/`gather`/`race` bodies, `val t = async { … }`, `with t = async
+  { … }`, a `select` arm); `await` gives the block's value.
+- `return v` ends the block with `v`; `break`/`continue` to an outer loop
+  are errors. `try`/`throw` fail the task as a throwing `async f()` does.
+- Captures follow D35: `val`s of Sendable types without `var` fields.
 
 ## Channels
 
@@ -581,7 +615,7 @@ Standard error then reads `panic: deadlock: every task is blocked`, and
 the exit code is 101. Only a *whole-program* deadlock is detected: if some
 tasks are stuck while another still runs, sleeps on a timer or waits on a
 socket (a server's accept loop, a ticker), the stuck ones wait forever.
-Give such waits a limit (`race` with a `sleep` arm, `withTimeout`).
+Give such waits a limit (`select` with a `sleep` arm, `withTimeout`).
 
 To find out what a hung program waits on, run it with
 `VELES_WATCHDOG=<seconds>`: still running after that long, it prints every
@@ -634,7 +668,7 @@ and end updates a table, so it is a tool for a hunt, not for production.
   lock only until the value is built; its `init` runs under it.
 - `Event.wait()`, `Watch.changed()` and `Subscription.recv()` are
   suspension points like `ch.recv()`: awaited, cancellable, and usable as
-  `race` arms (D146). `Event.set()`, `Watch.set(v)` and `Broadcast.send(v)`
+  `select` arms (D146). `Event.set()`, `Watch.set(v)` and `Broadcast.send(v)`
   never wait.
 
 ## Threads and scheduling
@@ -763,4 +797,4 @@ the exit code is 101.
 | Some tasks waiting for each other while others run | waits forever; put a limit on the wait |
 | Relying on which task prints or runs first | no order is guaranteed; collect, then print |
 | Expecting `async obj.method()` to change `obj` | the task works on a copy |
-| A race arm's task losing | it keeps running; the scope waits for it |
+| A losing task in a `race` or `select` | started by it (`async f()`, `async { }`): cancelled and waited for; a handle started before a `select`: keeps running, its scope waits for it (D168, D169) |

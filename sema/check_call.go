@@ -153,6 +153,9 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 		if callee.Name == "awaitAll" && f.lookup(callee.Name) == nil {
 			return f.awaitAllCall(e)
 		}
+		if callee.Name == "awaitFirst" && f.lookup(callee.Name) == nil {
+			return f.awaitFirstCall(e, want)
+		}
 		if (testWords[callee.Name] || callee.Name == "assert") && f.lookup(callee.Name) == nil {
 			return f.testCall(callee.Name, typeArgs, e, want)
 		}

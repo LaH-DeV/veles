@@ -26,7 +26,7 @@ trait Show {
 }
 
 val returned: i64 = if (Temp(c: 1).c > 0) 1 else return // error: 'return' outside of a function
-val raced = race { // error: 'race' cannot appear in a global initializer
+val raced = select { // error: 'select' cannot appear in a global initializer
   sleep(Duration.millis(1)) => 1
 }
 
@@ -72,12 +72,12 @@ fun filterIsNone(ss: List<Shape>) {
   val _ = ss.filterIs() // error: 'filterIs' needs one type argument, a variant of 'Shape'
 }
 fun raceBindTwo(ch: Channel<i64>) {
-  val _ = race {
-    val (a, b) = ch.recv() => 1 // error: race arms bind a single name
+  val _ = select {
+    val (a, b) = ch.recv() => 1 // error: a select arm names one value: 'val name = src => …' (D169)
   }
 }
 fun raceEmpty() {
-  val _ = race { } // error: 'race' needs at least one arm
+  val _ = select { } // error: 'select' needs at least one arm
 }
 fun letElse(x: i64?) {
   val (a, b) = x else { return } // error: cannot destructure a value of type 'i64' into 2 names

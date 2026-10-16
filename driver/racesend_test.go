@@ -25,7 +25,7 @@ func TestRaceSendArms(t *testing.T) {
 // every other offer waits a millisecond for a consumer; the rest give up
 // at once unless one is already waiting
 fun offer(c: Channel<i64>, v: i64, patience: Duration): bool {
-  race {
+  select {
     c.send(v)       => true
     sleep(patience) => false
   }
@@ -60,8 +60,8 @@ fun plainConsumer(c: Channel<i64>, out: Channel<i64>) {
 
 fun racingConsumer(c: Channel<i64>, out: Channel<i64>) {
   loop {
-    val v = race {
-      val x = c.recv()          => x ?: -1
+    val v = select {
+      val x = c.recv()             => x ?: -1
       sleep(Duration.millis(1)) => -2
     }
     if (v == -1) break
@@ -91,7 +91,7 @@ fun main() {
   println("received what was sent ${seen.len() == sent.load()} duplicates ${dup}")
   val full = Channel<i64>(capacity: 1)
   full.send(1)
-  val lost = race {
+  val lost = select {
     full.send(2)         => "sent"
     sleep(Duration.zero) => "not sent"
   }
@@ -105,7 +105,7 @@ fun main() {
 }
 
 fun sendClosed(c: Channel<i64>) {
-  race {
+  select {
     c.send(1)                    => println("not reached")
     sleep(Duration.seconds(5))   => println("not reached")
   }

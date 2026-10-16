@@ -54,6 +54,13 @@ P11. CANDIDATE HELPERS for later (not started; pick when a program needs them):
      `firstConcurrent`, channel-to-channel stages.
    → 2026-10-13: `awaitAll` decided (spec D156, plan F19), with a lazy `iter.mapConcurrent`.
      Still open here: `filterConcurrent`, `firstConcurrent`, channel-to-channel stages.
+   → 2026-10-15: the first of a few computations decided (spec D168: `async` arms in `race`,
+     `awaitFirst(async a(), async b())`, plan B23). Still open here: `firstConcurrent` over a
+     list, `filterConcurrent`, channel-to-channel stages.
+   → 2026-10-16: reshaped and built as spec D169: `race { }` races the tasks its body starts,
+     so the first over a list is `race { loop (x in xs) async f(x) }` (`firstConcurrent` done);
+     `select { }` has the arms; `async { }` blocks. Still open here: `filterConcurrent`,
+     channel-to-channel stages.
 
 === 2026-10-05 (review of `const fun`, D113 part 3; requested by the user, written by us) ===
 

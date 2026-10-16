@@ -132,7 +132,7 @@ public struct Event {                    // D146: Event()
   public fun set()                       // releases every waiter; later waits go through until reset
   public fun reset()
   public fun isSet(): bool
-  public fun wait()                      // awaited: `await e.wait()`; cancellable; a race arm
+  public fun wait()                      // awaited: `await e.wait()`; cancellable; a select arm
 }
 
 public struct Lazy<T> {                  // D146: usable as a module-level val
@@ -149,7 +149,7 @@ public struct Broadcast<T> {             // D146: every subscriber gets every va
 }
 
 public struct Subscription<T> {          // Closeable: `with sub = news.subscribe()`
-  public fun recv(): T? throws Lagged    // awaited; null once closed and drained; a race arm (`try sub.recv() => …`)
+  public fun recv(): T? throws Lagged    // awaited; null once closed and drained; a select arm (`try sub.recv() => …`)
 }
 
 public error Lagged { public missed: i64 }  // the subscriber fell more than `capacity` behind, once
@@ -158,7 +158,7 @@ public struct Watch<T> {                 // D146: the latest value; each copy re
   init(value: T)
   public fun set(value: T)
   public fun get(): T
-  public fun changed()                   // awaited: until a set after this copy's last get/changed; a race arm
+  public fun changed()                   // awaited: until a set after this copy's last get/changed; a select arm
 }
 ```
 
@@ -418,12 +418,15 @@ unreachable.
 |---|---|
 | `Channel<T>()` | a rendezvous: `send` completes when a receiver has the value |
 | `Channel<T>(capacity: n)` | bounded channel; `send(v)`, `await recv(): T?`, `close()`, `closeAfter(n)` (closes itself after `n` more sends), `len()`; `trySend(v): bool` and `tryRecv(): T?` never wait (`false` when full, `null` when nothing is buffered) |
-| `race { ch.send(v) => … }` | a send arm (D108): ready when `ch` can take `v`; when it wins `v` is in the channel, when another arm wins it was not sent; on a closed channel it panics |
+| `select { ch.send(v) => … }` | a send arm (D108): ready when `ch` can take `v`; when it wins `v` is in the channel, when another arm wins it was not sent; on a closed channel it panics |
 | `ch.toList(): List<T>`, `ch.forEach(f)` | receive until `ch` is closed and drained; an error from `f` stops `forEach` and is thrown (D110) |
 | `Semaphore(permits: n)` | at most `n` holders (D110): `acquire(): Permit` waits for one (cancellable), `tryAcquire(): Permit?` does not, `available(): i64`; a `Permit` is `Closeable` — `with sem.acquire()` — and a second close does nothing; `n < 1` panics |
 | `retry(times, f, delay: Duration.zero): R throws E` | call `f` until it returns, waiting `delay` after each thrown error, `times` calls in all, then throw the last error; a panic is not retried, cancellation stops it at the wait; `times < 1` panics (D110) |
 | `xs.mapConcurrent(f, workers: 4)`, `xs.forEachConcurrent(f, workers: 4)` | `List<T: Sendable>`: the worker pool — at most `workers` calls of `f` in flight, results in order; `f` is a `sendable fun` that may suspend and throw (then the call throws). On an iterator, `it.mapConcurrent(f, workers:)` is the lazy form (D156) |
 | `awaitAll(a, b, …)`, `awaitAll(tasks)` | built in (D156): waits for every task; a tuple of their values in argument order, or a `List` of a list's; inline `async f()` arguments fail fast together |
+| `race { async a(); async b() … }` | built in (D169): the tasks the body starts race; the value of the first to finish (a failure included: its error is thrown); the others are cancelled and joined first. `race { loop (x in xs) async f(x) }` races a list |
+| `select { val v = src => … }` | built in (D38, D169): waits on channels, timers, handles, events and `async` arms; the first ready arm runs; an `async` arm is the select's, cancelled if it loses |
+| `async { … }`: `Task<T>` | built in (D169): starts the block as a task where `async f()` may stand; `await` gives its value; `return v` ends it with `v`; captures follow D35 |
 | `await sleep(d: Duration)` | suspend for at least `d`, to the system's resolution (tens of µs on Linux, about 0.5 ms on Windows); `Duration.zero` yields |
 | `async f(...)`: `Task<T>` | (`T` is `f`'s value even when `f` throws — its error fails the scope; in `gather` the handle is `Task<Result<T, E>>`; a handle stays in its block, D141) start a task in the enclosing `scope` — or, as `with t = async f(...)`, in the background until the block ends, which cancels then joins it (D100); `await task`; `task.cancel()` asks it to stop at its next suspension point (its `with` cleanups run, the scope still waits for it) |
 | `withTimeout(limit: Duration, f): R throws E \| Timeout` | call `f` in this task and throw `Timeout` (which carries the `limit` it reached) if it passes first — `f` has unwound by then, its scopes joined and its `with`s closed; `f`'s own errors are rethrown, and `f` need not be sendable (D151) |

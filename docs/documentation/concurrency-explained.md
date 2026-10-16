@@ -170,7 +170,7 @@ task handle.
 | `const p = f()` (starts running) | `val t = async f()` |
 | `await p` | `await t` |
 | `await Promise.all([a, b])` | `await a`, `await b` inside one `scope` — or `gather` |
-| `Promise.race([...])` | `race { ... }` |
+| `Promise.race([a(), b()])` | `race { async a(); async b() }` — and the loser is cancelled, which JavaScript cannot do; `select { ... }` waits on tasks, channels and timers at once |
 | `setTimeout(fn, 100)` | `await sleep(Duration.millis(100))` in a task |
 | an unawaited promise that fails silently | impossible: every task belongs to a `scope` |
 
@@ -387,6 +387,6 @@ failure on to the code around the scope. See "Fail fast" in
   the rest.
 
 Next: [chapter 12, Concurrency](12-concurrency.md) — the full reference,
-with `gather`, `race`, channels, cancellation and timeouts — and
+with `gather`, `race`, `select`, channels, cancellation and timeouts — and
 [Concurrency: what happens, exactly](reference/concurrency.md), every rule
 and every gotcha in one place.
