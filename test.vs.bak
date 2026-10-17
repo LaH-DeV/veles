@@ -1,4 +1,16 @@
-fun fastest(): string => race {
+use io { println }
+
+fun mirror(name: string, delay: Duration): string {
+  await sleep(delay)
+  return name
+}
+
+fun work(x: i64): i64 {
+  await sleep(Duration.millis(10))
+  return x * x
+}
+
+fun selected(): string => select {
   async mirror("eu", Duration.millis(30)) => "EU"
   async mirror("us", Duration.millis(10)) => "US"
 }
@@ -6,13 +18,12 @@ fun fastest(): string => race {
 fun fastest(): string => race {
   async mirror("eu", Duration.millis(30))
   async mirror("us", Duration.millis(10))
-  async sleep(Duration.millis(50))
+  await sleep(Duration.millis(50))
   async {
-    sleep(Duration.millis(20))
+    await sleep(Duration.millis(20))
     return "Done"
   }
 }
-
 
 fun inScope(): i64 => scope {
   val a = async work(1)
@@ -23,19 +34,11 @@ fun inScope(): i64 => scope {
   return x + y
 }
 
-fun inScope(): i64 => scope {
-  val a = async work(1)
-  println("Doing some work in the scope...")
-  val b = async work(2)
-  println("Doing some work in the scope...")
-  return awaitAll(a, b).sum()
-}
-
 fun withGather(): i64 {
   val (r1, r2, r3) = gather {
-    async mayFail(1)
-    async mayFail(2)
-    async square(5)
+    async work(1)
+    async work(2)
+    async work(5)
   }
   return (r1 ?? 0) + (r2 ?? 0) + (r3 ?? 0)
 }
