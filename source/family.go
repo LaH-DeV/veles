@@ -87,7 +87,7 @@ var families = []family{
 		`ranges are over integers`, `range patterns need an integer`, `^index must be an integer`,
 		`^cannot iterate a range`, `numeric literal`, `^'as' no longer converts`, `keeps the low bits`,
 		`^'cast' takes`, `^'wrapTo'`, `is not callable; convert with`),
-	fam("text", `string literal`, `character literal`, `a comment contains`, `byte literal`, `not indexable`,
+	fam("text", `string literal`, `format spec`, `text block`, `raw string`, `character literal`, `a comment contains`, `byte literal`, `not indexable`,
 		`interpolat`, `U\+`),
 	fam("references", `copy of the element`, `reach the element`, `the address of`, `^'&' `, `^a map key cannot`,
 		`'loop \(&x in xs\)' needs`, `'loop \(\(k, &v\) in m\)' needs`, `a pointer into an immutable`,

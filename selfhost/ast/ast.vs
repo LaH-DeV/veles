@@ -540,6 +540,9 @@ struct StringLit : Expr {
 struct StringPart {
   var text: string = ""
   var expr: (*Expr)? = null
+  var spec: string = ""  // `${expr:spec}` (D171), as written
+  var specPos: Span = Span.none()
+  var hasSpec: bool = false
 }
 
 /// `tag"text ${x}"` (D129).

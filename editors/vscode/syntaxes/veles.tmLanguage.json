@@ -12,6 +12,8 @@
     { "include": "#effects" },
     { "include": "#literals" },
     { "include": "#templateTag" },
+    { "include": "#textblocks" },
+    { "include": "#rawstrings" },
     { "include": "#strings" },
     { "include": "#chars" },
     { "include": "#types" },
@@ -205,6 +207,42 @@
       "comment": "`sql\"…\"`, `db.sql\"…\"` (D129): the name written right before a string is the template function; the string that follows is a string",
       "match": "\b[A-Za-z_][A-Za-z0-9_]*(?=\")",
       "name": "entity.name.function.template.veles"
+    },
+    "textblocks": {
+      "comment": "D172: a text block, `\"\"\"` on its own line to `\"\"\"`; escapes and interpolation work as in a string",
+      "name": "string.quoted.triple.veles",
+      "begin": "\"\"\"",
+      "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.veles" } },
+      "end": "\"\"\"",
+      "endCaptures": { "0": { "name": "punctuation.definition.string.end.veles" } },
+      "patterns": [
+        { "name": "constant.character.escape.veles", "match": "\\\\(u\\{[0-9a-fA-F]+\\}|[nrt0\\\\\"'$])" },
+        {
+          "name": "meta.interpolation.veles",
+          "begin": "\\$\\{",
+          "beginCaptures": { "0": { "name": "punctuation.definition.template-expression.begin.veles" } },
+          "end": "\\}",
+          "endCaptures": { "0": { "name": "punctuation.definition.template-expression.end.veles" } },
+          "contentName": "meta.embedded.line.veles",
+          "patterns": [{ "include": "$self" }]
+        },
+        {
+          "name": "meta.interpolation.veles meta.embedded.line.veles",
+          "match": "(\\$)([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "punctuation.definition.template-expression.begin.veles" },
+            "2": { "name": "variable.other.readwrite.veles" }
+          }
+        }
+      ]
+    },
+    "rawstrings": {
+      "comment": "D172: a backtick string is raw — no escapes, no interpolation — and may span lines",
+      "name": "string.quoted.other.raw.veles",
+      "begin": "`",
+      "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.veles" } },
+      "end": "`",
+      "endCaptures": { "0": { "name": "punctuation.definition.string.end.veles" } }
     },
     "strings": {
       "name": "string.quoted.double.veles",

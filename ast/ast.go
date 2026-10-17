@@ -722,6 +722,11 @@ type TemplateExpr struct {
 type StringPart struct {
 	Text string
 	Expr Expr // set for `$x` / `${expr}` parts
+	// Spec is the format spec of `${expr:spec}` (D171), as written; HasSpec
+	// tells an empty one from none, SpecPos is where it is.
+	Spec    string
+	SpecPos source.Span
+	HasSpec bool
 }
 
 type CharLit struct {
@@ -750,6 +755,14 @@ type FieldDefaultExpr struct {
 	Struct any
 	Index  int
 	Pos    source.Span
+}
+
+// CheckedExpr is an expression the checker has already checked, put back into
+// synthesized syntax (a formatted interpolation, D171): X is the checker's own
+// tree. It never comes from the parser.
+type CheckedExpr struct {
+	X   any
+	Pos source.Span
 }
 
 // PreludeName is a prelude function named directly, in a synthesized
@@ -1038,6 +1051,7 @@ func (e *NullLit) Span() source.Span          { return e.Pos }
 func (e *SelfExpr) Span() source.Span         { return e.Pos }
 func (e *TypeExpr) Span() source.Span         { return e.Pos }
 func (e *FieldDefaultExpr) Span() source.Span { return e.Pos }
+func (e *CheckedExpr) Span() source.Span      { return e.Pos }
 func (e *PreludeName) Span() source.Span      { return e.Pos }
 func (e *NameExpr) Span() source.Span         { return e.Pos }
 func (e *MemberExpr) Span() source.Span       { return e.Pos }
@@ -1081,6 +1095,7 @@ func (*NullLit) exprNode()          {}
 func (*SelfExpr) exprNode()         {}
 func (*TypeExpr) exprNode()         {}
 func (*FieldDefaultExpr) exprNode() {}
+func (*CheckedExpr) exprNode()       {}
 func (*PreludeName) exprNode()      {}
 func (*NameExpr) exprNode()         {}
 func (*MemberExpr) exprNode()       {}

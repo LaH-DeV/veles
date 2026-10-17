@@ -485,7 +485,7 @@ func (p *Parser) stringLit(t lexer.Token) ast.Expr {
 		if !sub.at(lexer.EOF) {
 			sub.errorf(sub.span(), "unexpected %s in string interpolation", sub.cur().Describe())
 		}
-		lit.Parts = append(lit.Parts, ast.StringPart{Expr: e})
+		lit.Parts = append(lit.Parts, ast.StringPart{Expr: e, Spec: part.Spec, SpecPos: part.SpecSpan, HasSpec: part.HasSpec})
 	}
 	return lit
 }

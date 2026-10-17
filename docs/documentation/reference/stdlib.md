@@ -1108,6 +1108,21 @@ so a list of v7 ids sorts into creation order.
 `Hasher` is the trait behind the four digests: `start`, `algorithm`,
 `blockSize`, `digestSize`, `update`, `finish`.
 
+## Module `fmt` (D171)
+
+Numbers, sizes, durations and tables written for people; the level above the
+`"${x:spec}"` format spec. English and `.`/`,` only for now — **locales
+(decimal commas, dates) are a later addition**.
+
+| Function | Result |
+|---|---|
+| `thousands(n)` | `"1,234,567"` |
+| `bytes(n)` | the largest binary unit, one decimal: `"1.5 KiB"`, `"12 B"` |
+| `percent(fraction, digits = 1)` | `"25.6%"` |
+| `ordinal(n)` | `"1st"`, `"12th"`, `"23rd"` |
+| `duration(d)` | at most three units: `"1h 2m 5s"`, `"250ms"`, `"0s"` |
+| `table(rows, right = [], header = false)` | rows as columns two spaces apart, as wide as the widest cell in characters; `right` lists right-aligned columns; `header` underlines the first row |
+
 ## Module `hex`
 
 ```veles

@@ -672,6 +672,9 @@ func (p *printer) expr(e Expr) {
 			if part.Expr != nil {
 				p.w(" ${")
 				p.expr(part.Expr)
+				if part.HasSpec {
+					p.f(":%q", part.Spec)
+				}
 				p.w("}")
 			} else {
 				p.f(" %q", part.Text)

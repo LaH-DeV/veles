@@ -181,6 +181,10 @@ struct StringPart {
   isExpr: bool = false
   expr:   string = ""
   span:   Span = Span(file: null, start: 0, end: 0)
+  // the format spec after the colon of `${expr:spec}` (D171); hasSpec tells an empty one from none
+  spec:     string = ""
+  specSpan: Span = Span(file: null, start: 0, end: 0)
+  hasSpec:  bool = false
 }
 
 struct Token {

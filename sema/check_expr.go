@@ -278,6 +278,8 @@ func (f *fnCtx) checkExprInner(e ast.Expr, want types.Type) Expr {
 		return bad()
 	case *ast.FieldDefaultExpr:
 		return f.fieldDefault(e.Struct.(*types.Struct), e.Index) // synthesized (D58)
+	case *ast.CheckedExpr:
+		return e.X.(Expr) // synthesized (D171)
 	case *ast.SelfExpr:
 
 		if in := f.initScope(); in != nil {
@@ -474,6 +476,10 @@ func (f *fnCtx) stringLit(e *ast.StringLit) Expr {
 		f.takeLooked()
 		if _, ok := p.Expr.(*ast.SelfExpr); ok && f.inOwnToString(x.Type()) {
 			f.errorf(p.Expr.Span(), "interpolating 'this' inside its own 'toString' calls the same 'toString' again, forever; interpolate the fields instead, e.g. \"(${this.x}, ${this.y})\"")
+		}
+		if p.HasSpec {
+			cat.Parts = append(cat.Parts, f.formatted(p, x))
+			continue
 		}
 		cat.Parts = append(cat.Parts, f.toString(x, p.Expr.Span()))
 	}

@@ -468,12 +468,33 @@ between numbers.
 literal holds one ASCII character`, `cannot interpolate a value of type
 '()'`.
 
+#### `format spec '.2' does not fit a value of type 'string'`
+
+A format spec (`"${price:>10.2}"`, D171) is checked against the type of the
+value when the program is compiled. An integer takes `d x X b o`, a float
+`f` or `%` and a precision, text and everything that prints takes a fill, an
+alignment and a width. The message says which part does not fit. A spec that
+is not well formed (`"${n:q}"`) is reported with the grammar:
+`[[fill]align][sign][#][0][width][,][.precision][type]`. Not available yet:
+the type `e` and a computed width (`${x:>${w}}`).
+
 #### `a byte literal holds one ASCII character`
 
 `'x'` is a `u8` — the byte of one ASCII character, for code that walks a
 string with `byteAt` (`b == '"'`, `b >= '0' && b <= '9'`). A character
 outside ASCII has no single byte to be; use a one-character string, `"é"`
 (D18).
+
+#### `a text block's text starts on the line after the opening """`
+
+A text block (D172) is `"""`, a line break, the lines of text, and a closing
+`"""` on a line of its own. The closing delimiter's indentation is the margin:
+it is removed from every line, so each line of the text must be indented at
+least that far (a blank line may be shorter). Put the text on the lines
+between, and the closing `"""` alone on its line.
+
+A raw string between backticks has no such rules, and no escapes or
+interpolation; it is closed by the next backtick.
 
 #### `unexpected character U+00A0, a no-break space; use an ordinary space`
 

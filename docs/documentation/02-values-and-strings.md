@@ -226,6 +226,84 @@ as intended; a non-ASCII character is not a byte literal.
 Escapes in string literals: `\n`, `\t`, `\\`, `\"`, `\$` (a literal
 dollar) and `\u{1F600}` for a code point.
 
+### Multi-line and raw strings
+
+A **text block** is written between two `"""` lines. Its text starts on the
+line after the opening delimiter and ends before the closing one, and the
+indentation of the closing `"""` is the margin: it is removed from every line,
+so the block can sit at any depth of the code. Escapes and `${…}` work as in
+any string; a line indented less than the margin is an error.
+
+A **raw string** is written between backticks: every character is itself —
+no escapes, no `${…}` — which is what regular expressions, Windows paths and
+generated code want. It may span lines, and cannot hold a backtick.
+
+```veles
+use io { println }
+
+fun main() {
+  val title = "Tea"
+  val page = """
+    <h1>${title}</h1>
+      <p>tab:\tdone</p>
+    """
+  println(page)
+  println(`C:\Users\(\w+)\Documents ${title}`)
+}
+```
+
+Output:
+```text
+<h1>Tea</h1>
+  <p>tab:	done</p>
+C:\Users\(\w+)\Documents ${title}
+```
+
+### Format specs
+
+A value in `${…}` may be followed by a colon and a **format spec**, which
+decides how it is written — a width, an alignment, digits after the point, a
+base. The spec is checked against the type of the value when the program is
+compiled, so a spec that does not fit is an error, never a wrong line of
+output:
+
+```text
+${value:[[fill]align][sign][#][0][width][,][.precision][type]}
+```
+
+- `align` is `<` (left), `>` (right) or `^` (centre); `fill` is the one
+  character written before it (`${n:*>8}`). Numbers default to right, text to
+  left; widths count characters.
+- `sign` is `+` (show it for positive numbers too) or a space; `#` adds the
+  `0x`/`0b`/`0o` prefix; `0` pads a number with zeros after the sign; `,`
+  groups the digits in threes.
+- `.precision` is the digits after the point of a float; the `type` is `d`,
+  `x`, `X`, `b` or `o` for an integer, `f` or `%` for a float (`%` scales by
+  100), and `s` or nothing for text.
+- Anything that prints — a `bool`, an enum, a struct with `toString` — takes a
+  fill, an alignment and a width, applied to what it prints.
+
+```veles
+use io { println }
+
+fun main() {
+  val name = "tea"
+  val price = 3.14159
+  val share = 0.256
+  val id = 255
+  println("[${name:<8}] [${name:*^9}] [${price:>10.2}] [${share:.1%}] [${id:08x}] [${id:#b}] [${1234567:,}]")
+}
+```
+
+Output:
+```text
+[tea     ] [***tea***] [      3.14] [25.6%] [000000ff] [0b11111111] [1,234,567]
+```
+
+Not available yet: the `e` type, and a width or precision computed at run time
+(`${x:>${w}}`). `std/fmt` ([stdlib](reference/stdlib.md#module-fmt-d171)) adds
+the functions above the spec: `fmt.bytes`, `fmt.table`, `fmt.duration`.
+
 ### Template literals
 
 A name written **straight before** a string — no space — hands the string to

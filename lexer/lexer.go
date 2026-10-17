@@ -182,6 +182,8 @@ func (lx *Lexer) run() {
 			lx.number()
 		case c == '"':
 			lx.stringLit()
+		case c == '`':
+			lx.rawLit()
 		case c == '\'':
 			lx.charLit()
 		default:
@@ -370,7 +372,240 @@ func (lx *Lexer) escape() string {
 	return ""
 }
 
+// skipInterp moves past a `${…}` that starts at lx.pos, to its closing
+// brace, and returns where the expression starts. ok is false when the
+// interpolation never closes.
+func (lx *Lexer) skipInterp() (exprStart int, ok bool) {
+	exprStart = lx.pos + 2
+	lx.pos += 2
+	depth := 1
+	for lx.pos < len(lx.src) && depth > 0 {
+		switch lx.src[lx.pos] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+		case '"':
+			// skip nested string
+			lx.pos++
+			for lx.pos < len(lx.src) && lx.src[lx.pos] != '"' {
+				if lx.src[lx.pos] == '\\' {
+					lx.pos++
+				}
+				lx.pos++
+			}
+		}
+		if depth > 0 {
+			lx.pos++
+		}
+	}
+	if lx.pos > len(lx.src) {
+		lx.pos = len(lx.src) // a nested string ran off the end
+	}
+	return exprStart, depth == 0
+}
+
+// rawLit lexes a backtick string (D172): every character is itself — no
+// escapes, no interpolation — and it may span lines.
+func (lx *Lexer) rawLit() {
+	start := lx.pos
+	lx.pos++ // opening backtick
+	end := strings.IndexByte(lx.src[lx.pos:], '`')
+	if end < 0 {
+		lx.errorf(start, start+1, "unterminated raw string; a raw string is closed by another backtick")
+		lx.pos = len(lx.src)
+		lx.badString(start)
+		return
+	}
+	text := lx.src[lx.pos : lx.pos+end]
+	lx.pos += end + 1
+	lx.tokens = append(lx.tokens, Token{Kind: String, Text: lx.src[start:lx.pos], Span: lx.span(start, lx.pos), Parts: []StringPart{{Text: strings.ReplaceAll(text, "\r\n", "\n")}}})
+}
+
+// textBlock lexes `"""…"""` (D172) from its opening delimiter. The text
+// starts on the line after the opening delimiter and ends before the line of
+// the closing one; the whitespace in front of the closing delimiter is the
+// margin, removed from every line. Escapes and `${}` work as in a string.
+func (lx *Lexer) textBlock() {
+	start := lx.pos
+	lx.pos += 3
+	// the rest of the opening line is empty
+	eol := strings.IndexByte(lx.src[lx.pos:], '\n')
+	if eol < 0 || strings.Trim(lx.src[lx.pos:lx.pos+eol], " 	") != "" {
+		lx.errorf(start, start+3, "a text block's text starts on the line after the opening \"\"\"")
+		lx.skipTextBlock(start)
+		return
+	}
+	bodyStart := lx.pos + eol + 1
+	// find the closing delimiter, stepping over escapes and interpolations
+	lx.pos = bodyStart
+	closeAt := -1
+	for lx.pos < len(lx.src) {
+		switch {
+		case lx.src[lx.pos] == '\\':
+			lx.pos += 2
+		case lx.src[lx.pos] == '$' && lx.peekByte(1) == '{':
+			if exprStart, ok := lx.skipInterp(); !ok {
+				lx.errorf(exprStart-2, exprStart, "unterminated interpolation")
+				lx.pos = len(lx.src)
+				lx.badString(start)
+				return
+			}
+			lx.pos++
+		case strings.HasPrefix(lx.src[lx.pos:], `"""`):
+			closeAt = lx.pos
+		default:
+			lx.pos++
+		}
+		if closeAt >= 0 {
+			break
+		}
+	}
+	if closeAt < 0 {
+		lx.errorf(start, start+3, "unterminated text block")
+		lx.pos = len(lx.src)
+		lx.badString(start)
+		return
+	}
+	lineStart := strings.LastIndexByte(lx.src[:closeAt], '\n') + 1
+	margin := lx.src[lineStart:closeAt]
+	if lineStart < bodyStart || strings.TrimLeft(margin, " \t") != "" {
+		lx.errorf(closeAt, closeAt+3, "the closing \"\"\" of a text block goes on a line of its own; its indentation is the margin")
+		lx.pos = closeAt + 3
+		lx.tokens = append(lx.tokens, Token{Kind: String, Text: lx.src[start:lx.pos], Span: lx.span(start, lx.pos), Parts: []StringPart{{Text: ""}}})
+		return
+	}
+	// the text is the lines between, without the line break before the
+	// closing line
+	bodyEnd := lineStart - 1
+	if bodyEnd < bodyStart {
+		bodyEnd = bodyStart
+	}
+	var parts []StringPart
+	var buf strings.Builder
+	flush := func() {
+		if buf.Len() > 0 {
+			parts = append(parts, StringPart{Text: buf.String()})
+			buf.Reset()
+		}
+	}
+	lx.pos = bodyStart
+	atLine := true
+	for lx.pos < bodyEnd {
+		if atLine {
+			atLine = false
+			n := 0
+			for n < len(margin) && lx.pos+n < bodyEnd && lx.src[lx.pos+n] == margin[n] {
+				n++
+			}
+			rest := lx.src[lx.pos+n : bodyEnd]
+			blank := strings.TrimLeft(rest, " \t\r") == "" || strings.HasPrefix(strings.TrimLeft(rest, " \t\r"), "\n")
+			if n < len(margin) && !blank {
+				lx.errorf(lx.pos, lx.pos+n+1, "this line is indented less than the closing \"\"\" of its text block; indent it to the margin")
+			}
+			lx.pos += n
+			if n < len(margin) && blank {
+				// a blank line may be shorter than the margin
+				for lx.pos < bodyEnd && (lx.src[lx.pos] == ' ' || lx.src[lx.pos] == '\t') {
+					lx.pos++
+				}
+			}
+			continue
+		}
+		c := lx.src[lx.pos]
+		switch {
+		case c == '\\':
+			buf.WriteString(lx.escape())
+		case c == '\r' && lx.peekByte(1) == '\n':
+			lx.pos++
+		case c == '\n':
+			buf.WriteByte('\n')
+			lx.pos++
+			atLine = true
+		case c == '$' && lx.peekByte(1) == '{':
+			flush()
+			exprStart, _ := lx.skipInterp()
+			parts = append(parts, lx.exprPart(exprStart, lx.pos))
+			lx.pos++
+		case c == '$' && identStartLen(lx.src, lx.pos+1) > 0:
+			flush()
+			exprStart := lx.pos + 1
+			lx.pos = identEnd(lx.src, exprStart)
+			parts = append(parts, StringPart{IsExpr: true, Expr: lx.src[exprStart:lx.pos], Span: lx.span(exprStart, lx.pos)})
+		default:
+			r, size := utf8.DecodeRuneInString(lx.src[lx.pos:])
+			if r == utf8.RuneError && size == 1 {
+				lx.errorf(lx.pos, lx.pos+1, "invalid UTF-8 in string literal")
+			}
+			buf.WriteString(lx.src[lx.pos : lx.pos+size])
+			lx.pos += size
+		}
+	}
+	flush()
+	if parts == nil {
+		parts = []StringPart{{Text: ""}}
+	}
+	lx.pos = closeAt + 3
+	lx.tokens = append(lx.tokens, Token{Kind: String, Text: lx.src[start:lx.pos], Span: lx.span(start, lx.pos), Parts: parts})
+}
+
+// exprPart is the interpolated part src[start, end): an expression, and
+// after its top-level colon a format spec (D171): "${price:>10.2}".
+func (lx *Lexer) exprPart(start, end int) StringPart {
+	if at := specColon(lx.src[start:end]); at >= 0 {
+		return StringPart{IsExpr: true, Expr: lx.src[start : start+at], Span: lx.span(start, start+at),
+			Spec: lx.src[start+at+1 : end], SpecSpan: lx.span(start+at+1, end), HasSpec: true}
+	}
+	return StringPart{IsExpr: true, Expr: lx.src[start:end], Span: lx.span(start, end)}
+}
+
+// specColon is the index of the colon that starts a format spec in the
+// text of "${…}": the first one outside brackets, strings and character
+// literals, and not the Elvis operator's (`?:`). -1 when there is none.
+func specColon(s string) int {
+	depth := 0
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; c {
+		case '(', '[', '{':
+			depth++
+		case ')', ']', '}':
+			depth--
+		case '"', '\'':
+			for i++; i < len(s) && s[i] != c; i++ {
+				if s[i] == '\\' {
+					i++
+				}
+			}
+		case ':':
+			if depth == 0 && (i == 0 || s[i-1] != '?') {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+// badString stands for a literal that never closed, so the parser sees a
+// string where one was written.
+func (lx *Lexer) badString(start int) {
+	lx.tokens = append(lx.tokens, Token{Kind: String, Text: lx.src[start:lx.pos], Span: lx.span(start, lx.pos), Parts: []StringPart{{Text: ""}}})
+}
+
+// skipTextBlock recovers from a malformed opening: past the next `"""`.
+func (lx *Lexer) skipTextBlock(start int) {
+	if i := strings.Index(lx.src[start+3:], `"""`); i >= 0 {
+		lx.pos = start + 3 + i + 3
+	} else {
+		lx.pos = len(lx.src)
+	}
+	lx.tokens = append(lx.tokens, Token{Kind: String, Text: lx.src[start:lx.pos], Span: lx.span(start, lx.pos), Parts: []StringPart{{Text: ""}}})
+}
+
 func (lx *Lexer) stringLit() {
+	if strings.HasPrefix(lx.src[lx.pos:], `"""`) {
+		lx.textBlock()
+		return
+	}
 	start := lx.pos
 	lx.pos++ // opening quote
 	var parts []StringPart
@@ -399,37 +634,12 @@ func (lx *Lexer) stringLit() {
 			// `$ident` or `${expr}`
 			if lx.peekByte(1) == '{' {
 				flush()
-				exprStart := lx.pos + 2
-				lx.pos += 2
-				depth := 1
-				for lx.pos < len(lx.src) && depth > 0 {
-					switch lx.src[lx.pos] {
-					case '{':
-						depth++
-					case '}':
-						depth--
-					case '"':
-						// skip nested string
-						lx.pos++
-						for lx.pos < len(lx.src) && lx.src[lx.pos] != '"' {
-							if lx.src[lx.pos] == '\\' {
-								lx.pos++
-							}
-							lx.pos++
-						}
-					}
-					if depth > 0 {
-						lx.pos++
-					}
-				}
-				if lx.pos > len(lx.src) {
-					lx.pos = len(lx.src) // a nested string ran off the end
-				}
-				if depth != 0 {
+				exprStart, ok := lx.skipInterp()
+				if !ok {
 					lx.errorf(exprStart-2, exprStart, "unterminated interpolation")
 					break
 				}
-				parts = append(parts, StringPart{IsExpr: true, Expr: lx.src[exprStart:lx.pos], Span: lx.span(exprStart, lx.pos)})
+				parts = append(parts, lx.exprPart(exprStart, lx.pos))
 				lx.pos++ // closing brace
 				continue
 			}

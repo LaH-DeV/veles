@@ -1332,12 +1332,15 @@ Every new public std API (http cookies/forms/client, `std/log`,
   bare names (left to the user, as the spec says); the module-level-name warning reports at
   the use, not at the member's declaration. Labels on tests (D170): tags for filtering
   (`--tag`) were rejected for now; take them up with `@slow`-style needs.
-- **Decided 2026-10-17, not built yet:** D171 (format specs after `:` and `std/fmt`; the
-  functions' names are confirmed when built; **locales — decimal commas, dates — are a
-  noted todo**), D172 (`"""` text blocks with a margin; backtick raw strings: tagging a
-  raw string and holding a backtick are left to the build). Touches the lexer, parser,
-  formatter, `selfhost/` lexer and parser (gate corpus), sema, docs chapter 2, the editor
-  grammar.
+- **Format specs and strings (D171, D172, built 2026-10-17).** Not built: the spec type
+  `e`, and a width or precision computed at run time (`${x:>${w}}`; refused with a
+  message); a user type's own spec (every printing type takes fill/align/width of what it
+  prints, nothing more); **locales in `std/fmt` — decimal commas, dates — a noted todo**
+  (they touch `std/time`); `veles fmt` keeps a text block verbatim, so moving its opening
+  to another indentation does not move the body (the margin stays correct, the block just
+  looks unaligned); a raw backtick string cannot be tagged or hold a backtick; the editor
+  grammar does not colour the spec; `std/fmt` is the first set (`thousands`, `bytes`,
+  `percent`, `ordinal`, `duration`, `table`) — more when asked.
 - **Linux (WSL)** was not run for the 2026-10-17 change (D170, B17, B20); run
   `wsl -d Ubuntu -- bash …/internal/wsl-test.sh`.
 

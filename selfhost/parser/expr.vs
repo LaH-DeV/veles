@@ -436,7 +436,7 @@ extend Parser {
       val e = sub.parseExpr()
       sub.skipSemis()
       if (!sub.at(Kind.EOF)) sub.errorAt(sub.span(), "unexpected ${sub.cur().describe()} in string interpolation")
-      parts.push(ast.StringPart(expr: &e))
+      parts.push(ast.StringPart(expr: &e, spec: part.spec, specPos: part.specSpan, hasSpec: part.hasSpec))
     }
     ast.StringLit(parts: parts.toList(), pos: t.span)
   }

@@ -258,6 +258,8 @@ struct Lexer {
         this.number()
       } else if (b == '"') {
         this.stringLit()
+      } else if (b == '`') {
+        this.rawLit()
       } else if (b == '\'') {
         this.charLit()
       } else {
@@ -410,7 +412,205 @@ struct Lexer {
     utf8.char(code)
   }
 
+  // the interpolated part src[start, end): an expression, and after its
+  // top-level colon a format spec (D171)
+  fun exprPart(start: i64, end: i64): StringPart {
+    val colon = this.specColon(start, end)
+    if (colon < 0) return StringPart(isExpr: true, expr: this.cut(start, end), span: this.span(start, end))
+    return StringPart(isExpr: true, expr: this.cut(start, colon), span: this.span(start, colon), spec: this.cut(colon + 1, end), specSpan: this.span(colon + 1, end), hasSpec: true)
+  }
+
+  // the first colon of src[start, end) outside brackets, strings and
+  // character literals, and not the Elvis operator's; -1 when there is none
+  fun specColon(start: i64, end: i64): i64 {
+    var depth: i64 = 0
+    var i = start
+    loop (i < end) {
+      val b = this.src.byteAt(i)
+      if (b == '(' || b == '[' || b == '{') {
+        depth += 1
+      } else if (b == ')' || b == ']' || b == '}') {
+        depth -= 1
+      } else if (b == '"' || b == '\'') {
+        i += 1
+        loop (i < end && this.src.byteAt(i) != b) {
+          if (this.src.byteAt(i) == '\\') i += 1
+          i += 1
+        }
+      } else if (b == ':' && depth == 0 && (i == start || this.src.byteAt(i - 1) != '?')) {
+        return i
+      }
+      i += 1
+    }
+    -1
+  }
+
+  // a backtick string (D172): every character is itself, over lines
+  fun rawLit() {
+    val start = this.pos
+    this.pos += 1  // the opening backtick
+    val end = this.findByteFrom(this.pos, '`')
+    if (end < 0) {
+      this.errorAt(start, start + 1, "unterminated raw string; a raw string is closed by another backtick")
+      this.pos = this.src.len()
+      this.badString(start)
+      return
+    }
+    val text = this.cut(this.pos, end)
+    this.pos = end + 1
+    this.tokens.push(Token(kind: Kind.String, text: this.cut(start, this.pos), span: this.span(start, this.pos), parts: [StringPart(text: text.replace("\r\n", "\n"))]))
+  }
+
+  // the index of the first `b` at or after `from`, or -1
+  fun findByteFrom(from: i64, b: u8): i64 {
+    var i = from
+    loop (i < this.src.len()) {
+      if (this.src.byteAt(i) == b) return i
+      i += 1
+    }
+    -1
+  }
+
+  // `"""…"""` (D172): the text is the lines between the delimiters' lines;
+  // the closing delimiter's indentation is the margin, removed from each line
+  fun textBlock() {
+    val start = this.pos
+    this.pos += 3
+    val eol = this.findByteFrom(this.pos, '\n')
+    if (eol < 0 || !this.blankBetween(this.pos, eol)) {
+      this.errorAt(start, start + 3, "a text block's text starts on the line after the opening \"\"\"")
+      this.skipTextBlock(start)
+      return
+    }
+    val bodyStart = eol + 1
+    this.pos = bodyStart
+    var closeAt: i64 = -1
+    loop (this.pos < this.src.len() && closeAt < 0) {
+      val b = this.src.byteAt(this.pos)
+      if (b == '\\') {
+        this.pos += 2
+      } else if (b == '$' && this.peekByte(1) == '{') {
+        if (!this.interpolation(this.pos + 2)) {
+          this.pos = this.src.len()
+          this.badString(start)
+          return
+        }
+        this.pos += 1
+      } else if (this.holdsAt(this.pos, "\"\"\"")) {
+        closeAt = this.pos
+      } else {
+        this.pos += 1
+      }
+    }
+    if (closeAt < 0) {
+      this.errorAt(start, start + 3, "unterminated text block")
+      this.pos = this.src.len()
+      this.badString(start)
+      return
+    }
+    var lineStart = closeAt
+    loop (lineStart > 0 && this.src.byteAt(lineStart - 1) != '\n') lineStart -= 1
+    if (lineStart < bodyStart || !this.blankBetween(lineStart, closeAt)) {
+      this.errorAt(closeAt, closeAt + 3, "the closing \"\"\" of a text block goes on a line of its own; its indentation is the margin")
+      this.pos = closeAt + 3
+      this.badString(start)
+      return
+    }
+    val marginLen = closeAt - lineStart
+    var bodyEnd = lineStart - 1
+    if (bodyEnd < bodyStart) bodyEnd = bodyStart
+    val parts: MutableList<StringPart> = []
+    val text = StringBuilder()
+    this.pos = bodyStart
+    var atLine = true
+    loop (this.pos < bodyEnd) {
+      if (atLine) {
+        atLine = false
+        var n: i64 = 0
+        loop (n < marginLen && this.pos + n < bodyEnd && this.src.byteAt(this.pos + n) == this.src.byteAt(lineStart + n)) n += 1
+        var j = this.pos + n
+        loop (j < bodyEnd && (this.src.byteAt(j) == ' ' || this.src.byteAt(j) == '\t' || this.src.byteAt(j) == '\r')) j += 1
+        val blank = j >= bodyEnd || this.src.byteAt(j) == '\n'
+        if (n < marginLen && !blank) {
+          this.errorAt(this.pos, this.pos + n + 1, "this line is indented less than the closing \"\"\" of its text block; indent it to the margin")
+        }
+        this.pos += n
+        if (n < marginLen && blank) {
+          loop (this.pos < bodyEnd && (this.src.byteAt(this.pos) == ' ' || this.src.byteAt(this.pos) == '\t')) this.pos += 1
+        }
+        continue
+      }
+      val b = this.src.byteAt(this.pos)
+      if (b == '\\') {
+        text.append(this.escape())
+      } else if (b == '\r' && this.peekByte(1) == '\n') {
+        this.pos += 1
+      } else if (b == '\n') {
+        text.append("\n")
+        this.pos += 1
+        atLine = true
+      } else if (b == '$' && this.peekByte(1) == '{') {
+        if (!text.isEmpty()) {
+          parts.push(StringPart(text: text.toString()))
+          text.clear()
+        }
+        val exprStart = this.pos + 2
+        this.interpolation(exprStart)
+        parts.push(this.exprPart(exprStart, this.pos))
+        this.pos += 1
+      } else if (b == '$' && identStartLen(this.src, this.pos + 1) > 0) {
+        if (!text.isEmpty()) {
+          parts.push(StringPart(text: text.toString()))
+          text.clear()
+        }
+        val exprStart = this.pos + 1
+        this.pos = identEnd(this.src, exprStart)
+        parts.push(StringPart(isExpr: true, expr: this.cut(exprStart, this.pos), span: this.span(exprStart, this.pos)))
+      } else {
+        val (code, size) = this.runeAt(this.pos)
+        if (code == 0xFFFD && size == 1) this.errorAt(this.pos, this.pos + 1, "invalid UTF-8 in string literal")
+        text.append(this.cut(this.pos, this.pos + size))
+        this.pos += size
+      }
+    }
+    if (!text.isEmpty()) parts.push(StringPart(text: text.toString()))
+    if (parts.isEmpty()) parts.push(StringPart(text: ""))
+    this.pos = closeAt + 3
+    this.tokens.push(Token(kind: Kind.String, text: this.cut(start, this.pos), span: this.span(start, this.pos), parts: parts.toList()))
+  }
+
+  // whether src[from, to) is only spaces, tabs and carriage returns
+  fun blankBetween(from: i64, to: i64): bool {
+    var i = from
+    loop (i < to) {
+      val b = this.src.byteAt(i)
+      if (b != ' ' && b != '\t' && b != '\r') return false
+      i += 1
+    }
+    true
+  }
+
+  // a literal that never closed, standing in so the parser sees a string
+  fun badString(start: i64) {
+    this.tokens.push(Token(kind: Kind.String, text: this.cut(start, this.pos), span: this.span(start, this.pos), parts: [StringPart(text: "")]))
+  }
+
+  // recovery from a malformed opening: past the next `"""`
+  fun skipTextBlock(start: i64) {
+    var i = start + 3
+    var found = false
+    loop (i + 3 <= this.src.len() && !found) {
+      if (this.holdsAt(i, "\"\"\"")) found = true else i += 1
+    }
+    this.pos = if (found) i + 3 else this.src.len()
+    this.badString(start)
+  }
+
   fun stringLit() {
+    if (this.holdsAt(this.pos, "\"\"\"")) {
+      this.textBlock()
+      return
+    }
     val start = this.pos
     this.pos += 1  // the opening quote
     val parts: MutableList<StringPart> = []
@@ -436,7 +636,7 @@ struct Lexer {
         }
         val exprStart = this.pos + 2
         if (!this.interpolation(exprStart)) break
-        parts.push(StringPart(isExpr: true, expr: this.cut(exprStart, this.pos), span: this.span(exprStart, this.pos)))
+        parts.push(this.exprPart(exprStart, this.pos))
         this.pos += 1  // the closing brace
         continue
       }

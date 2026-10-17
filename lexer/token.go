@@ -232,6 +232,11 @@ type StringPart struct {
 	IsExpr bool
 	Expr   string
 	Span   source.Span
+	// Spec is the format spec after the colon of "${expr:spec}" (D171); HasSpec
+	// tells an empty one ("${x:}") from none.
+	Spec     string
+	SpecSpan source.Span
+	HasSpec  bool
 }
 
 type Token struct {

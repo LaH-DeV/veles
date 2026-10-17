@@ -908,6 +908,7 @@ struct Printer {
       if (x != null) {
         this.write(" \${")
         this.expr(*x)
+        if (part.hasSpec) this.write(":${quote(part.spec)}")
         this.write("}")
       } else {
         this.write(" ${quote(part.text)}")
