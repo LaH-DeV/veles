@@ -462,6 +462,7 @@ type Field struct {
 	Name       string
 	Type       Type
 	Pub        bool
+	Internal   bool // `internal`: this module only; unmarked is the package (D142)
 	Private    bool // visible only inside the type's own declarations
 	Var        bool // assignable after construction (D22 v0.30); a bare field never changes
 	Protected  bool // `protected var`: assignable only by the type's own declarations; read like any field
@@ -477,10 +478,11 @@ type Field struct {
 // body per instantiation is the bootstrap policy; GC-shape sharing is a
 // later optimisation invisible to semantics per D15).
 type Struct struct {
-	Name   string
-	Module string
-	Pub    bool
-	Extern bool
+	Name     string
+	Module   string
+	Pub      bool
+	Internal bool // `internal`: this module only; unmarked is the package (D142)
+	Extern   bool
 	// C layout (D120): Packed — no padding, alignment 1; Align — `@align(n)`,
 	// 0 when none; Union — `extern union`, every field at offset 0;
 	// Transparent — laid out and passed to C as its one field.
@@ -509,6 +511,7 @@ type Sealed struct {
 	Name       string
 	Module     string
 	Pub        bool
+	Internal   bool // `internal`: this module only; unmarked is the package (D142)
 	TypeParams []*TypeParam
 	TypeArgs   []Type
 	Template   *Sealed
@@ -538,6 +541,7 @@ type Trait struct {
 	Name        string
 	Module      string
 	Pub         bool
+	Internal    bool // `internal`: this module only; unmarked is the package (D142)
 	TypeParams  []*TypeParam
 	AssocTypes  []string
 	AssocBounds map[string][]*Trait
@@ -563,12 +567,13 @@ func (t *Trait) String() string { return t.Name }
 // is its Base at run time; the names are compile-time facts the compiler
 // spells out for toString, parse and exhaustiveness.
 type Enum struct {
-	Name    string
-	Module  string
-	Pub     bool
-	Base    *Basic
-	Members []*EnumMember
-	Decl    any
+	Name     string
+	Module   string
+	Pub      bool
+	Internal bool // `internal`: this module only; unmarked is the package (D142)
+	Base     *Basic
+	Members  []*EnumMember
+	Decl     any
 }
 
 // EnumMember is one named value; Value and Neg spell it the way an integer

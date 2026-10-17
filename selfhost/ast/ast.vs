@@ -12,869 +12,877 @@
 use lexer { Kind }
 use source { File, Span }
 
-public struct Ident {
-  public var name: string = ""
-  public var pos:  Span = Span.none()
+struct Ident {
+  var name: string = ""
+  var pos:  Span = Span.none()
 }
 
 /// A parsed file: a module is every file in its directory.
-public struct SourceFile {
-  public var source: File
-  public var decls:  List<Decl> = []
+struct SourceFile {
+  var source: File
+  var decls:  List<Decl> = []
   /// The module documentation: a doc comment at the top, set off from the
   /// first declaration by a blank line.
-  public var doc: string = ""
+  var doc: string = ""
 }
 
 // ---------------------------------------------------------------------------
 // types
 
-public sealed trait Type
+sealed trait Type
 
 /// `i32`, `List<T>`, `Shape.Circle`, `io.Reader`.
-public struct NamedType : Type {
-  public var path: List<Ident> = []
-  public var args: List<Type> = []
-  public var pos:  Span = Span.none()
+struct NamedType : Type {
+  var path: List<Ident> = []
+  var args: List<Type> = []
+  var pos:  Span = Span.none()
 }
 
 /// `T?`.
-public struct NullableType : Type {
-  public var elem: *Type
-  public var pos:  Span = Span.none()
+struct NullableType : Type {
+  var elem: *Type
+  var pos:  Span = Span.none()
 }
 
 /// `*T`, or `*raw T` (unmanaged, D50).
-public struct PointerType : Type {
-  public var elem:  *Type
-  public var isRaw: bool = false
-  public var pos:   Span = Span.none()
+struct PointerType : Type {
+  var elem:  *Type
+  var isRaw: bool = false
+  var pos:   Span = Span.none()
 }
 
 /// `(A, B)`; `()` is the unit type.
-public struct TupleType : Type {
-  public var elems: List<Type> = []
-  public var pos:   Span = Span.none()
+struct TupleType : Type {
+  var elems: List<Type> = []
+  var pos:   Span = Span.none()
 }
 
 /// `fun(A, B): R suspends throws E` (D40), `sendable fun(…)` (D35),
 /// `extern fun(…)` (a C function pointer, D69).
-public struct FunType : Type {
-  public var params:   List<Type> = []
-  public var ret:      (*Type)? = null  // null: unit
-  public var effects:  Effects = Effects()
-  public var sendable: bool = false
-  public var c:        bool = false
-  public var pos:      Span = Span.none()
+struct FunType : Type {
+  var params:   List<Type> = []
+  var ret:      (*Type)? = null  // null: unit
+  var effects:  Effects = Effects()
+  var sendable: bool = false
+  var c:        bool = false
+  var pos:      Span = Span.none()
 }
 
 /// A constant where a type argument goes: the `8` of `Array<u8, 8>` (D121).
-public struct ConstType : Type {
-  public var x:   *Expr
-  public var pos: Span = Span.none()
+struct ConstType : Type {
+  var x:   *Expr
+  var pos: Span = Span.none()
 }
 
 /// `Self` in a trait or an implement.
-public struct SelfType : Type {
-  public var pos: Span = Span.none()
+struct SelfType : Type {
+  var pos: Span = Span.none()
 }
 
 /// An associated type: `Self.Item`, `I.Item`.
-public struct AssocType : Type {
-  public var base: *Type
-  public var name: Ident = Ident()
-  public var pos:  Span = Span.none()
+struct AssocType : Type {
+  var base: *Type
+  var name: Ident = Ident()
+  var pos:  Span = Span.none()
 }
 
 /// `A | B`: after `throws`, or as a type argument (D45).
-public struct ErrorUnionType : Type {
-  public var members: List<Type> = []
-  public var pos:     Span = Span.none()
+struct ErrorUnionType : Type {
+  var members: List<Type> = []
+  var pos:     Span = Span.none()
 }
 
 /// `suspends`, `throws`, `throws E`; `throws` with no type is inferred (D45).
-public struct Effects {
-  public var suspending:   bool = false
-  public var suspendsSpan: Span = Span.none()
-  public var throwing:     bool = false
-  public var throwsSpan:   Span = Span.none()
-  public var error:        (*Type)? = null
+struct Effects {
+  var suspending:   bool = false
+  var suspendsSpan: Span = Span.none()
+  var throwing:     bool = false
+  var throwsSpan:   Span = Span.none()
+  var error:        (*Type)? = null
 }
 
 // ---------------------------------------------------------------------------
 // declarations
 
-public sealed trait Decl
+sealed trait Decl
 
 /// `@name` or `@name(args)` on the line before a declaration.
-public struct Attribute {
-  public var name: Ident = Ident()
-  public var args: List<Arg> = []
-  public var pos:  Span = Span.none()
+struct Attribute {
+  var name: Ident = Ident()
+  var args: List<Arg> = []
+  var pos:  Span = Span.none()
 }
 
 /// `use a, b.c as d` (M6), `public use` (D89).
-public struct UseDecl : Decl {
-  public var specs: List<UseSpec> = []
-  public var pub:   bool = false
-  public var pos:   Span = Span.none()
+struct UseDecl : Decl {
+  var specs: List<UseSpec> = []
+  var pub:   bool = false
+  var pos:   Span = Span.none()
 }
 
 /// One import: `a.b`, `a.b as c`, `a.b { f, T as U }` (D85).
-public struct UseSpec {
-  public var path:  List<Ident> = []
-  public var alias: Ident? = null
-  public var names: List<UseName>? = null  // the braced names; null without braces
-  public var pub:   bool = false
-  public var pos:   Span = Span.none()
+struct UseSpec {
+  var path:  List<Ident> = []
+  var alias: Ident? = null
+  var names: List<UseName>? = null  // the braced names; null without braces
+  var pub:   bool = false
+  var pos:   Span = Span.none()
 }
 
 /// `f` or `f as g` in braces.
-public struct UseName {
-  public var name:  Ident = Ident()
-  public var alias: Ident? = null
-  public var pos:   Span = Span.none()
+struct UseName {
+  var name:  Ident = Ident()
+  var alias: Ident? = null
+  var pos:   Span = Span.none()
 }
 
-public struct TypeParam {
-  public var name:    Ident = Ident()
-  public var bounds:  List<Type> = []
-  public var isConst: bool = false        // `<const N: i64>` (D121)
-  public var at:      Span = Span.none()  // the word `const`
-  public var of:      (*Type)? = null     // the constant's type
+struct TypeParam {
+  var name:    Ident = Ident()
+  var bounds:  List<Type> = []
+  var isConst: bool = false        // `<const N: i64>` (D121)
+  var at:      Span = Span.none()  // the word `const`
+  var of:      (*Type)? = null     // the constant's type
 }
 
-public struct Param {
-  public var name:         Ident = Ident()
-  public var typ:          (*Type)? = null
-  public var defaultValue: (*Expr)? = null
-  public var variadic:     bool = false  // `name: T...`
-  public var isLazy:       bool = false  // `lazy name: fun(): T` (D90)
-  public var lazyPos:      Span = Span.none()
-  public var pattern:      Binding? = null  // a lambda's destructured parameter (D37)
-  public var pos:          Span = Span.none()
+struct Param {
+  var name:         Ident = Ident()
+  var typ:          (*Type)? = null
+  var defaultValue: (*Expr)? = null
+  var variadic:     bool = false  // `name: T...`
+  var isLazy:       bool = false  // `lazy name: fun(): T` (D90)
+  var lazyPos:      Span = Span.none()
+  var pattern:      Binding? = null  // a lambda's destructured parameter (D37)
+  var pos:          Span = Span.none()
 }
 
 /// A function: free, a method, a trait's (no body), or an extern.
-public struct FunDecl {
-  public var attrs:      List<Attribute> = []
-  public var doc:        string = ""
-  public var pub:        bool = false
-  public var isInternal: bool = false
-  public var isPrivate:  bool = false
-  public var isStatic:   bool = false
-  public var isOverride: bool = false
-  public var isUnsafe:   bool = false
-  public var isConst:    bool = false  // `const fun` (D113)
-  public var isExtern:   bool = false
-  public var exportC:    bool = false  // `extern "C" fun name(…) { }` (D69)
-  public var isTest:     bool = false  // `test fun` (D78)
-  public var name:       Ident = Ident()
-  public var typeParams: List<TypeParam> = []
-  public var params:     List<Param> = []
-  public var cVariadic:  bool = false  // `...` in an `extern "C"` block (D123)
-  public var variadicAt: Span = Span.none()
-  public var ret:        (*Type)? = null  // null: unit
-  public var effects:    Effects = Effects()
-  public var body:       Block? = null
-  public var exprBody:   (*Expr)? = null  // `fun f() = expr`
-  public var pos:        Span = Span.none()
+struct FunDecl {
+  var attrs:      List<Attribute> = []
+  var doc:        string = ""
+  var pub:        bool = false
+  var isInternal: bool = false
+  var isPrivate:  bool = false
+  var isStatic:   bool = false
+  var isOverride: bool = false
+  var isUnsafe:   bool = false
+  var isConst:    bool = false  // `const fun` (D113)
+  var isExtern:   bool = false
+  var exportC:    bool = false  // `extern "C" fun name(…) { }` (D69)
+  var isTest:     bool = false  // `test fun` (D78)
+  var name:       Ident = Ident()
+  var typeParams: List<TypeParam> = []
+  var params:     List<Param> = []
+  var cVariadic:  bool = false  // `...` in an `extern "C"` block (D123)
+  var variadicAt: Span = Span.none()
+  var ret:        (*Type)? = null  // null: unit
+  var effects:    Effects = Effects()
+  var body:       Block? = null
+  var exprBody:   (*Expr)? = null  // `fun f() = expr`
+  var pos:        Span = Span.none()
 }
 
-public struct FunDeclNode : Decl {
-  public var decl: FunDecl
+struct FunDeclNode : Decl {
+  var decl: FunDecl
 }
 
 /// A field, perhaps with a default.
-public struct Field {
-  public var attrs:        List<Attribute> = []
-  public var pub:          bool = false
-  public var isInternal:   bool = false
-  public var isPrivate:    bool = false
-  public var isVar:        bool = false
-  public var isVal:        bool = false
-  public var isProtected:  bool = false
-  public var doc:          string = ""
-  public var name:         Ident = Ident()
-  public var typ:          (*Type)? = null
-  public var defaultValue: (*Expr)? = null
-  public var pos:          Span = Span.none()
+struct Field {
+  var attrs:        List<Attribute> = []
+  var pub:          bool = false
+  var isInternal:   bool = false
+  var isPrivate:    bool = false
+  var isVar:        bool = false
+  var isVal:        bool = false
+  var isProtected:  bool = false
+  var doc:          string = ""
+  var name:         Ident = Ident()
+  var typ:          (*Type)? = null
+  var defaultValue: (*Expr)? = null
+  var pos:          Span = Span.none()
 }
 
 /// `struct Name<T> : SealedParent { fields; methods }`, an `extern struct`,
 /// an `extern union`, or an `error Name { }`.
-public struct StructDecl : Decl {
-  public var attrs:      List<Attribute> = []
-  public var doc:        string = ""
-  public var pub:        bool = false
-  public var isInternal: bool = false
-  public var isExtern:   bool = false
-  public var union:      bool = false
-  public var isError:    bool = false
-  public var errorImpl:  (*ImplDecl)? = null
-  public var name:       Ident = Ident()
-  public var typeParams: List<TypeParam> = []
-  public var variant:    (*Type)? = null
-  public var fields:     List<Field> = []
-  public var methods:    List<FunDecl> = []
-  public var statics:    List<ValDecl> = []
-  public var impls:      List<ImplDecl> = []
-  public var init:       Block? = null
-  public var initPos:    Span = Span.none()
-  public var initParams: List<Param>? = null
-  public var pos:        Span = Span.none()
+struct StructDecl : Decl {
+  var attrs:      List<Attribute> = []
+  var doc:        string = ""
+  var pub:        bool = false
+  var isInternal: bool = false
+  var isExtern:   bool = false
+  var union:      bool = false
+  var isError:    bool = false
+  var errorImpl:  (*ImplDecl)? = null
+  var name:       Ident = Ident()
+  var typeParams: List<TypeParam> = []
+  var variant:    (*Type)? = null
+  var fields:     List<Field> = []
+  var methods:    List<FunDecl> = []
+  var statics:    List<ValDecl> = []
+  var impls:      List<ImplDecl> = []
+  var init:       Block? = null
+  var initPos:    Span = Span.none()
+  var initParams: List<Param>? = null
+  var pos:        Span = Span.none()
 }
 
-public struct AssocTypeDecl {
-  public var name:   Ident = Ident()
-  public var bounds: List<Type> = []
-  public var pos:    Span = Span.none()
+struct AssocTypeDecl {
+  var name:   Ident = Ident()
+  var bounds: List<Type> = []
+  var pos:    Span = Span.none()
 }
 
 /// `trait Name { type Item; fun m() }`, or `sealed trait Name`.
-public struct TraitDecl : Decl {
-  public var attrs:      List<Attribute> = []
-  public var doc:        string = ""
-  public var pub:        bool = false
-  public var isInternal: bool = false
-  public var isSealed:   bool = false
-  public var name:       Ident = Ident()
-  public var typeParams: List<TypeParam> = []
-  public var supers:     List<Type> = []
-  public var assocTypes: List<AssocTypeDecl> = []
-  public var methods:    List<FunDecl> = []
-  public var pos:        Span = Span.none()
+struct TraitDecl : Decl {
+  var attrs:      List<Attribute> = []
+  var doc:        string = ""
+  var pub:        bool = false
+  var isInternal: bool = false
+  var isSealed:   bool = false
+  var name:       Ident = Ident()
+  var typeParams: List<TypeParam> = []
+  var supers:     List<Type> = []
+  var assocTypes: List<AssocTypeDecl> = []
+  var methods:    List<FunDecl> = []
+  var pos:        Span = Span.none()
 }
 
-public struct AssocTypeBinding {
-  public var name: Ident = Ident()
-  public var typ:  (*Type)? = null
+struct AssocTypeBinding {
+  var name: Ident = Ident()
+  var typ:  (*Type)? = null
 }
 
 /// `implement<T> Trait for Type { }`, or `extend<T> Type { }` (D23).
-public struct ImplDecl : Decl {
-  public var attrs:      List<Attribute> = []
-  public var extend:     bool = false
-  public var inline:     bool = false  // written inside the struct's body
-  public var braceless:  bool = false  // an empty implement with no `{ }` (D58)
-  public var errorSugar: bool = false  // made by an `error Name` declaration
-  public var typeParams: List<TypeParam> = []
-  public var traitType:  (*Type)? = null  // null for `extend`
-  public var target:     (*Type)? = null
-  public var assocTypes: List<AssocTypeBinding> = []
-  public var methods:    List<FunDecl> = []
-  public var pos:        Span = Span.none()
+struct ImplDecl : Decl {
+  var attrs:      List<Attribute> = []
+  var extend:     bool = false
+  var inline:     bool = false  // written inside the struct's body
+  var braceless:  bool = false  // an empty implement with no `{ }` (D58)
+  var errorSugar: bool = false  // made by an `error Name` declaration
+  var typeParams: List<TypeParam> = []
+  var traitType:  (*Type)? = null  // null for `extend`
+  var target:     (*Type)? = null
+  var assocTypes: List<AssocTypeBinding> = []
+  var methods:    List<FunDecl> = []
+  var pos:        Span = Span.none()
 }
 
-public enum BindKind {
+enum BindKind {
   Val
   Var
   Const
 }
 
-public fun bindWord(k: BindKind): string => when (k) {
+fun bindWord(k: BindKind): string => when (k) {
   BindKind.Val   => "val"
   BindKind.Var   => "var"
   BindKind.Const => "const"
 }
 
 /// A module-level `val`, `var` or `const`.
-public struct ValDecl : Decl {
-  public var attrs:      List<Attribute> = []
-  public var doc:        string = ""
-  public var pub:        bool = false
-  public var isInternal: bool = false
-  public var kind:       BindKind = BindKind.Val
-  public var name:       Ident = Ident()
-  public var typ:        (*Type)? = null
-  public var value:      (*Expr)? = null
-  public var pos:        Span = Span.none()
+struct ValDecl : Decl {
+  var attrs:      List<Attribute> = []
+  var doc:        string = ""
+  var pub:        bool = false
+  var isInternal: bool = false
+  var kind:       BindKind = BindKind.Val
+  var name:       Ident = Ident()
+  var typ:        (*Type)? = null
+  var value:      (*Expr)? = null
+  var pos:        Span = Span.none()
 }
 
 /// `extern "C" { fun …; }`.
-public struct ExternBlock : Decl {
-  public var abi:  string = ""
-  public var funs: List<FunDecl> = []
-  public var pos:  Span = Span.none()
+struct ExternBlock : Decl {
+  var abi:  string = ""
+  var funs: List<FunDecl> = []
+  var pos:  Span = Span.none()
 }
 
 /// `executor name(args) { state and functions }` (D150).
-public struct ExecutorDecl : Decl {
-  public var doc:        string = ""
-  public var pub:        bool = false
-  public var isInternal: bool = false
-  public var name:       Ident = Ident()
-  public var args:       List<Arg> = []
-  public var state:      List<ValDecl> = []
-  public var funs:       List<FunDecl> = []
-  public var hasBody:    bool = false
-  public var pos:        Span = Span.none()
+struct ExecutorDecl : Decl {
+  var doc:        string = ""
+  var pub:        bool = false
+  var isInternal: bool = false
+  var name:       Ident = Ident()
+  var args:       List<Arg> = []
+  var state:      List<ValDecl> = []
+  var funs:       List<FunDecl> = []
+  var hasBody:    bool = false
+  var pos:        Span = Span.none()
 }
 
 /// `error Name = A | B | C` (D45).
-public struct ErrorAliasDecl : Decl {
-  public var attrs:      List<Attribute> = []
-  public var doc:        string = ""
-  public var pub:        bool = false
-  public var isInternal: bool = false
-  public var name:       Ident = Ident()
-  public var members:    (*Type)? = null
-  public var pos:        Span = Span.none()
+struct ErrorAliasDecl : Decl {
+  var attrs:      List<Attribute> = []
+  var doc:        string = ""
+  var pub:        bool = false
+  var isInternal: bool = false
+  var name:       Ident = Ident()
+  var members:    (*Type)? = null
+  var pos:        Span = Span.none()
 }
 
 /// `type Name<T> = Type` (D55).
-public struct TypeAliasDecl : Decl {
-  public var attrs:      List<Attribute> = []
-  public var doc:        string = ""
-  public var pub:        bool = false
-  public var isInternal: bool = false
-  public var name:       Ident = Ident()
-  public var typeParams: List<TypeParam> = []
-  public var typ:        (*Type)? = null
-  public var pos:        Span = Span.none()
+struct TypeAliasDecl : Decl {
+  var attrs:      List<Attribute> = []
+  var doc:        string = ""
+  var pub:        bool = false
+  var isInternal: bool = false
+  var name:       Ident = Ident()
+  var typeParams: List<TypeParam> = []
+  var typ:        (*Type)? = null
+  var pos:        Span = Span.none()
 }
 
 /// `enum Name : Base { A = 1, B, C }` (D57).
-public struct EnumDecl : Decl {
-  public var attrs:      List<Attribute> = []
-  public var doc:        string = ""
-  public var pub:        bool = false
-  public var isInternal: bool = false
-  public var name:       Ident = Ident()
-  public var base:       (*Type)? = null  // null: i64
-  public var members:    List<EnumMember> = []
-  public var pos:        Span = Span.none()
+struct EnumDecl : Decl {
+  var attrs:      List<Attribute> = []
+  var doc:        string = ""
+  var pub:        bool = false
+  var isInternal: bool = false
+  var name:       Ident = Ident()
+  var base:       (*Type)? = null  // null: i64
+  var members:    List<EnumMember> = []
+  var pos:        Span = Span.none()
 }
 
-public struct EnumMember {
-  public var attrs: List<Attribute> = []
-  public var doc:   string = ""
-  public var name:  Ident = Ident()
-  public var value: (*Expr)? = null  // null: the previous value plus one
-  public var pos:   Span = Span.none()
+struct EnumMember {
+  var attrs: List<Attribute> = []
+  var doc:   string = ""
+  var name:  Ident = Ident()
+  var value: (*Expr)? = null  // null: the previous value plus one
+  var pos:   Span = Span.none()
 }
 
 /// `test "name" { body }` (D78).
-public struct TestDecl : Decl {
-  public var doc:  string = ""
-  public var name: string = ""  // unquoted
-  public var at:   Span = Span.none()
-  public var body: Block? = null
-  public var pos:  Span = Span.none()
+struct TestDecl : Decl {
+  var doc:     string = ""
+  var label:   string = ""  // `test listMethods "…"`: the optional identifier (D170)
+  var labelAt: Span = Span.none()
+  var name:    string = ""  // unquoted; empty when only a label is written
+  var at:      Span = Span.none()  // the sentence's string (the label's when there is none)
+  var body: Block? = null
+  var pos:  Span = Span.none()
 }
 
+/// What a report calls a test or a suite: the label and the sentence
+/// ("listMethods: incrementAt updates an element"), or whichever is written (D170).
+fun title(label: string, name: string): string => if (label.isEmpty()) name else if (name.isEmpty()) label else "$label: $name"
+
 /// `suite "name" { … }` (D78).
-public struct SuiteDecl : Decl {
-  public var doc:   string = ""
-  public var name:  string = ""
-  public var at:    Span = Span.none()
-  public var decls: List<Decl> = []
-  public var pos:   Span = Span.none()
+struct SuiteDecl : Decl {
+  var doc:     string = ""
+  var label:   string = ""
+  var labelAt: Span = Span.none()
+  var name:    string = ""
+  var at:      Span = Span.none()
+  var decls:   List<Decl> = []
+  var pos:   Span = Span.none()
 }
 
 /// `static assert(cond, "why")` (D113), at module level or in a body.
-public struct StaticAssert {
-  public var cond:   *Expr
-  public var reason: (*Expr)? = null  // null when left out (an error)
-  public var pos:    Span = Span.none()
+struct StaticAssert {
+  var cond:   *Expr
+  var reason: (*Expr)? = null  // null when left out (an error)
+  var pos:    Span = Span.none()
 }
 
-public struct StaticAssertDecl : Decl {
-  public var assert: StaticAssert
+struct StaticAssertDecl : Decl {
+  var assert: StaticAssert
 }
 
 /// A declaration that did not parse.
-public struct BadDecl : Decl {
-  public var pos: Span = Span.none()
+struct BadDecl : Decl {
+  var pos: Span = Span.none()
 }
 
 // ---------------------------------------------------------------------------
 // statements
 
-public sealed trait Stmt
+sealed trait Stmt
 
-public struct Block {
-  public var stmts: List<Stmt> = []
-  public var pos:   Span = Span.none()
+struct Block {
+  var stmts: List<Stmt> = []
+  var pos:   Span = Span.none()
 }
 
-public struct BlockStmt : Stmt {
-  public var block: Block
+struct BlockStmt : Stmt {
+  var block: Block
 }
 
 /// The left side of `val`: a name or a tuple of bindings (D37).
-public struct Binding {
-  public var name:  Ident? = null       // a single name
-  public var tuple: List<Binding> = []  // destructuring
-  public var typ:   (*Type)? = null     // a single name's annotation
-  public var ref:   bool = false        // `&x` in a loop head (D42)
-  public var pos:   Span = Span.none()
+struct Binding {
+  var name:  Ident? = null       // a single name
+  var tuple: List<Binding> = []  // destructuring
+  var typ:   (*Type)? = null     // a single name's annotation
+  var ref:   bool = false        // `&x` in a loop head (D42)
+  var pos:   Span = Span.none()
 }
 
-public struct ValStmt : Stmt {
-  public var kind:    BindKind = BindKind.Val
-  public var binding: Binding = Binding()
+struct ValStmt : Stmt {
+  var kind:    BindKind = BindKind.Val
+  var binding: Binding = Binding()
   /// set instead of `binding` for a let-else over a variant:
   /// `val JObj(fields) = doc else { … }`
-  public var pattern: (*Pattern)? = null
-  public var value:   (*Expr)? = null
+  var pattern: (*Pattern)? = null
+  var value:   (*Expr)? = null
   /// `val x = e else { … }`: runs when e is null, an Err, or does not match
-  public var orElse: Handler? = null
-  public var pos:    Span = Span.none()
+  var orElse: Handler? = null
+  var pos:    Span = Span.none()
 }
 
 /// `{ body }` or `{ e => body }`: a let-else's or a catch's failure branch.
-public struct Handler {
-  public var err:  Ident? = null
-  public var body: Block = Block()
-  public var pos:  Span = Span.none()
+struct Handler {
+  var err:  Ident? = null
+  var body: Block = Block()
+  var pos:  Span = Span.none()
 }
 
-public struct ExprStmt : Stmt {
-  public var x: *Expr
+struct ExprStmt : Stmt {
+  var x: *Expr
 }
 
 /// `target = value`, or a compound `target += value`.
-public struct AssignStmt : Stmt {
-  public var target: *Expr
-  public var op:     Kind = Kind.Assign
-  public var value:  *Expr
-  public var pos:    Span = Span.none()
+struct AssignStmt : Stmt {
+  var target: *Expr
+  var op:     Kind = Kind.Assign
+  var value:  *Expr
+  var pos:    Span = Span.none()
 }
 
-public struct ReturnStmt : Stmt {
-  public var value: (*Expr)? = null
-  public var pos:   Span = Span.none()
+struct ReturnStmt : Stmt {
+  var value: (*Expr)? = null
+  var pos:   Span = Span.none()
 }
 
 /// `throw e` (D4).
-public struct ThrowStmt : Stmt {
-  public var value: (*Expr)? = null
-  public var pos:   Span = Span.none()
+struct ThrowStmt : Stmt {
+  var value: (*Expr)? = null
+  var pos:   Span = Span.none()
 }
 
-public struct BreakStmt : Stmt {
-  public var label: Ident? = null
-  public var pos:   Span = Span.none()
+struct BreakStmt : Stmt {
+  var label: Ident? = null
+  var pos:   Span = Span.none()
 }
 
-public struct ContinueStmt : Stmt {
-  public var label: Ident? = null
-  public var pos:   Span = Span.none()
+struct ContinueStmt : Stmt {
+  var label: Ident? = null
+  var pos:   Span = Span.none()
 }
 
 /// `loop { }`, `loop (cond) { }`, `loop (x in c) { }`.
-public struct LoopStmt : Stmt {
-  public var label: Ident? = null
-  public var cond:  (*Expr)? = null
-  public var bound: Binding? = null  // `loop (x in …)`
-  public var iter:  (*Expr)? = null
-  public var body:  Block = Block()
-  public var pos:   Span = Span.none()
+struct LoopStmt : Stmt {
+  var label: Ident? = null
+  var cond:  (*Expr)? = null
+  var bound: Binding? = null  // `loop (x in …)`
+  var iter:  (*Expr)? = null
+  var body:  Block = Block()
+  var pos:   Span = Span.none()
 }
 
 /// `name = e`, or `e` alone (D109): an empty name holds and closes the value
 /// without naming it.
-public struct WithBinding {
-  public var name:  Ident = Ident()
-  public var value: *Expr
+struct WithBinding {
+  var name:  Ident = Ident()
+  var value: *Expr
 }
 
 /// The statement form `with x = e` (D100); the rest of its block is its body.
-public struct WithStmt : Stmt {
-  public var binding: WithBinding
-  public var pos:     Span = Span.none()
+struct WithStmt : Stmt {
+  var binding: WithBinding
+  var pos:     Span = Span.none()
 }
 
 /// `scope { }` (D34); `scope(on: e, workers: n) { }` (D143, D156).
-public struct ScopeStmt : Stmt {
-  public var on:      (*Expr)? = null
-  public var workers: (*Expr)? = null
-  public var body:    Block = Block()
-  public var pos:     Span = Span.none()
+struct ScopeStmt : Stmt {
+  var on:      (*Expr)? = null
+  var workers: (*Expr)? = null
+  var body:    Block = Block()
+  var pos:     Span = Span.none()
 }
 
 /// A local function.
-public struct FunStmt : Stmt {
-  public var decl: *FunDecl
+struct FunStmt : Stmt {
+  var decl: *FunDecl
 }
 
-public struct StaticAssertStmt : Stmt {
-  public var assert: StaticAssert
+struct StaticAssertStmt : Stmt {
+  var assert: StaticAssert
 }
 
-public struct BadStmt : Stmt {
-  public var pos: Span = Span.none()
+struct BadStmt : Stmt {
+  var pos: Span = Span.none()
 }
 
 // ---------------------------------------------------------------------------
 // expressions
 
-public sealed trait Expr
+sealed trait Expr
 
-public struct IntLit : Expr {
-  public var text: string = ""
-  public var pos:  Span = Span.none()
+struct IntLit : Expr {
+  var text: string = ""
+  var pos:  Span = Span.none()
 }
 
-public struct FloatLit : Expr {
-  public var text: string = ""
-  public var pos:  Span = Span.none()
+struct FloatLit : Expr {
+  var text: string = ""
+  var pos:  Span = Span.none()
 }
 
 /// A string, its interpolation split into parts.
-public struct StringLit : Expr {
-  public var parts: List<StringPart> = []
-  public var pos:   Span = Span.none()
+struct StringLit : Expr {
+  var parts: List<StringPart> = []
+  var pos:   Span = Span.none()
 }
 
 /// `$x` and `${expr}` parts hold the expression; the others the text.
-public struct StringPart {
-  public var text: string = ""
-  public var expr: (*Expr)? = null
+struct StringPart {
+  var text: string = ""
+  var expr: (*Expr)? = null
 }
 
 /// `tag"text ${x}"` (D129).
-public struct TemplateExpr : Expr {
-  public var tag: *Expr  // a NameExpr or a MemberExpr
-  public var lit: StringLit
-  public var pos: Span = Span.none()
+struct TemplateExpr : Expr {
+  var tag: *Expr  // a NameExpr or a MemberExpr
+  var lit: StringLit
+  var pos: Span = Span.none()
 }
 
-public struct CharLit : Expr {
-  public var value: string = ""
-  public var pos:   Span = Span.none()
+struct CharLit : Expr {
+  var value: string = ""
+  var pos:   Span = Span.none()
 }
 
-public struct BoolLit : Expr {
-  public var value: bool = false
-  public var pos:   Span = Span.none()
+struct BoolLit : Expr {
+  var value: bool = false
+  var pos:   Span = Span.none()
 }
 
-public struct NullLit : Expr {
-  public var pos: Span = Span.none()
+struct NullLit : Expr {
+  var pos: Span = Span.none()
 }
 
 /// `this`.
-public struct ThisExpr : Expr {
-  public var pos: Span = Span.none()
+struct ThisExpr : Expr {
+  var pos: Span = Span.none()
 }
 
-public struct NameExpr : Expr {
-  public var name:     string = ""
-  public var typeArgs: List<Type> = []  // `Name<T>.f(…)`
-  public var pos:      Span = Span.none()
+struct NameExpr : Expr {
+  var name:     string = ""
+  var typeArgs: List<Type> = []  // `Name<T>.f(…)`
+  var pos:      Span = Span.none()
 }
 
 /// `x.name` or `x?.name`.
-public struct MemberExpr : Expr {
-  public var x:        *Expr
-  public var name:     Ident = Ident()
-  public var safe:     bool = false
-  public var typeArgs: List<Type> = []  // `mod.Name<T>.f(…)`
-  public var grouped:  bool = false     // in parentheses: ends a `?.` chain (D70)
-  public var pos:      Span = Span.none()
+struct MemberExpr : Expr {
+  var x:        *Expr
+  var name:     Ident = Ident()
+  var safe:     bool = false
+  var typeArgs: List<Type> = []  // `mod.Name<T>.f(…)`
+  var grouped:  bool = false     // in parentheses: ends a `?.` chain (D70)
+  var pos:      Span = Span.none()
 }
 
-public struct IndexExpr : Expr {
-  public var x:     *Expr
-  public var index: *Expr
-  public var pos:   Span = Span.none()
+struct IndexExpr : Expr {
+  var x:     *Expr
+  var index: *Expr
+  var pos:   Span = Span.none()
 }
 
 /// A call argument, perhaps named (D28).
-public struct Arg {
-  public var name:   Ident? = null
-  public var value:  *Expr
-  public var spread: bool = false  // `xs...`
+struct Arg {
+  var name:   Ident? = null
+  var value:  *Expr
+  var spread: bool = false  // `xs...`
 }
 
 /// `f(args)`, `Type<T>(args)`, `async f(args)`.
-public struct CallExpr : Expr {
-  public var callee:   *Expr
-  public var typeArgs: List<Type> = []
-  public var args:     List<Arg> = []
-  public var isAsync:  bool = false
-  public var grouped:  bool = false
+struct CallExpr : Expr {
+  var callee:   *Expr
+  var typeArgs: List<Type> = []
+  var args:     List<Arg> = []
+  var isAsync:  bool = false
+  var grouped:  bool = false
   // written `async { body }` (D169): the callee is a lambda of no
   // parameters whose body is that block
-  public var block: bool = false
-  public var pos:   Span = Span.none()
+  var block: bool = false
+  var pos:   Span = Span.none()
 }
 
-public struct UnaryExpr : Expr {
-  public var op:  Kind = Kind.Minus  // Minus, Bang, Amp, Star, Tilde
-  public var x:   *Expr
-  public var pos: Span = Span.none()
+struct UnaryExpr : Expr {
+  var op:  Kind = Kind.Minus  // Minus, Bang, Amp, Star, Tilde
+  var x:   *Expr
+  var pos: Span = Span.none()
 }
 
-public struct BinaryExpr : Expr {
-  public var op:    Kind = Kind.Plus
-  public var left:  *Expr
-  public var right: *Expr
-  public var pos:   Span = Span.none()
+struct BinaryExpr : Expr {
+  var op:    Kind = Kind.Plus
+  var left:  *Expr
+  var right: *Expr
+  var pos:   Span = Span.none()
 }
 
 /// `x ?! error`.
-public struct OrFailExpr : Expr {
-  public var left:  *Expr
-  public var right: *Expr
-  public var pos:   Span = Span.none()
+struct OrFailExpr : Expr {
+  var left:  *Expr
+  var right: *Expr
+  var pos:   Span = Span.none()
 }
 
 /// `r ?? fallback`, or `r ?? { … }`.
-public struct CoalesceExpr : Expr {
-  public var left:    *Expr
-  public var right:   (*Expr)? = null  // null when handler is set
-  public var handler: Handler? = null
-  public var pos:     Span = Span.none()
+struct CoalesceExpr : Expr {
+  var left:    *Expr
+  var right:   (*Expr)? = null  // null when handler is set
+  var handler: Handler? = null
+  var pos:     Span = Span.none()
 }
 
 /// `do { body } catch (e) { handler }`, or `x catch (e) { handler }` (D98).
-public struct CatchExpr : Expr {
-  public var body:    Block? = null
-  public var x:       (*Expr)? = null
-  public var handler: Handler = Handler()
-  public var pos:     Span = Span.none()
+struct CatchExpr : Expr {
+  var body:    Block? = null
+  var x:       (*Expr)? = null
+  var handler: Handler = Handler()
+  var pos:     Span = Span.none()
 }
 
 /// `x ?: default` (D30).
-public struct ElvisExpr : Expr {
-  public var left:  *Expr
-  public var right: *Expr
-  public var pos:   Span = Span.none()
+struct ElvisExpr : Expr {
+  var left:  *Expr
+  var right: *Expr
+  var pos:   Span = Span.none()
 }
 
 /// `lo..hi` or `lo..<hi` (D29).
-public struct RangeExpr : Expr {
-  public var lo:        *Expr
-  public var hi:        *Expr
-  public var inclusive: bool = false
-  public var pos:       Span = Span.none()
+struct RangeExpr : Expr {
+  var lo:        *Expr
+  var hi:        *Expr
+  var inclusive: bool = false
+  var pos:       Span = Span.none()
 }
 
 /// `x => e`, `(a, b) => e`, `(x: i32) => { … }` (D32).
-public struct LambdaExpr : Expr {
-  public var params: List<Param> = []
-  public var ret:    (*Type)? = null
-  public var body:   *Expr  // a BlockExpr for `{ … }`
-  public var pos:    Span = Span.none()
+struct LambdaExpr : Expr {
+  var params: List<Param> = []
+  var ret:    (*Type)? = null
+  var body:   *Expr  // a BlockExpr for `{ … }`
+  var pos:    Span = Span.none()
 }
 
-public struct TupleExpr : Expr {
-  public var elems: List<Expr> = []
-  public var pos:   Span = Span.none()
+struct TupleExpr : Expr {
+  var elems: List<Expr> = []
+  var pos:   Span = Span.none()
 }
 
 /// `[a, b]`, `mut [a, b]` (D25).
-public struct ListLit : Expr {
-  public var elems: List<Expr> = []
-  public var isMut: bool = false
-  public var pos:   Span = Span.none()
+struct ListLit : Expr {
+  var elems: List<Expr> = []
+  var isMut: bool = false
+  var pos:   Span = Span.none()
 }
 
-public struct MapEntry {
-  public var key:   *Expr
-  public var value: *Expr
+struct MapEntry {
+  var key:   *Expr
+  var value: *Expr
 }
 
 /// `["k": v]`, `[:]`, `mut [...]`.
-public struct MapLit : Expr {
-  public var entries: List<MapEntry> = []
-  public var isMut:   bool = false
-  public var pos:     Span = Span.none()
+struct MapLit : Expr {
+  var entries: List<MapEntry> = []
+  var isMut:   bool = false
+  var pos:     Span = Span.none()
 }
 
 /// `if (cond) then else other`; a branch is always a block.
-public struct IfExpr : Expr {
-  public var cond:   *Expr
-  public var then:   Block = Block()
-  public var orElse: Block? = null  // or a block holding one IfExpr: `else if`
-  public var pos:    Span = Span.none()
+struct IfExpr : Expr {
+  var cond:   *Expr
+  var then:   Block = Block()
+  var orElse: Block? = null  // or a block holding one IfExpr: `else if`
+  var pos:    Span = Span.none()
 }
 
 /// `val name = value` in an `if`'s condition (D95).
-public struct LetCond : Expr {
-  public var name:  Ident = Ident()
-  public var value: *Expr
-  public var pos:   Span = Span.none()
+struct LetCond : Expr {
+  var name:  Ident = Ident()
+  var value: *Expr
+  var pos:   Span = Span.none()
 }
 
 /// `when (subject) { arms }`, or `when { }` (D13).
-public struct WhenExpr : Expr {
-  public var subject: (*Expr)? = null
-  public var bind:    Ident? = null  // `when (val r = subject)`
-  public var arms:    List<WhenArm> = []
-  public var pos:     Span = Span.none()
+struct WhenExpr : Expr {
+  var subject: (*Expr)? = null
+  var bind:    Ident? = null  // `when (val r = subject)`
+  var arms:    List<WhenArm> = []
+  var pos:     Span = Span.none()
 }
 
-public struct WhenArm {
-  public var patterns: List<Pattern> = []
-  public var cond:     (*Expr)? = null  // the subjectless form
-  public var guard:    (*Expr)? = null
-  public var isElse:   bool = false
-  public var body:     *Expr
-  public var pos:      Span = Span.none()
+struct WhenArm {
+  var patterns: List<Pattern> = []
+  var cond:     (*Expr)? = null  // the subjectless form
+  var guard:    (*Expr)? = null
+  var isElse:   bool = false
+  var body:     *Expr
+  var pos:      Span = Span.none()
 }
 
 /// A block where an expression goes: lambda and arm bodies.
-public struct BlockExpr : Expr {
-  public var block: Block
+struct BlockExpr : Expr {
+  var block: Block
 }
 
-public struct TryExpr : Expr {
-  public var x:   *Expr
-  public var pos: Span = Span.none()
+struct TryExpr : Expr {
+  var x:   *Expr
+  var pos: Span = Span.none()
 }
 
-public struct AwaitExpr : Expr {
-  public var x:   *Expr
-  public var pos: Span = Span.none()
+struct AwaitExpr : Expr {
+  var x:   *Expr
+  var pos: Span = Span.none()
 }
 
 /// `x is T`, `x !is T`.
-public struct IsExpr : Expr {
-  public var x:   *Expr
-  public var pat: TypePat
-  public var not: bool = false
-  public var pos: Span = Span.none()
+struct IsExpr : Expr {
+  var x:   *Expr
+  var pat: TypePat
+  var not: bool = false
+  var pos: Span = Span.none()
 }
 
 /// `T implements Trait` (D117).
-public struct ImplementsExpr : Expr {
-  public var typ:       *Type
-  public var traitType: *Type
-  public var pos:       Span = Span.none()
+struct ImplementsExpr : Expr {
+  var typ:       *Type
+  var traitType: *Type
+  var pos:       Span = Span.none()
 }
 
 /// `x as T`.
-public struct CastExpr : Expr {
-  public var x:   *Expr
-  public var typ: *Type
-  public var pos: Span = Span.none()
+struct CastExpr : Expr {
+  var x:   *Expr
+  var typ: *Type
+  var pos: Span = Span.none()
 }
 
 /// `gather { … }` (D36); `gather(on: e, workers: n) { … }` (D143, D156).
-public struct GatherExpr : Expr {
-  public var on:      (*Expr)? = null
-  public var workers: (*Expr)? = null
-  public var body:    Block = Block()
-  public var pos:     Span = Span.none()
+struct GatherExpr : Expr {
+  var on:      (*Expr)? = null
+  var workers: (*Expr)? = null
+  var body:    Block = Block()
+  var pos:     Span = Span.none()
 }
 
 /// A `scope { … }` used as a value: its body's last expression (D156). In
 /// statement position a scope is a ScopeStmt.
-public struct ScopeExpr : Expr {
-  public var on:      (*Expr)? = null
-  public var workers: (*Expr)? = null
-  public var body:    Block = Block()
-  public var pos:     Span = Span.none()
+struct ScopeExpr : Expr {
+  var on:      (*Expr)? = null
+  var workers: (*Expr)? = null
+  var body:    Block = Block()
+  var pos:     Span = Span.none()
 }
 
 /// `race { body }` (D169): the tasks the body starts race. `arms` instead of
 /// `body` for the removed `race` with arms, now `select`.
-public struct RaceExpr : Expr {
-  public var body: Block? = null
-  public var arms: List<RaceArm> = []
-  public var pos:  Span = Span.none()
+struct RaceExpr : Expr {
+  var body: Block? = null
+  var arms: List<RaceArm> = []
+  var pos:  Span = Span.none()
 }
 
 /// `select { val x = ch.recv() => body … }` (D169; the arms of D38/D108/D168).
-public struct SelectExpr : Expr {
-  public var arms: List<RaceArm> = []
-  public var pos:  Span = Span.none()
+struct SelectExpr : Expr {
+  var arms: List<RaceArm> = []
+  var pos:  Span = Span.none()
 }
 
-public struct RaceArm {
-  public var binding: Binding? = null  // `val x = …`
-  public var source:  *Expr
-  public var name:    Ident? = null    // `src as name =>` (D168, removed by D169)
-  public var body:    (*Expr)? = null  // null for a bare arm (D168, removed by D169)
-  public var pos:     Span = Span.none()
+struct RaceArm {
+  var binding: Binding? = null  // `val x = …`
+  var source:  *Expr
+  var name:    Ident? = null    // `src as name =>` (D168, removed by D169)
+  var body:    (*Expr)? = null  // null for a bare arm (D168, removed by D169)
+  var pos:     Span = Span.none()
 }
 
-public struct UnsafeExpr : Expr {
-  public var body: Block = Block()
-  public var pos:  Span = Span.none()
+struct UnsafeExpr : Expr {
+  var body: Block = Block()
+  var pos:  Span = Span.none()
 }
 
 /// `with (r = open()) { … }` (D43); a statement through ExprStmt.
-public struct WithExpr : Expr {
-  public var bindings: List<WithBinding> = []
-  public var body:     Block = Block()
-  public var pos:      Span = Span.none()
+struct WithExpr : Expr {
+  var bindings: List<WithBinding> = []
+  var body:     Block = Block()
+  var pos:      Span = Span.none()
 }
 
 /// `return`, `break` or `continue` where an expression goes: `x ?: return`.
-public struct ControlExpr : Expr {
-  public var stmt: *Stmt
+struct ControlExpr : Expr {
+  var stmt: *Stmt
 }
 
-public struct BadExpr : Expr {
-  public var pos: Span = Span.none()
+struct BadExpr : Expr {
+  var pos: Span = Span.none()
 }
 
 // ---------------------------------------------------------------------------
 // patterns (D13)
 
-public sealed trait Pattern
+sealed trait Pattern
 
 /// `_`.
-public struct WildcardPat : Pattern {
-  public var pos: Span = Span.none()
+struct WildcardPat : Pattern {
+  var pos: Span = Span.none()
 }
 
 /// A name the matched value is bound to.
-public struct BindPat : Pattern {
-  public var name: Ident = Ident()
+struct BindPat : Pattern {
+  var name: Ident = Ident()
 }
 
 /// A constant: `1`, `"x"`, `null`, `true`.
-public struct LiteralPat : Pattern {
-  public var value: *Expr
+struct LiteralPat : Pattern {
+  var value: *Expr
 }
 
 /// `in lo..hi`.
-public struct RangePat : Pattern {
-  public var range: RangeExpr
-  public var pos:   Span = Span.none()
+struct RangePat : Pattern {
+  var range: RangeExpr
+  var pos:   Span = Span.none()
 }
 
 /// `is T` or `is T(field, other: pat)` (D12).
-public struct TypePat : Pattern {
-  public var typ:    *Type
-  public var fields: List<FieldPat> = []
-  public var hasArg: bool = false  // `is T()` rather than `is T`
-  public var pos:    Span = Span.none()
+struct TypePat : Pattern {
+  var typ:    *Type
+  var fields: List<FieldPat> = []
+  var hasArg: bool = false  // `is T()` rather than `is T`
+  var pos:    Span = Span.none()
 }
 
-public struct FieldPat {
-  public var name: Ident = Ident()
-  public var pat:  (*Pattern)? = null  // null: bind under the field's name
+struct FieldPat {
+  var name: Ident = Ident()
+  var pat:  (*Pattern)? = null  // null: bind under the field's name
 }
 
 /// `(a, b)`.
-public struct TuplePat : Pattern {
-  public var elems: List<Pattern> = []
-  public var pos:   Span = Span.none()
+struct TuplePat : Pattern {
+  var elems: List<Pattern> = []
+  var pos:   Span = Span.none()
 }
 
 /// `[a, b]`, `[first, ..rest]` (D62).
-public struct ListPat : Pattern {
-  public var elems: List<Pattern> = []
-  public var pos:   Span = Span.none()
+struct ListPat : Pattern {
+  var elems: List<Pattern> = []
+  var pos:   Span = Span.none()
 }
 
 /// `..` or `..name` in a list pattern.
-public struct RestPat : Pattern {
-  public var name: Ident? = null
-  public var pos:  Span = Span.none()
+struct RestPat : Pattern {
+  var name: Ident? = null
+  var pos:  Span = Span.none()
 }
 
 // ---------------------------------------------------------------------------
 // where a node is: one exhaustive `when` per family
 
-public fun typeSpan(t: Type): Span => when (t) {
+fun typeSpan(t: Type): Span => when (t) {
   is NamedType      => t.pos
   is NullableType   => t.pos
   is PointerType    => t.pos
@@ -886,7 +894,7 @@ public fun typeSpan(t: Type): Span => when (t) {
   is ErrorUnionType => t.pos
 }
 
-public fun declSpan(d: Decl): Span => when (d) {
+fun declSpan(d: Decl): Span => when (d) {
   is UseDecl          => d.pos
   is FunDeclNode      => d.decl.pos
   is StructDecl       => d.pos
@@ -904,7 +912,7 @@ public fun declSpan(d: Decl): Span => when (d) {
   is BadDecl          => d.pos
 }
 
-public fun stmtSpan(s: Stmt): Span => when (s) {
+fun stmtSpan(s: Stmt): Span => when (s) {
   is BlockStmt        => s.block.pos
   is ValStmt          => s.pos
   is ExprStmt         => exprSpan(*s.x)
@@ -921,7 +929,7 @@ public fun stmtSpan(s: Stmt): Span => when (s) {
   is BadStmt          => s.pos
 }
 
-public fun exprSpan(e: Expr): Span => when (e) {
+fun exprSpan(e: Expr): Span => when (e) {
   is IntLit         => e.pos
   is FloatLit       => e.pos
   is StringLit      => e.pos
@@ -964,7 +972,7 @@ public fun exprSpan(e: Expr): Span => when (e) {
   is BadExpr        => e.pos
 }
 
-public fun patternSpan(p: Pattern): Span => when (p) {
+fun patternSpan(p: Pattern): Span => when (p) {
   is WildcardPat => p.pos
   is BindPat     => p.name.pos
   is LiteralPat  => exprSpan(*p.value)

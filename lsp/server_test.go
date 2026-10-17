@@ -1052,7 +1052,7 @@ func TestHoverViewpoint(t *testing.T) {
 	root := t.TempDir()
 	os.WriteFile(filepath.Join(root, "veles.toml"), []byte("[package]\nname = \"app\"\nversion = \"0.1.0\"\n"), 0o644)
 	os.MkdirAll(filepath.Join(root, "store"), 0o755)
-	store := "public struct Notes {\n  private var next: i64 = 1\n  items: List<string> = []\n  public val tag: string = \"n\"\n  fun size(): i64 => this.items.len()\n  public fun add(text: string): i64 {\n    this.next += 1\n    this.next\n  }\n  private fun bump() { }\n}\n\nfun inModule(): i64 {\n  val n = Notes()\n  n.size()\n}\n"
+	store := "public struct Notes {\n  private var next: i64 = 1\n  internal items: List<string> = []\n  public val tag: string = \"n\"\n  internal fun size(): i64 => this.items.len()\n  public fun add(text: string): i64 {\n    this.next += 1\n    this.next\n  }\n  private fun bump() { }\n}\n\nfun inModule(): i64 {\n  val n = Notes()\n  n.size()\n}\n"
 	os.WriteFile(filepath.Join(root, "store", "store.vs"), []byte(store), 0o644)
 	main := "use io, store\n\nfun main() {\n  val n = store.Notes()\n  io.println(\"${n.add(\"x\")} ${n.tag}\")\n}\n"
 	os.WriteFile(filepath.Join(root, "main.vs"), []byte(main), 0o644)

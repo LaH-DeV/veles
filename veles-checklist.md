@@ -1115,6 +1115,7 @@ list as it was is in `archive/progress-log-2026-09.md` and git history).
 
 **Open:**
 
+
 - Q45: when an operation that explicitly accepts a cancellation token is
   cancelled, should it throw a typed `Cancelled` error, return a distinct
   cancellation outcome, or use another contract? The user wants cancellation
@@ -1316,10 +1317,31 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-10-14 | Q43: a binding generator | **`veles bindgen <header>` over clang's JSON AST, layouts checked by a C probe; `.winmd` later** (user, recommended of 2; D162). Rejected: hand-written only. |
 | 2026-10-15 | Q44: racing computations (the user, on the idioms review's `fastest()`: "this piece of code looks awful and we should change it in the language"; two rounds) | **`async f()` as a `race` arm, owned by the race (losers cancelled and joined); `awaitFirst(async a(), async b())` for plain values; an arm without `=> body` gives its value; the first to finish wins, error included; no `await` in arms; a value named `src as name => body`** (user, recommended in each; D168). Rejected: `awaitFirst` only; leaving manual cancels; first-success semantics (a separately named form later — "`race try` or something better named"); keeping `await` or both; `val name = src =>`; `src => name =>`; a Kotlin-`select` redesign. |
 | 2026-10-16 | Q45: `race` and `select`, async blocks (the user, after D168 was built: "naming 'as' in race arms was a mistake"; `race` without arms "like gather", a `select` that "has arms always", and `async { }` blocks) | **`race { }` a block whose `async` tasks race (first to finish wins, errors included; losers cancelled and joined); `select { }` the construct with arms, each `src => body`, named `val x = src =>`, `async` arms owned; `async { }` a started sendable lambda, `return` gives its value; `awaitFirst`, `as` and bare arms removed** (user, recommended in each of 4; D169). Rejected: arms in `race`; keeping `awaitFirst`; `src => x =>`; a waits-only `select`; refusing `return` in an async block; `async () => { }` (the user: "would create it but not call it"). |
+| 2026-10-17 | Q46: labels on tests and suites (the user: "normal optional labels with current description") | **`test listMethods "sentence" { }` and `suite Lexer "sentence" { }`: an optional identifier first, the sentence optional when a label exists; reports and `--filter` use `label: sentence`** (user, the recommended form; D170; built the same day). Rejected: tags for filtering (later), `label: "…"` (a colon), identifier-only names. |
+| 2026-10-17 | Q47: format specs in interpolation | **A spec after `:` (`${price:>10.2}`, Python/Rust-like grammar, checked at compile time) and a higher-level `std/fmt`; locales a noted todo** (user: "spec after colon, and additional module for formatting functions (higher level than :spec)", "std/fmt but note the locales todo"; D171). Rejected: a minimal grammar, printf style, a `format(...)` method only. |
+| 2026-10-17 | Q48: multi-line and raw strings | **`"""…"""` text blocks (closing delimiter's column is the margin) and backtick raw strings (no escapes, no interpolation)** (user: "backticks will have non-interpolating raw strings… `this is a string`"; margin the recommended; D172). Rejected: a `raw"…"` tag, `#"…"#`, no margin rule. |
 
 ## 11. Known limitations to revisit
 
-- **Decided 2026-10-14, not built yet:** D157 (interpolating a `Result`/task is an error; a
+- **Bare member names (D158, built 2026-10-17).** The rule is applied by a rewrite before
+  a body is checked: a name the body binds anywhere as a local is never read as a member
+  there (the reader gets "unknown name … `this.x`" where the local is not in scope, instead
+  of the spec's shadowing warning, which is not built); hover does not say "field of
+  `this`"; rename and references cover both spellings only because the rewritten node keeps
+  its span. Not done: the lint preferring one spelling, and migrating std and `selfhost/` to
+  bare names (left to the user, as the spec says); the module-level-name warning reports at
+  the use, not at the member's declaration. Labels on tests (D170): tags for filtering
+  (`--tag`) were rejected for now; take them up with `@slow`-style needs.
+- **Decided 2026-10-17, not built yet:** D171 (format specs after `:` and `std/fmt`; the
+  functions' names are confirmed when built; **locales — decimal commas, dates — are a
+  noted todo**), D172 (`"""` text blocks with a margin; backtick raw strings: tagging a
+  raw string and holding a backtick are left to the build). Touches the lexer, parser,
+  formatter, `selfhost/` lexer and parser (gate corpus), sema, docs chapter 2, the editor
+  grammar.
+- **Linux (WSL)** was not run for the 2026-10-17 change (D170, B17, B20); run
+  `wsl -d Ubuntu -- bash …/internal/wsl-test.sh`.
+
+- **Decided 2026-10-14, not built yet (D158 was built 2026-10-17, see below):** D157 (interpolating a `Result`/task is an error; a
   generic body interpolating a `T` later instantiated as a `Result` is not refused — the rule
   reads declared types), D158 (bare names reach the receiver's members; left to the user when
   built: a lint preferring one spelling, and whether std/`selfhost/` migrate to bare names),
@@ -1442,7 +1464,14 @@ Every new public std API (http cookies/forms/client, `std/log`,
   children of scopes); a trait implementation cannot be one of its members. (An executor's
   function taken as a value outside its code stays an error by decision: Q31, 2026-10-11.)
 
-- Visibility (D142, decided 2026-10-08, not built: plan B17). Kept for later:
+- Visibility (D142, built 2026-10-17: plan B17). Not done: the migration did not
+  insert `internal` for the old module-private items (the unwritten level widened
+  from the module to the package; a module-only helper is written `internal` when
+  wanted), and std keeps its `public`s (some may now be demotable to the package
+  level — an API review, not a rule). The spec's "A `public` signature" check
+  covers functions and fields, not type aliases, trait methods, `static val`s or
+  an `executor`'s functions. A `veles check --fix` over a path inside a populated
+  directory fixes its sibling files too (found 2026-10-17). Kept for later:
   a file-scoped `private` on top-level declarations (Kotlin's rule) — refused
   as an error today so the word stays free; take it up if large modules ask
   for per-file helpers. A semver check at `veles publish` that names a field

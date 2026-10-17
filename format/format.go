@@ -388,7 +388,7 @@ func (p *printer) decl(d ast.Decl) {
 	case *ast.FunDecl:
 		p.fun(d)
 	case *ast.SuiteDecl:
-		p.w("suite " + p.src[d.At.Start:d.At.End] + " ")
+		p.w("suite " + p.testTitle(d.Label, d.Name, d.At) + " ")
 		p.members(p.openBrace(d.At.End, d.Pos.End), d.Pos.End, len(d.Decls) == 0, func(i int) bool { return i < len(d.Decls) }, func(i int) {
 			inner := d.Decls[i]
 			p.before(declStart(inner))
@@ -399,7 +399,7 @@ func (p *printer) decl(d ast.Decl) {
 		p.staticAssert(d)
 	case *ast.TestDecl:
 		// the name as written, escapes and all
-		p.w("test " + p.src[d.At.Start:d.At.End])
+		p.w("test " + p.testTitle(d.Label, d.Name, d.At))
 		if d.Body != nil {
 			p.w(" ")
 			p.block(d.Body)
@@ -1380,6 +1380,19 @@ func (p *printer) blockHead(b *ast.Block, head string) {
 // a bare statement body in a block with the statement's span).
 func (p *printer) braced(b *ast.Block) bool {
 	return b.Pos.Start < len(p.src) && p.src[b.Pos.Start] == '{'
+}
+
+// testTitle is a test's or suite's head as written (D170): the label, then
+// the sentence's string literal with its escapes (at is the sentence's, or
+// the label's when only that is written).
+func (p *printer) testTitle(label, name string, at source.Span) string {
+	switch {
+	case name == "":
+		return label
+	case label == "":
+		return p.src[at.Start:at.End]
+	}
+	return label + " " + p.src[at.Start:at.End]
 }
 
 func (p *printer) staticAssert(d *ast.StaticAssert) {

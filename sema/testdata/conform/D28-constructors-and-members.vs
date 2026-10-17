@@ -1,13 +1,14 @@
 // D28/D23: constructors take fields by name, `init` assigns before it
-// reads, and a method is reached through a value — `this` inside the type.
+// reads, and a method is reached through a value — inside the type a bare name
+// is `this.name` (D158).
 use io
 
 struct Plain {
   x: i64
   fun twice(): i64 => this.x * 2
-  fun bare(): i64 => twice() // error: unknown function 'twice'; a member is reached through the receiver: 'this.twice'
+  fun bare(): i64 => twice()
   fun asValue(): i64 {
-    val f = twice // error: unknown name 'twice'; a member is reached through the receiver: 'this.twice'
+    val f = twice // error: 'Plain' has no field 'twice'; 'twice' is a method: call it, 'twice()'
     1
   }
 }

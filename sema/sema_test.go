@@ -3870,6 +3870,11 @@ func TestTestSuites(t *testing.T) {
 	expectError(t, "suite \"a\" {\n  test fun h() { }\n}\ntest \"x\" { h() }\nfun main() { }\n", "'h' is a helper of suite \"a\", visible only inside it")
 	expectError(t, "suite \"a\" { }\nsuite \"a\" { }\nfun main() { }\n", "another test or suite here is named \"a\"")
 	expectError(t, "suite \"a\" {\n  test \"x\" { }\n  test \"x\" { }\n}\nfun main() { }\n", "another test or suite here is named \"a / x\"")
+
+	// labels (D170): a label and a sentence, or either; a label is unique
+	// within its suite even when the sentences differ
+	expectClean(t, "suite Lexer \"tokens\" {\n  test a \"first\" { }\n  test b \"first too\" { }\n  test c { }\n}\nfun main() { }\n")
+	expectError(t, "suite S {\n  test a \"one\" { }\n  test a \"two\" { }\n}\nfun main() { }\n", "another test or suite here is named \"S / a\"")
 }
 
 func TestUnsafeNeedsSafetyComment(t *testing.T) {

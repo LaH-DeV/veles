@@ -436,6 +436,10 @@ struct Route {
   handler:  Handler
 }
 
+// `handler` under another name, for the code inside Router, whose own
+// `handler()` method hides the function (D158).
+fun adapt<E>(h: sendable fun(Request): Response suspends throws E | Fail): Handler => handler(h)
+
 /// Maps `METHOD /pattern` to handlers. A pattern segment `{name}` captures
 /// one path segment into `req.params`; a final `*` captures the rest under
 /// `"*"`. `http.Router()` makes an empty one; register routes, then hand
@@ -445,22 +449,22 @@ public struct Router {
   private middleware: MutableList<Middleware> = []
 
   public fun get<E>(pattern: string, h: sendable fun(Request): Response suspends throws E | Fail) {
-    this.add(Method.get, pattern, handler(h))
+    this.add(Method.get, pattern, adapt(h))
   }
   public fun post<E>(pattern: string, h: sendable fun(Request): Response suspends throws E | Fail) {
-    this.add(Method.post, pattern, handler(h))
+    this.add(Method.post, pattern, adapt(h))
   }
   public fun put<E>(pattern: string, h: sendable fun(Request): Response suspends throws E | Fail) {
-    this.add(Method.put, pattern, handler(h))
+    this.add(Method.put, pattern, adapt(h))
   }
   public fun delete<E>(pattern: string, h: sendable fun(Request): Response suspends throws E | Fail) {
-    this.add(Method.delete, pattern, handler(h))
+    this.add(Method.delete, pattern, adapt(h))
   }
   public fun patch<E>(pattern: string, h: sendable fun(Request): Response suspends throws E | Fail) {
-    this.add(Method.patch, pattern, handler(h))
+    this.add(Method.patch, pattern, adapt(h))
   }
   public fun any<E>(pattern: string, h: sendable fun(Request): Response suspends throws E | Fail) {
-    this.routes.push(Route(method: null, segments: segmentsOf(pattern), handler: handler(h)))
+    this.routes.push(Route(method: null, segments: segmentsOf(pattern), handler: adapt(h)))
   }
 
   /// Registers an already adapted handler for `method`.

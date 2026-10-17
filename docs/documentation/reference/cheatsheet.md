@@ -24,8 +24,9 @@ fun main() { }                  // entry point
 ```
 
 A module is a directory; every `.vs` in it shares a namespace (M2).
-`public` exports from the module (M5); `public use m` in the root module
-shows a module to other packages (D89). `veles.toml` names the package and
+Levels (D142): `private` the type, `internal` the module, nothing the package,
+`public` other packages (a warning in a program); `public use m` in the root
+module is the facade (D89). `veles.toml` names the package and
 its `[dependencies]` (M1).
 
 ## Bindings and types
@@ -120,11 +121,11 @@ struct Point {
   sum: i64                      // no default + assigned in init = init's, not the caller's (a default is a constant: no `this` in it)
   init { this.sum = this.x + this.y }  // runs after every construction; must assign sum on every path; not callable (D28)
   public protected var hits: i64 = 0  // protected var: read wherever visible, assigned only by Point's own code
-  fun len(): i64 => this.x + this.y
+  fun len(): i64 => this.x + this.y     // or `x + y`: in a method a bare member name is this.name (D158)
   fun move(dx: i64) { this.x += dx }   // no marker: a method may assign the var fields
   static fun origin(): Point => Point(x: 0)  // no this; Point.origin()
-  static val unit = Point(x: 1)             // a constant in the type's namespace: Point.unit (public to export; never var)
-  private count: i64 = 0                    // private: only Point's own methods/implement/extend blocks; no marker (or `internal`) = the module; public = the package
+  static val unit = Point(x: 1)             // a constant in the type's namespace: Point.unit, or just `unit` inside Point (D158; public to export; never var)
+  private count: i64 = 0                    // private: only Point's own methods/implement/extend blocks; `internal` = the module; no marker = the package; public = other packages
 }
 struct Shared<T> {
   private cell: *T
@@ -351,6 +352,7 @@ test "parses a port" {                       // a sentence names it; no signatur
 }
 test fun expectSorted(xs: List<i64>) { ... }  // helper: test code only, left out of builds
 suite "parser" { test "..." { } suite "..." { } test fun h() { } }  // a group; its helpers are its own
+suite Lexer "tokens" { test label "sentence" { } }  // optional identifier labels (D170); either part may stand alone
 parser.test.vs                                // a file of tests, the suite "parser"; never built into the program
 veles test --filter "parser / rejects"        // a test's full name: its suites and its own, joined with " / "
 assert(n > 0, "why it must hold")            // anywhere: an invariant; panics with the reason and both sides

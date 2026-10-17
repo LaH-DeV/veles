@@ -24,10 +24,10 @@ import (
 // declareEnum is declare() for an enum declaration.
 func (c *Checker) declareEnum(m *Module, f *ast.File, d *ast.EnumDecl) {
 	c.attrsOf(d.Attrs, "enum")
-	e := &types.Enum{Name: d.Name.Name, Module: m.prefix(), Pub: d.Pub, Base: types.TI64, Decl: d}
+	e := &types.Enum{Name: d.Name.Name, Module: m.prefix(), Pub: d.Pub, Internal: d.Internal, Base: types.TI64, Decl: d}
 	c.enumDecl[e] = &declCtx{module: m, file: f, decl: d, tps: map[string]*types.TypeParam{}}
 	c.enums = append(c.enums, e)
-	c.insert(m, &Symbol{Name: d.Name.Name, Kind: SymType, Pub: d.Pub, Module: m, Span: d.Name.Pos, Type: e})
+	c.insert(m, &Symbol{Name: d.Name.Name, Kind: SymType, Pub: d.Pub, Internal: d.Internal, Module: m, Span: d.Name.Pos, Type: e})
 }
 
 // resolveEnum fixes the base type and the members' values: an explicit
@@ -169,7 +169,7 @@ func (c *Checker) refEnumMember(span source.Span, e *types.Enum, m *types.EnumMe
 // enumHead is the declaration line of an enum with every implicit word
 // spelled out.
 func enumHead(e *types.Enum) string {
-	head := visPrefix(e.Pub, false) + "enum " + e.Name
+	head := visPrefix(e.Pub, e.Internal, false) + "enum " + e.Name
 	return head + " : " + e.Base.Name
 }
 

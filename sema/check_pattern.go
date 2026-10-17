@@ -860,7 +860,7 @@ func (f *fnCtx) compileFields(p *ast.TypePat, value Expr, st *types.Struct, span
 			f.errorf(fp.Name.Pos, "field '%s' is private to '%s' and cannot be matched here", fld.Name, st.Name)
 			continue
 		}
-		if !fld.Pub && st.Module != f.module.prefix() {
+		if !fieldVisible(fld.Pub, fld.Internal, st.Module, f.module) {
 			f.errorf(p.Pos, "field '%s' of '%s' is private (M5)", fld.Name, st.Name)
 		}
 		sub := fp.Pat

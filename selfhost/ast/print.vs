@@ -5,7 +5,7 @@ use utf8
 use lexer { PRINT, kindText }
 
 /// Every declaration of a file, one after another.
-public fun dump(file: SourceFile): string {
+fun dump(file: SourceFile): string {
   var p = Printer()
   loop (d in file.decls) {
     p.decl(d)
@@ -14,19 +14,19 @@ public fun dump(file: SourceFile): string {
   p.out.toString()
 }
 
-public fun dumpDecl(d: Decl): string {
+fun dumpDecl(d: Decl): string {
   var p = Printer()
   p.decl(d)
   p.out.toString()
 }
 
-public fun dumpExpr(e: Expr): string {
+fun dumpExpr(e: Expr): string {
   var p = Printer()
   p.expr(e)
   p.out.toString()
 }
 
-public fun typeString(t: Type): string {
+fun typeString(t: Type): string {
   var p = Printer()
   p.typ(t)
   p.out.toString()
@@ -47,7 +47,7 @@ fun hex(n: i64, width: i64): string => n.toString(radix: 16).padStart(width, "0"
 /// `"` and `\` escaped, the C escapes for the control characters that have
 /// one, `\xNN` for the other ASCII ones, and `\uNNNN` / `\UNNNNNNNN` for any
 /// character above ASCII that is not printable.
-public fun quote(text: string): string {
+fun quote(text: string): string {
   val out = StringBuilder()
   out.append("\"")
   var i: i64 = 0
@@ -210,7 +210,7 @@ struct Printer {
       }
       is FunDeclNode      => this.funDecl(d.decl)
       is SuiteDecl        => {
-        this.open("suite ${quote(d.name)}")
+        this.open("suite ${quote(title(d.label, d.name))}")
         loop (inner in d.decls) {
           this.nl()
           this.decl(inner)
@@ -219,7 +219,7 @@ struct Printer {
       }
       is StaticAssertDecl => this.staticAssert(d.assert)
       is TestDecl         => {
-        this.open("test ${quote(d.name)}")
+        this.open("test ${quote(title(d.label, d.name))}")
         if (val body = d.body) {
           this.nl()
           this.block(body)

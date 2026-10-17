@@ -476,13 +476,13 @@ func (p *Parser) parseDeclKind(attrs []*ast.Attribute, pub, marked bool, which s
 			}
 			return p.parseExecutorDecl(pub, start)
 		}
-		if p.cur().Text == "suite" && p.peek(1).Kind == lexer.String {
+		if p.atTestHead("suite") {
 			if marked {
 				p.errorf(start, "a suite cannot be %s; it only groups tests", which)
 			}
 			return p.parseSuite(attrs, start)
 		}
-		if p.cur().Text == "test" && p.peek(1).Kind == lexer.String {
+		if p.atTestHead("test") {
 			if marked {
 				p.errorf(start, "a test cannot be %s; nothing calls it", which)
 			}
@@ -1392,8 +1392,8 @@ func (p *Parser) parseExportedFun(attrs []*ast.Attribute, pub bool, start source
 func (p *Parser) parseTest(attrs []*ast.Attribute, start source.Span) ast.Decl {
 	doc := p.takeDoc()
 	p.next() // test
-	t := p.next()
-	d := &ast.TestDecl{Doc: doc, At: t.Span, Name: p.fixedName(t, "test", "test \"parses an empty list\" { ... }")}
+	d := &ast.TestDecl{Doc: doc}
+	d.Label, d.LabelAt, d.Name, d.At = p.testHead("test", "test listMethods \"incrementAt updates an element\" { ... }")
 	if len(attrs) > 0 {
 		p.errorf(attrs[0].Pos, "a test takes no attributes")
 	}
@@ -1405,6 +1405,39 @@ func (p *Parser) parseTest(attrs []*ast.Attribute, start source.Span) ast.Decl {
 	d.Body = p.parseBlock()
 	d.Pos = p.spanFrom(start)
 	return d
+}
+
+// atTestHead reports whether the cursor starts a test or a suite (D78,
+// D170): the word followed by a string, or by an identifier label and then a
+// string or the body's brace. The words stay contextual.
+func (p *Parser) atTestHead(word string) bool {
+	if !p.at(lexer.Ident) || p.cur().Text != word {
+		return false
+	}
+	switch p.peek(1).Kind {
+	case lexer.String:
+		return true
+	case lexer.Ident:
+		k := p.peek(2).Kind
+		return k == lexer.String || k == lexer.LBrace
+	}
+	return false
+}
+
+// testHead reads what follows `test` or `suite`: an optional identifier
+// label, then an optional sentence — at least one of the two. The span
+// returned for the name is the sentence's, or the label's when only that is
+// written.
+func (p *Parser) testHead(what, example string) (label string, labelAt source.Span, name string, at source.Span) {
+	if p.at(lexer.Ident) {
+		t := p.next()
+		label, labelAt, at = t.Text, t.Span, t.Span
+	}
+	if p.at(lexer.String) {
+		t := p.next()
+		name, at = p.fixedName(t, what, example), t.Span
+	}
+	return
 }
 
 // fixedName is the text of a test's or a suite's name: a plain string,
@@ -1429,8 +1462,8 @@ func (p *Parser) fixedName(t lexer.Token, what, example string) string {
 func (p *Parser) parseSuite(attrs []*ast.Attribute, start source.Span) ast.Decl {
 	doc := p.takeDoc()
 	p.next() // suite
-	t := p.next()
-	d := &ast.SuiteDecl{Doc: doc, At: t.Span, Name: p.fixedName(t, "suite", "suite \"the router\" { ... }")}
+	d := &ast.SuiteDecl{Doc: doc}
+	d.Label, d.LabelAt, d.Name, d.At = p.testHead("suite", "suite Router \"routing and middleware\" { ... }")
 	if len(attrs) > 0 {
 		p.errorf(attrs[0].Pos, "a suite takes no attributes")
 	}

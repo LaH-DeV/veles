@@ -118,8 +118,10 @@ make that inference circular.
 
 ## Visibility
 
-Everything is private to its module unless marked `public` (M5): functions,
-structs, fields, methods, module-level values.
+A declaration is visible to the other modules of its **package** unless you
+say otherwise (D142): functions, structs, fields, methods, module-level
+values. `public` lets *other packages* use it; `internal` keeps it to its own
+module.
 
 ```veles
 // fragment — geometry/point.vs
@@ -131,25 +133,31 @@ public struct Point {
 public fun distance(a: Point, b: Point): f64 => root((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y))
 public fun origin(): Point => Point(x: 0.0, y: 0.0)
 
-fun root(x: f64): f64 => ...   // private helper
+internal fun root(x: f64): f64 => ...   // this module's helper
 ```
 
-A struct whose fields are module-private cannot be constructed outside
-its module with the `Point(x: .., y: ..)` syntax; give it a `public fun`
-constructor instead. That is how you keep invariants at the module
-boundary; for an invariant that even the rest of the module must not
-touch, a member can be `private` to its type
+A struct with a field that another package or module cannot see cannot
+be built there with every field given: the hidden field takes its default
+(or must be given by a constructor you write as a `public static fun`).
+That is how you keep invariants at a boundary; for an invariant that even
+the rest of the module must not touch, a member can be `private` to its type
 ([chapter 5](05-structs-and-methods.md#visibility)).
 
-The three levels, then: `private` — the type's own methods, implement and
-extend blocks; `internal` — the module (the directory), which is what
-nothing written means, so the word is optional; `public` — the whole
-package. These say who can *see* a name. Who can *assign* a field is a
-separate question with its own words — bare, `protected var`, `var`
+The four levels, then: `private` — the type's own methods, implement and
+extend blocks; `internal` — the module (the directory); *nothing written* —
+the whole package; `public` — other packages too. These say who can *see* a
+name. Who can *assign* a field is a separate question with its own words —
+bare, `protected var`, `var`
 ([chapter 5](05-structs-and-methods.md#protected-var-everyone-reads-the-type-writes)) —
 so `public protected var count` reads "everyone sees it, only the type
-changes it". What leaves the *package* is what its root module re-exports
-with `public use`, below.
+changes it".
+
+Two rules keep the words honest. In a **program** (its root module has
+`main`) no other package imports anything, so `public` is noise and the
+compiler warns with a fix (`veles check --fix` removes it). And a `public`
+signature may name only types other packages can see: `public fun parse():
+Token` with `Token` neither `public` nor re-exported is an error, with the
+two ways out — make `Token` public, or drop `public` from `parse`.
 
 ## Packages and `veles.toml`
 
@@ -535,9 +543,14 @@ veles: 3 workspace members ok
 
 ### What a package shows
 
-`public` makes something visible to the *rest of the package*. What other
-packages may reach is what the package's **root module** (`lib.vs`, or any
-file of the root directory) re-exports with `public use` (D89):
+What other packages may reach is whatever is `public`, at the module's path:
+with a dependency `mathlib`, `use mathlib.geometry` and `geometry.distance(..)`
+work when `geometry` declares `distance` `public`. The directory layout of
+`public` modules is therefore part of the API — moving one is a breaking
+change, unless a **facade** hides it. A package's **root module** (`lib.vs`,
+or any file of the root directory) writes the facade with `public use`
+(D89), and a facade may export *unmarked* items too, under its own name
+(D142):
 
 ```veles
 // fragment: mathlib/lib.vs
@@ -552,9 +565,12 @@ public fun twice(x: i64): i64 => x * 2
 - `public use support { root as sqrt }` puts those items into the module
   itself, flattened: `use mathlib { sqrt }` or `mathlib.sqrt(x)`, while the
   module `support` is not reachable — a facade that hides the layout.
-- A module that is not re-exported cannot be imported from another package:
-  `module 'hidden' of package 'mathlib' is not re-exported; add 'public
-  use hidden' to its root module`.
+- A module that is not re-exported can still be imported by its path
+  (`use mathlib.hidden`), but shows only what it declares `public`; an item
+  that is unmarked is reachable from another package only through a facade's
+  `public use` (`public use hidden { helper }`), and `public use hidden`
+  shows the module's unmarked items too, under the facade's name. An
+  `internal` or `private` item cannot be re-exported.
 - `public use` in any module works the same way for that module's importers,
   so a module can pass on what it re-exports: `use mathlib.geometry.deep`
   is fine when `geometry` says `public use deep`.

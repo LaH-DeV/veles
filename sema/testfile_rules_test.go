@@ -93,7 +93,7 @@ func TestTestFileHelpersStayForTests(t *testing.T) {
 
 // D129: a tag may be `module.name`, and only a public function of that module.
 func TestTemplateTagQualifiedByModule(t *testing.T) {
-	const lib = "public struct Query {\n  public text: string\n}\n\n@template\npublic fun sql(parts: List<string>, values: List<i64>): Query => Query(text: parts.join(\"?\"))\n\n@template\nfun hidden(parts: List<string>, values: List<i64>): Query => Query(text: \"\")\n\npublic fun plain(parts: List<string>, values: List<i64>): Query => Query(text: \"\")\n"
+	const lib = "public struct Query {\n  public text: string\n}\n\n@template\npublic fun sql(parts: List<string>, values: List<i64>): Query => Query(text: parts.join(\"?\"))\n\n@template\ninternal fun hidden(parts: List<string>, values: List<i64>): Query => Query(text: \"\")\n\npublic fun plain(parts: List<string>, values: List<i64>): Query => Query(text: \"\")\n"
 	ok := checkFiles(t, map[string]string{
 		"main.vs":   "use tags\n\nfun main() {\n  val q = tags.sql\"a ${1} b\"\n}\n",
 		"tags/t.vs": lib,

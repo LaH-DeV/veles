@@ -234,6 +234,12 @@ they nest:
 - A `*.test.vs` file is a suite by itself, named after the file:
   everything in `config.test.vs` is in the suite `config`.
 
+A test or a suite may also carry a **label**, an identifier written before
+the sentence: `test listMethods "incrementAt updates an element" { }`,
+`suite Lexer "tokenising" { }`. Either part may stand alone (`test
+listMethods { }`). The report and `--filter` use `label: sentence`, so a
+filter matches both; a label, like a sentence, is unique within its suite.
+
 ```veles
 // fragment
 suite "parser" {

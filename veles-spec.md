@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.84** — decisions D1–D169. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.86** — decisions D1–D172. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -29,6 +29,9 @@ Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-p
 | D157–D167 | (2026-10-14 review) a `Result`/task cannot be interpolated; bare names reach the receiver's members; `std/bluetooth` LE central; per-target files and `build.target`; `std/sys/<os>` and the platform modules; `veles bindgen`; one-parameter constructors positional; `copy`; the index-of family answers `i64?`; labelled tuples; `std/cli` |
 | D168 | racing computations: `async` arms owned by the construct, no `await` in arms (partly superseded by D169) |
 | D169 | `race { }` a block like `gather`, `select { }` with arms, `async { }` blocks |
+| D170 | tests and suites take an optional identifier label before the sentence |
+| D171 | format specs after `:` in interpolation, checked at compile time; `std/fmt` for the higher level |
+| D172 | `"""…"""` text blocks with a margin; backtick raw strings |
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -5153,6 +5156,8 @@ other packages only under the facade's name, not at `lexer.Token`. An
 level). `public use m` of a whole module exports that module's unmarked and
 `public` declarations under the facade.
 
+*Built 2026-10-17.* `public` in a program (root declares `main`) is a warning with a fix; migration removed it from programs and kept it in libraries; unmarked old items were not rewritten to `internal` (the level widened to the package). A module of another package is reached by its path; `public use m` of a whole module shows its unmarked items under the facade.
+
 **A `public` signature names only types other packages can see** (Q23,
 user, recommended of 3). `public fun parse(): Token` with `Token` neither
 `public` nor re-exported is an error ("'parse' is public but its result
@@ -6365,6 +6370,14 @@ the parser's state is mostly written); leaving `this.` mandatory (Rust,
 Python and TypeScript do; Kotlin, Swift, Java, C# and C++ do not, and the
 count above is the cost).
 
+*Built 2026-10-17.* A rewrite before a body is checked turns each bare name
+that is a member of the receiver (and bound nowhere in the body as a local)
+into `this.name`, each bare static member into `Type.name`. A name the body
+binds as a local anywhere is left alone: where the local is in scope it is the
+local, elsewhere the error says `this.name`. The shadowing warning of "Shadowing"
+above is built only for a member hiding a *module-level* name (reported at the
+use: `'x' means this.x here`); the local-versus-member warning is not.
+
 ### D159 — `std/bluetooth`: Bluetooth LE central, high level first (v0.82)
 
 Q42 (user, recommended of 3; user, 2026-10-14: "low-level apis like
@@ -6994,6 +7007,83 @@ Rejected: keeping arms in `race` (the user); keeping `awaitFirst` beside
 of waits only (a computation against a shutdown channel would need `with t
 = async …` first); `return` refused in `async { }`; `async () => { }` (a
 lambda that is created but not called, the user's own objection).
+
+### D170 — Tests and suites may carry a label (v0.85)
+
+```veles
+suite Lexer "tokenising" {
+  test listMethods "incrementAt updates an element and checks its index" { ... }
+  test emptyInput { ... }          // a label alone
+  test "plain sentence" { ... }    // a sentence alone, as before (D78)
+}
+```
+
+The user: "I would prefer normal optional labels with current description,
+something like `test listMethods "incrementAt updates an element and checks
+its index"`". `test`/`suite` take an optional identifier, then an optional
+string; at least one is written. The report and `--filter` use the title
+`label: sentence` (the one that is written when only one is), so a filter
+matches either part. A label is reserved in its suite like a sentence: two
+tests of one suite may not share a label even when their sentences differ.
+The label is the handle the reports and the editor's outline show; it is not
+a symbol (nothing can call a test, D78).
+
+Rejected: tags for filtering (`@slow`; a different need, left for later);
+the label after the sentence or behind a colon (`test listMethods: "…"`).
+
+### D171 — Format specs in interpolation, and `std/fmt` (v0.86)
+
+```veles
+println("${name:<20} ${price:>10.2} ${share:.1%} ${id:08x} ${n:+,d}")
+```
+
+The user: "spec after colon, and additional module for formatting functions
+(higher level than :spec)" (grammar: the recommended of 3).
+
+**The spec** after the top-level `:` of `${…}` is
+`[fill][align][sign][0][width][,][.precision][type]`; align `<` `>` `^`; type
+`d x X b o e f %`. It is checked at compile time against the value's type
+(`.2` on a string and `x` on a float are errors); a width may be computed,
+`${x:>${w}}` (an `i64`). The formatter keeps the spec as written. A user type
+accepts only the empty spec until a `Display` hook is decided.
+
+**`std/fmt`** holds the higher-level functions built on the spec — the first
+set: `bytes`, `duration`, `thousands`, `percent`, `table` (aligned columns),
+`ordinal`; each name is confirmed when built. **Locales (decimal commas, dates)
+are a later decision**, and touch `std/time` too (the user: "note the locales
+todo").
+
+Rejected: the minimal grammar; printf-style `${n:%08.2f}`; a `format(...)` method
+only.
+
+### D172 — Multi-line `"""…"""` and raw backtick strings (v0.86)
+
+```veles
+val page = """
+  <h1>${title}</h1>
+  <p>${body}</p>
+  """
+val query = sql"""
+  select id from users where team = ${team}
+  """
+val pattern = `C:\Users\(\w+)\Documents`      // raw: no escapes, no interpolation
+```
+
+The user: "raw like template strings in js `raw`, multiline `"""..."""`", then:
+"backticks will have non-interpolating raw strings… `this is a string`".
+
+- **`"""…"""`** is a text block: escapes and `${}` work as in a string; the
+  line break after the opening and before the closing delimiter is not part of
+  the text; the column of the closing `"""` is removed from every line, and a
+  less-indented non-blank line is an error with a fix. A template tag may
+  precede it (`sql"""…"""`, D129): the pieces are the stripped text.
+- **`` `…` ``** is a raw string: every character is itself — no escapes, no
+  `${}` — and it may span lines (kept verbatim; no margin). It cannot hold a
+  backtick.
+- Open details settled when built (checklist §11): whether a raw string may be
+  tagged, and holding a backtick.
+
+Rejected: a `raw"…"` tag; Swift's `#"…"#`; text blocks without a margin rule.
 
 ---
 

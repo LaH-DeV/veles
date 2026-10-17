@@ -678,7 +678,7 @@ func (f *fnCtx) memberExpr(e *ast.MemberExpr, want types.Type) Expr {
 					f.c.noMember(n.Pos, e.Name.Pos, n.Name, e.Name.Name, sym.Mod)
 					return bad()
 				}
-				if !member.Pub {
+				if !memberVisible(sym, member, f.module) {
 					f.errorf(e.Name.Pos, "'%s' is private to module '%s'%s (M5)", e.Name.Name, n.Name, privateHint(sym.Mod.Path))
 					return bad()
 				}
@@ -747,7 +747,7 @@ func (f *fnCtx) staticValue(st *types.Struct, e *ast.MemberExpr, want types.Type
 		tmpl = st.Template
 	}
 	if sym, ok := f.c.staticVals[tmpl][name]; ok {
-		if !sym.Pub && sym.Module != f.module {
+		if !symVisible(sym, f.module) {
 			f.errorf(e.Name.Pos, "'%s.%s' is private to module '%s'%s (M5)", st.Name, name, sym.Module.Name(), privateHint(sym.Module.Path))
 			return bad()
 		}

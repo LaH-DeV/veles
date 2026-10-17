@@ -113,10 +113,20 @@ func (c *Checker) claimTestName(m *Module, qualified string, at source.Span, wha
 	names[qualified] = at
 }
 
+// claimLabel reserves a label (D170) as well as the full title: a label
+// names its test or suite, so two under one suite may not share it even when
+// their sentences differ. (A label alone is already the title.)
+func (c *Checker) claimLabel(m *Module, path []string, label, name string, at source.Span, what string) {
+	if label != "" && name != "" {
+		c.claimTestName(m, suiteName(path, label), at, what)
+	}
+}
+
 // declareSuite declares a suite's tests under its name and its helpers in
 // a scope of its own, between the file's and the tests' (D78).
 func (c *Checker) declareSuite(m *Module, f *ast.File, d *ast.SuiteDecl, path []string, outer *Scope) {
-	c.claimTestName(m, suiteName(path, d.Name), d.At, "suite")
+	c.claimTestName(m, suiteName(path, d.Title()), d.At, "suite")
+	c.claimLabel(m, path, d.Label, d.Name, d.LabelAt, "suite")
 	if outer == nil {
 		outer = m.Imports[f]
 		if outer == nil {
@@ -124,7 +134,7 @@ func (c *Checker) declareSuite(m *Module, f *ast.File, d *ast.SuiteDecl, path []
 		}
 	}
 	scope := NewScope(outer)
-	inner := append(append([]string(nil), path...), d.Name)
+	inner := append(append([]string(nil), path...), d.Title())
 	c.suites++
 	for _, x := range d.Decls {
 		switch x := x.(type) {
@@ -139,7 +149,7 @@ func (c *Checker) declareSuite(m *Module, f *ast.File, d *ast.SuiteDecl, path []
 			if c.suiteHelpers == nil {
 				c.suiteHelpers = map[string]string{}
 			}
-			c.suiteHelpers[x.Name.Name] = suiteName(path, d.Name)
+			c.suiteHelpers[x.Name.Name] = suiteName(path, d.Title())
 			if old := scope.Insert(&Symbol{Name: x.Name.Name, Kind: SymFunc, Module: m, Span: x.Name.Pos, Func: t}); old != nil {
 				c.errorf(x.Name.Pos, "'%s' is already declared in this suite (at %s)", x.Name.Name, old.Span)
 			}
@@ -155,7 +165,8 @@ func (c *Checker) declareTest(m *Module, f *ast.File, d *ast.TestDecl, path []st
 	if d.Body == nil {
 		return // the parser reported it
 	}
-	c.claimTestName(m, suiteName(path, d.Name), d.At, "test")
+	c.claimTestName(m, suiteName(path, d.Title()), d.At, "test")
+	c.claimLabel(m, path, d.Label, d.Name, d.LabelAt, "test")
 	fd := &ast.FunDecl{
 		Doc:     d.Doc,
 		Test:    true,
@@ -165,7 +176,7 @@ func (c *Checker) declareTest(m *Module, f *ast.File, d *ast.TestDecl, path []st
 		Pos:     d.Pos,
 	}
 	t := c.newTemplate(m, f, fd, nil, nil)
-	t.Name = suiteName(path, d.Name)
+	t.Name = suiteName(path, d.Title())
 	t.Suite = path
 	t.SuiteScope = scope
 	c.tests = append(c.tests, t)

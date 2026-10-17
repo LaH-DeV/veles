@@ -69,7 +69,7 @@ func (f *fnCtx) templateTarget(tag ast.Expr) *FuncTemplate {
 			return nil
 		}
 		if sym := f.lookup(n.Name); sym != nil && sym.Kind == SymModule {
-			if member := sym.Mod.Scope.LookupLocal(t.Name.Name); member != nil && member.Pub && member.Kind == SymFunc {
+			if member := sym.Mod.Scope.LookupLocal(t.Name.Name); member != nil && memberVisible(sym, member, f.module) && member.Kind == SymFunc {
 				return member.Func
 			}
 		}

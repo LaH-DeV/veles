@@ -54,7 +54,7 @@ struct Held {
 
 // What `with n = m.lock()` holds (D107): the taken lock and the value it
 // guards. The compiler binds `n` to `value`; the close is the unlock.
-struct Locked<T> {
+public struct Locked<T> {
   held:  Held
   value: *T
 
@@ -150,7 +150,7 @@ struct RwHeld {
 
 // What `with c = lock.read()` and `with w = lock.write()` hold (D146): the
 // taken lock and the value, as Locked is for a Mutex (D107).
-struct RwLocked<T> {
+public struct RwLocked<T> {
   held:  RwHeld
   value: *T
 

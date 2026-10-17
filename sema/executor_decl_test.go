@@ -112,7 +112,7 @@ func TestExecutorAcrossModules(t *testing.T) {
 		}
 	}
 	write("veles.toml", "[package]\nname = \"app\"\nversion = \"0.1.0\"\n")
-	write("render/lib.vs", "public executor gl {\n  var frames: i64 = 0\n  public fun frame(): i64 {\n    frames += 1\n    frames\n  }\n  fun secret(): i64 => frames\n}\n")
+	write("render/lib.vs", "public executor gl {\n  var frames: i64 = 0\n  public fun frame(): i64 {\n    frames += 1\n    frames\n  }\n  internal fun secret(): i64 => frames\n}\n")
 	write("main.vs", "use io\nuse render\nfun main() {\n  io.println(\"${render.gl.frame()}\")\n  io.println(\"${render.gl.secret()}\")\n}\n")
 	diags := &source.Diagnostics{}
 	pkg, err := LoadPackage(root, diags)
@@ -124,7 +124,7 @@ func TestExecutorAcrossModules(t *testing.T) {
 	if want := "'gl.secret' is private to module 'render'"; !strings.Contains(got, want) {
 		t.Errorf("missing %q in:\n%s", want, got)
 	}
-	if strings.Contains(got, "frame") {
+	if strings.Contains(got, "gl.frame") {
 		t.Errorf("the public function should be reachable:\n%s", got)
 	}
 }

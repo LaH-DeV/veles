@@ -17,6 +17,7 @@ type Checker struct {
 	namedImports []namedImport // every bound name of a braced import (D85)
 	arrayUses    []arrayUse    // inline arrays to size-check (D121)
 	pkg          *Package
+	bareDone     map[*ast.FunDecl]bool // the methods whose bare member names are resolved (D158)
 	diags        *source.Diagnostics
 	// roundDiags collects diagnostics of the current inference round; only
 	// the final round's are kept (D45 fixpoint).
@@ -525,7 +526,7 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 			c.errorFix(d.Name.Pos, testFunFix(d.Name.Pos), "'%s' is a function in a *.test.vs file: write 'test fun %s' — a test file holds tests and test helpers, and a function the program uses belongs in a module file (D78)", d.Name.Name, d.Name.Name)
 		}
 		t := c.newTemplate(m, f, d, nil, nil)
-		c.insert(m, &Symbol{Name: d.Name.Name, Kind: SymFunc, Pub: d.Pub, Module: m, Span: d.Name.Pos, Func: t})
+		c.insert(m, &Symbol{Name: d.Name.Name, Kind: SymFunc, Pub: d.Pub, Internal: d.Internal, Module: m, Span: d.Name.Pos, Func: t})
 	case *ast.StaticAssert:
 		c.staticAsserts = append(c.staticAsserts, moduleAssert{m, f, d})
 	case *ast.TestDecl:
@@ -537,7 +538,7 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 			t := c.newTemplate(m, f, fn, nil, nil)
 			t.Extern = true
 			t.Mangled = fn.Name.Name // C symbol
-			c.insert(m, &Symbol{Name: fn.Name.Name, Kind: SymFunc, Pub: fn.Pub, Module: m, Span: fn.Name.Pos, Func: t})
+			c.insert(m, &Symbol{Name: fn.Name.Name, Kind: SymFunc, Pub: fn.Pub, Internal: fn.Internal, Module: m, Span: fn.Name.Pos, Func: t})
 		}
 	case *ast.StructDecl:
 		var attrs map[string]*ast.Attribute
@@ -546,7 +547,7 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 		} else {
 			attrs = c.attrsOf(d.Attrs, "struct")
 		}
-		s := &types.Struct{Name: d.Name.Name, Module: m.prefix(), Pub: d.Pub, Extern: d.Extern, Union: d.Union, Decl: d, Instances: map[string]*types.Struct{}}
+		s := &types.Struct{Name: d.Name.Name, Module: m.prefix(), Pub: d.Pub, Internal: d.Internal, Extern: d.Extern, Union: d.Union, Decl: d, Instances: map[string]*types.Struct{}}
 		c.layoutAttrs(s, d, attrs)
 		ctx := &declCtx{module: m, file: f, decl: d, tps: map[string]*types.TypeParam{}}
 		for i, tp := range d.TypeParams {
@@ -556,7 +557,7 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 		}
 		c.structDecl[s] = ctx
 		c.structs = append(c.structs, s)
-		c.insert(m, &Symbol{Name: d.Name.Name, Kind: SymType, Pub: d.Pub, Module: m, Span: d.Name.Pos, Type: s})
+		c.insert(m, &Symbol{Name: d.Name.Name, Kind: SymType, Pub: d.Pub, Internal: d.Internal, Module: m, Span: d.Name.Pos, Type: s})
 		c.methods[s] = map[string]*FuncTemplate{}
 		for _, md := range d.Methods {
 			t := c.newTemplate(m, f, md, s, ctx.tps)
@@ -598,15 +599,15 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 			c.globalMod[g] = m
 			c.globalFile[g] = f
 			c.staticOwner[g] = s
-			c.staticVals[s][sv.Name.Name] = &Symbol{Name: sv.Name.Name, Kind: SymGlobal, Pub: sv.Pub, Module: m, Span: sv.Name.Pos, Global: g}
+			c.staticVals[s][sv.Name.Name] = &Symbol{Name: sv.Name.Name, Kind: SymGlobal, Pub: sv.Pub, Internal: sv.Internal, Module: m, Span: sv.Name.Pos, Global: g}
 		}
 	case *ast.ErrorAliasDecl:
 		c.attrsOf(d.Attrs, "error")
-		c.insert(m, &Symbol{Name: d.Name.Name, Kind: SymType, Pub: d.Pub, Module: m, Span: d.Name.Pos,
+		c.insert(m, &Symbol{Name: d.Name.Name, Kind: SymType, Pub: d.Pub, Internal: d.Internal, Module: m, Span: d.Name.Pos,
 			Alias: &errorAlias{decl: d, module: m, file: f}})
 	case *ast.TypeAliasDecl:
 		c.attrsOf(d.Attrs, "type")
-		c.insert(m, &Symbol{Name: d.Name.Name, Kind: SymType, Pub: d.Pub, Module: m, Span: d.Name.Pos,
+		c.insert(m, &Symbol{Name: d.Name.Name, Kind: SymType, Pub: d.Pub, Internal: d.Internal, Module: m, Span: d.Name.Pos,
 			TypeAlias: &typeAlias{decl: d, module: m, file: f}})
 	case *ast.EnumDecl:
 		c.declareEnum(m, f, d)
@@ -617,7 +618,7 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 			c.attrsOf(d.Attrs, "trait")
 		}
 		if d.Sealed {
-			s := &types.Sealed{Name: d.Name.Name, Module: m.prefix(), Pub: d.Pub, Decl: d, Instances: map[string]*types.Sealed{}}
+			s := &types.Sealed{Name: d.Name.Name, Module: m.prefix(), Pub: d.Pub, Internal: d.Internal, Decl: d, Instances: map[string]*types.Sealed{}}
 			ctx := &declCtx{module: m, file: f, decl: d, tps: map[string]*types.TypeParam{}}
 			for i, tp := range d.TypeParams {
 				p := newTypeParam(tp, i, d.Name.Name)
@@ -626,7 +627,7 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 			}
 			c.sealedDecl[s] = ctx
 			c.sealeds = append(c.sealeds, s)
-			c.insert(m, &Symbol{Name: d.Name.Name, Kind: SymType, Pub: d.Pub, Module: m, Span: d.Name.Pos, Type: s})
+			c.insert(m, &Symbol{Name: d.Name.Name, Kind: SymType, Pub: d.Pub, Internal: d.Internal, Module: m, Span: d.Name.Pos, Type: s})
 			if len(d.AssocTypes) > 0 {
 				c.errorf(d.Name.Pos, "sealed traits cannot declare associated types")
 			}
@@ -637,14 +638,14 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 			}
 			if len(d.Methods) > 0 {
 				// the trait half: methods implemented per variant, dispatched by tag
-				t := &types.Trait{Name: d.Name.Name, Module: m.prefix(), Pub: d.Pub, Decl: d, Methods: map[string]*types.Func{}}
+				t := &types.Trait{Name: d.Name.Name, Module: m.prefix(), Pub: d.Pub, Internal: d.Internal, Decl: d, Methods: map[string]*types.Func{}}
 				s.Trait = t
 				c.traitDecl[t] = ctx
 				c.traits = append(c.traits, t)
 			}
 			return
 		}
-		t := &types.Trait{Name: d.Name.Name, Module: m.prefix(), Pub: d.Pub, Decl: d, Methods: map[string]*types.Func{}}
+		t := &types.Trait{Name: d.Name.Name, Module: m.prefix(), Pub: d.Pub, Internal: d.Internal, Decl: d, Methods: map[string]*types.Func{}}
 		for _, at := range d.AssocTypes {
 			t.AssocTypes = append(t.AssocTypes, at.Name.Name)
 		}
@@ -665,14 +666,14 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 		}
 		c.traitDecl[t] = ctx
 		c.traits = append(c.traits, t)
-		c.insert(m, &Symbol{Name: d.Name.Name, Kind: SymType, Pub: d.Pub, Module: m, Span: d.Name.Pos, Type: t})
+		c.insert(m, &Symbol{Name: d.Name.Name, Kind: SymType, Pub: d.Pub, Internal: d.Internal, Module: m, Span: d.Name.Pos, Type: t})
 	case *ast.ValDecl:
 		c.attrsOf(d.Attrs, "value")
 		g := &Global{Name: m.prefix() + "." + d.Name.Name, Display: d.Name.Name, Mutable: d.Kind == ast.BindVar, Span: d.Name.Pos}
 		c.globals[g] = d
 		c.globalMod[g] = m
 		c.globalFile[g] = f
-		c.insert(m, &Symbol{Name: d.Name.Name, Kind: SymGlobal, Pub: d.Pub, Module: m, Span: d.Name.Pos, Global: g})
+		c.insert(m, &Symbol{Name: d.Name.Name, Kind: SymGlobal, Pub: d.Pub, Internal: d.Internal, Module: m, Span: d.Name.Pos, Global: g})
 	case *ast.ExecutorDecl:
 		c.declareExecutor(m, f, d)
 	case *ast.ImplDecl, *ast.UseDecl, *ast.BadDecl:
@@ -681,7 +682,7 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 }
 
 func (c *Checker) newTemplate(m *Module, f *ast.File, d *ast.FunDecl, owner *types.Struct, outer map[string]*types.TypeParam) *FuncTemplate {
-	t := &FuncTemplate{Name: d.Name.Name, Module: m, File: f, Decl: d, Pub: d.Pub, Owner: owner, Extern: d.Extern}
+	t := &FuncTemplate{Name: d.Name.Name, Module: m, File: f, Decl: d, Pub: d.Pub, Internal: d.Internal, Owner: owner, Extern: d.Extern}
 	t.Attrs = c.attrsOf(d.Attrs, "function")
 	t.TestCode = d.Test || isTestFile(f)
 	if _, isTemplate := t.Attrs["template"]; isTemplate {
@@ -720,12 +721,15 @@ func (c *Checker) declareUse(m *Module, f *ast.File, u *ast.UseSpec) {
 	if u.Alias != nil {
 		name = u.Alias.Name
 	}
-	if old := scope.Insert(&Symbol{Name: name, Kind: SymModule, Mod: dep, Span: u.Pos}); old != nil {
+	// a module of another package reached through the facade's `public use`
+	// of the whole module shows its unmarked declarations too (D142)
+	facade := len(u.Path) > 1 && dep.Pkg != m.Pkg && !dep.Std && dep.Path != dep.Pkg.KeyPrefix+strings.ReplaceAll(pathString(u.Path[1:]), ".", "/")
+	if old := scope.Insert(&Symbol{Name: name, Kind: SymModule, Mod: dep, Facade: facade, Span: u.Pos}); old != nil {
 		c.errorf(u.Pos, "'%s' is already imported in this file", name)
 	}
 	// the module name in the `use` line hovers like any other reference
 	c.refSym(u.Path[len(u.Path)-1].Pos, &Symbol{Name: name, Kind: SymModule, Mod: dep, Span: u.Pos})
-	c.declareUseNames(m, f, u, dep, scope)
+	c.declareUseNames(m, f, u, dep, scope, facade)
 	if u.Pub {
 		c.reexport(m, u, dep) // D89
 	}
@@ -735,7 +739,7 @@ func (c *Checker) declareUse(m *Module, f *ast.File, u *ast.UseSpec) {
 // file's import scope. The bound symbol is the module's own, so a call or a
 // type written bare means exactly what the qualified one would; a rename
 // gets a copy under its new name.
-func (c *Checker) declareUseNames(m *Module, f *ast.File, u *ast.UseSpec, dep *Module, scope *Scope) {
+func (c *Checker) declareUseNames(m *Module, f *ast.File, u *ast.UseSpec, dep *Module, scope *Scope, facade bool) {
 	mod := pathString(u.Path)
 	for _, n := range u.Names {
 		member := dep.Scope.LookupLocal(n.Name.Name)
@@ -743,7 +747,7 @@ func (c *Checker) declareUseNames(m *Module, f *ast.File, u *ast.UseSpec, dep *M
 			c.noNamedMember(n, mod, dep)
 			continue
 		}
-		if !member.Pub {
+		if !memberVisible(&Symbol{Facade: facade}, member, m) {
 			c.errorf(n.Name.Pos, "'%s' is private to module '%s'%s (M5)", n.Name.Name, mod, privateHint(dep.Path))
 			continue
 		}
@@ -1102,7 +1106,7 @@ func (c *Checker) lookupTypeName(env *typeEnv, path []ast.Ident) (*Symbol, *type
 				c.pathReported = true
 				return nil, nil
 			}
-			if !next.Pub {
+			if !memberVisible(sym, next, env.module) {
 				c.errorf(path[i].Pos, "'%s' is private to module '%s'%s (M5)", path[i].Name, sym.Mod.Path, privateHint(sym.Mod.Path))
 				c.pathReported = true
 				return nil, nil
@@ -1480,7 +1484,7 @@ func (c *Checker) resolveStruct(s *types.Struct) {
 		if u, isUnion := ft.(*types.ErrorUnion); isUnion && !isAliasRef(f.Type) { // an alias checks its own members
 			c.deferErrorCheck(u, f.Type.Span())
 		}
-		fld := &types.Field{Name: f.Name.Name, Type: ft, Pub: f.Pub, Private: f.Private, Var: f.Var, Protected: f.Protected, HasDefault: f.Default != nil, Index: i}
+		fld := &types.Field{Name: f.Name.Name, Type: ft, Pub: f.Pub, Internal: f.Internal, Private: f.Private, Var: f.Var, Protected: f.Protected, HasDefault: f.Default != nil, Index: i}
 		if a, ok := fattrs["align"]; ok {
 			if d.Extern && !d.Union {
 				fld.Align = alignArg(c, a)
@@ -2331,7 +2335,7 @@ func (c *Checker) instantiateStruct(tmpl *types.Struct, args []types.Type, span 
 	for i, tp := range tmpl.TypeParams {
 		m[tp] = args[i]
 	}
-	inst := &types.Struct{Name: tmpl.Name, Module: tmpl.Module, Pub: tmpl.Pub, Extern: tmpl.Extern, Packed: tmpl.Packed, Align: tmpl.Align, Union: tmpl.Union, Transparent: tmpl.Transparent, TypeArgs: args, Template: tmpl, Decl: tmpl.Decl, Tag: tmpl.Tag}
+	inst := &types.Struct{Name: tmpl.Name, Module: tmpl.Module, Pub: tmpl.Pub, Internal: tmpl.Internal, Extern: tmpl.Extern, Packed: tmpl.Packed, Align: tmpl.Align, Union: tmpl.Union, Transparent: tmpl.Transparent, TypeArgs: args, Template: tmpl, Decl: tmpl.Decl, Tag: tmpl.Tag}
 	tmpl.Instances[key] = inst
 	for _, f := range tmpl.Fields {
 		nf := *f
@@ -2350,7 +2354,7 @@ func (c *Checker) instantiateSealed(tmpl *types.Sealed, args []types.Type, span 
 	if inst, ok := tmpl.Instances[key]; ok {
 		return inst
 	}
-	inst := &types.Sealed{Name: tmpl.Name, Module: tmpl.Module, Pub: tmpl.Pub, TypeArgs: args, Template: tmpl, Decl: tmpl.Decl}
+	inst := &types.Sealed{Name: tmpl.Name, Module: tmpl.Module, Pub: tmpl.Pub, Internal: tmpl.Internal, TypeArgs: args, Template: tmpl, Decl: tmpl.Decl}
 	tmpl.Instances[key] = inst
 	for _, v := range tmpl.Variants {
 		vi := c.instantiateStruct(v, args, span)
@@ -2675,6 +2679,8 @@ func (c *Checker) runRound() *Program {
 	}
 	c.lintNeedlessThrows()
 	c.lintUnusedNames()
+	c.lintProgramPublic()
+	c.lintPublicSignatures()
 	c.finishImportRefs()
 	c.prog.Funcs = c.funcs
 	c.prog.Structs = nil

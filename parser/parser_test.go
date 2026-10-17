@@ -690,6 +690,29 @@ func TestTestDecl(t *testing.T) {
 	}
 }
 
+// D170: an optional identifier label before (or instead of) the sentence.
+func TestTestLabels(t *testing.T) {
+	f, diags := parse(t, "suite Lexer \"tokens\" {\n  test listMethods \"updates an element\" { }\n  test bare { }\n}\nsuite Solo { }\n")
+	if diags.HasErrors() {
+		t.Fatalf("parse errors:\n%s", diags.Render())
+	}
+	s := f.Decls[0].(*ast.SuiteDecl)
+	a, b := s.Decls[0].(*ast.TestDecl), s.Decls[1].(*ast.TestDecl)
+	if s.Label != "Lexer" || s.Name != "tokens" || a.Label != "listMethods" || a.Name != "updates an element" || b.Label != "bare" || b.Name != "" {
+		t.Fatalf("labels: %#v %#v %#v", s, a, b)
+	}
+	if got := a.Title(); got != "listMethods: updates an element" {
+		t.Errorf("title %q", got)
+	}
+	if s2 := f.Decls[1].(*ast.SuiteDecl); s2.Label != "Solo" || s2.Title() != "Solo" {
+		t.Errorf("label-only suite: %#v", s2)
+	}
+	_, diags = parse(t, "test { }\n")
+	if !diags.HasErrors() {
+		t.Errorf("a test with neither label nor sentence parsed")
+	}
+}
+
 // `suite "name" { }` (D78) holds tests, suites and `test fun` helpers.
 func TestSuiteDecl(t *testing.T) {
 	f, diags := parse(t, "suite \"router\" {\n  test fun h() { }\n  test \"routes\" { }\n  suite \"auth\" {\n    test \"rejects\" { }\n  }\n}\nfun suite() { }\n")

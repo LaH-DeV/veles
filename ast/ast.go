@@ -438,23 +438,45 @@ type EnumMember struct {
 // with no signature — it cannot be called, takes nothing, and may throw
 // and suspend without saying so.
 type TestDecl struct {
-	Doc  string
-	Name string      // the sentence, unquoted
-	At   source.Span // the name's string literal
-	Body *Block
-	Pos  source.Span
+	Doc     string
+	Label   string      // `test listMethods "…"`: the optional identifier (D170)
+	LabelAt source.Span // the label; zero without one
+	Name    string      // the sentence, unquoted; empty when only a label is written
+	At      source.Span // the name's string literal (the label's when there is no sentence)
+	Body    *Block
+	Pos     source.Span
+}
+
+// Title is what a report calls the test: the label and the sentence
+// ("listMethods: incrementAt updates an element"), or whichever is written.
+func (d *TestDecl) Title() string { return Title(d.Label, d.Name) }
+
+// Title joins a test's or suite's label and sentence (D170).
+func Title(label, name string) string {
+	switch {
+	case label == "":
+		return name
+	case name == "":
+		return label
+	}
+	return label + ": " + name
 }
 
 // SuiteDecl is `suite "name" { ... }` (D78): a named group of tests. It
 // holds tests, nested suites and `test fun` helpers, which are visible only
 // inside it.
 type SuiteDecl struct {
-	Doc   string
-	Name  string      // unquoted
-	At    source.Span // the name's string literal
-	Decls []Decl      // *TestDecl, *SuiteDecl, *FunDecl with Test set
-	Pos   source.Span
+	Doc     string
+	Label   string      // `suite Lexer "…"`: the optional identifier (D170)
+	LabelAt source.Span // the label; zero without one
+	Name    string      // unquoted; empty when only a label is written
+	At      source.Span // the name's string literal (the label's when there is no sentence)
+	Decls   []Decl      // *TestDecl, *SuiteDecl, *FunDecl with Test set
+	Pos     source.Span
 }
+
+// Title is what a report calls the suite (see Title).
+func (d *SuiteDecl) Title() string { return Title(d.Label, d.Name) }
 
 // StaticAssert is `static assert(cond, "why")` (D113): a condition over
 // constants, checked at compile time — at module level or in a body, so it

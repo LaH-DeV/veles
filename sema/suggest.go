@@ -282,12 +282,12 @@ func (f *fnCtx) memberNames(rt types.Type) (fields, methods []string) {
 			}
 			return owner == nil || f.insideType(owner)
 		}
-		return t.Pub || t.Module == f.module
+		return declVisible(t.Pub, t.Internal, false, t.Module.Path, f.module.Path)
 	}
 	switch ct := rt.(type) {
 	case *types.Struct:
 		for _, fld := range ct.Fields {
-			if (!fld.Private || f.insideType(ct)) && (fld.Pub || fld.Private || ct.Module == f.module.prefix()) {
+			if (!fld.Private || f.insideType(ct)) && (fld.Private || fieldVisible(fld.Pub, fld.Internal, ct.Module, f.module)) {
 				fields = append(fields, fld.Name)
 			}
 		}
@@ -336,17 +336,19 @@ func (f *fnCtx) memberNames(rt types.Type) (fields, methods []string) {
 // of that name in a module to import (with its certain fix), else the
 // closest name in scope (with a guessed one).
 func (f *fnCtx) unknownNameHint(span source.Span, name string, bare bool) (string, *source.Fix) {
-	var hint string
-	if bare {
-		hint = f.c.suggestUnknownName(f.module, name)
-	} else {
-		hint = f.c.suggestUnknown(f.module, name)
+	// a member of the receiver named bare is certain, not a guess: it is
+	// what the author meant, so it comes before any suggestion (D158)
+	// in a static function there is no receiver for a bare member
+	if st, ok := f.env.self.(*types.Struct); ok && f.selfRef() == nil {
+		fields, methods := f.memberNames(st)
+		for _, m := range append(fields, methods...) {
+			if m == name {
+				return "; '" + name + "' is a member of '" + st.Name + "', but this function is static: it has no receiver", nil
+			}
+		}
 	}
-	if hint != "" {
-		return hint, f.c.unknownFix(f.file, f.module, span, name)
-	}
-	// inside a method, a member of the receiver named bare: certain, not a
-	// guess — the receiver is never implicit (D65)
+	// inside a method, a bare member the body also binds as a local, read
+	// where the local is not in scope: write the receiver (D158)
 	if self := f.selfRef(); self != nil {
 		rt := self.Type
 		if p, ok := rt.(*types.Pointer); ok {
@@ -358,6 +360,15 @@ func (f *fnCtx) unknownNameHint(span source.Span, name string, bare bool) (strin
 				return "; a member is reached through the receiver: 'this." + name + "'", fixReplace("Write 'this."+name+"'", span, "this."+name)
 			}
 		}
+	}
+	var hint string
+	if bare {
+		hint = f.c.suggestUnknownName(f.module, name)
+	} else {
+		hint = f.c.suggestUnknown(f.module, name)
+	}
+	if hint != "" {
+		return hint, f.c.unknownFix(f.file, f.module, span, name)
 	}
 	if hit := didYouMean(name, scopeNames(f.scope)); hit != "" {
 		if sym := f.lookup(hit); sym != nil && sym.Kind == SymLocal {
@@ -417,7 +428,7 @@ func privateHint(mod string) string {
 	case strings.HasPrefix(mod, "dep/") || strings.HasPrefix(mod, "dep."):
 		return "; it is not part of that package's API"
 	}
-	return "; declare it 'public' there to use it from here"
+	return "; it is 'internal' there: leave that word off to share it with this package"
 }
 
 // arityError reports a built-in method called with the wrong number of

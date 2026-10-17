@@ -181,7 +181,7 @@ func corpus(t *testing.T) []corpusFile {
 		// what the parser must recover from the same way: one per path
 		"p-decls": "use\nuse a { }\nuse a { * }\nuse a.b as\npublic internal fun f() {}\nprivate val x = 1\n" +
 			"extend X for Y {}\nerror E = A | B\nenum E<T> { A, B = 2, 3 }\n" +
-			"test fun helper() => 1\nsuite \"\" { val x = 1 }\ntest \"${x}\" { }\ntest \"t\" ()\nstatic assert(x)\n" +
+			"test fun helper() => 1\ntest lab \"x\" { }\nsuite Lab { test only { } test two \"\" { } }\ntest ${bad} { }\nsuite \"\" { val x = 1 }\ntest \"${x}\" { }\ntest \"t\" ()\nstatic assert(x)\n" +
 			"extern \"Go\" { fun f() }\nextern union U<T> { a: i32 }\nwith x = f()\n@attr static assert(true, \"y\")\n" +
 			"public suite \"s\" { }\nstruct S { x: , init(a) { } public init { } init { } static var y = 1 private static val z = 2 }\n" +
 			"trait T { val x: i64 }\nimplement T for { }\nextern \"C\" fun g() \nfun h(...) {}\nfun k(a: i64... = []) {}\n",

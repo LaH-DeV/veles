@@ -379,12 +379,23 @@ extend Parser {
     ast.FunDeclNode(decl: fn)
   }
 
-  // `test "name" { body }` (D78): `test` with a string after it
+  // `test`/`suite` followed by a string, or by an identifier label and then a
+  // string or the body's brace (D170); the words stay contextual
+  fun atTestHead(word: string): bool {
+    if (!this.atWord(word)) return false
+    val k = this.peek(1).kind
+    if (k == Kind.String) return true
+    if (k != Kind.Ident) return false
+    val k2 = this.peek(2).kind
+    k2 == Kind.String || k2 == Kind.LBrace
+  }
+
+  // `test listMethods "name" { body }` (D78, D170): an optional label, an optional sentence
   fun parseTest(head: DeclHead): ast.Decl {
     val doc = this.takeDoc()
     this.next()  // test
-    val t = this.next()
-    var d: ast.TestDecl = ast.TestDecl(doc: if (doc.isEmpty()) head.doc else doc, name: this.fixedName(t, "test", "test \"parses an empty list\" { ... }"), at: t.span)
+    val h = this.testHead("test", "test listMethods \"incrementAt updates an element\" { ... }")
+    var d: ast.TestDecl = ast.TestDecl(doc: if (doc.isEmpty()) head.doc else doc, label: h.label, labelAt: h.labelAt, name: h.name, at: h.at)
     if (val first = head.attrs.at(0)) this.errorAt(first.pos, "a test takes no attributes")
     if (this.at(Kind.LBrace)) {
       d.body = this.parseBlock()
@@ -393,6 +404,24 @@ extend Parser {
     }
     d.pos = this.spanFrom(head.start)
     d
+  }
+
+  // what follows `test` or `suite`: an optional identifier label, then an
+  // optional sentence — at least one of the two (D170)
+  fun testHead(what: string, example: string): TestHead {
+    var h = TestHead()
+    if (this.at(Kind.Ident)) {
+      val t = this.next()
+      h.label = t.text
+      h.labelAt = t.span
+      h.at = t.span
+    }
+    if (this.at(Kind.String)) {
+      val t = this.next()
+      h.name = this.fixedName(t, what, example)
+      h.at = t.span
+    }
+    h
   }
 
   // a test's or a suite's name: plain text, neither interpolated nor blank
@@ -409,12 +438,12 @@ extend Parser {
     name
   }
 
-  // `suite "name" { … }` (D78): tests, suites and `test fun` helpers
+  // `suite Router "name" { … }` (D78, D170): tests, suites and `test fun` helpers
   fun parseSuite(head: DeclHead): ast.Decl {
     val doc = this.takeDoc()
     this.next()  // suite
-    val t = this.next()
-    var d: ast.SuiteDecl = ast.SuiteDecl(doc: if (doc.isEmpty()) head.doc else doc, name: this.fixedName(t, "suite", "suite \"the router\" { ... }"), at: t.span)
+    val h = this.testHead("suite", "suite Router \"routing and middleware\" { ... }")
+    var d: ast.SuiteDecl = ast.SuiteDecl(doc: if (doc.isEmpty()) head.doc else doc, label: h.label, labelAt: h.labelAt, name: h.name, at: h.at)
     if (val first = head.attrs.at(0)) this.errorAt(first.pos, "a suite takes no attributes")
     if (this.expect(Kind.LBrace)) d.decls = this.parseSuiteBody()
     d.pos = this.spanFrom(head.start)

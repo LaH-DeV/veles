@@ -93,18 +93,33 @@ both can import, or merge the two.
 **A name another module keeps to itself.** `'helper' is private to module
 'geometry'; declare it 'public' there to use it from here`.
 
-Mark it `public`, or if it is meant to stay internal, add a `public`
-function in that module that does what you need (M5). The same holds for
-a field, a method or a static of a type from another module. For a
-standard module the message says instead that the name is not part of
-the standard library's API: it is an internal helper, and the public
-functions around it are the way in.
+The four levels (D142): `private` (the type), `internal` (the module),
+nothing (the package), `public` (other packages). Reaching an `internal`
+name from another module of the package: leave the word off to share it
+with the package. Reaching an unmarked name from another *package*: mark
+it `public` there, or have its facade export it. The same holds for
+a field, a method or a static of a type. For a standard module or a
+dependency the message says instead that the name is not part of that
+package's API: it is an internal helper, and the public functions around
+it are the way in.
 
-#### `module 'x' of package 'lib' is not re-exported`
+#### `'public' on 'x' does nothing in a program`
 
-A package's root module decides what leaves the package: `public use x`
-there (D89). Import a module it re-exports, or add that line to the
-dependency's root module. The message names the line to add.
+A program (its root module declares `main`) has no other package importing
+it, so `public` guards nothing. `veles check --fix` removes the word.
+
+#### `'f' is public but its result type 'T' is not visible outside the package`
+
+A `public` function, or a `public` field, names a type that other packages
+cannot see (it is not `public` and no `public use` exports it). Make the type
+`public`, or drop `public` from the function.
+
+#### `package 'lib' has no module 'x'`
+
+A module of another package is reached by its path (`use lib.geometry`) —
+a directory of the package, or an alias its root module's `public use`
+gives — and what it shows is what it declares `public`, or what a facade
+exports (D142, D89).
 
 #### `'public use m' re-exports a module of another package`
 
@@ -577,6 +592,19 @@ function`.
 
 A method's receiver is `this` and its type is `Self`; a static function
 and a top-level function have neither (D23, D65).
+
+#### `'name' means this.name here (D158)`
+
+Inside a method a bare name that is a member of the type means
+`this.name`; a module-level function or value of the same name is hidden by
+it (a warning, because the code compiled before the member existed and
+reads the same). Rename one of the two. For a `static` member the warning
+reads `'name' means Type.name here`.
+
+#### `'name' is a member of 'T', but this function is static`
+
+A `static fun` has no receiver, so an instance field or method is not
+reachable bare. Take the value as a parameter, or make the function a method.
 
 ### declarations
 

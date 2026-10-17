@@ -575,7 +575,7 @@ func declSymbol(decl ast.Decl) (docSymbol, bool) {
 		return docSymbol{Name: d.Name.Name, Detail: "type = " + ast.TypeString(d.Type), Kind: symStruct,
 			Range: spanToRange(d.Pos), SelectionRange: spanToRange(d.Name.Pos)}, true
 	case *ast.SuiteDecl:
-		sym := docSymbol{Name: d.Name, Detail: "suite", Kind: symNamespace, Range: spanToRange(d.Pos), SelectionRange: spanToRange(d.At)}
+		sym := docSymbol{Name: d.Title(), Detail: "suite", Kind: symNamespace, Range: spanToRange(d.Pos), SelectionRange: spanToRange(d.At)}
 		for _, inner := range d.Decls {
 			if child, ok := declSymbol(inner); ok {
 				sym.Children = append(sym.Children, child)
@@ -584,7 +584,7 @@ func declSymbol(decl ast.Decl) (docSymbol, bool) {
 		return sym, true
 	case *ast.TestDecl:
 		// a test is named by its sentence (D78)
-		return docSymbol{Name: d.Name, Detail: "test", Kind: symMethod, Range: spanToRange(d.Pos), SelectionRange: spanToRange(d.At)}, true
+		return docSymbol{Name: d.Title(), Detail: "test", Kind: symMethod, Range: spanToRange(d.Pos), SelectionRange: spanToRange(d.At)}, true
 	case *ast.EnumDecl:
 		sym := docSymbol{Name: d.Name.Name, Kind: symEnum, Range: spanToRange(d.Pos), SelectionRange: spanToRange(d.Name.Pos)}
 		if d.Base != nil {

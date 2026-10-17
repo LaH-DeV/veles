@@ -32,7 +32,15 @@ Point(x: 3, y: -4) 7 Point(x: 4, y: -3) true
   field can stand alone: `Point(x, y)` is `Point(x: x, y: y)` (and
   writing `x: x` is a warning with a fix). Nothing else may be passed
   bare — `Point(3, -4)` is an error.
-- Methods live in the struct body and refer to the receiver as `this`.
+- Methods live in the struct body and refer to the receiver as `this`
+  — or by leaving it off: inside a method a bare name that is a field or a
+  method of the type means `this.name` (D158), after locals and
+  parameters, which win (`this.name` reaches the member they hide). A
+  `static fun` has no receiver, so a bare instance member there is an error
+  that says so; the type's `static` members are reachable bare in every
+  function of it. If a member and a module-level function share a name, the
+  member wins and the compiler warns where it matters. Both spellings
+  stay valid and `veles fmt` keeps the one you wrote.
 - Every struct can be printed with `$p`, compared with `==`, and used as
   a map key, automatically. To order structs with `<` or `sorted()`, or
   to change what `==` and `$p` mean, implement the operator traits of
@@ -226,7 +234,7 @@ for a class, so the differences are the things to unlearn:
 | Mutation | any method may assign fields | only the fields declared `var`; a bare field never changes (D22) |
 | Equality, printing, hashing | `equals`/`hashCode`/`toString` by hand (or `data class`) | structural by default; replaced with the operator traits |
 | Interfaces | `implements I` | `implement I for T` — see chapter 8 |
-| Private state | `private` fields | no `public` on the field; the implicit constructor then works only inside the module |
+| Private state | `private` fields | `private` (the type), `internal` (the module), nothing (the package), `public` (other packages) |
 
 The value semantics are the one that surprises people: `var b = a` then
 `b.n = 5` leaves `a` alone. When you want the class behaviour — one
@@ -311,8 +319,8 @@ Output:
 ```
 
 Read the modifiers left to right as two separate questions. The first
-word answers *who can see the field*: `private` (the type), nothing or
-`internal` (the module), `public` (the package). The rest answers *who
+word answers *who can see the field*: `private` (the type), `internal`
+(the module), nothing (the package), `public` (other packages). The rest answers *who
 can assign it*:
 
 | spelling | set by the constructor | assigned by the type's own code | assigned by anyone who sees it |
@@ -517,10 +525,10 @@ anything points at it, so returning it from a function is fine.
 
 ## Visibility
 
-Declarations are *internal* — visible throughout their module — unless
-marked `public`; the same goes for fields and methods (M5). Nothing is
-written for it, though you may write `internal` when it helps the reader
-(`internal fun helper()`, `internal x: i64`). Inside one directory
+Declarations are visible throughout their *package* unless marked
+`internal` (the module only) or `public` (other packages too); the same goes
+for fields and methods (D142). Nothing is written for the package level, and
+in a program `public` does nothing. Inside one package
 everything sees everything — which is right for a helper struct and wrong for an
 invariant: in a one-file program, nothing would stop a handler from
 poking a counter that only the type should touch. A member marked

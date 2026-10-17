@@ -17,15 +17,15 @@ struct DocComment {
 /// What scanning a file gives: the tokens, the module's documentation (a doc
 /// comment at the very top, set off from the first token by a blank line),
 /// and every comment for tools that reproduce the source.
-public struct Scan {
-  public tokens:    List<Token>
-  public moduleDoc: string
-  public comments:  List<Comment>
+struct Scan {
+  tokens:    List<Token>
+  moduleDoc: string
+  comments:  List<Comment>
 }
 
 /// Scans a whole file. Problems go into `diags`, and a character that
 /// belongs to no token becomes an Illegal one, so parsing can go on.
-public fun tokenize(file: File, diags: *Diagnostics): Scan {
+fun tokenize(file: File, diags: *Diagnostics): Scan {
   var lexer = Lexer(file, src: file.content, diags)
   lexer.run()
   lexer.attachDocs()
@@ -34,7 +34,7 @@ public fun tokenize(file: File, diags: *Diagnostics): Scan {
 
 /// Scans `file.content[start, end)` with the file's own offsets: the
 /// expression inside an interpolated string, `${…}`.
-public fun tokenizeRange(file: File, start: i64, end: i64, diags: *Diagnostics): List<Token> {
+fun tokenizeRange(file: File, start: i64, end: i64, diags: *Diagnostics): List<Token> {
   // the cut is where a `${` or a `}` is, so not inside a character
   val src = file.content.substring(0, end) ?: panic("tokenizeRange: $end is not at a character's edge")
   var lexer = Lexer(file, src, diags, pos: start)

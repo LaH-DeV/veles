@@ -20,9 +20,17 @@ const (
 )
 
 type Symbol struct {
-	Name   string
-	Kind   SymbolKind
-	Pub    bool
+	Name string
+	Kind SymbolKind
+	Pub  bool
+	// Internal: written `internal` (this module only); unmarked is the package.
+	// Exported: a facade's `public use` puts it outside the package whatever its
+	// own level (D142).
+	Internal bool
+	Exported bool
+	// Facade: a module reached through a `public use` of the whole module, which
+	// shows its unmarked declarations as well as its `public` ones (D142).
+	Facade bool
 	Module *Module
 	Span   source.Span
 
@@ -129,6 +137,7 @@ type FuncTemplate struct {
 	File       *ast.File
 	Decl       *ast.FunDecl
 	Pub        bool
+	Internal   bool
 	Extern     bool
 	TypeParams []*types.TypeParam
 	Sig        *types.Func

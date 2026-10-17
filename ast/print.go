@@ -130,7 +130,7 @@ func (p *printer) decl(d Decl) {
 	case *FunDecl:
 		p.fun(d)
 	case *SuiteDecl:
-		p.open(fmt.Sprintf("suite %q", d.Name))
+		p.open(fmt.Sprintf("suite %q", d.Title()))
 		for _, inner := range d.Decls {
 			p.child(func() { p.decl(inner) })
 		}
@@ -138,7 +138,7 @@ func (p *printer) decl(d Decl) {
 	case *StaticAssert:
 		p.staticAssert(d)
 	case *TestDecl:
-		p.open(fmt.Sprintf("test %q", d.Name))
+		p.open(fmt.Sprintf("test %q", d.Title()))
 		if d.Body != nil {
 			p.child(func() { p.block(d.Body) })
 		}

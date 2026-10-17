@@ -4,17 +4,17 @@
 use io
 
 struct Bag {
-  public protected var items: MutableList<i64> = []
-  public protected var index: MutableMap<string, i64> = [:]
-  public protected var seen: MutableSet<i64> = []
-  public var open: MutableList<i64> = []
+  protected var items: MutableList<i64> = []
+  protected var index: MutableMap<string, i64> = [:]
+  protected var seen: MutableSet<i64> = []
+  var open: MutableList<i64> = []
 
-  public fun add(n: i64) {
+  fun add(n: i64) {
     this.items.push(n)
     this.index.set("$n", n)
     this.seen.add(n)
   }
-  public fun total(): i64 {
+  fun total(): i64 {
     var sum = 0
     loop (x in this.items) { sum += x }
     sum

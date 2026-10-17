@@ -23,24 +23,26 @@ func (c *Checker) reexport(m *Module, u *ast.UseSpec, dep *Module) {
 		if u.Alias != nil {
 			name = u.Alias.Name
 		}
-		if old := m.Scope.Insert(&Symbol{Name: name, Kind: SymModule, Mod: dep, Pub: true, Module: m, Span: u.Pos}); old != nil {
+		if old := m.Scope.Insert(&Symbol{Name: name, Kind: SymModule, Mod: dep, Pub: true, Facade: true, Module: m, Span: u.Pos}); old != nil {
 			c.errorf(u.Pos, "'%s' is already declared in this module (at %s): re-export the module under another name, 'public use %s as …' (D89)", name, old.Span, path)
 		}
 		return
 	}
 	for _, n := range u.Names {
 		member := dep.Scope.LookupLocal(n.Name.Name)
-		if member == nil || !member.Pub {
+		if member == nil || !symVisible(member, m) {
 			continue // declareUseNames has said so
 		}
-		bound := member
+		// the facade's copy is the export: it leaves the package whatever
+		// level the item itself has (D142), under the facade's name only
+		cp := *member
+		cp.Exported, cp.Internal = true, false
 		name := n.Name.Name
 		if n.Alias != nil {
 			name = n.Alias.Name
-			cp := *member
 			cp.Name = name
-			bound = &cp
 		}
+		bound := &cp
 		if old := m.Scope.Insert(bound); old != nil {
 			c.errorf(n.Pos, "'%s' is already declared in this module (at %s): re-export it under another name, 'public use %s { %s as … }' (D89)", name, old.Span, path, n.Name.Name)
 		}

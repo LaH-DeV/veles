@@ -14,7 +14,7 @@ use lexer { Kind, Token, kindText, tokenize }
 use source { Diagnostics, File, Span }
 
 /// Parses one file; problems go into `diags`.
-public fun parseFile(file: File, diags: *Diagnostics): ast.SourceFile {
+fun parseFile(file: File, diags: *Diagnostics): ast.SourceFile {
   val scan = tokenize(file, diags)
   var parser = Parser(file, toks: scan.tokens.toMutable(), diags)
   var parsed = parser.parseFile()
@@ -43,6 +43,14 @@ struct DeclHead {
 
   // the word written, as a message quotes it
   fun visibility(): string => if (this.isInternal) "'internal'" else "'public'"
+}
+
+// the label and sentence after `test` or `suite` (D170)
+struct TestHead {
+  var label:   string = ""
+  var labelAt: Span = Span.none()
+  var name:    string = ""
+  var at:      Span = Span.none()
 }
 
 struct Parser {
@@ -307,11 +315,11 @@ struct Parser {
           return this.parseExecutorDecl(head)
         }
         val next = this.peek(1).kind
-        if (this.atWord("suite") && next == Kind.String) {
+        if (this.atTestHead("suite")) {
           if (head.marked()) this.errorAt(head.start, "a suite cannot be ${head.visibility()}; it only groups tests")
           return this.parseSuite(head)
         }
-        if (this.atWord("test") && next == Kind.String) {
+        if (this.atTestHead("test")) {
           if (head.marked()) this.errorAt(head.start, "a test cannot be ${head.visibility()}; nothing calls it")
           return this.parseTest(head)
         }

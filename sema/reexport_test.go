@@ -24,12 +24,12 @@ func TestPublicUse(t *testing.T) {
 		}
 	}
 	write("lib/veles.toml", "[package]\nname = \"mathlib\"\nversion = \"0.1.0\"\n")
-	write("lib/lib.vs", "public use geometry\npublic use shapes { area, Circle as Round }\npublic use util as tools\n")
+	write("lib/lib.vs", "public use geometry\npublic use shapes { area, perimeter, Circle as Round }\npublic use util as tools\n")
 	write("lib/geometry/lib.vs", "public use deep\npublic fun twice(n: i64): i64 => n * 2\n")
 	write("lib/deep/lib.vs", "public fun depth(): i64 => 3\n")
-	write("lib/shapes/lib.vs", "public struct Circle {\n  public r: f64\n}\npublic fun area(c: Circle): f64 => c.r * c.r * 3.0\n")
-	write("lib/util/lib.vs", "public fun one(): i64 => 1\n")
-	write("lib/hidden/lib.vs", "public fun secret(): i64 => 7\n")
+	write("lib/shapes/lib.vs", "public struct Circle {\n  public r: f64\n}\npublic fun area(c: Circle): f64 => c.r * c.r * 3.0\nfun perimeter(r: f64): f64 => r * 6.0\n")
+	write("lib/util/lib.vs", "public fun one(): i64 => 1\nfun two(): i64 => 2\n")
+	write("lib/hidden/lib.vs", "public fun secret(): i64 => 7\nfun helper(): i64 => 8\n")
 	write("app/veles.toml", "[package]\nname = \"app\"\nversion = \"0.1.0\"\n\n[dependencies]\nmathlib = \"../lib\"\n")
 
 	check := func(dir string) string {
@@ -57,24 +57,37 @@ func TestPublicUse(t *testing.T) {
 	if out := app(good); strings.Contains(out, "error") {
 		t.Errorf("a re-exported surface should check:\n%s", out)
 	}
-	// a module the root does not re-export
-	if out := app("use mathlib.hidden\nfun main() {}\n"); !strings.Contains(out, "module 'hidden' of package 'mathlib' is not re-exported; add 'public use hidden' to its root module") {
-		t.Errorf("hidden module:\n%s", out)
+	// D142: a module is reachable by its path whether or not the root
+	// re-exports it; what it shows is what it declares `public`
+	if out := app("use io { println }\nuse mathlib.hidden\nfun main() { println(\"${hidden.secret()}\") }\n"); strings.Contains(out, "error") {
+		t.Errorf("a public item of a module nobody re-exports:\n%s", out)
 	}
-	// a module whose items are flattened is not itself reachable
-	if out := app("use mathlib.shapes\nfun main() {}\n"); !strings.Contains(out, "module 'shapes' of package 'mathlib' is not re-exported") {
-		t.Errorf("flattened module:\n%s", out)
+	if out := app("use mathlib.hidden\nfun main() { val _ = hidden.helper() }\n"); !strings.Contains(out, "'helper' is private to module 'hidden'; it is not part of that package's API") {
+		t.Errorf("an unmarked item from another package:\n%s", out)
 	}
-	// a name only the alias carries
-	if out := app("use mathlib.util\nfun main() {}\n"); !strings.Contains(out, "module 'util' of package 'mathlib' is not re-exported") {
-		t.Errorf("aliased module under its own name:\n%s", out)
+	if out := app("use io { println }\nuse mathlib.shapes\nfun main() { println(\"${shapes.area(shapes.Circle(r: 1.0))}\") }\n"); strings.Contains(out, "error") {
+		t.Errorf("a flattened module by its path:\n%s", out)
+	}
+	if out := app("use mathlib.nope\nfun main() {}\n"); !strings.Contains(out, "package 'mathlib' has no module 'nope'") {
+		t.Errorf("a module that does not exist:\n%s", out)
+	}
+	// a facade may export unmarked items: under its own name only
+	if out := app("use io { println }\nuse mathlib { perimeter }\nfun main() { println(\"${perimeter(1.0)}\") }\n"); strings.Contains(out, "error") {
+		t.Errorf("an unmarked item a facade exports:\n%s", out)
+	}
+	if out := app("use mathlib.shapes\nfun main() { val _ = shapes.perimeter(1.0) }\n"); !strings.Contains(out, "'perimeter' is private to module 'shapes'; it is not part of that package's API") {
+		t.Errorf("the same item at its own path:\n%s", out)
+	}
+	// `public use m` of a whole module shows its unmarked items under the facade's name
+	if out := app("use io { println }\nuse mathlib.tools\nfun main() { println(\"${tools.two()}\") }\n"); strings.Contains(out, "error") {
+		t.Errorf("an unmarked item of a module a facade exports whole:\n%s", out)
+	}
+	if out := app("use mathlib.util\nfun main() { val _ = util.two() }\n"); !strings.Contains(out, "'two' is private to module 'util'") {
+		t.Errorf("the same module at its own path:\n%s", out)
 	}
 	// a module passes on what it re-exports: `geometry` shows `deep`
 	if out := app("use io { println }\nuse mathlib.geometry.deep\nfun main() { println(\"${deep.depth()}\") }\n"); strings.Contains(out, "error") {
 		t.Errorf("a chain of re-exports:\n%s", out)
-	}
-	if out := app("use mathlib.deep\nfun main() {}\n"); !strings.Contains(out, "module 'deep' of package 'mathlib' is not re-exported; add 'public use deep' to its root module") {
-		t.Errorf("a module only a sub-module re-exports, from the root path:\n%s", out)
 	}
 	// hover and definition follow a flattened item to its declaration: the
 	// module scope holds the module's own symbol

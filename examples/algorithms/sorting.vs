@@ -3,7 +3,7 @@
 // swapping with the prelude's `swap(i, j)`.
 
 /// Bubble sort: O(n²), stops early when a pass makes no swap.
-public fun bubbleSort(xs: List<i64>): List<i64> {
+fun bubbleSort(xs: List<i64>): List<i64> {
   val out = xs.toMutable()
   val n = out.len()
   loop (i in 0..<n) {
@@ -23,7 +23,7 @@ public fun bubbleSort(xs: List<i64>): List<i64> {
 
 /// Insertion sort, generic over anything Comparable: O(n²), fast on
 /// nearly-sorted input.
-public fun insertionSort<T: Comparable>(xs: List<T>): List<T> {
+fun insertionSort<T: Comparable>(xs: List<T>): List<T> {
   val out = xs.toMutable()
   loop (i in 1..<out.len()) {
     val key = out.at(i)
@@ -40,7 +40,7 @@ public fun insertionSort<T: Comparable>(xs: List<T>): List<T> {
 }
 
 /// Selection sort: O(n²) comparisons, at most n swaps.
-public fun selectionSort(xs: List<i64>): List<i64> {
+fun selectionSort(xs: List<i64>): List<i64> {
   val out = xs.toMutable()
   val n = out.len()
   loop (i in 0..<n) {
@@ -56,7 +56,7 @@ public fun selectionSort(xs: List<i64>): List<i64> {
 }
 
 /// Merge sort: O(n log n), stable, recursive on halves.
-public fun mergeSort(xs: List<i64>): List<i64> {
+fun mergeSort(xs: List<i64>): List<i64> {
   if (xs.len() <= 1) return xs
   val mid = xs.len() / 2
   merge(mergeSort(xs.take(mid)), mergeSort(xs.drop(mid)))
@@ -83,7 +83,7 @@ fun merge(left: List<i64>, right: List<i64>): List<i64> {
 }
 
 /// Quick sort: O(n log n) average, in place on a copy, Lomuto partition.
-public fun quickSort(xs: List<i64>): List<i64> {
+fun quickSort(xs: List<i64>): List<i64> {
   val out = xs.toMutable()
   quickSortRange(out, 0, out.len() - 1)
   out.toList()
@@ -106,7 +106,7 @@ fun quickSortRange(xs: MutableList<i64>, lo: i64, hi: i64) {
 }
 
 /// Counting sort for small non-negative keys: O(n + k).
-public fun countingSort(xs: List<i64>, maxValue: i64): List<i64> {
+fun countingSort(xs: List<i64>, maxValue: i64): List<i64> {
   val counts = MutableList<i64>.repeat(0, maxValue + 1)
   loop (x in xs) {
     if (x < 0 || x > maxValue) panic("countingSort: $x is outside 0..$maxValue")
@@ -121,7 +121,7 @@ public fun countingSort(xs: List<i64>, maxValue: i64): List<i64> {
   out.toList()
 }
 
-public fun isSorted(xs: List<i64>): bool {
+fun isSorted(xs: List<i64>): bool {
   var prev: i64? = null
   loop (x in xs) {
     if (prev != null && prev > x) return false

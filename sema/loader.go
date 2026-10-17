@@ -471,28 +471,28 @@ func (p *Package) resolveDep(name, depPath string, rest []string, span source.Sp
 		}
 		p.Deps[name] = dep
 	}
-	// the module the path names: the dependency's root module, then one
-	// `public use` per segment (D89: nothing escapes a package except what
-	// its modules re-export)
+	// the module the path names: the dependency's root module, then per
+	// segment the facade's `public use` of that name if it has one (D89), else
+	// the directory of that name (D142: a module is reachable by its path;
+	// what it shows is what it declares `public`)
 	cur := p.depModule(dep, name, "", span)
-	for i, seg := range rest {
+	curPath := ""
+	for _, seg := range rest {
 		if cur == nil {
 			return nil
 		}
-		spec := publicUseOf(cur, seg)
-		if spec == nil {
-			where := "its root module"
-			if i > 0 {
-				where = "module '" + strings.Join(rest[:i], ".") + "'"
+		if spec := publicUseOf(cur, seg); spec != nil {
+			var target []string
+			for _, s := range spec.Path {
+				target = append(target, s.Name)
 			}
-			p.diags.Errorf(span, "module '%s' of package '%s' is not re-exported; add 'public use %s' to %s (D89: nothing escapes a package except what its modules re-export)", strings.Join(rest[:i+1], "."), name, seg, where)
-			return nil
+			curPath = strings.Join(target, "/")
+		} else if curPath == "" {
+			curPath = seg
+		} else {
+			curPath += "/" + seg
 		}
-		var target []string
-		for _, s := range spec.Path {
-			target = append(target, s.Name)
-		}
-		cur = p.depModule(dep, name, strings.Join(target, "/"), span)
+		cur = p.depModule(dep, name, curPath, span)
 	}
 	return cur
 }

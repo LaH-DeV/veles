@@ -422,7 +422,7 @@ func (c *Checker) globalDecl(name string, g *Global) string {
 		return kind + " " + name + typeSuffix(g.Type)
 	}
 	var sb strings.Builder
-	sb.WriteString(visPrefix(d.Pub, false))
+	sb.WriteString(visPrefix(d.Pub, d.Internal, false))
 	if c.staticOwner[g] != nil {
 		sb.WriteString("static ")
 	}
@@ -749,22 +749,24 @@ func (c *Checker) refField(span source.Span, st *types.Struct, fld *types.Field)
 }
 
 // visibilityWord spells the M5 level of a member or declaration. The
-// unwritten level (module-internal) has no word: hover shows what was
-// written, and `internal` on every line only made it harder to read.
-func visibilityWord(pub, private bool) string {
+// unwritten level (the package, D142) has no word: hover shows what was
+// written.
+func visibilityWord(pub, internal, private bool) string {
 	switch {
 	case private:
 		return "private"
 	case pub:
 		return "public"
+	case internal:
+		return "internal"
 	}
 	return ""
 }
 
 // visPrefix is visibilityWord ready to prepend: the word and a space, or
 // nothing at all.
-func visPrefix(pub, private bool) string {
-	if w := visibilityWord(pub, private); w != "" {
+func visPrefix(pub, internal, private bool) string {
+	if w := visibilityWord(pub, internal, private); w != "" {
 		return w + " "
 	}
 	return ""
@@ -776,7 +778,7 @@ func visPrefix(pub, private bool) string {
 // call may omit the field); a field the `init` block assigns says so.
 func fieldDecl(st *types.Struct, fld *types.Field) string {
 	var sb strings.Builder
-	sb.WriteString(visPrefix(fld.Pub, fld.Private))
+	sb.WriteString(visPrefix(fld.Pub, fld.Internal, fld.Private))
 	switch {
 	case fld.Protected:
 		sb.WriteString("protected var ")
@@ -803,7 +805,7 @@ func constructorLine(st *types.Struct, v viewpoint) string {
 	var parts []string
 	for _, fld := range st.Fields {
 		switch {
-		case fld.Init, fld.HasDefault && !v.sees(st, fld.Pub, fld.Private):
+		case fld.Init, fld.HasDefault && !v.sees(st, fld.Pub, fld.Internal, fld.Private):
 			// not the caller's to give from here
 			continue
 		case fld.HasDefault:
@@ -843,14 +845,14 @@ func structHead(st *types.Struct) string {
 	tmpl := templateOf(st)
 	d, _ := tmpl.Decl.(*ast.StructDecl)
 	head := "struct "
-	pub := st.Pub
+	pub, internal := st.Pub, st.Internal
 	if d != nil {
 		if d.Error {
 			head = "error "
 		}
-		pub = d.Pub
+		pub, internal = d.Pub, d.Internal
 	}
-	head = visPrefix(pub, false) + head
+	head = visPrefix(pub, internal, false) + head
 	if len(st.TypeParams) > 0 && len(st.TypeArgs) == 0 {
 		head += st.Name + typeParamList(st.TypeParams)
 	} else {
@@ -882,7 +884,7 @@ func funDecl(t *FuncTemplate) string {
 	traitMethod := t.Trait != nil
 	if d != nil && !implMethod && !traitMethod {
 		// an impl's or a trait's method has the trait's visibility
-		sb.WriteString(visPrefix(d.Pub, d.Private))
+		sb.WriteString(visPrefix(d.Pub, d.Internal, d.Private))
 	}
 	if d != nil {
 		if d.Override {
@@ -959,7 +961,7 @@ func funWhere(t *FuncTemplate) string {
 // traitHead is a trait's declaration line with its visibility spelled
 // out and its supertraits: `public trait Shape : Display`.
 func traitHead(tr *types.Trait) string {
-	head := visPrefix(tr.Pub, false)
+	head := visPrefix(tr.Pub, tr.Internal, false)
 	d, _ := tr.Decl.(*ast.TraitDecl)
 	if d != nil && d.Sealed {
 		head += "sealed "
@@ -995,7 +997,7 @@ func sealedHead(s *types.Sealed) string {
 	if len(tmpl.TypeParams) > 0 && len(s.TypeArgs) == 0 {
 		name = s.Name + typeParamList(tmpl.TypeParams)
 	}
-	return visPrefix(tmpl.Pub, false) + "sealed trait " + name
+	return visPrefix(tmpl.Pub, tmpl.Internal, false) + "sealed trait " + name
 }
 
 // traitBody lists a trait's associated types and methods as declared:
@@ -1159,14 +1161,14 @@ func (v viewpoint) insideType(st *types.Struct) bool {
 
 // sees reports whether a member with the given visibility of a type
 // declared in module modPrefix can be named from the viewpoint.
-func (v viewpoint) sees(st *types.Struct, pub, private bool) bool {
-	switch {
-	case private:
+func (v viewpoint) sees(st *types.Struct, pub, internal, private bool) bool {
+	if private {
 		return v.insideType(st)
-	case pub:
-		return true
 	}
-	return v.mod != nil && v.mod.prefix() == templateOf(st).Module
+	if v.mod == nil {
+		return pub
+	}
+	return declVisible(pub, internal, false, templateOf(st).Module, v.mod.prefix())
 }
 
 // shapeOf spells out what a value of type t has inside, as it would be
@@ -1203,7 +1205,7 @@ func (c *Checker) shapeFrom(t types.Type, v viewpoint) string {
 			sb.WriteString("  // " + constructorLine(tt, v) + "\n")
 		}
 		for _, fld := range tt.Fields {
-			if !v.sees(tt, fld.Pub, fld.Private) {
+			if !v.sees(tt, fld.Pub, fld.Internal, fld.Private) {
 				hidden++
 				continue
 			}
@@ -1217,11 +1219,11 @@ func (c *Checker) shapeFrom(t types.Type, v viewpoint) string {
 			sort.Strings(names)
 			for _, name := range names {
 				sym := statics[name]
-				if !v.sees(tt, sym.Pub, false) {
+				if !v.sees(tt, sym.Pub, sym.Internal, false) {
 					hidden++
 					continue
 				}
-				sb.WriteString("  " + visPrefix(sym.Pub, false) + "static val " + name)
+				sb.WriteString("  " + visPrefix(sym.Pub, sym.Internal, false) + "static val " + name)
 				if sym.Global != nil && sym.Global.Type != nil {
 					sb.WriteString(": " + sym.Global.Type.String())
 				}
@@ -1233,7 +1235,7 @@ func (c *Checker) shapeFrom(t types.Type, v viewpoint) string {
 				continue // the hidden `$init` method: shown as the block below
 			}
 			m := c.methods[tmpl][name]
-			if m.Decl != nil && !v.sees(tt, m.Decl.Pub, m.Decl.Private) {
+			if m.Decl != nil && !v.sees(tt, m.Decl.Pub, m.Decl.Internal, m.Decl.Private) {
 				hidden++
 				continue
 			}

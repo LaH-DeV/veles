@@ -314,6 +314,7 @@ func (c *Checker) checkBody(fn *Func) {
 		fn.Params = append(fn.Params, v)
 		f.declareLocal(p.Name.Name, v, p.Name.Pos)
 	}
+	f.resolveBareMembers(t.Decl)
 	defer f.reportUnused()
 	// D111: the body's value is returned straight to the caller
 	if f.retType != nil && types.IsUnit(f.retType) {
@@ -1177,7 +1178,7 @@ func (f *fnCtx) lookupField(st *types.Struct, name string, span source.Span) *ty
 		if fld.Name == name {
 			if fld.Private && !f.insideType(st) {
 				f.errorf(span, "field '%s' is private to '%s': only its own methods, impl and extend blocks may use it", name, st.Name)
-			} else if !fld.Pub && st.Module != f.module.prefix() {
+			} else if !fieldVisible(fld.Pub, fld.Internal, st.Module, f.module) {
 				f.errorf(span, "field '%s' of '%s' is private to module '%s'%s (M5)", name, st.Name, st.Module, privateHint(st.Module))
 			}
 			f.c.refField(span, st, fld)

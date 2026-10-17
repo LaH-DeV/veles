@@ -213,7 +213,7 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 						f.checkArgsLoosely(e.Args)
 						return bad()
 					}
-					if !member.Pub {
+					if !memberVisible(sym, member, f.module) {
 						f.errorf(callee.Name.Pos, "'%s' is private to module '%s'%s (M5)", callee.Name.Name, n.Name, privateHint(sym.Mod.Path))
 						f.checkArgsLoosely(e.Args)
 						return bad()
@@ -846,18 +846,6 @@ func (f *fnCtx) constructStruct(st *types.Struct, args []ast.Arg, span source.Sp
 		f.errorf(span, "'%s' is generic; supply type arguments", st.Name)
 		return bad()
 	}
-	if templateOf(st).Module != f.module.prefix() {
-		for _, fld := range st.Fields {
-			// a `private` field is settled below (M5 v0.30): left to its
-			// default, or given by the call; an unmarked one belongs to the
-			// module, and the module alone may construct
-			if !fld.Pub && !fld.Private {
-				f.errorf(span, "cannot construct '%s' here: field '%s' belongs to module '%s', so the implicit constructor is only callable there (D28); mark the field 'private' to hide it and let other modules construct '%s'", st.Name, fld.Name, st.Module, st.Name)
-				f.checkArgsLoosely(args)
-				return bad()
-			}
-		}
-	}
 	params := make([]types.Param, len(st.Fields))
 	for i, fld := range st.Fields {
 		// a field the `init` block assigns is not the caller's to give
@@ -898,13 +886,23 @@ func (f *fnCtx) constructStruct(st *types.Struct, args []ast.Arg, span source.Sp
 	for i, fld := range st.Fields {
 		var v Expr
 		switch {
-		case fld.Private && !inside && fld.HasDefault && bound[i] != nil:
+		case (fld.Private && !inside || !fieldVisible(fld.Pub, fld.Internal, st.Module, f.module)) && fld.HasDefault && bound[i] != nil:
 			// a private field with a default is the type's own state: from
 			// outside it takes its default (M5). One without a default is
 			// the initial state the constructor call must supply — nobody
 			// else could — so it may be given from anywhere the type is
 			// visible, and is private from then on.
-			f.errorf(bound[i].Span(), "field '%s' is private to '%s' and has a default; it cannot be set from outside — drop it, or construct through a static function of '%s'", fld.Name, st.Name, st.Name)
+			// (a field of a lower level than this reader sees — `internal`
+			// from another module, unmarked from another package — is the
+			// same: D142)
+			why := "private to '" + st.Name + "'"
+			if !(fld.Private && !inside) {
+				why = "not visible outside its package"
+				if fld.Internal {
+					why = "not visible outside its module"
+				}
+			}
+			f.errorf(bound[i].Span(), "field '%s' is %s and has a default; it cannot be set from outside — drop it, or construct through a static function of '%s'", fld.Name, why, st.Name)
 			v = bad()
 		case fld.Init && bound[i] != nil:
 			f.errorf(bound[i].Span(), "field '%s' is assigned by the 'init' block of '%s'; the constructor call does not take it (D28)", fld.Name, st.Name)
@@ -1433,7 +1431,7 @@ func (f *fnCtx) callMethod(t *FuncTemplate, ownerSubst map[*types.TypeParam]type
 		if owner != nil && !f.insideType(owner) {
 			f.errorf(callee.Name.Pos, "method '%s' is private to '%s': only its own methods, impl and extend blocks may call it", t.Name, owner.Name)
 		}
-	} else if inherent && !t.Pub && t.Module != f.module {
+	} else if inherent && !declVisible(t.Pub, t.Internal, false, t.Module.Path, f.module.Path) {
 		f.errorf(callee.Name.Pos, "method '%s' is private to module '%s'%s (M5)", t.Name, t.Module.Path, privateHint(t.Module.Path))
 	}
 	// D22 (v0.30): every method takes a pointer to its receiver's place.

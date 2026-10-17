@@ -3,7 +3,7 @@
 // goes where it goes there.
 use source { Span }
 
-public enum Kind {
+enum Kind {
   EOF
   Illegal
   // literals
@@ -123,7 +123,7 @@ public enum Kind {
 }
 
 /// The keywords and the reserved words.
-public const KEYWORDS: Map<string, Kind> = [
+const KEYWORDS: Map<string, Kind> = [
   "fun": Kind.KwFun, "val": Kind.KwVal, "var": Kind.KwVar, "const": Kind.KwConst, "if": Kind.KwIf,
   "else": Kind.KwElse, "loop": Kind.KwLoop, "break": Kind.KwBreak, "continue": Kind.KwContinue,
   "return": Kind.KwReturn, "struct": Kind.KwStruct, "trait": Kind.KwTrait, "implement": Kind.KwImplement,
@@ -170,30 +170,30 @@ const NAMES: Map<Kind, string> = kindNames()
 
 /// How a kind is spelled in a message: the symbol (`(`, `=>`), the quoted
 /// keyword (`'fun'`), or a word for a class of tokens (`identifier`).
-public fun kindText(k: Kind): string => NAMES.get(k) ?: "token(${k.value})"
+fun kindText(k: Kind): string => NAMES.get(k) ?: "token(${k.value})"
 
-public fun isKeyword(k: Kind): bool => k > Kind.KeywordStart && k < Kind.KeywordEnd
+fun isKeyword(k: Kind): bool => k > Kind.KeywordStart && k < Kind.KeywordEnd
 
 /// One piece of a string literal: a run of text with its escapes decoded,
 /// or the source of an interpolated expression and where it is.
-public struct StringPart {
-  public text:   string = ""
-  public isExpr: bool = false
-  public expr:   string = ""
-  public span:   Span = Span(file: null, start: 0, end: 0)
+struct StringPart {
+  text:   string = ""
+  isExpr: bool = false
+  expr:   string = ""
+  span:   Span = Span(file: null, start: 0, end: 0)
 }
 
-public struct Token {
-  public var kind:     Kind
-  public var text:     string  // the source text
-  public var span:     Span
-  public var parts:    List<StringPart> = []  // a String's or a Char's
-  public var autoSemi: bool = false           // a Semi the newline rule inserted
-  public var doc:      string = ""            // the documentation comment written directly above
+struct Token {
+  var kind:     Kind
+  var text:     string  // the source text
+  var span:     Span
+  var parts:    List<StringPart> = []  // a String's or a Char's
+  var autoSemi: bool = false           // a Semi the newline rule inserted
+  var doc:      string = ""            // the documentation comment written directly above
 
   /// The token as a diagnostic names it: `identifier 'x'`, `keyword 'fun'`,
   /// `end of line`, `')'`.
-  public fun describe(): string {
+  fun describe(): string {
     when (this.kind) {
       Kind.Ident => return "identifier '${this.text}'"
       Kind.Int, Kind.Float, Kind.String, Kind.Char => return "${kindText(this.kind)} '${this.text}'"
@@ -207,7 +207,7 @@ public struct Token {
 }
 
 /// A `// …` line or a `/* … */` block, as written.
-public struct Comment {
-  public span: Span
-  public text: string
+struct Comment {
+  span: Span
+  text: string
 }

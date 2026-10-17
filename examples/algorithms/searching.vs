@@ -10,7 +10,7 @@
 
 /// Linear scan: O(n), works on unsorted input. (`xs.indexOf(target)` is the
 /// built-in spelling; it answers -1 rather than null.)
-public fun linearSearch(xs: List<i64>, target: i64): i64? {
+fun linearSearch(xs: List<i64>, target: i64): i64? {
   loop ((i, x) in xs.iter().enumerate()) {
     if (x == target) return i
   }
@@ -18,7 +18,7 @@ public fun linearSearch(xs: List<i64>, target: i64): i64? {
 }
 
 /// Binary search on a sorted list: O(log n).
-public fun binarySearch(xs: List<i64>, target: i64): i64? {
+fun binarySearch(xs: List<i64>, target: i64): i64? {
   var lo = 0
   var hi = xs.len() - 1
   loop (lo <= hi) {
@@ -35,7 +35,7 @@ public fun binarySearch(xs: List<i64>, target: i64): i64? {
 
 /// First index whose element is >= target (the insertion point that keeps
 /// the list sorted); xs.len() when every element is smaller.
-public fun lowerBound(xs: List<i64>, target: i64): i64 {
+fun lowerBound(xs: List<i64>, target: i64): i64 {
   var lo = 0
   var hi = xs.len()
   loop (lo < hi) {
@@ -47,7 +47,7 @@ public fun lowerBound(xs: List<i64>, target: i64): i64 {
 }
 
 /// Recursive binary search over an explicit range, for comparison.
-public fun binarySearchRec(xs: List<i64>, target: i64, lo: i64, hi: i64): i64? {
+fun binarySearchRec(xs: List<i64>, target: i64, lo: i64, hi: i64): i64? {
   if (lo > hi) return null
   val mid = lo + (hi - lo) / 2
   val v = xs.at(mid) ?: panic("binarySearchRec: lo..hi must lie inside the list")
@@ -61,7 +61,7 @@ public fun binarySearchRec(xs: List<i64>, target: i64, lo: i64, hi: i64): i64? {
 /// The two implementations, on every target from below the smallest element
 /// to above the largest — the only honest way to compare two searches, since
 /// the interesting answers are the ones for values that are *not* there.
-public fun preludeAgrees(xs: List<i64>): bool {
+fun preludeAgrees(xs: List<i64>): bool {
   val sorted = xs.sorted()
   loop (target in -2..12) {
     if (sorted.lowerBound(target) != lowerBound(sorted, target)) return false
@@ -81,7 +81,7 @@ public fun preludeAgrees(xs: List<i64>): bool {
 }
 
 /// Two-pointer: does a sorted list contain a pair summing to target?
-public fun pairWithSum(xs: List<i64>, target: i64): (i64, i64)? {
+fun pairWithSum(xs: List<i64>, target: i64): (i64, i64)? {
   var i = 0
   var j = xs.len() - 1
   loop (i < j) {

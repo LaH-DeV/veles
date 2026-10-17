@@ -63,14 +63,14 @@ func (c *Checker) declareExecutor(m *Module, file *ast.File, d *ast.ExecutorDecl
 	}
 	args[1].Value = &ast.BoolLit{Value: info.single, Pos: pos}
 	start := &ast.CallExpr{Fun: &ast.PreludeName{Name: "startExecutor", Pos: pos}, Args: args, Pos: d.Pos}
-	vd := &ast.ValDecl{Doc: d.Doc, Pub: d.Pub, Kind: ast.BindVal, Name: d.Name, Value: start, Pos: d.Pos}
+	vd := &ast.ValDecl{Doc: d.Doc, Pub: d.Pub, Internal: d.Internal, Kind: ast.BindVal, Name: d.Name, Value: start, Pos: d.Pos}
 	g := &Global{Name: m.prefix() + "." + d.Name.Name, Display: d.Name.Name, Span: d.Name.Pos}
 	c.globals[g] = vd
 	c.globalMod[g] = m
 	c.globalFile[g] = file
 	c.execOfGlobal[g] = info
 	info.global = g
-	c.insert(m, &Symbol{Name: d.Name.Name, Kind: SymGlobal, Pub: d.Pub, Module: m, Span: d.Name.Pos, Global: g})
+	c.insert(m, &Symbol{Name: d.Name.Name, Kind: SymGlobal, Pub: d.Pub, Internal: d.Internal, Module: m, Span: d.Name.Pos, Global: g})
 	add := func(sym *Symbol) bool {
 		if old, dup := info.byName[sym.Name]; dup {
 			c.errorf(sym.Span, "'%s' is already declared in executor '%s' (at %s)", sym.Name, d.Name.Name, old.Span)
@@ -87,7 +87,7 @@ func (c *Checker) declareExecutor(m *Module, file *ast.File, d *ast.ExecutorDecl
 		}
 		c.attrsOf(s.Attrs, "value")
 		gs := &Global{Name: m.prefix() + "." + d.Name.Name + "." + s.Name.Name, Display: d.Name.Name + "." + s.Name.Name, Mutable: s.Kind == ast.BindVar, Span: s.Name.Pos}
-		if !add(&Symbol{Name: s.Name.Name, Kind: SymGlobal, Pub: s.Pub, Module: m, Span: s.Name.Pos, Global: gs}) {
+		if !add(&Symbol{Name: s.Name.Name, Kind: SymGlobal, Pub: s.Pub, Internal: s.Internal, Module: m, Span: s.Name.Pos, Global: gs}) {
 			continue
 		}
 		c.globals[gs] = s
@@ -100,7 +100,7 @@ func (c *Checker) declareExecutor(m *Module, file *ast.File, d *ast.ExecutorDecl
 		t := c.newTemplate(m, file, fn, nil, nil)
 		t.Mangled = m.prefix() + "." + d.Name.Name + "." + fn.Name.Name
 		t.Exec = info
-		add(&Symbol{Name: fn.Name.Name, Kind: SymFunc, Pub: fn.Pub, Module: m, Span: fn.Name.Pos, Func: t})
+		add(&Symbol{Name: fn.Name.Name, Kind: SymFunc, Pub: fn.Pub, Internal: fn.Internal, Module: m, Span: fn.Name.Pos, Func: t})
 	}
 	c.execs = append(c.execs, info)
 }
@@ -146,7 +146,7 @@ func (f *fnCtx) execRef(x ast.Expr) *execInfo {
 			return nil
 		}
 		if sym := f.lookup(n.Name); sym != nil && sym.Kind == SymModule {
-			if member := sym.Mod.Scope.LookupLocal(x.Name.Name); member != nil && member.Kind == SymGlobal && (member.Pub || sym.Mod == f.module) {
+			if member := sym.Mod.Scope.LookupLocal(x.Name.Name); member != nil && member.Kind == SymGlobal && memberVisible(sym, member, f.module) {
 				return f.c.execOfGlobal[member.Global]
 			}
 		}
@@ -204,7 +204,7 @@ func (f *fnCtx) execCall(info *execInfo, callee *ast.MemberExpr, typeArgs []type
 		return nil, false
 	}
 	f.c.refSym(callee.Name.Pos, sym)
-	if !sym.Pub && info.module != f.module {
+	if !declVisible(sym.Pub, sym.Internal, sym.Exported, info.module.Path, f.module.Path) {
 		f.errorf(callee.Name.Pos, "'%s.%s' is private to module '%s'%s (M5)", exec, name, info.module.Path, privateHint(info.module.Path))
 		f.checkArgsLoosely(e.Args)
 		return bad(), true

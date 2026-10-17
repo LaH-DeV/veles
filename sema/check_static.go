@@ -207,7 +207,7 @@ func (f *fnCtx) staticCall(rt types.Type, callee *ast.MemberExpr, typeArgs []typ
 	}
 	f.c.refFunc(callee.Name.Pos, t)
 	inherent := t.Owner != nil || (t.Impl != nil && t.Impl.Trait == nil)
-	if inherent && !t.Pub && t.Module != f.module {
+	if inherent && !declVisible(t.Pub, t.Internal, false, t.Module.Path, f.module.Path) {
 		f.errorf(callee.Name.Pos, "static function '%s' is private to module '%s'%s (M5)", name, t.Module.Path, privateHint(t.Module.Path))
 	}
 	return f.callTemplateRecv(t, subst, typeArgs, nil, e.Args, e.Pos, want)
@@ -331,7 +331,7 @@ func (f *fnCtx) moduleTypeNamed(x ast.Expr) types.Type {
 	if member == nil || member.Kind != SymType {
 		return nil
 	}
-	if !member.Pub {
+	if !memberVisible(sym, member, f.module) {
 		f.errorf(m.Name.Pos, "'%s' is private to module '%s'%s (M5)", m.Name.Name, n.Name, privateHint(sym.Mod.Path))
 		return types.TInvalid
 	}

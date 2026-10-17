@@ -14,9 +14,9 @@ use recursion
 
 /// The grammar refused the input because it nested too far.
 error TooDeep {
-  public limit: i64
+  limit: i64
   /// The byte offset the parser had reached.
-  public at: i64
+  at: i64
   fun message(): string => "at byte ${this.at}: ${recursion.tooDeepMessage(this.limit)}"
 }
 

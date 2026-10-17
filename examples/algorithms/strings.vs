@@ -3,10 +3,10 @@
 // work.
 
 /// Reverses by code points, so multi-byte characters stay intact.
-public fun reverse(s: string): string => s.chars().reversed().join("")
+fun reverse(s: string): string => s.chars().reversed().join("")
 
 /// Two pointers closing in from both ends, ignoring case and spaces.
-public fun isPalindrome(s: string): bool {
+fun isPalindrome(s: string): bool {
   val chars = s.toLower().chars().filter(c => c != " ")
   var i = 0
   var j = chars.len() - 1
@@ -21,11 +21,11 @@ public fun isPalindrome(s: string): bool {
 }
 
 /// Two words are anagrams when their sorted characters agree.
-public fun isAnagram(a: string, b: string): bool =>
+fun isAnagram(a: string, b: string): bool =>
   a.toLower().chars().sorted() == b.toLower().chars().sorted()
 
 /// Word frequencies, insertion-ordered (D25: maps keep insertion order).
-public fun wordCounts(text: string): Map<string, i64> {
+fun wordCounts(text: string): Map<string, i64> {
   val counts: MutableMap<string, i64> = [:]
   loop (word in text.toLower().split(" ")) {
     if (word == "") continue
@@ -35,7 +35,7 @@ public fun wordCounts(text: string): Map<string, i64> {
 }
 
 /// Run-length encoding: "aaabcc" -> "3a1b2c".
-public fun runLengthEncode(s: string): string {
+fun runLengthEncode(s: string): string {
   val chars = s.chars()
   val out = StringBuilder()
   var current = chars.first() ?: return ""
@@ -54,7 +54,7 @@ public fun runLengthEncode(s: string): string {
 }
 
 /// Caesar cipher over ASCII letters; other bytes pass through.
-public fun caesar(s: string, shift: i64): string {
+fun caesar(s: string, shift: i64): string {
   val out = StringBuilder()
   val by = (((shift % 26) + 26) % 26).wrapU8()
   loop (byte in s.bytes()) {
@@ -70,7 +70,7 @@ public fun caesar(s: string, shift: i64): string {
 
 /// Naive substring search: every start position, O(n·m). Returns the byte
 /// index or null.
-public fun findNaive(haystack: string, needle: string): i64? {
+fun findNaive(haystack: string, needle: string): i64? {
   val n = haystack.len()
   val m = needle.len()
   if (m == 0) return 0
@@ -83,7 +83,7 @@ public fun findNaive(haystack: string, needle: string): i64? {
 }
 
 /// Knuth–Morris–Pratt: O(n + m) with a failure table over the needle.
-public fun findKmp(haystack: string, needle: string): i64? {
+fun findKmp(haystack: string, needle: string): i64? {
   val m = needle.len()
   if (m == 0) return 0
   // fail[i] = length of the longest proper prefix of needle[0..i] that is
@@ -107,7 +107,7 @@ public fun findKmp(haystack: string, needle: string): i64? {
 }
 
 /// Longest common prefix of a list of words.
-public fun commonPrefix(words: List<string>): string {
+fun commonPrefix(words: List<string>): string {
   val first = words.first() ?: return ""
   var end = first.len()
   loop (word in words.drop(1)) {
