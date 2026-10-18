@@ -22,6 +22,7 @@ import (
 // annotation can stand on.
 var annotationTargets = map[string]bool{
 	"field": true, "struct": true, "fun": true, "trait": true, "enum": true, "enumMember": true, "variant": true,
+	"test": true, "suite": true,
 }
 
 // AnnotationUse is one resolved `@Name(args)` on a declaration.
@@ -69,7 +70,7 @@ func (c *Checker) checkAnnotationDecl(d *ast.StructDecl) {
 	for _, t := range info.On {
 		switch {
 		case !annotationTargets[t.Name]:
-			c.errorf(t.Pos, "'%s' is not a place an annotation can stand; the places are field, struct, fun, trait, enum, enumMember and variant (D174)", t.Name)
+			c.errorf(t.Pos, "'%s' is not a place an annotation can stand; the places are field, struct, fun, trait, enum, enumMember, variant, test and suite (D174, D178)", t.Name)
 		case seen[t.Name]:
 			c.errorf(t.Pos, "'%s' is listed twice after 'on' (D174)", t.Name)
 		}
@@ -143,6 +144,13 @@ func (c *Checker) annotateDecl(m *Module, f *ast.File, d ast.Decl) {
 		c.useAnnotations(m, f, d, d.Attrs, "type", nil)
 	case *ast.ErrorAliasDecl:
 		c.useAnnotations(m, f, d, d.Attrs, "error", nil)
+	case *ast.TestDecl:
+		c.useAnnotations(m, f, d, d.Attrs, "test", nil)
+	case *ast.SuiteDecl:
+		c.useAnnotations(m, f, d, d.Attrs, "suite", nil)
+		for _, x := range d.Decls {
+			c.annotateDecl(m, f, x)
+		}
 	}
 }
 
@@ -216,6 +224,20 @@ func (c *Checker) resolveAnnotationUse(m *Module, f *ast.File, a *ast.Attribute,
 	if len(args) == 1 && args[0].Name == nil && !args[0].Spread && len(st.Fields) == 1 {
 		// the one parameter may be given bare: @Min(18)
 		args = []ast.Arg{{Name: &ast.Ident{Name: st.Fields[0].Name, Pos: args[0].Value.Span()}, Value: args[0].Value}}
+	}
+	if c.isSkipAnnotation(st) && len(args) == len(st.Fields) && len(args) > 1 {
+		// `@SkipIf(cond, "why")`: the std skip annotations read as the words do (D178)
+		named := make([]ast.Arg, len(args))
+		for i, a := range args {
+			if a.Name != nil || a.Spread {
+				named = nil
+				break
+			}
+			named[i] = ast.Arg{Name: &ast.Ident{Name: st.Fields[i].Name, Pos: a.Value.Span()}, Value: a.Value}
+		}
+		if named != nil {
+			args = named
+		}
 	}
 	call := &ast.CallExpr{Fun: fun, Args: args, Pos: a.Pos}
 	init := fc.checkExprTo(call, st)
@@ -468,4 +490,45 @@ func (c *Checker) applyDecorators(fd *ast.FunDecl, uses []*AnnotationUse) {
 	} else {
 		fd.ExprBody = inner
 	}
+}
+
+// ---------------------------------------------------------------------------
+// skipping (D178)
+
+// staticSkip is whether a test is skipped without running, by `@Skip` or a
+// `@SkipIf` that holds on the test or on a suite around it (innermost first),
+// and the reason the report gives.
+func (c *Checker) staticSkip(t *FuncTemplate) (bool, string) {
+	if t.TestDecl == nil {
+		return false, ""
+	}
+	var keys []any
+	keys = append(keys, t.TestDecl)
+	for i := len(t.SuiteDecls) - 1; i >= 0; i-- {
+		keys = append(keys, t.SuiteDecls[i])
+	}
+	for _, k := range keys {
+		for _, u := range c.annotations[k] {
+			s, ok := u.Value.(*CStruct)
+			if !ok || u.Type.Name == "" || !c.isSkipAnnotation(u.Type) {
+				continue
+			}
+			switch u.Type.Name {
+			case "Skip":
+				return true, s.Fields[0].(*CString).V
+			case "SkipIf":
+				if s.Fields[0].(*CBool).V {
+					return true, s.Fields[1].(*CString).V
+				}
+			}
+		}
+	}
+	return false, ""
+}
+
+// isSkipAnnotation: the prelude's `Skip` and `SkipIf`, not a user annotation
+// that happens to share the name.
+func (c *Checker) isSkipAnnotation(st *types.Struct) bool {
+	ctx := c.structDecl[st]
+	return (st.Name == "Skip" || st.Name == "SkipIf") && ctx != nil && ctx.module.Std
 }

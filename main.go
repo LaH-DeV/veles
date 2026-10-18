@@ -2,7 +2,7 @@
 //
 //	veles build <file.vs | dir>   compile a package to a native executable (a workspace root: every member)
 //	veles run   <file.vs | dir>   compile and run
-//	veles test  <file.vs | dir>   run the tests, test "..." { } (--filter text, --timeout 10m, --jobs n)
+//	veles test  <file.vs | dir>   run the tests, test "..." { } (--filter text, --timeout 10m, --jobs n, --fail-on-skip)
 //	veles check <file.vs | dir>   type-check only (--fix applies lint corrections)
 //	veles parse <file.vs>         dump the syntax tree
 //	veles tokens <file.vs>        dump the token stream
@@ -34,7 +34,7 @@ import (
 )
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: veles <build|run|test|check|parse|tokens> <path> [-o output] [--emit-llvm] [--keep] [--release] [--sanitize] [--timings] [--const-steps n] [--fix] [--filter text] [--timeout 10m] [--jobs n] [-- args...] | veles explain <family> | veles explain <path> --derive [Type] | veles fmt <paths...> [--check] [--stdout] | veles new <dir> [--template app|server] | veles doc [dir] [-o out] | veles fetch [dir] | veles add <spec>[@version] [--as name] [--dev] | veles update <name>... [--all] | veles remove <name>... | veles deps [dir] [--why name] | veles vendor [dir] | veles audit [dir] [--detail] | veles publish [dir] | veles yank <owner/name>@<version> [--reason text] [--undo] | veles attest keygen|sign|verify|import | veles lsp")
+	fmt.Fprintln(os.Stderr, "usage: veles <build|run|test|check|parse|tokens> <path> [-o output] [--emit-llvm] [--keep] [--release] [--sanitize] [--timings] [--const-steps n] [--fix] [--filter text] [--timeout 10m] [--jobs n] [--fail-on-skip] [-- args...] | veles explain <family> | veles explain <path> --derive [Type] | veles fmt <paths...> [--check] [--stdout] | veles new <dir> [--template app|server] | veles doc [dir] [-o out] | veles fetch [dir] | veles add <spec>[@version] [--as name] [--dev] | veles update <name>... [--all] | veles remove <name>... | veles deps [dir] [--why name] | veles vendor [dir] | veles audit [dir] [--detail] | veles publish [dir] | veles yank <owner/name>@<version> [--reason text] [--undo] | veles attest keygen|sign|verify|import | veles lsp")
 	os.Exit(2)
 }
 
@@ -283,6 +283,12 @@ func command() int {
 					opts.Output = args[i+1]
 					i++
 				}
+			case "--fail-on-skip":
+				if cmd != "test" {
+					fmt.Fprintln(os.Stderr, "--fail-on-skip is a flag of 'veles test'")
+					usage()
+				}
+				opts.FailOnSkip = true
 			case "--emit-llvm":
 				opts.EmitLLVM = true
 			case "--keep":

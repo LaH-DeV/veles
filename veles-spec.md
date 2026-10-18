@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.91** — decisions D1–D177. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.92** — decisions D1–D178. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -7263,6 +7263,38 @@ long_line = "warn"
 Rejected: a `lint Name on node { }` declaration syntax (a rule is a normal value); plugin executables fed a serialized tree (a second public AST format, a process per run); a linter binary linking the rules (syntax-only until a Veles sema exists); declarative-only rules; `trailing_commas = "always"`; per-construct comma settings; a reflowing `max_width`; a default width of 100 (the user: too narrow today); formatter plugins; per-directory lint overrides (until needed).
 
 Both levels: the level table and `[lint.forbid]` are the high-level spelling; rules in Veles are the low-level escape. Self-hosting: the rule API sits on the Veles AST, so the compiler's own Go lints can become rules in it once S6–S9 land.
+
+### D178 — Skipping tests: `skip`, `skipIf`, `@Skip`, `@SkipIf` (v0.92)
+
+Q54 (user, 2026-10-18: "we should have a way to skip some tests either just 'skip' or 'skipIf'"; then "skip()/skipIf in the body as well as static @Skip() and @SkipIf()"). Until now a test could only pass or fail; a test needing a tool, a service or an OS returned early and reported a false `ok`.
+
+```veles
+test "reads a postgres row" {
+  skipIf(os.env("VELES_PG_BIN") == null, "no PostgreSQL binaries")
+  val bin = os.env("VELES_PG_BIN") ?: skip("no PostgreSQL binaries")   // skip is Never, like panic
+  ...
+}
+
+@SkipIf(build.target.os == "windows", "no ::1 in CI")
+test "ipv6 loopback" { ... }
+
+suite "db" {
+  skipIf(os.env("VELES_PG_BIN") == null, "no PostgreSQL binaries")   // every test in it, nested suites too
+  test "connects" { ... }
+}
+```
+
+- **Vocabulary** (test code only, like `require`): `skip(why: string): Never` ends the test as *skipped*; `skipIf(cond: bool, why: string)` is `if (cond) skip(why)`. Both work from a `test fun` helper and from a lambda, by the mechanism of `require`. A test that already recorded a failed `expect` and then skips stays failed. A skipped test's body is still compiled.
+- **Suites.** `skip(why)` and `skipIf(cond, why)` may be written directly in a `suite` body (the only statements allowed there); the condition is evaluated once, before the suite's first test, and skips every test of the suite and of its nested suites.
+- **Annotations.** `@Skip("why")` and `@SkipIf(cond, "why")` stand on a `test` or a `suite`; the annotation targets gain `test` and `suite`. The condition is a constant (D113), so `build.target` works and the test is reported skipped without running. `Skip`/`SkipIf` are std annotations in scope in test code.
+- **Report.** `test x ... skipped: why`; the summary is `3 passed, 1 failed, 2 skipped: parsesDates` (names after the colon stay the failed tests). A run whose only non-passes are skips exits 0; `veles test --fail-on-skip` makes them fail. `--filter` treats a skipped test like any other.
+- **Helpers do not propagate.** A `test fun` that calls `skip` skips the test that called it, at run time; nothing is inferred statically about which tests may skip (the user: "maybe it is an overdoing").
+
+*(Built 2026-10-18, plan B28. A suite's statements become one gate function per suite, run once as a task before the first test is queued; `@Skip`/`@SkipIf` accept their arguments positionally, as written above; the summary shows `, K skipped` only when K > 0.)*
+
+Rejected: a test modifier `test "x" skip "why" { }` (constant conditions only, new syntax in both parsers, competes with D170's label); leaving the early `return` (a false `ok`); a header clause or a shared helper for suites; propagating a helper's skip into a static property of the calling test.
+
+Both levels: one word for the common case; any run-time check in the test body is the low-level escape. Self-hosting: the compiler's own Veles tests skip when clang or PostgreSQL is missing, as the Go tests do now.
 
 ---
 

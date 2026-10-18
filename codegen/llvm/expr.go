@@ -1948,6 +1948,12 @@ func (g *gen) builtin(e *sema.Builtin) string {
 			g.panicValueAt(g.stringConst("the test stopped"), g.where(e.Span))
 		}
 		return "zeroinitializer"
+	case "test.skip":
+		// the test ends as skipped (D178): recorded, then stopped as `require` stops
+		mp, ml := g.strPtrLen(g.expr(e.Args[0]))
+		g.emit("call void @veles_test_skip(ptr %s, i64 %s)", mp, ml)
+		g.panicValueAt(g.stringConst("the test stopped"), g.where(e.Span))
+		return "zeroinitializer"
 	case "test.enter":
 		// a test helper is being called from here: failures inside it say
 		// so (D78); the handle puts the previous call site back

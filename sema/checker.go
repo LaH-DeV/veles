@@ -550,9 +550,9 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 	case *ast.StaticAssert:
 		c.staticAsserts = append(c.staticAsserts, moduleAssert{m, f, d})
 	case *ast.TestDecl:
-		c.declareTest(m, f, d, fileSuite(f), nil)
+		c.declareTest(m, f, d, fileSuite(f), nil, suiteUp{})
 	case *ast.SuiteDecl:
-		c.declareSuite(m, f, d, fileSuite(f), nil)
+		c.declareSuite(m, f, d, fileSuite(f), nil, suiteUp{})
 	case *ast.ExternBlock:
 		for _, fn := range d.Funs {
 			t := c.newTemplate(m, f, fn, nil, nil)
@@ -2724,6 +2724,12 @@ func (c *Checker) runRound() *Program {
 	c.prog.PanicType = c.panicType()
 	for _, t := range c.tests {
 		if inst, ok := t.Instances[""]; ok {
+			inst.Skipped, inst.SkipWhy = c.staticSkip(t)
+			for _, g := range t.Gates {
+				if gi, ok := g.Instances[""]; ok {
+					inst.Gates = append(inst.Gates, gi)
+				}
+			}
 			c.prog.Tests = append(c.prog.Tests, inst)
 		}
 	}

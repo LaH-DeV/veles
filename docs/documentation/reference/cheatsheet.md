@@ -367,7 +367,11 @@ test "parses a port" {                       // a sentence names it; no signatur
   expectThrows<RangeError>(() => parsePort("70000"))
   expectPanics(() => { val _ = [1].at(5) ?: panic("no") })
   fail("not written yet")                    // ends the test
+  skipIf(os.env("PG") == null, "no PostgreSQL")  // ends it as skipped; skip(why) is Never (D178)
 }
+@SkipIf(isCi, "no ::1 in CI")                 // static, a constant condition; @Skip(why) too: on a test or a suite
+suite "db" { skipIf(noDb, "no database")  test "..." { } }  // skips every test below, once
+veles test --fail-on-skip                     // a skipped test fails the run (default: exit 0)
 test fun expectSorted(xs: List<i64>) { ... }  // helper: test code only, left out of builds
 suite "parser" { test "..." { } suite "..." { } test fun h() { } }  // a group; its helpers are its own
 suite Lexer "tokens" { test label "sentence" { } }  // optional identifier labels (D170); either part may stand alone
@@ -384,7 +388,7 @@ veles doc [dir] [-o out]   (the public API as Markdown)
 veles fetch [dir]      (download git/registry dependencies, record veles.sum)
 veles add <spec>[@ver]  veles update <name>|--all  veles remove <name>  veles deps [--why n]  veles vendor  veles audit [--detail]
 veles publish [dir]  veles yank <owner/name>@<ver> [--reason t] [--undo]  veles attest keygen|sign|verify|import
-veles check <dir>      veles test <dir> [--filter text] [--timeout 10m]
+veles check <dir>      veles test <dir> [--filter text] [--timeout 10m] [--fail-on-skip]
 veles parse <file>     veles lsp     (editor server)
 veles fmt <paths>      [--check | --stdout]   format in place; [format] in veles.toml: indent = 2 | "tab", max_blank_lines = 1, imports = "lines" | "merged", trailing_commas = "multiline" | "never", line_endings = "lf" | "crlf" | "auto"
 veles lint --list      the lints; [lint] in veles.toml: name = "allow" | "warn" | "deny", max_width = 120 (for long_line, off by default)

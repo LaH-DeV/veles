@@ -1129,6 +1129,15 @@ takes no parameters and returns nothing`.
 a `test fun` and `*.test.vs` files; outside a test, `assert(cond, "why")`
 states an invariant (D78).
 
+**Skipping.** `'skip' takes the reason`, `'skipIf' takes a condition and the
+reason`, `a test takes annotations (@Skip, @SkipIf)`, `'@Skip' stands on test,
+suite`.
+
+`skip(why)` and `skipIf(cond, why)` end a test as skipped (D178); in a `suite`
+body they skip every test below. `@Skip("why")` and `@SkipIf(cond, "why")`
+stand on a test or a suite and nothing else; a test or suite takes no other
+attribute. The `skipIf` condition is a bool, and the annotation's a constant.
+
 ### template-literals
 
 **Template literals and `@template` functions.** `'plain' is not a template`,

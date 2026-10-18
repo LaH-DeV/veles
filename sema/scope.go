@@ -171,6 +171,11 @@ type FuncTemplate struct {
 	// helpers and is the parent of the body's scope.
 	Suite      []string
 	SuiteScope *Scope
+	// the declarations a test's skipping (D178) is read from: its own, the
+	// suites around it (annotations), and the gates of those suites
+	TestDecl   *ast.TestDecl
+	SuiteDecls []*ast.SuiteDecl
+	Gates      []*FuncTemplate
 }
 
 // Impl records `impl Trait for Type` (D17: one per pair program-wide).

@@ -134,6 +134,7 @@ func (p *printer) decl(d Decl) {
 	case *FunDecl:
 		p.fun(d)
 	case *SuiteDecl:
+		p.attrs(d.Attrs)
 		p.open(fmt.Sprintf("suite %q", d.Title()))
 		for _, inner := range d.Decls {
 			p.child(func() { p.decl(inner) })
@@ -141,7 +142,12 @@ func (p *printer) decl(d Decl) {
 		p.close()
 	case *StaticAssert:
 		p.staticAssert(d)
+	case *SkipDecl:
+		p.open("skip")
+		p.child(func() { p.expr(d.Call) })
+		p.close()
 	case *TestDecl:
+		p.attrs(d.Attrs)
 		p.open(fmt.Sprintf("test %q", d.Title()))
 		if d.Body != nil {
 			p.child(func() { p.block(d.Body) })

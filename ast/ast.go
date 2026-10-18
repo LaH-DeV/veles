@@ -465,10 +465,11 @@ type EnumMember struct {
 // and suspend without saying so.
 type TestDecl struct {
 	Doc     string
-	Label   string      // `test listMethods "…"`: the optional identifier (D170)
-	LabelAt source.Span // the label; zero without one
-	Name    string      // the sentence, unquoted; empty when only a label is written
-	At      source.Span // the name's string literal (the label's when there is no sentence)
+	Attrs   []*Attribute // `@Skip("why")` (D178)
+	Label   string       // `test listMethods "…"`: the optional identifier (D170)
+	LabelAt source.Span  // the label; zero without one
+	Name    string       // the sentence, unquoted; empty when only a label is written
+	At      source.Span  // the name's string literal (the label's when there is no sentence)
 	Body    *Block
 	Pos     source.Span
 }
@@ -493,16 +494,25 @@ func Title(label, name string) string {
 // inside it.
 type SuiteDecl struct {
 	Doc     string
-	Label   string      // `suite Lexer "…"`: the optional identifier (D170)
-	LabelAt source.Span // the label; zero without one
-	Name    string      // unquoted; empty when only a label is written
-	At      source.Span // the name's string literal (the label's when there is no sentence)
-	Decls   []Decl      // *TestDecl, *SuiteDecl, *FunDecl with Test set
+	Attrs   []*Attribute // `@SkipIf(cond, "why")` (D178)
+	Label   string       // `suite Lexer "…"`: the optional identifier (D170)
+	LabelAt source.Span  // the label; zero without one
+	Name    string       // unquoted; empty when only a label is written
+	At      source.Span  // the name's string literal (the label's when there is no sentence)
+	Decls   []Decl       // *TestDecl, *SuiteDecl, *FunDecl with Test set, *SkipDecl
 	Pos     source.Span
 }
 
 // Title is what a report calls the suite (see Title).
 func (d *SuiteDecl) Title() string { return Title(d.Label, d.Name) }
+
+// SkipDecl is `skip(why)` or `skipIf(cond, why)` written directly in a suite
+// body (D178): evaluated once before the suite's first test, it skips every
+// test of the suite and of its nested suites.
+type SkipDecl struct {
+	Call *CallExpr
+	Pos  source.Span
+}
 
 // StaticAssert is `static assert(cond, "why")` (D113): a condition over
 // constants, checked at compile time — at module level or in a body, so it
@@ -536,6 +546,7 @@ func (d *TypeAliasDecl) Span() source.Span  { return d.Pos }
 func (d *EnumDecl) Span() source.Span       { return d.Pos }
 func (d *TestDecl) Span() source.Span       { return d.Pos }
 func (d *SuiteDecl) Span() source.Span      { return d.Pos }
+func (d *SkipDecl) Span() source.Span       { return d.Pos }
 
 func (*ErrorAliasDecl) declNode() {}
 func (*TypeAliasDecl) declNode()  {}
@@ -551,6 +562,7 @@ func (*ExecutorDecl) declNode()   {}
 func (*BadDecl) declNode()        {}
 func (*TestDecl) declNode()       {}
 func (*SuiteDecl) declNode()      {}
+func (*SkipDecl) declNode()       {}
 
 // ---------------------------------------------------------------------------
 // Statements

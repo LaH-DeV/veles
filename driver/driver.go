@@ -42,6 +42,8 @@ type Options struct {
 	// Jobs bounds how many tests run at once (D80): 0 is one per worker
 	// thread, 1 runs them one at a time, in order.
 	Jobs int
+	// FailOnSkip makes a skipped test fail the run (D178).
+	FailOnSkip bool
 	// Timings prints the time each phase took, and the modules that cost
 	// the most to parse and check, on standard error.
 	Timings bool
@@ -135,6 +137,7 @@ func Run(opts Options) int {
 		}
 		prog.TestTimeoutMs = opts.TestTimeout.Milliseconds()
 		prog.TestJobs = int64(opts.Jobs)
+		prog.FailOnSkip = opts.FailOnSkip
 	}
 
 	ir := llvm.Generate(prog)

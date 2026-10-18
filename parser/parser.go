@@ -1428,9 +1428,7 @@ func (p *Parser) parseTest(attrs []*ast.Attribute, start source.Span) ast.Decl {
 	p.next() // test
 	d := &ast.TestDecl{Doc: doc}
 	d.Label, d.LabelAt, d.Name, d.At = p.testHead("test", "test listMethods \"incrementAt updates an element\" { ... }")
-	if len(attrs) > 0 {
-		p.errorf(attrs[0].Pos, "a test takes no attributes")
-	}
+	d.Attrs = attrs
 	if !p.at(lexer.LBrace) {
 		p.errorf(p.span(), "expected '{' to open the test's body, found %s", p.cur().Describe())
 		d.Pos = p.spanFrom(start)
@@ -1498,9 +1496,7 @@ func (p *Parser) parseSuite(attrs []*ast.Attribute, start source.Span) ast.Decl 
 	p.next() // suite
 	d := &ast.SuiteDecl{Doc: doc}
 	d.Label, d.LabelAt, d.Name, d.At = p.testHead("suite", "suite Router \"routing and middleware\" { ... }")
-	if len(attrs) > 0 {
-		p.errorf(attrs[0].Pos, "a suite takes no attributes")
-	}
+	d.Attrs = attrs
 	if _, ok := p.expect(lexer.LBrace); !ok {
 		d.Pos = p.spanFrom(start)
 		return d
@@ -1511,6 +1507,11 @@ func (p *Parser) parseSuite(attrs []*ast.Attribute, start source.Span) ast.Decl 
 			break
 		}
 		before := p.pos
+		if p.atSuiteSkip() {
+			d.Decls = append(d.Decls, p.parseSuiteSkip())
+			p.expectTerminator()
+			continue
+		}
 		inner := p.parseDecl()
 		switch x := inner.(type) {
 		case *ast.TestDecl, *ast.SuiteDecl:
@@ -1522,7 +1523,7 @@ func (p *Parser) parseSuite(attrs []*ast.Attribute, start source.Span) ast.Decl 
 			d.Decls = append(d.Decls, inner)
 		case *ast.BadDecl:
 		default:
-			p.errorf(inner.Span(), "a suite holds tests ('test \"...\" { }'), 'test fun' helpers and other suites")
+			p.errorf(inner.Span(), "a suite holds tests ('test \"...\" { }'), 'test fun' helpers, other suites and 'skip(why)' / 'skipIf(cond, why)' (D178)")
 		}
 		if p.pos == before {
 			p.next()
@@ -1531,6 +1532,29 @@ func (p *Parser) parseSuite(attrs []*ast.Attribute, start source.Span) ast.Decl 
 	p.expect(lexer.RBrace)
 	d.Pos = p.spanFrom(start)
 	return d
+}
+
+// atSuiteSkip: `skip(` or `skipIf(` directly in a suite's body (D178). Both
+// words are contextual, as `test` and `suite` are.
+func (p *Parser) atSuiteSkip() bool {
+	if !p.at(lexer.Ident) || p.peek(1).Kind != lexer.LParen {
+		return false
+	}
+	t := p.cur().Text
+	return t == "skip" || t == "skipIf"
+}
+
+// parseSuiteSkip parses the call of a suite's `skip(why)` / `skipIf(cond,
+// why)`; the checker holds the arguments to the words' signatures.
+func (p *Parser) parseSuiteSkip() ast.Decl {
+	start := p.span()
+	e := p.parseExpr()
+	call, ok := e.(*ast.CallExpr)
+	if !ok {
+		p.errorf(e.Span(), "a suite's statement is 'skip(why)' or 'skipIf(cond, why)' (D178)")
+		return &ast.BadDecl{Pos: p.spanFrom(start)}
+	}
+	return &ast.SkipDecl{Call: call, Pos: p.spanFrom(start)}
 }
 
 // atErrorDecl reports whether the cursor is at an `error Name` declaration.

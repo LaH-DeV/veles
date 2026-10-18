@@ -734,6 +734,31 @@ func TestSuiteDecl(t *testing.T) {
 	}
 }
 
+// D178: annotations stand on a test and a suite; a suite's body also holds
+// `skip(why)` and `skipIf(cond, why)` statements.
+func TestSkipSyntax(t *testing.T) {
+	f, diags := parse(t, "@Skip(\"later\")\ntest \"a\" { }\n@SkipIf(c, \"why\")\nsuite \"s\" {\n  skipIf(c, \"no\")\n  skip(\"x\")\n  test \"b\" { }\n}\n")
+	if diags.HasErrors() {
+		t.Fatalf("parse errors:\n%s", diags.Render())
+	}
+	test := f.Decls[0].(*ast.TestDecl)
+	suite := f.Decls[1].(*ast.SuiteDecl)
+	if len(test.Attrs) != 1 || len(suite.Attrs) != 1 || len(suite.Decls) != 3 {
+		t.Fatalf("attrs %d/%d, decls %d", len(test.Attrs), len(suite.Attrs), len(suite.Decls))
+	}
+	if _, ok := suite.Decls[0].(*ast.SkipDecl); !ok {
+		t.Errorf("first member: %#v", suite.Decls[0])
+	}
+	if dump := ast.Dump(f); !strings.Contains(dump, "(skip") || !strings.Contains(dump, "@Skip(") {
+		t.Errorf("dump:\n%s", dump)
+	}
+	// only the two words stand as statements; anything else is still refused
+	_, diags = parse(t, "suite \"a\" {\n  println(\"x\")\n}\n")
+	if !diags.HasErrors() {
+		t.Errorf("another statement in a suite was accepted")
+	}
+}
+
 // D100: `with x = e` is a statement of its own, kept flat in its block — the
 // checker reads the statements after it as its body — while `with (` is
 // the block form.

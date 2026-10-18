@@ -12,7 +12,7 @@ import (
 // library function cannot. They are in scope only in test code; `assert`,
 // the invariant form, is in scope everywhere. A declaration of the same
 // name wins, as with `panic`.
-var testWords = map[string]bool{"expect": true, "require": true, "expectThrows": true, "expectPanics": true, "fail": true}
+var testWords = map[string]bool{"expect": true, "require": true, "expectThrows": true, "expectPanics": true, "fail": true, "skip": true, "skipIf": true}
 
 // inTest reports whether the code being checked is test code: a test, a
 // `test fun`, a function in a `*.test.vs` file, or a lambda inside one.
@@ -53,6 +53,9 @@ func (f *fnCtx) testCall(name string, typeArgs []types.Type, e *ast.CallExpr, wa
 		cond := e.Args[0].Value
 		return f.expectCall(name, "assert("+srcText(cond)+")", cond, why, e.Pos)
 	}
+	if name == "skip" || name == "skipIf" {
+		return f.skipCall(name, e)
+	}
 	if len(e.Args) != 1 || e.Args[0].Name != nil {
 		f.errorf(e.Pos, "'%s' takes one argument: %s", name, testWordSigs[name])
 		f.checkArgsLoosely(e.Args)
@@ -89,6 +92,8 @@ var testWordSigs = map[string]string{
 	"expectThrows": "fun expectThrows<E>(body: fun() throws E)",
 	"expectPanics": "fun expectPanics(body: fun())",
 	"fail":         "fun fail(why: string): Never",
+	"skip":         "fun skip(why: string): Never",
+	"skipIf":       "fun skipIf(condition: bool, why: string)",
 	"assert":       "fun assert(condition: bool, message: string)",
 }
 
@@ -103,6 +108,10 @@ var testWordDocs = map[string]string{
 	"expectPanics": "Calls `body` in a task of its own and records a failure unless it panics: " +
 		"`expectPanics(() => { val _ = [1].at(5) ?: panic(\"out of range\") })`. In test code only (D78).",
 	"fail": "Records `why` and ends the test: `val x = maybe ?: fail(\"no x\")`. In test code only (D78).",
+	"skip": "Ends the test as skipped, with the reason the report shows: `val bin = os.env(\"PG_BIN\") ?: skip(\"no PostgreSQL binaries\")`. " +
+		"A failure recorded before it keeps the test failed. In test code only (D178).",
+	"skipIf": "`skipIf(condition, why)` is `if (condition) skip(why)`: `skipIf(os.env(\"PG_BIN\") == null, \"no PostgreSQL binaries\")`. " +
+		"Written directly in a `suite` body it skips every test of the suite, once, before the first runs. In test code only (D178).",
 	"assert": "Panics with `message` when `condition` is false — an invariant that must hold, anywhere in a program. " +
 		"The panic also shows the condition and, for a comparison, both sides' values; `message` is evaluated only then (D78).",
 }
@@ -371,4 +380,30 @@ func (f *fnCtx) expectPanicsCall(head string, arg ast.Expr, span source.Span) Ex
 func (f *fnCtx) testFailCall(e *ast.CallExpr) Expr {
 	msg := f.checkExprTo(e.Args[0].Value, types.TString)
 	return &Builtin{exprBase{types.TUnit}, "test.fail", []Expr{msg}, e.Pos}
+}
+
+// skipCall is `skip(why)` and `skipIf(cond, why)` (D178): the first ends the
+// test as skipped, the second does so when the condition holds — its reason
+// is evaluated only then. Like `require`, the end is a stop that works from a
+// helper or a lambda; a failure recorded before it keeps the test failed.
+func (f *fnCtx) skipCall(name string, e *ast.CallExpr) Expr {
+	want := 1
+	if name == "skipIf" {
+		want = 2
+	}
+	if len(e.Args) != want || e.Args[0].Name != nil || (want == 2 && e.Args[1].Name != nil) {
+		f.errorf(e.Pos, "'%s' takes %s: %s", name, pick(want == 1, "the reason", "a condition and the reason"), testWordSigs[name])
+		f.checkArgsLoosely(e.Args)
+		return bad()
+	}
+	why := f.checkExprTo(e.Args[want-1].Value, types.TString)
+	if want == 1 {
+		return &Builtin{exprBase{types.TNever}, "test.skip", []Expr{why}, e.Pos}
+	}
+	cond := f.checkExprTo(e.Args[0].Value, types.TBool)
+	if types.IsInvalid(cond.Type()) || types.IsInvalid(why.Type()) {
+		return bad()
+	}
+	stop := &Builtin{exprBase{types.TNever}, "test.skip", []Expr{why}, e.Pos}
+	return &If{exprBase{types.TUnit}, cond, f.valueBlock(stop), nil}
 }

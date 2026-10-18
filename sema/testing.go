@@ -124,7 +124,14 @@ func (c *Checker) claimLabel(m *Module, path []string, label, name string, at so
 
 // declareSuite declares a suite's tests under its name and its helpers in
 // a scope of its own, between the file's and the tests' (D78).
-func (c *Checker) declareSuite(m *Module, f *ast.File, d *ast.SuiteDecl, path []string, outer *Scope) {
+// suiteUp is what the suites around a test or suite contribute to its skipping
+// (D178): their declarations (annotations) and their gates.
+type suiteUp struct {
+	decls []*ast.SuiteDecl
+	gates []*FuncTemplate
+}
+
+func (c *Checker) declareSuite(m *Module, f *ast.File, d *ast.SuiteDecl, path []string, outer *Scope, up suiteUp) {
 	c.claimTestName(m, suiteName(path, d.Title()), d.At, "suite")
 	c.claimLabel(m, path, d.Label, d.Name, d.LabelAt, "suite")
 	if outer == nil {
@@ -136,12 +143,17 @@ func (c *Checker) declareSuite(m *Module, f *ast.File, d *ast.SuiteDecl, path []
 	scope := NewScope(outer)
 	inner := append(append([]string(nil), path...), d.Title())
 	c.suites++
+	c.noPlainAttrs(d.Attrs, "suite")
+	up = suiteUp{append(append([]*ast.SuiteDecl(nil), up.decls...), d), up.gates}
+	if g := c.declareGate(m, f, d, inner, scope); g != nil {
+		up.gates = append(append([]*FuncTemplate(nil), up.gates...), g)
+	}
 	for _, x := range d.Decls {
 		switch x := x.(type) {
 		case *ast.TestDecl:
-			c.declareTest(m, f, x, inner, scope)
+			c.declareTest(m, f, x, inner, scope, up)
 		case *ast.SuiteDecl:
-			c.declareSuite(m, f, x, inner, scope)
+			c.declareSuite(m, f, x, inner, scope, up)
 		case *ast.FunDecl:
 			t := c.newTemplate(m, f, x, nil, nil)
 			t.Mangled = m.prefix() + ".$suite" + itoa(c.suites) + "." + x.Name.Name
@@ -161,7 +173,7 @@ func (c *Checker) declareSuite(m *Module, f *ast.File, d *ast.SuiteDecl, path []
 // calls. Its name is the qualified sentence, which the summary prints and
 // `--filter` matches; its symbol is none, so nothing can call it. scope is
 // its suite's, for the suite's helpers.
-func (c *Checker) declareTest(m *Module, f *ast.File, d *ast.TestDecl, path []string, scope *Scope) {
+func (c *Checker) declareTest(m *Module, f *ast.File, d *ast.TestDecl, path []string, scope *Scope, up suiteUp) {
 	if d.Body == nil {
 		return // the parser reported it
 	}
@@ -179,6 +191,8 @@ func (c *Checker) declareTest(m *Module, f *ast.File, d *ast.TestDecl, path []st
 	t.Name = suiteName(path, d.Title())
 	t.Suite = path
 	t.SuiteScope = scope
+	t.TestDecl, t.SuiteDecls, t.Gates = d, up.decls, up.gates
+	c.noPlainAttrs(d.Attrs, "test")
 	c.tests = append(c.tests, t)
 }
 
@@ -255,4 +269,41 @@ func (f *fnCtx) traceHelperCall(sym *Symbol, call Expr, e *ast.CallExpr) Expr {
 		body = &Let{exprBase{t}, r, call, &BlockExpr{exprBase{t}, &Block{Stmts: []Stmt{leave}, Value: ref(r), Type: t}}}
 	}
 	return &Let{exprBase{t}, prev, enter, body}
+}
+
+// noPlainAttrs refuses the compiler's own lowercase attributes on a test or a
+// suite: what stands there is an annotation (`@Skip`, `@SkipIf`, D178).
+func (c *Checker) noPlainAttrs(attrs []*ast.Attribute, what string) {
+	for _, a := range attrs {
+		if !isUserAnnotation(a) {
+			c.errorf(a.Pos, "a %s takes annotations (@Skip, @SkipIf), not '@%s' (D178)", what, a.Name.Name)
+		}
+	}
+}
+
+// declareGate turns the `skip` / `skipIf` statements of a suite's body into
+// one function the runner calls once before the suite's first test (D178).
+// It is checked as test code, which cannot throw (a condition is not a test),
+// and ends as a skip when one of its statements does.
+func (c *Checker) declareGate(m *Module, f *ast.File, d *ast.SuiteDecl, inner []string, scope *Scope) *FuncTemplate {
+	var stmts []ast.Stmt
+	for _, x := range d.Decls {
+		if s, ok := x.(*ast.SkipDecl); ok {
+			stmts = append(stmts, &ast.ExprStmt{X: s.Call})
+		}
+	}
+	if len(stmts) == 0 {
+		return nil
+	}
+	fd := &ast.FunDecl{
+		Test: true,
+		Name: ast.Ident{Name: fmt.Sprintf("$gate%d", c.suites), Pos: d.At},
+		Body: &ast.Block{Stmts: stmts, Pos: d.Pos},
+		Pos:  d.Pos,
+	}
+	t := c.newTemplate(m, f, fd, nil, nil)
+	t.Name = suiteName(inner[:len(inner)-1], d.Title())
+	t.Suite = inner[:len(inner)-1]
+	t.SuiteScope = scope
+	return t
 }

@@ -483,3 +483,130 @@ test "in a task" {
 		t.Fatalf("exit %d, output:\n%s\n--- want ---\n%s", code, out, want)
 	}
 }
+
+// D178: skip, skipIf, @Skip, @SkipIf and a suite's gate: a third outcome that
+// does not fail the run, unless --fail-on-skip.
+func TestTestSkipping(t *testing.T) {
+	if _, err := findClang(); err != nil {
+		t.Skip("clang not available:", err)
+	}
+	const src = `const slow = true
+
+test "passes" {
+  expect(1 + 1 == 2)
+}
+
+test "skips at run time" {
+  skip("no tool here")
+}
+
+test "skipIf holds" {
+  skipIf(1 == 1, "always")
+  fail("not reached")
+}
+
+test "skipIf does not hold" {
+  skipIf(1 == 2, "never")
+  expect(true)
+}
+
+test "a failure before the skip stays" {
+  expect(1 == 2)
+  skip("late")
+}
+
+@Skip("not ready")
+test "annotated" {
+  fail("never runs")
+}
+
+@SkipIf(slow, "too slow here")
+test "conditional" {
+  fail("never runs")
+}
+
+@SkipIf(!slow, "not skipped")
+test "condition false" {
+  expect(true)
+}
+
+test fun need(ok: bool) {
+  skipIf(!ok, "helper says no")
+}
+
+test "through a helper" {
+  need(false)
+  fail("not reached")
+}
+
+test "through a lambda" {
+  val run = () => skip("in a lambda")
+  run()
+  fail("not reached")
+}
+
+suite "gated" {
+  skipIf(slow, "suite is off")
+  test "first" { fail("never runs") }
+  suite "nested" {
+    test "second" { fail("never runs") }
+  }
+}
+
+@Skip("whole suite")
+suite "annotated suite" {
+  test "third" { fail("never runs") }
+}
+
+suite "open" {
+  skipIf(!slow, "never")
+  test "fourth" { expect(true) }
+}
+`
+	out, code := runTests(t, src, Options{})
+	want := "test passes ... ok\n" +
+		"test skips at run time ... skipped: no tool here\n" +
+		"test skipIf holds ... skipped: always\n" +
+		"test skipIf does not hold ... ok\n" +
+		"test a failure before the skip stays ... FAILED\n" +
+		"  main.vs:22:3: expect(1 == 2)\n" +
+		"      left:  1\n" +
+		"      right: 2\n" +
+		"test annotated ... skipped: not ready\n" +
+		"test conditional ... skipped: too slow here\n" +
+		"test condition false ... ok\n" +
+		"test through a helper ... skipped: helper says no\n" +
+		"test through a lambda ... skipped: in a lambda\n" +
+		"gated\n" +
+		"  test first ... skipped: suite is off\n" +
+		"  nested\n" +
+		"    test second ... skipped: suite is off\n" +
+		"annotated suite\n" +
+		"  test third ... skipped: whole suite\n" +
+		"open\n" +
+		"  test fourth ... ok\n" +
+		"\n4 passed, 1 failed, 9 skipped: a failure before the skip stays\n"
+	if out != want || code != 1 {
+		t.Fatalf("exit %d, output:\n%s\n--- want ---\n%s", code, out, want)
+	}
+	// only skips: the run passes, unless --fail-on-skip asks otherwise
+	const skipsOnly = `test "ok" { expect(true) }
+
+test "later" {
+  skip("not today")
+}
+`
+	out, code = runTests(t, skipsOnly, Options{})
+	if code != 0 || !strings.HasSuffix(out, "\n1 passed, 0 failed, 1 skipped\n") {
+		t.Errorf("only skips: exit %d, output:\n%s", code, out)
+	}
+	out, code = runTests(t, skipsOnly, Options{FailOnSkip: true})
+	if code != 1 || !strings.Contains(out, "test later ... skipped: not today\n") {
+		t.Errorf("--fail-on-skip: exit %d, output:\n%s", code, out)
+	}
+	// a skipped test is a test for --filter
+	out, _ = runTests(t, skipsOnly, Options{Filter: "later"})
+	if !strings.HasSuffix(out, "\n0 passed, 0 failed, 1 skipped; 1 filtered out\n") {
+		t.Errorf("filtered:\n%s", out)
+	}
+}

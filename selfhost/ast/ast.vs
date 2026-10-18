@@ -374,6 +374,7 @@ struct EnumMember {
 /// `test "name" { body }` (D78).
 struct TestDecl : Decl {
   var doc:     string = ""
+  var attrs:   List<Attribute> = []  // `@Skip("why")` (D178)
   var label:   string = ""  // `test listMethods "…"`: the optional identifier (D170)
   var labelAt: Span = Span.none()
   var name:    string = ""         // unquoted; empty when only a label is written
@@ -389,12 +390,20 @@ fun title(label: string, name: string): string => if (label.isEmpty()) name else
 /// `suite "name" { … }` (D78).
 struct SuiteDecl : Decl {
   var doc:     string = ""
+  var attrs:   List<Attribute> = []  // `@SkipIf(cond, "why")` (D178)
   var label:   string = ""
   var labelAt: Span = Span.none()
   var name:    string = ""
   var at:      Span = Span.none()
   var decls:   List<Decl> = []
   var pos:     Span = Span.none()
+}
+
+/// `skip(why)` or `skipIf(cond, why)` directly in a suite's body (D178): the
+/// call, evaluated once before the suite's first test.
+struct SkipDecl : Decl {
+  var call: *Expr
+  var pos:  Span = Span.none()
 }
 
 /// `static assert(cond, "why")` (D113), at module level or in a body.
@@ -929,6 +938,7 @@ fun declSpan(d: Decl): Span => when (d) {
   is EnumDecl         => d.pos
   is TestDecl         => d.pos
   is SuiteDecl        => d.pos
+  is SkipDecl         => d.pos
   is StaticAssertDecl => d.assert.pos
   is BadDecl          => d.pos
 }

@@ -210,6 +210,7 @@ struct Printer {
       }
       is FunDeclNode      => this.funDecl(d.decl)
       is SuiteDecl        => {
+        this.attrs(d.attrs)
         this.open("suite ${quote(title(d.label, d.name))}")
         loop (inner in d.decls) {
           this.nl()
@@ -218,7 +219,14 @@ struct Printer {
         this.close()
       }
       is StaticAssertDecl => this.staticAssert(d.assert)
+      is SkipDecl         => {
+        this.open("skip")
+        this.nl()
+        this.expr(*d.call)
+        this.close()
+      }
       is TestDecl         => {
+        this.attrs(d.attrs)
         this.open("test ${quote(title(d.label, d.name))}")
         if (val body = d.body) {
           this.nl()

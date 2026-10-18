@@ -388,6 +388,10 @@ func declStart(d ast.Node) int {
 		attrs = d.Attrs
 	case *ast.EnumDecl:
 		attrs = d.Attrs
+	case *ast.TestDecl:
+		attrs = d.Attrs
+	case *ast.SuiteDecl:
+		attrs = d.Attrs
 	}
 	if len(attrs) > 0 {
 		return attrs[0].Pos.Start
@@ -426,6 +430,7 @@ func (p *printer) decl(d ast.Decl) {
 	case *ast.FunDecl:
 		p.fun(d)
 	case *ast.SuiteDecl:
+		p.attrs(d.Attrs)
 		p.w("suite " + p.testTitle(d.Label, d.Name, d.At) + " ")
 		p.members(p.openBrace(d.At.End, d.Pos.End), d.Pos.End, len(d.Decls) == 0, func(i int) bool { return i < len(d.Decls) }, func(i int) {
 			inner := d.Decls[i]
@@ -435,8 +440,11 @@ func (p *printer) decl(d ast.Decl) {
 		})
 	case *ast.StaticAssert:
 		p.staticAssert(d)
+	case *ast.SkipDecl:
+		p.expr(d.Call, 0)
 	case *ast.TestDecl:
 		// the name as written, escapes and all
+		p.attrs(d.Attrs)
 		p.w("test " + p.testTitle(d.Label, d.Name, d.At))
 		if d.Body != nil {
 			p.w(" ")

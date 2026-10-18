@@ -263,6 +263,8 @@ Inside a test, a small vocabulary is in scope:
 | `expectThrows<E>(() => ...)` | a failure unless the function throws (an `E`, when one is named) |
 | `expectPanics(() => ...)` | a failure unless the function panics (it runs in a task of its own) |
 | `fail("why")` | records `why` and ends the test |
+| `skip("why")` | ends the test as **skipped**, with the reason the report shows (see [Skipping tests](#skipping-tests)) |
+| `skipIf(cond, why)` | `if (cond) skip(why)` |
 
 ```veles
 use io
@@ -377,6 +379,7 @@ Three flags shape a run:
 - `--jobs n` runs at most `n` tests at once (default: one per thread of
   the runtime, `VELES_THREADS` or the machine's cores); `--jobs 1` runs
   them in order, one after another.
+- `--fail-on-skip` makes a skipped test fail the run ([Skipping tests](#skipping-tests)).
 - `--timeout 30s` bounds each test (default `10m`, `0` for no bound).
   A test still running at its deadline is reported —
   `FAILED: timed out after 30s` — and ends the run (whatever the test was
@@ -484,6 +487,58 @@ that is what the summary lists and what `--filter` matches, so
 `veles test --filter "parser / rejects"` runs one suite. Names need to
 differ only within a suite — `parser / rejects / empty input` and
 `router / empty input` are two tests.
+
+### Skipping tests
+
+A test that needs a tool, a service or an OS the machine does not have
+should say so, not return early and report a false `ok`. A skipped test is
+a third outcome: it is shown, counted, and does not fail the run.
+
+```veles
+// fragment
+test "reads a postgres row" {
+  skipIf(os.env("VELES_PG_BIN") == null, "no PostgreSQL binaries")
+  val bin = os.env("VELES_PG_BIN") ?: skip("no PostgreSQL binaries")   // skip is Never, like panic
+  ...
+}
+
+@SkipIf(isCi, "no ::1 in CI")
+test "ipv6 loopback" { ... }
+
+suite "db" {
+  skipIf(os.env("VELES_PG_BIN") == null, "no PostgreSQL binaries")    // every test in it, nested suites too
+  test "connects" { ... }
+}
+```
+
+- **At run time**, in test code: `skip(why)` ends the test as skipped;
+  `skipIf(cond, why)` does so when `cond` holds. Both work from a `test fun`
+  helper (it skips the test that called it) and from a lambda, as `require`
+  does. A test that already recorded a failed `expect` and then skips stays
+  **failed**. A skipped test's body is still compiled.
+- **In a suite's body**, `skip(why)` and `skipIf(cond, why)` are the only
+  statements allowed beside tests, suites and helpers. The condition is
+  evaluated once, before the suite's first test, and skips every test of the
+  suite and of its nested suites.
+- **Statically**, `@Skip("why")` and `@SkipIf(cond, "why")` stand on a `test`
+  or a `suite`. The condition is a constant ([chapter 2](02-values-and-strings.md),
+  D113), so the test is reported skipped without running at all.
+  `@Skip` and `@SkipIf` are in scope in test code.
+- Nothing is inferred through helpers: a `test fun` that calls `skip` skips
+  whichever test called it, when it runs.
+
+```text
+test parses a port ... ok
+test reads a postgres row ... skipped: no PostgreSQL binaries
+test ipv6 loopback ... skipped: no ::1 in CI
+
+1 passed, 0 failed, 2 skipped
+```
+
+The summary names the skipped count only when there is one; the names after
+the colon stay the failed tests. A run whose only non-passes are skips exits
+`0`; `veles test --fail-on-skip` makes them fail the run (for a CI job that
+must have run everything). `--filter` treats a skipped test like any other.
 
 ### Invariants: `assert`
 

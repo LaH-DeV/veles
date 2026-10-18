@@ -1319,9 +1319,10 @@ func (g *gen) convertResult(v string, from, to *types.Sealed) string {
 // test, and the exit code reports the outcome (§4b: testing is a build
 // mode).
 func (g *gen) testRunner() {
-	failures, passes := g.alloca("i64"), g.alloca("i64")
+	failures, passes, skips := g.alloca("i64"), g.alloca("i64"), g.alloca("i64")
 	g.emit("store i64 0, ptr %s", failures)
 	g.emit("store i64 0, ptr %s", passes)
+	g.emit("store i64 0, ptr %s", skips)
 	// the failed tests' names, each after ", ", for the summary
 	failedNames := g.alloca(strType)
 	g.emit("store %s %s, ptr %s", strType, g.stringConst(""), failedNames)
@@ -1371,9 +1372,72 @@ func (g *gen) testRunner() {
 	// task's creation so the task and all it starts record into it; the
 	// runtime runs up to `jobs` at once (D80). The reports then follow in
 	// declaration order, each printed when its test is done.
-	g.emit("call void @veles_test_setup(i64 %d, i64 %d, i64 %d)", g.prog.TestJobs, g.prog.TestTimeoutMs, len(g.prog.Tests))
+	//
+	// A test skipped by an annotation (D178) is not run, and a suite's
+	// `skip` / `skipIf` statements run once each, as a task of their own,
+	// before the first test is queued: a gate that skipped decides for every
+	// test below it.
+	var gates []*sema.Func
+	gateAt := map[*sema.Func]int{}
+	runnable := 0
+	for _, t := range g.prog.Tests {
+		if t.Skipped {
+			continue
+		}
+		runnable++
+		for _, gt := range t.Gates {
+			if _, ok := gateAt[gt]; !ok {
+				gateAt[gt] = len(gates)
+				gates = append(gates, gt)
+			}
+		}
+	}
+	g.emit("call void @veles_test_setup(i64 %d, i64 %d, i64 %d)", g.prog.TestJobs, g.prog.TestTimeoutMs, runnable+len(gates))
+	gateHit, gateWhy := make([]string, len(gates)), make([]string, len(gates))
+	for i, gt := range gates {
+		gateHit[i], gateWhy[i] = g.alloca("i64"), g.alloca(strType)
+		g.emit("store i64 0, ptr %s", gateHit[i])
+		g.emit("store %s %s, ptr %s", strType, g.stringConst(""), gateWhy[i])
+		np, nl := g.strPtrLen(g.stringConst(gt.Display))
+		rec, task, prev := g.newTmp(), g.newTmp(), g.newTmp()
+		g.emit("%s = call ptr @veles_test_new(ptr %s, i64 %s)", rec, np, nl)
+		g.emit("%s = call ptr @veles_test_bind(ptr %s)", prev, rec)
+		g.emit("%s = call ptr @veles_task_new()", task)
+		g.emit("call void @veles_test_unbind(ptr %s)", prev)
+		fn := gt
+		if !fn.Suspends {
+			fn = g.rampFor(fn)
+		}
+		g.emit("call void @veles_test_queue(ptr %s, ptr @%s, ptr null)", task, g.entryThunk(fn, nil, nil))
+		g.emit("call void @veles_run(ptr %s)", task)
+		buf, sk, why := g.alloca(strType), g.newTmp(), g.newTmp()
+		g.emit("%s = call i64 @veles_test_skipped(ptr %s, ptr %s)", sk, rec, buf)
+		g.emit("store i64 %s, ptr %s", sk, gateHit[i])
+		g.emit("%s = load %s, ptr %s", why, strType, buf)
+		g.emit("store %s %s, ptr %s", strType, why, gateWhy[i])
+	}
+	// gateOf is whether a gate above the test skipped it, and why: the
+	// outermost one that did
+	gateOf := func(t *sema.Func) (hit, why string) {
+		hit, why = "false", g.stringConst("")
+		for j := len(t.Gates) - 1; j >= 0; j-- {
+			k := gateAt[t.Gates[j]]
+			h, w, hb, sel, or := g.newTmp(), g.newTmp(), g.newTmp(), g.newTmp(), g.newTmp()
+			g.emit("%s = load i64, ptr %s", h, gateHit[k])
+			g.emit("%s = load %s, ptr %s", w, strType, gateWhy[k])
+			g.emit("%s = icmp ne i64 %s, 0", hb, h)
+			g.emit("%s = select i1 %s, %s %s, %s %s", sel, hb, strType, w, strType, why)
+			g.emit("%s = or i1 %s, %s", or, hb, hit)
+			hit, why = or, sel
+		}
+		return hit, why
+	}
 	recs, tasks := make([]string, len(g.prog.Tests)), make([]string, len(g.prog.Tests))
+	skipHit, skipWhy := make([]string, len(g.prog.Tests)), make([]string, len(g.prog.Tests))
 	for i, t := range g.prog.Tests {
+		if t.Skipped {
+			continue
+		}
 		np, nl := g.strPtrLen(g.stringConst(t.Display))
 		recs[i], tasks[i] = g.newTmp(), g.newTmp()
 		g.emit("%s = call ptr @veles_test_new(ptr %s, i64 %s)", recs[i], np, nl)
@@ -1385,7 +1449,18 @@ func (g *gen) testRunner() {
 		if !fn.Suspends {
 			fn = g.rampFor(fn)
 		}
+		queueL, afterL := "", ""
+		if len(t.Gates) > 0 {
+			skipHit[i], skipWhy[i] = gateOf(t)
+			queueL, afterL = g.newLabel("test.queue"), g.newLabel("test.queued")
+			g.emitTerm("br i1 %s, label %%%s, label %%%s", skipHit[i], afterL, queueL)
+			g.placeLabel(queueL)
+		}
 		g.emit("call void @veles_test_queue(ptr %s, ptr @%s, ptr null)", tasks[i], g.entryThunk(fn, nil, nil))
+		if afterL != "" {
+			g.emitTerm("br label %%%s", afterL)
+			g.placeLabel(afterL)
+		}
 	}
 	var open []string // the suites whose heading is printed, outermost first
 	for i, t := range g.prog.Tests {
@@ -1408,8 +1483,48 @@ func (g *gen) testRunner() {
 		// report it; a test that outlives --timeout is the watchdog's to report
 		root := tasks[i]
 		rec = recs[i]
+		prefix := strings.Repeat("  ", depth) + "test " + leaf + " ... "
+		reportSkip := func(why string) {
+			say(g.concat(g.concat(g.stringConst(prefix+"skipped: "), why), g.stringConst("\n")))
+			bump(skips)
+		}
+		if t.Skipped { // an annotation: the test never ran
+			reportSkip(g.stringConst(t.SkipWhy))
+			continue
+		}
+		finalL := ""
+		if skipHit[i] != "" { // a suite's gate may have skipped it, unqueued
+			gateL, runL := g.newLabel("test.gated"), g.newLabel("test.run")
+			finalL = g.newLabel("test.final")
+			g.emitTerm("br i1 %s, label %%%s, label %%%s", skipHit[i], gateL, runL)
+			g.placeLabel(gateL)
+			reportSkip(skipWhy[i])
+			g.emitTerm("br label %%%s", finalL)
+			g.placeLabel(runL)
+		}
 		g.emit("call void @veles_run(ptr %s)", root)
-		say(g.stringConst(strings.Repeat("  ", depth) + "test " + leaf + " ... "))
+		say(g.stringConst(prefix))
+		doneL := g.newLabel("test.done")
+		finish := func() {
+			g.placeLabel(doneL)
+			if finalL != "" {
+				g.emitTerm("br label %%%s", finalL)
+				g.placeLabel(finalL)
+			}
+		}
+		// `skip` / `skipIf` in the body (D178): skipped, unless a failure came first
+		skBuf, skN, skAny := g.alloca(strType), g.newTmp(), g.newTmp()
+		g.emit("%s = call i64 @veles_test_skipped(ptr %s, ptr %s)", skN, rec, skBuf)
+		g.emit("%s = icmp ne i64 %s, 0", skAny, skN)
+		skL, notSkL := g.newLabel("test.skipped"), g.newLabel("test.ran")
+		g.emitTerm("br i1 %s, label %%%s, label %%%s", skAny, skL, notSkL)
+		g.placeLabel(skL)
+		skWhy := g.newTmp()
+		g.emit("%s = load %s, ptr %s", skWhy, strType, skBuf)
+		say(g.concat(g.concat(g.stringConst("skipped: "), skWhy), g.stringConst("\n")))
+		bump(skips)
+		g.emitTerm("br label %%%s", doneL)
+		g.placeLabel(notSkL)
 		name := t.Display
 		fail = func(text string) {
 			say(text)
@@ -1426,7 +1541,7 @@ func (g *gen) testRunner() {
 		g.emit("%s = call i64 @veles_task_panicked(ptr %s)", pan, root)
 		pb := g.newTmp()
 		g.emit("%s = icmp ne i64 %s, 0", pb, pan)
-		panL, resL, doneL := g.newLabel("test.panic"), g.newLabel("test.result"), g.newLabel("test.done")
+		panL, resL := g.newLabel("test.panic"), g.newLabel("test.result")
 		g.emitTerm("br i1 %s, label %%%s, label %%%s", pb, panL, resL)
 		g.placeLabel(panL)
 		pt := g.prog.PanicType.(*types.Struct)
@@ -1454,7 +1569,7 @@ func (g *gen) testRunner() {
 		g.placeLabel(resL)
 		if rs == nil {
 			passOrRecorded(doneL)
-			g.placeLabel(doneL)
+			finish()
 			continue
 		}
 		rp := g.newTmp()
@@ -1474,7 +1589,7 @@ func (g *gen) testRunner() {
 		g.emitTerm("br label %%%s", doneL)
 		g.placeLabel(okL)
 		passOrRecorded(doneL)
-		g.placeLabel(doneL)
+		finish()
 	}
 	// the summary: `3 passed, 1 failed: parsesDates` (and what a filter left out)
 	np, nf := g.newTmp(), g.newTmp()
@@ -1482,6 +1597,15 @@ func (g *gen) testRunner() {
 	g.emit("%s = load i64, ptr %s", nf, failures)
 	summary := g.concat(g.concat(g.stringConst("\n"), g.show(types.TI64, np)), g.stringConst(" passed, "))
 	summary = g.concat(g.concat(summary, g.show(types.TI64, nf)), g.stringConst(" failed"))
+	// `, 2 skipped` only when something was (D178)
+	nk := g.newTmp()
+	g.emit("%s = load i64, ptr %s", nk, skips)
+	anySkip := g.newTmp()
+	g.emit("%s = icmp ne i64 %s, 0", anySkip, nk)
+	skipText, skipNone := g.concat(g.concat(g.stringConst(", "), g.show(types.TI64, nk)), g.stringConst(" skipped")), g.stringConst("")
+	shownSkips := g.newTmp()
+	g.emit("%s = select i1 %s, %s %s, %s %s", shownSkips, anySkip, strType, skipText, strType, skipNone)
+	summary = g.concat(summary, shownSkips)
 	names := g.newTmp()
 	g.emit("%s = load %s, ptr %s", names, strType, failedNames)
 	// drop the first ", " — or, with nothing failed, nothing to drop
@@ -1505,6 +1629,12 @@ func (g *gen) testRunner() {
 	say(g.concat(summary, g.stringConst("\n")))
 	anyFail := g.newTmp()
 	g.emit("%s = icmp ne i64 %s, 0", anyFail, nf)
+	// only skips: success, unless `--fail-on-skip` (D178)
+	if g.prog.FailOnSkip {
+		bad := g.newTmp()
+		g.emit("%s = or i1 %s, %s", bad, anyFail, anySkip)
+		anyFail = bad
+	}
 	code := g.newTmp()
 	g.emit("%s = select i1 %s, i32 1, i32 0", code, anyFail)
 	g.emitTerm("ret i32 %s", code)

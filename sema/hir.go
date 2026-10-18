@@ -37,6 +37,8 @@ type Program struct {
 	// counts the tests `veles test --filter` left out; the driver sets both.
 	TestTimeoutMs int64
 	TestsFiltered int
+	// FailOnSkip makes a skipped test fail the run (`veles test --fail-on-skip`, D178).
+	FailOnSkip bool
 	// TestJobs is how many tests run at once (D80): 0 is one per worker
 	// thread, 1 runs them one at a time.
 	TestJobs int64
@@ -68,7 +70,13 @@ type Func struct {
 	Name    string // mangled, unique
 	Display string // for diagnostics and panics
 	// Suite is a test's path of suites (D78), for the runner's grouping.
-	Suite    []string
+	Suite []string
+	// Skipped, for a test, is a static @Skip / @SkipIf that holds (D178): the
+	// runner reports it without running it, with SkipWhy. Gates are the
+	// suites' `skip` / `skipIf` statements above it, outermost first, run once.
+	Skipped  bool
+	SkipWhy  string
+	Gates    []*Func
 	Sig      *types.Func
 	Params   []*Var // excludes the receiver
 	Receiver *Var   // `this` for methods, always a pointer to the receiver's place (D22 v0.30)

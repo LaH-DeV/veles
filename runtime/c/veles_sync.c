@@ -873,6 +873,8 @@ typedef struct veles_test_rec {
     veles_lock *lock;
     text_buf fails;  /* the recorded failure lines */
     text_buf output; /* what the test printed, kept for its report */
+    text_buf skip_why; /* why `skip` ended it (D178) */
+    int64_t skipped;
     int64_t count, stopped;
     int64_t taken;   /* the runner has the report: nothing more is kept */
     const char *name;
@@ -980,6 +982,44 @@ void veles_test_fail(const char *msg, int64_t len, const char *where, int64_t wl
     r->count++;
     if (stop) r->stopped = 1;
     veles_lock_release(r->lock);
+}
+
+/* `skip(why)` (D178): the test ends as skipped with `why` unless it already
+ * recorded a failure, which stays a failure. The caller then stops the test
+ * as `require` does. */
+void veles_test_skip(const char *msg, int64_t len) {
+    veles_test_rec *r = current_rec();
+    if (!r) {
+        fprintf(stderr, "skipped: %.*s\n", (int)len, msg);
+        return;
+    }
+    veles_lock_acquire(r->lock);
+    if (!r->skipped) {
+        buf_append(&r->skip_why, msg, len);
+        r->skipped = 1;
+    }
+    r->stopped = 1;
+    veles_lock_release(r->lock);
+}
+
+/* Whether the test ended as skipped, and why: 1 with *out set, or 0 when it
+ * did not skip or had recorded a failure first. */
+int64_t veles_test_skipped(void *rec, veles_test_string *out) {
+    veles_test_rec *r = rec;
+    veles_lock_acquire(r->lock);
+    int64_t yes = r->skipped && r->count == 0;
+    if (yes) {
+        char *text = veles_alloc(r->skip_why.len + 1);
+        if (r->skip_why.len > 0) memcpy(text, r->skip_why.data, (size_t)r->skip_why.len);
+        text[r->skip_why.len] = 0;
+        out->data = text;
+        out->len = r->skip_why.len;
+        free(r->skip_why.data);
+        r->skip_why = (text_buf){0};
+        r->taken = 1;
+    }
+    veles_lock_release(r->lock);
+    return yes;
 }
 
 /* The failures a test recorded, as one string, and how many; *stopped is

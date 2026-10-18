@@ -200,6 +200,7 @@ declare ptr @veles_alloc(i64)
 declare void @veles_panic(ptr, i64)
 declare void @veles_panic_at(ptr, i64, ptr, i64)
 declare void @veles_test_fail(ptr, i64, ptr, i64, i64)
+declare void @veles_test_skip(ptr, i64)
 declare i64 @veles_test_enter(ptr, i64)
 declare void @veles_test_leave(i64)
 declare void @veles_cleanup_push(ptr, ptr, ptr, ptr)
@@ -1158,7 +1159,7 @@ func (g *gen) entryPoint() {
 		g.emitTerm("ret i32 0")
 	}
 	if g.prog.TestMode {
-		g.out.WriteString("declare void @veles_test_setup(i64, i64, i64)\ndeclare ptr @veles_test_new(ptr, i64)\ndeclare ptr @veles_test_bind(ptr)\ndeclare void @veles_test_unbind(ptr)\ndeclare void @veles_test_queue(ptr, ptr, ptr)\ndeclare i64 @veles_test_take(ptr, ptr, ptr, i64)\n\n")
+		g.out.WriteString("declare void @veles_test_setup(i64, i64, i64)\ndeclare ptr @veles_test_new(ptr, i64)\ndeclare ptr @veles_test_bind(ptr)\ndeclare void @veles_test_unbind(ptr)\ndeclare void @veles_test_queue(ptr, ptr, ptr)\ndeclare i64 @veles_test_take(ptr, ptr, ptr, i64)\ndeclare i64 @veles_test_skipped(ptr, ptr)\n\n")
 	}
 	g.out.WriteString("define i32 @veles_main(i32 %argc, ptr %argv) {\nentry:\n")
 	g.out.WriteString(g.allocas.String())

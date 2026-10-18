@@ -471,7 +471,7 @@ extend Parser {
     this.next()  // test
     val h = this.testHead("test", "test listMethods \"incrementAt updates an element\" { ... }")
     var d: ast.TestDecl = ast.TestDecl(doc: if (doc.isEmpty()) head.doc else doc, label: h.label, labelAt: h.labelAt, name: h.name, at: h.at)
-    if (val first = head.attrs.at(0)) this.errorAt(first.pos, "a test takes no attributes")
+    d.attrs = head.attrs
     if (this.at(Kind.LBrace)) {
       d.body = this.parseBlock()
     } else {
@@ -519,7 +519,7 @@ extend Parser {
     this.next()  // suite
     val h = this.testHead("suite", "suite Router \"routing and middleware\" { ... }")
     var d: ast.SuiteDecl = ast.SuiteDecl(doc: if (doc.isEmpty()) head.doc else doc, label: h.label, labelAt: h.labelAt, name: h.name, at: h.at)
-    if (val first = head.attrs.at(0)) this.errorAt(first.pos, "a suite takes no attributes")
+    d.attrs = head.attrs
     if (this.expect(Kind.LBrace)) d.decls = this.parseSuiteBody()
     d.pos = this.spanFrom(head.start)
     d
@@ -532,6 +532,11 @@ extend Parser {
       this.skipSemis()
       if (this.atAny(Kind.RBrace, Kind.EOF)) break
       val before = this.pos
+      if (this.atSuiteSkip()) {
+        decls.push(this.parseSuiteSkip())
+        this.expectTerminator()
+        continue
+      }
       val inner = this.parseDecl()
       when (inner) {
         is ast.TestDecl, is ast.SuiteDecl => decls.push(inner)
@@ -542,12 +547,28 @@ extend Parser {
           decls.push(inner)
         }
         is ast.BadDecl => { }
-        else => this.errorAt(ast.declSpan(inner), "a suite holds tests ('test \"...\" { }'), 'test fun' helpers and other suites")
+        else => this.errorAt(ast.declSpan(inner), "a suite holds tests ('test \"...\" { }'), 'test fun' helpers, other suites and 'skip(why)' / 'skipIf(cond, why)' (D178)")
       }
       if (this.pos == before) this.next()
     }
     this.expect(Kind.RBrace)
     decls.toList()
+  }
+
+  // `skip(` or `skipIf(` directly in a suite's body (D178); both words are contextual
+  fun atSuiteSkip(): bool => this.at(Kind.Ident) && this.peek(1).kind == Kind.LParen && (this.cur().text == "skip" || this.cur().text == "skipIf")
+
+  // the call of a suite's skip / skipIf; the checker holds its arguments to the words' signatures
+  fun parseSuiteSkip(): ast.Decl {
+    val start = this.span()
+    val e = &this.parseExpr()
+    when (*e) {
+      is ast.CallExpr => return ast.SkipDecl(call: e, pos: this.spanFrom(start))
+      else => {
+        this.errorAt(ast.exprSpan(*e), "a suite's statement is 'skip(why)' or 'skipIf(cond, why)' (D178)")
+        return ast.BadDecl(pos: this.spanFrom(start))
+      }
+    }
   }
 
   // `error Name<T> { fields; methods }` (D4): a struct plus `implement Error
