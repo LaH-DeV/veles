@@ -211,6 +211,11 @@ threads = "auto"              # the default pool's threads: "auto" (one per core
   a body without braces (`fun f() => expr`, `x => expr`), so every `{ }` body
   says `return`. The blocks of an `if` or a `when` arm are never affected:
   their value is the branch's, not the function's.
+- A lint can also come from a dependency: `acme_lints.no_sleep = "warn"`
+  (the dependency's name in `[dependencies]`, a dot, the rule's name; a
+  quoted `"acme_lints.no_sleep"` works too) turns that rule on for this
+  package, at that level. A package's rules run only where its manifest names
+  them. See [Writing a lint rule](#writing-a-lint-rule) below.
 - `[runtime]` is how the program runs, and only the program's own
   manifest is read: a dependency's `[runtime]` is ignored. `threads` sizes
   the pool every task runs on unless placed elsewhere (chapter 12, D143);
@@ -610,6 +615,81 @@ veles doc . -o api        # api/<module>.md, one file per module
 
 Private members and modules the root does not re-export are left out;
 a package with errors is refused, since its API is not settled.
+
+### Writing a lint rule
+
+A lint rule is an ordinary value in an ordinary package, written against the
+library module `lint` (D177). A rule has a name, a line of documentation and a
+function that makes a `Visitor` for each file; the visitor has one optional
+callback per kind of syntax node, which the compiler calls with the node and a
+`Context` to report through. A package lists its rules in a
+`public const fun rules()`:
+
+```veles
+// fragment
+use lint
+
+/// `await sleep(d)` in a test or anywhere else: wait for what you need.
+const fun noSleep(): lint.Rule => lint.Rule(
+  name: "no_sleep",
+  doc: "a call to sleep",
+  create: ctx => lint.Visitor(
+    onAwaitExpr: (waited, c) => {
+      val x = *waited.x
+      when (x) {
+        is lint.CallExpr => {
+          val callee = *x.callee
+          when (callee) {
+            is lint.NameExpr => if (callee.name == "sleep") {
+              c.report(waited.pos, "waiting for a fixed time hides what is being waited for", fix: lint.Fix.remove(waited.pos))
+            }
+            else => {}
+          }
+        }
+        else => {}
+      }
+    },
+  ),
+)
+
+public const fun rules(): List<lint.Rule> => [noSleep()]
+```
+
+A package that depends on this one turns the rule on, at the level it wants,
+in its own manifest:
+
+```toml
+[dependencies]
+acme_lints = "../acme-lints"
+
+[lint]
+acme_lints.no_sleep = "warn"
+```
+
+`veles check` then runs the rule on that package's files, and
+`veles check --fix` applies the fixes it reported, as it does for the
+compiler's own lints. Nothing runs unless the manifest names the rule.
+
+- **The tree.** A rule sees the same syntax tree as the Veles front end in
+  `selfhost/ast` (`CallExpr`, `NameExpr`, `FunDecl`, …): a node of one of the
+  five families — types, declarations, statements, expressions, patterns — is
+  a sealed value, `when (x) { is lint.CallExpr => … }`, and a node held by its
+  own family is behind a pointer, read with `*`. Every node has a `pos`,
+  a `Span` over the file's bytes; `ctx.text(span)` is the text it covers.
+  Callbacks run parents before children, in source order.
+- **Reports and fixes.** `ctx.report(span, message, fix: …)` records a
+  finding; the fix is `Fix.replace(span, text)`, `Fix.remove(span)`,
+  `Fix.insertBefore(span, text)`, or a `Fix(edits: [...])` of several edits.
+  The level in `[lint]` decides whether a finding is a warning or an error.
+- **What a rule may do.** A rule runs in the compiler's own evaluator (chapter
+  2, D113), so it is `const fun` all the way down: no I/O, no clock, no tasks;
+  it reads the tree and nothing else. A rule that panics, or runs past
+  `--const-steps`, fails the check with the rule's name.
+- **Limits.** A rule sees the tree as the parser built it (syntax only: no
+  types yet), the `Visitor` has an enter callback per node and no exit
+  callback, and the tree is rebuilt for each file, which is the cost of a
+  rule: about a tenth of a second for a package of 8,000 lines running a rule
+  with five node callbacks.
 
 ## The standard library
 

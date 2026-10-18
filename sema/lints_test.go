@@ -41,7 +41,7 @@ func TestManifestLintLevels(t *testing.T) {
 		{pkg + "[lint]\nunused_import = \"error\"\n", "[lint] unused_import is \"allow\""},
 		{pkg + "[lint]\nunused_import = true\n", "[lint] unused_import is \"allow\""},
 		{pkg + "[lint]\nunused_imports = \"deny\"\n", "did you mean \"unused_import\"?"},
-		{pkg + "[lint]\n\"acme.no_sleep\" = \"warn\"\n", "lints from other packages are not available yet"},
+		{pkg + "[lint]\nacme.no_sleep = \"loud\"\n", "[lint] acme.no_sleep is \"allow\""},
 		{pkg + "[lint]\nmax_width = 5\n", "[lint] max_width is a number of columns"},
 		{pkg + "[format]\ntrailing_commas = \"always\"\n", "[format] trailing_commas is \"multiline\""},
 		{pkg + "[format]\nline_endings = \"cr\"\n", "[format] line_endings is \"lf\""},
@@ -49,6 +49,11 @@ func TestManifestLintLevels(t *testing.T) {
 		if _, err := parseManifest("veles.toml", ".", c.text); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%q:\n got %v\nwant %q", c.text, err, c.want)
 		}
+	}
+	// a rule of a dependency (std/lint): quoted, bare dotted and table keys
+	lib := parseOK(t, pkg+"[lint]\n\"acme.no_sleep\" = \"warn\"\nacme_lints.lower = \"deny\"\n\n[lint.other]\nrule = \"allow\"\n")
+	if lib.Lint.Library["acme.no_sleep"] != LintWarn || lib.Lint.Library["acme_lints.lower"] != LintDeny || lib.Lint.Library["other.rule"] != LintAllow {
+		t.Errorf("library lints %+v", lib.Lint.Library)
 	}
 	f := parseOK(t, pkg+"[format]\ntrailing_commas = \"never\"\nline_endings = \"crlf\"\n")
 	if !f.Format.NoTrailingCommas || f.Format.LineEndings != "crlf" {

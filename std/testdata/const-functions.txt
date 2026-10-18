@@ -7,6 +7,11 @@ hex/hex.vs: const fun digit(nibble: u8, upper: bool): u8
 hex/hex.vs: const fun write(bytes: List<u8>, upper: bool): string
 hex/hex.vs: public const fun encode(bytes: List<u8>): string
 hex/hex.vs: public const fun encodeUpper(bytes: List<u8>): string
+lint/lint.vs: public const fun report(span: Span, message: string, fix: Fix? = null)
+lint/lint.vs: public const fun text(span: Span): string
+lint/lint.vs: public static const fun insertBefore(span: Span, text: string): Fix
+lint/lint.vs: public static const fun remove(span: Span): Fix
+lint/lint.vs: public static const fun replace(span: Span, text: string): Fix
 prelude/adapters.vs: public const fun all<E>(pred: fun(T): bool suspends throws E): bool throws E
 prelude/adapters.vs: public const fun any<E>(pred: fun(T): bool suspends throws E): bool throws E
 prelude/adapters.vs: public const fun filter<E>(pred: fun(K, V): bool suspends throws E): Map<K, V> throws E

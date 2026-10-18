@@ -1151,6 +1151,12 @@ be written right against the string (a space is an error), and it is a
 function — or `module.function` — not a value. A value whose type does not fit
 `V` is the usual type error at its `${…}`.
 
+### lint-rules
+
+**A lint rule written in Veles that cannot run.** `[lint] other.rule: 'other' is not a dependency of this package`, `package 'acme_lints' has no rule 'no_sleeps'; its rules are no_sleep (did you mean 'no_sleep'?)`, `package 'acme_lints' has no 'public const fun rules(): List<lint.Rule>'`, `a lint rule was shown the syntax 'X', which std/lint cannot show yet`.
+
+A rule comes from a dependency (D177): the key in `[lint]` is the dependency's name in `[dependencies]`, a dot and the rule's `name`. The dependency lists its rules in `public const fun rules()`. A rule is a `const fun` like any other, so a panic or a run past `--const-steps` in it is reported with the chain of calls. The last message means the checker rewrote the tree into a node `std/lint` has no type for; it is a gap to report.
+
 ### manifest
 
 **`veles.toml`.** `veles.toml:3: unknown [format] key "indnt"`.

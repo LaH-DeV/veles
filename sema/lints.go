@@ -132,6 +132,7 @@ func (c *Checker) lintManifests() map[string]*Manifest {
 func (c *Checker) applyLintLevels(items []source.Diagnostic) []source.Diagnostic {
 	mans := c.lintManifests()
 	items = append(items, c.longLines(mans)...)
+	items = append(items, c.libraryLints()...)
 	out := make([]source.Diagnostic, 0, len(items))
 	for _, d := range items {
 		if d.Lint == "" {

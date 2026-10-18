@@ -19,7 +19,7 @@ func TestConstFunMatchesRunTime(t *testing.T) {
 	}
 	for _, release := range []bool{false, true} {
 		out, code := runTestFiles(t, map[string]string{"fns.vs": constFunSrc, "cf.test.vs": constFunTests}, Options{Release: release})
-		if code != 0 || !strings.Contains(out, "27 passed") {
+		if code != 0 || !strings.Contains(out, "28 passed") {
 			t.Fatalf("release=%v: exit %d, output:\n%s", release, code, out)
 		}
 	}
@@ -51,6 +51,53 @@ const fun ints(): List<i64> {
   out.toList()
 }
 const INTS: List<i64> = ints()
+
+sealed trait Tree
+
+struct Leaf : Tree {
+  var value: i64
+}
+
+struct Fork : Tree {
+  var op: i64
+  var left: *Tree
+  var right: *Tree
+}
+
+struct Many : Tree {
+  var kids: List<Tree>
+}
+
+const fun build(depth: i64, seed: i64): Tree {
+  if (depth == 0) return Leaf(value: seed)
+  if (seed % 3 == 0) {
+    Fork(op: seed % 5, left: &build(depth - 1, seed * 3 + 1), right: &build(depth - 1, seed * 3 + 2))
+  } else {
+    Many(kids: [build(depth - 1, seed + 1), build(depth - 1, seed + 2)])
+  }
+}
+
+const fun sum(t: Tree, seen: *i64) {
+  when (t) {
+    is Leaf => *seen += t.value
+    is Fork => {
+      *seen += t.op
+      sum(*t.left, seen)
+      sum(*t.right, seen)
+    }
+    is Many => {
+      *seen += t.kids.len()
+      loop (k in t.kids) sum(k, seen)
+    }
+  }
+}
+
+const fun sealedSum(depth: i64): i64 {
+  var seen = 0
+  sum(build(depth, 1), &seen)
+  seen
+}
+const SEALED: i64 = sealedSum(7)
 
 const fun fnv(n: i64): u32 {
   var h: u32 = 2166136261
@@ -494,6 +541,9 @@ test "std: Duration" {
 }
 test "std: hex, base64, utf8" {
   expect(CODECS == codecs())
+}
+test "sealed values and pointers" {
+  expect(SEALED == sealedSum(7))
 }
 test "integer arithmetic" {
   expect(INTS == ints())

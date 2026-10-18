@@ -114,7 +114,7 @@ const fun variantOk(): i64 {
     is Err   => 0
   }
 }
-const V: i64 = variantOk() // error: a sealed variant is not a constant expression
+const V: i64 = variantOk() // a sealed value is fine inside a const fun; only the constant itself cannot be one
 const Q: List<i64> = [1, 2].map(x => x + 1)
 const Q2: List<i64> = [1, 2].map(x => plain(x)) // error: a constant cannot call 'plain'
 

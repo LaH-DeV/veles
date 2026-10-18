@@ -133,8 +133,23 @@ func parseTOML(text string) (*tomlTable, error) {
 		}
 		line := p.line
 		p.skipSpace(false)
-		if p.pos < len(p.src) && p.src[p.pos] == '.' {
-			return nil, p.fail("dotted keys are not supported: write '[" + key + "]' as a table or '{ ... }' inline")
+		// a dotted key (`a.b = 1`) is the key of a table below the current one
+		dest := cur
+		for p.pos < len(p.src) && p.src[p.pos] == '.' {
+			p.pos++
+			p.skipSpace(false)
+			sub, ok := dest.vals[key]
+			if !ok {
+				sub = &tomlVal{kind: tomlTab, tab: newTomlTable(line), line: line}
+				dest.vals[key] = sub
+			} else if sub.kind != tomlTab {
+				return nil, p.fail(fmt.Sprintf("%q is already %s, not a table", key, sub.kind))
+			}
+			dest = sub.tab
+			if key, err = p.key(); err != nil {
+				return nil, err
+			}
+			p.skipSpace(false)
 		}
 		if !p.eat('=') {
 			return nil, p.fail("expected 'key = value'")
@@ -145,10 +160,10 @@ func parseTOML(text string) (*tomlTable, error) {
 			return nil, err
 		}
 		v.line = line
-		if _, dup := cur.vals[key]; dup {
+		if _, dup := dest.vals[key]; dup {
 			return nil, &tomlError{line, fmt.Sprintf("key %q is set twice", key)}
 		}
-		cur.vals[key] = v
+		dest.vals[key] = v
 		if err := p.endOfLine(); err != nil {
 			return nil, err
 		}

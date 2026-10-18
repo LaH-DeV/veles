@@ -556,8 +556,20 @@ func (r *manifestReader) lint(m *Manifest, t *tomlTable) error {
 			}
 			m.Lint.ImplicitReturn = level
 		default:
+			if v.kind == tomlTab {
+				// `acme-lints.no_sleep = "warn"` reads as a table `acme-lints`
+				for _, rule := range v.tab.keys() {
+					if err := r.libraryLint(m, key+"."+rule, v.tab.vals[rule]); err != nil {
+						return err
+					}
+				}
+				continue
+			}
 			if strings.Contains(key, ".") {
-				return r.fail(v, "[lint] %s: lints from other packages are not available yet (D177, plan B27); the lints here are listed by 'veles lint --list'", key)
+				if err := r.libraryLint(m, key, v); err != nil {
+					return err
+				}
+				continue
 			}
 			if _, ok := LintNamed(key); !ok {
 				names := []string{"implicit_return", "max_width"}
@@ -643,6 +655,10 @@ type ManifestLint struct {
 	// Levels is the level a package set for each lint of the registry
 	// (lints.go); a lint missing from it has its default.
 	Levels map[string]LintLevel
+	// Library is the level a package set for each rule of a dependency, keyed
+	// `package.rule` (rules written in Veles, std/lint): a rule runs only
+	// when the package names it.
+	Library map[string]LintLevel
 	// MaxWidth is `max_width`, the column the `long_line` lint allows; 0 for
 	// the default.
 	MaxWidth int
@@ -905,4 +921,21 @@ func ReadManifestIn(dir string) (*Manifest, error) {
 		return nil, err
 	}
 	return readManifest(abs)
+}
+
+// libraryLint reads `[lint] package.rule = "warn"`: a rule of a dependency
+// (std/lint, D177). The rule's existence is checked when it is loaded.
+func (r *manifestReader) libraryLint(m *Manifest, key string, v *tomlVal) error {
+	level, ok := parseLintLevel(v.str)
+	if v.kind != tomlStr || !ok {
+		return r.fail(v, "[lint] %s is \"allow\" (silent), \"warn\" or \"deny\" (an error)", key)
+	}
+	if strings.HasPrefix(key, ".") || strings.HasSuffix(key, ".") {
+		return r.fail(v, "[lint] %s: a rule of another package is written package.rule, e.g. acme-lints.no_sleep = \"warn\"", key)
+	}
+	if m.Lint.Library == nil {
+		m.Lint.Library = map[string]LintLevel{}
+	}
+	m.Lint.Library[key] = level
+	return nil
 }

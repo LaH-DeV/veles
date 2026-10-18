@@ -3,6 +3,7 @@
 # sema/testdata/conform instead; a covered one must leave this list (`go test ./sema -conform-update`
 # rewrites it, keeping the reasons).
 "%s is not a constant expression (D113)"  # a list element place the evaluator reaches only through a node the checker built for a list
+"%s is not a constant expression (D113); compute it at run time with 'val'"  # a HIR node the evaluator has no case for; each kind the checker produces is handled
 "%s takes %d arguments"  # std-internal intrinsic: only std calls it, and std calls it right
 "%s takes 1 argument"  # std-internal intrinsic: only std calls it, and std calls it right
 "%s takes a pointer"  # std-internal intrinsic: only std calls it, and std calls it right
@@ -31,10 +32,10 @@
 "'next()' must return 'Item?', found '%s'"  # an Iterator implementation is checked against the trait first
 "a 'lazy' parameter must be a plain 'fun(): T' — no arguments, effects, default or '...' (D90)"  # std-only, after the reserved check: user code is refused first, and std writes only well-formed ones
 "a 'test fun' is a top-level helper, not a method"  # the parser refuses `test fun` in a type body; guards ASTs built another way
+"a lint rule was shown %s, which std/lint cannot show yet"  # needs a syntax node std/lint has no type for; checker-only nodes reach a rule as Bad nodes
 "a type is not a value"  # the parser refuses the form first
 "arrayRawData takes an array"  # std-internal intrinsic: only std calls it, and std calls it right
 "blockOn takes an executor's handle and a 'sendable fun()' that returns nothing and throws nothing"  # std-internal intrinsic: only std calls it, and std calls it right
-"runWithin takes a 'fun(): R suspends throws E'"  # std-internal intrinsic: only std calls it, and std calls it right
 "cannot assign through '?.': there may be nothing to assign to; check for null first, 'if (x != null) x.f = v'"  # defensive: check_safe.go binds every '?.' write (plain, compound, nested, '&') before an assignment target is checked
 "cannot infer the type arguments of '%s' from this call; write them, e.g. '%s<T>.%s(...)', or annotate the binding"  # every static the prelude adds to a built-in collection takes an argument of the element type, so the type is inferred or that argument reports its own error first (D137)
 "close() of '%s' throws; throwing cleanup is not supported yet"  # Closeable.close is declared non-throwing, so an implementation cannot throw
@@ -51,12 +52,15 @@
 "module-level '%s' needs an initializer"  # the parser refuses the form first
 "no arm of the 'when' matches the constant"  # a 'when' with a value is exhaustive or has an 'else', so a constant subject always meets an arm
 "only a module-level function can be 'extern \"C\"'; C calls it by name (D69)"  # the parser refuses `extern "C" fun` in a type body; guards ASTs built another way
+"package '%s' has no 'public const fun rules(): List<lint.Rule>', so it has no lint rules (D177)"  # needs a dependency package; sema/lintrules_test.go runs the rule host
 "parameter '%s' needs a type"  # the parser refuses the form first
+"runWithin takes a 'fun(): R suspends throws E'"  # std-internal intrinsic: only std calls it, and std calls it right
 "secretExpose takes the type to copy out: secretExpose<string>(bytes) or secretExpose<List<u8>>(bytes)"  # std-internal intrinsic: only std calls it, and std calls it right
 "the length of '%s' is not known here (D121)"  # bodies are checked per instantiation, so an array's length is a constant by then
 "this conversion is not a constant expression (D113)"  # defensive (D113): before `const fun` (part 4) the evaluator sees only the HIR of constant expressions, whose conversions are numeric or retype a collection
 "this function value is not one the compiler can call (D113)"  # defensive: every function value the evaluator makes is a lambda or a named `const fun`; a C function pointer (`&callback`) names a function that is not one, which the declaration check refuses first
 "this operator is not a constant expression (D113)"  # defensive (D113): before `const fun` (part 4) the evaluator sees only the HIR of constant expressions, whose operand types the checker already matched to the operator
+"this sealed value is not one the compiler can read (D113)"  # defensive: a sealed value in the evaluator is always made by MakeVariant
 "this statement is not a constant expression (D113)"  # defensive (D113): before `const fun` (part 4) the evaluator sees only the HIR of constant expressions, whose blocks hold only initialized temporaries
 "trait objects (boxed '%s') are not supported yet in the bootstrap compiler; use a generic bound instead (D9)"  # defensive: a call on a trait-typed receiver takes the trait-object path first
 "unsupported expression"  # no syntax reaches it: guards an AST node kind the checker does not handle

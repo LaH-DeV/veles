@@ -1,0 +1,10 @@
+[package]
+name = "app"
+version = "0.1.0"
+
+[dependencies]
+acme_lints = "../acme-lints"
+
+[lint]
+acme_lints.no_sleep = "warn"
+acme_lints.lower_case_functions = "deny"

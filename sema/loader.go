@@ -37,6 +37,9 @@ type Package struct {
 	Script    string
 	Deps      map[string]*Package
 	KeyPrefix string    // "" for the entry package, "dep/<name>/" for dependencies
+	// lintMods are the root modules of the dependencies whose lint rules the
+	// manifest turns on (`[lint] acme-lints.no_sleep`), by dependency name
+	lintMods map[string]*Module
 	table     *depTable // every dependency package of the program, one instance per identity
 	diags     *source.Diagnostics
 	// overlay maps OverlayKey(path) to unsaved editor contents (LSP).
@@ -403,7 +406,45 @@ func loadPackage(entry string, diags *source.Diagnostics, overlay map[string]str
 	if p.Entry != nil && p.Entry != given {
 		p.loadImports(p.Entry)
 	}
+	p.loadLintPackages()
 	return p, nil
+}
+
+// loadLintPackages loads the root module of every dependency whose lint
+// rules the manifest turns on (`[lint] acme-lints.no_sleep = "warn"`): nothing
+// imports a rules package, so nothing else would load it.
+func (p *Package) loadLintPackages() {
+	if p.Manifest == nil || len(p.Manifest.Lint.Library) == 0 {
+		return
+	}
+	keys := make([]string, 0, len(p.Manifest.Lint.Library))
+	for k := range p.Manifest.Lint.Library {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		name := key[:strings.LastIndexByte(key, '.')]
+		if p.lintMods[name] != nil {
+			continue
+		}
+		known := false
+		if _, ok := p.Manifest.Deps[name]; ok {
+			known = true
+		}
+		for _, d := range p.Manifest.Requires {
+			known = known || d.Name == name
+		}
+		if !known {
+			p.diags.Errorf(source.Span{}, "[lint] %s: '%s' is not a dependency of this package; a lint rule comes from a package listed under [dependencies]", key, name)
+			continue
+		}
+		if m := p.Resolve([]string{name}, source.Span{}, nil); m != nil {
+			if p.lintMods == nil {
+				p.lintMods = map[string]*Module{}
+			}
+			p.lintMods[name] = m
+		}
+	}
 }
 
 // SortedModules returns modules in dependency order (dependencies first).

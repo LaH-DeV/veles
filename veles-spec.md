@@ -7262,6 +7262,10 @@ long_line = "warn"
 
 Rejected: a `lint Name on node { }` declaration syntax (a rule is a normal value); plugin executables fed a serialized tree (a second public AST format, a process per run); a linter binary linking the rules (syntax-only until a Veles sema exists); declarative-only rules; `trailing_commas = "always"`; per-construct comma settings; a reflowing `max_width`; a default width of 100 (the user: too narrow today); formatter plugins; per-directory lint overrides (until needed).
 
+*Addendum (2026-10-19, run model confirmed after measuring).* A `const fun` walking a std-sized tree (294k nodes, lambda callbacks per kind) cost about 2.8 µs per node, roughly 7× a trivial `veles check` per rule pass, and the evaluator cannot hold sealed variants yet (`sema/consteval.go`). The user chose to extend the evaluator (sealed variants, then speed) over the `veles lint` binary; if a real rule set over the real AST is over budget the numbers go back to the user before the model changes.
+
+*Built (2026-10-19).* `std/lint` is `Rule`, `Visitor` (an optional `on<Node>` callback for every struct of `selfhost/ast`, entered parents first), `Context.report(span, message, fix:)` and `Fix` (`replace`, `remove`, `insertBefore`); its tree is `selfhost/ast` written out as public declarations. A package lists its rules in `public const fun rules(): List<lint.Rule>`; a manifest turns one on as `[lint] dep.rule = "warn"`, where `dep` is the dependency's name in `[dependencies]` (an identifier, so `acme-lints.x` is `acme_lints.x`). The evaluator holds sealed variants and pointers while it runs; a constant's *result* still cannot be one. A rule sees the parser's tree, not types. Left: `[lint.forbid]`, type-aware rules, exit callbacks (checklist §11).
+
 Both levels: the level table and `[lint.forbid]` are the high-level spelling; rules in Veles are the low-level escape. Self-hosting: the rule API sits on the Veles AST, so the compiler's own Go lints can become rules in it once S6–S9 land.
 
 ### D178 — Skipping tests: `skip`, `skipIf`, `@Skip`, `@SkipIf` (v0.92)

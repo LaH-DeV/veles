@@ -55,6 +55,7 @@ var families = []family{
 	fam("private-to-module", `is private to module`, `is not visible outside the package`, `has a default; it cannot be set from outside`, `does nothing in a program`, `is not re-exported`, `re-exports a module of another package`, `is private \(M5\)`,
 		`belongs to module`),
 	fam("private-to-type", `is private to '`, `the field is 'protected var'`),
+	fam("lint-rules", `\(D177\)`, `std/lint`, `^\[lint\] .*(not a dependency|has no rule)`),
 	fam("manifest", `^%s:%d: `, `^%s: \[`, `\[(package|format|native)\]`),
 	fam("modules", `^unknown module`, `import cycle`, `^dependency`, `has no module`, `^'use' `, `^'use %s `,
 		`is already imported`, `^'%s' is not a module`, `is a module, not a value`, `^no \.vs files`,

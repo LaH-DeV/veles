@@ -1257,6 +1257,22 @@ h.ptr(): *raw u8;  unsafe ffi.Handle<T>.from(p): T       // the value back, in t
 // language: extern "C" fun name(...) { }  and  &name: extern fun(...); p.cast<*raw T>() in unsafe
 ```
 
+## Module `lint` (D177)
+
+The API a lint rule is written against ([chapter 11](../11-modules-and-packages.md#writing-a-lint-rule)); the compiler runs the rules a manifest names, in its evaluator.
+
+```veles
+// fragment
+use lint
+lint.Rule(name: string, doc: string = "", level: lint.Level = lint.Level.Warn, create: fun(lint.Context): lint.Visitor)
+lint.Visitor(onCallExpr: ((lint.CallExpr, lint.Context) => ())? = null, ...)   // one optional callback per node struct of selfhost/ast: onFunDecl, onNameExpr, onBlock, onIdent, …
+ctx.report(span: lint.Span, message: string, fix: lint.Fix? = null)
+ctx.text(span): string;  ctx.file: lint.File   // path, content, position(offset), line(n)
+lint.Fix.replace(span, text);  lint.Fix.remove(span);  lint.Fix.insertBefore(span, text);  lint.Fix(edits: [lint.Edit(span, text)])
+// the tree: lint.Expr / Stmt / Decl / Type / Pattern (sealed), lint.CallExpr, lint.FunDecl, …, lint.Kind (token kinds)
+// a package lists its rules: public const fun rules(): List<lint.Rule>
+```
+
 ## Not in the library yet
 
 UDP and Unix-domain sockets in `net`, a terminal module, file watching.

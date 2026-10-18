@@ -75,22 +75,28 @@ type (
 		Lo, Hi    ConstVal
 		Inclusive bool
 	}
+	CVariant struct { // a value of a sealed type: which variant, and that variant's value
+		T       types.Type
+		Variant *types.Struct
+		V       ConstVal
+	}
 )
 
-func (v *CInt) Type() types.Type    { return v.T }
-func (v *CFloat) Type() types.Type  { return v.T }
-func (v *CBool) Type() types.Type   { return types.TBool }
-func (v *CString) Type() types.Type { return types.TString }
-func (v *CUnit) Type() types.Type   { return types.TUnit }
-func (v *CNull) Type() types.Type   { return v.T }
-func (v *CSome) Type() types.Type   { return v.T }
-func (v *CTuple) Type() types.Type  { return v.T }
-func (v *CStruct) Type() types.Type { return v.T }
-func (v *CList) Type() types.Type   { return v.T }
-func (v *CArray) Type() types.Type  { return v.T }
-func (v *CMap) Type() types.Type    { return v.T }
-func (v *CSet) Type() types.Type    { return v.T }
-func (v *CRange) Type() types.Type  { return v.T }
+func (v *CInt) Type() types.Type     { return v.T }
+func (v *CFloat) Type() types.Type   { return v.T }
+func (v *CBool) Type() types.Type    { return types.TBool }
+func (v *CString) Type() types.Type  { return types.TString }
+func (v *CUnit) Type() types.Type    { return types.TUnit }
+func (v *CNull) Type() types.Type    { return v.T }
+func (v *CSome) Type() types.Type    { return v.T }
+func (v *CTuple) Type() types.Type   { return v.T }
+func (v *CStruct) Type() types.Type  { return v.T }
+func (v *CList) Type() types.Type    { return v.T }
+func (v *CArray) Type() types.Type   { return v.T }
+func (v *CMap) Type() types.Type     { return v.T }
+func (v *CSet) Type() types.Type     { return v.T }
+func (v *CRange) Type() types.Type   { return v.T }
+func (v *CVariant) Type() types.Type { return v.T }
 
 // constFailed unwinds the evaluator after its error was reported.
 type constFailed struct{}
@@ -245,6 +251,8 @@ func copyVal(v ConstVal) ConstVal {
 		return out
 	case *CSome:
 		return &CSome{v.T, copyVal(v.V)}
+	case *CVariant:
+		return &CVariant{v.T, v.Variant, copyVal(v.V)}
 	}
 	return v
 }
@@ -390,6 +398,20 @@ func (ev *constEval) expr(e Expr) ConstVal {
 		return &CFunc{T: e.Type(), Fn: e.Fn}
 	case *CallIndirect:
 		return ev.callIndirect(e)
+	case *MakeVariant:
+		return &CVariant{e.Type(), e.Variant, ev.val(e.Value)}
+	case *VariantTest:
+		v, ok := ev.expr(e.X).(*CVariant)
+		if !ok {
+			ev.errorf(source.Span{}, "this sealed value is not one the compiler can read (D113)")
+		}
+		return &CBool{v.Variant == e.Variant}
+	case *VariantCast:
+		v, ok := ev.expr(e.X).(*CVariant)
+		if !ok || v.Variant != e.Variant {
+			ev.errorf(source.Span{}, "this sealed value is not one the compiler can read (D113)")
+		}
+		return v.V
 	case *AddrOf:
 		return ev.place(e.X)
 	case *Deref:
@@ -1138,6 +1160,9 @@ func constEqual(a, b ConstVal) bool {
 	case *CSome:
 		b, ok := b.(*CSome)
 		return ok && constEqual(a.V, b.V)
+	case *CVariant:
+		b, ok := b.(*CVariant)
+		return ok && a.Variant == b.Variant && constEqual(a.V, b.V)
 	case *CTuple:
 		b, ok := b.(*CTuple)
 		return ok && constAllEqual(a.Elems, b.Elems)
