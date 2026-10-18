@@ -210,7 +210,7 @@ fun counts(tasks: List<Task>, pick: fun(Task): List<string>) {
     }
   }
   loop ((tag, n) in tally.entries().sortedWith((a, b) => if (a.1 != b.1) b.1.compareTo(a.1) else a.0.compareTo(b.0))) {
-    println("${"$n".padStart(3)} $tag")
+    println("${n:>3} $tag")
   }
 }
 

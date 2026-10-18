@@ -13,11 +13,11 @@ use io { println }
 use time
 
 fun show(label: string, value: string) {
-  println("  ${label.padEnd(34)} $value")
+  println("  ${label:<34} $value")
 }
 
 fun ok(label: string, cond: bool) {
-  println("  ${label.padEnd(34)} ${if (cond) "ok" else "FAILED"}")
+  println("  ${label:<34} ${if (cond) "ok" else "FAILED"}")
 }
 
 // ---------------------------------------------------------------------------

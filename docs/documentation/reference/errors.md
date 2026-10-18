@@ -43,11 +43,12 @@ whole package, rewrites it.
 
 #### `the receiver is spelled 'this'`
 
-Before v0.40 a method named its receiver `self`. The old word still reads
-as the receiver, so the rest of the file checks, but every use is an error
-whose fix writes `this` — `veles check --fix` (or the editor's quick fix)
-migrates a whole package in one run, `"$self"` and `"${self.x}"` included.
-`Self`, the type, is unchanged. (D65)
+A method's receiver is `this`, as in most languages that have one. `self`
+(Rust's and Swift's word) still reads as the receiver, so the rest of the
+file checks, but every use is an error whose fix writes `this` —
+`veles check --fix` (or the editor's quick fix) rewrites a whole package in
+one run, `"$self"` and `"${self.x}"` included. `Self`, the type, is
+unchanged. (D65)
 
 ### unknown-name
 
@@ -400,8 +401,8 @@ convert a float with `.toI64()` (null when it does not fit).
 
 #### `'as' no longer converts (D86; it only renames)`
 
-`x as i64` was the old spelling of every numeric conversion. Conversions are
-methods now, each naming what it can lose (`n.toI64()`, `n.toU8()`,
+`x as i64` is how many languages convert a number; in Veles `as` only
+renames an import. Conversions are methods, each naming what it can lose (`n.toI64()`, `n.toU8()`,
 `n.wrapU8()`, `p.cast<*raw T>()` — see chapter 2). The message names the one
 that replaces the cast and the editor offers it as a fix; `veles check --fix`
 applies it across a project. The fix for a narrowing between integers is

@@ -81,7 +81,7 @@ fun webhook() throws hex.Invalid {
 fun encodings() throws base64.Invalid | hex.Invalid {
   println("-- base64 and hex (RFC 4648)")
   loop (s in ["", "f", "fo", "foo", "foob", "fooba", "foobar"]) {
-    println("'${s.padEnd(6)}' std=${base64.encode(s.bytes()).padEnd(8)} url=${base64.encodeUrl(s.bytes())}")
+    println("'${s:<6}' std=${base64.encode(s.bytes()):<8} url=${base64.encodeUrl(s.bytes())}")
   }
   val edge = [251.wrapU8(), 255.wrapU8(), 254.wrapU8()]
   println("alphabets  std=${base64.encode(edge)} url=${base64.encodeUrl(edge)}")

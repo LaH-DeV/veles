@@ -9,8 +9,9 @@ do most things. Programs compile through LLVM to native executables.
 
 If you know Kotlin or Swift the syntax will feel familiar. If you know
 Go, the module system will. If you know Rust, you will notice what was
-left out on purpose: no lifetimes, no borrow checker, no `async` keyword
-to remember.
+left out on purpose: no lifetimes, no borrow checker, no `async`/`await`
+colouring of functions — a call that waits is a plain call, and `async` only
+starts a task.
 
 ## Installing the toolchain
 

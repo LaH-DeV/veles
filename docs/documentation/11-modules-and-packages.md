@@ -26,7 +26,7 @@ A `.vss` file is a **script**: a program that is one file. It is its own
 package — the file is the root module — and it ignores its neighbours:
 other `.vs` and `.vss` files in the same directory are not part of it, and
 a directory module never reads `.vss` files. Scripts import the standard
-library and nothing else (dependencies: later). Use one for a tutorial
+library and nothing else. Use one for a tutorial
 step, a throwaway tool or an experiment; when it grows a second file,
 move it into a directory and rename it `.vs`.
 
@@ -89,8 +89,7 @@ exactly what `http.Request` means. The rules are short:
   does a module.
 - A name nothing uses is a warning (`veles check --fix` removes it).
 - `veles fmt` sorts the names inside the braces.
-- Completion inside the braces offers the module's names; the old
-  `use m.{ … }` spelling is an error whose fix removes the dot.
+- Completion inside the braces offers the module's names.
 
 The editor does the bookkeeping. Typing the start of a name a module
 offers — `readL` — completes to `readLine` and adds it to the braces of
@@ -575,8 +574,8 @@ public fun twice(x: i64): i64 => x * 2
   so a module can pass on what it re-exports: `use mathlib.geometry.deep`
   is fine when `geometry` says `public use deep`.
 - Only the package's own modules can be re-exported, not a dependency's or
-  a standard module's. The old manifest `exports` list is gone; a manifest
-  that still has one gets an error naming this form.
+  a standard module's. A manifest has no `exports` list: what a package
+  shows is written in source.
 
 `examples/packages` in the repository is a small project you can run:
 `veles run examples/packages/app` uses a path dependency (`mathlib`) and a

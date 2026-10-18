@@ -22,7 +22,7 @@ fun area(shape: Shape): f64 => when (shape) {
 fun describe(shape: Shape): string => when (shape) {
   is Circle => "circle r=${shape.radius}"
   is Rect   => "rect ${shape.w}x${shape.h}"
-  else      => "point"
+  is Point  => "point"
 }
 
 fun main() {

@@ -1,7 +1,7 @@
 # The Veles programming language
 
 Bootstrap compiler for Veles, written in Go, implementing `veles-spec.md`
-(v0.81, D1–D156): the whole surface syntax, the type system with inferred
+(v0.87, D1–D173): the whole surface syntax, the type system with inferred
 effects, compile-time evaluation (`const fun`), a non-moving collector with
 concurrent marking on Windows, a multi-threaded executor for stackless
 coroutines with declared executors and OS-thread control, packages (path,
@@ -58,7 +58,7 @@ program (docs chapter 13).
 | `editors/vscode/` | VS Code extension: TextMate grammar and client for `veles lsp` |
 | `docs/` | tutorials and reference; `go test ./docs/` runs every code block |
 | `selfhost/` | the front end rewritten in Veles (veles-selfhost-frontend-plan.md), phase by phase; `go test ./selfhost` builds it and checks its output against the Go front end's, byte for byte, on every Veles file in the repository |
-| `examples/` | 63 programs with expected output; `go test ./...` compiles and runs them (a `commands.txt` scripts a command-line tool, `-update` rewrites `expected.txt`; a `name.vss` script is a test when `name.expected.txt` exists, fed `name.stdin.txt` when present) |
+| `examples/` | 64 programs with expected output; `go test ./...` compiles and runs them (a `commands.txt` scripts a command-line tool, `-update` rewrites `expected.txt`; a `name.vss` script is a test when `name.expected.txt` exists, fed `name.stdin.txt` when present) |
 
 `go test ./...` is the regression suite. The parser, formatter and checker also
 have native fuzz targets — `go test -fuzz=FuzzParse ./parser`, `-fuzz=FuzzFormat
@@ -95,10 +95,9 @@ comparator/key lambdas. D51 `@deprecated`, `@mustUse`, `@inline`,
 `@noinline`; D78 `test "..." { }` with `expect`/`require`/`check`.
 
 **Modules and packages.** M1 `veles.toml` identity, M2/M3 directory
-modules, M4 cycle detection, M5 `public` plus the root module's `public use` re-exports (D89), M6 logical
+modules, M4 cycle detection, M5 visibility (D142: `private`, `internal`, package-wide unmarked, `public` for other packages) plus the root module's `public use` re-exports (D89), M6 logical
 paths; dependencies by path, git (tags or a commit) and a registry, minimal version selection per
 major, workspaces, `veles.sum`, vendoring, capabilities and a `[policy]` (D138, D139; chapter 25).
-D142's visibility levels (`internal`, package-wide unmarked) are decided and not built yet (plan B17).
 
 ## Known gaps and deviations
 

@@ -468,7 +468,8 @@ it, private to the module otherwise, like any declaration. A generic
 struct cannot have one (there would have to be a value per
 instantiation) — use a `static fun` there. This is the tool for a set of
 named values that stays *open*: anyone may still write `Status(code: 599)`.
-A set that is closed is a different thing, and will be an `enum`.
+A set that is closed is a different thing: an `enum`
+([chapter 9](09-sealed-types.md)).
 
 ## Sharing with pointers
 

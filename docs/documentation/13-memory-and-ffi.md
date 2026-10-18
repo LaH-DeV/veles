@@ -4,7 +4,7 @@
 
 Veles is garbage collected (D1). You allocate by writing `&x`, building a
 list or map, capturing a variable in a closure, or starting a task; you
-never free. The bootstrap collector is a non-moving mark-sweep: the
+never free. The collector is a non-moving mark-sweep: the
 compiler emits a layout descriptor for every type so the heap is scanned
 precisely, and the native stack is scanned conservatively. Once more than
 a megabyte stays live, helper threads — one per core, up to eight — mark

@@ -636,7 +636,7 @@ struct Money {
     fun times(other: i64): Money => Money(cents: this.cents * other)
   }
   implement Display {
-    fun toString(): string => "€${this.cents / 100}.${"${this.cents % 100}".padStart(2, "0")}"
+    fun toString(): string => "€${this.cents / 100}.${this.cents % 100:02}"
   }
 }
 

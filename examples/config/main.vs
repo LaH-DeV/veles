@@ -40,7 +40,7 @@ fun usage() {
   loop (v in config.describe<Settings>("DEMO_")) {
     val given = v.default ?: ""
     val kind = if (v.required) "required" else "default ${if (given.isEmpty()) "(empty)" else given}"
-    println("  ${v.name.padEnd(18)} ${kind.padEnd(20)} ${v.what}")
+    println("  ${v.name:<18} ${kind:<20} ${v.what}")
   }
 }
 

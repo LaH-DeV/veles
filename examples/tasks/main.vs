@@ -69,7 +69,7 @@ fun main() throws {
   val running: Atomic<i64> = Atomic(value: 0)
   val seen = Channel<i64>(capacity: 16)
   val launched = scope(workers: 2) {
-    loop (i in 0..<8) async limitedJob(running, seen)
+    loop (_ in 0..<8) async limitedJob(running, seen)
     8
   }
   seen.close()
