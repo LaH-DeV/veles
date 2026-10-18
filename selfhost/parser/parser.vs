@@ -330,8 +330,11 @@ struct Parser {
           return this.topLevelFun(head, fn)
         }
         if (this.atExtendDecl()) {
-          if (head.marked()) this.errorAt(head.start, "'extend' cannot be ${head.visibility()}; mark the methods instead")
-          return this.parseImpl(head.attrs, true)
+          var d = this.parseImpl(head.attrs, true)
+          d.pub = head.pub
+          d.isInternal = head.isInternal
+          if (head.marked()) d.pos = head.start.to(d.pos)
+          return d
         }
       }
       Kind.KwSealed, Kind.KwTrait => return this.parseTrait(head)

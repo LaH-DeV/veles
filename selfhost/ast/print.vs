@@ -404,6 +404,8 @@ struct Printer {
       this.typeParams(d.typeParams)
       this.write(" ")
       this.optType(d.target)
+      if (d.pub) this.write(" public") else if (d.isInternal) this.write(" internal")
+      if (d.withFun) this.write(" with")
     } else {
       this.open("impl")
       this.typeParams(d.typeParams)

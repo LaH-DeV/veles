@@ -78,7 +78,7 @@ deliberate choice, so it is worth knowing which is which.
 | | TypeScript / Go interface | Kotlin interface | Veles trait |
 |---|---|---|---|
 | How a type gets it | structurally: having the methods is enough | `class C : I` at the class | `implement I for C` (or `implement I { }` in the body): explicit, by name |
-| For a type you did not write | Go: yes (structural); TS: yes | no (extension functions do not implement interfaces) | yes: `implement Display for i64` in your package |
+| For a type you did not write | Go: yes (structural); TS: yes | no (extension functions do not implement interfaces) | yes: `implement Display for i64` in your package; for a helper that need not be part of the type, an extension function (`extend i64 with fun f()`, [chapter 5](05-structs-and-methods.md#extension-functions-extend-on-a-type-you-did-not-write)) |
 | Default method bodies | TS: no (abstract only); Go: no | yes | yes; an implement that replaces one writes `override` |
 | Static / constructor-like members | TS: no; Go: no | companion objects | `static fun` on the trait: `T.parse(s)` in generic code |
 | Associated types | generics on the interface | generics | `type Item` inside the trait (`Iterator.Item`) |

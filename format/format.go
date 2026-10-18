@@ -1202,10 +1202,20 @@ func (p *printer) traitDecl(d *ast.TraitDecl) {
 func (p *printer) implDecl(d *ast.ImplDecl) {
 	p.attrs(d.Attrs)
 	if d.Extend {
+		if d.Pub {
+			p.w("public ")
+		} else if d.Internal {
+			p.w("internal ")
+		}
 		p.w("extend")
 		p.typeParams(d.TypeParams)
 		p.w(" ")
 		p.typ(d.Target)
+		if d.With && len(d.Methods) == 1 {
+			p.w(" with ")
+			p.fun(d.Methods[0])
+			return
+		}
 	} else if d.Inline {
 		p.w("implement ")
 		p.typ(d.Trait)

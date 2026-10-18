@@ -1320,8 +1320,22 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-10-17 | Q46: labels on tests and suites (the user: "normal optional labels with current description") | **`test listMethods "sentence" { }` and `suite Lexer "sentence" { }`: an optional identifier first, the sentence optional when a label exists; reports and `--filter` use `label: sentence`** (user, the recommended form; D170; built the same day). Rejected: tags for filtering (later), `label: "…"` (a colon), identifier-only names. |
 | 2026-10-17 | Q47: format specs in interpolation | **A spec after `:` (`${price:>10.2}`, Python/Rust-like grammar, checked at compile time) and a higher-level `std/fmt`; locales a noted todo** (user: "spec after colon, and additional module for formatting functions (higher level than :spec)", "std/fmt but note the locales todo"; D171). Rejected: a minimal grammar, printf style, a `format(...)` method only. |
 | 2026-10-17 | Q48: multi-line and raw strings | **`"""…"""` text blocks (closing delimiter's column is the margin) and backtick raw strings (no escapes, no interpolation)** (user: "backticks will have non-interpolating raw strings… `this is a string`"; margin the recommended; D172). Rejected: a `raw"…"` tag, `#"…"#`, no margin rule. |
+| 2026-10-17 | Q49: pipelines and extension functions (the user: "so maybe it would be better to look again into extension functions, but we would have to be careful what we allow and what not") | **`extend T with fun f() …` and `extend T { }` also on a type you do not own: an extension function, a statically resolved call visible where its module is imported (`use strx`), `public` per M5; inherent methods win, public API only, not part of the type's interface, an ambiguity is an error; no `\|>` now** (user: direction B, "importing the module… but we probably would change the extending syntax", then proposed the `extend T with fun` form; D173). Rejected: UFCS, a separate `extension` keyword, `\|>` / `->` now, Kotlin's `fun T.name()`, per-name imports. |
 
 ## 11. Known limitations to revisit
+
+- **Extension functions (D173, built 2026-10-17, plan B25).** Not built: extensions on a
+  nullable receiver (`string?`), on a trait or `dyn` type, a pointer, a tuple or a function
+  type (all answer "only named types can be extended"); `static fun` in a foreign extension
+  (refused); an extension on an `Array<T, N>` does not see the read-only `List` methods'
+  copy view that own `extend` blocks get (D121) — only `extend … Array` matches; a module
+  reached through a facade's `public use` does not bring its extensions (only a direct
+  `use` of the declaring module does); completion after a `.` offers the extension
+  functions of every module of the package, imported or not (it filters by visibility, not
+  by the file's imports); `veles doc` and the module interface do not list extensions as
+  such; the ambiguity message offers no mechanical fix (there is no call form that names the
+  module). A pipe operator `|>` was not added — re-open only if real code shows a gap (the
+  value going to a non-first parameter).
 
 - **Bare member names (D158, built 2026-10-17).** The rule is applied by a rewrite before
   a body is checked: a name the body binds anywhere as a local is never read as a member

@@ -115,7 +115,7 @@ var families = []family{
 	fam("declarations", `duplicate`, `already (declared|a static|provided|defined)`, `cannot be redeclared`,
 		`only allowed at module level`, `needs an initializer`, `needs a (type|body)`, `^local functions`,
 		`^'static'`, `static (member|value)`, `static val`, `visibility`, `^'public'`, `^'private'`,
-		`^'protected'`, `^'private protected'`, `^a field is`, `extend`, `impl`, `^'main' must`, `infinite size`, `type alias`,
+		`^'protected'`, `^'private protected'`, `^a field is`, `extend`, `extension`, `impl`, `^'main' must`, `infinite size`, `type alias`,
 		`^'const'`, `^a global cannot`, `^'%s' binding needs`, `^'suspends' must`),
 	fam("unused", `never used`, `must be used`),
 	fam("syntax", `escape`, `a binding in a condition`, `^expected`, `^unexpected`, `^unterminated`, `^empty type`),

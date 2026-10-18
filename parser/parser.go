@@ -429,6 +429,8 @@ func setInternal(d ast.Decl) {
 		d.Internal = true
 	case *ast.EnumDecl:
 		d.Internal = true
+	case *ast.ImplDecl:
+		d.Internal = true
 	case *ast.ExecutorDecl:
 		d.Internal = true
 	}
@@ -497,10 +499,12 @@ func (p *Parser) parseDeclKind(attrs []*ast.Attribute, pub, marked bool, which s
 			return fn
 		}
 		if p.atExtendDecl() {
+			d := p.parseImpl(attrs, true).(*ast.ImplDecl)
+			d.Pub = pub
 			if marked {
-				p.errorf(start, "'extend' cannot be %s; mark the methods instead", which)
+				d.Pos = start.To(d.Pos)
 			}
-			return p.parseImpl(attrs, true)
+			return d
 		}
 	case lexer.KwSealed, lexer.KwTrait:
 		return p.parseTrait(attrs, pub, start)
@@ -1224,6 +1228,19 @@ func (p *Parser) parseImpl(attrs []*ast.Attribute, extend bool) ast.Decl {
 			p.errorf(p.span(), "expected 'for' after trait name in impl; inherent methods go inside the struct body (D23)")
 			d.Target = d.Trait
 		}
+	}
+	if extend && p.at(lexer.KwWith) {
+		// `extend T with fun f() …` (D173): one function, no braces
+		p.next()
+		d.With = true
+		mattrs := p.parseAttributes()
+		if !p.at(lexer.KwFun, lexer.KwMut, lexer.KwOverride, lexer.KwUnsafe, lexer.KwConst, lexer.KwPub, lexer.KwPrivate, lexer.KwInternal, lexer.KwStatic) {
+			p.errorf(p.span(), "expected 'fun' after 'extend … with', found %s", p.cur().Describe())
+		} else {
+			d.Methods = append(d.Methods, p.parseFun(mattrs, funContextMethod))
+		}
+		d.Pos = p.spanFrom(start)
+		return d
 	}
 	p.parseImplBody(d, extend)
 	d.Pos = p.spanFrom(start)

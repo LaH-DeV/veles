@@ -89,7 +89,48 @@ func (s *Server) inlayHints(params json.RawMessage) any {
 			out = append(out, h)
 		}
 	}
+	for _, h := range extensionHints(f, a.index.Refs) {
+		if in(positionToOffset(f, h.Position)) {
+			out = append(out, h)
+		}
+	}
 	return out
+}
+
+// extensionHints ends a `use` line with the types the imported module adds
+// methods to (D173): its extension functions are in scope from that line on,
+// and nothing else in the file names them. The hover on the module lists them.
+func extensionHints(f *source.File, refs []sema.Ref) []inlayHint {
+	var out []inlayHint
+	done := map[int]bool{}
+	for i := range refs {
+		r := &refs[i]
+		if r.Span.File != f || r.Kind != "module" || len(r.Extends) == 0 {
+			continue
+		}
+		start := strings.LastIndexByte(f.Content[:r.Span.Start], '\n') + 1
+		end := len(f.Content)
+		if nl := strings.IndexByte(f.Content[r.Span.End:], '\n'); nl >= 0 {
+			end = r.Span.End + nl
+		}
+		line := strings.TrimRight(f.Content[start:end], " \t\r")
+		if done[start] || !isUseLine(line) {
+			continue
+		}
+		done[start] = true
+		out = append(out, inlayHint{Position: offsetToPosition(f, start+len(line)), Label: "extends " + strings.Join(r.Extends, ", "), Kind: hintType, PaddingLeft: true})
+	}
+	return out
+}
+
+// isUseLine reports whether a source line is an import: `use m`,
+// `public use m { f }`.
+func isUseLine(line string) bool {
+	line = strings.TrimSpace(line)
+	for _, vis := range []string{"public ", "internal "} {
+		line = strings.TrimPrefix(line, vis)
+	}
+	return strings.HasPrefix(line, "use ")
 }
 
 // bindingUntyped reports whether the name ending at end is written without

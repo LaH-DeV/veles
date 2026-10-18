@@ -186,6 +186,10 @@ type Impl struct {
 	Decl          *ast.ImplDecl
 	// Derived names the methods the compiler wrote (D58), for hover.
 	Derived map[string]bool
+	// Foreign marks an `extend` of a type the module's package does not own
+	// (D173): its methods are extension functions, in scope only where the
+	// module is imported.
+	Foreign bool
 }
 
 // Doc is the module's documentation: the top-of-file doc comments of its

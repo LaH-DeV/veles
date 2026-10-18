@@ -149,7 +149,9 @@ if (T implements Show) x.show() // generic code, compile time: each instance com
 extend Point {                  // more inherent methods, outside the body (D23)
   fun norm(): i64 => this.x.abs() + this.y.abs()
 }
-extend<T: Shape> Box<T> { ... } // only for types you declare; bounds allowed
+extend<T: Shape> Box<T> { ... } // on a type you declare; bounds allowed
+extend string with fun shout(): string => this.toUpper() + "!"  // a type you did not write: an extension function,
+                                // seen by files that import the module (D173); inherent methods win
 
 sealed trait Expr {             // fixed set of variants (D12)
   fun eval(): i64 => when (this) { is Num(v) => v; is Neg(e) => -e.eval() }

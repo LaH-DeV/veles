@@ -694,8 +694,10 @@ fun main() {
   io.println("$v")
 }`)
 	cases := []struct{ name, src, want string }{
-		{"builtin outside std", `extend string { fun shout(): string => this }`, "outside the standard library"},
-		{"foreign struct", `extend Panic { fun why(): string => "" }`, "declared outside this package"},
+		// on a type the package does not own the block declares extension
+		// functions (D173; extension_test.go)
+		{"builtin outside std", `extend string { fun shout(): string => this }`, ""},
+		{"foreign struct", `extend Panic { fun why(): string => "" }`, ""},
 		{"pointer target", `struct P { x: i64 }
 extend *P { fun z() {} }`, "only named types can be extended"},
 		{"type param target", `extend<T> T { fun z() {} }`, "only named types can be extended"},

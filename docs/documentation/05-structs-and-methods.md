@@ -740,11 +740,66 @@ Pair(first: 2, second: 1) 3
 ```
 
 The second block applies to `Pair<i64, i64>` only; a bound like
-`extend<T: Show> Box<T>` works the same way. You can only extend types your
-own package declares — for anyone else's type, declare a trait and
-implement it ([chapter 8](08-traits-and-generics.md)). The built-in types
-belong to the standard library, which is where `"a,b".split(",")` and
-`xs.take(3)` come from: they are `extend` blocks in the prelude, written in
-Veles.
+`extend<T: Show> Box<T>` works the same way. On a type your own package
+declares, `extend` adds real methods. The built-in types belong to the
+standard library, which is where `"a,b".split(",")` and `xs.take(3)` come
+from: they are `extend` blocks in the prelude, written in Veles.
+
+## Extension functions: `extend` on a type you did not write
+
+The same word works on a type from anywhere else — `string`, a `List`, a
+type from a dependency. There it declares an *extension function*: a call
+`x.f()` that means a plain function taking `x`. One function takes the
+short form `extend T with fun`; several go in a block:
+
+```veles
+use io
+
+extend string with fun shout(): string => this.toUpper() + "!"
+
+extend string {
+  fun slug(): string => this.trim().toLower().replace(" ", "-")
+  fun isBlank(): bool => this.trim().isEmpty()
+}
+
+extend<T: Comparable> List<T> with fun isSorted(): bool => this.sorted() == this
+
+fun main() {
+  io.println("  Hello Big World ".slug().shout())
+  io.println("${[1, 2, 3].isSorted()} ${"  ".isBlank()}")
+}
+```
+
+Output:
+```text
+HELLO-BIG-WORLD!
+true true
+```
+
+That is how a pipeline reads in Veles: a chain, left to right, on any type.
+There is no `|>`. Extensions are deliberately narrower than methods, so a
+call never changes meaning behind your back:
+
+- **A file sees an extension by importing its module** (`use strx`). A
+  module's own files always see it; a sibling file that does not import
+  it does not. Mark it `public` (or write `public extend T { }` for the
+  block) to offer it to other packages.
+- **An inherent method wins.** An extension named like a method the type
+  already has is never called, and the compiler warns. If two imported
+  modules extend the same type with the same name, or a trait method has
+  that name too, the call is an *ambiguity error*: the compiler never
+  picks one.
+- **It sees what any other package sees.** The body reaches only the
+  public API of the type, never its private fields.
+- **It is not part of the type.** It satisfies no trait bound, is not
+  found by `is`, and has no entry in a trait object. For that, write an
+  `implement` ([chapter 8](08-traits-and-generics.md)).
+- **No `static fun`, no `private`** in an extension, and no extending a
+  `Result` or an `Option`.
+
+The editor tells you what an import brings: the `use strx` line ends with
+a hint naming the types it extends (`extends string, List<T>`), hovering
+`strx` lists its extension functions, and hovering a call says which module
+the method comes from.
 
 Next: [Nullable types](06-nullable-types.md).

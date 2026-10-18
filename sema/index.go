@@ -289,6 +289,10 @@ type Ref struct {
 	// `file: file`): the span is also a use of the variable, so renaming one
 	// of the two spells the pair out instead of renaming both.
 	Pun bool
+	// Extends, on a reference to a module, names the types the module's
+	// extension functions (D173) add methods to, as the referring file may
+	// call them: the hint on a `use` line.
+	Extends []string
 }
 
 // Key is the declaration a reference groups under for find-references and
@@ -884,7 +888,12 @@ func funDecl(t *FuncTemplate) string {
 	traitMethod := t.Trait != nil
 	if d != nil && !implMethod && !traitMethod {
 		// an impl's or a trait's method has the trait's visibility
-		sb.WriteString(visPrefix(d.Pub, d.Internal, d.Private))
+		if t.Impl != nil {
+			// an extend block's marker (`public extend T { }`) is the methods' (D173)
+			sb.WriteString(visPrefix(t.Pub, t.Internal, d.Private))
+		} else {
+			sb.WriteString(visPrefix(d.Pub, d.Internal, d.Private))
+		}
 	}
 	if d != nil {
 		if d.Override {
@@ -943,6 +952,9 @@ func funWhere(t *FuncTemplate) string {
 		return structHead(t.Owner)
 	case t.Impl != nil && t.Impl.Trait != nil:
 		return "implement " + t.Impl.Trait.Name + " for " + t.Impl.Target.String()
+	case t.Impl != nil && t.Impl.Foreign:
+		// an extension function (D173): where it comes from is what a reader needs
+		return "extend " + t.Impl.Target.String() + " — extension from module '" + t.Module.Name() + "'"
 	case t.Impl != nil:
 		return "extend " + t.Impl.Target.String()
 	case t.Trait != nil:

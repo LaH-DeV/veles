@@ -112,10 +112,14 @@
           ]
         },
         {
-          "comment": "extend<T> Type { ... }  (contextual keyword at declaration position)",
-          "begin": "^\\s*(extend)\\b(?=\\s*[<A-Za-z_*(])",
-          "beginCaptures": { "1": { "name": "storage.type.impl.veles" } },
-          "end": "(?=\\{)",
+          "comment": "extend<T> Type { ... } and extend<T> Type with fun f() … (D173); contextual keyword at declaration position, optionally after public/internal",
+          "begin": "^\\s*(?:(public|internal)\\s+)?(extend)\\b(?=\\s*[<A-Za-z_*(])",
+          "beginCaptures": {
+            "1": { "name": "storage.modifier.veles" },
+            "2": { "name": "storage.type.impl.veles" }
+          },
+          "end": "(\\bwith\\b)|(?=\\{)|$",
+          "endCaptures": { "1": { "name": "keyword.other.with.veles" } },
           "patterns": [
             { "include": "#types" },
             { "include": "#punctuation" }

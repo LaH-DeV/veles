@@ -315,10 +315,15 @@ type AssocTypeBinding struct {
 
 // ImplDecl is `impl<T> Trait for Type { ... }`, or with Extend set
 // `extend<T> Type { ... }`: inherent methods added to a type the package
-// declares (D23; the built-in types belong to std). Trait is nil then.
+// declares (D23; the built-in types belong to std). Trait is nil then. For a
+// type declared elsewhere `extend` adds an extension function, scoped to the
+// importers of its module (D173).
 type ImplDecl struct {
 	Attrs      []*Attribute
 	Extend     bool
+	With       bool // `extend T with fun f() …`: the one-function form (D173)
+	Pub        bool // `public extend`: the visibility of the methods that carry no marker of their own
+	Internal   bool // `internal extend`, likewise
 	Inline     bool // written inside the target struct's body
 	Braceless  bool // an empty impl written without `{ }` (D58): the body is derived
 	Derived    bool // synthesized by the compiler (D58): a supertrait's, a variant's or an enum's impl; never from the parser

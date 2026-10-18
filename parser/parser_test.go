@@ -168,6 +168,8 @@ func TestSpecRejections(t *testing.T) {
 		{"implement Foo { }", "'for'"},
 		{"fun f() { async 1 }", "'async' must prefix a call"},
 		{"fun f() { val x = a -> b }", "'=>'"},
+		{"extend string with 5", "expected 'fun' after 'extend … with'"},
+		{"extend string with fun f() => 1 fun g() => 2", "expected newline"},
 	}
 	for _, c := range cases {
 		_, diags := parse(t, c.src)

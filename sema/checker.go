@@ -61,7 +61,8 @@ type Checker struct {
 	traits      []*types.Trait
 	templates   []*FuncTemplate
 	impls       map[*types.Trait][]*Impl
-	extends     []*Impl                                    // `extend Type { }` blocks (Trait == nil)
+	extends     []*Impl                                    // `extend Type { }` blocks on a type the package owns (Trait == nil)
+	foreignExts []*Impl                                    // `extend Type { }` on a type it does not own: extension functions (D173)
 	methods     map[*types.Struct]map[string]*FuncTemplate // inherent, by template
 	staticVals  map[*types.Struct]map[string]*Symbol       // `static val` members, as globals in the type's namespace
 	staticOwner map[*Global]*types.Struct                  // the struct a `static val` global belongs to
@@ -225,6 +226,7 @@ func checkCollect(pkg *Package, diags *source.Diagnostics, release bool, testMod
 	diags.Items = append(diags.Items, c.roundDiags.Items...)
 	c.dropSyntheticRefs()
 	c.indexImpls()
+	c.indexExtensions()
 	if diags.HasErrors() {
 		return nil, c
 	}
@@ -1907,35 +1909,63 @@ func (c *Checker) declareExtend(m *Module, f *ast.File, d *ast.ImplDecl) {
 		return
 	}
 	if !c.ownsType(m, impl.Target) {
-		switch impl.Target.(type) {
-		case *types.Struct, *types.Sealed:
-			c.errorf(d.Target.Span(), "cannot extend '%s': it is declared outside this package; declare a trait and implement it for '%s' instead (D23)", impl.Target, impl.Target)
-		case *types.Basic, *types.List, *types.Array, *types.Map, *types.Set, *types.Range, *types.Channel:
-			c.errorf(d.Target.Span(), "cannot extend built-in type '%s' outside the standard library; declare a trait and implement it for '%s' instead (D23)", impl.Target, impl.Target)
+		// a type the package does not own: an extension function (D173), a
+		// statically resolved call visible where this module is imported
+		switch t := impl.Target.(type) {
+		case *types.Struct, *types.Basic, *types.List, *types.Array, *types.Map, *types.Set, *types.Range, *types.Channel:
+			impl.Foreign = true
+		case *types.Sealed:
+			if t.Module == "<prelude>" {
+				c.errorf(d.Target.Span(), "cannot extend '%s': it is built in; an extension on a Result or an Option is not supported (D173)", impl.Target)
+				return
+			}
+			impl.Foreign = true
 		default:
-			c.errorf(d.Target.Span(), "cannot extend '%s': only named types can be extended", impl.Target)
+			c.errorf(d.Target.Span(), "cannot extend '%s': only named types can be extended (D173)", impl.Target)
+			return
 		}
-		return
+		c.foreignExts = append(c.foreignExts, impl)
+	} else {
+		c.extends = append(c.extends, impl)
 	}
-	c.extends = append(c.extends, impl)
 	for _, md := range d.Methods {
 		name := md.Name.Name
 		if prev, dup := impl.Methods[name]; dup {
 			c.errorf(md.Name.Pos, "duplicate method '%s' in extend block; first declared at %s", name, prev.Decl.Name.Pos)
 			continue
 		}
-		if st, ok := impl.Target.(*types.Struct); ok {
-			if _, has := c.methods[templateOf(st)][name]; has {
-				c.errorf(md.Name.Pos, "method '%s' is already declared in the body of '%s'", name, st.Name)
+		if impl.Foreign {
+			// an extension function is a plain call: no receiver-less form,
+			// and no per-type privacy of a type it does not own
+			if md.Static {
+				c.errorf(md.Name.Pos, "an extension on the foreign type '%s' cannot declare a static function; write a free function in this module instead (D173)", impl.Target)
+				continue
+			}
+			if md.Private {
+				c.errorf(md.Name.Pos, "'private' belongs to the members of a struct; an extension function is visible by its module — leave the marker off, or write 'internal' (D173)")
+				continue
+			}
+		} else {
+			if st, ok := impl.Target.(*types.Struct); ok {
+				if _, has := c.methods[templateOf(st)][name]; has {
+					c.errorf(md.Name.Pos, "method '%s' is already declared in the body of '%s'", name, st.Name)
+					continue
+				}
+			}
+			if lookupBuiltinDoc(builtinFamily(impl.Target), name) != nil {
+				c.errorf(md.Name.Pos, "method '%s' is a compiler built-in on '%s' and cannot be redeclared", name, impl.Target)
 				continue
 			}
 		}
-		if lookupBuiltinDoc(builtinFamily(impl.Target), name) != nil {
-			c.errorf(md.Name.Pos, "method '%s' is a compiler built-in on '%s' and cannot be redeclared", name, impl.Target)
-			continue
-		}
 		t := c.newTemplate(m, f, md, nil, ctx.tps)
 		t.Impl = impl
+		// the block's marker is the visibility of the methods that carry none
+		if d.Pub && !md.Internal {
+			t.Pub = true
+		}
+		if d.Internal && !md.Pub {
+			t.Internal = true
+		}
 		t.Mangled = m.prefix() + ".extend." + typeMangle(impl.Target) + "." + name
 		impl.Methods[name] = t
 	}
@@ -2304,6 +2334,40 @@ func (c *Checker) checkCoherence() {
 			}
 		}
 	}
+	// extension functions (D173): an inherent method of the type always wins,
+	// so one with the same name is never called. Two extensions of one name
+	// are fine here — they only clash where a file imports both, and that is
+	// reported at the call.
+	for _, ext := range c.foreignExts {
+		for name, t := range ext.Methods {
+			if why := c.inherentShadow(ext, name); why != "" {
+				c.warnf(t.Decl.Name.Pos, "extension '%s' on '%s' is never called: %s wins over an extension; rename it (D173)", name, ext.Target, why)
+			}
+		}
+	}
+}
+
+// inherentShadow says what inherent method of ext's target type carries name:
+// the struct body, a compiler built-in, or an extend block of the type's own
+// package ("" when none).
+func (c *Checker) inherentShadow(ext *Impl, name string) string {
+	if st, ok := ext.Target.(*types.Struct); ok {
+		if _, has := c.methods[templateOf(st)][name]; has {
+			return "the method of that name in the body of '" + st.Name + "'"
+		}
+	}
+	if lookupBuiltinDoc(builtinFamily(ext.Target), name) != nil {
+		return "the built-in '" + name + "'"
+	}
+	for _, own := range c.extends {
+		if _, has := own.Methods[name]; !has {
+			continue
+		}
+		if unify(own.Target, ext.Target, map[*types.TypeParam]types.Type{}) || unify(ext.Target, own.Target, map[*types.TypeParam]types.Type{}) {
+			return "the method of that name in the extend block at " + own.Methods[name].Decl.Name.Pos.String()
+		}
+	}
+	return ""
 }
 
 func typeMangle(t types.Type) string {

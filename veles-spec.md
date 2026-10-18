@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.86** — decisions D1–D172. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.87** — decisions D1–D173. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -32,6 +32,7 @@ Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-p
 | D170 | tests and suites take an optional identifier label before the sentence |
 | D171 | format specs after `:` in interpolation, checked at compile time; `std/fmt` for the higher level |
 | D172 | `"""…"""` text blocks with a margin; backtick raw strings |
+| D173 | extension functions: `extend T with fun …` / `extend T { }` on a type you do not own, scoped to the importer; no `\|>` for now |
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -405,7 +406,7 @@ On the word: `protected` means "the class and its subclasses" in Java, C#, C++ a
 
 *Addendum (2026-09-25) — a changed parameter is a lost change.* A struct parameter is the caller's value copied (D7), and `val`/`var` govern rebinding only, so a function may assign a `var` field of a parameter, or call a method that writes `this` on it — and the caller never sees it: `fun step(f: Fuzzer) { f.rng.next() }` advances a copy of the generator. This is a **warning**, on the parameter, naming the change and the fixes (`f: *Fuzzer`, or return the value). Silent when the copy is the point (the function returns the parameter's type, or uses the parameter whole after changing it), when the parameter's address is taken, and for writes through a reference field (seen by the caller). Rejected: Swift's immutable parameters, which would change the rule above for one case.
 
-### D23 — Methods in the struct body; `implement` blocks for traits; no extension functions
+### D23 — Methods in the struct body; `implement` blocks for traits; ~~no extension functions~~ *(extension functions allowed by D173, v0.87)*
 
 Inherent methods are declared inside the struct. Trait implementations go in `implement Trait for Type` blocks, which are required anyway since D6 permits implementing traits for foreign types.
 
@@ -418,6 +419,8 @@ Putting trait implementations in the struct body was considered and rejected. It
 *Amended (v0.23) — static functions.* A function in a struct body, trait, implement or extend block may be declared `static fun`: it has no receiver and is called on the type — `Point.origin()`, `i64.parse(s)`, `Stack<i64>.of(x)` — and, for a trait, on a type parameter bounded by it: `T.parse(s)` resolves to the implement for the concrete `T` of each stencil. An `extend` block in the prelude may add statics to a built-in generic type, called with the type arguments written: `MutableList<bool>.repeat(false, n)`, `MutableList<Row>.make(n, i => ...)` (v0.25). An implement declares `static` exactly where the trait does. A trait with a static function is not object-safe (D9), and a sealed trait cannot declare one (its methods dispatch on a variant). The prelude declares `Parsable { static fun parse(s: string): Self? }` for the numbers, `bool` and `string`.
 
 *Addendum (v0.29) — static values.* A struct body may declare `static val name[: T] = expr`: a constant in the type's namespace, read as `Type.name` (`Status.notFound`, `http.Status.ok` from outside the module), `public` to export and module-private otherwise, initialised with the module's globals in source order. It is always a `val` — a mutable global belongs at module level, where it is visibly one — and a generic struct cannot have one (a value per instantiation would be a different feature; a `static fun` serves). Motivated by the HTTP module: status codes, methods and content types are *open* sets with well-known members, which is a value type plus named constants, not an enumeration; closed sets are `enum` (D57).
+
+~~Consequence: inherent methods cannot be added to a type you do not own. Extension functions were declined, so the route is declaring a trait and implementing it.~~ *(v0.87, D173: extension functions are now allowed, scoped to the importer; the trait route stays for anything that must be part of the type's interface.)* Original text:
 
 Consequence: inherent methods cannot be added to a type you do not own. Extension functions were declined, so the route is declaring a trait and implementing it. This is narrower than it sounds — Veles owns `string` and the collections, so stdlib types stay method-rich; the ceremony only appears when extending a third-party type. Rust lives this way.
 
@@ -432,7 +435,7 @@ extend<T: Show> Stack<T> {          // bounded: only for showable elements
 }
 ```
 
-The ownership rule is unchanged — `extend` names only a type declared in the same package, and the built-in types (`string`, the numbers, `List`, `Map`, `Set`, `Range`, `Channel`) are declared by the standard library. This is not an extension-function mechanism: what it provides is a home for the methods of the built-in types, which have no struct body to hold them, so that `trim`, `split`, `take`, `chunked` and the rest are written in Veles in the prelude rather than in the compiler. A `MutableList<T>` also has every `extend<T> List<T>` method (D25). Method names must not collide with the struct body, another `extend` in the package, or a compiler built-in; coherence is checked program-wide like D17. `public` on the methods follows M5.
+The ownership rule is unchanged — `extend` names only a type declared in the same package, and the built-in types (`string`, the numbers, `List`, `Map`, `Set`, `Range`, `Channel`) are declared by the standard library. *(v0.87: D173 now lets `extend` name a foreign type too, as a scoped extension function.)* This was not an extension-function mechanism: what it provides is a home for the methods of the built-in types, which have no struct body to hold them, so that `trim`, `split`, `take`, `chunked` and the rest are written in Veles in the prelude rather than in the compiler. A `MutableList<T>` also has every `extend<T> List<T>` method (D25). Method names must not collide with the struct body, another `extend` in the package, or a compiler built-in; coherence is checked program-wide like D17. `public` on the methods follows M5.
 
 ### D24 — Full prelude
 
@@ -7084,6 +7087,81 @@ The user: "raw like template strings in js `raw`, multiline `"""..."""`", then:
   tagged, and holding a backtick.
 
 Rejected: a `raw"…"` tag; Swift's `#"…"#`; text blocks without a margin rule.
+
+### D173 — Extension functions on types you do not own (v0.87)
+
+```veles
+extend string with fun shout(): string => this.toUpper() + "!"       // one function
+
+extend string {                                                      // several
+  fun slug(): string => this.toLower().replace(" ", "-")
+  fun isBlank(): bool => this.trim().isEmpty()
+}
+
+extend<T: Ord> List<T> with fun isSorted(): bool => ...             // generics in the header
+public extend i64 with fun clamped(lo: i64, hi: i64): i64 => ...     // exported
+
+val s = "  Hello World ".trim().slug().shout()                       // reads as a chain
+```
+
+The user, asking how to serve people who like pipelines (a `|>` or `->` was
+floated): "so maybe it would be better to look again into extension
+functions, but we would have to be careful what we allow and what not". On
+visibility: "importing the module... but we probably would change the
+extending syntax", then proposed the `extend T with fun …` / `extend T { }`
+forms above.
+
+New evidence over D23's decline: the trait route (`trait` + `implement` for a
+foreign type) works and chains, but costs two declarations and a trait name per
+helper, and every implement is global and counts under D17 (adding one is a
+breaking change for a library). An extension function takes part in neither:
+it is a statically resolved call, no vtable, no dictionary, nothing to link.
+
+- **Own type:** `extend` is as before (D23 addendum v0.22) — a real inherent
+  method. The `with fun` form is the same thing for one function.
+- **Foreign type** (declared in another package, or a built-in the std does not
+  extend for you): the same spelling declares an *extension function*, with
+  these rules. The compiler always knows which case applies (who declares the
+  type); hover says "extension from `strx`".
+  1. **An inherent method always wins.** An extension with the name of an
+     inherent method of that type is a warning ("never called").
+  2. **Public API only:** the body sees what any other package sees of the
+     type — no private fields, no package-private members.
+  3. **Not part of the type's interface:** it cannot satisfy a trait bound,
+     cannot be reached through `is`, and is not in a trait object's vtable (D9).
+  4. **Visible where its module is imported** — `use strx` brings the module's
+     `public` extensions into scope for that file. Not global like D17.
+  5. **Two visible extensions with one name on one type** (or an extension and
+     a trait method) are an *ambiguity error at the call*, with the fix (call
+     the function by its module name or drop one import). Never picked silently.
+  6. Generics and bounds work as on the existing `extend`; `this` is implicit
+     (D158); effects (suspension, errors) are inferred like any function's.
+  7. **`public`** follows M5: `public extend T { }` makes the block's
+     functions public, `public extend T with fun f()` that one; a `public`
+     on a function inside the block works as today. Adding a public extension
+     is not a breaking change, since nothing is global.
+- **Formatter:** `extend T with fun …` stays on one line when it fits.
+
+**Pipelines:** no `|>` now. With extensions a chain reads left to right on any
+type (`x.trim().parse().clamp(0, 100)`), which covers what a pipe gives, and
+`->` is out anyway (D33: `=>` is the only arrow). Revisit only when real code
+shows a gap an extension cannot close (the value going to a non-first
+parameter).
+
+Rejected: **UFCS** (any free function callable as a method — adding a function
+elsewhere changes how existing calls resolve, every function becomes a method,
+the author never opts in); a separate `extension` keyword (the user's
+`extend … with fun` form was preferred, it also covers one-liners); `|>` /
+`->` now; Kotlin's `fun T.name()`; per-name imports of extensions.
+
+*Built 2026-10-17 (plan B25).* As built: a braced `use m { x }` brings the
+module's extensions like `use m`; the scope is the file, not the module; a
+`private` marker, a `static fun`, and a `Result` or `Option` receiver are
+errors; `public extend T { }` and `internal extend T { }` give the block's
+unmarked functions that visibility. Left open (checklist §11): extensions on a
+nullable receiver (`string?`), on a trait or `dyn` type, on a function type;
+`static fun` in a foreign extension; the `veles doc` marker; a facade's
+`public use` reaching extensions.
 
 ---
 

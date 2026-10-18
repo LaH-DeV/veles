@@ -1281,21 +1281,39 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 			}
 		}
 	}
-	if len(found) > 1 {
+	// extension functions (D173) come last: an inherent method has won above,
+	// and a trait method of the same name is an ambiguity, never a silent pick
+	exts, extUnmet := f.extensionsFor(rt, name)
+	if len(found)+len(exts) > 1 {
 		var names []string
 		for _, t := range found {
 			tr := t.Trait
 			if t.Impl != nil {
 				tr = t.Impl.Trait
 			}
-			names = append(names, tr.Name)
+			names = append(names, "trait "+tr.Name)
 		}
-		f.errorf(callee.Name.Pos, "ambiguous method '%s' on '%s': provided by traits %s (D26)", name, rt, strings.Join(names, " and "))
+		for _, x := range exts {
+			names = append(names, "the extension in module '"+x.t.Module.Name()+"'")
+		}
+		fix := " (D26)"
+		if len(exts) > 0 {
+			fix = "; drop one of the imports or rename one of them (D173)"
+		}
+		f.errorf(callee.Name.Pos, "ambiguous method '%s' on '%s': provided by %s%s", name, rt, strings.Join(names, " and "), fix)
 		f.checkArgsLoosely(e.Args)
 		return bad()
 	}
 	if len(found) == 1 {
 		return f.callMethod(found[0], foundSubst[0], typeArgs, recv, viaPointer, callee, e, want)
+	}
+	if len(exts) == 1 {
+		x := f.callMethod(exts[0].t, exts[0].subst, typeArgs, recv, viaPointer, callee, e, want)
+		f.refuseUnitMap(exts[0].t, x, e.Pos)
+		return x
+	}
+	if unmet == "" {
+		unmet = extUnmet
 	}
 	if unmet != "" {
 		f.errorf(callee.Name.Pos, "%s", unmet)
@@ -1340,6 +1358,9 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 			break
 		}
 		hint, hit := f.noMethodHint(rt, name)
+		if hint == "" {
+			hint = f.unimportedExtensionHint(rt, name)
+		}
 		f.c.errorFix(callee.Name.Pos, typoFix(callee.Name.Pos, hit), "no method '%s' on type '%s'%s", name, rt, hint)
 	}
 	f.checkArgsLoosely(e.Args)

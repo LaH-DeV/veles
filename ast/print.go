@@ -305,6 +305,14 @@ func (p *printer) decl(d Decl) {
 			p.typeParams(d.TypeParams)
 			p.w(" ")
 			p.typ(d.Target)
+			if d.Pub {
+				p.w(" public")
+			} else if d.Internal {
+				p.w(" internal")
+			}
+			if d.With {
+				p.w(" with")
+			}
 		} else {
 			p.open("impl")
 			p.typeParams(d.TypeParams)

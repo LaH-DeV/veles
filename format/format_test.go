@@ -509,3 +509,14 @@ func TestExecutorDeclRoundTrips(t *testing.T) {
 		t.Errorf("formatted:\n%s\nwant:\n%s", got, src)
 	}
 }
+
+// D173: `extend T with fun …` is the one-function form of an extension.
+func TestExtensionRoundTrips(t *testing.T) {
+	src := "extend string with fun shout(): string => this.toUpper() + \"!\"\n\n" +
+		"public extend<T: Comparable> List<T> with fun isSorted(): bool => this.sorted() == this\n\n" +
+		"internal extend i64 {\n  fun clamped(lo: i64, hi: i64): i64 => if (this < lo) lo else this\n}\n\n" +
+		"extend i64 with public fun twice(): i64 {\n  return this * 2\n}\n"
+	if got := checkRoundTrip(t, "extension.vs", src); got != src {
+		t.Errorf("formatted:\n%s\nwant:\n%s", got, src)
+	}
+}

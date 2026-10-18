@@ -205,6 +205,21 @@ extend Parser {
         d.target = &traitType
       }
     }
+    if (extend && this.at(Kind.KwWith)) {
+      // `extend T with fun f() …` (D173): one function, no braces
+      this.next()
+      d.withFun = true
+      val memberAttrs = this.parseAttributes()
+      if (this.atAny(Kind.KwFun, Kind.KwOverride, Kind.KwUnsafe, Kind.KwConst, Kind.KwPublic, Kind.KwPrivate, Kind.KwInternal, Kind.KwStatic)) {
+        val methods: MutableList<ast.FunDecl> = []
+        methods.push(this.parseFun(memberAttrs, FunContext.Method))
+        d.methods = methods.toList()
+      } else {
+        this.errorAt(this.span(), "expected 'fun' after 'extend … with', found ${this.cur().describe()}")
+      }
+      d.pos = this.spanFrom(start)
+      return d
+    }
     d = this.parseImplBody(d)
     d.pos = this.spanFrom(start)
     d

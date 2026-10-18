@@ -66,6 +66,12 @@ a declaration, or a `use` of the module that has it.
 'size' on 'List<i64>'; did you mean 'len'?`, `type 'Point' has no field
 'z'`, `'Point' has no static 'origin'`.
 
+A method that exists only as an extension function in a module this file
+does not import says so: `'shout' is an extension function in module
+'strx': add 'use strx'` (D173). Two imported extensions of one name, or an
+extension and a trait method, are `ambiguous method 'twice' on 'string'`:
+drop one of the imports or rename one.
+
 A method called as a field (`xs.len`) or a field called as a method
 (`p.x()`) is told which it is. Hover shows everything a type has, and
 completion after the `.` lists it.
@@ -632,6 +638,17 @@ reachable bare. Take the value as a parameter, or make the function a method.
 **How a declaration is written, and where.** `duplicate field 'x'`,
 `'x' is already declared in this scope`, `'static' belongs to a function in
 a struct, trait, impl or extend body`, `struct 'Node' has infinite size`.
+
+#### `extension 'trim' on 'string' is never called`
+
+`extend T { }` on a type your package does not own declares *extension
+functions* (D173), and an inherent method of the type always wins: the
+struct body's, a compiler built-in's, or a method of the same name in an
+`extend` of the type's own package. An extension with such a name is never
+reached; rename it. Also refused there: a `static fun` (write a free
+function in the module), `private` (leave it off, or write `internal`), and
+extending a `Result` or an `Option`. See
+[chapter 5](../05-structs-and-methods.md#extension-functions-extend-on-a-type-you-did-not-write).
 
 #### `'protected' qualifies 'var'`
 

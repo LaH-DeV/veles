@@ -172,6 +172,7 @@ func corpus(t *testing.T) []corpusFile {
 		"text-blocks":           "val a = \"\"\"\n    a ${x} $y\n      b\\t\n\n    c \\\" \"\n    \"\"\"\nval e = \"\"\"\n  \"\"\"\nval f = sql\"\"\"\n  select ${n}\n  \"\"\"\n",
 		"text-block-errors":     "val a = \"\"\"abc\"\"\"\nval b = \"\"\"\n  a\n  b\"\"\"\nval c = \"\"\"\n  a\n b\n  \"\"\"\nval d = \"\"\"\n  ${x\"\"\"\nval g = \"\"\"\n  a\n",
 		"format-specs":          "val a = \"${x:>10.2} ${f(a: 1):x} ${m.get(\"a:b\"):<5} ${c == ':':^3} ${a ?: b} ${[1: 2].len()} ${x:} $y:z\"\nval b = \"\"\"\n  ${n:08x}\n  \"\"\"\n",
+		"extensions":           "extend string with fun shout(): string => this.toUpper()\npublic extend<T: Comparable> List<T> with fun isSorted(): bool => true\ninternal extend string {\n  fun a(): i64 => 1\n}\nextend i64 with public fun b(): i64 { return 2 }\nextend i64 with 5\nextend i64 with fun a() => 1 fun b() => 2\n",
 		"raw-strings":          "val a = `C:\\Users\\${x} \"q\"\nnext`\nval b = ``\nval c = `open\n",
 		"escapes":               "val s = \"\\q \\u{zz} \\u{} \\u{110000} \\u{D800} \\u{FFFFFFFFF} \\u{1F600} \\u 9 \\0\\$\\'\"\n",
 		"escape-multibyte":      "val s = \"\\é\"\nval c = '\\é'\n",

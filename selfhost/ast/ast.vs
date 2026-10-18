@@ -263,6 +263,9 @@ struct ImplDecl : Decl {
   var target:     (*Type)? = null
   var assocTypes: List<AssocTypeBinding> = []
   var methods:    List<FunDecl> = []
+  var withFun:    bool = false  // `extend T with fun f() …`, the one-function form (D173)
+  var pub:        bool = false  // `public extend`: the visibility of the methods that carry none
+  var isInternal: bool = false  // `internal extend`, likewise
   var pos:        Span = Span.none()
 }
 

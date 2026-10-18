@@ -1669,3 +1669,60 @@ func TestHoverOnIfValBinding(t *testing.T) {
 		t.Errorf("definition of the use: %s", got)
 	}
 }
+
+// D173: hovering a call of an extension function says where it comes from,
+// and shows the visibility of a `public extend` block on its function.
+func TestHoverExtensionFunction(t *testing.T) {
+	src := "use io\n\npublic extend string with fun shout(): string => this.toUpper()\n\nfun main() {\n  io.println(\"hi\".shout())\n}\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := pathToURI(path)
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{})
+	c.notify("initialized", map[string]any{})
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": src}})
+	res, _ := c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": 5, "character": 20}})
+	if !strings.Contains(string(res), "extension from module") || !strings.Contains(string(res), "public fun shout(): string") {
+		t.Errorf("hover on an extension function: %s", res)
+	}
+}
+
+// D173: the imported module's hover lists its extension functions, and the
+// `use` line ends with the types they extend.
+func TestExtensionsShownOnTheImport(t *testing.T) {
+	strx := "public extend string with fun shout(): string => this.toUpper()\n\npublic extend<T> List<T> with fun second(): T? => this.at(1)\n\ninternal extend i64 with fun hidden(): i64 => this\n"
+	src := "use io\nuse strx\n\nfun main() {\n  io.println(\"hi\".shout())\n}\n"
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "strx"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "strx", "strx.vs"), []byte(strx), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "veles.toml"), []byte("[package]\nname = \"app\"\nversion = \"0.1.0\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "main.vs")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := pathToURI(path)
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{})
+	c.notify("initialized", map[string]any{})
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": src}})
+	res, _ := c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": 1, "character": 5}})
+	if !strings.Contains(string(res), "public extend string with fun shout(): string") || !strings.Contains(string(res), "public extend List\\u003cT\\u003e with fun second") || strings.Contains(string(res), "hidden") {
+		t.Errorf("hover on the imported module: %s", res)
+	}
+	res, _ = c.call("textDocument/inlayHint", map[string]any{"textDocument": map[string]any{"uri": uri},
+		"range": map[string]any{"start": map[string]any{"line": 0, "character": 0}, "end": map[string]any{"line": 100, "character": 0}}})
+	if !strings.Contains(string(res), "extends string, List\\u003cT\\u003e") {
+		t.Errorf("hint on the use line: %s", res)
+	}
+}
