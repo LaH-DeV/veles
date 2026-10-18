@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.92** — decisions D1–D178. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.93** — decisions D1–D179. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -7299,6 +7299,14 @@ suite "db" {
 Rejected: a test modifier `test "x" skip "why" { }` (constant conditions only, new syntax in both parsers, competes with D170's label); leaving the early `return` (a false `ok`); a header clause or a shared helper for suites; propagating a helper's skip into a static property of the calling test.
 
 Both levels: one word for the common case; any run-time check in the test body is the low-level escape. Self-hosting: the compiler's own Veles tests skip when clang or PostgreSQL is missing, as the Go tests do now.
+
+### D179 — No overloading (v0.93)
+
+Q55 (user, 2026-10-19: "can we add overloading into veles or not?"). Two functions or two methods of one type with the same name stay an error (`'show' is already declared in this module`, `duplicate method 'add'`). Variants are spelled with a distinct name (`writeFile`, `writeBytes`), a bounded generic (`write<T: Writable>(…)`), a default or named argument, or an extension function (D173).
+
+**Why.** Resolution would have to be defined together with optional labels (`greet("x", punct: "?")` is also valid positionally, so labels cannot identify an overload), default arguments and variadics, integer literals that fit ten types, `null`, lambdas whose parameter types are known only after the choice, effects inferred to a fixpoint (D4/D45), extension functions (D173) and decorator wrappers (D176) — and it would be implemented twice, in the Go compiler and in the self-hosted one, which must agree byte for byte. The standard library's cost without it is a few longer names. Go and Rust also have none.
+
+Rejected: restricted overloading by distinct named parameter types with ambiguity an error; full overloading by argument types (Java, Kotlin, Swift, C#). A narrow gap is closed by the means above, not by this; a new case goes through `veles-decide` with the program that needs it.
 
 ---
 
