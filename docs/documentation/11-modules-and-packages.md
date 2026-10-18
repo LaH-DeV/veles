@@ -176,9 +176,14 @@ utils = "../utils"            # a path dependency
 indent = 2                    # spaces per level, or "tab"; the default is 2
 max_blank_lines = 1           # consecutive blank lines kept by `veles fmt`
 imports = "lines"             # one `use` per module; "merged" writes `use fs, io, os`
+trailing_commas = "multiline" # a comma after the last element of a broken list; "never" leaves it out
+line_endings = "lf"           # "lf" (default) | "crlf" | "auto" (keep the file's own)
 
 [lint]
 implicit_return = "lambda"    # "full" (default) | "lambda" | "expr": where a body may end in its value
+unused_import = "deny"        # any lint of `veles lint --list`: "allow" (silent) | "warn" | "deny" (an error)
+long_line = "warn"            # off by default; warns on a line wider than max_width
+max_width = 120               # columns for long_line (default 120)
 
 [native]
 static-libs = ["z"]           # C libraries the package's extern blocks need (chapter 13)
@@ -189,10 +194,17 @@ threads = "auto"              # the default pool's threads: "auto" (one per core
 
 - What other packages may import is written in source, not here: see
   [What a package shows](#what-a-package-shows) below (D89).
-- `[lint]` turns on checks a team may want and the language does not
-  require. Each is an error in this package's own code, with a fix that
-  `veles check --fix` applies; dependencies and the standard library follow
-  their own manifests. `implicit_return` says where a body's last
+- `[lint]` sets how loud each lint is: `"allow"` drops it, `"warn"` is a
+  warning, `"deny"` an error. `veles lint --list` prints every lint with its
+  default; an unknown name is an error that suggests the closest. The levels
+  apply to this package's own code; dependencies follow their own manifests
+  and the standard library the defaults. `veles fmt` never reflows a line, so
+  `long_line` (off by default) is how a team keeps lines short: it warns on a
+  line wider than `max_width` (120 by default; a tab counts as four, and a
+  line with no space to break at, such as a URL, is left alone).
+  `implicit_return` is the one lint that turns on checks the language does
+  not require: it is an error in this package's own code, with a fix that
+  `veles check --fix` applies. `implicit_return` says where a body's last
   expression may be its value without `return`: `"full"` (the default)
   anywhere; `"lambda"` in every lambda and in `fun f() => expr`, while a
   function's or method's `{ }` body ends in `return value`; `"expr"` only in

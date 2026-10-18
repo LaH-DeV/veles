@@ -130,7 +130,7 @@ func TestManifestLintAndImportsKeys(t *testing.T) {
 		{pkg + "[format]\nimports = \"grouped\"\n", "[format] imports is \"lines\""},
 		{pkg + "[lint]\nimplicit_return = \"none\"\n", "[lint] implicit_return is \"full\""},
 		{pkg + "[lint]\nimplicit_return = false\n", "[lint] implicit_return is \"full\""},
-		{pkg + "[lint]\nexplicit_return = true\n", "unknown [lint] key \"explicit_return\" (implicit_return)"},
+		{pkg + "[lint]\nexplicit_return = true\n", "unknown [lint] key \"explicit_return\"; did you mean \"implicit_return\"?"},
 	} {
 		if _, err := parseManifest("veles.toml", ".", c.text); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%q:\n got %v\nwant %q", c.text, err, c.want)

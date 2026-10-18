@@ -103,7 +103,7 @@ func (f *fnCtx) reportLayoutChange(call *ast.CallExpr, refs []liveRef) {
 		if r.coll != coll {
 			continue
 		}
-		f.c.warnf(call.Pos, "'%s.%s' may move or reorder the elements while '%s' (a reference into '%s' taken at %s) is still used; a write through it would be lost — take the reference after this call", coll, m.Name.Name, r.name, coll, refLine(r.span))
+		f.c.warnLint("stale_reference", call.Pos, nil, "'%s.%s' may move or reorder the elements while '%s' (a reference into '%s' taken at %s) is still used; a write through it would be lost — take the reference after this call", coll, m.Name.Name, r.name, coll, refLine(r.span))
 		return
 	}
 }

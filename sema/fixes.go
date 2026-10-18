@@ -97,11 +97,16 @@ func fixDropMut(span source.Span) *source.Fix {
 }
 
 func (f *fnCtx) warnFix(span source.Span, fix *source.Fix, format string, args ...any) {
-	if fix == nil {
+	f.warnLint("", span, fix, format, args...)
+}
+
+// warnLint is Checker.warnLint inside a function body.
+func (f *fnCtx) warnLint(lint string, span source.Span, fix *source.Fix, format string, args ...any) {
+	if fix == nil && lint == "" {
 		f.c.warnf(span, format, args...)
 		return
 	}
-	f.c.warnFix(span, fix, format, args...)
+	f.c.warnLint(lint, span, fix, format, args...)
 }
 
 // fixVarField inserts `var ` before the declaration of fld in st, when the

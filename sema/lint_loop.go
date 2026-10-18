@@ -15,7 +15,7 @@ func (f *fnCtx) lintLoopTrue(s *ast.LoopStmt) {
 	if !ok || !lit.Value {
 		return
 	}
-	f.warnFix(lit.Pos, fixLoopTrue(s, lit.Pos), "'loop (true)' is written 'loop { ... }': a loop with no condition runs until 'break' or 'return'")
+	f.warnLint("loop_true", lit.Pos, fixLoopTrue(s, lit.Pos), "'loop (true)' is written 'loop { ... }': a loop with no condition runs until 'break' or 'return'")
 }
 
 // fixLoopTrue removes `(true)` and the space before it, keeping everything

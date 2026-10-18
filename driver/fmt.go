@@ -88,8 +88,9 @@ func Format(opts FormatOptions) int {
 		switch {
 		case opts.Stdout:
 			fmt.Print(out)
-		case out == strings.ReplaceAll(text, "\r\n", "\n"):
-			// already formatted
+		case out == text || (style.LineEndings == format.EndingsLF && out == strings.ReplaceAll(text, "\r\n", "\n")):
+			// already formatted (a CRLF checkout counts as formatted while the
+			// setting is the default "lf", which git's autocrlf produces)
 		case opts.Check:
 			fmt.Println(path)
 			code = 1
@@ -150,6 +151,15 @@ func StyleFor(path string) (format.Options, error) {
 	opts := format.Options{Indent: man.Format.Indent, MaxBlankLines: man.Format.MaxBlankLines}
 	if man.Format.MergeImports {
 		opts.Imports = format.ImportsMerged
+	}
+	if man.Format.NoTrailingCommas {
+		opts.TrailingCommas = format.TrailingNever
+	}
+	switch man.Format.LineEndings {
+	case "crlf":
+		opts.LineEndings = format.EndingsCRLF
+	case "auto":
+		opts.LineEndings = format.EndingsAuto
 	}
 	return opts, nil
 }

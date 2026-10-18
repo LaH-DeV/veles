@@ -108,6 +108,10 @@ type Diagnostic struct {
 	// Fix is an optional automatic correction (a lint's autofix); tools
 	// that can apply edits — the language server — offer it.
 	Fix *Fix
+	// Lint names the lint that produced the diagnostic ("" for a compiler
+	// error or warning that no setting can change); the package's `[lint]`
+	// table sets its level.
+	Lint string
 }
 
 // Fix is a set of text edits, possibly across files, that resolves a

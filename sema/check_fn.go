@@ -214,7 +214,7 @@ func (f *fnCtx) reportUnused() {
 		if isResultType(v.Type) {
 			f.errorf(v.Span, "unused Result '%s': the call may fail; use 'try' to propagate the error or 'when' to handle it (D4)", v.Name)
 		} else if !types.IsInvalid(v.Type) {
-			f.warnFix(v.Span, fixReplace("Rename to '_' (discard)", v.Span, "_"), "'%s' is never used", v.Name)
+			f.warnLint("unused_variable", v.Span, fixReplace("Rename to '_' (discard)", v.Span, "_"), "'%s' is never used", v.Name)
 		}
 	}
 }

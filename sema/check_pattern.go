@@ -202,7 +202,7 @@ func (f *fnCtx) whenExpr(e *ast.WhenExpr, want types.Type) Expr {
 						fix = fixDeleteLine("Remove the unreachable 'else' arm", arm.Pos)
 					}
 				}
-				f.warnFix(e.Pos, fix, "'else' is unreachable: every variant of '%s' has an arm (D13 lint)", st.Name)
+				f.warnLint("unreachable_else", e.Pos, fix, "'else' is unreachable: every variant of '%s' has an arm (D13 lint)", st.Name)
 			case len(st.Variants) > 1 && covered == len(st.Variants)-1:
 				f.warnf(e.Pos, "'else' stands for the one remaining variant, %s, and would silently take any variant added to '%s' later; name it instead (D13 lint)", f.missingArms(cov, subjType), st.Name)
 			}
@@ -223,7 +223,7 @@ func (f *fnCtx) whenExpr(e *ast.WhenExpr, want types.Type) Expr {
 						fix = fixDeleteLine("Remove the unreachable 'else' arm", arm.Pos)
 					}
 				}
-				f.warnFix(e.Pos, fix, "'else' is unreachable: every member of '%s' has an arm (D13 lint)", en.Name)
+				f.warnLint("unreachable_else", e.Pos, fix, "'else' is unreachable: every member of '%s' has an arm (D13 lint)", en.Name)
 			case len(en.Members) > 1 && covered == len(en.Members)-1:
 				f.warnf(e.Pos, "'else' stands for the one remaining member, %s, and would silently take any member added to '%s' later; name it instead (D13 lint)", f.missingArms(cov, subjType), en.Name)
 			}
@@ -699,7 +699,7 @@ func (f *fnCtx) compileTypePattern(p *ast.TypePat, subj Expr, t types.Type, span
 		if f.isExprAt != nil {
 			// on an `is` expression, the fix writes the answer
 			word := strconv.FormatBool(known != f.isExprNot)
-			f.warnFix(p.Pos, fixReplace("Replace with '"+word+"'", *f.isExprAt, word), msg, t, tr.Name)
+			f.warnLint("pattern_form", p.Pos, fixReplace("Replace with '"+word+"'", *f.isExprAt, word), msg, t, tr.Name)
 		} else {
 			f.warnf(p.Pos, msg, t, tr.Name)
 		}

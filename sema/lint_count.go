@@ -59,7 +59,7 @@ func (f *fnCtx) lintCountingLoop(stmts []ast.Stmt, i int) {
 		iter = "(" + iter + ")"
 	}
 	span := decl.Pos.To(loop.Pos)
-	f.warnFix(span, fixReplace("Write 'val "+name+" = "+iter+".len()'", span, "val "+name+" = "+iter+".len()"),
+	f.warnLint("count_loop", span, fixReplace("Write 'val "+name+" = "+iter+".len()'", span, "val "+name+" = "+iter+".len()"),
 		"this loop counts the elements one by one; the count is 'val %s = %s.len()'", name, iter)
 }
 

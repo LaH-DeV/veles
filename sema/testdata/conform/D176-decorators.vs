@@ -63,6 +63,15 @@ trait Sig {
 @Logged(label: "v") // error: variadic parameter
 fun variadic(xs: i64...): i64 => xs.len()
 
+@Twice // error: a decorator cannot wrap a test or an extern function
+test fun decoratedHelper() {
+}
+
+@Twice // error: a decorator cannot wrap a test or an extern function
+extern "C" fun decoratedCallback(x: i32): i32 {
+  x
+}
+
 fun main() {
   io.println("${add(1, 2)} ${doubled(4)} ${flaky(3) catch (e) { -1 }}")
   var c = Counter()

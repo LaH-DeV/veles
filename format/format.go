@@ -39,7 +39,36 @@ type Options struct {
 	// origin (ImportsMerged). Both are valid Veles; the setting only picks
 	// the one `veles fmt` writes.
 	Imports ImportStyle
+	// TrailingCommas is whether a list broken over several lines ends in a
+	// comma (TrailingMultiline, the default) or not (TrailingNever).
+	TrailingCommas TrailingCommas
+	// LineEndings is the line terminator written (EndingsLF, the default).
+	LineEndings LineEndings
 }
+
+// TrailingCommas is the `[format] trailing_commas` setting.
+type TrailingCommas int
+
+const (
+	// TrailingMultiline writes a comma after the last element of a list that
+	// is broken over several lines: `f(\n  a,\n  b,\n)`.
+	TrailingMultiline TrailingCommas = iota
+	// TrailingNever leaves it out: `f(\n  a,\n  b\n)`. A one-element tuple
+	// keeps its comma, which is part of the syntax.
+	TrailingNever
+)
+
+// LineEndings is the `[format] line_endings` setting.
+type LineEndings int
+
+const (
+	// EndingsLF writes "\n".
+	EndingsLF LineEndings = iota
+	// EndingsCRLF writes "\r\n".
+	EndingsCRLF
+	// EndingsAuto keeps the file's own: CRLF when it has any, else LF.
+	EndingsAuto
+)
 
 // ImportStyle is the `[format] imports` setting.
 type ImportStyle int
@@ -73,7 +102,11 @@ func Source(file *source.File, opts Options) (string, *source.Diagnostics) {
 	if diags.HasErrors() {
 		return file.Content, diags
 	}
-	return Print(f, layout, opts), diags
+	out := Print(f, layout, opts)
+	if opts.LineEndings == EndingsCRLF || (opts.LineEndings == EndingsAuto && strings.Contains(file.Content, "\r\n")) {
+		out = strings.ReplaceAll(out, "\n", "\r\n")
+	}
+	return out, diags
 }
 
 // Print renders a parsed file with the layout the parser collected.
@@ -89,6 +122,7 @@ func Print(f *ast.File, layout *parser.Layout, opts Options) string {
 type printer struct {
 	src      string
 	opts     Options
+	oneTuple bool // printing a one-element tuple: its comma is syntax, whatever trailing_commas says
 	comments []lexer.Comment
 	ci       int             // next comment to place
 	parens   map[[2]int]bool // expressions the author parenthesised
@@ -755,7 +789,9 @@ func (p *printer) params(params []ast.Param, open int, owner ast.Node, cVariadic
 			p.expr(prm.Default, 0)
 		}
 		if multi {
-			p.w(",")
+			if p.opts.TrailingCommas != TrailingNever || i < len(params)-1 || cVariadic {
+				p.w(",")
+			}
 			p.after(prm.Pos.End)
 		}
 	}
@@ -1842,7 +1878,9 @@ func (p *printer) exprInner(e ast.Expr) {
 		p.lambda(e)
 	case *ast.TupleExpr:
 		p.w("(")
+		p.oneTuple = len(e.Elems) == 1
 		p.exprList(e.Elems, e.Pos, "(")
+		p.oneTuple = false
 		if len(e.Elems) == 1 && p.pendingNL == 0 {
 			p.w(",") // the one-element marker; a broken list wrote it already
 		}
@@ -2017,6 +2055,8 @@ func (p *printer) exprList(elems []ast.Expr, owner source.Span, bracket string) 
 // element per line is the common case, but a table written as a grid — the
 // round constants of a hash, a matrix — stays a grid.
 func (p *printer) brokenList(multi bool, n, open, close int, span func(i int) (int, int), elem func(i int)) {
+	keepLast := p.oneTuple
+	p.oneTuple = false // only this list is the tuple's; lists inside its element follow the setting
 	if !multi {
 		for i := 0; i < n; i++ {
 			if i > 0 {
@@ -2038,7 +2078,9 @@ func (p *printer) brokenList(multi bool, n, open, close int, span func(i int) (i
 		}
 		p.before(s)
 		p.nested(func() { elem(i) })
-		p.w(",")
+		if p.opts.TrailingCommas != TrailingNever || i < n-1 || keepLast {
+			p.w(",")
+		}
 		p.after(e)
 		prevEnd = e
 	}

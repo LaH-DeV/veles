@@ -1117,7 +1117,7 @@ func (f *fnCtx) unaryExpr(e *ast.UnaryExpr, want types.Type) Expr {
 				rest := strings.TrimSpace(inner.File.Content[is.X.Span().End:inner.End])
 				if strings.HasPrefix(rest, "is") {
 					repl := x + " !" + rest
-					f.warnFix(e.Pos, fixReplace("Replace with '"+repl+"'", e.Pos, repl), "'!(x is T)' reads better as 'x !is T' (D13)")
+					f.warnLint("negated_is", e.Pos, fixReplace("Replace with '"+repl+"'", e.Pos, repl), "'!(x is T)' reads better as 'x !is T' (D13)")
 				}
 			}
 		}
@@ -1596,7 +1596,7 @@ func (f *fnCtx) elvisExpr(e *ast.ElvisExpr, want types.Type) Expr {
 			if c, isCall := e.L.(*ast.CallExpr); isCall && f.provenReads[c] {
 				// gaining a fact must not break code that was right without it
 				drop := source.Span{File: e.Pos.File, Start: e.L.Span().End, End: e.Pos.End}
-				f.warnFix(drop, fixReplace("Drop the fallback", drop, ""), "'%s' is known to be in range here, so it is never null; the fallback never runs (D62)", srcText(e.L))
+				f.warnLint("unreachable_fallback", drop, fixReplace("Drop the fallback", drop, ""), "'%s' is known to be in range here, so it is never null; the fallback never runs (D62)", srcText(e.L))
 				f.checkExpr(e.R, l.Type())
 				return l
 			}
@@ -1649,7 +1649,7 @@ func (f *fnCtx) listLit(e *ast.ListLit, want types.Type) Expr {
 		}
 		mutable = lt.Mutable
 		if e.Mut && mutable {
-			f.warnFix(e.Pos, fixDropMut(e.Pos), "redundant 'mut': the expected type '%s' already makes the literal mutable", lt)
+			f.warnLint("redundant_mut", e.Pos, fixDropMut(e.Pos), "redundant 'mut': the expected type '%s' already makes the literal mutable", lt)
 		}
 	}
 	if e.Mut {
@@ -1682,7 +1682,7 @@ func (f *fnCtx) listLit(e *ast.ListLit, want types.Type) Expr {
 // `val s: Set<i64> = [1, 2]` becomes `{ val tmp = MutableSet(); tmp.add(1); ...; tmp }`.
 func (f *fnCtx) setLit(e *ast.ListLit, st *types.Set) Expr {
 	if e.Mut && st.Mutable {
-		f.warnFix(e.Pos, fixDropMut(e.Pos), "redundant 'mut': the expected type '%s' already makes the literal mutable", st)
+		f.warnLint("redundant_mut", e.Pos, fixDropMut(e.Pos), "redundant 'mut': the expected type '%s' already makes the literal mutable", st)
 	}
 	if !f.c.checkHashable(st.Elem, e.Pos) {
 		return bad()
@@ -1829,7 +1829,7 @@ func (f *fnCtx) tryLinks(x ast.Expr, pos source.Span, unwrapped *bool) Expr {
 			if src := inner.Pos.File.Content; span.Start > 0 && span.End < len(src) && src[span.Start-1] == '(' && src[span.End] == ')' {
 				span = source.Span{File: span.File, Start: span.Start - 1, End: span.End + 1}
 			}
-			f.warnFix(inner.Pos, fixReplace("Remove the inner 'try'", span, text),
+			f.warnLint("nested_try", inner.Pos, fixReplace("Remove the inner 'try'", span, text),
 				"the inner 'try' is redundant: one 'try' covers every failing call in its chain (D134)")
 		}
 		recv = f.tryOn(operand, inner.Pos)

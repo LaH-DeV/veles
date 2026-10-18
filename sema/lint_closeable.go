@@ -45,7 +45,7 @@ func (c *Checker) lintNeverClosed(prog *Program) {
 				if at, ok := valKeywordBefore(v.Span); ok {
 					fix = fixReplace("Close it at the end of the block with 'with'", at, "with")
 				}
-				c.warnFix(v.Span, fix, "'%s' is never closed: bind it with 'with %s = …' so it is closed at the end of the block, close it, or hand it on (D115)", v.Name, v.Name)
+				c.warnLint("never_closed", v.Span, fix, "'%s' is never closed: bind it with 'with %s = …' so it is closed at the end of the block, close it, or hand it on (D115)", v.Name, v.Name)
 			}
 		}
 	}
@@ -174,5 +174,5 @@ func (f *fnCtx) discardedCloseable(s *ast.ExprStmt, x Expr) {
 	}
 	at := source.Span{File: s.X.Span().File, Start: s.X.Span().Start, End: s.X.Span().Start}
 	fix := fixReplace("Close it at the end of the block with 'with'", at, "with _ = ")
-	f.c.warnFix(s.X.Span(), fix, "the '%s' this returns is never closed: bind it with 'with', or discard it on purpose with 'val _ = …' (D115)", t)
+	f.c.warnLint("never_closed", s.X.Span(), fix, "the '%s' this returns is never closed: bind it with 'with', or discard it on purpose with 'val _ = …' (D115)", t)
 }

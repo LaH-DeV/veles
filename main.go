@@ -7,6 +7,7 @@
 //	veles parse <file.vs>         dump the syntax tree
 //	veles tokens <file.vs>        dump the token stream
 //	veles fmt   <paths...>        format source files in place (--check, --stdout)
+//	veles lint  --list            the lints a package may set in [lint]
 //	veles explain <family>         what an error means and how to fix it (the "see:" line)
 //	veles explain <file.vs | dir> --derive [Type]  print the implements the compiler wrote
 //	veles new   <dir>             create a package that runs and tests (--template server: an HTTP service)
@@ -28,6 +29,7 @@ import (
 	"github.com/LaH-DeV/veles/lexer"
 	"github.com/LaH-DeV/veles/lsp"
 	"github.com/LaH-DeV/veles/parser"
+	"github.com/LaH-DeV/veles/sema"
 	"github.com/LaH-DeV/veles/source"
 )
 
@@ -100,6 +102,15 @@ func command() int {
 			usage()
 		}
 		return driver.Format(opts)
+	case "lint":
+		if path != "--list" {
+			fmt.Fprintln(os.Stderr, "usage: veles lint --list")
+			return 2
+		}
+		for _, l := range sema.Lints {
+			fmt.Printf("%-22s %-5s %s\n", l.Name, l.Default, l.Doc)
+		}
+		return 0
 	case "explain":
 		opts := driver.ExplainOptions{Path: path}
 		for _, a := range os.Args[3:] {

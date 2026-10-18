@@ -413,6 +413,57 @@ func TestImportStyles(t *testing.T) {
 	}
 }
 
+// `[format] trailing_commas`: a list broken over several lines ends in a
+// comma by default; "never" leaves it out, except in a one-element tuple,
+// whose comma is syntax. Each style is stable.
+func TestTrailingCommas(t *testing.T) {
+	src := "fun area(\n  w: i64,\n  h: i64,\n): i64 => w * h\n\n" +
+		"fun main() {\n  val xs = [\n    1,\n    2,\n  ]\n  val one = (\n    xs,\n  )\n  val t = area(\n    1,\n    2,\n  )\n}\n"
+	never := "fun area(\n  w: i64,\n  h: i64\n): i64 => w * h\n\n" +
+		"fun main() {\n  val xs = [\n    1,\n    2\n  ]\n  val one = (\n    xs,\n  )\n  val t = area(\n    1,\n    2\n  )\n}\n"
+	for _, c := range []struct {
+		style TrailingCommas
+		want  string
+	}{
+		{TrailingMultiline, src},
+		{TrailingNever, never},
+	} {
+		opts := Options{TrailingCommas: c.style}
+		got, diags := Source(source.NewFile("t.vs", src), opts)
+		if diags.HasErrors() || got != c.want {
+			t.Errorf("style %d:\n--- got ---\n%s--- want ---\n%s%s", c.style, got, c.want, diags.Render())
+			continue
+		}
+		if again, _ := Source(source.NewFile("t.vs", got), opts); again != got {
+			t.Errorf("style %d is not stable:\n%s", c.style, again)
+		}
+	}
+}
+
+// `[format] line_endings`: "lf" (the default) writes "\n", "crlf" "\r\n", and
+// "auto" keeps the file's own.
+func TestLineEndings(t *testing.T) {
+	lf := "fun main() {\n  val x = 1\n}\n"
+	crlf := strings.ReplaceAll(lf, "\n", "\r\n")
+	for _, c := range []struct {
+		name  string
+		style LineEndings
+		in    string
+		want  string
+	}{
+		{"lf from crlf", EndingsLF, crlf, lf},
+		{"crlf from lf", EndingsCRLF, lf, crlf},
+		{"crlf stays", EndingsCRLF, crlf, crlf},
+		{"auto keeps crlf", EndingsAuto, crlf, crlf},
+		{"auto keeps lf", EndingsAuto, lf, lf},
+	} {
+		got, diags := Source(source.NewFile("t.vs", c.in), Options{LineEndings: c.style})
+		if diags.HasErrors() || got != c.want {
+			t.Errorf("%s:\n got %q\nwant %q\n%s", c.name, got, c.want, diags.Render())
+		}
+	}
+}
+
 // A `lazy` parameter (D90) keeps its modifier through the formatter.
 func TestLazyParameterRoundTrips(t *testing.T) {
 	src := "fun debug(lazy msg: fun(): string, fields: Field...) {\n  emit(msg, fields)\n}\n"

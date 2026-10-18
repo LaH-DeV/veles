@@ -1147,6 +1147,9 @@ function — or `module.function` — not a value. A value whose type does not f
 **`veles.toml`.** `veles.toml:3: unknown [format] key "indnt"`.
 
 The message names the file, the line and the keys that section accepts.
+An unknown lint in `[lint]` suggests the closest name
+(`unknown [lint] key "unused_imports"; did you mean "unused_import"?`); a
+level other than `"allow"`, `"warn"` or `"deny"` names the three.
 A dependency that names no source, two sources, a version that is not
 `major.minor.patch`, a bare `"1.4.2"` where a path is expected, or a
 `[workspace]` member that leaves the workspace each get a message saying

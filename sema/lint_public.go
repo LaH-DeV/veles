@@ -94,7 +94,7 @@ func (c *Checker) noPublic(pub bool, name ast.Ident) {
 		return
 	}
 	cut := source.Span{File: name.Pos.File, Start: lineStart + at, End: lineStart + at + len("public ")}
-	c.warnFix(name.Pos, fixReplace("Remove 'public'", cut, ""),
+	c.warnLint("redundant_public", name.Pos, fixReplace("Remove 'public'", cut, ""),
 		"'public' on '%s' does nothing in a program: no other package imports it; leave it off (D142)", name.Name)
 }
 

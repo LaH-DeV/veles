@@ -55,7 +55,7 @@ func (c *Checker) lintInlinableImpl(m *Module, f *ast.File, d *ast.ImplDecl, imp
 		return
 	}
 	fix := inlineImplFix(f, sf, d, sd, impl.Trait.Name)
-	c.warnFix(d.Pos, fix, "implement of '%s' for '%s' can be written inside the body of '%s' as 'implement %s { ... }' (D23)", impl.Trait.Name, tmpl.Name, tmpl.Name, impl.Trait.Name)
+	c.warnLint("inline_implement", d.Pos, fix, "implement of '%s' for '%s' can be written inside the body of '%s' as 'implement %s { ... }' (D23)", impl.Trait.Name, tmpl.Name, tmpl.Name, impl.Trait.Name)
 }
 
 func containsTrait(ts []*types.Trait, t *types.Trait) bool {

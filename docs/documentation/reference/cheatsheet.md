@@ -386,6 +386,7 @@ veles add <spec>[@ver]  veles update <name>|--all  veles remove <name>  veles de
 veles publish [dir]  veles yank <owner/name>@<ver> [--reason t] [--undo]  veles attest keygen|sign|verify|import
 veles check <dir>      veles test <dir> [--filter text] [--timeout 10m]
 veles parse <file>     veles lsp     (editor server)
-veles fmt <paths>      [--check | --stdout]   format in place; [format] in veles.toml: indent = 2 | "tab", max_blank_lines = 1, imports = "lines" | "merged"
+veles fmt <paths>      [--check | --stdout]   format in place; [format] in veles.toml: indent = 2 | "tab", max_blank_lines = 1, imports = "lines" | "merged", trailing_commas = "multiline" | "never", line_endings = "lf" | "crlf" | "auto"
+veles lint --list      the lints; [lint] in veles.toml: name = "allow" | "warn" | "deny", max_width = 120 (for long_line, off by default)
 VELES_CLANG=<path>     VELES_GC_TRACE=1     VELES_GC_THRESHOLD=<bytes>     VELES_GC_MARKERS=<n>     VELES_GC_CONCURRENT=0|1|all     VELES_THREADS=<n>     VELES_WATCHDOG=<s> (dump every task if still running)
 ```

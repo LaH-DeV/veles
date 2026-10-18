@@ -993,7 +993,7 @@ func (f *fnCtx) punFields(st *types.Struct, args []ast.Arg) ([]ast.Arg, bool) {
 		if a.Name != nil {
 			if n, isName := a.Value.(*ast.NameExpr); isName && n.Name == a.Name.Name && len(n.TypeArgs) == 0 {
 				fix := fixReplace("Write '"+n.Name+"' once", source.Span{File: a.Name.Pos.File, Start: a.Name.Pos.Start, End: n.Pos.Start}, "")
-				f.warnFix(a.Name.Pos, fix, "'%s: %s' can be written '%s' (D28)", n.Name, n.Name, n.Name)
+				f.warnLint("redundant_label", a.Name.Pos, fix, "'%s: %s' can be written '%s' (D28)", n.Name, n.Name, n.Name)
 			}
 			continue
 		}

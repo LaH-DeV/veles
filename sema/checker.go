@@ -234,7 +234,7 @@ func checkCollect(pkg *Package, diags *source.Diagnostics, release bool, testMod
 		c.checkHeldRegions(prog)
 		c.indexInferred(prog)
 	}
-	diags.Items = append(diags.Items, c.roundDiags.Items...)
+	diags.Items = append(diags.Items, c.applyLintLevels(c.roundDiags.Items)...)
 	c.dropSyntheticRefs()
 	c.indexImpls()
 	c.indexExtensions()
@@ -293,6 +293,12 @@ func (c *Checker) warnf(span source.Span, format string, args ...any) {
 
 // warnFix is warnf with an automatic correction attached (a lint).
 func (c *Checker) warnFix(span source.Span, fix *source.Fix, format string, args ...any) {
+	c.warnLint("", span, fix, format, args...)
+}
+
+// warnLint is warnFix for a lint of the registry (lints.go): the package's
+// `[lint]` table may silence it or make it an error. fix may be nil.
+func (c *Checker) warnLint(lint string, span source.Span, fix *source.Fix, format string, args ...any) {
 	if noteDiagnostic != nil {
 		noteDiagnostic(format)
 	}
@@ -302,7 +308,7 @@ func (c *Checker) warnFix(span source.Span, fix *source.Fix, format string, args
 		return
 	}
 	c.seen[key] = true
-	c.roundDiags.Items = append(c.roundDiags.Items, source.Diagnostic{Severity: source.Warning, Span: span, Message: msg, Fix: fix})
+	c.roundDiags.Items = append(c.roundDiags.Items, source.Diagnostic{Severity: source.Warning, Span: span, Message: msg, Fix: fix, Lint: lint})
 }
 
 // errorFix is errorf with an automatic correction attached: for a form
@@ -864,7 +870,7 @@ func (c *Checker) lintUnusedNames() {
 		if c.hasUncheckedGeneric(ni.file) {
 			continue // a generic body is checked only when instantiated: the use may be in one nobody called
 		}
-		c.warnFix(ni.name.Pos, unusedNameFix(ni.spec, ni.name), "'%s' is imported but never used", ni.bound)
+		c.warnLint("unused_import", ni.name.Pos, unusedNameFix(ni.spec, ni.name), "'%s' is imported but never used", ni.bound)
 	}
 }
 

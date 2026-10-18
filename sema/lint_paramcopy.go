@@ -44,7 +44,7 @@ func (c *Checker) lintParamCopies(prog *Program) {
 				continue
 			}
 			if what := paramWrite(fn, p); what != "" {
-				c.warnf(p.Span, "'%s' is a copy of the caller's '%s': this function %s, and the caller never sees the change; take '%s: *%s' (and pass '&x'), or return the changed value",
+				c.warnLint("param_copy", p.Span, nil, "'%s' is a copy of the caller's '%s': this function %s, and the caller never sees the change; take '%s: *%s' (and pass '&x'), or return the changed value",
 					p.Name, p.Type, what, p.Name, p.Type)
 			}
 		}

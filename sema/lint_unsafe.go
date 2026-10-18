@@ -26,9 +26,9 @@ func (f *fnCtx) lintUnsafeBlock(e *ast.UnsafeExpr) {
 	}
 	switch {
 	case !found:
-		f.warnFix(e.Pos, fixSafetyStub(e.Pos), "an 'unsafe' block needs a '// SAFETY:' comment on the line above saying why it is sound, or the function can be declared 'unsafe fun' so its callers take on the obligation")
+		f.warnLint("unsafe_without_reason", e.Pos, fixSafetyStub(e.Pos), "an 'unsafe' block needs a '// SAFETY:' comment on the line above saying why it is sound, or the function can be declared 'unsafe fun' so its callers take on the obligation")
 	case reason == "":
-		f.c.warnf(e.Pos, "the '// SAFETY:' comment above this 'unsafe' block gives no reason; say why the block is sound")
+		f.c.warnLint("unsafe_without_reason", e.Pos, nil, "the '// SAFETY:' comment above this 'unsafe' block gives no reason; say why the block is sound")
 	}
 }
 

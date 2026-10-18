@@ -523,20 +523,32 @@ func (r *manifestReader) format(m *Manifest, t *tomlTable) error {
 				return r.fail(v, "[format] imports is \"lines\" (one 'use' per module, the default) or \"merged\" (one 'use a, b' per origin)")
 			}
 			m.Format.MergeImports = v.str == "merged"
+		case "trailing_commas":
+			if v.kind != tomlStr || (v.str != "multiline" && v.str != "never") {
+				return r.fail(v, "[format] trailing_commas is \"multiline\" (a comma after the last element of a list broken over several lines, the default) or \"never\"")
+			}
+			m.Format.NoTrailingCommas = v.str == "never"
+		case "line_endings":
+			if v.kind != tomlStr || (v.str != "lf" && v.str != "crlf" && v.str != "auto") {
+				return r.fail(v, "[format] line_endings is \"lf\" (the default), \"crlf\" or \"auto\" (keep the file's own)")
+			}
+			m.Format.LineEndings = v.str
 		default:
-			return r.fail(v, "unknown [format] key %q (indent, max_blank_lines, imports)", key)
+			return r.fail(v, "unknown [format] key %q (indent, max_blank_lines, imports, trailing_commas, line_endings)", key)
 		}
 	}
 	return nil
 }
 
-// lintKeys are the settings of a `[lint]` table.
-var lintKeys = []string{"implicit_return"}
-
 func (r *manifestReader) lint(m *Manifest, t *tomlTable) error {
 	for _, key := range t.keys() {
 		v := t.vals[key]
 		switch key {
+		case "max_width":
+			if v.kind != tomlInt || v.num < 20 || v.num > 1000 {
+				return r.fail(v, "[lint] max_width is a number of columns from 20 to 1000, e.g. max_width = 120 (the default)")
+			}
+			m.Lint.MaxWidth = int(v.num)
 		case "implicit_return":
 			level, ok := implicitReturnLevels[v.str]
 			if v.kind != tomlStr || !ok {
@@ -544,7 +556,28 @@ func (r *manifestReader) lint(m *Manifest, t *tomlTable) error {
 			}
 			m.Lint.ImplicitReturn = level
 		default:
-			return r.fail(v, "unknown [lint] key %q (%s)", key, strings.Join(lintKeys, ", "))
+			if strings.Contains(key, ".") {
+				return r.fail(v, "[lint] %s: lints from other packages are not available yet (D177, plan B27); the lints here are listed by 'veles lint --list'", key)
+			}
+			if _, ok := LintNamed(key); !ok {
+				names := []string{"implicit_return", "max_width"}
+				for _, l := range Lints {
+					names = append(names, l.Name)
+				}
+				hint := ""
+				if s := didYouMean(key, names); s != "" {
+					hint = fmt.Sprintf("; did you mean %q?", s)
+				}
+				return r.fail(v, "unknown [lint] key %q%s (run 'veles lint --list' for the lints)", key, hint)
+			}
+			level, ok := parseLintLevel(v.str)
+			if v.kind != tomlStr || !ok {
+				return r.fail(v, "[lint] %s is \"allow\" (silent), \"warn\" or \"deny\" (an error)", key)
+			}
+			if m.Lint.Levels == nil {
+				m.Lint.Levels = map[string]LintLevel{}
+			}
+			m.Lint.Levels[key] = level
 		}
 	}
 	return nil
@@ -594,6 +627,10 @@ type ManifestFormat struct {
 	MaxBlankLines int
 	// MergeImports is `imports = "merged"`: `use a, b` rather than a line each.
 	MergeImports bool
+	// NoTrailingCommas is `trailing_commas = "never"`.
+	NoTrailingCommas bool
+	// LineEndings is "", "lf", "crlf" or "auto".
+	LineEndings string
 }
 
 // ManifestLint is the `[lint]` table: the lints a package opts into. Each is
@@ -603,6 +640,12 @@ type ManifestLint struct {
 	// ImplicitReturn is where a body's last expression may be its value
 	// without `return`.
 	ImplicitReturn ImplicitReturn
+	// Levels is the level a package set for each lint of the registry
+	// (lints.go); a lint missing from it has its default.
+	Levels map[string]LintLevel
+	// MaxWidth is `max_width`, the column the `long_line` lint allows; 0 for
+	// the default.
+	MaxWidth int
 }
 
 // ImplicitReturn is the `[lint] implicit_return` setting, from the most

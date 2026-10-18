@@ -32,6 +32,30 @@ func TestFormatUsesManifest(t *testing.T) {
 	}
 }
 
+// TestFormatManifestCommasAndEndings: `trailing_commas = "never"` and
+// `line_endings = "crlf"` reach the formatter, and --check compares the
+// line endings too once they are not the default.
+func TestFormatManifestCommasAndEndings(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "veles.toml"), []byte("[package]\nname = \"app\"\n\n[format]\ntrailing_commas = \"never\"\nline_endings = \"crlf\"\n"), 0o644)
+	path := filepath.Join(dir, "main.vs")
+	os.WriteFile(path, []byte("fun main() {\n  f(\n    1,\n    2,\n  )\n}\n"), 0o644)
+	if code := Format(FormatOptions{Paths: []string{dir}}); code != 0 {
+		t.Errorf("format: exit %d", code)
+	}
+	want := "fun main() {\r\n  f(\r\n    1,\r\n    2\r\n  )\r\n}\r\n"
+	if data, _ := os.ReadFile(path); string(data) != want {
+		t.Errorf("formatted: %q\n want %q", data, want)
+	}
+	if code := Format(FormatOptions{Paths: []string{dir}, Check: true}); code != 0 {
+		t.Errorf("--check after formatting: exit %d, want 0", code)
+	}
+	os.WriteFile(path, []byte("fun main() {\n  f(\n    1,\n    2\n  )\n}\n"), 0o644)
+	if code := Format(FormatOptions{Paths: []string{dir}, Check: true}); code != 1 {
+		t.Errorf("--check on LF text under line_endings = \"crlf\": exit %d, want 1", code)
+	}
+}
+
 // TestFormatWritesAtomically: the rewrite keeps the file's permission bits
 // and leaves no temporary file next to it.
 func TestFormatWritesAtomically(t *testing.T) {

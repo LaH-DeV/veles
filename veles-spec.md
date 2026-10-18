@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.90** — decisions D1–D176. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.91** — decisions D1–D177. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -7237,6 +7237,32 @@ fun fetchUser(id: i64): User throws HttpError { … }      // fetchUser(1) is re
 - **Not data.** A decorator changes what a function does, so it is the one kind of annotation that does: the declaration says so on the line a reader looks at (`= retryCall`), and hover on a decorated function names the wrapper.
 
 Rejected: `wraps retryCall` and a `decorator` keyword (the user: ugly / prefers `annotation`); a `wrap` method in the annotation's body (the user did not want a method); `implement Decorator` (a fixed method name and a generic signature to write); wrappers that see no arguments (the user chose both shapes); macros (D118).
+
+### D177 — Lint levels, lint rules written in Veles, and formatter options (v0.91)
+
+Q53 (user, 2026-10-18: "I want to have possibility to write project-wide and library custom linters & formatter rules for the veles compiler… let's think about formatter options and defaults like trailing commas etc"; then "couldn't there be a normal looking module with 'API' for writing linter and the compiler would run it? Like eslint for js").
+
+**Lint levels.** Every lint, built-in or from a library, has a level `allow | warn | deny`, set in the manifest's `[lint]` table by name; a library's lint is `package.name`. The existing key `implicit_return` stays. A dependency's lints apply to a package only when that package names them. `[lint.forbid]` bans calls, imports or names project-wide, each with a message and a fix. No per-directory overrides yet.
+
+```toml
+[lint]
+implicit_return = "lambda"
+unused_import = "deny"
+acme-lints.no_sleep_in_tests = "warn"
+long_line = "warn"
+```
+
+**Rules are ordinary Veles, run by the compiler.** A rule is a value of `lint.Rule` in a normal package: a name, a doc string, a default level and a `create` function returning a `lint.Visitor` with one callback per node kind (ESLint's shape). A callback reads the node and reports through `ctx.report(span, message, fix:)`. The compiler runs the rules in its compile-time evaluator (D113), as `const fun`: no extra process, no I/O, deterministic, cacheable per file, and a rule can ask the compiler's own tables for types (type-aware rules). The AST is reflected into Veles types from `selfhost/ast`. `veles check --fix` applies the fixes as it does for built-in lints.
+
+**Formatter options** (`[format]`, a closed set; no formatter plugins, so one source has one canonical layout):
+- `trailing_commas = "multiline" | "never"`: default `"multiline"` (today's behaviour, a comma after the last element of a list broken across lines); one setting for arguments, literals and parameters.
+- `line_endings = "lf" | "crlf" | "auto"`: default `"lf"`.
+- Unchanged: `indent` (2), `max_blank_lines` (1), `imports` (lines). A file ends with one newline, not an option.
+- No reflowing width: the formatter keeps the author's line breaks (a grid stays a grid). Instead the built-in lint `long_line` (off by default) with `max_width` (default 120) warns on a longer line.
+
+Rejected: a `lint Name on node { }` declaration syntax (a rule is a normal value); plugin executables fed a serialized tree (a second public AST format, a process per run); a linter binary linking the rules (syntax-only until a Veles sema exists); declarative-only rules; `trailing_commas = "always"`; per-construct comma settings; a reflowing `max_width`; a default width of 100 (the user: too narrow today); formatter plugins; per-directory lint overrides (until needed).
+
+Both levels: the level table and `[lint.forbid]` are the high-level spelling; rules in Veles are the low-level escape. Self-hosting: the rule API sits on the Veles AST, so the compiler's own Go lints can become rules in it once S6–S9 land.
 
 ---
 

@@ -50,7 +50,7 @@ func (c *Checker) lintNeedlessThrows() {
 		if d.Effects.Error != nil {
 			clause = clause.To(d.Effects.Error.Span())
 		}
-		c.warnFix(clause, fixDropClause("Remove 'throws'", clause),
+		c.warnLint("needless_throws", clause, fixDropClause("Remove 'throws'", clause),
 			"'%s' declares 'throws', but nothing in its body can throw, so every caller pays for a 'try' it does not need; remove the clause (D45)", t.Name)
 	}
 }

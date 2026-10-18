@@ -417,7 +417,7 @@ func (c *Checker) applyDecorators(fd *ast.FunDecl, uses []*AnnotationUse) {
 	case fd.Body == nil && fd.ExprBody == nil:
 		c.errorf(first.Pos, "a decorator wraps a body, and '%s' has none (D176)", fd.Name.Name)
 		return
-	case fd.Test || fd.Extern:
+	case fd.Test || fd.Extern || fd.ExportC:
 		c.errorf(first.Pos, "a decorator cannot wrap a test or an extern function (D176)")
 		return
 	}

@@ -78,6 +78,6 @@ func (f *fnCtx) lintSelfAddress(s *ast.AssignStmt) {
 		return
 	}
 	if addr := selfAddress(n.Name, s.Value); addr != nil {
-		f.c.warnf(addr.Pos, "'&%s' is the address of the variable being assigned, so the new value would contain itself; box the old value first: 'val old = %s' and use '&old' (D10)", n.Name, n.Name)
+		f.c.warnLint("self_address", addr.Pos, nil, "'&%s' is the address of the variable being assigned, so the new value would contain itself; box the old value first: 'val old = %s' and use '&old' (D10)", n.Name, n.Name)
 	}
 }
