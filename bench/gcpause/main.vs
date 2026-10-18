@@ -34,7 +34,9 @@ fun total(node: *Node): i64 {
 fun main() {
   val live = build(21, 1)
   // SAFETY: a full collection: none the build began is left running
-  unsafe { veles_gc_collect() }
+  unsafe {
+    veles_gc_collect()
+  }
   val n: i64 = 20000000
   val stopwatch = time.Stopwatch.start()
   var churn: i64 = 0

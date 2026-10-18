@@ -697,9 +697,10 @@ these because it would have nothing to do: a panic in a handler is
 already caught at the request boundary and answered with a 500.
 
 A middleware runs in a task, so it is a `sendable` function: it may
-capture `val`s of Sendable types and nothing mutable. There are no
-task-local values yet, so the way to hand something to the handlers
-behind you is `req.withHeader(...)`, as `requestId` does.
+capture `val`s of Sendable types and nothing mutable. To hand something to
+the handlers behind you, put it on the request with `req.withHeader(...)`,
+as `requestId` does, or bind a `TaskLocal` around `next(req)`
+([chapter 12](12-concurrency.md#values-that-follow-a-task-tasklocal)).
 
 ## Other origins, and who may call
 

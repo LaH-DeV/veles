@@ -6,7 +6,7 @@
 // (first, last) ranges in order.
 
 /// UAX #31 ID_Start: the characters an identifier may begin with.
-public const ID_START: List<(i64, i64)> = [
+const ID_START: List<(i64, i64)> = [
   (0xAA, 0xAA),
   (0xB5, 0xB5),
   (0xBA, 0xBA),
@@ -667,7 +667,7 @@ public const ID_START: List<(i64, i64)> = [
 ]
 
 /// UAX #31 ID_Continue: the characters an identifier may go on with.
-public const ID_CONTINUE: List<(i64, i64)> = [
+const ID_CONTINUE: List<(i64, i64)> = [
   (0xAA, 0xAA),
   (0xB5, 0xB5),
   (0xB7, 0xB7),
@@ -1435,7 +1435,7 @@ public const ID_CONTINUE: List<(i64, i64)> = [
 ]
 
 /// format characters (Cf) and separators (Zs, Zl, Zp): what a diagnostic calls invisible.
-public const INVISIBLE: List<(i64, i64)> = [
+const INVISIBLE: List<(i64, i64)> = [
   (0xA0, 0xA0),
   (0xAD, 0xAD),
   (0x600, 0x605),
@@ -1463,7 +1463,7 @@ public const INVISIBLE: List<(i64, i64)> = [
 ]
 
 /// the printable characters — letters, marks, numbers, punctuation, symbols — which `quote` writes as themselves.
-public const PRINT: List<(i64, i64)> = [
+const PRINT: List<(i64, i64)> = [
   (0xA1, 0xAC),
   (0xAE, 0x377),
   (0x37A, 0x37F),

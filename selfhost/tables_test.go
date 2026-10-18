@@ -53,7 +53,7 @@ func TestUnicodeTables(t *testing.T) {
 }
 
 func table(b *strings.Builder, name, doc string, in func(rune) bool) {
-	fmt.Fprintf(b, "\n/// %s.\npublic const %s: List<(i64, i64)> = [\n", doc, name)
+	fmt.Fprintf(b, "\n/// %s.\nconst %s: List<(i64, i64)> = [\n", doc, name)
 	for r := rune(utf8.RuneSelf); r <= utf8.MaxRune; r++ {
 		if !in(r) {
 			continue

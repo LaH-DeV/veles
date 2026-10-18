@@ -2,7 +2,7 @@
 
 These tutorials are written for three kinds of readers. Pick the track that
 matches you; each chapter is self-contained and every program in it
-compiles and runs with the bootstrap compiler (the test suite checks that).
+compiles and runs (the test suite checks that).
 
 ## Track 1 — New to programming, or new to typed languages
 
@@ -50,7 +50,7 @@ For readers who want to know what the compiler actually does.
 ## Reference
 
 - [Cheat sheet](reference/cheatsheet.md) — the whole syntax on one page.
-- [Standard library](reference/stdlib.md) — what the bootstrap prelude and `io` provide today.
+- [Standard library](reference/stdlib.md) — the prelude and every `std` module, signature by signature.
 - [The registry protocol](reference/registry-protocol.md) — what a package registry serves and accepts: versions, signed metadata, archives, reviews.
 - [Concurrency: what happens, exactly](reference/concurrency.md) — every rule of the runtime in one place: when tasks start, what `await` waits for, where a task can be interrupted, failures, cancellation, timeouts, deadlock, locks, scheduling, costs, and the mistakes the compiler cannot stop.
 - [Error messages](reference/errors.md) — every family of error the compiler reports, what it means and how to fix it (`veles explain <family>`).

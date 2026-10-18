@@ -214,7 +214,7 @@ unsafe fun wrap(a: i32, b: i32): i32 => a +% b
 
 fun typeTests(x: Shape, y: Any) {
   if (x is Shape.Circle && !(y !is string)) { }
-  val z = y as i64
+  val z = y.toI64()
   val addr = &x
 }
 

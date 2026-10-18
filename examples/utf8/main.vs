@@ -9,21 +9,21 @@ use hex
 use io { println }
 use utf8
 
-fun u(code: i64): string => "U+${code.toString(radix: 16).toUpper().padStart(4, "0")}"
+fun u(code: i64): string => "U+${code:04X}"
 
 /// One row: the bytes, then what `decodeBytes` made of them.
 fun row(label: string, bytes: List<u8>) {
-  val shown = hex.encode(bytes).padEnd(10)
+  val shown = hex.encode(bytes)
   val r = utf8.decodeBytes(bytes, 0)
   val outcome = if (r == null) "rejected" else "${u(r.code)} size ${r.size}"
-  println("  ${label.padEnd(26)} $shown $outcome")
+  println("  ${label:<26} ${shown:<10} $outcome")
 }
 
 fun roundTrip(code: i64) {
   val bytes = utf8.encode(code)
   val back = utf8.decodeBytes(bytes, 0)
   val ok = back != null && back.code == code && back.size == bytes.len()
-  println("  ${u(code).padEnd(10)} ${hex.encode(bytes).padEnd(10)} ${if (ok) "round trip" else "BROKEN"}")
+  println("  ${u(code):<10} ${hex.encode(bytes):<10} ${if (ok) "round trip" else "BROKEN"}")
 }
 
 fun main() {
@@ -96,7 +96,7 @@ fun main() {
   val notCodePoints = [("negative", -1), ("high surrogate", 0xD800), ("low surrogate", 0xDFFF), ("past U+10FFFF", 0x110000)]
   loop ((label, code) in notCodePoints) {
     val bytes = utf8.encode(code)
-    println("  ${label.padEnd(16)} ${hex.encode(bytes)} is ${u(utf8.decodeBytes(bytes, 0)?.code ?: -1)}, size ${utf8.size(code)}")
+    println("  ${label:<16} ${hex.encode(bytes)} is ${u(utf8.decodeBytes(bytes, 0)?.code ?: -1)}, size ${utf8.size(code)}")
   }
   println("  isScalar: ${utf8.isScalar(0x41)} ${utf8.isScalar(0xD800)} ${utf8.isScalar(0x10FFFF)} ${utf8.isScalar(0x110000)}")
   println("  size:     ${utf8.size(0x41)} ${utf8.size(0x7FF)} ${utf8.size(0x800)} ${utf8.size(0x10000)} ${utf8.size(0xD800)}")

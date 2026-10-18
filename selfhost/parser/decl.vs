@@ -300,7 +300,7 @@ extend Parser {
       loop (!this.atAny(Kind.RBrace, Kind.EOF)) {
         val m = this.parseDecl()
         when (m) {
-          is ast.ValDecl => {
+          is ast.ValDecl     => {
             if (m.kind == ast.BindKind.Const) this.errorAt(m.pos, "a constant belongs at module level, where every executor may read it; an executor holds 'val' and 'var' state (D150)")
             state.push(m)
           }
@@ -309,8 +309,8 @@ extend Parser {
             if (fn.isStatic || fn.isTest || fn.isExtern || fn.exportC) this.errorAt(fn.name.pos, "a function of an executor is a plain 'fun': it runs on the executor (D150)")
             funs.push(fn)
           }
-          is ast.BadDecl => { }
-          else => this.errorAt(ast.declSpan(m), "an executor holds 'val'/'var' state and functions only (D150)")
+          is ast.BadDecl     => { }
+          else               => this.errorAt(ast.declSpan(m), "an executor holds 'val'/'var' state and functions only (D150)")
         }
         this.parseMemberSeparator()
       }

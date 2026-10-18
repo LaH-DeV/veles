@@ -1,10 +1,9 @@
-# Standard library reference (bootstrap)
+# Standard library reference
 
-The bootstrap standard library is deliberately small: enough to write
-the tutorials and the compiler's own tests. Everything here is embedded
-in the compiler binary (`std/` in the repository). A few primitives on
-strings and collections are implemented by the compiler; everything else —
-the prelude, `io`, `os`, `fs`, `path` — is written in Veles.
+Everything here is embedded in the compiler binary (`std/` in the
+repository). A few primitives on strings and collections are implemented by
+the compiler; everything else — the prelude and every module — is written
+in Veles.
 
 ## Always in scope (the prelude, D24)
 
@@ -1228,10 +1227,8 @@ h.ptr(): *raw u8;  unsafe ffi.Handle<T>.from(p): T       // the value back, in t
 // language: extern "C" fun name(...) { }  and  &name: extern fun(...); p.cast<*raw T>() in unsafe
 ```
 
-## Not yet in the bootstrap
+## Not in the library yet
 
-UDP, a format-string module, iterating a directory tree, running a
-program with its own stdin or a separate stderr capture. Each is a small
-`extern "C"` binding away (see [chapter 13](../13-memory-and-ffi.md)) or
-plain Veles on top of `fs`; the library grows with the compiler's own needs
-setting the order.
+UDP and Unix-domain sockets in `net`, a terminal module, file watching.
+Each is a small `extern "C"` binding away (see
+[chapter 13](../13-memory-and-ffi.md)) until the module exists.

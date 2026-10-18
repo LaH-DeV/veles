@@ -323,10 +323,6 @@ panic: n is 3, so the total is off
   at main.vs:12:3
 ```
 
-The pre-D78 form, `@test fun name() { }`, is an error whose fix writes
-the new one — `veles check --fix` turns `@test fun parsesDates()` into
-`test "parses dates"`.
-
 ## Conventions the compiler enforces so you need not
 
 Looking back over the tutorials, a good deal of what a style guide would

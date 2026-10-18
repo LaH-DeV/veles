@@ -72,8 +72,8 @@ fun isDigit(b: u8): bool => b >= '0' && b <= '9'
 fun run(text: string, shown: string) {
   var calc = Calc(src: text)
   when (calc.parseExpr()) {
-    is Ok(value) => println("  ${shown.padEnd(18)} = ${"$value".padEnd(6)} deepest ${calc.deepest()}, balanced ${calc.balanced()}")
-    is Err(e)    => println("  ${shown.padEnd(18)} ! ${e.message()}")
+    is Ok(value) => println("  ${shown:<18} = ${value:<6} deepest ${calc.deepest()}, balanced ${calc.balanced()}")
+    is Err(e)    => println("  ${shown:<18} ! ${e.message()}")
   }
 }
 

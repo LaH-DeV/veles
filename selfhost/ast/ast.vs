@@ -362,10 +362,10 @@ struct TestDecl : Decl {
   var doc:     string = ""
   var label:   string = ""  // `test listMethods "…"`: the optional identifier (D170)
   var labelAt: Span = Span.none()
-  var name:    string = ""  // unquoted; empty when only a label is written
+  var name:    string = ""         // unquoted; empty when only a label is written
   var at:      Span = Span.none()  // the sentence's string (the label's when there is none)
-  var body: Block? = null
-  var pos:  Span = Span.none()
+  var body:    Block? = null
+  var pos:     Span = Span.none()
 }
 
 /// What a report calls a test or a suite: the label and the sentence
@@ -380,7 +380,7 @@ struct SuiteDecl : Decl {
   var name:    string = ""
   var at:      Span = Span.none()
   var decls:   List<Decl> = []
-  var pos:   Span = Span.none()
+  var pos:     Span = Span.none()
 }
 
 /// `static assert(cond, "why")` (D113), at module level or in a body.
@@ -541,9 +541,9 @@ struct StringLit : Expr {
 
 /// `$x` and `${expr}` parts hold the expression; the others the text.
 struct StringPart {
-  var text: string = ""
-  var expr: (*Expr)? = null
-  var spec: string = ""  // `${expr:spec}` (D171), as written
+  var text:    string = ""
+  var expr:    (*Expr)? = null
+  var spec:    string = ""  // `${expr:spec}` (D171), as written
   var specPos: Span = Span.none()
   var hasSpec: bool = false
 }
