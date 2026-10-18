@@ -47,7 +47,7 @@ extend Parser {
       }
       Kind.KwSelfType => {
         this.next()
-        // `Self.Item`: an associated type of the implementing type
+        // `This.Item`: an associated type of the implementing type
         var t: ast.Type = ast.SelfType(pos: start)
         loop (this.at(Kind.Dot) && this.peek(1).kind == Kind.Ident) t = this.parseAssocType(t, start)
         t

@@ -206,6 +206,12 @@ func (p *Parser) parseStmt() ast.Stmt {
 		p.syncStmt()
 		return &ast.BadStmt{Pos: start}
 	}
+	if p.at(lexer.Ident) && p.cur().Text == "inline" && p.peek(1).Kind == lexer.KwLoop {
+		p.next() // inline: contextual, only before `loop` (D174)
+		s := p.parseLoop(start).(*ast.LoopStmt)
+		s.Inline = true
+		return s
+	}
 	if p.atErrorDecl() || p.atExtendDecl() {
 		p.errorf(p.span(), "'%s' declarations are only allowed at module level", p.cur().Text)
 		p.syncStmt()

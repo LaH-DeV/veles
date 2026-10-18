@@ -16,7 +16,7 @@ trait Sized : Shape {
 }
 
 trait Maker {
-  static fun make(): Self
+  static fun make(): This
 }
 
 struct Circle {

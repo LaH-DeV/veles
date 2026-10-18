@@ -48,7 +48,7 @@ var keywordCompletions = []string{
 	"fun", "val", "var", "const", "if", "else", "loop", "break", "continue", "return", "throw",
 	"struct", "enum", "error", "trait", "implement", "extend", "sealed", "public", "private", "internal", "protected", "use", "when", "is", "as", "in",
 	"throws", "suspends", "try", "do", "catch", "async", "await", "scope", "gather", "race", "with",
-	"unsafe", "extern", "mut", "override", "true", "false", "null", "this", "Self", "type",
+	"unsafe", "extern", "mut", "override", "true", "false", "null", "this", "This", "type",
 }
 
 var builtinTypeCompletions = []string{

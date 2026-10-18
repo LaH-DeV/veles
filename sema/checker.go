@@ -66,6 +66,12 @@ type Checker struct {
 	methods     map[*types.Struct]map[string]*FuncTemplate // inherent, by template
 	staticVals  map[*types.Struct]map[string]*Symbol       // `static val` members, as globals in the type's namespace
 	staticOwner map[*Global]*types.Struct                  // the struct a `static val` global belongs to
+	annotations map[any][]*AnnotationUse                   // user annotations (D174), by the declaration node they stand on
+	annReaders  map[*types.Struct][]*types.Trait           // the `for` traits of each annotation, once resolved
+	annWrappers map[*types.Struct]*annWrapper                 // the wrapper function of each decorator annotation, once resolved (D176)
+	reflOwners  []*types.Struct                            // the structs whose fields were reflected, numbered for FieldInfo.owner (D174)
+	reflIndex   map[*types.Struct]int
+	readsAnn    map[*Func]bool // a `const fun` that reads annotations (memoized)
 	globals     map[*Global]*ast.ValDecl
 	// executors (D150): their declarations, the global holding each, and
 	// the state each owns
@@ -171,6 +177,11 @@ func checkCollect(pkg *Package, diags *source.Diagnostics, release bool, testMod
 		staticVals:     map[*types.Struct]map[string]*Symbol{},
 		initDecl:       map[*types.Struct]*ast.FunDecl{},
 		staticOwner:    map[*Global]*types.Struct{},
+		annotations:    map[any][]*AnnotationUse{},
+		annReaders:     map[*types.Struct][]*types.Trait{},
+		annWrappers:    map[*types.Struct]*annWrapper{},
+		reflIndex:      map[*types.Struct]int{},
+		readsAnn:       map[*Func]bool{},
 		globals:        map[*Global]*ast.ValDecl{},
 		execOfGlobal:   map[*Global]*execInfo{},
 		stateOwner:     map[*Global]*execInfo{},
@@ -472,6 +483,7 @@ func (c *Checker) collect() {
 	}
 	c.pendingBoundChecks = nil
 	c.collected = true
+	c.resolveAnnotations(mods) // D174: needs every type, impl and constant rule
 	// the declaration sites themselves: a hover on `struct Notes {` or on a
 	// field where it is declared shows the same spelled-out form as a use
 	if c.index != nil {
@@ -543,6 +555,9 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 			c.insert(m, &Symbol{Name: fn.Name.Name, Kind: SymFunc, Pub: fn.Pub, Internal: fn.Internal, Module: m, Span: fn.Name.Pos, Func: t})
 		}
 	case *ast.StructDecl:
+		if d.Annotation != nil {
+			c.checkAnnotationDecl(d)
+		}
 		var attrs map[string]*ast.Attribute
 		if d.Variant != nil {
 			attrs = c.attrsOf(d.Attrs, "variant")
@@ -931,6 +946,9 @@ type typeEnv struct {
 	// `throws`, a union member, an error's field): the only places a named
 	// error set may appear (D45).
 	errorPos bool
+	// handles maps the name of a field handle in scope to that field's type,
+	// so `f.Type` is a type (D174)
+	handles map[string]types.Type
 }
 
 // errorAlias is an `error Name = A | B` declaration awaiting resolution.
@@ -1144,6 +1162,11 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 	case *ast.ResolvedType:
 		return t.T.(types.Type) // synthesized by the compiler (D58)
 	case *ast.NamedType:
+		if len(t.Path) == 2 && t.Path[1].Name == "Type" && len(t.Args) == 0 {
+			if ft, ok := env.handles[t.Path[0].Name]; ok {
+				return ft // `f.Type`: the type of the field an inline loop is at (D174)
+			}
+		}
 		if len(t.Path) == 1 {
 			name := t.Path[0].Name
 			// bare associated names inside trait and impl bodies
@@ -1366,7 +1389,7 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 		return ft
 	case *ast.SelfType:
 		if env.self == nil {
-			c.errorf(t.Pos, "'Self' is only meaningful inside a struct, trait or impl")
+			c.errorf(t.Pos, "'This' is only meaningful inside a struct, trait or impl")
 			return types.TInvalid
 		}
 		return env.self
@@ -2690,6 +2713,7 @@ func (c *Checker) runRound() *Program {
 	c.drainQueue()
 	c.finishInstances()
 	c.checkConstFuns()
+	c.checkReflectUse()
 	c.prog.TestMode = c.testMode
 	c.prog.PanicType = c.panicType()
 	for _, t := range c.tests {

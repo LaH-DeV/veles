@@ -47,8 +47,15 @@ A method's receiver is `this`, as in most languages that have one. `self`
 (Rust's and Swift's word) still reads as the receiver, so the rest of the
 file checks, but every use is an error whose fix writes `this` —
 `veles check --fix` (or the editor's quick fix) rewrites a whole package in
-one run, `"$self"` and `"${self.x}"` included. `Self`, the type, is
-unchanged. (D65)
+one run, `"$self"` and `"${self.x}"` included. (D65)
+
+#### `the implementing type is spelled 'This'`
+
+Inside a struct, trait or `implement`, the type being written is `This`, the
+pair of the receiver `this`: `fun compareTo(other: This): Ordering`,
+`This.fields`, `This.default()`. `Self` (Rust's and Swift's word) still reads
+as that type, so the rest of the file checks, but every use is an error whose
+fix writes `This`. (D175)
 
 ### unknown-name
 
@@ -618,7 +625,7 @@ D73).
 type takes the value as a parameter`, `'this' is not available in a static
 function`.
 
-A method's receiver is `this` and its type is `Self`; a static function
+A method's receiver is `this` and its type is `This`; a static function
 and a top-level function have neither (D23, D65).
 
 #### `'name' means this.name here (D158)`
@@ -1068,6 +1075,42 @@ it can prove.
 Attributes shape what the compiler derives (D58): `@key` renames a field
 on the wire, `@skip` leaves it out, `@tag` names a sealed variant.
 `veles explain <path> --derive` prints the code a derive wrote.
+
+#### `unknown annotation '@Min'`, `'@Min' stands on field, and cannot stand on …` (D174)
+
+`@Name` with a capital is an annotation a library or your program declares
+with `annotation Name(params) on field`; the lowercase names are the
+compiler's. The error says what is missing: the declaration or an import
+(`use validate { Min }`), or the places the annotation was declared `on` —
+`field`, `struct`, `fun`, `trait`, `enum`, `enumMember`, `variant`. Its
+arguments are the constructor's, and constants. A second `@Min` on one
+declaration is an error.
+
+#### `nothing reads '@Min' here` (D174)
+
+An annotation declared `for Validate` is read by that trait's reflection; the
+type it stands on does not implement `Validate`, so nothing will look at it.
+Add `implement Validate` to the type, or remove the annotation.
+
+#### `'f' stands for a field of the type being walked`, `'break' cannot leave an inline loop`, `'has' reads annotations …` (D174)
+
+`inline loop (f in T.fields)` is unrolled while the program is compiled, one
+copy of the body per field; `f` is not a value but a handle with members
+(`f.name`, `f.Type`, `f.get(x)`, `f.has<A>()`, `f.attr<A>()`), and the loop has
+no `break`, `continue` or label. `has` and `attr` on a `FieldInfo` value work
+in a `const fun` only, and a function that reads annotations cannot be called
+from code that runs when the program does: put the call in a constant,
+`const RULES = Signup.rules()`.
+
+#### `the wrapper of '@Retry' …`, `a decorator wraps a body …` (D176)
+
+`annotation Retry(…) on fun = retryCall` makes a decorator: `retryCall` must be a
+function in scope where the annotation is declared, taking the annotation and
+the body — `(a: Retry, body: fun(): R)` — or the annotation, the arguments and
+the body — `(a: Retry, args: A, body: fun(A): R)`. A decorator stands on
+functions only, on one that has a body (not a test, an extern function or a
+trait method without a default), and the second shape cannot wrap a function
+with a variadic parameter.
 
 #### `'@caller_location' is reserved for the standard library for now`
 

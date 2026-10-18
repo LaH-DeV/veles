@@ -1,10 +1,11 @@
-# 14. Attributes and tests
+# 14. Attributes, annotations and tests
 
 ## Attributes
 
 An attribute is `@name` or `@name(args)` on the line before a
-declaration (D51). The compiler knows each one; an unknown one is an
-error, not a silent no-op.
+declaration (D51). The compiler knows each lowercase one; an unknown
+lowercase name is an error, not a silent no-op. (A capitalised `@Name` is an
+annotation a library defined — [below](#annotations-of-your-own).)
 
 | Attribute | On | Effect |
 |---|---|---|
@@ -45,6 +46,205 @@ Change `greet("ann")` to `hello("ann")` and the compiler prints
 `warning: 'hello' is deprecated: use greet` with the call site. Write
 `important()` as a bare statement and it refuses: `result of 'important'
 must be used (@mustUse)`.
+
+## Annotations of your own
+
+The `@names` above belong to the compiler: they are lowercase and reserved, and
+each changes how code is compiled or checked. A library can also define
+**annotations** (D174), and they are the opposite kind of thing: typed data on
+a declaration that **changes nothing by itself**. A library reads it, while the
+program is compiled, to write the code or the table you would otherwise write
+by hand — a validation rule, a flag's short name, a column's name. An annotation
+does not wrap a function or alter what it does, with one declared exception ([decorators](#decorators)), and
+nothing is looked up when the program runs.
+
+An annotation is declared like a function's header, followed by where it may
+stand and, when a trait reads it, which one:
+
+```veles
+// fragment
+/// The smallest value a number field may hold.
+annotation Min(value: i64) on field for Validate
+
+annotation Hidden on field for Validate                  // no parameters: `@Hidden`
+annotation Route(path: string, method: string = "GET") on fun
+annotation Key(name: string) on field, enumMember, variant
+```
+
+- **The name is a type's** — `Min`, not `min` — so it never clashes with the
+  compiler's own lowercase ones. It is imported like any name
+  (`use validate { Min }`) or written through its module, `@validate.Min(18)`.
+- **The parameters are the arguments.** `@Min(18)` constructs a `Min`, with the
+  same rules as a struct: named arguments, defaults, and one bare argument when
+  there is exactly one parameter. The arguments are constants.
+- **`on` lists the places**: `field`, `struct`, `fun`, `trait`, `enum`,
+  `enumMember` and `variant`. An annotation anywhere else is an error that
+  names the places.
+- **`for` names the readers.** Put an annotation on a type that does not
+  implement any of them and the compiler warns: nothing would read it.
+
+### Reading them
+
+A library reads the annotations of a type through `T.fields`, a constant list
+of [`FieldInfo`](reference/stdlib.md#reflection-d174) — the name, doc comment,
+type, default and annotations of each field, known while the program is
+compiled — and through `T.annotated<A>()`, the fields that carry `A` together
+with the annotation's value. Both are constants, and there are two ways to use
+them. A library typically uses both.
+
+A **`const fun`** reads them as data and builds a table the compiler stores in
+the program: nothing is computed when the program starts.
+
+An **`inline loop`** is unrolled once per field, so each copy knows the field's
+own type. `f.get(x)` reads the field (`f.get(this)` in a trait's default body:
+the type said `implement` and so opted in, whatever the field's visibility),
+`f.Type` is its type, and `T.build(f => …)` makes a `T` by giving a value for
+each field. `inline loop ((f, a) in T.annotated<A>())` visits only the fields
+that carry `A`, with `a` the annotation, which is how one body can compare a
+number field with `<` and measure a text field with `len()`.
+
+```veles
+use io
+
+annotation Min(value: i64) on field for Validate
+annotation MaxLen(value: i64) on field for Validate
+
+trait Validate {
+  fun problems(): List<string> {
+    val out: MutableList<string> = []
+    inline loop ((f, min) in This.annotated<Min>()) {
+      if (f.get(this) < min.value) out.push("${f.name} must be at least ${min.value}")
+    }
+    inline loop ((f, most) in This.annotated<MaxLen>()) {
+      if (f.get(this).len() > most.value) out.push("${f.name} is longer than ${most.value}")
+    }
+    out.toList()
+  }
+
+  static const fun rules(): List<string> {
+    val out: MutableList<string> = []
+    loop ((f, min) in This.annotated<Min>()) out.push("${f.name} >= ${min.value}")
+    loop ((f, most) in This.annotated<MaxLen>()) out.push("${f.name} <= ${most.value} bytes")
+    out.toList()
+  }
+}
+
+struct Signup {
+  @MaxLen(5)
+  name: string
+  @Min(18)
+  age: i64
+  note: string = ""
+  implement Validate
+}
+
+const RULES: List<string> = Signup.rules()
+
+fun main() {
+  io.println("${RULES}")
+  io.println("${Signup(name: "Alexander", age: 12).problems()}")
+  io.println("${Signup(name: "Al", age: 30).problems()}")
+}
+```
+
+Output:
+```text
+[age >= 18, name <= 5 bytes]
+[age must be at least 18, name is longer than 5]
+[]
+```
+
+When one field needs several questions, walk all the fields and ask each one
+(`inline loop (f in This.fields)`): `f.has<A>()` and `f.attr<A>()` are
+constants there, `if (f.has<A>())` keeps only the branch that applies, and
+`if (val a = f.attr<A>())` binds the annotation. `examples/annotations` does
+this for a `Skip` annotation.
+
+The rules the compiler holds you to:
+
+- `f.attr<A>()` and `f.has<A>()` exist while the program is compiled. In an
+  `inline loop` they are constants; on a `FieldInfo` value they work in a
+  `const fun` only. A function that reads annotations, called from code that
+  runs when the program does, is an error that says to call it in a constant
+  (`const RULES = Signup.rules()`).
+- An `inline loop` walks `T.fields` or `T.annotated<A>()` and nothing else, and
+  has no `break`, `continue` or label: it is not iterating, it is being written
+  out. A generic body that has one is checked once for each type it is used with.
+- Reading a field with `f.get(x)` follows the usual visibility, except in a
+  trait's default body for the type that implemented the trait — so a library
+  cannot read what a type keeps private unless the type asked it to.
+- `This` is a receiver in a trait's default body: `This.fields`,
+  `This.annotated<A>()`, `This.build(…)`, `This.default()`.
+- Annotations on enum members, variants and functions can be declared and used
+  but not yet read ([checklist §11](../../veles-checklist.md)).
+
+`examples/annotations` is a small validation library used from a program.
+
+### Decorators
+
+One kind of annotation does change what a function does, and says so in its
+declaration (D176): it names an ordinary generic function that **wraps** the
+functions it stands on. The function's body becomes a lambda handed to the
+wrapper, and the wrapper's result is the function's result:
+
+```veles
+use io { println }
+
+error Flaky {
+  n: i64
+}
+
+annotation Retry(times: i64, delay: Duration = Duration.zero) on fun = retryCall
+annotation Logged(label: string) on fun = logged
+
+fun retryCall<R, E>(a: Retry, body: fun(): R suspends throws E): R suspends throws E =>
+  try retry(a.times, () => try body(), delay: a.delay)
+
+fun logged<A, R>(a: Logged, args: A, body: fun(A): R): R {
+  println("[${a.label}] called with $args")
+  body(args)
+}
+
+val attempts = Atomic(value: 0)
+
+@Retry(times: 3)
+fun flaky(): string throws Flaky {
+  val n = attempts.add(1)
+  if (n < 3) throw Flaky(n)
+  "succeeded on attempt $n"
+}
+
+@Logged(label: "add")
+fun add(a: i64, b: i64): i64 => a + b
+
+fun main() {
+  println(flaky() catch (e) { "gave up" })
+  println("${add(2, 3)}")
+}
+```
+
+Output:
+```text
+succeeded on attempt 3
+[add] called with (2, 3)
+5
+```
+
+- **There is no macro.** `flaky()` means `retryCall(Retry(times: 3), () => <the body>)`.
+  The wrapper is a function anyone can read, call and test, and `throws` and
+  suspension flow through it by inference: a function wrapped by a retrying
+  wrapper suspends, and its errors are the wrapper's.
+- **Two shapes of wrapper**, told apart by the number of parameters:
+  `(a: Name, body: fun(): R)` sees the annotation and the body;
+  `(a: Name, args: A, body: fun(A): R)` also receives the function's arguments,
+  as a tuple (the parameter itself for one, `()` for none), for a log line or a
+  cache key. The first parameter is the annotation.
+- **Several decorators nest**, the first written outermost, as in Python.
+- **Where**: any function, method or trait default with a body. The annotation
+  is declared `on fun` and nothing else; its arguments are built on each call, so
+  they need not be constants. State, such as a cache, lives in a module-level
+  `Mutex`, `Atomic` or `Lazy`.
+- `examples/decorators` has a retry, a logger and a decorator pair.
 
 ## Writing tests
 

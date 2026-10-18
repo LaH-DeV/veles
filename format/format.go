@@ -370,7 +370,11 @@ func (p *printer) attrs(attrs []*ast.Attribute) {
 func (p *printer) attrList(attrs []*ast.Attribute, sep func()) {
 	for _, a := range attrs {
 		p.before(a.Pos.Start)
-		p.w("@" + a.Name.Name)
+		if a.Qual.Name != "" {
+			p.w("@" + a.Qual.Name + "." + a.Name.Name)
+		} else {
+			p.w("@" + a.Name.Name)
+		}
 		if a.Args != nil {
 			p.w("(")
 			p.args(a.Args, a.Pos)
@@ -900,7 +904,50 @@ func (p *printer) sortedMembers(ms []memberRef) []memberRef {
 	return ms
 }
 
+// annotationDecl prints `annotation Name(params) on targets for Readers`
+// (D174) on one line: the parameter list as a function's, then the clauses.
+func (p *printer) annotationDecl(d *ast.StructDecl) {
+	p.attrs(d.Attrs)
+	if d.Pub {
+		p.w("public ")
+	} else if d.Internal {
+		p.w("internal ")
+	}
+	p.w("annotation " + d.Name.Name)
+	if len(d.Fields) > 0 {
+		params := make([]ast.Param, len(d.Fields))
+		for i, f := range d.Fields {
+			params[i] = ast.Param{Name: f.Name, Type: f.Type, Default: f.Default, Pos: f.Pos}
+		}
+		p.params(params, d.Name.Pos.End, d, false)
+	}
+	a := d.Annotation
+	p.w(" on ")
+	for i, t := range a.On {
+		if i > 0 {
+			p.w(", ")
+		}
+		p.w(t.Name)
+	}
+	for i, t := range a.For {
+		if i == 0 {
+			p.w(" for ")
+		} else {
+			p.w(", ")
+		}
+		p.typ(t)
+	}
+	if a.Wrapper != nil {
+		p.w(" = ")
+		p.expr(a.Wrapper, 0)
+	}
+}
+
 func (p *printer) structDecl(d *ast.StructDecl) {
+	if d.Annotation != nil {
+		p.annotationDecl(d)
+		return
+	}
 	p.attrs(d.Attrs)
 	if d.Pub {
 		p.w("public ")
@@ -1326,7 +1373,7 @@ func (p *printer) typ(t ast.Type) {
 	case *ast.ConstType:
 		p.expr(t.X, 0)
 	case *ast.SelfType:
-		p.w("Self")
+		p.w("This")
 	case *ast.AssocType:
 		p.typ(t.Base)
 		p.w("." + t.Name.Name)
@@ -1460,6 +1507,9 @@ func (p *printer) stmt(s ast.Stmt) {
 			p.w(" " + s.Label.Name)
 		}
 	case *ast.LoopStmt:
+		if s.Inline {
+			p.w("inline ")
+		}
 		p.w("loop")
 		if s.Label != nil {
 			p.w(" :" + s.Label.Name)

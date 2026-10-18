@@ -1,13 +1,13 @@
 # The Veles programming language
 
 Bootstrap compiler for Veles, written in Go, implementing `veles-spec.md`
-(v0.87, D1–D173): the whole surface syntax, the type system with inferred
+(v0.90, D1–D176): the whole surface syntax, the type system with inferred
 effects, compile-time evaluation (`const fun`), a non-moving collector with
 concurrent marking on Windows, a multi-threaded executor for stackless
 coroutines with declared executors and OS-thread control, packages (path,
 git and a registry, with `veles.sum` and capability policies), C interop
 with the C ABI for structs by value, and a test runner.
-Self-hosting has begun: the lexer and parser are rewritten in Veles
+This-hosting has begun: the lexer and parser are rewritten in Veles
 (`selfhost/`) and agree with the Go front end byte for byte; the order of
 what follows is track S of `veles-plan.md`.
 
@@ -112,6 +112,6 @@ major, workspaces, `veles.sum`, vendoring, capabilities and a `[policy]` (D138, 
 - Exhaustiveness is a variant-set check; nested refutable sub-patterns are
   only tracked for nullables.
 - Trait objects require object-safe traits (no associated types, generic
-  methods, `Self` in signatures, or suspending methods).
+  methods, `This` in signatures, or suspending methods).
 - Inside `unsafe`, `*T` converts implicitly to `*raw T` (needed to bind the
   runtime from Veles).

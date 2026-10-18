@@ -147,7 +147,7 @@ struct Printer {
 
   fun attrs(attrs: List<Attribute>) {
     loop (a in attrs) {
-      this.write("@${a.name.name}")
+      this.write(if (a.qual.name.isEmpty()) "@${a.name.name}" else "@${a.qual.name}.${a.name.name}")
       if (!a.args.isEmpty()) {
         this.write("(")
         this.args(a.args)
@@ -343,7 +343,7 @@ struct Printer {
 
   fun structDecl(d: StructDecl) {
     this.attrs(d.attrs)
-    this.open(if (d.isError) "error " else if (d.union) "union " else "struct ")
+    this.open(if (d.isError) "error " else if (d.union) "union " else if (d.annotation != null) "annotation " else "struct ")
     if (d.pub) this.write("public ")
     if (d.isExtern) this.write("extern ")
     this.write(d.name.name)
@@ -351,6 +351,18 @@ struct Printer {
     if (val variant = d.variant) {
       this.write(" : ")
       this.typ(*variant)
+    }
+    if (val info = d.annotation) {
+      this.write(" on")
+      loop (t in info.targets) this.write(" " + t.name)
+      loop ((i, t) in info.readers.enumerate()) {
+        this.write(if (i == 0) " for " else ", ")
+        this.typ(t)
+      }
+      if (val wrapper = info.wrapper) {
+        this.write(" = ")
+        this.expr(*wrapper)
+      }
     }
     loop (field in d.fields) {
       this.nl()
@@ -521,7 +533,7 @@ struct Printer {
         }
         this.effects(t.effects)
       }
-      is SelfType       => this.write("Self")
+      is SelfType       => this.write("This")
       is AssocType      => {
         this.typ(*t.base)
         this.write("." + t.name.name)
@@ -622,7 +634,7 @@ struct Printer {
         this.write(")")
       }
       is LoopStmt         => {
-        this.open("loop")
+        this.open(if (s.isInline) "inline-loop" else "loop")
         if (val label = s.label) this.write(" @${label.name}")
         val bound = s.bound
         val cond = s.cond

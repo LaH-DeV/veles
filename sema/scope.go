@@ -17,6 +17,7 @@ const (
 	SymLocal
 	SymModule
 	SymVariantCtor // prelude Some / None / Ok / Err
+	SymFieldHandle // the name of an `inline loop` or `T.build` lambda: one field, known while compiling (D174)
 )
 
 type Symbol struct {
@@ -41,6 +42,7 @@ type Symbol struct {
 	Global    *Global       // SymGlobal
 	Var       *Var          // SymLocal
 	Mod       *Module       // SymModule
+	Handle    *fieldHandle  // SymFieldHandle
 }
 
 // Scope is a lexical symbol table.

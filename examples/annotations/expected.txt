@@ -1,0 +1,8 @@
+signup rules:
+  name: string (at most 8 bytes) — What the account is called.
+  age: i64 (at least 18) — Must be an adult.
+[]
+[name must be at most 8 bytes, age must be at least 18]
+[quantity must be at least 1, currency must be at most 3 bytes]
+[quantity: i64 (at least 1), currency: string (at most 3 bytes)]
+exit=0

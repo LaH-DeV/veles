@@ -1051,6 +1051,11 @@ func (ev *constEval) builtin(e *Builtin) ConstVal {
 		case *CSet:
 			return &CBool{constIndex(m.Elems, k) >= 0}
 		}
+	case "reflect.attr": // D174: the annotation on the field a FieldInfo describes
+		return ev.reflectAttr(ev.expr(e.Args[0]), e.Type().(*types.Nullable))
+	case "reflect.has":
+		_, none := ev.reflectAttr(ev.expr(e.Args[0]), e.Args[1].Type().(*types.Nullable)).(*CNull)
+		return &CBool{!none}
 	case "set.new":
 		return &CSet{T: e.Type().(*types.Set)}
 	case "set.add":

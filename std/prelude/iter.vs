@@ -7,12 +7,12 @@ public trait Iterator {
   type Item
   fun next(): Item?
 
-  fun map<U>(f: fun(Item): U): MapIter<Self, U> => MapIter(inner: this, f)
-  fun filter(f: fun(Item): bool): FilterIter<Self> => FilterIter(inner: this, f)
-  fun take(n: i64): TakeIter<Self> => TakeIter(inner: this, remaining: n)
-  fun skip(n: i64): SkipIter<Self> => SkipIter(inner: this, remaining: n)
-  fun enumerate(): EnumerateIter<Self> => EnumerateIter(inner: this, index: 0)
-  fun zip<J: Iterator>(other: J): ZipIter<Self, J> => ZipIter(a: this, b: other)
+  fun map<U>(f: fun(Item): U): MapIter<This, U> => MapIter(inner: this, f)
+  fun filter(f: fun(Item): bool): FilterIter<This> => FilterIter(inner: this, f)
+  fun take(n: i64): TakeIter<This> => TakeIter(inner: this, remaining: n)
+  fun skip(n: i64): SkipIter<This> => SkipIter(inner: this, remaining: n)
+  fun enumerate(): EnumerateIter<This> => EnumerateIter(inner: this, index: 0)
+  fun zip<J: Iterator>(other: J): ZipIter<This, J> => ZipIter(a: this, b: other)
 
   /// Calls `f` on the elements with up to `workers` calls under way, and
   /// gives the results in the elements' order as they are asked for (D156):
@@ -28,7 +28,7 @@ public trait Iterator {
   ///   save(page)
   /// }
   /// ```
-  fun mapConcurrent<R, E>(f: sendable fun(Item): R suspends throws E, workers: i64 = 4): ConcurrentMap<Self, R, E> {
+  fun mapConcurrent<R, E>(f: sendable fun(Item): R suspends throws E, workers: i64 = 4): ConcurrentMap<This, R, E> {
     if (workers < 1) panic("mapConcurrent: workers must be at least 1, got $workers")
     val jobs = Channel<Item>(capacity: workers)
     val results = Channel<R>(capacity: workers)

@@ -134,7 +134,7 @@ const KEYWORDS: Map<string, Kind> = [
   "gather": Kind.KwGather, "race": Kind.KwRace, "with": Kind.KwWith, "unsafe": Kind.KwUnsafe,
   "extern": Kind.KwExtern, "mut": Kind.KwMut, "override": Kind.KwOverride, "static": Kind.KwStatic,
   "true": Kind.KwTrue, "false": Kind.KwFalse, "null": Kind.KwNull, "this": Kind.KwThis,
-  "Self": Kind.KwSelfType, "raw": Kind.KwRaw, "type": Kind.KwType, "enum": Kind.KwEnum, "for": Kind.KwFor,
+  "This": Kind.KwSelfType, "raw": Kind.KwRaw, "type": Kind.KwType, "enum": Kind.KwEnum, "for": Kind.KwFor,
   "do": Kind.KwDo, "catch": Kind.KwCatch,
   "match": Kind.KwReserved, "defer": Kind.KwReserved, "go": Kind.KwReserved, "yield": Kind.KwReserved,
   "where": Kind.KwReserved, "super": Kind.KwReserved, "interface": Kind.KwReserved,

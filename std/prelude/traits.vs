@@ -18,14 +18,14 @@ public enum Ordering {
 /// `compareTo` returns `Ordering.Less` when `this` sorts before `other`,
 /// `Ordering.Equal` when they are equal, and `Ordering.Greater` otherwise.
 public trait Comparable {
-  fun compareTo(other: Self): Ordering
+  fun compareTo(other: This): Ordering
 }
 
 /// Custom equality for `==` and `!=`. A type that implements Equatable and
 /// is used as a map key or set element must implement Hashable too, so that
 /// equal values hash alike.
 public trait Equatable {
-  fun equals(other: Self): bool
+  fun equals(other: This): bool
 }
 
 /// Custom hashing for map keys and set elements. Equal values (by `==`)
@@ -109,7 +109,7 @@ implement Comparable for string {
 /// `T.parse(s)` in generic code. `null` when the text is not a value of
 /// the type.
 public trait Parsable {
-  static fun parse(s: string): Self?
+  static fun parse(s: string): This?
 }
 
 implement Parsable for i64 {

@@ -78,9 +78,9 @@ func (p *Parser) parseType() ast.Type {
 		nt.Pos = p.spanFrom(start)
 		t = nt
 	case lexer.KwSelfTy:
-		p.next()
+		p.oldSelfTypeSpelling(p.next())
 		t = &ast.SelfType{Pos: start}
-		// `Self.Item`: an associated type of the implementing type
+		// `This.Item`: an associated type of the implementing type
 		for p.at(lexer.Dot) && p.peek(1).Kind == lexer.Ident {
 			p.next()
 			name, _ := p.expectIdent()
@@ -234,7 +234,7 @@ func (p *Parser) parseErrorType() ast.Type {
 }
 
 // dblColon consumes a `::` and reports it: associated types are written
-// with a dot (`Self.Item`, `I.Item`, v0.24). The fix rewrites it.
+// with a dot (`This.Item`, `I.Item`, v0.24). The fix rewrites it.
 func (p *Parser) dblColon() {
 	tok := p.cur()
 	p.next()
@@ -245,7 +245,7 @@ func (p *Parser) dblColon() {
 	p.diags.Items = append(p.diags.Items, source.Diagnostic{
 		Severity: source.Error,
 		Span:     tok.Span,
-		Message:  "'::' is not Veles; an associated type is written with a dot: 'Self.Item', 'I.Item'",
+		Message:  "'::' is not Veles; an associated type is written with a dot: 'This.Item', 'I.Item'",
 		Fix:      &source.Fix{Title: "Replace '::' with '.'", Edits: []source.TextEdit{{Span: tok.Span, NewText: "."}}},
 	})
 }

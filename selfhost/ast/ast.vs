@@ -74,12 +74,12 @@ struct ConstType : Type {
   var pos: Span = Span.none()
 }
 
-/// `Self` in a trait or an implement.
+/// `This` in a trait or an implement.
 struct SelfType : Type {
   var pos: Span = Span.none()
 }
 
-/// An associated type: `Self.Item`, `I.Item`.
+/// An associated type: `This.Item`, `I.Item`.
 struct AssocType : Type {
   var base: *Type
   var name: Ident = Ident()
@@ -108,9 +108,22 @@ sealed trait Decl
 
 /// `@name` or `@name(args)` on the line before a declaration.
 struct Attribute {
+  var qual: Ident = Ident()  // `@validate.Min(1)`: the module it is written through (D174); empty when bare
   var name: Ident = Ident()
   var args: List<Arg> = []
   var pos:  Span = Span.none()
+}
+
+/// What only `annotation Name(params) on targets for Readers` has (D174); the
+/// parameters are the struct's fields.
+struct AnnotationInfo {
+  var targets:    List<Ident> = []  // field, struct, fun, trait, enum, enumMember, variant
+  var readers:    List<Type> = []   // the traits whose reflection reads it
+  var onPos:      Span = Span.none()
+  var readersPos: Span = Span.none()  // the word `for`; none without a reader clause
+  var wrapper:    (*Expr)? = null     // `= retryCall`: the function that wraps what it stands on (D176)
+  var wrapperPos: Span = Span.none()  // the `=`
+  var keywordEnd: bool = false        // the last target is a keyword, after which no newline is inserted
 }
 
 /// `use a, b.c as d` (M6), `public use` (D89).
@@ -212,6 +225,7 @@ struct StructDecl : Decl {
   var union:      bool = false
   var isError:    bool = false
   var errorImpl:  (*ImplDecl)? = null
+  var annotation: AnnotationInfo? = null  // `annotation Name(params) on …` (D174): the parameters are `fields`
   var name:       Ident = Ident()
   var typeParams: List<TypeParam> = []
   var variant:    (*Type)? = null
@@ -476,12 +490,13 @@ struct ContinueStmt : Stmt {
 
 /// `loop { }`, `loop (cond) { }`, `loop (x in c) { }`.
 struct LoopStmt : Stmt {
-  var label: Ident? = null
-  var cond:  (*Expr)? = null
-  var bound: Binding? = null  // `loop (x in …)`
-  var iter:  (*Expr)? = null
-  var body:  Block = Block()
-  var pos:   Span = Span.none()
+  var isInline: bool = false  // `inline loop (f in T.fields)`: unrolled while compiling (D174)
+  var label:    Ident? = null
+  var cond:     (*Expr)? = null
+  var bound:    Binding? = null  // `loop (x in …)`
+  var iter:     (*Expr)? = null
+  var body:     Block = Block()
+  var pos:      Span = Span.none()
 }
 
 /// `name = e`, or `e` alone (D109): an empty name holds and closes the value

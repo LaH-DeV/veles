@@ -2055,6 +2055,13 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		val := g.newTmp()
 		g.emit("%s = load i64, ptr %s", val, out)
 		return g.makeNullableT(e.Type().(*types.Nullable), ok, val)
+	case "reflect.has":
+		// annotations exist only while compiling (D174): the checker refuses
+		// every call of this function from code that runs, so this body is
+		// emitted but never reached
+		return "false"
+	case "reflect.attr":
+		return "zeroinitializer"
 	}
 	panic("codegen: unknown builtin " + e.Op)
 }

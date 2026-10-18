@@ -262,7 +262,7 @@ total 7.0
 
 A `Circle` converts to a `Shape` wherever a `Shape` is expected. Not
 every trait can be used this way: one with generic methods, associated
-types, static functions, or `Self` in a signature has no single method
+types, static functions, or `This` in a signature has no single method
 table to build, and the compiler says so.
 
 ### Objects of a trait that requires another
@@ -531,7 +531,7 @@ A field with neither a default nor a `Default` type is an error that names
 it. Nothing is `Default` unless it says so: a sealed trait has no one
 variant to start from, a `Secret` is never made from nothing, and a value
 holding a task starts that task where it is built, so those write
-`static fun default(): Self` by hand if they want one.
+`static fun default(): This` by hand if they want one.
 
 ## The operator traits
 
@@ -542,8 +542,8 @@ type replace that behaviour:
 
 | Trait | Method | Replaces |
 |---|---|---|
-| `Comparable` | `compareTo(other: Self): Ordering` | `<`, `<=`, `>`, `>=`, `sorted()`, `min()`, `max()` |
-| `Equatable` | `equals(other: Self): bool` | `==`, `!=`, `contains`, `indexOf` |
+| `Comparable` | `compareTo(other: This): Ordering` | `<`, `<=`, `>`, `>=`, `sorted()`, `min()`, `max()` |
+| `Equatable` | `equals(other: This): bool` | `==`, `!=`, `contains`, `indexOf` |
 | `Hashable` | `hash(): i64` | map keys and set elements |
 | `Display` | `toString(): string` | interpolation, `"$x"` |
 

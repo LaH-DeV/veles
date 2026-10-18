@@ -50,7 +50,11 @@ func (p *printer) child(f func())            { p.nl(); f() }
 
 func (p *printer) attrs(attrs []*Attribute) {
 	for _, a := range attrs {
-		p.f("@%s", a.Name.Name)
+		if a.Qual.Name != "" {
+			p.f("@%s.%s", a.Qual.Name, a.Name.Name)
+		} else {
+			p.f("@%s", a.Name.Name)
+		}
 		if len(a.Args) > 0 {
 			p.w("(")
 			p.args(a.Args)
@@ -194,6 +198,8 @@ func (p *printer) decl(d Decl) {
 			p.open("error ")
 		case d.Union:
 			p.open("union ")
+		case d.Annotation != nil:
+			p.open("annotation ")
 		default:
 			p.open("struct ")
 		}
@@ -208,6 +214,24 @@ func (p *printer) decl(d Decl) {
 		if d.Variant != nil {
 			p.w(" : ")
 			p.typ(d.Variant)
+		}
+		if a := d.Annotation; a != nil {
+			p.w(" on")
+			for _, t := range a.On {
+				p.w(" " + t.Name)
+			}
+			for i, t := range a.For {
+				if i == 0 {
+					p.w(" for ")
+				} else {
+					p.w(", ")
+				}
+				p.typ(t)
+			}
+			if a.Wrapper != nil {
+				p.w(" = ")
+				p.expr(a.Wrapper)
+			}
 		}
 		for _, fld := range d.Fields {
 			p.child(func() {
@@ -503,7 +527,7 @@ func (p *printer) typ(t Type) {
 		}
 		p.effects(t.Effects)
 	case *SelfType:
-		p.w("Self")
+		p.w("This")
 	case *AssocType:
 		p.typ(t.Base)
 		p.w("." + t.Name.Name)
@@ -613,7 +637,11 @@ func (p *printer) stmt(s Stmt) {
 		}
 		p.w(")")
 	case *LoopStmt:
-		p.open("loop")
+		if s.Inline {
+			p.open("inline-loop")
+		} else {
+			p.open("loop")
+		}
 		if s.Label != nil {
 			p.w(" @" + s.Label.Name)
 		}
@@ -707,6 +735,8 @@ func (p *printer) expr(e Expr) {
 		p.typ(e.Type)
 	case *PreludeName:
 		p.w("(prelude " + e.Name + ")")
+	case *SymbolRef:
+		p.w("(symbol " + e.Name + ")")
 	case *FieldDefaultExpr:
 		p.w(fmt.Sprintf("(default %v.%d)", e.Struct, e.Index))
 	case *NameExpr:

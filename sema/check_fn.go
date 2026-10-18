@@ -79,6 +79,8 @@ type fnCtx struct {
 	isGlobal    bool           // checking a global initializer
 	staticOwner *types.Struct  // the struct whose `static val` this global initializer is, if any
 	looseArgs   int            // inside checkArgsLoosely: the call already failed, its lambdas have no expected type
+	inlineBase  []int          // len(loops) at the start of each inline loop body being checked: a jump to a loop at or below it would leave the unrolled body (D174)
+	reflectSelf *types.Struct  // while `f.get(x)` is checked in a trait default body: the implementing type, whose fields the body may read (D174)
 
 	// lambda support
 	parent      *fnCtx
@@ -413,7 +415,7 @@ func (f *fnCtx) initMissing() []string {
 // trait default method template, kept on the trait itself.
 func selfParamOf(t *types.Trait) *types.TypeParam {
 	if t.SelfParam == nil {
-		t.SelfParam = &types.TypeParam{Name: "Self", Owner: t.Name}
+		t.SelfParam = &types.TypeParam{Name: "This", Owner: t.Name}
 	}
 	return t.SelfParam
 }
@@ -603,6 +605,9 @@ func (f *fnCtx) checkStmt(s ast.Stmt) (stmts []Stmt, term bool) {
 	case *ast.ThrowStmt:
 		return f.checkThrow(s), true
 	case *ast.BreakStmt:
+		if f.inlineJump(s.Pos, "break") {
+			return nil, true
+		}
 		lp := f.findLoop(s.Label, s.Pos, "break")
 		if lp == nil {
 			return nil, true
@@ -611,6 +616,9 @@ func (f *fnCtx) checkStmt(s ast.Stmt) (stmts []Stmt, term bool) {
 		f.leaveAwaited(s.Pos, f.loopIndex(lp))
 		return []Stmt{&Break{Loop: lp}}, true
 	case *ast.ContinueStmt:
+		if f.inlineJump(s.Pos, "continue") {
+			return nil, true
+		}
 		lp := f.findLoop(s.Label, s.Pos, "continue")
 		if lp == nil {
 			return nil, true
@@ -1176,6 +1184,12 @@ func (f *fnCtx) lookupField(st *types.Struct, name string, span source.Span) *ty
 	f.c.resolveStruct(templateOf(st))
 	for _, fld := range st.Fields {
 		if fld.Name == name {
+			if f.reflectSelf != nil && templateOf(f.reflectSelf) == templateOf(st) {
+				// `f.get(this)` in the trait default body of a type that implements
+				// the trait: the type has opted in, so its fields are readable (D174)
+				f.c.refField(span, st, fld)
+				return fld
+			}
 			if fld.Private && !f.insideType(st) {
 				f.errorf(span, "field '%s' is private to '%s': only its own methods, impl and extend blocks may use it", name, st.Name)
 			} else if !fieldVisible(fld.Pub, fld.Internal, st.Module, f.module) {
@@ -1228,6 +1242,9 @@ func (f *fnCtx) globalVar(g *Global) *Var {
 // loops (D42 desugaring for ranges and lists)
 
 func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
+	if s.Inline {
+		return f.inlineLoop(s) // D174
+	}
 	f.c.nextLoop++
 	lp := &Loop{ID: f.c.nextLoop}
 	label := ""

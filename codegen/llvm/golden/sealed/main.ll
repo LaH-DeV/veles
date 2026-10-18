@@ -187,7 +187,7 @@ entry:
   %t32 = extractvalue %str { ptr @.str.5, i64 18 }, 0
   %t33 = extractvalue %str { ptr @.str.5, i64 18 }, 1
   call void @veles_call_push(ptr %t32)
-  %t34 = call i64 @v_main.Expr.eval_Self_main.Expr_(ptr %a31)
+  %t34 = call i64 @v_main.Expr.eval_This_main.Expr_(ptr %a31)
   call void @veles_call_pop()
   %t36 = call i64 @veles_i64_format(ptr %a35, i64 %t34)
   %t37 = insertvalue %str undef, ptr %a35, 0
@@ -378,7 +378,7 @@ if.end.19:
   ret void
 }
 
-define i64 @v_main.Expr.eval_Self_main.Expr_(ptr %p0) {
+define i64 @v_main.Expr.eval_This_main.Expr_(ptr %p0) {
 entry:
   %a1 = alloca ptr
   %a2 = alloca i64
@@ -427,13 +427,13 @@ when.body.7:
   %t26 = extractvalue %str { ptr @.str.24, i64 17 }, 0
   %t27 = extractvalue %str { ptr @.str.24, i64 17 }, 1
   call void @veles_call_push(ptr %t26)
-  %t28 = call i64 @v_main.Expr.eval_Self_main.Expr_(ptr %t25)
+  %t28 = call i64 @v_main.Expr.eval_This_main.Expr_(ptr %t25)
   call void @veles_call_pop()
   %t29 = load ptr, ptr %a24
   %t30 = extractvalue %str { ptr @.str.25, i64 17 }, 0
   %t31 = extractvalue %str { ptr @.str.25, i64 17 }, 1
   call void @veles_call_push(ptr %t30)
-  %t32 = call i64 @v_main.Expr.eval_Self_main.Expr_(ptr %t29)
+  %t32 = call i64 @v_main.Expr.eval_This_main.Expr_(ptr %t29)
   call void @veles_call_pop()
   %t34 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %t28, i64 %t32)
   %t35 = extractvalue { i64, i1 } %t34, 0
@@ -465,7 +465,7 @@ when.body.12:
   %t49 = extractvalue %str { ptr @.str.27, i64 17 }, 0
   %t50 = extractvalue %str { ptr @.str.27, i64 17 }, 1
   call void @veles_call_push(ptr %t49)
-  %t51 = call i64 @v_main.Expr.eval_Self_main.Expr_(ptr %t48)
+  %t51 = call i64 @v_main.Expr.eval_This_main.Expr_(ptr %t48)
   call void @veles_call_pop()
   %t53 = call { i64, i1 } @llvm.ssub.with.overflow.i64(i64 0, i64 %t51)
   %t54 = extractvalue { i64, i1 } %t53, 0

@@ -61,6 +61,8 @@ func (f *fnCtx) staticCond(cond ast.Expr) (value, known bool) {
 	switch c := cond.(type) {
 	case *ast.ImplementsExpr:
 		return f.implementsAnswer(c, false)
+	case *ast.CallExpr:
+		return f.handleHas(c) // `f.has<A>()` of an inline loop's field (D174)
 	case *ast.UnaryExpr:
 		if c.Op == lexer.Bang {
 			v, k := f.staticCond(c.X)

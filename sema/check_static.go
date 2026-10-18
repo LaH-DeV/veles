@@ -17,6 +17,11 @@ import (
 // a declared or built-in type, or a type parameter (concrete inside a
 // stencil). nil when the name is not a type.
 func (f *fnCtx) typeNamed(n *ast.NameExpr, member string) types.Type {
+	if n.Name == "This" && f.lookup("This") == nil {
+		// `This.fields`, `This.default()`: the implementing type (the parser
+		// makes a name of the keyword before a dot)
+		return f.resolve(&ast.SelfType{Pos: n.Pos})
+	}
 	if sym := f.lookup(n.Name); sym != nil {
 		if sym.Kind != SymType {
 			return nil
@@ -324,6 +329,9 @@ func (f *fnCtx) moduleTypeNamed(x ast.Expr) types.Type {
 		return nil
 	}
 	sym := f.lookup(n.Name)
+	if sym != nil && sym.Kind == SymFieldHandle && m.Name.Name == "Type" {
+		return sym.Handle.fld.Type // `f.Type.default()`: the field's type as a receiver (D174)
+	}
 	if sym == nil || sym.Kind != SymModule {
 		return nil
 	}

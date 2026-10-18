@@ -1,5 +1,5 @@
 // D23 and the declaration rules: one name per member, typed parameters,
-// generic names that do not shadow, `Self` only where it means something.
+// generic names that do not shadow, `This` only where it means something.
 use io
 
 struct Point {
@@ -20,7 +20,7 @@ struct Box<T> {
 
 fun twice(a: i64, a: i64): i64 => a // error: duplicate parameter 'a'
 
-fun selfless(): Self => 0 // error: 'Self' is only meaningful inside a struct, trait or impl
+fun selfless(): This => 0 // error: 'This' is only meaningful inside a struct, trait or impl
 
 fun main() {
   io.println("${twice(1, 2)} ${Box(item: 1).item} ${Point.origin}")

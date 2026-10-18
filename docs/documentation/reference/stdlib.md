@@ -16,15 +16,15 @@ public trait Iterator {
   fun next(): Item?                       // null at the end
 
   // lazy adapters: build a new iterator, do no work yet
-  fun map<U>(f: fun(Item): U): MapIter<Self, U>
-  fun filter(f: fun(Item): bool): FilterIter<Self>
-  fun take(n: i64): TakeIter<Self>
-  fun skip(n: i64): SkipIter<Self>
-  fun enumerate(): EnumerateIter<Self>        // yields (i64, Item)
-  fun zip<J: Iterator>(other: J): ZipIter<Self, J>   // yields (Item, J.Item)
+  fun map<U>(f: fun(Item): U): MapIter<This, U>
+  fun filter(f: fun(Item): bool): FilterIter<This>
+  fun take(n: i64): TakeIter<This>
+  fun skip(n: i64): SkipIter<This>
+  fun enumerate(): EnumerateIter<This>        // yields (i64, Item)
+  fun zip<J: Iterator>(other: J): ZipIter<This, J>   // yields (Item, J.Item)
   // up to `workers` calls of f under way, results in order as asked for;
   // holds tasks: a loop over it (or a `with`) owns them (D156)
-  fun mapConcurrent<R, E>(f: sendable fun(Item): R suspends throws E, workers: i64 = 4): ConcurrentMap<Self, R, E>
+  fun mapConcurrent<R, E>(f: sendable fun(Item): R suspends throws E, workers: i64 = 4): ConcurrentMap<This, R, E>
 
   // terminal operations: pull until done
   fun toList(): List<Item>
@@ -167,6 +167,36 @@ collections, structs of such fields; never a mutable collection, a pointer
 or a closure. It is what may cross a task boundary, and what a function may
 duplicate: `MutableList<T>.repeat` and `fill` require it.
 
+### Reflection (D174)
+
+```veles
+// fragment
+public struct FieldInfo {
+  public name: string
+  public doc: string = ""            // the doc comment above the field
+  public typeName: string = ""       // `i64`, `List<string>`
+  public hasDefault: bool = false
+  public index: i64 = 0              // position in declaration order
+  public owner: i64 = -1             // the compiler's number for the struct, for attr and has
+}
+
+T.fields: List<FieldInfo>            // a constant: T is a struct, or This in a trait's default body
+T.annotated<A>(): List<(FieldInfo, A)>   // a constant: the fields that carry A, with its value
+inline loop ((f, a) in T.annotated<A>()) { … }   // unrolled for those fields only; a is the annotation
+f.has<A>(): bool                     // A is an annotation; in a const fun or an inline loop
+f.attr<A>(): A?                      // the annotation's arguments as a value of A, or null
+inline loop (f in T.fields) { … }    // unrolled once per field; f is a handle with:
+//   f.name, f.doc, f.typeName, f.hasDefault, f.index   constants
+//   f.Type                                             the field's type, in a type position or as a receiver
+//   f.get(x)                                           x.name, read with the field's own type
+//   f.has<A>(), f.attr<A>()                            constants; `if (f.has<A>())` and `if (val a = f.attr<A>())` keep one branch
+T.build(f => value)                  // a T made field by field; the body is checked once per field
+```
+
+Annotations and the reflection that reads them are
+[chapter 14](../14-attributes-and-testing.md#annotations-of-your-own); the
+decision is D174.
+
 ### Panics (D52)
 
 ```veles
@@ -251,8 +281,8 @@ on Windows), for logs; `message()` is `"detail: path"`.
 ```veles
 // fragment
 public enum Ordering { Less = -1, Equal, Greater }             // what compareTo returns
-public trait Comparable { fun compareTo(other: Self): Ordering } // <, <=, >, >=, sorted, min, max
-public trait Equatable  { fun equals(other: Self): bool }     // ==, !=, contains, indexOf
+public trait Comparable { fun compareTo(other: This): Ordering } // <, <=, >, >=, sorted, min, max
+public trait Equatable  { fun equals(other: This): bool }     // ==, !=, contains, indexOf
 public trait Hashable   { fun hash(): i64 }                   // map keys, set elements
 public trait Display    { fun toString(): string }            // interpolation "$x"
 ```
@@ -271,7 +301,7 @@ entries in any order) whenever their elements do. A type with
 
 ```veles
 // fragment
-public trait Parsable { static fun parse(s: string): Self? }   // i64.parse("42"), T.parse(s)
+public trait Parsable { static fun parse(s: string): This? }   // i64.parse("42"), T.parse(s)
 ```
 
 Construction from text, implemented for `i64`, `f64`, `bool` and `string`;
@@ -282,7 +312,7 @@ receiver and is called on the type (`Point.origin()`, `Stack<i64>.of(1)`).
 
 ```veles
 // fragment
-public trait Default { static fun default(): Self }   // i64.default(), T.default()
+public trait Default { static fun default(): This }   // i64.default(), T.default()
 ```
 
 A value to start from, for generic code that has to make one: `0` for every
@@ -292,7 +322,7 @@ number, `false`, `""`, empty `List`/`Map`/`Set` and their mutable forms,
 each field takes its declared default, or else its type's `default()`; a
 field with neither is an error naming it, and a generic struct's type
 parameters get the `Default` bound they need. A sealed trait, a `Secret` and
-a value holding a task are not derived (write `static fun default(): Self`
+a value holding a task are not derived (write `static fun default(): This`
 by hand); an enum cannot implement it (D57).
 
 ### Codable (D58)
@@ -300,7 +330,7 @@ by hand); an enum cannot implement it (D57).
 ```veles
 // fragment
 public trait Encodable { fun encode(to: codec.Encoder) throws EncodeError }
-public trait Decodable { static fun decode(from: codec.Decoder): Self throws DecodeError; static fun schema(format: string, keys: codec.KeyStyle): codec.Schema }   // schema: derived beside a derived decode (D125); the default is one opaque value
+public trait Decodable { static fun decode(from: codec.Decoder): This throws DecodeError; static fun schema(format: string, keys: codec.KeyStyle): codec.Schema }   // schema: derived beside a derived decode (D125); the default is one opaque value
 public trait Codable : Encodable + Decodable { }   // `implement Codable` in a struct body derives both; `implement Codable for pkg.T` at top level
 public error EncodeError { message, path }; public error DecodeError { problems: List<codec.Problem> }
 ```

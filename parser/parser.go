@@ -299,6 +299,8 @@ func (p *Parser) parseFile() *ast.File {
 		case p.at(lexer.Semi):
 			p.next()
 		case p.at(lexer.EOF):
+		case endsInKeyword(d):
+			// `annotation Route(…) on fun`: no newline follows a keyword
 		case p.startsDecl():
 			// Missing terminator (typically an unbalanced paren suppressed
 			// newline insertion); report but keep the next declaration.
@@ -310,8 +312,15 @@ func (p *Parser) parseFile() *ast.File {
 	return f
 }
 
+// endsInKeyword: an annotation declaration whose last word is a keyword, after
+// which the lexer inserts no newline (D174).
+func endsInKeyword(d ast.Decl) bool {
+	sd, ok := d.(*ast.StructDecl)
+	return ok && sd.Annotation != nil && sd.Annotation.KeywordEnd
+}
+
 func (p *Parser) startsDecl() bool {
-	return p.atErrorDecl() || p.atExtendDecl() || p.at(lexer.KwFun, lexer.KwStruct, lexer.KwTrait, lexer.KwImpl, lexer.KwSealed,
+	return p.atErrorDecl() || p.atAnnotationDecl() || p.atExtendDecl() || p.at(lexer.KwFun, lexer.KwStruct, lexer.KwTrait, lexer.KwImpl, lexer.KwSealed,
 		lexer.KwPub, lexer.KwPrivate, lexer.KwInternal, lexer.KwUse, lexer.KwExtern, lexer.KwVal, lexer.KwVar, lexer.KwConst, lexer.At)
 }
 
@@ -325,6 +334,11 @@ func (p *Parser) parseAttributes() []*ast.Attribute {
 		p.next()
 		name, _ := p.expectIdent()
 		attr := &ast.Attribute{Name: name}
+		if p.at(lexer.Dot) { // `@validate.Min(1)`: through the module (D174)
+			p.next()
+			attr.Qual = name
+			attr.Name, _ = p.expectIdent()
+		}
 		if p.at(lexer.LParen) {
 			attr.Args = p.parseArgs()
 		}
@@ -471,6 +485,9 @@ func (p *Parser) parseDeclKind(attrs []*ast.Attribute, pub, marked bool, which s
 	case lexer.Ident:
 		if p.atErrorDecl() {
 			return p.parseErrorDecl(attrs, pub, start)
+		}
+		if p.atAnnotationDecl() {
+			return p.parseAnnotationDecl(attrs, pub, start)
 		}
 		if p.atExecutorDecl() {
 			if len(attrs) > 0 {
@@ -1571,6 +1588,84 @@ func (p *Parser) parseExecutorDecl(pub bool, start source.Span) ast.Decl {
 	return d
 }
 
+// atAnnotationDecl: `annotation` is a contextual keyword (D174), a declaration
+// only at declaration position when a name follows and then a parameter
+// list or the `on` clause.
+func (p *Parser) atAnnotationDecl() bool {
+	if !p.at(lexer.Ident) || p.cur().Text != "annotation" || p.peek(1).Kind != lexer.Ident {
+		return false
+	}
+	switch k := p.peek(2); k.Kind {
+	case lexer.LParen:
+		return true
+	case lexer.Ident:
+		return k.Text == "on"
+	}
+	return false
+}
+
+// parseAnnotationDecl parses `annotation Name(params) on targets [for
+// Readers]` (D174). It is a struct whose fields are the parameters, so a use
+// `@Name(args)` is a construction; the targets and readers are kept beside.
+func (p *Parser) parseAnnotationDecl(attrs []*ast.Attribute, pub bool, start source.Span) ast.Decl {
+	p.next() // annotation
+	d := &ast.StructDecl{Attrs: attrs, Pub: pub, Annotation: &ast.AnnotationInfo{}}
+	d.Name, _ = p.expectIdent()
+	if p.at(lexer.LParen) {
+		for _, prm := range p.parseParams() {
+			if prm.Type == nil {
+				p.errorf(prm.Name.Pos, "an annotation parameter needs a type: '%s: T' (D174)", prm.Name.Name)
+			}
+			if prm.Variadic || prm.Lazy {
+				p.errorf(prm.Pos, "an annotation parameter is a plain 'name: T' with an optional default (D174)")
+			}
+			d.Fields = append(d.Fields, &ast.Field{Pub: pub, Name: prm.Name, Type: prm.Type, Default: prm.Default, Pos: prm.Pos})
+		}
+	}
+	info := d.Annotation
+	info.OnPos = p.span()
+	if p.at(lexer.Ident) && p.cur().Text == "on" {
+		p.next()
+		for {
+			// the words of the source: `field`, `variant`, `enumMember`, and
+			// the keywords `fun`, `struct`, `trait`, `enum`
+			switch p.cur().Kind {
+			case lexer.Ident, lexer.KwFun, lexer.KwStruct, lexer.KwTrait, lexer.KwEnum:
+				tok := p.next()
+				info.On = append(info.On, ast.Ident{Name: tok.Text, Pos: tok.Span})
+				info.KeywordEnd = tok.Kind != lexer.Ident
+			default:
+				p.errorf(p.span(), "expected where the annotation may stand — field, struct, fun, trait, enum, enumMember or variant — found %s", p.cur().Describe())
+			}
+			if !p.accept(lexer.Comma) {
+				break
+			}
+		}
+	} else {
+		p.errorf(p.span(), "an annotation says where it may stand: 'annotation %s(…) on field' (D174)", d.Name.Name)
+	}
+	if p.at(lexer.KwFor) {
+		info.ForPos = p.span()
+		info.KeywordEnd = false
+		p.next()
+		for {
+			info.For = append(info.For, p.parseType())
+			if !p.accept(lexer.Comma) {
+				break
+			}
+		}
+	}
+	if p.at(lexer.Assign) {
+		// `= retryCall`: the function that wraps what this stands on (D176)
+		info.WrapperPos = p.span()
+		info.KeywordEnd = false
+		p.next()
+		info.Wrapper = p.parseExpr()
+	}
+	d.Pos = p.spanFrom(start)
+	return d
+}
+
 // `error` is a contextual keyword: it is an ordinary identifier everywhere
 // else (`is Err(error) => ...`), and a declaration only at declaration
 // position when a name follows.
@@ -1742,6 +1837,21 @@ func (p *Parser) oldSelfSpelling(t lexer.Token) {
 		Span:     t.Span,
 		Message:  "the receiver is spelled 'this' (v0.40, D65)",
 		Fix:      &source.Fix{Title: "Replace 'self' with 'this'", Edits: []source.TextEdit{{Span: t.Span, NewText: "this"}}},
+	})
+}
+
+// oldSelfTypeSpelling reports the pre-D175 spelling `Self` of the
+// implementing type, with a fix that writes `This`. It still reads as that
+// type, so the file checks normally apart from these errors.
+func (p *Parser) oldSelfTypeSpelling(t lexer.Token) {
+	if t.Text != "Self" {
+		return
+	}
+	p.diags.Items = append(p.diags.Items, source.Diagnostic{
+		Severity: source.Error,
+		Span:     t.Span,
+		Message:  "the implementing type is spelled 'This' (D175); 'Self' was its old spelling",
+		Fix:      &source.Fix{Title: "Replace 'Self' with 'This'", Edits: []source.TextEdit{{Span: t.Span, NewText: "This"}}},
 	})
 }
 

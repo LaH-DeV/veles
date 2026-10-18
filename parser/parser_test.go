@@ -397,7 +397,7 @@ struct S<T> {
   static fun of(x: T): S<T> => S<T>()
   public static fun z(): i64 => 0
 }
-trait P { static fun parse(s: string): Self? }
+trait P { static fun parse(s: string): This? }
 extend S<i64> { static fun one(): S<i64> => S<i64>.of(1) }
 fun main() {
   val a = S<i64>.of(1)

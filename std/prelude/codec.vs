@@ -271,7 +271,7 @@ public trait Encodable {
 
 /// A value that reads itself from a `Decoder`; the inverse of `Encodable`.
 public trait Decodable {
-  static fun decode(from: Decoder): Self throws DecodeError
+  static fun decode(from: Decoder): This throws DecodeError
 
   /// What the type reads, as a source that is not a document needs to know it
   /// (D125: `config` asks for each environment variable by name): the

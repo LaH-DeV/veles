@@ -197,10 +197,10 @@ var builtinDocs = []BuiltinDoc{
 	{"int", "reverseBits", "(): i64", "The bits in reverse order: the lowest becomes the highest (D104)."},
 
 	{"enum", "toString", "(): string", "The member's name as written in the declaration: `Ordering.Less.toString() == \"Less\"`; interpolation uses it too."},
-	{"enum", "compareTo", "(other: Self): Ordering", "The order of the two values' numbers; `<` and `sorted()` use it."},
-	{"enum", "values", "(): List<Self>", "Every member in declaration order."},
-	{"enum", "fromValue", "(value: i64): Self?", "The member holding `value`, or `null` when none does; the parameter has the enum's base type."},
-	{"enum", "parse", "(s: string): Self?", "The member named `s`, or `null` when none is: the inverse of `toString`."},
+	{"enum", "compareTo", "(other: This): Ordering", "The order of the two values' numbers; `<` and `sorted()` use it."},
+	{"enum", "values", "(): List<This>", "Every member in declaration order."},
+	{"enum", "fromValue", "(value: i64): This?", "The member holding `value`, or `null` when none does; the parameter has the enum's base type."},
+	{"enum", "parse", "(s: string): This?", "The member named `s`, or `null` when none is: the inverse of `toString`."},
 }
 
 // BuiltinStubPath is the path the stub file is known by, next to the
@@ -426,9 +426,9 @@ func (c *Checker) basicShape(t *types.Basic) string {
 // receiverSig writes a catalogue signature for a concrete receiver: the
 // element type where the catalogue says `T` (`List<i64>.sorted(): List<i64>`),
 // the key and value types for a map's `K` and `V`, the type itself for
-// `Self`.
+// `This`.
 func receiverSig(sig string, recv types.Type) string {
-	sub := map[string]string{"Self": recv.String()}
+	sub := map[string]string{"This": recv.String()}
 	switch r := recv.(type) {
 	case *types.List:
 		sub["T"] = r.Elem.String()

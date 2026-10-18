@@ -970,7 +970,7 @@ fun main() { val p = P(x: 1); p.make() }`, "call it on the type: 'P.make(...)'"}
 fun main() { P.m() }`, "call it on a value, not on the type"},
 		{"unknown static", `struct P { x: i64 }
 fun main() { P.nothing() }`, "no static function 'nothing' on type 'P'"},
-		{"impl must say static", `trait F { static fun make(): Self }
+		{"impl must say static", `trait F { static fun make(): This }
 struct P { x: i64 }
 implement F for P { fun make(): P => P(x: 1) }`, "declare it 'static fun'"},
 		{"impl must not say static", `trait F { fun m(): i64 }
@@ -978,7 +978,7 @@ struct P { x: i64 }
 implement F for P { static fun m(): i64 => 1 }`, "cannot be 'static'"},
 		{"sealed trait", `sealed trait S { static fun z(): i64 => 1 }
 struct A : S { }`, "a sealed trait cannot declare a static function"},
-		{"not object safe", `trait F { static fun make(): Self }
+		{"not object safe", `trait F { static fun make(): This }
 struct P { x: i64 }
 implement F for P { static fun make(): P => P(x: 1) }
 fun main() { val f: F = P(x: 1); io.println("$f") }`, "function 'make' is static"},
@@ -1410,7 +1410,7 @@ trait Iter2 { type Item
   fun next(): Item? }
 fun f<I: Iter2>(i: I): I.Item? => i.next()
 struct Ones { implement Iter2 { type Item = i64
-  fun next(): Self.Item? => 1 } }
+  fun next(): This.Item? => 1 } }
 fun main() { io.println("${f(Ones())}") }`)
 }
 

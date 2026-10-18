@@ -250,9 +250,9 @@ entry:
   %t8 = insertvalue { i8, i8, i1 } %t7, i8 %t6, 1
   %t9 = insertvalue { i8, i8, i1 } %t8, i1 true, 2
   store { i8, i8, i1 } %t9, ptr %a10
-  %t11 = call %S.std.prelude.RangeIter_u8_ @v_std.prelude.Iterable.iter_Self_Range_u8_T_u8_(ptr %a10)
+  %t11 = call %S.std.prelude.RangeIter_u8_ @v_std.prelude.Iterable.iter_T_u8_This_Range_u8_(ptr %a10)
   store %S.std.prelude.RangeIter_u8_ %t11, ptr %a12
-  %t13 = call i64 @v_std.prelude.Iterator.count_Self_std.prelude.RangeIter_u8_T_u8_(ptr %a12)
+  %t13 = call i64 @v_std.prelude.Iterator.count_T_u8_This_std.prelude.RangeIter_u8_(ptr %a12)
   %t15 = call i64 @veles_i64_format(ptr %a14, i64 %t13)
   %t16 = insertvalue %str undef, ptr %a14, 0
   %t17 = insertvalue %str %t16, i64 %t15, 1
@@ -304,7 +304,7 @@ entry:
   store { i8, i8, i1 } %t59, ptr %a60
   %t61 = call %S.std.prelude.RangeStepIter_i8_ @v_std.prelude.extend.Range_T.step_T_i8_(ptr %a60, i8 100, %str { ptr @.str.6, i64 13 })
   store %S.std.prelude.RangeStepIter_i8_ %t61, ptr %a62
-  %t63 = call ptr @v_std.prelude.Iterator.toList_Self_std.prelude.RangeStepIter_i8_T_i8_(ptr %a62)
+  %t63 = call ptr @v_std.prelude.Iterator.toList_T_i8_This_std.prelude.RangeStepIter_i8_(ptr %a62)
   %t64 = call %str @show.List_i8_(ptr %t63)
   %t66 = extractvalue %str { ptr @.str.7, i64 24 }, 0
   %t67 = extractvalue %str { ptr @.str.7, i64 24 }, 1
@@ -323,7 +323,7 @@ entry:
   store %S.std.prelude.RangeStepIter_i8_ %t77, ptr %a78
   %t79 = call %S.std.prelude.RangeStepIter_i8_ @v_std.prelude.RangeStepIter.step_T_i8_(ptr %a78, i8 100, %str { ptr @.str.8, i64 13 })
   store %S.std.prelude.RangeStepIter_i8_ %t79, ptr %a80
-  %t81 = call ptr @v_std.prelude.Iterator.toList_Self_std.prelude.RangeStepIter_i8_T_i8_(ptr %a80)
+  %t81 = call ptr @v_std.prelude.Iterator.toList_T_i8_This_std.prelude.RangeStepIter_i8_(ptr %a80)
   %t82 = call %str @show.List_i8_(ptr %t81)
   %t83 = load i8, ptr %a1
   %t84 = load i8, ptr %a2
@@ -335,7 +335,7 @@ entry:
   store %S.std.prelude.RangeStepIter_i8_ %t89, ptr %a90
   %t91 = call %S.std.prelude.RangeStepIter_i8_ @v_std.prelude.RangeStepIter.reversed_T_i8_(ptr %a90)
   store %S.std.prelude.RangeStepIter_i8_ %t91, ptr %a92
-  %t93 = call ptr @v_std.prelude.Iterator.toList_Self_std.prelude.RangeStepIter_i8_T_i8_(ptr %a92)
+  %t93 = call ptr @v_std.prelude.Iterator.toList_T_i8_This_std.prelude.RangeStepIter_i8_(ptr %a92)
   %t94 = call %str @show.List_i8_(ptr %t93)
   %t97 = getelementptr [4 x %str], ptr %a96, i64 0, i64 0
   store %str { ptr @.str.10, i64 21 }, ptr %t97

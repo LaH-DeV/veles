@@ -119,7 +119,7 @@ const (
 	KwFalse
 	KwNull
 	KwSelf   // this (the receiver; spelled `self` before v0.40)
-	KwSelfTy // Self
+	KwSelfTy // This (and the removed spelling Self)
 	KwRaw
 	KwType
 	KwEnum
@@ -175,7 +175,8 @@ var keywords = map[string]TokenKind{
 	"null":      KwNull,
 	"this":      KwSelf,
 	"self":      KwSelf, // the pre-v0.40 spelling; the parser reports it with a fix
-	"Self":      KwSelfTy,
+	"This":      KwSelfTy,
+	"Self":      KwSelfTy, // the pre-D175 spelling; the parser reports it with a fix
 	"raw":       KwRaw,
 	"type":      KwType,
 	"enum":      KwEnum,
@@ -204,7 +205,8 @@ var kindNames = map[TokenKind]string{
 	GtEq: ">=", AndAnd: "&&", OrOr: "||", Bang: "!", Caret: "^", Tilde: "~", Shl: "<<", Shr: ">>",
 	// two spellings: without this, String ranged over the keyword map and
 	// said 'this' or 'self' at random
-	KwSelf: "'this'",
+	KwSelf:   "'this'",
+	KwSelfTy: "'This'", // two spellings again, since D175: This and the removed Self
 }
 
 func (k TokenKind) String() string {

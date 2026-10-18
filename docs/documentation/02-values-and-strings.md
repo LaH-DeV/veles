@@ -146,7 +146,7 @@ fun main() {
 Output:
 ```text
 2 11 160 11111111 -1
-0.667 000042 1235
+0.667 000042 0.667 1235
 ```
 
 A float's bits are one call away, without `unsafe` (D93): `x.toBits()` is

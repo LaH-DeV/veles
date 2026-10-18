@@ -184,6 +184,9 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 			f.errorf(callee.Pos, "'%s' is test code (a 'test fun', or declared in a *.test.vs file); only tests can call it, and a build leaves it out (D78)", callee.Name)
 		}
 		return f.traceHelperCall(sym, f.callSymbol(sym, callee.Name, typeArgs, e, want), e)
+	case *ast.SymbolRef:
+		// a decorator's wrapper (D176): resolved where the annotation is declared
+		return f.callSymbol(callee.Sym.(*Symbol), callee.Name, typeArgs, e, want)
 	case *ast.PreludeName:
 		// synthesized code (D58): the prelude's function, whatever the
 		// module declares under the same name
@@ -201,9 +204,20 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 				return x
 			}
 		}
+		if x, ok := f.buildCall(callee, e, want); ok {
+			return x // `T.build(f => …)` (D174)
+		}
+		if x, ok := f.annotatedCall(e); ok {
+			return x // `T.annotated<A>()`: the fields that carry A (D174)
+		}
+		if x, ok := f.fieldInfoCall(callee, e.TypeArgs, e, want); ok {
+			return x // `f.attr<A>()` on a FieldInfo, in a const fun (D174)
+		}
 		if n, ok := callee.X.(*ast.NameExpr); ok {
 			if sym := f.lookup(n.Name); sym != nil {
 				switch sym.Kind {
+				case SymFieldHandle:
+					return f.handleCall(sym.Handle, callee, e.TypeArgs, e, want)
 				case SymModule:
 					member := sym.Mod.Scope.LookupLocal(callee.Name.Name)
 					if member == nil {

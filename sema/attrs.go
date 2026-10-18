@@ -24,8 +24,11 @@ var knownAttrs = map[string]bool{"test": true, "deprecated": true, "inline": tru
 func (c *Checker) attrsOf(attrs []*ast.Attribute, what string) map[string]*ast.Attribute {
 	out := map[string]*ast.Attribute{}
 	for _, a := range attrs {
+		if a.Name.Name == "" || isUserAnnotation(a) {
+			continue // resolved once the types exist (annotation.go, D174)
+		}
 		if !knownAttrs[a.Name.Name] {
-			c.errorf(a.Pos, "unknown attribute '@%s'; user-defined attributes are deferred until there is a derivation story (D51)", a.Name.Name)
+			c.errorf(a.Pos, "unknown attribute '@%s'; the lowercase names belong to the compiler, and an annotation you declare is named like a type, '@%s' (D174)", a.Name.Name, strings.ToUpper(a.Name.Name[:1])+a.Name.Name[1:])
 			continue
 		}
 		if _, dup := out[a.Name.Name]; dup {

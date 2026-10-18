@@ -308,6 +308,11 @@ extend Parser {
   fun parsePrimary(): ast.Expr {
     val start = this.span()
     val t = this.cur()
+    if (t.kind == Kind.KwSelfType && this.peek(1).kind == Kind.Dot) {
+      // `This.fields`, `This.default()`: the implementing type as a receiver
+      this.next()
+      return ast.NameExpr(name: "This", pos: t.span)
+    }
     when (t.kind) {
       Kind.Int => {
         this.next()

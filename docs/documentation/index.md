@@ -35,7 +35,7 @@ For readers who want to know what the compiler actually does.
 
 12. [Concurrency](12-concurrency.md) — inferred suspension, `async`/`await`, `scope`, `gather`, `race`, `select`, `async { }`, channels, cancellation, `withTimeout`, task-local values.
 13. [Memory, `with`, `unsafe` and C](13-memory-and-ffi.md) — the collector, value vs pointer, cleanup, raw pointers, `extern "C"`.
-14. [Attributes and tests](14-attributes-and-testing.md) — `@deprecated`, `@mustUse`, `@inline`; `test "..." { }`, `expect`, `require`, `check`.
+14. [Attributes, annotations and tests](14-attributes-and-testing.md) — `@deprecated`, `@mustUse`, `@inline`; annotations a library defines and reads at compile time (`annotation`, `T.fields`, `inline loop`); `test "..." { }`, `expect`, `require`, `check`.
 16. [Networking](16-networking.md) — TCP with `net`: one task per connection, `readLine`/`write`, timeouts.
 17. [An HTTP server](17-http.md) — `http`: router, handlers and what their errors mean, static files, keep-alive.
 18. [Codable and JSON](18-codable-and-json.md) — `implement Codable` derives the wire code; `json` reads and writes it, reporting every problem with its path.

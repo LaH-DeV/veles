@@ -97,12 +97,12 @@ type ConstType struct {
 	Pos source.Span
 }
 
-// SelfType is the `Self` keyword in a trait or impl.
+// SelfType is the `This` keyword in a trait or impl (D175).
 type SelfType struct {
 	Pos source.Span
 }
 
-// AssocType is an associated-type projection: `Self::Item`, `I::Item`.
+// AssocType is an associated-type projection: `This.Item`, `I.Item`.
 type AssocType struct {
 	Base Type
 	Name Ident
@@ -157,9 +157,29 @@ type Decl interface {
 
 // Attribute is `@name` or `@name(args)` on the line before a declaration.
 type Attribute struct {
+	Qual Ident // `@validate.Min(1)`: the module the annotation is written through (D174); empty when bare
 	Name Ident
 	Args []Arg
 	Pos  source.Span
+}
+
+// AnnotationInfo marks a StructDecl as `annotation Name(params) on targets
+// for Readers` (D174). The parameters are the struct's fields, so
+// construction, defaults, constants and visibility are a struct's; this
+// holds what only an annotation has.
+type AnnotationInfo struct {
+	On     []Ident // where it may stand: field, struct, fun, trait, enum, enumMember, variant
+	For    []Type  // the traits whose reflection reads it
+	OnPos  source.Span
+	ForPos source.Span // the word `for`; invalid when there is no reader clause
+	// Wrapper: `= retryCall` (D176): an ordinary generic function that wraps
+	// the functions this annotation stands on. Nil for a data annotation.
+	Wrapper    Expr
+	WrapperPos source.Span // the `=`
+	// KeywordEnd: the last target is a keyword (`fun`, `struct`, `trait`,
+	// `enum`), after which the lexer inserts no newline; the declaration
+	// ends there without a terminator.
+	KeywordEnd bool
 }
 
 // UseDecl is `use a, b.c as d`: one or more module imports in one
@@ -265,11 +285,12 @@ type StructDecl struct {
 	Attrs      []*Attribute
 	Doc        string
 	Pub        bool
-	Internal   bool      // `internal`: the module level written out (M5); the default
-	Extern     bool      // `extern struct` — C layout
-	Union      bool      // `extern union` — every field at offset 0 (D120)
-	Error      bool      // `error Name { }` — declared with an impl of Error (D4)
-	ErrorImpl  *ImplDecl // the `impl Error for Name` an error declaration desugars to
+	Internal   bool            // `internal`: the module level written out (M5); the default
+	Extern     bool            // `extern struct` — C layout
+	Union      bool            // `extern union` — every field at offset 0 (D120)
+	Error      bool            // `error Name { }` — declared with an impl of Error (D4)
+	ErrorImpl  *ImplDecl       // the `impl Error for Name` an error declaration desugars to
+	Annotation *AnnotationInfo // `annotation Name(params) on …` (D174): the parameters are Fields
 	Name       Ident
 	TypeParams []TypeParam
 	Variant    Type // the sealed trait this struct is a variant of, or nil
@@ -610,12 +631,15 @@ type ContinueStmt struct {
 
 // LoopStmt covers `loop { }`, `loop (cond) { }` and `loop (x in c) { }`.
 type LoopStmt struct {
-	Label *Ident
-	Cond  Expr     // `loop (cond)`
-	Var   *Binding // `loop (x in iter)`
-	Iter  Expr
-	Body  *Block
-	Pos   source.Span
+	// Inline: `inline loop (f in T.fields) { … }` (D174) is unrolled while
+	// compiling, once per field, with `f` standing for that field.
+	Inline bool
+	Label  *Ident
+	Cond   Expr     // `loop (cond)`
+	Var    *Binding // `loop (x in iter)`
+	Iter   Expr
+	Body   *Block
+	Pos    source.Span
 }
 
 // WithExpr is `with (r = open()) { ... }` (D43): the bindings are closed
@@ -1055,6 +1079,8 @@ func (e *BoolLit) Span() source.Span          { return e.Pos }
 func (e *NullLit) Span() source.Span          { return e.Pos }
 func (e *SelfExpr) Span() source.Span         { return e.Pos }
 func (e *TypeExpr) Span() source.Span         { return e.Pos }
+func (e *BoundExpr) Span() source.Span        { return e.Pos }
+func (e *SymbolRef) Span() source.Span        { return e.Pos }
 func (e *FieldDefaultExpr) Span() source.Span { return e.Pos }
 func (e *CheckedExpr) Span() source.Span      { return e.Pos }
 func (e *PreludeName) Span() source.Span      { return e.Pos }
@@ -1099,8 +1125,10 @@ func (*BoolLit) exprNode()          {}
 func (*NullLit) exprNode()          {}
 func (*SelfExpr) exprNode()         {}
 func (*TypeExpr) exprNode()         {}
+func (*BoundExpr) exprNode()        {}
+func (*SymbolRef) exprNode()        {}
 func (*FieldDefaultExpr) exprNode() {}
-func (*CheckedExpr) exprNode()       {}
+func (*CheckedExpr) exprNode()      {}
 func (*PreludeName) exprNode()      {}
 func (*NameExpr) exprNode()         {}
 func (*MemberExpr) exprNode()       {}
@@ -1223,3 +1251,23 @@ type ControlExpr struct {
 
 func (e *ControlExpr) Span() source.Span { return e.Stmt.Span() }
 func (*ControlExpr) exprNode()           {}
+
+// BoundExpr is an expression checked with a field handle in scope under
+// Param (D174): the body of the lambda given to `T.build(f => …)`, once per
+// field. Handle is the checker's own record of the field. It never comes
+// from the parser.
+type BoundExpr struct {
+	Param  string
+	Handle any
+	Body   Expr
+	Pos    source.Span
+}
+
+// SymbolRef names a function the checker has already resolved: the wrapper
+// a decorator's rewrite calls (D176), whatever the module it is written in
+// imports. It never comes from the parser.
+type SymbolRef struct {
+	Sym  any
+	Name string
+	Pos  source.Span
+}

@@ -1,0 +1,11 @@
+succeeded on attempt 3
+[add] called with (2, 3)
+[add] returned 5
+5
+[doubled] called with 4
+  body runs with 4
+  body runs with 4
+[doubled] returned 8
+8
+the counter bumped 2 times
+exit=0

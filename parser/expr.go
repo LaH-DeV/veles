@@ -362,6 +362,11 @@ func (p *Parser) parseArgs() []ast.Arg {
 func (p *Parser) parsePrimary() ast.Expr {
 	start := p.span()
 	t := p.cur()
+	if t.Kind == lexer.KwSelfTy && p.peek(1).Kind == lexer.Dot {
+		// `This.fields`, `This.default()`: the implementing type as a receiver
+		p.oldSelfTypeSpelling(p.next())
+		return &ast.NameExpr{Name: "This", Pos: t.Span}
+	}
 	switch t.Kind {
 	case lexer.Int:
 		p.next()

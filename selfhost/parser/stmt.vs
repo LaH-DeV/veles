@@ -124,6 +124,7 @@ extend Parser {
       }
       else => { }
     }
+    if (this.atWord("inline") && this.peek(1).kind == Kind.KwLoop) return this.parseLoop(start)  // `inline loop` (D174)
     if (this.atErrorDecl() || this.atExtendDecl()) {
       this.errorAt(this.span(), "'${this.cur().text}' declarations are only allowed at module level")
       this.syncStmt()
@@ -178,8 +179,11 @@ extend Parser {
 
   // `loop (…) body`, or the `for` the caller reported
   fun parseLoop(start: Span): ast.Stmt {
+    val isInline = this.atWord("inline") && this.peek(1).kind == Kind.KwLoop
+    if (isInline) this.next()  // inline: contextual, only before `loop` (D174)
     if (!this.accept(Kind.KwFor)) this.expect(Kind.KwLoop)
     var s: ast.LoopStmt = ast.LoopStmt()
+    s.isInline = isInline
     if (this.accept(Kind.Colon)) s.label = this.ident()  // `loop :outer (x in xs) { … break outer }`
     if (this.at(Kind.LParen)) {
       // `loop (x in c)` or `loop (cond)`: a binding before `in` is iteration

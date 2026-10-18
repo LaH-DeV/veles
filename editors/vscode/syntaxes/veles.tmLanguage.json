@@ -90,8 +90,8 @@
           }
         },
         {
-          "comment": "struct / trait / sealed trait / error / enum (contextual: a keyword only before a type name)",
-          "match": "\\b(public\\s+)?(extern\\s+)?(sealed\\s+)?(struct|trait|error|enum|union)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "comment": "struct / trait / sealed trait / error / enum / annotation (D174; contextual: a keyword only before a type name)",
+          "match": "\\b(public\\s+)?(extern\\s+)?(sealed\\s+)?(struct|trait|error|enum|union|annotation)\\s+([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
             "1": { "name": "storage.modifier.veles" },
             "2": { "name": "storage.modifier.veles" },
@@ -178,6 +178,7 @@
     "keywords": {
       "patterns": [
         { "name": "keyword.control.conditional.veles", "match": "\\b(if|else|when|is)\\b" },
+        { "comment": "inline loop (f in T.fields) { } (contextual: only directly before `loop`, D174)", "name": "keyword.control.loop.veles", "match": "(?<![.\\w])inline\\b(?=\\s+loop\\b)" },
         { "name": "keyword.control.loop.veles", "match": "\\b(loop|break|continue|in)\\b" },
         { "name": "keyword.control.flow.veles", "match": "\\b(return|throw|try|do|catch|with)\\b" },
         { "name": "keyword.control.concurrency.veles", "match": "\\b(async|await|scope|gather|race)\\b" },
@@ -188,7 +189,7 @@
         { "name": "keyword.operator.expression.veles", "match": "\\b(as|raw|for)\\b" },
         { "name": "keyword.operator.expression.veles", "match": "\\b(implements)\\b" },
         { "name": "variable.language.this.veles", "match": "\\b(this)\\b" },
-        { "name": "support.type.self.veles", "match": "\\b(Self)\\b" },
+        { "name": "support.type.self.veles", "match": "\\b(This)\\b" },
         { "name": "invalid.illegal.reserved.veles", "match": "\\b(self|match|defer|go|yield|where|super|catch|interface|class|while|do|finally|import|package|module|let)\\b" }
       ]
     },

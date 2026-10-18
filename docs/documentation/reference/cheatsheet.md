@@ -338,9 +338,25 @@ with listener = try net.listen(host: "", port: 8080)
 http.serve(listener, app.handler())
 ```
 
-## Attributes (D51)
+## Attributes (D51) and annotations (D174)
 
-`@deprecated("msg")`, `@mustUse`, `@inline`, `@noinline`, `@template` (the function behind `name"…${x}…"`, D129); for the wire: `@key`, `@skip`, `@required`, `@tag`.
+`@deprecated("msg")`, `@mustUse`, `@inline`, `@noinline`, `@template` (the function behind `name"…${x}…"`, D129); for the wire: `@key`, `@skip`, `@required`, `@tag`. These lowercase names are the compiler's.
+
+```veles
+// fragment
+annotation Min(value: i64) on field for Validate   // a library's typed data; UpperCamel; `on`: field, struct, fun, trait, enum, enumMember, variant
+annotation Hidden on field                         // no parameters: `@Hidden`
+struct Signup { @Min(18) age: i64; @validate.Min(1) n: i64; implement Validate }   // a construction with constants; `@mod.Name` through a module
+const RULES: List<string> = Signup.rules()          // a const fun read This.fields: loop (f in This.fields) { f.name; f.doc; f.typeName; f.has<A>(); f.attr<A>() }
+inline loop ((f, m) in This.annotated<Min>()) { if (f.get(this) < m.value) … }   // unrolled for the fields that carry Min; f.Type is the field's type; no break/continue
+loop ((f, m) in This.annotated<Min>()) rules.push("${f.name} >= ${m.value}")   // in a const fun: a constant list of (FieldInfo, Min)
+inline loop (f in This.fields) { if (f.has<Skip>()) … }   // every field; f.has<A>(), f.attr<A>() are constants
+val zero = This.build(f => f.Type.default())        // a value made field by field
+annotation Retry(times: i64) on fun = retryCall     // a decorator (D176): an ordinary generic function wraps the functions it stands on
+fun retryCall<R, E>(a: Retry, body: fun(): R suspends throws E): R suspends throws E => try retry(a.times, () => try body(), delay: Duration.zero)
+fun logged<A, R>(a: Logged, args: A, body: fun(A): R): R   // the other shape: also the arguments, as a tuple
+@Retry(times: 3) @Logged(label: "x") fun fetch(id: i64): User throws HttpError { … }   // fetch's body is the lambda; the first written is outermost
+```
 
 ## Tests (D78)
 

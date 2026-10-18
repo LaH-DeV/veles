@@ -9,7 +9,7 @@
 /// default or a type that is `Default`; a sealed trait, an enum, a `Secret`
 /// or a value holding a task writes `default()` by hand.
 public trait Default {
-  static fun default(): Self
+  static fun default(): This
 }
 
 implement Default for i8 {

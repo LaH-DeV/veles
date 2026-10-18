@@ -276,6 +276,8 @@ func (f *fnCtx) checkExprInner(e ast.Expr, want types.Type) Expr {
 	case *ast.TypeExpr:
 		f.errorf(e.Pos, "a type is not a value")
 		return bad()
+	case *ast.BoundExpr:
+		return f.boundExpr(e, want) // synthesized (D174)
 	case *ast.FieldDefaultExpr:
 		return f.fieldDefault(e.Struct.(*types.Struct), e.Index) // synthesized (D58)
 	case *ast.CheckedExpr:
@@ -547,6 +549,10 @@ func (f *fnCtx) nameExpr(e *ast.NameExpr, want types.Type) Expr {
 		f.c.refVarAs(e.Pos, v, x.Type())
 		return x
 	}
+	if sym.Kind == SymFieldHandle {
+		f.errorf(e.Pos, "'%s' stands for a field of the type being walked: use its members — %s.name, %s.Type, %s.get(x), %s.has<A>(), %s.attr<A>() (D174)", e.Name, e.Name, e.Name, e.Name, e.Name, e.Name)
+		return bad()
+	}
 	f.c.refSym(e.Pos, sym)
 	switch sym.Kind {
 	case SymGlobal:
@@ -662,6 +668,9 @@ func (f *fnCtx) memberExpr(e *ast.MemberExpr, want types.Type) Expr {
 			return x // an executor's state or function (D150)
 		}
 	}
+	if x, ok := f.reflectMember(e); ok {
+		return x // `T.fields` (D174)
+	}
 	if _, isSelf := e.X.(*ast.SelfExpr); isSelf && !e.Safe {
 		// in an `init` block: a field the block owns is unreadable until
 		// the block has assigned it on every path to here
@@ -678,6 +687,8 @@ func (f *fnCtx) memberExpr(e *ast.MemberExpr, want types.Type) Expr {
 	if n, ok := e.X.(*ast.NameExpr); ok {
 		if sym := f.lookup(n.Name); sym != nil {
 			switch sym.Kind {
+			case SymFieldHandle:
+				return f.handleMember(sym.Handle, e)
 			case SymModule:
 				member := sym.Mod.Scope.LookupLocal(e.Name.Name)
 				if member == nil {
@@ -2296,6 +2307,9 @@ func (f *fnCtx) patternTargetType(from types.Type, pat *ast.TypePat) types.Type 
 func (f *fnCtx) ifExpr(e *ast.IfExpr, want types.Type) Expr {
 	// `if (val x = e && ...)` (D95): the names live from their binding to the
 	// end of the then-branch, so a scope opens here and closes before `else`
+	if x, ok := f.attrLetIf(e, want, want != nil && !types.IsUnit(want)); ok {
+		return x // a field handle's annotation, known while compiling (D174)
+	}
 	lets := letConds(e.Cond)
 	if len(lets) > 0 {
 		f.pushScope()

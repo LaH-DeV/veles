@@ -225,6 +225,8 @@ struct Parser {
         continue
       }
       if (this.accept(Kind.Semi) || this.at(Kind.EOF)) continue
+      // `annotation Route(…) on fun`: no newline follows a keyword
+      if (d is ast.StructDecl && (d.annotation?.keywordEnd ?: false)) continue
       if (this.startsDecl()) {
         // a missing terminator (an unbalanced paren kept the newline out);
         // reported, and the next declaration kept
@@ -237,7 +239,7 @@ struct Parser {
   }
 
   fun startsDecl(): bool =>
-    this.atErrorDecl() || this.atExtendDecl() || this.atAny(
+    this.atErrorDecl() || this.atAnnotationDecl() || this.atExtendDecl() || this.atAny(
       Kind.KwFun, Kind.KwStruct, Kind.KwTrait,
       Kind.KwImplement, Kind.KwSealed, Kind.KwPublic, Kind.KwPrivate, Kind.KwInternal, Kind.KwUse, Kind.KwExtern,
       Kind.KwVal, Kind.KwVar, Kind.KwConst, Kind.At,
@@ -250,6 +252,11 @@ struct Parser {
       val start = this.span()
       this.next()
       var attr = ast.Attribute(name: this.ident())
+      if (this.accept(Kind.Dot)) {
+        // `@validate.Min(1)`: through the module (D174)
+        attr.qual = attr.name
+        attr.name = this.ident()
+      }
       if (this.at(Kind.LParen)) attr.args = this.parseArgs()
       attr.pos = this.spanFrom(start)
       attrs.push(attr)
@@ -309,6 +316,7 @@ struct Parser {
       Kind.KwStruct => return this.parseStruct(head, false)
       Kind.Ident => {
         if (this.atErrorDecl()) return this.parseErrorDecl(head)
+        if (this.atAnnotationDecl()) return this.parseAnnotationDecl(head)
         if (this.atExecutorDecl()) {
           val [first, ..] = head.attrs else return this.parseExecutorDecl(head)
           this.errorAt(first.pos, "an executor takes no attributes; its settings are its arguments (D150)")
@@ -687,6 +695,18 @@ struct Parser {
 
   // `error Name`: `error` is a word only at declaration position, with a name after it
   fun atErrorDecl(): bool => this.atWord("error") && this.peek(1).kind == Kind.Ident
+
+  // `annotation` is a word only at declaration position, before a name and
+  // then a parameter list or the `on` clause (D174)
+  fun atAnnotationDecl(): bool {
+    if (!this.atWord("annotation") || this.peek(1).kind != Kind.Ident) return false
+    val third = this.peek(2)
+    when (third.kind) {
+      Kind.LParen => return true
+      Kind.Ident  => return third.text == "on"
+      else        => return false
+    }
+  }
 
   // `executor` is a word only at module level, before a name and then its
   // arguments, its body or the end of the line (D150)

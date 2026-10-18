@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.87** — decisions D1–D173. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.90** — decisions D1–D176. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -935,7 +935,7 @@ Initial compiler-known set:
 - `@mustUse` — unused-result lint; this is what the `Channel.send()` returning `Result` decision needed
 - `@specialize` — makes §6's deferred specialization question expressible when wanted (D15)
 
-*Amended (v0.33, D58).* The derivation story exists, and with it the first attributes that carry data the compiler reads on the author's behalf — all of them serve the synthesized `Codable` impls and nothing else: `@key(...)`, `@skip`, `@required` on a field, `@key` on an enum member or sealed variant, `@tag(...)` on a sealed trait. They are still compiler-known; "user-definable attributes are deferred" stands.
+*Amended (v0.33, D58).* The derivation story exists, and with it the first attributes that carry data the compiler reads on the author's behalf — all of them serve the synthesized `Codable` impls and nothing else: `@key(...)`, `@skip`, `@required` on a field, `@key` on an enum member or sealed variant, `@tag(...)` on a sealed trait. They are still compiler-known; "user-definable attributes are deferred" stands. *Amended (v0.88, D174): user-defined annotations (`annotation`, read by compile-time reflection) replace the deferral; the compiler's own lowercase names stay reserved.*
 
 `extern struct` (FFI §3) is **retained as a keyword** rather than folded into a layout attribute.
 
@@ -7162,6 +7162,81 @@ unmarked functions that visibility. Left open (checklist §11): extensions on a
 nullable receiver (`string?`), on a trait or `dyn` type, on a function type;
 `static fun` in a foreign extension; the `veles doc` marker; a facade's
 `public use` reaching extensions.
+
+### D174 — User-defined annotations: `annotation`, read at compile time (v0.88)
+
+Q50 (user, 2026-10-18: "think about annotations and how users should create them (i'm not a fan of them but we have some std-only annotations) … allow people to create them so they would be able to create high-level code libraries"). Settles D51's "user-definable attributes are deferred" and gives D118's reflection its shape. An annotation is **typed data on a declaration**; it never changes how code is compiled or what it does. The `@name` forms the compiler itself defines (`@test`, `@inline`, `@noinline`, `@specialize`, `@mustUse`, `@deprecated`, `@caller_location`, `@template`, `@packed`, `@align`, `@transparent`) keep their lowercase names, which are **reserved**; D51's wire set (`@key`, `@skip`, `@required`, `@tag`) and D167's `@positional`, `@short`, `@name`, `@env`, `@hidden` become ordinary annotations declared in `std/codec` and `std/cli` (see the order below).
+
+```veles
+/// in std/cli
+public annotation Short(letter: string) on field for Args
+public annotation Env(name: string) on field for Args
+public annotation Hidden on field for Args                      // no parameters: `@Hidden`
+public annotation Route(path: string, method: string = "GET") on fun for Router
+
+/// in a program
+use cli { Short, Env }
+
+struct Options {
+  /// How many files to hash at once.
+  @Short("w")
+  @Env("WORKERS")
+  workers: i64 = 4
+  implement cli.Args
+}
+```
+
+- **Declaration.** `annotation Name(params) on targets [for Trait, …]`; `annotation` is a contextual keyword. The parameter list is the use site's argument list (named arguments, defaults, D163's single positional), so `@Route("/users", method: "POST")` reads like the declaration. `on` lists where it may stand, in the words of the source: `field`, `struct`, `fun`, `trait`, `enum`, `enumMember`, `variant`. A **reader clause** `for Args` names the trait(s) whose reflection reads it. Declarations take D142 visibility (`public` to be used from another package). Arguments are constants (the compiler reads them while compiling); a wrong type is the constructor's error at the use site.
+- **Naming.** A user annotation is a type, so it is UpperCamel (`@Min`); it is imported like any name (`use validate { Min }`) or written qualified (`@validate.Min(18)`). The lowercase names belong to the compiler and cannot be declared. Each `@x` stays on the line before its declaration (annotations-on-their-own-line rule).
+- **Checks.** An annotation on a target not listed after `on` is an error naming the allowed targets. Because every annotation names its reader, one used on a declaration whose type does not implement (or cannot reach) any of its `for` traits is a **warning** — "`@Short` is read by `cli.Args`, but `Options` does not implement it" — so nothing is silently ignored (D51's rule, kept). Behaviour annotations stay closed: a library cannot write a `@cached` that changes compilation; wrapping behaviour is a higher-order function or a middleware.
+- **Reading — at compile time only, two layers.** There is no run-time reflection. `T.fields` / `Self.fields` is a constant description of a type — for each member its name, type, doc comment, default, and the annotations on it (`f.attr<Short>()` is `Short?`, `f has Hidden` a `bool`); likewise for enum members and a sealed trait's variants. (1) **`const fun`** (D113) reads it as data and builds tables the compiler stores read-only in the binary — help text, a route table, SQL columns, a config schema — computed once, free at start-up; `loop (f in Self.fields)` is an ordinary loop there. (2) **A trait's default body**, which is compiled once per type, may use `inline loop (f in Self.fields)`: unrolled, each iteration with its own static `f.Type`, so it can read and assign real fields; an empty `implement Trait` runs it (D58's rule; D117's compile-time branches decide which code each copy keeps). This is how `std/cli`, `config`, `db` and a user's `Validate` are written, in Veles, with no code in the compiler. The exact names of the reflection members, the typing of `get`/`set` by field and the error text inside an unrolled body (which must name the field and its type) are confirmed when it is built, as D167's were.
+- **Order.** (1) the mechanism: `annotation`, `T.fields`, `inline loop`, the checks, hover and `veles doc` showing annotations and their values, formatter, docs; (2) `std/cli` (plan C9) written on it instead of adding five annotations to the Go compiler; (3) later, `@key`/`@skip`/`@required`/`@tag` and the `Codable` derive (about 1 550 lines of Go: `derive.go`, `derive_print.go`, `derive_schema.go`) move to `std/codec` as ordinary code — the case for the self-hosted compiler, which then needs only the reflection primitive, not every derive.
+- **Terminology.** The user's word is *annotation*; the docs, the `ast` and the diagnostics say "annotation" for all of it (the compiler's own included) when this is built.
+
+Rejected: any struct usable as an annotation without a declaration (no target check, no way to know whether anything reads it); leaving annotations std-only with a table beside the struct (metadata away from the field, every std addition a compiler change); a constant run-time descriptor (`describe<T>()`) — run-time reflection, ruled out by the user ("no run-time"); a `const fun` that emits code or macros (D118); `const fun` only (libraries could not set fields from input, so `cli`/`config`/decoders would keep a compiler-written part); trait bodies only (no compile-time tables); `attribute` as the keyword and the `{ value: i64 }` body form (the declaration did not look like the use site). User, 2026-10-18: declaration "header plus reader clause" with `annotation` for the keyword; reading "both: const fun and trait bodies"; UpperCamel user names with lowercase reserved; the order above (all recommended, the keyword the user's).
+
+*Built 2026-10-18 (plan B26), as spelled; `T.annotated<A>()` added the same day (user: "reading helpers").* `annotation Name(params) on targets [for Traits]` parses (Go and `selfhost/`, gates green) into a `StructDecl` whose fields are the parameters, with `Annotation` info beside; an annotation declared `public` has public fields. A use `@Name(args)` / `@mod.Name(args)` is resolved after all types exist (`sema/annotation.go`): a construction with constant arguments (one bare argument when there is exactly one parameter), kept by declaration node for reflection, with the target check, the duplicate check and the "nothing reads it" warning (fields, enum members, variants, structs, enums with a generic-free owner that implements none of the `for` traits). Reflection (`sema/reflect.go`): prelude `FieldInfo` (name, doc, typeName, hasDefault, index, owner); `T.fields` and `Self.fields` (the parser makes `Self` a receiver before a dot) as a constant `List<FieldInfo>`; in a `const fun` a `FieldInfo` answers `f.has<A>()` and `f.attr<A>()` through evaluator builtins (`reflect.has`/`reflect.attr`); `inline loop (f in T.fields)` unrolls the body once per field with `f` a compile-time handle — `f.name`, `f.doc`, `f.typeName`, `f.hasDefault`, `f.index`, `f.Type` (as a type or a receiver), `f.get(x)`, `f.has<A>()` and `f.attr<A>()` as constants, an `if` on `f.has<A>()` or `if (val a = f.attr<A>())` keeping only the branch that applies, no `break`/`continue`; `T.build(f => value)` makes a `T` with the lambda's body checked once per field. Differences from the text above: the methods are `f.has<A>()` and `f.attr<A>()` (no `has` operator); `f.get(x)` reads a field whatever its visibility only inside a trait's default body for the implementing type, and follows the usual rules anywhere else; a function that reads annotations is refused when code that runs calls it (`checkReflectUse`), its emitted body is never reached; a generic body's `inline loop` is checked in the copy for each type, not once abstractly. Not built: `T.members` for enums and variants, `f.set(x, v)`, `veles doc` and completion for annotations, the "annotation" wording in the compiler's own diagnostics for `@key`-style attributes (checklist §11).
+
+
+
+*Reading helpers (2026-10-18, user: "Reading helpers (Recommended)").* `T.annotated<A>()` is a constant `List<(FieldInfo, A)>` of the fields that carry `A` with its value, for a `const fun` (`loop ((f, a) in T.annotated<A>())`); `inline loop ((f, a) in T.annotated<A>())` is unrolled for those fields only, `a` bound to the annotation, so a reader needs no `has`/`attr` question. Typed decorators (annotations that wrap a function) were asked for the same day: D176.
+
+### D175 — The implementing type is `This` (v0.89)
+
+Q51 (user, 2026-10-18: "why \"Self\" and not \"This\" as an own type?"). D65 renamed the receiver `self` to `this` and left the type `Self` as it was; nobody had chosen the type's name on its own. It is now `This`, the pair of `this`:
+
+```veles
+trait Parsable { static fun parse(s: string): This? }
+implement Comparable { fun compareTo(other: This): Ordering => this.n.compareTo(other.n) }
+trait Validate { static fun blank(): This => This.build(f => f.Type.default()) }   // D174: This.fields, This.annotated<A>()
+```
+
+`This` is a keyword in type position and, before a dot, a receiver in an expression (`This.fields`, `This.default()`); `This.Item` is an associated type as `Self.Item` was. `Self` keeps parsing as the same type with an error whose fix writes `This` (`veles check --fix` migrates a package); std, `selfhost/`, examples, docs and the tests were migrated in the same change. User, 2026-10-18, recommended of 2 (neutral): rename. Rejected: keeping Rust's and Swift's `Self` (the user preferred the pair with `this`, the Kotlin word chosen in D65); accepting both (one way to do a thing).
+
+
+### D176 — Typed decorators: `annotation Name(…) on fun = wrapper` (v0.90)
+
+Q52 (user, 2026-10-18, on D174: "the decorators known from other languages are not possible?" — "typed decorators but with simpler spelling… `on fun wraps retryCall` is kind of ugly"; then "I would prefer annotation but without wrap method" and, of the three readings offered, `= retryCall`). An annotation that stands on functions can name an ordinary generic function that **wraps** them:
+
+```veles
+// library
+annotation Retry(times: i64, delay: Duration = Duration.zero) on fun = retryCall
+fun retryCall<R, E>(a: Retry, body: fun(): R throws E): R throws E =>
+  retry(a.times, body, delay: a.delay)
+
+// user
+@Retry(times: 3)
+fun fetchUser(id: i64): User throws HttpError { … }      // fetchUser(1) is retryCall(Retry(times: 3), () => <the body>)
+```
+
+- **The meaning is a rewrite to an ordinary call**, made when the package is checked: the body of the decorated function becomes a lambda handed to the wrapper, and the wrapper's result is the function's. There is no macro and no second language; the wrapper is a function anyone can call, test and read. `throws` and suspension flow through the generic wrapper by inference (D116): a function wrapped by a retrying wrapper suspends.
+- **Two shapes of wrapper, told apart by the number of parameters.** `wrapper(a: Name, body: fun(): R …): R` sees the annotation and the body. `wrapper(a: Name, args: A, body: fun(A): R …): R` also receives the function's arguments — a tuple of the parameters (the parameter itself for one, `()` for none), and the body takes them by D37's tupling conversion — for a cache key or a log line of the call. The first parameter's type must be the annotation.
+- **Stacking.** Several decorators nest in the order written: the top one is outermost, as in Python.
+- **Where.** On a free function, a method or a trait's default body (they have a body). Not on a `test`, an extern or a signature. The annotation must be declared `on fun` and nothing else. A `return` in the body returns from the body; recursion calls the decorated function.
+- **The wrapper is the library's choice**: it may be `internal` to the library's module; it is called by the compiler's rewrite whatever the user's imports say. State — a cache, a counter — lives in a module-level `Mutex`, `Atomic` or `Lazy`, as any shared state does (D66).
+- **Not data.** A decorator changes what a function does, so it is the one kind of annotation that does: the declaration says so on the line a reader looks at (`= retryCall`), and hover on a decorated function names the wrapper.
+
+Rejected: `wraps retryCall` and a `decorator` keyword (the user: ugly / prefers `annotation`); a `wrap` method in the annotation's body (the user did not want a method); `implement Decorator` (a fixed method name and a generic signature to write); wrappers that see no arguments (the user chose both shapes); macros (D118).
 
 ---
 

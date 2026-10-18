@@ -100,7 +100,7 @@ public struct Digest {
 /// `finish` twice returns the same digest.
 public trait Hasher {
   /// A fresh hasher.
-  static fun start(): Self
+  static fun start(): This
 
   /// The name the wire formats use: `"SHA-256"`.
   static fun algorithm(): string

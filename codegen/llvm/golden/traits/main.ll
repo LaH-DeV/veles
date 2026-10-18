@@ -232,7 +232,7 @@ entry:
   ret %str %t23
 }
 
-define %str @v_main.Shape.describe_Self_main.Square_(ptr %p0) {
+define %str @v_main.Shape.describe_This_main.Square_(ptr %p0) {
 entry:
   %a1 = alloca ptr
   %a6 = alloca %str
@@ -293,7 +293,7 @@ entry:
 
 define internal %str @vt.main.Shape.main.Square.1(ptr %self) {
 entry:
-  %t1 = call %str @v_main.Shape.describe_Self_main.Square_(ptr %self)
+  %t1 = call %str @v_main.Shape.describe_This_main.Square_(ptr %self)
   ret %str %t1
 }
 

@@ -190,7 +190,7 @@ func corpus(t *testing.T) []corpusFile {
 			"extern \"Go\" { fun f() }\nextern union U<T> { a: i32 }\nwith x = f()\n@attr static assert(true, \"y\")\n" +
 			"public suite \"s\" { }\nstruct S { x: , init(a) { } public init { } init { } static var y = 1 private static val z = 2 }\n" +
 			"trait T { val x: i64 }\nimplement T for { }\nextern \"C\" fun g() \nfun h(...) {}\nfun k(a: i64... = []) {}\n",
-		"p-signatures": "fun f(a: i64, lazy b: fun(): i64, c: *raw u8, d: (*i64)?, e: extern fun(i32): i32, f: sendable fun() suspends throws E, g: Self.Item, i: List<List<i64>>, j: Array<u8, 4 * 16>, k: Result<i64, A | b.B>, l: (), m: (i64,), n: T??) {}\n" +
+		"p-signatures": "fun f(a: i64, lazy b: fun(): i64, c: *raw u8, d: (*i64)?, e: extern fun(i32): i32, f: sendable fun() suspends throws E, g: This.Item, i: List<List<i64>>, j: Array<u8, 4 * 16>, k: Result<i64, A | b.B>, l: (), m: (i64,), n: T??) {}\n" +
 			"fun g(): i64 throws A, B, C {}\nfun h() throws suspends {}\nfun i<const N: i64, const M: u8, T: A + B>() {}\noverride static fun k() {}\n" +
 			"fun l(x: i64 = 1, ...) {}\nfun m() => \nfun n()\nfun o() { } fun p() { }\nfun q() => { 1 }\n",
 		"p-removed": "use a.{ b }\nfun z(): i64 = 1\nimpl Foo for Bar {}\nfun <T> f<U>() {}\nstruct S { mut fun j() {} }\nfun g(h: T::Item) {}\n" +

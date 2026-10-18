@@ -284,6 +284,66 @@ extend Parser {
     d
   }
 
+  // `annotation Name(params) on targets for Readers` (D174): a struct whose
+  // fields are the parameters; the targets and readers are kept beside
+  fun parseAnnotationDecl(head: DeclHead): ast.StructDecl {
+    this.next()  // annotation
+    var d: ast.StructDecl = ast.StructDecl(attrs: head.attrs, pub: head.pub)
+    var info = ast.AnnotationInfo()
+    d.name = this.ident()
+    if (this.at(Kind.LParen)) {
+      val fields: MutableList<ast.Field> = []
+      loop (prm in this.parseParams()) {
+        if (prm.typ == null) this.errorAt(prm.name.pos, "an annotation parameter needs a type: '${prm.name.name}: T' (D174)")
+        if (prm.variadic || prm.isLazy) this.errorAt(prm.pos, "an annotation parameter is a plain 'name: T' with an optional default (D174)")
+        fields.push(ast.Field(pub: head.pub, name: prm.name, typ: prm.typ, defaultValue: prm.defaultValue, pos: prm.pos))
+      }
+      d.fields = fields.toList()
+    }
+    info.onPos = this.span()
+    if (this.atWord("on")) {
+      this.next()
+      val targets: MutableList<ast.Ident> = []
+      loop {
+        // the words of the source: `field`, `variant`, `enumMember`, and the
+        // keywords `fun`, `struct`, `trait`, `enum`
+        when (this.cur().kind) {
+          Kind.Ident, Kind.KwFun, Kind.KwStruct, Kind.KwTrait, Kind.KwEnum => {
+            val tok = this.next()
+            targets.push(ast.Ident(name: tok.text, pos: tok.span))
+            info.keywordEnd = tok.kind != Kind.Ident
+          }
+          else => this.errorAt(this.span(), "expected where the annotation may stand — field, struct, fun, trait, enum, enumMember or variant — found ${this.cur().describe()}")
+        }
+        if (!this.accept(Kind.Comma)) break
+      }
+      info.targets = targets.toList()
+    } else {
+      this.errorAt(this.span(), "an annotation says where it may stand: 'annotation ${d.name.name}(…) on field' (D174)")
+    }
+    if (this.at(Kind.KwFor)) {
+      info.readersPos = this.span()
+      info.keywordEnd = false
+      this.next()
+      val readers: MutableList<ast.Type> = []
+      loop {
+        readers.push(this.parseType())
+        if (!this.accept(Kind.Comma)) break
+      }
+      info.readers = readers.toList()
+    }
+    if (this.at(Kind.Assign)) {
+      // `= retryCall`: the function that wraps what this stands on (D176)
+      info.wrapperPos = this.span()
+      info.keywordEnd = false
+      this.next()
+      info.wrapper = &this.parseExpr()
+    }
+    d.annotation = info
+    d.pos = this.spanFrom(head.start)
+    d
+  }
+
   // `executor name(args) { members }` (D150): the arguments are a call's;
   // the body holds `val`/`var` state and functions
   fun parseExecutorDecl(head: DeclHead): ast.ExecutorDecl {

@@ -348,13 +348,13 @@ arith.ok.2:
   %t18 = extractvalue %str { ptr @.str.12, i64 18 }, 0
   %t19 = extractvalue %str { ptr @.str.12, i64 18 }, 1
   call void @veles_call_push(ptr %t18)
-  %t20 = call %S.std.prelude.RangeIter_u8_ @v_std.prelude.Iterable.iter_Self_Range_u8_T_u8_(ptr %a17)
+  %t20 = call %S.std.prelude.RangeIter_u8_ @v_std.prelude.Iterable.iter_T_u8_This_Range_u8_(ptr %a17)
   call void @veles_call_pop()
   store %S.std.prelude.RangeIter_u8_ %t20, ptr %a21
   %t22 = extractvalue %str { ptr @.str.13, i64 19 }, 0
   %t23 = extractvalue %str { ptr @.str.13, i64 19 }, 1
   call void @veles_call_push(ptr %t22)
-  %t24 = call i64 @v_std.prelude.Iterator.count_Self_std.prelude.RangeIter_u8_T_u8_(ptr %a21)
+  %t24 = call i64 @v_std.prelude.Iterator.count_T_u8_This_std.prelude.RangeIter_u8_(ptr %a21)
   call void @veles_call_pop()
   %t26 = call i64 @veles_i64_format(ptr %a25, i64 %t24)
   %t27 = insertvalue %str undef, ptr %a25, 0
@@ -430,7 +430,7 @@ arith.ok.2:
   %t84 = extractvalue %str { ptr @.str.23, i64 20 }, 0
   %t85 = extractvalue %str { ptr @.str.23, i64 20 }, 1
   call void @veles_call_push(ptr %t84)
-  %t86 = call ptr @v_std.prelude.Iterator.toList_Self_std.prelude.RangeStepIter_i8_T_i8_(ptr %a83)
+  %t86 = call ptr @v_std.prelude.Iterator.toList_T_i8_This_std.prelude.RangeStepIter_i8_(ptr %a83)
   call void @veles_call_pop()
   %t87 = call %str @show.List_i8_(ptr %t86)
   %t89 = extractvalue %str { ptr @.str.24, i64 24 }, 0
@@ -465,7 +465,7 @@ arith.ok.2:
   %t110 = extractvalue %str { ptr @.str.29, i64 20 }, 0
   %t111 = extractvalue %str { ptr @.str.29, i64 20 }, 1
   call void @veles_call_push(ptr %t110)
-  %t112 = call ptr @v_std.prelude.Iterator.toList_Self_std.prelude.RangeStepIter_i8_T_i8_(ptr %a109)
+  %t112 = call ptr @v_std.prelude.Iterator.toList_T_i8_This_std.prelude.RangeStepIter_i8_(ptr %a109)
   call void @veles_call_pop()
   %t113 = call %str @show.List_i8_(ptr %t112)
   %t114 = load i8, ptr %a1
@@ -489,7 +489,7 @@ arith.ok.2:
   %t128 = extractvalue %str { ptr @.str.33, i64 21 }, 0
   %t129 = extractvalue %str { ptr @.str.33, i64 21 }, 1
   call void @veles_call_push(ptr %t128)
-  %t130 = call ptr @v_std.prelude.Iterator.toList_Self_std.prelude.RangeStepIter_i8_T_i8_(ptr %a127)
+  %t130 = call ptr @v_std.prelude.Iterator.toList_T_i8_This_std.prelude.RangeStepIter_i8_(ptr %a127)
   call void @veles_call_pop()
   %t131 = call %str @show.List_i8_(ptr %t130)
   %t134 = getelementptr [4 x %str], ptr %a133, i64 0, i64 0

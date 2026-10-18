@@ -90,6 +90,7 @@ var constBuiltins = map[string]bool{
 	"map.entries": true, "map.mods": true, "map.checkMods": true,
 	"set.new": true, "set.add": true,
 	"num.toChecked": true, "panic": true,
+	"reflect.attr": true, "reflect.has": true, // annotations exist only while compiling (D174)
 }
 
 // runsInCompiler reports whether the evaluator may run fn: a `const fun`, or
