@@ -139,7 +139,7 @@ fun main() {
   io.println("${flags & 0b0010} ${flags | 1} ${flags << 4} ${(255).toString(radix: 2)} ${(-1).toString(radix: 16)}")
   val third = 2.0 / 3.0
   val id = 42
-  io.println("${third.toFixed(3)} ${id:06} ${(1234.56).toFixed(0)}")
+  io.println("${(2.0 / 3.0).toFixed(3)} ${id:06} ${third:.3} ${(1234.56).toFixed(0)}")
 }
 ```
 
