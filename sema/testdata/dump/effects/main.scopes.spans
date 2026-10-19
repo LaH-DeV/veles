@@ -1,0 +1,7 @@
+module main
+  type Failed  package  @main.vs:3:7-3:13
+  fun main  package  @main.vs:14:5-14:9
+  fun risky  package  @main.vs:7:5-7:10
+  fun twice  package  @main.vs:12:5-12:10
+  file main.vs imports
+    module io -> std/io

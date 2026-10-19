@@ -36,8 +36,8 @@ var DumpKinds = []string{DumpNames, DumpTypes, DumpHIR}
 // The standard library's symbols are left out unless withStd: they are the
 // same in every program and would bury the package's own (a std generic
 // instantiated for the package is std's symbol too).
-func DumpProgram(w io.Writer, p *Program, kind string, withStd bool) error {
-	if !withStd {
+func DumpProgram(w io.Writer, p *Program, kind string, opts DumpOptions) error {
+	if !opts.Std {
 		p = withoutStd(p)
 	}
 	switch kind {
@@ -46,7 +46,7 @@ func DumpProgram(w io.Writer, p *Program, kind string, withStd bool) error {
 	case DumpTypes:
 		dumpTypes(w, p)
 	case DumpHIR:
-		dumpHIR(w, p)
+		dumpHIR(w, p, opts)
 	default:
 		return errors.New("unknown dump " + strconv.Quote(kind) + " (one of " + strings.Join(DumpKinds, ", ") + ")")
 	}
@@ -211,8 +211,8 @@ func (n varNames) ref(v *Var) string {
 	return fmt.Sprintf("%s#%d", v.Name, id)
 }
 
-func dumpHIR(w io.Writer, p *Program) {
-	d := &hirDumper{w: w, seen: map[uintptr]bool{}, vars: varNames{}}
+func dumpHIR(w io.Writer, p *Program, opts DumpOptions) {
+	d := &hirDumper{w: w, seen: map[uintptr]bool{}, vars: varNames{}, spans: opts.Spans, root: p.Root}
 	for _, f := range sortedFuncs(p) {
 		d.top(f)
 	}
@@ -230,6 +230,9 @@ type hirDumper struct {
 	w    io.Writer
 	seen map[uintptr]bool
 	vars varNames
+	// spans: write the Pos and Span fields too, as `line:col-line:col` (DumpOptions.Spans)
+	spans bool
+	root  string
 }
 
 func (d *hirDumper) line(depth int, format string, args ...any) {
@@ -243,7 +246,7 @@ func (d *hirDumper) line(depth int, format string, args ...any) {
 // without being listed here.
 func (d *hirDumper) top(f *Func) {
 	d.vars = varNames{}
-	fmt.Fprintf(d.w, "fun %s: %s%s\n", f.Name, funcSig(f), funcEffects(f))
+	fmt.Fprintf(d.w, "fun %s: %s%s%s\n", f.Name, funcSig(f), funcEffects(f), d.at(f.Span))
 	if f.Display != "" && f.Display != f.Name {
 		d.line(1, "display: %s", f.Display)
 	}
@@ -393,7 +396,13 @@ func (d *hirDumper) structValue(depth int, v reflect.Value) {
 	d.line(depth, "%s%s", name, typ)
 	for i := 0; i < t.NumField(); i++ {
 		sf := t.Field(i)
-		if sf.PkgPath != "" || sf.Type == dumpSpanType {
+		if sf.PkgPath != "" {
+			continue
+		}
+		if sf.Type == dumpSpanType {
+			if sp, ok := v.Field(i).Interface().(source.Span); ok && d.spans && sp.File != nil {
+				d.line(depth+1, "%s: %s", sf.Name, spanRange(sp))
+			}
 			continue
 		}
 		fv := v.Field(i)
@@ -459,4 +468,12 @@ func (d *hirDumper) leafText(v reflect.Value) string {
 		return x.String()
 	}
 	return scalar(v)
+}
+
+// at is where a function is written, when the dump was asked for spans.
+func (d *hirDumper) at(sp source.Span) string {
+	if !d.spans || sp.File == nil {
+		return ""
+	}
+	return "  @" + relPath(d.root, sp.File.Path) + ":" + spanRange(sp)
 }

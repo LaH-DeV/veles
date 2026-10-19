@@ -1,0 +1,16 @@
+module main
+  type TooBig  package
+  fun check  package
+  fun main  package
+  file main.vs imports
+    type Rect <- geo
+    fun area <- geo
+    module geo -> geo
+    module out -> std/io
+    module units -> geo/units
+module geo
+  type Rect  package
+  fun area  package
+  fun hidden  package
+module geo/units
+  fun cm  package

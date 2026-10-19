@@ -1,0 +1,21 @@
+fun v_geo.area: fun(Rect): f64
+  param r: Rect
+  local r#0: Rect
+fun v_geo.hidden: fun(): i64
+fun v_geo.units.cm: fun(f64): f64
+  param x: f64
+  local x#0: f64
+fun v_main.check: fun(Rect): f64 throws TooBig
+  param r: Rect
+  local r#0: Rect
+  local a#1: f64
+fun v_main.main: fun() throws TooBig
+  local r#0: Rect
+fun veles.main.report: fun(TooBig): string
+  param $e: TooBig
+  local $e#0: TooBig
+struct Rect
+  w: f64
+  h: f64
+struct TooBig
+  limit: i64

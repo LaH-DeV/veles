@@ -3,7 +3,7 @@
 //	veles build <file.vs | dir>   compile a package to a native executable (a workspace root: every member)
 //	veles run   <file.vs | dir>   compile and run
 //	veles test  <file.vs | dir>   run the tests, test "..." { } (--filter text, --timeout 10m, --jobs n, --fail-on-skip)
-//	veles check <file.vs | dir>   type-check only (--fix applies lint corrections; --dump names|types|hir [--dump-std] prints the checker's output)
+//	veles check <file.vs | dir>   type-check only (--fix applies lint corrections; --dump names|types|hir|modules|scopes|decls|effects [--dump-std] [--dump-spans] prints the checker's output; the last four between its passes)
 //	veles parse <file.vs>         dump the syntax tree
 //	veles tokens <file.vs>        dump the token stream
 //	veles fmt   <paths...>        format source files in place (--check, --stdout)
@@ -315,6 +315,8 @@ func command() int {
 				opts.Fix = true
 			case "--dump-std":
 				opts.DumpStd = true
+			case "--dump-spans":
+				opts.DumpSpans = true
 			case "--dump":
 				if cmd != "check" || i+1 >= len(args) {
 					fmt.Fprintf(os.Stderr, "--dump is a flag of 'veles check' and takes one of %s\n", strings.Join(sema.DumpKinds, ", "))

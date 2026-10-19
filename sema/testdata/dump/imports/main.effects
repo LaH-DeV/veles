@@ -1,0 +1,7 @@
+rounds 3
+fun v_geo.area: pure
+fun v_geo.hidden: pure
+fun v_geo.units.cm: pure
+fun v_main.check: throws TooBig
+fun v_main.main: throws TooBig
+fun veles.main.report: pure

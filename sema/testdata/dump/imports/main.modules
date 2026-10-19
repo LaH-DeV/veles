@@ -1,0 +1,10 @@
+module main
+  file main.vs
+    use io as out -> std/io
+    use geo { Rect, area } -> geo
+    use geo.units -> geo/units
+  needs geo, geo/units, std/io
+module geo
+  file geo/geo.vs
+module geo/units
+  file geo/units/units.vs

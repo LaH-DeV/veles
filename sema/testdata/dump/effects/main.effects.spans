@@ -1,0 +1,6 @@
+rounds 1
+fun v_main.main: throws Failed suspends  @main.vs:14:5-14:9
+fun v_main.main.lambda1: pure  @main.vs:16:20-16:30
+fun v_main.risky: throws Failed  @main.vs:7:5-7:10
+fun v_main.twice__i64: pure  @main.vs:12:5-12:10
+fun veles.main.report: pure  @main.vs:14:5-14:9

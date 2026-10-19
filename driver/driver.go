@@ -40,6 +40,8 @@ type Options struct {
 	Dump string
 	// DumpStd includes the standard library's symbols in the dump.
 	DumpStd bool
+	// DumpSpans adds where each thing is written to the dump.
+	DumpSpans bool
 	// Filter, in test mode, keeps the tests whose name contains it.
 	Filter string
 	// TestTimeout bounds each test (test mode); 0 means no bound.
@@ -118,9 +120,19 @@ func Run(opts Options) int {
 	pkg.NeedMain = (opts.Mode == "build" || opts.Mode == "run") && !opts.inWorkspace
 	pkg.ConstSteps = opts.ConstSteps
 	var prog *sema.Program
-	if opts.Mode == "test" {
+	switch {
+	case opts.Mode == "check" && sema.IsPhaseDump(opts.Dump):
+		// a dump of the checker between its passes (plan S10b): written to
+		// standard output as the checker reaches the pass, then the usual check
+		dump, err := sema.NewPhaseDump(os.Stdout, opts.Dump, sema.DumpOptions{Std: opts.DumpStd, Spans: opts.DumpSpans})
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "veles:", err)
+			return 2
+		}
+		prog = sema.CheckWithDump(pkg, diags, opts.Release, false, dump)
+	case opts.Mode == "test":
 		prog = sema.CheckTests(pkg, diags, opts.Release)
-	} else {
+	default:
 		prog = sema.Check(pkg, diags, opts.Release)
 	}
 	fmt.Fprint(os.Stderr, diags.Render())
@@ -134,8 +146,8 @@ func Run(opts Options) int {
 	}
 	if opts.Mode == "check" {
 		clk.report(os.Stderr)
-		if opts.Dump != "" {
-			if err := sema.DumpProgram(os.Stdout, prog, opts.Dump, opts.DumpStd); err != nil {
+		if opts.Dump != "" && !sema.IsPhaseDump(opts.Dump) {
+			if err := sema.DumpProgram(os.Stdout, prog, opts.Dump, sema.DumpOptions{Std: opts.DumpStd, Spans: opts.DumpSpans}); err != nil {
 				fmt.Fprintln(os.Stderr, "veles:", err)
 				return 2
 			}

@@ -1,0 +1,6 @@
+module main
+  type Point  package
+  fun add  package
+  fun main  package
+  file main.vs imports
+    module io -> std/io

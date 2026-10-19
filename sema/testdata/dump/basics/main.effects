@@ -1,0 +1,4 @@
+rounds 1
+fun v_main.Point.sum: pure
+fun v_main.add: pure
+fun v_main.main: pure

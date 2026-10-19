@@ -1,0 +1,4 @@
+module main
+  file main.vs
+    use io -> std/io
+  needs std/io

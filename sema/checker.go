@@ -15,6 +15,7 @@ import (
 
 type Checker struct {
 	namedImports []namedImport // every bound name of a braced import (D85)
+	rounds       int           // inference rounds run so far (D45), for the effects dump
 	arrayUses    []arrayUse    // inline arrays to size-check (D121)
 	pkg          *Package
 	bareDone     map[*ast.FunDecl]bool // the methods whose bare member names are resolved (D158)
@@ -163,6 +164,15 @@ func checkWith(pkg *Package, diags *source.Diagnostics, release bool, testMode b
 // needs more than the HIR — `veles explain --derive` wants the synthesized
 // implements — can read it.
 func checkCollect(pkg *Package, diags *source.Diagnostics, release bool, testMode bool, index *Index) (*Program, *Checker) {
+	return checkCollectObserved(pkg, diags, release, testMode, index, nil)
+}
+
+// checkCollectObserved is checkCollect, telling d (when not nil) as the checker
+// passes the points a phase dump is written at (dump_phases.go).
+func checkCollectObserved(pkg *Package, diags *source.Diagnostics, release bool, testMode bool, index *Index, d *PhaseDump) (*Program, *Checker) {
+	if d != nil {
+		d.afterLoad(pkg)
+	}
 	c := &Checker{
 		deriveFailed:   map[*Impl]bool{},
 		syntheticSpans: map[source.Span]bool{},
@@ -208,6 +218,9 @@ func checkCollect(pkg *Package, diags *source.Diagnostics, release bool, testMod
 	c.roundDiags = diags
 	c.buildUniverse()
 	c.collect()
+	if d != nil {
+		d.afterCollect(c)
+	}
 	if c.index != nil {
 		c.collectRefs = len(c.index.Refs)
 	}
@@ -222,6 +235,7 @@ func checkCollect(pkg *Package, diags *source.Diagnostics, release bool, testMod
 		c.roundDiags = &source.Diagnostics{}
 		c.seen = map[string]bool{}
 		prog = c.runRound()
+		c.rounds++
 		c.checkArraySizes()
 		if !c.changed {
 			break
@@ -240,6 +254,9 @@ func checkCollect(pkg *Package, diags *source.Diagnostics, release bool, testMod
 	c.indexExtensions()
 	if diags.HasErrors() {
 		return nil, c
+	}
+	if d != nil {
+		d.afterCheck(c, prog)
 	}
 	return prog, c
 }

@@ -1,0 +1,8 @@
+fun v_geo.area  (area)
+fun v_geo.hidden  (hidden)
+fun v_geo.units.cm  (cm)
+fun v_main.check  (check)
+fun v_main.main  (main)
+fun veles.main.report  (main.report)
+struct Rect
+struct TooBig

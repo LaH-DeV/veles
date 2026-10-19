@@ -1,0 +1,7 @@
+module main
+  type Failed  package
+  fun main  package
+  fun risky  package
+  fun twice  package
+  file main.vs imports
+    module io -> std/io

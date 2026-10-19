@@ -1,0 +1,7 @@
+module main
+  struct Point  package  @main.vs:3:8-3:13
+    field x: i64
+    field y: i64
+    fun sum: fun(): i64  package
+  fun add: fun(i64, i64): i64  package  @main.vs:10:5-10:8
+  fun main: fun()  package  @main.vs:12:5-12:9

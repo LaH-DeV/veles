@@ -1,0 +1,160 @@
+fun v_geo.area: fun(Rect): f64
+  display: area
+  param: r#0 Rect
+  body:
+    Block
+      Stmts:
+        Return
+          Value:
+            Binary: f64
+              Op: *
+              L:
+                FieldGet: f64
+                  X:
+                    VarRef: Rect
+                      Var: r#0
+                  Index: 0
+                  Name: "w"
+              R:
+                FieldGet: f64
+                  X:
+                    VarRef: Rect
+                      Var: r#0
+                  Index: 1
+                  Name: "h"
+      Type: Never
+fun v_geo.hidden: fun(): i64
+  display: hidden
+  body:
+    Block
+      Stmts:
+        Return
+          Value:
+            IntConst: i64
+              Value: 1
+      Type: Never
+fun v_geo.units.cm: fun(f64): f64
+  display: cm
+  param: x#0 f64
+  body:
+    Block
+      Stmts:
+        Return
+          Value:
+            Binary: f64
+              Op: *
+              L:
+                VarRef: f64
+                  Var: x#0
+              R:
+                FloatConst: f64
+                  Value: 0.01
+      Type: Never
+fun v_main.check: fun(Rect): f64 throws TooBig
+  display: check
+  param: r#0 Rect
+  body:
+    Block
+      Stmts:
+        VarDecl
+          Var: a#1
+          Init:
+            Call: f64
+              Fn: @v_geo.area
+              Args:
+                VarRef: Rect
+                  Var: r#0
+              Recv: 0
+        ExprStmt
+          X:
+            If: ()
+              Cond:
+                Binary: bool
+                  Op: >
+                  L:
+                    VarRef: f64
+                      Var: a#1
+                  R:
+                    FloatConst: f64
+                      Value: 100
+              Then:
+                Block
+                  Stmts:
+                    ExprStmt
+                      X:
+                        Throw: Never
+                          Value:
+                            StructLit: TooBig
+                              Struct: TooBig
+                              Fields:
+                                IntConst: i64
+                                  Value: 100
+                          From: TooBig
+                          To: TooBig
+                  Type: Never
+        Return
+          Value:
+            VarRef: f64
+              Var: a#1
+      Type: f64
+fun v_main.main: fun() throws TooBig
+  display: main
+  body:
+    Block
+      Stmts:
+        VarDecl
+          Var: r#0
+          Init:
+            StructLit: Rect
+              Struct: Rect
+              Fields:
+                Call: f64
+                  Fn: @v_geo.units.cm
+                  Args:
+                    FloatConst: f64
+                      Value: 3
+                  Recv: 0
+                FloatConst: f64
+                  Value: 4
+        ExprStmt
+          X:
+            Call: ()
+              Fn: @v_std.io.println
+              Args:
+                StringConcat: string
+                  Parts:
+                    ToString: string
+                      X:
+                        Try: f64
+                          X:
+                            Call: Result<f64, TooBig>
+                              Fn: @v_main.check
+                              Args:
+                                VarRef: Rect
+                                  Var: r#0
+                              Recv: 0
+                          From: TooBig
+                          To: TooBig
+              Recv: 0
+      Type: ()
+fun veles.main.report: fun(TooBig): string
+  display: main.report
+  param: $e#0 TooBig
+  body:
+    Block
+      Stmts:
+        Return
+          Value:
+            Call: string
+              Fn: @v_std.prelude.Error.message_This_main.TooBig_
+              Args:
+                AddrOf: *TooBig
+                  X:
+                    VarRef: TooBig
+                      Var: $e#0
+              Recv: 2
+              RecvType: TooBig
+              RecvExpr:
+                NameExpr
+                  Name: "$e"
+      Type: Never

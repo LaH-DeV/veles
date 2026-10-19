@@ -1,0 +1,14 @@
+module main
+  struct TooBig  package  @main.vs:5:7-5:13
+    field limit: i64
+  fun check: fun(Rect): f64 throws  package  [throws TooBig]  @main.vs:11:5-11:10
+  fun main: fun() throws  package  [throws TooBig]  @main.vs:17:5-17:9
+  implement Error for TooBig
+module geo
+  struct Rect  package  @geo/geo.vs:1:8-1:12
+    field w: f64
+    field h: f64
+  fun area: fun(Rect): f64  package  @geo/geo.vs:6:5-6:9
+  fun hidden: fun(): i64  package  @geo/geo.vs:8:5-8:11
+module geo/units
+  fun cm: fun(f64): f64  package  @geo/units/units.vs:1:5-1:7

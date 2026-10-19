@@ -1,0 +1,7 @@
+module main
+  struct Failed  package  @main.vs:3:7-3:13
+    field why: string
+  fun main: fun() throws Failed  package  @main.vs:14:5-14:9
+  fun risky: fun(i64): i64 throws Failed  package  @main.vs:7:5-7:10
+  fun twice<T>: fun(T, fun(T): T): T  package  @main.vs:12:5-12:10
+  implement Error for Failed

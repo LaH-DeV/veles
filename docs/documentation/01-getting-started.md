@@ -86,7 +86,7 @@ The other commands you will use:
 | `veles audit [dir] [--detail]` | what each dependency can do (`unsafe`, `extern`, `native`, `net`, `fs`, `os`, `ffi`), computed from its source, and whether the `[policy]` in `veles.toml` allows it; exit 1 if not (chapter 11) |
 | `veles publish [dir]`, `veles yank <owner/name>@<version>`, `veles attest keygen|sign|verify|import` | publish a package to a registry, withdraw a version, and sign / check / import reviews of dependencies (chapter 11) |
 | `veles build <dir> -o app` | produce an executable (named after the package without `-o`) |
-| `veles check <dir>` | type-check without compiling; `--fix` applies lint corrections; `--dump names\|types\|hir` prints a stable text dump of what the checker made (the package's own symbols, `--dump-std` adds the standard library's) — the oracle a checker written in Veles is compared against |
+| `veles check <dir>` | type-check without compiling; `--fix` applies lint corrections; `--dump names\|types\|hir` prints a stable text dump of what the checker made (the package's own symbols, `--dump-std` adds the standard library's), `--dump modules\|scopes\|decls\|effects` of what it holds between its passes (the module graph; the declarations before any body is checked; the resolved declarations; what each function throws and whether it suspends, with the rounds it took), `--dump-spans` adds where each thing is written — the oracles a checker written in Veles is compared against |
 | `veles explain <family>` | what a kind of error means and how to fix it (the `see:` line) |
 | `veles test <dir>` | run every `test "..." { }` (chapter 14), several at once (`--jobs 1`: one at a time) |
 | `veles build <dir> --release` | optimise, and drop integer overflow checks |

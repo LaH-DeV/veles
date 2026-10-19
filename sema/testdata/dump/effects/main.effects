@@ -1,0 +1,6 @@
+rounds 1
+fun v_main.main: throws Failed suspends
+fun v_main.main.lambda1: pure
+fun v_main.risky: throws Failed
+fun v_main.twice__i64: pure
+fun veles.main.report: pure

@@ -1,0 +1,12 @@
+module main
+  variant of Shape Circle  package  @main.vs:5:8-5:14
+    field r: f64
+  variant of Shape Rect  package  @main.vs:9:8-9:12
+    field w: f64
+    field h: f64
+  sealed Shape  package  @main.vs:3:14-3:19
+    variant Circle
+    variant Rect
+  fun area: fun(Shape): f64  package  @main.vs:14:5-14:9
+  fun first: fun(List<string>): string?  package  @main.vs:19:5-19:10
+  fun main: fun()  package  @main.vs:21:5-21:9

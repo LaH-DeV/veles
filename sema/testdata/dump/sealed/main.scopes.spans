@@ -1,0 +1,9 @@
+module main
+  type Circle  package  @main.vs:5:8-5:14
+  type Rect  package  @main.vs:9:8-9:12
+  type Shape  package  @main.vs:3:14-3:19
+  fun area  package  @main.vs:14:5-14:9
+  fun first  package  @main.vs:19:5-19:10
+  fun main  package  @main.vs:21:5-21:9
+  file main.vs imports
+    module io -> std/io

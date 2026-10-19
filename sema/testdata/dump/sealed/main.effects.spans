@@ -1,0 +1,4 @@
+rounds 1
+fun v_main.area: pure  @main.vs:14:5-14:9
+fun v_main.first: pure  @main.vs:19:5-19:10
+fun v_main.main: pure  @main.vs:21:5-21:9

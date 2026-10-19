@@ -1,0 +1,4 @@
+rounds 1
+fun v_main.area: pure
+fun v_main.first: pure
+fun v_main.main: pure

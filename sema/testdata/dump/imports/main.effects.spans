@@ -1,0 +1,7 @@
+rounds 3
+fun v_geo.area: pure  @geo/geo.vs:6:5-6:9
+fun v_geo.hidden: pure  @geo/geo.vs:8:5-8:11
+fun v_geo.units.cm: pure  @geo/units/units.vs:1:5-1:7
+fun v_main.check: throws TooBig  @main.vs:11:5-11:10
+fun v_main.main: throws TooBig  @main.vs:17:5-17:9
+fun veles.main.report: pure  @main.vs:17:5-17:9
