@@ -136,3 +136,87 @@ func TestInterpolationSpec(t *testing.T) {
 		}
 	}
 }
+
+// kindsOf lexes src and lists the token kinds, without the final newline and
+// end of file.
+func kindsOf(t *testing.T, src string) ([]Token, string) {
+	t.Helper()
+	var diags source.Diagnostics
+	toks := Tokenize(source.NewFile("t.vs", src), &diags)
+	var out []Token
+	for _, tok := range toks {
+		if tok.Kind == EOF || tok.Kind == Semi {
+			continue
+		}
+		out = append(out, tok)
+	}
+	return out, diags.Render()
+}
+
+// TestRegexLiteral pins when a slash starts a regular expression (D182) and
+// when it divides: after a token that ends a value it divides, as in JavaScript.
+// The Veles front end reproduces the rule (selfhost/lexer).
+func TestRegexLiteral(t *testing.T) {
+	cases := []struct {
+		name  string
+		src   string
+		texts []string // the tokens that are regular expressions, in order
+	}{
+		{"after =", `val r = /a+b/`, []string{`/a+b/`}},
+		{"flags", `val r = /a/imx`, []string{`/a/imx`}},
+		{"after (", `f(/\d+/, 1)`, []string{`/\d+/`}},
+		{"after comma", `f(1, /x/)`, []string{`/x/`}},
+		{"after return", `return /x/`, []string{`/x/`}},
+		{"after =>", `val f = s => /x/`, []string{`/x/`}},
+		{"after an operator", `val b = !/x/.test(s)`, []string{`/x/`}},
+		{"at the start of a statement", "val a = 1\n/x/.test(s)", []string{`/x/`}},
+		{"divides after a name", `val q = a / b / c`, nil},
+		{"divides after a number", `val q = 8 / 2`, nil},
+		{"divides after )", `val q = (a + b) / 2`, nil},
+		{"divides after ]", `val q = xs[0] / 2`, nil},
+		{"divides after a string", `val q = "a" / 2`, nil},
+		{"divides after this", `val q = this / 2`, nil},
+		{"/= after a name", `a /= 2`, nil},
+		{"escaped slash", `val r = /a\/b/`, []string{`/a\/b/`}},
+		{"slash in a class", `val r = /[/]x/`, []string{`/[/]x/`}},
+		{"posix class", `val r = /[[:alpha:]/]+/`, []string{`/[[:alpha:]/]+/`}},
+		{"two on a line", `f(/a/, /b/i)`, []string{`/a/`, `/b/i`}},
+		{"comment, not a regex", "val a = 1 // x\n", nil},
+		{"block comment, not a regex", "val a = /* x */ 1", nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			toks, rendered := kindsOf(t, c.src)
+			if rendered != "" {
+				t.Fatalf("unexpected diagnostics:\n%s", rendered)
+			}
+			var got []string
+			for _, tok := range toks {
+				if tok.Kind == Regex {
+					got = append(got, tok.Text)
+				}
+			}
+			if strings.Join(got, "|") != strings.Join(c.texts, "|") {
+				t.Fatalf("regular expressions = %q, want %q", got, c.texts)
+			}
+		})
+	}
+}
+
+func TestRegexLiteralErrors(t *testing.T) {
+	cases := []struct{ name, src, want string }{
+		{"unterminated", "val r = /abc\nval x = 1", "unterminated regular expression"},
+		{"ends the file", "val r = /abc", "unterminated regular expression"},
+		{"unknown flag", `val r = /a/q`, "unknown regular expression flag 'q'"},
+		{"repeated flag", `val r = /a/ii`, "the regular expression flag 'i' is written twice"},
+		{"slash in a class is open", `val r = /[a/`, "unterminated regular expression"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, rendered := kindsOf(t, c.src)
+			if !strings.Contains(rendered, c.want) {
+				t.Fatalf("wanted %q in:\n%s", c.want, rendered)
+			}
+		})
+	}
+}

@@ -1,0 +1,25 @@
+lines that are not log lines: 1
+errors in cache: 1
+errors in db: 1
+errors in http: 1
+slowest: 2210ms
+2026-10-19 09:15:07 ERROR [http] GET /reports/7 500 took 2210ms user bob.smith@mail.example.org
+--- shared version
+2026-10-19 09:15:02 INFO  [http] GET /users/42 200 took 18ms
+2026-10-19 09:15:03 WARN  [db] slow query on orders (840ms) for <email>
+2026-10-19 09:15:04 ERROR [db] connection reset by peer
+2026-10-19 09:15:04 INFO  [http] POST /orders 201 took 95ms
+this line is not a log line at all
+2026-10-19 09:15:07 ERROR [http] GET /reports/7 500 took 2210ms user <email>
+2026-10-19 09:15:09 ERROR [cache] eviction storm, 3 retries
+--- patterns from outside
+\bERROR\b matches 3 times
+refused (unclosed: missing ')'
+\d+(ms|s) matches 4 times
+refused (\w+)\1: backreferences are not supported by the linear-time engine; Regex.compile(pattern, backtracking: true) allows them, and can take exponential time
+--- Unicode, and a trusted pattern that asks for more
+words: 3
+repeated words: 2
+--- no input blows it up
+false
+exit=0

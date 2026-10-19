@@ -142,6 +142,9 @@ func TestCorpus(t *testing.T) {
 // exercises loosely: spacing, parentheses, comments, blank lines.
 func TestStyle(t *testing.T) {
 	cases := []struct{ name, in, want string }{
+		{"regex literals stay verbatim",
+			"fun f(s: string):bool{val r=/(a b)\\d+ [/] \\//imx\nreturn r.test(s)||/x/.test(s)}\n",
+			"fun f(s: string): bool {\n  val r = /(a b)\\d+ [/] \\//imx\n  return r.test(s) || /x/.test(s)\n}\n"},
 		{"spacing and parens",
 			"fun f(a:i64,b:i64):i64{val x=(a+b)*2\nreturn x}\n",
 			"fun f(a: i64, b: i64): i64 {\n  val x = (a + b) * 2\n  return x\n}\n"},

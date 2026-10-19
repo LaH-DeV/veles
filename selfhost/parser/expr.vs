@@ -330,6 +330,13 @@ extend Parser {
         this.next()
         return ast.CharLit(value: (t.parts.at(0) ?: lexer.StringPart()).text, pos: t.span)
       }
+      Kind.Regex => {
+        this.next()
+        val closing = t.text.lastIndexOf("/")
+        // an unterminated literal: the lexer reported it
+        if (closing < 1) return ast.RegexLit(pattern: t.text.substring(1, t.text.len()) ?: "", pos: t.span)
+        return ast.RegexLit(pattern: t.text.substring(1, closing) ?: "", flags: t.text.substring(closing + 1, t.text.len()) ?: "", pos: t.span)
+      }
       Kind.KwTrue, Kind.KwFalse => {
         this.next()
         return ast.BoolLit(value: t.kind == Kind.KwTrue, pos: t.span)

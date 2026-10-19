@@ -50,7 +50,7 @@ extend Parser {
         this.expect(Kind.RBracket)
         return ast.ListPat(elems: elems.toList(), pos: this.spanFrom(start))
       }
-      Kind.KwNull, Kind.KwTrue, Kind.KwFalse, Kind.Int, Kind.Float, Kind.String, Kind.Char => return ast.LiteralPat(value: &this.parsePrimary())
+      Kind.KwNull, Kind.KwTrue, Kind.KwFalse, Kind.Int, Kind.Float, Kind.String, Kind.Char, Kind.Regex => return ast.LiteralPat(value: &this.parsePrimary())
       Kind.Minus => {
         this.next()
         val x = this.parsePrimary()

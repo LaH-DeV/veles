@@ -714,6 +714,7 @@ struct Printer {
         this.write(")")
       }
       is CharLit        => this.write("'${e.value}'")
+      is RegexLit       => this.write("(regex ${quote(e.pattern)} ${quote(e.flags)})")
       is BoolLit        => this.write(if (e.value) "true" else "false")
       is NullLit        => this.write("null")
       is ThisExpr       => this.write("this")

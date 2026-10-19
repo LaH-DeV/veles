@@ -1,6 +1,8 @@
 package parser
 
 import (
+	"strings"
+
 	"github.com/LaH-DeV/veles/ast"
 	"github.com/LaH-DeV/veles/lexer"
 	"github.com/LaH-DeV/veles/source"
@@ -380,6 +382,14 @@ func (p *Parser) parsePrimary() ast.Expr {
 	case lexer.Char:
 		p.next()
 		return &ast.CharLit{Value: t.Parts[0].Text, Pos: t.Span}
+	case lexer.Regex:
+		p.next()
+		closing := strings.LastIndexByte(t.Text, '/')
+		if closing < 1 {
+			// an unterminated literal: the lexer reported it
+			return &ast.RegexLit{Pattern: strings.TrimPrefix(t.Text, "/"), Pos: t.Span}
+		}
+		return &ast.RegexLit{Pattern: t.Text[1:closing], Flags: t.Text[closing+1:], Pos: t.Span}
 	case lexer.KwTrue, lexer.KwFalse:
 		p.next()
 		return &ast.BoolLit{Value: t.Kind == lexer.KwTrue, Pos: t.Span}

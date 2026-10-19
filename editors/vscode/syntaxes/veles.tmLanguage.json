@@ -13,6 +13,7 @@
     { "include": "#literals" },
     { "include": "#templateTag" },
     { "include": "#textblocks" },
+    { "include": "#regex" },
     { "include": "#rawstrings" },
     { "include": "#strings" },
     { "include": "#chars" },
@@ -133,6 +134,18 @@
           }
         },
         {
+          "comment": "test label \"name\" { } (D170): the label is a name tests can be listed by",
+          "match": "^\\s*(test)\\s+(?!fun\\b)([A-Za-z_][A-Za-z0-9_]*)(?=\\s*\")",
+          "captures": {
+            "1": {
+              "name": "storage.type.test.veles"
+            },
+            "2": {
+              "name": "entity.name.label.test.veles"
+            }
+          }
+        },
+        {
           "comment": "test \"name\" { }, suite \"name\" { }  and  test fun  (D78; contextual: only before a string or 'fun')",
           "match": "^\\s*(test|suite)\\b(?=\\s*(\"|fun\\b))",
           "captures": {
@@ -149,7 +162,7 @@
         },
         {
           "comment": "val / var / const binding",
-          "match": "\\b(public\\s+)?(val|var|const)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "match": "\\b(public\\s+)?(val|var|const)\\s+(?!fun\\b)([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
             "1": { "name": "storage.modifier.veles" },
             "2": { "name": "storage.type.veles" },
@@ -248,6 +261,82 @@
       "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.veles" } },
       "end": "`",
       "endCaptures": { "0": { "name": "punctuation.definition.string.end.veles" } }
+    },
+    "regex": {
+      "comment": "D182: /pattern/flags where a value may start, i.e. not right after a name, a number, a string, ')', ']' or '}' (the compiler's lexer decides by the previous token; this is the usual editor approximation). Inside, the pattern's own parts are coloured.",
+      "name": "string.regexp.veles",
+      "begin": "(?:(?<=\\b(?:return|in|is|else|try|throw|await|if|when)\\s)|(?<![\\w)\\]}'\"`/*])(?<![\\w)\\]}]\\s))(/)(?![/*\\s])",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.string.begin.veles"
+        }
+      },
+      "end": "(/)([imsxu]*)|(?=$)",
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.definition.string.end.veles"
+        },
+        "2": {
+          "name": "keyword.other.flags.regexp.veles"
+        }
+      },
+      "patterns": [
+        {
+          "name": "constant.other.character-class.escape.regexp.veles",
+          "match": "\\\\[dDwWsS]"
+        },
+        {
+          "name": "keyword.control.anchor.regexp.veles",
+          "match": "\\\\[bBAz]"
+        },
+        {
+          "name": "constant.character.escape.regexp.veles",
+          "match": "\\\\(?:[dDwWsS]|[bBAz]|x\\{[0-9a-fA-F]+\\}|x[0-9a-fA-F]{2}|.)"
+        },
+        {
+          "name": "constant.other.character-class.set.regexp.veles",
+          "begin": "\\[\\^?",
+          "end": "\\]",
+          "patterns": [
+            {
+              "name": "constant.other.character-class.posix.regexp.veles",
+              "match": "\\[:\\^?[a-z]+:\\]"
+            },
+            {
+              "name": "constant.other.character-class.escape.regexp.veles",
+              "match": "\\\\[dDwWsS]"
+            },
+            {
+              "name": "constant.character.escape.regexp.veles",
+              "match": "\\\\(?:[dDwWsS]|[bBAz]|x\\{[0-9a-fA-F]+\\}|x[0-9a-fA-F]{2}|.)"
+            },
+            {
+              "name": "punctuation.separator.range.regexp.veles",
+              "match": "(?<=[^\\[^])-(?=[^\\]])"
+            }
+          ]
+        },
+        {
+          "name": "punctuation.definition.group.regexp.veles",
+          "match": "\\(\\?(?:<[A-Za-z_][A-Za-z0-9_]*>|P<[A-Za-z_][A-Za-z0-9_]*>|[imsx-]*:|[imsx-]+(?=\\)))|\\(|\\)"
+        },
+        {
+          "name": "keyword.operator.quantifier.regexp.veles",
+          "match": "[*+?]\\??|\\{\\d+(?:,\\d*)?\\}\\??"
+        },
+        {
+          "name": "keyword.operator.or.regexp.veles",
+          "match": "\\|"
+        },
+        {
+          "name": "keyword.control.anchor.regexp.veles",
+          "match": "[\\^$]"
+        },
+        {
+          "name": "constant.other.character-class.any.regexp.veles",
+          "match": "\\."
+        }
+      ]
     },
     "strings": {
       "name": "string.quoted.double.veles",

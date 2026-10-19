@@ -11,6 +11,7 @@ enum Kind {
   Int
   Float
   String
+  Regex
   Char
   // punctuation
   LParen
@@ -146,7 +147,7 @@ const fun kindNames(): Map<Kind, string> {
   val names: MutableMap<Kind, string> = [
     Kind.EOF: "end of file", Kind.Illegal: "illegal token", Kind.Ident: "identifier",
     Kind.Int: "integer literal", Kind.Float: "float literal", Kind.String: "string literal",
-    Kind.Char: "character literal", Kind.Semi: "newline", Kind.KwReserved: "reserved keyword",
+    Kind.Char: "character literal", Kind.Regex: "regular expression literal", Kind.Semi: "newline", Kind.KwReserved: "reserved keyword",
   ]
   val symbols = [
     "(", ")", "{", "}", "[", "]", ",", ";", ":", "::", ".", "?.", "?:", "?!", "??", "?", "=>", "->", "@",
@@ -200,7 +201,7 @@ struct Token {
   fun describe(): string {
     when (this.kind) {
       Kind.Ident => return "identifier '${this.text}'"
-      Kind.Int, Kind.Float, Kind.String, Kind.Char => return "${kindText(this.kind)} '${this.text}'"
+      Kind.Int, Kind.Float, Kind.String, Kind.Char, Kind.Regex => return "${kindText(this.kind)} '${this.text}'"
       Kind.Semi => return if (this.autoSemi) "end of line" else "';'"
       Kind.EOF => return "end of file"
       else => { }

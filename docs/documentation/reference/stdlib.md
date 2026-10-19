@@ -1273,6 +1273,49 @@ lint.Fix.replace(span, text);  lint.Fix.remove(span);  lint.Fix.insertBefore(spa
 // a package lists its rules: public const fun rules(): List<lint.Rule>
 ```
 
+## Module `regex` (D182)
+
+```veles
+// fragment
+use regex { Regex }
+val re = try Regex.compile(`(?<y>\d{4})-(?<m>\d\d)`)   // throws RegexError { message, position }
+Regex.compile(p, ignoreCase: false, multiLine: false, dotAll: false, extended: false, unicode: false, backtracking: false)
+Regex.escape(text): string                     // text that matches itself
+re.test(text): bool                            // matches somewhere
+re.matches(text): bool                         // matches all of it
+re.find(text, from: 0): Match?
+re.findAll(text): List<Match>                  // not overlapping; an empty match right after a match is skipped
+re.replaceAll(text, replacement): string       // $1, ${1}, ${name}, $0, $$ in replacement
+re.replaceFirst(text, replacement), re.replaceEach(text, f: fun(Match): string)
+re.split(text, limit: -1): List<string>
+re.source(): string, re.groupCount(): i64
+m.value(), m.start(), m.end()                  // byte offsets
+m.groupAt(i): string?, m.group(name): string?, m.span(i): (i64, i64)?, m.groupCount()
+text.matches(re), text.find(re), text.findAll(re), text.replaceAll(re, replacement), text.splitBy(re)   // after `use regex`
+```
+
+RE2's syntax, matched in time at most proportional to the pattern times the
+text: there is no input that makes a search blow up. Flags `(?i)`, `(?m)`,
+`(?s)`, `(?x)`, `(?u)`, scoped as `(?i:…)`; the same letters follow a `/…/`
+literal. A raw backtick string keeps the backslashes out of the way.
+
+**Unicode.** `\p{L}`, `\pL`, `\P{Lu}`, `\p{^Nd}` and `\p{Greek}` name a
+general category or a script (Unicode 15, all of Go's tables), in or out of a
+`[…]` class; `\p{Any}` is every code point. `\d \w \s \b` are ASCII unless the
+`u` flag is on (`/\w+/u`, `(?u)`, `unicode: true`): then `\d` is `Nd`, `\w` is
+letters, marks, `Nd` and connector punctuation, `\s` is `White_Space`, and the
+case folding of `i` is Unicode's simple folding (`σ`, `Σ`, `ς`) instead of
+ASCII's. Offsets stay bytes.
+
+**Backreferences and lookaround.** `\1`, `\k<name>`, `(?=…)`, `(?!…)`, `(?<=…)`
+and `(?<!…)` cannot be matched in bounded time, so a `/…/` literal or a plain
+`Regex.compile` refuses them with an error that names the way out:
+`Regex.compile(p, backtracking: true)` runs the pattern on an exhaustive engine,
+depth first, with no memory of the states it tried. It can take exponential
+time on a hostile pattern or text (`(a+)+\1` over a long run of `a`), so use
+it for patterns you wrote and text you trust. A pattern that has none of these
+constructs runs on the fast engines whatever the option says.
+
 ## Not in the library yet
 
 UDP and Unix-domain sockets in `net`, a terminal module, file watching.

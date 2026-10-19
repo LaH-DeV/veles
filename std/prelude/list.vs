@@ -384,6 +384,7 @@ extend<T: Sendable> MutableList<T> {
   /// A list of `count` copies of `x`: `MutableList<bool>.repeat(false, n)`.
   public static const fun repeat(x: T, count: i64): MutableList<T> {
     var out: MutableList<T> = []
+    if (count > 0) out.reserve(count)
     loop (_ in 0..<count) out.push(x)
     out
   }
@@ -411,6 +412,7 @@ extend<T> MutableList<T> {
   /// `MutableList<MutableList<i64>>.make(n, _ => [])`.
   public static const fun make(n: i64, init: fun(i64): T): MutableList<T> {
     var out: MutableList<T> = []
+    if (n > 0) out.reserve(n)
     loop (i in 0..<n) out.push(init(i))
     out
   }

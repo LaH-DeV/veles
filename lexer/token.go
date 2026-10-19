@@ -17,6 +17,7 @@ const (
 	Int
 	Float
 	String // may carry interpolation parts
+	Regex  // /pattern/flags (D182), Text is the whole literal
 	Char
 
 	// Punctuation
@@ -194,7 +195,7 @@ var keywords = map[string]TokenKind{
 
 var kindNames = map[TokenKind]string{
 	EOF: "end of file", Illegal: "illegal token", Ident: "identifier", Int: "integer literal",
-	Float: "float literal", String: "string literal", Char: "character literal",
+	Float: "float literal", String: "string literal", Char: "character literal", Regex: "regular expression literal",
 	LParen: "(", RParen: ")", LBrace: "{", RBrace: "}", LBracket: "[", RBracket: "]",
 	Comma: ",", Semi: "newline", Colon: ":", DblColon: "::", Dot: ".", SafeDot: "?.",
 	Elvis: "?:", OrFail: "?!", Coalesce: "??", Question: "?", FatArrow: "=>", Arrow: "->", At: "@", Amp: "&", Pipe: "|",
@@ -256,7 +257,7 @@ type Token struct {
 
 func (t Token) String() string {
 	switch t.Kind {
-	case Ident, Int, Float, String, Char:
+	case Ident, Int, Float, String, Char, Regex:
 		return fmt.Sprintf("%s %q", t.Kind, t.Text)
 	case Semi:
 		if t.AutoSemi {
@@ -273,7 +274,7 @@ func (t Token) Describe() string {
 	switch t.Kind {
 	case Ident:
 		return fmt.Sprintf("identifier '%s'", t.Text)
-	case Int, Float, String, Char:
+	case Int, Float, String, Char, Regex:
 		return fmt.Sprintf("%s '%s'", t.Kind, t.Text)
 	case Semi:
 		if t.AutoSemi {

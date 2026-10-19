@@ -76,6 +76,7 @@ public struct Visitor {
   public onRaceExpr:         (fun(RaceExpr, Context))? = null
   public onRangeExpr:        (fun(RangeExpr, Context))? = null
   public onRangePat:         (fun(RangePat, Context))? = null
+  public onRegexLit:         (fun(RegexLit, Context))? = null
   public onRestPat:          (fun(RestPat, Context))? = null
   public onReturnStmt:       (fun(ReturnStmt, Context))? = null
   public onScopeExpr:        (fun(ScopeExpr, Context))? = null

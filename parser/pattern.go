@@ -66,7 +66,7 @@ func (p *Parser) parsePattern(binding bool) ast.Pattern {
 		p.expect(lexer.RBracket)
 		lp.Pos = p.spanFrom(start)
 		return lp
-	case lexer.KwNull, lexer.KwTrue, lexer.KwFalse, lexer.Int, lexer.Float, lexer.String, lexer.Char:
+	case lexer.KwNull, lexer.KwTrue, lexer.KwFalse, lexer.Int, lexer.Float, lexer.String, lexer.Char, lexer.Regex:
 		return &ast.LiteralPat{Value: p.parsePrimary()}
 	case lexer.Minus:
 		p.next()

@@ -100,7 +100,7 @@ func (lx *Lexer) semiAllowed() bool {
 		return false
 	}
 	switch lx.lastKind() {
-	case Ident, Int, Float, String, Char,
+	case Ident, Int, Float, String, Char, Regex,
 		KwTrue, KwFalse, KwNull, KwSelf, KwSelfTy, KwBreak, KwContinue, KwReturn,
 		KwThrows, KwSuspends,
 		RParen, RBracket, RBrace, Question, Gt, Shr, Under: // Shr: `List<List<T>>` at line end
@@ -176,6 +176,8 @@ func (lx *Lexer) run() {
 			lx.checkComment(start, lx.pos)
 			lx.comments = append(lx.comments, Comment{Span: lx.span(start, lx.pos), Text: lx.src[start:lx.pos]})
 			lx.blockDoc(start)
+		case c == '/' && lx.regexAllowed():
+			lx.regexLit()
 		case identStartLen(lx.src, lx.pos) > 0:
 			lx.identifier()
 		case isDigit(c):
@@ -403,6 +405,88 @@ func (lx *Lexer) skipInterp() (exprStart int, ok bool) {
 		lx.pos = len(lx.src) // a nested string ran off the end
 	}
 	return exprStart, depth == 0
+}
+
+// regexAllowed reports whether a `/` here starts a regular expression literal
+// (D182) rather than dividing: it divides after a token that ends a value, as in
+// JavaScript — a name, a number, a string, `)`, `]`, `}`, `this`, `true`,
+// `false`, `null` — and starts a literal after anything else (an operator, `(`,
+// `,`, `=`, `=>`, a keyword, the start of a statement). `//` and `/*` are
+// comments and never get here.
+func (lx *Lexer) regexAllowed() bool {
+	switch lx.lastKind() {
+	case Ident, Int, Float, String, Char, Regex, KwTrue, KwFalse, KwNull, KwSelf, KwSelfTy,
+		RParen, RBracket, RBrace, Under:
+		return false
+	}
+	return true
+}
+
+// regexFlags are the letters that may follow a literal's closing slash (D182):
+// ignore case, multi-line anchors, dot matches a newline, extended syntax,
+// Unicode classes.
+const regexFlags = "imsxu"
+
+// regexLit lexes `/pattern/flags`. The pattern is raw: a backslash keeps the
+// next character from ending it (`\/`), and a slash inside `[…]` needs no
+// escape. It stays on one line.
+func (lx *Lexer) regexLit() {
+	start := lx.pos
+	lx.pos++ // opening slash
+	inClass := false
+	closed := false
+	for lx.pos < len(lx.src) && !closed {
+		c := lx.src[lx.pos]
+		switch {
+		case c == '\n' || c == '\r':
+			lx.errorf(start, lx.pos, "unterminated regular expression; a /…/ literal is on one line and ends with a slash")
+			lx.regexToken(start)
+			return
+		case c == '\\' && lx.pos+1 < len(lx.src) && lx.src[lx.pos+1] != '\n' && lx.src[lx.pos+1] != '\r':
+			lx.pos += 2
+			continue
+		case inClass && c == '[' && lx.peekByte(1) == ':':
+			// [:alpha:] inside a class
+			if end := strings.Index(lx.src[lx.pos+2:], ":]"); end >= 0 && !strings.ContainsAny(lx.src[lx.pos:lx.pos+2+end], "\n\r") {
+				lx.pos += end + 4
+				continue
+			}
+		case c == '[':
+			inClass = true
+		case c == ']':
+			inClass = false
+		case c == '/' && !inClass:
+			closed = true
+			continue
+		}
+		lx.pos++
+	}
+	if !closed {
+		lx.errorf(start, lx.pos, "unterminated regular expression; a /…/ literal ends with a slash")
+		lx.regexToken(start)
+		return
+	}
+	lx.pos++ // closing slash
+	flagsStart := lx.pos
+	for lx.pos < len(lx.src) && (lx.src[lx.pos] >= 'a' && lx.src[lx.pos] <= 'z' || lx.src[lx.pos] >= 'A' && lx.src[lx.pos] <= 'Z') {
+		lx.pos++
+	}
+	seen := ""
+	for i := flagsStart; i < lx.pos; i++ {
+		f := lx.src[i]
+		switch {
+		case !strings.ContainsRune(regexFlags, rune(f)):
+			lx.errorf(i, i+1, "unknown regular expression flag '%c'; the flags are i (ignore case), m (multi-line), s (dot matches a newline), x (extended) and u (Unicode)", f)
+		case strings.ContainsRune(seen, rune(f)):
+			lx.errorf(i, i+1, "the regular expression flag '%c' is written twice", f)
+		}
+		seen += string(f)
+	}
+	lx.regexToken(start)
+}
+
+func (lx *Lexer) regexToken(start int) {
+	lx.tokens = append(lx.tokens, Token{Kind: Regex, Text: lx.src[start:lx.pos], Span: lx.span(start, lx.pos)})
 }
 
 // rawLit lexes a backtick string (D172): every character is itself — no

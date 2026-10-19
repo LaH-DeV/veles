@@ -250,6 +250,8 @@ func (f *fnCtx) checkExprInner(e ast.Expr, want types.Type) Expr {
 		return f.stringLit(e)
 	case *ast.TemplateExpr:
 		return f.templateLit(e, want)
+	case *ast.RegexLit:
+		return f.regexLit(e, want)
 	case *ast.CharLit:
 		// `'"'` is a byte (D18 addendum, v0.24): the u8 of one ASCII character,
 		// for code that walks a string with `byteAt`. Not a character type —

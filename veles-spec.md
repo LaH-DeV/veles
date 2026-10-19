@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.95** — decisions D1–D181. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.96** — decisions D1–D182. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -7327,6 +7327,39 @@ val sum = acc.reduceSum()
 Rules: `T` is a numeric primitive; the width is 128, 256 or 512 bits (anything else is a compile error with a fix); a width the target lacks is legalized by LLVM into narrower vectors or scalars, so the program stays correct; `load` is bounds-checked in debug builds, `loadUnchecked` is `unsafe`; no effects. Masks, `select`, `reduceSum`, `shuffle`, `bitmask` and bit-casts between element types of the same width are the first API set — the public method names are confirmed with the user when built.
 
 Rejected: lane-count-only `Simd<T, N>` as the main spelling; relying on auto-vectorization (Go; float reductions are not vectorized without fast-math); raw per-ISA intrinsics through `extern` (not portable).
+
+### D182 — `std/regex`: a `/…/flags` literal, a linear-time engine, an opt-in backtracking one (v0.96)
+
+Gap review 2026-10-19 (idioms menu A38; the user, after the options: engine "both, linear by default"; "what about regex type + regex literal but no backticks or quotes... more like in JS? + what about typed groups like an extension later? with typed regex + methods on strings as an extension for devex?"; "Ideally it would be configurable, but if not - use the ascii"). All answers were the recommended option.
+
+```veles
+use regex
+
+val logLine = /(?<date>\d{4}-\d\d-\d\d) (?<level>[A-Z]+) \[(?<mod>\w+)\] (?<msg>.*)/
+val m = logLine.find(line) ?: continue                  // Match?
+io.println("${m.group("level")} in ${m.group("mod")}")   // group(name): string?
+if (line.matches(/^\d+$/)) …                             // string extensions (D173), after `use regex`
+val clean = text.replaceAll(/\s+/, with: " ")
+val re = try Regex.compile(userPattern)                  // throws RegexError (offset, message, fix)
+val safe = Regex.escape(userText)
+val backref = try Regex.compile(`(\w)\1`, backtracking: true)
+```
+
+- **The literal** `/…/flags` is a token of its own. The lexer reads a `/` as a regex start unless the previous token ends a value (an identifier, a number, string or char, `)`, `]`, `}`, `?`, `this`, `true`, `false`, `null`, `break`, `continue`) — the state it already keeps for semicolons; division is unchanged. `//` and `/*` stay comments, so a literal is never empty (`(?:)`). One line, no `${}` (an interpolated pattern is an injection risk: `Regex.escape` and `Regex.compile`), `\/` is a slash and `/` needs no escape inside `[…]`. Flags: `i` case-insensitive, `m` multi-line anchors, `s` dot matches `\n`, `x` verbose, `u` Unicode classes. A bad pattern is a compile error: the compiler runs `std/regex`'s own parser on the literal through the `const fun` evaluator (D113), so there is one pattern parser, written in Veles.
+- **Engine:** `Regex` is immutable and `Sendable`. The default engine is linear time (RE2 syntax: classes, `\d \w \s \b`, `\p{…}`, named groups `(?<n>…)`, lazy quantifiers, flags `(?i)`, anchors) — no catastrophic backtracking, safe on untrusted input. Backreferences and lookaround exist only behind `Regex.compile(p, backtracking: true)`, never in a literal (`/(\w)\1/` is an error that names that call): the risk stays greppable. Written in Veles (`std/regex`), a Pike VM first, a lazy DFA when a profile asks; benchmarked against Go's `regexp`.
+- **Classes:** `\d`, `\w`, `\s`, `\b` are ASCII by default (`[0-9]`, `[0-9A-Za-z_]`); the `u` flag or `unicode: true` makes them Unicode-aware; `\p{…}` is always Unicode. Offsets are bytes, as `byteAt`.
+- **String extensions** in `std/regex` (D173; visible where a file does `use regex`): `matches` (whole string), `find`, `findAll`, `replaceAll`, `splitBy` — distinct from the inherent `replace`, `split`, `contains` (an inherent method wins and there is no overloading, D179). Each forwards to the `Regex` method, which stays the primary API. The exact names are confirmed when built.
+- **Typed groups are a later extension:** the literal's named groups give it a type `Regex<(date: string, mod: string)>` (D166 labelled tuples; an optional group is `string?`), with `m.groups.date` typed. The untyped `Regex` and `group(name)` keep working. Not decided here; checklist §11.
+
+Edge cases settled with the options: the raw backtick string cannot hold a backtick (so a tagged `` regex`…` `` was not chosen); the formatter keeps a literal verbatim; the one lexer miss is a regex directly after `)` on the same line (`if (ok) /x/.matches(s)` — braces, as Veles requires).
+
+Rejected: a tagged raw string `regex\`…\``; a backtracking engine by default or a flag letter for it; methods on `string` only without a `Regex` type; Unicode classes by default.
+
+What this means for writing the compiler in Veles: the literal's compile-time check reuses `std/regex` through the evaluator, so the Veles compiler needs no regex code of its own; the lexer's regex rule is added to the Go and the `selfhost/` lexers together (G1).
+
+*Built 2026-10-19 (v0.96), with these names settled.* `std/regex`: `Regex.compile(pattern, ignoreCase, multiLine, dotAll, extended)` throws `RegexError { message, position }`; `Regex.escape`; `test` (anywhere) and `matches` (the whole text); `find(text, from)`, `findAll`, `replaceAll(text, replacement)`, `replaceFirst`, `replaceEach(text, f)`, `split(text, limit)`; `Match.value/start/end/groupAt(i)/group(name)/span(i)/groupCount`; the string extensions `matches`, `find`, `findAll`, `replaceAll(re, replacement)`, `splitBy`. The replacement parameter is `replacement`, not `with` (`with` is a keyword, D100), and `group(name)` / `groupAt(index)` are two names because there is no overloading (D179). A replacement reads `$1`, `${1}`, `${name}`, `$0` and `$$`. The engine is a Pike VM plus a bounded backtracker (a visited set of (instruction, position), used when program × text ≤ 262 144 pairs), identical results, both linear. The parser and the instruction builder are `const fun`s that record the first problem instead of throwing (a `const fun` cannot throw), which is how the compiler runs `regex.validate(pattern, flags)` on every literal; a literal lowers to `regex.literal(pattern, flags)`, which compiles each distinct literal once. Not built: typed groups; see checklist §11.
+
+*Built the same day (second part).* `\p{Name}`, `\pL`, `\P{…}`, `\p{^…}` (any general category or script of Unicode 15, `Any`), in or out of a class; the `u` flag (`/…/u`, `(?u)`, `unicode: true`): `\d` is `Nd`, `\w` letters + marks + `Nd` + connector punctuation, `\s` `White_Space`, `\b` and `i` follow Unicode (simple case folding). The tables are `std/regex/unicode.vs`, generated from Go's `unicode` package (`go test ./std -run RegexUnicodeTables -update-unicode`). `Regex.compile(pattern, …, unicode: false, backtracking: false)`: with `backtracking: true`, `\1`, `\k<name>`, `(?=…)`, `(?!…)`, `(?<=…)` and `(?<!…)` run on an exhaustive depth-first engine with no visited set (it can take exponential time; no step limit); a `/…/` literal never has it, and the refusal names this call.
 
 ---
 

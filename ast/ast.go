@@ -750,6 +750,15 @@ type StringLit struct {
 	Pos   source.Span
 }
 
+// RegexLit is `/pattern/flags` (D182): a regular expression. The lexer reads it
+// where a value may start (see Lexer.regexAllowed); the checker validates the
+// pattern while compiling and the value is a `regex.Regex`.
+type RegexLit struct {
+	Pattern string // between the slashes, as written (raw)
+	Flags   string // after the closing slash
+	Pos     source.Span
+}
+
 // TemplateExpr is `tag"text ${x}"` (D129): a string literal written right
 // after a function name (or `module.name`), with no space. The function —
 // marked `@template` — receives the literal's text pieces and its values
@@ -1087,6 +1096,7 @@ func (e *FloatLit) Span() source.Span         { return e.Pos }
 func (e *StringLit) Span() source.Span        { return e.Pos }
 func (e *TemplateExpr) Span() source.Span     { return e.Pos }
 func (e *CharLit) Span() source.Span          { return e.Pos }
+func (e *RegexLit) Span() source.Span         { return e.Pos }
 func (e *BoolLit) Span() source.Span          { return e.Pos }
 func (e *NullLit) Span() source.Span          { return e.Pos }
 func (e *SelfExpr) Span() source.Span         { return e.Pos }
@@ -1133,6 +1143,7 @@ func (*FloatLit) exprNode()         {}
 func (*StringLit) exprNode()        {}
 func (*TemplateExpr) exprNode()     {}
 func (*CharLit) exprNode()          {}
+func (*RegexLit) exprNode()         {}
 func (*BoolLit) exprNode()          {}
 func (*NullLit) exprNode()          {}
 func (*SelfExpr) exprNode()         {}

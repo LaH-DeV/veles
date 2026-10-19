@@ -38,6 +38,7 @@ var families = []family{
 	// compiler-internal checks a program cannot reach, and the std intrinsics
 	fam("internal", `^unsupported (expression|statement|pattern|operator|unary operator|type syntax)$`,
 		`^list(RawData|DecodeUtf8Range|AppendText) takes`, `^%s takes a pointer$`, `^cannot read `),
+	fam("regular-expressions", `\(D182\)`, `regular expression`),
 	fam("removed-syntax", `was removed`, `no longer exists`, `is spelled`, `is written '=> expr'`, `has no '=>'`, `there is no 'for'`,
 		`is written 'loop`, `are written as lambdas`, `type parameters follow the function name`,
 		`are not imported one by one`, `brackets are for collection literals only`, `^'=' assigns`,

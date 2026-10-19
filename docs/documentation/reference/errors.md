@@ -1151,6 +1151,22 @@ be written right against the string (a space is an error), and it is a
 function — or `module.function` — not a value. A value whose type does not fit
 `V` is the usual type error at its `${…}`.
 
+### regular-expressions
+
+**A `/…/` literal the compiler refuses.** `this regular expression cannot be compiled: missing ')' (D182)`, `unterminated regular expression; a /…/ literal is on one line and ends with a slash`, `unknown regular expression flag 'q'`, `a regular expression literal needs the 'regex' module: add 'use regex'`.
+
+`/(?<year>\d{4})-(?<month>\d\d)/i` is a regular expression (D182,
+[the stdlib reference](stdlib.md)). The compiler runs the pattern through the
+same parser `Regex.compile` uses, so a bad pattern is an error at the
+literal, with the parser's own words, instead of a failure when the program
+runs. A literal stays on one line, takes no `${…}`, and ends at the first
+slash outside a `[…]` class that no backslash protects (`\/`); the flags after
+it are `i`, `m`, `s`, `x` and `u`. `\1` and `(?=…)` cannot be matched in bounded
+time and are refused in a literal; `Regex.compile(text, backtracking: true)` takes them,
+at the price of a search that can run for ever. The file
+needs `use regex`; a pattern built from text at run time is
+`Regex.compile`, which throws a `RegexError` with the same message.
+
 ### lint-rules
 
 **A lint rule written in Veles that cannot run.** `[lint] other.rule: 'other' is not a dependency of this package`, `package 'acme_lints' has no rule 'no_sleeps'; its rules are no_sleep (did you mean 'no_sleep'?)`, `package 'acme_lints' has no 'public const fun rules(): List<lint.Rule>'`, `a lint rule was shown the syntax 'X', which std/lint cannot show yet`.

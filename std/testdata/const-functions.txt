@@ -154,6 +154,71 @@ prelude/traits.vs: const fun compareTo(other: u32): Ordering
 prelude/traits.vs: const fun compareTo(other: u64): Ordering
 prelude/traits.vs: const fun compareTo(other: u8): Ordering
 prelude/traits.vs: const fun compareTo(other: usize): Ordering
+regex/compile.vs: const fun asciiMasks(sets: List<List<i64>>): List<i64>
+regex/compile.vs: const fun build(parsed: Parsed): Program
+regex/compile.vs: const fun choice(items: List<Node>)
+regex/compile.vs: const fun emit(op: i64, x: i64, y: i64 = 0): i64
+regex/compile.vs: const fun firstBytes(insts: List<Inst>, sets: List<List<i64>>): (List<bool>, bool)
+regex/compile.vs: const fun headIndexOf(insts: List<Inst>): (List<i64>, i64)
+regex/compile.vs: const fun here(): i64
+regex/compile.vs: const fun node(n: Node)
+regex/compile.vs: const fun patch(at: i64, x: i64, y: i64)
+regex/compile.vs: const fun repeat(body: Node, min: i64, max: i64, lazy: bool)
+regex/compile.vs: const fun runsOf(insts: List<Inst>): List<i64>
+regex/compile.vs: const fun set(ranges: List<i64>): i64
+regex/parse.vs: const fun alternation(depth: i64): Node
+regex/parse.vs: const fun assertion(kind: i64): Node
+regex/parse.vs: const fun atom(depth: i64): Node?
+regex/parse.vs: const fun braces(): (i64, i64)?
+regex/parse.vs: const fun bracket(): Node
+regex/parse.vs: const fun classAtom(pairs: MutableList<i64>): i64?
+regex/parse.vs: const fun classEscape(set: List<i64>, negated: bool): Node
+regex/parse.vs: const fun close()
+regex/parse.vs: const fun digitRanges(): List<i64>
+regex/parse.vs: const fun digits(): List<i64>
+regex/parse.vs: const fun eat(ch: u8): bool
+regex/parse.vs: const fun escape(): Node
+regex/parse.vs: const fun escapedCode(): i64
+regex/parse.vs: const fun fail(message: string)
+regex/parse.vs: const fun failed(): bool
+regex/parse.vs: const fun fold(ranges: List<i64>): List<i64>
+regex/parse.vs: const fun foldOf(c: i64): i64
+regex/parse.vs: const fun foldRanges(ranges: List<i64>): List<i64>
+regex/parse.vs: const fun foldUnicode(ranges: List<i64>): List<i64>
+regex/parse.vs: const fun group(depth: i64): Node?
+regex/parse.vs: const fun groupName(): string
+regex/parse.vs: const fun hexEscape(): i64
+regex/parse.vs: const fun hexValue(c: i64): i64
+regex/parse.vs: const fun isDigit(c: i64): bool
+regex/parse.vs: const fun isLetter(c: i64): bool
+regex/parse.vs: const fun literal(c: i64): Node
+regex/parse.vs: const fun look(ch: u8): bool
+regex/parse.vs: const fun lookaround(depth: i64, behind: bool, negated: bool): Node
+regex/parse.vs: const fun namedBackRef(): Node
+regex/parse.vs: const fun negate(ranges: List<i64>): List<i64>
+regex/parse.vs: const fun normalize(pairs: List<i64>): List<i64>
+regex/parse.vs: const fun number(): i64?
+regex/parse.vs: const fun numberedBackRef(): Node
+regex/parse.vs: const fun parse(pattern: string, flags: Flags): Parsed
+regex/parse.vs: const fun peek(): i64
+regex/parse.vs: const fun peekAt(ahead: i64): i64
+regex/parse.vs: const fun posix(name: string): List<i64>?
+regex/parse.vs: const fun posixClass(pairs: MutableList<i64>): bool
+regex/parse.vs: const fun property(negated: bool): List<i64>?
+regex/parse.vs: const fun quantified(atom: Node): Node
+regex/parse.vs: const fun sequence(depth: i64): Node
+regex/parse.vs: const fun skipSpace()
+regex/parse.vs: const fun spaceRanges(): List<i64>
+regex/parse.vs: const fun spaces(): List<i64>
+regex/parse.vs: const fun sym(c: i64): u8
+regex/parse.vs: const fun utf8String(code: i64): string
+regex/parse.vs: const fun wordRanges(): List<i64>
+regex/parse.vs: const fun words(): List<i64>
+regex/regex.vs: const fun flagsOf(flags: string): Flags
+regex/regex.vs: public const fun validate(pattern: string, flags: string): string
+regex/unicode.vs: const fun unicodeProperty(name: string): List<i64>?
+regex/vm.vs: const fun inSet(ranges: List<i64>, c: i64): bool
+regex/vm.vs: const fun isWordByte(b: u8): bool
 utf8/utf8.vs: const fun step(b0: u8, b1: u8, b2: u8, b3: u8, rest: i64): Rune?
 utf8/utf8.vs: public const fun char(code: i64): string
 utf8/utf8.vs: public const fun combineSurrogates(high: i64, low: i64): i64?

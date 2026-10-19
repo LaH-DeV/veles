@@ -731,6 +731,8 @@ func (p *printer) expr(e Expr) {
 		p.w(")")
 	case *CharLit:
 		p.f("'%s'", e.Value)
+	case *RegexLit:
+		p.f("(regex %q %q)", e.Pattern, e.Flags)
 	case *BoolLit:
 		p.f("%v", e.Value)
 	case *NullLit:

@@ -58,6 +58,8 @@ const OPERATORS: List<(string, Kind)> = [
 
 fun isDigit(b: u8): bool => b >= '0' && b <= '9'
 
+fun isAsciiLetter(b: u8): bool => (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
+
 fun isHexDigit(b: u8): bool => isDigit(b) || (b >= 'a' && b <= 'f') || (b >= 'A' && b <= 'F')
 
 fun isBinDigit(b: u8): bool => b == '0' || b == '1'
@@ -188,7 +190,7 @@ struct Lexer {
   }
 
   fun endsStatement(): bool => when (this.lastKind()) {
-    Kind.Ident, Kind.Int, Kind.Float, Kind.String, Kind.Char, Kind.KwTrue, Kind.KwFalse, Kind.KwNull,
+    Kind.Ident, Kind.Int, Kind.Float, Kind.String, Kind.Char, Kind.Regex, Kind.KwTrue, Kind.KwFalse, Kind.KwNull,
       Kind.KwThis, Kind.KwSelfType, Kind.KwBreak, Kind.KwContinue, Kind.KwReturn, Kind.KwThrows,
       Kind.KwSuspends, Kind.RParen, Kind.RBracket, Kind.RBrace, Kind.Question, Kind.Gt, Kind.Under,
       Kind.Shr => true  // `List<List<T>>` at a line's end
@@ -252,6 +254,8 @@ struct Lexer {
         this.checkComment(start, this.pos)
         this.comments.push(Comment(span: this.span(start, this.pos), text: this.cut(start, this.pos)))
         this.blockDoc(start)
+      } else if (b == '/' && this.regexAllowed()) {
+        this.regexLit()
       } else if (identStartLen(this.src, this.pos) > 0) {
         this.identifier()
       } else if (isDigit(b)) {
@@ -443,6 +447,85 @@ struct Lexer {
       i += 1
     }
     -1
+  }
+
+  // whether a `/` here starts a regular expression literal (D182) rather than
+  // dividing: it divides after a token that ends a value, as in JavaScript
+  fun regexAllowed(): bool => when (this.lastKind()) {
+    Kind.Ident, Kind.Int, Kind.Float, Kind.String, Kind.Char, Kind.Regex, Kind.KwTrue, Kind.KwFalse,
+      Kind.KwNull, Kind.KwThis, Kind.KwSelfType, Kind.RParen, Kind.RBracket, Kind.RBrace, Kind.Under => false
+    else => true
+  }
+
+  // `/pattern/flags` (D182). The pattern is raw: a backslash keeps the next
+  // character from ending it, and a slash inside `[…]` needs no escape. It
+  // stays on one line.
+  fun regexLit() {
+    val start = this.pos
+    this.pos += 1  // the opening slash
+    var inClass = false
+    var closed = false
+    loop (this.pos < this.src.len() && !closed) {
+      val b = this.src.byteAt(this.pos)
+      if (b == '\n' || b == '\r') {
+        this.errorAt(start, this.pos, "unterminated regular expression; a /…/ literal is on one line and ends with a slash")
+        this.regexToken(start)
+        return
+      }
+      if (b == '\\' && this.pos + 1 < this.src.len() && this.src.byteAt(this.pos + 1) != '\n' && this.src.byteAt(this.pos + 1) != '\r') {
+        this.pos += 2
+        continue
+      }
+      if (inClass && b == '[' && this.peekByte(1) == ':') {
+        // [:alpha:] inside a class
+        val end = this.src.indexOf(":]", this.pos + 2)
+        if (end >= 0 && !this.hasLineBreak(this.pos, end)) {
+          this.pos = end + 2
+          continue
+        }
+      } else if (b == '[') {
+        inClass = true
+      } else if (b == ']') {
+        inClass = false
+      } else if (b == '/' && !inClass) {
+        closed = true
+        continue
+      }
+      this.pos += 1
+    }
+    if (!closed) {
+      this.errorAt(start, this.pos, "unterminated regular expression; a /…/ literal ends with a slash")
+      this.regexToken(start)
+      return
+    }
+    this.pos += 1  // the closing slash
+    val flagsStart = this.pos
+    loop (this.pos < this.src.len() && isAsciiLetter(this.src.byteAt(this.pos))) this.pos += 1
+    var seen = ""
+    loop (i in flagsStart..<this.pos) {
+      val f = this.src.byteAt(i)
+      val letter = this.cut(i, i + 1)
+      if (!"imsxu".contains(letter)) {
+        this.errorAt(i, i + 1, "unknown regular expression flag '$letter'; the flags are i (ignore case), m (multi-line), s (dot matches a newline), x (extended) and u (Unicode)")
+      } else if (seen.contains(letter)) {
+        this.errorAt(i, i + 1, "the regular expression flag '$letter' is written twice")
+      }
+      seen += letter
+    }
+    this.regexToken(start)
+  }
+
+  fun regexToken(start: i64) {
+    this.tokens.push(Token(kind: Kind.Regex, text: this.cut(start, this.pos), span: this.span(start, this.pos)))
+  }
+
+  // whether a line break lies in src[from, to)
+  fun hasLineBreak(from: i64, to: i64): bool {
+    loop (i in from..<to) {
+      val b = this.src.byteAt(i)
+      if (b == '\n' || b == '\r') return true
+    }
+    false
   }
 
   // a backtick string (D172): every character is itself, over lines

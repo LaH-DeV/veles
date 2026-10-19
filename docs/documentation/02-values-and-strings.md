@@ -369,6 +369,51 @@ space (`html "…"`) is an error that says so. A module's function is tagged
 `db.sql"…"`. `examples/templates` writes an `html` and an `sql` tag; a
 database module (`std/db`) uses the same to make injection impossible.
 
+### Regular expressions
+
+A pattern between slashes is a regular expression, as in JavaScript (D182).
+`use regex` brings the type; the literal is a `Regex`, and the compiler
+checks the pattern while it compiles, so a bad one is an error at the literal
+and not a failure when the program runs.
+
+```veles
+use io { println }
+use regex
+
+fun main() {
+  val entry = /(?<date>\d{4}-\d\d-\d\d) (?<level>[A-Z]+) (?<message>.*)/
+  val m = "2026-10-19 ERROR disk full".find(entry) ?: panic("no match")
+  println("${m.group("level") ?: ""}: ${m.group("message") ?: ""}")
+  println("a1b22c333".replaceAll(/\d+/, "#"))
+  println("${"2026".matches(/\d+/)} ${"20x6".matches(/\d+/)}")
+}
+```
+
+Output:
+```text
+ERROR: disk full
+a#b#c#
+true false
+```
+
+A `/` starts a literal where a value can start, and divides after a name, a
+number, a string, `)`, `]` or `}` — so `a / b / c` is arithmetic and
+`f(/x/)` is a pattern. The pattern is raw (no escapes of Veles' own, no
+`${…}`), stays on one line, and ends at the first slash outside a `[…]` class
+that no backslash protects (`\/`). The flags after it are `i` (ignore case),
+`m` (`^` and `$` match at every line), `s` (`.` matches a newline), `x`
+(white space and `#` comments in the pattern are ignored) and `u` (`\d \w \s \b`
+and the case folding of `i` follow Unicode instead of ASCII). `\p{L}` and
+`\p{Greek}` name a Unicode category or script. The syntax is RE2's, and a
+search takes time at most proportional to the pattern times the text, whatever
+the text: `\1` and `(?=…)`, which cannot promise that, are errors in a literal.
+A pattern built from text at run time is `Regex.compile(text)`, which throws a
+`RegexError`; `Regex.escape` makes user text safe to put in one, and
+`Regex.compile(text, backtracking: true)` allows the backreferences and
+lookaround for patterns and text you trust. The
+methods are in the [library reference](reference/stdlib.md) and
+`examples/regex` is a log analyser.
+
 ## Booleans
 
 `bool` is `true` or `false`. `&&` and `||` short-circuit; `!` negates.

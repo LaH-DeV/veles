@@ -584,6 +584,13 @@ struct CharLit : Expr {
   var pos:   Span = Span.none()
 }
 
+/// `/pattern/flags` (D182): a regular expression.
+struct RegexLit : Expr {
+  var pattern: string = ""
+  var flags:   string = ""
+  var pos:     Span = Span.none()
+}
+
 struct BoolLit : Expr {
   var value: bool = false
   var pos:   Span = Span.none()
@@ -966,6 +973,7 @@ fun exprSpan(e: Expr): Span => when (e) {
   is StringLit      => e.pos
   is TemplateExpr   => e.pos
   is CharLit        => e.pos
+  is RegexLit       => e.pos
   is BoolLit        => e.pos
   is NullLit        => e.pos
   is ThisExpr       => e.pos
