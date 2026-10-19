@@ -120,12 +120,18 @@ func (c *Checker) indexExtensions() {
 		return
 	}
 	fileModule := map[*source.File]*Module{}
+	astFile := map[*source.File]*ast.File{}
 	for _, m := range c.pkg.Modules {
 		for _, f := range m.Files {
 			fileModule[f.Source] = m
+			astFile[f.Source] = f
 		}
 	}
-	byModule := map[*Module][]*FuncTemplate{}
+	type extFunc struct {
+		name string
+		t    *FuncTemplate
+	}
+	byModule := map[*Module][]extFunc{}
 	for _, ext := range c.foreignExts {
 		names := make([]string, 0, len(ext.Methods))
 		for name := range ext.Methods {
@@ -133,7 +139,7 @@ func (c *Checker) indexExtensions() {
 		}
 		sort.Strings(names)
 		for _, name := range names {
-			byModule[ext.Module] = append(byModule[ext.Module], ext.Methods[name])
+			byModule[ext.Module] = append(byModule[ext.Module], extFunc{name, ext.Methods[name]})
 		}
 	}
 	for i := range c.index.Refs {
@@ -142,9 +148,13 @@ func (c *Checker) indexExtensions() {
 		if r.Kind != "module" || r.Module == nil || from == nil || from == r.Module {
 			continue
 		}
+		// the use this reference is the module of, if it is on a use line: the
+		// types shown after it are those of the extensions its clause brings
+		spec := useSpecAt(astFile[r.Span.File], r.Span)
 		var lines []string
 		seen := map[string]bool{}
-		for _, t := range byModule[r.Module] {
+		for _, fn := range byModule[r.Module] {
+			t := fn.t
 			if !declVisible(t.Pub, t.Internal, false, t.Module.Path, from.Path) {
 				continue
 			}
@@ -157,15 +167,32 @@ func (c *Checker) indexExtensions() {
 				}
 			}
 			lines = append(lines, "  "+vis+"extend "+t.Impl.Target.String()+" with "+decl)
-			if target := t.Impl.Target.String(); !seen[target] {
+			if target := t.Impl.Target.String(); !seen[target] && spec != nil && importsExtension(spec, fn.name) {
 				seen[target] = true
 				r.Extends = append(r.Extends, target)
 			}
 		}
 		if len(lines) > 0 && strings.HasSuffix(r.Shape, "}") {
-			r.Shape = strings.TrimSuffix(r.Shape, "}") + "  // extension functions (D173): methods in the files that import this module\n" + strings.Join(lines, "\n") + "\n}"
+			r.Shape = strings.TrimSuffix(r.Shape, "}") + "  // extension functions (D173): methods in the files whose use says `extend` (D185)\n" + strings.Join(lines, "\n") + "\n}"
 		}
 	}
+}
+
+// useSpecAt is the import of a use declaration of f that contains span, or nil.
+func useSpecAt(f *ast.File, span source.Span) *ast.UseSpec {
+	if f == nil {
+		return nil
+	}
+	for _, d := range f.Decls {
+		if u, ok := d.(*ast.UseDecl); ok {
+			for _, s := range u.Specs {
+				if s.Pos.Start <= span.Start && span.End <= s.Pos.End {
+					return s
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // checkExtendClauses checks every `extend` clause of a use (D185): the module

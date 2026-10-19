@@ -97,9 +97,10 @@ func (s *Server) inlayHints(params json.RawMessage) any {
 	return out
 }
 
-// extensionHints ends a `use` line with the types the imported module adds
-// methods to (D173): its extension functions are in scope from that line on,
-// and nothing else in the file names them. The hover on the module lists them.
+// extensionHints ends a `use` line with the types its `extend` clause adds
+// methods to (D173, D185): those extension functions are in scope from that
+// line on, and nothing else in the file names them. A use without a clause
+// brings none, so it gets no hint. The hover on the module lists all it offers.
 func extensionHints(f *source.File, refs []sema.Ref) []inlayHint {
 	var out []inlayHint
 	done := map[int]bool{}
