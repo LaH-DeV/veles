@@ -1316,6 +1316,26 @@ time on a hostile pattern or text (`(a+)+\1` over a long run of `a`), so use
 it for patterns you wrote and text you trust. A pattern that has none of these
 constructs runs on the fast engines whatever the option says.
 
+## Module `toml` (D183)
+
+```veles
+// fragment
+use toml
+val doc = try toml.parse(text)                      // throws ParseError { line, message }; the whole of TOML 1.0
+val strict = try toml.parse(text, strict: true)     // the subset veles.toml uses: no floats, dates, [[tables]], hex
+val server = doc.get("server")?.asTable() ?: return // Table: get(key), has(key), keys() (sorted), line, defined()
+val port = server.get("port")?.asInt() ?: 8080
+// Value: kind (Kind.Str Int Float Bool OffsetDateTime LocalDateTime LocalDate LocalTime List Table), line,
+//        asString(), asInt(), asFloat() (an Int reads too), asBool(), asList(), asTable(), str/num/real/items/table
+// toml.describe(kind): "a string", "a list", … for a message
+```
+
+Every value remembers the line it was written on, so a program reading a
+configuration can say where it is wrong. Dates and times are kept as the text
+written (`Value.str`), checked for form and range. A table is `defined()` when a
+`[header]` or an inline table named it. Typed decoding (`toml.decode<T>`) and
+writing TOML are not built yet.
+
 ## Not in the library yet
 
 UDP and Unix-domain sockets in `net`, a terminal module, file watching.

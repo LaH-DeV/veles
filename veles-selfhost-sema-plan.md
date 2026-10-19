@@ -144,7 +144,7 @@ excluded bodies is printed, and it must reach zero at R7.
 ### 3.1 The first slice, concretely (R0 + R1)
 
 1. S10b: `--dump=modules` in the Go checker, golden-tested like the others.
-2. `selfhost/sema/toml.vs`, `manifest.vs`: the TOML subset and the manifest
+2. `std/toml` (D183, public) and `selfhost/sema/manifest.vs`: the TOML subset and the manifest
    schema (D131/D138) — small, self-contained, and the first code in the
    compiler that reads a user's configuration.
 3. `selfhost/sema/loader.vs`: module discovery, `use` resolution, the
@@ -277,6 +277,10 @@ which can start in parallel with 2–4.
   checker as a real compiler stage. The alternative is to compare dumps only
   and keep `codegen` waiting. *Recommendation: build the bridge; it turns the
   gate from "equal text" into "the programs still run".*
+  **Decided 2026-10-19 (user): build the readable HIR bridge — and note that
+  it must be cleaned up later** (checklist §11: the bridge is scaffolding; when
+  `codegen` is ported the text format and the Go reader go, or become the
+  compiler's interface-file format, S12).
 - **Q-S2 — the shape of the checker's state in Veles.** One large `Checker`
   struct with its methods in `extend` blocks across the files (it works today
   and mirrors the Go code, at the price of one type that every file can reach
@@ -285,16 +289,27 @@ which can start in parallel with 2–4.
   about what a pass may touch, and the better fit for tasks if checking ever
   runs in parallel). Not a language decision unless R2 shows a missing
   feature. *To be prepared with real code from R2 before asking.*
+  **Decided 2026-10-19 (user): a family of state types** (`Scopes`,
+  `Instances`, `Effects`, `Globals`, …) passed explicitly. R2 still reports
+  back if a pass needs a feature the language lacks.
 - **Q-S3 — whether the HIR stays a tree of `struct`s or a flat arena.** The Go
   HIR is ~75 pointer-linked node types. A flat arena with indices would be
   faster under the collector and easier to serialise (Q-S1), at the price of a
   style that is less readable. *Measure with R4's first constructs.*
+  **Decided 2026-10-19 (user): a flat arena, made as readable as possible
+  without losing speed and quality** — typed index handles (`ExprId`, …),
+  accessor methods that read like field access, and the dump/printer as the
+  place where the structure is read.
 - **Q-S4 — error recovery policy.** The Go checker keeps checking after an
   error to report more than one, with a few explicit "do not report a
   consequence" rules. The port must copy them exactly; if any of them turns
   out to depend on the Go checker's map order or pointer identity, that is a
   finding, and it may need a decision about what the language's diagnostics
   promise.
+  **Decided 2026-10-19 (user, the recommended): the set of errors, in a stable
+  order per file.** Wording may change between versions; the port matches the
+  Go checker's set and order, and a rule that depends on map order or pointer
+  identity is fixed in both.
 
 ---
 

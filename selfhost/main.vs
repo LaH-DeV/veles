@@ -9,16 +9,18 @@
 //   selfhost --tokens FILE      every token, comment and diagnostic of the scan (P1, gate G1)
 //   selfhost --quote FILE       every line quoted as the tree printer quotes a string (P3)
 //   selfhost --parse FILE       the tree as `veles parse` prints it, then every diagnostic (P5, gates G2, G3)
+//   selfhost --toml FILE        a TOML file as the manifest reader sees it, or its error (sema plan R1)
 use fs
 use io
 use os
 use ast { dump, quote }
 use lexer { kindText, tokenize }
 use parser { parseFile }
+use sema { tomlDump }
 use source { Diagnostics, File, Span }
 
 fun usage(): Never {
-  io.eprintln("usage: selfhost --positions|--lines|--render|--tokens|--quote|--parse FILE")
+  io.eprintln("usage: selfhost --positions|--lines|--render|--tokens|--quote|--parse|--toml FILE")
   os.exit(2)
 }
 
@@ -122,6 +124,7 @@ fun main() throws IoError {
     "--tokens"    => tokens(file)
     "--quote"     => quoteLines(file)
     "--parse"     => parse(file)
+    "--toml"      => tomlDump(file.content)
     else          => usage()
   }
   io.print(text)

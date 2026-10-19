@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.96** — decisions D1–D182. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.97** — decisions D1–D183. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -7450,3 +7450,17 @@ The tractable version:
 - ~~**A declaration-file system**, in the spirit of `.d.ts`, so foreign libraries can be bound with Veles-side type safety~~ *(v0.64, D122: bindings are ordinary packages of `extern` blocks; no separate file kind.)*
 
 This covers the large majority of the practical value at a small fraction of the cost.
+
+### D183 — `std/toml`: one TOML reader for programs and for the compiler (v0.97)
+
+Self-hosting review 2026-10-19 (the user, after the compiler port got a private TOML reader: "shouldn't the language itself have a toml parser that sema reuses?!"; scope chosen: "std/toml, full TOML + strict").
+
+```veles
+use toml
+
+val doc = try toml.parse(text)                         // TOML 1.0; throws ParseError { line, message }
+val manifest = try toml.parse(text, strict: true)      // the subset veles.toml uses
+val port = doc.get("server")?.asTable()?.get("port")?.asInt() ?: 8080
+```
+
+The reader builds a tree, not a typed value: every `Value` has its `kind` and the `line` it was written on, and a `Table` knows whether a header or an inline table defined it. `strict: true` refuses floats, dates, hex/octal/binary integers, multi-line strings, the `\b \f \r \e \U` escapes and `[[tables]]`, and allows a header after a dotted key — exactly what the compiler's manifest reader accepted before, which the self-hosted checker pins byte for byte against the Go reader (`TestR1Toml`). The Go `sema` keeps its own copy until the Go side is retired. Dates and times are the text as written with their shape (`OffsetDateTime`, `LocalDateTime`, `LocalDate`, `LocalTime`), checked for form and range. Typed decoding through `Decodable` (`toml.decode<T>`) and writing TOML come later (checklist §11). Rejected: a private reader inside the compiler port; the manifest subset only.
