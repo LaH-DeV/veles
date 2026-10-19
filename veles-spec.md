@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.93** — decisions D1–D179. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.95** — decisions D1–D181. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -7307,6 +7307,26 @@ Q55 (user, 2026-10-19: "can we add overloading into veles or not?"). Two functio
 **Why.** Resolution would have to be defined together with optional labels (`greet("x", punct: "?")` is also valid positionally, so labels cannot identify an overload), default arguments and variadics, integer literals that fit ten types, `null`, lambdas whose parameter types are known only after the choice, effects inferred to a fixpoint (D4/D45), extension functions (D173) and decorator wrappers (D176) — and it would be implemented twice, in the Go compiler and in the self-hosted one, which must agree byte for byte. The standard library's cost without it is a few longer names. Go and Rust also have none.
 
 Rejected: restricted overloading by distinct named parameter types with ambiguity an error; full overloading by argument types (Java, Kotlin, Swift, C#). A narrow gap is closed by the means above, not by this; a new case goes through `veles-decide` with the program that needs it.
+
+### D180 — A WebAssembly target is planned, built after the self-host groundwork (v0.94)
+
+Gap review 2026-10-19 (user, recommended of 3: "wasm32-wasi target, later"). A `wasm32-wasi` target is part of the plan, built after S10–S12 (sema dumps, module interfaces) rather than before them. LLVM already emits wasm; the work is the runtime: a single-thread executor for tasks, GC stack scanning on wasm, panic traces without DWARF unwinding (D81's shadow stack applies), and the WASI file and clock bindings. Sockets and threads are out of the first cut. It also enables a browser playground and edge runtimes, and the JS import/export of the "Beyond C ABI" list arrives with it.
+
+Rejected: building it now (competes with the self-hosting path and touches the scheduler and GC); dropping wasm as a goal.
+
+### D181 — SIMD: `Vector128<T>`, `Vector256<T>`, `Vector512<T>` and lane aliases (v0.95)
+
+Gap review 2026-10-19 (idioms menu A58; user, recommended of 3, after asking for more examples and finding `Simd<f32, 8>` ugly: "the aliases seems enough, it would be good. Vectors are good. C# has Vector128 etc no? that reads better I think"). A std type over LLVM vectors (`<N x T>`), no new syntax, built on D121 const generics and D71 operators. The sized names are C#'s: `Vector256<f32>` is 256 bits, so 8 lanes of `f32`; the lane count follows from `T`. Core type `Simd<T, bits>` (exact spelling of the width parameter fixed when built) serves code generic over width; `Vector128/256/512<T>` are D55 aliases of it, and short lane aliases (`f32x4`, `f32x8`, `i32x4`, `u8x16`, `u8x32`, …) are D55 aliases of those.
+
+```veles
+var acc = f32x8.splat(0.0)
+acc += f32x8.load(a, at: i) * f32x8.load(b, at: i)
+val sum = acc.reduceSum()
+```
+
+Rules: `T` is a numeric primitive; the width is 128, 256 or 512 bits (anything else is a compile error with a fix); a width the target lacks is legalized by LLVM into narrower vectors or scalars, so the program stays correct; `load` is bounds-checked in debug builds, `loadUnchecked` is `unsafe`; no effects. Masks, `select`, `reduceSum`, `shuffle`, `bitmask` and bit-casts between element types of the same width are the first API set — the public method names are confirmed with the user when built.
+
+Rejected: lane-count-only `Simd<T, N>` as the main spelling; relying on auto-vectorization (Go; float reductions are not vectorized without fast-math); raw per-ISA intrinsics through `extern` (not portable).
 
 ---
 

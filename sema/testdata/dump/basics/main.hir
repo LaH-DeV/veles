@@ -1,0 +1,264 @@
+fun v_main.Point.sum: fun(): i64
+  display: sum
+  this: this#0
+  body:
+    Block
+      Stmts:
+        Return
+          Value:
+            Binary: i64
+              Op: +
+              L:
+                FieldGet: i64
+                  X:
+                    Deref: Point
+                      X:
+                        VarRef: *Point
+                          Var: this#0
+                  Index: 0
+                  Name: "x"
+              R:
+                FieldGet: i64
+                  X:
+                    Deref: Point
+                      X:
+                        VarRef: *Point
+                          Var: this#0
+                  Index: 1
+                  Name: "y"
+      Type: Never
+fun v_main.add: fun(i64, i64): i64
+  display: add
+  param: a#0 i64
+  param: b#1 i64
+  body:
+    Block
+      Stmts:
+        Return
+          Value:
+            Binary: i64
+              Op: +
+              L:
+                VarRef: i64
+                  Var: a#0
+              R:
+                VarRef: i64
+                  Var: b#1
+      Type: Never
+fun v_main.main: fun()
+  display: main
+  body:
+    Block
+      Stmts:
+        VarDecl
+          Var: p#0
+          Init:
+            StructLit: Point
+              Struct: Point
+              Fields:
+                IntConst: i64
+                  Value: 1
+                IntConst: i64
+                  Value: 2
+        VarDecl
+          Var: total#1
+          Init:
+            Call: i64
+              Fn: @v_main.add
+              Args:
+                FieldGet: i64
+                  X:
+                    VarRef: Point
+                      Var: p#0
+                  Index: 0
+                  Name: "x"
+                FieldGet: i64
+                  X:
+                    VarRef: Point
+                      Var: p#0
+                  Index: 1
+                  Name: "y"
+              Recv: 0
+        VarDecl
+          Var: $tmp2#2
+          Init:
+            RangeLit: Range<i64>
+              Lo:
+                IntConst: i64
+                  Value: 0
+              Hi:
+                IntConst: i64
+                  Value: 3
+        VarDecl
+          Var: $tmp3#3
+          Init:
+            FieldGet: i64
+              X:
+                VarRef: Range<i64>
+                  Var: $tmp2#2
+              Index: 0
+              Name: "lo"
+        VarDecl
+          Var: $tmp4#4
+          Init:
+            FieldGet: i64
+              X:
+                VarRef: Range<i64>
+                  Var: $tmp2#2
+              Index: 1
+              Name: "hi"
+        VarDecl
+          Var: $tmp5#5
+          Init:
+            BoolConst: bool
+        Loop
+          Cond:
+            If: bool
+              Cond:
+                VarRef: bool
+                  Var: $tmp5#5
+              Then:
+                Block
+                  Value:
+                    BoolConst: bool
+                  Type: bool
+              Else:
+                Block
+                  Value:
+                    If: bool
+                      Cond:
+                        FieldGet: bool
+                          X:
+                            VarRef: Range<i64>
+                              Var: $tmp2#2
+                          Index: 2
+                          Name: "inclusive"
+                      Then:
+                        Block
+                          Value:
+                            Binary: bool
+                              Op: <=
+                              L:
+                                VarRef: i64
+                                  Var: $tmp3#3
+                              R:
+                                VarRef: i64
+                                  Var: $tmp4#4
+                          Type: bool
+                      Else:
+                        Block
+                          Value:
+                            Binary: bool
+                              Op: <
+                              L:
+                                VarRef: i64
+                                  Var: $tmp3#3
+                              R:
+                                VarRef: i64
+                                  Var: $tmp4#4
+                          Type: bool
+                  Type: bool
+          Body:
+            Block
+              Stmts:
+                VarDecl
+                  Var: i#6
+                  Init:
+                    VarRef: i64
+                      Var: $tmp3#3
+                Assign
+                  Target:
+                    VarRef: i64
+                      Var: total#1
+                  Value:
+                    Binary: i64
+                      Op: +
+                      L:
+                        VarRef: i64
+                          Var: total#1
+                      R:
+                        VarRef: i64
+                          Var: i#6
+              Type: ()
+          Post:
+            ExprStmt
+              X:
+                If: ()
+                  Cond:
+                    Binary: bool
+                      Op: &&
+                      L:
+                        FieldGet: bool
+                          X:
+                            VarRef: Range<i64>
+                              Var: $tmp2#2
+                          Index: 2
+                          Name: "inclusive"
+                      R:
+                        Binary: bool
+                          Op: ==
+                          L:
+                            VarRef: i64
+                              Var: $tmp3#3
+                          R:
+                            VarRef: i64
+                              Var: $tmp4#4
+                  Then:
+                    Block
+                      Stmts:
+                        Assign
+                          Target:
+                            VarRef: bool
+                              Var: $tmp5#5
+                          Value:
+                            BoolConst: bool
+                              Value: true
+                      Type: ()
+                  Else:
+                    Block
+                      Stmts:
+                        Assign
+                          Target:
+                            VarRef: i64
+                              Var: $tmp3#3
+                          Value:
+                            Binary: i64
+                              Op: +%
+                              L:
+                                VarRef: i64
+                                  Var: $tmp3#3
+                              R:
+                                IntConst: i64
+                                  Value: 1
+                      Type: ()
+          ID: 1
+        ExprStmt
+          X:
+            Call: ()
+              Fn: @v_std.io.println
+              Args:
+                StringConcat: string
+                  Parts:
+                    ToString: string
+                      X:
+                        VarRef: i64
+                          Var: total#1
+                    StringConst: string
+                      Value: " "
+                    ToString: string
+                      X:
+                        Call: i64
+                          Fn: @v_main.Point.sum
+                          Args:
+                            AddrOf: *Point
+                              X:
+                                VarRef: Point
+                                  Var: p#0
+                          Recv: 1
+                          RecvRoot: p#0
+                          RecvType: Point
+                          RecvExpr:
+                            NameExpr
+                              Name: "p"
+              Recv: 0
+      Type: ()

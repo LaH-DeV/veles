@@ -1,0 +1,213 @@
+fun v_main.main: fun() suspends throws Failed suspends
+  display: main
+  body:
+    Block
+      Stmts:
+        VarDecl
+          Var: n#0
+          Init:
+            Try: i64
+              X:
+                Call: Result<i64, Failed>
+                  Fn: @v_main.risky
+                  Args:
+                    IntConst: i64
+                      Value: 4
+                  Recv: 0
+              From: Failed
+              To: Failed
+        VarDecl
+          Var: m#1
+          Init:
+            Call: i64
+              Fn: @v_main.twice__i64
+              Args:
+                VarRef: i64
+                  Var: n#0
+                Cast: fun(i64): i64
+                  X:
+                    Closure: sendable fun(i64): i64
+                      Fn: @v_main.main.lambda1
+              Recv: 0
+        ExprStmt
+          X:
+            BlockExpr: ()
+              Block:
+                Block
+                  Stmts:
+                    ScopeBlock: ()
+                      Body:
+                        Block
+                          Stmts:
+                            VarDecl
+                              Var: other#2
+                              Init:
+                                Launch: Task<i64>
+                                  Call:
+                                    Call: Result<i64, Failed>
+                                      Fn: @v_main.risky
+                                      Args:
+                                        VarRef: i64
+                                          Var: m#1
+                                      Recv: 0
+                                  Scope:
+                                    <again ScopeBlock>
+                                  Index: 0
+                                  Fails: true
+                                  Unwrap: true
+                            Block
+                              Stmts:
+                                ExprStmt
+                                  X:
+                                    Call: ()
+                                      Fn: @v_std.io.println
+                                      Args:
+                                        StringConcat: string
+                                          Parts:
+                                            ToString: string
+                                              X:
+                                                Call: Result<i64, Failed>
+                                                  Fn: @v_main.risky
+                                                  Args:
+                                                    IntConst: i64
+                                                      Value: 1
+                                                  Recv: 0
+                                      Recv: 0
+                                ExprStmt
+                                  X:
+                                    Call: ()
+                                      Fn: @v_std.io.println
+                                      Args:
+                                        StringConcat: string
+                                          Parts:
+                                            ToString: string
+                                              X:
+                                                AwaitTask: i64
+                                                  X:
+                                                    VarRef: Task<i64>
+                                                      Var: other#2
+                                      Recv: 0
+                              Type: ()
+                          Type: ()
+                      Launches:
+                        Launch: Task<i64>
+                          Call:
+                            Call: Result<i64, Failed>
+                              Fn: @v_main.risky
+                              Args:
+                                VarRef: i64
+                                  Var: m#1
+                              Recv: 0
+                          Scope:
+                            <again ScopeBlock>
+                          Index: 0
+                          Fails: true
+                          Unwrap: true
+                      ErrTo: Failed
+                      Cancel: true
+                  Type: ()
+      Type: ()
+fun v_main.main.lambda1: sendable fun(i64): i64
+  display: lambda
+  param: v#0 i64
+  body:
+    Block
+      Stmts:
+        Return
+          Value:
+            Binary: i64
+              Op: +
+              L:
+                VarRef: i64
+                  Var: v#0
+              R:
+                IntConst: i64
+                  Value: 1
+      Type: Never
+fun v_main.risky: fun(i64): i64 throws Failed
+  display: risky
+  param: n#0 i64
+  body:
+    Block
+      Stmts:
+        ExprStmt
+          X:
+            If: ()
+              Cond:
+                Binary: bool
+                  Op: <
+                  L:
+                    VarRef: i64
+                      Var: n#0
+                  R:
+                    IntConst: i64
+                      Value: 0
+              Then:
+                Block
+                  Stmts:
+                    ExprStmt
+                      X:
+                        Throw: Never
+                          Value:
+                            StructLit: Failed
+                              Struct: Failed
+                              Fields:
+                                StringConst: string
+                                  Value: "negative"
+                          From: Failed
+                          To: Failed
+                  Type: Never
+        Return
+          Value:
+            Binary: i64
+              Op: *
+              L:
+                VarRef: i64
+                  Var: n#0
+              R:
+                IntConst: i64
+                  Value: 2
+      Type: i64
+fun v_main.twice__i64: fun(i64, fun(i64): i64): i64
+  display: twice
+  param: x#0 i64
+  param: f#1 fun(i64): i64
+  body:
+    Block
+      Stmts:
+        Return
+          Value:
+            CallIndirect: i64
+              Fn:
+                VarRef: fun(i64): i64
+                  Var: f#1
+              Args:
+                CallIndirect: i64
+                  Fn:
+                    VarRef: fun(i64): i64
+                      Var: f#1
+                  Args:
+                    VarRef: i64
+                      Var: x#0
+      Type: Never
+fun veles.main.report: fun(Failed): string
+  display: main.report
+  param: $e#0 Failed
+  body:
+    Block
+      Stmts:
+        Return
+          Value:
+            Call: string
+              Fn: @v_std.prelude.Error.message_This_main.Failed_
+              Args:
+                AddrOf: *Failed
+                  X:
+                    VarRef: Failed
+                      Var: $e#0
+              Recv: 2
+              RecvType: Failed
+              RecvExpr:
+                NameExpr
+                  Name: "$e"
+      Type: Never

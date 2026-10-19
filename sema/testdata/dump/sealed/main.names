@@ -1,0 +1,5 @@
+fun v_main.area  (area)
+fun v_main.first  (first)
+fun v_main.main  (main)
+struct Circle
+struct Rect

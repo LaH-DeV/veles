@@ -1328,8 +1328,23 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-10-18 | Q53: custom lints and formatter options (the user: "write project-wide and library custom linters & formatter rules"; "a normal looking module with 'API' for writing linter and the compiler would run it? Like eslint"; "max_width = 100 is probably too narrow for today's world") | **Per-lint levels `allow\|warn\|deny` in `[lint]` (library lints as `package.name`, `[lint.forbid]`); rules are ordinary Veles (`lint.Rule`/`Visitor`) run by the compiler's evaluator as `const fun`; `[format] trailing_commas = "multiline"\|"never"`, `line_endings`, no reflow, opt-in `long_line` lint with `max_width` 120** (user: levels, commas and line endings as recommended; run model 1 of 3 after asking to rethink; width 120 of 3; spec D177). Rejected: a `lint` declaration syntax, plugin executables, a linter binary, declarative-only rules, `trailing_commas = "always"`, a reflowing width, width 100, formatter plugins, per-directory overrides. |
 | 2026-10-18 | Q54: skipping tests (the user: "we should have a way to skip some tests either just 'skip' or 'skipIf'"; then "skip()/skipIf in the body as well as static @Skip() and @SkipIf()"; on helpers: "maybe it is an overdoing") | **`skip(why)` / `skipIf(cond, why)` in a test body (run time), the same two as statements in a `suite` body, and `@Skip` / `@SkipIf` on a `test` or `suite` (constant conditions); a third outcome "skipped" in the report; exit 0; `--fail-on-skip`** (user: A plus the annotations of 3; suite statement and report as recommended; spec D178). Rejected: a test modifier, the early `return`, a suite header clause or helper only, static propagation through helpers. |
 | 2026-10-19 | Q55: overloading (the user: "can we add overloading into veles or not?") | **No overloading; variants take a distinct name, a bounded generic, defaults or an extension function** (user, recommended of 4; spec D179). Rejected: restricted overloading by distinct named types, full overloading by argument types. |
+| 2026-10-19 | Gap review: a WebAssembly target | **`wasm32-wasi`, planned, built after S10–S12** (user, recommended of 3; spec D180). Rejected: build it now, drop it as a goal. Not built: the whole target (plan G1). |
+| 2026-10-19 | Gap review: SIMD (idioms A58) | **`Vector128/256/512<T>` over a `Simd<T, bits>` core, plus lane aliases `f32x8` and so on** (user, recommended of 3, after more examples; spec D181). Rejected: lane-count `Simd<T, N>` as the main spelling, auto-vectorization only, raw intrinsics. Not built. |
 
 ## 11. Known limitations to revisit
+
+- **Sema dumps (plan S10, first cut built 2026-10-19).** `veles check --dump names|types|hir`
+  dumps the program *after* lowering, not each phase separately: there is no dump of name
+  resolution before type checking, of declarations before bodies, or of the effects pass on its
+  own, which the sema port's phase gates (S11) will want. Not in the dumps: spans (a Veles
+  checker is not compared on positions yet), generic *templates* that were never instantiated
+  (only the instances in the program), the checker's warnings and lint results, constant values
+  folded by `const fun` beyond what the HIR holds, and the std symbols unless `--dump-std`.
+  `names` is a symbol list, not the resolution of each use (that is the `Fn:` of a call in
+  `hir`). The dump walks the HIR by reflection, so its text changes when an HIR field is
+  added or renamed — regenerate the goldens with `go test ./sema -run TestDumps -update-dump`.
+  The goldens cover three small programs (`sema/testdata/dump/`); a corpus-wide comparison
+  (examples, std) and a check that the dump is the same on Linux were not done.
 
 - **Skipping tests (D178, built 2026-10-18, plan B28).** Not built or not verified: a suite's `skip`/`skipIf` gate that *panics* (not skips) is treated as "did not skip" — its tests run — instead of failing them with the panic; the gates of all suites run before the first test is queued, not lazily per suite (a nested suite's gate runs even when the outer one skipped); `@SkipIf(build.target.os == …)` waits for `build.target` (plan P1, D160) — until then the condition is any D113 constant; `@Skip`/`@SkipIf` take positional arguments (only these two annotations do — D174 requires names for the others; the user may want it general); LSP outline shows no entry for a suite's `skip` statements; `--fail-on-skip` is not repeated in the summary line; the Go driver tests' `t.Skip` conditions (clang, PostgreSQL) were not mirrored into Veles tests — no std test currently returns early for a missing tool.
 

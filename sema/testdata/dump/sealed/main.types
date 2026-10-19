@@ -1,0 +1,19 @@
+fun v_main.area: fun(Shape): f64
+  param s: Shape
+  local s#0: Shape
+  local $tmp2#1: Shape
+fun v_main.first: fun(List<string>): string?
+  param xs: List<string>
+  local xs#0: List<string>
+  local $tmp3#1: List<string>
+  local $tmp4#2: i64
+fun v_main.main: fun()
+  local shapes#0: List<Shape>
+  local $tmp5#1: List<Shape>
+  local $tmp6#2: i64
+  local s#3: Shape
+struct Circle
+  r: f64
+struct Rect
+  w: f64
+  h: f64

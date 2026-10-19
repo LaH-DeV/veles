@@ -1,0 +1,4 @@
+fun v_main.Point.sum  (sum)
+fun v_main.add  (add)
+fun v_main.main  (main)
+struct Point

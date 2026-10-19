@@ -1,0 +1,20 @@
+fun v_main.main: fun() suspends throws Failed suspends
+  local n#0: i64
+  local m#1: i64
+  local other#2: Task<i64>
+fun v_main.main.lambda1: sendable fun(i64): i64
+  param v: i64
+  local v#0: i64
+fun v_main.risky: fun(i64): i64 throws Failed
+  param n: i64
+  local n#0: i64
+fun v_main.twice__i64: fun(i64, fun(i64): i64): i64
+  param x: i64
+  param f: fun(i64): i64
+  local x#0: i64
+  local f#1: fun(i64): i64
+fun veles.main.report: fun(Failed): string
+  param $e: Failed
+  local $e#0: Failed
+struct Failed
+  why: string

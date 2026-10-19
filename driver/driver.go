@@ -35,6 +35,11 @@ type Options struct {
 	ProgramArgs []string
 	// Fix applies the automatic corrections attached to warnings (check).
 	Fix bool
+	// Dump (check) prints a stable text dump of the checked program on standard
+	// output: one of sema.DumpKinds (plan S10).
+	Dump string
+	// DumpStd includes the standard library's symbols in the dump.
+	DumpStd bool
 	// Filter, in test mode, keeps the tests whose name contains it.
 	Filter string
 	// TestTimeout bounds each test (test mode); 0 means no bound.
@@ -129,6 +134,12 @@ func Run(opts Options) int {
 	}
 	if opts.Mode == "check" {
 		clk.report(os.Stderr)
+		if opts.Dump != "" {
+			if err := sema.DumpProgram(os.Stdout, prog, opts.Dump, opts.DumpStd); err != nil {
+				fmt.Fprintln(os.Stderr, "veles:", err)
+				return 2
+			}
+		}
 		return 0
 	}
 	if opts.Mode == "test" {

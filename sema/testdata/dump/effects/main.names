@@ -1,0 +1,6 @@
+fun v_main.main  (main)
+closure v_main.main.lambda1  (lambda)
+fun v_main.risky  (risky)
+fun v_main.twice__i64  (twice)
+fun veles.main.report  (main.report)
+struct Failed

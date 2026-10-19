@@ -1,0 +1,308 @@
+fun v_main.area: fun(Shape): f64
+  display: area
+  param: s#0 Shape
+  body:
+    Block
+      Stmts:
+        Return
+          Value:
+            Match: f64
+              Subject: $tmp2#1
+              Init:
+                VarRef: Shape
+                  Var: s#0
+              Arms:
+                MatchArm
+                  Test:
+                    VariantTest: bool
+                      X:
+                        VarRef: Shape
+                          Var: $tmp2#1
+                      Variant: Circle
+                  Body:
+                    Block
+                      Value:
+                        Binary: f64
+                          Op: *
+                          L:
+                            Binary: f64
+                              Op: *
+                              L:
+                                FloatConst: f64
+                                  Value: 3
+                              R:
+                                FieldGet: f64
+                                  X:
+                                    VariantCast: Circle
+                                      X:
+                                        VarRef: Shape
+                                          Var: s#0
+                                      Variant: Circle
+                                  Index: 0
+                                  Name: "r"
+                          R:
+                            FieldGet: f64
+                              X:
+                                VariantCast: Circle
+                                  X:
+                                    VarRef: Shape
+                                      Var: s#0
+                                  Variant: Circle
+                              Index: 0
+                              Name: "r"
+                      Type: f64
+                MatchArm
+                  Test:
+                    VariantTest: bool
+                      X:
+                        VarRef: Shape
+                          Var: $tmp2#1
+                      Variant: Rect
+                  Body:
+                    Block
+                      Value:
+                        Binary: f64
+                          Op: *
+                          L:
+                            FieldGet: f64
+                              X:
+                                VariantCast: Rect
+                                  X:
+                                    VarRef: Shape
+                                      Var: s#0
+                                  Variant: Rect
+                              Index: 0
+                              Name: "w"
+                          R:
+                            FieldGet: f64
+                              X:
+                                VariantCast: Rect
+                                  X:
+                                    VarRef: Shape
+                                      Var: s#0
+                                  Variant: Rect
+                              Index: 1
+                              Name: "h"
+                      Type: f64
+              Exhaustive: true
+      Type: Never
+fun v_main.first: fun(List<string>): string?
+  display: first
+  param: xs#0 List<string>
+  body:
+    Block
+      Stmts:
+        Return
+          Value:
+            BlockExpr: string?
+              Block:
+                Block
+                  Stmts:
+                    VarDecl
+                      Var: $tmp3#1
+                      Init:
+                        VarRef: List<string>
+                          Var: xs#0
+                    VarDecl
+                      Var: $tmp4#2
+                      Init:
+                        IntConst: i64
+                          Value: 0
+                    ExprStmt
+                      X:
+                        If: ()
+                          Cond:
+                            Binary: bool
+                              Op: <
+                              L:
+                                VarRef: i64
+                                  Var: $tmp4#2
+                              R:
+                                IntConst: i64
+                                  Value: 0
+                          Then:
+                            Block
+                              Stmts:
+                                Assign
+                                  Target:
+                                    VarRef: i64
+                                      Var: $tmp4#2
+                                  Value:
+                                    Binary: i64
+                                      Op: +%
+                                      L:
+                                        VarRef: i64
+                                          Var: $tmp4#2
+                                      R:
+                                        Builtin: i64
+                                          Op: "list.len"
+                                          Args:
+                                            VarRef: List<string>
+                                              Var: $tmp3#1
+                              Type: ()
+                  Value:
+                    If: string?
+                      Cond:
+                        Binary: bool
+                          Op: &&
+                          L:
+                            Binary: bool
+                              Op: >=
+                              L:
+                                VarRef: i64
+                                  Var: $tmp4#2
+                              R:
+                                IntConst: i64
+                                  Value: 0
+                          R:
+                            Binary: bool
+                              Op: <
+                              L:
+                                VarRef: i64
+                                  Var: $tmp4#2
+                              R:
+                                Builtin: i64
+                                  Op: "list.len"
+                                  Args:
+                                    VarRef: List<string>
+                                      Var: $tmp3#1
+                      Then:
+                        Block
+                          Value:
+                            SomeWrap: string?
+                              X:
+                                Builtin: string
+                                  Op: "list.get"
+                                  Args:
+                                    VarRef: List<string>
+                                      Var: $tmp3#1
+                                    VarRef: i64
+                                      Var: $tmp4#2
+                          Type: string?
+                      Else:
+                        Block
+                          Value:
+                            NullConst: string?
+                          Type: string?
+                  Type: string?
+      Type: Never
+fun v_main.main: fun()
+  display: main
+  body:
+    Block
+      Stmts:
+        VarDecl
+          Var: shapes#0
+          Init:
+            ListLit: List<Shape>
+              Elems:
+                MakeVariant: Shape
+                  Sealed: Shape
+                  Variant: Circle
+                  Value:
+                    StructLit: Circle
+                      Struct: Circle
+                      Fields:
+                        FloatConst: f64
+                          Value: 1
+                MakeVariant: Shape
+                  Sealed: Shape
+                  Variant: Rect
+                  Value:
+                    StructLit: Rect
+                      Struct: Rect
+                      Fields:
+                        FloatConst: f64
+                          Value: 2
+                        FloatConst: f64
+                          Value: 3
+        VarDecl
+          Var: $tmp5#1
+          Init:
+            VarRef: List<Shape>
+              Var: shapes#0
+        VarDecl
+          Var: $tmp6#2
+          Init:
+            IntConst: i64
+              Value: 0
+        Loop
+          Cond:
+            Binary: bool
+              Op: <
+              L:
+                VarRef: i64
+                  Var: $tmp6#2
+              R:
+                Builtin: i64
+                  Op: "list.len"
+                  Args:
+                    VarRef: List<Shape>
+                      Var: $tmp5#1
+          Body:
+            Block
+              Stmts:
+                VarDecl
+                  Var: s#3
+                  Init:
+                    Builtin: Shape
+                      Op: "list.get"
+                      Args:
+                        VarRef: List<Shape>
+                          Var: $tmp5#1
+                        VarRef: i64
+                          Var: $tmp6#2
+                ExprStmt
+                  X:
+                    Call: ()
+                      Fn: @v_std.io.println
+                      Args:
+                        StringConcat: string
+                          Parts:
+                            ToString: string
+                              X:
+                                Call: f64
+                                  Fn: @v_main.area
+                                  Args:
+                                    VarRef: Shape
+                                      Var: s#3
+                                  Recv: 0
+                      Recv: 0
+              Type: ()
+          Post:
+            Assign
+              Target:
+                VarRef: i64
+                  Var: $tmp6#2
+              Value:
+                Binary: i64
+                  Op: +%
+                  L:
+                    VarRef: i64
+                      Var: $tmp6#2
+                  R:
+                    IntConst: i64
+                      Value: 1
+          ID: 1
+        ExprStmt
+          X:
+            Call: ()
+              Fn: @v_std.io.println
+              Args:
+                Elvis: string
+                  L:
+                    Call: string?
+                      Fn: @v_main.first
+                      Args:
+                        ListLit: List<string>
+                          Elems:
+                            StringConst: string
+                              Value: "a"
+                            StringConst: string
+                              Value: "b"
+                      Recv: 0
+                  R:
+                    StringConst: string
+                      Value: "none"
+              Recv: 0
+      Type: ()

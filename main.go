@@ -3,7 +3,7 @@
 //	veles build <file.vs | dir>   compile a package to a native executable (a workspace root: every member)
 //	veles run   <file.vs | dir>   compile and run
 //	veles test  <file.vs | dir>   run the tests, test "..." { } (--filter text, --timeout 10m, --jobs n, --fail-on-skip)
-//	veles check <file.vs | dir>   type-check only (--fix applies lint corrections)
+//	veles check <file.vs | dir>   type-check only (--fix applies lint corrections; --dump names|types|hir [--dump-std] prints the checker's output)
 //	veles parse <file.vs>         dump the syntax tree
 //	veles tokens <file.vs>        dump the token stream
 //	veles fmt   <paths...>        format source files in place (--check, --stdout)
@@ -34,7 +34,7 @@ import (
 )
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: veles <build|run|test|check|parse|tokens> <path> [-o output] [--emit-llvm] [--keep] [--release] [--sanitize] [--timings] [--const-steps n] [--fix] [--filter text] [--timeout 10m] [--jobs n] [--fail-on-skip] [-- args...] | veles explain <family> | veles explain <path> --derive [Type] | veles fmt <paths...> [--check] [--stdout] | veles new <dir> [--template app|server] | veles doc [dir] [-o out] | veles fetch [dir] | veles add <spec>[@version] [--as name] [--dev] | veles update <name>... [--all] | veles remove <name>... | veles deps [dir] [--why name] | veles vendor [dir] | veles audit [dir] [--detail] | veles publish [dir] | veles yank <owner/name>@<version> [--reason text] [--undo] | veles attest keygen|sign|verify|import | veles lsp")
+	fmt.Fprintln(os.Stderr, "usage: veles <build|run|test|check|parse|tokens> <path> [-o output] [--emit-llvm] [--keep] [--release] [--sanitize] [--timings] [--const-steps n] [--fix] [--dump names|types|hir] [--dump-std] [--filter text] [--timeout 10m] [--jobs n] [--fail-on-skip] [-- args...] | veles explain <family> | veles explain <path> --derive [Type] | veles fmt <paths...> [--check] [--stdout] | veles new <dir> [--template app|server] | veles doc [dir] [-o out] | veles fetch [dir] | veles add <spec>[@version] [--as name] [--dev] | veles update <name>... [--all] | veles remove <name>... | veles deps [dir] [--why name] | veles vendor [dir] | veles audit [dir] [--detail] | veles publish [dir] | veles yank <owner/name>@<version> [--reason text] [--undo] | veles attest keygen|sign|verify|import | veles lsp")
 	os.Exit(2)
 }
 
@@ -313,10 +313,23 @@ func command() int {
 				i++
 			case "--fix":
 				opts.Fix = true
+			case "--dump-std":
+				opts.DumpStd = true
+			case "--dump":
+				if cmd != "check" || i+1 >= len(args) {
+					fmt.Fprintf(os.Stderr, "--dump is a flag of 'veles check' and takes one of %s\n", strings.Join(sema.DumpKinds, ", "))
+					usage()
+				}
+				opts.Dump = args[i+1]
+				i++
 			case "--":
 				opts.ProgramArgs = args[i+1:]
 				i = len(args)
 			default:
+				if kind, ok := strings.CutPrefix(args[i], "--dump="); ok && cmd == "check" {
+					opts.Dump = kind
+					continue
+				}
 				if strings.HasPrefix(args[i], "-") || opts.Path != "" {
 					fmt.Fprintf(os.Stderr, "unknown flag %q\n", args[i])
 					usage()
