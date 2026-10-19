@@ -1,7 +1,7 @@
 // A pipeline without a pipe operator: the extensions of `strx` read as
 // methods, so a chain goes left to right on any type (D173).
 use io { println }
-use strx
+use strx extend
 
 fun main() {
   println("  Hello Big World ".slug().shout())

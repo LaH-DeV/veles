@@ -70,9 +70,8 @@ fun bytesOfHex(text: string, digits: i64): List<u8>? {
 
 // only lower-case digits are trace context (W3C §3.2)
 fun hexNibble(b: u8): i64 {
-  if (b >= '0' && b <= '9') return (b - '0').toI64()
-  if (b >= 'a' && b <= 'f') return (b - 'a').toI64() + 10
-  -1
+  if (b.isAsciiUpper()) return -1
+  b.digitValue(16) ?: -1
 }
 
 /// Where a span sits in a trace: enough to continue it in another span, in

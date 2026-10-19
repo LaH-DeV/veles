@@ -9,9 +9,9 @@ fun inTable(table: List<(i64, i64)>, r: i64): bool {
   first <= r
 }
 
-fun asciiIdStart(b: u8): bool => b == '_' || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
+fun asciiIdStart(b: u8): bool => b == '_' || b.isAsciiLetter()
 
-fun asciiIdContinue(b: u8): bool => asciiIdStart(b) || (b >= '0' && b <= '9')
+fun asciiIdContinue(b: u8): bool => asciiIdStart(b) || b.isAsciiDigit()
 
 fun isIDStart(r: i64): bool => if (r < 0x80) asciiIdStart(r.wrapU8()) else inTable(ID_START, r)
 

@@ -484,6 +484,7 @@ func (c *Checker) collect() {
 		c.resolveSignature(t)
 	}
 	c.checkCoherence()
+	c.checkExtendClauses()
 	// every error set is resolved (and its members checked) even if unused
 	for _, m := range mods {
 		for _, sym := range m.Scope.symbols {
@@ -2026,11 +2027,13 @@ func (c *Checker) ownsType(m *Module, t types.Type) bool {
 		prefix = t.Module
 	case *types.Sealed:
 		if t.Module == "<prelude>" {
-			return m.Std // Result and Option are built in; std extends them
+			return m.isPrelude() // Result and Option are built in; the prelude extends them
 		}
 		prefix = t.Module
 	case *types.Basic, *types.List, *types.Array, *types.Map, *types.Set, *types.Range, *types.Channel:
-		return m.Std
+		// built-in types are the prelude's: a method another std module adds
+		// to one is an extension function, seen where it is imported (D173)
+		return m.isPrelude()
 	default:
 		return false
 	}

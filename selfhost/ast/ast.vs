@@ -138,8 +138,13 @@ struct UseSpec {
   var path:  List<Ident> = []
   var alias: Ident? = null
   var names: List<UseName>? = null  // the braced names; null without braces
-  var pub:   bool = false
-  var pos:   Span = Span.none()
+  /// The `extend` clause (D185): the import brings extension functions of the
+  /// module (D173). Without it, none; `extendNames` are the ones named in
+  /// `extend { f, g }`, null for a bare `extend`: all of them.
+  var extend:      bool = false
+  var extendNames: List<UseName>? = null
+  var pub:         bool = false
+  var pos:         Span = Span.none()
 }
 
 /// `f` or `f as g` in braces.
@@ -375,7 +380,7 @@ struct EnumMember {
 struct TestDecl : Decl {
   var doc:     string = ""
   var attrs:   List<Attribute> = []  // `@Skip("why")` (D178)
-  var label:   string = ""  // `test listMethods "…"`: the optional identifier (D170)
+  var label:   string = ""           // `test listMethods "…"`: the optional identifier (D170)
   var labelAt: Span = Span.none()
   var name:    string = ""         // unquoted; empty when only a label is written
   var at:      Span = Span.none()  // the sentence's string (the label's when there is none)

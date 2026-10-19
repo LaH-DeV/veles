@@ -4,7 +4,7 @@
 // while compiling (D182); one pattern comes from outside and goes through
 // Regex.compile, which reports a bad one instead of failing.
 use io
-use regex { Match, Regex }
+use regex { Match, Regex } extend { findAll }
 
 val sample = """
   2026-10-19 09:15:02 INFO  [http] GET /users/42 200 took 18ms

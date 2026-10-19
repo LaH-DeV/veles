@@ -374,11 +374,14 @@ database module (`std/db`) uses the same to make injection impossible.
 A pattern between slashes is a regular expression, as in JavaScript (D182).
 `use regex` brings the type; the literal is a `Regex`, and the compiler
 checks the pattern while it compiles, so a bad one is an error at the literal
-and not a failure when the program runs.
+and not a failure when the program runs. The string methods that take a
+`Regex` (`find`, `matches`, `replaceAll`, …) are extension functions of the
+module, which an import brings only when it says so: `use regex extend` for
+all of them, `use regex extend { find, matches }` for some (chapter 5).
 
 ```veles
 use io { println }
-use regex
+use regex extend
 
 fun main() {
   val entry = /(?<date>\d{4}-\d\d-\d\d) (?<level>[A-Z]+) (?<message>.*)/

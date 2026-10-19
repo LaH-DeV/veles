@@ -939,11 +939,11 @@ fun readRequest(c: io.Stream, peer: string, limits: Limits, drain: Drain): (Requ
 
 // The characters a method or a header name may hold (RFC 9110 §5.6.2).
 fun isToken(s: string): bool =>
-  !s.isEmpty() && s.bytes().all(b => (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || tokenMarks.contains(b))
+  !s.isEmpty() && s.bytes().all(b => b.isAsciiAlphanumeric() || tokenMarks.contains(b))
 
 val tokenMarks: List<u8> = "!#$%&'*+-.^_`|~".bytes()
 
-fun isDigits(s: string): bool => !s.isEmpty() && s.bytes().all(b => b >= '0' && b <= '9')
+fun isDigits(s: string): bool => !s.isEmpty() && s.bytes().all(b => b.isAsciiDigit())
 
 fun parseQuery(text: string): Map<string, string> {
   val out: MutableMap<string, string> = [:]
@@ -957,13 +957,6 @@ fun parseQuery(text: string): Map<string, string> {
   out.toMap()
 }
 
-fun hexValue(b: u8): i64 {
-  if (b >= '0' && b <= '9') return (b - '0').toI64()
-  if (b >= 'a' && b <= 'f') return (b - 'a').toI64() + 10
-  if (b >= 'A' && b <= 'F') return (b - 'A').toI64() + 10
-  -1
-}
-
 /// Decodes `%XX` escapes (and `+` as a space in query strings); text that
 /// does not decode to UTF-8 is returned as it came.
 public fun percentDecode(s: string, plusIsSpace: bool): string {
@@ -974,10 +967,10 @@ public fun percentDecode(s: string, plusIsSpace: bool): string {
   loop (i < bytes.len()) {
     val b = bytes.at(i)
     if (b == '%' && i + 2 < bytes.len()) {
-      val hi = hexValue(bytes.at(i + 1) ?: panic("percentDecode: i + 2 < len was checked"))
-      val lo = hexValue(bytes.at(i + 2) ?: panic("percentDecode: i + 2 < len was checked"))
-      if (hi >= 0 && lo >= 0) {
-        out.push((hi * 16 + lo).wrapU8())
+      val hi = bytes.at(i + 1)?.digitValue(16)
+      val lo = bytes.at(i + 2)?.digitValue(16)
+      if (val high = hi && val low = lo) {
+        out.push((high * 16 + low).wrapU8())
         i += 3
         continue
       }

@@ -100,6 +100,10 @@ type Module struct {
 	state   int                      // 0 unloaded, 1 loading, 2 loaded
 }
 
+// isPrelude: the standard library's prelude, whose methods on the built-in
+// types are the types' own.
+func (m *Module) isPrelude() bool { return m.Std && m.Path == "std/prelude" }
+
 func (m *Module) Name() string {
 	if m.Path == "" {
 		return "main"

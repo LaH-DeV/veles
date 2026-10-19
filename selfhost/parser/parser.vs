@@ -425,6 +425,9 @@ struct Parser {
     var s = ast.UseSpec(path: path.toList())
     if (this.accept(Kind.KwAs)) s.alias = this.ident()
     if (this.at(Kind.LBrace)) s.names = this.parseUseNames(s.path)
+    val (extend, extendNames) = this.parseExtendClause()
+    s.extend = extend
+    s.extendNames = extendNames
     s.pos = this.spanFrom(start)
     s
   }
@@ -458,6 +461,39 @@ struct Parser {
       this.errorAt(open.span.to(closer), "'use ${pathString(path)} { }' names nothing: list what to import, or write 'use ${pathString(path)}'")
     }
     names.toList()
+  }
+
+  // the `extend` that ends a use (D185): `use m extend` brings all of the
+  // module's extension functions (D173), `use m { A } extend { f, g }` only those
+  // named. A use without it brings none.
+  fun parseExtendClause(): (bool, List<ast.UseName>?) {
+    if (!this.at(Kind.Ident) || this.cur().text != "extend") return (false, null)
+    this.next()
+    if (!this.at(Kind.LBrace)) return (true, null)
+    val open = this.next()
+    this.skipSemis()
+    val names: MutableList<ast.UseName> = []
+    loop (!this.atAny(Kind.RBrace, Kind.EOF)) {
+      val start = this.span()
+      var n = ast.UseName(name: this.expectIdent() ?: break)
+      if (this.at(Kind.KwAs)) {
+        this.errorAt(this.span(), "an extension function keeps its name: 'as' renames an imported name, not a method")
+        this.next()
+        this.expectIdent()
+      }
+      n.pos = this.spanFrom(start)
+      names.push(n)
+      this.skipSemis()
+      if (!this.accept(Kind.Comma)) break
+      this.skipSemis()
+    }
+    this.skipSemis()
+    val closer = this.span()
+    this.expect(Kind.RBrace)
+    if (names.isEmpty()) {
+      this.errorAt(open.span.to(closer), "'extend { }' names nothing: list the extension functions to import, or write 'extend' alone for all of them (D185)")
+    }
+    (true, names.toList())
   }
 
   // ---- signatures

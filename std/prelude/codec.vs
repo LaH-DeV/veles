@@ -154,9 +154,9 @@ public fun styleKey(name: string, style: KeyStyle): string => when (style) {
     var i = 0
     loop (i < name.len()) {
       val b = name.byteAt(i)
-      if (b >= 'A' && b <= 'Z') {
+      if (b.isAsciiUpper()) {
         if (i > 0) out.append("_")
-        out.appendByte(b + 32)
+        out.appendByte(b.toAsciiLower())
       } else {
         out.appendByte(b)
       }
@@ -172,8 +172,8 @@ public fun styleKey(name: string, style: KeyStyle): string => when (style) {
       val b = name.byteAt(i)
       if (b == '_') {
         up = true
-      } else if (up && b >= 'a' && b <= 'z') {
-        out.appendByte(b - 32)
+      } else if (up && b.isAsciiLower()) {
+        out.appendByte(b.toAsciiUpper())
         up = false
       } else {
         out.appendByte(b)

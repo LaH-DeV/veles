@@ -132,7 +132,7 @@ fun parseUrl(text: string): Url throws FetchError {
       if (!after.startsWith(":")) throw invalid(text, "malformed host")
       port = try portOf(text, after.substring(1, after.len()) ?: "")
     }
-    if (host.isEmpty() || !host.bytes().all(b => hexValue(b) >= 0 || b == ':' || b == '.')) {
+    if (host.isEmpty() || !host.bytes().all(b => b.isAsciiHexDigit() || b == ':' || b == '.')) {
       throw invalid(text, "malformed IPv6 address")
     }
   } else {
@@ -142,7 +142,7 @@ fun parseUrl(text: string): Url throws FetchError {
       port = try portOf(text, authority.substring(colon + 1, authority.len()) ?: "")
     }
     if (host.isEmpty()) throw invalid(text, "a URL needs a host")
-    if (!host.bytes().all(b => (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == '.' || b == '-' || b == '_')) {
+    if (!host.bytes().all(b => b.isAsciiAlphanumeric() || b == '.' || b == '-' || b == '_')) {
       throw invalid(text, "a host name is letters, digits, dots and hyphens; write an international name in its punycode form")
     }
   }
@@ -195,7 +195,7 @@ fun resolve(base: Url, location: string): Url throws FetchError {
 fun hasScheme(text: string): bool {
   val i = text.indexOf("://")
   if (i <= 0) return false
-  (text.substring(0, i) ?: "").bytes().all(b => (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == '+' || b == '-' || b == '.')
+  (text.substring(0, i) ?: "").bytes().all(b => b.isAsciiAlphanumeric() || b == '+' || b == '-' || b == '.')
 }
 
 fun pathOf(target: string): string {

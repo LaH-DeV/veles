@@ -484,8 +484,6 @@ fun year4(y: i64): string {
 
 // ---- RFC 3339 -------------------------------------------------------------
 
-fun isDigit(b: u8): bool => b >= '0' && b <= '9'
-
 /// The number spelled by `count` digits at `i`, or `null` when they are not
 /// all digits or run past the end.
 fun digitsAt(s: string, i: i64, count: i64): i64? {
@@ -493,7 +491,7 @@ fun digitsAt(s: string, i: i64, count: i64): i64? {
   var n: i64 = 0
   loop (k in 0..<count) {
     val b = s.byteAt(i + k)
-    if (!isDigit(b)) return null
+    if (!b.isAsciiDigit()) return null
     n = n * 10 + ((b - '0').toI64())
   }
   n
@@ -555,9 +553,9 @@ public fun parseRfc3339Fields(s: string): DateTime? {
   var micros: i64 = 0
   if (i < s.len() && s.byteAt(i) == '.') {
     i += 1
-    if (i >= s.len() || !isDigit(s.byteAt(i))) return null
+    if (i >= s.len() || !s.byteAt(i).isAsciiDigit()) return null
     var kept: i64 = 0
-    loop (i < s.len() && isDigit(s.byteAt(i))) {
+    loop (i < s.len() && s.byteAt(i).isAsciiDigit()) {
       if (kept < 6) {
         micros = micros * 10 + ((s.byteAt(i) - '0').toI64())
         kept += 1

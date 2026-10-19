@@ -76,7 +76,7 @@ a declaration, or a `use` of the module that has it.
 
 A method that exists only as an extension function in a module this file
 does not import says so: `'shout' is an extension function in module
-'strx': add 'use strx'` (D173). Two imported extensions of one name, or an
+'strx': import it with 'use strx extend { slug }'` (D173, D185). Two imported extensions of one name, or an
 extension and a trait method, are `ambiguous method 'twice' on 'string'`:
 drop one of the imports or rename one.
 

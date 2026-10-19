@@ -211,33 +211,29 @@ fun expand(m: Match, template: string): string {
   var i = 0
   loop (i < template.len()) {
     val b = template.byteAt(i)
-    if (b != '$' || i + 1 >= template.len()) {
-      out.appendByte(b)
-      i += 1
-      continue
-    }
-    val next = template.byteAt(i + 1)
-    if (next == '$') {
-      out.appendByte('$')
-      i += 2
-    } else if (next == '{') {
-      val close = template.indexOf("}", i + 2)
-      if (close < 0) {
-        out.appendByte(b)
-        i += 1
-      } else {
-        val name = template.substring(i + 2, close) ?: ""
-        out.append(referenced(m, name))
+    // what follows a `$`; 0 where this byte is no `$` or ends the template
+    val after: u8 = if (b == '$' && i + 1 < template.len()) template.byteAt(i + 1) else 0
+    val close = if (after == '{') template.indexOf("}", i + 2) else -1
+    when {
+      after == '$'         => {
+        out.appendByte('$')
+        i += 2
+      }
+      close >= 0           => {
+        out.append(referenced(m, template.substring(i + 2, close) ?: ""))
         i = close + 1
       }
-    } else if (next >= '0' && next <= '9') {
-      var j = i + 1
-      loop (j < template.len() && template.byteAt(j) >= '0' && template.byteAt(j) <= '9') j += 1
-      out.append(referenced(m, template.substring(i + 1, j) ?: ""))
-      i = j
-    } else {
-      out.appendByte(b)
-      i += 1
+      after.isAsciiDigit() => {
+        var end = i + 1
+        loop (end < template.len() && template.byteAt(end).isAsciiDigit()) end += 1
+        out.append(referenced(m, template.substring(i + 1, end) ?: ""))
+        i = end
+      }
+      else                 => {
+        // an ordinary byte, a `$` that starts nothing, or `${` with no `}`
+        out.appendByte(b)
+        i += 1
+      }
     }
   }
   out.toString()
@@ -252,7 +248,8 @@ fun referenced(m: Match, name: string): string {
 // String extensions (D173, D182): the same operations read from the text's
 // side. An inherent `replace`, `split` or `contains` wins over an extension of
 // the same name and there is no overloading, so these have names of their own.
-// They are visible where a file says `use regex`.
+// They are visible where a file imports them: `use regex extend` for all of
+// them, `use regex extend { find }` for some (D185).
 
 /// True when `re` matches all of this text: `"2026".matches(Regex.compile("\d+"))`.
 public extend string with fun matches(re: Regex): bool => re.matches(this)

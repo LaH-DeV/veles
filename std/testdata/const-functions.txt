@@ -23,6 +23,16 @@ prelude/adapters.vs: public const fun forEach<E>(f: fun(T): () suspends throws E
 prelude/adapters.vs: public const fun getOrPut<E>(key: K, make: fun(): V suspends throws E): V throws E
 prelude/adapters.vs: public const fun map<U, E>(f: fun(T): U suspends throws E): List<U> throws E
 prelude/adapters.vs: public const fun mapValues<U, E>(f: fun(V): U suspends throws E): Map<K, U> throws E
+prelude/ascii.vs: public const fun digitValue(radix: i64 = 10): i64?
+prelude/ascii.vs: public const fun isAsciiAlphanumeric(): bool
+prelude/ascii.vs: public const fun isAsciiDigit(): bool
+prelude/ascii.vs: public const fun isAsciiHexDigit(): bool
+prelude/ascii.vs: public const fun isAsciiLetter(): bool
+prelude/ascii.vs: public const fun isAsciiLower(): bool
+prelude/ascii.vs: public const fun isAsciiSpace(): bool
+prelude/ascii.vs: public const fun isAsciiUpper(): bool
+prelude/ascii.vs: public const fun toAsciiLower(): u8
+prelude/ascii.vs: public const fun toAsciiUpper(): u8
 prelude/builder.vs: public const fun append(s: string)
 prelude/builder.vs: public const fun appendByte(b: u8)
 prelude/builder.vs: public const fun appendLine(s: string = "")
@@ -34,7 +44,6 @@ prelude/builder.vs: public const fun toString(): string
 prelude/duration.vs: const fun compareTo(other: Duration): Ordering
 prelude/duration.vs: const fun decimal(whole: i64, frac: i64, digits: i64): string
 prelude/duration.vs: const fun dividedBy(other: i64): Duration
-prelude/duration.vs: const fun isAsciiDigit(b: u8): bool
 prelude/duration.vs: const fun minus(other: Duration): Duration
 prelude/duration.vs: const fun negate(): Duration
 prelude/duration.vs: const fun parseDuration(s: string): Duration?
@@ -124,8 +133,6 @@ prelude/number.vs: const fun checkRadix(radix: i64)
 prelude/number.vs: const fun unsignedToRadix(v: u64, radix: i64): string
 prelude/number.vs: public const fun toString(radix: i64 = 10): string
 prelude/number.vs: public const fun toString(radix: i64 = 10): string
-prelude/string.vs: const fun isAsciiSpace(b: u8): bool
-prelude/string.vs: const fun isDigit(b: u8): bool
 prelude/string.vs: public const fun capitalize(): string
 prelude/string.vs: public const fun indexOf(part: string, from: i64 = 0): i64
 prelude/string.vs: public const fun lastIndexOf(part: string): i64

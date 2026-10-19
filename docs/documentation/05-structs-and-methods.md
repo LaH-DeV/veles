@@ -781,10 +781,13 @@ That is how a pipeline reads in Veles: a chain, left to right, on any type.
 There is no `|>`. Extensions are deliberately narrower than methods, so a
 call never changes meaning behind your back:
 
-- **A file sees an extension by importing its module** (`use strx`). A
-  module's own files always see it; a sibling file that does not import
-  it does not. Mark it `public` (or write `public extend T { }` for the
-  block) to offer it to other packages.
+- **A file sees an extension by asking for it in its `use`** (D185). A
+  plain `use strx` brings the module and no extensions; `use strx extend`
+  brings all of them, and `use strx extend { slug, shout }` exactly those two.
+  The clause goes after the braced names: `use strx { Text } extend { slug }`.
+  A module's own files always see its extensions; a sibling file that does
+  not import it does not. Mark one `public` (or write `public extend T { }`
+  for the block) to offer it to other packages.
 - **An inherent method wins.** An extension named like a method the type
   already has is never called, and the compiler warns. If two imported
   modules extend the same type with the same name, or a trait method has

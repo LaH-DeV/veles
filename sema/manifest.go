@@ -3,6 +3,7 @@ package sema
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -212,6 +213,19 @@ func parseManifest(path, dir, text string) (*Manifest, error) {
 }
 
 type manifestReader struct{ path string }
+
+// memberIsAbsolute: a workspace member that names a root — `/x`, a backslash
+// path, `C:/x` — on every platform, since a manifest means the same thing
+// wherever it is read.
+func memberIsAbsolute(member string) bool {
+	if member == "" {
+		return false
+	}
+	if member[0] == '/' || member[0] == '\\' {
+		return true
+	}
+	return len(member) >= 3 && member[1] == ':' && (member[2] == '/' || member[2] == '\\')
+}
 
 func (r *manifestReader) fail(v *tomlVal, format string, a ...any) error {
 	return fmt.Errorf("%s:%d: %s", r.path, v.line, fmt.Sprintf(format, a...))
@@ -444,11 +458,11 @@ func (r *manifestReader) workspace(t *tomlTable) (*ManifestWorkspace, error) {
 		}
 		seen := map[string]bool{}
 		for _, member := range list {
-			clean := filepath.ToSlash(filepath.Clean(member))
+			clean := path.Clean(strings.ReplaceAll(member, "\\", "/"))
 			switch {
 			case member == "" || clean == ".":
 				return nil, r.fail(v, "[workspace] members: a member is a directory below the root, not %q", member)
-			case filepath.IsAbs(member) || clean == ".." || strings.HasPrefix(clean, "../"):
+			case memberIsAbsolute(member) || clean == ".." || strings.HasPrefix(clean, "../"):
 				return nil, r.fail(v, "[workspace] members: %q leaves the workspace; a member is a directory below the root manifest", member)
 			case strings.ContainsAny(member, "*?["):
 				return nil, r.fail(v, "[workspace] members: patterns such as %q are not supported yet; list each member directory", member)
@@ -862,7 +876,8 @@ func (r *manifestReader) policy(m *Manifest, t *tomlTable) error {
 		return r.fail(&tomlVal{line: t.line}, "[policy] require needs trust = { name = \"ed25519:…\" }: whose reviews count?")
 	}
 	if allowAt != nil {
-		for c := range m.Policy.Allow {
+		// in a fixed order, so the same manifest always gives the same message
+		for _, c := range sortedKeys(m.Policy.Allow) {
 			if _, claim := m.Policy.Require[c]; !validCapability(c) && !claim {
 				return r.fail(allowAt, "[policy] allow: %q is neither a capability (%s) nor a claim in require", c, strings.Join(Capabilities, ", "))
 			}

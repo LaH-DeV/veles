@@ -129,6 +129,19 @@ func (p *printer) decl(d Decl) {
 				}
 				p.w(" }")
 			}
+			if s.Extend {
+				p.w(" extend")
+				if len(s.ExtendNames) > 0 {
+					p.w(" {")
+					for i, n := range s.ExtendNames {
+						if i > 0 {
+							p.w(",")
+						}
+						p.w(" " + n.Name.Name)
+					}
+					p.w(" }")
+				}
+			}
 		}
 		p.w(")")
 	case *FunDecl:

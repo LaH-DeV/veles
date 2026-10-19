@@ -124,7 +124,7 @@ public fun ident(name: string): Sql? {
   loop ((i, part) in name.split(".").enumerate()) {
     if (part.isEmpty()) return null
     loop (b in part.bytes()) {
-      val ok = (b >= 48 && b <= 57) || (b >= 65 && b <= 90) || (b >= 97 && b <= 122) || b == 95
+      val ok = b.isAsciiAlphanumeric() || b == '_'
       if (!ok) return null
     }
     if (i > 0) out.append(".")

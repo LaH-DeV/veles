@@ -9,8 +9,6 @@ extern "C" {
   fun veles_parse_f64(s: string): f64
 }
 
-const fun isAsciiSpace(b: u8): bool => b == 32 || b == 9 || b == 10 || b == 13 || b == 12 || b == 11
-
 extend string {
   /// Byte index of the first occurrence of `part` at or after `from`, or -1.
   public const fun indexOf(part: string, from: i64 = 0): i64 => unsafe {
@@ -33,7 +31,7 @@ extend string {
   /// The text without leading ASCII whitespace.
   public const fun trimStart(): string {
     var i: i64 = 0
-    loop (i < this.len() && isAsciiSpace(this.byteAt(i))) {
+    loop (i < this.len() && this.byteAt(i).isAsciiSpace()) {
       i += 1
     }
     this.substring(i, this.len()) ?: this
@@ -42,7 +40,7 @@ extend string {
   /// The text without trailing ASCII whitespace.
   public const fun trimEnd(): string {
     var j = this.len()
-    loop (j > 0 && isAsciiSpace(this.byteAt(j - 1))) {
+    loop (j > 0 && this.byteAt(j - 1).isAsciiSpace()) {
       j -= 1
     }
     this.substring(0, j) ?: this
@@ -105,7 +103,7 @@ extend string {
   public const fun toUpper(): string {
     var out: MutableList<u8> = []
     loop (b in this.bytes()) {
-      out.push(if (b >= 97 && b <= 122) b - 32 else b)
+      out.push(b.toAsciiUpper())
     }
     out.decodeUtf8() ?: this
   }
@@ -114,7 +112,7 @@ extend string {
   public const fun toLower(): string {
     var out: MutableList<u8> = []
     loop (b in this.bytes()) {
-      out.push(if (b >= 65 && b <= 90) b + 32 else b)
+      out.push(b.toAsciiLower())
     }
     out.decodeUtf8() ?: this
   }
@@ -163,13 +161,13 @@ extend string {
     var i: i64 = 0
     if (s.byteAt(0) == 45 || s.byteAt(0) == 43) i = 1
     var digits: i64 = 0
-    loop (i < s.len() && isDigit(s.byteAt(i))) {
+    loop (i < s.len() && s.byteAt(i).isAsciiDigit()) {
       i += 1
       digits += 1
     }
     if (i < s.len() && s.byteAt(i) == 46) {
       i += 1
-      loop (i < s.len() && isDigit(s.byteAt(i))) {
+      loop (i < s.len() && s.byteAt(i).isAsciiDigit()) {
         i += 1
         digits += 1
       }
@@ -179,7 +177,7 @@ extend string {
       i += 1
       if (i < s.len() && (s.byteAt(i) == 45 || s.byteAt(i) == 43)) i += 1
       val expStart = i
-      loop (i < s.len() && isDigit(s.byteAt(i))) i += 1
+      loop (i < s.len() && s.byteAt(i).isAsciiDigit()) i += 1
       if (i == expStart) return null
     }
     if (i != s.len()) return null
@@ -190,5 +188,3 @@ extend string {
     }
   }
 }
-
-const fun isDigit(b: u8): bool => b >= 48 && b <= 57

@@ -512,6 +512,18 @@ Interpolation `"$x ${expr}"` accepts any value. `List<u8>.decodeUtf8()` is
 the way back from `bytes()`: `string?`, null when the bytes are not valid
 UTF-8.
 
+### ASCII classes of a byte (D184)
+
+```veles
+// fragment
+b.isAsciiDigit(); b.isAsciiLetter(); b.isAsciiLower(); b.isAsciiUpper(); b.isAsciiAlphanumeric()
+b.isAsciiHexDigit(); b.isAsciiSpace()      // space, \t \n \r \f \v
+b.toAsciiLower(); b.toAsciiUpper()          // a byte with its ASCII case changed; any other byte as it is
+b.digitValue(radix: 10): i64?              // '7' is 7, 'f' in radix 16 is 15, null when b is no digit of that radix (radix 2 to 36)
+```
+
+A `u8` is a byte, not a code point, so the names say ASCII; they are `const fun`s.
+
 ### Endian bytes (D130)
 
 ```veles
@@ -1291,7 +1303,7 @@ re.split(text, limit: -1): List<string>
 re.source(): string, re.groupCount(): i64
 m.value(), m.start(), m.end()                  // byte offsets
 m.groupAt(i): string?, m.group(name): string?, m.span(i): (i64, i64)?, m.groupCount()
-text.matches(re), text.find(re), text.findAll(re), text.replaceAll(re, replacement), text.splitBy(re)   // after `use regex`
+text.matches(re), text.find(re), text.findAll(re), text.replaceAll(re, replacement), text.splitBy(re)   // extension functions: `use regex extend`, or `use regex extend { find }` (D185)
 ```
 
 RE2's syntax, matched in time at most proportional to the pattern times the
@@ -1316,6 +1328,31 @@ time on a hostile pattern or text (`(a+)+\1` over a long run of `a`), so use
 it for patterns you wrote and text you trust. A pattern that has none of these
 constructs runs on the fast engines whatever the option says.
 
+## Module `version` (D186)
+
+```veles
+// fragment
+use version { Constraint, Version }
+val v = try Version.parse("1.4.2-rc.1")          // throws VersionError { message }; a leading v is dropped, +build is refused
+v.major, v.minor, v.patch, v.pre                 // numbers; pre is ["rc", "1"]
+v.toString(), "$v"                               // "1.4.2-rc.1"
+v < w, v.compareTo(w), versions.sorted()         // semver.org precedence: 1.0.0-alpha < 1.0.0-rc.1 < 1.0.0 < 1.10.0
+v.isPreRelease(), v.majorId()                    // "1" for 1.x, "0.3" for 0.3.x, "0.0.2" for 0.0.2 (D132's compatibility id)
+v.bumpMajor(), v.bumpMinor(), v.bumpPatch()      // 2.0.0, 1.5.0, 1.4.3 (a pre-release's patch bump is its release)
+
+val c = try Constraint.parse("^1.2 || >=3.1 <4")  // throws VersionError
+c.matches(v)                                     // bool
+c.newest(versions)                               // the highest version that matches, or null
+Constraint.exactly(v)                            // "=1.4.2"
+```
+
+A constraint is sets joined by `||`; a set is comparators separated by spaces or commas, all of which must hold.
+`1.4.2` and `=1.4.2` are exact; `>`, `>=`, `<`, `<=` bound; `^1.2.3` is `>=1.2.3 <2.0.0` (`^0.2.3` is
+`<0.3.0`, `^0.0.3` is `<0.0.4`); `~1.2.3` is `>=1.2.3 <1.3.0`; `1.2`, `1.2.x`, `1.*` and `*` are ranges. A
+pre-release such as `2.0.0-rc.1` satisfies a set only when one of its comparators names a pre-release of the
+same `major.minor.patch`. Each number is a whole number below 2^32 without a leading zero; pre-release
+identifiers are not empty and a number among them has no leading zero.
+
 ## Module `toml` (D183)
 
 ```veles
@@ -1325,9 +1362,9 @@ val doc = try toml.parse(text)                      // throws ParseError { line,
 val strict = try toml.parse(text, strict: true)     // the subset veles.toml uses: no floats, dates, [[tables]], hex
 val server = doc.get("server")?.asTable() ?: return // Table: get(key), has(key), keys() (sorted), line, defined()
 val port = server.get("port")?.asInt() ?: 8080
-// Value: kind (Kind.Str Int Float Bool OffsetDateTime LocalDateTime LocalDate LocalTime List Table), line,
-//        asString(), asInt(), asFloat() (an Int reads too), asBool(), asList(), asTable(), str/num/real/items/table
-// toml.describe(kind): "a string", "a list", … for a message
+// Value: line, data (a sealed family: Text, Integer, Real, Flag, Moment, Items, Nested — match on it),
+//        asString(), asInt(), asFloat() (an Int reads too), asBool(), asList(), asTable(), asMoment()
+// value.data.describe(): "a string", "a list", … for a message
 ```
 
 Every value remembers the line it was written on, so a program reading a

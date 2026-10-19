@@ -154,9 +154,9 @@ fun read(text: string, url: bool): List<u8> throws Invalid {
 }
 
 fun sextet(b: u8, url: bool, at: i64): i64 throws Invalid {
-  if (b >= 65 && b <= 90) return (b -% 65).toI64()        // 'A'..'Z' → 0..25
-  if (b >= 97 && b <= 122) return (b -% 97).toI64() + 26  // 'a'..'z' → 26..51
-  if (b >= 48 && b <= 57) return (b -% 48).toI64() + 52   // '0'..'9' → 52..61
+  if (b.isAsciiUpper()) return (b -% 'A').toI64()       // 'A'..'Z' → 0..25
+  if (b.isAsciiLower()) return (b -% 'a').toI64() + 26  // 'a'..'z' → 26..51
+  if (b.isAsciiDigit()) return (b -% '0').toI64() + 52  // '0'..'9' → 52..61
   if (url) {
     if (b == MINUS) return 62
     if (b == UNDER) return 63

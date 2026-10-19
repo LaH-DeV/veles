@@ -26,6 +26,9 @@ func ParseVersion(s string) (Version, error) {
 		if v.Pre == "" || !validPre(v.Pre) {
 			return v, detail("%q: the pre-release part after '-' is letters, digits, '.' and '-'", orig)
 		}
+		if !validPreIdentifiers(v.Pre) {
+			return v, detail("%q: pre-release identifiers are separated by '.', none empty, a number without a leading zero", orig)
+		}
 	}
 	if strings.Contains(s, "+") {
 		return v, detail("%q: build metadata ('+…') is not used in versions", orig)
@@ -49,6 +52,20 @@ func ParseVersion(s string) (Version, error) {
 func validPre(s string) bool {
 	for _, r := range s {
 		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '-') {
+			return false
+		}
+	}
+	return true
+}
+
+// validPreIdentifiers: the identifiers between the dots are not empty, and a
+// number among them has no leading zero (semver.org §9), as std/version reads them.
+func validPreIdentifiers(pre string) bool {
+	for _, id := range strings.Split(pre, ".") {
+		if id == "" {
+			return false
+		}
+		if len(id) > 1 && id[0] == '0' && strings.Trim(id, "0123456789") == "" {
 			return false
 		}
 	}

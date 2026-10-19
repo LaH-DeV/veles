@@ -61,10 +61,8 @@ public fun decode(text: string): List<u8> throws Invalid {
 
 fun nibbleAt(text: string, at: i64): u8 throws Invalid {
   val b = text.byteAt(at)
-  if (b >= 48 && b <= 57) return b -% 48   // '0'..'9'
-  if (b >= 97 && b <= 102) return b -% 87  // 'a'..'f'
-  if (b >= 65 && b <= 70) return b -% 55   // 'A'..'F'
-  throw Invalid(message: "hex: ${describe(b)} at $at is not a hex digit", position: at)
+  val digit = b.digitValue(16) ?: throw Invalid(message: "hex: ${describe(b)} at $at is not a hex digit", position: at)
+  digit.wrapU8()
 }
 
 /// A byte as it should read in a message: the character when it is

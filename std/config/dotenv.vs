@@ -102,9 +102,8 @@ fun validName(name: string): bool {
   var i = 0
   loop (i < name.len()) {
     val b = name.byteAt(i)
-    val letter = b >= 'A' && b <= 'Z' || b >= 'a' && b <= 'z' || b == '_'
-    val digit = b >= '0' && b <= '9'
-    if (!(letter || i > 0 && (digit || b == '.' || b == '-'))) return false
+    val letter = b.isAsciiLetter() || b == '_'
+    if (!(letter || i > 0 && (b.isAsciiDigit() || b == '.' || b == '-'))) return false
     i += 1
   }
   true

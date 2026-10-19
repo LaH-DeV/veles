@@ -56,16 +56,6 @@ const OPERATORS: List<(string, Kind)> = [
   ("%", Kind.Percent), ("<", Kind.Lt), (">", Kind.Gt), ("!", Kind.Bang), ("^", Kind.Caret), ("~", Kind.Tilde),
 ]
 
-fun isDigit(b: u8): bool => b >= '0' && b <= '9'
-
-fun isAsciiLetter(b: u8): bool => (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
-
-fun isHexDigit(b: u8): bool => isDigit(b) || (b >= 'a' && b <= 'f') || (b >= 'A' && b <= 'F')
-
-fun isBinDigit(b: u8): bool => b == '0' || b == '1'
-
-fun isOctDigit(b: u8): bool => b >= '0' && b <= '7'
-
 // only the whitespace a gap between tokens can hold: whatever else stands
 // there is a token or a comment
 fun onlyWhitespace(text: string): bool {
@@ -258,7 +248,7 @@ struct Lexer {
         this.regexLit()
       } else if (identStartLen(this.src, this.pos) > 0) {
         this.identifier()
-      } else if (isDigit(b)) {
+      } else if (b.isAsciiDigit()) {
         this.number()
       } else if (b == '"') {
         this.stringLit()
@@ -314,34 +304,34 @@ struct Lexer {
       if (radix == 'x' || radix == 'X' || radix == 'b' || radix == 'B' || radix == 'o' || radix == 'O') {
         this.pos += 2
         when (radix) {
-          'x', 'X' => this.digits(isHexDigit)
-          'b', 'B' => this.digits(isBinDigit)
-          else     => this.digits(isOctDigit)
+          'x', 'X' => this.digits(b => b.isAsciiHexDigit())
+          'b', 'B' => this.digits(b => b.digitValue(2) != null)
+          else     => this.digits(b => b.digitValue(8) != null)
         }
         return this.push(Kind.Int, start)
       }
     }
-    this.digits(isDigit)
+    this.digits(b => b.isAsciiDigit())
     // after a member dot a number is a tuple index: `pair.0.1` is two
     // indexes, not `pair` and the float `0.1`
     val last = this.lastKind()
     if (last == Kind.Dot || last == Kind.SafeDot) return this.push(Kind.Int, start)
     var isFloat = false
     // a '.' then a digit continues a float; `1..5` is a range
-    if (this.peekByte(0) == '.' && isDigit(this.peekByte(1))) {
+    if (this.peekByte(0) == '.' && this.peekByte(1).isAsciiDigit()) {
       isFloat = true
       this.pos += 1
-      this.digits(isDigit)
+      this.digits(b => b.isAsciiDigit())
     }
     val e = this.peekByte(0)
     if (e == 'e' || e == 'E') {
       var n: i64 = 1
       val sign = this.peekByte(1)
       if (sign == '+' || sign == '-') n += 1
-      if (isDigit(this.peekByte(n))) {
+      if (this.peekByte(n).isAsciiDigit()) {
         isFloat = true
         this.pos += n
-        this.digits(isDigit)
+        this.digits(b => b.isAsciiDigit())
       }
     }
     this.push(if (isFloat) Kind.Float else Kind.Int, start)
@@ -399,10 +389,7 @@ struct Lexer {
     var code: i64 = 0
     loop (i in 0..<hex.len()) {
       val h = hex.byteAt(i)
-      val digit: i64 = if (isDigit(h)) (h - '0').toI64()
-      else if (h >= 'a' && h <= 'f') (h - 'a').toI64() + 10
-      else if (h >= 'A' && h <= 'F') (h - 'A').toI64() + 10
-      else -1
+      val digit = h.digitValue(16) ?: -1
       if (digit < 0) {
         this.errorAt(hexStart, this.pos, "invalid unicode escape '\\u{$hex}'")
         return ""
@@ -500,10 +487,9 @@ struct Lexer {
     }
     this.pos += 1  // the closing slash
     val flagsStart = this.pos
-    loop (this.pos < this.src.len() && isAsciiLetter(this.src.byteAt(this.pos))) this.pos += 1
+    loop (this.pos < this.src.len() && this.src.byteAt(this.pos).isAsciiLetter()) this.pos += 1
     var seen = ""
     loop (i in flagsStart..<this.pos) {
-      val f = this.src.byteAt(i)
       val letter = this.cut(i, i + 1)
       if (!"imsxu".contains(letter)) {
         this.errorAt(i, i + 1, "unknown regular expression flag '$letter'; the flags are i (ignore case), m (multi-line), s (dot matches a newline), x (extended) and u (Unicode)")

@@ -10,17 +10,19 @@
 //   selfhost --quote FILE       every line quoted as the tree printer quotes a string (P3)
 //   selfhost --parse FILE       the tree as `veles parse` prints it, then every diagnostic (P5, gates G2, G3)
 //   selfhost --toml FILE        a TOML file as the manifest reader sees it, or its error (sema plan R1)
+//   selfhost --manifest FILE    a veles.toml as the manifest reader makes it, or its error (R1)
+//   selfhost --lints            the registry of lints: name, default level, documentation (R1)
 use fs
 use io
 use os
-use ast { dump, quote }
+use ast { dump }
 use lexer { kindText, tokenize }
 use parser { parseFile }
-use sema { tomlDump }
 use source { Diagnostics, File, Span }
+use text { quote }
 
 fun usage(): Never {
-  io.eprintln("usage: selfhost --positions|--lines|--render|--tokens|--quote|--parse|--toml FILE")
+  io.eprintln("usage: selfhost --positions|--lines|--render|--tokens|--quote|--parse|--toml|--manifest FILE")
   os.exit(2)
 }
 
@@ -115,6 +117,10 @@ fun quoteLines(file: File): string {
 }
 
 fun main() throws IoError {
+  if (os.args() == ["--lints"]) {
+    io.print(lintsDump())
+    return
+  }
   val [mode, path] = os.args() else usage()
   val file = File.of(path, try fs.readFile(path))
   val text = when (mode) {
@@ -125,6 +131,7 @@ fun main() throws IoError {
     "--quote"     => quoteLines(file)
     "--parse"     => parse(file)
     "--toml"      => tomlDump(file.content)
+    "--manifest"  => manifestDump(path, file.content)
     else          => usage()
   }
   io.print(text)

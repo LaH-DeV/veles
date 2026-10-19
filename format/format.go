@@ -563,6 +563,7 @@ func (p *printer) useRun(decls []ast.Decl) bool {
 func SortUseSpecs(specs []*ast.UseSpec) {
 	for _, s := range specs {
 		sort.SliceStable(s.Names, func(i, j int) bool { return s.Names[i].Name.Name < s.Names[j].Name.Name })
+		sort.SliceStable(s.ExtendNames, func(i, j int) bool { return s.ExtendNames[i].Name.Name < s.ExtendNames[j].Name.Name })
 	}
 	sort.SliceStable(specs, func(i, j int) bool {
 		a, b := isStdImport(specs[i]), isStdImport(specs[j])
@@ -640,6 +641,19 @@ func (p *printer) useSpec(s *ast.UseSpec) {
 			}
 		}
 		p.w(" }")
+	}
+	if s.Extend {
+		p.w(" extend")
+		if len(s.ExtendNames) > 0 {
+			p.w(" { ")
+			for i, n := range s.ExtendNames {
+				if i > 0 {
+					p.w(", ")
+				}
+				p.w(n.Name.Name)
+			}
+			p.w(" }")
+		}
 	}
 }
 

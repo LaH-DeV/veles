@@ -215,7 +215,7 @@ fun addThread(prog: Program, text: string, list: Threads, marks: MutableList<i64
 }
 
 const fun isWordByte(b: u8): bool =>
-  (b >= '0' && b <= '9') || (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') || b == '_'
+  b.isAsciiAlphanumeric() || b == '_'
 
 /// Does the zero-width test `kind` hold at byte offset `pos`? Word characters
 /// are ASCII, so a byte before or after is enough to look at.
@@ -599,8 +599,8 @@ fun sameText(text: string, a: i64, b: i64, length: i64, fold: bool): bool {
     var x = text.byteAt(a + k)
     var y = text.byteAt(b + k)
     if (fold) {
-      if (x >= 'A' && x <= 'Z') x = x +% 32
-      if (y >= 'A' && y <= 'Z') y = y +% 32
+      x = x.toAsciiLower()
+      y = y.toAsciiLower()
     }
     if (x != y) return false
   }

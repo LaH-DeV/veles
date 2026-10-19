@@ -92,7 +92,7 @@ fun originAllowed(c: Cors, origin: string): bool {
     if (origin.len() <= before.len() + after.len() || !origin.startsWith(before) || !origin.endsWith(after)) continue
     // what the star stands for: labels, nothing that could end the host early
     val middle = origin.substring(before.len(), origin.len() - after.len()) ?: continue
-    if (middle.bytes().all(b => (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == '.' || b == '-')) return true
+    if (middle.bytes().all(b => b.isAsciiAlphanumeric() || b == '.' || b == '-')) return true
   }
   false
 }

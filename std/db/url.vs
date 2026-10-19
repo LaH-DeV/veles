@@ -41,9 +41,8 @@ fun unescape(text: string): string? {
   loop (i < bytes.len()) {
     val b = bytes.at(i)
     if (b == 37) {
-      val hi = hexValue(bytes.at(i + 1) ?: 0)
-      val lo = hexValue(bytes.at(i + 2) ?: 0)
-      if (hi < 0 || lo < 0) return null
+      val hi = (bytes.at(i + 1) ?: 0).digitValue(16) ?: return null
+      val lo = (bytes.at(i + 2) ?: 0).digitValue(16) ?: return null
       out.push((hi * 16 + lo).wrapU8())
       i += 3
     } else {
@@ -52,13 +51,6 @@ fun unescape(text: string): string? {
     }
   }
   out.decodeUtf8()
-}
-
-fun hexValue(b: u8): i64 {
-  if (b >= 48 && b <= 57) return (b - 48).toI64()
-  if (b >= 97 && b <= 102) return (b - 87).toI64()
-  if (b >= 65 && b <= 70) return (b - 55).toI64()
-  -1
 }
 
 fun parseTarget(url: Secret<string>, application: string): Target throws DbError {

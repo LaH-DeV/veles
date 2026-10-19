@@ -2,6 +2,7 @@
 use ast
 use lexer { Kind, Token }
 use source { Span }
+use text
 
 extend Parser {
   fun parseStruct(head: DeclHead, isExtern: bool): ast.StructDecl {
@@ -402,7 +403,7 @@ extend Parser {
         [part] => if (!part.isExpr) d.abi = part.text
         else   => { }
       }
-      if (t.parts.len() != 1 || d.abi != "C") this.errorAt(t.span, "unsupported ABI ${ast.quote(d.abi)}; only \"C\" is defined")
+      if (t.parts.len() != 1 || d.abi != "C") this.errorAt(t.span, "unsupported ABI ${text.quote(d.abi)}; only \"C\" is defined")
     } else {
       this.errorExpected("ABI string (\"C\") after 'extern'")
     }
@@ -564,7 +565,7 @@ extend Parser {
     val e = &this.parseExpr()
     when (*e) {
       is ast.CallExpr => return ast.SkipDecl(call: e, pos: this.spanFrom(start))
-      else => {
+      else            => {
         this.errorAt(ast.exprSpan(*e), "a suite's statement is 'skip(why)' or 'skipIf(cond, why)' (D178)")
         return ast.BadDecl(pos: this.spanFrom(start))
       }

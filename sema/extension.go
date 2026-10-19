@@ -22,8 +22,9 @@ type extCandidate struct {
 }
 
 // extensionInScope reports whether the file being checked sees ext: its own
-// module always does, any other through a `use` of that module.
-func (f *fnCtx) extensionInScope(ext *Impl) bool {
+// module always does, any other through a `use` of that module with an `extend`
+// clause that covers the function (D185).
+func (f *fnCtx) extensionInScope(ext *Impl, name string) bool {
 	if ext.Module == f.module {
 		return true
 	}
@@ -36,7 +37,7 @@ func (f *fnCtx) extensionInScope(ext *Impl) bool {
 			continue
 		}
 		for _, s := range u.Specs {
-			if f.module.Uses[s] == ext.Module {
+			if f.module.Uses[s] == ext.Module && importsExtension(s, name) {
 				return true
 			}
 		}
@@ -51,7 +52,7 @@ func (f *fnCtx) extensionsFor(rt types.Type, name string) (found []extCandidate,
 	for _, view := range receiverViews(rt) {
 		for _, ext := range f.c.foreignExts {
 			t, ok := ext.Methods[name]
-			if !ok || !f.extensionInScope(ext) {
+			if !ok || !f.extensionInScope(ext, name) {
 				continue
 			}
 			m := map[*types.TypeParam]types.Type{}
@@ -76,20 +77,37 @@ func (f *fnCtx) extensionsFor(rt types.Type, name string) (found []extCandidate,
 }
 
 // unimportedExtensionHint completes "no method 'name'" when an extension
-// function of that name exists for the receiver in a module this file does
-// not import.
+// function of that name exists for the receiver in a module this file does not
+// import it from: the fix is the `extend` clause of a use (D185).
 func (f *fnCtx) unimportedExtensionHint(rt types.Type, name string) string {
 	for _, view := range receiverViews(rt) {
 		for _, ext := range f.c.foreignExts {
-			if _, ok := ext.Methods[name]; !ok || f.extensionInScope(ext) {
+			if _, ok := ext.Methods[name]; !ok || f.extensionInScope(ext, name) {
 				continue
 			}
 			if unify(ext.Target, view, map[*types.TypeParam]types.Type{}) {
-				return "; '" + name + "' is an extension function in module '" + ext.Module.Name() + "': add 'use " + ext.Module.Name() + "' (D173)"
+				return "; '" + name + "' is an extension function in module '" + ext.Module.Name() + "': import it with 'use " + ext.Module.Name() + " extend { " + name + " }' (D185)"
 			}
 		}
 	}
 	return ""
+}
+
+// importsExtension reports whether a use brings the extension function name:
+// it has an `extend` clause that is bare (all of them) or names it (D185).
+func importsExtension(s *ast.UseSpec, name string) bool {
+	if !s.Extend {
+		return false
+	}
+	if s.ExtendNames == nil {
+		return true
+	}
+	for _, n := range s.ExtendNames {
+		if n.Name.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // indexExtensions tells every reference to a module what its extension
@@ -147,5 +165,56 @@ func (c *Checker) indexExtensions() {
 		if len(lines) > 0 && strings.HasSuffix(r.Shape, "}") {
 			r.Shape = strings.TrimSuffix(r.Shape, "}") + "  // extension functions (D173): methods in the files that import this module\n" + strings.Join(lines, "\n") + "\n}"
 		}
+	}
+}
+
+// checkExtendClauses checks every `extend` clause of a use (D185): the module
+// must have extension functions, and each one named must be one of them.
+func (c *Checker) checkExtendClauses() {
+	for _, m := range c.pkg.SortedModules() {
+		for _, f := range m.Files {
+			for _, d := range f.Decls {
+				u, ok := d.(*ast.UseDecl)
+				if !ok {
+					continue
+				}
+				for _, s := range u.Specs {
+					if dep := m.Uses[s]; dep != nil && s.Extend {
+						c.checkExtendClause(s, dep)
+					}
+				}
+			}
+		}
+	}
+}
+
+func (c *Checker) checkExtendClause(s *ast.UseSpec, dep *Module) {
+	have := map[string]bool{}
+	for _, ext := range c.foreignExts {
+		if ext.Module == dep {
+			for name := range ext.Methods {
+				have[name] = true
+			}
+		}
+	}
+	mod := pathString(s.Path)
+	if len(have) == 0 {
+		c.errorf(s.Pos, "module '%s' has no extension functions: drop 'extend' (D185)", mod)
+		return
+	}
+	names := make([]string, 0, len(have))
+	for name := range have {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, n := range s.ExtendNames {
+		if have[n.Name.Name] {
+			continue
+		}
+		hint := ""
+		if hit := didYouMean(n.Name.Name, names); hit != "" {
+			hint = "; did you mean '" + hit + "'?"
+		}
+		c.errorf(n.Pos, "module '%s' has no extension function '%s'%s (its extensions: %s)", mod, n.Name.Name, hint, strings.Join(names, ", "))
 	}
 }

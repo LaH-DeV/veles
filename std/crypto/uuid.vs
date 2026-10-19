@@ -220,9 +220,4 @@ fun nextTick(): (i64, i64) => v7Clock.withLock(c => c.tick())
 
 fun hexDigit(nibble: u8): u8 => if (nibble < 10) 48 +% nibble else 87 +% nibble
 
-fun nibble(b: u8): u8? {
-  if (b >= 48 && b <= 57) return b -% 48
-  if (b >= 97 && b <= 102) return b -% 87
-  if (b >= 65 && b <= 70) return b -% 55
-  null
-}
+fun nibble(b: u8): u8? => b.digitValue(16)?.wrapU8()

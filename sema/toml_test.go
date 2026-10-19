@@ -67,7 +67,7 @@ func TestVersions(t *testing.T) {
 			t.Errorf("%s: %v %v %v", c.in, v, v.MajorID(), err)
 		}
 	}
-	for _, bad := range []string{"1", "1.2", "1.2.3.4", "01.2.3", "1.2.x", "1.2.3+b", "1.2.3-", "1.2.3-a_b", ""} {
+	for _, bad := range []string{"1", "1.2", "1.2.3.4", "01.2.3", "1.2.x", "1.2.3+b", "1.2.3-", "1.2.3-a_b", "1.2.3-a..b", "1.2.3-.a", "1.2.3-a.01", ""} {
 		if _, err := ParseVersion(bad); err == nil {
 			t.Errorf("%q should not parse", bad)
 		}

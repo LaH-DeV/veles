@@ -1695,7 +1695,7 @@ func TestHoverExtensionFunction(t *testing.T) {
 // `use` line ends with the types they extend.
 func TestExtensionsShownOnTheImport(t *testing.T) {
 	strx := "public extend string with fun shout(): string => this.toUpper()\n\npublic extend<T> List<T> with fun second(): T? => this.at(1)\n\ninternal extend i64 with fun hidden(): i64 => this\n"
-	src := "use io\nuse strx\n\nfun main() {\n  io.println(\"hi\".shout())\n}\n"
+	src := "use io\nuse strx extend\n\nfun main() {\n  io.println(\"hi\".shout())\n}\n"
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "strx"), 0o755); err != nil {
 		t.Fatal(err)

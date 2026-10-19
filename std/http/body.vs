@@ -272,9 +272,7 @@ fun parseChunkSize(line: string): i64? {
   if (digits.isEmpty() || digits.len() > 15) return null
   var n: i64 = 0
   loop (b in digits.bytes()) {
-    val v = hexValue(b)
-    if (v < 0) return null
-    n = n * 16 + v
+    n = n * 16 + (b.digitValue(16) ?: return null)
   }
   n
 }

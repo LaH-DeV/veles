@@ -284,9 +284,8 @@ fun byteaItems(text: string): List<string?>? {
   val bytes = text.bytes()
   var i = 2
   loop (i + 1 < bytes.len()) {
-    val hi = hexValue(bytes.at(i) ?: 0)
-    val lo = hexValue(bytes.at(i + 1) ?: 0)
-    if (hi < 0 || lo < 0) return null
+    val hi = (bytes.at(i) ?: 0).digitValue(16) ?: return null
+    val lo = (bytes.at(i + 1) ?: 0).digitValue(16) ?: return null
     out.push("${hi * 16 + lo}")
     i += 2
   }

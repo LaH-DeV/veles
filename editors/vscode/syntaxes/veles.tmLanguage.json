@@ -72,6 +72,7 @@
           ]
         },
         { "name": "keyword.control.import.veles", "match": "\\bas\\b" },
+        { "comment": "use m extend / use m { A } extend { f } (D185): the clause that brings extension functions", "name": "keyword.control.import.veles", "match": "\\bextend\\b" },
         { "name": "entity.name.namespace.veles", "match": "[A-Za-z_][A-Za-z0-9_]*" },
         { "include": "#punctuation" }
       ]

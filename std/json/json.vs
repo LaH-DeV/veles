@@ -431,13 +431,8 @@ public struct JsonDecoder {
   private fun hex4(): i64 throws DecodeError {
     var n: i64 = 0
     loop (_ in 0..<4) {
-      val b = (this.peekByte() ?: throw this.malformed("short \\u escape")).toI64()
-      val d = when {
-        b >= '0' && b <= '9' => b - '0'
-        b >= 'a' && b <= 'f' => b - 'a' + 10
-        b >= 'A' && b <= 'F' => b - 'A' + 10
-        else                 => throw this.malformed("bad \\u escape")
-      }
+      val byte = this.peekByte() ?: throw this.malformed("short \\u escape")
+      val d = byte.digitValue(16) ?: throw this.malformed("bad \\u escape")
       n = n * 16 + d
       this.setPos(this.pos() + 1)
     }
@@ -490,13 +485,13 @@ public struct JsonDecoder {
       this.skipSpace()
       val b = this.peekByte() ?: throw this.malformed("unexpected end of input")
       when {
-        b == '{' => codec.Kind.Object
-        b == '[' => codec.Kind.List
-        b == '"' => codec.Kind.String
-        b == 't' || b == 'f' => codec.Kind.Bool
-        b == 'n' => codec.Kind.Null
-        b == '-' || (b >= '0' && b <= '9') => if (this.numberIsFloat()) codec.Kind.Float else codec.Kind.Int
-        else => throw this.malformed("unexpected character")
+        b == '{'                     => codec.Kind.Object
+        b == '['                     => codec.Kind.List
+        b == '"'                     => codec.Kind.String
+        b == 't' || b == 'f'         => codec.Kind.Bool
+        b == 'n'                     => codec.Kind.Null
+        b == '-' || b.isAsciiDigit() => if (this.numberIsFloat()) codec.Kind.Float else codec.Kind.Int
+        else                         => throw this.malformed("unexpected character")
       }
     }
 

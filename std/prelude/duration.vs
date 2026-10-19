@@ -262,7 +262,7 @@ fun parseSecondsText(s: string): Duration? {
   var i: i64 = if (s.byteAt(0) == '-') 1 else 0
   loop (i < s.len() - 1) {
     val b = s.byteAt(i)
-    if (!isAsciiDigit(b) && b != '.') return null
+    if (!b.isAsciiDigit() && b != '.') return null
     i += 1
   }
   parseDuration(s)
@@ -326,7 +326,7 @@ fun parseIsoText(s: string): Duration? {
       continue
     }
     val start = i
-    loop (i < s.len() && (isAsciiDigit(s.byteAt(i)) || s.byteAt(i) == '.' || s.byteAt(i) == ',')) i += 1
+    loop (i < s.len() && (s.byteAt(i).isAsciiDigit() || s.byteAt(i) == '.' || s.byteAt(i) == ',')) i += 1
     if (i == start || i >= s.len()) return null
     val number = (s.substring(start, i) ?: return null).replace(",", ".")
     if (fraction) return null  // a fraction is only allowed on the last component
@@ -375,8 +375,6 @@ const fun unitNanos(u: string): i64 => when (u) {
   else => -1
 }
 
-const fun isAsciiDigit(b: u8): bool => b >= '0' && b <= '9'
-
 /// The body of `Duration.parse`; see its documentation for the grammar.
 const fun parseDuration(s: string): Duration? {
   if (s.isEmpty()) return null
@@ -395,7 +393,7 @@ const fun parseDuration(s: string): Duration? {
     // nanoseconds can hold rather than wrapping there (D21)
     val startDigits = i
     var whole: i64 = 0
-    loop (i < s.len() && isAsciiDigit(s.byteAt(i))) {
+    loop (i < s.len() && s.byteAt(i).isAsciiDigit()) {
       if (whole > nanosMax / 10) return null
       whole = whole * 10 + ((s.byteAt(i) - '0').toI64())
       i += 1
@@ -407,8 +405,8 @@ const fun parseDuration(s: string): Duration? {
     var den: i64 = 1
     if (i < s.len() && s.byteAt(i) == '.') {
       i += 1
-      if (i >= s.len() || !isAsciiDigit(s.byteAt(i))) return null  // a point with no digits
-      loop (i < s.len() && isAsciiDigit(s.byteAt(i))) {
+      if (i >= s.len() || !s.byteAt(i).isAsciiDigit()) return null  // a point with no digits
+      loop (i < s.len() && s.byteAt(i).isAsciiDigit()) {
         if (fracDigits < 9) {
           frac = frac * 10 + ((s.byteAt(i) - '0').toI64())
           den *= 10
@@ -422,7 +420,7 @@ const fun parseDuration(s: string): Duration? {
     if (i == startDigits) return null  // no digits at all
     // the unit
     val startUnit = i
-    loop (i < s.len() && !isAsciiDigit(s.byteAt(i)) && s.byteAt(i) != '.' &&
+    loop (i < s.len() && !s.byteAt(i).isAsciiDigit() && s.byteAt(i) != '.' &&
       s.byteAt(i) != '-' && s.byteAt(i) != '+') {
         i += 1
       }

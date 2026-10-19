@@ -73,7 +73,7 @@ val (a, b) = (1, "one")         // tuple destructuring, nests: val ((x, y), z) =
 | address | `&x` → `*T`, `*p` reads through |
 | range | `a..b`, `a..<b` |
 | assignment | `= += -= *= /= %=` |
-| strings | `"a" + "b"`, `s.len()` (bytes), `s.trim()`, `s.split(",")`, `s.splitOnce("=")` (a `(string, string)?`), `s.replace(a, b)`, `s.indexOf(p)`, `s.toUpper()`, `s.padStart(n)`, `s.toInt()`, `s.chars()`, `s.byteAt(i)` (a `u8`; `'"'` is a byte literal), `"$name ${expr}"`, escapes `\n \t \\ \" \$ \u{..}`; a `"""` text block (the closing delimiter's indentation is the margin, D172) and a backtick raw string (no escapes, no `${}`); format specs `"${price:>10.2} ${id:08x} ${share:.1%}"` (D171, `[[fill]align][sign][#][0][width][,][.precision][type]`; `use fmt` for `fmt.bytes`, `fmt.table`, …); one code point at a time is `use utf8` — `utf8.decode(s, i)`, `utf8.encodeTo(out, code)`; a regular expression is a literal `/(\d+)-(\d+)/i` after `use regex` (checked while compiling; RE2 syntax, linear time, D182): `s.find(re)`, `s.findAll(re)`, `s.matches(re)`, `s.replaceAll(re, "$1")`, `s.splitBy(re)`, `Regex.compile(text)` at run time |
+| strings | `"a" + "b"`, `s.len()` (bytes), `s.trim()`, `s.split(",")`, `s.splitOnce("=")` (a `(string, string)?`), `s.replace(a, b)`, `s.indexOf(p)`, `s.toUpper()`, `s.padStart(n)`, `s.toInt()`, `s.chars()`, `s.byteAt(i)` (a `u8`; `'"'` is a byte literal), `"$name ${expr}"`, escapes `\n \t \\ \" \$ \u{..}`; a `"""` text block (the closing delimiter's indentation is the margin, D172) and a backtick raw string (no escapes, no `${}`); format specs `"${price:>10.2} ${id:08x} ${share:.1%}"` (D171, `[[fill]align][sign][#][0][width][,][.precision][type]`; `use fmt` for `fmt.bytes`, `fmt.table`, …); one code point at a time is `use utf8` — `utf8.decode(s, i)`, `utf8.encodeTo(out, code)`; a regular expression is a literal `/(\d+)-(\d+)/i` after `use regex` (checked while compiling; RE2 syntax, linear time, D182): `s.find(re)`, `s.findAll(re)`, `s.matches(re)`, `s.replaceAll(re, "$1")`, `s.splitBy(re)` (extension functions: `use regex extend`), `Regex.compile(text)` at run time |
 
 ## Control flow
 
@@ -151,7 +151,7 @@ extend Point {                  // more inherent methods, outside the body (D23)
 }
 extend<T: Shape> Box<T> { ... } // on a type you declare; bounds allowed
 extend string with fun shout(): string => this.toUpper() + "!"  // a type you did not write: an extension function,
-                                // seen by files that import the module (D173); inherent methods win
+                                // seen by files that ask for it: `use m extend` (all) or `use m extend { shout }` (D173, D185); inherent methods win
 
 sealed trait Expr {             // fixed set of variants (D12)
   fun eval(): i64 => when (this) { is Num(v) => v; is Neg(e) => -e.eval() }

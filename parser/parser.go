@@ -608,6 +608,7 @@ func (p *Parser) parseUseSpec() *ast.UseSpec {
 				p.errorf(dot, "'use %s.{ … }' is spelled 'use %s { … }' (D85)", pathString(s.Path), pathString(s.Path))
 				p.diags.Items[len(p.diags.Items)-1].Fix = &source.Fix{Title: "Remove the '.'", Edits: []source.TextEdit{{Span: dot}}}
 			}
+			p.parseExtendClause(s)
 			s.Pos = p.spanFrom(start)
 			return s
 		}
@@ -631,6 +632,7 @@ func (p *Parser) parseUseSpec() *ast.UseSpec {
 	if p.at(lexer.LBrace) {
 		p.parseUseNames(s)
 	}
+	p.parseExtendClause(s)
 	s.Pos = p.spanFrom(start)
 	return s
 }
@@ -671,6 +673,46 @@ func (p *Parser) parseUseNames(s *ast.UseSpec) {
 	p.expect(lexer.RBrace)
 	if len(s.Names) == 0 && !starred {
 		p.errorf(source.Span{File: open.Span.File, Start: open.Span.Start, End: closer.End}, "'use %s { }' names nothing: list what to import, or write 'use %s'", pathString(s.Path), pathString(s.Path))
+	}
+}
+
+// parseExtendClause parses the `extend` that ends a use (D185): `use m extend`
+// brings all of the module's extension functions (D173), `use m { A } extend {
+// f, g }` only those named. A use without it brings none.
+func (p *Parser) parseExtendClause(s *ast.UseSpec) {
+	if !p.at(lexer.Ident) || p.cur().Text != "extend" {
+		return
+	}
+	p.next()
+	s.Extend = true
+	if !p.at(lexer.LBrace) {
+		return
+	}
+	open := p.next()
+	p.skipSemis()
+	for !p.at(lexer.RBrace) && !p.at(lexer.EOF) {
+		start := p.span()
+		name, ok := p.expectIdent()
+		if !ok {
+			break
+		}
+		if p.at(lexer.KwAs) {
+			p.errorf(p.span(), "an extension function keeps its name: 'as' renames an imported name, not a method")
+			p.next()
+			p.expectIdent()
+		}
+		s.ExtendNames = append(s.ExtendNames, &ast.UseName{Name: name, Pos: p.spanFrom(start)})
+		p.skipSemis()
+		if !p.accept(lexer.Comma) {
+			break
+		}
+		p.skipSemis()
+	}
+	p.skipSemis()
+	closer := p.span()
+	p.expect(lexer.RBrace)
+	if len(s.ExtendNames) == 0 {
+		p.errorf(source.Span{File: open.Span.File, Start: open.Span.Start, End: closer.End}, "'extend { }' names nothing: list the extension functions to import, or write 'extend' alone for all of them (D185)")
 	}
 }
 

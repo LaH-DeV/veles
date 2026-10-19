@@ -62,7 +62,7 @@ extend i64 with fun clamped(lo: i64, hi: i64): i64 => if (this < lo) lo else if 
 		diags := checkExtTree(t, map[string]string{
 			"strx/strx.vs": strx,
 			"main.vs": `use io
-use strx
+use strx extend
 fun main() {
   io.println(" Hi There ".trim().slug().shout())
   io.println("${[1, 2].isSorted()} ${150.clamped(0, 100)}")
@@ -76,19 +76,48 @@ fun main() {
 		// the scope is the file: a sibling file that imports the module does not help
 		diags := checkExtTree(t, map[string]string{
 			"strx/strx.vs": strx,
-			"other.vs":     "use strx\nfun g(): string => \"a\".shout()",
+			"other.vs":     "use strx extend\nfun g(): string => \"a\".shout()",
 			"main.vs":      "fun f(): string => \"a\".shout()",
 		})
-		wantDiag(t, diags, source.Error, "'shout' is an extension function in module 'strx': add 'use strx'")
+		wantDiag(t, diags, source.Error, "'shout' is an extension function in module 'strx': import it with 'use strx extend { shout }'")
 	})
-	t.Run("a braced import brings the module too", func(t *testing.T) {
-		diags := checkExtTree(t, map[string]string{
-			"strx/strx.vs": strx + "\npublic fun hello(): string => \"hello\"\n",
-			"main.vs":      "use strx { hello }\nfun f(): string => \"a\".shout() + hello()",
-		})
-		if diags.HasErrors() {
-			t.Errorf("unexpected errors:\n%s", diags.Render())
+	t.Run("a use brings no extension unless it says extend (D185)", func(t *testing.T) {
+		withHello := strx + "\npublic fun hello(): string => \"hello\"\n"
+		cases := []struct{ name, use, want string }{
+			{"plain use", "use strx", "'shout' is an extension function in module 'strx'"},
+			{"braced names", "use strx { hello }", "'shout' is an extension function in module 'strx'"},
+			{"extend names another", "use strx { hello } extend { slug }", "'shout' is an extension function in module 'strx'"},
+			{"extend names it", "use strx { hello } extend { shout }", ""},
+			{"extend alone is all", "use strx extend", ""},
+			{"braced and extend alone", "use strx { hello } extend", ""},
+			{"extend names without braced names", "use strx extend { shout, slug }", ""},
+			{"extend an unknown name", "use strx extend { shoot }", "module 'strx' has no extension function 'shoot'; did you mean 'shout'?"},
+			{"extend of a module with none", "use plain extend", "module 'plain' has no extension functions: drop 'extend'"},
 		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				diags := checkExtTree(t, map[string]string{
+					"strx/strx.vs":   withHello,
+					"plain/plain.vs": "public fun nothing(): i64 => 1",
+					"main.vs":        tc.use + "\nfun f(): string => \"a\".shout()",
+				})
+				if tc.want == "" {
+					if diags.HasErrors() {
+						t.Errorf("unexpected errors:\n%s", diags.Render())
+					}
+					return
+				}
+				wantDiag(t, diags, source.Error, tc.want)
+			})
+		}
+	})
+	t.Run("a std module's extensions on built-in types are scoped like any other", func(t *testing.T) {
+		// importing regex's extensions in one module gives them to no other file
+		diags := checkExtTree(t, map[string]string{
+			"x/x.vs":  "use regex { Regex } extend\npublic fun make(): Regex => Regex.compile(\"a\") ?? panic(\"x\")",
+			"main.vs": "use x\nfun g(): bool => \"a\".findAll(x.make()).isEmpty()",
+		})
+		wantDiag(t, diags, source.Error, "'findAll' is an extension function in module 'regex'")
 	})
 	t.Run("an inherent method wins and the extension warns", func(t *testing.T) {
 		diags := checkExtTree(t, map[string]string{
@@ -100,7 +129,7 @@ fun main() {
 		diags := checkExtTree(t, map[string]string{
 			"a/a.vs":  "extend string with fun twice(): string => this + this",
 			"b/b.vs":  "extend string with fun twice(): string => this + \"2\"",
-			"main.vs": "use a\nuse b\nfun f(): string => \"a\".twice()",
+			"main.vs": "use a extend\nuse b extend\nfun f(): string => \"a\".twice()",
 		})
 		wantDiag(t, diags, source.Error, "ambiguous method 'twice' on 'string'")
 	})
@@ -108,7 +137,7 @@ fun main() {
 		diags := checkExtTree(t, map[string]string{
 			"a/a.vs":  "extend string with fun twice(): string => this + this",
 			"b/b.vs":  "extend string with fun twice(): string => this + \"2\"",
-			"main.vs": "use a\nfun f(): string => \"a\".twice()",
+			"main.vs": "use a extend\nfun f(): string => \"a\".twice()",
 		})
 		if diags.HasErrors() {
 			t.Errorf("unexpected errors:\n%s", diags.Render())
@@ -117,7 +146,7 @@ fun main() {
 	t.Run("a trait method of the same name is ambiguous", func(t *testing.T) {
 		diags := checkExtTree(t, map[string]string{
 			"a/a.vs": "extend string with fun twice(): string => this + this",
-			"main.vs": `use a
+			"main.vs": `use a extend
 trait Twice { fun twice(): string }
 implement Twice for string { fun twice(): string => "t" }
 fun f(): string => "a".twice()`,
@@ -127,7 +156,7 @@ fun f(): string => "a".twice()`,
 	t.Run("bounds are checked", func(t *testing.T) {
 		diags := checkExtTree(t, map[string]string{
 			"a/a.vs": "extend<T: Comparable> List<T> with fun top(): i64 => this.len()",
-			"main.vs": `use a
+			"main.vs": `use a extend
 struct P { x: i64 }
 fun f(): i64 => [P(x: 1)].top()`,
 		})
@@ -144,7 +173,7 @@ fun f(): i64 => [P(x: 1)].top()`,
 		// an extension never satisfies a trait bound
 		diags := checkExtTree(t, map[string]string{
 			"a/a.vs": "extend string with fun shout(): string => this",
-			"main.vs": `use a
+			"main.vs": `use a extend
 trait Shouts { fun shout(): string }
 fun needs<T: Shouts>(x: T): string => x.shout()
 fun f(): string => needs("a")`,

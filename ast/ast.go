@@ -198,8 +198,13 @@ type UseSpec struct {
 	Path  []Ident
 	Alias *Ident
 	Names []*UseName // the braced names; nil without braces
-	Pub   bool       // the declaration is `public use` (D89)
-	Pos   source.Span
+	// Extend is the `extend` clause (D185): the import brings extension
+	// functions of the module (D173). Without it, none. ExtendNames are the
+	// ones named in `extend { f, g }`; nil is a bare `extend`: all of them.
+	Extend      bool
+	ExtendNames []*UseName
+	Pub          bool // the declaration is `public use` (D89)
+	Pos          source.Span
 }
 
 // UseName is one name of a braced import: `f` or `f as g`.

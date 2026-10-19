@@ -138,8 +138,13 @@ public struct UseSpec {
   public var path:  List<Ident> = []
   public var alias: Ident? = null
   public var names: List<UseName>? = null  // the braced names; null without braces
-  public var pub:   bool = false
-  public var pos:   Span = Span.none()
+  /// The `extend` clause (D185): the import brings extension functions of the
+  /// module (D173). Without it, none; `extendNames` are the ones named in
+  /// `extend { f, g }`, null for a bare `extend`: all of them.
+  public var extend:      bool = false
+  public var extendNames: List<UseName>? = null
+  public var pub:         bool = false
+  public var pos:         Span = Span.none()
 }
 
 /// `f` or `f as g` in braces.

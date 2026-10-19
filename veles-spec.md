@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.97** — decisions D1–D183. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.100** — decisions D1–D186. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -7463,4 +7463,66 @@ val manifest = try toml.parse(text, strict: true)      // the subset veles.toml 
 val port = doc.get("server")?.asTable()?.get("port")?.asInt() ?: 8080
 ```
 
-The reader builds a tree, not a typed value: every `Value` has its `kind` and the `line` it was written on, and a `Table` knows whether a header or an inline table defined it. `strict: true` refuses floats, dates, hex/octal/binary integers, multi-line strings, the `\b \f \r \e \U` escapes and `[[tables]]`, and allows a header after a dotted key — exactly what the compiler's manifest reader accepted before, which the self-hosted checker pins byte for byte against the Go reader (`TestR1Toml`). The Go `sema` keeps its own copy until the Go side is retired. Dates and times are the text as written with their shape (`OffsetDateTime`, `LocalDateTime`, `LocalDate`, `LocalTime`), checked for form and range. Typed decoding through `Decodable` (`toml.decode<T>`) and writing TOML come later (checklist §11). Rejected: a private reader inside the compiler port; the manifest subset only.
+The reader builds a tree, not a typed value: every `Value` has the `line` it was written on and its `data`, a sealed family (`Text`, `Integer`, `Real`, `Flag`, `Moment`, `Items`, `Nested`) to match on, and a `Table` knows whether a header or an inline table defined it. `strict: true` refuses floats, dates, hex/octal/binary integers, multi-line strings, the `\b \f \r \e \U` escapes and `[[tables]]`, and allows a header after a dotted key — exactly what the compiler's manifest reader accepted before, which the self-hosted checker pins byte for byte against the Go reader (`TestR1Toml`). The Go `sema` keeps its own copy until the Go side is retired. Dates and times are the text as written with their shape (`OffsetDateTime`, `LocalDateTime`, `LocalDate`, `LocalTime`), checked for form and range. Typed decoding through `Decodable` (`toml.decode<T>`) and writing TOML come later (checklist §11). Rejected: a private reader inside the compiler port; the manifest subset only.
+
+### D184 — ASCII classes of a byte: `u8.isAsciiDigit()` and friends (v0.98)
+
+Self-hosting review 2026-10-19 (the user, seeing `isDigit` written in six modules: "the alphanumeric and other checks are already in std no? shouldn't we use our language to write code? there could be even a possibility to expand std while writing currently selfhosted code"; chosen: "u8 extension methods, ascii-named", recommended of 3).
+
+```veles
+if (b.isAsciiDigit()) ...                // 0-9
+b.isAsciiLetter(), b.isAsciiLower(), b.isAsciiUpper(), b.isAsciiAlphanumeric()
+b.toAsciiLower(), b.toAsciiUpper()       // 'A' to 'a', and back; any other byte as it is
+b.isAsciiHexDigit(), b.isAsciiSpace()    // space, 	 
+   
+val v = b.digitValue(16) ?: return null  // i64?: 0-9, a-z, A-Z up to the radix (2 to 36, default 10)
+```
+
+Written in Veles in `std/prelude/ascii.vs` as `const fun` extension methods of `u8` (D173), so the compile-time evaluator and `regex` can use them; no compiler change. The names say ASCII because a `u8` is a byte, not a code point: a Unicode question is asked of a code point (`utf8`), once the shared Unicode tables are a module (checklist §11). A radix outside 2 to 36 panics (a caller bug). `toAsciiLower`/`toAsciiUpper` were added the same day, when the sweep for hand-written ranges found `string.toUpper`, the camel/snake key styles and the regex case folding each doing it by hand. Rejected: a `std/ascii` module, private helpers per module. The private copies in `std/prelude`, `time`, `http`, `db`, `toml`, the selfhost lexer and `selfhost/pkg` are gone; `std/regex` keeps its code-point (`i64`) variants until it moves to the Unicode module.
+
+### D185 — The `extend` clause of a `use`: extension functions are imported explicitly (v0.99)
+
+Self-hosting review 2026-10-19. The user, seeing `use regex { Regex }` bring a dozen methods onto every string: "we should probably have a way of opt-in (in `use` import) disabling auto-include of some extensions"; then, after a first spelling (`extensions: false`) was half built: "maybe we would be tempted to import only some extensions"; and the spelling: "`use formatter { FormatOptions, readFormat } extend { leadingInteger }`". Asked what a use without the clause brings: "no `extend` => no extensions, bare `extend` without braces gives all, `{ find }`, empty braces is an error".
+
+```veles
+use strx                                  // the module (strx.slug as a function), no extension functions
+use strx extend                           // all of the module's extension functions
+use strx extend { slug, shout }           // exactly these two
+use regex { Regex } extend { find }       // the type, bare; and only `find` on strings
+use regex { Regex, Match as M } extend    // names, and all the extensions
+```
+
+The clause is last on the spec, after the braced names, on the same line (a new line starting `extend T { }` is a declaration, as before). It amends D173 rule 4 (*visible where its module is imported*): an extension function is visible in a file only through an `extend` clause that is bare or names it. Further rules:
+
+- The names are the functions' own, never renamed (`as` is an error); each must be an extension function of the module (error with a did-you-mean and the list), and a module with no extension functions refuses `extend` ("drop 'extend'").
+- Two visible extensions of one name, or an extension and a trait method, are still an ambiguity error at the call (D173 rule 5).
+- A module's own files always see its extensions (rule 4).
+- A call that needs an extension the file did not import fails with "no method 'find' on type 'string'; 'find' is an extension function in module 'regex': import it with 'use regex extend { find }'".
+- The formatter keeps the clause and sorts its names like the braced ones; the tree dump prints `(use regex { Regex } extend { find })`.
+
+**A bug found on the way, fixed with it:** extension functions that a *std* module wrote on a built-in type (`std/regex`'s `extend string …`) were treated as the type's own methods — visible in every file of the program once any file loaded the module, whatever it imported. Only the prelude owns the built-in types now; every other module's methods on them are extension functions scoped by import, as D173 says.
+
+Rejected: `extensions: false` (all or nothing, and an opt-out where the default is to include); a per-name list inside the braces (`use regex { Regex, find }`: a name and a method share one list, and `find` could mean either); keeping the old default (a use brings all extensions) with the new clause only restricting it — a braced list would not be exact, and a reader could not tell from the `use` line what methods a file has.
+
+Migration: the examples (`examples/extensions`, `examples/regex`), the docs and the tests that used a module's extensions now say `extend`; the compiler's message names the exact clause. Not built: the editor's auto-import of an extension name, `veles check --fix` writing the clause, and a warning for an `extend { f }` name the file never calls (checklist §11).
+
+### D186 — `std/version`: `Version` and `Constraint` (v0.100)
+
+Self-hosting review 2026-10-19. The user, seeing the package system's own `Version`: "shouldn't veles have a 'version' or 'semver' module that the pkg would use for Version?"; asked for the scope and name: "std/version would be better, because we could later add more than semver, some helpers, types etc... so semver with constraints but called std/version".
+
+```veles
+use version { Constraint, Version }
+
+val installed = try Version.parse("1.4.2")            // throws VersionError { message }
+val wanted = try Constraint.parse("^1.2 || >=3.1 <4")
+if (wanted.matches(installed)) ...
+val best = wanted.newest(available)                    // Version?
+installed < try Version.parse("1.10.0")                // semver.org precedence: numbers, not text
+```
+
+- **`Version`** (`major`, `minor`, `patch`, `pre: List<string>`): `parse`, `toString`/`"$v"`, `Comparable` by semver.org precedence, structural `==` and hashing, `isPreRelease()`, `majorId()` (D132's compatibility id), `bumpMajor/Minor/Patch()`. D132's flavour: a leading `v` is accepted and dropped, build metadata is refused, each number is below 2^32 without a leading zero. Pre-release identifiers are not empty and a number among them has no leading zero (semver.org §9) — the bootstrap compiler's reader was tightened the same way.
+- **`Constraint`**: sets joined by `||`, comparators separated by spaces or commas; `=`/bare exact, `> >= < <=`, `^`, `~`, partial versions and `x`/`*` ranges; a pre-release satisfies a set only through a comparator naming a pre-release of the same `major.minor.patch` (npm's rule). `matches`, `newest`, `Constraint.exactly`.
+- **A bare full version is exact**, not caret as in Cargo: D132 pins exact versions, and a constraint that silently allowed more would be a surprise there. `^` is written when wanted.
+- **`Version.parse` throws** rather than returning `null` (unlike a number's `parse`): a version that is wrong has a reason a tool wants to print.
+
+Not built (checklist §11): hyphen ranges (`1.2.3 - 2.3.4`), a minimal-version-selection resolver (the package system's `Compare`/`MajorID` users), `Version` in the codec (JSON, TOML values), constraints in `[dependencies]` (D132 stays on exact pins).
