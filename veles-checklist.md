@@ -1333,6 +1333,14 @@ Every new public std API (http cookies/forms/client, `std/log`,
 
 ## 11. Known limitations to revisit
 
+- **Bootstrap fixpoint (plan S14, harness built 2026-10-19).** The gate, `TestSelfHostedCompiler`,
+  skips: there is no Veles compiler to build yet (S11). Compared: the LLVM IR of the compiler's
+  source in `--release`; not compared: the executables byte for byte (they carry the build
+  directory and, on Windows, a timestamp), the output of running each stage over the whole
+  corpus, and a build with the sanitizers. The harness assumes the stages speak
+  `build . -o out --release [--emit-llvm]`; a Veles compiler with a different command line adapts
+  `Compiler.Build`. No CI line yet, and not run on Linux.
+
 - **Sema dumps (plan S10, first cut built 2026-10-19).** `veles check --dump names|types|hir`
   dumps the program *after* lowering, not each phase separately: there is no dump of name
   resolution before type checking, of declarations before bodies, or of the effects pass on its
