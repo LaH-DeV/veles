@@ -52,6 +52,9 @@ func (g *gen) keyArgs(kt types.Type, key string) (string, string, string) {
 
 func (g *gen) mapLit(e *sema.MapLit) string {
 	mt := e.Type().(*types.Map)
+	if len(e.Entries) == 0 && !mt.Mutable {
+		return g.emptyMap(mt.Key, mt.Value) // shared, as an empty immutable list (D187)
+	}
 	m := g.newTmp()
 	g.emit("%s = call ptr @veles_map_new(ptr %s, ptr %s)", m, g.arrayDescOf(mt.Key), g.arrayDescOf(mt.Value))
 	for _, en := range e.Entries {
@@ -68,6 +71,9 @@ func (g *gen) mapBuiltin(e *sema.Builtin) (string, bool) {
 	switch e.Op {
 	case "set.new":
 		st := e.Type().(*types.Set)
+		if !st.Mutable {
+			return g.emptyMap(st.Elem, nil), true
+		}
 		m := g.newTmp()
 		g.emit("%s = call ptr @veles_map_new(ptr %s, ptr null)", m, g.arrayDescOf(st.Elem))
 		return m, true

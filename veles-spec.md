@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.100** — decisions D1–D186. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.101** — decisions D1–D187. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -7526,3 +7526,37 @@ installed < try Version.parse("1.10.0")                // semver.org precedence:
 - **`Version.parse` throws** rather than returning `null` (unlike a number's `parse`): a version that is wrong has a reason a tool wants to print.
 
 Not built (checklist §11): hyphen ranges (`1.2.3 - 2.3.4`), a minimal-version-selection resolver (the package system's `Compare`/`MajorID` users), `Version` in the codec (JSON, TOML values), constraints in `[dependencies]` (D132 stays on exact pins).
+
+### D187 — What an empty or unused value costs: nothing it does not need (v0.101)
+
+2026-10-20. The user, looking at a struct of four `List<string>` fields each defaulted to `[]`: "would it be good for performance if we added `lazy` for variables and fields?" — then, after the first change: "check for map, set, stringbuilder … and write this to the spec, what other types and things in the language must be aware of (no/low cost whenever possible, but decided, not done by accident)". Other languages: Kotlin `by lazy` and Scala `lazy val` pay a flag, a lock and an extra object per field; Swift `lazy var` stores an `Optional`; Rust/Go/Zig/C# make the *empty* collection free (`Vec::new()` does not allocate) and use an explicit `OnceCell`/`sync.Once`/`Lazy<T>` for the expensive field. Veles follows the second group.
+
+**The rule.** A value that holds nothing owns no storage beyond its own header; the first write allocates, growth is geometric from a floor. Writing `= []` / `= [:]` / `= StringBuilder()` as a field default is therefore the cheap way to say "starts empty", and no language feature is needed to avoid paying for it. A type that must allocate on creation says so here.
+
+| Thing | Cost when empty or unused | First use | Decided |
+|---|---|---|---|
+| `List`, `Map`, `Set` (immutable) | an empty `[]` / `[:]` / `List<T>()` / `Set<T>()` is one shared constant per element type: nothing is allocated, even for the header | never written; `.toList()` of a non-empty mutable one is a copy, of an empty one the constant | D187 |
+| `MutableList` | the header (a heap object with its own identity, D25); `cap 0`, no element buffer | first `push`/`addAll`/`reserve` allocates 4 elements (`append` on bytes: 16) and doubles | D187 |
+| `MutableMap`, `MutableSet` | the header; no key, value, metadata or index array | first insert/`reserve` allocates room for 8 entries (keys, values, hashes) and no hash index: up to 8 entries a lookup scans the stored hashes; the entry arrays growing past 8 builds the index | D187 |
+| `Deque`, `PriorityQueue` (prelude) | a small state object and an empty list: the ring buffer / heap array is allocated by the first add (4 slots, then doubling) | first `addFirst`/`addLast`/`add` | D187 (already so) |
+| `StringBuilder` | its list: a header | as a list of bytes | D187 |
+| `string` | `""` is a constant. In a concatenation or interpolation a literal `""` piece is dropped at compile time; if nothing else is left the result is the constant, and a single remaining string piece is the result itself (no copy). When no piece is a formatted number, the runtime also hands back the one non-empty piece (`a + ""` is `a`: strings are immutable). A formatted number is a temporary buffer until copied, so a concatenation with an integer piece always copies | — | D187 |
+| `Array<T, N>`, tuples, structs, enums, nullable, `Result` | no heap: values, inline (memory class above 128 bytes, D121) | — | existing |
+| a closure without captures | `{ fn, null }`, no environment | with captures: one environment object | existing |
+| constants and `const` tables (D113) | static data, never seen by the collector | — | existing |
+| `Lazy<T>` (D146) | the cell; `init` has not run | `get()` runs it once | existing |
+| `Channel` | its header; a buffer of exactly the capacity asked for, none when unbuffered | — | the capacity is the program's request |
+| `Secret<T>` | the bytes, in a wiping object | — | D112 |
+
+**What follows for the language and the library**
+
+- **Unspecified identity of the storage.** `rawData` of an empty list may be null; a foreign call that receives a pointer with length 0 must accept null. A `string` may share another string's bytes (a slice does), and its data pointer is not NUL-terminated by the language.
+- **A runtime function treats "length 0, no storage" as a valid state**, not as an error: it never copies from, wipes, scans or indexes the missing buffer. New collection types in the runtime and in `std/` follow the table: a `std/` type built on `List`/`Map` gets it for free; one with its own buffer starts with none.
+- **Shared immutable values never allocate on read.** A `List`/`Map` seen by several tasks is not changed (D35), so lazy storage needs no synchronisation: only a mutable value, owned by one task, allocates.
+- **A new type states its empty cost** in its spec entry (a row here or one line in its own entry), and a benchmark or test pins it when it is a collection (`TestEmptyListNoStorage`: live bytes per empty list, map and set).
+- **`lazy` fields are not added.** A `lazy var f: T = []` would save nothing over this (an empty list is a header) and would put a flag and a branch on every read; for an expensive field the answer is `Lazy<T>` (D146) today. A `lazy val` field over `Lazy<T>` stays a possible later sugar, to be decided if real cases appear.
+- **`lazy` parameters (D90)** are unrelated: they delay *computing an argument* (a thunk), not storage.
+
+Measured (`bench/emptycoll`, two million records with three empty collections each): about 205 ms before D187, about 70 ms after. Go takes 19 ms when the record does not escape (its escape analysis puts the record and its map header on the stack) and about 105 ms when the record is heap-allocated (a pointer stored in a global): against Go's own heap allocation Veles is ahead, and the remaining gap to the 19 ms is stack allocation of a non-escaping value, which Veles lacks (checklist §3, escape analysis).
+
+Not done (checklist §11): a `MutableList`/`MutableMap` header is still a heap object (identity, D25), so an empty mutable field costs its header (about 11 ns for a list, 14 ns for a map); escape analysis for headers; `Bitset`/`Ring`-like types do not exist in `std/` yet and take their row here when they do.

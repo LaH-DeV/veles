@@ -250,7 +250,7 @@ entry:
   %t10 = extractvalue %str { ptr @.str.15, i64 5 }, 1
   %t11 = extractvalue %str %t7, 0
   %t12 = extractvalue %str %t7, 1
-  call void @veles_string_concat(ptr %a8, ptr %t9, i64 %t10, ptr %t11, i64 %t12)
+  call void @veles_string_concat_shared(ptr %a8, ptr %t9, i64 %t10, ptr %t11, i64 %t12)
   %t13 = load %str, ptr %a8
   ret %str %t13
 }

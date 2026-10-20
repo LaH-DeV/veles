@@ -437,7 +437,7 @@ arith.ok.2:
   %t90 = extractvalue %str { ptr @.str.24, i64 24 }, 1
   %t91 = extractvalue %str %t87, 0
   %t92 = extractvalue %str %t87, 1
-  call void @veles_string_concat(ptr %a88, ptr %t89, i64 %t90, ptr %t91, i64 %t92)
+  call void @veles_string_concat_shared(ptr %a88, ptr %t89, i64 %t90, ptr %t91, i64 %t92)
   %t93 = load %str, ptr %a88
   %t94 = extractvalue %str { ptr @.str.25, i64 20 }, 0
   %t95 = extractvalue %str { ptr @.str.25, i64 20 }, 1
@@ -500,7 +500,7 @@ arith.ok.2:
   store %str { ptr @.str.35, i64 23 }, ptr %t136
   %t137 = getelementptr [4 x %str], ptr %a133, i64 0, i64 3
   store %str %t131, ptr %t137
-  call void @veles_string_concat_n(ptr %a132, ptr %a133, i64 4)
+  call void @veles_string_concat_n_shared(ptr %a132, ptr %a133, i64 4)
   %t138 = load %str, ptr %a132
   %t139 = extractvalue %str { ptr @.str.36, i64 20 }, 0
   %t140 = extractvalue %str { ptr @.str.36, i64 20 }, 1
@@ -695,7 +695,7 @@ when.body.20:
   store %str { ptr @.str.39, i64 2 }, ptr %t90
   %t91 = getelementptr [3 x %str], ptr %a88, i64 0, i64 2
   store %str %t86, ptr %t91
-  call void @veles_string_concat_n(ptr %a87, ptr %a88, i64 3)
+  call void @veles_string_concat_n_shared(ptr %a87, ptr %a88, i64 3)
   %t92 = load %str, ptr %a87
   %t93 = extractvalue %str { ptr @.str.40, i64 21 }, 0
   %t94 = extractvalue %str { ptr @.str.40, i64 21 }, 1

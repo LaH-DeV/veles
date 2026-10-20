@@ -1689,6 +1689,10 @@ func (f *fnCtx) setLit(e *ast.ListLit, st *types.Set) Expr {
 	if !f.c.checkHashable(st.Elem, e.Pos) {
 		return bad()
 	}
+	if len(e.Elems) == 0 && !st.Mutable && !e.Mut {
+		// an empty immutable set: the shared constant, no temporary (D187)
+		return &Builtin{exprBase{&types.Set{Elem: st.Elem}}, "set.new", nil, e.Pos}
+	}
 	outT := &types.Set{Elem: st.Elem, Mutable: true}
 	out := f.newTemp(outT)
 	stmts := []Stmt{&VarDecl{Var: out, Init: &Builtin{exprBase{outT}, "set.new", nil, e.Pos}}}

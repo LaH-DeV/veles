@@ -887,7 +887,7 @@ elvis.end.113:
   store %str { ptr @.str.6, i64 1 }, ptr %t260
   %t261 = getelementptr [11 x %str], ptr %a250, i64 0, i64 10
   store %str %t248, ptr %t261
-  call void @veles_string_concat_n(ptr %a249, ptr %a250, i64 11)
+  call void @veles_string_concat_n_shared(ptr %a249, ptr %a250, i64 11)
   %t262 = load %str, ptr %a249
   %t263 = extractvalue %str { ptr @.str.15, i64 20 }, 0
   %t264 = extractvalue %str { ptr @.str.15, i64 20 }, 1
@@ -1482,7 +1482,7 @@ entry:
   %t7 = extractvalue %str { ptr @.str.23, i64 7 }, 1
   %t8 = extractvalue %str %t4, 0
   %t9 = extractvalue %str %t4, 1
-  call void @veles_string_concat(ptr %a5, ptr %t6, i64 %t7, ptr %t8, i64 %t9)
+  call void @veles_string_concat_shared(ptr %a5, ptr %t6, i64 %t7, ptr %t8, i64 %t9)
   %t10 = load %str, ptr %a5
   %t11 = extractvalue %str { ptr @.str.24, i64 20 }, 0
   %t12 = extractvalue %str { ptr @.str.24, i64 20 }, 1

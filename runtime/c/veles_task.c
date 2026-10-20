@@ -2029,7 +2029,9 @@ veles_chan *veles_chan_new(veles_desc *desc, int64_t cap) {
     if (cap < 0) cap = 0;
     c->cap = cap;
     c->remaining = -1;
-    c->buf = veles_gc_alloc(desc, c->elem * cap + 1);
+    /* an unbuffered channel hands values over directly (every push is guarded
+     * by len < cap), so it owns no buffer */
+    c->buf = cap > 0 ? veles_gc_alloc(desc, c->elem * cap + 1) : NULL;
     return c;
 }
 

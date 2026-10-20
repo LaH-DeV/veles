@@ -257,6 +257,25 @@ var references = map[string]func() string{
 		}
 		return strconv.FormatInt(sum, 10)
 	},
+	"emptycoll": func() string {
+		// Go's empty slice and nil slice cost nothing and a map literal is one
+		// small header, so this is the floor Veles' empty collections aim at
+		type record struct {
+			items []int64
+			index map[int64]int64
+			tags  []int64
+		}
+		var sum int64
+		for i := int64(0); i < 2000000; i++ {
+			r := record{items: []int64{}, index: map[int64]int64{}}
+			if i%8 == 0 {
+				r.items = append(r.items, i)
+				r.index[i] = i
+			}
+			sum += int64(len(r.items)) + int64(len(r.index)) + int64(len(r.tags))
+		}
+		return strconv.FormatInt(sum, 10)
+	},
 	"adapters": func() string {
 		// the same loops the eager adapters run, each element through a
 		// closure as Veles calls its lambda

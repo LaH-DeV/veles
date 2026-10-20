@@ -310,7 +310,7 @@ entry:
   %t67 = extractvalue %str { ptr @.str.7, i64 24 }, 1
   %t68 = extractvalue %str %t64, 0
   %t69 = extractvalue %str %t64, 1
-  call void @veles_string_concat(ptr %a65, ptr %t66, i64 %t67, ptr %t68, i64 %t69)
+  call void @veles_string_concat_shared(ptr %a65, ptr %t66, i64 %t67, ptr %t68, i64 %t69)
   %t70 = load %str, ptr %a65
   call void @v_std.io.println(%str %t70)
   %t71 = load i8, ptr %a1
@@ -345,7 +345,7 @@ entry:
   store %str { ptr @.str.11, i64 23 }, ptr %t99
   %t100 = getelementptr [4 x %str], ptr %a96, i64 0, i64 3
   store %str %t94, ptr %t100
-  call void @veles_string_concat_n(ptr %a95, ptr %a96, i64 4)
+  call void @veles_string_concat_n_shared(ptr %a95, ptr %a96, i64 4)
   %t101 = load %str, ptr %a95
   call void @v_std.io.println(%str %t101)
   ret void
@@ -532,7 +532,7 @@ when.body.20:
   store %str { ptr @.str.13, i64 2 }, ptr %t88
   %t89 = getelementptr [3 x %str], ptr %a86, i64 0, i64 2
   store %str %t84, ptr %t89
-  call void @veles_string_concat_n(ptr %a85, ptr %a86, i64 3)
+  call void @veles_string_concat_n_shared(ptr %a85, ptr %a86, i64 3)
   %t90 = load %str, ptr %a85
   call void @v_std.io.println(%str %t90)
   br label %when.end.14

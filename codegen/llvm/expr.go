@@ -243,15 +243,45 @@ func (g *gen) expr(e sema.Expr) string {
 	case *sema.StringConcat:
 		// every part first, then one allocation for the whole text; an
 		// integer part is formatted into a stack buffer, never the heap
-		vals := make([]string, len(e.Parts))
-		for i, part := range e.Parts {
+		// a literal "" adds nothing: drop it; what is left may be the whole
+		// result, with no copy (D187) — but not an integer part, which lives
+		// in a stack buffer until the copy
+		parts := make([]sema.Expr, 0, len(e.Parts))
+		for _, part := range e.Parts {
+			if c, ok := part.(*sema.StringConst); ok && c.Value == "" {
+				continue
+			}
+			parts = append(parts, part)
+		}
+		if len(parts) == 0 {
+			return g.stringConst("")
+		}
+		if len(parts) == 1 {
+			if ts, ok := parts[0].(*sema.ToString); !ok || !types.IsInteger(ts.X.Type()) {
+				return g.expr(parts[0])
+			}
+		}
+		// with no integer piece (a formatted number lives in a temporary
+		// buffer) the runtime may hand back a piece when the others are empty
+		share := ""
+		anyInt := false
+		for _, part := range parts {
+			if ts, ok := part.(*sema.ToString); ok && types.IsInteger(ts.X.Type()) {
+				anyInt = true
+			}
+		}
+		if !anyInt {
+			share = "_shared"
+		}
+		vals := make([]string, len(parts))
+		for i, part := range parts {
 			vals[i] = g.stringPart(part)
 		}
 		out := g.alloca(strType)
 		if len(vals) == 2 {
 			ap, al := g.strPtrLen(vals[0])
 			bp, bl := g.strPtrLen(vals[1])
-			g.emit("call void @veles_string_concat(ptr %s, ptr %s, i64 %s, ptr %s, i64 %s)", out, ap, al, bp, bl)
+			g.emit("call void @veles_string_concat%s(ptr %s, ptr %s, i64 %s, ptr %s, i64 %s)", share, out, ap, al, bp, bl)
 		} else {
 			arr := g.alloca(fmt.Sprintf("[%d x %s]", len(vals), strType))
 			for i, v := range vals {
@@ -259,7 +289,7 @@ func (g *gen) expr(e sema.Expr) string {
 				g.emit("%s = getelementptr [%d x %s], ptr %s, i64 0, i64 %d", slot, len(vals), strType, arr, i)
 				g.emit("store %s %s, ptr %s", strType, v, slot)
 			}
-			g.emit("call void @veles_string_concat_n(ptr %s, ptr %s, i64 %d)", out, arr, len(vals))
+			g.emit("call void @veles_string_concat_n%s(ptr %s, ptr %s, i64 %d)", share, out, arr, len(vals))
 		}
 		r := g.newTmp()
 		g.emit("%s = load %s, ptr %s", r, strType, out)
@@ -1333,6 +1363,9 @@ func (g *gen) try(e *sema.Try) string {
 
 func (g *gen) listLit(e *sema.ListLit) string {
 	lt := e.Type().(*types.List)
+	if len(e.Elems) == 0 && !lt.Mutable {
+		return g.emptyList(lt.Elem) // an immutable empty list is one shared constant (D187)
+	}
 	list := g.newTmp()
 	g.emit("%s = call ptr @veles_list_new(ptr %s, i64 %d)", list, g.arrayDescOf(lt.Elem), len(e.Elems))
 	if len(e.Elems) > 0 {
@@ -1831,6 +1864,29 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		return v
 	case "list.copy":
 		l := g.expr(e.Args[0])
+		if rt, ok := e.Type().(*types.List); ok && !rt.Mutable {
+			// the copy of an empty list into an immutable one is the shared
+			// empty constant: nothing to allocate (D187)
+			lenP, n, isEmpty := g.newTmp(), g.newTmp(), g.newTmp()
+			g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 1", lenP, listHeader, l)
+			g.emit("%s = load i64, ptr %s", n, lenP)
+			g.emit("%s = icmp eq i64 %s, 0", isEmpty, n)
+			res := g.alloca("ptr")
+			emptyL, copyL, doneL := g.newLabel("copy.empty"), g.newLabel("copy.full"), g.newLabel("copy.done")
+			g.emitTerm("br i1 %s, label %%%s, label %%%s", isEmpty, emptyL, copyL)
+			g.placeLabel(emptyL)
+			g.emit("store ptr %s, ptr %s", g.emptyList(rt.Elem), res)
+			g.emitTerm("br label %%%s", doneL)
+			g.placeLabel(copyL)
+			c := g.newTmp()
+			g.emit("%s = call ptr @veles_list_copy(ptr %s)", c, l)
+			g.emit("store ptr %s, ptr %s", c, res)
+			g.emitTerm("br label %%%s", doneL)
+			g.placeLabel(doneL)
+			out := g.newTmp()
+			g.emit("%s = load ptr, ptr %s", out, res)
+			return out
+		}
 		v := g.newTmp()
 		g.emit("%s = call ptr @veles_list_copy(ptr %s)", v, l)
 		return v

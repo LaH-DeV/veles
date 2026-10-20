@@ -44,6 +44,7 @@ type gen struct {
 	descNames     map[string]bool
 	descOut       strings.Builder
 	consts        map[sema.ConstVal]string // constant tables (consts.go)
+	emptyShared   map[string]string        // the shared empty List/Map/Set, by descriptors (consts.go)
 	lay           *types.Layout            // sizes, alignments, offsets (D120)
 	fieldMap      map[string][]int         // struct field → LLVM index, for padded struct types
 	overAlign     map[string]int           // LLVM struct type → alignment above LLVM's own
@@ -122,6 +123,7 @@ func Generate(prog *sema.Program) string {
 		descNames:     map[string]bool{},
 		eqPtrFns:      map[string]string{},
 		consts:        map[sema.ConstVal]string{},
+		emptyShared:   map[string]string{},
 	}
 	g.typeDecls[strType] = "{ ptr, i64 }"
 	g.typeOrder = append(g.typeOrder, strType)
@@ -222,6 +224,8 @@ declare void @veles_task_shield_leave(ptr)
 declare void @veles_cleanup_continue(ptr)
 declare void @veles_report_error(ptr, i64)
 declare void @veles_string_concat(ptr, ptr, i64, ptr, i64)
+declare void @veles_string_concat_shared(ptr, ptr, i64, ptr, i64)
+declare void @veles_string_concat_n_shared(ptr, ptr, i64)
 declare i1 @veles_string_eq(ptr, i64, ptr, i64)
 declare i32 @veles_string_cmp(ptr, i64, ptr, i64)
 declare i1 @veles_string_starts_with(ptr, i64, ptr, i64)

@@ -377,3 +377,17 @@ is expected to differ.
 | benchmark | Veles longest pause | Go longest pause |
 |---|---:|---:|
 | gcpause | 1.01ms | 4.06ms |
+
+## 2026-10-20 10:15 — go1.23.2, windows/amd64 (HEAD d029143, plus the working tree)
+
+| benchmark | ops | Veles | Go | Veles / Go |
+|---|---:|---:|---:|---:|
+| emptycoll | 2000000 | 71.74ms | 18.39ms | 3.9× |
+
+`emptycoll` (D187) is two million records with an empty `MutableList`, an empty `MutableMap` and an
+empty `List` field, one in eight used. Before D187 (empty values allocated their storage and every
+`[]` its own header) it ran in about 205 ms (10.7–11.3× Go, three runs); after, about 73 ms
+(three runs within 4%). The Go column is Go with escape analysis: its record never leaves the
+loop, so nothing is heap-allocated. The same Go record stored in a global (heap-allocated, like
+every Veles collection) takes about 105 ms, so the allocators are even or Veles is ahead; the gap
+to the table row is stack allocation, which Veles does not have yet (checklist §3).

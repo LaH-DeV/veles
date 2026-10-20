@@ -52,6 +52,44 @@ func (g *gen) constTable(v sema.ConstVal, name string) string {
 	return name
 }
 
+// emptyList, emptyMap: the one empty immutable List / Map / Set of an element
+// (key, value) type, a constant like the tables above. An immutable
+// collection never changes, so every `[]` of that type can be the same
+// object: it costs no allocation at all (D187). Its storage pointers are null
+// and its counts zero, which is how the runtime already sees an empty one.
+func (g *gen) emptyList(elem types.Type) string {
+	desc := g.arrayDescOf(elem)
+	key := "list " + desc
+	if name, ok := g.emptyShared[key]; ok {
+		return name
+	}
+	name := fmt.Sprintf("@const.empty.list.%d", len(g.emptyShared))
+	g.emptyShared[key] = name
+	size, _ := g.layout(elem)
+	fmt.Fprintf(&g.constOut, "%s = private unnamed_addr constant %s { ptr null, i64 0, i64 0, i64 %d, ptr %s, i64 0 }\n",
+		name, listHeader, size, desc)
+	return name
+}
+
+// emptyMap is the shared empty Map (vt non-nil) or Set (vt nil).
+func (g *gen) emptyMap(kt, vt types.Type) string {
+	kd, vd, valSize := g.arrayDescOf(kt), "null", 0
+	if vt != nil {
+		vd = g.arrayDescOf(vt)
+		valSize, _ = g.layout(vt)
+	}
+	key := "map " + kd + " " + vd
+	if name, ok := g.emptyShared[key]; ok {
+		return name
+	}
+	name := fmt.Sprintf("@const.empty.map.%d", len(g.emptyShared))
+	g.emptyShared[key] = name
+	keySize, _ := g.layout(kt)
+	fmt.Fprintf(&g.constOut, "%s = private unnamed_addr constant %s { ptr null, ptr null, ptr null, ptr %s, ptr %s, ptr null, i64 0, i64 0, i64 0, i64 0, i64 %d, i64 %d, i64 0 }\n",
+		name, mapHeader, kd, vd, keySize, valSize)
+	return name
+}
+
 // constArray emits an array of constants and returns its name; a table
 // among them is named at + its index.
 func (g *gen) constArray(name, at string, elem types.Type, xs []sema.ConstVal) string {

@@ -1457,6 +1457,15 @@ static uintptr_t wipe_probe(veles_desc *d) {
     return (uintptr_t)p ^ PROBE_MASK;
 }
 
+/* clears the dead stack below the caller, where a probe's address may linger */
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#endif
+static void scrub_stack(void) {
+    volatile char junk[16384];
+    for (size_t i = 0; i < sizeof junk; i++) junk[i] = 0;
+}
+
 static int probe_freed(const char *p) {
     veles_span *s = span_of(p);
     if (!s) return 0;
@@ -1467,17 +1476,24 @@ static int probe_freed(const char *p) {
 void veles_gc_collect(void);
 
 int64_t veles_gc_test_wipe(void) {
-    uintptr_t wiped = wipe_probe(&veles_wipe_u8_desc);
-    uintptr_t plain = wipe_probe(&plain_u8_desc);
-    veles_gc_collect();
-    const char *w = (const char *)(wiped ^ PROBE_MASK);
-    const char *p = (const char *)(plain ^ PROBE_MASK);
-    if (!probe_freed(w) || !probe_freed(p)) return -1;
-    for (int i = 0; i < 48; i++) {
-        if (w[i] != 0) return 0;          /* the secret's bytes survived */
-        if (p[i] != 0x5A) return 0;       /* an ordinary object was touched */
+    /* A stale word somewhere (a dead stack slot, a freed object's remains)
+     * can keep one probe alive under the conservative scan; that depends on
+     * what the program allocated before, so try again with fresh probes. */
+    for (int attempt = 0; attempt < 8; attempt++) {
+        uintptr_t wiped = wipe_probe(&veles_wipe_u8_desc);
+        uintptr_t plain = wipe_probe(&plain_u8_desc);
+        scrub_stack();
+        veles_gc_collect();
+        const char *w =(const char *)(wiped ^ PROBE_MASK);
+        const char *p = (const char *)(plain ^ PROBE_MASK);
+        if (!probe_freed(w) || !probe_freed(p)) continue;
+        for (int i = 0; i < 48; i++) {
+            if (w[i] != 0) return 0;          /* the secret's bytes survived */
+            if (p[i] != 0x5A) return 0;       /* an ordinary object was touched */
+        }
+        return 1;
     }
-    return 1;
+    return -1;
 }
 
 /* an explicit collection (tests, the gc example) */
