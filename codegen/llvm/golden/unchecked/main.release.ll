@@ -9,10 +9,10 @@ entry:
   store ptr %t3, ptr %a4
   %t5 = load ptr, ptr %a4
   %t6 = load i64, ptr %a2
-  %t7 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64 }, ptr %t5, i32 0, i32 1
+  %t7 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t5, i32 0, i32 1
   %t8 = load i64, ptr %t7
   %t9 = load ptr, ptr %t5
-  %t10 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64 }, ptr %t5, i32 0, i32 3
+  %t10 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t5, i32 0, i32 3
   %t11 = load i64, ptr %t10
   %t12 = mul i64 %t11, %t6
   %t13 = getelementptr inbounds i8, ptr %t9, i64 %t12
@@ -34,14 +34,22 @@ entry:
   %t6 = load i64, ptr %a3
   %t7 = load ptr, ptr %a5
   %t8 = load i64, ptr %a2
-  %t9 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64 }, ptr %t7, i32 0, i32 1
+  %t9 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t7, i32 0, i32 6
   %t10 = load i64, ptr %t9
-  %t11 = load ptr, ptr %t7
-  %t12 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64 }, ptr %t7, i32 0, i32 3
+  %t11 = icmp ult i64 %t10, 2
+  br i1 %t11, label %flags.done.2, label %flags.slow.1, !prof !{!"branch_weights", i32 2000, i32 1}
+flags.slow.1:
+  call void @veles_list_write_check(ptr %t7)
+  br label %flags.done.2
+flags.done.2:
+  %t12 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t7, i32 0, i32 1
   %t13 = load i64, ptr %t12
-  %t14 = mul i64 %t13, %t8
-  %t15 = getelementptr inbounds i8, ptr %t11, i64 %t14
-  store i64 %t6, ptr %t15
+  %t14 = load ptr, ptr %t7
+  %t15 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t7, i32 0, i32 3
+  %t16 = load i64, ptr %t15
+  %t17 = mul i64 %t16, %t8
+  %t18 = getelementptr inbounds i8, ptr %t14, i64 %t17
+  store i64 %t6, ptr %t18
   ret void
 }
 

@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.101** — decisions D1–D187. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.102** — decisions D1–D188. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -7474,7 +7474,8 @@ if (b.isAsciiDigit()) ...                // 0-9
 b.isAsciiLetter(), b.isAsciiLower(), b.isAsciiUpper(), b.isAsciiAlphanumeric()
 b.toAsciiLower(), b.toAsciiUpper()       // 'A' to 'a', and back; any other byte as it is
 b.isAsciiHexDigit(), b.isAsciiSpace()    // space, 	 
-   
+ 
+  
 val v = b.digitValue(16) ?: return null  // i64?: 0-9, a-z, A-Z up to the radix (2 to 36, default 10)
 ```
 
@@ -7536,7 +7537,7 @@ Not built (checklist §11): hyphen ranges (`1.2.3 - 2.3.4`), a minimal-version-s
 | Thing | Cost when empty or unused | First use | Decided |
 |---|---|---|---|
 | `List`, `Map`, `Set` (immutable) | an empty `[]` / `[:]` / `List<T>()` / `Set<T>()` is one shared constant per element type: nothing is allocated, even for the header | never written; `.toList()` of a non-empty mutable one is a copy, of an empty one the constant | D187 |
-| `MutableList` | the header (a heap object with its own identity, D25); `cap 0`, no element buffer | first `push`/`addAll`/`reserve` allocates 4 elements (`append` on bytes: 16) and doubles | D187 |
+| `MutableList` | the header (a heap object with its own identity, D25 — a slot in the frame when it never leaves the function, D188); `cap 0`, no element buffer | first `push`/`addAll`/`reserve` allocates 4 elements (`append` on bytes: 16) and doubles | D187 |
 | `MutableMap`, `MutableSet` | the header; no key, value, metadata or index array | first insert/`reserve` allocates room for 8 entries (keys, values, hashes) and no hash index: up to 8 entries a lookup scans the stored hashes; the entry arrays growing past 8 builds the index | D187 |
 | `Deque`, `PriorityQueue` (prelude) | a small state object and an empty list: the ring buffer / heap array is allocated by the first add (4 slots, then doubling) | first `addFirst`/`addLast`/`add` | D187 (already so) |
 | `StringBuilder` | its list: a header | as a list of bytes | D187 |
@@ -7560,3 +7561,50 @@ Not built (checklist §11): hyphen ranges (`1.2.3 - 2.3.4`), a minimal-version-s
 Measured (`bench/emptycoll`, two million records with three empty collections each): about 205 ms before D187, about 70 ms after. Go takes 19 ms when the record does not escape (its escape analysis puts the record and its map header on the stack) and about 105 ms when the record is heap-allocated (a pointer stored in a global): against Go's own heap allocation Veles is ahead, and the remaining gap to the 19 ms is stack allocation of a non-escaping value, which Veles lacks (checklist §3, escape analysis).
 
 Not done (checklist §11): a `MutableList`/`MutableMap` header is still a heap object (identity, D25), so an empty mutable field costs its header (about 11 ns for a list, 14 ns for a map); escape analysis for headers; `Bitset`/`Ring`-like types do not exist in `std/` yet and take their row here when they do.
+
+### D188 — A mutable collection becomes an immutable one: the proof grows, and `freeze()` is the explicit escape (v0.102)
+
+2026-10-20. The user, after D187: "maybe we should have a possibility to copy mutable list to List and explicit it ... and another thing for moving mutable to List without copy?"; then, shown the options: "I want the changing of mutables to immutables as easy and as cheap as it can be. either freeze or move, compile time is tempting … maybe both would be the best (but freeze explicitly so users of the language understand they are using something that can panic in the runtime so documented as only when it is needed)."
+
+**The problem.** D63 moves a `MutableList` (also `MutableMap`, `MutableSet`) into a `List` without a copy only for a local built in the function, used as a receiver of the collection's own methods, at its last use. Two common shapes fail and cost a full copy (`'out' is a MutableList … copy it with '.toList()'`):
+
+```veles
+fun squares(n: i64): List<i64> {
+  val out: MutableList<i64> = []
+  fill(out, n)          // a helper fills it: 'out' is "passed", so not provably unshared
+  out                   // error today: .toList() — a copy of n elements
+}
+fun collect(): List<i64> {
+  val acc = Acc()       // a builder struct with `items: MutableList<i64>`
+  acc.items.push(5)
+  acc.items             // error today: a field is not a local
+}
+```
+
+About 30 functions in `std/` end in `builder.toList()` (db rows, regex compile, deflate tables, argon2, config, version parsing). The cost is one allocation and a copy of the elements: roughly 5–10 % on top of building a large list, twice the peak memory, nothing noticeable for short lists.
+
+**Decision: both, in this order.**
+
+1. **Compile time first — no new syntax.** D63's last-use move is extended where the compiler can prove nobody else sees the storage: a field of a local struct built in the function that has not escaped, and an argument passed to a function whose parameter provably is not kept (not stored, returned, captured, or passed on to something that keeps it). The second part is the escape analysis of checklist §3 (a per-function summary of which parameters leave); the two are built together. What the proof cannot reach — recursion, a call through a closure or trait object, an extern call — keeps the error and its `.toList()` fix. `.toList()` stays the explicit copy; `toMutable()` the explicit copy the other way. No `.move()` spelling is added: it would change nothing the proof does not already decide.
+2. **`freeze()` second, explicit and documented as a last resort.** `out.freeze()` returns the `List` over the same storage in O(1) and always compiles; afterwards any mutation of the same collection through another name (a parameter, a field, a closure) **panics** with `list was frozen` and the site (the precedent: a `Secret` used after `close()`, D112). The documentation says: use it only when the compiler cannot prove the move and a copy is too dear; prefer the proof, then `.toList()`.
+
+**Settled 2026-10-20 (Q56): a pointer taken before the freeze, answered with an "exposed" flag.** The user, on banning stored pointers: "tempting to get them to stay local but the real production grade code probably needs passing pointers… how can we improve it?" (`examples/todo` returns `this.tasks.ref(n - 1)` from a method.) Then, of the options: "Exposed flag + copy" (recommended). A pointer into a collection's element storage can be returned, stored and passed, so it cannot be tracked by the compiler; the collection tracks it instead.
+
+- Every `MutableList` / `MutableMap` / `MutableSet` header gets a flags word. **exposed** is set whenever a pointer into its storage is made: `xs.ref(i)`, `loop (&x in xs)`, `m.ref(k)` / `refOrPanic`, `rawData`. **frozen** is set by `freeze()`.
+- `xs.freeze()` returns the same object as a `List` / `Map` / `Set` and marks it frozen, always. If no pointer was ever exposed, the storage is shared (O(1), no allocation). If one was, the storage is copied into a fresh buffer first (one O(n) copy), so no old pointer can change the immutable collection; the old pointers write into the abandoned buffer, as after a growth (D10).
+- A frozen collection read through any old name still reads. Every write through an old name — `push`, `pop`, `clear`, `reserve`, `addAll`, `set`, `ref` / `&x` (a write-capable pointer), an element assignment, a map `set` / `remove` — **panics**: `list was frozen (at …)`. This is the one place `freeze()` can panic, and it is a contract the documentation states: use `freeze()` only when the compiler cannot prove a move (D63, D188) and a copy is too dear.
+- `freeze()` on an already frozen collection panics. A frozen collection is never a candidate for a stack header (it is returned).
+- Not done: a compile-time note where a pointer is visible at a `freeze()` ("this freeze will copy"). Rejected: banning stored pointers (production code returns and passes them), `unsafe fun freeze` (the keyword is for memory safety; every call would carry a block), refusing at compile time only (leaves pointers kept elsewhere unsound), panicking on an exposed collection (a pointer taken long ago would make a later freeze fail in production).
+
+Rejected: an explicit compile-time `.move()` alone (the proof is the limit, not the spelling: the two shapes above still fail), `freeze()` alone (a runtime failure mode for what a compiler can prove), an implicit copy (hidden O(n) cost, D63's own rejection).
+
+**Built 2026-10-20 (step 1, and the escape analysis of the headers).**
+
+- **The summary** (`sema/escape.go`): for each parameter of a free function, whether the function ever keeps it, computed on the syntax tree (so it does not depend on the order functions are checked in), memoized, pessimistic. A parameter stays unkept when every mention of it is the receiver of one of the collection's own methods, the subject of a `loop (x in p)` that binds no pointer, or an argument to a function whose parameter stays unkept (a chain; a cycle, a method, a closure, a constructor, an extern, an executor function, a decorated function, a variadic or `lazy` parameter all keep). A mention in a lambda, a reassignment, a return, an `async` call keep.
+- **The wider D63 proof** (`sema/move.go`, `escape.go`): an argument to such a function no longer counts as "passed somewhere"; and `acc.items` of a `val acc = Acc()` built in the function is movable at its last use when `acc` is only used as `acc.<field>…`, no method is called on it, and the field was built fresh (a literal argument or the declared default; the type has no `init { }`).
+- **The lint `redundant_copy`** (`sema/lints.go`): `x.toList()` / `toMap()` / `toSet()` where a `List` / `Map` / `Set` is expected and `x` would be moved without it. Its fix drops the call. The ~55 such sites in `std/` (and the tests there) were fixed with `veles check --fix`; the lint is off inside `std/` itself.
+- **Stack headers** (`sema/escape_hir.go`, `codegen/llvm`): the header of a `MutableList` / `MutableMap` / `MutableSet` built in a function and only ever used there — the collection's own operations as receiver, and the temporary a `loop` makes of it; a field of a local struct the same way — is a slot in the function's frame, not a heap object; the element storage stays on the heap. Any other use (argument, return, store, closure capture, `&`, assignment, element of another collection) keeps the heap header. Functions that can suspend keep heap headers. `VELES_NO_STACK_COLLECTIONS=1` at compile time turns it off (for bisecting). `bench/emptycoll` went from ~70 to ~27 ms (Go: 19–36 ms); `TestStackCollections` builds one program both ways and runs both under a tiny collection threshold.
+- **The inlay hint**: the editor shows `moved immutable` after each expression D63 hands over without a copy (`sema.Index.Moved`, `lsp/inlay.go`; `lsp/move_hint_test.go`), so a move that depends on the proof is visible, and one that stops being provable shows as the error it becomes.
+
+- **`freeze()` (Q56 answered above)**: built 2026-10-20. `xs.freeze()` on a `MutableList` / `MutableMap` / `MutableSet` returns the same object as the immutable type (`list.freeze` / `map.freeze`, `runtime/c/veles_rt.c`); a flags word (EXPOSED, FROZEN) ends every list and map header (`listHeader`, `mapHeader`, the static tables, the stack headers). A pointer into the storage sets EXPOSED where it is made (`AddrOf` of an element place, `map.ref`, `rawData`); an element write, a pointer, and every runtime change (`push`, `pop`, `clear`, `reserve`, `addAll`, a map's `set` / `remove` / `clear` / `reserve`) check FROZEN first and panic with `list was frozen by freeze() and cannot be changed; copy it with toMutable()`. Freezing an exposed collection copies its storage first; a frozen one is never a stack header (the collection is returned). The write guard costs a load and a compare per element write: no change within noise on `sort`, `gzip`, `gunzip`, `intern`. `TestFreeze` runs every change as its own panicking program, in debug and release. `xs.isFrozen()` (on the three mutable types only: a `List` is immutable by its type) asks the frozen bit, one inline load and a test; it is not a "mutating" method for a `protected var` (D87). Asked for by the user (2026-10-20: "should we have a possibility to check in code if the mutables are frozen?"); the documentation says the usual answer is to refuse or report an error, not to skip the change.
+Not covered by the proof (each keeps the error and its `.toList()` fix): a method call on the collection's owner that passes it on, a call through a trait object or closure, a collection reached through a parameter. Not covered by stack headers (heap as before): a `var` collection variable (a method call marks it address-taken), a collection that becomes another struct's field, a function that can suspend.

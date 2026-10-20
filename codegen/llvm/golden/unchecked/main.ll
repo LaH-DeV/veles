@@ -9,7 +9,7 @@ entry:
   store ptr %t3, ptr %a4
   %t5 = load ptr, ptr %a4
   %t6 = load i64, ptr %a2
-  %t7 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64 }, ptr %t5, i32 0, i32 1
+  %t7 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t5, i32 0, i32 1
   %t8 = load i64, ptr %t7
   %t9 = icmp ult i64 %t6, %t8
   br i1 %t9, label %uidx.ok.1, label %uidx.bad.2, !prof !{!"branch_weights", i32 2000, i32 1}
@@ -20,7 +20,7 @@ uidx.bad.2:
   unreachable
 uidx.ok.1:
   %t12 = load ptr, ptr %t5
-  %t13 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64 }, ptr %t5, i32 0, i32 3
+  %t13 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t5, i32 0, i32 3
   %t14 = load i64, ptr %t13
   %t15 = mul i64 %t14, %t6
   %t16 = getelementptr inbounds i8, ptr %t12, i64 %t15
@@ -42,22 +42,30 @@ entry:
   %t6 = load i64, ptr %a3
   %t7 = load ptr, ptr %a5
   %t8 = load i64, ptr %a2
-  %t9 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64 }, ptr %t7, i32 0, i32 1
+  %t9 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t7, i32 0, i32 6
   %t10 = load i64, ptr %t9
-  %t11 = icmp ult i64 %t8, %t10
-  br i1 %t11, label %uidx.ok.1, label %uidx.bad.2, !prof !{!"branch_weights", i32 2000, i32 1}
-uidx.bad.2:
-  %t12 = extractvalue %str { ptr @.str.2, i64 13 }, 0
-  %t13 = extractvalue %str { ptr @.str.2, i64 13 }, 1
-  call void @veles_unchecked_index_panic(i64 %t8, i64 %t10, i64 0, ptr %t12, i64 %t13)
+  %t11 = icmp ult i64 %t10, 2
+  br i1 %t11, label %flags.done.2, label %flags.slow.1, !prof !{!"branch_weights", i32 2000, i32 1}
+flags.slow.1:
+  call void @veles_list_write_check(ptr %t7)
+  br label %flags.done.2
+flags.done.2:
+  %t12 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t7, i32 0, i32 1
+  %t13 = load i64, ptr %t12
+  %t14 = icmp ult i64 %t8, %t13
+  br i1 %t14, label %uidx.ok.3, label %uidx.bad.4, !prof !{!"branch_weights", i32 2000, i32 1}
+uidx.bad.4:
+  %t15 = extractvalue %str { ptr @.str.2, i64 13 }, 0
+  %t16 = extractvalue %str { ptr @.str.2, i64 13 }, 1
+  call void @veles_unchecked_index_panic(i64 %t8, i64 %t13, i64 0, ptr %t15, i64 %t16)
   unreachable
-uidx.ok.1:
-  %t14 = load ptr, ptr %t7
-  %t15 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64 }, ptr %t7, i32 0, i32 3
-  %t16 = load i64, ptr %t15
-  %t17 = mul i64 %t16, %t8
-  %t18 = getelementptr inbounds i8, ptr %t14, i64 %t17
-  store i64 %t6, ptr %t18
+uidx.ok.3:
+  %t17 = load ptr, ptr %t7
+  %t18 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t7, i32 0, i32 3
+  %t19 = load i64, ptr %t18
+  %t20 = mul i64 %t19, %t8
+  %t21 = getelementptr inbounds i8, ptr %t17, i64 %t20
+  store i64 %t6, ptr %t21
   ret void
 }
 

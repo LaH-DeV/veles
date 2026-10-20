@@ -53,8 +53,26 @@ func isPlace(e sema.Expr) bool {
 	return false
 }
 
+// placeMode says what the pointer place() returns will be used for (D188): a
+// read needs nothing; a write to an element of a mutable list must find it
+// not frozen; a pointer that outlives the access marks the list exposed, so a
+// later freeze() copies the storage instead of sharing it with that pointer.
+type placeMode int
+
+const (
+	placeRead placeMode = iota
+	placeWrite
+	placeExpose
+)
+
 // place returns a pointer to the storage an lvalue expression denotes.
 func (g *gen) place(e sema.Expr) string {
+	return g.placeAs(e, placeRead)
+}
+
+// placeAs is place for a use of the given kind; the kind follows the place
+// down to the list element it is inside.
+func (g *gen) placeAs(e sema.Expr, mode placeMode) string {
 	switch e := e.(type) {
 	case *sema.VarRef:
 		return g.varPtr(e.Var)
@@ -63,7 +81,7 @@ func (g *gen) place(e sema.Expr) string {
 	case *sema.Unwrap:
 		// the payload of a nullable place (after a null test): a pointer-like
 		// nullable is the payload itself; otherwise field 1 of {i1, T}
-		base := g.place(e.X)
+		base := g.placeAs(e.X, mode)
 		nt := e.X.Type().(*types.Nullable)
 		if isPtrLike(nt.Elem) {
 			return base
@@ -84,12 +102,12 @@ func (g *gen) place(e sema.Expr) string {
 	case *sema.VariantCast:
 		// the payload of a sealed place (after `is Variant`): field 1 of the
 		// tagged union, read as the variant's own layout
-		base := g.place(e.X)
+		base := g.placeAs(e.X, mode)
 		p := g.newTmp()
 		g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 1", p, g.llType(e.X.Type()), base)
 		return p
 	case *sema.FieldGet:
-		base := g.place(e.X)
+		base := g.placeAs(e.X, mode)
 		if st, ok := e.X.Type().(*types.Struct); ok && st.Union {
 			return base // every field of a union is at its start (D120)
 		}
@@ -97,7 +115,7 @@ func (g *gen) place(e sema.Expr) string {
 		g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d", p, g.llType(e.X.Type()), base, g.fidx(e.X.Type(), e.Index))
 		return p
 	case *sema.TupleGet:
-		base := g.place(e.X)
+		base := g.placeAs(e.X, mode)
 		p := g.newTmp()
 		g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d", p, g.llType(e.X.Type()), base, e.Index)
 		return p
@@ -108,11 +126,13 @@ func (g *gen) place(e sema.Expr) string {
 		if e.Op == "list.ref" {
 			list := g.expr(e.Args[0])
 			idx := g.expr(e.Args[1])
+			g.listGuard(list, e.Args[0].Type(), mode)
 			return g.listElemPtr(list, idx, g.where(e.Span))
 		}
 		if e.Op == "list.refUnchecked" {
 			list := g.expr(e.Args[0])
 			idx := g.expr(e.Args[1])
+			g.listGuard(list, e.Args[0].Type(), mode)
 			return g.listElemPtrUnchecked(list, idx, e.Span)
 		}
 	}
@@ -342,7 +362,7 @@ func (g *gen) expr(e sema.Expr) string {
 		return acc
 	case *sema.AddrOf:
 		if isPlace(e.X) {
-			return g.place(e.X)
+			return g.placeAs(e.X, placeExpose) // a pointer that may outlive this statement (D188)
 		}
 		// box a temporary on the heap
 		v := g.expr(e.X)
@@ -633,7 +653,7 @@ func (g *gen) assign(target sema.Expr, v string) {
 		g.assign(fg.X, g.withField(fg.X.Type(), g.expr(fg.X), fg.Index, v))
 		return
 	}
-	p := g.place(target)
+	p := g.placeAs(target, placeWrite)
 	g.storeVal(target.Type(), v, p)
 }
 
@@ -1366,8 +1386,18 @@ func (g *gen) listLit(e *sema.ListLit) string {
 	if len(e.Elems) == 0 && !lt.Mutable {
 		return g.emptyList(lt.Elem) // an immutable empty list is one shared constant (D187)
 	}
-	list := g.newTmp()
-	g.emit("%s = call ptr @veles_list_new(ptr %s, i64 %d)", list, g.arrayDescOf(lt.Elem), len(e.Elems))
+	var list string
+	if g.stackLit[e] {
+		// the header never leaves this function: a slot in its frame, with the
+		// storage allocated on the first push as for any empty list (D188)
+		list = g.stackListHeader(lt.Elem)
+		if len(e.Elems) > 0 {
+			g.emit("call void @veles_list_reserve(ptr %s, i64 %d)", list, len(e.Elems))
+		}
+	} else {
+		list = g.newTmp()
+		g.emit("%s = call ptr @veles_list_new(ptr %s, i64 %d)", list, g.arrayDescOf(lt.Elem), len(e.Elems))
+	}
 	if len(e.Elems) > 0 {
 		et := g.llType(lt.Elem)
 		tmp := g.alloca(et)
@@ -1753,9 +1783,18 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		v := g.newTmp()
 		g.emit("%s = icmp u%s ptr %s, %s", v, strings.TrimPrefix(e.Op, "rawptr."), a, b)
 		return v
+	case "list.isFrozen":
+		return g.isFrozen(g.expr(e.Args[0]), listHeader, flagsField)
+	case "list.freeze":
+		// the list, now immutable, in place (D188)
+		l := g.expr(e.Args[0])
+		r := g.newTmp()
+		g.emit("%s = call ptr @veles_list_freeze(ptr %s)", r, l)
+		return r
 	case "list.rawData":
 		// the element storage: veles_list's first field (D69, withRaw)
 		l := g.expr(e.Args[0])
+		g.listGuard(l, e.Args[0].Type(), placeExpose) // a pointer into the storage (D188)
 		p := g.newTmp()
 		g.emit("%s = load ptr, ptr %s", p, l)
 		return p
@@ -2441,7 +2480,7 @@ func (g *gen) shift(e *sema.Binary, llt, l, r string, signed bool) string {
 }
 
 // The list header, as veles_rt.c lays it out: data, len, cap, elem, desc.
-const listHeader = "{ ptr, i64, i64, i64, ptr, i64 }" // data, len, cap, elem size, descriptor, mods (D102)
+const listHeader = "{ ptr, i64, i64, i64, ptr, i64, i64 }" // data, len, cap, elem size, descriptor, mods (D102), flags (D188)
 
 // listLen reads a list's length from its header, without a call.
 func (g *gen) listLen(l string) string {

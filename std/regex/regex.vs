@@ -112,7 +112,7 @@ public struct Regex {
       lastEnd = end
       out.push(m)
     }
-    out.toList()
+    out
   }
 
   /// `text` with each match replaced by `replacement`. In `replacement`, `$1` or `${1}` is a
@@ -156,7 +156,7 @@ public struct Regex {
       copied = m.end()
     }
     out.push(text.substring(copied, text.len()) ?: "")
-    out.toList()
+    out
   }
 }
 

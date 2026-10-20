@@ -4,6 +4,7 @@ package llvm
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -19,6 +20,10 @@ type gen struct {
 	// in a coroutine's body: a temporary's life starts where it is made
 	// (alloca), so the frame keeps only what lives across a suspension
 	markLifetimes bool
+
+	// stackLit: the collection-building expressions of the function being
+	// emitted whose header lives in its frame (sema.StackCollections, D188)
+	stackLit map[sema.Expr]bool
 
 	typeDecls map[string]string
 	typeOrder []string
@@ -256,6 +261,11 @@ declare i64 @veles_list_len(ptr)
 declare void @veles_list_push(ptr, ptr)
 declare void @veles_list_reserve(ptr, i64)
 declare ptr @veles_list_ref(ptr, i64)
+declare void @veles_list_expose(ptr)
+declare void @veles_list_write_check(ptr)
+declare ptr @veles_list_freeze(ptr)
+declare void @veles_map_expose(ptr)
+declare ptr @veles_map_freeze(ptr)
 declare void @veles_list_index_panic(ptr, i64, ptr, i64)
 declare void @veles_array_index_panic(i64, i64, ptr, i64)
 declare void @veles_unchecked_index_panic(i64, i64, i64, ptr, i64)
@@ -585,6 +595,10 @@ func (g *gen) resetFn(fn *sema.Func) {
 	g.inCleanup = 0
 	g.launchSlots = map[*sema.Launch]string{}
 	g.markLifetimes = false
+	g.stackLit = nil
+	if os.Getenv("VELES_NO_STACK_COLLECTIONS") == "" { // a switch for bisecting a miscompile
+		g.stackLit = sema.StackCollections(fn)
+	}
 }
 
 // retLL returns the LLVM return type of a function: void when the result is

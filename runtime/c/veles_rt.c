@@ -42,7 +42,14 @@ typedef struct {
     veles_desc *desc; /* array descriptor of the elements */
     int64_t mods;      /* D102: changes of length or order so far; a loop over
                         * the list compares it on every step */
+    int64_t flags;     /* LIST_EXPOSED / LIST_FROZEN (D188) */
 } veles_list;
+
+/* D188: a pointer into the storage was made (EXPOSED); freeze() turned the
+ * collection immutable (FROZEN): any change through a name that still sees it
+ * as mutable panics. The same two bits on a map's header. */
+#define LIST_EXPOSED 1
+#define LIST_FROZEN 2
 
 int64_t veles_desc_size(veles_desc *d);
 
@@ -796,9 +803,53 @@ int64_t veles_list_len(veles_list *l) {
     return l->len;
 }
 
+/* ---- freeze (D188) ----------------------------------------------------- */
+
+static void frozen_panic(const char *what) {
+    char msg[96];
+    int n = snprintf(msg, sizeof msg, "%s was frozen by freeze() and cannot be changed; copy it with toMutable()", what);
+    veles_panic(msg, n);
+}
+
+/* the guard of every change to a list through a name that sees it as mutable */
+static inline void list_writable(veles_list *l) {
+    if (l->flags & LIST_FROZEN) frozen_panic("list");
+}
+
+/* a write through an element place (set, an element assignment) */
+void veles_list_write_check(veles_list *l) {
+    list_writable(l);
+}
+
+/* a pointer into the list's storage is being made: remember it, so freeze()
+ * copies the storage instead of sharing it with the pointer. A write-capable
+ * pointer into a frozen list is refused like any other change. */
+void veles_list_expose(veles_list *l) {
+    list_writable(l);
+    l->flags |= LIST_EXPOSED;
+}
+
+/* The list becomes immutable in place: the same object, now read-only through
+ * every name. Storage nobody holds a pointer into is shared as it is; storage
+ * a pointer was made into is copied first, so that pointer can never change
+ * the frozen list (it writes into the abandoned buffer, as after a growth). */
+veles_list *veles_list_freeze(veles_list *l) {
+    list_writable(l);
+    if (l->flags & LIST_EXPOSED) {
+        char *nd = l->len > 0 ? veles_gc_alloc(l->desc, l->elem * l->len) : NULL;
+        if (l->len > 0) memcpy(nd, l->data, (size_t)(l->elem * l->len));
+        l->data = nd;
+    }
+    l->cap = l->len; /* no room left: the inline push falls to the runtime, which panics */
+    l->flags |= LIST_FROZEN;
+    l->flags &= ~(int64_t)LIST_EXPOSED;
+    return l;
+}
+
 /* room for at least n elements in all (D83): pushing up to n does not grow
  * the storage again; never shrinks */
 void veles_list_reserve(veles_list *l, int64_t n) {
+    list_writable(l);
     if (n <= l->cap) return;
     char *nd = veles_gc_alloc(l->desc, l->elem * n);
     if (l->len > 0) memcpy(nd, l->data, (size_t)(l->elem * l->len));
@@ -807,6 +858,7 @@ void veles_list_reserve(veles_list *l, int64_t n) {
 }
 
 void veles_list_push(veles_list *l, const void *item) {
+    list_writable(l);
     if (l->len == l->cap) {
         int64_t ncap = l->cap ? l->cap * 2 : 4;
         char *nd = veles_gc_alloc(l->desc, l->elem * ncap);
@@ -908,6 +960,7 @@ void veles_string_join(veles_string *out, veles_list *l, const char *sep, int64_
 
 /* appends n bytes to a list of u8 (StringBuilder.append) */
 void veles_list_append_bytes(veles_list *l, const char *p, int64_t n) {
+    list_writable(l);
     if (l->len + n > l->cap) {
         int64_t ncap = l->cap * 2;
         if (ncap < l->len + n) ncap = l->len + n;
@@ -991,6 +1044,7 @@ void veles_unchecked_index_panic(int64_t i, int64_t len, int64_t kind, const cha
 }
 
 bool veles_list_pop(veles_list *l, void *out) {
+    list_writable(l);
     if (l->len == 0) return false;
     l->len--;
     l->mods++;
@@ -1033,6 +1087,7 @@ void *veles_race_list(void *t, veles_list *tasks) {
 }
 
 void veles_list_append_list(veles_list *dst, veles_list *src) {
+    list_writable(dst);
     int64_t n = src->len;
     if (n == 0) return;
     if (dst->len + n > dst->cap) {
@@ -1049,6 +1104,7 @@ void veles_list_append_list(veles_list *dst, veles_list *src) {
 }
 
 void veles_list_clear(veles_list *l) {
+    list_writable(l);
     l->len = 0;
     l->mods++;
 }
@@ -1076,6 +1132,7 @@ typedef struct {
     int64_t keySize;
     int64_t valSize;
     int64_t mods; /* D102: entries added or removed so far */
+    int64_t flags; /* LIST_EXPOSED / LIST_FROZEN (D188) */
 } veles_map;
 
 int64_t veles_hash_bytes(const char *p, int64_t len) {
@@ -1145,6 +1202,40 @@ static void map_build_index(veles_map *m) {
 
 int64_t veles_map_len(veles_map *m) {
     return m->len;
+}
+
+/* ---- freeze (D188), as for lists ---------------------------------------- */
+
+static inline void map_writable(veles_map *m) {
+    if (m->flags & LIST_FROZEN) frozen_panic(m->valDesc ? "map" : "set");
+}
+
+/* a pointer into the entries is being made (m.ref) */
+void veles_map_expose(veles_map *m) {
+    map_writable(m);
+    m->flags |= LIST_EXPOSED;
+}
+
+/* The map becomes immutable in place. Entry arrays a pointer was made into are
+ * copied first (the index is rebuilt over the copy), so that pointer can never
+ * change the frozen map. */
+veles_map *veles_map_freeze(veles_map *m) {
+    map_writable(m);
+    if ((m->flags & LIST_EXPOSED) && m->cap > 0) {
+        char *nk = veles_gc_alloc(m->keyDesc, m->keySize * m->cap + 1);
+        char *nv = m->valDesc ? veles_gc_alloc(m->valDesc, m->valSize * m->cap + 1) : map_no_vals;
+        veles_meta *nm = veles_alloc((int64_t)sizeof(veles_meta) * m->cap);
+        memcpy(nk, m->keys, (size_t)(m->keySize * m->used));
+        if (m->valSize) memcpy(nv, m->vals, (size_t)(m->valSize * m->used));
+        memcpy(nm, m->meta, sizeof(veles_meta) * (size_t)m->used);
+        m->keys = nk;
+        m->vals = nv;
+        m->meta = nm;
+        if (m->icap > 0) map_rebuild(m, m->icap);
+    }
+    m->flags |= LIST_FROZEN;
+    m->flags &= ~(int64_t)LIST_EXPOSED;
+    return m;
 }
 
 int64_t veles_map_mods(veles_map *m) {
@@ -1224,6 +1315,7 @@ static int64_t map_append(veles_map *m, int64_t hash, const void *key, const voi
 
 /* insert or overwrite; returns the entry index */
 int64_t veles_map_insert(veles_map *m, int64_t hash, const void *key, const void *val, veles_eq_fn eq) {
+    map_writable(m);
     int64_t e = veles_map_find(m, hash, key, eq);
     if (e >= 0) {
         if (m->valSize) memcpy(m->vals + e * m->valSize, val, (size_t)m->valSize);
@@ -1233,6 +1325,7 @@ int64_t veles_map_insert(veles_map *m, int64_t hash, const void *key, const void
 }
 
 bool veles_map_remove(veles_map *m, int64_t hash, const void *key, veles_eq_fn eq) {
+    map_writable(m);
     if (m->icap == 0) { /* small: no index to update */
         int64_t e = veles_map_find(m, hash, key, eq);
         if (e < 0) return false;
@@ -1277,6 +1370,7 @@ bool veles_map_live(veles_map *m, int64_t e) {
 }
 
 void veles_map_clear(veles_map *m) {
+    map_writable(m);
     m->len = 0;
     m->mods++;
     m->used = 0;
@@ -1287,6 +1381,7 @@ void veles_map_clear(veles_map *m) {
  * n neither grows the arrays nor rebuilds the index (map_append's two
  * conditions). Never shrinks; the contents and their order stay. */
 void veles_map_reserve(veles_map *m, int64_t n) {
+    map_writable(m);
     if (n <= 0) return;
     if (m->cap == 0) map_start(m);
     if (m->used > m->len) map_compact(m); /* dead entries would count against n */

@@ -31,6 +31,9 @@ type Index struct {
 	// Held marks the value of each `with` that receives a value holding
 	// tasks (D111): its brace stops those tasks before it closes the value.
 	Held map[source.Span]bool
+	// Moved marks each mutable collection that D63 hands over as its immutable
+	// form without a copy (D188): the editor says so after it.
+	Moved map[source.Span]bool
 }
 
 // TypeDecl is where the type of a value is declared, for

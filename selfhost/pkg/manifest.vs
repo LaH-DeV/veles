@@ -33,7 +33,7 @@ struct Manifest {
       val source = dependency.source
       if (source is PathSource) out.set(dependency.name, source.path)
     }
-    out.toMap()
+    out
   }
 }
 

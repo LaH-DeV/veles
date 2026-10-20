@@ -82,7 +82,7 @@ fun splitPath(path: string): List<string> {
     }
   }
   if (!cur.isEmpty()) parts.push(cur.toString())
-  parts.toList()
+  parts
 }
 
 /// Encoding failed: the sink refused a write, or a value cannot be

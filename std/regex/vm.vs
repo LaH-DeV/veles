@@ -138,7 +138,7 @@ fun run(prog: Program, scratch: Scratch, marks: MutableList<i64>, a: Threads, b:
           if (!full || pos == n) {
             val result: MutableList<i64> = []
             loop (k in 0..<width) result.push(clist.slots.at(base + k) ?: -1)
-            found = result.toList()
+            found = result
             break
           }
         }
@@ -418,7 +418,7 @@ fun backtrack(prog: Program, text: string, from: i64, anchored: bool, full: bool
               loop (k in 0..<width) result.push(cur.at(k) ?: -1)
               stackA.clear()
               stackB.clear()
-              return result.toList()
+              return result
             }
             break
           }
@@ -468,7 +468,7 @@ fun exhaustive(prog: Program, text: string, from: i64, anchored: bool, full: boo
       val width = 2 * (prog.groups + 1)
       val result: MutableList<i64> = []
       loop (k in 0..<width) result.push(cur.at(k) ?: -1)
-      return result.toList()
+      return result
     }
     if (anchored) return null
     start += if (start < n) (utf8.decode(text, start)?.size ?: 1) else 1

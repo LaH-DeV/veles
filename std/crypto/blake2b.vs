@@ -101,7 +101,7 @@ fun blake2b(data: List<u8>, outLen: i64, key: List<u8> = []): List<u8> {
   loop (tail.len() < 128) {
     tail.push(0)
   }
-  b2compress(h, tail.toList(), total.wrapU64(), true, v, m)
+  b2compress(h, tail, total.wrapU64(), true, v, m)
   val out: MutableList<u8> = []
   loop (w in h) loop (j in 0..<8) {
     out.push((w >> (8 * j)).wrapU8())

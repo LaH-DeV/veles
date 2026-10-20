@@ -29,7 +29,7 @@ fun readConstraint(text: string): List<List<Comparator>> throws VersionError {
   loop (written in text.split("||")) {
     sets.push(try readSet(written.trim(), text))
   }
-  sets.toList()
+  sets
 }
 
 /// The comparators of one set.
@@ -41,7 +41,7 @@ fun readSet(written: string, whole: string): List<Comparator> throws VersionErro
   loop (token in tokens(written)) {
     loop (comparator in try expand(token, whole)) comparators.push(comparator)
   }
-  comparators.toList()
+  comparators
 }
 
 /// The words of a set, an operator on its own joined to the version after it
@@ -59,7 +59,7 @@ fun tokens(written: string): List<string> {
     }
   }
   if (!pending.isEmpty()) out.push(pending)
-  out.toList()
+  out
 }
 
 const OPERATORS: List<string> = [">=", "<=", ">", "<", "=", "^", "~"]

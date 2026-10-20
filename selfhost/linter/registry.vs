@@ -101,6 +101,7 @@ fun lints(): List<LintInfo> => [
   warn("never_closed", "a `Closeable` that is never closed or handed on"),
   warn("param_copy", "a parameter changed in a function whose caller never sees the change"),
   warn("pattern_form", "a pattern written in a longer form than needed"),
+  warn("redundant_copy", "a `.toList()` of a collection that is not used afterwards: without it the collection is moved immutable"),
   warn("redundant_label", "an argument label that repeats the variable passed (`f(x: x)`)"),
   warn("redundant_mut", "`mut` on a literal whose expected type is already mutable"),
   warn("redundant_public", "`public` where the declaration is already public"),

@@ -55,7 +55,100 @@ Output:
 - A `List` never changes, so a `MutableList` does not quietly become one.
   `xs.toList()` copies it. The exception is a list you just built and
   nobody else has seen: returning it, or passing it on as its last use,
-  hands it over without a copy (D63).
+  hands it over without a copy (D63). "Nobody else" still holds while you
+  hand the list to a function that only reads or fills it (it does not
+  store it, return it or capture it), and for a field of a struct you
+  built in the same function and kept to yourself (D188):
+
+```veles
+use io
+
+struct Report {
+  lines: MutableList<string> = []
+}
+
+fun addLines(out: MutableList<string>, n: i64) {
+  loop (i in 0..<n) out.push("line $i")
+}
+
+fun report(n: i64): List<string> {
+  val out: MutableList<string> = []
+  addLines(out, n)  // only fills it: still nobody else's
+  out
+}
+
+fun summary(): List<string> {
+  val r = Report()
+  r.lines.push("a")
+  r.lines.push("b")
+  r.lines  // a field of a struct built here
+}
+
+fun main() {
+  io.println("${report(2)} ${summary()}")
+}
+```
+
+Output:
+```text
+[line 0, line 1] [a, b]
+```
+
+  Where the compiler cannot show that (the list is a parameter, or goes
+  through a method, a closure or a function that keeps it), the error says
+  so and `.toList()` is the copy. A `.toList()` on a list that is not used
+  afterwards is a warning (`redundant_copy`) with a fix: the move needs no
+  copy. The editor marks every move with an inlay hint after the
+  expression: `out` `moved immutable`.
+- When the compiler cannot show a move and a copy is too dear (a builder that
+  keeps its list in a field, a list a method hands over when it is done),
+  `xs.freeze()` makes the `MutableList` immutable **in place**: it returns the
+  same object as a `List`, with no copy (`MutableMap` and `MutableSet` have it
+  too). It is the one place this can panic: afterwards **any change through a
+  name that still sees it as mutable** (`push`, `set`, `clear`, a pointer from
+  `ref`, ...) panics with "was frozen by freeze()", and freezing twice panics.
+  Reading through those names still works. A pointer you took into the list
+  with `ref` or `loop (&x in xs)` before the freeze cannot reach the frozen
+  contents: the list remembers that a pointer was made and copies its elements
+  once at the freeze (D188). Prefer returning the local (a move) or
+  `.toList()`; use `freeze()` only when neither fits.
+
+```veles
+use io
+
+struct Report {
+  protected var lines: MutableList<string> = []
+
+  // false once the report is finished, instead of a panic
+  fun add(line: string): bool {
+    if (this.lines.isFrozen()) return false
+    this.lines.push(line)
+    true
+  }
+
+  // the report is finished: its lines become a List without a copy
+  fun finish(): List<string> => this.lines.freeze()
+}
+
+fun main() {
+  val r = Report()
+  r.add("first")
+  r.add("second")
+  val done = r.finish()
+  val late = r.add("third")
+  io.println("$done ${done.len()} $late")
+}
+```
+
+Output:
+```text
+[first, second] 2 false
+```
+
+  `xs.isFrozen()` (on the three mutable types) asks whether that has
+  happened, for code that may be handed a finished collection. The usual
+  answer is to refuse or report an error, as `add` does; quietly skipping
+  the change is usually a bug hiding.
 
 ### When the index is known to be in range
 

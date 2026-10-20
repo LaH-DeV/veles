@@ -201,9 +201,32 @@ func (f *fnCtx) mapMethod(recv Expr, mt *types.Map, name string, e *ast.CallExpr
 			return bad()
 		}
 		return &Builtin{exprBase{&types.List{Elem: &types.Tuple{Elems: []types.Type{mt.Key, mt.Value}}}}, "map.entries", []Expr{recv}, span}
+	case "isFrozen":
+		if !mt.Mutable {
+			f.errorf(span, "'isFrozen' needs a MutableMap: a Map is immutable by its type (D188)")
+			f.checkArgsLoosely(e.Args)
+			return bad()
+		}
+		if !need(0) {
+			return bad()
+		}
+		return &Builtin{exprBase{types.TBool}, "map.isFrozen", []Expr{recv}, span}
+	case "freeze":
+		if !mt.Mutable {
+			f.errorf(span, "'freeze' needs a MutableMap: a Map is already immutable (D188)")
+			f.checkArgsLoosely(e.Args)
+			return bad()
+		}
+		if !need(0) {
+			return bad()
+		}
+		return &Builtin{exprBase{&types.Map{Key: mt.Key, Value: mt.Value}}, "map.freeze", []Expr{recv}, span}
 	case "toMap", "toMutable":
 		if !need(0) {
 			return bad()
+		}
+		if name == "toMap" && mt.Mutable {
+			f.lintRedundantCopy(e, recv, name)
 		}
 		return &Builtin{exprBase{&types.Map{Key: mt.Key, Value: mt.Value, Mutable: name == "toMutable"}}, "map.copy", []Expr{recv}, span}
 	case "set":
@@ -274,9 +297,32 @@ func (f *fnCtx) setMethod(recv Expr, st *types.Set, name string, e *ast.CallExpr
 			return bad()
 		}
 		return &Builtin{exprBase{&types.List{Elem: st.Elem}}, "map.keys", []Expr{recv}, span}
+	case "isFrozen":
+		if !st.Mutable {
+			f.errorf(span, "'isFrozen' needs a MutableSet: a Set is immutable by its type (D188)")
+			f.checkArgsLoosely(e.Args)
+			return bad()
+		}
+		if !need(0) {
+			return bad()
+		}
+		return &Builtin{exprBase{types.TBool}, "map.isFrozen", []Expr{recv}, span}
+	case "freeze":
+		if !st.Mutable {
+			f.errorf(span, "'freeze' needs a MutableSet: a Set is already immutable (D188)")
+			f.checkArgsLoosely(e.Args)
+			return bad()
+		}
+		if !need(0) {
+			return bad()
+		}
+		return &Builtin{exprBase{&types.Set{Elem: st.Elem}}, "map.freeze", []Expr{recv}, span}
 	case "toSet", "toMutable":
 		if !need(0) {
 			return bad()
+		}
+		if name == "toSet" && st.Mutable {
+			f.lintRedundantCopy(e, recv, name)
 		}
 		return &Builtin{exprBase{&types.Set{Elem: st.Elem, Mutable: name == "toMutable"}}, "map.copy", []Expr{recv}, span}
 	case "add":

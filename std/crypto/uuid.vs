@@ -28,7 +28,7 @@ public struct Uuid {
     if (b.len() != 16) panic("Uuid.v4: randomBytes(16) returned ${b.len()} bytes")
     b.set(6, (b.at(6) & 0x0f) | 0x40)  // version 4
     b.set(8, (b.at(8) & 0x3f) | 0x80)  // variant 10
-    Uuid(data: b.toList())
+    Uuid(data: b)
   }
 
   /// A time-ordered UUID (version 7): 48 bits of Unix milliseconds, a
@@ -58,7 +58,7 @@ public struct Uuid {
     b.push((counter & 255).wrapU8())                 // counter low
     b.push((r.at(0) & 0x3f) | 0x80)                  // variant 10
     loop (i in 1..<r.len()) b.push(r.at(i))
-    Uuid(data: b.toList())
+    Uuid(data: b)
   }
 
   /// The all-zero UUID, `00000000-0000-0000-0000-000000000000`: the RFC's
@@ -96,7 +96,7 @@ public struct Uuid {
       out.push((hi << 4) | lo)
       i = i + 2
     }
-    Uuid(data: out.toList())
+    Uuid(data: out)
   }
 
   /// Byte `i` of the id. Every constructor makes sixteen bytes, and the

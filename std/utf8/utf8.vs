@@ -256,7 +256,7 @@ public const fun encodeTo(out: MutableList<u8>, code: i64): i64 {
 public const fun encode(code: i64): List<u8> {
   val out: MutableList<u8> = []
   encodeTo(out, code)
-  out.toList()
+  out
 }
 
 /// `code` as a one-character string — U+FFFD when it is not a scalar value,

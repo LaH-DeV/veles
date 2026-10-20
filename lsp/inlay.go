@@ -94,6 +94,11 @@ func (s *Server) inlayHints(params json.RawMessage) any {
 			out = append(out, h)
 		}
 	}
+	for sp := range a.index.Moved {
+		if sp.File == f && in(sp.End) {
+			out = append(out, inlayHint{Position: offsetToPosition(f, sp.End), Label: "moved immutable", Kind: hintType, PaddingLeft: true})
+		}
+	}
 	return out
 }
 

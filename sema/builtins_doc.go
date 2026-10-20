@@ -102,6 +102,8 @@ var builtinDocs = []BuiltinDoc{
 	{"MutableList", "ref", "(i: i64): (*T)?", "A pointer to the element at `i`, or `null` when `i` is out of range: `xs.ref(i)?.bump()` and `xs.ref(i)?.n = 0` change the element in place. A negative `i` counts from the end."},
 	{"MutableList", "pop", "(): T?", "Removes and returns the last element, or `null` when empty."},
 	{"MutableList", "clear", "()", "Removes every element."},
+	{"MutableList", "isFrozen", "(): bool", "True once `freeze()` has made this list immutable: every change through this name now panics. A question for code that may be handed a finished list; refusing or reporting an error is the usual answer, skipping the change is usually a bug hiding (D188)."},
+	{"MutableList", "freeze", "(): List<T>", "Makes this list immutable in place, without a copy, and returns it as a `List`: every later change through a `MutableList` name panics, so use it only when the compiler cannot prove a move (D63) and a copy is too dear. If a pointer into the list was made with `ref` or `loop (&x in …)`, the elements are copied once so that pointer cannot change the `List` (D188)."},
 
 	{"Map", "len", "(): i64", "Number of entries."},
 	{"Map", "isEmpty", "(): bool", "True when there are no entries."},
@@ -118,6 +120,8 @@ var builtinDocs = []BuiltinDoc{
 	{"MutableMap", "ref", "(key: K): (*V)?", "A pointer to the value stored for `key`, or `null` when there is no entry: `m.ref(k)?.bump()`, `m.ref(k)?.n += 1` change the entry in place."},
 	{"MutableMap", "remove", "(key: K): V?", "Removes the entry for `key`, returning its value, or `null`."},
 	{"MutableMap", "clear", "()", "Removes every entry."},
+	{"MutableMap", "isFrozen", "(): bool", "True once `freeze()` has made this map immutable (D188)."},
+	{"MutableMap", "freeze", "(): Map<K, V>", "Makes this map immutable in place, without a copy, and returns it as a `Map`: every later change through a `MutableMap` name panics, so use it only when the compiler cannot prove a move (D63) and a copy is too dear. A pointer made with `ref` before is not shared with the result: the entries are copied once (D188)."},
 
 	{"Set", "len", "(): i64", "Number of elements."},
 	{"Set", "isEmpty", "(): bool", "True when there are no elements."},
@@ -133,6 +137,8 @@ var builtinDocs = []BuiltinDoc{
 	{"MutableSet", "reserve", "(n: i64)", "Makes room for at least `n` members in all, so adding up to `n` neither grows the set nor rehashes it. Never shrinks it, never changes the members (D105)."},
 	{"MutableSet", "remove", "(x: T): bool", "Removes `x`; true when it was a member."},
 	{"MutableSet", "clear", "()", "Removes every member."},
+	{"MutableSet", "isFrozen", "(): bool", "True once `freeze()` has made this set immutable (D188)."},
+	{"MutableSet", "freeze", "(): Set<T>", "Makes this set immutable in place, without a copy, and returns it as a `Set`: every later change through a `MutableSet` name panics (D188)."},
 
 	{"Channel", "send", "(x: T) suspends", "Sends `x`, suspending while the channel is full. As a `race` arm, `ch.send(x) => …`, `x` is sent only if that arm wins (D108)."},
 	{"Channel", "recv", "(): T? suspends", "Receives the next value, suspending while empty; `null` once closed and drained."},

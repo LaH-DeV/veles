@@ -3447,6 +3447,49 @@ fun last(): i64 {
 }
 fun main() { io.println("${build(2)} ${early(1)} ${last()}") }`)
 
+	// D188: a function that never keeps its parameter leaves the argument
+	// unshared, and a field of a struct built here is a local of its own
+	expectClean(t, prelude+`
+fun fill(xs: MutableList<i64>, n: i64) { loop (i in 0..<n) xs.push(i) }
+fun fillTwice(xs: MutableList<i64>) {
+  fill(xs, 2)
+  fill(xs: xs, n: 1)
+}
+fun total(xs: MutableList<i64>): i64 {
+  var s = 0
+  loop (x in xs) s += x
+  s
+}
+fun filled(n: i64): List<i64> {
+  val a: MutableList<i64> = []
+  fill(a, n)
+  a
+}
+fun filledTwice(): List<i64> {
+  val a: MutableList<i64> = []
+  fillTwice(a)
+  val t = total(a)
+  a.push(t)
+  a
+}
+struct Acc {
+  items: MutableList<i64> = []
+  names: MutableList<string> = []
+}
+fun collected(): List<i64> {
+  val acc = Acc()
+  acc.items.push(5)
+  acc.names.push("x")
+  fill(acc.items, 3)
+  acc.items
+}
+fun fromLiteral(): List<i64> {
+  val acc = Acc(items: [1, 2])
+  acc.items.push(3)
+  acc.items
+}
+fun main() { io.println("${filled(2)} ${filledTwice()} ${collected()} ${fromLiteral()}") }`)
+
 	for _, c := range []struct{ name, src string }{
 		{"parameter", `fun f(xs: MutableList<i64>): List<i64> => xs`},
 		{"alias", `fun f(): List<i64> {
@@ -3454,11 +3497,98 @@ fun main() { io.println("${build(2)} ${early(1)} ${last()}") }`)
   val b = a
   a
 }`},
-		{"passed to a function", `fun fill(xs: MutableList<i64>) { xs.push(1) }
+		{"passed to a function that returns it", `fun same(xs: MutableList<i64>): MutableList<i64> => xs
 fun f(): List<i64> {
   val a: MutableList<i64> = []
-  fill(a)
+  val b = same(a)
   a
+}`},
+		{"passed to a function that stores it", `struct Holder { items: MutableList<i64> }
+fun wrap(xs: MutableList<i64>): Holder => Holder(items: xs)
+fun f(): List<i64> {
+  val a: MutableList<i64> = []
+  val h = wrap(a)
+  a
+}`},
+		{"passed to a function that captures it", `fun later(xs: MutableList<i64>): fun() { () => xs.push(1) }
+fun f(): List<i64> {
+  val a: MutableList<i64> = []
+  val g = later(a)
+  a
+}`},
+		{"passed through a function that stores it", `struct Holder { items: MutableList<i64> }
+fun wrap(xs: MutableList<i64>): Holder => Holder(items: xs)
+fun relay(xs: MutableList<i64>): Holder => wrap(xs)
+fun f(): List<i64> {
+  val a: MutableList<i64> = []
+  val h = relay(a)
+  a
+}`},
+		{"passed to a recursive function", `fun walk(xs: MutableList<i64>, n: i64) { if (n > 0) walk(xs, n - 1) }
+fun f(): List<i64> {
+  val a: MutableList<i64> = []
+  walk(a, 2)
+  a
+}`},
+		{"passed where an iterator is made", `fun first(xs: MutableList<i64>): i64 => xs.iter().first() ?: 0
+fun f(): List<i64> {
+  val a: MutableList<i64> = []
+  val n = first(a)
+  a
+}`},
+		{"passed to a closure", `fun f(): List<i64> {
+  val a: MutableList<i64> = []
+  val add = (xs: MutableList<i64>) => xs.push(1)
+  add(a)
+  a
+}`},
+		{"field passed to a function that stores it", `struct Holder { items: MutableList<i64> }
+struct Acc { items: MutableList<i64> = [] }
+fun wrap(xs: MutableList<i64>): Holder => Holder(items: xs)
+fun f(): List<i64> {
+  val acc = Acc()
+  val h = wrap(acc.items)
+  acc.items
+}`},
+		{"field of a struct that is passed on", `struct Acc { items: MutableList<i64> = [] }
+fun keep(a: Acc) {}
+fun f(): List<i64> {
+  val acc = Acc()
+  keep(acc)
+  acc.items
+}`},
+		{"field of a struct that is aliased", `struct Acc { items: MutableList<i64> = [] }
+fun f(): List<i64> {
+  val acc = Acc()
+  val other = acc
+  acc.items
+}`},
+		{"field built from a list someone else holds", `struct Acc { items: MutableList<i64> = [] }
+fun f(shared: MutableList<i64>): List<i64> {
+  val acc = Acc(items: shared)
+  acc.items
+}`},
+		{"field of a struct with a method called on it", `struct Acc {
+  items: MutableList<i64> = []
+  fun add(x: i64) { this.items.push(x) }
+}
+fun f(): List<i64> {
+  val acc = Acc()
+  acc.add(1)
+  acc.items
+}`},
+		{"field used after", `struct Acc { items: MutableList<i64> = [] }
+fun g(xs: List<i64>) {}
+fun f() {
+  val acc = Acc()
+  g(acc.items)
+  acc.items.push(1)
+}`},
+		{"field reassigned", `struct Acc { var items: MutableList<i64> = [] }
+fun f(other: MutableList<i64>): List<i64> {
+  val acc = Acc()
+  acc.items = other
+  acc.items
 }`},
 		{"used after", `fun g(xs: List<i64>) {}
 fun f() {
@@ -3996,4 +4126,57 @@ fun main() {
   val n = 3
   val m = await n
 }`, "applies to channels, timers and task handles, not 'i64'")
+}
+
+// D188: a `.toList()` of a collection that is not used afterwards is a copy
+// the move would have saved; the lint says so and its fix drops the call —
+// only where the expected type is the immutable collection.
+func TestRedundantCopyLint(t *testing.T) {
+	expectWarning(t, prelude+`
+fun build(n: i64): List<i64> {
+  val out: MutableList<i64> = []
+  loop (i in 0..<n) { out.push(i) }
+  out.toList()
+}
+fun main() { io.println("${build(2)}") }`, "which is not used after this")
+
+	expectWarning(t, prelude+`
+struct Acc { items: MutableList<i64> = [] }
+fun fill(xs: MutableList<i64>) { xs.push(1) }
+fun collect(): List<i64> {
+  val acc = Acc()
+  fill(acc.items)
+  acc.items.toList()
+}
+fun main() { io.println("${collect()}") }`, "which is not used after this")
+
+	for _, c := range []struct{ name, src string }{
+		{"used after", `fun f(): List<i64> {
+  val out: MutableList<i64> = []
+  val copy = out.toList()
+  out.push(1)
+  copy
+}`},
+		{"no expected type", `fun f(): i64 {
+  val out: MutableList<i64> = [1]
+  val frozen = out.toList()
+  frozen.len()
+}`},
+		{"a parameter", `fun f(out: MutableList<i64>): List<i64> => out.toList()`},
+		{"kept by a function", `fun keep(xs: MutableList<i64>): MutableList<i64> => xs
+fun f(): List<i64> {
+  val out: MutableList<i64> = []
+  val b = keep(out)
+  out.toList()
+}`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			diags := checkSource(t, prelude+c.src+"\nfun main() {}")
+			for _, d := range diags.Items {
+				if strings.Contains(d.Message, "which is not used after this") {
+					t.Errorf("unexpected lint: %s", d.Message)
+				}
+			}
+		})
+	}
 }

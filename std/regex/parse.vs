@@ -133,7 +133,7 @@ const fun parse(pattern: string, flags: Flags): Parsed {
     codes.push(r.code)
     at += r.size
   }
-  val parser = Parser(codes: codes.toList(), flags)
+  val parser = Parser(codes, flags)
   val root = parser.alternation(0)
   if (parser.pos < parser.codes.len()) {
     // only a stray `)` can stop the top level before the end
@@ -232,7 +232,7 @@ struct Parser {
     loop (this.eat('|')) items.push(this.sequence(depth))
     // `(?i)` ends with its group
     this.flags = saved
-    if (items.len() == 1) items.at(0) else Choice(items: items.toList())
+    if (items.len() == 1) items.at(0) else Choice(items)
   }
 
   const fun sequence(depth: i64): Node {
@@ -246,7 +246,7 @@ struct Parser {
     }
     if (items.len() == 0) return Nothing()
     if (items.len() == 1) return items.at(0)
-    Cat(items: items.toList())
+    Cat(items)
   }
 
   /// A quantifier after an atom; a second one in a row is an error.
@@ -812,7 +812,7 @@ const fun normalize(pairs: List<i64>): List<i64> {
       out.push(hi)
     }
   }
-  out.toList()
+  out
 }
 
 /// Everything in 0..U+10FFFF that `ranges` leaves out.
@@ -834,7 +834,7 @@ const fun negate(ranges: List<i64>): List<i64> {
     out.push(next)
     out.push(maxCode)
   }
-  out.toList()
+  out
 }
 
 /// `ranges` plus the other case of every ASCII letter in them.
@@ -861,7 +861,7 @@ const fun foldRanges(ranges: List<i64>): List<i64> {
     }
     i += 2
   }
-  normalize(out.toList())
+  normalize(out)
 }
 
 /// One code point as text, for messages.
@@ -889,7 +889,7 @@ const fun foldUnicode(ranges: List<i64>): List<i64> {
     }
     i += 2
   }
-  normalize(out.toList())
+  normalize(out)
 }
 
 /// The next code point in the case orbit of `c` (`c` itself when it has no

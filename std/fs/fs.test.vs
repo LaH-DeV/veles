@@ -296,7 +296,7 @@ test "copy reproduces a file bigger than one piece, and replaces the target" {
   try copy(from, to)
   expect(try readBytes(to) == data.toList())
   try copy(from, from)
-  expect(try readBytes(from) == data.toList())
+  expect(try readBytes(from) == data)
   expect(copy(scratch("missing.bin"), to) is Err)
   try remove(from)
   try remove(to)

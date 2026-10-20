@@ -40,7 +40,7 @@ public struct Sha1 {
       loop (w in this.state) {
         pushU32(out, w)
       }
-      val d = Digest.of(out.toList())
+      val d = Digest.of(out)
       this.result = d
       d
     }

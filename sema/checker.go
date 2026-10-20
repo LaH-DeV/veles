@@ -14,6 +14,7 @@ import (
 )
 
 type Checker struct {
+	paramState   map[paramKey]int8 // which parameters a function keeps (escape.go, D188)
 	namedImports []namedImport // every bound name of a braced import (D85)
 	rounds       int           // inference rounds run so far (D45), for the effects dump
 	arrayUses    []arrayUse    // inline arrays to size-check (D121)

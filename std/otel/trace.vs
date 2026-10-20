@@ -65,7 +65,7 @@ fun bytesOfHex(text: string, digits: i64): List<u8>? {
     out.push((hi * 16 + lo).wrapU8())
     i += 2
   }
-  out.toList()
+  out
 }
 
 // only lower-case digits are trace context (W3C §3.2)

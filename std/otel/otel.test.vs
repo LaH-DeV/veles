@@ -47,7 +47,7 @@ test fun spansOf(rec: Recorder): List<List<Fld>> {
       out.push(fields(s.data))
     }
   }
-  out.toList()
+  out
 }
 
 // every metric of every metrics export
@@ -60,7 +60,7 @@ test fun metricsOf(rec: Recorder): List<List<Fld>> {
       }
     }
   }
-  out.toList()
+  out
 }
 
 test fun metricNamed(rec: Recorder, name: string): List<Fld>? =>
@@ -74,7 +74,7 @@ test fun logsOf(rec: Recorder): List<List<Fld>> {
       out.push(fields(r.data))
     }
   }
-  out.toList()
+  out
 }
 
 test fun spanNamed(rec: Recorder, name: string): List<Fld> {

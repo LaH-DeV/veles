@@ -79,7 +79,7 @@ extend string {
       }
     }
     if (out.len() > 0 && out.last().isEmpty()) out.pop()
-    out.toList()
+    out
   }
 
   /// The text with every occurrence of `old` replaced by `new`.

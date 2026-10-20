@@ -390,4 +390,12 @@ empty `List` field, one in eight used. Before D187 (empty values allocated their
 (three runs within 4%). The Go column is Go with escape analysis: its record never leaves the
 loop, so nothing is heap-allocated. The same Go record stored in a global (heap-allocated, like
 every Veles collection) takes about 105 ms, so the allocators are even or Veles is ahead; the gap
-to the table row is stack allocation, which Veles does not have yet (checklist §3).
+to the table row is stack allocation, which Veles did not have at this row. Since D188 the header of a
+collection that never leaves its function is a stack slot (`sema/escape_hir.go`): the next row is
+that run: 20–28 ms over several runs (1.0× Go in the recorded one).
+
+## 2026-10-20 13:11 — go1.23.2, windows/amd64 (HEAD 6de3a52, plus the working tree)
+
+| benchmark | ops | Veles | Go | Veles / Go |
+|---|---:|---:|---:|---:|
+| emptycoll | 2000000 | 20.32ms | 20.22ms | 1.0× |

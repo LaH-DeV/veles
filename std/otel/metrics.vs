@@ -95,7 +95,7 @@ fun zeros(n: i64): List<i64> {
   loop (_ in 0..<n) {
     out.push(0)
   }
-  out.toList()
+  out
 }
 
 val registry: Mutex<MutableList<Core>> = newQueue<Core>()
@@ -132,7 +132,7 @@ fun collectMetrics(): List<MetricData> {
     val m = c.snapshot()
     if (m != null) out.push(m)
   }
-  out.toList()
+  out
 }
 
 /// The explicit boundaries a histogram uses when none are given: seconds,
@@ -240,7 +240,7 @@ public struct Histogram {
         intValue: s.intValue,
         realValue: s.realValue + x,
         count: s.count + 1,
-        buckets: counts.toList(),
+        buckets: counts,
         min: if (s.count == 0 || x < s.min) x else s.min,
         max: if (s.count == 0 || x > s.max) x else s.max,
       )

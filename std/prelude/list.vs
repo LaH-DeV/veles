@@ -19,7 +19,7 @@ extend<T> List<T> {
     var out: MutableList<T> = []
     out.addAll(this)
     out.addAll(other)
-    out.toList()
+    out
   }
 
   /// The valid indexes, `0..<len()`. In `loop (i in xs.indices())` the

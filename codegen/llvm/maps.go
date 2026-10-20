@@ -55,8 +55,13 @@ func (g *gen) mapLit(e *sema.MapLit) string {
 	if len(e.Entries) == 0 && !mt.Mutable {
 		return g.emptyMap(mt.Key, mt.Value) // shared, as an empty immutable list (D187)
 	}
-	m := g.newTmp()
-	g.emit("%s = call ptr @veles_map_new(ptr %s, ptr %s)", m, g.arrayDescOf(mt.Key), g.arrayDescOf(mt.Value))
+	var m string
+	if g.stackLit[e] {
+		m = g.stackMapHeader(mt.Key, mt.Value) // the header stays in this frame (D188)
+	} else {
+		m = g.newTmp()
+		g.emit("%s = call ptr @veles_map_new(ptr %s, ptr %s)", m, g.arrayDescOf(mt.Key), g.arrayDescOf(mt.Value))
+	}
 	for _, en := range e.Entries {
 		k := g.expr(en[0])
 		v := g.expr(en[1])
@@ -73,6 +78,9 @@ func (g *gen) mapBuiltin(e *sema.Builtin) (string, bool) {
 		st := e.Type().(*types.Set)
 		if !st.Mutable {
 			return g.emptyMap(st.Elem, nil), true
+		}
+		if g.stackLit[e] {
+			return g.stackMapHeader(st.Elem, nil), true
 		}
 		m := g.newTmp()
 		g.emit("%s = call ptr @veles_map_new(ptr %s, ptr null)", m, g.arrayDescOf(st.Elem))
@@ -116,6 +124,7 @@ func (g *gen) mapBuiltin(e *sema.Builtin) (string, bool) {
 		kt, _ := keyValTypes(e.Args[0].Type())
 		m := g.expr(e.Args[0])
 		k := g.expr(e.Args[1])
+		g.emit("call void @veles_map_expose(ptr %s)", m) // a pointer into the entries is made (D188)
 		h, kp, eq := g.keyArgs(kt, k)
 		idx := g.newTmp()
 		g.emit("%s = call i64 @veles_map_find(ptr %s, i64 %s, ptr %s, ptr %s)", idx, m, h, kp, eq)
@@ -189,6 +198,14 @@ func (g *gen) mapBuiltin(e *sema.Builtin) (string, bool) {
 		m := g.expr(e.Args[0])
 		g.emit("call void @veles_map_clear(ptr %s)", m)
 		return "zeroinitializer", true
+	case "map.isFrozen":
+		return g.isFrozen(g.expr(e.Args[0]), mapHeader, 13), true
+	case "map.freeze":
+		// the map, now immutable, in place (D188)
+		m := g.expr(e.Args[0])
+		r := g.newTmp()
+		g.emit("%s = call ptr @veles_map_freeze(ptr %s)", r, m)
+		return r, true
 	case "map.reserve":
 		m, n := g.expr(e.Args[0]), g.expr(e.Args[1])
 		g.emit("call void @veles_map_reserve(ptr %s, i64 %s)", m, n)

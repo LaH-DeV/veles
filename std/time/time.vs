@@ -649,7 +649,7 @@ fun fieldsOf(s: string): List<string> {
     }
     if (i > start) out.push(s.substring(start, i) ?: "")
   }
-  out.toList()
+  out
 }
 
 fun isHttpSpace(b: u8): bool => b == ' ' || b == '\t'

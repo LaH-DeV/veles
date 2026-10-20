@@ -75,6 +75,9 @@ func (f *fnCtx) refuseContentsChange(l *lookedField, method string, span source.
 // the catalogue lists the mutable family's own methods apart from the
 // immutable form's.
 func mutatesCollection(rt types.Type, name string) bool {
+	if name == "isFrozen" {
+		return false // a question about the collection, documented on the mutable family only (D188)
+	}
 	family := builtinFamily(rt)
 	d := lookupBuiltinDoc(family, name)
 	return d != nil && d.Recv == family

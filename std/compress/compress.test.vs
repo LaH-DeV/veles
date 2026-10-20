@@ -73,7 +73,7 @@ test "a long run and a far match both come back" {
   far.addAll(noise(30000))
   far.addAll(key)
   far.addAll(MutableList<u8>.repeat(65, 5000).toList())
-  expect(try gunzip(gzip(far.toList(), 9)) == far.toList())
+  expect(try gunzip(gzip(far.toList(), 9)) == far)
 }
 
 test "a damaged stream is Corrupt, a short one Truncated, never a panic" {
@@ -94,10 +94,10 @@ test "a damaged stream is Corrupt, a short one Truncated, never a panic" {
   // a flipped bit in the data or in the checksum is caught
   val flipped = packed.toMutable()
   flipped.set(30, (packed.at(30) ?: 0) ^ 4)
-  expect(gunzip(flipped.toList()) is Err)
+  expect(gunzip(flipped) is Err)
   val badCrc = packed.toMutable()
   badCrc.set(packed.len() - 8, (packed.at(packed.len() - 8) ?: 0) ^ 1)
-  when (gunzip(badCrc.toList())) {
+  when (gunzip(badCrc)) {
     is Err(e) => expect(e.kind == CompressKind.Corrupt)
     is Ok(_)  => expect(false)
   }

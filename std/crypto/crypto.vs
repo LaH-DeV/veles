@@ -238,5 +238,5 @@ fun padding(buffered: i64, blockSize: i64, lengthBytes: i64, totalBytes: i64): L
     i = i - 1
   }
   pushU64(out, (totalBytes * 8).wrapU64())
-  out.toList()  // a copy: `out` was handed to pushU64 (D63)
+  out  // a copy: `out` was handed to pushU64 (D63)
 }

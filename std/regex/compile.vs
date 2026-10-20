@@ -320,7 +320,7 @@ const fun asciiMasks(sets: List<List<i64>>): List<i64> {
     }
     loop (w in words) out.push(w)
   }
-  out.toList()
+  out
 }
 
 /// Finds the loops over one character: `split, char, jmp back` as the compiler

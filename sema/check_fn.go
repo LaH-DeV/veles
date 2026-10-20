@@ -63,6 +63,9 @@ type fnCtx struct {
 	// bodyAST is the body being checked (a Block or an expression), for the
 	// whole-function look D63's move check takes.
 	bodyAST any
+	// callWant: the type the method call being dispatched is expected to
+	// produce, for lintRedundantCopy (escape.go)
+	callWant types.Type
 	// loopIters is the checked type of each `loop (x in iter)` head, for lints
 	// that look at the loop after it was checked (lint_count.go).
 	loopIters map[*ast.LoopStmt]types.Type

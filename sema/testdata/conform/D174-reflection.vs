@@ -30,7 +30,7 @@ const fun flags<T>(): List<string> {
   loop (f in T.fields) {
     if (!f.has<Hidden>()) out.push("${f.name} ${f.attr<Short>()?.letter ?: "-"} ${f.typeName} ${f.doc}")
   }
-  out.toList()
+  out
 }
 
 const HELP: List<string> = flags<Options>()
@@ -94,7 +94,7 @@ fun main() {
 const fun mins<T>(): List<string> {
   val out: MutableList<string> = []
   loop ((f, s) in T.annotated<Short>()) out.push("${f.name}=${s.letter}") // error: 'i64' has no fields to read
-  out.toList()
+  out
 }
 
 fun shorts<T>(x: T): i64 {

@@ -75,6 +75,7 @@ var Lints = []LintInfo{
 	{"never_closed", "a `Closeable` that is never closed or handed on", LintWarn},
 	{"param_copy", "a parameter changed in a function whose caller never sees the change", LintWarn},
 	{"pattern_form", "a pattern written in a longer form than needed", LintWarn},
+	{"redundant_copy", "a `.toList()` of a collection that is not used afterwards: without it the collection is moved immutable", LintWarn},
 	{"redundant_label", "an argument label that repeats the variable passed (`f(x: x)`)", LintWarn},
 	{"redundant_mut", "`mut` on a literal whose expected type is already mutable", LintWarn},
 	{"redundant_public", "`public` where the declaration is already public", LintWarn},

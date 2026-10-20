@@ -104,7 +104,7 @@ public struct GzipEncoder {
     val out: MutableList<u8> = []
     out.addAll(this.ready())
     out.addAll(gzipTrailer(this.crc, this.size))
-    out.toList()
+    out
   }
 
   // the compressed bytes taken out, the header in front the first time
@@ -115,7 +115,7 @@ public struct GzipEncoder {
       out.addAll(gzipHeader(this.level))
     }
     out.addAll(this.deflater.take())
-    out.toList()
+    out
   }
 }
 

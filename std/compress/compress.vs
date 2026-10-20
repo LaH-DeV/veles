@@ -150,7 +150,7 @@ fun buildCrcTable(): List<i64> {
       table.push((table.at(before & 255) ?: 0) ^ (before >> 8))
     }
   }
-  table.toList()
+  table
 }
 
 val crcTable: List<i64> = buildCrcTable()

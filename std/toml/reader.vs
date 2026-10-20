@@ -142,7 +142,7 @@ struct Reader {
       if (!cursor.eat(']')) throw cursor.fail("expected ',' or ']' in the list")
       break
     }
-    Value(data: Items(items: items.toList()), line)
+    Value(data: Items(items), line)
   }
 
   fun inlineTable(line: i64): Value throws ParseError {

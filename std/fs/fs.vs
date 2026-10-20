@@ -541,7 +541,7 @@ public fun walk(root: string): List<string> throws IoError {
       else => out.push(p)
     }
   }
-  out.toList()
+  out
 }
 
 // pushEntries puts a directory's entries on the walk's stack in reverse, so

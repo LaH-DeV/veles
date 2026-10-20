@@ -1157,7 +1157,10 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 	if isMutexLock(rt, name) {
 		f.lockUse(callee, e)
 	}
-	if b := f.builtinMethod(recv, rt, name, e); b != nil {
+	f.callWant = want
+	b := f.builtinMethod(recv, rt, name, e)
+	f.callWant = nil
+	if b != nil {
 		f.c.refBuiltin(callee.Name.Pos, rt, name)
 		return b
 	}
@@ -1715,12 +1718,35 @@ func (f *fnCtx) builtinMethod(recv Expr, rt types.Type, name string, e *ast.Call
 			if !nargs(0) {
 				return bad()
 			}
+			if t.Mutable {
+				f.lintRedundantCopy(e, recv, name)
+			}
 			return &Builtin{exprBase{&types.List{Elem: t.Elem}}, "list.copy", []Expr{recv}, e.Pos}
 		case "toMutable":
 			if !nargs(0) {
 				return bad()
 			}
 			return &Builtin{exprBase{&types.List{Elem: t.Elem, Mutable: true}}, "list.copy", []Expr{recv}, e.Pos}
+		case "isFrozen":
+			if !t.Mutable {
+				f.errorf(e.Pos, "'isFrozen' needs a MutableList: a List is immutable by its type (D188)")
+				f.checkArgsLoosely(e.Args)
+				return bad()
+			}
+			if !nargs(0) {
+				return bad()
+			}
+			return &Builtin{exprBase{types.TBool}, "list.isFrozen", []Expr{recv}, e.Pos}
+		case "freeze":
+			if !t.Mutable {
+				f.errorf(e.Pos, "'freeze' needs a MutableList: a List is already immutable (D188)")
+				f.checkArgsLoosely(e.Args)
+				return bad()
+			}
+			if !nargs(0) {
+				return bad()
+			}
+			return &Builtin{exprBase{&types.List{Elem: t.Elem}}, "list.freeze", []Expr{recv}, e.Pos}
 		case "decodeUtf8":
 			if !types.Identical(t.Elem, types.TU8) {
 				break // only List<u8>

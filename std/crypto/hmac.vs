@@ -31,7 +31,7 @@ public struct Hmac<H: Hasher> {
     }
     var h = H.start()
     h.update(ipad)
-    Hmac(inner: h, outerPad: opad.toList())
+    Hmac(inner: h, outerPad: opad)
   }
 
   /// The name for a wire format: `"HMAC-SHA-256"`.

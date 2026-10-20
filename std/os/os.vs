@@ -35,7 +35,7 @@ public fun args(): List<string> {
     }
     out.push(s)
   }
-  out.toList()
+  out
 }
 
 /// The program's own path, as it was invoked.

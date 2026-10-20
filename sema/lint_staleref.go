@@ -140,6 +140,8 @@ func mentionsName(node any, name string) bool {
 // walkAST visits every syntax node reachable from node through struct
 // fields, slices and pointers; visit returns false to stop descending.
 func walkAST(node any, visit func(any) bool) {
+	astPkg := reflect.TypeOf(ast.Ident{}).PkgPath()
+	seen := map[uintptr]bool{}
 	var walk func(v reflect.Value)
 	walk = func(v reflect.Value) {
 		switch v.Kind() {
@@ -148,9 +150,12 @@ func walkAST(node any, visit func(any) bool) {
 				walk(v.Elem())
 			}
 		case reflect.Ptr:
-			if v.IsNil() {
+			// syntax nodes only, each once: a ResolvedType (compiler-written
+			// code) holds a type, and the type graph has cycles
+			if v.IsNil() || v.Type().Elem().PkgPath() != astPkg || seen[v.Pointer()] {
 				return
 			}
+			seen[v.Pointer()] = true
 			if v.Type().Elem().Kind() == reflect.Struct {
 				if !visit(v.Interface()) {
 					return

@@ -37,7 +37,7 @@ func (g *gen) constTable(v sema.ConstVal, name string) string {
 	case *sema.CList:
 		data := g.constArray(name+".data", base+".", v.T.Elem, v.Elems)
 		size, _ := g.layout(v.T.Elem)
-		fmt.Fprintf(&g.constOut, "%s = private unnamed_addr constant %s { ptr %s, i64 %d, i64 %d, i64 %d, ptr %s, i64 0 }\n",
+		fmt.Fprintf(&g.constOut, "%s = private unnamed_addr constant %s { ptr %s, i64 %d, i64 %d, i64 %d, ptr %s, i64 0, i64 0 }\n",
 			name, listHeader, data, len(v.Elems), len(v.Elems), size, g.arrayDescOf(v.T.Elem))
 	case *sema.CArray:
 		// the array itself, inline: a use reads it in place or loads it
@@ -66,7 +66,7 @@ func (g *gen) emptyList(elem types.Type) string {
 	name := fmt.Sprintf("@const.empty.list.%d", len(g.emptyShared))
 	g.emptyShared[key] = name
 	size, _ := g.layout(elem)
-	fmt.Fprintf(&g.constOut, "%s = private unnamed_addr constant %s { ptr null, i64 0, i64 0, i64 %d, ptr %s, i64 0 }\n",
+	fmt.Fprintf(&g.constOut, "%s = private unnamed_addr constant %s { ptr null, i64 0, i64 0, i64 %d, ptr %s, i64 0, i64 0 }\n",
 		name, listHeader, size, desc)
 	return name
 }
@@ -85,7 +85,7 @@ func (g *gen) emptyMap(kt, vt types.Type) string {
 	name := fmt.Sprintf("@const.empty.map.%d", len(g.emptyShared))
 	g.emptyShared[key] = name
 	keySize, _ := g.layout(kt)
-	fmt.Fprintf(&g.constOut, "%s = private unnamed_addr constant %s { ptr null, ptr null, ptr null, ptr %s, ptr %s, ptr null, i64 0, i64 0, i64 0, i64 0, i64 %d, i64 %d, i64 0 }\n",
+	fmt.Fprintf(&g.constOut, "%s = private unnamed_addr constant %s { ptr null, ptr null, ptr null, ptr %s, ptr %s, ptr null, i64 0, i64 0, i64 0, i64 0, i64 %d, i64 %d, i64 0, i64 0 }\n",
 		name, mapHeader, kd, vd, keySize, valSize)
 	return name
 }
@@ -116,7 +116,7 @@ func (g *gen) constArrayAs(name, at string, elem types.Type, xs []sema.ConstVal)
 // constNameRe matches what an unquoted LLVM global name cannot hold.
 var constNameRe = regexp.MustCompile(`[^A-Za-z0-9._]`)
 
-const mapHeader = "{ ptr, ptr, ptr, ptr, ptr, ptr, i64, i64, i64, i64, i64, i64, i64 }"
+const mapHeader = "{ ptr, ptr, ptr, ptr, ptr, ptr, i64, i64, i64, i64, i64, i64, i64, i64 }" // ..., mods, flags (D188)
 
 // constMap emits a map (vt nil: a set) with its entries in order, their
 // hashes as the runtime computes them, and an open-addressing index with
@@ -158,7 +158,7 @@ func (g *gen) constMap(name, base string, kt, vt types.Type, keys, vals []sema.C
 	}
 	fmt.Fprintf(&g.constOut, "%s.index = private unnamed_addr constant [%d x i64] [%s]\n", name, icap, strings.Join(slots, ", "))
 	keySize, _ := g.layout(kt)
-	fmt.Fprintf(&g.constOut, "%s = private unnamed_addr constant %s { ptr %s, ptr %s, ptr %s.meta, ptr %s, ptr %s, ptr %s.index, i64 %d, i64 %d, i64 %d, i64 %d, i64 %d, i64 %d, i64 0 }\n",
+	fmt.Fprintf(&g.constOut, "%s = private unnamed_addr constant %s { ptr %s, ptr %s, ptr %s.meta, ptr %s, ptr %s, ptr %s.index, i64 %d, i64 %d, i64 %d, i64 %d, i64 %d, i64 %d, i64 0, i64 0 }\n",
 		name, mapHeader, keyArr, valArr, name, g.arrayDescOf(kt), valDesc, name, icap, n, n, n, keySize, valSize)
 }
 
@@ -310,4 +310,47 @@ func hashMix(a, b int64) int64 {
 	h := uint64(a) * 0x9E3779B97F4A7C15
 	h ^= uint64(b) + 0x7F4A7C15 + (h << 6) + (h >> 2)
 	return int64(h)
+}
+
+// stackListHeader builds the header of a mutable list in a slot of the
+// current function's frame, the way veles_list_new would leave it for a
+// list with no storage yet (D188). The slot is reached once per execution of
+// the declaration, so the fields are written there each time.
+func (g *gen) stackListHeader(elem types.Type) string {
+	hdr := g.alloca(listHeader)
+	size, _ := g.layout(elem)
+	g.emit("store %s zeroinitializer, ptr %s", listHeader, hdr)
+	es, ds := g.newTmp(), g.newTmp()
+	g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 3", es, listHeader, hdr)
+	g.emit("store i64 %d, ptr %s", size, es)
+	g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 4", ds, listHeader, hdr)
+	g.emit("store ptr %s, ptr %s", g.arrayDescOf(elem), ds)
+	return hdr
+}
+
+// stackMapHeader is stackListHeader for a map (vt nil: a set).
+func (g *gen) stackMapHeader(kt, vt types.Type) string {
+	hdr := g.alloca(mapHeader)
+	g.emit("store %s zeroinitializer, ptr %s", mapHeader, hdr)
+	keySize, _ := g.layout(kt)
+	valSize, valDesc := 0, "null"
+	if vt != nil {
+		valSize, _ = g.layout(vt)
+		valDesc = g.arrayDescOf(vt)
+	}
+	for _, f := range []struct {
+		idx int
+		ty  string
+		val string
+	}{
+		{3, "ptr", g.arrayDescOf(kt)},
+		{4, "ptr", valDesc},
+		{10, "i64", fmt.Sprint(keySize)},
+		{11, "i64", fmt.Sprint(valSize)},
+	} {
+		p := g.newTmp()
+		g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d", p, mapHeader, hdr, f.idx)
+		g.emit("store %s %s, ptr %s", f.ty, f.val, p)
+	}
+	return hdr
 }

@@ -50,6 +50,12 @@ func (f *fnCtx) convertMutable(x Expr, want types.Type, span source.Span) Expr {
 		return cast
 	}
 	if f.movable(x, span) {
+		if f.c.index != nil {
+			if f.c.index.Moved == nil {
+				f.c.index.Moved = map[source.Span]bool{}
+			}
+			f.c.index.Moved[span] = true // the editor says "moved immutable" here (D188)
+		}
 		return cast
 	}
 	name := copyMethod(want)
@@ -88,7 +94,7 @@ func isSimpleOperand(text string) bool {
 func (f *fnCtx) movable(x Expr, span source.Span) bool {
 	ref, ok := x.(*VarRef)
 	if !ok {
-		return false
+		return f.movableField(x, span) // `acc.items` of a struct built here (D188)
 	}
 	v := ref.Var
 	// AddrTaken is not consulted: a method call on a `var` sets it, and an
@@ -104,6 +110,8 @@ func (f *fnCtx) movable(x Expr, span source.Span) bool {
 	var uses []*ast.NameExpr
 	escaped := false
 	var loops []*ast.LoopStmt
+	var scope *Scope // the function's file scope and declared names, once a call needs them
+	var declared map[string]bool
 
 	var visit func(n any) bool
 	visit = func(n any) bool {
@@ -145,6 +153,17 @@ func (f *fnCtx) movable(x Expr, span source.Span) bool {
 			if m, ok := n.Fun.(*ast.MemberExpr); ok && !m.Safe {
 				if ne, ok := m.X.(*ast.NameExpr); ok && ne.Name == v.Name && moveMethods[m.Name.Name] {
 					allowed[ne] = true
+				}
+			}
+			// handed to a function that does not keep it (D188)
+			for i, a := range n.Args {
+				if ne, ok := a.Value.(*ast.NameExpr); ok && ne.Name == v.Name {
+					if scope == nil {
+						scope, declared = f.c.fileScope(f.module, f.file), identNames(f.bodyAST)
+					}
+					if f.c.argStays(n, i, scope, declared) {
+						allowed[ne] = true
+					}
 				}
 			}
 		case *ast.AssignStmt:

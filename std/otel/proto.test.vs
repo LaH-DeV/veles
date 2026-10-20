@@ -56,7 +56,7 @@ test fun fields(bytes: List<u8>): List<Fld> {
       fail("unknown wire type $wire")
     }
   }
-  out.toList()
+  out
 }
 
 // the fields numbered `num`

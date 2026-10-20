@@ -364,7 +364,7 @@ fun audience(v: codec.Value): List<string> throws Invalid {
           reason: Reason.MissingClaim,
         ))
       }
-      out.toList()
+      out
     }
     else           => throw Invalid(
       message: "jwt: 'aud' is neither a string nor a list of strings",

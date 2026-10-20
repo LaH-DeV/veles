@@ -32,7 +32,7 @@ fun buildRows(): List<i64> {
   loop (r in 0..<8) loop (k in 0..<16) {
     out.push(r * 16 + k)
   }
-  out.toList()
+  out
 }
 
 fun buildCols(): List<i64> {
@@ -41,7 +41,7 @@ fun buildCols(): List<i64> {
     out.push(r * 16 + c * 2)
     out.push(r * 16 + c * 2 + 1)
   }
-  out.toList()
+  out
 }
 
 // BlaMka: a + b + 2 * lo(a) * lo(b), where lo is the low 32 bits
@@ -140,7 +140,7 @@ fun argonHash(input: List<u8>, outLen: i64): List<u8> {
   head.addAll(input)
   if (outLen <= 64) return blake2b(head.toList(), outLen)
   val out: MutableList<u8> = []
-  var v = blake2b(head.toList(), 64)
+  var v = blake2b(head, 64)
   out.addAll(v.slice(0, 32))
   var left = outLen - 32
   loop (left > 64) {
@@ -149,7 +149,7 @@ fun argonHash(input: List<u8>, outLen: i64): List<u8> {
     left -= 32
   }
   out.addAll(blake2b(v, left))
-  out.toList()
+  out
 }
 
 // a block as 128 words, from 1024 bytes
@@ -192,7 +192,7 @@ fun argon2(kind: Argon2Type, password: List<u8>, salt: List<u8>, memoryKiB: i64,
   seed.addAll(secret)
   le32(seed, data.len())
   seed.addAll(data)
-  val h0 = blake2b(seed.toList(), 64)
+  val h0 = blake2b(seed, 64)
 
   // the matrix: `lanes` rows of `columns` blocks, a block being 128 words
   val columns = (memoryKiB / (4 * lanes)) * 4
@@ -203,7 +203,7 @@ fun argon2(kind: Argon2Type, password: List<u8>, salt: List<u8>, memoryKiB: i64,
     start.addAll(h0)
     le32(start, c)
     le32(start, l)
-    wordsOf(argonHash(start.toList(), 1024), mem, (l * columns + c) * 128)
+    wordsOf(argonHash(start, 1024), mem, (l * columns + c) * 128)
   }
 
   val rows = buildRows()
@@ -291,5 +291,5 @@ fun argon2(kind: Argon2Type, password: List<u8>, salt: List<u8>, memoryKiB: i64,
   loop (w in last) loop (j in 0..<8) {
     bytes.push((w >> (8 * j)).wrapU8())
   }
-  argonHash(bytes.toList(), tagLen)
+  argonHash(bytes, tagLen)
 }
