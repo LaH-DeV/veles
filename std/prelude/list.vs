@@ -152,8 +152,7 @@ extend<T> List<T> {
         val hi = if (lo + 2 * width < n) lo + 2 * width else n
         var i = lo
         var j = mid
-        var k = lo
-        loop (k < hi) {
+        loop (k in lo..<hi) {
           if (i < mid && (j >= hi || compare(src.at(i) ?: panic("sortedWith: i < mid <= n"), src.at(j) ?: panic("sortedWith: j < hi <= n")) <= 0)) {
             dst.set(k, src.at(i) ?: panic("sortedWith: i < mid <= n"))
             i += 1
@@ -161,7 +160,6 @@ extend<T> List<T> {
             dst.set(k, src.at(j) ?: panic("sortedWith: j < hi <= n"))
             j += 1
           }
-          k += 1
         }
         lo += 2 * width
       }

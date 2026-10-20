@@ -189,14 +189,7 @@ func (f *fnCtx) movable(x Expr, span source.Span) bool {
 		return false
 	}
 	// fresh: built here, not a handle to someone else's collection
-	switch init := decl.Value.(type) {
-	case *ast.ListLit, *ast.MapLit:
-	case *ast.CallExpr:
-		m, ok := init.Fun.(*ast.MemberExpr)
-		if !ok || m.Name.Name != "toMutable" {
-			return false
-		}
-	default:
+	if !freshCollection(decl.Value) {
 		return false
 	}
 	for _, u := range uses {

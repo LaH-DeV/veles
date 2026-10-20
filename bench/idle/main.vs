@@ -21,7 +21,7 @@ fun liveBytes(): i64 {
 }
 
 fun waiter(ch: Channel<i64>, parked: Atomic<i64>): i64 {
-  val _ = parked.add(1)
+  parked.add(1)
   await ch.recv() ?: 0
 }
 

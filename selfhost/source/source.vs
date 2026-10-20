@@ -159,6 +159,11 @@ fun caret(text: string, at: i64, width: i64): string {
 fun charSize(text: string, i: i64, limit: i64): i64 {
   val b = text.byteAt(i)
   if (b < 0x80) return 1
-  val size = if (b >= 0xF0) 4 else if (b >= 0xE0) 3 else if (b >= 0xC0) 2 else 1
+  val size = when {
+    b >= 0xF0 => 4
+    b >= 0xE0 => 3
+    b >= 0xC0 => 2
+    else      => 1
+  }
   if (i + size > limit) 1 else size
 }

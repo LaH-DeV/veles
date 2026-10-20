@@ -19,5 +19,5 @@ internal fun helper(): i64 => 1
 fun shared(): i64 => helper()
 
 fun main() {
-  val _ = shared()
+  shared()
 }

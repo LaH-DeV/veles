@@ -151,8 +151,7 @@ public fun styleKey(name: string, style: KeyStyle): string => when (style) {
   KeyStyle.UpperSnake => styleKey(name, KeyStyle.SnakeCase).toUpper()
   KeyStyle.SnakeCase  => {
     val out = StringBuilder()
-    var i = 0
-    loop (i < name.len()) {
+    loop (i in 0..<name.len()) {
       val b = name.byteAt(i)
       if (b.isAsciiUpper()) {
         if (i > 0) out.append("_")
@@ -160,15 +159,13 @@ public fun styleKey(name: string, style: KeyStyle): string => when (style) {
       } else {
         out.appendByte(b)
       }
-      i += 1
     }
     out.toString()
   }
   KeyStyle.CamelCase  => {
     val out = StringBuilder()
     var up = false
-    var i = 0
-    loop (i < name.len()) {
+    loop (i in 0..<name.len()) {
       val b = name.byteAt(i)
       if (b == '_') {
         up = true
@@ -179,7 +176,6 @@ public fun styleKey(name: string, style: KeyStyle): string => when (style) {
         out.appendByte(b)
         up = false
       }
-      i += 1
     }
     out.toString()
   }
@@ -1020,7 +1016,7 @@ public struct ValueEncoder {
         fields.set(k, top.values.at(i) ?: panic("codec: an object's keys and values are pushed in pairs"))
         i += 1
       }
-      this.put(VObject(fields: fields.toMap()))
+      this.put(VObject(fields))
     }
 
     fun beginList() throws EncodeError {

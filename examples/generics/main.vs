@@ -48,7 +48,7 @@ fun tally<V: Default>(keys: List<string>, add: fun(V): V): Map<string, V> {
   loop (k in keys) {
     out.set(k, add(out.get(k) ?: V.default()))
   }
-  out.toMap()
+  out
 }
 
 // `T implements Trait` (D117) is answered per instance at compile time: an

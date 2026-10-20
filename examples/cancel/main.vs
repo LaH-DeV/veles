@@ -16,7 +16,7 @@ struct Held {
     fun close() {
       println("closed: ${this.name}")
       if (this.name.contains("gather")) {
-        val _ = this.steps.trySend(true)  // a close cannot wait; the channel has room
+        this.steps.trySend(true)  // a close cannot wait; the channel has room
       }
     }
   }
@@ -62,11 +62,11 @@ fun main() {
     val g = async viaGather(steps)
     val s = async twoLevels(steps)
     loop (_ in 0..<3) {
-      val _ = await steps.recv()  // the three children hold their resources
+      await steps.recv()  // the three children hold their resources
     }
     println("--- cancel the gather's owner")
     g.cancel()
-    val _ = await steps.recv()  // the gather's child has closed
+    await steps.recv()  // the gather's child has closed
     println("--- cancel two levels above the scope")
     s.cancel()
   }

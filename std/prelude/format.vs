@@ -44,7 +44,12 @@ fun fmtNum(text: string, fill: string, align: i64, sign: i64, prefix: string, ze
   var body = if (neg) text.substring(1, text.len()) ?: text else text
   if (upper) body = body.toUpper()
   if (group) body = fmtGroup(body)
-  val signText = if (neg) "-" else if (sign == 1) "+" else if (sign == 2) " " else ""
+  val signText = when {
+    neg       => "-"
+    sign == 1 => "+"
+    sign == 2 => " "
+    else      => ""
+  }
   val head = signText + prefix
   if (zero) {
     val used = (head + body + suffix).chars().len()

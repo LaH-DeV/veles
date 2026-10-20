@@ -55,7 +55,7 @@ public struct BodyWriter {
     // a body longer than the length announced would run into the next response
     if (this.left.load() >= 0) {
       if (bytes.len() > this.left.load()) throw IoError(path: "response", code: 0, detail: "more bytes than the declared length", kind: IoKind.InvalidInput)
-      val _ = this.left.update(l => l - bytes.len())
+      this.left.update(l => l - bytes.len())
     }
     if (val c = this.conn) {
       if (this.chunked) {

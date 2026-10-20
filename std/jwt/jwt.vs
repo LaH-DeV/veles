@@ -179,7 +179,7 @@ public fun sign(
   if (kid != null) header.set("kid", codec.VString(value: kid))
 
   val payload = claimsToObject(claims)
-  val signing = base64.encodeUrl((try json.encode(codec.VObject(fields: header.toMap()))).bytes()) + "." +
+  val signing = base64.encodeUrl((try json.encode(codec.VObject(fields: header))).bytes()) + "." +
     base64.encodeUrl(try json.encode(payload).bytes())
   signing + "." + mac(algorithm, key, signing).toBase64Url()
 }
@@ -207,7 +207,7 @@ fun claimsToObject(claims: Claims): codec.Value {
   if (iat != null) out.set("iat", codec.VInt(value: iat))
   val jti = claims.id
   if (jti != null) out.set("jti", codec.VString(value: jti))
-  codec.VObject(fields: out.toMap())
+  codec.VObject(fields: out)
 }
 
 // ---------------------------------------------------------------------------
@@ -330,7 +330,7 @@ fun readClaims(payload: codec.Value): Claims throws Invalid {
       else  => extra.set(name, v)
     }
   }
-  Claims(issuer, subject, audience: who, expiresAt, notBefore, issuedAt, id, extra: extra.toMap())
+  Claims(issuer, subject, audience: who, expiresAt, notBefore, issuedAt, id, extra)
 }
 
 fun text(v: codec.Value, name: string): string throws Invalid =>

@@ -139,7 +139,7 @@ public struct Telemetry {
       // the last interval's data, unless shutdown() sent it already; the
       // exporter's own timeouts bound the wait
       if (enabled.load()) {
-        val _ = flushAll(this.exporter, this.resource)
+        flushAll(this.exporter, this.resource)
       }
       enabled.store(false)
       running.store(false)
@@ -194,7 +194,7 @@ public fun start(
 fun exportLoop(exporter: Exporter, resource: List<Attr>, interval: Duration) {
   loop {
     await sleep(interval)
-    val _ = flushAll(exporter, resource)
+    flushAll(exporter, resource)
   }
 }
 
@@ -208,7 +208,7 @@ fun flushAll(exporter: Exporter, resource: List<Attr>): bool suspends {
   })
   if (!spans.isEmpty() && !sendWithRetry(exporter, Signal.Traces, traceRequest(resource, spans))) {
     ok = false
-    val _ = lost.update(n => n + spans.len())
+    lost.update(n => n + spans.len())
   }
   val logs = logQueue.withLock(q => {
     val all = q.toList()
@@ -217,7 +217,7 @@ fun flushAll(exporter: Exporter, resource: List<Attr>): bool suspends {
   })
   if (!logs.isEmpty() && !sendWithRetry(exporter, Signal.Logs, logsRequest(resource, logs))) {
     ok = false
-    val _ = lost.update(n => n + logs.len())
+    lost.update(n => n + logs.len())
   }
   val metrics = collectMetrics().concat(selfMetrics())
   if (!metrics.isEmpty() && !sendWithRetry(exporter, Signal.Metrics, metricsRequest(resource, metrics, unixNanos()))) {

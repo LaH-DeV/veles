@@ -3,10 +3,8 @@ use io { println }
 fun main() {
   val sum = add(5, 7)
   printSum(sum)
-  var i = 0
-  loop (i < 3) {
+  loop (i in 0..<3) {
     println("i = $i")
-    i += 1
   }
   loop (k in 1..3) {
     println("k = $k")

@@ -266,16 +266,32 @@ func (c *Checker) nameStays(name string, body any, scope *Scope, declared map[st
 }
 
 // freshCollection reports whether e builds a collection nobody else holds:
-// a literal, or a `toMutable()` copy.
+// a literal, a `toMutable()` copy, a constructor (`MutableSet<string>()`) or
+// a static factory of a mutable collection type (`MutableList<bool>.repeat(…)`).
 func freshCollection(e ast.Expr) bool {
 	switch e := e.(type) {
 	case *ast.ListLit, *ast.MapLit:
 		return true
 	case *ast.CallExpr:
-		m, ok := e.Fun.(*ast.MemberExpr)
-		return ok && !m.Safe && m.Name.Name == "toMutable"
+		switch fn := e.Fun.(type) {
+		case *ast.NameExpr:
+			return isMutableCollectionName(fn.Name)
+		case *ast.MemberExpr:
+			if fn.Safe {
+				return false
+			}
+			if fn.Name.Name == "toMutable" {
+				return true
+			}
+			ne, ok := fn.X.(*ast.NameExpr)
+			return ok && isMutableCollectionName(ne.Name)
+		}
 	}
 	return false
+}
+
+func isMutableCollectionName(name string) bool {
+	return name == "MutableList" || name == "MutableMap" || name == "MutableSet"
 }
 
 // movableField: D63's move for `acc.items`, a field of a struct local that
@@ -542,7 +558,7 @@ func (f *fnCtx) lintRedundantCopy(e *ast.CallExpr, recv Expr, name string) {
 		return
 	}
 	span := m.X.Span()
-	if span.File == nil || f.c.stdSpan(span) || !f.movable(recv, span) {
+	if span.File == nil || f.skipStd(span) || !f.movable(recv, span) {
 		return
 	}
 	text := spanText(span)

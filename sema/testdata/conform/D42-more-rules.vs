@@ -72,7 +72,7 @@ fun filterIsNone(ss: List<Shape>) {
   val _ = ss.filterIs() // error: 'filterIs' needs one type argument, a variant of 'Shape'
 }
 fun raceBindTwo(ch: Channel<i64>) {
-  val _ = select {
+  select {
     val (a, b) = ch.recv() => 1 // error: a select arm names one value: 'val name = src => …' (D169)
   }
 }

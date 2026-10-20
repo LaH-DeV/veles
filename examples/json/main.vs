@@ -122,7 +122,7 @@ struct Parser {
       if (b == RBRACE) break
       if (b != COMMA) throw this.fail("expected ',' or '}'")
     }
-    JObj(fields: fields.toMap())
+    JObj(fields)
   }
 
   fun parseArray(): Json throws ParseError {

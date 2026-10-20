@@ -9,7 +9,7 @@ test "blake2b: the RFC 7693 vector for abc, the empty message, and a key" {
   val block: MutableList<u8> = MutableList<u8>.repeat(7, 128)
   expect(blake2b(block.toList(), 64).len() == 64)
   block.addAll(block.toList())
-  expect(blake2b(block.toList(), 20).len() == 20)
+  expect(blake2b(block, 20).len() == 20)
 }
 
 test fun rfcInputs(kind: Argon2Type): List<u8> {

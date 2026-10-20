@@ -23,7 +23,7 @@ struct Count {
 test fun tableName(): string => "veles_t_" + crypto.randomBytes(6).map(b => (if (b < 16) "0" else "") + b.toI64().toString(radix: 16)).join("")
 
 test fun createAccounts(pool: Pool, table: Sql) suspends throws DbError {
-  val _ = try pool.exec(sql"create table ${table} (id bigserial primary key, owner text not null unique, balance bigint not null default 0, note text, opened_at timestamptz not null default now())")
+  try pool.exec(sql"create table ${table} (id bigserial primary key, owner text not null unique, balance bigint not null default 0, note text, opened_at timestamptz not null default now())")
 }
 
 test fun dropTable(pool: Pool, table: Sql) suspends {
@@ -97,7 +97,7 @@ test "a constraint violation names its code and leaves the pool usable" {
   val name = tableName()
   val table = ident(name) ?: fail("a plain name")
   try createAccounts(pool, table)
-  val _ = try pool.exec(sql"insert into ${table} (owner) values (${"a"})")
+  try pool.exec(sql"insert into ${table} (owner) values (${"a"})")
   val again = pool.exec(sql"insert into ${table} (owner) values (${"a"})")
   when (again) {
     is Ok(_)  => fail("a duplicate owner must be refused")
@@ -121,22 +121,22 @@ test "a constraint violation names its code and leaves the pool usable" {
 
 test fun transfer(pool: Pool, table: Sql) suspends throws DbError | DecodeError {
   with tx = try pool.begin()
-  val _ = try tx.exec(sql"update ${table} set balance = balance - ${30} where owner = ${"a"}")
-  val _ = try tx.exec(sql"update ${table} set balance = balance + ${30} where owner = ${"b"}")
+  try tx.exec(sql"update ${table} set balance = balance - ${30} where owner = ${"a"}")
+  try tx.exec(sql"update ${table} set balance = balance + ${30} where owner = ${"b"}")
   try tx.commit()
 }
 
 // the server process of the transaction's connection
 test fun abandon(pool: Pool, table: Sql): i64 suspends throws DbError | DecodeError {
   with tx = try pool.begin()
-  val _ = try tx.exec(sql"update ${table} set balance = 0")
+  try tx.exec(sql"update ${table} set balance = 0")
   expect(try tx.query<i64>(sql"select sum(balance)::bigint from ${table}") == [0])
   try tx.queryOne<i64>(sql"select pg_backend_pid()::bigint") ?: -1
 }
 
 test fun rollbackByName(pool: Pool, table: Sql) suspends throws DbError {
   with tx = try pool.begin()
-  val _ = try tx.exec(sql"delete from ${table}")
+  try tx.exec(sql"delete from ${table}")
   try tx.rollback()
 }
 
@@ -158,7 +158,7 @@ test "a transaction commits, rolls back, and abandons what it did not commit" {
   val name = tableName()
   val table = ident(name) ?: fail("a plain name")
   try createAccounts(pool, table)
-  val _ = try pool.exec(sql"insert into ${table} (owner, balance) values (${"a"}, ${100}), (${"b"}, ${0})")
+  try pool.exec(sql"insert into ${table} (owner, balance) values (${"a"}, ${100}), (${"b"}, ${0})")
   try transfer(pool, table)
   expect(try pool.query<i64>(sql"select balance from ${table} order by owner") == [70, 30])
   // left without a commit: its close rolls it back and the connection is

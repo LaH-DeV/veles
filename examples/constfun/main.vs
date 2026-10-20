@@ -32,7 +32,7 @@ fun crc32(text: string): u32 {
 const fun positions(names: List<string>): Map<string, i64> {
   val out: MutableMap<string, i64> = [:]
   loop ((i, name) in names.enumerate()) out.set(name, i)
-  out.toMap()
+  out
 }
 
 const MONTHS: Map<string, i64> = positions(["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"])

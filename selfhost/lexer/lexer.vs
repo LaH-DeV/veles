@@ -193,17 +193,22 @@ struct Lexer {
     var i = this.pos
     loop (i < this.src.len()) {
       val b = this.src.byteAt(i)
-      if (b == ' ' || b == '\t' || b == '\r' || b == '\n') {
-        i += 1
-      } else if (b == '/' && i + 1 < this.src.len() && this.src.byteAt(i + 1) == '/') {
-        loop (i < this.src.len() && this.src.byteAt(i) != '\n') i += 1
-      } else if (b == '/' && i + 1 < this.src.len() && this.src.byteAt(i + 1) == '*') {
-        val end = this.findFrom(i + 2, "*/")
-        if (end < 0) return false
-        i = end + 2
-      } else {
-        if (this.holdsAt(i, "?.") || this.holdsAt(i, "?:") || this.holdsAt(i, "?!") || this.holdsAt(i, "??")) return true
-        return b == '.' && i + 1 < this.src.len() && this.src.byteAt(i + 1) != '.'
+      when {
+        b == ' ' || b == '\t' || b == '\r' || b == '\n' => {
+          i += 1
+        }
+        b == '/' && i + 1 < this.src.len() && this.src.byteAt(i + 1) == '/' => {
+          loop (i < this.src.len() && this.src.byteAt(i) != '\n') i += 1
+        }
+        b == '/' && i + 1 < this.src.len() && this.src.byteAt(i + 1) == '*' => {
+          val end = this.findFrom(i + 2, "*/")
+          if (end < 0) return false
+          i = end + 2
+        }
+        else => {
+          if (this.holdsAt(i, "?.") || this.holdsAt(i, "?:") || this.holdsAt(i, "?!") || this.holdsAt(i, "??")) return true
+          return b == '.' && i + 1 < this.src.len() && this.src.byteAt(i + 1) != '.'
+        }
       }
     }
     false
@@ -229,35 +234,47 @@ struct Lexer {
     loop (this.pos < this.src.len()) {
       val b = this.src.byteAt(this.pos)
       val start = this.pos
-      if (b == '\n') {
-        this.pos += 1
-        this.newline(start)
-      } else if (b == ' ' || b == '\t' || b == '\r') {
-        this.pos += 1
-      } else if (b == '/' && this.peekByte(1) == '/') {
-        loop (this.pos < this.src.len() && this.src.byteAt(this.pos) != '\n') this.pos += 1
-        this.checkComment(start, this.pos)
-        this.comments.push(Comment(span: this.span(start, this.pos), text: trimEndOf(this.cut(start, this.pos), "\r")))
-        this.lineDoc(start)
-      } else if (b == '/' && this.peekByte(1) == '*') {
-        this.blockComment()
-        this.checkComment(start, this.pos)
-        this.comments.push(Comment(span: this.span(start, this.pos), text: this.cut(start, this.pos)))
-        this.blockDoc(start)
-      } else if (b == '/' && this.regexAllowed()) {
-        this.regexLit()
-      } else if (identStartLen(this.src, this.pos) > 0) {
-        this.identifier()
-      } else if (b.isAsciiDigit()) {
-        this.number()
-      } else if (b == '"') {
-        this.stringLit()
-      } else if (b == '`') {
-        this.rawLit()
-      } else if (b == '\'') {
-        this.charLit()
-      } else {
-        this.operator()
+      when {
+        b == '\n' => {
+          this.pos += 1
+          this.newline(start)
+        }
+        b == ' ' || b == '\t' || b == '\r' => {
+          this.pos += 1
+        }
+        b == '/' && this.peekByte(1) == '/' => {
+          loop (this.pos < this.src.len() && this.src.byteAt(this.pos) != '\n') this.pos += 1
+          this.checkComment(start, this.pos)
+          this.comments.push(Comment(span: this.span(start, this.pos), text: trimEndOf(this.cut(start, this.pos), "\r")))
+          this.lineDoc(start)
+        }
+        b == '/' && this.peekByte(1) == '*' => {
+          this.blockComment()
+          this.checkComment(start, this.pos)
+          this.comments.push(Comment(span: this.span(start, this.pos), text: this.cut(start, this.pos)))
+          this.blockDoc(start)
+        }
+        b == '/' && this.regexAllowed() => {
+          this.regexLit()
+        }
+        identStartLen(this.src, this.pos) > 0 => {
+          this.identifier()
+        }
+        b.isAsciiDigit() => {
+          this.number()
+        }
+        b == '"' => {
+          this.stringLit()
+        }
+        b == '`' => {
+          this.rawLit()
+        }
+        b == '\'' => {
+          this.charLit()
+        }
+        else => {
+          this.operator()
+        }
       }
     }
     // a file always ends in a statement terminator
@@ -418,18 +435,23 @@ struct Lexer {
     var i = start
     loop (i < end) {
       val b = this.src.byteAt(i)
-      if (b == '(' || b == '[' || b == '{') {
-        depth += 1
-      } else if (b == ')' || b == ']' || b == '}') {
-        depth -= 1
-      } else if (b == '"' || b == '\'') {
-        i += 1
-        loop (i < end && this.src.byteAt(i) != b) {
-          if (this.src.byteAt(i) == '\\') i += 1
-          i += 1
+      when {
+        b == '(' || b == '[' || b == '{' => {
+          depth += 1
         }
-      } else if (b == ':' && depth == 0 && (i == start || this.src.byteAt(i - 1) != '?')) {
-        return i
+        b == ')' || b == ']' || b == '}' => {
+          depth -= 1
+        }
+        b == '"' || b == '\'' => {
+          i += 1
+          loop (i < end && this.src.byteAt(i) != b) {
+            if (this.src.byteAt(i) == '\\') i += 1
+            i += 1
+          }
+        }
+        b == ':' && depth == 0 && (i == start || this.src.byteAt(i - 1) != '?') => {
+          return i
+        }
       }
       i += 1
     }
@@ -463,20 +485,25 @@ struct Lexer {
         this.pos += 2
         continue
       }
-      if (inClass && b == '[' && this.peekByte(1) == ':') {
-        // [:alpha:] inside a class
-        val end = this.src.indexOf(":]", this.pos + 2)
-        if (end >= 0 && !this.hasLineBreak(this.pos, end)) {
-          this.pos = end + 2
+      when {
+        inClass && b == '[' && this.peekByte(1) == ':' => {
+          // [:alpha:] inside a class
+          val end = this.src.indexOf(":]", this.pos + 2)
+          if (end >= 0 && !this.hasLineBreak(this.pos, end)) {
+            this.pos = end + 2
+            continue
+          }
+        }
+        b == '[' => {
+          inClass = true
+        }
+        b == ']' => {
+          inClass = false
+        }
+        b == '/' && !inClass => {
+          closed = true
           continue
         }
-      } else if (b == '[') {
-        inClass = true
-      } else if (b == ']') {
-        inClass = false
-      } else if (b == '/' && !inClass) {
-        closed = true
-        continue
       }
       this.pos += 1
     }
@@ -532,10 +559,8 @@ struct Lexer {
 
   // the index of the first `b` at or after `from`, or -1
   fun findByteFrom(from: i64, b: u8): i64 {
-    var i = from
-    loop (i < this.src.len()) {
+    loop (i in from..<this.src.len()) {
       if (this.src.byteAt(i) == b) return i
-      i += 1
     }
     -1
   }
@@ -556,19 +581,24 @@ struct Lexer {
     var closeAt: i64 = -1
     loop (this.pos < this.src.len() && closeAt < 0) {
       val b = this.src.byteAt(this.pos)
-      if (b == '\\') {
-        this.pos += 2
-      } else if (b == '$' && this.peekByte(1) == '{') {
-        if (!this.interpolation(this.pos + 2)) {
-          this.pos = this.src.len()
-          this.badString(start)
-          return
+      when {
+        b == '\\' => {
+          this.pos += 2
         }
-        this.pos += 1
-      } else if (this.holdsAt(this.pos, "\"\"\"")) {
-        closeAt = this.pos
-      } else {
-        this.pos += 1
+        b == '$' && this.peekByte(1) == '{' => {
+          if (!this.interpolation(this.pos + 2)) {
+            this.pos = this.src.len()
+            this.badString(start)
+            return
+          }
+          this.pos += 1
+        }
+        this.holdsAt(this.pos, "\"\"\"") => {
+          closeAt = this.pos
+        }
+        else => {
+          this.pos += 1
+        }
       }
     }
     if (closeAt < 0) {
@@ -610,36 +640,43 @@ struct Lexer {
         continue
       }
       val b = this.src.byteAt(this.pos)
-      if (b == '\\') {
-        text.append(this.escape())
-      } else if (b == '\r' && this.peekByte(1) == '\n') {
-        this.pos += 1
-      } else if (b == '\n') {
-        text.append("\n")
-        this.pos += 1
-        atLine = true
-      } else if (b == '$' && this.peekByte(1) == '{') {
-        if (!text.isEmpty()) {
-          parts.push(StringPart(text: text.toString()))
-          text.clear()
+      when {
+        b == '\\' => {
+          text.append(this.escape())
         }
-        val exprStart = this.pos + 2
-        this.interpolation(exprStart)
-        parts.push(this.exprPart(exprStart, this.pos))
-        this.pos += 1
-      } else if (b == '$' && identStartLen(this.src, this.pos + 1) > 0) {
-        if (!text.isEmpty()) {
-          parts.push(StringPart(text: text.toString()))
-          text.clear()
+        b == '\r' && this.peekByte(1) == '\n' => {
+          this.pos += 1
         }
-        val exprStart = this.pos + 1
-        this.pos = identEnd(this.src, exprStart)
-        parts.push(StringPart(isExpr: true, expr: this.cut(exprStart, this.pos), span: this.span(exprStart, this.pos)))
-      } else {
-        val (code, size) = this.runeAt(this.pos)
-        if (code == 0xFFFD && size == 1) this.errorAt(this.pos, this.pos + 1, "invalid UTF-8 in string literal")
-        text.append(this.cut(this.pos, this.pos + size))
-        this.pos += size
+        b == '\n' => {
+          text.append("\n")
+          this.pos += 1
+          atLine = true
+        }
+        b == '$' && this.peekByte(1) == '{' => {
+          if (!text.isEmpty()) {
+            parts.push(StringPart(text: text.toString()))
+            text.clear()
+          }
+          val exprStart = this.pos + 2
+          this.interpolation(exprStart)
+          parts.push(this.exprPart(exprStart, this.pos))
+          this.pos += 1
+        }
+        b == '$' && identStartLen(this.src, this.pos + 1) > 0 => {
+          if (!text.isEmpty()) {
+            parts.push(StringPart(text: text.toString()))
+            text.clear()
+          }
+          val exprStart = this.pos + 1
+          this.pos = identEnd(this.src, exprStart)
+          parts.push(StringPart(isExpr: true, expr: this.cut(exprStart, this.pos), span: this.span(exprStart, this.pos)))
+        }
+        else => {
+          val (code, size) = this.runeAt(this.pos)
+          if (code == 0xFFFD && size == 1) this.errorAt(this.pos, this.pos + 1, "invalid UTF-8 in string literal")
+          text.append(this.cut(this.pos, this.pos + size))
+          this.pos += size
+        }
       }
     }
     if (!text.isEmpty()) parts.push(StringPart(text: text.toString()))
@@ -650,11 +687,9 @@ struct Lexer {
 
   // whether src[from, to) is only spaces, tabs and carriage returns
   fun blankBetween(from: i64, to: i64): bool {
-    var i = from
-    loop (i < to) {
+    loop (i in from..<to) {
       val b = this.src.byteAt(i)
       if (b != ' ' && b != '\t' && b != '\r') return false
-      i += 1
     }
     true
   }
@@ -740,16 +775,20 @@ struct Lexer {
     var depth: i64 = 1
     loop (this.pos < this.src.len() && depth > 0) {
       val b = this.src.byteAt(this.pos)
-      if (b == '{') {
-        depth += 1
-      } else if (b == '}') {
-        depth -= 1
-      } else if (b == '"') {
-        // a nested string, skipped whole
-        this.pos += 1
-        loop (this.pos < this.src.len() && this.src.byteAt(this.pos) != '"') {
-          if (this.src.byteAt(this.pos) == '\\') this.pos += 1
+      when {
+        b == '{' => {
+          depth += 1
+        }
+        b == '}' => {
+          depth -= 1
+        }
+        b == '"' => {
+          // a nested string, skipped whole
           this.pos += 1
+          loop (this.pos < this.src.len() && this.src.byteAt(this.pos) != '"') {
+            if (this.src.byteAt(this.pos) == '\\') this.pos += 1
+            this.pos += 1
+          }
         }
       }
       if (depth > 0) this.pos += 1

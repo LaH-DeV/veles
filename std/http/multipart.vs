@@ -171,7 +171,7 @@ public struct Multipart {
       if (!isToken(name)) throw badRequest("malformed multipart part header name")
       out.set(name.toLower(), value.trim())
     }
-    out.toMap()
+    out
   }
 
   // at least `n` bytes in the buffer, or the body's end
@@ -286,17 +286,22 @@ fun parseParams(value: string): (string, Map<string, string>) {
   val fields: MutableList<string> = []
   var quoted = false
   loop (b in bytes) {
-    if (quoted) {
-      if (b == '"') quoted = false
-      current.push(b)
-    } else if (b == '"') {
-      quoted = true
-      current.push(b)
-    } else if (b == ';') {
-      fields.push(current.toList().decodeUtf8() ?: "")
-      current = []
-    } else {
-      current.push(b)
+    when {
+      quoted   => {
+        if (b == '"') quoted = false
+        current.push(b)
+      }
+      b == '"' => {
+        quoted = true
+        current.push(b)
+      }
+      b == ';' => {
+        fields.push(current.toList().decodeUtf8() ?: "")
+        current = []
+      }
+      else     => {
+        current.push(b)
+      }
     }
   }
   fields.push(current.toList().decodeUtf8() ?: "")
@@ -311,5 +316,5 @@ fun parseParams(value: string): (string, Map<string, string>) {
     if (v.len() >= 2 && v.startsWith("\"") && v.endsWith("\"")) v = v.substring(1, v.len() - 1) ?: v
     params.set(name.trim().toLower(), v)
   }
-  (first, params.toMap())
+  (first, params)
 }

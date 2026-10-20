@@ -222,7 +222,7 @@ fun removeDots(target: string): string {
     if (part == ".") {
       if (last) out.push("")
     } else if (part == "..") {
-      val _ = out.pop()
+      out.pop()
       if (last) out.push("")
     } else {
       out.push(part)
@@ -817,7 +817,7 @@ fun withTraceparent(headers: Map<string, string>): Map<string, string> {
   }
   val out = headers.toMutable()
   out.set("traceparent", header)
-  out.toMap()
+  out
 }
 
 fun isIdempotent(m: Method): bool =>
@@ -845,7 +845,7 @@ fun merged(base: Map<string, string>, extra: Map<string, string>): Map<string, s
   loop ((k, v) in extra.entries()) {
     out.set(k.toLower(), v)
   }
-  out.toMap()
+  out
 }
 
 const credentialHeaders = ["authorization", "cookie", "proxy-authorization"]
@@ -855,7 +855,7 @@ fun withoutCredentials(headers: Map<string, string>): Map<string, string> {
   loop ((k, v) in headers.entries()) {
     if (!credentialHeaders.contains(k)) out.set(k, v)
   }
-  out.toMap()
+  out
 }
 
 // ---------------------------------------------------------------------------
@@ -1001,7 +1001,7 @@ fun readOneHead(c: io.Stream, url: string, deadline: time.Deadline): Head suspen
       headers.set(name, "$earlier, $value")
     }
   }
-  Head(status: Status(code), headers: headers.toMap(), cookies, http10: version == "HTTP/1.0")
+  Head(status: Status(code), headers, cookies, http10: version == "HTTP/1.0")
 }
 
 // Whether the connection may carry another request (RFC 9112 §9.3).
@@ -1021,25 +1021,30 @@ fun exchange(c: io.Stream, url: Url, method: Method, request: List<u8>, deadline
   val coding = head.headers.get("transfer-encoding")
   val declared = head.headers.get("content-length")
   val noBody = method == Method.head || head.status.code == 204 || head.status.code == 304
-  val body = if (noBody) {
-    ClientBody.none(c, keep, reusable, text, deadline)
-  } else if (coding != null) {
-    // the framing is the transfer coding's; a length beside it is a sign of
-    // a confused sender, and the connection is not trusted past this answer
-    if (coding.toLower() != "chunked") throw protocolError(text, "unsupported transfer coding")
-    if (declared != null) reusable = false
-    ClientBody.wire(c, keep, framing: 2, length: 0, reusable: reusable, url: text, deadline: deadline)
-  } else if (declared != null) {
-    if (!isDigits(declared)) throw protocolError(text, "malformed content-length")
-    val length = try declared.toInt() ?! protocolError(text, "malformed content-length")
-    if (length == 0) {
+  val body = when {
+    noBody           => {
       ClientBody.none(c, keep, reusable, text, deadline)
-    } else {
-      ClientBody.wire(c, keep, framing: 1, length: length, reusable: reusable, url: text, deadline: deadline)
     }
-  } else {
-    // no length and no chunks: the body is whatever comes before the close
-    ClientBody.wire(c, keep, framing: 3, length: 0, reusable: false, url: text, deadline: deadline)
+    coding != null   => {
+      // the framing is the transfer coding's; a length beside it is a sign of
+      // a confused sender, and the connection is not trusted past this answer
+      if (coding.toLower() != "chunked") throw protocolError(text, "unsupported transfer coding")
+      if (declared != null) reusable = false
+      ClientBody.wire(c, keep, framing: 2, length: 0, reusable: reusable, url: text, deadline: deadline)
+    }
+    declared != null => {
+      if (!isDigits(declared)) throw protocolError(text, "malformed content-length")
+      val length = try declared.toInt() ?! protocolError(text, "malformed content-length")
+      if (length == 0) {
+        ClientBody.none(c, keep, reusable, text, deadline)
+      } else {
+        ClientBody.wire(c, keep, framing: 1, length: length, reusable: reusable, url: text, deadline: deadline)
+      }
+    }
+    else             => {
+      // no length and no chunks: the body is whatever comes before the close
+      ClientBody.wire(c, keep, framing: 3, length: 0, reusable: false, url: text, deadline: deadline)
+    }
   }
   ClientResponse(status: head.status, headers: head.headers, setCookies: head.cookies, url: text, ok: head.status.isSuccess(), body)
 }

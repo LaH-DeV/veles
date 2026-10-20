@@ -2311,6 +2311,7 @@ func (f *fnCtx) patternTargetType(from types.Type, pat *ast.TypePat) types.Type 
 }
 
 func (f *fnCtx) ifExpr(e *ast.IfExpr, want types.Type) Expr {
+	f.lintElseIfLadder(e)
 	// `if (val x = e && ...)` (D95): the names live from their binding to the
 	// end of the then-branch, so a scope opens here and closes before `else`
 	if x, ok := f.attrLetIf(e, want, want != nil && !types.IsUnit(want)); ok {

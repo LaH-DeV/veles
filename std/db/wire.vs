@@ -151,7 +151,7 @@ fun readFields(c: *Cursor): Map<u8, string> throws DbError {
     if (code == 0) break
     fields.set(code, try c.cstring())
   }
-  fields.toMap()
+  fields
 }
 
 fun serverError(fields: Map<u8, string>): DbError {

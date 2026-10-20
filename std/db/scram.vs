@@ -28,14 +28,18 @@ struct Scram {
     var salt: List<u8> = []
     var iterations: i64 = 0
     loop (field in serverFirst.split(",")) {
-      if (field.startsWith("r=")) {
-        nonce = field.substring(2, field.len()) ?: ""
-      } else if (field.startsWith("s=")) {
-        salt = base64.decode(field.substring(2, field.len()) ?: "") catch (e) {
-          return null
+      when {
+        field.startsWith("r=") => {
+          nonce = field.substring(2, field.len()) ?: ""
         }
-      } else if (field.startsWith("i=")) {
-        iterations = (field.substring(2, field.len()) ?: "").toInt() ?: 0
+        field.startsWith("s=") => {
+          salt = base64.decode(field.substring(2, field.len()) ?: "") catch (e) {
+            return null
+          }
+        }
+        field.startsWith("i=") => {
+          iterations = (field.substring(2, field.len()) ?: "").toInt() ?: 0
+        }
       }
     }
     if (!nonce.startsWith(this.nonce) || nonce.len() == this.nonce.len() || salt.isEmpty()) return null

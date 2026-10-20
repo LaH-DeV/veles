@@ -19,7 +19,7 @@ test fun basic(user: string, pass: string): Map<string, string> =>
 test fun forged(user: string, pass: string, remote: string): Map<string, string> {
   val h = basic(user, pass).toMutable()
   h.set("X-Remote-User", remote)
-  h.toMap()
+  h
 }
 
 test fun authText(r: Response): string => r.body.decodeUtf8() ?: "<binary>"

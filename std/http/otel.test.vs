@@ -40,19 +40,24 @@ test fun pbFields(bytes: List<u8>): List<PbField> {
     val (key, afterKey) = pbVarint(bytes, i)
     i = afterKey
     val wire = key % 8
-    if (wire == 0) {
-      val (v, next) = pbVarint(bytes, i)
-      i = next
-      out.push(PbField(num: key / 8, wire, value: v, data: []))
-    } else if (wire == 2) {
-      val (len, next) = pbVarint(bytes, i)
-      out.push(PbField(num: key / 8, wire, value: len, data: bytes.slice(next, next + len)))
-      i = next + len
-    } else if (wire == 1) {
-      out.push(PbField(num: key / 8, wire, value: 0, data: bytes.slice(i, i + 8)))
-      i += 8
-    } else {
-      fail("unexpected wire type $wire")
+    when {
+      wire == 0 => {
+        val (v, next) = pbVarint(bytes, i)
+        i = next
+        out.push(PbField(num: key / 8, wire, value: v, data: []))
+      }
+      wire == 2 => {
+        val (len, next) = pbVarint(bytes, i)
+        out.push(PbField(num: key / 8, wire, value: len, data: bytes.slice(next, next + len)))
+        i = next + len
+      }
+      wire == 1 => {
+        out.push(PbField(num: key / 8, wire, value: 0, data: bytes.slice(i, i + 8)))
+        i += 8
+      }
+      else      => {
+        fail("unexpected wire type $wire")
+      }
     }
   }
   out

@@ -65,9 +65,12 @@ type LintInfo struct {
 // `implicit_return` is a lint too, but its setting picks where a body may end
 // in its value rather than a level (lint_return.go), so it is not listed.
 var Lints = []LintInfo{
+	{"continue_skips_step", "a `continue` that jumps over the step of a hand-written counting loop", LintWarn},
 	{"count_loop", "a loop that only counts is written `iter.len()`", LintWarn},
+	{"else_if_ladder", "three or more `else if` branches in a row are a `when { }`", LintWarn},
 	{"inline_implement", "an `implement` beside a type can be written inside its body", LintWarn},
 	{"long_line", "a line longer than `max_width` columns (default 120); the formatter never reflows", LintAllow},
+	{"loop_is_range", "a counting loop that is `loop (i in a..<b)` written by hand", LintWarn},
 	{"loop_true", "`loop (true)` is written `loop { }`", LintWarn},
 	{"needless_throws", "a `throws` clause on a function that cannot throw", LintWarn},
 	{"negated_is", "`!(x is T)` reads better as `x !is T`", LintWarn},
@@ -76,6 +79,7 @@ var Lints = []LintInfo{
 	{"param_copy", "a parameter changed in a function whose caller never sees the change", LintWarn},
 	{"pattern_form", "a pattern written in a longer form than needed", LintWarn},
 	{"redundant_copy", "a `.toList()` of a collection that is not used afterwards: without it the collection is moved immutable", LintWarn},
+	{"redundant_discard", "`val _ = f()` for a value a statement may simply ignore", LintWarn},
 	{"redundant_label", "an argument label that repeats the variable passed (`f(x: x)`)", LintWarn},
 	{"redundant_mut", "`mut` on a literal whose expected type is already mutable", LintWarn},
 	{"redundant_public", "`public` where the declaration is already public", LintWarn},

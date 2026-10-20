@@ -416,7 +416,7 @@ public struct Conn {
               veles_tls_take(this.session.number, &out)
             }
             if (!out.isEmpty()) {
-              val _ = socket.tryWrite(out.bytes())
+              socket.tryWrite(out.bytes())
             }
           }
         }

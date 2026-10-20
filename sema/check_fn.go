@@ -569,6 +569,7 @@ func (f *fnCtx) checkBlock(b *ast.Block, expected types.Type, wantValue bool) *B
 		out.Stmts = append(out.Stmts, stmts...)
 		if i > 0 {
 			f.lintCountingLoop(b.Stmts, i-1) // needs the loop at i checked
+			f.lintCounterLoop(b.Stmts, i-1)
 		}
 		if term {
 			terminated = true
@@ -630,6 +631,7 @@ func (f *fnCtx) checkStmt(s ast.Stmt) (stmts []Stmt, term bool) {
 		f.leaveAwaited(s.Pos, f.loopIndex(lp))
 		return []Stmt{&Continue{Loop: lp}}, true
 	case *ast.LoopStmt:
+		f.lintContinueSkipsStep(s)
 		stmts := f.checkLoop(s)
 		// an infinite loop that never breaks does not fall through
 		if s.Cond == nil && s.Var == nil && len(stmts) > 0 {
@@ -712,6 +714,9 @@ func (f *fnCtx) checkValStmt(s *ast.ValStmt) []Stmt {
 		}
 		if declared == nil {
 			declared = types.TInvalid
+		}
+		if b.Name.Name == "_" {
+			f.lintRedundantDiscard(s, init)
 		}
 		v := f.newVar(b.Name.Name, declared, mutable, b.Name.Pos)
 		if s.Value != nil {

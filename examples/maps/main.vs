@@ -10,7 +10,7 @@ fun wordCounts(text: List<string>): Map<string, i64> {
   loop (w in text) {
     counts.set(w, (counts.get(w) ?: 0) + 1)
   }
-  counts.toMap()
+  counts
 }
 
 fun main() {

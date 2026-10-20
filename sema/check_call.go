@@ -1196,12 +1196,18 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 			return &Builtin{exprBase{types.TUnit}, "task.cancel", []Expr{recv}, e.Pos}
 		}
 	case *types.Map:
-		if x := f.mapMethod(recv, ct, name, e); x != nil {
+		f.callWant = want
+		x := f.mapMethod(recv, ct, name, e)
+		f.callWant = nil
+		if x != nil {
 			f.c.refBuiltin(callee.Name.Pos, rt, name)
 			return x
 		}
 	case *types.Set:
-		if x := f.setMethod(recv, ct, name, e); x != nil {
+		f.callWant = want
+		x := f.setMethod(recv, ct, name, e)
+		f.callWant = nil
+		if x != nil {
 			f.c.refBuiltin(callee.Name.Pos, rt, name)
 			return x
 		}

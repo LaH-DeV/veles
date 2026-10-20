@@ -665,19 +665,23 @@ struct Parser {
     }
     if (this.accept(Kind.Colon)) fn.ret = &this.parseType()
     fn.effects = this.commaInThrows(this.parseEffects())
-    if (this.at(Kind.LBrace)) {
-      fn.body = this.parseBlock()
-    } else if (this.at(Kind.FatArrow)) {
-      val arrow = this.next()
-      if (this.at(Kind.LBrace)) {
-        // a body in braces has no arrow (D140); the block is read as the body
-        this.diags.errorAt(arrow.span, "a body in braces has no '=>': write 'fun ${fn.name.name}(…) { … }' (D140)")
+    when {
+      this.at(Kind.LBrace) => {
         fn.body = this.parseBlock()
-      } else {
-        fn.exprBody = &this.parseExpr()
       }
-    } else if (ctx == FunContext.Free || ctx == FunContext.Method) {
-      this.errorAt(this.span(), "function '${fn.name.name}' needs a body: '{ ... }' or '=> expr'")
+      this.at(Kind.FatArrow) => {
+        val arrow = this.next()
+        if (this.at(Kind.LBrace)) {
+          // a body in braces has no arrow (D140); the block is read as the body
+          this.diags.errorAt(arrow.span, "a body in braces has no '=>': write 'fun ${fn.name.name}(…) { … }' (D140)")
+          fn.body = this.parseBlock()
+        } else {
+          fn.exprBody = &this.parseExpr()
+        }
+      }
+      ctx == FunContext.Free || ctx == FunContext.Method => {
+        this.errorAt(this.span(), "function '${fn.name.name}' needs a body: '{ ... }' or '=> expr'")
+      }
     }
     if (ctx == FunContext.Extern && (fn.body != null || fn.exprBody != null)) {
       this.errorAt(fn.name.pos, "extern function '${fn.name.name}' cannot have a body")

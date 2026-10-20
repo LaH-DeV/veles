@@ -46,7 +46,12 @@ public fun verifyPassword(password: Secret<string>, hash: string): bool {
   var lanes: i64 = 0
   loop (field in parts.at(3).split(",")) {
     val n = (field.substring(2, field.len()) ?: "").toInt() ?: return false
-    if (field.startsWith("m=")) memory = n else if (field.startsWith("t=")) passes = n else if (field.startsWith("p=")) lanes = n else return false
+    when {
+      field.startsWith("m=") => memory = n
+      field.startsWith("t=") => passes = n
+      field.startsWith("p=") => lanes = n
+      else                   => return false
+    }
   }
   if (lanes < 1 || lanes > maxLanes || passes < 1 || passes > maxPasses) return false
   if (memory < 8 * lanes || memory > maxMemoryKiB) return false

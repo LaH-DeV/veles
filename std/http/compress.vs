@@ -95,7 +95,7 @@ fun gzipped(resp: Response, level: i64): Response {
     }
     return Response(status: resp.status, headers: headers.toMap(), cookies: resp.cookies, stream: producer, quiet: resp.quiet)
   }
-  Response(status: resp.status, headers: headers.toMap(), body: gz.gzip(resp.body, level), cookies: resp.cookies, quiet: resp.quiet)
+  Response(status: resp.status, headers, body: gz.gzip(resp.body, level), cookies: resp.cookies, quiet: resp.quiet)
 }
 
 /// Opens request bodies sent with `Content-Encoding: gzip`, which a server
@@ -141,5 +141,5 @@ fun inflateRequest(req: Request, max: i64): Request suspends throws Fail | IoErr
   val headers = req.headers.toMutable()
   headers.remove(Header.contentEncoding)
   headers.set(Header.contentLength, "${plain.len()}")
-  Request(method: req.method, path: req.path, query: req.query, headers: headers.toMap(), body: Body.hold(plain, Limits(bodyBytes: max)), peer: req.peer, params: req.params, rawQuery: req.rawQuery)
+  Request(method: req.method, path: req.path, query: req.query, headers, body: Body.hold(plain, Limits(bodyBytes: max)), peer: req.peer, params: req.params, rawQuery: req.rawQuery)
 }

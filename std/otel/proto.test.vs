@@ -34,26 +34,32 @@ test fun fields(bytes: List<u8>): List<Fld> {
     i = afterKey
     val num = key / 8
     val wire = key % 8
-    if (wire == 0) {
-      val (v, next) = readVarint(bytes, i)
-      i = next
-      out.push(Fld(num, wire, value: v, data: []))
-    } else if (wire == 1) {
-      var v: u64 = 0
-      loop (k in 0..<8) {
-        v = v | ((bytes.at(i + k) ?: 0).toU64() << (8 * k))
+    when {
+      wire == 0 => {
+        val (v, next) = readVarint(bytes, i)
+        i = next
+        out.push(Fld(num, wire, value: v, data: []))
       }
-      out.push(Fld(num, wire, value: v.wrapI64(), data: bytes.slice(i, i + 8)))
-      i += 8
-    } else if (wire == 2) {
-      val (len, next) = readVarint(bytes, i)
-      out.push(Fld(num, wire, value: len, data: bytes.slice(next, next + len)))
-      i = next + len
-    } else if (wire == 5) {
-      out.push(Fld(num, wire, value: 0, data: bytes.slice(i, i + 4)))
-      i += 4
-    } else {
-      fail("unknown wire type $wire")
+      wire == 1 => {
+        var v: u64 = 0
+        loop (k in 0..<8) {
+          v = v | ((bytes.at(i + k) ?: 0).toU64() << (8 * k))
+        }
+        out.push(Fld(num, wire, value: v.wrapI64(), data: bytes.slice(i, i + 8)))
+        i += 8
+      }
+      wire == 2 => {
+        val (len, next) = readVarint(bytes, i)
+        out.push(Fld(num, wire, value: len, data: bytes.slice(next, next + len)))
+        i = next + len
+      }
+      wire == 5 => {
+        out.push(Fld(num, wire, value: 0, data: bytes.slice(i, i + 4)))
+        i += 4
+      }
+      else      => {
+        fail("unknown wire type $wire")
+      }
     }
   }
   out

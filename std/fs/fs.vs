@@ -342,7 +342,7 @@ public struct File {
       if (!this.isOpen.swap(false)) return
       // SAFETY: the swap lets exactly one caller through, so the handle is
       // closed once
-      val _ = unsafe {
+      unsafe {
         veles_fs_file_close(this.handle)
       }
     }
@@ -361,7 +361,7 @@ public struct Lock {
       if (!this.held.swap(false)) return
       // SAFETY: the swap lets one caller through; an already closed handle just
       // answers with an error that is ignored
-      val _ = unsafe {
+      unsafe {
         veles_fs_file_unlock(this.handle)
       }
     }

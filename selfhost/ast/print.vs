@@ -309,7 +309,12 @@ struct Printer {
 
   fun structDecl(d: StructDecl) {
     this.attrs(d.attrs)
-    this.open(if (d.isError) "error " else if (d.union) "union " else if (d.annotation != null) "annotation " else "struct ")
+    this.open(when {
+      d.isError            => "error "
+      d.union              => "union "
+      d.annotation != null => "annotation "
+      else                 => "struct "
+    })
     if (d.pub) this.write("public ")
     if (d.isExtern) this.write("extern ")
     this.write(d.name.name)
@@ -337,12 +342,16 @@ struct Printer {
       if (field.pub) this.write("public ")
       if (field.isPrivate) this.write("private ")
       if (field.isInternal) this.write("internal ")
-      if (field.isProtected) {
-        this.write("protected var ")
-      } else if (field.isVar) {
-        this.write("var ")
-      } else if (field.isVal) {
-        this.write("val ")
+      when {
+        field.isProtected => {
+          this.write("protected var ")
+        }
+        field.isVar       => {
+          this.write("var ")
+        }
+        field.isVal       => {
+          this.write("val ")
+        }
       }
       this.write(field.name.name + ": ")
       this.optType(field.typ)

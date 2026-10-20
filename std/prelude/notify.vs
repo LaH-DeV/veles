@@ -61,7 +61,7 @@ public struct Event {
   /// task stops waiting, and it can be a `race` arm.
   public fun wait() {
     val signal = this.waitSignal()
-    val _ = await signal.recv()
+    await signal.recv()
     this.waitTake()
   }
 

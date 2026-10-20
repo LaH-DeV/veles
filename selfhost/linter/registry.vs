@@ -91,9 +91,12 @@ fun lintOptions(): List<Setting<LintSettings>> => [
 /// is a lint too, but its setting picks where a body may end in its value
 /// rather than a level, so it is not listed.
 fun lints(): List<LintInfo> => [
+  warn("continue_skips_step", "a `continue` that jumps over the step of a hand-written counting loop"),
   warn("count_loop", "a loop that only counts is written `iter.len()`"),
+  warn("else_if_ladder", "three or more `else if` branches in a row are a `when { }`"),
   warn("inline_implement", "an `implement` beside a type can be written inside its body"),
   silent("long_line", "a line longer than `max_width` columns (default 120); the formatter never reflows"),
+  warn("loop_is_range", "a counting loop that is `loop (i in a..<b)` written by hand"),
   warn("loop_true", "`loop (true)` is written `loop { }`"),
   warn("needless_throws", "a `throws` clause on a function that cannot throw"),
   warn("negated_is", "`!(x is T)` reads better as `x !is T`"),
@@ -102,6 +105,7 @@ fun lints(): List<LintInfo> => [
   warn("param_copy", "a parameter changed in a function whose caller never sees the change"),
   warn("pattern_form", "a pattern written in a longer form than needed"),
   warn("redundant_copy", "a `.toList()` of a collection that is not used afterwards: without it the collection is moved immutable"),
+  warn("redundant_discard", "`val _ = f()` for a value a statement may simply ignore"),
   warn("redundant_label", "an argument label that repeats the variable passed (`f(x: x)`)"),
   warn("redundant_mut", "`mut` on a literal whose expected type is already mutable"),
   warn("redundant_public", "`public` where the declaration is already public"),

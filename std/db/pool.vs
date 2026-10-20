@@ -69,7 +69,7 @@ public struct Pool {
 
   /// Checks that the database answers.
   public fun ping() suspends throws DbError {
-    val _ = try this.exec(Sql.dangerouslyRaw("select 1"), Duration.seconds(5))
+    try this.exec(Sql.dangerouslyRaw("select 1"), Duration.seconds(5))
   }
 
   /// Starts a transaction on a connection of its own. It ends with

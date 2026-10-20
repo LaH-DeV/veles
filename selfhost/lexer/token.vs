@@ -164,7 +164,7 @@ const fun kindNames(): Map<Kind, string> {
   loop ((word, k) in KEYWORDS) {
     if (k != Kind.KwReserved && !names.containsKey(k)) names.set(k, "'$word'")
   }
-  names.toMap()
+  names
 }
 
 const NAMES: Map<Kind, string> = kindNames()

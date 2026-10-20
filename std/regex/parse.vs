@@ -255,20 +255,26 @@ struct Parser {
     var min = 0
     var max = -1
     val b = sym(this.peek())
-    if (b == '*') {
-      this.pos += 1
-    } else if (b == '+') {
-      this.pos += 1
-      min = 1
-    } else if (b == '?') {
-      this.pos += 1
-      max = 1
-    } else if (b == '{') {
-      val bounds = this.braces() ?: return atom
-      min = bounds.0
-      max = bounds.1
-    } else {
-      return atom
+    when {
+      b == '*' => {
+        this.pos += 1
+      }
+      b == '+' => {
+        this.pos += 1
+        min = 1
+      }
+      b == '?' => {
+        this.pos += 1
+        max = 1
+      }
+      b == '{' => {
+        val bounds = this.braces() ?: return atom
+        min = bounds.0
+        max = bounds.1
+      }
+      else     => {
+        return atom
+      }
     }
     val lazy = this.eat('?')
     this.skipSpace()

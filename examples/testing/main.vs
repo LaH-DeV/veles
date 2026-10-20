@@ -69,7 +69,7 @@ test "sorts" {
 
 test "panics are expected" {
   expectPanics(() => {
-    val _ = [1].at(3) ?: panic("index 3 is out of range")
+    [1].at(3) ?: panic("index 3 is out of range")
   })
 }
 

@@ -26,7 +26,7 @@ struct Tally {
         otel.Signal.Metrics => this.metrics
         otel.Signal.Logs    => this.logs
       }
-      val _ = which.update(n => n + (if (body.isEmpty()) 0 else 1))
+      which.update(n => n + (if (body.isEmpty()) 0 else 1))
     }
   }
 }

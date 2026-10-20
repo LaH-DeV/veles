@@ -60,15 +60,20 @@ struct Cursor {
   fun skipSpace(newlines: bool) {
     loop (this.more()) {
       val byte = this.peek()
-      if (byte == ' ' || byte == '\t') {
-        this.pos += 1
-      } else if (byte == '#') {
-        loop (this.more() && this.peek() != '\n') this.pos += 1
-      } else if (byte == '\n' && newlines) {
-        this.pos += 1
-        this.line += 1
-      } else {
-        return
+      when {
+        byte == ' ' || byte == '\t' => {
+          this.pos += 1
+        }
+        byte == '#'                 => {
+          loop (this.more() && this.peek() != '\n') this.pos += 1
+        }
+        byte == '\n' && newlines    => {
+          this.pos += 1
+          this.line += 1
+        }
+        else                        => {
+          return
+        }
       }
     }
   }

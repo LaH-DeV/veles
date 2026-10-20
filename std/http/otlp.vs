@@ -20,7 +20,7 @@ struct OtlpExporter {
       }
       val sent = if (this.gzip) gz.gzip(body) else body
       if (this.gzip) headers.set("content-encoding", "gzip")
-      when (this.client.post(url, body: Payload.bytes(sent, contentType: MediaType(name: "application/x-protobuf")), headers: headers.toMap())) {
+      when (this.client.post(url, body: Payload.bytes(sent, contentType: MediaType(name: "application/x-protobuf")), headers: headers)) {
         is Ok(res) => {
           with answer = res
           // a small answer is read and dropped, so the connection serves the next export
@@ -58,5 +58,5 @@ public fun otlp(endpoint: string, headers: Map<string, Secret<string>> = [:], ti
   loop ((name, value) in headers.entries()) {
     lower.set(name.toLower(), value)
   }
-  OtlpExporter(endpoint: trimmed, headers: lower.toMap(), gzip, client: Client.untraced(timeout, tlsOptions))
+  OtlpExporter(endpoint: trimmed, headers: lower, gzip, client: Client.untraced(timeout, tlsOptions))
 }

@@ -31,7 +31,7 @@ fun wordCounts(text: string): Map<string, i64> {
     if (word == "") continue
     counts.set(word, counts.getOrDefault(word, 0) + 1)
   }
-  counts.toMap()
+  counts
 }
 
 /// Run-length encoding: "aaabcc" -> "3a1b2c".

@@ -49,7 +49,7 @@ fun buildLengthSymbols(): List<i64> {
     }
   }
   table.set(258, 285)  // 258 has its own symbol, not the last slot of 227's
-  table.toList()
+  table
 }
 
 fun buildDistSymbols(): List<i64> {
@@ -78,7 +78,7 @@ fun buildDistSymbols(): List<i64> {
       table.set(256 + k, slot)
     }
   }
-  table.toList()
+  table
 }
 
 val lengthSymbols: List<i64> = buildLengthSymbols()
@@ -436,10 +436,8 @@ struct Deflater {
           this.emitMatch(this.pendingLen, this.pendingDist)
           // the match covers here - 1 ..< here - 1 + pendingLen; here is hashed
           val until = here - 1 + this.pendingLen
-          var p = here + 1
-          loop (p < until) {
+          loop (p in (here + 1)..<until) {
             if (p + 2 < end) this.insert(p)
-            p += 1
           }
           this.pos = until
           this.havePending = false
@@ -453,10 +451,8 @@ struct Deflater {
         } else {
           this.emitMatch(len, dist)
           if (len <= this.effort.lazyAbove || lazy) {
-            var p = here + 1
-            loop (p < here + len) {
+            loop (p in (here + 1)..<(here + len)) {
               if (p + 2 < end) this.insert(p)
-              p += 1
             }
           }
           this.pos = here + len
@@ -600,7 +596,12 @@ struct Deflater {
     var headerBits = 3 + 14 + 3 * hclen
     loop (c in coded) {
       val sym = c & 255
-      headerBits += (clenLens.at(sym) ?: 0) + (if (sym == 16) 2 else if (sym == 17) 3 else if (sym == 18) 7 else 0)
+      headerBits += (clenLens.at(sym) ?: 0) + (when {
+        sym == 16 => 2
+        sym == 17 => 3
+        sym == 18 => 7
+        else      => 0
+      })
     }
     val dynamicBits = headerBits + litBits + distBits + extraBits
 

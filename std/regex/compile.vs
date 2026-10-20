@@ -118,10 +118,8 @@ const fun firstBytes(insts: List<Inst>, sets: List<List<i64>>): (List<bool>, boo
             b += 1
           }
           if (hi >= 128) {
-            var lead = 128
-            loop (lead < 256) {
+            loop (lead in 128..<256) {
               first.set(lead, true)
-              lead += 1
             }
           }
           i += 2
@@ -133,7 +131,7 @@ const fun firstBytes(insts: List<Inst>, sets: List<List<i64>>): (List<bool>, boo
       }
     }
   }
-  (first.toList(), useful)
+  (first, useful)
 }
 
 struct Builder {
@@ -173,20 +171,20 @@ struct Builder {
     when (n) {
       is Nothing => { }
       is Lit     => {
-        val _ = this.emit(opChar, n.code)
+        this.emit(opChar, n.code)
       }
       is Dot     => {
         if (n.dotAll) {
-          val _ = this.emit(opAny, 0)
+          this.emit(opAny, 0)
         } else {
-          val _ = this.emit(opSet, this.set(negate([10, 10])))
+          this.emit(opSet, this.set(negate([10, 10])))
         }
       }
       is Ranges  => {
         if (n.ranges.len() == 2 && n.ranges.at(0) == n.ranges.at(1)) {
-          val _ = this.emit(opChar, n.ranges.at(0) ?: 0)
+          this.emit(opChar, n.ranges.at(0) ?: 0)
         } else {
-          val _ = this.emit(opSet, this.set(n.ranges))
+          this.emit(opSet, this.set(n.ranges))
         }
       }
       is Cat     => {
@@ -199,15 +197,15 @@ struct Builder {
         this.repeat(*n.body, n.min, n.max, n.lazy)
       }
       is Group   => {
-        val _ = this.emit(opSave, 2 * n.index)
+        this.emit(opSave, 2 * n.index)
         this.node(*n.body)
-        val _ = this.emit(opSave, 2 * n.index + 1)
+        this.emit(opSave, 2 * n.index + 1)
       }
       is Anchor  => {
-        val _ = this.emit(opAssert, n.kind)
+        this.emit(opAssert, n.kind)
       }
       is BackRef => {
-        val _ = this.emit(opBackref, n.index, if (n.fold) 1 else 0)
+        this.emit(opBackref, n.index, if (n.fold) 1 else 0)
       }
       is Look    => {
         // opLook kind, then the body, then opLookEnd; the look's y is where
@@ -215,7 +213,7 @@ struct Builder {
         val kind = (if (n.behind) 2 else 0) + (if (n.negated) 1 else 0)
         val look = this.emit(opLook, kind)
         this.node(*n.body)
-        val _ = this.emit(opLookEnd, 0)
+        this.emit(opLookEnd, 0)
         this.patch(look, kind, this.here())
       }
     }
@@ -253,13 +251,13 @@ struct Builder {
         // iteration started and refuse one that moved nowhere
         val slot = this.nextSlot
         this.nextSlot += 1
-        val _ = this.emit(opSave, slot)
+        this.emit(opSave, slot)
         this.node(body)
-        val _ = this.emit(opAdvance, slot)
+        this.emit(opAdvance, slot)
       } else {
         this.node(body)
       }
-      val _ = this.emit(opJmp, split)
+      this.emit(opJmp, split)
       val end = this.here()
       if (lazy) this.patch(split, end, split + 1) else this.patch(split, split + 1, end)
       return
@@ -299,7 +297,7 @@ const fun headIndexOf(insts: List<Inst>): (List<i64>, i64) {
       count += 1
     }
   }
-  (index.toList(), count)
+  (index, count)
 }
 
 /// For each set, four 32-bit words of the ASCII code points it holds.
@@ -342,5 +340,5 @@ const fun runsOf(insts: List<Inst>): List<i64> {
     }
     pc += 1
   }
-  runs.toList()
+  runs
 }

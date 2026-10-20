@@ -91,18 +91,23 @@ fun compress1(state: MutableList<u32>, block: List<u8>, at: i64, w: MutableList<
   loop (r in 0..<80) {
     var f: u32 = 0
     var k: u32 = 0
-    if (r < 20) {
-      f = (b & c) | ((~b) & d)
-      k = 0x5a827999
-    } else if (r < 40) {
-      f = b ^ c ^ d
-      k = 0x6ed9eba1
-    } else if (r < 60) {
-      f = (b & c) | (b & d) | (c & d)
-      k = 0x8f1bbcdc
-    } else {
-      f = b ^ c ^ d
-      k = 0xca62c1d6
+    when {
+      r < 20 => {
+        f = (b & c) | ((~b) & d)
+        k = 0x5a827999
+      }
+      r < 40 => {
+        f = b ^ c ^ d
+        k = 0x6ed9eba1
+      }
+      r < 60 => {
+        f = (b & c) | (b & d) | (c & d)
+        k = 0x8f1bbcdc
+      }
+      else   => {
+        f = b ^ c ^ d
+        k = 0xca62c1d6
+      }
     }
     val t = rotl32(a, 5) +% f +% e +% k +% schedule1(w, r)
     e = d

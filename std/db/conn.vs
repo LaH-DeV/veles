@@ -163,19 +163,25 @@ struct Conn {
     var failure: DbError? = null
     loop {
       val m = try this.receive()
-      if (m.kind == msgReady) {
-        this.inTransaction.store((m.body.at(0) ?: 73) != 73)
-        break
-      } else if (m.kind == msgError) {
-        if (failure == null) failure = try errorOf(m)
-      } else if (m.kind == msgRowDescription) {
-        var c = m.cursor()
-        columns = try readColumns(&c)
-      } else if (m.kind == msgDataRow) {
-        var c = m.cursor()
-        rows.push(try readRow(&c))
-      } else if (m.kind == msgCommandDone) {
-        tag = try m.cursor().cstring()
+      when {
+        m.kind == msgReady          => {
+          this.inTransaction.store((m.body.at(0) ?: 73) != 73)
+          break
+        }
+        m.kind == msgError          => {
+          if (failure == null) failure = try errorOf(m)
+        }
+        m.kind == msgRowDescription => {
+          var c = m.cursor()
+          columns = try readColumns(&c)
+        }
+        m.kind == msgDataRow        => {
+          var c = m.cursor()
+          rows.push(try readRow(&c))
+        }
+        m.kind == msgCommandDone    => {
+          tag = try m.cursor().cstring()
+        }
       }
     }
     if (failure != null) throw failure
@@ -205,12 +211,12 @@ fun readColumns(c: *Cursor): List<Column> throws DbError {
   val out: MutableList<Column> = []
   loop (_ in 0..<n) {
     val name = try c.cstring()
-    val _ = try c.i32()  // the table
-    val _ = try c.i16()  // the column in it
+    try c.i32()  // the table
+    try c.i16()  // the column in it
     val oid = try c.i32()
-    val _ = try c.i16()  // size
-    val _ = try c.i32()  // modifier
-    val _ = try c.i16()  // format
+    try c.i16()  // size
+    try c.i32()  // modifier
+    try c.i16()  // format
     out.push(Column(name, oid))
   }
   out
@@ -294,60 +300,72 @@ fun login(conn: Conn, target: Target, startup: List<u8>) suspends throws DbError
   var expected: List<u8> = []
   loop {
     val m = try conn.receive()
-    if (m.kind == msgError) {
-      val e = try errorOf(m)
-      throw DbError(kind: if (e.code.startsWith("28")) ErrorKind.Auth else ErrorKind.Server, text: e.text, code: e.code, detail: e.detail, hint: e.hint, severity: e.severity)
-    } else if (m.kind == msgAuth) {
-      var c = m.cursor()
-      val code = try c.i32()
-      if (code == 0) {
-        // authenticated; what follows is parameter status and the key, up to ReadyForQuery
-      } else if (code == 3) {
-        if (target.tls == Tls.Off && !isLoopback(target.host)) {
-          throw DbError(kind: ErrorKind.Auth, text: "the server asks for the password in clear text over a connection that is not encrypted")
-        }
-        val reply = Out()
-        reply.cstring(target.password.expose())
-        try conn.send(reply.frame(112))
-      } else if (code == 10) {
-        // the mechanisms the server offers, a list of names ended by an empty one
-        var offered = false
-        loop {
-          val name = try c.cstring()
-          if (name.isEmpty()) break
-          if (name == "SCRAM-SHA-256") offered = true
-        }
-        if (!offered) throw DbError(kind: ErrorKind.Auth, text: "the server offers no SASL mechanism this driver speaks (SCRAM-SHA-256)")
-        val nonce = base64.encode(crypto.randomBytes(18))
-        val s = Scram(user: "", nonce, password: target.password)
-        val first = s.first().bytes()
-        scram = s
-        val reply = Out()
-        reply.cstring("SCRAM-SHA-256")
-        reply.i32(first.len())
-        reply.put(first)
-        try conn.send(reply.frame(112))
-      } else if (code == 11) {
-        val s = scram ?: throw DbError(kind: ErrorKind.Protocol, text: "the server continued a SASL exchange that was not begun")
-        val challenge = c.rest().decodeUtf8() ?: ""
-        val (answer, signature) = s.answer(challenge) ?: throw DbError(kind: ErrorKind.Auth, text: "the server's SCRAM challenge is not valid")
-        expected = signature
-        val reply = Out()
-        reply.put(answer.bytes())
-        try conn.send(reply.frame(112))
-      } else if (code == 12) {
-        val s = scram ?: throw DbError(kind: ErrorKind.Protocol, text: "the server finished a SASL exchange that was not begun")
-        if (!s.verify(c.rest().decodeUtf8() ?: "", expected)) {
-          throw DbError(kind: ErrorKind.Auth, text: "the server could not prove it knows the password (its SCRAM signature is wrong)")
-        }
-      } else if (code == 5) {
-        throw DbError(kind: ErrorKind.Auth, text: "the server asks for an MD5 password; use scram-sha-256 (password_encryption) on the server")
-      } else {
-        throw DbError(kind: ErrorKind.Auth, text: "the server asks for an authentication method this driver does not speak (code $code)")
+    when {
+      m.kind == msgError => {
+        val e = try errorOf(m)
+        throw DbError(kind: if (e.code.startsWith("28")) ErrorKind.Auth else ErrorKind.Server, text: e.text, code: e.code, detail: e.detail, hint: e.hint, severity: e.severity)
       }
-    } else if (m.kind == msgReady) {
-      conn.inTransaction.store((m.body.at(0) ?: 73) != 73)
-      return
+      m.kind == msgAuth  => {
+        var c = m.cursor()
+        val code = try c.i32()
+        when {
+          code == 0  => {
+            // authenticated; what follows is parameter status and the key, up to ReadyForQuery
+          }
+          code == 3  => {
+            if (target.tls == Tls.Off && !isLoopback(target.host)) {
+              throw DbError(kind: ErrorKind.Auth, text: "the server asks for the password in clear text over a connection that is not encrypted")
+            }
+            val reply = Out()
+            reply.cstring(target.password.expose())
+            try conn.send(reply.frame(112))
+          }
+          code == 10 => {
+            // the mechanisms the server offers, a list of names ended by an empty one
+            var offered = false
+            loop {
+              val name = try c.cstring()
+              if (name.isEmpty()) break
+              if (name == "SCRAM-SHA-256") offered = true
+            }
+            if (!offered) throw DbError(kind: ErrorKind.Auth, text: "the server offers no SASL mechanism this driver speaks (SCRAM-SHA-256)")
+            val nonce = base64.encode(crypto.randomBytes(18))
+            val s = Scram(user: "", nonce, password: target.password)
+            val first = s.first().bytes()
+            scram = s
+            val reply = Out()
+            reply.cstring("SCRAM-SHA-256")
+            reply.i32(first.len())
+            reply.put(first)
+            try conn.send(reply.frame(112))
+          }
+          code == 11 => {
+            val s = scram ?: throw DbError(kind: ErrorKind.Protocol, text: "the server continued a SASL exchange that was not begun")
+            val challenge = c.rest().decodeUtf8() ?: ""
+            val (answer, signature) = s.answer(challenge) ?: throw DbError(kind: ErrorKind.Auth, text: "the server's SCRAM challenge is not valid")
+            expected = signature
+            val reply = Out()
+            reply.put(answer.bytes())
+            try conn.send(reply.frame(112))
+          }
+          code == 12 => {
+            val s = scram ?: throw DbError(kind: ErrorKind.Protocol, text: "the server finished a SASL exchange that was not begun")
+            if (!s.verify(c.rest().decodeUtf8() ?: "", expected)) {
+              throw DbError(kind: ErrorKind.Auth, text: "the server could not prove it knows the password (its SCRAM signature is wrong)")
+            }
+          }
+          code == 5  => {
+            throw DbError(kind: ErrorKind.Auth, text: "the server asks for an MD5 password; use scram-sha-256 (password_encryption) on the server")
+          }
+          else       => {
+            throw DbError(kind: ErrorKind.Auth, text: "the server asks for an authentication method this driver does not speak (code $code)")
+          }
+        }
+      }
+      m.kind == msgReady => {
+        conn.inTransaction.store((m.body.at(0) ?: 73) != 73)
+        return
+      }
     }
   }
 }

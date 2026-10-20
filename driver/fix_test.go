@@ -61,7 +61,7 @@ trait Show {
 fun main() {
   var xs: MutableList<i64> = [1]
   var m: MutableMap<string, i64> = [:]
-  val _ = xs.len()
+  xs.len()
   val s: S = A()
   val n = when (s) {
     is A => 1

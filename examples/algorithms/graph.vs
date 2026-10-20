@@ -74,7 +74,7 @@ struct Graph {
         queue.addLast(w)
       }
     }
-    dist.toList()
+    dist
   }
 
   /// Kahn's algorithm; null when the graph has a cycle.
@@ -158,5 +158,5 @@ fun dijkstra(n: i64, edges: List<(i64, i64, i64)>, start: i64): List<i64?> {
       pending.push(Hop(dist: candidate, node: to))
     }
   }
-  dist.toList()
+  dist
 }

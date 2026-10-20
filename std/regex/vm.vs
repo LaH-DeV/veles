@@ -336,27 +336,31 @@ fun backtrack(prog: Program, text: string, from: i64, anchored: bool, full: bool
       val b0 = stackB.pop() ?: break
       var pc = a0
       var pos = b0
-      if (a0 <= runLazy) {
-        pc = runLazy - a0
-        val body = insts.at(pc - 2) ?: panic("regex: pc in range")
-        val taken = oneChar(body, ascii, sets, text, b0)
-        if (taken == 0) continue
-        pos = b0 + taken
-        stackA.push(a0)
-        stackB.push(pos)
-      } else if (a0 <= runGreedy) {
-        // give back one character of a greedy run, if any is left to give
-        pc = runGreedy - a0
-        pos = b0 & runField
-        val low = b0 >> 20
-        if (pos > low) {
+      when {
+        a0 <= runLazy   => {
+          pc = runLazy - a0
+          val body = insts.at(pc - 2) ?: panic("regex: pc in range")
+          val taken = oneChar(body, ascii, sets, text, b0)
+          if (taken == 0) continue
+          pos = b0 + taken
           stackA.push(a0)
-          stackB.push(previousStart(text, pos) | (low << 20))
+          stackB.push(pos)
         }
-      } else if (a0 < 0) {
-        // put back capture slot -1 - a0
-        cur.set(-1 - a0, b0)
-        continue
+        a0 <= runGreedy => {
+          // give back one character of a greedy run, if any is left to give
+          pc = runGreedy - a0
+          pos = b0 & runField
+          val low = b0 >> 20
+          if (pos > low) {
+            stackA.push(a0)
+            stackB.push(previousStart(text, pos) | (low << 20))
+          }
+        }
+        a0 < 0          => {
+          // put back capture slot -1 - a0
+          cur.set(-1 - a0, b0)
+          continue
+        }
       }
       // follow one path as far as it goes without touching the stack: only a
       // split leaves an alternative behind

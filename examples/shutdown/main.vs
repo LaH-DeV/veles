@@ -136,7 +136,7 @@ fun main() throws IoError | io.TooLong {
       stopNow.send(true)
     }
   }, stop: () => {
-    val _ = await stopNow.recv()
+    await stopNow.recv()
     println("server: told to stop, 100ms of grace")
   }, grace: Duration.millis(100))
 }

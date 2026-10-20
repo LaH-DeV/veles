@@ -171,7 +171,7 @@ public struct Request {
   public fun withHeader(name: string, value: string): Request {
     val h = this.headers.toMutable()
     h.set(name.toLower(), value)
-    Request(method: this.method, path: this.path, query: this.query, headers: h.toMap(), body: this.body, peer: this.peer, params: this.params, rawQuery: this.rawQuery)
+    Request(method: this.method, path: this.path, query: this.query, headers: h, body: this.body, peer: this.peer, params: this.params, rawQuery: this.rawQuery)
   }
 
   /// Every cookie the browser sent, by name. A value is percent-decoded (see
@@ -301,7 +301,7 @@ public struct Response {
   public fun withHeader(name: string, value: string): Response {
     val h = this.headers.toMutable()
     h.set(name.toLower(), value)
-    Response(status: this.status, headers: h.toMap(), body: this.body, cookies: this.cookies, stream: this.stream, streamLength: this.streamLength, quiet: this.quiet)
+    Response(status: this.status, headers: h, body: this.body, cookies: this.cookies, stream: this.stream, streamLength: this.streamLength, quiet: this.quiet)
   }
 
   /// The same response setting `cookie` as well. The value is percent-encoded;
@@ -418,7 +418,7 @@ public fun call(handler: Handler, method: Method, target: string, body: string =
     method,
     path: percentDecode(rawPath, plusIsSpace: false),
     query: parseQuery(rawQuery),
-    headers: lower.toMap(),
+    headers: lower,
     body: Body.hold(body.bytes(), Limits()),
     peer: "test",
     rawQuery,
@@ -624,7 +624,7 @@ fun matchRoute(pattern: List<string>, segments: List<string>): Map<string, strin
     }
   }
   if (segments.len() != pattern.len()) return null
-  params.toMap()
+  params
 }
 
 // ---------------------------------------------------------------------------
@@ -738,7 +738,7 @@ fun acceptLoop(listener: net.Listener, out: Channel<net.Conn>, permits: Channel<
 
 // gives one place back
 fun release(permits: Channel<bool>) {
-  val _ = permits.tryRecv()
+  permits.tryRecv()
 }
 
 fun serveConnection(conn: net.Conn, cert: tls.Certificate?, handler: Handler, limits: Limits, log: bool, drain: Drain, permits: Channel<bool>?) {
@@ -933,7 +933,7 @@ fun readRequest(c: io.Stream, peer: string, limits: Limits, drain: Drain): (Requ
     Body.none(limits)
   }
   val (rawPath, rawQuery) = target.splitOnce("?") ?: (target, "")
-  val req = Request(method: Method(name: method), path: percentDecode(rawPath, plusIsSpace: false), query: parseQuery(rawQuery), headers: headers.toMap(), body, peer, rawQuery)
+  val req = Request(method: Method(name: method), path: percentDecode(rawPath, plusIsSpace: false), query: parseQuery(rawQuery), headers, body, peer, rawQuery)
   (req, http10)
 }
 
@@ -954,7 +954,7 @@ fun parseQuery(text: string): Map<string, string> {
     val (k, v) = pair.splitOnce("=") ?: (pair, "")
     out.set(percentDecode(k, plusIsSpace: true), percentDecode(v, plusIsSpace: true))
   }
-  out.toMap()
+  out
 }
 
 /// Decodes `%XX` escapes (and `+` as a space in query strings); text that

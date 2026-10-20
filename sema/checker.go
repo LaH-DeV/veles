@@ -15,6 +15,7 @@ import (
 
 type Checker struct {
 	paramState   map[paramKey]int8 // which parameters a function keeps (escape.go, D188)
+	ladderSeen   map[*ast.IfExpr]bool // the links of an else-if chain whose head was looked at (lint_style.go)
 	namedImports []namedImport // every bound name of a braced import (D85)
 	rounds       int           // inference rounds run so far (D45), for the effects dump
 	arrayUses    []arrayUse    // inline arrays to size-check (D121)

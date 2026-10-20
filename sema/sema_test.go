@@ -3488,7 +3488,23 @@ fun fromLiteral(): List<i64> {
   acc.items.push(3)
   acc.items
 }
-fun main() { io.println("${filled(2)} ${filledTwice()} ${collected()} ${fromLiteral()}") }`)
+// a collection built by a constructor or a static factory is as fresh as a literal
+fun constructed(): Set<i64> {
+  val s = MutableSet<i64>()
+  loop (i in 0..<3) { val _ = s.add(i) }
+  s
+}
+fun repeated(n: i64): List<bool> {
+  val xs = MutableList<bool>.repeat(false, n)
+  xs.set(0, true)
+  xs
+}
+fun mapped(): Map<string, i64> {
+  val m = MutableMap<string, i64>()
+  m.set("a", 1)
+  m
+}
+fun main() { io.println("${filled(2)} ${filledTwice()} ${collected()} ${fromLiteral()} ${constructed()} ${repeated(2)} ${mapped()}") }`)
 
 	for _, c := range []struct{ name, src string }{
 		{"parameter", `fun f(xs: MutableList<i64>): List<i64> => xs`},
@@ -4149,6 +4165,22 @@ fun collect(): List<i64> {
   acc.items.toList()
 }
 fun main() { io.println("${collect()}") }`, "which is not used after this")
+
+	// maps and sets have the same lint (it was missing for them at first)
+	expectWarning(t, prelude+`
+fun count(words: List<string>): Map<string, i64> {
+  val counts: MutableMap<string, i64> = [:]
+  loop (w in words) counts.set(w, (counts.get(w) ?: 0) + 1)
+  counts.toMap()
+}
+fun main() { io.println("${count(["a"])}") }`, "which is not used after this")
+	expectWarning(t, prelude+`
+fun seen(words: List<string>): Set<string> {
+  val out: MutableSet<string> = MutableSet<string>()
+  loop (w in words) { val _ = out.add(w) }
+  out.toSet()
+}
+fun main() { io.println("${seen(["a"])}") }`, "which is not used after this")
 
 	for _, c := range []struct{ name, src string }{
 		{"used after", `fun f(): List<i64> {

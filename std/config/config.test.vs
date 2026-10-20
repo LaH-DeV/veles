@@ -70,7 +70,7 @@ test fun minimal(extra: Map<string, string> = [:]): Map<string, string> {
   loop ((name, value) in extra.entries()) {
     vars.set(name, value)
   }
-  vars.toMap()
+  vars
 }
 
 test fun read<T: Decodable>(vars: Map<string, string>, files: List<string> = [], prefix: string = ""): T throws Error =>

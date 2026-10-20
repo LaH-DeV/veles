@@ -111,5 +111,5 @@ fun parseCookies(header: string): Map<string, string> {
     if (value.len() >= 2 && value.startsWith("\"") && value.endsWith("\"")) value = value.substring(1, value.len() - 1) ?: value
     out.set(name, percentDecode(value, plusIsSpace: false))
   }
-  out.toMap()
+  out
 }

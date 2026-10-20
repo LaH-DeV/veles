@@ -24,14 +24,14 @@ fun main() {
   loop (&x in four) { // error: cannot assign to 'four': it is a 'val'
     *x = *x + 1
   }
-  val _ = sum([1, 2, 3]) + sum(four) + zeros<4>().len()
+  sum([1, 2, 3]) + sum(four) + zeros<4>().len()
   val _ = ["a", "b"].toArray<2>()
   val _ = ["a"].toArray() // error: 'toArray' needs the length as its type argument
   val _ = ["a"].toArray<string>() // error: 'toArray' takes a length, not the type 'string'
   val _ = ["a"].toArray<1>(1) // error: 'toArray' takes no arguments
   val _ = Buf<8>(data: Array.make(0))
   val _ = Buf(data: Array.make(0)) // error: cannot infer type parameter 'N' of 'Buf' // error: cannot tell which array to make
-  val _ = sum([1.5, 2.5]) // error: expected
+  sum([1.5, 2.5]) // error: expected
   firstOf([]) // error: cannot infer the element type of an empty array literal
   val pairs: Array<(i64, i64), 1> = [(1, 2)]
   loop ((&p, q) in pairs) { // error: '&' binds an array element as a whole // warning: 'p' is never used // warning: 'q' is never used

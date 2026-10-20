@@ -227,11 +227,11 @@ struct RowDecoder {
     }
 
     fun readNull() throws DecodeError {
-      val _ = this.take()
+      this.take()
     }
 
     fun skip() throws DecodeError {
-      val _ = this.take()
+      this.take()
     }
 
     fun path(): string => this.here()

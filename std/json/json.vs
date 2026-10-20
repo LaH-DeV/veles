@@ -201,7 +201,7 @@ public struct JsonEncoder {
 
     fun writeNull() throws EncodeError {
       if (this.options.omitNulls && !this.pending.isEmpty()) {
-        val _ = this.pending.removeAt(this.pending.len() - 1)
+        this.pending.removeAt(this.pending.len() - 1)
         return
       }
       this.beforeValue()
@@ -357,12 +357,10 @@ public struct JsonDecoder {
 
   /// Whether the number at the cursor has a fraction or an exponent.
   private fun numberIsFloat(): bool {
-    var i = this.pos()
-    loop (i < this.src.len()) {
+    loop (i in this.pos()..<this.src.len()) {
       val b = this.src.at(i) ?: break
       if (b == '.' || b == 'e' || b == 'E') return true
       if (b != '-' && (b < '0' || b > '9')) return false
-      i += 1
     }
     false
   }
@@ -380,15 +378,13 @@ public struct JsonDecoder {
     this.setPos(this.pos() + 1)
     // most strings have no escape: find the closing quote and copy once
     val first = this.pos()
-    var end = first
-    loop (end < this.src.len()) {
+    loop (end in first..<this.src.len()) {
       val b = this.src.at(end) ?: break
       if (b == '"') {
         this.setPos(end + 1)
         return listDecodeUtf8Range(this.src, first, end) ?: throw this.malformed("a string that is not valid UTF-8")
       }
       if (b == '\\' || b < 32) break
-      end += 1
     }
     val out: MutableList<u8> = []
     loop {
@@ -420,7 +416,7 @@ public struct JsonDecoder {
             val low = try this.hex4()
             cp = utf8.combineSurrogates(cp, low) ?: throw this.malformed("a lone surrogate in a \\u escape")
           }
-          val _ = utf8.encodeTo(out, cp)
+          utf8.encodeTo(out, cp)
         }
         else => throw this.malformed("unknown escape '\\${[esc].decodeUtf8() ?: "?"}'")
       }
@@ -618,16 +614,16 @@ public struct JsonDecoder {
       when (try this.peek()) {
         codec.Kind.Null   => try this.literal("null")
         codec.Kind.Bool   => {
-          val _ = try this.readBool()
+          try this.readBool()
         }
         codec.Kind.Int    => {
-          val _ = try this.number()
+          try this.number()
         }
         codec.Kind.Float  => {
-          val _ = try this.number()
+          try this.number()
         }
         codec.Kind.String => {
-          val _ = try this.quoted()
+          try this.quoted()
         }
         codec.Kind.List   => {
           try this.beginList()
@@ -637,7 +633,7 @@ public struct JsonDecoder {
         codec.Kind.Object => {
           try this.beginObject()
           loop {
-            val _ = try this.nextKey() ?: break
+            try this.nextKey() ?: break
             try this.skip()
           }
           try this.endObject()

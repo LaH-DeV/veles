@@ -182,7 +182,7 @@ fun randomValue(f: *Fuzzer, depth: i64): codec.Value {
     else => {
       var fields: MutableMap<string, codec.Value> = [:]
       loop (_ in 0..<f.rng.range(0, 4)) fields.set(f.rng.pick(strs) ?: "", randomValue(f, depth - 1))
-      return codec.VObject(fields: fields.toMap())
+      return codec.VObject(fields)
     }
   }
 }
@@ -311,17 +311,21 @@ fun draft(f: *Fuzzer, last: bool, framed: bool): (Draft, Want) {
   var decodedBody: List<u8> = []
   var chunkedBody = false
   if (!framed) {
-    if (f.rng.range(0, 3) == 0) {
-      d.body = f.bytes(fuzzLimits.bodyBytes)
-      decodedBody = d.body
-      d.headers.push("Content-Length: ${d.body.len()}")
-    } else if (f.rng.range(0, 4) == 0) {
-      decodedBody = f.bytes(fuzzLimits.bodyBytes)
-      d.body = chunked(f, decodedBody)
-      d.headers.push("Transfer-Encoding: chunked")
-      chunkedBody = true
-    } else if (f.rng.range(0, 6) == 0) {
-      d.headers.push("Content-Length: 0")
+    when {
+      f.rng.range(0, 3) == 0 => {
+        d.body = f.bytes(fuzzLimits.bodyBytes)
+        decodedBody = d.body
+        d.headers.push("Content-Length: ${d.body.len()}")
+      }
+      f.rng.range(0, 4) == 0 => {
+        decodedBody = f.bytes(fuzzLimits.bodyBytes)
+        d.body = chunked(f, decodedBody)
+        d.headers.push("Transfer-Encoding: chunked")
+        chunkedBody = true
+      }
+      f.rng.range(0, 6) == 0 => {
+        d.headers.push("Content-Length: 0")
+      }
     }
     if (last && f.rng.range(0, 4) == 0) {
       d.headers.push("Connection: close")
@@ -435,7 +439,7 @@ fun faulty(f: *Fuzzer): (List<u8>, i64, string) {
       return (w, 400, "target not UTF-8")
     }
     19   => {
-      val _ = d.headers.removeAt(0)
+      d.headers.removeAt(0)
       return (d.wire(), 400, "no Host")
     }
     20   => {
@@ -482,7 +486,7 @@ fun mutate(f: *Fuzzer, wire: List<u8>): List<u8> {
       0    => out.set(at, b)
       1    => out.insert(at, b)
       else => {
-        val _ = out.removeAt(at)
+        out.removeAt(at)
       }
     }
   }
@@ -623,7 +627,7 @@ fun parseResponses(data: List<u8>): (List<Got>, string) {
     }
     val length = headers.get("content-length")?.toInt() ?: return (out.toList(), "response ${out.len() + 1} has no content-length")
     if (at + length > data.len()) return (out.toList(), "response ${out.len() + 1}: body shorter than its content-length")
-    out.push(Got(status, headers: headers.toMap(), body: data.slice(at, at + length)))
+    out.push(Got(status, headers, body: data.slice(at, at + length)))
     at += length
   }
   (out, "")

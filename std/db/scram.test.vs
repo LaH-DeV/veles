@@ -13,14 +13,14 @@ test "the RFC 7677 exchange produces the RFC's proof and accepts the RFC's serve
 
 test "a challenge whose nonce does not extend ours is refused" {
   val scram = Scram(user: "", nonce: "abc", password: Secret.of("pw"))
-  val _ = scram.first()
+  scram.first()
   expect(scram.answer("r=xyz123,s=c2FsdA==,i=4096") == null)
   expect(scram.answer("r=abc,s=c2FsdA==,i=4096") == null)
 }
 
 test "a challenge with a silly iteration count or a bad salt is refused" {
   val scram = Scram(user: "", nonce: "abc", password: Secret.of("pw"))
-  val _ = scram.first()
+  scram.first()
   expect(scram.answer("r=abcdef,s=c2FsdA==,i=0") == null)
   expect(scram.answer("r=abcdef,s=c2FsdA==,i=999999999") == null)
   expect(scram.answer("r=abcdef,s=!!!,i=4096") == null)

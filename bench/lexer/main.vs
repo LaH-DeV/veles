@@ -34,27 +34,34 @@ fun tokenise(src: string): MutableList<Token> {
   loop (i < n) {
     val b = src.byteAt(i)
     val start = i
-    if (b == ' ' || b == '\n' || b == '\t') {
-      i += 1
-    } else if (isIdentStart(b)) {
-      loop (i < n && (isIdentStart(src.byteAt(i)) || isDigit(src.byteAt(i)))) i += 1
-      val word = src.substring(start, i) ?: ""
-      val kind = if (keywords.get(word) == null) Kind.Ident else Kind.Keyword
-      out.push(Token(kind, start, end: i))
-    } else if (isDigit(b)) {
-      loop (i < n && (isDigit(src.byteAt(i)) || src.byteAt(i) == '.')) i += 1
-      out.push(Token(kind: Kind.Number, start, end: i))
-    } else if (b == '"') {
-      i += 1
-      loop (i < n && src.byteAt(i) != '"') i += 1
-      i += 1
-      out.push(Token(kind: Kind.Str, start, end: i))
-    } else if (b == '/' && i + 1 < n && src.byteAt(i + 1) == '/') {
-      loop (i < n && src.byteAt(i) != '\n') i += 1
-      out.push(Token(kind: Kind.Comment, start, end: i))
-    } else {
-      i += 1
-      out.push(Token(kind: Kind.Punct, start, end: i))
+    when {
+      b == ' ' || b == '\n' || b == '\t' => {
+        i += 1
+      }
+      isIdentStart(b) => {
+        loop (i < n && (isIdentStart(src.byteAt(i)) || isDigit(src.byteAt(i)))) i += 1
+        val word = src.substring(start, i) ?: ""
+        val kind = if (keywords.get(word) == null) Kind.Ident else Kind.Keyword
+        out.push(Token(kind, start, end: i))
+      }
+      isDigit(b) => {
+        loop (i < n && (isDigit(src.byteAt(i)) || src.byteAt(i) == '.')) i += 1
+        out.push(Token(kind: Kind.Number, start, end: i))
+      }
+      b == '"' => {
+        i += 1
+        loop (i < n && src.byteAt(i) != '"') i += 1
+        i += 1
+        out.push(Token(kind: Kind.Str, start, end: i))
+      }
+      b == '/' && i + 1 < n && src.byteAt(i + 1) == '/' => {
+        loop (i < n && src.byteAt(i) != '\n') i += 1
+        out.push(Token(kind: Kind.Comment, start, end: i))
+      }
+      else => {
+        i += 1
+        out.push(Token(kind: Kind.Punct, start, end: i))
+      }
     }
   }
   out

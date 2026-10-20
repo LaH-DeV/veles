@@ -58,15 +58,20 @@ struct Scanner {
       if (b == BACKSLASH && quote == DOUBLE && !this.atEnd()) {
         val next = this.peek()
         this.pos += 1
-        if (next == 'n') {
-          out.appendByte(NEWLINE)
-        } else if (next == 't') {
-          out.appendByte(TAB)
-        } else if (next == 'r') {
-          out.appendByte(13)
-        } else {
-          if (next != DOUBLE && next != BACKSLASH) out.appendByte(BACKSLASH)
-          out.appendByte(next)
+        when {
+          next == 'n' => {
+            out.appendByte(NEWLINE)
+          }
+          next == 't' => {
+            out.appendByte(TAB)
+          }
+          next == 'r' => {
+            out.appendByte(13)
+          }
+          else        => {
+            if (next != DOUBLE && next != BACKSLASH) out.appendByte(BACKSLASH)
+            out.appendByte(next)
+          }
         }
         if (next == NEWLINE) this.line += 1
         continue
@@ -84,14 +89,12 @@ struct Scanner {
     }
     val line = this.slice(begin, this.pos)
     var end = line.len()
-    var i = 1
-    loop (i < line.len()) {
+    loop (i in 1..<line.len()) {
       val before = line.byteAt(i - 1)
       if (line.byteAt(i) == HASH && (before == SPACE || before == TAB)) {
         end = i - 1
         break
       }
-      i += 1
     }
     (line.substring(0, end) ?: line).trim()
   }
@@ -99,12 +102,10 @@ struct Scanner {
 
 fun validName(name: string): bool {
   if (name.isEmpty()) return false
-  var i = 0
-  loop (i < name.len()) {
+  loop (i in 0..<name.len()) {
     val b = name.byteAt(i)
     val letter = b.isAsciiLetter() || b == '_'
     if (!(letter || i > 0 && (b.isAsciiDigit() || b == '.' || b == '-'))) return false
-    i += 1
   }
   true
 }
@@ -173,5 +174,5 @@ fun parseDotenv(text: string): Dotenv {
     vars.set(name, scan.unquoted())
     scan.skipLine()
   }
-  Dotenv(vars: vars.toMap(), problems)
+  Dotenv(vars, problems)
 }

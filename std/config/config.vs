@@ -191,7 +191,7 @@ struct Load {
       }
     }
     if (!found && !required) return null
-    codec.VObject(fields: fields.toMap())
+    codec.VObject(fields)
   }
 
   // The value of a variable: the environment, then each file, strongest first.
@@ -213,33 +213,39 @@ struct Load {
   fun typed(variable: string, text: string, source: string, schema: codec.Schema): codec.Value? {
     this.sources.set(variable, source)
     var out: codec.Value? = null
-    if (schema.kind == codec.SchemaKind.Int) {
-      val n = text.toInt()
-      if (n == null) this.bad(variable, schema, text) else out = codec.VInt(value: n)
-    } else if (schema.kind == codec.SchemaKind.Float) {
-      val x = text.toF64()
-      if (x == null) this.bad(variable, schema, text) else out = codec.VFloat(value: x)
-    } else if (schema.kind == codec.SchemaKind.Bool) {
-      if (text == "true") {
-        out = codec.VBool(value: true)
-      } else if (text == "false") {
-        out = codec.VBool(value: false)
-      } else {
-        this.bad(variable, schema, text)
+    when {
+      schema.kind == codec.SchemaKind.Int => {
+        val n = text.toInt()
+        if (n == null) this.bad(variable, schema, text) else out = codec.VInt(value: n)
       }
-    } else if (schema.kind == codec.SchemaKind.List) {
-      val elem = schema.element() ?: return null
-      val items: MutableList<codec.Value> = []
-      var whole = true
-      if (!text.trim().isEmpty()) {
-        loop (part in text.split(",")) {
-          val v = this.typed(variable, part.trim(), source, elem)
-          if (v == null) whole = false else items.push(v)
+      schema.kind == codec.SchemaKind.Float => {
+        val x = text.toF64()
+        if (x == null) this.bad(variable, schema, text) else out = codec.VFloat(value: x)
+      }
+      schema.kind == codec.SchemaKind.Bool => {
+        if (text == "true") {
+          out = codec.VBool(value: true)
+        } else if (text == "false") {
+          out = codec.VBool(value: false)
+        } else {
+          this.bad(variable, schema, text)
         }
       }
-      if (whole) out = codec.VList(items)
-    } else {
-      out = codec.VString(value: text)
+      schema.kind == codec.SchemaKind.List => {
+        val elem = schema.element() ?: return null
+        val items: MutableList<codec.Value> = []
+        var whole = true
+        if (!text.trim().isEmpty()) {
+          loop (part in text.split(",")) {
+            val v = this.typed(variable, part.trim(), source, elem)
+            if (v == null) whole = false else items.push(v)
+          }
+        }
+        if (whole) out = codec.VList(items)
+      }
+      else => {
+        out = codec.VString(value: text)
+      }
     }
     out
   }

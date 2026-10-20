@@ -196,19 +196,19 @@ public struct Semaphore {
     if (permits < 1) panic("Semaphore: permits must be at least 1, got $permits")
     this.free = Channel<bool>(capacity: permits)
     loop (_ in 0..<permits) {
-      val _ = this.free.trySend(true)
+      this.free.trySend(true)
     }
   }
 
   /// A permit, waiting until one is free; a cancelled task stops waiting.
   public fun acquire(): Permit {
-    val _ = await this.free.recv()
+    await this.free.recv()
     Permit(free: this.free)
   }
 
   /// A permit if one is free now, or `null`; never waits.
   public fun tryAcquire(): Permit? {
-    val _ = this.free.tryRecv() ?: return null
+    this.free.tryRecv() ?: return null
     Permit(free: this.free)
   }
 
@@ -226,7 +226,7 @@ public struct Permit {
   implement Closeable {
     fun close() {
       if (!this.returned.swap(true)) {
-        val _ = this.free.trySend(true)
+        this.free.trySend(true)
       }
     }
   }
