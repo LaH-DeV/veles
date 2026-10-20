@@ -156,7 +156,7 @@ struct Conn {
     out.addAll(describe.frame(68))
     out.addAll(execute.frame(69))
     out.addAll(Out().frame(83))  // Sync
-    try this.send(out.toList())
+    try this.send(out)
     var columns: List<Column> = []
     val rows: MutableList<List<string?>> = []
     var tag = ""
@@ -179,7 +179,7 @@ struct Conn {
       }
     }
     if (failure != null) throw failure
-    Rows(columns, rows: rows.toList(), tag)
+    Rows(columns, rows, tag)
   }
 
   fun send(bytes: List<u8>) suspends throws DbError {
@@ -213,7 +213,7 @@ fun readColumns(c: *Cursor): List<Column> throws DbError {
     val _ = try c.i16()  // format
     out.push(Column(name, oid))
   }
-  out.toList()
+  out
 }
 
 fun readRow(c: *Cursor): List<string?> throws DbError {
@@ -228,7 +228,7 @@ fun readRow(c: *Cursor): List<string?> throws DbError {
       out.push(bytes.decodeUtf8() ?: throw DbError(kind: ErrorKind.Protocol, text: "the server sent a value that is not UTF-8"))
     }
   }
-  out.toList()
+  out
 }
 
 // ---- the login ----

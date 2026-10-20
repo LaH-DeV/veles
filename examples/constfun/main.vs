@@ -14,7 +14,7 @@ const fun crc32Table(): List<u32> {
     }
     table.push(c)
   }
-  table.toList()
+  table
 }
 
 const CRC: List<u32> = crc32Table()
@@ -50,7 +50,7 @@ const fun primesBelow(n: i64): List<i64> {
       j += i
     }
   }
-  primes.toList()
+  primes
 }
 
 const PRIMES: List<i64> = primesBelow(50)

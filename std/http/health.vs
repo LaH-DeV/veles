@@ -121,7 +121,7 @@ fun runAll(checks: List<Check>): List<string?> suspends {
       outcomes.push(await t)
     }
   }
-  outcomes.toList()
+  outcomes
 }
 
 // one check behind the same boundary a handler has: a panic is a failure

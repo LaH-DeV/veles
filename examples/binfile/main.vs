@@ -44,7 +44,7 @@ fun decode(bytes: List<u8>): List<Score>? {
     scores.push(Score(name, score))
     at += 2 + length + 8
   }
-  scores.toList()
+  scores
 }
 
 // The header is one seek and one read; the rest of the file stays on disk.

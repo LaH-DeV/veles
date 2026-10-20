@@ -364,7 +364,7 @@ public struct ClientBody {
       }
       out.addAll(chunk)
     }
-    out.toList()
+    out
   }
 
   fun pull(c: io.Stream, max: i64): List<u8> suspends throws FetchError | IoError {
@@ -806,7 +806,7 @@ fun clientSpan(url: string, method: Method): otel.Span {
     }
     is Err(_) => { }
   }
-  otel.span(method.name, attrs: attrs.toList(), kind: otel.SpanKind.Client)
+  otel.span(method.name, attrs: attrs, kind: otel.SpanKind.Client)
 }
 
 // the headers with the current trace added, unless the caller set its own
@@ -1001,7 +1001,7 @@ fun readOneHead(c: io.Stream, url: string, deadline: time.Deadline): Head suspen
       headers.set(name, "$earlier, $value")
     }
   }
-  Head(status: Status(code), headers: headers.toMap(), cookies: cookies.toList(), http10: version == "HTTP/1.0")
+  Head(status: Status(code), headers: headers.toMap(), cookies, http10: version == "HTTP/1.0")
 }
 
 // Whether the connection may carry another request (RFC 9112 §9.3).

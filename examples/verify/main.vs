@@ -38,7 +38,7 @@ fun readManifest(file: string): List<Entry> throws IoError | UsageError {
     val (hash, name) = line.splitOnce("  ") ?: throw UsageError(message: "$file:$n: expected '<sha256>  <file>'")
     entries.push(Entry(hash, file: name))
   }
-  entries.toList()
+  entries
 }
 
 /// The files under `dir`, as paths relative to it.

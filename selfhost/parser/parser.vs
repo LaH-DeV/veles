@@ -235,7 +235,7 @@ struct Parser {
         this.expectTerminator()
       }
     }
-    ast.SourceFile(source: this.file, decls: decls.toList())
+    ast.SourceFile(source: this.file, decls)
   }
 
   fun startsDecl(): bool =>
@@ -262,7 +262,7 @@ struct Parser {
       attrs.push(attr)
       this.skipSemis()
     }
-    attrs.toList()
+    attrs
   }
 
   // the documentation comment above the declaration at the cursor: on its
@@ -415,14 +415,14 @@ struct Parser {
       this.skipSemis()
     }
     if (specs.isEmpty()) this.errorAt(start, "'use' needs a module path")
-    ast.UseDecl(specs: specs.toList(), pos: this.spanFrom(start))
+    ast.UseDecl(specs, pos: this.spanFrom(start))
   }
 
   fun parseUseSpec(): ast.UseSpec? {
     val start = this.span()
     val path: MutableList<ast.Ident> = [this.expectIdent() ?: return null]
     loop (this.accept(Kind.Dot)) path.push(this.expectIdent() ?: break)
-    var s = ast.UseSpec(path: path.toList())
+    var s = ast.UseSpec(path)
     if (this.accept(Kind.KwAs)) s.alias = this.ident()
     if (this.at(Kind.LBrace)) s.names = this.parseUseNames(s.path)
     val (extend, extendNames) = this.parseExtendClause()
@@ -460,7 +460,7 @@ struct Parser {
     if (names.isEmpty() && !starred) {
       this.errorAt(open.span.to(closer), "'use ${pathString(path)} { }' names nothing: list what to import, or write 'use ${pathString(path)}'")
     }
-    names.toList()
+    names
   }
 
   // the `extend` that ends a use (D185): `use m extend` brings all of the
@@ -493,7 +493,7 @@ struct Parser {
     if (names.isEmpty()) {
       this.errorAt(open.span.to(closer), "'extend { }' names nothing: list the extension functions to import, or write 'extend' alone for all of them (D185)")
     }
-    (true, names.toList())
+    (true, names)
   }
 
   // ---- signatures
@@ -520,14 +520,14 @@ struct Parser {
       if (!this.accept(Kind.Comma)) break
     }
     this.expectTypeClose()
-    tps.toList()
+    tps
   }
 
   // `A + B`: the bounds of a type parameter, the supertraits of a trait
   fun parseBounds(): List<ast.Type> {
     val bounds: MutableList<ast.Type> = [this.parseType()]
     loop (this.accept(Kind.Plus)) bounds.push(this.parseType())
-    bounds.toList()
+    bounds
   }
 
   fun parseParams(): List<ast.Param> {
@@ -566,7 +566,7 @@ struct Parser {
       if (!this.accept(Kind.Comma)) break
     }
     this.expect(Kind.RParen)
-    params.toList()
+    params
   }
 
   // to the `)` of the current list, or a `{` or a statement's end that shows

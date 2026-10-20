@@ -23,7 +23,7 @@ extend Parser {
       this.expectTerminator()
     }
     this.expect(Kind.RBrace)
-    ast.Block(stmts: stmts.toList(), pos: this.spanFrom(start))
+    ast.Block(stmts, pos: this.spanFrom(start))
   }
 
   // a `{ block }`, or one statement wrapped in a block
@@ -52,7 +52,7 @@ extend Parser {
       }
       this.expect(Kind.RParen)
       if (tuple.len() < 2) this.errorAt(this.spanFrom(start), "tuple destructuring needs at least two names")
-      return ast.Binding(tuple: tuple.toList(), pos: this.spanFrom(start))
+      return ast.Binding(tuple, pos: this.spanFrom(start))
     }
     if (this.at(Kind.Under)) {
       val t = this.next()
@@ -300,7 +300,7 @@ extend Parser {
       this.expect(Kind.RParen)
     }
     val body = this.parseBlock()
-    ast.WithExpr(bindings: bindings.toList(), body, pos: this.spanFrom(start))
+    ast.WithExpr(bindings, body, pos: this.spanFrom(start))
   }
 
   // `do { body } catch (e) { handler }` (D98), the cursor on `do`; the

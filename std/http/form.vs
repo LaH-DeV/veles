@@ -21,7 +21,7 @@ public struct Fields {
         pairs.push((percentDecode(k, plusIsSpace: true), percentDecode(v, plusIsSpace: true)))
       }
     }
-    Fields(pairs: pairs.toList())
+    Fields(pairs)
   }
 
   /// The first value of `name`, or null.
@@ -38,7 +38,7 @@ public struct Fields {
     loop ((k, v) in this.pairs) {
       if (k == name) out.push(v)
     }
-    out.toList()
+    out
   }
 
   /// The distinct names, in the order they first appear.
@@ -50,7 +50,7 @@ public struct Fields {
       seen.add(k)
       out.push(k)
     }
-    out.toList()
+    out
   }
 }
 

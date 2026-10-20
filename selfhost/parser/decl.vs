@@ -65,10 +65,10 @@ extend Parser {
       this.parseMemberSeparator()
     }
     this.expect(Kind.RBrace)
-    declaration.fields = fields.toList()
-    declaration.methods = methods.toList()
-    declaration.statics = statics.toList()
-    declaration.impls = impls.toList()
+    declaration.fields = fields
+    declaration.methods = methods
+    declaration.statics = statics
+    declaration.impls = impls
     declaration.pos = this.spanFrom(head.start)
     declaration
   }
@@ -176,8 +176,8 @@ extend Parser {
         this.parseMemberSeparator()
       }
       this.expect(Kind.RBrace)
-      d.assocTypes = assocTypes.toList()
-      d.methods = methods.toList()
+      d.assocTypes = assocTypes
+      d.methods = methods
     }
     d.pos = this.spanFrom(head.start)
     d
@@ -214,7 +214,7 @@ extend Parser {
       if (this.atAny(Kind.KwFun, Kind.KwOverride, Kind.KwUnsafe, Kind.KwConst, Kind.KwPublic, Kind.KwPrivate, Kind.KwInternal, Kind.KwStatic)) {
         val methods: MutableList<ast.FunDecl> = []
         methods.push(this.parseFun(memberAttrs, FunContext.Method))
-        d.methods = methods.toList()
+        d.methods = methods
       } else {
         this.errorAt(this.span(), "expected 'fun' after 'extend … with', found ${this.cur().describe()}")
       }
@@ -280,8 +280,8 @@ extend Parser {
       this.parseMemberSeparator()
     }
     this.expect(Kind.RBrace)
-    d.assocTypes = assocTypes.toList()
-    d.methods = methods.toList()
+    d.assocTypes = assocTypes
+    d.methods = methods
     d
   }
 
@@ -299,7 +299,7 @@ extend Parser {
         if (prm.variadic || prm.isLazy) this.errorAt(prm.pos, "an annotation parameter is a plain 'name: T' with an optional default (D174)")
         fields.push(ast.Field(pub: head.pub, name: prm.name, typ: prm.typ, defaultValue: prm.defaultValue, pos: prm.pos))
       }
-      d.fields = fields.toList()
+      d.fields = fields
     }
     info.onPos = this.span()
     if (this.atWord("on")) {
@@ -318,7 +318,7 @@ extend Parser {
         }
         if (!this.accept(Kind.Comma)) break
       }
-      info.targets = targets.toList()
+      info.targets = targets
     } else {
       this.errorAt(this.span(), "an annotation says where it may stand: 'annotation ${d.name.name}(…) on field' (D174)")
     }
@@ -331,7 +331,7 @@ extend Parser {
         readers.push(this.parseType())
         if (!this.accept(Kind.Comma)) break
       }
-      info.readers = readers.toList()
+      info.readers = readers
     }
     if (this.at(Kind.Assign)) {
       // `= retryCall`: the function that wraps what this stands on (D176)
@@ -376,8 +376,8 @@ extend Parser {
         this.parseMemberSeparator()
       }
       this.expect(Kind.RBrace)
-      d.state = state.toList()
-      d.funs = funs.toList()
+      d.state = state
+      d.funs = funs
     }
     d.pos = this.spanFrom(head.start)
     d
@@ -423,7 +423,7 @@ extend Parser {
         this.parseMemberSeparator()
       }
       this.expect(Kind.RBrace)
-      d.funs = funs.toList()
+      d.funs = funs
     }
     d.pos = this.spanFrom(start)
     d
@@ -553,7 +553,7 @@ extend Parser {
       if (this.pos == before) this.next()
     }
     this.expect(Kind.RBrace)
-    decls.toList()
+    decls
   }
 
   // `skip(` or `skipIf(` directly in a suite's body (D178); both words are contextual
@@ -601,13 +601,13 @@ extend Parser {
         if (f.name.name == "message" && isPlainName(*typ, "string")) implemented.push(messageFromField(f.name.pos))
       }
     }
-    d.methods = inherent.toList()
+    d.methods = inherent
     d.errorImpl = &ast.ImplDecl(
       errorSugar: true,
       typeParams: d.typeParams,
       traitType: &ast.NamedType(path: [ast.Ident(name: "Error", pos: kw)], pos: kw),
       target: &selfType(d.name, d.typeParams),
-      methods: implemented.toList(),
+      methods: implemented,
       pos: d.pos,
     )
     d
@@ -657,7 +657,7 @@ extend Parser {
       this.parseMemberSeparator()
     }
     this.expect(Kind.RBrace)
-    d.members = members.toList()
+    d.members = members
     d.pos = this.spanFrom(head.start)
     d
   }

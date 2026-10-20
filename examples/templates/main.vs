@@ -81,7 +81,7 @@ fun sql(parts: List<string>, values: List<Param>): Query {
       text.append("$${i + 1}")
     }
   }
-  Query(text: text.toString(), params: params.toList())
+  Query(text: text.toString(), params)
 }
 
 fun main() {

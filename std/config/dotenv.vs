@@ -173,5 +173,5 @@ fun parseDotenv(text: string): Dotenv {
     vars.set(name, scan.unquoted())
     scan.skipLine()
   }
-  Dotenv(vars: vars.toMap(), problems: problems.toList())
+  Dotenv(vars: vars.toMap(), problems)
 }

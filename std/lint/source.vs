@@ -14,7 +14,7 @@ public struct File {
     loop (i in 0..<content.len()) {
       if (content.byteAt(i) == '\n') starts.push(i + 1)
     }
-    File(path, content, lineStarts: starts.toList())
+    File(path, content, lineStarts: starts)
   }
 
   /// The 1-based line and column of a byte offset. An offset past the end

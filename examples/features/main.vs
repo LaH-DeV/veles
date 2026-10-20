@@ -10,7 +10,7 @@ fun primes(limit: i64): List<i64> {
     }
     found.push(n)
   }
-  found.toList()
+  found
 }
 
 fun sign(n: i64): string => when {

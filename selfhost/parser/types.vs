@@ -42,7 +42,7 @@ extend Parser {
             path.push(this.ident())
           }
           val args: List<ast.Type> = if (this.at(Kind.Lt)) this.parseTypeArgs() else []
-          ast.NamedType(path: path.toList(), args, pos: this.spanFrom(start))
+          ast.NamedType(path, args, pos: this.spanFrom(start))
         }
       }
       Kind.KwSelfType => {
@@ -101,7 +101,7 @@ extend Parser {
       if (!this.accept(Kind.Comma)) break
     }
     this.expectTypeClose()
-    args.toList()
+    args
   }
 
   // a type, or a constant (D121): a number or arithmetic on names
@@ -174,7 +174,7 @@ extend Parser {
     if (!this.at(Kind.Pipe)) return first
     val members: MutableList<ast.Type> = [first]
     loop (this.accept(Kind.Pipe)) members.push(this.parseType())
-    ast.ErrorUnionType(members: members.toList(), pos: this.spanFrom(start))
+    ast.ErrorUnionType(members, pos: this.spanFrom(start))
   }
 
   // after `fun`: `(A, B): R suspends throws E`
@@ -187,7 +187,7 @@ extend Parser {
         if (!this.accept(Kind.Comma)) break
       }
       this.expect(Kind.RParen)
-      ft.params = params.toList()
+      ft.params = params
     }
     if (this.accept(Kind.Colon)) ft.ret = &this.parseType()
     ft.effects = this.parseEffects()

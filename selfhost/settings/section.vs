@@ -32,7 +32,7 @@ struct Section {
       val value = this.table.get(key) ?: continue
       out.push(Entry(key, value))
     }
-    out.toList()
+    out
   }
 
   /// A table inside this one, read as part of the same section.
@@ -49,5 +49,5 @@ fun stringList(section: Section, value: Value, what: string, example: string): L
   loop (item in items) {
     out.push(item.asString() ?: throw section.failAt(item, "$what holds strings only"))
   }
-  out.toList()
+  out
 }

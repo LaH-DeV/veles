@@ -41,7 +41,7 @@ public trait Validate {
         }
       }
     }
-    out.toList()
+    out
   }
 
   static const fun labels(): List<string> {
@@ -49,7 +49,7 @@ public trait Validate {
     loop (f in This.fields) {
       out.push(f.name + "=" + (f.attr<Label>()?.text ?: "-"))
     }
-    out.toList()
+    out
   }
 
   static fun blank(): This => This.build(f => f.Type.default())
@@ -110,7 +110,7 @@ const fun letters<T>(): List<string> {
   loop (f in T.fields) {
     out.push(f.attr<Short>()?.letter ?: "")
   }
-  out.toList()
+  out
 }
 
 fun main() {

@@ -143,7 +143,7 @@ fun ask(port: i64, commands: List<string>): List<string> throws IoError | io.Too
     try conn.writeText("$cmd\n")
     replies.push(try conn.readLine(max: 4096) ?: "closed")
   }
-  return replies.toList()
+  return replies
 }
 
 // two clients, one after the other: the second sees what the first stored

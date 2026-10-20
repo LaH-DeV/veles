@@ -126,7 +126,7 @@ public struct Body {
       if (chunk.isEmpty()) break
       out.addAll(chunk)
     }
-    out.toList()
+    out
   }
 
   // what `Request.bytes` collected, kept for the next call that wants it

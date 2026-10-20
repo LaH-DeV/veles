@@ -40,7 +40,7 @@ struct Graph {
         queue.addLast(w)
       }
     }
-    order.toList()
+    order
   }
 
   /// Depth-first order from `start`, recursive.
@@ -97,7 +97,7 @@ struct Graph {
         if (left == 0) ready.addLast(w)
       }
     }
-    if (order.len() == this.n) order.toList() else null
+    if (order.len() == this.n) order else null
   }
 
   /// Number of connected components (treating edges as undirected).

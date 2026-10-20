@@ -106,7 +106,7 @@ public fun sql(parts: List<string>, values: List<Param>): Sql {
     }
   }
   outParts.push(current.toString())
-  Sql(parts: outParts.toList(), args: outArgs.toList())
+  Sql(parts: outParts, args: outArgs)
 }
 
 /// A table or column name written as a `Sql`, quoted: letters, digits and `_`,

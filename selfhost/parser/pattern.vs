@@ -48,7 +48,7 @@ extend Parser {
           if (!this.accept(Kind.Comma)) break
         }
         this.expect(Kind.RBracket)
-        return ast.ListPat(elems: elems.toList(), pos: this.spanFrom(start))
+        return ast.ListPat(elems, pos: this.spanFrom(start))
       }
       Kind.KwNull, Kind.KwTrue, Kind.KwFalse, Kind.Int, Kind.Float, Kind.String, Kind.Char, Kind.Regex => return ast.LiteralPat(value: &this.parsePrimary())
       Kind.Minus => {
@@ -108,7 +108,7 @@ extend Parser {
         if (!this.accept(Kind.Comma)) break
       }
       this.expect(Kind.RParen)
-      tp.fields = fields.toList()
+      tp.fields = fields
     }
     tp.pos = this.spanFrom(start)
     tp

@@ -118,5 +118,5 @@ fun factorize(n: i64): List<(i64, i64)> {
     p += 1
   }
   if (rest > 1) out.push((rest, 1))
-  out.toList()
+  out
 }

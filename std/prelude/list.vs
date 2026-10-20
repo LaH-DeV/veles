@@ -67,7 +67,7 @@ extend<T> List<T> {
       out.push((a, b))
       i += 1
     }
-    out.toList()
+    out
   }
 
   /// The lists `f` returns for each element, concatenated.
@@ -88,7 +88,7 @@ extend<T> List<T> {
     loop (x in this) {
       if (seen.add(x)) out.push(x)
     }
-    out.toList()
+    out
   }
 
   /// Consecutive pieces of `n` elements; the last may be shorter.
@@ -101,7 +101,7 @@ extend<T> List<T> {
       out.push(this.slice(i, i + n))
       i += n
     }
-    out.toList()
+    out
   }
 
   /// Every window of `n` consecutive elements (none when the list is shorter).
@@ -112,7 +112,7 @@ extend<T> List<T> {
     loop (i in 0..(this.len() - n)) {
       out.push(this.slice(i, i + n))
     }
-    out.toList()
+    out
   }
 }
 
@@ -230,7 +230,7 @@ extend<T> List<T> {
     loop (x in this) {
       if (seen.add(key(x))) out.push(x)
     }
-    out.toList()
+    out
   }
 }
 
@@ -573,7 +573,7 @@ extend<T> List<T> {
     loop (x in this) {
       if (try p(x)) yes.push(x) else no.push(x)
     }
-    (yes.toList(), no.toList())
+    (yes, no)
   }
 }
 

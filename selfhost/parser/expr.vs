@@ -302,7 +302,7 @@ extend Parser {
     }
     this.expect(Kind.RParen)
     this.noLambda = saved
-    args.toList()
+    args
   }
 
   fun parsePrimary(): ast.Expr {
@@ -450,7 +450,7 @@ extend Parser {
       if (!sub.at(Kind.EOF)) sub.errorAt(sub.span(), "unexpected ${sub.cur().describe()} in string interpolation")
       parts.push(ast.StringPart(expr: &e, spec: part.spec, specPos: part.specSpan, hasSpec: part.hasSpec))
     }
-    ast.StringLit(parts: parts.toList(), pos: t.span)
+    ast.StringLit(parts, pos: t.span)
   }
 
   // from `(` to its `)`: whether `=>` (or `: Type =>`) follows (D37)
@@ -508,7 +508,7 @@ extend Parser {
     }
     this.expect(Kind.FatArrow)
     val body = this.parseArmBody()
-    ast.LambdaExpr(params: params.toList(), ret, body: &body, pos: this.spanFrom(start))
+    ast.LambdaExpr(params, ret, body: &body, pos: this.spanFrom(start))
   }
 
   // the right side of `=>`: a block, an expression, or an assignment —
@@ -590,12 +590,12 @@ extend Parser {
         entries.push(ast.MapEntry(key: &key, value: &entryValue))
       }
       this.expect(Kind.RBracket)
-      return ast.MapLit(entries: entries.toList(), pos: this.spanFrom(start))
+      return ast.MapLit(entries, pos: this.spanFrom(start))
     }
     val elems: MutableList<ast.Expr> = [first]
     loop (this.accept(Kind.Comma) && !this.at(Kind.RBracket)) elems.push(this.parseExpr())
     this.expect(Kind.RBracket)
-    ast.ListLit(elems: elems.toList(), pos: this.spanFrom(start))
+    ast.ListLit(elems, pos: this.spanFrom(start))
   }
 
   fun parseIf(): ast.Expr {
@@ -675,7 +675,7 @@ extend Parser {
       }
     }
     this.expect(Kind.RBrace)
-    w.arms = arms.toList()
+    w.arms = arms
     w.pos = this.spanFrom(start)
     w
   }
@@ -688,7 +688,7 @@ extend Parser {
     } else if (hasSubject) {
       val patterns: MutableList<ast.Pattern> = [this.parsePattern(false)]
       loop (this.accept(Kind.Comma)) patterns.push(this.parsePattern(false))
-      arm.patterns = patterns.toList()
+      arm.patterns = patterns
       if (this.accept(Kind.KwIf)) arm.guard = &this.parseArmHead()
     } else {
       arm.cond = &this.parseArmHead()
@@ -783,7 +783,7 @@ extend Parser {
       }
     }
     this.expect(Kind.RBrace)
-    arms.toList()
+    arms
   }
 
   // the `=>` between an arm's head and its body; Kotlin's `->` is reported

@@ -168,7 +168,7 @@ struct Parser {
             }
           }
           try this.expectOp(")")
-          Call(name: text, args: args.toList())
+          Call(name: text, args)
         } else {
           Variable(name: text)
         }

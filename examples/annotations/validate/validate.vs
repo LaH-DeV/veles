@@ -33,7 +33,7 @@ trait Validate {
         }
       }
     }
-    out.toList()
+    out
   }
 
   /// The rules of the type as text, built by the compiler from the
@@ -48,6 +48,6 @@ trait Validate {
       if (!f.doc.isEmpty()) rule += " — " + f.doc
       out.push(rule)
     }
-    out.toList()
+    out
   }
 }

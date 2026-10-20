@@ -113,7 +113,7 @@ fun codePoints(text: string): List<i64> {
     out.push(rune.code)
     at += rune.size
   }
-  out.toList()
+  out
 }
 
 /// The length of the longest common subsequence of two names.

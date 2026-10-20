@@ -80,7 +80,7 @@ fun parseAll(items: List<string>): List<i64> throws ParseError {
     val n = it.toInt() ?: throw ParseError(text: it)
     out.push(n)
   }
-  out.toList()
+  out
 }
 
 fun total(items: List<string>): i64 throws ParseError {

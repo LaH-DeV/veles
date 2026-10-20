@@ -132,7 +132,7 @@ fun main() {
   loop (r in 0..<2000) {
     val row: MutableList<i64> = []
     loop (c in 0..<64) row.push(r * 64 + c)
-    rows.push(row.toList())
+    rows.push(row)
   }
   val kept = rows.toList()
   var sum: i64 = 0

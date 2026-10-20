@@ -42,7 +42,7 @@ public trait Iterator {
       if (v == null) break
       out.push(v)
     }
-    out.toList()
+    out
   }
 
   fun toSet(): Set<Item> => this.toList().toSet()

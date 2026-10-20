@@ -18,7 +18,7 @@ fun bubbleSort(xs: List<i64>): List<i64> {
     }
     if (!swapped) break
   }
-  out.toList()
+  out
 }
 
 /// Insertion sort, generic over anything Comparable: O(n²), fast on
@@ -36,7 +36,7 @@ fun insertionSort<T: Comparable>(xs: List<T>): List<T> {
     }
     out.set(j + 1, key)
   }
-  out.toList()
+  out
 }
 
 /// Selection sort: O(n²) comparisons, at most n swaps.
@@ -52,7 +52,7 @@ fun selectionSort(xs: List<i64>): List<i64> {
     }
     if (minAt != i) out.swap(i, minAt)
   }
-  out.toList()
+  out
 }
 
 /// Merge sort: O(n log n), stable, recursive on halves.
@@ -79,7 +79,7 @@ fun merge(left: List<i64>, right: List<i64>): List<i64> {
   }
   out.addAll(left.drop(i))
   out.addAll(right.drop(j))
-  out.toList()
+  out
 }
 
 /// Quick sort: O(n log n) average, in place on a copy, Lomuto partition.
@@ -118,7 +118,7 @@ fun countingSort(xs: List<i64>, maxValue: i64): List<i64> {
     loop (_ in 0..<c) out.push(v)
     v += 1
   }
-  out.toList()
+  out
 }
 
 fun isSorted(xs: List<i64>): bool {

@@ -76,7 +76,7 @@ public fun describe<T: Decodable>(prefix: string = ""): List<Variable> {
   loop (leaf in leavesOf("config.describe", schema, prefix)) {
     out.push(Variable(name: leaf.name, what: leaf.schema.what, required: leaf.required, secret: leaf.schema.secret, default: leaf.field.fallback))
   }
-  out.toList()
+  out
 }
 
 // where a value is found: a dotenv file's variables or a JSON file's tree
@@ -237,7 +237,7 @@ struct Load {
           if (v == null) whole = false else items.push(v)
         }
       }
-      if (whole) out = codec.VList(items: items.toList())
+      if (whole) out = codec.VList(items)
     } else {
       out = codec.VString(value: text)
     }
@@ -292,7 +292,7 @@ fun readLayers(files: List<string>, problems: MutableList<codec.Problem>): List<
     }
     layers.push(Layer(label: file, vars: dotenv.vars, tree: null))
   }
-  layers.toList()
+  layers
 }
 
 // `load` with the lookup of the environment passed in, which is how the tests
@@ -305,7 +305,7 @@ fun loadWith<T: Decodable>(lookup: fun(string): string?, files: List<string>, pr
   }
   val problems: MutableList<codec.Problem> = []
   val state = Load(lookup, layers: readLayers(files, problems), prefix)
-  state.problems.addAll(problems.toList())
+  state.problems.addAll(problems)
   val tree = state.object(schema, prefix, [], true) ?: codec.VObject(fields: [:])
   val decoder = codec.ValueDecoder.of(tree, format: "env", enums: codec.EnumStyle.Name, keys: codec.KeyStyle.UpperSnake, durations: codec.DurationStyle.Text)
   val decoded = T.decode(decoder)

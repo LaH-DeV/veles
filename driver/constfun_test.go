@@ -48,7 +48,7 @@ const fun ints(): List<i64> {
   out.push((-1).wrapU32().toI64())
   out.push(~5)
   out.push(6 & 3 | 8 ^ 1)
-  out.toList()
+  out
 }
 const INTS: List<i64> = ints()
 
@@ -120,7 +120,7 @@ const fun floats(): List<f64> {
   out.push(d)
   out.push(1.0 / 3.0)
   out.push(2.5 - 1.0)
-  out.toList()
+  out
 }
 const FLOATS: List<f64> = floats()
 
@@ -153,7 +153,7 @@ const fun texts(): List<string> {
   }
   out.push("a-b-c".replace("-", "+") + "|" + "abc".replace("", "x") + "|" + "xx".replace("x", ""))
   out.push("ab".repeat(3) + "|" + "Hello".toUpper() + "|" + "Hello".toLower() + "|" + "hello".capitalize() + "|" + "7".padStart(3, "0") + "|" + "7".padEnd(3, "."))
-  out.toList()
+  out
 }
 const TEXTS: List<string> = texts()
 
@@ -169,7 +169,7 @@ const fun lists(): List<i64> {
   out.addAll([1, 2, 3, 4, 5].slice(1, 3))
   out.push(m.at(-1) ?: -9)
   out.push(m.at(99) ?: -9)
-  out.toList()
+  out
 }
 const LISTS: List<i64> = lists()
 
@@ -202,7 +202,7 @@ const fun maps(): List<string> {
   out.push("${m.len()} ${m.containsKey("c")} ${m.containsKey("z")}")
   val s: MutableSet<i64> = []
   out.push("${s.add(3)} ${s.add(3)} ${s.add(4)} ${s.len()}")
-  out.toList()
+  out
 }
 const MAPS: List<string> = maps()
 
@@ -232,7 +232,7 @@ const fun flow(): List<i64> {
       out.push(i * 10 + j)
     }
   }
-  out.toList()
+  out
 }
 const FLOW: List<i64> = flow()
 
@@ -323,7 +323,7 @@ const fun nested(): List<string> {
   o.bump(1)
   copy.inner.x += 5
   val out: MutableList<string> = [o.summary(), copy.summary()]
-  out.toList()
+  out
 }
 const NESTED: List<string> = nested()
 
@@ -337,7 +337,7 @@ const fun sorting(): List<string> {
   loop (w in words) {
     out.push(w)
   }
-  out.toList()
+  out
 }
 const SORTED: List<string> = sorting()
 
@@ -350,7 +350,7 @@ const fun mapLoop(): List<string> {
   loop ((k, v) in m) {
     out.push("$k$v")
   }
-  out.toList()
+  out
 }
 
 const fun intOps(): List<string> {
@@ -373,7 +373,7 @@ const fun intOps(): List<string> {
   out.push("${n.countOnes()} ${n.leadingZeros()} ${n.trailingZeros()} ${n.swapBytes()} ${n.reverseBits()} ${n.rotateLeft(3)} ${m.rotateRight(1)} ${m.swapBytes()} ${m.reverseBits()}")
   val big: u64 = 18446744073709551615
   out.push("${big.checkedAdd(1) ?: 0} ${big.wrappingAdd(2)} ${big.saturatingMul(2)} ${big.min(5)} ${big.mod(1000)}")
-  out.toList()
+  out
 }
 const INTOPS: List<string> = intOps()
 
@@ -387,7 +387,7 @@ const fun floatOps(): List<string> {
   val nan = 0.0 / 0.0
   val inf = 1.0 / 0.0
   out.push("${nan.isNaN()} ${nan.min(1.0)} ${nan.max(1.0)} ${nan.sign()} ${inf.isInfinite()} ${inf.isFinite()} ${(-inf).clamp(-5.0, 5.0)} ${(-0.0).isSignNegative()} ${(-0.0).sign()}")
-  out.toList()
+  out
 }
 const FLOATOPS: List<string> = floatOps()
 
@@ -501,7 +501,7 @@ const HIGHER: string = higher()
 const fun mapAll<T, U>(xs: List<T>, f: fun(T): U): List<U> {
   val out: MutableList<U> = []
   loop (x in xs) out.push(f(x))
-  out.toList()
+  out
 }
 
 const fun twice(x: i64): i64 => x * 2

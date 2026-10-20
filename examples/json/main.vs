@@ -141,7 +141,7 @@ struct Parser {
       if (b == RBRACKET) break
       if (b != COMMA) throw this.fail("expected ',' or ']'")
     }
-    JArr(items: items.toList())
+    JArr(items)
   }
 
   fun parseNumber(): Json throws ParseError {

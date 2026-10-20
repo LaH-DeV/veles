@@ -52,7 +52,7 @@ struct Scram {
       proof.push(k ^ (signature.at(i) ?: 0))
     }
     val serverKey = hmac(salted, "Server Key".bytes())
-    ("$withoutProof,p=${base64.encode(proof.toList())}", hmac(serverKey, authMessage))
+    ("$withoutProof,p=${base64.encode(proof)}", hmac(serverKey, authMessage))
   }
 
   // The server's last message `v=<signature>`: true when it is the one only a server that knows
@@ -79,7 +79,7 @@ fun pbkdf2(password: List<u8>, salt: List<u8>, iterations: i64): List<u8> {
   first.push(0)
   first.push(0)
   first.push(1)
-  var u = hmac(password, first.toList())
+  var u = hmac(password, first)
   val result = u.toMutable()
   var n: i64 = 1
   loop (n < iterations) {
@@ -89,5 +89,5 @@ fun pbkdf2(password: List<u8>, salt: List<u8>, iterations: i64): List<u8> {
     }
     n += 1
   }
-  result.toList()
+  result
 }

@@ -106,7 +106,7 @@ public struct Deque<T> {
     loop (i in 0..<s.size) {
       out.push(this.slot(i) ?: panic("deque: a live slot is empty"))
     }
-    out.toList()
+    out
   }
 
   /// Makes room for `n` elements in all, so adding up to `n` does not grow

@@ -645,7 +645,7 @@ struct Lexer {
     if (!text.isEmpty()) parts.push(StringPart(text: text.toString()))
     if (parts.isEmpty()) parts.push(StringPart(text: ""))
     this.pos = closeAt + 3
-    this.tokens.push(Token(kind: Kind.String, text: this.cut(start, this.pos), span: this.span(start, this.pos), parts: parts.toList()))
+    this.tokens.push(Token(kind: Kind.String, text: this.cut(start, this.pos), span: this.span(start, this.pos), parts))
   }
 
   // whether src[from, to) is only spaces, tabs and carriage returns
@@ -730,7 +730,7 @@ struct Lexer {
     }
     if (!text.isEmpty()) parts.push(StringPart(text: text.toString()))
     if (parts.isEmpty()) parts.push(StringPart(text: ""))
-    this.tokens.push(Token(kind: Kind.String, text: this.cut(start, this.pos), span: this.span(start, this.pos), parts: parts.toList()))
+    this.tokens.push(Token(kind: Kind.String, text: this.cut(start, this.pos), span: this.span(start, this.pos), parts))
   }
 
   // `${…}`: moves to the closing brace, over nested braces and strings;

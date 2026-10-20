@@ -21,7 +21,7 @@ fun workspaceSchema(): Schema<WorkspaceMembers> => Schema(
         seen.add(clean)
         cleaned.push(clean)
       }
-      workspace.directories = workspace.directories.concat(cleaned.toList())
+      workspace.directories = workspace.directories.concat(cleaned)
     }),
   ],
 )

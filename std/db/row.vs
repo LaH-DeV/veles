@@ -250,7 +250,7 @@ fun decodeRows<T: Decodable>(rows: Rows): List<T> throws DecodeError {
     val value = try T.decode(dec)
     out.push(try codec.finish(dec, value))
   }
-  out.toList()
+  out
 }
 
 // A timestamp as the server writes it (`2026-10-05 12:34:56.789+02`, or without a zone for
@@ -290,7 +290,7 @@ fun byteaItems(text: string): List<string?>? {
     i += 2
   }
   if (i != bytes.len()) return null
-  out.toList()
+  out
 }
 
 // An array in its text form, `{1,2,3}` or `{"a b",NULL,c}`, as its elements. One
@@ -340,5 +340,5 @@ fun arrayItems(text: string): List<string?>? {
     if (bytes.at(i) != 44) return null
     i += 1
   }
-  out.toList()
+  out
 }

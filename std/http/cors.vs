@@ -126,7 +126,7 @@ fun corsAnswer(c: Cors, next: Handler, req: Request): Response {
     val names: MutableList<string> = []
     if (varies) names.push("origin")
     if (reflected) names.push("access-control-request-headers")
-    return withVary(r, names.toList())
+    return withVary(r, names)
   }
   var r = next(req).withHeader("access-control-allow-origin", shown)
   if (c.credentials) r = r.withHeader("access-control-allow-credentials", "true")

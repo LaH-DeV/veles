@@ -571,7 +571,7 @@ const fun crc32Table(): List<u32> {
     }
     table.push(c)
   }
-  table.toList()
+  table
 }
 
 const CRC: List<u32> = crc32Table()

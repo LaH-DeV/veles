@@ -140,7 +140,7 @@ public fun withFields<R, E>(fields: List<Field>, f: fun(): R suspends throws E):
   var all: MutableList<Field> = []
   loop (x in ambient.get()) all.push(x)
   loop (x in fields) all.push(x)
-  return try ambient.withValue(all.toList(), f)
+  return try ambient.withValue(all, f)
 }
 
 fun emit(level: Level, msg: fun(): string, fields: List<Field>) {

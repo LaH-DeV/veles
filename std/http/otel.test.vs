@@ -55,7 +55,7 @@ test fun pbFields(bytes: List<u8>): List<PbField> {
       fail("unexpected wire type $wire")
     }
   }
-  out.toList()
+  out
 }
 
 test fun pbAll(fs: List<PbField>, num: i64): List<PbField> => fs.filter(f => f.num == num)
@@ -98,7 +98,7 @@ struct Capture {
         out.push(pbFields(s.data))
       }
     }
-    out.toList()
+    out
   }
 
   fun named(name: string): List<List<PbField>> => this.spans().filter(s => pbText(s, 5) == name)

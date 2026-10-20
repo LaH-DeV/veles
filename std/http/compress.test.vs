@@ -104,7 +104,7 @@ test fun askBytes(port: i64, request: List<u8>): List<u8> throws IoError {
     if (chunk.isEmpty()) break
     out.addAll(chunk)
   }
-  out.toList()
+  out
 }
 
 // where the blank line after the headers ends
@@ -135,7 +135,7 @@ test fun unchunk(framed: List<u8>): List<u8> {
     out.addAll(framed.slice(at, at + size))
     at += size + 2
   }
-  out.toList()
+  out
 }
 
 test "over a socket the compressed stream is chunked and decodes" {

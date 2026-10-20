@@ -118,14 +118,14 @@ trait Validate {
     inline loop ((f, most) in This.annotated<MaxLen>()) {
       if (f.get(this).len() > most.value) out.push("${f.name} is longer than ${most.value}")
     }
-    out.toList()
+    out
   }
 
   static const fun rules(): List<string> {
     val out: MutableList<string> = []
     loop ((f, min) in This.annotated<Min>()) out.push("${f.name} >= ${min.value}")
     loop ((f, most) in This.annotated<MaxLen>()) out.push("${f.name} <= ${most.value} bytes")
-    out.toList()
+    out
   }
 }
 

@@ -39,7 +39,7 @@ fun slidingMax(xs: List<i64>, k: i64): List<i64> {
     if (window.first() == i - k) window.removeFirst()
     if (i >= k - 1) out.push(xs.at(window.first() ?: i) ?: panic("slidingMax: the window holds indexes of xs"))
   }
-  out.toList()
+  out
 }
 
 /// Binary search tree of i64, nodes linked by GC pointers (D10/D31).
@@ -163,5 +163,5 @@ fun heapSort(xs: List<i64>): List<i64> {
     val v = heap.pop() ?: break
     out.push(v)
   }
-  out.toList()
+  out
 }

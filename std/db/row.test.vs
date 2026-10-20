@@ -24,7 +24,7 @@ test fun cols(names: List<string>, oids: List<i64>): List<Column> {
   loop ((i, n) in names.enumerate()) {
     out.push(Column(name: n, oid: oids.at(i) ?: 25))
   }
-  out.toList()
+  out
 }
 
 test fun one(columns: List<Column>, row: List<string?>): Rows => Rows(columns, rows: [row], tag: "SELECT 1")

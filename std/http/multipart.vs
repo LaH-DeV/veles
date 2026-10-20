@@ -223,7 +223,7 @@ public struct Part {
       if (out.len() + piece.len() > max) throw Fail(status: Status.contentTooLarge, text: "the part '${this.name}' is larger than $max bytes")
       out.addAll(piece)
     }
-    out.toList()
+    out
   }
 
   /// The rest of the part as text, at most `max` bytes; text that is not

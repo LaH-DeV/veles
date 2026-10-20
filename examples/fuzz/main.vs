@@ -53,7 +53,7 @@ struct Fuzzer {
     val n = this.rng.range(0, max + 1)
     var out: MutableList<u8> = []
     loop (_ in 0..<n) out.push((this.rng.range(0, 256)).wrapU8())
-    out.toList()
+    out
   }
 
   /// Text built from pieces that are likely to matter to the decoder under
@@ -177,7 +177,7 @@ fun randomValue(f: *Fuzzer, depth: i64): codec.Value {
     5    => {
       var items: MutableList<codec.Value> = []
       loop (_ in 0..<f.rng.range(0, 4)) items.push(randomValue(f, depth - 1))
-      return codec.VList(items: items.toList())
+      return codec.VList(items)
     }
     else => {
       var fields: MutableMap<string, codec.Value> = [:]
@@ -247,7 +247,7 @@ fun chunked(f: *Fuzzer, data: List<u8>): List<u8> {
   out.addAll("0\r\n".bytes())
   if (f.rng.range(0, 3) == 0) out.addAll("X-Trailer: 1\r\n".bytes())
   out.addAll("\r\n".bytes())
-  out.toList()
+  out
 }
 
 fun hexNumber(n: i64): string {
@@ -432,7 +432,7 @@ fun faulty(f: *Fuzzer): (List<u8>, i64, string) {
       // a byte that is not UTF-8 in the target
       var w = d.wire().toMutable()
       w.insert(d.method.len() + 2, 0xFF)
-      return (w.toList(), 400, "target not UTF-8")
+      return (w, 400, "target not UTF-8")
     }
     19   => {
       val _ = d.headers.removeAt(0)
@@ -486,7 +486,7 @@ fun mutate(f: *Fuzzer, wire: List<u8>): List<u8> {
       }
     }
   }
-  out.toList()
+  out
 }
 
 fun fuzzHttp(f: *Fuzzer, port: i64) {
@@ -512,7 +512,7 @@ fun fuzzHttp(f: *Fuzzer, port: i64) {
   when (val r = exchange(port, sent)) {
     is Ok     => {
       val (got, broken) = parseResponses(r)
-      val problem = if (!broken.isEmpty()) broken else if (mode == 1) judgeMutated(got) else judge(got, wants.toList())
+      val problem = if (!broken.isEmpty()) broken else if (mode == 1) judgeMutated(got) else judge(got, wants)
       val accepted = if (mode == 1) got.all(g => g.status == 200) else mode != 0
       f.record(target, accepted, if (problem.isEmpty()) null else "$problem\n  sent ${showBytes(sent)}" + (if (fault.isEmpty()) "" else " ($fault)") + "\n  got  ${showBytes(r)}")
     }
@@ -571,7 +571,7 @@ fun readAll(c: net.Conn): List<u8> suspends throws IoError {
     if (chunk.isEmpty()) break
     out.addAll(chunk)
   }
-  out.toList()
+  out
 }
 
 /// One response as the client read it.
@@ -626,7 +626,7 @@ fun parseResponses(data: List<u8>): (List<Got>, string) {
     out.push(Got(status, headers: headers.toMap(), body: data.slice(at, at + length)))
     at += length
   }
-  (out.toList(), "")
+  (out, "")
 }
 
 /// Every response is the one wanted, and a refusal ends the connection.

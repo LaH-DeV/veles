@@ -112,7 +112,7 @@ fun readDependencies(section: Section): List<Dependency> throws SettingsError {
     val source = try dependencySource(section, name, value)
     out.push(Dependency(name, source, line: value.line))
   }
-  out.toList()
+  out
 }
 
 /// The source one entry names: `name = "../dir"`, or a table of keys.

@@ -54,7 +54,7 @@ fun policySchema(): Schema<Policy> => Schema(
       loop (name in names) {
         capabilities.push(capabilityNamed(name) ?: throw section.failAt(value, "[policy] deny: unknown capability ${quote(name)} (${capabilityNames()})"))
       }
-      policy.deny = capabilities.toList()
+      policy.deny = capabilities
     }),
     Setting<Policy>(key: "allow", doc: "the packages that may use a capability or claim despite deny", read: (section, value, policy) => {
       val table = value.asTable() ?: throw section.failAt(value, "[policy] allow is a table of capability = [packages], e.g. allow = { net = [\"acme/httputil\"] }")
