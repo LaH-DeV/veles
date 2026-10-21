@@ -1072,6 +1072,25 @@ veles_list *veles_list_slice(veles_list *l, int64_t from, int64_t to) {
     return c;
 }
 
+/* The same elements as a window onto l's storage, not a copy (D196): for a
+ * receiver that is an immutable List, which nothing can write through, so the
+ * sharing cannot be seen. The new header points into the middle of l's buffer
+ * (the collector follows an interior pointer, D10), which it keeps alive; an
+ * empty window holds on to nothing. */
+veles_list *veles_list_view(veles_list *l, int64_t from, int64_t to) {
+    if (from < 0) from = 0;
+    if (to > l->len) to = l->len;
+    if (from > to) from = to;
+    int64_t n = to - from;
+    veles_list *c = veles_list_new(l->desc, 0);
+    if (n > 0) {
+        c->data = l->data + l->elem * from;
+        c->len = n;
+        c->cap = n;
+    }
+    return c;
+}
+
 /* appends every element of src to dst (MutableList.addAll); src may be dst */
 /* `race { }` (D169): a race whose sources are the tasks of a list, one per
  * element in list order, so the winner's index is its place in the list

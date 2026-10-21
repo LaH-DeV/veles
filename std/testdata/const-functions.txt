@@ -81,11 +81,13 @@ prelude/list.vs: public const fun binarySearch(x: T): i64
 prelude/list.vs: public const fun binarySearchBy<K: Comparable>(key: fun(T): K, target: K): i64
 prelude/list.vs: public const fun binarySearchWith(compare: fun(T): Ordering): i64
 prelude/list.vs: public const fun chunked(n: i64): List<List<T>>
+prelude/list.vs: public const fun chunked(n: i64): List<List<T>>
 prelude/list.vs: public const fun concat(other: List<T>): List<T>
 prelude/list.vs: public const fun contains(x: T): bool
 prelude/list.vs: public const fun count<E>(pred: fun(T): bool suspends throws E): i64 throws E
 prelude/list.vs: public const fun distinct(): List<T>
 prelude/list.vs: public const fun distinctBy<K>(key: fun(T): K): List<T>
+prelude/list.vs: public const fun drop(n: i64): List<T>
 prelude/list.vs: public const fun drop(n: i64): List<T>
 prelude/list.vs: public const fun enumerate(): List<(i64, T)>
 prelude/list.vs: public const fun fill(x: T)
@@ -121,10 +123,12 @@ prelude/list.vs: public const fun sum(): f64
 prelude/list.vs: public const fun sum(): i64
 prelude/list.vs: public const fun swap(i: i64, j: i64)
 prelude/list.vs: public const fun take(n: i64): List<T>
+prelude/list.vs: public const fun take(n: i64): List<T>
 prelude/list.vs: public const fun toMutableSet(): MutableSet<T>
 prelude/list.vs: public const fun toSet(): Set<T>
 prelude/list.vs: public const fun updateAt(i: i64, transform: fun(T): T): T
 prelude/list.vs: public const fun upperBound(x: T): i64
+prelude/list.vs: public const fun windowed(n: i64): List<List<T>>
 prelude/list.vs: public const fun windowed(n: i64): List<List<T>>
 prelude/list.vs: public const fun zip<U>(other: List<U>): List<(T, U)>
 prelude/list.vs: public static const fun make(n: i64, init: fun(i64): T): MutableList<T>

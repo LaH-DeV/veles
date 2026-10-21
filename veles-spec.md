@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.103** — decisions D1–D195. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.103** — decisions D1–D196. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -7726,6 +7726,20 @@ An `implement Shape { … }` in the variant keeps working (the rule is additive)
 Rejected: `fun Circle.area()` inside the trait (new syntax; `when (this)` in the trait body already puts the behaviour beside the declaration), leaving the block required.
 
 Built 2026-10-21 (`sema/checker.go` `liftVariantMethods`, run on the syntax tree before names are declared; `lint_impl.go`; tests in `sema/loopbind_test.go`). The selfhost parser needs nothing: the lift is in sema.
+
+### D196 — The window of an immutable `List` shares its storage (v0.103; amends D192)
+
+2026-10-21. From `veles-research-views.md`, option B; the user chose to go with the research's recommendation.
+
+`xs.slice(from, to)` on an immutable `List` — and so `take`, `drop`, `windowed(n)` and `chunked(n)`, which the prelude builds on it — returns a new header whose `data` points into the middle of `xs`'s buffer: no copy, no allocation of elements. Nothing can write through either header (an immutable `List` never changes, D35, D63, D188), so the sharing cannot be seen. A `MutableList` receiver still copies (a later `push` or `set` would show through), as does the `..rest` of a list pattern. An empty window holds no storage. Bounds are clamped as before.
+
+The one place an immutable `List` can be a mutable list's own header is the `this` of a `List` extension method called on a `MutableList` receiver. So a window of `this` in a method a program writes is a copy, and std's `take`, `drop`, `chunked` and `windowed` have a copying version for `MutableList` receivers (`std/prelude/list.vs`), which is the one a mutable receiver selects.
+
+The cost is retention: a 4-element window of a 1 GiB list keeps the 1 GiB alive (the collector follows interior pointers, D10). The cure is the copy: `window.toList()` detaches it. Measured on 4 KiB windows of a 4 MiB list: 0.9 ms against 11.8 ms for the copy (13×).
+
+Not built, and not needed yet (checklist §11): an explicit view type with its own methods (option C of the research), and a mutable window (option D).
+
+Built 2026-10-21 (`veles_list_view` in the runtime, chosen in codegen by the receiver's static type; `driver/listview_test.go`).
 
 ### I1 — generators: investigated, not decided
 

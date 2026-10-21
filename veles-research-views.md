@@ -95,3 +95,11 @@ clamped, never-null spelling of what `substring` already does without copying.
 Open for the user: whether the retention hazard of B is acceptable, and whether
 `List.slice` of a `MutableList` should keep copying (it must) or whether an
 explicit `xs.toList().slice(…)` spelling is enough to opt into sharing there.
+
+## 5. Outcome (2026-10-21)
+
+The user chose to go with option B. Built as D196: `List.slice` on an immutable
+`List` returns a window onto the same storage (`veles_list_view`); a
+`MutableList` still copies. 4 KiB windows of a 4 MiB list: 0.9 ms instead of
+11.8 ms. Options C (a view type) and D (a mutable window) stay open, to be
+decided when a program needs them.

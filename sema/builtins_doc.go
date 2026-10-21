@@ -78,7 +78,7 @@ var builtinDocs = []BuiltinDoc{
 	{"List", "reversed", "(): List<T>", "A reversed copy."},
 	{"List", "join", "(sep: string): string", "The elements rendered and joined with `sep`."},
 	{"List", "iter", "(): Iterator<T>", "A lazy iterator over the elements (D46)."},
-	{"List", "slice", "(from: i64, to: i64): List<T>", "The elements in `from..<to`, both ends clamped to the list; empty when `from >= to`. One bulk copy."},
+	{"List", "slice", "(from: i64, to: i64): List<T>", "The elements in `from..<to`, both ends clamped to the list; empty when `from >= to`. On an immutable `List` it is a window onto the same storage (no copy, and it keeps that storage alive: `toList()` detaches it); on a `MutableList` it is one bulk copy (D196)."},
 	{"List", "toList", "(): List<T>", "An immutable copy."},
 	{"List", "toMutable", "(): MutableList<T>", "A mutable copy."},
 	{"List", "decodeUtf8", "(): string?", "On a `List<u8>` only: the bytes as text, or `null` when they are not valid UTF-8 (D18)."},

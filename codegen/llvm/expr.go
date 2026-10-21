@@ -1939,7 +1939,13 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		from := g.expr(e.Args[1])
 		to := g.expr(e.Args[2])
 		v := g.newTmp()
-		g.emit("%s = call ptr @veles_list_slice(ptr %s, i64 %s, i64 %s)", v, l, from, to)
+		// an immutable List cannot change, so its window shares the storage
+		// (D196); a MutableList's window is a copy
+		fn := "veles_list_slice"
+		if lt, ok := types.Underlying(e.Args[0].Type()).(*types.List); ok && !lt.Mutable && !g.mayAliasMutable(e.Args[0]) {
+			fn = "veles_list_view"
+		}
+		g.emit("%s = call ptr @%s(ptr %s, i64 %s, i64 %s)", v, fn, l, from, to)
 		return v
 	case "list.touch":
 		// an order change made through `set` (sort, swap): D102 counts it
@@ -2579,4 +2585,20 @@ func (g *gen) bumpMods(l string) {
 	g.emit("%s = load i64, ptr %s", v, p)
 	g.emit("%s = add i64 %s, 1", n, v)
 	g.emit("store i64 %s, ptr %s", n, p)
+}
+
+// mayAliasMutable reports whether the immutable List x may in fact be a
+// MutableList's own header: the `this` of a `List` extension method, which a
+// MutableList receiver is passed as. A window of it must be a copy (D196).
+// std's own methods are written to account for that, with a `MutableList`
+// version of each method that cuts windows.
+func (g *gen) mayAliasMutable(x sema.Expr) bool {
+	if d, ok := x.(*sema.Deref); ok {
+		x = d.X // `this` is a pointer to the receiver's place
+	}
+	ref, ok := x.(*sema.VarRef)
+	if !ok || !ref.Var.IsSelf {
+		return false
+	}
+	return g.fn == nil || g.fn.Span.File == nil || !g.fn.Span.File.Embedded
 }

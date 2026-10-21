@@ -232,6 +232,41 @@ extend<T> List<T> {
   }
 }
 
+// The windows of a MutableList are copies (D196): the `List` methods above
+// would see `this` as an immutable list and share the storage, which a later
+// `push` or `set` on the mutable list would show through.
+extend<T> MutableList<T> {
+  /// The first `n` elements (all of them when `n` exceeds the length), copied.
+  public const fun take(n: i64): List<T> => this.slice(0, n)
+
+  /// The elements after the first `n`, copied.
+  public const fun drop(n: i64): List<T> => this.slice(n, this.len())
+
+  /// Consecutive pieces of `n` elements, copied; the last may be shorter.
+  @caller_location
+  public const fun chunked(n: i64): List<List<T>> {
+    if (n <= 0) panic("chunked: size must be positive, got $n")
+    var out: MutableList<List<T>> = []
+    var i: i64 = 0
+    loop (i < this.len()) {
+      out.push(this.slice(i, i + n))
+      i += n
+    }
+    out
+  }
+
+  /// Every window of `n` consecutive elements, copied (none when the list is shorter).
+  @caller_location
+  public const fun windowed(n: i64): List<List<T>> {
+    if (n <= 0) panic("windowed: size must be positive, got $n")
+    var out: MutableList<List<T>> = []
+    loop (i in 0..(this.len() - n)) {
+      out.push(this.slice(i, i + n))
+    }
+    out
+  }
+}
+
 extend<T> MutableList<T> {
   /// Sorts in place by `compare` (see `sortedWith`).
   public const fun sortWith(compare: fun(T, T): Ordering) {
