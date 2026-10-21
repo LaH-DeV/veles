@@ -44,6 +44,35 @@ Point -> 0.0
   `is Circle` and then read `s.r`, because inside that arm `s` is
   smart-cast to `Circle`.
 
+The variants may instead be declared **inside** the trait, which keeps the
+family in one place. They are the same structs: top-level names, the
+trait's visibility, and the `: Shape` clause implied (a generic trait
+writes it out, `struct Some<T> : Option<T>`). The formatter keeps the
+trait's own methods at the top and the variants after them:
+
+```veles
+use io
+
+sealed trait Shape {
+  struct Circle { r: f64 }
+  struct Rect { w: f64, h: f64 }
+}
+
+fun area(s: Shape): f64 => when (s) {
+  is Circle(r) => 3.0 * r * r
+  is Rect(w, h) => w * h
+}
+
+fun main() {
+  io.println("${area(Circle(r: 1.0))} ${area(Rect(w: 2.0, h: 3.0))}")
+}
+```
+
+Output:
+```text
+3.0 6.0
+```
+
 Remove the `is Point` arm and the compiler reports that `when` is not
 exhaustive and names the missing variant. Add a fourth variant next year
 and every `when` over `Shape` that forgot it stops compiling — that is
@@ -154,8 +183,11 @@ Recursive variants hold pointers (`*Expr`) — a value cannot contain
 itself, and the compiler reports an infinite-size type if you try (D31).
 
 A method declared without a body is written by each variant instead, in
-an `implement` block of its body; a method with a body is a default a
-variant may `override`:
+its own body; a method with a body is a default a variant may `override`.
+A method of a variant that has the name of a method of its sealed trait
+*is* that implementation (D195), so there is no `implement Shape { }` to
+write around it (an `implement` block for another trait is still how a
+variant takes that trait on):
 
 ```veles
 use io
@@ -167,18 +199,14 @@ sealed trait Shape {
 struct Circle : Shape {
   r: f64
 
-  implement Shape {
-    fun area(): f64 => 3.0 * this.r * this.r
-    override fun describe(): string => "circle r=${this.r}"
-  }
+  fun area(): f64 => 3.0 * this.r * this.r
+  override fun describe(): string => "circle r=${this.r}"
 }
 struct Rect : Shape {
   w: f64
   h: f64
 
-  implement Shape {
-    fun area(): f64 => this.w * this.h
-  }
+  fun area(): f64 => this.w * this.h
 }
 
 fun main() {
@@ -197,7 +225,9 @@ shape with area 6.0 -> 6.0
 
 A variant that leaves such a method out is an error at the variant, not
 at some later call: `variant 'Rect' of 'Shape' does not implement 'area';
-add 'implement Shape { fun area(): f64 }' to its body`.
+write 'fun area(): f64' in its body`. The old form, `implement Shape { … }`
+inside the variant, still works; the `redundant_implement` lint offers to
+unwrap it.
 
 ## Enums: a closed set of values
 
@@ -264,9 +294,38 @@ What you get without writing anything:
 An enum compares with its own base type — `level == 10`, `level < 5` —
 but never converts to or from it: a `u8` is not a `Level` (say
 `Level.fromValue(n)`), and a `Level` is not a `u8` (say `.value`). It has
-no methods, fields or `implement` blocks of its own, and it cannot be
-generic: an enum is a set of values, and behaviour that needs one goes
-in a function that takes it, like `next` above. When the alternatives
+no fields, no `implement` blocks and cannot be generic: an enum is a set of
+values. Behaviour that needs one goes in a function that takes it, like
+`next` above, or in an **extension function** (`extend Level { … }`, or
+`extend Level with fun next(): Level? => …`), which reads as a method:
+
+```veles
+use io
+
+enum Level { Debug, Info, Warn }
+
+extend Level {
+  fun label(): string => when (this) {
+    Level.Debug => "dbg"
+    Level.Info => "inf"
+    Level.Warn => "wrn"
+  }
+  fun isSevere(): bool => this >= Level.Warn
+}
+
+fun main() {
+  io.println("${Level.Warn.label()} ${Level.Warn.isSevere()} ${Level.Debug.isSevere()}")
+}
+```
+
+Output:
+```text
+wrn true false
+```
+
+The extension cannot reuse a built-in name (`value`, `toString`, `values`,
+`fromValue`, `parse`), and from another module it is brought in with the
+`use … extend` clause like any extension function. When the alternatives
 start to carry data, you have outgrown the enum and want a sealed trait.
 
 The prelude's `Ordering` is an enum — `Less = -1`, `Equal`, `Greater` —

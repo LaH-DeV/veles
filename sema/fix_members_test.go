@@ -23,7 +23,7 @@ func TestAddMissingMethodsFix(t *testing.T) {
 		{
 			"a sealed variant with no implement",
 			"sealed trait Shape {\n  fun area(): i64\n  fun name(): string\n}\nstruct Sq : Shape {\n  side: i64\n}\nfun main() { }\n",
-			"sealed trait Shape {\n  fun area(): i64\n  fun name(): string\n}\nstruct Sq : Shape {\n  side: i64\n  implement Shape {\n    fun area(): i64 => panic(\"'area' is not written yet\")\n    fun name(): string => panic(\"'name' is not written yet\")\n  }\n}\nfun main() { }\n",
+			"sealed trait Shape {\n  fun area(): i64\n  fun name(): string\n}\nstruct Sq : Shape {\n  side: i64\n  fun area(): i64 => panic(\"'area' is not written yet\")\n  fun name(): string => panic(\"'name' is not written yet\")\n}\nfun main() { }\n",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

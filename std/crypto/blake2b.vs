@@ -29,11 +29,11 @@ fun b2g(v: MutableList<u64>, a: i64, b: i64, c: i64, d: i64, x: u64, y: u64) {
   var vd = v.wordAt(d)
   va = va +% vb +% x
   vd = rotr64(vd ^ va, 32)
-  vc = vc +% vd
+  vc +%= vd
   vb = rotr64(vb ^ vc, 24)
   va = va +% vb +% y
   vd = rotr64(vd ^ va, 16)
-  vc = vc +% vd
+  vc +%= vd
   vb = rotr64(vb ^ vc, 63)
   v.set(a, va)
   v.set(b, vb)
@@ -46,7 +46,7 @@ fun b2compress(h: MutableList<u64>, block: List<u8>, counter: u64, last: bool, v
   loop (i in 0..<16) {
     var w: u64 = 0
     loop (j in 0..<8) {
-      w = w | ((block.at(i * 8 + j) ?: 0).toU64() << (8 * j))
+      w |= (block.at(i * 8 + j) ?: 0).toU64() << (8 * j)
     }
     m.set(i, w)
   }

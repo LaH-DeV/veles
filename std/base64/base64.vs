@@ -173,7 +173,7 @@ fun sextet(b: u8, url: bool, at: i64): i64 throws Invalid {
   if (b == PAD) {
     throw Invalid(message: "base64: '=' at $at, before the end of the input", position: at)
   }
-  if (b == 9 || b == 10 || b == 13 || b == 32) {
+  if (b in [9, 10, 13, 32]) {
     throw Invalid(message: "base64: whitespace at $at; strip line breaks before decoding", position: at)
   }
   throw Invalid(message: "base64: ${describe(b)} at $at is not a base64 character", position: at)
@@ -182,12 +182,12 @@ fun sextet(b: u8, url: bool, at: i64): i64 throws Invalid {
 /// A byte as it should read in a message: the character when it is
 /// printable ASCII, `0x0a` when it is not.
 fun describe(b: u8): string {
-  if (b >= 32 && b < 127) {
+  if (b in 32..<127) {
     val one: MutableList<u8> = [b]
     return "'${one.decodeUtf8() ?: "?"}'"
   }
   val d = "0123456789abcdef"
   val hi = (b >> 4).toI64()
   val lo = (b & 15).toI64()
-  "0x${d.substring(hi, hi + 1) ?: ""}${d.substring(lo, lo + 1) ?: ""}"
+  "0x${d.slice(hi, hi + 1)}${d.slice(lo, lo + 1)}"
 }

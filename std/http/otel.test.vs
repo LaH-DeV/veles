@@ -23,10 +23,9 @@ test fun pbVarint(bytes: List<u8>, at: i64): (i64, i64) {
   var result: u64 = 0
   var shift: i64 = 0
   var i = at
-  loop {
-    val b = bytes.at(i) ?: break
+  loop (val b = bytes.at(i)) {
     i += 1
-    result = result | ((b & 127).toU64() << shift)
+    result |= (b & 127).toU64() << shift
     if (b < 128) break
     shift += 7
   }

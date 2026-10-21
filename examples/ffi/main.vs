@@ -33,7 +33,7 @@ fun forEachDigit(text: string, visit: extern fun(i64, *raw u8), userdata: *raw u
   loop (b in text.bytes()) {
     // SAFETY: `visit` is a C function pointer taken from a Veles `extern fun`;
     // it gets back the `userdata` it was handed
-    if (b >= '0' && b <= '9') unsafe {
+    if (b in '0'..'9') unsafe {
       visit((b - '0').toI64(), userdata)
     }
   }

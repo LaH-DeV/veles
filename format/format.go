@@ -102,6 +102,14 @@ func Source(file *source.File, opts Options) (string, *source.Diagnostics) {
 	if diags.HasErrors() {
 		return file.Content, diags
 	}
+	if moved := reorderVariants(f); moved != "" {
+		// a sealed trait lists its methods first, its variants after (D193)
+		again := source.NewFile(file.Path, moved)
+		redo := &source.Diagnostics{}
+		if f2, layout2 := parser.ParseFileLayout(again, redo); !redo.HasErrors() {
+			f, layout = f2, layout2
+		}
+	}
 	out := Print(f, layout, opts)
 	if opts.LineEndings == EndingsCRLF || (opts.LineEndings == EndingsAuto && strings.Contains(file.Content, "\r\n")) {
 		out = strings.ReplaceAll(out, "\n", "\r\n")
@@ -324,6 +332,14 @@ func (p *printer) file(f *ast.File) {
 	// `error Name { }` desugars to a struct plus an impl the parser appends
 	// to the file; the impl is printed as part of the error declaration
 	synth := map[*ast.ImplDecl]bool{}
+	nested := map[*ast.StructDecl]bool{}
+	for _, d := range f.Decls {
+		if td, ok := d.(*ast.TraitDecl); ok {
+			for _, v := range td.Variants {
+				nested[v] = true // printed inside the trait body (D193)
+			}
+		}
+	}
 	for _, d := range f.Decls {
 		if sd, ok := d.(*ast.StructDecl); ok {
 			if sd.ErrorImpl != nil {
@@ -337,6 +353,9 @@ func (p *printer) file(f *ast.File) {
 	for i := 0; i < len(f.Decls); i++ {
 		d := f.Decls[i]
 		if impl, ok := d.(*ast.ImplDecl); ok && synth[impl] {
+			continue
+		}
+		if sd, ok := d.(*ast.StructDecl); ok && nested[sd] {
 			continue
 		}
 		if ud, ok := d.(*ast.UseDecl); ok && !ud.Pub {
@@ -1007,7 +1026,9 @@ func (p *printer) structDecl(d *ast.StructDecl) {
 		return
 	}
 	p.attrs(d.Attrs)
-	if d.Pub {
+	if d.Nested {
+		// a variant declared in a sealed trait is as visible as the trait (D193)
+	} else if d.Pub {
 		p.w("public ")
 	} else if d.Internal {
 		p.w("internal ")
@@ -1024,7 +1045,7 @@ func (p *printer) structDecl(d *ast.StructDecl) {
 	}
 	p.w(d.Name.Name)
 	p.typeParams(d.TypeParams)
-	if d.Variant != nil {
+	if d.Variant != nil && !d.ImpliedVariant {
 		p.w(" : ")
 		p.typ(d.Variant)
 	}
@@ -1073,7 +1094,7 @@ func (p *printer) structDecl(d *ast.StructDecl) {
 	}
 	ms = p.sortedMembers(ms)
 	hdr := d.Name.Pos.End
-	if d.Variant != nil {
+	if d.Variant != nil && !d.ImpliedVariant {
 		hdr = d.Variant.Span().End
 	}
 	open := p.openBrace(hdr, d.Pos.End)
@@ -1286,6 +1307,11 @@ func (p *printer) traitDecl(d *ast.TraitDecl) {
 		m := m
 		ends[declStart(m)] = m.Pos.End
 		ms = append(ms, memberRef{declStart(m), func() { p.fun(m) }})
+	}
+	for _, v := range d.Variants {
+		v := v
+		ends[declStart(v)] = v.Pos.End
+		ms = append(ms, memberRef{declStart(v), func() { p.structDecl(v) }})
 	}
 	ms = p.sortedMembers(ms)
 	hdr := d.Name.Pos.End
@@ -1694,6 +1720,8 @@ func bp(e ast.Expr) int {
 		return bpElvis
 	case *ast.RangeExpr:
 		return bpRange
+	case *ast.InExpr:
+		return bpCmp
 	case *ast.IsExpr:
 		return bpNamed
 	case *ast.CastExpr:
@@ -1880,6 +1908,14 @@ func (p *printer) exprInner(e ast.Expr) {
 			p.w("..<")
 		}
 		p.exprRight(e.Hi, bpRange+1)
+	case *ast.InExpr:
+		p.expr(e.X, bpCmp)
+		if e.Not {
+			p.w(" !in ")
+		} else {
+			p.w(" in ")
+		}
+		p.exprRight(e.C, bpCmp)
 	case *ast.IsExpr:
 		p.expr(e.X, bpNamed)
 		if e.Not {

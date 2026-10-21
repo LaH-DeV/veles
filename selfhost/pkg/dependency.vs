@@ -5,33 +5,30 @@ use text { quote }
 
 /// Where a dependency comes from. Exactly one, by construction: a table that
 /// names two sources never becomes a `Dependency`.
-sealed trait Source
-
-/// A directory, relative to the manifest: the project's own code.
-struct PathSource : Source {
-  path: string
+sealed trait Source {
+  /// A directory, relative to the manifest: the project's own code.
+  struct PathSource {
+    path: string
+  }
+  /// A package of a registry (D139), pinned by an exact version as written.
+  struct RegistrySource {
+    name:    string
+    version: string
+  }
+  /// A git repository, pinned by a tag (a version) or by a commit.
+  struct GitSource {
+    url: string
+    pin: GitPin
+  }
 }
 
-/// A package of a registry (D139), pinned by an exact version as written.
-struct RegistrySource : Source {
-  name:    string
-  version: string
-}
-
-/// A git repository, pinned by a tag (a version) or by a commit.
-struct GitSource : Source {
-  url: string
-  pin: GitPin
-}
-
-sealed trait GitPin
-
-struct TagPin : GitPin {
-  version: string
-}
-
-struct CommitPin : GitPin {
-  prefix: string
+sealed trait GitPin {
+  struct TagPin {
+    version: string
+  }
+  struct CommitPin {
+    prefix: string
+  }
 }
 
 /// One entry of `[dependencies]` or `[dev-dependencies]`.
@@ -73,7 +70,7 @@ fun sourceOf(keys: DependencyKeys): Source throws DependencyProblem {
       throw DependencyProblem(message: e.message)
     }
     if (keys.version.startsWith("v")) {
-      throw DependencyProblem(message: "write the version without the 'v' (${quote(keys.version.substring(1, keys.version.len()) ?: "")})")
+      throw DependencyProblem(message: "write the version without the 'v' (${quote(keys.version.slice(1, keys.version.len()))})")
     }
   }
   if (!keys.commit.isEmpty() && !isCommitPrefix(keys.commit)) {
@@ -170,7 +167,7 @@ fun isRegistryName(text: string): bool {
     if (part.isEmpty()) return false
     loop (i in 0..<part.len()) {
       val byte = part.byteAt(i)
-      val allowed = byte.isAsciiLower() || byte.isAsciiDigit() || byte == '-' || byte == '_'
+      val allowed = byte.isAsciiLower() || byte.isAsciiDigit() || byte in ['-', '_']
       if (!allowed) return false
     }
   }

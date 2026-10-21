@@ -17,7 +17,7 @@ fun notANumber(): f64 => f64.fromBits(0x7FF8000000000000)
 /// A decimal integer: an optional sign and digits, in the range of an i64.
 fun parseDecimal(word: string): i64? {
   val negative = word.startsWith("-")
-  val digits = if (negative || word.startsWith("+")) word.substring(1, word.len()) ?: "" else word
+  val digits = if (negative || word.startsWith("+")) word.slice(1, word.len()) else word
   if (digits.isEmpty()) return null
   var value: i64 = 0
   loop (i in 0..<digits.len()) {
@@ -59,7 +59,7 @@ fun withoutUnderscores(text: string): string? {
 /// null where the text is not one.
 fun parseFloat(word: string): f64? {
   val negative = word.startsWith("-")
-  val body = if (negative || word.startsWith("+")) word.substring(1, word.len()) ?: "" else word
+  val body = if (negative || word.startsWith("+")) word.slice(1, word.len()) else word
   if (body == "inf") return if (negative) -infinity() else infinity()
   if (body == "nan") return notANumber()
   val parts = FloatParts.of(body) ?: return null
@@ -81,14 +81,14 @@ struct DigitScanner {
   fun digits(): string {
     val start = this.at
     loop (this.more() && (this.peek().isAsciiDigit() || this.peek() == '_')) this.at += 1
-    this.text.substring(start, this.at) ?: ""
+    this.text.slice(start, this.at)
   }
 
   /// A `+` or `-` at the position, consumed; "" when there is none.
   fun sign(): string {
     if (!this.more() || (this.peek() != '+' && this.peek() != '-')) return ""
     this.at += 1
-    this.text.substring(this.at - 1, this.at) ?: ""
+    this.text.slice(this.at - 1, this.at)
   }
 
   fun eat(byte: u8): bool {
@@ -142,8 +142,8 @@ struct FloatParts {
 /// or `nan`.
 fun readNumber(word: string): Data throws NumberProblem {
   val sign: u8 = if (word.startsWith("+") || word.startsWith("-")) word.byteAt(0) else 0
-  val body = if (sign == 0) word else word.substring(1, word.len()) ?: ""
-  if (body == "inf" || body == "nan") return Real(value: parseFloat(word) ?: throw Unreadable())
+  val body = if (sign == 0) word else word.slice(1, word.len())
+  if (body in ["inf", "nan"]) return Real(value: parseFloat(word) ?: throw Unreadable())
   if (sign == 0 && body.len() > 2 && body.byteAt(0) == '0') {
     val radix: i64 = when (body.byteAt(1)) {
       'x'  => 16
@@ -152,7 +152,7 @@ fun readNumber(word: string): Data throws NumberProblem {
       else => 0
     }
     if (radix != 0) {
-      val digits = withoutUnderscores(body.substring(2, body.len()) ?: "") ?: throw Unreadable()
+      val digits = withoutUnderscores(body.slice(2, body.len())) ?: throw Unreadable()
       return Integer(value: parseRadix(digits, radix) ?: throw OutOfRange())
     }
   }

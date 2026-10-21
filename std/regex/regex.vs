@@ -134,12 +134,12 @@ public struct Regex {
     var count = 0
     loop (m in this.findAll(text)) {
       if (limit >= 0 && count >= limit) break
-      out.append(text.substring(copied, m.start()) ?: "")
+      out.append(text.slice(copied, m.start()))
       out.append(f(m))
       copied = m.end()
       count += 1
     }
-    out.append(text.substring(copied, text.len()) ?: "")
+    out.append(text.slice(copied, text.len()))
     out.toString()
   }
 
@@ -152,10 +152,10 @@ public struct Regex {
       if (limit >= 0 && out.len() + 1 >= limit) break
       // an empty match at the very start or end splits nothing off
       if (m.end() == 0 || m.start() == text.len()) continue
-      out.push(text.substring(copied, m.start()) ?: "")
+      out.push(text.slice(copied, m.start()))
       copied = m.end()
     }
-    out.push(text.substring(copied, text.len()) ?: "")
+    out.push(text.slice(copied, text.len()))
     out
   }
 }
@@ -220,13 +220,13 @@ fun expand(m: Match, template: string): string {
         i += 2
       }
       close >= 0           => {
-        out.append(referenced(m, template.substring(i + 2, close) ?: ""))
+        out.append(referenced(m, template.slice(i + 2, close)))
         i = close + 1
       }
       after.isAsciiDigit() => {
         var end = i + 1
         loop (end < template.len() && template.byteAt(end).isAsciiDigit()) end += 1
-        out.append(referenced(m, template.substring(i + 1, end) ?: ""))
+        out.append(referenced(m, template.slice(i + 1, end)))
         i = end
       }
       else                 => {

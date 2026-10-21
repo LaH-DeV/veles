@@ -279,7 +279,17 @@ func (p *Parser) parseFile() *ast.File {
 		d := p.parseDecl()
 		if d != nil {
 			f.Decls = append(f.Decls, d)
+			structs := []*ast.StructDecl{}
+			if td, ok := d.(*ast.TraitDecl); ok {
+				for _, v := range td.Variants {
+					f.Decls = append(f.Decls, v) // a variant declared in the trait's body (D193)
+					structs = append(structs, v)
+				}
+			}
 			if sd, ok := d.(*ast.StructDecl); ok {
+				structs = append(structs, sd)
+			}
+			for _, sd := range structs {
 				if sd.ErrorImpl != nil {
 					f.Decls = append(f.Decls, sd.ErrorImpl) // `error` desugars to struct + impl
 				}
@@ -1235,6 +1245,11 @@ func (p *Parser) parseTrait(attrs []*ast.Attribute, pub bool, start source.Span)
 		p.skipSemis()
 		for !p.at(lexer.RBrace, lexer.EOF) {
 			mattrs := p.parseAttributes()
+			if p.at(lexer.KwStruct) {
+				p.parseNestedVariant(d, mattrs)
+				p.parseMemberSeparator()
+				continue
+			}
 			switch p.cur().Kind {
 			case lexer.KwType:
 				ts := p.span()
@@ -1945,4 +1960,30 @@ func (p *Parser) peekIdentAfterTypeParams() string {
 		}
 	}
 	return "name"
+}
+
+// parseNestedVariant parses a `struct` in the body of a sealed trait (D193):
+// an ordinary struct that is a variant of the trait. Its visibility is the
+// trait's; for a trait without type parameters the `: Trait` clause is
+// supplied, for a generic one it must be written.
+func (p *Parser) parseNestedVariant(d *ast.TraitDecl, attrs []*ast.Attribute) {
+	start := p.span()
+	sd, _ := p.parseStruct(attrs, d.Pub, false, start).(*ast.StructDecl)
+	if sd == nil {
+		return
+	}
+	if !d.Sealed {
+		p.errorf(sd.Name.Pos, "only a sealed trait declares its variants: write 'sealed trait %s { struct %s … }' (D193)", d.Name.Name, sd.Name.Name)
+	}
+	sd.Nested = true
+	sd.Internal = d.Internal
+	if sd.Variant == nil {
+		if len(d.TypeParams) > 0 {
+			p.errorf(sd.Name.Pos, "a variant of the generic trait '%s' names it with its arguments: 'struct %s … : %s<…>' (D193)", d.Name.Name, sd.Name.Name, d.Name.Name)
+		} else {
+			sd.Variant = &ast.NamedType{Path: []ast.Ident{d.Name}, Pos: d.Name.Pos}
+			sd.ImpliedVariant = true
+		}
+	}
+	d.Variants = append(d.Variants, sd)
 }

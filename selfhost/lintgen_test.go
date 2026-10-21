@@ -22,7 +22,9 @@ import (
 var (
 	lintTopDecl = regexp.MustCompile(`(?m)^(struct|sealed trait|enum|fun) `)
 	lintMember  = regexp.MustCompile(`^  (var|val|static fun|static val|const fun|fun) `)
-	lintStruct  = regexp.MustCompile(`(?m)^struct (\w+)`)
+	lintStruct  = regexp.MustCompile(`(?m)^ {0,2}struct (\w+)`)
+	// a member of a variant declared in the body of its sealed trait (D193)
+	lintInner = regexp.MustCompile(`^    (var|val|static fun|static val|const fun|fun) `)
 )
 
 const lintHeader = "// Generated from %s by `go test ./selfhost -run LintAPI -update`; edit the source, not this file.\n\n"
@@ -41,13 +43,21 @@ func readLF(t *testing.T, path string) string {
 func lintPublic(src string) string {
 	src = lintTopDecl.ReplaceAllString(src, "public ${1} ")
 	var out []string
-	inType := false
+	inType, inVariant := false, false
 	for _, line := range strings.Split(src, "\n") {
 		switch {
 		case strings.HasPrefix(line, "public struct ") || strings.HasPrefix(line, "public enum ") || strings.HasPrefix(line, "public sealed trait "):
 			inType = strings.HasSuffix(line, "{")
 		case line == "}":
-			inType = false
+			inType, inVariant = false, false
+		case inType && strings.HasPrefix(line, "  struct ") && strings.HasSuffix(line, "{"):
+			inVariant = true // a variant inherits the trait's visibility; its members do not
+		case inType && line == "  }":
+			inVariant = false
+		case inVariant:
+			if lintInner.MatchString(line) {
+				line = "    public " + line[4:]
+			}
 		case inType:
 			if lintMember.MatchString(line) {
 				line = "  public " + line[2:]

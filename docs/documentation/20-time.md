@@ -275,7 +275,10 @@ false  true
 0s
 ```
 
-`Stopwatch.start()` then `sw.elapsed()` is the whole of measuring.
+`Stopwatch.start()` then `sw.elapsed()` is the whole of measuring; to time one
+piece of work, `val (rows, took) = time.Stopwatch.measure(() => load())` runs
+it and returns its result with the time (an error the work throws passes
+through, so write `try` before the call when it can fail).
 `Deadline.after(d)` is the whole of a timeout: `remaining()` (never
 negative), `expired()`, `extend(d)` and `earlier(other)` for when a request
 deadline and a configured one both apply. This is what replaced

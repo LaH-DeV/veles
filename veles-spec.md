@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.102** — decisions D1–D188. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.103** — decisions D1–D195. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -7604,7 +7604,129 @@ Rejected: an explicit compile-time `.move()` alone (the proof is the limit, not 
 - **The wider D63 proof** (`sema/move.go`, `escape.go`): an argument to such a function no longer counts as "passed somewhere"; and `acc.items` of a `val acc = Acc()` built in the function is movable at its last use when `acc` is only used as `acc.<field>…`, no method is called on it, and the field was built fresh (a literal argument or the declared default; the type has no `init { }`).
 - **The lint `redundant_copy`** (`sema/lints.go`): `x.toList()` / `toMap()` / `toSet()` where a `List` / `Map` / `Set` is expected and `x` would be moved without it. Its fix drops the call. The ~55 such sites in `std/` (and the tests there) were fixed with `veles check --fix`; the lint is off inside `std/` itself.
 - **Stack headers** (`sema/escape_hir.go`, `codegen/llvm`): the header of a `MutableList` / `MutableMap` / `MutableSet` built in a function and only ever used there — the collection's own operations as receiver, and the temporary a `loop` makes of it; a field of a local struct the same way — is a slot in the function's frame, not a heap object; the element storage stays on the heap. Any other use (argument, return, store, closure capture, `&`, assignment, element of another collection) keeps the heap header. Functions that can suspend keep heap headers. `VELES_NO_STACK_COLLECTIONS=1` at compile time turns it off (for bisecting). `bench/emptycoll` went from ~70 to ~27 ms (Go: 19–36 ms); `TestStackCollections` builds one program both ways and runs both under a tiny collection threshold.
+- **A collection is "built here" also by a constructor or a static factory** (`MutableSet<T>()`, `MutableMap<K, V>()`, `MutableList<bool>.repeat(…)`), not only by a literal or `toMutable()`; the `redundant_copy` lint covers `toMap()` and `toSet()` as well (it had been wired for lists only; a repository sweep then found and fixed the map and set sites).
+- **Four more lints from the 2026-10-20 style review** (`veles-syntax-ideas.md`, all with a fix except the second): `redundant_discard` (`val _ = f()` for a number, text, boolean, nullable of those or a collection; not for an `if`/`when` value, whose branches a statement would not join), `continue_skips_step` (a `continue` before the constant step `i += 1` of a hand-written counting loop), `loop_is_range` (`var i = a; loop (i < b) { …; i += 1 }` with `b` unable to change, `i` untouched elsewhere and unused afterwards, no `continue`: `loop (i in a..<b)`), `else_if_ladder` (three or more `else if` branches, none binding with `val x = e &&`: a `when { }`, laid out by the formatter). They skip the standard library and compiler-written code (derived implements carry the user's span); `VELES_LINT_STD=1` lifts the first guard for a sweep. The repository was swept: about 100 discards, 23 counting loops and 59 ladders rewritten.
 - **The inlay hint**: the editor shows `moved immutable` after each expression D63 hands over without a copy (`sema.Index.Moved`, `lsp/inlay.go`; `lsp/move_hint_test.go`), so a move that depends on the proof is visible, and one that stops being provable shows as the error it becomes.
 
 - **`freeze()` (Q56 answered above)**: built 2026-10-20. `xs.freeze()` on a `MutableList` / `MutableMap` / `MutableSet` returns the same object as the immutable type (`list.freeze` / `map.freeze`, `runtime/c/veles_rt.c`); a flags word (EXPOSED, FROZEN) ends every list and map header (`listHeader`, `mapHeader`, the static tables, the stack headers). A pointer into the storage sets EXPOSED where it is made (`AddrOf` of an element place, `map.ref`, `rawData`); an element write, a pointer, and every runtime change (`push`, `pop`, `clear`, `reserve`, `addAll`, a map's `set` / `remove` / `clear` / `reserve`) check FROZEN first and panic with `list was frozen by freeze() and cannot be changed; copy it with toMutable()`. Freezing an exposed collection copies its storage first; a frozen one is never a stack header (the collection is returned). The write guard costs a load and a compare per element write: no change within noise on `sort`, `gzip`, `gunzip`, `intern`. `TestFreeze` runs every change as its own panicking program, in debug and release. `xs.isFrozen()` (on the three mutable types only: a `List` is immutable by its type) asks the frozen bit, one inline load and a test; it is not a "mutating" method for a `protected var` (D87). Asked for by the user (2026-10-20: "should we have a possibility to check in code if the mutables are frozen?"); the documentation says the usual answer is to refuse or report an error, not to skip the change.
 Not covered by the proof (each keeps the error and its `.toList()` fix): a method call on the collection's owner that passes it on, a call through a trait object or closure, a collection reached through a parameter. Not covered by stack headers (heap as before): a `var` collection variable (a method call marks it address-taken), a collection that becomes another struct's field, a function that can suspend.
+
+### D189 — `x in c` and `x !in c` (v0.103)
+
+2026-10-20, from the style review (`veles-syntax-ideas.md` S4, prepared in `veles-syntax-decisions.md` §1). The user: "contains operator but in string I would like both byte in string and substring in string (would be like in js, no?)" — the model is Python's (`"b" in "abc"`); JavaScript's `in` tests object keys and its substring test is `includes`.
+
+```veles
+if (b in [' ', '\t', '\r', '\n']) …       // a byte among bytes
+if (c in 'a'..'z') …                      // a range
+if (word !in STOP_WORDS) …                // a set
+if ("://" in url) …                       // a substring
+if (b in "+-*/") …                        // a byte occurring in a string
+if (key in headers) …                     // a map: its keys
+```
+
+- **The rule.** `x in c` is `c.contains(x)` for a `List`, `Set` or `Range`; for a `Map` it is `containsKey`; for a `string`, a `string` left operand is a substring test (`contains`) and a `u8` left operand is "the byte occurs in the text". `x !in c` is the negation, spelled like `!is`. A user type with a `contains` method of one parameter gets the operator. The left operand is never nullable.
+- **No allocation for a literal right operand.** A list literal, a string literal or a range literal on the right is compiled as comparisons, the element type taken from the left operand (so `b in [' ', '\t']` is a list of bytes, not of `i64`).
+- **Precedence** is the comparison level; `a in xs == true` is an error that asks for parentheses. Inside a `loop` head and a `when` arm `in` keeps its present meaning.
+- **Bounds facts** (D62): `i in 0..<xs.len()` establishes the range for `xs.at(i)` below it.
+
+Rejected: leaving it (equality chains: 81 lines, 39 with three or more alternatives, 64 byte comparisons, 83 range tests), `u8 in string` as a method (`contains(u8)` beside `contains(string)` would be overloading, D179), a chained comparison `0 <= i < n` (an error stays; `i in 0..<n` says it).
+
+Built 2026-10-20 (`sema/inexpr.go`; `driver/syntax_test.go`). Not built (checklist §11): the bounds fact of the last bullet, the user-type `contains` case beyond what the method call already gives, the selfhost parser. A string literal of more than 16 bytes on the right is a `containsByte` call, not comparisons.
+
+### D190 — A loop head that binds: `loop (val x = e) { … }` (v0.103)
+
+2026-10-20 (`veles-syntax-ideas.md` S2; decisions memo §2). The user chose the recommended form.
+
+```veles
+loop (val tok = this.next()) {            // runs while the value is not null
+  handle(tok)
+}
+loop (val line = try reader.readLine() && !line.isEmpty()) { out.push(line) }
+```
+
+D95's head for `if`, on a loop: the head is evaluated before each iteration; a null ends the loop; `&& cond` continues the condition; the name holds the non-null value in the rest of the head and in the body; `continue` evaluates the head again, `break` leaves. The head may use `try` and `await`. Only a nullable is unwrapped (as in D95); a `Result` head is not. Replaces 71 `val x = f() ?: break` first lines.
+
+Rejected: a new keyword (`while let`), leaving `?: break`.
+
+Built 2026-10-20 (`sema/check_fn.go`, `sema/letcond.go`). Not built: the selfhost parser; the 71 call sites are not migrated (they are in files the selfhost gate parses).
+
+### D191 — The missing compound assignments (v0.103)
+
+2026-10-20 (S6; memo §3). The user chose the bit and wrapping forms.
+
+`|=`, `&=`, `^=`, `<<=`, `>>=` and `+%=`, `-%=`, `*%=`: `x op= y` is `x = x op y` with the place of `x` evaluated once, integers only, as `+=` is. The overflow behaviour is the operator's own (checked `+=`, wrapping `+%=`). Rejected: `&&=` and `||=` (a hidden short circuit), a compound form on `bool`.
+
+Built 2026-10-20 (lexer tokens, parser `IsAssign`, sema). Not built: the selfhost lexer/parser. `>>=` after a generic close needs a space (`List<List<i64>> = x`).
+
+### D192 — `string.slice(from, to)`, and a look at views (v0.103)
+
+2026-10-20 (S9; memo §4). The user: "add recommended slice but we should also take a look at a view/Span type".
+
+`slice(from, to): string` is `substring` that cannot fail: both ends are clamped to the text, a bound inside a code point moves outward to the character boundary, `from >= to` is the empty string. Like `substring` it shares the original's bytes (no copy, no allocation). `substring` stays for callers that must tell "invalid" from "empty". 122 of the 130 `substring` calls in the code say `?: fallback`, 47 of them `?: ""`.
+
+The view question is answered in `veles-research-views.md`: a `string` already is a view; the open item is `List.slice` copying — sharing the storage when the receiver is an immutable `List` is possible without a new type.
+
+`string.slice` built 2026-10-20 (`std/prelude/string.vs`, `string.test.vs`); the list-slice sharing is not decided.
+
+### D193 — Variants declared inside the sealed trait (v0.103)
+
+2026-10-20 (I10; memo §5). The user chose nested structs.
+
+```veles
+sealed trait Expr {
+  struct IntLit { var text: string = ""; var pos: Span = Span.none() }
+  struct Binary { var left: *Expr; var op: string; var right: *Expr }
+}
+```
+
+A `struct` declared in the body of a `sealed trait` is an ordinary struct — fields with defaults and `var`, methods, `implement` blocks, attributes — and a variant of the enclosing trait. Its name is top-level, as the separate declaration's is today (`IntLit`, not `Expr.IntLit`). The old form keeps working; a quick fix may move declarations in. `selfhost/ast/ast.vs` has 88 variants.
+
+Layout (user, 2026-10-21): the formatter lists the trait's own members first — associated types, then methods — and the variants after, with a blank line between the two groups; a member moves with the comment lines directly above it and a comment ending its line (`format/reorder.go`).
+
+Rejected: the data-only short form `Num(value: i64)` (needs its own rules for `var` fields, defaults, docs and attributes), leaving it.
+
+Built 2026-10-20 (parser `parseNestedVariant`, formatter, tests in `sema/loopbind_test.go`, `format/format_test.go`, `driver/syntax_test.go`). Only a sealed trait declares variants; a generic trait needs the explicit `: Trait<…>` on each; visibility is the trait's. Not built: the selfhost parser, the quick fix that moves declarations in.
+
+### D194 — Extension functions on enums (v0.103; amends D57)
+
+2026-10-20 (I9; memo §6). The user chose extension functions only.
+
+```veles
+extend Level {
+  fun label(): string => when (this) { … }
+  fun isSevere(): bool => this >= Level.Warn
+}
+println(entry.level.label())
+```
+
+`extend Level with fun …` and `extend Level { … }` are allowed on an enum (they are refused today with the D57 message). No fields and no `implement`: the representation, comparison, hashing, printing and `Codable` derivation stay the compiler's. The methods cannot shadow `value`, `toString`, `values`, `fromValue`, `parse`. Scope is D185's: where the module's `use … extend` clause brings them. Rejected: `implement Trait for Level` for now (impl tables and trait objects over an integer-backed value), leaving it.
+
+Built 2026-10-20 (`declareExtend` enum branch; `driver/syntax_test.go`).
+
+### D195 — A variant's methods implement its sealed trait (v0.103; amends D12, D23, D53)
+
+2026-10-21. The user: `implement Shape { … }` inside a variant of `Shape` should not be required; "maybe just `override area`, or implement `area()`". The recommended form (option B) was chosen.
+
+```veles
+sealed trait Shape {
+  struct Circle {
+    r: f64
+    fun area(): f64 => 3.0 * this.r * this.r
+    override fun describe(): string => "circle r=${this.r}"
+  }
+  fun area(): f64
+  fun describe(): string => "shape with area ${this.area()}"
+}
+```
+
+A method in a variant's body (nested, D193, or a top-level `struct X : Shape`) that has the name of a method of its sealed trait implements it; the compiler moves it into the variant's `implement Shape` — the one the variant wrote, or one it makes. `override` is required exactly where D53 requires it (the trait gives a default body), and is an error elsewhere. A static method never matches. A same-named method with another signature is the usual signature error against the trait, not a separate inherent method (no overloading, D179). A method whose name the trait does not have stays the variant's own.
+
+An `implement Shape { … }` in the variant keeps working (the rule is additive); the `redundant_implement` lint, with a quick fix that unwraps the block, offers the short form. An `implement` of any other trait is unchanged. The error for a variant that leaves a required method out now says `write 'fun area(): f64' in its body`, and its quick fix adds the stub as a plain method.
+
+Rejected: `fun Circle.area()` inside the trait (new syntax; `when (this)` in the trait body already puts the behaviour beside the declaration), leaving the block required.
+
+Built 2026-10-21 (`sema/checker.go` `liftVariantMethods`, run on the syntax tree before names are declared; `lint_impl.go`; tests in `sema/loopbind_test.go`). The selfhost parser needs nothing: the lift is in sema.
+
+### I1 — generators: investigated, not decided
+
+The user (2026-10-20): "investigate problem further, give a lot of different examples from other languages and how could we benefit from each viable approach". `veles-research-generators.md` compares hand-written iterators, `yield` functions, sequence builders, internal iteration (Go's range-over-func), fibers, tasks with channels and lazy data, on four programs. Open.

@@ -306,6 +306,13 @@ func lockCallee(e ast.Expr) (*ast.MemberExpr, bool) {
 
 // walkNodes calls visit on every AST node reachable from v.
 func walkNodes(v reflect.Value, visit func(any)) {
+	walkNodesSeen(v, visit, map[any]bool{})
+}
+
+// walkNodesSeen visits each node once: a variant declared inside a sealed
+// trait (D193) is reachable from the trait and from the file's declarations.
+func walkNodesSeen(v reflect.Value, visit func(any), seen map[any]bool) {
+	walkNodes := func(v reflect.Value, visit func(any)) { walkNodesSeen(v, visit, seen) }
 	switch v.Kind() {
 	case reflect.Interface:
 		if !v.IsNil() {
@@ -316,6 +323,10 @@ func walkNodes(v reflect.Value, visit func(any)) {
 			return
 		}
 		if v.Type().Elem().Kind() == reflect.Struct {
+			if seen[v.Interface()] {
+				return
+			}
+			seen[v.Interface()] = true
 			visit(v.Interface())
 		}
 		walkNodes(v.Elem(), visit)

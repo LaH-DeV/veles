@@ -113,9 +113,9 @@ fun main() {
     val bytes: MutableList<u8> = []
     val texts: MutableList<string> = []
     loop (_ in 0..<n) {
-      seed = seed ^ (seed << 13)
-      seed = seed ^ (seed >> 7)
-      seed = seed ^ (seed << 17)
+      seed ^= seed << 13
+      seed ^= seed >> 7
+      seed ^= seed << 17
       ints.push((seed % 2001).wrapI64() - 1000)
       bytes.push((seed % 256).wrapU8())
       texts.push("ż${seed % 97}")

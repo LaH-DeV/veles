@@ -220,3 +220,47 @@ func TestRegexLiteralErrors(t *testing.T) {
 		})
 	}
 }
+
+// D191: the compound assignments of the bit and wrapping operators are single
+// tokens, matched longest first; the plain operators they start with are
+// unchanged.
+func TestCompoundAssignmentTokens(t *testing.T) {
+	cases := []struct {
+		src  string
+		want []TokenKind
+	}{
+		{"a |= b", []TokenKind{Ident, PipeEq, Ident}},
+		{"a &= b", []TokenKind{Ident, AmpEq, Ident}},
+		{"a ^= b", []TokenKind{Ident, CaretEq, Ident}},
+		{"a <<= 2", []TokenKind{Ident, ShlEq, Int}},
+		{"a >>= 2", []TokenKind{Ident, ShrEq, Int}},
+		{"a +%= b", []TokenKind{Ident, WrapPlusEq, Ident}},
+		{"a -%= b", []TokenKind{Ident, WrapMinusEq, Ident}},
+		{"a *%= b", []TokenKind{Ident, WrapStarEq, Ident}},
+		// the operators themselves, and neighbours that must not change
+		{"a | b & c ^ d", []TokenKind{Ident, Pipe, Ident, Amp, Ident, Caret, Ident}},
+		{"a << 2 >> 1", []TokenKind{Ident, Shl, Int, Shr, Int}},
+		{"a && b || c", []TokenKind{Ident, AndAnd, Ident, OrOr, Ident}},
+		{"a +% b", []TokenKind{Ident, WrapPlus, Ident}},
+		{"a != b", []TokenKind{Ident, NotEq, Ident}},
+	}
+	for _, c := range cases {
+		var diags source.Diagnostics
+		toks := Tokenize(source.NewFile("t.vs", c.src), &diags)
+		var got []TokenKind
+		for _, tk := range toks {
+			if tk.Kind != EOF && tk.Kind != Semi {
+				got = append(got, tk.Kind)
+			}
+		}
+		if len(got) != len(c.want) {
+			t.Errorf("%q: tokens %v, want %v", c.src, got, c.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != c.want[i] {
+				t.Errorf("%q: token %d is %v, want %v", c.src, i, got[i], c.want[i])
+			}
+		}
+	}
+}

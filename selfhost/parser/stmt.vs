@@ -144,7 +144,7 @@ extend Parser {
   }
 
   // `=` or a compound assignment such as `+=`
-  fun atAssignOp(): bool => this.atAny(Kind.Assign, Kind.PlusEq, Kind.MinusEq, Kind.StarEq, Kind.SlashEq, Kind.PercentEq)
+  fun atAssignOp(): bool => this.atAny(Kind.Assign, Kind.PlusEq, Kind.MinusEq, Kind.StarEq, Kind.SlashEq, Kind.PercentEq, Kind.PipeEq, Kind.AmpEq, Kind.CaretEq, Kind.ShlEq, Kind.ShrEq, Kind.WrapPlusEq, Kind.WrapMinusEq, Kind.WrapStarEq)
 
   fun parseValStmt(start: Span): ast.Stmt {
     var s: ast.ValStmt = ast.ValStmt(kind: bindKind(this.next().kind))

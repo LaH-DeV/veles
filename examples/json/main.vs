@@ -3,22 +3,23 @@
 // printer, and a few queries on the parsed tree.
 use io { println }
 
-sealed trait Json
-struct JNull : Json { }
-struct JBool : Json {
-  value: bool
-}
-struct JNum : Json {
-  value: f64
-}
-struct JStr : Json {
-  value: string
-}
-struct JArr : Json {
-  items: List<Json>
-}
-struct JObj : Json {
-  fields: Map<string, Json>
+sealed trait Json {
+  struct JNull { }
+  struct JBool {
+    value: bool
+  }
+  struct JNum {
+    value: f64
+  }
+  struct JStr {
+    value: string
+  }
+  struct JArr {
+    items: List<Json>
+  }
+  struct JObj {
+    fields: Map<string, Json>
+  }
 }
 
 error ParseError {
@@ -153,13 +154,13 @@ struct Parser {
       this.digits()
     }
     val e = this.peek()
-    if (e == 'e' || e == 'E') {
+    if (e in ['e', 'E']) {
       this.pos += 1
       val sign = this.peek()
       if (sign == PLUS || sign == MINUS) this.pos += 1
       this.digits()
     }
-    val text = this.src.substring(start, this.pos) ?: ""
+    val text = this.src.slice(start, this.pos)
     val value = text.toF64() ?: throw ParseError(message: "malformed number '$text'", pos: start)
     JNum(value)
   }

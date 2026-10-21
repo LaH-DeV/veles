@@ -838,6 +838,13 @@ struct Printer {
         if (e.pat.hasArg) this.write("(...)")
         this.write(")")
       }
+      is InExpr         => {
+        this.write(if (e.not) "(!in " else "(in ")
+        this.expr(*e.x)
+        this.write(" ")
+        this.expr(*e.c)
+        this.write(")")
+      }
       is ImplementsExpr => {
         this.write("(implements ")
         this.typ(*e.typ)

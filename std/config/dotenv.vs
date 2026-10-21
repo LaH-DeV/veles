@@ -44,7 +44,7 @@ struct Scanner {
     }
   }
 
-  fun slice(from: i64, to: i64): string => this.text.substring(from, to) ?: ""
+  fun slice(from: i64, to: i64): string => this.text.slice(from, to)
 
   // the text up to a quote on the same or a later line, `null` when there is none;
   // a double-quoted value reads `\n`, `\t`, `\r`, `\"` and `\\`
@@ -105,7 +105,7 @@ fun validName(name: string): bool {
   loop (i in 0..<name.len()) {
     val b = name.byteAt(i)
     val letter = b.isAsciiLetter() || b == '_'
-    if (!(letter || i > 0 && (b.isAsciiDigit() || b == '.' || b == '-'))) return false
+    if (!(letter || i > 0 && (b.isAsciiDigit() || b in ['.', '-']))) return false
   }
   true
 }
@@ -138,7 +138,7 @@ fun parseDotenv(text: string): Dotenv {
       continue
     }
     var name = scan.slice(begin, scan.pos).trim()
-    if (name.startsWith("export ") || name.startsWith("export\t")) name = (name.substring(7, name.len()) ?: "").trim()
+    if (name.startsWith("export ") || name.startsWith("export\t")) name = name.slice(7, name.len()).trim()
     scan.pos += 1
     if (!validName(name)) {
       problems.push("line $line: '$name' is not a variable name")

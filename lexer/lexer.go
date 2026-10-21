@@ -777,8 +777,9 @@ var operators = []struct {
 	text string
 	kind TokenKind
 }{
+	{"<<=", ShlEq}, {">>=", ShrEq}, {"+%=", WrapPlusEq}, {"-%=", WrapMinusEq}, {"*%=", WrapStarEq},
 	{"...", Ellipsis}, {"..<", RangeLt}, {"<<", Shl}, {">>", Shr}, {"::", DblColon}, {"?.", SafeDot}, {"?:", Elvis}, {"?!", OrFail}, {"??", Coalesce}, {"=>", FatArrow},
-	{"->", Arrow}, {"..", Range}, {"+=", PlusEq}, {"-=", MinusEq}, {"*=", StarEq},
+	{"->", Arrow}, {"..", Range}, {"|=", PipeEq}, {"&=", AmpEq}, {"^=", CaretEq}, {"+=", PlusEq}, {"-=", MinusEq}, {"*=", StarEq},
 	{"/=", SlashEq}, {"%=", PercentEq}, {"+%", WrapPlus}, {"-%", WrapMinus}, {"*%", WrapStar},
 	{"==", Eq}, {"!=", NotEq}, {"<=", LtEq}, {">=", GtEq}, {"&&", AndAnd}, {"||", OrOr},
 	{"(", LParen}, {")", RParen}, {"{", LBrace}, {"}", RBrace}, {"[", LBracket}, {"]", RBracket},

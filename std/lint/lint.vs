@@ -69,7 +69,7 @@ public struct Context {
 
   /// The source text `span` covers.
   public const fun text(span: Span): string =>
-    this.file.content.substring(span.start, span.end) ?: ""
+    this.file.content.slice(span.start, span.end)
 }
 
 /// How loud a rule is when the package that uses it says nothing.

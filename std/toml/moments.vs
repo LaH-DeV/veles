@@ -66,7 +66,7 @@ fun momentShape(word: string): MomentShape? {
   if (end < 0) return null
   if (end == word.len()) return MomentShape.LocalDateTime
   val zone = word.byteAt(end)
-  val isUtc = (zone == 'Z' || zone == 'z') && end + 1 == word.len()
-  val hasOffset = (zone == '+' || zone == '-') && isOffsetAt(word, end)
+  val isUtc = zone in ['Z', 'z'] && end + 1 == word.len()
+  val hasOffset = zone in ['+', '-'] && isOffsetAt(word, end)
   if (isUtc || hasOffset) MomentShape.OffsetDateTime else null
 }

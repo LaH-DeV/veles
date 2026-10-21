@@ -529,8 +529,7 @@ public fun walk(root: string): List<string> throws IoError {
   // recursion, so a deep tree cannot overflow the call stack
   var pending: MutableList<string> = []
   try pushEntries(root, pending)
-  loop {
-    val p = pending.pop() ?: break
+  loop (val p = pending.pop()) {
     // SAFETY: takes `p` by value and returns a number; it keeps nothing
     val kind = unsafe {
       veles_fs_lstat(p)

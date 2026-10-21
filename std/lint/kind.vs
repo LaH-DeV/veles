@@ -118,4 +118,13 @@ public enum Kind {
   // reserved for future use: lexed as keywords so they cannot be names
   KwReserved
   KeywordEnd
+  // the compound assignments of D191, after the keywords as in the bootstrap
+  PipeEq
+  AmpEq
+  CaretEq
+  ShlEq
+  ShrEq
+  WrapPlusEq
+  WrapMinusEq
+  WrapStarEq
 }

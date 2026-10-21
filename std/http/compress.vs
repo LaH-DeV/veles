@@ -46,7 +46,7 @@ fun acceptsGzip(header: string?): bool {
       if (key.trim().toLower() == "q") q = number.trim().toF64() ?: 0.0
     }
     val coding = name.trim().toLower()
-    if (coding == "gzip" || coding == "x-gzip") gzipQ = q
+    if (coding in ["gzip", "x-gzip"]) gzipQ = q
     if (coding == "*") starQ = q
   }
   if (gzipQ >= 0.0) gzipQ > 0.0 else starQ > 0.0
@@ -59,12 +59,12 @@ fun isTextual(contentType: string): bool {
   val essence = essenceOf(contentType)
   if (essence == "text/event-stream") return false  // a live feed is not buffered into blocks
   essence.startsWith("text/") ||
-    essence == "application/json" || essence == "application/javascript" || essence == "application/xml" ||
+    essence in ["application/json", "application/javascript", "application/xml"] ||
     essence == "image/svg+xml" || essence.endsWith("+json") || essence.endsWith("+xml")
 }
 
 fun worthCompressing(resp: Response, minBytes: i64): bool {
-  if (resp.status.code < 200 || resp.status.code == 204 || resp.status.code == 206 || resp.status.code == 304) return false
+  if (resp.status.code < 200 || resp.status.code in [204, 206, 304]) return false
   if (resp.headers.get(Header.contentEncoding) != null || resp.headers.get("content-range") != null) return false
   if ((resp.headers.get(Header.cacheControl) ?: "").toLower().contains("no-transform")) return false
   if (!isTextual(resp.headers.get(Header.contentType) ?: "")) return false

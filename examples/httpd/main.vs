@@ -184,8 +184,7 @@ fun exchange(port: i64, method: string, target: string, body: string, extra: str
   // shown only when the server sends them: the methods a 405 or an
   // OPTIONS names, and the length a HEAD promises without a body
   var more = ""
-  loop {
-    val line = try conn.readLine(max: maxResponseLine) ?: break
+  loop (val line = try conn.readLine(max: maxResponseLine)) {
     if (line.isEmpty()) break
     val (rawName, rawValue) = line.splitOnce(":") ?: continue
     val value = rawValue.trim()

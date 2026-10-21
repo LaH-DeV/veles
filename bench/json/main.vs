@@ -15,12 +15,14 @@ fun main() throws EncodeError | DecodeError {
   var records: MutableList<Record> = []
   loop (i in 0..<2000) records.push(Record(id: i, name: "record number $i", score: (i.toF64()) * 0.5, tags: ["a", "bb", "ccc"]))
   val input = records.toList()
-  val sw = time.Stopwatch.start()
-  var check: i64 = 0
-  loop (_ in 0..<20) {
-    val text = try json.encode(input)
-    val back = try json.decode<List<Record>>(text)
-    loop (r in back) check += r.id
-  }
-  println("BENCH json 40000 ${sw.elapsed().toNanos()} $check")
+  val (check, elapsed) = try time.Stopwatch.measure(() => {
+    var check: i64 = 0
+    loop (_ in 0..<20) {
+      val text = try json.encode(input)
+      val back = try json.decode<List<Record>>(text)
+      loop (r in back) check += r.id
+    }
+    check
+  })
+  println("BENCH json 40000 ${elapsed.toNanos()} $check")
 }

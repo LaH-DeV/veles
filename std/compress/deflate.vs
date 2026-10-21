@@ -205,7 +205,7 @@ fun canonicalCodes(lens: MutableList<i64>, n: i64): MutableList<i64> {
     var rest = canonical
     loop (_ in 0..<len) {
       reversed = (reversed << 1) | (rest & 1)
-      rest = rest >> 1
+      rest >>= 1
     }
     codes.set(sym, reversed)
   }
@@ -320,11 +320,11 @@ struct Deflater {
   }
 
   private fun putBits(value: i64, n: i64) {
-    this.acc = this.acc | (value << this.nbits)
+    this.acc |= value << this.nbits
     this.nbits += n
     loop (this.nbits >= 8) {
       this.out.push((this.acc & 255).wrapU8())
-      this.acc = this.acc >> 8
+      this.acc >>= 8
       this.nbits -= 8
     }
   }

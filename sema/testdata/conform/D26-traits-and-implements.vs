@@ -36,9 +36,7 @@ sealed trait Shape {
 
 struct Square : Shape {
   side: i64
-  implement Shape {
-    fun area(): i64 => this.side * this.side
-  }
+  fun area(): i64 => this.side * this.side
 }
 
 trait Plain {

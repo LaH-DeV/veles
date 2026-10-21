@@ -11,9 +11,9 @@ fun text(size: i64): List<u8> {
   val out: MutableList<u8> = []
   var x: u64 = 88172645463325252
   loop (out.len() < size) {
-    x = x ^ (x << 13)
-    x = x ^ (x >> 7)
-    x = x ^ (x << 17)
+    x ^= x << 13
+    x ^= x >> 7
+    x ^= x << 17
     out.addAll((words.at((x % 24).wrapI64()) ?: "a").bytes())
     out.push(if (x % 11 == 0) 10 else 32)
   }
@@ -23,10 +23,12 @@ fun text(size: i64): List<u8> {
 fun main() {
   val data = text(2097152).toList()
   val packed = compress.gzip(data, 6)
-  val sw = time.Stopwatch.start()
-  var back: List<u8> = []
-  loop (_ in 0..<8) back = compress.gunzip(packed) ?? []
-  val took = sw.elapsed().toNanos()
+  val (back, elapsed) = time.Stopwatch.measure(() => {
+    var back: List<u8> = []
+    loop (_ in 0..<8) back = compress.gunzip(packed) ?? []
+    back
+  })
+  val took = elapsed.toNanos()
   var sum: i64 = 0
   loop (b in back) sum = (sum * 31 + b.toI64()) % 1000000007
   println("BENCH gunzip ${data.len() * 8} $took $sum")

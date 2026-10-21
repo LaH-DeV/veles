@@ -45,7 +45,7 @@ public fun percent(fraction: f64, digits: i64 = 1): string => (fraction * 100.0)
 /// `ordinal(12)` is `"12th"`, `ordinal(23)` is `"23rd"`.
 public fun ordinal(n: i64): string {
   val last = n.abs() % 100
-  val suffix = if (last >= 11 && last <= 13) "th" else when (last % 10) {
+  val suffix = if (last in 11..13) "th" else when (last % 10) {
     1    => "st"
     2    => "nd"
     3    => "rd"

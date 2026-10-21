@@ -25,16 +25,17 @@ fun main() {
   val stream: MutableList<string> = []
   var x: i64 = 88172645463325252
   loop (_ in 0..<1000000) {
-    x = x ^ (x << 13)
-    x = x ^ (x >> 7)
-    x = x ^ (x << 17)
+    x ^= x << 13
+    x ^= x >> 7
+    x ^= x << 17
     stream.push(pool.at((x & 0x7fffffff) % 50000) ?: "")
   }
 
-  val sw = time.Stopwatch.start()
-  var check: i64 = 0
-  var interner = Interner()
-  loop (s in stream) check += interner.intern(s)
-  check += interner.names.len()
-  println("BENCH intern 1000000 ${sw.elapsed().toNanos()} $check")
+  val (check, elapsed) = time.Stopwatch.measure(() => {
+    var check: i64 = 0
+    var interner = Interner()
+    loop (s in stream) check += interner.intern(s)
+    check + interner.names.len()
+  })
+  println("BENCH intern 1000000 ${elapsed.toNanos()} $check")
 }

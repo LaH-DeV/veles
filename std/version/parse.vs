@@ -42,7 +42,7 @@ fun readPre(text: string, whole: string): List<string> throws VersionError {
 /// `1.4.2`, `v1.4.2`, `1.4.2-rc.1`.
 fun readVersion(text: string): Version throws VersionError {
   val shown = quoted(text)
-  val bare = if (text.startsWith("v")) text.substring(1, text.len()) ?: "" else text
+  val bare = if (text.startsWith("v")) text.slice(1, text.len()) else text
   val (core, preText) = bare.splitOnce("-") ?: (bare, "")
   val pre: List<string> = if (bare.indexOf("-") >= 0) try readPre(preText, text) else []
   if (core.indexOf("+") >= 0) throw VersionError(message: "$shown: build metadata ('+…') is not used in versions")

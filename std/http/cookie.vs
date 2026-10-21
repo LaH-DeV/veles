@@ -49,8 +49,8 @@ public struct Cookie {
 @caller_location
 fun checkCookie(c: Cookie) {
   if (!isToken(c.name)) panic("cookie name '${c.name}' must be a token: letters, digits and !#\$%&'*+-.^_`|~")
-  if (!c.path.startsWith("/") || c.path.bytes().any(b => b < 32 || b == 127 || b == ';')) panic("cookie path '${c.path}' must start with '/' and hold no ';' or control characters")
-  if (val domain = c.domain && (domain.isEmpty() || !domain.bytes().all(b => b.isAsciiAlphanumeric() || b == '.' || b == '-'))) {
+  if (!c.path.startsWith("/") || c.path.bytes().any(b => b < 32 || b in [127, ';'])) panic("cookie path '${c.path}' must start with '/' and hold no ';' or control characters")
+  if (val domain = c.domain && (domain.isEmpty() || !domain.bytes().all(b => b.isAsciiAlphanumeric() || b in ['.', '-']))) {
     panic("cookie domain '$domain' must be a host name: letters, digits, '.' and '-'")
   }
   if (val age = c.maxAge && age.isNegative()) panic("cookie '${c.name}' has a negative maxAge; withoutCookie removes a cookie")
@@ -83,7 +83,7 @@ fun percentEncode(v: string): string {
   val out = StringBuilder()
   val hex = "0123456789ABCDEF"
   loop (b in v.bytes()) {
-    if (b.isAsciiAlphanumeric() || b == '-' || b == '.' || b == '_' || b == '~') {
+    if (b.isAsciiAlphanumeric() || b in ['-', '.', '_', '~']) {
       out.appendByte(b)
     } else {
       out.append("%")

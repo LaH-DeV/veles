@@ -367,7 +367,7 @@ public struct Offset {
 }
 
 fun parseOffset(s: string): Offset? {
-  if (s == "Z" || s == "z") return Offset.utc
+  if (s in ["Z", "z"]) return Offset.utc
   if (s.len() != 6) return null
   val sign = s.byteAt(0)
   if (sign != '+' && sign != '-') return null
@@ -476,7 +476,7 @@ fun pad(n: i64, width: i64): string => n.toString().padStart(width, "0")
 /// where `secs * 1000000 + micros` would leave the i64, and buying those
 /// two seconds back would cost arithmetic nobody could check.
 fun year4(y: i64): string {
-  if (y >= 0 && y <= 9999) return pad(y, 4)
+  if (y in 0..9999) return pad(y, 4)
   val sign = if (y < 0) "-" else "+"
   val a = if (y < 0) 0 - y else y
   "$sign${pad(a, 6)}"
@@ -647,12 +647,12 @@ fun fieldsOf(s: string): List<string> {
     loop (i < s.len() && !isHttpSpace(s.byteAt(i))) {
       i += 1
     }
-    if (i > start) out.push(s.substring(start, i) ?: "")
+    if (i > start) out.push(s.slice(start, i))
   }
   out
 }
 
-fun isHttpSpace(b: u8): bool => b == ' ' || b == '\t'
+fun isHttpSpace(b: u8): bool => b in [' ', '\t']
 
 fun monthIndex(name: string): i64 {
   loop (i in 0..<monthNames.len()) {
@@ -792,6 +792,15 @@ public struct Stopwatch {
   /// Starts over.
   public fun reset() {
     this.startedAt = monotonicNanos()
+  }
+
+  /// Measures the time `f` takes to run, returning its result and the
+  /// elapsed time: `val (rows, took) = time.Stopwatch.measure(() => load())`.
+  /// An error `f` throws passes through, and no time is returned for it.
+  public static fun measure<R, E>(f: fun(): R suspends throws E): (R, Duration) throws E {
+    val start = monotonicNanos()
+    val result = try f()
+    (result, Duration.nanos(monotonicNanos() - start))
   }
 }
 

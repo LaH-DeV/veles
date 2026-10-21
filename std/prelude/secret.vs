@@ -53,7 +53,7 @@ public struct Secret<T> {
       if (this.bytes.len() != other.bytes.len()) return false
       var diff: u8 = 0
       loop ((a, b) in this.bytes.zip(other.bytes)) {
-        diff = diff | (a ^ b)
+        diff |= a ^ b
       }
       diff == 0
     }

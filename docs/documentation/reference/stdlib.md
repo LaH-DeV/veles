@@ -1018,6 +1018,7 @@ time.formatHttp(t): string            // Sun, 06 Nov 1994 08:49:37 GMT (IMF-fixd
 time.parseHttp(s): Timestamp?         // IMF-fixdate, RFC 850 and asctime (RFC 9110 §5.6.7)
 
 time.Stopwatch.start(): Stopwatch     // elapsed(): Duration, reset()
+time.Stopwatch.measure(f): (R, Duration)  // runs f, returns its result and the time; f's error passes through
 time.Deadline.after(d): Deadline      // remaining(): Duration (never negative), expired(), extend(d), earlier(other)
 time.monotonicNanos(): i64            // the raw reading, for a benchmark
 time.ticker(every: Duration): Ticker  // .ticks: Channel<Timestamp> (holds one; a slow reader misses ticks); Closeable: stops and closes ticks (D110)

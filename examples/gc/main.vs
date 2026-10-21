@@ -85,5 +85,5 @@ fun main() {
   val replaced = joined.replace(",", "; ")
   val sb = StringBuilder()
   loop (n in numbers) sb.append("$n,")
-  println("text ${joined.len()} ${replaced.len()} ${sb.len()} ${replaced.substring(0, 12) ?: ""}")
+  println("text ${joined.len()} ${replaced.len()} ${sb.len()} ${replaced.slice(0, 12)}")
 }

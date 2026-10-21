@@ -30,15 +30,15 @@ struct Scram {
     loop (field in serverFirst.split(",")) {
       when {
         field.startsWith("r=") => {
-          nonce = field.substring(2, field.len()) ?: ""
+          nonce = field.slice(2, field.len())
         }
         field.startsWith("s=") => {
-          salt = base64.decode(field.substring(2, field.len()) ?: "") catch (e) {
+          salt = base64.decode(field.slice(2, field.len())) catch (e) {
             return null
           }
         }
         field.startsWith("i=") => {
-          iterations = (field.substring(2, field.len()) ?: "").toInt() ?: 0
+          iterations = field.slice(2, field.len()).toInt() ?: 0
         }
       }
     }
@@ -63,7 +63,7 @@ struct Scram {
   // the password could make.
   fun verify(serverFinal: string, expected: List<u8>): bool {
     if (!serverFinal.startsWith("v=")) return false
-    val got = base64.decode(serverFinal.substring(2, serverFinal.len()) ?: "") catch (e) {
+    val got = base64.decode(serverFinal.slice(2, serverFinal.len())) catch (e) {
       return false
     }
     crypto.Digest.of(got) == crypto.Digest.of(expected)

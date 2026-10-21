@@ -26,21 +26,21 @@ extend Parser {
       // a member may start with a visibility word (M5); what follows says
       // whether it is a field, a static or a method
       val vis = this.cur().kind
-      val hasVis = vis == Kind.KwPublic || vis == Kind.KwPrivate || vis == Kind.KwInternal
+      val hasVis = vis in [Kind.KwPublic, Kind.KwPrivate, Kind.KwInternal]
       val at: i64 = if (hasVis) 1 else 0
       val member = this.peek(at)
       val afterMember = this.peek(at + 1).kind
       when (member.kind) {
         Kind.Ident, Kind.KwVar, Kind.KwVal, Kind.KwProtected => {
           // `init { }`, `init(value: T) { }`; a field named init is `init: T`
-          if (member.text == "init" && (afterMember == Kind.LBrace || afterMember == Kind.LParen)) {
+          if (member.text == "init" && afterMember in [Kind.LBrace, Kind.LParen]) {
             declaration = this.parseInit(declaration, hasVis)
           } else {
             fields.push(this.parseField(memberAttrs, vis))
           }
         }
         Kind.KwStatic => {
-          if (afterMember == Kind.KwVal || afterMember == Kind.KwVar) {
+          if (afterMember in [Kind.KwVal, Kind.KwVar]) {
             if (hasVis) this.next()
             if (vis == Kind.KwPrivate) this.errorAt(this.prevSpan(), "a static value cannot be 'private'; it is the module's unless 'public' (D23)")
             statics.push(this.parseStaticVal(memberAttrs, vis == Kind.KwPublic, vis == Kind.KwInternal))
@@ -158,8 +158,14 @@ extend Parser {
       this.skipSemis()
       val assocTypes: MutableList<ast.AssocTypeDecl> = []
       val methods: MutableList<ast.FunDecl> = []
+      val variants: MutableList<ast.StructDecl> = []
       loop (!this.atAny(Kind.RBrace, Kind.EOF)) {
         val memberAttrs = this.parseAttributes()
+        if (this.at(Kind.KwStruct)) {
+          variants.push(this.parseNestedVariant(d, memberAttrs))
+          this.parseMemberSeparator()
+          continue
+        }
         if (this.at(Kind.KwType)) {
           val typeStart = this.next().span
           var assoc = ast.AssocTypeDecl(name: this.ident())
@@ -178,9 +184,32 @@ extend Parser {
       this.expect(Kind.RBrace)
       d.assocTypes = assocTypes
       d.methods = methods
+      d.variants = variants
     }
     d.pos = this.spanFrom(head.start)
     d
+  }
+
+  /// A `struct` in the body of a sealed trait (D193): an ordinary struct that
+  /// is a variant of the trait. Its visibility is the trait's; for a trait
+  /// without type parameters the `: Trait` clause is supplied, for a generic
+  /// one it must be written.
+  fun parseNestedVariant(d: ast.TraitDecl, attrs: List<ast.Attribute>): ast.StructDecl {
+    val start = this.span()
+    var sd = this.parseStruct(DeclHead(attrs, doc: "", pub: d.pub, isInternal: false, start), false)
+    if (!d.isSealed) this.errorAt(sd.name.pos, "only a sealed trait declares its variants: write 'sealed trait ${d.name.name} { struct ${sd.name.name} … }' (D193)")
+    sd.nested = true
+    sd.isInternal = d.isInternal
+    if (sd.variant == null) {
+      if (!d.typeParams.isEmpty()) {
+        this.errorAt(sd.name.pos, "a variant of the generic trait '${d.name.name}' names it with its arguments: 'struct ${sd.name.name} … : ${d.name.name}<…>' (D193)")
+      } else {
+        val named: ast.Type = ast.NamedType(path: [d.name], pos: d.name.pos)
+        sd.variant = &named
+        sd.impliedVariant = true
+      }
+    }
+    sd
   }
 
   // `implement<T> Trait for Type { … }`, or `extend<T> Type { … }`
@@ -463,7 +492,7 @@ extend Parser {
     if (k == Kind.String) return true
     if (k != Kind.Ident) return false
     val k2 = this.peek(2).kind
-    k2 == Kind.String || k2 == Kind.LBrace
+    k2 in [Kind.String, Kind.LBrace]
   }
 
   // `test listMethods "name" { body }` (D78, D170): an optional label, an optional sentence

@@ -37,7 +37,7 @@ const fun lowerCaseFunctions(): lint.Rule => lint.Rule(
   doc: "a function named with a capital",
   create: ctx => lint.Visitor(
     onFunDecl: (fn, c) => {
-      val first = fn.name.name.substring(0, 1) ?: ""
+      val first = fn.name.name.slice(0, 1)
       if (first != first.toLower()) {
         c.report(fn.name.pos, "'${fn.name.name}' starts with a capital: functions are written in camelCase")
       }

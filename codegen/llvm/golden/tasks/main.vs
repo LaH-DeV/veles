@@ -30,8 +30,7 @@ fun main() {
   var sum = 0
   scope {
     async produce(ch)
-    loop {
-      val v = await ch.recv() ?: break
+    loop (val v = await ch.recv()) {
       sum += v
     }
   }

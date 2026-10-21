@@ -883,7 +883,12 @@ func (f *fnCtx) checkAssignInner(s *ast.AssignStmt) []Stmt {
 			value = f.coerce(f.operatorCall(op, target, s.Value, s.Pos), target.Type(), s.Pos)
 			return append(pre, f.assignPlace(s.Target, target, root, value, rawType))
 		}
-		rhs := f.checkExprTo(s.Value, target.Type())
+		var rhs Expr
+		if op == OpShl || op == OpShr {
+			rhs = f.checkExpr(s.Value, nil) // the count keeps its own integer type, as in `x << n`
+		} else {
+			rhs = f.checkExprTo(s.Value, target.Type())
+		}
 		value = f.makeBinary(op, target, rhs, s.Pos)
 		return append(pre, f.assignPlace(s.Target, target, root, value, rawType))
 	}
@@ -1438,6 +1443,9 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 			return nil
 		}
 	case s.Cond != nil:
+		for _, l := range letConds(s.Cond) {
+			f.letOK[l] = true // `loop (val x = e)` (D190): the head is the `if` head, run before every iteration
+		}
 		cond := f.checkExprTo(s.Cond, types.TBool)
 		lp.Cond = cond
 		saved := f.saveNarrow()

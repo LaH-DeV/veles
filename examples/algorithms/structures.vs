@@ -29,8 +29,7 @@ fun slidingMax(xs: List<i64>, k: i64): List<i64> {
   val window = Deque<i64>()
   loop ((i, x) in xs.iter().enumerate()) {
     // drop smaller elements from the back: they can never be a maximum again
-    loop {
-      val back = window.last() ?: break
+    loop (val back = window.last()) {
       if ((xs.at(back) ?: panic("slidingMax: the window holds indexes of xs")) > x) break
       window.removeLast()
     }
@@ -159,8 +158,7 @@ fun heapSort(xs: List<i64>): List<i64> {
   val heap = MinHeap()
   loop (x in xs) heap.push(x)
   val out: MutableList<i64> = []
-  loop {
-    val v = heap.pop() ?: break
+  loop (val v = heap.pop()) {
     out.push(v)
   }
   out

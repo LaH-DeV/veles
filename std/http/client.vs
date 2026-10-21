@@ -116,8 +116,8 @@ fun parseUrl(text: string): Url throws FetchError {
   var end = noFragment.len()
   if (slash >= 0 && slash < end) end = slash
   if (query >= 0 && query < end) end = query
-  val authority = noFragment.substring(0, end) ?: ""
-  val tail = noFragment.substring(end, noFragment.len()) ?: ""
+  val authority = noFragment.slice(0, end)
+  val tail = noFragment.slice(end, noFragment.len())
   if (authority.contains("@")) {
     throw invalid(text, "a URL with a user name is not supported; send an authorization header")
   }
@@ -126,23 +126,23 @@ fun parseUrl(text: string): Url throws FetchError {
   if (authority.startsWith("[")) {
     val close = authority.indexOf("]")
     if (close < 0) throw invalid(text, "an IPv6 address needs its closing bracket")
-    host = authority.substring(1, close) ?: ""
-    val after = authority.substring(close + 1, authority.len()) ?: ""
+    host = authority.slice(1, close)
+    val after = authority.slice(close + 1, authority.len())
     if (!after.isEmpty()) {
       if (!after.startsWith(":")) throw invalid(text, "malformed host")
-      port = try portOf(text, after.substring(1, after.len()) ?: "")
+      port = try portOf(text, after.slice(1, after.len()))
     }
-    if (host.isEmpty() || !host.bytes().all(b => b.isAsciiHexDigit() || b == ':' || b == '.')) {
+    if (host.isEmpty() || !host.bytes().all(b => b.isAsciiHexDigit() || b in [':', '.'])) {
       throw invalid(text, "malformed IPv6 address")
     }
   } else {
     val colon = authority.indexOf(":")
     if (colon >= 0) {
-      host = authority.substring(0, colon) ?: ""
-      port = try portOf(text, authority.substring(colon + 1, authority.len()) ?: "")
+      host = authority.slice(0, colon)
+      port = try portOf(text, authority.slice(colon + 1, authority.len()))
     }
     if (host.isEmpty()) throw invalid(text, "a URL needs a host")
-    if (!host.bytes().all(b => b.isAsciiAlphanumeric() || b == '.' || b == '-' || b == '_')) {
+    if (!host.bytes().all(b => b.isAsciiAlphanumeric() || b in ['.', '-', '_'])) {
       throw invalid(text, "a host name is letters, digits, dots and hyphens; write an international name in its punycode form")
     }
   }
@@ -195,7 +195,7 @@ fun resolve(base: Url, location: string): Url throws FetchError {
 fun hasScheme(text: string): bool {
   val i = text.indexOf("://")
   if (i <= 0) return false
-  (text.substring(0, i) ?: "").bytes().all(b => b.isAsciiAlphanumeric() || b == '+' || b == '-' || b == '.')
+  text.slice(0, i).bytes().all(b => b.isAsciiAlphanumeric() || b in ['+', '-', '.'])
 }
 
 fun pathOf(target: string): string {
@@ -213,7 +213,7 @@ fun directoryOf(target: string): string {
 // `.` and `..` segments resolved, as a server would before routing
 fun removeDots(target: string): string {
   val path = pathOf(target)
-  val query = target.substring(path.len(), target.len()) ?: ""
+  val query = target.slice(path.len(), target.len())
   val parts = path.split("/")
   val out: MutableList<string> = []
   loop ((i, part) in parts.enumerate()) {
@@ -556,8 +556,7 @@ struct Pool {
       var out: io.Stream? = null
       val list = m.get(key)
       if (list != null) {
-        loop {
-          val item = list.pop() ?: break
+        loop (val item = list.pop()) {
           if (item.expires.expired()) {
             expired.push(item.conn)
           } else {
@@ -773,7 +772,7 @@ public struct Client {
         is Err(e)  => {
           pooled.close()
           // the server may have closed it while it sat idle
-          if (!(isIdempotent(method) && (e.kind == FetchKind.Io || e.kind == FetchKind.Closed))) throw e
+          if (!(isIdempotent(method) && e.kind in [FetchKind.Io, FetchKind.Closed])) throw e
         }
       }
     }
@@ -821,15 +820,15 @@ fun withTraceparent(headers: Map<string, string>): Map<string, string> {
 }
 
 fun isIdempotent(m: Method): bool =>
-  m == Method.get || m == Method.head || m == Method.put || m == Method.delete || m == Method.options || m == Method.trace
+  m in [Method.get, Method.head, Method.put, Method.delete, Method.options, Method.trace]
 
 fun followsRedirect(m: Method, s: Status): bool =>
-  (m == Method.get || m == Method.head) && (s.code == 301 || s.code == 302 || s.code == 303 || s.code == 307 || s.code == 308)
+  m in [Method.get, Method.head] && s.code in [301, 302, 303, 307, 308]
 
-fun retryableStatus(s: Status): bool => s.code == 502 || s.code == 503 || s.code == 504
+fun retryableStatus(s: Status): bool => s.code in [502, 503, 504]
 
 fun retryable(e: FetchError): bool =>
-  e.kind == FetchKind.Connect || e.kind == FetchKind.Closed || e.kind == FetchKind.Io || e.kind == FetchKind.Timeout
+  e.kind in [FetchKind.Connect, FetchKind.Closed, FetchKind.Io, FetchKind.Timeout]
 
 // 100 ms, 200 ms, 400 ms … up to five seconds
 fun backoff(attempt: i64): Duration {
@@ -909,7 +908,7 @@ fun requestBytes(url: Url, method: Method, headers: Map<string, string>, payload
     val kind = p.contentType
     if (!hasType && kind != null) head.append("content-type: $kind\r\n")
   }
-  if (payload != null || method == Method.post || method == Method.put || method == Method.patch) {
+  if (payload != null || method in [Method.post, Method.put, Method.patch]) {
     head.append("content-length: ${body.len()}\r\n")
   }
   head.append("\r\n")

@@ -129,4 +129,4 @@ extend Cursor {
 }
 
 fun isKeyByte(byte: u8): bool =>
-  byte.isAsciiAlphanumeric() || byte == '_' || byte == '-'
+  byte.isAsciiAlphanumeric() || byte in ['_', '-']

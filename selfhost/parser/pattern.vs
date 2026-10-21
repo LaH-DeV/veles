@@ -119,7 +119,7 @@ extend Parser {
   fun parseFieldPattern(): ast.FieldPat {
     var fp = ast.FieldPat()
     val after = this.peek(1).kind
-    if (this.at(Kind.Ident) && (after == Kind.Colon || after == Kind.Comma || after == Kind.RParen)) {
+    if (this.at(Kind.Ident) && after in [Kind.Colon, Kind.Comma, Kind.RParen]) {
       val id = this.next()
       fp.name = ast.Ident(name: id.text, pos: id.span)
       if (after != Kind.Colon) return fp

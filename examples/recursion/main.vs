@@ -67,7 +67,7 @@ struct Calc {
   fun balanced(): bool => this.depth.depth() == 0
 }
 
-fun isDigit(b: u8): bool => b >= '0' && b <= '9'
+fun isDigit(b: u8): bool => b in '0'..'9'
 
 fun run(text: string, shown: string) {
   var calc = Calc(src: text)

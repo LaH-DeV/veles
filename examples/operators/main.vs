@@ -43,12 +43,13 @@ implement<T: Display> Display for Pair<T> {
   fun toString(): string => "<${this.a} | ${this.b}>"
 }
 
-sealed trait Shape
-struct Circle : Shape {
-  r: f64
-}
-struct Square : Shape {
-  side: f64
+sealed trait Shape {
+  struct Circle {
+    r: f64
+  }
+  struct Square {
+    side: f64
+  }
 }
 
 fun area(s: Shape): f64 => when (s) {

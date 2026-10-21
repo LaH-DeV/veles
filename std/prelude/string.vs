@@ -10,6 +10,29 @@ extern "C" {
 }
 
 extend string {
+  /// True when some byte of the text is `b` (the byte form of `b in text`, D189).
+  public const fun containsByte(b: u8): bool {
+    loop (i in 0..<this.len()) {
+      if (this.byteAt(i) == b) return true
+    }
+    false
+  }
+
+  /// The bytes in `from..<to` as text, whatever the bounds: both ends are clamped to
+  /// the string, a bound inside a character moves outward to the character's edge
+  /// (so the piece holds every byte asked for), and `from >= to` is the empty
+  /// string. Like `substring` it shares the original's bytes: no copy. Use
+  /// `substring` where an invalid range must be told from an empty one (D192).
+  public const fun slice(from: i64, to: i64): string {
+    val n = this.len()
+    var lo = if (from < 0) 0 else if (from > n) n else from
+    var hi = if (to < 0) 0 else if (to > n) n else to
+    if (lo >= hi) return ""
+    loop (lo > 0 && (this.byteAt(lo) & 0xC0) == 0x80) lo -= 1
+    loop (hi < n && (this.byteAt(hi) & 0xC0) == 0x80) hi += 1
+    this.substring(lo, hi) ?: panic("slice: both bounds are in range and on character edges")
+  }
+
   /// Byte index of the first occurrence of `part` at or after `from`, or -1.
   public const fun indexOf(part: string, from: i64 = 0): i64 => unsafe {
     // SAFETY: a read-only search inside both strings' lengths; `from` is clamped

@@ -577,3 +577,72 @@ func TestExtensionRoundTrips(t *testing.T) {
 		t.Errorf("formatted:\n%s\nwant:\n%s", got, src)
 	}
 }
+
+// D189: `in` and `!in` print as written, with parentheses only where the
+// grouping needs them; D190: a loop head may bind; D191: the compound forms.
+func TestMembershipLoopBindAndCompoundRoundTrip(t *testing.T) {
+	src := "fun f(a: i64, xs: List<i64>, s: string, c: u8): bool {\n" +
+		"  val r1 = a in xs\n" +
+		"  val r2 = a !in xs\n" +
+		"  val r3 = (a in xs) == true\n" +
+		"  val r4 = c in 'a'..'z' && a !in [1, 2, 3]\n" +
+		"  val r5 = s !in \"abc\"\n" +
+		"  var bits: u32 = 1\n" +
+		"  bits |= 2\n" +
+		"  bits &= 7\n" +
+		"  bits ^= 1\n" +
+		"  bits <<= 3\n" +
+		"  bits >>= 1\n" +
+		"  bits +%= 5\n" +
+		"  bits -%= 1\n" +
+		"  bits *%= 3\n" +
+		"  loop (val tok = next()) {\n    show(tok)\n  }\n" +
+		"  loop (val line = read() && line.len() > 1) {\n    show(line)\n  }\n" +
+		"  return r1 || r2 || r3 || r4 || r5\n" +
+		"}\n"
+	if got := checkRoundTrip(t, "syntax.vs", src); got != src {
+		t.Errorf("formatted:\n%s\nwant:\n%s", got, src)
+	}
+}
+
+// D193: variants declared in the body of a sealed trait print inside it,
+// without the visibility word or the `: Trait` clause the trait implies.
+func TestNestedVariantsRoundTrip(t *testing.T) {
+	src := "public sealed trait Expr {\n" +
+		"  fun describe(): string => \"expr\"\n\n" +
+		"  /// A whole number.\n" +
+		"  struct IntLit {\n    var text: string = \"\"\n  }\n" +
+		"  struct Add {\n    var left:  *Expr\n    var right: *Expr\n  }\n" +
+		"}\n\n" +
+		"sealed trait Option<T> {\n" +
+		"  struct Some<T> : Option<T> {\n    value: T\n  }\n" +
+		"  struct None<T> : Option<T> { }\n" +
+		"}\n"
+	if got := checkRoundTrip(t, "nested.vs", src); got != src {
+		t.Errorf("formatted:\n%s\nwant:\n%s", got, src)
+	}
+}
+
+// D193: the formatter lists a sealed trait's own members first and the
+// variants declared in it after, each with the comments above it.
+func TestSealedTraitShapeFirst(t *testing.T) {
+	src := "sealed trait Shape {\n" +
+		"  /// A circle.\n" +
+		"  struct Circle {\n    r: f64\n  }\n" +
+		"  // a rectangle\n" +
+		"  struct Rect {\n    w: f64\n  }\n" +
+		"  /// Area.\n" +
+		"  fun area(): f64\n" +
+		"}\n"
+	want := "sealed trait Shape {\n" +
+		"  /// Area.\n" +
+		"  fun area(): f64\n\n" +
+		"  /// A circle.\n" +
+		"  struct Circle {\n    r: f64\n  }\n" +
+		"  // a rectangle\n" +
+		"  struct Rect {\n    w: f64\n  }\n" +
+		"}\n"
+	if got := checkRoundTrip(t, "shape.vs", src); got != want {
+		t.Errorf("formatted:\n%s\nwant:\n%s", got, want)
+	}
+}

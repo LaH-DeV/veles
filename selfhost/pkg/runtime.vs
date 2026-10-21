@@ -12,7 +12,7 @@ fun runtimeSchema(): Schema<RuntimeSettings> => Schema(
       val count = value.asInt()
       if (value.asString() == "auto") {
         runtime.threads = null
-      } else if (count != null && count >= 1 && count <= 256) {
+      } else if (count != null && count in 1..256) {
         runtime.threads = count
       } else {
         throw section.failAt(value, "[runtime] threads is \"auto\" (one per core, the default) or a number from 1 to 256, e.g. threads = 4")

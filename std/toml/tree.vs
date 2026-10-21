@@ -24,7 +24,7 @@ struct Tree {
   /// reach only tables that no header or inline table has defined.
   fun dotted(parent: *Table, key: string, line: i64): *Table throws ParseError {
     val below = try this.child(parent, key, line, Origin.Dotted)
-    val final = below.origin == Origin.Header || below.origin == Origin.Inline
+    val final = below.origin in [Origin.Header, Origin.Inline]
     if (this.rules.closedTables && final) {
       throw this.problem(line, "cannot add to the table ${quoted(key)}: it is defined elsewhere")
     }
@@ -65,7 +65,7 @@ struct Tree {
     val dotted = path.join(".")
     if (val existing = parent.get(key)) {
       val found = existing.asTable() ?: throw this.problem(line, "${quoted(dotted)} is already ${existing.data.describe()}, not a table")
-      val reopened = found.origin == Origin.Header || found.origin == Origin.Inline || (this.rules.closedTables && found.origin == Origin.Dotted)
+      val reopened = found.origin in [Origin.Header, Origin.Inline] || (this.rules.closedTables && found.origin == Origin.Dotted)
       if (reopened) throw this.problem(line, "table [$dotted] is defined twice")
       found.origin = Origin.Header
       return found

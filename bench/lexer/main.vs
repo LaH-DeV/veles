@@ -24,8 +24,8 @@ val keywords: Map<string, i64> = [
   "loop": 7, "when": 8, "struct": 9, "enum": 10, "use": 11, "throws": 12,
 ]
 
-fun isIdentStart(b: u8): bool => (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || b == '_' || b >= 128
-fun isDigit(b: u8): bool => b >= '0' && b <= '9'
+fun isIdentStart(b: u8): bool => b in 'a'..'z' || b in 'A'..'Z' || b == '_' || b >= 128
+fun isDigit(b: u8): bool => b in '0'..'9'
 
 fun tokenise(src: string): MutableList<Token> {
   val out: MutableList<Token> = []
@@ -40,7 +40,7 @@ fun tokenise(src: string): MutableList<Token> {
       }
       isIdentStart(b) => {
         loop (i < n && (isIdentStart(src.byteAt(i)) || isDigit(src.byteAt(i)))) i += 1
-        val word = src.substring(start, i) ?: ""
+        val word = src.slice(start, i)
         val kind = if (keywords.get(word) == null) Kind.Ident else Kind.Keyword
         out.push(Token(kind, start, end: i))
       }
@@ -77,13 +77,15 @@ fun main() {
   }
   val src = sb.toString()
 
-  val stopwatch = time.Stopwatch.start()
-  var check: i64 = 0
-  var tokens: i64 = 0
-  loop (_ in 0..<3) {
-    val toks = tokenise(src)
-    tokens += toks.len()
-    loop (token in toks) check += (token.end - token.start) * (token.kind.value + 1)
-  }
-  println("BENCH lexer $tokens ${stopwatch.elapsed().toNanos()} $check")
+  val ((tokens, check), elapsed) = time.Stopwatch.measure(() => {
+    var check: i64 = 0
+    var tokens: i64 = 0
+    loop (_ in 0..<3) {
+      val toks = tokenise(src)
+      tokens += toks.len()
+      loop (token in toks) check += (token.end - token.start) * (token.kind.value + 1)
+    }
+    (tokens, check)
+  })
+  println("BENCH lexer $tokens ${elapsed.toNanos()} $check")
 }

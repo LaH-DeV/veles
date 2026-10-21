@@ -30,7 +30,7 @@ func letConds(cond ast.Expr) []*ast.LetCond {
 // letCond checks one binding of an `if` condition.
 func (f *fnCtx) letCond(e *ast.LetCond) Expr {
 	if !f.letOK[e] {
-		f.errorf(e.Pos, "'val %s = ...' is only allowed in the condition of an 'if', joined to the rest by '&&' (D95)", e.Name.Name)
+		f.errorf(e.Pos, "'val %s = ...' is only allowed in the condition of an 'if' or a 'loop', joined to the rest by '&&' (D95, D190)", e.Name.Name)
 		f.checkExpr(e.Value, nil)
 		return bad()
 	}

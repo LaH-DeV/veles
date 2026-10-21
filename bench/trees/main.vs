@@ -22,13 +22,15 @@ fun count(node: *Node): i64 {
 }
 
 fun main() {
-  val stopwatch = time.Stopwatch.start()
-  var check: i64 = 0
-  var depth = 4
-  loop (depth <= 16) {
-    val trees = 1 << (16 - depth + 4)
-    loop (_ in 0..<trees) check += count(build(depth))
-    depth += 2
-  }
-  println("BENCH trees $check ${stopwatch.elapsed().toNanos()} $check")
+  val (check, elapsed) = time.Stopwatch.measure(() => {
+    var check: i64 = 0
+    var depth = 4
+    loop (depth <= 16) {
+      val trees = 1 << (16 - depth + 4)
+      loop (_ in 0..<trees) check += count(build(depth))
+      depth += 2
+    }
+    check
+  })
+  println("BENCH trees $check ${elapsed.toNanos()} $check")
 }

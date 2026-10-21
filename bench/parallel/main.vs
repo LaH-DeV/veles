@@ -23,12 +23,14 @@ fun worker(seed: i64, out: Channel<i64>) {
 }
 
 fun main() {
-  val stopwatch = time.Stopwatch.start()
   val out = Channel<i64>(capacity: 64)
-  var sum: i64 = 0
-  scope {
-    loop (s in 0..<64) async worker(s, out)
-    loop (_ in 0..<64) sum += (await out.recv()) ?: 0
-  }
-  println("BENCH parallel 64 ${stopwatch.elapsed().toNanos()} $sum")
+  val (sum, elapsed) = time.Stopwatch.measure(() => {
+    var sum: i64 = 0
+    scope {
+      loop (s in 0..<64) async worker(s, out)
+      loop (_ in 0..<64) sum += (await out.recv()) ?: 0
+    }
+    sum
+  })
+  println("BENCH parallel 64 ${elapsed.toNanos()} $sum")
 }

@@ -624,8 +624,7 @@ implement<V: Decodable> Decodable for MutableMap<string, V> {
   static fun decode(from: Decoder): MutableMap<string, V> throws DecodeError {
     val out: MutableMap<string, V> = [:]
     try from.beginObject()
-    loop {
-      val k = try from.nextKey() ?: break
+    loop (val k = try from.nextKey()) {
       out.set(k, try V.decode(from))
     }
     try from.endObject()
@@ -641,25 +640,26 @@ implement<V: Decodable> Decodable for MutableMap<string, V> {
 /// what a derived sealed-trait decoder buffers an object into before it
 /// knows the variant. It is `Codable` itself, so it passes through any
 /// format.
-public sealed trait Value
-public struct VNull : Value { }
-public struct VBool : Value {
-  public value: bool
-}
-public struct VInt : Value {
-  public value: i64
-}
-public struct VFloat : Value {
-  public value: f64
-}
-public struct VString : Value {
-  public value: string
-}
-public struct VList : Value {
-  public items: List<Value>
-}
-public struct VObject : Value {
-  public fields: Map<string, Value>
+public sealed trait Value {
+  struct VNull { }
+  struct VBool {
+    public value: bool
+  }
+  struct VInt {
+    public value: i64
+  }
+  struct VFloat {
+    public value: f64
+  }
+  struct VString {
+    public value: string
+  }
+  struct VList {
+    public items: List<Value>
+  }
+  struct VObject {
+    public fields: Map<string, Value>
+  }
 }
 
 extend Value {

@@ -106,11 +106,10 @@ fun exchange(port: i64, method: string, target: string, body: string, extra: str
   try conn.writeText(head.toString() + body)
   val out = StringBuilder()
   out.append("< ${try conn.readLine(max: maxResponseLine) ?: "(no response)"}")
-  loop {
-    val line = try conn.readLine(max: maxResponseLine) ?: break
+  loop (val line = try conn.readLine(max: maxResponseLine)) {
     if (line.isEmpty()) break
     val name = line.splitOnce(":")?.0?.toLower() ?: ""
-    if (name == "set-cookie" || name == "location") out.append("\n<   $line")
+    if (name in ["set-cookie", "location"]) out.append("\n<   $line")
   }
   var text = ""
   loop {

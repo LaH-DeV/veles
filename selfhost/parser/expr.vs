@@ -21,7 +21,7 @@ fun infixBp(k: Kind): i64 => when (k) {
   Kind.OrOr => BP_OR
   Kind.AndAnd => BP_AND
   Kind.Eq, Kind.NotEq => BP_EQ
-  Kind.Lt, Kind.LtEq, Kind.Gt, Kind.GtEq => BP_CMP
+  Kind.Lt, Kind.LtEq, Kind.Gt, Kind.GtEq, Kind.KwIn => BP_CMP
   Kind.KwIs => BP_NAMED
   Kind.Elvis, Kind.OrFail, Kind.Coalesce => BP_ELVIS
   Kind.Range, Kind.RangeLt => BP_RANGE
@@ -67,7 +67,9 @@ extend Parser {
     loop {
       // `!is` is two tokens
       val notIs = this.at(Kind.Bang) && this.peek(1).kind == Kind.KwIs
-      val op = if (notIs) Kind.KwIs else this.cur().kind
+      // `!in` too (D189)
+      val notIn = this.at(Kind.Bang) && this.peek(1).kind == Kind.KwIn
+      val op = if (notIs) Kind.KwIs else if (notIn) Kind.KwIn else this.cur().kind
       if (left is ast.NameExpr && this.atWord("implements")) {
         if (BP_NAMED <= minBp) return left
         left = this.parseImplements(left, start)
@@ -79,15 +81,20 @@ extend Parser {
         else => infixBp(op)
       }
       if (bp == BP_NONE || bp <= minBp) return left
-      left = this.parseInfix(left, op, bp, notIs, start)
+      left = this.parseInfix(left, op, bp, notIs || notIn, start)
     }
   }
 
-  // one infix operator at the cursor, with left before it
+  // one infix operator at the cursor, with left before it; `notIs` is also
+  // the `!` of an `!in`
   fun parseInfix(left: ast.Expr, op: Kind, bp: i64, notIs: bool, start: Span): ast.Expr {
     if (notIs) this.next()  // !
     this.next()
     when (op) {
+      Kind.KwIn                => {
+        val container = this.parseBinary(bp)
+        return ast.InExpr(x: &left, c: &container, not: notIs, pos: this.spanFrom(start))
+      }
       Kind.KwIs                => {
         val pat = this.parseTypePatternRest(this.prevSpan())
         return ast.IsExpr(x: &left, pat, not: notIs, pos: this.spanFrom(start))
@@ -334,8 +341,8 @@ extend Parser {
         this.next()
         val closing = t.text.lastIndexOf("/")
         // an unterminated literal: the lexer reported it
-        if (closing < 1) return ast.RegexLit(pattern: t.text.substring(1, t.text.len()) ?: "", pos: t.span)
-        return ast.RegexLit(pattern: t.text.substring(1, closing) ?: "", flags: t.text.substring(closing + 1, t.text.len()) ?: "", pos: t.span)
+        if (closing < 1) return ast.RegexLit(pattern: t.text.slice(1, t.text.len()), pos: t.span)
+        return ast.RegexLit(pattern: t.text.slice(1, closing), flags: t.text.slice(closing + 1, t.text.len()), pos: t.span)
       }
       Kind.KwTrue, Kind.KwFalse => {
         this.next()
@@ -464,7 +471,7 @@ extend Parser {
           depth -= 1
           if (depth == 0) {
             val after = this.peek(i + 1).kind
-            return after == Kind.FatArrow || after == Kind.Colon
+            return after in [Kind.FatArrow, Kind.Colon]
           }
         }
         Kind.EOF => return false

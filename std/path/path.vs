@@ -36,7 +36,7 @@ public fun base(p: string): string {
 public fun ext(p: string): string {
   val name = base(p)
   val i = name.lastIndexOf(".")
-  if (i <= 0) "" else name.substring(i, name.len()) ?: ""
+  if (i <= 0) "" else name.slice(i, name.len())
 }
 
 /// The last component without its extension.
@@ -53,7 +53,7 @@ public fun isAbsolute(p: string): bool {
   p.len() >= 3 && p.byteAt(1) == 58 && isSep(p.byteAt(2))  // drive letter, ':'
 }
 
-fun isSep(b: u8): bool => b == 47 || b == 92
+fun isSep(b: u8): bool => b in [47, 92]
 
 fun lastSep(p: string): i64 {
   var i = p.len() - 1
@@ -116,7 +116,7 @@ public fun within(root: string, p: string): bool {
 // server and share too, which Windows treats as the root the way it treats
 // a drive letter; "" for a relative path.
 fun rootOf(p: string): string {
-  if (p.len() >= 3 && p.byteAt(1) == ':' && isSep(p.byteAt(2))) return (p.substring(0, 2) ?: "") + "/"
+  if (p.len() >= 3 && p.byteAt(1) == ':' && isSep(p.byteAt(2))) return p.slice(0, 2) + "/"
   if (p.len() >= 2 && isSep(p.byteAt(0)) && isSep(p.byteAt(1))) {
     var end = 2
     var seps = 0

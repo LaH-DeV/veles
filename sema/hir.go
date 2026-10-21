@@ -375,11 +375,11 @@ func BinOpFromToken(k lexer.TokenKind) BinOp {
 		return OpDiv
 	case lexer.Percent, lexer.PercentEq:
 		return OpRem
-	case lexer.WrapPlus:
+	case lexer.WrapPlus, lexer.WrapPlusEq:
 		return OpWrapAdd
-	case lexer.WrapMinus:
+	case lexer.WrapMinus, lexer.WrapMinusEq:
 		return OpWrapSub
-	case lexer.WrapStar:
+	case lexer.WrapStar, lexer.WrapStarEq:
 		return OpWrapMul
 	case lexer.Eq:
 		return OpEq
@@ -397,15 +397,15 @@ func BinOpFromToken(k lexer.TokenKind) BinOp {
 		return OpAnd
 	case lexer.OrOr:
 		return OpOr
-	case lexer.Amp:
+	case lexer.Amp, lexer.AmpEq:
 		return OpBitAnd
-	case lexer.Pipe:
+	case lexer.Pipe, lexer.PipeEq:
 		return OpBitOr
-	case lexer.Caret:
+	case lexer.Caret, lexer.CaretEq:
 		return OpBitXor
-	case lexer.Shl:
+	case lexer.Shl, lexer.ShlEq:
 		return OpShl
-	case lexer.Shr:
+	case lexer.Shr, lexer.ShrEq:
 		return OpShr
 	}
 	return -1

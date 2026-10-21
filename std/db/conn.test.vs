@@ -41,7 +41,7 @@ test "SCRAM-SHA-256 logs in with the right password and refuses the wrong one" {
     is Err(e) => {
       // PostgreSQL on Windows sometimes resets the connection after its error, and a reset
       // discards the unread message: the refusal then shows as a lost connection
-      expect(e.kind == ErrorKind.Auth || e.kind == ErrorKind.Connection)
+      expect(e.kind in [ErrorKind.Auth, ErrorKind.Connection])
       if (e.kind == ErrorKind.Auth) expect(e.code == "28P01")
     }
   }

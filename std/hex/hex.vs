@@ -68,12 +68,12 @@ fun nibbleAt(text: string, at: i64): u8 throws Invalid {
 /// A byte as it should read in a message: the character when it is
 /// printable ASCII, `0x0a` when it is not.
 fun describe(b: u8): string {
-  if (b >= 32 && b < 127) {
+  if (b in 32..<127) {
     val one: MutableList<u8> = [b]
     return "'${one.decodeUtf8() ?: "?"}'"
   }
   val d = "0123456789abcdef"
   val hi = (b >> 4).toI64()
   val lo = (b & 15).toI64()
-  "0x${d.substring(hi, hi + 1) ?: ""}${d.substring(lo, lo + 1) ?: ""}"
+  "0x${d.slice(hi, hi + 1)}${d.slice(lo, lo + 1)}"
 }

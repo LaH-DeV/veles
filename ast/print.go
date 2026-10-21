@@ -993,6 +993,16 @@ func (p *printer) expr(e Expr) {
 		p.w("(val " + e.Name.Name + " ")
 		p.expr(e.Value)
 		p.w(")")
+	case *InExpr:
+		if e.Not {
+			p.w("(!in ")
+		} else {
+			p.w("(in ")
+		}
+		p.expr(e.X)
+		p.w(" ")
+		p.expr(e.C)
+		p.w(")")
 	case *IsExpr:
 		if e.Not {
 			p.w("(!is ")

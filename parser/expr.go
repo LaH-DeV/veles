@@ -32,7 +32,7 @@ func infixBp(k lexer.TokenKind) int {
 		return bpAnd
 	case lexer.Eq, lexer.NotEq:
 		return bpEq
-	case lexer.Lt, lexer.LtEq, lexer.Gt, lexer.GtEq:
+	case lexer.Lt, lexer.LtEq, lexer.Gt, lexer.GtEq, lexer.KwIn:
 		return bpCmp
 	case lexer.KwIs:
 		return bpNamed
@@ -68,6 +68,11 @@ func (p *Parser) parseBinary(minBp int) ast.Expr {
 		if notIs {
 			op = lexer.KwIs
 		}
+		// `!in` is spelled as two tokens too (D189).
+		notIn := op == lexer.Bang && p.peek(1).Kind == lexer.KwIn
+		if notIn {
+			op = lexer.KwIn
+		}
 		// `T implements Trait` (D117): `implements` is a word only here,
 		// after a name, at the level of `is`
 		if name, isName := left.(*ast.NameExpr); isName && op == lexer.Ident && p.cur().Text == "implements" {
@@ -98,6 +103,13 @@ func (p *Parser) parseBinary(minBp int) ast.Expr {
 			p.next()
 			pat := p.parseTypePatternRest(p.prevSpan())
 			left = &ast.IsExpr{X: left, Pat: pat, Not: notIs, Pos: p.spanFrom(start)}
+		case lexer.KwIn:
+			if notIn {
+				p.next()
+			}
+			p.next()
+			right := p.parseBinary(bp)
+			left = &ast.InExpr{X: left, C: right, Not: notIn, Pos: p.spanFrom(start)}
 		case lexer.KwAs:
 			p.next()
 			t := p.parseType()
@@ -587,8 +599,7 @@ func (p *Parser) parseArmBody() ast.Expr {
 	}
 	start := p.span()
 	body := p.parseExpr()
-	switch p.cur().Kind {
-	case lexer.Assign, lexer.PlusEq, lexer.MinusEq, lexer.StarEq, lexer.SlashEq, lexer.PercentEq:
+	if p.cur().Kind.IsAssign() {
 		op := p.next().Kind
 		val := p.parseExpr()
 		as := &ast.AssignStmt{Target: body, Op: op, Value: val, Pos: p.spanFrom(start)}

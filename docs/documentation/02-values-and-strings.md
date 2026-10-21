@@ -220,6 +220,12 @@ Two things worth knowing early:
   character, so a parser can probe `s.substring(pos, pos + 4)` near the
   end without a bounds check. The `?:` after
   it supplies a fallback; nullable types get [a chapter of their own](06-nullable-types.md).
+- `slice(from, to)` is `substring` that cannot fail and so returns a plain
+  `string`: both ends are clamped to the text, an end inside a character
+  moves out to the character's edge, and `from >= to` gives `""`. It shares
+  the original's bytes, like `substring`. Use it when an empty answer is as
+  good as a missing one, and `substring` when the caller must tell them
+  apart.
 
 There is no separate character type; a one-character string is what you
 use. When you walk a string byte by byte (`s.byteAt(i)`), `'"'` is the

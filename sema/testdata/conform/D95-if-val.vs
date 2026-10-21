@@ -26,12 +26,12 @@ fun notNullable() {
 }
 
 fun onlyInIf() {
-  val flag = (val b = find("b")) // error: 'val b = ...' is only allowed in the condition of an 'if', joined to the rest by '&&' (D95)
+  val flag = (val b = find("b")) // error: 'val b = ...' is only allowed in the condition of an 'if' or a 'loop', joined to the rest by '&&' (D95, D190)
   io.println("$flag")
 }
 
 fun notUnderOr() {
-  if (val a = find("a") || find("b") != null) io.println("x") // error: 'val a = ...' is only allowed in the condition of an 'if', joined to the rest by '&&' (D95)
+  if (val a = find("a") || find("b") != null) io.println("x") // error: 'val a = ...' is only allowed in the condition of an 'if' or a 'loop', joined to the rest by '&&' (D95, D190)
 }
 
 fun neverRead() {

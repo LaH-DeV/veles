@@ -106,6 +106,7 @@ fun lints(): List<LintInfo> => [
   warn("pattern_form", "a pattern written in a longer form than needed"),
   warn("redundant_copy", "a `.toList()` of a collection that is not used afterwards: without it the collection is moved immutable"),
   warn("redundant_discard", "`val _ = f()` for a value a statement may simply ignore"),
+  warn("redundant_implement", "an `implement Trait { }` around the methods of a variant of that sealed trait"),
   warn("redundant_label", "an argument label that repeats the variable passed (`f(x: x)`)"),
   warn("redundant_mut", "`mut` on a literal whose expected type is already mutable"),
   warn("redundant_public", "`public` where the declaration is already public"),

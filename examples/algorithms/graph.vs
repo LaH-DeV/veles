@@ -31,8 +31,7 @@ struct Graph {
     val queue = Deque<i64>()
     queue.addLast(start)
     seen.set(start, true)
-    loop {
-      val v = queue.removeFirst() ?: break
+    loop (val v = queue.removeFirst()) {
       order.push(v)
       loop (w in this.neighbours(v)) {
         if (slot(seen, w)) continue
@@ -65,8 +64,7 @@ struct Graph {
     dist.set(start, 0)
     val queue = Deque<i64>()
     queue.addLast(start)
-    loop {
-      val v = queue.removeFirst() ?: break
+    loop (val v = queue.removeFirst()) {
       val d = slot(dist, v) ?: 0
       loop (w in this.neighbours(v)) {
         if (slot(dist, w) != null) continue
@@ -88,8 +86,7 @@ struct Graph {
       if (slot(indegree, v) == 0) ready.addLast(v)
     }
     val order: MutableList<i64> = []
-    loop {
-      val v = ready.removeFirst() ?: break
+    loop (val v = ready.removeFirst()) {
       order.push(v)
       loop (w in this.neighbours(v)) {
         val left = slot(indegree, w) - 1
@@ -146,8 +143,7 @@ fun dijkstra(n: i64, edges: List<(i64, i64, i64)>, start: i64): List<i64?> {
   dist.set(start, 0)
   val pending = PriorityQueue<Hop>.natural()
   pending.push(Hop(dist: 0, node: start))
-  loop {
-    val hop = pending.pop() ?: break
+  loop (val hop = pending.pop()) {
     val best = slot(dist, hop.node) ?: hop.dist
     if (hop.dist > best) continue
     loop ((to, weight) in slot(adj, hop.node)) {

@@ -80,6 +80,7 @@ var Lints = []LintInfo{
 	{"pattern_form", "a pattern written in a longer form than needed", LintWarn},
 	{"redundant_copy", "a `.toList()` of a collection that is not used afterwards: without it the collection is moved immutable", LintWarn},
 	{"redundant_discard", "`val _ = f()` for a value a statement may simply ignore", LintWarn},
+	{"redundant_implement", "an `implement Trait { }` around the methods of a variant of that sealed trait", LintWarn},
 	{"redundant_label", "an argument label that repeats the variable passed (`f(x: x)`)", LintWarn},
 	{"redundant_mut", "`mut` on a literal whose expected type is already mutable", LintWarn},
 	{"redundant_public", "`public` where the declaration is already public", LintWarn},

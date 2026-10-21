@@ -9,14 +9,15 @@ fun produce(ch: Channel<i64>) {
 
 fun main() {
   val ch = Channel<i64>(capacity: 64)
-  val sw = time.Stopwatch.start()
-  var sum: i64 = 0
-  scope {
-    async produce(ch)
-    loop {
-      val v = await ch.recv() ?: break
-      sum += v
+  val (sum, elapsed) = time.Stopwatch.measure(() => {
+    var sum: i64 = 0
+    scope {
+      async produce(ch)
+      loop (val v = await ch.recv()) {
+        sum += v
+      }
     }
-  }
-  println("BENCH channels 200000 ${sw.elapsed().toNanos()} $sum")
+    sum
+  })
+  println("BENCH channels 200000 ${elapsed.toNanos()} $sum")
 }

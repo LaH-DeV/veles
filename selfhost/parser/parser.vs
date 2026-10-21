@@ -215,6 +215,13 @@ struct Parser {
       val start = this.pos
       val d = this.parseDecl()
       decls.push(d)
+      if (d is ast.TraitDecl) {
+        loop (v in d.variants) decls.push(v)  // a variant declared in the trait's body (D193)
+        loop (v in d.variants) {
+          if (val errorImpl = v.errorImpl) decls.push(*errorImpl)
+          loop (impl in v.impls) decls.push(impl)
+        }
+      }
       if (d is ast.StructDecl) {
         if (val errorImpl = d.errorImpl) decls.push(*errorImpl)  // `error` is a struct and an implement
         loop (impl in d.impls) decls.push(impl)                  // an `implement Trait { }` in the body
@@ -629,7 +636,7 @@ struct Parser {
   fun parseFun(attrs: List<ast.Attribute>, ctx: FunContext): ast.FunDecl {
     val start = this.span()
     var fn = ast.FunDecl(attrs, doc: this.takeDoc())
-    val topLevel = ctx == FunContext.Free || ctx == FunContext.Extern
+    val topLevel = ctx in [FunContext.Free, FunContext.Extern]
     // modifiers
     loop {
       when (this.cur().kind) {
@@ -730,7 +737,7 @@ struct Parser {
   // `extend Type {` or `extend<T> Type {`: `extend` is a word only there
   fun atExtendDecl(): bool {
     val next = this.peek(1).kind
-    this.atWord("extend") && (next == Kind.Ident || next == Kind.Lt || next == Kind.Star || next == Kind.LParen)
+    this.atWord("extend") && next in [Kind.Ident, Kind.Lt, Kind.Star, Kind.LParen]
   }
 
   // `error Name`: `error` is a word only at declaration position, with a name after it

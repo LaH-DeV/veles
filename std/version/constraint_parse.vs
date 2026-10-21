@@ -69,7 +69,7 @@ fun isOperator(word: string): bool => OPERATORS.contains(word)
 /// The operator a token starts with, longest first, and the rest.
 fun splitOperator(token: string): (string, string) {
   loop (op in OPERATORS) {
-    if (token.startsWith(op)) return (op, token.substring(op.len(), token.len()) ?: "")
+    if (token.startsWith(op)) return (op, token.slice(op.len(), token.len()))
   }
   ("", token)
 }
@@ -114,11 +114,11 @@ fun caretEnd(p: Partial): Version {
   Version(major: 0, minor: 0, patch: patch + 1)
 }
 
-fun isWildcard(part: string): bool => part == "x" || part == "X" || part == "*"
+fun isWildcard(part: string): bool => part in ["x", "X", "*"]
 
 /// `1`, `1.2`, `1.2.3`, `1.2.3-rc.1`, `1.x`, `*`, with an optional `v`.
 fun readPartial(written: string, whole: string): Partial throws VersionError {
-  val text = if (written.startsWith("v")) written.substring(1, written.len()) ?: "" else written
+  val text = if (written.startsWith("v")) written.slice(1, written.len()) else written
   val (numbers, preText) = text.splitOnce("-") ?: (text, "")
   val pre: List<string> = if (text.indexOf("-") >= 0) try readPre(preText, whole) else []
   val parts = numbers.split(".")

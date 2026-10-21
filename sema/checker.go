@@ -5,6 +5,7 @@ package sema
 import (
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 
@@ -397,6 +398,7 @@ func (c *Checker) ResultType(ok, errT types.Type) *types.Sealed {
 
 func (c *Checker) collect() {
 	mods := c.pkg.SortedModules()
+	liftVariantMethods(mods)
 	// 1. declare every module-level name
 	for _, m := range mods {
 		m.Scope = NewScope(c.universe)
@@ -1953,11 +1955,15 @@ func (c *Checker) declareExtend(m *Module, f *ast.File, d *ast.ImplDecl) {
 	if types.IsInvalid(impl.Target) {
 		return
 	}
-	if en, ok := impl.Target.(*types.Enum); ok {
-		c.errorf(d.Target.Span(), "cannot extend enum '%s': an enum is a set of values with no methods of its own; write functions that take one (D57)", en.Name)
-		return
-	}
-	if !c.ownsType(m, impl.Target) {
+	_, isEnum := impl.Target.(*types.Enum)
+	switch {
+	case isEnum:
+		// D194: an enum gains extension functions and nothing else — no fields, no
+		// `implement` (D57): what it compares, hashes, orders and prints as stays the
+		// compiler's. They resolve like the other extension functions (D173).
+		impl.Foreign = true
+		c.foreignExts = append(c.foreignExts, impl)
+	case !c.ownsType(m, impl.Target):
 		// a type the package does not own: an extension function (D173), a
 		// statically resolved call visible where this module is imported
 		switch t := impl.Target.(type) {
@@ -1974,13 +1980,17 @@ func (c *Checker) declareExtend(m *Module, f *ast.File, d *ast.ImplDecl) {
 			return
 		}
 		c.foreignExts = append(c.foreignExts, impl)
-	} else {
+	default:
 		c.extends = append(c.extends, impl)
 	}
 	for _, md := range d.Methods {
 		name := md.Name.Name
 		if prev, dup := impl.Methods[name]; dup {
 			c.errorf(md.Name.Pos, "duplicate method '%s' in extend block; first declared at %s", name, prev.Decl.Name.Pos)
+			continue
+		}
+		if isEnum && (name == "value" || lookupBuiltinDoc("enum", name) != nil) {
+			c.errorf(md.Name.Pos, "'%s' is a built-in member of every enum and cannot be redeclared (D194)", name)
 			continue
 		}
 		if impl.Foreign {
@@ -2137,6 +2147,7 @@ func (c *Checker) declareImpl(m *Module, f *ast.File, d *ast.ImplDecl) {
 	c.impls[trait] = append(c.impls[trait], impl)
 	if !d.Derived {
 		c.lintInlinableImpl(m, f, d, impl)
+		c.lintRedundantImplement(m, d, impl)
 	}
 	// D58: methods written for a supertrait are declared with that super's
 	// impl; the supers the type lacks are derived once every impl exists
@@ -2194,6 +2205,80 @@ func (c *Checker) declareImplMethod(m *Module, f *ast.File, d *ast.ImplDecl, imp
 	c.checkImplSignature(t, sig, trait, impl, md)
 }
 
+// liftVariantMethods is D195: a method written in the body of a variant that
+// has the name of a method of its sealed trait implements it, so `implement
+// Shape { }` need not be written around it. The matching methods move into
+// the variant's `implement` of that trait — the one it wrote, or one made
+// here — and the rest stay its own. It runs on the syntax tree before any
+// name is declared, so everything after sees the explicit form.
+func liftVariantMethods(mods []*Module) {
+	for _, m := range mods {
+		traits := map[string]*ast.TraitDecl{}
+		for _, f := range m.Files {
+			for _, d := range f.Decls {
+				if td, ok := d.(*ast.TraitDecl); ok && td.Sealed {
+					traits[td.Name.Name] = td
+				}
+			}
+		}
+		if len(traits) == 0 {
+			continue
+		}
+		for _, f := range m.Files {
+			var made []ast.Decl
+			for _, d := range f.Decls {
+				sd, ok := d.(*ast.StructDecl)
+				if !ok || sd.Variant == nil {
+					continue
+				}
+				nt, ok := sd.Variant.(*ast.NamedType)
+				if !ok || len(nt.Path) != 1 {
+					continue
+				}
+				td := traits[nt.Path[0].Name]
+				if td == nil {
+					continue
+				}
+				var lifted, kept []*ast.FunDecl
+				for _, md := range sd.Methods {
+					if !md.Static && slices.ContainsFunc(td.Methods, func(tm *ast.FunDecl) bool { return tm.Name.Name == md.Name.Name }) {
+						lifted = append(lifted, md)
+					} else {
+						kept = append(kept, md)
+					}
+				}
+				if len(lifted) == 0 {
+					continue
+				}
+				sd.Methods = kept
+				if impl := variantImplOf(sd, td); impl != nil {
+					impl.Methods = append(impl.Methods, lifted...)
+					continue
+				}
+				target := &ast.NamedType{Path: []ast.Ident{sd.Name}, Pos: sd.Name.Pos}
+				for _, tp := range sd.TypeParams {
+					target.Args = append(target.Args, &ast.NamedType{Path: []ast.Ident{tp.Name}, Pos: tp.Name.Pos})
+				}
+				impl := &ast.ImplDecl{Inline: true, Lifted: true, TypeParams: sd.TypeParams, Trait: sd.Variant, Target: target, Methods: lifted, Pos: lifted[0].Pos}
+				sd.Impls = append(sd.Impls, impl)
+				made = append(made, impl)
+			}
+			f.Decls = append(f.Decls, made...)
+		}
+	}
+}
+
+// variantImplOf is the `implement` of the variant's sealed trait written in
+// its body, or nil.
+func variantImplOf(sd *ast.StructDecl, td *ast.TraitDecl) *ast.ImplDecl {
+	for _, impl := range sd.Impls {
+		if nt, ok := impl.Trait.(*ast.NamedType); ok && len(nt.Path) == 1 && nt.Path[0].Name == td.Name.Name {
+			return impl
+		}
+	}
+	return nil
+}
+
 // checkImplComplete reports the trait methods an impl neither writes nor
 // derives.
 // checkSealedVariants reports, at its declaration, a variant with no
@@ -2220,20 +2305,14 @@ func (c *Checker) checkSealedVariants() {
 			if !ok || c.findImplFor(v, s.Trait) != nil {
 				continue
 			}
-			hint := fmt.Sprintf("; add 'implement %s { %s }' to its body", s.Name, traitMethodText(s.Trait, required[0]))
-			for _, md := range sd.Methods {
-				if md.Name.Name == required[0] {
-					// the method is there, one level too far out
-					hint = fmt.Sprintf("; '%s' is declared in its body, outside any implement: move it inside 'implement %s { }'", md.Name.Name, s.Name)
-				}
-			}
-			// the block, with a stub per method, added to the variant's body —
-			// scaffolding, as for an implement missing methods
-			block := "implement " + s.Name + " {"
+			hint := fmt.Sprintf("; write '%s' in its body (D195)", traitMethodText(s.Trait, required[0]))
+			// a stub per method, added to the variant's body — scaffolding, as
+			// for an implement missing methods
+			var stubs []string
 			for _, name := range required {
-				block += "\n  " + traitMethodText(s.Trait, name) + " => panic(\"'" + name + "' is not written yet\")"
+				stubs = append(stubs, traitMethodText(s.Trait, name)+" => panic(\"'"+name+"' is not written yet\")")
 			}
-			fix := fixAddMembers(fmt.Sprintf("Implement '%s' in '%s'", s.Name, v.Name), sd.Pos, []string{block + "\n}"})
+			fix := fixAddMembers(fmt.Sprintf("Implement '%s' in '%s'", s.Name, v.Name), sd.Pos, stubs)
 			if fix != nil {
 				fix.Guess = true
 			}

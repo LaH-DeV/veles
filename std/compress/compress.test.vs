@@ -19,9 +19,9 @@ test fun noise(n: i64): List<u8> {
   val out: MutableList<u8> = []
   var x: u64 = 88172645463325252
   loop (_ in 0..<n) {
-    x = x ^ (x << 13)
-    x = x ^ (x >> 7)
-    x = x ^ (x << 17)
+    x ^= x << 13
+    x ^= x >> 7
+    x ^= x << 17
     out.push((x & 255).wrapU8())
   }
   out

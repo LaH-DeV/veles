@@ -21,15 +21,17 @@ fun emitFunction(sb: StringBuilder, index: i64) {
 }
 
 fun main() {
-  val sw = time.Stopwatch.start()
-  var check: i64 = 0
-  var lines: i64 = 0
-  loop (_ in 0..<4) {
-    val sb = StringBuilder()
-    loop (f in 0..<5000) emitFunction(sb, f)
-    val text = sb.toString()
-    check += text.len()
-    lines += 50 * 5000
-  }
-  println("BENCH emit $lines ${sw.elapsed().toNanos()} $check")
+  val ((lines, check), elapsed) = time.Stopwatch.measure(() => {
+    var check: i64 = 0
+    var lines: i64 = 0
+    loop (_ in 0..<4) {
+      val sb = StringBuilder()
+      loop (f in 0..<5000) emitFunction(sb, f)
+      val text = sb.toString()
+      check += text.len()
+      lines += 50 * 5000
+    }
+    (lines, check)
+  })
+  println("BENCH emit $lines ${elapsed.toNanos()} $check")
 }

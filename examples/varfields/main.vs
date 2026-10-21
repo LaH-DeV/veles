@@ -23,19 +23,16 @@ struct Counter {
 sealed trait Shape {
   fun grow(by: f64)
   fun area(): f64
-}
-struct Circle : Shape {
-  var r: f64
-  implement Shape {
+
+  struct Circle {
+    var r: f64
     fun grow(by: f64) {
       this.r += by
     }
     fun area(): f64 => 3.0 * this.r * this.r
   }
-}
-struct Square : Shape {
-  var side: f64
-  implement Shape {
+  struct Square {
+    var side: f64
     fun grow(by: f64) {
       this.side += by
     }

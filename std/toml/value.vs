@@ -20,40 +20,34 @@ public sealed trait Data {
     is Items            => "a list"
     is Nested           => "a table"
   }
-}
 
-public struct Text : Data {
-  public value: string
-}
-
-public struct Integer : Data {
-  public value: i64
-}
-
-public struct Real : Data {
-  public value: f64
-}
-
-public struct Flag : Data {
-  public value: bool
-}
-
-/// A date, a time or both, as written (`1979-05-27T07:32:00Z`), checked for
-/// its form and range.
-public struct Moment : Data {
-  public shape: MomentShape
-  public text:  string
-}
-
-/// A list. `ofTables` is set for one made by `[[name]]` headers, which the
-/// next such header extends; an inline `[ … ]` is closed.
-public struct Items : Data {
-  public items:    List<Value>
-  public ofTables: bool = false
-}
-
-public struct Nested : Data {
-  public table: *Table
+  struct Text {
+    public value: string
+  }
+  struct Integer {
+    public value: i64
+  }
+  struct Real {
+    public value: f64
+  }
+  struct Flag {
+    public value: bool
+  }
+  /// A date, a time or both, as written (`1979-05-27T07:32:00Z`), checked for
+  /// its form and range.
+  struct Moment {
+    public shape: MomentShape
+    public text:  string
+  }
+  /// A list. `ofTables` is set for one made by `[[name]]` headers, which the
+  /// next such header extends; an inline `[ … ]` is closed.
+  struct Items {
+    public items:    List<Value>
+    public ofTables: bool = false
+  }
+  struct Nested {
+    public table: *Table
+  }
 }
 
 /// The four shapes TOML gives a date or a time.
@@ -149,5 +143,5 @@ public struct Table {
 
   /// True when a `[header]` or an inline table named it, not when it is only
   /// the parent of one.
-  public fun defined(): bool => this.origin == Origin.Header || this.origin == Origin.Inline
+  public fun defined(): bool => this.origin in [Origin.Header, Origin.Inline]
 }

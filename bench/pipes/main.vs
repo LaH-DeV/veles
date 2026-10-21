@@ -18,17 +18,19 @@ fun consume(ch: Channel<i64>): i64 {
 }
 
 fun main() {
-  val stopwatch = time.Stopwatch.start()
-  var total: i64 = 0
-  scope {
-    val sums: MutableList<Task<i64>> = []
-    sums.reserve(8)
-    loop (_ in 0..<8) {
-      val ch = Channel<i64>(capacity: 64)
-      async produce(ch)
-      sums.push(async consume(ch))
+  val (total, elapsed) = time.Stopwatch.measure(() => {
+    var total: i64 = 0
+    scope {
+      val sums: MutableList<Task<i64>> = []
+      sums.reserve(8)
+      loop (_ in 0..<8) {
+        val ch = Channel<i64>(capacity: 64)
+        async produce(ch)
+        sums.push(async consume(ch))
+      }
+      total = sums.fold(0, (acc, task) => acc + await task)
     }
-    total = sums.fold(0, (acc, task) => acc + await task)
-  }
-  println("BENCH pipes 1600000 ${stopwatch.elapsed().toNanos()} $total")
+    total
+  })
+  println("BENCH pipes 1600000 ${elapsed.toNanos()} $total")
 }

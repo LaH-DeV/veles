@@ -134,6 +134,7 @@ prelude/number.vs: const fun unsignedToRadix(v: u64, radix: i64): string
 prelude/number.vs: public const fun toString(radix: i64 = 10): string
 prelude/number.vs: public const fun toString(radix: i64 = 10): string
 prelude/string.vs: public const fun capitalize(): string
+prelude/string.vs: public const fun containsByte(b: u8): bool
 prelude/string.vs: public const fun indexOf(part: string, from: i64 = 0): i64
 prelude/string.vs: public const fun lastIndexOf(part: string): i64
 prelude/string.vs: public const fun lines(): List<string>
@@ -141,6 +142,7 @@ prelude/string.vs: public const fun padEnd(width: i64, pad: string = " "): strin
 prelude/string.vs: public const fun padStart(width: i64, pad: string = " "): string
 prelude/string.vs: public const fun repeat(n: i64): string
 prelude/string.vs: public const fun replace(old: string, new: string): string
+prelude/string.vs: public const fun slice(from: i64, to: i64): string
 prelude/string.vs: public const fun split(sep: string): List<string>
 prelude/string.vs: public const fun splitOnce(sep: string): (string, string)?
 prelude/string.vs: public const fun toLower(): string

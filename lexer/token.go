@@ -48,33 +48,33 @@ const (
 	Under    // _
 
 	// Operators
-	Assign    // =
-	PlusEq    // +=
-	MinusEq   // -=
-	StarEq    // *=
-	SlashEq   // /=
-	PercentEq // %=
-	Plus      // +
-	Minus     // -
-	Star      // *
-	Slash     // /
-	Percent   // %
-	WrapPlus  // +%
-	WrapMinus // -%
-	WrapStar  // *%
-	Eq        // ==
-	NotEq     // !=
-	Lt        // <
-	LtEq      // <=
-	Gt        // >
-	GtEq      // >=
-	AndAnd    // &&
-	OrOr      // ||
-	Bang      // !
-	Caret     // ^ (bitwise xor)
-	Tilde     // ~ (bitwise not)
-	Shl       // <<
-	Shr       // >>
+	Assign      // =
+	PlusEq      // +=
+	MinusEq     // -=
+	StarEq      // *=
+	SlashEq     // /=
+	PercentEq   // %=
+	Plus        // +
+	Minus       // -
+	Star        // *
+	Slash       // /
+	Percent     // %
+	WrapPlus    // +%
+	WrapMinus   // -%
+	WrapStar    // *%
+	Eq          // ==
+	NotEq       // !=
+	Lt          // <
+	LtEq        // <=
+	Gt          // >
+	GtEq        // >=
+	AndAnd      // &&
+	OrOr        // ||
+	Bang        // !
+	Caret       // ^ (bitwise xor)
+	Tilde       // ~ (bitwise not)
+	Shl         // <<
+	Shr         // >>
 
 	// Keywords
 	keywordStart
@@ -130,6 +130,17 @@ const (
 	// Reserved for future use; lexed as keywords so they cannot be identifiers.
 	KwReserved
 	keywordEnd
+
+	// The compound assignments of D191. They follow the keywords so the
+	// numbers of the older tokens, which the selfhost gate compares, stay put.
+	PipeEq      // |=
+	AmpEq       // &=
+	CaretEq     // ^=
+	ShlEq       // <<=
+	ShrEq       // >>=
+	WrapPlusEq  // +%=
+	WrapMinusEq // -%=
+	WrapStarEq  // *%=
 )
 
 var keywords = map[string]TokenKind{
@@ -203,7 +214,8 @@ var kindNames = map[TokenKind]string{
 	Assign: "=", PlusEq: "+=", MinusEq: "-=", StarEq: "*=", SlashEq: "/=", PercentEq: "%=",
 	Plus: "+", Minus: "-", Star: "*", Slash: "/", Percent: "%", WrapPlus: "+%",
 	WrapMinus: "-%", WrapStar: "*%", Eq: "==", NotEq: "!=", Lt: "<", LtEq: "<=", Gt: ">",
-	GtEq: ">=", AndAnd: "&&", OrOr: "||", Bang: "!", Caret: "^", Tilde: "~", Shl: "<<", Shr: ">>",
+	GtEq: ">=", AndAnd: "&&", OrOr: "||", Bang: "!", Caret: "^", Tilde: "~", Shl: "<<", Shr: ">>", PipeEq: "|=", AmpEq: "&=", CaretEq: "^=", ShlEq: "<<=", ShrEq: ">>=",
+	WrapPlusEq: "+%=", WrapMinusEq: "-%=", WrapStarEq: "*%=",
 	// two spellings: without this, String ranged over the keyword map and
 	// said 'this' or 'self' at random
 	KwSelf:   "'this'",
@@ -288,4 +300,15 @@ func (t Token) Describe() string {
 		return fmt.Sprintf("keyword '%s'", t.Text)
 	}
 	return fmt.Sprintf("'%s'", t.Kind.String())
+}
+
+// IsAssign reports whether the token is `=` or a compound assignment (`+=`,
+// `|=`, `<<=`, `+%=`, …).
+func (k TokenKind) IsAssign() bool {
+	switch k {
+	case Assign, PlusEq, MinusEq, StarEq, SlashEq, PercentEq,
+		PipeEq, AmpEq, CaretEq, ShlEq, ShrEq, WrapPlusEq, WrapMinusEq, WrapStarEq:
+		return true
+	}
+	return false
 }

@@ -99,7 +99,7 @@ fun refuse(challenge: string): Response =>
 
 @caller_location
 fun checkRealm(realm: string) {
-  if (realm.bytes().any(b => b < 32 || b == 127 || b == '"' || b == '\\')) panic("realm '$realm' cannot hold a quote, a backslash or a control character")
+  if (realm.bytes().any(b => b < 32 || b in [127, '"', '\\'])) panic("realm '$realm' cannot hold a quote, a backslash or a control character")
 }
 
 // the credentials of `Authorization: <scheme> <rest>`, when the scheme is `scheme`

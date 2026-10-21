@@ -6,17 +6,18 @@ use io { println }
 // ---------------------------------------------------------------------------
 // tokens
 
-sealed trait Token
-struct Num : Token {
-  value: f64
+sealed trait Token {
+  struct Num {
+    value: f64
+  }
+  struct Name {
+    text: string
+  }
+  struct Op {
+    text: string
+  }
+  struct End { }
 }
-struct Name : Token {
-  text: string
-}
-struct Op : Token {
-  text: string
-}
-struct End : Token { }
 
 error SyntaxError {
   message: string
@@ -24,8 +25,8 @@ error SyntaxError {
   fun message(): string => "${this.message} (column ${this.col + 1})"
 }
 
-fun isDigit(b: u8): bool => b >= '0' && b <= '9'
-fun isAlpha(b: u8): bool => (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || b == '_'
+fun isDigit(b: u8): bool => b in '0'..'9'
+fun isAlpha(b: u8): bool => b in 'a'..'z' || b in 'A'..'Z' || b == '_'
 
 type Position = i64
 
@@ -42,17 +43,17 @@ struct Lexer {
         b == ' ' || b == '\t' => this.pos += 1
         isDigit(b) || b == '.' => {
           loop (this.pos < this.src.len() && (isDigit(this.src.byteAt(this.pos)) || this.src.byteAt(this.pos) == '.')) this.pos += 1
-          val text = this.src.substring(start, this.pos) ?: ""
+          val text = this.src.slice(start, this.pos)
           val v = text.toF64() ?: throw SyntaxError(message: "bad number '$text'", col: start)
           this.toks.push((Num(value: v), start))
         }
         isAlpha(b) => {
           loop (this.pos < this.src.len() && (isAlpha(this.src.byteAt(this.pos)) || isDigit(this.src.byteAt(this.pos)))) this.pos += 1
-          this.toks.push((Name(text: this.src.substring(start, this.pos) ?: ""), start))
+          this.toks.push((Name(text: this.src.slice(start, this.pos)), start))
         }
         "+-*/^%(),=".contains(this.src.substring(start, start + 1) ?: "?") => {
           this.pos += 1
-          this.toks.push((Op(text: this.src.substring(start, this.pos) ?: ""), start))
+          this.toks.push((Op(text: this.src.slice(start, this.pos)), start))
         }
         else => throw SyntaxError(message: "unexpected character '${this.src.substring(start, start + 1)}'", col: start)
       }
@@ -65,29 +66,30 @@ struct Lexer {
 // ---------------------------------------------------------------------------
 // syntax tree
 
-sealed trait Expr
-struct Literal : Expr {
-  value: f64
-}
-struct Variable : Expr {
-  name: string
-}
-struct Unary : Expr {
-  op:      string
-  operand: *Expr
-}
-struct Binary : Expr {
-  op:    string
-  left:  *Expr
-  right: *Expr
-}
-struct Call : Expr {
-  name: string
-  args: List<Expr>
-}
-struct Assign : Expr {
-  name:  string
-  value: *Expr
+sealed trait Expr {
+  struct Literal {
+    value: f64
+  }
+  struct Variable {
+    name: string
+  }
+  struct Unary {
+    op:      string
+    operand: *Expr
+  }
+  struct Binary {
+    op:    string
+    left:  *Expr
+    right: *Expr
+  }
+  struct Call {
+    name: string
+    args: List<Expr>
+  }
+  struct Assign {
+    name:  string
+    value: *Expr
+  }
 }
 
 /// Binding power of an infix operator; 0 when `t` is not one.

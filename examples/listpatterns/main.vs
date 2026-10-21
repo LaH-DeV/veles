@@ -4,12 +4,13 @@
 // any number of them, and `..rest` binds those as a new List.
 use io { println }
 
-sealed trait Shape
-struct Circle : Shape {
-  radius: f64
-}
-struct Square : Shape {
-  side: f64
+sealed trait Shape {
+  struct Circle {
+    radius: f64
+  }
+  struct Square {
+    side: f64
+  }
 }
 
 fun describe(args: List<string>): string => when (args) {

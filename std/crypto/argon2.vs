@@ -157,7 +157,7 @@ fun wordsOf(bytes: List<u8>, into: MutableList<u64>, at: i64) {
   loop (i in 0..<128) {
     var w: u64 = 0
     loop (j in 0..<8) {
-      w = w | ((bytes.at(i * 8 + j) ?: 0).toU64() << (8 * j))
+      w |= (bytes.at(i * 8 + j) ?: 0).toU64() << (8 * j)
     }
     into.set(at + i, w)
   }

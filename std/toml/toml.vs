@@ -26,7 +26,7 @@
 /// Reads `text` into its root table. `strict` reads the subset a package
 /// manifest uses (see the module's description).
 public fun parse(text: string, strict: bool = false): *Table throws ParseError {
-  val withoutMark = if (text.startsWith("\u{FEFF}")) text.substring(3, text.len()) ?: "" else text
+  val withoutMark = if (text.startsWith("\u{FEFF}")) text.slice(3, text.len()) else text
   val rules = if (strict) Rules.manifest() else Rules.full()
   var reader = Reader.of(withoutMark.replace("\r\n", "\n"), rules)
   try reader.run()

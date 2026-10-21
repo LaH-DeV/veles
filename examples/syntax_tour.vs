@@ -16,13 +16,14 @@ fun printSum(sum: i32) {
 }
 
 // D12 — sealed traits
-sealed trait Shape
-struct Circle : Shape {
-  radius: f64
-}
-struct Rect : Shape {
-  w: f64
-  h: f64
+sealed trait Shape {
+  struct Circle {
+    radius: f64
+  }
+  struct Rect {
+    w: f64
+    h: f64
+  }
 }
 
 // D13 — when with patterns, guards, destructuring

@@ -4,25 +4,26 @@
 use io { println }
 use time
 
-sealed trait Expr
-struct Num : Expr {
-  value: i64
-}
-struct Neg : Expr {
-  operand: *Expr
-}
-struct Add : Expr {
-  left:  *Expr
-  right: *Expr
-}
-struct Mul : Expr {
-  left:  *Expr
-  right: *Expr
-}
-struct Cond : Expr {
-  test: *Expr
-  yes:  *Expr
-  no:   *Expr
+sealed trait Expr {
+  struct Num {
+    value: i64
+  }
+  struct Neg {
+    operand: *Expr
+  }
+  struct Add {
+    left:  *Expr
+    right: *Expr
+  }
+  struct Mul {
+    left:  *Expr
+    right: *Expr
+  }
+  struct Cond {
+    test: *Expr
+    yes:  *Expr
+    no:   *Expr
+  }
 }
 
 fun build(depth: i64, seed: i64): Expr {
@@ -57,13 +58,15 @@ fun count(e: Expr): i64 => when (e) {
 }
 
 fun main() {
-  val sw = time.Stopwatch.start()
-  var check: i64 = 0
-  var nodes: i64 = 0
-  loop (r in 0..<6) {
-    val tree = build(17, r + 1)
-    nodes += count(tree)
-    loop (_ in 0..<4) check += eval(tree)
-  }
-  println("BENCH ast $nodes ${sw.elapsed().toNanos()} $check")
+  val ((nodes, check), elapsed) = time.Stopwatch.measure(() => {
+    var check: i64 = 0
+    var nodes: i64 = 0
+    loop (r in 0..<6) {
+      val tree = build(17, r + 1)
+      nodes += count(tree)
+      loop (_ in 0..<4) check += eval(tree)
+    }
+    (nodes, check)
+  })
+  println("BENCH ast $nodes ${elapsed.toNanos()} $check")
 }

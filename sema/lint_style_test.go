@@ -145,3 +145,35 @@ func TestCounterLoopLints(t *testing.T) {
 		t.Errorf("a continue after the step is fine, got %v", got)
 	}
 }
+
+// D191: the compound forms are the operator they abbreviate, on integers.
+func TestCompoundAssignmentRules(t *testing.T) {
+	expectClean(t, prelude+`
+fun main() {
+  var a: u32 = 6
+  var n: i64 = 2
+  a |= 1
+  a &= 7
+  a ^= 3
+  a <<= n
+  a >>= 1
+  a +%= 5
+  a -%= 1
+  a *%= 3
+  io.println("$a")
+}`)
+	for _, c := range []struct{ name, body, want string }{
+		{"a float", `var x: f64 = 1.0
+  x |= 2.0`, "only defined for integers"},
+		{"a string", `var s = "a"
+  s <<= 1`, "only defined for integers"},
+		{"a bool", `var b = true
+  b &= false`, "only defined for integers"},
+		{"a non-integer count", `var x: u32 = 1
+  x <<= 1.5`, "a shift count must be an integer"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			expectError(t, prelude+"fun main() {\n  "+c.body+"\n}", c.want)
+		})
+	}
+}

@@ -53,17 +53,18 @@ fun wrap(): (i32, i64, u8) {
 }
 
 // Smart casts on vars and sealed (D5/D13), pointer auto-deref (D39)
-sealed trait Expr
-struct Num : Expr {
-  value: i64
-}
-struct Add : Expr {
-  left:  *Expr
-  right: *Expr
-}
-struct Mul : Expr {
-  left:  *Expr
-  right: *Expr
+sealed trait Expr {
+  struct Num {
+    value: i64
+  }
+  struct Add {
+    left:  *Expr
+    right: *Expr
+  }
+  struct Mul {
+    left:  *Expr
+    right: *Expr
+  }
 }
 
 fun eval(e: Expr): i64 => when (e) {

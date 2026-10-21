@@ -74,8 +74,7 @@ fun main() throws {
   }
   seen.close()
   var peak: i64 = 0
-  loop {
-    val n = await seen.recv() ?: break
+  loop (val n = await seen.recv()) {
     peak = peak.max(n)
   }
   println("$launched jobs, at most $peak at once")

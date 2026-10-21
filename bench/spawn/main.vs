@@ -20,8 +20,10 @@ fun batch(from: i64, to: i64): i64 {
 }
 
 fun main() {
-  val stopwatch = time.Stopwatch.start()
-  var sum: i64 = 0
-  loop (b in 0..<100) sum += batch(b * 1000, (b + 1) * 1000)
-  println("BENCH spawn 100000 ${stopwatch.elapsed().toNanos()} $sum")
+  val (sum, elapsed) = time.Stopwatch.measure(() => {
+    var sum: i64 = 0
+    loop (b in 0..<100) sum += batch(b * 1000, (b + 1) * 1000)
+    sum
+  })
+  println("BENCH spawn 100000 ${elapsed.toNanos()} $sum")
 }

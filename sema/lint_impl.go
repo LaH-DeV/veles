@@ -229,3 +229,58 @@ func (c *Checker) implementFix(t types.Type, trait *types.Trait) *source.Fix {
 	fix := fixReplace("Add 'implement "+trait.Name+"' to 'struct "+st.Name+"' (derived)", source.Span{File: d.Pos.File, Start: at, End: at}, text)
 	return fix
 }
+
+// lintRedundantImplement (D195): `implement Shape { … }` written in the body
+// of a variant of the sealed trait `Shape` says what the variant's own methods
+// already say, so the methods can stand in the body without it. The fix
+// unwraps the block.
+func (c *Checker) lintRedundantImplement(m *Module, d *ast.ImplDecl, impl *Impl) {
+	if !d.Inline || d.Lifted || d.Derived || d.Braceless || len(d.Attrs) > 0 || len(d.AssocTypes) > 0 || impl.Trait == nil {
+		return
+	}
+	if m.Std && m != c.pkg.Given {
+		return
+	}
+	st, ok := impl.Target.(*types.Struct)
+	if !ok {
+		return
+	}
+	sd, ok := templateOf(st).Decl.(*ast.StructDecl)
+	if !ok || sd.Variant == nil || d.Pos.File == nil {
+		return
+	}
+	vt, ok := sd.Variant.(*ast.NamedType)
+	dt, ok2 := d.Trait.(*ast.NamedType)
+	if !ok || !ok2 || len(vt.Path) != 1 || len(dt.Path) != 1 || vt.Path[0].Name != dt.Path[0].Name {
+		return
+	}
+	src := d.Pos.File.Content
+	if d.Pos.End > len(src) || d.Pos.Start >= d.Pos.End || src[d.Pos.End-1] != '}' {
+		return
+	}
+	text := src[d.Pos.Start:d.Pos.End]
+	open := strings.Index(text, "{")
+	if open < 0 {
+		return
+	}
+	body := strings.TrimRight(text[open+1:len(text)-1], " \t\r\n")
+	var lines []string
+	for i, l := range strings.Split(body, "\n") {
+		l = strings.TrimRight(l, "\r")
+		if i == 0 && strings.TrimSpace(l) == "" {
+			continue
+		}
+		if len(lines) == 0 {
+			l = strings.TrimLeft(l, " \t") // the first line starts where `implement` did
+		} else {
+			l = strings.TrimPrefix(l, "  ")
+		}
+		lines = append(lines, l)
+	}
+	if len(lines) == 0 {
+		return
+	}
+	span := d.Pos
+	c.warnLint("redundant_implement", span, fixReplace("Write the methods in the body", span, strings.Join(lines, "\n")),
+		"'implement %s' around the methods of its variant '%s' is not needed: write them in the body (D195)", impl.Trait.Name, sd.Name.Name)
+}

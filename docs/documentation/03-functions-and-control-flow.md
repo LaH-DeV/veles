@@ -135,6 +135,47 @@ Output:
 3 1 10 #### 30
 ```
 
+A loop head can **bind** a value, as an `if` head does (chapter 6): `loop (val
+item = queue.pop())` runs while the value is not null, with `item`
+holding the non-null value in the body; `&& cond` continues the condition,
+and `continue` evaluates the head again.
+
+`x in c` asks whether a value is in a collection, a range or a text, and
+`x !in c` is the opposite. A list, range or string written out on the right
+is compiled to plain comparisons — nothing is allocated. For a text, a byte
+on the left means "this byte occurs" and a string means "this substring
+occurs". The bit and wrapping operators have compound forms too: `|=`, `&=`,
+`^=`, `<<=`, `>>=`, and `+%=`, `-%=`, `*%=`, which wrap instead of
+panicking on overflow.
+
+```veles
+use io
+
+fun kind(c: u8): string {
+  if (c in '0'..'9') return "digit"
+  if (c in ['+', '-', '*', '/']) return "operator"
+  if (c !in " \t") return "other"
+  "space"
+}
+
+fun main() {
+  val queue: MutableList<string> = ["a", "bb", "ccc"]
+  var seen = 0
+  loop (val item = queue.pop()) { seen += item.len() }
+  var flags: u32 = 0b1010
+  flags |= 0b0101
+  flags <<= 2
+  var wrapped: u8 = 250
+  wrapped +%= 10
+  io.println("$seen $flags $wrapped ${kind('7')} ${kind('+')} ${kind(' ')} ${kind('x')} ${"ab" in "cabd"} ${3 in [1, 2, 3]}")
+}
+```
+
+Output:
+```text
+6 60 4 digit operator space other true true
+```
+
 There is no C-style `for (init; cond; step)`. A loop that walks by a fixed
 stride — every third element, counting down, the inner loop of a sieve — is
 a range with `step()` or `reversed()`, which says *what* is visited rather

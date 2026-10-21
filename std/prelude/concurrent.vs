@@ -12,8 +12,7 @@ struct Indexed<R> {
 
 /// A pool worker: takes indexes until the channel closes, applies `f`, reports.
 fun poolWorker<T, R, E>(items: List<T>, f: sendable fun(T): R suspends throws E, jobs: Channel<i64>, results: Channel<Indexed<R>>) throws E {
-  loop {
-    val i = await jobs.recv() ?: break
+  loop (val i = await jobs.recv()) {
     val item = items.at(i) ?: panic("mapConcurrent: feedIndexes sends only 0..<items.len()")
     val value = try f(item)
     results.send(Indexed(index: i, value))
@@ -48,8 +47,7 @@ extend<T: Sendable> List<T> {
         async poolWorker(this, f, jobs, results)
       }
       async feedIndexes(n, jobs)
-      loop {
-        val r = await results.recv() ?: break
+      loop (val r = await results.recv()) {
         slots.set(r.index, r.value)
       }
     }
@@ -236,8 +234,7 @@ extend<T> Channel<T> {
   /// Receives until the channel is closed and drained, calling `f` on each
   /// value; an error from `f` stops it and is thrown (D110).
   public fun forEach<E>(f: fun(T) suspends throws E) throws E {
-    loop {
-      val v = await this.recv() ?: break
+    loop (val v = await this.recv()) {
       try f(v)
     }
   }
@@ -245,8 +242,7 @@ extend<T> Channel<T> {
   /// Every value until the channel is closed and drained, in order.
   public fun toList(): List<T> {
     val out = MutableList<T>()
-    loop {
-      val v = await this.recv() ?: break
+    loop (val v = await this.recv()) {
       out.push(v)
     }
     out.toList()

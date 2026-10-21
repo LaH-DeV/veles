@@ -11,15 +11,17 @@ struct Record {
 }
 
 fun main() {
-  val sw = time.Stopwatch.start()
-  var sum: i64 = 0
-  loop (i in 0..<2000000) {
-    val r = Record()
-    if (i % 8 == 0) {
-      r.items.push(i)
-      r.index.set(i, i)
+  val (sum, elapsed) = time.Stopwatch.measure(() => {
+    var sum: i64 = 0
+    loop (i in 0..<2000000) {
+      val r = Record()
+      if (i % 8 == 0) {
+        r.items.push(i)
+        r.index.set(i, i)
+      }
+      sum += r.items.len() + r.index.len() + r.tags.len()
     }
-    sum += r.items.len() + r.index.len() + r.tags.len()
-  }
-  println("BENCH emptycoll 2000000 ${sw.elapsed().toNanos()} $sum")
+    sum
+  })
+  println("BENCH emptycoll 2000000 ${elapsed.toNanos()} $sum")
 }

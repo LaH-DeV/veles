@@ -53,6 +53,7 @@ public struct Visitor {
   public onIfExpr:           (fun(IfExpr, Context))? = null
   public onImplDecl:         (fun(ImplDecl, Context))? = null
   public onImplementsExpr:   (fun(ImplementsExpr, Context))? = null
+  public onInExpr:           (fun(InExpr, Context))? = null
   public onIndexExpr:        (fun(IndexExpr, Context))? = null
   public onIntLit:           (fun(IntLit, Context))? = null
   public onIsExpr:           (fun(IsExpr, Context))? = null

@@ -41,7 +41,7 @@ struct Task {
     }
     val pri = words.first() ?: ""
     if (isPriority(pri)) {
-      t.priority = pri.substring(1, 2) ?: ""
+      t.priority = pri.slice(1, 2)
       words = words.drop(1)
     }
     val created = words.first() ?: ""
@@ -85,14 +85,14 @@ struct Task {
   /// Every term must match: `+proj` and `@ctx` match a tag, `-word` excludes,
   /// anything else is a case-insensitive substring of the line.
   fun matches(terms: List<string>): bool => terms.all(term => when {
-    term.startsWith("-") && term.len() > 1 => !this.matches([term.substring(1, term.len()) ?: ""])
+    term.startsWith("-") && term.len() > 1 => !this.matches([term.slice(1, term.len())])
     term.startsWith("+") => this.projects().contains(term)
     term.startsWith("@") => this.contexts().contains(term)
     else => this.line().toLower().contains(term.toLower())
   })
 }
 
-fun isDigit(b: u8): bool => b >= '0' && b <= '9'
+fun isDigit(b: u8): bool => b in '0'..'9'
 
 /// `YYYY-MM-DD`, by shape only.
 fun isDate(w: string?): bool {
@@ -100,7 +100,7 @@ fun isDate(w: string?): bool {
   if (w.len() != 10) return false
   loop (i in 0..<10) {
     val b = w.byteAt(i)
-    if (i == 4 || i == 7) {
+    if (i in [4, 7]) {
       if (b != '-') return false
     } else if (!isDigit(b)) return false
   }

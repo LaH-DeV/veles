@@ -16,8 +16,10 @@ fun top(i: i64): i64 => middle(i) + 1
 
 fun main() {
   val n: i64 = 10000000
-  val stopwatch = time.Stopwatch.start()
-  var sum: i64 = 0
-  loop (i in 0..<n) sum += top(i)
-  println("BENCH suscall $n ${stopwatch.elapsed().toNanos()} $sum")
+  val (sum, elapsed) = time.Stopwatch.measure(() => {
+    var sum: i64 = 0
+    loop (i in 0..<n) sum += top(i)
+    sum
+  })
+  println("BENCH suscall $n ${elapsed.toNanos()} $sum")
 }

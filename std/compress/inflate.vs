@@ -84,7 +84,7 @@ fun buildTable(lengths: MutableList<i64>, from: i64, n: i64, table: MutableList<
     var rest = canonical
     loop (_ in 0..<len) {
       reversed = (reversed << 1) | (rest & 1)
-      rest = rest >> 1
+      rest >>= 1
     }
     val entry = (sym << 4) | len
     var at = reversed
@@ -147,7 +147,7 @@ struct Inflater {
     val back = this.count / 8
     this.pos -= back
     this.count -= back * 8
-    this.bits = this.bits & ((1 << this.count) - 1)
+    this.bits &= (1 << this.count) - 1
     this.input.drop(this.pos)
   }
 
@@ -185,7 +185,7 @@ struct Inflater {
       val b = unsafe {
         this.input.atUnchecked(this.pos)
       }
-      this.bits = this.bits | (b.toI64() << this.count)
+      this.bits |= b.toI64() << this.count
       this.pos += 1
       this.count += 8
     }
@@ -194,7 +194,7 @@ struct Inflater {
 
   private fun eat(n: i64): i64 {
     val v = this.bits & ((1 << n) - 1)
-    this.bits = this.bits >> n
+    this.bits >>= n
     this.count -= n
     v
   }
@@ -212,7 +212,7 @@ struct Inflater {
       throw corrupt("a code that no symbol has")
     }
     if (len > this.count) return -1
-    this.bits = this.bits >> len
+    this.bits >>= len
     this.count -= len
     entry >> 4
   }
@@ -471,7 +471,7 @@ struct Inflater {
       val length = unsafe {
         LENGTH_BASE.atUnchecked(slot)
       } + (b & ((1 << extra) - 1))
-      b = b >> extra
+      b >>= extra
       c -= extra
       // SAFETY: masked index, as for lit
       val dentry = unsafe {
@@ -486,7 +486,7 @@ struct Inflater {
         return NEED_INPUT
       }
       val dsym = dentry >> 4
-      b = b >> dlen
+      b >>= dlen
       c -= dlen
       if (dsym > 29) throw corrupt("a distance symbol past 29")
       // SAFETY: dsym is 0..29
@@ -503,7 +503,7 @@ struct Inflater {
       val distance = unsafe {
         DIST_BASE.atUnchecked(dsym)
       } + (b & ((1 << dextra) - 1))
-      b = b >> dextra
+      b >>= dextra
       c -= dextra
       if (distance > out.len()) throw corrupt("a match reaches back before the start of the data")
       bits = b

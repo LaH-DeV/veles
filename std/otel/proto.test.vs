@@ -15,10 +15,9 @@ test fun readVarint(bytes: List<u8>, at: i64): (i64, i64) {
   var result: u64 = 0
   var shift: i64 = 0
   var i = at
-  loop {
-    val b = bytes.at(i) ?: break
+  loop (val b = bytes.at(i)) {
     i += 1
-    result = result | ((b & 127).toU64() << shift)
+    result |= (b & 127).toU64() << shift
     if (b < 128) break
     shift += 7
   }
@@ -43,7 +42,7 @@ test fun fields(bytes: List<u8>): List<Fld> {
       wire == 1 => {
         var v: u64 = 0
         loop (k in 0..<8) {
-          v = v | ((bytes.at(i + k) ?: 0).toU64() << (8 * k))
+          v |= (bytes.at(i + k) ?: 0).toU64() << (8 * k)
         }
         out.push(Fld(num, wire, value: v.wrapI64(), data: bytes.slice(i, i + 8)))
         i += 8

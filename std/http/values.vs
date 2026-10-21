@@ -118,11 +118,11 @@ public struct Status {
   /// 1xx: the request goes on.
   public fun isInformational(): bool => this.code < 200
   /// 2xx.
-  public fun isSuccess(): bool => this.code >= 200 && this.code < 300
+  public fun isSuccess(): bool => this.code in 200..<300
   /// 3xx.
-  public fun isRedirect(): bool => this.code >= 300 && this.code < 400
+  public fun isRedirect(): bool => this.code in 300..<400
   /// 4xx: the client's mistake.
-  public fun isClientError(): bool => this.code >= 400 && this.code < 500
+  public fun isClientError(): bool => this.code in 400..<500
   /// 5xx: the server's.
   public fun isServerError(): bool => this.code >= 500
 
@@ -224,7 +224,7 @@ public struct MediaType {
   /// case (`".PNG"`, `"png"`); `octetStream` when it is not known.
   public static fun ofExtension(ext: string): MediaType {
     val e = ext.toLower()
-    when (if (e.startsWith(".")) e.substring(1, e.len()) ?: "" else e) {
+    when (if (e.startsWith(".")) e.slice(1, e.len()) else e) {
       "html", "htm" => MediaType.html
       "css"         => MediaType.css
       "js", "mjs"   => MediaType.javascript

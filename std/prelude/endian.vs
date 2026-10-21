@@ -11,7 +11,7 @@ fun beBytesOf<const N: i64>(v: u64): Array<u8, N> {
   var i = N - 1
   loop (i >= 0) {
     out.set(i, (rest & 255).wrapU8())
-    rest = rest >> 8
+    rest >>= 8
     i -= 1
   }
   out
@@ -23,7 +23,7 @@ fun leBytesOf<const N: i64>(v: u64): Array<u8, N> {
   var rest = v
   loop (i in 0..<N) {
     out.set(i, (rest & 255).wrapU8())
-    rest = rest >> 8
+    rest >>= 8
   }
   out
 }

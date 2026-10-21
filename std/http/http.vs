@@ -713,8 +713,7 @@ fun acceptAndServe(listener: net.Listener, handler: Handler, limits: Limits, log
   }
   // accepted but never served: close them instead of leaving the
   // descriptors to the process's exit
-  loop {
-    val c = accepted.tryRecv() ?: break
+  loop (val c = accepted.tryRecv()) {
     c.close()
   }
 }
@@ -1040,7 +1039,7 @@ const framing = ["content-length", "transfer-encoding", "connection"]
 // 1xx, 204 and 304 never carry a body, and a 1xx or 204 may not even say
 // `content-length` (RFC 9110 §6.4.1, §8.6); a 304's length would be the
 // 200's, which a handler returning `empty(304)` does not know.
-fun hasNoBody(status: Status): bool => status.isInformational() || status == Status.noContent || status == Status.notModified
+fun hasNoBody(status: Status): bool => status.isInformational() || status in [Status.noContent, Status.notModified]
 
 /// A time in the format HTTP dates use: `Sun, 06 Nov 1994 08:49:37 GMT`.
 ///

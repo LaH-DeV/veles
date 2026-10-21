@@ -45,7 +45,7 @@ public fun verifyPassword(password: Secret<string>, hash: string): bool {
   var passes: i64 = 0
   var lanes: i64 = 0
   loop (field in parts.at(3).split(",")) {
-    val n = (field.substring(2, field.len()) ?: "").toInt() ?: return false
+    val n = field.slice(2, field.len()).toInt() ?: return false
     when {
       field.startsWith("m=") => memory = n
       field.startsWith("t=") => passes = n
@@ -64,7 +64,7 @@ public fun verifyPassword(password: Secret<string>, hash: string): bool {
 
 // base64 without its '=' padding, as the PHC format writes it
 fun unpadded(text: string): List<u8>? {
-  val padded = text + ("===".substring(0, (4 - text.len() % 4) % 4) ?: "")
+  val padded = text + "===".slice(0, (4 - text.len() % 4) % 4)
   base64.decode(padded) catch (e) {
     return null
   }

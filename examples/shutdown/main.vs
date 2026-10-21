@@ -17,8 +17,7 @@ fun response(c: net.Conn): string throws IoError | io.TooLong {
   val status = try c.readLine(max: 8192) ?: return "(closed without a response)"
   var length: i64 = 0
   var closing = false
-  loop {
-    val line = try c.readLine(max: 8192) ?: break
+  loop (val line = try c.readLine(max: 8192)) {
     if (line.isEmpty()) break
     val (name, value) = line.splitOnce(":") ?: continue
     when (name.toLower()) {

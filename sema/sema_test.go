@@ -2712,9 +2712,12 @@ fun main() { }`, "an enum is not generic"},
 		{"no impls", `enum E { A }
 implement Display for E { fun toString(): string => "a" }
 fun main() { }`, "cannot implement 'Display' for enum 'E'"},
-		{"no extend", `enum E { A }
-extend E { fun f(): i64 => 1 }
-fun main() { }`, "cannot extend enum 'E'"},
+		{"extend cannot redeclare a built-in member", `enum E { A }
+extend E { fun value(): i64 => 1 }
+fun main() { }`, "built-in member of every enum"},
+		{"extend cannot declare a static", `enum E { A }
+extend E { static fun make(): E => E.A }
+fun main() { }`, "cannot declare a static function"},
 		{"an integer is not an enum", `enum E { A }
 fun main() { val e: E = 0; io.println("$e") }`, "an enum is not its number"},
 		{"an enum is not an integer", `enum E { A }

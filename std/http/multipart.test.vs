@@ -30,8 +30,7 @@ val mpEnd = "--XyZ--\r\n"
 test fun uploader(max: i64 = 10000000, partMax: i64 = 1000000, maxParts: i64 = 100): Handler => handler(req => {
   val form = try req.multipart(max: max, maxParts: maxParts)
   val out = StringBuilder()
-  loop {
-    val part = try form.next() ?: break
+  loop (val part = try form.next()) {
     if (val original = part.filename) {
       val n = try part.saveTo(path.join(uploads, "up-${part.name}"), max: partMax)
       out.append("file ${part.name}=$original ${part.contentType ?: "-"} $n\n")
@@ -135,13 +134,13 @@ test "a large upload arrives chunk by chunk and lands on disk whole" {
   with srv = try testServer(handlerFor)
   val port = srv.port()
   val head = "POST / HTTP/1.1\r\nHost: t\r\nConnection: close\r\nContent-Type: multipart/form-data; boundary=XyZ\r\nContent-Length: ${body.len()}\r\n\r\n"
-  val r = try talk(port, [head, body.substring(0, 100000) ?: "", body.substring(100000, 200000) ?: "", body.substring(200000, body.len()) ?: ""])
+  val r = try talk(port, [head, body.slice(0, 100000), body.slice(100000, 200000), body.slice(200000, body.len())])
   expect(r.startsWith("HTTP/1.1 200 OK"))
   expect(r.endsWith("file big=big.txt text/plain 300000\nfield after=done\n"))
   // the same form, chunked
   val chunkHead = "POST / HTTP/1.1\r\nHost: t\r\nConnection: close\r\nContent-Type: multipart/form-data; boundary=XyZ\r\nTransfer-Encoding: chunked\r\n\r\n"
-  val a = body.substring(0, 150001) ?: ""
-  val b = body.substring(150001, body.len()) ?: ""
+  val a = body.slice(0, 150001)
+  val b = body.slice(150001, body.len())
   val chunked = try talk(port, [chunkHead + "${hexLength(a.len())}\r\n" + a + "\r\n", "${hexLength(b.len())}\r\n" + b + "\r\n0\r\n\r\n"])
   expect(chunked.endsWith("file big=big.txt text/plain 300000\nfield after=done\n"))
   expect((try fs.stat(path.join(uploads, "up-big"))).size == 300000)

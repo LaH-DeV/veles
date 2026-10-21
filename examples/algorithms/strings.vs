@@ -115,5 +115,5 @@ fun commonPrefix(words: List<string>): string {
     loop (i < end && i < word.len() && word.byteAt(i) == first.byteAt(i)) i += 1
     end = i
   }
-  first.substring(0, end) ?: ""
+  first.slice(0, end)
 }

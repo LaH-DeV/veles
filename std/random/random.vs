@@ -26,7 +26,7 @@ public struct Rng {
     var x = n.wrapU64()
     var s: MutableList<u64> = []
     loop (_ in 0..<4) {
-      x = x +% GOLDEN
+      x +%= GOLDEN
       var z = x
       z = (z ^ (z >> 30)) *% MIX1
       z = (z ^ (z >> 27)) *% MIX2
@@ -40,11 +40,11 @@ public struct Rng {
   public fun nextU64(): u64 {
     val result = rotl(this.s1 *% 5, 7) *% 9
     val t = this.s1 << 17
-    this.s2 = this.s2 ^ this.s0
-    this.s3 = this.s3 ^ this.s1
-    this.s1 = this.s1 ^ this.s2
-    this.s0 = this.s0 ^ this.s3
-    this.s2 = this.s2 ^ t
+    this.s2 ^= this.s0
+    this.s3 ^= this.s1
+    this.s1 ^= this.s2
+    this.s0 ^= this.s3
+    this.s2 ^= t
     this.s3 = rotl(this.s3, 45)
     result
   }

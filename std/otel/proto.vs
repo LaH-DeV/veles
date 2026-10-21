@@ -18,7 +18,7 @@ struct Pb {
     var rest = n
     loop (rest >= 128) {
       this.out.push(((rest & 127) | 128).wrapU8())
-      rest = rest >> 7
+      rest >>= 7
     }
     this.out.push(rest.wrapU8())
   }

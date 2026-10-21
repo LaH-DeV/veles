@@ -79,7 +79,7 @@ struct Reader {
     if (!cursor.more()) throw cursor.fail("expected a value")
     val line = cursor.line
     val first = cursor.peek()
-    if (first == '"' || first == '\'') return Value(data: Text(value: try cursor.string()), line)
+    if (first in ['"', '\'']) return Value(data: Text(value: try cursor.string()), line)
     if (first == '[') return try this.list(line)
     if (first == '{') return try this.inlineTable(line)
     Value(data: try this.word(), line)
@@ -92,7 +92,7 @@ struct Reader {
     val start = cursor.pos
     loop (cursor.more() && !endsWord(cursor.peek())) cursor.pos += 1
     var word = cursor.since(start)
-    if (word == "true" || word == "false") return Flag(value: word == "true")
+    if (word in ["true", "false"]) return Flag(value: word == "true")
     if (word.isEmpty()) throw cursor.fail("expected a value")
     if (!cursor.rules.richValues) return try this.plainInteger(word)
     // a date and a time may be separated by a space
@@ -183,4 +183,4 @@ struct Reader {
 
 /// Where an unquoted value ends.
 fun endsWord(byte: u8): bool =>
-  byte == ' ' || byte == '\t' || byte == '\n' || byte == ',' || byte == ']' || byte == '}' || byte == '#'
+  byte in [' ', '\t', '\n', ',', ']', '}', '#']

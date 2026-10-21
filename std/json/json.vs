@@ -220,7 +220,7 @@ fun writeQuoted(out: StringBuilder, s: string) {
   var plain = true
   loop (i in 0..<s.len()) {
     val b = s.byteAt(i)
-    if (b < 32 || b == '"' || b == '\\') {
+    if (b < 32 || b in ['"', '\\']) {
       plain = false
       break
     }
@@ -337,10 +337,10 @@ public struct JsonDecoder {
       this.digits()
     }
     val e = this.peekByte()
-    if (e == 'e' || e == 'E') {
+    if (e in ['e', 'E']) {
       this.setPos(this.pos() + 1)
       val sign = this.peekByte()
-      if (sign == '+' || sign == '-') this.setPos(this.pos() + 1)
+      if (sign in ['+', '-']) this.setPos(this.pos() + 1)
       this.digits()
     }
     if (this.pos() == start) throw this.malformed("expected a number")
@@ -359,7 +359,7 @@ public struct JsonDecoder {
   private fun numberIsFloat(): bool {
     loop (i in this.pos()..<this.src.len()) {
       val b = this.src.at(i) ?: break
-      if (b == '.' || b == 'e' || b == 'E') return true
+      if (b in ['.', 'e', 'E']) return true
       if (b != '-' && (b < '0' || b > '9')) return false
     }
     false
@@ -533,8 +533,7 @@ public struct JsonDecoder {
       if (negative) this.setPos(start + 1)
       var n: i64 = 0
       var fits = true
-      loop {
-        val b = this.peekByte() ?: break
+      loop (val b = this.peekByte()) {
         if (b < '0' || b > '9') break
         val d = (b - '0').toI64()
         // accumulate negatively: -9223372036854775808 has no positive twin

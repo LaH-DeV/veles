@@ -26,12 +26,12 @@ fun fmtText(text: string, fill: string, align: i64, width: i64): string => fmtPa
 fun fmtGroup(body: string): string {
   val dot = body.indexOf(".")
   val whole = if (dot < 0) body else body.substring(0, dot) ?: body
-  val rest = if (dot < 0) "" else body.substring(dot, body.len()) ?: ""
+  val rest = if (dot < 0) "" else body.slice(dot, body.len())
   val out = StringBuilder()
   val n = whole.len()
   loop (i in 0..<n) {
     if (i > 0 && (n - i) % 3 == 0) out.append(",")
-    out.append(whole.substring(i, i + 1) ?: "")
+    out.append(whole.slice(i, i + 1))
   }
   out.toString() + rest
 }

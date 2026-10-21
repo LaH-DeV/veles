@@ -130,7 +130,7 @@ public struct Uuid {
       val out = StringBuilder()
       var i = 0
       loop (i < 16) {
-        if (i == 4 || i == 6 || i == 8 || i == 10) out.appendByte(45)
+        if (i in [4, 6, 8, 10]) out.appendByte(45)
         val b = this.byte(i)
         out.appendByte(hexDigit(b >> 4))
         out.appendByte(hexDigit(b & 15))

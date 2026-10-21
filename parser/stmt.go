@@ -224,8 +224,7 @@ func (p *Parser) parseStmt() ast.Stmt {
 		p.syncStmt()
 		return &ast.BadStmt{Pos: start}
 	}
-	switch p.cur().Kind {
-	case lexer.Assign, lexer.PlusEq, lexer.MinusEq, lexer.StarEq, lexer.SlashEq, lexer.PercentEq:
+	if p.cur().Kind.IsAssign() {
 		op := p.next().Kind
 		val := p.parseExpr()
 		return &ast.AssignStmt{Target: x, Op: op, Value: val, Pos: p.spanFrom(start)}

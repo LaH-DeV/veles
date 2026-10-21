@@ -1,14 +1,15 @@
 use io { println }
 
-sealed trait Shape
-struct Circle : Shape {
-  radius: f64
+sealed trait Shape {
+  struct Circle {
+    radius: f64
+  }
+  struct Rect {
+    w: f64
+    h: f64
+  }
+  struct Point { }
 }
-struct Rect : Shape {
-  w: f64
-  h: f64
-}
-struct Point : Shape { }
 
 const PI: f64 = 3.14159265358979
 

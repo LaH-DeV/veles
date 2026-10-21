@@ -335,7 +335,7 @@ public struct RangeIter<T> {
         if (this.current >= this.hi) return null
       }
       val v = this.current
-      this.current = this.current +% 1
+      this.current +%= 1
       v
     }
   }

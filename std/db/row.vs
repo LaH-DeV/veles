@@ -263,17 +263,17 @@ fun rfc3339(text: string, zoned: bool): string {
   var zone = -1
   loop (i in (at + 1)..<t.len()) {
     val b = t.byteAt(i)
-    if (b == 43 || b == 45) {
+    if (b in [43, 45]) {
       zone = i
       break
     }
   }
   if (zone < 0) return t + "Z"
   val head = t.substring(0, zone) ?: t
-  val offset = t.substring(zone, t.len()) ?: ""
+  val offset = t.slice(zone, t.len())
   // +02 → +02:00, +0530 → +05:30
   if (offset.len() == 3) return head + offset + ":00"
-  if (offset.len() == 5) return head + (offset.substring(0, 3) ?: "") + ":" + (offset.substring(3, 5) ?: "")
+  if (offset.len() == 5) return head + offset.slice(0, 3) + ":" + offset.slice(3, 5)
   head + offset
 }
 

@@ -6,13 +6,13 @@
 
 extend u8 {
   /// True for `0`–`9`.
-  public const fun isAsciiDigit(): bool => this >= '0' && this <= '9'
+  public const fun isAsciiDigit(): bool => this in '0'..'9'
 
   /// True for `a`–`z`.
-  public const fun isAsciiLower(): bool => this >= 'a' && this <= 'z'
+  public const fun isAsciiLower(): bool => this in 'a'..'z'
 
   /// True for `A`–`Z`.
-  public const fun isAsciiUpper(): bool => this >= 'A' && this <= 'Z'
+  public const fun isAsciiUpper(): bool => this in 'A'..'Z'
 
   /// True for `a`–`z` and `A`–`Z`.
   public const fun isAsciiLetter(): bool => this.isAsciiLower() || this.isAsciiUpper()
@@ -24,7 +24,7 @@ extend u8 {
   public const fun isAsciiHexDigit(): bool => this.digitValue(16) != null
 
   /// True for space, tab, newline, carriage return, form feed and vertical tab.
-  public const fun isAsciiSpace(): bool => this == ' ' || (this >= 9 && this <= 13)
+  public const fun isAsciiSpace(): bool => this == ' ' || this in 9..13
 
   /// The byte with `A`–`Z` made `a`–`z`; any other byte as it is.
   public const fun toAsciiLower(): u8 => if (this.isAsciiUpper()) this +% 32 else this

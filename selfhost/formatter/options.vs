@@ -10,15 +10,13 @@ use toml { Value }
 use settings { Schema, Section, Setting, SettingsError }
 
 /// How a line is indented.
-sealed trait Indentation
-
-/// The formatter's own choice.
-struct DefaultIndent : Indentation { }
-
-struct TabIndent : Indentation { }
-
-struct SpacesIndent : Indentation {
-  width: i64
+sealed trait Indentation {
+  /// The formatter's own choice.
+  struct DefaultIndent { }
+  struct TabIndent { }
+  struct SpacesIndent {
+    width: i64
+  }
 }
 
 /// `imports = "lines"` (one `use` per module) or `"merged"` (one `use a, b`
@@ -120,7 +118,7 @@ extend string {
     if (at < this.len() && (this.byteAt(at) == '+' || this.byteAt(at) == '-')) at += 1
     val start = at
     loop (at < this.len() && this.byteAt(at).isAsciiDigit()) at += 1
-    val magnitude = (this.substring(start, at) ?: "").toInt() ?: return 0
+    val magnitude = this.slice(start, at).toInt() ?: return 0
     if (negative) -magnitude else magnitude
   }
 }

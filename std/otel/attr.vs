@@ -2,21 +2,22 @@
 
 /// The value of an attribute: the types OpenTelemetry defines. Make attributes
 /// with `attr`, which converts the common Veles types.
-public sealed trait AnyValue
-public struct StringValue : AnyValue {
-  public value: string
-}
-public struct BoolValue : AnyValue {
-  public value: bool
-}
-public struct IntValue : AnyValue {
-  public value: i64
-}
-public struct DoubleValue : AnyValue {
-  public value: f64
-}
-public struct StringsValue : AnyValue {
-  public values: List<string>
+public sealed trait AnyValue {
+  struct StringValue {
+    public value: string
+  }
+  struct BoolValue {
+    public value: bool
+  }
+  struct IntValue {
+    public value: i64
+  }
+  struct DoubleValue {
+    public value: f64
+  }
+  struct StringsValue {
+    public values: List<string>
+  }
 }
 
 /// What can be an attribute's value: text, numbers, booleans and lists of

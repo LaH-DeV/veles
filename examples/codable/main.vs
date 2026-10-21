@@ -33,15 +33,16 @@ struct User {
 
 /// A closed family travels with a discriminator: `{"kind": "circle", ...}`.
 @tag("kind")
-sealed trait Shape
-@key("circle")
-struct Circle : Shape {
-  r: f64
-}
-@key("rect")
-struct Rect : Shape {
-  w: f64
-  h: f64
+sealed trait Shape {
+  @key("circle")
+  struct Circle {
+    r: f64
+  }
+  @key("rect")
+  struct Rect {
+    w: f64
+    h: f64
+  }
 }
 implement Codable for Shape
 

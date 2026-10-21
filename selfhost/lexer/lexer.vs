@@ -44,9 +44,10 @@ fun tokenizeRange(file: File, start: i64, end: i64, diags: *Diagnostics): List<T
 
 // the operators, longest first where one is a prefix of another
 const OPERATORS: List<(string, Kind)> = [
+  ("<<=", Kind.ShlEq), (">>=", Kind.ShrEq), ("+%=", Kind.WrapPlusEq), ("-%=", Kind.WrapMinusEq), ("*%=", Kind.WrapStarEq),
   ("...", Kind.Ellipsis), ("..<", Kind.RangeLt), ("<<", Kind.Shl), (">>", Kind.Shr), ("::", Kind.DblColon),
   ("?.", Kind.SafeDot), ("?:", Kind.Elvis), ("?!", Kind.OrFail), ("??", Kind.Coalesce), ("=>", Kind.FatArrow),
-  ("->", Kind.Arrow), ("..", Kind.Range), ("+=", Kind.PlusEq), ("-=", Kind.MinusEq), ("*=", Kind.StarEq),
+  ("->", Kind.Arrow), ("..", Kind.Range), ("|=", Kind.PipeEq), ("&=", Kind.AmpEq), ("^=", Kind.CaretEq), ("+=", Kind.PlusEq), ("-=", Kind.MinusEq), ("*=", Kind.StarEq),
   ("/=", Kind.SlashEq), ("%=", Kind.PercentEq), ("+%", Kind.WrapPlus), ("-%", Kind.WrapMinus),
   ("*%", Kind.WrapStar), ("==", Kind.Eq), ("!=", Kind.NotEq), ("<=", Kind.LtEq), (">=", Kind.GtEq),
   ("&&", Kind.AndAnd), ("||", Kind.OrOr), ("(", Kind.LParen), (")", Kind.RParen), ("{", Kind.LBrace),
@@ -318,7 +319,7 @@ struct Lexer {
     val start = this.pos
     if (this.src.byteAt(this.pos) == '0' && this.pos + 1 < this.src.len()) {
       val radix = this.src.byteAt(this.pos + 1)
-      if (radix == 'x' || radix == 'X' || radix == 'b' || radix == 'B' || radix == 'o' || radix == 'O') {
+      if (radix in ['x', 'X', 'b', 'B', 'o', 'O']) {
         this.pos += 2
         when (radix) {
           'x', 'X' => this.digits(b => b.isAsciiHexDigit())
@@ -332,7 +333,7 @@ struct Lexer {
     // after a member dot a number is a tuple index: `pair.0.1` is two
     // indexes, not `pair` and the float `0.1`
     val last = this.lastKind()
-    if (last == Kind.Dot || last == Kind.SafeDot) return this.push(Kind.Int, start)
+    if (last in [Kind.Dot, Kind.SafeDot]) return this.push(Kind.Int, start)
     var isFloat = false
     // a '.' then a digit continues a float; `1..5` is a range
     if (this.peekByte(0) == '.' && this.peekByte(1).isAsciiDigit()) {
@@ -341,10 +342,10 @@ struct Lexer {
       this.digits(b => b.isAsciiDigit())
     }
     val e = this.peekByte(0)
-    if (e == 'e' || e == 'E') {
+    if (e in ['e', 'E']) {
       var n: i64 = 1
       val sign = this.peekByte(1)
-      if (sign == '+' || sign == '-') n += 1
+      if (sign in ['+', '-']) n += 1
       if (this.peekByte(n).isAsciiDigit()) {
         isFloat = true
         this.pos += n
@@ -476,7 +477,7 @@ struct Lexer {
     var closed = false
     loop (this.pos < this.src.len() && !closed) {
       val b = this.src.byteAt(this.pos)
-      if (b == '\n' || b == '\r') {
+      if (b in ['\n', '\r']) {
         this.errorAt(start, this.pos, "unterminated regular expression; a /…/ literal is on one line and ends with a slash")
         this.regexToken(start)
         return
@@ -536,7 +537,7 @@ struct Lexer {
   fun hasLineBreak(from: i64, to: i64): bool {
     loop (i in from..<to) {
       val b = this.src.byteAt(i)
-      if (b == '\n' || b == '\r') return true
+      if (b in ['\n', '\r']) return true
     }
     false
   }

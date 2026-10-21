@@ -34,8 +34,8 @@ public struct File {
     val start = this.lineStarts.at(n - 1) ?: return ""
     val end = if (n < this.lineStarts.len()) (this.lineStarts.at(n) ?: 0) - 1 else this.content.len()
     // both ends are at a line start or a `\n`, so the cut cannot split a character
-    var text = this.content.substring(start, end) ?: ""
-    loop (text.endsWith("\r")) text = text.substring(0, text.len() - 1) ?: ""
+    var text = this.content.slice(start, end)
+    loop (text.endsWith("\r")) text = text.slice(0, text.len() - 1)
     text
   }
 }

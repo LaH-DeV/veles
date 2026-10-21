@@ -5,6 +5,8 @@ could be better just for developing in this language … a lot of them … think
 them through and explain and ask. no code yet"). Nothing here is decided or
 built; an answer becomes a spec entry through `veles-decide`.
 
+**Status (2026-10-20, later).** Answered by the user: S1 option A (two lints), S12, S8 and the map/set `redundant_copy` lint were built and applied repository-wide (about 100 discards, 23 counting loops, 59 ladders, the map and set copies); S4 `in`, S2 `loop (val x = e)`, S6 compound assignments, S9 `slice`, and I10/I9/I1 are being prepared as decisions; S3 waits for an explanation of what the helpers would look like.
+
 **Evidence.** Counts are over the Veles source of the repository that is
 written by hand: `std/`, `selfhost/`, `examples/`, `bench/` (252 files, test
 files excluded), measured 2026-10-20 with small scripts. "S" ideas are new
@@ -267,8 +269,7 @@ appears; not recommended now.
 
 ### S15 — `when (val t = f()) { … }`
 
-22 places write `val t = f()` and then `when (t)`. The binding could live in
-the head, scoping `t` to the `when`. Cosmetic; not recommended.
+Already in the language (`WhenExpr.Bind`, "a name for the subject, scoped to the arms"); 22 places still write `val t = f()` and then `when (t)`. Nothing to add.
 
 ---
 

@@ -18,66 +18,56 @@ public error RegexError {
   public position: i64
 }
 
-sealed trait Node
-
-/// Matches the empty string.
-struct Nothing : Node { }
-
-/// One code point.
-struct Lit : Node {
-  code: i64
-}
-
-/// Any code point; `\n` only when `dotAll`.
-struct Dot : Node {
-  dotAll: bool
-}
-
-/// A set of code points: sorted, merged `lo, hi, lo, hi, …` pairs, both ends in.
-struct Ranges : Node {
-  ranges: List<i64>
-}
-
-struct Cat : Node {
-  items: List<Node>
-}
-
-struct Choice : Node {
-  items: List<Node>
-}
-
-/// `body{min,max}`; `max` is -1 for no upper bound.
-struct Repeat : Node {
-  body: *Node
-  min:  i64
-  max:  i64
-  lazy: bool
-}
-
-/// A capturing group; `index` counts from 1 (0 is the whole match).
-struct Group : Node {
-  index: i64
-  body:  *Node
-}
-
-/// A zero-width test: one of the `assert…` constants.
-struct Anchor : Node {
-  kind: i64
-}
-
-/// `\1` or `\k<name>`: the text group `index` matched. Only with
-/// `backtracking: true`; `fold` is whether `(?i)` was on where it was written.
-struct BackRef : Node {
-  index: i64
-  fold:  bool
-}
-
-/// `(?=…)`, `(?!…)`, `(?<=…)` and `(?<!…)`: `body` must (or must not) match
-/// ahead of here, or end here for `behind`. Only with `backtracking: true`.
-struct Look : Node {
-  behind:  bool
-  negated: bool
-  body:    *Node
+sealed trait Node {
+  /// Matches the empty string.
+  struct Nothing { }
+  /// One code point.
+  struct Lit {
+    code: i64
+  }
+  /// Any code point; `\n` only when `dotAll`.
+  struct Dot {
+    dotAll: bool
+  }
+  /// A set of code points: sorted, merged `lo, hi, lo, hi, …` pairs, both ends in.
+  struct Ranges {
+    ranges: List<i64>
+  }
+  struct Cat {
+    items: List<Node>
+  }
+  struct Choice {
+    items: List<Node>
+  }
+  /// `body{min,max}`; `max` is -1 for no upper bound.
+  struct Repeat {
+    body: *Node
+    min:  i64
+    max:  i64
+    lazy: bool
+  }
+  /// A capturing group; `index` counts from 1 (0 is the whole match).
+  struct Group {
+    index: i64
+    body:  *Node
+  }
+  /// A zero-width test: one of the `assert…` constants.
+  struct Anchor {
+    kind: i64
+  }
+  /// `\1` or `\k<name>`: the text group `index` matched. Only with
+  /// `backtracking: true`; `fold` is whether `(?i)` was on where it was written.
+  struct BackRef {
+    index: i64
+    fold:  bool
+  }
+  /// `(?=…)`, `(?!…)`, `(?<=…)` and `(?<!…)`: `body` must (or must not) match
+  /// ahead of here, or end here for `behind`. Only with `backtracking: true`.
+  struct Look {
+    behind:  bool
+    negated: bool
+    body:    *Node
+  }
 }
 
 const assertBeginLine: i64 = 0
@@ -148,23 +138,23 @@ const fun parse(pattern: string, flags: Flags): Parsed {
 
 /// A code point as the ASCII byte it is, or 255 for one that is not ASCII (or
 /// the end of the pattern): what lets `when` and comparisons use byte literals.
-const fun sym(c: i64): u8 => if (c >= 0 && c < 128) c.wrapU8() else 255
+const fun sym(c: i64): u8 => if (c in 0..<128) c.wrapU8() else 255
 
 const fun isDigit(c: i64): bool {
   val b = sym(c)
-  b >= '0' && b <= '9'
+  b in '0'..'9'
 }
 
 const fun isLetter(c: i64): bool {
   val b = sym(c)
-  (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
+  b in 'a'..'z' || b in 'A'..'Z'
 }
 
 const fun hexValue(c: i64): i64 {
   val b = sym(c)
-  if (b >= '0' && b <= '9') return c - 48
-  if (b >= 'a' && b <= 'f') return c - 97 + 10
-  if (b >= 'A' && b <= 'F') return c - 65 + 10
+  if (b in '0'..'9') return c - 48
+  if (b in 'a'..'f') return c - 97 + 10
+  if (b in 'A'..'F') return c - 65 + 10
   -1
 }
 
@@ -212,7 +202,7 @@ struct Parser {
     if (!this.flags.extended) return
     loop (this.pos < this.codes.len() && !this.failed()) {
       val b = sym(this.peek())
-      if (b == ' ' || b == '\t' || b == '\n' || b == '\r' || b == 12) {
+      if (b in [' ', '\t', '\n', '\r', 12]) {
         this.pos += 1
       } else if (b == '#') {
         loop (this.pos < this.codes.len() && !this.look('\n')) this.pos += 1
@@ -240,7 +230,7 @@ struct Parser {
     loop {
       this.skipSpace()
       val b = sym(this.peek())
-      if (this.peek() == -1 || b == '|' || b == ')') break
+      if (this.peek() == -1 || b in ['|', ')']) break
       val atom = this.atom(depth) ?: continue
       items.push(this.quantified(atom))
     }
@@ -279,7 +269,7 @@ struct Parser {
     val lazy = this.eat('?')
     this.skipSpace()
     val after = sym(this.peek())
-    if (after == '*' || after == '+' || after == '?') {
+    if (after in ['*', '+', '?']) {
       this.fail("a repetition cannot be repeated again: group it with (?:…)")
     }
     if (atom is Anchor) this.fail("an assertion cannot be repeated")
@@ -416,7 +406,7 @@ struct Parser {
       this.close()
       return body
     }
-    if (b == '<' || b == 'P') {
+    if (b in ['<', 'P']) {
       if (b == '<' && (sym(this.peekAt(1)) == '=' || sym(this.peekAt(1)) == '!')) {
         val negated = sym(this.peekAt(1)) == '!'
         if (!this.flags.backtracking) {
@@ -441,7 +431,7 @@ struct Parser {
       this.close()
       return Group(index, body: &body)
     }
-    if (b == '=' || b == '!') {
+    if (b in ['=', '!']) {
       if (!this.flags.backtracking) {
         this.fail("lookahead is not supported by the linear-time engine; Regex.compile(pattern, backtracking: true) allows it, and can take exponential time")
         return Nothing()

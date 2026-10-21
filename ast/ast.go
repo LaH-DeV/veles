@@ -203,8 +203,8 @@ type UseSpec struct {
 	// ones named in `extend { f, g }`; nil is a bare `extend`: all of them.
 	Extend      bool
 	ExtendNames []*UseName
-	Pub          bool // the declaration is `public use` (D89)
-	Pos          source.Span
+	Pub         bool // the declaration is `public use` (D89)
+	Pos         source.Span
 }
 
 // UseName is one name of a braced import: `f` or `f as g`.
@@ -310,7 +310,11 @@ type StructDecl struct {
 	// InitParams are `init(value: T) { }`'s parameters: parameters of the
 	// implicit constructor after the fields (D73). Nil when it has none.
 	InitParams []Param
-	Pos        source.Span
+	// Nested: declared in the body of a sealed trait (D193), a variant of it.
+	// ImpliedVariant: its `: Trait` clause was not written but supplied.
+	Nested         bool
+	ImpliedVariant bool
+	Pos            source.Span
 }
 
 type AssocTypeDecl struct {
@@ -331,7 +335,10 @@ type TraitDecl struct {
 	Supers     []Type
 	AssocTypes []*AssocTypeDecl
 	Methods    []*FunDecl
-	Pos        source.Span
+	// Variants are the structs declared in the body of a sealed trait (D193). Each
+	// is also in the file's list of declarations, as the separate form would be.
+	Variants []*StructDecl
+	Pos      source.Span
 }
 
 type AssocTypeBinding struct {
@@ -352,6 +359,7 @@ type ImplDecl struct {
 	Internal   bool // `internal extend`, likewise
 	Inline     bool // written inside the target struct's body
 	Braceless  bool // an empty impl written without `{ }` (D58): the body is derived
+	Lifted     bool // made by the compiler from the methods a variant wrote in its body (D195)
 	Derived    bool // synthesized by the compiler (D58): a supertrait's, a variant's or an enum's impl; never from the parser
 	ErrorSugar bool // the `impl Error for Name` an `error Name` declaration makes: its trait is the prelude's, whatever the module names its own types
 	TypeParams []TypeParam
@@ -1022,6 +1030,16 @@ type AwaitExpr struct {
 	Pos source.Span
 }
 
+// InExpr is the membership test `x in c` and `x !in c` (D189): `c.contains(x)`,
+// `c.containsKey(x)` for a map, and for a text the occurrence of a substring or
+// a byte. A list, string or range literal as `c` is compiled as comparisons.
+type InExpr struct {
+	X   Expr
+	C   Expr
+	Not bool
+	Pos source.Span
+}
+
 // IsExpr is the boolean type test `x is T`.
 type IsExpr struct {
 	X   Expr
@@ -1134,6 +1152,7 @@ func (e *BlockExpr) Span() source.Span        { return e.Block.Pos }
 func (e *TryExpr) Span() source.Span          { return e.Pos }
 func (e *AwaitExpr) Span() source.Span        { return e.Pos }
 func (e *IsExpr) Span() source.Span           { return e.Pos }
+func (e *InExpr) Span() source.Span           { return e.Pos }
 func (e *CastExpr) Span() source.Span         { return e.Pos }
 func (e *ImplementsExpr) Span() source.Span   { return e.Pos }
 func (e *GatherExpr) Span() source.Span       { return e.Pos }
@@ -1181,6 +1200,7 @@ func (*BlockExpr) exprNode()        {}
 func (*TryExpr) exprNode()          {}
 func (*AwaitExpr) exprNode()        {}
 func (*IsExpr) exprNode()           {}
+func (*InExpr) exprNode()           {}
 func (*CastExpr) exprNode()         {}
 func (*ImplementsExpr) exprNode()   {}
 func (*GatherExpr) exprNode()       {}

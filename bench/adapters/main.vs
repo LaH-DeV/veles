@@ -8,21 +8,23 @@ fun main() {
   var x: u64 = 88172645463325252
   var xs: MutableList<i64> = []
   loop (_ in 0..<200000) {
-    x = x ^ (x << 13)
-    x = x ^ (x >> 7)
-    x = x ^ (x << 17)
+    x ^= x << 13
+    x ^= x >> 7
+    x ^= x << 17
     xs.push((x % 1000000).wrapI64())
   }
   val input = xs.toList()
-  val sw = time.Stopwatch.start()
-  var check: i64 = 0
-  loop (round in 0..<20) {
-    val scaled = input.map(n => n * 3 + round)
-    val even = scaled.filter(n => n % 2 == 0)
-    check += even.fold(0, (acc, n) => acc + n % 1000)
-    if (even.any(n => n > 2999990)) check += 1
-    if (scaled.all(n => n >= 0)) check += 2
-    check += even.find(n => n % 7 == 3) ?: -1
-  }
-  println("BENCH adapters 24000000 ${sw.elapsed().toNanos()} $check")
+  val (check, elapsed) = time.Stopwatch.measure(() => {
+    var check: i64 = 0
+    loop (round in 0..<20) {
+      val scaled = input.map(n => n * 3 + round)
+      val even = scaled.filter(n => n % 2 == 0)
+      check += even.fold(0, (acc, n) => acc + n % 1000)
+      if (even.any(n => n > 2999990)) check += 1
+      if (scaled.all(n => n >= 0)) check += 2
+      check += even.find(n => n % 7 == 3) ?: -1
+    }
+    check
+  })
+  println("BENCH adapters 24000000 ${elapsed.toNanos()} $check")
 }

@@ -121,6 +121,15 @@ enum Kind {
   // reserved for future use: lexed as keywords so they cannot be names
   KwReserved
   KeywordEnd
+  // the compound assignments of D191, after the keywords as in the bootstrap
+  PipeEq
+  AmpEq
+  CaretEq
+  ShlEq
+  ShrEq
+  WrapPlusEq
+  WrapMinusEq
+  WrapStarEq
 }
 
 /// The keywords and the reserved words.
@@ -161,6 +170,14 @@ const fun kindNames(): Map<Kind, string> {
     if (!names.containsKey(k)) names.set(k, text)
     kind += 1
   }
+  names.set(Kind.PipeEq, "|=")
+  names.set(Kind.AmpEq, "&=")
+  names.set(Kind.CaretEq, "^=")
+  names.set(Kind.ShlEq, "<<=")
+  names.set(Kind.ShrEq, ">>=")
+  names.set(Kind.WrapPlusEq, "+%=")
+  names.set(Kind.WrapMinusEq, "-%=")
+  names.set(Kind.WrapStarEq, "*%=")
   loop ((word, k) in KEYWORDS) {
     if (k != Kind.KwReserved && !names.containsKey(k)) names.set(k, "'$word'")
   }

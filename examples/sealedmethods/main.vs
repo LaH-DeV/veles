@@ -3,20 +3,17 @@ use io { println }
 sealed trait Shape {
   fun area(): f64
   fun describe(): string => "shape with area ${this.area()}"
-}
-struct Circle : Shape {
-  r: f64
 
-  implement Shape {
+  struct Circle {
+    r: f64
+
     fun area(): f64 => 3.0 * this.r * this.r
     override fun describe(): string => "circle r=${this.r}"
   }
-}
-struct Rect : Shape {
-  w: f64
-  h: f64
+  struct Rect {
+    w: f64
+    h: f64
 
-  implement Shape {
     fun area(): f64 => this.w * this.h
   }
 }

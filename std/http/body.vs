@@ -241,7 +241,7 @@ public struct Body {
   // it is tried.
   fun reusable(cap: i64): bool {
     val st = this.state.get()
-    if (st.done || st.framing == 0 || st.framing == 3) return true
+    if (st.done || st.framing in [0, 3]) return true
     if (st.broken || st.waiting) return false
     st.declared < 0 || st.declared - st.total <= cap
   }
@@ -250,7 +250,7 @@ public struct Body {
   // when it could not, and the connection must close.
   fun drain(cap: i64): bool suspends {
     val st = this.state.get()
-    if (st.done || st.framing == 0 || st.framing == 3) return true
+    if (st.done || st.framing in [0, 3]) return true
     if (!this.reusable(cap)) return false
     val rest = this.withLimit(st.total + cap)
     loop {

@@ -282,6 +282,8 @@ func (f *fnCtx) checkExprInner(e ast.Expr, want types.Type) Expr {
 		return f.boundExpr(e, want) // synthesized (D174)
 	case *ast.FieldDefaultExpr:
 		return f.fieldDefault(e.Struct.(*types.Struct), e.Index) // synthesized (D58)
+	case *ast.InExpr:
+		return f.inExpr(e, want)
 	case *ast.CheckedExpr:
 		return e.X.(Expr) // synthesized (D171)
 	case *ast.SelfExpr:
