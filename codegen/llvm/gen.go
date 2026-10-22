@@ -192,7 +192,7 @@ func Generate(prog *sema.Program) string {
 	sb.WriteString(out)
 	sb.WriteString(helpers)
 	sb.WriteString(g.referencedHeld(out + helpers))
-	return sb.String()
+	return pruneModule(sb.String())
 }
 
 var declRe = regexp.MustCompile(`declare [^@]+@([A-Za-z0-9_.]+)[(]`)

@@ -48,7 +48,7 @@ or by hand), see red, restore.
 ## Commands
 
 ```bash
-go test -timeout 30m ./...                             # everything, ~10 min on Windows (run in background; driver and sema are the long poles)
+go test ./...                                          # everything, ~4 min (run in background; driver and sema are the long poles)
 go test ./sema -run TestSpecRules                      # one table
 go test ./examples -run TestExamples/json              # one example
 go test ./examples -run TestExamples/json -update      # rewrite its expected.txt

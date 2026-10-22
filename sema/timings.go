@@ -46,11 +46,17 @@ func LoadPackageTimed(entry string, diags *source.Diagnostics, t *Timings) (*Pac
 
 // parse parses one source file of m, timed when the build asked.
 func (p *Package) parse(m *Module, f *source.File) *ast.File {
+	return p.timeParse(m, f, func() *ast.File { return parser.ParseFile(f, p.diags) })
+}
+
+// timeParse runs parse, the parse of f (or its copy from the cache of
+// embedded std files), recording the time under m when the build asked.
+func (p *Package) timeParse(m *Module, f *source.File, parse func() *ast.File) *ast.File {
 	if p.timings == nil {
-		return parser.ParseFile(f, p.diags)
+		return parse()
 	}
 	start := time.Now()
-	out := parser.ParseFile(f, p.diags)
+	out := parse()
 	mt := p.timings.module(m.Path)
 	mt.Parse += time.Since(start)
 	mt.Files++

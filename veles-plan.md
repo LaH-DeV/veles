@@ -466,6 +466,41 @@ on Linux).
 
 Older entries: `archive/progress-log-2026-09.md`.
 
+### 2026-10-23 — Embedded std parsed once per process
+
+Checklist §11 "Test-suite wall time", point (2). A profile of
+`TestCheckEveryPrefix/httpd` (27 s wall, 69 s CPU) put 13 s in loading —
+12 s of it parsing std — 11 s in `Check` and the rest in GC, which parsing
+fed most. The checker writes into the tree it is given: D158 replaces bare
+member names in every method body by `this.name` through reflection, D176
+replaces a decorated function's body, so a parsed tree cannot be shared
+between checks (a data race under the LSP's concurrent loads, a D158
+shadowing warning lost on the second check, and a rewrite that depends on
+the program's own impls on std types). `sema/stdparse.go` parses each
+embedded std file once and hands every load a deep copy; `ast.Clone` is
+generated from `ast/ast.go` (`go generate ./ast`, `ast/internal/clonegen`;
+a test fails when it is stale) and keeps the sharing the parser makes (a
+struct's impls are also in the file's declarations; desugared declarations
+share a `NamedType`) — `ast/clone_test.go` checks over every std and
+repository source that the copy shares nothing with the original and shares
+within itself exactly what the original does. Prelude: parse 13.7 ms /
+15.8 MB, copy 2.3 ms / 2.3 MB. A first reflective copy took 7.5 ms and cost
+more than it saved under load.
+
+Measured on Windows: `go test ./sema` 384 s → 168 s;
+`TestCheckEveryPrefix/httpd` 27.5 s → 17.3 s (CPU 69 → 31 s); a language
+server edit of `examples/httpd/main.vs` loads in 9 ms instead of 45 ms, but
+checking it (`CheckIndex`) takes ~590 ms either way — recorded in §11 as
+"Checking the embedded std once", with what caching checked std would take.
+`go test ./lsp` unchanged (~10 s; it is not load-bound). `go build`, `go vet`
+clean; `go test ./...` green on Windows (8 min wall) except two failures
+that come from a CRLF checkout (`core.autocrlf=true`), not from this change:
+`format` `TestCorpus` and `examples/todo` fail on CRLF copies of
+`examples/regex/main.vs` and `examples/todo/main.vs` and pass on LF ones
+(checklist §11). Linux (WSL): build, vet and `go test ./...` green; `go
+test -race` clean on `ast` and on `sema`'s concurrent-load test and httpd
+prefixes.
+
 ### 2026-10-22 - B19 / D157: reject unhandled values in interpolation
 
 **Implemented; cross-platform completion remains pending in checklist 11.**
@@ -1935,3 +1970,4 @@ chapter 17 "Calling other servers", reference/stdlib. The example caught a bug t
 - 2026-10-20 — `isFrozen()` on MutableList/MutableMap/MutableSet (D188; the user's question, recommended option): the frozen bit as one inline load; not a mutating method for `protected var` fields; `TestFreeze` and `sema/testdata/conform/D188-freeze.vs` cover it.
 - 2026-10-20 — Style lints from the syntax review (`veles-syntax-ideas.md`): `redundant_discard`, `loop_is_range`, `continue_skips_step`, `else_if_ladder` built with fixes and applied to the whole repository (about 100 + 23 + 59 sites, `TestRedundantDiscardLint`, `TestElseIfLadderLint`, `TestCounterLoopLints`); the `redundant_copy` lint now covers maps and sets, and D63's "built here" rule accepts constructors and static factories (`MutableSet<T>()`, `MutableList<bool>.repeat(…)`). Found on the way: the lint once rewrote the compiler's own derived `implement Decodable` into a `when` (spans of derived code are the user's); derived code is skipped now.
 - 2026-10-21 — A7, macOS arm64: native kqueue with one-shot read/write filters, EVFILT_USER wake coalescing, close-on-exec and nanosecond waits; portable poll remains testable on macOS. `TestReactorKqueue` pins backend selection, filter replacement, one-shot readiness, EOF, forgetting and invalid descriptors; the connection stress now includes 4 workers, and the sanitizer smoke test runs on macOS. Fixed the C varargs fixture's Linux-only O_CREAT value (Darwin uses 0x200); snprintf/varargs and C structs already used the correct Apple ABI. Go 1.23.2 + Apple clang 21: build/vet/all tests green; all examples under poisoned GC at threshold 256 and ASan/UBSan, reactor/C ABI sanitizer tests, and GC/sync examples each 20 repetitions at 1/2/4/8 workers green. Sustained connection stress hit Darwin's ephemeral port limit, not a lost wake. All 22 benchmark checksums match Go, recorded in `bench/results.md`: httphello 386 ms default, 790 ms at 1 worker, 384 ms at 8; longest gcpause 15.96 ms (marking remains in the pause). Same-toolchain comparison: poll 369 ms before, kqueue 388–394 ms over three runs after, within the 10% noise threshold; no speedup claimed. `internal/macos-test.sh` pins the validation toolchain by default: Go 1.27's newer Unicode fails generated-table freshness, so no language data was regenerated. TLS uses tested Homebrew OpenSSL 3; D143's refused priority/affinity settings remain unchanged. Staticcheck was skipped by the user; Intel Macs and Windows/Linux reruns remain in checklist §11.
+- 2026-10-23 — Test-suite wall time, point (3): codegen emits only what is reachable (`codegen/llvm/prune.go`). A last pass over the finished module keeps the definitions and private constants reachable from what is named from outside it (`veles_main`, `veles_init_globals`, `extern "C"` exports, non-private globals) through every `@name`: calls, function values and their thunks, closures, coroutine frames and method tables. Order and bodies are unchanged, so the codegen goldens did not move; the new `golden/reach` fixture pins it (an unused function and method gone; methods reached only through a trait object's table, a function passed by name and a lambda kept). Hello world 540 → 4 `define`s (1.3 MB → 28 KB IR), clang ~450 → ~245 ms; `examples/httpd` 2156 → 822 (9.3 → 4.0 MB), clang 2.9 → 1.4 s; `go test ./docs ./examples` 59 → 32 s; `driver` 586 → 325 s; benchmarks unchanged (`bench/results.md`). Linux (WSL) all green. Windows is green except three tests that also fail without this change in a fresh checkout: `examples/regex` and `examples/todo` sources check out with CRLF there (checklist §11).

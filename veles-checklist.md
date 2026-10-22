@@ -1392,16 +1392,60 @@ Every new public std API (http cookies/forms/client, `std/log`,
       environment, swap stdio (`capture`, `runTestDir` — guarded by
       `serialOnly`) or set `runtimeTestFlags`. Shrinking it means making
       those programs cheaper to build (3) or running each with its own
-      stdio and env instead of the process's. (2) `sema` `TestCheckEveryPrefix` re-loads and
-      re-parses the embedded std for every line of every example (`fuzz`
-      181 s, `httpd` 100 s): `loadPackage` has no cache of parsed std files,
-      which the language server pays on every keystroke too. (3) Each build
-      emits every std function (540 `define`s for hello world, 1.3 MB of
-      IR) and clang spends ~0.8 s of the ~1 s build on it; codegen emitting
-      only what is reachable from `main`, tests, exports and vtables would
-      speed every build and test. Plain `go test ./...` may still exceed
-      the default 10-minute timeout on Windows under load; use
-      `-timeout 30m`.
+      stdio and env instead of the process's. (2) Done 2026-10-23:
+      `sema` `TestCheckEveryPrefix` re-parsed the embedded std for every
+      line of every example (`fuzz` 181 s, `httpd` 100 s), as the language
+      server did on every keystroke; now the embedded std is parsed once per
+      process (`sema/stdparse.go`) and each load gets its own deep copy
+      (`ast.Clone`, generated from `ast/ast.go` by `ast/internal/clonegen`),
+      because the checker rewrites the tree it is given (D158 bare members,
+      D176 decorators) — see "Checking the embedded std once" below for what
+      is left. `go test ./sema` 384 s → 168 s on Windows. (3) Done
+      2026-10-23: codegen keeps only the definitions and private constants
+      reachable from what is named from outside the module (`veles_main`,
+      `veles_init_globals`, `extern "C"` exports, non-private globals),
+      following every `@name` in calls, function values, closures, coroutine
+      frames and method tables (`codegen/llvm/prune.go`, fixture
+      `golden/reach`). Hello world 540 → 4 `define`s, clang ~450 → ~245 ms;
+      `httpd` 2156 → 822, clang 2.9 → 1.4 s; `./docs ./examples` 59 → 32 s
+      (`bench/results.md`). With all three, `go test ./...` takes 228 s on
+      Windows (it timed out at 10 minutes before) and 212 s on Linux with
+      build and vet; `driver` (224 s) and `sema` (123 s) are the long poles.
+
+- [ ] **Checking the embedded std once, not per load (2026-10-23).** With
+      parsed std cached (above), checking is what the language server and
+      `sema` tests pay for: an edit of `examples/httpd/main.vs` (load +
+      `CheckIndex`, as `lsp/server.go` `analyze` does) is ~9 ms of loading and
+      ~590 ms of checking on Windows, and `TestCheckEveryPrefix/httpd` spends
+      12 of its 31 CPU-seconds in `Check`, most of the rest in the GC it
+      drives. The checker cannot keep checked std modules between loads as it
+      stands: it is whole-program — every round of the effect fixpoint
+      re-checks every body, std's included, into a fresh `Program` with fresh
+      instance tables and variable numbering; generic std bodies are
+      instantiated with the program's types, and their effects follow the
+      caller's arguments (D116); D158 rewrites a method body against the
+      receiver's member set, which a program's own `implement` of a trait on
+      a std type extends. Caching it is separate compilation of std: freeze,
+      after checking std alone, per-module summaries (scopes, signatures,
+      inferred effects, impl and trait tables, `types` values with an
+      identity every program shares read-only) and the non-generic HIR;
+      instantiate generic std bodies per program in a layer of its own;
+      make every checker table that std entries live in a per-program
+      overlay over the frozen one; give HIR variable and loop numbers a
+      per-module base so frozen bodies keep theirs. A design change of the
+      checker, not a cache; measure first how much of `Check` is std bodies
+      (`--timings` reports check time per module).
+
+- [ ] **A fresh Windows checkout fails three tests (found 2026-10-23, by
+      both the codegen and the std-parse sessions).** With
+      `core.autocrlf=true`, `examples/regex/main.vs` and
+      `examples/todo/main.vs` check out with CRLF (the main checkout has
+      them with LF): `format` `TestCorpus` says both are not formatted, and
+      `examples/todo` prints its multi-line usage string with `\r\n`, which
+      does not match `expected.txt`. Linux is green. Either the formatter
+      and multi-line string literals should not depend on the line ending a
+      Windows checkout gives a source, or `.gitattributes` should pin `*.vs`
+      to `eol=lf`.
 
 - [ ] **D197 `cede` (specified 2026-10-21, not implemented; plan F20).**
       Add the reserved statement in both frontends, suspension inference and

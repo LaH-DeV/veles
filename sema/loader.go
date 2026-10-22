@@ -194,11 +194,7 @@ func (p *Package) loadStd(modPath string) (*Module, bool) {
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		data, _ := fs.ReadFile(std.FS, modPath+"/"+name)
-		sf := source.NewFile("std/"+modPath+"/"+name, string(data))
-		sf.Embedded = true
-		f := p.parse(m, sf)
-		m.Files = append(m.Files, f)
+		m.Files = append(m.Files, p.parseStd(m, modPath+"/"+name))
 	}
 	return m, len(names) > 0
 }

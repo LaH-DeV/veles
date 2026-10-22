@@ -456,3 +456,55 @@ the runner's 10% noise threshold, not evidence of a speedup.
 | benchmark |   ops |    Veles |       Go | Veles / Go |
 | --------- | ----: | -------: | -------: | ---------: |
 | httphello | 16000 | 383.81ms | 445.99ms |       0.9× |
+
+## 2026-10-23 00:13 — go1.23.2, windows/amd64 (HEAD c6080ab, plus the working tree)
+
+| benchmark | ops | Veles | Go | Veles / Go |
+|---|---:|---:|---:|---:|
+| adapters | 24000000 | 57.29ms | 30.68ms | 1.9× |
+| ast | 861841 | 39.77ms | 40.3ms | 1.0× |
+| channels | 200000 | 5.1ms | 10.77ms | 0.5× |
+| emit | 1000000 | 82.07ms | 57.55ms | 1.4× |
+| emptycoll | 2000000 | 19.69ms | 18.76ms | 1.0× |
+| gcpause | 20000000 | 448.31ms | 388.57ms | 1.2× |
+| gunzip | 16777232 | 90.92ms | 56.33ms | 1.6× |
+| gzip | 2097154 | 144.22ms | 131.16ms | 1.1× |
+| httphello | 16000 | 196.85ms | 690.2ms | 0.3× |
+| idle | 100000 | 89.71ms | 331.46ms | 0.3× |
+| intern | 1000000 | 43.34ms | 31.14ms | 1.4× |
+| json | 40000 | 42.76ms | 46.81ms | 0.9× |
+| lexer | 2100000 | 84.68ms | 95.74ms | 0.9× |
+| maps | 2000000 | 69.02ms | 76.92ms | 0.9× |
+| parallel | 64 | 11.1ms | 17.07ms | 0.7× |
+| pipes | 1600000 | 38.75ms | 78.61ms | 0.5× |
+| sha256 | 16 | 145.64ms | 9.9ms | 14.7× |
+| sort | 900000 | 60.35ms | 131.8ms | 0.5× |
+| spawn | 100000 | 50.06ms | 35.88ms | 1.4× |
+| strings | 1000000 | 74.09ms | 58.24ms | 1.3× |
+| suscall | 10000000 | 125.55ms | 6.95ms | 18.1× |
+| trees | 14592688 | 164.82ms | 335.1ms | 0.5× |
+
+| benchmark | Veles bytes/op | Go bytes/op | Veles / Go |
+|---|---:|---:|---:|
+| idle | 249 | 8710 | 0.03× |
+
+| benchmark | Veles longest pause | Go longest pause |
+|---|---:|---:|
+| gcpause | 1.36ms | 1.72ms |
+
+Run after codegen started emitting only reachable functions (`codegen/llvm/prune.go`).
+Function bodies are unchanged, so run time should be too: the Veles column is within noise
+of the 2026-10-13 Windows run except `sha256` (146 ms here). Built with the old and the new
+compiler side by side, it was 60–64 ms for both over three runs with the same checksum, so
+that row was a noisy run, not a regression.
+
+Build time, `veles build --timings` (`-O0 -g`, runtime objects cached), three runs each:
+
+| program | IR before | IR after | `define`s | clang before | clang after | build before | build after |
+| ------- | --------: | -------: | --------: | -----------: | ----------: | -----------: | ----------: |
+| hello world (`use io`, one `println`) | 1.3 MB | 28 KB | 540 → 4 | 443–453 ms | 226–258 ms | 513–530 ms | 295–325 ms |
+| `examples/httpd` | 9.3 MB | 4.0 MB | 2156 → 822 | 2.86–2.91 s | 1.40–1.42 s | 3.21–3.25 s | 1.75–1.78 s |
+
+Wall time of `go test -count=1 ./docs ./examples`: 59 s before, 32 s after (docs 57 → 29 s,
+examples 45 → 25 s). In the full `go test ./...` on Windows, `driver` went from 586 s
+(2026-10-22) to 325 s.
