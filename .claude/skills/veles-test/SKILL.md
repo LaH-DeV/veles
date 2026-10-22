@@ -5,10 +5,26 @@ description: Run, choose, write and update Veles tests — sema rule tests, exam
 
 # Testing Veles
 
-The end-to-end suites (`examples/`, `docs/`) build a fresh compiler into a
-temp dir every run (`internal/buildtest`) and key the Go test cache on
-every compiler source, so `(cached)` is trustworthy and a stale
-`veles.exe` in the tree is never what is tested.
+The end-to-end suites (`examples/`, `docs/`, `selfhost/`,
+`internal/bootstrap/`) build a fresh compiler into a temp dir every run
+(`internal/buildtest`) and key the Go test cache on every compiler source,
+so `(cached)` is trustworthy and a stale `veles.exe` in the tree is never
+what is tested. It is built once per test binary: a package using
+`buildtest.Compiler` or `buildtest.Built` (anything else expensive to build
+once, like the selfhost binary) has `func TestMain(m *testing.M) {
+buildtest.Main(m) }`, which removes the builds at the end. Doc blocks and
+examples run in parallel (`t.Parallel()`): a doc block runs with its own
+working directory and `os.tempDir()`, an example must keep to a temp path
+named after itself and listen on `net.listen()`'s ephemeral port.
+
+In `driver/`, a test that only builds and compares output starts with
+`t.Parallel()`. Leave it serial when it runs a program whose result depends
+on timing or threads (`runtime_test.go`, reactor, race, cancellation,
+servers with timeouts), uses `t.Setenv`, sets `runtimeTestFlags`, or
+captures stdio (`runTests`/`runTestFiles`/`runTestDir`, `capture`: they call
+`serialOnly`, which fails a parallel test at once). Go starts parallel tests
+only after every serial one has finished, so the serial ones never share
+the machine with them.
 
 ## Pick the cheapest test that pins the behaviour
 
@@ -32,7 +48,7 @@ or by hand), see red, restore.
 ## Commands
 
 ```bash
-go test ./...                                          # everything, ~2 min (run in background)
+go test -timeout 30m ./...                             # everything, ~10 min on Windows (run in background; driver and sema are the long poles)
 go test ./sema -run TestSpecRules                      # one table
 go test ./examples -run TestExamples/json              # one example
 go test ./examples -run TestExamples/json -update      # rewrite its expected.txt

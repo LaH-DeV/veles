@@ -14,6 +14,7 @@ import (
 // allocation (one past the end of a list with spare capacity, the byte
 // after a string's last), so the test reads no foreign memory.
 func TestUncheckedAccess(t *testing.T) {
+	t.Parallel()
 	if _, err := findClang(); err != nil {
 		t.Skip("clang not available:", err)
 	}
@@ -51,6 +52,7 @@ fun main() {
 `, "panic: unchecked index -1 out of bounds for string of length 3\n  at main.vs:6:20"},
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			dir := t.TempDir()
 			if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(c.src), 0o644); err != nil {
 				t.Fatal(err)

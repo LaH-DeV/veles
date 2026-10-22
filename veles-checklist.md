@@ -1370,6 +1370,38 @@ Every new public std API (http cookies/forms/client, `std/log`,
       HEAD worktree's isolated test and the subsequent full driver suite passed.
       No timing assertion was weakened and no runtime fix was made; the
       load-sensitive failure's cause remains unverified.
+- [ ] **`TestLessCeremony` flake under load (2026-10-22).** A full WSL run
+      of the `macos` branch failed it at release/4 threads: `stopped()`
+      printed `every started call closed: false`. Five isolated reruns
+      passed. The check `started.load() >= 2` assumes a second
+      `mapConcurrent` call has started before the loop breaks on the first
+      value, which scheduling does not promise (the test's own comment says
+      so); `started == closed` is the property that matters. Decide whether
+      to drop the `>= 2` half or make the first call wait for a second to
+      start, and confirm `started == closed` never fails on its own.
+- [ ] **Test-suite wall time, what is left (2026-10-22).** The compiler is
+      now built once per test binary and doc blocks and examples run in
+      parallel (docs 400–600 s → 41 s, examples ~300 s → 31 s, selfhost
+      234 s → 55 s on Windows). Still slow, measured on Windows the same
+      day: (1) `driver` was 506–586 s with all 116 tests serial; the ~40
+      that only build and compare now run in parallel (`TestFreeze`'s
+      subtests too) and it takes ~300 s. Nearly all of that is the
+      serial phase: the timing- and thread-sensitive runtime tests
+      (`runtime_test.go` alone ~150 s, `TestStdHttpUnitTests`,
+      `TestLoopsAreCancellationPoints`), and tests that set the
+      environment, swap stdio (`capture`, `runTestDir` — guarded by
+      `serialOnly`) or set `runtimeTestFlags`. Shrinking it means making
+      those programs cheaper to build (3) or running each with its own
+      stdio and env instead of the process's. (2) `sema` `TestCheckEveryPrefix` re-loads and
+      re-parses the embedded std for every line of every example (`fuzz`
+      181 s, `httpd` 100 s): `loadPackage` has no cache of parsed std files,
+      which the language server pays on every keystroke too. (3) Each build
+      emits every std function (540 `define`s for hello world, 1.3 MB of
+      IR) and clang spends ~0.8 s of the ~1 s build on it; codegen emitting
+      only what is reachable from `main`, tests, exports and vtables would
+      speed every build and test. Plain `go test ./...` may still exceed
+      the default 10-minute timeout on Windows under load; use
+      `-timeout 30m`.
 
 - [ ] **D197 `cede` (specified 2026-10-21, not implemented; plan F20).**
       Add the reserved statement in both frontends, suspension inference and

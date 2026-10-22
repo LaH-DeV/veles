@@ -14,6 +14,7 @@ import (
 // struct crosses by value as C passes it, whatever register class its
 // elements put it in: integers, floats, a size past the registers.
 func TestArraysAgreeWithC(t *testing.T) {
+	t.Parallel()
 	clang, err := findClang()
 	if err != nil {
 		t.Skip("clang not available:", err)

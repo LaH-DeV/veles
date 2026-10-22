@@ -10,6 +10,7 @@ import (
 // `--const-steps n` otherwise: a runaway `const fun` ends the build with an
 // error naming the constant, and a bigger budget lets an honest long one run.
 func TestConstStepsBudget(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	src := `const fun total(n: i64): i64 {
   var i = 0

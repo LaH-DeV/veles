@@ -7,6 +7,7 @@ import (
 
 // std/fs's own tests (open files, stat) run as part of the suite.
 func TestStdFsUnitTests(t *testing.T) {
+	t.Parallel()
 	if _, err := findClang(); err != nil {
 		t.Skip("clang not available:", err)
 	}

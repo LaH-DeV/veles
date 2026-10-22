@@ -27,6 +27,8 @@ var sanitize = flag.Bool("sanitize", false, "build with --sanitize and collect c
 // sanitizeEnv is the environment of a -sanitize run.
 var sanitizeEnv = []string{"VELES_GC_THRESHOLD=4096", "UBSAN_OPTIONS=print_stacktrace=1"}
 
+func TestMain(m *testing.M) { buildtest.Main(m) }
+
 // TestExamples compiles every example directory with the veles binary and
 // compares its standard output and exit code against expected.txt. An
 // example with a commands.txt is a command-line tool: see runScript. A
@@ -62,6 +64,7 @@ func TestExamples(t *testing.T) {
 			continue
 		}
 		t.Run(ex.name, func(t *testing.T) {
+			t.Parallel()
 			exe := filepath.Join(t.TempDir(), filepath.Base(ex.name))
 			if runtime.GOOS == "windows" {
 				exe += ".exe"

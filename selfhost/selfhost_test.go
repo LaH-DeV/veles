@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -43,19 +42,21 @@ func TestP0Source(t *testing.T) {
 	}
 }
 
-// buildSelfhost builds selfhost/ with a freshly built compiler.
+func TestMain(m *testing.M) { buildtest.Main(m) }
+
+// buildSelfhost builds selfhost/ with a freshly built compiler, once for
+// every test of the package.
 func buildSelfhost(t *testing.T) string {
 	t.Helper()
 	veles := buildtest.Compiler(t)
-	exe := filepath.Join(t.TempDir(), "selfhost")
-	if runtime.GOOS == "windows" {
-		exe += ".exe"
-	}
-	build := exec.Command(veles, "build", ".", "-o", exe, "--release")
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("building selfhost: %v\n%s", err, out)
-	}
-	return exe
+	return buildtest.Built(t, "selfhost", func(dir string) (string, error) {
+		exe := buildtest.Exe(dir, "selfhost")
+		build := exec.Command(veles, "build", ".", "-o", exe, "--release")
+		if out, err := build.CombinedOutput(); err != nil {
+			return "", fmt.Errorf("%v\n%s", err, out)
+		}
+		return exe, nil
+	})
 }
 
 type corpusFile struct {

@@ -10,6 +10,7 @@ import (
 // TestFormatUsesManifest: `[format]` in veles.toml sets the style, and
 // --check reports files that would change without touching them.
 func TestFormatUsesManifest(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "veles.toml"), []byte("[package]\nname = \"app\"\n\n[format]\nindent = 4\n"), 0o644)
 	path := filepath.Join(dir, "main.vs")
@@ -36,6 +37,7 @@ func TestFormatUsesManifest(t *testing.T) {
 // `line_endings = "crlf"` reach the formatter, and --check compares the
 // line endings too once they are not the default.
 func TestFormatManifestCommasAndEndings(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "veles.toml"), []byte("[package]\nname = \"app\"\n\n[format]\ntrailing_commas = \"never\"\nline_endings = \"crlf\"\n"), 0o644)
 	path := filepath.Join(dir, "main.vs")
@@ -59,6 +61,7 @@ func TestFormatManifestCommasAndEndings(t *testing.T) {
 // TestFormatWritesAtomically: the rewrite keeps the file's permission bits
 // and leaves no temporary file next to it.
 func TestFormatWritesAtomically(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")
 	os.WriteFile(path, []byte("fun main() {\nx()\n}\n"), 0o600)
@@ -82,6 +85,7 @@ func TestFormatWritesAtomically(t *testing.T) {
 // TestFormatReportsWalkErrors: a tree that cannot be fully read fails the
 // run, so `--check` never passes on files it did not see.
 func TestFormatReportsWalkErrors(t *testing.T) {
+	t.Parallel()
 	if code := Format(FormatOptions{Paths: []string{filepath.Join(t.TempDir(), "missing")}, Check: true}); code != 1 {
 		t.Errorf("a missing path: exit %d, want 1", code)
 	}
@@ -102,6 +106,7 @@ func TestFormatReportsWalkErrors(t *testing.T) {
 // `veles fmt` leaves vendor/ alone: reformatting a vendored package would
 // change the bytes veles.sum vouches for.
 func TestFormatSkipsVendor(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	os.MkdirAll(filepath.Join(dir, "vendor", "git", "x"), 0o755)
 	src := "fun main() {\nx()\n}\n"

@@ -13,6 +13,7 @@ import (
 // panics; a pointer made before the freeze never reaches the frozen contents,
 // because the storage is copied when one was made.
 func TestFreeze(t *testing.T) {
+	t.Parallel()
 	if _, err := findClang(); err != nil {
 		t.Skip("clang not available:", err)
 	}
@@ -36,6 +37,7 @@ func TestFreeze(t *testing.T) {
 	}
 
 	t.Run("works", func(t *testing.T) {
+		t.Parallel()
 		const body = `
 struct Report {
   protected var lines: MutableList<string> = []
@@ -171,6 +173,7 @@ fun main() {
 		{"freezing twice", `val xs: MutableList<i64> = [1, 2]`, `val _ = xs.freeze()`},
 	} {
 		t.Run("panics: "+c.name, func(t *testing.T) {
+			t.Parallel()
 			body := "fun main() {\n  " + c.setup + "\n  val frozen = xs.freeze()\n  io.println(\"frozen ${frozen}\")\n  " + c.use + "\n  io.println(\"not reached\")\n}\n"
 			for _, release := range []bool{false, true} {
 				out, errs, err := run(t, body, release)
@@ -188,6 +191,7 @@ fun main() {
 	}
 
 	t.Run("immutable receivers are refused", func(t *testing.T) {
+		t.Parallel()
 		for _, src := range []string{
 			"fun main() {\n  val xs: List<i64> = [1]\n  val _ = xs.freeze()\n}\n",
 			"fun main() {\n  val m: Map<string, i64> = [\"a\": 1]\n  val _ = m.freeze()\n}\n",

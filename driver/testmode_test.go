@@ -34,10 +34,19 @@ func runTestFiles(t *testing.T, files map[string]string, opts Options) (string, 
 	return runTestDir(t, dir, opts)
 }
 
+// serialOnly fails a test that swaps the process's standard streams while
+// it runs in parallel: the other tests' output would land in its capture.
+// t.Setenv refuses (panics) in a parallel test, which is the check.
+func serialOnly(t *testing.T) {
+	t.Helper()
+	t.Setenv("VELES_TEST_CAPTURES_STDIO", "1")
+}
+
 // runTestDir runs `veles test` on a directory, returning the output and
 // the exit code.
 func runTestDir(t *testing.T, dir string, opts Options) (string, int) {
 	t.Helper()
+	serialOnly(t)
 	outPath := filepath.Join(t.TempDir(), "out.txt")
 	out, err := os.Create(outPath)
 	if err != nil {

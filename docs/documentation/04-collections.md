@@ -276,7 +276,7 @@ fun main() {
   io.println("${xs.any(x => x > 7)} ${xs.all(x => x > 0)} ${xs.find(x => x > 4) ?: 0} ${xs.indexOf(8)}")
   io.println("${xs.first() ?: 0} ${xs.last() ?: 0} ${xs.join(", ")}")
   xs.forEach(x => io.print("$x "))
-  io.println("")
+  io.println("done")
 }
 ```
 
@@ -286,7 +286,7 @@ Output:
 [1, 3, 5, 8] [8, 5, 3, 1] [1, 8, 3, 5]
 true true 5 2
 5 1 5, 3, 8, 1
-5 3 8 1 
+5 3 8 1 done
 ```
 
 `x => x * 2` is a lambda; [chapter 10](10-closures-and-iterators.md)

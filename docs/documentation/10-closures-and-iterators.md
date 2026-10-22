@@ -317,7 +317,7 @@ fun main() {
   io.println("${nums.iter().zip(["a", "b", "c"].iter()).toList()}")
   io.println("${nums.iter().count()} ${nums.iter().fold(0, (a, b) => a + b)} ${nums.iter().find(x => x > 3) ?: -1}")
   loop (x in (1..3).iter().map(x => x * 100)) { io.print("$x ") }
-  io.println("")
+  io.println("done")
 }
 ```
 
@@ -329,7 +329,7 @@ Output:
 [0:1, 1:2, 2:3, 3:4, 4:5, 5:6]
 [(1, a), (2, b), (3, c)]
 6 21 4
-100 200 300
+100 200 300 done
 ```
 
 When to use which: `xs.map(f)` on a list is eager and returns a `List`

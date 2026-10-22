@@ -32,6 +32,7 @@ func copyDir(t *testing.T, from, to string) {
 // A lint rule written in Veles (D177, examples/lintrules): `veles check` runs
 // the rules the manifest names, and `--fix` applies the fix a rule reports.
 func TestLibraryLintFix(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	copyDir(t, "../examples/lintrules", root)
 	app := filepath.Join(root, "app")

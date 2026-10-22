@@ -7,6 +7,7 @@ import (
 
 // std/fmt's own tests (the format helpers) run as part of the suite.
 func TestStdFmtUnitTests(t *testing.T) {
+	t.Parallel()
 	if _, err := findClang(); err != nil {
 		t.Skip("clang not available:", err)
 	}

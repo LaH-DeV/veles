@@ -12,6 +12,7 @@ import (
 // redundant `mut`, an unused binding, a dead `else` on a sealed subject,
 // and a top-level impl that belongs in the struct body.
 func TestCheckFixInterpolation(t *testing.T) {
+	t.Parallel()
 	src := `use io
 error ParseError { }
 fun parse(value: i64): i64 throws ParseError => if (value < 0) throw ParseError() else value
@@ -62,6 +63,7 @@ fun main() throws {
 }
 
 func TestCheckFix(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")
 	src := `use io
@@ -138,6 +140,7 @@ fun main() {
 // forms need further passes because their edits overlap, and one run
 // makes them all (it checks again while a pass still finds a fix).
 func TestCheckFixIndexing(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")
 	src := `use io
@@ -180,6 +183,7 @@ fun main() {
 // spelling (D65) stops the load, and one `check --fix` migrates it —
 // interpolations included — and checks the result clean.
 func TestCheckFixParseErrors(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")
 	src := "use io\n\nstruct C {\n  var n: i64 = 0\n  fun bump() {\n    self.n += 1\n  }\n  fun show(): string => \"${self.n} $self\"\n}\n\nfun main() {\n  val c = C()\n  c.bump()\n  io.println(c.show())\n}\n"
@@ -198,6 +202,7 @@ func TestCheckFixParseErrors(t *testing.T) {
 // imported by one `check --fix`, the `use` above the first declaration's
 // doc comment, once however many names needed it.
 func TestCheckFixQualifiesModuleNames(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")
 	src := "/// A module doc.\n\n/// Counts things.\nfun count(v: Value, w: Value): i64 => 1\n\nfun main() {\n  val d = Depth(limit: 3)\n  io.println(\"${count(VNull(), VNull())} ${d.limit}\")\n}\n"
@@ -219,6 +224,7 @@ func TestCheckFixQualifiesModuleNames(t *testing.T) {
 // throw away the binding the typo meant: `counter` is not "never used"
 // (whose fix renames it to `_`) when `countr` was its use.
 func TestCheckFixLeavesGuesses(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")
 	src := "use io\n\nfun main() {\n  val counter = [1, 2]\n  io.printn(\"${countr.size()}\")\n}\n"
@@ -235,6 +241,7 @@ func TestCheckFixLeavesGuesses(t *testing.T) {
 // struct that is not Encodable (or Comparable) gets `implement X`, derived;
 // `try` in front of `??` is dropped. One `check --fix` and it runs.
 func TestCheckFixDerivesMissingImplements(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")
 	src := "use io, json\n\nstruct Point {\n  x: i64\n  y: i64\n}\n\nstruct Tag { name: string }\n\nfun main() {\n  io.println(try json.encode(Point(x: 1, y: 2)) ?? \"\")\n  val tags = [Tag(name: \"b\"), Tag(name: \"a\")].sorted()\n  io.println(json.encode(tags) ?? \"\")\n}\n"

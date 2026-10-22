@@ -1,16 +1,20 @@
 // Package buildtest builds the veles compiler for the end-to-end suites
-// (examples/, docs/). It exists for two reasons, both about a green run
-// having to mean a working compiler:
+// (examples/, docs/, selfhost/, internal/bootstrap/). It exists for two
+// reasons, both about a green run having to mean a working compiler:
 //
-//   - The binary is built fresh into the test's temporary directory, so a
-//     stale veles.exe lying in the tree is never what gets tested.
+//   - The binary is built fresh into a temporary directory, so a stale
+//     veles.exe lying in the tree is never what gets tested.
 //   - `go test` caches a result keyed on the files a test opens itself; the
 //     `go build` child process is invisible to it. So before building,
 //     every compiler source is opened here, and editing any of them
-//     invalidates the cached result of both suites.
+//     invalidates the cached result of every suite.
+//
+// It is built once per test binary, not once per test: a package that uses
+// it runs its tests through Main, which removes what was built at the end.
 package buildtest
 
 import (
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -18,24 +22,96 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 )
 
-// Compiler builds the compiler and returns the path of the binary.
+var (
+	mainRunning bool
+	mu          sync.Mutex
+	sharedDir   string
+	built       = map[string]*product{}
+)
+
+// product is one thing Built made: its path, or why it could not be made.
+type product struct {
+	once sync.Once
+	path string
+	err  error
+}
+
+// Main runs a package's tests and then removes everything Built made. A
+// package that calls Compiler or Built has `func TestMain(m *testing.M) {
+// buildtest.Main(m) }`.
+func Main(m *testing.M) {
+	mainRunning = true
+	code := m.Run()
+	if sharedDir != "" {
+		os.RemoveAll(sharedDir)
+	}
+	os.Exit(code)
+}
+
+// Built returns the path build made, running build only the first time a
+// test of this binary asks for name; later callers wait for it and share
+// the result, a failure included. build writes into dir, which lives until
+// Main removes it.
+func Built(t testing.TB, name string, build func(dir string) (string, error)) string {
+	t.Helper()
+	if !mainRunning {
+		t.Fatal("buildtest: the package's TestMain must call buildtest.Main(m)")
+	}
+	mu.Lock()
+	if sharedDir == "" {
+		dir, err := os.MkdirTemp("", "veles-buildtest-")
+		if err != nil {
+			mu.Unlock()
+			t.Fatal(err)
+		}
+		sharedDir = dir
+	}
+	p := built[name]
+	if p == nil {
+		p = &product{}
+		built[name] = p
+	}
+	dir := sharedDir
+	mu.Unlock()
+	p.once.Do(func() {
+		sub := filepath.Join(dir, name)
+		if p.err = os.MkdirAll(sub, 0o755); p.err == nil {
+			p.path, p.err = build(sub)
+		}
+	})
+	if p.err != nil {
+		t.Fatalf("building %s: %v", name, p.err)
+	}
+	return p.path
+}
+
+// Exe names an executable called name in dir, with .exe on Windows.
+func Exe(dir, name string) string {
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	return filepath.Join(dir, name)
+}
+
+// Compiler builds the compiler (once per test binary) and returns the path
+// of the binary.
 func Compiler(t testing.TB) string {
 	t.Helper()
-	root := moduleRoot(t)
-	touchSources(t, root)
-	exe := filepath.Join(t.TempDir(), "veles")
-	if runtime.GOOS == "windows" {
-		exe += ".exe"
-	}
-	build := exec.Command("go", "build", "-o", exe, ".")
-	build.Dir = root
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("building compiler: %v\n%s", err, out)
-	}
-	return exe
+	return Built(t, "veles", func(dir string) (string, error) {
+		root := moduleRoot(t)
+		touchSources(t, root)
+		exe := Exe(dir, "veles")
+		build := exec.Command("go", "build", "-o", exe, ".")
+		build.Dir = root
+		if out, err := build.CombinedOutput(); err != nil {
+			return "", fmt.Errorf("%v\n%s", err, out)
+		}
+		return exe, nil
+	})
 }
 
 // moduleRoot walks up from the test's working directory to go.mod.
